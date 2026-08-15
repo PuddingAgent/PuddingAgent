@@ -32,9 +32,6 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<MessageDeliveryEntity> MessageDeliveries => Set<MessageDeliveryEntity>();
     public DbSet<RoomParticipantEntity> RoomParticipants => Set<RoomParticipantEntity>();
 
-    // 会话事件日志（ADR-016）
-    public DbSet<SessionEventLogEntity> SessionEventLogs => Set<SessionEventLogEntity>();
-
     // 消息话题索引
     public DbSet<MessageTopicEntity> MessageTopics => Set<MessageTopicEntity>();
 
@@ -377,16 +374,6 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.ToTable("room_participants");
             e.HasIndex(p => p.ParticipantId).IsUnique();
             e.HasIndex(p => new { p.WorkspaceId, p.RoomId, p.Kind, p.EndpointId }).IsUnique();
-        });
-
-        // ── SessionEventLog (ADR-016) ─────────────────────────
-        modelBuilder.Entity<SessionEventLogEntity>(e =>
-        {
-            e.ToTable("session_event_log");
-            e.HasIndex(e => new { e.SessionId, e.SequenceNum }).IsUnique();
-            e.HasIndex(e => new { e.WorkspaceId, e.RecordedAt });
-            e.HasIndex(e => new { e.WorkspaceId, e.AgentInstanceId, e.RecordedAt });
-            e.Property(e => e.Data).HasColumnType("TEXT");
         });
 
         // ── SessionSubAgent (ADR-016) ─────────────────────────

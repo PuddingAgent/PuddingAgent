@@ -30,7 +30,6 @@ public sealed class StorageMaintenanceService(
     private static readonly string[] RuntimeActivityTables = ["runtime_activity"];
     private static readonly string[] ProtectedEventTables =
     [
-        "session_event_log",
         "conversation_events",
     ];
 
@@ -440,7 +439,7 @@ public sealed class StorageMaintenanceService(
                 ItemId = "platform.execution-facts",
                 DatabaseId = "platform",
                 DisplayName = "会话与执行事实",
-                Description = "session_event_log 与 conversation_events，是断线恢复、回放和执行审计的事实源。",
+                Description = "conversation_events，是断线恢复、回放和执行审计的事实源。",
                 RowCount = protectedRows,
                 RowCountIsApproximate = true,
                 AllocatedBytes = SumObjectBytes(platformObjectBytes, ProtectedEventTables),

@@ -10,7 +10,7 @@ namespace PuddingPlatform.Services;
 /// <summary>
 /// 聊天转录物化写入器。
 /// <para>
-/// ADR-031：`session_event_log` 是执行事实源，`ChatMessages` 是面向 UI 历史、分页与检索的
+/// ADR-031：`conversation_events` 是执行事实源，`ChatMessages` 是面向 UI 历史、分页与检索的
 /// 聊天转录物化视图。该服务只负责物化视图写入，不改变事件日志权威性。
 /// </para>
 /// </summary>

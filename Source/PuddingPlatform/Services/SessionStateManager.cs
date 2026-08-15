@@ -24,7 +24,7 @@ namespace PuddingPlatform.Services;
 /// 实现接口：ISessionStateManager（兼容 Facade）、ISessionEventWriter。
 /// 
 /// 三大职责：
-///   1. 持久化事件日志 — session_event_log 表，append-only 不可变记录。
+///   1. 持久化事件日志 — conversation_events 表，append-only 不可变记录。
 ///      a. 正常路径：先 SQLite → 后 JSONL → 后 Channel fan-out
 ///      b. 批量路径：先缓冲（最多 32 条或 150ms）→ flush SQLite → 后 Channel fan-out
 ///      c. 两条路径均保证 persist-before-notify（ADR-056 P0 正确性不变量）
@@ -950,7 +950,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
     }
 
     /// <summary>
-    /// ADR-028-C：对 DbUpdateException + SQLite error 19（session_event_log 唯一约束冲突）
+    /// ADR-028-C：对 DbUpdateException + SQLite error 19（conversation_events 唯一约束冲突）
     /// 最多重试 3 次，每次重试延迟递增。作为多实例/旧代码路径的最后防线。
     /// </summary>
     private async Task<long> AppendSqliteEventWithRetryAsync(
@@ -1091,7 +1091,7 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
         {
             // Gate 被占用：重置调度标志并重新安排延迟 flush。
             // 否则 _flushScheduled 卡在 1，后续 ScheduleBufferedFlush 的 TrySchedule 永远返回 false，
-            // 导致 terminal 事件(done/usage)永远留在内存 buffer，不写入 SQLite session_event_log。
+            // 导致 terminal 事件(done/usage)永远留在内存 buffer，不写入 SQLite conversation_events。
             // 关联 bug：WWmyKiW5kf9wrd 会话 done/usage 事件丢失
             _logger.LogInformation(
                 "[SSM] Flush gate busy, rescheduled delayed flush session={Session} bufferedCount={BufferedCount}",
@@ -1295,13 +1295,13 @@ public sealed class SessionStateManager : ISessionStateManager, ISessionEventWri
     }
 
     /// <summary>
-    /// 判定 DbUpdateException 是否为 session_event_log 的 (session_id, sequence_num) 唯一约束冲突。
+    /// 判定 DbUpdateException 是否为 conversation_events 的 (conversation_id, sequence) 唯一约束冲突。
     /// </summary>
     private static bool IsSessionSequenceConflict(DbUpdateException ex)
     {
         return ex.InnerException is SqliteException sqlite
             && sqlite.SqliteErrorCode == 19
-            && sqlite.Message.Contains("session_event_log.session_id, session_event_log.sequence_num", StringComparison.OrdinalIgnoreCase);
+            && sqlite.Message.Contains("conversation_events.conversation_id, conversation_events.sequence", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

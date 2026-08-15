@@ -115,7 +115,7 @@ public sealed record TurnTerminalInfo(
 /// </summary>
 public enum TurnOutputOwnership
 {
-    /// <summary>默认：旧路径，Runtime 仍写 session_event_log（历史行为，逐步退役）。</summary>
+    /// <summary>默认：旧路径（历史行为，逐步退役）。</summary>
     LegacySessionStream = 0,
     /// <summary>Coordinator 执行：Runtime 只产流，持久化与终态由 Journal（conversation_events）负责。</summary>
     CoordinatorCanonical = 1,

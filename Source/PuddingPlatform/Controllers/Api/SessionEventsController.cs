@@ -517,7 +517,7 @@ public class SessionEventsController : ControllerBase
     /// GET /api/sessions/{sessionId}/projected-cursor
     /// <para>
     /// ADR-056: 浏览器加载历史消息 → ChatMessages；然后从 projectedThroughSequence 之后读取尾部队列事件。
-    /// ChatMessages 是 SessionEventLog 的物化投影，不是独立事实源。
+    /// ChatMessages 是 ConversationEvent 的物化投影，不是独立事实源。
     /// </para>
     /// </summary>
     [AllowAnonymous]

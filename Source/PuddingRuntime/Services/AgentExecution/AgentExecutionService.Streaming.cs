@@ -498,7 +498,7 @@ public sealed partial class AgentExecutionService
             // ADR-056-E：prefer ISessionEventWriter (unified envelope); fallback to sessionOutputWriter / SSM for backward compat.
             async Task Append(ServerSentEventFrame frame)
             {
-                // P0-4f-3: CoordinatorCanonical 时 Runtime 只产流，不写 session_event_log 持久化。
+                // P0-4f-3: CoordinatorCanonical 时 Runtime 只产流，不写旧流表持久化。
                 // 此处仅 gate 持久化写入（_eventWriter / _sessionOutputWriter / _ssm），
                 // SSE 实时传输由各 yield return 完成，Channel fan-out 在下游，均不受此 gate 影响。
                 if (request.OutputOwnership == TurnOutputOwnership.CoordinatorCanonical)

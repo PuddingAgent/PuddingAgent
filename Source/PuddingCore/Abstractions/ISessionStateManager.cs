@@ -126,7 +126,7 @@ public interface ISessionStateManager
 
     /// <summary>
     /// 获取会话级 Trace 聚合报告。
-    /// 从 session_event_log 中查询该会话的所有事件，按 traceId 和 component 聚合。
+    /// 从 conversation_events 中查询该会话的所有事件，按 traceId 和 component 聚合。
     /// </summary>
     /// <param name="includeSubAgents">是否递归包含子代理的 Token 统计（默认 false，仅统计本会话）</param>
     Task<SessionTraceReport> GetTraceReportAsync(string sessionId, bool includeSubAgents = false, CancellationToken ct = default);
@@ -301,7 +301,7 @@ public sealed record SubAgentTokenSummary
 
 /// <summary>
 /// 会话级 Trace 聚合报告。
-/// 从 session_event_log 查询该会话的所有事件，按 traceId 和 component 聚合。
+/// 从 conversation_events 查询该会话的所有事件，按 traceId 和 component 聚合。
 /// 关联 ADR：Docs/07架构/20会话状态机与事件规范ADR.md §6
 /// </summary>
 public sealed record SessionTraceReport

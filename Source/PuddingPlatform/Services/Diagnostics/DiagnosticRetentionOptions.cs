@@ -1,4 +1,4 @@
-﻿namespace PuddingPlatform.Services.Diagnostics;
+namespace PuddingPlatform.Services.Diagnostics;
 
 /// <summary>
 /// 诊断 append-only 表保留期裁剪服务（DiagnosticRetentionService）的配置。
@@ -7,7 +7,7 @@
 /// 目标表（platform.db 的 append-only 诊断表）：
 ///   telemetry_metric_events / context_layer_metric_events / runtime_activity
 ///   （按时间戳直接裁剪）
-/// conversation_events 与 session_event_log 是权威执行事实源，不参与此后台裁剪。
+/// conversation_events 是权威执行事实源，不参与此后台裁剪。
 /// ChatMessages 绝不参与裁剪。
 /// </summary>
 public sealed class DiagnosticRetentionOptions

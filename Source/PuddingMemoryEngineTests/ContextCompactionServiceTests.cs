@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Models;
@@ -232,7 +232,7 @@ public sealed class ContextCompactionServiceTests
             evicted.Content!.Length < 10_000,
             $"巨型 tool_output 应被截断而非原样保留（实际长度 {evicted.Content.Length}）。");
         StringAssert.Contains(evicted.Content, "截断标记");
-        StringAssert.Contains(evicted.Content, "session_event_log");
+        StringAssert.Contains(evicted.Content, "conversation_events");
         StringAssert.Contains(evicted.Content, "200000"); // 标记注明原始大小
         Assert.IsFalse(
             evicted.Content.Contains(new string('x', 100_000), StringComparison.Ordinal),

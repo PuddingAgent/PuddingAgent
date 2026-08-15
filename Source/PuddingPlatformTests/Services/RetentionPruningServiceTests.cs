@@ -13,9 +13,9 @@ namespace PuddingPlatformTests.Services;
 
 /// <summary>
 /// RetentionPruningService 行为验证：
-/// 1) 从 "Retention" 节读取四张表配置并裁剪过期行（"O" 格式时间戳字典序比较安全）
+/// 1) 从 "Retention" 节读取三张表配置并裁剪过期行（"O" 格式时间戳字典序比较安全）
 /// 2) 仅删超过保留期的行，新鲜行保留
-/// 3) conversation_events / session_event_log / telemetry / runtime_activity 均按各自保留期裁剪
+/// 3) conversation_events / telemetry / runtime_activity 均按各自保留期裁剪
 /// 4) chat_messages 不在白名单 → 永不裁剪
 /// 5) 白名单外表名被忽略（防注入设计副作用）
 /// </summary>
@@ -67,16 +67,6 @@ public sealed class RetentionPruningServiceTests
     private static string CreateArchiveRoot()
         => Path.Combine(Path.GetTempPath(), "pudding-retention-tests", Guid.NewGuid().ToString("N"));
 
-    private static SessionEventLogEntity MakeSessionEvent(string sessionId, long sequence, DateTimeOffset recordedAt) => new()
-    {
-        SessionId = sessionId,
-        WorkspaceId = "default",
-        SequenceNum = sequence,
-        EventType = "test",
-        Data = "{}",
-        RecordedAt = recordedAt.ToString("O"),
-    };
-
     private static ConversationEventEntity MakeConversationEvent(string conversationId, DateTimeOffset committedAt) => new()
     {
         ConversationId = conversationId,
@@ -113,7 +103,7 @@ public sealed class RetentionPruningServiceTests
     };
 
     [TestMethod]
-    public async Task Trims_All_Four_Tables_And_Keeps_Fresh_Rows()
+    public async Task Trims_All_Three_Tables_And_Keeps_Fresh_Rows()
     {
         var (provider, connection) = CreateProvider();
         await using (connection)
@@ -121,9 +111,6 @@ public sealed class RetentionPruningServiceTests
             await using (var scope = provider.CreateAsyncScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                db.Set<SessionEventLogEntity>().AddRange(
-                    MakeSessionEvent("old", 1, DateTimeOffset.UtcNow.AddDays(-20)),
-                    MakeSessionEvent("fresh", 1, DateTimeOffset.UtcNow.AddDays(-1)));
                 db.Set<ConversationEventEntity>().AddRange(
                     MakeConversationEvent("old-c", DateTimeOffset.UtcNow.AddDays(-40)),
                     MakeConversationEvent("fresh-c", DateTimeOffset.UtcNow.AddDays(-1)));
@@ -137,7 +124,6 @@ public sealed class RetentionPruningServiceTests
             }
 
             var config = MakeConfiguration(
-                ("Retention:session_event_log:RetentionDays", "14"),
                 ("Retention:telemetry_metric_events:RetentionDays", "14"),
                 ("Retention:runtime_activity:RetentionDays", "14"),
                 ("Retention:conversation_events:RetentionDays", "30"),
@@ -149,8 +135,6 @@ public sealed class RetentionPruningServiceTests
             await using (var scope = provider.CreateAsyncScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                Assert.AreEqual(1, await db.Set<SessionEventLogEntity>().CountAsync(e => e.SessionId == "fresh"));
-                Assert.AreEqual(0, await db.Set<SessionEventLogEntity>().CountAsync(e => e.SessionId == "old"));
                 Assert.AreEqual(1, await db.Set<ConversationEventEntity>().CountAsync(e => e.ConversationId == "fresh-c"));
                 Assert.AreEqual(0, await db.Set<ConversationEventEntity>().CountAsync(e => e.ConversationId == "old-c"));
                 Assert.AreEqual(1, await db.Set<TelemetryMetricEventEntity>().CountAsync(e => e.MetricId == "fresh-t"));
@@ -170,14 +154,13 @@ public sealed class RetentionPruningServiceTests
             await using (var scope = provider.CreateAsyncScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                // 20 天前：超过 session/telemetry/runtime 的 14 天，但未超过 conversation_events 的 30 天
+                // 20 天前：超过 telemetry/runtime 的 14 天，但未超过 conversation_events 的 30 天
                 db.Set<ConversationEventEntity>().Add(
                     MakeConversationEvent("twenty-days", DateTimeOffset.UtcNow.AddDays(-20)));
                 await db.SaveChangesAsync();
             }
 
             var config = MakeConfiguration(
-                ("Retention:session_event_log:RetentionDays", "14"),
                 ("Retention:telemetry_metric_events:RetentionDays", "14"),
                 ("Retention:runtime_activity:RetentionDays", "14"),
                 ("Retention:conversation_events:RetentionDays", "30"),
@@ -219,7 +202,6 @@ public sealed class RetentionPruningServiceTests
             }
 
             var config = MakeConfiguration(
-                ("Retention:session_event_log:RetentionDays", "14"),
                 ("Retention:telemetry_metric_events:RetentionDays", "14"),
                 ("Retention:runtime_activity:RetentionDays", "14"),
                 ("Retention:conversation_events:RetentionDays", "30"),
@@ -253,59 +235,6 @@ public sealed class RetentionPruningServiceTests
     }
 
     [TestMethod]
-    public async Task Archives_SessionEventLog_Before_Delete()
-    {
-        var (provider, connection) = CreateProvider();
-        var archiveRoot = CreateArchiveRoot();
-        var archiveWriter = new RetentionArchiveWriter(
-            PuddingDataPaths.FromRoot(archiveRoot),
-            NullLogger<RetentionArchiveWriter>.Instance);
-
-        await using (connection)
-        {
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                db.Set<SessionEventLogEntity>().Add(
-                    MakeSessionEvent("old", 1, DateTimeOffset.UtcNow.AddDays(-20)));
-                await db.SaveChangesAsync();
-            }
-
-            var config = MakeConfiguration(
-                ("Retention:session_event_log:RetentionDays", "14"),
-                ("Retention:conversation_events:RetentionDays", "30"),
-                ("Retention:telemetry_metric_events:RetentionDays", "14"),
-                ("Retention:runtime_activity:RetentionDays", "14"),
-                ("Retention:Vacuum:Enabled", "false"));
-
-            var service = CreateService(provider, config, archiveWriter);
-            await service.RunOnceAsync();
-
-            // 已删除
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                Assert.AreEqual(0, await db.Set<SessionEventLogEntity>().CountAsync(e => e.SessionId == "old"));
-            }
-
-            // 已归档（当天分片，含完整字段与元数据）
-            var day = DateTimeOffset.UtcNow.UtcDateTime.ToString("yyyy-MM-dd");
-            var archiveFile = PuddingDataPaths.FromRoot(archiveRoot)
-                .PlatformRetentionArchiveFile("session_event_log", day);
-            Assert.IsTrue(File.Exists(archiveFile), $"archive file not found: {archiveFile}");
-
-            var lines = await File.ReadAllLinesAsync(archiveFile);
-            Assert.AreEqual(1, lines.Length);
-            using var doc = JsonDocument.Parse(lines[0]);
-            var root = doc.RootElement;
-            Assert.AreEqual("old", root.GetProperty("SessionId").GetString());
-            Assert.AreEqual("session_event_log", root.GetProperty("table_name").GetString());
-            Assert.IsTrue(root.TryGetProperty("archived_at", out _));
-            Assert.IsTrue(root.TryGetProperty("retention_cutoff", out _));
-        }
-    }
-
-    [TestMethod]
     public async Task Archives_ConversationEvents_Before_Delete()
     {
         var (provider, connection) = CreateProvider();
@@ -325,7 +254,6 @@ public sealed class RetentionPruningServiceTests
             }
 
             var config = MakeConfiguration(
-                ("Retention:session_event_log:RetentionDays", "14"),
                 ("Retention:conversation_events:RetentionDays", "30"),
                 ("Retention:telemetry_metric_events:RetentionDays", "14"),
                 ("Retention:runtime_activity:RetentionDays", "14"),
@@ -363,13 +291,12 @@ public sealed class RetentionPruningServiceTests
             await using (var scope = provider.CreateAsyncScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                db.Set<SessionEventLogEntity>().Add(
-                    MakeSessionEvent("old", 1, DateTimeOffset.UtcNow.AddDays(-20)));
+                db.Set<ConversationEventEntity>().Add(
+                    MakeConversationEvent("old-c", DateTimeOffset.UtcNow.AddDays(-40)));
                 await db.SaveChangesAsync();
             }
 
             var config = MakeConfiguration(
-                ("Retention:session_event_log:RetentionDays", "14"),
                 ("Retention:conversation_events:RetentionDays", "30"),
                 ("Retention:telemetry_metric_events:RetentionDays", "14"),
                 ("Retention:runtime_activity:RetentionDays", "14"),
@@ -386,7 +313,7 @@ public sealed class RetentionPruningServiceTests
             await using (var scope = provider.CreateAsyncScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                Assert.AreEqual(1, await db.Set<SessionEventLogEntity>().CountAsync(e => e.SessionId == "old"));
+                Assert.AreEqual(1, await db.Set<ConversationEventEntity>().CountAsync(e => e.ConversationId == "old-c"));
             }
         }
     }

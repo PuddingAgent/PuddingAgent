@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
@@ -6,7 +6,7 @@ using PuddingCode.Tools;
 namespace PuddingRuntime.Services.Tools;
 
 /// <summary>
-/// 原始会话日志查询工具：供 Agent 按天列出、检索和读取未压缩的 session_event_log 证据。
+/// 原始会话日志查询工具：供 Agent 按天列出、检索和读取未压缩的 conversation_events 证据。
 /// </summary>
 [Tool(
     id: "query_session_logs",

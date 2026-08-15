@@ -4,7 +4,7 @@ namespace PuddingCode.Platform;
 /// 会话事件类型常量 — 从 SSE event 字段扩展到会话事件日志的完整事件分类。
 /// 
 /// 用途：
-///   · SessionEventLog 的 event_type 列
+///   · conversation_events 的 event_type 列
 ///   · 前端 AdminChatStreamEvent 联合类型
 ///   · ServerSentEventFrame.Event 字段
 /// 

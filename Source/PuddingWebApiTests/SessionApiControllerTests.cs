@@ -277,15 +277,6 @@ public sealed class SessionApiControllerTests
                 Content = "删除后不应通过 transcript backfill 恢复",
                 CreatedAt = now.ToUnixTimeMilliseconds(),
             });
-            db.SessionEventLogs.Add(new SessionEventLogEntity
-            {
-                SessionId = sid,
-                WorkspaceId = "default",
-                SequenceNum = 1,
-                EventType = "done",
-                Data = "{\"reply\":\"deleted\"}",
-                RecordedAt = now.ToString("O"),
-            });
             db.ConversationCatalogs.Add(new ConversationCatalogEntity
             {
                 ConversationId = sid,

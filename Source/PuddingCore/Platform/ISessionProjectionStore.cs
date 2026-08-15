@@ -4,7 +4,7 @@ namespace PuddingCode.Platform;
 /// 会话事件投影游标存储——追踪 ChatMessages 物化视图的进度。
 /// <para>
 /// ADR-056 分层架构：
-///   SessionEventLog ──── 唯一权威事实源（事件、审计、恢复、诊断）
+///   ConversationEvent ──── 唯一权威事实源（事件、审计、恢复、诊断）
 ///        │
 ///        │ 投影（project）
 ///        ▼
@@ -14,7 +14,7 @@ namespace PuddingCode.Platform;
 /// 浏览器重连时：
 /// 1. 从 ChatMessages 加载已完成的用户/Agent 消息（历史分页）
 /// 2. 获取 projectedThroughSequence
-/// 3. 从 SessionEventLog 读取该 sequence 之后的尾部队列事件
+/// 3. 从 ConversationEvent 读取该 sequence 之后的尾部队列事件
 /// 4. 尚未完成的 Turn 使用尾部 delta 重建
 /// </para>
 /// </summary>

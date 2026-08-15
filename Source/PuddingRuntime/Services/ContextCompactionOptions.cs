@@ -1,4 +1,4 @@
-﻿namespace PuddingRuntime.Services;
+namespace PuddingRuntime.Services;
 
 /// <summary>
 /// 上下文压缩配置选项。
@@ -49,7 +49,7 @@ public sealed class ContextCompactionOptions
     /// "最近消息原样保留窗口"的单条消息尺寸上限（字节）。
     /// 保留窗口内单条消息（含 tool_result/tool_output 载荷，如 ToolCallsJson/ToolResultJson/Metadata）超过该值时，
     /// 不再原样保留全文，而是截断为"头部摘要 + 截断标记"（标记注明原始大小，
-    /// 并提示完整内容可在会话原始日志 session_event_log 中查证），
+    /// 并提示完整内容可在会话原始事件流 conversation_events 中查证），
     /// 被截断的完整原文仍会以克隆形式进入摘要侧输入，照常参与摘要处理。
     /// 0 或负数表示禁用该驱逐，保持旧行为，便于回滚。默认 16*1024。
     /// </summary>

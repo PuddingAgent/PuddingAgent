@@ -95,39 +95,6 @@ public sealed class MessageApiControllerTests
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
     }
 
-    // ── ADR-031: 旧事件日志 fallback ─────────────────
-    [TestMethod]
-    public async Task ListMessages_WhenChatMessagesEmptyAndEventLogHasDone_ReturnsAssistantFallback()
-    {
-        var sid = $"fallback-{Guid.NewGuid():N}";
-        var now = DateTimeOffset.UtcNow;
-
-        using (var scope = _factory.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-            db.SessionEventLogs.AddRange(
-                NewEvent(sid, 1, "thinking", "{\"delta\":\"思考中\"}", now),
-                NewEvent(sid, 2, "delta", "{\"delta\":\"Hello \"}", now.AddMilliseconds(1)),
-                NewEvent(sid, 3, "delta", "{\"delta\":\"fallback\"}", now.AddMilliseconds(2)),
-                NewEvent(sid, 4, "usage", "{\"promptTokens\":1,\"completionTokens\":2,\"totalTokens\":3}", now.AddMilliseconds(3)),
-                NewEvent(sid, 5, "done", "{\"reply\":\"Hello fallback\",\"usage\":{\"promptTokens\":1,\"completionTokens\":2,\"totalTokens\":3}}", now.AddMilliseconds(4)));
-            await db.SaveChangesAsync();
-        }
-
-        var response = await _client.GetAsync($"/api/sessions/{sid}/messages?limit=20");
-        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
-
-        var body = await response.Content.ReadFromJsonAsync<MessageListDto>(JsonOpts);
-        Assert.IsNotNull(body);
-        Assert.AreEqual(1, body!.Items.Count);
-        Assert.AreEqual("agent", body.Items[0].Role);
-        Assert.AreEqual("Hello fallback", body.Items[0].Content);
-        Assert.AreEqual(1, body.Items[0].Thinking?.Count);
-        Assert.AreEqual(3, body.Items[0].Usage?.TotalTokens);
-        Assert.IsFalse(body.HasMore);
-        Assert.IsNotNull(body.OldestCreatedAt);
-    }
-
     // ── ADR-031: ChatMessages 是普通历史的物化视图 ─────
     [TestMethod]
     public async Task ListMessages_WhenMaterializedMessagesExist_DoesNotUseEventFallback()
@@ -146,7 +113,6 @@ public sealed class MessageApiControllerTests
                 Content = "materialized user",
                 CreatedAt = createdAt,
             });
-            db.SessionEventLogs.Add(NewEvent(sid, 1, "done", "{\"reply\":\"fallback should not win\"}", now));
             await db.SaveChangesAsync();
         }
 
@@ -274,21 +240,6 @@ public sealed class MessageApiControllerTests
         StringAssert.Contains(md, "hello");
         StringAssert.Contains(md, "world");
     }
-
-    private static SessionEventLogEntity NewEvent(
-        string sessionId,
-        long sequence,
-        string eventType,
-        string data,
-        DateTimeOffset recordedAt) => new()
-        {
-            SessionId = sessionId,
-            WorkspaceId = "default",
-            SequenceNum = sequence,
-            EventType = eventType,
-            Data = data,
-            RecordedAt = recordedAt.ToString("O"),
-        };
 
     private static object NewTurnPayload(string text) => new
     {

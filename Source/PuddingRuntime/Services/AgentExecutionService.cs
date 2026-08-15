@@ -386,7 +386,7 @@ public sealed partial class AgentExecutionService
                 error: null,
                 ct: CancellationToken.None);
 
-            // P0-4f-3: CoordinatorCanonical 时 Runtime 只产流，不写 session_event_log。
+            // P0-4f-3: CoordinatorCanonical 时 Runtime 只产流，不写旧流表。
             // 此处仅 gate SSM 旧流持久化；P0-2 canonical conversation_events 留痕
             // （PersistSteeringInjectedEventAsync）在下文保留，不受此 gate 影响。
             if (_ssm is not null

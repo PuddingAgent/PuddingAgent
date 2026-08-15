@@ -271,7 +271,7 @@ public sealed class TokenUsageRebuildService(
         // usage.recorded v2 payload carries invocationIndex (per-turn LLM invocation
         // counter), which is a precise pairing key: an ordered chat_stream activity at
         // position i maps to the usage event whose invocationIndex == i + 1. This
-        // replaces the legacy index-based pairing against session_event_log "usage"
+        // replaces the legacy index-based pairing against conversation_events "usage"
         // frames. Duplicate invocationIndex (multi-turn overlap) collapses to fewer
         // entries than activities, which fails the count check below and safely falls
         // back to self-contained facts instead of manufacturing a wrong pairing.

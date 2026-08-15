@@ -58,7 +58,7 @@ public class RuntimeTimelineQueryService
             items.AddRange(events);
         }
 
-        // 3. 从 ConversationEvent 查询（canonical，替换旧 SessionEventLog）
+        // 3. 从 ConversationEvent 查询（canonical）
         if (ShouldQueryKind(query, null))
         {
             var conversationEvents = await QueryConversationEventsAsync(db, query, ct);
@@ -123,7 +123,7 @@ public class RuntimeTimelineQueryService
             .ToListAsync(ct);
         items.AddRange(events);
 
-        // ConversationEvent（canonical，替换旧 SessionEventLog）
+        // ConversationEvent（canonical）
         var conversationEvents = await db.ConversationEvents
             .Where(c => c.ConversationId == sessionId)
             .ToListAsync(ct);

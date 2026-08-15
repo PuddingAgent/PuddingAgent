@@ -14,7 +14,7 @@ namespace PuddingPlatform.Services;
 /// <item>
 ///   <description>
 ///     <b>Timeline（会话轨迹）</b>：按时间线记录关键阶段（received → route.resolved → main_session.resolved → command.accepted）。
-///     存储在 session_event_log 或 session_timeline 中，供前端 /api/sessions/{id}/trace 查询。
+///     存储在 conversation_events 或 session_timeline 中，供前端 /api/sessions/{id}/trace 查询。
 ///   </description>
 /// </item>
 /// <item>

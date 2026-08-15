@@ -823,54 +823,6 @@ namespace PuddingPlatform.Migrations
                     b.ToTable("LlmProviderQuotas", "platform");
                 });
 
-            modelBuilder.Entity("PuddingPlatform.Data.Entities.SessionEventLogEntity", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Data")
-                        .IsRequired()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("data");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT")
-                        .HasColumnName("event_type");
-
-                    b.Property<string>("RecordedAt")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("TEXT")
-                        .HasColumnName("recorded_at");
-
-                    b.Property<long>("SequenceNum")
-                        .HasColumnType("INTEGER")
-                        .HasColumnName("sequence_num");
-
-                    b.Property<string>("SessionId")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT")
-                        .HasColumnName("session_id");
-
-                    b.Property<string>("WorkspaceId")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT")
-                        .HasColumnName("workspace_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SessionId", "SequenceNum")
-                        .IsUnique();
-
-                    b.HasIndex("WorkspaceId", "RecordedAt");
-
-                    b.ToTable("session_event_log", "platform");
-                });
 
             modelBuilder.Entity("PuddingPlatform.Data.Entities.SessionSubAgentEntity", b =>
                 {

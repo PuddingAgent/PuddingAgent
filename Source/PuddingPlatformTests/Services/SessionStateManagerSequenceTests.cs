@@ -125,7 +125,7 @@ public sealed class SessionStateManagerSequenceTests
     }
 
     /// <summary>
-    /// SQLite 中不存在重复 (session_id, sequence_num)。
+    /// SQLite 中不存在重复 (conversation_id, sequence)。
     /// </summary>
     [TestMethod]
     public async Task AppendAsync_NoDuplicateSequenceNum_InSqlite()
@@ -150,8 +150,8 @@ public sealed class SessionStateManagerSequenceTests
             using var scope = scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
 
-            var duplicates = await db.SessionEventLogs
-                .GroupBy(e => new { e.SessionId, e.SequenceNum })
+            var duplicates = await db.ConversationEvents
+                .GroupBy(e => new { e.ConversationId, e.Sequence })
                 .Where(g => g.Count() > 1)
                 .CountAsync();
 
@@ -510,7 +510,7 @@ public sealed class SessionStateManagerSequenceTests
 
     /// <summary>
     /// P0-4f B3：GetTraceReportAsync 读 canonical conversation_events + 共享投影器，
-    /// 验证 usage / tool / subagent / component 全部走投影器聚合，不再读 session_event_log。
+    /// 验证 usage / tool / subagent / component 全部走投影器聚合（canonical conversation_events 源）。
     /// </summary>
     [TestMethod]
     public async Task GetTraceReportAsync_ConversationEventSource_ProjectsThroughProjector()

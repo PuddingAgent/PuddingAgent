@@ -198,7 +198,7 @@ public sealed class ExecutionRunCoordinator(
                     TraceId = command.TraceId,
                 },
                 // P0-4f-3: Coordinator 执行路径的领域事件由 Journal（conversation_events）负责持久化与终态权威；
-                // Runtime 只产流，不再写 session_event_log（旧流）。SSE 实时传输不受影响。
+                // Runtime 只产流，不再写旧流表。SSE 实时传输不受影响。
                 OutputOwnership = TurnOutputOwnership.CoordinatorCanonical,
             };
 

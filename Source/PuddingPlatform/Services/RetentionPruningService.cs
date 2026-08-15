@@ -11,12 +11,12 @@ namespace PuddingPlatform.Services;
 /// platform.db 数据保留期裁剪后台服务。
 ///
 /// 背景：platform.db 已膨胀到数 GB；保留期配置（Retention）早已定义但裁剪代码缺失，
-/// 现有 DiagnosticRetentionService 只覆盖遥测/上下文指标/运行活动，session_event_log 与
-/// conversation_events 从未被裁剪。本服务补齐全部四张表的保留期清理。
+/// 现有 DiagnosticRetentionService 只覆盖遥测/上下文指标/运行活动，conversation_events
+/// 从未被裁剪。本服务补齐全部三张表的保留期清理。
 ///
 /// 设计要点：
 /// 1) 配置读取：优先读取顶层 "Retention" 节（每张表一个 { "RetentionDays": N }），
-///    若该节未定义则回退到既有 "Diagnostics:Retention:Tables"（已包含全部四张表）。
+///    若该节未定义则回退到既有 "Diagnostics:Retention:Tables"（已包含全部三张表）。
 ///    表名/列名只允许来自内置白名单（防 SQL 注入，配置值只影响 RetentionDays）。
 /// 2) 宿主服务模式照抄 DiagnosticRetentionService：ExecuteAsync 首句 Task.Yield()，
 ///    绝不阻塞宿主启动（BackgroundService.StartAsync 会同步执行到第一个未完成 await）。
@@ -25,7 +25,6 @@ namespace PuddingPlatform.Services;
 ///    循环到 affected&lt;batch，批间限速，尊重 CancellationToken，用 ExecuteSqlRaw 不加载实体。
 /// 4) 时间戳列均为 "O" 格式（DateTimeOffset.UtcNow.ToString("O")，如 2026-08-12T11:33:34.4448190+00:00），
 ///    ISO-8601 字典序比较即时间序比较；cutoff 同样按 "O" 格式化。列名来自实体映射核实：
-///      session_event_log.recorded_at          （SessionEventLogEntity）
 ///      telemetry_metric_events.occurred_at_utc（TelemetryMetricEventEntity）
 ///      runtime_activity.started_at_utc        （RuntimeActivityEntity）
 ///      conversation_events.committed_at       （ConversationEventEntity，写入时与 occurred_at 同值）
@@ -50,7 +49,6 @@ public sealed class RetentionPruningService : BackgroundService
     private static readonly IReadOnlyDictionary<string, string> TableTimestampColumns =
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["session_event_log"] = "recorded_at",
             ["telemetry_metric_events"] = "occurred_at_utc",
             ["runtime_activity"] = "started_at_utc",
             ["conversation_events"] = "committed_at",
@@ -63,7 +61,6 @@ public sealed class RetentionPruningService : BackgroundService
     private static readonly IReadOnlySet<string> ArchiveTables =
         new HashSet<string>(StringComparer.Ordinal)
         {
-            "session_event_log",
             "conversation_events",
         };
 
@@ -280,7 +277,7 @@ public sealed class RetentionPruningService : BackgroundService
     }
 
     /// <summary>
-    /// 对证据流表（session_event_log / conversation_events）按批执行：
+    /// 对证据流表（conversation_events）按批执行：
     /// SELECT 完整字段（时间戳早于 cutoff，ORDER BY rowid，LIMIT batch）→ 归档 → DELETE 该批精确 rowid。
     /// 归档写文件失败会抛异常（由 RunLoopAsync 捕获），对应批次绝不先删后归档。
     /// </summary>
@@ -294,26 +291,6 @@ public sealed class RetentionPruningService : BackgroundService
     {
         switch (tableName)
         {
-            case "session_event_log":
-            {
-                var rows = await db.SessionEventLogs
-                    .AsNoTracking()
-                    .Where(e => string.Compare(e.RecordedAt, cutoffString) < 0)
-                    .OrderBy(e => e.Id)
-                    .Take(batchSize)
-                    .ToListAsync(ct);
-
-                if (rows.Count == 0)
-                    return 0;
-
-                await _archiveWriter.ArchiveBatchAsync(tableName, rows, cutoff, ct);
-
-                var ids = rows.Select(r => r.Id).ToList();
-                return await db.SessionEventLogs
-                    .Where(e => ids.Contains(e.Id))
-                    .ExecuteDeleteAsync(ct);
-            }
-
             case "conversation_events":
             {
                 var rows = await db.ConversationEvents

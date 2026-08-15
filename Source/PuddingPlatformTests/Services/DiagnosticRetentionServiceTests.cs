@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -12,8 +12,7 @@ namespace PuddingPlatformTests.Services;
 /// DiagnosticRetentionService 行为验证：
 /// 1) 只删超过保留期的行（时间戳为 "O" 格式字符串，字典序比较安全）
 /// 2) Enabled=false 时完全不动数据
-/// 3) session_event_log 无投影水位时一律跳过（ADR-056 权威事实源保护）
-/// 4) 白名单外的表名被忽略（防注入设计的副作用验证）
+/// 3) 白名单外的表名被忽略（防注入设计的副作用验证）
 /// </summary>
 [TestClass]
 public sealed class DiagnosticRetentionServiceTests
@@ -56,16 +55,6 @@ public sealed class DiagnosticRetentionServiceTests
         Category = "retention-test",
         Name = "retention.test.metric",
         OccurredAtUtc = occurredAt.ToString("O"),
-    };
-
-    private static SessionEventLogEntity MakeSessionEvent(string sessionId, long sequence, DateTimeOffset recordedAt) => new()
-    {
-        SessionId = sessionId,
-        WorkspaceId = "default",
-        SequenceNum = sequence,
-        EventType = "test",
-        Data = "{}",
-        RecordedAt = recordedAt.ToString("O"),
     };
 
     [TestMethod]
@@ -134,42 +123,6 @@ public sealed class DiagnosticRetentionServiceTests
             await using (var db = factory.CreateDbContext())
             {
                 Assert.AreEqual(1, await db.Set<TelemetryMetricEventEntity>().CountAsync());
-            }
-        }
-    }
-
-    [TestMethod]
-    public async Task SessionEventLog_Skipped_Without_Projection_Watermark()
-    {
-        var (connection, factory) = await CreateDbAsync();
-        await using (connection)
-        {
-            await using (var db = factory.CreateDbContext())
-            {
-                db.Set<SessionEventLogEntity>().Add(
-                    MakeSessionEvent("s1", 1, DateTimeOffset.UtcNow.AddDays(-30)));
-                await db.SaveChangesAsync();
-            }
-
-            var service = CreateService(factory, new DiagnosticRetentionOptions
-            {
-                Enabled = true,
-                StartupDelaySeconds = 0,
-                BatchDelayMs = 0,
-                Tables =
-                {
-                    ["session_event_log"] = new DiagnosticRetentionTableOptions { RetentionDays = 14 },
-                },
-            });
-
-            await service.RunOnceAsync();
-
-            await using (var db = factory.CreateDbContext())
-            {
-                Assert.AreEqual(
-                    1,
-                    await db.Set<SessionEventLogEntity>().CountAsync(),
-                    "session_event_log 无投影水位时必须整表跳过（ADR-056 权威事实源）");
             }
         }
     }

@@ -1115,7 +1115,7 @@ public sealed class ContextCompactionService : IContextCompactionService
 
     /// <summary>
     /// 构造"头部摘要 + 截断标记"的保留副本：保留开头一小段原文，随后附加截断标记；
-    /// 标记注明原始大小，并提示完整内容可在会话原始日志 session_event_log 中查证。
+    /// 标记注明原始大小，并提示完整内容可在会话原始事件流 conversation_events 中查证。
     /// </summary>
     private static string BuildVerbatimTruncatedContent(
         MessageEntity message,
@@ -1129,7 +1129,7 @@ public sealed class ContextCompactionService : IContextCompactionService
             : originalContent[..headChars];
         var nl = Environment.NewLine;
         var marker = $@"{nl}{nl}--- [ContextCompaction 截断标记] 该消息原始内容过大（原始大小 {originalBytes} 字节），"
-            + $"未原样保留全文，完整内容仍可在会话原始日志 session_event_log 中查证"
+            + $"未原样保留全文，完整内容仍可在会话原始事件流 conversation_events 中查证"
             + $"（session={message.SessionId}, message={message.MessageId}, sequence={message.Sequence}）。---";
         return head + marker;
     }

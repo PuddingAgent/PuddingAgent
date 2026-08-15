@@ -5,7 +5,7 @@ namespace PuddingCode.Abstractions;
 /// <summary>
 /// 会话事件写入器——所有事件持久化的唯一入口。
 /// <para>
-/// ADR-056：事件的权威来源是 SQLite Event Store (session_event_log)。
+/// ADR-056：事件的权威来源是 SQLite Event Store (conversation_events)。
 /// ISessionEventWriter 保证以下不变量：
 /// 1. AppendAsync 返回前，事件已成功写入 SQLite（持久化优先）。
 /// 2. 只有在 SQLite 提交成功后，才向 Channel 发送 head 通知。

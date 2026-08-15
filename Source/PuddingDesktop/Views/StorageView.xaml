@@ -498,7 +498,7 @@
                     </ItemsControl>
 
                     <Border Height="1" Margin="20,8,20,0" Background="{DynamicResource DividerBrush}" />
-                    <TextBlock Text="Core 只接受固定清理目标和十分钟内有效的预览令牌。session_event_log、conversation_events、聊天正文与记忆始终受保护。"
+                    <TextBlock Text="Core 只接受固定清理目标和十分钟内有效的预览令牌。conversation_events、聊天正文与记忆始终受保护。"
                                Margin="20,14,20,18"
                                Foreground="{DynamicResource TextTertiaryBrush}"
                                FontSize="11"

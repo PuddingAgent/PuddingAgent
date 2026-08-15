@@ -17,7 +17,7 @@ namespace PuddingPlatform.Services.Diagnostics;
 ///    循环到 affected&lt;batch，批间限速，尊重 CancellationToken，用 ExecuteSqlRaw 不加载实体。
 /// 3) 时间戳列名来自实体映射（见 TableSpecs），不假设 CreatedAt；
 ///    服务运行前 CREATE INDEX IF NOT EXISTS 时间戳索引并记日志。
-/// 4) 安全红线：session_event_log 与 conversation_events 是权威执行事实源，
+/// 4) 安全红线：conversation_events 是权威执行事实源，
 ///    不在后台保留期白名单内。ChatMessages 也绝不参与裁剪。
 /// </summary>
 public sealed class DiagnosticRetentionService : BackgroundService
@@ -150,7 +150,7 @@ public sealed class DiagnosticRetentionService : BackgroundService
             if (spec.RequiresWatermark && !await HasUsableSessionEventWatermarkAsync(ct))
             {
                 _logger.LogWarning(
-                    "[DiagnosticRetention] session_event_log requires projection watermark " +
+                    "[DiagnosticRetention] event table requires projection watermark " +
                     "(session_projection_cursors written by SessionProjectionStore) but none is " +
                     "available in this database — table NOT trimmed (ADR-056 authoritative source).");
                 continue;
@@ -235,7 +235,7 @@ public sealed class DiagnosticRetentionService : BackgroundService
 
     private async Task<bool> HasUsableSessionEventWatermarkAsync(CancellationToken ct)
     {
-        // session_event_log 是 ADR-056 权威事实源（投影尾部读取）。可删范围必须
+        // conversation_events 是 ADR-056 权威事实源（投影尾部读取）。可删范围必须
         // 同时受投影水位约束：只删比 min(保留期截止线, 最老未消费水位) 更旧的行。
         // 当前实现要求 session_projection_cursors 表存在且至少有一行水位记录
         // （说明 SessionProjectionStore 有写入方在推进），否则该表默认不删。
@@ -263,7 +263,7 @@ public sealed class DiagnosticRetentionService : BackgroundService
         {
             _logger.LogWarning(
                 ex,
-                "[DiagnosticRetention] watermark probe failed — session_event_log NOT trimmed");
+                "[DiagnosticRetention] watermark probe failed — event table NOT trimmed");
             return false;
         }
     }

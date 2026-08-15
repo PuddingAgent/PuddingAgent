@@ -258,9 +258,6 @@ public partial class SessionApiController
         var deletedMessages = await db.ChatMessages
             .Where(m => m.SessionId == sessionId)
             .ExecuteDeleteAsync(ct);
-        var deletedEvents = await db.SessionEventLogs
-            .Where(e => e.SessionId == sessionId)
-            .ExecuteDeleteAsync(ct);
         var deletedSubAgents = await db.SessionSubAgents
             .Where(s => s.ParentSessionId == sessionId || s.SubSessionId == sessionId)
             .ExecuteDeleteAsync(ct);
@@ -269,10 +266,9 @@ public partial class SessionApiController
             .ExecuteDeleteAsync(ct);
 
         _logger.LogInformation(
-            "[SessionApi] Deleted session artifacts sessionId={SessionId} messages={Messages} events={Events} subAgents={SubAgents} catalog={Catalog}",
+            "[SessionApi] Deleted session artifacts sessionId={SessionId} messages={Messages} subAgents={SubAgents} catalog={Catalog}",
             sessionId,
             deletedMessages,
-            deletedEvents,
             deletedSubAgents,
             deletedCatalog);
     }
