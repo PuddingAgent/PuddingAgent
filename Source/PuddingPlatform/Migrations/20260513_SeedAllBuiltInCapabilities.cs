@@ -95,15 +95,6 @@ namespace PuddingPlatform.Migrations
                         epoch
                     },
                     {
-                        14, "cap-task-manager", epoch,
-                        "管理 Agent 内部任务列表：创建、更新状态、列出、删除。",
-                        true, "任务管理", false, false, false, 110,
-                        "Manage the agent's internal task list: create, update status, list, delete.",
-                        "manage_tasks",
-                        "{\"type\":\"object\",\"properties\":{\"operation\":{\"type\":\"string\",\"description\":\"操作: create/update_status/list/delete\"},\"title\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"}},\"required\":[\"operation\"]}",
-                        epoch
-                    },
-                    {
                         16, "cap-file-patch", epoch,
                         "对宿主工作区中的文本文件执行局部补丁、批量替换或正则替换。",
                         true, "文件补丁", true, false, false, 120,

@@ -17,7 +17,7 @@ public static class ToolProfileConfig
         "search_tools",
         "goal_read", "goal_update", "sleep", "receive_messages", "send_message",
         "agent_diagnostics", "agent_status", "search_memory", "save_memory",
-        "save_preference", "query_sessions", "query_session_logs", "manage_tasks",
+        "save_preference", "query_sessions", "query_session_logs",
         "event_subscribe", "list_agents", "query_sub_agents", "spawn_sub_agent",
         "file_read", "list_dir", "file_search", "search_grep", "code_outline",
         "code_symbol_search", "code_summary", "project_map",

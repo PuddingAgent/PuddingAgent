@@ -19,7 +19,6 @@ public sealed class BuiltInAgentTemplateToolIdTests
                 .Concat(t.Capability?.RequiresGrantToolNames ?? []))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        CollectionAssert.Contains(toolNames.ToArray(), "manage_tasks");
         CollectionAssert.DoesNotContain(toolNames.ToArray(), "task_manager");
     }
 }

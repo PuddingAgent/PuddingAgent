@@ -157,7 +157,6 @@ public static partial class PuddingServiceCollectionExtensions
 
         builder.Services.AddPuddingAgentTool<LlmResourcePoolTool>();
         builder.Services.AddPuddingAgentTool<ReadOfficeDocumentTool>();
-        builder.Services.AddPuddingAgentTool<TaskManagerTool>();
         builder.Services.AddPuddingTool<SubAgentTool>();
         builder.Services.AddSingleton<SubAgentPool>();
         builder.Services.AddSingleton<ISubAgentPool>(

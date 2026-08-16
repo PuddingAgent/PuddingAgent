@@ -340,15 +340,6 @@ public sealed partial class SkillRuntime
                 ],
                 ["query"]);
 
-        if (skillId.Equals("manage_tasks", StringComparison.OrdinalIgnoreCase))
-            return new ToolParameterSchema(
-                [
-                    new ToolParameter("operation", "string", "Operation: create / update_status / list / delete"),
-                    new ToolParameter("task_id", "string", "Task ID (required for update/delete)"),
-                    new ToolParameter("title", "string", "Task title (required for create)"),
-                    new ToolParameter("status", "string", "Task status: pending / in-progress / completed"),
-                ],
-                ["operation"]);
 
         if (skillId.Equals("send_message", StringComparison.OrdinalIgnoreCase))
             return new ToolParameterSchema(

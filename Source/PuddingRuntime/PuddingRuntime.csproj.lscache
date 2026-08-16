@@ -120,7 +120,6 @@ Services/
   SkillPackageDownloadService.cs
   SkillRuntime.cs
   SubAgentTool.cs
-  TaskManagerTool.cs
  SseEventForwarder.cs
  StartupEnvironmentInfo.cs
  StreamingEventBus.cs

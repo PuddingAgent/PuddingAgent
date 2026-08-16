@@ -159,7 +159,6 @@ public static partial class PuddingServiceCollectionExtensions
 
         builder.Services.AddPuddingAgentTool<LlmResourcePoolTool>();
         builder.Services.AddPuddingAgentTool<ReadOfficeDocumentTool>();
-        builder.Services.AddPuddingAgentTool<TaskManagerTool>();
 
         // ── TB-06：工作区任务四工具（task_list/task_get/task_claim/task_update）──
         builder.Services.AddPuddingAgentTool<TaskListTool>();
