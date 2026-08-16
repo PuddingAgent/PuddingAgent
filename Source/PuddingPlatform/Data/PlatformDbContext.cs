@@ -104,6 +104,12 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // Task Assignment Attempts（TB-03 Assign/RunNow 记录）
     public DbSet<TaskAssignmentAttemptEntity> TaskAssignmentAttempts => Set<TaskAssignmentAttemptEntity>();
 
+    // Task Dispatch Outbox（TB-05 手工派发持久 Outbox）
+    public DbSet<TaskDispatchOutboxEntity> TaskDispatchOutbox => Set<TaskDispatchOutboxEntity>();
+
+    // Task Execution Bindings（TB-05 Task/Assignment/Delivery/Execution 绑定）
+    public DbSet<TaskExecutionBindingEntity> TaskExecutionBindings => Set<TaskExecutionBindingEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -537,6 +543,25 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
                 .IsUnique()
                 .HasFilter("released_at_utc IS NULL")
                 .HasDatabaseName("UX_task_assignment_attempts_task_active");
+        });
+
+        // ── Task Dispatch Outbox（TB-05）──────────────────────────
+        modelBuilder.Entity<TaskDispatchOutboxEntity>(e =>
+        {
+            e.ToTable("task_dispatch_outbox");
+            e.HasKey(o => o.Id);
+            e.HasIndex(o => o.IdempotencyKey).IsUnique();
+            e.HasIndex(o => new { o.Status, o.LeaseUntilUtc });
+            e.HasIndex(o => o.AssignmentId);
+        });
+
+        // ── Task Execution Bindings（TB-05）────────────────────────
+        modelBuilder.Entity<TaskExecutionBindingEntity>(e =>
+        {
+            e.ToTable("task_execution_bindings");
+            e.HasKey(b => b.Id);
+            e.HasIndex(b => new { b.TaskId, b.AssignmentId, b.DeliveryId }).IsUnique();
+            e.HasIndex(b => b.DeliveryId);
         });
 
         modelBuilder.Entity<ConnectorStreamProjectionEntity>(e =>

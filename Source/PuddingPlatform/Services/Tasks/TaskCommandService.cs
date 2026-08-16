@@ -264,6 +264,36 @@ public sealed class TaskCommandService(
                 };
                 db.TaskAssignmentAttempts.Add(attempt);
                 entity.ActiveAssignmentId = attempt.AttemptId;
+
+                // ── TB-05：同事务追加 DispatchOutbox（不变量 #6，外部发送不在此发生，不变量 #7）──
+                var idempotencyKey = TaskDispatchIds.BuildIdempotencyKey(taskId, attempt.AttemptId);
+                var envelope = new TaskInstructionEnvelope
+                {
+                    IdempotencyKey = idempotencyKey,
+                    WorkspaceId = workspaceId,
+                    TaskId = taskId,
+                    AssignmentId = attempt.AttemptId,
+                    AgentId = agentId,
+                    Origin = TaskInstructionEnvelope.OriginTaskManual,
+                    Priority = TaskWireMaps.PriorityToString(entity.Priority),
+                    ExecutionWindow = TaskWireMaps.ExecutionWindowToString(entity.ExecutionWindow),
+                    Title = entity.Title,
+                    Description = entity.Description,
+                    AcceptanceCriteria = entity.AcceptanceCriteria,
+                };
+                db.TaskDispatchOutbox.Add(new TaskDispatchOutboxEntity
+                {
+                    IdempotencyKey = idempotencyKey,
+                    WorkspaceId = workspaceId,
+                    TaskId = taskId,
+                    AssignmentId = attempt.AttemptId,
+                    AgentId = agentId,
+                    Origin = TaskInstructionEnvelope.OriginTaskManual,
+                    EnvelopePayload = TaskDispatchSerialization.Serialize(envelope),
+                    Status = TaskDispatchOutboxStatuses.Pending,
+                    AttemptCount = 0,
+                    CreatedAtUtc = now,
+                });
                 break;
             }
             case TaskCommand.Cancel:

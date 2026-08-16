@@ -12,6 +12,7 @@ using PuddingCode.Observability;
 using PuddingCode.Orchestration;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
+using PuddingCode.Scheduling;
 using PuddingCode.Services;
 using PuddingCode.Storage;
 using PuddingCode.Tasks;
@@ -156,9 +157,15 @@ public static partial class PuddingServiceCollectionExtensions
         // ── Repository pattern (EF Core → Repository → Service) ──
         builder.Services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
         // Task Ledger（TB-02 SQLite Task Store）
-        builder.Services.AddScoped<ITaskStore, SqliteWorkspaceTaskStore>();
+        builder.Services.AddScoped<SqliteWorkspaceTaskStore>();
+        builder.Services.AddScoped<ITaskStore>(sp => sp.GetRequiredService<SqliteWorkspaceTaskStore>());
         // Task Command 服务（TB-03：状态机校验 + CAS + Assignment + AppendEvent 原子语义）
         builder.Services.AddScoped<TaskCommandService>();
+        // Task Dispatch Outbox + Dispatcher（TB-05：手工派发闭环）
+        builder.Services.AddScoped<TaskDispatchOutboxStore>();
+        builder.Services.AddSingleton<IWorkAdmissionFence, ManualAlwaysAllowFence>();
+        builder.Services.Configure<TaskDispatcherOptions>(_ => { });
+        builder.Services.AddHostedService<TaskDispatcher>();
         builder.Services.AddSingleton<ChatMessageRepository>();
         builder.Services.AddSingleton<IChatMessageRepository>(sp => sp.GetRequiredService<ChatMessageRepository>());
         builder.Services.AddSingleton<ICompactionChatMessageStore>(sp => sp.GetRequiredService<ChatMessageRepository>());
