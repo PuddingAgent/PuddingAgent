@@ -310,6 +310,8 @@ public sealed class TaskControllerTests
             [TaskErrorCode.TaskNotReopenable] = 422,
             [TaskErrorCode.TaskCannotHardDelete] = 422,
             [TaskErrorCode.PolicyInvalid] = 422,
+            [TaskErrorCode.TaskActiveContextMissing] = 422,
+            [TaskErrorCode.TaskInvalidCursor] = 422,
             [TaskErrorCode.CapabilityMissing] = 403,
         };
 
@@ -333,6 +335,8 @@ public sealed class TaskControllerTests
             [TaskErrorCode.CapabilityMissing] = "capability.missing",
             [TaskErrorCode.PolicyInvalid] = "policy.invalid",
             [TaskErrorCode.PolicyVersionConflict] = "policy.version_conflict",
+            [TaskErrorCode.TaskActiveContextMissing] = "task.active_context_missing",
+            [TaskErrorCode.TaskInvalidCursor] = "task.invalid_cursor",
         };
 
         foreach (TaskErrorCode code in Enum.GetValues<TaskErrorCode>())
