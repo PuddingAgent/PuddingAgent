@@ -42,6 +42,7 @@ using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.SubAgents;
 using PuddingRuntime.Services.Tools;
 using PuddingRuntime.Services.TaskPlanning;
+using PuddingRuntime.Services.TaskTools;
 using PuddingMemoryEngine;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Services;
@@ -159,6 +160,13 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddPuddingAgentTool<LlmResourcePoolTool>();
         builder.Services.AddPuddingAgentTool<ReadOfficeDocumentTool>();
         builder.Services.AddPuddingAgentTool<TaskManagerTool>();
+
+        // ── TB-06：工作区任务四工具（task_list/task_get/task_claim/task_update）──
+        builder.Services.AddPuddingAgentTool<TaskListTool>();
+        builder.Services.AddPuddingAgentTool<TaskGetTool>();
+        builder.Services.AddPuddingAgentTool<TaskClaimTool>();
+        builder.Services.AddPuddingAgentTool<TaskUpdateTool>();
+
         builder.Services.AddPuddingTool<SubAgentTool>();
         builder.Services.AddSingleton<SubAgentPool>();
         builder.Services.AddSingleton<ISubAgentPool>(

@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Runtime;
+using PuddingCode.Tasks;
 
 namespace PuddingCode.Tools;
 
@@ -174,6 +175,11 @@ public sealed record ToolExecutionContext
     /// 当前 Tool 所属执行身份。ToolCallId 在 ToolInvocationService 进入工具前冻结。
     /// </summary>
     public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
+    /// <summary>
+    /// Active Task Runtime Context（TB-06）：task_claim/task_update 强制要求非空；
+    /// task_list/task_get 用 workspace/agent 身份。由派发链注入，工具不得自行解析。
+    /// </summary>
+    public ActiveTaskRuntimeContext? ActiveTask { get; init; }
     /// <summary>当前 Runtime Run 的绝对截止时间；派生工具和子代理不得越过。</summary>
     public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
     public int? DelegationDepth { get; init; }

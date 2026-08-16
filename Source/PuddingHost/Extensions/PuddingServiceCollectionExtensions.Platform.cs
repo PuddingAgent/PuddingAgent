@@ -161,6 +161,10 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddScoped<ITaskStore>(sp => sp.GetRequiredService<SqliteWorkspaceTaskStore>());
         // Task Command 服务（TB-03：状态机校验 + CAS + Assignment + AppendEvent 原子语义）
         builder.Services.AddScoped<TaskCommandService>();
+        // Task Agent 命令服务（TB-06：ClaimAsync / ApplyDispositionAsync / ListMineAsync / GetAsync）
+        builder.Services.AddScoped<TaskAgentCommandService>();
+        builder.Services.AddScoped<ITaskAgentCommandService>(sp => sp.GetRequiredService<TaskAgentCommandService>());
+        builder.Services.Configure<WorkspaceTaskFeatureOptions>(_ => { });
         // Task Dispatch Outbox + Dispatcher（TB-05：手工派发闭环）
         builder.Services.AddScoped<TaskDispatchOutboxStore>();
         builder.Services.AddSingleton<IWorkAdmissionFence, ManualAlwaysAllowFence>();

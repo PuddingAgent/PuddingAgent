@@ -44,8 +44,8 @@ public sealed class TaskAgentCommandService(
                 "status and board_column are mutually exclusive; provide only one.");
         }
 
-        var status = query.Status is null ? null : TaskWireMaps.StatusFromString(query.Status);
-        var priority = query.Priority is null ? null : TaskWireMaps.PriorityFromString(query.Priority);
+        WorkspaceTaskStatus? status = query.Status is null ? null : TaskWireMaps.StatusFromString(query.Status);
+        TaskPriority? priority = query.Priority is null ? null : TaskWireMaps.PriorityFromString(query.Priority);
         IReadOnlyList<WorkspaceTaskStatus>? boardStatuses = query.BoardColumn is null
             ? null
             : TaskWireMaps.BoardColumnToStatuses(TaskWireMaps.BoardColumnFromString(query.BoardColumn));
