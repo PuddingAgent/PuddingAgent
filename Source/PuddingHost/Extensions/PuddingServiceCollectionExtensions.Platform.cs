@@ -14,6 +14,7 @@ using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Services;
 using PuddingCode.Storage;
+using PuddingCode.Tasks;
 using PuddingCode.Tools;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
@@ -30,6 +31,7 @@ using PuddingPlatform.Services.MessageGateway;
 using PuddingPlatform.Services.Mcp;
 using PuddingPlatform.Services.Orchestration;
 using PuddingPlatform.Services.TaskPlanning;
+using PuddingPlatform.Services.Tasks;
 using PuddingController;
 using PuddingController.Data;
 using PuddingController.Services;
@@ -153,6 +155,8 @@ public static partial class PuddingServiceCollectionExtensions
 
         // ── Repository pattern (EF Core → Repository → Service) ──
         builder.Services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
+        // Task Ledger（TB-02 SQLite Task Store）
+        builder.Services.AddScoped<ITaskStore, SqliteWorkspaceTaskStore>();
         builder.Services.AddSingleton<ChatMessageRepository>();
         builder.Services.AddSingleton<IChatMessageRepository>(sp => sp.GetRequiredService<ChatMessageRepository>());
         builder.Services.AddSingleton<ICompactionChatMessageStore>(sp => sp.GetRequiredService<ChatMessageRepository>());

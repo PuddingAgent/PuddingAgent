@@ -97,6 +97,10 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<ExecutionRunEntity> ExecutionRuns => Set<ExecutionRunEntity>();
     public DbSet<ControlMessageEntity> ControlMessages => Set<ControlMessageEntity>();
 
+    // Task Ledger（TB-02 SQLite Task Store）
+    public DbSet<WorkspaceTaskEntity> WorkspaceTasks => Set<WorkspaceTaskEntity>();
+    public DbSet<TaskEventEntity> TaskEvents => Set<TaskEventEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -496,6 +500,26 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.ToTable("conversation_catalog");
             e.HasIndex(x => x.WorkspaceId);
             e.HasIndex(x => x.Status);
+        });
+
+        // ── Task Ledger（TB-02 SQLite Task Store）─────────────────────
+        modelBuilder.Entity<WorkspaceTaskEntity>(e =>
+        {
+            e.ToTable("workspace_tasks");
+            e.HasKey(t => t.TaskId);
+            e.HasIndex(t => new { t.WorkspaceId, t.TaskId }).IsUnique();
+            e.HasIndex(t => new { t.WorkspaceId, t.Status });
+            e.HasIndex(t => new { t.WorkspaceId, t.SortOrder });
+        });
+
+        modelBuilder.Entity<TaskEventEntity>(e =>
+        {
+            e.ToTable("task_events");
+            e.HasKey(t => t.Id);
+            e.Property(t => t.Id).ValueGeneratedOnAdd();
+            e.HasIndex(t => new { t.TaskId, t.Sequence }).IsUnique();
+            e.HasIndex(t => t.EventId).IsUnique();
+            e.HasIndex(t => new { t.WorkspaceId, t.TaskId });
         });
 
         modelBuilder.Entity<ConnectorStreamProjectionEntity>(e =>
