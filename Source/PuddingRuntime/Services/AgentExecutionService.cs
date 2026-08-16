@@ -334,6 +334,7 @@ public sealed partial class AgentExecutionService
             AllowAgentCreation = anchor.AllowAgentCreation,
             AssignedObjective = anchor.AssignedObjective,
             ExpectedOutputContract = anchor.ExpectedOutputContract,
+            ActiveTask = anchor.ActiveTask,
         };
 
         return await ExecuteAsync(dispatchRequest, external);

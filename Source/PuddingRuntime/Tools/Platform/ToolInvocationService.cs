@@ -94,6 +94,7 @@ public sealed class ToolInvocationService : IToolInvocationService
                 ExecutionIdentity = request.ExecutionIdentity is null
                     ? null
                     : request.ExecutionIdentity with { ToolCallId = request.ToolCallId },
+                ActiveTask = request.ActiveTask,
             };
 
             var result = await _toolExecutionService.ExecuteAsync(

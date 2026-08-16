@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using PuddingCode.Tasks;
 
 namespace PuddingRuntime.Services.AgentLoop;
 
@@ -53,6 +54,12 @@ public sealed record ResumeAnchor
     public bool? AllowAgentCreation { get; init; }
     public string? AssignedObjective { get; init; }
     public string? ExpectedOutputContract { get; init; }
+    /// <summary>
+    /// Active Task Runtime Context 快照（TB-07 B1）。WAIT→wakeup 时回填到 RuntimeDispatchRequest，
+    /// 避免后续 task_claim/task_update 丢失 active context 而返回 active_context_missing。
+    /// 类型为 ActiveTaskRuntimeContext（可 JSON 序列化，与 ResumeAnchor 持久化风格一致）。
+    /// </summary>
+    public ActiveTaskRuntimeContext? ActiveTask { get; init; }
 }
 
 /// <summary>

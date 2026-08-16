@@ -3,6 +3,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
+using PuddingCode.Tasks;
 
 namespace PuddingRuntime.Services;
 
@@ -112,8 +113,39 @@ public sealed class AgentInvocationDispatchFactory(
                 AllowSubDelegation = GetMetadataBool(invocation.Metadata, "allow_sub_delegation", "allowSubDelegation", "AllowSubDelegation"),
                 AllowAgentCreation = GetMetadataBool(invocation.Metadata, "allow_agent_creation", "allowAgentCreation", "AllowAgentCreation"),
                 AssignedObjective = GetMetadataValue(invocation.Metadata, "assigned_objective", "assignedObjective", "AssignedObjective"),
-                ExpectedOutputContract = GetMetadataValue(invocation.Metadata, "expected_output_contract", "expectedOutputContract", "ExpectedOutputContract"),
+                                ExpectedOutputContract = GetMetadataValue(invocation.Metadata, "expected_output_contract", "expectedOutputContract", "ExpectedOutputContract"),
+                ActiveTask = BuildActiveTask(invocation),
             },
+        };
+    }
+
+    /// <summary>解析 task metadata → Active Task Runtime Context（复用 task_plan_id 同款模式）。</summary>
+    private static ActiveTaskRuntimeContext? BuildActiveTask(WorkspaceAgentInvocation invocation)
+    {
+        var taskId = GetMetadataValue(invocation.Metadata, "task_id", "taskId", "TaskId");
+        if (string.IsNullOrWhiteSpace(taskId))
+        {
+            return null;
+        }
+
+        var assignmentId = GetMetadataValue(invocation.Metadata, "assignment_id", "assignmentId", "AssignmentId");
+        if (string.IsNullOrWhiteSpace(assignmentId))
+        {
+            return null;
+        }
+
+        return new ActiveTaskRuntimeContext
+        {
+            WorkspaceId = invocation.WorkspaceId,
+            TaskId = taskId!,
+            AssignmentId = assignmentId!,
+            AgentId = invocation.AgentId,
+            Origin = GetMetadataValue(invocation.Metadata, "origin", "Origin") ?? string.Empty,
+            Priority = GetMetadataValue(invocation.Metadata, "priority", "Priority") ?? string.Empty,
+            ExecutionWindow = GetMetadataValue(invocation.Metadata, "execution_window", "executionWindow", "ExecutionWindow") ?? string.Empty,
+            ExpectedVersion = GetMetadataInt(invocation.Metadata, "expected_version", "expectedVersion", "ExpectedVersion"),
+            PolicyVersion = GetMetadataValue(invocation.Metadata, "policy_version", "policyVersion", "PolicyVersion"),
+            DispatchIdempotencyKey = GetMetadataValue(invocation.Metadata, "dispatch_idempotency_key", "dispatchIdempotencyKey", "DispatchIdempotencyKey"),
         };
     }
 

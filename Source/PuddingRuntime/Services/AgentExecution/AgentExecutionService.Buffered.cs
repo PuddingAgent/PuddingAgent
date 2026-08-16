@@ -165,7 +165,7 @@ public sealed partial class AgentExecutionService
                         RoleInPlan = request.RoleInPlan,
                         AllowSubDelegation = request.AllowSubDelegation,
                         AllowAgentCreation = request.AllowAgentCreation,
-                                                AssignedObjective = request.AssignedObjective,
+                        AssignedObjective = request.AssignedObjective,
                         ExpectedOutputContract = request.ExpectedOutputContract,
                         TraceId = request.ExecutionIdentity?.TraceId,
                     }, ct);
@@ -874,6 +874,7 @@ public sealed partial class AgentExecutionService
                                         MaxDelegationDepth = request.MaxDelegationDepth,
                                         AllowSubDelegation = request.AllowSubDelegation,
                                         RoleInPlan = request.RoleInPlan,
+                                        ActiveTask = request.ActiveTask,
                                     }, ct);
                                     skillResult = new SkillResult
                                     {
@@ -1269,6 +1270,7 @@ public sealed partial class AgentExecutionService
                         AllowAgentCreation = request.AllowAgentCreation,
                         AssignedObjective = request.AssignedObjective,
                         ExpectedOutputContract = request.ExpectedOutputContract,
+                        ActiveTask = request.ActiveTask,
                     });
                     _logger.LogInformation(
                         "[AgentExec] WAIT round={Round} session={Session} reason={Reason} anchorId={AnchorId}",
@@ -1415,6 +1417,7 @@ public sealed partial class AgentExecutionService
                                 MaxDelegationDepth = request.MaxDelegationDepth,
                                 AllowSubDelegation = request.AllowSubDelegation,
                                 RoleInPlan = request.RoleInPlan,
+                                ActiveTask = request.ActiveTask,
                             }, ct);
                             skillResult = new SkillResult
                             {

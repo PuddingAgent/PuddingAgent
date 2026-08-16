@@ -1,5 +1,6 @@
 using PuddingCode.Models;
 using PuddingCode.Runtime;
+using PuddingCode.Tasks;
 
 namespace PuddingCode.Platform;
 
@@ -196,6 +197,11 @@ public sealed record RuntimeDispatchRequest
     public string? AssignedObjective { get; init; }
     /// <summary>Expected output contract for the assigned task node.</summary>
         public string? ExpectedOutputContract { get; init; }
+    /// <summary>
+    /// Active Task Runtime Context（TB-06）：由派发链注入（task_id/assignment_id/expected_version 等）。
+    /// 仅当本次执行是由 workspace_tasks 派发时非空；Task 工具以此为唯一事实源，禁止从 Transcript 猜测。
+    /// </summary>
+    public ActiveTaskRuntimeContext? ActiveTask { get; init; }
     /// <summary>视觉附件 ID 列表，用于构建多模态请求（图片/视频）。</summary>
     public IReadOnlyList<string>? VisualArtifactIds { get; init; }
     /// <summary>音频附件 ID 列表；仅声明 audio capability 的模型会收到原生音频内容。</summary>

@@ -1229,6 +1229,7 @@ public sealed partial class AgentExecutionService
                             MaxDelegationDepth = request.MaxDelegationDepth,
                             AllowSubDelegation = request.AllowSubDelegation,
                             RoleInPlan = request.RoleInPlan,
+                            ActiveTask = request.ActiveTask,
                         }, ct);
                         result = new SkillResult
                         {

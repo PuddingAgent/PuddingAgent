@@ -1,5 +1,6 @@
 using PuddingCode.Observability;
 using PuddingCode.Platform;
+using PuddingCode.Tasks;
 
 namespace PuddingCode.Runtime;
 
@@ -24,6 +25,8 @@ public sealed record ToolInvocationRequest
     public int? MaxDelegationDepth { get; init; }
     public bool? AllowSubDelegation { get; init; }
     public string? RoleInPlan { get; init; }
+    /// <summary>Active Task Runtime Context（TB-06）：随 ToolInvocationRequest 透传至 ToolExecutionContext。</summary>
+    public ActiveTaskRuntimeContext? ActiveTask { get; init; }
 }
 
 /// <summary>工具调用结果。</summary>

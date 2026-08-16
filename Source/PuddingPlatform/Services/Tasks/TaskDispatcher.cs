@@ -163,11 +163,14 @@ public sealed class TaskDispatcher : BackgroundService
             return;
         }
 
+        // ── 快照 expected_version（派发时刻 Task 即将被 CompleteDispatchAsync 推进 Reserved→Assigned，Assigned 版本 = Reserved + 1）──
+        var envelope = entry.Envelope with { ExpectedVersion = task.Version + 1 };
+
         // ── Message Fabric SendAsync（幂等，外部发送不在 DB 事务内，不变量 #7）──
         MessageSendResult result;
         try
         {
-            result = await messages.SendAsync(entry.Envelope.ToMessageEnvelope(), ct);
+            result = await messages.SendAsync(envelope.ToMessageEnvelope(), ct);
         }
         catch (Exception ex)
         {
@@ -191,9 +194,9 @@ public sealed class TaskDispatcher : BackgroundService
         }
         else
         {
-            deliveryId = await store.FindDeliveryIdByMessageIdAsync(entry.Envelope.MessageId, ct)
+            deliveryId = await store.FindDeliveryIdByMessageIdAsync(envelope.MessageId, ct)
                 ?? throw new InvalidOperationException(
-                    $"Delivery not found for message '{entry.Envelope.MessageId}' after idempotent re-send.");
+                    $"Delivery not found for message '{envelope.MessageId}' after idempotent re-send.");
         }
 
         // ── 原子推进：outbox sent + binding + Task Reserved→Assigned + task.assigned 事件 ──
