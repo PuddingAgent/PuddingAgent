@@ -101,6 +101,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<WorkspaceTaskEntity> WorkspaceTasks => Set<WorkspaceTaskEntity>();
     public DbSet<TaskEventEntity> TaskEvents => Set<TaskEventEntity>();
 
+    // Task Assignment Attempts（TB-03 Assign/RunNow 记录）
+    public DbSet<TaskAssignmentAttemptEntity> TaskAssignmentAttempts => Set<TaskAssignmentAttemptEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -520,6 +523,20 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(t => new { t.TaskId, t.Sequence }).IsUnique();
             e.HasIndex(t => t.EventId).IsUnique();
             e.HasIndex(t => new { t.WorkspaceId, t.TaskId });
+        });
+
+        // ── Task Assignment Attempts（TB-03）───────────────────────
+        modelBuilder.Entity<TaskAssignmentAttemptEntity>(e =>
+        {
+            e.ToTable("task_assignment_attempts");
+            e.HasKey(a => a.AttemptId);
+            e.HasIndex(a => a.TaskId);
+            e.HasIndex(a => a.WorkspaceId);
+            // partial unique index：(task_id) WHERE released_at_utc IS NULL（每 task 最多一个 active assignment）。
+            e.HasIndex(a => a.TaskId)
+                .IsUnique()
+                .HasFilter("released_at_utc IS NULL")
+                .HasDatabaseName("UX_task_assignment_attempts_task_active");
         });
 
         modelBuilder.Entity<ConnectorStreamProjectionEntity>(e =>

@@ -157,6 +157,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
         // Task Ledger（TB-02 SQLite Task Store）
         builder.Services.AddScoped<ITaskStore, SqliteWorkspaceTaskStore>();
+        // Task Command 服务（TB-03：状态机校验 + CAS + Assignment + AppendEvent 原子语义）
+        builder.Services.AddScoped<TaskCommandService>();
         builder.Services.AddSingleton<ChatMessageRepository>();
         builder.Services.AddSingleton<IChatMessageRepository>(sp => sp.GetRequiredService<ChatMessageRepository>());
         builder.Services.AddSingleton<ICompactionChatMessageStore>(sp => sp.GetRequiredService<ChatMessageRepository>());
