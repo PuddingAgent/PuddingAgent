@@ -1,9 +1,10 @@
-﻿import {
+import {
   ArrowLeftOutlined,
   ApiOutlined,
   DeleteOutlined,
   EditOutlined,
   PlusOutlined,
+  ProjectOutlined,
   RobotOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -107,7 +108,7 @@ import {
   type WorkspaceSkillDto,
   type WorkspaceWithPermDto,
 } from '@/services/platform/api';
-import { buildWorkspacePath } from '@/utils/workspaceNavigation';
+import { buildWorkspacePath, buildWorkspaceTasksPath } from '@/utils/workspaceNavigation';
 import WorkspaceAgentSettingsDrawer, {
   type WorkspaceAgentFormValues,
 } from './WorkspaceAgentSettingsDrawer';
@@ -1473,6 +1474,13 @@ const WorkspaceDetailPage: React.FC = () => {
         ),
         subTitle: `场景 ID：${workspace.workspaceId}`,
         extra: [
+          <Button
+            key="tasks"
+            icon={<ProjectOutlined />}
+            onClick={() => history.push(buildWorkspaceTasksPath(workspace.workspaceId))}
+          >
+            任务看板
+          </Button>,
           <Button key="edit" icon={<SettingOutlined />} onClick={openEdit}>
             编辑设置
           </Button>,
