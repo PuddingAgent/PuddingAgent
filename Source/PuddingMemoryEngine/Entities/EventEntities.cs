@@ -81,39 +81,6 @@ public class EventDiagnosticLogEntity
 }
 
 /// <summary>
-/// Agent 现场检查点 — 保存打断时的执行现场。
-/// </summary>
-public class AgentCheckpointEntity
-{
-    [Key]
-    [MaxLength(32)]
-    public string CheckpointId { get; set; } = Guid.NewGuid().ToString("N");
-
-    [MaxLength(64)]
-    public string SessionId { get; set; } = string.Empty;
-
-    [MaxLength(64)]
-    public string AgentId { get; set; } = string.Empty;
-
-    [MaxLength(64)]
-    public string WorkspaceId { get; set; } = string.Empty;
-
-    /// <summary>调用栈 JSON（当前执行位置）</summary>
-    public string CallStack { get; set; } = "{}";
-
-    /// <summary>未完成的工具调用 JSON</summary>
-    public string? PendingTools { get; set; }
-
-    /// <summary>上下文快照 JSON（最近 N 条消息摘要）</summary>
-    public string? ContextSnapshot { get; set; }
-
-    public long CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
-    [MaxLength(32)]
-    public string Status { get; set; } = "active"; // active / restored / expired
-}
-
-/// <summary>
 /// 事件订阅 — Agent 主动订阅感兴趣的事件类型。
 /// </summary>
 public class EventSubscriptionEntity

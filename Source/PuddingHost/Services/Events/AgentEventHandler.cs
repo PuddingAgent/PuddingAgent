@@ -32,7 +32,6 @@ public class AgentEventHandler : IEventHandler
 
     private readonly AgentExecutionService _executionService;
     private readonly ContextWindowManager _contextManager;
-    private readonly IAgentCheckpointService _checkpointService;
     private readonly ILogger<AgentEventHandler> _logger;
     private readonly IServiceProvider _services;
 
@@ -43,13 +42,11 @@ public class AgentEventHandler : IEventHandler
     public AgentEventHandler(
         AgentExecutionService executionService,
         ContextWindowManager contextManager,
-        IAgentCheckpointService checkpointService,
         ILogger<AgentEventHandler> logger,
         IServiceProvider services)
     {
         _executionService = executionService;
         _contextManager = contextManager;
-        _checkpointService = checkpointService;
         _logger = logger;
         _services = services;
     }

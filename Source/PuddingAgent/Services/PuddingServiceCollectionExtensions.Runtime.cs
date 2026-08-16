@@ -309,9 +309,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddHostedService(sp => sp.GetRequiredService<MessageDeliveryDispatcher>());
         builder.Services.AddHostedService<ConversationReplyProjectionWorker>();
 
-        // 检查点与订阅管理
-        builder.Services.AddSingleton<AgentCheckpointService>();
-        builder.Services.AddSingleton<IAgentCheckpointService>(sp => sp.GetRequiredService<AgentCheckpointService>());
+        // 订阅管理
         builder.Services.AddPuddingAgentTool<EventSubscriptionTool>();
         builder.Services.AddSingleton<IEventSubscriptionTool>(sp => sp.GetRequiredService<EventSubscriptionTool>());
 

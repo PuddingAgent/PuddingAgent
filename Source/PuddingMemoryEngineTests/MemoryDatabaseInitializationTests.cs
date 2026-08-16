@@ -44,7 +44,6 @@ public sealed class MemoryDatabaseInitializationTests
                          "SubconsciousJobs",
                          "EventQueue",
                          "EventDiagnosticLogs",
-                         "AgentCheckpoints",
                          "EventSubscriptions",
                      })
             {

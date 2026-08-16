@@ -173,22 +173,6 @@ public sealed record QueueStats
 }
 
 /// <summary>
-/// Agent 现场保存点。
-/// </summary>
-public sealed record AgentCheckpoint
-{
-    public string CheckpointId { get; init; } = Guid.NewGuid().ToString("N");
-    public string SessionId { get; init; } = "";
-    public string AgentId { get; init; } = "";
-    public string WorkspaceId { get; init; } = "";
-    public string CallStack { get; init; } = "{}";
-    public string? PendingTools { get; init; }
-    public string? ContextSnapshot { get; init; }
-    public long CreatedAt { get; init; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-    public string Status { get; init; } = "active";
-}
-
-/// <summary>
 /// 事件订阅描述。
 /// </summary>
 public sealed record EventSubscription

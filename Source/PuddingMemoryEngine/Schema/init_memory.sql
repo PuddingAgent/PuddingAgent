@@ -255,21 +255,6 @@ CREATE INDEX IF NOT EXISTS IX_EventDiagnosticLogs_EventId
 CREATE INDEX IF NOT EXISTS IX_EventDiagnosticLogs_Timestamp
     ON EventDiagnosticLogs(Timestamp);
 
-CREATE TABLE IF NOT EXISTS AgentCheckpoints (
-    CheckpointId    TEXT PRIMARY KEY,
-    SessionId       TEXT NOT NULL,
-    AgentId         TEXT NOT NULL,
-    WorkspaceId     TEXT NOT NULL,
-    CallStack       TEXT NOT NULL DEFAULT '{}',
-    PendingTools    TEXT,
-    ContextSnapshot TEXT,
-    CreatedAt       INTEGER NOT NULL,
-    Status          TEXT NOT NULL DEFAULT 'active'
-);
-
-CREATE INDEX IF NOT EXISTS IX_AgentCheckpoints_Workspace_Agent_Status
-    ON AgentCheckpoints(WorkspaceId, AgentId, Status);
-
 CREATE TABLE IF NOT EXISTS EventSubscriptions (
     SubscriptionId  TEXT PRIMARY KEY,
     AgentId          TEXT NOT NULL,

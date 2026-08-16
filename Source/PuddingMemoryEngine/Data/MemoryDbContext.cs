@@ -20,7 +20,6 @@ public sealed class MemoryDbContext : DbContext
     public DbSet<SubconsciousJobEntity> SubconsciousJobs => Set<SubconsciousJobEntity>();
     public DbSet<EventQueueEntity> EventQueue => Set<EventQueueEntity>();
     public DbSet<EventDiagnosticLogEntity> EventDiagnosticLogs => Set<EventDiagnosticLogEntity>();
-    public DbSet<AgentCheckpointEntity> AgentCheckpoints => Set<AgentCheckpointEntity>();
     public DbSet<EventSubscriptionEntity> EventSubscriptions => Set<EventSubscriptionEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -121,13 +120,6 @@ public sealed class MemoryDbContext : DbContext
             entity.HasKey(e => e.LogId);
             entity.HasIndex(e => e.EventId);
             entity.HasIndex(e => e.Timestamp);
-        });
-
-        modelBuilder.Entity<AgentCheckpointEntity>(entity =>
-        {
-            entity.ToTable("AgentCheckpoints");
-            entity.HasKey(e => e.CheckpointId);
-            entity.HasIndex(e => new { e.WorkspaceId, e.AgentId, e.Status });
         });
 
         modelBuilder.Entity<EventSubscriptionEntity>(entity =>

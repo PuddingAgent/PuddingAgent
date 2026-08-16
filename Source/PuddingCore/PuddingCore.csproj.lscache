@@ -55,7 +55,6 @@ TemporaryDependencyNodeTargetIdentifier=net10.0
 
 [sourceFiles]
 Abstractions/
- IAgentCheckpointService.cs
  IAgentHook.cs
  IAgentOrchestrator.cs
  IAgentTemplateProvider.cs

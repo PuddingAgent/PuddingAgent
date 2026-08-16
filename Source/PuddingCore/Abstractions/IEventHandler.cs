@@ -32,7 +32,7 @@ public interface IEventHandler
     /// <summary>
     /// 是否支持被更高优先级事件打断。
     /// Urgent 事件入队时，EventDispatcher 会检查当前正在执行的处理者，
-    /// 若 SupportsInterruption == true，则调用 IAgentCheckpointService 保存现场后打断。
+    /// 若 SupportsInterruption == true，则中断当前处理并切换到更高优先级事件。
     /// </summary>
     bool SupportsInterruption { get; }
 }
