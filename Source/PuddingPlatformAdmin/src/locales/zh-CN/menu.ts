@@ -2,6 +2,7 @@ export default {
   'menu.welcome': '工作台',
   'menu.adminHome': '后台首页',
   'menu.workspace': '工作区管理',
+  'menu.workspaceTasks': '任务看板',
   'menu.chat': '对话',
   'menu.llmResourcePool': 'LLM 资源池',
   'menu.voiceModels': '语音服务',

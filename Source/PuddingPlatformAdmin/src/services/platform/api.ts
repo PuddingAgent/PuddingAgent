@@ -1,5 +1,15 @@
 import { request } from '@umijs/max';
 import { recordPerfEvent } from '@/utils/perfEventRuntime';
+import type {
+  AssignTaskRequest,
+  CommandTaskRequest,
+  CreateTaskRequest,
+  ListTasksParams,
+  PatchTaskRequest,
+  RunNowTaskRequest,
+  TaskDto,
+  TaskPageDto,
+} from '@/pages/workspace-tasks/types';
 
 // ─── 类型定义（与 C# 模型对齐）───────────────────────────────────
 
@@ -3551,3 +3561,147 @@ export async function getSessionBenchmarkDiagnostics(
   });
 }
 
+
+
+// ─── WorkspaceTask API（TB-04 §5.1，对齐 TB-03 冻结端点）─────────────────
+// URL 基座：/api/workspaces/{workspaceId}/tasks（TaskController）
+// GET 用 params、写操作用 data；路径段 encodeURIComponent。
+
+export async function listTasks(
+  workspaceId: string,
+  params: ListTasksParams,
+): Promise<TaskPageDto> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/tasks`, {
+    method: 'GET',
+    params,
+  });
+}
+
+export async function createTask(
+  workspaceId: string,
+  body: CreateTaskRequest,
+): Promise<TaskDto> {
+  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/tasks`, {
+    method: 'POST',
+    data: body,
+  });
+}
+
+export async function getTask(
+  workspaceId: string,
+  taskId: string,
+): Promise<TaskDto> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}`,
+    { method: 'GET' },
+  );
+}
+
+export async function updateTask(
+  workspaceId: string,
+  taskId: string,
+  body: PatchTaskRequest,
+): Promise<TaskDto> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}`,
+    { method: 'PATCH', data: body },
+  );
+}
+
+export async function deleteTask(
+  workspaceId: string,
+  taskId: string,
+): Promise<void> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function assignTask(
+  workspaceId: string,
+  taskId: string,
+  body: AssignTaskRequest,
+): Promise<TaskDto> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}/assign`,
+    { method: 'POST', data: body },
+  );
+}
+
+export async function runNowTask(
+  workspaceId: string,
+  taskId: string,
+  body: RunNowTaskRequest,
+): Promise<TaskDto> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}/run-now`,
+    { method: 'POST', data: body },
+  );
+}
+
+export async function cancelTask(
+  workspaceId: string,
+  taskId: string,
+  body: CommandTaskRequest,
+): Promise<TaskDto> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}/cancel`,
+    { method: 'POST', data: body },
+  );
+}
+
+export async function reopenTask(
+  workspaceId: string,
+  taskId: string,
+  body: CommandTaskRequest,
+): Promise<TaskDto> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}/reopen`,
+    { method: 'POST', data: body },
+  );
+}
+
+export async function archiveTask(
+  workspaceId: string,
+  taskId: string,
+  body: CommandTaskRequest,
+): Promise<TaskDto> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}/archive`,
+    { method: 'POST', data: body },
+  );
+}
+
+export async function markFailedTask(
+  workspaceId: string,
+  taskId: string,
+  body: CommandTaskRequest,
+): Promise<TaskDto> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}/mark-failed`,
+    { method: 'POST', data: body },
+  );
+}
+
+export async function resumeTask(
+  workspaceId: string,
+  taskId: string,
+  body: CommandTaskRequest,
+): Promise<TaskDto> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}/resume`,
+    { method: 'POST', data: body },
+  );
+}
+
+export async function requeueTask(
+  workspaceId: string,
+  taskId: string,
+  body: CommandTaskRequest,
+): Promise<TaskDto> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}/requeue`,
+    { method: 'POST', data: body },
+  );
+}

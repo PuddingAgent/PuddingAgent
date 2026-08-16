@@ -55,6 +55,7 @@ export default {
   'menu.editor.koni': 'Koni Editor',
   'menu.memoryLibrary': 'Memory Library',
   'menu.workspace': 'Workspace',
+  'menu.workspaceTasks': 'Workspace Tasks',
   'menu.llmResourcePool': 'LLM Resource Pool',
   'menu.voiceModels': 'Voice Service',
   'menu.globalAgentTemplate': 'Global Agent Template',
