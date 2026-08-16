@@ -64,6 +64,10 @@ public sealed record CreateTaskDto
 public sealed record PatchTaskDto
 {
     public required int ExpectedVersion { get; init; }
+
+    /// <summary>可选显式状态迁移目标（wire 字符串）。非空时经 TaskStateMachine.CanTransition 校验后迁移。</summary>
+    public string? Status { get; init; }
+
     public string? Title { get; init; }
     public string? Description { get; init; }
     public string? AcceptanceCriteria { get; init; }
@@ -102,6 +106,26 @@ public sealed record TaskPageDto
 {
     public required IReadOnlyList<TaskDto> Items { get; init; }
     public string? NextCursor { get; init; }
+}
+
+/// <summary>Watch SSE 事件 payload（task_events 自增 id 游标 + 当前任务快照）。</summary>
+public sealed record TaskWatchEventDto
+{
+    /// <summary>task_events 全局自增 id（游标，Last-Event-ID 续传用）。</summary>
+    public required long Id { get; init; }
+
+    public required string EventId { get; init; }
+    public required string TaskId { get; init; }
+    public required string WorkspaceId { get; init; }
+    public required long Sequence { get; init; }
+
+    /// <summary>wire: "task.created"/"task.ready"/...（见 TaskWireMaps.EventTypeToString）。</summary>
+    public required string EventType { get; init; }
+
+    public required DateTimeOffset CreatedAtUtc { get; init; }
+
+    /// <summary>事件发生时点的任务快照（任务已被硬删则为 null）。</summary>
+    public TaskDto? Task { get; init; }
 }
 
 /// <summary>稳定错误响应（ST-00.4，用 TB-01 已冻结的 TaskErrorCode 映射）。</summary>

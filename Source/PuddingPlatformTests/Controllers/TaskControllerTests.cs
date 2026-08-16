@@ -354,10 +354,177 @@ public sealed class TaskControllerTests
         Assert.IsFalse(string.IsNullOrEmpty(err.Message));
     }
 
+    // ── 12. B1：PATCH 可选 status 字段（显式状态迁移）──
+
+    [TestMethod]
+    public async Task Patch_BacklogToReady_ReturnsReadyTodoAndReadyEvent()
+    {
+        var task = await CreateTaskAsync();
+        var controller = CreateController();
+
+        var result = await controller.Patch(WorkspaceId, task.TaskId, new PatchTaskDto
+        {
+            ExpectedVersion = 1,
+            Status = "Ready",
+        }, CancellationToken.None);
+
+        var dto = AssertOkDto(result);
+        Assert.AreEqual("Ready", dto.Status);
+        Assert.AreEqual("Todo", dto.BoardColumn);
+        Assert.AreEqual(2, dto.Version);
+
+        var events = await GetEventsAsync(task.TaskId);
+        Assert.AreEqual(TaskEventType.TaskReady, events[^1].EventType);
+        Assert.AreEqual(2, events[^1].Sequence);
+    }
+
+    [TestMethod]
+    public async Task Patch_BacklogToInProgress_Returns422InvalidTransition()
+    {
+        var task = await CreateTaskAsync();
+        var controller = CreateController();
+
+        var result = await controller.Patch(WorkspaceId, task.TaskId, new PatchTaskDto
+        {
+            ExpectedVersion = 1,
+            Status = "InProgress",
+        }, CancellationToken.None);
+
+        var err = AssertError(result, 422);
+        Assert.AreEqual("task.invalid_transition", err.Code);
+    }
+
+    [TestMethod]
+    public async Task Patch_FailedToReady_Returns422InvalidTransition()
+    {
+        var task = await CreateTaskAsync();
+        await SetStatusAsync(task.TaskId, WorkspaceTaskStatus.Failed);
+        var controller = CreateController();
+
+        var result = await controller.Patch(WorkspaceId, task.TaskId, new PatchTaskDto
+        {
+            ExpectedVersion = 1,
+            Status = "Ready",
+        }, CancellationToken.None);
+
+        var err = AssertError(result, 422);
+        Assert.AreEqual("task.invalid_transition", err.Code);
+    }
+
+    [TestMethod]
+    public async Task Patch_CompletedToArchived_ReturnsArchived()
+    {
+        var task = await CreateTaskAsync();
+        await SetStatusAsync(task.TaskId, WorkspaceTaskStatus.Completed);
+        var controller = CreateController();
+
+        var result = await controller.Patch(WorkspaceId, task.TaskId, new PatchTaskDto
+        {
+            ExpectedVersion = 1,
+            Status = "Archived",
+        }, CancellationToken.None);
+
+        var dto = AssertOkDto(result);
+        Assert.AreEqual("Archived", dto.Status);
+        Assert.IsNotNull(dto.ArchivedAtUtc);
+    }
+
+    [TestMethod]
+    public async Task Patch_WithoutStatus_KeepsStatus()
+    {
+        var task = await CreateTaskAsync();
+        var controller = CreateController();
+
+        var result = await controller.Patch(WorkspaceId, task.TaskId, new PatchTaskDto
+        {
+            ExpectedVersion = 1,
+            Title = "renamed",
+        }, CancellationToken.None);
+
+        var dto = AssertOkDto(result);
+        Assert.AreEqual("Backlog", dto.Status);
+        Assert.AreEqual("renamed", dto.Title);
+        Assert.AreEqual(2, dto.Version);
+    }
+
+    // ── 13. B2：boardColumn 过滤 ──
+
+    [TestMethod]
+    public async Task List_BoardColumnTodo_ReturnsTodoStatusTasks()
+    {
+        var ready = await CreateTaskAsync("ready");
+        await SetStatusAsync(ready.TaskId, WorkspaceTaskStatus.Ready);
+        var inProgress = await CreateTaskAsync("in-progress");
+        await SetStatusAsync(inProgress.TaskId, WorkspaceTaskStatus.InProgress);
+        var controller = CreateController();
+
+        var result = await controller.List(WorkspaceId, null, "Todo", null, null, 100, null, CancellationToken.None);
+
+        var page = AssertPage(result);
+        CollectionAssert.AreEqual(new[] { ready.TaskId }, page.Items.Select(i => i.TaskId).ToArray());
+    }
+
+    [TestMethod]
+    public async Task List_BoardColumnDoneAndStatusCompleted_Intersects()
+    {
+        var completed = await CreateTaskAsync("completed");
+        await SetStatusAsync(completed.TaskId, WorkspaceTaskStatus.Completed);
+        var inProgress = await CreateTaskAsync("in-progress");
+        await SetStatusAsync(inProgress.TaskId, WorkspaceTaskStatus.InProgress);
+        var controller = CreateController();
+
+        var result = await controller.List(WorkspaceId, "Completed", "Done", null, null, 100, null, CancellationToken.None);
+
+        var page = AssertPage(result);
+        CollectionAssert.AreEqual(new[] { completed.TaskId }, page.Items.Select(i => i.TaskId).ToArray());
+    }
+
+    [TestMethod]
+    public async Task List_UnknownBoardColumn_Returns422()
+    {
+        var controller = CreateController();
+
+        var result = await controller.List(WorkspaceId, null, "Bogus", null, null, 100, null, CancellationToken.None);
+
+        var obj = Assert.IsInstanceOfType<ObjectResult>(result.Result);
+        Assert.AreEqual(422, obj.StatusCode);
+        Assert.AreEqual("task.invalid_transition", Assert.IsInstanceOfType<TaskErrorResponse>(obj.Value).Code);
+    }
+
+    // ── 14. B2：Watch SSE（游标 + Last-Event-ID 续传）──
+
+    [TestMethod]
+    public async Task Watch_ResumesFromCursor_EmitsSnapshotAndEventsAfterCursor()
+    {
+        var task = await CreateTaskAsync();
+        await _store.UpdateTaskAsync(new UpdateTaskRequest
+        {
+            TaskId = task.TaskId,
+            ExpectedVersion = 1,
+            Title = "v2",
+        });
+
+        var createdEventId = await GetFirstEventIdAsync(task.TaskId);
+
+        var controller = CreateController();
+        using var body = new MemoryStream();
+        controller.ControllerContext.HttpContext.Response.Body = body;
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+        await controller.Watch(WorkspaceId, afterId: createdEventId, cts.Token);
+
+        body.Position = 0;
+        var text = await new StreamReader(body).ReadToEndAsync();
+
+        StringAssert.Contains(text, "task.snapshot");
+        StringAssert.Contains(text, "task.updated");
+        Assert.IsFalse(text.Contains("task.created"), "游标之后不应重发 task.created。");
+    }
+
     // ── helpers ─────────────────────────────────────────────
 
     private TaskController CreateController(string traceId = "trace-test")
-        => new(_store, _service)
+        => new(_store, _service, _dbFactory)
         {
             ControllerContext = new ControllerContext
             {
@@ -435,6 +602,22 @@ public sealed class TaskControllerTests
     {
         var ok = Assert.IsInstanceOfType<OkObjectResult>(result.Result);
         return Assert.IsInstanceOfType<TaskDto>(ok.Value);
+    }
+
+    private static TaskPageDto AssertPage(ActionResult<TaskPageDto> result)
+    {
+        var ok = Assert.IsInstanceOfType<OkObjectResult>(result.Result);
+        return Assert.IsInstanceOfType<TaskPageDto>(ok.Value);
+    }
+
+    private async Task<long> GetFirstEventIdAsync(string taskId)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        return await db.TaskEvents
+            .Where(e => e.TaskId == taskId)
+            .OrderBy(e => e.Id)
+            .Select(e => e.Id)
+            .FirstAsync();
     }
 
     private static TaskErrorResponse AssertError(ActionResult<TaskDto> result, int expectedStatus)

@@ -193,6 +193,95 @@ public sealed class TaskCommandServiceTests
         Assert.AreEqual(TaskErrorCode.TaskNotFound, ex.ErrorCode);
     }
 
+    // ── B1：PATCH 可选 status 字段（显式状态迁移，严格 CanTransition 校验）──
+
+    [TestMethod]
+    public async Task Patch_BacklogToReady_MigratesStatusAndAppendsReadyEvent()
+    {
+        var task = await CreateTaskAsync();
+
+        var result = await _service.PatchAsync(
+            WorkspaceId, task.TaskId, expectedVersion: 1,
+            title: null, description: null, acceptanceCriteria: null,
+            priority: null, executionWindow: null,
+            preferredAgentId: null, notBeforeUtc: null, dueAtUtc: null, sortOrder: null,
+            status: WorkspaceTaskStatus.Ready);
+
+        Assert.AreEqual(WorkspaceTaskStatus.Ready, result.Status);
+        Assert.AreEqual(2, result.Version);
+
+        var events = await GetEventsAsync(task.TaskId);
+        Assert.AreEqual(TaskEventType.TaskReady, events[^1].EventType);
+        Assert.AreEqual(2, events[^1].Sequence);
+    }
+
+    [TestMethod]
+    public async Task Patch_BacklogToInProgress_ThrowsInvalidTransition()
+    {
+        var task = await CreateTaskAsync(); // Backlog
+
+        var ex = await Assert.ThrowsExactlyAsync<TaskStoreException>(() =>
+            _service.PatchAsync(
+                WorkspaceId, task.TaskId, expectedVersion: 1,
+                title: null, description: null, acceptanceCriteria: null,
+                priority: null, executionWindow: null,
+                preferredAgentId: null, notBeforeUtc: null, dueAtUtc: null, sortOrder: null,
+                status: WorkspaceTaskStatus.InProgress));
+
+        Assert.AreEqual(TaskErrorCode.TaskInvalidTransition, ex.ErrorCode);
+    }
+
+    [TestMethod]
+    public async Task Patch_FailedToReady_ThrowsInvalidTransition()
+    {
+        var task = await CreateTaskAsync();
+        await SetStatusAsync(task.TaskId, WorkspaceTaskStatus.Failed);
+
+        var ex = await Assert.ThrowsExactlyAsync<TaskStoreException>(() =>
+            _service.PatchAsync(
+                WorkspaceId, task.TaskId, expectedVersion: 1,
+                title: null, description: null, acceptanceCriteria: null,
+                priority: null, executionWindow: null,
+                preferredAgentId: null, notBeforeUtc: null, dueAtUtc: null, sortOrder: null,
+                status: WorkspaceTaskStatus.Ready));
+
+        Assert.AreEqual(TaskErrorCode.TaskInvalidTransition, ex.ErrorCode);
+    }
+
+    [TestMethod]
+    public async Task Patch_CompletedToArchived_MigratesStatusAndSetsArchivedAt()
+    {
+        var task = await CreateTaskAsync();
+        await SetStatusAsync(task.TaskId, WorkspaceTaskStatus.Completed);
+
+        var result = await _service.PatchAsync(
+            WorkspaceId, task.TaskId, expectedVersion: 1,
+            title: null, description: null, acceptanceCriteria: null,
+            priority: null, executionWindow: null,
+            preferredAgentId: null, notBeforeUtc: null, dueAtUtc: null, sortOrder: null,
+            status: WorkspaceTaskStatus.Archived);
+
+        Assert.AreEqual(WorkspaceTaskStatus.Archived, result.Status);
+        Assert.IsNotNull(result.ArchivedAtUtc);
+    }
+
+    [TestMethod]
+    public async Task Patch_WithoutStatus_KeepsStatusAndUpdatesFields()
+    {
+        var task = await CreateTaskAsync();
+
+        var result = await _service.PatchAsync(
+            WorkspaceId, task.TaskId, expectedVersion: 1,
+            title: "renamed", description: null, acceptanceCriteria: null,
+            priority: null, executionWindow: null,
+            preferredAgentId: null, notBeforeUtc: null, dueAtUtc: null, sortOrder: null,
+            status: null);
+
+        Assert.AreEqual(WorkspaceTaskStatus.Backlog, result.Status);
+        Assert.AreEqual("renamed", result.Title);
+        Assert.AreEqual(2, result.Version);
+    }
+
     // ── 10. wire 映射：枚举 ↔ wire 双向一致（含未知 fail-closed）──
 
     [TestMethod]

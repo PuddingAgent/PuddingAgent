@@ -22,7 +22,9 @@ public sealed class TaskCommandService(
     private readonly ITaskStore _store = store;
     private readonly IDbContextFactory<PlatformDbContext> _dbFactory = dbFactory;
 
-    /// <summary>PATCH：状态机校验（非终态保持当前状态）+ Store CAS 更新（task.updated 事件）。</summary>
+    /// <summary>PATCH：状态机校验（非终态保持当前状态）+ Store CAS 更新（task.updated 事件）。
+    /// <para>B1：可选 <paramref name="status"/> 非空且 != 当前状态时，经 <see cref="TaskStateMachine.CanTransition"/> 校验后原子迁移状态 + 字段更新 + 事件。</para>
+    /// </summary>
     public async Task<WorkspaceTask> PatchAsync(
         string workspaceId,
         string taskId,
@@ -36,6 +38,7 @@ public sealed class TaskCommandService(
         DateTimeOffset? notBeforeUtc,
         DateTimeOffset? dueAtUtc,
         long? sortOrder,
+        WorkspaceTaskStatus? status = null,
         CancellationToken ct = default)
     {
         var current = await _store.GetTaskAsync(workspaceId, taskId, ct);
@@ -49,30 +52,118 @@ public sealed class TaskCommandService(
                 null);
         }
 
-        if (!TaskStateMachine.TryApplyCommand(current.Status, TaskCommand.Update, out _))
+        // 无状态迁移（status 缺省或 target == current）：纯字段更新（现状不变，task.updated）。
+        if (status is null || status.Value == current.Status)
+        {
+            if (!TaskStateMachine.TryApplyCommand(current.Status, TaskCommand.Update, out _))
+            {
+                throw new TaskStoreException(
+                    TaskErrorCode.TaskInvalidTransition,
+                    $"Task '{taskId}' in terminal status '{current.Status}' cannot be updated.",
+                    taskId,
+                    expectedVersion,
+                    current.Version);
+            }
+
+            return await _store.UpdateTaskAsync(new UpdateTaskRequest
+            {
+                TaskId = taskId,
+                ExpectedVersion = expectedVersion,
+                Title = title,
+                Description = description,
+                AcceptanceCriteria = acceptanceCriteria,
+                Priority = priority,
+                ExecutionWindow = executionWindow,
+                PreferredAgentId = preferredAgentId,
+                NotBeforeUtc = notBeforeUtc,
+                DueAtUtc = dueAtUtc,
+                SortOrder = sortOrder,
+            }, ct);
+        }
+
+        // 显式状态迁移：严格 CanTransition 校验（终态出边天然禁止，Failed→Ready 只能 Reopen）。
+        var target = status.Value;
+        if (!TaskStateMachine.CanTransition(current.Status, target))
         {
             throw new TaskStoreException(
                 TaskErrorCode.TaskInvalidTransition,
-                $"Task '{taskId}' in terminal status '{current.Status}' cannot be updated.",
+                $"Task '{taskId}' cannot transition from '{current.Status}' to '{target}'.",
                 taskId,
                 expectedVersion,
                 current.Version);
         }
 
-        return await _store.UpdateTaskAsync(new UpdateTaskRequest
+        if (current.Version != expectedVersion)
         {
+            throw new TaskStoreException(
+                TaskErrorCode.TaskVersionConflict,
+                $"Task '{taskId}' version conflict: expected {expectedVersion}, actual {current.Version}.",
+                taskId,
+                expectedVersion,
+                current.Version);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var eventType = EventTypeForStatus(target);
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var entity = await db.WorkspaceTasks
+            .SingleOrDefaultAsync(t => t.TaskId == taskId && t.WorkspaceId == workspaceId, ct)
+            ?? throw new TaskStoreException(
+                TaskErrorCode.TaskNotFound,
+                $"Task '{taskId}' not found.",
+                taskId,
+                expectedVersion,
+                null);
+
+        // 防御性二次 CAS（与读取同一上下文；单写者语义下与首次判定等价）。
+        if (entity.Version != expectedVersion)
+        {
+            throw new TaskStoreException(
+                TaskErrorCode.TaskVersionConflict,
+                $"Task '{taskId}' version conflict: expected {expectedVersion}, actual {entity.Version}.",
+                taskId,
+                expectedVersion,
+                entity.Version);
+        }
+
+        ApplyFieldUpdates(entity, title, description, acceptanceCriteria, priority, executionWindow,
+            preferredAgentId, notBeforeUtc, dueAtUtc, sortOrder);
+
+        entity.Status = target;
+        entity.Version += 1;
+        entity.UpdatedAtUtc = now;
+
+        switch (target)
+        {
+            case WorkspaceTaskStatus.Completed:
+                entity.CompletedAtUtc = now;
+                break;
+            case WorkspaceTaskStatus.Failed:
+                entity.FailedAtUtc = now;
+                break;
+            case WorkspaceTaskStatus.Archived:
+                entity.ArchivedAtUtc = now;
+                break;
+        }
+
+        var nextSequence = await db.TaskEvents
+            .Where(e => e.TaskId == taskId)
+            .MaxAsync(e => (long?)e.Sequence, ct) ?? 0;
+
+        db.TaskEvents.Add(new TaskEventEntity
+        {
+            EventId = Guid.NewGuid().ToString("N"),
             TaskId = taskId,
-            ExpectedVersion = expectedVersion,
-            Title = title,
-            Description = description,
-            AcceptanceCriteria = acceptanceCriteria,
-            Priority = priority,
-            ExecutionWindow = executionWindow,
-            PreferredAgentId = preferredAgentId,
-            NotBeforeUtc = notBeforeUtc,
-            DueAtUtc = dueAtUtc,
-            SortOrder = sortOrder,
-        }, ct);
+            WorkspaceId = workspaceId,
+            Sequence = nextSequence + 1,
+            EventType = eventType,
+            CreatedAtUtc = now,
+        });
+
+        await db.SaveChangesAsync(ct);
+
+        return (await _store.GetTaskAsync(workspaceId, taskId, ct))!;
     }
 
     /// <summary>命令原子流程（Assign/RunNow/Cancel/Reopen/Archive/MarkFailed/Resume/Requeue）。</summary>
@@ -244,4 +335,36 @@ public sealed class TaskCommandService(
         TaskCommand.Resume or TaskCommand.Requeue => TaskEventType.TaskReady,
         _ => throw new ArgumentOutOfRangeException(nameof(command), command, "未知任务命令。"),
     };
+
+    /// <summary>PATCH 状态迁移目标 → 事件类型（Ready/Cancelled/Archived 有专门事件，其余用通用 updated）。</summary>
+    private static TaskEventType EventTypeForStatus(WorkspaceTaskStatus target) => target switch
+    {
+        WorkspaceTaskStatus.Ready => TaskEventType.TaskReady,
+        WorkspaceTaskStatus.Cancelled => TaskEventType.TaskCancelled,
+        WorkspaceTaskStatus.Archived => TaskEventType.TaskArchived,
+        _ => TaskEventType.TaskUpdated,
+    };
+
+    private static void ApplyFieldUpdates(
+        WorkspaceTaskEntity entity,
+        string? title,
+        string? description,
+        string? acceptanceCriteria,
+        TaskPriority? priority,
+        TaskExecutionWindow? executionWindow,
+        string? preferredAgentId,
+        DateTimeOffset? notBeforeUtc,
+        DateTimeOffset? dueAtUtc,
+        long? sortOrder)
+    {
+        if (title is not null) entity.Title = title;
+        if (description is not null) entity.Description = description;
+        if (acceptanceCriteria is not null) entity.AcceptanceCriteria = acceptanceCriteria;
+        if (priority.HasValue) entity.Priority = priority.Value;
+        if (executionWindow.HasValue) entity.ExecutionWindow = executionWindow.Value;
+        if (preferredAgentId is not null) entity.PreferredAgentId = preferredAgentId;
+        if (notBeforeUtc.HasValue) entity.NotBeforeUtc = notBeforeUtc.Value;
+        if (dueAtUtc.HasValue) entity.DueAtUtc = dueAtUtc.Value;
+        if (sortOrder.HasValue) entity.SortOrder = sortOrder.Value;
+    }
 }

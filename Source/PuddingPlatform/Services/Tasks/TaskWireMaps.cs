@@ -60,6 +60,35 @@ public static class TaskWireMaps
         _ => throw new ArgumentOutOfRangeException(nameof(column), column, "未知看板列。"),
     };
 
+    /// <summary>未知/null 值 fail-closed：抛 <see cref="TaskStoreException"/>(<see cref="TaskErrorCode.TaskInvalidTransition"/>)。</summary>
+    public static BoardColumn BoardColumnFromString(string? value) => value switch
+    {
+        "Backlog" => BoardColumn.Backlog,
+        "Todo" => BoardColumn.Todo,
+        "InProgress" => BoardColumn.InProgress,
+        "Done" => BoardColumn.Done,
+        "Failed" => BoardColumn.Failed,
+        _ => throw InvalidWire("boardColumn", value),
+    };
+
+    /// <summary>boardColumn → 状态集合（权威 = TaskStateMachine.ProjectBoardColumn 反查）。</summary>
+    public static IReadOnlyList<WorkspaceTaskStatus> BoardColumnToStatuses(BoardColumn column) => column switch
+    {
+        BoardColumn.Backlog => new[] { WorkspaceTaskStatus.Backlog },
+        BoardColumn.Todo => new[]
+        {
+            WorkspaceTaskStatus.Ready,
+            WorkspaceTaskStatus.Deferred,
+            WorkspaceTaskStatus.Reserved,
+            WorkspaceTaskStatus.Assigned,
+            WorkspaceTaskStatus.NeedsReview
+        },
+        BoardColumn.InProgress => new[] { WorkspaceTaskStatus.InProgress, WorkspaceTaskStatus.Blocked },
+        BoardColumn.Done => new[] { WorkspaceTaskStatus.Completed },
+        BoardColumn.Failed => new[] { WorkspaceTaskStatus.Failed },
+        _ => throw new ArgumentOutOfRangeException(nameof(column), column, "未知看板列。"),
+    };
+
     // ── Priority ────────────────────────────────────────────
 
     public static string PriorityToString(TaskPriority priority) => priority switch
@@ -124,6 +153,29 @@ public static class TaskWireMaps
         TaskErrorCode.PolicyInvalid => "policy.invalid",
         TaskErrorCode.PolicyVersionConflict => "policy.version_conflict",
         _ => code.ToString(),
+    };
+
+    /// <summary>TaskEventType → wire 字符串（task.created / task.ready / ...，以 TB-01 枚举注释为权威）。</summary>
+    public static string EventTypeToString(TaskEventType eventType) => eventType switch
+    {
+        TaskEventType.TaskCreated => "task.created",
+        TaskEventType.TaskUpdated => "task.updated",
+        TaskEventType.TaskReady => "task.ready",
+        TaskEventType.TaskDeferred => "task.deferred",
+        TaskEventType.TaskReserved => "task.reserved",
+        TaskEventType.TaskAssigned => "task.assigned",
+        TaskEventType.TaskAccepted => "task.accepted",
+        TaskEventType.TaskProgressed => "task.progressed",
+        TaskEventType.TaskBlocked => "task.blocked",
+        TaskEventType.TaskAssignmentRejected => "task.assignment_rejected",
+        TaskEventType.TaskCompleted => "task.completed",
+        TaskEventType.TaskFailed => "task.failed",
+        TaskEventType.TaskReopened => "task.reopened",
+        TaskEventType.TaskCancelled => "task.cancelled",
+        TaskEventType.TaskArchived => "task.archived",
+        TaskEventType.TaskDispatchRequested => "task.dispatch.requested",
+        TaskEventType.TaskDispatchDeferred => "task.dispatch.deferred",
+        _ => throw new ArgumentOutOfRangeException(nameof(eventType), eventType, "未知任务事件类型。"),
     };
 
     /// <summary>TaskErrorCode → HTTP 状态（契约 §五）。</summary>

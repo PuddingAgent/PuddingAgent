@@ -95,6 +95,22 @@ public sealed class SqliteWorkspaceTaskStore(
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<WorkspaceTask>> QueryTasksAsync(TaskQuery query, CancellationToken ct = default)
+        => await QueryTasksCoreAsync(query, statuses: null, ct);
+
+    /// <summary>
+    /// B2 boardColumn 过滤重载：<paramref name="statuses"/> 非空时生成 status IN (...) 子句，
+    /// 与 <see cref="TaskQuery.Status"/>（单值）取交集；keyset 游标语义不变。不改变 ITaskStore 既有方法签名。
+    /// </summary>
+    public async Task<IReadOnlyList<WorkspaceTask>> QueryTasksAsync(
+        TaskQuery query,
+        IReadOnlyList<WorkspaceTaskStatus>? statuses,
+        CancellationToken ct = default)
+        => await QueryTasksCoreAsync(query, statuses, ct);
+
+    private async Task<IReadOnlyList<WorkspaceTask>> QueryTasksCoreAsync(
+        TaskQuery query,
+        IReadOnlyList<WorkspaceTaskStatus>? statuses,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(query);
         var limit = query.Limit <= 0 ? 100 : query.Limit;
@@ -105,11 +121,14 @@ public sealed class SqliteWorkspaceTaskStore(
         await conn.OpenAsync(ct);
 
         await using var cmd = conn.CreateCommand();
+        var statusInSql = BuildStatusInClause(statuses, cmd);
+
         cmd.CommandText = $"""
             SELECT {TaskColumns}
             FROM workspace_tasks
             WHERE workspace_id = @workspaceId
               AND (@status IS NULL OR status = @status)
+              AND {StatusInOrTrue(statusInSql)}
               AND (@agentId IS NULL OR preferred_agent_id = @agentId)
               AND (@priority IS NULL OR priority = @priority)
               AND (@cursorSort IS NULL OR sort_order > @cursorSort
@@ -521,6 +540,27 @@ public sealed class SqliteWorkspaceTaskStore(
             """;
         return (sql, parameters);
     }
+
+    private static string? BuildStatusInClause(IReadOnlyList<WorkspaceTaskStatus>? statuses, SqliteCommand cmd)
+    {
+        if (statuses is null || statuses.Count == 0)
+        {
+            return null;
+        }
+
+        var names = new string[statuses.Count];
+        for (var i = 0; i < statuses.Count; i++)
+        {
+            var name = $"@statusIn{i}";
+            names[i] = name;
+            AddParam(cmd, name, (int)statuses[i]);
+        }
+
+        return string.Join(", ", names);
+    }
+
+    private static string StatusInOrTrue(string? statusInSql)
+        => statusInSql is null ? "1 = 1" : $"status IN ({statusInSql})";
 
     private static (long SortOrder, string TaskId)? ParseCursor(string? cursor)
     {

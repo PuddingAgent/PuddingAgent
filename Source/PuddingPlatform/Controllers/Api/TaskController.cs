@@ -1,7 +1,13 @@
 using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using PuddingCode.Tasks;
+using PuddingPlatform.Data;
+using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services.Tasks;
 
 namespace PuddingPlatform.Controllers.Api;
@@ -15,20 +21,26 @@ namespace PuddingPlatform.Controllers.Api;
 [Authorize]
 public class TaskController : ControllerBase
 {
-    private readonly ITaskStore _store;
+    private readonly SqliteWorkspaceTaskStore _store;
     private readonly TaskCommandService _commands;
+    private readonly IDbContextFactory<PlatformDbContext> _dbFactory;
 
-    public TaskController(ITaskStore store, TaskCommandService commands)
+    public TaskController(
+        SqliteWorkspaceTaskStore store,
+        TaskCommandService commands,
+        IDbContextFactory<PlatformDbContext> dbFactory)
     {
         _store = store;
         _commands = commands;
+        _dbFactory = dbFactory;
     }
 
-    /// <summary>GET /api/workspaces/{workspaceId}/tasks — keyset 分页 + 筛选。</summary>
+    /// <summary>GET /api/workspaces/{workspaceId}/tasks — keyset 分页 + 筛选（含 boardColumn 五列过滤）。</summary>
     [HttpGet]
     public async Task<ActionResult<TaskPageDto>> List(
         string workspaceId,
         [FromQuery] string? status,
+        [FromQuery] string? boardColumn,
         [FromQuery] string? agentId,
         [FromQuery] string? priority,
         [FromQuery] int limit = 100,
@@ -45,6 +57,9 @@ public class TaskController : ControllerBase
             var statusFilter = ParseStatus(status);
             var priorityFilter = ParsePriority(priority);
             var agentFilter = string.IsNullOrWhiteSpace(agentId) ? null : agentId;
+            var boardStatuses = string.IsNullOrWhiteSpace(boardColumn)
+                ? null
+                : TaskWireMaps.BoardColumnToStatuses(TaskWireMaps.BoardColumnFromString(boardColumn));
 
             // 多取一条用于判断是否还有下一页（keyset）。
             var results = await _store.QueryTasksAsync(new TaskQuery
@@ -55,7 +70,7 @@ public class TaskController : ControllerBase
                 Priority = priorityFilter,
                 Cursor = cursor,
                 Limit = limit + 1,
-            }, ct);
+            }, boardStatuses, ct);
 
             var items = results.Take(limit).Select(ToDto).ToList();
             string? nextCursor = null;
@@ -133,7 +148,7 @@ public class TaskController : ControllerBase
         }
     }
 
-    /// <summary>PATCH /api/workspaces/{workspaceId}/tasks/{taskId} — 更新（CAS）。</summary>
+    /// <summary>PATCH /api/workspaces/{workspaceId}/tasks/{taskId} — 更新（CAS）；可选 status 字段为显式状态迁移（B1）。</summary>
     [HttpPatch("{taskId}")]
     public async Task<ActionResult<TaskDto>> Patch(
         string workspaceId,
@@ -149,6 +164,9 @@ public class TaskController : ControllerBase
             var executionWindow = string.IsNullOrWhiteSpace(dto.ExecutionWindow)
                 ? null
                 : (TaskExecutionWindow?)TaskWireMaps.ExecutionWindowFromString(dto.ExecutionWindow);
+            var targetStatus = string.IsNullOrWhiteSpace(dto.Status)
+                ? null
+                : (WorkspaceTaskStatus?)TaskWireMaps.StatusFromString(dto.Status);
 
             var updated = await _commands.PatchAsync(
                 workspaceId,
@@ -163,6 +181,7 @@ public class TaskController : ControllerBase
                 dto.NotBeforeUtc,
                 dto.DueAtUtc,
                 dto.SortOrder,
+                targetStatus,
                 ct);
 
             return Ok(ToDto(updated));
@@ -280,6 +299,80 @@ public class TaskController : ControllerBase
         CancellationToken ct = default)
         => ApplyCommandAsync(workspaceId, taskId, TaskCommand.Requeue, dto.ExpectedVersion, null, null, dto.Reason, ct);
 
+    /// <summary>
+    /// GET /tasks/watch — Snapshot + Cursor Watch SSE。
+    /// 首帧发送当前 workspace 任务快照，后续按 task_events 全局自增 id 游标推送 task.{eventType} 事件，
+    /// 支持 Last-Event-ID 请求头续传（断线重连不丢事件）；每 15s 发一次 : ping 心跳保活。
+    /// </summary>
+    [HttpGet("watch")]
+    public async Task Watch(
+        string workspaceId,
+        [FromQuery] long? afterId = null,
+        CancellationToken ct = default)
+    {
+        var cursor = ResolveCursor(afterId);
+        if (cursor is null || cursor < 0)
+        {
+            await WriteSseJsonErrorAsync(
+                StatusCodes.Status400BadRequest,
+                "task.invalid_cursor",
+                "afterId 和 Last-Event-ID 必须为非负整数。",
+                ct);
+            return;
+        }
+
+        ConfigureSseResponse(Response);
+
+        try
+        {
+            // 首帧：当前 workspace 的任务快照（复用 GET /tasks 的 TaskDto 列表）。
+            var snapshot = await _store.QueryTasksAsync(
+                new TaskQuery { WorkspaceId = workspaceId, Limit = 500 }, ct);
+            await WriteSseFrameAsync(
+                Response,
+                "task.snapshot",
+                JsonSerializer.Serialize(snapshot.Select(ToDto).ToList()),
+                id: null,
+                ct);
+
+            var lastId = cursor.Value;
+            var lastHeartbeat = DateTime.UtcNow;
+
+            while (!ct.IsCancellationRequested)
+            {
+                var events = await ReadEventsAfterAsync(workspaceId, lastId, ct);
+                foreach (var evt in events)
+                {
+                    var payload = await BuildEventPayloadAsync(workspaceId, evt, ct);
+                    await WriteSseFrameAsync(
+                        Response,
+                        $"task.{TaskWireMaps.EventTypeToString(evt.EventType)}",
+                        JsonSerializer.Serialize(payload),
+                        evt.Id,
+                        ct);
+                    lastId = evt.Id;
+                }
+
+                if (DateTime.UtcNow - lastHeartbeat >= TimeSpan.FromSeconds(15))
+                {
+                    await Response.Body.WriteAsync(Encoding.UTF8.GetBytes(": ping\n\n"), ct);
+                    await Response.Body.FlushAsync(ct);
+                    lastHeartbeat = DateTime.UtcNow;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 客户端断开（正常退出）。
+        }
+        catch (IOException)
+        {
+            // 客户端断开导致的写失败（正常退出）。
+        }
+    }
+
     // ── helpers ─────────────────────────────────────────────
 
     private async Task<ActionResult<TaskDto>> ApplyCommandAsync(
@@ -309,6 +402,82 @@ public class TaskController : ControllerBase
 
     private static TaskPriority? ParsePriority(string? priority)
         => string.IsNullOrWhiteSpace(priority) ? null : TaskWireMaps.PriorityFromString(priority);
+
+    private long? ResolveCursor(long? afterId)
+    {
+        if (afterId.HasValue)
+        {
+            return afterId.Value;
+        }
+
+        var value = Request.Headers["Last-Event-ID"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return 0;
+        }
+
+        return long.TryParse(value, out var parsed) ? parsed : null;
+    }
+
+    private async Task<IReadOnlyList<TaskEventEntity>> ReadEventsAfterAsync(
+        string workspaceId, long afterId, CancellationToken ct)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.TaskEvents
+            .AsNoTracking()
+            .Where(e => e.WorkspaceId == workspaceId && e.Id > afterId)
+            .OrderBy(e => e.Id)
+            .Take(500)
+            .ToListAsync(ct);
+    }
+
+    private async Task<TaskWatchEventDto> BuildEventPayloadAsync(
+        string workspaceId, TaskEventEntity evt, CancellationToken ct)
+    {
+        var task = await _store.GetTaskAsync(workspaceId, evt.TaskId, ct);
+        return new TaskWatchEventDto
+        {
+            Id = evt.Id,
+            EventId = evt.EventId,
+            TaskId = evt.TaskId,
+            WorkspaceId = evt.WorkspaceId,
+            Sequence = evt.Sequence,
+            EventType = TaskWireMaps.EventTypeToString(evt.EventType),
+            CreatedAtUtc = evt.CreatedAtUtc,
+            Task = task is null ? null : ToDto(task),
+        };
+    }
+
+    private static void ConfigureSseResponse(HttpResponse response)
+    {
+        response.StatusCode = StatusCodes.Status200OK;
+        response.ContentType = "text/event-stream";
+        response.Headers.CacheControl = "no-cache, no-store";
+        response.Headers.Connection = "keep-alive";
+        response.Headers["X-Accel-Buffering"] = "no";
+    }
+
+    private static async Task WriteSseFrameAsync(
+        HttpResponse response, string eventName, string data, long? id, CancellationToken ct)
+    {
+        var sb = new StringBuilder();
+        if (id.HasValue)
+        {
+            sb.Append("id: ").Append(id.Value).Append('\n');
+        }
+
+        sb.Append("event: ").Append(eventName).Append('\n');
+        sb.Append("data: ").Append(data).Append("\n\n");
+        await response.Body.WriteAsync(Encoding.UTF8.GetBytes(sb.ToString()), ct);
+        await response.Body.FlushAsync(ct);
+    }
+
+    private async Task WriteSseJsonErrorAsync(int statusCode, string code, string message, CancellationToken ct)
+    {
+        Response.StatusCode = statusCode;
+        Response.ContentType = "application/json";
+        await Response.WriteAsync(JsonSerializer.Serialize(new { code, message }), ct);
+    }
 
     private static TaskDto ToDto(WorkspaceTask t) => new()
     {
