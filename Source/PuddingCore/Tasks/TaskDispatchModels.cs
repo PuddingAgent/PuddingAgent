@@ -84,36 +84,19 @@ public sealed record TaskInstructionEnvelope
     /// <summary>验收标准。</summary>
     public string? AcceptanceCriteria { get; init; }
 
+    /// <summary>
+    /// 派发时刻的 Task.Version（TB-06 增补，评审 R2 方案 A）。随 Outbox 序列化、
+    /// 写入 metadata <c>expected_version</c>，由派发时取 task.Version 注入，供 Agent
+    /// 侧 claim/update 的 version_conflict 校验（§4.3）。</summary>
+    public int? ExpectedVersion { get; init; }
+
     /// <summary>由幂等键确定性派生的 MessageId。</summary>
     public string MessageId => TaskDispatchIds.BuildMessageId(IdempotencyKey);
 
     /// <summary>转换为 Message Fabric 权威 <see cref="MessageEnvelope"/>（ADR-072 §9.1）。</summary>
-    public MessageEnvelope ToMessageEnvelope() => new()
+    public MessageEnvelope ToMessageEnvelope()
     {
-        MessageId = MessageId,
-        From = new MessageAddress
-        {
-            Kind = MessageEndpointKinds.System,
-            Id = FromSystemId,
-            WorkspaceId = WorkspaceId,
-            DisplayName = "Task Orchestrator",
-        },
-        To = new[]
-        {
-            new MessageAddress
-            {
-                Kind = MessageEndpointKinds.Agent,
-                Id = AgentId,
-                WorkspaceId = WorkspaceId,
-            },
-        },
-        Audience = MessageAudiences.Direct,
-        Visibility = MessageVisibilities.System,
-        ContentType = ContentTypeTaskInstruction,
-        Content = BuildBody(),
-        Priority = MapPriority(Priority),
-        CorrelationId = AssignmentId,
-        Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["origin"] = Origin,
             ["task_id"] = TaskId,
@@ -121,8 +104,40 @@ public sealed record TaskInstructionEnvelope
             ["priority"] = Priority,
             ["execution_window"] = ExecutionWindow,
             ["dispatch_idempotency_key"] = IdempotencyKey,
-        },
-    };
+        };
+        if (ExpectedVersion.HasValue)
+        {
+            metadata["expected_version"] = ExpectedVersion.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return new MessageEnvelope
+        {
+            MessageId = MessageId,
+            From = new MessageAddress
+            {
+                Kind = MessageEndpointKinds.System,
+                Id = FromSystemId,
+                WorkspaceId = WorkspaceId,
+                DisplayName = "Task Orchestrator",
+            },
+            To = new[]
+            {
+                new MessageAddress
+                {
+                    Kind = MessageEndpointKinds.Agent,
+                    Id = AgentId,
+                    WorkspaceId = WorkspaceId,
+                },
+            },
+            Audience = MessageAudiences.Direct,
+            Visibility = MessageVisibilities.System,
+            ContentType = ContentTypeTaskInstruction,
+            Content = BuildBody(),
+            Priority = MapPriority(Priority),
+            CorrelationId = AssignmentId,
+            Metadata = metadata,
+        };
+    }
 
     private string BuildBody()
     {

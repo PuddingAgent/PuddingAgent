@@ -398,7 +398,7 @@ public sealed class WorkspaceTaskCoreTests
         Assert.AreEqual(3, Enum.GetValues<TaskExecutionWindow>().Length);
         Assert.AreEqual(15, Enum.GetValues<DecisionCode>().Length);
         Assert.AreEqual(10, Enum.GetValues<TaskCommand>().Length);
-        Assert.AreEqual(18, Enum.GetValues<TaskErrorCode>().Length);
+        Assert.AreEqual(20, Enum.GetValues<TaskErrorCode>().Length);
         Assert.AreEqual(17, Enum.GetValues<TaskEventType>().Length);
         Assert.AreEqual(4, Enum.GetValues<AssignmentStatus>().Length);
     }

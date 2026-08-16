@@ -152,6 +152,8 @@ public static class TaskWireMaps
         TaskErrorCode.CapabilityMissing => "capability.missing",
         TaskErrorCode.PolicyInvalid => "policy.invalid",
         TaskErrorCode.PolicyVersionConflict => "policy.version_conflict",
+        TaskErrorCode.TaskActiveContextMissing => "task.active_context_missing",
+        TaskErrorCode.TaskInvalidCursor => "task.invalid_cursor",
         _ => code.ToString(),
     };
 
@@ -190,7 +192,8 @@ public static class TaskWireMaps
         TaskErrorCode.TaskInvalidTransition or TaskErrorCode.TaskInvalidDisposition or
         TaskErrorCode.TaskReasonRequired or TaskErrorCode.TaskResultRequired or
         TaskErrorCode.TaskArtifactRequired or TaskErrorCode.TaskNotReopenable or
-        TaskErrorCode.TaskCannotHardDelete or TaskErrorCode.PolicyInvalid
+        TaskErrorCode.TaskCannotHardDelete or TaskErrorCode.PolicyInvalid or
+        TaskErrorCode.TaskActiveContextMissing or TaskErrorCode.TaskInvalidCursor
             => StatusCodes.Status422UnprocessableEntity,
         TaskErrorCode.CapabilityMissing => StatusCodes.Status403Forbidden,
         _ => StatusCodes.Status500InternalServerError,

@@ -264,7 +264,13 @@ public enum TaskErrorCode
     PolicyInvalid,
 
     /// <summary>policy.version_conflict 409</summary>
-    PolicyVersionConflict
+    PolicyVersionConflict,
+
+    /// <summary>task.active_context_missing 422（claim/update 无 Active Task Context）</summary>
+    TaskActiveContextMissing,
+
+    /// <summary>task.invalid_cursor 422（task_list 游标非法）</summary>
+    TaskInvalidCursor
 }
 
 /// <summary>task.* 事件类型（不含 automation.* / work_policy.*，那是 P1）。</summary>
