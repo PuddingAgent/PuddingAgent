@@ -554,6 +554,7 @@ public sealed class PuddingToolSchemaService
                 Parameters = d.Parameters,
                 SubAgentExposure = d.SubAgentExposure,
             })
+            .OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 }

@@ -106,7 +106,7 @@ public sealed partial class SkillRuntime
         var available = GetAvailableSkills(policy);
         var tools = new List<LlmToolDefinition>(available.Count);
 
-        foreach (var skill in available)
+        foreach (var skill in available.OrderBy(s => s.SkillId, StringComparer.OrdinalIgnoreCase))
         {
             var parameters = BuildDefaultParameters(skill.SkillId);
             tools.Add(new LlmToolDefinition

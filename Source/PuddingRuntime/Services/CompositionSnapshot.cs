@@ -53,12 +53,14 @@ public static class CompositionSnapshot
             t.Description,
             Parameters = new
             {
-                Properties = t.Parameters.Properties.Select(p => new
-                {
-                    p.Name,
-                    p.Type,
-                    p.Description,
-                }).ToArray(),
+                Properties = t.Parameters.Properties
+                    .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                    .Select(p => new
+                    {
+                        p.Name,
+                        p.Type,
+                        p.Description,
+                    }).ToArray(),
                 Required = t.Parameters.Required.ToArray(),
                 RawJsonSchema = t.Parameters.RawJsonSchema?.GetRawText(),
             },

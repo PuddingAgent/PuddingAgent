@@ -134,6 +134,37 @@ public sealed class CompositionSnapshotTests
         Assert.AreNotEqual(CompositionSnapshot.ComputeToolSpecHash(a), CompositionSnapshot.ComputeToolSpecHash(b));
     }
 
+    [TestMethod]
+    public void ComputeToolSpecHash_StableAcrossPropertyOrder()
+    {
+        // 同一工具，Properties 构造顺序不同但集合相同 → hash 必须一致（字节级稳定）。
+        var a = new[] { Tool("t", properties: new[] { Param("b", "string"), Param("a", "number"), Param("c", "integer") }) };
+        var b = new[] { Tool("t", properties: new[] { Param("c", "integer"), Param("b", "string"), Param("a", "number") }) };
+
+        Assert.AreEqual(CompositionSnapshot.ComputeToolSpecHash(a), CompositionSnapshot.ComputeToolSpecHash(b));
+    }
+
+    [TestMethod]
+    public void ComputeToolSpecHash_StableAcrossRepeatedCalls()
+    {
+        var tools = new[]
+        {
+            Tool("t", "desc", new[] { Param("c", "integer"), Param("a", "string"), Param("b", "number") }, new[] { "a", "b", "c" }),
+        };
+
+        var first = CompositionSnapshot.ComputeToolSpecHash(tools);
+        for (var i = 0; i < 3; i++)
+            Assert.AreEqual(first, CompositionSnapshot.ComputeToolSpecHash(tools));
+    }
+
+    [TestMethod]
+    public void ComputeToolSpecHash_DiffersWhenPropertySetDiffers()
+    {
+        var a = new[] { Tool("t", properties: new[] { Param("x", "string") }) };
+        var b = new[] { Tool("t", properties: new[] { Param("x", "string"), Param("y", "string") }) };
+        Assert.AreNotEqual(CompositionSnapshot.ComputeToolSpecHash(a), CompositionSnapshot.ComputeToolSpecHash(b));
+    }
+
     // ── Prefix hash ────────────────────────────────────
 
     [TestMethod]
