@@ -1,4 +1,4 @@
-﻿# PuddingMemoryEngine CodeMAP
+# PuddingMemoryEngine CodeMAP
 
 > 记忆引擎 | Library/Book/Chapter · FTS5 全文搜索 · 潜意识处理
 
@@ -17,9 +17,9 @@
 
 | 目录/文件 | 用途 |
 |------|------|
-| `Data/` | 数据访问层 |
-| `Entities/` | 实体定义 |
-| `Schema/` | 数据库 Schema |
+| `Data/` | 数据访问层（`MemoryDbContext` + `init_memory.sql` 幂等建表 + additive 补列迁移） |
+| `Entities/` | 实体定义（含 `CompactionCoverageManifestEntity` 压缩覆盖清单） |
+| `Schema/` | 数据库 Schema（`CompactionCoverageManifests` 表、`Sessions.CompactionGeneration` 列） |
 
 ## 服务
 

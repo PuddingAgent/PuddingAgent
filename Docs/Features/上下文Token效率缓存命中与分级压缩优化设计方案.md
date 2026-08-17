@@ -24,7 +24,8 @@ Pudding 的主要成本问题不是输出 Token，而是大体积历史在每轮
 - 已开始 P0-1：`ContextCompactionService` 改为分页读取全部 active 消息；每 80 条形成一个 map 摘要块，再做 reduce；在任何 `CompactedBy` 写入前校验待压缩消息全部进入 map 输入。
 - 已增加 94 条和 594 条回归用例，分别防止 80 条窗口截断和 500 条数据库页截断复发。
 - 已开始 P0-0：`context_layer_metric_events` 现持久化每层 Token、UTF-8 字节、GZIP 字节、GZIP 比、hash 和按前缀位置分摊的 cache hit/miss；`GET /api/stats/tokens/context-layers` 可按层聚合读取这些数值。指标不保存正文，旧 SQLite 表启动时幂等补列。
-- 尚未完成：持久化 `CoverageManifest`、generation/recall 过滤、逐 segment 的服务商 Token 精确归因、日报自动对账和生产 7 日验收。因此本文件的总体状态仍为 Proposed，不能据此宣称缓存目标已达成。
+- 已完成 P0-1 遗留：`CompactionCoverageManifests` 覆盖清单持久化（§6.3 数据合同 + entity + 表）；session 递增 `CompactionGeneration`（`Sessions.CompactionGeneration` 列，manifest 记 Source/TargetGeneration）；写 `CompactedBy` 前强制 `OmittedCount == 0` 的持久化门禁；失败不写 `CompactedBy`、不切 successor。
+- 尚未完成：generation/recall 过滤、逐 segment 的服务商 Token 精确归因、日报自动对账和生产 7 日验收。因此本文件的总体状态仍为 Proposed，不能据此宣称缓存目标已达成。
 
 ## 2. 目标与非目标
 

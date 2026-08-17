@@ -13,8 +13,9 @@ CREATE TABLE IF NOT EXISTS Sessions (
     Tags            TEXT,
     CreatedAt       INTEGER NOT NULL,
     LastActivityAt  INTEGER NOT NULL,
-    MessageCount    INTEGER NOT NULL DEFAULT 0,
+        MessageCount    INTEGER NOT NULL DEFAULT 0,
     TokenTotal      INTEGER NOT NULL DEFAULT 0,
+    CompactionGeneration INTEGER NOT NULL DEFAULT 0,
     Metadata        TEXT
 );
 
@@ -269,3 +270,71 @@ CREATE INDEX IF NOT EXISTS IX_EventSubscriptions_Workspace_Agent_Pattern
     ON EventSubscriptions(WorkspaceId, AgentId, EventTypePattern);
 CREATE INDEX IF NOT EXISTS IX_EventSubscriptions_Status
     ON EventSubscriptions(Status);
+
+-- P1-1 Task A：ContextSegmentLedger（设计方案 §6.1 数据合同，additive 新表）
+-- 注意：MemoryDbInitializer.EnsureContextSegmentsTableAsync 持有与本表一致的
+-- CREATE TABLE IF NOT EXISTS 自愈 DDL（供旧库缺表时兜底），两处需保持同步。
+CREATE TABLE IF NOT EXISTS ContextSegments (
+    SegmentId            TEXT PRIMARY KEY,
+    SessionId            TEXT NOT NULL,
+    RunId                TEXT,
+    TurnId               TEXT,
+    SourceKind           TEXT NOT NULL,
+    SourceId             TEXT NOT NULL,
+    SequenceStart        INTEGER NOT NULL,
+    SequenceEnd          INTEGER NOT NULL,
+    Role                 TEXT NOT NULL,
+    ContentType          TEXT NOT NULL DEFAULT 'text',
+    CanonicalContentHash TEXT NOT NULL,
+    RawUtf8Bytes         INTEGER NOT NULL,
+    EstimatedTokens      INTEGER,
+    ProviderTokens       INTEGER,
+    ArtifactRef          TEXT,
+    ContextGeneration    INTEGER,
+    CoveredByManifestId  TEXT,
+    Tier                 TEXT NOT NULL DEFAULT 'T0',
+    IsAtomicToolGroup    INTEGER NOT NULL DEFAULT 0,
+    AuthorizationScope   TEXT,
+    CreatedAt            INTEGER NOT NULL,
+    Metadata             TEXT
+);
+
+CREATE INDEX IF NOT EXISTS IX_ContextSegments_Session_SeqStart
+    ON ContextSegments(SessionId, SequenceStart);
+CREATE INDEX IF NOT EXISTS IX_ContextSegments_SourceKind_SourceId
+    ON ContextSegments(SourceKind, SourceId);
+CREATE INDEX IF NOT EXISTS IX_ContextSegments_ContentHash
+    ON ContextSegments(CanonicalContentHash);
+CREATE INDEX IF NOT EXISTS IX_ContextSegments_CoveredBy
+    ON ContextSegments(CoveredByManifestId)
+    WHERE CoveredByManifestId IS NOT NULL;
+CREATE INDEX IF NOT EXISTS IX_ContextSegments_Generation
+    ON ContextSegments(ContextGeneration)
+    WHERE ContextGeneration IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS CompactionCoverageManifests (
+    CompactionId       TEXT PRIMARY KEY,
+    SessionId          TEXT NOT NULL,
+    SourceGeneration   INTEGER NOT NULL DEFAULT 0,
+    TargetGeneration   INTEGER NOT NULL DEFAULT 0,
+    SourceMessageIds   TEXT,
+    SourceHashes       TEXT,
+    CoveredCount       INTEGER NOT NULL DEFAULT 0,
+    OmittedCount       INTEGER NOT NULL DEFAULT 0,
+    DuplicateCount     INTEGER NOT NULL DEFAULT 0,
+    RawUtf8BytesBefore INTEGER NOT NULL DEFAULT 0,
+    RawUtf8BytesAfter  INTEGER NOT NULL DEFAULT 0,
+    TokensBefore       INTEGER NOT NULL DEFAULT 0,
+    TokensAfter        INTEGER NOT NULL DEFAULT 0,
+    FinalSummaryId     TEXT,
+    FinalSummaryHash   TEXT,
+    Generator          TEXT NOT NULL DEFAULT '',
+    Degraded           INTEGER NOT NULL DEFAULT 0,
+    FailureReason      TEXT,
+    CreatedAtUtc       INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_CompactionCoverageManifests_Session
+    ON CompactionCoverageManifests(SessionId);
+CREATE INDEX IF NOT EXISTS IX_CompactionCoverageManifests_Session_Generation
+    ON CompactionCoverageManifests(SessionId, TargetGeneration);

@@ -136,6 +136,34 @@ public sealed record ContextCompactionResult(
     ContextCompactionDiagnostics? Diagnostics = null,
     bool SkippedDueToTokenIncrease = false);
 
+/// <summary>
+/// 压缩覆盖清单（方案 §6.3）。
+/// 持久化为一次成功或失败的 Compact 生成的覆盖事实：记录了本次压缩到底覆盖了哪些
+/// source message、前后代际、字节/Token 变化，以及是否降级或失败。
+/// 数据库事务只允许依据 manifest 中确实被覆盖（OmittedCount == 0）的 message id
+/// 写入 <c>CompactedBy</c>，二者必须落在同一个事务里，防止「选中待压缩集合」与
+/// 「实际送入摘要的集合」脱节。
+/// </summary>
+public sealed record CompactionCoverageManifest(
+    string CompactionId,
+    string SessionId,
+    int SourceGeneration,
+    int TargetGeneration,
+    IReadOnlyList<string> SourceMessageIds,
+    IReadOnlyList<string> SourceHashes,
+    int CoveredCount,
+    int OmittedCount,
+    int DuplicateCount,
+    long RawUtf8BytesBefore,
+    long RawUtf8BytesAfter,
+    long TokensBefore,
+    long TokensAfter,
+    string? FinalSummaryId,
+    string? FinalSummaryHash,
+    string Generator,
+    bool Degraded,
+    string? FailureReason);
+
 public sealed record ContextCompactionSummaryRequest(
     string WorkspaceId,
     string SessionId,

@@ -42,7 +42,13 @@ public class SessionEntity
 
     public int MessageCount { get; set; }
 
-    public long TokenTotal { get; set; }
+        public long TokenTotal { get; set; }
+
+    /// <summary>
+    /// 会话内已完成的压缩代际（每次成功提交的压缩 +1）。
+    /// 用于生成 CompactionCoverageManifest 的 Source/TargetGeneration。
+    /// </summary>
+    public int CompactionGeneration { get; set; }
 
     /// <summary>JSON 扩展字段。</summary>
     public string? Metadata { get; set; }

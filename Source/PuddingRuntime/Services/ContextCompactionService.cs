@@ -367,7 +367,8 @@ public sealed class ContextCompactionService : IContextCompactionService
         // 这里在保留逻辑内增加尺寸判定：单条消息（含 tool 载荷）超过 MaxVerbatimMessageBytes 时，
         // 保留副本被截断为"头部摘要 + 截断标记"，完整原文以克隆形式进入摘要侧输入照常参与摘要处理；
         // 尺寸正常的最近消息仍按原规则原样保留，逐条保留数量逻辑不变。
-        var beforeTokens = EstimateMessages(activeMessages); // 截断前快照，保证诊断口径准确
+                var beforeTokens = EstimateMessages(activeMessages); // 截断前快照，保证诊断口径准确
+        var rawBytesBefore = EstimateUtf8Bytes(activeMessages); // 截断前快照（UTF-8 字节）
         var verbatimEvictionClones = ApplyVerbatimSizeEviction(candidates, messagesToCompact);
 
         var expandStart = sw.ElapsedMilliseconds;
@@ -395,9 +396,9 @@ public sealed class ContextCompactionService : IContextCompactionService
             "[ContextCompaction:Phase] expandInput session={SessionId} baseCount={BaseCount} expandedCount={ExpandedCount} supBefore={SuppBefore} elapsedMs={ElapsedMs}",
             request.SessionId, summaryBaseMessages.Count, expandedInput.Messages.Count, expandedInput.SupplementalBeforeCount, sw.ElapsedMilliseconds - expandStart);
 
-        var windowStart = sw.ElapsedMilliseconds;
+                var windowStart = sw.ElapsedMilliseconds;
         var summaryInput = SelectSummaryInputWindow(expandedInput);
-        EnsureCompactionCoverage(messagesToCompact, summaryInput.Messages);
+        var coverage = EnsureCompactionCoverage(messagesToCompact, summaryInput.Messages);
         _logger.LogInformation(
             "[ContextCompaction:Phase] selectWindow session={SessionId} windowCount={WindowCount} firstSeq={FirstSeq} lastSeq={LastSeq} omitted={Omitted}",
             request.SessionId, summaryInput.Messages.Count, summaryInput.FirstIncludedSequence, summaryInput.LastIncludedSequence, summaryInput.OmittedBeforeCount);
@@ -485,11 +486,88 @@ public sealed class ContextCompactionService : IContextCompactionService
             return skipResult;
         }
 
-        summary = AppendKeyFactsSection(summary, request.PreCompactionFacts);
+                summary = AppendKeyFactsSection(summary, request.PreCompactionFacts);
+
+        // ── P0-1 持久化覆盖清单 + 代际 ──
+        // 在同一事务内写入 final summary、manifest、精确的 CompactedBy 与 generation。
+        // 内存覆盖校验（EnsureCompactionCoverage）已保证 OmittedCount == 0，这里把该事实
+        // 落成持久化 manifest；OmittedCount != 0 时在上游已抛异常，不会走到写库。
+        var session = await db.Sessions.FirstOrDefaultAsync(s => s.SessionId == request.SessionId, ct);
+        if (session is null)
+        {
+            session = new SessionEntity
+            {
+                SessionId = request.SessionId,
+                WorkspaceId = request.WorkspaceId,
+                AgentId = request.AgentId ?? string.Empty,
+                Status = "active",
+                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                LastActivityAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            };
+            db.Sessions.Add(session);
+        }
+
+        var sourceGeneration = session.CompactionGeneration;
+        var targetGeneration = sourceGeneration + 1;
+        var summaryMessageId = Guid.NewGuid().ToString("N");
+        var compactedIdSet = messagesToCompact.Select(m => m.MessageId).ToHashSet(StringComparer.Ordinal);
+        var retainedMessages = activeMessages
+            .Where(m => !compactedIdSet.Contains(m.MessageId))
+            .ToList();
+        var afterTokensEstimate = EstimateMessages(retainedMessages) + ContextUsageSnapshotStore.CountTokens(summary);
+        var rawBytesAfterEstimate = EstimateUtf8Bytes(retainedMessages) + Utf8ByteCount(summary);
+        var sourceMessageIds = messagesToCompact.Select(m => m.MessageId).ToArray();
+        var sourceHashes = messagesToCompact
+            .Select(m => CompositionSnapshot.Sha256Hex(m.Content ?? string.Empty))
+            .ToArray();
+
+        // §6.3 数据合同（定义），随后映射为持久化实体。
+        var manifest = new CompactionCoverageManifest(
+            CompactionId: compactionId,
+            SessionId: request.SessionId,
+            SourceGeneration: sourceGeneration,
+            TargetGeneration: targetGeneration,
+            SourceMessageIds: sourceMessageIds,
+            SourceHashes: sourceHashes,
+            CoveredCount: coverage.CoveredCount,
+            OmittedCount: coverage.OmittedCount,
+            DuplicateCount: coverage.DuplicateCount,
+            RawUtf8BytesBefore: rawBytesBefore,
+            RawUtf8BytesAfter: rawBytesAfterEstimate,
+            TokensBefore: beforeTokens,
+            TokensAfter: afterTokensEstimate,
+            FinalSummaryId: summaryMessageId,
+            FinalSummaryHash: CompositionSnapshot.Sha256Hex(summary),
+            Generator: ResolveSummaryGeneratorName(),
+            Degraded: false,
+            FailureReason: null);
+
+        var manifestEntity = new CompactionCoverageManifestEntity
+        {
+            CompactionId = manifest.CompactionId,
+            SessionId = manifest.SessionId,
+            SourceGeneration = manifest.SourceGeneration,
+            TargetGeneration = manifest.TargetGeneration,
+            SourceMessageIds = JsonSerializer.Serialize(manifest.SourceMessageIds, JsonOptions),
+            SourceHashes = JsonSerializer.Serialize(manifest.SourceHashes, JsonOptions),
+            CoveredCount = manifest.CoveredCount,
+            OmittedCount = manifest.OmittedCount,
+            DuplicateCount = manifest.DuplicateCount,
+            RawUtf8BytesBefore = manifest.RawUtf8BytesBefore,
+            RawUtf8BytesAfter = manifest.RawUtf8BytesAfter,
+            TokensBefore = manifest.TokensBefore,
+            TokensAfter = manifest.TokensAfter,
+            FinalSummaryId = manifest.FinalSummaryId,
+            FinalSummaryHash = manifest.FinalSummaryHash,
+            Generator = manifest.Generator,
+            Degraded = manifest.Degraded,
+            FailureReason = manifest.FailureReason,
+            CreatedAtUtc = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
 
         var summaryMessage = new MessageEntity
         {
-            MessageId = Guid.NewGuid().ToString("N"),
+            MessageId = summaryMessageId,
             SessionId = request.SessionId,
             Sequence = activeMessages.Max(m => m.Sequence) + 1,
             Role = "system",
@@ -519,12 +597,16 @@ public sealed class ContextCompactionService : IContextCompactionService
                 summaryReductionPassCount = summaryGeneration.ReductionPassCount,
                 summaryGenerator = ResolveSummaryGeneratorName(),
                 beforeTokens,
+                sourceGeneration,
+                targetGeneration,
             }, JsonOptions),
         };
 
         db.Messages.Add(summaryMessage);
+        db.CompactionCoverageManifests.Add(manifestEntity);
         foreach (var message in messagesToCompact)
             message.CompactedBy = summaryMessage.MessageId;
+        session.CompactionGeneration = targetGeneration;
 
         await db.SaveChangesAsync(ct);
 
@@ -1070,8 +1152,14 @@ public sealed class ContextCompactionService : IContextCompactionService
         return result;
     }
 
-    private static int EstimateMessages(IReadOnlyList<MessageEntity> messages) =>
+        private static int EstimateMessages(IReadOnlyList<MessageEntity> messages) =>
         messages.Sum(m => ContextUsageSnapshotStore.CountTokens(m.Content));
+
+    private static long EstimateUtf8Bytes(IReadOnlyList<MessageEntity> messages) =>
+        messages.Sum(message => Utf8ByteCount(message.Content));
+
+    private static long Utf8ByteCount(string? text) =>
+        string.IsNullOrEmpty(text) ? 0 : System.Text.Encoding.UTF8.GetByteCount(text);
 
     /// <summary>
     /// 对"最近消息原样保留窗口"执行尺寸驱逐（见 <see cref="ContextCompactionOptions.MaxVerbatimMessageBytes"/>）。
@@ -1288,25 +1376,30 @@ public sealed class ContextCompactionService : IContextCompactionService
             LastOmittedSequence: null);
     }
 
-    private static void EnsureCompactionCoverage(
+        private static (int CoveredCount, int OmittedCount, int DuplicateCount) EnsureCompactionCoverage(
         IReadOnlyList<MessageEntity> messagesToCompact,
         IReadOnlyList<MessageEntity> summaryInputMessages)
     {
         if (messagesToCompact.Count == 0)
-            return;
+            return (0, 0, 0);
 
         var inputIds = summaryInputMessages
             .Select(message => message.MessageId)
-            .ToHashSet(StringComparer.Ordinal);
+            .ToList();
+        var inputIdSet = inputIds.ToHashSet(StringComparer.Ordinal);
+        var covered = messagesToCompact.Count(message => inputIdSet.Contains(message.MessageId));
+        var omitted = messagesToCompact.Count - covered;
+        var duplicate = inputIds.Count - inputIdSet.Count;
+
+        if (omitted == 0)
+            return (covered, omitted, duplicate);
+
         var missing = messagesToCompact
-            .Where(message => !inputIds.Contains(message.MessageId))
+            .Where(message => !inputIdSet.Contains(message.MessageId))
             .Select(message => message.MessageId)
             .ToList();
-        if (missing.Count == 0)
-            return;
-
         throw new InvalidOperationException(
-            $"Refusing to compact {messagesToCompact.Count} messages because {missing.Count} messages are absent from the summary input. " +
+            $"Refusing to compact {messagesToCompact.Count} messages because {omitted} messages are absent from the summary input. " +
             $"First missing message: '{missing[0]}'.");
     }
 

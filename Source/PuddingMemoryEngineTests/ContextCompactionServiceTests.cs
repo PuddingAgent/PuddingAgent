@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text.Json;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
@@ -518,7 +519,143 @@ public sealed class ContextCompactionServiceTests
         // Assert: compaction was NOT skipped
         Assert.IsFalse(result.SkippedDueToTokenIncrease);
         Assert.IsTrue(result.CompactedMessageCount > 0);
-        Assert.IsFalse(string.IsNullOrWhiteSpace(result.SummaryMessageId));
+                Assert.IsFalse(string.IsNullOrWhiteSpace(result.SummaryMessageId));
+    }
+
+    [TestMethod]
+    public async Task FullCompactAsync_PersistsCoverageManifest_WithZeroOmittedCount()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-manifest", messageCount: 10);
+
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new FixedSummaryGenerator("## 用户目标\n保留早期关键决策。"),
+            NullLogger<ContextCompactionService>.Instance);
+
+        var result = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1",
+            SessionId: "session-manifest",
+            AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual,
+            Level: ContextCompactionLevel.Full,
+            Reason: "manual slash command"));
+
+        Assert.IsNotNull(result.Diagnostics);
+        db.ChangeTracker.Clear();
+        var manifest = await db.CompactionCoverageManifests
+            .SingleAsync(m => m.SessionId == "session-manifest");
+        Assert.AreEqual(result.Diagnostics.CompactionId, manifest.CompactionId);
+        Assert.AreEqual("session-manifest", manifest.SessionId);
+        Assert.AreEqual(0, manifest.SourceGeneration);
+        Assert.AreEqual(1, manifest.TargetGeneration);
+        Assert.AreEqual(4, manifest.CoveredCount);
+        Assert.AreEqual(0, manifest.OmittedCount);
+        Assert.AreEqual(0, manifest.DuplicateCount);
+        Assert.AreEqual(result.SummaryMessageId, manifest.FinalSummaryId);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(manifest.FinalSummaryHash));
+        Assert.IsFalse(manifest.Degraded);
+        Assert.IsNull(manifest.FailureReason);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(manifest.Generator));
+        Assert.IsTrue(manifest.RawUtf8BytesBefore > 0);
+        Assert.IsTrue(manifest.TokensBefore > 0);
+
+        var sourceIds = JsonSerializer.Deserialize<List<string>>(manifest.SourceMessageIds!);
+        Assert.IsNotNull(sourceIds);
+        CollectionAssert.AreEqual(new[] { "msg-1", "msg-2", "msg-3", "msg-4" }, sourceIds);
+
+        var session = await db.Sessions.SingleAsync(s => s.SessionId == "session-manifest");
+        Assert.AreEqual(1, session.CompactionGeneration);
+    }
+
+    [TestMethod]
+    public async Task FullCompactAsync_IncrementsGeneration_AcrossSuccessiveCompactions()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-gen", messageCount: 10);
+
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new FixedSummaryGenerator("## 摘要\ngeneration"),
+            NullLogger<ContextCompactionService>.Instance,
+            compactionCoordinator: new CompactionCoordinator(cooldown: TimeSpan.Zero));
+
+        var first = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1", SessionId: "session-gen", AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual, Level: ContextCompactionLevel.Full,
+            Reason: "manual slash command"));
+        Assert.AreEqual(4, first.CompactedMessageCount);
+
+        // 追加 10 条新消息（Sequence 12..21，避开首次摘要的 Sequence 11），让第二次压缩有可压缩对象。
+        for (var i = 12; i <= 21; i++)
+        {
+            db.Messages.Add(new MessageEntity
+            {
+                MessageId = $"msg-{i}",
+                SessionId = "session-gen",
+                Sequence = i,
+                Role = i % 2 == 0 ? "agent" : "user",
+                ContentType = "text",
+                Content = $"message {i}",
+                CreatedAt = i,
+            });
+        }
+        await db.SaveChangesAsync();
+
+        await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1", SessionId: "session-gen", AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual, Level: ContextCompactionLevel.Full,
+            Reason: "manual slash command"));
+
+        db.ChangeTracker.Clear();
+        var manifests = await db.CompactionCoverageManifests
+            .Where(m => m.SessionId == "session-gen")
+            .OrderBy(m => m.TargetGeneration)
+            .ToListAsync();
+        Assert.AreEqual(2, manifests.Count);
+        Assert.AreEqual(0, manifests[0].SourceGeneration);
+        Assert.AreEqual(1, manifests[0].TargetGeneration);
+        Assert.AreEqual(1, manifests[1].SourceGeneration);
+        Assert.AreEqual(2, manifests[1].TargetGeneration);
+
+        var session = await db.Sessions.SingleAsync(s => s.SessionId == "session-gen");
+        Assert.AreEqual(2, session.CompactionGeneration);
+    }
+
+    [TestMethod]
+    public async Task FullCompactAsync_DoesNotWriteManifestOrCompactedBy_WhenSummaryGenerationFails()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-fail", messageCount: 10);
+
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new ThrowingSummaryGenerator(),
+            NullLogger<ContextCompactionService>.Instance);
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            service.CompactAsync(new ContextCompactionRequest(
+                WorkspaceId: "workspace-1", SessionId: "session-fail", AgentId: "agent-1",
+                Mode: ContextCompactionMode.Manual, Level: ContextCompactionLevel.Full,
+                Reason: "manual slash command")));
+
+        db.ChangeTracker.Clear();
+        Assert.AreEqual(0, await db.CompactionCoverageManifests.CountAsync(m => m.SessionId == "session-fail"));
+        Assert.AreEqual(0, await db.Messages.CountAsync(m => m.SessionId == "session-fail" && m.CompactedBy != null));
+        var session = await db.Sessions.SingleAsync(s => s.SessionId == "session-fail");
+        Assert.AreEqual(0, session.CompactionGeneration);
     }
 
     [TestMethod]
@@ -635,8 +772,16 @@ public sealed class ContextCompactionServiceTests
                 sb.AppendLine(line);
         }
 
-        return sb.ToString();
+                return sb.ToString();
     }
+    private sealed class ThrowingSummaryGenerator : IContextCompactionSummaryGenerator
+    {
+        public Task<string> GenerateSummaryAsync(
+            ContextCompactionSummaryRequest request,
+            CancellationToken ct = default) =>
+            Task.FromException<string>(new InvalidOperationException("summary generation failed"));
+    }
+
     private sealed class CapturingSummaryGenerator : IContextCompactionSummaryGenerator
     {
         public IReadOnlyList<ContextCompactionMessage>? LastRequest { get; private set; }

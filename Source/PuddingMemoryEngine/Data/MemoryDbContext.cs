@@ -10,8 +10,9 @@ public sealed class MemoryDbContext : DbContext
 {
     public MemoryDbContext(DbContextOptions<MemoryDbContext> options) : base(options) { }
 
-    public DbSet<SessionEntity> Sessions => Set<SessionEntity>();
+        public DbSet<SessionEntity> Sessions => Set<SessionEntity>();
     public DbSet<MessageEntity> Messages => Set<MessageEntity>();
+    public DbSet<CompactionCoverageManifestEntity> CompactionCoverageManifests => Set<CompactionCoverageManifestEntity>();
     public DbSet<MemoryEntity> Memories => Set<MemoryEntity>();
     public DbSet<AgentMemoryEntity> AgentMemories => Set<AgentMemoryEntity>();
     public DbSet<MemoryFactEntity> MemoryFacts => Set<MemoryFactEntity>();
@@ -20,7 +21,8 @@ public sealed class MemoryDbContext : DbContext
     public DbSet<SubconsciousJobEntity> SubconsciousJobs => Set<SubconsciousJobEntity>();
     public DbSet<EventQueueEntity> EventQueue => Set<EventQueueEntity>();
     public DbSet<EventDiagnosticLogEntity> EventDiagnosticLogs => Set<EventDiagnosticLogEntity>();
-    public DbSet<EventSubscriptionEntity> EventSubscriptions => Set<EventSubscriptionEntity>();
+        public DbSet<EventSubscriptionEntity> EventSubscriptions => Set<EventSubscriptionEntity>();
+    public DbSet<ContextSegmentEntity> ContextSegments => Set<ContextSegmentEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,6 +34,14 @@ public sealed class MemoryDbContext : DbContext
             entity.HasKey(e => e.SessionId);
             entity.HasIndex(e => new { e.WorkspaceId, e.LastActivityAt }).IsDescending(false, true);
             entity.HasIndex(e => new { e.Status, e.LastActivityAt }).IsDescending(false, true);
+        });
+
+        modelBuilder.Entity<CompactionCoverageManifestEntity>(entity =>
+        {
+            entity.ToTable("CompactionCoverageManifests");
+            entity.HasKey(e => e.CompactionId);
+            entity.HasIndex(e => e.SessionId);
+            entity.HasIndex(e => new { e.SessionId, e.TargetGeneration });
         });
 
         modelBuilder.Entity<MessageEntity>(entity =>
@@ -122,12 +132,23 @@ public sealed class MemoryDbContext : DbContext
             entity.HasIndex(e => e.Timestamp);
         });
 
-        modelBuilder.Entity<EventSubscriptionEntity>(entity =>
+                modelBuilder.Entity<EventSubscriptionEntity>(entity =>
         {
             entity.ToTable("EventSubscriptions");
             entity.HasKey(e => e.SubscriptionId);
             entity.HasIndex(e => new { e.WorkspaceId, e.AgentId, e.EventTypePattern });
             entity.HasIndex(e => e.Status);
+        });
+
+        modelBuilder.Entity<ContextSegmentEntity>(entity =>
+        {
+            entity.ToTable("ContextSegments");
+            entity.HasKey(e => e.SegmentId);
+            entity.HasIndex(e => new { e.SessionId, e.SequenceStart });
+            entity.HasIndex(e => new { e.SourceKind, e.SourceId });
+            entity.HasIndex(e => e.CanonicalContentHash);
+            entity.HasIndex(e => e.CoveredByManifestId);
+            entity.HasIndex(e => e.ContextGeneration);
         });
     }
 }

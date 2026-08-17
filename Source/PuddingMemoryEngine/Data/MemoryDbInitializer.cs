@@ -28,7 +28,7 @@ public static class MemoryDbInitializer
                 sqlPath);
         }
 
-        var sql = await File.ReadAllTextAsync(sqlPath);
+                var sql = await File.ReadAllTextAsync(sqlPath);
         var conn = db.Database.GetDbConnection();
         if (conn.State != System.Data.ConnectionState.Open)
             await conn.OpenAsync();
@@ -36,5 +36,40 @@ public static class MemoryDbInitializer
         using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         await cmd.ExecuteNonQueryAsync();
+
+        // additive 迁移：为既有数据库幂等补列（不删除旧列/旧数据）。
+        await EnsureCompactionGenerationColumnAsync(conn);
+    }
+
+    /// <summary>
+    /// 为既有 Sessions 表幂等补 <c>CompactionGeneration</c> 列。
+    /// init_memory.sql 的 CREATE TABLE IF NOT EXISTS 不会改动已存在的表，
+    /// 因此新增列必须由 PRAGMA table_info 检测后 ALTER TABLE 自愈。
+    /// </summary>
+    private static async Task EnsureCompactionGenerationColumnAsync(
+        System.Data.Common.DbConnection conn)
+    {
+        var exists = false;
+        using (var check = conn.CreateCommand())
+        {
+            check.CommandText = "PRAGMA table_info(Sessions);";
+            await using var reader = await check.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                if (reader.FieldCount > 1
+                    && string.Equals(reader.GetString(1), "CompactionGeneration", StringComparison.OrdinalIgnoreCase))
+                {
+                    exists = true;
+                    break;
+                }
+            }
+        }
+
+        if (exists)
+            return;
+
+        using var alter = conn.CreateCommand();
+        alter.CommandText = "ALTER TABLE Sessions ADD COLUMN CompactionGeneration INTEGER NOT NULL DEFAULT 0;";
+        await alter.ExecuteNonQueryAsync();
     }
 }

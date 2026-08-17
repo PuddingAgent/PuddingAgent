@@ -34,7 +34,7 @@
 | `Services/ContextWindowManager.cs` | Token 窗口管理（48KB） |
 | `Services/ContextAssemblyService.cs` | 上下文装配 |
 | `Services/ContextBudgetAllocator.cs` | 预算分配 |
-| `Services/ContextCompactionService.cs` | 压缩服务；active 消息按页全量读取，80 条仅作为 Map-Reduce 块大小；所有待压缩消息进入 map 输入并通过覆盖校验后才写 `CompactedBy`（持久化 manifest/generation 待补） |
+| `Services/ContextCompactionService.cs` | 压缩服务；active 消息按页全量读取，80 条仅作为 Map-Reduce 块大小；所有待压缩消息进入 map 输入并通过覆盖校验后才写 `CompactedBy`；同一事务写 `CompactionCoverageManifests` 覆盖清单（OmittedCount==0 门禁）与 session 递增 `CompactionGeneration`（Source/TargetGeneration） |
 | `Services/ContextHealthEvaluator.cs` | 健康评估 |
 | `Services/SystemPromptBuilder.cs` | 系统提示构建（24KB） |
 
