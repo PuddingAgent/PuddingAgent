@@ -143,6 +143,8 @@ export interface TaskDto {
   status: TaskStatusWire;
   /** wire: "Backlog"/"Todo"/"InProgress"/"Done"/"Failed" */
   boardColumn: BoardColumnWire;
+  /** 当前状态可迁移到的目标状态 wire 列表（后端派生，前端只消费不实现状态机） */
+  allowedTransitions: TaskStatusWire[];
   /** wire: "p0"/"p1"/"p2"/"p3" */
   priority: TaskPriorityWire;
   /** wire: "inherit"/"anytime"/"off_peak_only" */
@@ -177,6 +179,25 @@ export interface TaskPageDto {
   nextCursor: string | null;
 }
 
+// ─── 评论/备注（TB-12 F-1，对齐 TB-11 B-5 DTO）─────────────────────────
+
+export type TaskCommentAuthorKindWire = 'user' | 'agent' | 'system';
+
+export interface TaskCommentDto {
+  commentId: string;
+  taskId: string;
+  workspaceId: string;
+  authorKind: TaskCommentAuthorKindWire;
+  authorId?: string;
+  content: string;
+  createdAtUtc: string;
+}
+
+export interface CreateTaskCommentRequest {
+  content: string;
+  authorKind?: TaskCommentAuthorKindWire;
+}
+
 // ─── 请求 DTO（TB-03 §四）───────────────────────────────────────────────
 
 export interface CreateTaskRequest {
@@ -200,6 +221,8 @@ export interface PatchTaskRequest {
   title?: string;
   description?: string;
   acceptanceCriteria?: string;
+  /** 状态流转（TB-12 F-3，后端 PATCH 已支持，前端只透传目标状态） */
+  status?: TaskStatusWire;
   priority?: TaskPriorityWire;
   executionWindow?: TaskExecutionWindowWire;
   preferredAgentId?: string;

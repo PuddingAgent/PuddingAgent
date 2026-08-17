@@ -11,6 +11,7 @@ function makeTask(overrides: Partial<TaskDto> = {}): TaskDto {
     title: '示例任务',
     status: 'Backlog',
     boardColumn: 'Backlog',
+    allowedTransitions: [],
     priority: 'p3',
     executionWindow: 'inherit',
     sortOrder: 0,

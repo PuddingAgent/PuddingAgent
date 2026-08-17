@@ -3,8 +3,10 @@ import {
   assignTask,
   cancelTask,
   createTask,
+  createTaskComment,
   deleteTask,
   getTask,
+  listTaskComments,
   listTasks,
   markFailedTask,
   reopenTask,
@@ -77,6 +79,27 @@ describe('workspace task REST API（TB-04 §5.1，13 端点）', () => {
     expect(mockRequest).toHaveBeenCalledWith(
       '/api/workspaces/default/tasks/task%2F1',
       { method: 'DELETE' },
+    );
+  });
+
+  it('listTaskComments：GET .../comments', async () => {
+    mockRequest.mockResolvedValueOnce([]);
+    await listTaskComments('default', 'task/1');
+    expect(mockRequest).toHaveBeenCalledWith(
+      '/api/workspaces/default/tasks/task%2F1/comments',
+      { method: 'GET' },
+    );
+  });
+
+  it('createTaskComment：POST .../comments', async () => {
+    mockRequest.mockResolvedValueOnce({});
+    await createTaskComment('default', 'task/1', {
+      content: '备注',
+      authorKind: 'user',
+    });
+    expect(mockRequest).toHaveBeenCalledWith(
+      '/api/workspaces/default/tasks/task%2F1/comments',
+      { method: 'POST', data: { content: '备注', authorKind: 'user' } },
     );
   });
 

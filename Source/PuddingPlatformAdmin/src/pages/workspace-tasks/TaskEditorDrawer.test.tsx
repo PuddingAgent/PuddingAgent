@@ -19,6 +19,7 @@ const task = {
   title: '原标题',
   status: 'Backlog',
   boardColumn: 'Backlog',
+  allowedTransitions: [] as never[],
   priority: 'p3',
   executionWindow: 'inherit',
   sortOrder: 0,

@@ -590,6 +590,10 @@ export default function WorkspaceTasksPage() {
         }}
         onCommand={handleCommand}
         onDeleted={handleDeleted}
+        onChanged={(updated) => {
+          handleSaved(updated);
+          setSelectedTask(updated);
+        }}
       />
 
       <AssignmentModal

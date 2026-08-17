@@ -3,10 +3,12 @@ import { recordPerfEvent } from '@/utils/perfEventRuntime';
 import type {
   AssignTaskRequest,
   CommandTaskRequest,
+  CreateTaskCommentRequest,
   CreateTaskRequest,
   ListTasksParams,
   PatchTaskRequest,
   RunNowTaskRequest,
+  TaskCommentDto,
   TaskDto,
   TaskPageDto,
 } from '@/pages/workspace-tasks/types';
@@ -3702,6 +3704,27 @@ export async function requeueTask(
 ): Promise<TaskDto> {
   return request(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}/requeue`,
+    { method: 'POST', data: body },
+  );
+}
+
+export async function listTaskComments(
+  workspaceId: string,
+  taskId: string,
+): Promise<TaskCommentDto[]> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}/comments`,
+    { method: 'GET' },
+  );
+}
+
+export async function createTaskComment(
+  workspaceId: string,
+  taskId: string,
+  body: CreateTaskCommentRequest,
+): Promise<TaskCommentDto> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}/comments`,
     { method: 'POST', data: body },
   );
 }
