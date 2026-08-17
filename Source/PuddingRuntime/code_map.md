@@ -43,6 +43,7 @@
 | 文件 | 用途 |
 |------|------|
 | `Services/DirectLlmClient.cs` | 🔑 直接 LLM 客户端；只按选中模型 protocol 路由；Provider 成功后以共享 ActivityId 必达写入逐请求 usage 账本 |
+| `Services/CompositionSnapshot.cs` | 前缀缓存归因：逐请求计算 systemPromptHash/toolSpecHash/prefixHash（SHA-256 小写 hex）与 compositionVersion（进程内按 session 递增） |
 | `Services/LlmInvocationService.cs` | LLM 调用编排；把模型配置解析出的 protocol 传给 Direct/Controller 路径 |
 | `Services/LlmProfileResolver.cs` | Profile 解析 |
 | `Services/LlmRequestBudgetGuard.cs` | 预算守卫 |
