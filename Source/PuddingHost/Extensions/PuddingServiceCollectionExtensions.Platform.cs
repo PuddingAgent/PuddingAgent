@@ -161,9 +161,15 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddScoped<ITaskStore>(sp => sp.GetRequiredService<SqliteWorkspaceTaskStore>());
         // Task Command 服务（TB-03：状态机校验 + CAS + Assignment + AppendEvent 原子语义）
         builder.Services.AddScoped<TaskCommandService>();
-        // Task Agent 命令服务（TB-06：ClaimAsync / ApplyDispositionAsync / ListMineAsync / GetAsync）
-        builder.Services.AddScoped<TaskAgentCommandService>();
-        builder.Services.AddScoped<ITaskAgentCommandService>(sp => sp.GetRequiredService<TaskAgentCommandService>());
+        // Task Agent 命令服务（TB-06：ClaimAsync / ApplyDispositionAsync / ListMineAsync / GetAsync）。
+        // task_* 原生工具由统一 Tool Registry 按 Singleton 托管，因此这里也必须是 Singleton。
+        // 服务自身无请求态，只持有 Singleton DbContextFactory/Fence；每次调用都会创建并释放独立 DbContext。
+        builder.Services.AddSingleton<TaskAgentCommandService>();
+        builder.Services.AddSingleton<ITaskAgentCommandService>(sp => sp.GetRequiredService<TaskAgentCommandService>());
+        // Task Admin 命令服务（TB-09：管理者视角跨 Agent CRUD + 命令）。
+        // 与 TaskAgentCommandService 同为 Singleton 工具消费；构造仅依赖 Singleton DbContextFactory。
+        builder.Services.AddSingleton<WorkspaceTaskAdminService>();
+        builder.Services.AddSingleton<IWorkspaceTaskAdminService>(sp => sp.GetRequiredService<WorkspaceTaskAdminService>());
         builder.Services.Configure<WorkspaceTaskFeatureOptions>(_ => { });
         // Task Dispatch Outbox + Dispatcher（TB-05：手工派发闭环）
         builder.Services.AddScoped<TaskDispatchOutboxStore>();
