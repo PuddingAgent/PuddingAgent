@@ -626,26 +626,50 @@ public sealed partial class PuddingToolInfrastructureTests
         Assert.AreEqual(0, provider.SearchCallCount);
     }
 
-    [TestMethod]
-    public async Task FileSearchTool_Rejects_Relative_Directory_For_Everything_Provider_With_Guidance()
+        [TestMethod]
+    public async Task FileSearchTool_Normalizes_Relative_Directory_For_Everything_Provider()
     {
-        var provider = new FakeFileSearchProvider("Everything");
-        var tool = new FileSearchTool([provider]);
-
-        var result = await ExecuteFileSearchAsync(tool, """
+        var root = Path.Combine(Path.GetTempPath(), "pudding-fs-rel-" + Guid.NewGuid().ToString("N"));
+        var sub = Path.Combine(root, "sub");
+        Directory.CreateDirectory(sub);
+        try
         {
-          "provider": "Everything",
-          "directory": "Source",
-          "pattern": "*.cs"
-        }
-        """);
+            var provider = new FakeFileSearchProvider("Everything");
+            var tool = new FileSearchTool([provider]);
 
-        Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.Error, "Everything requires an absolute directory");
-        StringAssert.Contains(result.Error, "BuiltInRecursiveFileSearch");
-        StringAssert.Contains(result.Error, "Available drive roots");
-        StringAssert.Contains(result.Error, ExpectedCurrentDriveRoot());
-        Assert.AreEqual(0, provider.SearchCallCount);
+            var result = await tool.ExecuteAsync(new ToolExecutionRequest
+            {
+                ToolCallId = "call-1",
+                ArgumentsJson = """
+                {
+                  "provider": "Everything",
+                  "directory": "sub",
+                  "pattern": "*.cs"
+                }
+                """,
+                Context = new ToolExecutionContext
+                {
+                    WorkspaceId = "workspace-1",
+                    SessionId = "session-1",
+                    AgentInstanceId = "agent-1",
+                    WorkingDirectory = root,
+                },
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(1, provider.SearchCallCount);
+            Assert.AreEqual(ToolResultStatuses.NoMatch, result.Status);
+            Assert.IsNotNull(provider.LastDirectory);
+            Assert.IsTrue(Path.IsPathRooted(provider.LastDirectory), "directory should be normalized to absolute");
+            Assert.IsTrue(
+                provider.LastDirectory!.EndsWith(Path.DirectorySeparatorChar + "sub", StringComparison.OrdinalIgnoreCase),
+                $"normalized directory '{provider.LastDirectory}' should end with 'sub'");
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
     }
 
     [TestMethod]

@@ -104,9 +104,9 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             if (string.IsNullOrWhiteSpace(args.Directory))
                 return ToolExecutionResult.Fail(BuildEverythingDirectoryGuidance("Everything requires an absolute directory."));
 
-            if (!Path.IsPathRooted(args.Directory))
-                return ToolExecutionResult.Fail(BuildEverythingDirectoryGuidance(
-                    $"Everything requires an absolute directory. Received relative directory '{args.Directory}'."));
+            // 相对目录不直接拒绝：先按与 BuiltIn 分支同源的方式归一化为 workspace 绝对路径，
+            // 只有最终无效/不存在的路径才会在下方 Directory.Exists 检查处返回 allowed roots 提示。
+            // 这消除了“Everything 绝对目录 97 次”无效调用的根因（相对路径被误报为错误）。
         }
 
         var directory = string.IsNullOrWhiteSpace(args.Directory) ? "." : args.Directory;
@@ -142,9 +142,11 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             var providerResults = await provider.SearchAsync(directory, pattern, recursive, maxResults, ct);
             var results = NormalizeAbsolutePaths(providerResults, directory);
             var output = BuildSearchOutput(results, fallbackFrom, providerId, fallbackReason);
-            if (results.Count == 0)
+            var noMatch = results.Count == 0;
+            if (noMatch)
                 output += Environment.NewLine + Environment.NewLine + BuildNoResultsGuidance(providerId, directory, pattern, recursive);
-            return ToolExecutionResult.Ok(output);
+            return ToolExecutionResult.Ok(output,
+                status: noMatch ? ToolResultStatuses.NoMatch : ToolResultStatuses.Ok);
         }
         catch (Exception ex) when (
             IsEverythingProvider(providerId)
@@ -161,7 +163,8 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
                     providerId,
                     builtInFallback.ProviderId,
                     $"provider query failed: {ex.Message}");
-                if (results.Count == 0)
+                var noMatch = results.Count == 0;
+                if (noMatch)
                 {
                     output += Environment.NewLine + Environment.NewLine +
                               BuildNoResultsGuidance(
@@ -171,7 +174,8 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
                                   recursive);
                 }
 
-                return ToolExecutionResult.Ok(output);
+                return ToolExecutionResult.Ok(output,
+                    status: noMatch ? ToolResultStatuses.NoMatch : ToolResultStatuses.Ok);
             }
             catch (Exception fallbackException)
             {

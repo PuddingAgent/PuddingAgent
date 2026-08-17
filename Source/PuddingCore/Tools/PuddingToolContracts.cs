@@ -210,20 +210,45 @@ public sealed record ToolExecutionResult
     public string? Error { get; init; }
     public int ExitCode { get; init; }
 
-    public static ToolExecutionResult Ok(string output) => new()
+    /// <summary>
+    /// 结构化结果分类。null 或空等价于普通成功（无特殊分类）。
+    /// 约定值见 <see cref="ToolResultStatuses"/>，用于把 no_match/timeout 等成功态与失败态严格区分。
+    /// </summary>
+    public string? Status { get; init; }
+
+    public static ToolExecutionResult Ok(string output, string? status = null) => new()
     {
         Success = true,
         Output = output,
         ExitCode = 0,
+        Status = status,
     };
 
-    public static ToolExecutionResult Fail(string error, int exitCode = 1) => new()
+    public static ToolExecutionResult Fail(string error, int exitCode = 1, string? status = null) => new()
     {
         Success = false,
         Output = string.Empty,
         Error = error,
         ExitCode = exitCode,
+        Status = status,
     };
+}
+
+/// <summary>Tool 执行结果的结构化状态约定（附加在 <see cref="ToolExecutionResult.Status"/>）。</summary>
+public static class ToolResultStatuses
+{
+    /// <summary>普通成功（无特殊分类）。</summary>
+    public const string Ok = "ok";
+    /// <summary>成功，但未匹配到任何结果（与失败/timeout 严格区分）。</summary>
+    public const string NoMatch = "no_match";
+    /// <summary>成功，但结果因预算/上限被截断，可能不完整。</summary>
+    public const string Truncated = "truncated";
+    /// <summary>失败，扫描超时。</summary>
+    public const string Timeout = "timeout";
+    /// <summary>失败，参数合同错误。</summary>
+    public const string ContractError = "contract_error";
+    /// <summary>成功，确定性重试被失败账本短路。</summary>
+    public const string ExactRetrySuppressed = "exact_retry_suppressed";
 }
 
 /// <summary>统一 Tool 抽象。新 Tool 应优先实现此接口。</summary>

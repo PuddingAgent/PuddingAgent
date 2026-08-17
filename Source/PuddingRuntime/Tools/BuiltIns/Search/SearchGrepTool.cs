@@ -4,6 +4,7 @@ using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Tools;
 using PuddingFullTextIndex.Contracts;
+using PuddingRuntime.Services.Search;
 using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntime.Services.Skills;
@@ -24,6 +25,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     private readonly ILogger<SearchGrepTool> _logger;
     private readonly IFullTextSearchEngine _searchEngine;
     private readonly ITelemetryMetricSink? _telemetry;
+    private readonly ISearchAttemptLedger _ledger;
 
     private const int DefaultMaxResults = 20;
     private const long MaxFileSizeBytes = 1 * 1024 * 1024;
@@ -46,11 +48,13 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     public SearchGrepTool(
         ILogger<SearchGrepTool> logger,
         IFullTextSearchEngine searchEngine,
-        ITelemetryMetricSink? telemetry = null)
+        ITelemetryMetricSink? telemetry = null,
+        ISearchAttemptLedger? ledger = null)
     {
         _logger = logger;
         _searchEngine = searchEngine;
         _telemetry = telemetry;
+        _ledger = ledger ?? new SearchAttemptLedger();
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -61,10 +65,11 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             return ToolExecutionResult.Fail(
                 "query is required — provide the text or regex to search for inside files. " +
                 "Use 'pattern' to filter file names (e.g. '*.cs'), and 'query' for the content to search. " +
-                "Example: query='class FileSearchTool', pattern='*.cs', directory='Source'");
+                "Example: query='class FileSearchTool', pattern='*.cs', directory='Source'",
+                status: ToolResultStatuses.ContractError);
 
         int maxResults = Math.Clamp(args.MaxResults ?? DefaultMaxResults, 1, 200);
-        bool caseSensitive = args.CaseSensitive?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
+        bool caseSensitive = ParseBool(args.CaseSensitive);
         long maxLineBytes = args.MaxLineBytes is null ? DefaultMaxLineBytes : Math.Max(0, args.MaxLineBytes.Value);
         long maxTotalBytes = args.MaxTotalBytes is null ? DefaultMaxTotalBytes : Math.Max(0, args.MaxTotalBytes.Value);
         var excludeDirs = ParseExcludeDirs(args.ExcludeDirs);
@@ -75,9 +80,27 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         // 避免回落到进程 Environment.CurrentDirectory（运行时 bin 目录）。
         var managedDirectory = ResolveManagedSearchDirectory(args.Directory, context);
 
-        return await SearchCoreAsync(
+        // 失败账本：仅对确定性重试（query/scope/glob/case/workspaceVersion 完全一致）短路。
+        var key = BuildAttemptKey(query, args.Pattern, managedDirectory, caseSensitive, context);
+        if (_ledger.TryGetSuppression(key, out var prior))
+        {
+            ReportTelemetry(
+                "search_attempt",
+                TelemetryMetricStatuses.Succeeded,
+                ToolResultStatuses.ExactRetrySuppressed,
+                BuildAttemptDimensions(query, managedDirectory, args.Pattern, caseSensitive),
+                context);
+            return ToolExecutionResult.Ok(
+                BuildSuppressionHint(prior, query),
+                status: ToolResultStatuses.ExactRetrySuppressed);
+        }
+
+        var result = await SearchCoreAsync(
             query, args.Pattern, args.FileExt, args.Directory, managedDirectory,
             caseSensitive, maxResults, excludeDirs, maxLineBytes, maxTotalBytes, ct);
+
+        RecordAttempt(key, result, context);
+        return result;
     }
 
     private static string ResolveManagedSearchDirectory(string? directory, ToolExecutionContext context)
@@ -89,6 +112,142 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         return Path.GetFullPath(Path.Combine(
             HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory), directory));
     }
+
+    /// <summary>
+    /// 归一化历史字符串布尔：true/1/yes/on（不区分大小写）→ true，其余→ false。
+    /// 只接受 schema 明确声明的少量别名，不引入未声明别名。
+    /// </summary>
+    private static bool ParseBool(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+        return value.Trim().ToLowerInvariant() is "true" or "1" or "yes" or "on";
+    }
+
+    private SearchAttemptKey BuildAttemptKey(
+        string query,
+        string? pattern,
+        string managedDirectory,
+        bool caseSensitive,
+        ToolExecutionContext context)
+    {
+        var workspaceRoot = HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory);
+        return new SearchAttemptKey(
+            "search_grep",
+            query,
+            SearchAttemptKeyNormalizer.NormalizeScope(managedDirectory),
+            pattern ?? string.Empty,
+            caseSensitive,
+            SearchWorkspaceVersion.Resolve(workspaceRoot));
+    }
+
+    private void RecordAttempt(SearchAttemptKey key, ToolExecutionResult result, ToolExecutionContext context)
+    {
+        var (outcome, summary, count) = Classify(result);
+        _ledger.Record(key, new SearchAttemptRecord(outcome, summary, count, DateTimeOffset.UtcNow));
+
+        var name = outcome switch
+        {
+            SearchAttemptOutcome.NoMatch => "no_match",
+            SearchAttemptOutcome.Timeout => "timeout",
+            SearchAttemptOutcome.Error => "contract_error",
+            SearchAttemptOutcome.Truncated => "truncated",
+            _ => "hit",
+        };
+        var status = outcome == SearchAttemptOutcome.Error
+            ? TelemetryMetricStatuses.Failed
+            : TelemetryMetricStatuses.Succeeded;
+        ReportTelemetry(
+            "search_attempt",
+            status,
+            name,
+            BuildAttemptDimensions(key.Query, key.Scope, key.Glob, key.CaseSensitive),
+            context);
+    }
+
+    private static (SearchAttemptOutcome Outcome, string Summary, int Count) Classify(ToolExecutionResult result)
+    {
+        if (!result.Success)
+            return (SearchAttemptOutcome.Error, result.Error ?? "error", 0);
+
+        var status = result.Status;
+        if (string.Equals(status, ToolResultStatuses.NoMatch, StringComparison.Ordinal))
+            return (SearchAttemptOutcome.NoMatch, result.Output, 0);
+        if (string.Equals(status, ToolResultStatuses.Timeout, StringComparison.Ordinal))
+            return (SearchAttemptOutcome.Timeout, result.Output, 0);
+        if (string.Equals(status, ToolResultStatuses.Truncated, StringComparison.Ordinal))
+            return (SearchAttemptOutcome.Truncated, result.Output, CountResultLines(result.Output));
+
+        return (SearchAttemptOutcome.Hit, result.Output, CountResultLines(result.Output));
+    }
+
+    private static int CountResultLines(string output)
+    {
+        if (string.IsNullOrEmpty(output))
+            return 0;
+        var count = 0;
+        foreach (var line in output.Split('\n'))
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+                count++;
+        }
+        return count;
+    }
+
+    private static string BuildSuppressionHint(SearchAttemptRecord prior, string query)
+    {
+        var verb = prior.Outcome == SearchAttemptOutcome.Timeout ? "扫描超时" : "已查无结果";
+        var advice = prior.Outcome == SearchAttemptOutcome.Timeout
+            ? "建议缩小 directory/pattern/file_ext 范围后继续，或缩短 query。"
+            : "建议换 query、缩小范围或调整 pattern/file_ext；若文件可能已变化，可用不同 directory 或 query 重新检索。";
+        return $"(exact retry suppressed) 同一搜索（query=\"{query}\"，scope/glob/case 完全相同）此前{verb}：" +
+               $"{prior.Summary} {advice}";
+    }
+
+    private void ReportTelemetry(
+        string name,
+        string status,
+        string errorCode,
+        IReadOnlyDictionary<string, string>? dimensions,
+        ToolExecutionContext context)
+    {
+        if (_telemetry is null)
+            return;
+
+        try
+        {
+            var trace = context.Trace ?? RuntimeTraceContext.CreateNew(context.SessionId, context.WorkspaceId);
+            _ = _telemetry.RecordAsync(new TelemetryMetric
+            {
+                Trace = trace,
+                Source = "search_grep",
+                Category = TelemetryMetricCategories.Tool,
+                Name = name,
+                Status = status,
+                Severity = status == TelemetryMetricStatuses.Failed ? "error" : "info",
+                Summary = name,
+                ErrorCode = errorCode,
+                Dimensions = dimensions,
+            });
+        }
+        catch
+        {
+            // telemetry is best-effort and must never affect the search result
+        }
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildAttemptDimensions(
+        string query,
+        string scope,
+        string? glob,
+        bool caseSensitive)
+        => new Dictionary<string, string>
+        {
+            ["query"] = query,
+            ["scope"] = scope,
+            ["glob"] = glob ?? string.Empty,
+            ["case_sensitive"] = caseSensitive ? "true" : "false",
+        };
 
     private async Task<ToolExecutionResult> SearchCoreAsync(
         string query, string? pattern, string? fileExt, string? directory, string managedDirectory,
@@ -142,7 +301,8 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 if (capReached)
                     sb.AppendLine(string.Format(TotalCapMessage, matchCount));
                 if (added > 0)
-                    return ToolExecutionResult.Ok(sb.ToString().TrimEnd());
+                    return ToolExecutionResult.Ok(sb.ToString().TrimEnd(),
+                        status: capReached ? ToolResultStatuses.Truncated : ToolResultStatuses.Ok);
             }
         }
         catch (Exception ex)
@@ -260,7 +420,11 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             catch { errors++; }
         }
 
+        bool timedOut = cts.IsCancellationRequested && !ct.IsCancellationRequested;
+
         var notes = new List<string>();
+        if (timedOut)
+            notes.Add("搜索超时（10s），结果可能不完整，建议缩小 directory/pattern/file_ext 范围");
         if (enumerationTruncated)
             notes.Add(string.Format(EnumerationTruncatedMessage, MaxEnumeratedFiles));
         if (scanBudgetExceeded)
@@ -270,11 +434,19 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
         if (results.Count == 0)
         {
+            var notesText = notes.Count > 0 ? "\n" + string.Join("\n", notes) : string.Empty;
+            if (timedOut)
+                return ToolExecutionResult.Ok("(search timed out)" + notesText, status: ToolResultStatuses.Timeout);
+
+            var incomplete = enumerationTruncated || scanBudgetExceeded;
+            var status = incomplete ? ToolResultStatuses.Truncated : ToolResultStatuses.NoMatch;
             var emptyMsg = scannedFiles > 0 ? "(no matches)" : "(no files scanned)";
-            if (notes.Count > 0)
-                return ToolExecutionResult.Ok(emptyMsg + "\n" + string.Join("\n", notes));
-            return ToolExecutionResult.Ok(emptyMsg);
+            return ToolExecutionResult.Ok(emptyMsg + notesText, status: status);
         }
+
+        var truncatedStatus = enumerationTruncated || scanBudgetExceeded || totalCapReached
+            ? ToolResultStatuses.Truncated
+            : ToolResultStatuses.Ok;
 
         if (results.Count > MaxInlineResults)
         {
@@ -288,7 +460,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 if (notes.Count > 0)
                     output += "\n" + string.Join("\n", notes);
                 output += "\n" + string.Format(PaginationReportMessage, results.Count, tmpPath);
-                return ToolExecutionResult.Ok(output);
+                return ToolExecutionResult.Ok(output, status: truncatedStatus);
             }
             catch (Exception ex)
             {
@@ -303,7 +475,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         var finalOutput = string.Join("\n", results);
         if (notes.Count > 0)
             finalOutput += "\n" + string.Join("\n", notes);
-        return ToolExecutionResult.Ok(finalOutput);
+        return ToolExecutionResult.Ok(finalOutput, status: truncatedStatus);
     }
 
         /// <summary>

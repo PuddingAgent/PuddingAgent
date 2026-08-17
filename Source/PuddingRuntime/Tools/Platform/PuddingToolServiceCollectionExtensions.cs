@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Flurl.Http.Configuration;
@@ -8,6 +8,7 @@ using PuddingCode.Runtime;
 using PuddingCode.Tools;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.Plugins;
+using PuddingRuntime.Services.Search;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.Tools.Handlers;
 using System.Reflection;
@@ -26,6 +27,7 @@ public static class PuddingToolServiceCollectionExtensions
         IConfiguration? configuration = null)
     {
         services.TryAddSingleton<IEverythingSdk, EverythingSdk>();
+        services.TryAddSingleton<ISearchAttemptLedger, SearchAttemptLedger>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IFileSearchProvider, BuiltInRecursiveFileSearchProvider>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IFileSearchProvider, EverythingSearchProvider>());
         services.TryAddSingleton<ITerminalProcessManager>(NoOpTerminalProcessManager.Instance);

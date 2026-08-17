@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using PuddingCode.Tools;
 using PuddingFullTextIndex.Contracts;
+using PuddingRuntime.Services.Search;
 using PuddingRuntime.Services.Skills;
 
 namespace PuddingRuntimeTests.Tools;
@@ -559,6 +560,120 @@ public sealed class SearchGrepToolTests
             Assert.AreEqual(totalMatches, inlineCount, "all matches must be inline");
             Assert.IsFalse(result.Output.Contains("超过预算"), "no pagination report expected when <=100 results");
             Assert.IsFalse(result.Output.Contains("临时文件"), "no temp file report expected when <=100 results");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+        [TestMethod]
+    public async Task ExecuteAsync_CaseSensitive_Accepts_Truthy_Alias_One()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "test.txt"), "hello NEEDLE world");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(true, [], null, 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            // case_sensitive="1" 归一化为 true：小写 needle 不匹配大写 NEEDLE
+            var r1 = await ExecuteAsync(tool, "needle", new Dictionary<string, string> { ["pattern"] = "*.txt", ["case_sensitive"] = "1" });
+            Assert.IsTrue(r1.Success, r1.Error);
+            Assert.AreEqual(ToolResultStatuses.NoMatch, r1.Status);
+            StringAssert.Contains(r1.Output, "(no matches)");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_NoMatch_Is_Success_With_NoMatch_Status()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "sample.txt"), "alpha\nomega\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false, new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var r1 = await ExecuteAsync(tool, "Needle", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+            Assert.IsTrue(r1.Success, r1.Error);
+            Assert.AreEqual(ToolResultStatuses.NoMatch, r1.Status);
+            StringAssert.Contains(r1.Output, "(no matches)");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_ShortCircuits_Exact_NoMatch_Retry()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "sample.txt"), "alpha\nomega\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false, new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var ledger = new SearchAttemptLedger();
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine, ledger: ledger);
+
+            var r1 = await ExecuteAsync(tool, "Needle", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+            Assert.IsTrue(r1.Success, r1.Error);
+            Assert.AreEqual(ToolResultStatuses.NoMatch, r1.Status);
+
+            var r2 = await ExecuteAsync(tool, "Needle", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+            Assert.IsTrue(r2.Success, r2.Error);
+            Assert.AreEqual(ToolResultStatuses.ExactRetrySuppressed, r2.Status);
+            StringAssert.Contains(r2.Output, "exact retry suppressed");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_DoesNotShortCircuit_DifferentQuery()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "sample.txt"), "alpha\nomega\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false, new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var ledger = new SearchAttemptLedger();
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine, ledger: ledger);
+
+            var r1 = await ExecuteAsync(tool, "Needle", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+            Assert.AreEqual(ToolResultStatuses.NoMatch, r1.Status);
+
+            // 不同 query 不应被短路
+            var r2 = await ExecuteAsync(tool, "AnotherNeedle", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+            Assert.IsTrue(r2.Success, r2.Error);
+            Assert.AreEqual(ToolResultStatuses.NoMatch, r2.Status);
         }
         finally
         {
