@@ -106,6 +106,10 @@ public sealed partial class ContextPipeline
         var skillsTrimmed = TrimToTokenBudget(skillsCtx, skillsBudget);
                 RecordLayer(sb, skillsTrimmed, "动态技能", "L2-SKILLS", ref usedBudget, totalBudget, layers, layerInfos);
 
+        // ── L3-WORKSPACE-ENVIRONMENT ──
+        var workspaceEnvironmentCtx = BuildWorkspaceEnvironmentLayer(request);
+        RecordLayer(sb, workspaceEnvironmentCtx, "工作区环境", "L3-WORKSPACE-ENVIRONMENT", ref usedBudget, totalBudget, layers, layerInfos);
+
         // ── L2-INHERITED: 父代理上下文快照（Session Fork）──
         if (!string.IsNullOrWhiteSpace(request.ParentContextSnapshot))
         {
@@ -143,10 +147,6 @@ public sealed partial class ContextPipeline
                 "[ContextPipeline:MemoryRecall] historicalContextEmpty agent={AgentId}",
                 request.AgentInstanceId);
         }
-
-        // ── L3-WORKSPACE-ENVIRONMENT ──
-        var workspaceEnvironmentCtx = BuildWorkspaceEnvironmentLayer(request);
-        RecordLayer(sb, workspaceEnvironmentCtx, "工作区环境", "L3-WORKSPACE-ENVIRONMENT", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L3: 用户偏好 ──
         AppendLayer(sb, userProfile);
