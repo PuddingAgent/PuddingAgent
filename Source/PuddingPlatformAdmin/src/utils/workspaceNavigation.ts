@@ -48,10 +48,6 @@ export function buildWorkspaceSettingsPath(workspaceId: string, tab?: string): s
   return appendQuery(`/workspace/${encodeURIComponent(workspaceId)}`, params);
 }
 
-export function buildWorkspaceTasksPath(workspaceId: string): string {
-  return `/workspace/${encodeURIComponent(workspaceId)}/tasks`;
-}
-
 export function buildChatPath(context: WorkspaceRouteContext = {}): string {
   const params = new URLSearchParams();
   if (context.workspaceId) params.set('workspaceId', context.workspaceId);

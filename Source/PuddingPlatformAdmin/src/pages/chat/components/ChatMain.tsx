@@ -7,7 +7,6 @@ import {
   MenuUnfoldOutlined,
   SoundOutlined,
 } from '@ant-design/icons';
-import { history } from '@umijs/max';
 import { Alert, Button, Divider, Select, Tooltip } from 'antd';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { WorkspaceNavigationHeader } from '@/components';
@@ -16,7 +15,6 @@ import type {
   WorkspaceWithPermDto,
 } from '@/services/platform/api';
 import {
-  buildWorkspaceTasksPath,
   rememberWorkspaceVisit,
 } from '@/utils/workspaceNavigation';
 import type { RecentlyDeniedItem } from '../classifier/autoReviewClassifier';
@@ -44,6 +42,7 @@ import CheckpointTimelinePanel from './CheckpointTimelinePanel';
 import IntentConsole, { type ChatStatus } from './IntentConsole';
 import MessageList from './MessageList';
 import type { TranscriptMode } from './TranscriptModeSwitch';
+import { TaskBoardModal } from '@/pages/workspace-tasks';
 
 const DevPanel =
   process.env.NODE_ENV === 'test'
@@ -258,6 +257,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
   const [devMode, setDevMode] = useState<boolean>(
     () => localStorage.getItem(DEV_MODE_KEY) === '1',
   );
+  // 任务看板模态窗口（原独立路由改为弹窗）
+  const [taskBoardOpen, setTaskBoardOpen] = useState(false);
   /** P0#2：转录视图分级（normal | verbose | summary） */
   const [transcriptMode, setTranscriptMode] =
     useState<TranscriptMode>('normal');
@@ -503,7 +504,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                 aria-label="任务看板"
                 onClick={() => {
                   if (workspaceId) {
-                    history.push(buildWorkspaceTasksPath(workspaceId));
+                    setTaskBoardOpen(true);
                   }
                 }}
               >
@@ -692,6 +693,14 @@ const ChatMain: React.FC<ChatMainProps> = ({
             onQuote={handleHistoryQuote}
           />
         </React.Suspense>
+      )}
+
+      {taskBoardOpen && workspaceId && (
+        <TaskBoardModal
+          open
+          workspaceId={workspaceId}
+          onClose={() => setTaskBoardOpen(false)}
+        />
       )}
 
       {checkpointTimelineOpen && (

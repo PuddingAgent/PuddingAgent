@@ -108,10 +108,11 @@ import {
   type WorkspaceSkillDto,
   type WorkspaceWithPermDto,
 } from '@/services/platform/api';
-import { buildWorkspacePath, buildWorkspaceTasksPath } from '@/utils/workspaceNavigation';
+import { buildWorkspacePath } from '@/utils/workspaceNavigation';
 import WorkspaceAgentSettingsDrawer, {
   type WorkspaceAgentFormValues,
 } from './WorkspaceAgentSettingsDrawer';
+import { TaskBoardModal } from '@/pages/workspace-tasks';
 import UserAvatarUpload from '@/components/UserAvatarUpload';
 
 const { Text } = Typography;
@@ -1270,6 +1271,9 @@ const WorkspaceDetailPage: React.FC = () => {
   const [editLoading, setEditLoading] = useState(false);
   const [editForm] = Form.useForm<UpdateWorkspaceRequest>();
 
+  // Task board modal
+  const [taskBoardOpen, setTaskBoardOpen] = useState(false);
+
   const workspaceId = id ?? '';
   const tabFromQuery = new URLSearchParams(location.search).get('tab');
   const defaultTabKey = [
@@ -1477,7 +1481,7 @@ const WorkspaceDetailPage: React.FC = () => {
           <Button
             key="tasks"
             icon={<ProjectOutlined />}
-            onClick={() => history.push(buildWorkspaceTasksPath(workspace.workspaceId))}
+            onClick={() => setTaskBoardOpen(true)}
           >
             任务看板
           </Button>,
@@ -1695,6 +1699,14 @@ const WorkspaceDetailPage: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
+
+      {taskBoardOpen && workspace && (
+        <TaskBoardModal
+          open
+          workspaceId={workspace.workspaceId}
+          onClose={() => setTaskBoardOpen(false)}
+        />
+      )}
     </PageContainer>
   );
 };

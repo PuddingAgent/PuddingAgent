@@ -48,12 +48,6 @@ const routeCatalog = [
     redirect: '/workspace/default',
   },
   {
-    path: '/workspace-tasks',
-    name: 'workspaceTasks',
-    icon: 'project',
-    redirect: '/workspace/default/tasks',
-  },
-  {
     path: '/pudding/workspaces',
     layout: false,
     hideInMenu: true,
@@ -67,11 +61,6 @@ const routeCatalog = [
   {
     path: '/workspace/:id',
     component: './workspace/[id]',
-    hideInMenu: true,
-  },
-  {
-    path: '/workspace/:workspaceId/tasks',
-    component: './workspace-tasks',
     hideInMenu: true,
   },
   {

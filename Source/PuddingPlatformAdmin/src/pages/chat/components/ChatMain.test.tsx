@@ -95,6 +95,19 @@ jest.mock('./HistorySearchModal', () => ({
   default: (props: any) =>
     props.open ? <div data-testid="history-search-modal" /> : null,
 }));
+jest.mock('@/pages/workspace-tasks', () => ({
+  TaskBoardModal: (props: any) =>
+    props.open ? (
+      <div
+        data-testid="task-board-modal"
+        data-workspace-id={props.workspaceId}
+      >
+        <button type="button" aria-label="关闭任务看板" onClick={props.onClose}>
+          关闭任务看板
+        </button>
+      </div>
+    ) : null,
+}));
 
 const workspace = {
   workspaceId: 'default',
@@ -218,12 +231,25 @@ describe('ChatMain workbench header', () => {
     expect(screen.queryByText(/session-visible/)).toBeNull();
   });
 
-  it('opens the current workspace task board from the visible header entry', () => {
+  it('opens the current workspace task board modal from the visible header entry', () => {
     renderChatMain();
 
     fireEvent.click(screen.getByRole('button', { name: '任务看板' }));
 
-    expect(mockHistoryPush).toHaveBeenCalledWith('/workspace/default/tasks');
+    expect(mockHistoryPush).not.toHaveBeenCalled();
+    const modal = screen.getByTestId('task-board-modal');
+    expect(modal).toBeTruthy();
+    expect(modal.getAttribute('data-workspace-id')).toBe('default');
+  });
+
+  it('closes the task board modal via its close handler', () => {
+    renderChatMain();
+
+    fireEvent.click(screen.getByRole('button', { name: '任务看板' }));
+    expect(screen.getByTestId('task-board-modal')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭任务看板' }));
+    expect(screen.queryByTestId('task-board-modal')).toBeNull();
   });
 
   it('renders the Agent Workbench with timeline and intent console without a side presence rail', () => {

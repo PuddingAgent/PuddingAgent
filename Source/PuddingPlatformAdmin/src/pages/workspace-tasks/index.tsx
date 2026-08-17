@@ -1,5 +1,4 @@
 import {
-  ArrowLeftOutlined,
   PlusOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
@@ -17,7 +16,6 @@ import {
   Typography,
 } from 'antd';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { history, useParams } from '@umijs/max';
 import {
   archiveTask,
   assignTask,
@@ -34,7 +32,6 @@ import {
   type WorkspaceAgentDto,
   type WorkspaceWithPermDto,
 } from '@/services/platform/api';
-import { buildWorkspaceSettingsPath } from '@/utils/workspaceNavigation';
 import { watchTasks } from './api';
 import { TaskBoard } from './TaskBoard';
 import type { TaskActions } from './TaskCard';
@@ -100,8 +97,12 @@ function isBoardColumn(value: unknown): value is BoardColumnWire {
   return (BOARD_COLUMN_WIRES as readonly unknown[]).includes(value);
 }
 
-export default function WorkspaceTasksPage() {
-  const { workspaceId = '' } = useParams<{ workspaceId: string }>();
+export interface WorkspaceTasksPanelProps {
+  workspaceId: string;
+}
+
+/** 任务看板主体（可复用组件，workspaceId 由 props 传入，不依赖路由参数）。 */
+export function WorkspaceTasksPanel({ workspaceId }: WorkspaceTasksPanelProps) {
   const { message, modal } = App.useApp();
 
   const [workspace, setWorkspace] = useState<WorkspaceWithPermDto | null>(null);
@@ -481,11 +482,6 @@ export default function WorkspaceTasksPage() {
       header={{
         title: (
           <Space>
-            <Button
-              type="text"
-              icon={<ArrowLeftOutlined />}
-              onClick={() => history.push(buildWorkspaceSettingsPath(workspaceId))}
-            />
             {workspace?.name ?? workspaceId}
             <Text type="secondary">任务看板</Text>
           </Space>
@@ -557,7 +553,7 @@ export default function WorkspaceTasksPage() {
         </Space>
       </div>
 
-      <div style={{ height: 'calc(100vh - 250px)', minHeight: 420 }}>
+      <div style={{ height: 'calc(80vh - 230px)', minHeight: 420 }}>
         {viewMode === 'board' ? (
           <TaskBoard
             columns={visibleColumns}
@@ -630,6 +626,38 @@ export default function WorkspaceTasksPage() {
     </PageContainer>
   );
 }
+
+/** 任务看板模态窗口：约占窗口 80% 宽高，内容区可滚动，关闭即卸载并重新加载数据。 */
+export function TaskBoardModal({
+  open,
+  workspaceId,
+  onClose,
+}: {
+  open: boolean;
+  workspaceId: string;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      title="任务看板"
+      open={open}
+      onCancel={onClose}
+      footer={null}
+      width="80vw"
+      destroyOnClose
+      styles={{
+        body: {
+          height: 'calc(80vh - 88px)',
+          overflow: 'auto',
+        },
+      }}
+    >
+      <WorkspaceTasksPanel workspaceId={workspaceId} />
+    </Modal>
+  );
+}
+
+export default WorkspaceTasksPanel;
 
 // ─── 指派/执行对话框（必选 agentId；RunNow 高峰二选一）──────────────────
 
