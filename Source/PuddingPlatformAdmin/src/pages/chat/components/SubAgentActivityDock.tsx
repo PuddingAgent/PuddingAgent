@@ -27,7 +27,15 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { getSubAgentRunOutput } from '@/services/platform/api';
+import {
+  getSubAgentRunDetail,
+  getSubAgentRunEvents,
+  getSubAgentRunOutput,
+} from '@/services/platform/api';
+import {
+  projectSubAgentActivity,
+  type SubAgentConversationEvent,
+} from '../reducer/subAgentReducer';
 import type {
   SubAgentActivity,
   SubAgentCard,
@@ -53,6 +61,16 @@ interface RunOutputState {
   runId?: string;
   status: RunOutputLoadStatus;
   output?: string;
+  error?: string;
+}
+
+interface RunArchiveState {
+  runId?: string;
+  status: RunOutputLoadStatus;
+  activities?: SubAgentActivity[];
+  totalRounds?: number;
+  totalToolCalls?: number;
+  totalDurationMs?: number;
   error?: string;
 }
 
@@ -538,6 +556,9 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
   const [runOutput, setRunOutput] = useState<RunOutputState>({
     status: 'idle',
   });
+  const [runArchive, setRunArchive] = useState<RunArchiveState>({
+    status: 'idle',
+  });
 
   useEffect(() => {
     visibleSinceRef.current = Date.now();
@@ -594,6 +615,98 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
   const selectedRun = runs.find(
     (run) => (run.runId ?? run.subSessionId) === selectedRunId,
   );
+
+  useEffect(() => {
+    if (!inspectorOpen || !selectedRun) {
+      setRunArchive({ status: 'idle' });
+      return undefined;
+    }
+
+    const runId = selectedRun.runId ?? selectedRun.subSessionId;
+    let disposed = false;
+
+    const loadArchive = async () => {
+      setRunArchive((current) =>
+        current.runId === runId
+          ? { ...current, status: 'loading', error: undefined }
+          : { runId, status: 'loading' },
+      );
+      try {
+        const detail = await getSubAgentRunDetail(runId);
+        const events = [] as Awaited<
+          ReturnType<typeof getSubAgentRunEvents>
+        >['items'];
+        let offset = 0;
+        do {
+          const page = await getSubAgentRunEvents(runId, offset, 500);
+          events.push(...page.items);
+          offset += page.items.length;
+          if (page.items.length === 0 || offset >= page.total) break;
+        } while (!disposed);
+        if (disposed) return;
+
+        const activities = events
+          .map((event) => {
+            const occurredAt = Date.parse(event.timestamp);
+            const projectedEvent: SubAgentConversationEvent = {
+              type: event.eventType,
+              eventId: event.eventId,
+              occurredAt: Number.isFinite(occurredAt) ? occurredAt : Date.now(),
+              payload: event.payload ?? undefined,
+            };
+            return projectSubAgentActivity(
+              projectedEvent,
+              {
+                modelId: selectedRun.modelId,
+                currentRound: selectedRun.currentRound ?? 0,
+              },
+              projectedEvent.occurredAt as number,
+            );
+          })
+          .sort((left, right) => left.occurredAt - right.occurredAt);
+        const archivedRounds = events.filter(
+          (event) => event.eventType === 'subagent.round.completed',
+        ).length;
+        const archivedToolCalls = events.filter(
+          (event) => event.eventType === 'subagent.tool.started',
+        ).length;
+        setRunArchive({
+          runId,
+          status: 'loaded',
+          activities,
+          totalRounds: detail.summary.totalRounds || archivedRounds,
+          totalToolCalls:
+            detail.summary.totalToolCalls ||
+            detail.toolCallCount ||
+            archivedToolCalls,
+          totalDurationMs: detail.summary.totalDurationMs,
+        });
+      } catch (error) {
+        if (disposed) return;
+        setRunArchive({
+          runId,
+          status: 'error',
+          error: error instanceof Error ? error.message : '运行归档加载失败',
+        });
+      }
+    };
+
+    void loadArchive();
+    const timer = activeStatuses.has(selectedRun.status)
+      ? window.setInterval(() => void loadArchive(), 3_000)
+      : undefined;
+    return () => {
+      disposed = true;
+      if (timer !== undefined) window.clearInterval(timer);
+    };
+  }, [
+    inspectorOpen,
+    selectedRun?.currentRound,
+    selectedRun?.modelId,
+    selectedRun?.runId,
+    selectedRun?.status,
+    selectedRun?.subSessionId,
+  ]);
 
   useEffect(() => {
     if (!inspectorOpen || !selectedRun) {
@@ -732,6 +845,23 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
         : undefined;
     const endAt = run.completedAt ?? now;
     const elapsedMs = Math.max(0, endAt - run.spawnedAt);
+    const archiveMatches = runArchive.runId === runId;
+    const archivedActivities = archiveMatches
+      ? runArchive.activities
+      : undefined;
+    const displayActivities = archivedActivities?.length
+      ? archivedActivities
+      : run.activities;
+    const displayRounds = archiveMatches
+      ? (runArchive.totalRounds ?? run.currentRound ?? 0)
+      : (run.currentRound ?? 0);
+    const displayTools = archiveMatches
+      ? (runArchive.totalToolCalls ?? run.toolCount ?? 0)
+      : (run.toolCount ?? 0);
+    const displayDurationMs =
+      archiveMatches && (runArchive.totalDurationMs ?? 0) > 0
+        ? (runArchive.totalDurationMs as number)
+        : elapsedMs;
     const timeoutMs = (run.timeoutSeconds ?? 0) * 1000;
     const timeoutPercent =
       timeoutMs > 0 && activeStatuses.has(run.status)
@@ -777,13 +907,13 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
               <span>模型：{run.modelId ?? '-'}</span>
               <span>Provider：{run.providerId ?? '-'}</span>
               <span>
-                轮次：{run.currentRound ?? 0}
+                轮次：{displayRounds}
                 {run.maxRounds ? `/${run.maxRounds}` : ''}
               </span>
-              <span>耗时：{formatDuration(elapsedMs)}</span>
+              <span>耗时：{formatDuration(displayDurationMs)}</span>
               <span>Token：{formatTokens(run.totalTokens)}</span>
               <span>
-                工具：{run.toolCount ?? 0}
+                工具：{displayTools}
                 {run.failedToolCount ? ` / 失败 ${run.failedToolCount}` : ''}
               </span>
             </div>
@@ -824,9 +954,22 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
           </div>
 
           <div className={styles.sectionTitle}>运行时间线</div>
-          {run.activities?.length ? (
+          {runArchive.runId === runId &&
+            runArchive.status === 'loading' &&
+            !displayActivities?.length && (
+              <div className={styles.resultHint}>
+                <LoadingOutlined spin style={{ marginRight: 8 }} />
+                正在从运行归档恢复时间线…
+              </div>
+            )}
+          {runArchive.runId === runId && runArchive.status === 'error' && (
+            <div className={styles.error}>
+              时间线归档加载失败：{runArchive.error}
+            </div>
+          )}
+          {displayActivities?.length ? (
             <Timeline
-              items={run.activities.map((activity) => ({
+              items={displayActivities.map((activity) => ({
                 color: activityColor(activity),
                 children: (
                   <div>

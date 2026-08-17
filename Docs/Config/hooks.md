@@ -51,6 +51,8 @@ CLI 命令：
 
 ## Hook System v2 direction
 
+> 2026-08-14：完整目标架构见 `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`。本文的 v2 `IHookPublisher` 现归类为 lifecycle event publisher；新的同步可阻断/可变换 Hook 使用独立 Typed Hook Dispatcher。外部 command/webhook 仍是异步、只读事件消费者，不进入权限和主执行控制链。
+
 Hook v2 separates internal framework hooks from external user-configured hooks.
 
 - Internal hooks are mandatory framework lifecycle events and use `IHookPublisher` plus the existing internal event pipeline.

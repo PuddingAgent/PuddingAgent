@@ -101,6 +101,10 @@ namespace PuddingCode.Platform
         public int ToolCount { get; set; }
         /// <summary>规范化工具名称、描述和参数 schema 的稳定哈希。</summary>
         public string? ToolDefinitionHash { get; set; }
+        /// <summary>工具 schema 的原始 UTF-8 字节数，仅用于归因，不保存正文。</summary>
+        public long ToolDefinitionUtf8Bytes { get; set; }
+        /// <summary>工具 schema 的 GZIP 字节数，仅用于归因，不保存正文。</summary>
+        public long ToolDefinitionGzipBytes { get; set; }
         public string Source { get; set; } = "unknown";
                 public string Confidence { get; set; } = "estimated";
         /// <summary>System 消息层 gzip 压缩比（熵探针）。</summary>
@@ -176,6 +180,7 @@ namespace PuddingCode.Platform
             var toolText = tools is { Count: > 0 }
                 ? JsonSerializer.Serialize(tools, JsonOptions)
                 : null;
+            var toolMetrics = EntropyProbe.Measure(toolText);
             var rawEstimatedTokens = Math.Max(0, messageTokens + toolTokens);
             var calibrationRatio = GetPromptCalibrationRatio(sessionId, modelId);
             var calibratedTokens = (int)Math.Min(
@@ -197,6 +202,8 @@ namespace PuddingCode.Platform
                 MessageCount = messages.Count,
                 ToolCount = tools?.Count ?? 0,
                 ToolDefinitionHash = toolDefinitionHash,
+                ToolDefinitionUtf8Bytes = toolMetrics.RawUtf8Bytes,
+                ToolDefinitionGzipBytes = toolMetrics.GzipBytes,
                 Source = calibrationRatio > 1.0001 ? "llm_request_calibrated" : "llm_request",
                 Confidence = calibrationRatio > 1.0001 ? "provider_calibrated" : "estimated",
                 ModelId = modelId,
@@ -260,6 +267,8 @@ namespace PuddingCode.Platform
                 MessageCount = existing?.MessageCount ?? 0,
                 ToolCount = existing?.ToolCount ?? 0,
                 ToolDefinitionHash = existing?.ToolDefinitionHash,
+                ToolDefinitionUtf8Bytes = existing?.ToolDefinitionUtf8Bytes ?? 0,
+                ToolDefinitionGzipBytes = existing?.ToolDefinitionGzipBytes ?? 0,
                 Source = "provider_usage",
                 Confidence = "provider_reported",
                 ProviderPromptTokens = usage.PromptTokens,

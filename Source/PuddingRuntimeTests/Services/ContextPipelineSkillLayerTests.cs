@@ -76,6 +76,31 @@ public sealed class ContextPipelineSkillLayerTests
             ExtractLayer(second.SystemPrompt, "--- LAYER: SKILLS ---", "--- LAYER: WORKSPACE ENVIRONMENT ---"));
     }
 
+    [TestMethod]
+    public async Task AssembleAsync_UsesPersistentConfigurationAgentWithoutCreatingTransientDirectory()
+    {
+        using var temp = new TempDataRoot();
+        var skillService = new AgentSkillFileService(temp.Paths);
+        await skillService.CreateAsync("persistent-agent", new AgentSkillCreateRequest
+        {
+            SkillId = "persistent_skill",
+            Name = "Persistent Skill",
+            Summary = "Owned by the configured Agent.",
+            SkillMarkdown = "# Persistent Skill",
+        });
+        var pipeline = CreatePipeline(new ContextAssemblyStore(), skillService);
+        var transientId = "parent-session-sub-1234abcd";
+        var request = CreateRequest(transientId) with
+        {
+            ConfigurationAgentInstanceId = "persistent-agent",
+        };
+
+        var result = await pipeline.AssembleAsync(request, CancellationToken.None);
+
+        StringAssert.Contains(result.SystemPrompt, "`persistent_skill`");
+        Assert.IsFalse(Directory.Exists(temp.Paths.AgentInstanceRoot(transientId)));
+    }
+
     private static string ExtractLayer(string prompt, string startMarker, string endMarker)
     {
         var start = prompt.IndexOf(startMarker, StringComparison.Ordinal);

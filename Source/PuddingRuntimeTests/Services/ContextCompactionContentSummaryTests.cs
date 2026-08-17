@@ -334,7 +334,7 @@ public sealed class ContextCompactionContentSummaryTests
     }
 
     [TestMethod]
-    public async Task FullCompactAsync_LimitsSummaryInputToLatestMaxMessages()
+    public async Task FullCompactAsync_MapsEveryMessageBeforeMarkingItCompacted()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -358,11 +358,60 @@ public sealed class ContextCompactionContentSummaryTests
             Reason: "manual slash command"));
 
         Assert.AreEqual(94, result.CompactedMessageCount);
-        Assert.AreEqual(80, generator.LastMessages.Count);
-        Assert.AreEqual(15, generator.LastMessages[0].Sequence);
-        Assert.AreEqual(94, generator.LastMessages[^1].Sequence);
-        StringAssert.Contains(result.SummaryMarkdown, "Sequence 15-94");
-        StringAssert.Contains(result.SummaryMarkdown, "Sequence 1-14");
+        Assert.AreEqual(3, generator.Invocations.Count, "94 messages require two map calls and one reduce call.");
+        var mapSequences = generator.Invocations
+            .Take(2)
+            .SelectMany(messages => messages)
+            .Select(message => message.Sequence)
+            .OrderBy(sequence => sequence)
+            .ToList();
+        CollectionAssert.AreEqual(Enumerable.Range(1, 94).Select(i => (long)i).ToList(), mapSequences);
+
+        await using var verifyDb = new MemoryDbContext(options);
+        var summary = await verifyDb.Messages.SingleAsync(message =>
+            message.SessionId == "session-max" && message.ContentType == "compact_summary");
+        StringAssert.Contains(summary.Metadata!, "\"coverageComplete\":true");
+        StringAssert.Contains(summary.Metadata!, "\"coverageMessageCount\":94");
+        StringAssert.Contains(summary.Metadata!, "\"summaryMapChunkCount\":2");
+    }
+
+    [TestMethod]
+    public async Task FullCompactAsync_LoadsPastDatabasePageAndMapsEveryCompactedMessage()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-over-page", messageCount: 600);
+
+        var generator = new RecordingSummaryGenerator("## 摘要\nall pages");
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            generator,
+            NullLogger<ContextCompactionService>.Instance);
+
+        var result = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1",
+            SessionId: "session-over-page",
+            AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual,
+            Level: ContextCompactionLevel.Full,
+            Reason: "manual slash command"));
+
+        Assert.AreEqual(594, result.CompactedMessageCount);
+        Assert.AreEqual(9, generator.Invocations.Count, "594 messages require eight map calls and one reduce call.");
+        var mapSequences = generator.Invocations
+            .Take(8)
+            .SelectMany(messages => messages)
+            .Select(message => message.Sequence)
+            .OrderBy(sequence => sequence)
+            .ToList();
+        CollectionAssert.AreEqual(Enumerable.Range(1, 594).Select(i => (long)i).ToList(), mapSequences);
+
+        await using var verifyDb = new MemoryDbContext(options);
+        Assert.AreEqual(594, await verifyDb.Messages.CountAsync(message =>
+            message.SessionId == "session-over-page" && message.CompactedBy != null));
     }
 
     [TestMethod]
@@ -505,11 +554,14 @@ public sealed class ContextCompactionContentSummaryTests
     {
         public IReadOnlyList<ContextCompactionMessage> LastMessages { get; private set; } = [];
 
+        public List<IReadOnlyList<ContextCompactionMessage>> Invocations { get; } = [];
+
         public Task<string> GenerateSummaryAsync(
             ContextCompactionSummaryRequest request,
             CancellationToken ct = default)
         {
-            LastMessages = request.Messages;
+            LastMessages = request.Messages.ToList();
+            Invocations.Add(LastMessages);
             return Task.FromResult(summary);
         }
     }

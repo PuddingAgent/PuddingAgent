@@ -10,8 +10,8 @@ internal static class TerminalToolJson
 {
     public const int DefaultPreviewLines = 120;
     public const int DefaultPreviewChars = 4_000;
-    public const int DefaultReadLines = 500;
-    public const int DefaultReadChars = 40_000;
+    public const int DefaultReadLines = 200;
+    public const int DefaultReadChars = 8_000;
 
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
@@ -463,10 +463,10 @@ public sealed record TerminalReadArgs
     [ToolParam("0-based output line offset to read from. Use result.next_offset from terminal_wait or terminal_read.")]
     public int? FromOffset { get; init; }
 
-    [ToolParam("Maximum output lines to return. Default: 500.")]
+    [ToolParam("Maximum output lines to return. Default: 200.")]
     public int? MaxLines { get; init; }
 
-    [ToolParam("Maximum output characters to return. Default: 40000.")]
+    [ToolParam("Maximum output characters to return. Default: 8000.")]
     public int? MaxChars { get; init; }
 }
 

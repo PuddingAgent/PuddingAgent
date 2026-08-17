@@ -20,6 +20,8 @@ public sealed record PuddingDataPaths
     public string DatabasesRoot => Path.Combine(DataRoot, "databases");
     public string BackupsRoot => Path.Combine(DataRoot, "backups");
     public string RetentionArchiveRoot => Path.Combine(DataRoot, "retention-archive");
+    public string SubAgentTransientDirectoryQuarantineRoot =>
+        Path.Combine(RetentionArchiveRoot, "subagent-transient-instances");
     public string TempRoot => Path.Combine(DataRoot, "tmp");
     public string PluginsRoot => Path.Combine(DataRoot, "plugins");
 

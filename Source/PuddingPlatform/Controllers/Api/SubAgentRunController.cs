@@ -24,11 +24,6 @@ public class SubAgentRunController : ControllerBase
     private readonly IDbContextFactory<PlatformDbContext> _dbFactory;
     private readonly ISubAgentRunStore _runStore;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     public SubAgentRunController(
         IDbContextFactory<PlatformDbContext> dbFactory,
         ISubAgentRunStore runStore)
@@ -127,6 +122,10 @@ public class SubAgentRunController : ControllerBase
             return NotFound(new { error = $"Run '{runId}' not found." });
 
         var m = archive.Manifest;
+        var elapsedMs = m.CompletedAt is { } completedAt
+            ? Math.Max(0L, (long)(completedAt - m.StartedAt).TotalMilliseconds)
+            : Math.Max(0L, (long)(DateTimeOffset.UtcNow - m.StartedAt).TotalMilliseconds);
+        var archivedRounds = archive.Events.Count(raw => EventType(raw) == "subagent.round.completed");
 
         var summary = new SubAgentRunSummaryDto
         {
@@ -139,10 +138,13 @@ public class SubAgentRunController : ControllerBase
             Status = m.Status,
             StartedAt = m.StartedAt.ToString("o"),
             CompletedAt = m.CompletedAt?.ToString("o"),
-            TotalDurationMs = 0, // Manifest 无此字段，统计由 events 提供
-            TotalRounds = 0,
-            TotalToolCalls = 0,
-            ErrorMessage = null,
+            TotalDurationMs = m.TotalDurationMs
+                ?? elapsedMs,
+            TotalRounds = m.TotalRounds
+                ?? archivedRounds,
+            TotalToolCalls = m.TotalToolCalls
+                ?? archive.Tools.Count,
+            ErrorMessage = m.ErrorMessage,
         };
 
         return Ok(new SubAgentRunDetailDto
@@ -159,7 +161,7 @@ public class SubAgentRunController : ControllerBase
 
     /// <summary>
     /// GET /api/sub-agents/runs/{runId}/events — 获取运行事件列表（从 events.jsonl 读取）。
-    /// 返回 PagedResultDto&lt;SubAgentRunEventDto&gt;，不含完整 payload。
+    /// 返回 PagedResultDto&lt;SubAgentRunEventDto&gt;，包含认证检查器回放所需的 payload。
     /// </summary>
     [HttpGet("{runId}/events")]
     public async Task<ActionResult<PagedResultDto<SubAgentRunEventDto>>> Events(
@@ -223,6 +225,9 @@ public class SubAgentRunController : ControllerBase
                 Timestamp = timestamp,
                 PayloadSize = payloadSize,
                 PayloadPreview = payloadPreview,
+                Payload = je.TryGetProperty("payload", out var payload)
+                    ? payload.Clone()
+                    : null,
             };
         }
 
@@ -234,7 +239,21 @@ public class SubAgentRunController : ControllerBase
             Timestamp = rawEvent.GetType().GetProperty("Timestamp")?.GetValue(rawEvent)?.ToString() ?? "",
             PayloadSize = 0,
             PayloadPreview = null,
+            Payload = null,
         };
+    }
+
+    private static string? EventType(object rawEvent)
+    {
+        if (rawEvent is JsonElement je)
+        {
+            if (je.TryGetProperty("eventType", out var eventType))
+                return eventType.GetString();
+            if (je.TryGetProperty("type", out var type))
+                return type.GetString();
+        }
+
+        return rawEvent.GetType().GetProperty("EventType")?.GetValue(rawEvent)?.ToString();
     }
 
     /// <summary>

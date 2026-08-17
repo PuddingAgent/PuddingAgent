@@ -74,12 +74,28 @@ PuddingAgent 已经具备以下基础：
 
 | 层级 | 触发 | 成本 | 结果 | 第一阶段 |
 | --- | --- | --- | --- | --- |
-| InputCompression | 每次 LLM 调用前 | 低 | 压缩工具输出、日志、文件、RAG 块并保留可取回原文 | 原型验证 |
+| InputCompression | 每次 LLM 调用前 | 低 | 压缩工具输出、日志、文件、RAG 块并保留可取回原文 | P0 有界化已实现；语义压缩待验证 |
 | MicroCompact | 每轮后 | 极低 | 清理旧工具结果内容 | 规划接口，延后启用 |
 | SessionMemoryCompact | warning / unhealthy | 低 | 用会话记忆替换远期历史 | 第二阶段 |
 | FullCompact | critical / blocking / `/compact` | 高 | LLM 生成完整摘要并持久化 | 第一阶段实现 |
 
 第一阶段优先实现 FullCompact，因为它能闭环持久化、API、UI、后续上下文重建和验收。InputCompression 可以并行做原型，但必须以 fail-open 方式运行：压缩失败、取回不可用或质量门禁失败时直接使用原文。
+
+### 3.0.1 2026-08-17 P0 缓存与输入 Token 修复状态
+
+本轮先落地不改变任务与工具调用能力的确定性边界：
+
+- 工具结果保持原始内容，不经过 KeyVault 脱敏；超过 8 KiB 的正文原样写入工作区 `.pudding/context-tool-results/<session>/`，模型历史接收不超过 8 KiB 的原始首尾预览和渐进读取路径。写入失败时 fail-open，保持原任务行为和信息完整性。
+- `file_read`、`search_grep`、目录列表和终端读取的默认返回窗口收紧；显式分页参数仍然可用，完整结果不会直接进入后续每一轮上下文。
+- 当前用户消息不再重复写入 system prompt；日期、潜意识/日志召回与 inbound message context 改为随本轮 User message 追加到缓存尾部。仅改变当前消息时，system prompt 必须字节级稳定。
+- `search_tools` 渐进加载出的工具 schema 在 live session 生命周期内保留，避免下一次 dispatch 先缩回核心 schema、再扩张并重复制造 `tool_spec_changed`。
+- Skills/Runtime/JSON tool-loop prompt 不再重复函数 schema 已包含的工具描述、参数和示例。
+
+这只是 InputCompression 的 P0 有界化切片，不代表 3.1 中的语义分类压缩、artifact hash/expiry、权限化取回与质量门禁已经完成。`.pudding/context-tool-results` 的保留期应在后续 artifact 生命周期实现中统一治理；当前不得用无保护的目录清理替代该设计。
+
+模型执行数据与运维遥测必须分开：工具结果、模型输入输出、用户可见任务结果和受治理的执行归档保持原始真实内容，包括任务所需的机密信息；普通 Runtime 日志和 telemetry metric 不记录正文，只记录 tool/call、长度、hash、状态和受控相对路径。调试遥测确需预览时只处理独立副本，不得为了日志安全修改模型实际输入、输出或任务证据。
+
+发布验收必须以新 Core 进程产生的 `llm_gateway_usage_events` 为准：连续观察 7 天，按 `cache_hit_tokens / (cache_hit_tokens + cache_miss_tokens)` 计算总体及 provider/model/session 分组命中率，目标为 `> 99%`；同时比较 input tokens/turn、工具结果有界化次数和任务质量。代码构建或单元测试不能代替该线上指标。
 
 ### 3.1 LLM 前置输入压缩层
 

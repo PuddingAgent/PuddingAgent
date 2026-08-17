@@ -112,10 +112,24 @@ Current defaults:
     "budgetGraceRounds": 20,
     "budgetGraceTimeoutSeconds": 1800,
     "parentFinalizationReserveSeconds": 120,
-    "defaultPermissionMode": "inherit"
+    "defaultPermissionMode": "inherit",
+    "transientDirectoryRetention": {
+      "enabled": true,
+      "scanIntervalMinutes": 360,
+      "scaffoldRetentionHours": 24,
+      "orphanRetentionHours": 168,
+      "quarantineRetentionDays": 7,
+      "maxItemsPerSweep": 200
+    }
   }
 }
 ```
+
+Transient directory retention only targets the exact empty `data/agents/{subSessionId}/skills/index.json`
+scaffold left by older builds. A terminal run must be older than 24 hours; a scaffold with no run index must
+be older than 7 days. Eligible directories are quarantined under `retention-archive` for another 7 days before
+purge. Running runs, stateful directories, run archives, and any unknown directory shape are never removed.
+Sub-sessions still registered in the reusable child-agent pool are also protected regardless of their latest run status.
 
 Permission mode:
 

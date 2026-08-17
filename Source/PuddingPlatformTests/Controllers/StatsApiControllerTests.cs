@@ -316,10 +316,16 @@ public sealed class StatsApiControllerTests
             new JsonSerializerOptions(JsonSerializerDefaults.Web)));
         var layers = json.RootElement.GetProperty("layers");
         Assert.AreEqual(2, layers.GetArrayLength());
+        Assert.AreEqual(800, json.RootElement.GetProperty("totalRawUtf8Bytes").GetInt64());
+        Assert.AreEqual(400, json.RootElement.GetProperty("totalGzipBytes").GetInt64());
+        Assert.AreEqual(2.0, json.RootElement.GetProperty("gzipRatio").GetDouble());
 
         var staticLayer = layers[0];
         Assert.AreEqual("L0-STATIC", staticLayer.GetProperty("layerName").GetString());
         Assert.AreEqual(90, staticLayer.GetProperty("tokenCount").GetInt64());
+        Assert.AreEqual(360, staticLayer.GetProperty("rawUtf8Bytes").GetInt64());
+        Assert.AreEqual(180, staticLayer.GetProperty("gzipBytes").GetInt64());
+        Assert.AreEqual(2.0, staticLayer.GetProperty("gzipRatio").GetDouble());
         Assert.AreEqual(0.45, staticLayer.GetProperty("tokenShare").GetDouble());
         Assert.AreEqual(45, staticLayer.GetProperty("medianTokens").GetDouble());
         Assert.AreEqual(1.0, staticLayer.GetProperty("medianCacheHitRate").GetDouble());
@@ -328,6 +334,9 @@ public sealed class StatsApiControllerTests
         var recentLayer = layers[1];
         Assert.AreEqual("L5-RECENT", recentLayer.GetProperty("layerName").GetString());
         Assert.AreEqual(110, recentLayer.GetProperty("tokenCount").GetInt64());
+        Assert.AreEqual(440, recentLayer.GetProperty("rawUtf8Bytes").GetInt64());
+        Assert.AreEqual(220, recentLayer.GetProperty("gzipBytes").GetInt64());
+        Assert.AreEqual(2.0, recentLayer.GetProperty("gzipRatio").GetDouble());
         Assert.AreEqual(0.55, recentLayer.GetProperty("tokenShare").GetDouble());
         Assert.AreEqual(55, recentLayer.GetProperty("medianTokens").GetDouble());
         Assert.AreEqual(0.25, recentLayer.GetProperty("medianCacheHitRate").GetDouble());
@@ -356,6 +365,9 @@ public sealed class StatsApiControllerTests
                 layer_role                      TEXT    NOT NULL,
                 token_count                     INTEGER NOT NULL DEFAULT 0,
                 char_count                      INTEGER NOT NULL DEFAULT 0,
+                raw_utf8_bytes                  INTEGER NOT NULL DEFAULT 0,
+                gzip_bytes                      INTEGER NOT NULL DEFAULT 0,
+                gzip_ratio                      REAL,
                 content_hash                    TEXT    NOT NULL,
                 previous_hash                   TEXT,
                 is_changed                      INTEGER NOT NULL DEFAULT 0,
@@ -376,7 +388,8 @@ public sealed class StatsApiControllerTests
             INSERT INTO context_layer_metric_events (
                 source_type, source_id, workspace_id, session_id, provider_id, model_id,
                 occurred_at_utc, assembler_version, layout_version, layer_name, layer_order,
-                layer_role, token_count, char_count, content_hash, previous_hash, is_changed,
+                layer_role, token_count, char_count, raw_utf8_bytes, gzip_bytes, gzip_ratio,
+                content_hash, previous_hash, is_changed,
                 change_reason, starts_at_token, ends_at_token, is_cache_eligible,
                 estimated_cache_hit_tokens, estimated_cache_miss_tokens, estimated_cache_hit_rate,
                 confidence, truncated_tokens, truncated_reason, created_at_utc
@@ -384,7 +397,7 @@ public sealed class StatsApiControllerTests
             VALUES (
                 'chat_message', 'm-runtime', 'w1', 's1', 'deepseek', 'deepseek-chat',
                 '2026-06-06T00:00:00+00:00', 'context-v1', 'layer-v1', 'L0-STATIC', 0,
-                'stable_prefix', 42, 168, 'hash-a', NULL, 0, NULL, 0, 42, 1,
+                'stable_prefix', 42, 168, 168, 84, 2.0, 'hash-a', NULL, 0, NULL, 0, 42, 1,
                 42, 0, 1.0, 'estimated', 0, NULL, '2026-06-06T00:00:01+00:00'
             );
             """);
@@ -408,6 +421,9 @@ public sealed class StatsApiControllerTests
         var layer = json.RootElement.GetProperty("layers")[0];
         Assert.AreEqual("L0-STATIC", layer.GetProperty("layerName").GetString());
         Assert.AreEqual(42, layer.GetProperty("tokenCount").GetInt64());
+        Assert.AreEqual(168, layer.GetProperty("rawUtf8Bytes").GetInt64());
+        Assert.AreEqual(84, layer.GetProperty("gzipBytes").GetInt64());
+        Assert.AreEqual(2.0, layer.GetProperty("gzipRatio").GetDouble());
         Assert.AreEqual(1.0, layer.GetProperty("medianCacheHitRate").GetDouble());
     }
 
@@ -554,6 +570,9 @@ public sealed class StatsApiControllerTests
             LayerRole = layerName.Contains("STATIC", StringComparison.OrdinalIgnoreCase) ? "stable_prefix" : "dynamic_history",
             TokenCount = tokens,
             CharCount = tokens * 4,
+            RawUtf8Bytes = tokens * 4,
+            GzipBytes = tokens * 2,
+            GzipRatio = 2d,
             ContentHash = hash,
             PreviousHash = changed ? "previous" : hash,
             IsChanged = changed,

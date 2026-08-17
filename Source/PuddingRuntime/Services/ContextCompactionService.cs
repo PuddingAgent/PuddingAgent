@@ -15,8 +15,12 @@ public sealed class ContextCompactionService : IContextCompactionService
 {
     private const int RecentMessagesToKeep = 6;
     private const int MinCompactionInputMessages = 20;
-    private const int MaxCompactionInputMessages = 80;
-    private const int MaxActiveMessagesToLoad = 500;
+    // 500 is a database page size, never a session-coverage limit.  A previous
+    // implementation used it as Take(500), then marked messages outside the
+    // summary input as compacted.
+    private const int ActiveMessageLoadPageSize = 500;
+    private const int MaxMessagesPerSummaryChunk = 80;
+    private const int CanonicalTranscriptEstimateSampleSize = 500;
     private const int MaxHealthEstimateSampleSize = 2000;
     private const int DefaultMaxVerbatimMessageBytes = 16 * 1024;
     private const string CompactionRequestedEventType = "context.compaction.requested";
@@ -171,7 +175,7 @@ public sealed class ContextCompactionService : IContextCompactionService
         {
             var messages = await _messageStore.GetRecentForSessionAsync(
                 sessionId,
-                MaxActiveMessagesToLoad,
+                CanonicalTranscriptEstimateSampleSize,
                 ct);
             if (messages.Count == 0)
                 return null;
@@ -393,6 +397,7 @@ public sealed class ContextCompactionService : IContextCompactionService
 
         var windowStart = sw.ElapsedMilliseconds;
         var summaryInput = SelectSummaryInputWindow(expandedInput);
+        EnsureCompactionCoverage(messagesToCompact, summaryInput.Messages);
         _logger.LogInformation(
             "[ContextCompaction:Phase] selectWindow session={SessionId} windowCount={WindowCount} firstSeq={FirstSeq} lastSeq={LastSeq} omitted={Omitted}",
             request.SessionId, summaryInput.Messages.Count, summaryInput.FirstIncludedSequence, summaryInput.LastIncludedSequence, summaryInput.OmittedBeforeCount);
@@ -409,27 +414,8 @@ public sealed class ContextCompactionService : IContextCompactionService
                 request.SessionId, request.AgentWorkSummary.Length, wsPreview);
         }
         
-        var summary = await _summaryGenerator.GenerateSummaryAsync(
-            new ContextCompactionSummaryRequest(
-                request.WorkspaceId,
-                request.SessionId,
-                request.AgentId,
-                summaryInput.Messages
-                    .Select(m => new ContextCompactionMessage(
-                        m.MessageId,
-                        m.Sequence,
-                        m.Role,
-                        m.Content ?? string.Empty))
-                    .ToList(),
-                request.Reason,
-                AgentWorkSummary: request.AgentWorkSummary,
-                AgentTemplateId: request.AgentTemplateId,
-                UserId: request.UserId,
-                LlmConfig: request.LlmConfig,
-                CapabilityPolicy: request.CapabilityPolicy,
-                ToolDefinitions: request.ToolDefinitions,
-                SkillPackages: request.SkillPackages),
-            ct);
+        var summaryGeneration = await GenerateSummaryTreeAsync(request, summaryInput.Messages, ct);
+        var summary = summaryGeneration.Summary;
 
         if (string.IsNullOrWhiteSpace(summary))
             throw new InvalidOperationException("Context compaction summary generator returned an empty summary.");
@@ -527,6 +513,10 @@ public sealed class ContextCompactionService : IContextCompactionService
                 omittedBeforeSummaryInputCount = summaryInput.OmittedBeforeCount,
                 omittedBeforeSummaryInputFirstSequence = summaryInput.FirstOmittedSequence,
                 omittedBeforeSummaryInputLastSequence = summaryInput.LastOmittedSequence,
+                coverageComplete = true,
+                coverageMessageCount = messagesToCompact.Count,
+                summaryMapChunkCount = summaryGeneration.MapChunkCount,
+                summaryReductionPassCount = summaryGeneration.ReductionPassCount,
                 summaryGenerator = ResolveSummaryGeneratorName(),
                 beforeTokens,
             }, JsonOptions),
@@ -1007,15 +997,37 @@ public sealed class ContextCompactionService : IContextCompactionService
             transcriptRows.Count);
     }
 
-    private static Task<List<MessageEntity>> LoadActiveMessagesAsync(
+    private static async Task<List<MessageEntity>> LoadActiveMessagesAsync(
         MemoryDbContext db,
         string sessionId,
-        CancellationToken ct) =>
-        db.Messages
-            .Where(m => m.SessionId == sessionId && m.CompactedBy == null)
-            .OrderBy(m => m.Sequence)
-            .Take(MaxActiveMessagesToLoad)
-            .ToListAsync(ct);
+        CancellationToken ct)
+    {
+        var activeMessages = new List<MessageEntity>();
+        long? lastSequence = null;
+
+        while (true)
+        {
+            var query = db.Messages
+                .Where(m => m.SessionId == sessionId && m.CompactedBy == null);
+            if (lastSequence is not null)
+                query = query.Where(m => m.Sequence > lastSequence.Value);
+
+            var page = await query
+                .OrderBy(m => m.Sequence)
+                .Take(ActiveMessageLoadPageSize)
+                .ToListAsync(ct);
+            if (page.Count == 0)
+                break;
+
+            activeMessages.AddRange(page);
+            if (page.Count < ActiveMessageLoadPageSize)
+                break;
+
+            lastSequence = page[^1].Sequence;
+        }
+
+        return activeMessages;
+    }
 
     /// <summary>
     /// 用 SQL 聚合估算活跃消息的 token 数，避免对大 session 做全量加载导致 OOM/超时。
@@ -1266,32 +1278,119 @@ public sealed class ContextCompactionService : IContextCompactionService
     private static SummaryInputWindow SelectSummaryInputWindow(MinimumInputExpansion expandedInput)
     {
         var messages = expandedInput.Messages;
-        if (messages.Count <= MaxCompactionInputMessages)
-        {
-            return new SummaryInputWindow(
-                messages,
-                expandedInput.SupplementalBeforeCount,
-                expandedInput.FirstSupplementalSequence,
-                expandedInput.LastSupplementalSequence,
-                OmittedBeforeCount: 0,
-                FirstOmittedSequence: null,
-                LastOmittedSequence: null);
-        }
-
-        var skipped = messages.Count - MaxCompactionInputMessages;
-        var selected = messages
-            .Skip(skipped)
-            .ToList();
-
         return new SummaryInputWindow(
-            selected,
+            messages,
             expandedInput.SupplementalBeforeCount,
             expandedInput.FirstSupplementalSequence,
             expandedInput.LastSupplementalSequence,
-            skipped,
-            messages[0].Sequence,
-            messages[skipped - 1].Sequence);
+            OmittedBeforeCount: 0,
+            FirstOmittedSequence: null,
+            LastOmittedSequence: null);
     }
+
+    private static void EnsureCompactionCoverage(
+        IReadOnlyList<MessageEntity> messagesToCompact,
+        IReadOnlyList<MessageEntity> summaryInputMessages)
+    {
+        if (messagesToCompact.Count == 0)
+            return;
+
+        var inputIds = summaryInputMessages
+            .Select(message => message.MessageId)
+            .ToHashSet(StringComparer.Ordinal);
+        var missing = messagesToCompact
+            .Where(message => !inputIds.Contains(message.MessageId))
+            .Select(message => message.MessageId)
+            .ToList();
+        if (missing.Count == 0)
+            return;
+
+        throw new InvalidOperationException(
+            $"Refusing to compact {messagesToCompact.Count} messages because {missing.Count} messages are absent from the summary input. " +
+            $"First missing message: '{missing[0]}'.");
+    }
+
+    private async Task<SummaryGenerationResult> GenerateSummaryTreeAsync(
+        ContextCompactionRequest request,
+        IReadOnlyList<MessageEntity> sourceMessages,
+        CancellationToken ct)
+    {
+        var source = sourceMessages
+            .OrderBy(message => message.Sequence)
+            .Select(message => new ContextCompactionMessage(
+                message.MessageId,
+                message.Sequence,
+                message.Role,
+                message.Content ?? string.Empty))
+            .ToList();
+
+        if (source.Count <= MaxMessagesPerSummaryChunk)
+        {
+            var summary = await GenerateSummaryAsync(request, source, ct);
+            return new SummaryGenerationResult(summary, MapChunkCount: source.Count == 0 ? 0 : 1, ReductionPassCount: 0);
+        }
+
+        var mapChunks = source.Chunk(MaxMessagesPerSummaryChunk).ToList();
+        var reduced = new List<ContextCompactionMessage>(mapChunks.Count);
+        for (var index = 0; index < mapChunks.Count; index++)
+        {
+            var chunk = mapChunks[index];
+            var chunkSummary = await GenerateSummaryAsync(request, chunk, ct);
+            reduced.Add(BuildSummaryNode($"map-{index + 1}", chunk, chunkSummary));
+        }
+
+        var reductionPassCount = 0;
+        while (reduced.Count > MaxMessagesPerSummaryChunk)
+        {
+            reductionPassCount++;
+            var next = new List<ContextCompactionMessage>();
+            foreach (var chunk in reduced.Chunk(MaxMessagesPerSummaryChunk))
+            {
+                var reducedSummary = await GenerateSummaryAsync(request, chunk, ct);
+                next.Add(BuildSummaryNode($"reduce-{reductionPassCount}-{next.Count + 1}", chunk, reducedSummary));
+            }
+
+            reduced = next;
+        }
+
+        var finalSummary = await GenerateSummaryAsync(request, reduced, ct);
+        return new SummaryGenerationResult(finalSummary, mapChunks.Count, reductionPassCount + 1);
+    }
+
+    private async Task<string> GenerateSummaryAsync(
+        ContextCompactionRequest request,
+        IReadOnlyList<ContextCompactionMessage> messages,
+        CancellationToken ct) =>
+        await _summaryGenerator.GenerateSummaryAsync(
+            new ContextCompactionSummaryRequest(
+                request.WorkspaceId,
+                request.SessionId,
+                request.AgentId,
+                messages,
+                request.Reason,
+                AgentWorkSummary: request.AgentWorkSummary,
+                AgentTemplateId: request.AgentTemplateId,
+                UserId: request.UserId,
+                LlmConfig: request.LlmConfig,
+                CapabilityPolicy: request.CapabilityPolicy,
+                ToolDefinitions: request.ToolDefinitions,
+                SkillPackages: request.SkillPackages),
+            ct);
+
+    private static ContextCompactionMessage BuildSummaryNode(
+        string nodeId,
+        IReadOnlyList<ContextCompactionMessage> source,
+        string summary) =>
+        new(
+            $"compaction-{nodeId}-{source[0].Sequence}-{source[^1].Sequence}",
+            source[^1].Sequence,
+            "system",
+            $"""
+            ## Compaction source range
+            Sequence {source[0].Sequence}-{source[^1].Sequence}; messageCount={source.Count}
+
+            {summary}
+            """);
 
     private async Task<MinimumInputExpansion> ExpandToMinimumInputAsync(
         MemoryDbContext db,
@@ -1389,6 +1488,11 @@ public sealed class ContextCompactionService : IContextCompactionService
 
         public long? LastIncludedSequence => Messages.Count == 0 ? null : Messages[^1].Sequence;
     }
+
+    private sealed record SummaryGenerationResult(
+        string Summary,
+        int MapChunkCount,
+        int ReductionPassCount);
 }
 
 /// <summary>

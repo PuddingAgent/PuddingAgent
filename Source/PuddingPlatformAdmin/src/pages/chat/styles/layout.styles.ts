@@ -87,6 +87,19 @@ export const useLayoutStyles = createStyles(({ token }) => ({
       },
     },
   },
+  taskBoardButton: {
+    color: 'var(--pudding-chat-accent)',
+    background: 'var(--pudding-chat-accent-soft)',
+    borderRadius: 999,
+    paddingInline: 10,
+    fontWeight: 600,
+    flexShrink: 0,
+    '&:hover': {
+      color: 'var(--pudding-chat-accent) !important',
+      background:
+        'color-mix(in srgb, var(--pudding-chat-accent) 16%, transparent) !important',
+    },
+  },
   devModeActive: { color: token.colorPrimary },
   /** 移动端隐藏元素 */
   hideOnMobile: {

@@ -472,6 +472,14 @@ public class TokenUsageRecorder : ITokenUsageRecorder
         {
             var layer = metricLayers[i];
             var tokens = Math.Max(0, layer.TokenCount);
+            var layerContent = layer.FullContent ?? layer.ContentPreview ?? string.Empty;
+            var compression = layer.LayerName.Equals("L1-TOOL-DEFINITIONS", StringComparison.OrdinalIgnoreCase)
+                              && usageSnapshot is not null
+                ? new EntropyProbe.GzipMetrics(
+                    usageSnapshot.ToolDefinitionUtf8Bytes,
+                    usageSnapshot.ToolDefinitionGzipBytes,
+                    usageSnapshot.ToolDefinitionEntropy ?? 1.0)
+                : EntropyProbe.Measure(layerContent);
             var hit = Math.Min(tokens, hitRemaining);
             hitRemaining -= hit;
             var remainingTokens = tokens - hit;
@@ -500,7 +508,10 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                 LayerOrder = i,
                 LayerRole = ClassifyLayerRole(layer.LayerName),
                 TokenCount = tokens,
-                CharCount = layer.ContentPreview?.Length ?? 0,
+                CharCount = layerContent.Length,
+                RawUtf8Bytes = compression.RawUtf8Bytes,
+                GzipBytes = compression.GzipBytes,
+                GzipRatio = compression.GzipRatio,
                 ContentHash = hash,
                 PreviousHash = previousHash,
                 IsChanged = isChanged,

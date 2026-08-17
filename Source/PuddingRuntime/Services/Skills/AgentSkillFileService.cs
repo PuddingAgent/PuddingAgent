@@ -144,11 +144,13 @@ public sealed partial class AgentSkillFileService
         CancellationToken ct = default)
     {
         ValidateAgentInstanceId(agentInstanceId);
-        await InitializeAsync(agentInstanceId, ct);
 
         var records = new List<AgentSkillRecord>();
         var skillsRoot = GetSkillsRoot(agentInstanceId);
         var index = await GetIndexAsync(agentInstanceId, ct);
+        if (!Directory.Exists(skillsRoot))
+            return records;
+
         foreach (var dir in Directory.EnumerateDirectories(skillsRoot))
         {
             var manifestPath = GetManifestPath(dir);
@@ -279,15 +281,24 @@ public sealed partial class AgentSkillFileService
         }
     }
 
-    /// <summary>Reads the agent SKILL index, initializing it if needed.</summary>
+    /// <summary>Reads the agent SKILL index without materializing missing Agent directories.</summary>
     public async Task<AgentSkillIndex> GetIndexAsync(
         string agentInstanceId,
         CancellationToken ct = default)
     {
         ValidateAgentInstanceId(agentInstanceId);
-        await InitializeAsync(agentInstanceId, ct);
 
         var indexPath = GetIndexPath(agentInstanceId);
+        if (!File.Exists(indexPath))
+        {
+            return new AgentSkillIndex
+            {
+                AgentInstanceId = agentInstanceId,
+                GeneratedAt = DateTimeOffset.UtcNow,
+                Skills = [],
+            };
+        }
+
         return await AtomicFileWriter.ReadJsonAsync<AgentSkillIndex>(indexPath, JsonOptions, ct)
             ?? new AgentSkillIndex
             {

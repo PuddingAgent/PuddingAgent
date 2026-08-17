@@ -49,13 +49,13 @@ public sealed partial class ContextPipeline
         // Persona 优先级：实例 MD 文件 > 模板 MD 文件 > DB > 内置模板
         AgentPersonaFiles? personaFiles = null;
         if (!string.IsNullOrWhiteSpace(request.AgentTemplateId) && _personaFileProvider is not null)
-            personaFiles = _personaFileProvider.Load(request.AgentTemplateId, request.AgentInstanceId);
+            personaFiles = _personaFileProvider.Load(request.AgentTemplateId, request.PersistentAgentInstanceId);
 
         // 实例级 persona（Admin 写入 AgentInstanceRoot/{agentId}/）优先级最高。
-        var instancePersona = LoadInstancePersonaFiles(request.AgentInstanceId);
+        var instancePersona = LoadInstancePersonaFiles(request.PersistentAgentInstanceId);
 
         // 实例 manifest.json 的 systemPrompt 字段（Admin「系统提示词」框）— 实例级最高优先级指令。
-        var manifestSystemPrompt = LoadInstanceManifestSystemPrompt(request.AgentInstanceId);
+        var manifestSystemPrompt = LoadInstanceManifestSystemPrompt(request.PersistentAgentInstanceId);
 
         string? dbPersonaPrompt = null;
         string? dbToolsDescription = null;
@@ -434,17 +434,10 @@ public sealed partial class ContextPipeline
 
         if (availableSkills.Count > 0)
         {
-            sb.AppendLine("Active agent skills:");
-            foreach (var skill in availableSkills)
-            {
-                var level = skill.PermissionLevel switch
-                {
-                    ToolPermissionLevel.Low => "auto",
-                    ToolPermissionLevel.High => "granted",
-                    _ => "default",
-                };
-                sb.AppendLine($"- `{skill.SkillId}` [{level}]: {skill.Description}");
-            }
+            // Function schemas and the compact L1 tool index are authoritative. Repeating
+            // every tool description here added thousands of stable-but-low-value tokens
+            // to every request and defeated deferred tool discovery.
+            sb.AppendLine($"Callable tool/skill count: {availableSkills.Count}. Use the visible function schemas; use `search_tools` for deferred capabilities.");
         }
 
         if (pkgs.Count > 0)
@@ -454,7 +447,7 @@ public sealed partial class ContextPipeline
                 sb.AppendLine($"- {pkg.Name} (v{pkg.Version}): {pkg.Description ?? ""}");
         }
 
-        var runtimeSkillCount = await AppendRuntimeSkillIndexAsync(sb, request.AgentInstanceId, ct);
+        var runtimeSkillCount = await AppendRuntimeSkillIndexAsync(sb, request.PersistentAgentInstanceId, ct);
 
         if (availableSkills.Count == 0 && pkgs.Count == 0 && runtimeSkillCount == 0)
             sb.AppendLine("(No skills or skill packages loaded.)");
@@ -597,13 +590,13 @@ public sealed partial class ContextPipeline
         sb.AppendLine("--- LAYER: PINNED ---");
 
         // ── 第一步：尝试读 Important_memory.md（主路径）──
-        if (!string.IsNullOrWhiteSpace(request.AgentInstanceId) && _importantMemory is not null)
+        if (!string.IsNullOrWhiteSpace(request.PersistentAgentInstanceId) && _importantMemory is not null)
         {
-            var content = _importantMemory.ReadOrNull(request.AgentInstanceId);
+            var content = _importantMemory.ReadOrNull(request.PersistentAgentInstanceId);
             if (string.IsNullOrWhiteSpace(content))
             {
-                await _importantMemory.EnsureInitializedAsync(request.AgentInstanceId, ct);
-                content = _importantMemory.ReadOrNull(request.AgentInstanceId);
+                await _importantMemory.EnsureInitializedAsync(request.PersistentAgentInstanceId, ct);
+                content = _importantMemory.ReadOrNull(request.PersistentAgentInstanceId);
             }
 
             if (!string.IsNullOrWhiteSpace(content))
@@ -677,7 +670,7 @@ public sealed partial class ContextPipeline
 
         if (request.SessionHistory is not { Count: > 0 })
         {
-            if (request.IsFirstMessage && !string.IsNullOrWhiteSpace(request.AgentInstanceId))
+            if (request.IsFirstMessage && !string.IsNullOrWhiteSpace(request.PersistentAgentInstanceId))
             {
                 var prefilled = TryBuildColdStartRecent(request, budgetTokens);
                 if (!string.IsNullOrWhiteSpace(prefilled))
@@ -757,7 +750,7 @@ public sealed partial class ContextPipeline
     {
         const int maxRecentDays = 3;
         var budgetChars = budgetTokens * 4;
-        var logsRoot = _dataPaths.AgentInstanceMessageLogsRoot(request.AgentInstanceId!);
+        var logsRoot = _dataPaths.AgentInstanceMessageLogsRoot(request.PersistentAgentInstanceId);
 
         var sb = new StringBuilder();
         var totalChars = 0;
@@ -811,14 +804,14 @@ public sealed partial class ContextPipeline
         CancellationToken ct)
     {
         if (_agentLogRecallService is null
-            || string.IsNullOrWhiteSpace(request.AgentInstanceId)
+            || string.IsNullOrWhiteSpace(request.PersistentAgentInstanceId)
             || string.IsNullOrWhiteSpace(request.UserMessage))
         {
             return string.Empty;
         }
 
         var recall = await _agentLogRecallService.RecallAsync(
-            new AgentLogRecallRequest(request.AgentInstanceId, request.UserMessage),
+            new AgentLogRecallRequest(request.PersistentAgentInstanceId, request.UserMessage),
             ct);
 
         if (recall.RecentFiveDaysMessages.Count == 0
@@ -857,28 +850,12 @@ public sealed partial class ContextPipeline
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // L7: 当前消息
-    // ═══════════════════════════════════════════════════════════════
-
-    private static string BuildCurrentMessageLayer(ContextRequest request, int budgetTokens)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("--- LAYER: CURRENT ---");
-        var msg = request.UserMessage;
-        var maxChars = budgetTokens * 4;
-        sb.AppendLine(TruncateText(msg, maxChars));
-        return sb.ToString();
-    }
-
-    // ═══════════════════════════════════════════════════════════════
     // RUNTIME 层
     // ═══════════════════════════════════════════════════════════════
 
     private void AppendRuntimeLayer(StringBuilder sb, ContextRequest request)
     {
         sb.AppendLine("--- LAYER: RUNTIME ---");
-        sb.AppendLine($"Date: {DateTimeOffset.Now:yyyy-MM-dd}");
-        sb.AppendLine($"Session: {request.SessionId}");
 
         if (request.ForStreaming)
         {
@@ -886,14 +863,11 @@ public sealed partial class ContextPipeline
             sb.AppendLine("Do not output JSON control structures such as status/tool/meta.");
             sb.AppendLine("Use concise explanations, fenced code blocks, Markdown tables, and LaTeX when helpful.");
             sb.AppendLine("For short inline values like paths, filenames, commands, or variable names, use inline `backticks` instead of fenced code blocks.");
-            sb.AppendLine("你有访问用户记忆图书馆和会话证据的能力。可用工具：search_memory（检索记忆）、save_memory（写入/更新记忆）、grep_memory（全文检索/列出Books/目录）、manage_memory（管理Books/章节/指针）、query_session_logs（默认查询分页消息转录；raw event 动作仅用于诊断）。");
-            sb.AppendLine("当需要主动记住用户信息时，使用 save_memory。当需要列出或管理记忆结构时，使用 grep_memory 或 manage_memory。当需要核实会话内容时，优先用 query_session_logs 的 messages/grep 默认消息视图；只有核实工具调用、tool_result、delta/thinking 等事件证据时才使用 raw event 动作。");
             if (request.Capability?.AllowedToolNames is { Count: > 0 })
                 sb.AppendLine("If a task requires tools, explain the limitation briefly instead of emitting tool-call JSON.");
         }
         else
         {
-            sb.AppendLine("你有访问用户记忆图书馆和会话证据的能力。可用工具：search_memory（检索记忆）、save_memory（写入/更新记忆）、grep_memory（全文检索/列出Books/目录）、manage_memory（管理Books/章节/指针）、query_session_logs（默认查询分页消息转录；raw event 动作仅用于诊断）。");
             sb.Append(BuildLoopInstructions(request.Capability, request.WorkspaceId));
         }
     }

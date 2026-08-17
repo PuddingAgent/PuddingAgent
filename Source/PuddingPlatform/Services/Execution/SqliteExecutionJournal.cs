@@ -17,6 +17,9 @@ public sealed class SqliteExecutionJournal(
     ICommittedEventSignal signal,
     ILogger<SqliteExecutionJournal> logger) : IExecutionJournal
 {
+    private const int OpenAttemptLimit = 3;
+    private static readonly TimeSpan OpenRetryDelay = TimeSpan.FromMilliseconds(150);
+
     /// <summary>
     /// P0-4f-1a 步骤5「Journal 守门人」：execution 域事实事件的固定 producer_component。
     /// 用户拍板的三值之一：chat.acceptance / execution.journal / subagent.runtime。
@@ -31,7 +34,7 @@ public sealed class SqliteExecutionJournal(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var conn = db.Database.GetDbConnection();
-        await conn.OpenAsync(ct);
+        await OpenConnectionAsync(conn, lease, ct);
 
         using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(
             System.Data.IsolationLevel.Serializable, ct);
@@ -128,7 +131,7 @@ public sealed class SqliteExecutionJournal(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var conn = db.Database.GetDbConnection();
-        await conn.OpenAsync(ct);
+        await OpenConnectionAsync(conn, lease, ct);
 
         using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(
             System.Data.IsolationLevel.Serializable, ct);
@@ -159,7 +162,7 @@ public sealed class SqliteExecutionJournal(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var conn = db.Database.GetDbConnection();
-        await conn.OpenAsync(ct);
+        await OpenConnectionAsync(conn, lease, ct);
 
         using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(
             System.Data.IsolationLevel.Serializable, ct);
@@ -306,7 +309,7 @@ public sealed class SqliteExecutionJournal(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var conn = db.Database.GetDbConnection();
-        await conn.OpenAsync(ct);
+        await OpenConnectionAsync(conn, lease, ct);
 
         using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(
             System.Data.IsolationLevel.Serializable, ct);
@@ -597,6 +600,49 @@ public sealed class SqliteExecutionJournal(
         CommandStatus.Cancelled => "cancelled",
         _ => "failed",
     };
+
+    private async Task OpenConnectionAsync(
+        System.Data.Common.DbConnection connection,
+        ExecutionLease lease,
+        CancellationToken ct)
+    {
+        for (var attempt = 1; attempt <= OpenAttemptLimit; attempt++)
+        {
+            try
+            {
+                await connection.OpenAsync(ct);
+                return;
+            }
+            catch (SqliteException ex) when (
+                attempt < OpenAttemptLimit && IsPooledConnectionActivationFailure(ex))
+            {
+                // No transaction or event write exists at this point, so retrying
+                // cannot duplicate a committed journal fact. Drop the affected
+                // pool to avoid reusing a handle whose activation/deactivation
+                // was interrupted by an outstanding native statement.
+                if (connection is SqliteConnection sqliteConnection)
+                    SqliteConnection.ClearPool(sqliteConnection);
+
+                logger.LogWarning(
+                    ex,
+                    "[Journal] SQLite pooled connection activation failed; retrying open attempt={Attempt}/{Limit} run={RunId} cmd={CommandId}",
+                    attempt,
+                    OpenAttemptLimit,
+                    lease.RunId,
+                    lease.CommandId);
+                await Task.Delay(OpenRetryDelay * attempt, ct);
+            }
+        }
+    }
+
+    private static bool IsPooledConnectionActivationFailure(SqliteException ex)
+    {
+        if (ex.SqliteErrorCode is not (5 or 6))
+            return false;
+
+        return ex.Message.Contains("not an error", StringComparison.OrdinalIgnoreCase) ||
+               ex.Message.Contains("active statements", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static void AddParam(System.Data.Common.DbCommand cmd, string name, object value)
     {

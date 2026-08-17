@@ -127,6 +127,10 @@ public sealed class TokenUsageRecorderPrefixDiagnosticsTests
         Assert.AreEqual(30, layers[1].EstimatedCacheHitTokens);
         Assert.AreEqual(30, layers[1].EstimatedCacheMissTokens);
         Assert.AreEqual(0.5, layers[1].EstimatedCacheHitRate);
+        Assert.IsGreaterThan(0L, layers[0].RawUtf8Bytes);
+        Assert.IsGreaterThan(0L, layers[0].GzipBytes);
+        Assert.IsNotNull(layers[0].GzipRatio);
+        Assert.IsGreaterThanOrEqualTo(1.0, layers[0].GzipRatio!.Value);
     }
 
     [TestMethod]

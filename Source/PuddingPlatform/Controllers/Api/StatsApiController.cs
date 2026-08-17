@@ -515,6 +515,8 @@ public class StatsApiController(
             .Where(e => !toDate.HasValue || e.OccurredAtUtc <= toDate.Value)
             .ToList();
         var totalTokens = rows.Sum(e => e.TokenCount);
+        var totalRawUtf8Bytes = rows.Sum(e => e.RawUtf8Bytes);
+        var totalGzipBytes = rows.Sum(e => e.GzipBytes);
         var layers = rows
             .GroupBy(e => new { e.LayerName, e.LayerOrder, e.LayerRole })
             .OrderBy(g => g.Key.LayerOrder)
@@ -528,6 +530,8 @@ public class StatsApiController(
                     .Select(v => v!.Value)
                     .ToList();
                 var tokenCount = items.Sum(e => e.TokenCount);
+                var rawUtf8Bytes = items.Sum(e => e.RawUtf8Bytes);
+                var gzipBytes = items.Sum(e => e.GzipBytes);
                 var changeReasons = items
                     .Where(e => !string.IsNullOrWhiteSpace(e.ChangeReason))
                     .GroupBy(e => e.ChangeReason!)
@@ -546,6 +550,9 @@ public class StatsApiController(
                     layerRole = g.Key.LayerRole,
                     calls = items.Count,
                     tokenCount,
+                    rawUtf8Bytes,
+                    gzipBytes,
+                    gzipRatio = RoundRatio(gzipBytes > 0 ? (double)rawUtf8Bytes / gzipBytes : 0),
                     tokenShare = RoundRatio(totalTokens > 0 ? (double)tokenCount / totalTokens : 0),
                     avgTokens = Math.Round(items.Average(e => e.TokenCount), 2),
                     medianTokens = Median(items.Select(e => (double)e.TokenCount)),
@@ -571,6 +578,9 @@ public class StatsApiController(
             sessionId,
             totalEvents = rows.Count,
             totalLayerTokens = totalTokens,
+            totalRawUtf8Bytes,
+            totalGzipBytes,
+            gzipRatio = RoundRatio(totalGzipBytes > 0 ? (double)totalRawUtf8Bytes / totalGzipBytes : 0),
             layers,
         });
     }

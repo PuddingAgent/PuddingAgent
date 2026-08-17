@@ -15,7 +15,7 @@ namespace PuddingRuntime.Services.Skills;
 [Tool(
     id: "search_grep",
     name: "search_grep",
-    description: "在指定目录的代码文件中搜索指定文本。支持正则表达式。可选参数 pattern 过滤文件名（如 \"*.cs\"），file_ext 过滤扩展名（如 \"cs;ts\"），directory 限定搜索目录，exclude_dirs 排除子目录（默认 $outputWwwroot;dist;node_modules;bin;obj;.git;TestResults;artifacts;publish;.venv;.tmp），exclude_dirs_append 追加排除目录，max_line_bytes 单行截断上限（默认 8192），max_total_bytes 结果总量上限（默认 262144）。",
+    description: "在指定目录的代码文件中搜索指定文本。支持正则表达式。可选参数 pattern 过滤文件名（如 \"*.cs\"），file_ext 过滤扩展名（如 \"cs;ts\"），directory 限定搜索目录，exclude_dirs 排除子目录（默认 $outputWwwroot;dist;node_modules;bin;obj;.git;.pudding;TestResults;artifacts;publish;.venv;.tmp），exclude_dirs_append 追加排除目录，max_line_bytes 单行截断上限（默认 8192），max_total_bytes 结果总量上限（默认 16384）；结果不足时缩小范围后渐进检索。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe)]
@@ -25,11 +25,11 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     private readonly IFullTextSearchEngine _searchEngine;
     private readonly ITelemetryMetricSink? _telemetry;
 
-    private const int DefaultMaxResults = 30;
+    private const int DefaultMaxResults = 20;
     private const long MaxFileSizeBytes = 1 * 1024 * 1024;
-    private const string DefaultExcludeDirs = "$outputWwwroot;dist;node_modules;bin;obj;.git;TestResults;artifacts;publish;.venv;.tmp";
+    private const string DefaultExcludeDirs = "$outputWwwroot;dist;node_modules;bin;obj;.git;.pudding;TestResults;artifacts;publish;.venv;.tmp";
     private const long DefaultMaxLineBytes = 8 * 1024;
-    private const long DefaultMaxTotalBytes = 256 * 1024;
+    private const long DefaultMaxTotalBytes = 16 * 1024;
     private const string TruncatedMarker = "...[truncated, original={0} bytes]";
     private const string TotalCapMessage = "结果已截断，共命中 {0} 处，请缩小范围";
     private const string EnumerationTruncatedMessage = "文件枚举已达上限 {0} 个，结果可能不完整（建议缩小 directory/pattern/file_ext 范围）";
@@ -444,12 +444,12 @@ public sealed record SearchGrepArgs
     public int? MaxResults { get; init; }
     [ToolParam("Directory to search in. Default: current directory.")]
     public string? Directory { get; init; }
-    [ToolParam("Directories to exclude, semicolon-separated. Default: $outputWwwroot;dist;node_modules;bin;obj;.git;TestResults;artifacts;publish;.venv;.tmp")]
+    [ToolParam("Directories to exclude, semicolon-separated. Default: $outputWwwroot;dist;node_modules;bin;obj;.git;.pudding;TestResults;artifacts;publish;.venv;.tmp")]
     public string? ExcludeDirs { get; init; }
     [ToolParam("Extra directories to exclude, appended to the effective exclude list, semicolon-separated")]
     public string? ExcludeDirsAppend { get; init; }
     [ToolParam("Max bytes per matching line before truncation. 0 disables truncation. Default: 8192")]
     public long? MaxLineBytes { get; init; }
-    [ToolParam("Max total bytes of results before truncation. 0 disables the cap. Default: 262144")]
+    [ToolParam("Max total bytes of results before truncation. 0 disables the cap. Default: 16384")]
     public long? MaxTotalBytes { get; init; }
 }

@@ -1,4 +1,4 @@
-﻿# PuddingCore CodeMAP
+# PuddingCore CodeMAP
 
 > 核心抽象与契约 | 接口 · 模型 · 配置 · 序列化 · Agent 定义
 
@@ -20,7 +20,7 @@
 | `ChatMessage.cs` | 聊天消息模型 |
 | `LlmResponse.cs` | LLM 响应 |
 | `LlmContinuationState.cs` | Provider opaque output items 跨工具轮次回放契约 |
-| `LlmOptions.cs` | LLM 选项 |
+| `LlmOptions.cs` | LLM 选项、最近请求的 ContextUsageSnapshot、Tokenizer 校准和工具 schema 的 UTF-8/GZIP 归因（不保存正文） |
 | `StreamDelta.cs` | 流式增量 |
 | `ToolCall.cs` | 工具调用 |
 | `ToolParameterSchema.cs` | 工具参数 Schema（JSON Schema） |
@@ -54,7 +54,8 @@
 |------|------|
 | `Agents/` | Agent 抽象定义 |
 | `SubAgents/` | 子代理抽象 |
-| `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约；大型任务基线 600 轮/2400 工具调用/24h + 20 轮/30 分钟收尾宽限，父 Agent 只可指定 `resume_sub_agent_id`，不可传数值预算 |
+| `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约；大型任务基线 600 轮/2400 工具调用/24h + 20 轮/30 分钟收尾宽限，并定义临时执行身份目录保留/隔离配置；父 Agent 只可指定 `resume_sub_agent_id`，不可传数值预算 |
+| `Runtime/ContextAssemblyContracts.cs` | 上下文装配契约；同时携带执行 AgentInstanceId 与稳定 ConfigurationAgentInstanceId，避免把 SubSessionId 当持久配置目录 |
 
 ## 子代理编排（Orchestration/）
 
@@ -76,7 +77,7 @@
 | 文件 | 用途 |
 |------|------|
 | `Tools/` | 工具接口与基类 |
-| `Tools/PuddingToolContracts.cs` | 原生 Tool 描述、反序列化与执行基类；提供不污染公开 schema 的参数归一化边界 |
+| `Tools/PuddingToolContracts.cs` | 原生 Tool 描述、反序列化与执行基类；当前结果仍为 Output/Error string，deepseek-harness 对齐方案将从这里演进 input/output schema、canonical value、结构化错误与不可变调用身份 |
 
 ## 存储管理契约（Storage/）
 
@@ -84,11 +85,23 @@
 |------|------|
 | `StorageMaintenanceContracts.cs` | Core 数据库/索引明细、语义清理目标、十分钟预览令牌、执行结果与 `IStorageMaintenanceService` 契约；Desktop 只通过 HTTP 使用 |
 
+## 任务系统契约（Tasks/）
+
+| 文件 | 用途 |
+|------|------|
+| `Tasks/WorkspaceTaskModels.cs` | WorkspaceTask 核心模型（28 字段 + 五列投影 Backlog/Ready/InProgress/Review/Done）|
+| `Tasks/TaskStateMachine.cs` | 纯状态机：12 态 + 10 命令 + `CanTransition` 终态出边约束 |
+| `Tasks/TaskPersistenceContracts.cs` | `ITaskStore` 持久化契约（keyset 分页 + CAS 乐观并发 + 硬删语义）|
+| `Tasks/TaskStoreException.cs` | Store 契约异常（ErrorCode/TaskId/ExpectedVersion/ActualVersion）|
+| `Tasks/TaskDispatchModels.cs` | 任务派发模型（RuntimeDispatchRequest.ActiveTask 注入）|
+| `Tasks/TaskAgentCommandContracts.cs` | task_* 工具命令契约（List/Get/Claim/Update + `ITaskAgentCommandService`）|
+| `Tasks/ActiveTaskRuntimeContext.cs` | ActiveTask 运行时上下文（派发链注入 ToolExecutionContext，含 ExpectedVersion）|
+
 ## 配置 & 序列化
 
 | 目录/文件 | 用途 |
 |------|------|
-| `Configuration/` | 配置抽象；`llm.providers.json` 的协议归属模型，支持同一 Provider 混合 `openai` / `responses` / `anthropic` |
+| `Configuration/` | 配置抽象；`PuddingDataPaths` 提供临时子代理目录隔离根；`llm.providers.json` 的协议归属模型支持同一 Provider 混合 `openai` / `responses` / `anthropic` |
 | `Serialization/` | 序列化契约 |
 | `Skills/` | 技能系统抽象 |
 
@@ -97,8 +110,12 @@
 | 目录/文件 | 用途 |
 |------|------|
 | `Events/` | 事件定义 |
+| `Models/InternalEvent.cs` | 当前跨 Runtime/Platform 的事件信封与队列 DTO；目标补齐 aggregate/version/partition、producer、actor、classification 及 run/turn/call 身份 |
+| `Abstractions/IInternalEventBus.cs` | 当前进程内 pub/sub；不作为长期 durable replay 或同步 Hook 合同 |
 | `Observability/` | 观测抽象 |
 | `Diagnostics/` | 诊断抽象 |
+
+目标新增 `Plugins/`、`Hooks/`、`Lifecycle/` 与 `Events/DomainEventContracts.cs`，分别承载 PluginActivation/Scope、Guard/Transform/Around、各 aggregate 状态机，以及 durable event envelope；详见 `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`。
 
 ## 运行时抽象
 

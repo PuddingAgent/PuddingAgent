@@ -44,6 +44,7 @@ public sealed record SubAgentRunManifest
     public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
     public int? TotalRounds { get; init; }
     public int? TotalToolCalls { get; init; }
+    public long? TotalDurationMs { get; init; }
     public string? ErrorMessage { get; init; }
 }
 

@@ -1,4 +1,4 @@
-﻿# PuddingPlatform CodeMAP
+# PuddingPlatform CodeMAP
 
 > 平台层 | Session 管理 · API · EF Core 持久化 · 消息网关
 
@@ -21,7 +21,6 @@
 | `Services/ChatMessageRepository.cs` | 消息仓储 |
 | `Services/ChatTranscriptWriter.cs` | 转录写入 |
 | `Services/ChatTelemetryRecorder.cs` | 遥测记录 |
-| `Services/ChatOmniRealtimeSessionRunner.cs` | 全双工实时会话 |
 
 ## 消息网关
 
@@ -31,6 +30,7 @@
 | `Services/Conversation/` | 对话接受/投影/事件存储 |
 | `Services/ConversationEventStore.cs` | 对话事件存储（18KB） |
 | `Services/ConversationProjectionWorker.cs` | 对话投影 Worker |
+| `Services/Execution/SqliteExecutionJournal.cs` | canonical execution journal；开事务前处理 SQLite pooled-handle 激活异常，且只在尚未写入事件时清池并有限重试，避免瞬时连接故障直接终止 Agent turn |
 | `Services/MessageTopicService.cs` | 消息主题 |
 
 ## Agent 管理
@@ -56,15 +56,37 @@
 |------|------|
 | `Services/SubAgentManager.cs` | 子代理管理；固化系统预算/收尾宽限；以同一 SubSessionId + 新 runId 透明续跑并重置计数器 |
 | `Services/SubAgentPool.cs` | Core `ISubAgentPool` 的 Platform 子代理池实现 |
+| `Services/SubAgentTransientDirectoryGcService.cs` | 历史临时执行身份空 Skill 脚手架 GC；以精确目录形状 + 子代理池 + durable run 终态多重门禁，先移入 retention-archive 隔离，延迟后再安全删除 |
 | `Services/SubAgentDiagnosticsService.cs` | 子代理诊断 |
-| `Services/FileSubAgentRunStore.cs` | 子代理运行文件存储；支持可恢复终态 `budget_exhausted` 与预算通知投影 |
+| `Services/FileSubAgentRunStore.cs` | 子代理运行文件存储；终态 `run.json` 固化轮次、工具、耗时和错误；支持可恢复终态 `budget_exhausted` 与预算通知投影 |
+| `Controllers/Api/SubAgentRunController.cs` | 认证运行检查器 API；详情从归档返回终态统计，events 分页返回可重建历史时间线的完整事件 payload |
 | `Services/SessionStateManager.cs` | 会话/子代理持久状态查询；子代理状态 DTO 按可复用 SubSessionId 关联最新 canonical runId，供托盘坞和检查器在漏收事件后恢复运行 |
+
+## 任务系统（Tasks）
+
+| 文件 | 用途 |
+|------|------|
+| `Services/Tasks/SqliteWorkspaceTaskStore.cs` | SQLite Task Ledger：`workspace_tasks` + `task_events` 两表、snake_case 列、CAS 乐观并发、Task+Event 原子提交、硬删语义、keyset 分页 |
+| `Services/Tasks/TaskAgentCommandService.cs` | task_* 工具命令服务：claim/update 原子写回 Task+Attempt+Event+Binding 四表 |
+| `Services/Tasks/TaskCommandService.cs` | PATCH/ApplyCommand 原子语义（含 status 显式迁移走 `CanTransition` 校验）|
+| `Services/Tasks/TaskDispatcher.cs` | 任务派发（RuntimeDispatchRequest.ActiveTask 注入到派发链）|
+| `Services/Tasks/TaskDispatchOutboxStore.cs` | 派发 outbox 持久化 |
+| `Services/Tasks/TaskDispatchSchemaBootstrapper.cs` | 派发 schema 幂等建表 |
+| `Services/Tasks/TaskDispatchSerialization.cs` | 派发序列化 |
+| `Services/Tasks/TaskWireMaps.cs` | 枚举↔wire 双向映射 + ErrorCode→wire/HTTP |
+| `Services/Tasks/ManualAlwaysAllowFence.cs` | manual always allow fence |
+| `Controllers/Api/TaskController.cs` | Control Plane 13 端点 + `GET /tasks/watch` SSE（快照+游标+Last-Event-ID）+ boardColumn 五列过滤 |
+| `Controllers/Api/TaskDtos.cs` | 8 个 wire DTO |
+| `Data/Entities/WorkspaceTaskEntity.cs` | `workspace_tasks` 实体（28 列）|
+| `Data/Entities/TaskEventEntity.cs` | `task_events` 实体（long Id 自增 + 18 业务列）|
+| `Data/Entities/TaskAssignmentAttemptEntity.cs` | `task_assignment_attempts` 实体 + partial unique index（task_id WHERE released_at_utc IS NULL）|
 
 ## 持久化
 
 | 文件 | 用途 |
 |------|------|
 | `Data/` | EF Core DbContext、实体、迁移 |
+| `Data/PlatformSqliteConnectionInterceptor.cs` | Platform SQLite 连接初始化；第一条安装 30 秒 `busy_timeout`，再执行其余连接 PRAGMA，避免连接设置本身在 writer 竞争时过早失败 |
 | `Migrations/` | EF Core 迁移 |
 | `DesignTimeDbContextFactory.cs` | 设计时工厂 |
 | `Services/Orchestration/AgentOrchestrationSchemaBootstrapper.cs` | 通用编排 graph/revision/layout/run/run-input/node-run/event SQLite 表与索引幂等初始化；幂等补齐 node-run `outputs_json` 按端口输出列 |
@@ -81,7 +103,7 @@
 | `Controllers/Api/AgentOrchestrationRunCommandApiController.cs` | `POST /api/orchestrations/runs`；Admin-only、1 MiB 请求上限、显式 Revision/type-safe inputs、201/200 幂等回执与稳定 400/404/409 错误 |
 | `Controllers/Api/AgentOrchestrationHttpHookApiController.cs` | `POST /api/orchestrations/hooks/{graphId}/{triggerId}?revisionId=...`；Admin-only、1 MiB 请求上限、201/200 幂等回执与稳定 400/404/409 错误 |
 | `Services/Diagnostics/DiagnosticRetentionService.cs` | 后台诊断保留期裁剪；仅遥测、上下文指标与运行活动，权威 session/conversation 事实源不在白名单 |
-| `Services/RetentionPruningService.cs` | 🆕 platform.db 数据保留期裁剪 BackgroundService；补齐 session_event_log/telemetry_metric_events/runtime_activity/conversation_events 四张表保留期清理，表名/列名白名单防注入、分批删除+批间限速+VACUUM；ChatMessages 永不裁剪 |
+| `Services/RetentionPruningService.cs` | 🆕 platform.db 数据保留期裁剪 BackgroundService；补齐 telemetry_metric_events/runtime_activity/conversation_events 三张表保留期清理，表名/列名白名单防注入、分批删除+批间限速+VACUUM；ChatMessages 永不裁剪 |
 
 ## 多媒体
 
@@ -106,14 +128,14 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/TokenUsageRecorder.cs` | Token 用量记录（26KB） |
+| `Services/TokenUsageRecorder.cs` | Token 用量记录；把 context layer 的 Token、UTF-8/GZIP 字节、压缩比、hash、变化原因和估算 cache hit/miss 持久化，不复制 prompt 正文 |
 | `Services/TokenUsageEventRepository.cs` | Token 事件持久化与最近层级/熵诊断查询；向 Runtime 返回 Core 诊断 DTO |
 | `Services/LlmGatewayUsageRecorder.cs` | Provider 成功边界逐请求计费账本；与会话归因投影解耦 |
 | `Data/Entities/LlmGatewayUsageEventEntity.cs` | `llm_gateway_usage_events` 本地计费事实；sourceId 唯一 |
-| `Services/TokenUsageSchemaBootstrapper.cs` | 旧 SQLite 的 Token 字段/索引与网关账本幂等建表 |
+| `Services/TokenUsageSchemaBootstrapper.cs` | 旧 SQLite 的 Token 字段/索引、context-layer UTF-8/GZIP 指标列与网关账本幂等升级 |
 | `Services/AppUserSchemaBootstrapper.cs` | 旧 SQLite 的 `AppUsers.Avatar` 幂等补列；避免头像实体升级后登录查询因 schema 漂移返回 500 |
 | `Services/TokenUsageRebuildService.cs` | 从成功网关活动 + session usage 帧重建计费事实，并保留无法覆盖的实时行 |
-| `Controllers/Api/StatsApiController.cs` | 月度/趋势优先网关计费账本，无网关历史月份回退会话投影 |
+| `Controllers/Api/StatsApiController.cs` | 月度/趋势优先网关计费账本，无网关历史月份回退会话投影；context-layer API 聚合 Token、UTF-8/GZIP 字节、压缩比、缓存与变化指标 |
 | `Services/TokenCostService.cs` | 成本计算 |
 
 ## 测试

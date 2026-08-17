@@ -656,6 +656,7 @@ Admin Chat 应从“单 Agent 对话页”转为“聊天室客户端”：
 15. Web Chat 发送给 Agent，Agent 再通过 `send_message` 主动回复用户，必须走同一条 `IMessageSystem -> MessageDelivery -> message.deliver/event/projection` 管道。
 16. 未收到 `message.deliver` 或 Runtime 重启后，`queued/retrying` 投递仍能被持久化扫描发现并进入同一原子 claim 路径。
 17. Chat 交互队列默认不显示 `visibility=system` 的内部投递；显式诊断查询返回正文投影而不是原始 envelope JSON。
+18. Composer 的消息队列只展示 `queued/delivering/retrying` 活动投递并默认收起；`delivered/dead_letter/failed/cancelled/expired` 终态记录继续持久化用于审计与显式诊断，但不常驻占用输入区。
 
 ---
 

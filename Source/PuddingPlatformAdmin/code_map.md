@@ -97,15 +97,20 @@
 | `src/pages/chat/styles/messageStyleContext.tsx` | 消息树样式边界；`MessageList` 注册一次聚合 Chat 样式并通过 Context 共享，消息叶子不得重复调用 `useChatStyles` |
 | `src/pages/chat/components/MessageRow.tsx` | 单消息渲染与语义 memo 边界；投影重建等价对象时保持历史行不提交，正文或过程事件变化仍立即更新 |
 | `src/pages/chat/components/MessageProcessSummary.tsx` | 思考/工具过程摘要；折叠时不得构建完整 rounds、trace chips 和展示项 |
+| `../../Docs/deepseek-harness-message-card-alignment-2026-08-14.md` | Chat 执行流目标设计：同一 assistant turn 内用 TurnStatus、ReasoningDisclosureRow、ToolCallRow、DelegationRow 分层呈现，按 toolCallId 配对并复用实时/历史 projector |
 | `src/pages/chat/components/MessageItem.tsx` | 消息文本轻量壳；立即显示纯文本 fallback，并异步加载 Markdown 增强器 |
 | `src/pages/chat/components/MarkdownBlock.tsx` | ReactMarkdown、KaTeX、HTML parser 和 Prism 的独立按需 chunk |
 | `src/pages/chat/reducer/subAgentReducer.ts` | 子代理事件与状态快照的统一投影；即使页面漏收 `created/started`，也会按状态接口的 canonical `runId` 重建缺失运行；`budget_exhausted` 是可恢复终态，任何终态进入后不得被迟到事件降级；`subagent.llm.completed.reasoning_preview` 作为实际“模型推理”展示，旧字符数占位不再生成 |
-| `src/pages/chat/components/ChatMain.tsx` | Chat 主壳；完整子代理卡片只进入托盘坞，主消息仅接收 active count/时间锚点等父级委派摘要；运行检查器仅在存在卡片或显式打开时加载 |
+| `src/pages/chat/components/ChatMain.tsx` | Chat 主壳；顶栏在当前工作区选择器旁提供常驻“任务看板”入口；完整子代理卡片只进入托盘坞，主消息仅接收 active count/时间锚点等父级委派摘要；运行检查器仅在存在卡片或显式打开时加载 |
 | `src/pages/chat/components/HistorySearchModal.tsx` | 历史搜索弹窗；只有 `historyModalOpen` 时才挂载并触发异步 chunk |
-| `src/pages/chat/components/AgentMessageBubble.tsx` | Agent 消息气泡；首 Token 前并列展示主代理当前活动与最近推理摘要，无事件时明确标注“主代理等待占位”；子代理内部过程不得进入主消息；操作栏在首次 hover 后才实例化 |
+| `src/pages/chat/components/AgentMessageBubble.tsx` | Agent 消息气泡；首 Token 前用一条 compact reasoning disclosure 与 canonical ToolCallRow 连续展示主代理轨迹，不再重复渲染 thinking/tool 活动大卡；无事件时才显示等待占位，子代理内部过程不得进入主消息 |
+| `src/pages/chat/components/ReasoningPreview.tsx` | DeepSeek Harness 风格思考 disclosure；折叠态只显示最新可见推理摘要，点击后展示完整 model-visible reasoning，不伪造隐藏思维链 |
+| `src/pages/chat/components/ToolCallRow.tsx` | 24px 工具轨迹行；call/result 只按 canonical `toolCallId` 精确配对，IN/OUT 按需展开，不按工具名或到达顺序兼容猜测 |
 | `src/pages/chat/hooks/useSessionEventReplay.ts` | 会话 bootstrap/gap replay 与子代理状态校正；进入会话后始终立即并低频读取状态接口，不能以本地已有 active run 为轮询前提 |
-| `src/pages/chat/components/SubAgentActivityDock.tsx` | 子代理任务、工具、轮次和输出详情的唯一运行时入口；Agent-first 路由由 `useChatState` 回退到已解析 `mainSessionId` 绑定卡片；预算耗尽以“运行结束/预算已用尽”异常终态展示 |
+| `src/pages/chat/components/SubAgentActivityDock.tsx` | 子代理任务、推理、工具、轮次和输出详情的唯一入口；选中 run 后分页读取归档并用同一 reducer 投影恢复历史时间线/终态统计，实时运行每 3 秒追平；Agent-first 路由回退 `mainSessionId` 绑定卡片 |
 | `src/pages/chat/components/IntentConsole.tsx` | Composer；摄像头弹窗只在用户打开视觉输入时加载和挂载 |
+| `src/pages/chat/hooks/useMessageInteractionQueue.ts` | Composer 活动消息队列投影；只请求并保留 queued/delivering/retrying，终态 delivery 留在持久化审计/诊断入口，不进入常驻输入区 |
+| `src/pages/chat/components/MessageQueueDropdown.tsx` | 活动消息队列紧凑入口；无活动项时不渲染，有活动项时默认收起并可按需展开详情 |
 | `src/pages/chat/viewport/messageProjection.ts` | 将 MessageList 已组装的权威消息顺序转换为虚拟行；不得按 active run 的原始启动时间二次排序，避免长任务状态回跳到历史顶部 |
 | `src/pages/chat/viewport/useMessageViewportRuntime.ts` | 虚拟列表、锚点与贴底；scroll 状态未变化时不得触发 React commit，首屏稳定轮询应尽快结束 |
 | `src/utils/perfEventRuntime.ts` | 首屏常驻的轻量性能事件缓冲；不得反向静态导入完整诊断模块 |

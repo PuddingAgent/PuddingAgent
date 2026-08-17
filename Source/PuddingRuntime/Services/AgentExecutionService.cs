@@ -523,10 +523,13 @@ public sealed partial class AgentExecutionService
     }
 
     /// <summary>从 RuntimeDispatchRequest 构建 LLM 可读的用户消息。若存在 Origin 则渲染为 pudding-message JSON 信封。</summary>
-    private static string BuildUserMessageForLlm(RuntimeDispatchRequest request)
+    private static string BuildUserMessageForLlm(
+        RuntimeDispatchRequest request,
+        string? userContextPrefix = null)
     {
+        var userContent = BuildUserTailContent(request.MessageText, userContextPrefix);
         if (request.Origin is null)
-            return request.MessageText;
+            return userContent;
 
         var envelope = new AgentContextEnvelope
         {
@@ -548,10 +551,23 @@ public sealed partial class AgentExecutionService
                 "Use metadata to identify sender, receiver, and message type. Do not infer identity only from natural language content.",
                 "Handle this message as an inbound conversation event for the target agent session.",
             ],
-            Context = new AgentContextPayload("text/markdown", request.MessageText),
+            Context = new AgentContextPayload("text/markdown", userContent),
         };
 
         return AgentContextEnvelopeRenderer.RenderForAgent(envelope);
+    }
+
+    private static string BuildUserTailContent(string messageText, string? userContextPrefix)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("[RUNTIME TAIL CONTEXT]");
+        sb.AppendLine($"Date: {DateTimeOffset.Now:yyyy-MM-dd}");
+        if (!string.IsNullOrWhiteSpace(userContextPrefix))
+            sb.Append(userContextPrefix.Trim()).AppendLine();
+        sb.AppendLine("[/RUNTIME TAIL CONTEXT]");
+        sb.AppendLine();
+        sb.Append(messageText);
+        return sb.ToString();
     }
 
     private static IReadOnlyDictionary<string, string> BuildOriginMetadata(MessageOrigin origin)

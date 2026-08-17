@@ -1,7 +1,8 @@
 # 通用 Agent 编排蓝图编辑器与组件系统施工图
 
 > 状态：**construction-blueprint；尚未全部实现**  
-> 日期：2026-08-10  
+> 首次提出：2026-08-10
+> 本次修订：2026-08-15
 > 总体决策：[ADR-071](82ADR-071通用Agent编排平台完整设计方案ADR.md)  
 > 后端配套：[执行内核与 Control Plane 施工图](83通用Agent编排后端执行内核与ControlPlane施工图.md)  
 > 验收配套：[测试交付与运维验收图册](85通用Agent编排交付测试与运维验收图册.md)
@@ -732,3 +733,158 @@ Source/PuddingPlatformAdmin/src/pages/orchestration/
 - 300 节点基线交互可用；
 - 键盘和屏幕阅读器可完成核心查看与编辑；
 - 浏览器 UI smoke 与后端持久事实一致，测试临时 Graph/Run/Artifact 可清理。
+
+## 26. 2026-08-15 增补：Pudding 视觉语言、Function Catalog 与插件呈现
+
+本节明确参考 pi/deepseek-harness 后 Pudding 自己的前端方向。目标不是复制 Harness 页面，也不是把节点编辑器做成另一套 ComfyUI 皮肤。
+
+### 26.1 四种视图只回答各自的问题
+
+| Surface | 首要问题 | 不应承担 |
+|---------|----------|----------|
+| Chat | 发生了什么、下一步是什么、用户是否需要决策 | 完整展示所有内部事件和每个端口字段 |
+| Graph | 函数如何依赖、数据为什么流到这里、当前执行走到哪里 | 充当业务事实源或在浏览器调度节点 |
+| Inspector | 选中对象的输入、输出、合同、权限、成本和诊断是什么 | 永久占据大面积画布或复制全局列表 |
+| Timeline | 哪些已提交事实导致当前状态、能否回放和审计 | 用临时动画代替 durable event |
+
+四种视图必须读取同一 `ProjectionSnapshot + watch cursor`。Chat 中显示“任务已完成”与 Graph/Timeline 的 Run 终态必须来自同一 aggregate sequence。
+
+### 26.2 Pudding 的视觉性格
+
+关键词：**安静、温和、精确、可信、长时间工作不疲劳**。
+
+- 大面积使用中性背景和少量层级面，不用每张卡片都加重边框、渐变和阴影；
+- 强调色用于当前焦点、可操作对象和真正需要注意的风险，不把品牌色当作所有状态色；
+- 节点默认紧凑，长文本与 Artifact 使用摘要 + 展开/抽屉；
+- 运动表达因果和状态转换，不表达“系统很忙”；后台等待不持续闪烁；
+- 同一状态使用 icon + label + semantic token，不能只靠颜色；
+- “布丁”的陪伴感来自连续记忆、温和措辞、可恢复工作和清楚解释，不依赖拟人装饰占用工作区。
+
+建议语义 Token：
+
+```text
+surface.canvas / surface.panel / surface.elevated
+text.primary / text.secondary / text.muted
+border.subtle / border.focus / border.danger
+state.running / waiting / deferred / approval / blocked / failed / completed
+causality.controlEdge / dataEdge / childRun / hook
+motion.instant / standard / deliberate
+```
+
+功能组件只消费 Token，不直接写 light/dark 颜色字面量。Shell 统一处理主题、对比度和 `prefers-reduced-motion`。
+
+### 26.3 原因优先的状态语言
+
+每个非终态状态至少展示：
+
+- 人可读状态；
+- `reasonCode`；
+- 谁/什么正在阻塞；
+- `nextEligibleAt` 或等待条件；
+- 是否消耗 Worker/Token/成本；
+- 用户可执行的恢复动作；
+- 最近一条相关 durable event。
+
+示例：
+
+```text
+已推迟 · 当前为高峰时段
+18:00 后自动恢复 · 不占用 Agent · 不消耗 Token
+[为何推迟] [现在运行] [修改工作区策略]
+```
+
+“睡眠”“等待模型”“等待子 Agent”“等待审批”“Goal 质询”“无进展熔断”不可合并成一个笼统 spinner。
+
+### 26.4 Catalog 从 Component 升级到 Function
+
+Palette 的权威来源改为后端 Function Catalog Projection。前端 ViewModel 可以继续称 Component，但必须保留：
+
+- Function ID/version/kind/contract hash；
+- typed inputs/outputs；
+- capability/side effect/trust；
+- idempotency/retry/timeout/cost 摘要；
+- provider plugin 与健康状态；
+- configuration schema；
+- presentation descriptor；
+- compatibility/deprecation。
+
+搜索应同时覆盖名称、能力、输入输出类型、Provider 和标签。筛选至少包括 Agent/Tool/Graph/Gate/Transform/HumanInput、只读/写入/外网、内置/第三方、健康/失效、成本等级。
+
+拖入画布时把 Function Reference 与 Contract Hash 冻结进 Draft；Renderer 只负责 UI，不得改变执行合同。
+
+### 26.5 Presentation Contribution
+
+插件默认贡献声明式呈现：
+
+```ts
+type PresentationDescriptor = {
+  presentationId: string
+  functionKinds: FunctionKind[]
+  summaryFields: FieldBinding[]
+  formSchemaRef?: string
+  cardTemplate?: SemanticTemplate
+  inspectorSections?: InspectorSectionDescriptor[]
+  timelineEventKinds?: string[]
+  artifactRenderers?: ArtifactRendererReference[]
+  actionCommands?: CommandPresentation[]
+  localizationNamespace: string
+}
+```
+
+声明式模板只能使用白名单语义组件，如 Text、Badge、Metric、Code、Markdown、Image、Audio、Video、ArtifactLink、KeyValue、Table 和 Diff。
+
+可信代码 Renderer 仅供签名的 in-product 插件：
+
+- 动态加载失败时回落到通用 JSON/Artifact Renderer；
+- 通过 capability-limited facade 读取 Projection、发送 Command；
+- 不得直接读取 Secret、数据库、文件系统或调用任意 API；
+- 由 plugin owner 管理卸载，不能留下订阅或 timer；
+- Renderer 版本和 Function Contract 兼容性可诊断。
+
+### 26.6 Composition、Hook 与 Event Inspector
+
+Admin 增加一个统一“系统构成”入口，包含：
+
+1. **Plugins**：包、版本、信任、Scope、依赖、健康、Contribution、Drain 状态；
+2. **Functions**：Provider、Schema、Capability、Side Effect、引用它的 Graph；
+3. **Pipelines**：某操作的 Guard/Transform/Around/Observer 顺序、来源和失败策略；
+4. **Events**：producer-consumer map、Schema、checkpoint、lag、retry、dead letter；
+5. **Projections**：来源事件、cursor、重建状态和最后错误；
+6. **Run Evidence**：实际冻结的 Composition Snapshot、Contract Hash 和策略决定。
+
+默认视图只展示结论和异常；高级信息在 Inspector 中展开。这样可观察性不会把普通用户界面变成开发者日志窗口。
+
+### 26.7 Agent 生成图的 UX
+
+Agent 生成图后，UI 显示为“建议 Revision”，而不是立即运行：
+
+1. 画布标出 Agent 新增/删除/修改的节点与边；
+2. Diagnostics 按类型、能力、成本、Side Effect 和循环风险分类；
+3. 用户可以查看 Revision Diff、接受、编辑或拒绝并留下理由；
+4. 只读低风险图可按工作区策略自动激活 ephemeral Revision；
+5. 写入、外网、Credential、人工发布等图必须进入审批；
+6. 运行后 Timeline 能从输出反查到 Agent 建图提议、编译诊断、审批和 Deployment。
+
+Agent 与用户同时编辑时继续使用 Head CAS；Agent 建议不能覆盖用户未保存 Draft。
+
+### 26.8 长时间任务的交互
+
+- 页面关闭或 Desktop 隐藏后，Run 仍由 Core 持久执行；
+- 重新进入时先取 Snapshot，再从 cursor watch；
+- 自动继续、质询和峰谷恢复标记真实来源，但在对话叙事中保持自然；
+- 用户消息永远有可见优先权，抢占自动 continuation 时给出一条简短证据；
+- Goal banner 展示进度、最近 verdict、剩余预算、下一次行动和退出方法；
+- 失败首先显示可恢复动作，其次才是 Error ID 和技术详情；
+- Notification 只用于需要用户行动或终态，不为每轮“仍在运行”制造噪音。
+
+### 26.9 前端新增验收
+
+- Plugin/Function/Hook/Event/Projection 目录都来自服务端 Snapshot，不维护前端硬编码第二事实源；
+- Presentation 缺失或异常时通用 Renderer 仍能展示输入输出和状态；
+- Theme 切换、High Contrast 与 Reduced Motion 不改变状态含义；
+- 原因、恢复动作和 next eligible time 可由键盘/屏幕阅读器访问；
+- Agent 建议 Revision 与用户 Draft 冲突时不丢任何一方内容；
+- 断线重连后 Chat、Graph、Inspector、Timeline aggregate sequence 一致；
+- 300 节点时只渲染可视区域和必要 overlay，Timeline 虚拟化；
+- 第三方 Renderer 无法越权调用未声明 Command；
+- 一个插件 Drain 后，新 Draft 不再显示其 Function，旧 Run 仍可看到冻结描述与降级呈现。

@@ -218,6 +218,14 @@ describe('ChatMain workbench header', () => {
     expect(screen.queryByText(/session-visible/)).toBeNull();
   });
 
+  it('opens the current workspace task board from the visible header entry', () => {
+    renderChatMain();
+
+    fireEvent.click(screen.getByRole('button', { name: '任务看板' }));
+
+    expect(mockHistoryPush).toHaveBeenCalledWith('/workspace/default/tasks');
+  });
+
   it('renders the Agent Workbench with timeline and intent console without a side presence rail', () => {
     renderChatMain();
 

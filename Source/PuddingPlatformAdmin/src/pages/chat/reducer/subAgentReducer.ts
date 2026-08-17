@@ -281,7 +281,7 @@ const isTerminalType = (type: string): boolean =>
 
 const activityLabel = (
   event: SubAgentConversationEvent,
-  run: SubAgentRunView,
+  run: Pick<SubAgentRunView, 'modelId' | 'currentRound'>,
 ): string => {
   const round = number(event, 'round') ?? run.currentRound;
   const toolName = text(event, 'tool_name', 'toolName') ?? '工具';
@@ -323,9 +323,9 @@ const activityLabel = (
   }
 };
 
-const projectActivity = (
+export const projectSubAgentActivity = (
   event: SubAgentConversationEvent,
-  run: SubAgentRunView,
+  run: Pick<SubAgentRunView, 'modelId' | 'currentRound'>,
   at: number,
 ): SubAgentActivity => {
   const details: NonNullable<SubAgentActivity['details']> = [];
@@ -661,9 +661,10 @@ export function reduceSubAgentRunEvent(
   }
   next = {
     ...next,
-    activities: [...next.activities, projectActivity(event, next, at)].slice(
-      -100,
-    ),
+    activities: [
+      ...next.activities,
+      projectSubAgentActivity(event, next, at),
+    ].slice(-100),
   };
 
   const output = { ...state, [runId]: next };

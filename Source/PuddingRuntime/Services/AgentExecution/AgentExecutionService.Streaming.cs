@@ -206,6 +206,7 @@ public sealed partial class AgentExecutionService
                 UserMessage = request.MessageText,
                 Capability = effectiveCapability,
                 AgentInstanceId = instance.AgentInstanceId,
+                ConfigurationAgentInstanceId = request.ConfigurationAgentInstanceId,
                 ForStreaming = true,
                 IsFirstMessage = history.Count == 0,
                 SessionHistory = history.Where(m => m.Role != ChatRole.System).ToList(),
@@ -285,7 +286,7 @@ public sealed partial class AgentExecutionService
 
         history.Add(new ChatMessage(
             ChatRole.User,
-            BuildUserMessageForLlm(request),
+            BuildUserMessageForLlm(request, streamingSystemPrompt.UserContextPrefix),
             VisualArtifactIds: request.VisualArtifactIds,
             AudioArtifactIds: request.AudioArtifactIds));
 
@@ -355,7 +356,7 @@ public sealed partial class AgentExecutionService
         // 构建工具定义：优先用上游下发的 ToolDefinitions，否则从 SkillRuntime 构建
         var toolBuildStartedAt = DateTimeOffset.UtcNow;
         var toolBuildSw = System.Diagnostics.Stopwatch.StartNew();
-        var loadedToolIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var loadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
         HashSet<string> availableToolNames;
         List<LlmToolDefinition> allLlmTools;
         List<LlmToolDefinition> llmTools;
@@ -565,22 +566,6 @@ public sealed partial class AgentExecutionService
                     && toolCallId.ValueKind == JsonValueKind.String)
                     return toolCallId.GetString();
                 return null;
-            }
-
-            async Task<string> StripWithDiagnosticsAsync(string value, string stage, CancellationToken token)
-            {
-                var startedAt = System.Diagnostics.Stopwatch.GetTimestamp();
-                try
-                {
-                    return await _keyVaultService.StripAsync(value, token);
-                }
-                finally
-                {
-                    pipelineDiagnostics.ObserveKeyVaultStrip(
-                        ElapsedMilliseconds(startedAt),
-                        stage,
-                        value.Length);
-                }
             }
 
             // ── 流式 Agent Loop（与同步路径共享护栏参数）──────
@@ -866,20 +851,20 @@ public sealed partial class AgentExecutionService
                         if (!string.IsNullOrEmpty(delta.ContentDelta))
                         {
                             roundDeltaFrames++;
-                            var safeDelta = await StripWithDiagnosticsAsync(delta.ContentDelta, "delta", ct);
-                            replyBuf.Append(safeDelta);
+                            var originalDelta = delta.ContentDelta;
+                            replyBuf.Append(originalDelta);
                             ReportMeaningfulProgress(
                                 request,
                                 "llm.streaming.content",
-                                safeDelta);
+                                originalDelta);
                             var deltaFrame = ServerSentEventFrame.Json(SseEventTypes.Delta,
-                                new { delta = safeDelta });
+                                new { delta = originalDelta });
                             await Append(deltaFrame);
                             yield return deltaFrame;
                             _ = _eventBus?.EmitAsync(new StreamingEvent
                             {
                                 Type = StreamingEventTypes.AgentDelta,
-                                Data = new { delta = safeDelta }
+                                Data = new { delta = originalDelta }
                             }, ct);
                         }
 
@@ -1107,7 +1092,7 @@ public sealed partial class AgentExecutionService
                 if (!hasToolCalls)
                 {
                     reply = replyBuf.Length > 0
-                        ? await StripWithDiagnosticsAsync(replyBuf.ToString(), "final_reply", ct)
+                        ? replyBuf.ToString()
                         : "（Agent 未返回可展示文本）";
 
                     // 极短回复保护：如果已执行过工具但回复太短且未到达最后轮，继续Loop给LLM机会补充
@@ -1158,7 +1143,7 @@ public sealed partial class AgentExecutionService
                     .Select(tc => new ToolCall(tc.Id, tc.Name, tc.Arguments))
                     .ToList();
                 var assistantContent = replyBuf.Length > 0
-                    ? await StripWithDiagnosticsAsync(replyBuf.ToString(), "tool_round_assistant", ct)
+                    ? replyBuf.ToString()
                     : null;
                 var toolRoundMessages = new List<ChatMessage>
                 {
@@ -1300,6 +1285,7 @@ public sealed partial class AgentExecutionService
                         allLlmTools);
                     if (newlyLoadedToolCount > 0)
                     {
+                        _sessionManager.RememberLoadedToolIds(request.SessionId, loadedToolIds);
                         llmTools = ToolExposurePlanner
                             .CreatePlan(allLlmTools, loadedToolIds)
                             .VisibleTools
@@ -1339,8 +1325,15 @@ public sealed partial class AgentExecutionService
                             finalInfo,
                             snapshot is null ? string.Empty : string.Join(Environment.NewLine, snapshot.Lines),
                             snapshot?.NextOffset ?? 0);
-                        var safeTerminalPayload = await _keyVaultService.StripAsync(terminalPayload, ct);
-                        toolRoundMessages.Add(new ChatMessage(ChatRole.Tool, safeTerminalPayload, ToolCallId: tc.Id));
+                        var boundedTerminalPayload = await ToolResultContextPolicy.MaterializeAsync(
+                            terminalPayload,
+                            request.WorkingDirectory,
+                            request.SessionId,
+                            tc.Name,
+                            tc.Id,
+                            _logger,
+                            ct);
+                        toolRoundMessages.Add(new ChatMessage(ChatRole.Tool, boundedTerminalPayload, ToolCallId: tc.Id));
                         _runtimeControl?.MarkSessionRunning(request.SessionId);
                         continue;
                     }
@@ -1352,7 +1345,14 @@ public sealed partial class AgentExecutionService
                             result.Error?.Contains("permission", StringComparison.OrdinalIgnoreCase) == true ||
                             result.Error?.Contains("not allowed", StringComparison.OrdinalIgnoreCase) == true ||
                             result.Error?.Contains("rejected", StringComparison.OrdinalIgnoreCase) == true);
-                    var toolPayload = await _keyVaultService.StripAsync(toolPayloadRaw, ct);
+                    var toolPayload = await ToolResultContextPolicy.MaterializeAsync(
+                        toolPayloadRaw,
+                        request.WorkingDirectory,
+                        request.SessionId,
+                        tc.Name,
+                        tc.Id,
+                        _logger,
+                        ct);
                     toolRoundMessages.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: tc.Id));
                     var controlSnapshot = _runtimeControl?.GetStatus(request.SessionId).Session;
                     if (controlSnapshot?.State == SessionState.Faulted)

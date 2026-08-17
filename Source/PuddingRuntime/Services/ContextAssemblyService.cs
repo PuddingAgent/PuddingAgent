@@ -58,6 +58,7 @@ public sealed class ContextAssemblyService : IContextAssemblyService
             AgentTemplateId = request.AgentTemplateId,
             UserMessage = request.UserMessage,
             AgentInstanceId = request.AgentInstanceId,
+            ConfigurationAgentInstanceId = request.ConfigurationAgentInstanceId,
             ForStreaming = request.ForStreaming,
             IsFirstMessage = request.IsFirstMessage,
             SessionHistory = request.SessionHistory,
@@ -105,6 +106,7 @@ public sealed class ContextAssemblyService : IContextAssemblyService
             Messages = messages,
             EstimatedTokens = pipelineResult.UsedTokens,
             Layers = layers,
+            UserContextPrefix = pipelineResult.UserContextPrefix,
         };
     }
 

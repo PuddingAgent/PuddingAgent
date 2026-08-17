@@ -28,7 +28,7 @@ public sealed class PlatformSqliteConnectionInterceptorTests
 
                 Assert.AreEqual(1, await ExecuteScalarIntAsync(db.Database.GetDbConnection(), "PRAGMA synchronous;"));
                 Assert.AreEqual(2, await ExecuteScalarIntAsync(db.Database.GetDbConnection(), "PRAGMA temp_store;"));
-                Assert.AreEqual(5000, await ExecuteScalarIntAsync(db.Database.GetDbConnection(), "PRAGMA busy_timeout;"));
+                Assert.AreEqual(30000, await ExecuteScalarIntAsync(db.Database.GetDbConnection(), "PRAGMA busy_timeout;"));
                 Assert.AreEqual(4000, await ExecuteScalarIntAsync(db.Database.GetDbConnection(), "PRAGMA wal_autocheckpoint;"));
                 await db.Database.CloseConnectionAsync();
             }

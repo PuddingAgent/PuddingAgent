@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 顶层快速索引 | 2026-08-12 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
+> 顶层快速索引 | 2026-08-15 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
 
 ## 项目定位
 
@@ -10,6 +10,9 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 
 | 文档 | 主题 |
 |------|------|
+| `README.md` / `README_zh-CN.md` | 中英文产品与目标架构入口；Windows Desktop/Core 产品边界、Plugin/Function/Hook/Event/Projection 五类合同、Agent FSM、函数图编排、前端思想、现状缺口与路线 |
+| `Docs/Features/工作区TODO与峰谷节能任务编排设计方案.md` | 工作区 TODO 台账、Agent 认领/拒绝/回报、durable 自动派发与定时消息、可信 idle、心跳 0、峰谷 WorkAdmissionFence，以及 Hook 触发的临时质询子代理、GoalRun 有界循环、manifest/Admin 模型路由、防无限循环熔断和公共 Plugin/Function/Event/Projection 映射 |
+| `Docs/deepseek-reference-architecture-master-plan-2026-08-14.md` | 本次会话的 deepseek-harness/pi 参考架构总蓝图；以“一切业务能力皆插件”为第一原则，覆盖 Model/Tool/Skill/Session/Agent Loop/Sandbox/Storage/Schedule/UI、统一运行事实、文件级改造矩阵、任务图与 T00-T16 施工步骤 |
 | `Docs/07架构/67ADR-066*.md` | Browser 能力与 Douyin 分层决策 |
 | `Docs/07架构/68*.md` | WebView2 自动化分阶段实施规格 |
 | `Docs/07架构/69*.md` | Desktop 浏览器工作区/运行中心/存储 |
@@ -19,11 +22,17 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/07架构/77–79*.md` | Phase 2A-3B/C DeepSeek 验收与闭环 |
 | `Docs/07架构/80ADR-069*.md` | MOA 子代理设计委员会编排核心；Phase 1–3 计划编译、纯状态机与运行时适配 |
 | `Docs/07架构/81ADR-070*.md` | 通用 Agent 编排图；V2 组件/多模态端口、SQLite 事实、Graph/Run 发现、Revision/Layout 双 CAS、replay-to-live SSE，以及 React Flow 节点/端口/Edge/Graph Input 编辑器 |
-| `Docs/07架构/82ADR-071*.md` | 通用 Agent 编排平台完整目标设计；JSON 图、Revision/Layout/Deployment/Run 事实边界、组件、多模态、Agent 工具与 MOA 统一 |
-| `Docs/07架构/83*.md` | 后端执行内核与 Control Plane 施工图；契约、SQLite、API、状态转换、Executor、Scheduler、Trigger 与权限 |
-| `Docs/07架构/84*.md` | Admin 蓝图编辑器和组件系统施工图；Node/Edge/Input/Trigger、Revision/Deployment/Run、多模态 UX 与文件级拆分 |
+| `Docs/07架构/82ADR-071*.md` | 通用 Agent 编排平台完整目标设计；JSON 图、Revision/Layout/Deployment/Run 事实边界、Agent/Tool/Graph 统一 Function、不可变图生成流程、有界循环、多模态、Agent 工具与 MOA 统一 |
+| `Docs/07架构/83*.md` | 后端执行内核与 Control Plane 施工图；契约、SQLite、API、状态转换、Function Runtime/Invoker、Typed Hook Pipeline、Parent/Child Run、Outbox、Scheduler、Trigger 与权限 |
+| `Docs/07架构/84*.md` | Admin 蓝图编辑器和组件系统施工图；Node/Edge/Input/Trigger、Revision/Deployment/Run、多模态 UX、Pudding 视觉语言、原因优先状态、Function Catalog、插件 Presentation 与系统构成检查器 |
 | `Docs/07架构/85*.md` | 分期交付、测试、安全、性能、Desktop 部署、浏览器 smoke、恢复与验收证据图册 |
+| `Docs/07架构/86ADR-072*.md` | 工作区 TODO 第一阶段任务领域 ADR；覆盖五列 Board、Task Failed/Reopen、Task Ledger、手工/Auto 派发、Once/Daily/Weekly/Interval/受限五字段 Cron/Message Event、Agent Availability、峰谷 Fence、Task Tools 和恢复 |
+| `Docs/07架构/87ADR-073*.md` | 当前产品施工总表与冲突裁决基线；列出 30 项产品任务、17 项 T00–T16 平台底座任务及专项 Phase 去重映射，覆盖目标、优先级、工作量、难度、依赖、设计位置和里程碑 |
 | `Docs/07架构/tool-infrastructure-layering.md` | Tool 分层、强制委派合同、Smart 参数与结果合同 |
+| `Docs/deepseek-harness-message-card-alignment-2026-08-14.md` | 对照 deepseek-harness 的消息、推理和工具调用 UI 目标架构；定义 TurnStatus、Reasoning/Tool/Delegation 行、toolCallId 投影、分期与验收矩阵 |
+| `Docs/deepseek-harness-tool-system-alignment-2026-08-14.md` | 对照 deepseek-harness 的工具定义与执行协议；规划 canonical output、端到端 callId、结构化错误、管线、并发、spill、可回放 presentation 与 DeepSeek Code Mode |
+| `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md` | 对照 deepseek-harness 与 pi 的统一目标架构与 2026-08-15 复评；定义 Plugin/Function/Hook/Event/Projection、Agent Transition+Effect FSM、Function Graph、Composition Snapshot、前端解释层、底座缺口与分期路线 |
+| `Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md` | 7 日 Token 构成、工具结果重放、搜索失败和 ZIP 稀疏度基线；定义原文不脱敏的 artifact/envelope、T0-T4 分级压缩、Compact 覆盖门禁、冷启动去重、稳定前缀与 DeepSeek 缓存 >99% 验收 |
 | `Docs/QA/QA-2026-08-03*.md` | Qwen 输入上限修复验收 |
 | `Agents.md` | 仓库级开发约束 |
 | `dev-up.py` | 本地开发监督器 |
@@ -76,6 +85,18 @@ ContextPipeline → Tool layer mandatory delegation policy
   → SmartWorkflowToolBase 将历史 question/what/query 仅在执行边界归一为 task
   → smart_explore 统一替代已退役的 smart_search / smart_query_session_log
 
+ContextPipeline → stable system prefix + volatile User tail
+  → 当前消息、日期、召回与 inbound context 不再插入 system prompt
+  → AgentExecutionService → ToolResultContextPolicy（模型历史最多 8 KiB；原始完整结果写入工作区 `.pudding/context-tool-results`，不做模型输入脱敏）
+  → search_tools 已发现 schema 在 live session 内保持加载，避免跨 dispatch 重复收缩/扩张
+
+Plugin configuration → Plugin Resolver → PluginActivation
+  → capability registry（Tool/LLM/Prompt/Context/Connector/Job/Presentation）
+  → Typed Hook（Guard/Transform/Around，同步有界干预）
+  → state commit + transactional outbox → durable DomainEventLog
+  → per-consumer checkpoint/retry/dead-letter → UI projection / Heartbeat / Subconscious / Self-learning
+  → Session/Run/Turn/LLM/Tool/SubAgent/Message/Compaction/Heartbeat/Job/Learning 使用统一状态机与提交后事件
+
 spawn_sub_agent → SubAgentInvocationService → SubAgentManager
   → `runtime.execution.json` 统一配置 600 轮 / 2400 次工具调用 / 24h
   → 父 Agent 工具 schema 不暴露轮次、工具调用或 timeout 预算字段
@@ -83,6 +104,8 @@ spawn_sub_agent → SubAgentInvocationService → SubAgentManager
   → 正常轮次/时间耗尽后提供 20 轮、最多 30 分钟的收尾宽限，终态为可续跑 `budget_exhausted`
   → `resume_sub_agent_id` 复用 SubSessionId/上下文、创建新 runId 并重置系统计数器
   → run archive 固化实际预算与 `subagent.budget.notice`
+  → ContextPipeline 以 ConfigurationAgentInstanceId 读取持久 Skill/人格/记忆，缺失 Skill 索引不写盘
+  → SubAgentTransientDirectoryGcService 只隔离终态/孤儿的精确空脚手架，运行归档与有状态目录不进入 GC
 
 Runtime 跨层服务 → Core contracts → Platform implementations
   → SubAgentTool → ISubAgentPool → SubAgentPool
@@ -142,9 +165,9 @@ Chat first paint → AgentConversationProjectionService
   → MessageList → messageProjection（保持已组装消息顺序，未匹配 active run 留在当前流末端）→ MessageViewportRuntime（虚拟化、锚点、贴底）
   → ChatMessageStyleProvider（消息树共享一次聚合样式注册）
   → MessageRow（稳定块直接渲染 + 语义 memo；不再经过单条 MessageStream 兼容重建）
-  → 主消息运行监视区（主代理当前阶段 + 最近推理摘要 + 有界子代理委派状态；不展开子代理内部过程）
+  → 主消息运行监视区（首 Token 前也保留主代理“查看过程”：当前阶段 + 推理摘要 + 工具操作 + 有界子代理委派状态；不展开子代理内部过程）
   → subAgentReducer（事件/快照统一投影；状态接口携带 canonical runId 并可重建漏收 created/started 的运行；budget_exhausted 终态单调；原样展示有界的实际 reasoning_preview）
-  → SubAgentActivityDock（子代理任务/工具/轮次/输出详情；Agent-first 路由回退 mainSessionId 保证图标可见；预算耗尽显示为可恢复终态）
+  → SubAgentActivityDock（实时 reducer + run archive 回放；刷新后按 canonical runId 恢复子代理任务/推理/工具/轮次/耗时/输出；Agent-first 路由回退 mainSessionId 保证图标可见）
   → 展开过程摘要时才构建 rounds / trace chips
   → MessageItem 先渲染纯文本，异步加载 Markdown/KaTeX 增强块
   → 子代理检查器、会话诊断 Drawer、摄像头输入仅在首次打开时加载

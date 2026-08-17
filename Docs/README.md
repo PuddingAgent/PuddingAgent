@@ -1,6 +1,6 @@
 # Pudding Agent Network 文档索引
 
-最后更新：2026-08-02（Desktop First：Phase 1B-R/S、Phase 2A-1/2 与 Phase 2A-3 自动验收已完成；真实 DeepSeek smoke pending）
+最后更新：2026-08-16（新增 ADR-073 任务看板优先施工总表，并统一 ADR-072、DeepSeek 总蓝图和消息 UI 的优先级；Desktop 既有验收状态不变）
 
 ## 文档定位
 
@@ -20,6 +20,18 @@
 
 ## 当前主线文档
 
+- `Docs/07架构/87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md`
+	- 当前产品施工入口；列出 30 项产品任务和 17 项 T00–T16 平台底座任务的目标、优先级、工作量、难度、依赖和设计位置，并把各专项 Phase 去重到唯一 Canonical Owner。产品顺序为任务看板 → Auto/Cron → 完整轨迹 → 实时指标 → 插件化收口。
+- `Docs/07架构/86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md`
+	- WorkspaceTask、五列 Board、Failed/Reopen、手工/Auto 派发、受限 Cron、峰谷策略、Task Tools、Admin 和恢复的任务领域合同。
+- `Docs/deepseek-reference-architecture-master-plan-2026-08-14.md`
+	- 本次会话设计总入口；以“模型、工具、技能、会话、Agent Loop、沙箱、存储、调度和 UI 均为插件”为第一原则，汇总组件级映射、文件级修改矩阵、任务图、T00-T16 施工卡、验收和风险边界。
+- `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`
+	- 插件、Typed Hook、durable event 与统一生命周期的上位架构；覆盖心跳自主推进和事件驱动自学习闭环。
+- `Docs/deepseek-harness-tool-system-alignment-2026-08-14.md`
+	- 工具 canonical output、callId、结构化错误、执行 Hook、并发、spill 与 presentation 方案。
+- `Docs/deepseek-harness-message-card-alignment-2026-08-14.md`
+	- 消息、推理、工具调用与子代理过程的前端投影方案。
 - `Docs/架构.md`
 	- Pudding Agent Network 的架构总览与阅读入口。
 - `Docs/07架构/README.md`
@@ -32,6 +44,8 @@
 	- 长会话 Compact、LLM 前置输入压缩、Headroom 研究结论和可逆取回边界。
 - `Docs/Features/上下文自动压缩与Compact命令设计方案.md`
 	- Compact API、上下文健康状态、InputCompression 原型和验收计划。
+- `Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md`
+	- 7 日 Token/工具重放/搜索失败/ZIP 基线，以及无损 artifact、分级压缩、Compact 覆盖门禁和 DeepSeek 缓存 `>99%` 的施工与验收合同。
 
 ## 主题文档分组
 
@@ -68,6 +82,7 @@
 - `Docs/07架构/43ADR-042上下文自动压缩与主动Compact命令ADR.md`
 - `Docs/07架构/44ADR-043缓存统计闭环ADR.md`
 - `Docs/Features/上下文自动压缩与Compact命令设计方案.md`
+- `Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md`
 
 该主题用于跟踪 token 成本治理、服务商前缀缓存命中、工具输出/日志/文件/RAG 块进入 LLM 前的压缩策略，以及 Headroom 作为参考项目或可选适配器的评估结果。
 

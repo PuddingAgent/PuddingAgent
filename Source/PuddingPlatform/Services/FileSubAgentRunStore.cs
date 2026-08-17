@@ -266,6 +266,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             CompletedAt = completedAt,
             TotalRounds = completion.TotalRounds,
             TotalToolCalls = completion.TotalToolCalls,
+            TotalDurationMs = completion.TotalDurationMs,
             ErrorMessage = completion.ErrorMessage,
         };
 

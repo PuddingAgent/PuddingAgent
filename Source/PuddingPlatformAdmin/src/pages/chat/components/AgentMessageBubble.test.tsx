@@ -76,7 +76,11 @@ jest.mock('../styles/reasoning.styles', () => {
     },
   );
   return {
-    useReasoningStyles: () => ({ styles }),
+    useReasoningStyles: () => ({
+      styles,
+      cx: (...values: Array<string | false | undefined>) =>
+        values.filter(Boolean).join(' '),
+    }),
   };
 });
 
@@ -229,14 +233,14 @@ describe('AgentMessageBubble streaming presentation', () => {
     );
 
     expect(screen.queryByTestId('message-item')).toBeNull();
-    expect(screen.getByText('模型过程')).toBeTruthy();
-    expect(screen.getByText('推理摘要')).toBeTruthy();
+    expect(screen.getByText('思考')).toBeTruthy();
     expect(screen.getByText('用户问的是商用密码应用安全性评估。')).toBeTruthy();
     expect(screen.queryByText(/undefined/)).toBeNull();
-    expect(container.querySelector('.reasoningContainer')).toBeTruthy();
+    expect(screen.getByTestId('reasoning-disclosure')).toBeTruthy();
+    expect(container.querySelector('.agentActiveOutputSurface')).toBeNull();
   });
 
-  it('shows only the last three reasoning lines in the preview', () => {
+  it('shows the latest reasoning line and expands the complete reasoning trajectory', () => {
     render(
       <AgentMessageBubble
         {...baseProps}
@@ -275,10 +279,15 @@ describe('AgentMessageBubble streaming presentation', () => {
     );
 
     expect(screen.queryByText('思维链第一行')).toBeNull();
-    expect(screen.getByText('思维链第二行')).toBeTruthy();
-    expect(screen.getByText('思维链第三行')).toBeTruthy();
+    expect(screen.queryByText('思维链第二行')).toBeNull();
+    expect(screen.queryByText('思维链第三行')).toBeNull();
     expect(screen.getByText('思维链第四行')).toBeTruthy();
-    expect(screen.getByText('持续推理中...')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '思考过程' }));
+    const body = screen.getByTestId('reasoning-disclosure-body');
+    expect(body.textContent).toContain('思维链第一行');
+    expect(body.textContent).toContain('思维链第二行');
+    expect(body.textContent).toContain('思维链第三行');
+    expect(body.textContent).toContain('思维链第四行');
   });
 
   it('keeps the latest reasoning summary visible when a tool call starts', () => {
@@ -298,6 +307,7 @@ describe('AgentMessageBubble streaming presentation', () => {
           },
           {
             id: 'tool-1',
+            toolCallId: 'call-1',
             type: 'tool_call',
             name: 'list_dir',
             status: 'tool_call',
@@ -309,10 +319,12 @@ describe('AgentMessageBubble streaming presentation', () => {
       />,
     );
 
-    expect(screen.getByText('正在调用工具：list_dir')).toBeTruthy();
-    expect(screen.getByText('最近推理摘要')).toBeTruthy();
+    expect(screen.getByTestId('toolcall-row').getAttribute('data-toolname')).toBe(
+      'list_dir',
+    );
+    expect(screen.getByText('思考')).toBeTruthy();
     expect(screen.getByText('需要先查看项目结构。')).toBeTruthy();
-    expect(screen.getByText('当前：正在调用工具：list_dir')).toBeTruthy();
+    expect(screen.queryByText('正在调用工具：list_dir')).toBeNull();
   });
 
   it('keeps the reasoning preview when older tool activity predates the latest thinking', () => {
@@ -325,6 +337,7 @@ describe('AgentMessageBubble streaming presentation', () => {
         processItems={[
           {
             id: 'tool-1',
+            toolCallId: 'call-1',
             type: 'tool_call',
             name: 'list_dir',
             status: 'tool_call',
@@ -343,8 +356,7 @@ describe('AgentMessageBubble streaming presentation', () => {
       />,
     );
 
-    expect(screen.getByText('模型过程')).toBeTruthy();
-    expect(screen.getByText('推理摘要')).toBeTruthy();
+    expect(screen.getByText('思考')).toBeTruthy();
     expect(screen.getByText('目录结构已明确，开始分析。')).toBeTruthy();
     expect(screen.queryByText('正在调用工具：list_dir')).toBeNull();
   });
@@ -370,7 +382,7 @@ describe('AgentMessageBubble streaming presentation', () => {
     expect(
       container.querySelector('.agentBubbleNew.agentBubbleStreaming'),
     ).toBeTruthy();
-    expect(container.querySelector('.reasoningContainer')).toBeNull();
+    expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
   });
 
   it('keeps the server elapsed time after the bubble remounts', () => {
@@ -408,6 +420,7 @@ describe('AgentMessageBubble streaming presentation', () => {
         processItems={[
           {
             id: 'tool-1',
+            toolCallId: 'call-shell',
             type: 'tool_call',
             name: 'shell',
             status: 'tool_call',
@@ -420,14 +433,14 @@ describe('AgentMessageBubble streaming presentation', () => {
     );
 
     expect(screen.queryByTestId('message-item')).toBeNull();
-    expect(screen.getByText('正在调用工具：shell')).toBeTruthy();
-    expect(screen.getByText('运行中')).toBeTruthy();
+    expect(screen.getByTestId('toolcall-row').getAttribute('data-status')).toBe(
+      'running',
+    );
+    expect(screen.getByText('shell')).toBeTruthy();
     expect(
-      screen.getByText(
-        '命令：dotnet build Source/PuddingAgent/PuddingAgent.csproj',
-      ),
+      screen.getByText('dotnet build Source/PuddingAgent/PuddingAgent.csproj'),
     ).toBeTruthy();
-    expect(container.querySelector('.agentActiveOutputSurface')).toBeTruthy();
+    expect(container.querySelector('.agentActiveOutputSurface')).toBeNull();
   });
 
   it('shows a bounded parent delegation summary without duplicating child internals', () => {
@@ -456,12 +469,16 @@ describe('AgentMessageBubble streaming presentation', () => {
     );
 
     expect(screen.getByText('正在调用 2 个子代理')).toBeTruthy();
-    expect(screen.getByText('模型过程')).toBeTruthy();
+    expect(screen.getByText('思考')).toBeTruthy();
     expect(screen.getByText('主代理继续整理已返回的信息。')).toBeTruthy();
     expect(
       screen.getByText('主代理正在等待子代理返回；内部进度请查看右侧托盘坞'),
     ).toBeTruthy();
     expect(document.body.textContent).not.toContain('子代理任务详情');
+    expect(screen.getByText('查看过程')).toBeTruthy();
+    expect(
+      screen.queryByText(/主代理过程可在当前消息的“查看过程”中展开/),
+    ).toBeNull();
   });
 
   it('summarizes JSON tool arguments instead of showing raw JSON in the default activity panel', () => {
@@ -479,6 +496,7 @@ describe('AgentMessageBubble streaming presentation', () => {
         processItems={[
           {
             id: 'tool-1',
+            toolCallId: 'call-subagent',
             type: 'tool_call',
             name: 'spawn_sub_agent',
             status: 'tool_call',
@@ -490,11 +508,9 @@ describe('AgentMessageBubble streaming presentation', () => {
       />,
     );
 
-    expect(screen.getByText('正在调用工具：spawn_sub_agent')).toBeTruthy();
+    expect(screen.getByText('spawn_sub_agent')).toBeTruthy();
     expect(
-      screen.getByText(
-        '任务：对 PuddingAgent 项目进行代码 QA，重点检查注释是否完成。',
-      ),
+      screen.getByText('对 PuddingAgent 项目进行代码 QA，重点检查注释是否完成。'),
     ).toBeTruthy();
     expect(document.body.textContent).not.toContain('"perspective"');
     expect(
@@ -514,6 +530,7 @@ describe('AgentMessageBubble streaming presentation', () => {
         processItems={[
           {
             id: 'tool-1',
+            toolCallId: 'call-code-summary',
             type: 'tool_call',
             name: 'code_summary',
             status: 'tool_call',
@@ -525,9 +542,7 @@ describe('AgentMessageBubble streaming presentation', () => {
       />,
     );
 
-    expect(
-      screen.getByText('参数：已记录，点击“查看过程”查看完整参数'),
-    ).toBeTruthy();
+    expect(screen.getByText('参数已记录')).toBeTruthy();
     expect(
       screen.queryByTestId('antd-tooltip')?.getAttribute('data-title') ?? '',
     ).not.toContain(rawArguments);
@@ -543,6 +558,7 @@ describe('AgentMessageBubble streaming presentation', () => {
         processItems={[
           {
             id: 'tool-call-1',
+            toolCallId: 'call-shell',
             type: 'tool_call',
             name: 'shell',
             status: 'tool_call',
@@ -552,6 +568,7 @@ describe('AgentMessageBubble streaming presentation', () => {
           },
           {
             id: 'tool-result-1',
+            toolCallId: 'call-shell',
             type: 'tool_result',
             name: 'shell',
             status: 'success',
@@ -571,16 +588,16 @@ describe('AgentMessageBubble streaming presentation', () => {
       />,
     );
 
-    expect(screen.getByText('工具调用完成：shell')).toBeTruthy();
-    expect(screen.getByText('已完成')).toBeTruthy();
+    const shellRow = screen.getByTestId('toolcall-row');
+    expect(shellRow.getAttribute('data-status')).toBe('done');
+    expect(screen.queryByText('工具调用完成：shell')).toBeNull();
     expect(document.body.textContent).not.toContain('正在处理结果');
     expect(document.body.textContent).not.toContain('已运行');
-    expect(document.body.textContent).toContain('line 2');
-    expect(document.body.textContent).toContain('line 6');
-    expect(document.body.textContent).toContain(
-      '输出较长，已截取最近 5 行 · 查看过程',
-    );
     expect(document.body.textContent).not.toContain('line 1');
+    fireEvent.click(shellRow);
+    const output = screen.getByTestId('toolcall-out');
+    expect(output.textContent).toContain('line 1');
+    expect(output.textContent).toContain('line 6');
   });
 
   it('does not show an old successful tool result as still running when the assistant status is stale', () => {
@@ -593,6 +610,7 @@ describe('AgentMessageBubble streaming presentation', () => {
         processItems={[
           {
             id: 'tool-call-1',
+            toolCallId: 'call-terminal',
             type: 'tool_call',
             name: 'terminal_execute',
             status: 'tool_call',
@@ -602,6 +620,7 @@ describe('AgentMessageBubble streaming presentation', () => {
           },
           {
             id: 'tool-result-1',
+            toolCallId: 'call-terminal',
             type: 'tool_result',
             name: 'terminal_execute',
             output: 'bbc6acfb1bca',
@@ -613,8 +632,9 @@ describe('AgentMessageBubble streaming presentation', () => {
       />,
     );
 
-    expect(screen.getByText('工具调用完成：terminal_execute')).toBeTruthy();
-    expect(screen.getByText('已完成')).toBeTruthy();
+    const terminalRow = screen.getByTestId('toolcall-row');
+    expect(terminalRow.getAttribute('data-status')).toBe('done');
+    expect(screen.queryByText('工具调用完成：terminal_execute')).toBeNull();
     expect(document.body.textContent).toContain('bbc6acfb1bca');
     expect(document.body.textContent).not.toContain('正在处理结果');
     expect(document.body.textContent).not.toContain('已运行 231 分');

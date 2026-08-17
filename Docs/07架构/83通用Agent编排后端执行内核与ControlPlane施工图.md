@@ -1,7 +1,8 @@
 # 通用 Agent 编排后端执行内核与 Control Plane 施工图
 
 > 状态：**construction-blueprint；尚未全部实现**  
-> 日期：2026-08-10  
+> 首次提出：2026-08-10
+> 本次修订：2026-08-15
 > 总体决策：[ADR-071](82ADR-071通用Agent编排平台完整设计方案ADR.md)  
 > 前端配套：[蓝图编辑器与组件系统施工图](84通用Agent编排蓝图编辑器与组件系统施工图.md)  
 > 验收配套：[测试交付与运维验收图册](85通用Agent编排交付测试与运维验收图册.md)
@@ -15,6 +16,7 @@
 - 固定 Revision 的 Run 创建、激活、取消、输入、重试和观察；
 - edge-driven Ready/Skipped、Run 终态和跨重启恢复；
 - subAgent/tool/gate/humanInput 四类 executor adapter；
+- Agent/Tool/Graph/Gate/Transform/HumanInput 共用的 Function Descriptor 与调用 Adapter；
 - graph input、node input/output 与 ArtifactRef 的持久事实；
 - Trigger 创建 Run 的幂等入口；
 - Admin 与 Agent 共用的命令服务、鉴权、审计和稳定错误协议。
@@ -841,3 +843,165 @@ Source/PuddingRuntimeTests/Services/Orchestration/
 5. 手动或 HTTP Hook 的 `RequestedByAgentId` 是审计主体，不能作为运行归档目录。SubAgent executor 从 workspace/graph 派生稳定的 filesystem-safe execution owner，避免 `manual:admin` 中的 `:` 污染 Windows 路径。
 
 首个产品链 `文案策划 → 镜头文案 → 生成图片 → 展示图片` 已证明三个 typed data edge 可以跨两个真实模型调用和一个媒体调用传递事实；它不替代多前驱、分支、恢复和副作用策略的后续验收。
+
+## 26. 2026-08-15 增补：Function Runtime、Hook Pipeline 与事件提交面
+
+本节把现有 Node Executor 扩展方向收敛到公共 Function Runtime。它是后续施工目标，不表示当前 Registry 已具备动态插件能力。
+
+### 26.1 Core 合同
+
+```csharp
+public interface IFunctionCatalog
+{
+    ValueTask<FunctionDescriptor?> ResolveAsync(
+        FunctionReference reference,
+        CompositionSnapshotId snapshotId,
+        CancellationToken cancellationToken);
+}
+
+public interface IFunctionInvoker
+{
+    ValueTask<FunctionInvocationResult> InvokeAsync(
+        FunctionInvocationContext context,
+        CancellationToken cancellationToken);
+}
+
+public sealed record FunctionInvocationContext(
+    FunctionInvocationId InvocationId,
+    FunctionReference Function,
+    CompositionSnapshotId SnapshotId,
+    JsonElement Input,
+    CapabilityGrant Grant,
+    BudgetEnvelope Budget,
+    CorrelationEnvelope Correlation,
+    FenceToken FenceToken);
+```
+
+`IFunctionInvoker` 是总路由，不是巨型 switch。每类 Function 由插件贡献 Adapter：
+
+- `AgentFunctionInvoker` 创建/观察 Child Agent Run；
+- `ToolFunctionInvoker` 复用 PuddingToolRegistry 与现有 Tool Pipeline；
+- `GraphFunctionInvoker` 创建冻结 Revision 的 Child Orchestration Run；
+- `GateFunctionInvoker` 执行纯判断；
+- `TransformFunctionInvoker` 执行受信、确定性的 typed transform；
+- `HumanInputFunctionInvoker` 创建持久 input request 后返回 Deferred。
+
+现有 `IAgentOrchestrationNodeExecutor` 不需要立即删除。第一阶段增加 `FunctionNodeExecutor` Adapter，把 NodeRun 映射到 Function Invocation；原四类 Executor 可以逐个迁入公共 Invoker。
+
+### 26.2 Function Invocation 持久事实
+
+建议增加或等价投影：
+
+```text
+function_invocations
+  invocation_id
+  function_id / version / contract_hash
+  composition_snapshot_id
+  parent_run_id / parent_node_id / child_run_id
+  state / attempt / fence_token
+  input_ref / output_ref / error_ref
+  capability_grant_hash
+  budget_reserved / budget_consumed
+  created_at / started_at / terminal_at / settled_at
+```
+
+若不新增独立表，也必须保证同等事实可从 NodeRun + ChildRun + Event 重建。不能只在日志中保存 Function 身份。
+
+### 26.3 调用 Pipeline
+
+```text
+Resolve frozen descriptor
+  -> Capability/Activation Guard Hooks
+  -> Input Transform Hooks
+  -> Idempotency and budget reservation
+  -> Around Hooks
+  -> Function Adapter execution
+  -> Result Transform Hooks
+  -> fenced terminal commit + outbox
+  -> Observer Hooks / Projectors
+```
+
+关键规则：
+
+1. Pipeline 使用 Run 创建时冻结的 `CompositionSnapshotId`；
+2. Guard 为 fail-closed 且 deny 单调；
+3. Transform 不能升级 Capability 或 SideEffectClass；
+4. Around Hook 不得绕过 Idempotency、Budget 和 Fence；
+5. terminal commit、output、usage、child identity、NodeRun 状态和 Outbox Event 同事务提交；
+6. Observer 在提交后运行，失败进入自己的 durable retry，不回滚已提交 Function；
+7. LLM、长工具和 Child Run 不能在 Event Dispatcher 事务中执行。
+
+### 26.4 Parent/Child Run
+
+AgentFunction 与 GraphFunction 一律创建 Child Run。父 NodeRun 在调用期间进入 `WaitingForChild` 或等价 Deferred 状态，不占用 Worker：
+
+```text
+Parent NodeRun
+  -> FunctionInvocationRequested
+  -> ChildRunCreated
+  -> WaitingForChild
+  -> ChildRunTerminal
+  -> FunctionResultMapped
+  -> NodeRunTerminal
+```
+
+Child terminal 由 durable event/projector 唤醒父节点。重复事件通过 invocation id 和 expected sequence 幂等。父取消传播为 Command，不能直接改写 Child 表；传播超时必须形成可观察的 `CancellationPending`。
+
+### 26.5 Agent 生成图的 Control Plane
+
+Agent 工具与 Admin 使用同一 Application Service：
+
+- Catalog Query 返回 Function Descriptor 和 Presentation 摘要；
+- Validate 返回结构、类型、能力、成本、循环、版本和策略诊断；
+- Create Revision 要求 expected head；
+- Propose Deployment 不等于 Deploy；
+- Create Run 固定 Revision/Deployment、Composition Snapshot、Input 与 request id；
+- Observe 使用 snapshot + buffered watch；
+- Control 使用版本/sequence 保护的 Cancel/Pause/Resume/Retry/Input Command。
+
+任何 `orchestration.run_generated_json` 之类“一步执行模型 JSON”的 API 都禁止出现。
+
+### 26.6 Event 与 Projection 收敛
+
+现有 `orchestration_events` 可先作为聚合专用日志保留，同时向公共 Outbox 写标准 Envelope。迁移期间采用 bridge，而不是双写两套业务状态：
+
+```text
+Run/Node transaction
+  -> orchestration aggregate event
+  -> common outbox envelope
+  -> consumer checkpoints
+  -> Run/Chat/Admin/Timeline projections
+```
+
+公共 Envelope 至少包含：
+
+- `eventId/eventType/schemaVersion`；
+- `aggregateType/aggregateId/sequence`；
+- `workspaceId/agentId/sessionId/runId/nodeId/functionInvocationId`；
+- `correlationId/causationId/commandId`；
+- `pluginId/pluginVersion/compositionSnapshotId/contractHash`；
+- `occurredAt/classification/payloadRef`。
+
+### 26.7 施工次序
+
+1. 冻结 Descriptor/Reference/Invocation/Result 与错误码；
+2. 用 Adapter 把现有 Tool Registry 暴露为 ToolFunction；
+3. 增加 FunctionNodeExecutor，先跑通现有只读 SubAgent 和图片链；
+4. 引入 Composition Snapshot ID 与 Contract Hash 冻结；
+5. 接入 typed Guard/Transform/Around Pipeline；
+6. 原子提交 Function terminal + Node terminal + Outbox；
+7. 增加 AgentFunction/GraphFunction 的 Child Run 等待与唤醒；
+8. 再增加 BoundedLoopFunction 和 GoalRun Adapter；
+9. 最后迁移/删除旧专用 Executor 路径。
+
+### 26.8 验收补充
+
+- 同一 Function Invocation 重投不会产生第二次付费副作用；
+- 插件升级后旧 Run 仍解析到旧 Snapshot，或明确暂停而不静默换实现；
+- Guard deny 后任何后续 Hook 都不能恢复 allow；
+- Parent Worker 重启后可从 Child Run 事实继续；
+- Child terminal 重复/乱序投递只提交一次父 Node 终态；
+- GraphFunction 深度、fan-out、轮数、时间、token 和 cost 任一预算达到上限均停止；
+- Function 输出 Schema 与节点端口不一致时 fail closed，并保留 Artifact/Error 证据；
+- Event projector 从零 replay 得到与在线 Projection 相同的 Run/Node/Function 状态；
+- UI Renderer 缺失或失败不影响 Function 执行与事实提交。

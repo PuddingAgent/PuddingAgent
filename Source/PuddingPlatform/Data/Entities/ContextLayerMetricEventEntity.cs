@@ -66,6 +66,18 @@ public sealed class ContextLayerMetricEventEntity
     [Column("char_count")]
     public long CharCount { get; set; }
 
+    /// <summary>Layer payload UTF-8 byte count; no payload is persisted here.</summary>
+    [Column("raw_utf8_bytes")]
+    public long RawUtf8Bytes { get; set; }
+
+    /// <summary>Layer payload GZIP byte count; no payload is persisted here.</summary>
+    [Column("gzip_bytes")]
+    public long GzipBytes { get; set; }
+
+    /// <summary>raw_utf8_bytes / gzip_bytes; 1.0 denotes empty or high-entropy content.</summary>
+    [Column("gzip_ratio")]
+    public double? GzipRatio { get; set; }
+
     [Required, MaxLength(64)]
     [Column("content_hash")]
     public string ContentHash { get; set; } = string.Empty;

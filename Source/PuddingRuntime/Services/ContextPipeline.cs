@@ -401,6 +401,16 @@ public sealed record ContextRequest
     public string UserMessage { get; init; } = string.Empty;
     public CapabilityPolicy? Capability { get; init; }
     public string AgentInstanceId { get; init; } = string.Empty;
+    /// <summary>
+    /// Stable Agent instance that owns durable files for this execution. Sub-agent executions
+    /// retain their SubSessionId in AgentInstanceId for isolation, but must not materialize
+    /// persistent state beneath that transient identity.
+    /// </summary>
+    public string? ConfigurationAgentInstanceId { get; init; }
+    public string PersistentAgentInstanceId =>
+        string.IsNullOrWhiteSpace(ConfigurationAgentInstanceId)
+            ? AgentInstanceId
+            : ConfigurationAgentInstanceId;
     public bool ForStreaming { get; init; }
     public bool IsFirstMessage { get; init; }
     public string? PreviousMessage { get; init; }
@@ -456,7 +466,8 @@ public sealed record ContextAssemblyResult(
     int TotalBudget,
     int UsedTokens,
     IReadOnlyList<ContextLayerSnapshot> Layers,
-    IReadOnlyList<ContextLayerInfo>? LayerInfos = null);
+    IReadOnlyList<ContextLayerInfo>? LayerInfos = null,
+    string? UserContextPrefix = null);
 
 /// <summary>单层上下文 Token 快照。</summary>
 public sealed record ContextLayerSnapshot(

@@ -1,11 +1,13 @@
 ﻿// ── ChatMain：右侧主聊天区（Header + MessageList + InputArea）─
 import {
+  AppstoreOutlined,
   BugOutlined,
   FieldTimeOutlined,
   HistoryOutlined,
   MenuUnfoldOutlined,
   SoundOutlined,
 } from '@ant-design/icons';
+import { history } from '@umijs/max';
 import { Alert, Button, Divider, Select, Tooltip } from 'antd';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { WorkspaceNavigationHeader } from '@/components';
@@ -13,14 +15,24 @@ import type {
   WorkspaceAgentDto,
   WorkspaceWithPermDto,
 } from '@/services/platform/api';
-import { rememberWorkspaceVisit } from '@/utils/workspaceNavigation';
+import {
+  buildWorkspaceTasksPath,
+  rememberWorkspaceVisit,
+} from '@/utils/workspaceNavigation';
+import type { RecentlyDeniedItem } from '../classifier/autoReviewClassifier';
 import type { AgentConversationView } from '../client/types';
+import { useAutoReviewClassifier } from '../hooks/useAutoReviewClassifier';
 import { useAutoTts } from '../hooks/useAutoTts';
 import type {
   ChatInteractionQueueItem,
   ChatInteractionRuntimeEvent,
 } from '../hooks/useChatState';
 import { useNotificationSound } from '../hooks/useNotificationSound';
+import type {
+  SandboxBoundaryInfo,
+  SandboxNetworkMode,
+} from '../sandbox/sandboxBoundary';
+import { createDefaultSandboxBoundary } from '../sandbox/sandboxBoundary';
 import { useChatStyles } from '../styles';
 import type {
   ChatTurn,
@@ -28,10 +40,6 @@ import type {
   SubAgentCardMap,
 } from '../types';
 import type { PermissionMode } from '../types/chatStateTypes';
-import { useAutoReviewClassifier } from '../hooks/useAutoReviewClassifier';
-import type { RecentlyDeniedItem } from '../classifier/autoReviewClassifier';
-import { createDefaultSandboxBoundary } from '../sandbox/sandboxBoundary';
-import type { SandboxBoundaryInfo, SandboxNetworkMode } from '../sandbox/sandboxBoundary';
 import CheckpointTimelinePanel from './CheckpointTimelinePanel';
 import IntentConsole, { type ChatStatus } from './IntentConsole';
 import MessageList from './MessageList';
@@ -91,7 +99,7 @@ interface ChatMainProps {
   onInputChange: (v: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   loading: boolean;
-    interactionQueue?: ChatInteractionQueueItem[];
+  interactionQueue?: ChatInteractionQueueItem[];
   onUpdateQueuedInteraction?: (id: string, text: string) => void;
   onDeleteQueuedInteraction?: (id: string) => void;
   onSendQueuedInteractionNow?: (id: string) => Promise<void>;
@@ -186,7 +194,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   onStop,
   onExport,
   disabled,
-    interactionQueue = [],
+  interactionQueue = [],
   onUpdateQueuedInteraction,
   onDeleteQueuedInteraction,
   onSendQueuedInteractionNow,
@@ -211,7 +219,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   currentUser,
   viewportScrollIntent,
   onViewportScrollIntentHandled,
-    permissionMode = 'auto',
+  permissionMode = 'auto',
   onPermissionModeChange = () => undefined,
   checkpoints = [],
   checkpointTimelineOpen = false,
@@ -472,19 +480,36 @@ const ChatMain: React.FC<ChatMainProps> = ({
           }
           crumbs={[]}
           controls={
-            <Select
-              className={`${styles.headerSelect} ${styles.headerSwitchSelect}`}
-              size="small"
-              variant="borderless"
-              value={workspaceId}
-              loading={workspaceLoading}
-              options={wsOpts}
-              onChange={onWorkspaceChange}
-              placeholder="工作空间"
-              popupMatchSelectWidth={false}
-              popupRender={dropdownRender}
-              classNames={{ popup: { root: styles.headerSelectPopup } }}
-            />
+            <>
+              <Select
+                className={`${styles.headerSelect} ${styles.headerSwitchSelect}`}
+                size="small"
+                variant="borderless"
+                value={workspaceId}
+                loading={workspaceLoading}
+                options={wsOpts}
+                onChange={onWorkspaceChange}
+                placeholder="工作空间"
+                popupMatchSelectWidth={false}
+                popupRender={dropdownRender}
+                classNames={{ popup: { root: styles.headerSelectPopup } }}
+              />
+              <Button
+                type="text"
+                size="small"
+                icon={<AppstoreOutlined />}
+                className={styles.taskBoardButton}
+                disabled={!workspaceId}
+                aria-label="任务看板"
+                onClick={() => {
+                  if (workspaceId) {
+                    history.push(buildWorkspaceTasksPath(workspaceId));
+                  }
+                }}
+              >
+                任务看板
+              </Button>
+            </>
           }
           extraActions={
             <>
@@ -569,7 +594,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                         onViewportScrollIntentHandled
                       }
                       parentDelegationActivity={parentDelegationActivity}
-                                            transcriptMode={transcriptMode}
+                      transcriptMode={transcriptMode}
                       onTranscriptModeChange={setTranscriptMode}
                       focusView={focusView}
                       onFocusViewChange={setFocusView}
@@ -583,7 +608,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     onInputChange={onInputChange}
                     onKeyDown={onKeyDown}
                     loading={loading}
-                                        interactionQueue={interactionQueue}
+                    interactionQueue={interactionQueue}
                     onUpdateQueuedInteraction={onUpdateQueuedInteraction}
                     onDeleteQueuedInteraction={onDeleteQueuedInteraction}
                     onSendQueuedInteractionNow={onSendQueuedInteractionNow}
@@ -610,7 +635,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     onOpenSubAgentInspector={() =>
                       handleOpenSubAgentInspector()
                     }
-                                        latestAssistantText={latestAssistantText}
+                    latestAssistantText={latestAssistantText}
                     permissionMode={permissionMode}
                     onPermissionModeChange={onPermissionModeChange}
                     autoReviewState={autoReview.state}

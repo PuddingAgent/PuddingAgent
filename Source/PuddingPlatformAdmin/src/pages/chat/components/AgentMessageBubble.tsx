@@ -495,7 +495,13 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
       ? delegationActivity
       : processActivity;
   }, [delegationActivity, processActivity]);
-  const shouldShowProcessActivity = Boolean(isRunActive && processActivity);
+  // thinking/tool have canonical compact rows below. Keep the activity card only
+  // for states that do not yet own a dedicated trajectory row.
+  const shouldShowProcessActivity = Boolean(
+    isRunActive &&
+      processActivity &&
+      (processActivity.kind === 'system' || processActivity.kind === 'subagent'),
+  );
   const shouldShowDelegationActivity = Boolean(
     isRunActive && delegationActivity && processActivity?.kind !== 'subagent',
   );
@@ -627,10 +633,6 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                   <CurrentActivityPanel
                     activity={processActivity}
                     now={activityNow}
-                    hidePreview={
-                      showReasoningPreview &&
-                      processActivity.kind === 'thinking'
-                    }
                   />
                 )}
 
@@ -645,11 +647,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                 {showReasoningPreview && (
                   <ReasoningPreview
                     lines={reasoningLines}
-                    waitSeconds={waitSeconds}
                     isCurrent={reasoningIsCurrent}
-                    currentActivityTitle={
-                      reasoningIsCurrent ? undefined : currentActivity?.title
-                    }
                   />
                 )}
 
@@ -741,10 +739,9 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
               if (hasItems || hasHistoricalSummary)
                 processSummaryEverMounted.current = true;
               const shouldRender =
-                !isBeforeFirstToken &&
-                (hasItems ||
-                  hasHistoricalSummary ||
-                  processSummaryEverMounted.current);
+                hasItems ||
+                hasHistoricalSummary ||
+                processSummaryEverMounted.current;
               if (!shouldRender) return null;
               return (
                 <MessageProcessSummary
@@ -777,7 +774,6 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                   </span>
                 </div>
               )}
-
 
             {/* P1-2: 模型重试行 — 嗅探 processItems 中的 LLM retry 条目；无条目时组件内部返回 null，不占用布局 */}
             <ModelRetryRow items={processItems} />

@@ -409,12 +409,12 @@ describe('MessageQueueDropdown', () => {
       />,
     );
     const root = screen.getByTestId('interaction-queue');
-    expect(root.getAttribute('data-open')).toBe('true');
-
-    fireEvent.click(screen.getByTestId('message-queue-trigger'));
     expect(root.getAttribute('data-open')).toBe('false');
 
     fireEvent.click(screen.getByTestId('message-queue-trigger'));
     expect(root.getAttribute('data-open')).toBe('true');
+
+    fireEvent.click(screen.getByTestId('message-queue-trigger'));
+    expect(root.getAttribute('data-open')).toBe('false');
   });
 });

@@ -35,4 +35,19 @@ public sealed class AgentSessionManagerTests
         Assert.AreEqual("agent-a", first.AgentInstanceId);
         Assert.AreEqual("agent-a", second.AgentInstanceId);
     }
+
+    [TestMethod]
+    public void LoadedToolIds_Persist_ForSession_And_AreRemoved_WithSession()
+    {
+        var manager = new AgentSessionManager();
+        manager.GetOrCreate("session-1", "global:general-assistant");
+
+        manager.RememberLoadedToolIds("session-1", ["file_read", "search_grep"]);
+
+        var loaded = manager.GetLoadedToolIds("session-1");
+        CollectionAssert.AreEquivalent(new[] { "file_read", "search_grep" }, loaded.ToArray());
+
+        manager.Remove("session-1");
+        Assert.IsEmpty(manager.GetLoadedToolIds("session-1"));
+    }
 }

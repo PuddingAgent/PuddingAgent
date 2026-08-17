@@ -17,6 +17,7 @@ const makeToolCall = (
   extra: Partial<TimelineItem> = {},
 ): TimelineItem => ({
   id,
+  toolCallId: `call-${id.replace(/^c/, '')}`,
   type: 'tool_call',
   name,
   arguments: args,
@@ -32,6 +33,7 @@ const makeToolResult = (
   extra: Partial<TimelineItem> = {},
 ): TimelineItem => ({
   id,
+  toolCallId: `call-${id.replace(/^r/, '')}`,
   type: 'tool_result',
   name,
   output,
@@ -65,7 +67,7 @@ describe('ToolCallRowList', () => {
     expect(rows[0].status).toBe('done');
   });
 
-  it('pairs tool_call with the next same-name tool_result (single-line done summary = output first line)', () => {
+  it('pairs tool_call with its canonical toolCallId result (single-line done summary = output first line)', () => {
     const { container } = render(
       <ToolCallRowList
         items={[
@@ -225,7 +227,7 @@ describe('ToolCallRowList', () => {
     ).toContain('retention policy');
   });
 
-  it('pairs same-name results preferentially and keeps the leftover call running', () => {
+  it('pairs only the matching canonical result and keeps the other call running', () => {
     const rows = buildToolCallRows([
       makeToolCall('c1', 'shell', '{"command":"git status"}'),
       makeToolCall('c2', 'shell', '{"command":"git log"}'),
@@ -264,32 +266,36 @@ describe('ToolCallRowList', () => {
     expect(rows[1].status).toBe('done');
   });
 
-  it('falls back to same-name+order when toolCallId is missing', () => {
-    // call 有 id、result 无 id → 回落同名
+  it('never guesses a result when either canonical toolCallId is missing', () => {
     const rows = buildToolCallRows([
       makeToolCall('c1', 'shell', '{"command":"git status"}', {
         toolCallId: 'call-1',
       }),
-      makeToolResult('r1', 'shell', 'On branch master'),
+      makeToolResult('r1', 'shell', 'On branch master', {
+        toolCallId: undefined,
+      }),
     ]);
-    expect(rows[0].result?.id).toBe('r1');
-    expect(rows[0].status).toBe('done');
+    expect(rows[0].result).toBeUndefined();
+    expect(rows[0].status).toBe('running');
 
-    // call 无 id、result 有 id → 回落同名
     const rows2 = buildToolCallRows([
-      makeToolCall('c2', 'shell', '{"command":"git log"}'),
+      makeToolCall('c2', 'shell', '{"command":"git log"}', {
+        toolCallId: undefined,
+      }),
       makeToolResult('r2', 'shell', '* abc123', { toolCallId: 'call-2' }),
     ]);
-    expect(rows2[0].result?.id).toBe('r2');
-    expect(rows2[0].status).toBe('done');
+    expect(rows2[0].result).toBeUndefined();
+    expect(rows2[0].status).toBe('running');
   });
 
-  it('handles mixed id presence: id pairs by id, legacy pairs by same-name, no cross-id theft', () => {
+  it('handles mixed id presence without compatibility pairing', () => {
     const rows = buildToolCallRows([
       makeToolCall('c1', 'shell', '{"command":"git status"}', {
         toolCallId: 'call-1',
       }),
-      makeToolCall('c2', 'shell', '{"command":"git log"}'),
+      makeToolCall('c2', 'shell', '{"command":"git log"}', {
+        toolCallId: undefined,
+      }),
       makeToolCall('c3', 'search', '{"query":"retention"}', {
         toolCallId: 'call-3',
       }),
@@ -300,16 +306,18 @@ describe('ToolCallRowList', () => {
       makeToolResult('r1', 'shell', 'On branch master', {
         toolCallId: 'call-1',
       }),
-      makeToolResult('r2', 'shell', '* abc123'),
+      makeToolResult('r2', 'shell', '* abc123', { toolCallId: undefined }),
     ]);
     expect(rows).toHaveLength(3);
     expect(rows[0].id).toBe('c1');
     expect(rows[0].result?.id).toBe('r1');
     expect(rows[1].id).toBe('c2');
-    expect(rows[1].result?.id).toBe('r2');
+    expect(rows[1].result).toBeUndefined();
+    expect(rows[1].status).toBe('running');
     expect(rows[2].id).toBe('c3');
     expect(rows[2].result?.id).toBe('r3');
-    expect(rows.every((row) => row.status === 'done')).toBe(true);
+    expect(rows[0].status).toBe('done');
+    expect(rows[2].status).toBe('done');
   });
 
   it('does not steal a result whose toolCallId belongs to another call (orphan result not consumed)', () => {

@@ -164,7 +164,7 @@ internal static class HostFileToolPaths
 [Tool(
     id: "file_read",
     name: "Read file",
-    description: "从宿主工作区读取 UTF-8 文本文件。Read a UTF-8 text file from the host workspace. 大文件/日志最佳实践：优先用 TailLines=N 读末尾最新 N 行，或用 OffsetLines+LimitLines 分段读取；避免对超大文件用 FullFile=true 以免塞满上下文。默认超过 300 行或 40KB 会触发护栏只返回前 200 行并附 META 头（总行数/字节数/截断提示）。参数：HeadLines/TailLines/OffsetLines/LimitLines 行级分页，MaxChars 字符级截断，FullFile=true 绕过护栏。优先级：同时指定 MaxChars 与行级分页时，MaxChars 优先生效（先按字符截断）。",
+    description: "从宿主工作区读取 UTF-8 文本文件。Read a UTF-8 text file from the host workspace. 默认超过 300 行或 8KB 时只返回前 120 行；优先用 TailLines=N 或 OffsetLines+LimitLines 渐进读取。完整工具结果即使显式 FullFile=true 也会由运行时保存为 artifact，模型历史只保留有界预览。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -228,11 +228,11 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
 
                 // Guardrail: auto-truncate large files when no explicit pagination or FullFile
                 var hasExplicitSlice = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue;
-                if (!hasExplicitSlice && args.FullFile != true && (totalLines > 300 || fileInfo.Length > 40_000))
+                if (!hasExplicitSlice && args.FullFile != true && (totalLines > 300 || fileInfo.Length > 8_192))
                 {
-                    var preview = string.Join("\n", lines.Take(200));
+                    var preview = string.Join("\n", lines.Take(120));
                     return ToolExecutionResult.Ok(
-                        $"{meta}\n{preview}\n... [GUARDRAIL: {totalLines} lines, {totalChars} chars — showing first 200 lines. Use HeadLines/TailLines/OffsetLines/LimitLines for line-level windowing, or FullFile=true to read the complete file.]");
+                        $"{meta}\n{preview}\n... [GUARDRAIL: {totalLines} lines, {totalChars} chars — showing first 120 lines. Use HeadLines/TailLines/OffsetLines/LimitLines for line-level windowing.]");
                 }
 
                 if (args.MaxChars.HasValue && totalChars > args.MaxChars.Value)
@@ -275,11 +275,11 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
 
             // Guardrail: auto-truncate large files when no explicit pagination or FullFile
             var hasExplicitSliceLarge = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue;
-            if (!hasExplicitSliceLarge && args.FullFile != true && (totalLinesLarge > 300 || fileInfo.Length > 40_000))
+            if (!hasExplicitSliceLarge && args.FullFile != true && (totalLinesLarge > 300 || fileInfo.Length > 8_192))
             {
-                var preview = await _chunk.ReadChunkAsync(fullPath, 0, 200, ct);
+                var preview = await _chunk.ReadChunkAsync(fullPath, 0, 120, ct);
                 return ToolExecutionResult.Ok(
-                    $"{metaLarge}\n{preview}\n... [GUARDRAIL: {totalLinesLarge} lines, {totalCharsLarge} chars — showing first 200 lines. Use HeadLines/TailLines/OffsetLines/LimitLines for line-level windowing, or FullFile=true to read the complete file.]");
+                    $"{metaLarge}\n{preview}\n... [GUARDRAIL: {totalLinesLarge} lines, {totalCharsLarge} chars — showing first 120 lines. Use HeadLines/TailLines/OffsetLines/LimitLines for line-level windowing.]");
             }
 
             // MaxChars requires full read for accurate char count — warn and truncate
@@ -332,7 +332,7 @@ public sealed record FileReadArgs
     [ToolParam("Absolute or relative file path inside the host workspace.")]
     public required string Path { get; init; }
 
-    [ToolParam("Maximum characters to return. Default: 100000.")]
+    [ToolParam("Optional maximum characters for this read window. Omit and use line pagination for progressive reads.")]
     public int? MaxChars { get; init; }
 
     [ToolParam("Read the first N lines. Highest priority pagination option.")]
@@ -496,7 +496,7 @@ public sealed class ListDirectoryTool : PuddingToolBase<ListDirectoryArgs>
 
         var recursive = args.Recursive == true;
         var includeHidden = args.IncludeHidden == true;
-        var maxEntries = Math.Clamp(args.MaxEntries ?? 200, 1, 2_000);
+        var maxEntries = Math.Clamp(args.MaxEntries ?? 100, 1, 2_000);
         var pattern = string.IsNullOrWhiteSpace(args.Pattern) ? "*" : args.Pattern;
         var entries = new List<ListDirectoryEntry>();
         var truncated = false;
@@ -585,7 +585,7 @@ public sealed record ListDirectoryArgs
     [ToolParam("When true, recursively list child directories. Default: false.")]
     public bool? Recursive { get; init; }
 
-    [ToolParam("Maximum entries to return. Default: 200, max: 2000.")]
+    [ToolParam("Maximum entries to return. Default: 100, max: 2000.")]
     public int? MaxEntries { get; init; }
 
     [ToolParam("When true, include hidden files and directories. Default: false.")]

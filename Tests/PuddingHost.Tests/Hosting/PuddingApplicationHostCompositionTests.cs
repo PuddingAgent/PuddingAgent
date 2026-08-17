@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using PuddingCode.Tasks;
 using PuddingHost.Hosting;
 using PuddingRuntime.Services;
+using PuddingRuntime.Services.TaskTools;
 
 namespace PuddingHost.Tests.Hosting;
 
@@ -8,7 +10,7 @@ namespace PuddingHost.Tests.Hosting;
 public sealed class PuddingApplicationHostCompositionTests
 {
     [Fact]
-    public async Task DesktopChild_CompositionRoot_ResolvesUserPreferenceService()
+    public async Task DesktopChild_CompositionRoot_ResolvesSingletonRuntimeToolsAndServices()
     {
         var dataRoot = Path.Combine(
             Path.GetTempPath(),
@@ -30,6 +32,23 @@ public sealed class PuddingApplicationHostCompositionTests
 
             Assert.IsType<UserPreferenceService>(
                 app.Services.GetRequiredService<IUserPreferenceService>());
+
+            var taskCommandService = app.Services.GetRequiredService<ITaskAgentCommandService>();
+            Assert.Same(
+                taskCommandService,
+                app.Services.GetRequiredService<ITaskAgentCommandService>());
+            Assert.Same(
+                app.Services.GetRequiredService<TaskListTool>(),
+                app.Services.GetRequiredService<TaskListTool>());
+            Assert.Same(
+                app.Services.GetRequiredService<TaskGetTool>(),
+                app.Services.GetRequiredService<TaskGetTool>());
+            Assert.Same(
+                app.Services.GetRequiredService<TaskClaimTool>(),
+                app.Services.GetRequiredService<TaskClaimTool>());
+            Assert.Same(
+                app.Services.GetRequiredService<TaskUpdateTool>(),
+                app.Services.GetRequiredService<TaskUpdateTool>());
         }
         finally
         {

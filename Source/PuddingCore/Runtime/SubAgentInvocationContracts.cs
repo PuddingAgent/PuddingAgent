@@ -177,6 +177,22 @@ public sealed record SubAgentExecutionOptions
     /// </summary>
     public int ParentFinalizationReserveSeconds { get; init; } = 120;
     public string DefaultPermissionMode { get; init; } = SubAgentPermissionModes.Inherit;
+    public SubAgentTransientDirectoryRetentionOptions TransientDirectoryRetention { get; init; } = new();
+}
+
+/// <summary>
+/// Retention policy for legacy transient directories accidentally materialized under
+/// data/agents/{subSessionId}. Only empty generated SKILL scaffolds are auto-quarantined;
+/// stateful or unknown directories always require explicit review.
+/// </summary>
+public sealed record SubAgentTransientDirectoryRetentionOptions
+{
+    public bool Enabled { get; init; } = true;
+    public int ScanIntervalMinutes { get; init; } = 6 * 60;
+    public int ScaffoldRetentionHours { get; init; } = 24;
+    public int OrphanRetentionHours { get; init; } = 7 * 24;
+    public int QuarantineRetentionDays { get; init; } = 7;
+    public int MaxItemsPerSweep { get; init; } = 200;
 }
 
 /// <summary>

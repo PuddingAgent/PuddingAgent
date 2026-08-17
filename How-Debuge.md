@@ -232,6 +232,26 @@ Get-Content .\tmp\dev\proxy.err.log -Tail 100
 
 不要因为页面显示 502 就先修改认证或聊天接口。
 
+#### DesktopChild 在 DI 校验阶段退出
+
+运行中心若显示 `AggregateException: Some services are not able to be constructed`，先展开内部的
+`Cannot consume scoped service ... from singleton ...`，按实际依赖链修正生命周期，不要关闭
+`ValidateScopes` 或 `ValidateOnBuild`。
+
+原生 Agent 工具通过统一 Tool Registry 注册为 Singleton，因此工具的直接构造依赖不能是 Scoped。
+若依赖服务只保留 Singleton 的 `IDbContextFactory<TContext>` 等线程安全依赖，并在每次调用内创建、
+释放独立 DbContext，可将该无状态服务注册为 Singleton；不要让 Singleton 保存 DbContext 实例。
+
+用产品组合根测试复现并确认容器可完整构建：
+
+```powershell
+dotnet test .\Tests\PuddingHost.Tests\PuddingHost.Tests.csproj --no-restore --nologo `
+  --filter "FullyQualifiedName~PuddingApplicationHostCompositionTests"
+```
+
+该测试通过只证明 DI 组合根可构建。Desktop 产品还应在明确的新构建上确认出现
+`PUDDING_DESKTOP_READY`，并检查 Loopback `/health` 返回 200。
+
 ### 6.2 POST 返回 500
 
 1. 从响应取得 `errorId`。
@@ -581,6 +601,18 @@ gap replay 和 live SSE 到达，以及 `subAgentReducer` 是否已记录并拒�
    bootstrap 的 `subAgentEvents`、gap replay、live SSE 和 `subAgentReducer`。
 5. 不要为详情检查器新增轮询或第二条实时通道；历史恢复与实时追加必须共享同一
    eventId 幂等 reducer。
+
+如果 run 已完成但检查器显示 `0` 轮、`0` 工具或“暂无运行事件”，按以下顺序定位：
+
+1. 读取同一 `runId` 的 `run.json`、`events.jsonl`、`tools.jsonl` 和
+   `conversation-projection.cursor`；先确认归档是否真的有终态统计和事件。
+2. 调用 `GET /api/sub-agents/runs/{runId}` 与 `/events`。详情统计必须来自 `run.json`
+   （旧归档缺字段时才由事件/时间戳回推），事件响应必须包含认证检查器回放所需的 payload。
+3. 若接口正确而 UI 为空，检查 `SubAgentActivityDock` 是否按选中的 canonical `runId` 拉取归档，
+   并通过 `projectSubAgentActivity` 与实时事件使用同一投影函数；不要只依赖本次页面生命周期中的
+   `run.activities`。
+4. 主消息中的“正在调用子代理”只说明父工具仍在等待。主代理自己的 reasoning/tool 过程应能在
+   当前消息“查看过程”中展开；子代理内部过程仍只进入右侧检查器，不应复制到主消息。
 
 ### 7.3 子代理检查器只显示摘要或完整结果为空
 
@@ -2812,3 +2844,63 @@ SubAgent executor 必须使用由 immutable workspace/graph 派生的 filesystem
 2026-08-11 的实际故障是 `SavePreferenceTool` 已被 Runtime 程序集扫描注册，但 PuddingHost 遗漏
 `IUserPreferenceService → UserPreferenceService`，Core 以 CLR 未处理异常退出。补齐产品组合根注册后，
 DesktopChild 组合根测试和实际 Core Ready 共同作为修复证据。
+
+## 11.29 Agent Turn 显示“本轮运行失败”且日志为 SQLite Error 5/6
+
+聊天失败卡只有 `execution_protocol_error`，而 Core 仍健康时，先按同一
+`sessionId/turnId/runId/traceId` 搜索 `D:\data\logs\error`。若失败点位于
+`SqliteExecutionJournal.AppendOutputAsync` 的 `DbConnection.OpenAsync`，并同时出现
+`database is locked`、`not an error` 或 `active statements`，这是 canonical journal
+在写入任何本轮事件前遭遇 SQLite writer/pooled handle 竞争，不是 LLM 或工具执行失败。
+
+检查顺序：
+
+1. 确认只有一个 `PuddingAgent.exe` 使用该 DataRoot，排除 Desktop 与 dev-up 双 Core。
+2. 检查 `PlatformSqliteConnectionInterceptor` 必须先执行 `PRAGMA busy_timeout=30000`，再执行
+   `synchronous/temp_store/wal_autocheckpoint`；否则连接初始化 PRAGMA 自己可能在等待策略安装前失败。
+3. `SqliteExecutionJournal` 只允许在事务尚未创建、事件尚未写入时，对 SQLite code 5/6 的
+   `not an error`/`active statements` pooled-handle 激活异常清池并有限重试。不得对已开始的事务
+   或一般 `database is locked` 整体重放，避免重复 canonical sequence/tool event。
+4. 修复后运行 interceptor 与 infrastructure-failure 定向测试，并用新的 Core PID 发起真实 turn；
+   旧失败卡不会自动变成成功，验收对象必须是新 run。
+
+2026-08-16 的实际故障中，单个 Desktop child Core 同时记录 SSE reader lock、journal open
+`not an error` 和连接回池 `active statements`。根因是 5 秒 busy timeout 覆盖了 provider 默认
+等待且安装顺序过晚；调整为首条 30 秒 wait policy，并仅在写前处理损坏 pooled handle 后，
+定向测试和 Platform 构建通过。
+
+## 11.30 工具结果上下文膨胀与 LLM 前缀缓存诊断
+
+部署 2026-08-17 的 P0 有界化后，大工具结果保持原始内容，在写入模型历史之前经过统一长度边界，不进行
+KeyVault 脱敏。搜索 Core 日志中的 `[AgentExec:ToolResultContext]`：`Spilled oversized tool result` 表示完整原文
+已写入当前工作区 `.pudding/context-tool-results/<session>/`，模型收到不超过 8 KiB 的原始首尾预览；Root dispatch 未提供
+WorkingDirectory 时会使用与 `file_read/search_grep` 相同的宿主工作区 fallback。`Failed to spill` 表示为了保持
+任务行为已 fail-open，本轮仍把原文送入模型，应优先检查解析后的工作区根和写入错误。
+普通日志只记录 tool/call、字符数和工作区相对路径，不应记录结果正文。模型上下文、用户可见结果和受治理的
+执行归档保持原文；调试遥测需要脱敏时只能处理其独立副本，不得把脱敏后的副本传回模型上下文、模型输出或任务证据。
+
+缓存验收不要用 `token_usage_events` 的会话归因字段代替 provider usage。以新 Core PID 和部署时间为界，读取
+`llm_gateway_usage_events.cache_hit_tokens/cache_miss_tokens`，按
+`hit / (hit + miss)` 计算总体及 provider/model/session 分组；同时查看 Admin Token 统计页。若总体仍低于 99%，
+优先对比低命中组是否伴随 system prompt 变化、`search_tools` 后 schema 扩张、工具结果 spill 失败或新 session
+冷启动。至少连续观察 7 天；构建成功和历史 7 天数据都不能证明新版本已达到目标。
+
+## 11.31 `data/agents` 持续出现 `*-sub-*` 空目录
+
+若目录中只有 `skills/index.json`，先检查是否为旧版 `AgentSkillFileService.GetIndexAsync` 的只读副作用：
+子代理执行身份是 `SubSessionId`，持久配置身份是 `ConfigurationAgentInstanceId`，二者不能混用。新版本的
+Get/List 缺失索引时返回内存空结果，不创建目录；人格、私有 Skill、记忆和消息日志均从稳定配置身份读取。
+
+历史空脚手架由 `SubAgentTransientDirectoryGcService` 处理。搜索系统日志
+`[SubAgentDirectoryGc]`，一次扫描会记录 `scanned/quarantined/purged/recent/pooled/nonTerminal/
+statefulOrUnknown/errors`。排查顺序：
+
+1. `Pool-state lookup failed` 或 `Run-state lookup failed` 表示安全门禁不可用，本轮不会移动源目录；先修复
+   子代理池或 Platform SQLite 访问，不能降级为按目录时间删除。
+2. `statefulOrUnknown` 表示目录不再是精确空 Skill 脚手架；检查 `manifest.json`、`goal.md`、
+   `heartbeat.json`、真实 Skill 或未知文件，必须人工判定，不能扩大自动删除匹配面。
+3. 合格项先移动到 `retention-archive/subagent-transient-instances` 并写 `gc.json`；默认隔离 7 天后才删除。
+   run archive 位于 workspace 的 `runs/{runId}`，不属于该 GC。
+4. 修改保留期时只编辑 `config/runtime.execution.json` 的
+   `subAgents.transientDirectoryRetention`，并用临时 DataRoot 的定向测试验证；不要用脚本直接递归删除
+   `data/agents`。

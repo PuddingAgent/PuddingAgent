@@ -1,9 +1,15 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
-import { getSubAgentRunOutput } from '@/services/platform/api';
+import {
+  getSubAgentRunDetail,
+  getSubAgentRunEvents,
+  getSubAgentRunOutput,
+} from '@/services/platform/api';
 import SubAgentActivityDock from './SubAgentActivityDock';
 
 jest.mock('@/services/platform/api', () => ({
+  getSubAgentRunDetail: jest.fn(),
+  getSubAgentRunEvents: jest.fn(),
   getSubAgentRunOutput: jest.fn(),
 }));
 
@@ -20,6 +26,29 @@ describe('SubAgentActivityDock', () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-07-19T00:00:10.000Z'));
     jest.mocked(getSubAgentRunOutput).mockResolvedValue({ output: null });
+    jest.mocked(getSubAgentRunDetail).mockImplementation(async (runId) => ({
+      summary: {
+        runId,
+        parentSessionId: 'session',
+        subSessionId: 'session-sub',
+        workspaceId: 'default',
+        agentInstanceId: 'agent',
+        templateId: 'template',
+        status: 'running',
+        startedAt: '2026-07-19T00:00:00.000Z',
+        totalDurationMs: 10_000,
+        totalRounds: 0,
+        totalToolCalls: 0,
+      },
+      eventCount: 0,
+      toolCallCount: 0,
+    }));
+    jest.mocked(getSubAgentRunEvents).mockResolvedValue({
+      items: [],
+      total: 0,
+      offset: 0,
+      limit: 500,
+    });
   });
 
   afterEach(() => {
@@ -280,5 +309,95 @@ describe('SubAgentActivityDock', () => {
       'FULL OUTPUT\nAll evidence returned to the parent Agent.',
     );
     expect(screen.queryByText('short event summary')).toBeNull();
+  });
+
+  it('restores archived metrics and timeline when the live event projection is empty', async () => {
+    jest.mocked(getSubAgentRunDetail).mockResolvedValue({
+      summary: {
+        runId: 'run-archive',
+        parentSessionId: 'session',
+        subSessionId: 'session-sub-archive',
+        workspaceId: 'default',
+        agentInstanceId: 'agent',
+        templateId: 'template',
+        status: 'completed',
+        startedAt: '2026-07-19T00:00:00.000Z',
+        completedAt: '2026-07-19T00:06:00.000Z',
+        totalDurationMs: 360_000,
+        totalRounds: 37,
+        totalToolCalls: 85,
+      },
+      eventCount: 2,
+      toolCallCount: 85,
+    });
+    jest.mocked(getSubAgentRunEvents).mockResolvedValue({
+      items: [
+        {
+          eventId: 'event-reasoning',
+          eventType: 'subagent.llm.completed',
+          timestamp: '2026-07-19T00:05:00.000Z',
+          payloadSize: 100,
+          payload: {
+            round: 37,
+            total_tokens: 1024,
+            reasoning_preview: '检查归档事件，再恢复运行时间线。',
+          },
+        },
+        {
+          eventId: 'event-tool',
+          eventType: 'subagent.tool.started',
+          timestamp: '2026-07-19T00:05:01.000Z',
+          payloadSize: 100,
+          payload: {
+            round: 37,
+            tool_name: 'shell',
+            tool_call_id: 'call-archive',
+            arguments_preview: '{"command":"git status"}',
+          },
+        },
+      ],
+      total: 2,
+      offset: 0,
+      limit: 500,
+    });
+
+    render(
+      <SubAgentActivityDock
+        sessionId="session"
+        inspectorOpen
+        onInspectorOpenChange={jest.fn()}
+        selectedRunId="run-archive"
+        onSelectedRunIdChange={jest.fn()}
+        subAgentCards={{
+          archived: {
+            turnId: 'archived',
+            runId: 'run-archive',
+            subSessionId: 'session-sub-archive',
+            parentSessionId: 'session',
+            status: 'completed',
+            phase: 'completed',
+            modelId: 'deepseek-v4-flash',
+            taskSummary: 'inspect archived events',
+            spawnedAt: Date.parse('2026-07-19T00:00:00.000Z'),
+            completedAt: Date.parse('2026-07-19T00:06:00.000Z'),
+            currentRound: 0,
+            toolCount: 0,
+            activities: [],
+          },
+        }}
+      />,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('轮次：37')).toBeTruthy();
+    expect(screen.getByText('工具：85')).toBeTruthy();
+    expect(screen.getByText('模型返回 · 1024 tokens')).toBeTruthy();
+    expect(screen.getByText('检查归档事件，再恢复运行时间线。')).toBeTruthy();
+    expect(screen.getByText('开始执行 shell')).toBeTruthy();
+    expect(screen.getByText('Call ID: call-archive')).toBeTruthy();
   });
 });

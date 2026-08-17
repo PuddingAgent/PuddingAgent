@@ -45,7 +45,7 @@ public sealed class FileReadToolTests
 
     // Test 2: Large file (>300 lines) triggers guardrail
     [TestMethod]
-    public async Task LargeFile_TriggersGuardrail_ShowsFirst200Lines()
+    public async Task LargeFile_TriggersGuardrail_ShowsFirst120Lines()
     {
         var lines = Enumerable.Range(1, 500).Select(i => $"line {i}");
         var content = string.Join("\n", lines);
@@ -59,11 +59,11 @@ public sealed class FileReadToolTests
         StringAssert.Contains(result.Output, "GUARDRAIL");
         StringAssert.Contains(result.Output, "500 lines");
         StringAssert.Contains(result.Output, "line 1");
-        StringAssert.Contains(result.Output, "line 200");
-        Assert.IsFalse(result.Output.Contains("line 201"));
+        StringAssert.Contains(result.Output, "line 120");
+        Assert.IsFalse(result.Output.Contains("line 121"));
     }
 
-    // Test 3: Large file (>40KB) triggers guardrail even if <300 lines
+    // Test 3: File above the progressive 8KB threshold triggers guardrail even if <300 lines
     [TestMethod]
     public async Task LargeByBytes_TriggersGuardrail()
     {
@@ -156,12 +156,12 @@ public sealed class FileReadToolTests
     [TestMethod]
     public async Task Utf8_MultiByteCharacters_PreservedAtBoundary()
     {
-        var specialLine = "line 200 München € café résumé naïve";
+        var specialLine = "line 100 München € café résumé naïve";
         var sb = new StringBuilder();
         for (int i = 1; i <= 350; i++)
         {
             if (i > 1) sb.Append('\n');
-            if (i == 200)
+            if (i == 100)
                 sb.Append(specialLine);
             else
                 sb.Append($"line {i}");

@@ -16,6 +16,9 @@ public sealed class TokenUsageSchemaBootstrapperTests
     private static readonly string[] ExpectedColumns =
         TokenUsageSchemaBootstrapper.RequiredColumns.Select(c => c.Name).ToArray();
 
+    private static readonly string[] ExpectedContextLayerColumns =
+        TokenUsageSchemaBootstrapper.RequiredContextLayerColumns.Select(c => c.Name).ToArray();
+
     [TestMethod]
     public async Task EnsureCreatedAsync_UpgradesLegacyTableWithColumnsAndIndex()
     {
@@ -26,6 +29,9 @@ public sealed class TokenUsageSchemaBootstrapperTests
         foreach (var column in ExpectedColumns)
             Assert.IsTrue(await ColumnExistsAsync(scope.Db, "TokenUsageEvents", column),
                 $"Expected column '{column}' to be added.");
+        foreach (var column in ExpectedContextLayerColumns)
+            Assert.IsTrue(await ColumnExistsAsync(scope.Db, "context_layer_metric_events", column),
+                $"Expected context-layer column '{column}' to be added.");
 
         Assert.IsTrue(await IndexExistsAsync(scope.Db, "IX_TokenUsageEvents_ParentSessionId"));
         Assert.IsTrue(await TableExistsAsync(scope.Db, "llm_gateway_usage_events"));
@@ -43,6 +49,9 @@ public sealed class TokenUsageSchemaBootstrapperTests
         foreach (var column in ExpectedColumns)
             Assert.IsTrue(await ColumnExistsAsync(scope.Db, "TokenUsageEvents", column),
                 $"Expected column '{column}' to survive a second run.");
+        foreach (var column in ExpectedContextLayerColumns)
+            Assert.IsTrue(await ColumnExistsAsync(scope.Db, "context_layer_metric_events", column),
+                $"Expected context-layer column '{column}' to survive a second run.");
 
         Assert.IsTrue(await IndexExistsAsync(scope.Db, "IX_TokenUsageEvents_ParentSessionId"));
         Assert.IsTrue(await TableExistsAsync(scope.Db, "llm_gateway_usage_events"));
@@ -81,6 +90,9 @@ public sealed class TokenUsageSchemaBootstrapperTests
             CREATE TABLE "TokenUsageEvents" (
                 "Id" INTEGER NOT NULL CONSTRAINT "PK_TokenUsageEvents" PRIMARY KEY AUTOINCREMENT,
                 "SessionId" TEXT NULL{extra}
+            );
+            CREATE TABLE "context_layer_metric_events" (
+                "id" INTEGER NOT NULL CONSTRAINT "PK_context_layer_metric_events" PRIMARY KEY AUTOINCREMENT
             );
             """);
 #pragma warning restore EF1002

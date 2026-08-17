@@ -32,6 +32,8 @@
 | `Services/SubconsciousOrchestrator.cs` | 潜意识编排（75KB，核心） |
 | `Services/SubconsciousJobQueue.cs` | 潜意识任务队列（27KB） |
 
+目标演进：保留持久 Job 的 lease/retry/dead-letter，把 Pre-Compaction Flush、后台提取、Auto-Dream、经验转 Skill、Skill Self-Improvement 拆为事件驱动 learning stage plugins；统一经过 signal → candidate → immutable proposal → evaluation → approval/canary → activation → monitoring/rollback，详见 `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`。
+
 ## 基础设施
 
 | 文件 | 用途 |

@@ -6,6 +6,8 @@
 > 触发条件：现有代码已有 3 态状态机实现，需正式文档化
 > 关联：[16会话状态层与客户端解耦ADR](16会话状态层与客户端解耦ADR.md)、[14消息管线与终端代理与前端优化ADR](14消息管线与终端代理与前端优化ADR.md)、[15潜意识LLM子代理系统ADR](15潜意识LLM子代理系统ADR.md)
 
+> **2026-08-14 修订说明**：本文的 `Streaming -> StreamCompleted -> Closed` 继续描述客户端事件观察流/Channel 生命周期，不再等同于 Session Domain 生命周期。Session、Agent Run、Turn、LLM Request、Tool Call、SubAgent、Heartbeat 与 Job 的目标状态机及提交后事件统一见 `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`。
+
 ---
 
 ## 1. 会话状态机

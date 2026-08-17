@@ -152,8 +152,8 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
   onStopAll,
 }) => {
   const { styles } = useChatStyles();
-  /** 默认展开（与旧内联队列一致的可见性；可折叠） */
-  const [open, setOpen] = useState(true);
+  /** 默认收起，避免活动队列长期挤占消息区；用户需要时再展开详情。 */
+  const [open, setOpen] = useState(false);
   /** HTML5 拖拽重排状态 */
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);

@@ -120,6 +120,7 @@ public sealed partial class AgentExecutionService
 
         // ── 构建对话历史 ─────────────────────────────────────────────
         var history = _contextManager.GetOrCreateHistory(request.SessionId);
+        string? userContextPrefix = null;
 
         // ── 入站消息去重：同一 message_id 因 Ack 丢失/重试被重复 dispatch 时，
         //     不再重复进入 LLM 历史、不再重复执行。
@@ -153,6 +154,7 @@ public sealed partial class AgentExecutionService
                         WorkspaceId = request.WorkspaceId ?? string.Empty,
                         SessionId = request.SessionId,
                         AgentInstanceId = instance.AgentInstanceId,
+                        ConfigurationAgentInstanceId = request.ConfigurationAgentInstanceId,
                         AgentTemplateId = request.AgentTemplateId,
                         UserMessage = request.MessageText,
                         LlmProfileId = request.LlmConfig?.ModelId ?? "default",
@@ -170,6 +172,7 @@ public sealed partial class AgentExecutionService
                         TraceId = request.ExecutionIdentity?.TraceId,
                     }, ct);
                     systemPromptText = facadeResult.Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? string.Empty;
+                    userContextPrefix = facadeResult.UserContextPrefix;
                 }
                 else
                 {
@@ -182,6 +185,7 @@ public sealed partial class AgentExecutionService
                         UserMessage = request.MessageText,
                         Capability = effectiveCapability,
                         AgentInstanceId = instance.AgentInstanceId,
+                        ConfigurationAgentInstanceId = request.ConfigurationAgentInstanceId,
                         ForStreaming = false,
                         IsFirstMessage = true,
                         SessionHistory = Array.Empty<ChatMessage>(),
@@ -202,6 +206,7 @@ public sealed partial class AgentExecutionService
                         ParentContextSnapshot = request.ParentContextSnapshot,
                     }, ct);
                     systemPromptText = pipelineResult.SystemPrompt;
+                    userContextPrefix = pipelineResult.UserContextPrefix;
                 }
                 ctxAssembleSw.Stop();
                 await RecordActivityAsync(
@@ -291,6 +296,7 @@ public sealed partial class AgentExecutionService
                         UserMessage = request.MessageText,
                         Capability = effectiveCapability,
                         AgentInstanceId = instance.AgentInstanceId,
+                        ConfigurationAgentInstanceId = request.ConfigurationAgentInstanceId,
                         ForStreaming = false,
                         IsFirstMessage = false,
                         SessionHistory = history.Where(m => m.Role != ChatRole.System).ToList(),
@@ -356,11 +362,12 @@ public sealed partial class AgentExecutionService
                     throw;
                 }
                 history[0] = new ChatMessage(ChatRole.System, systemPrompt.SystemPrompt);
+                userContextPrefix = systemPrompt.UserContextPrefix;
             }
         }
                 history.Add(new ChatMessage(
                     ChatRole.User,
-                    BuildUserMessageForLlm(request),
+                    BuildUserMessageForLlm(request, userContextPrefix),
                     VisualArtifactIds: request.VisualArtifactIds,
                     AudioArtifactIds: request.AudioArtifactIds));
 
@@ -428,7 +435,7 @@ public sealed partial class AgentExecutionService
         int  toolOutputTruncatedCount = 0;
         long toolOutputChars = 0;
         string? firstToolFailureSummary = null;
-        var loadedToolIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var loadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
         var providerInputRecoveryAttempted = false;
 
         try
@@ -720,7 +727,9 @@ public sealed partial class AgentExecutionService
                 // Note: the LLM call (facade / legacy) and error handling
                 // are now delegated to AgentExecutionLlmInvoker.
                 llmSw.Stop();
-                var rawText = await _keyVaultService.StripAsync(llmResp.Content ?? "{}", ct);
+                // Model output is execution data, not a diagnostic copy. Preserve it verbatim:
+                // redaction here can corrupt JSON/tool decisions and prevents confidential tasks.
+                var rawText = llmResp.Content ?? "{}";
                 // The sub-agent inspector is an explicit execution-audit surface. Preserve the
                 // provider's reasoning payload verbatim so operators can inspect what the model
                 // actually returned; only bound the event size below.
@@ -1145,6 +1154,7 @@ public sealed partial class AgentExecutionService
                             allLlmTools);
                         if (newlyLoadedToolCount > 0)
                         {
+                            _sessionManager.RememberLoadedToolIds(request.SessionId, loadedToolIds);
                             _logger.LogInformation(
                                 "[AgentExec:ToolDiscovery] Loaded {AddedCount} tool definition(s) for next round session={Session} loadedTools={LoadedTools}",
                                 newlyLoadedToolCount,
@@ -1158,7 +1168,14 @@ public sealed partial class AgentExecutionService
                                 skillResult.Error?.Contains("permission", StringComparison.OrdinalIgnoreCase) == true ||
                                 skillResult.Error?.Contains("not allowed", StringComparison.OrdinalIgnoreCase) == true ||
                                 skillResult.Error?.Contains("rejected", StringComparison.OrdinalIgnoreCase) == true);
-                        var toolPayload = await _keyVaultService.StripAsync(toolPayloadRaw, ct);
+                        var toolPayload = await ToolResultContextPolicy.MaterializeAsync(
+                            toolPayloadRaw,
+                            request.WorkingDirectory,
+                            request.SessionId,
+                            call.Name,
+                            call.Id,
+                            _logger,
+                            ct);
 
                         toolRoundMessages.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: call.Id));
 
@@ -1599,9 +1616,7 @@ public sealed partial class AgentExecutionService
                         ref firstToolFailureSummary);
 
                     toolSuccess = skillResult.Success;
-                    toolError   = string.IsNullOrWhiteSpace(skillResult.Error)
-                        ? skillResult.Error
-                        : await _keyVaultService.StripAsync(skillResult.Error, ct);
+                    toolError = skillResult.Error;
 
                     await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, toolName, skillResult, ct));
 
@@ -1613,6 +1628,7 @@ public sealed partial class AgentExecutionService
                         allLlmTools);
                     if (newlyLoadedToolCount > 0)
                     {
+                        _sessionManager.RememberLoadedToolIds(request.SessionId, loadedToolIds);
                         _logger.LogInformation(
                             "[AgentExec:ToolDiscovery] Loaded {AddedCount} tool definition(s) for next round session={Session} loadedTools={LoadedTools}",
                             newlyLoadedToolCount,
@@ -1625,7 +1641,14 @@ public sealed partial class AgentExecutionService
                         : $"❌ Tool '{toolName}' FAILED (exit={skillResult.ExitCode})\n" +
                           $"   Error: {skillResult.Error}\n" +
                           $"   💡 Suggestion: Try an alternative approach or use a different tool if this one has access restrictions.";
-                    var toolMsg = await _keyVaultService.StripAsync(toolMsgRaw, ct);
+                    var toolMsg = await ToolResultContextPolicy.MaterializeAsync(
+                        toolMsgRaw,
+                        request.WorkingDirectory,
+                        request.SessionId,
+                        toolName,
+                        $"legacy-{round + 1}-{totalToolCalls}",
+                        _logger,
+                        ct);
                     history.Add(new ChatMessage(ChatRole.User, toolMsg));
                 }
 

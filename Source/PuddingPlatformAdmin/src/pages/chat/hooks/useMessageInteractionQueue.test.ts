@@ -1,4 +1,4 @@
-﻿import { act, renderHook } from '@testing-library/react';
+﻿import { act, renderHook, waitFor } from '@testing-library/react';
 import { useRef } from 'react';
 import { getAgentMessageQueue } from '@/services/platform/api';
 import { useMessageInteractionQueue } from './useMessageInteractionQueue';
@@ -75,6 +75,46 @@ describe('useMessageInteractionQueue', () => {
     await act(async () => result.current.submitInteraction('  hello  '));
 
     expect(sendMessage).toHaveBeenCalledWith('hello', undefined);
+  });
+
+  it('projects only active backend deliveries into the composer queue', async () => {
+    let resolveSnapshot: (snapshot: unknown) => void = () => {};
+    (getAgentMessageQueue as jest.Mock).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSnapshot = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useQueueHarness('ws-1'));
+
+    await waitFor(() =>
+      expect(getAgentMessageQueue).toHaveBeenCalledWith('ws-1', 'agent-1', {
+        limit: 20,
+        includeTerminal: false,
+      }),
+    );
+    await act(async () => {
+      resolveSnapshot({
+        items: [
+          {
+            deliveryId: 'delivered-1',
+            content: '已完成历史',
+            createdAt: 1,
+            status: 'delivered',
+          },
+          {
+            deliveryId: 'queued-1',
+            content: '等待处理',
+            createdAt: 2,
+            status: 'queued',
+          },
+        ],
+      });
+    });
+    expect(result.current.interactionQueue.map((item) => item.id)).toEqual([
+      'queued-1',
+    ]);
   });
 
   it('routes the compact command without invoking the message sender', () => {

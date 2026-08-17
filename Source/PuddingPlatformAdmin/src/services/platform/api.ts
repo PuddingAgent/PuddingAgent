@@ -1989,6 +1989,46 @@ export interface SubAgentRunOutputResponse {
   output?: string | null;
 }
 
+export interface SubAgentRunSummaryResponse {
+  runId: string;
+  parentSessionId: string;
+  subSessionId: string;
+  workspaceId: string;
+  agentInstanceId: string;
+  templateId: string;
+  status: string;
+  startedAt: string;
+  completedAt?: string | null;
+  totalDurationMs: number;
+  totalRounds: number;
+  totalToolCalls: number;
+  errorMessage?: string | null;
+}
+
+export interface SubAgentRunDetailResponse {
+  summary: SubAgentRunSummaryResponse;
+  task?: string | null;
+  output?: string | null;
+  eventCount: number;
+  toolCallCount: number;
+}
+
+export interface SubAgentRunEventResponse {
+  eventId: string;
+  eventType: string;
+  timestamp: string;
+  payloadSize: number;
+  payloadPreview?: string | null;
+  payload?: Record<string, unknown> | null;
+}
+
+export interface SubAgentRunEventPageResponse {
+  items: SubAgentRunEventResponse[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
 /**
  * 读取子代理运行归档中的最终原始输出（output.md）。
  * Conversation Event 只承载有界摘要，不能替代这里的完整终态结果。
@@ -2379,6 +2419,27 @@ export interface AgentMessageQueueItem {
   deferCount?: number;
   executionState?: string; // 结构化 executionState（Busy/Failed/…），从 lastErrorState 列派生
   position?: number; // 队列序（0-based，priority desc + createdAt asc）
+}
+
+/** 读取归档详情，用于修复实时投影窗口之外的统计。 */
+export async function getSubAgentRunDetail(
+  runId: string,
+): Promise<SubAgentRunDetailResponse> {
+  return request(`/api/sub-agents/runs/${encodeURIComponent(runId)}`, {
+    method: 'GET',
+  });
+}
+
+/** 分页读取 canonical 运行事件，供检查器回放完整时间线。 */
+export async function getSubAgentRunEvents(
+  runId: string,
+  offset = 0,
+  limit = 500,
+): Promise<SubAgentRunEventPageResponse> {
+  return request(
+    `/api/sub-agents/runs/${encodeURIComponent(runId)}/events`,
+    { method: 'GET', params: { offset, limit } },
+  );
 }
 
 export interface AgentMessageQueueSnapshot {

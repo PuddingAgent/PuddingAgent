@@ -12,9 +12,11 @@ public sealed class PlatformSqliteConnectionInterceptor : DbConnectionIntercepto
 {
     private static readonly string[] ConnectionPragmas =
     [
+        // Install the wait policy before any other connection setup. These
+        // PRAGMAs run inside OpenAsync and can collide with an active writer.
+        "PRAGMA busy_timeout=30000;",
         "PRAGMA synchronous=NORMAL;",
         "PRAGMA temp_store=MEMORY;",
-        "PRAGMA busy_timeout=5000;",
         "PRAGMA wal_autocheckpoint=4000;",
     ];
 

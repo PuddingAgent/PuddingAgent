@@ -26,6 +26,7 @@ public sealed partial class ContextPipeline
     {
         var totalBudget = request.Template.Runtime?.MaxContextTokens ?? 0;
         var sb = new StringBuilder();
+        var userContextBuilder = new StringBuilder();
         var usedBudget = 0;
         var layers = new List<ContextLayerSnapshot>();
         var layerInfos = new List<ContextLayerInfo>();
@@ -117,7 +118,7 @@ public sealed partial class ContextPipeline
         var memorySummaryCtx = _agentMemorySummaryContextBuilder is null
             ? string.Empty
             : await _agentMemorySummaryContextBuilder.BuildAsync(
-                request.SessionId, request.AgentInstanceId, request.IsFirstMessage, ct);
+                request.SessionId, request.PersistentAgentInstanceId, request.IsFirstMessage, ct);
         var hasMemorySummary = !string.IsNullOrWhiteSpace(memorySummaryCtx);
         var memorySummaryTokens = hasMemorySummary ? EstimateTokens(memorySummaryCtx) : 0;
         usedBudget += memorySummaryTokens;
@@ -206,7 +207,7 @@ public sealed partial class ContextPipeline
                 contextAugmentStr = await _subconsciousRecallPipeline.RunAsync(
                     request.UserMessage ?? "",
                     request.WorkspaceId,
-                    request.AgentInstanceId ?? "",
+                    request.PersistentAgentInstanceId,
                     request.IsFirstMessage,
                     ct);
                 if (!string.IsNullOrWhiteSpace(contextAugmentStr))
@@ -224,7 +225,7 @@ public sealed partial class ContextPipeline
             }
         }
         else if (_agentLogRecallService is not null
-                 && !string.IsNullOrWhiteSpace(request.AgentInstanceId)
+                 && !string.IsNullOrWhiteSpace(request.PersistentAgentInstanceId)
                  && !string.IsNullOrWhiteSpace(request.UserMessage))
         {
             try
@@ -275,7 +276,7 @@ public sealed partial class ContextPipeline
                 request.WorkspaceId,
                 request.SessionId,
                 request.AgentTemplateId,
-                request.AgentInstanceId,
+                request.PersistentAgentInstanceId,
                 request.IsFirstMessage,
                 ct);
 
@@ -286,10 +287,11 @@ public sealed partial class ContextPipeline
         // 注入裁剪结果（或降级回原始内容）
         // ═══════════════════════════════════════════════════════════════
 
-        // ── L6-CONTEXT-AUGMENT 注入：潜意识召回管道输出（替代原 RECALLED + AGENT-LOG-RECALL）──
+        // ── L6-CONTEXT-AUGMENT：随当前用户消息追加到缓存尾部。
+        // 召回内容取决于本轮 query，不能写入 system prompt，否则会使其后的整段会话历史失去前缀缓存。
         if (!string.IsNullOrWhiteSpace(contextAugmentStr))
         {
-            AppendLayer(sb, contextAugmentStr);
+            AppendLayer(userContextBuilder, contextAugmentStr);
             layers.Add(new ContextLayerSnapshot("上下文增强", contextAugmentTokens, (double)contextAugmentTokens / totalBudget * 100));
             layerInfos.Add(new ContextLayerInfo
             {
@@ -300,7 +302,7 @@ public sealed partial class ContextPipeline
             });
         }
 
-        // ── RUNTIME 层（日期、Session、流式指令等）— 在 CURRENT 之前以利用日期稳定性 ──
+        // ── RUNTIME 层：仅保留跨 Turn 稳定的行为指令。日期等本轮元数据由用户消息尾部承载。──
         var runtimeLen = sb.Length;
         AppendRuntimeLayer(sb, request);
         var runtimeTokens = EstimateTokens(sb.ToString()) - EstimateTokens(sb.ToString(0, runtimeLen));
@@ -313,11 +315,10 @@ public sealed partial class ContextPipeline
             FullContent = sb.ToString(runtimeLen, sb.Length - runtimeLen),
         });
 
-        // ── INBOUND-MESSAGE-CONTEXT: agent-to-agent 消息上下文 ——
-        // 后移至 RUNTIME 之后：多 Agent 环境下高频变化，放末尾仅影响自身+CURRENT（~0.6K）
+        // ── INBOUND-MESSAGE-CONTEXT：高频变化，随当前用户消息追加到缓存尾部。──
         if (!string.IsNullOrEmpty(inboundCtx))
         {
-            AppendLayer(sb, inboundCtx);
+            AppendLayer(userContextBuilder, inboundCtx);
             layers.Add(new ContextLayerSnapshot("入站消息上下文", inboundTokens, (double)inboundTokens / totalBudget * 100));
             layerInfos.Add(new ContextLayerInfo
             {
@@ -328,12 +329,19 @@ public sealed partial class ContextPipeline
             });
         }
 
-        // ── L7: 当前消息（15%）──
-        ctx.UsedBudget = usedBudget;
-        budget.UpdateAvailable(ctx);
-        var currentMsgBudget = budget.AllocatePercentWithFloor(ctx, 0.15, 100);
-        var currentMsg = BuildCurrentMessageLayer(request, currentMsgBudget);
-        RecordLayer(sb, currentMsg, "当前消息", "L9-CURRENT", ref usedBudget, totalBudget, layers, layerInfos);
+        // ── L9-CURRENT：只做预算与可观测性计量。
+        // 实际正文由 AgentExecutionService 作为唯一一条 User message 发送，禁止再次复制到 system prompt。
+        var currentMessage = request.UserMessage ?? string.Empty;
+        var currentMsgTokens = EstimateTokens(currentMessage);
+        usedBudget += currentMsgTokens;
+        layers.Add(new ContextLayerSnapshot("当前消息", currentMsgTokens, (double)currentMsgTokens / totalBudget * 100));
+        layerInfos.Add(new ContextLayerInfo
+        {
+            LayerName = "L9-CURRENT",
+            TokenCount = currentMsgTokens,
+            ContentPreview = BuildPreview(currentMessage),
+            FullContent = currentMessage,
+        });
 
         // ── 压缩指令（如触发）──
         if (compactionLevel >= ContextPipelineCompactionLevel.Aggressive)
@@ -387,7 +395,13 @@ public sealed partial class ContextPipeline
             "[ContextPipeline] Assembled context session={Session} totalBudget={Total} usedEstimate={Used} level={Level} len={Len}",
             request.SessionId, totalBudget, usedBudget, compactionLevel, result.Length);
 
-        return new ContextAssemblyResult(result, totalBudget, usedBudget, layers.AsReadOnly(), layerInfos.AsReadOnly());
+        return new ContextAssemblyResult(
+            result,
+            totalBudget,
+            usedBudget,
+            layers.AsReadOnly(),
+            layerInfos.AsReadOnly(),
+            userContextBuilder.Length == 0 ? null : userContextBuilder.ToString());
         }
         catch (Exception ex)
         {

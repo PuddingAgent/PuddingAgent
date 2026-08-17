@@ -8,6 +8,22 @@ namespace PuddingRuntimeTests.Services;
 public sealed class AgentSkillFileServiceTests
 {
     [TestMethod]
+    public async Task GetIndexAndList_MissingAgent_AreReadOnlyAndDoNotCreateDirectory()
+    {
+        using var temp = new TempDataRoot();
+        var service = new AgentSkillFileService(temp.Paths);
+        var agentRoot = temp.Paths.AgentInstanceRoot("transient-sub-1234abcd");
+
+        var index = await service.GetIndexAsync("transient-sub-1234abcd");
+        var list = await service.ListAsync("transient-sub-1234abcd");
+
+        Assert.AreEqual("transient-sub-1234abcd", index.AgentInstanceId);
+        Assert.AreEqual(0, index.Skills.Count);
+        Assert.AreEqual(0, list.Count);
+        Assert.IsFalse(Directory.Exists(agentRoot));
+    }
+
+    [TestMethod]
     public async Task InitializeAsync_Creates_Skills_Root_And_Empty_Index()
     {
         using var temp = new TempDataRoot();

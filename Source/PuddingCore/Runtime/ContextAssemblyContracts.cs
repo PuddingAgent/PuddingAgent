@@ -8,6 +8,12 @@ public sealed record ContextAssemblyRequest
     public required string WorkspaceId { get; init; }
     public required string SessionId { get; init; }
     public required string AgentInstanceId { get; init; }
+    /// <summary>
+    /// Persistent Agent instance that owns manifest, private SKILL, goal, and memory files.
+    /// Delegated executions keep an ephemeral AgentInstanceId for execution isolation while
+    /// resolving durable Agent-scoped files through this stable identity.
+    /// </summary>
+    public string? ConfigurationAgentInstanceId { get; init; }
     public required string AgentTemplateId { get; init; }
     public required string UserMessage { get; init; }
     public required string LlmProfileId { get; init; }
@@ -41,6 +47,11 @@ public sealed record ContextAssemblyResult
     public required IReadOnlyList<ChatMessage> Messages { get; init; }
     public required int EstimatedTokens { get; init; }
     public required IReadOnlyList<ContextLayerSummary> Layers { get; init; }
+    /// <summary>
+    /// Per-turn recalled/inbound context that must be appended with the current user
+    /// message rather than inserted into the stable system-prefix cache region.
+    /// </summary>
+    public string? UserContextPrefix { get; init; }
     public string? CompactionMode { get; init; }
     public string? MemoryRecallMode { get; init; }
 }

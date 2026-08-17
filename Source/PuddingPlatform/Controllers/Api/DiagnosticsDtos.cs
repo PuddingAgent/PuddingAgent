@@ -1,3 +1,4 @@
+using System.Text.Json;
 using PuddingCode.Diagnostics;
 
 namespace PuddingPlatform.Controllers.Api;
@@ -30,7 +31,7 @@ public sealed record PagedResultDto<T>
 
 /// <summary>
 /// 子代理运行事件摘要 DTO — 用于 events 分页列表。
-/// 不含完整 payload，只返回 PayloadSize 和 PayloadPreview。
+/// 包含完整 payload，并保留 PayloadSize 和 PayloadPreview 供轻量列表使用。
 /// </summary>
 public sealed record SubAgentRunEventDto
 {
@@ -39,4 +40,9 @@ public sealed record SubAgentRunEventDto
     public required string Timestamp { get; init; }
     public required int PayloadSize { get; init; }
     public string? PayloadPreview { get; init; }
+    /// <summary>
+    /// 认证后的运行检查器使用的完整归档 payload。运行事件本身就是可审计事实，
+    /// 不能只返回 200 字符预览，否则历史回放无法重建推理、工具输入和工具输出。
+    /// </summary>
+    public JsonElement? Payload { get; init; }
 }

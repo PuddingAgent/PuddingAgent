@@ -4,6 +4,8 @@
 > Status: partial implementation in progress
 > Scope: Pudding framework lifecycle hooks, internal event pipeline, read-only external hooks, and Memory v2 R4 `session.compressed`.
 
+> 2026-08-14 terminology update: this document remains the implementation history for the existing `session.compressed -> SubconsciousJobs` path. The target architecture is now `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`: the current `IHookPublisher` is classified as a lifecycle event publisher, while synchronous Guard/Transform/Around intervention is owned by a separate Typed Hook Dispatcher. Do not add new blocking or mutating behavior to `IHookPublisher`.
+
 ## 0. Current Implementation Status
 
 2026-06-30 implementation status:

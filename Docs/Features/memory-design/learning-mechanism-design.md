@@ -2,6 +2,8 @@
 
 > 目标：建立一套由框架（Pudding）强制执行的长效学习机制，不依赖 Agent 显意识的提示词驱动，由潜意识 LLM 后台异步完成。
 
+> 2026-08-14 架构更新：本文件保留学习目标与管道内容；触发、生命周期和可靠性以 `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md` 为准。新实现不再把所有框架通知统称为 Hook，而是区分同步 Typed Hook、提交后的 durable lifecycle event、持久 Job 与定时兜底 Command。
+
 ## 一、核心原则
 
 ### 铁律
@@ -30,7 +32,7 @@
 │  - 不负责记忆维护                            │
 │  - 不负责经验提取                            │
 └──────────────┬──────────────────────────────┘
-               │ HOOK 触发
+               │ Typed Hook / durable event
                ▼
 ┌─────────────────────────────────────────────┐
 │  潜意识层 (Flash Model) — 异步后台           │
@@ -63,23 +65,29 @@
 
 ---
 
-## 三、HOOK 触发点
+## 三、事件驱动触发点
 
-潜意识 LLM 在以下时机被框架自动唤醒：
+潜意识 LLM 不在 Hook 或 EventDispatcher 中直接运行。同步 Hook 只处理必须发生在当前提交前的短操作；提交后的 durable event 经独立 consumer checkpoint 转换为持久 Job，再由后台 Worker 执行 LLM 工作。
 
-| HOOK | 触发时机 | 执行管道 | 优先级 |
-|------|---------|---------|--------|
-| `session.closed` | 会话结束/切换 | 管道1+2 全量 | P0 |
-| `compaction.completed` | 上下文压缩完成 | 管道1（增量更新） | P0 |
-| `memory.written` | save_memory 写入 | 管道1（去重检查） | P1 |
-| `skill.proposed` | Agent 提议新 SKILL | 管道2（验证+固化） | P1 |
-| `cron.daily` | 每日定时 | 管道1（深度整理） | P2 |
-| `idle_timeout` | 系统空闲 N 分钟 | 管道1+2（全量） | P2 |
+| 触发合同 | 类型 | 触发时机 | 执行管道 | 优先级 |
+|------|------|---------|---------|--------|
+| `context.compaction.before_commit` | Typed Hook | 压缩提交前 | Pre-Compaction Flush（同步、有界） | P0 |
+| `agent.run.settled` | Durable event | Run 已无 retry/compaction/follow-up/子工作 | 管道1+2 增量信号 | P0 |
+| `session.closed` | Durable event | Session 真正关闭 | 管道1+2 会话收尾 | P0 |
+| `context.compaction.completed` | Durable event | 压缩成功提交 | 管道1增量更新 | P0 |
+| `memory.written` | Durable event | 记忆写入成功提交 | 管道1去重/索引信号 | P1 |
+| `learning.proposal.created` | Durable event | 形成 Skill/Prompt/策略修订提案 | 评测与审批，不直接激活 | P1 |
+| `ScheduleMaintenance` | Command | 周期或阈值兜底 | Auto-Dream/深度整理 Job | P2 |
+| `heartbeat.completed` | Durable event | 自主推进轮次完成 | 低权重健康/轨迹信号 | P2 |
 
 ### 关键约束
-- HOOK 触发由**框架硬编码**，Agent 无法跳过或绕过
+
+- 框架必需 Hook 和事件提交点由**框架强制执行**，Agent 无法通过提示词跳过
 - 潜意识 LLM 使用 **Flash 模型**（低成本、低延迟）
-- 处理结果写入后触发 `system_prompt_changed` 事件，但频率受控
+- Event handler 只校验并入 Job，不在事件派发线程执行长 LLM
+- 每个 consumer group 独立 checkpoint、retry 和 dead-letter；业务写入使用来源 event id + pipeline version 幂等
+- Timer 只产生幂等 Command，不能直接扫描并执行学习逻辑
+- 处理结果写入后发布对应 durable fact；Prompt 投影监听这些事实并按频率合并刷新
 
 ---
 
@@ -148,7 +156,7 @@ file_write  → 大段内容写入 memory/ 目录
 2. 候选生成
    ├─ 为高分候选起草 SKILL.md
    ├─ 包含: 名称、版本、描述、标签、步骤
-   └─ 提交为 SKILL 草稿 (skill-lifecycle 管理)
+   └─ 创建 immutable revision proposal（不覆盖 active Skill）
 
 3. 已有 SKILL 更新
    ├─ 对比现有 SKILL 与新发现的模式
@@ -158,13 +166,15 @@ file_write  → 大段内容写入 memory/ 目录
 4. 质量门禁
    ├─ 新 SKILL 必须通过 code-qa-verification
    ├─ 更新 SKILL 必须有至少 2 个会话的证据支持
-   └─ 不自动启用，留待用户审核
+   ├─ test/evaluation/replay 数据默认不进入生产学习
+   └─ 审批或 canary 后才能激活；持续监测并支持 rollback
 ```
 
 ### 输出格式
 ```
-SKILL 草稿 → agent_skill(action=create, enabled=false)
-SKILL 更新 → agent_skill(action=update, ...)
+SKILL 草稿 → learning.proposal.created（immutable revision）
+SKILL 评测 → learning.evaluation.completed
+激活/回滚 → learning.revision.activated / learning.revision.rolled_back
 通知用户 → "从最近 N 个会话中发现了 X 个可固化的经验"
 ```
 
@@ -218,13 +228,14 @@ Agent 显意识**不需要知道**潜意识 LLM 在做什么。但它可以通�
 
 | 优先级 | 事项 | 工作量 | 依赖 |
 |--------|------|--------|------|
-| **P0** | HOOK 框架 → 触发潜意识 LLM | 中 | 无 |
-| **P0** | 管道1: 记忆去重+过期清理 | 中 | HOOK |
-| **P0** | 管道1: 档案建设（用户+项目） | 小 | HOOK |
-| **P1** | 管道2: 经验识别+SKILL候选生成 | 大 | HOOK |
+| **P0** | 生命周期词典 + Typed Hook + durable event/outbox/checkpoint | 大 | 无 |
+| **P0** | 管道1: 记忆去重+过期清理 | 中 | durable event + Job |
+| **P0** | 管道1: 档案建设（用户+项目） | 小 | durable event + Job |
+| **P1** | 管道2: 经验识别+SKILL候选生成 | 大 | learning signal/candidate |
 | **P1** | 管道2: 已有SKILL增量更新 | 中 | 管道2基础 |
+| **P1** | Proposal 评测、审批、canary、rollback | 大 | immutable revision |
 | **P2** | 外部文件档案同步 | 小 | 管道1 |
-| **P2** | 质量门禁自动化 | 中 | 管道2 |
+| **P2** | 历史事件离线 replay 对比新算法 | 中 | DomainEventLog |
 
 ---
 
@@ -233,7 +244,10 @@ Agent 显意识**不需要知道**潜意识 LLM 在做什么。但它可以通�
 | 现有组件 | 复用方式 |
 |---------|---------|
 | `SubconsciousWorkerService` | 已存在，作为潜意识 LLM 的宿主 |
+| `SubconsciousJobQueue` | 已存在，复用 lease/retry/dead-letter；后续由通用 Job Runtime 承载 |
 | `SubconsciousRecallPipeline` | 已存在，处理异步记忆召回 |
+| `IInternalEventBus` / `PriorityEventQueue` | 迁移基础；后续补 DomainEventLog、Outbox、per-consumer checkpoint |
+| `PluginManifestCatalog` | 工具插件基线；后续把各学习阶段注册为 event/job plugins |
 | `memory-system-v2-requirements.md` | 已定义 R1-R9，本设计细化之 |
 | `memory-compaction` SKILL | 方法论指导（四步判断法等） |
 | `skill-lifecycle` SKILL | 管理 SKILL 创建/更新/版本 |
@@ -250,3 +264,25 @@ Agent 显意识**不需要知道**潜意识 LLM 在做什么。但它可以通�
 | 缓存命中率 | > 85% | `agent_diagnostics(cache_health)` |
 | SKILL 自动发现率 | 每月 1-3 个候选 | 日志统计 |
 | 记忆维护耗时 | < 30s/次 | 内部指标 |
+
+---
+
+## 十一、事件溯源与学习治理
+
+每个学习结果必须记录：来源 event ids、workspace/agent/session/run、origin、pipeline plugin id/version、输入窗口、评测版本、批准主体和当前 revision。事件重放可以重新生成候选与离线评测，但默认关闭文件写入、外部通知和 active revision 切换等生产副作用。
+
+学习闭环固定为：
+
+```text
+signal observed
+  -> eligibility/filter
+  -> candidate
+  -> immutable proposal
+  -> offline evaluation
+  -> review/canary
+  -> activation
+  -> outcome monitoring
+  -> stable or rollback
+```
+
+同一来源操作的幂等和内容语义去重必须分开。来源 event id + pipeline version 只防止重复处理；是否合并两条记忆或两个 Skill 候选由独立策略与证据判断。

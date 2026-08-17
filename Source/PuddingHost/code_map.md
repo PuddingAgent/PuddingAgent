@@ -8,7 +8,7 @@
 |------|------|
 | `BuiltInAgentTemplates.cs` | 内置 Agent 模板注册 |
 | `PuddingHostAssemblyMarker.cs` | 程序集标记 |
-| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册；包含 MOA、V2 component registry/compiler、SQLite store/signal、Admin 手动 Run/HTTP Hook command service、SubAgent/图片生成/展示 executor、hosted worker 与 replay-to-live follower；不能只在未被产品入口调用的 Runtime 扩展里注册 worker |
+| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册；包含 MOA、V2 component registry/compiler、SQLite store/signal、Admin 手动 Run/HTTP Hook command service、SubAgent/图片生成/展示 executor、临时子代理目录两阶段 GC、hosted worker 与 replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工具同生命周期，服务内部每次调用通过 DbContextFactory 创建独立 DbContext；不能只在未被产品入口调用的 Runtime 扩展里注册 worker |
 | `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册；assembly scan 自动发现的新工具，其构造依赖也必须在这里注册（例如 `SavePreferenceTool` → `IUserPreferenceService`） |
 | `Tools/ImageReaderTool.cs` | Agent 图片复查工具；首选 manifest 的 `imageReaderModel`，失败时仅降级到具备 `vision` 的 Agent 主模型，不使用全局 vision 排序；文本模型附件预观察同样消费该字段 |
 | `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库初始化；包含 AppUsers 头像字段及通用编排 SQLite schema bootstrap，已有数据库也必须幂等升级 |
@@ -49,7 +49,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/HeartbeatService.cs` | 心跳编排；实例提示词后追加高优先级自主执行契约，恢复最近非心跳上下文并推进一个安全步骤 |
+| `Services/HeartbeatService.cs` | 当前 Agent 心跳编排；实例提示词后追加自主执行契约。目标拆为 scheduler plugin + WakeAgent command + before-run/context Hook，以 `agent.run.settled` 重新调度并发布 scheduled/skipped/run-linked/completed 事实 |
 | `Services/CronSchedulerService.cs` | Cron 调度 |
 | `Services/ConfigHotReloadService.cs` | 配置热重载 |
 | `Services/IndexPrebuildService.cs` | 索引预构建 |
@@ -62,4 +62,4 @@
 
 ## 测试
 
-`../Tests/PuddingHost.Tests/` — Browser Bridge、Remote proxy、Storage 管理与 DesktopChild 产品组合根构建验证；Storage 定向测试 4/4 ✅
+`../Tests/PuddingHost.Tests/` — Browser Bridge、Remote proxy、Storage 管理与 DesktopChild 产品组合根构建验证；组合根测试显式验证 Singleton `task_*` 工具及其命令服务生命周期；Storage 定向测试 4/4 ✅

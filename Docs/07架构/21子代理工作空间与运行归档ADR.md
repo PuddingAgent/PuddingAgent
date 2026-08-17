@@ -83,6 +83,32 @@ data/workspaces/{workspaceId}/agents/{agentInstanceId}/
 - run archive 默认只追加，不覆盖。
 - 归档目录可以被 Admin UI、E2E、QA 直接读取。
 
+### ADR-021-B2：临时执行身份目录必须可证明安全后回收
+
+**决定**：`subSessionId` 只表示一次可续跑的执行会话，不是持久 Agent 配置身份。上下文组装读取
+私有 Skill、人格、记忆和消息日志时，必须使用稳定的 `ConfigurationAgentInstanceId`；缺失的
+`skills/index.json` 读取返回空索引，不得创建目录或文件。
+
+历史版本已产生的 `data/agents/{subSessionId}` 目录采用两阶段保留策略：
+
+1. 仅匹配锚定的 `*-sub-{8位十六进制}` 目录名，并且目录内容必须精确等于一个空的、身份匹配的
+   `skills/index.json` 脚手架；包含 `manifest.json`、`goal.md`、`heartbeat.json`、真实 Skill、记忆或
+   任何未知内容的目录永久跳过自动回收。
+2. 查询进程内子代理池和 `sub_agent_runs` 的最新运行。仍在池中的目录与非终态目录不移动；终态空
+   脚手架保留 24 小时；没有运行索引的孤儿空脚手架保留 7 天。任一状态查询失败时本轮 fail closed，
+   不改变源目录。
+3. 到期项先原子移动到 `retention-archive/subagent-transient-instances/` 并写入 `gc.json`，默认隔离
+   7 天后才删除。隔离项结构不再满足精确脚手架约束时也不自动删除。
+
+**后果**：
+
+- `data/agents` 不再因只读上下文组装持续增长。
+- GC 不依据目录时间或会话投影单独下结论，而同时验证目录结构和 durable run 状态。
+- `data/workspaces/{workspaceId}/agents/{agentInstanceId}/runs/{runId}` 运行归档不属于本策略范围，
+  不得由该 GC 移动或删除。
+- 保留期与单次扫描上限由 `runtime.execution.json` 的
+  `subAgents.transientDirectoryRetention` 配置。
+
 ### ADR-021-C：子代理配置文件优先，数据库为索引
 
 **决定**：子代理配置以文件为源，数据库只保存查询索引和 UI 摘要。
@@ -165,6 +191,15 @@ subagent.completed
 
 - **诊断重放**：读取 `events.jsonl`、`tools.jsonl`、`output.md`，还原发生了什么。
 - **执行重跑**：用 `input.json` 和当前配置重新执行，生成新的 runId，不覆盖旧 run。
+
+#### 运行检查器历史回放契约
+
+- `run.json` 的终态统计（轮次、工具次数、耗时、错误）和 `events.jsonl` 的事件 payload
+  是运行检查器的归档事实；数据库与 Conversation Event 仅承担索引和实时投影。
+- 检查器先显示实时 reducer 投影，选中运行后再按 `runId` 分页读取归档事件；刷新、重连或
+  bootstrap 窗口漏掉历史事件时，必须能从归档恢复同一条时间线，不能显示 0 轮/0 工具的空壳。
+- 父消息可以展示主代理自己的推理摘要和工具操作，以及“正在调用子代理”的有界委派状态；
+  子代理的模型/工具内部过程只在右侧运行检查器展示，避免在父消息重复展开。
 
 ### ADR-021-F：子代理权限必须显式化
 

@@ -40,55 +40,20 @@ internal static class ToolLoopInstructionBuilder
         {
             sb.AppendLine();
             sb.AppendLine("## Available Tools");
-            foreach (var tool in available)
-            {
-                sb.AppendLine($"- **{tool.Name}** (id: `{tool.ToolId}`): {tool.Description}");
-                if (tool.Parameters.Properties.Count > 0)
-                {
-                    var required = tool.Parameters.Required.ToHashSet(StringComparer.OrdinalIgnoreCase);
-                    foreach (var parameter in tool.Parameters.Properties)
-                    {
-                        var suffix = required.Contains(parameter.Name) ? " required" : " optional";
-                        sb.AppendLine($"  - `{parameter.Name}` ({parameter.Type},{suffix}): {parameter.Description}");
-                    }
-                }
-            }
-
-            sb.AppendLine();
-            sb.AppendLine("To call a tool, set `tool.name` to the tool id and `tool.args` to the arguments.");
+            sb.AppendLine(string.Join(", ", available
+                .OrderBy(tool => tool.ToolId, StringComparer.OrdinalIgnoreCase)
+                .Select(tool => $"`{tool.ToolId}`")));
+            sb.AppendLine("Function schemas are authoritative for descriptions and arguments. To call a tool, set `tool.name` to its id and `tool.args` to the validated arguments; use `search_tools` to discover deferred tools.");
             if (HasTool(available, "terminal_start"))
             {
                 sb.AppendLine();
                 sb.AppendLine("Terminal command guidance:");
-                sb.AppendLine("- Prefer `terminal_start` for builds, tests, searches, servers, and any command that may run longer than a few seconds.");
-                sb.AppendLine("- After `terminal_start`, use `terminal_wait` with `job_id` and `from_offset` to poll incremental output.");
-                sb.AppendLine("- If `terminal_wait` returns `truncated=true` or a `handle`, use `terminal_read` with the returned `read_args` to read buffered output slices.");
-                sb.AppendLine("- Canceling a wait must not be treated as canceling the job; use `terminal_cancel` when the process should stop.");
-                sb.AppendLine("- If a terminal command fails, diagnose its output before retrying. Repeating the same command is OK for intentional restart/retry workflows, but avoid blind identical reruns without a reason or state change.");
-                sb.AppendLine("- Use direct `shell` only for short bounded commands when `terminal_start` is unavailable or a one-shot result is explicitly required.");
-
-                sb.AppendLine("Example - start a terminal job:");
-                sb.AppendLine("```json");
-                sb.AppendLine("{ \"status\": \"CONTINUE\", \"message\": \"Starting tests\", \"tool\": { \"name\": \"terminal_start\", \"args\": { \"command\": \"dotnet test\", \"cwd\": \"/workspace\" } } }");
-                sb.AppendLine("```");
-                sb.AppendLine("Example - poll terminal output:");
-                sb.AppendLine("```json");
-                sb.AppendLine("{ \"status\": \"CONTINUE\", \"message\": \"Checking test output\", \"tool\": { \"name\": \"terminal_wait\", \"args\": { \"job_id\": \"abc123\", \"from_offset\": 0, \"wait_seconds\": 3 } } }");
-                sb.AppendLine("```");
-                if (HasTool(available, "terminal_read"))
-                {
-                    sb.AppendLine("Example - read truncated terminal output:");
-                    sb.AppendLine("```json");
-                    sb.AppendLine("{ \"status\": \"CONTINUE\", \"message\": \"Reading more output\", \"tool\": { \"name\": \"terminal_read\", \"args\": { \"job_id\": \"abc123\", \"from_offset\": 120 } } }");
-                    sb.AppendLine("```");
-                }
+                sb.AppendLine("- Use `terminal_start`, then `terminal_wait`; continue truncated output with `terminal_read` and the returned offset.");
+                sb.AppendLine("- Use `terminal_cancel` to stop the job. Reserve `shell` for short bounded commands.");
             }
             else if (HasTool(available, "shell"))
             {
-                sb.AppendLine("Example - run a short shell command:");
-                sb.AppendLine("```json");
-                sb.AppendLine("{ \"status\": \"CONTINUE\", \"message\": \"Listing files\", \"tool\": { \"name\": \"shell\", \"args\": { \"command\": \"ls -la\" } } }");
-                sb.AppendLine("```");
+                sb.AppendLine("Use `shell` only for short, bounded commands.");
             }
         }
         else

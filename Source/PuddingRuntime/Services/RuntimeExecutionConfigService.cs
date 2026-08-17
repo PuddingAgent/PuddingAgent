@@ -114,6 +114,28 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
             1,
             Math.Max(1, maxTimeout - 1));
         var parentFinalizationReserve = Math.Max(0, subAgents.ParentFinalizationReserveSeconds);
+        var transientDirectoryRetention = subAgents.TransientDirectoryRetention
+            ?? new SubAgentTransientDirectoryRetentionOptions();
+        var scanIntervalMinutes = Math.Clamp(
+            transientDirectoryRetention.ScanIntervalMinutes,
+            5,
+            24 * 60);
+        var scaffoldRetentionHours = Math.Clamp(
+            transientDirectoryRetention.ScaffoldRetentionHours,
+            1,
+            365 * 24);
+        var orphanRetentionHours = Math.Clamp(
+            transientDirectoryRetention.OrphanRetentionHours,
+            scaffoldRetentionHours,
+            365 * 24);
+        var quarantineRetentionDays = Math.Clamp(
+            transientDirectoryRetention.QuarantineRetentionDays,
+            1,
+            90);
+        var maxItemsPerSweep = Math.Clamp(
+            transientDirectoryRetention.MaxItemsPerSweep,
+            1,
+            1000);
         var permissionMode = string.Equals(subAgents.DefaultPermissionMode, SubAgentPermissionModes.Low, StringComparison.OrdinalIgnoreCase)
             ? SubAgentPermissionModes.Low
             : SubAgentPermissionModes.Inherit;
@@ -140,6 +162,14 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
                 BudgetGraceTimeoutSeconds = budgetGraceTimeoutSeconds,
                 ParentFinalizationReserveSeconds = parentFinalizationReserve,
                 DefaultPermissionMode = permissionMode,
+                TransientDirectoryRetention = transientDirectoryRetention with
+                {
+                    ScanIntervalMinutes = scanIntervalMinutes,
+                    ScaffoldRetentionHours = scaffoldRetentionHours,
+                    OrphanRetentionHours = orphanRetentionHours,
+                    QuarantineRetentionDays = quarantineRetentionDays,
+                    MaxItemsPerSweep = maxItemsPerSweep,
+                },
             },
         };
     }

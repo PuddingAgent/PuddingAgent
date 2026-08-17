@@ -30,7 +30,6 @@ public sealed class ContextPipelineLayerTests
             "--- LAYER: SKILLS ---",
             "--- LAYER: WORKSPACE ENVIRONMENT ---",
             "--- LAYER: RUNTIME ---",
-            "--- LAYER: CURRENT ---",
         };
 
         var lastIndex = -1;
@@ -43,6 +42,9 @@ public sealed class ContextPipelineLayerTests
                 $"Layer '{marker}' appears out of order. Expected after index {lastIndex}, got {currentIndex}.");
             lastIndex = currentIndex;
         }
+
+        Assert.DoesNotContain("--- LAYER: CURRENT ---", result.SystemPrompt);
+        Assert.DoesNotContain(CreateRequest().UserMessage, result.SystemPrompt);
     }
 
     [TestMethod]
@@ -214,6 +216,30 @@ public sealed class ContextPipelineLayerTests
 
         Assert.AreEqual(firstIdentity, secondIdentity,
             "Identity layer content should be identical on second call (cache hit).");
+    }
+
+    [TestMethod]
+    public async Task AssembleAsync_Current_Message_Does_Not_Change_Stable_System_Prefix()
+    {
+        var store = new ContextAssemblyStore();
+        var pipeline = CreatePipeline(store);
+        var firstRequest = CreateRequest() with
+        {
+            SessionId = "session-stable-prefix",
+            UserMessage = "first volatile message",
+        };
+        var secondRequest = firstRequest with
+        {
+            UserMessage = "second volatile message",
+        };
+
+        var first = await pipeline.AssembleAsync(firstRequest, CancellationToken.None);
+        var second = await pipeline.AssembleAsync(secondRequest, CancellationToken.None);
+
+        Assert.AreEqual(first.SystemPrompt, second.SystemPrompt,
+            "Changing only the current user message must not invalidate the cacheable system prefix.");
+        Assert.DoesNotContain(firstRequest.UserMessage, first.SystemPrompt);
+        Assert.DoesNotContain(secondRequest.UserMessage, second.SystemPrompt);
     }
 
     [TestMethod]

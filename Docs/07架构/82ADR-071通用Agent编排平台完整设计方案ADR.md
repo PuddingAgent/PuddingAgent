@@ -1,8 +1,9 @@
 # ADR-071 通用 Agent 编排平台完整设计方案
 
 > 状态：**design-baseline；不表示后续施工已经完成**  
-> 日期：2026-08-10  
-> 范围：Agent 生成任务图、蓝图编辑器、不可变修订、组件系统、多模态数据流、持久化调度、Agent 工具、MOA 模板、运行控制与交付边界  
+> 首次提出：2026-08-10
+> 本次修订：2026-08-15
+> 范围：Agent 生成任务图、可组合 Function、蓝图编辑器、不可变修订、组件系统、多模态数据流、持久化调度、Agent 工具、MOA 模板、运行控制与交付边界
 > 前置：[ADR-069 MOA 子代理设计委员会](80ADR-069MOA子代理设计委员会编排核心ADR.md)、[ADR-070 通用 Agent 编排图基础架构](81ADR-070通用Agent编排图基础架构ADR.md)  
 > 配套施工图：[后端与 Control Plane](83通用Agent编排后端执行内核与ControlPlane施工图.md)、[蓝图编辑器与组件系统](84通用Agent编排蓝图编辑器与组件系统施工图.md)、[测试交付与运维验收](85通用Agent编排交付测试与运维验收图册.md)
 
@@ -20,6 +21,8 @@ Pudding 应当实现前端蓝图编辑器，但它不是新的运行时，也不
 8. 多模态大对象只传 ArtifactRef，文本和小型 JSON 才允许 inline；
 9. Admin UI 与 Agent 工具都只调用同一组 Control Plane API；
 10. MOA 是可编译模板，不保留第二套长期调度内核。
+11. Agent、Tool、Graph、Gate、Transform 和 HumanInput 都以统一 Function Descriptor 暴露，并通过 Adapter 执行；
+12. Agent 生成的图必须经过编译、策略、预算、审批和不可变 Revision 冻结，不能直接执行模型临时产出的任意图。
 
 图定义采用 `pudding.agent-orchestration/v2` JSON。JavaScript、C#、Shell 或任意表达式都不能成为图文件；它们只能存在于经过注册、版本化和权限审计的受信组件实现内部。
 
@@ -53,13 +56,14 @@ Pudding 应当实现前端蓝图编辑器，但它不是新的运行时，也不
 - 支持文字、JSON、图片、音频、视频、通用文件、事件和流式引用；
 - 支持子代理、工具、聚合、判断、人工审批、网络、媒体、存储和事件触发组件；
 - Run 可跨 Core 重启恢复，并提供连续、可回放的进度事件；
+- Agent、Tool 与已部署 Graph 可作为强类型函数互相组合，调用关系始终关联到可追踪的 Run；
 - MOA 设计委员会成为 Graph 模板实例，可复用全部运行、UI 和审计能力；
 - 所有写副作用、外部网络、凭据使用和人工决策都可审计、可治理。
 
 ### 3.2 非目标
 
 - 不实现图内任意脚本、`eval`、动态 C#、动态 Shell 或用户上传程序集；
-- 不在单个 Run 内实现循环边；周期行为由 Trigger 创建新 Run；
+- 不在单个 Graph Run 中开放任意循环边；循环只允许由受信的有界 Loop Function、Child Run/Sub-orchestration 或 Trigger 显式表达；
 - 不用前端状态替代服务端 Graph/Run/Event 事实；
 - 不让 Skill 硬编码模型、直接管理 claim 或自行维护第二套工作流状态；
 - 不在 Revision JSON 中内联图片、音频、视频或大文件 Base64；
@@ -727,3 +731,97 @@ orchestration execution owner。
 - Admin 交互、组件目录和多模态 UX 以 [84 施工图](84通用Agent编排蓝图编辑器与组件系统施工图.md) 为准；
 - 分期、测试、部署、回滚和验收证据以 [85 图册](85通用Agent编排交付测试与运维验收图册.md) 为准；
 - 代码与本文冲突时，先更新设计并记录决策，再施工，不能用隐式实现改变架构。
+
+## 21. 2026-08-15 增补：Function Graph 与插件贡献边界
+
+### 21.1 决策
+
+编排组件不再只被理解为“节点类型”，而是插件贡献的版本化 Function：
+
+```text
+Plugin
+  -> FunctionDescriptor + FunctionInvoker
+  -> ComponentDescriptor + optional PresentationDescriptor
+  -> Graph Node references FunctionId + Version + ContractHash
+```
+
+一个 Function Descriptor 至少声明：
+
+- `functionId/version/kind/contractHash`；
+- input/output JSON Schema 与 typed port；
+- capability、credential、network、filesystem 和 side-effect class；
+- idempotency、retry、timeout、cost 和 cancellation 语义；
+- 可选的 UI presentation、artifact renderer 与 configuration schema；
+- provider plugin、owner scope 和 compatibility range。
+
+Function Registry 是发现事实，Executor/Invoker Registry 是执行事实，Presentation Registry 是呈现事实。三者通过稳定 ID 关联，但不能合并成前后端共享的一段可执行代码。
+
+### 21.2 Agent as Function
+
+Agent 节点通过 `AgentFunction` Adapter 创建真实 Child Run：
+
+```text
+request + contextRef + route + capabilityGrant + budget
+  -> result + artifacts + usage + childRunRef
+```
+
+Agent 内部可以运行多轮 FSM；父图只依赖冻结合同、最终输出和 child identity。父图不得把 Child Agent 的隐藏调用栈作为恢复机制，也不得用模型文本代替 NodeRun 终态提交。
+
+### 21.3 Graph as Function
+
+已部署 Graph 也可以成为 Function，输入输出由 Graph Contract 定义。调用时创建固定 `graphId/revisionId/deploymentId/contractHash` 的 Child Run。调用者可以选择 await、stream projection 或 fire-and-observe，但三种策略共享同一持久事实。
+
+这使下列组合成为同一种机制：
+
+```text
+AgentFunction -> ToolFunction -> AgentFunction -> GraphFunction -> HumanInputFunction
+```
+
+而不是为“Agent 调 Agent”“MOA”“子工作流”和“自动化”各维护一套调度器。
+
+### 21.4 Agent 生成编排图
+
+Agent 获得的不是直接写数据库或任意执行 JSON 的权限，而是一组 Control Plane Function：
+
+1. `orchestration.catalog.query`
+2. `orchestration.draft.validate`
+3. `orchestration.revision.create`
+4. `orchestration.revision.diff`
+5. `orchestration.deployment.propose`
+6. `orchestration.run.create`
+7. `orchestration.run.observe`
+8. `orchestration.run.control`
+
+编译器必须验证类型、DAG、Function 版本、Contract Hash、Capability、Side Effect、Budget、Depth/Fan-out 和 Activation Policy。生成图只有成为不可变 Revision 后才可创建 Run。低风险的一次性图可以使用带 TTL 的 ephemeral Revision，但不能成为不落盘的旁路。
+
+### 21.5 循环和递归
+
+单个 Graph Revision 继续保持静态 DAG。需要迭代时显式选择：
+
+- `BoundedLoopFunction`：固定最大轮数、progress predicate、时间/token/cost 预算；
+- Sub-orchestration：创建 Child Run，固定 max depth/fan-out；
+- GoalRun：质询器决定是否开始下一 epoch，并受峰谷 Fence、无进展指纹和累计预算限制；
+- Trigger：按时间或事件创建新的独立 Run。
+
+隐藏的递归 Agent 调用、模型自发“继续”和无上限图循环均不允许。所有继续条件都必须能够被 Runtime 而非 Prompt 验证。
+
+### 21.6 与插件、Hook、Event 的关系
+
+- Plugin 提供 Function、Hook、Event Consumer、Projection 和 Presentation；
+- Function 调用是强类型的直接能力边界，不强迫通过 EventBus；
+- Function 执行管道暴露 Guard/Transform/Around Hook；
+- Run/Node/Function 的已提交状态变化写出 durable Event；
+- Admin/Chat/Desktop 只消费 Projection 和 Command API。
+
+完整合同与迁移路线以 [插件、Hook、Event、Agent FSM 与函数图总架构](../deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md) 为准。
+
+### 21.7 新增不变量
+
+1. 一个 NodeRun 只能由一个 Function Contract 和一个冻结 Composition Snapshot 解释；
+2. Function 升级不改变已创建 Revision/Run 的语义；
+3. Parent/Child Run 关系、输入映射、输出映射和成本必须可追踪；
+4. Function 终态、NodeRun 输出、Outbox Event 和后继释放必须原子或由同一 Fence 保证收敛；
+5. UI Presentation 缺失只影响呈现，不能改变 Function 执行；
+6. 插件卸载先停止新解析并 Drain 旧 Snapshot，不能让运行中 Node 突然换实现；
+7. Function/Graph 的同步等待不能退化为进程内递归调用栈；
+8. Agent 创作图与用户编辑图遵守相同 CAS、Revision、Policy 和 Approval 规则。

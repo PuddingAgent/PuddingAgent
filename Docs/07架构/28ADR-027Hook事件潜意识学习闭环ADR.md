@@ -6,6 +6,8 @@
 > 范围：Agent Loop Hook、统一事件系统、潜意识 LLM、记忆图书馆、后续 Skill 维护提案
 > 前置：[10事件系统与事件总线](10事件系统与事件总线.md)、[15潜意识LLM子代理系统ADR](15潜意识LLM子代理系统ADR.md)、[20会话状态机与事件规范ADR](20会话状态机与事件规范ADR.md)、[task41-hook-system](../Tasks/task41-hook-system.md)、[task38-subconscious-memory-engine](../Tasks/task38-subconscious-memory-engine.md)
 
+> **2026-08-14 修订说明**：本 ADR 的“长 LLM 不在 EventDispatcher 执行、事件消费者只入持久 Job、学习结果保留来源”原则继续有效；“Hook 只等于生命周期事件生产层”的术语被新方案修订。同步 Guard/Transform/Around 由 Typed Hook Dispatcher 承担，提交后的事实进入 durable event log，自学习按 signal/candidate/proposal/evaluation/activation/rollback 状态机推进。详见 `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`。
+
 ---
 
 ## 1. 背景

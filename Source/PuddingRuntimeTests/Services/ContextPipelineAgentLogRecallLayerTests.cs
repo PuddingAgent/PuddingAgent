@@ -48,12 +48,14 @@ public sealed class ContextPipelineAgentLogRecallLayerTests
 
         var result = await pipeline.AssembleAsync(CreateRequest(agentId), CancellationToken.None);
 
-        StringAssert.Contains(result.SystemPrompt, "--- LAYER: RECALLED ---");
-        StringAssert.Contains(result.SystemPrompt, "[AGENT LOG RECALL]");
-        StringAssert.Contains(result.SystemPrompt, "Recent 5 days message logs:");
-        StringAssert.Contains(result.SystemPrompt, "needle message recall");
-        StringAssert.Contains(result.SystemPrompt, "Recent 180 days daily summaries:");
-        StringAssert.Contains(result.SystemPrompt, "needle daily recall");
+        Assert.IsNotNull(result.UserContextPrefix);
+        StringAssert.Contains(result.UserContextPrefix, "--- LAYER: RECALLED ---");
+        StringAssert.Contains(result.UserContextPrefix, "[AGENT LOG RECALL]");
+        StringAssert.Contains(result.UserContextPrefix, "Recent 5 days message logs:");
+        StringAssert.Contains(result.UserContextPrefix, "needle message recall");
+        StringAssert.Contains(result.UserContextPrefix, "Recent 180 days daily summaries:");
+        StringAssert.Contains(result.UserContextPrefix, "needle daily recall");
+        Assert.DoesNotContain("needle message recall", result.SystemPrompt);
 
         Assert.IsTrue(store.TryGet("session-1", out var snapshot));
         Assert.IsNotNull(snapshot);

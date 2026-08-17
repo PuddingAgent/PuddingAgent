@@ -194,6 +194,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ISubAgentDiagnosticsService, SubAgentDiagnosticsService>();
         builder.Services.AddHostedService<SubAgentConversationProjectionWorker>();
         builder.Services.TryAddSingleton<IRuntimeExecutionConfigService, RuntimeExecutionConfigService>();
+        builder.Services.AddHostedService<SubAgentTransientDirectoryGcService>();
         builder.Services.TryAddSingleton<IExecutionProgressRegistry, ExecutionProgressRegistry>();
         builder.Services.TryAddSingleton<ISubAgentInvocationService, SubAgentInvocationService>();
         builder.Services.TryAddSingleton<DesignCouncilRunStateMachine>();

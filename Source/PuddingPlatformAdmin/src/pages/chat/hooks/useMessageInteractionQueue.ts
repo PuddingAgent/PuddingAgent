@@ -22,6 +22,12 @@ import {
 
 type SendMessage = (text: string, options?: ChatSendOptions) => Promise<void>;
 
+const ACTIVE_BACKEND_QUEUE_STATUSES = new Set([
+  'queued',
+  'delivering',
+  'retrying',
+]);
+
 interface MessageQueueIdentityPort {
   workspaceId?: string;
   agentId?: string;
@@ -288,9 +294,13 @@ export function useMessageInteractionQueue({
       try {
         const snapshot = await getAgentMessageQueue(workspaceId, agentId, {
           limit: 20,
-          includeTerminal: true,
+          includeTerminal: false,
         });
         const next = (snapshot.items ?? [])
+          // Composer 只展示尚待处理的活动队列。终态 delivery 是持久化审计
+          // 历史，不应长期占据输入区或被误解为“未消费”。即使旧后端忽略
+          // includeTerminal=false，也在客户端边界再次过滤。
+          .filter((item) => ACTIVE_BACKEND_QUEUE_STATUSES.has(item.status))
           .map(toChatInteractionQueueItem)
           // Phase 2：按后端 position（0-based，priority desc + createdAt asc）升序；
           // 旧后端无 position 时回落 createdAt 升序。

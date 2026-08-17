@@ -13,6 +13,7 @@ public static class TokenUsageSchemaBootstrapper
 {
     private const string TableName = "TokenUsageEvents";
     private const string GatewayTableName = "llm_gateway_usage_events";
+    private const string ContextLayerMetricTableName = "context_layer_metric_events";
 
     /// <summary>
     /// Nullable columns that exist on <see cref="Data.Entities.TokenUsageEventEntity"/> but
@@ -36,6 +37,17 @@ public static class TokenUsageSchemaBootstrapper
         ("ToolCallCount", "INTEGER NULL"),
         ("ToolNames", "TEXT NULL"),
         ("SubAgentId", "TEXT NULL"),
+    ];
+
+    /// <summary>
+    /// Additive observability fields for the existing context-layer ledger. They
+    /// contain byte counts and compression ratios only, never prompt text.
+    /// </summary>
+    internal static readonly (string Name, string Definition)[] RequiredContextLayerColumns =
+    [
+        ("raw_utf8_bytes", "INTEGER NOT NULL DEFAULT 0"),
+        ("gzip_bytes", "INTEGER NOT NULL DEFAULT 0"),
+        ("gzip_ratio", "REAL NULL"),
     ];
 
     public static async Task EnsureCreatedAsync(
@@ -63,6 +75,25 @@ public static class TokenUsageSchemaBootstrapper
                     "[TokenUsageSchema] Added {Table}.{Column}",
                     TableName,
                     columnName);
+            }
+        }
+
+        if (await TableExistsAsync(db, ContextLayerMetricTableName, ct))
+        {
+            foreach (var (columnName, columnDefinition) in RequiredContextLayerColumns)
+            {
+                if (!await ColumnExistsAsync(db, ContextLayerMetricTableName, columnName, ct))
+                {
+#pragma warning disable EF1002 // Column names/definitions are compile-time constants from RequiredContextLayerColumns
+                    await db.Database.ExecuteSqlRawAsync(
+                        $"ALTER TABLE \"{ContextLayerMetricTableName}\" ADD COLUMN \"{columnName}\" {columnDefinition};",
+                        ct);
+#pragma warning restore EF1002
+                    logger?.LogInformation(
+                        "[TokenUsageSchema] Added {Table}.{Column}",
+                        ContextLayerMetricTableName,
+                        columnName);
+                }
             }
         }
 
@@ -136,6 +167,33 @@ public static class TokenUsageSchemaBootstrapper
             }
 
             return false;
+        }
+        finally
+        {
+            if (shouldClose)
+                await connection.CloseAsync();
+        }
+    }
+
+    private static async Task<bool> TableExistsAsync(
+        DbContext db,
+        string tableName,
+        CancellationToken ct)
+    {
+        var connection = db.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+            await connection.OpenAsync(ct);
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $name LIMIT 1;";
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "$name";
+            parameter.Value = tableName;
+            command.Parameters.Add(parameter);
+            return await command.ExecuteScalarAsync(ct) is not null;
         }
         finally
         {

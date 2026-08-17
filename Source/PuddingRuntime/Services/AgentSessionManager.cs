@@ -14,6 +14,7 @@ public sealed class AgentSessionManager
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastAccessedAt = new();
     private readonly ConcurrentDictionary<string, TimeSpan> _sessionTimeouts = new();
     private readonly ConcurrentDictionary<string, byte> _waitingEventSessions = new();
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _loadedToolIds = new();
     private readonly ILogger<AgentSessionManager>? _logger;
 
     public AgentSessionManager(ILogger<AgentSessionManager>? logger = null)
@@ -161,6 +162,32 @@ public sealed class AgentSessionManager
     public IReadOnlyList<AgentInstanceRecord> ListActive() =>
         _instances.Values.Where(i => i.Status == AgentInstanceStatus.Running).ToList();
 
+    /// <summary>
+    /// Returns the progressively discovered tool surface for this live session.
+    /// Keeping it across dispatches prevents every user turn from shrinking to the
+    /// core schema set and then invalidating the provider prefix when tools reload.
+    /// </summary>
+    public HashSet<string> GetLoadedToolIds(string sessionId)
+    {
+        if (!_loadedToolIds.TryGetValue(sessionId, out var tools))
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        return tools.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Persists newly discovered tool ids for the lifetime of the session.</summary>
+    public void RememberLoadedToolIds(string sessionId, IEnumerable<string> toolIds)
+    {
+        var tools = _loadedToolIds.GetOrAdd(
+            sessionId,
+            _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase));
+        foreach (var toolId in toolIds)
+        {
+            if (!string.IsNullOrWhiteSpace(toolId))
+                tools.TryAdd(toolId.Trim(), 0);
+        }
+    }
+
     /// <summary>移除实例记录（用于超时清理）。</summary>
     public void Remove(string sessionId) =>
         RemoveInternal(sessionId);
@@ -174,5 +201,6 @@ public sealed class AgentSessionManager
         _lastAccessedAt.TryRemove(sessionId, out _);
         _sessionTimeouts.TryRemove(sessionId, out _);
         _waitingEventSessions.TryRemove(sessionId, out _);
+        _loadedToolIds.TryRemove(sessionId, out _);
     }
 }
