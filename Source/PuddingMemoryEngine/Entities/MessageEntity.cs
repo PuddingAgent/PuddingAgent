@@ -50,6 +50,13 @@ public class MessageEntity
     [MaxLength(64)]
     public string? Source { get; set; }
 
+    /// <summary>该消息所属的压缩代际（原始消息为 null；被压缩生成的 summary 消息记录其代际）。</summary>
+    public int? ContextGeneration { get; set; }
+
+    /// <summary>内容规范化 SHA-256（小写 hex），供 §9 同源去重锚点。未计算时为 null。</summary>
+    [MaxLength(64)]
+    public string? CanonicalContentHash { get; set; }
+
     [MaxLength(32)]
     public string? CompactedBy { get; set; }
 

@@ -52,6 +52,7 @@ public sealed class MemoryDbContext : DbContext
             entity.HasIndex(e => e.ParentId);
             entity.HasIndex(e => new { e.SessionId, e.BranchType, e.Sequence });
             entity.HasIndex(e => e.CompactedBy);
+            entity.HasIndex(e => e.CanonicalContentHash);
             entity.HasOne(e => e.Session)
                 .WithMany(e => e.Messages)
                 .HasForeignKey(e => e.SessionId)

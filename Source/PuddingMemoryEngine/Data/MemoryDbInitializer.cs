@@ -40,6 +40,7 @@ public static class MemoryDbInitializer
         // additive 迁移：为既有数据库幂等补列/补表（不删除旧列/旧数据）。
         await EnsureCompactionGenerationColumnAsync(conn);
         await EnsureContextSegmentsTableAsync(conn);
+        await EnsureMessageCompactionColumnsAsync(conn);
     }
 
     /// <summary>
@@ -123,5 +124,48 @@ public static class MemoryDbInitializer
             );
             """;
         await create.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// 为既有 Messages 表幂等补 <c>ContextGeneration</c> 与 <c>CanonicalContentHash</c> 列
+    /// （P1-1 Task B，设计方案 §9 同源去重锚点）。
+    /// init_memory.sql 的 CREATE TABLE IF NOT EXISTS 不会改动已存在的表，
+    /// 因此新增列必须由 PRAGMA table_info 检测后 ALTER TABLE 自愈。
+    /// 两列各自独立检测、独立 ALTER，重复执行幂等，不删除旧列/旧数据。
+    /// </summary>
+    private static async Task EnsureMessageCompactionColumnsAsync(
+        System.Data.Common.DbConnection conn)
+    {
+        var columns = new (string Name, string Ddl)[]
+        {
+            ("ContextGeneration", "ALTER TABLE Messages ADD COLUMN ContextGeneration INTEGER NULL;"),
+            ("CanonicalContentHash", "ALTER TABLE Messages ADD COLUMN CanonicalContentHash TEXT NULL;"),
+        };
+
+        foreach (var (name, ddl) in columns)
+        {
+            var exists = false;
+            using (var check = conn.CreateCommand())
+            {
+                check.CommandText = "PRAGMA table_info(Messages);";
+                await using var reader = await check.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    if (reader.FieldCount > 1
+                        && string.Equals(reader.GetString(1), name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+            }
+
+            if (exists)
+                continue;
+
+            using var alter = conn.CreateCommand();
+            alter.CommandText = ddl;
+            await alter.ExecuteNonQueryAsync();
+        }
     }
 }

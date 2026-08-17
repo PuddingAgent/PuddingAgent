@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS Messages (
     Source          TEXT,
     CompactedBy     TEXT REFERENCES Messages(MessageId),
     CreatedAt       INTEGER NOT NULL,
+    ContextGeneration   INTEGER,
+    CanonicalContentHash TEXT,
     Metadata        TEXT
 );
 
@@ -55,6 +57,10 @@ CREATE INDEX IF NOT EXISTS IX_Messages_Session_Branch_Seq
 CREATE INDEX IF NOT EXISTS IX_Messages_CompactedBy
     ON Messages(CompactedBy)
     WHERE CompactedBy IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS IX_Messages_CanonicalContentHash
+    ON Messages(CanonicalContentHash)
+    WHERE CanonicalContentHash IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS Memories (
     MemoryId        TEXT PRIMARY KEY,
