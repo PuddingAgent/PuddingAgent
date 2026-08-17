@@ -441,12 +441,17 @@ public sealed class ContextWindowManager
         if (entries.Count == 0)
             return new([], 0);
 
+        var coverage = await LoadCoverageAsync(sessionId, ct);
+
         var selected = new List<ChatMessage>();
         var estimatedTokens = 0;
         var lastCreatedAt = 0L;
         for (var i = entries.Count - 1; i >= 0; i--)
         {
             var entry = entries[i];
+            if (coverage.CoveredMessageIds.Contains(entry.MessageId))
+                continue;
+
             var content = entry.Content ?? string.Empty;
                         var tokenEstimate = Math.Max(1, content.Length / ContextWindowConstants.TokenEstimateCharDivisor);
             if (estimatedTokens + tokenEstimate > maxTokenBudget && selected.Count > ContextWindowConstants.MinMessagesBeforeTokenBreak)
@@ -466,6 +471,9 @@ public sealed class ContextWindowManager
         selected.Reverse();
         return new(SanitizeForLlmContext(selected), lastCreatedAt);
     }
+
+    private async Task<CompactionCoverage> LoadCoverageAsync(string sessionId, CancellationToken ct)
+        => await new CompactionCoverageFilter(_memoryDbFactory).LoadAsync(sessionId, ct);
 
     private static bool IsJsonlMessageEntry(JsonlEntry entry)
     {
