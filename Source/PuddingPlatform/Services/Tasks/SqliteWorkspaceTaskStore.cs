@@ -4,6 +4,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Tasks;
 using PuddingPlatform.Data;
+using PuddingPlatform.Data.Entities;
 
 namespace PuddingPlatform.Services.Tasks;
 
@@ -303,6 +304,90 @@ public sealed class SqliteWorkspaceTaskStore(
             await tx.RollbackAsync(ct);
             throw;
         }
+    }
+
+    // ── TB-11 comments ────────────────────────────────────────────
+
+    /// <summary>新增任务评论/备注（单条 INSERT，返回领域记录 TaskComment）。</summary>
+    public async Task<TaskComment> AddCommentAsync(
+        string workspaceId,
+        string taskId,
+        TaskCommentAuthorKind authorKind,
+        string? authorId,
+        string content,
+        CancellationToken ct = default)
+    {
+        var comment = new TaskComment
+        {
+            CommentId = Guid.NewGuid().ToString("N"),
+            TaskId = taskId,
+            WorkspaceId = workspaceId,
+            AuthorKind = authorKind,
+            AuthorId = authorId,
+            Content = content,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+        };
+
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var conn = (SqliteConnection)db.Database.GetDbConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO task_comments
+              (comment_id, task_id, workspace_id, author_kind, author_id, content, created_at_utc)
+            VALUES
+              (@commentId, @taskId, @workspaceId, @authorKind, @authorId, @content, @createdAtUtc)
+            """;
+        AddParam(cmd, "@commentId", comment.CommentId);
+        AddParam(cmd, "@taskId", comment.TaskId);
+        AddParam(cmd, "@workspaceId", comment.WorkspaceId);
+        AddParam(cmd, "@authorKind", (int)comment.AuthorKind);
+        AddParam(cmd, "@authorId", comment.AuthorId);
+        AddParam(cmd, "@content", comment.Content);
+        AddParam(cmd, "@createdAtUtc", comment.CreatedAtUtc.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct);
+
+        return comment;
+    }
+
+    /// <summary>按创建时间升序返回任务评论/备注。</summary>
+    public async Task<IReadOnlyList<TaskComment>> ListCommentsAsync(
+        string workspaceId,
+        string taskId,
+        CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var conn = (SqliteConnection)db.Database.GetDbConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT comment_id, task_id, workspace_id, author_kind, author_id, content, created_at_utc
+            FROM task_comments
+            WHERE workspace_id = @workspaceId AND task_id = @taskId
+            ORDER BY created_at_utc ASC, id ASC
+            """;
+        AddParam(cmd, "@workspaceId", workspaceId);
+        AddParam(cmd, "@taskId", taskId);
+
+        var results = new List<TaskComment>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(new TaskComment
+            {
+                CommentId = reader.GetString(0),
+                TaskId = reader.GetString(1),
+                WorkspaceId = reader.GetString(2),
+                AuthorKind = (TaskCommentAuthorKind)reader.GetInt32(3),
+                AuthorId = ReadStringNullable(reader, 4),
+                Content = reader.GetString(5),
+                CreatedAtUtc = ReadUtc(reader, 6),
+            });
+        }
+
+        return results.AsReadOnly();
     }
 
     // ── SQL helpers ──────────────────────────────────────────────

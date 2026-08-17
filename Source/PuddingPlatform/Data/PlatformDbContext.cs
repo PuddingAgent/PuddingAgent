@@ -104,6 +104,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // Task Assignment Attempts（TB-03 Assign/RunNow 记录）
     public DbSet<TaskAssignmentAttemptEntity> TaskAssignmentAttempts => Set<TaskAssignmentAttemptEntity>();
 
+    // Task Comments（TB-11 评论/备注）
+    public DbSet<TaskCommentEntity> TaskComments => Set<TaskCommentEntity>();
+
     // Task Dispatch Outbox（TB-05 手工派发持久 Outbox）
     public DbSet<TaskDispatchOutboxEntity> TaskDispatchOutbox => Set<TaskDispatchOutboxEntity>();
 
@@ -543,6 +546,15 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
                 .IsUnique()
                 .HasFilter("released_at_utc IS NULL")
                 .HasDatabaseName("UX_task_assignment_attempts_task_active");
+        });
+
+        // ── Task Comments（TB-11 评论/备注）────────────────────────
+        modelBuilder.Entity<TaskCommentEntity>(e =>
+        {
+            e.ToTable("task_comments");
+            e.HasKey(c => c.Id);
+            e.Property(c => c.Id).ValueGeneratedOnAdd();
+            e.HasIndex(c => c.CommentId).IsUnique().HasDatabaseName("UX_task_comments_comment_id");
         });
 
         // ── Task Dispatch Outbox（TB-05）──────────────────────────

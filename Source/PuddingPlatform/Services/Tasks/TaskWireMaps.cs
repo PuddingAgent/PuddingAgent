@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using PuddingCode.Tasks;
+using PuddingPlatform.Data.Entities;
 
 namespace PuddingPlatform.Services.Tasks;
 
@@ -178,6 +179,26 @@ public static class TaskWireMaps
         TaskEventType.TaskDispatchRequested => "task.dispatch.requested",
         TaskEventType.TaskDispatchDeferred => "task.dispatch.deferred",
         _ => throw new ArgumentOutOfRangeException(nameof(eventType), eventType, "未知任务事件类型。"),
+    };
+
+    // ── Comment author kind ──────────────────────────────────
+
+    /// <summary>TaskCommentAuthorKind → wire 字符串（user / agent / system）。</summary>
+    public static string CommentAuthorKindToString(TaskCommentAuthorKind kind) => kind switch
+    {
+        TaskCommentAuthorKind.User => "user",
+        TaskCommentAuthorKind.Agent => "agent",
+        TaskCommentAuthorKind.System => "system",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "未知评论作者类型。"),
+    };
+
+    /// <summary>wire 字符串 → TaskCommentAuthorKind。null/空/"user" → User；未知值 fail-closed。</summary>
+    public static TaskCommentAuthorKind CommentAuthorKindFromString(string? value) => value switch
+    {
+        null or "" or "user" => TaskCommentAuthorKind.User,
+        "agent" => TaskCommentAuthorKind.Agent,
+        "system" => TaskCommentAuthorKind.System,
+        _ => throw InvalidWire("authorKind", value),
     };
 
     /// <summary>TaskErrorCode → HTTP 状态（契约 §五）。</summary>

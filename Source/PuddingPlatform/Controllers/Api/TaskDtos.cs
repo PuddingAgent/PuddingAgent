@@ -15,6 +15,9 @@ public sealed record TaskDto
     /// <summary>wire: "Backlog"/"Ready"/"Deferred"/"Reserved"/"Assigned"/"NeedsReview"/"InProgress"/"Blocked"/"Completed"/"Failed"/"Cancelled"/"Archived"。</summary>
     public required string Status { get; init; }
 
+    /// <summary>当前状态允许迁移到的目标状态 wire 列表（由 TaskStateMachine.GetAllowedTransitions 派生，前端只消费不实现状态机）。</summary>
+    public required IReadOnlyList<string> AllowedTransitions { get; init; }
+
     /// <summary>wire: "Backlog"/"Todo"/"InProgress"/"Done"/"Failed"（Cancelled/Archived 无看板列，回退为状态 wire）。</summary>
     public required string BoardColumn { get; init; }
 
@@ -144,4 +147,28 @@ public sealed record TaskErrorResponse
 
     public int? ExpectedVersion { get; init; }
     public int? ActualVersion { get; init; }
+}
+
+/// <summary>任务评论/备注 DTO。</summary>
+public sealed record TaskCommentDto
+{
+    public required string CommentId { get; init; }
+    public required string TaskId { get; init; }
+    public required string WorkspaceId { get; init; }
+
+    /// <summary>wire: "user"|"agent"|"system"。</summary>
+    public required string AuthorKind { get; init; }
+
+    public string? AuthorId { get; init; }
+    public required string Content { get; init; }
+    public required DateTimeOffset CreatedAtUtc { get; init; }
+}
+
+/// <summary>创建任务评论/备注请求 DTO。authorKind 缺省 "user"。</summary>
+public sealed record CreateTaskCommentDto
+{
+    public required string Content { get; init; }
+
+    /// <summary>wire: "user"|"agent"|"system"，缺省 "user"。</summary>
+    public string? AuthorKind { get; init; }
 }

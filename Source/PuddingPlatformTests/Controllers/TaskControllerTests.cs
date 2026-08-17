@@ -525,6 +525,59 @@ public sealed class TaskControllerTests
         Assert.IsFalse(text.Contains("task.created"), "游标之后不应重发 task.created。");
     }
 
+    // ── 15. B1：ToDto allowedTransitions（TB-11）────────────────
+
+    [TestMethod]
+    public async Task ToDto_AllowedTransitions_DerivedFromStateMachine()
+    {
+        var controller = CreateController();
+
+        var backlog = await CreateTaskAsync("backlog");
+        var backlogDto = AssertOkDto(await controller.Get(WorkspaceId, backlog.TaskId, CancellationToken.None));
+        CollectionAssert.AreEqual(new[] { "Ready" }, backlogDto.AllowedTransitions.ToArray());
+
+        var failed = await CreateTaskAsync("failed");
+        await SetStatusAsync(failed.TaskId, WorkspaceTaskStatus.Failed);
+        var failedDto = AssertOkDto(await controller.Get(WorkspaceId, failed.TaskId, CancellationToken.None));
+        CollectionAssert.AreEqual(new[] { "Archived" }, failedDto.AllowedTransitions.ToArray());
+
+        var archived = await CreateTaskAsync("archived");
+        await SetStatusAsync(archived.TaskId, WorkspaceTaskStatus.Archived);
+        var archivedDto = AssertOkDto(await controller.Get(WorkspaceId, archived.TaskId, CancellationToken.None));
+        Assert.AreEqual(0, archivedDto.AllowedTransitions.Count);
+    }
+
+    // ── 16. TB-11：评论端点（GET/POST {taskId}/comments）────────
+
+    [TestMethod]
+    public async Task Comments_AddAndList_ViaController()
+    {
+        var task = await CreateTaskAsync();
+        var controller = CreateController();
+
+        var addResult = await controller.AddComment(WorkspaceId, task.TaskId, new CreateTaskCommentDto
+        {
+            Content = "hello",
+            AuthorKind = "agent",
+        }, CancellationToken.None);
+        var added = Assert.IsInstanceOfType<OkObjectResult>(addResult.Result);
+        var addedDto = Assert.IsInstanceOfType<TaskCommentDto>(added.Value);
+        Assert.AreEqual("agent", addedDto.AuthorKind);
+        Assert.AreEqual("hello", addedDto.Content);
+        Assert.AreEqual(task.TaskId, addedDto.TaskId);
+        Assert.AreEqual(WorkspaceId, addedDto.WorkspaceId);
+
+        var listResult = await controller.ListComments(WorkspaceId, task.TaskId, CancellationToken.None);
+        var ok = Assert.IsInstanceOfType<OkObjectResult>(listResult.Result);
+        var items = Assert.IsInstanceOfType<IReadOnlyList<TaskCommentDto>>(ok.Value);
+        Assert.AreEqual(1, items.Count);
+        Assert.AreEqual("hello", items[0].Content);
+
+        // 不存在的任务 → 404 task.not_found
+        var miss = await controller.AddComment(WorkspaceId, "missing", new CreateTaskCommentDto { Content = "x" }, CancellationToken.None);
+        Assert.AreEqual(404, Assert.IsInstanceOfType<ObjectResult>(miss.Result).StatusCode);
+    }
+
     // ── helpers ─────────────────────────────────────────────
 
     private TaskController CreateController(string traceId = "trace-test")

@@ -104,6 +104,23 @@ public static class WorkspaceTaskSchemaBootstrapper
         "CREATE INDEX IF NOT EXISTS IX_task_assignment_attempts_task ON task_assignment_attempts(task_id);",
         "CREATE INDEX IF NOT EXISTS IX_task_assignment_attempts_workspace ON task_assignment_attempts(workspace_id);",
         "CREATE UNIQUE INDEX IF NOT EXISTS UX_task_assignment_attempts_task_active ON task_assignment_attempts(task_id) WHERE released_at_utc IS NULL;",
+
+        // ── task_comments（TB-11，8 列 + long Id 自增主键）──────────
+        """
+        CREATE TABLE IF NOT EXISTS task_comments (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            comment_id     TEXT    NOT NULL,
+            task_id        TEXT    NOT NULL,
+            workspace_id   TEXT    NOT NULL,
+            author_kind    INTEGER NOT NULL,
+            author_id      TEXT,
+            content        TEXT    NOT NULL,
+            created_at_utc TEXT    NOT NULL
+        );
+        """,
+        "CREATE UNIQUE INDEX IF NOT EXISTS UX_task_comments_comment_id ON task_comments(comment_id);",
+        "CREATE INDEX IF NOT EXISTS IX_task_comments_task ON task_comments(task_id);",
+        "CREATE INDEX IF NOT EXISTS IX_task_comments_workspace_task ON task_comments(workspace_id, task_id);",
     ];
 
     public static async Task EnsureCreatedAsync(

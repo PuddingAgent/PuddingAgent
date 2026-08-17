@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
@@ -220,6 +221,66 @@ public class TaskController : ControllerBase
             }
 
             return NoContent();
+        }
+        catch (TaskStoreException ex)
+        {
+            return ToError(ex);
+        }
+    }
+
+    /// <summary>GET /api/workspaces/{workspaceId}/tasks/{taskId}/comments — 按创建时间升序。</summary>
+    [HttpGet("{taskId}/comments")]
+    public async Task<ActionResult<IReadOnlyList<TaskCommentDto>>> ListComments(
+        string workspaceId,
+        string taskId,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var task = await _store.GetTaskAsync(workspaceId, taskId, ct);
+            if (task is null)
+            {
+                throw new TaskStoreException(
+                    TaskErrorCode.TaskNotFound,
+                    $"Task '{taskId}' not found.",
+                    taskId);
+            }
+
+            var comments = await _store.ListCommentsAsync(workspaceId, taskId, ct);
+            return Ok(comments.Select(ToCommentDto).ToList());
+        }
+        catch (TaskStoreException ex)
+        {
+            return ToError(ex);
+        }
+    }
+
+    /// <summary>POST /api/workspaces/{workspaceId}/tasks/{taskId}/comments — 新增评论/备注。</summary>
+    [HttpPost("{taskId}/comments")]
+    public async Task<ActionResult<TaskCommentDto>> AddComment(
+        string workspaceId,
+        string taskId,
+        [FromBody] CreateTaskCommentDto dto,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var task = await _store.GetTaskAsync(workspaceId, taskId, ct);
+            if (task is null)
+            {
+                throw new TaskStoreException(
+                    TaskErrorCode.TaskNotFound,
+                    $"Task '{taskId}' not found.",
+                    taskId);
+            }
+
+            var authorKind = TaskWireMaps.CommentAuthorKindFromString(dto.AuthorKind);
+            var authorId = ResolveAuthorId();
+
+            var comment = await _store.AddCommentAsync(
+                workspaceId, taskId, authorKind, authorId, dto.Content, ct);
+
+            return Ok(ToCommentDto(comment));
         }
         catch (TaskStoreException ex)
         {
@@ -487,6 +548,10 @@ public class TaskController : ControllerBase
         Description = t.Description,
         AcceptanceCriteria = t.AcceptanceCriteria,
         Status = TaskWireMaps.StatusToString(t.Status),
+        AllowedTransitions = TaskStateMachine
+            .GetAllowedTransitions(t.Status)
+            .Select(TaskWireMaps.StatusToString)
+            .ToList(),
         BoardColumn = ToBoardColumn(t.Status),
         Priority = TaskWireMaps.PriorityToString(t.Priority),
         ExecutionWindow = TaskWireMaps.ExecutionWindowToString(t.ExecutionWindow),
@@ -517,6 +582,20 @@ public class TaskController : ControllerBase
         => status is WorkspaceTaskStatus.Cancelled or WorkspaceTaskStatus.Archived
             ? TaskWireMaps.StatusToString(status)
             : TaskWireMaps.BoardColumnToString(TaskStateMachine.ProjectBoardColumn(status));
+
+    private static TaskCommentDto ToCommentDto(TaskComment c) => new()
+    {
+        CommentId = c.CommentId,
+        TaskId = c.TaskId,
+        WorkspaceId = c.WorkspaceId,
+        AuthorKind = TaskWireMaps.CommentAuthorKindToString(c.AuthorKind),
+        AuthorId = c.AuthorId,
+        Content = c.Content,
+        CreatedAtUtc = c.CreatedAtUtc,
+    };
+
+    private string? ResolveAuthorId()
+        => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
 
     private ObjectResult ToError(TaskStoreException ex)
     {

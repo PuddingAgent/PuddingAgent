@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Tasks;
 using PuddingPlatform.Data;
+using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services.Tasks;
 
 namespace PuddingPlatformTests.Services.Tasks;
@@ -304,6 +305,37 @@ public sealed class SqliteWorkspaceTaskStoreTests
         Assert.IsNotNull(caught);
         Assert.AreEqual(0, await CountTasksAsync());
         Assert.AreEqual(0, await CountAllEventsAsync());
+    }
+
+    // ── 10. Comments 增查（TB-11）──────────────────────────────────
+
+    [TestMethod]
+    public async Task Comments_AddAndList_RoundTripsInCreatedOrder()
+    {
+        var task = await _store.CreateTaskAsync(NewRequest(title: "comment-target"));
+
+        var first = await _store.AddCommentAsync(
+            "ws-1", task.TaskId, TaskCommentAuthorKind.User, "user-1", "第一条", CancellationToken.None);
+        var second = await _store.AddCommentAsync(
+            "ws-1", task.TaskId, TaskCommentAuthorKind.Agent, "agent-2", "第二条", CancellationToken.None);
+
+        Assert.IsFalse(string.IsNullOrWhiteSpace(first.CommentId));
+        Assert.AreEqual("ws-1", first.WorkspaceId);
+        Assert.AreEqual(task.TaskId, first.TaskId);
+
+        var comments = await _store.ListCommentsAsync("ws-1", task.TaskId, CancellationToken.None);
+        Assert.AreEqual(2, comments.Count);
+        Assert.AreEqual(first.CommentId, comments[0].CommentId);
+        Assert.AreEqual(TaskCommentAuthorKind.User, comments[0].AuthorKind);
+        Assert.AreEqual("user-1", comments[0].AuthorId);
+        Assert.AreEqual("第一条", comments[0].Content);
+        Assert.AreEqual(second.CommentId, comments[1].CommentId);
+        Assert.AreEqual(TaskCommentAuthorKind.Agent, comments[1].AuthorKind);
+        Assert.AreEqual("第二条", comments[1].Content);
+
+        // 工作区/任务隔离
+        Assert.AreEqual(0, (await _store.ListCommentsAsync("ws-other", task.TaskId, CancellationToken.None)).Count);
+        Assert.AreEqual(0, (await _store.ListCommentsAsync("ws-1", "missing", CancellationToken.None)).Count);
     }
 
     // ── helpers ─────────────────────────────────────────────────────
