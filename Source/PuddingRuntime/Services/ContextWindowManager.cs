@@ -7,6 +7,7 @@ using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Services;
 using PuddingMemoryEngine.Data;
+using PuddingMemoryEngine.Entities;
 using PuddingRuntime.Services.AgentLoop;
 
 namespace PuddingRuntime.Services;
@@ -37,6 +38,7 @@ public sealed class ContextWindowManager
     private readonly ContextCompactionOptions? _compactionOptions;
     private readonly ISessionCompactionEventEmitter? _compactionEventEmitter;
     private readonly ITelemetryMetricSink? _telemetrySink;
+    private readonly IContextTierPlanner _tierPlanner;
 
         // 工作总结重试跟踪：每个 session 注入提示词的次数和首次注入时间
     private readonly ConcurrentDictionary<string, int> _workSummaryRetryCount = new();
@@ -63,7 +65,8 @@ public sealed class ContextWindowManager
         ContextCompactionOptions? compactionOptions = null,
         ISessionCompactionEventEmitter? compactionEventEmitter = null,
         ITelemetryMetricSink? telemetrySink = null,
-        int defaultToolCount = 50)
+        int defaultToolCount = 50,
+        IContextTierPlanner? tierPlanner = null)
     {
         _sessionManager = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -79,6 +82,7 @@ public sealed class ContextWindowManager
         _compactionEventEmitter = compactionEventEmitter;
         _telemetrySink = telemetrySink;
                 _defaultToolCount = defaultToolCount;
+        _tierPlanner = tierPlanner ?? new ContextTierPlanner();
 
         _strategy = new ContextCompactionStrategy(_logger, _workSummaryRetryCount, _workSummaryFirstInjectedAt);
 
@@ -266,33 +270,59 @@ public sealed class ContextWindowManager
             .Take(ContextWindowConstants.MaxDbFetchMessages)
             .ToListAsync(ct);
 
-        var messages = new List<ChatMessage>(entities.Count);
+        // 按 Sequence 升序得到稳定有序的消息列表（Sequence 是稳定顺序）。
+        var ordered = entities.OrderBy(m => m.Sequence).ToList();
+
+        // Tier 化分级：user 消息为轮次边界，最后 user 轮视为当前轮（T0），保证最近轮全保真。
+        var inputs = MapToTierInputs(ordered);
+        var plan = _tierPlanner.Plan(inputs, options: null);
+        var assignments = plan.Assignments;
+
+        // 按 Tier 保真度填充：T0 → T4，同 tier 内新的（Sequence 大）在前；
+        // 预算耗尽后更冷 tier 整体不再填充（保新弃旧，替代旧的"从旧到新累加 + break"）。
+        var selected = new List<MessageEntity>(ordered.Count);
         var estimatedTokens = 0;
-        var lastCreatedAt = 0L;
+        var budgetExhausted = false;
 
-        for (var i = entities.Count - 1; i >= 0; i--)
+        foreach (var tier in Enum.GetValues<ContextSegmentTier>().OrderBy(t => (int)t))
         {
-            var entity = entities[i];
-            var content = entity.Content ?? string.Empty;
-
-            // 简化估算：约 1 token ≈ 3 字符（中英混排折中），最少按 1 token 计。
-                        var tokenEstimate = Math.Max(1, content.Length / ContextWindowConstants.TokenEstimateCharDivisor);
-            if (estimatedTokens + tokenEstimate > maxTokenBudget && messages.Count > ContextWindowConstants.MinMessagesBeforeTokenBreak)
+            if (budgetExhausted)
                 break;
 
-            estimatedTokens += tokenEstimate;
-            lastCreatedAt = Math.Max(lastCreatedAt, entity.CreatedAt);
-            var role =         string.Equals(entity.ContentType, ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase)
-                                ? ChatRole.Assistant
-                : ParseChatRole(entity.Role);
-            messages.Add(new ChatMessage(
-                role,
-                content,
+            foreach (var (entity, _) in assignments
+                         .Select((a, i) => (Entity: ordered[i], a.Tier))
+                         .Where(p => p.Tier == tier)
+                         .OrderByDescending(p => p.Entity.Sequence))
+            {
+                var content = entity.Content ?? string.Empty;
+
+                // 简化估算：约 1 token ≈ 3 字符（中英混排折中），最少按 1 token 计。
+                var tokenEstimate = Math.Max(1, content.Length / ContextWindowConstants.TokenEstimateCharDivisor);
+                if (estimatedTokens + tokenEstimate > maxTokenBudget && selected.Count > ContextWindowConstants.MinMessagesBeforeTokenBreak)
+                {
+                    budgetExhausted = true;
+                    break;
+                }
+
+                estimatedTokens += tokenEstimate;
+                selected.Add(entity);
+            }
+        }
+
+        // 最终输出仍按 Sequence 升序（旧→新），与历史直觉一致。
+        var lastCreatedAt = selected.Count > 0 ? selected.Max(m => m.CreatedAt) : 0L;
+        var messages = selected
+            .OrderBy(m => m.Sequence)
+            .Select(entity => new ChatMessage(
+                string.Equals(entity.ContentType, ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase)
+                    ? ChatRole.Assistant
+                    : ParseChatRole(entity.Role),
+                entity.Content ?? string.Empty,
                 ToolCallId: null,
                 ToolCalls: null,
                 ToolName: null,
-                ReasoningContent: null));
-        }
+                ReasoningContent: null))
+            .ToList();
 
         return new(SanitizeForLlmContext(messages), lastCreatedAt);
     }
@@ -935,10 +965,100 @@ public sealed class ContextWindowManager
         if (history.Count <= maxMessages + 1) return;
 
         var system = history.FirstOrDefault(m => m.Role == ChatRole.System);
-        var recent = history.TakeLast(maxMessages).ToList();
+        var nonSystem = history.Where(m => m.Role != ChatRole.System).ToList();
+
+        if (nonSystem.Count > maxMessages)
+        {
+            // Tier 化裁剪：从最冷 tier 的最旧消息开始裁，直到条数 ≤ maxMessages；
+            // 替代旧的扁平 TakeLast（无差别保最近 N 条）。
+            var inputs = MapToTierInputs(nonSystem);
+            var assignments = _tierPlanner.Plan(inputs, options: null).Assignments;
+            var removeCount = nonSystem.Count - maxMessages;
+
+            var removeIndexes = assignments
+                .Select((a, i) => (Index: i, a.Tier))
+                .OrderByDescending(x => (int)x.Tier)   // 最冷 tier 先裁
+                .ThenBy(x => x.Index)                  // 同 tier 内最旧先裁
+                .Take(removeCount)
+                .Select(x => x.Index)
+                .ToHashSet();
+
+            var kept = new List<ChatMessage>(maxMessages);
+            for (var i = 0; i < nonSystem.Count; i++)
+            {
+                if (!removeIndexes.Contains(i))
+                    kept.Add(nonSystem[i]);
+            }
+
+            nonSystem = kept;
+        }
+
         history.Clear();
         if (system is not null) history.Add(system);
-        history.AddRange(SanitizeForLlmContext(recent));
+        history.AddRange(SanitizeForLlmContext(nonSystem));
+    }
+
+    /// <summary>
+    /// 把有序 <see cref="MessageEntity"/> 列表映射为 TierPlanner 输入（v1）。
+    /// 规则：Role == "user" 作为轮次边界（0-based 递增），最后 user 轮视为当前轮（T0）；
+    /// IsQueryHit 恒 false（DB 快照无当前 query 上下文）；AtomicGroupId 恒 null（原子组留 Task E）。
+    /// </summary>
+    private static List<TierPlannerSegmentInput> MapToTierInputs(IReadOnlyList<MessageEntity> entities)
+        => BuildTierInputs(
+            entities,
+            segmentIdSelector: (e, _) => e.MessageId,
+            isUserBoundary: e => string.Equals(e.Role, "user", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// TrimHistory 专用：ChatMessage 无 MessageId，用稳定索引字符串作为 SegmentId。
+    /// </summary>
+    private static List<TierPlannerSegmentInput> MapToTierInputs(IReadOnlyList<ChatMessage> messages)
+        => BuildTierInputs(
+            messages,
+            segmentIdSelector: (_, i) => i.ToString(CultureInfo.InvariantCulture),
+            isUserBoundary: m => m.Role == ChatRole.User);
+
+    /// <summary>
+    /// 通用轮次推导：按序遇到 user 边界开启新轮（0-based），消息归属当前轮；
+    /// 最后 user 轮标记为当前轮（IsCurrentTurn → T0），保证最近一轮全保真。
+    /// 输出与输入同序。
+    /// </summary>
+    private static List<TierPlannerSegmentInput> BuildTierInputs<T>(
+        IReadOnlyList<T> items,
+        Func<T, int, string> segmentIdSelector,
+        Func<T, bool> isUserBoundary)
+    {
+        var inputs = new List<TierPlannerSegmentInput>(items.Count);
+        var turnOrdinal = -1;       // 遇到第一条 user 后从 0 开始
+        var lastUserTurn = -1;      // 最后一条 user 开启的轮号（无 user 时为 -1）
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            var isUser = isUserBoundary(items[i]);
+            if (isUser)
+            {
+                turnOrdinal++;
+                lastUserTurn = turnOrdinal;
+            }
+
+            inputs.Add(new TierPlannerSegmentInput(
+                segmentIdSelector(items[i], i),
+                turnOrdinal,
+                IsCurrentTurn: false,
+                IsQueryHit: false,
+                AtomicGroupId: null));
+        }
+
+        if (lastUserTurn >= 0)
+        {
+            for (var i = 0; i < inputs.Count; i++)
+            {
+                if (inputs[i].TurnOrdinal == lastUserTurn)
+                    inputs[i] = inputs[i] with { IsCurrentTurn = true };
+            }
+        }
+
+        return inputs;
     }
 
     private static List<ChatMessage> SanitizeForLlmContext(IEnumerable<ChatMessage> source)

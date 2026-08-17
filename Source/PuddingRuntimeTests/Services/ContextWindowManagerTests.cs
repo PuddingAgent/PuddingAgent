@@ -494,10 +494,149 @@ public sealed class ContextWindowManagerTests
 
         var history = await manager.BuildContextFromDbAsync("session-fuse-history");
 
-        Assert.IsFalse(history.Any(m => m.Content?.StartsWith("Session fuse triggered.", StringComparison.Ordinal) == true),
+                Assert.IsFalse(history.Any(m => m.Content?.StartsWith("Session fuse triggered.", StringComparison.Ordinal) == true),
             "Runtime fuse/control messages are UI diagnostics and must not be sent back to the LLM as assistant history.");
         Assert.IsTrue(history.Any(m => m.Content == "后续正常回复"));
     }
+
+    [TestMethod]
+    public async Task BuildContextFromDbAsync_TierFill_KeepsNewestTurns_WhenBudgetIsTight()
+    {
+        // 3 轮（user+agent），每条约 300 字符 ≈ 100 tokens；预算 100 只够 T0 + 保底部分 T1。
+        // Tier 化填充应保留最新轮（T0：user3/agent3）、裁掉最旧轮（user1/agent1）——
+        // 与旧逻辑「从旧到新累加、超预算丢弃最新」方向相反。
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedTieredMessagesAsync(db, "session-tier-tight", [
+            ("user", "user1:" + new string('x', 294)),
+            ("agent", "agent1:" + new string('x', 294)),
+            ("user", "user2:" + new string('x', 294)),
+            ("agent", "agent2:" + new string('x', 294)),
+            ("user", "user3:" + new string('x', 294)),
+            ("agent", "agent3:" + new string('x', 294)),
+        ]);
+
+        var manager = CreateManager(null, new TestMemoryDbContextFactory(options));
+        var history = await manager.BuildContextFromDbAsync("session-tier-tight", maxTokenBudget: 100);
+
+        Assert.AreEqual(3, history.Count, "T0 两条 + T1 保底一条");
+        Assert.IsTrue(history.Any(m => m.Content?.StartsWith("user3:", StringComparison.Ordinal) == true), "最新轮 user3 必须保留");
+        Assert.IsTrue(history.Any(m => m.Content?.StartsWith("agent3:", StringComparison.Ordinal) == true), "最新轮 agent3 必须保留");
+        Assert.IsFalse(history.Any(m => m.Content?.StartsWith("user1:", StringComparison.Ordinal) == true), "最旧轮 user1 必须被裁");
+        Assert.IsFalse(history.Any(m => m.Content?.StartsWith("agent1:", StringComparison.Ordinal) == true), "最旧轮 agent1 必须被裁");
+
+        // 输出仍按 Sequence 升序（旧→新），而非按 tier 分组排列。
+        StringAssert.StartsWith(history[0].Content, "agent2:");
+        StringAssert.StartsWith(history[1].Content, "user3:");
+        StringAssert.StartsWith(history[2].Content, "agent3:");
+    }
+
+    [TestMethod]
+    public async Task BuildContextFromDbAsync_TierFill_PreservesSequenceOrder_WhenWithinBudget()
+    {
+        // 预算充足时，新逻辑输出与旧逻辑一致的「按 Sequence 升序」全量消息。
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedTieredMessagesAsync(db, "session-tier-order", [
+            ("user", "user1:" + new string('x', 27)),
+            ("agent", "agent1:" + new string('x', 27)),
+            ("user", "user2:" + new string('x', 27)),
+            ("agent", "agent2:" + new string('x', 27)),
+            ("user", "user3:" + new string('x', 27)),
+            ("agent", "agent3:" + new string('x', 27)),
+        ]);
+
+        var manager = CreateManager(null, new TestMemoryDbContextFactory(options));
+        var history = await manager.BuildContextFromDbAsync("session-tier-order", maxTokenBudget: 1_000_000);
+
+        Assert.AreEqual(6, history.Count);
+        var expected = new[] { "user1:", "agent1:", "user2:", "agent2:", "user3:", "agent3:" };
+        for (var i = 0; i < expected.Length; i++)
+            StringAssert.StartsWith(history[i].Content, expected[i]);
+    }
+
+    [TestMethod]
+    public async Task BuildContextFromDbAsync_TierFill_KeepsLargeLatestTurn_OverSmallColdTurns()
+    {
+        // 最近轮（T0）消息巨大（≈300 tokens/条），更冷轮消息很小（≈10 tokens/条）。
+        // 预算 645：T0（≈602）+ T1 全部（≈40）刚好容纳；T2（最冷轮）即使消息小也被裁。
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedTieredMessagesAsync(db, "session-tier-large-latest", [
+            ("user", "turn0-user:" + new string('x', 21)),
+            ("agent", "turn0-agent:" + new string('x', 21)),
+            ("user", "turn1-user:" + new string('x', 21)),
+            ("agent", "turn1-agent:" + new string('x', 21)),
+            ("user", "turn2-user:" + new string('x', 21)),
+            ("agent", "turn2-agent:" + new string('x', 21)),
+            ("user", "turn3-user:" + new string('x', 894)),
+            ("agent", "turn3-agent:" + new string('x', 893)),
+        ]);
+
+        var manager = CreateManager(null, new TestMemoryDbContextFactory(options));
+        var history = await manager.BuildContextFromDbAsync("session-tier-large-latest", maxTokenBudget: 645);
+
+        Assert.IsTrue(history.Any(m => m.Content?.StartsWith("turn3-user:", StringComparison.Ordinal) == true), "T0 大消息 turn3-user 必须全保真");
+        Assert.IsTrue(history.Any(m => m.Content?.StartsWith("turn3-agent:", StringComparison.Ordinal) == true), "T0 大消息 turn3-agent 必须全保真");
+        Assert.IsFalse(history.Any(m => m.Content?.StartsWith("turn0-", StringComparison.Ordinal) == true), "最冷轮 turn0 必须被裁");
+    }
+
+    [TestMethod]
+    public void TrimHistory_TierFill_CutsColdestTurns_First()
+    {
+        var manager = CreateManager();
+        var history = new List<ChatMessage> { new(ChatRole.System, "system") };
+        for (var turn = 0; turn < 5; turn++)
+        {
+            history.Add(new ChatMessage(ChatRole.User, $"turn{turn}-user"));
+            for (var j = 0; j < 9; j++)
+                history.Add(new ChatMessage(ChatRole.Assistant, $"turn{turn}-a{j}"));
+        }
+
+        // maxTokenBudget=100_000 → maxMessages=40；51 条 > 41，触发 Tier 化裁剪 10 条。
+        manager.TrimHistory(history, maxTokenBudget: 100_000);
+
+        Assert.AreEqual(41, history.Count, "system + 40 条非 system");
+        Assert.AreEqual(ChatRole.System, history[0].Role, "system 消息必须保留在首位");
+        Assert.IsFalse(history.Any(m => m.Content?.StartsWith("turn0-", StringComparison.Ordinal) == true), "最冷轮 turn0 必须先被裁");
+        Assert.IsTrue(history.Any(m => m.Content == "turn4-user"), "最近轮 turn4 必须保留");
+        Assert.IsTrue(history.Any(m => m.Content == "turn4-a8"), "最近轮最后一条必须保留");
+    }
+
+    [TestMethod]
+    public void TrimHistory_TierFill_KeepsRecentTurns_WhenHistoryIsLarge()
+    {
+        var manager = CreateManager();
+        var history = new List<ChatMessage> { new(ChatRole.System, "system") };
+        // 10 轮 × 8 条 = 80 条非 system；maxMessages=40 → 裁 40 条，仅保留最近 5 轮（T0+T1）。
+        for (var turn = 0; turn < 10; turn++)
+        {
+            history.Add(new ChatMessage(ChatRole.User, $"turn{turn}-user"));
+            for (var j = 0; j < 7; j++)
+                history.Add(new ChatMessage(ChatRole.Assistant, $"turn{turn}-a{j}"));
+        }
+
+        manager.TrimHistory(history, maxTokenBudget: 100_000);
+
+        Assert.AreEqual(41, history.Count);
+        Assert.IsFalse(history.Any(m => m.Content?.StartsWith("turn0-", StringComparison.Ordinal) == true), "最早的轮必须被裁");
+        Assert.IsFalse(history.Any(m => m.Content?.StartsWith("turn1-", StringComparison.Ordinal) == true));
+        Assert.IsFalse(history.Any(m => m.Content?.StartsWith("turn2-", StringComparison.Ordinal) == true));
+        Assert.IsFalse(history.Any(m => m.Content?.StartsWith("turn3-", StringComparison.Ordinal) == true));
+        Assert.IsFalse(history.Any(m => m.Content?.StartsWith("turn4-", StringComparison.Ordinal) == true));
+        Assert.IsTrue(history.Any(m => m.Content == "turn5-user"), "保底后的最近轮必须保留");
+        Assert.IsTrue(history.Any(m => m.Content == "turn9-a6"), "最后一条必须保留");
+    }
+
 
     [TestMethod]
     public async Task TryHydrateStreamHistoryFromDbAsync_Keeps_InMemoryHistory_When_PersistedContextIsShorter()
@@ -1020,6 +1159,43 @@ public sealed class ContextWindowManagerTests
                 ContentType = "text",
                 Content = $"message {i} " + new string('x', charsPerMessage),
                 CreatedAt = i,
+            });
+                }
+
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// 按显式 (Role, Content) 序列播种消息（Sequence=1..N，CreatedAt=Sequence）。
+    /// Role 用 "user"/"agent"，与 <see cref="SeedMessagesAsync"/> 保持一致。
+    /// </summary>
+    private static async Task SeedTieredMessagesAsync(
+        MemoryDbContext db,
+        string sessionId,
+        IReadOnlyList<(string Role, string Content)> messages)
+    {
+        db.Sessions.Add(new SessionEntity
+        {
+            SessionId = sessionId,
+            WorkspaceId = "workspace-1",
+            AgentId = "agent-1",
+            Status = "Active",
+            CreatedAt = 1,
+            LastActivityAt = 1,
+        });
+
+        for (var i = 0; i < messages.Count; i++)
+        {
+            var sequence = i + 1L;
+            db.Messages.Add(new MessageEntity
+            {
+                MessageId = $"msg-{sequence}",
+                SessionId = sessionId,
+                Sequence = sequence,
+                Role = messages[i].Role,
+                ContentType = "text",
+                Content = messages[i].Content,
+                CreatedAt = sequence,
             });
         }
 

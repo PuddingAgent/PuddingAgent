@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -167,6 +167,7 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<IAgentOrchestrationNodeExecutor, ImageGenerateOrchestrationNodeExecutor>();
         services.AddSingleton<IAgentOrchestrationNodeExecutor, ImagePreviewOrchestrationNodeExecutor>();
         services.AddHostedService<AgentOrchestrationWorkerService>();
+        services.TryAddSingleton<IContextTierPlanner, ContextTierPlanner>();
         services.AddSingleton<ContextWindowManager>();
         services.TryAddSingleton<ITerminalCommandPolicy, DefaultTerminalCommandPolicy>();
 
