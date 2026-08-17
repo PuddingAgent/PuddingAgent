@@ -32,6 +32,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     private readonly IAudioArtifactResolver? _audioArtifactResolver;
     private readonly IRuntimeExecutionConfigService? _executionConfig;
     private readonly ILlmGatewayUsageRecorder? _gatewayUsageRecorder;
+    private readonly CompositionVersionRegistry _compositionVersions = new();
 
     public DirectLlmClient(
     IHttpClientFactory httpClientFactory,
@@ -97,6 +98,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             config.Model,
             toolSpecs.Count,
             SummarizeToolSpecs(toolSpecs));
+
+        await RecordCompositionSnapshotAsync(trace, workspaceId, sessionId, agentTemplateId, messages, tools, config, ct);
 
         await RecordActivityAsync(
             trace,
@@ -361,6 +364,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             config.Model,
             toolSpecs.Count,
             SummarizeToolSpecs(toolSpecs));
+
+        await RecordCompositionSnapshotAsync(trace, workspaceId, sessionId, agentTemplateId, messages, tools, config, ct);
 
         await RecordActivityAsync(
             trace,
@@ -934,6 +939,64 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // Request cancellation must not mask the original LLM cancellation.
+        }
+    }
+
+    private async Task RecordCompositionSnapshotAsync(
+        RuntimeTraceContext trace,
+        string workspaceId,
+        string sessionId,
+        string agentTemplateId,
+        IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<LlmToolDefinition>? tools,
+        ResolvedGatewayConfig config,
+        CancellationToken ct)
+    {
+        if (_telemetrySink is null)
+            return;
+
+        try
+        {
+            var systemPromptHash = CompositionSnapshot.ComputeSystemPromptHash(messages);
+            var toolSpecHash = CompositionSnapshot.ComputeToolSpecHash(tools);
+            var prefixHash = CompositionSnapshot.ComputePrefixHash(systemPromptHash, toolSpecHash);
+            var observation = _compositionVersions.Observe(sessionId, systemPromptHash, toolSpecHash);
+
+            var dimensions = new Dictionary<string, string>
+            {
+                ["prefix_hash"] = prefixHash,
+                ["system_prompt_hash"] = systemPromptHash,
+                ["tool_spec_hash"] = toolSpecHash,
+                ["composition_version"] = observation.Version.ToString(),
+                ["session_id"] = sessionId,
+                ["workspace_id"] = workspaceId,
+                ["provider"] = config.ProviderId,
+                ["model"] = config.Model,
+                ["agent_template_id"] = agentTemplateId,
+            };
+
+            await _telemetrySink.RecordAsync(new TelemetryMetric
+            {
+                Trace = trace,
+                Source = "backend",
+                Category = TelemetryMetricCategories.Cache,
+                Name = "composition_snapshot",
+                Status = TelemetryMetricStatuses.Succeeded,
+                CountValue = 1,
+                Unit = "snapshot",
+                Severity = "info",
+                Summary = "Composition snapshot for prefix-cache attribution.",
+                Dimensions = dimensions,
+                ErrorCode = observation.ChangeReason,
+            }, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Request cancellation must not mask the original LLM cancellation.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[DirectLlm] composition snapshot telemetry failed");
         }
     }
 
