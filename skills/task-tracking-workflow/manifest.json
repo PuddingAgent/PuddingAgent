@@ -1,0 +1,13 @@
+{
+  "id": "task-tracking-workflow",
+  "name": "任务跟踪工作流",
+  "version": "1.0.0",
+  "description": "Agent 使用任务管理工具（task_list/task_get/task_claim/task_update + manage_tasks）跟踪任务生命周期的标准流程：盘点→认领→推进→阻塞/完成，与 goal.md 分工互补。",
+  "summary": "任务跟踪标准流程：心跳/会话开始 task_list 盘点名下任务 → task_claim 认领（Assigned→InProgress）→ 推进中 task_update progress → 阻塞 task_update blocked → 完成 task_update completed；管理者视角用 manage_tasks 跨 Agent 管理整个看板（create/assign/run_now/cancel 等 9 命令）。",
+  "author": "pudding-workspace",
+  "created": "2026-08-17",
+  "tags": ["任务跟踪", "task_list", "task_claim", "task_update", "manage_tasks", "任务看板", "workspace_tasks", "disposition", "工作流"],
+  "keywords": ["任务跟踪", "任务管理", "task_claim", "task_update", "task_list", "task_get", "manage_tasks", "disposition", "认领任务", "汇报进度", "任务阻塞", "任务完成", "任务看板", "workspace_tasks", "Active Task Context"],
+  "source_session": "e3a328981cc443d498efb904e9931f90",
+  "path": "skills/task-tracking-workflow"
+}
