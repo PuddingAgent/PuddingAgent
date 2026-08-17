@@ -20,6 +20,7 @@ build_output*.txt
 tmp/
 temp/
 .pnpm-store
+.pudding
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
