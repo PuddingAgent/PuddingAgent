@@ -37,8 +37,9 @@ public static class MemoryDbInitializer
         cmd.CommandText = sql;
         await cmd.ExecuteNonQueryAsync();
 
-        // additive 迁移：为既有数据库幂等补列（不删除旧列/旧数据）。
+        // additive 迁移：为既有数据库幂等补列/补表（不删除旧列/旧数据）。
         await EnsureCompactionGenerationColumnAsync(conn);
+        await EnsureContextSegmentsTableAsync(conn);
     }
 
     /// <summary>
@@ -71,5 +72,56 @@ public static class MemoryDbInitializer
         using var alter = conn.CreateCommand();
         alter.CommandText = "ALTER TABLE Sessions ADD COLUMN CompactionGeneration INTEGER NOT NULL DEFAULT 0;";
         await alter.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// 为既有数据库幂等补建 <c>ContextSegments</c> 表（P1-1 Task A，设计方案 §6.1）。
+    /// 正常情况下 init_memory.sql 的 CREATE TABLE IF NOT EXISTS 已建表；
+    /// 此处为防御性自愈：若旧库由更早版本 SQL 初始化（无 ContextSegments 表），
+    /// 用 PRAGMA table_info 检测后补建，不删除旧列/旧数据。
+    /// 建表 DDL 与 init_memory.sql 保持一致，修改时需两处同步。
+    /// </summary>
+    private static async Task EnsureContextSegmentsTableAsync(
+        System.Data.Common.DbConnection conn)
+    {
+        var exists = false;
+        using (var check = conn.CreateCommand())
+        {
+            check.CommandText = "PRAGMA table_info(ContextSegments);";
+            await using var reader = await check.ExecuteReaderAsync();
+            exists = await reader.ReadAsync();
+        }
+
+        if (exists)
+            return;
+
+        using var create = conn.CreateCommand();
+        create.CommandText = """
+            CREATE TABLE IF NOT EXISTS ContextSegments (
+                SegmentId            TEXT PRIMARY KEY,
+                SessionId            TEXT NOT NULL,
+                RunId                TEXT,
+                TurnId               TEXT,
+                SourceKind           TEXT NOT NULL,
+                SourceId             TEXT NOT NULL,
+                SequenceStart        INTEGER NOT NULL,
+                SequenceEnd          INTEGER NOT NULL,
+                Role                 TEXT NOT NULL,
+                ContentType          TEXT NOT NULL DEFAULT 'text',
+                CanonicalContentHash TEXT NOT NULL,
+                RawUtf8Bytes         INTEGER NOT NULL,
+                EstimatedTokens      INTEGER,
+                ProviderTokens       INTEGER,
+                ArtifactRef          TEXT,
+                ContextGeneration    INTEGER,
+                CoveredByManifestId  TEXT,
+                Tier                 TEXT NOT NULL DEFAULT 'T0',
+                IsAtomicToolGroup    INTEGER NOT NULL DEFAULT 0,
+                AuthorizationScope   TEXT,
+                CreatedAt            INTEGER NOT NULL,
+                Metadata             TEXT
+            );
+            """;
+        await create.ExecuteNonQueryAsync();
     }
 }
