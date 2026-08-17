@@ -74,6 +74,30 @@ public sealed class SqliteWorkspaceTaskStoreTests
         CollectionAssert.AreEqual(new long[] { 1 }, await GetSequencesAsync(created.TaskId));
     }
 
+    [TestMethod]
+    public async Task CreateTaskAsync_PersistsOrigin()
+    {
+        var created = await _store.CreateTaskAsync(
+            new CreateTaskRequest
+            {
+                WorkspaceId = "ws-1",
+                Title = "auto-created",
+                Origin = TaskOrigin.Auto,
+            });
+
+        Assert.AreEqual(TaskOrigin.Auto, created.Origin);
+
+        var fetched = await _store.GetTaskAsync("ws-1", created.TaskId);
+        Assert.IsNotNull(fetched);
+        Assert.AreEqual(TaskOrigin.Auto, fetched!.Origin);
+
+        // 未指定 origin → NULL（向后兼容，老数据 NULL）
+        var manual = await _store.CreateTaskAsync(NewRequest(title: "no-origin"));
+        Assert.IsNull(manual.Origin);
+        var fetchedManual = await _store.GetTaskAsync("ws-1", manual.TaskId);
+        Assert.IsNull(fetchedManual!.Origin);
+    }
+
     // ── 2. GetTaskAsync ─────────────────────────────────────────────
 
     [TestMethod]

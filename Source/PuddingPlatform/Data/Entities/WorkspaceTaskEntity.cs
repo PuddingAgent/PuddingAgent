@@ -71,6 +71,9 @@ public class WorkspaceTaskEntity
     [Column("failure_reason")]
     public string? FailureReason { get; set; }
 
+    [Column("origin")]
+    public TaskOrigin? Origin { get; set; }
+
     [Required, Column("version")]
     public int Version { get; set; } = 1;
 

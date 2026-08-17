@@ -28,7 +28,7 @@ public sealed class SqliteWorkspaceTaskStore(
         execution_window, preferred_agent_id, active_assignment_id, not_before_utc, due_at_utc,
         next_eligible_at_utc, sort_order, progress_percent, progress_summary, blocker_kind,
         blocker_reason, failure_code, failure_reason, version, created_by, updated_by,
-        created_at_utc, updated_at_utc, completed_at_utc, failed_at_utc, archived_at_utc
+        created_at_utc, updated_at_utc, completed_at_utc, failed_at_utc, archived_at_utc, origin
         """;
 
     /// <inheritdoc />
@@ -51,6 +51,9 @@ public sealed class SqliteWorkspaceTaskStore(
             NotBeforeUtc = request.NotBeforeUtc,
             DueAtUtc = request.DueAtUtc,
             SortOrder = request.SortOrder,
+            Origin = request.Origin,
+            CreatedBy = request.CreatedBy,
+            UpdatedBy = request.UpdatedBy,
             Version = 1,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
@@ -63,6 +66,7 @@ public sealed class SqliteWorkspaceTaskStore(
             WorkspaceId = request.WorkspaceId,
             Sequence = 1,
             EventType = TaskEventType.TaskCreated,
+            Origin = request.Origin,
             CreatedAtUtc = now,
         };
 
@@ -403,13 +407,13 @@ public sealed class SqliteWorkspaceTaskStore(
                execution_window, preferred_agent_id, active_assignment_id, not_before_utc, due_at_utc,
                next_eligible_at_utc, sort_order, progress_percent, progress_summary, blocker_kind,
                blocker_reason, failure_code, failure_reason, version, created_by, updated_by,
-               created_at_utc, updated_at_utc, completed_at_utc, failed_at_utc, archived_at_utc)
+               created_at_utc, updated_at_utc, completed_at_utc, failed_at_utc, archived_at_utc, origin)
             VALUES
               (@taskId, @workspaceId, @title, @description, @acceptanceCriteria, @status, @priority,
                @executionWindow, @preferredAgentId, @activeAssignmentId, @notBeforeUtc, @dueAtUtc,
                @nextEligibleAtUtc, @sortOrder, @progressPercent, @progressSummary, @blockerKind,
                @blockerReason, @failureCode, @failureReason, @version, @createdBy, @updatedBy,
-               @createdAtUtc, @updatedAtUtc, @completedAtUtc, @failedAtUtc, @archivedAtUtc)
+               @createdAtUtc, @updatedAtUtc, @completedAtUtc, @failedAtUtc, @archivedAtUtc, @origin)
             """;
         AddParam(cmd, "@taskId", t.TaskId);
         AddParam(cmd, "@workspaceId", t.WorkspaceId);
@@ -439,6 +443,7 @@ public sealed class SqliteWorkspaceTaskStore(
         AddParam(cmd, "@completedAtUtc", t.CompletedAtUtc?.ToString("O"));
         AddParam(cmd, "@failedAtUtc", t.FailedAtUtc?.ToString("O"));
         AddParam(cmd, "@archivedAtUtc", t.ArchivedAtUtc?.ToString("O"));
+        AddParam(cmd, "@origin", t.Origin.HasValue ? (int)t.Origin.Value : null);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -614,6 +619,12 @@ public sealed class SqliteWorkspaceTaskStore(
             parameters.Add(("@sortOrder", request.SortOrder.Value));
         }
 
+        if (request.UpdatedBy is not null)
+        {
+            sets.Add("updated_by = @updatedBy");
+            parameters.Add(("@updatedBy", request.UpdatedBy));
+        }
+
         // 恒定更新：版本 +1 与 updated_at_utc（CAS 语义）。
         sets.Add("version = version + 1");
         sets.Add("updated_at_utc = @now");
@@ -696,8 +707,12 @@ public sealed class SqliteWorkspaceTaskStore(
             CompletedAtUtc = ReadUtcNullable(reader, 25),
             FailedAtUtc = ReadUtcNullable(reader, 26),
             ArchivedAtUtc = ReadUtcNullable(reader, 27),
+            Origin = ReadOriginNullable(reader, 28),
         };
     }
+
+    private static TaskOrigin? ReadOriginNullable(SqliteDataReader reader, int ordinal)
+        => reader.IsDBNull(ordinal) ? null : (TaskOrigin)reader.GetInt32(ordinal);
 
     private static string? ReadStringNullable(SqliteDataReader reader, int ordinal)
         => reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);

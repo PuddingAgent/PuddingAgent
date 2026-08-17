@@ -407,6 +407,9 @@ public sealed record WorkspaceTask
     /// <summary>失败原因（Failed 时）。</summary>
     public string? FailureReason { get; init; }
 
+    /// <summary>任务来源（Manual/Auto/AutomationSchedule）。</summary>
+    public TaskOrigin? Origin { get; init; }
+
     /// <summary>乐观并发版本号。</summary>
     public int Version { get; init; } = 1;
 

@@ -54,6 +54,15 @@ public sealed record CreateTaskRequest
 
     /// <summary>排序序号。</summary>
     public long SortOrder { get; init; }
+
+    /// <summary>任务来源。</summary>
+    public TaskOrigin? Origin { get; init; }
+
+    /// <summary>创建者。</summary>
+    public string? CreatedBy { get; init; }
+
+    /// <summary>最后更新者。</summary>
+    public string? UpdatedBy { get; init; }
 }
 
 /// <summary>更新任务请求（CAS：expectedVersion 不匹配抛/返回冲突）。可空字段表示“不更新”。</summary>
@@ -91,6 +100,9 @@ public sealed record UpdateTaskRequest
 
     /// <summary>排序序号。</summary>
     public long? SortOrder { get; init; }
+
+    /// <summary>最后更新者。</summary>
+    public string? UpdatedBy { get; init; }
 }
 
 /// <summary>任务查询条件。</summary>

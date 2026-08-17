@@ -51,6 +51,9 @@ public sealed record TaskAdminCreateRequest
     public DateTimeOffset? DueAtUtc { get; init; }
     public long? SortOrder { get; init; }
 
+    /// <summary>wire 任务来源（task.manual/task.auto/automation.schedule），默认 task.manual。</summary>
+    public string? Origin { get; init; }
+
     /// <summary>操作者（写入 CreatedBy/UpdatedBy）。</summary>
     public string? ActorId { get; init; }
 }

@@ -100,6 +100,7 @@ public class TaskController : ControllerBase
         {
             var priority = TaskWireMaps.PriorityFromString(dto.Priority ?? "p3");
             var executionWindow = TaskWireMaps.ExecutionWindowFromString(dto.ExecutionWindow ?? "inherit");
+            var actorId = ResolveAuthorId();
 
             var created = await _store.CreateTaskAsync(new CreateTaskRequest
             {
@@ -113,6 +114,9 @@ public class TaskController : ControllerBase
                 NotBeforeUtc = dto.NotBeforeUtc,
                 DueAtUtc = dto.DueAtUtc,
                 SortOrder = dto.SortOrder ?? 0,
+                Origin = TaskOrigin.Manual,
+                CreatedBy = actorId,
+                UpdatedBy = actorId,
             }, ct);
 
             return CreatedAtAction(nameof(Get), new { workspaceId, taskId = created.TaskId }, ToDto(created));
@@ -183,6 +187,7 @@ public class TaskController : ControllerBase
                 dto.DueAtUtc,
                 dto.SortOrder,
                 targetStatus,
+                ResolveAuthorId(),
                 ct);
 
             return Ok(ToDto(updated));
@@ -449,7 +454,7 @@ public class TaskController : ControllerBase
         try
         {
             var result = await _commands.ApplyCommandAsync(
-                workspaceId, taskId, command, expectedVersion, agentId, windowDecision, reason, ct);
+                workspaceId, taskId, command, expectedVersion, agentId, windowDecision, reason, ResolveAuthorId(), ct);
             return Ok(ToDto(result));
         }
         catch (TaskStoreException ex)
@@ -567,6 +572,7 @@ public class TaskController : ControllerBase
         BlockerReason = t.BlockerReason,
         FailureCode = t.FailureCode,
         FailureReason = t.FailureReason,
+        Origin = t.Origin.HasValue ? TaskWireMaps.OriginToString(t.Origin.Value) : null,
         Version = t.Version,
         CreatedBy = t.CreatedBy,
         UpdatedBy = t.UpdatedBy,

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
@@ -76,6 +77,59 @@ public sealed class TaskControllerTests
         Assert.AreEqual("p1", dto.Priority);
         Assert.AreEqual("inherit", dto.ExecutionWindow);
         Assert.AreEqual(1, dto.Version);
+    }
+
+    // ── 1b. TB-10：origin 默认 Manual + created_by/updated_by 身份贯通 ──
+
+    [TestMethod]
+    public async Task Create_WithAuthenticatedUser_SetsOriginAndAuditFields()
+    {
+        var controller = CreateController(userId: "user-42");
+
+        var result = await controller.Create(WorkspaceId, new CreateTaskDto
+        {
+            Title = "audited task",
+        }, CancellationToken.None);
+
+        var created = Assert.IsInstanceOfType<CreatedAtActionResult>(result.Result);
+        var dto = Assert.IsInstanceOfType<TaskDto>(created.Value);
+        Assert.AreEqual("task.manual", dto.Origin);
+        Assert.AreEqual("user-42", dto.CreatedBy);
+        Assert.AreEqual("user-42", dto.UpdatedBy);
+    }
+
+    [TestMethod]
+    public async Task Create_WithoutUser_SetsOriginManualAndNullAudit()
+    {
+        var controller = CreateController();
+
+        var result = await controller.Create(WorkspaceId, new CreateTaskDto
+        {
+            Title = "anonymous task",
+        }, CancellationToken.None);
+
+        var created = Assert.IsInstanceOfType<CreatedAtActionResult>(result.Result);
+        var dto = Assert.IsInstanceOfType<TaskDto>(created.Value);
+        Assert.AreEqual("task.manual", dto.Origin);
+        Assert.IsNull(dto.CreatedBy);
+        Assert.IsNull(dto.UpdatedBy);
+    }
+
+    [TestMethod]
+    public async Task Patch_WithAuthenticatedUser_SetsUpdatedByOnly()
+    {
+        var task = await CreateTaskAsync();
+        var controller = CreateController(userId: "user-42");
+
+        var result = await controller.Patch(WorkspaceId, task.TaskId, new PatchTaskDto
+        {
+            ExpectedVersion = 1,
+            Title = "renamed",
+        }, CancellationToken.None);
+
+        var dto = AssertOkDto(result);
+        Assert.AreEqual("user-42", dto.UpdatedBy);
+        Assert.IsNull(dto.CreatedBy);
     }
 
     // ── 2. Get 命中/未命中（404 + task.not_found）──
@@ -580,14 +634,20 @@ public sealed class TaskControllerTests
 
     // ── helpers ─────────────────────────────────────────────
 
-    private TaskController CreateController(string traceId = "trace-test")
-        => new(_store, _service, _dbFactory)
+    private TaskController CreateController(string traceId = "trace-test", string? userId = null)
+    {
+        var httpContext = new DefaultHttpContext { TraceIdentifier = traceId };
+        if (userId is not null)
         {
-            ControllerContext = new ControllerContext
-            {
-                HttpContext = new DefaultHttpContext { TraceIdentifier = traceId },
-            },
+            httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+                new[] { new Claim(ClaimTypes.NameIdentifier, userId) }, "test"));
+        }
+
+        return new(_store, _service, _dbFactory)
+        {
+            ControllerContext = new ControllerContext { HttpContext = httpContext },
         };
+    }
 
     private async Task<WorkspaceTask> CreateTaskAsync(string title = "Task")
         => await _store.CreateTaskAsync(new CreateTaskRequest

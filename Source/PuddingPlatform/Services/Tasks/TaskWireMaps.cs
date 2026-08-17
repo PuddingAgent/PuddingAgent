@@ -130,6 +130,26 @@ public static class TaskWireMaps
         _ => throw InvalidWire("executionWindow", value),
     };
 
+    // ── Origin ──────────────────────────────────────────────
+
+    /// <summary>TaskOrigin → wire 字符串（task.manual/task.auto/automation.schedule）。</summary>
+    public static string OriginToString(TaskOrigin origin) => origin switch
+    {
+        TaskOrigin.Manual => "task.manual",
+        TaskOrigin.Auto => "task.auto",
+        TaskOrigin.AutomationSchedule => "automation.schedule",
+        _ => throw new ArgumentOutOfRangeException(nameof(origin), origin, "未知任务来源。"),
+    };
+
+    /// <summary>wire 字符串 → TaskOrigin。null/空/"task.manual" → Manual；未知值 fail-closed。</summary>
+    public static TaskOrigin OriginFromString(string? value) => value switch
+    {
+        null or "" or "task.manual" => TaskOrigin.Manual,
+        "task.auto" => TaskOrigin.Auto,
+        "automation.schedule" => TaskOrigin.AutomationSchedule,
+        _ => throw InvalidWire("origin", value),
+    };
+
     // ── Error code ──────────────────────────────────────────
 
     /// <summary>TaskErrorCode → 稳定 code（wire）。以 TB-01 枚举注释为权威。</summary>

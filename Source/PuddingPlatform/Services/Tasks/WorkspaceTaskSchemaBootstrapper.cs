@@ -18,7 +18,7 @@ public static class WorkspaceTaskSchemaBootstrapper
 {
     private static readonly string[] Ddl =
     [
-        // ── workspace_tasks（TB-02，28 列）────────────────────────────
+        // ── workspace_tasks（TB-02，29 列）────────────────────────────
         """
         CREATE TABLE IF NOT EXISTS workspace_tasks (
             task_id              TEXT    NOT NULL,
@@ -41,6 +41,7 @@ public static class WorkspaceTaskSchemaBootstrapper
             blocker_reason       TEXT,
             failure_code         TEXT,
             failure_reason       TEXT,
+            origin               INTEGER,
             version              INTEGER NOT NULL DEFAULT 1,
             created_by           TEXT,
             updated_by           TEXT,

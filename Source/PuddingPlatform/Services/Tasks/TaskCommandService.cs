@@ -39,6 +39,7 @@ public sealed class TaskCommandService(
         DateTimeOffset? dueAtUtc,
         long? sortOrder,
         WorkspaceTaskStatus? status = null,
+        string? updatedBy = null,
         CancellationToken ct = default)
     {
         var current = await _store.GetTaskAsync(workspaceId, taskId, ct);
@@ -78,6 +79,7 @@ public sealed class TaskCommandService(
                 NotBeforeUtc = notBeforeUtc,
                 DueAtUtc = dueAtUtc,
                 SortOrder = sortOrder,
+                UpdatedBy = updatedBy,
             }, ct);
         }
 
@@ -133,6 +135,10 @@ public sealed class TaskCommandService(
         entity.Status = target;
         entity.Version += 1;
         entity.UpdatedAtUtc = now;
+        if (!string.IsNullOrWhiteSpace(updatedBy))
+        {
+            entity.UpdatedBy = updatedBy;
+        }
 
         switch (target)
         {
@@ -175,6 +181,7 @@ public sealed class TaskCommandService(
         string? agentId = null,
         string? windowDecision = null,
         string? reason = null,
+        string? updatedBy = null,
         CancellationToken ct = default)
     {
         var current = await _store.GetTaskAsync(workspaceId, taskId, ct);
@@ -238,6 +245,10 @@ public sealed class TaskCommandService(
         entity.Status = next;
         entity.Version += 1;
         entity.UpdatedAtUtc = now;
+        if (!string.IsNullOrWhiteSpace(updatedBy))
+        {
+            entity.UpdatedBy = updatedBy;
+        }
 
         switch (command)
         {
@@ -348,6 +359,7 @@ public sealed class TaskCommandService(
             Status = next,
             Version = current.Version + 1,
             UpdatedAtUtc = now,
+            UpdatedBy = updatedBy ?? current.UpdatedBy,
             ActiveAssignmentId = entity.ActiveAssignmentId,
             ArchivedAtUtc = entity.ArchivedAtUtc,
             FailedAtUtc = entity.FailedAtUtc,

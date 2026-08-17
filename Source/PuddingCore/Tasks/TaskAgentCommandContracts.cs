@@ -119,6 +119,10 @@ public sealed record TaskAgentTaskDetail
     public string? BlockerReason { get; init; }
     public string? FailureCode { get; init; }
     public string? FailureReason { get; init; }
+
+    /// <summary>wire: "task.manual"/"task.auto"/"automation.schedule"。</summary>
+    public string? Origin { get; init; }
+
     public required int Version { get; init; }
     public string? CreatedBy { get; init; }
     public string? UpdatedBy { get; init; }

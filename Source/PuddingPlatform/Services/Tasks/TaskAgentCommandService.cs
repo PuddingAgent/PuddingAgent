@@ -588,6 +588,7 @@ public sealed class TaskAgentCommandService(
             BlockerReason = t.BlockerReason,
             FailureCode = t.FailureCode,
             FailureReason = t.FailureReason,
+            Origin = t.Origin.HasValue ? TaskWireMaps.OriginToString(t.Origin.Value) : null,
             Version = t.Version,
             CreatedBy = t.CreatedBy,
             UpdatedBy = t.UpdatedBy,

@@ -46,6 +46,7 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
 
         var priority = TaskWireMaps.PriorityFromString(request.Priority ?? "p3");
         var executionWindow = TaskWireMaps.ExecutionWindowFromString(request.ExecutionWindow ?? "inherit");
+        var origin = TaskWireMaps.OriginFromString(request.Origin);
 
         var task = await _store.CreateTaskAsync(new CreateTaskRequest
         {
@@ -59,6 +60,7 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
             NotBeforeUtc = request.NotBeforeUtc,
             DueAtUtc = request.DueAtUtc,
             SortOrder = request.SortOrder ?? 0,
+            Origin = origin,
         }, ct);
 
         await BackfillActorAsync(request.WorkspaceId, task.TaskId, request.ActorId, setCreatedBy: true, ct);
@@ -181,6 +183,7 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
             request.DueAtUtc,
             request.SortOrder,
             status: targetStatus,
+            updatedBy: null,
             ct);
 
         await BackfillActorAsync(request.WorkspaceId, request.TaskId, request.ActorId, setCreatedBy: false, ct);
@@ -229,6 +232,7 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
             request.AgentId,
             request.WindowDecision,
             request.Reason,
+            updatedBy: null,
             ct);
 
         await BackfillActorAsync(request.WorkspaceId, request.TaskId, request.ActorId, setCreatedBy: false, ct);
@@ -393,6 +397,7 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
             BlockerReason = t.BlockerReason,
             FailureCode = t.FailureCode,
             FailureReason = t.FailureReason,
+            Origin = t.Origin.HasValue ? TaskWireMaps.OriginToString(t.Origin.Value) : null,
             Version = t.Version,
             CreatedBy = t.CreatedBy,
             UpdatedBy = t.UpdatedBy,
