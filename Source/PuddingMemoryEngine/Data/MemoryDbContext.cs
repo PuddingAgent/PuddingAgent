@@ -23,6 +23,7 @@ public sealed class MemoryDbContext : DbContext
     public DbSet<EventDiagnosticLogEntity> EventDiagnosticLogs => Set<EventDiagnosticLogEntity>();
         public DbSet<EventSubscriptionEntity> EventSubscriptions => Set<EventSubscriptionEntity>();
     public DbSet<ContextSegmentEntity> ContextSegments => Set<ContextSegmentEntity>();
+    public DbSet<CompositionSnapshotEntity> CompositionSnapshots => Set<CompositionSnapshotEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -150,6 +151,12 @@ public sealed class MemoryDbContext : DbContext
             entity.HasIndex(e => e.CanonicalContentHash);
             entity.HasIndex(e => e.CoveredByManifestId);
             entity.HasIndex(e => e.ContextGeneration);
+        });
+
+        modelBuilder.Entity<CompositionSnapshotEntity>(entity =>
+        {
+            entity.ToTable("CompositionSnapshots");
+            entity.HasKey(e => new { e.SessionId, e.CompositionVersion });
         });
     }
 }

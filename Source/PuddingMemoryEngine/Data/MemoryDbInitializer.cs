@@ -41,6 +41,7 @@ public static class MemoryDbInitializer
         await EnsureCompactionGenerationColumnAsync(conn);
         await EnsureContextSegmentsTableAsync(conn);
         await EnsureMessageCompactionColumnsAsync(conn);
+        await EnsureCompositionSnapshotsTableAsync(conn);
     }
 
     /// <summary>
@@ -121,6 +122,48 @@ public static class MemoryDbInitializer
                 AuthorizationScope   TEXT,
                 CreatedAt            INTEGER NOT NULL,
                 Metadata             TEXT
+            );
+            """;
+        await create.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// 为既有数据库幂等补建 <c>CompositionSnapshots</c> 表（P0-5 步骤 1）。
+    /// 正常情况下 init_memory.sql 的 CREATE TABLE IF NOT EXISTS 已建表；
+    /// 此处为防御性自愈：若旧库由更早版本 SQL 初始化（无 CompositionSnapshots 表），
+    /// 用 PRAGMA table_info 检测后补建，不删除旧列/旧数据。
+    /// 建表 DDL 与 init_memory.sql 保持一致，修改时需两处同步。
+    /// </summary>
+    private static async Task EnsureCompositionSnapshotsTableAsync(
+        System.Data.Common.DbConnection conn)
+    {
+        var exists = false;
+        using (var check = conn.CreateCommand())
+        {
+            check.CommandText = "PRAGMA table_info(CompositionSnapshots);";
+            await using var reader = await check.ExecuteReaderAsync();
+            exists = await reader.ReadAsync();
+        }
+
+        if (exists)
+            return;
+
+        using var create = conn.CreateCommand();
+        create.CommandText = """
+            CREATE TABLE IF NOT EXISTS CompositionSnapshots (
+                SessionId               TEXT NOT NULL,
+                CompositionVersion      INTEGER NOT NULL,
+                SystemPromptHash        TEXT NOT NULL,
+                ToolSpecHash            TEXT NOT NULL,
+                PrefixHash              TEXT NOT NULL,
+                SkillManifestHash       TEXT,
+                SerializationVersion    TEXT NOT NULL DEFAULT 'prefix-v1',
+                ToolIds                 TEXT,
+                ChangeReason            TEXT,
+                PermissionEpoch         INTEGER NOT NULL DEFAULT 0,
+                CreatedAtUtc            INTEGER NOT NULL,
+                CanonicalSystemPrefixHash TEXT,
+                PRIMARY KEY (SessionId, CompositionVersion)
             );
             """;
         await create.ExecuteNonQueryAsync();

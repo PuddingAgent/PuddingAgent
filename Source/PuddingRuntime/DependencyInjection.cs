@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
@@ -167,8 +168,13 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<IAgentOrchestrationNodeExecutor, ImageGenerateOrchestrationNodeExecutor>();
         services.AddSingleton<IAgentOrchestrationNodeExecutor, ImagePreviewOrchestrationNodeExecutor>();
         services.AddHostedService<AgentOrchestrationWorkerService>();
-        services.TryAddSingleton<IContextTierPlanner, ContextTierPlanner>();
+                services.TryAddSingleton<IContextTierPlanner, ContextTierPlanner>();
         services.AddSingleton<ContextWindowManager>();
+
+        // P0-5 步骤 1：Composition 不可变持久化存储（SQLite，落 MemoryDbContext 的 CompositionSnapshots 表）。
+        // 宿主已注册 IDbContextFactory<MemoryDbContext>（MemoryDbInitializer 同源）；TryAdd 防宿主重复注册。
+        services.TryAddSingleton<ICompositionStore>(sp =>
+            new SqliteCompositionStore(sp.GetRequiredService<IDbContextFactory<MemoryDbContext>>()));
         services.TryAddSingleton<ITerminalCommandPolicy, DefaultTerminalCommandPolicy>();
 
         services.AddSingleton<SessionArchiver>();
