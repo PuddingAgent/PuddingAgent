@@ -373,7 +373,7 @@ public sealed class ContextWindowManager
 
             if (_jsonlReader is not null)
             {
-                var jsonlHistory = await BuildContextFromJsonlSnapshotAsync(sessionId, maxTokenBudget, ct);
+                var jsonlHistory = await BuildContextFromJsonlSnapshotAsync(sessionId, maxTokenBudget, ct, query);
                 if (jsonlHistory.Messages.Count > 0
                     && (hydrated is null || jsonlHistory.LastCreatedAt > hydrated.LastCreatedAt))
                 {
@@ -429,13 +429,15 @@ public sealed class ContextWindowManager
     public async Task<List<ChatMessage>> BuildContextFromJsonlAsync(
         string sessionId,
         int maxTokenBudget,
-        CancellationToken ct)
-        => (await BuildContextFromJsonlSnapshotAsync(sessionId, maxTokenBudget, ct)).Messages;
+        CancellationToken ct,
+        string? query = null)
+        => (await BuildContextFromJsonlSnapshotAsync(sessionId, maxTokenBudget, ct, query)).Messages;
 
     private async Task<HydratedHistorySnapshot> BuildContextFromJsonlSnapshotAsync(
         string sessionId,
         int maxTokenBudget,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? query = null)
     {
         if (_jsonlReader is null)
             return new([], 0);
@@ -448,33 +450,68 @@ public sealed class ContextWindowManager
 
         var coverage = await LoadCoverageAsync(sessionId, ct);
 
-        var selected = new List<ChatMessage>();
-        var estimatedTokens = 0;
-        var lastCreatedAt = 0L;
-        for (var i = entries.Count - 1; i >= 0; i--)
-        {
-            var entry = entries[i];
-            if (coverage.CoveredMessageIds.Contains(entry.MessageId))
-                continue;
+        // generation 过滤：已被压缩覆盖的消息不再进入模型上下文（防止经 JSONL 旁路复活，方案 §9 去重规则）。
+        var active = entries
+            .Where(e => !coverage.CoveredMessageIds.Contains(e.MessageId))
+            .ToList();
+        if (active.Count == 0)
+            return new([], 0);
 
-            var content = entry.Content ?? string.Empty;
-                        var tokenEstimate = Math.Max(1, content.Length / ContextWindowConstants.TokenEstimateCharDivisor);
-            if (estimatedTokens + tokenEstimate > maxTokenBudget && selected.Count > ContextWindowConstants.MinMessagesBeforeTokenBreak)
+        // 升序（旧→新）保证轮次推导正确；CreatedAt 全部为 0 时 OrderBy 稳定，保持原顺序。
+        var ordered = active.OrderBy(e => e.CreatedAt).ToList();
+
+        // Tier 分级（对齐 DB 路径 BuildContextFromDbSnapshotAsync）：
+        // user 消息为轮次边界，最后 user 轮视为当前轮（T0），query 命中由 ContextTierPlanner 有界晋升。
+        var inputs = MapToTierInputs(ordered, query);
+        var plan = _tierPlanner.Plan(inputs, options: null);
+        var assignments = plan.Assignments;
+
+        // 按 Tier 保真度填充：T0 → T4，同 tier 内新的（CreatedAt 大）在前；
+        // 预算耗尽后更冷 tier 整体不再填充（保新弃旧，替代旧的“倒序累加 + break”）。
+        var selected = new List<JsonlEntry>(ordered.Count);
+        var estimatedTokens = 0;
+        var budgetExhausted = false;
+
+        foreach (var tier in Enum.GetValues<ContextSegmentTier>().OrderBy(t => (int)t))
+        {
+            if (budgetExhausted)
                 break;
 
-            estimatedTokens += tokenEstimate;
-            lastCreatedAt = Math.Max(lastCreatedAt, entry.CreatedAt);
-            selected.Add(new ChatMessage(
+            foreach (var (entry, _) in assignments
+                         .Select((a, i) => (Entry: ordered[i], a.Tier))
+                         .Where(p => p.Tier == tier)
+                         .OrderByDescending(p => p.Entry.CreatedAt))
+            {
+                var content = entry.Content ?? string.Empty;
+
+                // 简化估算：约 1 token ≈ 3 字符（中英混排折中），最少按 1 token 计。
+                var tokenEstimate = Math.Max(1, content.Length / ContextWindowConstants.TokenEstimateCharDivisor);
+                if (estimatedTokens + tokenEstimate > maxTokenBudget && selected.Count > ContextWindowConstants.MinMessagesBeforeTokenBreak)
+                {
+                    budgetExhausted = true;
+                    break;
+                }
+
+                estimatedTokens += tokenEstimate;
+                selected.Add(entry);
+            }
+        }
+
+        // 最终输出按 CreatedAt 升序（旧→新），与历史直觉一致。
+        // summary 消息处理保持旧行为：仅按 Role 映射，不特殊判断 ContentType（与 DB 路径不同，勿照搬）。
+        var lastCreatedAt = selected.Count > 0 ? selected.Max(e => e.CreatedAt) : 0L;
+        var messages = selected
+            .OrderBy(e => e.CreatedAt)
+            .Select(entry => new ChatMessage(
                 ParseChatRole(entry.Role),
-                content,
+                entry.Content ?? string.Empty,
                 ToolCallId: null,
                 ToolCalls: null,
                 ToolName: null,
-                ReasoningContent: null));
-        }
+                ReasoningContent: null))
+            .ToList();
 
-        selected.Reverse();
-        return new(SanitizeForLlmContext(selected), lastCreatedAt);
+        return new(SanitizeForLlmContext(messages), lastCreatedAt);
     }
 
     private async Task<CompactionCoverage> LoadCoverageAsync(string sessionId, CancellationToken ct)
@@ -487,6 +524,22 @@ public sealed class ContextWindowManager
 
         return entry.Role.Trim().ToLowerInvariant() is "user" or "assistant" or "agent" or "system" or "tool";
     }
+
+    /// <summary>
+    /// JSONL 冷启动专用：<see cref="JsonlEntry"/> 无 Sequence，用 CreatedAt 升序隐含顺序；
+    /// Role == "user" 作为轮次边界（0-based 递增），最后 user 轮视为当前轮（T0）；
+    /// query 命中（正文包含 query 的有效 token）→ IsQueryHit=true。
+    /// internal 以便单测直接验证（沿用 ExtractQueryHits 的 InternalsVisibleTo 约定）。
+    /// </summary>
+    internal static List<TierPlannerSegmentInput> MapToTierInputs(
+        IReadOnlyList<JsonlEntry> entries,
+        string? query = null)
+        => BuildTierInputs(
+            entries,
+            segmentIdSelector: (e, _) => e.MessageId,
+            isUserBoundary: e => string.Equals(e.Role, "user", StringComparison.OrdinalIgnoreCase),
+            contentSelector: e => e.Content ?? string.Empty,
+            query);
 
     public async Task TrimHistoryAsync(
         string sessionId,
