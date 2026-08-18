@@ -963,7 +963,14 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             var systemPromptHash = CompositionSnapshot.ComputeSystemPromptHash(messages);
             var toolSpecHash = CompositionSnapshot.ComputeToolSpecHash(tools);
             var prefixHash = CompositionSnapshot.ComputePrefixHash(systemPromptHash, toolSpecHash);
-            var observation = _compositionVersions.Observe(sessionId, systemPromptHash, toolSpecHash);
+            var toolIds = tools?.Select(t => t.Name).ToList();
+            var observation = _compositionVersions.Observe(
+                sessionId,
+                systemPromptHash,
+                toolSpecHash,
+                toolIds,
+                permissionEpoch: 0,
+                skillManifestHash: null);
 
             var dimensions = new Dictionary<string, string>
             {

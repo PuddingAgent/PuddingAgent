@@ -90,13 +90,14 @@ public interface ICompositionVersionRegistry
 {
     /// <summary>
     /// 观测一次 composition，返回版本号与变化原因（原子）。
-    /// <paramref name="toolIds"/> 与 <paramref name="permissionEpoch"/> 仅供写穿持久化使用，
-    /// 纯内存实现可忽略；<paramref name="permissionEpoch"/> 变化由调用方显式 +1 触发开新版本。
+    /// <paramref name="toolIds"/>、<paramref name="permissionEpoch"/> 与 <paramref name="skillManifestHash"/>
+    /// 仅供写穿持久化使用，纯内存实现可忽略；<paramref name="permissionEpoch"/> 变化由调用方显式 +1 触发开新版本。
     /// </summary>
     CompositionObservation Observe(
         string sessionId,
         string systemPromptHash,
         string toolSpecHash,
         IReadOnlyList<string>? toolIds = null,
-        int permissionEpoch = 0);
+        int permissionEpoch = 0,
+        string? skillManifestHash = null);
 }

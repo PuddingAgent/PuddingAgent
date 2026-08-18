@@ -97,7 +97,8 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
         string systemPromptHash,
         string toolSpecHash,
         IReadOnlyList<string>? toolIds = null,
-        int permissionEpoch = 0)
+        int permissionEpoch = 0,
+        string? skillManifestHash = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         var state = _sessions.GetOrAdd(sessionId, static _ => new SessionState());

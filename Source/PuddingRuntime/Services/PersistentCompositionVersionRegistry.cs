@@ -41,16 +41,17 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
         string systemPromptHash,
         string toolSpecHash,
         IReadOnlyList<string>? toolIds = null,
-        int permissionEpoch = 0)
+        int permissionEpoch = 0,
+        string? skillManifestHash = null)
     {
-        var observation = _inner.Observe(sessionId, systemPromptHash, toolSpecHash, toolIds, permissionEpoch);
+        var observation = _inner.Observe(sessionId, systemPromptHash, toolSpecHash, toolIds, permissionEpoch, skillManifestHash);
 
         if (_store is null)
             return observation; // 无 store：纯内存降级
 
         // 仅在新版本号出现时异步写穿；相同组合复用版本 → 热路径只查内存，零 IO。
         if (observation.Version > _persistedVersions.GetValueOrDefault(sessionId))
-            _ = WriteThroughAsync(sessionId, systemPromptHash, toolSpecHash, observation, toolIds, permissionEpoch);
+            _ = WriteThroughAsync(sessionId, systemPromptHash, toolSpecHash, observation, toolIds, permissionEpoch, skillManifestHash);
 
         return observation;
     }
@@ -62,7 +63,8 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
         string toolSpecHash,
         CompositionObservation observation,
         IReadOnlyList<string>? toolIds,
-        int permissionEpoch)
+        int permissionEpoch,
+        string? skillManifestHash)
     {
         var gate = _writeGates.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync().ConfigureAwait(false);
@@ -79,7 +81,7 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
                 SystemPromptHash = systemPromptHash,
                 ToolSpecHash = toolSpecHash,
                 PrefixHash = CompositionSnapshot.ComputePrefixHash(systemPromptHash, toolSpecHash),
-                SkillManifestHash = null,
+                SkillManifestHash = skillManifestHash,
                 ToolIds = toolIds ?? Array.Empty<string>(),
                 ChangeReason = observation.ChangeReason,
                 PermissionEpoch = permissionEpoch,

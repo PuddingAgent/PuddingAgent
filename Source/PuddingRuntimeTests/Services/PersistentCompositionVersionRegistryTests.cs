@@ -96,6 +96,26 @@ public sealed class PersistentCompositionVersionRegistryTests
     }
 
     [TestMethod]
+    public async Task Observe_WithSkillManifestHash_PersistsManifestHash()
+    {
+        var registry = NewRegistry(_store);
+        var toolIds = new[] { "search_tools", "file_read" };
+
+        registry.Observe(
+            "session-mh",
+            "sys-hash-1",
+            "tool-hash-1",
+            toolIds,
+            permissionEpoch: 0,
+            skillManifestHash: "skill-manifest-hash-1");
+
+        var records = await WaitForCountAsync(_store!, "session-mh", 1);
+        var record = records[0];
+        Assert.AreEqual("skill-manifest-hash-1", record.SkillManifestHash);
+        CollectionAssert.AreEqual(toolIds, record.ToolIds.ToArray());
+    }
+
+    [TestMethod]
     public async Task Observe_CompositionChange_AppendsSecondVersion()
     {
         var registry = NewRegistry(_store);
