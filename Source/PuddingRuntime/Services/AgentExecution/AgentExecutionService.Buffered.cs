@@ -101,6 +101,11 @@ public sealed partial class AgentExecutionService
         _sessionManager.MarkRunning(request.SessionId);
         _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
 
+        // P0-5 步骤 5：跨 1h 超时 / Core 重启后从持久化 Composition 水合工具集合（append-only）。
+        // 恢复失败不阻断执行（服务内部静默降级为空集合）。
+        if (_compositionRecovery is not null)
+            await _compositionRecovery.RecoverAsync(request.SessionId, CancellationToken.None);
+
         _runtimeSessionStore.GetOrCreate(
             request.SessionId, instance.AgentInstanceId,
             request.WorkspaceId, request.AgentTemplateId);

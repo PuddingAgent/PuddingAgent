@@ -119,6 +119,7 @@
 | 文件 | 用途 |
 |------|------|
 | `Services/AgentSessionManager.cs` | 会话管理 |
+| `Services/CompositionRecoveryService.cs` | P0-5 步骤 5：跨 1h 超时/Core 重启从持久化 Composition 水合工具集合（append-only） |
 | `Services/SessionExecutionGate.cs` | 执行门控 |
 | `Services/SessionArchiver.cs` | 会话归档 |
 | `Services/HeartbeatService.cs` | 会话超时资源清理（不是 Agent 自主心跳编排） |

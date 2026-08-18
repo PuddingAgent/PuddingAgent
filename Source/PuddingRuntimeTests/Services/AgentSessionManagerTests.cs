@@ -93,4 +93,19 @@ public sealed class AgentSessionManagerTests
             manager.SnapshotToolSet("session-1").ToArray(),
             "external_mutation");
     }
+
+    [TestMethod]
+    public void HydrateToolIds_AppendOnly_DoesNotShrinkExisting()
+    {
+        var manager = new AgentSessionManager();
+        manager.GetOrCreate("session-1", "global:general-assistant");
+        manager.RememberLoadedToolIds("session-1", ["file_read"]);
+
+        // 从持久化水合：已存在的 file_read 不重复，新增 search_grep 追加，不收缩。
+        manager.HydrateToolIds("session-1", ["file_read", "search_grep"]);
+
+        CollectionAssert.AreEquivalent(
+            new[] { "file_read", "search_grep" },
+            manager.GetLoadedToolIds("session-1").ToArray());
+    }
 }

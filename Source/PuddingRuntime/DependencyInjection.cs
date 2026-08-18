@@ -183,6 +183,14 @@ public static class RuntimeServiceExtensions
             new PersistentCompositionVersionRegistry(
                 sp.GetService<ICompositionStore>(),
                 sp.GetService<ILogger<PersistentCompositionVersionRegistry>>()));
+
+        // P0-5 步骤 5：Composition 恢复服务（跨 1h 超时 / Core 重启水合工具集合）。
+        // ICompositionStore 可能未注册 → GetService 返回 null → 恢复静默降级为空集合，不阻断执行。
+        services.TryAddSingleton<CompositionRecoveryService>(sp => new CompositionRecoveryService(
+            sp.GetRequiredService<AgentSessionManager>(),
+            sp.GetService<ICompositionStore>(),
+            sp.GetService<ILogger<CompositionRecoveryService>>()));
+
         services.TryAddSingleton<ITerminalCommandPolicy, DefaultTerminalCommandPolicy>();
 
         services.AddSingleton<SessionArchiver>();

@@ -192,6 +192,13 @@ public sealed class AgentSessionManager
     }
 
     /// <summary>
+    /// P0-5 步骤 5：从持久化 Composition 记录水合工具集合（跨 1h 超时 / Core 重启恢复）。
+    /// append-only 语义：只追加持久化 toolIds，不覆盖/收缩进程内已有集合。
+    /// </summary>
+    public void HydrateToolIds(string sessionId, IEnumerable<string> toolIds) =>
+        RememberLoadedToolIds(sessionId, toolIds);
+
+    /// <summary>
     /// Returns an immutable snapshot of the session's progressively discovered tool
     /// surface. The set is append-only and survives session cleanup; callers receive a
     /// copy, so mutations cannot affect the internal state. Returns an empty set when

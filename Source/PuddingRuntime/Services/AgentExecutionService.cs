@@ -86,6 +86,7 @@ public sealed partial class AgentExecutionService
     private readonly SkillEnforcerService? _skillEnforcer;
     private readonly ISessionExecutionGate _sessionExecutionGate;
     private readonly IExecutionProgressRegistry? _executionProgress;
+    private readonly CompositionRecoveryService? _compositionRecovery; // P0-5 步骤 5：跨 1h/重启水合工具集合
 
     // LLM 调用提取（审计 P0 #1）
     private AgentExecutionLlmInvoker? _llmInvoker;
@@ -143,7 +144,8 @@ public sealed partial class AgentExecutionService
         SkillEnforcerService? skillEnforcer = null,
         IOptions<SubconsciousOptions>? subconsciousOptions = null,
         IExecutionProgressRegistry? executionProgress = null,
-        IConversationEventStore? conversationEventStore = null)
+        IConversationEventStore? conversationEventStore = null,
+        CompositionRecoveryService? compositionRecovery = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -193,6 +195,7 @@ public sealed partial class AgentExecutionService
         _skillEnforcer             = skillEnforcer;
         _executionProgress         = executionProgress;
         _conversationEventStore    = conversationEventStore;
+        _compositionRecovery       = compositionRecovery;
 
         if (_ssm is null)
             _logger.LogWarning("[AgentExec] SSM is NULL — SSE frames will NOT be forwarded through SessionStateManager");
