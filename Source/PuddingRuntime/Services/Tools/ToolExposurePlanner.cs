@@ -13,7 +13,8 @@ internal static class ToolExposurePlanner
     internal const string SearchToolId = "search_tools";
     internal const int DeferredLoadingThreshold = 24;
 
-    private static readonly HashSet<string> CoreToolIds = new(StringComparer.OrdinalIgnoreCase)
+    /// <summary>核心工具集（永不从可见集收缩，L1 TOOLS 索引与 CreatePlan 共用）。</summary>
+    internal static readonly HashSet<string> CoreToolIds = new(StringComparer.OrdinalIgnoreCase)
     {
         SearchToolId,
         "goal_read",

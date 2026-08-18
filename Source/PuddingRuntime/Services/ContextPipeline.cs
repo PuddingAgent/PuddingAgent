@@ -397,6 +397,12 @@ public sealed record ContextRequest
     public AgentTemplateDefinition Template { get; init; } = null!;
     public string WorkspaceId { get; init; } = string.Empty;
     public string SessionId { get; init; } = string.Empty;
+    /// <summary>
+    /// P0-5 step 4a: session 已加载工具集合的 append-only 快照（渐进发现，不收缩）。
+    /// L1 TOOLS 层索引文本据此生成可见工具 = Core ∪ Loaded，消除每轮从实时 registry
+    /// 全量重建导致的 system prompt 前缀漂移。为 null 时保持全量 registry 行为（向后兼容）。
+    /// </summary>
+    public IReadOnlySet<string>? LoadedToolIds { get; init; }
     public string AgentTemplateId { get; init; } = string.Empty;
     public string UserMessage { get; init; } = string.Empty;
     public CapabilityPolicy? Capability { get; init; }

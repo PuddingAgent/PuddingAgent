@@ -304,6 +304,17 @@ public sealed partial class ContextPipeline
         if (_toolRegistry is not null)
         {
             var descriptors = _toolRegistry.ListAvailable(request.Capability, request.WorkspaceId);
+            // P0-5 step 4a: L1 索引文本优先从 session 已加载工具集合（append-only）生成，
+            // 可见工具 = Core ∪ Loaded，与 ToolExposurePlanner.CreatePlan 的可见集语义一致
+            // （Core ∪ loaded ∪ committed 不收缩），消除每轮从实时 registry 全量重建导致
+            // 的 system prompt 前缀漂移。LoadedToolIds 为 null/空时保持全量行为（向后兼容）。
+            if (request.LoadedToolIds is { Count: > 0 })
+            {
+                descriptors = descriptors
+                    .Where(d => ToolExposurePlanner.CoreToolIds.Contains(d.ToolId)
+                        || request.LoadedToolIds.Contains(d.ToolId))
+                    .ToList();
+            }
             AppendToolDescriptorList(sb, descriptors, request);
             return Task.FromResult(sb.ToString());
         }

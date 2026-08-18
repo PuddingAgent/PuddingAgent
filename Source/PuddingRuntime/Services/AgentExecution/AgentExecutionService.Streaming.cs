@@ -203,6 +203,7 @@ public sealed partial class AgentExecutionService
                 Template = template,
                 WorkspaceId = request.WorkspaceId ?? string.Empty,
                 SessionId = request.SessionId,
+                LoadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId),
                 AgentTemplateId = request.AgentTemplateId,
                 UserMessage = request.MessageText,
                 Capability = effectiveCapability,
