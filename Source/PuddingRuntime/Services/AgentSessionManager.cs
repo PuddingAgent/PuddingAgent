@@ -132,6 +132,9 @@ public sealed class AgentSessionManager
                 };
             }
 
+            // 工具集合 append-only：清理实例不清理已授权工具面。
+            // 1h 超时只回收会话实例，避免下一轮工具可见集缩回 core schema
+            // 导致 provider prefix 漂移；跨重启持久化水合由 P0-5 步骤 5 负责。
             Remove(sessionId);
             removed.Add(sessionId);
         }
@@ -188,6 +191,21 @@ public sealed class AgentSessionManager
         }
     }
 
+    /// <summary>
+    /// Returns an immutable snapshot of the session's progressively discovered tool
+    /// surface. The set is append-only and survives session cleanup; callers receive a
+    /// copy, so mutations cannot affect the internal state. Returns an empty set when
+    /// the session has no recorded tools. (P0-5 step 5 will use this to hydrate the
+    /// committed tool set across restarts.)
+    /// </summary>
+    public IReadOnlySet<string> SnapshotToolSet(string sessionId)
+    {
+        if (!_loadedToolIds.TryGetValue(sessionId, out var tools))
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        return tools.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
     /// <summary>移除实例记录（用于超时清理）。</summary>
     public void Remove(string sessionId) =>
         RemoveInternal(sessionId);
@@ -201,6 +219,7 @@ public sealed class AgentSessionManager
         _lastAccessedAt.TryRemove(sessionId, out _);
         _sessionTimeouts.TryRemove(sessionId, out _);
         _waitingEventSessions.TryRemove(sessionId, out _);
-        _loadedToolIds.TryRemove(sessionId, out _);
+        // 工具集合 append-only：不删除已授权工具面（见 CleanupExpired 注释），
+        // 保证进程内跨 1h 超时工具可见集不收缩回 core schema。
     }
 }

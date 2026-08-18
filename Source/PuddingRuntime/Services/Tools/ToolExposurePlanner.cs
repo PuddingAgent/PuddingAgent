@@ -30,6 +30,7 @@ internal static class ToolExposurePlanner
     internal static ToolExposurePlan CreatePlan(
         IReadOnlyList<LlmToolDefinition> availableTools,
         IReadOnlySet<string>? loadedToolIds = null,
+        IReadOnlySet<string>? committedToolIds = null,
         int activationThreshold = DeferredLoadingThreshold)
     {
         ArgumentNullException.ThrowIfNull(availableTools);
@@ -46,8 +47,15 @@ internal static class ToolExposurePlanner
 
         IReadOnlySet<string> loaded = loadedToolIds
             ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        IReadOnlySet<string> committed = committedToolIds
+            ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // 不收缩：已授权集 = loaded ∪ committed。committedToolIds 是 session 已提交的
+        // 不可变工具集合（跨会话清理/重启水合后保持），与进程内渐进发现的 loaded
+        // 取并集，避免任一来源缩回时可见集收缩导致 provider prefix 漂移。
         var visible = stableTools
-            .Where(tool => CoreToolIds.Contains(tool.Name) || loaded.Contains(tool.Name))
+            .Where(tool => CoreToolIds.Contains(tool.Name)
+                || loaded.Contains(tool.Name)
+                || committed.Contains(tool.Name))
             .ToList();
 
         // search_tools is the recovery path. If it disappears because of a registration or

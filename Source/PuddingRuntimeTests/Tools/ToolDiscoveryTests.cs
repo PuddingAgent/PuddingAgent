@@ -66,6 +66,89 @@ public sealed class ToolDiscoveryTests
     }
 
     [TestMethod]
+    public void ExposurePlanner_CommittedToolIds_KeepToolsVisible_WhenLoadedEmpty()
+    {
+        var tools = new List<LlmToolDefinition>
+        {
+            Definition("search_tools"),
+            Definition("goal_read"),
+        };
+        tools.AddRange(Enumerable.Range(0, 28).Select(index => Definition($"deferred_{index:00}")));
+
+        // loadedToolIds 为空（如进程内会话工具面尚未恢复），但 committedToolIds
+        // 携带 session 已提交的工具集合 → 可见集不收缩，仍暴露已授权工具。
+        var committed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "deferred_07",
+            "deferred_19",
+        };
+        var plan = ToolExposurePlanner.CreatePlan(tools, committedToolIds: committed);
+
+        Assert.IsTrue(plan.DeferredLoadingEnabled);
+        var visible = plan.VisibleTools.Select(tool => tool.Name).ToArray();
+        CollectionAssert.Contains(visible, "deferred_07");
+        CollectionAssert.Contains(visible, "deferred_19");
+        CollectionAssert.Contains(visible, "goal_read");
+        CollectionAssert.Contains(visible, "search_tools");
+        CollectionAssert.DoesNotContain(visible, "deferred_03");
+    }
+
+    [TestMethod]
+    public void ExposurePlanner_LoadedAndCommitted_Union_IsAuthorizedSet()
+    {
+        var tools = new List<LlmToolDefinition>
+        {
+            Definition("search_tools"),
+            Definition("goal_read"),
+        };
+        tools.AddRange(Enumerable.Range(0, 28).Select(index => Definition($"deferred_{index:00}")));
+
+        var loaded = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "deferred_01" };
+        var committed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "deferred_02" };
+
+        var plan = ToolExposurePlanner.CreatePlan(tools, loaded, committed);
+
+        var visible = plan.VisibleTools.Select(tool => tool.Name).ToArray();
+        CollectionAssert.Contains(visible, "deferred_01");
+        CollectionAssert.Contains(visible, "deferred_02");
+        CollectionAssert.DoesNotContain(visible, "deferred_03");
+    }
+
+    [TestMethod]
+    public void ExposurePlanner_CommittedToolIds_DoNotChange_SmallSet_Behavior()
+    {
+        var tools = Enumerable.Range(0, 8)
+            .Select(index => Definition($"tool_{index}"))
+            .ToList();
+
+        var plan = ToolExposurePlanner.CreatePlan(
+            tools,
+            committedToolIds: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "tool_3" });
+
+        // 阈值内路径不受 committedToolIds 影响：不启用延迟加载，全量可见
+        Assert.IsFalse(plan.DeferredLoadingEnabled);
+        CollectionAssert.AreEquivalent(
+            tools.Select(tool => tool.Name).ToArray(),
+            plan.VisibleTools.Select(tool => tool.Name).ToArray());
+    }
+
+    [TestMethod]
+    public void ExposurePlanner_WithoutSearchTools_FailsOpen_ToFullSet()
+    {
+        var tools = Enumerable.Range(0, 30)
+            .Select(index => Definition($"tool_{index}"))
+            .ToList();
+
+        // availableTools 无 search_tools → fail-open 返回全量（现有行为不回归）
+        var plan = ToolExposurePlanner.CreatePlan(tools);
+
+        Assert.IsFalse(plan.DeferredLoadingEnabled);
+        CollectionAssert.AreEquivalent(
+            tools.Select(tool => tool.Name).ToArray(),
+            plan.VisibleTools.Select(tool => tool.Name).ToArray());
+    }
+
+    [TestMethod]
     public async Task SearchTools_Returns_Only_Capability_Visible_Matches()
     {
         var services = new ServiceCollection();
