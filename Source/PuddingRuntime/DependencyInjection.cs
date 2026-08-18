@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
@@ -173,8 +174,15 @@ public static class RuntimeServiceExtensions
 
         // P0-5 步骤 1：Composition 不可变持久化存储（SQLite，落 MemoryDbContext 的 CompositionSnapshots 表）。
         // 宿主已注册 IDbContextFactory<MemoryDbContext>（MemoryDbInitializer 同源）；TryAdd 防宿主重复注册。
-        services.TryAddSingleton<ICompositionStore>(sp =>
+                services.TryAddSingleton<ICompositionStore>(sp =>
             new SqliteCompositionStore(sp.GetRequiredService<IDbContextFactory<MemoryDbContext>>()));
+
+        // P0-5 步骤 2：Composition 版本登记表（DI 单例 + 写穿持久化）。
+        // ICompositionStore 可能未注册（宿主/测试环境）→ GetService 返回 null → Persistent 降级纯内存。
+        services.TryAddSingleton<ICompositionVersionRegistry>(sp =>
+            new PersistentCompositionVersionRegistry(
+                sp.GetService<ICompositionStore>(),
+                sp.GetService<ILogger<PersistentCompositionVersionRegistry>>()));
         services.TryAddSingleton<ITerminalCommandPolicy, DefaultTerminalCommandPolicy>();
 
         services.AddSingleton<SessionArchiver>();

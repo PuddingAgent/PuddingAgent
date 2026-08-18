@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Sockets;
@@ -32,7 +32,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     private readonly IAudioArtifactResolver? _audioArtifactResolver;
     private readonly IRuntimeExecutionConfigService? _executionConfig;
     private readonly ILlmGatewayUsageRecorder? _gatewayUsageRecorder;
-    private readonly CompositionVersionRegistry _compositionVersions = new();
+    private readonly ICompositionVersionRegistry _compositionVersions;
 
     public DirectLlmClient(
     IHttpClientFactory httpClientFactory,
@@ -46,7 +46,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     IVisualArtifactResolver? visualArtifactResolver = null,
     IRuntimeExecutionConfigService? executionConfig = null,
     IAudioArtifactResolver? audioArtifactResolver = null,
-    ILlmGatewayUsageRecorder? gatewayUsageRecorder = null)
+    ILlmGatewayUsageRecorder? gatewayUsageRecorder = null,
+    ICompositionVersionRegistry? compositionVersions = null)
     {
         _httpClientFactory = httpClientFactory;
         _llmConfigService = llmConfigService;
@@ -60,6 +61,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         _executionConfig = executionConfig;
         _audioArtifactResolver = audioArtifactResolver;
         _gatewayUsageRecorder = gatewayUsageRecorder;
+        // DI 未注册时回退纯内存登记表（进程内行为与既有实现一致，不依赖持久化 store）。
+        _compositionVersions = compositionVersions ?? new CompositionVersionRegistry();
     }
 
     public async Task<LlmResponse> ChatAsync(

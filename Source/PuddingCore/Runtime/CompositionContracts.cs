@@ -70,3 +70,33 @@ public interface ICompositionStore
     /// <summary>读取 session 全部 composition 记录（CompositionVersion 升序）；无记录时返回空列表。</summary>
     Task<IReadOnlyList<SessionCompositionRecord>> LoadAsync(string sessionId, CancellationToken ct = default);
 }
+
+/// <summary>
+/// Composition 版本观测结果（P0-5 步骤 2）。
+/// <see cref="Version"/> 为该 session 内单调递增的 composition 版本号（相同 hash 组合复用）；
+/// <see cref="ChangeReason"/> 为本次相对上次的变化原因（initial / *_changed / none）。
+/// </summary>
+public readonly record struct CompositionObservation(int Version, string ChangeReason);
+
+/// <summary>
+/// 进程内 composition 版本登记表接口（P0-5 步骤 2）。
+/// 契约放 Core 层，实现（纯内存 / 持久化写穿）放 Runtime 层。
+/// 语义：
+/// - <see cref="Observe"/> 按 (sessionId, systemPromptHash, toolSpecHash) 递增版本，相同组合复用同一版本；
+/// - 只处理 hash 指纹，绝不接收/保存 prompt 或工具 schema 正文；
+/// - 实现可自行决定是否写穿 <see cref="ICompositionStore"/>（写穿失败必须降级为纯内存，不抛给调用方）。
+/// </summary>
+public interface ICompositionVersionRegistry
+{
+    /// <summary>
+    /// 观测一次 composition，返回版本号与变化原因（原子）。
+    /// <paramref name="toolIds"/> 与 <paramref name="permissionEpoch"/> 仅供写穿持久化使用，
+    /// 纯内存实现可忽略；<paramref name="permissionEpoch"/> 变化由调用方显式 +1 触发开新版本。
+    /// </summary>
+    CompositionObservation Observe(
+        string sessionId,
+        string systemPromptHash,
+        string toolSpecHash,
+        IReadOnlyList<string>? toolIds = null,
+        int permissionEpoch = 0);
+}

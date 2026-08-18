@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 
 namespace PuddingRuntime.Services;
 
@@ -82,23 +83,26 @@ public static class CompositionSnapshot
 }
 
 /// <summary>
-/// 进程内 composition 版本登记表：按 (sessionId, systemPromptHash, toolSpecHash) 递增版本，
+/// 进程内 composition 版本登记表（纯内存版）：按 (sessionId, systemPromptHash, toolSpecHash) 递增版本，
 /// 相同组合复用同一版本；并给出本次相对上次的变化原因。线程安全（外层 ConcurrentDictionary，
-/// 每会话内部互斥）；不持久化，进程重启归零可接受。
+/// 每会话内部互斥）。不持久化，进程重启归零；供无 <see cref="ICompositionStore"/> 场景/测试使用。
 /// </summary>
-public sealed class CompositionVersionRegistry
+public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
 {
     private readonly ConcurrentDictionary<string, SessionState> _sessions = new(StringComparer.Ordinal);
 
-    /// <summary>观测一次 composition，返回版本号与变化原因（原子）。</summary>
-    public CompositionObservation Observe(string sessionId, string systemPromptHash, string toolSpecHash)
+    /// <inheritdoc />
+    public CompositionObservation Observe(
+        string sessionId,
+        string systemPromptHash,
+        string toolSpecHash,
+        IReadOnlyList<string>? toolIds = null,
+        int permissionEpoch = 0)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         var state = _sessions.GetOrAdd(sessionId, static _ => new SessionState());
         return state.Observe(systemPromptHash, toolSpecHash);
     }
-
-    public readonly record struct CompositionObservation(int Version, string ChangeReason);
 
     private sealed class SessionState
     {
