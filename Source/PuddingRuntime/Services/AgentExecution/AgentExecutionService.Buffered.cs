@@ -263,10 +263,11 @@ public sealed partial class AgentExecutionService
                 await _contextManager.TryHydrateStreamHistoryFromDbAsync(
                     request.SessionId,
                     persistedHistory,
-                    request.LlmConfig?.MaxInputTokens
+                                        request.LlmConfig?.MaxInputTokens
                         ?? template.Runtime?.MaxContextTokens
                         ?? 8192,
-                    ct);
+                    ct,
+                    query: request.MessageText);
                 if (persistedHistory.Count > 0)
                 {
                     history.AddRange(persistedHistory.Where(message => message.Role != ChatRole.System));
@@ -1798,11 +1799,12 @@ public sealed partial class AgentExecutionService
                 preferDbContextWindow: false,
                 request.WorkspaceId,
                 instance.AgentInstanceId,
-                ct,
-                                maxOutputTokens: effectiveLlmConfig?.MaxOutputTokens,
+                                    ct,
+                maxOutputTokens: effectiveLlmConfig?.MaxOutputTokens,
                 maxInputTokens: effectiveLlmConfig?.MaxInputTokens,
                 agentTemplateId: request.AgentTemplateId,
-                traceId: request.ExecutionIdentity?.TraceId);
+                traceId: request.ExecutionIdentity?.TraceId,
+                query: request.MessageText);
         }
         _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
         _sessionManager.Touch(request.SessionId);

@@ -247,17 +247,21 @@ public sealed class ContextWindowManager
     /// <summary>
     /// 从数据库构建会话上下文窗口（优先供 SSE 流式路径使用）。
     /// V1：按 token 预算（默认 8000）从新到旧取候选，再按旧到新组装，跳过已压缩消息。
+    /// query 非空时，正文命中 query 的旧证据在 Tier 分级时被临时晋升（§8.1 有界晋升），
+    /// 预算紧张时优先保留，避免被冷数据裁剪误伤。
     /// </summary>
     public async Task<List<ChatMessage>> BuildContextFromDbAsync(
         string sessionId,
                 int maxTokenBudget = ContextWindowConstants.DefaultMaxTokenBudget,
-        CancellationToken ct = default)
-        => (await BuildContextFromDbSnapshotAsync(sessionId, maxTokenBudget, ct)).Messages;
+        CancellationToken ct = default,
+        string? query = null)
+        => (await BuildContextFromDbSnapshotAsync(sessionId, maxTokenBudget, ct, query)).Messages;
 
     private async Task<HydratedHistorySnapshot> BuildContextFromDbSnapshotAsync(
         string sessionId,
         int maxTokenBudget = ContextWindowConstants.DefaultMaxTokenBudget,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? query = null)
     {
         if (_memoryDbFactory is null)
             return new([], 0);
@@ -274,7 +278,7 @@ public sealed class ContextWindowManager
         var ordered = entities.OrderBy(m => m.Sequence).ToList();
 
         // Tier 化分级：user 消息为轮次边界，最后 user 轮视为当前轮（T0），保证最近轮全保真。
-        var inputs = MapToTierInputs(ordered);
+        var inputs = MapToTierInputs(ordered, query);
         var plan = _tierPlanner.Plan(inputs, options: null);
         var assignments = plan.Assignments;
 
@@ -334,7 +338,8 @@ public sealed class ContextWindowManager
         string sessionId,
         List<ChatMessage> history,
         int maxTokenBudget,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? query = null)
     {
         try
         {
@@ -359,7 +364,7 @@ public sealed class ContextWindowManager
 
             if (_memoryDbFactory is not null)
             {
-                var dbHistory = await BuildContextFromDbSnapshotAsync(sessionId, maxTokenBudget, ct);
+                var dbHistory = await BuildContextFromDbSnapshotAsync(sessionId, maxTokenBudget, ct, query);
                 if (dbHistory.Messages.Count > 0)
                 {
                     hydrated = dbHistory;
@@ -489,7 +494,8 @@ public sealed class ContextWindowManager
         int maxTokenBudget,
         bool preferDbContextWindow,
         CancellationToken ct,
-        string? traceId = null)
+        string? traceId = null,
+        string? query = null)
         => await TrimHistoryAsync(
             sessionId,
             history,
@@ -498,7 +504,8 @@ public sealed class ContextWindowManager
             workspaceId: null,
             agentId: null,
             ct,
-            traceId: traceId);
+            traceId: traceId,
+            query: query);
 
     public async Task TrimHistoryAsync(
         string sessionId,
@@ -511,7 +518,8 @@ public sealed class ContextWindowManager
         int? maxOutputTokens = null,
         int? maxInputTokens = null,
         string? agentTemplateId = null,
-        string? traceId = null)
+        string? traceId = null,
+        string? query = null)
     {
         var autoCompacted = await TryAutoCompactAsync(
             sessionId,
@@ -528,7 +536,7 @@ public sealed class ContextWindowManager
         {
             try
             {
-                var dbHistory = await BuildContextFromDbAsync(sessionId, maxTokenBudget, ct);
+                var dbHistory = await BuildContextFromDbAsync(sessionId, maxTokenBudget, ct, query);
                 if (dbHistory.Count > 0)
                 {
                     var system = history.FirstOrDefault(m => m.Role == ChatRole.System);
@@ -548,7 +556,7 @@ public sealed class ContextWindowManager
             }
         }
 
-        TrimHistory(history, maxTokenBudget);
+        TrimHistory(history, maxTokenBudget, query);
     }
 
     private bool _compactionServiceNullLogged;
@@ -965,7 +973,7 @@ public sealed class ContextWindowManager
     private static string BuildAutoCompactionMetricSummary(string name, string status) =>
         $"{name} {status}";
 
-        public void TrimHistory(List<ChatMessage> history, int maxTokenBudget)
+        public void TrimHistory(List<ChatMessage> history, int maxTokenBudget, string? query = null)
     {
         // Proportional to token budget (~2500 tokens/msg), floor at 40.
         // A 1M window → 400 messages; a 128k window → 51 messages.
@@ -979,7 +987,7 @@ public sealed class ContextWindowManager
         {
             // Tier 化裁剪：从最冷 tier 的最旧消息开始裁，直到条数 ≤ maxMessages；
             // 替代旧的扁平 TakeLast（无差别保最近 N 条）。
-            var inputs = MapToTierInputs(nonSystem);
+            var inputs = MapToTierInputs(nonSystem, query);
             var assignments = _tierPlanner.Plan(inputs, options: null).Assignments;
             var removeCount = nonSystem.Count - maxMessages;
 
@@ -1009,36 +1017,48 @@ public sealed class ContextWindowManager
     /// <summary>
     /// 把有序 <see cref="MessageEntity"/> 列表映射为 TierPlanner 输入（v1）。
     /// 规则：Role == "user" 作为轮次边界（0-based 递增），最后 user 轮视为当前轮（T0）；
-    /// IsQueryHit 恒 false（DB 快照无当前 query 上下文）；AtomicGroupId 恒 null（原子组留 Task E）。
+    /// query 命中（正文包含 query 的有效 token）→ IsQueryHit=true；AtomicGroupId 恒 null（原子组留 Task E）。
     /// </summary>
-    private static List<TierPlannerSegmentInput> MapToTierInputs(IReadOnlyList<MessageEntity> entities)
+    private static List<TierPlannerSegmentInput> MapToTierInputs(
+        IReadOnlyList<MessageEntity> entities,
+        string? query = null)
         => BuildTierInputs(
             entities,
             segmentIdSelector: (e, _) => e.MessageId,
-            isUserBoundary: e => string.Equals(e.Role, "user", StringComparison.OrdinalIgnoreCase));
+            isUserBoundary: e => string.Equals(e.Role, "user", StringComparison.OrdinalIgnoreCase),
+            contentSelector: e => e.Content ?? string.Empty,
+            query);
 
     /// <summary>
     /// TrimHistory 专用：ChatMessage 无 MessageId，用稳定索引字符串作为 SegmentId。
     /// </summary>
-    private static List<TierPlannerSegmentInput> MapToTierInputs(IReadOnlyList<ChatMessage> messages)
+    private static List<TierPlannerSegmentInput> MapToTierInputs(
+        IReadOnlyList<ChatMessage> messages,
+        string? query = null)
         => BuildTierInputs(
             messages,
             segmentIdSelector: (_, i) => i.ToString(CultureInfo.InvariantCulture),
-            isUserBoundary: m => m.Role == ChatRole.User);
+            isUserBoundary: m => m.Role == ChatRole.User,
+            contentSelector: m => m.Content ?? string.Empty,
+            query);
 
     /// <summary>
     /// 通用轮次推导：按序遇到 user 边界开启新轮（0-based），消息归属当前轮；
-    /// 最后 user 轮标记为当前轮（IsCurrentTurn → T0），保证最近一轮全保真。
+    /// 最后 user 轮标记为当前轮（IsCurrentTurn → T0），保证最近一轮全保真；
+    /// query 非空时正文包含命中串的消息标记 IsQueryHit（由 ContextTierPlanner 有界晋升）。
     /// 输出与输入同序。
     /// </summary>
     private static List<TierPlannerSegmentInput> BuildTierInputs<T>(
         IReadOnlyList<T> items,
         Func<T, int, string> segmentIdSelector,
-        Func<T, bool> isUserBoundary)
+        Func<T, bool> isUserBoundary,
+        Func<T, string> contentSelector,
+        string? query = null)
     {
         var inputs = new List<TierPlannerSegmentInput>(items.Count);
         var turnOrdinal = -1;       // 遇到第一条 user 后从 0 开始
         var lastUserTurn = -1;      // 最后一条 user 开启的轮号（无 user 时为 -1）
+        var queryHits = ExtractQueryHits(query);
 
         for (var i = 0; i < items.Count; i++)
         {
@@ -1049,11 +1069,16 @@ public sealed class ContextWindowManager
                 lastUserTurn = turnOrdinal;
             }
 
+            var content = contentSelector(items[i]) ?? string.Empty;
+            var isQueryHit = queryHits.Count > 0
+                && content.Length > 0
+                && queryHits.Any(hit => content.Contains(hit, StringComparison.OrdinalIgnoreCase));
+
             inputs.Add(new TierPlannerSegmentInput(
                 segmentIdSelector(items[i], i),
                 turnOrdinal,
                 IsCurrentTurn: false,
-                IsQueryHit: false,
+                IsQueryHit: isQueryHit,
                 AtomicGroupId: null));
         }
 
@@ -1067,6 +1092,46 @@ public sealed class ContextWindowManager
         }
 
         return inputs;
+    }
+
+    /// <summary>
+    /// 从当前用户 query 提取「命中串」列表（纯内存、确定性、无 I/O）：
+    /// 按空白/常见标点切分 → 小写 → 过滤长度 &lt; 2 或纯数字/纯符号的 token → 去重。
+    /// query 为 null/空白 → 空列表；无有效 token → 以 query 整体小写作为单一命中串。
+    /// </summary>
+    internal static IReadOnlyList<string> ExtractQueryHits(string? query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            return Array.Empty<string>();
+
+        const string Separators = " \t\r\n,，。;；:：.！!？?()（）[]【】{}<>《》\"'\"'-_/\\|@#$%^&*+=~`";
+
+        var tokens = query
+            .Split(Separators.ToCharArray(), StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(t => t.ToLowerInvariant())
+            .Where(t => t.Length >= 2 && !IsNumericOrSymbolOnly(t))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (tokens.Count == 0)
+        {
+            var fallback = query.Trim().ToLowerInvariant();
+            return string.IsNullOrWhiteSpace(fallback) ? Array.Empty<string>() : [fallback];
+        }
+
+        return tokens;
+    }
+
+    /// <summary>token 是否不含任何字母/表意字符（纯数字或纯符号）→ 无检索语义，应过滤。</summary>
+    private static bool IsNumericOrSymbolOnly(string token)
+    {
+        foreach (var c in token)
+        {
+            if (char.IsLetter(c))
+                return false;
+        }
+
+        return true;
     }
 
     private static List<ChatMessage> SanitizeForLlmContext(IEnumerable<ChatMessage> source)

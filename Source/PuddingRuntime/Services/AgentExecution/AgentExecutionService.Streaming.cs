@@ -149,7 +149,8 @@ public sealed partial class AgentExecutionService
                 request.SessionId,
                 history,
                 template.Runtime?.MaxContextTokens ?? 8000,
-                ct);
+                ct,
+                query: request.MessageText);
             perfHistorySw.Stop();
             await RecordActivityAsync(
                 streamTrace,
@@ -1433,7 +1434,8 @@ public sealed partial class AgentExecutionService
                     maxOutputTokens: effectiveLlmConfig?.MaxOutputTokens,
                     maxInputTokens: effectiveLlmConfig?.MaxInputTokens,
                     agentTemplateId: request.AgentTemplateId,
-                    traceId: request.ExecutionIdentity?.TraceId);
+                    traceId: request.ExecutionIdentity?.TraceId,
+                    query: request.MessageText);
             }
             _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
             _sessionManager.Touch(request.SessionId);

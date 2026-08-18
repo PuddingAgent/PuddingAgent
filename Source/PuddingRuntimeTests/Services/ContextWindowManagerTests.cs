@@ -637,6 +637,146 @@ public sealed class ContextWindowManagerTests
         Assert.IsTrue(history.Any(m => m.Content == "turn9-a6"), "最后一条必须保留");
     }
 
+    [TestMethod]
+    public void ExtractQueryHits_NullOrWhitespace_ReturnsEmpty()
+    {
+        Assert.AreEqual(0, ContextWindowManager.ExtractQueryHits(null).Count);
+        Assert.AreEqual(0, ContextWindowManager.ExtractQueryHits(string.Empty).Count);
+        Assert.AreEqual(0, ContextWindowManager.ExtractQueryHits("   ").Count);
+    }
+
+    [TestMethod]
+    public void ExtractQueryHits_FiltersNumericAndSymbolTokens_KeepsMeaningfulOnes()
+    {
+        var hits = ContextWindowManager.ExtractQueryHits("Token 优化 缓存 命中率 123 !!!");
+
+        // "123"（纯数字）与 "!!!"（纯符号）无检索语义 → 过滤；其余小写保留。
+        CollectionAssert.AreEquivalent(new[] { "token", "优化", "缓存", "命中率" }, hits.ToList());
+    }
+
+    [TestMethod]
+    public void ExtractQueryHits_NoValidToken_FallsBackToWholeQuery()
+    {
+        var numeric = ContextWindowManager.ExtractQueryHits("12345");
+        CollectionAssert.AreEqual(new[] { "12345" }, numeric.ToList());
+
+        var symbols = ContextWindowManager.ExtractQueryHits("!!!??");
+        CollectionAssert.AreEqual(new[] { "!!!??" }, symbols.ToList());
+    }
+
+    [TestMethod]
+    public void ExtractQueryHits_DeduplicatesTokens_IgnoreCase()
+    {
+        var hits = ContextWindowManager.ExtractQueryHits("Token token TOKEN 优化");
+
+        CollectionAssert.AreEquivalent(new[] { "token", "优化" }, hits.ToList());
+    }
+
+    [TestMethod]
+    public void TrimHistory_QueryHit_PromotesMatchedOldTurn_OverUnmatched()
+    {
+        var manager = CreateManager();
+        var history = new List<ChatMessage> { new(ChatRole.System, "system") };
+        history.AddRange(CreateTenTurnHistory(hitTurn0: true));
+
+        // 80 条非 system；maxMessages=40 → 裁 40 条。
+        // turn0 整轮正文都含 "缓存命中率" → query 命中后整轮晋升 T1，免于 T2 裁剪。
+        manager.TrimHistory(history, maxTokenBudget: 100_000, query: "缓存命中率 优化");
+
+        Assert.AreEqual(41, history.Count);
+        Assert.IsTrue(history.Any(m => m.Content?.StartsWith("turn0-", StringComparison.Ordinal) == true),
+            "query 命中的旧轮必须晋升保留");
+    }
+
+    [TestMethod]
+    public void TrimHistory_QueryNull_BehavesLikeBefore_AndCutsColdestTurn()
+    {
+        var manager = CreateManager();
+        var history = new List<ChatMessage> { new(ChatRole.System, "system") };
+        history.AddRange(CreateTenTurnHistory(hitTurn0: true));
+
+        // query 默认 null（旧调用方式）：命中判定关闭，turn0 照常被裁 → 与改造前一致。
+        manager.TrimHistory(history, maxTokenBudget: 100_000);
+
+        Assert.AreEqual(41, history.Count);
+        Assert.IsFalse(history.Any(m => m.Content?.StartsWith("turn0-", StringComparison.Ordinal) == true),
+            "query=null 时旧轮照常被裁（回归）");
+        Assert.IsTrue(history.Any(m => m.Content == "turn6-user"), "保底后的最近轮必须保留");
+    }
+
+    [TestMethod]
+    public async Task BuildContextFromDbAsync_QueryHit_PromotesColdTurn_WhenBudgetIsTight()
+    {
+        // 5 轮（user+agent），每条约 100~101 tokens；预算 704：
+        // T0(turn4)=201 + T1(turn2/turn3)=402 → 603，T2 内只够 1 条（Sequence 降序 → turn1-agent）。
+        // 无 query：turn0（T2 最冷）全裁，turn1-agent（Sequence 较新）抢到 T2 名额。
+        // query 命中 turn0-user → 晋升进 T1（T0+T1=703 ≤ 704）→ turn0-user 保留，turn1 全裁；turn0-agent 未命中仍被裁。
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedTieredMessagesAsync(db, "session-query-hit", [
+            ("user", "turn0-user 缓存命中率 " + new string('x', 285)),
+            ("agent", "turn0-agent " + new string('x', 291)),
+            ("user", "turn1-user " + new string('x', 291)),
+            ("agent", "turn1-agent " + new string('x', 291)),
+            ("user", "turn2-user " + new string('x', 291)),
+            ("agent", "turn2-agent " + new string('x', 291)),
+            ("user", "turn3-user " + new string('x', 291)),
+            ("agent", "turn3-agent " + new string('x', 291)),
+            ("user", "turn4-user " + new string('x', 291)),
+            ("agent", "turn4-agent " + new string('x', 291)),
+        ]);
+
+        var manager = CreateManager(null, new TestMemoryDbContextFactory(options));
+
+        // 1) 无 query：turn0（最冷 T2）被裁，turn1-agent（Sequence 较新）抢到 T2 名额
+        var baseline = await manager.BuildContextFromDbAsync("session-query-hit", maxTokenBudget: 704);
+        Assert.IsFalse(baseline.Any(m => m.Content?.StartsWith("turn0-", StringComparison.Ordinal) == true),
+            "无 query 时 turn0 必须被裁");
+        Assert.IsTrue(baseline.Any(m => m.Content?.StartsWith("turn1-agent", StringComparison.Ordinal) == true),
+            "无 query 时 turn1-agent 抢到 T2 名额");
+
+        // 2) query 命中 turn0-user → 晋升 T1，turn0-user 保留；turn1 未命中且预算紧张 → 全裁
+        var promoted = await manager.BuildContextFromDbAsync("session-query-hit", maxTokenBudget: 704, query: "缓存命中率 提升");
+        Assert.IsTrue(promoted.Any(m => m.Content?.StartsWith("turn0-user", StringComparison.Ordinal) == true),
+            "query 命中后 turn0-user 必须晋升保留");
+        Assert.IsFalse(promoted.Any(m => m.Content?.StartsWith("turn1-", StringComparison.Ordinal) == true),
+            "query 未命中的 turn1 在预算紧张时必须被裁");
+        Assert.IsFalse(promoted.Any(m => m.Content?.StartsWith("turn0-agent", StringComparison.Ordinal) == true),
+            "turn0-agent 未命中不得晋升，预算紧张时仍被裁");
+    }
+
+    /// <summary>
+    /// 构造 10 轮 × 8 条（user + 7 assistant）历史；hitTurn0=true 时 turn0 整轮正文含 "缓存命中率"。
+    /// </summary>
+    private static List<ChatMessage> CreateTenTurnHistory(bool hitTurn0)
+    {
+        var history = new List<ChatMessage>();
+        if (hitTurn0)
+        {
+            history.Add(new ChatMessage(ChatRole.User, "turn0-user 缓存命中率"));
+            for (var j = 0; j < 7; j++)
+                history.Add(new ChatMessage(ChatRole.Assistant, $"turn0-缓存命中率-a{j}"));
+        }
+        else
+        {
+            history.Add(new ChatMessage(ChatRole.User, "turn0-user"));
+            for (var j = 0; j < 7; j++)
+                history.Add(new ChatMessage(ChatRole.Assistant, $"turn0-a{j}"));
+        }
+
+        for (var turn = 1; turn < 10; turn++)
+        {
+            history.Add(new ChatMessage(ChatRole.User, $"turn{turn}-user"));
+            for (var j = 0; j < 7; j++)
+                history.Add(new ChatMessage(ChatRole.Assistant, $"turn{turn}-a{j}"));
+        }
+
+        return history;
+    }
+
 
     [TestMethod]
     public async Task TryHydrateStreamHistoryFromDbAsync_Keeps_InMemoryHistory_When_PersistedContextIsShorter()
