@@ -143,6 +143,21 @@ public static class CompositionSnapshot
         return ComputeCanonicalSystemPrefixHash(layers);
     }
 
+    /// <summary>
+    /// 计算 L2 SKILLS 层的 Skill Manifest 版本指纹（P0-5 step 6b）。
+    /// 对完整 system prompt 中 <c>--- CONTEXT-LAYER: L2-SKILLS ---</c> 层的文本内容做 SHA-256（小写 hex），
+    /// 作为 skill_manifest_hash 遥测维度与 Skill Manifest 版本归因依据；
+    /// 提取不到该层（或 prompt 为 null/空白）时返回 null。
+    /// </summary>
+    public static string? ComputeSkillManifestHashFromPrompt(string? fullSystemPrompt)
+    {
+        if (string.IsNullOrWhiteSpace(fullSystemPrompt))
+            return null;
+
+        var content = ExtractLayerContent(fullSystemPrompt, "L2-SKILLS");
+        return content is null ? null : Sha256Hex(content);
+    }
+
     /// <summary>从完整组装字符串中提取指定 CONTEXT-LAYER 层的内容（与 ContextPipeline 语义一致）。</summary>
     private static string? ExtractLayerContent(string fullAssembly, string layerName)
     {

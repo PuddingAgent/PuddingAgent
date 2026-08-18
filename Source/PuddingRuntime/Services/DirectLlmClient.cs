@@ -970,9 +970,9 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 messages.Where(m => m.Role == ChatRole.System).Select(m => m.Content ?? string.Empty));
             var permissionFingerprint = CompositionSnapshot.ComputePermissionFingerprint(toolIds);
             var canonicalSystemPrefixHash = CompositionSnapshot.ComputeCanonicalSystemPrefixHashFromPrompt(fullSystemPrompt);
-            // P0-5 step 6：skillManifestHash 的 L2 计算为独立残留项（本轮不实现），先以 null 占位；
-            // 遥测维度补 permission_epoch / tool_count / skill_manifest_hash，保证归因维度键恒定。
-            string? skillManifestHash = null;
+            // P0-5 step 6b：skillManifestHash 取 L2 SKILLS 层文本的 SHA-256（Skill Manifest 版本指纹），
+            // 提取不到该层时返回 null（遥测维度回退为空串，归因维度键保持恒定）。
+            var skillManifestHash = CompositionSnapshot.ComputeSkillManifestHashFromPrompt(fullSystemPrompt);
             var observation = _compositionVersions.Observe(
                 sessionId,
                 systemPromptHash,

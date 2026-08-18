@@ -362,4 +362,43 @@ public sealed class CompositionSnapshotTests
         Assert.IsNull(CompositionSnapshot.ComputeCanonicalSystemPrefixHashFromPrompt(""));
         Assert.IsNull(CompositionSnapshot.ComputeCanonicalSystemPrefixHashFromPrompt("no static layers here"));
     }
+
+    // ── P0-5 step 6b：L2 SKILLS 层 skillManifestHash ──
+
+    [TestMethod]
+    public void ComputeSkillManifestHashFromPrompt_WithL2Layer_ReturnsSha256Hex()
+    {
+        var prompt = "--- CONTEXT-LAYER: L0-STATIC ---\nstatic\n" +
+                     "--- CONTEXT-LAYER: L2-SKILLS ---\nskill-a\nskill-b\n" +
+                     "--- CONTEXT-LAYER: L3-WORKSPACE-ENVIRONMENT ---\nworkspace";
+
+        var hash = CompositionSnapshot.ComputeSkillManifestHashFromPrompt(prompt);
+
+        Assert.IsNotNull(hash);
+        Assert.AreEqual(64, hash!.Length);
+        Assert.AreEqual(hash, hash.ToLowerInvariant());
+    }
+
+    [TestMethod]
+    public void ComputeSkillManifestHashFromPrompt_SameL2Layer_SameHash_ChangedL2Layer_DifferentHash()
+    {
+        var a = "--- CONTEXT-LAYER: L2-SKILLS ---\nskill-a\nskill-b\n--- CONTEXT-LAYER: L3-WORKSPACE-ENVIRONMENT ---\nws";
+        var same = "--- CONTEXT-LAYER: L2-SKILLS ---\nskill-a\nskill-b\n--- CONTEXT-LAYER: L4-PINNED ---\nchanged";
+        var changed = "--- CONTEXT-LAYER: L2-SKILLS ---\nskill-a\nskill-b-changed\n--- CONTEXT-LAYER: L3-WORKSPACE-ENVIRONMENT ---\nws";
+
+        Assert.AreEqual(
+            CompositionSnapshot.ComputeSkillManifestHashFromPrompt(a),
+            CompositionSnapshot.ComputeSkillManifestHashFromPrompt(same));
+        Assert.AreNotEqual(
+            CompositionSnapshot.ComputeSkillManifestHashFromPrompt(a),
+            CompositionSnapshot.ComputeSkillManifestHashFromPrompt(changed));
+    }
+
+    [TestMethod]
+    public void ComputeSkillManifestHashFromPrompt_NoL2Layer_ReturnsNull()
+    {
+        Assert.IsNull(CompositionSnapshot.ComputeSkillManifestHashFromPrompt(null));
+        Assert.IsNull(CompositionSnapshot.ComputeSkillManifestHashFromPrompt(""));
+        Assert.IsNull(CompositionSnapshot.ComputeSkillManifestHashFromPrompt("--- CONTEXT-LAYER: L0-STATIC ---\nstatic"));
+    }
 }
