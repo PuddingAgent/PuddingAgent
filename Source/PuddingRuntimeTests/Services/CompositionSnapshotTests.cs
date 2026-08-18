@@ -249,4 +249,117 @@ public sealed class CompositionSnapshotTests
         var reg = new CompositionVersionRegistry();
         Assert.ThrowsExactly<ArgumentException>(() => reg.Observe(" ", "sys", "tool"));
     }
+
+    // ── P0-5 step 4c：权限指纹检测 +1 / 开新版本 ─────
+
+    [TestMethod]
+    public void Registry_PermissionFingerprintChange_IncrementsEpochAndOpensNewVersion()
+    {
+        var reg = new CompositionVersionRegistry();
+        var first = reg.Observe("s", "sys", "tool", permissionFingerprint: "fp-1");
+        var second = reg.Observe("s", "sys", "tool", permissionFingerprint: "fp-2");
+
+        Assert.AreEqual(1, first.Version);
+        Assert.AreEqual(2, second.Version);
+        Assert.AreEqual(1, second.PermissionEpoch);
+        Assert.IsTrue(second.ChangeReason.Contains("permission_changed"));
+    }
+
+    [TestMethod]
+    public void Registry_SamePermissionFingerprint_ReusesVersion()
+    {
+        var reg = new CompositionVersionRegistry();
+        var first = reg.Observe("s", "sys", "tool", permissionFingerprint: "fp-1");
+        var second = reg.Observe("s", "sys", "tool", permissionFingerprint: "fp-1");
+
+        Assert.AreEqual(1, second.Version);
+        Assert.AreEqual(0, second.PermissionEpoch);
+        Assert.AreEqual("none", second.ChangeReason);
+    }
+
+    [TestMethod]
+    public void Registry_NullPermissionFingerprint_NoEpochChange()
+    {
+        var reg = new CompositionVersionRegistry();
+        reg.Observe("s", "sys", "tool");
+        var second = reg.Observe("s", "sys", "tool");
+
+        Assert.AreEqual(0, second.PermissionEpoch);
+        Assert.AreEqual(1, second.Version);
+    }
+
+    // ── P0-5 step 4c：权限指纹 / L0 静态层缓存键 ─────
+
+    [TestMethod]
+    public void ComputePermissionFingerprint_OrderAndDuplicateInsensitive()
+    {
+        var a = new[] { "tool_b", "tool_a", "tool_b" };
+        var b = new[] { "tool_a", "tool_b" };
+        Assert.AreEqual(
+            CompositionSnapshot.ComputePermissionFingerprint(a),
+            CompositionSnapshot.ComputePermissionFingerprint(b));
+    }
+
+    [TestMethod]
+    public void ComputePermissionFingerprint_DifferentSet_Changes()
+    {
+        Assert.AreNotEqual(
+            CompositionSnapshot.ComputePermissionFingerprint(new[] { "tool_a", "tool_b" }),
+            CompositionSnapshot.ComputePermissionFingerprint(new[] { "tool_a", "tool_c" }));
+    }
+
+    [TestMethod]
+    public void ComputePermissionFingerprint_NullOrEmpty_ReturnsNull()
+    {
+        Assert.IsNull(CompositionSnapshot.ComputePermissionFingerprint(null));
+        Assert.IsNull(CompositionSnapshot.ComputePermissionFingerprint(Array.Empty<string>()));
+    }
+
+    [TestMethod]
+    public void ComputeCanonicalSystemPrefixHash_Empty_ReturnsNull()
+    {
+        Assert.IsNull(CompositionSnapshot.ComputeCanonicalSystemPrefixHash(new Dictionary<string, string>()));
+        Assert.IsNull(CompositionSnapshot.ComputeCanonicalSystemPrefixHash(null));
+    }
+
+    [TestMethod]
+    public void ComputeCanonicalSystemPrefixHash_OrderInsensitive_IgnoresNonStaticLayers()
+    {
+        var a = new Dictionary<string, string>
+        {
+            ["L0-STATIC"] = "content-a",
+            ["L1-TOOLS"] = "tools",
+            ["L9-INBOUND"] = "ignored",
+        };
+        var b = new Dictionary<string, string>
+        {
+            ["L1-TOOLS"] = "tools",
+            ["L0-STATIC"] = "content-a",
+        };
+
+        var hashA = CompositionSnapshot.ComputeCanonicalSystemPrefixHash(a);
+        var hashB = CompositionSnapshot.ComputeCanonicalSystemPrefixHash(b);
+        Assert.IsNotNull(hashA);
+        Assert.AreEqual(hashA, hashB);
+    }
+
+    [TestMethod]
+    public void ComputeCanonicalSystemPrefixHashFromPrompt_ExtractsStaticLayersOnly()
+    {
+        var prompt1 = "--- CONTEXT-LAYER: L0-STATIC ---\nstatic content\n--- CONTEXT-LAYER: L1-TOOLS ---\ntools content\n--- CONTEXT-LAYER: L9-INBOUND ---\ndynamic content";
+        var prompt2 = "--- CONTEXT-LAYER: L0-STATIC ---\nstatic content\n--- CONTEXT-LAYER: L1-TOOLS ---\ntools content\n--- CONTEXT-LAYER: L9-INBOUND ---\nchanged dynamic content";
+
+        var h1 = CompositionSnapshot.ComputeCanonicalSystemPrefixHashFromPrompt(prompt1);
+        var h2 = CompositionSnapshot.ComputeCanonicalSystemPrefixHashFromPrompt(prompt2);
+        Assert.IsNotNull(h1);
+        Assert.AreEqual(h1, h2);
+    }
+
+    [TestMethod]
+    public void ComputeCanonicalSystemPrefixHashFromPrompt_NoStaticLayers_ReturnsNull()
+    {
+        Assert.IsNull(CompositionSnapshot.ComputeCanonicalSystemPrefixHashFromPrompt(null));
+        Assert.IsNull(CompositionSnapshot.ComputeCanonicalSystemPrefixHashFromPrompt(""));
+        Assert.IsNull(CompositionSnapshot.ComputeCanonicalSystemPrefixHashFromPrompt("no static layers here"));
+    }
 }

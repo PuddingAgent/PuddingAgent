@@ -964,13 +964,21 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             var toolSpecHash = CompositionSnapshot.ComputeToolSpecHash(tools);
             var prefixHash = CompositionSnapshot.ComputePrefixHash(systemPromptHash, toolSpecHash);
             var toolIds = tools?.Select(t => t.Name).ToList();
+            // P0-5 step 4c：计算权限指纹（当前工具授权集）与 L0 静态层缓存键，
+            // 传入 Observe 使 permissionEpoch 检测自增与 canonical prefix 持久化生效。
+            var fullSystemPrompt = string.Join('\n',
+                messages.Where(m => m.Role == ChatRole.System).Select(m => m.Content ?? string.Empty));
+            var permissionFingerprint = CompositionSnapshot.ComputePermissionFingerprint(toolIds);
+            var canonicalSystemPrefixHash = CompositionSnapshot.ComputeCanonicalSystemPrefixHashFromPrompt(fullSystemPrompt);
             var observation = _compositionVersions.Observe(
                 sessionId,
                 systemPromptHash,
                 toolSpecHash,
                 toolIds,
                 permissionEpoch: 0,
-                skillManifestHash: null);
+                skillManifestHash: null,
+                permissionFingerprint: permissionFingerprint,
+                canonicalSystemPrefixHash: canonicalSystemPrefixHash);
 
             var dimensions = new Dictionary<string, string>
             {

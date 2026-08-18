@@ -80,6 +80,106 @@ public static class CompositionSnapshot
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(text ?? string.Empty));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
+
+    // ── L0 静态层缓存键（P0-5 step 4c）──────────────────────
+
+    /// <summary>
+    /// L0 静态层固定顺序（CONTEXT-LAYER 标记名）。
+    /// 语义：这些层不随会话动态变化（STATIC/ENVIRONMENT/AGENTS-ROSTER/TOOLS/SKILLS/WORKSPACE-ENVIRONMENT），
+    /// 其稳定序列化的 SHA-256 作为 <see cref="SessionCompositionRecord.CanonicalSystemPrefixHash"/> 缓存键。
+    /// </summary>
+    public static readonly IReadOnlyList<string> CanonicalStaticLayerNames =
+    [
+        "L0-STATIC",
+        "L0-ENVIRONMENT",
+        "L0-AGENTS-ROSTER",
+        "L1-TOOLS",
+        "L2-SKILLS",
+        "L3-WORKSPACE-ENVIRONMENT",
+    ];
+
+    /// <summary>
+    /// 计算 L0 静态层缓存键（P0-5 step 4c）。
+    /// 只取 <see cref="CanonicalStaticLayerNames"/> 中存在的层，按固定层序拼接
+    /// <c>layerName + '\u001f' + content</c>（分隔符不与 hex 冲突）后 SHA-256。
+    /// 相同层集合无论构造顺序如何都得到相同 hash（内部按固定层序遍历）；
+    /// 没有任何静态层时返回 null。
+    /// </summary>
+    public static string? ComputeCanonicalSystemPrefixHash(IReadOnlyDictionary<string, string> staticLayers)
+    {
+        if (staticLayers is null || staticLayers.Count == 0)
+            return null;
+
+        var canonical = new List<string>(CanonicalStaticLayerNames.Count);
+        foreach (var layerName in CanonicalStaticLayerNames)
+        {
+            if (staticLayers.TryGetValue(layerName, out var content))
+                canonical.Add(layerName + "\u001f" + (content ?? string.Empty));
+        }
+
+        if (canonical.Count == 0)
+            return null;
+
+        return Sha256Hex(string.Join('\n', canonical));
+    }
+
+    /// <summary>
+    /// 从完整系统提示词（含 <c>--- CONTEXT-LAYER: xxx ---</c> 标记）提取 L0 静态层内容并计算缓存键。
+    /// 找不到任何静态层标记时返回 null。
+    /// </summary>
+    public static string? ComputeCanonicalSystemPrefixHashFromPrompt(string? fullSystemPrompt)
+    {
+        if (string.IsNullOrWhiteSpace(fullSystemPrompt))
+            return null;
+
+        var layers = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var layerName in CanonicalStaticLayerNames)
+        {
+            var content = ExtractLayerContent(fullSystemPrompt, layerName);
+            if (content is not null)
+                layers[layerName] = content;
+        }
+
+        return ComputeCanonicalSystemPrefixHash(layers);
+    }
+
+    /// <summary>从完整组装字符串中提取指定 CONTEXT-LAYER 层的内容（与 ContextPipeline 语义一致）。</summary>
+    private static string? ExtractLayerContent(string fullAssembly, string layerName)
+    {
+        var marker = $"--- CONTEXT-LAYER: {layerName} ---";
+        var idx = fullAssembly.IndexOf(marker, StringComparison.Ordinal);
+        if (idx < 0)
+            return null;
+
+        var nextMarker = "--- CONTEXT-LAYER:";
+        var nextIdx = fullAssembly.IndexOf(nextMarker, idx + marker.Length, StringComparison.Ordinal);
+        if (nextIdx < 0)
+            nextIdx = fullAssembly.Length;
+
+        return fullAssembly[idx..nextIdx].TrimEnd();
+    }
+
+    /// <summary>
+    /// 计算权限集合的稳定指纹（P0-5 step 4c）。
+    /// 输入为当前生效的工具 ID 集合（授权/能力过滤后的可见投影，append-only 会话集合取当前授权可见集），
+    /// 有序去重后以 '\u001f' 拼接 SHA-256；集合顺序不影响结果。用于注册表检测权限/工具授权变化。
+    /// </summary>
+    public static string? ComputePermissionFingerprint(IEnumerable<string>? toolIds)
+    {
+        if (toolIds is null)
+            return null;
+
+        var ordered = toolIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+
+        if (ordered.Length == 0)
+            return null;
+
+        return Sha256Hex(string.Join('\u001f', ordered));
+    }
 }
 
 /// <summary>
@@ -98,11 +198,13 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
         string toolSpecHash,
         IReadOnlyList<string>? toolIds = null,
         int permissionEpoch = 0,
-        string? skillManifestHash = null)
+        string? skillManifestHash = null,
+        string? permissionFingerprint = null,
+        string? canonicalSystemPrefixHash = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         var state = _sessions.GetOrAdd(sessionId, static _ => new SessionState());
-        return state.Observe(systemPromptHash, toolSpecHash);
+        return state.Observe(systemPromptHash, toolSpecHash, permissionEpoch, permissionFingerprint);
     }
 
     private sealed class SessionState
@@ -112,16 +214,48 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
         private int _nextVersion = 1;
         private string _lastSystemPromptHash = string.Empty;
         private string _lastToolSpecHash = string.Empty;
+        private string? _lastPermissionFingerprint;
+        private int _permissionEpoch;
         private bool _hasLast;
 
-        public CompositionObservation Observe(string systemPromptHash, string toolSpecHash)
+        public CompositionObservation Observe(
+            string systemPromptHash,
+            string toolSpecHash,
+            int permissionEpoch,
+            string? permissionFingerprint)
         {
             lock (_gate)
             {
                 var changeReason = DetectChangeReason(systemPromptHash, toolSpecHash);
 
+                // P0-5 step 4c：权限/工具授权指纹检测。
+                // 指纹非空且与上次不同 → 权限纪元 +1（显式传入 epoch 作为下限），并上报 permission_changed。
+                var permissionChanged = permissionFingerprint is not null
+                    && _hasLast
+                    && !string.Equals(_lastPermissionFingerprint, permissionFingerprint, StringComparison.Ordinal);
+                if (permissionChanged)
+                {
+                    _permissionEpoch = Math.Max(_permissionEpoch + 1, permissionEpoch);
+                    changeReason = AppendChangeReason(changeReason, "permission_changed");
+                }
+                else
+                {
+                    // 无指纹或指纹未变：显式传入 epoch 作为基准（保持向后兼容）。
+                    _permissionEpoch = Math.Max(_permissionEpoch, permissionEpoch);
+                }
+                if (permissionFingerprint is not null)
+                    _lastPermissionFingerprint = permissionFingerprint;
+
                 var key = systemPromptHash + "\u001f" + toolSpecHash;
-                if (!_versions.TryGetValue(key, out var version))
+                int version;
+                if (permissionChanged && _versions.TryGetValue(key, out var existing))
+                {
+                    // P0-5 step 4c：权限变化必须开新版本（即使 hash 组合复用），
+                    // 否则写穿因版本号不变被抑制，PermissionEpoch 无法持久化。
+                    version = _nextVersion++;
+                    _versions[key] = version;
+                }
+                else if (!_versions.TryGetValue(key, out version))
                 {
                     version = _nextVersion++;
                     _versions[key] = version;
@@ -131,9 +265,12 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
                 _lastToolSpecHash = toolSpecHash;
                 _hasLast = true;
 
-                return new CompositionObservation(version, changeReason);
+                return new CompositionObservation(version, changeReason, _permissionEpoch);
             }
         }
+
+        private static string AppendChangeReason(string current, string extra)
+            => current is "none" or "initial" ? extra : current + "," + extra;
 
         private string DetectChangeReason(string systemPromptHash, string toolSpecHash)
         {

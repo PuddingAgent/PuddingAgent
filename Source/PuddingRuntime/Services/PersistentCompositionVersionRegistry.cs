@@ -42,16 +42,18 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
         string toolSpecHash,
         IReadOnlyList<string>? toolIds = null,
         int permissionEpoch = 0,
-        string? skillManifestHash = null)
+        string? skillManifestHash = null,
+        string? permissionFingerprint = null,
+        string? canonicalSystemPrefixHash = null)
     {
-        var observation = _inner.Observe(sessionId, systemPromptHash, toolSpecHash, toolIds, permissionEpoch, skillManifestHash);
+        var observation = _inner.Observe(sessionId, systemPromptHash, toolSpecHash, toolIds, permissionEpoch, skillManifestHash, permissionFingerprint);
 
         if (_store is null)
             return observation; // 无 store：纯内存降级
 
         // 仅在新版本号出现时异步写穿；相同组合复用版本 → 热路径只查内存，零 IO。
         if (observation.Version > _persistedVersions.GetValueOrDefault(sessionId))
-            _ = WriteThroughAsync(sessionId, systemPromptHash, toolSpecHash, observation, toolIds, permissionEpoch, skillManifestHash);
+            _ = WriteThroughAsync(sessionId, systemPromptHash, toolSpecHash, observation, toolIds, permissionEpoch, skillManifestHash, canonicalSystemPrefixHash);
 
         return observation;
     }
@@ -64,7 +66,8 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
         CompositionObservation observation,
         IReadOnlyList<string>? toolIds,
         int permissionEpoch,
-        string? skillManifestHash)
+        string? skillManifestHash,
+        string? canonicalSystemPrefixHash)
     {
         var gate = _writeGates.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync().ConfigureAwait(false);
@@ -84,8 +87,9 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
                 SkillManifestHash = skillManifestHash,
                 ToolIds = toolIds ?? Array.Empty<string>(),
                 ChangeReason = observation.ChangeReason,
-                PermissionEpoch = permissionEpoch,
-                CanonicalSystemPrefixHash = null,
+                // P0-5 step 4c：以注册表内部检测后的权限纪元为准（含指纹变化自增）；显式传入值作为下限。
+                PermissionEpoch = observation.PermissionEpoch,
+                CanonicalSystemPrefixHash = canonicalSystemPrefixHash,
             };
 
             var ok = await _store!.AppendAsync(record).ConfigureAwait(false);

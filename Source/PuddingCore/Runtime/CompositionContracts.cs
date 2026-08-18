@@ -74,9 +74,11 @@ public interface ICompositionStore
 /// <summary>
 /// Composition 版本观测结果（P0-5 步骤 2）。
 /// <see cref="Version"/> 为该 session 内单调递增的 composition 版本号（相同 hash 组合复用）；
-/// <see cref="ChangeReason"/> 为本次相对上次的变化原因（initial / *_changed / none）。
+/// <see cref="ChangeReason"/> 为本次相对上次的变化原因（initial / *_changed / none）；
+/// <see cref="PermissionEpoch"/> 为本次观测生效的权限纪元（注册表内部基于权限指纹检测自增，
+/// 或显式传入的基准值；供写穿持久化记录）。
 /// </summary>
-public readonly record struct CompositionObservation(int Version, string ChangeReason);
+public readonly record struct CompositionObservation(int Version, string ChangeReason, int PermissionEpoch = 0);
 
 /// <summary>
 /// 进程内 composition 版本登记表接口（P0-5 步骤 2）。
@@ -92,6 +94,8 @@ public interface ICompositionVersionRegistry
     /// 观测一次 composition，返回版本号与变化原因（原子）。
     /// <paramref name="toolIds"/>、<paramref name="permissionEpoch"/> 与 <paramref name="skillManifestHash"/>
     /// 仅供写穿持久化使用，纯内存实现可忽略；<paramref name="permissionEpoch"/> 变化由调用方显式 +1 触发开新版本。
+    /// <paramref name="permissionFingerprint"/> 为当前权限集合的稳定 SHA-256 指纹（可为 null）；
+    /// 实现应检测指纹变化并在变化时自增内部权限纪元（P0-5 step 4c：permissionEpoch 检测 +1）。
     /// </summary>
     CompositionObservation Observe(
         string sessionId,
@@ -99,5 +103,7 @@ public interface ICompositionVersionRegistry
         string toolSpecHash,
         IReadOnlyList<string>? toolIds = null,
         int permissionEpoch = 0,
-        string? skillManifestHash = null);
+        string? skillManifestHash = null,
+        string? permissionFingerprint = null,
+        string? canonicalSystemPrefixHash = null);
 }
