@@ -970,13 +970,16 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 messages.Where(m => m.Role == ChatRole.System).Select(m => m.Content ?? string.Empty));
             var permissionFingerprint = CompositionSnapshot.ComputePermissionFingerprint(toolIds);
             var canonicalSystemPrefixHash = CompositionSnapshot.ComputeCanonicalSystemPrefixHashFromPrompt(fullSystemPrompt);
+            // P0-5 step 6：skillManifestHash 的 L2 计算为独立残留项（本轮不实现），先以 null 占位；
+            // 遥测维度补 permission_epoch / tool_count / skill_manifest_hash，保证归因维度键恒定。
+            string? skillManifestHash = null;
             var observation = _compositionVersions.Observe(
                 sessionId,
                 systemPromptHash,
                 toolSpecHash,
                 toolIds,
                 permissionEpoch: 0,
-                skillManifestHash: null,
+                skillManifestHash: skillManifestHash,
                 permissionFingerprint: permissionFingerprint,
                 canonicalSystemPrefixHash: canonicalSystemPrefixHash);
 
@@ -986,6 +989,9 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 ["system_prompt_hash"] = systemPromptHash,
                 ["tool_spec_hash"] = toolSpecHash,
                 ["composition_version"] = observation.Version.ToString(),
+                ["permission_epoch"] = observation.PermissionEpoch.ToString(),
+                ["tool_count"] = tools?.Count.ToString() ?? "0",
+                ["skill_manifest_hash"] = skillManifestHash ?? string.Empty,
                 ["session_id"] = sessionId,
                 ["workspace_id"] = workspaceId,
                 ["provider"] = config.ProviderId,
