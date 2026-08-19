@@ -1,6 +1,6 @@
 ﻿# PuddingAgent CodeMAP
 
-> 顶层快速索引 | 2026-08-15 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
+> 顶层快速索引 | 2026-08-18 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
 
 ## 项目定位
 
@@ -12,6 +12,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 |------|------|
 | `README.md` / `README_zh-CN.md` | 中英文产品与目标架构入口；Windows Desktop/Core 产品边界、Plugin/Function/Hook/Event/Projection 五类合同、Agent FSM、函数图编排、前端思想、现状缺口与路线 |
 | `Docs/Features/工作区TODO与峰谷节能任务编排设计方案.md` | 工作区 TODO 台账、Agent 认领/拒绝/回报、durable 自动派发与定时消息、可信 idle、心跳 0、峰谷 WorkAdmissionFence，以及 Hook 触发的临时质询子代理、GoalRun 有界循环、manifest/Admin 模型路由、防无限循环熔断和公共 Plugin/Function/Event/Projection 映射 |
+| `Docs/Features/Goal持久目标自主续行与自动压缩完整设计方案.md` | `/goal` 完整专项设计；统一 Web/Desktop/Connector 命令、持久 GoalRun、事件驱动 continuation、256 个外层 Goal Iteration、证据 Verifier、用户抢占、重启停用、自动压缩、API/UI、分期和验收；明确不依赖 Heartbeat |
 | `Docs/deepseek-reference-architecture-master-plan-2026-08-14.md` | 本次会话的 deepseek-harness/pi 参考架构总蓝图；以“一切业务能力皆插件”为第一原则，覆盖 Model/Tool/Skill/Session/Agent Loop/Sandbox/Storage/Schedule/UI、统一运行事实、文件级改造矩阵、任务图与 T00-T16 施工步骤 |
 | `Docs/07架构/67ADR-066*.md` | Browser 能力与 Douyin 分层决策 |
 | `Docs/07架构/68*.md` | WebView2 自动化分阶段实施规格 |
@@ -28,6 +29,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/07架构/85*.md` | 分期交付、测试、安全、性能、Desktop 部署、浏览器 smoke、恢复与验收证据图册 |
 | `Docs/07架构/86ADR-072*.md` | 工作区 TODO 第一阶段任务领域 ADR；覆盖五列 Board、Task Failed/Reopen、Task Ledger、手工/Auto 派发、Once/Daily/Weekly/Interval/受限五字段 Cron/Message Event、Agent Availability、峰谷 Fence、Task Tools 和恢复 |
 | `Docs/07架构/87ADR-073*.md` | 当前产品施工总表与冲突裁决基线；列出 30 项产品任务、17 项 T00–T16 平台底座任务及专项 Phase 去重映射，覆盖目标、优先级、工作量、难度、依赖、设计位置和里程碑 |
+| `Docs/07架构/89ADR-074*.md` | Goal 专项架构决策；冻结外层 GoalRun/内层 Agent Loop 双层预算、单 Goal 256 accepted Iteration 硬上限、durable outbox 续行、独立证据验证、重启 disarm、多客户端统一投影与 ADR-042 压缩边界 |
 | `Docs/07架构/tool-infrastructure-layering.md` | Tool 分层、强制委派合同、Smart 参数与结果合同 |
 | `Docs/deepseek-harness-message-card-alignment-2026-08-14.md` | 对照 deepseek-harness 的消息、推理和工具调用 UI 目标架构；定义 TurnStatus、Reasoning/Tool/Delegation 行、toolCallId 投影、分期与验收矩阵 |
 | `Docs/deepseek-harness-tool-system-alignment-2026-08-14.md` | 对照 deepseek-harness 的工具定义与执行协议；规划 canonical output、端到端 callId、结构化错误、管线、并发、spill、可回放 presentation 与 DeepSeek Code Mode |
@@ -90,6 +92,13 @@ ContextPipeline → stable system prefix + volatile User tail
   → AgentExecutionService → ToolResultContextPolicy（模型历史最多 8 KiB；原始完整结果写入工作区 `.pudding/context-tool-results`，不做模型输入脱敏）
   → search_tools 已发现 schema 在 live session 内保持加载，避免跨 dispatch 重复收缩/扩张
 
+P1-2 召回同源去重（压缩摘要/原文/recall 片段 ≤1 次注入）
+  → SessionChunkIndexer（写侧）回查 Messages 补齐 CanonicalContentHash/ContextGeneration 冗余列
+  → MemoryLibrary 第 5 路 LEFT JOIN Messages 取 hash/generation/CompactedBy，默认过滤 covered chunk
+  → RecalledMemory/SearchHit 透传 SourceMessageId + CanonicalContentHash
+  → SubconsciousRecallPipeline 注入前经 CompactionCoverageFilter 过滤 covered + 同轮 hash 去重
+  → ContextPipeline assembler 兜底去重（双保险）
+
 Plugin configuration → Plugin Resolver → PluginActivation
   → capability registry（Tool/LLM/Prompt/Context/Connector/Job/Presentation）
   → Typed Hook（Guard/Transform/Around，同步有界干预）
@@ -129,6 +138,11 @@ Desktop Storage → CoreStorageManagementClient
     → 平台库页面/行/重复索引 + 代码索引作用域明细
     → PreviewId（10 分钟）→ 白名单批量删除 → checkpoint/VACUUM → 重扫
     → session_event_log / conversation_events / ChatMessages / memory 永不进入清理目标
+
+PuddingHost → RetentionPruningService（platform.db 唯一在线保留期任务）
+  → `Retention` 顶层配置 → 小批 DELETE + 批间让步 + 单表单轮批数上限
+  → conversation_events 先写 `retention-archive/<day>/conversation_events.jsonl` 再删
+  → VACUUM 默认关闭；不与第二套诊断裁剪服务并行争用 SQLite writer
 
 DesignRequest + ExpertGroupDefinition → DesignCouncilPlanCompiler
   → 上下文审计 → 调研 → 独立提案 → 交叉批判 → 主席综合 → 独立终审

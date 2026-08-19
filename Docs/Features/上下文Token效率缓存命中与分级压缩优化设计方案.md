@@ -521,6 +521,8 @@ duplicateRate  = duplicatedSourceBytes / rawBytesBefore
 
 交付：source message/hash/generation、covered filter、summary/raw/recall 同源去重。
 
+状态：已完成（2026-08-19，T1-T7 全落地：schema 扩展 → 写侧 hash → 查询侧联表过滤 → 契约透传 → 管道内过滤 → 删死代码 → 端到端回归）。
+
 ### P1-3：Reasoning 紧凑归档
 
 修改范围：`JsonlSession`、transcript writer/projection、ReasoningContent persistence 和 UI timeline projection。

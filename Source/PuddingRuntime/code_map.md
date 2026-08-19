@@ -32,7 +32,7 @@
 | `Services/ContextPipeline.cs` | 🔑 上下文组装管线；区分执行 `AgentInstanceId` 与持久 `ConfigurationAgentInstanceId`，私有 Skill/人格/记忆/日志只读稳定身份；稳定 system prefix 与本轮 User tail 分离；Tool 层强制 Direct/Delegated 判定与前三次调用委派合同；L1 TOOLS 层索引文本从 session 已加载工具集合（append-only）生成（Core ∪ Loaded 不收缩），消除每轮全量重建导致的 prefix 漂移；已拆为 `ContextPipelineLayers.cs`（层装配）与 `ContextPipelineOrchestrator.cs`（编排执行）两个 partial |
 | `Services/Skills/AgentSkillFileService.cs` | Agent 私有 Skill 文件服务；缺失索引的 Get/List 为无副作用空读取，只有显式初始化或写操作创建目录 |
 | `Services/ContextWindowManager.cs` | Token 窗口管理；DB/JSONL 回填与内存裁剪已从扁平截断改为 `ContextTierPlanner` 分级填充（T0 全保 → T4 先弃，保新弃旧）；JSONL 冷启动路径经 `CompactionCoverageFilter` 过滤已压缩消息，防止复活 |
-| `Services/CompactionCoverageFilter.cs` | 压缩覆盖过滤器；加载 session 最新 `CompactionCoverageManifest`（SourceMessageIds/SourceHashes）为覆盖集合，供 JSONL 冷启动路径去重；null factory / 无 manifest / 非法 JSON 均 no-op |
+| `Services/CompactionCoverageFilter.cs` | 压缩覆盖过滤器；加载 session 最新 `CompactionCoverageManifest`（SourceMessageIds/SourceHashes）为覆盖集合，供 JSONL 冷启动路径去重；null factory / 无 manifest / 非法 JSON 均 no-op；P1-2 起亦供 `SubconsciousRecallPipeline` 管道内 covered 过滤（hash 命中覆盖集合 → 丢弃 recall 片段） |
 | `Services/ContextAssemblyService.cs` | 上下文装配 |
 | `Services/ContextBudgetAllocator.cs` | 预算分配 |
 | `Services/ContextCompactionService.cs` | 压缩服务；active 消息按页全量读取，80 条仅作为 Map-Reduce 块大小；所有待压缩消息进入 map 输入并通过覆盖校验后才写 `CompactedBy`；同一事务写 `CompactionCoverageManifests` 覆盖清单（OmittedCount==0 门禁）与 session 递增 `CompactionGeneration`（Source/TargetGeneration） |
@@ -82,7 +82,7 @@
 | `Services/Orchestration/SubAgentOrchestrationNodeExecutor.cs` | 只读 `pudding.agent.subagent` executor；冻结 role/template/provider/model，复用 `ISubAgentInvocationService` 与系统预算，提交 `result` 文本和 child Run/SubSession；用 workspace/graph 派生安全 archive owner，不把审计主体当目录 |
 | `Services/Orchestration/ImageGenerateOrchestrationNodeExecutor.cs` | `pudding.media.image-generate` executor；经共享 resolver 读取 prompt/参考图，复用 `IImageGenerationService`，使用稳定 paid-call idempotency key，并把 Artifact 列表写入 `outputs.images` |
 | `Services/Orchestration/ImagePreviewOrchestrationNodeExecutor.cs` | `pudding.media.image-preview` executor；经共享 resolver 读取上游 `images` Artifact 列表，并以同一引用写入自己的 `outputs.images`，不复制或内联图片 bytes |
-| `Services/SubconsciousRecallPipeline.cs` | 潜意识召回管道（25KB） |
+| `Services/SubconsciousRecallPipeline.cs` | 潜意识召回管道（25KB）；P1-2：`SearchHit` 携带 `CanonicalContentHash/SourceMessageId`，注入前经 `CompactionCoverageFilter` 过滤 covered 片段 + 同轮内 hash 去重（同一 source hash 的多个 chunk 只注入 1 条） |
 | `Services/SubconsciousPlanGenerationService.cs` | 计划生成 |
 | `Services/TaskPlanning/` | 任务规划 |
 
@@ -104,6 +104,9 @@
 | `Services/UserPreferenceService.cs` | 用户偏好管理：Prefetch 会话启动注入 System Prompt + save_preference 工具 Sync 存储 |
 | `Services/KnowledgeAccessRuntime.cs` | 知识访问 |
 | `Services/AgentLogRecallService.cs` | 日志召回 |
+| `Services/SessionChunkIndexer.cs` | P1-2 会话块向量索引写侧：索引时回查 Messages 补齐 `CanonicalContentHash/ContextGeneration` 冗余列（T2），查不到时对 SourceText 现算 SHA-256 兜底，幂等语义不变 |
+| `../PuddingMemoryEngine/Data/MemoryLibrary.cs` | P1-2 第 5 路召回查询侧：`SearchSessionChunksByVectorAsync` 同库 LEFT JOIN Messages 取 hash/generation/CompactedBy，默认过滤 covered chunk（`includeCovered=false`），返回专用 DTO `SessionChunkRankedResult`（含 MessageId/hash/generation/IsCovered） |
+| `../PuddingCore/Abstractions/IMemoryRecallService.cs` | P1-2 契约：`RecalledMemory` 新增 `SourceMessageId/CanonicalContentHash/ContextGeneration`（可空向后兼容），chunk-vector 路召回项透传溯源元数据供 assembler 同源去重 |
 
 ## 多媒体
 
