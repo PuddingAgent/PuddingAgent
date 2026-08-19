@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
@@ -242,10 +242,110 @@ public sealed class SessionChunkIndexerTests
         }
     }
 
+    [TestMethod]
+    public async Task IndexMessageAsync_MessageExistsInMessagesTable_CopiesHashAndGeneration()
+    {
+        var (dbPath, libraryFactory, memoryFactory) = await InitializeDualDbAsync();
+        try
+        {
+            var content = BuildLongContent(30);
+            const string seededHash = "a1b2c3d4e5f60718293a4b5c6d7e8f901a2b3c4d5e6f708192a3b4c5d6e7f8091";
+            const int seededGeneration = 3;
+
+            // 预置 Sessions + Messages 行（含 CanonicalContentHash/ContextGeneration），
+            // 模拟"消息先落库、后索引"的生产时序（Messages 表 SessionId 有外键，需先建 Session）。
+            await using (var seedDb = memoryFactory.CreateDbContext())
+            {
+                seedDb.Sessions.Add(new SessionEntity { SessionId = "session-1", WorkspaceId = "ws-1" });
+                seedDb.Messages.Add(new MessageEntity
+                {
+                    MessageId = "msg-hash-1",
+                    SessionId = "session-1",
+                    Role = "user",
+                    Content = content,
+                    CanonicalContentHash = seededHash,
+                    ContextGeneration = seededGeneration,
+                });
+                await seedDb.SaveChangesAsync();
+            }
+
+            var indexer = new SessionChunkIndexer(
+                new FakeEmbeddingService(), libraryFactory, NullLogger<SessionChunkIndexer>.Instance,
+                memoryFactory);
+
+            await indexer.IndexMessageAsync(
+                workspaceId: "ws-1", sessionId: "session-1", messageId: "msg-hash-1",
+                role: "user", content: content);
+
+            await using var verifyDb = libraryFactory.CreateDbContext();
+            var rows = await verifyDb.SessionChunkVectors
+                .Where(v => v.MessageId == "msg-hash-1")
+                .OrderBy(v => v.ChunkSeq)
+                .ToListAsync();
+
+            Assert.IsTrue(rows.Count > 0, "长内容应切为多块并写入");
+            foreach (var row in rows)
+            {
+                Assert.AreEqual(seededHash, row.CanonicalContentHash,
+                    "Messages 表存在 hash 时，chunk 应复用表值而非现算");
+                Assert.AreEqual(seededGeneration, row.ContextGeneration,
+                    "Messages 表存在 generation 时，chunk 应复用表值");
+            }
+        }
+        finally
+        {
+            CleanupDbFile(dbPath);
+        }
+    }
+
+    [TestMethod]
+    public async Task IndexMessageAsync_MessageMissingFromMessagesTable_FallsBackToComputedHash()
+    {
+        var (dbPath, libraryFactory, memoryFactory) = await InitializeDualDbAsync();
+        try
+        {
+            var indexer = new SessionChunkIndexer(
+                new FakeEmbeddingService(), libraryFactory, NullLogger<SessionChunkIndexer>.Instance,
+                memoryFactory);
+
+            var content = BuildLongContent(30);
+            await indexer.IndexMessageAsync(
+                workspaceId: "ws-1", sessionId: "session-1", messageId: "msg-nohash-1",
+                role: "user", content: content);
+
+            var expectedHash = CompositionSnapshot.Sha256Hex(content);
+
+            await using var verifyDb = libraryFactory.CreateDbContext();
+            var rows = await verifyDb.SessionChunkVectors
+                .Where(v => v.MessageId == "msg-nohash-1")
+                .OrderBy(v => v.ChunkSeq)
+                .ToListAsync();
+
+            Assert.IsTrue(rows.Count > 0, "长内容应切为多块并写入");
+            foreach (var row in rows)
+            {
+                Assert.AreEqual(expectedHash, row.CanonicalContentHash,
+                    "Messages 表查不到该消息时，hash 应现算兜底保证非空");
+                Assert.IsNull(row.ContextGeneration,
+                    "Messages 表查不到该消息时，generation 应为 null");
+            }
+        }
+        finally
+        {
+            CleanupDbFile(dbPath);
+        }
+    }
+
     // ═══════════════════ Test Infrastructure ═══════════════════
 
     private static DbContextOptions<MemoryLibraryDbContext> CreateFileOptions(string dbPath)
         => new DbContextOptionsBuilder<MemoryLibraryDbContext>()
+            .UseSqlite($"Data Source={dbPath}")
+            .EnableSensitiveDataLogging()
+            .Options;
+
+    private static DbContextOptions<MemoryDbContext> CreateMemoryFileOptions(string dbPath)
+        => new DbContextOptionsBuilder<MemoryDbContext>()
             .UseSqlite($"Data Source={dbPath}")
             .EnableSensitiveDataLogging()
             .Options;
@@ -275,6 +375,36 @@ public sealed class SessionChunkIndexerTests
 
         public Task<MemoryLibraryDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(new MemoryLibraryDbContext(_options));
+    }
+
+    /// <summary>
+    /// P1-2 T2 专用：同时初始化 MemoryLibraryDbContext 与 MemoryDbContext（同库同路径），
+    /// 前者建 SessionChunkVectors 表、后者建 Messages 表——两个初始化器需先后执行且幂等。
+    /// </summary>
+    private static async Task<(string DbPath, TestDbContextFactory LibraryFactory, TestMemoryDbContextFactory MemoryFactory)>
+        InitializeDualDbAsync()
+    {
+        var dbPath = CreateTempDbPath();
+        var libraryFactory = new TestDbContextFactory(CreateFileOptions(dbPath));
+        var memoryFactory = new TestMemoryDbContextFactory(CreateMemoryFileOptions(dbPath));
+        await MemoryLibraryDbInitializer.InitializeAsync(libraryFactory);
+        await MemoryDbInitializer.InitializeAsync(memoryFactory);
+        return (dbPath, libraryFactory, memoryFactory);
+    }
+
+    private sealed class TestMemoryDbContextFactory : IDbContextFactory<MemoryDbContext>
+    {
+        private readonly DbContextOptions<MemoryDbContext> _options;
+
+        public TestMemoryDbContextFactory(DbContextOptions<MemoryDbContext> options)
+        {
+            _options = options;
+        }
+
+        public MemoryDbContext CreateDbContext() => new(_options);
+
+        public Task<MemoryDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new MemoryDbContext(_options));
     }
 
     /// <summary>固定 1024 维的确定性 fake embedding（按文本内容哈希生成，保证"字节正确"可验证）。</summary>

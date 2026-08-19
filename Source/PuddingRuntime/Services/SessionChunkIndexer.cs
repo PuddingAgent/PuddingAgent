@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingMemoryEngine.Data;
@@ -17,15 +17,18 @@ public sealed class SessionChunkIndexer : ISessionChunkIndexer
 {
     private readonly IEmbeddingService _embeddingService;
     private readonly IDbContextFactory<MemoryLibraryDbContext> _dbFactory;
+    private readonly IDbContextFactory<MemoryDbContext>? _memoryDbFactory;
     private readonly ILogger<SessionChunkIndexer> _logger;
 
     public SessionChunkIndexer(
         IEmbeddingService embeddingService,
         IDbContextFactory<MemoryLibraryDbContext> dbFactory,
-        ILogger<SessionChunkIndexer> logger)
+        ILogger<SessionChunkIndexer> logger,
+        IDbContextFactory<MemoryDbContext>? memoryDbFactory = null)
     {
         _embeddingService = embeddingService;
         _dbFactory = dbFactory;
+        _memoryDbFactory = memoryDbFactory;
         _logger = logger;
     }
 
@@ -70,6 +73,11 @@ public sealed class SessionChunkIndexer : ISessionChunkIndexer
 
             await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
+            // P1-2 T2 写侧闭环：回查 Messages 表（同库）取 CanonicalContentHash/ContextGeneration，
+            // 查不到（或未注入 MemoryDbContext）时 hash 对 content 现算，保证新消息一定有去重锚点。
+            var (canonicalContentHash, contextGeneration) =
+                await ResolveContentHashAsync(messageId, content, ct);
+
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var vectors = new List<SessionChunkVectorEntity>(chunks.Count);
             for (var seq = 0; seq < chunks.Count; seq++)
@@ -88,6 +96,8 @@ public sealed class SessionChunkIndexer : ISessionChunkIndexer
                     SourceText = chunks[seq],
                     Embedding = VectorSimilarity.FloatsToBytes(embedding),
                     CreatedAt = now,
+                    CanonicalContentHash = canonicalContentHash,
+                    ContextGeneration = contextGeneration,
                 });
             }
 
@@ -117,6 +127,45 @@ public sealed class SessionChunkIndexer : ISessionChunkIndexer
             _logger.LogError(ex,
                 "[SessionChunkIndexer] IndexMessage failed messageId={MessageId} role={Role}",
                 messageId, role);
+        }
+    }
+
+    /// <summary>
+    /// 写侧闭环（P1-2 T2）：优先回查 Messages 表（同库）取该消息的 CanonicalContentHash/ContextGeneration；
+    /// 查不到或未注入 MemoryDbContext 时，hash 对 content 现算 SHA-256，generation 为 null，
+    /// 保证每条被索引的新消息在 SessionChunkVectors 上都有去重锚点。
+    /// </summary>
+    private async Task<(string Hash, int? Generation)> ResolveContentHashAsync(
+        string messageId,
+        string content,
+        CancellationToken ct)
+    {
+        var fallbackHash = CompositionSnapshot.Sha256Hex(content ?? string.Empty);
+        if (_memoryDbFactory is null)
+            return (fallbackHash, null);
+
+        try
+        {
+            await using var memoryDb = await _memoryDbFactory.CreateDbContextAsync(ct);
+            var message = await memoryDb.Messages
+                .AsNoTracking()
+                .Where(m => m.MessageId == messageId)
+                .Select(m => new { m.CanonicalContentHash, m.ContextGeneration })
+                .FirstOrDefaultAsync(ct);
+
+            // Messages 行存在且 hash 非空 → 以表值为准；否则（行缺失 / hash 未计算）回退现算。
+            if (message is not null && !string.IsNullOrEmpty(message.CanonicalContentHash))
+                return (message.CanonicalContentHash, message.ContextGeneration);
+
+            return (fallbackHash, null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // 查询失败不阻断索引：回退现算 hash，保证写侧闭环仍有值。
+            _logger.LogWarning(ex,
+                "[SessionChunkIndexer] Messages lookup failed, fallback to computed hash messageId={MessageId}",
+                messageId);
+            return (fallbackHash, null);
         }
     }
 }
