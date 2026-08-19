@@ -22,6 +22,17 @@ temp/
 .pnpm-store
 .pudding
 
+# 临时输出物/临时脚本：一律输出到 temp/，禁止提交到 git（2026-08-19 用户明确要求）
+*_output.txt
+*_result.txt
+/vacuum_db.py
+/commit_msg*.txt
+/msg.txt
+/.commitmsg.txt
+/build[0-9]*.txt
+Source/PuddingRuntime/build[0-9]*.txt
+Source/PuddingPlatformAdmin/tsc_output.txt
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
