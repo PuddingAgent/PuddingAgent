@@ -1,9 +1,11 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
+using PuddingMemoryEngine.Data;
 
 namespace PuddingRuntime.Services;
 
@@ -24,6 +26,9 @@ public sealed class SubconsciousRecallPipeline
     private readonly SessionSummaryStore? _summaryStore;
     private readonly ILogger<SubconsciousRecallPipeline> _logger;
     private readonly MemoryCache _cache = new(new MemoryCacheOptions { SizeLimit = 50 });
+
+    // P1-2 T5：压缩覆盖过滤器（可选构造注入）。null 时 covered 过滤 no-op（保持旧构造兼容，不抛异常）。
+    private readonly CompactionCoverageFilter? _coverageFilter;
 
     // Session 级状态（通过 agentInstanceId 隔离）
     private readonly ConcurrentDictionary<string, SessionRecallState> _sessionStates = new();
@@ -51,13 +56,15 @@ public sealed class SubconsciousRecallPipeline
         IMemoryLlmClient memoryLlmClient,
         ILogger<SubconsciousRecallPipeline> logger,
         SessionSummaryStore? summaryStore = null,
-        ILLMConfigResolver? llmConfigResolver = null)
+        ILLMConfigResolver? llmConfigResolver = null,
+        IDbContextFactory<MemoryDbContext>? memoryDbFactory = null)
     {
         _memoryRecall = memoryRecall;
         _memoryLlmClient = memoryLlmClient;
         _logger = logger;
         _summaryStore = summaryStore;
         _llmConfigResolver = llmConfigResolver;
+        _coverageFilter = memoryDbFactory is null ? null : new CompactionCoverageFilter(memoryDbFactory);
     }
 
     /// <summary>
@@ -113,6 +120,9 @@ public sealed class SubconsciousRecallPipeline
 
             // Step 2: 混合搜索（摘要 → 记忆库 → 日志）
             var searchResults = await HybridSearchAsync(keywords, workspaceId, agentInstanceId, ct);
+
+            // P1-2 T5：注入前 covered 过滤 + 同轮 hash 去重（结构化 SearchHit 层，BuildAugmentContent 之前）
+            searchResults = await FilterCoveredAndDedupeAsync(searchResults, agentInstanceId, ct);
             if (searchResults.Count == 0)
             {
                 state.ConsecutiveNoRecall++;
@@ -260,7 +270,16 @@ public sealed class SubconsciousRecallPipeline
             {
                 var fp = ComputeFingerprint(item.Snippet);
                 if (seen.Add(fp))
-                    results.Add(new SearchHit { Id = item.SourceId ?? fp, Source = "memory", Content = item.Snippet, Score = item.RelevanceScore });
+                    results.Add(new SearchHit
+                    {
+                        Id = item.SourceId ?? fp,
+                        Source = "memory",
+                        Content = item.Snippet,
+                        Score = item.RelevanceScore,
+                        // P1-2 T5：从 RecalledMemory（T4 已扩展）透传同源去重锚点；非 chunk 路为 null。
+                        SourceMessageId = item.SourceMessageId,
+                        CanonicalContentHash = item.CanonicalContentHash,
+                    });
             }
         }
         catch (Exception ex)
@@ -503,6 +522,54 @@ public sealed class SubconsciousRecallPipeline
     // Step 4: 截断 + 格式化
     // ═══════════════════════════════════════════════════════════════
 
+    /// <summary>
+    /// P1-2 T5：在注入内容组装（<see cref="BuildAugmentContent"/>）之前过滤召回片段。
+    /// 1) covered 过滤：CanonicalContentHash 命中当前 session 最新压缩覆盖集合（CoveredHashes）的片段直接丢弃
+    ///    （压缩摘要已覆盖原文，避免「摘要 + 原文 + 召回片段」同源重复，方案 §9 去重规则）；
+    /// 2) 同轮 hash 去重：同一 source hash 的多个 chunk 同轮只保留 1 条（Score 高者优先）；
+    /// 3) CompactionCoverageFilter 不可用（无 factory / 无 manifest / 加载失败）时仅做 hash 去重，
+    ///    covered 过滤自动降级 no-op，不抛异常、不阻断召回（方案风险表 #2 的三层保证：T3 查询侧为主，此处为管道内兜底）。
+    /// 过滤发生在结构化 SearchHit 层，不修改注入文本格式（方案风险 #5：文本级 hash 校验留 T6/后续）。
+    /// </summary>
+    private async Task<List<SearchHit>> FilterCoveredAndDedupeAsync(
+        List<SearchHit> hits,
+        string sessionKey,
+        CancellationToken ct)
+    {
+        if (hits.Count == 0) return hits;
+
+        var coverage = CompactionCoverage.Empty;
+        if (_coverageFilter is not null)
+        {
+            try
+            {
+                coverage = await _coverageFilter.LoadAsync(sessionKey, ct);
+            }
+            catch (Exception ex)
+            {
+                // 覆盖加载失败不阻断召回：降级为仅 hash 去重（防御性过滤保持 no-op 语义）。
+                _logger.LogDebug(ex, "[SubconsciousRecall] Coverage load failed, skip covered filtering");
+            }
+        }
+
+        var seenHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var filtered = new List<SearchHit>(hits.Count);
+        foreach (var hit in hits.OrderByDescending(h => h.Score))
+        {
+            if (hit.CanonicalContentHash is { Length: > 0 } hash)
+            {
+                if (coverage.CoveredHashes.Contains(hash))
+                    continue; // covered：压缩摘要已覆盖，不再注入原文片段
+                if (!seenHashes.Add(hash))
+                    continue; // 同轮 hash 去重：同一 source 只注入 1 条
+            }
+
+            filtered.Add(hit);
+        }
+
+        return filtered;
+    }
+
     private static string BuildAugmentContent(
         FlashRecallResult flashResult,
         List<SearchHit> hits,
@@ -583,6 +650,12 @@ public sealed class SubconsciousRecallPipeline
         public string Source { get; init; } = "";
         public string Content { get; init; } = "";
         public double Score { get; init; }
+
+        /// <summary>源消息 ID（P1-2 T5 同源去重锚点；非会话消息路为 null）。</summary>
+        public string? SourceMessageId { get; init; }
+
+        /// <summary>内容规范化 SHA-256（小写 hex）；covered 过滤 / 同轮去重的确定性依据。</summary>
+        public string? CanonicalContentHash { get; init; }
     }
 
     private sealed record FlashRecallResult
