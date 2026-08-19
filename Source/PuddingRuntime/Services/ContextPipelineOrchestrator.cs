@@ -197,6 +197,11 @@ public sealed partial class ContextPipeline
         var cropBundles = new List<RawContentBundle>();
 
         // ── L6-CONTEXT-AUGMENT：潜意识召回管道（替代原 RECALLED + AGENT-LOG-RECALL）──
+        // covered 过滤链（P1-2）：
+        //   T3 查询侧：SearchSessionChunksByVectorAsync 默认排除 CompactedBy != null 的 chunk（covered 前置过滤）
+        //   → T5 管道内：SubconsciousRecallPipeline.FilterCoveredAndDedupeAsync 在结构化 SearchHit 层做 covered hash 丢弃 + 同轮 hash 去重
+        //   → 本层为纯文本注入点（RunAsync 返回 string），无法按 hash 做文本级校验；
+        //     文本级 hash 校验按方案 P1-2 风险5 预留为后续增强（不改注入格式、不引入伪过滤）。
         string? contextAugmentStr = null;
         var contextAugmentLayerName = "L6-CONTEXT-AUGMENT";
         int contextAugmentTokens = 0;
