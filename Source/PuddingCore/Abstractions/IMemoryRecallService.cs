@@ -59,6 +59,15 @@ public sealed record RecalledMemory
     public string Source { get; init; } = "unknown"; // "library" | "fact" | "preference"
     public string? SourceId { get; init; }
 
+    /// <summary>源消息 ID（P1-2 同源去重锚点）。仅会话消息衍生路（如 chunk-vector）填充，其余路为 null。</summary>
+    public string? SourceMessageId { get; init; }
+
+    /// <summary>内容规范化 SHA-256（小写 hex），供 assembler 做确定性同源去重（原文/摘要/召回片段 ≤1 次注入）。</summary>
+    public string? CanonicalContentHash { get; init; }
+
+    /// <summary>源消息压缩代际（与 MessageEntity.ContextGeneration 对齐；未压缩/未知为 null）。</summary>
+    public int? ContextGeneration { get; init; }
+
     // ADR-028 Phase 5: 增强溯源元数据
     public string? BookId { get; init; }
     public string? ChapterId { get; init; }

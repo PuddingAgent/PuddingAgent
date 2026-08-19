@@ -214,11 +214,16 @@ public sealed class SessionChunkVectorRecallTests
                 {
                     WorkspaceId = "ws-1", SessionId = "sess-1", MessageId = "m-a", ChunkSeq = 0,
                     Role = "user", SourceText = "MySQL 连接池调优要点", Embedding = EmbeddingBytes(1f, 0f, 0f, 0f),
+                    // T2 写侧冗余列（模拟生产索引后写入）：原始消息 hash 有值、generation 为 null
+                    CanonicalContentHash = "hash-a",
+                    ContextGeneration = null,
                 };
                 var b = new SessionChunkVectorEntity
                 {
                     WorkspaceId = "ws-1", SessionId = "sess-1", MessageId = "m-b", ChunkSeq = 0,
                     Role = "user", SourceText = "SQLite 事务写入性能", Embedding = EmbeddingBytes(0.8f, 0.6f, 0f, 0f),
+                    CanonicalContentHash = "hash-b",
+                    ContextGeneration = 1,
                 };
                 db.SessionChunkVectors.AddRange(a, b);
                 chunkAId = a.ChunkId;
@@ -255,6 +260,22 @@ public sealed class SessionChunkVectorRecallTests
             Assert.IsTrue(
                 result.Items.Any(i => i.Source == "chunk-vector"),
                 "融合结果中应有 Source=chunk-vector 的条目");
+            // P1-2 T4：chunk-vector 路召回项必须携带源消息溯源元数据（SourceMessageId/hash/generation 透传）
+            var chunkAHit = result.Items.Single(i => i.SourceId == $"chunk:sess-1:{chunkAId}");
+            Assert.AreEqual("m-a", chunkAHit.SourceMessageId, "chunk-vector 项应透传源消息 ID");
+            Assert.AreEqual("hash-a", chunkAHit.CanonicalContentHash, "chunk-vector 项应透传写侧冗余 hash");
+            Assert.IsNull(chunkAHit.ContextGeneration, "原始消息（generation 为 null）应透传 null");
+
+            var chunkBHit = result.Items.Single(i => i.SourceId == $"chunk:sess-1:{chunkBId}");
+            Assert.AreEqual("m-b", chunkBHit.SourceMessageId, "chunk-vector 项应透传源消息 ID");
+            Assert.AreEqual("hash-b", chunkBHit.CanonicalContentHash, "chunk-vector 项应透传写侧冗余 hash");
+            Assert.AreEqual(1, chunkBHit.ContextGeneration, "chunk-vector 项应透传压缩代际");
+
+            // 非 chunk 路（library/fact/preference）不携带会话消息溯源字段（向后兼容：默认 null）
+            Assert.IsTrue(
+                result.Items.Where(i => i.Source != "chunk-vector")
+                    .All(i => i.SourceMessageId is null && i.CanonicalContentHash is null && i.ContextGeneration is null),
+                "非 chunk-vector 路召回项不应携带会话消息溯源字段");
         }
         finally
         {

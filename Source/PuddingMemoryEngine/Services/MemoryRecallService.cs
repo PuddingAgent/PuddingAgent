@@ -365,7 +365,7 @@ public sealed class MemoryRecallService : IMemoryRecallService
             if (queryEmbedding is null || queryEmbedding.Length == 0)
                 return Array.Empty<RecalledMemory>();
 
-                        // P1-2 T3：默认 includeCovered=false（covered chunk 不参与召回），语义与旧实现一致。
+            // P1-2 T3：默认 includeCovered=false（covered chunk 不参与召回），语义与旧实现一致。
             var chunkResults = await _memoryLibrary.SearchSessionChunksByVectorAsync(queryEmbedding, workspaceId, topK, ct);
 
             return chunkResults
@@ -375,6 +375,10 @@ public sealed class MemoryRecallService : IMemoryRecallService
                     RelevanceScore = r.Score,
                     Source = "chunk-vector",
                     SourceId = $"chunk:{r.SessionId}:{r.ChunkId}",
+                    // P1-2 T4：透传源消息溯源元数据（T3 DTO 提供，取值链：写侧冗余列 → 联表 Messages → 现算兜底）
+                    SourceMessageId = r.MessageId,
+                    CanonicalContentHash = r.CanonicalContentHash,
+                    ContextGeneration = r.ContextGeneration,
                 })
                 .ToList();
         }
