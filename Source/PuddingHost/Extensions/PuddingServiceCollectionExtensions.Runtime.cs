@@ -333,6 +333,19 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddHostedService<SessionCompressedMemoryMaintenanceHook>();
 
         builder.Services.AddSingleton<ProviderRateLimiter>();
+        // P0-5：Composition 不可变持久化（跨 1h 空闲 + Core 重启恢复 + append-only 工具集合）。
+        // PuddingHost 是产品组合根，不调用 RuntimeServiceExtensions.AddPuddingRuntime；
+        // 必须在此显式注册，否则 DirectLlmClient 回退纯内存 registry，CompositionSnapshots 永不落库。
+        builder.Services.TryAddSingleton<ICompositionStore>(sp =>
+            new SqliteCompositionStore(sp.GetRequiredService<IDbContextFactory<MemoryDbContext>>()));
+        builder.Services.TryAddSingleton<ICompositionVersionRegistry>(sp =>
+            new PersistentCompositionVersionRegistry(
+                sp.GetService<ICompositionStore>(),
+                sp.GetService<ILogger<PersistentCompositionVersionRegistry>>()));
+        builder.Services.TryAddSingleton<CompositionRecoveryService>(sp => new CompositionRecoveryService(
+            sp.GetRequiredService<AgentSessionManager>(),
+            sp.GetService<ICompositionStore>(),
+            sp.GetService<ILogger<CompositionRecoveryService>>()));
         builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
         builder.Services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
 
