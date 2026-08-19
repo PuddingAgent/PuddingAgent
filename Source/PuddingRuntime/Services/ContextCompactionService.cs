@@ -573,6 +573,7 @@ public sealed class ContextCompactionService : IContextCompactionService
             Role = "system",
             ContentType = "compact_summary",
             Content = summary,
+            CanonicalContentHash = manifest.FinalSummaryHash,
             Source = "context_compaction",
             CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Metadata = JsonSerializer.Serialize(new
@@ -605,7 +606,10 @@ public sealed class ContextCompactionService : IContextCompactionService
         db.Messages.Add(summaryMessage);
         db.CompactionCoverageManifests.Add(manifestEntity);
         foreach (var message in messagesToCompact)
+        {
             message.CompactedBy = summaryMessage.MessageId;
+            message.CanonicalContentHash ??= CompositionSnapshot.Sha256Hex(message.Content ?? string.Empty);
+        }
         session.CompactionGeneration = targetGeneration;
 
         await db.SaveChangesAsync(ct);
@@ -995,6 +999,7 @@ public sealed class ContextCompactionService : IContextCompactionService
                 AgentId = string.IsNullOrWhiteSpace(row.AgentInstanceId) ? agentId : row.AgentInstanceId,
                 Source = "chat_transcript",
                 CreatedAt = row.CreatedAt,
+                CanonicalContentHash = CompositionSnapshot.Sha256Hex(row.Content ?? string.Empty),
             });
             importedCount++;
         }
@@ -1061,6 +1066,7 @@ public sealed class ContextCompactionService : IContextCompactionService
                         AgentId = string.IsNullOrWhiteSpace(row.AgentInstanceId) ? agentId : row.AgentInstanceId,
                         Source = "chat_transcript",
                         CreatedAt = row.CreatedAt,
+                        CanonicalContentHash = CompositionSnapshot.Sha256Hex(row.Content ?? string.Empty),
                     });
                     await memoryDb.SaveChangesAsync(ct);
                     retryImported++;
