@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
@@ -365,15 +365,16 @@ public sealed class MemoryRecallService : IMemoryRecallService
             if (queryEmbedding is null || queryEmbedding.Length == 0)
                 return Array.Empty<RecalledMemory>();
 
+                        // P1-2 T3：默认 includeCovered=false（covered chunk 不参与召回），语义与旧实现一致。
             var chunkResults = await _memoryLibrary.SearchSessionChunksByVectorAsync(queryEmbedding, workspaceId, topK, ct);
 
             return chunkResults
                 .Select(r => new RecalledMemory
                 {
-                    Snippet = r.Snippet,
+                    Snippet = r.SourceText.Length > 200 ? r.SourceText[..200] : r.SourceText,
                     RelevanceScore = r.Score,
                     Source = "chunk-vector",
-                    SourceId = $"chunk:{r.ChapterTitle}:{r.ChapterId}",
+                    SourceId = $"chunk:{r.SessionId}:{r.ChunkId}",
                 })
                 .ToList();
         }

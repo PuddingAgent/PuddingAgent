@@ -1,4 +1,6 @@
-﻿using Microsoft.Data.Sqlite;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Abstractions;
 using PuddingMemoryEngine.Entities;
@@ -896,28 +898,19 @@ public sealed class MemoryLibrary : IMemoryLibrary
 
     /// <summary>
     /// 嵌入向量搜索会话块——按 WorkspaceId 过滤，加载该工作区所有有 Embedding 的
-    /// SessionChunkVector，计算余弦相似度，排序返回 topK。
+    /// SessionChunkVector，联表 Messages（同库 LEFT JOIN）补齐 CanonicalContentHash /
+    /// ContextGeneration / CompactedBy，计算余弦相似度，排序返回 topK。
+    /// P1-2 T3：covered 过滤前置——CompactedBy != null 的 chunk 默认不参与召回
+    /// （节省 embedding 比对成本）；includeCovered=true 时返回且带 hash。
+    /// Messages 表不存在或行缺失时 chunk 不丢（视为未覆盖），hash 对 SourceText 现算兜底。
     /// 与 SearchChaptersByVectorAsync 同构（姊妹路），时间复杂度 O(N*dim)。
     /// </summary>
-    public async Task<IReadOnlyList<RankedResult>> SearchSessionChunksByVectorAsync(
-        float[] queryEmbedding, string workspaceId, int topK = 20, CancellationToken ct = default)
+    public async Task<IReadOnlyList<SessionChunkRankedResult>> SearchSessionChunksByVectorAsync(
+        float[] queryEmbedding, string workspaceId, int topK = 20, CancellationToken ct = default, bool includeCovered = false)
     {
-        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
-
-        // 加载 WorkspaceId 匹配且含 Embedding 的会话块（Embedding 为 null 的 chunk 不参与向量检索）
-        var chunks = await db.SessionChunkVectors.AsNoTracking()
-            .Where(c => c.WorkspaceId == workspaceId && c.Embedding != null)
-            .Select(c => new
-            {
-                c.ChunkId,
-                c.SessionId,
-                c.SourceText,
-                c.Embedding
-            })
-            .ToListAsync(ct);
-
+        var chunks = await LoadSessionChunksAsync(workspaceId, includeCovered, ct);
         if (chunks.Count == 0)
-            return Array.Empty<RankedResult>();
+            return Array.Empty<SessionChunkRankedResult>();
 
         // 计算余弦相似度并排序
         var scored = chunks
@@ -925,7 +918,12 @@ public sealed class MemoryLibrary : IMemoryLibrary
             {
                 c.ChunkId,
                 c.SessionId,
+                c.MessageId,
                 c.SourceText,
+                c.Embedding,
+                c.CanonicalContentHash,
+                c.ContextGeneration,
+                c.IsCovered,
                 Score = VectorSimilarity.CosineSimilarity(
                     queryEmbedding,
                     VectorSimilarity.BytesToFloats(c.Embedding!))
@@ -934,16 +932,112 @@ public sealed class MemoryLibrary : IMemoryLibrary
             .Take(topK)
             .ToList();
 
-        // RankedResult 无 SessionId/ChunkId 字段：复用 ChapterId=ChunkId、ChapterTitle=SessionId
-        // 承载溯源信息；第 5 路适配时以 $"chunk:{SessionId}:{ChunkId}" 编码 SourceId（RRF 融合键防碰撞）。
-        return scored.Select(x => new RankedResult
+        return scored.Select(x => new SessionChunkRankedResult
         {
-            ChapterId = x.ChunkId,
-            ChapterTitle = x.SessionId,
-            Snippet = x.SourceText.Length > 200 ? x.SourceText[..200] : x.SourceText,
+            ChunkId = x.ChunkId,
+            SessionId = x.SessionId,
+            MessageId = x.MessageId,
+            SourceText = x.SourceText,
+            Embedding = x.Embedding,
+            CanonicalContentHash = x.CanonicalContentHash,
+            ContextGeneration = x.ContextGeneration,
             Score = Math.Round(x.Score, 4),
-            MatchSource = "vector"
+            IsCovered = x.IsCovered,
         }).ToList();
+    }
+
+    /// <summary>
+    /// P1-2 T3：加载 SessionChunkVectors 并联表 Messages（同库 LEFT JOIN）补齐
+    /// CanonicalContentHash / ContextGeneration / CompactedBy。covered 过滤前置：
+    /// includeCovered=false（默认）时排除 CompactedBy != null 的 chunk，减少 embedding 比对量。
+    /// Messages 表不存在（旧库/独立测试库）时降级为无联表查询：所有 chunk 视为未覆盖，
+    /// 保证 chunk 不丢（方案风险4）。
+    /// hash 优先级：写侧冗余列（T2 写入）→ 联表 Messages 值 → SourceText 现算兜底。
+    /// </summary>
+    private async Task<List<SessionChunkLoadRow>> LoadSessionChunksAsync(
+        string workspaceId, bool includeCovered, CancellationToken ct)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync(ct);
+
+        // 探测 Messages 表是否可用（生产同库；旧库/独立测试库可能尚未建表）。
+        var hasMessagesTable = false;
+        await using (var probe = conn.CreateCommand())
+        {
+            probe.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'Messages' LIMIT 1";
+            hasMessagesTable = await probe.ExecuteScalarAsync(ct) is not null;
+        }
+
+        // 显式列选择，避免 ALTER TABLE 追加列导致 ordinal 漂移（与 SearchBooksFtsAsync 同风格）。
+        var sql = hasMessagesTable
+            ? """
+              SELECT c.ChunkId, c.SessionId, c.MessageId, c.SourceText, c.Embedding,
+                     c.CanonicalContentHash, c.ContextGeneration,
+                     m.CanonicalContentHash AS MessageHash, m.ContextGeneration AS MessageGeneration, m.CompactedBy
+              FROM SessionChunkVectors c
+              LEFT JOIN Messages m ON m.MessageId = c.MessageId
+              WHERE c.WorkspaceId = $workspaceId AND c.Embedding IS NOT NULL
+              """
+            : """
+              SELECT c.ChunkId, c.SessionId, c.MessageId, c.SourceText, c.Embedding,
+                     c.CanonicalContentHash, c.ContextGeneration,
+                     NULL AS MessageHash, NULL AS MessageGeneration, NULL AS CompactedBy
+              FROM SessionChunkVectors c
+              WHERE c.WorkspaceId = $workspaceId AND c.Embedding IS NOT NULL
+              """;
+
+        // covered 过滤前置：默认跳过已被压缩覆盖的 chunk（节省 embedding 比对成本）。
+        if (!includeCovered && hasMessagesTable)
+            sql += "\nAND m.CompactedBy IS NULL";
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.Parameters.Add(new SqliteParameter("$workspaceId", workspaceId));
+
+        var rows = new List<SessionChunkLoadRow>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var sourceText = reader.GetString(3);
+            var chunkHash = reader.IsDBNull(5) ? null : reader.GetString(5);
+            var messageHash = reader.IsDBNull(7) ? null : reader.GetString(7);
+            var chunkGeneration = reader.IsDBNull(6) ? (int?)null : reader.GetInt32(6);
+            var messageGeneration = reader.IsDBNull(8) ? (int?)null : reader.GetInt32(8);
+
+            rows.Add(new SessionChunkLoadRow(
+                reader.GetString(0),                                        // ChunkId
+                reader.GetString(1),                                        // SessionId
+                reader.GetString(2),                                        // MessageId
+                sourceText,
+                reader.IsDBNull(4) ? null : (byte[])reader.GetValue(4),     // Embedding
+                chunkHash ?? messageHash ?? ComputeContentHash(sourceText), // hash 兜底现算
+                chunkGeneration ?? messageGeneration,                       // 代际：写侧冗余 → 联表值
+                !reader.IsDBNull(9)));                                      // CompactedBy != null → covered
+        }
+        return rows;
+    }
+
+    /// <summary>联表加载的中间行（Chunk 信息 + Messages 覆盖状态）。</summary>
+    private sealed record SessionChunkLoadRow(
+        string ChunkId,
+        string SessionId,
+        string MessageId,
+        string SourceText,
+        byte[]? Embedding,
+        string? CanonicalContentHash,
+        int? ContextGeneration,
+        bool IsCovered);
+
+    /// <summary>
+    /// SHA-256 小写 hex——与 CompositionSnapshot.Sha256Hex 等价（PuddingMemoryEngine
+    /// 不引用 PuddingRuntime，故本地等价实现，保证与写侧 T2 的 hash 规则一致）。
+    /// </summary>
+    private static string ComputeContentHash(string text)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(text ?? string.Empty));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     /// <summary>

@@ -1,4 +1,6 @@
-﻿using Microsoft.Data.Sqlite;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
@@ -147,7 +149,7 @@ public sealed class SessionChunkVectorRecallTests
                 results[0].Score > results[1].Score && results[1].Score > results[2].Score,
                 "结果应按余弦相似度降序排列");
             Assert.AreEqual(1.0, results[0].Score, 1e-4);
-            Assert.AreEqual("chunk A：与查询向量完全一致", results[0].Snippet);
+            Assert.AreEqual("chunk A：与查询向量完全一致", results[0].SourceText);
         }
         finally
         {
@@ -186,7 +188,7 @@ public sealed class SessionChunkVectorRecallTests
             var results = await library.SearchSessionChunksByVectorAsync([1f, 0f, 0f, 0f], "ws-1", topK: 10);
 
             Assert.AreEqual(1, results.Count);
-            Assert.AreNotEqual(otherChunkId, results[0].ChapterId, "另一 workspace 的 chunk 不应返回");
+            Assert.AreNotEqual(otherChunkId, results[0].ChunkId, "另一 workspace 的 chunk 不应返回");
         }
         finally
         {
@@ -292,11 +294,164 @@ public sealed class SessionChunkVectorRecallTests
             var results = await library.SearchSessionChunksByVectorAsync([1f, 0f, 0f, 0f], "ws-1", topK: 10);
 
             Assert.AreEqual(1, results.Count);
-            Assert.AreEqual(embeddedChunkId, results[0].ChapterId, "Embedding 为 null 的 chunk 不应参与向量检索");
+            Assert.AreEqual(embeddedChunkId, results[0].ChunkId, "Embedding 为 null 的 chunk 不应参与向量检索");
         }
         finally
         {
             CleanupDbFile(dbPath);
         }
+    }
+
+    // ── e) covered 过滤：CompactedBy != null 的 chunk 默认不返回；includeCovered=true 时返回且带 hash ──
+
+    [TestMethod]
+    public async Task SearchChunksByVector_ShouldFilterCoveredByDefaultAndReturnWithHashWhenIncluded()
+    {
+        var dbPath = await InitializeLibraryDbAsync();
+        try
+        {
+            var factory = new TestLibraryDbContextFactory(CreateLibraryFileOptions(dbPath));
+            await CreateMessagesTableAsync(factory);
+
+            string coveredChunkId;
+            string uncoveredChunkId;
+            await using (var db = factory.CreateDbContext())
+            {
+                var covered = new SessionChunkVectorEntity
+                {
+                    WorkspaceId = "ws-1", SessionId = "sess-1", MessageId = "m-covered", ChunkSeq = 0,
+                    Role = "user", SourceText = "已被压缩覆盖的 chunk（默认不应召回）", Embedding = EmbeddingBytes(1f, 0f, 0f, 0f),
+                };
+                var uncovered = new SessionChunkVectorEntity
+                {
+                    WorkspaceId = "ws-1", SessionId = "sess-1", MessageId = "m-open", ChunkSeq = 0,
+                    Role = "user", SourceText = "未被覆盖的 chunk（应召回）", Embedding = EmbeddingBytes(0.9f, 0.1f, 0f, 0f),
+                };
+                db.SessionChunkVectors.AddRange(covered, uncovered);
+                coveredChunkId = covered.ChunkId;
+                uncoveredChunkId = uncovered.ChunkId;
+                await db.SaveChangesAsync();
+
+                // 同库 Messages 行：covered 的 CompactedBy 非空；uncovered 的为空
+                var conn = db.Database.GetDbConnection();
+                await conn.OpenAsync();
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = """
+                    INSERT INTO Messages (MessageId, CanonicalContentHash, ContextGeneration, CompactedBy)
+                    VALUES ($coveredId, 'hash-covered', 1, 'compaction-1'),
+                           ($uncoveredId, 'hash-open', 0, NULL)
+                    """;
+                cmd.Parameters.Add(new SqliteParameter("$coveredId", "m-covered"));
+                cmd.Parameters.Add(new SqliteParameter("$uncoveredId", "m-open"));
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            var library = new MemoryLibrary(factory);
+
+            // 默认：covered chunk 不返回
+            var filtered = await library.SearchSessionChunksByVectorAsync([1f, 0f, 0f, 0f], "ws-1", topK: 10);
+            Assert.AreEqual(1, filtered.Count, "默认应过滤 covered chunk");
+            Assert.AreEqual(uncoveredChunkId, filtered[0].ChunkId);
+            Assert.IsFalse(filtered[0].IsCovered);
+
+            // includeCovered=true：covered chunk 返回且带 hash
+            var all = await library.SearchSessionChunksByVectorAsync([1f, 0f, 0f, 0f], "ws-1", topK: 10, includeCovered: true);
+            Assert.AreEqual(2, all.Count);
+            var coveredHit = all.Single(x => x.ChunkId == coveredChunkId);
+            Assert.IsTrue(coveredHit.IsCovered);
+            Assert.AreEqual("hash-covered", coveredHit.CanonicalContentHash);
+            Assert.AreEqual(1, coveredHit.ContextGeneration);
+        }
+        finally
+        {
+            CleanupDbFile(dbPath);
+        }
+    }
+
+    // ── f) hash 透传：返回项含 MessageId/CanonicalContentHash/ContextGeneration；Messages 行缺失时现算兜底 ──
+
+    [TestMethod]
+    public async Task SearchChunksByVector_ShouldExposeMessageHashAndComputeFallbackWhenMissing()
+    {
+        var dbPath = await InitializeLibraryDbAsync();
+        try
+        {
+            var factory = new TestLibraryDbContextFactory(CreateLibraryFileOptions(dbPath));
+            await CreateMessagesTableAsync(factory);
+
+            string withMessageChunkId;
+            string orphanChunkId;
+            await using (var db = factory.CreateDbContext())
+            {
+                // chunk 写侧冗余列留空（模拟 T2 前存量行），联表取 Messages 值
+                var withMessage = new SessionChunkVectorEntity
+                {
+                    WorkspaceId = "ws-1", SessionId = "sess-1", MessageId = "m-1", ChunkSeq = 0,
+                    Role = "user", SourceText = "有 Messages 行的 chunk", Embedding = EmbeddingBytes(1f, 0f, 0f, 0f),
+                };
+                // Messages 无对应行（LEFT JOIN 落空）→ hash 现算兜底，chunk 不丢（风险4）
+                var orphan = new SessionChunkVectorEntity
+                {
+                    WorkspaceId = "ws-1", SessionId = "sess-1", MessageId = "m-orphan", ChunkSeq = 0,
+                    Role = "user", SourceText = "Messages 缺失的孤立 chunk", Embedding = EmbeddingBytes(0.95f, 0.05f, 0f, 0f),
+                };
+                db.SessionChunkVectors.AddRange(withMessage, orphan);
+                withMessageChunkId = withMessage.ChunkId;
+                orphanChunkId = orphan.ChunkId;
+                await db.SaveChangesAsync();
+
+                var conn = db.Database.GetDbConnection();
+                await conn.OpenAsync();
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = """
+                    INSERT INTO Messages (MessageId, CanonicalContentHash, ContextGeneration, CompactedBy)
+                    VALUES ($id, 'expected-hash', 2, NULL)
+                    """;
+                cmd.Parameters.Add(new SqliteParameter("$id", "m-1"));
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            var library = new MemoryLibrary(factory);
+            var results = await library.SearchSessionChunksByVectorAsync([1f, 0f, 0f, 0f], "ws-1", topK: 10);
+
+            Assert.AreEqual(2, results.Count, "LEFT JOIN 落空的行不应丢 chunk（方案风险4）");
+
+            var hit = results.Single(x => x.ChunkId == withMessageChunkId);
+            Assert.AreEqual("m-1", hit.MessageId);
+            Assert.AreEqual("expected-hash", hit.CanonicalContentHash);
+            Assert.AreEqual(2, hit.ContextGeneration);
+            Assert.IsFalse(hit.IsCovered);
+
+            var orphanHit = results.Single(x => x.ChunkId == orphanChunkId);
+            Assert.AreEqual("m-orphan", orphanHit.MessageId);
+            // 现算兜底：SHA-256(UTF-8(SourceText)) 小写 hex（与写侧 T2 等价算法）
+            var expectedFallback = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes("Messages 缺失的孤立 chunk"))).ToLowerInvariant();
+            Assert.AreEqual(expectedFallback, orphanHit.CanonicalContentHash);
+            Assert.IsNull(orphanHit.ContextGeneration);
+            Assert.IsFalse(orphanHit.IsCovered, "Messages 无行 → 视为未覆盖");
+        }
+        finally
+        {
+            CleanupDbFile(dbPath);
+        }
+    }
+
+    /// <summary>在 library 库中手工建 Messages 表（模拟生产同库；MemoryLibraryDbInitializer 不建此表）。</summary>
+    private static async Task CreateMessagesTableAsync(TestLibraryDbContextFactory factory)
+    {
+        await using var db = factory.CreateDbContext();
+        var conn = db.Database.GetDbConnection();
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            CREATE TABLE IF NOT EXISTS Messages (
+                MessageId TEXT PRIMARY KEY,
+                CanonicalContentHash TEXT NULL,
+                ContextGeneration INTEGER NULL,
+                CompactedBy TEXT NULL
+            )
+            """;
+        await cmd.ExecuteNonQueryAsync();
     }
 }

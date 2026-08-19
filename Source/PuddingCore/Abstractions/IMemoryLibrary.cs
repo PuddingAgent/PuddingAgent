@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace PuddingCode.Abstractions;
 
@@ -196,8 +196,15 @@ public interface IMemoryLibrary
     /// <summary>嵌入向量搜索章节（余弦相似度）。仅搜索有 Embedding 的 Chapter。</summary>
     Task<IReadOnlyList<RankedResult>> SearchChaptersByVectorAsync(float[] queryEmbedding, int topK = 20, CancellationToken ct = default);
 
-    /// <summary>嵌入向量搜索会话块（余弦相似度）。按 WorkspaceId 过滤，仅搜索有 Embedding 的 SessionChunkVector（WP-L2c 第 5 路）。</summary>
-    Task<IReadOnlyList<RankedResult>> SearchSessionChunksByVectorAsync(float[] queryEmbedding, string workspaceId, int topK = 20, CancellationToken ct = default);
+    /// <summary>
+    /// 嵌入向量搜索会话块（余弦相似度）。按 WorkspaceId 过滤，仅搜索有 Embedding 的
+    /// SessionChunkVector（WP-L2c 第 5 路）。联表 Messages（同库 LEFT JOIN）透传
+    /// MessageId/CanonicalContentHash/ContextGeneration；CompactedBy != null 的 covered chunk
+    /// 默认不参与召回（includeCovered=true 时返回且带 hash）。Messages 无该行时 chunk 不丢，
+    /// hash 对 SourceText 现算兜底（P1-2 T3）。
+    /// </summary>
+    Task<IReadOnlyList<SessionChunkRankedResult>> SearchSessionChunksByVectorAsync(
+        float[] queryEmbedding, string workspaceId, int topK = 20, CancellationToken ct = default, bool includeCovered = false);
 
     /// <summary>融合检索：FTS5 + TagTree + Vector，RRF 合并排名。</summary>
     Task<IReadOnlyList<RankedResult>> HybridSearchAsync(string query, float[]? queryEmbedding, int topK = 20, CancellationToken ct = default);

@@ -1,4 +1,4 @@
-﻿namespace PuddingCode.Abstractions;
+namespace PuddingCode.Abstractions;
 
 /// <summary>图书馆记录。</summary>
 public sealed record LibraryRecord(
@@ -128,6 +128,41 @@ public sealed record RankedResult
 public sealed record ExperienceWriteResult(
     BookRecord Book,
     ChapterRecord Chapter);
+
+/// <summary>
+/// 会话块向量召回结果（WP-L2c 第 5 路专用 DTO，P1-2 T3）。
+/// 不复用 <see cref="RankedResult"/>：避免污染 Library 语义与既有序列化契约（P1-2 方案风险6）。
+/// 携带 MessageId / CanonicalContentHash / ContextGeneration 供上层同源去重（T4 透传至 RecalledMemory）。
+/// </summary>
+public sealed record SessionChunkRankedResult
+{
+    /// <summary>会话块 ID（SessionChunkVectors.ChunkId）。</summary>
+    public string ChunkId { get; init; } = "";
+
+    /// <summary>所属会话 ID。</summary>
+    public string SessionId { get; init; } = "";
+
+    /// <summary>源消息 ID（断点②修复：投影透传，供上层溯源/去重）。</summary>
+    public string MessageId { get; init; } = "";
+
+    /// <summary>块文本（完整原文，供摘要与 hash 校验）。</summary>
+    public string SourceText { get; init; } = "";
+
+    /// <summary>嵌入向量（float32 字节数组）。</summary>
+    public byte[]? Embedding { get; init; }
+
+    /// <summary>内容规范化 SHA-256（小写 hex）。优先写侧冗余列 → 联表 Messages 值 → SourceText 现算兜底。</summary>
+    public string? CanonicalContentHash { get; init; }
+
+    /// <summary>该块所属压缩代际（与 MessageEntity.ContextGeneration 对齐；未知为 null）。</summary>
+    public int? ContextGeneration { get; init; }
+
+    /// <summary>余弦相似度（保留 4 位小数）。</summary>
+    public double Score { get; init; }
+
+    /// <summary>源消息是否已被压缩覆盖（Messages.CompactedBy != null）。</summary>
+    public bool IsCovered { get; init; }
+}
 
 // ═══════════════════════════════════════════════════════════════
 // ADR-028 Phase 1-3: 新增 DTO
