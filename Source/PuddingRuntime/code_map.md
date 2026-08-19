@@ -19,11 +19,12 @@
 | `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial）；子代理 LLM 完成事件携带已脱敏的消息预览与不脱敏但有界的实际推理预览；重复消息只返回结构化 stop reason |
 | `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial）；重复 message_id 的 done 帧标记 `DuplicateMessage` 且不产生可展示 reply |
 | `Services/AgentExecution/ToolResultContextPolicy.cs` | 工具结果进入模型历史前的统一 8 KiB 边界；完整原文作为 workspace-scoped artifact 保存，sidecar manifest 固化 SHA-256、UTF-8 字节、行数和 session/tool/call 身份；模型输入不做脱敏并提供渐进读取路径，存储失败时 fail-open |
-| `Services/Messaging/MessageDeliveryDispatcher.cs` | durable Message Fabric 投递；入站转录沿用稳定 messageId，重复命中不得持久化或回发占位回复 |
+| `Services/Messaging/MessageDeliveryDispatcher.cs` | durable Message Fabric 投递；按 wake event 的 deliveryId 精确领取；后台投递持有可抢占 admission lease，用户 Turn 到达时取消执行并立即回队列；入站转录沿用稳定 messageId，重复命中不得持久化或回发占位回复；P1-3 起 thinking 落库改为 v2 紧凑格式（ReasoningCompactCodec.Encode：UTF-8 字节偏移 + delta 时间戳 + SHA-256） |
+| `Services/Messaging/AgentExecutionAdmissionCoordinator.cs` | workspace/agent 级前后台准入协调器；用户 Turn/Connector handoff 形成 foreground demand，抢占活动后台投递并阻止 recovery/idle drain 抢跑 |
 | `Services/AgentExecution/AgentToolArguments.cs` | tool-call JSON → 参数转换 |
 | `Services/AgentLoop/CanonicalWorkReport.cs` | 子代理五段报告解析/校验 |
 | `Services/GoalMode/` | 🆕 Goal 模式 v2 执行器 |
-| `Services/TurnExecutorAdapter.cs` | Turn 执行适配器 |
+| `Services/TurnExecutorAdapter.cs` | Turn 执行适配器；用户 Turn 获取 foreground admission，Busy 等待采用 100ms→1s 有界指数退避与 10 秒节流日志 |
 
 ## 上下文管线
 
