@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Runtime;
+using PuddingCode.Services;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
@@ -124,6 +125,121 @@ public sealed class MessageApiControllerTests
         Assert.AreEqual(1, body!.Items.Count);
         Assert.AreEqual("user", body.Items[0].Role);
         Assert.AreEqual("materialized user", body.Items[0].Content);
+    }
+
+    // ── P1-3 T3: ThinkingJson 读侧双格式解码 ───────────
+    [TestMethod]
+    public async Task ListMessages_DecodesLegacyThinkingJson_WithExactTextAndTimestamp()
+    {
+        var sid = $"thinking-legacy-{Guid.NewGuid():N}";
+        var createdAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            db.ChatMessages.Add(new ChatMessageEntity
+            {
+                MessageId = $"legacy-{Guid.NewGuid():N}",
+                SessionId = sid,
+                Role = "agent",
+                Content = "legacy answer",
+                ThinkingJson = """[{"text":"第一步分析","timestamp":1000},{"text":"第二步检索","timestamp":2000}]""",
+                CreatedAt = createdAt,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync($"/api/sessions/{sid}/messages");
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<MessageListDto>(JsonOpts);
+        Assert.IsNotNull(body);
+        var item = body!.Items.Single();
+        Assert.IsNotNull(item.Thinking);
+        Assert.HasCount(2, item.Thinking!);
+        Assert.AreEqual("第一步分析", item.Thinking![0].Text);
+        Assert.AreEqual(1000, item.Thinking[0].Timestamp);
+        Assert.AreEqual("第二步检索", item.Thinking[1].Text);
+        Assert.AreEqual(2000, item.Thinking[1].Timestamp);
+    }
+
+    [TestMethod]
+    public async Task ListMessages_DecodesCompactThinkingJson_WithChineseUtf8Boundaries()
+    {
+        var sid = $"thinking-compact-{Guid.NewGuid():N}";
+        var createdAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        // 中文多字节用例：chunk 边界经过汉字（UTF-8 3 字节/字），必须按字节偏移还原不产生乱码。
+        var compactJson = ReasoningCompactCodec.Encode(
+            "分析用户需求并检索文件",
+            new[]
+            {
+                new ReasoningCompactCodec.ThinkingChunk("分析", 1000),
+                new ReasoningCompactCodec.ThinkingChunk("用户需求", 2500),
+                new ReasoningCompactCodec.ThinkingChunk("并检索文件", 3100),
+            });
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            db.ChatMessages.Add(new ChatMessageEntity
+            {
+                MessageId = $"compact-{Guid.NewGuid():N}",
+                SessionId = sid,
+                Role = "agent",
+                Content = "compact answer",
+                ThinkingJson = compactJson,
+                CreatedAt = createdAt,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync($"/api/sessions/{sid}/messages");
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<MessageListDto>(JsonOpts);
+        Assert.IsNotNull(body);
+        var item = body!.Items.Single();
+        Assert.IsNotNull(item.Thinking);
+        Assert.HasCount(3, item.Thinking!);
+        Assert.AreEqual("分析", item.Thinking![0].Text);
+        Assert.AreEqual(1000, item.Thinking[0].Timestamp);
+        Assert.AreEqual("用户需求", item.Thinking[1].Text);
+        Assert.AreEqual(2500, item.Thinking[1].Timestamp);
+        Assert.AreEqual("并检索文件", item.Thinking[2].Text);
+        Assert.AreEqual(3100, item.Thinking[2].Timestamp);
+    }
+
+    [TestMethod]
+    public async Task ListMessages_CompactHashMismatch_FailsOpenWithEmptyThinking()
+    {
+        var sid = $"thinking-badhash-{Guid.NewGuid():N}";
+        var createdAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        // v2 结构合法但 hash 与 text 不匹配 → 必须 fail-open：200 + 空 thinking，不抛异常。
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            db.ChatMessages.Add(new ChatMessageEntity
+            {
+                MessageId = $"badhash-{Guid.NewGuid():N}",
+                SessionId = sid,
+                Role = "agent",
+                Content = "tampered answer",
+                ThinkingJson = """{"v":2,"text":"被篡改内容","chunks":[{"o":0,"t":1000}],"hash":"deadbeefdeadbeefdeadbeefdeadbeef"}""",
+                CreatedAt = createdAt,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync($"/api/sessions/{sid}/messages");
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<MessageListDto>(JsonOpts);
+        Assert.IsNotNull(body);
+        var item = body!.Items.Single();
+        Assert.IsNotNull(item.Thinking);
+        Assert.AreEqual(0, item.Thinking!.Count);
     }
 
     // ── ADR-059: Conversation command endpoint authentication ──

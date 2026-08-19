@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Services;
@@ -31,7 +32,8 @@ public sealed class AgentConversationProjectionService(
     PlatformApiClient api,
     WorkspaceAgentFileService workspaceAgentFileService,
     SessionRedirectStore redirectStore,
-    PlatformDbContext db) : IAgentConversationProjectionService
+    PlatformDbContext db,
+    ILogger<AgentConversationProjectionService> logger) : IAgentConversationProjectionService
 {
     private const string DefaultOwnerUserId = "single-user";
     private const int ConversationMessageLimit = 20;
@@ -284,7 +286,7 @@ public sealed class AgentConversationProjectionService(
         IReadOnlyList<ProcessSummaryItem> processItems;
         if (string.IsNullOrWhiteSpace(completedRunId))
         {
-            processItems = BuildTranscriptProcessItems(message);
+            processItems = BuildTranscriptProcessItems(message, logger);
         }
         else
         {
@@ -300,7 +302,7 @@ public sealed class AgentConversationProjectionService(
                 .Where(item => item is not null)
                 .Cast<ProcessSummaryItem>()
                 .ToList();
-            processItems = MergeMessageProcessItems(message, eventItems);
+            processItems = MergeMessageProcessItems(message, eventItems, logger);
         }
 
         return new MessageProcessDetailsView(messageId, completedRunId, processItems);
@@ -568,9 +570,10 @@ public sealed class AgentConversationProjectionService(
 
     private static IReadOnlyList<ProcessSummaryItem> MergeMessageProcessItems(
         ChatMessageEntity message,
-        IReadOnlyList<ProcessSummaryItem> eventItems)
+        IReadOnlyList<ProcessSummaryItem> eventItems,
+        ILogger logger)
     {
-        var transcriptItems = BuildTranscriptProcessItems(message);
+        var transcriptItems = BuildTranscriptProcessItems(message, logger);
         if (eventItems.Count == 0)
             return transcriptItems;
 
@@ -644,47 +647,50 @@ public sealed class AgentConversationProjectionService(
         return byMessageId;
     }
 
-    private static IReadOnlyList<ProcessSummaryItem> BuildTranscriptProcessItems(ChatMessageEntity message)
+    private static IReadOnlyList<ProcessSummaryItem> BuildTranscriptProcessItems(
+        ChatMessageEntity message,
+        ILogger logger)
     {
         if (message.Role != "agent" || string.IsNullOrWhiteSpace(message.ThinkingJson))
             return Array.Empty<ProcessSummaryItem>();
 
-        try
+        // P1-3 T3：ThinkingJson 支持旧数组 / v2 紧凑双格式，统一由 ReasoningCompactCodec 解析
+        // （utf8 字节偏移切片、timestamp delta 还原、SHA-256 校验均已封装在 codec 内）。
+        var decoded = ReasoningCompactCodec.Decode(message.ThinkingJson);
+        if (decoded is null)
         {
-            using var doc = JsonDocument.Parse(message.ThinkingJson);
-            if (doc.RootElement.ValueKind != JsonValueKind.Array)
-                return Array.Empty<ProcessSummaryItem>();
-
-            var items = new List<ProcessSummaryItem>();
-            var index = 0;
-            foreach (var element in doc.RootElement.EnumerateArray())
-            {
-                var text = element.TryGetProperty("text", out var textValue)
-                           && textValue.ValueKind == JsonValueKind.String
-                    ? textValue.GetString()
-                    : null;
-                if (string.IsNullOrWhiteSpace(text))
-                    continue;
-
-                var timestamp = element.TryGetProperty("timestamp", out var timestampValue)
-                    && timestampValue.TryGetInt64(out var timestampMs)
-                        ? DateTimeOffset.FromUnixTimeMilliseconds(timestampMs)
-                        : DateTimeOffset.FromUnixTimeMilliseconds(message.CreatedAt);
-
-                items.Add(new ProcessSummaryItem(
-                    $"{message.MessageId}:thinking:{index++}",
-                    "thinking",
-                    "done",
-                    text,
-                    timestamp));
-            }
-
-            return items;
-        }
-        catch (JsonException)
-        {
+            // 结构无效（非法 JSON / 乱序偏移 / 偏移切在多字节字符中间）：fail-open，不阻断 UI。
+            logger.LogWarning(
+                "[Projection] Failed to decode ThinkingJson for message {MessageId}; process items omitted (fail-open).",
+                message.MessageId);
             return Array.Empty<ProcessSummaryItem>();
         }
+
+        if (!decoded.HashValid)
+        {
+            // hash 与 text 不匹配：数据可能被篡改，fail-open 返回空，不展示不可信的推理内容。
+            logger.LogWarning(
+                "[Projection] ThinkingJson hash mismatch for message {MessageId}; process items omitted (fail-open).",
+                message.MessageId);
+            return Array.Empty<ProcessSummaryItem>();
+        }
+
+        var items = new List<ProcessSummaryItem>();
+        var index = 0;
+        foreach (var chunk in decoded.Chunks)
+        {
+            if (string.IsNullOrWhiteSpace(chunk.Text))
+                continue;
+
+            items.Add(new ProcessSummaryItem(
+                $"{message.MessageId}:thinking:{index++}",
+                "thinking",
+                "done",
+                chunk.Text,
+                DateTimeOffset.FromUnixTimeMilliseconds(chunk.Timestamp)));
+        }
+
+        return items;
     }
 
     private static string? ReadString(string json, string propertyName)

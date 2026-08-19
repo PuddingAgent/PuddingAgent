@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using PuddingPlatform.Controllers.Api;
 using PuddingPlatform.Services;
@@ -15,7 +16,7 @@ public sealed class MemoryLibraryAdminApiControllerTests
     private readonly Mock<IMemoryLibraryAdminService> _adminMock = new();
 
     private MemoryLibraryAdminController CreateController()
-        => new(_adminMock.Object);
+        => new(_adminMock.Object, NullLogger<MemoryLibraryAdminController>.Instance);
 
     // ── Input validation ────────────────────────────────────────────
 

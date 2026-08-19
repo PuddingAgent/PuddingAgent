@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Platform;
+using PuddingCode.Services;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
@@ -693,6 +694,159 @@ public sealed class AgentChatApiControllerTests
         Assert.AreEqual("tool_result", details.ProcessItems[2].Kind);
         Assert.AreEqual("README.md", details.ProcessItems[2].Output);
         Assert.AreEqual(0, details.ProcessItems[2].ExitCode);
+    }
+
+    [TestMethod]
+    public async Task ProcessItemsEndpoint_DecodesLegacyThinkingJson_AsThinkingItems()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
+        {
+            workspaceId = "default",
+            principalKind = "agent",
+            principalId = "agent-process-thoughts-legacy",
+            agentTemplateId = "global:general-assistant",
+            title = "Process Thoughts Legacy Agent"
+        });
+        createResponse.EnsureSuccessStatusCode();
+        var session = await createResponse.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
+        Assert.IsNotNull(session);
+
+        var externalMessageId = $"legacy-thinking-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            db.ChatMessages.Add(new ChatMessageEntity
+            {
+                MessageId = externalMessageId,
+                SessionId = session!.SessionId,
+                Role = "agent",
+                Content = "legacy final",
+                ThinkingJson = """[{"text":"分析用户需求","timestamp":2000},{"text":"检索资料","timestamp":2600}]""",
+                CreatedAt = now.ToUnixTimeMilliseconds(),
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync(
+            $"/api/workspaces/default/agents/agent-process-thoughts-legacy/conversation/messages/{externalMessageId}/process-items");
+        response.EnsureSuccessStatusCode();
+
+        var details = await response.Content.ReadFromJsonAsync<MessageProcessDetailsViewDto>(JsonOpts);
+        Assert.IsNotNull(details);
+        Assert.AreEqual(externalMessageId, details!.MessageId);
+        Assert.IsNull(details.RunId);
+        Assert.HasCount(2, details.ProcessItems);
+        Assert.AreEqual("thinking", details.ProcessItems[0].Kind);
+        Assert.AreEqual("done", details.ProcessItems[0].Status);
+        Assert.AreEqual("分析用户需求", details.ProcessItems[0].Text);
+        Assert.AreEqual(DateTimeOffset.FromUnixTimeMilliseconds(2000), DateTimeOffset.Parse(details.ProcessItems[0].Timestamp));
+        Assert.AreEqual("thinking", details.ProcessItems[1].Kind);
+        Assert.AreEqual("检索资料", details.ProcessItems[1].Text);
+        Assert.AreEqual(DateTimeOffset.FromUnixTimeMilliseconds(2600), DateTimeOffset.Parse(details.ProcessItems[1].Timestamp));
+    }
+
+    [TestMethod]
+    public async Task ProcessItemsEndpoint_DecodesCompactThinkingJson_WithChineseUtf8Boundaries_MatchingLegacyShape()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
+        {
+            workspaceId = "default",
+            principalKind = "agent",
+            principalId = "agent-process-thoughts-compact",
+            agentTemplateId = "global:general-assistant",
+            title = "Process Thoughts Compact Agent"
+        });
+        createResponse.EnsureSuccessStatusCode();
+        var session = await createResponse.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
+        Assert.IsNotNull(session);
+
+        var externalMessageId = $"compact-thinking-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        // 中文多字节用例：chunk 边界经过汉字（UTF-8 3 字节/字），还原后与旧格式逐字段一致。
+        var compactJson = ReasoningCompactCodec.Encode(
+            "分析用户需求并检索资料",
+            new[]
+            {
+                new ReasoningCompactCodec.ThinkingChunk("分析", 2000),
+                new ReasoningCompactCodec.ThinkingChunk("用户需求", 2600),
+                new ReasoningCompactCodec.ThinkingChunk("并检索资料", 3300),
+            });
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            db.ChatMessages.Add(new ChatMessageEntity
+            {
+                MessageId = externalMessageId,
+                SessionId = session!.SessionId,
+                Role = "agent",
+                Content = "compact final",
+                ThinkingJson = compactJson,
+                CreatedAt = now.ToUnixTimeMilliseconds(),
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync(
+            $"/api/workspaces/default/agents/agent-process-thoughts-compact/conversation/messages/{externalMessageId}/process-items");
+        response.EnsureSuccessStatusCode();
+
+        var details = await response.Content.ReadFromJsonAsync<MessageProcessDetailsViewDto>(JsonOpts);
+        Assert.IsNotNull(details);
+        Assert.AreEqual(externalMessageId, details!.MessageId);
+        Assert.IsNull(details.RunId);
+        Assert.HasCount(3, details.ProcessItems);
+        Assert.AreEqual("thinking", details.ProcessItems[0].Kind);
+        Assert.AreEqual("done", details.ProcessItems[0].Status);
+        Assert.AreEqual("分析", details.ProcessItems[0].Text);
+        Assert.AreEqual(DateTimeOffset.FromUnixTimeMilliseconds(2000), DateTimeOffset.Parse(details.ProcessItems[0].Timestamp));
+        Assert.AreEqual("用户需求", details.ProcessItems[1].Text);
+        Assert.AreEqual(DateTimeOffset.FromUnixTimeMilliseconds(2600), DateTimeOffset.Parse(details.ProcessItems[1].Timestamp));
+        Assert.AreEqual("并检索资料", details.ProcessItems[2].Text);
+        Assert.AreEqual(DateTimeOffset.FromUnixTimeMilliseconds(3300), DateTimeOffset.Parse(details.ProcessItems[2].Timestamp));
+    }
+
+    [TestMethod]
+    public async Task ProcessItemsEndpoint_CompactHashMismatch_FailsOpenWithEmptyProcessItems()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
+        {
+            workspaceId = "default",
+            principalKind = "agent",
+            principalId = "agent-process-thoughts-badhash",
+            agentTemplateId = "global:general-assistant",
+            title = "Process Thoughts BadHash Agent"
+        });
+        createResponse.EnsureSuccessStatusCode();
+        var session = await createResponse.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
+        Assert.IsNotNull(session);
+
+        var externalMessageId = $"badhash-thinking-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            db.ChatMessages.Add(new ChatMessageEntity
+            {
+                MessageId = externalMessageId,
+                SessionId = session!.SessionId,
+                Role = "agent",
+                Content = "tampered final",
+                ThinkingJson = """{"v":2,"text":"被篡改内容","chunks":[{"o":0,"t":2000}],"hash":"deadbeefdeadbeefdeadbeefdeadbeef"}""",
+                CreatedAt = now.ToUnixTimeMilliseconds(),
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync(
+            $"/api/workspaces/default/agents/agent-process-thoughts-badhash/conversation/messages/{externalMessageId}/process-items");
+        response.EnsureSuccessStatusCode();
+
+        var details = await response.Content.ReadFromJsonAsync<MessageProcessDetailsViewDto>(JsonOpts);
+        Assert.IsNotNull(details);
+        Assert.AreEqual(externalMessageId, details!.MessageId);
+        Assert.AreEqual(0, details.ProcessItems.Count);
     }
 
     [TestMethod]

@@ -2,8 +2,10 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingCode.Services;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 
@@ -96,7 +98,7 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
         // 结果按时间升序返回（前端从上往下渲染）
         var dtos = items
             .OrderBy(m => m.CreatedAt)
-            .Select(MapToDto)
+            .Select(m => MapToDto(m, logger))
             .ToList();
 
         var oldestCreatedAt = items.Count > 0
@@ -186,16 +188,34 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
 
     // ── Mapping ─────────────────────────────────────────────────
 
-    private static ChatMessageDto MapToDto(ChatMessageEntity m)
+    private static ChatMessageDto MapToDto(ChatMessageEntity m, ILogger logger)
     {
         List<ThinkingChunkDto>? thinking = null;
         if (!string.IsNullOrWhiteSpace(m.ThinkingJson))
         {
-            try
+            // P1-3 T3：ThinkingJson 支持旧数组 / v2 紧凑双格式，统一由 ReasoningCompactCodec 解析。
+            // hash 校验失败或结构无效时 fail-open：返回空 thinking，不抛异常、不阻断 UI。
+            var decoded = ReasoningCompactCodec.Decode(m.ThinkingJson);
+            if (decoded is null)
             {
-                thinking = JsonSerializer.Deserialize<List<ThinkingChunkDto>>(m.ThinkingJson, JsonOpts);
+                logger.LogWarning(
+                    "[Messages] Failed to decode ThinkingJson for message {MessageId}; thinking omitted (fail-open).",
+                    m.Id);
+                thinking = [];
             }
-            catch (JsonException) { /* skip malformed thinking JSON */ }
+            else if (!decoded.HashValid)
+            {
+                logger.LogWarning(
+                    "[Messages] ThinkingJson hash mismatch for message {MessageId}; thinking omitted (fail-open).",
+                    m.Id);
+                thinking = [];
+            }
+            else
+            {
+                thinking = decoded.Chunks
+                    .Select(c => new ThinkingChunkDto(c.Text, c.Timestamp))
+                    .ToList();
+            }
         }
 
         TokenUsageDto? usage = null;
