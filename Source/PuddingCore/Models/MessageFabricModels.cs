@@ -151,6 +151,11 @@ public sealed record MessageClaimRequest
     public required MessageAddress Endpoint { get; init; }
     public string? WorkspaceId { get; init; }
     public string? RoomId { get; init; }
+    /// <summary>
+    /// Optional exact delivery selected by a wake event. Recovery callers leave
+    /// this null to claim the highest-priority queued delivery for the endpoint.
+    /// </summary>
+    public string? DeliveryId { get; init; }
     public required string ExecutionId { get; init; }
     public TimeSpan LeaseDuration { get; init; } = TimeSpan.FromMinutes(5);
 }
