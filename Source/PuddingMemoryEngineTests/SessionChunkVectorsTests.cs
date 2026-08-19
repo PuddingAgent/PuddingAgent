@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Entities;
@@ -172,12 +172,112 @@ public sealed class SessionChunkVectorsTests
         }
     }
 
+    // ── d) 同源去重列：写入 + 读回往返 ────────────────────────────────
+
+    [TestMethod]
+    public async Task InsertAndQuery_SessionChunkVector_ShouldRoundTripDedupColumns()
+    {
+        var dbPath = await InitializeFileDbAsync();
+        try
+        {
+            var factory = new TestDbContextFactory(CreateFileOptions(dbPath));
+            await using var db = factory.CreateDbContext();
+
+            const int generation = 2;
+            var hash = new string('b', 64);
+
+            db.SessionChunkVectors.Add(new SessionChunkVectorEntity
+            {
+                WorkspaceId = "ws-2",
+                SessionId = "session-dedup",
+                MessageId = "msg-dedup",
+                ChunkSeq = 0,
+                Role = "user",
+                SourceText = "同源去重锚点测试",
+                CanonicalContentHash = hash,
+                ContextGeneration = generation,
+            });
+            await db.SaveChangesAsync();
+
+            var loaded = await db.SessionChunkVectors.SingleAsync(v => v.MessageId == "msg-dedup");
+            Assert.AreEqual(hash, loaded.CanonicalContentHash);
+            Assert.AreEqual(generation, loaded.ContextGeneration);
+        }
+        finally
+        {
+            CleanupDbFile(dbPath);
+        }
+    }
+
+    // ── e) 存量库自愈：旧 schema 表缺两列 → 初始化 ALTER TABLE 补列、不删旧数据 ──
+
+    [TestMethod]
+    public async Task InitializeSchema_OnLegacyTable_ShouldAddDedupColumnsWithoutDroppingData()
+    {
+        var dbPath = CreateTempDbPath();
+        try
+        {
+            // 1) 手工构造“存量库”：仅含旧 schema 的 SessionChunkVectors 表 + 一行旧数据
+            await using (var legacyConn = new SqliteConnection($"Data Source={dbPath}"))
+            {
+                await legacyConn.OpenAsync();
+                await using var legacyCmd = legacyConn.CreateCommand();
+                legacyCmd.CommandText = """
+CREATE TABLE SessionChunkVectors (
+    ChunkId     TEXT PRIMARY KEY,
+    WorkspaceId TEXT NOT NULL,
+    SessionId   TEXT NOT NULL,
+    MessageId   TEXT NOT NULL,
+    ChunkSeq    INTEGER NOT NULL,
+    Role        TEXT NOT NULL,
+    SourceText  TEXT NOT NULL,
+    Embedding   BLOB,
+    CreatedAt   INTEGER NOT NULL
+);
+INSERT INTO SessionChunkVectors (ChunkId, WorkspaceId, SessionId, MessageId, ChunkSeq, Role, SourceText, CreatedAt)
+VALUES ('legacy-1', 'ws-legacy', 'session-legacy', 'msg-legacy', 0, 'user', '存量数据', 1);
+""";
+                await legacyCmd.ExecuteNonQueryAsync();
+            }
+
+            // 2) 走生产初始化路径 → 应自动补列且不抛异常
+            var factory = new TestDbContextFactory(CreateFileOptions(dbPath));
+            await MemoryLibraryDbInitializer.InitializeAsync(factory);
+
+            // 3) 两列已补、旧数据仍在
+            await using var db = factory.CreateDbContext();
+            Assert.IsTrue(await ColumnExistsAsync(db, "CanonicalContentHash"), "存量库初始化后应补 CanonicalContentHash 列");
+            Assert.IsTrue(await ColumnExistsAsync(db, "ContextGeneration"), "存量库初始化后应补 ContextGeneration 列");
+
+            var legacy = await db.SessionChunkVectors.SingleOrDefaultAsync(v => v.ChunkId == "legacy-1");
+            Assert.IsNotNull(legacy, "存量数据不应被删");
+            Assert.AreEqual("session-legacy", legacy!.SessionId);
+            Assert.AreEqual("存量数据", legacy.SourceText);
+            Assert.IsNull(legacy.CanonicalContentHash);
+            Assert.IsNull(legacy.ContextGeneration);
+        }
+        finally
+        {
+            CleanupDbFile(dbPath);
+        }
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────
 
     private static async Task<bool> DbTableExistsAsync(MemoryLibraryDbContext db, string tableName)
     {
         var found = await db.Database
             .SqlQueryRaw<string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = {0}", tableName)
+            .ToListAsync();
+        return found.Count > 0;
+    }
+
+    private static async Task<bool> ColumnExistsAsync(MemoryLibraryDbContext db, string column)
+    {
+        var found = await db.Database
+            .SqlQueryRaw<string>(
+                "SELECT name FROM pragma_table_info('SessionChunkVectors') WHERE name = {0}",
+                column)
             .ToListAsync();
         return found.Count > 0;
     }

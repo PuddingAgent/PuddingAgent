@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using PuddingMemoryEngine.Entities;
 
 namespace PuddingMemoryEngine.Data;
@@ -79,6 +79,9 @@ public class MemoryLibraryDbContext : DbContext
         {
             entity.ToTable("SessionChunkVectors");
             entity.HasKey(e => e.ChunkId);
+            // P1-2 T1: 同源去重列（可空；存量库自愈补列后可用）
+            entity.Property(e => e.ContextGeneration).IsRequired(false);
+            entity.Property(e => e.CanonicalContentHash).IsRequired(false);
             entity.HasIndex(e => new { e.WorkspaceId, e.SessionId, e.ChunkSeq });
             entity.HasIndex(e => new { e.MessageId, e.ChunkSeq }).IsUnique();
         });

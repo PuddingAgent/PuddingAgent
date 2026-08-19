@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -103,9 +103,15 @@ CREATE TABLE IF NOT EXISTS SessionChunkVectors (
     Role        TEXT NOT NULL,
     SourceText  TEXT NOT NULL,
     Embedding   BLOB,
+    ContextGeneration INTEGER,
+    CanonicalContentHash TEXT,
     CreatedAt   INTEGER NOT NULL
 );
 """);
+
+        // P1-2 T1: 同源去重所需列。存量库缺列时幂等自愈（ALTER TABLE 补列，不删旧数据）。
+        await EnsureColumnAsync(conn, "SessionChunkVectors", "CanonicalContentHash", "TEXT", logger);
+        await EnsureColumnAsync(conn, "SessionChunkVectors", "ContextGeneration", "INTEGER", logger);
 
         await ExecuteAsync(conn, """
 CREATE TABLE IF NOT EXISTS Pointers (

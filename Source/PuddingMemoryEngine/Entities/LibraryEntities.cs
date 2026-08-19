@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace PuddingMemoryEngine.Entities;
 
@@ -208,6 +208,13 @@ public sealed class SessionChunkVectorEntity
     /// </summary>
     [MaxLength(1024 * 4)]
     public byte[]? Embedding { get; set; }
+
+    /// <summary>该块所属的压缩代际（原始消息为 null；与 MessageEntity.ContextGeneration 对齐）。</summary>
+    public int? ContextGeneration { get; set; }
+
+    /// <summary>内容规范化 SHA-256（小写 hex），供同源去重锚点。未计算时为 null。</summary>
+    [MaxLength(64)]
+    public string? CanonicalContentHash { get; set; }
 
     /// <summary>Unix 时间戳（毫秒）。</summary>
     public long CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
