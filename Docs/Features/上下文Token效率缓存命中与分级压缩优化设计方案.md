@@ -529,6 +529,8 @@ duplicateRate  = duplicatedSourceBytes / rawBytesBefore
 
 交付：近期 reasoning text 原文、紧凑 offset/timestamp sidecar、hash 级重建测试；`ThinkingJson` 不进入后续模型 prompt。
 
+状态：实施中（2026-08-20，T1 `ReasoningCompactCodec` 组件 `6e12830`、T3 读侧双格式解码 `3f75c58`、T5 ThinkingJson 隔离断言 `42cb5a2` 已提交；T2 写侧 v2 落库与 T6 端到端回归代码就绪待提交，被 retention/准入重构归属裁决阻塞）。
+
 ### P2：自适应预算
 
 在 P0/P1 有至少 7 日生产数据后，按任务类型、内容类型、cache benefit 和取回率自适应调整内联预算与 Tier 阈值。P2 不能提前阻塞 P0 的完整性和稳定性修复。
