@@ -440,6 +440,64 @@ public sealed class ContextWindowManagerTests
     }
 
     [TestMethod]
+    public async Task BuildContextFromJsonlAsync_DoesNotHydrate_ThinkingJson_As_ReasoningContent()
+    {
+        var jsonlRoot = CreateTempJsonlRoot();
+        try
+        {
+            var writer = new JsonlSessionWriter(jsonlRoot);
+            // thinking 事件帧：Content 为空 → IsJsonlMessageEntry 过滤，不进入 chat history。
+            writer.WriteEventLine(
+                "session-jsonl-thinking",
+                "thinking",
+                """{"delta":"The","messageId":"jsonl-a2"}""",
+                sequenceNum: 1,
+                "2026-08-19T00:00:00Z");
+            writer.Enqueue("session-jsonl-thinking", new JsonlEntry
+            {
+                Type = "user",
+                MessageId = "jsonl-u1",
+                SessionId = "session-jsonl-thinking",
+                Role = "user",
+                ContentType = "text",
+                Content = "继续优化缓存命中率",
+                BranchType = "MAIN",
+                CreatedAt = 10,
+            });
+            writer.Enqueue("session-jsonl-thinking", new JsonlEntry
+            {
+                Type = "assistant",
+                MessageId = "jsonl-a1",
+                SessionId = "session-jsonl-thinking",
+                Role = "assistant",
+                ContentType = "text",
+                Content = "好的，我来处理。",
+                ThinkingJson = """[{"text":"stale hidden reasoning from an older task"}]""",
+                BranchType = "MAIN",
+                CreatedAt = 11,
+            });
+
+            var manager = CreateManager(null, jsonlReader: new JsonlSessionReader(jsonlRoot));
+
+            var history = await manager.BuildContextFromJsonlAsync(
+                "session-jsonl-thinking",
+                maxTokenBudget: 8000,
+                CancellationToken.None);
+
+            var assistant = history.Single(m => m.Content == "好的，我来处理。");
+            Assert.IsNull(assistant.ReasoningContent,
+                "JSONL 冷启动路径的 ThinkingJson 是 UI/diagnostic 数据，不得作为 reasoning_content 回灌 LLM 提示词。");
+            Assert.IsFalse(
+                history.Any(m => m.Content?.Contains("stale hidden reasoning", StringComparison.Ordinal) == true),
+                "thinking 事件帧与 ThinkingJson 内容都不得进入 chat history。");
+        }
+        finally
+        {
+            Directory.Delete(jsonlRoot, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task BuildContextFromDbAsync_Filters_RuntimeFuse_AssistantMessages()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

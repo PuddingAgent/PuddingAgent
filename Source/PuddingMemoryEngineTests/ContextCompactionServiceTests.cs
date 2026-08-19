@@ -659,6 +659,48 @@ public sealed class ContextCompactionServiceTests
     }
 
     [TestMethod]
+    public async Task FullCompactAsync_SummaryInput_ExcludesThinkingJson()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-thinking-input", messageCount: 10);
+
+        // 给将被压缩的 agent 消息附加 ThinkingJson（UI/diagnostic 数据，模拟 DB 中遗留的历史 thinking）。
+        var agentRows = await db.Messages
+            .Where(m => m.SessionId == "session-thinking-input" && m.Role == "agent" && m.Sequence <= 4)
+            .ToListAsync();
+        foreach (var row in agentRows)
+            row.ThinkingJson = """[{"text":"stale hidden reasoning from an older task"}]""";
+        await db.SaveChangesAsync();
+
+        var generator = new CapturingSummaryGenerator();
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            generator,
+            NullLogger<ContextCompactionService>.Instance);
+
+        var result = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1", SessionId: "session-thinking-input", AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual, Level: ContextCompactionLevel.Full,
+            Reason: "verify summary input excludes thinking"));
+
+        Assert.AreEqual(4, result.CompactedMessageCount);
+
+        // map/reduce 输入是 ContextCompactionMessage（仅 MessageId/Sequence/Role/Content，编译期无 ThinkingJson 字段）；
+        // 运行时再断言 thinking 文本未进入摘要输入与最终摘要，防未来改动回灌。
+        Assert.IsNotNull(generator.LastRequest, "摘要生成器应收到 summary 输入。");
+        Assert.IsFalse(
+            generator.LastRequest!.Any(m => m.Content.Contains("stale hidden reasoning", StringComparison.Ordinal)),
+            "compact summary 生成输入不得包含 thinking 内容（只取 Content）。");
+        Assert.IsFalse(
+            result.SummaryMarkdown.Contains("stale hidden reasoning", StringComparison.Ordinal),
+            "compact summary 输出不得包含 thinking 内容。");
+    }
+
+    [TestMethod]
     public async Task ExtractiveGenerator_FiltersNoiseMessages()
     {
         var generator = new ExtractiveContextCompactionSummaryGenerator();
