@@ -304,6 +304,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<HeartbeatOrchestrator>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<HeartbeatOrchestrator>());
         builder.Services.AddSingleton<IAgentExecutionStateRegistry, AgentExecutionStateRegistry>();
+        builder.Services.AddSingleton<AgentExecutionAdmissionCoordinator>();
         builder.Services.AddSingleton<IAgentExecutionAvailabilityProvider, DefaultAgentExecutionAvailabilityProvider>();
         builder.Services.AddSingleton<MessageDeliveryDispatcher>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<MessageDeliveryDispatcher>());

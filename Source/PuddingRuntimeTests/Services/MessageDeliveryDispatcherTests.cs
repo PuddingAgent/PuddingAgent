@@ -277,7 +277,12 @@ public sealed class MessageDeliveryDispatcherTests
         // increments AttemptCount, so without the cooldown a busy target would be
         // hot-looped claim → dispatch → busy → defer and AttemptCount would inflate
         // without any progress.
-        var inbox = new RecordingMessageInbox { ClaimAttemptCount = 3 };
+        var agentSender = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "agent-a" };
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimAttemptCount = 3,
+            ClaimFrom = agentSender,
+        };
         var runtime = new RecordingRuntimeAgentDispatcher
         {
             StreamFrames =
@@ -291,12 +296,16 @@ public sealed class MessageDeliveryDispatcherTests
         };
         var dispatcher = CreateDispatcher(inbox, runtime);
 
-        await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
+        await dispatcher.HandleAsync(
+            CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: agentSender),
+            CancellationToken.None);
         var firstExecution = inbox.LastClaim!.ExecutionId;
 
         // Second dispatch attempt inside the cooldown window must be skipped before
         // claiming, so no new execution is created and no second defer happens.
-        await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
+        await dispatcher.HandleAsync(
+            CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: agentSender),
+            CancellationToken.None);
 
         Assert.HasCount(1, inbox.Deferred);
         Assert.AreEqual(firstExecution, inbox.LastClaim!.ExecutionId);
@@ -408,6 +417,7 @@ public sealed class MessageDeliveryDispatcherTests
             command.Recipients.AgentIds!.ToArray());
         Assert.AreEqual("hello", command.Content.Single().Text);
         Assert.AreEqual("feishu", command.Metadata![MessageGatewayMetadata.ChannelType]);
+        Assert.AreEqual("d1", inbox.LastClaim!.DeliveryId);
         Assert.IsEmpty(runtime.Requests);
         Assert.IsEmpty(runtime.StreamRequests);
         Assert.HasCount(1, inbox.Acked);
@@ -556,6 +566,7 @@ public sealed class MessageDeliveryDispatcherTests
             new RecordingInternalEventBus(),
             provider.GetRequiredService<IServiceScopeFactory>(),
             new AgentWakeQueue(NullLogger<AgentWakeQueue>.Instance),
+            new AgentExecutionAdmissionCoordinator(),
             NullLogger<MessageDeliveryDispatcher>.Instance);
 
         await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
@@ -642,6 +653,7 @@ public sealed class MessageDeliveryDispatcherTests
             new RecordingInternalEventBus(),
             provider.GetRequiredService<IServiceScopeFactory>(),
             new AgentWakeQueue(NullLogger<AgentWakeQueue>.Instance),
+            new AgentExecutionAdmissionCoordinator(),
             NullLogger<MessageDeliveryDispatcher>.Instance);
 
         await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
@@ -729,8 +741,10 @@ public sealed class MessageDeliveryDispatcherTests
     [TestMethod]
     public async Task HandleAsync_BatchedRuntimeFailure_RetriesEveryClaimedDelivery()
     {
+        var agentSender = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "agent-a" };
         var inbox = new RecordingMessageInbox
         {
+            ClaimFrom = agentSender,
             BatchClaims =
             [
                 new MessageInboxItem
@@ -755,7 +769,9 @@ public sealed class MessageDeliveryDispatcherTests
         };
         var dispatcher = CreateDispatcher(inbox, runtime);
 
-        await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
+        await dispatcher.HandleAsync(
+            CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: agentSender),
+            CancellationToken.None);
 
         CollectionAssert.AreEquivalent(
             new[] { "d1", "d2" },
@@ -831,6 +847,98 @@ public sealed class MessageDeliveryDispatcherTests
     }
 
     [TestMethod]
+    public async Task HandleAsync_ForegroundTurnPreemptsRunningSubAgentResultAndDefersDelivery()
+    {
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimMetadata = new Dictionary<string, string>
+            {
+                ["source"] = "subagent",
+                ["intent"] = "subagent_result",
+            },
+            ClaimFrom = new MessageAddress
+            {
+                Kind = MessageEndpointKinds.Agent,
+                Id = "child-agent",
+            },
+            MaxClaimCount = 1,
+        };
+        var runtime = new BlockingRuntimeAgentDispatcher();
+        var coordinator = new AgentExecutionAdmissionCoordinator();
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            admissionCoordinator: coordinator);
+
+        var backgroundTask = dispatcher.HandleAsync(
+            CreateSubAgentResultEvent(),
+            CancellationToken.None);
+        await runtime.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        using (coordinator.AcquireForeground("default", "agent-b"))
+            await backgroundTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.IsTrue(runtime.CancellationObserved);
+        Assert.HasCount(1, inbox.Deferred);
+        Assert.AreEqual("d1", inbox.Deferred[0].DeliveryId);
+        Assert.IsEmpty(inbox.Acked);
+        Assert.IsEmpty(inbox.Retried);
+        Assert.IsEmpty(inbox.DeadLettered);
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_ForegroundAdmissionCancelsRunningHeartbeatAndAcksItsDelivery()
+    {
+        var heartbeatFrom = new MessageAddress { Kind = MessageEndpointKinds.System, Id = "heartbeat" };
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimFrom = heartbeatFrom,
+            ClaimContent = "── 系统心跳 ──\n\n[系统心跳] 你醒来了。",
+            MaxClaimCount = 1,
+        };
+        var runtime = new BlockingRuntimeAgentDispatcher();
+        var coordinator = new AgentExecutionAdmissionCoordinator();
+        var dispatcher = CreateDispatcher(inbox, runtime, admissionCoordinator: coordinator);
+
+        var heartbeatTask = dispatcher.HandleAsync(
+            CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: heartbeatFrom),
+            CancellationToken.None);
+        await runtime.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        using var foreground = coordinator.AcquireForeground("default", "agent-b");
+        await heartbeatTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.IsTrue(runtime.CancellationObserved);
+        Assert.HasCount(1, inbox.Acked);
+        Assert.AreEqual("d1", inbox.Acked[0].DeliveryId);
+        Assert.IsEmpty(inbox.Deferred);
+        Assert.IsEmpty(inbox.Retried);
+        Assert.IsEmpty(inbox.DeadLettered);
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_ForegroundDemandSkipsBackgroundClaimWithoutIncrementingAttempt()
+    {
+        var inbox = new RecordingMessageInbox();
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var coordinator = new AgentExecutionAdmissionCoordinator();
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            admissionCoordinator: coordinator);
+
+        using (coordinator.AcquireForeground("default", "agent-b"))
+        {
+            await dispatcher.HandleAsync(
+                CreateSubAgentResultEvent(),
+                CancellationToken.None);
+        }
+
+        Assert.IsNull(inbox.LastClaim);
+        Assert.IsEmpty(runtime.StreamRequests);
+    }
+
+    [TestMethod]
     public async Task HandleAsync_SubAgentResultMessage_PersistsParentContinuationTranscript()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -890,6 +998,7 @@ public sealed class MessageDeliveryDispatcherTests
             new RecordingInternalEventBus(),
             provider.GetRequiredService<IServiceScopeFactory>(),
             new AgentWakeQueue(NullLogger<AgentWakeQueue>.Instance),
+            new AgentExecutionAdmissionCoordinator(),
             NullLogger<MessageDeliveryDispatcher>.Instance);
 
         await dispatcher.HandleAsync(CreateSubAgentResultEvent(), CancellationToken.None);
@@ -900,12 +1009,131 @@ public sealed class MessageDeliveryDispatcherTests
         Assert.AreEqual("parent continuation", transcript.Content);
         Assert.IsNotNull(transcript.ThinkingJson);
         StringAssert.Contains(transcript.ThinkingJson!, "thinking about child result");
+        var decodedThinking = ReasoningCompactCodec.Decode(transcript.ThinkingJson);
+        Assert.IsNotNull(decodedThinking);
+        Assert.IsTrue(decodedThinking!.IsCompactFormat, "新写 thinking 必须为 v2 紧凑格式");
+        Assert.IsTrue(decodedThinking.HashValid, "hash 应与 text 匹配");
+        Assert.AreEqual("thinking about child result", decodedThinking.Text);
+        Assert.HasCount(1, decodedThinking.Chunks);
+        Assert.AreEqual("thinking about child result", decodedThinking.Chunks[0].Text);
         Assert.IsNotNull(transcript.UsageJson);
         StringAssert.Contains(transcript.UsageJson!, "totalTokens");
         var runtime = provider.GetRequiredService<RecordingRuntimeAgentDispatcher>();
         Assert.HasCount(1, runtime.StreamRequests);
         StringAssert.Contains(runtime.StreamRequests[0].MessageText, "\"schema\": \"pudding-message\"");
         StringAssert.Contains(runtime.StreamRequests[0].MessageText, "\"message_type\": \"subagent_result\"");
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_ThinkingFrames_PersistCompactV2ThinkingJson()
+    {
+        var transcript = await PersistSubAgentTranscriptAsync(
+        [
+            ServerSentEventFrame.Json("thinking", new { delta = "step one " }),
+            ServerSentEventFrame.Json("thinking", new { delta = "step two" }),
+            ServerSentEventFrame.Json("delta", new { delta = "parent " }),
+            ServerSentEventFrame.Json("delta", new { delta = "continuation" }),
+            ServerSentEventFrame.Json("done", new { reply = "parent continuation" }),
+        ]);
+
+        Assert.IsNotNull(transcript.ThinkingJson);
+        Assert.IsFalse(transcript.ThinkingJson!.StartsWith('['), "新写 thinking 必须为 v2 紧凑格式而非旧数组");
+        var decoded = ReasoningCompactCodec.Decode(transcript.ThinkingJson);
+        Assert.IsNotNull(decoded);
+        Assert.IsTrue(decoded!.IsCompactFormat, "落库 ThinkingJson 应为新格式");
+        Assert.IsTrue(decoded.HashValid, "hash 应与 text 匹配");
+        Assert.AreEqual("step one step two", decoded.Text);
+        Assert.HasCount(2, decoded.Chunks);
+        Assert.AreEqual("step one ", decoded.Chunks[0].Text);
+        Assert.AreEqual("step two", decoded.Chunks[1].Text);
+        Assert.IsTrue(decoded.Chunks[0].Timestamp > 0);
+        Assert.IsTrue(decoded.Chunks[1].Timestamp >= decoded.Chunks[0].Timestamp);
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_ThinkingFrames_ChineseMultiByteUtf8Offsets_RoundTrip()
+    {
+        var transcript = await PersistSubAgentTranscriptAsync(
+        [
+            ServerSentEventFrame.Json("thinking", new { delta = "思考中" }),
+            ServerSentEventFrame.Json("thinking", new { delta = "，分析" }),
+            ServerSentEventFrame.Json("thinking", new { delta = "用户需求" }),
+            ServerSentEventFrame.Json("delta", new { delta = "好的，" }),
+            ServerSentEventFrame.Json("delta", new { delta = "我来处理" }),
+            ServerSentEventFrame.Json("done", new { reply = "好的，我来处理" }),
+        ]);
+
+        Assert.IsNotNull(transcript.ThinkingJson);
+        var decoded = ReasoningCompactCodec.Decode(transcript.ThinkingJson);
+        Assert.IsNotNull(decoded);
+        Assert.IsTrue(decoded!.IsCompactFormat);
+        Assert.IsTrue(decoded.HashValid);
+        Assert.AreEqual("思考中，分析用户需求", decoded.Text);
+        Assert.HasCount(3, decoded.Chunks);
+        Assert.AreEqual("思考中", decoded.Chunks[0].Text);
+        Assert.AreEqual("，分析", decoded.Chunks[1].Text);
+        Assert.AreEqual("用户需求", decoded.Chunks[2].Text);
+        Assert.IsTrue(decoded.Chunks[2].Timestamp >= decoded.Chunks[1].Timestamp);
+    }
+
+    private static async Task<ChatMessageEntity> PersistSubAgentTranscriptAsync(
+        IReadOnlyList<ServerSentEventFrame> frames)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+
+        var services = new ServiceCollection();
+        services.AddDbContext<PlatformDbContext>(options => options.UseSqlite(connection));
+        services.AddSingleton(new RecordingMessageInbox
+        {
+            ClaimMetadata = new Dictionary<string, string>
+            {
+                ["source"] = "subagent",
+                ["intent"] = "subagent_result",
+                ["sub_agent_id"] = "sub-1",
+            },
+            ClaimContent = """
+            {
+              "schema": "pudding-message",
+              "version": 1,
+              "message_id": "msg-sub-result",
+              "message_type": "subagent_result",
+              "from": { "kind": "agent", "id": "sub-1", "display_name": "Sub Agent" },
+              "to": [{ "kind": "agent", "id": "parent-agent" }],
+              "constraints": ["This message was delivered by Pudding Message Fabric."],
+              "context": { "format": "text/markdown", "text": "child completed" }
+            }
+            """,
+        });
+        services.AddSingleton(new RecordingRuntimeAgentDispatcher { StreamFrames = frames });
+        services.AddScoped<IMessageInbox>(sp => sp.GetRequiredService<RecordingMessageInbox>());
+        services.AddScoped<IRuntimeAgentDispatcher>(sp => sp.GetRequiredService<RecordingRuntimeAgentDispatcher>());
+        services.AddScoped<IWorkspaceAgentCatalog>(_ => new RecordingWorkspaceAgentCatalog(
+            Agent("agent-b", mainSessionId: "agent-b-main-session")));
+        services.AddScoped<IAgentRuntimeProfileResolver>(_ => new RecordingAgentRuntimeProfileResolver(
+            [Agent("agent-b", mainSessionId: "agent-b-main-session")]));
+        services.AddScoped<IAgentInvocationDispatchFactory, AgentInvocationDispatchFactory>();
+        services.AddSingleton<IChatTranscriptWriter, ChatTranscriptWriter>();
+        services.AddLogging();
+        await using var provider = services.BuildServiceProvider();
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<PlatformDbContext>().Database.EnsureCreatedAsync();
+        }
+
+        var dispatcher = new MessageDeliveryDispatcher(
+            new RecordingInternalEventBus(),
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            new AgentWakeQueue(NullLogger<AgentWakeQueue>.Instance),
+            new AgentExecutionAdmissionCoordinator(),
+            NullLogger<MessageDeliveryDispatcher>.Instance);
+
+        await dispatcher.HandleAsync(CreateSubAgentResultEvent(), CancellationToken.None);
+
+        await using var assertScope = provider.CreateAsyncScope();
+        var db = assertScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        return await db.ChatMessages.SingleAsync(m => m.SessionId == "session-1" && m.Role == "agent");
     }
 
     private static MessageDeliveryDispatcher CreateDispatcher(
@@ -915,7 +1143,8 @@ public sealed class MessageDeliveryDispatcherTests
         RecordingInternalEventBus? eventBus = null,
         RecordingWorkspaceAgentCatalog? catalog = null,
         RecordingMessageSystem? messageSystem = null,
-        RecordingSubmitTurnHandler? submitTurnHandler = null)
+        RecordingSubmitTurnHandler? submitTurnHandler = null,
+        AgentExecutionAdmissionCoordinator? admissionCoordinator = null)
     {
         var services = new ServiceCollection();
         var effectiveCatalog = catalog ?? new RecordingWorkspaceAgentCatalog(
@@ -938,6 +1167,7 @@ public sealed class MessageDeliveryDispatcherTests
             eventBus ?? new RecordingInternalEventBus(),
             provider.GetRequiredService<IServiceScopeFactory>(),
             new AgentWakeQueue(NullLogger<AgentWakeQueue>.Instance),
+            admissionCoordinator ?? new AgentExecutionAdmissionCoordinator(),
             NullLogger<MessageDeliveryDispatcher>.Instance);
     }
 

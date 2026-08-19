@@ -40,6 +40,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
     private readonly IInternalEventBus _eventBus;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly AgentWakeQueue _wakeQueue;
+    private readonly AgentExecutionAdmissionCoordinator _admissionCoordinator;
     private readonly ILogger<MessageDeliveryDispatcher> _logger;
     private readonly ConcurrentDictionary<string, AgentDeliveryTarget> _knownAgentTargets = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeHeartbeatExecutions = new();
@@ -53,11 +54,13 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         IInternalEventBus eventBus,
         IServiceScopeFactory scopeFactory,
         AgentWakeQueue wakeQueue,
+        AgentExecutionAdmissionCoordinator admissionCoordinator,
         ILogger<MessageDeliveryDispatcher> logger)
     {
         _eventBus = eventBus;
         _scopeFactory = scopeFactory;
         _wakeQueue = wakeQueue;
+        _admissionCoordinator = admissionCoordinator;
         _logger = logger;
     }
 
@@ -151,14 +154,23 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         }
 
         var isHeartbeat = IsHeartbeat(payload.From);
+        var isForegroundIngress =
+            IsGatewayConversationIngress(payload.Metadata)
+            || string.Equals(payload.From.Kind, MessageEndpointKinds.User, StringComparison.OrdinalIgnoreCase);
         RememberTarget(payload.WorkspaceId, payload.RoomId, payload.Target.Id);
 
-        // Non-heartbeat messages (user messages, sub-agent results, agent-to-agent)
-        // must wake the agent — same path as user messages.
-        if (!isHeartbeat)
+        // Only real user ingress may preempt background work. Sub-agent results
+        // and agent-to-agent messages remain durable background deliveries.
+        if (isForegroundIngress)
         {
             CancelActiveHeartbeat(payload.WorkspaceId, payload.Target.Id);
             await _wakeQueue.NotifyUserActivityAsync(payload.Target.Id, ct);
+            if (IsGatewayConversationIngress(payload.Metadata))
+            {
+                _admissionCoordinator.ReserveForeground(
+                    payload.WorkspaceId,
+                    payload.Target.Id);
+            }
         }
 
         await TryClaimAndDispatchAsync(
@@ -173,7 +185,8 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             evt.CausationId,
             payload.Metadata,
             ct,
-            isHeartbeat: isHeartbeat);
+            isHeartbeat: isHeartbeat,
+            isForeground: isForegroundIngress);
     }
 
     private async Task HandleAvailabilityChangedAsync(InternalEvent evt, CancellationToken ct)
@@ -227,6 +240,23 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             return;
         }
 
+        if (_admissionCoordinator.HasForegroundDemand(payload.WorkspaceId, payload.AgentId))
+        {
+            LogDecision(
+                payload.WorkspaceId,
+                payload.RoomId,
+                messageId: null,
+                deliveryId: null,
+                MessageEndpointKinds.Agent,
+                payload.AgentId,
+                "idle_drain_deferred_for_foreground",
+                attemptCount: 0,
+                executionId: null,
+                correlationId: evt.CorrelationId,
+                causationId: evt.CausationId);
+            return;
+        }
+
         // Idle → the drain must claim immediately, so clear any busy cooldown
         // before dispatching. This keeps busy deferral latency-free.
         ClearTargetBusy(targetKey);
@@ -257,10 +287,30 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         string? causationId,
         IReadOnlyDictionary<string, string>? metadata,
         CancellationToken ct,
-        bool isHeartbeat = false)
+        bool isHeartbeat = false,
+        bool isForeground = false)
     {
         var targetKey = BuildTargetKey(workspaceId, roomId, agentId);
-        if (IsTargetBusy(targetKey))
+        if (!isHeartbeat
+            && !isForeground
+            && !_admissionCoordinator.CanStartBackground(workspaceId, agentId))
+        {
+            LogDecision(
+                workspaceId,
+                roomId,
+                messageIdHint,
+                deliveryHint,
+                MessageEndpointKinds.Agent,
+                agentId,
+                "skipped_background_admission",
+                attemptCount: 0,
+                executionId: null,
+                correlationId: correlationId,
+                causationId: causationId);
+            return;
+        }
+
+        if (!isForeground && IsTargetBusy(targetKey))
         {
             LogDecision(
                 workspaceId,
@@ -331,6 +381,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             Endpoint = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = agentId, WorkspaceId = workspaceId },
             WorkspaceId = workspaceId,
             RoomId = roomId,
+            DeliveryId = deliveryHint,
             ExecutionId = executionId,
             LeaseDuration = DeliveryLeaseDuration,
         }, ct);
@@ -360,6 +411,11 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         var effectiveMetadata = claimed.Metadata.Count > 0
             ? claimed.Metadata
             : metadata ?? new Dictionary<string, string>();
+        var claimedIsSubAgentResult = IsSubAgentResult(effectiveMetadata);
+        var claimedIsForeground =
+            !claimedIsHeartbeat
+            && !claimedIsSubAgentResult
+            && string.Equals(claimed.From.Kind, MessageEndpointKinds.User, StringComparison.OrdinalIgnoreCase);
 
         // Connector chat ingress must enter the canonical ADR-059 command/event
         // path. It is intentionally one delivery = one Turn and never participates
@@ -376,10 +432,14 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             return;
         }
 
+        using var foregroundLease = claimedIsForeground
+            ? _admissionCoordinator.AcquireForeground(workspaceId, agentId)
+            : null;
+
         // 批量声明：同一目标的其他排队消息一并取出合并。
         // 心跳是低优先级探活，不参与批处理，避免插入或打断真实用户/Agent 消息。
         var batch = new List<MessageInboxItem> { claimed };
-        if (!claimedIsHeartbeat)
+        if (!claimedIsHeartbeat && !claimedIsForeground && !claimedIsSubAgentResult)
         {
             var batchRequest = new MessageClaimRequest
             {
@@ -443,11 +503,50 @@ public sealed class MessageDeliveryDispatcher : IHostedService
 
         using var dispatchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         using var leaseRenewalCts = CancellationTokenSource.CreateLinkedTokenSource(dispatchCts.Token);
+        using var backgroundLease = !claimedIsForeground
+            ? _admissionCoordinator.TryRegisterBackground(workspaceId, agentId, dispatchCts)
+            : null;
         var heartbeatKey = claimedIsHeartbeat
             ? BuildHeartbeatExecutionKey(claimed.WorkspaceId, claimed.Target.Id)
             : null;
         var heartbeatRegistered = false;
         var leaseRenewalTask = Task.CompletedTask;
+
+        if (!claimedIsForeground && backgroundLease is null)
+        {
+            if (claimedIsHeartbeat)
+            {
+                await inbox.AckAsync(claimed.DeliveryId, executionId, ct);
+                LogExecutionResult(
+                    claimed,
+                    MessageDeliveryStatuses.Delivered,
+                    executionId,
+                    correlationId,
+                    causationId);
+                _logger.LogInformation(
+                    "[MessageDeliveryDispatcher] Dropped heartbeat because foreground admission is pending delivery={DeliveryId} agent={AgentId}",
+                    claimed.DeliveryId,
+                    claimed.Target.Id);
+                return;
+            }
+
+            foreach (var item in batch)
+            {
+                await inbox.DeferAsync(
+                    item.DeliveryId,
+                    executionId,
+                    "Foreground Turn or another background delivery has admission priority.",
+                    ct);
+                LogExecutionResult(
+                    item,
+                    MessageDeliveryStatuses.Queued,
+                    executionId,
+                    correlationId,
+                    causationId);
+            }
+
+            return;
+        }
 
         try
         {
@@ -508,7 +607,18 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             if (dispatchCts.IsCancellationRequested)
             {
                 var stillOwned = await RenewOwnedBatchAsync(batch, executionId, CancellationToken.None);
-                if (claimedIsHeartbeat && stillOwned)
+                var completedBeforePreemption =
+                    backgroundLease?.WasPreempted == true
+                    && result.IsSuccess
+                    && stillOwned;
+                if (completedBeforePreemption)
+                {
+                    _logger.LogInformation(
+                        "[MessageDeliveryDispatcher] Background delivery completed during foreground preemption delivery={DeliveryId} agent={AgentId}",
+                        claimed.DeliveryId,
+                        claimed.Target.Id);
+                }
+                else if (claimedIsHeartbeat && stillOwned)
                 {
                     await inbox.AckAsync(claimed.DeliveryId, executionId, CancellationToken.None);
                     LogExecutionResult(
@@ -518,9 +628,18 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                         correlationId,
                         causationId);
                     _logger.LogInformation(
-                        "[MessageDeliveryDispatcher] Interrupted heartbeat for user activity delivery={DeliveryId} agent={AgentId}",
+                        "[MessageDeliveryDispatcher] Interrupted heartbeat for foreground Turn delivery={DeliveryId} agent={AgentId}",
                         claimed.DeliveryId,
                         claimed.Target.Id);
+                }
+                else if (backgroundLease?.WasPreempted == true && stillOwned)
+                {
+                    await DeferPreemptedBatchAsync(
+                        inbox,
+                        batch,
+                        executionId,
+                        correlationId,
+                        causationId);
                 }
                 else
                 {
@@ -531,7 +650,8 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                         executionId);
                 }
 
-                return;
+                if (!completedBeforePreemption)
+                    return;
             }
 
             if (!await RenewOwnedBatchAsync(batch, executionId, ct))
@@ -710,9 +830,18 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                     correlationId,
                     causationId);
                 _logger.LogInformation(
-                    "[MessageDeliveryDispatcher] Interrupted heartbeat for user activity delivery={DeliveryId} agent={AgentId}",
+                    "[MessageDeliveryDispatcher] Interrupted heartbeat for foreground Turn delivery={DeliveryId} agent={AgentId}",
                     claimed.DeliveryId,
                     claimed.Target.Id);
+            }
+            else if (backgroundLease?.WasPreempted == true && stillOwned)
+            {
+                await DeferPreemptedBatchAsync(
+                    inbox,
+                    batch,
+                    executionId,
+                    correlationId,
+                    causationId);
             }
             else
             {
@@ -768,6 +897,35 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                 _activeHeartbeatExecutions.TryRemove(heartbeatKey, out _);
             }
         }
+    }
+
+    private async Task DeferPreemptedBatchAsync(
+        IMessageInbox inbox,
+        IReadOnlyList<MessageInboxItem> batch,
+        string executionId,
+        string? correlationId,
+        string? causationId)
+    {
+        foreach (var item in batch)
+        {
+            await inbox.DeferAsync(
+                item.DeliveryId,
+                executionId,
+                "Preempted by a foreground user Turn.",
+                CancellationToken.None);
+            LogExecutionResult(
+                item,
+                MessageDeliveryStatuses.Queued,
+                executionId,
+                correlationId,
+                causationId);
+        }
+
+        _logger.LogInformation(
+            "[MessageDeliveryDispatcher] Background delivery preempted for foreground Turn delivery={DeliveryId} agent={AgentId} count={DeliveryCount}",
+            batch[0].DeliveryId,
+            batch[0].Target.Id,
+            batch.Count);
     }
 
     private async Task RunLeaseRenewalLoopAsync(
@@ -972,7 +1130,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         {
             var assistantContent = assistantReply;
             var thinkingJson = thinkingChunks.Count > 0
-                ? JsonSerializer.Serialize(thinkingChunks, JsonOptions)
+                ? BuildCompactThinkingJson(thinkingChunks)
                 : null;
 
             await transcriptWriter.PersistMessageAsync(
@@ -1013,6 +1171,20 @@ public sealed class MessageDeliveryDispatcher : IHostedService
     }
 
     private sealed record TranscriptThinkingChunk(string Text, long Timestamp);
+
+    /// <summary>
+    /// 将累积的 thinking chunks 编码为 v2 紧凑 JSON（P1-3 T2）。
+    /// text 为各 chunk 原文按序拼接；UTF-8 字节偏移、timestamp delta 与 SHA-256
+    /// 由 <see cref="ReasoningCompactCodec"/> 统一计算，写侧只负责按序提供
+    /// 完整原文与毫秒时间戳。
+    /// </summary>
+    private static string BuildCompactThinkingJson(IReadOnlyList<TranscriptThinkingChunk> chunks)
+    {
+        var text = string.Concat(chunks.Select(c => c.Text));
+        return ReasoningCompactCodec.Encode(
+            text,
+            chunks.Select(c => new ReasoningCompactCodec.ThinkingChunk(c.Text, c.Timestamp)).ToList());
+    }
 
     private static string? TryReadStringProperty(string json, string propertyName)
     {
@@ -1237,6 +1409,16 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             MessageGatewayMetadata.IsGatewayIngress);
         return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
                || string.Equals(value, "1", StringComparison.Ordinal);
+    }
+
+    private static bool IsSubAgentResult(IReadOnlyDictionary<string, string> metadata)
+    {
+        var source = GetMetadataValue(metadata, "source");
+        var intent = GetMetadataValue(metadata, "intent");
+        var messageType = GetMetadataValue(metadata, "message_type", "messageType");
+        return string.Equals(source, "subagent", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(intent, "subagent_result", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(messageType, "subagent_result", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string StableGatewayUserId(string externalUserId)

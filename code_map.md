@@ -1,4 +1,4 @@
-﻿# PuddingAgent CodeMAP
+# PuddingAgent CodeMAP
 
 > 顶层快速索引 | 2026-08-18 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
 
@@ -92,12 +92,25 @@ ContextPipeline → stable system prefix + volatile User tail
   → AgentExecutionService → ToolResultContextPolicy（模型历史最多 8 KiB；原始完整结果写入工作区 `.pudding/context-tool-results`，不做模型输入脱敏）
   → search_tools 已发现 schema 在 live session 内保持加载，避免跨 dispatch 重复收缩/扩张
 
+用户 Turn → TurnExecutorAdapter → AgentExecutionAdmissionCoordinator（foreground）
+  → 抢占同 workspace/agent 的 Message Fabric 后台执行（含 subagent_result）
+  → MessageDeliveryDispatcher 取消旧执行并把 exact delivery 立即 defer 回队列
+  → foreground demand 存续期间 recovery/idle drain 不领取后台 delivery
+  → MessageFabricStore 依据 wake event deliveryId 精确 claim，避免旧队首抢在用户事件前执行
+
 P1-2 召回同源去重（压缩摘要/原文/recall 片段 ≤1 次注入）
   → SessionChunkIndexer（写侧）回查 Messages 补齐 CanonicalContentHash/ContextGeneration 冗余列
   → MemoryLibrary 第 5 路 LEFT JOIN Messages 取 hash/generation/CompactedBy，默认过滤 covered chunk
   → RecalledMemory/SearchHit 透传 SourceMessageId + CanonicalContentHash
   → SubconsciousRecallPipeline 注入前经 CompactionCoverageFilter 过滤 covered + 同轮 hash 去重
   → ContextPipeline assembler 兜底去重（双保险）
+
+P1-3 Reasoning 紧凑归档（v2 sidecar + ThinkingJson 不回流）
+  → ReasoningCompactCodec（PuddingCore）：{v:2,text,chunks:[{o,t}],hash} UTF-8 字节偏移 + delta 时间戳 + SHA-256，旧格式兼容、hash fail-open
+  → MessageDeliveryDispatcher 写侧：thinking 帧累积 → ReasoningCompactCodec.Encode 落 v2（T2）
+  → MessageApiController / AgentConversationProjectionService 读侧：codec 双格式解码（T3）
+  → JSONL/Compaction 路径断言：ThinkingJson 不进模型 prompt / compact 输入（T5）
+  → E2E：写侧 v2 → 读侧解码 → UI DTO 逐字节还原 + hash 校验（T6）
 
 Plugin configuration → Plugin Resolver → PluginActivation
   → capability registry（Tool/LLM/Prompt/Context/Connector/Job/Presentation）
