@@ -1089,6 +1089,24 @@ public sealed partial class AgentExecutionService
         if (profileName is null)
             return tools;
 
+        // D1 修复（选型 A「只增不减」）：heartbeat profile 对「已暴露集」只增不减。
+        // session 已有已暴露工具集（committed/loaded append-only 非空，基准非瞬时态/非逐轮重算）→
+        // 心跳 turn 不裁剪，暴露集与普通 turn 全量集保持一致，消除 30↔24 tool_spec_changed 抖动（v12 事件根因）；
+        // 全新 session 无已暴露集 → 回退白名单过滤，保留省 token 意图。
+        if (profileName == ToolProfileConfig.HeartbeatProfileName)
+        {
+            var exposedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
+            if (!ToolProfileConfig.ShouldApplyHeartbeatToolFilter(exposedToolIds))
+            {
+                _logger.LogInformation(
+                    "[AgentExec:ToolProfile] Heartbeat profile kept full tool set (append-only exposure) session={Session} exposedToolCount={ExposedToolCount} toolCount={ToolCount}",
+                    request.SessionId,
+                    exposedToolIds.Count,
+                    tools.Count);
+                return tools;
+            }
+        }
+
         var filtered = tools
             .Where(t => ToolProfileConfig.ShouldInclude(profileName, t.Name))
             .ToList();

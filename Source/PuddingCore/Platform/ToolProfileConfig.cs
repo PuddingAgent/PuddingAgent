@@ -1,4 +1,4 @@
-﻿namespace PuddingCode.Platform;
+namespace PuddingCode.Platform;
 
 /// <summary>
 /// 工具配置文件：定义不同场景下应加载的工具子集。
@@ -48,6 +48,20 @@ public static class ToolProfileConfig
             _ => true // 默认包含所有工具
         };
     }
+
+    /// <summary>
+    /// D1 修复（选型 A「只增不减」）：heartbeat profile 是否仍应应用白名单裁剪。
+    /// 已暴露集基准 = session committed toolset（append-only 记录/最新快照 ToolIds，非瞬时态/非逐轮重算）：
+    /// <list type="bullet">
+    ///   <item>已有已暴露工具集（非空）→ 返回 false：心跳 turn 不裁剪，暴露集与普通 turn 全量集一致，
+    ///   消除 30↔24 tool_spec_changed 抖动（D1 根因，v12 事件）。</item>
+    ///   <item>无已暴露工具集（全新 session）→ 返回 true：回退白名单过滤，保留该场景省 token 意图。</item>
+    /// </list>
+    /// 与 <c>ToolExposurePlanner</c> 的 append-only 防收缩语义对齐：心跳可在白名单内新增工具，
+    /// 但不得删除任何已暴露工具。
+    /// </summary>
+    public static bool ShouldApplyHeartbeatToolFilter(IReadOnlySet<string>? exposedToolIds)
+        => exposedToolIds is not { Count: > 0 };
 
     /// <summary>
     /// 根据可信运行时元数据选择工具配置。用户消息文本不参与系统场景识别，
