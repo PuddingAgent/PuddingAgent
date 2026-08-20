@@ -110,6 +110,48 @@ public sealed class PersistentCompositionVersionRegistryRecoveryTests
         Assert.AreEqual(1, registry.Observe("s1", "sys-a", "tool-a").Version);
     }
 
+    /// <summary>
+    /// LoadAsync 返回记录 → Seed 被调用（同组合复用已存版本）且 _persistedVersions 同步到
+    /// 已持久化 max（新组合 v11 才触发写穿且不被 append-only 拒绝）。
+    /// </summary>
+    [TestMethod]
+    public async Task RecoverFromStoreAsync_LoadsRecords_SeedsRegistry_AndSyncsPersistedVersion()
+    {
+        var store = new RecordingCompositionStore(RecordsV1ToV10());
+        var registry = new PersistentCompositionVersionRegistry(store);
+
+        await registry.RecoverFromStoreAsync("s1");
+
+        // Seed 生效：同组合复用已存版本 v1（不因恢复而重新分配）。
+        Assert.AreEqual(1, registry.Observe("s1", "sys-a", "tool-a").Version);
+
+        // _persistedVersions 已同步到 max=10：新组合 v11 才触发写穿且成功。
+        var observation = registry.Observe("s1", "sys-new", "tool-a");
+        Assert.AreEqual(11, observation.Version);
+        var deadline = DateTime.UtcNow.AddMilliseconds(3000);
+        while (store.AppendCount < 1 && DateTime.UtcNow < deadline)
+            await Task.Delay(20);
+        Assert.AreEqual(1, store.AppendCount);
+        Assert.AreEqual(11, store.Records[^1].CompositionVersion);
+
+        // 同组合复用 v11，不重复写穿。
+        Assert.AreEqual(11, registry.Observe("s1", "sys-new", "tool-a").Version);
+        await Task.Delay(150);
+        Assert.AreEqual(1, store.AppendCount, "同组合复用版本后不得重复写穿。");
+    }
+
+    /// <summary>LoadAsync 抛 OperationCanceledException（无取消 token）：仍静默返回，不抛。</summary>
+    [TestMethod]
+    public async Task RecoverFromStoreAsync_StoreCancels_DoesNotPropagate()
+    {
+        var store = new CancelingLoadStore();
+        var registry = new PersistentCompositionVersionRegistry(store);
+
+        await registry.RecoverFromStoreAsync("s1"); // 不抛，静默降级
+
+        Assert.AreEqual(1, registry.Observe("s1", "sys-a", "tool-a").Version);
+    }
+
     // ── 测试替身 ───────────────────────────────────────
 
     /// <summary>记录 AppendAsync 调用次数与记录列表的 mock store。</summary>
@@ -148,5 +190,18 @@ public sealed class PersistentCompositionVersionRegistryRecoveryTests
 
         public Task<IReadOnlyList<SessionCompositionRecord>> LoadAsync(string sessionId, CancellationToken ct = default)
             => throw new InvalidOperationException("boom");
+    }
+
+    /// <summary>LoadAsync 抛 OperationCanceledException 的 store（模拟调用方取消/下游取消）。</summary>
+    private sealed class CancelingLoadStore : ICompositionStore
+    {
+        public Task<SessionCompositionRecord?> GetLatestAsync(string sessionId, CancellationToken ct = default)
+            => throw new OperationCanceledException(ct);
+
+        public Task<bool> AppendAsync(SessionCompositionRecord record, CancellationToken ct = default)
+            => throw new OperationCanceledException(ct);
+
+        public Task<IReadOnlyList<SessionCompositionRecord>> LoadAsync(string sessionId, CancellationToken ct = default)
+            => throw new OperationCanceledException(ct);
     }
 }

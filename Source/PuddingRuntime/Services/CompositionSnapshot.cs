@@ -247,6 +247,8 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
         private string? _lastPermissionFingerprint;
         private int _permissionEpoch;
         private bool _hasLast;
+        // 指纹基线是否已建立：Seed 不置位（DB 未持久化指纹），仅由首轮非空指纹 Observe 建立。
+        private bool _hasFingerprintBaseline;
 
         public CompositionObservation Observe(
             string systemPromptHash,
@@ -259,9 +261,11 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
                 var changeReason = DetectChangeReason(systemPromptHash, toolSpecHash);
 
                 // P0-5 step 4c：权限/工具授权指纹检测。
-                // 指纹非空且与上次不同 → 权限纪元 +1（显式传入 epoch 作为下限），并上报 permission_changed。
+                // 指纹非空且已建立基线、与基线不同 → 权限纪元 +1（显式传入 epoch 作为下限），并上报 permission_changed。
+                // _hasFingerprintBaseline 仅在首轮非空指纹 Observe 时建立（Seed 不置位），
+                // 避免重启后首轮把 null 基线误判为变化（epoch 虚增/强制开新版本/changeReason 污染）。
                 var permissionChanged = permissionFingerprint is not null
-                    && _hasLast
+                    && _hasFingerprintBaseline
                     && !string.Equals(_lastPermissionFingerprint, permissionFingerprint, StringComparison.Ordinal);
                 if (permissionChanged)
                 {
@@ -274,7 +278,10 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
                     _permissionEpoch = Math.Max(_permissionEpoch, permissionEpoch);
                 }
                 if (permissionFingerprint is not null)
+                {
                     _lastPermissionFingerprint = permissionFingerprint;
+                    _hasFingerprintBaseline = true;
+                }
 
                 var key = systemPromptHash + "\u001f" + toolSpecHash;
                 int version;
@@ -305,8 +312,8 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
         /// _nextVersion = max(当前, maxVersion + 1)，保证新组合从已持久化最大版本之后继续递增；
         /// 用版本号最大的记录设置基线 _lastSystemPromptHash/_lastToolSpecHash/_hasLast=true，
         /// _permissionEpoch = max(当前, records.PermissionEpoch)；
-        /// _lastPermissionFingerprint 保持 null（DB 未持久化指纹，重启后首轮不误报 permission_changed，
-        /// epoch 用显式传入值做下限）。
+        /// _lastPermissionFingerprint 保持 null、_hasFingerprintBaseline 保持 false
+        /// （DB 未持久化指纹，重启后首轮不误报 permission_changed，epoch 用显式传入值做下限）。
         /// </summary>
         public void Seed(IReadOnlyList<SessionCompositionRecord> records)
         {
@@ -340,8 +347,8 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
                     _lastToolSpecHash = latest.ToolSpecHash;
                     _hasLast = true;
                 }
-                // _lastPermissionFingerprint 保持 null：DB 未持久化指纹，
-                // 重启后首轮不触发 permission_changed（epoch 用显式传入值做下限）。
+                // 不置位 _hasFingerprintBaseline：DB 未持久化指纹，重启后首轮不触发 permission_changed
+                // （epoch 用显式传入值做下限），基线由首轮非空指纹 Observe 建立。
             }
         }
 
