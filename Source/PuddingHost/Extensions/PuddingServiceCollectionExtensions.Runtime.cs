@@ -310,6 +310,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<HeartbeatOrchestrator>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<HeartbeatOrchestrator>());
         builder.Services.AddSingleton<IAgentExecutionStateRegistry, AgentExecutionStateRegistry>();
+        builder.Services.AddSingleton<AgentExecutionAdmissionCoordinator>();
         builder.Services.AddSingleton<IAgentExecutionAvailabilityProvider, DefaultAgentExecutionAvailabilityProvider>();
         builder.Services.AddSingleton<MessageDeliveryDispatcher>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<MessageDeliveryDispatcher>());
@@ -345,7 +346,10 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.TryAddSingleton<CompositionRecoveryService>(sp => new CompositionRecoveryService(
             sp.GetRequiredService<AgentSessionManager>(),
             sp.GetService<ICompositionStore>(),
-            sp.GetService<ILogger<CompositionRecoveryService>>()));
+            sp.GetService<ILogger<CompositionRecoveryService>>(),
+            // P0-5 缺陷修复：传入持久化注册表单例，RecoverAsync 同时恢复已持久化版本
+            //（写穿从 max+1 继续）；若被覆盖为非 Persistent 实现则转型失败 → 版本恢复 no-op，工具恢复不受影响。
+            sp.GetService<ICompositionVersionRegistry>() as PersistentCompositionVersionRegistry));
         builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
         builder.Services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
 

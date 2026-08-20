@@ -18,27 +18,57 @@ public sealed class CompositionRecoveryService
     private readonly ICompositionStore? _compositionStore;
     private readonly AgentSessionManager _sessionManager;
     private readonly ILogger<CompositionRecoveryService>? _logger;
+    private readonly PersistentCompositionVersionRegistry? _persistentRegistry;
 
     public CompositionRecoveryService(
         AgentSessionManager sessionManager,
         ICompositionStore? compositionStore = null,
-        ILogger<CompositionRecoveryService>? logger = null)
+        ILogger<CompositionRecoveryService>? logger = null,
+        PersistentCompositionVersionRegistry? persistentRegistry = null)
     {
         _sessionManager = sessionManager;
         _compositionStore = compositionStore;
         _logger = logger;
+        _persistentRegistry = persistentRegistry;
     }
 
     /// <summary>
-    /// 从持久化 Composition 记录水合 session 的工具集合（append-only）。
-    /// 任何失败都静默降级为空集合，不抛给调用方、不阻断执行。
+    /// 从持久化数据恢复 session 状态：先恢复 composition 版本（P0-5 缺陷修复，写穿继续单调递增），
+    /// 再水合工具集合（append-only）。任何失败都静默降级，不抛给调用方、不阻断执行；
+    /// 版本恢复失败不阻断工具集合恢复（各自 try/catch）。
     /// </summary>
     public async Task RecoverAsync(string sessionId, CancellationToken ct = default)
     {
-        if (_compositionStore is null)
+        if (string.IsNullOrWhiteSpace(sessionId))
             return;
 
-        if (string.IsNullOrWhiteSpace(sessionId))
+        // 1) 先恢复 composition 版本：同组合复用已持久化版本号，新组合从 max+1 继续。
+        if (_persistentRegistry is not null)
+        {
+            try
+            {
+                await _persistentRegistry.RecoverFromStoreAsync(sessionId, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // 调用方主动取消：静默返回，不阻断执行。
+                _logger?.LogDebug(
+                    "[CompositionRecovery] Version recovery cancelled for session={Session}",
+                    sessionId);
+                return;
+            }
+            catch (Exception ex)
+            {
+                // 版本恢复失败：不阻断工具集合恢复（降级为仅水合工具）。
+                _logger?.LogWarning(
+                    ex,
+                    "[CompositionRecovery] Failed to recover composition versions for session={Session} — continuing with tool hydration",
+                    sessionId);
+            }
+        }
+
+        // 2) 工具集合水合（原有逻辑，append-only 不收缩）。
+        if (_compositionStore is null)
             return;
 
         try

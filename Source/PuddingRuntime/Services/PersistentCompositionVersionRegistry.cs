@@ -20,7 +20,8 @@ namespace PuddingRuntime.Services;
 /// </summary>
 public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRegistry
 {
-    private readonly ICompositionVersionRegistry _inner;
+    // 用具体类型（而非接口）持有内存注册表：RecoverFromStoreAsync 需要调用 Seed 预热已持久化版本。
+    private readonly CompositionVersionRegistry _inner;
     private readonly ICompositionStore? _store;
     private readonly ILogger<PersistentCompositionVersionRegistry>? _logger;
     private readonly ConcurrentDictionary<string, long> _persistedVersions = new(StringComparer.Ordinal);
@@ -56,6 +57,43 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
             _ = WriteThroughAsync(sessionId, systemPromptHash, toolSpecHash, observation, toolIds, permissionEpoch, skillManifestHash, canonicalSystemPrefixHash);
 
         return observation;
+    }
+
+    /// <summary>
+    /// 从 store 恢复 session 已持久化版本（跨重启，P0-5 缺陷修复）：
+    /// 用全量记录预热内存注册表（同组合复用已存版本），并同步 <see cref="_persistedVersions"/>
+    /// 到已持久化最大版本，保证后续写穿从 max+1 继续单调递增、不再被 append-only 拒绝。
+    /// store 为 null / session 无记录 / 任何异常（主动取消除外）：静默降级，不抛
+    /// （对齐恢复服务「失败不阻断」约定）。
+    /// </summary>
+    public async Task RecoverFromStoreAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (_store is null)
+            return;
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return;
+
+        try
+        {
+            var records = await _store.LoadAsync(sessionId, ct).ConfigureAwait(false);
+            if (records is null || records.Count == 0)
+                return;
+
+            _inner.Seed(sessionId, records);
+            _persistedVersions[sessionId] = records.Max(r => r.CompositionVersion);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 调用方主动取消：静默返回。
+        }
+        catch (Exception ex)
+        {
+            // 版本恢复失败不抛：静默降级为纯内存（后续写穿仍可能被拒，但不阻断调用方）。
+            _logger?.LogWarning(
+                ex,
+                "[CompositionRegistry] version recovery failed (session={SessionId}); degraded to in-memory",
+                sessionId);
+        }
     }
 
     /// <summary>异步写穿一条记录；失败仅记日志，不影响 Observe 返回值。</summary>

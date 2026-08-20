@@ -222,6 +222,21 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
         return state.Observe(systemPromptHash, toolSpecHash, permissionEpoch, permissionFingerprint);
     }
 
+    /// <summary>
+    /// 用已持久化记录预热 session 版本状态（跨重启恢复，P0-5 缺陷修复）。
+    /// 空 records 为 no-op；同 session 已存在的内存状态会被已持久化记录覆盖/合并
+    /// （更大版本覆盖，防版本分叉）。
+    /// </summary>
+    public void Seed(string sessionId, IReadOnlyList<SessionCompositionRecord> records)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        if (records is null || records.Count == 0)
+            return;
+
+        var state = _sessions.GetOrAdd(sessionId, static _ => new SessionState());
+        state.Seed(records);
+    }
+
     private sealed class SessionState
     {
         private readonly object _gate = new();
@@ -281,6 +296,52 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
                 _hasLast = true;
 
                 return new CompositionObservation(version, changeReason, _permissionEpoch);
+            }
+        }
+
+        /// <summary>
+        /// 用已持久化记录预热版本状态（跨重启恢复，P0-5 缺陷修复）。
+        /// 每条记录：_versions[SystemPromptHash + '\u001f' + ToolSpecHash] = version（更大版本覆盖，防版本分叉）；
+        /// _nextVersion = max(当前, maxVersion + 1)，保证新组合从已持久化最大版本之后继续递增；
+        /// 用版本号最大的记录设置基线 _lastSystemPromptHash/_lastToolSpecHash/_hasLast=true，
+        /// _permissionEpoch = max(当前, records.PermissionEpoch)；
+        /// _lastPermissionFingerprint 保持 null（DB 未持久化指纹，重启后首轮不误报 permission_changed，
+        /// epoch 用显式传入值做下限）。
+        /// </summary>
+        public void Seed(IReadOnlyList<SessionCompositionRecord> records)
+        {
+            lock (_gate)
+            {
+                if (records is null || records.Count == 0)
+                    return;
+
+                long maxVersion = 0;
+                SessionCompositionRecord? latest = null;
+                foreach (var record in records)
+                {
+                    var key = record.SystemPromptHash + "\u001f" + record.ToolSpecHash;
+                    var version = (int)record.CompositionVersion;
+                    if (!_versions.TryGetValue(key, out var existing) || version > existing)
+                        _versions[key] = version;
+
+                    if (record.CompositionVersion > maxVersion)
+                        maxVersion = record.CompositionVersion;
+                    if (latest is null || record.CompositionVersion > latest.CompositionVersion)
+                        latest = record;
+                    if (record.PermissionEpoch > _permissionEpoch)
+                        _permissionEpoch = record.PermissionEpoch;
+                }
+
+                _nextVersion = Math.Max(_nextVersion, (int)maxVersion + 1);
+
+                if (latest is not null)
+                {
+                    _lastSystemPromptHash = latest.SystemPromptHash;
+                    _lastToolSpecHash = latest.ToolSpecHash;
+                    _hasLast = true;
+                }
+                // _lastPermissionFingerprint 保持 null：DB 未持久化指纹，
+                // 重启后首轮不触发 permission_changed（epoch 用显式传入值做下限）。
             }
         }
 
