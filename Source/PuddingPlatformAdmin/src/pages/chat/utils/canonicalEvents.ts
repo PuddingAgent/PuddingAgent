@@ -23,6 +23,20 @@ export const CANONICAL_TOOL_EVENTS = new Set<string>([
   'tool.call.completed',
   'tool.call.failed',
 ]);
+/**
+ * CU-03：Turn 运行期 progress 事件（终态单调守卫）。
+ * 终态（turn.completed/failed/cancelled）落定后，迟到的 progress 事件不得
+ * 把 running → terminal 的状态降级回 running/thinking/executing。
+ * 事件名均为 canonical（TR-01/CU-02 冻结），无 legacy 映射。
+ */
+export const CANONICAL_TURN_PROGRESS_EVENTS = new Set<string>([
+  ...CANONICAL_ASSISTANT_STREAM_EVENTS,
+  ...CANONICAL_TOOL_EVENTS,
+  'usage.recorded',
+  'step',
+  'subconscious_step',
+  'metadata',
+]);
 
 /** 读取 canonical eventId；缺失返回 null。 */
 export function getCanonicalEventId(event: {

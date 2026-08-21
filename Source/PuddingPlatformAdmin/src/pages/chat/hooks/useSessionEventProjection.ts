@@ -17,7 +17,7 @@ import type {
   PlanCardData,
   PlanStepData,
 } from '../client/types';
-import type { ChatSource, ChatTurn } from '../types';
+import type { ChatSource, ChatTurn, TimelineItem } from '../types';
 import type { ChatInteractionRuntimeEvent } from '../types/chatStateTypes';
 import {
   formatChatErrorDiagnostic,
@@ -47,6 +47,7 @@ import {
 } from '../utils/chatStateUtils';
 import {
   buildTimelineItemIdentity,
+  CANONICAL_TURN_PROGRESS_EVENTS,
   getCanonicalEventId,
   getCanonicalOccurredAtMs,
   recordEventProtocolError,
@@ -165,6 +166,7 @@ export function useSessionEventProjection({
   const hydrateSessionReplayRef = useRef(false);
   const duplicateDeltaReplayOffsetRef = useRef<Map<string, number>>(new Map());
   const eventCountsRef = useRef<Map<string, number>>(new Map());
+  const seenEventIdsRef = useRef<Set<string>>(new Set());
   const streamStartAtRef = useRef<Map<string, number>>(new Map());
   const messageIdToAgentIdsRef = useRef<Map<string, string[]>>(new Map());
   const sessionIdToAgentIdsRef = useRef<Map<string, string[]>>(new Map());
@@ -252,6 +254,7 @@ export function useSessionEventProjection({
       activeMessageIdsRef.current.clear();
       streamStartAtRef.current.clear();
       duplicateDeltaReplayOffsetRef.current.clear();
+      seenEventIdsRef.current.clear();
       resetSessionEventBuffers();
     },
     [resetSessionEventBuffers],
@@ -310,9 +313,7 @@ export function useSessionEventProjection({
           if (turn.turnId !== turnId) return turn;
           if (
             completedTurnsRef.current.has(turnId) &&
-            (ev.type === 'message.content.appended' ||
-              ev.type === 'message.thinking_summary.appended' ||
-              ev.type === 'usage.recorded')
+            CANONICAL_TURN_PROGRESS_EVENTS.has(ev.type)
           ) {
             return turn;
           }
@@ -521,13 +522,46 @@ export function useSessionEventProjection({
             const toolCallId = requireToolCallId(ev);
             if (!toolCallId) return turn;
             const identity = buildTimelineItemIdentity(ev, 'tool-call');
+            const items = turn.assistant.timelineItems ?? [];
+            // CU-03：started 到达时补全 gap replay 先到的 result 所建的占位调用。
+            const placeholderIndex = items.findIndex(
+              (item) =>
+                item.type === 'tool_call' &&
+                item.toolCallId === toolCallId &&
+                item.placeholder === true,
+            );
+            if (placeholderIndex >= 0) {
+              const updatedItems = [...items];
+              updatedItems[placeholderIndex] = {
+                ...updatedItems[placeholderIndex],
+                // 补全后与「started 先到」路径保持同一 id（canonical eventId），
+                // 满足 CU-03 重放等价：同事件集不同到达顺序产出相同时间线。
+                id: identity.id,
+                eventId: getCanonicalEventId(ev) ?? undefined,
+                parentToolCallId: ev.parentToolCallId,
+                presentation: ev.presentation,
+                name: ev.name,
+                arguments: ev.arguments,
+                message: `🔧 调用工具: ${ev.name}\n参数: ${ev.arguments}`,
+                timestamp: identity.timestamp,
+                placeholder: false,
+              };
+              return {
+                ...turn,
+                assistant: {
+                  ...turn.assistant,
+                  renderMode: 'structured' as const,
+                  timelineItems: updatedItems,
+                },
+              };
+            }
             return {
               ...turn,
               assistant: {
                 ...turn.assistant,
                 renderMode: 'structured' as const,
                 timelineItems: [
-                  ...(turn.assistant.timelineItems ?? []),
+                  ...items,
                   {
                     id: identity.id,
                     eventId: getCanonicalEventId(ev) ?? undefined,
@@ -557,29 +591,50 @@ export function useSessionEventProjection({
             const isSuccess =
               ev.type === 'tool.call.completed' && ev.exitCode === 0;
             const exitLabel = isSuccess ? '✓' : '✗';
+            const items = turn.assistant.timelineItems ?? [];
+            // CU-03：gap replay 可能 result 先于 started 到达。此时创建占位调用，
+            // started 到达后再补全（占位 id 为 toolCallId 派生的确定性键，非本地随机 ID）。
+            const hasExistingCall = items.some(
+              (item) =>
+                item.type === 'tool_call' && item.toolCallId === toolCallId,
+            );
+            const resultItem: TimelineItem = {
+              id: identity.id,
+              eventId: getCanonicalEventId(ev) ?? undefined,
+              type: 'tool_result' as const,
+              status: isSuccess ? 'success' : 'error',
+              toolCallId,
+              parentToolCallId: ev.parentToolCallId,
+              durationMs: ev.durationMs,
+              presentation: ev.presentation,
+              name: ev.name,
+              output: ev.output,
+              exitCode: ev.exitCode,
+              message: `🔧 ${ev.name} ${exitLabel}\n${ev.output || ev.error || '(empty)'}`,
+              timestamp: identity.timestamp,
+              collapsed: false,
+            };
+            const placeholderCall: TimelineItem | null = hasExistingCall
+              ? null
+              : {
+                  id: `tool-call:${toolCallId}`,
+                  toolCallId,
+                  type: 'tool_call' as const,
+                  status: 'tool_call',
+                  message: `🔧 工具调用中…`,
+                  timestamp: identity.timestamp,
+                  collapsed: false,
+                  placeholder: true,
+                };
             return {
               ...turn,
               assistant: {
                 ...turn.assistant,
                 renderMode: 'structured' as const,
                 timelineItems: [
-                  ...(turn.assistant.timelineItems ?? []),
-                  {
-                    id: identity.id,
-                    eventId: getCanonicalEventId(ev) ?? undefined,
-                    type: 'tool_result' as const,
-                    status: isSuccess ? 'success' : 'error',
-                    toolCallId,
-                    parentToolCallId: ev.parentToolCallId,
-                    durationMs: ev.durationMs,
-                    presentation: ev.presentation,
-                    name: ev.name,
-                    output: ev.output,
-                    exitCode: ev.exitCode,
-                    message: `🔧 ${ev.name} ${exitLabel}\n${ev.output || ev.error || '(empty)'}`,
-                    timestamp: identity.timestamp,
-                    collapsed: false,
-                  },
+                  ...items,
+                  ...(placeholderCall ? [placeholderCall] : []),
+                  resultItem,
                 ],
               },
             };
@@ -865,6 +920,7 @@ export function useSessionEventProjection({
             };
           }
           if (ev.type === 'turn.cancelled') {
+            completedTurnsRef.current.add(turnId);
             const cancelledIdentity = buildTimelineItemIdentity(
               ev,
               'turn-cancelled',
@@ -893,6 +949,7 @@ export function useSessionEventProjection({
             };
           }
           if (ev.type === 'turn.failed') {
+            completedTurnsRef.current.add(turnId);
             const diagnosticMarkdown = formatChatErrorDiagnostic(ev, {
               sessionId: sseSessionIdRef.current,
               turnId,
@@ -932,6 +989,25 @@ export function useSessionEventProjection({
       const applyStart = performance.now();
       const eventType = String(ev.type);
       const anyEv = ev as Record<string, unknown>;
+      // CU-03：bootstrap/gap/live 三路输入统一进入同一投影。同一 eventId
+      // 重复到达（断线重连 replay 兜底与 SSE 重放重叠）只消费一次（幂等）。
+      const canonicalEventId = getCanonicalEventId(ev);
+      if (canonicalEventId) {
+        const dedupeKey = `${sseSessionIdRef.current ?? selectedSessionIdRef.current ?? ''}:${canonicalEventId}`;
+        if (seenEventIdsRef.current.has(dedupeKey)) {
+          recordPerfEvent(
+            'chat.event.duplicateSkipped',
+            {
+              eventType,
+              eventId: canonicalEventId,
+              sequenceNum: (ev as { sequenceNum?: number }).sequenceNum,
+            },
+            { throttleMs: 1_000 },
+          );
+          return;
+        }
+        seenEventIdsRef.current.add(dedupeKey);
+      }
       const isSubAgentEvent = isSubAgentConversationEvent(eventType);
       if (isSubAgentEvent) {
         setSubAgentRuns((current) =>
@@ -1574,6 +1650,7 @@ export function useSessionEventProjection({
     hydrateSessionReplayRef,
     duplicateDeltaReplayOffsetRef,
     eventCountsRef,
+    seenEventIdsRef,
     streamStartAtRef,
     messageIdToAgentIdsRef,
     sessionIdToAgentIdsRef,

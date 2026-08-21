@@ -30,6 +30,9 @@ export interface TimelineItem {
   id: string;
   /** canonical 事件 ID（服务端事实；重放幂等与深链用）。 */
   eventId?: string;
+  /** CU-03：gap replay 中 tool result 先于 started 到达时创建的占位调用；
+   *  started 到达后补全并清除该标记（不生成本地事件事实）。 */
+  placeholder?: boolean;
   /** 工具调用身份（后端 toolCallId；tool_call/tool_result 精确配对用） */
   toolCallId?: string;
   /** 父调用 ID；仅在明确存在时构成调用树（TR-01 冻结字段）。 */
