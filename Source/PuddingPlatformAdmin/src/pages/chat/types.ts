@@ -1,5 +1,8 @@
 // ── 聊天页共享类型 ─────────────────────────────────────────────
-import type { TokenUsageDto } from '@/services/platform/api';
+import type {
+  TokenUsageDto,
+  ToolPresentationDto,
+} from '@/services/platform/api';
 import type {
   ApprovalCardData,
   ConversationProcessSummary,
@@ -25,8 +28,16 @@ export type ChatMessageStatus =
 /** 统一时间线条目：思考 / 工具调用 / 工具结果 / 潜意识步骤 / 子代理 */
 export interface TimelineItem {
   id: string;
+  /** canonical 事件 ID（服务端事实；重放幂等与深链用）。 */
+  eventId?: string;
   /** 工具调用身份（后端 toolCallId；tool_call/tool_result 精确配对用） */
   toolCallId?: string;
+  /** 父调用 ID；仅在明确存在时构成调用树（TR-01 冻结字段）。 */
+  parentToolCallId?: string;
+  /** 工具调用耗时（服务端事实）。 */
+  durationMs?: number;
+  /** Tool-owned presentation intent；缺失时由 renderer registry 回落 generic。 */
+  presentation?: ToolPresentationDto;
   type:
     | 'thinking'
     | 'tool_call'

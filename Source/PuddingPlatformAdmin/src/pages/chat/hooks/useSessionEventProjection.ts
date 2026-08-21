@@ -5,10 +5,7 @@ import type {
   TokenUsageDto,
   WorkspaceAgentDto,
 } from '@/services/platform/api';
-import {
-  recordPerfEvent,
-  writeDebugTrace,
-} from '@/utils/perfEventRuntime';
+import { recordPerfEvent, writeDebugTrace } from '@/utils/perfEventRuntime';
 import { sanitizeProcessText } from '../components/processPreview';
 import {
   projectSubAgentRunsToCards,
@@ -31,7 +28,6 @@ import {
   canBindUnknownMetadataToTurn,
   confirmOptimisticTurn,
   createAssistant,
-  createId,
   formatCompactSuccessMessage,
   getStepMessage,
   getStepTone,
@@ -49,6 +45,13 @@ import {
   toChatInteractionRuntimeEvent,
   tryExtractDelta,
 } from '../utils/chatStateUtils';
+import {
+  buildTimelineItemIdentity,
+  getCanonicalEventId,
+  getCanonicalOccurredAtMs,
+  recordEventProtocolError,
+  requireToolCallId,
+} from '../utils/canonicalEvents';
 import type { CompactionLifecycleOptions } from './useCompaction';
 
 interface ProjectionIdentityPort {
@@ -75,7 +78,11 @@ interface ProjectionBufferPort {
   pendingDeltaRef: MutableRefObject<Map<string, string>>;
   pendingThinkingRef: MutableRefObject<Map<string, string>>;
   enqueueDelta: (turnId: string, delta: string) => void;
-  enqueueThinking: (turnId: string, delta: string) => void;
+  enqueueThinking: (
+    turnId: string,
+    delta: string,
+    facts?: { eventId?: string; occurredAtMs?: number },
+  ) => void;
   flushPendingDeltas: () => void;
   flushPendingThinking: () => void;
   resetSessionEventBuffers: () => void;
@@ -303,9 +310,9 @@ export function useSessionEventProjection({
           if (turn.turnId !== turnId) return turn;
           if (
             completedTurnsRef.current.has(turnId) &&
-            (ev.type === 'delta' ||
-              ev.type === 'thinking' ||
-              ev.type === 'usage')
+            (ev.type === 'message.content.appended' ||
+              ev.type === 'message.thinking_summary.appended' ||
+              ev.type === 'usage.recorded')
           ) {
             return turn;
           }
@@ -313,7 +320,7 @@ export function useSessionEventProjection({
             // T-102: 从 metadata 帧推断消息来源（持久 SSE 通道）
             // T-103: 兼容两种命名——SessionRouter 帧输出 source_id(source_name) snake_case，
             // WebSocket connector metadata 使用 sourceId camelCase。
-            const anyMeta = ev as Record<string, unknown>;
+            const anyMeta = ev as unknown as Record<string, unknown>;
             const sourceId = String(
               anyMeta.source_id || anyMeta.sourceId || 'agent',
             );
@@ -388,9 +395,7 @@ export function useSessionEventProjection({
                   ? raw.requestedAt
                   : new Date().toISOString(),
               expiresAt:
-                typeof raw.expiresAt === 'string'
-                  ? raw.expiresAt
-                  : undefined,
+                typeof raw.expiresAt === 'string' ? raw.expiresAt : undefined,
             };
             return {
               ...turn,
@@ -417,7 +422,8 @@ export function useSessionEventProjection({
                 const title =
                   typeof record.title === 'string' && record.title.trim()
                     ? record.title.trim()
-                    : typeof record.summary === 'string' && record.summary.trim()
+                    : typeof record.summary === 'string' &&
+                        record.summary.trim()
                       ? record.summary.trim()
                       : `步骤 ${index + 1}`;
                 const description =
@@ -426,9 +432,7 @@ export function useSessionEventProjection({
                     : '';
                 return { id: stepId, title, description };
               })
-              .filter(
-                (step): step is PlanStepData => step !== null,
-              );
+              .filter((step): step is PlanStepData => step !== null);
             const planCard: PlanCardData = {
               planId,
               summary:
@@ -449,7 +453,7 @@ export function useSessionEventProjection({
               },
             };
           }
-          if (ev.type === 'delta') {
+          if (ev.type === 'message.content.appended') {
             const rawDelta = typeof ev.delta === 'string' ? ev.delta : '';
             if (!rawDelta) return turn;
             // ADR-InkBloom: 去重逻辑保留，通过 enqueueDelta 批处理更新
@@ -495,11 +499,14 @@ export function useSessionEventProjection({
             enqueueDelta(turn.turnId, delta);
             return turn;
           }
-          if (ev.type === 'thinking') {
+          if (ev.type === 'message.thinking_summary.appended') {
             const thinkingDelta = typeof ev.delta === 'string' ? ev.delta : '';
             if (!sanitizeProcessText(thinkingDelta, { compact: false }))
               return turn;
-            enqueueThinking(turn.turnId, thinkingDelta);
+            enqueueThinking(turn.turnId, thinkingDelta, {
+              eventId: getCanonicalEventId(ev) ?? undefined,
+              occurredAtMs: getCanonicalOccurredAtMs(ev) ?? undefined,
+            });
             return {
               ...turn,
               assistant: {
@@ -509,7 +516,11 @@ export function useSessionEventProjection({
               },
             };
           }
-          if (ev.type === 'tool_call') {
+          if (ev.type === 'tool.call.requested') {
+            // TR-01/CU-02：toolCallId 是工具事件必填字段；缺失记协议错误且不渲染工具行。
+            const toolCallId = requireToolCallId(ev);
+            if (!toolCallId) return turn;
+            const identity = buildTimelineItemIdentity(ev, 'tool-call');
             return {
               ...turn,
               assistant: {
@@ -518,22 +529,34 @@ export function useSessionEventProjection({
                 timelineItems: [
                   ...(turn.assistant.timelineItems ?? []),
                   {
-                    id: createId(),
+                    id: identity.id,
+                    eventId: getCanonicalEventId(ev) ?? undefined,
                     type: 'tool_call' as const,
                     status: 'tool_call',
-                    toolCallId: ev.toolCallId,
+                    toolCallId,
+                    parentToolCallId: ev.parentToolCallId,
+                    presentation: ev.presentation,
                     name: ev.name,
                     arguments: ev.arguments,
                     message: `🔧 调用工具: ${ev.name}\n参数: ${ev.arguments}`,
-                    timestamp: Date.now(),
+                    timestamp: identity.timestamp,
                     collapsed: false,
                   },
                 ],
               },
             };
           }
-          if (ev.type === 'tool_result') {
-            const exitLabel = ev.exitCode === 0 ? '✓' : '✗';
+          if (
+            ev.type === 'tool.call.completed' ||
+            ev.type === 'tool.call.failed'
+          ) {
+            // TR-01/CU-02：toolCallId 是工具事件必填字段；缺失记协议错误且不渲染工具行。
+            const toolCallId = requireToolCallId(ev);
+            if (!toolCallId) return turn;
+            const identity = buildTimelineItemIdentity(ev, 'tool-result');
+            const isSuccess =
+              ev.type === 'tool.call.completed' && ev.exitCode === 0;
+            const exitLabel = isSuccess ? '✓' : '✗';
             return {
               ...turn,
               assistant: {
@@ -542,15 +565,19 @@ export function useSessionEventProjection({
                 timelineItems: [
                   ...(turn.assistant.timelineItems ?? []),
                   {
-                    id: createId(),
+                    id: identity.id,
+                    eventId: getCanonicalEventId(ev) ?? undefined,
                     type: 'tool_result' as const,
-                    status: ev.exitCode === 0 ? 'success' : 'error',
-                    toolCallId: ev.toolCallId,
+                    status: isSuccess ? 'success' : 'error',
+                    toolCallId,
+                    parentToolCallId: ev.parentToolCallId,
+                    durationMs: ev.durationMs,
+                    presentation: ev.presentation,
                     name: ev.name,
                     output: ev.output,
                     exitCode: ev.exitCode,
                     message: `🔧 ${ev.name} ${exitLabel}\n${ev.output || ev.error || '(empty)'}`,
-                    timestamp: Date.now(),
+                    timestamp: identity.timestamp,
                     collapsed: false,
                   },
                 ],
@@ -558,6 +585,7 @@ export function useSessionEventProjection({
             };
           }
           if (ev.type === 'subconscious_step') {
+            const identity = buildTimelineItemIdentity(ev, 'subconscious-step');
             return {
               ...turn,
               assistant: {
@@ -566,11 +594,12 @@ export function useSessionEventProjection({
                 timelineItems: [
                   ...(turn.assistant.timelineItems ?? []),
                   {
-                    id: createId(),
+                    id: identity.id,
+                    eventId: getCanonicalEventId(ev) ?? undefined,
                     type: 'subconscious_step' as const,
                     status: ev.status === 'done' ? 'done' : 'thinking',
                     message: `🧠 ${ev.message}`,
-                    timestamp: Date.now(),
+                    timestamp: identity.timestamp,
                     collapsed: false,
                   },
                 ],
@@ -594,6 +623,10 @@ export function useSessionEventProjection({
                 },
               };
             }
+            const compactStartIdentity = buildTimelineItemIdentity(
+              ev,
+              'compaction-started',
+            );
             return {
               ...turn,
               assistant: {
@@ -604,11 +637,12 @@ export function useSessionEventProjection({
                 timelineItems: [
                   ...items,
                   {
-                    id: createId(),
+                    id: compactStartIdentity.id,
+                    eventId: getCanonicalEventId(ev) ?? undefined,
                     type: 'subconscious_step' as const,
                     status: 'compacting',
                     message: '正在压缩上下文…',
-                    timestamp: Date.now(),
+                    timestamp: compactStartIdentity.timestamp,
                     collapsed: false,
                   },
                 ],
@@ -659,11 +693,18 @@ export function useSessionEventProjection({
                   : [
                       ...items,
                       {
-                        id: createId(),
+                        id: buildTimelineItemIdentity(
+                          ev,
+                          'compaction-completed',
+                        ).id,
+                        eventId: getCanonicalEventId(ev) ?? undefined,
                         type: 'subconscious_step' as const,
                         status: 'success',
                         message: '上下文压缩完成',
-                        timestamp: Date.now(),
+                        timestamp: buildTimelineItemIdentity(
+                          ev,
+                          'compaction-completed',
+                        ).timestamp,
                         collapsed: false,
                       },
                     ],
@@ -692,11 +733,16 @@ export function useSessionEventProjection({
                   : [
                       ...items,
                       {
-                        id: createId(),
+                        id: buildTimelineItemIdentity(ev, 'compaction-failed')
+                          .id,
+                        eventId: getCanonicalEventId(ev) ?? undefined,
                         type: 'subconscious_step' as const,
                         status: 'error',
                         message,
-                        timestamp: Date.now(),
+                        timestamp: buildTimelineItemIdentity(
+                          ev,
+                          'compaction-failed',
+                        ).timestamp,
                         collapsed: false,
                       },
                     ],
@@ -706,7 +752,7 @@ export function useSessionEventProjection({
           if (ev.type === 'step') {
             const status = String(ev.status || 'executing');
             const message = getStepMessage(ev);
-            const now = Date.now();
+            const stepIdentity = buildTimelineItemIdentity(ev, 'step');
             if (isReasoningStep(status)) {
               const items = turn.assistant.timelineItems ?? [];
               const last = items.length > 0 ? items[items.length - 1] : null;
@@ -733,10 +779,11 @@ export function useSessionEventProjection({
                   timelineItems: [
                     ...items,
                     {
-                      id: createId(),
+                      id: stepIdentity.id,
+                      eventId: getCanonicalEventId(ev) ?? undefined,
                       type: 'thinking' as const,
                       text: message,
-                      timestamp: now,
+                      timestamp: stepIdentity.timestamp,
                       collapsed: true,
                     },
                   ],
@@ -752,24 +799,25 @@ export function useSessionEventProjection({
                 timelineItems: [
                   ...(turn.assistant.timelineItems ?? []),
                   {
-                    id: createId(),
+                    id: stepIdentity.id,
+                    eventId: getCanonicalEventId(ev) ?? undefined,
                     type: 'subconscious_step' as const,
                     status,
                     message,
-                    timestamp: now,
+                    timestamp: stepIdentity.timestamp,
                     collapsed: false,
                   },
                 ],
               },
             };
           }
-          if (ev.type === 'usage') {
+          if (ev.type === 'usage.recorded') {
             return {
               ...turn,
               assistant: { ...turn.assistant, usage: normalizeUsage(ev.usage) },
             };
           }
-          if (ev.type === 'done') {
+          if (ev.type === 'turn.completed') {
             completedTurnsRef.current.add(turnId);
             duplicateDeltaReplayOffsetRef.current.delete(turnId);
             if (ev.traceId) writeDebugTrace(ev.traceId);
@@ -816,7 +864,11 @@ export function useSessionEventProjection({
               },
             };
           }
-          if (ev.type === 'cancelled') {
+          if (ev.type === 'turn.cancelled') {
+            const cancelledIdentity = buildTimelineItemIdentity(
+              ev,
+              'turn-cancelled',
+            );
             return {
               ...turn,
               assistant: {
@@ -827,11 +879,12 @@ export function useSessionEventProjection({
                   ? [
                       ...(turn.assistant.timelineItems ?? []),
                       {
-                        id: createId(),
+                        id: cancelledIdentity.id,
+                        eventId: getCanonicalEventId(ev) ?? undefined,
                         type: 'subconscious_step' as const,
                         status: 'cancelled',
                         message: ev.message,
-                        timestamp: Date.now(),
+                        timestamp: cancelledIdentity.timestamp,
                         collapsed: false,
                       },
                     ]
@@ -839,11 +892,12 @@ export function useSessionEventProjection({
               },
             };
           }
-          if (ev.type === 'error') {
+          if (ev.type === 'turn.failed') {
             const diagnosticMarkdown = formatChatErrorDiagnostic(ev, {
               sessionId: sseSessionIdRef.current,
               turnId,
             });
+            const failedIdentity = buildTimelineItemIdentity(ev, 'turn-failed');
             return {
               ...turn,
               assistant: {
@@ -854,11 +908,12 @@ export function useSessionEventProjection({
                 timelineItems: [
                   ...(turn.assistant.timelineItems ?? []),
                   {
-                    id: createId(),
+                    id: failedIdentity.id,
+                    eventId: getCanonicalEventId(ev) ?? undefined,
                     type: 'subconscious_step' as const,
                     status: 'error',
                     message: ev.message || '请求失败',
-                    timestamp: Date.now(),
+                    timestamp: failedIdentity.timestamp,
                     collapsed: false,
                   },
                 ],
@@ -1021,7 +1076,23 @@ export function useSessionEventProjection({
               `agent-${fanoutIndex || 'replay'}`,
           );
           const previousTurn = turnsRef.current[turnsRef.current.length - 1];
-          const recoveredTurnId = createId();
+          // TR-01/CU-02：恢复的 Turn 身份优先取 canonical 信封 turnId，
+          // 缺失时退化为服务端事实（messageId）派生的确定性键，不本地随机生成。
+          const envelopeTurnId =
+            typeof anyEv.turnId === 'string' && anyEv.turnId.trim()
+              ? anyEv.turnId
+              : null;
+          if (!envelopeTurnId) {
+            recordEventProtocolError('missing-turn-id-on-metadata', {
+              eventType,
+              messageId,
+              eventId: getCanonicalEventId(ev),
+              sequenceNum: (ev as { sequenceNum?: number }).sequenceNum,
+            });
+          }
+          const recoveredTurnId =
+            envelopeTurnId ?? `turn:recovered:${messageId}`;
+          const recoveredOccurredAtMs = getCanonicalOccurredAtMs(ev) ?? 0;
           const recoveredTurn: ChatTurn = {
             turnId: recoveredTurnId,
             source: {
@@ -1038,13 +1109,13 @@ export function useSessionEventProjection({
                 String(anyEv.avatar_url || anyEv.avatarUrl || '') || undefined,
             },
             userMessage: {
-              id: createId(),
+              id: `umsg:recovered:${messageId}`,
               text: previousTurn?.userMessage.text ?? '',
-              timestamp: Date.now(),
+              timestamp: recoveredOccurredAtMs,
               status: 'success',
             },
             assistant: createAssistant(
-              createId(),
+              `amsg:recovered:${messageId}`,
               'structured',
               'thinking',
               true,
@@ -1100,7 +1171,9 @@ export function useSessionEventProjection({
         const steeringId =
           typeof anyEv.steeringId === 'string' ? anyEv.steeringId : undefined;
         const injectedAt =
-          typeof anyEv.injectedAt === 'number' ? anyEv.injectedAt : Date.now();
+          typeof anyEv.injectedAt === 'number'
+            ? anyEv.injectedAt
+            : (getCanonicalOccurredAtMs(ev) ?? 0);
         const injectedRound =
           typeof anyEv.round === 'number' ? anyEv.round : undefined;
         const messageChars =
@@ -1251,9 +1324,9 @@ export function useSessionEventProjection({
         );
         // 埋点：terminal 事件找不到目标 turn 是消息被吞的常见原因
         if (
-          eventType === 'done' ||
-          eventType === 'error' ||
-          eventType === 'cancelled'
+          eventType === 'turn.completed' ||
+          eventType === 'turn.failed' ||
+          eventType === 'turn.cancelled'
         ) {
           console.warn(
             '[Pudding Chat] terminal event unmapped (no targetTurnId) — 消息可能被吞',
@@ -1300,9 +1373,9 @@ export function useSessionEventProjection({
         );
         // terminal 事件的目标 turn 不存在 → 尝试恢复
         if (
-          eventType === 'done' ||
-          eventType === 'error' ||
-          eventType === 'cancelled'
+          eventType === 'turn.completed' ||
+          eventType === 'turn.failed' ||
+          eventType === 'turn.cancelled'
         ) {
           // 尝试 1: 通过 messageId→turnId 映射查找
           let recoveryTurnId: string | null = null;
@@ -1374,11 +1447,11 @@ export function useSessionEventProjection({
         }
       }
 
-      if (ev.type === 'usage' && ev.usage) setLatestUsage(ev.usage);
-      if (ev.type === 'done' && ev.usage) setLatestUsage(ev.usage);
+      if (ev.type === 'usage.recorded' && ev.usage) setLatestUsage(ev.usage);
+      if (ev.type === 'turn.completed' && ev.usage) setLatestUsage(ev.usage);
 
       // T-CACHE-008: Accumulate cache hit/miss for the main session
-      if (ev.type === 'done' && ev.usage) {
+      if (ev.type === 'turn.completed' && ev.usage) {
         const hitTokens = ev.usage.promptCacheHitTokens || 0;
         const missTokens = ev.usage.promptCacheMissTokens || 0;
         if (hitTokens > 0 || missTokens > 0) {
@@ -1399,9 +1472,9 @@ export function useSessionEventProjection({
       // ADR-InkBloom: 终端事件前 flush 所有 pending delta，不丢最后一段
       if (
         eventType === 'session.closed' ||
-        eventType === 'done' ||
-        eventType === 'error' ||
-        eventType === 'cancelled'
+        eventType === 'turn.completed' ||
+        eventType === 'turn.failed' ||
+        eventType === 'turn.cancelled'
       ) {
         flushPendingDeltas();
         flushPendingThinking();
@@ -1409,9 +1482,9 @@ export function useSessionEventProjection({
 
       // T-102: 终端事件管理 loading 状态
       if (
-        eventType === 'done' ||
-        eventType === 'error' ||
-        eventType === 'cancelled'
+        eventType === 'turn.completed' ||
+        eventType === 'turn.failed' ||
+        eventType === 'turn.cancelled'
       ) {
         logChatDiag('event.terminal.apply', {
           eventType,
@@ -1464,7 +1537,8 @@ export function useSessionEventProjection({
             ? Math.round(performance.now() - streamStart)
             : undefined,
         },
-        eventType === 'delta' || eventType === 'thinking'
+        eventType === 'message.content.appended' ||
+          eventType === 'message.thinking_summary.appended'
           ? { throttleMs: 500 }
           : undefined,
       );

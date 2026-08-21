@@ -1,7 +1,4 @@
-import {
-  type AdminChatStreamEvent,
-  normalizeConversationEventType,
-} from '@/services/platform/api';
+import { type AdminChatStreamEvent } from '@/services/platform/api';
 import { SessionNotFoundError } from '../hooks/sessionRuntimeCleanup';
 import type { SessionEventPageResponse } from '../types/chatStateTypes';
 import {
@@ -11,6 +8,7 @@ import {
 
 export type NormalizedSessionEvent = AdminChatStreamEvent & {
   sequenceNum?: number;
+  /** 时间锚点：canonical occurredAt（供子代理卡片等消费）。 */
   recordedAt?: string;
 };
 
@@ -28,7 +26,11 @@ export function getMaxSessionEventSequenceNum(
   return Number.isFinite(maxSequence) ? maxSequence : null;
 }
 
-/** Normalizes persisted event wrappers and live events into one shape. */
+/**
+ * Normalizes canonical envelopes (SSE/replay/bootstrap 同形) into one shape.
+ * TR-01/CU-02：canonical 事件名直通；无 canonical → legacy 映射，
+ * 无旧 session_event_log wrapper（dataJson/Data/eventType）兼容分支。
+ */
 export function normalizeSessionEvent(
   raw: unknown,
 ): NormalizedSessionEvent | null {
@@ -40,14 +42,14 @@ export function normalizeSessionEvent(
     object.sequenceNum ??
     object.SequenceNum;
   const sequenceNum = rawSequence == null ? undefined : Number(rawSequence);
-  const rawRecordedAt =
-    object.recordedAt ??
-    object.RecordedAt ??
-    object.recordedAtUtc ??
-    object.RecordedAtUtc;
+  const rawOccurredAt =
+    object.occurredAt ??
+    object.OccurredAt ??
+    object.occurredAtUtc ??
+    object.OccurredAtUtc;
   const recordedAt =
-    typeof rawRecordedAt === 'string' && rawRecordedAt.trim()
-      ? rawRecordedAt
+    typeof rawOccurredAt === 'string' && rawOccurredAt.trim()
+      ? rawOccurredAt
       : undefined;
 
   let payload: Record<string, unknown> = {};
@@ -62,52 +64,14 @@ export function normalizeSessionEvent(
     }
   }
 
-  const rawDataJson = object.dataJson ?? object.DataJson;
-  if (
-    Object.keys(payload).length === 0 &&
-    typeof rawDataJson === 'string' &&
-    rawDataJson.trim()
-  ) {
-    try {
-      payload = JSON.parse(rawDataJson) as Record<string, unknown>;
-    } catch {
-      payload = {};
-    }
-  }
-
-  const rawData = object.data ?? object.Data;
-  if (
-    Object.keys(payload).length === 0 &&
-    typeof rawData === 'string' &&
-    rawData.trim()
-  ) {
-    try {
-      payload = JSON.parse(rawData) as Record<string, unknown>;
-    } catch {
-      payload = {};
-    }
-  } else if (
-    Object.keys(payload).length === 0 &&
-    rawData &&
-    typeof rawData === 'object'
-  ) {
-    payload = rawData as Record<string, unknown>;
-  }
-
   const rawType = object.type ?? object.Type;
-  const wrapperEventType = object.eventType ?? object.EventType;
-  const canonicalType = String(
-    (rawType === 'event' && wrapperEventType ? wrapperEventType : rawType) ??
-      wrapperEventType ??
-      payload.type ??
-      '',
-  ).trim();
+  const canonicalType = String(rawType ?? payload.type ?? '').trim();
   if (!canonicalType) return null;
 
   return {
     ...object,
     ...payload,
-    type: normalizeConversationEventType(canonicalType),
+    type: canonicalType,
     ...(Number.isFinite(sequenceNum) ? { sequenceNum } : {}),
     ...(recordedAt ? { recordedAt } : {}),
   } as NormalizedSessionEvent;

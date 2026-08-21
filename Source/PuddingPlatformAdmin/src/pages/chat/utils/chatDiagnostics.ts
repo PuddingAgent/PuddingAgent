@@ -58,8 +58,9 @@ export function isChatStreamErrorEvent(
   event: ChatErrorDiagnosticEvent,
 ): boolean {
   const type = readDiagnosticText(event, 'type')?.toLowerCase();
-  if (type === 'error') return true;
-  if (type !== 'done') return false;
+  // TR-01/CU-02：canonical 事件名（turn.failed/turn.completed）。
+  if (type === 'turn.failed') return true;
+  if (type !== 'turn.completed') return false;
 
   return (
     event.isError === true ||

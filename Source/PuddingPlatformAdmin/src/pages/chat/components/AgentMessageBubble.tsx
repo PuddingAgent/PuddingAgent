@@ -143,6 +143,10 @@ const toTimelineItems = (items: ProcessSummaryItem[]): TimelineItem[] =>
     .map((item) => ({
       id: item.id,
       toolCallId: item.toolCallId ?? undefined,
+      // TR-01 冻结字段透传（服务端穿透后生效；缺失时回落 generic）。
+      parentToolCallId: item.parentToolCallId ?? undefined,
+      durationMs: item.durationMs ?? undefined,
+      presentation: item.presentation ?? undefined,
       type:
         item.kind === 'thinking' ||
         item.kind === 'tool_call' ||
@@ -500,7 +504,8 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   const shouldShowProcessActivity = Boolean(
     isRunActive &&
       processActivity &&
-      (processActivity.kind === 'system' || processActivity.kind === 'subagent'),
+      (processActivity.kind === 'system' ||
+        processActivity.kind === 'subagent'),
   );
   const shouldShowDelegationActivity = Boolean(
     isRunActive && delegationActivity && processActivity?.kind !== 'subagent',

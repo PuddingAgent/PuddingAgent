@@ -49,11 +49,18 @@ describe('chatDiagnostics', () => {
   });
 
   it('recognizes error terminal events and persisted diagnostics', () => {
-    expect(
+        expect(
       isChatStreamErrorEvent({
-        type: 'done',
+        type: 'turn.completed',
         reply: '## 请求失败',
         isError: true,
+      }),
+    ).toBe(true);
+    // TR-01/CU-02：canonical 终态事件名（turn.failed 直接判错）。
+    expect(
+      isChatStreamErrorEvent({
+        type: 'turn.failed',
+        message: 'boom',
       }),
     ).toBe(true);
     expect(

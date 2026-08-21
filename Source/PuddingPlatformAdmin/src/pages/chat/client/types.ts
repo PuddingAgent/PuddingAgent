@@ -1,3 +1,5 @@
+import type { ToolPresentationDto } from '@/services/platform/api';
+
 export type AgentRunStatus =
   | 'queued'
   | 'running'
@@ -23,6 +25,12 @@ export interface ProcessSummaryItem {
   id: string;
   /** 工具调用身份（后端 toolCallId；tool_call/tool_result 精确配对用） */
   toolCallId?: string | null;
+  /** 父调用 ID（TR-01 冻结字段；服务端穿透后可用）。 */
+  parentToolCallId?: string | null;
+  /** 工具调用耗时（服务端事实）。 */
+  durationMs?: number | null;
+  /** Tool-owned presentation intent（实时/历史同构）。 */
+  presentation?: ToolPresentationDto | null;
   kind: string;
   status: string;
   text: string;
@@ -100,7 +108,7 @@ export interface ConversationMessageView {
     | 'succeeded'
     | 'failed'
     | 'cancelled';
-    processItems: ProcessSummaryItem[];
+  processItems: ProcessSummaryItem[];
   processSummary?: ConversationProcessSummary | null;
   /** 工具审批卡片（P0#1）。由 approval.requested / approval.resolved 事件投影。 */
   approvalCard?: ApprovalCardData | null;
@@ -130,10 +138,7 @@ export interface PlanStepData {
 }
 
 /** Plan 模式用户决定（EditablePlanCard 三按钮契约）。 */
-export type PlanDecision =
-  | 'approve_and_build'
-  | 'manual'
-  | 'keep_planning';
+export type PlanDecision = 'approve_and_build' | 'manual' | 'keep_planning';
 
 /** 计划卡片的 UI 投影（P1#5 Plan 模式）。 */
 export interface PlanCardData {

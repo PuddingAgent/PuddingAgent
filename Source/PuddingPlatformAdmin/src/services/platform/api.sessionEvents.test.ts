@@ -105,7 +105,7 @@ describe('subscribeSessionEvents error handling', () => {
     expect(onEvent).not.toHaveBeenCalled();
   });
 
-  it('projects a canonical SSE envelope into the chat event shape', () => {
+    it('projects a canonical SSE envelope into the chat event shape', () => {
     expect(
       projectConversationEventEnvelope(
         {
@@ -119,11 +119,34 @@ describe('subscribeSessionEvents error handling', () => {
       ),
     ).toEqual(
       expect.objectContaining({
-        type: 'done',
+        // TR-01/CU-02：canonical 事件名直通，不再映射为 legacy done。
+        type: 'turn.completed',
         sequenceNum: 23,
         turnId: 'turn-1',
         messageId: 'message-1',
         reply: 'OK',
+      }),
+    );
+  });
+
+  it('surfaces turn.failed errorMessage as message without legacy rename', () => {
+    expect(
+      projectConversationEventEnvelope(
+        {
+          sequence: 24,
+          turnId: 'turn-2',
+          payload: { errorMessage: 'boom', errorCode: 'E1' },
+        },
+        'turn.failed',
+        24,
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        type: 'turn.failed',
+        message: 'boom',
+        errorMessage: 'boom',
+        errorCode: 'E1',
+        sequenceNum: 24,
       }),
     );
   });
