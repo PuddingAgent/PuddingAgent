@@ -34,7 +34,7 @@ import {
   getCurrentRunActivity,
   sanitizeProcessText,
 } from './processPreview';
-import { ReasoningPreview } from './ReasoningPreview';
+import { ReasoningDisclosureRow } from './execution-flow/ReasoningDisclosureRow';
 import StateDot from './StateDot';
 import ToolCallRowList from './ToolCallRow';
 import type { TranscriptMode } from './TranscriptModeSwitch';
@@ -488,7 +488,8 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   }, [processItems]);
   const hasReasoningContent = reasoningLines.length > 0;
   // 推理摘要与当前工具/委派活动并列展示，避免阶段切换时丢失主代理上下文。
-  const showReasoningPreview = hasReasoningContent && isBeforeFirstToken;
+  // CU-06：去 isBeforeFirstToken 门控——整个 turn 内推理行保持同一行，正文流式后仍在主视图。
+  const showReasoningPreview = hasReasoningContent;
   const reasoningIsCurrent =
     !currentActivity || currentActivity.kind === 'thinking';
   // CU-05: TurnStatus —— 收敛 WaitingBubble/CurrentActivityPanel 的重复状态区。
@@ -622,7 +623,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
 
                 {/* 推理摘要与工具/子代理当前活动并列，保留主代理过程连续性。 */}
                 {showReasoningPreview && (
-                  <ReasoningPreview
+                  <ReasoningDisclosureRow
                     lines={reasoningLines}
                     isCurrent={reasoningIsCurrent}
                   />

@@ -113,4 +113,60 @@ export const useExecutionFlowStyles = createStyles(() => ({
     '0%': { backgroundPosition: '200% 0' },
     '100%': { backgroundPosition: '-200% 0' },
   },
+
+  // ── ReasoningDisclosureRow（CU-06 §5.1 + §6.1）──
+  /** reasoning 标题「思考」：13px/20px 600（对齐 turnStatusLabel 规格） */
+  reasoningTitle: {
+    fontSize: 13,
+    fontWeight: 600,
+    lineHeight: '20px',
+    color: 'var(--pudding-chat-text)',
+    whiteSpace: 'nowrap' as const,
+  },
+  /** 摘要单行 ellipsis：13px/20px，颜色次级 */
+  reasoningSummary: {
+    fontSize: 13,
+    lineHeight: '20px',
+    color: 'var(--pudding-chat-text-secondary)',
+    whiteSpace: 'nowrap' as const,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    minWidth: 0,
+  },
+  /** 展开内容容器：标题/复制/正文纵向排布 */
+  reasoningWrap: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 6,
+  },
+  /** 复制按钮：小号次级文案按钮 */
+  reasoningCopy: {
+    alignSelf: 'flex-start' as const,
+    fontSize: 11,
+    lineHeight: '20px',
+    color: 'var(--pudding-chat-text-muted)',
+    background: 'transparent',
+    border: 'none' as const,
+    padding: 0,
+    cursor: 'pointer',
+    textDecoration: 'underline',
+  },
+  /** 展开体：完整可审计文本，最大高度 320px 内部滚动（测试断言 max-height:320px / overflow:auto） */
+  reasoningBody: {
+    maxHeight: 320,
+    overflow: 'auto',
+    borderRadius: 8,
+    background: 'var(--pudding-chat-code-bg)',
+    padding: '8px 10px',
+    boxSizing: 'border-box' as const,
+  },
+  /** pre 保留换行（可审计原文），等宽字体 */
+  reasoningText: {
+    margin: 0,
+    fontSize: 12.5,
+    lineHeight: 1.6,
+    color: 'var(--pudding-chat-text)',
+    whiteSpace: 'pre-wrap' as const,
+    wordBreak: 'break-word' as const,
+  },
 }));
