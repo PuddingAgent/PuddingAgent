@@ -418,3 +418,7 @@ pub/
 /$null
 /checkpoint.json
 /me.png
+
+# db-shm/db-wal runtime temp files
+*.db-shm
+*.db-wal
