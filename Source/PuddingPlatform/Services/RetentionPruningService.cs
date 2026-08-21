@@ -10,15 +10,13 @@ namespace PuddingPlatform.Services;
 /// <summary>
 /// platform.db 数据保留期裁剪后台服务。
 ///
-/// 背景：platform.db 已膨胀到数 GB；保留期配置（Retention）早已定义但裁剪代码缺失，
-/// 现有 DiagnosticRetentionService 只覆盖遥测/上下文指标/运行活动，conversation_events
-/// 从未被裁剪。本服务补齐全部三张表的保留期清理。
+/// 背景：platform.db 已膨胀到数 GB。本服务是唯一在线保留期清理器，统一覆盖
+/// 遥测、运行活动和归档后的 conversation_events。
 ///
 /// 设计要点：
-/// 1) 配置读取：优先读取顶层 "Retention" 节（每张表一个 { "RetentionDays": N }），
-///    若该节未定义则回退到既有 "Diagnostics:Retention:Tables"（已包含全部三张表）。
+/// 1) 配置只读取顶层 "Retention" 节（每张表一个 { "RetentionDays": N }）。
 ///    表名/列名只允许来自内置白名单（防 SQL 注入，配置值只影响 RetentionDays）。
-/// 2) 宿主服务模式照抄 DiagnosticRetentionService：ExecuteAsync 首句 Task.Yield()，
+/// 2) ExecuteAsync 首句 Task.Yield()，
 ///    绝不阻塞宿主启动（BackgroundService.StartAsync 会同步执行到第一个未完成 await）。
 /// 3) SQLite 不支持 DELETE...LIMIT，因此用
 ///        DELETE FROM t WHERE rowid IN (SELECT rowid FROM t WHERE ts列&lt;@cutoff LIMIT @batch)
@@ -29,13 +27,15 @@ namespace PuddingPlatform.Services;
 ///      runtime_activity.started_at_utc        （RuntimeActivityEntity）
 ///      conversation_events.committed_at       （ConversationEventEntity，写入时与 occurred_at 同值）
 /// 5) ChatMessages 永不裁剪：chat_messages 不在白名单内。
-/// 6) 每 6 小时运行一次（Retention:RunIntervalHours 可覆盖）；最后按配置 VACUUM
-///    （Retention:Vacuum:Enabled，默认 true —— 裁剪后需要 VACUUM 才能归还磁盘空间）。
+/// 6) 在线维护必须给聊天等前台 writer 让路：小批删除、批间延迟、单轮批数上限；
+///    VACUUM 默认关闭，只能在显式维护窗口开启。
 /// </summary>
 public sealed class RetentionPruningService : BackgroundService
 {
     private const string SectionName = "Retention";
-    private const string FallbackSection = "Diagnostics:Retention";
+    private const int DefaultBatchSize = 100;
+    private const int DefaultBatchDelayMs = 250;
+    private const int DefaultMaxBatchesPerTablePerRun = 200;
 
     private readonly IConfiguration _configuration;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -77,17 +77,17 @@ public sealed class RetentionPruningService : BackgroundService
     }
 
     /// <summary>
-    /// 配置读取链：优先顶层 "Retention" 节，缺省项回退到既有
-    /// "Diagnostics:Retention"（仓库内已定义的完整配置），最后落到任务默认值。
+    /// 标量配置读取：只有显式存在的顶层 Retention 值才覆盖默认值。
+    /// 先检查原始配置值，避免值类型缺项被 GetValue 解析成 0/false。
     /// </summary>
     private T GetSetting<T>(string key, T defaultValue)
+        where T : notnull
     {
-        var primary = _configuration.GetValue<T?>($"{SectionName}:{key}");
-        if (primary is not null)
-            return primary;
+        var primaryKey = $"{SectionName}:{key}";
+        if (_configuration[primaryKey] is not null)
+            return _configuration.GetValue<T>(primaryKey) ?? defaultValue;
 
-        var fallback = _configuration.GetValue<T?>($"{FallbackSection}:{key}");
-        return fallback is not null ? fallback : defaultValue;
+        return defaultValue;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -117,6 +117,12 @@ public sealed class RetentionPruningService : BackgroundService
     /// </summary>
     public async Task RunLoopAsync(CancellationToken ct = default)
     {
+        if (!GetSetting("Enabled", true))
+        {
+            _logger.LogInformation("[RetentionPruning] disabled (Enabled=false), skip retention sweep");
+            return;
+        }
+
         var startupDelaySeconds = Math.Max(0, GetSetting("StartupDelaySeconds", 60));
         if (startupDelaySeconds > 0)
             await Task.Delay(TimeSpan.FromSeconds(startupDelaySeconds), ct);
@@ -149,6 +155,12 @@ public sealed class RetentionPruningService : BackgroundService
     /// </summary>
     public async Task RunOnceAsync(CancellationToken ct = default)
     {
+        if (!GetSetting("Enabled", true))
+        {
+            _logger.LogInformation("[RetentionPruning] disabled (Enabled=false), skip retention sweep");
+            return;
+        }
+
         var tables = ReadRetentionTables();
         if (tables.Count == 0)
         {
@@ -156,8 +168,11 @@ public sealed class RetentionPruningService : BackgroundService
             return;
         }
 
-        var batchSize = Math.Max(1, GetSetting("BatchSize", 5000));
-        var batchDelayMs = Math.Max(0, GetSetting("BatchDelayMs", 100));
+        var batchSize = Math.Max(1, GetSetting("BatchSize", DefaultBatchSize));
+        var batchDelayMs = Math.Max(0, GetSetting("BatchDelayMs", DefaultBatchDelayMs));
+        var maxBatchesPerTable = Math.Max(
+            1,
+            GetSetting("MaxBatchesPerTablePerRun", DefaultMaxBatchesPerTablePerRun));
         var cutoffBase = DateTimeOffset.UtcNow;
 
         foreach (var (tableName, retentionDays) in tables)
@@ -182,18 +197,24 @@ public sealed class RetentionPruningService : BackgroundService
 
             var cutoff = cutoffBase.AddDays(-retentionDays);
             await EnsureTimestampIndexAsync(tableName, timestampColumn, ct);
-            await TrimTableAsync(tableName, timestampColumn, cutoff, batchSize, batchDelayMs, ct);
+            await TrimTableAsync(
+                tableName,
+                timestampColumn,
+                cutoff,
+                batchSize,
+                batchDelayMs,
+                maxBatchesPerTable,
+                ct);
         }
 
-        if (GetSetting("Vacuum:Enabled", true))
+        if (GetSetting("Vacuum:Enabled", false))
         {
             await VacuumAsync(ct);
         }
     }
 
     /// <summary>
-    /// 读取保留期配置：优先顶层 "Retention" 节（task 规范形态），回退既有
-    /// "Diagnostics:Retention:Tables"（仓库内已定义的完整四表配置）。
+    /// 读取顶层 Retention 中的表级保留期；标量配置项没有 RetentionDays，自动跳过。
     /// </summary>
     private Dictionary<string, int> ReadRetentionTables()
     {
@@ -208,17 +229,6 @@ public sealed class RetentionPruningService : BackgroundService
             tables[child.Key] = days.Value;
         }
 
-        if (tables.Count > 0)
-            return tables;
-
-        foreach (var child in _configuration.GetSection($"{FallbackSection}:Tables").GetChildren())
-        {
-            var days = child.GetValue<int?>("RetentionDays");
-            if (days is null)
-                continue;
-            tables[child.Key] = days.Value;
-        }
-
         return tables;
     }
 
@@ -228,6 +238,7 @@ public sealed class RetentionPruningService : BackgroundService
         DateTimeOffset cutoff,
         int batchSize,
         int batchDelayMs,
+        int maxBatches,
         CancellationToken ct)
     {
         long totalDeleted = 0;
@@ -239,7 +250,8 @@ public sealed class RetentionPruningService : BackgroundService
 
         var archivable = ArchiveTables.Contains(tableName);
 
-        while (!ct.IsCancellationRequested)
+        var reachedBatchLimit = false;
+        while (!ct.IsCancellationRequested && batches < maxBatches)
         {
             int affected;
 
@@ -267,6 +279,12 @@ public sealed class RetentionPruningService : BackgroundService
             if (affected < batchSize)
                 break;
 
+            if (batches >= maxBatches)
+            {
+                reachedBatchLimit = true;
+                break;
+            }
+
             if (batchDelayMs > 0)
                 await Task.Delay(batchDelayMs, ct);
         }
@@ -274,6 +292,14 @@ public sealed class RetentionPruningService : BackgroundService
         _logger.LogInformation(
             "[RetentionPruning] trimmed table={Table} cutoff={Cutoff:O} deleted={Deleted} batches={Batches}",
             tableName, cutoff, totalDeleted, batches);
+
+        if (reachedBatchLimit)
+        {
+            _logger.LogInformation(
+                "[RetentionPruning] batch cap reached table={Table} maxBatches={MaxBatches}; remaining rows deferred",
+                tableName,
+                maxBatches);
+        }
     }
 
     /// <summary>

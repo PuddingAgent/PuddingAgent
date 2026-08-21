@@ -62,7 +62,7 @@
 - ~20 处注释/文案（含 `ISessionEventWriter` / `SessionEventDraft` 过时 doc 文字）
 
 ### 组 7：测试
-- `DiagnosticRetentionServiceTests` / `RetentionArchiveWriterTests` / `RetentionPruningServiceTests`
+- `RetentionArchiveWriterTests` / `RetentionPruningServiceTests`
 - `MessageApiControllerTests:278` / `SessionApiControllerTests:280`
 - 其他引用旧表实体的测试桩
 

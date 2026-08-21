@@ -33,7 +33,7 @@
 
 ### P0-5 仅追加性恢复（Retention DELETE → 归档后删）
 - 目标：append-only 语义不被破坏，超期不销毁证据
-- 方案：`RetentionPruningService`（46-63,203-238）DELETE 前归档到 WORM 文件（按会话分片 jsonl，复用 AgentRawLogMirrorService 写路径模式）；归档完成才删表行；或两表直接排除出 pruning（配置开关，默认归档模式）；ADR 显式化 append-only + 归档语义
+- 方案：`RetentionPruningService` 是 platform.db 唯一在线保留期任务；DELETE 前归档到 WORM 文件（按日分片 jsonl，复用 AgentRawLogMirrorService 写路径模式），归档完成才删表行。在线执行必须使用小批删除、批间让步和单轮批数上限，VACUUM 默认关闭；不得再并行注册第二套诊断裁剪服务争用 SQLite writer。ADR 显式化 append-only + 归档语义。
 - 验收：pruning 运行后归档文件可查全量历史；表内仅保留窗口期
 
 ## 3. P1 增强（五项，P0 收口后排）

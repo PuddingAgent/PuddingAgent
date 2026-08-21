@@ -6,6 +6,8 @@
 > - 目标平台：Windows 10/11、.NET 10、WPF、WebView2 Evergreen Runtime
 > - 本文用途：作为 Phase 1B/1C/2 的 UI、进程管理、IPC、类拆分和验收输入
 
+> **2026-08-20 存储边界更新**：本文第 6 节记录已经实现的 Phase 1B-S 历史方案，不再作为遥测/调试数据自动过期和新存储管理页的目标入口。新能力由 Core + `PuddingPlatformAdmin` Web `/storage` 承担，Desktop 暂不扩展存储管理职责。目标设计与裁决见 [ADR-076](91ADR-076遥测与调试数据保留及Core存储管理ADR.md) 和[详细设计](../Features/遥测调试数据自动过期与Web存储管理设计方案.md)。
+
 ## 1. 决策摘要
 
 ### 1.1 Agent Browser 使用浏览器式工作区，不复用 Workbench

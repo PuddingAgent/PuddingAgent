@@ -235,6 +235,137 @@ public sealed class RetentionPruningServiceTests
     }
 
     [TestMethod]
+    public async Task Top_Level_Scalar_Batch_Settings_Are_Applied()
+    {
+        var (provider, connection) = CreateProvider();
+        var recordingWriter = new RecordingRetentionArchiveWriter(
+            PuddingDataPaths.FromRoot(CreateArchiveRoot()));
+
+        await using (connection)
+        {
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                db.Set<ConversationEventEntity>().AddRange(
+                    Enumerable.Range(0, 5)
+                        .Select(i => MakeConversationEvent(
+                            $"old-config-{i}",
+                            DateTimeOffset.UtcNow.AddDays(-40))));
+                await db.SaveChangesAsync();
+            }
+
+            var config = MakeConfiguration(
+                ("Retention:Enabled", "true"),
+                ("Retention:BatchSize", "2"),
+                ("Retention:BatchDelayMs", "0"),
+                ("Retention:MaxBatchesPerTablePerRun", "10"),
+                ("Retention:conversation_events:RetentionDays", "30"),
+                ("Retention:Vacuum:Enabled", "false"));
+
+            var service = CreateService(provider, config, recordingWriter);
+            await service.RunOnceAsync();
+
+            CollectionAssert.AreEqual(new[] { 2, 2, 1 }, recordingWriter.BatchSizes);
+        }
+    }
+
+    [TestMethod]
+    public async Task Missing_Scalar_Settings_Use_Online_Safe_Default_Batch_Size()
+    {
+        var (provider, connection) = CreateProvider();
+        var recordingWriter = new RecordingRetentionArchiveWriter(
+            PuddingDataPaths.FromRoot(CreateArchiveRoot()));
+
+        await using (connection)
+        {
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                db.Set<ConversationEventEntity>().AddRange(
+                    Enumerable.Range(0, 101)
+                        .Select(i => MakeConversationEvent(
+                            $"old-default-{i}",
+                            DateTimeOffset.UtcNow.AddDays(-40))));
+                await db.SaveChangesAsync();
+            }
+
+            var config = MakeConfiguration(
+                ("Retention:conversation_events:RetentionDays", "30"),
+                ("Retention:Vacuum:Enabled", "false"));
+
+            var service = CreateService(provider, config, recordingWriter);
+            await service.RunOnceAsync();
+
+            CollectionAssert.AreEqual(new[] { 100, 1 }, recordingWriter.BatchSizes);
+        }
+    }
+
+    [TestMethod]
+    public async Task Max_Batches_Per_Table_Defers_Remaining_Rows()
+    {
+        var (provider, connection) = CreateProvider();
+        var recordingWriter = new RecordingRetentionArchiveWriter(
+            PuddingDataPaths.FromRoot(CreateArchiveRoot()));
+
+        await using (connection)
+        {
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                db.Set<ConversationEventEntity>().AddRange(
+                    Enumerable.Range(0, 5)
+                        .Select(i => MakeConversationEvent(
+                            $"old-capped-{i}",
+                            DateTimeOffset.UtcNow.AddDays(-40))));
+                await db.SaveChangesAsync();
+            }
+
+            var config = MakeConfiguration(
+                ("Retention:Enabled", "true"),
+                ("Retention:conversation_events:RetentionDays", "30"),
+                ("Retention:BatchSize", "2"),
+                ("Retention:BatchDelayMs", "0"),
+                ("Retention:MaxBatchesPerTablePerRun", "1"),
+                ("Retention:Vacuum:Enabled", "false"));
+
+            var service = CreateService(provider, config, recordingWriter);
+            await service.RunOnceAsync();
+
+            await using var verifyScope = provider.CreateAsyncScope();
+            var verifyDb = verifyScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            Assert.AreEqual(3, await verifyDb.Set<ConversationEventEntity>().CountAsync());
+            CollectionAssert.AreEqual(new[] { 2 }, recordingWriter.BatchSizes);
+        }
+    }
+
+    [TestMethod]
+    public async Task Disabled_Service_Does_Not_Delete_Rows()
+    {
+        var (provider, connection) = CreateProvider();
+        await using (connection)
+        {
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+                db.Set<RuntimeActivityEntity>().Add(
+                    MakeRuntimeActivity("disabled-old", DateTimeOffset.UtcNow.AddDays(-40)));
+                await db.SaveChangesAsync();
+            }
+
+            var config = MakeConfiguration(
+                ("Retention:Enabled", "false"),
+                ("Retention:runtime_activity:RetentionDays", "14"));
+
+            var service = CreateService(provider, config);
+            await service.RunOnceAsync();
+
+            await using var verifyScope = provider.CreateAsyncScope();
+            var verifyDb = verifyScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            Assert.AreEqual(1, await verifyDb.Set<RuntimeActivityEntity>().CountAsync());
+        }
+    }
+
+    [TestMethod]
     public async Task Archives_ConversationEvents_Before_Delete()
     {
         var (provider, connection) = CreateProvider();
@@ -328,5 +459,23 @@ public sealed class RetentionPruningServiceTests
         public override Task ArchiveBatchAsync<T>(
             string tableName, IReadOnlyList<T> rows, DateTimeOffset cutoff, CancellationToken ct = default)
             => throw new IOException("simulated archive failure");
+    }
+
+    private sealed class RecordingRetentionArchiveWriter(PuddingDataPaths paths)
+        : RetentionArchiveWriter(paths, NullLogger<RetentionArchiveWriter>.Instance)
+    {
+        private readonly List<int> _batchSizes = [];
+
+        public int[] BatchSizes => _batchSizes.ToArray();
+
+        public override Task ArchiveBatchAsync<T>(
+            string tableName,
+            IReadOnlyList<T> rows,
+            DateTimeOffset cutoff,
+            CancellationToken ct = default)
+        {
+            _batchSizes.Add(rows.Count);
+            return Task.CompletedTask;
+        }
     }
 }

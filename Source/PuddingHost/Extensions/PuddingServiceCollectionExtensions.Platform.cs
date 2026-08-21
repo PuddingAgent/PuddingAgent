@@ -19,10 +19,10 @@ using PuddingCode.Tasks;
 using PuddingCode.Tools;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
+using PuddingPlatform.Services.Diagnostics;
 using PuddingPlatform.Services.Conversation;
 using PuddingPlatform.Services.Execution;
 using PuddingPlatform.Services.AgentChat;
-using PuddingPlatform.Services.Diagnostics;
 using PuddingPlatform.Services.Snapshot;
 using PuddingCodeIntelligence;
 using PuddingCodeIntelligence.Contracts;
@@ -306,17 +306,9 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IStorageMaintenanceService>(sp =>
             sp.GetRequiredService<StorageMaintenanceService>());
 
-        // ── 诊断表保留期裁剪（Diagnostics:Retention，默认关闭）──────────────
-        builder.Services.Configure<DiagnosticRetentionOptions>(
-            builder.Configuration.GetSection(DiagnosticRetentionOptions.SectionName));
-        if (builder.Configuration.GetValue<bool>(
-                $"{DiagnosticRetentionOptions.SectionName}:{nameof(DiagnosticRetentionOptions.Enabled)}"))
-        {
-            builder.Services.AddHostedService<DiagnosticRetentionService>();
-        }
-
-        // ── platform.db 数据保留期裁剪（Retention，覆盖 telemetry_metric_events /
+        // ── platform.db 单一保留期裁剪服务（Retention，覆盖 telemetry_metric_events /
         //    runtime_activity / conversation_events；ChatMessages 永不裁剪）──────
+        // 不再并行注册旧 DiagnosticRetentionService；两套清理器会争用 SQLite writer。
         // 证据流表（conversation_events）DELETE 前先归档到 WORM jsonl。
         builder.Services.AddSingleton<RetentionArchiveWriter>();
         builder.Services.AddHostedService<RetentionPruningService>();

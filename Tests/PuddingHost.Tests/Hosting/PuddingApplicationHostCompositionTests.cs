@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using PuddingCode.Tasks;
 using PuddingHost.Hosting;
+using PuddingPlatform.Services;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.TaskTools;
 
@@ -49,6 +51,10 @@ public sealed class PuddingApplicationHostCompositionTests
             Assert.Same(
                 app.Services.GetRequiredService<TaskUpdateTool>(),
                 app.Services.GetRequiredService<TaskUpdateTool>());
+
+            Assert.Single(
+                app.Services.GetServices<IHostedService>()
+                    .OfType<RetentionPruningService>());
         }
         finally
         {
