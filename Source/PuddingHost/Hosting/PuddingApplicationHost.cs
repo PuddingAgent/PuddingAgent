@@ -6,8 +6,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using PuddingAgent.Services;
 using PuddingCode.Configuration;
+using PuddingCode.Security;
 using PuddingPlatform.Controllers.Api;
 using PuddingPlatform.Services;
+using PuddingPlatform.Services.Security;
 using Serilog;
 using System.IO.Compression;
 using System.Text;
@@ -133,13 +135,59 @@ public static class PuddingApplicationHost
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
                     ClockSkew = TimeSpan.FromMinutes(1),
                 };
-            });
+            })
+            // ADR-075: 第三方 External Access Token 独立认证 scheme。
+            // JWT 保持全局默认 scheme；External scheme 只由 /api/external/v1 Policy 显式选择。
+            .AddScheme<ExternalAccessTokenOptions, ExternalAccessTokenHandler>(
+                ExternalAccessTokenAuthentication.Scheme,
+                _ => { });
         builder.Services.AddAuthorization(authorization =>
         {
             authorization.AddPolicy(
                 PuddingAuthorizationPolicies.StorageManagement,
                 policy => policy.AddRequirements(new StorageManagementRequirement()));
+
+            // ── ADR-075 External Access Token policies ──────────
+            // Token 管理锁定 JWT scheme + admin role：External Token 无 admin role
+            // 且 scheme 不匹配，永远无法进入管理 API。
+            authorization.AddPolicy(
+                ExternalAccessTokenPolicyNames.AdminAccessTokenManagement,
+                policy => policy
+                    .AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
+                    .RequireRole("admin"));
+
+            AddExternalTaskApiPolicy(
+                authorization,
+                ExternalAccessTokenPolicyNames.ExternalApiAuthenticated,
+                scope: null,
+                requireWorkspace: false);
+            AddExternalTaskApiPolicy(
+                authorization,
+                ExternalAccessTokenPolicyNames.ExternalTasksRead,
+                ExternalTaskApiScopes.TasksRead,
+                requireWorkspace: true);
+            AddExternalTaskApiPolicy(
+                authorization,
+                ExternalAccessTokenPolicyNames.ExternalTasksWrite,
+                ExternalTaskApiScopes.TasksWrite,
+                requireWorkspace: true);
+            AddExternalTaskApiPolicy(
+                authorization,
+                ExternalAccessTokenPolicyNames.ExternalTasksComment,
+                ExternalTaskApiScopes.TasksComment,
+                requireWorkspace: true);
+            AddExternalTaskApiPolicy(
+                authorization,
+                ExternalAccessTokenPolicyNames.ExternalTasksEvaluate,
+                ExternalTaskApiScopes.TasksEvaluate,
+                requireWorkspace: true);
+            AddExternalTaskApiPolicy(
+                authorization,
+                ExternalAccessTokenPolicyNames.ExternalTasksCommand,
+                ExternalTaskApiScopes.TasksCommand,
+                requireWorkspace: true);
         });
+        builder.Services.AddSingleton<IAuthorizationHandler, ExternalAccessTokenAuthorizationHandler>();
 
         // ── Host options ────────────────────────────────────
         builder.Services.AddSingleton(options);
@@ -162,6 +210,27 @@ public static class PuddingApplicationHost
             options);
 
         return builder;
+    }
+
+    /// <summary>
+    /// External Task API policy helper：显式 PuddingExternalAccessToken scheme +
+    /// 已认证 + 可选 scope + 可选 workspace allow-list（route value 比对）。
+    /// </summary>
+    private static void AddExternalTaskApiPolicy(
+        AuthorizationOptions options,
+        string policyName,
+        string? scope,
+        bool requireWorkspace)
+    {
+        options.AddPolicy(policyName, policy =>
+        {
+            policy.AddAuthenticationSchemes(ExternalAccessTokenAuthentication.Scheme);
+            policy.RequireAuthenticatedUser();
+            if (scope is not null)
+                policy.AddRequirements(new ExternalScopeRequirement(scope));
+            if (requireWorkspace)
+                policy.AddRequirements(new ExternalWorkspaceRequirement());
+        });
     }
 
     /// <summary>

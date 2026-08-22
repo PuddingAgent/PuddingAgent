@@ -13,6 +13,8 @@ using PuddingPlatform.Services;
 using PuddingPlatform.Services.Execution;
 using PuddingPlatform.Services.MessageFabric;
 using PuddingPlatform.Services.Orchestration;
+using PuddingPlatform.Services.ExternalApi;
+using PuddingPlatform.Services.Security;
 using PuddingPlatform.Services.Tasks;
 
 namespace PuddingHost.Hosting;
@@ -45,6 +47,19 @@ public static class PuddingApplicationInitializer
             await AgentOrchestrationSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await TaskDispatchSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await WorkspaceTaskSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            await ExternalAccessTokenSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            await ExternalTaskApiSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+
+            // ── ADR-075: ExternalTaskApi 显式配置校验（越界即启动错误，不静默回默认）──
+            var externalApiOptions = scope.ServiceProvider.GetRequiredService<ExternalTaskApiOptionsProvider>();
+            var configErrors = ExternalTaskApiOptionsProvider.Validate(externalApiOptions.Current);
+            if (configErrors.Count > 0)
+            {
+                foreach (var error in configErrors)
+                    Console.WriteLine($"[Startup] ExternalTaskApi config error: {error}");
+                throw new InvalidOperationException(
+                    "Invalid ExternalTaskApi configuration in system.json: " + string.Join("; ", configErrors));
+            }
 
             Console.WriteLine("[Startup] Platform DB tables and schema upgrades ensured");
 

@@ -186,6 +186,12 @@ const routeCatalog = [
         icon: 'safety',
         component: './role-management',
       },
+      {
+        path: '/system-config/access-tokens',
+        name: 'accessTokenManagement',
+        icon: 'key',
+        component: './access-token-management',
+      },
     ],
   },
   {

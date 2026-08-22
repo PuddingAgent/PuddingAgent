@@ -1,9 +1,9 @@
 # 第三方任务看板 Access Token 与外部 API 详细设计方案
 
-> 状态：Design Complete / Implementation Not Started
-> 日期：2026-08-21
+> 状态：Design Complete / P1+P3+P2(基本功能) Implemented
+> 日期：2026-08-21（P1+P3 与 P2 基本功能实施于 2026-08-22；SSE Watch/RateLimiter/OpenAPI/P4 未实现）
 > 对应 ADR：[ADR-075 第三方任务看板 Access Token 与外部 API](../07架构/90ADR-075第三方任务看板AccessToken与外部APIADR.md)
-> 本轮边界：只输出 PuddingAgent 侧文档产物（详细设计、ADR 与索引）；未修改源码、配置、数据库或运行数据。
+> P1/P3 实施摘要：Core 合同（ExternalAccessTokenContracts/ExternalTaskApiScopes/PuddingExternalTaskApiConfig）、Platform 四实体+SchemaBootstrapper+Store/Service/Handler/Authorization/UsageCoalescer、`/api/admin/access-tokens` 管理 API、`/api/external/v1/token` whoami（默认关闭）、Admin `/system-config/access-tokens` 页面；测试见 `PuddingPlatformTests/Security/ExternalAccessToken*Tests.cs`（42 项）与 `src/pages/access-token-management/index.test.tsx`（8 项）。
 
 ## 0. 结论摘要
 

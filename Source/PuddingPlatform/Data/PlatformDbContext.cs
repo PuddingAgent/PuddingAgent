@@ -113,6 +113,16 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // Task Execution Bindings（TB-05 Task/Assignment/Delivery/Execution 绑定）
     public DbSet<TaskExecutionBindingEntity> TaskExecutionBindings => Set<TaskExecutionBindingEntity>();
 
+    // External Access Token（ADR-075 第三方任务看板认证）
+    public DbSet<ExternalAccessTokenEntity> ExternalAccessTokens => Set<ExternalAccessTokenEntity>();
+    public DbSet<ExternalAccessTokenScopeEntity> ExternalAccessTokenScopes => Set<ExternalAccessTokenScopeEntity>();
+    public DbSet<ExternalAccessTokenWorkspaceEntity> ExternalAccessTokenWorkspaces => Set<ExternalAccessTokenWorkspaceEntity>();
+    public DbSet<ExternalAccessTokenAuditEventEntity> ExternalAccessTokenAuditEvents => Set<ExternalAccessTokenAuditEventEntity>();
+
+    // External Task API v1（ADR-075：追加式评价 + mutation 幂等）
+    public DbSet<TaskEvaluationEntity> TaskEvaluations => Set<TaskEvaluationEntity>();
+    public DbSet<ExternalApiIdempotencyEntity> ExternalApiIdempotency => Set<ExternalApiIdempotencyEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -574,6 +584,62 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasKey(b => b.Id);
             e.HasIndex(b => new { b.TaskId, b.AssignmentId, b.DeliveryId }).IsUnique();
             e.HasIndex(b => b.DeliveryId);
+        });
+
+        // ── External Access Token（ADR-075）──────────────────────────
+        modelBuilder.Entity<ExternalAccessTokenEntity>(e =>
+        {
+            e.ToTable("external_access_tokens");
+            e.HasKey(t => t.TokenId);
+            e.HasIndex(t => t.KeyId).IsUnique();
+            e.HasIndex(t => t.OwnerUserId);
+            e.HasMany(t => t.Scopes)
+                .WithOne()
+                .HasForeignKey(s => s.TokenId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(t => t.Workspaces)
+                .WithOne()
+                .HasForeignKey(w => w.TokenId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ExternalAccessTokenScopeEntity>(e =>
+        {
+            e.ToTable("external_access_token_scopes");
+            e.HasKey(s => new { s.TokenId, s.Scope });
+            e.HasIndex(s => s.Scope);
+        });
+
+        modelBuilder.Entity<ExternalAccessTokenWorkspaceEntity>(e =>
+        {
+            e.ToTable("external_access_token_workspaces");
+            e.HasKey(w => new { w.TokenId, w.WorkspaceId });
+            e.HasIndex(w => w.WorkspaceId);
+        });
+
+        modelBuilder.Entity<ExternalAccessTokenAuditEventEntity>(e =>
+        {
+            e.ToTable("external_access_token_audit_events");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedOnAdd();
+            e.HasIndex(x => x.EventId).IsUnique();
+            e.HasIndex(x => new { x.TokenId, x.OccurredAtUtc });
+        });
+
+        // ── External Task API v1（ADR-075）──────────────────────────
+        modelBuilder.Entity<TaskEvaluationEntity>(e =>
+        {
+            e.ToTable("task_evaluations");
+            e.HasKey(x => x.EvaluationId);
+            e.HasIndex(x => new { x.TaskId, x.CreatedAtUtc });
+            e.HasIndex(x => x.WorkspaceId);
+        });
+
+        modelBuilder.Entity<ExternalApiIdempotencyEntity>(e =>
+        {
+            e.ToTable("external_api_idempotency");
+            e.HasKey(x => x.IdempotencyKeyHash);
+            e.HasIndex(x => x.CreatedAtUtc);
         });
 
         modelBuilder.Entity<ConnectorStreamProjectionEntity>(e =>

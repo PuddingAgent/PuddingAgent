@@ -52,6 +52,27 @@ public sealed record PuddingSystemConfig
     public PuddingRuntimeConfig Runtime { get; init; } = new();
     public PuddingPathConfig Paths { get; init; } = new();
     public PuddingDesktopConfig Desktop { get; init; } = new();
+
+    /// <summary>
+    /// ADR-075 外部任务看板 API 策略。默认关闭；Secret 永不进入此配置。
+    /// 缺失节 = 全默认值（Enabled=false）；显式越界值在启动期报配置错误，不静默回默认。
+    /// </summary>
+    public PuddingExternalTaskApiConfig? ExternalTaskApi { get; init; }
+}
+
+/// <summary>ADR-075 External Task API 运行策略（config/system.json → externalTaskApi）。</summary>
+public sealed record PuddingExternalTaskApiConfig
+{
+    public bool Enabled { get; init; }
+    public string? PublicBaseUrl { get; init; }
+    public bool RequireHttps { get; init; } = true;
+    public int DefaultTokenLifetimeDays { get; init; } = 90;
+    public int MaxTokenLifetimeDays { get; init; } = 365;
+    public int MaxActiveTokensPerOwner { get; init; } = 20;
+    public int RequestsPerMinutePerToken { get; init; } = 120;
+    public int MutationConcurrencyPerToken { get; init; } = 4;
+    public int SseConnectionsPerToken { get; init; } = 3;
+    public int IdempotencyRetentionDays { get; init; } = 7;
 }
 
 public sealed record PuddingDesktopConfig

@@ -31,6 +31,8 @@ using PuddingPlatform.Services.MessageFabric;
 using PuddingPlatform.Services.MessageGateway;
 using PuddingPlatform.Services.Mcp;
 using PuddingPlatform.Services.Orchestration;
+using PuddingPlatform.Services.ExternalApi;
+using PuddingPlatform.Services.Security;
 using PuddingPlatform.Services.TaskPlanning;
 using PuddingPlatform.Services.Tasks;
 using PuddingController;
@@ -222,7 +224,20 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<VisionArtifactStorageService>();
         builder.Services.AddSingleton<IVisualArtifactReferenceResolver>(sp => sp.GetRequiredService<VisionArtifactStorageService>());
         builder.Services.AddSingleton<IVisualArtifactLocalFileResolver>(sp => sp.GetRequiredService<VisionArtifactStorageService>());
-        // 用户头像上传落盘到 wwwroot/user-avatars/，由静态文件中间件对外提供服务。
+        // ── External Access Token（ADR-075 第三方任务看板认证）─────────
+        builder.Services.AddSingleton<ExternalTaskApiOptionsProvider>();
+        builder.Services.AddSingleton<ExternalAccessTokenStore>();
+        builder.Services.AddSingleton<ExternalAccessTokenService>();
+        // AddHostedService 同时注册 Singleton 实例；认证 Handler 通过
+        // RequestServices.GetService 获取并投递 last-used 合并写。
+        builder.Services.AddHostedService<ExternalAccessTokenUsageCoalescer>();
+
+        // ── External Task API v1（ADR-075 P2 基本功能：评价 + 幂等 + 门控）──
+        builder.Services.AddSingleton<TaskEvaluationStore>();
+        builder.Services.AddSingleton<ExternalApiIdempotencyStore>();
+        builder.Services.AddSingleton<PuddingPlatform.Controllers.External.V1.ExternalApiGateFilter>();
+
+        // ── 用户头像上传落盘到 wwwroot/user-avatars/，由静态文件中间件对外提供服务。──
         builder.Services.AddSingleton<UserAvatarStorageService>();
         builder.Services.AddHttpClient(
                 RemoteImageArtifactImportService.HttpClientName,
@@ -395,6 +410,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ITokenUsageRecorder>(sp => sp.GetRequiredService<TokenUsageRecorder>());
         builder.Services.AddSingleton<LlmGatewayUsageRecorder>();
         builder.Services.AddSingleton<ILlmGatewayUsageRecorder>(sp => sp.GetRequiredService<LlmGatewayUsageRecorder>());
+        builder.Services.AddSingleton<TokenUsageDailyAggregateService>();
+        builder.Services.AddSingleton<ContextLayerDailyRollupService>();
         builder.Services.AddSingleton<TokenUsageRebuildService>();
         builder.Services.AddSingleton<SessionSteeringService>();
         builder.Services.AddSingleton<ISessionSteeringService>(sp => sp.GetRequiredService<SessionSteeringService>());

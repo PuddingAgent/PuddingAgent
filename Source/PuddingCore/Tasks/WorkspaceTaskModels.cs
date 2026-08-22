@@ -94,7 +94,10 @@ public enum TaskOrigin
     Auto,
 
     /// <summary>定时任务创建。wire: automation.schedule</summary>
-    AutomationSchedule
+    AutomationSchedule,
+
+    /// <summary>第三方 External API 创建（ADR-075）。wire: external.api</summary>
+    ExternalApi
 }
 
 /// <summary>任务优先级。</summary>
@@ -325,7 +328,10 @@ public enum TaskEventType
     TaskDispatchRequested,
 
     /// <summary>task.dispatch.deferred</summary>
-    TaskDispatchDeferred
+    TaskDispatchDeferred,
+
+    /// <summary>task.evaluated（ADR-075 追加式评价；不改 Task 状态/version）</summary>
+    TaskEvaluated
 }
 
 /// <summary>Assignment Attempt 状态（最小集）。</summary>

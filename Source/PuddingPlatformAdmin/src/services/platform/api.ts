@@ -3789,3 +3789,122 @@ export async function createTaskComment(
     { method: 'POST', data: body },
   );
 }
+
+// ─── Access Token Management（ADR-075 第三方任务看板凭据）──────────────
+
+export type ExternalAccessTokenStatusWire =
+  | 'Active'
+  | 'Expired'
+  | 'Revoked'
+  | 'OwnerDisabled';
+
+export interface ExternalAccessTokenDto {
+  tokenId: string;
+  keyId: string;
+  displayPrefix: string;
+  name: string;
+  ownerUserId: string;
+  version: number;
+  createdAtUtc: string;
+  expiresAtUtc: string;
+  revokedAtUtc?: string | null;
+  revokedByUserId?: string | null;
+  revocationReason?: string | null;
+  lastUsedAtUtc?: string | null;
+  scopes: string[];
+  workspaces: string[];
+  status: ExternalAccessTokenStatusWire;
+}
+
+/** 创建响应是唯一包含 accessToken 明文的响应；关闭 Secret Modal 后不可恢复。 */
+export interface CreatedAccessTokenDto extends ExternalAccessTokenDto {
+  accessToken: string;
+}
+
+export interface ExternalAccessTokenListResult {
+  items: ExternalAccessTokenDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface ListAccessTokensParams {
+  status?: ExternalAccessTokenStatusWire;
+  ownerUserId?: string;
+  workspaceId?: string;
+  scope?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface CreateAccessTokenRequest {
+  name: string;
+  workspaceIds: string[];
+  scopes: string[];
+  lifetimeDays?: number;
+}
+
+export interface RenameAccessTokenRequest {
+  name: string;
+  expectedVersion: number;
+}
+
+export interface RevokeAccessTokenRequest {
+  expectedVersion: number;
+  reason?: string;
+}
+
+export interface ExternalApiStatusDto {
+  enabled: boolean;
+  publicBaseUrl?: string | null;
+  requireHttps: boolean;
+  defaultTokenLifetimeDays: number;
+  maxTokenLifetimeDays: number;
+  maxActiveTokensPerOwner: number;
+  boundBaseUrl: string;
+}
+
+export async function getExternalApiStatus(): Promise<ExternalApiStatusDto> {
+  return request('/api/admin/access-tokens/status', { method: 'GET' });
+}
+
+export async function listAccessTokens(
+  params?: ListAccessTokensParams,
+): Promise<ExternalAccessTokenListResult> {
+  return request('/api/admin/access-tokens', { method: 'GET', params });
+}
+
+export async function createAccessToken(
+  req: CreateAccessTokenRequest,
+): Promise<CreatedAccessTokenDto> {
+  return request('/api/admin/access-tokens', { method: 'POST', data: req });
+}
+
+export async function getAccessTokenDetail(
+  tokenId: string,
+): Promise<ExternalAccessTokenDto> {
+  return request(
+    `/api/admin/access-tokens/${encodeURIComponent(tokenId)}`,
+    { method: 'GET' },
+  );
+}
+
+export async function renameAccessToken(
+  tokenId: string,
+  req: RenameAccessTokenRequest,
+): Promise<ExternalAccessTokenDto> {
+  return request(
+    `/api/admin/access-tokens/${encodeURIComponent(tokenId)}`,
+    { method: 'PATCH', data: req },
+  );
+}
+
+export async function revokeAccessToken(
+  tokenId: string,
+  req: RevokeAccessTokenRequest,
+): Promise<ExternalAccessTokenDto> {
+  return request(
+    `/api/admin/access-tokens/${encodeURIComponent(tokenId)}/revoke`,
+    { method: 'POST', data: req },
+  );
+}

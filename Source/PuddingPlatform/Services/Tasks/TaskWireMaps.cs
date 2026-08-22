@@ -132,12 +132,13 @@ public static class TaskWireMaps
 
     // ── Origin ──────────────────────────────────────────────
 
-    /// <summary>TaskOrigin → wire 字符串（task.manual/task.auto/automation.schedule）。</summary>
+    /// <summary>TaskOrigin → wire 字符串（task.manual/task.auto/automation.schedule/external.api）。</summary>
     public static string OriginToString(TaskOrigin origin) => origin switch
     {
         TaskOrigin.Manual => "task.manual",
         TaskOrigin.Auto => "task.auto",
         TaskOrigin.AutomationSchedule => "automation.schedule",
+        TaskOrigin.ExternalApi => "external.api",
         _ => throw new ArgumentOutOfRangeException(nameof(origin), origin, "未知任务来源。"),
     };
 
@@ -147,6 +148,7 @@ public static class TaskWireMaps
         null or "" or "task.manual" => TaskOrigin.Manual,
         "task.auto" => TaskOrigin.Auto,
         "automation.schedule" => TaskOrigin.AutomationSchedule,
+        "external.api" => TaskOrigin.ExternalApi,
         _ => throw InvalidWire("origin", value),
     };
 
@@ -198,6 +200,7 @@ public static class TaskWireMaps
         TaskEventType.TaskArchived => "task.archived",
         TaskEventType.TaskDispatchRequested => "task.dispatch.requested",
         TaskEventType.TaskDispatchDeferred => "task.dispatch.deferred",
+        TaskEventType.TaskEvaluated => "task.evaluated",
         _ => throw new ArgumentOutOfRangeException(nameof(eventType), eventType, "未知任务事件类型。"),
     };
 
