@@ -205,6 +205,7 @@ public sealed class TokenUsageRebuildServiceTests
         => new(
             scope.Factory,
             new TokenUsageNormalizer(),
+            new TokenUsageDailyAggregateService(scope.Factory, NullLogger<TokenUsageDailyAggregateService>.Instance),
             null,
             NullLogger<TokenUsageRebuildService>.Instance);
 

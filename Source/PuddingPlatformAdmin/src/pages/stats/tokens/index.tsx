@@ -534,14 +534,17 @@ const TokenStatsPage: React.FC = () => {
     setLoading(true);
     try {
       const shouldRefreshOptions = Boolean(pv || mv);
-      const monthStart = dayjs(ym).startOf('month');
-      const monthEnd = dayjs(ym).endOf('month');
+      // 与后端 token 日序（UTC 日分桶）对齐：用 UTC 月边界，避免本地时区把首尾日切成半天，
+      // 同时让整月边界精确命中服务端按日聚合缓存
+      const [yearNumber, monthNumber] = ym.split('-').map(Number);
+      const monthStartUtc = new Date(Date.UTC(yearNumber, monthNumber - 1, 1));
+      const monthEndUtc = new Date(Date.UTC(yearNumber, monthNumber, 0, 23, 59, 59, 999));
       const [json, seriesJson, contextLayerJson, allJson] = await Promise.all([
         getMonthlyTokenStats(ym, pv, mv),
         getTokenStatsSeries(ym, pv, mv),
         getContextLayerTokenStats({
-          from: monthStart.toISOString(),
-          to: monthEnd.toISOString(),
+          from: monthStartUtc.toISOString(),
+          to: monthEndUtc.toISOString(),
           providerId: pv,
           modelId: mv,
         }),

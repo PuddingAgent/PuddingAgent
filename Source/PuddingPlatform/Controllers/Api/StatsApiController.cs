@@ -11,6 +11,7 @@ namespace PuddingPlatform.Controllers.Api;
 /// <summary>
 /// Token 使用统计 API — 聚合查询 + 明细事件 + 数据重建。
 /// ADR-018：上下文缓存可观测性体系。ADR-043：缓存统计闭环。
+/// 已结束 UTC 日的统计读取按日聚合缓存（渐进加载）；仅当前 UTC 日实时扫描事件表。
 /// </summary>
 [Authorize]
 [ApiController]
@@ -18,10 +19,12 @@ namespace PuddingPlatform.Controllers.Api;
 public class StatsApiController(
     PlatformDbContext db,
     TokenUsageRebuildService rebuildService,
+    TokenUsageDailyAggregateService aggregateService,
+    ContextLayerDailyRollupService contextLayerRollupService,
     ILlmConfigService llmConfigService) : ControllerBase
 {
     /// <summary>
-    /// GET /api/stats/tokens/monthly?yearMonth=2026-05&providerId=&modelId=
+    /// GET /api/stats/tokens/monthly?yearMonth=2026-05&amp;providerId=&amp;modelId=
     /// 返回指定月份的 Token 用量统计，按 Provider → Model 二级分组。
     /// yearMonth 格式：yyyy-MM，默认当月。
     /// </summary>
@@ -34,35 +37,34 @@ public class StatsApiController(
     {
         yearMonth ??= DateTimeOffset.UtcNow.ToString("yyyy-MM");
 
-        var hasGatewayFacts = await db.LlmGatewayUsageEvents
-            .AsNoTracking()
-            .AnyAsync(e => e.YearMonth == yearMonth, ct);
+        var aggregateRows = await LoadMonthAggregateRowsAsync(yearMonth, ct);
+        var hasGatewayFacts = aggregateRows.Any(r => r.Source == LlmUsageAggregateSources.Gateway);
+        // 与旧查询口径一致：本月存在网关事实时只按网关账本统计，不叠加 legacy 投影
+        var filteredRows = aggregateRows
+            .Where(r => r.Source == LlmUsageAggregateSources.Gateway)
+            .Where(r => MatchesAggregateFilter(r, providerId, modelId))
+            .ToList();
 
         List<TokenUsageStatsEntity> stats;
         if (hasGatewayFacts)
         {
-            var gatewayQuery = ApplyGatewayUsageFilters(
-                    db.LlmGatewayUsageEvents.AsNoTracking(),
-                    providerId,
-                    modelId)
-                .Where(e => e.YearMonth == yearMonth);
-            stats = await gatewayQuery
-                .GroupBy(e => new { e.ProviderId, e.ModelId })
-                .Select(group => new TokenUsageStatsEntity
+            stats = filteredRows
+                .GroupBy(r => (r.ProviderId, r.ModelId))
+                .Select(g => new TokenUsageStatsEntity
                 {
-                    ProviderId = group.Key.ProviderId,
-                    ModelId = group.Key.ModelId,
+                    ProviderId = g.Key.ProviderId,
+                    ModelId = g.Key.ModelId,
                     YearMonth = yearMonth,
-                    PromptTokens = group.Sum(e => e.PromptTokens),
-                    CompletionTokens = group.Sum(e => e.CompletionTokens),
-                    CacheHitTokens = group.Sum(e => e.CacheHitTokens),
-                    CacheMissTokens = group.Sum(e => e.CacheMissTokens),
-                    RequestCount = group.LongCount(),
-                    TotalCost = group.Sum(e => e.TotalCost),
+                    PromptTokens = g.Sum(r => r.PromptTokens),
+                    CompletionTokens = g.Sum(r => r.CompletionTokens),
+                    CacheHitTokens = g.Sum(r => r.CacheHitTokens),
+                    CacheMissTokens = g.Sum(r => r.CacheMissTokens),
+                    RequestCount = g.Sum(r => r.RequestCount),
+                    TotalCost = Math.Round(g.Sum(r => r.TotalCost), 6),
                 })
                 .OrderBy(s => s.ProviderId)
                 .ThenBy(s => s.ModelId)
-                .ToListAsync(ct);
+                .ToList();
         }
         else
         {
@@ -126,19 +128,15 @@ public class StatsApiController(
         List<TokenCostRow> eventCostRows;
         if (hasGatewayFacts)
         {
-            eventCostRows = await ApplyGatewayUsageFilters(
-                    db.LlmGatewayUsageEvents.AsNoTracking(),
-                    providerId,
-                    modelId)
-                .Where(e => e.YearMonth == yearMonth)
-                .GroupBy(e => new { e.ProviderId, e.ModelId })
+            eventCostRows = filteredRows
+                .GroupBy(r => (r.ProviderId, r.ModelId))
                 .Select(g => new TokenCostRow(
                     g.Key.ProviderId,
                     g.Key.ModelId,
-                    Math.Round(g.Sum(e => e.InputCost), 6),
-                    Math.Round(g.Sum(e => e.CacheHitCost), 6),
-                    Math.Round(g.Sum(e => e.OutputCost), 6)))
-                .ToListAsync(ct);
+                    Math.Round(g.Sum(r => r.InputCost), 6),
+                    Math.Round(g.Sum(r => r.CacheHitCost), 6),
+                    Math.Round(g.Sum(r => r.OutputCost), 6)))
+                .ToList();
         }
         else
         {
@@ -279,6 +277,7 @@ public class StatsApiController(
     /// <summary>
     /// GET /api/stats/tokens/series?yearMonth=2026-06&amp;providerId=&amp;modelId=
     /// 返回指定月份的按日序列，以及同年度的按月序列，用于 Token 用量图表。
+    /// 已结束 UTC 日来自按日聚合缓存，当前 UTC 日实时计算。
     /// </summary>
     [HttpGet("tokens/series")]
     public async Task<IActionResult> GetTokenStatsSeries(
@@ -296,78 +295,36 @@ public class StatsApiController(
         var year = monthStart.Year;
         var daysInMonth = DateTime.DaysInMonth(monthStart.Year, monthStart.Month);
 
-        var gatewayEvents = await ApplyGatewayUsageFilters(
-                db.LlmGatewayUsageEvents.AsNoTracking(),
-                providerId,
-                modelId)
-            .Where(e => e.YearMonth.StartsWith($"{year}-"))
-            .Select(e => new TokenSeriesRaw(
-                e.YearMonth,
-                e.OccurredAtUtc,
-                e.CacheMissTokens,
-                e.CacheHitTokens,
-                e.CompletionTokens,
-                e.InputCost,
-                e.CacheHitCost,
-                e.OutputCost,
-                e.TotalCost))
-            .ToListAsync(ct);
-        var gatewayMonths = gatewayEvents
-            .Select(e => e.YearMonth)
+        var rows = (await aggregateService.GetClosedDaysAsync(
+                new DateTime(year, 1, 1),
+                new DateTime(year + 1, 1, 1),
+                ct))
+            .ToList();
+        if (DateTime.UtcNow.Year == year)
+            rows.AddRange(await aggregateService.GetLiveTodayAsync(ct));
+
+        var filtered = rows
+            .Where(r => MatchesAggregateFilter(r, providerId, modelId))
+            .ToList();
+
+        // 月份级网关切换口径：某月一旦存在（过滤后）网关事实，则该月忽略 legacy 投影
+        var gatewayMonths = filtered
+            .Where(r => r.Source == LlmUsageAggregateSources.Gateway)
+            .Select(r => r.DayUtc[..7])
             .ToHashSet(StringComparer.Ordinal);
-
-        var legacyEvents = await ApplyTokenEventFilters(
-                db.TokenUsageEvents.AsNoTracking(),
-                providerId,
-                modelId)
-            .Where(e => e.YearMonth.StartsWith($"{year}-"))
-            .Select(e => new TokenSeriesRaw(
-                e.YearMonth,
-                e.OccurredAtUtc,
-                e.CacheMissTokens,
-                e.CacheHitTokens,
-                e.CompletionTokens,
-                e.InputCost,
-                e.CacheHitCost,
-                e.OutputCost,
-                e.TotalCost))
-            .ToListAsync(ct);
-        var monthlyEvents = gatewayEvents
-            .Concat(legacyEvents.Where(e => !gatewayMonths.Contains(e.YearMonth)))
-            .ToList();
-        var dailyEvents = monthlyEvents
-            .Where(e => e.YearMonth == yearMonth)
+        var effective = filtered
+            .Where(r => r.Source == LlmUsageAggregateSources.Gateway
+                        || !gatewayMonths.Contains(r.DayUtc[..7]))
             .ToList();
 
-        var monthlyLookup = monthlyEvents
-            .GroupBy(e => e.YearMonth)
-            .ToDictionary(
-                g => g.Key,
-                g => new TokenSeriesPoint(
-                    g.Key,
-                    g.Sum(e => e.CacheMissTokens),
-                    g.Sum(e => e.CacheHitTokens),
-                    g.Sum(e => e.CompletionTokens),
-                    g.LongCount(),
-                    Math.Round(g.Sum(e => e.InputCost), 6),
-                    Math.Round(g.Sum(e => e.CacheHitCost), 6),
-                    Math.Round(g.Sum(e => e.OutputCost), 6),
-                    Math.Round(g.Sum(e => e.TotalCost), 6)));
+        var monthlyLookup = effective
+            .GroupBy(r => r.DayUtc[..7])
+            .ToDictionary(g => g.Key, g => ToSeriesPoint(g.Key, g));
 
-        var dailyLookup = dailyEvents
-            .GroupBy(e => e.OccurredAtUtc.ToString("yyyy-MM-dd"))
-            .ToDictionary(
-                g => g.Key,
-                g => new TokenSeriesPoint(
-                    g.Key,
-                    g.Sum(e => e.CacheMissTokens),
-                    g.Sum(e => e.CacheHitTokens),
-                    g.Sum(e => e.CompletionTokens),
-                    g.LongCount(),
-                    Math.Round(g.Sum(e => e.InputCost), 6),
-                    Math.Round(g.Sum(e => e.CacheHitCost), 6),
-                    Math.Round(g.Sum(e => e.OutputCost), 6),
-                    Math.Round(g.Sum(e => e.TotalCost), 6)));
+        var dailyLookup = effective
+            .Where(r => r.DayUtc.StartsWith(yearMonth, StringComparison.Ordinal))
+            .GroupBy(r => r.DayUtc)
+            .ToDictionary(g => g.Key, g => ToSeriesPoint(g.Key, g));
 
         var monthly = Enumerable.Range(1, 12)
             .Select(month =>
@@ -414,13 +371,21 @@ public class StatsApiController(
         [FromQuery] int pageSize = 50,
         CancellationToken ct = default)
     {
-        var query = db.TokenUsageEvents.AsNoTracking();
+        // EF Core SQLite 无法翻译 DateTimeOffset 参数比较，时间范围按存储格式文本比较
+        DateTimeOffset.TryParse(from, out var fromDate);
+        DateTimeOffset.TryParse(to, out var toDate);
+        string? fromText = fromDate != default ? DailyCacheUtility.ToSqliteUtcText(fromDate.UtcDateTime) : null;
+        string? toText = toDate != default ? DailyCacheUtility.ToSqliteUtcText(toDate.UtcDateTime) : null;
 
-        if (!string.IsNullOrWhiteSpace(from) && DateTimeOffset.TryParse(from, out var fromDate))
-            query = query.Where(e => e.OccurredAtUtc >= fromDate);
-
-        if (!string.IsNullOrWhiteSpace(to) && DateTimeOffset.TryParse(to, out var toDate))
-            query = query.Where(e => e.OccurredAtUtc <= toDate);
+        var query = fromText is null && toText is null
+            ? db.TokenUsageEvents.AsNoTracking()
+            : db.TokenUsageEvents
+                .FromSqlInterpolated($"""
+                    SELECT * FROM "TokenUsageEvents"
+                    WHERE ("OccurredAtUtc" >= {fromText} OR {fromText} IS NULL)
+                      AND ("OccurredAtUtc" <= {toText} OR {toText} IS NULL)
+                    """)
+                .AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(providerId))
             query = query.Where(e => e.ProviderId == providerId);
@@ -478,6 +443,8 @@ public class StatsApiController(
     /// <summary>
     /// GET /api/stats/tokens/context-layers?from=&amp;to=&amp;providerId=&amp;modelId=&amp;sessionId=
     /// 返回上下文层级 token 占比、缓存命中率中位数和易变性统计。
+    /// 无 sessionId 过滤且 from/to 可解析时走按日 rollup 缓存（闭日缓存 + 当天实时 +
+    /// 非对齐边界日直查），结果与明细直查完全一致；否则回退明细直查。
     /// </summary>
     [HttpGet("tokens/context-layers")]
     public async Task<IActionResult> GetContextLayerTokenStats(
@@ -488,6 +455,57 @@ public class StatsApiController(
         [FromQuery] string? sessionId = null,
         CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            var analysis = await contextLayerRollupService.GetAnalysisAsync(from, to, providerId, modelId, ct);
+            if (analysis is not null)
+            {
+                return Ok(new
+                {
+                    from,
+                    to,
+                    providerId,
+                    modelId,
+                    sessionId,
+                    totalEvents = analysis.TotalEvents,
+                    totalLayerTokens = analysis.TotalLayerTokens,
+                    totalRawUtf8Bytes = analysis.TotalRawUtf8Bytes,
+                    totalGzipBytes = analysis.TotalGzipBytes,
+                    gzipRatio = ContextLayerDailyRollupService.RoundRatio(
+                        analysis.TotalGzipBytes > 0
+                            ? (double)analysis.TotalRawUtf8Bytes / analysis.TotalGzipBytes
+                            : 0),
+                    layers = analysis.Layers.Select(l => new
+                    {
+                        layerName = l.LayerName,
+                        layerOrder = l.LayerOrder,
+                        layerRole = l.LayerRole,
+                        calls = l.Calls,
+                        tokenCount = l.TokenCount,
+                        rawUtf8Bytes = l.RawUtf8Bytes,
+                        gzipBytes = l.GzipBytes,
+                        gzipRatio = l.GzipRatio,
+                        tokenShare = l.TokenShare,
+                        avgTokens = l.AvgTokens,
+                        medianTokens = l.MedianTokens,
+                        p95Tokens = l.P95Tokens,
+                        estimatedHitTokens = l.EstimatedHitTokens,
+                        estimatedMissTokens = l.EstimatedMissTokens,
+                        avgCacheHitRate = l.AvgCacheHitRate,
+                        medianCacheHitRate = l.MedianCacheHitRate,
+                        changeCount = l.ChangeCount,
+                        changeRate = l.ChangeRate,
+                        distinctHashes = l.DistinctHashes,
+                        changeReasons = l.ChangeReasons.Select(rc => new
+                        {
+                            reason = rc.Reason,
+                            count = rc.Count,
+                        }),
+                    }),
+                });
+            }
+        }
+
         var query = db.ContextLayerMetricEvents.AsNoTracking();
 
         DateTimeOffset? fromDate = null;
@@ -624,17 +642,51 @@ public class StatsApiController(
         return query;
     }
 
-    private static IQueryable<LlmGatewayUsageEventEntity> ApplyGatewayUsageFilters(
-        IQueryable<LlmGatewayUsageEventEntity> query,
+    /// <summary>月度聚合行：闭日缓存 +（当月时）当天实时。非法 yearMonth 返回空。</summary>
+    private async Task<List<LlmUsageDailyAggregateRow>> LoadMonthAggregateRowsAsync(
+        string yearMonth,
+        CancellationToken ct)
+    {
+        if (!DateTime.TryParseExact(
+                yearMonth,
+                "yyyy-MM",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out var monthStart))
+        {
+            return [];
+        }
+
+        var monthEnd = monthStart.AddMonths(1);
+        var rows = (await aggregateService.GetClosedDaysAsync(monthStart, monthEnd, ct)).ToList();
+        if (DateTime.UtcNow.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture) == yearMonth)
+            rows.AddRange(await aggregateService.GetLiveTodayAsync(ct));
+        return rows;
+    }
+
+    /// <summary>聚合行过滤：legacy 的 null 维度已在聚合时折叠为 "unknown"，与旧明细过滤语义一致。</summary>
+    private static bool MatchesAggregateFilter(
+        LlmUsageDailyAggregateRow row,
         string? providerId,
         string? modelId)
-    {
-        if (!string.IsNullOrWhiteSpace(providerId))
-            query = query.Where(e => e.ProviderId == providerId);
-        if (!string.IsNullOrWhiteSpace(modelId))
-            query = query.Where(e => e.ModelId == modelId);
-        return query;
-    }
+        => (string.IsNullOrWhiteSpace(providerId)
+                || string.Equals(row.ProviderId, providerId, StringComparison.Ordinal))
+            && (string.IsNullOrWhiteSpace(modelId)
+                || string.Equals(row.ModelId, modelId, StringComparison.Ordinal));
+
+    private static TokenSeriesPoint ToSeriesPoint(
+        string period,
+        IEnumerable<LlmUsageDailyAggregateRow> rows)
+        => new(
+            period,
+            rows.Sum(r => r.CacheMissTokens),
+            rows.Sum(r => r.CacheHitTokens),
+            rows.Sum(r => r.CompletionTokens),
+            rows.Sum(r => r.RequestCount),
+            Math.Round(rows.Sum(r => r.InputCost), 6),
+            Math.Round(rows.Sum(r => r.CacheHitCost), 6),
+            Math.Round(rows.Sum(r => r.OutputCost), 6),
+            Math.Round(rows.Sum(r => r.TotalCost), 6));
 
     private static double Median(IEnumerable<double> values)
     {
@@ -703,17 +755,6 @@ public class StatsApiController(
     {
         public static TokenSeriesPoint Empty(string period) => new(period, 0, 0, 0, 0, 0m, 0m, 0m, 0m);
     }
-
-    private sealed record TokenSeriesRaw(
-        string YearMonth,
-        DateTimeOffset OccurredAtUtc,
-        long CacheMissTokens,
-        long CacheHitTokens,
-        long CompletionTokens,
-        decimal InputCost,
-        decimal CacheHitCost,
-        decimal OutputCost,
-        decimal TotalCost);
 
     private sealed record TokenPrice(
         decimal InputPricePer1MTokens,

@@ -6,6 +6,7 @@
  */
 import React from 'react';
 import { Table } from 'antd';
+import type { TableProps } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import classNames from 'classnames';
 import styles from './styles';
@@ -19,6 +20,8 @@ export interface PuddingDataTableProps<T extends object> {
   pagination?: TablePaginationConfig | false;
   className?: string;
   onChange?: (pagination: TablePaginationConfig, filters: any, sorter: any) => void;
+  /** 行勾选（列表批量操作）。 */
+  rowSelection?: TableProps<T>['rowSelection'];
 }
 
 export function PuddingDataTable<T extends object>({
@@ -30,6 +33,7 @@ export function PuddingDataTable<T extends object>({
   pagination,
   className,
   onChange,
+  rowSelection,
 }: PuddingDataTableProps<T>) {
   return (
     <div className={classNames(styles.tableSurface, className)}>
@@ -40,6 +44,7 @@ export function PuddingDataTable<T extends object>({
         loading={loading}
         pagination={pagination}
         onChange={onChange}
+        rowSelection={rowSelection}
         locale={{ emptyText: emptyText ?? '暂无数据' }}
         size="middle"
       />

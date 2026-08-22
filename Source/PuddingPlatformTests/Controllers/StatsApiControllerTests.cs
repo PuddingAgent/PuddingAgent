@@ -396,9 +396,9 @@ public sealed class StatsApiControllerTests
             )
             VALUES (
                 'chat_message', 'm-runtime', 'w1', 's1', 'deepseek', 'deepseek-chat',
-                '2026-06-06T00:00:00+00:00', 'context-v1', 'layer-v1', 'L0-STATIC', 0,
+                '2026-06-06 00:00:00+00:00', 'context-v1', 'layer-v1', 'L0-STATIC', 0,
                 'stable_prefix', 42, 168, 168, 84, 2.0, 'hash-a', NULL, 0, NULL, 0, 42, 1,
-                42, 0, 1.0, 'estimated', 0, NULL, '2026-06-06T00:00:01+00:00'
+                42, 0, 1.0, 'estimated', 0, NULL, '2026-06-06 00:00:01+00:00'
             );
             """);
 
@@ -436,8 +436,11 @@ public sealed class StatsApiControllerTests
             new TokenUsageRebuildService(
                 scope.Factory,
                 new TokenUsageNormalizer(),
+                new TokenUsageDailyAggregateService(scope.Factory, NullLogger<TokenUsageDailyAggregateService>.Instance),
                 llmConfig is null ? null : new PuddingFileLlmConfigService(llmConfig),
                 NullLogger<TokenUsageRebuildService>.Instance),
+            new TokenUsageDailyAggregateService(scope.Factory, NullLogger<TokenUsageDailyAggregateService>.Instance),
+            new ContextLayerDailyRollupService(scope.Factory, NullLogger<ContextLayerDailyRollupService>.Instance),
             new PuddingFileLlmConfigService(llmConfig ?? new PuddingLlmProvidersConfig()));
 
     private static PuddingLlmProvidersConfig CreateScopedPriceConfig() => new()

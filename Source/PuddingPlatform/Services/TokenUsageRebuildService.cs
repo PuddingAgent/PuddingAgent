@@ -13,10 +13,12 @@ namespace PuddingPlatform.Services;
 /// <summary>
 /// 从 Conversation Event Store 的 usage.recorded v2 事实事件重建 Token 明细账本和月度汇总。
 /// Provider/Model 必须来自执行时不可变 LLM Profile；禁止从当前 Agent 配置或默认 Provider 猜测。
+/// 重建会改写事件账本，提交后按月失效按日聚合缓存，由下次统计查询重算。
 /// </summary>
 public sealed class TokenUsageRebuildService(
     IDbContextFactory<PlatformDbContext> dbFactory,
     TokenUsageNormalizer normalizer,
+    TokenUsageDailyAggregateService dailyAggregateService,
     ILlmConfigService? llmConfigService,
     ILogger<TokenUsageRebuildService> logger)
 {
@@ -177,6 +179,7 @@ public sealed class TokenUsageRebuildService(
 
         result.StatsRowsRebuilt = await RebuildMonthlyStatsAsync(db, yearMonth, ct);
         await tx.CommitAsync(ct);
+        await dailyAggregateService.InvalidateAsync(yearMonth, ct);
 
         logger.LogInformation(
             "[TokenUsageRebuild] Complete scanned={Scanned} deleted={Deleted} created={Created} unattributed={Unattributed} statsRows={StatsRows} errors={Errors}",

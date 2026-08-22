@@ -139,6 +139,52 @@ public static class TokenUsageSchemaBootstrapper
                 ON "{{GatewayTableName}}" ("provider_id", "model_id");
             """,
             ct);
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "llm_usage_daily_aggregates" (
+                "Id" INTEGER NOT NULL CONSTRAINT "PK_llm_usage_daily_aggregates" PRIMARY KEY AUTOINCREMENT,
+                "day_utc" TEXT NOT NULL,
+                "year_month" TEXT NOT NULL,
+                "source" TEXT NOT NULL,
+                "provider_id" TEXT NOT NULL,
+                "model_id" TEXT NOT NULL,
+                "prompt_tokens" INTEGER NOT NULL,
+                "completion_tokens" INTEGER NOT NULL,
+                "cache_hit_tokens" INTEGER NOT NULL,
+                "cache_miss_tokens" INTEGER NOT NULL,
+                "request_count" INTEGER NOT NULL,
+                "input_cost" decimal(18,10) NOT NULL,
+                "cache_hit_cost" decimal(18,10) NOT NULL,
+                "output_cost" decimal(18,10) NOT NULL,
+                "total_cost" decimal(18,10) NOT NULL,
+                "built_at_utc" TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_llm_usage_daily_aggregates_DayUtc_Source_ProviderId_ModelId"
+                ON "llm_usage_daily_aggregates" ("day_utc", "source", "provider_id", "model_id");
+            CREATE INDEX IF NOT EXISTS "IX_llm_usage_daily_aggregates_YearMonth"
+                ON "llm_usage_daily_aggregates" ("year_month");
+            CREATE TABLE IF NOT EXISTS "context_layer_daily_rollups" (
+                "Id" INTEGER NOT NULL CONSTRAINT "PK_context_layer_daily_rollups" PRIMARY KEY AUTOINCREMENT,
+                "day_utc" TEXT NOT NULL,
+                "layer_name" TEXT NOT NULL,
+                "layer_order" INTEGER NOT NULL,
+                "layer_role" TEXT NOT NULL,
+                "provider_id" TEXT NULL,
+                "model_id" TEXT NULL,
+                "payload_json" TEXT NOT NULL,
+                "built_at_utc" TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS "IX_context_layer_daily_rollups_DayUtc"
+                ON "context_layer_daily_rollups" ("day_utc");
+            CREATE TABLE IF NOT EXISTS "stats_daily_cache_days" (
+                "cache_key" TEXT NOT NULL,
+                "day_utc" TEXT NOT NULL,
+                "built_at_utc" TEXT NOT NULL,
+                CONSTRAINT "PK_stats_daily_cache_days" PRIMARY KEY ("cache_key", "day_utc")
+            );
+            """,
+            ct);
     }
 
     private static async Task<bool> ColumnExistsAsync(
