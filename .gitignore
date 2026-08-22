@@ -422,3 +422,7 @@ pub/
 # db-shm/db-wal runtime temp files
 *.db-shm
 *.db-wal
+
+# Agent runtime data (private, not source)
+/agents/
+/memory/
