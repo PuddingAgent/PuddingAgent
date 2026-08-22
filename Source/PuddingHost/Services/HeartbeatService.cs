@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,6 +36,7 @@ public sealed class HeartbeatOrchestrator : IHostedService
     private readonly string _workspaceId;
         private string? _currentAgentId;
     private readonly ConcurrentDictionary<string, int> _heartbeatRetryCounts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly string? _defaultHeartbeatPrompt;
 
     public HeartbeatOrchestrator(
         IIdleDetector idleDetector,
@@ -56,6 +57,15 @@ public sealed class HeartbeatOrchestrator : IHostedService
         _workspaceId = string.IsNullOrWhiteSpace(configuration["Agent:DefaultWorkspaceId"])
             ? "default"
             : configuration["Agent:DefaultWorkspaceId"]!.Trim();
+
+        // 心跳提示词唯一默认来源：embedded heartbeatPrompt.md（PuddingPlatform.Prompts）。
+        // 实例 heartbeatPrompt.md 缺失且嵌入式资源也缺失时，回退编译期常量并告警。
+        _defaultHeartbeatPrompt = WorkspaceAgentFileService.TryReadDefaultHeartbeatPrompt();
+        if (string.IsNullOrWhiteSpace(_defaultHeartbeatPrompt))
+        {
+            _logger.LogWarning(
+                "[HeartbeatOrchestrator] Embedded default heartbeat prompt unavailable; runtime fallback will use compiled default");
+        }
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -234,6 +244,17 @@ public sealed class HeartbeatOrchestrator : IHostedService
 
             var messageSystem = scope.ServiceProvider.GetRequiredService<IMessageSystem>();
             var heartbeatPrompt = await agentConfig.GetAgentHeartbeatPromptAsync(workspaceId, request.AgentId, ct);
+            if (string.IsNullOrWhiteSpace(heartbeatPrompt))
+            {
+                // 兜底：实例 heartbeatPrompt.md 缺失/空白时，使用全局默认（embedded heartbeatPrompt.md）；
+                // 嵌入式资源也缺失时回退编译期默认，避免空提示词导致 Agent 心跳无指令。
+                heartbeatPrompt = _defaultHeartbeatPrompt;
+                if (string.IsNullOrWhiteSpace(heartbeatPrompt))
+                    heartbeatPrompt = WorkspaceAgentFileService.DefaultHeartbeatPrompt;
+                _logger.LogWarning(
+                    "[HeartbeatOrchestrator] Agent={Agent} has empty heartbeat prompt; using default source",
+                    request.AgentId);
+            }
             var queuedSeconds = (int)(DateTime.UtcNow - request.EnqueuedAt).TotalSeconds;
             var heartbeatContent = FormatHeartbeatPrompt(
                 heartbeatPrompt,
