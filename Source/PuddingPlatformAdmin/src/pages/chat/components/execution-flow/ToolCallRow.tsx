@@ -14,6 +14,10 @@ import type { ToolPresentationKind } from '@/services/platform/api';
 import { useToolCallStyles } from '../../styles/toolcall.styles';
 import { sanitizeProcessText } from '../processPreview';
 import { summarizeError } from '../../utils/summarizeError';
+import {
+  getPresentationKind,
+  resolveRenderer,
+} from '../../presentation/PresentationRegistry';
 import StateDot from '../StateDot';
 import { ExecutionDisclosureRow } from './ExecutionDisclosureRow';
 
@@ -245,7 +249,7 @@ export interface ToolCallRowProps {
   node: ToolNode;
 }
 
-/** 单个工具调用行：单行摘要 + 整行展开（IN/OUT 卡）。 */
+/** 单个工具调用行：单行摘要 + 整行展开（IN/OUT 卡 + presentation renderer 分派）。 */
 export const ToolCallRow: React.FC<ToolCallRowProps> = ({ node }) => {
   const { styles, cx } = useToolCallStyles();
   const [showFullOut, setShowFullOut] = useState(false);
@@ -253,6 +257,10 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({ node }) => {
 
   const dotState: 'ongoing' | 'error' | 'done' =
     status === 'running' ? 'ongoing' : status === 'error' ? 'error' : 'done';
+  // CU-10：卡片挂载必须走 resolveRenderer 分派路径（按 presentation.kind，
+  // 禁止按 toolName 分支；未注册七类暂回落 Generic，分派保持活跃）。
+  const presentationKind = getPresentationKind(node.presentation);
+  const PresentationCard = resolveRenderer(presentationKind);
   const kind = node.presentation?.kind;
   const name =
     (kind ? PRESENTATION_LABELS[kind] : undefined) ||
@@ -274,8 +282,19 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({ node }) => {
         'data-toolname': name,
       }}
       expandedContent={
-        inText || showOut ? (
+        inText || showOut || node.presentation ? (
           <div className={styles.expanded} data-testid="toolcall-expanded">
+            {node.presentation && (
+              <div
+                className={styles.card}
+                data-testid="toolcall-presentation-card"
+              >
+                <PresentationCard
+                  meta={node.presentation.meta}
+                  payload={node.output ?? node.arguments}
+                />
+              </div>
+            )}
             {inText && (
               <div className={styles.card} data-testid="toolcall-in">
                 <div

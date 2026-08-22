@@ -4,10 +4,8 @@ import { Tooltip } from 'antd';
 import dayjs from 'dayjs';
 import React from 'react';
 import type { TokenUsageDto } from '@/services/platform/api';
-import { getAgentMessageProcessItems } from '../client/agentChatApi';
 import type {
   ConversationProcessSummary,
-  ProcessSummaryItem,
 } from '../client/types';
 import { defaultBrowserVoiceOutputAdapter } from '../hooks/browserVoiceOutput';
 import { useTtsPlayer } from '../hooks/useTtsPlayer';
@@ -27,7 +25,6 @@ import {
 } from './execution-flow/TurnStatus';
 import MessageActions from './MessageActions';
 import MessageItem from './MessageItem';
-import MessageProcessSummary from './MessageProcessSummary';
 import ModelRetryRow from './ModelRetryRow';
 import {
   type CurrentRunActivity,
@@ -145,37 +142,6 @@ const agentAvatarColors = [
   '#a78bfa',
   '#c084fc',
 ];
-
-const toTimelineItems = (items: ProcessSummaryItem[]): TimelineItem[] =>
-  items
-    .filter(
-      (item) =>
-        !item.kind.startsWith('subagent.') &&
-        !item.kind.startsWith('subagent_'),
-    )
-    .map((item) => ({
-      id: item.id,
-      toolCallId: item.toolCallId ?? undefined,
-      // TR-01 冻结字段透传（服务端穿透后生效；缺失时回落 generic）。
-      parentToolCallId: item.parentToolCallId ?? undefined,
-      durationMs: item.durationMs ?? undefined,
-      presentation: item.presentation ?? undefined,
-      type:
-        item.kind === 'thinking' ||
-        item.kind === 'tool_call' ||
-        item.kind === 'tool_result'
-          ? item.kind
-          : 'subconscious_step',
-      text: item.text,
-      status: item.status,
-      name: item.name ?? undefined,
-      arguments: item.arguments ?? undefined,
-      output: item.output ?? undefined,
-      exitCode: item.exitCode ?? undefined,
-      message: item.message ?? undefined,
-      timestamp: Date.parse(item.timestamp),
-      collapsed: true,
-    }));
 
 const isRawStructuredParameterText = (text?: string): boolean => {
   const trimmed = text?.trim();
@@ -334,10 +300,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   agentAvatarColor,
   agentAvatarUrl,
   processItems,
-  processSummary,
-  processMessageId,
   workspaceId,
-  agentId,
   usage,
   quotedMessage,
   groupedWithPrevious,
@@ -351,25 +314,12 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   sessionId,
   parentDelegationActivity,
   onOpenInspector,
-  transcriptMode,
-  onTranscriptModeChange,
 }) => {
   const { styles: rawStyles, cx } = useChatMessageStyles();
   const styles = rawStyles as Record<string, string>;
   const [showActions, setShowActions] = React.useState(false);
   const [actionsMounted, setActionsMounted] = React.useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false);
-  // 一旦过程摘要首次挂载，保持挂载避免 streaming 中 processItems 短暂清空导致 expanded 状态丢失
-  const processSummaryEverMounted = React.useRef(false);
-  const loadHistoricalProcessItems = React.useCallback(async () => {
-    if (!workspaceId || !agentId || !processMessageId) return [];
-    const details = await getAgentMessageProcessItems(
-      workspaceId,
-      agentId,
-      processMessageId,
-    );
-    return toTimelineItems(details.processItems);
-  }, [workspaceId, agentId, processMessageId]);
 
   const tts = useTtsPlayer();
   const hasAnswerContent = content.trim().length > 0;
@@ -445,7 +395,6 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   const messageAgeMs = Math.max(0, Date.now() - createdAt);
   const shouldAnimateEntrance =
     isRunActive || messageAgeMs <= MESSAGE_ENTRANCE_WINDOW_MS;
-  const isBeforeFirstToken = isRunActive && !hasAnswerContent;
   const shouldRenderAnswerBubble = hasAnswerContent || hasQuotedOnly;
   const processActivity = React.useMemo(
     () => getCurrentRunActivity(processItems, status),
@@ -730,38 +679,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
               />
             )}
 
-            {/* 过程摘要：首 token 前显示预览气泡；正文输出后折叠为可展开时间线 */}
-            {(() => {
-              const hasItems = processItems && processItems.length > 0;
-              const hasHistoricalSummary = Boolean(processSummary?.hasDetails);
-              if (hasItems || hasHistoricalSummary)
-                processSummaryEverMounted.current = true;
-              const shouldRender =
-                hasItems ||
-                hasHistoricalSummary ||
-                processSummaryEverMounted.current;
-              if (!shouldRender) return null;
-              return (
-                <MessageProcessSummary
-                  items={processItems || []}
-                  summary={processSummary}
-                  status={status}
-                  onLoadDetails={
-                    hasHistoricalSummary
-                      ? loadHistoricalProcessItems
-                      : undefined
-                  }
-                  onRerun={onRerun}
-                  onOpenDiagnostics={
-                    sessionId ? () => setDiagnosticsOpen(true) : undefined
-                  }
-                  transcriptMode={transcriptMode}
-                  onTranscriptModeChange={onTranscriptModeChange}
-                />
-              );
-            })()}
-
-            {/* P1-2: 模型重试行 — 嗅探 processItems 中的 LLM retry 条目；无条目时组件内部返回 null，不占用布局 */}
+                                    {/* P1-2: 模型重试行 — 嗅探 processItems 中的 LLM retry 条目；无条目时组件内部返回 null，不占用布局 */}
             <ModelRetryRow items={processItems} />
 
             {/* P0-1: 错误摘要行（StateDot + 标题 + 摘要，title 挂全量原文）；

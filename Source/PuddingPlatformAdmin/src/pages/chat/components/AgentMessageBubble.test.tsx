@@ -248,7 +248,7 @@ describe('AgentMessageBubble streaming presentation', () => {
     expect(screen.getByText('思考')).toBeTruthy();
     expect(screen.getByText('用户问的是商用密码应用安全性评估。')).toBeTruthy();
     expect(screen.queryByText(/undefined/)).toBeNull();
-    expect(screen.getByTestId('reasoning-disclosure')).toBeTruthy();
+    expect(screen.getByTestId('reasoning-disclosure-row')).toBeTruthy();
     expect(container.querySelector('.agentActiveOutputSurface')).toBeNull();
   });
 
@@ -393,7 +393,7 @@ describe('AgentMessageBubble streaming presentation', () => {
     // CU-05：WaitingBubble 收敛为 TurnStatus（唯一 L0 状态行，单 aria-live）
     expect(screen.getByTestId('turn-status')).toBeTruthy();
     expect(container.querySelector('.turnStatusRow')).toBeTruthy();
-    expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
+    expect(screen.queryByTestId('reasoning-disclosure-row')).toBeNull();
   });
 
   it('keeps the server elapsed time after the bubble remounts', () => {
@@ -485,7 +485,8 @@ describe('AgentMessageBubble streaming presentation', () => {
       screen.getByText('主代理正在等待子代理返回；内部进度请查看右侧托盘坞'),
     ).toBeTruthy();
     expect(document.body.textContent).not.toContain('子代理任务详情');
-    expect(screen.getByText('查看过程')).toBeTruthy();
+    // CU-10：MessageProcessSummary 已退出主生产路径 → 不再渲染「查看过程」折叠摘要入口。
+    expect(screen.queryByText('查看过程')).toBeNull();
     expect(
       screen.queryByText(/主代理过程可在当前消息的“查看过程”中展开/),
     ).toBeNull();
@@ -653,7 +654,7 @@ describe('AgentMessageBubble streaming presentation', () => {
     expect(container.querySelector('.agentActiveOutputSurface')).toBeNull();
   });
 
-  it('uses typewriter slices for streaming answers and collapses the process timeline while printing', () => {
+  it('uses typewriter slices for streaming answers while keeping the reasoning row visible', () => {
     mockUseTypewriterStreaming.mockReturnValue({
       stableMarkdown: '稳定段落',
       liveText: '尾段完整文本',
@@ -691,8 +692,11 @@ describe('AgentMessageBubble streaming presentation', () => {
         maxLagChars: 48,
       }),
     );
-    expect(screen.getByText(/已思考/)).toBeTruthy();
-    expect(screen.getByText('查看过程')).toBeTruthy();
+    expect(screen.queryByText(/已思考/)).toBeNull();
+    expect(screen.queryByText('查看过程')).toBeNull();
+    // CU-10：MessageProcessSummary 退出主路径后，typewriter 流式期间过程摘要不再渲染，
+    // 但推理摘要行（ReasoningDisclosureRow）保持可见。
+    expect(screen.getByText('思考')).toBeTruthy();
   });
 
   it('marks the answer bubble as an active output surface while it is streaming', () => {

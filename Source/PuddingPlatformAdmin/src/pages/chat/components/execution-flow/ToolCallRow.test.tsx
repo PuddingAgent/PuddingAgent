@@ -214,4 +214,24 @@ describe('ToolCallRow (ToolNode)', () => {
     expect(outCard.textContent).toContain('short output');
     expect(screen.queryByTestId('toolcall-out-expand')).toBeNull();
   });
+
+  // CU-10：卡片挂载必须走 resolveRenderer 分派路径（按 presentation.kind；
+  // 未注册七类暂回落 Generic renderer —— 分派必须活，防 Registry 死代码）。
+  it('CU-10：presentation 存在时按 kind 走 resolveRenderer 分派（未注册回落 Generic renderer）', () => {
+    render(
+      <ToolCallRow
+        node={makeNode({
+          presentation: { kind: 'terminal', meta: { command: 'git status' } },
+        })}
+      />,
+    );
+    // 折叠态：presentation 存在即可展开（即使无 IN/OUT 卡）。
+    const row = screen.getByTestId('toolcall-row');
+    expect(row.getAttribute('role')).toBe('button');
+    fireEvent.click(row);
+    // 分派活：toolcall-presentation-card 挂载 Generic renderer（terminal 未注册回落）。
+    const card = screen.getByTestId('toolcall-presentation-card');
+    expect(card).toBeTruthy();
+    expect(screen.getByTestId('presentation-generic')).toBeTruthy();
+  });
 });
