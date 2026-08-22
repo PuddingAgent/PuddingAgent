@@ -198,34 +198,24 @@ public class TaskController : ControllerBase
         }
     }
 
-    /// <summary>DELETE /api/workspaces/{workspaceId}/tasks/{taskId} — 硬删（仅无历史 Backlog）。</summary>
+    /// <summary>
+    /// DELETE /api/workspaces/{workspaceId}/tasks/{taskId} — 智能删除：无历史 Backlog 硬删（200 deleted），
+    /// 其余任务归档软删（200 archived，保留审计语义）。不再返回 422 task.cannot_hard_delete。
+    /// </summary>
     [HttpDelete("{taskId}")]
-    public async Task<IActionResult> Delete(
+    public async Task<ActionResult<TaskDeleteResultDto>> Delete(
         string workspaceId,
         string taskId,
         CancellationToken ct = default)
     {
         try
         {
-            var task = await _store.GetTaskAsync(workspaceId, taskId, ct);
-            if (task is null)
+            var archived = await _commands.DeleteTaskAsync(workspaceId, taskId, ResolveAuthorId(), ct);
+            return Ok(new TaskDeleteResultDto
             {
-                throw new TaskStoreException(
-                    TaskErrorCode.TaskNotFound,
-                    $"Task '{taskId}' not found.",
-                    taskId);
-            }
-
-            var deleted = await _store.HardDeleteTaskAsync(workspaceId, taskId, ct);
-            if (!deleted)
-            {
-                throw new TaskStoreException(
-                    TaskErrorCode.TaskCannotHardDelete,
-                    $"Task '{taskId}' cannot be hard-deleted (only history-free Backlog tasks).",
-                    taskId);
-            }
-
-            return NoContent();
+                Action = archived is null ? "deleted" : "archived",
+                Task = archived is null ? null : ToDto(archived),
+            });
         }
         catch (TaskStoreException ex)
         {

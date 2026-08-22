@@ -121,6 +121,40 @@ public sealed class WorkspaceAgentFileService :
 完成一个推进步骤，或确认确实没有可推进事项后，调用 sleep(min_idle_seconds=120, max_idle_seconds=600)。回复必须是已完成的行动或有证据的无待办结论，不能以问题结束。
 """;
 
+    /// <summary>embedded resource 中全局默认心跳提示词的资源名（唯一权威默认来源）。</summary>
+    internal const string DefaultHeartbeatPromptResourceName =
+        "PuddingPlatform.Prompts.HeartbeatPrompt.md";
+
+    /// <summary>
+    /// 从 embedded resource 读取全局默认心跳提示词（heartbeatPrompt.md 唯一权威默认来源）。
+    /// 资源缺失时返回 null，由调用方回退到 <see cref="DefaultHeartbeatPrompt"/> 并记录警告。
+    /// </summary>
+    public static string? TryReadDefaultHeartbeatPrompt()
+    {
+        var assembly = typeof(WorkspaceAgentFileService).Assembly;
+        using var stream = assembly.GetManifestResourceStream(DefaultHeartbeatPromptResourceName);
+        if (stream is null)
+            return null;
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd().Trim();
+    }
+
+    /// <summary>
+    /// 解析默认心跳提示词：优先 embedded heartbeatPrompt.md 资源；
+    /// 资源缺失时回退编译期常量 <see cref="DefaultHeartbeatPrompt"/> 并 LogWarning。
+    /// </summary>
+    private string ResolveDefaultHeartbeatPrompt(string context)
+    {
+        var resource = TryReadDefaultHeartbeatPrompt();
+        if (!string.IsNullOrWhiteSpace(resource))
+            return resource;
+
+        _logger.LogWarning(
+            "[Heartbeat] Embedded default heartbeat prompt unavailable (context={Context}); falling back to compiled default",
+            context);
+        return DefaultHeartbeatPrompt;
+    }
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -542,7 +576,7 @@ public sealed class WorkspaceAgentFileService :
             var memoryMd = await WriteAgentMdFileAsync(
                 instanceRoot, "MEMORY.md", req.MemoryMdContent ?? template?.MemoryPrompt, ct);
             var heartbeatMd = await WriteAgentMdFileAsync(instanceRoot, "heartbeatPrompt.md",
-                req.HeartbeatPrompt ?? DefaultHeartbeatPrompt, ct);
+                req.HeartbeatPrompt ?? ResolveDefaultHeartbeatPrompt($"create:{agentInstanceId}"), ct);
 
             var avatar = ResolveAvatarFromTemplate(template);
 
@@ -1253,12 +1287,11 @@ public sealed class WorkspaceAgentFileService :
                 JsonOptions,
                 ct);
 
-            _logger.LogInformation(
-                "Workspace agent heartbeat prompt initialized: workspace={Workspace} agent={AgentId}",
-                workspaceId,
+            _logger.LogWarning(
+                "[Heartbeat] heartbeatPrompt.md missing for agent={AgentId}; seeding from default heartbeat prompt source",
                 agentId);
 
-            await WriteAgentMdFileAsync(instanceRoot, "heartbeatPrompt.md", DefaultHeartbeatPrompt, ct);
+            await WriteAgentMdFileAsync(instanceRoot, "heartbeatPrompt.md", ResolveDefaultHeartbeatPrompt($"seed:{agentId}"), ct);
             var prompt = await ReadAgentMdContentAsync(instanceRoot, "heartbeatPrompt.md", ct);
             return prompt;
         }

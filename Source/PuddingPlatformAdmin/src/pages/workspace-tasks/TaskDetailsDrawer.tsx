@@ -66,7 +66,7 @@ export interface TaskDetailsDrawerProps {
   onChanged: (task: TaskDto) => void;
 }
 
-/** 详情（全字段 + 绑定 ID）+ 状态流转 + 评论/备注 + 事件时间线 + 执行链接 + 危险区（硬删）。 */
+/** 详情（全字段 + 绑定 ID）+ 状态流转 + 评论/备注 + 事件时间线 + 执行链接 + 危险区（删除：硬删或归档）。 */
 export const TaskDetailsDrawer: React.FC<TaskDetailsDrawerProps> = ({
   open,
   workspaceId,
@@ -113,15 +113,20 @@ export const TaskDetailsDrawer: React.FC<TaskDetailsDrawerProps> = ({
   const handleDelete = () => {
     if (!task) return;
     modal.confirm({
-      title: '确认永久删除该任务？',
-      content: '仅无历史 Backlog 任务可硬删；删除后不可恢复。',
+      title: '删除该任务？',
+      content:
+        '无历史 Backlog 任务将永久删除，不可恢复；其余任务将归档（软删除，保留审计历史）。',
       okText: '删除',
       okType: 'danger',
       cancelText: '取消',
       onOk: async () => {
         try {
-          await deleteTask(workspaceId, task.taskId);
-          message.success('已删除');
+          const result = await deleteTask(workspaceId, task.taskId);
+          if (result.action === 'archived') {
+            message.success('已归档（软删除）');
+          } else {
+            message.success('已删除');
+          }
           onDeleted(task.taskId);
           onClose();
         } catch (error) {
@@ -383,18 +388,19 @@ export const TaskDetailsDrawer: React.FC<TaskDetailsDrawerProps> = ({
             </div>
           </div>
 
-          {task.status === 'Backlog' && (
-            <div style={{ marginTop: 16 }}>
-              <Text type="danger" strong>
-                危险区
+          <div style={{ marginTop: 16 }}>
+            <Text type="danger" strong>
+              危险区
+            </Text>
+            <div style={{ marginTop: 8 }}>
+              <Button danger onClick={handleDelete}>
+                删除任务
+              </Button>
+              <Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 4 }}>
+                无历史 Backlog 将永久删除；其余任务将归档（保留审计历史）。
               </Text>
-              <div style={{ marginTop: 8 }}>
-                <Button danger onClick={handleDelete}>
-                  永久删除
-                </Button>
-              </div>
             </div>
-          )}
+          </div>
         </>
       )}
     </Drawer>

@@ -115,6 +115,18 @@ public sealed record TaskPageDto
     public string? NextCursor { get; init; }
 }
 
+/// <summary>
+/// DELETE 智能删除响应：Action = "deleted"（硬删，Task 为 null）| "archived"（归档软删，Task 为归档后任务）。
+/// </summary>
+public sealed record TaskDeleteResultDto
+{
+    /// <summary>wire: "deleted" | "archived"。</summary>
+    public required string Action { get; init; }
+
+    /// <summary>归档后的任务（硬删时为 null）。</summary>
+    public TaskDto? Task { get; init; }
+}
+
 /// <summary>Watch SSE 事件 payload（task_events 自增 id 游标 + 当前任务快照）。</summary>
 public sealed record TaskWatchEventDto
 {

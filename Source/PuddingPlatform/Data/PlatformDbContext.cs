@@ -53,6 +53,15 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // Context layer 长期统计事实（上下文缓存可观测性）
     public DbSet<ContextLayerMetricEventEntity> ContextLayerMetricEvents => Set<ContextLayerMetricEventEntity>();
 
+    // 已结束 UTC 日的 Token 用量聚合缓存（stats 页面渐进加载）
+    public DbSet<LlmUsageDailyAggregateEntity> LlmUsageDailyAggregates => Set<LlmUsageDailyAggregateEntity>();
+
+    // 已结束 UTC 日的上下文层级分析 rollup 缓存
+    public DbSet<ContextLayerDailyRollupEntity> ContextLayerDailyRollups => Set<ContextLayerDailyRollupEntity>();
+
+    // 按日缓存完成标记（cache_key × day）
+    public DbSet<StatsDailyCacheDayEntity> StatsDailyCacheDays => Set<StatsDailyCacheDayEntity>();
+
     // 会话运行中引导消息（下一次 LLM 调用前注入）
     public DbSet<SessionSteeringMessageEntity> SessionSteeringMessages => Set<SessionSteeringMessageEntity>();
 
@@ -309,6 +318,28 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(ev => ev.OccurredAtUtc);
             e.HasIndex(ev => ev.LayerName);
             e.HasIndex(ev => ev.ContentHash);
+        });
+
+        // ── LlmUsageDailyAggregates (closed-day token stats cache) ──
+        modelBuilder.Entity<LlmUsageDailyAggregateEntity>(e =>
+        {
+            e.ToTable("llm_usage_daily_aggregates");
+            e.HasIndex(a => new { a.DayUtc, a.Source, a.ProviderId, a.ModelId }).IsUnique();
+            e.HasIndex(a => a.YearMonth);
+        });
+
+        // ── ContextLayerDailyRollups (closed-day layer analysis cache) ──
+        modelBuilder.Entity<ContextLayerDailyRollupEntity>(e =>
+        {
+            e.ToTable("context_layer_daily_rollups");
+            e.HasIndex(r => r.DayUtc);
+        });
+
+        // ── StatsDailyCacheDays (per-cache completed-day markers) ──
+        modelBuilder.Entity<StatsDailyCacheDayEntity>(e =>
+        {
+            e.ToTable("stats_daily_cache_days");
+            e.HasKey(d => new { d.CacheKey, d.DayUtc });
         });
 
         // ── SessionSteeringMessages (runtime steering injection) ──

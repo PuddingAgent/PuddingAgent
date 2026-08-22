@@ -9,6 +9,7 @@ import type {
   PatchTaskRequest,
   RunNowTaskRequest,
   TaskCommentDto,
+  TaskDeleteResult,
   TaskDto,
   TaskPageDto,
 } from '@/pages/workspace-tasks/types';
@@ -2005,12 +2006,22 @@ export interface SubAgentRunSummaryResponse {
   errorMessage?: string | null;
 }
 
+export interface SubAgentArchiveDegradedInfo {
+  firstFailureAt: string;
+  lastFailureAt: string;
+  droppedEventCount: number;
+  lastEventType?: string | null;
+  lastError?: string | null;
+}
+
 export interface SubAgentRunDetailResponse {
   summary: SubAgentRunSummaryResponse;
   task?: string | null;
   output?: string | null;
   eventCount: number;
   toolCallCount: number;
+  /** 非空表示归档曾丢弃事件（archive-degraded），时间线不完整。 */
+  archiveDegraded?: SubAgentArchiveDegradedInfo | null;
 }
 
 export interface SubAgentRunEventResponse {
@@ -3674,7 +3685,7 @@ export async function updateTask(
 export async function deleteTask(
   workspaceId: string,
   taskId: string,
-): Promise<void> {
+): Promise<TaskDeleteResult> {
   return request(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}`,
     { method: 'DELETE' },

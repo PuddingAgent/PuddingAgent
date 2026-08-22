@@ -20,6 +20,7 @@ import {
   archiveTask,
   assignTask,
   cancelTask,
+  deleteTask,
   getTask,
   getWorkspace,
   listTasks,
@@ -29,6 +30,7 @@ import {
   requeueTask,
   resumeTask,
   runNowTask,
+  updateTask,
   type WorkspaceAgentDto,
   type WorkspaceWithPermDto,
 } from '@/services/platform/api';
@@ -45,6 +47,7 @@ import {
   parseTaskError,
   removeTaskFromColumns,
   upsertTaskIntoColumns,
+  TASK_STATUS_LABELS,
   type BoardColumnWire,
   type CommandTaskRequest,
   type TaskColumns,
@@ -52,6 +55,7 @@ import {
   type TaskDto,
   type TaskEventWatchEvent,
   type TaskPriorityWire,
+  type TaskStatusWire,
   type WindowDecisionWire,
 } from './types';
 
@@ -402,6 +406,81 @@ export function WorkspaceTasksPanel({ workspaceId }: WorkspaceTasksPanelProps) {
     setSelectedTask((current) => (current?.taskId === taskId ? null : current));
   }, []);
 
+  // ─── 批量操作（列表勾选） ────────────────────────────────────────────
+  const handleBatchRemove = useCallback(
+    async (tasks: TaskDto[]) => {
+      const succeededIds: string[] = [];
+      const failedTitles: string[] = [];
+      for (const task of tasks) {
+        try {
+          await deleteTask(workspaceId, task.taskId);
+          succeededIds.push(task.taskId);
+        } catch {
+          failedTitles.push(task.title);
+        }
+      }
+
+      if (succeededIds.length > 0) {
+        const ids = new Set(succeededIds);
+        setColumns((prev) => {
+          const next: TaskColumns = { ...prev };
+          for (const column of BOARD_COLUMN_ORDER) {
+            next[column] = {
+              ...prev[column],
+              items: prev[column].items.filter((t) => !ids.has(t.taskId)),
+            };
+          }
+          return next;
+        });
+        setSelectedTask((current) =>
+          current && ids.has(current.taskId) ? null : current,
+        );
+      }
+
+      if (failedTitles.length === 0) {
+        message.success(`已移除 ${succeededIds.length} 个任务`);
+      } else {
+        message.warning(
+          `${succeededIds.length} 个已移除，${failedTitles.length} 个失败`,
+        );
+      }
+    },
+    [workspaceId, message],
+  );
+
+  const handleBatchStatus = useCallback(
+    async (tasks: TaskDto[], status: TaskStatusWire) => {
+      const succeeded: TaskDto[] = [];
+      const failedTitles: string[] = [];
+      for (const task of tasks) {
+        try {
+          const updated = await updateTask(workspaceId, task.taskId, {
+            expectedVersion: task.version,
+            status,
+          });
+          succeeded.push(updated);
+        } catch {
+          failedTitles.push(task.title);
+        }
+      }
+
+      for (const updated of succeeded) {
+        handleSaved(updated);
+      }
+
+      if (failedTitles.length === 0) {
+        message.success(
+          `已更新 ${succeeded.length} 个任务状态为 ${TASK_STATUS_LABELS[status]}`,
+        );
+      } else {
+        message.warning(
+          `${succeeded.length} 个已更新，${failedTitles.length} 个失败`,
+        );
+      }
+    },
+    [workspaceId, handleSaved, message],
+  );
+
   const actions: TaskActions = useMemo(
     () => ({
       onOpen: (task) => setSelectedTask(task),
@@ -560,8 +639,13 @@ export function WorkspaceTasksPanel({ workspaceId }: WorkspaceTasksPanelProps) {
             actions={actions}
             onLoadMore={loadMore}
           />
-        ) : (
-          <TaskTable items={tableItems} onOpen={setSelectedTask} />
+                ) : (
+          <TaskTable
+            items={tableItems}
+            onOpen={setSelectedTask}
+            onBatchRemove={handleBatchRemove}
+            onBatchStatus={handleBatchStatus}
+          />
         )}
       </div>
 

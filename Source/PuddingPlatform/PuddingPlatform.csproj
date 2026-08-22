@@ -30,4 +30,11 @@
     <ProjectReference Include="..\PuddingFullTextIndex\PuddingFullTextIndex.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 全局默认心跳提示词（heartbeatPrompt.md 唯一权威默认来源）。
+         运行时通过 WorkspaceAgentFileService.TryReadDefaultHeartbeatPrompt 读取；
+         实例级 heartbeatPrompt.md 缺失时用它种子化，资源缺失则回退编译期常量。 -->
+    <EmbeddedResource Include="Prompts\HeartbeatPrompt.md" />
+  </ItemGroup>
+
 </Project>

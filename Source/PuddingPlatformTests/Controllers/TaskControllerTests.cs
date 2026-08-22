@@ -318,26 +318,96 @@ public sealed class TaskControllerTests
         Assert.IsNotNull(attempt.ReleasedAtUtc);
     }
 
-    // ── 10. Delete：硬删（404/204/422）──
+    // ── 10. Delete：智能删除（404/200 deleted/200 archived）──
 
     [TestMethod]
-    public async Task Delete_HardDeletesBacklog_Returns204Or422Or404()
+    public async Task Delete_Returns404ForMissingTask()
     {
         var controller = CreateController();
 
         var miss = await controller.Delete(WorkspaceId, "missing", CancellationToken.None);
-        var missObj = Assert.IsInstanceOfType<ObjectResult>(miss);
+        var missObj = Assert.IsInstanceOfType<ObjectResult>(miss.Result);
         Assert.AreEqual(404, missObj.StatusCode);
+        Assert.AreEqual("task.not_found", Assert.IsInstanceOfType<TaskErrorResponse>(missObj.Value).Code);
+    }
 
-        var nonBacklog = await CreateTaskAsync();
-        await SetStatusAsync(nonBacklog.TaskId, WorkspaceTaskStatus.Ready);
-        var cannotDelete = await controller.Delete(WorkspaceId, nonBacklog.TaskId, CancellationToken.None);
-        var cannotObj = Assert.IsInstanceOfType<ObjectResult>(cannotDelete);
-        Assert.AreEqual(422, cannotObj.StatusCode);
-
+    [TestMethod]
+    public async Task Delete_HistoryFreeBacklog_Returns200DeletedAndRemovesTask()
+    {
         var fresh = await CreateTaskAsync();
-        var deleted = await controller.Delete(WorkspaceId, fresh.TaskId, CancellationToken.None);
-        Assert.IsInstanceOfType<NoContentResult>(deleted);
+        var controller = CreateController();
+
+        var result = await controller.Delete(WorkspaceId, fresh.TaskId, CancellationToken.None);
+
+        var ok = Assert.IsInstanceOfType<OkObjectResult>(result.Result);
+        var dto = Assert.IsInstanceOfType<TaskDeleteResultDto>(ok.Value);
+        Assert.AreEqual("deleted", dto.Action);
+        Assert.IsNull(dto.Task);
+        Assert.IsNull(await _store.GetTaskAsync(WorkspaceId, fresh.TaskId));
+    }
+
+    [TestMethod]
+    public async Task Delete_BacklogWithHistory_Returns200Archived()
+    {
+        var withHistory = await CreateTaskAsync();
+        await _store.UpdateTaskAsync(new UpdateTaskRequest
+        {
+            TaskId = withHistory.TaskId,
+            ExpectedVersion = 1,
+            Title = "updated",
+        });
+        var controller = CreateController();
+
+        var result = await controller.Delete(WorkspaceId, withHistory.TaskId, CancellationToken.None);
+
+        var ok = Assert.IsInstanceOfType<OkObjectResult>(result.Result);
+        var dto = Assert.IsInstanceOfType<TaskDeleteResultDto>(ok.Value);
+        Assert.AreEqual("archived", dto.Action);
+        Assert.IsNotNull(dto.Task);
+        Assert.AreEqual("Archived", dto.Task!.Status);
+
+        var stored = await _store.GetTaskAsync(WorkspaceId, withHistory.TaskId);
+        Assert.IsNotNull(stored);
+        Assert.AreEqual(WorkspaceTaskStatus.Archived, stored!.Status);
+        Assert.IsNotNull(stored.ArchivedAtUtc);
+        Assert.AreEqual(3, stored.Version);
+    }
+
+    [TestMethod]
+    public async Task Delete_NonBacklogWithActiveAssignment_ArchivesAndReleasesAssignment()
+    {
+        var task = await CreateTaskAsync();
+        await SeedActiveAssignmentAsync(task.TaskId, "agent-3");
+        var controller = CreateController();
+
+        var result = await controller.Delete(WorkspaceId, task.TaskId, CancellationToken.None);
+
+        var ok = Assert.IsInstanceOfType<OkObjectResult>(result.Result);
+        var dto = Assert.IsInstanceOfType<TaskDeleteResultDto>(ok.Value);
+        Assert.AreEqual("archived", dto.Action);
+        Assert.IsNotNull(dto.Task);
+        Assert.AreEqual("Archived", dto.Task!.Status);
+        Assert.IsNull(dto.Task.ActiveAssignmentId);
+
+        var attempt = (await GetAttemptsAsync(task.TaskId)).Single();
+        Assert.IsNotNull(attempt.ReleasedAtUtc);
+        Assert.AreEqual(TaskEventType.TaskArchived, (await GetEventsAsync(task.TaskId))[^1].EventType);
+    }
+
+    [TestMethod]
+    public async Task Delete_AlreadyArchived_Returns200ArchivedIdempotent()
+    {
+        var task = await CreateTaskAsync();
+        await SetStatusAsync(task.TaskId, WorkspaceTaskStatus.Archived);
+        var controller = CreateController();
+
+        var result = await controller.Delete(WorkspaceId, task.TaskId, CancellationToken.None);
+
+        var ok = Assert.IsInstanceOfType<OkObjectResult>(result.Result);
+        var dto = Assert.IsInstanceOfType<TaskDeleteResultDto>(ok.Value);
+        Assert.AreEqual("archived", dto.Action);
+        Assert.IsNotNull(dto.Task);
+        Assert.AreEqual("Archived", dto.Task!.Status);
     }
 
     // ── 11. 错误协议：每种 TaskErrorCode → HTTP 状态 + 稳定 code + traceId ──

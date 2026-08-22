@@ -179,6 +179,12 @@ export interface TaskPageDto {
   nextCursor: string | null;
 }
 
+/** DELETE 智能删除响应：action = "deleted"（硬删，task 为 null）| "archived"（归档软删，task 为归档后任务） */
+export interface TaskDeleteResult {
+  action: 'deleted' | 'archived';
+  task?: TaskDto;
+}
+
 // ─── 评论/备注（TB-12 F-1，对齐 TB-11 B-5 DTO）─────────────────────────
 
 export type TaskCommentAuthorKindWire = 'user' | 'agent' | 'system';

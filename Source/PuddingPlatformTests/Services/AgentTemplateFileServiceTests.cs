@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Configuration;
@@ -176,6 +176,36 @@ public sealed class AgentTemplateFileServiceTests
         Assert.IsNotNull(saved);
         Assert.AreEqual("你负责在工作空间内审计其他 Agent 的执行过程。", saved.PersonaPrompt);
         Assert.IsTrue(File.Exists(Path.Combine(temp.Path, "agent-templates", "workspace-audit-assistant", "manifest.json")));
+    }
+
+    // ── 仓库卫生纪律条款注入断言（任务 a543e4bb / 蜜糖门禁 C1-C4）──────────
+
+    /// <summary>
+    /// 仓库 default-data/agent-template-presets/general-assistant.json 的 agentsPrompt
+    /// 必须包含 4.1 通用版条款（主代理提示词内容生效源）。
+    /// 直接读取仓库内的真实 preset 文件验证，确保与代码模板同步。
+    /// </summary>
+    [TestMethod]
+    public void RepoGeneralAssistantPreset_AgentsPrompt_Contains_RepoHygieneClause()
+    {
+        var repoPresetPath = Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..",
+            "Source", "PuddingHost", "default-data", "agent-template-presets", "general-assistant.json");
+        var fullPath = Path.GetFullPath(repoPresetPath);
+        Assert.IsTrue(File.Exists(fullPath), $"preset not found: {fullPath}");
+
+        var json = File.ReadAllText(fullPath);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var agentsPrompt = doc.RootElement.GetProperty("agentsPrompt").GetString();
+        Assert.IsNotNull(agentsPrompt);
+
+        StringAssert.Contains(agentsPrompt, "## 仓库卫生纪律（提交前强制自检）");
+        StringAssert.Contains(agentsPrompt, "一、产物与源码分离");
+        StringAssert.Contains(agentsPrompt, "二、临时文件纪律");
+        StringAssert.Contains(agentsPrompt, "三、提交前自检清单（每项都必须执行，缺一不可）");
+        StringAssert.Contains(agentsPrompt, "四、大文件与二进制警觉");
+        StringAssert.Contains(agentsPrompt, "使用 `git add <明确文件路径列表>` 精确暂存，禁止裸 `git add -A` / `git add .`");
     }
 
     private static async Task<AgentTemplateFileService> CreateServiceAsync(

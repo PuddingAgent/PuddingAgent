@@ -367,6 +367,93 @@ public sealed class TaskCommandService(
         };
     }
 
+    /// <summary>
+    /// 智能删除：无历史 Backlog 任务走硬删（返回 null），其余任意状态任务归档软删（返回归档后的任务）。
+    /// <para>
+    /// 删除是用户侧「移除无效任务」语义，不带 CAS（目标即移除，无需乐观锁）。归档路径从任意状态原子迁移到
+    /// Archived：version+1、写 task.archived 事件、释放活跃 Assignment（同 Cancel 语义），保留完整审计历史。
+    /// 已归档任务幂等成功（不重复写事件）。
+    /// </para>
+    /// </summary>
+    public async Task<WorkspaceTask?> DeleteTaskAsync(
+        string workspaceId,
+        string taskId,
+        string? updatedBy = null,
+        CancellationToken ct = default)
+    {
+        var current = await _store.GetTaskAsync(workspaceId, taskId, ct);
+        if (current is null)
+        {
+            throw new TaskStoreException(
+                TaskErrorCode.TaskNotFound,
+                $"Task '{taskId}' not found.",
+                taskId);
+        }
+
+        // 无历史 Backlog → 硬删（保留既有审计语义与 HardDeleteTaskAsync 判定）。
+        if (await _store.HardDeleteTaskAsync(workspaceId, taskId, ct))
+        {
+            return null;
+        }
+
+        // 已归档 → 幂等成功。
+        if (current.Status == WorkspaceTaskStatus.Archived)
+        {
+            return current;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var entity = await db.WorkspaceTasks
+            .SingleOrDefaultAsync(t => t.TaskId == taskId && t.WorkspaceId == workspaceId, ct)
+            ?? throw new TaskStoreException(
+                TaskErrorCode.TaskNotFound,
+                $"Task '{taskId}' not found.",
+                taskId);
+
+        // 释放活跃 Assignment（与 Cancel 命令一致）。
+        if (entity.ActiveAssignmentId is not null)
+        {
+            var active = await db.TaskAssignmentAttempts
+                .SingleOrDefaultAsync(a => a.AttemptId == entity.ActiveAssignmentId, ct);
+            if (active is not null)
+            {
+                active.ReleasedAtUtc = now;
+                active.UpdatedAtUtc = now;
+            }
+
+            entity.ActiveAssignmentId = null;
+        }
+
+        entity.Status = WorkspaceTaskStatus.Archived;
+        entity.Version += 1;
+        entity.UpdatedAtUtc = now;
+        entity.ArchivedAtUtc = now;
+        if (!string.IsNullOrWhiteSpace(updatedBy))
+        {
+            entity.UpdatedBy = updatedBy;
+        }
+
+        var nextSequence = await db.TaskEvents
+            .Where(e => e.TaskId == taskId)
+            .MaxAsync(e => (long?)e.Sequence, ct) ?? 0;
+
+        db.TaskEvents.Add(new TaskEventEntity
+        {
+            EventId = Guid.NewGuid().ToString("N"),
+            TaskId = taskId,
+            WorkspaceId = workspaceId,
+            Sequence = nextSequence + 1,
+            EventType = TaskEventType.TaskArchived,
+            CreatedAtUtc = now,
+        });
+
+        await db.SaveChangesAsync(ct);
+
+        return (await _store.GetTaskAsync(workspaceId, taskId, ct))!;
+    }
+
     private static TaskEventType EventTypeFor(TaskCommand command) => command switch
     {
         TaskCommand.Assign or TaskCommand.RunNow => TaskEventType.TaskReserved,
