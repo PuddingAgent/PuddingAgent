@@ -45,7 +45,7 @@ public sealed class FileReadToolTests
 
     // Test 2: Large file (>300 lines) triggers guardrail
     [TestMethod]
-    public async Task LargeFile_TriggersGuardrail_ShowsFirst120Lines()
+    public async Task LargeFile_TriggersGuardrail_ShowsFirst400Lines()
     {
         var lines = Enumerable.Range(1, 500).Select(i => $"line {i}");
         var content = string.Join("\n", lines);
@@ -59,8 +59,9 @@ public sealed class FileReadToolTests
         StringAssert.Contains(result.Output, "GUARDRAIL");
         StringAssert.Contains(result.Output, "500 lines");
         StringAssert.Contains(result.Output, "line 1");
-        StringAssert.Contains(result.Output, "line 120");
-        Assert.IsFalse(result.Output.Contains("line 121"));
+        // 2026-08-22 窗口 120→400：减少模型同文件翻页重读
+        StringAssert.Contains(result.Output, "line 400");
+        Assert.IsFalse(result.Output.Contains("line 450"));
     }
 
     // Test 3: File above the progressive 8KB threshold triggers guardrail even if <300 lines

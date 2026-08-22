@@ -1031,6 +1031,17 @@ internal static class UnifiedDiffParser
 
     public static UnifiedDiffParseResult Parse(string patchText)
     {
+        // 2026-08-22 模型倾向适配：模型训练先验常直接输出 Codex 风格
+        // （*** Begin Patch / *** Update File）。工具迁就模型：自动转译为
+        // unified diff，而不是报错让模型猜格式。实测该混淆造成 3 类失败/次 run。
+        if (CodexPatchTranslator.LooksLikeCodexPatch(patchText))
+        {
+            var (unified, error) = CodexPatchTranslator.Translate(patchText);
+            if (error is not null)
+                return UnifiedDiffParseResult.Fail(error);
+            patchText = unified!;
+        }
+
         var lines = patchText.Replace("\r\n", "\n").Split('\n');
         var files = new List<UnifiedDiffFile>();
         string? currentPath = null;
@@ -1126,8 +1137,7 @@ internal static class UnifiedDiffParser
 
     private static string CleanDiffPath(string path)
     {
-        var tabIndex = path.IndexOf('\t');
-        if (tabIndex >= 0)
+        var tabIndex = path.IndexOf('\t');        if (tabIndex >= 0)
             path = path[..tabIndex];
         if (path.StartsWith("a/", StringComparison.Ordinal) || path.StartsWith("b/", StringComparison.Ordinal))
             path = path[2..];
@@ -1251,4 +1261,95 @@ public sealed record FilePatchOperation
     [ToolParam("Full content of the line immediately AFTER the target range (whitespace-insensitive match).")]
     [JsonPropertyName("anchor_after")]
     public string? AnchorAfter { get; init; }
+}
+
+/// <summary>
+/// Codex 风格 apply_patch（*** Begin Patch / *** Update File / +/-/context）→ unified diff 转译器。
+/// 行号占位 -1/+1：执行器 FindHunkCandidates 会做全文内容匹配，占位行号仅作优先提示。
+/// </summary>
+internal static class CodexPatchTranslator
+{
+    public static bool LooksLikeCodexPatch(string text) =>
+        text.Contains("*** Begin Patch", StringComparison.Ordinal);
+
+    public static (string? Unified, string? Error) Translate(string text)
+    {
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        var sb = new System.Text.StringBuilder();
+        var sawFile = false;
+        var sawBody = false;
+        List<(char Kind, string Text)>? body = null;
+
+        foreach (var raw in lines)
+        {
+            var line = raw.TrimEnd();
+            if (line.StartsWith("*** Update File:", StringComparison.Ordinal))
+            {
+                FlushHunk(sb, ref body);
+                var path = line["*** Update File:".Length..].Trim();
+                if (path.Length == 0)
+                    return (null, "Codex patch has an empty Update File path.");
+                sb.Append("--- a/").AppendLine(path);
+                sb.Append("+++ b/").AppendLine(path);
+                sawFile = true;
+                sawBody = false;
+                continue;
+            }
+
+            if (line.StartsWith("*** Add File:", StringComparison.Ordinal)
+                || line.StartsWith("*** Delete File:", StringComparison.Ordinal))
+            {
+                return (null,
+                    "Codex patch contains Add/Delete File sections. Use `file_write` for new files or git tools for deletions; patch tools only update existing files.");
+            }
+
+            if (line.StartsWith("*** Begin Patch", StringComparison.Ordinal)
+                || line.StartsWith("*** End Patch", StringComparison.Ordinal))
+                continue;
+
+            if (!sawFile)
+                continue;
+
+            if (line == "@@")
+            {
+                FlushHunk(sb, ref body);
+                sawBody = true;
+                continue;
+            }
+
+            body ??= [];
+            if (line.Length == 0)
+                body.Add((' ', string.Empty));
+            else if (line[0] is '+' or '-' or ' ')
+                body.Add((line[0], line[1..]));
+            else
+                body.Add((' ', line)); // Codex 上下文行可不带前缀
+            sawBody = true;
+        }
+
+        FlushHunk(sb, ref body);
+
+        if (!sawFile)
+            return (null, "Codex patch has no Update File sections.");
+        if (!sawBody)
+            return (null, "Codex patch has no hunk content.");
+
+        return (sb.ToString().TrimEnd() + "\n", null);
+    }
+
+    private static void FlushHunk(System.Text.StringBuilder sb, ref List<(char Kind, string Text)>? body)
+    {
+        if (body is null || body.Count == 0)
+        {
+            body = null;
+            return;
+        }
+
+        var oldCount = body.Count(l => l.Kind is ' ' or '-');
+        var newCount = body.Count(l => l.Kind is ' ' or '+');
+        sb.Append("@@ -1,").Append(oldCount).Append(" +1,").Append(newCount).AppendLine(" @@");
+        foreach (var (kind, content) in body)
+            sb.Append(kind).AppendLine(content);
+        body = null;
+    }
 }

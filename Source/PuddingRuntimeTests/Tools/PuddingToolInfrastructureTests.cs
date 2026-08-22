@@ -1823,8 +1823,12 @@ public sealed partial class PuddingToolInfrastructureTests
             },
             descriptor);
 
-        Assert.IsTrue(check.IsApproved, check.Message);
-        Assert.AreEqual("ImplicitAudit", check.ApprovalSource);
+        // 任务 ce63f8c0（2026-08-22）：rm/del/Remove-Item 类破坏命令由字符串防火墙
+        // 确定性拦截并引导 request_tool_approval，不再走 LLM 隐式审计放行（消除
+        // 14-39 秒裁决与非确定性）。工作区临时清理改经显式工单申请。
+        Assert.IsFalse(check.IsApproved, check.Message);
+        Assert.AreEqual("CommandFirewall", check.ApprovalSource);
+        StringAssert.Contains(check.Message, "request_tool_approval");
     }
 
     [TestMethod]
@@ -2411,7 +2415,8 @@ public sealed partial class PuddingToolInfrastructureTests
             descriptor);
 
         Assert.IsFalse(check.IsApproved);
-        StringAssert.Contains(check.Message, "Implicit audit denied");
+        // Remove-Item 命中命令防火墙（确定性拒绝），消息含审批工具引导。
+        StringAssert.Contains(check.Message, "request_tool_approval");
         StringAssert.Contains(check.Message, "request_tool_approval");
     }
 
@@ -2691,7 +2696,8 @@ public sealed partial class PuddingToolInfrastructureTests
             descriptor);
 
         Assert.IsFalse(check.IsApproved);
-        StringAssert.Contains(check.Message, "Implicit audit denied");
+        // Remove-Item 命中命令防火墙（确定性拒绝），消息含审批工具引导。
+        StringAssert.Contains(check.Message, "request_tool_approval");
         StringAssert.Contains(check.Message, "Previous approval check failed with approval_mismatch");
         StringAssert.Contains(check.Message, "approved_command='python png2jpg.py --help'");
         StringAssert.Contains(check.Message, "actual_command='python png2jpg.py'");
@@ -2889,7 +2895,8 @@ public sealed partial class PuddingToolInfrastructureTests
         var auditEvents = await auditStore.ListAsync();
 
         Assert.IsFalse(check.IsApproved);
-        StringAssert.Contains(check.Message, "Implicit audit denied");
+        // Remove-Item 命中命令防火墙（确定性拒绝），消息含审批工具引导。
+        StringAssert.Contains(check.Message, "request_tool_approval");
         StringAssert.Contains(check.Message, "request_tool_approval");
         Assert.IsTrue(auditEvents.Any(e =>
             e.EventType == ToolApprovalAuditEventType.ImplicitDenied

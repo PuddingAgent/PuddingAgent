@@ -81,12 +81,36 @@ public sealed class HostShellTool : PuddingToolBase<HostShellToolArgs>
                     + string.Join("\n", lines.Skip(lines.Length - tailLines));
         }
 
+        // 2026-08-22 模型倾向适配：模型天然爱用 shell 探查文件（本 run 94.8% 的成功
+        // shell 是 Get-ChildItem/Select-String/Get-Content）。用返回值教育比工具描述教育
+        // 有效——一句提示把下一次调用引导到零噪声、带游标的专用工具。
+        var tip = BuildSpecializedToolTip(args.Command);
+        if (tip is not null && result.Success)
+            output = string.IsNullOrEmpty(output) ? tip : output + "\n" + tip;
+
         return new ToolExecutionResult
         {
             Success = result.Success,
             Output = output,
             Error = result.Error,
             ExitCode = result.ExitCode,
+        };
+    }
+
+    private static string? BuildSpecializedToolTip(string command)
+    {
+        var first = command.TrimStart().Split(' ', 2).FirstOrDefault()?.TrimEnd(':').ToLowerInvariant();
+        return first switch
+        {
+            "select-string" or "sls" or "grep" or "findstr" or "rg" =>
+                "Tip: use `search_grep` next time — regex content search with clean output and no quoting pitfalls.",
+            "get-childitem" or "gci" or "dir" or "ls" =>
+                "Tip: use `list_dir` next time — structured directory listing without table-format noise.",
+            "get-content" or "gc" or "cat" or "type" =>
+                "Tip: use `file_read` next time — line-windowed reads with offset/limit and stable metadata.",
+            "test-path" =>
+                "Tip: use `list_dir` (parent directory) or `file_read` (first lines) to check existence with structured output.",
+            _ => null,
         };
     }
 }

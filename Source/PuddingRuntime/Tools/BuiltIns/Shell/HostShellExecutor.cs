@@ -6,7 +6,7 @@ namespace PuddingRuntime.Services.Tools;
 /// <summary>
 /// Executes command-line tools directly on the host with an explicit shell mode.
 /// </summary>
-public static class HostShellExecutor
+public static partial class HostShellExecutor
 {
     private static readonly HashSet<string> SupportedShells = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -91,8 +91,8 @@ public static class HostShellExecutor
                 return Fail($"Command timed out after {timeoutSeconds} seconds.", exitCode: -1, shell, workingDirectory);
             }
 
-            var stdout = TruncateOutput((await stdoutTask).TrimEnd());
-            var stderr = TruncateOutput((await stderrTask).TrimEnd());
+            var stdout = TruncateOutput(StripAnsiEscape((await stdoutTask).TrimEnd()));
+            var stderr = TruncateOutput(StripAnsiEscape((await stderrTask).TrimEnd()));
             var output = PrependExecutionMetadata(MergeOutput(stdout, stderr), shell, workingDirectory);
             return new HostShellResult
             {
@@ -209,12 +209,34 @@ public static class HostShellExecutor
     {
         psi.Environment["PYTHONIOENCODING"] = "utf-8";
         psi.Environment["PYTHONUTF8"] = "1";
+        // 2026-08-22 冗余治理：模型不需要 ANSI 颜色码。NO_COLOR 是跨工具标准；
+        // pwsh 的 $PSStyle 在 BuildPowerShellCommand 中单独关闭。
+        psi.Environment["NO_COLOR"] = "1";
     }
 
     private static string BuildPowerShellCommand(string command) =>
         "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; " +
         "$OutputEncoding = [Console]::OutputEncoding; " +
+        // pwsh7 格式化输出（表格/高亮）默认带 ANSI 颜色；PlainText 从源头关闭。
+        // powershell.exe 5.1 无 $PSStyle，try/catch 保持兼容。
+        "try { $PSStyle.OutputRendering = 'PlainText' } catch { }; " +
         command;
+
+    /// <summary>
+    /// 兜底剥离 ANSI/VT 转义序列（颜色/光标控制）。子进程可能无视 NO_COLOR
+    /// （如部分 node CLI），模型历史不应为颜色码付 token。实测探查类命令
+    /// 输出中 ANSI+表格填充占 40-60%。
+    /// </summary>
+    private static string StripAnsiEscape(string text)
+    {
+        if (string.IsNullOrEmpty(text) || !text.Contains('\x1b'))
+            return text;
+
+        return AnsiEscapeRegex().Replace(text, string.Empty);
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex("\x1b\\[[0-9;?]*[ -/]*[@-~]|\x1b\\][^\\x07]*(?:\x07|\x1b\\\\)")]
+    private static partial System.Text.RegularExpressions.Regex AnsiEscapeRegex();
 
     private static bool CommandExists(string command)
     {

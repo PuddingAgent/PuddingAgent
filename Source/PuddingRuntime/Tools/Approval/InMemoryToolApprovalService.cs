@@ -499,6 +499,68 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
             };
         }
 
+        // 任务 ce63f8c0：确定性字符串防火墙——危险命令秒拒并引导 request_tool_approval，
+        // 安全命令（git 常规/构建/测试/只读探查）秒放。短路 LLM 隐式审计，
+        // 消除实测的 14-39 秒裁决延迟与"同参数先拒后过"的非确定性；灰区仍走下方隐式审计。
+        var firewallDecision = ToolApprovalCommandFirewall.Evaluate(normalizedToolId, request.ActualArgumentsJson);
+        if (firewallDecision is not null)
+        {
+            await SaveAuditAsync(new ToolApprovalAuditEvent
+            {
+                EventId = NewAuditEventId(),
+                EventType = firewallDecision.Allowed
+                    ? ToolApprovalAuditEventType.ImplicitApproved
+                    : ToolApprovalAuditEventType.ImplicitDenied,
+                WorkspaceId = request.WorkspaceId,
+                SessionId = request.SessionId,
+                AgentInstanceId = request.AgentInstanceId,
+                UserId = request.UserId,
+                ToolId = normalizedToolId,
+                Command = ExtractCommand(request.ActualArgumentsJson),
+                ArgumentsJson = request.ActualArgumentsJson,
+                Decision = firewallDecision.Allowed
+                    ? ToolApprovalDecision.Approved
+                    : ToolApprovalDecision.Denied,
+                ReviewerModel = "command-firewall",
+                Reason = firewallDecision.Message,
+                CreatedAtUtc = now,
+            }, ct);
+
+            _logger?.Log(
+                firewallDecision.Allowed ? LogLevel.Information : LogLevel.Warning,
+                "[ToolApproval] command firewall decision={Decision} tool={ToolId} workspace={WorkspaceId} session={SessionId} agent={AgentInstanceId} rule={Rule} durationMs={DurationMs}",
+                firewallDecision.Allowed ? "allowed" : "denied",
+                normalizedToolId,
+                request.WorkspaceId,
+                request.SessionId,
+                request.AgentInstanceId,
+                firewallDecision.RuleId,
+                DurationMs(startedAt));
+            await RecordCheckMetricAsync(
+                request,
+                normalizedToolId,
+                TelemetryMetricStatuses.Succeeded,
+                startedAt,
+                firewallDecision.Allowed
+                    ? "Tool approval check decided by command firewall (allow)."
+                    : "Tool approval check decided by command firewall (deny).",
+                new Dictionary<string, string>
+                {
+                    ["approval_source"] = "command_firewall",
+                    ["firewall_rule"] = firewallDecision.RuleId,
+                    ["decision"] = firewallDecision.Allowed ? "allowed" : "denied",
+                },
+                ct);
+
+            return new ToolApprovalCheckResult
+            {
+                IsApproved = firewallDecision.Allowed,
+                AllowlistRuleId = firewallDecision.RuleId,
+                ApprovalSource = "CommandFirewall",
+                Message = firewallDecision.Message,
+            };
+        }
+
         var denialFacts = BuildDenialFacts(normalizedToolId, request, tickets, now);
         return await ReviewImplicitApprovalAsync(
             request,

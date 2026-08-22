@@ -164,7 +164,7 @@ internal static class HostFileToolPaths
 [Tool(
     id: "file_read",
     name: "Read file",
-    description: "从宿主工作区读取 UTF-8 文本文件。Read a UTF-8 text file from the host workspace. 默认超过 300 行或 8KB 时只返回前 120 行；优先用 TailLines=N 或 OffsetLines+LimitLines 渐进读取。完整工具结果即使显式 FullFile=true 也会由运行时保存为 artifact，模型历史只保留有界预览。",
+    description: "从宿主工作区读取 UTF-8 文本文件。Read a UTF-8 text file from the host workspace. 默认超过 300 行或 8KB 时返回前 400 行，用 OffsetLines+LimitLines 从指定行继续或 TailLines 读末尾；优先渐进读取。完整工具结果即使显式 FullFile=true 也会由运行时保存为 artifact，模型历史只保留有界预览。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -230,9 +230,10 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
                 var hasExplicitSlice = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue;
                 if (!hasExplicitSlice && args.FullFile != true && (totalLines > 300 || fileInfo.Length > 8_192))
                 {
-                    var preview = string.Join("\n", lines.Take(120));
+                    // 2026-08-22 模型倾向适配：窗口 120→400 行，减少同文件翻页重读
+                    var preview = string.Join("\n", lines.Take(400));
                     return ToolExecutionResult.Ok(
-                        $"{meta}\n{preview}\n... [GUARDRAIL: {totalLines} lines, {totalChars} chars — showing first 120 lines. Use HeadLines/TailLines/OffsetLines/LimitLines for line-level windowing.]");
+                        $"{meta}\n{preview}\n... [GUARDRAIL: {totalLines} lines, {totalChars} chars — showing first 400 lines. Use OffsetLines+LimitLines to continue from line 401, or TailLines for the end.]");
                 }
 
                 if (args.MaxChars.HasValue && totalChars > args.MaxChars.Value)
@@ -274,12 +275,14 @@ public sealed class FileReadTool : PuddingToolBase<FileReadArgs>
             var metaLarge = $"[META: size={totalCharsLarge} chars, lines={totalLinesLarge}, encoding=utf-8]";
 
             // Guardrail: auto-truncate large files when no explicit pagination or FullFile
+            // 2026-08-22 模型倾向适配：模型心智是"整文件"，120 行窗口导致实测同文件
+            // 重读 8 次。预览放大到 400 行：≤400 行文件一次覆盖，大文件翻页次数降 70%。
             var hasExplicitSliceLarge = args.HeadLines.HasValue || args.TailLines.HasValue || args.OffsetLines.HasValue;
             if (!hasExplicitSliceLarge && args.FullFile != true && (totalLinesLarge > 300 || fileInfo.Length > 8_192))
             {
-                var preview = await _chunk.ReadChunkAsync(fullPath, 0, 120, ct);
+                var preview = await _chunk.ReadChunkAsync(fullPath, 0, 400, ct);
                 return ToolExecutionResult.Ok(
-                    $"{metaLarge}\n{preview}\n... [GUARDRAIL: {totalLinesLarge} lines, {totalCharsLarge} chars — showing first 120 lines. Use HeadLines/TailLines/OffsetLines/LimitLines for line-level windowing.]");
+                    $"{metaLarge}\n{preview}\n... [GUARDRAIL: {totalLinesLarge} lines, {totalCharsLarge} chars — showing first 400 lines. Use OffsetLines+LimitLines to continue from line 401, or TailLines for the end.]");
             }
 
             // MaxChars requires full read for accurate char count — warn and truncate
