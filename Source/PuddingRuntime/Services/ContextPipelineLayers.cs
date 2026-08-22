@@ -308,14 +308,28 @@ public sealed partial class ContextPipeline
             // 可见工具 = Core ∪ Loaded，与 ToolExposurePlanner.CreatePlan 的可见集语义一致
             // （Core ∪ loaded ∪ committed 不收缩），消除每轮从实时 registry 全量重建导致
             // 的 system prompt 前缀漂移。LoadedToolIds 为 null/空时保持全量行为（向后兼容）。
+            IReadOnlyList<ToolDescriptor> deferredDescriptors = [];
             if (request.LoadedToolIds is { Count: > 0 })
             {
-                descriptors = descriptors
+                var visible = descriptors
                     .Where(d => ToolExposurePlanner.CoreToolIds.Contains(d.ToolId)
                         || request.LoadedToolIds.Contains(d.ToolId))
                     .ToList();
+                // 2026-08-22 冗余治理：未装载工具必须以名字索引出现（只列 id，不带 schema），
+                // 否则 Agent 无法知道有哪些延迟能力、只能盲调 search_tools。
+                deferredDescriptors = descriptors
+                    .Where(d => !ToolExposurePlanner.CoreToolIds.Contains(d.ToolId)
+                        && !request.LoadedToolIds.Contains(d.ToolId))
+                    .OrderBy(d => d.ToolId, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                descriptors = visible;
             }
             AppendToolDescriptorList(sb, descriptors, request);
+            if (deferredDescriptors.Count > 0)
+            {
+                sb.AppendLine("Deferred tools (not loaded yet; call `search_tools` with a tool id above to load its full definition):");
+                sb.AppendLine(string.Join(", ", deferredDescriptors.Select(d => $"`{d.ToolId}`")));
+            }
             return Task.FromResult(sb.ToString());
         }
 
@@ -493,20 +507,18 @@ public sealed partial class ContextPipeline
             sb.AppendLine("Use `agent_skill` with action=read_file when a listed SKILL is relevant and you need its full instructions.");
             foreach (var skill in skills)
             {
+                // 2026-08-22 冗余治理：索引行只保留定位所需的最小信息（skillId + 首句摘要 +
+                // 有限 tags/keywords）。完整说明由 agent_skill 渐进加载；此前每条 ~1.2K 字符的
+                // 索引把该层推到 29K 字符，占每次调用上下文的 25%。
                 var parts = new List<string>
                 {
                     $"`{skill.SkillId}`",
-                    skill.Name,
-                    $"v{skill.Version}",
+                    CompactSummary(skill.Summary),
                 };
-                if (!string.IsNullOrWhiteSpace(skill.Summary))
-                    parts.Add(skill.Summary.Trim());
                 if (skill.Tags.Count > 0)
-                    parts.Add($"tags={string.Join(", ", skill.Tags)}");
+                    parts.Add($"tags={string.Join(", ", skill.Tags.Take(4))}");
                 if (skill.Keywords.Count > 0)
-                    parts.Add($"keywords={string.Join(", ", skill.Keywords)}");
-                if (!string.IsNullOrWhiteSpace(skill.RelativePath))
-                    parts.Add($"path={skill.RelativePath}");
+                    parts.Add($"keywords={string.Join(", ", skill.Keywords.Take(6))}");
 
                 sb.Append("- ");
                 sb.AppendLine(string.Join(" | ", parts));
@@ -526,6 +538,22 @@ public sealed partial class ContextPipeline
                 agentInstanceId);
             return 0;
         }
+    }
+
+    /// <summary>
+    /// 技能索引行的摘要压缩：取首个完整句（。/./!/？），上限 100 字符；
+    /// 完整说明由 agent_skill 渐进加载，索引只负责让模型判断相关性。
+    /// </summary>
+    private static string CompactSummary(string? summary)
+    {
+        if (string.IsNullOrWhiteSpace(summary))
+            return "(no summary)";
+
+        var text = summary.Trim();
+        var cut = text.IndexOfAny(['。', '.', '！', '!', '？', '?']);
+        if (cut > 0)
+            text = text[..(cut + 1)];
+        return text.Length <= 100 ? text : text[..100] + "…";
     }
 
     // ═══════════════════════════════════════════════════════════════

@@ -43,11 +43,12 @@ public sealed class ContextPipelineSkillLayerTests
         StringAssert.Contains(result.SystemPrompt, "--- LAYER: SKILLS ---");
         StringAssert.Contains(result.SystemPrompt, "Runtime-private SKILL index:");
         StringAssert.Contains(result.SystemPrompt, "`daily_notes`");
-        StringAssert.Contains(result.SystemPrompt, "Daily Notes");
-        StringAssert.Contains(result.SystemPrompt, "v1.2.3");
+        // 2026-08-22 冗余治理：索引行压缩为 skillId + 首句摘要 + 有限 tags/keywords；
+        // Name/版本/path 不再进入索引（完整内容由 agent_skill 渐进加载）。
         StringAssert.Contains(result.SystemPrompt, "Use this when writing daily notes.");
         StringAssert.Contains(result.SystemPrompt, "tags=notes, workflow");
-        StringAssert.Contains(result.SystemPrompt, "path=skills/daily_notes");
+        Assert.IsFalse(result.SystemPrompt.Contains("v1.2.3", StringComparison.Ordinal));
+        Assert.IsFalse(result.SystemPrompt.Contains("path=skills/daily_notes", StringComparison.Ordinal));
         Assert.IsFalse(result.SystemPrompt.Contains("FULL_SECRET_BODY_SHOULD_NOT_ENTER_CONTEXT", StringComparison.Ordinal));
         Assert.IsFalse(result.SystemPrompt.Contains("other_agent_skill", StringComparison.Ordinal));
         Assert.IsFalse(result.SystemPrompt.Contains("OTHER_AGENT_SECRET", StringComparison.Ordinal));
