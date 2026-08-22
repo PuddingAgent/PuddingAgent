@@ -56,7 +56,9 @@ public sealed class CodeProjectAddTool : PuddingToolBase<CodeProjectAddArgs>
 
         // 工作区边界检查（YOLO 模式跳过）
         if (!context.IsYoloMode
-            && !HostFileToolPaths.TryResolveInsideWorkspace(projectPath, out _, out var wsError))
+            && !HostFileToolPaths.TryResolveInsideWorkspace(
+                projectPath, out _, out var wsError,
+                executionWorkingDirectory: context.WorkingDirectory))
         {
             return Fail(wsError + " Use /yolo to bypass workspace boundary.");
         }

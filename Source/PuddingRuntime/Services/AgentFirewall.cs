@@ -205,6 +205,7 @@ public sealed class AgentFirewall : IAgentFirewall
                     UserId = ctx.UserId ?? "admin",
                     ToolId = ctx.ToolId,
                     ActualArgumentsJson = ctx.ArgumentsJson,
+                    WorkingDirectory = ctx.WorkingDirectory,
                 },
                 descriptor,
                 ct);
@@ -253,12 +254,15 @@ public sealed class AgentFirewall : IAgentFirewall
             return FirewallDecision.Allow();
 
         // Check that the file path(s) in arguments are inside the workspace.
+        // ctx.WorkingDirectory 是本次执行快照冻结的执行根（委派 worktree），
+        // 必须与文件工具/审批使用同一根，不能用进程级静态 workspace root。
         if (!string.IsNullOrWhiteSpace(ctx.ArgumentsJson))
         {
             var path = ExtractPathFromArgs(ctx.ToolId, ctx.ArgumentsJson);
             if (!string.IsNullOrWhiteSpace(path)
                 && !HostFileToolPaths.TryResolveInsideWorkspace(
-                    path, out _, out var wsError, skipWorkspaceCheck: false))
+                    path, out _, out var wsError, skipWorkspaceCheck: false,
+                    executionWorkingDirectory: ctx.WorkingDirectory))
             {
                 return FirewallDecision.Deny(wsError, FirewallGate.Workspace);
             }

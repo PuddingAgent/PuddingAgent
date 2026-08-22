@@ -524,7 +524,8 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
 
         if ((string.Equals(normalizedToolId, "file_write", StringComparison.Ordinal)
              || string.Equals(normalizedToolId, "file_patch", StringComparison.Ordinal))
-            && TryResolveAllWorkspaceFileTargets(normalizedToolId, request.ActualArgumentsJson, out var targets)
+            && TryResolveAllWorkspaceFileTargets(
+                normalizedToolId, request.ActualArgumentsJson, request.WorkingDirectory, out var targets)
             && targets.Count > 0)
         {
             return new ToolApprovalBuiltInPolicyApproval(
@@ -538,6 +539,7 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
     private static bool TryResolveAllWorkspaceFileTargets(
         string normalizedToolId,
         string? argumentsJson,
+        string? workingDirectory,
         out IReadOnlyList<string> targets)
     {
         targets = [];
@@ -562,7 +564,10 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
             var resolved = new List<string>();
             foreach (var path in paths)
             {
-                if (!HostFileToolPaths.TryResolveInsideWorkspace(path, out var fullPath, out _))
+                // 与文件工具同一执行根（委派 worktree 用 request.WorkingDirectory），
+                // 不得回退进程级静态 workspace root。
+                if (!HostFileToolPaths.TryResolveInsideWorkspace(
+                        path, out var fullPath, out _, executionWorkingDirectory: workingDirectory))
                     return false;
                 resolved.Add(fullPath);
             }

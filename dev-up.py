@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Pudding Agent local development launcher.
 
@@ -1943,6 +1943,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.logs is not None:
             follow_logs(args.logs)
             return 0
+
+        # Re-read checkpoint.json: if a previous run persisted auto_yolo=True,
+    # carry it over so a plain restart still re-activates YOLO mode.
+    if not args.auto_yolo:
+        try:
+            cp_path = ROOT / "checkpoint.json"
+            if cp_path.exists():
+                cp = json.loads(cp_path.read_text(encoding="utf-8-sig"))
+                if cp.get("auto_yolo"):
+                    args.auto_yolo = True
+                    info("V checkpoint.json auto_yolo=True -> carrying over YOLO activation")
+        except Exception as exc:
+            info(f"! checkpoint.json auto_yolo read failed: {exc}")
 
     if args.auto_yolo:
         threading.Thread(
