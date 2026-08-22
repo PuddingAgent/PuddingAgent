@@ -39,6 +39,10 @@ import {
   buildToolTreeFromProcessItems,
   ToolCallTree,
 } from './execution-flow/ToolCallTree';
+import {
+  buildDelegationNodesFromProcessItems,
+  DelegationRow,
+} from './execution-flow/DelegationRow';
 import StateDot from './StateDot';
 import type { TranscriptMode } from './TranscriptModeSwitch';
 
@@ -79,6 +83,8 @@ interface AgentMessageBubbleProps {
   turnId?: string;
   sessionId?: string | null;
   parentDelegationActivity?: ParentDelegationActivity;
+  /** CU-09：展开态「打开检查器」入口（runId → SubAgentActivityDock 检查器）。 */
+  onOpenInspector?: (runId: string) => void;
   /** P0#2：转录视图分级 */
   transcriptMode?: TranscriptMode;
   onTranscriptModeChange?: (mode: TranscriptMode) => void;
@@ -344,6 +350,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   turnId,
   sessionId,
   parentDelegationActivity,
+  onOpenInspector,
   transcriptMode,
   onTranscriptModeChange,
 }) => {
@@ -447,6 +454,12 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   // CU-07: 工具调用树 —— 从 processItems 构建 ToolNode 调用树（替代旧 ToolCallRowList）。
   const toolTreeNodes = React.useMemo(
     () => buildToolTreeFromProcessItems(processItems ?? []),
+    [processItems],
+  );
+  // CU-09: 父级委派摘要 —— 从 processItems 的 subagent 条目构建 DelegationNode[]。
+  // 空数组时 DelegationRow 内部返回 null（无子代理不渲染）；刷新后按 subAgentId 恢复。
+  const delegationNodes = React.useMemo(
+    () => buildDelegationNodesFromProcessItems(processItems ?? []),
     [processItems],
   );
   const delegationActivity = React.useMemo<CurrentRunActivity | null>(() => {
@@ -707,6 +720,15 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
 
             {/* CU-07: 工具调用树（对齐 D5 ToolCallRow）：单行摘要 + 展开 IN/OUT + 递归父子调用，与过程时间线共存 */}
             {toolTreeNodes.length > 0 && <ToolCallTree nodes={toolTreeNodes} />}
+
+            {/* CU-09: 父级委派摘要行（折叠态计数 + 展开态每子代理摘要/模型/状态/检查器入口）。
+                不复制子代理内部 reasoning/tool/完整结果；无子代理时内部返回 null。 */}
+            {delegationNodes.length > 0 && (
+              <DelegationRow
+                nodes={delegationNodes}
+                onOpenInspector={onOpenInspector}
+              />
+            )}
 
             {/* 过程摘要：首 token 前显示预览气泡；正文输出后折叠为可展开时间线 */}
             {(() => {

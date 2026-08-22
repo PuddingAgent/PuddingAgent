@@ -1,3 +1,10 @@
+// ── SubAgentActivityDock：子代理内部过程唯一承载（CU-09 边界契约）──────────
+// 边界（split-plan CU-09 §10 场景 9）：
+//  - 子代理内部过程（reasoning / tool / 完整结果）只在此浮坞 rail + 检查器
+//    Drawer 呈现；主消息区只显示 DelegationRow 委派摘要（CU-09），不复制
+//    subagent 内部过程，不渲染进主消息流。
+//  - 主消息侧任何 subagent 轨迹渲染均视为越界（由父级验收 grep 把关）。
+//  - 本组件不做 Store 突变；仅通过回调上报检查器开关与选中 runId。
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
