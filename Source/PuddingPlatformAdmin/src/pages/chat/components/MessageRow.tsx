@@ -1,8 +1,9 @@
-﻿// ── MessageRow：单条消息行（路由到 User/Agent/Heartbeat 气泡）──
+// ── MessageRow：单条消息行（路由到 User/Agent/Heartbeat 气泡）──
 import { HeartOutlined } from '@ant-design/icons';
 import React, { useMemo, useState } from 'react';
 import { useChatMessageStyles } from '../styles/messageStyleContext';
 import type { ChatMessageBlock, ParentDelegationActivity } from '../types';
+import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 import AgentMessageBubble from './AgentMessageBubble';
 import FocusViewRow, { type FocusViewRowTone } from './FocusViewRow';
 import MessageItem from './MessageItem';
@@ -35,6 +36,8 @@ interface MessageRowProps {
   onTranscriptModeChange?: (mode: TranscriptMode) => void;
   /** P2#8：Focus view 单行折叠模式 */
   focusView?: boolean;
+  /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
+  getTurnProjection?: (turnId: string) => ExecutionFlowProjection | undefined;
 }
 
 const optionalRecordEquals = (
@@ -144,6 +147,7 @@ export const areMessageRowPropsEqual = (
   previous.transcriptMode === next.transcriptMode &&
   previous.onTranscriptModeChange === next.onTranscriptModeChange &&
   (previous.focusView ?? false) === (next.focusView ?? false) &&
+  previous.getTurnProjection === next.getTurnProjection &&
   optionalRecordEquals(
     previous.parentDelegationActivity,
     next.parentDelegationActivity,
@@ -231,6 +235,7 @@ const MessageRow: React.FC<MessageRowProps> = ({
   transcriptMode,
   onTranscriptModeChange,
   focusView = false,
+  getTurnProjection,
 }) => {
   const { styles, cx } = useChatMessageStyles();
   // P2#8：Focus view 单行展开状态（折叠/展开同一行内切换，保持完整内容在同一
@@ -287,6 +292,7 @@ const MessageRow: React.FC<MessageRowProps> = ({
       parentDelegationActivity={parentDelegationActivity}
       transcriptMode={transcriptMode}
       onTranscriptModeChange={onTranscriptModeChange}
+      executionFlowProjection={getTurnProjection?.(block.turnId)}
     />
   );
 

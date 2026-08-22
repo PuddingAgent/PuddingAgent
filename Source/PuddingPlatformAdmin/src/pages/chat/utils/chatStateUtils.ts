@@ -87,6 +87,9 @@ export function tryExtractDelta(ev: {
   return null;
 }
 
+/** 仅用于客户端命令/乐观身份（发送中消息、交互队列、客户端实例等）。
+ * TR-01/CU-02：禁止用于会话事件事实（eventId/时间戳/顺序/配对/终态），
+ * 事件事实必须来自 canonical 信封（见 utils/canonicalEvents.ts）。 */
 export const createId = () =>
   `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 export const COMPACT_COMMAND = '/compact';
@@ -688,9 +691,9 @@ export function getHistoryReconcileBlockReason(
 }
 
 export const HISTORICAL_REPLAY_TERMINAL_EVENTS = new Set([
-  'done',
-  'error',
-  'cancelled',
+  'turn.completed',
+  'turn.failed',
+  'turn.cancelled',
   'session.closed',
   'context.compaction.completed',
   'context.compaction.failed',
@@ -779,20 +782,7 @@ export function getSessionEventSequenceNum(item: unknown): number | null {
         ? (obj.Payload as Record<string, unknown>)
         : parseObjectJson(obj.payload ?? obj.Payload);
   const payloadSeq = Number(payload?.sequenceNum ?? payload?.SequenceNum);
-  if (Number.isFinite(payloadSeq)) return payloadSeq;
-
-  const dataJson = parseObjectJson(obj.dataJson ?? obj.DataJson);
-  const dataJsonSeq = Number(dataJson?.sequenceNum ?? dataJson?.SequenceNum);
-  if (Number.isFinite(dataJsonSeq)) return dataJsonSeq;
-
-  const data =
-    typeof obj.data === 'object' && obj.data
-      ? (obj.data as Record<string, unknown>)
-      : typeof obj.Data === 'object' && obj.Data
-        ? (obj.Data as Record<string, unknown>)
-        : parseObjectJson(obj.data ?? obj.Data);
-  const dataSeq = Number(data?.sequenceNum ?? data?.SequenceNum);
-  return Number.isFinite(dataSeq) ? dataSeq : null;
+  return Number.isFinite(payloadSeq) ? payloadSeq : null;
 }
 
 export function resolveSessionReplayCursorSequence(page: {

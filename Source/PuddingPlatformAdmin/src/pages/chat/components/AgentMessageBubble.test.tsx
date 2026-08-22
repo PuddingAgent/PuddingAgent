@@ -108,6 +108,22 @@ jest.mock('../styles/waiting.styles', () => {
   };
 });
 
+jest.mock('../styles/execution-flow.styles', () => {
+  const styles = new Proxy(
+    {},
+    {
+      get: (_target, prop) => String(prop),
+    },
+  );
+  return {
+    useExecutionFlowStyles: () => ({
+      styles,
+      cx: (...values: Array<string | false | undefined>) =>
+        values.filter(Boolean).join(' '),
+    }),
+  };
+});
+
 jest.mock('../styles/toolcall.styles', () => {
   const styles = new Proxy(
     {},
@@ -116,7 +132,10 @@ jest.mock('../styles/toolcall.styles', () => {
     },
   );
   return {
-    useToolCallStyles: () => ({ styles, cx: (...v: unknown[]) => v.filter(Boolean).join(' ') }),
+    useToolCallStyles: () => ({
+      styles,
+      cx: (...v: unknown[]) => v.filter(Boolean).join(' '),
+    }),
   };
 });
 
@@ -138,16 +157,9 @@ jest.mock('../client/agentChatApi', () => ({
 }));
 
 jest.mock('./AgentAvatar', () => () => <div data-testid="agent-avatar" />);
-jest.mock(
-  './StateDot',
-  () => (props: { state: string; size?: number }) => (
-    <span
-      data-testid="state-dot"
-      data-state={props.state}
-      aria-hidden="true"
-    />
-  ),
-);
+jest.mock('./StateDot', () => (props: { state: string; size?: number }) => (
+  <span data-testid="state-dot" data-state={props.state} aria-hidden="true" />
+));
 jest.mock(
   './MessageActions',
   () => (props: Record<string, unknown>) => mockMessageActions(props),
@@ -236,7 +248,7 @@ describe('AgentMessageBubble streaming presentation', () => {
     expect(screen.getByText('思考')).toBeTruthy();
     expect(screen.getByText('用户问的是商用密码应用安全性评估。')).toBeTruthy();
     expect(screen.queryByText(/undefined/)).toBeNull();
-    expect(screen.getByTestId('reasoning-disclosure')).toBeTruthy();
+    expect(screen.getByTestId('reasoning-disclosure-row')).toBeTruthy();
     expect(container.querySelector('.agentActiveOutputSurface')).toBeNull();
   });
 
@@ -319,9 +331,9 @@ describe('AgentMessageBubble streaming presentation', () => {
       />,
     );
 
-    expect(screen.getByTestId('toolcall-row').getAttribute('data-toolname')).toBe(
-      'list_dir',
-    );
+    expect(
+      screen.getByTestId('toolcall-row').getAttribute('data-toolname'),
+    ).toBe('list_dir');
     expect(screen.getByText('思考')).toBeTruthy();
     expect(screen.getByText('需要先查看项目结构。')).toBeTruthy();
     expect(screen.queryByText('正在调用工具：list_dir')).toBeNull();
@@ -378,11 +390,10 @@ describe('AgentMessageBubble streaming presentation', () => {
     expect(screen.queryByText('正在请求模型')).toBeNull();
     expect(screen.queryByText('等待首个可见事件')).toBeNull();
     expect(screen.queryByText(/这是主代理的等待占位/)).toBeNull();
-    expect(screen.getByTestId('agent-waiting-monitor')).toBeTruthy();
-    expect(
-      container.querySelector('.agentBubbleNew.agentBubbleStreaming'),
-    ).toBeTruthy();
-    expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
+    // CU-05：WaitingBubble 收敛为 TurnStatus（唯一 L0 状态行，单 aria-live）
+    expect(screen.getByTestId('turn-status')).toBeTruthy();
+    expect(container.querySelector('.turnStatusRow')).toBeTruthy();
+    expect(screen.queryByTestId('reasoning-disclosure-row')).toBeNull();
   });
 
   it('keeps the server elapsed time after the bubble remounts', () => {
@@ -399,12 +410,11 @@ describe('AgentMessageBubble streaming presentation', () => {
         />,
       );
 
-      // P1-3：阶段文案进 tooltip（mock 透传 data-title）；主行只显示单行 + ≥15s 时钟（Xm 格式）。
+      // CU-05：主行只显示单行 + ≥15s 时钟（Xm 格式）；不展示「复杂推理/深入分析」等推断文案。
       expect(screen.getByText('Pudding 正在运行')).toBeTruthy();
       expect(screen.getByText('· 已等待 10m')).toBeTruthy();
-      expect(
-        screen.getByTestId('antd-tooltip').getAttribute('data-title'),
-      ).toContain('模型正在进行复杂推理');
+      expect(screen.queryByText('模型正在进行复杂推理')).toBeNull();
+      expect(screen.queryByText('深入分析')).toBeNull();
     } finally {
       jest.useRealTimers();
     }
@@ -475,7 +485,8 @@ describe('AgentMessageBubble streaming presentation', () => {
       screen.getByText('主代理正在等待子代理返回；内部进度请查看右侧托盘坞'),
     ).toBeTruthy();
     expect(document.body.textContent).not.toContain('子代理任务详情');
-    expect(screen.getByText('查看过程')).toBeTruthy();
+    // CU-10：MessageProcessSummary 已退出主生产路径 → 不再渲染「查看过程」折叠摘要入口。
+    expect(screen.queryByText('查看过程')).toBeNull();
     expect(
       screen.queryByText(/主代理过程可在当前消息的“查看过程”中展开/),
     ).toBeNull();
@@ -510,7 +521,9 @@ describe('AgentMessageBubble streaming presentation', () => {
 
     expect(screen.getByText('spawn_sub_agent')).toBeTruthy();
     expect(
-      screen.getByText('对 PuddingAgent 项目进行代码 QA，重点检查注释是否完成。'),
+      screen.getByText(
+        '对 PuddingAgent 项目进行代码 QA，重点检查注释是否完成。',
+      ),
     ).toBeTruthy();
     expect(document.body.textContent).not.toContain('"perspective"');
     expect(
@@ -641,7 +654,7 @@ describe('AgentMessageBubble streaming presentation', () => {
     expect(container.querySelector('.agentActiveOutputSurface')).toBeNull();
   });
 
-  it('uses typewriter slices for streaming answers and collapses the process timeline while printing', () => {
+  it('uses typewriter slices for streaming answers while keeping the reasoning row visible', () => {
     mockUseTypewriterStreaming.mockReturnValue({
       stableMarkdown: '稳定段落',
       liveText: '尾段完整文本',
@@ -679,8 +692,11 @@ describe('AgentMessageBubble streaming presentation', () => {
         maxLagChars: 48,
       }),
     );
-    expect(screen.getByText(/已思考/)).toBeTruthy();
-    expect(screen.getByText('查看过程')).toBeTruthy();
+    expect(screen.queryByText(/已思考/)).toBeNull();
+    expect(screen.queryByText('查看过程')).toBeNull();
+    // CU-10：MessageProcessSummary 退出主路径后，typewriter 流式期间过程摘要不再渲染，
+    // 但推理摘要行（ReasoningDisclosureRow）保持可见。
+    expect(screen.getByText('思考')).toBeTruthy();
   });
 
   it('marks the answer bubble as an active output surface while it is streaming', () => {
@@ -976,8 +992,6 @@ describe('AgentMessageBubble model retry row hook (P1-2)', () => {
     );
 
     expect(mockModelRetryRow).toHaveBeenCalledTimes(1);
-    expect(
-      screen.queryByTestId('agent-error-summary-row'),
-    ).toBeNull();
+    expect(screen.queryByTestId('agent-error-summary-row')).toBeNull();
   });
 });

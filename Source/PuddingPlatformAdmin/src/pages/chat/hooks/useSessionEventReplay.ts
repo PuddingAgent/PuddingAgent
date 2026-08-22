@@ -1,4 +1,4 @@
-﻿import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useEffect, useRef } from 'react';
 import {
   type AdminChatStreamEvent,
@@ -445,7 +445,8 @@ export function useSessionEventReplay({
       let doneCount = 0;
       let tailStart = 0;
       for (let index = 0; index < normalizedEvents.length; index += 1) {
-        if (normalizedEvents[index].type === 'done') {
+        // TR-01/CU-02：canonical 终态事件名。
+        if (normalizedEvents[index].type === 'turn.completed') {
           doneCount += 1;
           if (doneCount <= completedAssistantTurns) tailStart = index + 1;
         }

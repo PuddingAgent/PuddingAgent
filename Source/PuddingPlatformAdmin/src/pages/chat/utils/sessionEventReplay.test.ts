@@ -1,4 +1,3 @@
-import { normalizeConversationEventType } from '@/services/platform/api';
 import { SessionNotFoundError } from '../hooks/sessionRuntimeCleanup';
 import {
   getMaxSessionEventSequenceNum,
@@ -6,31 +5,47 @@ import {
   normalizeSessionEvent,
 } from './sessionEventReplay';
 
-jest.mock('@/services/platform/api', () => ({
-  normalizeConversationEventType: jest.fn((type: string) => type),
-}));
-
 describe('sessionEventReplay', () => {
   beforeEach(() => {
     localStorage.clear();
     jest.clearAllMocks();
   });
 
-  it('normalizes persisted wrappers and JSON payloads', () => {
+  it('normalizes canonical envelopes with passthrough event names', () => {
+    // TR-01/CU-02：canonical 事件名直通，无 legacy 映射；occurredAt 为时间锚点。
     const event = normalizeSessionEvent({
-      Type: 'event',
-      EventType: 'delta',
-      Sequence: '42',
-      RecordedAtUtc: '2026-07-21T00:00:00Z',
-      Payload: JSON.stringify({ delta: 'hello' }),
+      type: 'message.content.appended',
+      eventId: 'evt-1',
+      sequence: '42',
+      occurredAt: '2026-07-21T00:00:00Z',
+      turnId: 'turn-1',
+      messageId: 'message-1',
+      payload: { delta: 'hello' },
     });
 
-    expect(normalizeConversationEventType).toHaveBeenCalledWith('delta');
     expect(event).toMatchObject({
-      type: 'delta',
+      type: 'message.content.appended',
+      eventId: 'evt-1',
       sequenceNum: 42,
       recordedAt: '2026-07-21T00:00:00Z',
+      turnId: 'turn-1',
+      messageId: 'message-1',
       delta: 'hello',
+    });
+  });
+
+  it('parses JSON string payloads from persisted envelopes', () => {
+    const event = normalizeSessionEvent({
+      type: 'tool.call.requested',
+      sequence: 7,
+      payload: JSON.stringify({ name: 'shell', toolCallId: 'call-1' }),
+    });
+
+    expect(event).toMatchObject({
+      type: 'tool.call.requested',
+      sequenceNum: 7,
+      name: 'shell',
+      toolCallId: 'call-1',
     });
   });
 

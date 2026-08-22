@@ -1,4 +1,4 @@
-﻿// ── ChatLayout：整体布局（Sidebar + Main）───────────────────
+// ── ChatLayout：整体布局（Sidebar + Main）───────────────────
 import React from 'react';
 import type {
   WorkspaceAgentDto,
@@ -85,6 +85,8 @@ interface ChatLayoutProps {
   cacheHitRate?: number;
   /** 来自 useCompaction hook 的压缩状态文案 */
   compactionStatus?: string | null;
+  /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
+  getTurnProjection?: (turnId: string) => import('../projections/executionFlowProjector').ExecutionFlowProjection | undefined;
   formatTime: (ts: number) => string;
   onDeleteTurn: (turnId: string) => void;
   onContextMenu: (
@@ -146,6 +148,7 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
       />
       <ChatMain
         sidebarOpen={props.sidebarOpen}
+        getTurnProjection={props.getTurnProjection}
         onToggleSidebar={props.onToggleSidebar}
         workspaces={props.workspaces}
         workspaceId={props.workspaceId}

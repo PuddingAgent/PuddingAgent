@@ -14,10 +14,7 @@
 //   turn.failed       → 失败指定 Turn
 //   turn.cancelled    → 取消指定 Turn
 // ─────────────────────────────────────────────────────────────────
-import {
-  reduceSubAgentRunEvent,
-  type SubAgentRunMap,
-} from './subAgentReducer';
+import { reduceSubAgentRunEvent, type SubAgentRunMap } from './subAgentReducer';
 
 export interface ConversationState {
   conversationId: string;
@@ -62,6 +59,9 @@ export interface ConversationEvent {
   conversationId?: string;
   commandId?: string;
   runId?: string;
+  eventId?: string;
+  /** canonical 信封时间事实（ISO 8601）；时间戳只取自此字段。 */
+  occurredAt?: string;
   clientRequestId?: string;
   userMessageId?: string;
   assistantMessageId?: string;
@@ -78,9 +78,6 @@ export interface ConversationEvent {
   [key: string]: unknown;
 }
 
-const createId = () =>
-  `ev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
 export function createInitialState(conversationId?: string): ConversationState {
   return {
     conversationId: conversationId ?? '',
@@ -96,7 +93,12 @@ export function createInitialState(conversationId?: string): ConversationState {
 export function setSnapshotCursor(
   state: ConversationState,
   cursor: number,
-  messages?: Array<{ id: number; role: string; content: string; createdAt: number }>,
+  messages?: Array<{
+    id: number;
+    role: string;
+    content: string;
+    createdAt: number;
+  }>,
   turns?: ConversationTurn[],
 ): ConversationState {
   const newMessages = new Map(state.messages);
@@ -124,7 +126,8 @@ export function setSnapshotCursor(
     cursor: Math.max(state.cursor, cursor),
     messages: newMessages,
     turns: newTurns.length > 0 ? newTurns : state.turns,
-    turnOrder: newTurns.length > 0 ? newTurns.map((t) => t.turnId) : state.turnOrder,
+    turnOrder:
+      newTurns.length > 0 ? newTurns.map((t) => t.turnId) : state.turnOrder,
     gapDetected: false,
   };
 }
@@ -159,8 +162,9 @@ export function reduceConversationEvent(
 }
 
 function normalizeEventType(rawType: string): string {
+  // TR-01/CU-02：只映射 canonical 事件名（ConversationEventTypes）到内部状态名；
+  // 不存在 legacy 事件名兼容分支。
   const map: Record<string, string> = {
-    // ADR-057 backend event types (ConversationEventTypes)
     'turn.accepted': 'turn.accepted',
     'turn.started': 'turn.started',
     'turn.waiting_for_tool': 'turn.waiting_for_tool',
@@ -175,17 +179,23 @@ function normalizeEventType(rawType: string): string {
     'tool.call.requested': 'tool.call',
     'tool.call.completed': 'tool.result',
     'tool.call.failed': 'tool.failed',
-    // Legacy SSE event types (backward compat)
-    'assistant.content.delta': 'message.delta',
-    'assistant.thinking.delta': 'message.thinking',
-    done: 'turn.completed',
-    error: 'turn.failed',
-    cancelled: 'turn.cancelled',
-    usage: 'message.usage',
-    delta: 'message.delta',
-    thinking: 'message.thinking',
   };
   return map[rawType] ?? rawType;
+}
+
+/** 解析 canonical occurredAt；缺失/非法时记录协议错误并返回 0。 */
+function getEventOccurredAtMs(event: ConversationEvent): number {
+  if (typeof event.occurredAt === 'string' && event.occurredAt.trim()) {
+    const parsed = Date.parse(event.occurredAt);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  console.warn('[Pudding Chat] canonical event protocol error', {
+    reason: 'missing-occurred-at',
+    eventType: event.type,
+    sequence: event.sequence,
+    eventId: event.eventId,
+  });
+  return 0;
 }
 
 function applyEvent(
@@ -194,10 +204,7 @@ function applyEvent(
   type: string,
   seq: number,
 ): ConversationState {
-  const nextSubAgentRuns = reduceSubAgentRunEvent(
-    state.subAgentRuns,
-    event,
-  );
+  const nextSubAgentRuns = reduceSubAgentRunEvent(state.subAgentRuns, event);
   if (nextSubAgentRuns !== state.subAgentRuns) {
     return { ...state, subAgentRuns: nextSubAgentRuns };
   }
@@ -207,13 +214,14 @@ function applyEvent(
       const turnId = event.turnId ?? `turn-${seq}`;
       const userMsgId = event.userMessageId ?? `umsg-${seq}`;
       const asstMsgId = event.assistantMessageId ?? `amsg-${seq}`;
+      const occurredAtMs = getEventOccurredAtMs(event);
 
       const turn: ConversationTurn = {
         turnId,
         status: 'active',
         userMessageId: userMsgId,
         assistantMessageId: asstMsgId,
-        createdAt: Date.now(),
+        createdAt: occurredAtMs,
       };
 
       const newTurns = [...state.turns, turn];
@@ -226,7 +234,7 @@ function applyEvent(
         thinkingDelta: '',
         status: 'placeholder',
         turnId,
-        createdAt: Date.now(),
+        createdAt: occurredAtMs,
       });
 
       newMessages.set(asstMsgId, {
@@ -236,7 +244,7 @@ function applyEvent(
         thinkingDelta: '',
         status: 'placeholder',
         turnId,
-        createdAt: Date.now(),
+        createdAt: occurredAtMs,
       });
 
       return {

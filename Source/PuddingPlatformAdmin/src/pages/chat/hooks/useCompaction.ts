@@ -1,4 +1,4 @@
-﻿import type { MessageInstance } from 'antd/es/message/interface';
+import type { MessageInstance } from 'antd/es/message/interface';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useRef, useState } from 'react';
 import {
@@ -106,8 +106,11 @@ export function useCompaction({
       result?: ContextCompactionResult,
       stableTurnId?: string,
       placeAtStart = false,
+      facts?: { eventId?: string; occurredAtMs?: number },
     ) => {
-      const now = Date.now();
+      // 事件驱动路径使用 canonical 事实；手动压缩命令为客户端乐观身份（无服务端事实）。
+      const now = facts?.occurredAtMs ?? Date.now();
+      const eventId = facts?.eventId;
       const turnId = stableTurnId ?? createId();
       const existing = turnsRef.current.find((turn) => turn.turnId === turnId);
       if (existing) {
@@ -120,17 +123,18 @@ export function useCompaction({
       const compactTurn: ChatTurn = {
         turnId,
         userMessage: {
-          id: createId(),
+          id: eventId ? `umsg:${eventId}` : createId(),
           text: '',
           timestamp: now,
           status: 'success',
         },
         assistant: {
-          id: createId(),
+          id: eventId ? `amsg:${eventId}` : createId(),
           status: assistantStatus,
           timelineItems: [
             {
-              id: createId(),
+              id: eventId ? `item:${eventId}` : createId(),
+              eventId,
               type: 'subconscious_step',
               status:
                 assistantStatus === 'error'
@@ -171,6 +175,7 @@ export function useCompaction({
       assistantStatus: AssistantStatus,
       message: string,
       result?: ContextCompactionResult,
+      facts?: { eventId?: string; occurredAtMs?: number },
     ) => {
       const nextTurns = turnsRef.current.map((turn) => {
         if (turn.turnId !== turnId) return turn;
@@ -185,11 +190,21 @@ export function useCompaction({
           (item) => item.type === 'subconscious_step',
         );
         const nextItem = {
-          id: compactItemIndex >= 0 ? items[compactItemIndex].id : createId(),
+          id:
+            compactItemIndex >= 0
+              ? items[compactItemIndex].id
+              : facts?.eventId
+                ? `item:${facts.eventId}`
+                : createId(),
+          eventId:
+            facts?.eventId ??
+            (compactItemIndex >= 0
+              ? items[compactItemIndex].eventId
+              : undefined),
           type: 'subconscious_step' as const,
           status: itemStatus,
           message,
-          timestamp: Date.now(),
+          timestamp: facts?.occurredAtMs ?? Date.now(),
           collapsed: false,
         };
         const nextItems =
@@ -246,6 +261,18 @@ export function useCompaction({
         sourceSessionId !== null &&
         eventConversationId !== sourceSessionId;
 
+      const eventFacts = {
+        eventId:
+          typeof raw.eventId === 'string' && raw.eventId
+            ? raw.eventId
+            : undefined,
+        occurredAtMs:
+          typeof raw.occurredAt === 'string' &&
+          Number.isFinite(Date.parse(raw.occurredAt))
+            ? Date.parse(raw.occurredAt)
+            : undefined,
+      };
+
       if (!turnsRef.current.some((turn) => turn.turnId === compactTurnId)) {
         compactTurnId = appendCompactTurn(
           event.type === 'context.compaction.failed'
@@ -255,6 +282,7 @@ export function useCompaction({
           undefined,
           compactTurnId,
           placeAtStart,
+          eventFacts,
         );
       }
       compactionTurnIdsRef.current.set(compactionId, compactTurnId);
@@ -263,7 +291,13 @@ export function useCompaction({
       if (event.type === 'context.compaction.started') {
         setLoading(true);
         setCompactionStatus(COMPACTION_RUNNING_LABEL);
-        updateCompactTurn(compactTurnId, 'executing', '正在压缩上下文…');
+        updateCompactTurn(
+          compactTurnId,
+          'executing',
+          '正在压缩上下文…',
+          undefined,
+          eventFacts,
+        );
         if (options?.notify !== false) {
           messageApi.loading({
             content: '正在压缩上下文…',
@@ -278,7 +312,13 @@ export function useCompaction({
       if (options?.notify !== false) messageApi.destroy('compaction-status');
       if (event.type === 'context.compaction.failed') {
         const errorMessage = String(raw.error || '上下文压缩失败');
-        updateCompactTurn(compactTurnId, 'error', errorMessage);
+        updateCompactTurn(
+          compactTurnId,
+          'error',
+          errorMessage,
+          undefined,
+          eventFacts,
+        );
         setCompactionStatus(`压缩失败：${errorMessage}`);
         activeCompactionTurnIdRef.current = null;
         if (options?.notify !== false) messageApi.error(errorMessage, 4);
@@ -289,7 +329,13 @@ export function useCompaction({
         raw.compaction && typeof raw.compaction === 'object'
           ? (raw.compaction as ContextCompactionResult)
           : undefined;
-      updateCompactTurn(compactTurnId, 'success', '上下文压缩完成', compacted);
+      updateCompactTurn(
+        compactTurnId,
+        'success',
+        '上下文压缩完成',
+        compacted,
+        eventFacts,
+      );
       setCompactionStatus(`上次压缩：${formatCompactionAgo(Date.now())}`);
       activeCompactionTurnIdRef.current = null;
 

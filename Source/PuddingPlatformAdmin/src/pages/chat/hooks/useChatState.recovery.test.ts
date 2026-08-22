@@ -221,7 +221,9 @@ describe('chat session recovery decisions', () => {
   });
 
   it('does not advance the event sequence when a turn-scoped event has no target turn yet', () => {
-    expect(shouldAdvanceSequenceForSessionEvent('delta', false)).toBe(false);
+    expect(
+      shouldAdvanceSequenceForSessionEvent('message.content.appended', false),
+    ).toBe(false);
     expect(shouldAdvanceSequenceForSessionEvent('thinking', false)).toBe(false);
     expect(shouldAdvanceSequenceForSessionEvent('done', false)).toBe(false);
   });
@@ -352,12 +354,15 @@ describe('chat session recovery decisions', () => {
 
   it('hydrates completed event replays instead of visually streaming them again', () => {
     expect(
-      shouldHydrateSessionEventReplay([{ type: 'delta' }, { type: 'done' }]),
+      shouldHydrateSessionEventReplay([
+        { type: 'message.content.appended' },
+        { type: 'turn.completed' },
+      ]),
     ).toBe(true);
     expect(
       shouldHydrateSessionEventReplay([
-        { type: 'delta' },
-        { type: 'thinking' },
+        { type: 'message.content.appended' },
+        { type: 'message.thinking_summary.appended' },
       ]),
     ).toBe(false);
   });
@@ -445,15 +450,18 @@ describe('chat session recovery decisions', () => {
     expect(resolveSessionReplayCursorSequence({ events: [] })).toBeNull();
   });
 
-  it('reads replay cursor sequence from nested event data json', () => {
+  it('reads replay cursor sequence from canonical envelope payload', () => {
     expect(
       resolveSessionReplayCursorSequence({
         events: [
           {
-            eventType: 'thinking',
-            data: '{"sequenceNum":32,"messageId":"m-1"}',
+            type: 'message.thinking_summary.appended',
+            payload: { sequenceNum: 32, messageId: 'm-1' },
           },
-          { EventType: 'delta', Data: '{"SequenceNum":81,"messageId":"m-1"}' },
+          {
+            type: 'message.content.appended',
+            payload: { SequenceNum: 81, messageId: 'm-1' },
+          },
         ],
       }),
     ).toBe(81);
@@ -561,14 +569,14 @@ describe('chat session recovery decisions', () => {
 
     expect(
       resolveTurnIdForEvent(
-        { type: 'delta', messageId: 'message-2' },
+        { type: 'message.content.appended', messageId: 'message-2' },
         map,
         'turn-latest',
       ),
     ).toBeNull();
     expect(
       resolveTurnIdForEvent(
-        { type: 'delta', messageId: 'message-1' },
+        { type: 'message.content.appended', messageId: 'message-1' },
         map,
         'turn-latest',
       ),
@@ -796,7 +804,10 @@ describe('chat session recovery decisions', () => {
     });
 
     expect(
-      toChatInteractionRuntimeEvent({ type: 'delta', delta: 'x' }, 'assistant'),
+      toChatInteractionRuntimeEvent(
+        { type: 'message.content.appended', delta: 'x' },
+        'assistant',
+      ),
     ).toBeNull();
   });
 
@@ -883,10 +894,10 @@ describe('chat stream error diagnostics', () => {
     expect(markdown).toContain('Endpoint Host: `api.deepseek.com`');
   });
 
-  it('recognizes error done events and persisted diagnostic markdown', () => {
+  it('recognizes error turn.completed events and persisted diagnostic markdown', () => {
     expect(
       isChatStreamErrorEvent({
-        type: 'done',
+        type: 'turn.completed',
         reply: '## 请求失败',
         isError: true,
         errorId: 'llm-abc',

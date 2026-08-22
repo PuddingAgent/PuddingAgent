@@ -53,7 +53,12 @@ describe('useCompaction', () => {
     jest.clearAllMocks();
   });
 
-  it('projects compaction lifecycle events into one stable turn', () => {
+    it('projects compaction lifecycle events into one stable turn', () => {
+    // RC-6 守卫依赖 performance.now() 与手动切换时刻的差值；固定时钟避免
+    // 环境启动过快（<2s）导致的时序 flake（既有潜在问题，与 CU-02 无关）。
+    const perfSpy = jest
+      .spyOn(performance, 'now')
+      .mockReturnValue(10_000);
     const onSwitchSession = jest.fn();
     const { result } = renderHook(() => useCompactionHarness());
 
@@ -78,7 +83,8 @@ describe('useCompaction', () => {
     expect(result.current.turns).toHaveLength(1);
     expect(result.current.turns[0].assistant.status).toBe('success');
     expect(result.current.loading).toBe(false);
-    expect(onSwitchSession).toHaveBeenCalledWith('session-2', '压缩后的会话');
+        expect(onSwitchSession).toHaveBeenCalledWith('session-2', '压缩后的会话');
+    perfSpy.mockRestore();
   });
 
   it('resets lifecycle turns without mutating ordinary turns', () => {

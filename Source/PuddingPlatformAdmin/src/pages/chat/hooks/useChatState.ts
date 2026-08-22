@@ -1,4 +1,4 @@
-﻿// ── 聊天页状态管理 Hook ──────────────────────────────────────
+// ── 聊天页状态管理 Hook ──────────────────────────────────────
 //
 // ADR-057 迁移计划：
 //   · activeMessageIds / messageIdToTurnId / completedTurnsRef → 替换为 conversationStore selectors
@@ -116,6 +116,9 @@ import { useMessageSend } from './useMessageSend';
 import { useSessionCatalog } from './useSessionCatalog';
 import { useSessionEventBuffers } from './useSessionEventBuffers';
 import { useSessionEventConnection } from './useSessionEventConnection';
+import { collectExecutionEvents } from '../projections/executionFlowCollector';
+import { projectExecutionFlow, type ExecutionFlowEvent, type ExecutionFlowProjection } from '../projections/executionFlowProjector';
+import { isExecutionFlowProjectionEnabled } from '../client/featureFlag';
 import { useSessionEventProjection } from './useSessionEventProjection';
 import { useSessionEventReplay } from './useSessionEventReplay';
 import { useSessionHistoryProjection } from './useSessionHistoryProjection';
@@ -467,6 +470,8 @@ export function useChatState(
     resetStreamCursorForSessionChange,
     pruneTrackedActiveMessages,
     applySessionEvent,
+    rawEnvelopeRef,
+    envelopeRevision,
   } = useSessionEventProjection({
     identity: {
       agentId,
@@ -502,6 +507,40 @@ export function useChatState(
       handleCompactionLifecycleEvent,
     },
   });
+
+  // CU-11 Phase 2: gray-branch projection. Default off -> old path A unchanged (undefined).
+  // On: collect raw envelope -> ExecutionEventDto -> projectExecutionFlow output.
+  const executionFlowProjection = useMemo<ExecutionFlowProjection | undefined>(() => {
+    if (!isExecutionFlowProjectionEnabled()) return undefined;
+    if (envelopeRevision === 0 || rawEnvelopeRef.current.length === 0) return undefined;
+    const collected = collectExecutionEvents(rawEnvelopeRef.current);
+    return projectExecutionFlow(collected.events as ExecutionFlowEvent[]);
+  }, [envelopeRevision, rawEnvelopeRef]);
+
+  // CU-11 Phase 2: per-turn projection selector. Gray off -> undefined (old path A).
+  // On: build Map<turnId, ExecutionFlowProjection> from collected events so each
+  // AgentMessageBubble consumes its own turn's canonical projection (new path B).
+  const turnProjectionMap = useMemo<Map<string, ExecutionFlowProjection>>(() => {
+    const map = new Map<string, ExecutionFlowProjection>();
+    if (!isExecutionFlowProjectionEnabled()) return map;
+    if (envelopeRevision === 0 || rawEnvelopeRef.current.length === 0) return map;
+    const collected = collectExecutionEvents(rawEnvelopeRef.current);
+    const events = collected.events as ExecutionFlowEvent[];
+    const turnIds = new Set<string>();
+    for (const event of events) {
+      if (event.turnId) turnIds.add(event.turnId);
+    }
+    for (const turnId of turnIds) {
+      map.set(turnId, projectExecutionFlow(events, { turnId }));
+    }
+    return map;
+  }, [envelopeRevision, rawEnvelopeRef]);
+
+  const getTurnProjection = useCallback(
+    (turnId: string): ExecutionFlowProjection | undefined =>
+      turnProjectionMap.get(turnId),
+    [turnProjectionMap],
+  );
 
   useEffect(() => {
     if (!isPerfDiagnosticsEnabled()) return undefined;
@@ -1470,6 +1509,8 @@ export function useChatState(
     clearRestoredMarker: checkpointTimeline.clearRestoredMarker,
     handleSetMainSession,
     subAgentCards: visibleSubAgentCards,
+    executionFlowProjection,
+    getTurnProjection,
     sessionUnreadCounts,
     startWorkspaceNotificationStream,
     stopWorkspaceNotificationStream,

@@ -183,4 +183,46 @@ export const useToolCallStyles = createStyles(() => ({
   errorText: {
     color: 'var(--pudding-status-error)',
   },
+  /** 超长输出：查看完整输出按钮（验收 4） */
+  outExpand: {
+    display: 'inline-flex',
+    margin: '4px 0 0 0',
+    padding: '4px 10px',
+    fontSize: 11,
+    lineHeight: 1.4,
+    color: 'var(--pudding-chat-text)',
+    background:
+      'color-mix(in srgb, var(--pudding-chat-text-subtle) 10%, transparent)',
+    border:
+      '1px solid color-mix(in srgb, var(--pudding-chat-text-subtle) 24%, transparent)',
+    borderRadius: 6,
+    cursor: 'pointer',
+    userSelect: 'none' as const,
+    '&:hover': {
+      background:
+        'color-mix(in srgb, var(--pudding-chat-text-subtle) 16%, transparent)',
+    },
+    '&:focus-visible': {
+      outline: '2px solid var(--pudding-status-running)',
+      outlineOffset: -2,
+    },
+  },
+
+  // ── ToolCallTree（CU-07 递归调用树）──
+  /** 单分支容器：子列表缩进在其下方 */
+  treeBranch: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 0,
+  },
+  /** 子列表：左缩进 24px（相对父行）+ 左侧竖线（调用树层级视觉） */
+  treeChildren: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+    marginLeft: 24,
+    paddingLeft: 8,
+    borderLeft: '1px solid color-mix(in srgb, var(--pudding-chat-text-subtle) 24%, transparent)',
+    boxSizing: 'border-box' as const,
+  },
 }));

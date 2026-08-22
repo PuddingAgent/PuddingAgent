@@ -2121,23 +2121,61 @@ export async function getSessionEvents(
   });
 }
 
-// ── ADR-056-E: normalize new server event names to legacy names ──
-// Backend emits new names (assistant.content.delta etc.) via MapLegacy.
-// Frontend internally uses legacy names for backward compatibility.
-const NEW_TO_LEGACY_EVENT: Record<string, string> = {
-  'assistant.content.delta': 'delta',
-  'assistant.thinking.delta': 'thinking',
-  'turn.completed': 'done',
-  'turn.failed': 'error',
-  'turn.cancelled': 'cancelled',
-  'usage.recorded': 'usage',
-  'tool.call.started': 'tool_call',
-  'tool.call.completed': 'tool_result',
-  'tool.call.failed': 'tool_error',
-};
+// ── TR-01 / CU-02: canonical 轨迹合同（消息 UI 方案 §7.1 冻结）──
+// 服务端 SessionEventsController 对 SSE/replay/bootstrap 三路径下发同一
+// canonical 信封：eventId/sequence/type/occurredAt/runId/turnId/…/payload。
+// 前端只消费 canonical 事件名（ConversationEventTypes），不存在
+// canonical → legacy 映射；缺失必需字段按协议错误暴露（见 canonicalEvents.ts）。
 
-export function normalizeConversationEventType(rawType: string): string {
-  return NEW_TO_LEGACY_EVENT[rawType] ?? rawType;
+/** 冻结的执行事件最小公共字段（消息 UI 方案 §7.1）。 */
+export interface ExecutionEventDto {
+  eventId: string;
+  sequence: number;
+  occurredAt: string;
+  runId: string;
+  turnId: string;
+  step?: number;
+  requestId?: string;
+  type: string;
+}
+
+/** Tool-owned presentation 八类 intent（Core ToolPresentationIntentKind）。 */
+export type ToolPresentationKind =
+  | 'generic'
+  | 'terminal'
+  | 'diff'
+  | 'search'
+  | 'read'
+  | 'web'
+  | 'delegation'
+  | 'job';
+
+export interface ToolPresentationDto {
+  kind: ToolPresentationKind;
+  meta?: Record<string, unknown>;
+}
+
+/** 工具事件扩展字段：toolCallId 必填；缺失即协议错误。 */
+export interface ToolExecutionEventDto extends ExecutionEventDto {
+  toolCallId: string;
+  parentToolCallId?: string;
+  durationMs?: number;
+  presentation?: ToolPresentationDto;
+}
+
+/** SSE 信封身份字段（canonical；voice/camera 等非信封帧可能不携带）。 */
+interface ConversationEventEnvelopeBase {
+  eventId?: string;
+  sequence?: number;
+  /** 前端游标锚点：SSE id（committed sequence）。 */
+  sequenceNum?: number;
+  occurredAt?: string;
+  conversationId?: string;
+  commandId?: string;
+  turnId?: string;
+  runId?: string;
+  messageId?: string;
+  schemaVersion?: number;
 }
 
 export function projectConversationEventEnvelope(
@@ -2151,16 +2189,15 @@ export function projectConversationEventEnvelope(
     !Array.isArray(data.payload)
       ? (data.payload as Record<string, unknown>)
       : {};
-  const normalizedType = normalizeConversationEventType(rawType);
   const terminalMessage =
-    normalizedType === 'error' &&
+    rawType === 'turn.failed' &&
     typeof payload.errorMessage === 'string'
       ? payload.errorMessage
       : undefined;
   return {
     ...data,
     ...payload,
-    type: normalizedType as AdminChatStreamEvent['type'],
+    type: rawType as AdminChatStreamEvent['type'],
     ...(terminalMessage ? { message: terminalMessage } : {}),
     ...(sequenceNum !== undefined ? { sequenceNum } : {}),
   } as AdminChatStreamEvent;
@@ -2582,7 +2619,8 @@ export interface VisionArtifactUploadResponse {
   capturedAt: number;
 }
 
-export type AdminChatStreamEvent =
+export type AdminChatStreamEvent = ConversationEventEnvelopeBase &
+  (
   | {
       type: 'metadata';
       messageId: string;
@@ -2606,23 +2644,30 @@ export type AdminChatStreamEvent =
       omniProvider?: string;
       omniModel?: string;
     }
-  | { type: 'delta'; delta: string }
-  | { type: 'thinking'; delta: string }
+  // ── canonical 事件名（ConversationEventTypes；TR-01 硬切后唯一消费名）──
+  | { type: 'message.content.appended'; delta: string }
+  | { type: 'message.thinking_summary.appended'; delta: string }
+  | { type: 'message.completed'; reply?: string; [key: string]: unknown }
+  | { type: 'message.failed'; message?: string; errorMessage?: string; errorCode?: string; [key: string]: unknown }
   | { type: 'voice_capture_status'; messageId?: string; sessionId?: string; voiceSessionId?: string; status: string; text?: string; transcript?: string; error?: string; [key: string]: unknown }
   | { type: 'voice_playback_status'; messageId?: string; sessionId?: string; voiceSessionId?: string; status: string; audioBase64?: string; sampleRate?: number; error?: string; [key: string]: unknown }
   | { type: 'camera_capture_status'; sessionId?: string; status: string; artifactId?: string; error?: string; [key: string]: unknown }
   | { type: 'visual_reasoning_status'; sessionId?: string; status: string; artifactId?: string; error?: string; [key: string]: unknown }
-  | { type: 'tool_call'; name: string; arguments: string; toolCallId?: string }
-  | { type: 'tool_result'; name: string; exitCode: number; output: string; error?: string; toolCallId?: string }
+  | { type: 'tool.call.requested'; name: string; arguments: string; toolCallId: string; parentToolCallId?: string; presentation?: ToolPresentationDto }
+  | { type: 'tool.call.completed'; name: string; exitCode: number; output: string; error?: string; toolCallId: string; parentToolCallId?: string; durationMs?: number; presentation?: ToolPresentationDto }
+  | { type: 'tool.call.failed'; name: string; exitCode?: number; output?: string; error?: string; toolCallId: string; parentToolCallId?: string; durationMs?: number; presentation?: ToolPresentationDto }
   | { type: 'step'; status?: string; message?: string; [key: string]: unknown }
-  | { type: 'usage'; usage: TokenUsageDto }
+  | { type: 'usage.recorded'; usage: TokenUsageDto; [key: string]: unknown }
   | { type: 'context.health'; state?: ContextHealthState; usedTokens?: number; effectiveWindowTokens?: number; usageRatio?: number; [key: string]: unknown }
   | { type: 'context.compaction.started'; compactionId?: string; sessionId?: string; mode?: ContextCompactionMode; level?: ContextCompactionLevel; reason?: string; [key: string]: unknown }
   | { type: 'context.compaction.completed'; compactionId?: string; sessionId?: string; sourceSessionId?: string; newSessionId?: string; newSessionTitle?: string; compaction?: ContextCompactionResult; [key: string]: unknown }
   | { type: 'context.compaction.failed'; compactionId?: string; sessionId?: string; error?: string; errorType?: string; [key: string]: unknown }
-  | { type: 'done'; reply?: string; usage?: TokenUsageDto; traceId?: string; sessionId?: string; [key: string]: unknown }
-  | { type: 'error'; message: string; [key: string]: unknown }
-  | { type: 'cancelled'; message?: string }
+  | { type: 'turn.accepted'; turnId?: string; userMessageId?: string; assistantMessageId?: string; [key: string]: unknown }
+  | { type: 'turn.started'; [key: string]: unknown }
+  | { type: 'turn.waiting_for_tool'; [key: string]: unknown }
+  | { type: 'turn.completed'; reply?: string; usage?: TokenUsageDto; traceId?: string; sessionId?: string; [key: string]: unknown }
+  | { type: 'turn.failed'; message?: string; errorMessage?: string; errorCode?: string; [key: string]: unknown }
+  | { type: 'turn.cancelled'; message?: string }
   | { type: 'subconscious_step'; status: 'loading' | 'thinking' | 'done'; message: string; [key: string]: unknown }
   // T-102: 子代理事件（ADR-016）
   | { type: 'subagent.spawned'; sub_agent_id: string; template?: string; model?: string; task?: string; [key: string]: unknown }
@@ -2631,14 +2676,15 @@ export type AdminChatStreamEvent =
   | { type: 'subagent.tool_call'; sub_agent_id?: string; name?: string; arguments?: string; [key: string]: unknown }
   | { type: 'subagent.tool_result'; sub_agent_id?: string; name?: string; exitCode?: number; output?: string; error?: string; [key: string]: unknown }
     | { type: 'subagent.completed'; sub_agent_id: string; success?: boolean; reply?: string; error?: string; result_summary?: string; [key: string]: unknown }
-  // P0#1: 工具审批事件（后端原始类型，经 normalizeConversationEventType 原样透传）
+  // P0#1: 工具审批事件（后端原始类型原样透传）
   | { type: 'approval.requested'; approvalId?: string; toolName?: string; tool_name?: string; riskLevel?: string; description?: string; arguments?: Record<string, unknown>; requestedAt?: string; expiresAt?: string; [key: string]: unknown }
   | { type: 'approval.resolved'; approvalId?: string; status?: string; decision?: 'allow_once' | 'always_allow' | 'deny'; reason?: string; [key: string]: unknown }
   // P1#5: Plan 模式事件（EditablePlanCard）。payload 经 projectConversationEventEnvelope 展开
   | { type: 'plan.proposal'; planId?: string; summary?: string; steps?: Array<{ id?: string; title?: string; description?: string; [key: string]: unknown }>; requestedAt?: string; [key: string]: unknown }
   | { type: 'plan.finalized'; planId?: string; decision?: 'approve_and_build' | 'manual' | 'keep_planning'; steps?: Array<{ id?: string; title?: string; description?: string; [key: string]: unknown }>; decidedBy?: string; decidedAt?: string; [key: string]: unknown }
-  // T-102: 会话关闭事件（ADR-016）
-  | { type: 'session.closed'; sessionId: string };
+    // T-102: 会话关闭事件（ADR-016）
+  | { type: 'session.closed'; sessionId: string }
+  );
 
 // ─── Chat API ─────────────────────────────────────────────────
 
@@ -2748,21 +2794,21 @@ export async function awaitConversationTurn(
         const eventTurnId = 'turnId' in event ? event.turnId : undefined;
         if (eventTurnId && eventTurnId !== turnId) return;
 
-        if (event.type === 'delta') {
+                if (event.type === 'message.content.appended') {
           accumulatedReply += event.delta;
           return;
         }
-        if (event.type === 'done') {
+        if (event.type === 'turn.completed') {
           finish(() => resolve({
             reply: event.reply?.trim() || accumulatedReply.trim(),
           }));
           return;
         }
-        if (event.type === 'error') {
+        if (event.type === 'turn.failed') {
           finish(() => reject(new Error(event.message || 'Agent 执行失败')));
           return;
         }
-        if (event.type === 'cancelled') {
+        if (event.type === 'turn.cancelled') {
           finish(() => reject(new Error(event.message || 'Agent 执行已取消')));
         }
       },

@@ -41,7 +41,6 @@ jest.mock('@/services/platform/api', () => ({
   listTeams: jest.fn(),
   listWorkspaceAgents: jest.fn(),
   listWorkspaces: jest.fn(),
-  normalizeConversationEventType: (rawType: string) => rawType,
   renameSession: jest.fn(),
   submitConversationTurn: jest.fn(),
   subscribeSessionEvents: jest.fn(),
@@ -539,9 +538,9 @@ describe('useChatState session selection races', () => {
     await waitFor(() =>
       expect(submitConversationTurn).toHaveBeenCalledTimes(1),
     );
-    expect((submitConversationTurn as jest.Mock).mock.calls[0][2].metadata).toEqual(
-      optimisticTurn?.userMessage.metadata,
-    );
+    expect(
+      (submitConversationTurn as jest.Mock).mock.calls[0][2].metadata,
+    ).toEqual(optimisticTurn?.userMessage.metadata);
 
     await act(async () => {
       sendResult.resolve({
@@ -645,7 +644,8 @@ describe('useChatState session selection races', () => {
           },
           {
             sequenceNum: 2,
-            type: 'delta',
+            type: 'message.content.appended',
+            occurredAt: '2026-08-21T00:00:01Z',
             payload: {
               messageId: 'message-a',
               delta: 'replayed answer',
@@ -653,7 +653,8 @@ describe('useChatState session selection races', () => {
           },
           {
             sequenceNum: 3,
-            type: 'done',
+            type: 'turn.completed',
+            occurredAt: '2026-08-21T00:00:02Z',
             payload: {
               messageId: 'message-a',
               sessionId: 'session-a',

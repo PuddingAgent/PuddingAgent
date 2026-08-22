@@ -1,4 +1,4 @@
-﻿// ── ChatPage 壳：路由入口，组装布局 + 模态框 ────────────────
+// ── ChatPage 壳：路由入口，组装布局 + 模态框 ────────────────
 
 import { history, useLocation, useModel } from '@umijs/max';
 import { App, ConfigProvider, Form, Input, Modal } from 'antd';
@@ -660,6 +660,7 @@ const ChatPageContent: React.FC = () => {
         cacheMissTokens={chat.sessionCacheMissTokens}
         cacheHitRate={chat.cacheHitRate}
         compactionStatus={chat.compactionStatus}
+        getTurnProjection={chat.getTurnProjection}
         formatTime={chat.formatTime}
         onDeleteTurn={chat.onDeleteTurn}
         onContextMenu={handleContextMenu}

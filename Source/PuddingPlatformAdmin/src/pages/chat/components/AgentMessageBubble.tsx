@@ -1,13 +1,11 @@
 // ── AgentMessageBubble：Agent 消息气泡（左对齐）─────────────
 
-import dayjs from 'dayjs';
 import { Tooltip } from 'antd';
+import dayjs from 'dayjs';
 import React from 'react';
 import type { TokenUsageDto } from '@/services/platform/api';
-import { getAgentMessageProcessItems } from '../client/agentChatApi';
 import type {
   ConversationProcessSummary,
-  ProcessSummaryItem,
 } from '../client/types';
 import { defaultBrowserVoiceOutputAdapter } from '../hooks/browserVoiceOutput';
 import { useTtsPlayer } from '../hooks/useTtsPlayer';
@@ -18,22 +16,37 @@ import type {
   ParentDelegationActivity,
   TimelineItem,
 } from '../types';
+import { summarizeError } from '../utils/summarizeError';
 import AgentAvatar from './AgentAvatar';
+import {
+  deriveTurnStatusFromFacts,
+  type TurnPhase,
+  TurnStatus,
+} from './execution-flow/TurnStatus';
 import MessageActions from './MessageActions';
 import MessageItem from './MessageItem';
-import MessageProcessSummary from './MessageProcessSummary';
-import StateDot from './StateDot';
-import ToolCallRowList from './ToolCallRow';
 import ModelRetryRow from './ModelRetryRow';
 import {
   type CurrentRunActivity,
   getCurrentRunActivity,
   sanitizeProcessText,
 } from './processPreview';
-import { ReasoningPreview } from './ReasoningPreview';
+import { ReasoningDisclosureRow } from './execution-flow/ReasoningDisclosureRow';
+import {
+  buildToolTreeFromProcessItems,
+  ToolCallTree,
+} from './execution-flow/ToolCallTree';
+import type {
+  DelegationNode,
+  ExecutionFlowProjection,
+  ToolNode,
+} from '../projections/executionFlowProjector';
+import {
+  buildDelegationNodesFromProcessItems,
+  DelegationRow,
+} from './execution-flow/DelegationRow';
+import StateDot from './StateDot';
 import type { TranscriptMode } from './TranscriptModeSwitch';
-import { WaitingBubble } from './WaitingBubble';
-import { summarizeError } from '../utils/summarizeError';
 
 const SessionBenchmarkDrawer =
   process.env.NODE_ENV === 'test'
@@ -72,9 +85,13 @@ interface AgentMessageBubbleProps {
   turnId?: string;
   sessionId?: string | null;
   parentDelegationActivity?: ParentDelegationActivity;
+  /** CU-09：展开态「打开检查器」入口（runId → SubAgentActivityDock 检查器）。 */
+  onOpenInspector?: (runId: string) => void;
   /** P0#2：转录视图分级 */
   transcriptMode?: TranscriptMode;
   onTranscriptModeChange?: (mode: TranscriptMode) => void;
+  /** CU-11 Phase 2: per-turn canonical 投影（灰度开启时走新路径 B；undefined 回退旧路径 A）。 */
+  executionFlowProjection?: ExecutionFlowProjection;
 }
 
 const MESSAGE_ENTRANCE_WINDOW_MS = 5_000;
@@ -133,52 +150,6 @@ const agentAvatarColors = [
   '#c084fc',
 ];
 
-const toTimelineItems = (items: ProcessSummaryItem[]): TimelineItem[] =>
-  items
-    .filter(
-      (item) =>
-        !item.kind.startsWith('subagent.') &&
-        !item.kind.startsWith('subagent_'),
-    )
-    .map((item) => ({
-      id: item.id,
-      toolCallId: item.toolCallId ?? undefined,
-      type:
-        item.kind === 'thinking' ||
-        item.kind === 'tool_call' ||
-        item.kind === 'tool_result'
-          ? item.kind
-          : 'subconscious_step',
-      text: item.text,
-      status: item.status,
-      name: item.name ?? undefined,
-      arguments: item.arguments ?? undefined,
-      output: item.output ?? undefined,
-      exitCode: item.exitCode ?? undefined,
-      message: item.message ?? undefined,
-      timestamp: Date.parse(item.timestamp),
-      collapsed: true,
-    }));
-
-const formatElapsed = (startedAt?: number, now = Date.now()): string | null => {
-  if (!Number.isFinite(startedAt)) return null;
-  const elapsedMs = Math.max(0, now - (startedAt as number));
-  const seconds = Math.floor(elapsedMs / 1000);
-  if (seconds < 1) return '刚刚';
-  if (seconds < 60) return `${seconds} 秒`;
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  return rest > 0 ? `${minutes} 分 ${rest} 秒` : `${minutes} 分`;
-};
-
-const activityStatusText: Record<CurrentRunActivity['status'], string> = {
-  running: '运行中',
-  waiting_output: '等待输出',
-  processing_result: '正在处理结果',
-  completed: '已完成',
-  failed: '失败',
-};
-
 const isRawStructuredParameterText = (text?: string): boolean => {
   const trimmed = text?.trim();
   return Boolean(trimmed && /^[{[]/.test(trimmed));
@@ -186,17 +157,10 @@ const isRawStructuredParameterText = (text?: string): boolean => {
 
 const CurrentActivityPanel: React.FC<{
   activity: CurrentRunActivity;
-  now: number;
   hidePreview?: boolean;
-}> = ({ activity, now, hidePreview = false }) => {
+}> = ({ activity, hidePreview = false }) => {
   const { styles: rawStyles, cx } = useChatMessageStyles();
   const styles = rawStyles as Record<string, string>;
-  const elapsed = formatElapsed(activity.startedAt, now);
-  const shouldShowElapsed =
-    elapsed &&
-    (activity.status === 'running' ||
-      activity.status === 'waiting_output' ||
-      activity.status === 'processing_result');
   const toneClass =
     activity.status === 'failed'
       ? styles.currentActivityToneError
@@ -237,19 +201,9 @@ const CurrentActivityPanel: React.FC<{
         isWorkingActivity && styles.agentActiveOutputSurface,
         toneClass,
       )}
-      aria-live="polite"
     >
       <div className={styles.currentActivityHeader}>
-        <span className={cx(styles.pulseDot, styles.currentActivityDot)} />
         <span className={styles.currentActivityTitle}>{activity.title}</span>
-        <span className={styles.currentActivityStatus}>
-          {activityStatusText[activity.status]}
-        </span>
-        {shouldShowElapsed && (
-          <span className={styles.currentActivityElapsed}>
-            已运行 {elapsed}
-          </span>
-        )}
       </div>
       {activity.subject &&
         (shouldShowSubjectTooltip ? (
@@ -353,10 +307,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   agentAvatarColor,
   agentAvatarUrl,
   processItems,
-  processSummary,
-  processMessageId,
   workspaceId,
-  agentId,
   usage,
   quotedMessage,
   groupedWithPrevious,
@@ -369,25 +320,14 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   turnId,
   sessionId,
   parentDelegationActivity,
-  transcriptMode,
-  onTranscriptModeChange,
+  onOpenInspector,
+  executionFlowProjection,
 }) => {
   const { styles: rawStyles, cx } = useChatMessageStyles();
   const styles = rawStyles as Record<string, string>;
   const [showActions, setShowActions] = React.useState(false);
   const [actionsMounted, setActionsMounted] = React.useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false);
-  // 一旦过程摘要首次挂载，保持挂载避免 streaming 中 processItems 短暂清空导致 expanded 状态丢失
-  const processSummaryEverMounted = React.useRef(false);
-  const loadHistoricalProcessItems = React.useCallback(async () => {
-    if (!workspaceId || !agentId || !processMessageId) return [];
-    const details = await getAgentMessageProcessItems(
-      workspaceId,
-      agentId,
-      processMessageId,
-    );
-    return toTimelineItems(details.processItems);
-  }, [workspaceId, agentId, processMessageId]);
 
   const tts = useTtsPlayer();
   const hasAnswerContent = content.trim().length > 0;
@@ -463,12 +403,31 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   const messageAgeMs = Math.max(0, Date.now() - createdAt);
   const shouldAnimateEntrance =
     isRunActive || messageAgeMs <= MESSAGE_ENTRANCE_WINDOW_MS;
-  const isBeforeFirstToken = isRunActive && !hasAnswerContent;
   const shouldRenderAnswerBubble = hasAnswerContent || hasQuotedOnly;
   const processActivity = React.useMemo(
     () => getCurrentRunActivity(processItems, status),
     [processItems, status],
   );
+  // CU-07/CU-11: 工具调用树 —— 灰度开启且有 per-turn 投影时从 canonical 投影
+  // nodes 消费（路径 B）；否则回退 processItems 构建（路径 A，行为零变化）。
+  const toolTreeNodes = React.useMemo(() => {
+    if (executionFlowProjection) {
+      return executionFlowProjection.nodes.filter(
+        (node): node is ToolNode => node.kind === 'tool',
+      );
+    }
+    return buildToolTreeFromProcessItems(processItems ?? []);
+  }, [executionFlowProjection, processItems]);
+  // CU-09/CU-11: 父级委派摘要 —— 灰度开启且有 per-turn 投影时从 canonical 投影
+  // nodes 消费（路径 B）；否则回退 processItems 构建（路径 A，行为零变化）。
+  const delegationNodes = React.useMemo(() => {
+    if (executionFlowProjection) {
+      return executionFlowProjection.nodes.filter(
+        (node): node is DelegationNode => node.kind === 'delegation',
+      );
+    }
+    return buildDelegationNodesFromProcessItems(processItems ?? []);
+  }, [executionFlowProjection, processItems]);
   const delegationActivity = React.useMemo<CurrentRunActivity | null>(() => {
     if (!parentDelegationActivity?.activeCount) return null;
     const { activeCount, label, startedAt, updatedAt } =
@@ -500,12 +459,12 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   const shouldShowProcessActivity = Boolean(
     isRunActive &&
       processActivity &&
-      (processActivity.kind === 'system' || processActivity.kind === 'subagent'),
+      (processActivity.kind === 'system' ||
+        processActivity.kind === 'subagent'),
   );
   const shouldShowDelegationActivity = Boolean(
     isRunActive && delegationActivity && processActivity?.kind !== 'subagent',
   );
-  const shouldShowPreAnswerWaiting = isBeforeFirstToken && !currentActivity;
   // 思维链预览：从 timeline 提取已清洗的 thinking 文本；有内容时等待气泡升级为思维链预览
   const reasoningLines = React.useMemo(() => {
     if (!processItems || processItems.length === 0) return [];
@@ -516,45 +475,48 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   }, [processItems]);
   const hasReasoningContent = reasoningLines.length > 0;
   // 推理摘要与当前工具/委派活动并列展示，避免阶段切换时丢失主代理上下文。
-  const showReasoningPreview = hasReasoningContent && isBeforeFirstToken;
+  // CU-06：去 isBeforeFirstToken 门控——整个 turn 内推理行保持同一行，正文流式后仍在主视图。
+  const showReasoningPreview = hasReasoningContent;
   const reasoningIsCurrent =
     !currentActivity || currentActivity.kind === 'thinking';
-  const shouldTrackPreAnswerElapsed = isBeforeFirstToken;
-  const shouldShowRunMonitor =
-    shouldShowProcessActivity ||
-    shouldShowDelegationActivity ||
-    showReasoningPreview ||
-    (!hasReasoningContent && shouldShowPreAnswerWaiting);
-  const [activityNow, setActivityNow] = React.useState(() => Date.now());
-  const getCanonicalWaitSeconds = React.useCallback(
-    () =>
-      Number.isFinite(createdAt) && createdAt > 0
-        ? Math.max(0, Math.floor((Date.now() - createdAt) / 1000))
-        : 0,
-    [createdAt],
-  );
-  const [waitSeconds, setWaitSeconds] = React.useState(getCanonicalWaitSeconds);
-
-  React.useEffect(() => {
-    if (!shouldShowProcessActivity && !shouldShowDelegationActivity)
-      return undefined;
-    const timer = window.setInterval(() => setActivityNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [shouldShowDelegationActivity, shouldShowProcessActivity]);
-
-  // B1: TTFB 计时 — 使用 Turn 的服务端时间锚点，避免刷新或虚拟列表
-  // 重挂载时从 0 重新计时。
-  React.useEffect(() => {
-    if (shouldTrackPreAnswerElapsed) {
-      setWaitSeconds(getCanonicalWaitSeconds());
-      const timer = window.setInterval(() => {
-        setWaitSeconds(getCanonicalWaitSeconds());
-      }, 1000);
-      return () => window.clearInterval(timer);
+  // CU-05: TurnStatus —— 收敛 WaitingBubble/CurrentActivityPanel 的重复状态区。
+  // 阶段文案只来自已知事实（delegation/reasoning/tool/system/answer 活动），
+  // 无可见事件时为 pending（「{agentName} 正在运行」）；终态由消息状态驱动不在此派生。
+  const turnStatus = React.useMemo<TurnStatus | null>(() => {
+    if (!isRunActive) return null;
+    const hasVisibleEvents = Boolean(
+      currentActivity || reasoningLines.length > 0 || hasAnswerContent,
+    );
+    let phase: TurnPhase | undefined;
+    if (currentActivity?.kind === 'subagent' || delegationActivity) {
+      phase = 'delegating';
+    } else if (currentActivity?.kind === 'thinking') {
+      phase = 'reasoning';
+    } else if (
+      currentActivity?.kind === 'tool' &&
+      (currentActivity.status === 'running' ||
+        currentActivity.status === 'waiting_output' ||
+        currentActivity.status === 'processing_result')
+    ) {
+      phase = 'executing';
+    } else if (currentActivity?.kind === 'system') {
+      phase = 'connecting';
+    } else if (hasAnswerContent) {
+      phase = 'answering';
     }
-    // not waiting: do nothing (keep stale value hidden)
-    return undefined;
-  }, [getCanonicalWaitSeconds, shouldTrackPreAnswerElapsed]);
+    return deriveTurnStatusFromFacts({
+      active: true,
+      hasVisibleEvents,
+      phase,
+    });
+  }, [
+    isRunActive,
+    currentActivity,
+    delegationActivity,
+    reasoningLines,
+    hasAnswerContent,
+  ]);
+  const shouldShowRunMonitor = isRunActive;
 
   // E2: 流式停滞检测 — 15s 无内容增量触发琥珀色警告
   const lastDeltaRef = React.useRef(Date.now());
@@ -628,34 +590,29 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                 className={styles.agentRunMonitor}
                 data-testid="agent-run-monitor"
               >
-                {/* 当前活动区仅展示主代理真实阶段或有界委派摘要。 */}
-                {shouldShowProcessActivity && processActivity && (
-                  <CurrentActivityPanel
-                    activity={processActivity}
-                    now={activityNow}
+                {/* CU-05：唯一 L0 状态行（单 aria-live）；WaitingBubble 已退出生产路径。 */}
+                {turnStatus && (
+                  <TurnStatus
+                    status={turnStatus}
+                    turnStartedAt={createdAt}
+                    agentName={agentName}
                   />
                 )}
 
+                {/* 当前活动区仅展示主代理真实阶段或有界委派摘要（状态/计时已收敛到 TurnStatus）。 */}
+                {shouldShowProcessActivity && processActivity && (
+                  <CurrentActivityPanel activity={processActivity} />
+                )}
+
                 {shouldShowDelegationActivity && delegationActivity && (
-                  <CurrentActivityPanel
-                    activity={delegationActivity}
-                    now={activityNow}
-                  />
+                  <CurrentActivityPanel activity={delegationActivity} />
                 )}
 
                 {/* 推理摘要与工具/子代理当前活动并列，保留主代理过程连续性。 */}
                 {showReasoningPreview && (
-                  <ReasoningPreview
+                  <ReasoningDisclosureRow
                     lines={reasoningLines}
                     isCurrent={reasoningIsCurrent}
-                  />
-                )}
-
-                {/* 尚无可见事件时，明确展示主代理的真实等待阶段。 */}
-                {!hasReasoningContent && shouldShowPreAnswerWaiting && (
-                  <WaitingBubble
-                    waitSeconds={waitSeconds}
-                    agentName={agentName}
                   />
                 )}
               </div>
@@ -727,55 +684,19 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                 );
               })()}
 
-            {/* P1-1: 工具调用行（对齐 D5 ToolCallRow）：单行摘要 + 展开 IN/OUT，与过程时间线共存 */}
-            {processItems?.some((item) => item.type === 'tool_call') && (
-              <ToolCallRowList items={processItems} />
+            {/* CU-07: 工具调用树（对齐 D5 ToolCallRow）：单行摘要 + 展开 IN/OUT + 递归父子调用，与过程时间线共存 */}
+            {toolTreeNodes.length > 0 && <ToolCallTree nodes={toolTreeNodes} />}
+
+            {/* CU-09: 父级委派摘要行（折叠态计数 + 展开态每子代理摘要/模型/状态/检查器入口）。
+                不复制子代理内部 reasoning/tool/完整结果；无子代理时内部返回 null。 */}
+            {delegationNodes.length > 0 && (
+              <DelegationRow
+                nodes={delegationNodes}
+                onOpenInspector={onOpenInspector}
+              />
             )}
 
-            {/* 过程摘要：首 token 前显示预览气泡；正文输出后折叠为可展开时间线 */}
-            {(() => {
-              const hasItems = processItems && processItems.length > 0;
-              const hasHistoricalSummary = Boolean(processSummary?.hasDetails);
-              if (hasItems || hasHistoricalSummary)
-                processSummaryEverMounted.current = true;
-              const shouldRender =
-                hasItems ||
-                hasHistoricalSummary ||
-                processSummaryEverMounted.current;
-              if (!shouldRender) return null;
-              return (
-                <MessageProcessSummary
-                  items={processItems || []}
-                  summary={processSummary}
-                  status={status}
-                  onLoadDetails={
-                    hasHistoricalSummary
-                      ? loadHistoricalProcessItems
-                      : undefined
-                  }
-                  onRerun={onRerun}
-                  onOpenDiagnostics={
-                    sessionId ? () => setDiagnosticsOpen(true) : undefined
-                  }
-                  transcriptMode={transcriptMode}
-                  onTranscriptModeChange={onTranscriptModeChange}
-                />
-              );
-            })()}
-
-            {/* 流式状态提示（仅在过程摘要未挂载时显示，避免重复） */}
-            {isStreaming &&
-              hasAnswerContent &&
-              !processItems?.length &&
-              !processSummaryEverMounted.current && (
-                <div className={styles.processSummaryRow}>
-                  <span className={styles.processThinkingLabel}>
-                    正在生成回复...
-                  </span>
-                </div>
-              )}
-
-            {/* P1-2: 模型重试行 — 嗅探 processItems 中的 LLM retry 条目；无条目时组件内部返回 null，不占用布局 */}
+                                    {/* P1-2: 模型重试行 — 嗅探 processItems 中的 LLM retry 条目；无条目时组件内部返回 null，不占用布局 */}
             <ModelRetryRow items={processItems} />
 
             {/* P0-1: 错误摘要行（StateDot + 标题 + 摘要，title 挂全量原文）；
