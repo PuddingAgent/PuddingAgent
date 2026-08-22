@@ -35,8 +35,11 @@ import {
   sanitizeProcessText,
 } from './processPreview';
 import { ReasoningDisclosureRow } from './execution-flow/ReasoningDisclosureRow';
+import {
+  buildToolTreeFromProcessItems,
+  ToolCallTree,
+} from './execution-flow/ToolCallTree';
 import StateDot from './StateDot';
-import ToolCallRowList from './ToolCallRow';
 import type { TranscriptMode } from './TranscriptModeSwitch';
 
 const SessionBenchmarkDrawer =
@@ -441,6 +444,11 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
     () => getCurrentRunActivity(processItems, status),
     [processItems, status],
   );
+  // CU-07: 工具调用树 —— 从 processItems 构建 ToolNode 调用树（替代旧 ToolCallRowList）。
+  const toolTreeNodes = React.useMemo(
+    () => buildToolTreeFromProcessItems(processItems ?? []),
+    [processItems],
+  );
   const delegationActivity = React.useMemo<CurrentRunActivity | null>(() => {
     if (!parentDelegationActivity?.activeCount) return null;
     const { activeCount, label, startedAt, updatedAt } =
@@ -697,10 +705,8 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                 );
               })()}
 
-            {/* P1-1: 工具调用行（对齐 D5 ToolCallRow）：单行摘要 + 展开 IN/OUT，与过程时间线共存 */}
-            {processItems?.some((item) => item.type === 'tool_call') && (
-              <ToolCallRowList items={processItems} />
-            )}
+            {/* CU-07: 工具调用树（对齐 D5 ToolCallRow）：单行摘要 + 展开 IN/OUT + 递归父子调用，与过程时间线共存 */}
+            {toolTreeNodes.length > 0 && <ToolCallTree nodes={toolTreeNodes} />}
 
             {/* 过程摘要：首 token 前显示预览气泡；正文输出后折叠为可展开时间线 */}
             {(() => {

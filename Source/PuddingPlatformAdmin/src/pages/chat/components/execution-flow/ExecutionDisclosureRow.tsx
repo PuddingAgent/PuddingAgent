@@ -20,6 +20,8 @@ export interface ExecutionDisclosureRowProps {
   ariaLive?: 'polite' | 'assertive' | 'off';
   testId?: string;
   className?: string;
+  /** 透传到行容器的 data-* 属性（消费方自定义契约，如 toolcall-row 的 data-status/data-toolname）。 */
+  dataAttrs?: Record<string, string | number | boolean | undefined>;
 }
 
 export const ExecutionDisclosureRow: React.FC<ExecutionDisclosureRowProps> = ({
@@ -33,6 +35,7 @@ export const ExecutionDisclosureRow: React.FC<ExecutionDisclosureRowProps> = ({
   ariaLive,
   testId,
   className,
+  dataAttrs,
 }) => {
   const { styles, cx } = useExecutionFlowStyles();
   const [internalExpanded, setInternalExpanded] = useState(defaultExpanded);
@@ -60,6 +63,7 @@ export const ExecutionDisclosureRow: React.FC<ExecutionDisclosureRowProps> = ({
       <div
         className={cx(styles.row, expandable && styles.rowClickable, className)}
         data-testid={testId}
+        {...dataAttrs}
         {...(expandable
           ? {
               role: 'button' as const,

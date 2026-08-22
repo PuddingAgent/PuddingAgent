@@ -179,8 +179,26 @@ export const useToolCallStyles = createStyles(() => ({
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
   },
-  /** error 时 OUT 首行红 */
+    /** error 时 OUT 首行红 */
   errorText: {
     color: 'var(--pudding-status-error)',
+  },
+
+  // ── ToolCallTree（CU-07 递归调用树）──
+  /** 单分支容器：子列表缩进在其下方 */
+  treeBranch: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 0,
+  },
+  /** 子列表：左缩进 24px（相对父行）+ 左侧竖线（调用树层级视觉） */
+  treeChildren: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+    marginLeft: 24,
+    paddingLeft: 8,
+    borderLeft: '1px solid color-mix(in srgb, var(--pudding-chat-text-subtle) 24%, transparent)',
+    boxSizing: 'border-box' as const,
   },
 }));
