@@ -1587,12 +1587,12 @@ public sealed partial class AgentExecutionService
         if (_subAgentRunStore is null || runId is null)
             return;
 
-        await _subAgentRunStore.AppendEventAsync(runId, "subagent.run.context_assembled", new
+        await TryAppendSubAgentEventAsync(runId, "subagent.run.context_assembled", new
         {
             parent_session_id = request.ExecutionIdentity?.ConversationId,
             sub_agent_id = request.SessionId,
             run_id = runId,
-        }, CancellationToken.None);
+        });
     }
 
     private async Task TryAppendSubAgentEventAsync(
@@ -1603,11 +1603,22 @@ public sealed partial class AgentExecutionService
         if (_subAgentRunStore is null || string.IsNullOrWhiteSpace(runId))
             return;
 
-        await _subAgentRunStore.AppendEventAsync(
-            runId,
-            eventType,
-            payload,
-            CancellationToken.None);
+        try
+        {
+            await _subAgentRunStore.AppendEventAsync(
+                runId,
+                eventType,
+                payload,
+                CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // 运行事件是观测数据：归档写入失败（store 已重试并标记 archive_degraded）
+            // 或其他存储异常都不得杀死正在执行的子代理。
+            _logger.LogError(ex,
+                "[AgentExec:SubAgent] Run event append failed runId={RunId} eventType={EventType}",
+                runId, eventType);
+        }
     }
 
     /// <summary>

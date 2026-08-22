@@ -303,6 +303,32 @@ LLM 单次流另有更短的操作级看门狗：默认首块等待 300 秒，�
 作为“整条流总时长”；持续产出流块的调用可以超过旧总时长。操作级看门狗负责识别 Provider/网络读取卡死；父 Turn 看门狗负责识别
 跨 LLM、工具和子代理的整体任务停滞，两者不能用 SSE 活跃度互相续期。
 
+### 3.11 归档存储并发协议与 archive_degraded（2026-08-22 演进）
+
+`run_20260821_230951_dbff4b8075c1` 暴露了两类叠加缺陷：活动检查器以 3 秒间隔全量
+重读 `events.jsonl`（读方以 `FileShare.Read` 打开，拒绝并发写者），与归档写入产生
+Windows sharing violation 后直接把运行中的子代理标记为 failed；同时防火墙/审批用进程级
+静态 workspace root 校验路径，而文件工具用 `ToolExecutionContext.WorkingDirectory`，
+委派 worktree 的同一路径在不同层得到不同结论。本节冻结修复协议：
+
+1. **归档读写同一 per-run gate**：`FileSubAgentRunStore` 的写入（events/tools 追加、
+   终态推进、投影）与读取（`GetRunArchiveAsync`、诊断 API）都串行通过每 run
+   `SemaphoreSlim`；读方一律以 `FileShare.ReadWrite | Delete` 打开，读句柄不得
+   把并发写入方挤成 sharing violation。
+2. **写入有限退避重试**：JSONL 追加对 `IOException` 按 20/50/100/200/400ms 退避
+   重试（共 6 次尝试），覆盖杀毒/备份等外部进程短持文件的场景。
+3. **archive_degraded 降级而非杀死运行**：重试耗尽后运行事件被丢弃，写入
+   `archive-degraded.json` 标记（首次/最后失败时间、丢弃计数、最后事件类型与错误），
+   `AppendEventAsync` 返回不抛出；终态事件仍走 `CompleteRunAsync` 抛错语义，由
+   恢复流程仲裁。`SubAgentRunArchive.Degraded` 与详情 API 透出该标记，前端终态
+   时间线展示"归档降级"提示。观测存储竞争不得直接杀死已取得成果的 Agent。
+4. **检查器零轮询**：活动 run 的时间线与指标只来自 Conversation SSE 的
+   `subAgentReducer`；归档只在终态按 runId 一次性读取（组件边界表既有约束的落实）。
+5. **统一执行根**：`FirewallContext.WorkingDirectory` 从 `ToolExecutionContext`
+   冻结拷贝；防火墙 WorkspaceGate、审批目标解析（`ToolApprovalExecutionRequest.
+   WorkingDirectory`）、`code_index_register_project` 与文件工具全部使用同一执行根，
+   不得回退进程级静态 workspace root。
+
 ## 4. 组件边界
 
 | 组件 | 负责 | 不负责 |

@@ -35,6 +35,13 @@ public sealed record FirewallContext
     public string? ArgumentsJson { get; init; }
     public CapabilityPolicy? Policy { get; init; }
 
+    /// <summary>
+    /// 本次执行快照确定的文件工具根目录（委派 worktree 时为 worktree 根）。
+    /// WorkspaceGate 与审批目标解析必须与文件工具使用同一根目录，
+    /// 不得回退到进程级静态 workspace root（委派 worktree 案例曾因此被误判越界）。
+    /// </summary>
+    public string? WorkingDirectory { get; init; }
+
     // ── Runtime state ──
     public RuntimeExecutionMode RuntimeMode { get; init; }
     public string? AgentStatus { get; init; }
@@ -65,6 +72,7 @@ public sealed record FirewallContext
         ToolId = toolId ?? string.Empty,
         Policy = policy,
         RuntimeMode = mode,
+        WorkingDirectory = context.WorkingDirectory,
         IsHeartbeat = isHeartbeat,
         IsAgentToAgent = isAgentToAgent,
     };

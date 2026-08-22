@@ -156,6 +156,7 @@ public class SubAgentRunController : ControllerBase
             Trace = m.Trace,
             EventCount = archive.Events.Count,
             ToolCallCount = archive.Tools.Count,
+            ArchiveDegraded = archive.Degraded,
         });
     }
 

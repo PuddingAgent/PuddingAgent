@@ -200,6 +200,8 @@ public sealed record ToolApprovalExecutionRequest
     public required string UserId { get; init; }
     public required string ToolId { get; init; }
     public string? ActualArgumentsJson { get; init; }
+    /// <summary>本次执行快照的执行根（委派 worktree）；工作区文件目标解析必须与文件工具同根。</summary>
+    public string? WorkingDirectory { get; init; }
 }
 
 /// <summary>Result of checking a high-risk tool call against automatic approval tickets.</summary>

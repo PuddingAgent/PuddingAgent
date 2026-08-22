@@ -31,6 +31,7 @@ import {
   getSubAgentRunDetail,
   getSubAgentRunEvents,
   getSubAgentRunOutput,
+  type SubAgentArchiveDegradedInfo,
 } from '@/services/platform/api';
 import {
   projectSubAgentActivity,
@@ -71,6 +72,7 @@ interface RunArchiveState {
   totalRounds?: number;
   totalToolCalls?: number;
   totalDurationMs?: number;
+  degraded?: SubAgentArchiveDegradedInfo | null;
   error?: string;
 }
 
@@ -623,6 +625,15 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
     }
 
     const runId = selectedRun.runId ?? selectedRun.subSessionId;
+
+    // ADR-060：活动运行的时间线与指标来自 Conversation SSE 的 subAgentReducer，
+    // 归档只在终态按 Run ID 一次性读取。活动期间轮询 /runs/{id} 与 /events
+    // 会与归档写入产生 Windows sharing violation，曾直接杀死运行中的子代理。
+    if (activeStatuses.has(selectedRun.status)) {
+      setRunArchive({ runId, status: 'idle' });
+      return undefined;
+    }
+
     let disposed = false;
 
     const loadArchive = async () => {
@@ -680,6 +691,7 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
             detail.toolCallCount ||
             archivedToolCalls,
           totalDurationMs: detail.summary.totalDurationMs,
+          degraded: detail.archiveDegraded ?? null,
         });
       } catch (error) {
         if (disposed) return;
@@ -692,16 +704,11 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
     };
 
     void loadArchive();
-    const timer = activeStatuses.has(selectedRun.status)
-      ? window.setInterval(() => void loadArchive(), 3_000)
-      : undefined;
     return () => {
       disposed = true;
-      if (timer !== undefined) window.clearInterval(timer);
     };
   }, [
     inspectorOpen,
-    selectedRun?.currentRound,
     selectedRun?.modelId,
     selectedRun?.runId,
     selectedRun?.status,
@@ -954,6 +961,16 @@ const SubAgentActivityDock: React.FC<SubAgentActivityDockProps> = ({
           </div>
 
           <div className={styles.sectionTitle}>运行时间线</div>
+          {runArchive.runId === runId &&
+            runArchive.status === 'loaded' &&
+            runArchive.degraded && (
+              <div className={styles.error} data-testid="subagent-archive-degraded">
+                归档降级：曾有 {runArchive.degraded.droppedEventCount} 个事件
+                （最后为 {runArchive.degraded.lastEventType ?? '未知类型'}）因存储
+                竞争被丢弃，时间线不完整。最后失败：
+                {runArchive.degraded.lastError ?? '未知错误'}
+              </div>
+            )}
           {runArchive.runId === runId &&
             runArchive.status === 'loading' &&
             !displayActivities?.length && (

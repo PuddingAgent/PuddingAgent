@@ -121,4 +121,20 @@ public sealed record SubAgentRunArchive
     public IReadOnlyList<SubAgentToolAuditEntry> Tools { get; init; } = Array.Empty<SubAgentToolAuditEntry>();
     public string? Output { get; init; }
     public string? ErrorOutput { get; init; }
+    /// <summary>archive-degraded.json 标记投影；事件写入持续失败被丢弃时非空。</summary>
+    public SubAgentArchiveDegradedInfo? Degraded { get; init; }
+}
+
+/// <summary>
+/// 归档降级标记（archive-degraded.json）。
+/// 观测存储的瞬时竞争在重试耗尽后不得杀死运行中的子代理（ADR-060），
+/// 丢弃的事件计入此标记，让降级状态可诊断而不是被静默吞掉。
+/// </summary>
+public sealed record SubAgentArchiveDegradedInfo
+{
+    public string FirstFailureAt { get; init; } = "";
+    public string LastFailureAt { get; init; } = "";
+    public int DroppedEventCount { get; init; }
+    public string? LastEventType { get; init; }
+    public string? LastError { get; init; }
 }

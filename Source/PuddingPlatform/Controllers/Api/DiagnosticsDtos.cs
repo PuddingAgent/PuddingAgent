@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PuddingCode.Diagnostics;
+using PuddingCode.SubAgents;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -16,6 +17,8 @@ public sealed record SubAgentRunDetailDto
     public Dictionary<string, string> Trace { get; init; } = new();
     public int EventCount { get; init; }
     public int ToolCallCount { get; init; }
+    /// <summary>archive-degraded 标记：非空表示该归档曾丢弃事件，时间线不完整。</summary>
+    public SubAgentArchiveDegradedInfo? ArchiveDegraded { get; init; }
 }
 
 /// <summary>

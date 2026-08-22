@@ -454,6 +454,109 @@ public sealed class FileSubAgentRunStoreTests
         }
     }
 
+    [TestMethod]
+    public async Task AppendEvent_WhenArchiveLocked_Degrades_Instead_Of_Throwing()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={Path.Combine(temp.Path, "platform.db")}")
+            .Options;
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var store = new FileSubAgentRunStore(
+            paths,
+            NullLogger<FileSubAgentRunStore>.Instance,
+            new TestDbContextFactory(options),
+            new RecordingConversationEventStore());
+        var handle = await store.CreateRunAsync(new SubAgentRunCreateRequest
+        {
+            ParentSessionId = "parent-session",
+            SubSessionId = "sub-session",
+            WorkspaceId = "default",
+            AgentInstanceId = "agent-1",
+            TemplateId = "developer",
+            Task = "Survive archive lock",
+        });
+
+        var eventsPath = Path.Combine(handle.ArchivePath, "events.jsonl");
+        using (new FileStream(eventsPath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            // 模拟检查器/外部进程独占归档：append 重试耗尽后必须降级而不是抛出
+            // （run_20260821_230951_dbff4b8075c1 曾因此被直接标记 failed）。
+            await store.AppendEventAsync(handle.RunId, "subagent.round.started", new { round = 1 });
+        }
+
+        Assert.IsTrue(File.Exists(Path.Combine(handle.ArchivePath, "archive-degraded.json")));
+
+        var degraded = await store.GetRunArchiveAsync(handle.RunId);
+        Assert.IsNotNull(degraded);
+        Assert.IsNotNull(degraded.Degraded);
+        Assert.AreEqual(1, degraded.Degraded.DroppedEventCount);
+        Assert.AreEqual("subagent.round.started", degraded.Degraded.LastEventType);
+
+        // 锁释放后归档恢复写入，后续事件不再丢弃。
+        await store.AppendEventAsync(handle.RunId, "subagent.round.completed", new { round = 1 });
+        var recovered = await store.GetRunArchiveAsync(handle.RunId);
+        Assert.IsNotNull(recovered);
+        Assert.AreEqual(2, recovered.Events.Count);
+        Assert.AreEqual(1, recovered.Degraded!.DroppedEventCount);
+    }
+
+    [TestMethod]
+    public async Task Concurrent_Archive_Read_And_Event_Append_Never_SharingViolate()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={Path.Combine(temp.Path, "platform.db")}")
+            .Options;
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var store = new FileSubAgentRunStore(
+            paths,
+            NullLogger<FileSubAgentRunStore>.Instance,
+            new TestDbContextFactory(options),
+            new RecordingConversationEventStore());
+        var handle = await store.CreateRunAsync(new SubAgentRunCreateRequest
+        {
+            ParentSessionId = "parent-session",
+            SubSessionId = "sub-session",
+            WorkspaceId = "default",
+            AgentInstanceId = "agent-1",
+            TemplateId = "developer",
+            Task = "Concurrent inspector reads",
+        });
+
+        const int appendCount = 40;
+        const int readCount = 40;
+        var tasks = new List<Task>();
+        for (var i = 0; i < appendCount; i++)
+        {
+            var toolCallId = $"tool-{i}";
+            tasks.Add(store.AppendEventAsync(handle.RunId, "subagent.tool.started", new
+            {
+                round = 1,
+                tool_call_id = toolCallId,
+            }));
+        }
+        for (var i = 0; i < readCount; i++)
+            tasks.Add(store.GetRunArchiveAsync(handle.RunId));
+
+        await Task.WhenAll(tasks);
+
+        var final = await store.GetRunArchiveAsync(handle.RunId);
+        Assert.IsNotNull(final);
+        Assert.AreEqual(appendCount + 1, final.Events.Count);
+        Assert.IsNull(final.Degraded);
+    }
+
     private sealed class TestDbContextFactory(DbContextOptions<PlatformDbContext> options)
         : IDbContextFactory<PlatformDbContext>
     {

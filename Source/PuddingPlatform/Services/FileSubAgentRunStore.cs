@@ -163,6 +163,16 @@ public class FileSubAgentRunStore : ISubAgentRunStore
                 payload,
                 ct);
         }
+        catch (IOException ex)
+        {
+            // 运行事件是观测数据：重试耗尽后丢弃事件并标记 archive_degraded，
+            // 不得把运行中的子代理直接杀死（run_20260821_230951_dbff4b8075c1 案例）。
+            // 终态事件走 CompleteRunAsync，仍保持抛错语义。
+            _logger.LogError(ex,
+                "[FileSubAgentRunStore] Archive degraded — event dropped runId={RunId} eventType={EventType}",
+                runId, eventType);
+            await MarkArchiveDegradedAsync(runDir, runId, eventType, ex.Message, ct);
+        }
         finally
         {
             gate.Release();
@@ -176,7 +186,28 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         if (runDir is null) return;
 
         var line = JsonSerializer.Serialize(entry, PuddingJsonContracts.JsonLines);
-        await File.AppendAllTextAsync(Path.Combine(runDir, "tools.jsonl"), line + Environment.NewLine, ct);
+        var gate = _runGates.GetOrAdd(runId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            await AppendAllTextWithRetryAsync(
+                Path.Combine(runDir, "tools.jsonl"),
+                line + Environment.NewLine,
+                runId,
+                "tools.jsonl",
+                ct);
+        }
+        catch (IOException ex)
+        {
+            _logger.LogError(ex,
+                "[FileSubAgentRunStore] Archive degraded — tool audit dropped runId={RunId} tool={Tool}",
+                runId, entry.ToolName);
+            await MarkArchiveDegradedAsync(runDir, runId, $"tool_audit:{entry.ToolName}", ex.Message, ct);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     /// <inheritdoc />
@@ -201,7 +232,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         }
 
         // 读 run.json，检查当前 Status — 幂等性保护
-        var json = await File.ReadAllTextAsync(runJsonPath, ct);
+        var json = await ReadAllTextSharedAsync(runJsonPath, ct);
         var manifest = JsonSerializer.Deserialize<SubAgentRunManifest>(json, PuddingJsonContracts.PrettyJson);
         if (manifest is null) return SubAgentRunTerminalWriteResult.NotFound;
 
@@ -287,7 +318,8 @@ public class FileSubAgentRunStore : ISubAgentRunStore
                 timestamp = completedAt.ToString("O"),
                 error = completion.ErrorMessage,
             }, PuddingJsonContracts.JsonLines);
-            await File.AppendAllTextAsync(Path.Combine(runDir, "errors.jsonl"), errorLine + Environment.NewLine, ct);
+            await AppendAllTextWithRetryAsync(
+                Path.Combine(runDir, "errors.jsonl"), errorLine + Environment.NewLine, runId, "errors.jsonl", ct);
         }
 
         _logger.LogInformation(
@@ -316,17 +348,34 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         var runJsonPath = Path.Combine(runDir, "run.json");
         if (!File.Exists(runJsonPath)) return null;
 
+        // 读取必须与写入走同一个 per-run gate：ADR-060 要求归档只在终态被读取，
+        // 但历史检查器与诊断 API 仍会读取活动归档，绝不能让读取方把写入方挤成
+        // Windows sharing violation（run_20260821_230951_dbff4b8075c1 案例）。
+        var gate = _runGates.GetOrAdd(runId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            return await ReadRunArchiveCoreAsync(runDir, ct);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<SubAgentRunArchive> ReadRunArchiveCoreAsync(string runDir, CancellationToken ct)
+    {
         // 读 run.json
-        var json = await File.ReadAllTextAsync(runJsonPath, ct);
+        var json = await ReadAllTextSharedAsync(Path.Combine(runDir, "run.json"), ct);
         var manifest = JsonSerializer.Deserialize<SubAgentRunManifest>(json, PuddingJsonContracts.PrettyJson);
-        if (manifest is null) return null;
+        if (manifest is null) return null!;
 
         // 读 events.jsonl（逐行反序列化，单行失败时记录 warning 并跳过）
         var events = new List<object>();
         var eventsPath = Path.Combine(runDir, "events.jsonl");
         if (File.Exists(eventsPath))
         {
-            var lines = await File.ReadAllLinesAsync(eventsPath, ct);
+            var lines = await ReadAllLinesSharedAsync(eventsPath, ct);
             foreach (var line in lines)
             {
                 if (!string.IsNullOrWhiteSpace(line))
@@ -350,7 +399,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         var toolsPath = Path.Combine(runDir, "tools.jsonl");
         if (File.Exists(toolsPath))
         {
-            var lines = await File.ReadAllLinesAsync(toolsPath, ct);
+            var lines = await ReadAllLinesSharedAsync(toolsPath, ct);
             foreach (var line in lines)
             {
                 if (!string.IsNullOrWhiteSpace(line))
@@ -374,7 +423,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         var outputPath = Path.Combine(runDir, "output.md");
         if (File.Exists(outputPath))
         {
-            output = await File.ReadAllTextAsync(outputPath, ct);
+            output = await ReadAllTextSharedAsync(outputPath, ct);
         }
 
         // 读 errors.jsonl
@@ -382,7 +431,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         var errorsPath = Path.Combine(runDir, "errors.jsonl");
         if (File.Exists(errorsPath))
         {
-            errorOutput = await File.ReadAllTextAsync(errorsPath, ct);
+            errorOutput = await ReadAllTextSharedAsync(errorsPath, ct);
         }
 
         return new SubAgentRunArchive
@@ -392,6 +441,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             Tools = tools,
             Output = output,
             ErrorOutput = errorOutput,
+            Degraded = await TryReadArchiveDegradedAsync(runDir, ct),
         };
     }
 
@@ -421,7 +471,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             SubAgentRunManifest? manifest;
             try
             {
-                var json = await File.ReadAllTextAsync(runJsonPath, ct);
+                var json = await ReadAllTextSharedAsync(runJsonPath, ct);
                 manifest = JsonSerializer.Deserialize<SubAgentRunManifest>(
                     json,
                     PuddingJsonContracts.PrettyJson);
@@ -544,7 +594,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         var eventsPath = Path.Combine(runDir, "events.jsonl");
         if (File.Exists(eventsPath))
         {
-            foreach (var line in await File.ReadAllLinesAsync(eventsPath, ct))
+            foreach (var line in await ReadAllLinesSharedAsync(eventsPath, ct))
             {
                 if (string.IsNullOrWhiteSpace(line))
                     continue;
@@ -639,7 +689,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         if (!File.Exists(runJsonPath) || !File.Exists(eventsPath))
             return 0;
 
-        var manifestJson = await File.ReadAllTextAsync(runJsonPath, ct);
+        var manifestJson = await ReadAllTextSharedAsync(runJsonPath, ct);
         var manifest = JsonSerializer.Deserialize<SubAgentRunManifest>(
             manifestJson,
             PuddingJsonContracts.PrettyJson);
@@ -648,7 +698,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
 
         var cursorPath = Path.Combine(runDir, "conversation-projection.cursor");
         var cursor = await ReadProjectionCursorAsync(cursorPath, ct);
-        var lines = await File.ReadAllLinesAsync(eventsPath, ct);
+        var lines = await ReadAllLinesSharedAsync(eventsPath, ct);
         if (cursor >= lines.LongLength)
             return 0;
 
@@ -762,11 +812,134 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             payload = payloadNode,
         }, PuddingJsonContracts.JsonLines);
 
-        await File.AppendAllTextAsync(
+        await AppendAllTextWithRetryAsync(
             Path.Combine(runDir, "events.jsonl"),
             line + Environment.NewLine,
+            runId,
+            "events.jsonl",
             ct);
-        await ProjectPendingConversationEventsCoreAsync(runId, runDir, ct);
+        try
+        {
+            await ProjectPendingConversationEventsCoreAsync(runId, runDir, ct);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            // 事件已持久化，投影滞后由 ReplayPendingConversationEventsAsync 补齐；
+            // 投影的瞬时 IO 失败不得让调用方误判事件写入失败。
+            _logger.LogWarning(ex,
+                "[FileSubAgentRunStore] Conversation projection deferred after append runId={RunId} eventId={EventId}",
+                runId, eventId);
+        }
+    }
+
+    /// <summary>
+    /// Windows sharing violation 的有限退避重试（约 770ms 上限）。
+    /// 检查器/杀毒/备份进程短持文件时，append 必须等到锁释放而不是立刻失败。
+    /// </summary>
+    private static readonly int[] AppendRetryDelaysMs = [20, 50, 100, 200, 400];
+
+    private async Task AppendAllTextWithRetryAsync(
+        string path,
+        string contents,
+        string runId,
+        string fileName,
+        CancellationToken ct)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await File.AppendAllTextAsync(path, contents, ct);
+                return;
+            }
+            catch (IOException ex) when (attempt < AppendRetryDelaysMs.Length && !ct.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex,
+                    "[FileSubAgentRunStore] Append retry {Attempt}/{Max} runId={RunId} file={File}",
+                    attempt + 1, AppendRetryDelaysMs.Length, runId, fileName);
+                await Task.Delay(AppendRetryDelaysMs[attempt], ct);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 以 FileShare.ReadWrite|Delete 读取：读取方不得以只读共享打开归档文件，
+    /// 否则读句柄会把并发写入方挤成 sharing violation。
+    /// </summary>
+    private static async Task<string> ReadAllTextSharedAsync(string path, CancellationToken ct)
+    {
+        await using var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync(ct);
+    }
+
+    private static async Task<string[]> ReadAllLinesSharedAsync(string path, CancellationToken ct)
+    {
+        await using var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        var lines = new List<string>();
+        while (await reader.ReadLineAsync(ct) is { } line)
+            lines.Add(line);
+        return [.. lines];
+    }
+
+    private static async Task<SubAgentArchiveDegradedInfo?> TryReadArchiveDegradedAsync(
+        string runDir,
+        CancellationToken ct)
+    {
+        var markerPath = Path.Combine(runDir, "archive-degraded.json");
+        if (!File.Exists(markerPath))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<SubAgentArchiveDegradedInfo>(
+                await ReadAllTextSharedAsync(markerPath, ct),
+                PuddingJsonContracts.PrettyJson);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 写/更新 archive-degraded.json 标记。标记写入本身也可能失败，
+    /// 此时只记录日志——降级标记绝不能反向伤害运行中的子代理。
+    /// </summary>
+    private async Task MarkArchiveDegradedAsync(
+        string runDir,
+        string runId,
+        string eventType,
+        string error,
+        CancellationToken ct)
+    {
+        try
+        {
+            var previous = await TryReadArchiveDegradedAsync(runDir, ct);
+            var now = DateTimeOffset.UtcNow.ToString("O");
+            var marker = new SubAgentArchiveDegradedInfo
+            {
+                FirstFailureAt = string.IsNullOrEmpty(previous?.FirstFailureAt)
+                    ? now
+                    : previous!.FirstFailureAt,
+                LastFailureAt = now,
+                DroppedEventCount = (previous?.DroppedEventCount ?? 0) + 1,
+                LastEventType = eventType,
+                LastError = error,
+            };
+            await File.WriteAllTextAsync(
+                Path.Combine(runDir, "archive-degraded.json"),
+                JsonSerializer.Serialize(marker, PuddingJsonContracts.PrettyJson),
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "[FileSubAgentRunStore] Failed to write archive-degraded marker runId={RunId}", runId);
+        }
     }
 
     private static bool IsTerminalStatus(string status) =>
@@ -791,7 +964,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         if (!File.Exists(cursorPath))
             return 0;
 
-        var text = await File.ReadAllTextAsync(cursorPath, ct);
+        var text = await ReadAllTextSharedAsync(cursorPath, ct);
         return long.TryParse(
             text,
             System.Globalization.NumberStyles.Integer,
