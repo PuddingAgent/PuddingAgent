@@ -422,8 +422,9 @@ public sealed partial class PuddingToolInfrastructureTests
 
         CollectionAssert.Contains(parameters, "action");
         CollectionAssert.Contains(parameters, "provider");
-        StringAssert.Contains(tool.Descriptor.Description, "absolute");
-        StringAssert.Contains(tool.Descriptor.Description, "available drive roots");
+        // 2026-08-22 工具描述去英文复述：描述改为中文单语，断言改为中文关键语义。
+        StringAssert.Contains(tool.Descriptor.Description, "绝对");
+        StringAssert.Contains(tool.Descriptor.Description, "可用盘符根");
     }
 
     [TestMethod]

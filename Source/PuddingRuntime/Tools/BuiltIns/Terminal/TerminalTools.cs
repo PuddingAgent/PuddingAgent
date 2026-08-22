@@ -107,7 +107,7 @@ internal static class TerminalToolJson
 [Tool(
     id: "terminal_start",
     name: "Terminal start",
-    description: "以后台终端任务方式启动 shell 命令并立即返回。适用于构建、测试、搜索、服务器等可能耗时数秒以上的命令，随后用 terminal_wait 轮询。Start a shell command as a background terminal job and return immediately",
+    description: "以后台终端任务方式启动 shell 命令并立即返回。适用于构建、测试、搜索、服务器等可能耗时数秒以上的命令；随后用一次 terminal_wait 阻塞等待（wait_seconds 按预期耗时设置，构建/测试类 180-600 秒），不要用短 wait_seconds 反复轮询。",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,
@@ -186,20 +186,20 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs, Termi
             Job = TerminalToolJson.ToJobDto(info),
             Output = snapshot is null ? null : TerminalToolJson.ToOutputDto(snapshot),
             NextAction = snapshot is null
-                ? "Use terminal_wait with job_id to poll incremental output. Do not block the agent loop waiting for this process."
+                ? "Call terminal_wait once with job_id and wait_seconds sized to the expected runtime (builds/tests: 180-600); it blocks until the job exits. Do not poll with short waits."
                 : TerminalToolJson.NextAction(
                     snapshot,
-                    "Use terminal_wait with job_id to poll incremental output. Do not block the agent loop waiting for this process.",
+                    "Call terminal_wait once with job_id and wait_seconds sized to the expected runtime (builds/tests: 180-600); it blocks until the job exits. Do not poll with short waits.",
                     "Job already completed. Use the exit_code and output to continue."),
         };
     }
 }
 
-/// <summary>Polls incremental terminal job output without owning the process lifetime.</summary>
+/// <summary>Blocks on a background terminal job until it exits, output saturates the preview cap, or the wait deadline.</summary>
 [Tool(
     id: "terminal_wait",
     name: "Terminal wait",
-    description: "轮询后台终端任务的增量输出。取消等待不会杀死任务，请用 terminal_cancel 停止任务。Poll a background terminal job for incremental output",
+    description: "阻塞等待后台终端任务：直到任务退出、输出超过预览上限（返回截断句柄）或 wait_seconds 超时，一次性返回全部增量输出。每次工具调用都消耗一个完整模型轮——按预期耗时设置 wait_seconds（构建/测试类 180-600 秒），禁止 1-2 秒式反复轮询。取消等待不会杀死任务，请用 terminal_cancel 停止任务。",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,
@@ -223,7 +223,7 @@ public sealed class TerminalWaitTool : PuddingToolBase<TerminalWaitArgs, Termina
             throw new InvalidOperationException($"terminal job not found in this session: {args.JobId}");
 
         var fromOffset = Math.Max(0, args.FromOffset ?? 0);
-        var waitSeconds = Math.Clamp(args.WaitSeconds ?? 1, 0, 30);
+        var waitSeconds = Math.Clamp(args.WaitSeconds ?? 60, 0, 600);
         var deadline = DateTimeOffset.UtcNow.AddSeconds(waitSeconds);
         TerminalOutputSnapshot? snapshot = null;
 
@@ -239,7 +239,10 @@ public sealed class TerminalWaitTool : PuddingToolBase<TerminalWaitArgs, Termina
             if (snapshot is null)
                 throw new InvalidOperationException($"terminal job disappeared before output could be read: {args.JobId}");
 
-            if (snapshot.NextOffset > fromOffset || snapshot.Process.Status != TerminalProcessStatus.Running)
+            // 阻塞语义（2026-08-22 能耗修复）：等待任务退出或输出超过预览上限，
+            // 不再因“出现任何新输出”提前返回。旧语义把流式构建拆成一堆 200ms
+            // 级的完整模型轮——全库 6,040 个纯轮询轮、约 16% 的 token 消耗。
+            if (snapshot.Process.Status != TerminalProcessStatus.Running || snapshot.Truncated)
                 break;
 
             if (DateTimeOffset.UtcNow >= deadline)
@@ -253,7 +256,7 @@ public sealed class TerminalWaitTool : PuddingToolBase<TerminalWaitArgs, Termina
             Result = TerminalToolJson.ToOutputDto(snapshot),
             NextAction = TerminalToolJson.NextAction(
                 snapshot,
-                "Job is still running. Call terminal_wait again with from_offset set to next_offset for more output, or terminal_cancel to stop it.",
+                "Job is still running after wait_seconds. Call terminal_wait again with a larger wait_seconds (up to 600) sized to the expected runtime instead of short repeated polls — every tool call costs a full model round. Use terminal_cancel to stop the job.",
                 "Job is no longer running. Use the exit_code and output to continue."),
         };
     }
@@ -263,7 +266,7 @@ public sealed class TerminalWaitTool : PuddingToolBase<TerminalWaitArgs, Termina
 [Tool(
     id: "terminal_read",
     name: "Terminal read",
-    description: "按 job_id 和 from_offset 读取缓冲的终端输出切片。当 terminal_wait 返回截断句柄时使用。Read a slice of buffered terminal output by job_id and from_offset",
+    description: "按 job_id 和 from_offset 读取缓冲的终端输出切片。当 terminal_wait 返回截断句柄时使用。",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,
@@ -311,7 +314,7 @@ public sealed class TerminalReadTool : PuddingToolBase<TerminalReadArgs, Termina
 [Tool(
     id: "terminal_status",
     name: "Terminal status",
-    description: "列出当前会话的后台终端任务，或按 job_id 检查单个任务。List background terminal jobs for this session, or inspect one job by job_id",
+    description: "列出当前会话的后台终端任务，或按 job_id 检查单个任务。",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell,
@@ -348,7 +351,7 @@ public sealed class TerminalStatusTool : PuddingToolBase<TerminalStatusArgs>
 [Tool(
     id: "terminal_cancel",
     name: "Terminal cancel",
-    description: "按 job_id 取消正在运行的后台终端任务。【何时用】terminal_start 启动的后台任务失控/卡死或确认不再需要运行时，真正终止它时使用；注意 terminal_wait 超时或取消只是「停止等待」，并不会杀掉任务。【怎么用】传 job_id（terminal_start 返回值或 terminal_status 查询结果）；取消后用 terminal_status 确认任务已退出。【坑】是强杀，未保存进度会丢失；job 必须属于当前会话，否则报 not found；先 terminal_status 确认 job_id 再取消，避免误杀。Cancel a running background terminal job by job_id — use to truly kill a runaway/hung job (terminal_wait cancellation only stops polling, it does NOT kill the job); pass job_id from terminal_start/terminal_status and confirm with terminal_status afterwards; kill is forceful (unsaved work lost) and job_ids outside the current session are rejected.",
+    description: "按 job_id 取消正在运行的后台终端任务。【何时用】terminal_start 启动的后台任务失控/卡死或确认不再需要运行时，真正终止它时使用；注意 terminal_wait 超时或取消只是「停止等待」，并不会杀掉任务。【怎么用】传 job_id（terminal_start 返回值或 terminal_status 查询结果）；取消后用 terminal_status 确认任务已退出。【坑】是强杀，未保存进度会丢失；job 必须属于当前会话，否则报 not found；先 terminal_status 确认 job_id 再取消，避免误杀。",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell | ToolSafetyFlags.Destructive,
@@ -439,7 +442,7 @@ public sealed record TerminalWaitArgs
     [ToolParam("0-based output line offset to read from. Use next_offset from the previous result.")]
     public int? FromOffset { get; init; }
 
-    [ToolParam("Maximum seconds to wait for new output before returning. Range: 0-30. Default: 1.")]
+    [ToolParam("Maximum seconds to block waiting for the job to exit or output to exceed the preview cap. Range: 0-600. Default: 60. Size it to the expected command runtime (builds/tests: 180-600); short waits waste full model rounds.")]
     public int? WaitSeconds { get; init; }
 
     [ToolParam("Maximum output lines to return. Default: 200.")]

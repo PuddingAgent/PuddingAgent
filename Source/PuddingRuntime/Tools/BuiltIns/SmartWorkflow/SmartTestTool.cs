@@ -48,7 +48,7 @@ public sealed class SmartTestTool : SmartWorkflowToolBase<SmartTestArgs>
         sb.AppendLine();
         sb.AppendLine("### PROCESS");
         sb.AppendLine("1. Discover: list_dir + file_search for test projects (run in PARALLEL).");
-        sb.AppendLine("2. Run: `dotnet test` via terminal_start → terminal_wait. Run independent test projects in parallel.");
+        sb.AppendLine("2. Run: `dotnet test` via terminal_start → ONE blocking terminal_wait (wait_seconds 300-600, it waits until exit) — no short-wait polling. Run independent test projects in parallel.");
         sb.AppendLine("3. Analyze: for each failure → read source (search_grep + file_read) → root cause (file:line).");
         sb.AppendLine("4. Report: pattern analysis + actionable fix recommendations.");
         sb.AppendLine();

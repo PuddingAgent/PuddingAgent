@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 using PuddingCodeIntelligence.Contracts;
@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "code_index_register_project",
     name: "Register project for indexing",
-    description: "在 Pudding 的代码索引注册表中登记本地项目目录（register project）。低风险索引状态变更——不修改或删除任何源文件。索引数据始终可重建。index=true 时在登记后触发语义索引。【何时用】所有基于索引的 CodeIntelligence 查询（code_symbol_search/code_callers/code_callees/code_impact/code_summary）之前必须先登记项目；查询报 project_id is required 或结果为空时，多半是项目未登记。【怎么用】传 project_path（本地目录，必须存在）；可选 project_id/display_name；index=true 在登记后触发后台语义索引，否则仅登记不建索引。【坑】目录不存在会失败；非 YOLO 模式受工作区边界限制；索引是异步后台任务，登记后需用 code_index_status 确认 Completed 再查询，否则查不到符号。Register a local project directory in Pudding's code-index registry — REQUIRED before any index-based query (code_symbol_search/callers/callees/impact/summary); pass project_path (+optional project_id/display_name), set index=true to trigger async semantic indexing; poll code_index_status until Completed before querying.",
+    description: "在 Pudding 的代码索引注册表中登记本地项目目录（register project）。低风险索引状态变更——不修改或删除任何源文件。索引数据始终可重建。index=true 时在登记后触发语义索引。【何时用】所有基于索引的 CodeIntelligence 查询（code_symbol_search/code_callers/code_callees/code_impact/code_summary）之前必须先登记项目；查询报 project_id is required 或结果为空时，多半是项目未登记。【怎么用】传 project_path（本地目录，必须存在）；可选 project_id/display_name；index=true 在登记后触发后台语义索引，否则仅登记不建索引。【坑】目录不存在会失败；非 YOLO 模式受工作区边界限制；索引是异步后台任务，登记后需用 code_index_status 确认 Completed 再查询，否则查不到符号。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -120,7 +120,7 @@ public sealed record CodeProjectAddArgs
 [Tool(
     id: "code_index_unregister_project",
     name: "Unregister project from indexing",
-    description: "从 Pudding 的代码索引注册表中移除项目（unregister project）。低风险索引状态变更——不删除源文件或目录，仅清除索引注册项与关联的索引数据。【何时用】项目不再需要代码查询/索引时清理注册表；或想重建索引时先移除再重新登记。【怎么用】传 project_id（用 code_index_list_projects 查）；remove_index_data 默认 true，同时删除关联索引数据，设 false 可仅移除注册项保留索引数据。【坑】移除后该项目立即无法被索引查询访问；remove_index_data=true 会删除索引数据（但可重建，源文件不受影响）；确认 project_id 正确再执行，属于状态变更操作。Remove a project from Pudding's code-index registry — use when a project no longer needs code querying or to rebuild its index (remove then re-register); pass project_id from code_index_list_projects; remove_index_data defaults to true and deletes index data (source files untouched, index rebuildable).",
+    description: "从 Pudding 的代码索引注册表中移除项目（unregister project）。低风险索引状态变更——不删除源文件或目录，仅清除索引注册项与关联的索引数据。【何时用】项目不再需要代码查询/索引时清理注册表；或想重建索引时先移除再重新登记。【怎么用】传 project_id（用 code_index_list_projects 查）；remove_index_data 默认 true，同时删除关联索引数据，设 false 可仅移除注册项保留索引数据。【坑】移除后该项目立即无法被索引查询访问；remove_index_data=true 会删除索引数据（但可重建，源文件不受影响）；确认 project_id 正确再执行，属于状态变更操作。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ConcurrencySafe,
@@ -190,7 +190,7 @@ public sealed record CodeProjectRemoveArgs
 [Tool(
     id: "code_index_list_projects",
     name: "List registered projects",
-    description: "列出当前工作区中已登记到 Pudding 代码索引注册表的所有项目（list projects）。【何时用】开始代码查询前先看有哪些项目已登记、拿到 project_id；查询结果为空时用它排查项目是否已登记。【怎么用】无必填参数，直接调用即可；返回每个项目的 project_id/display_name/project_path/status。【坑】只列出已登记项目，未登记的目录不会出现；status 是注册状态而非索引完成度，索引进度需用 code_index_status 查。List all projects registered in Pudding's code-index registry for the current workspace — call before index-based queries to get project_id/status; no required args; only shows registered projects; use code_index_status for indexing progress.",
+    description: "列出当前工作区中已登记到 Pudding 代码索引注册表的所有项目（list projects）。【何时用】开始代码查询前先看有哪些项目已登记、拿到 project_id；查询结果为空时用它排查项目是否已登记。【怎么用】无必填参数，直接调用即可；返回每个项目的 project_id/display_name/project_path/status。【坑】只列出已登记项目，未登记的目录不会出现；status 是注册状态而非索引完成度，索引进度需用 code_index_status 查。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

@@ -38,7 +38,10 @@ public sealed class SearchToolsTool(IServiceProvider services) : PuddingToolBase
         // of IPuddingToolRegistry would create a singleton dependency cycle.
         var registry = services.GetRequiredService<IPuddingToolRegistry>();
         var descriptors = registry.ListAvailable(context.CapabilityPolicy, context.WorkspaceId);
-        var maxResults = Math.Clamp(args.MaxResults ?? 8, 1, 20);
+        // 2026-08-22 能耗治理：默认 8/上限 20 会把每次搜索的全部命中永久装载，
+        // 长会话棘轮到 50+ 工具、每轮 3.4 万 schema tokens。收紧为默认 3/上限 8；
+        // 精确 tool_id 查询仍按 1000 分优先命中，不受影响。
+        var maxResults = Math.Clamp(args.MaxResults ?? 3, 1, 8);
         var terms = QueryTermRegex.Matches(query)
             .Select(match => match.Value)
             .Where(term => term.Length > 1)
@@ -118,7 +121,7 @@ public sealed record SearchToolsArgs
     [ToolParam("Keywords describing the required capability or action. Prefer concise English domain/action terms when possible.")]
     public required string Query { get; init; }
 
-    [ToolParam("Maximum number of candidate tools to load. Range 1-20; default 8.")]
+    [ToolParam("Maximum number of candidate tools to load. Range 1-8; default 3. Loaded tools stay exposed for the whole session — query narrowly so only what you need loads.")]
     public int? MaxResults { get; init; }
 }
 

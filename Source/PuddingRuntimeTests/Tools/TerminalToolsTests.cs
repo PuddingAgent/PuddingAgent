@@ -335,6 +335,101 @@ public sealed class TerminalToolsTests
         StringAssert.Contains(waitResult.Output, "Do not blindly rerun the same command unchanged");
     }
 
+    [TestMethod]
+    public async Task TerminalWait_Blocks_Until_Job_Exit_Instead_Of_First_Output()
+    {
+        // 回归（2026-08-22 能耗修复）：旧语义一出现新输出就返回，流式构建被拆成
+        // 大量 1-2 秒级轮询轮（全库 6,040 个纯轮询轮 ≈16% token）。
+        // 新语义必须等到任务退出，一次返回全部输出。
+        using var scope = CreateScope();
+        var start = new TerminalStartTool(scope.Manager, NullLogger<TerminalStartTool>.Instance);
+        var wait = new TerminalWaitTool(scope.Manager);
+        var scriptName = "emit-slow-lines.py";
+        var script = Path.Combine(scope.Root, scriptName);
+        await File.WriteAllTextAsync(script, """
+        import time
+        print("wait-first-line", flush=True)
+        time.sleep(2.5)
+        print("wait-final-line", flush=True)
+        """);
+        var command = OperatingSystem.IsWindows()
+            ? $"python {scriptName}"
+            : $"python3 {scriptName}";
+
+        var startResult = await ExecuteAsync(start, $$"""
+        {
+          "command": "{{JsonEncodedText(command)}}",
+          "cwd": "{{JsonEncodedText(scope.Root)}}"
+        }
+        """);
+
+        Assert.IsTrue(startResult.Success, startResult.Error);
+        var jobId = ReadString(startResult.Output, "job", "job_id");
+
+        var waitResult = await ExecuteAsync(wait, $$"""
+        {
+          "job_id": "{{jobId}}",
+          "wait_seconds": 10,
+          "from_offset": 0
+        }
+        """);
+
+        Assert.IsTrue(waitResult.Success, waitResult.Error);
+        StringAssert.Contains(waitResult.Output, "wait-first-line");
+        StringAssert.Contains(waitResult.Output, "wait-final-line");
+        StringAssert.Contains(waitResult.Output, "\"status\":\"Exited\"");
+        StringAssert.Contains(waitResult.Output, "\"exit_code\":0");
+    }
+
+    [TestMethod]
+    public async Task TerminalWait_Returns_At_Deadline_While_Job_Still_Running()
+    {
+        using var scope = CreateScope();
+        var start = new TerminalStartTool(scope.Manager, NullLogger<TerminalStartTool>.Instance);
+        var wait = new TerminalWaitTool(scope.Manager);
+        var scriptName = "sleep-long.py";
+        var script = Path.Combine(scope.Root, scriptName);
+        await File.WriteAllTextAsync(script, """
+        import time
+        time.sleep(30)
+        """);
+        var command = OperatingSystem.IsWindows()
+            ? $"python {scriptName}"
+            : $"python3 {scriptName}";
+
+        var startResult = await ExecuteAsync(start, $$"""
+        {
+          "command": "{{JsonEncodedText(command)}}",
+          "cwd": "{{JsonEncodedText(scope.Root)}}"
+        }
+        """);
+
+        Assert.IsTrue(startResult.Success, startResult.Error);
+        var jobId = ReadString(startResult.Output, "job", "job_id");
+
+        var waitSw = System.Diagnostics.Stopwatch.StartNew();
+        var waitResult = await ExecuteAsync(wait, $$"""
+        {
+          "job_id": "{{jobId}}",
+          "wait_seconds": 1
+        }
+        """);
+        waitSw.Stop();
+
+        Assert.IsTrue(waitResult.Success, waitResult.Error);
+        StringAssert.Contains(waitResult.Output, "\"status\":\"Running\"");
+        StringAssert.Contains(waitResult.Output, "larger wait_seconds");
+        Assert.IsLessThan(10_000, (int)waitSw.ElapsedMilliseconds);
+
+        var cancel = new TerminalCancelTool(scope.Manager);
+        var cancelResult = await ExecuteAsync(cancel, $$"""
+        {
+          "job_id": "{{jobId}}"
+        }
+        """);
+        Assert.IsTrue(cancelResult.Success, cancelResult.Error);
+    }
+
     private static TerminalTestScope CreateScope()
     {
         var root = Path.Combine(Path.GetTempPath(), "pudding-terminal-tests", Guid.NewGuid().ToString("N"));

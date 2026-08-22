@@ -10,6 +10,16 @@ public sealed record LlmRequestBudgetResult(
     int EffectiveInputLimit,
     int RemovedMessageCount);
 
+/// <summary>软压缩结果：携带压缩前估算，供运行事件与日志归档。</summary>
+public sealed record LlmSoftCompactionResult(
+    IReadOnlyList<ChatMessage> Messages,
+    ContextUsageSnapshot Snapshot,
+    int EffectiveInputLimit,
+    bool Compacted,
+    int RemovedMessageCount,
+    int InitialUsedTokens,
+    int InitialMessageCount);
+
 public sealed class LlmInputBudgetExceededException : InvalidOperationException
 {
     public LlmInputBudgetExceededException(int estimatedTokens, int effectiveInputLimit)
@@ -89,6 +99,69 @@ public static partial class LlmRequestBudgetGuard
             snapshot,
             effectiveInputLimit,
             Math.Max(0, initialCount - working.Count));
+    }
+
+    /// <summary>
+    /// 轮内软压缩：估算输入达到 triggerRatio × 有效上限即按会话单元驱逐最旧历史，
+    /// 压到 targetRatio × 有效上限为止。与 <see cref="Prepare"/> 的硬悬崖不同，
+    /// 本方法从不抛异常——压缩不动（如只剩受保护尾部）时原样返回。
+    /// 2026-08-22 能耗修复：此前子代理路径只有硬悬崖（约 61 万 tokens），
+    /// 上下文被养满才一次性裁剪，每轮重放 30-60 万 tokens。
+    /// </summary>
+    public static LlmSoftCompactionResult PrepareSoftCompaction(
+        ContextUsageSnapshotStore usageStore,
+        string sessionId,
+        IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<LlmToolDefinition>? tools,
+        LlmConfig? config,
+        double triggerRatio = 0.65,
+        double targetRatio = 0.5,
+        int safetyBufferTokens = DefaultSafetyBufferTokens)
+    {
+        ArgumentNullException.ThrowIfNull(usageStore);
+
+        var effectiveInputLimit = ResolveEffectiveInputLimit(config, safetyBufferTokens);
+        var working = messages.ToList();
+        var snapshot = usageStore.CaptureLlmRequest(
+            sessionId,
+            working,
+            tools,
+            config?.ModelId);
+        var initialUsedTokens = snapshot.UsedTokens;
+
+        var trigger = effectiveInputLimit * Math.Clamp(triggerRatio, 0.1, 1.0);
+        if (snapshot.UsedTokens < trigger)
+        {
+            return new LlmSoftCompactionResult(
+                working,
+                snapshot,
+                effectiveInputLimit,
+                Compacted: false,
+                RemovedMessageCount: 0,
+                InitialUsedTokens: initialUsedTokens,
+                InitialMessageCount: messages.Count);
+        }
+
+        var target = effectiveInputLimit * Math.Clamp(targetRatio, 0.05, Math.Clamp(triggerRatio, 0.05, 1.0));
+        while (snapshot.UsedTokens > target && RemoveOldestConversationUnit(working))
+        {
+            working = LlmMessageSequenceNormalizer.Normalize(working).Messages.ToList();
+            snapshot = usageStore.CaptureLlmRequest(
+                sessionId,
+                working,
+                tools,
+                config?.ModelId);
+        }
+
+        var removed = Math.Max(0, messages.Count - working.Count);
+        return new LlmSoftCompactionResult(
+            working,
+            snapshot,
+            effectiveInputLimit,
+            Compacted: removed > 0,
+            RemovedMessageCount: removed,
+            InitialUsedTokens: initialUsedTokens,
+            InitialMessageCount: messages.Count);
     }
 
     public static bool TryGetProviderMaxInputTokens(Exception exception, out int maxInputTokens)

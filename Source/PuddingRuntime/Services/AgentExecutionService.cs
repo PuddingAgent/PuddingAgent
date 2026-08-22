@@ -83,6 +83,7 @@ public sealed partial class AgentExecutionService
     private readonly IConversationEventStore? _conversationEventStore; // P0-2：steering 正文 canonical 留痕
     private readonly IIdleDetector? _idleDetector;
     private readonly ContextUsageSnapshotStore? _contextUsageSnapshotStore;
+    private readonly IRuntimeExecutionConfigService? _runtimeExecutionConfig;
     private readonly SkillEnforcerService? _skillEnforcer;
     private readonly ISessionExecutionGate _sessionExecutionGate;
     private readonly IExecutionProgressRegistry? _executionProgress;
@@ -145,7 +146,8 @@ public sealed partial class AgentExecutionService
         IOptions<SubconsciousOptions>? subconsciousOptions = null,
         IExecutionProgressRegistry? executionProgress = null,
         IConversationEventStore? conversationEventStore = null,
-        CompositionRecoveryService? compositionRecovery = null)
+        CompositionRecoveryService? compositionRecovery = null,
+        IRuntimeExecutionConfigService? runtimeExecutionConfig = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -196,6 +198,7 @@ public sealed partial class AgentExecutionService
         _executionProgress         = executionProgress;
         _conversationEventStore    = conversationEventStore;
         _compositionRecovery       = compositionRecovery;
+        _runtimeExecutionConfig    = runtimeExecutionConfig;
 
         if (_ssm is null)
             _logger.LogWarning("[AgentExec] SSM is NULL — SSE frames will NOT be forwarded through SessionStateManager");
@@ -1619,6 +1622,20 @@ public sealed partial class AgentExecutionService
                 "[AgentExec:SubAgent] Run event append failed runId={RunId} eventType={EventType}",
                 runId, eventType);
         }
+    }
+
+    /// <summary>
+    /// 子代理轮内软压缩阈值：来自 runtime.execution.json 的 SubAgents 段；
+    /// 配置服务不可用时使用 SubAgentExecutionOptions 默认值。
+    /// </summary>
+    private (double Trigger, double Target) ResolveContextSoftCompactionRatios()
+    {
+        var subAgents = _runtimeExecutionConfig?.GetOptions().SubAgents;
+        return subAgents is null
+            ? (SubAgentExecutionOptions.DefaultContextSoftCompactionTriggerRatio,
+                SubAgentExecutionOptions.DefaultContextSoftCompactionTargetRatio)
+            : (subAgents.ContextSoftCompactionTriggerRatio,
+                subAgents.ContextSoftCompactionTargetRatio);
     }
 
     /// <summary>

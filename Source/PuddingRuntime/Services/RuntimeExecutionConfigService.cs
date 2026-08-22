@@ -114,6 +114,13 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
             1,
             Math.Max(1, maxTimeout - 1));
         var parentFinalizationReserve = Math.Max(0, subAgents.ParentFinalizationReserveSeconds);
+        // 软压缩触发/目标比例必须形成有效区间：trigger ∈ (0,1]，target ∈ (0, trigger]。
+        var softTrigger = subAgents.ContextSoftCompactionTriggerRatio > 0
+            ? Math.Min(1.0, subAgents.ContextSoftCompactionTriggerRatio)
+            : SubAgentExecutionOptions.DefaultContextSoftCompactionTriggerRatio;
+        var softTarget = subAgents.ContextSoftCompactionTargetRatio > 0
+            ? Math.Min(softTrigger, subAgents.ContextSoftCompactionTargetRatio)
+            : SubAgentExecutionOptions.DefaultContextSoftCompactionTargetRatio;
         var transientDirectoryRetention = subAgents.TransientDirectoryRetention
             ?? new SubAgentTransientDirectoryRetentionOptions();
         var scanIntervalMinutes = Math.Clamp(
@@ -161,6 +168,8 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
                 BudgetGraceRounds = budgetGraceRounds,
                 BudgetGraceTimeoutSeconds = budgetGraceTimeoutSeconds,
                 ParentFinalizationReserveSeconds = parentFinalizationReserve,
+                ContextSoftCompactionTriggerRatio = softTrigger,
+                ContextSoftCompactionTargetRatio = softTarget,
                 DefaultPermissionMode = permissionMode,
                 TransientDirectoryRetention = transientDirectoryRetention with
                 {

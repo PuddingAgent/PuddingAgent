@@ -46,7 +46,7 @@ internal static class CodeQueryToolHelper
 [Tool(
     id: "code_index_status",
     name: "Code index status",
-    description: "获取已登记代码项目的当前索引状态（indexing status）。【何时用】登记项目后、执行索引查询前，确认索引是否已完成；查询结果异常/为空时用它诊断是否索引未就绪。【怎么用】传 project_id；也可只传 file_path 或 scope_path 自动探测所属项目。【坑】项目未登记会报错；status 为 Pending/Indexing 时查询类工具结果不完整，等 Completed 再查；索引数据随源码变更会过期，重大改动后可重新登记触发重索引。Get the current indexing status for a registered code project — check after code_index_register_project before running queries, and when query results look incomplete; pass project_id or file_path/scope_path for auto-detection; wait for Completed, otherwise queries may return empty or stale results.",
+    description: "获取已登记代码项目的当前索引状态（indexing status）。【何时用】登记项目后、执行索引查询前，确认索引是否已完成；查询结果异常/为空时用它诊断是否索引未就绪。【怎么用】传 project_id；也可只传 file_path 或 scope_path 自动探测所属项目。【坑】项目未登记会报错；status 为 Pending/Indexing 时查询类工具结果不完整，等 Completed 再查；索引数据随源码变更会过期，重大改动后可重新登记触发重索引。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -124,7 +124,7 @@ public sealed record CodeIndexStatusArgs
 [Tool(
     id: "code_symbol_search",
     name: "Search code symbols",
-    description: "按名称在已登记项目中搜索代码符号（symbol search），结果包含符号种类、文件位置与签名。【何时用】定位某个类/方法/属性的定义与签名时使用；也是 code_callers/code_callees/code_impact 的前置步骤——先用它拿到 symbol_id。【怎么用】传 query（符号名关键词）；可选 project_id 限定项目（不传则跨全部已索引项目搜索）、kind 过滤符号种类、limit 控制数量（默认50）、include_parameters=true 可包含参数符号。【坑】依赖项目已登记且索引完成，否则搜不到；不传 project_id 时跨项目搜索，重名结果较多；参数与未知符号默认被过滤。Search code symbols by name across registered projects — use to locate definitions/signatures and to obtain symbol_id for callers/callees/impact; pass query (+optional project_id/kind/limit/include_parameters); requires registered and indexed projects; parameters are filtered unless include_parameters=true.",
+    description: "按名称在已登记项目中搜索代码符号（symbol search），结果包含符号种类、文件位置与签名。【何时用】定位某个类/方法/属性的定义与签名时使用；也是 code_callers/code_callees/code_impact 的前置步骤——先用它拿到 symbol_id。【怎么用】传 query（符号名关键词）；可选 project_id 限定项目（不传则跨全部已索引项目搜索）、kind 过滤符号种类、limit 控制数量（默认50）、include_parameters=true 可包含参数符号。【坑】依赖项目已登记且索引完成，否则搜不到；不传 project_id 时跨项目搜索，重名结果较多；参数与未知符号默认被过滤。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -262,7 +262,7 @@ public sealed record CodeSymbolSearchArgs
 [Tool(
     id: "code_explore",
     name: "Explore code symbol",
-    description: "探索代码符号（如命名空间或类型）的子符号（contained symbols）。【何时用】想查看某命名空间/类/接口下包含哪些成员（方法、属性、嵌套类型）、快速了解结构时使用；也是符号检索后的下钻步骤。【怎么用】项目必须先 code_index_register_project 登记且 code_index_status 为 Completed；传 symbol_id（必填，来自 code_symbol_search/code_explore 结果），可选 project_id 或 file_path/scope_path 自动探测项目。【坑】未登记/未索引完成会报 project_id is required 或结果为空；symbol_id 是索引内稳定标识，不能直接传符号名。Explore the children (contained symbols) of a code symbol such as a namespace or type — use to drill into a type's members after locating it; requires the project registered via code_index_register_project and indexed to Completed; pass symbol_id from search/explore results (not a raw symbol name) plus optional project_id/file_path/scope_path.",
+    description: "探索代码符号（如命名空间或类型）的子符号（contained symbols）。【何时用】想查看某命名空间/类/接口下包含哪些成员（方法、属性、嵌套类型）、快速了解结构时使用；也是符号检索后的下钻步骤。【怎么用】项目必须先 code_index_register_project 登记且 code_index_status 为 Completed；传 symbol_id（必填，来自 code_symbol_search/code_explore 结果），可选 project_id 或 file_path/scope_path 自动探测项目。【坑】未登记/未索引完成会报 project_id is required 或结果为空；symbol_id 是索引内稳定标识，不能直接传符号名。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -358,7 +358,7 @@ public sealed record CodeExploreArgs
 [Tool(
     id: "code_callers",
     name: "Find callers",
-    description: "查找所有调用指定符号（symbol）的调用方（callers）。【何时用】修改/删除某函数或方法前评估谁在调用它、追踪调用链与重构影响时使用。【怎么用】先用 code_symbol_search 定位符号拿到 symbol_id，再传 symbol_id；可选 project_id，或传 file_path/scope_path 自动探测。【坑】依赖项目已登记且索引完成；symbol_id 是索引中的稳定标识，需从搜索/探索结果获取，不能直接传符号名；仅覆盖已索引项目内的调用，外部引用查不到。Find all symbols that call the specified symbol — use before modifying/removing a method to assess its dependents and trace call chains; get symbol_id via code_symbol_search first, then pass symbol_id (+optional project_id/file_path/scope_path); requires registered and indexed projects; only indexed projects are covered.",
+    description: "查找所有调用指定符号（symbol）的调用方（callers）。【何时用】修改/删除某函数或方法前评估谁在调用它、追踪调用链与重构影响时使用。【怎么用】先用 code_symbol_search 定位符号拿到 symbol_id，再传 symbol_id；可选 project_id，或传 file_path/scope_path 自动探测。【坑】依赖项目已登记且索引完成；symbol_id 是索引中的稳定标识，需从搜索/探索结果获取，不能直接传符号名；仅覆盖已索引项目内的调用，外部引用查不到。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -451,7 +451,7 @@ public sealed record CodeCallersArgs
 [Tool(
     id: "code_callees",
     name: "Find callees",
-    description: "查找指定符号（symbol）调用的所有被调用方（callees）。【何时用】理解某函数/方法调用了哪些其他符号、梳理依赖面与调用链时使用。【怎么用】先用 code_symbol_search 拿到 symbol_id，再传 symbol_id；可选 project_id 或 file_path/scope_path。【坑】依赖项目已登记且索引完成；symbol_id 需从搜索/探索结果获取；只返回直接调用的被调用方，多层传递可配合 code_impact 或逐层展开。Find all symbols called by the specified symbol — use to understand a method's dependencies and call chains; get symbol_id via code_symbol_search first, then pass symbol_id; requires registered and indexed projects; returns direct callees only — combine with code_impact for transitive analysis.",
+    description: "查找指定符号（symbol）调用的所有被调用方（callees）。【何时用】理解某函数/方法调用了哪些其他符号、梳理依赖面与调用链时使用。【怎么用】先用 code_symbol_search 拿到 symbol_id，再传 symbol_id；可选 project_id 或 file_path/scope_path。【坑】依赖项目已登记且索引完成；symbol_id 需从搜索/探索结果获取；只返回直接调用的被调用方，多层传递可配合 code_impact 或逐层展开。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
@@ -544,7 +544,7 @@ public sealed record CodeCalleesArgs
 [Tool(
     id: "code_impact",
     name: "Code impact analysis",
-    description: "通过递归遍历调用方，计算符号（symbol）的下游影响（impact），直到指定深度。【何时用】改动核心/公共符号前评估影响面大小与波及范围，用于变更风险分级与回归范围圈定。【怎么用】先用 code_symbol_search 拿到 symbol_id，再传 symbol_id；max_depth 控制递归深度（默认3，范围1-10，越大结果越全也越慢）。【坑】依赖项目已登记且索引完成；必须传 project_id 或 file_path/scope_path 确定项目范围；深度过大可能返回大量符号，建议从默认深度开始再逐步加深。Compute the downstream impact of a symbol by traversing callers recursively up to the specified depth — use before modifying core/public symbols to size the blast radius; get symbol_id via code_symbol_search, pass symbol_id and max_depth (default 3, 1-10); requires registered and indexed projects plus a resolvable project scope; larger depth returns more symbols and takes longer.",
+    description: "通过递归遍历调用方，计算符号（symbol）的下游影响（impact），直到指定深度。【何时用】改动核心/公共符号前评估影响面大小与波及范围，用于变更风险分级与回归范围圈定。【怎么用】先用 code_symbol_search 拿到 symbol_id，再传 symbol_id；max_depth 控制递归深度（默认3，范围1-10，越大结果越全也越慢）。【坑】依赖项目已登记且索引完成；必须传 project_id 或 file_path/scope_path 确定项目范围；深度过大可能返回大量符号，建议从默认深度开始再逐步加深。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

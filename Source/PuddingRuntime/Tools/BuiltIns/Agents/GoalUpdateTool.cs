@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
@@ -22,7 +22,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "goal_update",
     name: "Goal update",
-    description: "向 Agent 私有的 goal.md 追加带时间戳的记录，或通过 base64 编码内容整体覆盖。Append a timestamped entry to the agent's private goal.md, or overwrite it entirely via base64-encoded content",
+    description: "向 Agent 私有的 goal.md 追加带时间戳的记录，或通过 base64 编码内容整体覆盖。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.None)]

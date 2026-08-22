@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "agent_skill",
     name: "Agent SKILL",
-    description: "读取并管理当前 Agent 实例的运行时私有 SKILL（技能）。【何时用】查看当前 Agent 有哪些已注册技能、读取某 SKILL 的 SKILL.md 内容、新建/更新/启停/删除私有技能，或把技能打包推送到技能市场（push）时使用。【怎么用】action=list（默认）列出技能；get_index 看索引；get/read_file 需 skill_id（read_file 可选 relative_path 指定 SKILL 内文件、max_chars 控制返回长度）；create 需 skill_id+name+skill_markdown；set_enabled/enable/disable 控制启停；delete 删除；push 推送到远程（依赖 AdminBaseUrl/AdminApiKey 配置）。【坑】list/get_index 默认过滤禁用技能，要看全部需 include_disabled=true；除 list/get_index/initialize 外多数 action 都要 skill_id，缺失直接报错；delete 不可恢复，确认 skill_id 再删；push 需要管理端可达。Read and manage runtime-private SKILLs for the current Agent instance — use to list (default), inspect indexes, read_file, create, update, enable/disable, delete, or push SKILLs; list/get_index hide disabled SKILLs unless include_disabled=true, most actions require skill_id, read_file takes relative_path/max_chars, delete is irreversible, and push requires AdminBaseUrl/AdminApiKey.",
+    description: "读取并管理当前 Agent 实例的运行时私有 SKILL（技能）。【何时用】查看当前 Agent 有哪些已注册技能、读取某 SKILL 的 SKILL.md 内容、新建/更新/启停/删除私有技能，或把技能打包推送到技能市场（push）时使用。【怎么用】action=list（默认）列出技能；get_index 看索引；get/read_file 需 skill_id（read_file 可选 relative_path 指定 SKILL 内文件、max_chars 控制返回长度）；create 需 skill_id+name+skill_markdown；set_enabled/enable/disable 控制启停；delete 删除；push 推送到远程（依赖 AdminBaseUrl/AdminApiKey 配置）。【坑】list/get_index 默认过滤禁用技能，要看全部需 include_disabled=true；除 list/get_index/initialize 外多数 action 都要 skill_id，缺失直接报错；delete 不可恢复，确认 skill_id 再删；push 需要管理端可达。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ConcurrencySafe,

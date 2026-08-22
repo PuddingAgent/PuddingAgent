@@ -611,7 +611,7 @@ public sealed record ListDirectoryResult(
 [Tool(
     id: "apply_patch",
     name: "Apply patch",
-    description: "对宿主工作区中的一个或多个现有文件应用统一差异补丁（unified diff），用于多区块或多文件编辑。Apply a unified diff to one or more existing files in the host workspace. Use this for multi-hunk or multi-file edits.",
+    description: "对宿主工作区中的一个或多个现有文件应用统一差异补丁（unified diff），用于多区块或多文件编辑。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresFileWrite | ToolSafetyFlags.Destructive,

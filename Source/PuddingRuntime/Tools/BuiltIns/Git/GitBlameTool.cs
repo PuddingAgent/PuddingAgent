@@ -18,7 +18,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.BlameId,
         name: "Git Blame",
-        description: "显示文件中每一行最后一次被哪个提交（commit）和作者（author）修改（blame）。何时用：定位某段代码是谁、在哪个提交里引入或修改的，排查历史变更原因。怎么用/坑：FilePath 必填、相对仓库根目录；基于当前文件内容，重排或大改后行归属可能失真；只读操作、并发安全。Show which commit and author last modified each line of a file; use to trace who and when a line was introduced; FilePath is required (repo-root-relative) and blame can mislead after large reformats; read-only",
+        description: "显示文件中每一行最后一次被哪个提交（commit）和作者（author）修改（blame）。何时用：定位某段代码是谁、在哪个提交里引入或修改的，排查历史变更原因。怎么用/坑：FilePath 必填、相对仓库根目录；基于当前文件内容，重排或大改后行归属可能失真；只读操作、并发安全。",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

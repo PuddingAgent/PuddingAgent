@@ -49,7 +49,7 @@ public sealed class SmartDeployTool : SmartWorkflowToolBase<SmartDeployArgs>
         sb.AppendLine("### PROCESS");
         sb.AppendLine("1. Verify: read configs, check prerequisites.");
         sb.AppendLine("2. Plan: identify exact steps + rollback path.");
-        sb.AppendLine("3. Execute: terminal_start → terminal_wait. Verify each step before next.");
+        sb.AppendLine("3. Execute: terminal_start → ONE blocking terminal_wait (wait_seconds 180-600, it waits until exit — no short-wait polling). Verify each step before next.");
         sb.AppendLine("4. Verify: health check, smoke test.");
         sb.AppendLine("5. Report: what, version, status.");
         sb.AppendLine();

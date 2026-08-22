@@ -48,8 +48,8 @@ internal static class ToolLoopInstructionBuilder
             {
                 sb.AppendLine();
                 sb.AppendLine("Terminal command guidance:");
-                sb.AppendLine("- Use `terminal_start`, then `terminal_wait`; continue truncated output with `terminal_read` and the returned offset.");
-                sb.AppendLine("- Use `terminal_cancel` to stop the job. Reserve `shell` for short bounded commands.");
+                sb.AppendLine("- Start long commands with `terminal_start`, then call `terminal_wait` ONCE with `wait_seconds` sized to the expected runtime (builds/tests: 180-600). It blocks until the job exits — do NOT poll repeatedly with short waits; every tool call costs a full model round.");
+                sb.AppendLine("- Continue truncated output with `terminal_read` and the returned offset. Use `terminal_cancel` to stop the job. Reserve `shell` for short bounded commands.");
             }
             else if (HasTool(available, "shell"))
             {

@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.RemoteId,
         name: "Git Remote",
-        description: "列出仓库配置的全部远程仓库（remote）。何时用：执行 clone/pull/push/fetch 前确认远端名称与 URL，或排查远端配置问题。怎么用/坑：只读操作；结果含远端名与 URL；未配置任何 remote 时 count 为 0，此时 pull/push 会失败，需先用 git clone 或手动添加远端。List all remotes configured for the repository; use to confirm remote names and URLs before clone/pull/push/fetch; read-only, and pull/push will fail when no remotes are configured",
+        description: "列出仓库配置的全部远程仓库（remote）。何时用：执行 clone/pull/push/fetch 前确认远端名称与 URL，或排查远端配置问题。怎么用/坑：只读操作；结果含远端名与 URL；未配置任何 remote 时 count 为 0，此时 pull/push 会失败，需先用 git clone 或手动添加远端。",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.None,

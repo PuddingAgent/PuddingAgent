@@ -29,7 +29,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "agent_diagnostics",
     name: "Agent diagnostics",
-    description: "查询当前 Agent 的运行时指标：工具调用成功/失败率、平均耗时、缓存健康等，用于自我诊断并优化工具使用。Query this agent's runtime metrics: tool call success/failure rates, average durations, cache health, and more",
+    description: "查询当前 Agent 的运行时指标：工具调用成功/失败率、平均耗时、缓存健康等，用于自我诊断并优化工具使用。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.None)]

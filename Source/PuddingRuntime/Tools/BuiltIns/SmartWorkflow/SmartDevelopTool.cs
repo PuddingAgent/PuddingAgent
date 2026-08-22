@@ -55,7 +55,7 @@ public sealed class SmartDevelopTool : SmartWorkflowToolBase<SmartDevelopArgs>
         sb.AppendLine("5. **Report**: Generate the five-section report with build evidence. Then STOP — no more tools.");
         sb.AppendLine();
         sb.AppendLine("### ⚠️ RULES");
-        sb.AppendLine("- Edit: file_patch, file_write. Verify: terminal_start + terminal_wait.");
+        sb.AppendLine("- Edit: file_patch, file_write. Verify: terminal_start + ONE blocking terminal_wait (wait_seconds 180-600, it waits until exit — no short-wait polling).");
         sb.AppendLine("- Read: file_read, code_outline, search_grep, list_dir.");
         sb.AppendLine("- NEVER: spawn_sub_agent. If stuck: report what you tried and why.");
         sb.AppendLine("- **A failed tool call does NOT mean the task failed.** If file_patch returns an error, read the error, fix the parameters, and retry ONCE. If still failing, report it in BLOCKERS and continue.");

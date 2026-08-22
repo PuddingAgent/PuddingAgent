@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using PuddingCode.Configuration;
@@ -16,7 +16,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "github_search",
     name: "GitHub Search",
-    description: "通过 GitHub REST API 搜索 GitHub 仓库、代码、issue 与提交（commit）。返回标题、URL 与描述。【何时用】技术选型/依赖调研时验证库是否存在、活跃度、issue 与兼容性讨论；查找示例代码、已知问题或版本信息时使用——避免凭记忆判断。【怎么用】传 query，支持 qualifier（如 language:cs、org:dotnet、repo:owner/name）；type 选 repositories/code/issues/commits/topics（默认 repositories），max_results 控制数量（1-100）。【坑】未配置 github.token 时匿名调用受速率限制；code 类型搜索需要 token 且仅覆盖默认分支；返回为标题/URL/描述，详情需用 http_fetch 打开链接。Search GitHub repositories, code, issues, and commits via GitHub REST API — use for library selection and issue/compatibility checks before code decisions; query supports qualifiers (language:/org:/repo:), type selects repositories/code/issues/commits/topics; code search requires a token and covers default branches only; anonymous calls are rate-limited; open links via http_fetch for details.",
+    description: "通过 GitHub REST API 搜索 GitHub 仓库、代码、issue 与提交（commit）。返回标题、URL 与描述。【何时用】技术选型/依赖调研时验证库是否存在、活跃度、issue 与兼容性讨论；查找示例代码、已知问题或版本信息时使用——避免凭记忆判断。【怎么用】传 query，支持 qualifier（如 language:cs、org:dotnet、repo:owner/name）；type 选 repositories/code/issues/commits/topics（默认 repositories），max_results 控制数量（1-100）。【坑】未配置 github.token 时匿名调用受速率限制；code 类型搜索需要 token 且仅覆盖默认分支；返回为标题/URL/描述，详情需用 http_fetch 打开链接。",
     category: ToolCategory.Network,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,

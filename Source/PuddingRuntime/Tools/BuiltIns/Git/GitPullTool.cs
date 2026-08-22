@@ -20,7 +20,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.PullId,
         name: "Git Pull",
-        description: "从远程仓库拉取（pull）并将远程分支合并到当前分支。何时用：与远端保持同步，把别人推送的提交拉到本地并合并。怎么用/坑：Remote 默认 origin，Branch 缺省为当前分支；本质是 fetch + merge，可能产生冲突（返回 has_conflicts=true），需手动解决；工作区有未提交改动时合并可能失败；需要网络。Fetch from a remote and merge the remote branch into the current branch; use to sync with upstream; defaults to origin/current branch, may return has_conflicts=true needing manual resolution, and requires network access",
+        description: "从远程仓库拉取（pull）并将远程分支合并到当前分支。何时用：与远端保持同步，把别人推送的提交拉到本地并合并。怎么用/坑：Remote 默认 origin，Branch 缺省为当前分支；本质是 fetch + merge，可能产生冲突（返回 has_conflicts=true），需手动解决；工作区有未提交改动时合并可能失败；需要网络。",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Medium,
         safety: ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,

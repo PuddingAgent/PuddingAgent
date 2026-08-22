@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.BranchListId,
         name: "Git Branch List",
-        description: "列出所有本地分支（branch），并标记当前所在分支。何时用：执行分支相关操作前先确认仓库里有哪些本地分支、当前 HEAD 在哪个分支，避免切错或改错。怎么用/坑：只读操作、并发安全；只列本地分支，远端分支（origin/xxx）不在结果中。List all local branches with the current branch marked; use before branch operations to confirm what exists and where HEAD is; read-only and remote-tracking branches are excluded",
+        description: "列出所有本地分支（branch），并标记当前所在分支。何时用：执行分支相关操作前先确认仓库里有哪些本地分支、当前 HEAD 在哪个分支，避免切错或改错。怎么用/坑：只读操作、并发安全；只列本地分支，远端分支（origin/xxx）不在结果中。",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

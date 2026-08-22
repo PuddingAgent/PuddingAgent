@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "list_agents",
     name: "列出 Agent",
-    description: "列出当前工作空间或房间中可发送消息的 Agent。【何时用】需要与其他 Agent 协作、用 send_message 发消息前，先查有哪些可通信的 Agent 及其 address 时使用。【怎么用】直接调用即可（默认列当前工作区 default 房间、含忙碌 Agent）；可选 room_id 指定房间、include_busy=false 只看空闲、include_frozen=true 包含冻结 Agent。【坑】只覆盖当前工作区可投递消息的 Agent；拿到结果后把对应 address 传给 send_message；count=0 时说明没有可通信对象，send_message 会投递失败。List agents in the current workspace or room that can receive messages — call before send_message to discover messageable agents and their addresses; no required args (room_id/include_busy/include_frozen optional); only covers the current workspace, and count=0 means there is no valid send_message target.",
+    description: "列出当前工作空间或房间中可发送消息的 Agent。【何时用】需要与其他 Agent 协作、用 send_message 发消息前，先查有哪些可通信的 Agent 及其 address 时使用。【怎么用】直接调用即可（默认列当前工作区 default 房间、含忙碌 Agent）；可选 room_id 指定房间、include_busy=false 只看空闲、include_frozen=true 包含冻结 Agent。【坑】只覆盖当前工作区可投递消息的 Agent；拿到结果后把对应 address 传给 send_message；count=0 时说明没有可通信对象，send_message 会投递失败。",
     category: ToolCategory.Messaging,
     permission: ToolPermissionLevel.Low)]
 public sealed class ListAgentsTool : PuddingToolBase<ListAgentsArgs>

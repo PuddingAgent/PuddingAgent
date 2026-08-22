@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -16,7 +16,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "code_outline",
     name: "File structure outline",
-    description: "获取文件中所有顶层类型与成员的结构化大纲（outline），返回符号种类、行范围、签名与修饰符的树视图——无需预建索引。Get a structured outline of all top-level types and members in a file",
+    description: "获取文件中所有顶层类型与成员的结构化大纲（outline），返回符号种类、行范围、签名与修饰符的树视图——无需预建索引。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,

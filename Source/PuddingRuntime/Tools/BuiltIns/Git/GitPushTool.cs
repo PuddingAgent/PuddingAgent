@@ -23,7 +23,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.PushId,
         name: "Git Push",
-        description: "将本地分支的提交推送（push）到远程仓库。何时用：把本地已提交的成果发布到远端，让其他人可见。怎么用/坑：Remote 默认 origin，Branch 缺省为当前分支；远端领先于本地时推送会被拒绝，需先 pull 合并；Force=true 强制覆盖远端历史（带 lease 语义），仅当确定要改写远端历史时使用，否则有丢失他人提交的风险；需要网络与推送权限。Push commits from a local branch to a remote repository; use to publish local work; push is rejected when the remote is ahead (pull first), and Force overwrites remote history with lease semantics — use only when you intend to rewrite history",
+        description: "将本地分支的提交推送（push）到远程仓库。何时用：把本地已提交的成果发布到远端，让其他人可见。怎么用/坑：Remote 默认 origin，Branch 缺省为当前分支；远端领先于本地时推送会被拒绝，需先 pull 合并；Force=true 强制覆盖远端历史（带 lease 语义），仅当确定要改写远端历史时使用，否则有丢失他人提交的风险；需要网络与推送权限。",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.High,
         safety: ToolSafetyFlags.Destructive | ToolSafetyFlags.ConcurrencySafe,

@@ -17,7 +17,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.FetchId,
         name: "Git Fetch",
-        description: "从远程仓库获取（fetch）更新，不进行合并。何时用：只想把远端最新提交下载到本地（更新 origin/xxx 引用）而不动当前分支与工作区，先 fetch 再决定 merge/rebase。怎么用/坑：Remote 默认 origin；需要网络；fetch 不会改动工作区，是安全的查看远端进展方式。Fetch updates from a remote repository without merging; use to download remote refs (e.g. origin/main) without touching your working tree, then decide whether to merge or rebase; needs network access",
+        description: "从远程仓库获取（fetch）更新，不进行合并。何时用：只想把远端最新提交下载到本地（更新 origin/xxx 引用）而不动当前分支与工作区，先 fetch 再决定 merge/rebase。怎么用/坑：Remote 默认 origin；需要网络；fetch 不会改动工作区，是安全的查看远端进展方式。",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Medium,
         safety: ToolSafetyFlags.RequiresNetwork | ToolSafetyFlags.ConcurrencySafe,

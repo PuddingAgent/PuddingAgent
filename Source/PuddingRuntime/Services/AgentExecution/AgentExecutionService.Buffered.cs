@@ -625,6 +625,52 @@ public sealed partial class AgentExecutionService
                 ContextUsageSnapshot? contextUsageSnapshot = null;
                 if (_contextUsageSnapshotStore is not null)
                 {
+                    // 轮内软压缩（P1 能耗修复）：估算达到 trigger×有效上限即驱逐最旧会话单元并
+                    // 回写 history。此前子代理路径只有硬悬崖（run_20260820_232511 曾把上下文
+                    // 养到 61.3 万 tokens 才一次性裁剪），每轮重放 30-60 万 tokens。
+                    if (history.Count > 12)
+                    {
+                        var (softTrigger, softTarget) = ResolveContextSoftCompactionRatios();
+                        var softCompaction = LlmRequestBudgetGuard.PrepareSoftCompaction(
+                            _contextUsageSnapshotStore,
+                            request.SessionId,
+                            history,
+                            llmTools,
+                            effectiveLlmConfig,
+                            softTrigger,
+                            softTarget);
+                        if (softCompaction.Compacted)
+                        {
+                            history.Clear();
+                            history.AddRange(softCompaction.Messages);
+                            injectedHistory = await BuildInjectedHistoryAsync(history, ct);
+                            _logger.LogWarning(
+                                "[AgentExec:ContextBudget] Soft compaction session={Session} round={Round} removed={Removed} messages {Before}->{After} estimated={BeforeTokens}->{AfterTokens} limit={Limit} trigger={Trigger:F2}",
+                                request.SessionId,
+                                round + 1,
+                                softCompaction.RemovedMessageCount,
+                                softCompaction.InitialMessageCount,
+                                history.Count,
+                                softCompaction.InitialUsedTokens,
+                                softCompaction.Snapshot.UsedTokens,
+                                softCompaction.EffectiveInputLimit,
+                                softTrigger);
+                            await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.context.compacted", new
+                            {
+                                sub_agent_id = request.SessionId,
+                                round = round + 1,
+                                removed_messages = softCompaction.RemovedMessageCount,
+                                messages_before = softCompaction.InitialMessageCount,
+                                messages_after = history.Count,
+                                estimated_tokens_before = softCompaction.InitialUsedTokens,
+                                estimated_tokens_after = softCompaction.Snapshot.UsedTokens,
+                                effective_input_limit = softCompaction.EffectiveInputLimit,
+                                trigger_ratio = softTrigger,
+                                target_ratio = softTarget,
+                            });
+                        }
+                    }
+
                     var budgetedRequest = LlmRequestBudgetGuard.Prepare(
                         _contextUsageSnapshotStore,
                         request.SessionId,

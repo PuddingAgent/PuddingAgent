@@ -20,7 +20,7 @@ namespace PuddingRuntime.Services.Tools
     [Tool(
         id: GitConstants.DiffId,
         name: "Git Diff",
-        description: "显示工作区与索引之间、或索引与 HEAD 之间的变更（diff）。何时用：提交前审查改了什么；Staged=true 查看已暂存内容的差异。怎么用/坑：默认对比工作区与 HEAD（含未暂存改动）；Files 可限定范围；只读操作、并发安全。Show changes between the working tree and the index or between the index and HEAD; use to review modifications before committing, set Staged=true for staged changes only, pass Files to narrow scope; read-only",
+        description: "显示工作区与索引之间、或索引与 HEAD 之间的变更（diff）。何时用：提交前审查改了什么；Staged=true 查看已暂存内容的差异。怎么用/坑：默认对比工作区与 HEAD（含未暂存改动）；Files 可限定范围；只读操作、并发安全。",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
