@@ -69,6 +69,7 @@
 | `Services/Tools/ToolExposurePlanner.cs` | Provider 无关的工具暴露规划；名称稳定排序，超过阈值时保留核心工具并通过 `search_tools` 下一轮加载能力；已发现工具由 AgentSessionManager 在 live session 内保持加载 |
 | `Services/TerminalProcessManager.cs` | 终端进程管理 |
 | `Services/TerminalSecurity.cs` | 终端安全 |
+| `Tools/BuiltIns/Terminal/TerminalTools.cs` | terminal_start/wait/read/status/cancel/input 六件套；`terminal_wait` 阻塞语义（2026-08-22 能耗修复）：等到任务退出或输出超过预览上限才返回，wait_seconds 0-600 默认 60，禁止短等待轮询（旧轮询语义曾占全库 16% token） |
 
 ## 子代理 & 计划
 

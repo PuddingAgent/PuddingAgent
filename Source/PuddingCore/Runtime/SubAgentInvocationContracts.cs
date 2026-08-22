@@ -153,6 +153,8 @@ public sealed record SubAgentExecutionOptions
     public const int LargeTaskMaxTimeoutSeconds = 24 * 60 * 60;
     public const int DefaultBudgetGraceRounds = 20;
     public const int DefaultBudgetGraceTimeoutSeconds = 30 * 60;
+    public const double DefaultContextSoftCompactionTriggerRatio = 0.65;
+    public const double DefaultContextSoftCompactionTargetRatio = 0.5;
 
     public int MaxConcurrentPerTemplate { get; init; } = 3;
     public int MaxConcurrentPerWorkspace { get; init; } = 6;
@@ -162,6 +164,15 @@ public sealed record SubAgentExecutionOptions
     public int MaxToolCallsTotal { get; init; } = LargeTaskMaxToolCallsTotal;
     /// <summary>System-managed child hard timeout. Parent agents cannot override it.</summary>
     public int MaxTimeoutSeconds { get; init; } = LargeTaskMaxTimeoutSeconds;
+    /// <summary>
+    /// 子代理轮内软压缩触发比例：估算输入达到有效输入上限的该比例即压缩历史，
+    /// 而不是等 LlmRequestBudgetGuard 在硬上限悬崖一次性裁剪。
+    /// 2026-08-22 能耗评估：无软压缩的 run 把上下文养到 61 万才触发一次悬崖，
+    /// 每轮重放 30-60 万 tokens，占抽样计费等价 token 的主要部分。
+    /// </summary>
+    public double ContextSoftCompactionTriggerRatio { get; init; } = DefaultContextSoftCompactionTriggerRatio;
+    /// <summary>软压缩目标比例：压缩后估算输入应降到的水平（必须低于触发比例）。</summary>
+    public double ContextSoftCompactionTargetRatio { get; init; } = DefaultContextSoftCompactionTargetRatio;
     /// <summary>
     /// Cleanup rounds granted after the normal round or time budget is exhausted.
     /// Runtime clamps this system setting to 10-50 rounds.

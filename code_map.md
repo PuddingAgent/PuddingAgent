@@ -83,6 +83,9 @@ Agent Loop → LlmInvocationService → DirectLlmClient
   → Provider 不保存协议；同一 Provider 的模型可分别选择三种协议
   → Provider usage → ILlmGatewayUsageRecorder → llm_gateway_usage_events
     → StatsApiController（月度/趋势本地计费口径）
+    → TokenUsageDailyAggregateService / ContextLayerDailyRollupService
+      （闭日 UTC 聚合缓存 llm_usage_daily_aggregates / context_layer_daily_rollups +
+        stats_daily_cache_days 完成标记；当天实时计算，Rebuild 后按月失效）
     → TokenUsageEvents 继续只承担会话/角色/上下文归因
 
 ContextPipeline → Tool layer mandatory delegation policy
@@ -90,6 +93,20 @@ ContextPipeline → Tool layer mandatory delegation policy
   → 复杂任务前三次工具调用内必须进入匹配 smart_* 或 spawn_sub_agent
   → SmartWorkflowToolBase 将历史 question/what/query 仅在执行边界归一为 task
   → smart_explore 统一替代已退役的 smart_search / smart_query_session_log
+
+Terminal 长命令能耗协议（2026-08-22）
+  → terminal_wait 阻塞语义：等到任务退出或输出超过预览上限才返回，wait_seconds 0-600 默认 60
+  → 工具描述/NextAction/ToolLoopInstruction/Smart 提示词统一引导"一次阻塞等待"，禁止 1-2 秒式轮询
+  → 动机：旧"出现新输出即返回"语义在全库产生 6,040 个纯轮询轮 ≈ 8.26 亿 tokens（16.3%）
+
+上下文注入冗余治理（2026-08-22，指令层曾占每次调用 67%）
+  → 工具描述单语化：41 文件去除英文复述（-13K 字符）；使用教学入 skill 文档，schema 只留必要说明
+  → search_tools 装载收紧：默认 3/上限 8（原 8/20），阻止长会话工具集棘轮到 50+（主会话曾 34.6K schema tokens/轮）
+  → L1-TOOLS 索引补延迟工具名清单（仅 id 无 schema），Agent 不再盲搜 search_tools
+  → L2-SKILLS 索引行压缩：skillId + 首句摘要(≤100字) + tags≤4/keywords≤6，去掉 Name/版本/path；
+    主 Agent 57 技能的索引从 29K 字符/轮显著缩减，全文仍由 agent_skill 渐进加载
+  → 前缀稳定性结论：分层排序已正确（稳→动）；L9-INBOUND/L6-AGENT-LOG-RECALL 变化属尾部动态层，
+    缓存损伤被限制在其自身与 <1K 尾巴，无需整改
 
 ContextPipeline → stable system prefix + volatile User tail
   → 当前消息、日期、召回与 inbound context 不再插入 system prompt
@@ -130,6 +147,9 @@ spawn_sub_agent → SubAgentInvocationService → SubAgentManager
   → 正常轮次/时间耗尽后提供 20 轮、最多 30 分钟的收尾宽限，终态为可续跑 `budget_exhausted`
   → `resume_sub_agent_id` 复用 SubSessionId/上下文、创建新 runId 并重置系统计数器
   → run archive 固化实际预算与 `subagent.budget.notice`
+  → 子代理轮内软压缩（ADR-060 §3.12）：估算达 0.65×有效输入上限即驱逐最旧会话单元并回写 history，
+    压到 0.5×上限；阈值由 runtime.execution.json subAgents 段配置；写 subagent.context.compacted 事件；
+    LlmRequestBudgetGuard 硬悬崖保留为最后防线
   → FileSubAgentRunStore 归档并发协议（ADR-060 §3.11）：读写同一 per-run gate、读方 FileShare.ReadWrite、
     JSONL 追加 sharing violation 退避重试；重试耗尽丢弃事件写 archive-degraded.json 降级，不杀死运行
   → FirewallContext.WorkingDirectory 从 ToolExecutionContext 冻结；防火墙 WorkspaceGate、审批目标解析

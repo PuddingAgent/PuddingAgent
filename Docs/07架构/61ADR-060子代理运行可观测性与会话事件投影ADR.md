@@ -329,6 +329,27 @@ Windows sharing violation 后直接把运行中的子代理标记为 failed；�
    WorkingDirectory`）、`code_index_register_project` 与文件工具全部使用同一执行根，
    不得回退进程级静态 workspace root。
 
+### 3.12 子代理轮内软压缩（2026-08-22 演进）
+
+能耗抽样（151 run / 12,117 轮）显示：99.8% 的 prompt tokens 是历史重放，
+上下文重放倍数中位 22x；Buffered 子代理路径此前只有 `LlmRequestBudgetGuard`
+硬悬崖——估算超过模型有效输入上限（flash ≈ 61.4 万）才一次性裁剪发送副本，
+run_20260820_232511 曾把上下文养到 61.3 万、每轮重放 30-45 万 tokens。本节冻结软压缩协议：
+
+1. **触发**：每轮 LLM 调用前，若 `history` 估算达到 `ContextSoftCompactionTriggerRatio
+   （默认 0.65）× 有效输入上限`，即按会话单元（User+应答块）驱逐最旧历史，
+   压到 `ContextSoftCompactionTargetRatio（默认 0.5）× 有效上限` 为止；
+   阈值来自 `runtime.execution.json` 的 `subAgents` 段，Normalize 夹取保证
+   target ≤ trigger ≤ 1.0。
+2. **回写 history**：压缩结果写回循环历史（非仅发送副本），后续轮次直接受益；
+   重建 KeyVault 注入时基于压缩后的 history，不落明文密钥。System 消息与
+   受保护尾部 8 条永不驱逐；无可驱逐单元时不抛异常、原样返回。
+3. **硬悬崖保留**：`LlmRequestBudgetGuard.Prepare` 仍是最后防线（校准漂移、
+   单轮巨型工具结果等场景），软压缩不改变其语义。
+4. **可观测**：每次压缩写 `subagent.context.compacted` 运行事件
+   （round、压缩前后估算与消息数、removed、有效上限、阈值），
+   压缩后处于目标水位之下，下一轮为 no-op（锯齿下沿）。
+
 ## 4. 组件边界
 
 | 组件 | 负责 | 不负责 |

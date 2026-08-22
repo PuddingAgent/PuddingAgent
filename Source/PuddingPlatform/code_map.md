@@ -58,7 +58,7 @@
 | `Services/SubAgentPool.cs` | Core `ISubAgentPool` 的 Platform 子代理池实现 |
 | `Services/SubAgentTransientDirectoryGcService.cs` | 历史临时执行身份空 Skill 脚手架 GC；以精确目录形状 + 子代理池 + durable run 终态多重门禁，先移入 retention-archive 隔离，延迟后再安全删除 |
 | `Services/SubAgentDiagnosticsService.cs` | 子代理诊断 |
-| `Services/FileSubAgentRunStore.cs` | 子代理运行文件存储；终态 `run.json` 固化轮次、工具、耗时和错误；支持可恢复终态 `budget_exhausted` 与预算通知投影 |
+| `Services/FileSubAgentRunStore.cs` | 子代理运行文件存储；终态 `run.json` 固化轮次、工具、耗时和错误；支持可恢复终态 `budget_exhausted` 与预算通知投影；归档读写同一 per-run gate + sharing violation 退避重试，重试耗尽写 archive-degraded.json 降级（ADR-060 §3.11） |
 | `Controllers/Api/SubAgentRunController.cs` | 认证运行检查器 API；详情从归档返回终态统计，events 分页返回可重建历史时间线的完整事件 payload |
 | `Services/SessionStateManager.cs` | 会话/子代理持久状态查询；子代理状态 DTO 按可复用 SubSessionId 关联最新 canonical runId，供托盘坞和检查器在漏收事件后恢复运行 |
 
@@ -68,14 +68,14 @@
 |------|------|
 | `Services/Tasks/SqliteWorkspaceTaskStore.cs` | SQLite Task Ledger：`workspace_tasks` + `task_events` 两表、snake_case 列、CAS 乐观并发、Task+Event 原子提交、硬删语义、keyset 分页 |
 | `Services/Tasks/TaskAgentCommandService.cs` | task_* 工具命令服务：claim/update 原子写回 Task+Attempt+Event+Binding 四表 |
-| `Services/Tasks/TaskCommandService.cs` | PATCH/ApplyCommand 原子语义（含 status 显式迁移走 `CanTransition` 校验）|
+| `Services/Tasks/TaskCommandService.cs` | PATCH/ApplyCommand 原子语义（含 status 显式迁移走 `CanTransition` 校验）；`DeleteTaskAsync` 智能删除（无历史 Backlog 硬删，其余任意状态归档软删）|
 | `Services/Tasks/TaskDispatcher.cs` | 任务派发（RuntimeDispatchRequest.ActiveTask 注入到派发链）|
 | `Services/Tasks/TaskDispatchOutboxStore.cs` | 派发 outbox 持久化 |
 | `Services/Tasks/TaskDispatchSchemaBootstrapper.cs` | 派发 schema 幂等建表 |
 | `Services/Tasks/TaskDispatchSerialization.cs` | 派发序列化 |
 | `Services/Tasks/TaskWireMaps.cs` | 枚举↔wire 双向映射 + ErrorCode→wire/HTTP |
 | `Services/Tasks/ManualAlwaysAllowFence.cs` | manual always allow fence |
-| `Controllers/Api/TaskController.cs` | Control Plane 13 端点 + `GET /tasks/watch` SSE（快照+游标+Last-Event-ID）+ boardColumn 五列过滤 |
+| `Controllers/Api/TaskController.cs` | Control Plane 13 端点 + `GET /tasks/watch` SSE（快照+游标+Last-Event-ID）+ boardColumn 五列过滤；`DELETE` 智能删除返回 200 deleted/archived |
 | `Controllers/Api/TaskDtos.cs` | 8 个 wire DTO |
 | `Data/Entities/WorkspaceTaskEntity.cs` | `workspace_tasks` 实体（28 列）|
 | `Data/Entities/TaskEventEntity.cs` | `task_events` 实体（long Id 自增 + 18 业务列）|
@@ -104,7 +104,6 @@
 | `Data/Entities/TaskEvaluationEntity.cs` / `Data/Entities/ExternalApiIdempotencyEntity.cs` | 评价 + 幂等实体 |
 | 测试 | `PuddingPlatformTests/Security/ExternalAccessToken*Tests.cs`（42 项）+ `Controllers/ExternalTaskApiV1Tests.cs` + `Services/TaskEvaluationStoreTests.cs` + `Services/ExternalApiIdempotencyStoreTests.cs`（P2 共 23 项）|
 
-
 ## 持久化
 
 | 文件 | 用途 |
@@ -126,8 +125,7 @@
 | `Controllers/Api/AgentOrchestrationRevisionApiController.cs` | Admin-only Draft validate 与 Revision PUT CAS；请求先以编排专用 Web/string-enum JSON 契约反序列化，校验返回稳定 elementType/elementId/portId 诊断，冲突返回当前 Revision 事实 |
 | `Controllers/Api/AgentOrchestrationRunCommandApiController.cs` | `POST /api/orchestrations/runs`；Admin-only、1 MiB 请求上限、显式 Revision/type-safe inputs、201/200 幂等回执与稳定 400/404/409 错误 |
 | `Controllers/Api/AgentOrchestrationHttpHookApiController.cs` | `POST /api/orchestrations/hooks/{graphId}/{triggerId}?revisionId=...`；Admin-only、1 MiB 请求上限、201/200 幂等回执与稳定 400/404/409 错误 |
-| `Services/Diagnostics/DiagnosticRetentionService.cs` | 后台诊断保留期裁剪；仅遥测、上下文指标与运行活动，权威 session/conversation 事实源不在白名单 |
-| `Services/RetentionPruningService.cs` | 🆕 platform.db 数据保留期裁剪 BackgroundService；补齐 telemetry_metric_events/runtime_activity/conversation_events 三张表保留期清理，表名/列名白名单防注入、分批删除+批间限速+VACUUM；ChatMessages 永不裁剪 |
+| `Services/RetentionPruningService.cs` | platform.db 唯一在线保留期裁剪 BackgroundService；覆盖 telemetry_metric_events/runtime_activity/conversation_events，证据事件先归档后删除，表名/列名白名单防注入；100 行小批、批间让步、单轮批数上限，VACUUM 默认关闭，ChatMessages 永不裁剪 |
 
 ## 多媒体
 
@@ -158,10 +156,16 @@
 | `Data/Entities/LlmGatewayUsageEventEntity.cs` | `llm_gateway_usage_events` 本地计费事实；sourceId 唯一 |
 | `Services/TokenUsageSchemaBootstrapper.cs` | 旧 SQLite 的 Token 字段/索引、context-layer UTF-8/GZIP 指标列与网关账本幂等升级 |
 | `Services/AppUserSchemaBootstrapper.cs` | 旧 SQLite 的 `AppUsers.Avatar` 幂等补列；避免头像实体升级后登录查询因 schema 漂移返回 500 |
-| `Services/TokenUsageRebuildService.cs` | 从成功网关活动 + session usage 帧重建计费事实，并保留无法覆盖的实时行 |
-| `Controllers/Api/StatsApiController.cs` | 月度/趋势优先网关计费账本，无网关历史月份回退会话投影；context-layer API 聚合 Token、UTF-8/GZIP 字节、压缩比、缓存与变化指标 |
+| `Services/TokenUsageRebuildService.cs` | 从成功网关活动 + session usage 帧重建计费事实，并保留无法覆盖的实时行；提交后按月失效按日聚合缓存 |
+| `Controllers/Api/StatsApiController.cs` | 月度/趋势优先网关计费账本，无网关历史月份回退会话投影；context-layer API 聚合 Token、UTF-8/GZIP 字节、压缩比、缓存与变化指标；三接口（monthly/series/context-layers）走闭日缓存 + 当天实时渐进加载 |
+| `Services/TokenUsageDailyAggregateService.cs` | Token 统计按日聚合缓存：已结束 UTC 日聚合一次落 `llm_usage_daily_aggregates`（day × source × provider × model），当天实时；Rebuild 后按月失效 |
+| `Services/ContextLayerDailyRollupService.cs` | Context-layer 按日 rollup 缓存：`context_layer_daily_rollups` 存 JSON 分布（token/命中率数组 + 去重哈希集合），跨日精确合并 median/P95/distinctHashes；非对齐边界日直查明细 |
+| `Services/DailyCacheUtility.cs` | 按日缓存共用工具：cache_key、UTC 日枚举、闭日标记读取、SQLite DateTimeOffset 文本范围格式（EF 无法翻译 DateTimeOffset 参数比较） |
+| `Data/Entities/LlmUsageDailyAggregateEntity.cs` | `llm_usage_daily_aggregates` 闭日 Token 聚合行 |
+| `Data/Entities/ContextLayerDailyRollupEntity.cs` | `context_layer_daily_rollups` 闭日层级分析 rollup |
+| `Data/Entities/StatsDailyCacheDayEntity.cs` | `stats_daily_cache_days` 闭日完成标记（cache_key × day，含零数据日） |
 | `Services/TokenCostService.cs` | 成本计算 |
 
 ## 测试
 
-`../PuddingPlatformTests/` — 渠道配置、Artifact、消息与通用编排；2026-08-11 Orchestration 定向测试 62/62 ✅，覆盖 Graph/Run 发现、Revision/Layout CAS、Draft validate、Graph 生命周期、冻结 Run Inputs、手动运行、后继 Ready/失败 Skipped 与 Run 原子终态、两节点图片模板、HTTP Hook 映射/幂等冲突
+`../PuddingPlatformTests/` — 渠道配置、Artifact、消息与通用编排；2026-08-11 Orchestration 定向测试 62/62 ✅，覆盖 Graph/Run 发现、Revision/Layout CAS、Draft validate、Graph 生命周期、冻结 Run Inputs、手动运行、后继 Ready/失败 Skipped 与 Run 原子终态、两节点图片模板、HTTP Hook 映射/幂等冲突；2026-08-22 新增 StatsApiController/TokenUsageDailyAggregate/ContextLayerDailyRollup/TokenUsageRebuild 定向 18/18 ✅（闭日缓存命中、空日完成标记、当天实时不落缓存、按月失效、rollup 跨日精确合并、非对齐边界直查）

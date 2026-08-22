@@ -552,6 +552,27 @@ pool execute
    检查器的"归档降级"提示同源。
 4. 若再次出现 append 失败杀死 run，说明有绕过 gate 的新读/写路径接入归档文件。
 
+### 6.11 子代理 token/耗时异常高：轮询与循环浪费
+
+症状：run 轮次很多（数百轮）、大部分轮次只有 `terminal_wait`/`terminal_status`，
+或同一工具反复失败；上下文估算涨到数十万 tokens。
+
+量化方法（读 `events.jsonl`，按 `args_hash` 聚合）：
+
+1. 纯轮询轮 = 整轮工具调用只有 `terminal_wait/terminal_status`：2026-08-22 基线
+   6,040 轮 / 8.26 亿 tokens（16.3%）。terminal_wait 已改阻塞语义（等任务退出，
+   wait_seconds 0-600），新 run 不应再出现连续短等待轮询。
+2. 审批拒绝连击 = 整轮工具调用全部返回 `Runtime approval required`：护栏盲区，
+   参数微调即可绕过重复检测；最长案例 321 连击。
+3. 失败重试 = `exit code 1`/超时反复出现，多为 Windows 引号或执行根不一致
+   （执行根已统一，见 ADR-060 §3.11）。
+4. 上下文无压缩增长 = `subagent.llm.started.estimated_context_tokens` 单调涨到
+   数十万。2026-08-22 起子代理轮内软压缩已上线（ADR-060 §3.12）：达 0.65×有效
+   上限即压缩到 0.5×；新 run 中出现 `subagent.context.compacted` 事件为正常行为，
+   日志关键字 `[AgentExec:ContextBudget] Soft compaction`。若上下文仍逼近
+   effective_input_limit（日志 `Append retry`/`Trimmed outbound history`），
+   说明软压缩未生效（检查 runtime.execution.json subAgents 段阈值）。
+
 ## 7. 延迟问题的定位
 
 不要用“点击发送到看到回复”的总时间直接归因 LLM。应拆分：
@@ -2937,3 +2958,28 @@ statefulOrUnknown/errors`。排查顺序：
 4. 修改保留期时只编辑 `config/runtime.execution.json` 的
    `subAgents.transientDirectoryRetention`，并用临时 DataRoot 的定向测试验证；不要用脚本直接递归删除
    `data/agents`。
+
+## 11.32 Admin Token 统计页慢、数字不更新与按日缓存诊断
+
+`/admin/stats/tokens` 的 monthly/series/context-layers 三个接口走"闭日 UTC 聚合缓存 + 当天实时"渐进加载：
+已结束的 UTC 日只聚合一次，写入 platform.db 的 `llm_usage_daily_aggregates`（Token：day × source ×
+provider × model）与 `context_layer_daily_rollups`（层级分析 JSON 分布，可跨日精确合并 median/P95/
+distinctHashes）；完成标记在 `stats_daily_cache_days`（cache_key = `token_usage` / `context_layer`），
+零数据闭日同样有标记。首次打开某历史时段会现场构建（较慢，属预期），之后读取缓存应接近瞬时。
+
+排查顺序：
+
+1. 页面首次慢、之后仍慢：搜系统日志 `[TokenDailyAggregate]` / `[ContextLayerRollup]` 的
+   `Built closed-day cache ... runs= rows=`。每次刷新都出现 build 日志说明标记未持久（检查
+   `stats_daily_cache_days` 是否有行）或每次查询的日期范围不同（例如前端时间边界未对齐 UTC 日）。
+2. 数字与账本不符（改了历史数据、重建后仍旧）：`POST /api/stats/tokens/rebuild` 会在提交后自动按月失效
+   Token 缓存（`Invalidated yearMonth=...` 日志）；手工修数据时可直接删除对应月的
+   `llm_usage_daily_aggregates` 行与 `stats_daily_cache_days` 标记，下次查询自动重算。context-layer
+   事件是追加事实，重建不触发其失效。
+3. 统计把某些行漏掉/多算：范围查询依赖 Microsoft.Data.Sqlite 的 DateTimeOffset TEXT 表示
+   `yyyy-MM-dd HH:mm:ss.FFFFFFF+00:00`（尾零省略、整秒无小数段）。EF Core SQLite 无法翻译
+   DateTimeOffset 参数比较，`DailyCacheUtility.ToSqliteUtcText` 生成文本比较参数；若用脚本手工插入
+   `T` 分隔或非 UTC 偏移的时间戳，文本比较会错位——手工数据必须用空格分隔 + `+00:00` 偏移。
+4. context-layer 边界日（from/to 不是整天）会绕过缓存直查明细；Admin 页面月份边界已改为 UTC 对齐
+   （`Date.UTC`），与 token 日序口径一致。带 `sessionId` 过滤的 context-layer 查询始终直查。
+
