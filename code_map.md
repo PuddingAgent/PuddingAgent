@@ -108,6 +108,19 @@ Terminal 长命令能耗协议（2026-08-22）
   → 前缀稳定性结论：分层排序已正确（稳→动）；L9-INBOUND/L6-AGENT-LOG-RECALL 变化属尾部动态层，
     缓存损伤被限制在其自身与 <1K 尾巴，无需整改
 
+审批命令防火墙（任务 ce63f8c0，2026-08-22，确定性 Gate 0）
+  → ToolApprovalCommandFirewall（静态字符串判定）接入 CheckAsync：工单匹配后、LLM 隐式审计前
+  → 危险命令（rm/del/Remove-Item/format/taskkill/force-push/reset --hard，引号外匹配+危险首词）秒拒并引导 request_tool_approval
+  → 安全命令（git 常规动词白名单含 -C 解析、构建/测试、只读探查、cd 前缀）秒放，与既有 builtin allowlist 协同
+  → 灰区落回 LLM 隐式审计；v2 三层漏斗（feature/auto-approval-v2，62/62 测试、部署就绪）合入后接管灰区
+  → 动机：隐式审计裁决 14-39 秒且同参数先拒后过；防火墙判定 0ms 可复现
+
+工具模型倾向适配（2026-08-22，实测子代理调用链驱动）
+  → shell 输出去 ANSI：pwsh 注入 $PSStyle.OutputRendering='PlainText' + NO_COLOR=1 + 输出侧正则剥离兜底
+  → 探查命令返回值教育：Get-ChildItem/Select-String/Get-Content 等成功输出尾附专用工具提示（94.8% shell 曾是探查类）
+  → Codex 补丁格式自动转译：UnifiedDiffParser 识别 *** Begin Patch 并转 unified diff（内容匹配定位，行号占位安全）
+  → file_read 护栏窗口 120→400 行（小文件与大文件双路径），减少同文件翻页重读（实测同文件重读 8 次）
+
 ContextPipeline → stable system prefix + volatile User tail
   → 当前消息、日期、召回与 inbound context 不再插入 system prompt
   → AgentExecutionService → ToolResultContextPolicy（模型历史最多 8 KiB；原始完整结果写入工作区 `.pudding/context-tool-results`，不做模型输入脱敏）
