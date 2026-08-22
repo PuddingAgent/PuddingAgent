@@ -247,6 +247,7 @@ const ModelTable: React.FC<{ provider: LlmProviderDetailDto; onRefresh: () => vo
         options={false}
         size="small"
         pagination={false}
+        scroll={{ x: 'max-content' }}
         toolBarRender={() => [
           <Button key="add" type="primary" size="small" icon={<PlusOutlined />} onClick={openCreate}>
             添加模型
