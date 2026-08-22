@@ -1,11 +1,12 @@
 # ADR-072 工作区 TODO、峰谷 Auto 派发与定时任务第一阶段
 
 > 状态：Proposed；第一阶段施工基线，不表示已经实现
-> 日期：2026-08-15
+> 日期：2026-08-15；2026-08-21 增补 Goal 前置与执行窗口权威裁决
 > 决策范围：TODO-List、手工任务派发、Auto 派发、定时消息、Agent 可用性、峰谷调度、任务工具、Admin 基础页面、持久恢复
 > 上位设计：[工作区 TODO 与峰谷节能任务编排设计方案](../Features/工作区TODO与峰谷节能任务编排设计方案.md)
 > 架构边界：[插件、Hook、Event、Agent FSM 与函数图总架构](../deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md)
 > 产品施工顺序：[ADR-073 任务看板优先的 Agent 工作台、完整轨迹与实时指标施工方案](87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md)
+> 后续自动执行裁决：[ADR-074 Goal 持久目标、自主续行与自动压缩](89ADR-074Goal持久目标自主续行与自动压缩ADR.md)
 
 ## 1. 决策
 
@@ -14,9 +15,9 @@
 1. 用户在 Admin 通过“待规划、待办、进行中、已完成、已失败”五列任务看板管理当前工作区的 TODO：创建、编辑、排序、指派、执行、取消、归档、筛选和查看执行记录；
 2. 用户手工指派任务给工作区 Agent，任务经持久 Outbox 和现有 Message Fabric 进入 Agent 正常执行路径；
 3. Agent 通过结构化任务工具查询、认领、接受、报告进展、阻塞、拒绝或完成任务；
-4. `auto-dispatch` 在任务 Ready、Agent 可信空闲、峰谷策略允许且原子 Reservation 成功时自动派发；
+4. `auto-dispatch` 在任务 Ready、Agent 可信空闲、执行窗口允许且原子 Reservation 成功时自动派发；生产启用时必须按 ADR-074 创建 Task-bound GoalRun，不以普通消息提醒代替持续执行；
 5. `scheduled-message` 支持一次、每天、每周、固定间隔、受限标准五字段 Cron 和符合条件的每个入站消息，先持久化 Occurrence，再按峰谷策略投递；
-6. 工作区默认使用北京时间每日 `[09:00,12:00)`、`[14:00,18:00)` 高峰窗口；P1/P2/P3 自动工作推迟，P0 可审计地越过；
+6. Task 以 `executionWindow` 表达 `inherit/anytime/off_peak_only` 执行偏好；实际高/低价时段从 Agent 有效提供商/模型价格档案解析，不新增工作区 `work-policy.json`；
 7. 用户直接聊天消息不受峰谷节能限制；“立即运行”不是直接聊天，若要在高峰执行必须显式确认一次性 Override；
 8. Agent 可用性、任务 Reservation、派发 Outbox、Occurrence、Task Event 和 Fence Decision 都是持久事实，不能依赖前端、心跳或进程内字典作为正确性权威；
 9. Core 重启后通过数据库恢复 Pending/Deferred/Expired Lease，不重复派发同一消息或同一 Occurrence；
@@ -36,7 +37,7 @@
 - `auto-dispatch`；
 - `scheduled-message` 的 once/daily/weekly/fixed-interval/受限五字段 cron/message-event；
 - Durable Occurrence、Next Fire、Misfire、Overlap、Outbox 和恢复扫描；
-- 工作区 `work-policy.json`、TimeProvider、时区解析和 WorkAdmissionFence；
+- `Task.executionWindow`、提供商/模型价格时段、`IExecutionWindowResolver`、TimeProvider、时区解析和 WorkAdmissionFence；
 - P0/P1/P2/P3 与 `inherit/anytime/off_peak_only`；
 - Agent Availability Projection 与一个 Agent 最多一个 Auto Reservation；
 - 高峰期 `heartbeat=0` 的明确禁用语义和“不补默认心跳”；
@@ -46,7 +47,7 @@
 ### 2.2 明确不在范围内
 
 - 回合后质询器、HOO/Typed TurnSettled Hook 和临时监督子代理；
-- Goal 目标冲刺、自动“继续”、无进展指纹和 Goal 熔断；
+- Goal 目标冲刺、自动“继续”、无进展指纹和 Goal 熔断的内部实现；这些由 ADR-074 后续交付，但完整 Auto Dispatcher 的生产启用受其前置门禁限制；
 - Stale Progress 自动提醒和“反复质询直到完成”；
 - 完整 Approval 聚合、审批人路由和自动恢复审批；
 - 通用 Webhook、自定义 Event Expression 和任意 Connector Event；第一阶段只开放受限的真实入站 `message_event`；
@@ -73,6 +74,16 @@ blocker_reason = Agent 提交的问题和风险
 
 用户处理后手工执行 `resume/requeue`。第一阶段不创建 Approval 聚合，也不自动向审批人派发。
 
+### 2.4 2026-08-21 跨 ADR 集成裁决
+
+本 ADR 保留“任务台账、手工派发、Availability/Reservation 和调度合同属于第一阶段”的历史范围，但冻结以下后续生产边界：
+
+1. `Task.executionWindow` 已是任务是否偏好低峰执行的权威字段，不再引入工作区 `work-policy.json` 作为平行配置。
+2. “当前是否低价”由集中 `IExecutionWindowResolver` 回答；它从 Agent 的实际 provider/model 路由与现有 LLM 配置中的价格时段生成带版本快照，而不从 Task 文本或 Heartbeat 猜测。
+3. Availability Sensor 必须是可持久、可重建、默认 `unknown` 的保守投影。进程内 `AgentExecutionStateRegistry` 可用于低延迟 signal，不是自动 Claim 权威。
+4. 完整 Auto Dispatcher 只能调用 ADR-074 定义的 `StartGoalFromTask`，原子建立 Assignment/Reservation/TaskGoalBinding/GoalRun/GoalOutbox。普通 Message Delivery ACK 不代表任务已执行。
+5. `TaskAutoDispatch.Enabled` 依赖 `GoalRuns.Enabled && TaskBoundGoals.Enabled`。Goal 持久续行尚未通过 ADR-074 G0–G3 时，任务看板和手工闭环可继续使用，Auto 只允许 shadow/evaluate，不允许发送自然语言提醒作为临时替代。
+
 ## 3. 参考基线与行号
 
 下表行号基于 2026-08-15 当前工作区文档。子任务中的 `Rxx` 均引用本表，不使用模糊的“参考整个文档”。
@@ -84,7 +95,7 @@ blocker_reason = Agent 提交的问题和风险
 | R03 | 同上 `:52-81` | 总目标、非目标和业务边界 |
 | R04 | 同上 `:83-100` | 当前代码基础、Message Fabric、Availability、Heartbeat、Cron 缺口 |
 | R05 | 同上 `:101-170` | WorkspaceTask 与 TaskNode 分离、五类事实、总体架构和分层 |
-| R06 | 同上 `:173-248` | work-policy、时区、heartbeat=0、高峰切换与 V1 降级 |
+| R06 | 同上 `:173-248` | 历史 work-policy 草案、时区、heartbeat=0、高峰切换与 V1 降级；配置权威已由本 ADR 2.4/6 节改写 |
 | R07 | 同上 `:250-377` | 优先级、运行窗口、Task 字段、状态机、Agent 表态、删除/归档 |
 | R08 | 同上 `:379-449` | auto-dispatch/scheduled-message、Automation、时间与 message-event Trigger、Occurrence、Misfire |
 | R09 | 同上 `:451-549` | WorkAdmissionFence 输入输出、Decision Code、判定顺序和多次检查 |
@@ -118,7 +129,8 @@ blocker_reason = Agent 提交的问题和风险
 
 | 事实 | 权威载体 | 说明 |
 |------|----------|------|
-| 工作区当前运行偏好 | `<workspace>/work-policy.json` | 配置优先；原子替换、版本 CAS |
+| Task 执行偏好 | `workspace_tasks.execution_window` | Task 版本 CAS；`off_peak_only` 为明确低价执行要求 |
+| 提供商/模型价格时段 | 现有 `llm.providers.json` 配置链上的可选时段字段 | 与 provider/model 路由同一权威；Resolver 输出 profile version/window key |
 | 当前 Task 投影 | `workspace_tasks` | 可用 expectedVersion 更新 |
 | Assignment 历史 | `task_assignment_attempts` | 只追加 Attempt，拒绝不覆盖历史 |
 | Task 与实际执行绑定 | `task_execution_bindings` | 关联 Delivery/Execution/Session |
@@ -128,7 +140,7 @@ blocker_reason = Agent 提交的问题和风险
 | 任务审计 | `task_events` | 每 Task 单调 sequence，只追加 |
 | Agent 可用性 | `agent_availability_projection` | 从已提交 Runtime/Session/Message 事实投影 |
 | Agent 自动所有权 | `agent_execution_reservations` | Lease + monotonic fencing token |
-| 消息及目标投递 | 现有 RoomMessage/MessageDelivery | 继续由 Message Fabric 负责 |
+| 手工/定时消息投递 | 现有 RoomMessage/MessageDelivery | 继续由 Message Fabric 负责；Auto Task 的 Goal 意图由 ADR-074 `goal_outbox` 负责 |
 | 实际 Agent 执行 | 现有 Conversation/Runtime Run | 继续受 Session Execution Gate 保护 |
 | Token/成本 | 现有 LLM usage facts | Task 只保存 correlation，不复制账本 |
 
@@ -138,11 +150,11 @@ blocker_reason = Agent 提交的问题和风险
 
 | 项目 | 第一阶段责任 |
 |------|--------------|
-| PuddingCore | Task/Automation/Occurrence/Policy 模型、状态机、错误码、Store/Clock/Fence/Availability 契约 |
-| PuddingPlatform | SQLite Store、Schema Bootstrap、事务 Outbox、Policy 文件服务、API、查询和 Task Event Watch |
+| PuddingCore | Task/Automation/Occurrence/ExecutionWindow 模型、状态机、错误码、Store/Clock/Fence/Availability 契约 |
+| PuddingPlatform | SQLite Store、Schema Bootstrap、事务 Outbox、Execution Window Resolver、API、查询和 Task Event Watch |
 | PuddingRuntime | Fence 实现、Availability Projector、Scheduler/Dispatcher、Task Tools、Active Task Context、Message Envelope |
 | PuddingHost | Hosted Service 和组合根注册；Heartbeat/Cron 入口 Adapter，不持有领域状态 |
-| PuddingPlatformAdmin | Tasks/Automations/Work Policy/History 页面和 API 类型 |
+| PuddingPlatformAdmin | Tasks/Automations/Execution Window Inspector/History 页面和 API 类型 |
 | PuddingDesktop | 不新增任务业务逻辑，只继续承载 Workbench 与 Core 生命周期 |
 
 ### 4.3 第一阶段组件关系
@@ -152,13 +164,18 @@ flowchart LR
     UI["Admin Tasks"] --> API["Task Control Plane"]
     Tools["Task Tools"] --> API
     API --> Store["Task / Automation / Occurrence Store"]
-    PolicyFile["work-policy.json"] --> Fence["WorkAdmissionFence"]
+    TaskWindow["Task.executionWindow"] --> Resolver["ExecutionWindowResolver"]
+    ModelPrice["LLM provider/model price windows"] --> Resolver
+    Resolver --> Fence["WorkAdmissionFence"]
     Scheduler["Durable Task Scheduler"] --> Store
     Scheduler --> Availability["Availability Projection"]
     Scheduler --> Fence
-    Scheduler --> Outbox["Dispatch Outbox"]
+    Scheduler --> Outbox["Manual / Scheduled Dispatch Outbox"]
     Outbox --> Fence
     Outbox --> Fabric["Existing Message Fabric"]
+    Scheduler --> Coordinator["TaskGoalDispatchCoordinator"]
+    Coordinator --> Goal["Task-bound GoalRun + goal_outbox"]
+    Goal --> Runtime
     Fabric --> Runtime["Agent Runtime + Session Gate"]
     Runtime --> Tools
     Runtime --> Binding["Execution Binding"]
@@ -285,7 +302,7 @@ materialized_at_utc
 status                       pending | deferred | reserved | dispatched |
                              running | completed | failed | skipped | needs_review
 next_eligible_at_utc?
-policy_version
+window_profile_version
 window_key
 decision_code
 delivery_id?
@@ -297,41 +314,39 @@ idempotency_key
 
 唯一键是 `(automation_id, idempotency_key)`。修改 Automation 不改变旧 Occurrence 的输入和策略快照。
 
-## 6. 峰谷策略与 WorkAdmissionFence
+## 6. 执行窗口解析与 WorkAdmissionFence
 
-### 6.1 默认配置
+### 6.1 权威输入
 
-```json
-{
-  "schemaVersion": "pudding.workspace-work-policy/v1",
-  "workspaceId": "default",
-  "version": 1,
-  "timeZone": "Asia/Shanghai",
-  "effectiveAt": "2026-08-17T00:00:00+08:00",
-  "mode": "eco-during-peak",
-  "peakWindows": [
-    { "days": [1, 2, 3, 4, 5, 6, 7], "start": "09:00", "end": "12:00" },
-    { "days": [1, 2, 3, 4, 5, 6, 7], "start": "14:00", "end": "18:00" }
-  ],
-  "peakHeartbeatIntervalSeconds": 0,
-  "offPeakHeartbeatIntervalSeconds": 3600,
-  "defaultAutomaticWorkWindow": "off-peak-only",
-  "priorityRules": {
-    "p0": "anytime",
-    "p1": "off-peak-only",
-    "p2": "off-peak-only",
-    "p3": "off-peak-only"
-  }
-}
+不新增 `<workspace>/work-policy.json`。窗口判定使用两类已有领域事实：
+
+1. `workspace_tasks.execution_window` 表达该 Task 是 `anytime`、`off_peak_only` 还是 `inherit`；
+2. Agent 实际路由到的 provider/model 价格档案表达低价时段、时区、生效时间和折扣标识。该可选字段延伸现有 `llm.providers.json` 模型配置，与模型路由和价格保持同一权威。
+
+Resolver 消费的规范化快照为：
+
+```text
+provider_id
+model_id
+profile_version
+time_zone
+effective_at
+discount_windows[]          day-of-week + [start,end) + window_key
+resolved_at_utc
+valid_until_utc
 ```
 
-支持 IANA `Asia/Shanghai` 和 Windows `China Standard Time`，内部统一使用 `TimeProvider`。禁止用 `DateTime.Now` 判断业务窗口。
+`IExecutionWindowResolver.Resolve(task, agentRoute, now)` 返回 `allow/defer/unknown`、`windowKey`、`profileVersion`、`nextEligibleAtUtc` 和稳定 reason code。如果 Task 为 `off_peak_only` 但 Agent 路由尚不确定、价格档案缺失或配置无效，结果必须是 `unknown/defer`，不得默认按 anytime 执行。
+
+支持 IANA `Asia/Shanghai` 和 Windows `China Standard Time`，内部统一使用 `TimeProvider`。禁止用 `DateTime.Now` 判断业务窗口。Task 设为 `off_peak_only` 时，该明确偏好高于 priority 默认值，包括 P0 也不能自动越过；只有用户显式 Run Now override 可以在本次执行改变它。
 
 ### 6.2 边界
 
+以当前 DeepSeek 价格档案为例（实际值由带版本配置提供，不硬编码在 Task Scheduler）：
+
 - 高峰：`[09:00,12:00)`、`[14:00,18:00)`；
 - 空闲：其余时段；
-- 价格档案生效前，默认策略返回 `inactive`，除非用户已显式提前启用；
+- 价格档案生效前，Resolver 返回 `inactive/defer`；档案缺失时返回 `execution_window_unknown`；
 - `08:59:59.999` 允许，`09:00:00` 推迟；
 - `11:59:59.999` 推迟，`12:00:00` 允许；
 - `13:59:59.999` 允许，`14:00:00` 推迟；
@@ -343,9 +358,9 @@ idempotency_key
 1. 校验 workspace/agent/task/automation 是否存在、启用且版本仍有效
 2. 校验 notBefore、Task/Occurrence 状态和 Assignment 身份
 3. 处理 user.direct 或授权 run-now override
-4. 解析 task executionWindow
-5. 解析 priorityRules
-6. 计算 peak/off_peak/inactive 与 nextEligibleAt
+4. 解析 Task executionWindow；显式 `off_peak_only` 不得被 priority 自动越过
+5. 解析 Agent 有效 provider/model route 和带版本价格时段
+6. 计算 discount/full_price/inactive/unknown 与 nextEligibleAt
 7. 校验 Agent availability、用户消息积压、cooldown
 8. 校验 workspace/agent concurrency 和 Reservation
 9. 返回 allow/defer/deny + code + validUntil
@@ -364,6 +379,7 @@ deferred_agent_busy
 deferred_agent_offline
 deferred_agent_cooldown
 deferred_user_message_pending
+deferred_execution_window_unknown
 denied_policy_invalid
 denied_task_state_changed
 denied_stale_assignment
@@ -379,12 +395,12 @@ denied_agent_frozen
 2. **dispatch**：Outbox 调用 Message Fabric 前；
 3. **execute**：Message Delivery claim 后、Agent Runtime 开始新 Turn 前。
 
-Scheduler 可以在高峰 Materialize 到期 Occurrence，但必须立即将其标为 `Deferred` 并写入 `nextEligibleAt`，不能投递。
+Scheduler 可以在全价时段 Materialize 到期 Occurrence，但对 `off_peak_only` 必须立即将其标为 `Deferred` 并写入 `nextEligibleAt`，不能投递。若没有可计算的下一窗口，保留 `execution_window_unknown`并等待配置/路由事件，不进行密集轮询。
 
 ### 6.5 Heartbeat 0
 
 - Agent 自身 `min_idle_seconds=0 && max_idle_seconds=0` 表示长期禁用；
-- 工作区策略计算 `effectiveHeartbeatIntervalSeconds=0` 表示当前窗口禁用；
+- provider/model 执行窗口 Resolver 与 Heartbeat 自身配置共同计算 `effectiveHeartbeatIntervalSeconds=0`，表示当前窗口禁用；
 - 一个为 0、另一个为正数是配置错误；
 - 0 不进入 Delay、Wake Queue 或 Retry；
 - 高峰期 `EnsureDefaultAsync` 不补一小时默认 Heartbeat；
@@ -456,16 +472,22 @@ User assign
 ### 8.2 Auto 派发
 
 ```text
-Scheduler wake/recovery scan
+task.ready / availability.idle / execution_window.opened / recovery scan
   -> list Ready Tasks in deterministic order
   -> select eligible Agent
   -> Fence(reserve)
-  -> TryReserve Agent + Task + Outbox
+  -> TryReserve Agent + Task
   -> Fence(dispatch)
-  -> durable Message Delivery
-  -> Fence(execute)
-  -> Agent Run
+  -> StartGoalFromTask transaction
+       Assignment + Reservation + TaskGoalBinding + GoalRun + GoalOutbox
+  -> GoalContinuationWorker
+  -> Fence(accept)
+  -> canonical Conversation Turn + Agent Run
+  -> Goal Verifier / Coordinator
+  -> Goal + Task dual CAS terminal mapping
 ```
+
+Auto Task 不创建普通 `task_instruction` Message Delivery，也不等待 Heartbeat 补发“继续”。Goal 前置未通过时，这条链只能 evaluate-only。
 
 任务排序：
 
@@ -514,25 +536,25 @@ Database next_fire due
 
 ## 9. Agent 消息和任务工具
 
-### 9.1 Message Envelope
+### 9.1 手工任务与定时消息 Envelope
 
-模型输入可使用 `user` role，但持久来源必须是：
+手工任务与 scheduled-message 的模型输入可使用 `user` role，但持久来源必须是：
 
 ```text
 From.Kind = system
 From.Id = task-orchestrator
 ContentType = task_instruction
-metadata.origin = task.manual | task.auto | automation.schedule
+metadata.origin = task.manual | automation.schedule
 metadata.task_id
 metadata.assignment_id
 metadata.occurrence_id?
-metadata.policy_version
+metadata.window_profile_version
 metadata.priority
 metadata.execution_window
 metadata.dispatch_idempotency_key
 ```
 
-Prompt 不能改写这些 Metadata。UI 用“手工任务”“自动任务”“定时任务”徽标解释真实来源。
+Prompt 不能改写这些 Metadata。Auto Task 不使用该 Envelope，而使用受信 `TaskGoalRuntimeContext`；UI 根据 canonical source 显示“手工任务”“Task-bound Goal”“定时任务”，不从文本猜测。
 
 ### 9.2 工具
 
@@ -540,7 +562,7 @@ Prompt 不能改写这些 Metadata。UI 用“手工任务”“自动任务”�
 |------|--------------|
 | `task_list` | 默认查询 mine；支持 workspace、status、limit、cursor |
 | `task_get` | 返回 Task、Assignment、允许转换、验收标准和近期事件 |
-| `task_claim` | expectedVersion + Policy + Availability + Reservation 原子认领 |
+| `task_claim` | expectedVersion + ExecutionWindow + Availability + Reservation 原子认领 |
 | `task_update` | accept/progress/todo/blocked/needs_approval/rejected/completed |
 
 `task_update` 由后端状态机解释 disposition，Agent 不直接写 Status。以下字段必须由 Runtime Context 注入并校验：
@@ -558,19 +580,20 @@ reservation_fencing_token
 - progress 必须有 summary 或 nextAction；
 - completed 必须有 resultSummary，并满足 Acceptance Criteria 声明的必需 Artifact；
 - 只有自然语言“完成”而没有工具调用时，Task 不变化；
-- Agent 不能通过工具提高 Priority、设置 Peak Override、改 Work Policy 或删除 Task。
+- Agent 不能通过工具提高 Priority、设置 Peak Override、改 provider/model 价格时段或删除 Task。
 
 ## 10. Control Plane 和 Admin
 
 ### 10.1 API
 
-工作策略：
+执行窗口诊断：
 
 ```text
-GET  /api/workspaces/{workspaceId}/work-policy
-PUT  /api/workspaces/{workspaceId}/work-policy
-POST /api/workspaces/{workspaceId}/work-policy/evaluate
+GET  /api/workspaces/{workspaceId}/execution-window?agentId=...&taskId=...
+POST /api/workspaces/{workspaceId}/execution-window/evaluate
 ```
+
+该 API 只读取 Task 偏好与现有 provider/model 配置并返回 Resolver 快照；不提供任务领域内的第二份窗口配置写 API。价格时段编辑沿用既有 LLM provider/model 配置权限和文件服务。
 
 任务：
 
@@ -613,7 +636,7 @@ POST          /api/workspaces/{workspaceId}/automations/{automationId}/run-now
 2. **Agent 任务**：按 Agent 过滤，展示 Availability、当前任务和最近拒绝；
 3. **自动化**：once/daily/weekly/interval/受限五字段 cron/message-event 表单、未来五次时间触发预览、消息过滤器和 Occurrence 历史；
 4. **执行记录**：Task -> Assignment -> Delivery -> Execution 的时间线；
-5. **工作偏好**：当前窗口、下一次切换、Heartbeat 有效值、Priority 规则和 Evaluate 预览。
+5. **执行窗口诊断**：Task 偏好、Agent 当前 provider/model route、价格档案版本、当前窗口、下一次切换和 Evaluate 预览；本页不另存工作区策略。
 
 关键交互：
 
@@ -655,7 +678,7 @@ agent_execution_reservations
 7. 外部消息发送、LLM、Tool 和网络不在数据库事务内；
 8. Outbox 成功发送但未绑定时，通过 Idempotency Key 找回同一 Delivery；
 9. Lease/Fence 过期的 Worker 不能提交 Task/Occurrence 终态；
-10. 所有业务时间保存 UTC，时区只保存在 Policy/Automation 定义；
+10. 所有业务时间保存 UTC，时区只保存在 provider/model 价格时段或 Automation 定义；
 11. 前端和内存状态不反向覆盖数据库事实；
 12. Task 与现有 TaskPlan/Orchestration 表不双写、不兼容映射。
 
@@ -672,8 +695,9 @@ tasks.delete
 tasks.execute
 tasks.override_peak
 automations.manage
-work_policy.manage
 ```
+
+本领域不新增 `work_policy.manage`。读取窗口评估受 `tasks.read` 约束；编辑 provider/model 价格时段复用现有 LLM 配置管理权限。
 
 Agent 默认只有读取自己的 Assignment 和提交合法 disposition 的能力。
 
@@ -703,8 +727,8 @@ automation.occurrence.materialized
 automation.occurrence.deferred
 automation.occurrence.dispatched
 automation.occurrence.completed
-work_policy.changed
-work_policy.override_used
+execution_window.profile_changed
+execution_window.override_used
 ```
 
 ### 12.3 关联字段
@@ -721,7 +745,7 @@ execution_id
 session_id
 origin
 priority
-policy_version
+window_profile_version
 window_kind
 admission_decision / decision_code
 next_eligible_at_utc
@@ -745,24 +769,24 @@ trace_id / correlation_id / causation_id
 
 | 步骤 | 工作 | 步骤目标/完成证据 | 参考 |
 |------|------|-------------------|------|
-| ST-00.1 | 冻结第一阶段范围和非目标 | 评审确认包含基础五列看板和受限五字段 Cron，不包含 Questioner/Goal/Approval/任意事件表达式/Graph；后续代码不得预埋第二套高阶状态机 | R03、R20、R22 |
+| ST-00.1 | 冻结第一阶段范围和非目标 | 评审确认包含基础五列看板和受限五字段 Cron，不在本 ADR 内实现 Questioner/Goal 内核/Approval/任意事件表达式/Graph；Auto 只通过 ADR-074 合同交界，不预埋第二套 Goal 状态机 | R03、R20、R22、ADR-074 |
 | ST-00.2 | 冻结 ID、Status、BoardColumn、Disposition、Origin、Priority、ExecutionWindow、DecisionCode | Core Contract 和 OpenAPI 使用同一枚举；BoardColumn 只由 Status 投影；未知值 fail closed | R07、R09、R12 |
-| ST-00.3 | 定义 Feature Flag | `WorkspaceTasks.Enabled`、`TaskAutoDispatch.Enabled`、`TaskAutomation.Enabled`、`PeakFence.Enabled` 可独立关闭 | R04、R20 |
+| ST-00.3 | 定义 Feature Flag | `WorkspaceTasks.Enabled`、`TaskAutoDispatch.Enabled`、`TaskAutomation.Enabled`、`ExecutionWindowFence.Enabled` 可独立关闭；Auto 还必须依赖 Goal flags | R04、R20、ADR-074 G7 |
 | ST-00.4 | 建立错误协议 | CAS=409、规则=422、权限=401/403；稳定 code 与 traceId 有契约测试 | R13 |
 | ST-00.5 | 建立实现追踪清单 | 每个子任务有 Owner、依赖、测试、迁移、回滚和证据链接 | R19、R21 |
 
-### ST-01 时间、时区与峰谷 Policy
+### ST-01 时间、时区与执行窗口
 
 依赖：ST-00。目标：在没有 TODO UI 时也能准确回答“现在能否启动自动工作”。
 
 | 步骤 | 工作 | 步骤目标/完成证据 | 参考 |
 |------|------|-------------------|------|
 | ST-01.1 | 引入业务 `TimeProvider` 与 TimeZone Resolver | Windows/IANA 时区得到一致 UTC 边界；业务代码不直接调用 `DateTime.Now` | R02、R06 |
-| ST-01.2 | 实现 `work-policy.json` 模型和 File Service | 原子替换、expectedVersion/ETag、无效配置不覆盖旧版本 | R06 |
-| ST-01.3 | 实现纯 Work Window Calculator | 覆盖 00:00 生效与 09/12/14/18 四个边界，返回 nextEligibleAt | R02、R21 |
+| ST-01.2 | 在现有 LLM provider/model 配置合同中增加可选价格时段 | 与现有路由/价格同源，有 schema/version/timezone/effectiveAt 验证；不新建工作区策略文件 | R02、本 ADR 2.4/6.1 |
+| ST-01.3 | 实现纯 `IExecutionWindowResolver` | 覆盖价格时段边界、路由未知、配置缺失与 nextEligibleAt；相同快照结果确定 | R02、R21 |
 | ST-01.4 | 实现 `IWorkAdmissionFence` | 对相同输入得到相同 allow/defer/deny、code、policyVersion、validUntil | R09 |
 | ST-01.5 | 接入 Heartbeat 0 | 高峰不创建、不补填、不重试 Heartbeat；0 不形成 Busy Loop | R06、R21 |
-| ST-01.6 | 提供 Policy GET/PUT/Evaluate API | UI 可预览任意时间/优先级，保存冲突返回 409 | R13 |
+| ST-01.6 | 提供 Execution Window GET/Evaluate API | UI 可预览任意 Task/Agent/时间，返回 route/profile version 和原因；无独立 PUT | R13 |
 
 ### ST-02 Task Ledger、状态机与 SQLite Store
 
@@ -816,19 +840,19 @@ trace_id / correlation_id / causation_id
 | ST-05.5 | 实现用户消息优先 | Execution 前到达的直接用户消息释放 Auto Reservation | R10 |
 | ST-05.6 | 记录 Availability/Claim 决策 | 每次 Skipped 有状态、原因和 Queue Age | R27 |
 
-### ST-06 Auto Dispatcher
+### ST-06 Auto Dispatcher 与 Task-bound Goal 交界
 
-依赖：ST-01、ST-02、ST-03、ST-05。目标：非高峰且 Agent 空闲时可靠派发 Ready Task。
+依赖：ST-01、ST-02、ST-03、ST-05，以及 ADR-074 G0–G3。目标：低价窗口且 Agent 空闲时可靠启动 Task-bound GoalRun。Goal 门禁未满足前，本步只能 shadow/evaluate，不能回退为普通提醒消息。
 
 | 步骤 | 工作 | 步骤目标/完成证据 | 参考 |
 |------|------|-------------------|------|
 | ST-06.1 | 实现确定性 Task/Agent Candidate Query | 同一快照排序一致，拒绝列表和 Preferred Agent 生效 | R11 |
 | ST-06.2 | 实现 Reserve Transaction | 并发两个 Scheduler 只有一个 Task/Agent Reservation 成功 | R10、R11、R14 |
 | ST-06.3 | 实现三次 Fence | Reserve、Dispatch、Execute 跨过高峰边界时重新判定 | R09、R21 |
-| ST-06.4 | 生成 Task Instruction Envelope | 模型见 user role，审计保留 system:task-orchestrator 与 origin | R01、R11 |
+| ST-06.4 | 提交结构化 `StartGoalFromTask` | Assignment/Reservation/TaskGoalBinding/GoalRun/GoalOutbox 同事务；Runtime 从受信 context 获得 Task/Goal 身份 | ADR-074 G7 |
 | ST-06.5 | 处理拒绝与候选轮换 | 原 Attempt 固化原因，Task Ready/NeedsReview，Agent 继续下一 Task | R07、R11 |
 | ST-06.6 | 增加恢复扫描 | 丢失 Signal 或进程重启后 Pending/Deferred/Expired Lease 继续推进 | R17、R25 |
-| ST-06.7 | 验证高峰/空闲 Auto 行为 | P1–P3 高峰 Deferred，P0 Bypass 可审计，Off-Peak 自动执行 | R02、R07、R21 |
+| ST-06.7 | 验证价格窗口/空闲 Auto 行为 | `off_peak_only` 全价 Deferred，低价自动创建 Goal；显式 anytime/P0 规则与用户 Override 可审计 | R02、R07、R21、ADR-074 G7 |
 
 ### ST-07 Durable Scheduled Message
 
@@ -862,14 +886,14 @@ trace_id / correlation_id / causation_id
 | ST-08A.7 | 实现 Snapshot + Watch | SSE 断线按 Cursor 追赶，Task 终态不丢不重 | R15、R27 |
 | ST-08A.8 | 应用 Quiet UI | 默认显示结论、原因和恢复动作，技术细节渐进披露 | R32 |
 
-### ST-08B Automation 与 Work Policy Admin
+### ST-08B Automation 与 Execution Window Inspector
 
-依赖：ST-01、ST-05、ST-06、ST-07 的 API。目标：在基础看板闭环后增加 Auto、Cron、Occurrence 和峰谷策略管理。
+依赖：ST-01、ST-05、ST-06、ST-07 的 API。目标：在基础看板闭环后增加 Auto、Cron、Occurrence 和执行窗口诊断。
 
 | 步骤 | 工作 | 步骤目标/完成证据 | 参考 |
 |------|------|-------------------|------|
 | ST-08B.1 | 实现 Automation Editor | 结构化时间、受限五字段 Cron、消息触发器、未来五次、来源过滤、Peak Defer 和 Occurrence History | R08、R15 |
-| ST-08B.2 | 实现 Work Policy Panel | 当前窗口、下一切换、Heartbeat 有效值和 Evaluate Preview | R06、R15 |
+| ST-08B.2 | 实现 Execution Window Inspector | 显示 Task 偏好、provider/model route、profile version、当前窗口、下一切换和 Evaluate Preview；不新建工作区策略编辑器 | R06、R15 |
 | ST-08B.3 | 接入 Automation Watch | Occurrence/Dispatch/Failure 变化实时投影且断线可追赶 | R15、R27 |
 
 ### ST-09 权限、审计和可观测性
@@ -878,7 +902,7 @@ trace_id / correlation_id / causation_id
 
 | 步骤 | 工作 | 步骤目标/完成证据 | 参考 |
 |------|------|-------------------|------|
-| ST-09.1 | 接入 Workspace Capability | Agent 无法提 Priority/Override/改 Policy，ReadOnly 用户不能写 | R16、R31 |
+| ST-09.1 | 接入 Workspace Capability | Agent 无法提 Priority/Override 或改 provider/model 价格时段，ReadOnly 用户不能写 | R16、R31 |
 | ST-09.2 | 完成 Task Event Catalog | 每个业务转换产生专用 Event，Event 不复制 Secret/全文 Transcript | R16 |
 | ST-09.3 | 打通 Correlation | Task -> Assignment -> Occurrence -> Delivery -> Execution -> Usage 可查询 | R17、R27 |
 | ST-09.4 | 增加 Metrics 和结构化日志 | Fence、Queue Age、Misfire、Reservation、Outbox Lag、Failure 均可观测 | R17、R27 |
@@ -923,8 +947,8 @@ flowchart LR
     B --> D["M3 Manual Dispatch + Tools"]
     C --> E["M4 Task Board 闭环"]
     D --> E
-    E --> F["M5 Time + Fence + Availability"]
-    F --> G["M6 Auto Dispatch"]
+    E --> F["M5 Time + Window Resolver + Availability"]
+    F --> G["M6 Task-bound Goal Auto Dispatch"]
     F --> H["M7 Cron + Occurrence"]
     G --> I["M8 Automation Admin + Recovery + Cutover"]
     H --> I
@@ -937,10 +961,10 @@ flowchart LR
 | M2 | 五列 Board、Editor/Details、筛选、虚拟化和 Snapshot+Watch 可用 |
 | M3 | 手工 Assignment -> Delivery -> Agent -> task_update 完整闭环，四个 Task Tool 通过 |
 | M4 | 自动回写、失败/重开、执行会话深链、刷新恢复和 E2E 通过；基础任务看板完成 |
-| M5 | Peak 边界、Policy CAS、Heartbeat 0、Availability 重建和 Reservation 通过 |
-| M6 | Off-Peak 自动派发、Peak Deferred、P0 Bypass、用户优先和拒绝轮换通过 |
+| M5 | 价格时段边界、Resolver 快照、Heartbeat 0、Availability 重建和 Reservation 通过 |
+| M6 | ADR-074 G0–G3 已通过；Off-Peak 原子创建 Task-bound Goal、Full-Price Deferred、用户优先和拒绝轮换通过 |
 | M7 | Once/Daily/Weekly/Interval/受限 Cron、Misfire/Overlap/Restart Recovery 通过 |
-| M8 | Automation/Policy/Occurrence UI、故障注入、单一 Owner、外部部署和真实授权 Smoke 完成 |
+| M8 | Automation/Execution Window/Occurrence UI、故障注入、单一 Owner、外部部署和真实授权 Smoke 完成 |
 
 ## 15. 文件级施工目标
 
@@ -953,7 +977,8 @@ Source/PuddingCore/Tasks/WorkspaceTaskModels.cs
 Source/PuddingCore/Tasks/TaskAutomationModels.cs
 Source/PuddingCore/Tasks/TaskStateMachine.cs
 Source/PuddingCore/Tasks/TaskPersistenceContracts.cs
-Source/PuddingCore/Scheduling/WorkPolicyModels.cs
+Source/PuddingCore/Scheduling/ExecutionWindowModels.cs
+Source/PuddingCore/Scheduling/IExecutionWindowResolver.cs
 Source/PuddingCore/Scheduling/IWorkAdmissionFence.cs
 Source/PuddingCore/Scheduling/IAgentAvailabilityProjection.cs
 ```
@@ -964,11 +989,11 @@ Source/PuddingCore/Scheduling/IAgentAvailabilityProjection.cs
 Source/PuddingPlatform/Services/Tasks/SqliteWorkspaceTaskStore.cs
 Source/PuddingPlatform/Services/Tasks/TaskAutomationStore.cs
 Source/PuddingPlatform/Services/Tasks/TaskDispatchOutbox.cs
-Source/PuddingPlatform/Services/Tasks/WorkspaceWorkPolicyFileService.cs
+Source/PuddingPlatform/Services/Tasks/ProviderModelExecutionWindowResolver.cs
 Source/PuddingPlatform/Services/Tasks/TaskSchemaBootstrapper.cs
 Source/PuddingPlatform/Controllers/Api/WorkspaceTaskApiController.cs
 Source/PuddingPlatform/Controllers/Api/WorkspaceAutomationApiController.cs
-Source/PuddingPlatform/Controllers/Api/WorkspaceWorkPolicyApiController.cs
+Source/PuddingPlatform/Controllers/Api/ExecutionWindowDiagnosticsController.cs
 ```
 
 ### PuddingRuntime
@@ -987,7 +1012,7 @@ Source/PuddingRuntime/Services/TaskTools/TaskUpdateTool.cs
 ### PuddingHost
 
 - 在真实 Host 组合根注册 Store、Fence、Availability、Scheduler、Outbox、Tools 和 TimeProvider；
-- `HeartbeatService` 在创建 Wake Request 前读取 Effective Policy；
+- `HeartbeatService` 在创建 Wake Request 前读取 Effective Execution Window Decision；
 - 旧 `CronSchedulerService` 不读取新 `task_automations` 表；
 - 新 Scheduler 未启用时不 Claim 新 Automation。
 
@@ -1004,7 +1029,7 @@ Source/PuddingPlatformAdmin/src/pages/workspace-tasks/
   TaskDetailsDrawer.tsx
   TaskExecutionLink.tsx
   AutomationEditor.tsx
-  WorkPolicyPanel.tsx
+  ExecutionWindowInspector.tsx
   TaskEventTimeline.tsx
   api.ts
   types.ts
@@ -1012,16 +1037,16 @@ Source/PuddingPlatformAdmin/src/pages/workspace-tasks/
 
 ## 16. 第一阶段验收
 
-### 16.1 时间与 Fence
+### 16.1 时间、Execution Window 与 Fence
 
-- 2026-08-17 00:00:00+08:00 策略按配置生效；
-- 四个高峰边界精确到毫秒；
-- P1/P2/P3 高峰 Deferred 到正确 nextEligibleAt；
-- P0 允许并产生 `allowed_priority_bypass`；
+- provider/model 价格档案按 timezone/effectiveAt/profileVersion 生效；
+- 每个折扣窗口的开/闭边界精确到毫秒；
+- `off_peak_only` 在全价窗口 Deferred 到正确 nextEligibleAt；路由/档案缺失时为 `execution_window_unknown`；
+- 显式 `off_peak_only` 不被 P0 自动越过；`inherit` 才可消费默认 priority 规则；
 - 用户直接聊天在高峰正常；
 - Run Now 未确认 Override 时不能高峰执行；
 - Heartbeat 0 不产生 Wake、Retry 或 Busy Loop；
-- 排队时 Off-Peak、Dispatch 时 Peak 的任务不执行。
+- 排队时 Off-Peak、Dispatch 时 Full-Price 的任务不执行。
 
 ### 16.2 Task 与工具
 
@@ -1042,6 +1067,7 @@ Source/PuddingPlatformAdmin/src/pages/workspace-tasks/
 
 - unknown/offline/busy/reserved/cooling/frozen 不 Claim；
 - Off-Peak + Idle + Ready 自动派发；
+- 自动派发产生唯一 TaskGoalBinding 和 GoalRun，不是一条普通提醒消息；
 - 两个 Scheduler 竞争只有一个成功；
 - 一个 Agent 同时最多一个自动任务；
 - 直接用户消息在 Execution 前抢占 Auto Reservation；
@@ -1067,7 +1093,7 @@ Source/PuddingPlatformAdmin/src/pages/workspace-tasks/
 - 每个 Deferred 状态都有原因、下一时间和恢复动作；
 - Task -> Assignment -> Delivery -> Execution -> Usage 可串联；
 - SSE 断线后 Cursor 追赶不丢终态；
-- Agent 无法提高 Priority、创建 Override 或改 Policy；
+- Agent 无法提高 Priority、创建 Override 或改 provider/model 价格时段；
 - API/日志/UI 不泄漏 Secret；
 - Feature Flag 关闭后停止新 Claim，不破坏已有 Task 读写和历史。
 
@@ -1075,11 +1101,11 @@ Source/PuddingPlatformAdmin/src/pages/workspace-tasks/
 
 | 层 | 必测 |
 |----|------|
-| Core | State Machine、Failed/Reopen、Board Projection、Window Calculator、Priority/Override、NextEligible、Cron NextFire、非法枚举、Property Test |
+| Core | State Machine、Failed/Reopen、Board Projection、ExecutionWindow Resolver、Route/Profile Unknown、Priority/Override、NextEligible、Cron NextFire、非法枚举、Property Test |
 | Platform | SQLite CAS、Partial Unique、Outbox、Occurrence、Misfire、Lease/Fence、Restart Recovery |
 | Runtime | Availability、三次 Fence、Task Tool、User Priority、Envelope Origin、Candidate Rotation |
 | Admin | Five-column Board、Virtualization、Filter、Drawer、Execute/Deep Link、Failed/Reopen、CAS Conflict、Cron Preview、Peak Banner、Timeline、SSE Replay |
-| E2E | Fake TimeProvider + Fake LLM；Board Manual Execute、Auto Off-Peak、Peak Defer、Cron Recovery 四条链 |
+| E2E | Fake TimeProvider + Fake LLM；Board Manual Execute、Auto Off-Peak -> Task-bound Goal、Full-Price Defer、Cron Recovery 四条链 |
 | Product Smoke | 用户明确授权后，在新构建 Core 上执行 Off-Peak 和 P0 Override 两条真实模型路径 |
 
 构建与测试输出只能进入仓库 `.tmp-build/.tmp-test-out` 或系统 Temp，不能写入 `D:\data`。
@@ -1091,12 +1117,13 @@ Source/PuddingPlatformAdmin/src/pages/workspace-tasks/
 1. Schema + 只读 API；
 2. Task Ledger + 五列只读 Board；
 3. Manual Dispatch + Task Tools + 自动回写，完成基础任务看板；
-4. Policy/Fence Shadow + Availability；
-5. 单 Workspace Auto Dispatch；
-6. Scheduled Message + 受限 Cron；
-7. Automation/Policy Admin；
-8. 扩大工作区范围；
-9. Heartbeat Peak Enforcement。
+4. Execution Window/Fence Shadow + Availability；
+5. ADR-074 GoalRun 与 Task-bound Goal 门禁；
+6. 单 Workspace/单 Agent Auto Dispatch；
+7. Scheduled Message + 受限 Cron；
+8. Automation/Execution Window Inspector；
+9. 扩大工作区范围；
+10. Heartbeat Window Enforcement。
 
 回滚规则：
 
@@ -1104,7 +1131,7 @@ Source/PuddingPlatformAdmin/src/pages/workspace-tasks/
 - 已 Reserved 但未 Dispatch 的行安全释放回 Ready/Deferred；
 - 已创建 Delivery 继续由 Message Fabric 完成或进入其 Retry/Dead Letter；
 - 已开始的 Agent Turn 运行到终态；
-- Policy 文件保留，关闭 Fence 时明确记录 `feature_disabled`；
+- provider/model 价格档案保留在现有 LLM 配置；关闭 Fence 时明确记录 `feature_disabled`；
 - 新 Automation 不自动转换成旧 Cron；
 - 回滚后 API 仍可读取和导出 Task 历史。
 
@@ -1114,9 +1141,9 @@ Source/PuddingPlatformAdmin/src/pages/workspace-tasks/
 - WorkspaceTask 与 TaskPlan/TaskNode 分离；
 - 用户直接聊天绕过峰谷；Run Now 需要显式 Override；
 - P0 默认 Anytime，P1/P2/P3 默认 Off-Peak；
-- 高峰窗口按用户给定规则每天生效；
+- 低价窗口来自 Agent 有效 provider/model 价格档案；Task 只保存执行偏好；
 - Heartbeat 0 表示禁用；
-- Auto 消息模型层使用 user role，审计层保持 system orchestrator；
+- 手工任务/定时消息的模型层可使用 user role，审计层保持 system orchestrator；Auto Task 使用受信 Task-bound Goal context；
 - Task 状态只由结构化 Command/Tool 推进；
 - Rejected 终止 Assignment，不终止 Task；
 - 五列 Board 是 Task Status 的投影，不是第二套状态机；
@@ -1125,7 +1152,7 @@ Source/PuddingPlatformAdmin/src/pages/workspace-tasks/
 - Periodic Misfire 默认 Coalesce One，Overlap 默认 Forbid；
 - 一个 Agent 同时最多一个 Auto Reservation；
 - 第一阶段不在执行中途暂停 Turn；
-- 第一阶段不实现 Questioner、Goal、Approval Workflow 或自动提醒；
+- 第一阶段不在本 ADR 内实现 Questioner、Goal 内核、Approval Workflow 或自动提醒；完整 Auto Dispatcher 在生产开启前必须依赖 ADR-074 Task-bound Goal；
 - 新 Task Scheduler 不读取旧 Cron Job，避免双 Owner；
 - 正确性依赖数据库、CAS、Lease、Fence 和 Outbox，不依赖心跳或 Agent 自觉。
 
@@ -1134,7 +1161,7 @@ Source/PuddingPlatformAdmin/src/pages/workspace-tasks/
 第一阶段只有在以下结果同时成立时完成：
 
 1. 用户可以从 Admin 五列看板创建一个普通 TODO，点击执行后进入真实 Agent 链，并看到 Agent 通过任务工具完成、自动回写和会话深链；
-2. 一个 Ready Auto Task 在 Off-Peak、Agent Idle 时自动派发，在 Peak 时确定性 Deferred；
+2. 一个 Ready Auto Task 在 Off-Peak、Agent Idle 时原子创建 Task-bound GoalRun，在 Full-Price 时确定性 Deferred；
 3. 一个受限 Cron Scheduled Message 在 Core 停机跨过时间触发点后按 Misfire Policy 恢复且只发送一次；同一 Source Message 也至多触发一次；
 4. P0 和显式 Run Now Override 均有清楚的高峰成本提示和审计；
 5. 任一 Reserve/Outbox/Send/Bind Crash Point 都不重复执行；
@@ -1142,4 +1169,4 @@ Source/PuddingPlatformAdmin/src/pages/workspace-tasks/
 7. UI 五列、API、Task Event、Delivery 和 Runtime Execution 对同一任务状态一致，Failed/Reopen 语义无歧义；
 8. 关闭 Feature Flag 可以停止自动工作而不丢历史；
 9. 所有定向测试、恢复测试、Admin Build 和外部部署验收通过；
-10. Questioner、Goal、自动监督、Graph 生成等高阶能力没有混入第一阶段代码路径。
+10. Questioner、Goal 内核、自动监督、Graph 生成等高阶能力没有混入第一阶段手工路径；Auto 与 Goal 只通过 ADR-074 冻结的内部命令和绑定表交界。

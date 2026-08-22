@@ -1,6 +1,6 @@
 # Pudding Agent Network 文档索引
 
-最后更新：2026-08-16（新增 ADR-073 任务看板优先施工总表，并统一 ADR-072、DeepSeek 总蓝图和消息 UI 的优先级；Desktop 既有验收状态不变）
+最后更新：2026-08-22（新增 ADR-077 主代理原生视觉理解与多模态消息链路；既有 Goal/Task/存储设计状态不变）
 
 ## 文档定位
 
@@ -20,10 +20,20 @@
 
 ## 当前主线文档
 
+- `Docs/07架构/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md`
+	- 冻结主视觉模型直接消费 typed image content、Workspace Artifact、DeepSeek Responses `input_image`/图片型工具结果、Files API、多轮重启恢复、fail-closed 与视觉用量；Image Reader 改为默认只传路径的按需取图工具，支持 URL/任意绝对路径，并保留显式 helper 委派能力。当前为 Proposed。
+- `Docs/07架构/89ADR-074Goal持久目标自主续行与自动压缩ADR.md`
+	- 冻结 GoalRun 持久续行、证据验证、Task-bound Goal、Agent 可用性感知与低峰自动派发；明确 Auto Task 以 Goal 为前置且不依赖 Heartbeat。
+- `Docs/Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md`
+	- 按 Core/Platform/Runtime/Host/Admin 列出类、表、事务、事件、文件、施工卡、测试、切换和生产验收门禁。
+- `Docs/07架构/91ADR-076遥测与调试数据保留及Core存储管理ADR.md`
+	- 冻结 Core + Web Admin `/storage` 边界、语义数据类型目录、唯一在线维护 writer、关键事实保护和禁止在线全库 VACUUM；当前为 Proposed。
+- `Docs/Features/遥测调试数据自动过期与Web存储管理设计方案.md`
+	- 自动过期、缓存快照与后台增量估算、分类占比图/趋势报表、按类型/时间近似 Preview、异步清理作业、策略配置、文件级施工与验收方案。
 - `Docs/07架构/87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md`
 	- 当前产品施工入口；列出 30 项产品任务和 17 项 T00–T16 平台底座任务的目标、优先级、工作量、难度、依赖和设计位置，并把各专项 Phase 去重到唯一 Canonical Owner。产品顺序为任务看板 → Auto/Cron → 完整轨迹 → 实时指标 → 插件化收口。
 - `Docs/07架构/86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md`
-	- WorkspaceTask、五列 Board、Failed/Reopen、手工/Auto 派发、受限 Cron、峰谷策略、Task Tools、Admin 和恢复的任务领域合同。
+	- WorkspaceTask、五列 Board、Failed/Reopen、手工/Auto 派发、受限 Cron、Task executionWindow、provider/model 价格时段 Resolver、Task Tools、Admin 和恢复的任务领域合同；不新增 `work-policy.json`。
 - `Docs/deepseek-reference-architecture-master-plan-2026-08-14.md`
 	- 本次会话设计总入口；以“模型、工具、技能、会话、Agent Loop、沙箱、存储、调度和 UI 均为插件”为第一原则，汇总组件级映射、文件级修改矩阵、任务图、T00-T16 施工卡、验收和风险边界。
 - `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`
@@ -110,6 +120,8 @@
 
 ## 当前实现状态说明
 
+- ADR-077 当前是基于现有多模态代码骨架形成的目标设计，不表示 `deepseek-v4-flash-vision-exp` 已通过当前轮、多轮、重启和 Files API 的真实模型验收。
+- ADR-074 及 Task-bound Goal 代码级施工计划当前只是设计定稿，不是实现或生产验收证据；现有 `goal_queue.json`/`GoalModeService` 不等价于持久 GoalRun。
 - Phase 1A Desktop Launcher、Phase 1B-R Runtime Center、Phase 1B-S Storage、Phase 2A-1/2 和 Phase 2A-3 确定性实现已于 2026-08-02 验收。Phase 2A-3 已交付 Snapshot、Locator、八项 Interact、Wait、版本化 ref、四项新 Agent Tools、真实 WebView2 TestSite、Release publish 与可见 Desktop 退出 smoke；结果见 76。真实 DeepSeek Agent 的工具选择 smoke 仍需用户明确选择测试 Agent/DataRoot，完成前不进入 Douyin Adapter。`dev-up.py` 保留为源码开发脚本，不进入最终产品。
 - Phase 2A-3B 的真实 DeepSeek 工具选择验收按 77 执行；通过前不得开始 Douyin Adapter 实现。
 - 当前源码中仍保留旧架构和开发脚本入口，阅读 Desktop 主线时以 68、69 实施规格为准。

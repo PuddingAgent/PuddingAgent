@@ -1,6 +1,6 @@
 # PuddingAgent CodeMAP
 
-> 顶层快速索引 | 2026-08-18 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
+> 顶层快速索引 | 2026-08-22 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
 
 ## 项目定位
 
@@ -12,7 +12,8 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 |------|------|
 | `README.md` / `README_zh-CN.md` | 中英文产品与目标架构入口；Windows Desktop/Core 产品边界、Plugin/Function/Hook/Event/Projection 五类合同、Agent FSM、函数图编排、前端思想、现状缺口与路线 |
 | `Docs/Features/工作区TODO与峰谷节能任务编排设计方案.md` | 工作区 TODO 台账、Agent 认领/拒绝/回报、durable 自动派发与定时消息、可信 idle、心跳 0、峰谷 WorkAdmissionFence，以及 Hook 触发的临时质询子代理、GoalRun 有界循环、manifest/Admin 模型路由、防无限循环熔断和公共 Plugin/Function/Event/Projection 映射 |
-| `Docs/Features/Goal持久目标自主续行与自动压缩完整设计方案.md` | `/goal` 完整专项设计；统一 Web/Desktop/Connector 命令、持久 GoalRun、事件驱动 continuation、256 个外层 Goal Iteration、证据 Verifier、用户抢占、重启停用、自动压缩、API/UI、分期和验收；明确不依赖 Heartbeat |
+| `Docs/Features/Goal持久目标自主续行与自动压缩完整设计方案.md` | `/goal` 完整专项设计；统一 Web/Desktop/Connector 命令、持久 GoalRun、事件驱动 continuation、256 个外层 Goal Iteration、证据 Verifier、用户抢占、重启停用、自动压缩和 Task-bound Goal；明确不依赖 Heartbeat |
+| `Docs/Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md` | 低峰自动执行施工图；冻结 Goal 前置、持久 Agent Availability Sensor、provider/model 价格时段 Resolver、TaskGoalDispatchCoordinator、原子 Task/Goal 绑定、文件矩阵、测试、切换与生产门禁 |
 | `Docs/deepseek-reference-architecture-master-plan-2026-08-14.md` | 本次会话的 deepseek-harness/pi 参考架构总蓝图；以“一切业务能力皆插件”为第一原则，覆盖 Model/Tool/Skill/Session/Agent Loop/Sandbox/Storage/Schedule/UI、统一运行事实、文件级改造矩阵、任务图与 T00-T16 施工步骤 |
 | `Docs/07架构/67ADR-066*.md` | Browser 能力与 Douyin 分层决策 |
 | `Docs/07架构/68*.md` | WebView2 自动化分阶段实施规格 |
@@ -27,9 +28,12 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/07架构/83*.md` | 后端执行内核与 Control Plane 施工图；契约、SQLite、API、状态转换、Function Runtime/Invoker、Typed Hook Pipeline、Parent/Child Run、Outbox、Scheduler、Trigger 与权限 |
 | `Docs/07架构/84*.md` | Admin 蓝图编辑器和组件系统施工图；Node/Edge/Input/Trigger、Revision/Deployment/Run、多模态 UX、Pudding 视觉语言、原因优先状态、Function Catalog、插件 Presentation 与系统构成检查器 |
 | `Docs/07架构/85*.md` | 分期交付、测试、安全、性能、Desktop 部署、浏览器 smoke、恢复与验收证据图册 |
-| `Docs/07架构/86ADR-072*.md` | 工作区 TODO 第一阶段任务领域 ADR；覆盖五列 Board、Task Failed/Reopen、Task Ledger、手工/Auto 派发、Once/Daily/Weekly/Interval/受限五字段 Cron/Message Event、Agent Availability、峰谷 Fence、Task Tools 和恢复 |
+| `Docs/07架构/86ADR-072*.md` | 工作区 TODO 第一阶段任务领域 ADR；覆盖五列 Board、Task Failed/Reopen、Task Ledger、手工/Auto 派发、受限 Cron/Message Event、Agent Availability、Task executionWindow 与 provider/model 价格时段 Resolver；完整 Auto 受 Goal 前置约束，不新增 `work-policy.json` |
 | `Docs/07架构/87ADR-073*.md` | 当前产品施工总表与冲突裁决基线；列出 30 项产品任务、17 项 T00–T16 平台底座任务及专项 Phase 去重映射，覆盖目标、优先级、工作量、难度、依赖、设计位置和里程碑 |
-| `Docs/07架构/89ADR-074*.md` | Goal 专项架构决策；冻结外层 GoalRun/内层 Agent Loop 双层预算、单 Goal 256 accepted Iteration 硬上限、durable outbox 续行、独立证据验证、重启 disarm、多客户端统一投影与 ADR-042 压缩边界 |
+| `Docs/07架构/89ADR-074*.md` | Goal 专项架构决策；冻结外层 GoalRun/内层 Agent Loop 双层预算、单 Goal 256 accepted Iteration 硬上限、durable outbox 续行、独立证据验证、重启 disarm、Task-bound Goal、Availability Sensor、低峰派发与不依赖 Heartbeat |
+| `Docs/07架构/90ADR-075*.md` / `Docs/Features/第三方任务看板AccessToken与外部API详细设计方案.md` | 第三方任务看板开发合同；冻结 hashed opaque Access Token、ASP.NET Core 独立 scheme + scope/workspace Policy、外部 API v1、ETag/幂等、追加式 TaskEvaluation 与 Admin Access Token 管理器；当前仅设计完成，未实现 |
+| `Docs/07架构/91ADR-076*.md` / `Docs/Features/遥测调试数据自动过期与Web存储管理设计方案.md` | 遥测/Debug 存储治理目标设计；Core + Web `/storage`、缓存快照与有界增量估算、分类图表/趋势报表、语义类型目录、自动/人工唯一维护 writer、按类型/时间清理、关键事实保护、长期聚合和禁止在线全库 VACUUM；Desktop 不扩展，当前未实现 |
+| `Docs/07架构/92ADR-077*.md` | 主代理原生视觉目标设计；typed image content、Workspace Artifact、DeepSeek Responses `input_image`/图片型工具结果、Files API、多轮/重启恢复、fail-closed；Image Reader 重定位为 URL/任意绝对路径/Artifact 取用工具，默认当前模型原生读取，文本模型或第二意见才委派 helper；当前仅设计完成 |
 | `Docs/07架构/tool-infrastructure-layering.md` | Tool 分层、强制委派合同、Smart 参数与结果合同 |
 | `Docs/deepseek-harness-message-card-alignment-2026-08-14.md` | 对照 deepseek-harness 的消息、推理和工具调用 UI 目标架构；定义 TurnStatus、Reasoning/Tool/Delegation 行、toolCallId 投影、分期与验收矩阵 |
 | `Docs/deepseek-harness-tool-system-alignment-2026-08-14.md` | 对照 deepseek-harness 的工具定义与执行协议；规划 canonical output、端到端 callId、结构化错误、管线、并发、spill、可回放 presentation 与 DeepSeek Code Mode |
@@ -126,6 +130,10 @@ spawn_sub_agent → SubAgentInvocationService → SubAgentManager
   → 正常轮次/时间耗尽后提供 20 轮、最多 30 分钟的收尾宽限，终态为可续跑 `budget_exhausted`
   → `resume_sub_agent_id` 复用 SubSessionId/上下文、创建新 runId 并重置系统计数器
   → run archive 固化实际预算与 `subagent.budget.notice`
+  → FileSubAgentRunStore 归档并发协议（ADR-060 §3.11）：读写同一 per-run gate、读方 FileShare.ReadWrite、
+    JSONL 追加 sharing violation 退避重试；重试耗尽丢弃事件写 archive-degraded.json 降级，不杀死运行
+  → FirewallContext.WorkingDirectory 从 ToolExecutionContext 冻结；防火墙 WorkspaceGate、审批目标解析
+    与文件工具统一委派执行根（worktree），不回退进程级静态 workspace root
   → ContextPipeline 以 ConfigurationAgentInstanceId 读取持久 Skill/人格/记忆，缺失 Skill 索引不写盘
   → SubAgentTransientDirectoryGcService 只隔离终态/孤儿的精确空脚手架，运行归档与有状态目录不进入 GC
 
@@ -137,13 +145,23 @@ Runtime 跨层服务 → Core contracts → Platform implementations
 PuddingHost 产品组合根 → Runtime tool assembly scan
   → 每个自动发现的 IPuddingTool 都参与 ValidateOnBuild
   → 新工具的构造依赖必须同步注册到 PuddingHost 的 Runtime 扩展
+  → AgentExecutionAdmissionCoordinator 必须在 Runtime 与 PuddingHost 两个组合根都注册为 Singleton，供前台 Turn 与 MessageDeliveryDispatcher 共享准入状态
   → PuddingApplicationHostCompositionTests 用 DesktopChild 入口防止“构建成功、Core 启动即退出”
 
-Agent 实例 `manifest.json.imageReaderModel` → ImageReaderTool
+当前待重定位链路：Agent 实例 `manifest.json.imageReaderModel` → ImageReaderTool
   → ILlmResolver 显式 `provider/model` + `vision` 能力校验
   → 专用模型失败时仅尝试同一 manifest 的 Agent 主模型（也必须具备 `vision`）
   → 配置缺失或两条显式路由均失败时返回错误，不按全局 vision 模型排序兜底
   → 文本主模型附件的 VisualArtifactObservationService 也使用同一显式字段
+  → ADR-077 目标态删除聊天自动预观察；Image Reader 保留并读取 URL/任意绝对路径/Artifact
+  → path 唯一必填，auto 优先向调用模型返回 typed image tool output；必要时用 visionHelperModel 委派
+
+主 Agent typed image content → Workspace `vision-*` Artifact → Agent Execution Snapshot
+  → 主模型带 `vision`：直接消费用户附图，不经过 Observation/Image Reader
+  → 运行中发现 URL/绝对图片路径：模型按需调用 Image Reader，默认原生读取，必要时显式 helper 委派
+  → LlmVisualInputPlanner（ADR-077 目标，尚未实现）全量授权与限制 preflight
+  → DeepSeek Responses `input_image`：小图 Data URI，大图/复用图 Files API `file_id`
+  → 任一图片失败整轮 fail closed；DB/JSONL/工具轮次/重启保持同一图片 part
 
 Desktop Storage → CoreStorageManagementClient
   → GET/POST /api/admin/storage/databases（Admin JWT 或 Loopback ControlToken）
@@ -194,7 +212,7 @@ Chat first paint → AgentConversationProjectionService
   → MessageRow（稳定块直接渲染 + 语义 memo；不再经过单条 MessageStream 兼容重建）
   → 主消息运行监视区（首 Token 前也保留主代理“查看过程”：当前阶段 + 推理摘要 + 工具操作 + 有界子代理委派状态；不展开子代理内部过程）
   → subAgentReducer（事件/快照统一投影；状态接口携带 canonical runId 并可重建漏收 created/started 的运行；budget_exhausted 终态单调；原样展示有界的实际 reasoning_preview）
-  → SubAgentActivityDock（实时 reducer + run archive 回放；刷新后按 canonical runId 恢复子代理任务/推理/工具/轮次/耗时/输出；Agent-first 路由回退 mainSessionId 保证图标可见）
+  → SubAgentActivityDock（实时 reducer + 终态 run 归档一次性回放；活动 run 零归档轮询=ADR-060 §3.11；归档降级时展示 archive-degraded 提示；刷新后按 canonical runId 恢复子代理任务/推理/工具/轮次/耗时/输出；Agent-first 路由回退 mainSessionId 保证图标可见）
   → 展开过程摘要时才构建 rounds / trace chips
   → MessageItem 先渲染纯文本，异步加载 Markdown/KaTeX 增强块
   → 子代理检查器、会话诊断 Drawer、摄像头输入仅在首次打开时加载

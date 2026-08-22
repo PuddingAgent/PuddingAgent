@@ -65,6 +65,10 @@
 59. [插件、Hook、Event、Agent FSM 与函数图总架构](../deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md)
 60. [ADR-072 工作区 TODO、峰谷 Auto 派发与定时任务第一阶段](86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md)
 61. [ADR-073 任务看板优先的 Agent 工作台、完整轨迹与实时指标施工方案](87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md)
+62. [ADR-074 Goal 持久目标、自主续行与自动压缩](89ADR-074Goal持久目标自主续行与自动压缩ADR.md)
+63. [ADR-075 第三方任务看板 Access Token 与外部 API](90ADR-075第三方任务看板AccessToken与外部APIADR.md)
+64. [ADR-076 遥测与调试数据保留及 Core 存储管理](91ADR-076遥测与调试数据保留及Core存储管理ADR.md)
+65. [ADR-077 主代理原生视觉理解与多模态消息链路](92ADR-077主代理原生视觉理解与多模态消息链路ADR.md)
 
 文档分工：
 
@@ -80,7 +84,11 @@
 - Workflow / TaskMap 是复杂任务的一等表达，前端可借鉴 FlowGram 风格画布，但运行时语义仍以 Pudding 自身架构为准。
 - Agent、Tool、Graph、Gate、Transform 与 HumanInput 统一为可组合 Function；Agent 生成的可执行任务图使用 `pudding.agent-orchestration/v2` 声明式契约，经过编译、策略、预算、审批和不可变 Revision 冻结后运行，MOA 是模板实例。当前定义、修订、运行、事件边界和 replay-to-live 基础见 [ADR-070](81ADR-070通用Agent编排图基础架构ADR.md)，完整目标及逐层施工/验收见 [ADR-071 文档包](82ADR-071通用Agent编排平台完整设计方案ADR.md)。
 - 产品施工顺序、完整任务目标、优先级、工作量、难度和跨文档冲突裁决以 [ADR-073](87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md) 为准：先完成五列任务看板闭环，再做 Auto/Cron、完整轨迹和实时指标。
-- 工作区 TODO、手工/Auto 派发、受限 Cron 定时消息和峰谷调度的任务领域合同以 [ADR-072](86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md) 为准；该阶段明确排除质询器、Goal、自动提醒、完整审批和 Agent 生成图。
+- 工作区 TODO、手工/Auto 派发、受限 Cron 定时消息、Task 执行窗口偏好和 Agent Availability/Reservation 的任务领域合同以 [ADR-072](86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md) 为准；不新增工作区 `work-policy.json`。第一阶段手工闭环仍排除 Goal 内核，但完整 Auto Dispatcher 的生产启用受 ADR-074 Task-bound Goal 前置门禁约束。
+- Goal 命令、多入口控制、持久状态、事件驱动自主续行、256 个 Goal Iteration 硬上限、证据验证、压缩集成、Task-bound Goal、Agent 状态感知和低峰自动派发以 [ADR-074](89ADR-074Goal持久目标自主续行与自动压缩ADR.md)、[完整设计](../Features/Goal持久目标自主续行与自动压缩完整设计方案.md) 和 [代码级施工计划](../Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md) 为准；Goal 不依赖 Heartbeat，Task Auto 不使用普通提醒消息代替 GoalRun。
+- 第三方任务看板调用、opaque Access Token、ASP.NET Core 独立认证方案、scope/workspace Policy、外部 API v1、结构化任务评价和 Admin Token 管理器以 [ADR-075](90ADR-075第三方任务看板AccessToken与外部APIADR.md) 与 [详细设计](../Features/第三方任务看板AccessToken与外部API详细设计方案.md) 为准；该 ADR 当前为 Proposed，不表示代码、配置或数据库已实现。
+- 遥测、上下文指标、运行活动与 Debug 数据的自动过期、缓存快照与后台增量估算、分类图表/趋势报表、用户按类型/时间清理、唯一在线维护 writer、Web `/storage` 和 Desktop 非目标边界以 [ADR-076](91ADR-076遥测与调试数据保留及Core存储管理ADR.md) 与 [详细设计](../Features/遥测调试数据自动过期与Web存储管理设计方案.md) 为准；当前仅设计完成，未实现或验收。
+- 主代理原生图片理解、typed image content、Workspace Artifact、DeepSeek Responses `input_image`/图片型工具结果、Files API、大图/多轮/重启恢复和 fail-closed 以 [ADR-077](92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) 为准；Image Reader 重定位为读取 URL、任意绝对路径和 Artifact 的按需取图工具，默认把图片交给调用模型，仅在文本模型或显式第二意见时调用 `visionHelperModel`。当前仅设计完成，既有多模态代码骨架不等于端到端验收。
 - 若需要继续细化事件命名、Envelope、重放与死信策略，应优先阅读 [10事件系统与事件总线](10事件系统与事件总线.md)。
 - 若需要研究 token 成本、前缀缓存命中、工具输出/日志/RAG 进入 LLM 前压缩和 Headroom 参考路线，应优先阅读 [18上下文缓存可观测性ADR](18上下文缓存可观测性ADR.md)、[43ADR-042上下文自动压缩与主动Compact命令ADR](43ADR-042上下文自动压缩与主动Compact命令ADR.md) 与 [44ADR-043缓存统计闭环ADR](44ADR-043缓存统计闭环ADR.md)。
 - 若需要讨论 Hermes 型系统的 1~7 开发方向、优先级和待细化问题，应优先阅读 [49ADR-048Hermes型系统开发方向参考ADR](49ADR-048Hermes型系统开发方向参考ADR.md)。
