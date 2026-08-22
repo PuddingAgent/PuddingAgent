@@ -163,6 +163,61 @@ public sealed class MessageFabricStoreTests
     }
 
     [TestMethod]
+    public async Task ClaimNextAsync_WithDeliveryId_ClaimsExactWakeDeliveryInsteadOfOlderQueueHead()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var options = CreateOptions(temp.Path);
+
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var store = new MessageFabricStore(db);
+        await store.PersistRouteAsync("default", RoutePlan(), CancellationToken.None);
+
+        var newer = RoutePlan() with
+        {
+            MessageId = "m2",
+            RoomMessage = RoutePlan().RoomMessage with
+            {
+                MessageId = "m2",
+                Content = "foreground user message",
+                CreatedAt = 200,
+            },
+            Deliveries =
+            [
+                new MessageDeliveryDraft
+                {
+                    DeliveryId = "d3",
+                    MessageId = "m2",
+                    Target = new MessageAddress
+                    {
+                        Kind = MessageEndpointKinds.Agent,
+                        Id = "assistant",
+                        WorkspaceId = "default",
+                    },
+                    Priority = 5,
+                },
+            ],
+        };
+        await store.PersistRouteAsync("default", newer, CancellationToken.None);
+
+        var claimed = await store.ClaimNextAsync(new MessageClaimRequest
+        {
+            Endpoint = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "assistant" },
+            WorkspaceId = "default",
+            RoomId = "room-default",
+            DeliveryId = "d3",
+            ExecutionId = "exec-foreground",
+        }, CancellationToken.None);
+
+        Assert.IsNotNull(claimed);
+        Assert.AreEqual("d3", claimed!.DeliveryId);
+        Assert.AreEqual("foreground user message", claimed.Content);
+        Assert.AreEqual(
+            MessageDeliveryStatuses.Queued,
+            (await db.MessageDeliveries.SingleAsync(delivery => delivery.DeliveryId == "d1")).Status);
+    }
+
+    [TestMethod]
     public async Task ListPendingTargetsAsync_ReturnsDistinctQueuedAndRetryingAgentScopes()
     {
         using var temp = TemporaryDirectory.Create();

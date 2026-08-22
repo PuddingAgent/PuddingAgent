@@ -532,6 +532,26 @@ pool execute
   被幂等检查忽略。
 - 删除 UNIQUE 索引：会让当前状态出现多行，运行数、取消和 UI 投影全部失真。
 
+### 6.10 子代理突然 failed 且 `(no response)`：归档 sharing violation
+
+症状：运行中的子代理直接进入 `failed`、无输出，events.jsonl 最后一行停在某个
+`subagent.*` 事件；error 日志有 `The process cannot access the file
+'...events.jsonl' because it is being used by another process`。
+
+根因（2026-08-22 已修复，ADR-060 §3.11）：检查器/外部进程与归档写入争用
+`events.jsonl`。修复后读写走同一 per-run gate、读方 `FileShare.ReadWrite`、写入
+退避重试，重试耗尽降级为 `archive-degraded.json` 标记而不是杀死 run。
+
+诊断顺序：
+
+1. `D:\data\logs\error\pudding-error-*.log` 检索 runId，确认堆栈是否在
+   `FileSubAgentRunStore.AppendEventCoreAsync`。
+2. 查看运行归档目录是否出现 `archive-degraded.json`（丢弃事件计数与最后错误）；
+   有该标记说明降级路径生效，run 不应因它失败。
+3. 详情 API `GET /api/sub-agents/runs/{runId}` 的 `archiveDegraded` 字段与前端
+   检查器的"归档降级"提示同源。
+4. 若再次出现 append 失败杀死 run，说明有绕过 gate 的新读/写路径接入归档文件。
+
 ## 7. 延迟问题的定位
 
 不要用“点击发送到看到回复”的总时间直接归因 LLM。应拆分：
@@ -2552,7 +2572,7 @@ dotnet build .\Tests\PuddingBrowser.WebView2.Smoke\PuddingBrowser.WebView2.Smoke
 
 真实 DeepSeek smoke 不能由上述集成测试代替。只有用户明确选择测试 Agent/DataRoot 后才能执行；不得读取、复制或回显 `D:\data` 中的 LLM Secret。需要保留的证据是脱敏 Tool 顺序、provider/model/role、Bridge Activity、最终页面和退出结果，不包含表单值、Token、Cookie 或 API Key。
 
-## 11.16 用户消息无输出与过期心跳执行诊断
+## 11.16 用户消息无输出、后台投递抢占与过期心跳执行诊断
 
 聊天页出现用户消息、Core `/health` 仍为 200，但长期没有 `thinking/delta/terminal` 时，不要先归因前端或 Provider。按同一 `conversationId` 对齐四组事实：
 
@@ -2561,9 +2581,11 @@ dotnet build .\Tests\PuddingBrowser.WebView2.Smoke\PuddingBrowser.WebView2.Smoke
 3. `message_deliveries`：检查心跳 delivery 的 `attempt_count/lease_until/claimed_by_execution_id/status`，重点查“旧 execution lease 过期 → recovery/reclaim → 新 execution Busy 后 ACK，但旧 execution 后续仍产生日志”；
 4. `runtime_activity` 与 `AgentExecutionStateRegistry`：若 Agent 实际持续跑工具而 registry 仍显示 idle，说明存在绕过 `RuntimeAgentDispatcher` 的入口。
 
-这个组合表明卡点在执行互斥和 delivery fencing，不是 SSE 渲染。当前不变量是：
+若用户消息停在 `turn.accepted`，而同 Agent 的 `message_deliveries` 正在执行 `source=subagent` / `intent=subagent_result`，说明隐藏后台投递占用了 Agent 单写执行槽。Provider 甚至可能还没收到用户请求。这个组合表明卡点在执行准入和 delivery fencing，不是 SSE 渲染。当前不变量是：
 
 - 所有用户 Turn、Agent 消息和心跳必须经 `RuntimeAgentDispatcher` 共用 `TryBegin/Complete`；用户 Turn 遇 Busy 等待，心跳遇 Busy 丢弃；
+- `AgentExecutionAdmissionCoordinator` 以 workspace/agent 为键；用户 Turn 获取 foreground lease 时必须取消正在运行的后台 Message Fabric 投递，被取消 delivery 立即 defer 回队列，不能 ACK、retry 或 dead-letter；foreground demand 存续期间 recovery/idle drain 不得抢先 claim；
+- `message.deliver` wake event 必须把 `deliveryId` 传给 `MessageClaimRequest` 做精确领取；否则用户 delivery 的事件可能领取更旧的队首后台 delivery，再次形成饥饿；
 - 普通用户/Agent 消息到达时取消同 workspace/agent 的活动心跳；心跳是可抢占的低优先级工作；
 - Message Fabric 长执行每 2 分钟续 5 分钟租约，终态或回复前再校验一次；`RenewLeaseAsync=false` 后旧执行必须取消且不得 ACK/retry/dead-letter/reply；
 - 非空 `executionId` 必须与 `ClaimedByExecutionId` 完全相等，owner 被回收清空也不能让旧 execution 回写。
@@ -2571,7 +2593,8 @@ dotnet build .\Tests\PuddingBrowser.WebView2.Smoke\PuddingBrowser.WebView2.Smoke
 关键日志：
 
 ```text
-[TurnExecutorAdapter] Waiting for agent availability
+[TurnExecutorAdapter] Waiting for foreground admission
+[MessageDeliveryDispatcher] Background delivery preempted for foreground Turn
 [MessageDeliveryDispatcher] User activity interrupted active heartbeat
 [MessageDeliveryDispatcher] Delivery lease ownership lost; cancelling stale runtime execution
 [MessageDeliveryDispatcher] Discarded stale execution before delivery mutation
@@ -2633,17 +2656,21 @@ python .\dev-up.py --restart
 
 ---
 
-## 11.18 诊断表保留期裁剪（Diagnostics:Retention）
+## 11.18 platform.db 在线保留期裁剪与聊天 500
 
-platform.db 的 append-only 诊断明细此前零裁剪机制，库会持续增长（2026-08-06 实测 2.48 GiB）。当前后台白名单只包含 `telemetry_metric_events`、`context_layer_metric_events` 和 `runtime_activity`。
+platform.db 只允许一个在线保留期任务：`PuddingPlatform/Services/RetentionPruningService.cs`。配置只读顶层 `Retention`，覆盖 `telemetry_metric_events`、`runtime_activity` 和 `conversation_events`；`conversation_events` 必须先归档到 `retention-archive/<day>/conversation_events.jsonl` 再删除，`ChatMessages` 永不裁剪。
 
-- 服务：`PuddingPlatform/Services/Diagnostics/DiagnosticRetentionService.cs`（BackgroundService，Task.Yield 起步不阻塞宿主）。
-- 配置节 `Diagnostics:Retention`：`Enabled` / `RunIntervalHours`(24) / `StartupDelaySeconds`(60) / `BatchSize`(5000) / `BatchDelayMs`(100) / `Tables:{表名:{Enabled,RetentionDays}}` / `Vacuum:{Enabled}`。
-- 建议保留期：telemetry_metric_events、context_layer_metric_events 和 runtime_activity 默认 14 天；也可由 Storage 页按 7/14/30/90 天显式预览清理。
-- 安全红线：`session_event_log` 与 `conversation_events` 都是权威执行事实源，不在后台或手动清理白名单；不能把“已有投影”误当成“可以删除 replay 事实”。
-- SQLite 无 DELETE...LIMIT：用 rowid 子查询分批删，批间限速；时间戳为 "O" 格式字符串，字典序比较安全。
-- VACUUM 默认关闭：约 2.5 GiB 库 VACUUM 需要等量临时空间与较长锁，建议借 bootstrap 的 Core 停止窗口手动执行。
-- 验证：`PuddingPlatformTests/Services/DiagnosticRetentionServiceTests.cs`（4 用例：过期裁剪/禁用跳过/权威表跳过/白名单防注入）。
+在线默认合同：`StartupDelaySeconds=60`、`BatchSize=100`、`BatchDelayMs=250`、`MaxBatchesPerTablePerRun=200`、`Vacuum.Enabled=false`。SQLite 无 `DELETE ... LIMIT`，实现使用 rowid 子查询小批删除；批间让步和单轮批数上限是前台 writer 的可用性边界，不能只依赖 30 秒 `busy_timeout`。数 GiB 库的 VACUUM 会整库重写并持有长锁，只能在明确停止 Core 的维护窗口显式执行。
+
+若 `POST /api/v1/conversations/{id}/turns` 约 30 秒后返回 500，并且同一时间 `ChatWorker`、`RuntimeActivity`、保留服务都报 `SQLite Error 5: database is locked`：
+
+1. 先用 `python dev-up.py --status` 和进程命令行确认同一 DataRoot 只有一个 Core。
+2. 按 SubmitTurn trace/errorId 查系统日志；失败点若是 `ConversationAcceptanceStore.AcceptBatchAsync` 的 `BeginTransactionAsync`，说明消息尚未受理，不是 LLM 失败。
+3. 搜索 `[RetentionPruning]`，确认当前启动周期只有这一种保留服务日志；出现 `[DiagnosticRetention]` 说明运行的仍是旧构建或旧清理器被重新注册。
+4. 单批裁剪耗时接近/超过 busy timeout，或连续几分钟没有批间前台写入成功时，检查配置是否退化为 5000 行大批、1 行无延迟死循环，或是否移除了 `MaxBatchesPerTablePerRun`。
+5. 修复后运行 `RetentionPruningServiceTests`，并由外部控制器重启到新 Core PID；旧失败消息不会自动补写，必须以新的唯一 client request 做 smoke。
+
+2026-08-18 的实际故障只有一个 Desktop child Core。新旧两套保留服务同时运行：新服务的泛型配置缺项被误判成显式 `0/false`，实际启动即运行、每批 1 行、无延迟；60 秒后旧服务又以 5000 行大批加入。日志中 runtime_activity 17,783 行/4 批耗时约 95 秒，telemetry_metric_events 18,044 行/4 批耗时约 126 秒，三次聊天受理均在 30 秒后失败。修复是删除旧服务、改为顶层强类型标量存在性读取、100 行小批/250ms 让步/单表 200 批上限，并保持 VACUUM 默认关闭。
 
 ## 11.19 Chat 首屏、渐进消息与滚动性能
 
@@ -2844,6 +2871,12 @@ SubAgent executor 必须使用由 immutable workspace/graph 派生的 filesystem
 2026-08-11 的实际故障是 `SavePreferenceTool` 已被 Runtime 程序集扫描注册，但 PuddingHost 遗漏
 `IUserPreferenceService → UserPreferenceService`，Core 以 CLR 未处理异常退出。补齐产品组合根注册后，
 DesktopChild 组合根测试和实际 Core Ready 共同作为修复证据。
+
+2026-08-20 的同类故障是 `MessageDeliveryDispatcher` 新增构造依赖
+`AgentExecutionAdmissionCoordinator` 后，只同步了 Runtime 的 DI 扩展，成品 PuddingHost 组合根漏注册；
+Desktop 重建成功，但 Core 在 `PuddingApplicationHost.Build()` 以 `Unable to resolve service` 退出并最终
+进入 `CircuitOpen`。修复时必须把 coordinator 以 Singleton 注册到 PuddingHost，保持 dispatcher 与
+`TurnExecutorAdapter` 共享同一 workspace/agent 准入状态；不能在各消费者内分别 new 一个实例。
 
 ## 11.29 Agent Turn 显示“本轮运行失败”且日志为 SQLite Error 5/6
 

@@ -124,6 +124,7 @@ public sealed class FakeFeishuRoundTripTests
                 eventBus,
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 new AgentWakeQueue(NullLogger<AgentWakeQueue>.Instance),
+                new AgentExecutionAdmissionCoordinator(),
                 NullLogger<MessageDeliveryDispatcher>.Instance);
             var connectorDispatcher = new ConnectorDeliveryDispatcher(
                 eventBus,

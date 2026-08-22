@@ -3,12 +3,37 @@ using PuddingCode.Abstractions;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingRuntime.Services;
+using PuddingRuntime.Services.Messaging;
 
 namespace PuddingRuntimeTests.Services;
 
 [TestClass]
 public sealed class TurnExecutorAdapterTests
 {
+    [TestMethod]
+    public async Task ExecuteAsync_AcquiresForegroundAndPreemptsBackgroundDelivery()
+    {
+        var coordinator = new AgentExecutionAdmissionCoordinator();
+        using var backgroundCts = new CancellationTokenSource();
+        using var background = coordinator.TryRegisterBackground(
+            "default",
+            "agent-1",
+            backgroundCts);
+        var runtime = new BusyThenSuccessRuntimeDispatcher();
+        var adapter = new TurnExecutorAdapter(
+            runtime,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TurnExecutorAdapter>.Instance,
+            coordinator);
+
+        await foreach (var _ in adapter.ExecuteAsync(CreateContext(), CancellationToken.None))
+        {
+        }
+
+        Assert.IsTrue(backgroundCts.IsCancellationRequested);
+        Assert.IsTrue(background!.WasPreempted);
+        Assert.IsFalse(coordinator.HasForegroundDemand("default", "agent-1"));
+    }
+
     [TestMethod]
     public async Task ExecuteAsync_WaitsForSharedRuntimeBusyStateThenCompletes()
     {

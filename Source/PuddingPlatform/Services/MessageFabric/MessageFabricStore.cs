@@ -178,6 +178,9 @@ public sealed class MessageFabricStore : IMessageInbox
         if (!string.IsNullOrWhiteSpace(request.RoomId))
             query = query.Where(delivery => delivery.RoomId == request.RoomId);
 
+        if (!string.IsNullOrWhiteSpace(request.DeliveryId))
+            query = query.Where(delivery => delivery.DeliveryId == request.DeliveryId);
+
         var delivery = await query
             .OrderByDescending(item => item.Priority)
             .ThenBy(item => item.CreatedAt)

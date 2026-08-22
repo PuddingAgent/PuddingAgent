@@ -3,6 +3,7 @@ using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
+using PuddingRuntime.Services.Messaging;
 
 namespace PuddingRuntime.Services;
 
@@ -13,8 +14,12 @@ namespace PuddingRuntime.Services;
 /// </summary>
 public sealed class TurnExecutorAdapter(
     IRuntimeAgentDispatcher runtimeDispatcher,
-    ILogger<TurnExecutorAdapter> logger) : ITurnExecutor
+    ILogger<TurnExecutorAdapter> logger,
+    AgentExecutionAdmissionCoordinator? admissionCoordinator = null) : ITurnExecutor
 {
+    private readonly AgentExecutionAdmissionCoordinator _admissionCoordinator =
+        admissionCoordinator ?? new AgentExecutionAdmissionCoordinator();
+
     public async IAsyncEnumerable<TurnExecutionEvent> ExecuteAsync(
         TurnExecutionContext context,
         [EnumeratorCancellation] CancellationToken ct)
@@ -44,8 +49,17 @@ public sealed class TurnExecutorAdapter(
             OutputOwnership = context.OutputOwnership,
         };
 
+        var agentId = !string.IsNullOrWhiteSpace(context.AgentInstanceId)
+            ? context.AgentInstanceId
+            : context.AgentTemplateId ?? "global:general-assistant";
+        using var foregroundLease = _admissionCoordinator.AcquireForeground(
+            context.WorkspaceId,
+            agentId);
+
         var sawTerminal = false;
         var usageInvocationIndex = 0;
+        var busyAttempt = 0;
+        var lastBusyLogAt = DateTimeOffset.MinValue;
 
         while (true)
         {
@@ -56,10 +70,17 @@ public sealed class TurnExecutorAdapter(
                 if (IsBusyFrame(frame.Event, payload))
                 {
                     retryAfterBusy = true;
-                    logger.LogInformation(
-                        "[TurnExecutorAdapter] Waiting for agent availability conversation={ConversationId} run={RunId}",
-                        context.ConversationId,
-                        context.RunId);
+                    busyAttempt++;
+                    var now = DateTimeOffset.UtcNow;
+                    if (busyAttempt == 1 || now - lastBusyLogAt >= TimeSpan.FromSeconds(10))
+                    {
+                        lastBusyLogAt = now;
+                        logger.LogInformation(
+                            "[TurnExecutorAdapter] Waiting for foreground admission conversation={ConversationId} run={RunId} attempt={Attempt}",
+                            context.ConversationId,
+                            context.RunId,
+                            busyAttempt);
+                    }
                     break;
                 }
 
@@ -90,7 +111,8 @@ public sealed class TurnExecutorAdapter(
             if (!retryAfterBusy)
                 break;
 
-            await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
+            var delayMs = Math.Min(1000, 100 * (1 << Math.Min(busyAttempt - 1, 4)));
+            await Task.Delay(TimeSpan.FromMilliseconds(delayMs), ct);
         }
 
         if (!sawTerminal)

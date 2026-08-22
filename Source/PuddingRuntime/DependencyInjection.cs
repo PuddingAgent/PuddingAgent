@@ -83,6 +83,7 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<IRuntimeControlService, RuntimeControlService>();
         services.AddSingleton<ISessionExecutionGate, SessionExecutionGate>();
         services.AddSingleton<IAgentExecutionStateRegistry, AgentExecutionStateRegistry>();
+        services.AddSingleton<AgentExecutionAdmissionCoordinator>();
         services.AddSingleton<ExecutionJournal>();
         services.AddSingleton<CompletionPolicy>();
 
