@@ -167,6 +167,10 @@ export function useSessionEventProjection({
   const duplicateDeltaReplayOffsetRef = useRef<Map<string, number>>(new Map());
   const eventCountsRef = useRef<Map<string, number>>(new Map());
   const seenEventIdsRef = useRef<Set<string>>(new Set());
+  // CU-11 Phase 2: accumulate raw AdminChatStreamEvent envelope (SSE live + history replay)
+  // for useChatState gray-branch collection into ExecutionEventDto + projection. append-only.
+  const rawEnvelopeRef = useRef<AdminChatStreamEvent[]>([]);
+  const [envelopeRevision, setEnvelopeRevision] = useState(0);
   const streamStartAtRef = useRef<Map<string, number>>(new Map());
   const messageIdToAgentIdsRef = useRef<Map<string, string[]>>(new Map());
   const sessionIdToAgentIdsRef = useRef<Map<string, string[]>>(new Map());
@@ -987,6 +991,9 @@ export function useSessionEventProjection({
   const applySessionEvent = useCallback(
     (ev: AdminChatStreamEvent) => {
       const applyStart = performance.now();
+      // CU-11 Phase 2: every canonical event goes into envelope (dedupe handled by projector).
+      rawEnvelopeRef.current.push(ev);
+      setEnvelopeRevision((v) => v + 1);
       const eventType = String(ev.type);
       const anyEv = ev as Record<string, unknown>;
       // CU-03：bootstrap/gap/live 三路输入统一进入同一投影。同一 eventId
@@ -1651,6 +1658,8 @@ export function useSessionEventProjection({
     duplicateDeltaReplayOffsetRef,
     eventCountsRef,
     seenEventIdsRef,
+    rawEnvelopeRef,
+    envelopeRevision,
     streamStartAtRef,
     messageIdToAgentIdsRef,
     sessionIdToAgentIdsRef,
