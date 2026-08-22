@@ -179,9 +179,33 @@ export const useToolCallStyles = createStyles(() => ({
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
   },
-    /** error 时 OUT 首行红 */
+  /** error 时 OUT 首行红 */
   errorText: {
     color: 'var(--pudding-status-error)',
+  },
+  /** 超长输出：查看完整输出按钮（验收 4） */
+  outExpand: {
+    display: 'inline-flex',
+    margin: '4px 0 0 0',
+    padding: '4px 10px',
+    fontSize: 11,
+    lineHeight: 1.4,
+    color: 'var(--pudding-chat-text)',
+    background:
+      'color-mix(in srgb, var(--pudding-chat-text-subtle) 10%, transparent)',
+    border:
+      '1px solid color-mix(in srgb, var(--pudding-chat-text-subtle) 24%, transparent)',
+    borderRadius: 6,
+    cursor: 'pointer',
+    userSelect: 'none' as const,
+    '&:hover': {
+      background:
+        'color-mix(in srgb, var(--pudding-chat-text-subtle) 16%, transparent)',
+    },
+    '&:focus-visible': {
+      outline: '2px solid var(--pudding-status-running)',
+      outlineOffset: -2,
+    },
   },
 
   // ── ToolCallTree（CU-07 递归调用树）──

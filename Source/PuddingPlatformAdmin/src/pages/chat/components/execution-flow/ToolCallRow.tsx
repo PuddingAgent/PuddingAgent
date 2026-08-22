@@ -8,7 +8,7 @@
 // 保留旧实现算法：summarizeArguments / truncateSingleLine / firstNonEmptyLine /
 // tryParseObject / getStringField / buildOutBody（迁移自 components/ToolCallRow.tsx）。
 // 摘要映射对齐 G1/G2 服务端契约：ToolNode.presentation.kind（八类 intent 词表）。
-import React from 'react';
+import React, { useState } from 'react';
 import type { ToolNode } from '../../projections/executionFlowProjector';
 import type { ToolPresentationKind } from '@/services/platform/api';
 import { useToolCallStyles } from '../../styles/toolcall.styles';
@@ -188,10 +188,29 @@ const buildSummary = (
   return summarizeArguments(node, '已完成');
 };
 
+/** 超长输出 preview 阈值（验收 4：超长默认 DOM 仅 preview，禁全量挂历史消息 DOM）。 */
+const OUT_PREVIEW_THRESHOLD = 2000;
+const OUT_PREVIEW_HEAD = 400;
+const OUT_PREVIEW_TAIL = 400;
+
+/** 截断为「头 + 省略标记 + 尾」预览（保留可读头尾，中间省略）。 */
+const buildPreview = (text: string): string => {
+  if (text.length <= OUT_PREVIEW_THRESHOLD) return text;
+  const head = text.slice(0, OUT_PREVIEW_HEAD);
+  const tail = text.slice(
+    Math.max(OUT_PREVIEW_HEAD, text.length - OUT_PREVIEW_TAIL),
+  );
+  return `${head}\n…（输出过长，已折叠）\n${tail}`;
+};
+
 interface OutBody {
   full: string;
   firstLine: string;
   rest: string;
+  /** 超长时的头尾预览；未超长时 == full。 */
+  preview: string;
+  /** 是否超过阈值（决定默认渲染 preview 而非 full）。 */
+  isLong: boolean;
 }
 
 /** OUT 卡内容：output / error / exit code / duration；error 时拆出首行（红） */
@@ -207,16 +226,18 @@ const buildOutBody = (node: ToolNode, status: ToolCallRowStatus): OutBody => {
     parts.push(`duration: ${node.durationMs}ms`);
   }
   const full = parts.join('\n\n');
-  if (status !== 'error') return { full, firstLine: '', rest: '' };
+  const isLong = full.length > OUT_PREVIEW_THRESHOLD;
+  const preview = isLong ? buildPreview(full) : full;
+  if (status !== 'error') return { full, firstLine: '', rest: '', preview, isLong };
   const lines = full.split(/\r?\n/);
   const firstIdx = lines.findIndex((line) => line.trim().length > 0);
-  if (firstIdx === -1) return { full, firstLine: '', rest: '' };
+  if (firstIdx === -1) return { full, firstLine: '', rest: '', preview, isLong };
   const firstLine = lines[firstIdx];
   const rest = lines
     .slice(firstIdx + 1)
     .join('\n')
     .trim();
-  return { full, firstLine, rest };
+  return { full, firstLine, rest, preview, isLong };
 };
 
 export interface ToolCallRowProps {
@@ -227,6 +248,7 @@ export interface ToolCallRowProps {
 /** 单个工具调用行：单行摘要 + 整行展开（IN/OUT 卡）。 */
 export const ToolCallRow: React.FC<ToolCallRowProps> = ({ node }) => {
   const { styles, cx } = useToolCallStyles();
+  const [showFullOut, setShowFullOut] = useState(false);
   const status = mapToolStateToRowStatus(node.state);
 
   const dotState: 'ongoing' | 'error' | 'done' =
@@ -285,12 +307,29 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({ node }) => {
                       >
                         {outBody.firstLine}
                       </span>
-                      {outBody.rest && `\n${outBody.rest}`}
+                      {(() => {
+                        const rest = outBody.isLong && !showFullOut
+                          ? buildPreview(outBody.rest)
+                          : outBody.rest;
+                        return rest ? `\n${rest}` : '';
+                      })()}
                     </>
+                  ) : outBody.isLong && !showFullOut ? (
+                    outBody.preview
                   ) : (
                     outBody.full
                   )}
                 </pre>
+                {outBody.isLong && !showFullOut && (
+                  <button
+                    type="button"
+                    className={styles.outExpand}
+                    onClick={() => setShowFullOut(true)}
+                    data-testid="toolcall-out-expand"
+                  >
+                    查看完整输出
+                  </button>
+                )}
               </div>
             )}
           </div>

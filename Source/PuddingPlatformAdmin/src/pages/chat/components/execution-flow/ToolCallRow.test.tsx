@@ -177,10 +177,41 @@ describe('ToolCallRow (ToolNode)', () => {
     expect(row.getAttribute('aria-expanded')).toBeNull();
   });
 
-  it('单 aria-live 不透传冗余：ToolCallRow 不设置 ariaLive → 行无 aria-live 属性', () => {
+    it('单 aria-live 不透传冗余：ToolCallRow 不设置 ariaLive → 行无 aria-live 属性', () => {
     render(<ToolCallRow node={makeNode()} />);
     expect(screen.getByTestId('toolcall-row').getAttribute('aria-live')).toBe(
       null,
     );
+  });
+
+  it('completed 超长输出（>阈值）：默认 OUT 卡仅 preview + 查看完整输出按钮，禁全量挂 DOM（验收 4/5）', () => {
+    const longOutput = [
+      '-'.repeat(120),
+      'start',
+      'middle'.repeat(600),
+      'end',
+      '-'.repeat(120),
+    ].join('\n');
+    render(<ToolCallRow node={makeNode({ output: longOutput })} />);
+    fireEvent.click(screen.getByTestId('toolcall-row'));
+    const outCard = screen.getByTestId('toolcall-out');
+    // 默认仅 preview：保留可读头尾、含折叠标记、不挂完整中间
+    expect(outCard.textContent).toContain('start');
+    expect(outCard.textContent).toContain('end');
+    expect(outCard.textContent).toContain('（输出过长，已折叠）');
+    expect(outCard.textContent).not.toContain('middle'.repeat(600));
+    expect(screen.getByTestId('toolcall-out-expand')).toBeTruthy();
+    // 点击展开 → 显示完整输出，按钮消失
+    fireEvent.click(screen.getByTestId('toolcall-out-expand'));
+    expect(outCard.textContent).toContain('middle'.repeat(600));
+    expect(screen.queryByTestId('toolcall-out-expand')).toBeNull();
+  });
+
+  it('completed 阈值内输出：OUT 卡直接渲染 full，无展开按钮（验收 4）', () => {
+    render(<ToolCallRow node={makeNode({ output: 'short output' })} />);
+    fireEvent.click(screen.getByTestId('toolcall-row'));
+    const outCard = screen.getByTestId('toolcall-out');
+    expect(outCard.textContent).toContain('short output');
+    expect(screen.queryByTestId('toolcall-out-expand')).toBeNull();
   });
 });
