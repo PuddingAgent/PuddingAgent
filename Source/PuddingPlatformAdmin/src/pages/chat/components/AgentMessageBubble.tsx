@@ -36,6 +36,11 @@ import {
   buildToolTreeFromProcessItems,
   ToolCallTree,
 } from './execution-flow/ToolCallTree';
+import type {
+  DelegationNode,
+  ExecutionFlowProjection,
+  ToolNode,
+} from '../projections/executionFlowProjector';
 import {
   buildDelegationNodesFromProcessItems,
   DelegationRow,
@@ -85,6 +90,8 @@ interface AgentMessageBubbleProps {
   /** P0#2：转录视图分级 */
   transcriptMode?: TranscriptMode;
   onTranscriptModeChange?: (mode: TranscriptMode) => void;
+  /** CU-11 Phase 2: per-turn canonical 投影（灰度开启时走新路径 B；undefined 回退旧路径 A）。 */
+  executionFlowProjection?: ExecutionFlowProjection;
 }
 
 const MESSAGE_ENTRANCE_WINDOW_MS = 5_000;
@@ -314,6 +321,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   sessionId,
   parentDelegationActivity,
   onOpenInspector,
+  executionFlowProjection,
 }) => {
   const { styles: rawStyles, cx } = useChatMessageStyles();
   const styles = rawStyles as Record<string, string>;
@@ -400,17 +408,26 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
     () => getCurrentRunActivity(processItems, status),
     [processItems, status],
   );
-  // CU-07: 工具调用树 —— 从 processItems 构建 ToolNode 调用树（替代旧 ToolCallRowList）。
-  const toolTreeNodes = React.useMemo(
-    () => buildToolTreeFromProcessItems(processItems ?? []),
-    [processItems],
-  );
-  // CU-09: 父级委派摘要 —— 从 processItems 的 subagent 条目构建 DelegationNode[]。
-  // 空数组时 DelegationRow 内部返回 null（无子代理不渲染）；刷新后按 subAgentId 恢复。
-  const delegationNodes = React.useMemo(
-    () => buildDelegationNodesFromProcessItems(processItems ?? []),
-    [processItems],
-  );
+  // CU-07/CU-11: 工具调用树 —— 灰度开启且有 per-turn 投影时从 canonical 投影
+  // nodes 消费（路径 B）；否则回退 processItems 构建（路径 A，行为零变化）。
+  const toolTreeNodes = React.useMemo(() => {
+    if (executionFlowProjection) {
+      return executionFlowProjection.nodes.filter(
+        (node): node is ToolNode => node.kind === 'tool',
+      );
+    }
+    return buildToolTreeFromProcessItems(processItems ?? []);
+  }, [executionFlowProjection, processItems]);
+  // CU-09/CU-11: 父级委派摘要 —— 灰度开启且有 per-turn 投影时从 canonical 投影
+  // nodes 消费（路径 B）；否则回退 processItems 构建（路径 A，行为零变化）。
+  const delegationNodes = React.useMemo(() => {
+    if (executionFlowProjection) {
+      return executionFlowProjection.nodes.filter(
+        (node): node is DelegationNode => node.kind === 'delegation',
+      );
+    }
+    return buildDelegationNodesFromProcessItems(processItems ?? []);
+  }, [executionFlowProjection, processItems]);
   const delegationActivity = React.useMemo<CurrentRunActivity | null>(() => {
     if (!parentDelegationActivity?.activeCount) return null;
     const { activeCount, label, startedAt, updatedAt } =

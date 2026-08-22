@@ -48,6 +48,7 @@ import FocusViewToggle from './FocusViewToggle';
 import MessageRow from './MessageRow';
 import PinnedMessageButton from './PinnedMessageButton';
 import type { TranscriptMode } from './TranscriptModeSwitch';
+import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 
 interface MessageListProps {
   turns: ChatTurn[];
@@ -87,6 +88,8 @@ interface MessageListProps {
   onTranscriptModeChange?: (mode: TranscriptMode) => void;
   /** P2#9：用户在审批卡点击「拒绝」时通知（进入 Recently denied 面板）。 */
   onApprovalDenied?: (card: ApprovalCardData) => void;
+  /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
+  getTurnProjection?: (turnId: string) => ExecutionFlowProjection | undefined;
   /** P2#8：Focus view 单行折叠模式 */
   focusView?: boolean;
   onFocusViewChange?: (value: boolean) => void;
@@ -747,6 +750,7 @@ const MessageList: React.FC<MessageListProps> = ({
   focusView = false,
   onFocusViewChange,
   onApprovalDenied,
+  getTurnProjection,
 }) => {
   const chatStyles = useChatStyles();
   const { styles } = chatStyles;
@@ -976,6 +980,7 @@ const MessageList: React.FC<MessageListProps> = ({
         transcriptMode={transcriptMode}
         onTranscriptModeChange={onTranscriptModeChange}
         focusView={focusView}
+        getTurnProjection={getTurnProjection}
       />
     );
 

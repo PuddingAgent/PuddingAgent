@@ -517,6 +517,31 @@ export function useChatState(
     return projectExecutionFlow(collected.events as ExecutionFlowEvent[]);
   }, [envelopeRevision, rawEnvelopeRef]);
 
+  // CU-11 Phase 2: per-turn projection selector. Gray off -> undefined (old path A).
+  // On: build Map<turnId, ExecutionFlowProjection> from collected events so each
+  // AgentMessageBubble consumes its own turn's canonical projection (new path B).
+  const turnProjectionMap = useMemo<Map<string, ExecutionFlowProjection>>(() => {
+    const map = new Map<string, ExecutionFlowProjection>();
+    if (!isExecutionFlowProjectionEnabled()) return map;
+    if (envelopeRevision === 0 || rawEnvelopeRef.current.length === 0) return map;
+    const collected = collectExecutionEvents(rawEnvelopeRef.current);
+    const events = collected.events as ExecutionFlowEvent[];
+    const turnIds = new Set<string>();
+    for (const event of events) {
+      if (event.turnId) turnIds.add(event.turnId);
+    }
+    for (const turnId of turnIds) {
+      map.set(turnId, projectExecutionFlow(events, { turnId }));
+    }
+    return map;
+  }, [envelopeRevision, rawEnvelopeRef]);
+
+  const getTurnProjection = useCallback(
+    (turnId: string): ExecutionFlowProjection | undefined =>
+      turnProjectionMap.get(turnId),
+    [turnProjectionMap],
+  );
+
   useEffect(() => {
     if (!isPerfDiagnosticsEnabled()) return undefined;
     let active = true;
@@ -1485,6 +1510,7 @@ export function useChatState(
     handleSetMainSession,
     subAgentCards: visibleSubAgentCards,
     executionFlowProjection,
+    getTurnProjection,
     sessionUnreadCounts,
     startWorkspaceNotificationStream,
     stopWorkspaceNotificationStream,

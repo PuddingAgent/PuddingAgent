@@ -1,4 +1,4 @@
-﻿// ── ChatMain：右侧主聊天区（Header + MessageList + InputArea）─
+// ── ChatMain：右侧主聊天区（Header + MessageList + InputArea）─
 import {
   AppstoreOutlined,
   BugOutlined,
@@ -19,6 +19,7 @@ import {
 } from '@/utils/workspaceNavigation';
 import type { RecentlyDeniedItem } from '../classifier/autoReviewClassifier';
 import type { AgentConversationView } from '../client/types';
+import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 import { useAutoReviewClassifier } from '../hooks/useAutoReviewClassifier';
 import { useAutoTts } from '../hooks/useAutoTts';
 import type {
@@ -125,6 +126,8 @@ interface ChatMainProps {
   cacheHitRate?: number;
   /** 来自 useCompaction hook 的压缩状态文案 */
   compactionStatus?: string | null;
+  /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
+  getTurnProjection?: (turnId: string) => ExecutionFlowProjection | undefined;
   // message rendering
   formatTime: (ts: number) => string;
   onDeleteTurn: (turnId: string) => void;
@@ -213,6 +216,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   onRerunTurn,
   onPinTurn,
   messageListRef,
+  getTurnProjection,
   listEndRef,
   subAgentCards,
   currentUser,
@@ -586,6 +590,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                       onContextMenu={onContextMenu}
                       onRerunTurn={onRerunTurn}
                       onPinTurn={onPinTurn}
+                      getTurnProjection={getTurnProjection}
                       onPinnedQuote={handlePinnedQuote}
                       messageListRef={messageListRef}
                       listEndRef={listEndRef}
