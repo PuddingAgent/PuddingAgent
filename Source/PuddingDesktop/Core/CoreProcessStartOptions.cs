@@ -25,4 +25,11 @@ public sealed record CoreProcessStartOptions
 
     /// <summary>Maximum time to wait for graceful shutdown.</summary>
     public TimeSpan ShutdownTimeout { get; init; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// Overrides ASPNETCORE_ENVIRONMENT/DOTNET_ENVIRONMENT for the Core child.
+    /// Null (default) forces Production; debug mode passes Development to run
+    /// the source-built backend like dev-up does.
+    /// </summary>
+    public string? EnvironmentName { get; init; }
 }

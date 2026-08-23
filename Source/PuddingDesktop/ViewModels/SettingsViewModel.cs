@@ -26,6 +26,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private bool _startWithWindows;
     private int _startupTimeoutSeconds = 60;
     private int _shutdownTimeoutSeconds = 15;
+    private bool _debugEnabled;
+    private string _debugRepositoryRoot = "";
+    private int _debugFrontendPort = 8000;
+    private int _debugProxyPort = 80;
+    private int _debugFrontendStartupTimeoutSeconds = 180;
+    private int _debugBackendBuildTimeoutSeconds = 300;
     private bool _hasToken;
     private string? _validationError;
 
@@ -119,6 +125,42 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         set { _shutdownTimeoutSeconds = value; OnPropertyChanged(); }
     }
 
+    public bool DebugEnabled
+    {
+        get => _debugEnabled;
+        set { _debugEnabled = value; OnPropertyChanged(); }
+    }
+
+    public string DebugRepositoryRoot
+    {
+        get => _debugRepositoryRoot;
+        set { _debugRepositoryRoot = value; OnPropertyChanged(); }
+    }
+
+    public int DebugFrontendPort
+    {
+        get => _debugFrontendPort;
+        set { _debugFrontendPort = value; OnPropertyChanged(); }
+    }
+
+    public int DebugProxyPort
+    {
+        get => _debugProxyPort;
+        set { _debugProxyPort = value; OnPropertyChanged(); }
+    }
+
+    public int DebugFrontendStartupTimeoutSeconds
+    {
+        get => _debugFrontendStartupTimeoutSeconds;
+        set { _debugFrontendStartupTimeoutSeconds = value; OnPropertyChanged(); }
+    }
+
+    public int DebugBackendBuildTimeoutSeconds
+    {
+        get => _debugBackendBuildTimeoutSeconds;
+        set { _debugBackendBuildTimeoutSeconds = value; OnPropertyChanged(); }
+    }
+
     public bool HasToken
     {
         get => _hasToken;
@@ -142,6 +184,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         CoreExecutablePath = bootstrap.CoreExecutablePath ?? "";
         MinimizeToTray = bootstrap.CloseBehavior == DesktopCloseBehavior.MinimizeToTray;
         StartWithWindows = bootstrap.StartWithWindows;
+        DebugEnabled = bootstrap.Debug.Enabled;
+        DebugRepositoryRoot = bootstrap.Debug.RepositoryRoot ?? "";
+        DebugFrontendPort = bootstrap.Debug.FrontendPort;
+        DebugProxyPort = bootstrap.Debug.ProxyPort;
+        DebugFrontendStartupTimeoutSeconds = bootstrap.Debug.FrontendStartupTimeoutSeconds;
+        DebugBackendBuildTimeoutSeconds = bootstrap.Debug.BackendBuildTimeoutSeconds;
 
         if (!string.IsNullOrEmpty(bootstrap.DataRoot))
         {
@@ -165,6 +213,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public async Task SaveBootstrapAsync(CancellationToken ct)
     {
+        if (DebugEnabled && !TryValidateDebugSettings())
+            return;
+
         var current = await _bootstrapStore.LoadAsync(ct);
         var settings = current with
         {
@@ -175,6 +226,15 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
                 ? DesktopCloseBehavior.MinimizeToTray
                 : DesktopCloseBehavior.ExitAndStopCore,
             StartWithWindows = StartWithWindows,
+            Debug = current.Debug with
+            {
+                Enabled = DebugEnabled,
+                RepositoryRoot = string.IsNullOrWhiteSpace(DebugRepositoryRoot) ? null : DebugRepositoryRoot.Trim(),
+                FrontendPort = DebugFrontendPort,
+                ProxyPort = DebugProxyPort,
+                FrontendStartupTimeoutSeconds = DebugFrontendStartupTimeoutSeconds,
+                BackendBuildTimeoutSeconds = DebugBackendBuildTimeoutSeconds,
+            },
         };
 
         var previouslyRegistered = _autoStartRegistrationService.IsEnabled();
@@ -260,6 +320,57 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             ct);
 
         ValidationError = null;
+    }
+
+    /// <summary>
+    /// Mirrors the coordinator's ValidateDebugConfiguration so invalid debug
+    /// settings are rejected before desktop.json is written.
+    /// </summary>
+    private bool TryValidateDebugSettings()
+    {
+        if (DebugFrontendPort is < 1 or > 65535)
+        {
+            ValidationError = "调试前端端口必须为 1 到 65535";
+            return false;
+        }
+
+        if (DebugProxyPort is < 1 or > 65535)
+        {
+            ValidationError = "调试代理端口必须为 1 到 65535";
+            return false;
+        }
+
+        if (DebugFrontendStartupTimeoutSeconds is < 10 or > 3600)
+        {
+            ValidationError = "调试前端启动超时必须为 10 到 3600 秒";
+            return false;
+        }
+
+        if (DebugBackendBuildTimeoutSeconds is < 10 or > 3600)
+        {
+            ValidationError = "调试后端构建超时必须为 10 到 3600 秒";
+            return false;
+        }
+
+        if (DebugProxyPort == DebugFrontendPort)
+        {
+            ValidationError = "调试代理端口不能与前端端口相同";
+            return false;
+        }
+
+        if (DebugProxyPort == Port)
+        {
+            ValidationError = $"调试代理端口不能与 Core 端口（{Port}）相同";
+            return false;
+        }
+
+        if (DebugFrontendPort == Port)
+        {
+            ValidationError = $"调试前端端口不能与 Core 端口（{Port}）相同";
+            return false;
+        }
+
+        return true;
     }
 
     public async Task ValidateDataRootAsync()

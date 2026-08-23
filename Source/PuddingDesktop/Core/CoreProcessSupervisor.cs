@@ -206,8 +206,12 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
         // PuddingDesktop is a WPF process, so its Visual Studio launch profile must
         // not leak Development static-web-assets behavior into the Core child.
         // DesktopChild always serves the physical wwwroot bundled beside the Core.
-        startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = DesktopChildEnvironmentName;
-        startInfo.Environment["DOTNET_ENVIRONMENT"] = DesktopChildEnvironmentName;
+        // Debug mode explicitly opts into Development (source-built backend).
+        var environmentName = string.IsNullOrWhiteSpace(options.EnvironmentName)
+            ? DesktopChildEnvironmentName
+            : options.EnvironmentName;
+        startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = environmentName;
+        startInfo.Environment["DOTNET_ENVIRONMENT"] = environmentName;
 
         return startInfo;
     }

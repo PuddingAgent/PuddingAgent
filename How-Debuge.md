@@ -1313,33 +1313,35 @@ SSE。先请求 `GET /api/sessions/{sessionId}/sub-agents`：
 
 ### 11.9 图片发送后气泡无图，或文本模型报 `unknown variant image_url`
 
-先区分三条独立链路：前端附件元数据、主 Agent 模型路由、视觉读取工具。
+ADR-077（2026-08-23）后图片链路是 typed content parts + fail-closed Planner，不再有自动预观察。
 
-1. 浏览器发送前应出现“待发送图片 N 张”，发送后同一用户气泡立即出现 N 个图片元素；刷新后仍应由
-   `visionArtifactIds` 恢复。若只有文字，检查 `useMessageSend` 的乐观消息和离线 Outbox 是否保留 metadata。
-   若 `POST /vision-artifacts` 返回 500，先按 `errorId` 查日志。`Unsupported vision artifact MIME type
-   'image/bmp'` 表示前端漏掉了 provider-safe 转码：`IntentConsole` 应通过
-   `visionArtifactImage.normalizeVisionArtifactFile` 将 BMP/GIF/AVIF 等浏览器可解码格式转成 PNG。
-   后端只接收 JPEG/PNG/WebP；绕过前端提交其它 MIME 时必须返回 415 和支持列表，不能抛出 500。
-2. 日志中的主调用必须仍是实例快照的 Provider/Model，例如
-   `[LlmInvocation] ... provider=deepseek ... model=deepseek-v4-pro`。上传图片不能把主 Agent 强制路由到
-   某个固定视觉模型。
-3. `DirectLlm` 只有在当前模型配置包含 `vision` 标签时才能序列化图片内容。文本主模型不会接收
-   `image_url`；`ExecutionRunCoordinator` 必须先调用 `VisualArtifactObservationService`，日志顺序是
-   `[VisualObservation] Analyze` → 视觉 `[LlmInvocation]` → `[VisualObservation] Completed` → 主模型
-   `[LlmInvocation]`。不能再以“主模型可能自行调用 `image_reader`”作为正确性条件。
-4. 原生视觉主模型应记录 `[VisualObservation] Native vision route` 并跳过第二次视觉调用。
-   `image_reader` 仍用于 Agent 对某张图做定向二次检查，调用时才应出现 `tool=image_reader` 与
-   `[ImageReader] Analyze ...`。
+1. 浏览器发送前应出现“待发送图片 N 张”，发送后同一用户气泡立即出现 N 个图片元素。图片事实以
+   `content: [{type:'image', artifactId, detail}]` 提交；`metadata` 只保留 `inputMode/imageCount`。
+   刷新后由 `ChatMessages.content_parts_json`（v1 信封）回放，经 `MessageApiController`/bootstrap 的
+   `contentParts` 安全摘要恢复；离线 Outbox 保存 `imageParts`。若 `POST /vision-artifacts` 返回 415，
+   是前端漏掉了 provider-safe 转码（BMP/GIF/AVIF 应转 PNG）；存储侧按 magic bytes 判型，声明 MIME 不再是事实。
+2. 日志中的主调用必须仍是实例快照的 Provider/Model。`[SnapshotFactory] Created ... vision=1 protocol=responses`
+   表示冻结判定为原生视觉：用户附图直接进入请求，正常路径不应出现任何辅助视觉 `[LlmInvocation]`
+   （ADR-077 要求 `vision_auxiliary_llm_invocation_count=0`）。
+3. 文本主模型（`vision=0`）只收到消息正文中的 `artifact://vision-...` 占位与 image_reader 引导；
+   它显式调用 `image_reader` 时才会出现一条 `[ImageReader] Loaded source=... mode=delegate` +
+   helper `[LlmInvocation]`（精确一次，provenance 在工具输出 `helper=provider/model invocation=...`）。
+   未配置 helper 时返回 `vision_helper_model_required`（manifest 字段已改名 `visionHelperModel`）。
+4. 任何图片缺失/超限都不再静默降级为纯文本：`LlmVisualInputPlanner` 抛 ADR-077 §9.1 稳定错误码
+   （`vision_artifact_missing`/`vision_request_limit_exceeded`/`vision_model_capability_mismatch` 等），
+   SubmitTurn 受理层映射为 404/413/400/403。>2MB 单图在 Files API（V3）落地前按
+   `vision_request_limit_exceeded` fail closed。
+5. `image_reader` 本身是取图工具（path 唯一必填：http(s) URL/宿主绝对路径/`artifact://`；High 权限）：
+   URL 下载每跳 SSRF 重校验，内网/环回地址返回 `vision_source_access_denied`；本地文件只读打开、
+   内容哈希固化 `vision-*` Artifact，原文件不动。
 
-`unknown variant image_url, expected text` 表示文本模型收到了多模态 payload；检查该模型是否被错误标记为
-`vision`。`model_not_found` 则先查询 Provider 的 `/models`，不要把不存在的视觉模型 ID 写进
-`llm.providers.json`。强制预识别不依赖 Agent manifest 的 `cap-image-reader`；只有需要 Agent 主动二次
-复查时才要求该 capability。可用以下命令快速确认：
+`unknown variant image_url, expected text` 表示文本模型收到了多模态 payload；新链路下这只会发生在
+模型 capability 标签与实际不符（`vision_model_capability_mismatch` 的镜像症状），检查 `llm.providers.json`
+的 `vision` 标签。`model_not_found` 则先查询 Provider 的 `/models`。可用以下命令快速确认：
 
 ```powershell
 Invoke-WebRequest http://localhost:5000/api/tools/image_reader -UseBasicParsing
-rg -n "VisualObservation|LlmInvocation|DirectLlm:Tools|tool=image_reader|ImageReader" .\tmp\dev\backend.out.log
+rg -n "SnapshotFactory|ImageReader|VisionArtifact|LlmInvocation|vision_" .\tmp\dev\backend.out.log
 ```
 
 ### 11.10 连续压缩后会话标题重复出现“压缩 - ”
@@ -2983,3 +2985,66 @@ distinctHashes）；完成标记在 `stats_daily_cache_days`（cache_key = `toke
 4. context-layer 边界日（from/to 不是整天）会绕过缓存直查明细；Admin 页面月份边界已改为 UTC 对齐
    （`Date.UTC`），与 token 日序口径一致。带 `sessionId` 过滤的 context-layer 查询始终直查。
 
+
+## 11.33 Chat 流式 Markdown 出现原始管道文本 / 轨迹与正文分裂双状态
+
+症状一（markdown 原文与渲染并存）：助手消息中的 GFM 表格以原始 `|` 管道字符显示在 `<p>` 里，其余部分正常渲染；流式期间尾段以纯文本出现。
+
+- 流结束后仍坏 → `MarkdownBlock.tsx` 的 `preprocessMarkdown` 管道行收集 hack（分隔行与后续正文 join、空行被吞，破坏「表头紧跟分隔行」）。2026-08-23 已删除，只保留逐行 `` `` ``→``` 归一。
+- 仅流式期间坏 → `useTypewriterStreaming.findStableMarkdownBoundary`：表格行要求尾 `|` 才提交（LLM 常输出无尾管道）、半截表头可经空行规则提交进 stable。已改为前导 `|` 识别 + 分隔行感知（run 见过分隔行才允许整表提交）。
+- `MessageItem` 流式尾段现在按内容分流：含块级/强调语法（`|`、反引号、`#`、列表、`>*_~`、链接）走 ReactMarkdown，纯文本保留打字机 span。
+- 快速判别：`document.querySelectorAll('p')` 中 `textContent.trim().startsWith('|')` 计数 > 0 即回归。
+
+症状三（直播期间回答正文整段重复两遍，刷新后消失）：增量入队后、80ms 批量 flush 前，activeRun 轮询快照把 answerMarkdown 替换为服务端全量文本（已包含缓冲增量），flush 盲目追加造成重复；旧 `selectLongerMarkdown` 会把重复（更长）版本保留到刷新。
+
+- 2026-08-23 已修复：`enqueueDelta` 携带入队基准长度（`current.length`），`applyBufferedDeltaToTurn(turn, delta, baseLength)` flush 时按位置幂等——基准未变才追加，漂移即丢弃缓冲（服务端为准）；`MessageList.selectMonotonicMarkdown` 改为前缀单调合并（分叉取服务端快照），activeRun markdown 缓存同样单调化。
+- 判别：直播期间 `answerMarkdown` 含重复段、刷新后消失即此缺陷；持久化后仍重复则查服务端 projection。
+
+症状二（轨迹/输出与消息卡分裂两个状态）：状态条显示「正在执行工具·已等待 Xs」而正文已在流式输出；或同一回复出现两张 agent 卡片。
+
+- 阶段优先级回归：`AgentMessageBubble` 的 `processing_result` 不再算 executing；`message.content.appended` 到达即翻转 status=streaming。
+- 双卡片回归：`MessageList.mergeProjectedMessageIntoTurns` 同 messageId 刷新必须原地更新；`mergeActiveRunAssistant` 本地终态后轮询快照不得回退 status/isStreaming。
+- 行序契约：TurnStatus → Reasoning/Tool/Delegation/Retry 行 → 正文 → 错误行 → actions，轨迹与正文共享同一内容列。
+- 定向测试：`messageTurnMerge.test.ts`、`MessageItem.streaming.test.tsx`、`useTypewriterStreaming.test.ts`（findStableMarkdownBoundary 表格用例）。
+
+部署注意（Desktop 启动）：Core 从 `AppContext.BaseDirectory/wwwroot` 服务静态文件；前端改动需 `npm run build` 后把 `Source/PuddingPlatformAdmin/dist/*` 复制到运行中 Core 的 `wwwroot/admin/`（base=/admin/），静态文件按请求从磁盘读取，无需重启 Core。
+
+## 11.34 PuddingDesktop 调试模式（源码前后端 + 80 端口反向代理）
+
+2026-08-23 新增。Desktop 设置页新增「调试模式（开发者）」卡片，启用并重启 Core 后：
+
+```
+Desktop(127.0.0.1:80) ──后端前缀(/api /swagger /health /healthz /metrics /assets /connectors /session-events)──> Core(源码构建, 8080)
+                    └──其余路径(SPA fallback: /admin/xxx 无扩展名 → /admin/)──> 前端 dev server(pnpm start:dev, 8000)
+```
+
+- 后端：`dotnet build Source/PuddingAgent/PuddingAgent.csproj` 后以 `bin/Debug/net10.0/PuddingAgent.exe --desktop-child` 启动（Development 环境），监督/Ready 握手/健康检查/优雅关停全部复用现有 CoreProcessSupervisor。
+- 前端：`cmd /c pnpm run start:dev -- --host 127.0.0.1 --port 8000`（cwd=Source/PuddingPlatformAdmin；node_modules 缺失时先自动 `pnpm install`）。
+- 代理：Desktop 内 `DesktopReverseProxy`（HttpListener，`Source/PuddingDesktop/Debug/`），SSE 逐块 Flush 转发，WebSocket（HMR）全双工中继；路由语义与 dev-up.py 的 Python 代理逐条对齐。
+- Workbench WebView2 导航到 `http://127.0.0.1/admin/`（代理），不再直连 Core；Storage/Browser Bridge/健康检查仍走 Core 真实地址。
+
+### 开启方式
+
+1. 系统设置 → 调试模式（开发者）→ 勾选启用，可编辑仓库根目录（留空自动向上解析）、前端端口（8000）、反向代理端口（80）、两个超时；保存。
+2. 点「重启 Core」。配置持久化在 `%LOCALAPPDATA%\Pudding\desktop.json` 的 `debug` 节（`debug.frontendWorkingDirectory`/`debug.backendProjectPath` 可手改覆盖自动推导）。
+3. 浏览器访问 `http://127.0.0.1/admin/user/login`（80 端口统一入口），前端改动 HMR 即时生效。
+
+### 端口互斥（必须先停止 dev-up）
+
+代理 80、前端 8000 与 dev-up 管理的端口完全冲突；同一 DataRoot 也禁止两个 Core 同时访问数据库。调试模式前先 `python dev-up.py --down`。
+
+### 日志与错误位置
+
+| 位置 | 内容 |
+|---|---|
+| 运行中心「最近 Core 输出」 | `[build]` 后端构建输出、`[Debug]` 调试组件启动、`[frontend]` 前端 stdout（FrontendDevSupervisor 环形缓冲，进程失败时错误信息自带最后 40 行） |
+| 状态机 | 新增 `DebugFailed` 状态（红点 + 「调试组件失败」），构建失败/pnpm 失败/80 被占都会进入 |
+| DesktopDiagnosticLog | `DebugProxyLoop`/`DebugProxyRequest`（代理请求级异常） |
+
+### 常见症状
+
+- 调试代理无法监听 127.0.0.1:80 → dev-up 的 Python 代理或 IIS 占用；`dev-up.py --down` 后重启 Core。
+- DebugFailed 且错误带 `exit code` → `dotnet build` 失败，看运行中心日志尾部 `[build]` 行定位编译错误。
+- DebugFailed 且错误带 `pnpm` → pnpm 不在 PATH，或 install/启动失败，错误自带前端日志尾部。
+- 页面 502 `Proxy error` → 上游（Core 或前端 dev server）未就绪或已退出；Core 起来前 /api 短暂 502 属正常。
+- HMR 不生效 → 确认页面确实经 80 端口访问（WebSocket 需经代理中继），而不是直连 8000。

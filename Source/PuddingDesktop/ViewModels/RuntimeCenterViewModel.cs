@@ -76,6 +76,7 @@ public sealed class RuntimeCenterViewModel : INotifyPropertyChanged, IDisposable
         DesktopStartupState.WebViewInitializing => "Workbench 加载中",
         DesktopStartupState.WorkbenchReady => "Workbench 就绪",
         DesktopStartupState.WorkbenchFailed => "Workbench 加载失败",
+        DesktopStartupState.DebugFailed => "调试组件失败",
         _ => "未知状态",
     };
 
@@ -93,6 +94,7 @@ public sealed class RuntimeCenterViewModel : INotifyPropertyChanged, IDisposable
         DesktopStartupState.WebViewInitializing => "Core 已就绪，正在创建隔离的 WebView2 Workbench。",
         DesktopStartupState.WorkbenchReady => "Desktop、Core API 与 Workbench 均已就绪。",
         DesktopStartupState.WorkbenchFailed => "Core 仍可用，但 Workbench 页面未能成功加载。",
+        DesktopStartupState.DebugFailed => "调试模式组件（源码构建、前端开发服务器或反向代理）失败；Core 可能仍在运行，可重启重试。",
         _ => "正在准备 Pudding Desktop。",
     };
 
@@ -104,6 +106,7 @@ public sealed class RuntimeCenterViewModel : INotifyPropertyChanged, IDisposable
     public bool CanStart => _state is DesktopStartupState.CoreStopped
         or DesktopStartupState.CoreFailed
         or DesktopStartupState.CoreCircuitOpen
+        or DesktopStartupState.DebugFailed
         or DesktopStartupState.NeedsDataRoot
         or DesktopStartupState.InvalidConfiguration;
 
@@ -112,11 +115,13 @@ public sealed class RuntimeCenterViewModel : INotifyPropertyChanged, IDisposable
         or DesktopStartupState.CoreRestartScheduled
         or DesktopStartupState.WebViewInitializing
         or DesktopStartupState.WorkbenchReady
-        or DesktopStartupState.WorkbenchFailed;
+        or DesktopStartupState.WorkbenchFailed
+        or DesktopStartupState.DebugFailed;
 
     public bool CanRestart => _state is DesktopStartupState.CoreReady
         or DesktopStartupState.CoreFailed
         or DesktopStartupState.CoreCircuitOpen
+        or DesktopStartupState.DebugFailed
         or DesktopStartupState.WorkbenchReady
         or DesktopStartupState.WorkbenchFailed;
 

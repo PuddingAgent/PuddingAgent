@@ -39,17 +39,18 @@ Source/PuddingPlatformAdmin/tsc_output.txt
 # Mono auto generated files
 mono_crash.*
 
-# Build results
-[Dd]ebug/
-[Dd]ebugPublic/
-[Rr]elease/
-[Rr]eleases/
-x64/
-x86/
-[Ww][Ii][Nn]32/
-[Aa][Rr][Mm]/
-[Aa][Rr][Mm]64/
-bld/
+# Build results (root-anchored; nested build outputs are covered by bin/obj below,
+# and Source/PuddingDesktop/Debug + Tests/PuddingDesktop.Tests/Debug are real source)
+/[Dd]ebug/
+/[Dd]ebugPublic/
+/[Rr]elease/
+/[Rr]eleases/
+/x64/
+/x86/
+/[Ww][Ii][Nn]32/
+/[Aa][Rr][Mm]/
+/[Aa][Rr][Mm]64/
+/bld/
 [Bb]in/
 [Oo]bj/
 [Oo]ut/

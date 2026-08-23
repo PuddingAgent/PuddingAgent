@@ -67,6 +67,18 @@ public partial class SettingsView : UserControl
             _viewModel.CoreExecutablePath = dialog.FileName;
     }
 
+    private void BrowseDebugRepositoryRoot_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "选择 PuddingAgent 仓库根目录",
+            Multiselect = false,
+        };
+
+        if (dialog.ShowDialog() == true)
+            _viewModel.DebugRepositoryRoot = dialog.FolderName;
+    }
+
     private async void ValidateDataRoot_Click(object sender, RoutedEventArgs e)
     {
         await _viewModel.ValidateDataRootAsync();
@@ -189,6 +201,30 @@ public partial class SettingsView : UserControl
             return false;
         }
 
+        if (!int.TryParse(DebugFrontendPortBox.Text, out var debugFrontendPort))
+        {
+            ShowFeedback("调试前端端口必须是整数。", isError: true);
+            return false;
+        }
+
+        if (!int.TryParse(DebugProxyPortBox.Text, out var debugProxyPort))
+        {
+            ShowFeedback("调试反向代理端口必须是整数。", isError: true);
+            return false;
+        }
+
+        if (!int.TryParse(DebugFrontendTimeoutBox.Text, out var debugFrontendTimeout))
+        {
+            ShowFeedback("调试前端启动超时必须是整数秒。", isError: true);
+            return false;
+        }
+
+        if (!int.TryParse(DebugBackendBuildTimeoutBox.Text, out var debugBackendBuildTimeout))
+        {
+            ShowFeedback("调试后端构建超时必须是整数秒。", isError: true);
+            return false;
+        }
+
         _viewModel.Port = port;
         _viewModel.StartupTimeoutSeconds = startupTimeout;
         _viewModel.ShutdownTimeoutSeconds = shutdownTimeout;
@@ -196,6 +232,10 @@ public partial class SettingsView : UserControl
         _viewModel.RestartWindowSeconds = restartWindow;
         _viewModel.RestartInitialDelaySeconds = restartInitialDelay;
         _viewModel.RestartMaxDelaySeconds = restartMaxDelay;
+        _viewModel.DebugFrontendPort = debugFrontendPort;
+        _viewModel.DebugProxyPort = debugProxyPort;
+        _viewModel.DebugFrontendStartupTimeoutSeconds = debugFrontendTimeout;
+        _viewModel.DebugBackendBuildTimeoutSeconds = debugBackendBuildTimeout;
         return true;
     }
 

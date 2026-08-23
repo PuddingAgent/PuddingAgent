@@ -2,18 +2,19 @@ using Microsoft.Win32;
 
 namespace PuddingDesktop.Runtime;
 
-public sealed class AutoStartRegistrationService
+public class AutoStartRegistrationService
 {
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string ValueName = "PuddingDesktop";
 
-    public bool IsEnabled()
+    // Virtual so tests can stub the registry access out.
+    public virtual bool IsEnabled()
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
         return key?.GetValue(ValueName) is string value && !string.IsNullOrWhiteSpace(value);
     }
 
-    public void SetEnabled(bool enabled, string executablePath)
+    public virtual void SetEnabled(bool enabled, string executablePath)
     {
         using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath, writable: true)
             ?? throw new InvalidOperationException("无法打开 Windows 当前用户启动项注册表。");

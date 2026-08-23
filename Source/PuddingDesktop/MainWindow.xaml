@@ -38,6 +38,9 @@
                 <DataTrigger Binding="{Binding State}" Value="{x:Static hosting:DesktopStartupState.CoreFailed}">
                     <Setter Property="Fill" Value="{DynamicResource ErrorBrush}" />
                 </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static hosting:DesktopStartupState.DebugFailed}">
+                    <Setter Property="Fill" Value="{DynamicResource ErrorBrush}" />
+                </DataTrigger>
                 <DataTrigger Binding="{Binding State}" Value="{x:Static hosting:DesktopStartupState.WorkbenchFailed}">
                     <Setter Property="Fill" Value="{DynamicResource ErrorBrush}" />
                 </DataTrigger>

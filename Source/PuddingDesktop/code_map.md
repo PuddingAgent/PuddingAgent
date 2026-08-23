@@ -14,11 +14,23 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Hosting/DesktopApplicationCoordinator.cs` | 🔑 Launcher↔Core 状态机，协调 Runtime、Bridge、Workbench |
+| `Hosting/DesktopApplicationCoordinator.cs` | 🔑 Launcher↔Core 状态机，协调 Runtime、Bridge、Workbench、调试组件 |
 | `Core/CoreExecutableResolver.cs` | Core 路径确定性解析（配置→发布包→同源→兜底） |
-| `Core/CoreProcessSupervisor.cs` | Core 子进程固定端口 `0.0.0.0` 启动、本机健康检查、环形 stdout/stderr、进程树回收 |
+| `Core/CoreProcessSupervisor.cs` | Core 子进程固定端口 `0.0.0.0` 启动、本机健康检查、环形 stdout/stderr、进程树回收；`EnvironmentName` 可覆盖 Production |
 | `Runtime/DesktopRuntimeOrchestrator.cs` | 异常退出恢复、退避熔断（2s/4s/8s，60s 3 次） |
 | `Runtime/CoreRestartPolicy.cs` | 重启策略与取消语义 |
+
+## 调试模式（Debug）
+
+| 文件 | 用途 |
+|------|------|
+| `Debug/DesktopReverseProxy.cs` | HttpListener 本机反向代理（默认 127.0.0.1:80）：后端前缀→Core、其余→前端 dev server；SSE 逐块 Flush、WebSocket 全双工中继（HMR）、上游 502 |
+| `Debug/ProxyRoutePlanner.cs` | 纯路由决策：8 个后端前缀 + /admin SPA fallback（与 dev-up.py 语义逐条对齐） |
+| `Debug/DebugBackendLauncher.cs` | `dotnet build` 源码后端并解析 `bin/Debug/net10.0/PuddingAgent.exe`（desktop-child 协议不变，Development 环境） |
+| `Debug/FrontendDevSupervisor.cs` | `pnpm run start:dev`（缺 node_modules 自动 install）、/admin/ 就绪探测、进程树回收、环形日志 |
+| `Debug/DebugRepositoryResolver.cs` | 仓库根向上自动解析 + 显式覆盖（repositoryRoot/frontendWorkingDirectory/backendProjectPath） |
+| `Configuration/DesktopBootstrapSettings.cs` | `DesktopDebugSettings`（desktop.json `debug` 节：Enabled/端口/超时） |
+| `Hosting/DesktopStateChangedEventArgs.cs` | `WorkbenchAddress`（调试=代理源）与 `CoreAddress`（控制面）分离 |
 
 ## Browser 工作区
 
@@ -64,8 +76,8 @@
 | `Storage/DataRootSafetyValidator.cs` | 安全校验（拒绝越界、链接） |
 | `ViewModels/StorageViewModel.cs` | 文件分类与 Core 数据库明细合并展示；7/14/30/90 天保留期、预览确认、清理后重扫 |
 | `Configuration/SystemConfigurationService.cs` | system.json 原子写入 |
-| `ViewModels/SettingsViewModel.cs` | Desktop Core 固定监听端口（默认 8080）、恢复与关闭策略配置 |
+| `ViewModels/SettingsViewModel.cs` | Desktop Core 固定监听端口（默认 8080）、恢复与关闭策略、调试模式（仓库根/前端端口/代理端口/超时）配置 |
 
 ## 测试
 
-`../../Tests/PuddingDesktop.Tests/` — Desktop 进程/配置、Browser 与 Core Storage Client 测试（136/136 ✅，2026-08-09 隔离输出）
+`../../Tests/PuddingDesktop.Tests/` — Desktop 进程/配置、Browser、Core Storage Client 与 Debug（路由/代理集成/SSE/WS、前端监督器、源码构建器）测试

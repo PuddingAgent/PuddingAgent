@@ -3,6 +3,7 @@ using PuddingDesktop.Bootstrap;
 using PuddingDesktop.Browser;
 using PuddingDesktop.Configuration;
 using PuddingDesktop.Core;
+using PuddingDesktop.Debug;
 using PuddingDesktop.Diagnostics;
 using PuddingDesktop.Runtime;
 
@@ -23,6 +24,7 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     private readonly DesktopBrowserBridgeClient _bridgeClient;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
     private readonly SemaphoreSlim _bridgeOperationLock = new(1, 1);
+    private readonly SemaphoreSlim _debugComponentsLock = new(1, 1);
 
     private MainWindow? _mainWindow;
     private CancellationTokenSource? _lifetimeCts;
@@ -36,9 +38,15 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     private int _disposeState;
     private DesktopBootstrapSignalService? _bootstrapSignalService;
     private DesktopBootstrapHttpEndpoint? _bootstrapHttpEndpoint;
+    private DesktopDebugSettings? _debugSettings;
+    private FrontendDevSupervisor? _frontendSupervisor;
+    private DesktopReverseProxy? _debugProxy;
+    private string? _debugFailure;
+    private Uri? _workbenchAddress;
 
     public DesktopStartupState State => _state;
     public Uri? CoreAddress => _coreAddress;
+    public Uri? WorkbenchAddress => _workbenchAddress;
     public string? DataRoot => _bootstrapSettings?.DataRoot;
     public CoreProcessLogBuffer CoreLogBuffer => _supervisor.LogBuffer;
     public DesktopRuntimeSnapshot RuntimeSnapshot => _runtime.Snapshot;
@@ -209,11 +217,16 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
                 _lifetimeCts?.Token ?? CancellationToken.None);
             _startCts = operationCts;
             await TryInitializeBrowserWorkspaceAsync(dataRoot, operationCts.Token);
+            var debugExecutablePath = await BuildDebugBackendAsync(
+                _bootstrapSettings, systemResult.Config.Desktop.Core, operationCts.Token);
             await ConfigureRuntimeAsync(
                 _bootstrapSettings,
                 dataRoot,
                 systemResult.Config.Desktop.Core,
-                operationCts.Token);
+                operationCts.Token,
+                debugExecutablePath);
+            if (debugExecutablePath is not null)
+                _ = StartDebugComponentsAsync(_lifetimeCts?.Token ?? CancellationToken.None);
             await _runtime.StartAsync(operationCts.Token);
         }
         catch (OperationCanceledException) when (
@@ -221,6 +234,11 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         {
             _coreAddress = null;
             TransitionTo(DesktopStartupState.CoreStopped);
+        }
+        catch (DebugComponentsFailedException)
+        {
+            // The debug pipeline already transitioned to DebugFailed with the
+            // underlying error; keep it instead of masking it as CoreFailed.
         }
         catch (Exception ex)
         {
@@ -287,11 +305,16 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
                 _lifetimeCts?.Token ?? CancellationToken.None);
             _startCts = operationCts;
             await TryInitializeBrowserWorkspaceAsync(dataRoot, operationCts.Token);
+            var debugExecutablePath = await BuildDebugBackendAsync(
+                _bootstrapSettings, systemResult.Config.Desktop.Core, operationCts.Token);
             await ConfigureRuntimeAsync(
                 _bootstrapSettings,
                 dataRoot,
                 systemResult.Config.Desktop.Core,
-                operationCts.Token);
+                operationCts.Token,
+                debugExecutablePath);
+            if (debugExecutablePath is not null)
+                _ = StartDebugComponentsAsync(_lifetimeCts?.Token ?? CancellationToken.None);
             await _runtime.RestartAsync(operationCts.Token);
         }
         catch (OperationCanceledException) when (
@@ -299,6 +322,11 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         {
             _coreAddress = null;
             TransitionTo(DesktopStartupState.CoreStopped);
+        }
+        catch (DebugComponentsFailedException)
+        {
+            // The debug pipeline already transitioned to DebugFailed with the
+            // underlying error; keep it instead of masking it as CoreFailed.
         }
         catch (Exception ex)
         {
@@ -363,7 +391,8 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         DesktopBootstrapSettings bootstrapSettings,
         string dataRoot,
         PuddingDesktopCoreConfig coreConfig,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? debugExecutablePath = null)
     {
         ValidateCoreConfiguration(coreConfig);
         var controlToken = coreConfig.ControlToken
@@ -371,15 +400,171 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
 
         _runtimeOptions = new CoreProcessStartOptions
         {
-            ExecutablePath = CoreExecutableResolver.Resolve(bootstrapSettings.CoreExecutablePath),
+            ExecutablePath = debugExecutablePath
+                ?? CoreExecutableResolver.Resolve(bootstrapSettings.CoreExecutablePath),
             DataRoot = dataRoot,
             Port = coreConfig.Port,
             ParentProcessId = Environment.ProcessId,
             ControlToken = controlToken,
             StartupTimeout = TimeSpan.FromSeconds(coreConfig.StartupTimeoutSeconds),
             ShutdownTimeout = TimeSpan.FromSeconds(coreConfig.ShutdownTimeoutSeconds),
+            EnvironmentName = debugExecutablePath is null ? null : "Development",
         };
         _runtime.Configure(_runtimeOptions, CreateRestartPolicy(coreConfig));
+    }
+
+    /// <summary>
+    /// Debug pipeline stage 1: validate debug settings and build the backend
+    /// from source. Returns the built exe path, or null when debug mode is
+    /// off. Failures transition to DebugFailed and rethrow a marker that the
+    /// Start/Restart catch blocks translate to a no-op.
+    /// </summary>
+    private async Task<string?> BuildDebugBackendAsync(
+        DesktopBootstrapSettings bootstrapSettings,
+        PuddingDesktopCoreConfig coreConfig,
+        CancellationToken cancellationToken)
+    {
+        var debug = bootstrapSettings.Debug;
+        if (!debug.Enabled)
+        {
+            _debugSettings = null;
+            return null;
+        }
+
+        ValidateDebugConfiguration(debug, coreConfig);
+        _debugSettings = debug;
+        _debugFailure = null;
+
+        try
+        {
+            var backendProjectPath = DebugRepositoryResolver.ResolveBackendProjectPath(debug);
+            var executablePath = await new DebugBackendLauncher().BuildAsync(
+                backendProjectPath,
+                TimeSpan.FromSeconds(debug.BackendBuildTimeoutSeconds),
+                _supervisor.LogBuffer,
+                cancellationToken);
+            return executablePath;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _debugFailure = ex.Message;
+            TransitionOnDispatcher(DesktopStartupState.DebugFailed, error: ex.Message);
+            throw new DebugComponentsFailedException(ex.Message, ex);
+        }
+    }
+
+    /// <summary>
+    /// Debug pipeline stage 2 (fire-and-forget, parallel to Core startup):
+    /// starts the loopback reverse proxy and the pnpm frontend dev server.
+    /// Core keeps its own supervision; frontend readiness re-fires CoreReady
+    /// so the Workbench binds to the proxy once everything is up.
+    /// </summary>
+    private async Task StartDebugComponentsAsync(CancellationToken cancellationToken)
+    {
+        // Re-entrancy guard: Start/Restart can both fire this while a previous
+        // frontend bring-up (up to minutes) is still in flight.
+        if (!await _debugComponentsLock.WaitAsync(0))
+            return;
+
+        try
+        {
+            var debug = _debugSettings;
+            if (debug is null)
+                return;
+
+            if (_debugProxy is null)
+            {
+                var backendBase = new Uri(
+                    $"http://127.0.0.1:{_runtimeOptions?.Port ?? PuddingDesktopCoreConfig.DefaultPort}");
+                var frontendBase = new Uri($"http://127.0.0.1:{debug.FrontendPort}");
+                var proxy = new DesktopReverseProxy(backendBase, frontendBase, debug.ProxyPort);
+                try
+                {
+                    proxy.Start();
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException(
+                        $"调试代理无法监听 127.0.0.1:{debug.ProxyPort}（可能被占用，请先停止 dev-up 或检查 IIS）：{ex.Message}",
+                        ex);
+                }
+
+                _debugProxy = proxy;
+                _supervisor.LogBuffer.Append($"[Debug] Reverse proxy listening: {proxy.BaseAddress}");
+            }
+
+            if (_frontendSupervisor is null)
+            {
+                var supervisor = new FrontendDevSupervisor();
+                supervisor.StateChanged += OnFrontendStateChanged;
+                _frontendSupervisor = supervisor;
+            }
+
+            if (_frontendSupervisor.State is FrontendDevState.Idle
+                or FrontendDevState.Failed
+                or FrontendDevState.Stopped)
+            {
+                await _frontendSupervisor.StartAsync(new FrontendDevStartOptions
+                {
+                    WorkingDirectory = DebugRepositoryResolver.ResolveFrontendWorkingDirectory(debug),
+                    Port = debug.FrontendPort,
+                    StartupTimeout = TimeSpan.FromSeconds(debug.FrontendStartupTimeoutSeconds),
+                }, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Desktop shutdown owns cancellation.
+        }
+        catch (Exception ex)
+        {
+            _debugFailure = ex.Message;
+            TransitionOnDispatcher(DesktopStartupState.DebugFailed, error: ex.Message);
+        }
+        finally
+        {
+            _debugComponentsLock.Release();
+        }
+    }
+
+    private void OnFrontendStateChanged(object? sender, FrontendDevState state)
+    {
+        if (state == FrontendDevState.Ready)
+        {
+            // Re-fire CoreReady so the Workbench sees a non-null
+            // WorkbenchAddress now that every debug component is up.
+            if (_state == DesktopStartupState.CoreReady)
+                TransitionOnDispatcher(DesktopStartupState.CoreReady);
+        }
+        else if (state == FrontendDevState.Failed)
+        {
+            _debugFailure = _frontendSupervisor?.LastError ?? "前端开发服务器运行失败。";
+            TransitionOnDispatcher(DesktopStartupState.DebugFailed, error: _debugFailure);
+        }
+    }
+
+    private static void ValidateDebugConfiguration(
+        DesktopDebugSettings debug,
+        PuddingDesktopCoreConfig coreConfig)
+    {
+        if (debug.FrontendPort is < 1 or > 65535)
+            throw new InvalidOperationException("调试前端端口必须为 1 到 65535。");
+        if (debug.ProxyPort is < 1 or > 65535)
+            throw new InvalidOperationException("调试代理端口必须为 1 到 65535。");
+        if (debug.FrontendStartupTimeoutSeconds is < 10 or > 3600)
+            throw new InvalidOperationException("调试前端启动超时必须为 10 到 3600 秒。");
+        if (debug.BackendBuildTimeoutSeconds is < 10 or > 3600)
+            throw new InvalidOperationException("调试后端构建超时必须为 10 到 3600 秒。");
+        if (debug.ProxyPort == debug.FrontendPort)
+            throw new InvalidOperationException("调试代理端口不能与前端端口相同。");
+        if (debug.ProxyPort == coreConfig.Port)
+            throw new InvalidOperationException($"调试代理端口不能与 Core 端口（{coreConfig.Port}）相同。");
+        if (debug.FrontendPort == coreConfig.Port)
+            throw new InvalidOperationException($"调试前端端口不能与 Core 端口（{coreConfig.Port}）相同。");
     }
 
     private async Task TryInitializeBrowserWorkspaceAsync(
@@ -438,7 +623,11 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
                     break;
                 case DesktopRuntimeState.Ready when e.Current.Session is not null:
                     _coreAddress = e.Current.Session.BaseAddress;
-                    TransitionTo(DesktopStartupState.CoreReady, _coreAddress);
+                    TransitionTo(
+                        _debugFailure is null
+                            ? DesktopStartupState.CoreReady
+                            : DesktopStartupState.DebugFailed,
+                        _coreAddress);
                     QueueBridgeIntent(connect: true, _coreAddress);
                     break;
                 case DesktopRuntimeState.Stopping:
@@ -533,10 +722,56 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         if (coreAddress is not null)
             _coreAddress = coreAddress;
         _lastError = error;
+        _workbenchAddress = GetWorkbenchAddress();
 
         StateChanged?.Invoke(
             this,
-            new DesktopStateChangedEventArgs(previous, newState, _coreAddress, _lastError));
+            new DesktopStateChangedEventArgs(previous, newState, _coreAddress, _workbenchAddress, _lastError));
+    }
+
+    /// <summary>
+    /// The origin the Workbench must load: the debug reverse proxy once every
+    /// debug component is up, otherwise the Core child itself.
+    /// </summary>
+    private Uri? GetWorkbenchAddress()
+    {
+        if (_debugSettings is null)
+            return _coreAddress;
+
+        return _debugFailure is null
+            && _debugProxy is not null
+            && _frontendSupervisor?.State == FrontendDevState.Ready
+            ? _debugProxy.BaseAddress
+            : null;
+    }
+
+    /// <summary>
+    /// Transitions a state raised from background threads (debug build,
+    /// frontend probes) onto the WPF dispatcher, mirroring OnRuntimeChanged.
+    /// </summary>
+    private void TransitionOnDispatcher(DesktopStartupState newState, string? error = null)
+    {
+        var application = System.Windows.Application.Current;
+        if (application is null || application.Dispatcher.CheckAccess())
+        {
+            TransitionTo(newState, error: error);
+            return;
+        }
+
+        application.Dispatcher.BeginInvoke(() => TransitionTo(newState, error: error));
+    }
+
+    /// <summary>
+    /// Marker for debug pipeline failures that already transitioned the
+    /// coordinator into DebugFailed; caught and swallowed by the Start/Restart
+    /// catch blocks so the error is not masked as CoreFailed.
+    /// </summary>
+    private sealed class DebugComponentsFailedException : Exception
+    {
+        public DebugComponentsFailedException(string message, Exception inner)
+            : base(message, inner)
+        {
+        }
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -553,6 +788,21 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
 
         _lifetimeCts?.Cancel();
         _startCts?.Cancel();
+
+        if (_debugProxy is not null)
+        {
+            try { await _debugProxy.DisposeAsync(); }
+            catch { }
+            _debugProxy = null;
+        }
+
+        if (_frontendSupervisor is not null)
+        {
+            _frontendSupervisor.StateChanged -= OnFrontendStateChanged;
+            try { await _frontendSupervisor.DisposeAsync(); }
+            catch { }
+            _frontendSupervisor = null;
+        }
 
         if (_bootstrapHttpEndpoint is not null)
         {
@@ -598,6 +848,7 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         _startCts?.Dispose();
         _lifetimeCts?.Dispose();
         _bridgeOperationLock.Dispose();
+        _debugComponentsLock.Dispose();
         _operationLock.Dispose();
     }
 

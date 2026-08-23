@@ -159,6 +159,30 @@ public class CoreProcessSupervisorTests
         Assert.Equal("http://0.0.0.0:8080", startInfo.ArgumentList[urlsIndex + 1]);
     }
 
+    [Fact]
+    public void CreateProcessStartInfo_EnvironmentNameOverridesDefaultProduction()
+    {
+        var executablePath = Path.Combine(
+            Path.GetTempPath(),
+            "pudding-desktop-tests",
+            "core",
+            "PuddingAgent.exe");
+        var options = new CoreProcessStartOptions
+        {
+            ExecutablePath = executablePath,
+            DataRoot = "D:\\data",
+            Port = 8080,
+            ParentProcessId = 1234,
+            ControlToken = "test-token",
+            EnvironmentName = "Development",
+        };
+
+        var startInfo = CoreProcessSupervisor.CreateProcessStartInfo(options);
+
+        Assert.Equal("Development", startInfo.Environment["ASPNETCORE_ENVIRONMENT"]);
+        Assert.Equal("Development", startInfo.Environment["DOTNET_ENVIRONMENT"]);
+    }
+
     [Theory]
     [InlineData(80, "http://0.0.0.0:80")]
     [InlineData(8080, "http://0.0.0.0:8080")]

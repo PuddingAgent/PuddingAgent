@@ -18,6 +18,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <StackPanel>
@@ -219,8 +220,98 @@
                 </Grid>
             </Border>
 
-            <!-- Desktop background behavior -->
+            <!-- Debug mode (developer) -->
             <Border Grid.Row="3"
+                    Margin="0,12,0,0"
+                    Style="{StaticResource CardStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="44" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Width="36" Height="36"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Top"
+                            Background="{DynamicResource AccentLightBrush}"
+                            CornerRadius="9">
+                        <TextBlock Text="&#xEBC5;"
+                                   Style="{StaticResource FluentIconTextStyle}"
+                                   Foreground="{DynamicResource AccentBrush}"
+                                   FontSize="17" />
+                    </Border>
+
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="调试模式（开发者）" Style="{StaticResource SectionTitleStyle}" />
+                        <TextBlock Text="启用后 Desktop 从源码构建并启动后端（Development），用 pnpm run start:dev 拉起前端开发服务器，并在本机反向代理端口提供统一入口。需先停止 dev-up（80/8000 端口互斥）；保存后重启 Core 生效。"
+                                   Style="{StaticResource CaptionTextStyle}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,4,0,14" />
+
+                        <CheckBox x:Name="DebugEnabledCheck"
+                                  IsChecked="{Binding DebugEnabled, Mode=TwoWay}"
+                                  Content="启用调试模式（源码启动前后端 + 反向代理）"
+                                  Margin="0,0,0,16" />
+
+                        <TextBlock Text="仓库根目录" FontWeight="SemiBold" FontSize="13" />
+                        <TextBlock Text="留空时从 Desktop 可执行文件位置向上自动解析（需包含 Source/PuddingAgent 与 Source/PuddingPlatformAdmin）。"
+                                   Style="{StaticResource CaptionTextStyle}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,3,0,7" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="DebugRepositoryRootBox"
+                                     Text="{Binding DebugRepositoryRoot, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Grid.Column="1"
+                                    Content="浏览…"
+                                    Margin="8,0,0,0"
+                                    Style="{StaticResource DefaultButtonStyle}"
+                                    Click="BrowseDebugRepositoryRoot_Click" />
+                        </Grid>
+
+                        <UniformGrid Columns="4" Margin="0,16,0,0">
+                            <StackPanel Margin="0,0,8,0">
+                                <TextBlock Text="前端端口" FontWeight="SemiBold" FontSize="13" />
+                                <TextBlock Text="默认 8000"
+                                           Style="{StaticResource CaptionTextStyle}"
+                                           Margin="0,3,0,7" />
+                                <TextBox x:Name="DebugFrontendPortBox"
+                                         Text="{Binding DebugFrontendPort, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                            <StackPanel Margin="8,0">
+                                <TextBlock Text="反向代理端口" FontWeight="SemiBold" FontSize="13" />
+                                <TextBlock Text="默认 80"
+                                           Style="{StaticResource CaptionTextStyle}"
+                                           Margin="0,3,0,7" />
+                                <TextBox x:Name="DebugProxyPortBox"
+                                         Text="{Binding DebugProxyPort, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                            <StackPanel Margin="8,0">
+                                <TextBlock Text="前端启动超时（秒）" FontWeight="SemiBold" FontSize="13" />
+                                <TextBlock Text="10–3600 秒"
+                                           Style="{StaticResource CaptionTextStyle}"
+                                           Margin="0,3,0,7" />
+                                <TextBox x:Name="DebugFrontendTimeoutBox"
+                                         Text="{Binding DebugFrontendStartupTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                            <StackPanel Margin="8,0,0,0">
+                                <TextBlock Text="后端构建超时（秒）" FontWeight="SemiBold" FontSize="13" />
+                                <TextBlock Text="10–3600 秒"
+                                           Style="{StaticResource CaptionTextStyle}"
+                                           Margin="0,3,0,7" />
+                                <TextBox x:Name="DebugBackendBuildTimeoutBox"
+                                         Text="{Binding DebugBackendBuildTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                        </UniformGrid>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Desktop background behavior -->
+            <Border Grid.Row="4"
                     Margin="0,12,0,0"
                     Style="{StaticResource CardStyle}">
                 <Grid>
@@ -255,7 +346,7 @@
             </Border>
 
             <!-- Security -->
-            <Border Grid.Row="4"
+            <Border Grid.Row="5"
                     Margin="0,12,0,0"
                     Style="{StaticResource CardStyle}">
                 <Grid>
@@ -301,7 +392,7 @@
                 </Grid>
             </Border>
 
-            <Border Grid.Row="5"
+            <Border Grid.Row="6"
                     Margin="0,12,0,0"
                     Padding="14"
                     Background="{DynamicResource ErrorFillBrush}"
@@ -321,7 +412,7 @@
                 </StackPanel>
             </Border>
 
-            <Grid Grid.Row="6" Margin="0,20,0,0">
+            <Grid Grid.Row="7" Margin="0,20,0,0">
                 <TextBlock x:Name="SaveFeedback"
                            Visibility="Collapsed"
                            VerticalAlignment="Center"

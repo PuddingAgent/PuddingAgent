@@ -75,16 +75,17 @@ public sealed partial class MainWindow : Window
             UpdateNavigation();
 
             if (e.Current == DesktopStartupState.CoreReady
-                && e.CoreAddress is not null
+                && e.WorkbenchAddress is not null
                 && navWorkbench.IsChecked == true)
             {
-                _ = InitializeWebView2Async(e.CoreAddress);
+                _ = InitializeWebView2Async(e.WorkbenchAddress);
             }
 
             if (e.Current is DesktopStartupState.CoreStopped
                 or DesktopStartupState.CoreFailed
                 or DesktopStartupState.CoreRestartScheduled
-                or DesktopStartupState.CoreCircuitOpen)
+                or DesktopStartupState.CoreCircuitOpen
+                or DesktopStartupState.DebugFailed)
             {
                 ResetWebView2();
             }
@@ -303,9 +304,9 @@ public sealed partial class MainWindow : Window
                 // Core and the Agent Browser Bridge remain independently usable.
                 if (WorkbenchPage.Visibility == Visibility.Visible
                     && s == DesktopStartupState.CoreReady
-                    && _coordinator.CoreAddress is { } coreAddress)
+                    && _coordinator.WorkbenchAddress is { } workbenchAddress)
                 {
-                    _ = InitializeWebView2Async(coreAddress);
+                    _ = InitializeWebView2Async(workbenchAddress);
                 }
             }
             else if (btn == navBrowser)

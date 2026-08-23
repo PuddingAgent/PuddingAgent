@@ -18,4 +18,5 @@ public enum DesktopStartupState
     WebViewInitializing,
     WorkbenchReady,
     WorkbenchFailed,
+    DebugFailed,
 }
