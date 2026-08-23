@@ -295,7 +295,8 @@ public sealed partial class AgentExecutionService
             ChatRole.User,
             BuildUserMessageForLlm(request, streamingSystemPrompt.UserContextPrefix),
             VisualArtifactIds: request.VisualArtifactIds,
-            AudioArtifactIds: request.AudioArtifactIds));
+            AudioArtifactIds: request.AudioArtifactIds,
+            ContentParts: request.ContentParts));
 
         var loopCtx = new AgentLoopContext
         {
@@ -1222,6 +1223,8 @@ public sealed partial class AgentExecutionService
                             AllowSubDelegation = request.AllowSubDelegation,
                             RoleInPlan = request.RoleInPlan,
                             ActiveTask = request.ActiveTask,
+                            CallerLlmSnapshot = request.CallerLlmSnapshot,
+                            CallerVisionHelperRoute = request.CallerVisionHelperRoute,
                         }, ct);
                         result = new SkillResult
                         {
@@ -1229,6 +1232,7 @@ public sealed partial class AgentExecutionService
                             Output = toolResult.Output ?? "",
                             Error = toolResult.Error,
                             ExitCode = toolResult.Success ? 0 : 1,
+                            ContentParts = toolResult.ToolContentParts,
                         };
                     }
                     else
@@ -1360,7 +1364,8 @@ public sealed partial class AgentExecutionService
                         tc.Id,
                         _logger,
                         ct);
-                    toolRoundMessages.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: tc.Id));
+                    toolRoundMessages.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: tc.Id,
+                        ContentParts: result.ContentParts));
                     var controlSnapshot = _runtimeControl?.GetStatus(request.SessionId).Session;
                     if (controlSnapshot?.State == SessionState.Faulted)
                     {

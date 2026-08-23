@@ -104,8 +104,14 @@ public sealed record ConversationMessageView(
         /// <summary>Role used when feeding the message to the LLM, when it differs from UI/business role.</summary>
     public string LlmRole { get; init; } = "";
 
-    /// <summary>Optional message-level metadata (e.g. visionArtifactId, inputMode).</summary>
+    /// <summary>Optional message-level metadata (e.g. inputMode, channel routing facts).</summary>
     public IReadOnlyDictionary<string, string>? Metadata { get; init; }
+
+    /// <summary>
+    /// ADR-077：服务端 authoritative 内容部件安全摘要（type/artifactId/detail）。
+    /// 图片字节、路径与 Provider file_id 不会出现在投影中。
+    /// </summary>
+    public IReadOnlyList<ConversationContentPartView>? ContentParts { get; init; }
 
     /// <summary>
     /// Compact historical process statistics. Full event payloads are intentionally excluded from
@@ -113,3 +119,9 @@ public sealed record ConversationMessageView(
     /// </summary>
     public ConversationProcessSummary? ProcessSummary { get; init; }
 }
+
+/// <summary>投影用内容部件安全摘要（ADR-077）。</summary>
+public sealed record ConversationContentPartView(
+    string Type,
+    string? ArtifactId,
+    string? Detail);

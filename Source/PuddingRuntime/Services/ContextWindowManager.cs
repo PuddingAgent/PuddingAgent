@@ -325,7 +325,9 @@ public sealed class ContextWindowManager
                 ToolCallId: null,
                 ToolCalls: null,
                 ToolName: null,
-                ReasoningContent: null))
+                ReasoningContent: null,
+                // ADR-077 §7.1：DB 水合必须恢复图片 part，不能只构造纯文本消息。
+                ContentParts: ContentPartsEnvelope.Decode(entity.AttachmentsJson)))
             .ToList();
 
         return new(SanitizeForLlmContext(messages), lastCreatedAt);

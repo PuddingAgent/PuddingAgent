@@ -192,6 +192,13 @@ public sealed record ToolExecutionContext
     /// 实际执行仍必须再次经过 ToolExecutionService/AgentFirewall 授权。
     /// </summary>
     public PuddingCode.Platform.CapabilityPolicy? CapabilityPolicy { get; init; }
+    /// <summary>
+    /// 调用方模型的冻结 LLM 路由快照（ADR-077）。image_reader 等需要感知调用模型
+    /// 能力/协议的工具消费它决定 native/delegate；只读，不触发任何模型目录重读。
+    /// </summary>
+    public PuddingCode.Platform.LlmRouteSnapshot? CallerLlmSnapshot { get; init; }
+    /// <summary>Agent 显式配置的视觉辅助路由（ADR-077）；仅 image_reader delegate 模式使用。</summary>
+    public PuddingCode.Platform.VisionHelperRouteSnapshot? CallerVisionHelperRoute { get; init; }
 }
 
 /// <summary>平台传给 Tool 的执行请求。</summary>
@@ -216,12 +223,32 @@ public sealed record ToolExecutionResult
     /// </summary>
     public string? Status { get; init; }
 
+    /// <summary>
+    /// 有序富内容部件（ADR-077 §5.5）：支持视觉的调用模型通过它直接收到
+    /// image/artifactId 引用。Output 只是 UI 摘要，不得在此放置
+    /// Base64、绝对路径或伪造的图片描述。
+    /// </summary>
+    public IReadOnlyList<PuddingCode.Models.LlmContentPart>? ToolContentParts { get; init; }
+
     public static ToolExecutionResult Ok(string output, string? status = null) => new()
     {
         Success = true,
         Output = output,
         ExitCode = 0,
         Status = status,
+    };
+
+    /// <summary>携带 typed 内容部件的成功结果；output 为人类可读摘要文本。</summary>
+    public static ToolExecutionResult OkWithParts(
+        string output,
+        IReadOnlyList<PuddingCode.Models.LlmContentPart> contentParts,
+        string? status = null) => new()
+    {
+        Success = true,
+        Output = output,
+        ExitCode = 0,
+        Status = status,
+        ToolContentParts = contentParts,
     };
 
     public static ToolExecutionResult Fail(string error, int exitCode = 1, string? status = null) => new()

@@ -333,7 +333,7 @@ public class SessionEventsController : ControllerBase
         var snapshotCursor = Math.Min(eventHead, projectedCursor);
 
         // Load recent messages from projected ChatMessages table
-        var messages = await _db.ChatMessages
+        var messageRows = await _db.ChatMessages
             .AsNoTracking()
             .Where(m => m.SessionId == conversationId)
             .OrderByDescending(m => m.CreatedAt)
@@ -344,8 +344,30 @@ public class SessionEventsController : ControllerBase
                 role = m.Role,
                 content = m.Content,
                 createdAt = m.CreatedAt,
+                contentPartsJson = m.ContentPartsJson,
             })
             .ToListAsync(ct);
+
+        // ADR-077：canonical 信封解码为回放安全摘要（type/artifactId/detail）。
+        var messages = messageRows
+            .Select(m => new
+            {
+                m.id,
+                m.role,
+                m.content,
+                m.createdAt,
+                contentParts = PuddingCode.Models.ContentPartsEnvelope.Decode(m.contentPartsJson)?
+                    .Select(part => part switch
+                    {
+                        PuddingCode.Models.LlmImagePart image => new
+                        {
+                            type = "image", artifactId = image.ArtifactId, detail = image.Detail,
+                        },
+                        _ => new { type = "text", artifactId = (string?)null, detail = (string?)null },
+                    })
+                    .ToList(),
+            })
+            .ToList();
 
         messages.Reverse();
 

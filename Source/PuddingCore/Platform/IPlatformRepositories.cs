@@ -28,6 +28,8 @@ public sealed class ChatMessageRow
     public long CreatedAt { get; init; }
     public string? AgentInstanceId { get; init; }
     public string? MetadataJson { get; init; }
+    /// <summary>ADR-077：多模态 canonical 信封；null 表示纯文本消息。</summary>
+    public string? ContentPartsJson { get; init; }
 }
 
 /// <summary>

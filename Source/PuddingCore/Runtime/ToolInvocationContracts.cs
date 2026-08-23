@@ -27,6 +27,10 @@ public sealed record ToolInvocationRequest
     public string? RoleInPlan { get; init; }
     /// <summary>Active Task Runtime Context（TB-06）：随 ToolInvocationRequest 透传至 ToolExecutionContext。</summary>
     public ActiveTaskRuntimeContext? ActiveTask { get; init; }
+    /// <summary>调用方模型的冻结 LLM 路由快照（ADR-077）；工具经 ToolExecutionContext.CallerLlmSnapshot 消费。</summary>
+    public LlmRouteSnapshot? CallerLlmSnapshot { get; init; }
+    /// <summary>Agent 显式配置的视觉辅助路由（ADR-077）；随请求透传至 ToolExecutionContext。</summary>
+    public VisionHelperRouteSnapshot? CallerVisionHelperRoute { get; init; }
 }
 
 /// <summary>工具调用结果。</summary>
@@ -40,6 +44,8 @@ public sealed record ToolInvocationResult
     public long DurationMs { get; init; }
     public string ArgsHash { get; init; } = "";
     public int OutputLength { get; init; }
+    /// <summary>typed 富内容部件（ADR-077）：image_reader native 模式把图片交回调用模型的通道。</summary>
+    public IReadOnlyList<PuddingCode.Models.LlmContentPart>? ToolContentParts { get; init; }
 }
 
 /// <summary>工具调用服务，统一权限、审计、耗时、错误处理。</summary>

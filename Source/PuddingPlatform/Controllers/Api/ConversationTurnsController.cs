@@ -1,6 +1,7 @@
 ﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PuddingCode.Core;
 using PuddingCode.Platform;
 
 namespace PuddingPlatform.Controllers.Api;
@@ -37,8 +38,33 @@ public class ConversationTurnsController : ControllerBase
             Content: request.Content,
             Metadata: request.Metadata);
 
-        var result = await handler.HandleAsync(command, ct);
+        AcceptanceResult result;
+        try
+        {
+            result = await handler.HandleAsync(command, ct);
+        }
+        catch (PuddingCode.Core.VisionPipelineException visionEx)
+        {
+            return VisionProblem(visionEx);
+        }
+
         return Accepted(result);
+    }
+
+    /// <summary>ADR-077 §9.1：视觉受理失败返回稳定 4xx + 错误码，不静默丢图。</summary>
+    private IActionResult VisionProblem(PuddingCode.Core.VisionPipelineException exception)
+    {
+        var status = exception.Code switch
+        {
+            VisionErrorCodes.ArtifactMissing => StatusCodes.Status404NotFound,
+            VisionErrorCodes.ArtifactForbidden => StatusCodes.Status403Forbidden,
+            VisionErrorCodes.RequestLimitExceeded => StatusCodes.Status413PayloadTooLarge,
+            _ => StatusCodes.Status400BadRequest,
+        };
+        return Problem(
+            statusCode: status,
+            title: exception.Code,
+            detail: exception.Message);
     }
 
     /// <summary>取消 Turn — POST /{conversationId}/turns/{turnId}/cancel</summary>
@@ -106,15 +132,11 @@ public class ConversationTurnsController : ControllerBase
         {
             errors[nameof(request.Content)] = ["At least one content part is required."];
         }
-        else if (request.Content.Any(part =>
-                     !string.Equals(part.Type, "text", StringComparison.OrdinalIgnoreCase)))
+        else
         {
-            errors[nameof(request.Content)] =
-                ["Only text content is currently supported; unsupported content is not accepted silently."];
-        }
-        else if (!request.Content.Any(part => !string.IsNullOrWhiteSpace(part.Text)))
-        {
-            errors[nameof(request.Content)] = ["Text content cannot be empty."];
+            var contentError = ConversationContentValidator.Validate(request.Content);
+            if (contentError is not null)
+                errors[nameof(request.Content)] = [contentError];
         }
 
         return errors.Count == 0

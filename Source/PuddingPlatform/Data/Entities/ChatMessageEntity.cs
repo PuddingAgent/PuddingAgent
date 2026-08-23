@@ -49,6 +49,13 @@ public class ChatMessageEntity
     [Column("metadata_json")]
     public string? MetadataJson { get; set; }
 
+    /// <summary>
+    /// ADR-077 §4.2：多模态 canonical fact（版本化信封 {v:1, parts:[...]}）。
+    /// Content 保存 text part 拼接投影；两者在同一 acceptance 事务写入，禁止事后补 metadata。
+    /// </summary>
+    [Column("content_parts_json")]
+    public string? ContentPartsJson { get; set; }
+
     /// <summary>Unix 时间戳（毫秒）。</summary>
     public long CreatedAt { get; set; }
 }

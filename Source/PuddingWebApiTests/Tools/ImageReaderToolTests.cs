@@ -12,27 +12,74 @@ using PuddingPlatform.Services;
 
 namespace PuddingWebApiTests.Tools;
 
+/// <summary>
+/// ADR-077 V2：image_reader 新合同 — path 唯一必填（URL/绝对路径/artifact://）；
+/// auto 优先 native（typed 图片工具结果，零辅助 invocation），文本调用模型才 delegate；
+/// 失败走稳定错误码，输出不含绝对路径。
+/// </summary>
 [TestClass]
 public sealed class ImageReaderToolTests
 {
-    [TestMethod]
-    public async Task ExecuteAsync_Imports_Local_Image_And_Invokes_Vision_Model()
+    private static readonly byte[] Png = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
+
+    private static string CreateImageFile(out string root)
     {
-        var root = Path.Combine(Path.GetTempPath(), $"pudding-image-reader-{Guid.NewGuid():N}");
+        root = Path.Combine(Path.GetTempPath(), $"pudding-image-reader-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
         var imagePath = Path.Combine(root, "sample.png");
-        await File.WriteAllBytesAsync(imagePath, [1, 2, 3, 4]);
+        File.WriteAllBytes(imagePath, Png);
+        return imagePath;
+    }
 
+    private static async Task<(PuddingDataPaths Paths, VisionArtifactStorageService Storage)> CreateStorageAsync(
+        string root,
+        string? visionHelperModel = null)
+    {
         var paths = PuddingDataPaths.FromRoot(root);
         await WriteAgentManifestAsync(
             paths,
             "configuration-agent",
-            imageReaderModel: "vision-provider/vision-model",
-            preferredProviderId: "text-provider",
-            preferredModelId: "text-model");
+            visionHelperModel,
+            "text-provider",
+            "text-model");
         var storage = new VisionArtifactStorageService(
             paths,
             NullLogger<VisionArtifactStorageService>.Instance);
+        return (paths, storage);
+    }
+
+    [TestMethod]
+    public async Task Auto_VisionCaller_ReturnsNativeImageToolPartsWithoutSecondInvocation()
+    {
+        var imagePath = CreateImageFile(out var root);
+        var (_, storage) = await CreateStorageAsync(root);
+
+        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var result = await tool.ExecuteAsync(Request(
+            imagePath,
+            context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses"))));
+
+        Assert.IsTrue(result.Error is null, result.Error);
+        Assert.IsTrue(result.Success);
+        Assert.IsNotNull(result.ToolContentParts);
+        Assert.AreEqual(1, result.ToolContentParts.Count);
+        var image = (LlmImagePart)result.ToolContentParts[0];
+        StringAssert.StartsWith(image.ArtifactId, "vision-");
+        // native 模式零辅助 LLM invocation（ADR-077 §9.2）
+        StringAssert.Contains(result.Output, "native image part");
+        Assert.IsFalse(result.Output.Contains(root, StringComparison.Ordinal), "output must not leak the host path");
+        // 原文件不被移动或修改
+        Assert.IsTrue(File.Exists(imagePath));
+        Assert.AreEqual(Png.Length, new FileInfo(imagePath).Length);
+    }
+
+    [TestMethod]
+    public async Task Auto_TextCaller_DelegatesToConfiguredHelper_WithProvenance()
+    {
+        var imagePath = CreateImageFile(out var root);
+        var (_, storage) = await CreateStorageAsync(root, visionHelperModel: "vision-provider/vision-model");
+
         var route = new ResolvedLlmRoute
         {
             ProviderId = "vision-provider",
@@ -55,191 +102,177 @@ public sealed class ImageReaderToolTests
         LlmInvocationRequest? captured = null;
         var invocation = new Mock<ILlmInvocationService>();
         invocation
-            .Setup(service => service.InvokeAsync(
-                It.IsAny<LlmInvocationRequest>(),
-                It.IsAny<CancellationToken>()))
+            .Setup(service => service.InvokeAsync(It.IsAny<LlmInvocationRequest>(), It.IsAny<CancellationToken>()))
             .Callback<LlmInvocationRequest, CancellationToken>((request, _) => captured = request)
             .ReturnsAsync(new LlmInvocationResult
             {
                 Success = true,
-                ReplyText = "A purple pudding logo is visible.",
+                ReplyText = "A purple pudding logo.",
                 ProviderId = "vision-provider",
                 ModelId = "vision-model",
             });
 
-        var tool = new ImageReaderTool(
-            storage,
-            storage,
-            new AgentProfileProvider(paths),
-            resolver.Object,
-            invocation.Object,
-            NullLogger<ImageReaderTool>.Instance);
-        var result = await tool.ExecuteAsync(new ToolExecutionRequest
-        {
-            ToolCallId = "tool-call-1",
-            ArgumentsJson = $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"prompt":"Describe it"}""",
-            Context = new ToolExecutionContext
-            {
-                WorkspaceId = "default",
-                SessionId = "session-1",
-                AgentInstanceId = "ephemeral-agent",
-                ConfigurationAgentInstanceId = "configuration-agent",
-                AgentTemplateId = "template-1",
-            },
-        });
+        var tool = CreateTool(storage, root, resolver, invocation);
+        var result = await tool.ExecuteAsync(Request(
+            imagePath,
+            context: Context(callerSnapshot: Snapshot(vision: false, protocol: "openai"))));
 
         Assert.IsTrue(result.Success, result.Error);
-        Assert.AreEqual("A purple pudding logo is visible.", result.Output);
+        // 精确一次可归因 helper invocation
+        invocation.Verify(service => service.InvokeAsync(
+            It.IsAny<LlmInvocationRequest>(),
+            It.IsAny<CancellationToken>()), Times.Once);
         Assert.IsNotNull(captured);
         Assert.AreEqual("vision-provider", captured.Profile.ProviderId);
-        Assert.AreEqual("vision-model", captured.Profile.ModelId);
-        Assert.AreEqual(1, captured.Messages.Count);
-        Assert.AreEqual(1, captured.Messages[0].VisualArtifactIds?.Count);
-        resolver.Verify(service => service.ResolveRouteAsync(
-            "vision-provider/vision-model",
-            It.Is<IReadOnlyCollection<string>>(tags => tags.Contains("vision")),
-            It.IsAny<CancellationToken>()), Times.Once);
+        // helper 收到的消息携带 canonical 图片部件
+        Assert.AreEqual(1, captured.Messages[0].ContentParts!.OfType<LlmImagePart>().Count());
+        // provenance 可见
+        StringAssert.Contains(result.Output, "helper=vision-provider/vision-model");
+        StringAssert.Contains(result.Output, "artifact=vision-");
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_WhenDedicatedModelFails_FallsBackToAgentMainVisionModel()
+    public async Task Delegate_WithoutHelper_ReturnsStableErrorAndNeverInvokes()
     {
-        var root = Path.Combine(Path.GetTempPath(), $"pudding-image-reader-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(root);
-        var imagePath = Path.Combine(root, "sample.png");
-        await File.WriteAllBytesAsync(imagePath, [1, 2, 3, 4]);
+        var imagePath = CreateImageFile(out var root);
+        var (_, storage) = await CreateStorageAsync(root, visionHelperModel: null);
 
-        var paths = PuddingDataPaths.FromRoot(root);
-        await WriteAgentManifestAsync(
-            paths,
-            "agent-1",
-            imageReaderModel: "cheap/cheap-vision",
-            preferredProviderId: "premium",
-            preferredModelId: "premium-vision");
-        var storage = new VisionArtifactStorageService(
-            paths,
-            NullLogger<VisionArtifactStorageService>.Instance);
-        var resolver = new Mock<ILlmResolver>();
-        resolver
-            .Setup(service => service.ResolveRouteAsync(
-                It.IsAny<string>(),
-                It.Is<IReadOnlyCollection<string>>(tags => tags.Contains("vision")),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync((
-                string? modelRoute,
-                IReadOnlyCollection<string>? requiredCapabilityTags,
-                CancellationToken _) =>
-            {
-                Assert.IsTrue(requiredCapabilityTags?.Contains("vision"));
-                var parts = modelRoute!.Split('/', 2);
-                return new ResolvedLlmRoute
-                {
-                    ProviderId = parts[0],
-                    ModelId = parts[1],
-                    Config = new LlmConfig { ModelId = parts[1] },
-                };
-            });
-
-        var invokedModels = new List<string>();
         var invocation = new Mock<ILlmInvocationService>();
-        invocation
-            .Setup(service => service.InvokeAsync(
-                It.IsAny<LlmInvocationRequest>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync((LlmInvocationRequest request, CancellationToken _) =>
-            {
-                invokedModels.Add(request.Profile.ModelId);
-                return request.Profile.ModelId == "cheap-vision"
-                    ? new LlmInvocationResult { Success = false, Error = "temporary failure" }
-                    : new LlmInvocationResult
-                    {
-                        Success = true,
-                        ReplyText = "Fallback model description.",
-                    };
-            });
-
-        var tool = new ImageReaderTool(
-            storage,
-            storage,
-            new AgentProfileProvider(paths),
-            resolver.Object,
-            invocation.Object,
-            NullLogger<ImageReaderTool>.Instance);
-        var result = await tool.ExecuteAsync(new ToolExecutionRequest
-        {
-            ToolCallId = "tool-call-fallback",
-            ArgumentsJson = $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}}}""",
-            Context = new ToolExecutionContext
-            {
-                WorkspaceId = "default",
-                SessionId = "session-1",
-                AgentInstanceId = "agent-1",
-                AgentTemplateId = "template-1",
-            },
-        });
-
-        Assert.IsTrue(result.Success, result.Error);
-        Assert.AreEqual("Fallback model description.", result.Output);
-        CollectionAssert.AreEqual(
-            new[] { "cheap-vision", "premium-vision" },
-            invokedModels);
-    }
-
-    [TestMethod]
-    public async Task ExecuteAsync_WithoutImageReaderModel_DoesNotSelectGlobalVisionModel()
-    {
-        var root = Path.Combine(Path.GetTempPath(), $"pudding-image-reader-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(root);
-        var imagePath = Path.Combine(root, "sample.png");
-        await File.WriteAllBytesAsync(imagePath, [1, 2, 3, 4]);
-
-        var paths = PuddingDataPaths.FromRoot(root);
-        await WriteAgentManifestAsync(
-            paths,
-            "agent-1",
-            imageReaderModel: null,
-            preferredProviderId: "premium",
-            preferredModelId: "premium-vision");
-        var storage = new VisionArtifactStorageService(
-            paths,
-            NullLogger<VisionArtifactStorageService>.Instance);
-        var resolver = new Mock<ILlmResolver>();
-        var invocation = new Mock<ILlmInvocationService>();
-        var tool = new ImageReaderTool(
-            storage,
-            storage,
-            new AgentProfileProvider(paths),
-            resolver.Object,
-            invocation.Object,
-            NullLogger<ImageReaderTool>.Instance);
-
-        var result = await tool.ExecuteAsync(new ToolExecutionRequest
-        {
-            ToolCallId = "tool-call-missing-config",
-            ArgumentsJson = $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}}}""",
-            Context = new ToolExecutionContext
-            {
-                WorkspaceId = "default",
-                SessionId = "session-1",
-                AgentInstanceId = "agent-1",
-            },
-        });
+        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), invocation);
+        var result = await tool.ExecuteAsync(Request(
+            imagePath,
+            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"mode":"delegate"}""",
+            context: Context(callerSnapshot: Snapshot(vision: false, protocol: "openai"))));
 
         Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.Error, "imageReaderModel");
-        resolver.Verify(service => service.ResolveRouteAsync(
-            It.IsAny<string>(),
-            It.IsAny<IReadOnlyCollection<string>>(),
-            It.IsAny<CancellationToken>()), Times.Never);
+        StringAssert.Contains(result.Error, "vision_helper_model_required");
         invocation.Verify(service => service.InvokeAsync(
             It.IsAny<LlmInvocationRequest>(),
             It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [TestMethod]
+    public async Task Native_OnNonResponsesProtocol_ReturnsToolOutputNotSupported()
+    {
+        var imagePath = CreateImageFile(out var root);
+        var (_, storage) = await CreateStorageAsync(root);
+
+        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var result = await tool.ExecuteAsync(Request(
+            imagePath,
+            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"mode":"native"}""",
+            context: Context(callerSnapshot: Snapshot(vision: true, protocol: "openai"))));
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "vision_tool_output_not_supported");
+    }
+
+    [TestMethod]
+    public async Task ArtifactReference_ReusesWorkspaceArtifactByContentHash()
+    {
+        var imagePath = CreateImageFile(out var root);
+        var (_, storage) = await CreateStorageAsync(root);
+
+        await using var first = new MemoryStream(Png);
+        var imported = await storage.SaveAsync("default", first, "image/png");
+
+        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var result = await tool.ExecuteAsync(Request(
+            $"artifact://{imported.ArtifactId}",
+            context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses"))));
+
+        Assert.IsTrue(result.Success, result.Error);
+        var image = (LlmImagePart)result.ToolContentParts![0];
+        // 内容哈希稳定 id：与首次导入一致
+        Assert.AreEqual(imported.ArtifactId, image.ArtifactId);
+    }
+
+    [TestMethod]
+    public async Task RelativePath_RejectedWithStableError()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"pudding-image-reader-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var (_, storage) = await CreateStorageAsync(root);
+
+        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var result = await tool.ExecuteAsync(Request(
+            "relative/sample.png",
+            context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses"))));
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "vision_source_invalid");
+    }
+
+    [TestMethod]
+    public async Task UrlLoopback_RejectedAsNonPublicNetwork()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"pudding-image-reader-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var (_, storage) = await CreateStorageAsync(root);
+
+        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var result = await tool.ExecuteAsync(Request(
+            "http://127.0.0.1:9/img.png",
+            context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses"))));
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "vision_source_access_denied");
+    }
+
+    private static ImageReaderTool CreateTool(
+        VisionArtifactStorageService storage,
+        string root,
+        Mock<ILlmResolver> resolver,
+        Mock<ILlmInvocationService> invocation)
+    {
+        var paths = PuddingDataPaths.FromRoot(root);
+        var sourceResolver = new ImageReaderSourceResolver(
+            storage,
+            null,
+            NullLogger<ImageReaderSourceResolver>.Instance);
+        return new ImageReaderTool(
+            sourceResolver,
+            storage,
+            new AgentProfileProvider(paths),
+            resolver.Object,
+            invocation.Object,
+            NullLogger<ImageReaderTool>.Instance);
+    }
+
+    private static ToolExecutionRequest Request(
+        string path,
+        ToolExecutionContext context,
+        string? arguments = null)
+        => new()
+        {
+            ToolCallId = "tool-call-1",
+            ArgumentsJson = arguments
+                ?? $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(path)}}}""",
+            Context = context,
+        };
+
+    private static ToolExecutionContext Context(PuddingCode.Platform.LlmRouteSnapshot? callerSnapshot = null)
+        => new()
+        {
+            WorkspaceId = "default",
+            SessionId = "session-1",
+            AgentInstanceId = "ephemeral-agent",
+            ConfigurationAgentInstanceId = "configuration-agent",
+            AgentTemplateId = "template-1",
+            CallerLlmSnapshot = callerSnapshot,
+        };
+
+    private static PuddingCode.Platform.LlmRouteSnapshot Snapshot(bool vision, string protocol)
+        => new(
+            "text-provider",
+            "text-model",
+            protocol,
+            vision ? ["vision"] : []);
+
     private static async Task WriteAgentManifestAsync(
         PuddingDataPaths paths,
         string agentId,
-        string? imageReaderModel,
+        string? visionHelperModel,
         string preferredProviderId,
         string preferredModelId)
     {
@@ -250,7 +283,7 @@ public sealed class ImageReaderToolTests
             AgentInstanceId = agentId,
             TemplateId = "template-1",
             WorkspaceId = "default",
-            ImageReaderModel = imageReaderModel,
+            VisionHelperModel = visionHelperModel,
             PreferredProviderId = preferredProviderId,
             PreferredModelId = preferredModelId,
         };

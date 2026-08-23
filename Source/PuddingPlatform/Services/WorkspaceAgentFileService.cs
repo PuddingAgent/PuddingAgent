@@ -460,6 +460,7 @@ public sealed class WorkspaceAgentFileService :
                     DeveloperModel: instanceManifest.DeveloperModel,
                     DeployerModel: instanceManifest.DeployerModel,
                     TesterModel: instanceManifest.TesterModel,
+                    VisionHelperModel: instanceManifest.VisionHelperModel,
                     ChannelIds: instanceManifest.ChannelIds
                 ));
             }
@@ -620,6 +621,7 @@ public sealed class WorkspaceAgentFileService :
                 DeveloperModel = NormalizeSmartRoleModel(req.DeveloperModel),
                 DeployerModel = NormalizeSmartRoleModel(req.DeployerModel),
                 TesterModel = NormalizeSmartRoleModel(req.TesterModel),
+                VisionHelperModel = NormalizeSmartRoleModel(req.VisionHelperModel),
                 Capabilities = new AgentCapabilitiesConfig
                 {
                     AllowedToolIds = req.SelectedCapabilityIds ?? template?.SelectedCapabilityIds ?? [],
@@ -730,6 +732,7 @@ public sealed class WorkspaceAgentFileService :
                 DeveloperModel: instanceManifest.DeveloperModel,
                 DeployerModel: instanceManifest.DeployerModel,
                 TesterModel: instanceManifest.TesterModel,
+                VisionHelperModel: instanceManifest.VisionHelperModel,
                 ChannelIds: instanceManifest.ChannelIds
             );
         }
@@ -792,6 +795,7 @@ public sealed class WorkspaceAgentFileService :
                 DeveloperModel = NormalizeSmartRoleModel(req.DeveloperModel),
                 DeployerModel = NormalizeSmartRoleModel(req.DeployerModel),
                 TesterModel = NormalizeSmartRoleModel(req.TesterModel),
+                VisionHelperModel = NormalizeSmartRoleModel(req.VisionHelperModel),
                 Capabilities = instanceManifest.Capabilities with
                 {
                     AllowFileWrite = req.AllowFileWrite ?? instanceManifest.Capabilities.AllowFileWrite,
@@ -906,6 +910,7 @@ public sealed class WorkspaceAgentFileService :
                 DeveloperModel: updated.DeveloperModel,
                 DeployerModel: updated.DeployerModel,
                 TesterModel: updated.TesterModel,
+                VisionHelperModel: updated.VisionHelperModel,
                 ChannelIds: updated.ChannelIds
             );
         }

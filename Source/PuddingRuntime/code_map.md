@@ -44,7 +44,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/DirectLlmClient.cs` | 🔑 直接 LLM 客户端；只按选中模型 protocol 路由；Provider 成功后以共享 ActivityId 必达写入逐请求 usage 账本 |
+| `Services/DirectLlmClient.cs` | 🔑 直接 LLM 客户端；只按选中模型 protocol 路由；Provider 成功后以共享 ActivityId 必达写入逐请求 usage 账本；vision 能力才注入视觉 resolver，网关层 fail-closed |
 | `Services/CompositionSnapshot.cs` | 前缀缓存归因：逐请求计算 systemPromptHash/toolSpecHash/prefixHash（SHA-256 小写 hex）与 compositionVersion（进程内按 session 递增） |
 | `Services/SqliteCompositionStore.cs` | 🆕 P0-5 `ICompositionStore` SQLite 实现：落 `CompositionSnapshots` 表（MemoryDbContext 同库），append-only（版本严格递增，重写/乱序抛 InvalidOperationException）、写穿、GetLatest 取最大版本 |
 | `Services/LlmInvocationService.cs` | LLM 调用编排；把模型配置解析出的 protocol 传给 Direct/Controller 路径 |

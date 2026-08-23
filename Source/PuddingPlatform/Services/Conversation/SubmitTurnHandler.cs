@@ -1,13 +1,16 @@
 ﻿using Microsoft.Extensions.Logging;
+using PuddingCode.Core;
 using PuddingCode.Platform;
 
 namespace PuddingPlatform.Services.Conversation;
 
 /// <summary>
 /// ADR-059: SubmitTurnHandler — 委托给 IConversationAcceptanceStore。
+/// ADR-077: 受理 typed image content part，并在 acceptance 前验证 Artifact 属于当前 Workspace 且可读。
 /// </summary>
 public sealed class SubmitTurnHandler(
     IConversationAcceptanceStore acceptanceStore,
+    IVisualArtifactLocalFileResolver visualArtifactLocalFileResolver,
     ILogger<SubmitTurnHandler> logger) : ISubmitTurnHandler
 {
     public async Task<AcceptanceResult> HandleAsync(SubmitTurnCommand command, CancellationToken ct)
@@ -26,13 +29,11 @@ public sealed class SubmitTurnHandler(
             throw new ArgumentException(
                 "At least one explicit agent ID is required.",
                 nameof(command.Recipients));
-        if (command.Content.Count == 0 ||
-            command.Content.Any(part =>
-                !string.Equals(part.Type, "text", StringComparison.OrdinalIgnoreCase)) ||
-            !command.Content.Any(part => !string.IsNullOrWhiteSpace(part.Text)))
-            throw new ArgumentException(
-                "At least one non-empty text content part is required.",
-                nameof(command.Content));
+        var contentError = ConversationContentValidator.Validate(command.Content);
+        if (contentError is not null)
+            throw new ArgumentException(contentError, nameof(command.Content));
+
+        await ValidateImageArtifactsAsync(command, ct);
 
         logger.LogInformation(
             "[SubmitTurn] conv={ConvId} msg={MsgId} agents={Agents}",
@@ -54,6 +55,26 @@ public sealed class SubmitTurnHandler(
             command.ConversationId,
             command.UserId,
             ct);
+    }
+
+    /// <summary>SubmitTurn 受理前验证全部图片 Artifact 可读且属于当前 Workspace（ADR-077 §5.1.3）。</summary>
+    private async Task ValidateImageArtifactsAsync(SubmitTurnCommand command, CancellationToken ct)
+    {
+        foreach (var part in command.Content)
+        {
+            if (!string.Equals(part.Type, "image", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var localFile = await visualArtifactLocalFileResolver.ResolveLocalFileAsync(
+                command.WorkspaceId,
+                part.ArtifactId!,
+                ct);
+            if (localFile is null)
+                throw new VisionPipelineException(
+                    VisionErrorCodes.ArtifactMissing,
+                    $"Image artifact {part.ArtifactId} does not exist or is not readable in workspace " +
+                    $"{command.WorkspaceId}; upload it via the vision artifact API before submitting the turn.");
+        }
     }
 
     private static IReadOnlyDictionary<string, string>? NormalizeMetadata(

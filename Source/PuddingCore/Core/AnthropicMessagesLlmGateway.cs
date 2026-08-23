@@ -19,6 +19,8 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
     private const string AnthropicVersion = "2023-06-01";
 
     public IVisualArtifactResolver? VisualArtifactResolver { get; set; }
+    /// <summary>图片请求预算（ADR-077）；由 DirectLlmClient 按快照策略注入，默认产品上限。</summary>
+    public VisionRequestPolicy? VisionPolicy { get; set; }
     public string? WorkspaceId { get; set; }
 
     public AnthropicMessagesLlmGateway(HttpClient httpClient, PlatformLlmOptions options)
@@ -207,12 +209,13 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
 
     private async Task<JsonNode> BuildUserContentAsync(ChatMessage message, CancellationToken ct)
     {
-        if (message.VisualArtifactIds is not { Count: > 0 }
-            || VisualArtifactResolver is null
-            || string.IsNullOrWhiteSpace(WorkspaceId))
-        {
+        var imageParts = ChatMessageMultimodalNormalizer.GetImageParts(message);
+        if (imageParts.Count == 0)
             return JsonValue.Create(message.Content ?? string.Empty)!;
-        }
+
+        // ADR-077 §5.5：无视觉解析通道 = 文本路由，图片部件不进入请求（文本模型以正文占位为准）。
+        if (VisualArtifactResolver is null || string.IsNullOrWhiteSpace(WorkspaceId))
+            return JsonValue.Create(message.Content ?? string.Empty)!;
 
         var content = new JsonArray();
         if (!string.IsNullOrWhiteSpace(message.Content))
@@ -224,35 +227,32 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
             });
         }
 
-        foreach (var artifactId in message.VisualArtifactIds)
+        var plan = await LlmVisualInputPlanner.PlanAsync(
+            WorkspaceId!,
+            imageParts,
+            VisualArtifactResolver,
+            VisionPolicy,
+            ct);
+        foreach (var image in plan.Images)
         {
-            try
-            {
-                var resolved = await VisualArtifactResolver.ResolveAsync(WorkspaceId!, artifactId, ct);
-                if (resolved is null || !TryParseDataUri(resolved.DataUri, out var mediaType, out var data))
-                    continue;
+            if (!TryParseDataUri(image.DataUri, out var mediaType, out var data))
+                throw new VisionPipelineException(
+                    VisionErrorCodes.MediaInvalid,
+                    $"Image artifact {image.ArtifactId} resolved to a malformed data URI.");
 
-                content.Add(new JsonObject
-                {
-                    ["type"] = "image",
-                    ["source"] = new JsonObject
-                    {
-                        ["type"] = "base64",
-                        ["media_type"] = mediaType,
-                        ["data"] = data,
-                    },
-                });
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
+            content.Add(new JsonObject
             {
-                Debug.WriteLine(
-                    $"[AnthropicMessagesLlmGateway] Failed to resolve vision artifact '{artifactId}': {exception.Message}");
-            }
+                ["type"] = "image",
+                ["source"] = new JsonObject
+                {
+                    ["type"] = "base64",
+                    ["media_type"] = mediaType,
+                    ["data"] = data,
+                },
+            });
         }
 
-        return content.Count > (string.IsNullOrWhiteSpace(message.Content) ? 0 : 1)
-            ? content
-            : JsonValue.Create(message.Content ?? string.Empty)!;
+        return content;
     }
 
     private static JsonObject BuildAssistantMessage(ChatMessage message)
@@ -310,6 +310,13 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
     {
         if (string.IsNullOrWhiteSpace(message.ToolCallId))
             throw new InvalidOperationException("Anthropic tool_result requires a non-empty tool_use_id.");
+
+        // ADR-077：Anthropic 图片只能以 user image block 出现；本 adapter 未开放图片型工具结果。
+        if (ChatMessageMultimodalNormalizer.GetImageParts(message).Count > 0)
+            throw new VisionPipelineException(
+                VisionErrorCodes.ToolOutputNotSupported,
+                "This route uses the Anthropic Messages protocol, which cannot carry image tool results; " +
+                "use mode=delegate or a responses-protocol route.");
 
         var result = new JsonObject
         {

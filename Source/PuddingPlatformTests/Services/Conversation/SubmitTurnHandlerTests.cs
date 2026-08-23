@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Platform;
+using PuddingPlatform.Services;
 using PuddingPlatform.Services.Conversation;
 
 namespace PuddingPlatformTests.Services.Conversation;
@@ -13,6 +14,7 @@ public sealed class SubmitTurnHandlerTests
         var store = new RecordingAcceptanceStore();
         var handler = new SubmitTurnHandler(
             store,
+            new NullVisualArtifactResolver(),
             NullLogger<SubmitTurnHandler>.Instance);
 
         await handler.HandleAsync(Command() with
@@ -41,6 +43,7 @@ public sealed class SubmitTurnHandlerTests
         var store = new RecordingAcceptanceStore();
         var handler = new SubmitTurnHandler(
             store,
+            new NullVisualArtifactResolver(),
             NullLogger<SubmitTurnHandler>.Instance);
         var command = Command() with
         {
@@ -85,6 +88,15 @@ public sealed class SubmitTurnHandlerTests
                 },
             ],
             Metadata: null);
+
+    private sealed class NullVisualArtifactResolver : IVisualArtifactLocalFileResolver
+    {
+        public Task<VisualArtifactLocalFile?> ResolveLocalFileAsync(
+            string workspaceId,
+            string artifactId,
+            CancellationToken ct = default)
+            => Task.FromResult<VisualArtifactLocalFile?>(null);
+    }
 
     private sealed class RecordingAcceptanceStore
         : IConversationAcceptanceStore

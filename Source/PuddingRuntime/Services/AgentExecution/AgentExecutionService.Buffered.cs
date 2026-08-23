@@ -377,7 +377,8 @@ public sealed partial class AgentExecutionService
                     ChatRole.User,
                     BuildUserMessageForLlm(request, userContextPrefix),
                     VisualArtifactIds: request.VisualArtifactIds,
-                    AudioArtifactIds: request.AudioArtifactIds));
+                    AudioArtifactIds: request.AudioArtifactIds,
+                    ContentParts: request.ContentParts));
 
         // ── 初始化 Loop 上下文 ────────────────────────────────────────
         var maxRounds = request.MaxRounds > 0
@@ -938,6 +939,8 @@ public sealed partial class AgentExecutionService
                                         AllowSubDelegation = request.AllowSubDelegation,
                                         RoleInPlan = request.RoleInPlan,
                                         ActiveTask = request.ActiveTask,
+                                        CallerLlmSnapshot = request.CallerLlmSnapshot,
+                                        CallerVisionHelperRoute = request.CallerVisionHelperRoute,
                                     }, ct);
                                     skillResult = new SkillResult
                                     {
@@ -945,6 +948,7 @@ public sealed partial class AgentExecutionService
                                         Output = toolResult.Output ?? "",
                                         Error = toolResult.Error,
                                         ExitCode = toolResult.Success ? 0 : 1,
+                                        ContentParts = toolResult.ToolContentParts,
                                     };
                                 }
                                 else
@@ -1231,7 +1235,8 @@ public sealed partial class AgentExecutionService
                             _logger,
                             ct);
 
-                        toolRoundMessages.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: call.Id));
+                        toolRoundMessages.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: call.Id,
+                            ContentParts: skillResult.ContentParts));
 
                         _journal.Record(request.SessionId, new TurnRecord
                         {

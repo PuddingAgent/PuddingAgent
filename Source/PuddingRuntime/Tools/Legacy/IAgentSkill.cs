@@ -41,4 +41,6 @@ public sealed record SkillResult
     public string? Error { get; init; }
     public int ExitCode { get; init; }
     public Dictionary<string, object>? Metadata { get; init; }
+    /// <summary>typed 富内容部件（ADR-077）：工具返回的图片引用，随工具消息进入 LLM 历史。</summary>
+    public IReadOnlyList<PuddingCode.Models.LlmContentPart>? ContentParts { get; init; }
 }

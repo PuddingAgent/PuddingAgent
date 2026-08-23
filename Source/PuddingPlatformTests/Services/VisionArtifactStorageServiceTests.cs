@@ -14,7 +14,9 @@ public sealed class VisionArtifactStorageServiceTests
         var service = new VisionArtifactStorageService(
             PuddingDataPaths.FromRoot(root),
             NullLogger<VisionArtifactStorageService>.Instance);
-        await using var stream = new MemoryStream([1, 2, 3, 4]);
+        // ADR-077：以 magic bytes 与结构字段为准；客户端声明 MIME/尺寸不参与事实。
+        var png = VisionTestImages.MinimalPng();
+        await using var stream = new MemoryStream(png);
 
         var saved = await service.SaveAsync(
             "default",
@@ -25,20 +27,20 @@ public sealed class VisionArtifactStorageServiceTests
             capturedAt: 1234);
 
         StringAssert.StartsWith(saved.ArtifactId, "vision-");
-        Assert.AreEqual("image/jpeg", saved.MimeType);
-        Assert.AreEqual(640, saved.Width);
-        Assert.AreEqual(480, saved.Height);
+        Assert.AreEqual("image/png", saved.MimeType);
+        Assert.AreEqual(1, saved.Width);
+        Assert.AreEqual(1, saved.Height);
         Assert.AreEqual(1234, saved.CapturedAt);
 
         var resolved = await service.ResolveAsync("default", saved.ArtifactId);
 
         Assert.IsNotNull(resolved);
         Assert.AreEqual(saved.ArtifactId, resolved.ArtifactId);
-        Assert.AreEqual("image/jpeg", resolved.MimeType);
-        Assert.AreEqual(640, resolved.Width);
-        Assert.AreEqual(480, resolved.Height);
+        Assert.AreEqual("image/png", resolved.MimeType);
+        Assert.AreEqual(1, resolved.Width);
+        Assert.AreEqual(1, resolved.Height);
         Assert.AreEqual(1234, resolved.CapturedAt);
-        Assert.AreEqual("data:image/jpeg;base64,AQIDBA==", resolved.Uri);
+        Assert.AreEqual($"data:image/png;base64,{Convert.ToBase64String(png)}", resolved.Uri);
 
         var localFile = await service.ResolveLocalFileAsync("default", saved.ArtifactId);
         Assert.IsNotNull(localFile);
@@ -84,8 +86,9 @@ public sealed class VisionArtifactStorageServiceTests
             PuddingDataPaths.FromRoot(root),
             NullLogger<VisionArtifactStorageService>.Instance);
         const string artifactId = "vision-0123456789abcdef0123456789abcdef";
-        await using var first = new MemoryStream([1, 2, 3]);
-        await using var retry = new MemoryStream([9, 9, 9]);
+        var png = VisionTestImages.MinimalPng();
+        await using var first = new MemoryStream(png);
+        await using var retry = new MemoryStream(png);
 
         var saved = await service.SaveIdempotentAsync(
             "default",
@@ -105,7 +108,7 @@ public sealed class VisionArtifactStorageServiceTests
         Assert.AreEqual(1234, reused.CapturedAt);
         var resolved = await service.ResolveAsync("default", artifactId);
         Assert.IsNotNull(resolved);
-        Assert.AreEqual("data:image/png;base64,AQID", resolved.Uri);
+        Assert.AreEqual($"data:image/png;base64,{Convert.ToBase64String(png)}", resolved.Uri);
     }
 
     private static string CreateTempRoot()

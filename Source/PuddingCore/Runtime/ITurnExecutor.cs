@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PuddingCode.Models;
 using PuddingCode.Platform;
 
 namespace PuddingCode.Runtime;
@@ -44,7 +45,10 @@ public sealed record TurnExecutionContext(
     string? UserExternalId,
     RunCancellation RunCancellation,
     IReadOnlyList<string>? VisualArtifactIds,
-    IReadOnlyList<string>? AudioArtifactIds
+    IReadOnlyList<string>? AudioArtifactIds,
+    IReadOnlyList<LlmContentPart>? ContentParts = null,
+    LlmRouteSnapshot? CallerLlmSnapshot = null,
+    VisionHelperRouteSnapshot? CallerVisionHelperRoute = null
 )
 {
     /// <summary>P0-4f-2: 稳定 trace_id — 从 command 显式透传至 journal（可空）。</summary>

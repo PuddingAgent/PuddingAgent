@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
@@ -62,8 +63,11 @@ public sealed class ConversationAcceptanceStore(
             var agentIds = request.Recipients.AgentIds
                 ?? throw new InvalidOperationException(
                     "Validated turn acceptance requires explicit agent IDs.");
-            var textContent = request.Content
-                .FirstOrDefault(c => c.Type == "text")?.Text ?? "";
+            // ADR-077 §4.2：Content 为全部 text part 的稳定拼接投影；ContentPartsJson 才是多模态 canonical fact。
+            var contentParts = ConversationContentValidator.ToLlmContentParts(
+                request.Content,
+                out var textContent);
+            var contentPartsJson = contentParts is null ? null : ContentPartsEnvelope.Encode(contentParts);
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             // 2a: 用户消息
@@ -77,6 +81,7 @@ public sealed class ConversationAcceptanceStore(
                 UserId = userId,
                 CreatedAt = now,
                 MetadataJson = SerializeMetadata(request.Metadata),
+                ContentPartsJson = contentPartsJson,
             };
             db.ChatMessages.Add(message);
 
@@ -130,6 +135,19 @@ public sealed class ConversationAcceptanceStore(
             {
                 var seq = headSeq + i + 1;
                 var cmd = commands[i];
+                // ADR-077 §4.2：事件消费者需要立即显示附件时，只携带 type/artifactId/detail 安全摘要，
+                // 不携带字节、路径或 Provider file_id。
+                object? attachments = contentParts is null
+                    ? null
+                    : contentParts
+                        .OfType<PuddingCode.Models.LlmImagePart>()
+                        .Select(image => new
+                        {
+                            type = "image",
+                            artifactId = image.ArtifactId,
+                            detail = image.Detail,
+                        })
+                        .ToArray();
                 var payload = JsonSerializer.SerializeToElement(new
                 {
                     batchId,
@@ -139,6 +157,7 @@ public sealed class ConversationAcceptanceStore(
                     userMessageId = request.ClientMessageId,
                     clientRequestId = request.ClientRequestId,
                     agentId = cmd.AgentInstanceId,
+                    attachments,
                     metadata = request.Metadata?.ToDictionary(kv => kv.Key, kv => (object)kv.Value),
                 }, JsonOpts);
 

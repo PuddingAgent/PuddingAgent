@@ -10,7 +10,7 @@
 | `PuddingHostAssemblyMarker.cs` | 程序集标记 |
 | `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册；包含 MOA、V2 component registry/compiler、SQLite store/signal、Admin 手动 Run/HTTP Hook command service、SubAgent/图片生成/展示 executor、临时子代理目录两阶段 GC、hosted worker 与 replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工具同生命周期，服务内部每次调用通过 DbContextFactory 创建独立 DbContext；不能只在未被产品入口调用的 Runtime 扩展里注册 worker |
 | `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册；assembly scan 自动发现的新工具，其构造依赖也必须在这里注册（例如 `SavePreferenceTool` → `IUserPreferenceService`） |
-| `Tools/ImageReaderTool.cs` | Agent 图片复查工具；首选 manifest 的 `imageReaderModel`，失败时仅降级到具备 `vision` 的 Agent 主模型，不使用全局 vision 排序；文本模型附件预观察同样消费该字段 |
+| `Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs` | ADR-077 V2 取图工具：`path` 唯一必填（http(s) URL/宿主绝对路径/`artifact://`）；High 权限 ReadOnly\|RequiresNetwork；`mode=auto\|native\|delegate`——auto 优先 typed 图片工具结果回交具备 vision 的调用模型（零辅助 invocation），文本模型或显式 delegate 用 manifest `visionHelperModel` 单次可归因 invocation；URL 有界下载每跳 SSRF 重校验（禁内网）、本地只读、内容哈希稳定 `vision-*` Artifact；错误走 ADR-077 §9.1 稳定码 |
 | `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库初始化；包含 AppUsers 头像字段及通用编排 SQLite schema bootstrap，已有数据库也必须幂等升级 |
 | `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理；固定语义白名单、服务端预览、批量删除、checkpoint/VACUUM |
 | `Controllers/StorageManagementController.cs` | `/api/admin/storage/databases` 分析、清理预览与执行 API |

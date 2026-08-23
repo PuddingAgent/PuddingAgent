@@ -113,6 +113,7 @@ public sealed class AgentConversationProjectionService(
                 m.Content,
                 m.TurnId,
                 m.MetadataJson,
+                m.ContentPartsJson,
                 m.CreatedAt))
             .ToListAsync(ct);
         messageRows.Reverse();
@@ -551,8 +552,25 @@ public sealed class AgentConversationProjectionService(
             MessageType = messageType,
             LlmRole = message.Role,
             Metadata = ParseMetadataJson(message.MetadataJson),
+            ContentParts = ProjectContentParts(message.ContentPartsJson),
             ProcessSummary = completedProcess?.Summary,
         };
+    }
+
+    /// <summary>ADR-077：从 canonical 信封恢复只含 type/artifactId/detail 的安全摘要。</summary>
+    private static IReadOnlyList<ConversationContentPartView>? ProjectContentParts(string? contentPartsJson)
+    {
+        var parts = ContentPartsEnvelope.Decode(contentPartsJson);
+        return parts is null
+            ? null
+            : parts
+                .Select(part => part switch
+                {
+                    LlmTextPart => new ConversationContentPartView("text", null, null),
+                    LlmImagePart image => new ConversationContentPartView("image", image.ArtifactId, image.Detail),
+                    _ => new ConversationContentPartView("text", null, null),
+                })
+                .ToList();
     }
 
     private static PuddingMessageMetadata? ParsePuddingMessageMetadata(AgentContextEnvelope? envelope)
@@ -844,6 +862,7 @@ public sealed class AgentConversationProjectionService(
         string Content,
         string? TurnId,
         string? MetadataJson,
+        string? ContentPartsJson,
         long CreatedAt);
 
     private sealed record MessageProcessEvent(

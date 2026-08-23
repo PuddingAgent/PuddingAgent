@@ -9,11 +9,15 @@ namespace PuddingPlatform.Services.Snapshot;
 /// ADR-059: Agent Execution Snapshot Factory — 组装 Agent/Template/LLM/Skill 配置为不可变快照。
 /// 快照只消费统一解析后的 AgentRuntimeProfile，不自行读取 Agent、模板、Provider 或 Skill 存储。
 /// 哈希输入显式排除 LLM 密钥与 Skill 下载地址。
+/// ADR-077 §4.3：冻结主模型 Protocol/CapabilityTags/VisionPolicy 与可选 VisionHelperRoute；
+/// Coordinator 与 Image Reader 消费同一判定，不再各自读取可热变的模型目录。
 /// </summary>
 public sealed class AgentExecutionSnapshotFactory(
-    ILogger<AgentExecutionSnapshotFactory> logger) : IAgentExecutionSnapshotFactory
+    ILogger<AgentExecutionSnapshotFactory> logger,
+    ILlmConfigService? llmConfigService = null,
+    ILlmResolver? llmResolver = null) : IAgentExecutionSnapshotFactory
 {
-    public Task<AgentExecutionSnapshot> CreateAsync(
+    public async Task<AgentExecutionSnapshot> CreateAsync(
         AgentRuntimeProfile profile,
         AgentExecutionSnapshot? previousSnapshot, CancellationToken ct)
     {
@@ -21,7 +25,7 @@ public sealed class AgentExecutionSnapshotFactory(
         {
             logger.LogDebug("[SnapshotFactory] Reusing previous snapshot {SnapshotId}",
                 previousSnapshot.SnapshotId);
-            return Task.FromResult(previousSnapshot);
+            return previousSnapshot;
         }
 
         var toolReferences = profile.ToolDefinitions?
@@ -30,6 +34,33 @@ public sealed class AgentExecutionSnapshotFactory(
         var skillReferences = profile.SkillPackages?
             .Select(skill => new SnapshotSkillRef(skill.SkillPackageId, Revision: 0))
             .ToArray();
+
+        var modelInfo = llmConfigService?.GetAllModels().FirstOrDefault(model =>
+            string.Equals(model.ProviderId, profile.PreferredProviderId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(model.ModelId, profile.PreferredModelId, StringComparison.OrdinalIgnoreCase));
+        var capabilityTags = modelInfo?.CapabilityTags?.ToList();
+        var protocol = modelInfo?.Protocol;
+
+        VisionHelperRouteSnapshot? visionHelperRoute = null;
+        if (llmResolver is not null && !string.IsNullOrWhiteSpace(profile.VisionHelperModel))
+        {
+            try
+            {
+                // requiredCapabilityTags 保证 helper 路由具备 vision；解析失败保持 null（delegate 时 fail closed）。
+                var route = await llmResolver.ResolveRouteAsync(profile.VisionHelperModel, ["vision"], ct);
+                visionHelperRoute = new VisionHelperRouteSnapshot(
+                    route.ProviderId,
+                    route.ModelId,
+                    ["vision"]);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "[SnapshotFactory] visionHelperModel route failed to resolve; image_reader delegate mode will fail closed");
+            }
+        }
+
         var hashInput = JsonSerializer.SerializeToUtf8Bytes(new
         {
             profile.WorkspaceId,
@@ -49,6 +80,11 @@ public sealed class AgentExecutionSnapshotFactory(
             skills = profile.SkillPackages?
                 .Select(skill => new { skill.SkillPackageId, skill.Version })
                 .OrderBy(skill => skill.SkillPackageId),
+            capabilityTags = capabilityTags is null ? null : capabilityTags.OrderBy(tag => tag),
+            protocol,
+            visionHelperRoute = visionHelperRoute is null
+                ? null
+                : new { visionHelperRoute.ProviderId, visionHelperRoute.ModelId },
         });
         var snapshotHash = $"sha256:{Convert.ToHexString(SHA256.HashData(hashInput)).ToLowerInvariant()}";
 
@@ -75,12 +111,20 @@ public sealed class AgentExecutionSnapshotFactory(
             Timeout: profile.MaxElapsedSeconds is > 0
                 ? TimeSpan.FromSeconds(profile.MaxElapsedSeconds.Value)
                 : null,
-            CreatedAt: DateTimeOffset.UtcNow);
+            CreatedAt: DateTimeOffset.UtcNow,
+            CapabilityTags: capabilityTags,
+            Protocol: protocol,
+            VisionPolicy: PuddingCode.Core.VisionRequestPolicy.Default,
+            VisionHelperRoute: visionHelperRoute);
 
-        logger.LogInformation("[SnapshotFactory] Created snapshot={SnapshotId} agent={AgentId}",
-            snapshot.SnapshotId, profile.AgentId);
+        logger.LogInformation(
+            "[SnapshotFactory] Created snapshot={SnapshotId} agent={AgentId} vision={Vision} protocol={Protocol}",
+            snapshot.SnapshotId,
+            profile.AgentId,
+            snapshot.SupportsVision ? 1 : 0,
+            string.IsNullOrWhiteSpace(protocol) ? "unknown" : protocol);
 
-        return Task.FromResult(snapshot);
+        return snapshot;
     }
 
     public Task<AgentExecutionSnapshot?> FindByIdAsync(string snapshotId, CancellationToken ct)

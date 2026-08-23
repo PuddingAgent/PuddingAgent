@@ -217,6 +217,8 @@ public sealed class SessionRouter
             AssignedObjective = GetMetadataValue(request.Metadata, "assigned_objective", "assignedObjective", "AssignedObjective"),
                         ExpectedOutputContract = GetMetadataValue(request.Metadata, "expected_output_contract", "expectedOutputContract", "ExpectedOutputContract"),
             VisualArtifactIds = GetMetadataList(request.Metadata, "vision_artifact_id", "visionArtifactId", "VisionArtifactId"),
+            // ADR-077：ingress metadata 中的视觉附件在此归一为 typed parts（detail 默认 original）。
+            ContentParts = BuildImageContentParts(GetMetadataList(request.Metadata, "vision_artifact_id", "visionArtifactId", "VisionArtifactId")),
         };
 
         _logger.LogInformation(
@@ -433,6 +435,8 @@ public sealed class SessionRouter
             AssignedObjective = GetMetadataValue(request.Metadata, "assigned_objective", "assignedObjective", "AssignedObjective"),
                         ExpectedOutputContract = GetMetadataValue(request.Metadata, "expected_output_contract", "expectedOutputContract", "ExpectedOutputContract"),
             VisualArtifactIds = GetMetadataList(request.Metadata, "vision_artifact_id", "visionArtifactId", "VisionArtifactId"),
+            // ADR-077：ingress metadata 中的视觉附件在此归一为 typed parts（detail 默认 original）。
+            ContentParts = BuildImageContentParts(GetMetadataList(request.Metadata, "vision_artifact_id", "visionArtifactId", "VisionArtifactId")),
         };
 
         _logger.LogInformation(
@@ -527,6 +531,13 @@ public sealed class SessionRouter
 
         private static int? GetMetadataInt(IReadOnlyDictionary<string, string>? metadata, params string[] keys)
         => int.TryParse(GetMetadataValue(metadata, keys), out var value) ? value : null;
+
+
+    private static IReadOnlyList<PuddingCode.Models.LlmContentPart>? BuildImageContentParts(
+        IReadOnlyList<string>? artifactIds)
+        => artifactIds is { Count: > 0 }
+            ? artifactIds.Select(id => new PuddingCode.Models.LlmImagePart(id)).ToList()
+            : null;
 
     private static IReadOnlyList<string>? GetMetadataList(IReadOnlyDictionary<string, string>? metadata, params string[] keys)
     {

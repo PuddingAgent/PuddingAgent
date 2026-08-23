@@ -41,8 +41,15 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
         string? CommandId,
         string? SourceType,
         string? SourceId,
-        string? SourceName
+        string? SourceName,
+        List<ChatContentPartDto>? ContentParts = null
     );
+
+    /// <summary>ADR-077：回放用内容部件安全摘要（type/artifactId/detail，不含字节/路径）。</summary>
+    public record ChatContentPartDto(
+        string Type,
+        string? ArtifactId = null,
+        string? Detail = null);
 
     public record ThinkingChunkDto(
         string Text,
@@ -242,8 +249,22 @@ public class MessageApiController(PlatformDbContext db, IChatMessageRepository m
             m.CommandId,
             source?.SourceType,
             source?.SourceId,
-            source?.SourceName
+            source?.SourceName,
+            ProjectContentParts(m.ContentPartsJson)
         );
+    }
+
+    /// <summary>ADR-077：从 canonical 信封恢复回放用安全摘要。</summary>
+    private static List<ChatContentPartDto>? ProjectContentParts(string? contentPartsJson)
+    {
+        var parts = ContentPartsEnvelope.Decode(contentPartsJson);
+        return parts is null
+            ? null
+            : parts.Select(part => part switch
+            {
+                LlmImagePart image => new ChatContentPartDto("image", image.ArtifactId, image.Detail),
+                _ => new ChatContentPartDto("text"),
+            }).ToList();
     }
 
     private static MessageSourceMetadata? ParseSourceMetadata(string? metadataJson)

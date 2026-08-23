@@ -276,6 +276,8 @@ public record WorkspaceAgentDto(
     string? DeveloperModel = null,
     string? DeployerModel = null,
     string? TesterModel = null,
+    /// <summary>ADR-077：可选视觉辅助模型（仅 image_reader delegate 模式），格式 providerId/modelId。</summary>
+    string? VisionHelperModel = null,
     // ── Markdown 文件内容（仅在 GetAgentAsync 中填充）──
     string? SoulMdContent = null,
     string? AgentsMdContent = null,
@@ -325,7 +327,9 @@ public record CreateWorkspaceAgentRequest(
     string? ReviewerModel = null,
     string? DeveloperModel = null,
     string? DeployerModel = null,
-    string? TesterModel = null
+    string? TesterModel = null,
+    /// <summary>ADR-077：可选视觉辅助模型（仅 image_reader delegate 模式），格式 providerId/modelId。</summary>
+    string? VisionHelperModel = null
 );
 
 public record UpdateWorkspaceAgentRequest(
@@ -369,6 +373,8 @@ public record UpdateWorkspaceAgentRequest(
     string? DeveloperModel = null,
     string? DeployerModel = null,
     string? TesterModel = null,
+    /// <summary>ADR-077：可选视觉辅助模型（仅 image_reader delegate 模式），格式 providerId/modelId。</summary>
+    string? VisionHelperModel = null,
     // ── Markdown 文件内容（不传则保留原文件）──
     string? SoulMdContent = null,
     string? AgentsMdContent = null,

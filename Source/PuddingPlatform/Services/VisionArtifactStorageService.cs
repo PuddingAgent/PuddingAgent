@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using PuddingCode.Configuration;
+using PuddingCode.Core;
 
 namespace PuddingPlatform.Services;
 
@@ -125,7 +127,7 @@ public sealed partial class VisionArtifactStorageService(
         string workspaceId,
         string artifactId,
         Stream content,
-        string normalizedMime,
+        string declaredMime,
         int? width,
         int? height,
         long? capturedAt,
@@ -133,15 +135,19 @@ public sealed partial class VisionArtifactStorageService(
     {
         var storedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var effectiveCapturedAt = capturedAt ?? storedAt;
-        var ext = ExtensionForMime(normalizedMime);
         var root = WorkspaceVisionRoot(workspaceId);
         Directory.CreateDirectory(root);
 
-        var bytesPath = Path.Combine(root, $"{artifactId}{ext}");
-        var metadataPath = Path.Combine(root, $"{artifactId}.json");
+        var prefixLength = VisionImageInspector.HeaderPrefixLength;
+        var prefix = new byte[prefixLength];
+        var prefixFilled = 0;
+        long totalBytes = 0;
+        using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+
+        var bytesPathPlaceholder = Path.Combine(root, artifactId);
         var tempSuffix = $".tmp-{Guid.NewGuid():N}";
-        var tempBytesPath = bytesPath + tempSuffix;
-        var tempMetadataPath = metadataPath + tempSuffix;
+        var tempBytesPath = bytesPathPlaceholder + tempSuffix;
+        string? tempMetadataPath = null;
 
         try
         {
@@ -153,18 +159,55 @@ public sealed partial class VisionArtifactStorageService(
                 bufferSize: 81_920,
                 FileOptions.Asynchronous | FileOptions.WriteThrough))
             {
-                await content.CopyToAsync(file, ct);
+                var buffer = new byte[81_920];
+                int read;
+                while ((read = await content.ReadAsync(buffer, ct)) > 0)
+                {
+                    totalBytes += read;
+                    if (totalBytes > VisionImageInspector.MaxCanonicalImageBytes)
+                        throw new VisionPipelineException(
+                            VisionErrorCodes.RequestLimitExceeded,
+                            $"Image exceeds the {VisionImageInspector.MaxCanonicalImageBytes} byte canonical artifact limit.");
+
+                    sha.AppendData(buffer, 0, read);
+                    if (prefixFilled < prefixLength)
+                    {
+                        var copy = Math.Min(read, prefixLength - prefixFilled);
+                        Buffer.BlockCopy(buffer, 0, prefix, prefixFilled, copy);
+                        prefixFilled += copy;
+                    }
+
+                    await file.WriteAsync(buffer.AsMemory(0, read), ct);
+                }
+
                 await file.FlushAsync(ct);
             }
 
+            // ADR-077 §5.1/§8.2：以 magic bytes 与结构字段为准，不信任声明 MIME/尺寸。
+            var header = VisionImageInspector.InspectPrefix(prefix.AsSpan(0, prefixFilled));
+            if (header is null)
+                throw new VisionPipelineException(
+                    VisionErrorCodes.MediaInvalid,
+                    $"Image artifact {artifactId} has an unsupported signature, truncated data, or dimensions beyond " +
+                    $"{VisionImageInspector.MaxImageEdgePixels}px; declared MIME was '{declaredMime}'.");
+
+            var sha256Hex = Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
+            var actualMime = header.MimeType;
+            var ext = ExtensionForMime(actualMime);
+            var bytesPath = bytesPathPlaceholder + ext;
+            var metadataPath = Path.Combine(root, $"{artifactId}.json");
+            tempMetadataPath = metadataPath + tempSuffix;
+
             var metadata = new VisionArtifactMetadata(
                 artifactId,
-                normalizedMime,
+                actualMime,
                 Path.GetFileName(bytesPath),
-                width,
-                height,
+                header.Width,
+                header.Height,
                 effectiveCapturedAt,
-                storedAt);
+                storedAt,
+                sha256Hex,
+                totalBytes);
             await File.WriteAllTextAsync(
                 tempMetadataPath,
                 JsonSerializer.Serialize(metadata, JsonOptions),
@@ -172,27 +215,31 @@ public sealed partial class VisionArtifactStorageService(
 
             File.Move(tempBytesPath, bytesPath, overwrite: true);
             File.Move(tempMetadataPath, metadataPath, overwrite: true);
+            tempMetadataPath = null;
+
+            logger.LogInformation(
+                "[VisionArtifact] Stored workspace={WorkspaceId} artifact={ArtifactId} mime={MimeType} bytes={Bytes} dims={Width}x{Height}",
+                workspaceId,
+                artifactId,
+                actualMime,
+                totalBytes,
+                header.Width,
+                header.Height);
+
+            return new VisionArtifactUploadResult(
+                artifactId,
+                actualMime,
+                header.Width,
+                header.Height,
+                effectiveCapturedAt);
         }
         finally
         {
             if (File.Exists(tempBytesPath))
                 File.Delete(tempBytesPath);
-            if (File.Exists(tempMetadataPath))
+            if (tempMetadataPath is not null && File.Exists(tempMetadataPath))
                 File.Delete(tempMetadataPath);
         }
-
-        logger.LogInformation(
-            "[VisionArtifact] Stored workspace={WorkspaceId} artifact={ArtifactId} mime={MimeType}",
-            workspaceId,
-            artifactId,
-            normalizedMime);
-
-        return new VisionArtifactUploadResult(
-            artifactId,
-            normalizedMime,
-            width,
-            height,
-            effectiveCapturedAt);
     }
 
     public async Task<VisualArtifactReference?> ResolveAsync(
@@ -298,7 +345,9 @@ public sealed partial class VisionArtifactStorageService(
         int? Width,
         int? Height,
         long CapturedAt,
-        long StoredAt);
+        long StoredAt,
+        string? Sha256 = null,
+        long? Bytes = null);
 
     [GeneratedRegex("^vision-[a-f0-9]{32}$", RegexOptions.Compiled)]
     private static partial Regex ArtifactIdRegex();

@@ -453,10 +453,11 @@ public sealed record AgentInstanceManifest
     public string? TesterModel { get; init; }
 
     /// <summary>
-    /// image_reader 专用模型路由，格式为 providerId/modelId。
-    /// 未配置时不从全局 vision 模型池隐式选择。
+    /// 可选视觉辅助模型路由（ADR-077），格式为 providerId/modelId。
+    /// 只供 image_reader 的 delegate 模式（文本主模型附件或显式第二意见）使用，
+    /// 不代表 Image Reader 的默认执行模型；未配置时不从全局 vision 模型池隐式选择。
     /// </summary>
-    public string? ImageReaderModel { get; init; }
+    public string? VisionHelperModel { get; init; }
 
     // ── Markdown 文件引用（相对于实例根目录的文件名，如 "SOUL.md"）──
     public string? SoulMdFile { get; init; }

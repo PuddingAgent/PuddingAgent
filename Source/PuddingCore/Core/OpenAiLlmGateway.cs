@@ -22,6 +22,8 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
 
     /// <summary>Vision artifact resolver — injected by the runtime before each call. Set after construction.</summary>
     public IVisualArtifactResolver? VisualArtifactResolver { get; set; }
+    /// <summary>图片请求预算（ADR-077）；由 DirectLlmClient 按快照策略注入，默认产品上限。</summary>
+    public VisionRequestPolicy? VisionPolicy { get; set; }
 
     /// <summary>Audio artifact resolver — injected only for models tagged with the audio capability.</summary>
     public IAudioArtifactResolver? AudioArtifactResolver { get; set; }
@@ -308,27 +310,37 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
                 }
             };
 
+            // ADR-077：Chat Completions 协议不支持图片型工具结果；不得伪装成 user message 绕过协议。
+            if (msg.Role == ChatRole.Tool
+                && ChatMessageMultimodalNormalizer.GetImageParts(msg).Count > 0)
+            {
+                throw new VisionPipelineException(
+                    VisionErrorCodes.ToolOutputNotSupported,
+                    "This route uses the Chat Completions protocol, which cannot carry image tool results; " +
+                    "use mode=delegate or a responses-protocol route.");
+            }
+
             if (msg.Content is not null)
             {
                 // ── Provider-authorized multimodal content ──
+                var imageParts = ChatMessageMultimodalNormalizer.GetImageParts(msg);
                 if (msg.Role == ChatRole.User
-                    && ((msg.VisualArtifactIds is { Count: > 0 }
-                         && VisualArtifactResolver is not null)
-                        || (msg.AudioArtifactIds is { Count: > 0 }
-                            && AudioArtifactResolver is not null))
+                    && imageParts.Count > 0
+                    && VisualArtifactResolver is not null
                     && !string.IsNullOrWhiteSpace(WorkspaceId))
                 {
-                    var multimodalContent = await BuildMultimodalContentArrayAsync(
-                        msg,
-                        ct);
-                    if (multimodalContent is not null)
-                    {
-                        msgObj["content"] = multimodalContent;
-                    }
-                    else
-                    {
-                        msgObj["content"] = msg.Content;
-                    }
+                    // ADR-077 §5.5：无视觉解析通道 = 文本路由，图片部件不进入请求；
+                    // 有解析通道而失败由 Planner fail closed。
+                    msgObj["content"] = await BuildMultimodalContentArrayAsync(msg, imageParts, ct)
+                        ?? (JsonNode?)msg.Content;
+                }
+                else if (msg.Role == ChatRole.User
+                         && msg.AudioArtifactIds is { Count: > 0 }
+                         && AudioArtifactResolver is not null
+                         && !string.IsNullOrWhiteSpace(WorkspaceId))
+                {
+                    msgObj["content"] = await BuildMultimodalContentArrayAsync(msg, [], ct)
+                        ?? (JsonNode?)msg.Content;
                 }
                 else
                 {
@@ -467,10 +479,12 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
 
     /// <summary>
     /// Build an OpenAI-compatible multimodal content array for a user message.
-    /// Returns null when resolution fails for all artifacts.
+    /// Vision parts resolve through the fail-closed planner (ADR-077); audio keeps its
+    /// per-artifact tolerant path.
     /// </summary>
     private async Task<JsonArray?> BuildMultimodalContentArrayAsync(
         ChatMessage msg,
+        IReadOnlyList<LlmImagePart> imageParts,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(WorkspaceId))
@@ -479,35 +493,28 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         var content = new JsonArray();
         var resolvedAny = false;
 
-        if (msg.VisualArtifactIds is { Count: > 0 }
-            && VisualArtifactResolver is not null)
+        if (imageParts.Count > 0 && VisualArtifactResolver is not null)
         {
-            foreach (var artifactId in msg.VisualArtifactIds)
+            var plan = await LlmVisualInputPlanner.PlanAsync(
+                WorkspaceId!,
+                imageParts,
+                VisualArtifactResolver,
+                VisionPolicy,
+                ct);
+            foreach (var image in plan.Images)
             {
-                try
+                content.Add(new JsonObject
                 {
-                    var resolved = await VisualArtifactResolver.ResolveAsync(
-                        WorkspaceId!,
-                        artifactId,
-                        ct);
-                    if (resolved is not null)
+                    ["type"] = "image_url",
+                    ["image_url"] = new JsonObject
                     {
-                        content.Add(new JsonObject
-                        {
-                            ["type"] = "image_url",
-                            ["image_url"] = new JsonObject
-                            {
-                                ["url"] = resolved.DataUri,
-                            },
-                        });
-                        resolvedAny = true;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine(
-                        $"[OpenAiLlmGateway] Failed to resolve vision artifact '{artifactId}': {ex.Message}");
-                }
+                        ["url"] = image.DataUri,
+                        ["detail"] = string.Equals(image.Detail, VisionContentPartDetails.Low, StringComparison.Ordinal)
+                            ? "low"
+                            : "high",
+                    },
+                });
+                resolvedAny = true;
             }
         }
 

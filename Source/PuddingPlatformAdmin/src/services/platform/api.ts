@@ -227,6 +227,8 @@ export interface ChatMessageDto {
   sourceId?: string | null;
   sourceName?: string | null;
   metadata?: Record<string, string> | null;
+  /** ADR-077：服务端 authoritative 内容部件安全摘要（回放图片用）。 */
+  contentParts?: ConversationContentPartView[] | null;
 }
 
 export interface ThinkingChunkDto {
@@ -1613,6 +1615,8 @@ export interface WorkspaceAgentDto {
   developerModel?: string;
   deployerModel?: string;
   testerModel?: string;
+  /** ADR-077：可选视觉辅助模型（仅 image_reader delegate 模式），providerId/modelId */
+  visionHelperModel?: string;
   // Markdown 文件内容
   soulMdContent?: string;
   agentsMdContent?: string;
@@ -1662,6 +1666,8 @@ export interface CreateWorkspaceAgentRequest {
   developerModel?: string;
   deployerModel?: string;
   testerModel?: string;
+  /** ADR-077：可选视觉辅助模型（仅 image_reader delegate 模式），providerId/modelId */
+  visionHelperModel?: string;
 }
 
 export interface UpdateWorkspaceAgentRequest {
@@ -1704,6 +1710,8 @@ export interface UpdateWorkspaceAgentRequest {
   developerModel?: string;
   deployerModel?: string;
   testerModel?: string;
+  /** ADR-077：可选视觉辅助模型（仅 image_reader delegate 模式），providerId/modelId */
+  visionHelperModel?: string;
   soulMdContent?: string;
   agentsMdContent?: string;
   toolsMdContent?: string;
@@ -2590,9 +2598,15 @@ export interface ConversationRecipientRequest {
   agentIds: string[];
 }
 
-export interface ConversationContentPart {
-  type: 'text';
-  text: string;
+export type ConversationContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; artifactId: string; detail?: 'original' | 'low' };
+
+/** ADR-077：服务端 authoritative 内容部件安全摘要（回放用，不含字节/路径）。 */
+export interface ConversationContentPartView {
+  type: string;
+  artifactId?: string | null;
+  detail?: string | null;
 }
 
 export interface SubmitConversationTurnRequest {

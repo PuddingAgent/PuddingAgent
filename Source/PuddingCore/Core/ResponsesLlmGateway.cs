@@ -18,6 +18,8 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
     public IVisualArtifactResolver? VisualArtifactResolver { get; set; }
     public IAudioArtifactResolver? AudioArtifactResolver { get; set; }
     public string? WorkspaceId { get; set; }
+    /// <summary>图片请求预算（ADR-077）；由 DirectLlmClient 按快照策略注入，默认产品上限。</summary>
+    public VisionRequestPolicy? VisionPolicy { get; set; }
 
     public ResponsesLlmGateway(HttpClient httpClient, PlatformLlmOptions options)
         : this(httpClient, new LlmOptions(
@@ -215,11 +217,36 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             if (string.IsNullOrWhiteSpace(message.ToolCallId))
                 throw new InvalidOperationException("Responses function_call_output requires a non-empty call_id.");
 
+            var toolImageParts = ChatMessageMultimodalNormalizer.GetImageParts(message);
+            JsonNode outputNode;
+            if (toolImageParts.Count > 0)
+            {
+                // DeepSeek Responses 官方合同允许 input_image 出现在 function_call_output.output。
+                // 只有明确支持图片型工具结果的协议才走该分支；不支持协议由各自 Gateway fail closed。
+                var outputParts = new JsonArray();
+                if (!string.IsNullOrWhiteSpace(message.Content))
+                    outputParts.Add(new JsonObject
+                    {
+                        ["type"] = "input_text",
+                        ["text"] = message.Content,
+                    });
+
+                var plan = await PlanVisualInputsAsync(toolImageParts, ct);
+                foreach (var image in plan.Images)
+                    outputParts.Add(BuildInputImageNode(image));
+
+                outputNode = outputParts;
+            }
+            else
+            {
+                outputNode = JsonValue.Create(message.Content ?? string.Empty)!;
+            }
+
             input.Add(new JsonObject
             {
                 ["type"] = "function_call_output",
                 ["call_id"] = message.ToolCallId,
-                ["output"] = message.Content ?? string.Empty,
+                ["output"] = outputNode,
             });
             return;
         }
@@ -277,28 +304,14 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             });
         }
 
-        if (message.VisualArtifactIds is { Count: > 0 } && VisualArtifactResolver is not null)
+        var imageParts = ChatMessageMultimodalNormalizer.GetImageParts(message);
+        // ADR-077 §5.5：无视觉解析通道 = 文本路由；图片部件不进入请求（文本模型的附件
+        // 以消息正文 artifact:// 占位为准）。有解析通道而解析失败才由 Planner fail closed。
+        if (imageParts.Count > 0 && VisualArtifactResolver is not null)
         {
-            foreach (var artifactId in message.VisualArtifactIds)
-            {
-                try
-                {
-                    var resolved = await VisualArtifactResolver.ResolveAsync(WorkspaceId!, artifactId, ct);
-                    if (resolved is not null)
-                    {
-                        content.Add(new JsonObject
-                        {
-                            ["type"] = "input_image",
-                            ["image_url"] = resolved.DataUri,
-                        });
-                    }
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    Debug.WriteLine(
-                        $"[ResponsesLlmGateway] Failed to resolve vision artifact '{artifactId}': {exception.Message}");
-                }
-            }
+            var plan = await PlanVisualInputsAsync(imageParts, ct);
+            foreach (var image in plan.Images)
+                content.Add(BuildInputImageNode(image));
         }
 
         if (message.AudioArtifactIds is { Count: > 0 } && AudioArtifactResolver is not null)
@@ -333,6 +346,33 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             ? content
             : null;
     }
+
+    private async Task<VisualInputPlan> PlanVisualInputsAsync(
+        IReadOnlyList<LlmImagePart> imageParts,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(WorkspaceId) || VisualArtifactResolver is null)
+            throw new VisionPipelineException(
+                VisionErrorCodes.ModelCapabilityMismatch,
+                "Visual inputs require a workspace and a vision-capable route.");
+
+        return await LlmVisualInputPlanner.PlanAsync(
+            WorkspaceId!,
+            imageParts,
+            VisualArtifactResolver,
+            VisionPolicy,
+            ct);
+    }
+
+    /// <summary>canonical detail → DeepSeek Responses detail（original 等价 high）。</summary>
+    private static JsonObject BuildInputImageNode(PlannedVisualInput image) => new()
+    {
+        ["type"] = "input_image",
+        ["image_url"] = image.DataUri,
+        ["detail"] = string.Equals(image.Detail, VisionContentPartDetails.Low, StringComparison.Ordinal)
+            ? "low"
+            : "high",
+    };
 
     private static JsonNode BuildParametersNode(ITool tool)
     {

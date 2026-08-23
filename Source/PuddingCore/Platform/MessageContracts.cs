@@ -202,10 +202,19 @@ public sealed record RuntimeDispatchRequest
     /// 仅当本次执行是由 workspace_tasks 派发时非空；Task 工具以此为唯一事实源，禁止从 Transcript 猜测。
     /// </summary>
     public ActiveTaskRuntimeContext? ActiveTask { get; init; }
-    /// <summary>视觉附件 ID 列表，用于构建多模态请求（图片/视频）。</summary>
+    /// <summary>视觉附件 ID 列表（派生投影）。canonical 图片事实在 <see cref="ContentParts"/>。</summary>
     public IReadOnlyList<string>? VisualArtifactIds { get; init; }
     /// <summary>音频附件 ID 列表；仅声明 audio capability 的模型会收到原生音频内容。</summary>
     public IReadOnlyList<string>? AudioArtifactIds { get; init; }
+    /// <summary>
+    /// 有序 typed 内容部件（ADR-077 canonical）。图片只含 Workspace Artifact 引用；
+    /// 与所属 user turn 原子进入历史、工具轮次与裁剪，不依赖 metadata 拼接。
+    /// </summary>
+    public IReadOnlyList<PuddingCode.Models.LlmContentPart>? ContentParts { get; init; }
+    /// <summary>调用方模型的冻结 LLM 路由快照；工具经 ToolExecutionContext.CallerLlmSnapshot 消费。</summary>
+    public LlmRouteSnapshot? CallerLlmSnapshot { get; init; }
+    /// <summary>Agent 显式配置的视觉辅助路由（ADR-077）；仅 image_reader delegate 模式使用。</summary>
+    public VisionHelperRouteSnapshot? CallerVisionHelperRoute { get; init; }
     /// <summary>Agent Loop 最大轮数。子代理请求由 runtime.execution.json 冻结；0 或负数表示使用护栏默认值。</summary>
     public int MaxRounds { get; init; }
     /// <summary>Agent Loop 最大总耗时秒数。0 或负数表示使用平台护栏默认值。</summary>

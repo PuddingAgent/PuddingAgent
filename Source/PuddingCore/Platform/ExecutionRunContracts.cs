@@ -105,6 +105,32 @@ public sealed record TurnTerminal(
 }
 
 /// <summary>
+/// 冻结的 LLM 路由能力快照（ADR-077 §4.3）。Coordinator、Image Reader 与调用链
+/// 消费同一份快照，不再各自读取可热变的模型目录。
+/// </summary>
+public sealed record LlmRouteSnapshot(
+    string ProviderId,
+    string ModelId,
+    string? Protocol,
+    IReadOnlyList<string> CapabilityTags)
+{
+    public bool SupportsVision => CapabilityTags.Contains("vision", StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Agent 显式配置的视觉辅助路由（manifest visionHelperModel，仅 delegate 模式使用）。
+/// 不配置时 Image Reader 的 delegate/auto 路径返回 vision_helper_model_required，
+/// 不得从全局模型池猜选。
+/// </summary>
+public sealed record VisionHelperRouteSnapshot(
+    string ProviderId,
+    string ModelId,
+    IReadOnlyList<string> CapabilityTags)
+{
+    public bool SupportsVision => CapabilityTags.Contains("vision", StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
 /// Agent 执行快照 — Run 启动时由 SnapshotFactory 一次性生产。
 /// 快照不可变；同一 Turn 的重试复用第一次生成的快照。
 /// 快照不保存 API Key 等秘密；LlmConfig 内密钥在快照化前剥离。
@@ -130,7 +156,16 @@ public sealed record AgentExecutionSnapshot(
     int? BudgetMaxRounds,
     int? BudgetMaxToolCalls,
     TimeSpan? Timeout,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    IReadOnlyList<string>? CapabilityTags = null,
+    string? Protocol = null,
+    PuddingCode.Core.VisionRequestPolicy? VisionPolicy = null,
+    VisionHelperRouteSnapshot? VisionHelperRoute = null)
+{
+    /// <summary>主模型是否声明 vision；Coordinator/Image Reader 只消费该冻结判定。</summary>
+    public bool SupportsVision =>
+        CapabilityTags?.Contains("vision", StringComparer.OrdinalIgnoreCase) ?? false;
+}
 
 /// <summary>
 /// 快照内工具引用 — 只保存工具标识和版本，不保存完整实现。

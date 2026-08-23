@@ -90,6 +90,8 @@ public sealed class ToolInvocationService : IToolInvocationService
                 MaxDelegationDepth = request.MaxDelegationDepth,
                 AllowSubDelegation = request.AllowSubDelegation,
                 RoleInPlan = request.RoleInPlan,
+                CallerLlmSnapshot = request.CallerLlmSnapshot,
+                CallerVisionHelperRoute = request.CallerVisionHelperRoute,
                 CapabilityPolicy = request.CapabilityPolicy,
                 ExecutionIdentity = request.ExecutionIdentity is null
                     ? null
@@ -142,6 +144,7 @@ public sealed class ToolInvocationService : IToolInvocationService
                 DurationMs = durationMs,
                 ArgsHash = argsHash,
                 OutputLength = result.Output?.Length ?? 0,
+                ToolContentParts = result.ToolContentParts,
             };
         }
         catch (Exception ex)

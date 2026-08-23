@@ -18,7 +18,9 @@
 | 文件 | 用途 |
 |------|------|
 | `Services/ChatHistoryService.cs` | 聊天历史 |
-| `Services/ChatMessageRepository.cs` | 消息仓储 |
+| `Services/ChatMessageRepository.cs` | 消息仓储；ChatMessageRow 透传 `ContentPartsJson` canonical 信封 |
+| `Services/ChatMessageSchemaBootstrapper.cs` | 存量 SQLite 幂等补 `ChatMessages.content_parts_json` 列 |
+| `Services/AgentChat/ExecutionRunCoordinator.cs` | ADR-077：canonical parts + 冻结 Snapshot 判定 vision/文本占位；已删除自动预观察旁路，消息正文不再含本地绝对路径 |
 | `Services/ChatTranscriptWriter.cs` | 转录写入 |
 | `Services/ChatTelemetryRecorder.cs` | 遥测记录 |
 
@@ -132,7 +134,7 @@
 | 文件 | 用途 |
 |------|------|
 | `Services/ImageGenerationService.cs` | 图片生成 |
-| `Services/VisionArtifactStorageService.cs` | 视觉存储 |
+| `Services/VisionArtifactStorageService.cs` | 视觉存储；ADR-077：magic bytes/真实尺寸（PNG/JPEG/WebP 头部嗅探）、SHA-256 与字节数入 metadata、50MiB 上限、内容身份为准 |
 | `Services/VisualArtifactObservationService.cs` | 视觉观察 |
 | `Services/AudioArtifactStorageService.cs` | 音频存储 |
 | `Services/AudioTranscriptionService.cs` | 音频转录 |

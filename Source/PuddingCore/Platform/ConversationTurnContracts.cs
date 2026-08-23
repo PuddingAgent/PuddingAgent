@@ -1,19 +1,20 @@
 namespace PuddingCode.Platform;
 
 /// <summary>
-/// 用户消息内容片段 — 支持文本、图片、文件等多媒体类型。
-/// 替代 AdminChatRequest.MessageText 纯文本字段。
+/// 用户消息内容片段（ADR-077）。type=text 只接受 Text；type=image 只接受
+/// Workspace Artifact 引用 ArtifactId + 可选 Detail。客户端 Data URL、外部 URL、
+/// MIME 声明和本地路径都不是受控字段——图片必须先经 Artifact API 上传取得 artifactId。
 /// </summary>
 public sealed record ContentPart
 {
-    /// <summary>内容类型：text | image | file。</summary>
+    /// <summary>内容类型：text | image。</summary>
     public required string Type { get; init; }
-    /// <summary>文本内容（type=text 时必填）。</summary>
+    /// <summary>文本内容（type=text 时必填非空）。</summary>
     public string? Text { get; init; }
-    /// <summary>MIME 类型（type=image/file 时）。</summary>
-    public string? MimeType { get; init; }
-    /// <summary>数据 URL 或 base64 payload（type=image/file 时）。</summary>
-    public string? DataUrl { get; init; }
+    /// <summary>Workspace vision Artifact 引用（type=image 时必填，格式 vision-&lt;32hex&gt;）。</summary>
+    public string? ArtifactId { get; init; }
+    /// <summary>图片 detail：original（默认）| low。</summary>
+    public string? Detail { get; init; }
 }
 
 /// <summary>

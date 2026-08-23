@@ -190,6 +190,112 @@ public sealed class ResponsesLlmGatewayTests
     }
 
     [TestMethod]
+    public async Task ChatAsync_ImagePartsWithoutResolver_TextRouteOmitsImages()
+    {
+        // ADR-077 §5.5：无视觉解析通道 = 文本路由；图片部件不进入请求（模型以正文 artifact:// 占位为准）。
+        string? requestBody = null;
+        var gateway = CreateGateway(request =>
+        {
+            requestBody = ReadBody(request);
+            return OkResponsesResponse();
+        });
+        gateway.WorkspaceId = "workspace-1";
+        gateway.VisualArtifactResolver = null;
+
+        await gateway.ChatAsync(
+            [new ChatMessage(
+                ChatRole.User,
+                "artifact://vision-1 placeholder",
+                ContentParts: [new PuddingCode.Models.LlmImagePart("vision-1")])],
+            []);
+
+        var content = JsonNode.Parse(requestBody!)!["input"]![0]!["content"]!;
+        Assert.AreEqual("artifact://vision-1 placeholder", content.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_ResolverFailure_FailsClosedInsteadOfSilentText()
+    {
+        var gateway = CreateGateway(_ => OkResponsesResponse());
+        gateway.WorkspaceId = "workspace-1";
+        gateway.VisualArtifactResolver = new ThrowingVisualResolver();
+
+        var ex = await Assert.ThrowsExactlyAsync<VisionPipelineException>(() => gateway.ChatAsync(
+            [new ChatMessage(
+                ChatRole.User,
+                "describe",
+                VisualArtifactIds: ["vision-missing"])],
+            []));
+
+        Assert.AreEqual(VisionErrorCodes.ArtifactMissing, ex.Code);
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_CanonicalImagePart_MapsDetailOriginalToHigh()
+    {
+        string? requestBody = null;
+        var gateway = CreateGateway(request =>
+        {
+            requestBody = ReadBody(request);
+            return OkResponsesResponse();
+        });
+        gateway.WorkspaceId = "workspace-1";
+        gateway.VisualArtifactResolver = new FixedVisualResolver();
+
+        await gateway.ChatAsync(
+            [new ChatMessage(
+                ChatRole.User,
+                "describe",
+                ContentParts:
+                [
+                    new PuddingCode.Models.LlmTextPart("describe"),
+                    new PuddingCode.Models.LlmImagePart("vision-1"),
+                    new PuddingCode.Models.LlmImagePart("vision-2", PuddingCode.Models.VisionContentPartDetails.Low),
+                ])],
+            []);
+
+        var content = JsonNode.Parse(requestBody!)!["input"]![0]!["content"]!.AsArray();
+        Assert.AreEqual(3, content.Count);
+        Assert.AreEqual("high", content[1]!["detail"]!.GetValue<string>());
+        Assert.AreEqual("low", content[2]!["detail"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_ToolResultWithImageParts_SerializesTypedOutputArray()
+    {
+        string? requestBody = null;
+        var gateway = CreateGateway(request =>
+        {
+            requestBody = ReadBody(request);
+            return OkResponsesResponse();
+        });
+        gateway.WorkspaceId = "workspace-1";
+        gateway.VisualArtifactResolver = new FixedVisualResolver();
+
+        await gateway.ChatAsync(
+            [
+                new ChatMessage(ChatRole.User, "read this image"),
+                new ChatMessage(ChatRole.Assistant, null, ToolCalls: [new ToolCall("call-1", "image_reader", "{}")]),
+                new ChatMessage(
+                    ChatRole.Tool,
+                    "image_reader loaded one image",
+                    ToolCallId: "call-1",
+                    ContentParts: [new PuddingCode.Models.LlmImagePart("vision-1")]),
+            ],
+            []);
+
+        var input = JsonNode.Parse(requestBody!)!["input"]!.AsArray();
+        var toolOutput = input.FirstOrDefault(node => node?["type"]?.GetValue<string>() == "function_call_output");
+        Assert.IsNotNull(toolOutput, "function_call_output item missing");
+        Assert.AreEqual("call-1", toolOutput!["call_id"]!.GetValue<string>());
+        var output = toolOutput["output"]!.AsArray();
+        Assert.AreEqual("input_text", output[0]!["type"]!.GetValue<string>());
+        Assert.AreEqual("image_reader loaded one image", output[0]!["text"]!.GetValue<string>());
+        Assert.AreEqual("input_image", output[1]!["type"]!.GetValue<string>());
+        Assert.AreEqual("data:image/png;base64,iVBORw0KGgo=", output[1]!["image_url"]!.GetValue<string>());
+    }
+
+    [TestMethod]
     public async Task ChatAsync_OptionalGenerationFields_UseResponsesNames()
     {
         string? requestBody = null;
@@ -579,6 +685,15 @@ public sealed class ResponsesLlmGatewayTests
 
         public Task<string> ExecuteAsync(string argumentsJson, CancellationToken ct = default)
             => Task.FromResult("ok");
+    }
+
+    private sealed class ThrowingVisualResolver : IVisualArtifactResolver
+    {
+        public Task<VisualArtifactResolveResult?> ResolveAsync(
+            string workspaceId,
+            string artifactId,
+            CancellationToken ct = default)
+            => throw new InvalidOperationException("boom");
     }
 
     private sealed class FixedVisualResolver : IVisualArtifactResolver

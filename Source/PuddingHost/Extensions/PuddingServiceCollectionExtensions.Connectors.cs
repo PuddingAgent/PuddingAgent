@@ -216,7 +216,6 @@ public static partial class PuddingServiceCollectionExtensions
                 sp.GetRequiredService<ILlmConfigService>(),
                 sp.GetRequiredService<ILogger<FileLlmResolver>>());
         });
-        builder.Services.AddSingleton<IVisualArtifactObservationService, VisualArtifactObservationService>();
 
         builder.Services.AddHttpClient("DirectLlm", client =>
         {

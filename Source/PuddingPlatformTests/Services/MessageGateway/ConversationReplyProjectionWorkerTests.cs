@@ -394,7 +394,7 @@ public sealed class ConversationReplyProjectionWorkerTests
         const string artifactId =
             "vision-0123456789abcdef0123456789abcdef";
         await using (var image = new MemoryStream(
-                         [0x89, 0x50, 0x4E, 0x47]))
+                         Services.VisionTestImages.PngHeader(24, 24)))
         {
             await visionStorage.SaveIdempotentAsync(
                 "default",

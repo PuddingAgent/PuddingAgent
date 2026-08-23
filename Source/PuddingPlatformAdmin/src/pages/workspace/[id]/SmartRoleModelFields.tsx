@@ -46,6 +46,11 @@ const SMART_ROLE_FIELDS = [
     label: 'Tester 测试者',
     description: '测试执行与结果分析',
   },
+  {
+    name: 'visionHelperModel',
+    label: 'Vision Helper 视觉辅助',
+    description: 'ADR-077：仅 image_reader delegate 模式的第二意见模型（需 vision 能力）',
+  },
 ] as const;
 
 interface ModelOption {

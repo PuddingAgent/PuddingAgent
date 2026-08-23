@@ -224,6 +224,12 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<VisionArtifactStorageService>();
         builder.Services.AddSingleton<IVisualArtifactReferenceResolver>(sp => sp.GetRequiredService<VisionArtifactStorageService>());
         builder.Services.AddSingleton<IVisualArtifactLocalFileResolver>(sp => sp.GetRequiredService<VisionArtifactStorageService>());
+        // ADR-077：image_reader 按需取图（URL/绝对路径/artifact 引用 → Workspace Artifact）。
+        builder.Services.AddHttpClient("image_reader", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(60);
+        });
+        builder.Services.AddSingleton<PuddingAgent.Tools.ImageReaderSourceResolver>();
         // ── External Access Token（ADR-075 第三方任务看板认证）─────────
         builder.Services.AddSingleton<ExternalTaskApiOptionsProvider>();
         builder.Services.AddSingleton<ExternalAccessTokenStore>();

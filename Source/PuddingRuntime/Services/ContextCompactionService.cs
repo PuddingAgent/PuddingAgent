@@ -1000,6 +1000,8 @@ public sealed class ContextCompactionService : IContextCompactionService
                 Source = "chat_transcript",
                 CreatedAt = row.CreatedAt,
                 CanonicalContentHash = CompositionSnapshot.Sha256Hex(row.Content ?? string.Empty),
+                // ADR-077 §7.1：多模态 canonical 信封随消息镜像，供上下文水合恢复图片 part。
+                AttachmentsJson = row.ContentPartsJson,
             });
             importedCount++;
         }

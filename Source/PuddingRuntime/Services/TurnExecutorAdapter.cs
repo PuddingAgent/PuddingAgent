@@ -45,6 +45,9 @@ public sealed class TurnExecutorAdapter(
             ExecutionIdentity = context.ExecutionIdentity,
             VisualArtifactIds = context.VisualArtifactIds,
             AudioArtifactIds = context.AudioArtifactIds,
+            ContentParts = context.ContentParts,
+            CallerLlmSnapshot = context.CallerLlmSnapshot,
+            CallerVisionHelperRoute = context.CallerVisionHelperRoute,
             Origin = context.Origin,
             OutputOwnership = context.OutputOwnership,
         };

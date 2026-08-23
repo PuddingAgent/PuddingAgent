@@ -62,6 +62,7 @@ public sealed class ChatMessageRepository : IChatMessageRepository, ICompactionC
         CreatedAt = e.CreatedAt,
         AgentInstanceId = e.AgentInstanceId,
         MetadataJson = e.MetadataJson,
+        ContentPartsJson = e.ContentPartsJson,
     };
 
     public async Task<IReadOnlyList<ChatMessageRow>> GetAllForSessionAsync(string sessionId, CancellationToken ct = default)

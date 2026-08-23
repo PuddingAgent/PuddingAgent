@@ -2,6 +2,11 @@
 
 > 状态：Proposed（设计完成，不代表代码、运行态或生产验收完成）
 > 日期：2026-08-22
+> 实施进度（2026-08-23）：Phase V0–V2 已实现并通过单元/请求体测试（typed content parts 持久化、
+> 冻结 Snapshot 能力判定、删除自动预观察、Planner fail-closed、Responses 图片型工具结果、
+> image_reader 重定位为 path/auto/native/delegate、imageReaderModel 改名 visionHelperModel、
+> Web typed parts 收发与回放）。V3 Files API 未实现：>2MB 单图暂按 vision_request_limit_exceeded
+> fail closed。V4 真实 DeepSeek smoke 与进程外生命周期验收未执行，ADR 保持 Proposed。
 > 范围：Web/Camera Snapshot/Connector 图片进入主 Agent 的 canonical Conversation、Runtime、LLM Gateway、上下文恢复与用量观测
 > 首个目标模型：`deepseek/deepseek-v4-flash-vision-exp`，`protocol=responses`
 > 目标：主代理直接理解用户图片；`image_reader` 从“自动代读拐杖”重定位为按需图片取用工具

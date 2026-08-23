@@ -17,7 +17,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `ChatMessage.cs` | 聊天消息模型 |
+| `ChatMessage.cs` + `LlmContentPart.cs` + `ChatMessageMultimodalNormalizer.cs` | 消息模型；ADR-077 有序 typed 内容部件（text/image→Artifact 引用+detail）与 v1 信封 `ContentPartsEnvelope`，Gateway 渲染统一经 normalizer（旧 VisualArtifactIds 派生 original） |
 | `LlmResponse.cs` | LLM 响应 |
 | `LlmContinuationState.cs` | Provider opaque output items 跨工具轮次回放契约 |
 | `LlmOptions.cs` | LLM 选项、最近请求的 ContextUsageSnapshot、Tokenizer 校准和工具 schema 的 UTF-8/GZIP 归因（不保存正文） |
@@ -45,7 +45,7 @@
 | 文件 | 用途 |
 |------|------|
 | `OpenAiLlmGateway.cs` | OpenAI-compatible Chat Completions 网关 |
-| `ResponsesLlmGateway.cs` | OpenAI/DeepSeek Responses API 网关；flat tools、明文 reasoning SSE、completed/failed/incomplete 终态、截断工具调用隔离与 output items 回放 |
+| `ResponsesLlmGateway.cs` | OpenAI/DeepSeek Responses API 网关；flat tools、明文 reasoning SSE、completed/failed/incomplete 终态、截断工具调用隔离与 output items 回放；ADR-077：user `input_image`（original→high）与 `function_call_output.output` [input_text, input_image] 数组，图片经 LlmVisualInputPlanner fail-closed |
 | `AnthropicMessagesLlmGateway.cs` | Anthropic Messages API 网关；`x-api-key`、顶层 system、content blocks、工具回放和 SSE state |
 
 ## 推理紧凑编解码（Services/）
