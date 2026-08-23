@@ -215,9 +215,9 @@ describe('ToolCallRow (ToolNode)', () => {
     expect(screen.queryByTestId('toolcall-out-expand')).toBeNull();
   });
 
-  // CU-10：卡片挂载必须走 resolveRenderer 分派路径（按 presentation.kind；
-  // 未注册七类暂回落 Generic renderer —— 分派必须活，防 Registry 死代码）。
-  it('CU-10：presentation 存在时按 kind 走 resolveRenderer 分派（未注册回落 Generic renderer）', () => {
+  // CU-10：卡片挂载必须走 resolveRenderer 分派路径（按 presentation.kind，
+  // 行为链 P3 后 terminal 已注册专用 renderer —— 分派必须活，防 Registry 死代码）。
+  it('CU-10：presentation 存在时按 kind 走 resolveRenderer 分派（terminal 走专用 renderer）', () => {
     render(
       <ToolCallRow
         node={makeNode({
@@ -229,9 +229,37 @@ describe('ToolCallRow (ToolNode)', () => {
     const row = screen.getByTestId('toolcall-row');
     expect(row.getAttribute('role')).toBe('button');
     fireEvent.click(row);
-    // 分派活：toolcall-presentation-card 挂载 Generic renderer（terminal 未注册回落）。
+    // 分派活：toolcall-presentation-card 挂载 Terminal renderer（P3 已注册）。
     const card = screen.getByTestId('toolcall-presentation-card');
     expect(card).toBeTruthy();
-    expect(screen.getByTestId('presentation-generic')).toBeTruthy();
+    expect(screen.getByTestId('presentation-terminal')).toBeTruthy();
+  });
+
+  // ── 行为链升级 §3.3：耗时 / exit code 上折叠行尾部 ──
+  it('completed + durationMs：折叠行尾部渲染耗时（tabular 计量），running 不渲染', () => {
+    const { rerender } = render(
+      <ToolCallRow node={makeNode({ state: 'running', durationMs: 1200 })} />,
+    );
+    expect(screen.queryByTestId('toolcall-duration')).toBeNull();
+    rerender(
+      <ToolCallRow node={makeNode({ state: 'completed', durationMs: 1200 })} />,
+    );
+    const duration = screen.getByTestId('toolcall-duration');
+    expect(duration.textContent).toBe('1.2s');
+  });
+
+  it('failed + 非零 exitCode：耗时行附带 exit code（错误色）', () => {
+    render(
+      <ToolCallRow
+        node={makeNode({
+          state: 'failed',
+          durationMs: 63000,
+          exitCode: 1,
+          error: 'command failed',
+        })}
+      />,
+    );
+    const duration = screen.getByTestId('toolcall-duration');
+    expect(duration.textContent).toBe('1m03s · exit 1');
   });
 });

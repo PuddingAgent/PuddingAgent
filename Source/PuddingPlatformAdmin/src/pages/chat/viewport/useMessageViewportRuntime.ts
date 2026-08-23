@@ -15,7 +15,9 @@ interface UseMessageViewportRuntimeOptions {
 }
 
 const NEAR_TOP_PX = 64;
-const BOTTOM_THRESHOLD_PX = 80;
+// 吸底判定阈值（对齐 deepseek-harness FOLLOW_THRESHOLD=24）：过宽（原 80px）时
+// 用户在底部附近想停下阅读会被 auto-follow 反复拉回，是「滚动不丝滑」的直接来源。
+const BOTTOM_THRESHOLD_PX = 24;
 const MESSAGE_VIEWPORT_BOTTOM_PADDING_PX = 32;
 const MESSAGE_VIEWPORT_VIRTUALIZATION_MIN_ITEMS = 80;
 const MESSAGE_VIEWPORT_RICH_VIRTUALIZATION_MIN_ITEMS = 200;
@@ -498,6 +500,10 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
 
   // Bottom following owns the real scroll container. The virtualizer only owns
   // item measurement and anchor restoration; it must not estimate the bottom.
+  // totalSize 是关键依赖：流式内容增长时，写入底部用的是「测量修正前」的
+  // scrollHeight；随后虚拟器按真实 DOM 高度修正 totalSize，若不随之再次写入，
+  // 视口会停留在半高位置（表现为突然显示上方旧消息），直到下一个 delta 才
+  // 猛跳回底部——跳变感的直接来源。每次高度修正都必须重新收敛底部。
   React.useLayoutEffect(() => {
     if (options.items.length === 0) return;
     // C2: Skip auto-follow while smooth scroll animation is in progress
@@ -509,6 +515,7 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
   }, [
     contentFingerprint,
     options.items.length,
+    totalSize,
     scheduleBottomSettlement,
     state.followMode,
     writeBottomPosition,
@@ -516,7 +523,11 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
 
   // Virtual rows, Markdown, images and tool panels can grow after React commits.
   // In pinned mode every measured layout change must converge to the actual
-  // bottom; auto mode deliberately does not steal scroll from a reader.
+  // bottom; auto mode deliberately does not steal scroll from a reader — but a
+  // layout change that the reader did not cause (streaming growth / typewriter
+  // re-layout / image load collapsing the distance-to-bottom) must still
+  // converge, otherwise the viewport strands on stale content. The follow-mode
+  // guard below only converges when we are already adjudged at-bottom.
   React.useLayoutEffect(() => {
     const parent = parentRef.current;
     const content = contentRef.current;
@@ -527,6 +538,16 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
         initialBottomSettlingRef.current
       ) {
         scheduleBottomSettlement();
+        return;
+      }
+      if (followModeRef.current === 'auto') {
+        // auto 模式（跟随中）：布局变化后仍在底部阈值内 → 收敛；已离底则不动
+        // （读者位置优先）。仅收窄到底部附近，不与用户滚动对抗。
+        const el = parent;
+        const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (distance >= 0 && distance <= BOTTOM_THRESHOLD_PX * 2) {
+          scheduleBottomSettlement();
+        }
       }
     });
     observer.observe(parent);

@@ -149,6 +149,7 @@ export function useSessionHistoryProjection({
               status: 'success',
               dbMessageId: item.id,
               metadata: item.metadata ?? undefined,
+              contentParts: item.contentParts ?? undefined,
             },
             assistant: createAssistant(
               `hist-assistant-${item.id}`,

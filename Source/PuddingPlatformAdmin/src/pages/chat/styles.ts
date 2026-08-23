@@ -394,19 +394,18 @@ const useResidualStyles = createStyles(({ token }) => ({
   },
 
   paperStreaming: {
-    background: 'color-mix(in srgb, var(--soft-white) 92%, #fff7df)',
-    borderColor: 'color-mix(in srgb, var(--earth-brown) 8%, transparent)',
-    boxShadow: '0 1px 8px rgba(92, 64, 42, 0.04)',
-    transition:
-      'background 420ms ease, border-color 420ms ease, box-shadow 520ms ease',
+    // 平铺正文（无边框/底色）后，paper* 仅保留为兼容类名，不再回加纸张底色。
+    background: 'transparent',
+    borderColor: 'transparent',
+    boxShadow: 'none',
+    transition: 'background 420ms ease',
     contain: 'paint',
   },
   paperSettled: {
-    background: 'var(--soft-white)',
-    borderColor: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
+    background: 'transparent',
+    borderColor: 'transparent',
     boxShadow: 'none',
-    transition:
-      'background 520ms ease, border-color 520ms ease, box-shadow 520ms ease',
+    transition: 'background 520ms ease',
   },
   actionButtonsSettled: {
     opacity: '1 !important' as unknown as number,

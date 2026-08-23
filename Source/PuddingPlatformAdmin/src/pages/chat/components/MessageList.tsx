@@ -400,7 +400,8 @@ const createActiveRunTurn = (
   };
 };
 
-const mergeProjectedMessageIntoTurns = (
+/** @internal 导出仅供定向单测消费（同 messageId 刷新不追加第二张卡片）。 */
+export const mergeProjectedMessageIntoTurns = (
   turns: ChatTurn[],
   message: ConversationMessageView,
   agentName: string,
@@ -412,11 +413,22 @@ const mergeProjectedMessageIntoTurns = (
   }
 
   const previous = turns[turns.length - 1];
-  if (
-    !previous ||
-    previous.turnId !== projected.turnId ||
-    previous.assistant.answerMarkdown
-  ) {
+  if (!previous || previous.turnId !== projected.turnId) {
+    turns.push(projected);
+    return;
+  }
+  // 同一 agent 消息（messageId 稳定）经投影刷新重复到达时原地更新；
+  // 追加为新 turn 会让同一逻辑回复裂成「轨迹卡 + 正文卡」两张卡片。
+  if (previous.assistant.id === projected.assistant.id) {
+    previous.assistant = {
+      ...projected.assistant,
+      quotedMessage:
+        previous.assistant.quotedMessage ?? projected.assistant.quotedMessage,
+    };
+    previous.source = projected.source;
+    return;
+  }
+  if (previous.assistant.answerMarkdown) {
     turns.push(projected);
     return;
   }
@@ -451,10 +463,6 @@ const isPendingLocalTurn = (turn: ChatTurn): boolean =>
   turn.assistant.status === 'streaming';
 
 const SERVER_PROJECTION_CLOCK_SKEW_MS = 1_000;
-const bottomScrollControlsStyle: React.CSSProperties = {
-  position: 'fixed',
-};
-
 const hasProjectedUserTurn = (
   projectedTurns: ChatTurn[],
   localTurn: ChatTurn,
@@ -628,28 +636,51 @@ const selectRicherTimelineItems = (
     : localItems;
 };
 
-const selectLongerMarkdown = (local: string, active: string): string =>
-  active.length >= local.length ? active : local;
+/**
+ * 回答正文合并必须前缀单调：
+ *  - 一方是另一方前缀 → 取更长（正常流式推进）；
+ *  - 分叉（任一方含重复拼接/脏文本）→ 以服务端快照为准（与刷新后的持久化投影一致）。
+ * 旧「取更长」会把直播竞态产生的重复版本保留到刷新，造成同段正文显示两遍。
+ */
+const selectMonotonicMarkdown = (local: string, active: string): string => {
+  if (active.length === 0) return local;
+  if (local.length === 0) return active;
+  if (active.startsWith(local)) return active;
+  if (local.startsWith(active)) return local;
+  return active;
+};
 
-const mergeActiveRunAssistant = (
+const isTerminalAssistantStatus = (status: ChatTurn['assistant']['status']): boolean =>
+  status === 'success' || status === 'error' || status === 'cancelled';
+
+/** @internal 导出仅供定向单测消费（终态守卫/同 messageId 原地更新）。 */
+export const mergeActiveRunAssistant = (
   local: ChatTurn['assistant'],
   active: ChatTurn['assistant'],
-): ChatTurn['assistant'] => ({
-  ...local,
-  ...active,
-  // Keep the local identity stable so a projection refresh cannot remount the
-  // visible bubble while the same Turn is still streaming.
-  id: local.id,
-  timelineItems: selectRicherTimelineItems(
-    local.timelineItems,
-    active.timelineItems,
-  ),
-  answerMarkdown: selectLongerMarkdown(
-    local.answerMarkdown,
-    active.answerMarkdown,
-  ),
-  isStreaming: local.isStreaming || active.isStreaming,
-});
+): ChatTurn['assistant'] => {
+  // 本地 SSE 已终态时，轮询快照不得把 status/isStreaming 拉回运行态：
+  // 快照滞后会让状态条与正文在两个状态间来回翻转（BUG2 双状态来源之一）。
+  const localTerminal = isTerminalAssistantStatus(local.status);
+  return {
+    ...local,
+    ...active,
+    // Keep the local identity stable so a projection refresh cannot remount the
+    // visible bubble while the same Turn is still streaming.
+    id: local.id,
+    status: localTerminal ? local.status : active.status,
+    timelineItems: selectRicherTimelineItems(
+      local.timelineItems,
+      active.timelineItems,
+    ),
+    answerMarkdown: selectMonotonicMarkdown(
+      local.answerMarkdown,
+      active.answerMarkdown,
+    ),
+    isStreaming: localTerminal
+      ? false
+      : local.isStreaming || active.isStreaming,
+  };
+};
 
 const mergeActiveRunIntoTurns = (
   turns: ChatTurn[],
@@ -764,10 +795,10 @@ const MessageList: React.FC<MessageListProps> = ({
     if (!activeRun) return undefined;
     const incoming = activeRun.outputSnapshot.markdown ?? '';
     const cached = activeRunMarkdownCacheRef.current;
-    // 同一次 run：保留较长版本（流式累积场景 incoming 单调增长）
     if (cached && cached.runId === activeRun.runId) {
-      const stable =
-        incoming.length >= cached.markdown.length ? incoming : cached.markdown;
+      // 同一次 run 的快照缓存保持前缀单调：流式累积取推进方；
+      // 分叉（快照重算/脏数据）以最新快照为准，避免缓存保留重复文本。
+      const stable = selectMonotonicMarkdown(cached.markdown, incoming);
       activeRunMarkdownCacheRef.current = {
         runId: activeRun.runId,
         markdown: stable,
@@ -1185,12 +1216,12 @@ const MessageList: React.FC<MessageListProps> = ({
             }
           />
         )}
-        {/* 底部滚动控制 */}
+        {/* 底部滚动控制（messageViewportControls 锚定 messageListShell 右下角，
+            不再使用视口 fixed 内联样式） */}
         {projection.items.length > 0 && (
           <div
             data-testid="chat-bottom-scroll-controls"
             className={styles.messageViewportControls}
-            style={bottomScrollControlsStyle}
           >
             {onPinnedQuote && (
               <PinnedMessageButton

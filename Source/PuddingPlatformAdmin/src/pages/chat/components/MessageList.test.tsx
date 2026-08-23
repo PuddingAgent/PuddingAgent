@@ -773,7 +773,7 @@ describe('MessageList scroll performance', () => {
     expect(node.scrollTop).toBe(1_600);
   });
 
-  it('pins bottom controls to the browser viewport', () => {
+  it('anchors bottom controls to the message area shell (always above composer)', () => {
     render(
       <MessageList
         {...baseProps}
@@ -790,7 +790,10 @@ describe('MessageList scroll performance', () => {
     screen.getByRole('button', { name: '开启贴底跟随' });
     const controls = screen.getByTestId('chat-bottom-scroll-controls');
 
-    expect(controls.style.position).toBe('fixed');
+    // 行为链对齐：控制簇不再使用视口 fixed 内联样式（写死偏移会随 composer
+    // 高度错位）；由 messageViewportControls 类锚定 messageListShell 右下角。
+    expect(controls.style.position).toBe('');
+    expect(controls.className).toBeTruthy();
   });
 
   it('keeps bottom anchor mode on for newly appended local turns', () => {

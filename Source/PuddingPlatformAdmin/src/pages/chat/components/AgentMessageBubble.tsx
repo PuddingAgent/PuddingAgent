@@ -20,6 +20,7 @@ import { summarizeError } from '../utils/summarizeError';
 import AgentAvatar from './AgentAvatar';
 import {
   deriveTurnStatusFromFacts,
+  deriveTurnStatusFromProjection,
   type TurnPhase,
   TurnStatus,
 } from './execution-flow/TurnStatus';
@@ -31,20 +32,13 @@ import {
   getCurrentRunActivity,
   sanitizeProcessText,
 } from './processPreview';
-import { ReasoningDisclosureRow } from './execution-flow/ReasoningDisclosureRow';
 import {
-  buildToolTreeFromProcessItems,
-  ToolCallTree,
-} from './execution-flow/ToolCallTree';
-import type {
-  DelegationNode,
-  ExecutionFlowProjection,
-  ToolNode,
-} from '../projections/executionFlowProjector';
-import {
-  buildDelegationNodesFromProcessItems,
-  DelegationRow,
-} from './execution-flow/DelegationRow';
+  deriveStatsFromProcessItems,
+  deriveStatsFromProjection,
+  ExecutionFlowTimeline,
+} from './execution-flow/ExecutionFlowTimeline';
+import { TurnStatsLine } from './execution-flow/TurnStatsLine';
+import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 import StateDot from './StateDot';
 import type { TranscriptMode } from './TranscriptModeSwitch';
 
@@ -122,8 +116,9 @@ const StreamingAnswer = React.memo(function StreamingAnswer({
   const typewriter = useTypewriterStreaming({
     text: content,
     isStreaming: Boolean(isStreaming),
-    tickMs: 40,
-    maxLagChars: 48,
+    // 输出自然度：不再覆盖 tick/maxLag——hook 的 B2 自适应（24ms tick、
+    // 速率追踪 maxLag、拥堵降速、分档 charsPerTick）已针对平滑流式调优；
+    // 旧覆盖（40/48）滞后余量过小，追平激进导致文字 bursts 式蹦出。
   });
 
   return (
@@ -345,7 +340,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
           item.status === 'failed' ||
           (typeof item.exitCode === 'number' && item.exitCode !== 0);
         const text = failed ? item.message || item.output : '';
-        if (text && text.trim()) candidates.push(text);
+        if (text?.trim()) candidates.push(text);
       }
     }
     for (const candidate of candidates) {
@@ -408,26 +403,18 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
     () => getCurrentRunActivity(processItems, status),
     [processItems, status],
   );
-  // CU-07/CU-11: 工具调用树 —— 灰度开启且有 per-turn 投影时从 canonical 投影
-  // nodes 消费（路径 B）；否则回退 processItems 构建（路径 A，行为零变化）。
-  const toolTreeNodes = React.useMemo(() => {
-    if (executionFlowProjection) {
-      return executionFlowProjection.nodes.filter(
-        (node): node is ToolNode => node.kind === 'tool',
-      );
-    }
-    return buildToolTreeFromProcessItems(processItems ?? []);
-  }, [executionFlowProjection, processItems]);
-  // CU-09/CU-11: 父级委派摘要 —— 灰度开启且有 per-turn 投影时从 canonical 投影
-  // nodes 消费（路径 B）；否则回退 processItems 构建（路径 A，行为零变化）。
-  const delegationNodes = React.useMemo(() => {
-    if (executionFlowProjection) {
-      return executionFlowProjection.nodes.filter(
-        (node): node is DelegationNode => node.kind === 'delegation',
-      );
-    }
-    return buildDelegationNodesFromProcessItems(processItems ?? []);
-  }, [executionFlowProjection, processItems]);
+  // 行为链 P2：交错时间线 —— 灰度开启且有 per-turn 投影时按 canonical sequence
+  // 顺序交错渲染（路径 B）；否则 processItems adapter 分组为同一 entry 结构（路径 A）。
+  // reasoning 段 / 工具树 / 委派不再固定分区块，按真实发生顺序呈现。
+  // 思维链预览行数据仍供 TurnStatus facts 回退派生使用。
+  const reasoningLines = React.useMemo(() => {
+    if (!processItems || processItems.length === 0) return [];
+    return processItems
+      .filter((item) => item.type === 'thinking' && item.text)
+      .map((item) => ({ id: item.id, text: sanitizeProcessText(item.text) }))
+      .filter((line) => line.text.length > 0);
+  }, [processItems]);
+  const hasReasoningContent = reasoningLines.length > 0;
   const delegationActivity = React.useMemo<CurrentRunActivity | null>(() => {
     if (!parentDelegationActivity?.activeCount) return null;
     const { activeCount, label, startedAt, updatedAt } =
@@ -454,51 +441,37 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
       ? delegationActivity
       : processActivity;
   }, [delegationActivity, processActivity]);
-  // thinking/tool have canonical compact rows below. Keep the activity card only
-  // for states that do not yet own a dedicated trajectory row.
+  // thinking/tool/delegation have canonical compact rows below (timeline). The
+  // activity card remains only for system-stage facts without a dedicated row.
   const shouldShowProcessActivity = Boolean(
-    isRunActive &&
-      processActivity &&
-      (processActivity.kind === 'system' ||
-        processActivity.kind === 'subagent'),
+    isRunActive && processActivity && processActivity.kind === 'system',
   );
-  const shouldShowDelegationActivity = Boolean(
-    isRunActive && delegationActivity && processActivity?.kind !== 'subagent',
-  );
-  // 思维链预览：从 timeline 提取已清洗的 thinking 文本；有内容时等待气泡升级为思维链预览
-  const reasoningLines = React.useMemo(() => {
-    if (!processItems || processItems.length === 0) return [];
-    return processItems
-      .filter((item) => item.type === 'thinking' && item.text)
-      .map((item) => ({ id: item.id, text: sanitizeProcessText(item.text) }))
-      .filter((line) => line.text.length > 0);
-  }, [processItems]);
-  const hasReasoningContent = reasoningLines.length > 0;
-  // 推理摘要与当前工具/委派活动并列展示，避免阶段切换时丢失主代理上下文。
-  // CU-06：去 isBeforeFirstToken 门控——整个 turn 内推理行保持同一行，正文流式后仍在主视图。
-  const showReasoningPreview = hasReasoningContent;
-  const reasoningIsCurrent =
-    !currentActivity || currentActivity.kind === 'thinking';
-  // CU-05: TurnStatus —— 收敛 WaitingBubble/CurrentActivityPanel 的重复状态区。
-  // 阶段文案只来自已知事实（delegation/reasoning/tool/system/answer 活动），
-  // 无可见事件时为 pending（「{agentName} 正在运行」）；终态由消息状态驱动不在此派生。
+  // 思维链数据已在时间线 memo 中提取（reasoningLines）；这里只保留 TurnStatus 派生。
+  // CU-05 + 行为链 P2: TurnStatus —— 有 canonical 投影时直接消费投影派生（路径 B），
+  // 阶段来自最后节点 kind（reasoning/tool/delegation/message）；无投影回退 facts 派生。
   const turnStatus = React.useMemo<TurnStatus | null>(() => {
     if (!isRunActive) return null;
+    if (executionFlowProjection) {
+      return deriveTurnStatusFromProjection(executionFlowProjection);
+    }
     const hasVisibleEvents = Boolean(
       currentActivity || reasoningLines.length > 0 || hasAnswerContent,
     );
     let phase: TurnPhase | undefined;
     if (currentActivity?.kind === 'subagent' || delegationActivity) {
       phase = 'delegating';
-    } else if (currentActivity?.kind === 'thinking') {
-      phase = 'reasoning';
     } else if (
       currentActivity?.kind === 'tool' &&
       (currentActivity.status === 'running' ||
-        currentActivity.status === 'waiting_output' ||
-        currentActivity.status === 'processing_result')
+        currentActivity.status === 'waiting_output')
     ) {
+      // 仅真实运行中的工具算 executing；processing_result 是工具已完成、
+      // 模型正在产出下一轮（推理/回答），不得压过 answering/reasoning。
       phase = 'executing';
+    } else if (hasAnswerContent && isStreaming) {
+      phase = 'answering';
+    } else if (currentActivity?.kind === 'thinking' || hasReasoningContent) {
+      phase = 'reasoning';
     } else if (currentActivity?.kind === 'system') {
       phase = 'connecting';
     } else if (hasAnswerContent) {
@@ -511,12 +484,39 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
     });
   }, [
     isRunActive,
+    executionFlowProjection,
     currentActivity,
     delegationActivity,
     reasoningLines,
     hasAnswerContent,
+    hasReasoningContent,
+    isStreaming,
   ]);
   const shouldShowRunMonitor = isRunActive;
+
+  // 行为链 §3.3：turn 终态计量（StatsLine）—— 段数/工具数来自投影（路径 B）或
+  // processItems（路径 A），总时长 = turn 起点 → 终态 occurredAt（路径 A 回退末条
+  // 时间线 timestamp），token 来自 usage；全部缺失时 TurnStatsLine 自行不渲染。
+  const turnStats = React.useMemo(() => {
+    if (isRunActive) return null;
+    const base = executionFlowProjection
+      ? deriveStatsFromProjection(executionFlowProjection)
+      : deriveStatsFromProcessItems(processItems ?? []);
+    let endMs = Number.NaN;
+    const terminalAt = executionFlowProjection?.terminal?.occurredAt;
+    if (terminalAt) endMs = Date.parse(terminalAt);
+    if (!Number.isFinite(endMs) && processItems && processItems.length > 0) {
+      endMs = processItems[processItems.length - 1].timestamp;
+    }
+    const totalDurationMs =
+      Number.isFinite(endMs) && endMs > createdAt ? endMs - createdAt : null;
+    return {
+      reasoningSegments: base.reasoningSegments,
+      toolCount: base.toolCount,
+      totalDurationMs,
+      totalTokens: usage?.totalTokens ?? null,
+    };
+  }, [isRunActive, executionFlowProjection, processItems, createdAt, usage]);
 
   // E2: 流式停滞检测 — 15s 无内容增量触发琥珀色警告
   const lastDeltaRef = React.useRef(Date.now());
@@ -599,24 +599,27 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                   />
                 )}
 
-                {/* 当前活动区仅展示主代理真实阶段或有界委派摘要（状态/计时已收敛到 TurnStatus）。 */}
+                {/* 当前活动区仅保留尚无专属轨迹行的 system 阶段事实
+                    （委派等待态由 TurnStatus delegating + DelegationRow 承载，不再渲染大卡）。 */}
                 {shouldShowProcessActivity && processActivity && (
                   <CurrentActivityPanel activity={processActivity} />
                 )}
-
-                {shouldShowDelegationActivity && delegationActivity && (
-                  <CurrentActivityPanel activity={delegationActivity} />
-                )}
-
-                {/* 推理摘要与工具/子代理当前活动并列，保留主代理过程连续性。 */}
-                {showReasoningPreview && (
-                  <ReasoningDisclosureRow
-                    lines={reasoningLines}
-                    isCurrent={reasoningIsCurrent}
-                  />
-                )}
               </div>
             )}
+
+            {/* 行为链 P2：交错时间线 —— reasoning 段 → 工具 → reasoning 段 → 委派按
+                canonical sequence 真实发生顺序交错（路径 B 投影 / 路径 A adapter
+                共用同一渲染结构），与正文共享同一内容列并置于正文之前；无可见轨迹时
+                内部返回 null。多段思考各占一行（段首行/最新行摘要 + 段时长 chip）。 */}
+            <ExecutionFlowTimeline
+              projection={executionFlowProjection}
+              processItems={processItems}
+              isRunActive={isRunActive}
+              onOpenInspector={onOpenInspector}
+            />
+
+            {/* P1-2: 模型重试行 — 嗅探 processItems 中的 LLM retry 条目；无条目时组件内部返回 null，不占用布局 */}
+            <ModelRetryRow items={processItems} />
 
             {/* 消息气泡 */}
             {shouldRenderAnswerBubble &&
@@ -684,21 +687,6 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                 );
               })()}
 
-            {/* CU-07: 工具调用树（对齐 D5 ToolCallRow）：单行摘要 + 展开 IN/OUT + 递归父子调用，与过程时间线共存 */}
-            {toolTreeNodes.length > 0 && <ToolCallTree nodes={toolTreeNodes} />}
-
-            {/* CU-09: 父级委派摘要行（折叠态计数 + 展开态每子代理摘要/模型/状态/检查器入口）。
-                不复制子代理内部 reasoning/tool/完整结果；无子代理时内部返回 null。 */}
-            {delegationNodes.length > 0 && (
-              <DelegationRow
-                nodes={delegationNodes}
-                onOpenInspector={onOpenInspector}
-              />
-            )}
-
-                                    {/* P1-2: 模型重试行 — 嗅探 processItems 中的 LLM retry 条目；无条目时组件内部返回 null，不占用布局 */}
-            <ModelRetryRow items={processItems} />
-
             {/* P0-1: 错误摘要行（StateDot + 标题 + 摘要，title 挂全量原文）；
                 重试按钮与摘要行同行（沿用 !processItems 条件，不破坏既有 onRerun 逻辑） */}
             {isError && (
@@ -755,12 +743,9 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
               />
             )}
 
-            {/* Token 用量 */}
-            {usage?.totalTokens && (
-              <div className={styles.tokenUsageLine}>
-                {usage.totalTokens.toLocaleString()} tokens
-              </div>
-            )}
+            {/* 行为链 §3.3：turn 终态计量行（段数/工具数/总时长/tokens；升级自
+                原单行 token 计数，数据刷新不归零） */}
+            {turnStats && <TurnStatsLine {...turnStats} />}
             {diagnosticsOpen && (
               <React.Suspense fallback={null}>
                 <SessionBenchmarkDrawer

@@ -132,4 +132,28 @@ describe('ReasoningDisclosureRow', () => {
     );
     await waitFor(() => expect(screen.getByText('已复制')).toBeTruthy());
   });
+
+  // ── 行为链升级 §3.3：完成态计量 chip + 运行中扫光 ──
+  it('completed + durationMs：渲染「12s」计量 chip，摘要稳定为首行', () => {
+    render(
+      <ReasoningDisclosureRow lines={lines} isCurrent={false} durationMs={12000} />,
+    );
+    const chip = screen.getByTestId('reasoning-duration-chip');
+    expect(chip.textContent).toBe('12s');
+    // 完成态摘要取首行
+    expect(screen.getByText('第一行')).toBeTruthy();
+  });
+
+  it('completed 无 durationMs：不渲染计量 chip（不伪造数值）', () => {
+    render(<ReasoningDisclosureRow lines={lines} isCurrent={false} />);
+    expect(screen.queryByTestId('reasoning-duration-chip')).toBeNull();
+  });
+
+  it('running：不渲染计量 chip，注入 CSS 含行扫光动画（reduced-motion 降级）', () => {
+    render(<ReasoningDisclosureRow lines={lines} isCurrent durationMs={999} />);
+    expect(screen.queryByTestId('reasoning-duration-chip')).toBeNull();
+    const css = injectedCssText();
+    expect(css).toContain('executionFlowRowSweep');
+    expect(css).toContain('prefers-reduced-motion');
+  });
 });

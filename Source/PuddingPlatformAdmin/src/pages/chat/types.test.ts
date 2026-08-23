@@ -40,7 +40,9 @@ describe('buildMessageBlocks', () => {
     });
   });
 
-  it('excludes sub-agent timeline items from main message blocks', () => {
+  it('filters sub-agent progress items but keeps spawned/completed delegation facts', () => {
+    // 行为链升级：spawned/completed 是 DelegationRow 的父级有界事实，保留进
+    // 主消息过程时间线；高频 subagent_progress 仍滤除（托盘坞承载）。
     const turns: ChatTurn[] = [
       {
         turnId: 'turn-sub-agent',
@@ -59,15 +61,24 @@ describe('buildMessageBlocks', () => {
               type: 'subagent_spawned',
               status: 'running',
               name: 'sub-agent',
-              message: 'stale sub-agent card',
+              message: '委派子任务',
               timestamp: 2,
               collapsed: false,
+            },
+            {
+              id: 'sub-agent-1-progress',
+              type: 'subagent_progress',
+              status: 'running',
+              name: 'sub-agent',
+              text: '内部第 3 轮推理增量……',
+              timestamp: 3,
+              collapsed: true,
             },
             {
               id: 'thinking-1',
               type: 'thinking',
               text: 'main agent thinking',
-              timestamp: 3,
+              timestamp: 4,
               collapsed: true,
             },
           ],
@@ -82,8 +93,12 @@ describe('buildMessageBlocks', () => {
     const agentBlock = blocks.find((block) => block.role === 'agent');
 
     expect(agentBlock?.processItems).toEqual([
+      expect.objectContaining({ id: 'sub-agent-1', type: 'subagent_spawned' }),
       expect.objectContaining({ id: 'thinking-1', type: 'thinking' }),
     ]);
+    expect(
+      agentBlock?.processItems?.some((item) => item.type === 'subagent_progress'),
+    ).toBe(false);
   });
 
   it('carries planCard (P1#5) onto the agent message block', () => {

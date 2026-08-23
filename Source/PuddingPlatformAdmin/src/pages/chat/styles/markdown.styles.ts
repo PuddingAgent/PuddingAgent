@@ -1,12 +1,20 @@
 // ── markdown styles ─────────────────────────────────
 import { createStyles } from 'antd-style';
 
-export const useMarkdownStyles = createStyles(({ token }) => ({
+export const useMarkdownStyles = createStyles(() => ({
   markdownBody: {
     whiteSpace: 'normal' as const,
     '& p': { margin: '0 0 8px' },
     '& p:last-child': { marginBottom: 0 },
-    '& ul, & ol': { paddingLeft: 22, margin: '6px 0' },
+    // 列表节奏放半档（对齐 harness 16px 节奏）：列表块 8px、li 间 2px
+    '& ul, & ol': { paddingLeft: 22, margin: '8px 0' },
+    '& li': { margin: '2px 0' },
+    // emoji 字号收敛：预处理包 data-md-emoji span，避免 emoji 比正文大一号的突兀感
+    '& [data-md-emoji]': {
+      fontSize: '0.95em',
+      lineHeight: 1,
+      verticalAlign: '-0.06em',
+    },
     '& blockquote': {
       margin: '8px 0',
       paddingLeft: 12,
@@ -19,13 +27,34 @@ export const useMarkdownStyles = createStyles(({ token }) => ({
       textDecoration: 'none',
       '&:hover': { textDecoration: 'underline' },
     },
-    '& table': { borderCollapse: 'collapse' as const },
-    '& th, & td': {
-      border: `1px solid ${token.colorBorderSecondary}`,
-      padding: '6px 10px',
-      textAlign: 'left' as const,
+    // 表格对齐 harness MarkdownText：仅横向分隔线（无竖线网格），
+    // th 加粗下边线、td 弱下边线，末行无底线。
+    '& table': {
+      borderCollapse: 'collapse' as const,
+      minWidth: 'min(100%, 420px)',
+      margin: '2px 0',
     },
-    '& th': { background: token.colorFillQuaternary },
+    '& th, & td': {
+      border: 'none',
+      padding: '9px 14px',
+      textAlign: 'left' as const,
+      verticalAlign: 'top',
+    },
+    '& th': {
+      background: 'transparent',
+      fontSize: 13,
+      fontWeight: 600,
+      whiteSpace: 'nowrap' as const,
+      borderBottom:
+        '1.5px solid color-mix(in srgb, var(--text-primary, #333) 25%, transparent)',
+    },
+    '& td': {
+      fontSize: 13.5,
+      lineHeight: '22px',
+      borderBottom:
+        '1px solid color-mix(in srgb, var(--text-primary, #333) 10%, transparent)',
+    },
+    '& tr:last-child td': { borderBottom: 'none' },
   },
   markdownTableScroll: {
     maxWidth: '100%',
@@ -34,7 +63,7 @@ export const useMarkdownStyles = createStyles(({ token }) => ({
   },
   inlineCode: {
     padding: '1px 5px',
-    borderRadius: 4,
+    borderRadius: 6,
     background: 'color-mix(in srgb, var(--misty-blue) 30%, transparent)',
     fontSize: '0.92em',
     fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
@@ -42,7 +71,7 @@ export const useMarkdownStyles = createStyles(({ token }) => ({
     codeBlockWrap: {
     position: 'relative' as const,
     margin: '10px 0',
-    borderRadius: 8,
+    borderRadius: 12,
     // P0-3: 深一档背景（双主题 token，浅 #1e2430 / 深 #0d1117）。
     // 注意：不能设 overflow:hidden —— 会破坏 sticky banner 相对滚动容器的吸附。
     background: 'var(--pudding-chat-code-bg)',

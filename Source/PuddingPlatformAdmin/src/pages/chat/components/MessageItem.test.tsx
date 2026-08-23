@@ -123,7 +123,7 @@ describe('MessageItem markdown code rendering', () => {
     expect(container.querySelectorAll('.inkChunk')).toHaveLength(0);
   });
 
-  it('keeps the full received live tail visible when the typewriter lags behind', () => {
+  it('append 风格：打字机滞后时只显示已推进的可见尾段（节奏统一，不再整段瞬跳）', () => {
     const { container } = render(
       <MessageItem
         markdownText="稳定内容尾段完整文本"
@@ -134,7 +134,9 @@ describe('MessageItem markdown code rendering', () => {
       />,
     );
 
-    expect(container.textContent).toContain('稳定内容尾段完整文本');
+    // 只渲染打字机已推进的可见文本；未追赶的部分随后续 tick 渐进出现
+    expect(container.textContent).toContain('稳定内容尾段');
+    expect(container.textContent).not.toContain('尾段完整文本');
   });
 
   it('renders streaming markdown with the markdown renderer while the message is still growing', () => {

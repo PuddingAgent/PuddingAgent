@@ -1,8 +1,53 @@
 import { act, renderHook } from '@testing-library/react';
 import {
   chunkVisibleText,
+  findStableMarkdownBoundary,
   useTypewriterStreaming,
 } from './useTypewriterStreaming';
+
+describe('findStableMarkdownBoundary 表格感知', () => {
+  it('完整表格（表头+分隔行+数据行）在表格结束后提交', () => {
+    const text =
+      '前文\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n后续段落';
+    const boundary = findStableMarkdownBoundary(text);
+    expect(text.slice(0, boundary)).toBe(
+      '前文\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n',
+    );
+  });
+
+  it('表格行不带尾管道时同样识别（LLM 常见输出）', () => {
+    const text = '| a | b\n| --- | ---\n| 1 | 2\n\n结论';
+    const boundary = findStableMarkdownBoundary(text);
+    expect(text.slice(0, boundary)).toBe(
+      '| a | b\n| --- | ---\n| 1 | 2\n',
+    );
+  });
+
+  it('半截表头（分隔行未到达）不提交，避免表头降级为段落原文', () => {
+    const text = '前文\n\n| a | b |\n| 1';
+    const boundary = findStableMarkdownBoundary(text);
+    expect(text.slice(0, boundary)).toBe('前文\n');
+  });
+
+  it('半截表头后跟空行也不提交', () => {
+    const text = '前文\n\n| a | b |\n\n后续段落';
+    const boundary = findStableMarkdownBoundary(text);
+    expect(text.slice(0, boundary)).toBe('前文\n');
+  });
+
+  it('表格流式增长过程中（run 未结束）不提交中间行', () => {
+    const text =
+      '前文\n\n| a | b |\n| --- | --- |\n| 1';
+    const boundary = findStableMarkdownBoundary(text);
+    expect(text.slice(0, boundary)).toBe('前文\n');
+  });
+
+  it('未闭合代码块仍回退到围栏之前的安全边界', () => {
+    const text = '段落一\n\n```js\nconst x = 1;';
+    const boundary = findStableMarkdownBoundary(text);
+    expect(text.slice(0, boundary)).toBe('段落一\n');
+  });
+});
 
 describe('chunkVisibleText', () => {
   it('splits visible text deterministically across renders', () => {

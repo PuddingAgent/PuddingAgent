@@ -5,6 +5,7 @@ import {
   recordPerfEvent,
 } from '@/utils/perfEventRuntime';
 import { useChatMessageStyles } from '../styles/messageStyleContext';
+import IncrementalMarkdown from './IncrementalMarkdown';
 
 const MarkdownBlock =
   process.env.NODE_ENV === 'test'
@@ -159,25 +160,53 @@ const MessageItem: React.FC<MessageItemProps> = ({
     </Suspense>
   );
 
-  // Stable Markdown is parsed only at paragraph boundaries. The live tail is
-  // painted as text, so token updates never re-run the Markdown parser.
+  // Stable Markdown 走增量渲染（对齐 harness IncrementalMarkdownParser）：
+  // 冻结块 memo 缓存、提交只重解析尾部块；live 尾段按打字机推进的可见文本
+  // 渐进渲染（含块级语法时走 markdown 前缀渲染，纯文字走零解析 span + 墨迹光标）。
+  const LIVE_BLOCK_SYNTAX_PATTERN = /[|`#>*_~]|\[[^\]]*\]\(/;
   if (isStreaming && stableMarkdown !== undefined) {
-    const liveTextToRender = liveText ?? visibleLiveText;
+    const liveTextToRender = visibleLiveText ?? liveText;
+    const liveHasBlockSyntax =
+      liveTextToRender != null && liveTextToRender.length > 0
+        ? LIVE_BLOCK_SYNTAX_PATTERN.test(liveTextToRender) ||
+          /^\s{0,3}(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s)/m.test(liveTextToRender)
+        : false;
     return (
       <div ref={outputRef} className={styles.markdownBody}>
-        {stableMarkdown ? renderMarkdown(stableMarkdown, true) : null}
-        {liveTextToRender ? (
+        {stableMarkdown ? (
+          <IncrementalMarkdown
+            text={stableMarkdown}
+            styles={styles}
+            workspaceId={workspaceId}
+            isStreaming
+          />
+        ) : null}
+        {liveTextToRender
+          ? liveHasBlockSyntax
+            ? renderMarkdown(liveTextToRender, true)
+            : null
+          : null}
+        {liveTextToRender && !liveHasBlockSyntax ? (
           <span className={styles.liveTextSpan}>{liveTextToRender}</span>
         ) : null}
-        <span className={styles.inkCursor} />
+        {!liveHasBlockSyntax && <span className={styles.inkCursor} />}
       </div>
     );
   }
 
+  // 落定/非流式路径同样走增量渲染：块 key 与流式期间一致（偏移:长度），
+  // settle 时不重挂载已冻结块、不全文重解析，只提交最后的尾块。
   const renderedMarkdown = markdownText || (isStreaming ? ' ' : '');
   return (
     <div ref={outputRef} className={styles.markdownBody}>
-      {renderMarkdown(renderedMarkdown, isStreaming)}
+      {renderedMarkdown.trim() ? (
+        <IncrementalMarkdown
+          text={renderedMarkdown}
+          styles={styles}
+          workspaceId={workspaceId}
+          isStreaming={isStreaming}
+        />
+      ) : null}
       {isStreaming && <span className={styles.streamingCursor}>▌</span>}
     </div>
   );

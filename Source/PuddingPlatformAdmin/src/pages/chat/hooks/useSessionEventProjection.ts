@@ -76,9 +76,12 @@ interface ProjectionTurnsPort {
 }
 
 interface ProjectionBufferPort {
-  pendingDeltaRef: MutableRefObject<Map<string, string>>;
+  pendingDeltaRef: MutableRefObject<
+    Map<string, { delta: string; baseLength: number }>
+  >;
   pendingThinkingRef: MutableRefObject<Map<string, string>>;
-  enqueueDelta: (turnId: string, delta: string) => void;
+  /** baseLength = 入队时 answerMarkdown 长度；flush 按基准位置幂等应用（防快照竞态重复）。 */
+  enqueueDelta: (turnId: string, delta: string, baseLength: number) => void;
   enqueueThinking: (
     turnId: string,
     delta: string,
@@ -498,11 +501,20 @@ export function useSessionEventProjection({
                   ...turn.assistant,
                   renderMode: 'structured' as const,
                   answerMarkdown: current + delta,
+                  status: 'streaming' as const,
                 },
               };
             }
-            enqueueDelta(turn.turnId, delta);
-            return turn;
+            enqueueDelta(turn.turnId, delta, current.length);
+            // 首个回答增量到达即为已知事实「正在生成回答」：立即把 thinking/executing
+            // 翻转为 streaming，TurnStatus 阶段与正文流式状态不再各说各话。
+            return {
+              ...turn,
+              assistant: {
+                ...turn.assistant,
+                status: 'streaming' as const,
+              },
+            };
           }
           if (ev.type === 'message.thinking_summary.appended') {
             const thinkingDelta = typeof ev.delta === 'string' ? ev.delta : '';

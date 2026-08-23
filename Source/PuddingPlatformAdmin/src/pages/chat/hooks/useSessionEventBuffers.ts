@@ -20,7 +20,10 @@ export function useSessionEventBuffers({
   setTurns,
   completedTurnsRef,
 }: UseSessionEventBuffersOptions) {
-  const pendingDeltaRef = useRef<Map<string, string>>(new Map());
+  /** 回答增量缓冲：delta 文本 + 入队时 answerMarkdown 的基准长度（幂等 flush 依据）。 */
+  const pendingDeltaRef = useRef<
+    Map<string, { delta: string; baseLength: number }>
+  >(new Map());
   const deltaFlushTimerRef = useRef<number | null>(null);
   const deltaHasFlushedRef = useRef(false);
   const pendingThinkingRef = useRef<Map<string, string>>(new Map());
@@ -92,20 +95,22 @@ export function useSessionEventBuffers({
   );
 
   const enqueueDelta = useCallback(
-    (turnId: string, delta: string) => {
-      pendingDeltaRef.current.set(
-        turnId,
-        (pendingDeltaRef.current.get(turnId) ?? '') + delta,
-      );
+    (turnId: string, delta: string, baseLength: number) => {
+      const pending = pendingDeltaRef.current.get(turnId);
+      // 基准取批内首个增量入队时的长度；后续增量只拼接文本。
+      pendingDeltaRef.current.set(turnId, {
+        delta: (pending?.delta ?? '') + delta,
+        baseLength: pending ? pending.baseLength : baseLength,
+      });
       if (deltaFlushTimerRef.current != null) return;
       const scheduledAt = performance.now();
       const delayMs = deltaHasFlushedRef.current ? 80 : 0;
       deltaFlushTimerRef.current = window.setTimeout(() => {
         deltaHasFlushedRef.current = true;
         const flushStart = performance.now();
-        const pending = new Map(pendingDeltaRef.current);
-        const chars = [...pending.values()].reduce(
-          (sum, value) => sum + value.length,
+        const pendingMap = new Map(pendingDeltaRef.current);
+        const chars = [...pendingMap.values()].reduce(
+          (sum, value) => sum + value.delta.length,
           0,
         );
         pendingDeltaRef.current.clear();
@@ -113,15 +118,19 @@ export function useSessionEventBuffers({
         setTurns((previous) => {
           let changed = false;
           const next = previous.map((turn) => {
-            const bufferedDelta = pending.get(turn.turnId);
-            if (!bufferedDelta) return turn;
+            const buffered = pendingMap.get(turn.turnId);
+            if (!buffered) return turn;
             changed = true;
-            return applyBufferedDeltaToTurn(turn, bufferedDelta);
+            return applyBufferedDeltaToTurn(
+              turn,
+              buffered.delta,
+              buffered.baseLength,
+            );
           });
           return changed ? next : previous;
         });
         recordPerfEvent('chat.delta.flush', {
-          turns: pending.size,
+          turns: pendingMap.size,
           chars,
           waitMs: Math.round(flushStart - scheduledAt),
           applyMs: Math.round(performance.now() - flushStart),
@@ -138,24 +147,28 @@ export function useSessionEventBuffers({
     }
     if (pendingDeltaRef.current.size === 0) return;
     const flushStart = performance.now();
-    const pending = new Map(pendingDeltaRef.current);
-    const chars = [...pending.values()].reduce(
-      (sum, value) => sum + value.length,
+    const pendingMap = new Map(pendingDeltaRef.current);
+    const chars = [...pendingMap.values()].reduce(
+      (sum, value) => sum + value.delta.length,
       0,
     );
     pendingDeltaRef.current.clear();
     setTurns((previous) => {
       let changed = false;
       const next = previous.map((turn) => {
-        const bufferedDelta = pending.get(turn.turnId);
-        if (!bufferedDelta) return turn;
+        const buffered = pendingMap.get(turn.turnId);
+        if (!buffered) return turn;
         changed = true;
-        return applyBufferedDeltaToTurn(turn, bufferedDelta);
+        return applyBufferedDeltaToTurn(
+          turn,
+          buffered.delta,
+          buffered.baseLength,
+        );
       });
       return changed ? next : previous;
     });
     recordPerfEvent('chat.delta.flushNow', {
-      turns: pending.size,
+      turns: pendingMap.size,
       chars,
       applyMs: Math.round(performance.now() - flushStart),
     });

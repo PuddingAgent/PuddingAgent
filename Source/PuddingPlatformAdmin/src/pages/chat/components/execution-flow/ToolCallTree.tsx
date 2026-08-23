@@ -15,7 +15,7 @@ import { sanitizeProcessText } from '../processPreview';
 import { ToolCallRow } from './ToolCallRow';
 
 /** 占位节点判定：placeholder=true 且无任何真实结果 → 隐藏（不渲染空壳）。 */
-const isPlaceholderVoid = (node: ToolNode): boolean =>
+export const isPlaceholderVoid = (node: ToolNode): boolean =>
   Boolean(
     node.placeholder &&
       !node.output &&
@@ -28,8 +28,8 @@ export interface ToolCallTreeProps {
   nodes: ToolNode[];
 }
 
-/** 递归分支：单节点行 +（有 children 时）缩进子列表。 */
-const ToolCallTreeBranch: React.FC<{ node: ToolNode }> = ({ node }) => {
+/** 递归分支：单节点行 +（有 children 时）缩进子列表（ExecutionFlowTimeline 交错复用）。 */
+export const ToolCallTreeBranch: React.FC<{ node: ToolNode }> = ({ node }) => {
   const { styles } = useToolCallStyles();
   const visibleChildren = node.children.filter(
     (child) => !isPlaceholderVoid(child),

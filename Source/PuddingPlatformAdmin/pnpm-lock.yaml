@@ -65,6 +65,9 @@ importers:
       sm-crypto:
         specifier: ^0.4.0
         version: 0.4.0
+      thinking-orbs:
+        specifier: ^0.3.1
+        version: 0.3.1(react@19.2.5)
       topojson-client:
         specifier: ^3.1.0
         version: 3.1.0
@@ -10920,6 +10923,11 @@ packages:
   textextensions@5.16.0:
     resolution: {integrity: sha512-7D/r3s6uPZyU//MCYrX6I14nzauDwJ5CxazouuRGNuvSCihW87ufN6VLoROLCrHg6FblLuJrT6N2BVaPVzqElw==}
     engines: {node: '>=0.8'}
+
+  thinking-orbs@0.3.1:
+    resolution: {integrity: sha512-3BG1aeB1RUTxItCml/BBuIz5JRM4kZqGuyx+vouv0fXTtcR9ZNoKjWGneHPx94y74GxgArwJZ1qbJR5dt54kSw==}
+    peerDependencies:
+      react: '>=18.0.0'
 
   thread-stream@0.15.2:
     resolution: {integrity: sha512-UkEhKIg2pD+fjkHQKyJO3yoIvAP3N6RlNFt2dUhcS1FGvCD1cQa1M/PGknCLFIyZdtJOWQjejp7bdNqmN7zwdA==}
@@ -26510,6 +26518,10 @@ snapshots:
   text-table@0.2.0: {}
 
   textextensions@5.16.0: {}
+
+  thinking-orbs@0.3.1(react@19.2.5):
+    dependencies:
+      react: 19.2.5
 
   thread-stream@0.15.2:
     dependencies:

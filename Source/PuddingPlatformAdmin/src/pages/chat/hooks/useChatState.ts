@@ -588,7 +588,14 @@ export function useChatState(
             clientRequestId: record.id,
             clientMessageId: record.clientMessageId,
             recipients: { type: 'agent', agentIds: record.agentIds },
-            content: [{ type: 'text', text: record.messageText }],
+            content: record.imageParts?.length
+              ? [
+                  ...(record.messageText
+                    ? [{ type: 'text' as const, text: record.messageText }]
+                    : []),
+                  ...record.imageParts,
+                ]
+              : [{ type: 'text', text: record.messageText }],
             metadata: record.metadata,
           },
         );

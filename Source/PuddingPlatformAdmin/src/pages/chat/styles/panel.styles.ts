@@ -83,13 +83,13 @@ export const usePanelStyles = createStyles(() => ({
     maxWidth: 'min(720px, 100%)',
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: 8,
+    gap: 4,
   },
   currentActivityPanel: {
     position: 'relative' as const,
     isolation: 'isolate' as const,
     width: '100%',
-    minWidth: 'min(560px, calc(100vw - 128px))',
+    minWidth: 0,
     maxWidth: 'min(720px, 100%)',
     boxSizing: 'border-box' as const,
     border: '1px solid',
@@ -107,9 +107,6 @@ export const usePanelStyles = createStyles(() => ({
     flexDirection: 'column' as const,
     gap: 7,
     contain: 'paint',
-    '@media (max-width: 720px)': {
-      minWidth: 0,
-    },
   },
   currentActivityToneRunning: {
     borderLeftColor:

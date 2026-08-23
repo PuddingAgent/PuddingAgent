@@ -11,9 +11,11 @@
 import React, { useState } from 'react';
 import type { ToolNode } from '../../projections/executionFlowProjector';
 import type { ToolPresentationKind } from '@/services/platform/api';
+import { useExecutionFlowStyles } from '../../styles/execution-flow.styles';
 import { useToolCallStyles } from '../../styles/toolcall.styles';
 import { sanitizeProcessText } from '../processPreview';
 import { summarizeError } from '../../utils/summarizeError';
+import { formatDurationMs } from '../../utils/formatDuration';
 import {
   getPresentationKind,
   resolveRenderer,
@@ -252,6 +254,7 @@ export interface ToolCallRowProps {
 /** 单个工具调用行：单行摘要 + 整行展开（IN/OUT 卡 + presentation renderer 分派）。 */
 export const ToolCallRow: React.FC<ToolCallRowProps> = ({ node }) => {
   const { styles, cx } = useToolCallStyles();
+  const { styles: flowStyles, cx: flowCx } = useExecutionFlowStyles();
   const [showFullOut, setShowFullOut] = useState(false);
   const status = mapToolStateToRowStatus(node.state);
 
@@ -270,6 +273,15 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({ node }) => {
   const inText = sanitizeProcessText(node.arguments, { compact: false });
   const outBody = buildOutBody(node, status);
   const showOut = outBody.full.length > 0;
+  // 完成态计量（§3.3）：耗时 + 非零 exit code 上折叠行尾部（caption 灰 tabular-nums，
+  // error 时 exit code 染红）；running 无 durationMs 自然不渲染，不伪造。
+  const durationText = status === 'running' ? null : formatDurationMs(node.durationMs);
+  const exitCodeText =
+    status === 'error' &&
+    typeof node.exitCode === 'number' &&
+    node.exitCode !== 0
+      ? `exit ${node.exitCode}`
+      : null;
 
   return (
     <ExecutionDisclosureRow
@@ -374,6 +386,17 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({ node }) => {
       >
         {summary}
       </span>
+      {(durationText || exitCodeText) && (
+        <span
+          className={flowCx(
+            flowStyles.duration,
+            exitCodeText !== null && flowStyles.durationError,
+          )}
+          data-testid="toolcall-duration"
+        >
+          {[durationText, exitCodeText].filter(Boolean).join(' · ')}
+        </span>
+      )}
     </ExecutionDisclosureRow>
   );
 };

@@ -1,10 +1,16 @@
 // ── PresentationRegistry：presentation.kind → renderer 的最小分派表（CU-08 / TR-04b）──
 // 按 presentation.kind 分派 renderer；【禁止】按 toolName / 工具名字符串分支猜测卡片类型。
 // kind 词表与 Core wire 契约对齐：services/platform/api.ts ToolPresentationKind（八类 intent）。
-// 首批只完整消费 generic；其余七类留注册位（未注册时统一回落 Generic renderer）。
+// 行为链 P3：terminal/diff/read/search/web 五类专用 renderer 已注册（§3.5 卡片家族）；
+// delegation/job 未注册回落 Generic（delegation 由 DelegationRow 行承载主路径）。
 import type { ComponentType } from 'react';
 import type { ToolPresentationKind } from '@/services/platform/api';
 import { GenericRenderer } from './renderers/generic';
+import { TerminalRenderer } from './renderers/terminal';
+import { DiffRenderer } from './renderers/diff';
+import { ReadRenderer } from './renderers/read';
+import { SearchRenderer } from './renderers/search';
+import { WebRenderer } from './renderers/web';
 
 /** 八类 intent 键常量（与 Core ToolPresentationIntentKind 词表一一对应）。 */
 export const PRESENTATION_KINDS: readonly ToolPresentationKind[] = [
@@ -24,11 +30,16 @@ export type PresentationRenderer = ComponentType<{
   payload?: unknown;
 }>;
 
-/** kind → renderer 注册表（通用占位：首批仅 generic 注册，其余七类留注册位）。 */
+/** kind → renderer 注册表（行为链 P3：五类专用 renderer 上线）。 */
 const rendererRegistry: Partial<Record<ToolPresentationKind, PresentationRenderer>> = {
   generic: GenericRenderer,
-  // 注册位（后续 CU 逐个注册专用 renderer；当前未注册 → 回落 Generic）：
-  // terminal / diff / search / read / web / delegation / job
+  terminal: TerminalRenderer,
+  diff: DiffRenderer,
+  read: ReadRenderer,
+  search: SearchRenderer,
+  web: WebRenderer,
+  // 注册位（delegation 主路径由 DelegationRow 承载；job 后续按需注册）：
+  // delegation / job
 };
 
 /** 按 kind 分派 renderer；未注册 / 未知 / undefined / null → 回落 Generic renderer。 */

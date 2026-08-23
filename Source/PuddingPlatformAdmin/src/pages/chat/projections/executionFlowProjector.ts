@@ -169,6 +169,8 @@ export interface ReasoningNode extends ExecutionFlowNodeBase {
   text: string;
   /** 分块（对齐 MessageProcessSummary 的 900 字符切块阈值）。 */
   blocks: ReasoningBlock[];
+  /** 段末（最后一个 delta）事件的 occurredAt（服务端事实；段时长 = last - first）。 */
+  lastOccurredAt?: string;
 }
 
 /** 单个推理块（UI 折叠摘要 / 展开审计共用）。 */
@@ -582,6 +584,9 @@ export function projectExecutionFlow(
         text: event.delta ?? '',
       });
       openReasoning.node.sourceEventIds.push(event.eventId);
+      if (event.occurredAt) {
+        openReasoning.node.lastOccurredAt = event.occurredAt;
+      }
       return;
     }
     const node: ReasoningNode = {

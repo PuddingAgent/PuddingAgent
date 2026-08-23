@@ -9,8 +9,8 @@
 import React, { useEffect, useState } from 'react';
 import type { ExecutionFlowProjection } from '../../projections/executionFlowProjector';
 import { useExecutionFlowStyles } from '../../styles/execution-flow.styles';
-import StateDot from '../StateDot';
 import { ExecutionDisclosureRow } from './ExecutionDisclosureRow';
+import { TurnStatusOrb } from './TurnStatusOrb';
 
 // ── TurnStatus 类型（canonical 事件字段派生）───────────────────────────────
 
@@ -159,7 +159,13 @@ export const TurnStatus: React.FC<TurnStatusProps> = ({
 
   return (
     <ExecutionDisclosureRow
-      leading={<StateDot state="ongoing" size={10} />}
+      leading={
+        <TurnStatusOrb
+          pending={status.kind === 'pending'}
+          phase={status.phase}
+          ariaLabel={label}
+        />
+      }
       testId="turn-status"
       ariaLive="polite"
       className={styles.turnStatusRow}
@@ -172,7 +178,9 @@ export const TurnStatus: React.FC<TurnStatusProps> = ({
           className={styles.turnStatusElapsed}
           data-testid="turn-status-elapsed"
         >
-          · 已等待 {formatElapsed(elapsedSeconds)}
+          {/* 回答正在流式产出时是「运行」而非「等待」；等待语义保留给连接/排队阶段。 */}
+          · {status.phase === 'answering' ? '已运行' : '已等待'}{' '}
+          {formatElapsed(elapsedSeconds)}
         </span>
       )}
     </ExecutionDisclosureRow>

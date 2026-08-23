@@ -47,6 +47,11 @@ injectGlobal`
     --pudding-chat-text: #1a1a2e;
     --pudding-chat-text-muted: #5c4a3a;
     --pudding-chat-text-subtle: #8c7a6a;
+    /* 文本四档灰（行为链升级 §3.1）：primary 正文 / secondary 次要 / tertiary 过程正文（思考、工具行）/ caption 装饰标签与耗时。
+       muted/subtle 为 legacy 别名（= secondary/tertiary），存量引用不破坏。 */
+    --pudding-chat-text-secondary: #5c4a3a;
+    --pudding-chat-text-tertiary: #8c7a6a;
+    --pudding-chat-text-caption: #ab9c8e;
     --pudding-chat-accent: #7c3aed;
     --pudding-chat-accent-soft: rgba(124, 58, 237, 0.08);
     --pudding-chat-danger: #b42318;
@@ -361,6 +366,10 @@ injectGlobal`
     --pudding-chat-text: #f4efe7;
     --pudding-chat-text-muted: #d2c5b5;
     --pudding-chat-text-subtle: #a99c8d;
+    /* 文本四档灰 — Dark（与浅色段一一对应，§3.1） */
+    --pudding-chat-text-secondary: #d2c5b5;
+    --pudding-chat-text-tertiary: #a99c8d;
+    --pudding-chat-text-caption: #8d8174;
     --pudding-chat-accent: #a78bfa;
     --pudding-chat-accent-soft: rgba(167, 139, 250, 0.14);
     --pudding-chat-danger: #fca5a5;

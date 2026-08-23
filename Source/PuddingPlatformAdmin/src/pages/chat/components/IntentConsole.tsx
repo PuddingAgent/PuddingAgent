@@ -1,15 +1,15 @@
 ﻿// ── InputArea：安静胶囊 Composer + 轻反馈带 ────────
 import {
-  AudioMutedOutlined,
   AudioOutlined,
   DeleteOutlined,
   DownOutlined,
   LoadingOutlined,
   PlusOutlined,
   SendOutlined,
+  SettingOutlined,
   StopOutlined,
 } from '@ant-design/icons';
-import { Input, message, Popover, Tooltip } from 'antd';
+import { message, Popover, Tooltip } from 'antd';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   type CacheDiagnosticsReport,
@@ -38,7 +38,9 @@ import type { SandboxBoundaryInfo, SandboxNetworkMode } from '../sandbox/sandbox
 import { useChatStyles } from '../styles';
 import type { PermissionMode } from '../types/chatStateTypes';
 import AutoReviewIndicator from './AutoReviewIndicator';
-import CommandPalette, { type Command, filterCommands } from './CommandPalette';
+import ComposerTextInput, {
+  type ComposerTextInputHandle,
+} from './ComposerTextInput';
 import ComposerActionMenu from './ComposerActionMenu';
 import ComposerContextBar from './ComposerContextBar';
 import ComposerFeedbackStrip, {
@@ -143,6 +145,7 @@ interface IntentConsoleProps {
   onSendWithMetadata?: (
     content: string,
     metadata: Record<string, string>,
+    imageParts?: { type: 'image'; artifactId: string; detail?: 'original' | 'low' }[],
   ) => Promise<void> | void;
   onStop: () => void;
   onExport: () => void;
@@ -252,9 +255,9 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
 }) => {
   const { styles } = useChatStyles();
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  /** 输入叶子组件句柄（草稿态/IME 守卫/命令面板已下沉，外部改写走 setValue） */
+  const textInputRef = useRef<ComposerTextInputHandle | null>(null);
   const handleComposerSendRef = useRef<() => void>(() => undefined);
-  const [paletteVisible, setPaletteVisible] = useState(false);
-  const [selectedIdx, setSelectedIdx] = useState(0);
   /** `+` 动作菜单 Popover */
   const [showComposerMenu, setShowComposerMenu] = useState(false);
   /** 运行状态详情 Popover */
@@ -281,9 +284,10 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const [completedVisible, setCompletedVisible] = useState(false);
   /** Composer 输入容器焦点状态 */
   const [composerFocused, setComposerFocused] = useState(false);
-  /** 输入框本地草稿；IME 组合输入期间避免把拼音中间态提升到整页状态。 */
-  const [draftValue, setDraftValue] = useState(inputValue);
-  const isTextComposingRef = useRef(false);
+  /** 输入是否有文本（叶子组件仅空↔非空翻转时上报；替代逐键 draftValue 门控） */
+  const [composerHasText, setComposerHasText] = useState(
+    inputValue.trim().length > 0,
+  );
   /** 容器是否处于 active（focus 或 非空输入 或 正在录音） */
   const [recording, setRecording] = useState(false);
   const [recognizing, setRecognizing] = useState(false);
@@ -343,7 +347,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const voiceAdapterRef = useRef(createDashScopeVoiceInputAdapter());
   const composerActive =
     composerFocused ||
-    draftValue.trim().length > 0 ||
+    composerHasText ||
     pendingImages.length > 0 ||
     recording;
   const cameraSupported = cameraInputAdapter.isSupported();
@@ -387,19 +391,10 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   }, [status]);
 
   React.useEffect(() => {
-    if (composerFocused || draftValue.length > 0) {
+    if (composerFocused || composerHasText) {
       setCompletedVisible(false);
     }
-  }, [composerFocused, draftValue]);
-
-  React.useEffect(() => {
-    if (!isTextComposingRef.current && inputValue !== draftValue) {
-      setDraftValue(inputValue);
-      if (!inputValue.trim()) {
-        setPaletteVisible(false);
-      }
-    }
-  }, [draftValue, inputValue]);
+  }, [composerFocused, composerHasText]);
 
   React.useEffect(() => {
     pendingImagesRef.current = pendingImages;
@@ -414,160 +409,31 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     [],
   );
 
-  const updateCommandPaletteState = useCallback(
-    (value: string, selectionStart?: number | null) => {
-      const pos = selectionStart ?? value.length;
-      const before = value.slice(0, pos);
-      const slashMatch = before.match(/(?:^|\s)\/([^\s]*)$/);
-      setPaletteVisible(!!slashMatch);
-      if (slashMatch) {
-        setSelectedIdx(0);
-      }
-    },
-    [],
-  );
-
-  /** 当前文本中最后一个 / 后的内容（用于过滤命令） */
-  const slashFilterText = React.useMemo(() => {
-    if (!paletteVisible) return '';
-    const cursorPos = textAreaRef.current?.selectionStart ?? draftValue.length;
-    const beforeCursor = draftValue.slice(0, cursorPos);
-    const match = beforeCursor.match(/(?:^|\s)\/([^\s]*)$/);
-    return match ? match[1] : '';
-  }, [draftValue, paletteVisible]);
-
-  /** 根据过滤文本匹配的命令列表 */
-  const filteredCommands = React.useMemo(() => {
-    return filterCommands(slashFilterText);
-  }, [slashFilterText]);
-
-  const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const v = e.target.value;
-      setDraftValue(v);
-      setCompletedVisible(false);
-
-      if (!isTextComposingRef.current) {
-        onInputChange(v);
-      }
-
-      updateCommandPaletteState(v, e.target.selectionStart);
-    },
-    [onInputChange, updateCommandPaletteState],
-  );
-
-  const handleCompositionStart = useCallback(() => {
-    isTextComposingRef.current = true;
+  // 输入/组合/命令面板键盘导航已下沉 ComposerTextInput 叶子组件（按键只重渲染叶子）。
+  // IntentConsole 仅接收低频事件：focus 变化与 hasText 空↔非空翻转。
+  const handleTextAreaFocusChange = useCallback((focused: boolean) => {
+    setComposerFocused(focused);
   }, []);
-
-  const handleCompositionEnd = useCallback(
-    (e: React.CompositionEvent<HTMLTextAreaElement>) => {
-      isTextComposingRef.current = false;
-      const v = e.currentTarget.value;
-      setDraftValue(v);
-      setCompletedVisible(false);
-      onInputChange(v);
-      updateCommandPaletteState(v, e.currentTarget.selectionStart);
-    },
-    [onInputChange, updateCommandPaletteState],
-  );
-
-  const handleCommandSelect = useCallback(
-    (cmd: Command) => {
-      const pos = textAreaRef.current?.selectionStart ?? draftValue.length;
-      const before = draftValue.slice(0, pos);
-      const after = draftValue.slice(pos);
-      const newBefore = before.replace(/\/([^\s]*)$/, cmd.shortcut + ' ');
-      const newValue = newBefore + after;
-      setDraftValue(newValue);
-      onInputChange(newValue);
-      setPaletteVisible(false);
-      requestAnimationFrame(() => {
-        if (textAreaRef.current) {
-          const newPos = newBefore.length;
-          textAreaRef.current.selectionStart = newPos;
-          textAreaRef.current.selectionEnd = newPos;
-          textAreaRef.current.focus();
-        }
-      });
-    },
-    [draftValue, onInputChange],
-  );
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.nativeEvent.isComposing || isTextComposingRef.current) {
-        return;
-      }
-
-      if (paletteVisible) {
-        if (e.key === 'ArrowDown') {
-          e.preventDefault();
-          setSelectedIdx((prev) =>
-            Math.min(filteredCommands.length - 1, prev + 1),
-          );
-          return;
-        }
-        if (e.key === 'ArrowUp') {
-          e.preventDefault();
-          setSelectedIdx((prev) => Math.max(0, prev - 1));
-          return;
-        }
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          setPaletteVisible(false);
-          return;
-        }
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          const cmd = filteredCommands[selectedIdx];
-          if (cmd) handleCommandSelect(cmd);
-          return;
-        }
-      }
-      if (e.key === 'Enter' && !e.shiftKey && pendingImages.length > 0) {
-        e.preventDefault();
-        handleComposerSendRef.current();
-        return;
-      }
-      onKeyDown(e);
-    },
-    [
-      paletteVisible,
-      filteredCommands,
-      selectedIdx,
-      onKeyDown,
-      handleCommandSelect,
-      pendingImages.length,
-    ],
-  );
-
-  const handleClosePalette = useCallback(() => {
-    setPaletteVisible(false);
+  const handleHasTextChange = useCallback((hasText: boolean) => {
+    setComposerHasText(hasText);
   }, []);
-
-  const handleTextAreaFocus = useCallback(() => {
-    setComposerFocused(true);
-  }, []);
-  const handleTextAreaBlur = useCallback(() => {
-    setComposerFocused(false);
+  /** Enter+待发图片：走图片上传发送流（叶子内消费按键）。 */
+  const handleEnterWithImages = useCallback(() => {
+    handleComposerSendRef.current();
   }, []);
   const handleFillUiTestGreeting = useCallback(() => {
     setCompletedVisible(false);
-    setPaletteVisible(false);
-    setDraftValue('你好');
-    onInputChange('你好');
+    textInputRef.current?.setValue('你好');
     requestAnimationFrame(() => textAreaRef.current?.focus());
-  }, [onInputChange]);
+  }, []);
 
   const handleCameraSend = useCallback(
     async (content: string, metadata: Record<string, string>) => {
       if (!onSendWithMetadata) return;
       await onSendWithMetadata(content, metadata);
-      setDraftValue('');
-      onInputChange('');
+      textInputRef.current?.setValue('');
     },
-    [onInputChange, onSendWithMetadata],
+    [onSendWithMetadata],
   );
 
   // ── 图片暂存与发送（菜单选择 / 粘贴 / 拖拽共用）──
@@ -631,22 +497,23 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
           };
         }),
       );
-      const artifactIds = uploaded.map((item) => item.artifactId);
+      // ADR-077：图片事实以 typed content parts 提交；metadata 只保留投影事实。
+      const imageParts = uploaded.map((item) => ({
+        type: 'image' as const,
+        artifactId: item.artifactId,
+        detail: 'original' as const,
+      }));
       const metadata: Record<string, string> = {
         inputMode: 'image',
-        visionArtifactId: artifactIds[0],
-        visionArtifactIds: artifactIds.join(','),
         imageCount: String(uploaded.length),
-        imageManifest: JSON.stringify(uploaded),
       };
       const prompt =
-        draftValue.trim() ||
+        (textInputRef.current?.getValue() ?? '').trim() ||
         (uploaded.length > 1 ? '请分析这些图片。' : '请分析这张图片。');
-      await onSendWithMetadata(prompt, metadata);
+      await onSendWithMetadata(prompt, metadata, imageParts);
       pendingImages.forEach((item) => URL.revokeObjectURL(item.previewUrl));
       setPendingImages([]);
-      setDraftValue('');
-      onInputChange('');
+      textInputRef.current?.setValue('');
     } catch (err) {
       message.error(getRequestErrorMessage(err, '图片上传失败'));
     } finally {
@@ -654,10 +521,8 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     }
   }, [
     disabled,
-    draftValue,
     imageUploading,
     loading,
-    onInputChange,
     onSend,
     onSendWithMetadata,
     onStop,
@@ -769,8 +634,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
         setTimeout(() => {
           setRecognizing(false);
           if (finalText.trim()) {
-            setDraftValue(finalText);
-            onInputChange(finalText);
+            textInputRef.current?.setValue(finalText);
           }
         }, 200);
       };
@@ -914,14 +778,6 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
         tabIndex={-1}
         data-testid="image-file-input"
       />
-      <CommandPalette
-        visible={paletteVisible}
-        filterText={slashFilterText}
-        selectedIdx={selectedIdx % Math.max(1, filteredCommands.length)}
-        onSelectIndex={setSelectedIdx}
-        onSelect={handleCommandSelect}
-        onClose={handleClosePalette}
-            />
 
       <MessageQueueDropdown
         interactionQueue={interactionQueue}
@@ -975,21 +831,20 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
           cacheHitRate={cacheHitRate}
           compactionStatus={compactionStatus}
         />
-        <Input.TextArea
-          ref={textAreaRef as any}
-          value={draftValue}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePasteImage}
-          onCompositionStart={handleCompositionStart}
-          onCompositionEnd={handleCompositionEnd}
-          onFocus={handleTextAreaFocus}
-          onBlur={handleTextAreaBlur}
+        <ComposerTextInput
+          ref={textInputRef}
+          inputValue={inputValue}
+          onInputChange={onInputChange}
+          onKeyDown={onKeyDown}
+          onFocusChange={handleTextAreaFocusChange}
+          onHasTextChange={handleHasTextChange}
+          onEnterWithImages={handleEnterWithImages}
+          hasPendingImages={pendingImages.length > 0}
           placeholder={loading ? '正在生成回复…' : '输入你的问题或任务…'}
           disabled={disabled}
-          autoSize={{ minRows: 1, maxRows: 5 }}
           className={styles.composerTextarea}
-          data-testid="chat-input"
+          onPaste={handlePasteImage}
+          textareaRef={textAreaRef}
         />
 
         <div className={styles.composerToolbar}>
@@ -1113,30 +968,57 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               onChange={onPermissionModeChange}
               disabled={disabled || loading}
             />
-            <SandboxBoundaryIndicator
-              boundary={sandboxBoundary ?? null}
-              disabled={disabled || !sandboxBoundary}
-              onNetworkModeChange={onSandboxNetworkModeChange}
-            />
-            <AutoReviewIndicator
-              state={
-                autoReviewState ?? {
-                  enabled: permissionMode === 'auto',
-                  consecutiveBlocks: 0,
-                  totalBlocks: 0,
-                  fallbackTriggered: false,
-                  fallbackReason: null,
-                  lastBlockedAt: null,
-                  lastBlockRule: null,
-                }
+            {/* CU-11 §6.2：低频选项（Sandbox 边界 / Auto-review）收敛进设置 Popover，
+                需要盯防的活动态通过角标浮出；高频的执行偏好/权限/语音/发送保持直达。 */}
+            <Popover
+              trigger="click"
+              placement="topRight"
+              content={
+                <div
+                  className={styles.composerSettingsPanel}
+                  data-testid="composer-settings-panel"
+                >
+                  <SandboxBoundaryIndicator
+                    boundary={sandboxBoundary ?? null}
+                    disabled={disabled || !sandboxBoundary}
+                    onNetworkModeChange={onSandboxNetworkModeChange}
+                  />
+                  <AutoReviewIndicator
+                    state={
+                      autoReviewState ?? {
+                        enabled: permissionMode === 'auto',
+                        consecutiveBlocks: 0,
+                        totalBlocks: 0,
+                        fallbackTriggered: false,
+                        fallbackReason: null,
+                        lastBlockedAt: null,
+                        lastBlockRule: null,
+                      }
+                    }
+                    recentlyDenied={recentlyDenied}
+                    disabled={disabled || loading}
+                    onRestoreAuto={onAutoReviewRestore}
+                    onRetryDenied={onRetryDenied}
+                    onRemoveDenied={onRemoveDenied}
+                    onClearDenied={onClearDenied}
+                  />
+                </div>
               }
-              recentlyDenied={recentlyDenied}
-              disabled={disabled || loading}
-              onRestoreAuto={onAutoReviewRestore}
-              onRetryDenied={onRetryDenied}
-              onRemoveDenied={onRemoveDenied}
-              onClearDenied={onClearDenied}
-            />
+            >
+              <button
+                type="button"
+                className={styles.composerToolbarButton}
+                aria-label="沙箱与自动审查设置"
+                data-testid="composer-settings"
+              >
+                <SettingOutlined />
+                {Boolean(
+                  (autoReviewState?.consecutiveBlocks ?? 0) > 0 ||
+                    autoReviewState?.fallbackTriggered ||
+                    recentlyDenied.length > 0,
+                ) && <span className={styles.composerSettingsBadge} />}
+              </button>
+            </Popover>
             <Tooltip
               title={
                 recording ? '停止录音' : recognizing ? '识别中...' : '语音输入'
@@ -1176,7 +1058,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 disabled={
                   loading
                     ? false
-                    : (!draftValue.trim() && pendingImages.length === 0) ||
+                    : (!composerHasText && pendingImages.length === 0) ||
                       disabled ||
                       imageUploading
                 }
@@ -1202,7 +1084,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
             open
             workspaceId={workspaceId}
             disabled={disabled || loading}
-            initialPrompt={draftValue}
+            initialPrompt={textInputRef.current?.getValue() ?? ''}
             cameraInputAdapter={cameraInputAdapter}
             onCancel={() => setShowCameraInput(false)}
             onSend={handleCameraSend}

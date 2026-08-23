@@ -1125,4 +1125,24 @@ export const useComposerStyles = createStyles(({ token }) => ({
       fontSize: 12,
     },
   },
+
+  // ── CU-11 §6.2：低频选项收敛（Sandbox / Auto-review 设置 Popover）──
+  /** 设置面板：Sandbox 边界 + Auto-review 纵向排布 */
+  composerSettingsPanel: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 12,
+    minWidth: 280,
+    maxWidth: 'min(360px, calc(100vw - 48px))',
+  },
+  /** 活动角标：Auto-review 有拦截/回退/最近拒绝时在设置入口旁提示 */
+  composerSettingsBadge: {
+    display: 'inline-block',
+    width: 6,
+    height: 6,
+    marginLeft: 4,
+    borderRadius: '50%',
+    background: 'var(--pudding-status-error, #c15f45)',
+    flexShrink: 0,
+  },
 }));

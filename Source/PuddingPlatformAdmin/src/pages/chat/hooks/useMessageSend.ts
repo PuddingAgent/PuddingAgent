@@ -370,6 +370,11 @@ export function useMessageSend({
           timestamp: now,
           status: 'sending',
           metadata: options?.metadata,
+          contentParts: options?.imageParts?.map((p) => ({
+            type: 'image',
+            artifactId: p.artifactId,
+            detail: p.detail ?? 'original',
+          })),
         },
         assistant: createAssistant(createId(), 'structured', 'thinking', true),
       };
@@ -419,6 +424,7 @@ export function useMessageSend({
               ? route.targetAgentIds
               : [targetAgentId],
           metadata: options?.metadata,
+          imageParts: options?.imageParts,
         });
         await markSending(clientRequestId);
         // T-102: 非流式 POST — 202 Accepted + { success, status, commandId, messageId, turnId, sessionId, eventCursor }
@@ -436,7 +442,12 @@ export function useMessageSend({
                   ? route.targetAgentIds
                   : [targetAgentId],
             },
-            content: [{ type: 'text', text: routedText }],
+            content: options?.imageParts?.length
+              ? [
+                  ...(routedText ? [{ type: 'text' as const, text: routedText }] : []),
+                  ...options.imageParts,
+                ]
+              : [{ type: 'text', text: routedText }],
             metadata: options?.metadata,
           },
           ctrl.signal,

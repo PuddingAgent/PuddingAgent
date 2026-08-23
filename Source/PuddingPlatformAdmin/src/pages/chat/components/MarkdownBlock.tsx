@@ -65,63 +65,52 @@ const MarkdownBlock = React.memo(
     previous.workspaceId === next.workspaceId,
 );
 
+// 只做逐行安全归一：不合并/吞并任何行。
+// 历史「管道行收集 + 标题拆 |」hack 会把分隔行与后续正文 join 成一行、吞掉空行，
+// 破坏 GFM「表头必须紧跟分隔行」的表格识别，导致整表降级为 <p> 原文。
+//
+// emoji 字号收敛（行为链 §UI 微调）：正文中的 emoji run 包一层
+// <span data-md-emoji>（配合 markdown.styles 的 0.95em 样式，避免 emoji
+// 渲染得比正文大一档）。跳过围栏代码块（fence 状态跟踪）与行内 `code` 段；
+// KaTeX 公式内出现 emoji 属异常输入，不做特判。
+const EMOJI_RUN_RE = /(?:\p{Extended_Pictographic}|\uFE0F|\u200D)+/gu;
+
+const wrapEmojiRuns = (line: string): string => {
+  if (!EMOJI_RUN_RE.test(line)) {
+    EMOJI_RUN_RE.lastIndex = 0;
+    return line;
+  }
+  EMOJI_RUN_RE.lastIndex = 0;
+  // 行内 code 段（`...`）不包裹：按反引号分段，仅处理偶数索引（code 外）段。
+  const segments = line.split('`');
+  return segments
+    .map((segment, index) =>
+      index % 2 === 0
+        ? segment.replace(
+            EMOJI_RUN_RE,
+            (run) => `<span data-md-emoji>${run}</span>`,
+          )
+        : segment,
+    )
+    .join('`');
+};
+
 const preprocessMarkdown = (markdown: string): string => {
   const lines = markdown.split('\n');
   const output: string[] = [];
-  let index = 0;
-  while (index < lines.length) {
-    const line = lines[index];
-    const trimmed = line.trim();
-
-    if (trimmed === '``') {
+  let inFencedCode = false;
+  for (const line of lines) {
+    if (line.trim() === '``') {
       output.push('```');
-      index++;
       continue;
     }
-
-    const headingMatch = /^(#{1,6}\s+)(.*)$/.exec(trimmed);
-    if (headingMatch?.[2].includes('|')) {
-      const prefix = headingMatch[1];
-      const rest = headingMatch[2];
-      const pipeIndex = rest.indexOf('|');
-      const headingText = rest.substring(0, pipeIndex).trim();
-      const tablePart = rest.substring(pipeIndex).trim();
-      output.push(prefix + (headingText || '测试结果'));
-      output.push('');
-      output.push(tablePart);
-      index++;
+    // 围栏代码块内的内容原样保留（不包 emoji span，不破坏代码语义/高亮）
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFencedCode = !inFencedCode;
+      output.push(line);
       continue;
     }
-
-    if (/^\|.*\|$/.test(trimmed) || /^\|[-:| ]+\|$/.test(trimmed)) {
-      const parts: string[] = [line];
-      index++;
-      while (index < lines.length) {
-        const nextLine = lines[index].trim();
-        if (/^\|/.test(nextLine)) break;
-        if (nextLine === '') {
-          index++;
-          break;
-        }
-        parts.push(lines[index]);
-        index++;
-      }
-      const fixed = parts
-        .join(' ')
-        .replace(/```[^\n`]*\s*/g, '`')
-        .replace(/\s*```/g, '`');
-      if (
-        output.length > 0 &&
-        /^#{1,6}\s/.test(output[output.length - 1].trim())
-      ) {
-        output.push('');
-      }
-      output.push(fixed);
-      continue;
-    }
-
-    output.push(line);
-    index++;
+    output.push(inFencedCode ? line : wrapEmojiRuns(line));
   }
   return output.join('\n');
 };

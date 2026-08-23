@@ -579,11 +579,15 @@ const ChatPageContent: React.FC = () => {
   }, [chat.inputValue, chat.setInputValue, chat.submitInteraction]);
 
   const handleSendWithMetadata = useCallback(
-    async (content: string, metadata?: Record<string, string>) => {
+    async (
+      content: string,
+      metadata?: Record<string, string>,
+      imageParts?: { type: 'image'; artifactId: string; detail?: 'original' | 'low' }[],
+    ) => {
       const text = content.trim();
-      if (!text) return;
+      if (!text && !(imageParts && imageParts.length > 0)) return;
       chat.setInputValue('');
-      await chat.submitInteraction(text, { metadata });
+      await chat.submitInteraction(text, { metadata, imageParts });
     },
     [chat.setInputValue, chat.submitInteraction],
   );

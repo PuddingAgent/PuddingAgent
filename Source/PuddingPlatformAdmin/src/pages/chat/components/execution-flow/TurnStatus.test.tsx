@@ -274,6 +274,20 @@ describe('TurnStatus 组件', () => {
     );
   });
 
+  it('answering 阶段计时文案为「已运行」（生成中而非等待）', () => {
+    render(
+      <TurnStatus
+        status={{ kind: 'running', phase: 'answering' }}
+        turnStartedAt={NOW - 30_000}
+        agentName="Pudding"
+        now={NOW}
+      />,
+    );
+    expect(screen.getByTestId('turn-status-elapsed').textContent).toContain(
+      '已运行 30s',
+    );
+  });
+
   it('终态（succeeded/failed/cancelled）立即不渲染', () => {
     const { container } = render(
       <TurnStatus

@@ -141,20 +141,16 @@ export const useMessageStyles = createStyles(({ token }) => ({
     lineHeight: '16px',
   },
   messageActionsNew: {
-    position: 'absolute' as const,
-    left: 4,
-    bottom: -26,
-    zIndex: 3,
+    // 行为链升级：去「白色药丸卡片 + 绝对定位悬浮」——与扁平消息流风格冲突，
+    // 且 bottom:-26 悬浮会与 TurnStatsLine 重叠。改为 harness IconActions 模式：
+    // 正文下方常驻透明图标行（hover 透明度切换、不 reflow），margin-left -6px
+    // 做 28px 热区的光学对齐。
     display: 'flex',
     alignItems: 'center',
     gap: 2,
-    padding: '2px 4px',
-    borderRadius: 6,
-    background: 'color-mix(in srgb, var(--soft-white) 90%, transparent)',
-    boxShadow: '0 4px 12px rgba(30, 22, 12, 0.08)',
+    margin: '6px 0 0 -6px',
     opacity: 0,
     pointerEvents: 'none' as const,
-    transform: 'translateY(-2px)',
     transition: 'opacity 180ms ease',
   },
   messageActionsVisible: {
@@ -168,22 +164,24 @@ export const useMessageStyles = createStyles(({ token }) => ({
     },
   },
   messageActionBtn: {
-    width: 24,
-    height: 24,
+    width: 28,
+    height: 28,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     border: 'none',
     background: 'transparent',
-    borderRadius: 4,
+    borderRadius: 6,
     cursor: 'pointer' as const,
-    color: 'var(--earth-brown)',
+    color: 'var(--pudding-chat-text-tertiary)',
     opacity: 1,
     fontSize: 13,
-    transition: 'opacity 120ms ease, background 120ms ease',
+    transition: 'opacity 120ms ease, background 120ms ease, color 120ms ease',
     '&:hover': {
       opacity: 1,
-      background: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
+      color: 'var(--pudding-chat-text-secondary)',
+      background:
+        'color-mix(in srgb, var(--pudding-chat-text-tertiary) 10%, transparent)',
     },
     // P0-2: 键盘焦点显影（对齐 focusViewRowHeader 的 focus-visible 写法）
     '&:focus-visible': {
@@ -203,21 +201,17 @@ export const useMessageStyles = createStyles(({ token }) => ({
     position: 'relative' as const,
   },
   userMessageActions: {
-    position: 'absolute' as const,
-    right: 4,
-    top: 'calc(100% + 2px)',
-    zIndex: 3,
+    // 与 agent 侧 messageActionsNew 同款 inline 透明图标行（去白卡/去绝对定位
+    // 悬浮）：随气泡流排列、右对齐由 userBubbleArea（align-items:flex-end）提供，
+    // hover 透明度切换、不 reflow；marginRight -6px 为 28px 热区光学对齐。
     display: 'flex',
     alignItems: 'center',
     gap: 2,
-    padding: '2px 4px',
-    borderRadius: 6,
-    background: 'color-mix(in srgb, var(--soft-white) 90%, transparent)',
-    boxShadow: '0 4px 12px rgba(30, 22, 12, 0.08)',
+    marginTop: 4,
+    marginRight: -6,
     opacity: 0,
     pointerEvents: 'none' as const,
-    transform: 'translateY(-2px)',
-    transition: 'opacity 180ms ease, transform 180ms ease',
+    transition: 'opacity 180ms ease',
     '&:focus-within': {
       opacity: 1,
       pointerEvents: 'auto' as const,
@@ -448,18 +442,16 @@ export const useMessageStyles = createStyles(({ token }) => ({
     animation: 'nodeAppear 300ms ease-out',
   },
   messageViewportControls: {
-    position: 'fixed' as const,
-    right: 24,
-    bottom: 112,
+    // 锚定 messageListShell（relative）右下角：不随滚动移动、始终位于 composer
+    // 上方（原 position:fixed + bottom:112 写死视口偏移，composer 变高时错位）。
+    position: 'absolute' as const,
+    right: 16,
+    bottom: 16,
     display: 'flex',
     justifyContent: 'flex-end',
     gap: 8,
     pointerEvents: 'none' as const,
     zIndex: 30,
-    '@media (max-width: 768px)': {
-      right: 16,
-      bottom: 96,
-    },
   },
   messageViewportControlButton: {
     pointerEvents: 'auto' as const,

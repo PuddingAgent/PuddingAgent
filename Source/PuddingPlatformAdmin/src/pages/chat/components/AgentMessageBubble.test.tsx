@@ -478,12 +478,15 @@ describe('AgentMessageBubble streaming presentation', () => {
       />,
     );
 
-    expect(screen.getByText('正在调用 2 个子代理')).toBeTruthy();
+    // 行为链升级：委派等待态由 TurnStatus delegating 阶段承载，
+    // CurrentActivityPanel 委派大卡退役（不再三处重复）。
+    expect(screen.getByText('正在等待子代理')).toBeTruthy();
+    expect(screen.queryByText('正在调用 2 个子代理')).toBeNull();
     expect(screen.getByText('思考')).toBeTruthy();
     expect(screen.getByText('主代理继续整理已返回的信息。')).toBeTruthy();
     expect(
-      screen.getByText('主代理正在等待子代理返回；内部进度请查看右侧托盘坞'),
-    ).toBeTruthy();
+      screen.queryByText('主代理正在等待子代理返回；内部进度请查看右侧托盘坞'),
+    ).toBeNull();
     expect(document.body.textContent).not.toContain('子代理任务详情');
     // CU-10：MessageProcessSummary 已退出主生产路径 → 不再渲染「查看过程」折叠摘要入口。
     expect(screen.queryByText('查看过程')).toBeNull();
@@ -688,8 +691,7 @@ describe('AgentMessageBubble streaming presentation', () => {
     expect(mockUseTypewriterStreaming).toHaveBeenCalledWith(
       expect.objectContaining({
         isStreaming: true,
-        tickMs: 40,
-        maxLagChars: 48,
+        text: '完整回答',
       }),
     );
     expect(screen.queryByText(/已思考/)).toBeNull();

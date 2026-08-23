@@ -9,23 +9,24 @@
 import { createStyles } from 'antd-style';
 
 export const useExecutionFlowStyles = createStyles(() => ({
-  /** 行容器：非可展开行无 hover/焦点反馈；chevron 占位保持对齐 */
+  /** 行容器：非可展开行无 hover/焦点反馈；chevron 占位保持对齐（harness 24px 行，规范下限 28px） */
   row: {
     position: 'relative',
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    minHeight: 32,
-    padding: '0 8px',
+    gap: 6,
+    minHeight: 28,
+    padding: '0 4px',
     boxSizing: 'border-box' as const,
     borderRadius: 6,
     width: '100%',
     maxWidth: 'min(720px, 100%)',
     transition: 'background 150ms ease',
   },
-  /** 可展开行：整行可点（cursor + hover + :focus-visible 焦点环） */
+  /** 可展开行：整行可点（cursor + hover + :focus-visible 焦点环）；可点击区最小 32px（§6 规范） */
   rowClickable: {
     cursor: 'pointer',
+    minHeight: 32,
     '&:hover': {
       background:
         'color-mix(in srgb, var(--pudding-chat-text-subtle) 10%, transparent)',
@@ -42,7 +43,7 @@ export const useExecutionFlowStyles = createStyles(() => ({
     alignItems: 'center',
     justifyContent: 'center',
     width: 16,
-    height: 32,
+    height: 28,
   },
   /** 行主体：弹性填充；单行截断由内容自身处理 */
   body: {
@@ -50,7 +51,57 @@ export const useExecutionFlowStyles = createStyles(() => ({
     minWidth: 0,
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+  },
+  /** 标题与摘要之间的 2×2px 分隔点（harness 行式 chrome） */
+  titleDot: {
+    flexShrink: 0,
+    width: 2,
+    height: 2,
+    borderRadius: 1,
+    background: 'var(--pudding-chat-text-caption)',
+    opacity: 0.85,
+  },
+  /** 折叠行尾部计量槽（耗时 / exit code）：caption 灰 + tabular-nums，不挤压摘要 */
+  duration: {
+    flexShrink: 0,
+    fontSize: 11,
+    lineHeight: '20px',
+    color: 'var(--pudding-chat-text-caption)',
+    fontVariantNumeric: 'tabular-nums' as const,
+    whiteSpace: 'nowrap' as const,
+  },
+  /** exit code 非零时的错误色计量 */
+  durationError: {
+    color: 'var(--pudding-status-error)',
+  },
+  /** running 行扫光（与工具行 toolCallSweep 同参数家族；reasoning/委派行复用） */
+  rowSweep: {
+    '&::after': {
+      content: '""',
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      height: '100%',
+      width: '38%',
+      background:
+        'linear-gradient(100deg, transparent, color-mix(in srgb, var(--pudding-status-running) 12%, transparent), transparent)',
+      transform: 'translateX(-130%)',
+      animation: 'executionFlowRowSweep 1.7s ease-in-out infinite',
+      pointerEvents: 'none' as const,
+    },
+    overflow: 'hidden',
+    '@media (prefers-reduced-motion: reduce)': {
+      '&::after': {
+        animation: 'none',
+        transform: 'none',
+        opacity: 0.16,
+      },
+    },
+  },
+  '@keyframes executionFlowRowSweep': {
+    '0%': { transform: 'translateX(-130%)' },
+    '55%, 100%': { transform: 'translateX(360%)' },
   },
   /** chevron 16px 固定槽；不可展开时占位隐藏（行首对齐不跳动） */
   chevron: {
@@ -59,18 +110,18 @@ export const useExecutionFlowStyles = createStyles(() => ({
     alignItems: 'center',
     justifyContent: 'center',
     width: 16,
-    height: 32,
+    height: 28,
     fontSize: 10,
     lineHeight: 1,
-    color: 'var(--pudding-chat-text-subtle)',
+    color: 'var(--pudding-chat-text-caption)',
     transition: 'transform 150ms ease',
   },
   chevronPlaceholder: {
     visibility: 'hidden',
   },
-  /** 展开体：左缩进对齐行内容（8 + 16 + 8 = 32px）；圆角 10px；表面由消费方定义 */
+  /** 展开体：左缩进对齐行内容（leading 16 + gap 6 = 22px）；圆角 10px；表面由消费方定义 */
   expanded: {
-    padding: '2px 8px 6px 32px',
+    padding: '2px 8px 6px 22px',
     boxSizing: 'border-box' as const,
     maxWidth: 'min(720px, 100%)',
   },
@@ -80,11 +131,21 @@ export const useExecutionFlowStyles = createStyles(() => ({
   turnStatusRow: {
     maxWidth: 'min(720px, 100%)',
   },
-  /** 「{agentName} 正在运行」/ 阶段文案：text-shimmer（对齐 D6 TurnStatus），reduced-motion 降级静态 */
+  /** 墨球宿主槽：20px inline 档，-2px 光学居中于 16px leading 槽（两侧各溢 2px 吃进行 padding） */
+  orbHost: {
+    flexShrink: 0,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 20,
+    height: 20,
+    marginLeft: -2,
+  },
+  /** 「{agentName} 正在运行」/ 阶段文案：text-shimmer（对齐 harness TurnStatus shimmer），reduced-motion 降级静态 */
   turnStatusLabel: {
-    fontSize: 13,
-    fontWeight: 600,
-    lineHeight: '20px',
+    fontSize: 14,
+    fontWeight: 500,
+    lineHeight: '22px',
     whiteSpace: 'nowrap' as const,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -103,7 +164,7 @@ export const useExecutionFlowStyles = createStyles(() => ({
   },
   /** 「· 已等待 Xs/Xm」（≥15s 才渲染；基于持久化 turn start，刷新不归零） */
   turnStatusElapsed: {
-    color: 'var(--pudding-chat-text-muted)',
+    color: 'var(--pudding-chat-text-caption)',
     fontSize: 11,
     lineHeight: '20px',
     fontVariantNumeric: 'tabular-nums' as const,
@@ -114,24 +175,37 @@ export const useExecutionFlowStyles = createStyles(() => ({
     '100%': { backgroundPosition: '-200% 0' },
   },
 
-  // ── ReasoningDisclosureRow（CU-06 §5.1 + §6.1）──
-  /** reasoning 标题「思考」：13px/20px 600（对齐 turnStatusLabel 规格） */
+  // ── ReasoningDisclosureRow（CU-06 §5.1 + §6.1 + 行为链 §3.3 计量 chip）──
+  /** reasoning 标题「思考」：14px/22px 500（过程行标题 = secondary 档） */
   reasoningTitle: {
-    fontSize: 13,
-    fontWeight: 600,
-    lineHeight: '20px',
-    color: 'var(--pudding-chat-text)',
+    fontSize: 14,
+    fontWeight: 500,
+    lineHeight: '22px',
+    color: 'var(--pudding-chat-text-secondary)',
     whiteSpace: 'nowrap' as const,
   },
-  /** 摘要单行 ellipsis：13px/20px，颜色次级 */
+  /** 摘要单行 ellipsis：13px/20px，过程正文 = tertiary 档 */
   reasoningSummary: {
     fontSize: 13,
     lineHeight: '20px',
-    color: 'var(--pudding-chat-text-secondary)',
+    color: 'var(--pudding-chat-text-tertiary)',
     whiteSpace: 'nowrap' as const,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     minWidth: 0,
+  },
+  /** 完成态计量 chip：「思考 · 12s」（caption 底 pill，对齐 harness "Thought for Ns"） */
+  reasoningChip: {
+    flexShrink: 0,
+    fontSize: 11,
+    lineHeight: '18px',
+    padding: '0 8px',
+    borderRadius: 999,
+    color: 'var(--pudding-chat-text-caption)',
+    background:
+      'color-mix(in srgb, var(--pudding-chat-text-caption) 10%, transparent)',
+    fontVariantNumeric: 'tabular-nums' as const,
+    whiteSpace: 'nowrap' as const,
   },
   /** 展开内容容器：标题/复制/正文纵向排布 */
   reasoningWrap: {
@@ -144,7 +218,7 @@ export const useExecutionFlowStyles = createStyles(() => ({
     alignSelf: 'flex-start' as const,
     fontSize: 11,
     lineHeight: '20px',
-    color: 'var(--pudding-chat-text-muted)',
+    color: 'var(--pudding-chat-text-caption)',
     background: 'transparent',
     border: 'none' as const,
     padding: 0,
@@ -168,5 +242,39 @@ export const useExecutionFlowStyles = createStyles(() => ({
     color: 'var(--pudding-chat-text)',
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
+  },
+
+  // ── ExecutionFlowTimeline（行为链 P2：交错时间线容器）──
+  /** 时间线容器：与工具列表同规格（gap 4 / 720px 上限 / 上边距 6） */
+  timelineList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 4,
+    width: '100%',
+    maxWidth: 'min(720px, 100%)',
+    marginTop: 6,
+    boxSizing: 'border-box' as const,
+  },
+
+  // ── TurnStatsLine（行为链 §3.3：turn 终态计量行）──  /** 统计行：正文下方一行 caption 灰计量（harness StatsLine 同语义） */
+  statsLine: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    fontSize: 12,
+    lineHeight: '20px',
+    color: 'var(--pudding-chat-text-caption)',
+    fontVariantNumeric: 'tabular-nums' as const,
+    maxWidth: 'min(720px, 100%)',
+  },
+  /** 统计项之间的分隔点 */
+  statsDot: {
+    flexShrink: 0,
+    width: 2,
+    height: 2,
+    borderRadius: 1,
+    background: 'var(--pudding-chat-text-caption)',
+    opacity: 0.7,
   },
 }));

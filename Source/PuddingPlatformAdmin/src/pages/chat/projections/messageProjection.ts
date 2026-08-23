@@ -4,10 +4,11 @@
 // 把 turns + conversationView + activeRun + subAgentCards 转成 VirtualMessageItem[]。
 // 纯函数，不访问 DOM、localStorage、API。
 
-import type {
-  ChatMessageBlock,
-  ChatTurn as SystemChatTurn,
-  TimelineItem,
+import {
+  extractVisionArtifactIds,
+  type ChatMessageBlock,
+  type ChatTurn as SystemChatTurn,
+  type TimelineItem,
 } from '../types';
 
 // ── 类型定义 ────────────────────────────────────────────
@@ -111,15 +112,8 @@ export function buildMessageBlocks(
               : turn.userMessage.metadata?.inputMode === 'image'
                 ? 'image'
                 : 'text',
-        visionArtifactId: turn.userMessage.metadata?.visionArtifactId,
-        visionArtifactIds: (
-          turn.userMessage.metadata?.visionArtifactIds ??
-          turn.userMessage.metadata?.visionArtifactId ??
-          ''
-        )
-          .split(',')
-          .map((id) => id.trim())
-          .filter(Boolean),
+        visionArtifactId: extractVisionArtifactIds(turn)[0],
+        visionArtifactIds: extractVisionArtifactIds(turn),
         userName: currentUser?.name || '我',
         userAvatarUrl: currentUser?.avatar,
       });

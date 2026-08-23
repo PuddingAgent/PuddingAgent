@@ -734,17 +734,31 @@ export function resolveTerminalAssistantMarkdown(
   return `${current}${separator}${reply}`;
 }
 
+/**
+ * 应用缓冲的回答增量。
+ * `baseLength` 是增量入队时 answerMarkdown 的基准长度：
+ *  - 长度未变 → 正常追加；
+ *  - 长度漂移（activeRun 快照/投影刷新已把 answerMarkdown 推进或替换，缓冲内容
+ *    已包含于新基准或已被服务端文本覆盖）→ 丢弃缓冲。盲目追加会造成同一段正文
+ *    在直播期间重复两遍（BUG：轨迹/输出分裂的姊妹缺陷，刷新后消失）。
+ *  - 不传 baseLength（恢复/终态回填等无基准场景）→ 保持原直追语义。
+ */
 export function applyBufferedDeltaToTurn(
   turn: ChatTurn,
   delta: string,
+  baseLength?: number,
 ): ChatTurn {
   if (!delta) return turn;
+  const current = turn.assistant.answerMarkdown;
+  if (typeof baseLength === 'number' && current.length !== baseLength) {
+    return turn;
+  }
   return {
     ...turn,
     assistant: {
       ...turn.assistant,
       renderMode: 'structured' as const,
-      answerMarkdown: turn.assistant.answerMarkdown + delta,
+      answerMarkdown: current + delta,
     },
   };
 }

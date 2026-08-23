@@ -8,7 +8,7 @@ import {
   SoundOutlined,
 } from '@ant-design/icons';
 import { Alert, Button, Divider, Select, Tooltip } from 'antd';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { WorkspaceNavigationHeader } from '@/components';
 import type {
   WorkspaceAgentDto,
@@ -294,11 +294,16 @@ const ChatMain: React.FC<ChatMainProps> = ({
     },
     [onInputChange],
   );
+  // inputValue 存 ref：回调身份稳定（否则每次按键 lift 都重建 → MessageList 的
+  // React.memo 被击穿，整条消息流随打字重渲染——输入框卡顿的放大器）。
+  const inputValueRef = useRef(inputValue);
+  inputValueRef.current = inputValue;
   const handlePinnedQuote = useCallback(
     (quoteText: string) => {
-      onInputChange(inputValue ? `${inputValue}\n${quoteText}` : quoteText);
+      const current = inputValueRef.current;
+      onInputChange(current ? `${current}\n${quoteText}` : quoteText);
     },
-    [inputValue, onInputChange],
+    [onInputChange],
   );
   const activeSubAgentCards = React.useMemo(
     () =>

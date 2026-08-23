@@ -72,6 +72,8 @@ export interface ChatTurn {
     metadata?: Record<string, string>;
     /** ChatMessages.Id — 用于引用回复的结构化消息ID */
     dbMessageId?: number;
+    /** ADR-077：typed 内容部件（图片回放/乐观渲染的 authoritative 来源）。 */
+    contentParts?: { type: string; artifactId?: string | null; detail?: string | null }[];
   };
   assistant: {
     id: string;
@@ -163,14 +165,6 @@ function isAssistantInProgress(status: AssistantStatus): boolean {
   );
 }
 
-function isSubAgentTimelineItem(item: TimelineItem): boolean {
-  return (
-    item.type === 'subagent_spawned' ||
-    item.type === 'subagent_progress' ||
-    item.type === 'subagent_completed'
-  );
-}
-
 /**
  * 从 ChatTurn[] 转换为 IM-style ChatMessageBlock[]
  * 拆分规则：
@@ -179,6 +173,27 @@ function isSubAgentTimelineItem(item: TimelineItem): boolean {
  * 3. 不同 Agent 必须分开显示
  * 4. 工具过程不作为消息气泡
  */
+/**
+ * ADR-077：优先从 typed contentParts 取图片；camera/旧数据回退 metadata。
+ */
+export function extractVisionArtifactIds(
+  turn: Pick<ChatTurn, 'userMessage'>,
+): string[] {
+  const parts = turn.userMessage.contentParts ?? [];
+  const fromParts = parts
+    .filter((p) => p.type === 'image' && p.artifactId)
+    .map((p) => p.artifactId as string);
+  if (fromParts.length > 0) return fromParts;
+  const raw =
+    turn.userMessage.metadata?.visionArtifactIds ??
+    turn.userMessage.metadata?.visionArtifactId ??
+    '';
+  return raw
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
 export function buildMessageBlocks(
   turns: ChatTurn[],
   agentName?: string,
@@ -207,15 +222,8 @@ export function buildMessageBlocks(
               : turn.userMessage.metadata?.inputMode === 'image'
                 ? 'image'
                 : 'text',
-        visionArtifactId: turn.userMessage.metadata?.visionArtifactId,
-        visionArtifactIds: (
-          turn.userMessage.metadata?.visionArtifactIds ??
-          turn.userMessage.metadata?.visionArtifactId ??
-          ''
-        )
-          .split(',')
-          .map((id) => id.trim())
-          .filter(Boolean),
+        visionArtifactId: extractVisionArtifactIds(turn)[0],
+        visionArtifactIds: extractVisionArtifactIds(turn),
         userName: currentUser?.name || '我',
         userAvatarUrl: currentUser?.avatar,
       });
@@ -246,8 +254,10 @@ export function buildMessageBlocks(
 
     if (hasContent) {
       const blockAgentName = turn.source?.displayName || agentName || 'Pudding';
+      // 子代理高频 progress 不进主消息（托盘坞承载）；spawned/completed 是
+      // 父级有界委派事实（DelegationRow 数据源），保留进主消息过程时间线。
       const mainAgentProcessItems = turn.assistant.timelineItems.filter(
-        (item) => !isSubAgentTimelineItem(item),
+        (item) => item.type !== 'subagent_progress',
       );
       const block: ChatMessageBlock = {
         id: `${turn.assistant.id}:assistant:0`,

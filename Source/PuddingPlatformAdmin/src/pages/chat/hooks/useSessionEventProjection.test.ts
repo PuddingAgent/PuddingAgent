@@ -79,8 +79,8 @@ function setup(initialTurns: ChatTurn[] = [makeRunningTurn()]): Harness {
     current: new Set<string>(),
   } as MutableRefObject<Set<string>>;
   const pendingDeltaRef = {
-    current: new Map<string, string>(),
-  } as MutableRefObject<Map<string, string>>;
+    current: new Map<string, { delta: string; baseLength: number }>(),
+  } as MutableRefObject<Map<string, { delta: string; baseLength: number }>>;
   const pendingThinkingRef = {
     current: new Map<string, string>(),
   } as MutableRefObject<Map<string, string>>;

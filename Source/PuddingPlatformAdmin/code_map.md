@@ -88,12 +88,55 @@
 
 画布采用 `@xyflow/react`，固定高度容器内开放平移、缩放、选择、节点拖拽和 graph 模式的 catalog 端口连线；页面默认把完整宽高交给画布，Inspector、Graph Inputs、HTTP Hook、Events 按需以悬浮层覆盖，打开/收起都不重建画布或丢失 viewport。`deleteKeyCode={null}` 关闭画布裸删除键，节点/边删除必须走检查器以同步定义与引用。运行状态刷新只更新节点外观，不覆盖未保存坐标。保存提交全部节点坐标与当前 viewport，并以 `expectedCurrentLayoutRevision` 做 CAS；409 时保留本地状态，只有用户明确确认才重新加载。Executable definition、GraphLayout 与 Run 投影保持三层独立。
 
+## Chat 流式 UI（deepseek-harness 对齐，2026-08-23）
+
+参考 `E:\github\deepseek\deepseek-harness`（dsh-0.1.1-rc.2）流式 UI 设计 + `Docs/deepseek-harness-message-card-alignment-2026-08-14.md`；保留 Pudding 色板/头像身份，采用 harness 的信息架构与流式渲染模式。行为链交错时间线 + 质感升级见 `Docs/chat-ui-behavior-chain-quality-upgrade-2026-08-23.md`（2026-08-23）。
+
+| 文件 | 职责与边界 |
+|------|------------|
+| `src/pages/chat/components/MarkdownBlock.tsx` | `preprocessMarkdown` 只做逐行 `` `` ``→``` 归一；历史「管道行收集 + 标题拆 \|」hack 会破坏 GFM 表格（分隔行与正文合并/空行被吞→整表降级为 `<p>` 原文），已删除 |
+| `src/pages/chat/hooks/useTypewriterStreaming.ts` | `findStableMarkdownBoundary`（已导出）表格感知：前导 `\|` 识别（不要求尾管道）、分隔行到达才允许整表提交、半截表头滞留 live 段、表格 run 中间不提交 |
+| `src/pages/chat/components/MessageItem.tsx` | 流式尾段含块级/强调语法（`\|`、反引号、`#`、列表、`>*_~`、链接）时走 ReactMarkdown 渲染（不再以纯文本 span 显示原始管道/星号）；纯文本尾段保留打字机 span + 墨迹光标（零解析路径） |
+| `src/pages/chat/components/AgentMessageBubble.tsx` | 行序 TurnStatus → ExecutionFlowTimeline（交错）→ ModelRetryRow → 正文 → 错误行 → actions/StatsLine；TurnStatus 有 canonical 投影时直接消费 `deriveTurnStatusFromProjection`（最后节点 kind 派生阶段），无投影回退 facts 派生（delegating > executing > answering > reasoning > connecting）；turn 终态渲染 TurnStatsLine（段数/工具数/总时长/tokens，来自投影 + usage，刷新不归零） |
+| `src/pages/chat/hooks/useSessionEventProjection.ts` | `message.content.appended` 到达即翻转 status=streaming（首个回答增量 = 已知事实「正在生成回答」，状态条与正文不再各说各话）；`enqueueDelta` 携带入队基准长度 |
+| `src/pages/chat/hooks/useSessionEventBuffers.ts` | 回答增量缓冲 `{delta, baseLength}`；flush 经 `applyBufferedDeltaToTurn` 按基准位置幂等应用——基准漂移（activeRun 快照竞态）丢弃缓冲，杜绝直播期间正文整段重复 |
+| `src/pages/chat/components/IntentConsole.tsx` | Composer §6.2：Sandbox/Auto-review 收敛进设置 Popover（活动态角标浮出）；执行偏好/权限/语音/发送保持直达 |
+| `src/pages/chat/styles/agent.styles.ts` | `agentBubbleNew` 平铺化：透明背景/无边框阴影/15px 1.75（对齐 harness 助手无气泡全宽正文）；`agentActiveOutputSurface` 退化为兼容类名 |
+| `src/pages/chat/styles/user.styles.ts` | `userBubbleNew` 右侧 22px 圆角胶囊（harness 数值）：accent 淡染、无边框无阴影 |
+| `src/pages/chat/styles/execution-flow.styles.ts` | 行式 chrome：28px 行高、16px leading、14/22 标题（secondary 档）、2×2 分隔点（caption 档）、22px 展开缩进、TurnStatus 文字 shimmer；行为链升级新增：`rowSweep` 运行行扫光（reduced-motion 降级）、`duration` 折叠行尾部计量槽、`reasoningChip` 段时长 chip、`statsLine/statsDot` 终态计量行、`timelineList` 交错时间线容器 |
+| `src/pages/chat/styles/markdown.styles.ts` | 表格仅横向分隔线（th 加粗下边线/td 弱底线/无竖线网格，对齐 harness MarkdownText）；代码块圆角 12px、行内 code 圆角 6px |
+| `src/pages/chat/components/messageTurnMerge.test.ts` | BUG2 守卫单测：终态不回退、同 messageId 不追加第二卡 |
+| `src/pages/chat/components/MessageItem.streaming.test.tsx` | BUG1 单测：完整表格渲染 `<table>`、流式尾段表格走 markdown、纯文本尾段保留打字机 |
+| `src/pages/chat/components/execution-flow/ExecutionFlowTimeline.tsx` | 行为链交错时间线（P2 核心）：路径 B 直接消费投影 nodes 的 sequence 顺序（reasoning 段 → 工具树 → 委派交错，message/terminal/retry 由既有承载不重复渲染）；路径 A adapter `buildEntriesFromProcessItems` 把 TimelineItem[] 按序分组为同构 entry（相邻 thinking 合并段、toolCallId 配对、subAgentId 聚合）；`markTrailingReasoningCurrent` 用输入事实判定当前段；`deriveStatsFrom*` 供 TurnStatsLine；纯函数无时间源 |
+| `src/pages/chat/components/execution-flow/ReasoningDisclosureRow.tsx` | 多段推理行：每段一行，折叠摘要运行中=最新非空行+扫光、完成=首行+段时长 chip（`思考 · 12s`，对齐 "Thought for Ns"）；hooks 必须先于空 payload 早退 |
+| `src/pages/chat/components/execution-flow/ToolCallRow.tsx` | 完成态耗时/非零 exit code 上折叠行尾部（caption 灰 tabular-nums，error 染红）；presentation 卡经 `resolveRenderer` 分派（P3 五类已注册） |
+| `src/pages/chat/components/execution-flow/TurnStatsLine.tsx` | turn 终态计量行：`N 段思考 · M 工具 · 3m01s · 4.2k tokens`；缺失项省略不伪造，全缺失不渲染 |
+| `src/pages/chat/presentation/PresentationRegistry.ts` | kind→renderer 分派表：generic/terminal/diff/read/search/web 已注册，delegation/job 回落 Generic；禁止按 toolName 分支 |
+| `src/pages/chat/presentation/renderers/*.tsx` | 五类专用 renderer + `rendererKit`（卡片家族：banner + 224px 内容窗口、圆角 radius-md、meta 契约字段优先、payload 回退解析、payload 即调用参数 JSON 时不重复展示正文）；diff 解析 +/−/@@ 着色与增删计数，search 命中数组有界 20 条 |
+| `src/pages/chat/utils/formatDuration.ts` | `formatDurationMs`（123ms/1.2s/1m03s，缺失 null 不伪造）+ `formatTokenCount`（4.2k tokens）；计量 chip/工具行耗时/StatsLine 共用 |
+| `src/pages/chat/client/featureFlag.ts` | `isExecutionFlowProjectionEnabled` 默认开启（P2 转正：live turn 消费 canonical 投影交错）；localStorage `pudding-exec-flow-proj==='0'` 为逃生门；历史/无投影 turn 走路径 A adapter |
+| `src/pages/chat/projections/executionFlowProjector.ts` | `ReasoningNode.lastOccurredAt`（段末 delta 的 occurredAt）→ 段时长 = last − first，服务端事实派生 |
+| `src/pages/chat/components/execution-flow/TurnStatus.tsx` | 单行运行态（唯一 aria-live）；leading 槽渲染阶段墨球 TurnStatusOrb（pending/五阶段 → breathing/connecting/working/solving/weaving/composing） |
+| `src/pages/chat/components/execution-flow/TurnStatusOrb.tsx` | thinking-orbs 20px 单色墨球包装：阶段映射 + `data-pudding-theme` 显式主题绑定（MutationObserver 跟随）；全局仅 TurnStatus 一颗动画，其余行保持静态 StateDot + 扫光（不喧宾夺主） |
+| `src/pages/chat/components/ComposerTextInput.tsx` | 输入叶子组件（输入框卡顿修复）：textarea+草稿态+IME 组合守卫+「/」命令面板全部下沉，按键只重渲染本叶子（memo）；非组合逐键 lift、组合期不 lift（compositionEnd 一次性）、`lastLiftedRef` 自 lift 回显抑制（父级滞后 prop 不误判为外部改写）；ref API（setValue/getValue/focus）供语音转写/组图提示词/清空复用 |
+| `src/pages/chat/components/IntentConsole.tsx` | Composer 壳：不再持有草稿态/面板态（下沉叶子），仅订阅低频事件（focus 变化、hasText 空↔非空翻转）；外部改写走 textInputRef.setValue；发送门控用 composerHasText |
+| `src/pages/chat/components/ChatMain.tsx` | `handlePinnedQuote` 用 inputValueRef 消除 inputValue 依赖（回调身份稳定，MessageList 的 React.memo 不再被逐键 lift 击穿） |
+| `src/pages/chat/types.ts` | `buildMessageBlocks` 仅滤除 `subagent_progress`（托盘坞承载）；spawned/completed 父级委派事实保留进主消息（DelegationRow 路径 A 数据源） |
+| `src/pages/chat/styles/message.styles.ts` | 消息操作条去「白色药丸悬浮卡」：agent 侧常驻透明图标行（28px 热区、tertiary 色、-6px 光学对齐），用户侧同步去白卡；CurrentActivityPanel 委派大卡退役（TurnStatus delegating + DelegationRow 承载） |
+| `src/pages/chat/components/MarkdownBlock.tsx` | `preprocessMarkdown` 增量：正文 emoji run 包 `<span data-md-emoji>`（0.95em 收敛，围栏代码/行内 code 跳过；fence 状态跟踪） |
+| `src/pages/chat/viewport/useMessageViewportRuntime.ts` | 吸底阈值 `BOTTOM_THRESHOLD_PX`=24（对齐 harness FOLLOW_THRESHOLD；原 80px 底部附近想停会被 auto-follow 反复拉回）；scrollTop 单一写入者/instant snap/上滚停跟随/内容权重计价虚拟化保持；**流式跳变修复**：follow effect 依赖补 `totalSize`（高度修正后必须重新收敛底部，否则视口停在半高显示旧消息直到下个 delta 猛跳）+ ResizeObserver auto 模式底部阈值内收敛（布局收缩漂移跟随） |
+| `src/pages/chat/components/AgentMessageBubble.tsx` | 流式打字机不再覆盖 tick/maxLag（40/48 滞后余量过小致 bursts 式蹦出）；交给 hook 的 B2 自适应（24ms tick、速率追踪、拥堵降速、分档 charsPerTick） |
+| `src/pages/chat/components/IncrementalMarkdown.tsx` | 流式 markdown 增量渲染（对齐 harness IncrementalMarkdownParser 架构）：围栏外空行切块 + 冻结块 memo 缓存（key=偏移:长度），提交只重解析尾部块，长文流式从 O(n·parse) 降为 O(tail)；`splitMarkdownBlocks` 纯函数（fence 内空行保护、连续空行跳过、前缀偏移） |
+| `src/pages/chat/components/MessageItem.tsx` | append 风格：stable 走 IncrementalMarkdown；live 尾段一律消费打字机推进的 visibleLiveText（原实现含语法尾段整段渲染 liveText 造成"瞬跳块+逐打文字"混合节奏），markdown 对未完成结构按前缀渐进渲染 |
+| `src/pages/chat/hooks/useTypewriterStreaming.ts` | append 节奏：基础步长跟随流速率（ratePerTick，visible≈到达速率，clamp 2..24），滞后分档仅作追赶兜底；adaptiveMaxLag 收紧 [24,120]（只作平滑余量，避免长落后追赶爆发） |
+| `src/pages/chat/styles/layout.styles.ts` | `messageListShell` 增加 relative：底部滚动控制簇（回到底部/贴底跟随）锚定消息区右下角，天然位于 composer 上方（对齐 Hermes measured-composer 锚定语义） |
+
 ## Chat 性能热路径
 
 | 文件 | 职责与性能边界 |
 |------|----------------|
 | `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；相同状态轮询必须短路，不重复写缓存或通知订阅者 |
-| `src/pages/chat/components/MessageList.tsx` | 将历史消息与 active run 快照投影为稳定消息行；active run 无法匹配现有 Turn 时追加到当前消息流末端；直接渲染 `MessageRow`，并只给当前主代理行附加有界委派摘要 |
+| `src/pages/chat/components/MessageList.tsx` | 将历史消息与 active run 快照投影为稳定消息行；active run 无法匹配现有 Turn 时追加到当前消息流末端；直接渲染 `MessageRow`，并只给当前主代理行附加有界委派摘要；`mergeActiveRunAssistant` 带终态守卫（本地 SSE 终态后轮询快照不得把 status/isStreaming 拉回运行态）、`mergeProjectedMessageIntoTurns` 同 messageId 原地更新（刷新不得追加第二张卡片） |
 | `src/pages/chat/styles/messageStyleContext.tsx` | 消息树样式边界；`MessageList` 注册一次聚合 Chat 样式并通过 Context 共享，消息叶子不得重复调用 `useChatStyles` |
 | `src/pages/chat/components/MessageRow.tsx` | 单消息渲染与语义 memo 边界；投影重建等价对象时保持历史行不提交，正文或过程事件变化仍立即更新 |
 | `src/pages/chat/components/MessageProcessSummary.tsx` | 思考/工具过程摘要；折叠时不得构建完整 rounds、trace chips 和展示项 |

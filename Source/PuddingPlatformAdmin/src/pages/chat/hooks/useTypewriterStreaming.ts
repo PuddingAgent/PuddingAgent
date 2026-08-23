@@ -37,16 +37,17 @@ export interface TypewriterStreamingOptions {
  *   传入 stableLenRef.current 可跳过已提交文本，将 O(n) 降为 O(delta)。
  *   内部会回退到最近的段落边界（\n\n）以确保语法完整性。
  */
-function findStableMarkdownBoundary(text: string, fromOffset: number = 0): number {
+export function findStableMarkdownBoundary(text: string, fromOffset: number = 0): number {
   if (!text) return 0;
 
   // 增量优化：从 fromOffset 回退到最近的段落边界开始扫描
   let scanStart = 0;
   if (fromOffset > 0 && fromOffset < text.length) {
-    // 找到 fromOffset 之前最近的 \n\n（段落边界）
+    // 找到 fromOffset 之前最近的 \n\n（段落边界；表格 run 不会跨空行，
+    // 因此段落边界永远不会落在表格内部）
     const paraBreak = text.lastIndexOf('\n\n', fromOffset);
     if (paraBreak > 0) {
-      scanStart = paraBreak + 1; // 从第二个 \n 之后开始（即新段落起始）
+      scanStart = paraBreak + 1;
     }
     // 如果没找到段落边界，保持从 0 扫描（安全回退）
   }
@@ -57,36 +58,52 @@ function findStableMarkdownBoundary(text: string, fromOffset: number = 0): numbe
   let lastSafeEnd = scanStart;
   let accumulatedLen = scanStart;
 
+  // 表格 run 状态：GFM 要求「表头紧跟分隔行」，分隔行缺失的半截表头
+  // 不得提交进 stableMarkdown，否则 remark-gfm 按段落渲染出原始管道文本。
+  let inTableRun = false;
+  let tableRunHasSeparator = false;
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const nextLine = i + 1 < lines.length ? lines[i + 1] : '';
+    const isTableRow = /^\s*\|/.test(line);
 
-    // 双换行段落结束
-    if (line === '' && i > 0 && lines[i - 1] !== '') {
+    if (isTableRow) {
+      if (!inTableRun) {
+        inTableRun = true;
+        tableRunHasSeparator = false;
+      }
+      // 分隔行：仅由 |、:、-、空白组成且至少含一个 -
+      if (/^\s*\|[\s:|-]*-[\s:|-]*$/.test(line)) {
+        tableRunHasSeparator = true;
+      }
+    } else if (inTableRun) {
+      // 表格 run 结束：只有见过分隔行的完整表格才允许提交到表尾
+      // （表格行不要求尾 |，LLM 常输出无尾管道行）
+      if (tableRunHasSeparator) {
+        lastSafeEnd = accumulatedLen;
+      }
+      inTableRun = false;
+      tableRunHasSeparator = false;
+    }
+
+    // 双换行段落结束：前一行是表格行时不在此提交（由表格 run 结束分支裁决）
+    if (
+      line === '' &&
+      i > 0 &&
+      lines[i - 1] !== '' &&
+      !/^\s*\|/.test(lines[i - 1])
+    ) {
       lastSafeEnd = accumulatedLen;
     }
 
-    // 标题行
-    if (/^#{1,6}\s/.test(line) && nextLine !== '') {
-      // 标题本身是完整一行，但下一行不是空行时可能是不安全
-      // 允许在 heading 行尾提交
-    }
-
-    // 表格行：连续表格行结束后提交
-    if (
-      /^\|.*\|$/.test(line) &&
-      !nextLine.startsWith('|') &&
-      !nextLine.startsWith('|---')
-    ) {
-      lastSafeEnd = accumulatedLen + line.length;
-    }
-
-    // 列表项：`\n- ` 或 `\n* ` 或 `\n1. ` 独立行后可提交
+    // 列表项：列表行后跟非列表行时可提交（列表 run 中间不提交）
     if (
       /^(\s*[-*\d+.]\s)/.test(line) &&
       line.trim() !== '' &&
       nextLine &&
-      !/^(\s*[-*\d+.]\s)/.test(nextLine)
+      !/^(\s*[-*\d+.]\s)/.test(nextLine) &&
+      !/^\s*\|/.test(nextLine)
     ) {
       lastSafeEnd = accumulatedLen + line.length;
     }
@@ -234,12 +251,17 @@ export function useTypewriterStreaming({
         : tickMs;
     const congestionFactor = Math.max(1, scheduledGap / (tickMs * 2));
 
-    // dynamic charsPerTick: 根据剩余长度调整速度，并发拥堵时降速
+    // dynamic charsPerTick: 基础步长跟随流速率（append 风格：visible ≈ 到达
+    // 速率，打字机只做 24ms 级平滑，不再人为限速），滞后分档只作追赶兜底；
+    // 并发拥堵时降速
     const remaining = liveLen - visiblePosRef.current;
-    let charsPerTick = 2;
-    if (remaining > 180) charsPerTick = 10;
-    else if (remaining > 96) charsPerTick = 6;
-    else if (remaining > 48) charsPerTick = 3;
+    const ratePerTick = Math.ceil(
+      (streamRateRef.current * tickMs) / 1000,
+    );
+    let charsPerTick = Math.max(2, Math.min(24, ratePerTick));
+    if (remaining > 180) charsPerTick = Math.max(charsPerTick, 10);
+    else if (remaining > 96) charsPerTick = Math.max(charsPerTick, 6);
+    else if (remaining > 48) charsPerTick = Math.max(charsPerTick, 3);
 
     // 拥堵降速：因子 > 2 时跳过本 tick 让主线程喘息
     if (congestionFactor > 2.5) {
@@ -363,10 +385,11 @@ export function useTypewriterStreaming({
       }
       lastDeltaTimestampRef.current = now;
 
-      // B2: adaptiveMaxLag — ~1.5s buffer of incoming text, clamped [48, 200]
+      // B2+B4: adaptiveMaxLag — ~1.5s buffer of incoming text, clamped [24, 120]
+      // （append 风格：滞后只作平滑余量，上限收紧，避免长时间落后于流的追赶爆发）
       const adaptiveMaxLag = Math.max(
-        48,
-        Math.min(200, Math.round(streamRateRef.current * 1.5)),
+        24,
+        Math.min(120, Math.round(streamRateRef.current * 1.5)),
       );
 
       // 如果 live 长度增长超过 adaptiveMaxLag，强制推进 visiblePos

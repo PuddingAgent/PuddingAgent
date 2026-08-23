@@ -133,38 +133,19 @@ export const useAgentStyles = createStyles(({ token }) => ({
   agentBubbleNew: {
     position: 'relative' as const,
     isolation: 'isolate' as const,
-    background: 'var(--soft-white)',
-    border: '1px solid',
-    borderColor:
-      'color-mix(in srgb, var(--accent-purple) 9%, var(--earth-brown) 5%)',
-    borderLeft:
-      '2px solid color-mix(in srgb, var(--accent-purple) 22%, var(--earth-brown) 8%)',
-    borderRadius: 10,
-    borderTopLeftRadius: 5,
-    padding: '12px 16px',
-    fontSize: 14,
-    lineHeight: 1.7,
+    // 对齐 harness 流式 UI：助手正文平铺（无白卡/边框/阴影），与执行流行
+    // 共享同一内容列；Pudding 保留自身字号行高与文字色。
+    background: 'transparent',
+    border: 'none',
+    borderRadius: 0,
+    padding: '2px 0 0',
+    fontSize: 15,
+    lineHeight: 1.75,
     color: 'var(--text-primary)',
     wordBreak: 'break-word' as const,
     width: '100%',
     contain: 'layout style',
-    boxShadow: '0 3px 12px rgba(63, 38, 95, 0.04), 0 1px 3px rgba(0,0,0,0.035)',
-    transition:
-      'background 200ms ease, border-color 200ms ease, box-shadow 200ms ease, transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-    '@media (hover: hover) and (pointer: fine)': {
-      '&:hover': {
-        background:
-          'color-mix(in srgb, var(--accent-purple) 2%, var(--soft-white))',
-        borderColor:
-          'color-mix(in srgb, var(--accent-purple) 22%, var(--earth-brown) 6%)',
-        boxShadow:
-          '0 6px 18px rgba(63, 38, 95, 0.065), 0 0 0 1px rgba(139, 63, 232, 0.025)',
-        transform: 'translateY(-1px) scale(1.006)',
-      },
-    },
-    '@media (prefers-reduced-motion: reduce)': {
-      '&:hover': { transform: 'none' },
-    },
+    transition: 'background 200ms ease',
   },
   agentBubbleEntrance: {
     transformOrigin: 'bottom left',
@@ -176,15 +157,13 @@ export const useAgentStyles = createStyles(({ token }) => ({
     },
   },
   agentBubbleGrouped: {
-    borderTopLeftRadius: 8,
-    borderTop: '1px solid',
-    borderTopColor: 'color-mix(in srgb, var(--earth-brown) 4%, transparent)',
+    borderTopLeftRadius: 0,
+    borderTop: 'none',
   },
   agentBubbleStreaming: {
-    borderColor:
-      'color-mix(in srgb, var(--accent-purple) 22%, var(--earth-brown) 5%)',
-    boxShadow:
-      '0 5px 18px rgba(63, 38, 95, 0.055), 0 0 18px 2px rgba(139, 63, 232, 0.07)',
+    background: 'transparent',
+    borderColor: 'transparent',
+    boxShadow: 'none',
   },
   agentWaitingBubble: {
     display: 'flex',
@@ -367,36 +346,9 @@ export const useAgentStyles = createStyles(({ token }) => ({
     lineHeight: 1.55,
   },
   agentActiveOutputSurface: {
+    // 平铺正文后不再叠加流光辉光（运行态由 TurnStatus shimmer 与行内状态点表达）。
+    // 保留类名以兼容消费方 cx 组合。
     position: 'relative' as const,
-    isolation: 'isolate' as const,
-    borderColor:
-      'color-mix(in srgb, var(--accent-purple) 24%, var(--earth-brown) 6%)',
-    boxShadow:
-      '0 5px 18px rgba(63, 38, 95, 0.055), 0 0 18px 2px rgba(139, 63, 232, 0.07)',
-    '&::after': {
-      content: '""',
-      position: 'absolute' as const,
-      inset: 0,
-      borderRadius: 'inherit',
-      background:
-        'linear-gradient(112deg, transparent 8%, rgba(167, 139, 250, 0.015) 35%, rgba(139, 63, 232, 0.055) 50%, rgba(167, 139, 250, 0.015) 64%, transparent 90%)',
-      backgroundSize: '220% 100%',
-      pointerEvents: 'none' as const,
-      zIndex: 0,
-      animation: 'agentActiveOutputGlow 2.8s ease-in-out infinite',
-    },
-    '& > *': {
-      position: 'relative' as const,
-      zIndex: 1,
-    },
-    '@media (prefers-reduced-motion: reduce)': {
-      boxShadow:
-        '0 3px 12px rgba(63, 38, 95, 0.04), 0 1px 3px rgba(0,0,0,0.035)',
-      '&::after': {
-        animation: 'none',
-        opacity: 0.12,
-      },
-    },
   },
   '@keyframes waitingBounce': {
     '0%, 80%, 100%': { transform: 'translateY(0) scale(0.6)', opacity: 0.35 },

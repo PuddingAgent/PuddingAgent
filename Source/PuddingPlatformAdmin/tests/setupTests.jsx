@@ -38,6 +38,9 @@ if (typeof window !== 'undefined') {
         matches: false,
         addListener: jest.fn(),
         removeListener: jest.fn(),
+        // 现代 API（thinking-orbs 等新库使用；antd 兼容旧 addListener）
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
       })),
     });
   }

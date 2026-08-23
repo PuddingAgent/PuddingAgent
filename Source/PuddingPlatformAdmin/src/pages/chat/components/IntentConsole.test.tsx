@@ -313,14 +313,17 @@ describe('IntentConsole', () => {
 
     await waitFor(() => expect(sendWithMetadata).toHaveBeenCalledTimes(1));
     expect(upload).toHaveBeenCalledTimes(2);
+    // ADR-077：图片以 typed content parts 提交；metadata 只保留投影事实。
     expect(sendWithMetadata).toHaveBeenCalledWith(
       '比较这两张图',
       expect.objectContaining({
         inputMode: 'image',
-        visionArtifactId: 'vision-first',
-        visionArtifactIds: 'vision-first,vision-second',
         imageCount: '2',
       }),
+      [
+        { type: 'image', artifactId: 'vision-first', detail: 'original' },
+        { type: 'image', artifactId: 'vision-second', detail: 'original' },
+      ],
     );
     expect(screen.queryByTestId('image-preview-list')).toBeNull();
   });

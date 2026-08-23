@@ -61,34 +61,21 @@ export const useUserStyles = createStyles(() => ({
   },
   userBubbleNew: {
     position: 'relative' as const,
+    // 对齐 harness：用户消息为右侧无边框大圆角气泡（底色取 Pudding accent 淡染）
     background:
-      'color-mix(in srgb, var(--accent-purple) 8%, var(--soft-white))',
-    border: '1.5px solid',
-    borderColor: 'color-mix(in srgb, var(--accent-purple) 28%, transparent)',
-    borderRadius: 10,
-    borderBottomRightRadius: 4,
+      'color-mix(in srgb, var(--accent-purple) 9%, var(--soft-white))',
+    border: 'none',
+    // 行为链升级 §3.2：圆角对齐 harness 数值（22px），padding 10/16 已一致
+    borderRadius: 22,
     padding: '10px 16px',
-    fontSize: 14,
-    lineHeight: 1.6,
+    fontSize: 14.5,
+    lineHeight: 1.65,
     color: 'var(--text-primary)',
     wordBreak: 'break-word' as const,
     whiteSpace: 'pre-wrap' as const,
     contain: 'layout style',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
-    transition:
-      'background 200ms ease, box-shadow 200ms ease, transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-    '@media (hover: hover) and (pointer: fine)': {
-      '&:hover': {
-        background:
-          'color-mix(in srgb, var(--accent-purple) 14%, var(--soft-white))',
-        boxShadow:
-          '0 7px 20px rgba(63, 38, 95, 0.09), 0 0 0 1px rgba(139, 63, 232, 0.04)',
-        transform: 'translateY(-1px) scale(1.006)',
-      },
-    },
-    '@media (prefers-reduced-motion: reduce)': {
-      '&:hover': { transform: 'none' },
-    },
+    boxShadow: 'none',
+    transition: 'background 200ms ease',
   },
   userBubbleEntrance: {
     transformOrigin: 'bottom right',

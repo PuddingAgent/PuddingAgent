@@ -69,6 +69,8 @@ export interface ChatRouteSelection {
 
 export interface ChatSendOptions {
   metadata?: Record<string, string>;
+  /** ADR-077：typed 图片内容部件（已上传为 Workspace Artifact）。 */
+  imageParts?: { type: 'image'; artifactId: string; detail?: 'original' | 'low' }[];
 }
 
 export type ChatInteractionQueueStatus =

@@ -73,16 +73,16 @@ export const useToolCallStyles = createStyles(() => ({
     width: 16,
     height: 24,
   },
-  /** 工具名 14px */
+  /** 工具名 14px（过程行标题 = secondary 档，§3.2） */
   title: {
     flexShrink: 0,
     fontSize: 14,
     fontWeight: 600,
     lineHeight: '24px',
     whiteSpace: 'nowrap' as const,
-    color: 'var(--pudding-chat-text)',
+    color: 'var(--pudding-chat-text-secondary)',
   },
-  /** 2×2 分隔点 */
+  /** 2×2 分隔点（caption 档） */
   dotGrid: {
     flexShrink: 0,
     display: 'grid',
@@ -94,10 +94,10 @@ export const useToolCallStyles = createStyles(() => ({
     width: 2,
     height: 2,
     borderRadius: '50%',
-    background: 'var(--pudding-chat-text-subtle)',
+    background: 'var(--pudding-chat-text-caption)',
     opacity: 0.55,
   },
-  /** summary FILL 单行截断 */
+  /** summary FILL 单行截断（过程正文 = tertiary 档） */
   summary: {
     flex: 1,
     minWidth: 0,
@@ -106,13 +106,13 @@ export const useToolCallStyles = createStyles(() => ({
     whiteSpace: 'nowrap' as const,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
-    color: 'var(--pudding-chat-text-muted)',
+    color: 'var(--pudding-chat-text-tertiary)',
   },
   /** error 摘要：红色（错误首行） */
   summaryError: {
     color: 'var(--pudding-status-error)',
   },
-  /** chevron：展开旋转 180° */
+  /** chevron：展开旋转 180°（caption 档） */
   chevron: {
     flexShrink: 0,
     display: 'inline-flex',
@@ -122,7 +122,7 @@ export const useToolCallStyles = createStyles(() => ({
     height: 24,
     fontSize: 10,
     lineHeight: 1,
-    color: 'var(--pudding-chat-text-subtle)',
+    color: 'var(--pudding-chat-text-caption)',
     transition: 'transform 150ms ease',
   },
   chevronOpen: {

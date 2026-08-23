@@ -161,7 +161,10 @@ export const useLayoutStyles = createStyles(({ token }) => ({
     flexDirection: 'column' as const,
     gap: 12,
   },
-  /** P2#8：消息列表外壳 — 顶部承载 Focus view 工具栏，滚动区域占满剩余高度 */
+  /** P2#8：消息列表外壳 — 顶部承载 Focus view 工具栏，滚动区域占满剩余高度；
+   * relative 作为底部滚动控制簇（回到底部/贴底跟随）的定位锚：控制簇锚定
+   * 消息区右下角，天然始终位于 composer 上方（对齐 Hermes measured-composer
+   * 锚定语义，无需写死视口偏移/测量桥）。 */
   messageListShell: {
     display: 'flex',
     flexDirection: 'column' as const,
@@ -169,5 +172,6 @@ export const useLayoutStyles = createStyles(({ token }) => ({
     minWidth: 0,
     minHeight: 0,
     overflow: 'hidden',
+    position: 'relative' as const,
   },
 }));
