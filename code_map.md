@@ -1,6 +1,6 @@
 # PuddingAgent CodeMAP
 
-> 顶层快速索引 | 2026-08-23 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
+> 顶层快速索引 | 2026-08-24 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
 
 ## 项目定位
 
@@ -51,7 +51,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 |------|------|----------|
 | `Source/PuddingAgent/` | 🔑 入口 (Program.cs · Console/DesktopChild 薄壳) | [code_map](Source/PuddingAgent/code_map.md) |
 | `Source/PuddingRuntime/` | 🔑 Agent Loop · LLM · 工具 · 上下文管线 | [code_map](Source/PuddingRuntime/code_map.md) |
-| `Source/PuddingDesktop/` | 🔑 WPF Launcher · 固定端口 Core 子进程 · Browser 工作区 · 调试模式（源码前后端 + 80 端口反向代理）· 客户端精灵源素材 | [code_map](Source/PuddingDesktop/code_map.md) |
+| `Source/PuddingDesktop/` | 🔑 WPF Launcher · 固定端口 Core 子进程 · Browser 工作区 · 调试模式（源码前后端 + 80 端口反向代理）· 运行中心前端构建部署按钮 · 客户端精灵源素材 | [code_map](Source/PuddingDesktop/code_map.md) |
 | `Source/PuddingHost/` | 🔑 组合根 · 全网卡 HTTP/本机控制地址 · Browser Bridge · 飞书连接器 | [code_map](Source/PuddingHost/code_map.md) |
 | `Source/PuddingCore/` | 🔑 抽象与契约 · 接口 · 模型 | [code_map](Source/PuddingCore/code_map.md) |
 | `Source/PuddingPlatform/` | 🔑 Session · API（含认证/当前用户投影）· EF Core · 消息网关 | [code_map](Source/PuddingPlatform/code_map.md) |
@@ -67,7 +67,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Source/PuddingCodeIndexer.Cli/` | 代码索引 CLI | [code_map](Source/PuddingCodeIndexer.Cli/code_map.md) |
 | `Source/PuddingFullTextIndex/` | 全文索引引擎 | [code_map](Source/PuddingFullTextIndex/code_map.md) |
 | `Source/PuddingGit.Tools/` | Git 20 工具（实现在 Runtime） | [code_map](Source/PuddingGit.Tools/code_map.md) |
-| `Source/PuddingPlatformAdmin/` | React 管理前端 · Chat 虚拟视口/渐进消息/状态缓存 · Agent 编排布局编辑器 · 管理壳异步隔离 · 已移除 Phaser/2D Studio | [code_map](Source/PuddingPlatformAdmin/code_map.md) |
+| `Source/PuddingPlatformAdmin/` | React 管理前端 · Chat 虚拟视口/渐进消息/状态缓存 · Agent 编排布局编辑器 · 管理壳异步隔离 · 已移除 Phaser/2D Studio · 生产 dist 经 PuddingHostContent.props 部署到 Core `wwwroot/admin`（dev 输出分流 dist-dev，防 MSBuild 增量清理破坏部署，见 How-Debuge §6.12） | [code_map](Source/PuddingPlatformAdmin/code_map.md) |
 
 ## 调用链路
 
@@ -246,6 +246,11 @@ Chat first paint → AgentConversationProjectionService
   → 过滤 transport duplicate 占位、按 pudding-message envelope message_id 折叠历史重复入站
   → system/heartbeat envelope 正文投影为 context.text，不把协议 JSON 显示在聊天气泡
   → 最近 20 条可见消息 + active run 最近 64 条过程明细/全量摘要
+  → TurnSurfaceStore（2026-08-24 行为链重构）：canonical turnId + 别名归并
+    （messageId/runId/commandClientId），完成 turn 经 per-message 明细接口懒水合
+    （text/thinking/tool/delegation 同一事件流，eventId 幂等去重），
+    终态/刷新后轨迹从投影重建；AgentConversationProjectionService 明细端点
+    补 text 事件 + delegation 三重排除修复（canonical 事件名/kind 映射/run 过滤）
   → MessageList → messageProjection（保持已组装消息顺序，未匹配 active run 留在当前流末端）→ MessageViewportRuntime（虚拟化、锚点、贴底）
   → ChatMessageStyleProvider（消息树共享一次聚合样式注册）
   → MessageRow（稳定块直接渲染 + 语义 memo；不再经过单条 MessageStream 兼容重建）
@@ -256,6 +261,9 @@ Chat first paint → AgentConversationProjectionService
        分段并集必须覆盖 answerMarkdown 否则回退整块（防同段双渲染）；
        TurnOutputChunker 非 delta 事件先 flush 正文/思考缓冲，轮次边界进 canonical sequence；
        终态 reply 分叉以服务端为准不再拼接（重复输出修复）；
+       流式中同回复单卡：activeRun↔本地 turn 合并移除「本地正文为空」门槛
+       （commandClientId 已是同一发送的强约束），hasProjectedUserTurn 增加
+       turnId 锚点、合并保留本地 clientMessageId（2026-08-24，生成中多卡修复）；
        ReasoningDisclosureRow 多段 + 段时长 chip、ToolCallRow 耗时/exit 折叠行、
        TurnStatsLine 终态计量、PresentationRegistry 五类 renderer：terminal/diff/read/search/web）
   → 主消息运行监视区（首 Token 前也保留主代理“查看过程”：当前阶段 + 推理摘要 + 工具操作 + 有界子代理委派状态；不展开子代理内部过程）
@@ -280,6 +288,6 @@ Chat first paint → AgentConversationProjectionService
 | `Tests/PuddingCodexServiceTests/` | Codex MCP Service |
 | `Tests/PuddingFullTextIndexTests/` | 全文索引 |
 | `Tests/PuddingWebApiTests/` | Web API |
-| `Tests/PuddingDesktop.Tests/` | Desktop 进程/配置、Browser Controller/Client、Debug 调试模式（路由/反向代理集成/SSE/WS 中继/前端监督器/源码构建器） |
+| `Tests/PuddingDesktop.Tests/` | Desktop 进程/配置、Browser Controller/Client、Debug 调试模式（路由/反向代理集成/SSE/WS 中继/前端监督器/源码构建器/前端构建部署） |
 | `Tests/PuddingHost.Tests/` | Bridge Endpoint/Remote proxy（56/56 ✅） |
 | `Tests/PuddingBrowser.AgentTools.Tests/` | 七项 Agent Tools（10/10 ✅） |

@@ -46,6 +46,30 @@ public sealed class AgentConversationProjectionService(
         ConversationEventTypes.ToolCallRequested,
         ConversationEventTypes.ToolCallCompleted,
         ConversationEventTypes.ToolCallFailed,
+        // 委派轨迹：live 快照也带子代理生命周期（64 条窗口内），
+        // 前端 DelegationRow 才能在运行中渲染委派行。
+        ConversationEventTypes.SubAgentRunCreated,
+        ConversationEventTypes.SubAgentRunCompleted,
+        ConversationEventTypes.SubAgentRunBudgetExhausted,
+        ConversationEventTypes.SubAgentRunFailed,
+        ConversationEventTypes.SubAgentRunCancelled,
+        ConversationEventTypes.SubAgentRunTimedOut,
+        ConversationEventTypes.SubAgentRunInterrupted,
+    ];
+    /// <summary>
+    /// 子代理运行生命周期事件（canonical 名，见 ConversationEventTypes）。挂在父回复的
+    /// message_id 下、run_id 为子 run，因此明细查询需放宽 run 过滤才能恢复委派轨迹。
+    /// </summary>
+    private static readonly string[] SubAgentRunLifecycleEventTypes =
+    [
+        ConversationEventTypes.SubAgentRunCreated,
+        ConversationEventTypes.SubAgentRunStarted,
+        ConversationEventTypes.SubAgentRunCompleted,
+        ConversationEventTypes.SubAgentRunBudgetExhausted,
+        ConversationEventTypes.SubAgentRunFailed,
+        ConversationEventTypes.SubAgentRunCancelled,
+        ConversationEventTypes.SubAgentRunTimedOut,
+        ConversationEventTypes.SubAgentRunInterrupted,
     ];
     private static readonly string[] MessageProcessEventTypes =
     [
@@ -53,12 +77,17 @@ public sealed class AgentConversationProjectionService(
         ConversationEventTypes.ToolCallRequested,
         ConversationEventTypes.ToolCallCompleted,
         ConversationEventTypes.ToolCallFailed,
-        "subagent.spawned",
-        "subagent.delta",
-        "subagent.thinking",
-        "subagent.tool_call",
-        "subagent.tool_result",
-        "subagent.completed",
+        .. SubAgentRunLifecycleEventTypes,
+    ];
+    /// <summary>
+    /// 单消息全量明细额外包含 message.content.appended（kind=text），供前端在
+    /// bootstrap 时按同一事件流重建「正文段 ⇄ 思考 ⇄ 工具 ⇄ 委派」的交错顺序。
+    /// 会话级摘要计数（TotalItems 等）不把正文增量算作过程条目，故不并入 MessageProcessEventTypes。
+    /// </summary>
+    private static readonly string[] MessageDetailEventTypes =
+    [
+        .. MessageProcessEventTypes,
+        ConversationEventTypes.MessageContentAppended,
     ];
     private static readonly string[] MessageProjectionEventTypes =
     [
@@ -294,8 +323,11 @@ public sealed class AgentConversationProjectionService(
             var processEvents = await db.ConversationEvents
                 .AsNoTracking()
                 .Where(e => e.ConversationId == main.SessionId)
-                .Where(e => e.MessageId == messageId && e.RunId == completedRunId)
-                .Where(e => MessageProcessEventTypes.Contains(e.Type))
+                .Where(e => e.MessageId == messageId)
+                // 父 run 事件按 completedRunId 收敛；子代理事件挂同一 message_id 但携带
+                // 子 run_id，放宽为按类型纳入，委派轨迹才能在完成后被回放。
+                .Where(e => e.RunId == completedRunId || SubAgentRunLifecycleEventTypes.Contains(e.Type))
+                .Where(e => MessageDetailEventTypes.Contains(e.Type))
                 .OrderBy(e => e.Sequence)
                 .ToListAsync(ct);
             var eventItems = processEvents
@@ -773,11 +805,23 @@ public sealed class AgentConversationProjectionService(
         var output = ReadString(evt.Payload, "output");
         var error = ReadString(evt.Payload, "error");
         var exitCode = ReadInt(evt.Payload, "exitCode") ?? ReadInt(evt.Payload, "exit_code");
+        string? delegationRunId = null;
+        if (kind == "delegation")
+        {
+            // created 带 template/task_summary；终态带 reply/error。sub_agent_id 在
+            // 两类 payload 中都存在，是委派节点跨事件分组的稳定键（优先于
+            // RunId 列：终态事件经由事件总线落库，RunId 归属不做保证）。
+            name ??= ReadString(evt.Payload, "template") ?? ReadString(evt.Payload, "sub_agent_id");
+            delegationRunId = ReadString(evt.Payload, "sub_agent_id") ?? evt.RunId;
+        }
         var message = ReadString(evt.Payload, "message")
             ?? BuildToolProcessMessage(kind, name, arguments, output, error, exitCode);
         var toolCallId = ReadString(evt.Payload, "toolCallId");
         var text = ReadString(evt.Payload, "delta")
             ?? ReadString(evt.Payload, "text")
+            ?? (kind == "delegation"
+                ? ReadString(evt.Payload, "task_summary") ?? ReadString(evt.Payload, "reply")
+                : null)
             ?? message
             ?? output
             ?? error
@@ -789,13 +833,19 @@ public sealed class AgentConversationProjectionService(
             return false;
         }
 
-        var status = ReadString(evt.Payload, "status") ?? kind switch
+        var status = kind switch
         {
-            "tool_call" => "running",
-            "tool_result" when !string.IsNullOrWhiteSpace(error) => "error",
-            "tool_result" when exitCode.HasValue => exitCode.Value == 0 ? "success" : "error",
-            "tool_result" => "success",
-            _ => "done",
+            // 委派状态由事件类型决定：payload 的 status 是子代理侧状态机值
+            //（created/budget_exhausted 等），不直接对应 UI 运行态。
+            "delegation" when evt.Type is ConversationEventTypes.SubAgentRunCreated
+                or ConversationEventTypes.SubAgentRunStarted => "running",
+            "delegation" when evt.Type == ConversationEventTypes.SubAgentRunCompleted => "success",
+            "delegation" when evt.Type is ConversationEventTypes.SubAgentRunFailed
+                or ConversationEventTypes.SubAgentRunTimedOut => "error",
+            "delegation" when evt.Type == ConversationEventTypes.SubAgentRunBudgetExhausted => "budget_exhausted",
+            "delegation" => "cancelled",
+            "text" => "done",
+            _ => ReadString(evt.Payload, "status") ?? FallbackToolStatus(kind, error, exitCode),
         };
 
         item = new ProcessSummaryItem(
@@ -809,16 +859,34 @@ public sealed class AgentConversationProjectionService(
             output,
             exitCode,
             message,
-            toolCallId);
+            toolCallId,
+            delegationRunId);
         return true;
     }
+
+    private static string FallbackToolStatus(string kind, string? error, int? exitCode)
+        => kind == "tool_call"
+            ? "running"
+            : !string.IsNullOrWhiteSpace(error)
+                ? "error"
+                : exitCode is not null and not 0
+                    ? "error"
+                    : "success";
 
     private static string? MapProcessKind(string eventType)
         => eventType switch
         {
+            ConversationEventTypes.MessageContentAppended => "text",
             ConversationEventTypes.MessageThinkingSummaryAppended => "thinking",
             ConversationEventTypes.ToolCallRequested => "tool_call",
             ConversationEventTypes.ToolCallCompleted or ConversationEventTypes.ToolCallFailed => "tool_result",
+            ConversationEventTypes.SubAgentRunCreated or ConversationEventTypes.SubAgentRunStarted => "delegation",
+            ConversationEventTypes.SubAgentRunCompleted
+                or ConversationEventTypes.SubAgentRunBudgetExhausted
+                or ConversationEventTypes.SubAgentRunFailed
+                or ConversationEventTypes.SubAgentRunCancelled
+                or ConversationEventTypes.SubAgentRunTimedOut
+                or ConversationEventTypes.SubAgentRunInterrupted => "delegation",
             _ => null,
         };
 

@@ -15,6 +15,7 @@ import type {
 } from '../types';
 import type { ChatCheckpoint } from '../client/checkpointStore';
 import type { ScrollIntent } from '../viewport/types';
+import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 
 export const MESSAGE_PAGE_SIZE = 20;
 export const SESSION_EVENT_PAGE_SIZE = 50;
@@ -169,6 +170,8 @@ export interface UseChatStateReturn {
   setError: (value: string | null) => void;
   latestUsage: TokenUsageDto | undefined;
   subAgentCards: SubAgentCardMap;
+  /** CU-11 路径 B：turnId → canonical 执行流投影（灰度开关控制）。 */
+  getTurnProjection: (turnId: string) => ExecutionFlowProjection | undefined;
   sessionUnreadCounts: Record<string, number>;
   startWorkspaceNotificationStream: (workspaceId: string) => void;
   stopWorkspaceNotificationStream: () => void;

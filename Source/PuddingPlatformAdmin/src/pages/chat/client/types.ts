@@ -40,6 +40,11 @@ export interface ProcessSummaryItem {
   output?: string | null;
   exitCode?: number | null;
   message?: string | null;
+  /**
+   * 委派节点跨事件分组键（subagent 子 run id 或 sub_agent_id）。
+   * 服务端 2026-08-24 起对 kind=delegation 提供；旧后端缺省。
+   */
+  delegationRunId?: string | null;
 }
 
 export interface ConversationProcessSummary {

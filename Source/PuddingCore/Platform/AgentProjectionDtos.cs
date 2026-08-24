@@ -48,7 +48,8 @@ public sealed record ProcessSummaryItem(
     string? Output = null,
     int? ExitCode = null,
     string? Message = null,
-    string? ToolCallId = null);
+    string? ToolCallId = null,
+    string? DelegationRunId = null);
 
 /// <summary>
 /// Payload-free statistics for a completed message process. Historical details are loaded on demand.

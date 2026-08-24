@@ -28,6 +28,7 @@ import ChatLayout from './components/ChatLayout';
 import ContextMenu, { type ContextMenuState } from './components/ContextMenu';
 import { useAgentChatClient } from './hooks/useAgentChatClient';
 import { useChatState } from './hooks/useChatState';
+import { useTurnSurfaceStore } from './hooks/useTurnSurfaceStore';
 import { useTtsPlayer } from './hooks/useTtsPlayer';
 import {
   savePinnedMessage,
@@ -112,6 +113,23 @@ const ChatPageContent: React.FC = () => {
     agentClient.snapshot.agentId === chat.agentId
       ? agentClient.snapshot.conversation
       : null;
+  // 行为链重构（2026-08-24）：完成 turn 的过程明细懒水合进 TurnSurfaceStore，
+  // 终态/刷新后 reasoning/tool/delegation 轨迹从同一事件流重建；live 投影
+  // （useChatState getTurnProjection）作为无 surface 时的回退。
+  const turnSurface = useTurnSurfaceStore({
+    workspaceId: chat.workspaceId,
+    agentId: chat.agentId,
+    conversationView: projectedConversation,
+  });
+  const getTurnProjectionWithSurface = useCallback(
+    (turnId: string) =>
+      turnSurface.getSurfaceProjection(turnId) ??
+      chat.getTurnProjection(turnId),
+    // 依赖 surface.revision：agent-client 架构下 SSE 关闭会让
+    // chat.getTurnProjection 身份恒定，若组合函数也恒定，MessageRow 的
+    // memo 比较器会判定 props 未变，水合完成后气泡永不重渲染。
+    [turnSurface.getSurfaceProjection, turnSurface.revision, chat.getTurnProjection],
+  );
   const selectedAgentStatus = useMemo(
     () =>
       agentClient.snapshot.statuses.find(
@@ -664,7 +682,7 @@ const ChatPageContent: React.FC = () => {
         cacheMissTokens={chat.sessionCacheMissTokens}
         cacheHitRate={chat.cacheHitRate}
         compactionStatus={chat.compactionStatus}
-        getTurnProjection={chat.getTurnProjection}
+        getTurnProjection={getTurnProjectionWithSurface}
         formatTime={chat.formatTime}
         onDeleteTurn={chat.onDeleteTurn}
         onContextMenu={handleContextMenu}
