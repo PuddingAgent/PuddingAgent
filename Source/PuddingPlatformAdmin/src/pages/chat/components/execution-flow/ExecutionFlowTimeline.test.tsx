@@ -16,6 +16,7 @@ import {
   buildEntriesFromProjection,
   deriveStatsFromProcessItems,
   deriveStatsFromProjection,
+  deriveTrailingMessageNode,
   ExecutionFlowTimeline,
 } from './ExecutionFlowTimeline';
 
@@ -137,6 +138,91 @@ describe('ExecutionFlowTimeline（路径 B：投影 nodes）', () => {
       <ExecutionFlowTimeline projection={projectExecutionFlow([])} />,
     );
     expect(container.firstChild).toBeNull();
+  });
+});
+
+describe('ExecutionFlowTimeline（正文分段交错：messageSegments）', () => {
+  /** 交错 turn：文本1 → 推理 → 工具 → 文本2(尾段) → 终态。 */
+  const makeSegmentEvents = (): ExecutionFlowEvent[] => [
+    seqEvent(1, { type: 'message.content.appended', delta: '先说明一下' }),
+    seqEvent(2, { type: 'message.thinking_summary.appended', delta: '思考' }),
+    seqEvent(3, {
+      type: 'tool.call.requested',
+      name: 'shell',
+      toolCallId: 'call-1',
+      arguments: '{"command":"ls"}',
+    }),
+    seqEvent(4, {
+      type: 'tool.call.completed',
+      name: 'shell',
+      toolCallId: 'call-1',
+      output: 'ok',
+      durationMs: 100,
+    }),
+    seqEvent(5, { type: 'message.content.appended', delta: '最终回答' }),
+    seqEvent(6, { type: 'turn.completed' }),
+  ];
+
+  it('deriveTrailingMessageNode：最后一个 message 且其后仅 terminal → 尾段', () => {
+    const projection = projectExecutionFlow(makeSegmentEvents());
+    const trailing = deriveTrailingMessageNode(projection);
+    expect(trailing?.kind).toBe('message');
+    expect(trailing?.text).toBe('最终回答');
+  });
+
+  it('deriveTrailingMessageNode：最后文本之后还有工具（run 进行中）→ 无尾段', () => {
+    const projection = projectExecutionFlow([
+      seqEvent(1, { type: 'message.content.appended', delta: '文本1' }),
+      seqEvent(2, {
+        type: 'tool.call.requested',
+        name: 'shell',
+        toolCallId: 'call-1',
+      }),
+    ]);
+    expect(deriveTrailingMessageNode(projection)).toBeUndefined();
+  });
+
+  it('buildEntriesFromProjection 带 messageSegments：中间文本段内联，尾段跳过', () => {
+    const projection = projectExecutionFlow(makeSegmentEvents());
+    const trailing = deriveTrailingMessageNode(projection);
+    const entries = buildEntriesFromProjection(projection, false, {
+      trailingKey: trailing?.key,
+    });
+    expect(entries.map((entry) => entry.kind)).toEqual([
+      'message',
+      'reasoning',
+      'tool',
+    ]);
+    const segment = entries.find((entry) => entry.kind === 'message');
+    expect(segment?.kind === 'message' && segment.node.text).toBe('先说明一下');
+  });
+
+  it('未提供 messageSegments：message 不进时间线（回退整块正文行为）', () => {
+    const projection = projectExecutionFlow(makeSegmentEvents());
+    const entries = buildEntriesFromProjection(projection, false);
+    expect(entries.some((entry) => entry.kind === 'message')).toBe(false);
+  });
+
+  it('渲染交错 DOM：文本段 → 推理行 → 工具行（尾段不出现）', () => {
+    const projection = projectExecutionFlow(makeSegmentEvents());
+    const trailing = deriveTrailingMessageNode(projection);
+    render(
+      <ExecutionFlowTimeline
+        projection={projection}
+        isRunActive={false}
+        messageSegments={{ trailingKey: trailing?.key }}
+      />,
+    );
+    const order = Array.from(
+      document.querySelectorAll(
+        '[data-testid="timeline-message-segment"], [data-testid="reasoning-disclosure-row"], [data-testid="toolcall-row"], [data-testid="delegation-row"]',
+      ),
+    ).map((el) => el.getAttribute('data-testid'));
+    expect(order).toEqual([
+      'timeline-message-segment',
+      'reasoning-disclosure-row',
+      'toolcall-row',
+    ]);
   });
 });
 

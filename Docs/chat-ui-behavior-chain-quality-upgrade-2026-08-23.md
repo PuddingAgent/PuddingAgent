@@ -179,3 +179,36 @@
 - 复制 harness 品牌 CSS/图标/字体；不引入新 UI 框架。
 - `styles.ts` residual 全量迁移（仅迁移本期触碰样式）。
 - 后端事件契约改动。
+
+## 12. 正文分段交错 + 重复输出修复（2026-08-24）
+
+用户反馈两项：① 消息输出会重复输出；② 文本输出/思维链/工具调用应交错（状态1：文本1 → 思维链 → 工具；状态2：文本1 → 思维链(折叠) → 工具(折叠) → 文本2）。对照 harness 源码级调研结论：**单条 assistant message 是多 block（text/reasoning/tool-call）按出现序排列，一个 turn 内多个 step 消息节点按全局 seq 交错；reasoning/工具行默认折叠一行摘要，文本段永远可见**。Pudding 此前把全部正文增量合并进单一 `MessageNode` 且时间线跳过 message 节点——中间文本（工具调用前的输出）永远沉底拼进尾块，交错语义在投影层就丢失。
+
+### 12.1 后端交错保序（TurnOutputChunker）
+
+- **缺陷**：非 delta 事件（工具调用/结果）到达时不 flush 已缓冲正文/思考，跨轮文本被合并成一个排在工具事件之后的分块，「文本 → 工具 → 文本」的轮次边界在 canonical sequence 持久层丢失。
+- **修复**：`Feed` 的非 delta 分支先 `FlushPendingContent` 再透传事件；每轮文本以独立 `message.content.appended` 事件先于其后的工具事件落盘。
+- 测试：`TurnOutputChunkerPayloadOwnershipTests` 补 2 例（content/thinking 先于工具事件、第二轮文本不与第一轮合并）。
+
+### 12.2 前端投影分段（executionFlowProjector）
+
+- `MessageNode` 语义升级为「一个连续正文段」：相邻 content 增量合并为一段；任何非 content 节点事件（tool/delegation/retry/terminal，含 reasoning delta）切段；后续 content 开新段，按各自首事件 sequence 交错进 nodes（对齐 harness 每 step 一条 AssistantMessageNode）。
+- `message.completed/failed` 应用到当前开放段并关闭；空 delta/纯空白段被投影后过滤（对齐 reasoning 空段语义，failed 段保留 errorMessage）。
+
+### 12.3 时间线内联文本段（ExecutionFlowTimeline / AgentMessageBubble）
+
+- 新 entry `message` + `MessageSegmentView`（与正文同款 15/1.75 全宽 markdown，`timelineMessageSegment` 样式）；`deriveTrailingMessageNode` 判定尾段（最后一个 message 节点且其后仅剩 terminal）。
+- AgentMessageBubble：`segmentRendering` 备忘录——投影分段并集必须覆盖 `answerMarkdown`（相等或为其前缀；content 为空亦可），否则回退整块正文（防 envelope 缺事件漏段 / 终态改写后的同段双渲染）。分段启用时：中间文本段由时间线内联；尾段由正文气泡承载，`StreamingAnswer` 以 `key=尾段key` 段切换 remount（每段从零平滑敲出）；无尾段（尾文本后仍有工具在跑）→ 正文气泡不渲染，TurnStatus 承载运行态。
+- 正文渲染源切换为 `bodyContent`（尾段文本或整块 content）；操作/复制/TTS/错误摘要仍用全量 `content`。
+
+### 12.4 重复输出修复（三处加固）
+
+1. **`resolveTerminalAssistantMarkdown` 分叉兜底**：current 与终态 reply 完全分叉且无后缀衔接时改为返回 reply（服务端 canonical，与刷新后投影一致）。旧实现把 reply 整段拼在 current 之后——流内任何一次偏差（重叠修剪误删、快照替换）都会让**整段正文显示两遍**（「消息重复输出」的直接来源）。
+2. **打字机 stale-stable 守卫**（`useTypewriterStreaming`）：`stableTextRef` 镜像已提交 stable 前缀；`text` 不再以其开头（快照/终态改写）时整体重置 stable/live 游标，杜绝 stale stable 与新 live 拼接的同段双渲染。新增 `text` 收缩/替换重置用例。
+3. **结构防重**：分段渲染本身消除了「中间文本既在时间线又沉底拼进整块正文」的重复形态（尾段独占正文，中间段独占时间线，一致性守卫兜底）。
+
+### 12.5 测试与验收
+
+- 前端新增/更新：投影器分段 5 例（切段/交错序/相邻合并/message.completed/空段过滤）、时间线 5 例（尾段判定×2、内联交错、未启用回退、DOM 序）、消费点 3 例（中间段内联+正文只承载尾段不重复、无尾段正文不渲染、分叉守卫回退整块）、终态 reply 不重复 2 例、打字机替换重置 1 例。chat 目录 106/109 套件通过（IntentConsole/InputArea/DevPanel 3 套件为 HEAD 存量失败，与本次无关）。
+- 后端：`dotnet build` PuddingPlatform/PuddingHost 0 错误；TurnOutputChunker 7/7。
+- 真实模型 smoke（多轮工具调用会话的交错视觉验证）待两段式外部验收。

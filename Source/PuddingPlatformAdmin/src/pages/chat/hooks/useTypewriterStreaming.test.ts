@@ -152,4 +152,44 @@ describe('useTypewriterStreaming', () => {
     expect(result.current.visibleLiveText).toBe('');
     expect(result.current.isSettling).toBe(false);
   });
+
+  it('resets the committed stable prefix when the text is replaced (no stale-stale duplication)', () => {
+    // 正文被快照/终态改写为不再以已提交 stable 前缀开头的内容：
+    // stable 必须整体重置，否则 stale stable 与新 live 会把同段文本渲染两遍。
+    const { result, rerender } = renderHook(
+      ({ text }) =>
+        useTypewriterStreaming({
+          text,
+          isStreaming: true,
+          tickMs: 10,
+        }),
+      {
+        initialProps: {
+          text: '第一段\n\n尾段正在生成',
+        },
+      },
+    );
+
+    act(() => {
+      jest.advanceTimersByTime(80);
+    });
+    expect(result.current.stableMarkdown).toBe('第一段\n');
+
+    // 服务端版本替换（分叉，非追加）
+    rerender({
+      text: '完全不同的服务端文本\n\n继续',
+    });
+
+    // stable 前缀被重置；新文本从零开始（不残留旧前缀）
+    expect(result.current.stableMarkdown).toBe('');
+    act(() => {
+      jest.advanceTimersByTime(40);
+    });
+    expect(result.current.stableMarkdown).not.toContain('第一段');
+    expect(
+      (result.current.stableMarkdown + result.current.liveText).startsWith(
+        '完全不同的服务端文本',
+      ) || result.current.stableMarkdown === '',
+    ).toBe(true);
+  });
 });

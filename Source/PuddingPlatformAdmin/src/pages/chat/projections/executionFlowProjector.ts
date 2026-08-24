@@ -181,7 +181,13 @@ export interface ReasoningBlock {
   sourceIds: string[];
 }
 
-/** message 节点：合并后的回答正文。 */
+/**
+ * message 节点：一个连续正文段（相邻 content 增量合并）。
+ * 多轮 turn 中「文本 → 工具 → 文本」的每次文本产出是独立段（对齐
+ * deepseek-harness 每 step 一条 AssistantMessageNode 的交错语义）；
+ * 段与段之间被工具/委派/reasoning/终态等非 content 事件分隔，
+ * 按各自首个事件的 sequence 交错进入 nodes。
+ */
 export interface MessageNode extends ExecutionFlowNodeBase {
   kind: 'message';
   text: string;
@@ -190,6 +196,8 @@ export interface MessageNode extends ExecutionFlowNodeBase {
   terminalEventId?: string;
   terminalSequence?: number;
   errorMessage?: string;
+  /** 段末（最后一个 delta）事件的 occurredAt（段时长派生用）。 */
+  lastOccurredAt?: string;
 }
 
 export type ToolState = 'running' | 'completed' | 'failed';
@@ -557,7 +565,7 @@ export function projectExecutionFlow(
   let terminalEmitted = false; // 首个 turn 终态胜出（终态单调）。
   const nodes: ExecutionFlowNode[] = [];
   const toolNodesByCallId = new Map<string, ToolNode>();
-  let messageNode: MessageNode | null = null;
+  let openMessage: MessageNode | null = null;
   const delegationNodes = new Map<string, DelegationNode>();
   let openReasoning: {
     node: ReasoningNode;
@@ -577,7 +585,13 @@ export function projectExecutionFlow(
     openReasoning = null;
   };
 
+  /** 关闭当前正文段（节点已按序进入 nodes；后续 content 增量开新段）。 */
+  const flushMessage = () => {
+    openMessage = null;
+  };
+
   const appendReasoning = (event: ReasoningDeltaEvent) => {
+    flushMessage();
     if (openReasoning) {
       openReasoning.segments.push({
         id: deriveKey('reasoning', event),
@@ -606,6 +620,27 @@ export function projectExecutionFlow(
         { id: deriveKey('reasoning', event), text: event.delta ?? '' },
       ],
     };
+  };
+
+  const appendMessageDelta = (event: ContentDeltaEvent) => {
+    flushReasoning();
+    if (openMessage) {
+      openMessage.sourceEventIds.push(event.eventId);
+      if (event.occurredAt) openMessage.lastOccurredAt = event.occurredAt;
+    } else {
+      openMessage = {
+        kind: 'message',
+        key: deriveKey('message', event),
+        firstEventId: event.eventId,
+        sequence: event.sequence,
+        occurredAt: event.occurredAt,
+        sourceEventIds: [event.eventId],
+        text: '',
+        terminal: 'none',
+      };
+      nodes.push(openMessage);
+    }
+    if (typeof event.delta === 'string') openMessage.text += event.delta;
   };
 
   const upsertTool = (
@@ -661,31 +696,15 @@ export function projectExecutionFlow(
         break;
       }
       case 'message.content.appended': {
-        flushReasoning();
-        if (!messageNode) {
-          messageNode = {
-            kind: 'message',
-            key: 'message',
-            firstEventId: event.eventId,
-            sequence: event.sequence,
-            occurredAt: event.occurredAt,
-            sourceEventIds: [event.eventId],
-            text: '',
-            terminal: 'none',
-          };
-          nodes.push(messageNode);
-        } else {
-          messageNode.sourceEventIds.push(event.eventId);
-        }
-        if (typeof event.delta === 'string') messageNode.text += event.delta;
+        appendMessageDelta(event);
         break;
       }
       case 'message.completed': {
         flushReasoning();
-        if (!messageNode) {
-          messageNode = {
+        if (!openMessage) {
+          openMessage = {
             kind: 'message',
-            key: 'message',
+            key: deriveKey('message', event),
             firstEventId: event.eventId,
             sequence: event.sequence,
             occurredAt: event.occurredAt,
@@ -693,24 +712,25 @@ export function projectExecutionFlow(
             text: '',
             terminal: 'none',
           };
-          nodes.push(messageNode);
+          nodes.push(openMessage);
         } else {
-          messageNode.sourceEventIds.push(event.eventId);
+          openMessage.sourceEventIds.push(event.eventId);
         }
         if (typeof event.reply === 'string' && event.reply.trim()) {
-          messageNode.text = event.reply;
+          openMessage.text = event.reply;
         }
-        messageNode.terminal = 'completed';
-        messageNode.terminalEventId = event.eventId;
-        messageNode.terminalSequence = event.sequence;
+        openMessage.terminal = 'completed';
+        openMessage.terminalEventId = event.eventId;
+        openMessage.terminalSequence = event.sequence;
+        flushMessage();
         break;
       }
       case 'message.failed': {
         flushReasoning();
-        if (!messageNode) {
-          messageNode = {
+        if (!openMessage) {
+          openMessage = {
             kind: 'message',
-            key: 'message',
+            key: deriveKey('message', event),
             firstEventId: event.eventId,
             sequence: event.sequence,
             occurredAt: event.occurredAt,
@@ -718,19 +738,21 @@ export function projectExecutionFlow(
             text: '',
             terminal: 'none',
           };
-          nodes.push(messageNode);
+          nodes.push(openMessage);
         } else {
-          messageNode.sourceEventIds.push(event.eventId);
+          openMessage.sourceEventIds.push(event.eventId);
         }
-        messageNode.terminal = 'failed';
-        messageNode.terminalEventId = event.eventId;
-        messageNode.terminalSequence = event.sequence;
-        messageNode.errorMessage =
+        openMessage.terminal = 'failed';
+        openMessage.terminalEventId = event.eventId;
+        openMessage.terminalSequence = event.sequence;
+        openMessage.errorMessage =
           event.errorMessage ?? event.message ?? undefined;
+        flushMessage();
         break;
       }
       case 'tool.call.requested': {
         flushReasoning();
+        flushMessage();
         const requested = upsertTool(event);
         if (!requested) break;
         const { node } = requested;
@@ -754,6 +776,7 @@ export function projectExecutionFlow(
       case 'tool.call.completed':
       case 'tool.call.failed': {
         flushReasoning();
+        flushMessage();
         const result = upsertTool(event);
         if (!result) break;
         const { node, created } = result;
@@ -798,6 +821,7 @@ export function projectExecutionFlow(
       }
       case 'subagent.spawned': {
         flushReasoning();
+        flushMessage();
         const subAgentId =
           readString(event, ['subAgentId', 'sub_agent_id']) ?? event.eventId;
         const node: DelegationNode = {
@@ -819,6 +843,7 @@ export function projectExecutionFlow(
       }
       case 'subagent.completed': {
         flushReasoning();
+        flushMessage();
         const subAgentId =
           readString(event, ['subAgentId', 'sub_agent_id']) ?? event.eventId;
         const existing = delegationNodes.get(subAgentId);
@@ -850,6 +875,7 @@ export function projectExecutionFlow(
       }
       case 'subconscious_step': {
         flushReasoning();
+        flushMessage();
         const retry = tryParseRetry(event.message);
         if (!retry) break; // 非 retry 形态的 subconscious_step 不投影为节点。
         nodes.push({
@@ -875,6 +901,7 @@ export function projectExecutionFlow(
         }
         terminalEmitted = true;
         flushReasoning();
+        flushMessage();
         const state: TerminalState =
           type === 'turn.completed'
             ? 'completed'
@@ -914,6 +941,19 @@ export function projectExecutionFlow(
     const rootSet = new Set(roots);
     const kept = nodes.filter(
       (node) => node.kind !== 'tool' || rootSet.has(node),
+    );
+    nodes.length = 0;
+    nodes.push(...kept);
+  }
+
+  // 7) 空 message 段不进入投影（对齐 reasoning 空段语义；failed 段保留
+  //    errorMessage 事实）。空 delta / 纯空白 delta 不产生占位节点。
+  {
+    const kept = nodes.filter(
+      (node) =>
+        node.kind !== 'message' ||
+        node.text.trim().length > 0 ||
+        node.terminal === 'failed',
     );
     nodes.length = 0;
     nodes.push(...kept);

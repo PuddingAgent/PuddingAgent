@@ -4,9 +4,7 @@
 // （canonical 投影 nodes 过滤）。两条路径在同一组事实下渲染结构等价。
 import { render, screen } from '@testing-library/react';
 import * as React from 'react';
-import {
-  projectExecutionFlow,
-} from '../projections/executionFlowProjector';
+import { projectExecutionFlow } from '../projections/executionFlowProjector';
 import AgentMessageBubble from './AgentMessageBubble';
 
 const mockUseTypewriterStreaming = jest.fn();
@@ -430,5 +428,112 @@ describe('AgentMessageBubble projection dual-path equivalence (CU-11 Phase 2)', 
 
     expect(pathBToolRows).toBe(pathAToolRows);
     expect(pathBDelegation).toBe(pathADelegation);
+  });
+});
+
+// ── 行为链 §3.4+：正文分段交错消费点 ─────────────────────────────────────
+describe('AgentMessageBubble message-segment interleaving', () => {
+  const segmentEvents: ExecutionFlowEvent[] = [
+    ev('message.content.appended', 1, { delta: '先说明一下' }),
+    ev('message.thinking_summary.appended', 2, { delta: '思考' }),
+    ev('tool.call.requested', 3, {
+      toolCallId: 'call-1',
+      name: 'shell',
+      arguments: '{"command":"ls"}',
+    }),
+    ev('tool.call.completed', 4, {
+      toolCallId: 'call-1',
+      name: 'shell',
+      exitCode: 0,
+      output: 'ok',
+    }),
+    ev('message.content.appended', 5, { delta: '最终回答' }),
+    ev('turn.completed', 6, { reply: '先说明一下最终回答' }),
+  ];
+
+  beforeEach(() => {
+    mockUseTypewriterStreaming.mockReset();
+    mockMessageItem.mockClear();
+    mockUseTypewriterStreaming.mockReturnValue({
+      stableMarkdown: '',
+      liveText: '',
+      visibleLiveText: '',
+      visibleStartOffset: 0,
+      isTyping: false,
+      isSettling: false,
+    });
+  });
+
+  it('中间文本段内联进时间线，正文只承载尾段（不重复）', () => {
+    const projection = projectExecutionFlow(segmentEvents, {
+      turnId: 'turn-1',
+    });
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        content="先说明一下最终回答"
+        executionFlowProjection={projection}
+      />,
+    );
+    // 中间段（text1）由时间线内联渲染
+    const segments = screen.getAllByTestId('timeline-message-segment');
+    expect(segments).toHaveLength(1);
+    // 正文气泡的 MessageItem 只承载尾段文本，绝不再包含整段全文
+    const bubbleItem = mockMessageItem.mock.calls.find(
+      (call) => (call[0] as Record<string, unknown>).markdownText === '最终回答',
+    );
+    expect(bubbleItem).toBeTruthy();
+    const fullTextItem = mockMessageItem.mock.calls.find(
+      (call) =>
+        (call[0] as Record<string, unknown>).markdownText ===
+        '先说明一下最终回答',
+    );
+    expect(fullTextItem).toBeUndefined();
+  });
+
+  it('尾段后仍有工具（run 进行中）：正文不渲染，全部文本进时间线', () => {
+    const runningEvents: ExecutionFlowEvent[] = [
+      ev('message.content.appended', 1, { delta: '文本1' }),
+      ev('tool.call.requested', 3, {
+        toolCallId: 'call-1',
+        name: 'shell',
+      }),
+    ];
+    const projection = projectExecutionFlow(runningEvents, {
+      turnId: 'turn-1',
+    });
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        status="executing"
+        isStreaming
+        content="文本1"
+        executionFlowProjection={projection}
+      />,
+    );
+    expect(screen.getAllByTestId('timeline-message-segment')).toHaveLength(1);
+    // 无尾段 → 正文气泡不渲染（MessageItem 仅时间线段一个调用）
+    expect(mockMessageItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('分段并集与 answerMarkdown 分叉时回退整块正文（守卫）', () => {
+    const projection = projectExecutionFlow(segmentEvents, {
+      turnId: 'turn-1',
+    });
+    // content 与投影分段不一致（模拟 envelope 缺事件）：不得启用分段渲染
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        content="完全不同的诊断文本"
+        executionFlowProjection={projection}
+      />,
+    );
+    expect(screen.queryByTestId('timeline-message-segment')).toBeNull();
+    const fullTextItem = mockMessageItem.mock.calls.find(
+      (call) =>
+        (call[0] as Record<string, unknown>).markdownText ===
+        '完全不同的诊断文本',
+    );
+    expect(fullTextItem).toBeTruthy();
   });
 });

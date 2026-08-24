@@ -729,9 +729,10 @@ export function resolveTerminalAssistantMarkdown(
       return current + reply.slice(n);
     }
   }
-  const separator =
-    current.endsWith('\n') || reply.startsWith('\n') ? '' : '\n\n';
-  return `${current}${separator}${reply}`;
+  // 分叉且无后缀衔接：以服务端 reply 为准（canonical 事实，与刷新后的持久化
+  // 投影一致）。旧实现把 reply 整段拼在 current 之后——流内任何一次偏差
+  // （重叠修剪误删、快照替换、replay 竞态）都会让整段正文显示两遍。
+  return reply;
 }
 
 /**

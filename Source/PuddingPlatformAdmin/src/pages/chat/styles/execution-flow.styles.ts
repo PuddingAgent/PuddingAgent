@@ -255,6 +255,17 @@ export const useExecutionFlowStyles = createStyles(() => ({
     marginTop: 6,
     boxSizing: 'border-box' as const,
   },
+  /** 交错文本段：与正文同款排版（15/1.75 全宽），区别于过程行的 tertiary 灰阶 */
+  timelineMessageSegment: {
+    width: '100%',
+    maxWidth: 'min(720px, 100%)',
+    fontSize: 15,
+    lineHeight: 1.75,
+    color: 'var(--pudding-chat-text)',
+    wordBreak: 'break-word' as const,
+    marginTop: 2,
+    marginBottom: 2,
+  },
 
   // ── TurnStatsLine（行为链 §3.3：turn 终态计量行）──  /** 统计行：正文下方一行 caption 灰计量（harness StatsLine 同语义） */
   statsLine: {

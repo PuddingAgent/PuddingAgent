@@ -252,6 +252,32 @@ dotnet test .\Tests\PuddingHost.Tests\PuddingHost.Tests.csproj --no-restore --no
 该测试通过只证明 DI 组合根可构建。Desktop 产品还应在明确的新构建上确认出现
 `PUDDING_DESKTOP_READY`，并检查 Loopback `/health` 返回 200。
 
+#### Desktop 报 "Core did not emit a Ready signal within 60 seconds"
+
+Ready 信号在 `Program.cs` 的 `app.StartAsync()`（全部 hosted service StartAsync 返回）之后才写
+stdout，Desktop 固定等 60 秒。定位方法：看 Desktop 运行中心 Core 日志最后停在哪一行——停在
+`[Feishu] Connector starting WebSocket long connection...` 说明启动被远程网络 I/O 卡住
+（外网黑洞/代理挂起时 HttpClient 默认超时 100s > 60s）。
+
+2026-08-24 修复后的不变量：
+
+- `ConnectorHostLifecycleService` 只同步做本地注册，`StartAllAsync` 在后台 Task 上执行
+  （绑定 `IHostApplicationLifetime.ApplicationStopping`，不能用 StartAsync 传入的 token——
+  其源在 Host 启动结束后被释放）。Ready 不再依赖任何连接器网络握手。
+- `FeishuWebSocket` 端点发现与 WS 握手各有 15s 上限；飞书不可达时连接器在 ~15s 内进入
+  Faulted（诊断可见），Core 其余功能不受影响。
+- 手工复现 DesktopChild 启动时序（不占 80 端口，parent 用存活的 Desktop PID）：
+
+```bash
+cd Source/PuddingAgent/bin/Debug/net10.0
+timeout 25 ./PuddingAgent.exe --desktop-child --desktop-parent-pid <DesktopPid> \
+  --data-root D:/data --urls http://0.0.0.0:5099 | grep -E "READY|Connector"
+```
+
+注意 DesktopChild 强制 `http://0.0.0.0:<port>` IPv4 通配 URL，`127.0.0.1` 会被
+`PuddingHostOptionsFactory` 拒绝。若日志显示 MCP 连 `127.0.0.1:5100` 失败（Codex sidecar
+未启动），那只是 reconcile 失败计数，不阻塞 Ready。
+
 ### 6.2 POST 返回 500
 
 1. 从响应取得 `errorId`。

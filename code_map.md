@@ -182,6 +182,11 @@ PuddingHost 产品组合根 → Runtime tool assembly scan
   → AgentExecutionAdmissionCoordinator 必须在 Runtime 与 PuddingHost 两个组合根都注册为 Singleton，供前台 Turn 与 MessageDeliveryDispatcher 共享准入状态
   → PuddingApplicationHostCompositionTests 用 DesktopChild 入口防止“构建成功、Core 启动即退出”
 
+Desktop → Core Ready 契约（2026-08-24 修复连接器阻塞启动）
+  → Core 在全部 hosted service StartAsync 返回后才发 PUDDING_DESKTOP_READY，Desktop 固定 60s 超时
+  → ConnectorHostLifecycleService 本地注册保持同步，StartAllAsync 后台执行（ApplicationStopping 绑定）
+  → FeishuWebSocket 端点发现/WS 握手各 15s 上限；飞书不可达只 Faulted 单个连接器，不阻塞 Ready
+
 当前视觉链路（ADR-077 V0–V2 已实现，2026-08-23）：typed image content part（`ContentPart{type=image, artifactId, detail}`）
   → ConversationAcceptanceStore 同事务写 `ChatMessages.ContentPartsJson`（v1 信封，Content 为文本拼接投影）
   → ExecutionRunCoordinator 读 canonical parts + 冻结 AgentExecutionSnapshot（CapabilityTags/Protocol/VisionPolicy/VisionHelperRoute）
@@ -244,9 +249,13 @@ Chat first paint → AgentConversationProjectionService
   → MessageList → messageProjection（保持已组装消息顺序，未匹配 active run 留在当前流末端）→ MessageViewportRuntime（虚拟化、锚点、贴底）
   → ChatMessageStyleProvider（消息树共享一次聚合样式注册）
   → MessageRow（稳定块直接渲染 + 语义 memo；不再经过单条 MessageStream 兼容重建）
-  → AgentMessageBubble → ExecutionFlowTimeline（行为链交错，2026-08-23）
-     （per-turn canonical 投影 nodes 按 sequence 交错 reasoning 段/工具树/委派；
+  → AgentMessageBubble → ExecutionFlowTimeline（行为链交错，2026-08-23；正文分段交错 2026-08-24）
+     （per-turn canonical 投影 nodes 按 sequence 交错 文本段/reasoning 段/工具树/委派；
        路径 A processItems adapter 同构回退，featureFlag 默认开、'0' 逃生门；
+       正文分段：中间文本段（MessageNode 段）时间线内联、尾段独占正文气泡（段切换 remount 打字机），
+       分段并集必须覆盖 answerMarkdown 否则回退整块（防同段双渲染）；
+       TurnOutputChunker 非 delta 事件先 flush 正文/思考缓冲，轮次边界进 canonical sequence；
+       终态 reply 分叉以服务端为准不再拼接（重复输出修复）；
        ReasoningDisclosureRow 多段 + 段时长 chip、ToolCallRow 耗时/exit 折叠行、
        TurnStatsLine 终态计量、PresentationRegistry 五类 renderer：terminal/diff/read/search/web）
   → 主消息运行监视区（首 Token 前也保留主代理“查看过程”：当前阶段 + 推理摘要 + 工具操作 + 有界子代理委派状态；不展开子代理内部过程）

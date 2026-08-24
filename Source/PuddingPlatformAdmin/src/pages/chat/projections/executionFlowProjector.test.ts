@@ -172,6 +172,78 @@ describe('projectExecutionFlow', () => {
     });
   });
 
+  describe('正文分段交错（message 段按中间事件切段）', () => {
+    it('content 被工具事件切段：文本 → 工具 → 文本 产生两个 message 节点按序交错', () => {
+      const proj = projectExecutionFlow([
+        ev('message.content.appended', 1, { delta: '先说明' }),
+        ev('tool.call.requested', 2, {
+          toolCallId: 't1',
+          name: 'shell',
+          arguments: '{"command":"ls"}',
+        }),
+        ev('tool.call.completed', 3, {
+          toolCallId: 't1',
+          name: 'shell',
+          exitCode: 0,
+          output: 'ok',
+        }),
+        ev('message.content.appended', 4, { delta: '结论' }),
+        ev('turn.completed', 5, {}),
+      ]);
+      expect(nodeKinds(proj)).toEqual([
+        'message', 'tool', 'message', 'terminal',
+      ]);
+      const segments = proj.nodes.filter((node) => node.kind === 'message');
+      expect(segments[0]).toMatchObject({ kind: 'message', text: '先说明' });
+      expect(segments[1]).toMatchObject({ kind: 'message', text: '结论' });
+      // 段 key 来自各自首个来源事件（稳定且互不相同）。
+      expect(segments[0].key).not.toBe(segments[1].key);
+    });
+
+    it('reasoning delta 同样切段：正文 → 推理 → 正文', () => {
+      const proj = projectExecutionFlow([
+        ev('message.content.appended', 1, { delta: '开始' }),
+        ev('message.thinking_summary.appended', 2, { delta: '想一想' }),
+        ev('message.content.appended', 3, { delta: '结束' }),
+      ]);
+      expect(nodeKinds(proj)).toEqual(['message', 'reasoning', 'message']);
+    });
+
+    it('相邻 content 增量（无中间事件）合并为单段', () => {
+      const proj = projectExecutionFlow([
+        ev('message.content.appended', 1, { delta: 'a' }),
+        ev('message.content.appended', 2, { delta: 'b' }),
+        ev('message.content.appended', 3, { delta: 'c' }),
+      ]);
+      const segments = proj.nodes.filter((node) => node.kind === 'message');
+      expect(segments).toHaveLength(1);
+      expect(segments[0]).toMatchObject({ text: 'abc' });
+    });
+
+    it('message.completed 应用到当前开放段并关闭；后续 content 开新段', () => {
+      const proj = projectExecutionFlow([
+        ev('message.content.appended', 1, { delta: '部分' }),
+        ev('message.completed', 2, { reply: '部分完成' }),
+        ev('message.content.appended', 3, { delta: '续写' }),
+      ]);
+      const segments = proj.nodes.filter((node) => node.kind === 'message');
+      expect(segments).toHaveLength(2);
+      expect(segments[0]).toMatchObject({
+        text: '部分完成',
+        terminal: 'completed',
+      });
+      expect(segments[1]).toMatchObject({ text: '续写', terminal: 'none' });
+    });
+
+    it('无文本的 message 事件（空 delta）不产生空段', () => {
+      const proj = projectExecutionFlow([
+        ev('message.content.appended', 1, { delta: '' }),
+        ev('message.content.appended', 2, { delta: '   ' }),
+      ]);
+      expect(nodeKinds(proj)).toEqual([]);
+    });
+  });
+
   describe('终态单调', () => {
     it('turn 终态后迟到 progress 事件忽略；子代理事件保留', () => {
       const proj = projectExecutionFlow([

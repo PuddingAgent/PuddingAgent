@@ -2131,4 +2131,134 @@ describe('MessageList scroll performance', () => {
     expect(screen.getByText('LIVE_REASONING_FRAGMENT')).toBeTruthy();
   });
 
+  it('does not duplicate a persisted assistant answer while its run is still streaming', () => {
+    render(
+      <MessageList
+        {...baseProps}
+        turns={[]}
+        conversationView={{
+          workspaceId: 'default',
+          ownerUserId: 'single-user',
+          agentId: 'agent-a',
+          mainSessionId: 'session-a',
+          messages: [
+            {
+              messageId: 'user-1',
+              turnId: 'turn-1',
+              runId: 'run-1',
+              role: 'user',
+              sourceId: 'admin',
+              sourceName: 'Pudding Admin',
+              createdAt: '2026-06-07T00:00:00.000Z',
+              content: 'persisted prompt',
+              status: 'sent',
+              processItems: [],
+            },
+            {
+              messageId: 'agent-1',
+              turnId: 'turn-1',
+              runId: 'run-1',
+              role: 'agent',
+              sourceId: 'agent-a',
+              sourceName: 'Agent A',
+              createdAt: '2026-06-07T00:00:01.000Z',
+              content: '同一个回复',
+              status: 'succeeded',
+              processItems: [],
+            },
+          ],
+          activeRun: {
+            runId: 'run-1',
+            workspaceId: 'default',
+            ownerUserId: 'single-user',
+            agentId: 'agent-a',
+            mainSessionId: 'session-a',
+            status: 'running',
+            statusText: '正在输出',
+            summary: '',
+            eventCursor: 2,
+            outputSnapshot: {
+              markdown: '同一个回复',
+              processItems: [],
+            },
+            startedAt: '2026-06-07T00:00:00.000Z',
+            updatedAt: '2026-06-07T00:00:01.000Z',
+          },
+          eventCursor: 2,
+          updatedAt: '2026-06-07T00:00:01.000Z',
+        }}
+      />,
+    );
+
+    // 历史已完成消息与 activeRun（同 runId 仍在 streaming）内容一致时，
+    // 必须合并为同一条消息行，而不是渲染两条相同的 assistant 回复。
+    expect(screen.getAllByText('同一个回复')).toHaveLength(1);
+    expect(screen.getAllByTestId('message-row')).toHaveLength(2);
+  });
+
+  it('keeps distinct multi-turn assistant answers separate from the active run', () => {
+    render(
+      <MessageList
+        {...baseProps}
+        turns={[]}
+        conversationView={{
+          workspaceId: 'default',
+          ownerUserId: 'single-user',
+          agentId: 'agent-a',
+          mainSessionId: 'session-a',
+          messages: [
+            {
+              messageId: 'user-old',
+              turnId: 'turn-old',
+              runId: 'run-old',
+              role: 'user',
+              sourceId: 'admin',
+              sourceName: 'Pudding Admin',
+              createdAt: '2026-06-07T00:00:00.000Z',
+              content: 'old prompt',
+              status: 'sent',
+              processItems: [],
+            },
+            {
+              messageId: 'agent-old',
+              turnId: 'turn-old',
+              runId: 'run-old',
+              role: 'agent',
+              sourceId: 'agent-a',
+              sourceName: 'Agent A',
+              createdAt: '2026-06-07T00:00:01.000Z',
+              content: '旧回复',
+              status: 'succeeded',
+              processItems: [],
+            },
+          ],
+          activeRun: {
+            runId: 'run-new',
+            workspaceId: 'default',
+            ownerUserId: 'single-user',
+            agentId: 'agent-a',
+            mainSessionId: 'session-a',
+            status: 'running',
+            statusText: '正在输出',
+            summary: '',
+            eventCursor: 2,
+            outputSnapshot: {
+              markdown: '新的流式回复',
+              processItems: [],
+            },
+            startedAt: '2026-06-07T00:00:02.000Z',
+            updatedAt: '2026-06-07T00:00:03.000Z',
+          },
+          eventCursor: 2,
+          updatedAt: '2026-06-07T00:00:03.000Z',
+        }}
+      />,
+    );
+
+    // 内容不同的多轮消息必须保持独立：历史回复与 activeRun 各渲染一行。
+    expect(screen.getByText('旧回复')).toBeTruthy();
+    expect(screen.getByText('新的流式回复')).toBeTruthy();
+    expect(screen.getAllByTestId('message-row')).toHaveLength(3);
+  });
+
 });

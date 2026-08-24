@@ -41,9 +41,13 @@
 |------|------|
 | `Connectors/` | 连接器实现 |
 | `Services/ConnectorHost.cs` | 连接器宿主 |
+| `Hosting/ConnectorHostLifecycleService.cs` | 连接器生命周期 hosted service：本地注册同步、`StartAllAsync` 后台执行（ApplicationStopping 绑定），Ready 不被 Feishu WS 握手阻塞；单连接器失败隔离进 Faulted |
 | `Services/ConnectorDeliveryDispatcher.cs` | 投递分发 |
 | `Services/MessageGatewayIngress.cs` | 消息网关入口（19KB） |
 | `Extensions/` | 扩展注册 |
+
+飞书 WS 底座在 `../../src/HarnessAgent/Core/Connectors/Feishu/FeishuWebSocket.cs`：端点发现
+HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 Starting 100s。
 
 ## 服务治理
 

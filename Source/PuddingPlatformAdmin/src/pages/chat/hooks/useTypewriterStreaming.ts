@@ -195,6 +195,8 @@ export function useTypewriterStreaming({
     const prevTextRef = useRef(isStreaming ? '' : text);
   const prevIncomingLengthRef = useRef(isStreaming ? text.length : 0);
   const stableLenRef = useRef(isStreaming ? 0 : text.length);
+  /** stable 前缀镜像（同步 stableMarkdown state；用于正文被替换/收缩时的分叉检测）。 */
+  const stableTextRef = useRef(isStreaming ? '' : text);
   const visiblePosRef = useRef(0);
   const liveTextRef = useRef('');
   const latestTextRef = useRef(isStreaming ? text : '');
@@ -226,7 +228,9 @@ export function useTypewriterStreaming({
       if (commitBoundary <= stableLenRef.current) return;
 
       stableLenRef.current = commitBoundary;
-      setStableMarkdown(fullText.slice(0, commitBoundary));
+      const committed = fullText.slice(0, commitBoundary);
+      stableTextRef.current = committed;
+      setStableMarkdown(committed);
     },
     [],
   );
@@ -320,6 +324,27 @@ export function useTypewriterStreaming({
     }
     prevTextRef.current = text;
 
+    // 正文替换/收缩守卫：answerMarkdown 被快照/终态改写为不再以已提交 stable
+    // 前缀开头的内容时（activeRun 分叉以服务端为准、终态 reply 覆盖），必须整体
+    // 重置 stable/live 游标——否则 stale stable 与新 live 拼接会把同段文本
+    // 渲染两遍（正文与 80ms 缓冲竞态的姊妹缺陷）。
+    const stableText = stableTextRef.current;
+    if (stableText.length > 0 && !text.startsWith(stableText)) {
+      stableLenRef.current = 0;
+      stableTextRef.current = '';
+      visiblePosRef.current = 0;
+      liveTextRef.current = '';
+      prevIncomingLengthRef.current = text.length;
+      setStableMarkdown('');
+      setTwState((s) => ({
+        ...s,
+        liveText: '',
+        visibleLiveText: '',
+        visibleStartOffset: 0,
+        isTyping: false,
+      }));
+    }
+
     if (isStreaming) {
       wasStreamingRef.current = true;
       latestTextRef.current = text;
@@ -411,6 +436,7 @@ export function useTypewriterStreaming({
     } else {
       if (!wasStreamingRef.current) {
         setStableMarkdown(text);
+        stableTextRef.current = text;
         stableLenRef.current = text.length;
         liveTextRef.current = '';
         setTwState((s) => ({
@@ -445,6 +471,7 @@ export function useTypewriterStreaming({
         const settleCheck = () => {
           if (visiblePosRef.current >= liveTextRef.current.length) {
             setStableMarkdown(text);
+            stableTextRef.current = text;
             stableLenRef.current = text.length;
             liveTextRef.current = '';
             setTwState((s) => ({
@@ -465,6 +492,7 @@ export function useTypewriterStreaming({
       } else {
         // 已经全部显示
         setStableMarkdown(text);
+        stableTextRef.current = text;
         stableLenRef.current = text.length;
         liveTextRef.current = '';
         setTwState((s) => ({
@@ -490,6 +518,7 @@ export function useTypewriterStreaming({
   useEffect(() => {
     if (!isStreaming && !text) {
       setStableMarkdown('');
+      stableTextRef.current = '';
       setTwState((s) => ({
         ...s,
         liveText: '',

@@ -21,6 +21,7 @@
 | `Services/ChatMessageRepository.cs` | 消息仓储；ChatMessageRow 透传 `ContentPartsJson` canonical 信封 |
 | `Services/ChatMessageSchemaBootstrapper.cs` | 存量 SQLite 幂等补 `ChatMessages.content_parts_json` 列 |
 | `Services/AgentChat/ExecutionRunCoordinator.cs` | ADR-077：canonical parts + 冻结 Snapshot 判定 vision/文本占位；已删除自动预观察旁路，消息正文不再含本地绝对路径 |
+| `Services/AgentChat/TurnOutputChunker.cs` | Delta 聚合分块器；非 delta 事件（工具/step）先 flush 已缓冲正文/思考再透传——「文本 → 工具 → 文本」轮次边界进入 canonical sequence（chat 交错时间线依赖，2026-08-24）；测试 `PuddingPlatformTests/Services/TurnOutputChunkerPayloadOwnershipTests.cs` |
 | `Services/ChatTranscriptWriter.cs` | 转录写入 |
 | `Services/ChatTelemetryRecorder.cs` | 遥测记录 |
 

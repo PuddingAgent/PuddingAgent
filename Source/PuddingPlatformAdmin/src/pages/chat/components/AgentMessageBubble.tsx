@@ -35,10 +35,14 @@ import {
 import {
   deriveStatsFromProcessItems,
   deriveStatsFromProjection,
+  deriveTrailingMessageNode,
   ExecutionFlowTimeline,
 } from './execution-flow/ExecutionFlowTimeline';
 import { TurnStatsLine } from './execution-flow/TurnStatsLine';
-import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
+import type {
+  ExecutionFlowProjection,
+  MessageNode,
+} from '../projections/executionFlowProjector';
 import StateDot from './StateDot';
 import type { TranscriptMode } from './TranscriptModeSwitch';
 
@@ -381,6 +385,45 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
     return () => clearTimeout(timer);
   }, [isStreaming, hasAnswerContent, isError]);
 
+  // 行为链 §3.4+：正文分段交错 —— 投影提供多段 message 节点时启用。
+  // 中间文本段（其后还有工具/委派/推理）由时间线内联渲染；尾段（其后仅剩
+  // terminal）由下方正文气泡/打字机承载，段切换时 remount 打字机（每段从零
+  // 平滑敲出，与 harness 每 step 一条消息节点语义一致）。
+  // 一致性守卫：分段并集必须覆盖 answerMarkdown（content 为空或为其前缀），
+  // 否则视为 envelope 缺事件/终态改写（错误诊断等），回退整块正文渲染，
+  // 杜绝「时间线段 + 整块正文」同段双渲染。
+  const segmentRendering = React.useMemo(() => {
+    if (!executionFlowProjection) return null;
+    const segments = executionFlowProjection.nodes.filter(
+      (node): node is MessageNode =>
+        node.kind === 'message' && node.text.trim().length > 0,
+    );
+    if (segments.length === 0) return null;
+    const joined = segments.map((node) => node.text).join('');
+    if (
+      content.length > 0 &&
+      joined !== content &&
+      !joined.startsWith(content)
+    ) {
+      return null;
+    }
+    return {
+      trailing: deriveTrailingMessageNode(executionFlowProjection),
+    };
+  }, [executionFlowProjection, content]);
+  const trailingMessageKey = segmentRendering?.trailing?.key;
+  const timelineMessageSegments = React.useMemo(
+    () => (segmentRendering ? { trailingKey: trailingMessageKey } : undefined),
+    [segmentRendering, trailingMessageKey],
+  );
+  // 正文渲染源：分段启用时只渲染尾段文本（无尾段 → 空，全部文本在时间线）；
+  // 未启用分段时整块 content 承载。绝不能在分段启用且无尾段时回退整块，
+  // 否则中间段会在时间线与正文各渲染一遍。
+  const bodyContent = segmentRendering
+    ? (segmentRendering.trailing?.text ?? '')
+    : content;
+  const hasBodyContent = bodyContent.trim().length > 0;
+
   const shouldUseTypewriter = Boolean(isStreaming);
   const hasQuotedOnly =
     Boolean(quotedMessage) &&
@@ -388,6 +431,11 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
     !isStreaming &&
     status !== 'error' &&
     status !== 'cancelled';
+  // 正文气泡门控：分段交错启用时只看尾段文本（中间段由时间线承载）；
+  // 否则沿用整块正文判定。
+  const shouldRenderAnswerBubble = segmentRendering
+    ? hasBodyContent || hasQuotedOnly
+    : hasAnswerContent || hasQuotedOnly;
   const isRunActive =
     !isError &&
     (Boolean(isStreaming) ||
@@ -398,15 +446,10 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   const messageAgeMs = Math.max(0, Date.now() - createdAt);
   const shouldAnimateEntrance =
     isRunActive || messageAgeMs <= MESSAGE_ENTRANCE_WINDOW_MS;
-  const shouldRenderAnswerBubble = hasAnswerContent || hasQuotedOnly;
   const processActivity = React.useMemo(
     () => getCurrentRunActivity(processItems, status),
     [processItems, status],
   );
-  // 行为链 P2：交错时间线 —— 灰度开启且有 per-turn 投影时按 canonical sequence
-  // 顺序交错渲染（路径 B）；否则 processItems adapter 分组为同一 entry 结构（路径 A）。
-  // reasoning 段 / 工具树 / 委派不再固定分区块，按真实发生顺序呈现。
-  // 思维链预览行数据仍供 TurnStatus facts 回退派生使用。
   const reasoningLines = React.useMemo(() => {
     if (!processItems || processItems.length === 0) return [];
     return processItems
@@ -607,14 +650,16 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
               </div>
             )}
 
-            {/* 行为链 P2：交错时间线 —— reasoning 段 → 工具 → reasoning 段 → 委派按
+            {/* 行为链 P2：交错时间线 —— 文本段 → reasoning 段 → 工具 → 委派按
                 canonical sequence 真实发生顺序交错（路径 B 投影 / 路径 A adapter
                 共用同一渲染结构），与正文共享同一内容列并置于正文之前；无可见轨迹时
-                内部返回 null。多段思考各占一行（段首行/最新行摘要 + 段时长 chip）。 */}
+                内部返回 null。多段思考各占一行（段首行/最新行摘要 + 段时长 chip）。
+                分段启用时中间文本段在此内联渲染，尾段由下方正文气泡承载。 */}
             <ExecutionFlowTimeline
               projection={executionFlowProjection}
               processItems={processItems}
               isRunActive={isRunActive}
+              messageSegments={timelineMessageSegments}
               onOpenInspector={onOpenInspector}
             />
 
@@ -638,7 +683,8 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                 );
                 return shouldUseTypewriter ? (
                   <StreamingAnswer
-                    content={content}
+                    key={trailingMessageKey ?? 'answer-body'}
+                    content={bodyContent}
                     isStreaming={isStreaming}
                     className={bubbleClassName}
                     workspaceId={workspaceId}
@@ -654,7 +700,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                       <QuotedMessageBlock quotedMessage={quotedMessage} />
                     )}
                     <MessageItem
-                      markdownText={content}
+                      markdownText={bodyContent}
                       isStreaming={false}
                       workspaceId={workspaceId}
                     />

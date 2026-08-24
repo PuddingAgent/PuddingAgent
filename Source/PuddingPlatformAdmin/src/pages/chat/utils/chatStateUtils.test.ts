@@ -59,4 +59,15 @@ describe('chatStateUtils module boundary', () => {
       'hello world',
     );
   });
+
+  it('diverged stream text falls back to the server reply (never duplicates)', () => {
+    // 流内任何一次偏差（重叠修剪误删/快照替换）导致 current 与 reply 分叉时，
+    // 以服务端 reply 为准；旧实现把 reply 整段拼在 current 之后会让正文显示两遍。
+    expect(resolveTerminalAssistantMarkdown('hello wor', 'HELLO WORLD')).toBe(
+      'HELLO WORLD',
+    );
+    expect(
+      resolveTerminalAssistantMarkdown('前文流式', '服务端终稿全文'),
+    ).toBe('服务端终稿全文');
+  });
 });

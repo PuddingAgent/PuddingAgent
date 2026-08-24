@@ -653,6 +653,33 @@ const selectMonotonicMarkdown = (local: string, active: string): string => {
 const isTerminalAssistantStatus = (status: ChatTurn['assistant']['status']): boolean =>
   status === 'success' || status === 'error' || status === 'cancelled';
 
+/**
+ * 查找与 activeRun 内容完全一致的已完成（terminal）turn。
+ * 历史已完成消息与 activeRun 可能是同一条回复的两份表示：历史投影 turn 的
+ * turnId 来自 message.turnId/runId/messageId，而 activeRun.runId 是另一个
+ * 稳定 ID，二者不一致时按 turnId 匹配不到；若该 turn 已完成（非 pending），
+ * 也无法通过 pending 挂载路径合并。此时按内容判重，把 activeRun 合并到最近
+ * 一条内容相同的 terminal turn，避免同一条 assistant 回复渲染成两行。
+ * 返回 -1 表示没有可合并的 turn（内容不同或 activeRun 尚无可比内容）。
+ */
+const findTerminalTurnWithSameMarkdown = (
+  turns: ChatTurn[],
+  activeAnswer: string,
+): number => {
+  const trimmed = activeAnswer.trim();
+  if (!trimmed) return -1;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const turn = turns[i];
+    if (
+      !isPendingLocalTurn(turn) &&
+      turn.assistant.answerMarkdown.trim() === trimmed
+    ) {
+      return i;
+    }
+  }
+  return -1;
+};
+
 /** @internal 导出仅供定向单测消费（终态守卫/同 messageId 原地更新）。 */
 export const mergeActiveRunAssistant = (
   local: ChatTurn['assistant'],
@@ -746,6 +773,29 @@ const mergeActiveRunIntoTurns = (
         source: activeTurn.source,
       },
     ];
+  }
+
+  // 历史已完成消息与 activeRun 内容一致时，合并到历史 turn 而不是追加，
+  // 否则同一条 assistant 回复会被渲染成两条独立消息行（用户实证）。
+  // 合并复用 mergeActiveRunAssistant：保留历史 turn 的 assistant.id 以维持
+  // 投影稳定，同时带上 activeRun 的实时内容（时间线/内容择优）。
+  const sameMarkdownIndex = findTerminalTurnWithSameMarkdown(
+    turns,
+    activeTurn.assistant.answerMarkdown,
+  );
+  if (sameMarkdownIndex >= 0) {
+    return turns.map((turn, index) =>
+      index === sameMarkdownIndex
+        ? {
+            ...turn,
+            assistant: mergeActiveRunAssistant(
+              turn.assistant,
+              activeTurn.assistant,
+            ),
+            source: activeTurn.source,
+          }
+        : turn,
+    );
   }
 
   return [...turns, activeTurn];

@@ -1,7 +1,10 @@
 // ── ExecutionFlowTimeline：按真实发生顺序交错的行为链时间线（行为链升级 P2）──
-// 渲染顺序 = canonical sequence 顺序：reasoning 段 → 工具（含子树）→ reasoning 段 →
-// 委派 → …，对齐 deepseek-harness「按事件顺序插入消息卡片」与 Claude interleaved
-// thinking；正文（message）与终态（terminal）由 AgentMessageBubble 既有承载，不重复渲染。
+// 渲染顺序 = canonical sequence 顺序：文本段 → reasoning 段 → 工具（含子树）→
+// 文本段 → 委派 → …，对齐 deepseek-harness「单条 assistant message 多 block 按
+// 出现顺序交错 + 每 step 一条消息节点」与 Claude interleaved thinking。
+// 正文分段（MessageNode）按段内联渲染；尾段（其后仅剩 terminal 的最后一段）
+// 由 AgentMessageBubble 的正文气泡/打字机承载，时间线跳过，杜绝同段双渲染。
+// 终态（terminal）由错误行/StatsLine 既有承载，不进时间线。
 //
 // 数据源（§3.4）：
 //  - 路径 B：projection（ExecutionFlowProjector 输出）nodes 的 sequence 顺序；
@@ -15,11 +18,13 @@ import React from 'react';
 import type {
   DelegationNode,
   ExecutionFlowProjection,
+  MessageNode,
   ToolNode,
 } from '../../projections/executionFlowProjector';
 import type { TimelineItem } from '../../types';
 import { sanitizeProcessText } from '../processPreview';
 import { useExecutionFlowStyles } from '../../styles/execution-flow.styles';
+import MessageItem from '../MessageItem';
 import {
   buildDelegationNodesFromProcessItems,
   DelegationRow,
@@ -43,6 +48,12 @@ export interface ReasoningTimelineEntry {
   durationMs: number | null;
 }
 
+export interface MessageTimelineEntry {
+  kind: 'message';
+  key: string;
+  node: MessageNode;
+}
+
 export interface ToolTimelineEntry {
   kind: 'tool';
   key: string;
@@ -57,8 +68,28 @@ export interface DelegationTimelineEntry {
 
 export type ExecutionTimelineEntry =
   | ReasoningTimelineEntry
+  | MessageTimelineEntry
   | ToolTimelineEntry
   | DelegationTimelineEntry;
+
+/**
+ * 尾段判定（纯函数）：最后一个含正文的 message 节点，且其后只剩 terminal
+ * 节点。尾段是「正在流式/最终回答」的承载者，由 AgentMessageBubble 正文
+ * 气泡渲染；非尾段（后面还有工具/委派/推理）在时间线内联渲染。
+ */
+export const deriveTrailingMessageNode = (
+  projection: ExecutionFlowProjection,
+): MessageNode | undefined => {
+  for (let i = projection.nodes.length - 1; i >= 0; i--) {
+    const node = projection.nodes[i];
+    if (node.kind === 'terminal') continue;
+    if (node.kind === 'message') {
+      return node.text.trim().length > 0 ? node : undefined;
+    }
+    return undefined;
+  }
+  return undefined;
+};
 
 /** occurredAt（ISO 字符串）差 → 毫秒；任一缺失/非法 → null。 */
 const diffIsoMs = (first?: string, last?: string): number | null => {
@@ -82,10 +113,15 @@ const markTrailingReasoningCurrent = (
   }
 };
 
-/** 路径 B：投影 nodes → 有序 entry（message/terminal/retry 不进时间线：正文/终态/ModelRetryRow 既有承载）。 */
+/**
+ * 路径 B：投影 nodes → 有序 entry。
+ * terminal/retry 不进时间线（错误行/StatsLine/ModelRetryRow 既有承载）；
+ * message 段按 messageSegments 配置决定是否内联（尾段 key 跳过，由正文气泡承载）。
+ */
 export const buildEntriesFromProjection = (
   projection: ExecutionFlowProjection,
   isRunActive: boolean,
+  messageSegments?: { trailingKey?: string },
 ): ExecutionTimelineEntry[] => {
   const entries: ExecutionTimelineEntry[] = [];
   for (const node of projection.nodes) {
@@ -105,6 +141,12 @@ export const buildEntriesFromProjection = (
         isCurrent: false,
         durationMs: diffIsoMs(node.occurredAt, node.lastOccurredAt),
       });
+      continue;
+    }
+    if (node.kind === 'message') {
+      if (!messageSegments || !node.text.trim()) continue;
+      if (node.key === messageSegments.trailingKey) continue;
+      entries.push({ kind: 'message', key: node.key, node });
       continue;
     }
     if (node.kind === 'tool') {
@@ -274,22 +316,47 @@ export interface ExecutionFlowTimelineProps {
   processItems?: TimelineItem[];
   /** turn 是否仍在运行（尾部 reasoning 段的 running 判定）。 */
   isRunActive?: boolean;
+  /**
+   * 文本分段内联渲染（行为链交错）：提供时 message 段按序内联渲染，
+   * trailingKey 指向的尾段跳过（由 AgentMessageBubble 正文气泡承载）；
+   * undefined 时正文整块承载（历史/无投影回退）。
+   */
+  messageSegments?: { trailingKey?: string };
   /** 委派展开态「打开检查器」入口。 */
   onOpenInspector?: (runId: string) => void;
 }
+
+/** 时间线内联文本段：与正文同款 markdown 排版（全宽正文，非过程灰阶）。 */
+const MessageSegmentView: React.FC<{ node: MessageNode }> = ({ node }) => {
+  const { styles } = useExecutionFlowStyles();
+  return (
+    <div
+      className={styles.timelineMessageSegment}
+      data-testid="timeline-message-segment"
+    >
+      <MessageItem markdownText={node.text} isStreaming={false} />
+    </div>
+  );
+};
 
 /** 交错行为链时间线：无可见 entry → null（不占用布局）。 */
 export const ExecutionFlowTimeline: React.FC<ExecutionFlowTimelineProps> = ({
   projection,
   processItems,
   isRunActive = false,
+  messageSegments,
   onOpenInspector,
 }) => {
   const { styles } = useExecutionFlowStyles();
   const entries = React.useMemo(() => {
-    if (projection) return buildEntriesFromProjection(projection, isRunActive);
+    if (projection)
+      return buildEntriesFromProjection(
+        projection,
+        isRunActive,
+        messageSegments,
+      );
     return buildEntriesFromProcessItems(processItems ?? [], isRunActive);
-  }, [projection, processItems, isRunActive]);
+  }, [projection, processItems, isRunActive, messageSegments]);
 
   if (entries.length === 0) return null;
 
@@ -308,6 +375,9 @@ export const ExecutionFlowTimeline: React.FC<ExecutionFlowTimelineProps> = ({
               durationMs={entry.durationMs}
             />
           );
+        }
+        if (entry.kind === 'message') {
+          return <MessageSegmentView key={entry.key} node={entry.node} />;
         }
         if (entry.kind === 'tool') {
           return <ToolCallTreeBranch key={entry.key} node={entry.node} />;
