@@ -136,7 +136,7 @@ export const useToolCallStyles = createStyles(() => ({
     padding: '0 8px 6px 32px',
     boxSizing: 'border-box' as const,
   },
-  /** IN/OUT 卡：深底 + 等宽 + 260px 内滚 */
+  /** IN/OUT 卡：深底 + 等宽 + 260px 内滚（presentation 卡沿用） */
   card: {
     position: 'relative',
     maxHeight: 260,
@@ -144,6 +144,48 @@ export const useToolCallStyles = createStyles(() => ({
     borderRadius: 6,
     background: 'var(--pudding-chat-code-bg)',
     border: '1px solid color-mix(in srgb, #e6edf3 12%, transparent)',
+  },
+  /**
+   * IN/OUT 参数面板：走主题感知变量（浅色=灰阶浅底，深色=终端深底）。
+   * 参数是结构化数据而非代码内容，浅色主题下不再套大块深底；
+   * 终端/diff presentation 卡仍用上方 card（深底质感是 renderer 约定）。
+   */
+  docCard: {
+    position: 'relative',
+    maxHeight: 260,
+    overflow: 'auto',
+    borderRadius: 6,
+    background: 'var(--pudding-toolcard-bg)',
+    border: '1px solid var(--pudding-toolcard-border)',
+  },
+  /** sticky 标签：随卡滚动吸附顶部（doc 版，主题感知） */
+  docLabel: {
+    position: 'sticky',
+    top: 0,
+    zIndex: 2,
+    padding: '4px 10px',
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+    lineHeight: '16px',
+    fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
+    background: 'var(--pudding-toolcard-bg)',
+    color: 'var(--pudding-toolcard-fg)',
+    opacity: 0.9,
+    borderBottom: '1px solid var(--pudding-toolcard-border)',
+    userSelect: 'none' as const,
+    pointerEvents: 'none' as const,
+  },
+  /** 卡内容：等宽字体（doc 版，主题感知） */
+  docPre: {
+    margin: 0,
+    padding: '8px 10px 10px',
+    fontSize: 12,
+    lineHeight: 1.55,
+    fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
+    color: 'var(--pudding-toolcard-fg)',
+    whiteSpace: 'pre-wrap' as const,
+    wordBreak: 'break-word' as const,
   },
   /** sticky 标签：随卡滚动吸附顶部 */
   cardLabel: {

@@ -308,28 +308,28 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({ node }) => {
               </div>
             )}
             {inText && (
-              <div className={styles.card} data-testid="toolcall-in">
+              <div className={styles.docCard} data-testid="toolcall-in">
                 <div
-                  className={styles.cardLabel}
+                  className={styles.docLabel}
                   data-testid="toolcall-in-label"
                 >
                   IN
                 </div>
-                <pre className={styles.cardPre}>{inText}</pre>
+                <pre className={styles.docPre}>{inText}</pre>
               </div>
             )}
             {showOut && (
-              <div className={styles.card} data-testid="toolcall-out">
+              <div className={styles.docCard} data-testid="toolcall-out">
                 <div
                   className={cx(
-                    styles.cardLabel,
+                    styles.docLabel,
                     status === 'error' && styles.cardLabelError,
                   )}
                   data-testid="toolcall-out-label"
                 >
                   OUT
                 </div>
-                <pre className={styles.cardPre}>
+                <pre className={styles.docPre}>
                   {status === 'error' && outBody.firstLine ? (
                     <>
                       <span

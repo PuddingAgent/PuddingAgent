@@ -73,6 +73,12 @@ injectGlobal`
     --pudding-status-error: #ef4444;
     /* 代码块深底（P0-3：对齐 D4 对比度策略，浅色下代码表面独立加深一档） */
     --pudding-chat-code-bg: #1e2430;
+    /* 工具 IN/OUT 参数面板（2026-08-24）：浅色下降为灰阶浅底——参数是结构化
+       数据而非代码内容，大段深底在浅色消息流中视觉过重；终端/diff
+       presentation 卡仍走 code-bg 深底。 */
+    --pudding-toolcard-bg: #f6f8fa;
+    --pudding-toolcard-fg: #3f4a5a;
+    --pudding-toolcard-border: rgba(92, 74, 58, 0.14);
 
     /* Pudding Admin Tokens — Light */
     --pudding-admin-bg: #f5f0e8;
@@ -391,6 +397,10 @@ injectGlobal`
     --pudding-status-error: #fca5a5;
     /* 代码块深底（P0-3：深色下与聊天表面拉开一档） */
     --pudding-chat-code-bg: #0d1117;
+    /* 工具 IN/OUT 参数面板：深色维持终端深底（与浅色策略成对，见 Light 块注释） */
+    --pudding-toolcard-bg: #0d1117;
+    --pudding-toolcard-fg: #e6edf3;
+    --pudding-toolcard-border: rgba(230, 237, 243, 0.12);
 
     /* Pudding Admin Tokens — Dark */
     --pudding-admin-bg: #0b1020;
