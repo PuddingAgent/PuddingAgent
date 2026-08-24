@@ -26,6 +26,21 @@ public sealed class DebugBackendLauncherTests : IDisposable
     }
 
     [Fact]
+    public void ResolveOutputDirectory_PointsAtPrimaryFrameworkOutput()
+    {
+        var projectPath = Path.Combine(_tempRoot, "OutputDir", "PuddingAgent.csproj");
+        Directory.CreateDirectory(Path.GetDirectoryName(projectPath)!);
+
+        var outputDirectory = DebugBackendLauncher.ResolveOutputDirectory(projectPath);
+
+        Assert.Equal(
+            Path.Combine(
+                Path.GetDirectoryName(Path.GetFullPath(projectPath))!,
+                "bin", "Debug", "net10.0"),
+            outputDirectory);
+    }
+
+    [Fact]
     public void ResolveOutputExecutable_PrefersPrimaryFrameworkOutput()
     {
         var projectPath = CreateProjectWithOutput("net10.0");

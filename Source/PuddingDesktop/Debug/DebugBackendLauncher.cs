@@ -88,18 +88,26 @@ public sealed class DebugBackendLauncher
     }
 
     /// <summary>
+    /// Resolves the primary framework output directory under bin\Debug where
+    /// the next debug build will place the exe, without requiring a build.
+    /// </summary>
+    internal static string ResolveOutputDirectory(string backendProjectPath)
+    {
+        var projectDirectory = Path.GetDirectoryName(Path.GetFullPath(backendProjectPath))!;
+        return Path.Combine(projectDirectory, "bin", "Debug", PrimaryOutputFramework);
+    }
+
+    /// <summary>
     /// Resolves the built apphost exe: prefer the primary framework output,
     /// then the newest net* output directory under bin\Debug.
     /// </summary>
     internal static string ResolveOutputExecutable(string backendProjectPath)
     {
-        var projectDirectory = Path.GetDirectoryName(Path.GetFullPath(backendProjectPath))!;
-        var primary = Path.Combine(
-            projectDirectory, "bin", "Debug", PrimaryOutputFramework, OutputExecutableName);
+        var primary = Path.Combine(ResolveOutputDirectory(backendProjectPath), OutputExecutableName);
         if (File.Exists(primary))
             return primary;
 
-        var debugRoot = Path.Combine(projectDirectory, "bin", "Debug");
+        var debugRoot = Path.GetDirectoryName(ResolveOutputDirectory(backendProjectPath))!;
         if (Directory.Exists(debugRoot))
         {
             var candidate = Directory

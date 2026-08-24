@@ -88,6 +88,24 @@ public partial class RuntimeCenterView : UserControl
         }
     }
 
+    private async void DeployFrontend_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is null)
+            return;
+        try
+        {
+            var result = await ViewModel.DeployFrontendAsync(CancellationToken.None);
+            ViewModel.RefreshTransient();
+            ShowFeedback(
+                $"前端已构建并部署到 {result.TargetAdminDirectory}（{result.CopiedFileCount} 个文件）。刷新 Workbench 页面即可加载新前端。",
+                isError: false);
+        }
+        catch (Exception ex)
+        {
+            ShowFeedback($"前端构建部署失败：{ex.Message}", isError: true);
+        }
+    }
+
     private async Task RunAsync(
         Func<RuntimeCenterViewModel, Task> operation,
         string successMessage)

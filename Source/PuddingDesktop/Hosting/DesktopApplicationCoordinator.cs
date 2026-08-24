@@ -25,6 +25,7 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     private readonly SemaphoreSlim _operationLock = new(1, 1);
     private readonly SemaphoreSlim _bridgeOperationLock = new(1, 1);
     private readonly SemaphoreSlim _debugComponentsLock = new(1, 1);
+    private readonly SemaphoreSlim _frontendDeployLock = new(1, 1);
 
     private MainWindow? _mainWindow;
     private CancellationTokenSource? _lifetimeCts;
@@ -353,6 +354,61 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
             current => current with { AutoRestart = enabled },
             cancellationToken);
         await _runtime.SetAutoRestartAsync(enabled, cancellationToken);
+    }
+
+    /// <summary>
+    /// Explicitly builds the Admin frontend from source and deploys the dist
+    /// artifacts into the wwwroot\admin subtree of the Core executable
+    /// Desktop runs. Holds no operation lock: a multi-minute pnpm build must
+    /// never block Start/Stop/Restart, and replacing static files is safe
+    /// while Core is running.
+    /// </summary>
+    public async Task<FrontendDeployResult> DeployFrontendAsync(CancellationToken cancellationToken)
+    {
+        if (!await _frontendDeployLock.WaitAsync(0, cancellationToken))
+            throw new InvalidOperationException("前端构建部署正在进行中，请稍候。");
+
+        try
+        {
+            var settings = await _bootstrapStore.LoadAsync(cancellationToken);
+            var frontendWorkingDirectory =
+                DebugRepositoryResolver.ResolveFrontendWorkingDirectory(settings.Debug);
+            var targetAdminDirectory = Path.Combine(
+                ResolveFrontendDeployCoreDirectory(settings),
+                "wwwroot",
+                "admin");
+
+            return await new FrontendBuildDeployService().DeployAsync(
+                new FrontendDeployOptions
+                {
+                    FrontendWorkingDirectory = frontendWorkingDirectory,
+                    TargetAdminDirectory = targetAdminDirectory,
+                },
+                _supervisor.LogBuffer,
+                cancellationToken);
+        }
+        finally
+        {
+            _frontendDeployLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// The Core directory the frontend artifacts must be deployed into: the
+    /// executable configured for this session, else the debug build output
+    /// (without requiring a prior build), else the resolved product exe.
+    /// </summary>
+    private string ResolveFrontendDeployCoreDirectory(DesktopBootstrapSettings settings)
+    {
+        var runtimeExecutablePath = _runtimeOptions?.ExecutablePath;
+        if (!string.IsNullOrWhiteSpace(runtimeExecutablePath))
+            return Path.GetDirectoryName(runtimeExecutablePath)!;
+
+        if (settings.Debug.Enabled)
+            return DebugBackendLauncher.ResolveOutputDirectory(
+                DebugRepositoryResolver.ResolveBackendProjectPath(settings.Debug));
+
+        return Path.GetDirectoryName(CoreExecutableResolver.Resolve(settings.CoreExecutablePath))!;
     }
 
     private bool TryValidateDataRoot(DesktopBootstrapSettings settings, out string dataRoot)
@@ -849,6 +905,7 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
         _lifetimeCts?.Dispose();
         _bridgeOperationLock.Dispose();
         _debugComponentsLock.Dispose();
+        _frontendDeployLock.Dispose();
         _operationLock.Dispose();
     }
 

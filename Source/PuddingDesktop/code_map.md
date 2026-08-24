@@ -14,7 +14,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Hosting/DesktopApplicationCoordinator.cs` | 🔑 Launcher↔Core 状态机，协调 Runtime、Bridge、Workbench、调试组件 |
+| `Hosting/DesktopApplicationCoordinator.cs` | 🔑 Launcher↔Core 状态机，协调 Runtime、Bridge、Workbench、调试组件；`DeployFrontendAsync` 独立锁执行前端构建部署（目标=当前 Core 可执行目录，调试模式取源码构建输出目录） |
 | `Core/CoreExecutableResolver.cs` | Core 路径确定性解析（配置→发布包→同源→兜底） |
 | `Core/CoreProcessSupervisor.cs` | Core 子进程固定端口 `0.0.0.0` 启动、本机健康检查、环形 stdout/stderr、进程树回收；`EnvironmentName` 可覆盖 Production |
 | `Runtime/DesktopRuntimeOrchestrator.cs` | 异常退出恢复、退避熔断（2s/4s/8s，60s 3 次） |
@@ -26,8 +26,9 @@
 |------|------|
 | `Debug/DesktopReverseProxy.cs` | HttpListener 本机反向代理（默认 127.0.0.1:80）：后端前缀→Core、其余→前端 dev server；SSE 逐块 Flush、WebSocket 全双工中继（HMR）、上游 502 |
 | `Debug/ProxyRoutePlanner.cs` | 纯路由决策：8 个后端前缀 + /admin SPA fallback（与 dev-up.py 语义逐条对齐） |
-| `Debug/DebugBackendLauncher.cs` | `dotnet build` 源码后端并解析 `bin/Debug/net10.0/PuddingAgent.exe`（desktop-child 协议不变，Development 环境） |
+| `Debug/DebugBackendLauncher.cs` | `dotnet build` 源码后端并解析 `bin/Debug/net10.0/PuddingAgent.exe`（desktop-child 协议不变，Development 环境）；`ResolveOutputDirectory` 无需先构建即可给出输出目录 |
 | `Debug/FrontendDevSupervisor.cs` | `pnpm run start:dev`（缺 node_modules 自动 install）、/admin/ 就绪探测、进程树回收、环形日志 |
+| `Debug/FrontendBuildDeployService.cs` | 运行中心「构建并部署前端」：`pnpm run build` 出 dist 后清空并复制到 Core 可执行目录 `wwwroot\admin`（仅动静态文件，Core 运行中可安全执行）；目标目录防御性限定 `wwwroot\admin` 后缀 |
 | `Debug/DebugRepositoryResolver.cs` | 仓库根向上自动解析 + 显式覆盖（repositoryRoot/frontendWorkingDirectory/backendProjectPath） |
 | `Configuration/DesktopBootstrapSettings.cs` | `DesktopDebugSettings`（desktop.json `debug` 节：Enabled/端口/超时） |
 | `Hosting/DesktopStateChangedEventArgs.cs` | `WorkbenchAddress`（调试=代理源）与 `CoreAddress`（控制面）分离 |
@@ -45,8 +46,8 @@
 
 | 文件 | 用途 |
 |------|------|
-| `ViewModels/RuntimeCenterViewModel.cs` | Core 状态、PID、健康、启停重启 |
-| `Views/RuntimeCenterView.xaml(.cs)` | 运行中心 UI，500 行日志视口 |
+| `ViewModels/RuntimeCenterViewModel.cs` | Core 状态、PID、健康、启停重启；`DeployFrontendAsync` 防重入门控 |
+| `Views/RuntimeCenterView.xaml(.cs)` | 运行中心 UI，500 行日志视口；「构建并部署前端」按钮（成功反馈目标目录与文件数） |
 | `Runtime/DiagnosticBundleService.cs` | 诊断 ZIP，过滤敏感信息 |
 
 ## 系统集成

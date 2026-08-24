@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using PuddingDesktop.Debug;
 using PuddingDesktop.Hosting;
 using PuddingDesktop.Runtime;
 
@@ -13,6 +14,7 @@ public sealed class RuntimeCenterViewModel : INotifyPropertyChanged, IDisposable
     private DesktopRuntimeSnapshot _runtime;
     private string? _stateError;
     private string _coreLogText = "尚无 Core 输出。";
+    private int _frontendDeployInProgress;
     private int _disposeState;
 
     public RuntimeCenterViewModel(DesktopApplicationCoordinator coordinator)
@@ -156,6 +158,25 @@ public sealed class RuntimeCenterViewModel : INotifyPropertyChanged, IDisposable
             _coordinator.DataRoot ?? string.Empty,
             cancellationToken);
 
+    public bool CanDeployFrontend => Volatile.Read(ref _frontendDeployInProgress) == 0;
+
+    public async Task<FrontendDeployResult> DeployFrontendAsync(CancellationToken cancellationToken)
+    {
+        if (Interlocked.Exchange(ref _frontendDeployInProgress, 1) != 0)
+            throw new InvalidOperationException("前端构建部署正在进行中，请稍候。");
+
+        try
+        {
+            OnPropertyChanged(nameof(CanDeployFrontend));
+            return await _coordinator.DeployFrontendAsync(cancellationToken);
+        }
+        finally
+        {
+            Volatile.Write(ref _frontendDeployInProgress, 0);
+            OnPropertyChanged(nameof(CanDeployFrontend));
+        }
+    }
+
     public string GetLogDirectory()
     {
         var dataRoot = _coordinator.DataRoot;
@@ -195,6 +216,7 @@ public sealed class RuntimeCenterViewModel : INotifyPropertyChanged, IDisposable
             nameof(StartedAtText), nameof(UptimeText), nameof(LastExitCodeText), nameof(HealthText),
             nameof(AutoRestartEnabled), nameof(RestartAttempts), nameof(RestartStatusText),
             nameof(IsCoreRunning), nameof(CanStart), nameof(CanStop), nameof(CanRestart),
+            nameof(CanDeployFrontend),
             nameof(LastError), nameof(HasError),
         })
         {
