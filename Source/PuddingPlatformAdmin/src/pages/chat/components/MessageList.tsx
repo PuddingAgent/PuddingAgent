@@ -153,7 +153,12 @@ const isSubAgentProcessItem = (kind: string): boolean =>
 
 const toTimelineItems = (items: ProcessSummaryItem[]): TimelineItem[] =>
   items
-    .filter((item) => !isSubAgentProcessItem(item.kind))
+    // 'text' 是正文增量（历史明细接口提供；由投影分段/正文气泡承载），
+    // 'subagent.*' 是旧会话级事件 kind——都不进入路径 A 时间线。
+    .filter(
+      (item) =>
+        !isSubAgentProcessItem(item.kind) && item.kind !== 'text',
+    )
     .map((item) => ({
       id: item.id,
       toolCallId: item.toolCallId ?? undefined,
@@ -162,12 +167,32 @@ const toTimelineItems = (items: ProcessSummaryItem[]): TimelineItem[] =>
         item.kind === 'tool_result' ||
         item.kind === 'thinking'
           ? item.kind
-          : 'subconscious_step',
+          : item.kind === 'delegation'
+            ? item.status === 'running'
+              ? 'subagent_spawned'
+              : 'subagent_completed'
+            : 'subconscious_step',
       text: item.text,
-      status: item.status,
-      name: item.name ?? undefined,
+      status:
+        item.kind === 'delegation' && item.status !== 'running'
+          ? item.status === 'success'
+            ? 'completed'
+            : item.status === 'error'
+              ? 'failed'
+              : 'cancelled'
+          : item.status,
+      // DelegationRow 以 name 作为委派分组键：delegationRunId（sub_agent_id）
+      // 在 created/terminal 两类事件中一致，优先于展示名（template）。
+      // 终态项的回复摘要走 output（buildDelegationNodesFromProcessItems 语义）。
+      name:
+        item.kind === 'delegation'
+          ? (item.delegationRunId ?? item.name ?? undefined)
+          : (item.name ?? undefined),
       arguments: item.arguments ?? undefined,
-      output: item.output ?? undefined,
+      output:
+        item.kind === 'delegation' && item.status !== 'running'
+          ? item.text
+          : (item.output ?? undefined),
       exitCode: item.exitCode ?? undefined,
       message: item.message ?? undefined,
       timestamp: toTimestamp(item.timestamp),
@@ -473,6 +498,12 @@ const hasProjectedUserTurn = (
   return projectedTurns.some(
     (turn) =>
       turn.userMessage.id === localTurn.userMessage.id ||
+      // 本地 SSE turn 在 POST 确认后 turnId 迁移为服务端 turnId，与投影 user
+      // turn 的 turnId（message.turnId/runId/messageId）一致——这是「同一
+      // 条回复」的稳定锚点。若只按 text+timestamp 匹配（≤1s 容差），时钟偏差、
+      // outbox 延迟 flush 或客户端/服务端 id 体系不同都会失配，导致本地 turn
+      // 被追加到投影 turn 之后，同一条回复渲染成多张卡片（用户实证三张）。
+      turn.turnId === localTurn.turnId ||
       (turn.userMessage.text.trim() === localText &&
         Math.abs(turn.userMessage.timestamp - localTimestamp) <=
           SERVER_PROJECTION_CLOCK_SKEW_MS),
@@ -512,6 +543,15 @@ const mergeLocalTurnsAwaitingProjection = (
                 ...candidate,
                 turnId: localTurn.turnId,
                 source: localTurn.source ?? candidate.source,
+                // 保留本地 userMessage.id（clientMessageId）：后续
+                // mergeActiveRunIntoTurns 靠 userMessage.id ===
+                // activeRun.commandClientId 把运行快照合并回本 turn，
+                // 若沿用投影的 messageId 会让匹配失败，activeRun 被追加为
+                // 第二张 assistant 卡（用户实证同回复多卡）。
+                userMessage: {
+                  ...candidate.userMessage,
+                  id: localTurn.userMessage.id,
+                },
                 assistant: localTurn.assistant,
               }
             : candidate,
@@ -539,6 +579,13 @@ const mergeLocalTurnsAwaitingProjection = (
             ...projectedTurn,
             turnId: localTurn.turnId,
             source: localTurn.source ?? projectedTurn.source,
+            // 与 pending 分支同理：保持本地 userMessage.id，使 activeRun 的
+            // commandClientId 匹配与 viewport 滚动定位（message:user:<id>）
+            // 在后续链路中保持一致，避免同一条回复被拆成多张卡片。
+            userMessage: {
+              ...projectedTurn.userMessage,
+              id: localTurn.userMessage.id,
+            },
             assistant: localTurn.assistant,
           }
         : projectedTurn,
@@ -606,7 +653,12 @@ const findActiveRunPendingTurnIndex = (
   return turns.findIndex(
     (turn) =>
       isPendingLocalTurn(turn) &&
-      !turn.assistant.answerMarkdown.trim() &&
+      // 不能要求本地 turn 尚未产出正文：流式过程中本地 SSE 可能已经带
+      // 部分/完整 answerMarkdown（与 activeRun 是同一条回复的两份表示），
+      // 若因「已有正文」而匹配失败，activeRun 会被当作新 turn 追加，
+      // 导致同一条 assistant 回复渲染成多张卡片（用户实证三张）。
+      // commandClientId 与 userMessage.id 相等已是「同一发送」的强约束，
+      // 正文有无不影响归属判定。
       turn.userMessage.id === activeRun.commandClientId,
   );
 };

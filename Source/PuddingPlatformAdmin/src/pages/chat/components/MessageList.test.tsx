@@ -2261,4 +2261,151 @@ describe('MessageList scroll performance', () => {
     expect(screen.getAllByTestId('message-row')).toHaveLength(3);
   });
 
+  it('renders a single assistant card when local SSE turn + projected turn + activeRun represent the same reply', () => {
+    const ANSWER = '收到「先提交代码」。先恢复上下文，再检查工作区待提交…';
+    render(
+      <MessageList
+        {...baseProps}
+        turns={[
+          {
+            turnId: 'turn-1',
+            source: {
+              sourceId: 'agent-a',
+              sourceType: 'agent',
+              displayName: 'Agent A',
+              avatarEmoji: '🤖',
+              avatarColor: '#7c3aed',
+            },
+            userMessage: {
+              // 本地 SSE 流的稳定 clientMessageId（服务端投影的 messageId 不同）
+              id: 'client-message-1',
+              text: '先提交代码',
+              timestamp: 1_787_616_000_000,
+              status: 'success',
+            },
+            assistant: {
+              id: 'local-assistant-1',
+              status: 'executing',
+              timelineItems: [
+                {
+                  id: 't1',
+                  type: 'tool_call',
+                  name: 'goal_read',
+                  text: 'goal_read',
+                  timestamp: 1_787_616_001_000,
+                  collapsed: true,
+                },
+                {
+                  id: 't2',
+                  type: 'tool_call',
+                  name: 'git_status',
+                  text: 'git_status',
+                  timestamp: 1_787_616_002_000,
+                  collapsed: true,
+                },
+              ],
+              answerMarkdown: ANSWER,
+              isStreaming: true,
+              renderMode: 'structured',
+            },
+          },
+        ]}
+        conversationView={{
+          workspaceId: 'default',
+          ownerUserId: 'single-user',
+          agentId: 'agent-a',
+          mainSessionId: 'session-1',
+          messages: [
+            {
+              messageId: 'user-msg-1',
+              turnId: 'turn-1',
+              runId: 'run-1',
+              role: 'user',
+              sourceId: 'admin',
+              sourceName: 'Pudding Admin',
+              createdAt: '2026-08-24T00:00:00.000Z',
+              content: '先提交代码',
+              status: 'sent',
+              processItems: [],
+            },
+            {
+              messageId: 'agent-msg-1',
+              turnId: 'turn-1',
+              runId: 'run-1',
+              role: 'agent',
+              sourceId: 'agent-a',
+              sourceName: 'Agent A',
+              createdAt: '2026-08-24T00:00:01.000Z',
+              content: ANSWER,
+              status: 'streaming',
+              processItems: [
+                {
+                  id: 'p1',
+                  kind: 'tool_call',
+                  status: 'running',
+                  text: 'shell git log',
+                  timestamp: '2026-08-24T00:00:03.000Z',
+                  name: 'shell',
+                },
+                {
+                  id: 'p2',
+                  kind: 'tool_call',
+                  status: 'running',
+                  text: 'shell git diff',
+                  timestamp: '2026-08-24T00:00:04.000Z',
+                  name: 'shell',
+                },
+              ],
+            },
+          ],
+          activeRun: {
+            runId: 'run-1',
+            workspaceId: 'default',
+            ownerUserId: 'single-user',
+            agentId: 'agent-a',
+            mainSessionId: 'session-1',
+            commandClientId: 'client-message-1',
+            status: 'running',
+            statusText: '正在输出',
+            summary: '',
+            eventCursor: 5,
+            outputSnapshot: {
+              markdown: ANSWER,
+              processItems: [
+                {
+                  id: 'p3',
+                  kind: 'tool_call',
+                  status: 'running',
+                  text: 'git_add',
+                  timestamp: '2026-08-24T00:00:05.000Z',
+                  name: 'git_add',
+                },
+                {
+                  id: 'p4',
+                  kind: 'tool_call',
+                  status: 'running',
+                  text: 'git_commit',
+                  timestamp: '2026-08-24T00:00:06.000Z',
+                  name: 'git_commit',
+                },
+              ],
+            },
+            startedAt: '2026-08-24T00:00:00.000Z',
+            updatedAt: '2026-08-24T00:00:06.000Z',
+          },
+          eventCursor: 5,
+          updatedAt: '2026-08-24T00:00:06.000Z',
+        }}
+      />,
+    );
+
+    // 本地 SSE turn、服务端投影 turn、activeRun 快照代表同一条回复时，
+    // 必须合并为同一张 assistant 卡：正文只出现一次，agent 行只有一行。
+    expect(screen.getAllByText(ANSWER)).toHaveLength(1);
+    const agentRows = screen
+      .getAllByTestId('message-row')
+      .filter((row) => row.getAttribute('data-role') === 'agent');
+    expect(agentRows).toHaveLength(1);
+  });
+
 });
