@@ -42,6 +42,11 @@ public sealed class AgentConversationProjectionService(
     private static readonly TimeSpan ActiveRunStaleAfter = TimeSpan.FromMinutes(5);
     private static readonly string[] ActiveRunVisibleProcessEventTypes =
     [
+        // 正文增量也进活动快照过程项（kind=text）：前端 TurnSurfaceStore 才能
+        // 在运行态就构建「文本段 ⇄ 思考 ⇄ 工具 ⇄ 委派」交错投影，与完成态
+        // 明细水合同构，消除运行/终态的投影源切换与节点重排。64 条窗口只
+        // 覆盖最近活动，完整轨迹仍由完成态明细接口提供。
+        ConversationEventTypes.MessageContentAppended,
         ConversationEventTypes.MessageThinkingSummaryAppended,
         ConversationEventTypes.ToolCallRequested,
         ConversationEventTypes.ToolCallCompleted,
@@ -860,7 +865,12 @@ public sealed class AgentConversationProjectionService(
             exitCode,
             message,
             toolCallId,
-            delegationRunId);
+            delegationRunId,
+            // canonical 事实透传：前端 TurnSurfaceStore 用真实 sequence 交错排序、
+            // runId/turnId 参与别名归并，避免数组下标合成顺序破坏重放等价。
+            evt.Sequence,
+            string.IsNullOrWhiteSpace(evt.TurnId) ? null : evt.TurnId,
+            evt.RunId);
         return true;
     }
 

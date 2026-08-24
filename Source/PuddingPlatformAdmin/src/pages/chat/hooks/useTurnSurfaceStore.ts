@@ -59,6 +59,11 @@ export interface UseTurnSurfaceStoreResult {
    * memo 的「函数身份恒定 → 水合后不重渲染」死锁。
    */
   revision: number;
+  /**
+   * 注册「近视口回合」：MessageRow 挂载（虚拟化窗口内可见）时上报 turnId，
+   * 懒水合只对已注册回合 + 活跃回合发起，替代首屏全量并发拉取。
+   */
+  registerVisibleTurn: (turnId?: string | null) => void;
 }
 
 export function useTurnSurfaceStore({
@@ -70,8 +75,10 @@ export function useTurnSurfaceStore({
   if (storeRef.current === null) storeRef.current = new TurnSurfaceStore();
   const store = storeRef.current;
   const [revision, setRevision] = useState(0);
+  const [registerRevision, setRegisterRevision] = useState(0);
   const hydratedMessageIdsRef = useRef<Set<string>>(new Set());
   const inFlightRef = useRef<Set<string>>(new Set());
+  const visibleTurnIdsRef = useRef<Set<string>>(new Set());
 
   // 会话切换：就地清空 store（实例身份恒定，闭包不会捕获到孤儿 store）。
   const conversationId = conversationView?.mainSessionId ?? null;
@@ -127,7 +134,10 @@ export function useTurnSurfaceStore({
     if (mutated) notifyMutated();
   }, [conversationView, store, notifyMutated]);
 
-  // 2) 完成 turn 懒水合（每 messageId 一次；失败静默，下次视图刷新重试）。
+  // 2) 完成 turn 懒水合（有界）：只水合「近视口回合」（MessageRow 挂载时
+  //    registerVisibleTurn 上报；虚拟化窗口即近视口过滤器）与活跃回合，
+  //    单批最多 2 个并发——替代旧版首屏全量并发拉取（实测 8 回合 5288 事件
+  //    导致 4.5k DOM 节点）。未注册回合滚动进入视口时由注册触发补拉。
   useEffect(() => {
     if (!workspaceId || !agentId || !conversationView) return;
     const view = conversationView;
@@ -137,10 +147,11 @@ export function useTurnSurfaceStore({
       if (message.status === 'streaming') return false;
       const turnId = message.turnId || message.runId || message.messageId;
       if (!turnId) return false;
+      if (!visibleTurnIdsRef.current.has(turnId)) return false;
       if (hydratedMessageIdsRef.current.has(message.messageId)) return false;
       if (inFlightRef.current.has(message.messageId)) return false;
       return true;
-    });
+    }).slice(0, 2);
     for (const message of targets) {
       inFlightRef.current.add(message.messageId);
       const turnId = message.turnId || message.runId || message.messageId;
@@ -150,10 +161,9 @@ export function useTurnSurfaceStore({
           if (!details.processItems?.length) return;
           const events = processItemsToFlowEvents(details.processItems, {
             turnId,
-            // 历史明细 base 取负高段：projector 的终态单调守卫会忽略
-            // sequence 大于终态的迟到事件，水合事实必须排在 live 事件之前；
-            // 明细按 canonical sequence 升序返回，负段递增保持相对顺序，
-            // 与 live 事实的重叠靠 eventId 去重互斥（同 canonical EventId）。
+            // 服务端已透传真实 sequence 时负段不再生效（适配器优先真实值）；
+            // 旧后端无 sequence 时以负高段回退：projector 终态单调守卫会忽略
+            // sequence 大于终态的迟到事件，回退序必须排在 live 事件之前。
             baseSequence: -1_000_000,
           });
           const result = store.applyEvents(events, { turnIdHint: turnId });
@@ -164,7 +174,7 @@ export function useTurnSurfaceStore({
           inFlightRef.current.delete(message.messageId);
         });
     }
-  }, [workspaceId, agentId, conversationView, store, notifyMutated]);
+  }, [workspaceId, agentId, conversationView, store, notifyMutated, registerRevision]);
 
   const getSurfaceProjection = useCallback(
     (turnIdOrAlias?: string | null) =>
@@ -177,5 +187,16 @@ export function useTurnSurfaceStore({
     [store, revision],
   );
 
-  return { getSurfaceProjection, hydratedTurnCount, revision };
+  const registerVisibleTurn = useCallback(
+    (turnId?: string | null) => {
+      if (!turnId || visibleTurnIdsRef.current.has(turnId)) return;
+      visibleTurnIdsRef.current.add(turnId);
+      // 触发水合 effect 重跑（revision 只增不减，setRevision 同值会被 React
+      // 忽略，故用自增计数器）。
+      setRegisterRevision((n) => n + 1);
+    },
+    [],
+  );
+
+  return { getSurfaceProjection, hydratedTurnCount, revision, registerVisibleTurn };
 }

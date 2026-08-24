@@ -464,6 +464,34 @@ describe('projectExecutionFlow', () => {
       expect(delegation && delegation.kind === 'delegation' ? delegation.state : '').toBe('failed');
       expect(delegation && delegation.kind === 'delegation' ? delegation.error : '').toBe('boom');
     });
+
+    it('created → started → completed 同一 subAgentId 只保留一个节点（upsert）', () => {
+      // subagent.run.created 与 subagent.run.started 都映射为 subagent.spawned；
+      // 重复 spawn 不得新增第二个 running 节点，completed 也不得留下孤儿运行节点。
+      const proj = projectExecutionFlow([
+        ev('subagent.spawned', 1, { sub_agent_id: 'sa3', template: 'tpl-a' }),
+        ev('subagent.spawned', 2, { sub_agent_id: 'sa3', model: 'deepseek-v4-flash' }),
+        ev('subagent.completed', 3, { sub_agent_id: 'sa3', success: true, result_summary: '完成' }),
+      ]);
+      const delegations = proj.nodes.filter((node) => node.kind === 'delegation');
+      expect(delegations).toHaveLength(1);
+      const node = delegations[0];
+      expect(node.kind === 'delegation' ? node.state : '').toBe('completed');
+      expect(node.kind === 'delegation' ? node.template : '').toBe('tpl-a');
+      expect(node.kind === 'delegation' ? node.model : '').toBe('deepseek-v4-flash');
+      expect(node.sourceEventIds).toHaveLength(3);
+    });
+
+    it('乱序重放：completed 之后的重复 spawn 不复活 running 节点', () => {
+      const proj = projectExecutionFlow([
+        ev('subagent.spawned', 1, { sub_agent_id: 'sa4', task: '任务A' }),
+        ev('subagent.completed', 2, { sub_agent_id: 'sa4', success: true }),
+        ev('subagent.spawned', 3, { sub_agent_id: 'sa4' }),
+      ]);
+      const delegations = proj.nodes.filter((node) => node.kind === 'delegation');
+      expect(delegations).toHaveLength(1);
+      expect(delegations[0].kind === 'delegation' ? delegations[0].state : '').toBe('completed');
+    });
   });
 
   describe('retry 节点', () => {

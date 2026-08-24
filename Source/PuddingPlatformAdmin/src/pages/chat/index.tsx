@@ -683,6 +683,7 @@ const ChatPageContent: React.FC = () => {
         cacheHitRate={chat.cacheHitRate}
         compactionStatus={chat.compactionStatus}
         getTurnProjection={getTurnProjectionWithSurface}
+        onTurnVisible={turnSurface.registerVisibleTurn}
         formatTime={chat.formatTime}
         onDeleteTurn={chat.onDeleteTurn}
         onContextMenu={handleContextMenu}

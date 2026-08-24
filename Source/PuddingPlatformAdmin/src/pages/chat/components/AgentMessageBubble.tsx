@@ -615,6 +615,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
             grouped={groupedWithPrevious}
           />
           <div className={styles.agentMessageContainer}>
+            <div className={styles.agentTurnCard}>
             {/* 名称 + 时间 */}
             {!groupedWithPrevious && (
               <div className={styles.agentNameRow}>
@@ -625,6 +626,19 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                 >
                   {formatTime(createdAt)}
                 </span>
+                {/* 无障碍（验收 6）：终态卡保留可达状态标记（成功/失败/取消），
+                    不只依赖颜色与计量行。运行态由 TurnStatus 行承载。 */}
+                {/* 失败/取消语义由既有错误摘要行承载（StateDot+标题），此处
+                    只补成功终态标记，避免同卡重复状态行。 */}
+                {!isRunActive && status === 'success' && (
+                  <span
+                    className={styles.agentTurnStateChip}
+                    aria-label="回合已完成"
+                  >
+                    <StateDot state="done" size={8} />
+                    已完成
+                  </span>
+                )}
               </div>
             )}
 
@@ -801,6 +815,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                 />
               </React.Suspense>
             )}
+            </div>
           </div>
         </>
       )}

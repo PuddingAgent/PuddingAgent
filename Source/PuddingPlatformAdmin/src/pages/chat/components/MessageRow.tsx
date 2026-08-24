@@ -1,6 +1,6 @@
 // ── MessageRow：单条消息行（路由到 User/Agent/Heartbeat 气泡）──
 import { HeartOutlined } from '@ant-design/icons';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useChatMessageStyles } from '../styles/messageStyleContext';
 import type { ChatMessageBlock, ParentDelegationActivity } from '../types';
 import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
@@ -38,6 +38,8 @@ interface MessageRowProps {
   focusView?: boolean;
   /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
   getTurnProjection?: (turnId: string) => ExecutionFlowProjection | undefined;
+  /** 挂载即上报可见 turnId（虚拟化窗口=近视口），驱动有界懒水合。 */
+  onTurnVisible?: (turnId: string) => void;
 }
 
 const optionalRecordEquals = (
@@ -148,6 +150,7 @@ export const areMessageRowPropsEqual = (
   previous.onTranscriptModeChange === next.onTranscriptModeChange &&
   (previous.focusView ?? false) === (next.focusView ?? false) &&
   previous.getTurnProjection === next.getTurnProjection &&
+  previous.onTurnVisible === next.onTurnVisible &&
   optionalRecordEquals(
     previous.parentDelegationActivity,
     next.parentDelegationActivity,
@@ -236,11 +239,15 @@ const MessageRow: React.FC<MessageRowProps> = ({
   onTranscriptModeChange,
   focusView = false,
   getTurnProjection,
+  onTurnVisible,
 }) => {
   const { styles, cx } = useChatMessageStyles();
   // P2#8：Focus view 单行展开状态（折叠/展开同一行内切换，保持完整内容在同一
   // 虚拟行内渲染，避免折叠展开引发整列重渲染）。
   const [focusExpanded, setFocusExpanded] = useState(false);
+  useEffect(() => {
+    if (block.turnId) onTurnVisible?.(block.turnId);
+  }, [block.turnId, onTurnVisible]);
   const focusSummary = useMemo(() => getFocusViewSummary(block), [block]);
   const focusTone = useMemo(() => getFocusViewTone(block), [block]);
 

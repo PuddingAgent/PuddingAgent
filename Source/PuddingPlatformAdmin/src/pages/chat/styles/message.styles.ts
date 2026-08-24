@@ -94,7 +94,10 @@ export const useMessageStyles = createStyles(({ token }) => ({
     padding: '8px 0',
     contain: 'layout paint style',
     contentVisibility: 'auto' as const,
-    containIntrinsicSize: '120px',
+    // auto 前缀：浏览器记忆元素最近渲染高度作为占位，仅首次进入视口用
+    // 120px 兜底——固定 120px 会让 2k+px 的 Agent 行每次离屏/回视口都发生
+    // 大幅高度修正与 scrollHeight 跳变（2026-08-24 验收 4）。
+    containIntrinsicSize: 'auto 120px',
   },
   messageRowUser: {
     justifyContent: 'flex-end',
@@ -119,6 +122,34 @@ export const useMessageStyles = createStyles(({ token }) => ({
     minWidth: 0,
     // P0-2: 为气泡外绝对定位的操作按钮预留落点，长气泡/贴底场景防裁切
     paddingBottom: 8,
+  },
+  /**
+   * AgentTurnCard 大卡片外壳（2026-08-24 验收 5）：一个 Agent 回合 = 一张卡。
+   * 包住状态行、交错行为链、正文、错误行、操作与统计；内部节点保持行式
+   * 紧凑布局，不再各套卡片。外壳结构稳定——终态只改变状态，不重挂载、
+   * 不重播入场动画（动画只存在于正文气泡的 entrance 类）。
+   * 表面：微弱暖色（主题 surface 混 3% 品牌紫）、1px 边界、14px 圆角。
+   */
+  agentTurnStateChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    fontSize: 11,
+    lineHeight: '20px',
+    opacity: 0.65,
+    marginLeft: 6,
+  },
+  agentTurnCard: {
+    position: 'relative' as const,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'stretch',
+    background:
+      'color-mix(in srgb, var(--pudding-chat-accent) 3%, var(--pudding-admin-surface))',
+    border: '1px solid var(--pudding-admin-border)',
+    borderRadius: 'var(--pudding-chat-radius-lg)',
+    padding: '10px 14px 6px',
+    width: '100%',
   },
   userMessageContainer: {
     display: 'flex',

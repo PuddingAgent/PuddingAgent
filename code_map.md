@@ -32,7 +32,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/07架构/87ADR-073*.md` | 当前产品施工总表与冲突裁决基线；列出 30 项产品任务、17 项 T00–T16 平台底座任务及专项 Phase 去重映射，覆盖目标、优先级、工作量、难度、依赖、设计位置和里程碑 |
 | `Docs/07架构/89ADR-074*.md` | Goal 专项架构决策；冻结外层 GoalRun/内层 Agent Loop 双层预算、单 Goal 256 accepted Iteration 硬上限、durable outbox 续行、独立证据验证、重启 disarm、Task-bound Goal、Availability Sensor、低峰派发与不依赖 Heartbeat |
 | `Docs/07架构/90ADR-075*.md` / `Docs/Features/第三方任务看板AccessToken与外部API详细设计方案.md` | 第三方任务看板开发合同；冻结 hashed opaque Access Token、ASP.NET Core 独立 scheme + scope/workspace Policy、外部 API v1、ETag/幂等、追加式 TaskEvaluation 与 Admin Access Token 管理器；P1（Token 后端）+ P3（Admin UI）+ P2 基本功能已实现：`pdt_v1_` opaque Token 摘要存储、PuddingExternalAccessToken scheme、Admin 管理 API/UI、last-used 合并写、External Task API v1（list/get/create/patch/comments/evaluations/commands + ETag/428/412 + 简化幂等）共 65 项后端测试；SSE Watch/RateLimiter/OpenAPI 与 P4（部署收口）未实现，External API 默认关闭 |
-| `Docs/07架构/91ADR-076*.md` / `Docs/Features/遥测调试数据自动过期与Web存储管理设计方案.md` | 遥测/Debug 存储治理目标设计；Core + Web `/storage`、缓存快照与有界增量估算、分类图表/趋势报表、语义类型目录、自动/人工唯一维护 writer、按类型/时间清理、关键事实保护、长期聚合和禁止在线全库 VACUUM；Desktop 不扩展，当前未实现 |
+| `Docs/07架构/91ADR-076*.md` / `Docs/Features/遥测调试数据自动过期与Web存储管理设计方案.md` | 遥测/Debug 存储治理目标设计；Core + Web `/storage`、缓存快照与有界增量估算、分类图表/趋势报表、语义类型目录、自动/人工唯一维护 writer、按类型/时间清理、关键事实保护、长期聚合和禁止在线全库 VACUUM；Desktop 不扩展，当前未实现；2026-08-24 代码级现状核对补充：上下文日聚合复用既有 `context_layer_daily_rollups`、retention 索引收编目录所有权（终止 `ix_prune_*` 运行时补建双轨）、`CompactAfterCleanup` 默认值随 Phase 1 翻转、旧 /databases 端点与 Desktop 旧页面捆绑退役、appsettings `Retention` 节整体迁移 system.json |
 | `Docs/07架构/92ADR-077*.md` | 主代理原生视觉目标设计；typed image content、Workspace Artifact、DeepSeek Responses `input_image`/图片型工具结果、Files API、多轮/重启恢复、fail-closed；Image Reader 重定位为 URL/任意绝对路径/Artifact 取用工具，默认当前模型原生读取，文本模型或第二意见才委派 helper；V0–V2 已实现（typed parts、fail-closed Planner、图片工具结果、visionHelperModel、删除自动预观察），V3 Files API 与 V4 真实模型 smoke 待做 |
 | `Docs/07架构/tool-infrastructure-layering.md` | Tool 分层、强制委派合同、Smart 参数与结果合同 |
 | `Docs/deepseek-harness-message-card-alignment-2026-08-14.md` | 对照 deepseek-harness 的消息、推理和工具调用 UI 目标架构；定义 TurnStatus、Reasoning/Tool/Delegation 行、toolCallId 投影、分期与验收矩阵 |
@@ -40,6 +40,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/deepseek-harness-tool-system-alignment-2026-08-14.md` | 对照 deepseek-harness 的工具定义与执行协议；规划 canonical output、端到端 callId、结构化错误、管线、并发、spill、可回放 presentation 与 DeepSeek Code Mode |
 | `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md` | 对照 deepseek-harness 与 pi 的统一目标架构与 2026-08-15 复评；定义 Plugin/Function/Hook/Event/Projection、Agent Transition+Effect FSM、Function Graph、Composition Snapshot、前端解释层、底座缺口与分期路线 |
 | `Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md` | 7 日 Token 构成、工具结果重放、搜索失败和 ZIP 稀疏度基线；定义原文不脱敏的 artifact/envelope、T0-T4 分级压缩、Compact 覆盖门禁、冷启动去重、稳定前缀与 DeepSeek 缓存 >99% 验收 |
+| `Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md` | 聊天页主代理余额徽标 + 前后端双注册表计费抽象：后端 `ILlmBalanceProvider` 查询适配器（DeepSeek `/user/balance` 首个落地，`/v1` 剥离修复）+ 前端 `providerBilling.ts` 展示适配器；新服务商扩展步骤、5min 低频轮询/手动刷新、apiKey 不进日志约束 |
 | `Docs/QA/QA-2026-08-03*.md` | Qwen 输入上限修复验收 |
 | `Agents.md` | 仓库级开发约束 |
 | `dev-up.py` | 本地开发监督器 |
@@ -67,7 +68,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Source/PuddingCodeIndexer.Cli/` | 代码索引 CLI | [code_map](Source/PuddingCodeIndexer.Cli/code_map.md) |
 | `Source/PuddingFullTextIndex/` | 全文索引引擎 | [code_map](Source/PuddingFullTextIndex/code_map.md) |
 | `Source/PuddingGit.Tools/` | Git 20 工具（实现在 Runtime） | [code_map](Source/PuddingGit.Tools/code_map.md) |
-| `Source/PuddingPlatformAdmin/` | React 管理前端 · Chat 虚拟视口/渐进消息/状态缓存 · Agent 编排布局编辑器 · 管理壳异步隔离 · 已移除 Phaser/2D Studio · 生产 dist 经 PuddingHostContent.props 部署到 Core `wwwroot/admin`（dev 输出分流 dist-dev，防 MSBuild 增量清理破坏部署，见 How-Debuge §6.12） | [code_map](Source/PuddingPlatformAdmin/code_map.md) |
+| `Source/PuddingPlatformAdmin/` | React 管理前端 · Chat 虚拟视口/渐进消息/状态缓存 · Agent 编排布局编辑器 · 管理壳异步隔离 · 主代理服务商余额徽标（DeepSeek 首个，多服务商计费展示适配器） · 已移除 Phaser/2D Studio · 生产 dist 经 PuddingHostContent.props 部署到 Core `wwwroot/admin`（dev 输出分流 dist-dev，防 MSBuild 增量清理破坏部署，见 How-Debuge §6.12） | [code_map](Source/PuddingPlatformAdmin/code_map.md) |
 
 ## 调用链路
 
@@ -88,6 +89,12 @@ Agent Loop → LlmInvocationService → DirectLlmClient
       （闭日 UTC 聚合缓存 llm_usage_daily_aggregates / context_layer_daily_rollups +
         stats_daily_cache_days 完成标记；当天实时计算，Rebuild 后按月失效）
     → TokenUsageEvents 继续只承担会话/角色/上下文归因
+
+Admin ChatMain 余额徽标 → useProviderBalance (5min 轮询/手动刷新)
+  → GET /api/llm/providers/{id}/balance → LlmProviderApiController.GetBalance
+    → LlmProviderFileService.GetBalanceAsync（解析 apiKey：ApiKey/${ENV}/{{vault}}/ApiKeyRef）
+      → ILlmBalanceProvider 注册表 CanHandle 分发（DeepSeek: {baseUrl 去 /v1}/user/balance）
+      → 未注册适配器 → IsAvailable=false「暂不支持」DTO（前端隐藏/显示 —）
 
 ContextPipeline → Tool layer mandatory delegation policy
   → 首次工具调用前必须判定 Direct / Delegated
@@ -155,6 +162,10 @@ Plugin configuration → Plugin Resolver → PluginActivation
   → Session/Run/Turn/LLM/Tool/SubAgent/Message/Compaction/Heartbeat/Job/Learning 使用统一状态机与提交后事件
 
 spawn_sub_agent → SubAgentInvocationService → SubAgentManager
+  → model 参数必须是 providerId/modelId 完整路由；裸 modelId 多 provider 注册时 FileLlmResolver 报
+    "exists under multiple providers"（2026-08-24 起 list_llm_providers 内置工具输出实时路由表与
+    ambiguous_model_ids 歧义清单，不含 apiKey/baseUrl，已入 CoreToolIds 常驻可见；应急快照
+    memory/llm-providers-cheatsheet.md 转兜底）
   → `runtime.execution.json` 统一配置 600 轮 / 2400 次工具调用 / 24h
   → 父 Agent 工具 schema 不暴露轮次、工具调用或 timeout 预算字段
   → AgentExecutionService 在启动、剩余 80%/50% 与预算耗尽时注入预算通知
@@ -251,6 +262,13 @@ Chat first paint → AgentConversationProjectionService
     （text/thinking/tool/delegation 同一事件流，eventId 幂等去重），
     终态/刷新后轨迹从投影重建；AgentConversationProjectionService 明细端点
     补 text 事件 + delegation 三重排除修复（canonical 事件名/kind 映射/run 过滤）
+  → 验收二轮修复（2026-08-24）：委派节点按 subAgentId upsert（重复 spawn 不再
+    留下永久 running）；DTO 透传 canonical sequence/turnId/runId + activeRun 快照
+    补正文事件（运行态即可交错文本段）；懒水合有界化（MessageRow 挂载注册可见
+    turn、单批并发 ≤2，替代首屏全量 8 回合 5288 事件）；content-visibility 占位
+    改 auto 120px + 虚拟化按内容权重即时开启（不再要求 ≥24 条）；
+    AgentTurnCard 大卡片外壳（暖色表面/1px 边界/14px 圆角，终态不重挂载）；
+    工具行 aria-label 带状态 + 成功终态卡「已完成」标记
   → MessageList → messageProjection（保持已组装消息顺序，未匹配 active run 留在当前流末端）→ MessageViewportRuntime（虚拟化、锚点、贴底）
   → ChatMessageStyleProvider（消息树共享一次聚合样式注册）
   → MessageRow（稳定块直接渲染 + 语义 memo；不再经过单条 MessageStream 兼容重建）

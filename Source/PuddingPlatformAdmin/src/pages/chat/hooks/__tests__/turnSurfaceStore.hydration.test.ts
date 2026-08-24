@@ -2,7 +2,7 @@
 // 数据来自生产 API 实测快照（默认助手主线会话 + b03b6f1f turn 的 686 项明细），
 // 验证：懒水合触发 → store 合流 → getSurfaceProjection 产出含 message/reasoning/
 // tool 节点的投影（刷新后完成态轨迹可恢复的端到端前提）。
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useTurnSurfaceStore } from '../useTurnSurfaceStore';
 
 const conversation = require('./fixtures-conversation.json');
@@ -32,6 +32,11 @@ describe('useTurnSurfaceStore (real fixture)', () => {
         conversationView: conversation,
       }),
     );
+    // 有界水合：只有注册为「可见」的 turn 才会拉取明细（MessageRow 挂载
+    // 即注册；此处模拟 b03b 回合进入近视口）。
+    act(() => {
+      result.current.registerVisibleTurn('b03b6f1fbd5843f992fd150a07dd7e75');
+    });
     await waitFor(
       () => {
         const projection = result.current.getSurfaceProjection('b03b6f1fbd5843f992fd150a07dd7e75');

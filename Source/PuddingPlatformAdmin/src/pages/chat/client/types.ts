@@ -45,6 +45,11 @@ export interface ProcessSummaryItem {
    * 服务端 2026-08-24 起对 kind=delegation 提供；旧后端缺省。
    */
   delegationRunId?: string | null;
+  /** canonical 事件 sequence（服务端 2026-08-24 起透传；旧后端缺省）。 */
+  sequence?: number | null;
+  /** canonical turnId / runId 透传（跨源合流别名归并用；旧后端缺省）。 */
+  turnId?: string | null;
+  runId?: string | null;
 }
 
 export interface ConversationProcessSummary {

@@ -90,6 +90,8 @@ interface MessageListProps {
   onApprovalDenied?: (card: ApprovalCardData) => void;
   /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
   getTurnProjection?: (turnId: string) => ExecutionFlowProjection | undefined;
+  /** MessageRow 挂载上报可见 turnId（有界懒水合驱动）。 */
+  onTurnVisible?: (turnId: string) => void;
   /** P2#8：Focus view 单行折叠模式 */
   focusView?: boolean;
   onFocusViewChange?: (value: boolean) => void;
@@ -884,6 +886,7 @@ const MessageList: React.FC<MessageListProps> = ({
   onFocusViewChange,
   onApprovalDenied,
   getTurnProjection,
+  onTurnVisible,
 }) => {
   const chatStyles = useChatStyles();
   const { styles } = chatStyles;
@@ -1114,6 +1117,7 @@ const MessageList: React.FC<MessageListProps> = ({
         onTranscriptModeChange={onTranscriptModeChange}
         focusView={focusView}
         getTurnProjection={getTurnProjection}
+        onTurnVisible={onTurnVisible}
       />
     );
 

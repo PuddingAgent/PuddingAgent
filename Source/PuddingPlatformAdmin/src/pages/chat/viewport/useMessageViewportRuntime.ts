@@ -21,7 +21,6 @@ const BOTTOM_THRESHOLD_PX = 24;
 const MESSAGE_VIEWPORT_BOTTOM_PADDING_PX = 32;
 const MESSAGE_VIEWPORT_VIRTUALIZATION_MIN_ITEMS = 80;
 const MESSAGE_VIEWPORT_RICH_VIRTUALIZATION_MIN_ITEMS = 200;
-const MESSAGE_VIEWPORT_WEIGHTED_MIN_ITEMS = 24;
 const MESSAGE_VIEWPORT_CONTENT_WEIGHT_THRESHOLD = 16_000;
 const INITIAL_BOTTOM_SETTLE_STABLE_TICKS = 3;
 const INITIAL_BOTTOM_SETTLE_MIN_MS = 500;
@@ -110,26 +109,26 @@ export const shouldVirtualizeMessageViewport = (
   // of DOM nodes during refresh. Keep genuinely short conversations in normal
   // flow, but virtualize medium timelines once their aggregate render weight is
   // high enough to block the first usable frame.
-  if (items.length >= MESSAGE_VIEWPORT_WEIGHTED_MIN_ITEMS) {
-    const contentWeight = items.reduce(
-      (total, item) =>
-        total +
-        (item.kind === 'message'
-          ? item.block.content.length +
-            (item.block.processItems?.reduce(
-              (processTotal, processItem) =>
-                processTotal +
-                textLength(processItem.text) +
-                textLength(processItem.output) +
-                textLength(processItem.message),
-              0,
-            ) ?? 0)
-          : 0),
-      0,
-    );
-    if (contentWeight >= MESSAGE_VIEWPORT_CONTENT_WEIGHT_THRESHOLD) {
-      return true;
-    }
+  // 内容权重优先：单个 2k+ 事件回合就能挂载数千 DOM 节点，不再要求
+  // 「至少 24 条」才检查权重（2026-08-24 验收 4：21 项/4548 DOM 未开虚拟化）。
+  const contentWeight = items.reduce(
+    (total, item) =>
+      total +
+      (item.kind === 'message'
+        ? item.block.content.length +
+          (item.block.processItems?.reduce(
+            (processTotal, processItem) =>
+              processTotal +
+              textLength(processItem.text) +
+              textLength(processItem.output) +
+              textLength(processItem.message),
+            0,
+          ) ?? 0)
+        : 0),
+    0,
+  );
+  if (contentWeight >= MESSAGE_VIEWPORT_CONTENT_WEIGHT_THRESHOLD) {
+    return true;
   }
 
   if (items.length < MESSAGE_VIEWPORT_VIRTUALIZATION_MIN_ITEMS) return false;

@@ -287,7 +287,11 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({ node }) => {
     <ExecutionDisclosureRow
       leading={<StateDot state={dotState} size={10} />}
       testId="toolcall-row"
-      ariaLabel={`${name} 工具调用`}
+      // 无障碍（2026-08-24 验收 6）：StateDot 是装饰性 aria-hidden，状态
+      // 语义必须进可达名称，不能只靠颜色区分。
+      ariaLabel={`${name} 工具调用（${
+        status === 'running' ? '执行中' : status === 'error' ? '失败' : '成功'
+      }）`}
       className={cx(status === 'running' && styles.rowRunning)}
       dataAttrs={{
         'data-status': status,

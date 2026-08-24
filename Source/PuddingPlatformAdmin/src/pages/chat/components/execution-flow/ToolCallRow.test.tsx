@@ -47,7 +47,8 @@ describe('ToolCallRow (ToolNode)', () => {
     expect(row.getAttribute('role')).toBe('button');
     expect(row.getAttribute('tabindex')).toBe('0');
     expect(row.getAttribute('aria-expanded')).toBe('false');
-    expect(row.getAttribute('aria-label')).toBe('shell 工具调用');
+    // 无障碍（2026-08-24 验收 6）：可达名称携带状态语义
+expect(row.getAttribute('aria-label')).toBe('shell 工具调用（成功）');
     expect(row.getAttribute('data-status')).toBe('done');
     expect(row.getAttribute('data-toolname')).toBe('shell');
 

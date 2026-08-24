@@ -824,6 +824,18 @@ export function projectExecutionFlow(
         flushMessage();
         const subAgentId =
           readString(event, ['subAgentId', 'sub_agent_id']) ?? event.eventId;
+        // upsert：created 与 started（以及乱序重放的重复 spawn）都映射到
+        // subagent.spawned，同一 subAgentId 只保留一个节点——重复事件只补充
+        // 字段与来源 ID，不得新增第二个 running 节点（否则 completed 只结算
+        // 最后创建的节点，先前的永久停留在 running）。
+        const existing = delegationNodes.get(subAgentId);
+        if (existing) {
+          existing.template = existing.template ?? event.template;
+          existing.model = existing.model ?? event.model;
+          existing.taskSummary = existing.taskSummary ?? event.task;
+          if (event.eventId) existing.sourceEventIds.push(event.eventId);
+          break;
+        }
         const node: DelegationNode = {
           kind: 'delegation',
           key: `delegation:${subAgentId}`,

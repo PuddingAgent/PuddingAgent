@@ -87,6 +87,7 @@ interface ChatLayoutProps {
   compactionStatus?: string | null;
   /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
   getTurnProjection?: (turnId: string) => import('../projections/executionFlowProjector').ExecutionFlowProjection | undefined;
+  onTurnVisible?: (turnId: string) => void;
   formatTime: (ts: number) => string;
   onDeleteTurn: (turnId: string) => void;
   onContextMenu: (
@@ -149,6 +150,7 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
       <ChatMain
         sidebarOpen={props.sidebarOpen}
         getTurnProjection={props.getTurnProjection}
+        onTurnVisible={props.onTurnVisible}
         onToggleSidebar={props.onToggleSidebar}
         workspaces={props.workspaces}
         workspaceId={props.workspaceId}

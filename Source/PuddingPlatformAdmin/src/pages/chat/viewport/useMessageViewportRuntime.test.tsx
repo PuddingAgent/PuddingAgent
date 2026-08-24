@@ -70,7 +70,9 @@ describe('useMessageViewportRuntime', () => {
     }));
 
     expect(shouldVirtualizeMessageViewport(weightedTimeline)).toBe(true);
-    expect(shouldVirtualizeMessageViewport(shortTallTimeline)).toBe(false);
+    // 2026-08-24 验收 4：内容权重优先，不再要求「至少 24 条」——少量超重
+    // 回合（12 条 × 2.7k 字符 > 16k 阈值）同样进入虚拟化。
+    expect(shouldVirtualizeMessageViewport(shortTallTimeline)).toBe(true);
   });
 
   it('tracks active process item growth for bottom-follow updates', () => {

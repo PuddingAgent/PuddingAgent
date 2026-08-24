@@ -27,6 +27,7 @@ import type {
   ChatInteractionRuntimeEvent,
 } from '../hooks/useChatState';
 import { useNotificationSound } from '../hooks/useNotificationSound';
+import { useProviderBalance } from '../hooks/useProviderBalance';
 import type {
   SandboxBoundaryInfo,
   SandboxNetworkMode,
@@ -39,9 +40,11 @@ import type {
   SubAgentCardMap,
 } from '../types';
 import type { PermissionMode } from '../types/chatStateTypes';
+import { currencySymbolFor, resolveBillingAdapter } from '../utils/providerBilling';
 import CheckpointTimelinePanel from './CheckpointTimelinePanel';
 import IntentConsole, { type ChatStatus } from './IntentConsole';
 import MessageList from './MessageList';
+import ProviderBalanceIndicator from './ProviderBalanceIndicator';
 import type { TranscriptMode } from './TranscriptModeSwitch';
 import { TaskBoardModal } from '@/pages/workspace-tasks';
 
@@ -128,6 +131,7 @@ interface ChatMainProps {
   compactionStatus?: string | null;
   /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
   getTurnProjection?: (turnId: string) => ExecutionFlowProjection | undefined;
+  onTurnVisible?: (turnId: string) => void;
   // message rendering
   formatTime: (ts: number) => string;
   onDeleteTurn: (turnId: string) => void;
@@ -217,6 +221,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   onPinTurn,
   messageListRef,
   getTurnProjection,
+  onTurnVisible,
   listEndRef,
   subAgentCards,
   currentUser,
@@ -235,6 +240,14 @@ const ChatMain: React.FC<ChatMainProps> = ({
   clearRestoredMarker,
 }) => {
   const { styles } = useChatStyles();
+  // ── 主代理服务商余额徽标（多服务商计费展示适配器；非 DeepSeek 等未适配服务商不渲染）──
+  const billingAdapter = resolveBillingAdapter(selectedAgent?.preferredProviderId);
+  const {
+    balance: providerBalance,
+    currency: providerBalanceCurrency,
+    errorText: providerBalanceError,
+    refresh: refreshProviderBalance,
+  } = useProviderBalance(selectedAgent?.preferredProviderId, !!billingAdapter);
   // ── P2#9：Auto-review classifier 状态机（回退自动切手动）──
   const autoReview = useAutoReviewClassifier({
     enabled: permissionMode === 'auto',
@@ -523,6 +536,27 @@ const ChatMain: React.FC<ChatMainProps> = ({
           }
           extraActions={
             <>
+              {billingAdapter && (
+                <span
+                  aria-label="刷新服务商余额"
+                  onClick={refreshProviderBalance}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <ProviderBalanceIndicator
+                    provider={billingAdapter.displayName}
+                    balance={providerBalance}
+                    currency={currencySymbolFor(
+                      providerBalanceCurrency,
+                      billingAdapter,
+                    )}
+                    detail={providerBalanceError ?? '点击刷新'}
+                  />
+                </span>
+              )}
               <Tooltip title="搜索历史消息">
                 <Button
                   type="text"
@@ -596,6 +630,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                       onRerunTurn={onRerunTurn}
                       onPinTurn={onPinTurn}
                       getTurnProjection={getTurnProjection}
+                      onTurnVisible={onTurnVisible}
                       onPinnedQuote={handlePinnedQuote}
                       messageListRef={messageListRef}
                       listEndRef={listEndRef}

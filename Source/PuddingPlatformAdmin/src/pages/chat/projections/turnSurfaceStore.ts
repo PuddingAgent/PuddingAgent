@@ -59,11 +59,12 @@ export function processItemsToFlowEvents(
   items.forEach((item, index) => {
     const common = {
       eventId: item.id,
-      sequence: base + index,
-      // 冻结 DTO 要求 runId：明细项没有独立 run 语义，以 turnId 占位
-      //（projector 不消费 runId）。
-      runId: options.turnId,
-      turnId: options.turnId,
+      // 服务端 2026-08-24 起透传 canonical sequence/turnId/runId：优先用真实
+      // sequence（跨源合流的重放等价前提）；旧后端缺省时回退 base+index
+      // 保持相对顺序。
+      sequence: typeof item.sequence === 'number' ? item.sequence : base + index,
+      runId: item.runId ?? options.turnId,
+      turnId: item.turnId ?? options.turnId,
       occurredAt: item.timestamp,
     } as const;
     const toolCallId = item.toolCallId ?? item.id;
