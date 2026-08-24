@@ -120,6 +120,6 @@ public class HostLifecycleTests
         // Build returns WebApplication from WebApplicationBuilder
         Assert.Equal(typeof(WebApplicationBuilder), createBuilderMethod!.ReturnType);
         Assert.Equal(typeof(WebApplication), buildMethod!.ReturnType);
-        Assert.Equal(typeof(WebApplication), buildMethod.GetParameters()[0].ParameterType);
+        Assert.Equal(typeof(WebApplicationBuilder), buildMethod.GetParameters()[0].ParameterType);
     }
 }

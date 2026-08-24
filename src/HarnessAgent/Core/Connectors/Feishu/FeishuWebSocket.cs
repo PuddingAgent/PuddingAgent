@@ -37,6 +37,11 @@ public sealed class FeishuWebSocket : IDisposable
     private const string Domain = "https://open.feishu.cn";
     private const string UserAgent = "PuddingAgent/1.0 FeishuConnector/1.0";
 
+    // 端点发现走默认 HttpClient.Timeout=100s：外网黑洞（被墙/代理挂起）会把
+    // 连接器卡在 Starting/Faulted-retry 长达 100 秒。显式收紧到 15s。
+    private static readonly TimeSpan EndpointTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan SocketConnectTimeout = TimeSpan.FromSeconds(15);
+
     /// <summary>Async event handler; completion is acknowledged to Feishu.</summary>
     public event Func<FeishuEvent, Task>? OnEvent;
     /// <summary>Text-only convenience callback used by the manual harness.</summary>
@@ -50,7 +55,7 @@ public sealed class FeishuWebSocket : IDisposable
     public FeishuWebSocket(FeishuConfig config, HttpClient? http = null)
     {
         _config = config;
-        _http = http ?? new HttpClient();
+        _http = http ?? new HttpClient { Timeout = EndpointTimeout };
         _ownsHttp = http is null;
     }
 
@@ -73,7 +78,9 @@ public sealed class FeishuWebSocket : IDisposable
         var socket = new ClientWebSocket();
         try
         {
-            await socket.ConnectAsync(new Uri(wsUrl), ct);
+            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            connectCts.CancelAfter(SocketConnectTimeout);
+            await socket.ConnectAsync(new Uri(wsUrl), connectCts.Token);
         }
         catch
         {

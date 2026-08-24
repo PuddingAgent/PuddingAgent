@@ -64,7 +64,11 @@ public sealed class TurnOutputChunker
         }
         else
         {
-            // Non-delta events pass through immediately.
+            // 交错保序：非 delta 事件（工具调用/结果、step 等）先 flush 已缓冲的
+            // 正文/思考，保证「文本 → 工具 → 文本」的真实发生顺序进入 canonical
+            // sequence。否则跨轮文本会被合并成一个排在工具事件之后的分块，
+            // 交错时间线在持久层就丢失轮次边界。
+            FlushPendingContent(conversationId, workspaceId, turnId, commandId, runId, messageId, traceId);
             _batchedEvents.Add(MapEvent(evt, conversationId, workspaceId, turnId, commandId, runId, messageId, traceId));
             return Drain();
         }
