@@ -15,7 +15,15 @@ const { REACT_APP_ENV = 'dev' } = process.env;
  */
 const PUBLIC_PATH: string = '/admin/';
 
+// `max dev` 会把开发态产物（无 hash、无 index.html）写到磁盘输出目录。
+// 默认与生产共用 dist/ 会破坏 PuddingHostContent.props 的 dist→wwwroot/admin
+// 部署链：dist/index.html 消失 → Exists 条件失败不部署，且 MSBuild 增量清理
+// 会把已部署的 wwwroot/admin 文件删掉。dev 输出分流到 dist-dev/（gitignore）。
+const IS_DEV = process.env.NODE_ENV === 'development';
+const OUTPUT_PATH = IS_DEV ? 'dist-dev' : 'dist';
+
 export default defineConfig({
+  outputPath: OUTPUT_PATH,
   /**
    * @name 开启 hash 模式
    * @description 让 build 之后的产物包含 hash 后缀。通常用于增量发布和避免浏览器加载缓存。

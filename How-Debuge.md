@@ -599,6 +599,47 @@ pool execute
    effective_input_limit（日志 `Append retry`/`Trimmed outbound history`），
    说明软压缩未生效（检查 runtime.execution.json subAgents 段阈值）。
 
+### 6.12 Admin SPA 打不开/白屏：dist 被前端 dev server 重写 + MSBuild 增量清理
+
+症状：Core 直连的 `/admin/` 白屏（body 为空）、index.html 或 `umi.*.js` 404、
+`wwwroot/admin` 只剩空目录或文件残缺；浏览器控制台报 chunk 加载失败。
+常见于 dev-up 重启之后（尤其隔一次重启爆发），Desktop 与 dev 后端都可能命中。
+
+部署链（2026-08-24 确认）：
+
+1. `PuddingHost/Build/PuddingHostContent.props` 把
+   `PuddingPlatformAdmin/dist/**` 作为 Content 复制到输出目录
+   `wwwroot/admin/**`（`dotnet build` / publish 都会执行）。
+2. 该 Include 带 `Condition="Exists('dist\index.html')"`。
+3. umi/mako 的 `max dev`（dev-up 前端）启动时会把**开发态产物写到磁盘输出目录**：
+   无 hash 的 `umi.js`、`p__xxx-async.js`，且**没有 index.html**。
+4. 于是任何在此之后运行的 `dotnet build`：Exists 条件失败 → 零 Content 项 →
+   MSBuild 增量清理把**上次构建记录过的 `wwwroot/admin/**` 文件全部删除**
+   （手动拷入、从未被 MSBuild 记录的文件会幸存，形成半新半旧的残缺状态）。
+
+修复（已落地）：`config/config.ts` 按 `NODE_ENV` 分流 `outputPath`——
+dev 写 `dist-dev/`（已加入 .gitignore），生产构建写 `dist/`。
+注意该 umi 版本（4.6.48 + bundler-mako 0.11.10）不支持 `mako.writeToDisk`，
+不要尝试用该键关闭写盘（dev server 会直接 assert 退出）。
+
+诊断与恢复：
+
+1. `ls Source/PuddingPlatformAdmin/dist/index.html` 不存在 → dist 处于 dev 态。
+2. `cd Source/PuddingPlatformAdmin && pnpm run build` 恢复 dist 生产态。
+3. `dotnet build Source/PuddingAgent/PuddingAgent.csproj --no-restore` 重新部署
+   到 `wwwroot/admin`。
+4. 验证：`curl http://<core>/admin/` 应返回引用 `umi.<hash>.js` 的 index.html，
+   且 `/admin/umi.<hash>.js`、`/admin/scripts/root-redirect.js` 均 200。
+
+另外两个相关坑：
+
+- Development 环境下 StaticWebAssets loader 要求 `Source/PuddingAgent/wwwroot/`
+  目录存在（.gitignore 忽略了它，clone/clean 后会消失）。缺失时后端启动即崩：
+  `DirectoryNotFoundException: ...\Source\PuddingAgent\wwwroot\`。建一个空目录即可。
+- `/admin/*` 静态请求与 SPA fallback 实际映射到输出目录 `wwwroot/admin/`
+  （见 `PuddingWebApplicationExtensions.cs`），不是 `wwwroot/` 根；排查资源 404
+  时先看 `wwwroot/admin/` 下的实际文件。
+
 ## 7. 延迟问题的定位
 
 不要用“点击发送到看到回复”的总时间直接归因 LLM。应拆分：
