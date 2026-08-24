@@ -51,7 +51,10 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Controllers/Api/AuthApiController.cs` | 登录、JWT/Session 当前用户投影；默认头像使用 Web 自有 `/admin/assets/images/me.png`，不得回退到框架示例或第三方远程资源 |
+| `Controllers/Api/AuthApiController.cs` | 登录、JWT/Session 当前用户投影；`/api/currentUser` 异步读取 `AppUsers.Avatar`（空值回退自有 `/admin/assets/images/me.png`），刷新/重登后头像保持数据库最新值 |
+| `Controllers/Api/UserAvatarApiController.cs` | 头像唯一上传契约 `POST /api/users/{userId}/avatar`（multipart 字段 `file`，返回 `{ avatar }`）；上传自己需登录、为他人上传需 Admin（403）；统一 PNG/JPG/WebP、5 MiB 上限；`SaveForUserAsync` 复用落盘/写库/旧文件清理；`GET` 匿名查任意用户头像 |
+| `Controllers/Api/AppUserApiController.cs` | 用户管理 CRUD/密码/角色，收紧为 `[Authorize(Roles = "admin")]`；`AppUserDto` 携带 `Avatar` |
+| `Services/UserAvatarStorageService.cs` | 头像落盘 `wwwroot/user-avatars/`（userId 前缀防穿越、原子写、TryDelete 限根内）；允许 MIME 仅 PNG/JPEG/WebP（GIF 已移除） |
 
 ## 子代理 & 诊断
 

@@ -50,10 +50,10 @@ public class AuthApiController(IConfiguration config, IAppUserRepository appUser
         return Ok(new { status = "ok", type = "account", currentAuthority = authority, token });
     }
 
-    /// <summary>GET /api/currentUser — 优先读 JWT Claim，兼容 Session</summary>
+    /// <summary>GET /api/currentUser — 优先读 JWT Claim，兼容 Session；头像读取数据库中的最新值</summary>
     [AllowAnonymous]
     [HttpGet("currentUser")]
-    public IActionResult CurrentUser()
+    public async Task<IActionResult> CurrentUser(CancellationToken ct)
     {
         var userId    = User.FindFirstValue(ClaimTypes.NameIdentifier)
                        ?? HttpContext.Session.GetString("username");
@@ -73,13 +73,16 @@ public class AuthApiController(IConfiguration config, IAppUserRepository appUser
             });
         }
 
+        var user = await appUserRepo.FindByIdAsync(userId, ct);
+        var avatar = user?.Avatar;
+
         return Ok(new
         {
             success = true,
             data    = new
             {
                 name      = name ?? userId,
-                avatar    = "/admin/assets/images/me.png",
+                avatar    = string.IsNullOrEmpty(avatar) ? "/admin/assets/images/me.png" : avatar,
                 userid    = userId,
                 access    = authority ?? "user",
                 email     = email ?? $"{userId}@pudding.local",

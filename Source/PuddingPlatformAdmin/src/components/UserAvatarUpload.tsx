@@ -1,17 +1,17 @@
 ﻿// ── UserAvatarUpload：用户头像上传组件（Upload + 裁剪预览）────────
 //
-// 功能：
-// - 展示当前用户头像（currentUser.avatar，由 AdminLayout / UserMessageBubble 消费）
+// 受控组件：只负责“预览、裁剪、上传”，不读写全局 initialState。
+// - 头像来源由父组件通过 avatarUrl 传入
+// - 上传目标由 userId 指定：POST /api/users/{userId}/avatar
+//   （multipart 字段 file，返回 { avatar }）
+// - 上传成功后仅回调 onUploaded(newAvatarUrl)，是否同步顶栏由页面决定
 // - antd Upload 选择本地图片（校验类型与大小）
 // - Modal 内提供正方形裁剪预览（缩放 + 拖动），确认后按 1:1 输出
-// - 上传至 POST /api/users/me/avatar（multipart/form-data，字段名 avatar），返回 { avatarUrl }
-// - 成功后同步更新全局 currentUser.avatar，立即反映到顶栏与聊天气泡
 //
 // 不引入额外裁剪库：裁剪几何为纯函数（computeCropSourceRect），
 // 输出阶段用 Canvas 渲染，尺寸 OUTPUT_SIZE=512px。
 
 import { CameraOutlined, UserOutlined } from '@ant-design/icons';
-import { useModel } from '@umijs/max';
 import type { UploadProps } from 'antd';
 import {
   Avatar,
@@ -24,15 +24,15 @@ import {
   Upload,
 } from 'antd';
 import React, { useCallback, useRef, useState } from 'react';
-import { updateCurrentUserAvatar } from '@/services/platform/api';
+import { updateUserAvatar } from '@/services/platform/api';
 
 export interface UserAvatarUploadProps {
+  /** 目标用户 ID（上传地址 POST /api/users/{userId}/avatar） */
+  userId: string;
+  /** 受控头像 URL（由父组件提供，上传成功后由父组件更新） */
+  avatarUrl?: string;
   /** 头像展示尺寸（px），默认 96 */
   size?: number;
-  /** 上传地址，默认 /api/user-avatar */
-  uploadUrl?: string;
-  /** multipart 字段名，默认 file */
-  fieldName?: string;
   /** 最大文件大小（MB），默认 5 */
   maxSizeMb?: number;
   /** 上传成功回调（携带新头像 URL） */
@@ -103,15 +103,14 @@ export function validateAvatarFile(
 }
 
 const UserAvatarUpload: React.FC<UserAvatarUploadProps> = ({
+  userId,
+  avatarUrl,
   size = 96,
-  uploadUrl,
-  fieldName = 'file',
   maxSizeMb = DEFAULT_MAX_MB,
   onUploaded,
   disabled = false,
 }) => {
-  const { initialState, setInitialState } = useModel('@@initialState');
-  const currentAvatar = initialState?.currentUser?.avatar;
+  const currentAvatar = avatarUrl;
 
   const [cropOpen, setCropOpen] = useState(false);
   const [sourceUrl, setSourceUrl] = useState<string>();
@@ -288,21 +287,15 @@ const UserAvatarUpload: React.FC<UserAvatarUploadProps> = ({
       });
 
       const formData = new FormData();
-      formData.append(fieldName, file);
-      const result = await updateCurrentUserAvatar(formData, uploadUrl);
-      const avatarUrl = result.avatarUrl ?? result.avatar;
-      if (!avatarUrl) {
+      formData.append('file', file);
+      const result = await updateUserAvatar(userId, formData);
+      const newAvatarUrl = result.avatar;
+      if (!newAvatarUrl) {
         throw new Error('上传成功但响应缺少头像地址');
       }
 
-      // 同步全局 currentUser，AdminLayout 顶栏与聊天气泡即时生效
-      setInitialState((s) =>
-        s?.currentUser
-          ? { ...s, currentUser: { ...s.currentUser, avatar: avatarUrl } }
-          : s,
-      );
       message.success('头像已更新');
-      onUploaded?.(avatarUrl);
+      onUploaded?.(newAvatarUrl);
       resetCrop();
     } catch (error) {
       message.error(error instanceof Error ? error.message : '头像上传失败');
@@ -380,7 +373,7 @@ const UserAvatarUpload: React.FC<UserAvatarUploadProps> = ({
         open={cropOpen}
         onCancel={resetCrop}
         onOk={handleConfirm}
-        okText="保存"
+        okText="确认上传"
         cancelText="取消"
         confirmLoading={uploading}
         okButtonProps={{ disabled: !naturalSize }}

@@ -113,7 +113,6 @@ import WorkspaceAgentSettingsDrawer, {
   type WorkspaceAgentFormValues,
 } from './WorkspaceAgentSettingsDrawer';
 import { TaskBoardModal } from '@/pages/workspace-tasks';
-import UserAvatarUpload from '@/components/UserAvatarUpload';
 
 const { Text } = Typography;
 
@@ -1499,29 +1498,6 @@ const WorkspaceDetailPage: React.FC = () => {
             label: '概览',
             children: (
               <>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 12,
-                    flexWrap: 'wrap',
-                    background: token.colorBgContainer,
-                    padding: '12px 16px',
-                    borderRadius: token.borderRadiusLG,
-                    marginBottom: 16,
-                  }}
-                >
-                  <div>
-                    <Text strong>我的头像</Text>
-                    <div style={{ marginTop: 4 }}>
-                      <Text type="secondary">
-                        头像会显示在顶栏与聊天消息中，支持裁剪预览。
-                      </Text>
-                    </div>
-                  </div>
-                  <UserAvatarUpload size={64} />
-                </div>
                 <Descriptions bordered column={2} style={{ background: token.colorBgContainer, padding: 16 }}>
                 <Descriptions.Item label="场景 ID">{workspace.workspaceId}</Descriptions.Item>
                 <Descriptions.Item label="状态">{statusBadge}</Descriptions.Item>

@@ -26,7 +26,6 @@ public sealed class UserAvatarStorageService
         "image/png",
         "image/jpeg",
         "image/webp",
-        "image/gif",
     };
 
     private static readonly Dictionary<string, string> MimeToExtension = new(StringComparer.OrdinalIgnoreCase)
@@ -34,7 +33,6 @@ public sealed class UserAvatarStorageService
         ["image/png"] = ".png",
         ["image/jpeg"] = ".jpg",
         ["image/webp"] = ".webp",
-        ["image/gif"] = ".gif",
     };
 
     private readonly IWebHostEnvironment _env;
@@ -203,7 +201,7 @@ public sealed class UserAvatarStorageService
 /// <summary>上传的图片 MIME 不在允许列表时抛出。</summary>
 public sealed class UnsupportedUserAvatarMediaTypeException(string? mimeType)
     : InvalidOperationException(
-        $"不支持的用户头像 MIME 类型 '{mimeType}'。允许：image/png、image/jpeg、image/webp、image/gif。")
+        $"不支持的用户头像 MIME 类型 '{mimeType}'。允许：image/png、image/jpeg、image/webp。")
 {
     public string? MimeType { get; } = mimeType;
 }

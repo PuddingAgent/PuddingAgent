@@ -11,31 +11,77 @@ using PuddingPlatform.Services;
 namespace PuddingPlatform.Controllers.Api;
 
 /// <summary>
-/// 用户头像上传 API。
-/// 当前登录用户上传自己的头像（multipart/form-data），文件落盘到
-/// wwwroot/user-avatars/，并将访问 URL 写回 AppUserEntity.Avatar 字段。
+/// 用户头像上传 API（唯一契约：POST /api/users/{userId}/avatar）。
+/// 上传自己的头像需要登录；为目标用户上传需要 Admin 角色。
+/// multipart 字段固定为 file，文件落盘到 wwwroot/user-avatars/，
+/// 并将访问 URL 写回 AppUserEntity.Avatar 字段。
 /// </summary>
 [Authorize]
 [ApiController]
-[Route("api/user-avatar")]
+[Route("api/users/{userId}/avatar")]
 public sealed class UserAvatarApiController(
     PlatformDbContext db,
     UserAvatarStorageService storage,
     ILogger<UserAvatarApiController> logger) : ControllerBase
 {
-    /// <summary>上传单张头像并写库。</summary>
+    private const long MaxAvatarBytes = 5 * 1024 * 1024; // 5 MiB
+
+    /// <summary>为目标用户上传头像并写库（multipart 字段：file）。</summary>
     [HttpPost]
-    [RequestSizeLimit(5_000_000)] // 5 MB
-    public async Task<ActionResult<UserAvatarResponse>> Upload(
+    [RequestSizeLimit(MaxAvatarBytes)]
+    public async Task<IActionResult> Upload(
+        string userId,
         [FromForm] IFormFile file,
         CancellationToken ct)
     {
-        var userId = ResolveUserId();
-        if (string.IsNullOrEmpty(userId))
+        if (string.IsNullOrWhiteSpace(userId))
+            return BadRequest(new { message = "userId 不能为空" });
+
+        var currentUserId = ResolveUserId();
+        if (string.IsNullOrEmpty(currentUserId))
             return Unauthorized(new { message = "未找到登录身份，无法上传头像" });
 
+        // 只允许上传自己的头像，或由 Admin 为任意用户上传
+        if (!string.Equals(userId, currentUserId, StringComparison.Ordinal)
+            && !User.IsInRole("admin"))
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "只有管理员可以为其他用户上传头像" });
+
+        return await SaveForUserAsync(userId, file, ct);
+    }
+
+    /// <summary>获取任意用户的头像 URL（无需登录，用于在 UI 渲染他人头像）。</summary>
+    [AllowAnonymous]
+    [HttpGet]
+    public async Task<IActionResult> Get(string userId, CancellationToken ct)
+    {
+        var user = await db.AppUsers
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.UserId == userId, ct);
+        if (user is null)
+            return NotFound(new { message = $"用户 '{userId}' 不存在" });
+
+        return Ok(new UserAvatarResponse(
+            UserId: user.UserId,
+            Avatar: user.Avatar,
+            FileName: string.Empty,
+            ContentType: string.Empty,
+            Length: 0,
+            UpdatedAt: user.UpdatedAt));
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 校验并保存头像：落盘 → 写库 → 清理旧文件。
+    /// 供 POST 上传动作复用，错误以 ActionResult 形式返回。
+    /// </summary>
+    private async Task<IActionResult> SaveForUserAsync(
+        string userId, IFormFile? file, CancellationToken ct)
+    {
         if (file is null || file.Length <= 0)
             return BadRequest(new { message = "头像文件不能为空" });
+        if (file.Length > MaxAvatarBytes)
+            return BadRequest(new { message = $"头像文件不能超过 5 MiB" });
 
         AppUserEntity? user;
         try
@@ -56,12 +102,7 @@ public sealed class UserAvatarApiController(
         try
         {
             await using var stream = file.OpenReadStream();
-            saved = await storage.SaveAsync(
-                userId,
-                stream,
-                file.ContentType,
-                file.Length,
-                ct);
+            saved = await storage.SaveAsync(userId, stream, file.ContentType, file.Length, ct);
         }
         catch (UnsupportedUserAvatarMediaTypeException ex)
         {
@@ -74,7 +115,7 @@ public sealed class UserAvatarApiController(
                 StatusCodes.Status415UnsupportedMediaType,
                 new
                 {
-                    message = "不支持的图片类型，仅接受 image/png、image/jpeg、image/webp、image/gif。",
+                    message = "不支持的图片类型，仅接受 image/png、image/jpeg、image/webp。",
                     receivedMimeType = ex.MimeType,
                 });
         }
@@ -104,51 +145,6 @@ public sealed class UserAvatarApiController(
             Length: saved.Length,
             UpdatedAt: user.UpdatedAt));
     }
-
-    /// <summary>获取当前登录用户的头像 URL。</summary>
-    [HttpGet("me")]
-    public async Task<ActionResult<UserAvatarResponse>> GetMine(CancellationToken ct)
-    {
-        var userId = ResolveUserId();
-        if (string.IsNullOrEmpty(userId))
-            return Unauthorized(new { message = "未找到登录身份" });
-
-        var user = await db.AppUsers
-            .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.UserId == userId, ct);
-        if (user is null)
-            return NotFound(new { message = $"用户 '{userId}' 不存在" });
-
-        return Ok(new UserAvatarResponse(
-            UserId: user.UserId,
-            Avatar: user.Avatar,
-            FileName: string.Empty,
-            ContentType: string.Empty,
-            Length: 0,
-            UpdatedAt: user.UpdatedAt));
-    }
-
-    /// <summary>获取任意用户的头像 URL（无需 Admin 权限，用于在 UI 渲染他人头像）。</summary>
-    [AllowAnonymous]
-    [HttpGet("{userId}")]
-    public async Task<ActionResult<UserAvatarResponse>> Get(string userId, CancellationToken ct)
-    {
-        var user = await db.AppUsers
-            .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.UserId == userId, ct);
-        if (user is null)
-            return NotFound(new { message = $"用户 '{userId}' 不存在" });
-
-        return Ok(new UserAvatarResponse(
-            UserId: user.UserId,
-            Avatar: user.Avatar,
-            FileName: string.Empty,
-            ContentType: string.Empty,
-            Length: 0,
-            UpdatedAt: user.UpdatedAt));
-    }
-
-    // ── Helpers ────────────────────────────────────────────────────────
 
     /// <summary>
     /// 优先从 JWT Claim(ClaimTypes.NameIdentifier) 获取当前用户 ID，

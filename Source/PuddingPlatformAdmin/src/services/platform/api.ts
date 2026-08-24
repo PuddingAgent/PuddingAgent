@@ -1265,6 +1265,7 @@ export interface AppUserDto {
   isEnabled: boolean;
   roleIds: string[];
   createdAt: string;
+  avatar?: string;
 }
 
 export interface CreateUserRequest {
@@ -1419,22 +1420,22 @@ export async function deleteUser(userId: string): Promise<void> {
   return request(`/api/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
 }
 
-export interface UpdateCurrentUserAvatarResult {
-  avatarUrl?: string;
+export interface UserAvatarUploadResult {
+  userId?: string;
   avatar?: string;
   [key: string]: unknown;
 }
 
 /**
- * 上传当前用户头像（multipart/form-data）。
- * 契约地址：POST /api/users/me/avatar，字段名 avatar，返回 { avatarUrl }；
- * 也兼容并行开发的 UserAvatarApi（/api/user-avatar，字段名 file，返回 { avatar }）。
+ * 为指定用户上传头像（multipart/form-data，字段名 file）。
+ * 唯一契约地址：POST /api/users/{userId}/avatar，返回 { avatar }（新头像 URL）。
+ * 上传自己需要登录；为其他用户上传需要 Admin 权限（否则 403）。
  */
-export async function updateCurrentUserAvatar(
+export async function updateUserAvatar(
+  userId: string,
   formData: FormData,
-  url = '/api/users/me/avatar',
-): Promise<UpdateCurrentUserAvatarResult> {
-  return request(url, {
+): Promise<UserAvatarUploadResult> {
+  return request(`/api/users/${encodeURIComponent(userId)}/avatar`, {
     method: 'POST',
     data: formData,
     requestType: 'form',

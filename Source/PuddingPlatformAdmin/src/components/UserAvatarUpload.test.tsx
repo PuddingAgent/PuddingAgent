@@ -1,10 +1,30 @@
-﻿// ── UserAvatarUpload 纯逻辑测试：裁剪几何 + 文件校验 ─────────────
+﻿// ── UserAvatarUpload 纯逻辑测试：裁剪几何 + 文件校验 + 受控行为 ──
 
+import { render, screen } from '@testing-library/react';
+import * as React from 'react';
 import {
   CROP_VIEWPORT,
   computeCropSourceRect,
   validateAvatarFile,
+  default as UserAvatarUpload,
 } from './UserAvatarUpload';
+
+describe('UserAvatarUpload（受控组件）', () => {
+  it('renders the avatar from the controlled avatarUrl prop', () => {
+    render(
+      <UserAvatarUpload userId="alice" avatarUrl="/user-avatars/a.png" />,
+    );
+    const img = screen
+      .getAllByRole('img')
+      .find((el) => (el as HTMLImageElement).src.includes('/user-avatars/'));
+    expect((img as HTMLImageElement).src).toContain('/user-avatars/a.png');
+  });
+
+  it('exposes a 更换头像 button targeting the given userId', () => {
+    render(<UserAvatarUpload userId="alice" />);
+    expect(screen.getByRole('button', { name: /更换头像/ })).toBeTruthy();
+  });
+});
 
 describe('validateAvatarFile', () => {
   it('accepts PNG / JPG / WebP within the size limit', () => {

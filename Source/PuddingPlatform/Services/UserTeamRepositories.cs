@@ -88,6 +88,7 @@ public sealed class AppUserRepository : IAppUserRepository
         UserType = e.UserType == UserType.Admin ? "admin" : "simple",
         IsEnabled = e.IsEnabled,
         DisplayName = e.DisplayName,
+        Avatar = e.Avatar,
         CreatedAt = e.CreatedAt,
         UpdatedAt = e.UpdatedAt,
     };

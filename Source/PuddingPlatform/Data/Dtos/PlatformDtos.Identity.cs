@@ -15,7 +15,8 @@ public record AppUserDto(
     string UserType,
     bool IsEnabled,
     List<string> RoleIds,
-    DateTimeOffset CreatedAt
+    DateTimeOffset CreatedAt,
+    string? Avatar = null
 );
 
 public record CreateUserRequest(

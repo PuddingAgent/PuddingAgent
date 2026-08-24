@@ -12,6 +12,7 @@ public sealed class AppUserRow
     public string? PasswordHash { get; init; }
     public string UserType { get; init; } = string.Empty;
     public string? DisplayName { get; init; }
+    public string? Avatar { get; init; }
     public bool IsEnabled { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }

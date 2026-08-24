@@ -9,8 +9,8 @@ using PuddingPlatform.Utils;
 
 namespace PuddingPlatform.Controllers.Api;
 
-/// <summary>用户管理 API — CRUD、密码、角色分配</summary>
-[Authorize]
+/// <summary>用户管理 API — CRUD、密码、角色分配（仅 Admin）</summary>
+[Authorize(Roles = "admin")]
 [ApiController]
 [Route("api/users")]
 public class AppUserApiController(PlatformDbContext db) : ControllerBase
@@ -169,6 +169,7 @@ public class AppUserApiController(PlatformDbContext db) : ControllerBase
         u.UserType.ToString(),
         u.IsEnabled,
         u.UserRoles.Select(ur => ur.Role?.RoleId ?? ur.RoleEntityId.ToString()).ToList(),
-        u.CreatedAt
+        u.CreatedAt,
+        u.Avatar
     );
 }

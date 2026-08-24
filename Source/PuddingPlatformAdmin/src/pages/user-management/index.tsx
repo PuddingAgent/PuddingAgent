@@ -22,6 +22,8 @@ import {
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, KeyOutlined, SafetyOutlined } from '@ant-design/icons';
 import React, { useRef, useState, useEffect } from 'react';
+import { useModel } from '@umijs/max';
+import UserAvatarUpload from '@/components/UserAvatarUpload';
 import {
   listUsers,
   createUser,
@@ -46,6 +48,7 @@ const USER_TYPE_OPTIONS = [
 export default function UserManagementPage() {
   const actionRef = useRef<ActionType>(null);
   const [roles, setRoles] = useState<AppRoleDto[]>([]);
+  const { initialState, setInitialState } = useModel('@@initialState');
 
   // 新建/编辑用户
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -227,6 +230,22 @@ export default function UserManagementPage() {
     }
   }
 
+  // 头像为“独立即时保存项”：裁剪确认后立即上传，不参与抽屉“保存/取消”
+  function handleAvatarUploaded(newAvatarUrl: string) {
+    if (editingUser) {
+      setEditingUser({ ...editingUser, avatar: newAvatarUrl });
+    }
+    // 只有编辑自己时才同步顶栏；编辑其他用户不得改动当前管理员状态
+    if (initialState?.currentUser?.userid === editingUser?.userId) {
+      setInitialState((s) =>
+        s?.currentUser
+          ? { ...s, currentUser: { ...s.currentUser, avatar: newAvatarUrl } }
+          : s,
+      );
+    }
+    actionRef.current?.reload();
+  }
+
   return (
     <PageContainer title="用户管理" subTitle="管理平台用户账号与权限角色分配">
       <ProTable<AppUserDto>
@@ -262,6 +281,19 @@ export default function UserManagementPage() {
         }
       >
         <ProForm form={drawerForm} submitter={false} layout="vertical">
+          {editingUser && (
+            <Form.Item label="头像">
+              <UserAvatarUpload
+                userId={editingUser.userId}
+                avatarUrl={editingUser.avatar}
+                size={72}
+                onUploaded={handleAvatarUploaded}
+              />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                头像修改后立即生效，不随“保存/取消”回滚。
+              </Text>
+            </Form.Item>
+          )}
           {!editingUser && (
             <>
               <ProFormText
