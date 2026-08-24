@@ -1,4 +1,4 @@
-﻿# PuddingPlatformAdmin CodeMAP
+# PuddingPlatformAdmin CodeMAP
 
 > React 管理前端 | Ant Design Pro v6 · React 19 · UmiJS
 
@@ -138,7 +138,7 @@
 | 文件 | 职责与性能边界 |
 |------|----------------|
 | `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；相同状态轮询必须短路，不重复写缓存或通知订阅者 |
-| `src/pages/chat/components/MessageList.tsx` | 将历史消息与 active run 快照投影为稳定消息行；active run 无法匹配现有 Turn 时追加到当前消息流末端；直接渲染 `MessageRow`，并只给当前主代理行附加有界委派摘要；`mergeActiveRunAssistant` 带终态守卫（本地 SSE 终态后轮询快照不得把 status/isStreaming 拉回运行态）、`mergeProjectedMessageIntoTurns` 同 messageId 原地更新（刷新不得追加第二张卡片） |
+| `src/pages/chat/components/MessageList.tsx` | 将历史消息与 active run 快照投影为稳定消息行；active run 无法匹配现有 Turn 时追加到当前消息流末端；直接渲染 `MessageRow`，并只给当前主代理行附加有界委派摘要；`mergeActiveRunAssistant` 带终态守卫（本地 SSE 终态后轮询快照不得把 status/isStreaming 拉回运行态）、`mergeProjectedMessageIntoTurns` 同 messageId 原地更新（刷新不得追加第二张卡片）；三源去重（本地 SSE / 投影 / activeRun）：`hasProjectedUserTurn` 按 turnId 关联（POST 确认后本地与服务端 turnId 一致）、`mergeLocalTurnsAwaitingProjection` 覆盖时保留本地 userMessage.id（供 commandClientId 匹配）、`findActiveRunPendingTurnIndex` 不再因本地已有正文而拒绝匹配（2026-08-24 修复同回复三卡） |
 | `src/pages/chat/styles/messageStyleContext.tsx` | 消息树样式边界；`MessageList` 注册一次聚合 Chat 样式并通过 Context 共享，消息叶子不得重复调用 `useChatStyles` |
 | `src/pages/chat/components/MessageRow.tsx` | 单消息渲染与语义 memo 边界；投影重建等价对象时保持历史行不提交，正文或过程事件变化仍立即更新 |
 | `src/pages/chat/components/MessageProcessSummary.tsx` | 思考/工具过程摘要；折叠时不得构建完整 rounds、trace chips 和展示项 |
@@ -168,6 +168,16 @@
 | `src/pages/workspace/index.tsx` | 工作空间列表；进入操作直接打开带 `workspaceId` 的 Chat，新建后进入管理设置，不再加载 2D Studio |
 | `src/utils/workspaceNavigation.ts` | 工作空间入口在最近访问或唯一工作空间时解析到 Chat；不再生成 Studio 深链 |
 | `public/assets/` | 只保留 Web 运行时实际需要的静态资源；`images/me.png` 是当前用户的 Pudding 默认头像，Agent 精灵素材已迁出到 `../PuddingDesktop/Assets/AgentSprites/` |
+
+## 用户头像
+
+| 文件 | 职责与边界 |
+|------|------------|
+| `src/components/UserAvatarUpload.tsx` | 受控头像上传组件（Upload + 正方形裁剪 Canvas 512px）；props 为 `userId`/`avatarUrl`/`onUploaded`，不读写 `@@initialState`；上传走 `updateUserAvatar`（`POST /api/users/{userId}/avatar`，字段 `file`，仅 PNG/JPG/WebP ≤5MiB），成功只回调，是否同步顶栏由页面决定 |
+| `src/pages/user-management/index.tsx` | 编辑抽屉顶部头像区域（仅编辑态显示）；头像为“独立即时保存项”（确认即上传，不随保存/取消回滚）；`onUploaded` 更新 `editingUser.avatar` 并刷新列表，仅当被编辑用户是当前登录用户时同步全局 `currentUser.avatar` |
+| `src/pages/workspace/[id]/index.tsx` | 工作空间概览已移除“我的头像”区块；头像入口只在用户管理编辑抽屉 |
+
+后端契约见 `PuddingPlatform/Controllers/Api/UserAvatarApiController.cs`：`POST /api/users/{userId}/avatar`（为自己上传需登录，为他人上传需 Admin）；`AppUserDto.Avatar` 携带现有头像；`/api/currentUser` 从 `AppUsers.Avatar` 投影，空值回退 `/admin/assets/images/me.png`。
 
 后端对应入口：`PuddingPlatform/Services/AgentChat/AgentConversationProjectionService.cs` 首屏只返回最近 20 条消息；active run 返回最近 64 条可见过程明细，同时用 `processSummary` 保留全量计数。`PuddingPlatform/Controllers/Api/SessionEventsController.cs` 的 bootstrap 子代理事件快照上限为 500 条。
 
