@@ -34,7 +34,20 @@ public sealed record AgentRunView(
 public sealed record AgentOutputSnapshot(
     string Markdown,
     IReadOnlyList<ProcessSummaryItem> ProcessItems,
-    ConversationProcessSummary? ProcessSummary = null);
+    ConversationProcessSummary? ProcessSummary = null,
+    TurnEventWindow? Window = null);
+
+/// <summary>
+/// Turn 事件窗口边界（AgentTurnCard 重构 2026-08-25）：快照/明细返回的事件
+/// 集合不再是无边界信息的一页——前端据此判断截断（HasMoreBefore）并对齐
+/// canonical sequence 游标。
+/// </summary>
+public sealed record TurnEventWindow(
+    string TurnId,
+    long ThroughSequence,
+    long MinSequence,
+    long MaxSequence,
+    bool HasMoreBefore);
 
 /// <summary>Compact process item shown through progressive disclosure in chat UI.</summary>
 public sealed record ProcessSummaryItem(
@@ -43,6 +56,8 @@ public sealed record ProcessSummaryItem(
     string Status,
     string Text,
     DateTimeOffset Timestamp,
+    /// <summary>Canonical event sequence（2026-08-25 硬切必填：前端不再合成顺序）。</summary>
+    long Sequence,
     string? Name = null,
     string? Arguments = null,
     string? Output = null,
@@ -50,7 +65,6 @@ public sealed record ProcessSummaryItem(
     string? Message = null,
     string? ToolCallId = null,
     string? DelegationRunId = null,
-    long? Sequence = null,
     string? TurnId = null,
     string? RunId = null);
 
@@ -71,7 +85,8 @@ public sealed record ConversationProcessSummary(
 public sealed record MessageProcessDetailsView(
     string MessageId,
     string? RunId,
-    IReadOnlyList<ProcessSummaryItem> ProcessItems);
+    IReadOnlyList<ProcessSummaryItem> ProcessItems,
+    TurnEventWindow? Window = null);
 
 /// <summary>Renderable conversation projection for one Agent main session.</summary>
 public sealed record AgentConversationView(

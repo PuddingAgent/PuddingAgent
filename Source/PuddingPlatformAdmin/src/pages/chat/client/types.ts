@@ -42,12 +42,14 @@ export interface ProcessSummaryItem {
   message?: string | null;
   /**
    * 委派节点跨事件分组键（subagent 子 run id 或 sub_agent_id）。
-   * 服务端 2026-08-24 起对 kind=delegation 提供；旧后端缺省。
    */
   delegationRunId?: string | null;
-  /** canonical 事件 sequence（服务端 2026-08-24 起透传；旧后端缺省）。 */
-  sequence?: number | null;
-  /** canonical turnId / runId 透传（跨源合流别名归并用；旧后端缺省）。 */
+  /**
+   * canonical 事件 sequence（服务端 2026-08-25 硬切为必填）。前端不得
+   * 用数组下标或本地计数器补造，否则正文与行为节点无法跨来源精确交错。
+   */
+  sequence: number;
+  /** canonical turnId / runId 透传（跨源合流别名归并用）。 */
   turnId?: string | null;
   runId?: string | null;
 }
@@ -67,12 +69,25 @@ export interface MessageProcessDetailsView {
   messageId: string;
   runId?: string | null;
   processItems: ProcessSummaryItem[];
+  /** 事件窗口边界（全量明细 hasMoreBefore=false；服务端 2026-08-25 起）。 */
+  window?: TurnEventWindow | null;
+}
+
+/** Turn 事件窗口边界：快照截断（hasMoreBefore）与 sequence 游标对齐。 */
+export interface TurnEventWindow {
+  turnId: string;
+  throughSequence: number;
+  minSequence: number;
+  maxSequence: number;
+  hasMoreBefore: boolean;
 }
 
 export interface AgentOutputSnapshot {
   markdown: string;
   processItems: ProcessSummaryItem[];
   processSummary?: ConversationProcessSummary | null;
+  /** 活动快照窗口：64 条只是最近活动，更早轨迹由完成态明细水合恢复。 */
+  window?: TurnEventWindow | null;
 }
 
 export interface AgentRunView {

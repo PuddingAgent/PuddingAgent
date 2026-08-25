@@ -28,15 +28,20 @@ export interface ToolCallTreeProps {
   nodes: ToolNode[];
 }
 
-/** 递归分支：单节点行 +（有 children 时）缩进子列表（ExecutionFlowTimeline 交错复用）。 */
-export const ToolCallTreeBranch: React.FC<{ node: ToolNode }> = ({ node }) => {
+/** 递归分支：单节点行 +（有 children 时）缩进子列表（TurnContentStream 交错复用）。 */
+export const ToolCallTreeBranch: React.FC<{
+  node: ToolNode;
+  /** 受控展开（仅根行；子行内部自管）。 */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
+}> = ({ node, expanded, onExpandedChange }) => {
   const { styles } = useToolCallStyles();
   const visibleChildren = node.children.filter(
     (child) => !isPlaceholderVoid(child),
   );
   return (
     <div className={styles.treeBranch}>
-      <ToolCallRow node={node} />
+      <ToolCallRow node={node} expanded={expanded} onExpandedChange={onExpandedChange} />
       {visibleChildren.length > 0 && (
         <div className={styles.treeChildren} data-testid="toolcall-tree-children">
           {visibleChildren.map((child) => (
@@ -74,7 +79,7 @@ interface PairResult {
  * 缺失 id 与不同 id 均不配对；孤儿 tool_result 不进行）。
  * 返回按 call 输入顺序排列的配对结果。
  */
-export const pairToolCallItems = (items: TimelineItem[]): PairResult[] => {
+export const pairToolCallItems = (items: readonly TimelineItem[]): PairResult[] => {
   const calls: TimelineItem[] = [];
   const results: TimelineItem[] = [];
   for (const item of items) {
@@ -116,7 +121,7 @@ const deriveToolState = (
  * 仅 tool_call 条目生成节点；thinking/subagent_* 不进入（由其他组件呈现）。
  */
 export const buildToolNodesFromProcessItems = (
-  items: TimelineItem[],
+  items: readonly TimelineItem[],
 ): ToolNode[] => {
   const pairs = pairToolCallItems(items);
   return pairs.map(({ call, result }, index) => {
@@ -152,7 +157,7 @@ export const buildToolNodesFromProcessItems = (
  * 返回根节点列表（顶层调用按输入顺序）。
  */
 export const buildToolTreeFromProcessItems = (
-  items: TimelineItem[],
+  items: readonly TimelineItem[],
 ): ToolNode[] => {
   const nodes = buildToolNodesFromProcessItems(items);
   const byCallId = new Map<string, ToolNode>();

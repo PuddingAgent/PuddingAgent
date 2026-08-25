@@ -49,6 +49,19 @@
 | `src/pages/llm-resource-pool/providerTemplates.ts` | Provider 模板及模型级协议默认值；OpenCode Go 模板含同一 Provider 下三种协议的五个模型 |
 | `src/services/platform/api.ts` | Provider DTO 不含协议；Model DTO/Upsert 必须携带协议 |
 
+## 主代理服务商余额徽标（多服务商计费展示适配器，2026-08-24）
+
+| 文件 | 职责与边界 |
+|------|------------|
+| `src/pages/chat/utils/providerBilling.ts` | 展示适配器注册表 `{id,match,displayName,fallbackCurrencySymbol}` + `resolveBillingAdapter`/`currencySymbolFor`（CNY→¥/USD→$）；providerId 未命中不渲染徽标；新服务商在此加一项即可 |
+| `src/pages/chat/hooks/useProviderBalance.ts` | 余额拉取：providerId 变化即取 + 5min 低频轮询（`usePollingLoader` 页面隐藏自动暂停）+ 手动 `refresh`；任何失败静默降级为 `balance=undefined` + `errorText`，不抛错 |
+| `src/pages/chat/components/ProviderBalanceIndicator.tsx` | 品牌图标（DeepSeek/Mimo 内联 SVG）+ `¥xx.xx` 徽标；`detail` prop 进 Tooltip 第二行（错误原因/刷新提示） |
+| `src/pages/chat/components/GoalBanner.tsx` + `hooks/useGoal.ts` | ADR-074 G1 Goal 状态条：服务端投影（GET /api/v1/conversations/{id}/goal）驱动 objective/phase/iteration 与 pause/resume/cancel；终态隐藏控件；`api.ts` 含 `getConversationGoal`/`executeGoalCommand`；CommandPalette 有 /goal 提示；5 项 jest 通过 |
+| `src/pages/chat/components/ChatMain.tsx` | 挂载点：头部 `extraActions` 首位，`selectedAgent.preferredProviderId` 命中适配器才渲染；点击徽标手动刷新 |
+| `src/services/platform/api.ts` | `getLlmProviderBalance` → `GET /api/llm/providers/{id}/balance`；`LlmProviderBalanceDto`/`LlmBalanceInfoDto` 类型 |
+
+后端查询适配器注册表（`ILlmBalanceProvider`/`DeepSeekLlmBalanceProvider`）见 `PuddingPlatform/code_map.md` 提供商配置节；完整设计与扩展步骤见 `Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md`。
+
 ## 路由与壳层加载边界
 
 | 文件 | 职责与加载边界 |
@@ -97,7 +110,7 @@
 | `src/pages/chat/components/MarkdownBlock.tsx` | `preprocessMarkdown` 只做逐行 `` `` ``→``` 归一；历史「管道行收集 + 标题拆 \|」hack 会破坏 GFM 表格（分隔行与正文合并/空行被吞→整表降级为 `<p>` 原文），已删除 |
 | `src/pages/chat/hooks/useTypewriterStreaming.ts` | `findStableMarkdownBoundary`（已导出）表格感知：前导 `\|` 识别（不要求尾管道）、分隔行到达才允许整表提交、半截表头滞留 live 段、表格 run 中间不提交 |
 | `src/pages/chat/components/MessageItem.tsx` | 流式尾段含块级/强调语法（`\|`、反引号、`#`、列表、`>*_~`、链接）时走 ReactMarkdown 渲染（不再以纯文本 span 显示原始管道/星号）；纯文本尾段保留打字机 span + 墨迹光标（零解析路径） |
-| `src/pages/chat/components/AgentMessageBubble.tsx` | 行序 TurnStatus → ExecutionFlowTimeline（交错，含中间文本段内联）→ ModelRetryRow → 正文（分段启用时只承载尾段文本，`key=尾段key` 段切换 remount 打字机）→ 错误行 → actions/StatsLine；`segmentRendering` 一致性守卫：投影分段并集必须覆盖 answerMarkdown（相等/前缀/空），否则回退整块正文（防 envelope 缺事件漏段与同段双渲染）；TurnStatus 有 canonical 投影时直接消费 `deriveTurnStatusFromProjection`（最后节点 kind 派生阶段），无投影回退 facts 派生（delegating > executing > answering > reasoning > connecting）；turn 终态渲染 TurnStatsLine（段数/工具数/总时长/tokens，来自投影 + usage，刷新不归零） |
+| `src/pages/chat/components/AgentMessageBubble.tsx` | 行序 TurnStatus → TurnContentStream（正文 ⇄ 行为组单一内容流）→ ModelRetryRow → 错误行 → actions/StatsLine；投影一旦含 TextBlock 就不再渲染第二个 answer bubble，`answerMarkdown` 仅作复制/TTS/无 canonical 正文节点时的旧记录兜底；TurnStatus 有 canonical 投影时直接消费 `deriveTurnStatusFromProjection`，turn 终态渲染 TurnStatsLine |
 | `src/pages/chat/hooks/useSessionEventProjection.ts` | `message.content.appended` 到达即翻转 status=streaming（首个回答增量 = 已知事实「正在生成回答」，状态条与正文不再各说各话）；`enqueueDelta` 携带入队基准长度 |
 | `src/pages/chat/hooks/useSessionEventBuffers.ts` | 回答增量缓冲 `{delta, baseLength}`；flush 经 `applyBufferedDeltaToTurn` 按基准位置幂等应用——基准漂移（activeRun 快照竞态）丢弃缓冲，杜绝直播期间正文整段重复 |
 | `src/pages/chat/components/IntentConsole.tsx` | Composer §6.2：Sandbox/Auto-review 收敛进设置 Popover（活动态角标浮出）；执行偏好/权限/语音/发送保持直达 |
@@ -107,7 +120,9 @@
 | `src/pages/chat/styles/markdown.styles.ts` | 表格仅横向分隔线（th 加粗下边线/td 弱底线/无竖线网格，对齐 harness MarkdownText）；代码块圆角 12px、行内 code 圆角 6px |
 | `src/pages/chat/components/messageTurnMerge.test.ts` | BUG2 守卫单测：终态不回退、同 messageId 不追加第二卡 |
 | `src/pages/chat/components/MessageItem.streaming.test.tsx` | BUG1 单测：完整表格渲染 `<table>`、流式尾段表格走 markdown、纯文本尾段保留打字机 |
-| `src/pages/chat/components/execution-flow/ExecutionFlowTimeline.tsx` | 行为链交错时间线（P2 核心 + 2026-08-24 正文分段）：路径 B 直接消费投影 nodes 的 sequence 顺序（**文本段 →** reasoning 段 → 工具树 → 委派交错；`messageSegments` 提供时中间 MessageNode 段由 `MessageSegmentView` 内联渲染、trailingKey 尾段跳过由正文气泡承载；terminal/retry 由既有承载）；`deriveTrailingMessageNode` 尾段判定（最后一个 message 且其后仅 terminal）；路径 A adapter `buildEntriesFromProcessItems` 把 TimelineItem[] 按序分组为同构 entry（相邻 thinking 合并段、toolCallId 配对、subAgentId 聚合，无 message entry——processItems 不含正文事件）；`markTrailingReasoningCurrent` 用输入事实判定当前段；`deriveStatsFrom*` 供 TurnStatsLine；纯函数无时间源 |
+| `src/pages/chat/projections/turnContentBlocks.ts` | 把 canonical nodes 解释为 TextBlock ⇄ ActivityGroupBlock；每个最大连续非正文区间一组，不重排；组 key 锚定首节点，摘要/运行态/Stats 纯派生 |
+| `src/pages/chat/components/execution-flow/TurnContentStream.tsx` | AgentTurnCard 唯一内容渲染器；最新尾部组始终展开，历史组折叠；只有尾部开放正文段走打字机。路径 A 仅适配无正文的旧 TimelineItem，不参与 canonical 顺序合成 |
+| `src/pages/chat/components/execution-flow/ActivityGroup.tsx` / `TextSegmentView.tsx` / `useDisclosureRegistry.ts` | 折叠时卸载成员 DOM，组内详情默认单行折叠并用状态点/扫光表示运行；用户 override 粘性；已封闭正文段/历史组按可见语义 memo，SSE append 不重渲染旧内容 |
 | `src/pages/chat/components/execution-flow/ReasoningDisclosureRow.tsx` | 多段推理行：每段一行，折叠摘要运行中=最新非空行+扫光、完成=首行+段时长 chip（`思考 · 12s`，对齐 "Thought for Ns"）；hooks 必须先于空 payload 早退 |
 | `src/pages/chat/components/execution-flow/ToolCallRow.tsx` | 完成态耗时/非零 exit code 上折叠行尾部（caption 灰 tabular-nums，error 染红）；presentation 卡经 `resolveRenderer` 分派（P3 五类已注册） |
 | `src/pages/chat/components/execution-flow/TurnStatsLine.tsx` | turn 终态计量行：`N 段思考 · M 工具 · 3m01s · 4.2k tokens`；缺失项省略不伪造，全缺失不渲染 |
@@ -115,7 +130,8 @@
 | `src/pages/chat/presentation/renderers/*.tsx` | 五类专用 renderer + `rendererKit`（卡片家族：banner + 224px 内容窗口、圆角 radius-md、meta 契约字段优先、payload 回退解析、payload 即调用参数 JSON 时不重复展示正文）；diff 解析 +/−/@@ 着色与增删计数，search 命中数组有界 20 条 |
 | `src/pages/chat/utils/formatDuration.ts` | `formatDurationMs`（123ms/1.2s/1m03s，缺失 null 不伪造）+ `formatTokenCount`（4.2k tokens）；计量 chip/工具行耗时/StatsLine 共用 |
 | `src/pages/chat/client/featureFlag.ts` | `isExecutionFlowProjectionEnabled` 默认开启（P2 转正：live turn 消费 canonical 投影交错）；localStorage `pudding-exec-flow-proj==='0'` 为逃生门；历史/无投影 turn 走路径 A adapter |
-| `src/pages/chat/projections/executionFlowProjector.ts` | `ReasoningNode.lastOccurredAt`（段末 delta 的 occurredAt）→ 段时长 = last − first，服务端事实派生；**正文分段（2026-08-24）**：`MessageNode` = 一个连续正文段，任何非 content 节点事件（tool/delegation/retry/terminal/reasoning delta）切段、后续 content 开新段按首事件 sequence 交错（对齐 harness 每 step 一条消息节点）；`message.completed/failed` 应用到开放段并关闭；空段投影后过滤（failed 保留 errorMessage） |
+| `src/pages/chat/projections/executionFlowProjector.ts` | `MessageNode` = 一个连续正文段，任何非 content 节点事件切段；`message.completed.reply` 只在整 turn 无 content delta 时创建兜底正文，绝不覆盖已有段文本；空段过滤、reasoning/tool/delegation 仍按 canonical sequence 投影 |
+| `src/pages/chat/projections/turnSurfaceStore.ts` / `client/types.ts` | bootstrap/activeRun/live 三源按 eventId 幂等合流；`ProcessSummaryItem.sequence` 必填且运行时校验，缺失 fail closed，禁止数组下标伪造跨源顺序 |
 | `src/pages/chat/utils/chatStateUtils.ts` | `resolveTerminalAssistantMarkdown` 分叉兜底：current 与终态 reply 完全分叉且无后缀衔接时返回 reply（服务端 canonical），不再整段拼接（旧实现任何一次流内偏差都会让正文显示两遍） |
 | `src/pages/chat/hooks/useTypewriterStreaming.ts` | stale-stable 守卫：`stableTextRef` 镜像已提交前缀，`text` 不再以其开头（快照/终态改写）时整体重置 stable/live 游标，杜绝 stale stable + 新 live 同段双渲染 |
 | `src/pages/chat/components/execution-flow/TurnStatus.tsx` | 单行运行态（唯一 aria-live）；leading 槽渲染阶段墨球 TurnStatusOrb（pending/五阶段 → breathing/connecting/working/solving/weaving/composing） |
@@ -186,3 +202,5 @@
 ## 测试
 
 编排 Layout/Revision/Typed Edge/Graph Input/HTTP Hook/Manual Run/组件 UI 定向 Jest：`src/pages/orchestration` 10 suites / 57 tests；生产构建必须生成 `/orchestration/index.html`。仓库全量 `tsc --noEmit` 有既有非编排基线错误时，必须另行确认输出中 `src/pages/orchestration` 命中为 0，不能把全量失败描述为通过。
+
+余额徽标定向 Jest：`providerBilling.test.ts` / `useProviderBalance.test.ts` / `ProviderBalanceIndicator.test.tsx` 共 3 suites / 12 tests（注册表匹配矩阵、拉取/降级/手动刷新、'—'/¥xx.xx/detail Tooltip）。

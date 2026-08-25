@@ -14,6 +14,7 @@ const item = (overrides: Partial<ProcessSummaryItem> & { id: string }): ProcessS
   status: 'done',
   text: '',
   timestamp: ts(0),
+  sequence: Number(overrides.id.match(/\d+/)?.[0] ?? 0),
   ...overrides,
 });
 
@@ -40,7 +41,7 @@ describe('processItemsToFlowEvents', () => {
       'subagent.spawned',
       'subagent.completed',
     ]);
-    // sequence 单调（base + index），顺序事实保留。
+    // sequence 直接来自服务端明细，顺序事实保留。
     const sequences = events.map((e) => e.sequence);
     expect(sequences).toEqual([...sequences].sort((a, b) => a - b));
     // 未知 kind 不投影。
@@ -49,6 +50,16 @@ describe('processItemsToFlowEvents', () => {
       { turnId: 'turn-1' },
     );
     expect(unknown).toHaveLength(0);
+  });
+
+  it('缺失 canonical sequence 时 fail closed，不以数组下标伪造顺序', () => {
+    const missingSequence = item({ id: 'legacy-1', text: '旧响应' }) as Partial<ProcessSummaryItem>;
+    delete missingSequence.sequence;
+    expect(
+      processItemsToFlowEvents([missingSequence as ProcessSummaryItem], {
+        turnId: 'turn-1',
+      }),
+    ).toHaveLength(0);
   });
 });
 
@@ -155,13 +166,12 @@ describe('TurnSurfaceStore', () => {
       },
     ]);
     expect(store.get('turn-1')!.status).toBe('completed');
-    // 历史明细水合到达（负高段 sequence，排在 live 事件与终态之前，
-    // 不被终态单调守卫忽略；同事实靠 eventId 去重）：节点只增不减，
-    // 绝不因终态清空。
+    // 历史明细水合到达（真实 canonical sequence 低于终态 sequence，不被终态
+    // 单调守卫忽略；同事实靠 eventId 去重）：节点只增不减，绝不因终态清空。
     store.applyEvents(
       processItemsToFlowEvents(
         [item({ id: 'h1', kind: 'thinking', text: '历史思考' })],
-        { turnId: 'turn-1', baseSequence: -1_000_000 },
+        { turnId: 'turn-1' },
       ),
       { turnIdHint: 'turn-1' },
     );

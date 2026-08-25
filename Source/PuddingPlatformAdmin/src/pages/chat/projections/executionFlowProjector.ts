@@ -701,7 +701,19 @@ export function projectExecutionFlow(
       }
       case 'message.completed': {
         flushReasoning();
-        if (!openMessage) {
+        if (openMessage) {
+          // 流式正文段：只落终态。reply 是全量持久化文本，绝不能覆盖段文本
+          // ——覆盖会把先前所有输出塞回尾段，造成重复/错段/两大块。
+          openMessage.sourceEventIds.push(event.eventId);
+          openMessage.terminal = 'completed';
+          openMessage.terminalEventId = event.eventId;
+          openMessage.terminalSequence = event.sequence;
+        } else if (
+          !nodes.some((node) => node.kind === 'message') &&
+          typeof event.reply === 'string' &&
+          event.reply.trim()
+        ) {
+          // 非流式兜底：整 turn 无任何 content delta 时，reply 是唯一正文源。
           openMessage = {
             kind: 'message',
             key: deriveKey('message', event),
@@ -709,19 +721,15 @@ export function projectExecutionFlow(
             sequence: event.sequence,
             occurredAt: event.occurredAt,
             sourceEventIds: [event.eventId],
-            text: '',
-            terminal: 'none',
+            text: event.reply,
+            terminal: 'completed',
+            terminalEventId: event.eventId,
+            terminalSequence: event.sequence,
           };
           nodes.push(openMessage);
-        } else {
-          openMessage.sourceEventIds.push(event.eventId);
         }
-        if (typeof event.reply === 'string' && event.reply.trim()) {
-          openMessage.text = event.reply;
-        }
-        openMessage.terminal = 'completed';
-        openMessage.terminalEventId = event.eventId;
-        openMessage.terminalSequence = event.sequence;
+        // 其余情况（reply 携带全量文本但已有更早正文段）：reply 只作持久化
+        // 校验，不投影——节点边界只由 canonical sequence 决定。
         flushMessage();
         break;
       }

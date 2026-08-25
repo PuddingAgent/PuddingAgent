@@ -1,11 +1,16 @@
-// ── CU-11 Phase 2: per-turn 投影消费点接线双路径对比测试 ───────────
-// 验收锚点①：灰度关闭（不传 executionFlowProjection）走旧路径 A（processItems
-// 构建 ToolNode/DelegationNode）；灰度开启（传 executionFlowProjection）走新路径 B
-// （canonical 投影 nodes 过滤）。两条路径在同一组事实下渲染结构等价。
-import { render, screen } from '@testing-library/react';
+// ── CU-11 Phase 2 → AgentTurnCard 重构（2026-08-25）：内容块流消费点测试 ────
+// 验收锚点：
+//  - 灰度关闭（无 executionFlowProjection）走路径 A（processItems 适配）；
+//    灰度开启走路径 B（canonical 投影）；两路径同一组事实渲染结构等价。
+//  - 正文全部由 TurnContentStream 的 TextBlock 承载且只渲染一次——卡片底部
+//    不存在第二个 answer bubble。
+//  - projection 一旦有 TextBlock 就始终是正文渲染权威，answerMarkdown 不再
+//    通过字符串关系把正文切回卡片底部。
+import { fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 import { projectExecutionFlow } from '../projections/executionFlowProjector';
 import AgentMessageBubble from './AgentMessageBubble';
+
 
 const mockUseTypewriterStreaming = jest.fn();
 const mockMessageActions = jest.fn((_props: Record<string, unknown>) => (
@@ -97,7 +102,11 @@ jest.mock('../styles/agent.styles', () => {
     },
   );
   return {
-    useAgentStyles: () => ({ styles }),
+    useAgentStyles: () => ({
+      styles,
+      cx: (...values: Array<string | false | undefined>) =>
+        values.filter(Boolean).join(' '),
+    }),
   };
 });
 
@@ -231,10 +240,10 @@ function ev(
     turnId: 'turn-1',
     type,
     ...over,
-  } as ExecutionFlowEvent;
+  } as any;
 }
 
-const canonicalEvents: ExecutionFlowEvent[] = [
+const canonicalEvents: any[] = [
   ev('message.thinking_summary.appended', 1, { delta: '分析' }),
   ev('tool.call.requested', 2, {
     toolCallId: 'call-search',
@@ -378,20 +387,22 @@ describe('AgentMessageBubble projection dual-path equivalence (CU-11 Phase 2)', 
     expect(toolCallIds).not.toContain('other-tool');
   });
 
-  it('path A (gray off): renders tool rows + delegation list from processItems', () => {
+  it('path A (gray off): processItems 适配为行为组；展开后工具/委派可见', () => {
     render(
       <AgentMessageBubble
         {...baseProps}
         content="答案"
-        processItems={turn1ProcessItems}
+        processItems={turn1ProcessItems as never}
       />,
     );
+    // 单一尾部组默认展开；无投影时正文仍由整块气泡兜底。
+    expect(screen.getAllByTestId('activity-group-header')).toHaveLength(1);
     expect(screen.getAllByTestId('toolcall-row')).toHaveLength(2);
     expect(screen.getByTestId('delegation-list')).toBeTruthy();
     expect(screen.getByTestId('delegation-item-sa-1')).toBeTruthy();
   });
 
-  it('path B (gray on): renders equivalent structure from canonical projection', () => {
+  it('path B (gray on): 投影正文段直渲 + 行为组等价结构', () => {
     render(
       <AgentMessageBubble
         {...baseProps}
@@ -399,6 +410,10 @@ describe('AgentMessageBubble projection dual-path equivalence (CU-11 Phase 2)', 
         executionFlowProjection={turn1Projection}
       />,
     );
+    expect(screen.getAllByTestId('turn-text-segment')).toHaveLength(1);
+    expect(screen.getAllByTestId('activity-group-header')).toHaveLength(1);
+    // 此行为组后面还有正文，因此属于历史组，默认折叠；显式展开后再核对成员结构。
+    fireEvent.click(screen.getByTestId('activity-group-header'));
     expect(screen.getAllByTestId('toolcall-row')).toHaveLength(2);
     expect(screen.getByTestId('delegation-list')).toBeTruthy();
     expect(screen.getByTestId('delegation-item-sa-1')).toBeTruthy();
@@ -409,7 +424,7 @@ describe('AgentMessageBubble projection dual-path equivalence (CU-11 Phase 2)', 
       <AgentMessageBubble
         {...baseProps}
         content="答案"
-        processItems={turn1ProcessItems}
+        processItems={turn1ProcessItems as never}
       />,
     );
     const pathAToolRows = screen.getAllByTestId('toolcall-row').length;
@@ -423,6 +438,7 @@ describe('AgentMessageBubble projection dual-path equivalence (CU-11 Phase 2)', 
         executionFlowProjection={turn1Projection}
       />,
     );
+    fireEvent.click(screen.getByTestId('activity-group-header'));
     const pathBToolRows = screen.getAllByTestId('toolcall-row').length;
     const pathBDelegation = Boolean(screen.queryByTestId('delegation-list'));
 
@@ -431,9 +447,9 @@ describe('AgentMessageBubble projection dual-path equivalence (CU-11 Phase 2)', 
   });
 });
 
-// ── 行为链 §3.4+：正文分段交错消费点 ─────────────────────────────────────
+// ── 行为链 §3.4+ → AgentTurnCard：正文分段内容块流 ─────────────────────────
 describe('AgentMessageBubble message-segment interleaving', () => {
-  const segmentEvents: ExecutionFlowEvent[] = [
+  const segmentEvents: any[] = [
     ev('message.content.appended', 1, { delta: '先说明一下' }),
     ev('message.thinking_summary.appended', 2, { delta: '思考' }),
     ev('tool.call.requested', 3, {
@@ -464,7 +480,7 @@ describe('AgentMessageBubble message-segment interleaving', () => {
     });
   });
 
-  it('中间文本段内联进时间线，正文只承载尾段（不重复）', () => {
+  it('每个正文段各渲染一次；卡片底部不存在第二个 answer bubble（不重复）', () => {
     const projection = projectExecutionFlow(segmentEvents, {
       turnId: 'turn-1',
     });
@@ -475,14 +491,11 @@ describe('AgentMessageBubble message-segment interleaving', () => {
         executionFlowProjection={projection}
       />,
     );
-    // 中间段（text1）由时间线内联渲染
-    const segments = screen.getAllByTestId('timeline-message-segment');
-    expect(segments).toHaveLength(1);
-    // 正文气泡的 MessageItem 只承载尾段文本，绝不再包含整段全文
-    const bubbleItem = mockMessageItem.mock.calls.find(
-      (call) => (call[0] as Record<string, unknown>).markdownText === '最终回答',
-    );
-    expect(bubbleItem).toBeTruthy();
+    // 两段正文按序各渲染一次（TurnContentStream TextBlock）
+    const segments = screen.getAllByTestId('turn-text-segment');
+    expect(segments).toHaveLength(2);
+    // MessageItem 恰好两次调用（每段一次）；绝无整段全文的第三次调用
+    expect(mockMessageItem).toHaveBeenCalledTimes(2);
     const fullTextItem = mockMessageItem.mock.calls.find(
       (call) =>
         (call[0] as Record<string, unknown>).markdownText ===
@@ -491,8 +504,8 @@ describe('AgentMessageBubble message-segment interleaving', () => {
     expect(fullTextItem).toBeUndefined();
   });
 
-  it('尾段后仍有工具（run 进行中）：正文不渲染，全部文本进时间线', () => {
-    const runningEvents: ExecutionFlowEvent[] = [
+  it('尾段后仍有工具（run 进行中）：正文段照常渲染，行为组在正文之后', () => {
+    const runningEvents: any[] = [
       ev('message.content.appended', 1, { delta: '文本1' }),
       ev('tool.call.requested', 3, {
         toolCallId: 'call-1',
@@ -511,16 +524,17 @@ describe('AgentMessageBubble message-segment interleaving', () => {
         executionFlowProjection={projection}
       />,
     );
-    expect(screen.getAllByTestId('timeline-message-segment')).toHaveLength(1);
-    // 无尾段 → 正文气泡不渲染（MessageItem 仅时间线段一个调用）
+    expect(screen.getAllByTestId('turn-text-segment')).toHaveLength(1);
     expect(mockMessageItem).toHaveBeenCalledTimes(1);
+    // run 活跃：尾部组默认展开，运行中工具行可见
+    expect(screen.getAllByTestId('toolcall-row')).toHaveLength(1);
   });
 
-  it('分段并集与 answerMarkdown 分叉时回退整块正文（守卫）', () => {
+  it('answerMarkdown 与分段文本不同：canonical TextBlock 仍按序渲染，不切回底部整块正文', () => {
     const projection = projectExecutionFlow(segmentEvents, {
       turnId: 'turn-1',
     });
-    // content 与投影分段不一致（模拟 envelope 缺事件）：不得启用分段渲染
+    // content 是完成态物化文本，不再参与分段路径选择。
     render(
       <AgentMessageBubble
         {...baseProps}
@@ -528,12 +542,12 @@ describe('AgentMessageBubble message-segment interleaving', () => {
         executionFlowProjection={projection}
       />,
     );
-    expect(screen.queryByTestId('timeline-message-segment')).toBeNull();
+    expect(screen.getAllByTestId('turn-text-segment')).toHaveLength(2);
     const fullTextItem = mockMessageItem.mock.calls.find(
       (call) =>
         (call[0] as Record<string, unknown>).markdownText ===
         '完全不同的诊断文本',
     );
-    expect(fullTextItem).toBeTruthy();
+    expect(fullTextItem).toBeUndefined();
   });
 });

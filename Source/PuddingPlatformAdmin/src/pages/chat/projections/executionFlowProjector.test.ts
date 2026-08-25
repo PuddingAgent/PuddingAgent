@@ -220,7 +220,7 @@ describe('projectExecutionFlow', () => {
       expect(segments[0]).toMatchObject({ text: 'abc' });
     });
 
-    it('message.completed 应用到当前开放段并关闭；后续 content 开新段', () => {
+    it('message.completed 只落终态不覆盖段文本；后续 content 开新段', () => {
       const proj = projectExecutionFlow([
         ev('message.content.appended', 1, { delta: '部分' }),
         ev('message.completed', 2, { reply: '部分完成' }),
@@ -229,10 +229,37 @@ describe('projectExecutionFlow', () => {
       const segments = proj.nodes.filter((node) => node.kind === 'message');
       expect(segments).toHaveLength(2);
       expect(segments[0]).toMatchObject({
-        text: '部分完成',
+        text: '部分',
         terminal: 'completed',
       });
       expect(segments[1]).toMatchObject({ text: '续写', terminal: 'none' });
+    });
+
+    it('message.completed.reply 不把全量文本塞回尾段（多段场景）', () => {
+      // 文本A → 工具 → 文本B → completed(reply=A+B)：段边界只由 sequence
+      // 决定，reply 不得覆盖/复制任何已有段。
+      const proj = projectExecutionFlow([
+        ev('message.content.appended', 1, { delta: '文本A' }),
+        ev('tool.call.requested', 2, { toolCallId: 't1', name: 'x', arguments: '{}' }),
+        ev('tool.call.completed', 3, { toolCallId: 't1', name: 'x', exitCode: 0, output: 'ok' }),
+        ev('message.content.appended', 4, { delta: '文本B' }),
+        ev('message.completed', 5, { reply: '文本A文本B' }),
+      ]);
+      const segments = proj.nodes.filter((node) => node.kind === 'message');
+      expect(segments).toHaveLength(2);
+      expect(segments[0]).toMatchObject({ text: '文本A', terminal: 'none' });
+      expect(segments[1]).toMatchObject({ text: '文本B', terminal: 'completed' });
+    });
+
+    it('非流式兜底：无 content delta 时 completed.reply 创建唯一正文段', () => {
+      const proj = projectExecutionFlow([
+        ev('tool.call.requested', 1, { toolCallId: 't1', name: 'x', arguments: '{}' }),
+        ev('tool.call.completed', 2, { toolCallId: 't1', name: 'x', exitCode: 0, output: 'ok' }),
+        ev('message.completed', 3, { reply: '唯一答案' }),
+      ]);
+      const segments = proj.nodes.filter((node) => node.kind === 'message');
+      expect(segments).toHaveLength(1);
+      expect(segments[0]).toMatchObject({ text: '唯一答案', terminal: 'completed' });
     });
 
     it('无文本的 message 事件（空 delta）不产生空段', () => {

@@ -244,16 +244,26 @@ export const useExecutionFlowStyles = createStyles(() => ({
     wordBreak: 'break-word' as const,
   },
 
-  // ── ExecutionFlowTimeline（行为链 P2：交错时间线容器）──
-  /** 时间线容器：与工具列表同规格（gap 4 / 720px 上限 / 上边距 6） */
-  timelineList: {
+  // ── TurnContentStream（AgentTurnCard 重构：正文段 ⇄ 行为组内容块流）──
+  /** 内容块流容器：与时间线同规格（gap 4 / 720px 上限） */
+  turnContentStream: {
     display: 'flex',
     flexDirection: 'column' as const,
     gap: 4,
     width: '100%',
     maxWidth: 'min(720px, 100%)',
-    marginTop: 6,
     boxSizing: 'border-box' as const,
+  },
+  /** 行为组容器：仅承载组头折叠行 + 展开体，不叠加容器级 margin */
+  activityGroup: {
+    width: '100%',
+    maxWidth: 'min(720px, 100%)',
+  },
+  /** 组展开体：成员行纵向排布 */
+  activityGroupBody: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 4,
   },
   /** 交错文本段：与正文同款排版（15/1.75 全宽），区别于过程行的 tertiary 灰阶 */
   timelineMessageSegment: {

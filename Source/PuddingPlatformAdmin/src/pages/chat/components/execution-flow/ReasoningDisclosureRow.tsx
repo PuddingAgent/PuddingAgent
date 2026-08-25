@@ -21,12 +21,17 @@ export interface ReasoningDisclosureRowProps {
   isCurrent?: boolean;
   /** 段时长（毫秒，服务端事实派生：段首/段末 occurredAt 差）；缺失时不渲染 chip。 */
   durationMs?: number | null;
+  /** 受控展开（TurnContentStream 注册表）；未传时内部自管。 */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
 export const ReasoningDisclosureRow: React.FC<ReasoningDisclosureRowProps> = ({
   lines,
   isCurrent = true,
   durationMs,
+  expanded,
+  onExpandedChange,
 }) => {
   const { styles, cx } = useExecutionFlowStyles();
   const [copied, setCopied] = useState(false);
@@ -65,6 +70,8 @@ export const ReasoningDisclosureRow: React.FC<ReasoningDisclosureRowProps> = ({
       testId="reasoning-disclosure-row"
       ariaLabel="思考过程"
       className={cx(isCurrent && styles.rowSweep)}
+      expanded={expanded}
+      onExpandedChange={onExpandedChange}
       expandedContent={
         <div className={styles.reasoningWrap}>
           <button

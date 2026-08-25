@@ -68,7 +68,7 @@ const deriveTone = (
  * 纯函数：同输入深度一致，刷新后按 subAgentId 恢复终态摘要。
  */
 export const buildDelegationNodesFromProcessItems = (
-  items: TimelineItem[],
+  items: readonly TimelineItem[],
 ): DelegationNode[] => {
   const byId = new Map<string, DelegationNode>();
   const sequenceOrder: string[] = [];
@@ -250,12 +250,17 @@ export interface DelegationRowProps {
   onOpenInspector?: (runId: string) => void;
   /** 测试注入当前时间（毫秒）；未传时 running 态每秒 tick（对齐 TurnStatus）。 */
   now?: number;
+  /** 受控展开（TurnContentStream 注册表）；未传时内部自管。 */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
 export const DelegationRow: React.FC<DelegationRowProps> = ({
   nodes,
   onOpenInspector,
   now: nowProp,
+  expanded,
+  onExpandedChange,
 }) => {
   const { styles, cx } = useDelegationStyles();
   const [now, setNow] = useState(() => nowProp ?? Date.now());
@@ -310,6 +315,8 @@ export const DelegationRow: React.FC<DelegationRowProps> = ({
       leading={<StateDot state={hasRunning ? 'ongoing' : 'done'} size={10} />}
       testId="delegation-row"
       ariaLabel="子代理委派摘要"
+      expanded={expanded}
+      onExpandedChange={onExpandedChange}
       expandedContent={
         <div
           className={styles.list}

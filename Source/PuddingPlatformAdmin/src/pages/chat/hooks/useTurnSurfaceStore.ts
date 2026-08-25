@@ -161,10 +161,6 @@ export function useTurnSurfaceStore({
           if (!details.processItems?.length) return;
           const events = processItemsToFlowEvents(details.processItems, {
             turnId,
-            // 服务端已透传真实 sequence 时负段不再生效（适配器优先真实值）；
-            // 旧后端无 sequence 时以负高段回退：projector 终态单调守卫会忽略
-            // sequence 大于终态的迟到事件，回退序必须排在 live 事件之前。
-            baseSequence: -1_000_000,
           });
           const result = store.applyEvents(events, { turnIdHint: turnId });
           if (result.applied > 0) notifyMutated();

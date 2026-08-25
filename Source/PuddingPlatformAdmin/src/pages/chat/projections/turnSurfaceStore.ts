@@ -45,24 +45,22 @@ export interface ApplyEventsResult {
 /**
  * ProcessSummaryItem（服务端过程明细 / activeRun 快照项）→ ExecutionFlowEvent。
  *
- * 顺序事实：明细接口与快照项均按 canonical sequence 升序返回；本项目不回传
- * sequence 字段，故以 baseSequence + index 派生单调序列（保持相对顺序即可
- * 满足 projector 的交错语义；与 live 事件合流时靠 eventId 去重互斥，不会
- * 出现同一事实双份）。occurredAt 透传服务端 timestamp。
+ * 顺序事实：服务端 2026-08-25 硬切为 canonical sequence 必填，直接透传真实
+ * sequence（跨源合流的重放等价前提）；不再以 baseSequence + index 合成顺序。
+ * occurredAt 透传服务端 timestamp。
  */
 export function processItemsToFlowEvents(
   items: readonly ProcessSummaryItem[],
-  options: { turnId: string; baseSequence?: number },
+  options: { turnId: string },
 ): ExecutionFlowEvent[] {
-  const base = options.baseSequence ?? 0;
   const events: ExecutionFlowEvent[] = [];
-  items.forEach((item, index) => {
+  items.forEach((item) => {
+    // 运行时也 fail closed：即使缓存/旧 Core 绕过了 TypeScript 契约，也不以
+    // 数组位置伪造 canonical 顺序。升级后缺 sequence 的项目必须重新水合。
+    if (!Number.isSafeInteger(item.sequence) || item.sequence < 0) return;
     const common = {
       eventId: item.id,
-      // 服务端 2026-08-24 起透传 canonical sequence/turnId/runId：优先用真实
-      // sequence（跨源合流的重放等价前提）；旧后端缺省时回退 base+index
-      // 保持相对顺序。
-      sequence: typeof item.sequence === 'number' ? item.sequence : base + index,
+      sequence: item.sequence,
       runId: item.runId ?? options.turnId,
       turnId: item.turnId ?? options.turnId,
       occurredAt: item.timestamp,

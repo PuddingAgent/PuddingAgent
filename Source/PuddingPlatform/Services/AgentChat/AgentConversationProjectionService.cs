@@ -205,67 +205,100 @@ public sealed class AgentConversationProjectionService(
                 completedProcessByMessageId))
             .ToList();
 
-        var latestRunEvent = await db.ConversationEvents
+        // 根 run 选择（2026-08-25 修复子代理抢占 active 快照）：不再取「最新任意
+        // runId 事件」——子代理生命周期事件挂父 message_id 但携带子 run_id，会
+        // 整体抢占快照。根 run = 最新 turn.started 的 RunId；快照按其 TurnId
+        // 聚合父 Agent 正文/思考/工具与子代理生命周期事件（正文按根 RunId 收敛，
+        // 子 run 的 content 不并入父快照）；根 run 已终态 → 无 active run。
+        var rootTurnStarted = await db.ConversationEvents
             .AsNoTracking()
             .Where(e => e.ConversationId == main.SessionId)
-            .Where(e => e.RunId != null && e.RunId != "")
+            .Where(e => e.Type == ConversationEventTypes.TurnStarted)
             .OrderByDescending(e => e.Sequence)
             .FirstOrDefaultAsync(ct);
-
         AgentRunView? activeRun = null;
-        if (latestRunEvent is not null && !IsTerminalEvent(latestRunEvent.Type))
+        string? latestTurnEventAt = null;
+        if (rootTurnStarted is not null && !string.IsNullOrWhiteSpace(rootTurnStarted.RunId))
         {
-            var activeRunQuery = db.ConversationEvents
+            var rootRunId = rootTurnStarted.RunId;
+            var rootTerminalExists = await db.ConversationEvents
                 .AsNoTracking()
-                .Where(e =>
-                    e.ConversationId == main.SessionId
-                    && e.RunId == latestRunEvent.RunId);
-            var firstRunEventAt = await activeRunQuery
-                .OrderBy(e => e.Sequence)
-                .Select(e => e.OccurredAt)
-                .FirstOrDefaultAsync(ct);
-            var outputEvents = await activeRunQuery
-                .Where(e =>
-                    e.Type == ConversationEventTypes.TurnStarted
-                    || e.Type == ConversationEventTypes.MessageContentAppended)
-                .OrderBy(e => e.Sequence)
-                .ToListAsync(ct);
-            var processMetadata = await activeRunQuery
-                .Where(e => ActiveRunVisibleProcessEventTypes.Contains(e.Type))
-                .OrderBy(e => e.Sequence)
-                .Select(e => new ActiveProcessEventMetadata(e.Type, e.OccurredAt))
-                .ToListAsync(ct);
-            var recentProcessEvents = await activeRunQuery
-                .Where(e => ActiveRunVisibleProcessEventTypes.Contains(e.Type))
-                .OrderByDescending(e => e.Sequence)
-                .Take(ActiveRunProcessItemLimit)
-                .ToListAsync(ct);
-            recentProcessEvents.Reverse();
-            var commandClientId = string.IsNullOrWhiteSpace(latestRunEvent.CommandId)
-                ? null
-                : await db.ChatExecutionCommands
+                .Where(e => e.ConversationId == main.SessionId)
+                .Where(e => e.RunId == rootRunId)
+                .Where(e => TerminalEventTypes.Contains(e.Type))
+                .AnyAsync(ct);
+            if (!rootTerminalExists)
+            {
+                var activeRunQuery = db.ConversationEvents
                     .AsNoTracking()
-                    .Where(c => c.CommandId == latestRunEvent.CommandId)
-                    .Select(c => c.UserMessageId)
+                    .Where(e => e.ConversationId == main.SessionId && e.TurnId == rootTurnStarted.TurnId);
+                var firstRunEventAt = await activeRunQuery
+                    .OrderBy(e => e.Sequence)
+                    .Select(e => e.OccurredAt)
                     .FirstOrDefaultAsync(ct);
+                var outputEvents = await activeRunQuery
+                    .Where(e => e.RunId == rootRunId)
+                    .Where(e =>
+                        e.Type == ConversationEventTypes.TurnStarted
+                        || e.Type == ConversationEventTypes.MessageContentAppended)
+                    .OrderBy(e => e.Sequence)
+                    .ToListAsync(ct);
+                var processMetadata = await activeRunQuery
+                    .Where(e => ActiveRunVisibleProcessEventTypes.Contains(e.Type))
+                    .OrderBy(e => e.Sequence)
+                    .Select(e => new ActiveProcessEventMetadata(e.Type, e.Sequence, e.OccurredAt))
+                    .ToListAsync(ct);
+                var recentProcessEvents = await activeRunQuery
+                    .Where(e => ActiveRunVisibleProcessEventTypes.Contains(e.Type))
+                    .OrderByDescending(e => e.Sequence)
+                    .Take(ActiveRunProcessItemLimit)
+                    .ToListAsync(ct);
+                recentProcessEvents.Reverse();
+                var latestTurnEvent = await activeRunQuery
+                    .OrderByDescending(e => e.Sequence)
+                    .Select(e => new { e.Sequence, e.OccurredAt, e.CommandId })
+                    .FirstOrDefaultAsync(ct);
+                latestTurnEventAt = latestTurnEvent?.OccurredAt;
+                // CommandId：根 turn 事件链中最近非空值（子代理事件不携带）。
+                var commandId = latestTurnEvent?.CommandId
+                    ?? rootTurnStarted.CommandId;
+                var commandClientId = string.IsNullOrWhiteSpace(commandId)
+                    ? null
+                    : await db.ChatExecutionCommands
+                        .AsNoTracking()
+                        .Where(c => c.CommandId == commandId)
+                        .Select(c => c.UserMessageId)
+                        .FirstOrDefaultAsync(ct);
 
-            activeRun = BuildActiveRun(
-                workspaceId,
-                ownerUserId,
-                agentId,
-                main,
-                commandClientId,
-                latestRunEvent,
-                firstRunEventAt,
-                outputEvents,
-                recentProcessEvents,
-                BuildActiveProcessSummary(processMetadata));
+                // 窗口边界：64 条窗口只是最近活动；更早轨迹由完成态明细水合恢复。
+                var window = new TurnEventWindow(
+                    rootTurnStarted.TurnId,
+                    latestTurnEvent?.Sequence ?? rootTurnStarted.Sequence,
+                    processMetadata.Count > 0 ? processMetadata[0].Sequence : rootTurnStarted.Sequence,
+                    processMetadata.Count > 0 ? processMetadata[^1].Sequence : rootTurnStarted.Sequence,
+                    recentProcessEvents.Count < processMetadata.Count);
+
+                activeRun = BuildActiveRun(
+                    workspaceId,
+                    ownerUserId,
+                    agentId,
+                    main,
+                    commandClientId,
+                    rootRunId,
+                    latestTurnEvent?.OccurredAt ?? rootTurnStarted.OccurredAt,
+                    latestTurnEvent?.Sequence ?? rootTurnStarted.Sequence,
+                    firstRunEventAt,
+                    outputEvents,
+                    recentProcessEvents,
+                    BuildActiveProcessSummary(processMetadata),
+                    window);
+            }
         }
 
         var eventCursor = await GetEventCursorAsync(main.SessionId, ct);
-        var updatedAt = latestRunEvent is null
+        var updatedAt = latestTurnEventAt is null
             ? main.LastActiveAt
-            : ParseOccurredAt(latestRunEvent.OccurredAt);
+            : ParseOccurredAt(latestTurnEventAt);
 
         return new AgentConversationView(
             workspaceId,
@@ -319,6 +352,7 @@ public sealed class AgentConversationProjectionService(
             .FirstOrDefaultAsync(ct);
 
         IReadOnlyList<ProcessSummaryItem> processItems;
+        TurnEventWindow? window = null;
         if (string.IsNullOrWhiteSpace(completedRunId))
         {
             processItems = BuildTranscriptProcessItems(message, logger);
@@ -341,9 +375,20 @@ public sealed class AgentConversationProjectionService(
                 .Cast<ProcessSummaryItem>()
                 .ToList();
             processItems = MergeMessageProcessItems(message, eventItems, logger);
+            // 明细为全量集合（无截断）：窗口边界供前端对齐 sequence 游标。
+            if (processEvents.Count > 0
+                && !string.IsNullOrWhiteSpace(message.TurnId ?? completedRunId))
+            {
+                window = new TurnEventWindow(
+                    message.TurnId ?? completedRunId!,
+                    processEvents[^1].Sequence,
+                    processEvents[0].Sequence,
+                    processEvents[^1].Sequence,
+                    HasMoreBefore: false);
+            }
         }
 
-        return new MessageProcessDetailsView(messageId, completedRunId, processItems);
+        return new MessageProcessDetailsView(messageId, completedRunId, processItems, window);
     }
 
     public async Task<long> GetConversationCursorAsync(
@@ -433,13 +478,16 @@ public sealed class AgentConversationProjectionService(
         string agentId,
         SessionRecord main,
         string? commandClientId,
-        ConversationEventEntity latestRunEvent,
+        string rootRunId,
+        string latestTurnEventAt,
+        long latestTurnSequence,
         string? firstRunEventAt,
         IReadOnlyList<ConversationEventEntity> outputEvents,
         IReadOnlyList<ConversationEventEntity> recentProcessEvents,
-        ConversationProcessSummary? processSummary)
+        ConversationProcessSummary? processSummary,
+        TurnEventWindow window)
     {
-        if (string.IsNullOrWhiteSpace(latestRunEvent.RunId))
+        if (string.IsNullOrWhiteSpace(rootRunId))
             return null;
 
         var markdown = new StringBuilder();
@@ -453,22 +501,18 @@ public sealed class AgentConversationProjectionService(
                     ?? "");
             }
         }
-        var processItems = recentProcessEvents
-            .Select(evt => TryBuildEventProcessItem(evt, out var item) ? item : null)
-            .Where(item => item is not null)
-            .Cast<ProcessSummaryItem>()
-            .ToList();
+        var processItems = BuildActiveProcessItems(outputEvents, recentProcessEvents);
 
         var startedAt = ParseOccurredAt(
             outputEvents.FirstOrDefault(e => e.Type == ConversationEventTypes.TurnStarted)?.OccurredAt
             ?? firstRunEventAt
-            ?? latestRunEvent.OccurredAt);
-        var updatedAt = ParseOccurredAt(latestRunEvent.OccurredAt);
+            ?? latestTurnEventAt);
+        var updatedAt = ParseOccurredAt(latestTurnEventAt);
         if (DateTimeOffset.UtcNow - updatedAt > ActiveRunStaleAfter)
             return null;
 
         return new AgentRunView(
-            latestRunEvent.RunId,
+            rootRunId,
             workspaceId,
             ownerUserId,
             agentId,
@@ -477,11 +521,36 @@ public sealed class AgentConversationProjectionService(
             "running",
             "正在输出",
             main.Title ?? "",
-            latestRunEvent.Sequence,
-            new AgentOutputSnapshot(markdown.ToString(), processItems, processSummary),
+            latestTurnSequence,
+            new AgentOutputSnapshot(markdown.ToString(), processItems, processSummary, window),
             startedAt,
             updatedAt,
             null);
+    }
+
+    /// <summary>
+    /// 活动快照过程项：正文增量（kind=text）全量并入 + 最近活动有界窗口。
+    /// 正文与 markdown 字段同源（outputEvents 已无界加载，量级相同）；64 条窗口
+    /// 只界最近活动——若正文也被窗口截断，前端「分段并集覆盖 answerMarkdown」
+    /// 守卫会失败，整段正文退回底部气泡、行为组失去正文锚点（2026-08-25 实测）。
+    /// </summary>
+    private static IReadOnlyList<ProcessSummaryItem> BuildActiveProcessItems(
+        IReadOnlyList<ConversationEventEntity> outputEvents,
+        IReadOnlyList<ConversationEventEntity> recentProcessEvents)
+    {
+        var byId = new Dictionary<string, ProcessSummaryItem>(StringComparer.Ordinal);
+        foreach (var evt in outputEvents)
+        {
+            if (evt.Type != ConversationEventTypes.MessageContentAppended) continue;
+            if (TryBuildEventProcessItem(evt, out var textItem))
+                byId[textItem.Id] = textItem;
+        }
+        foreach (var evt in recentProcessEvents)
+        {
+            if (TryBuildEventProcessItem(evt, out var item) && !byId.ContainsKey(item.Id))
+                byId[item.Id] = item;
+        }
+        return byId.Values.OrderBy(item => item.Sequence).ToList();
     }
 
     private static ConversationProcessSummary? BuildActiveProcessSummary(
@@ -737,12 +806,16 @@ public sealed class AgentConversationProjectionService(
             if (string.IsNullOrWhiteSpace(chunk.Text))
                 continue;
 
+            // Transcript 兜底无 canonical 事件：以明细序号退化为 sequence（仅保
+            // 相对顺序；有 canonical 事件的正常路径不走此处）。
             items.Add(new ProcessSummaryItem(
-                $"{message.MessageId}:thinking:{index++}",
+                $"{message.MessageId}:thinking:{index}",
                 "thinking",
                 "done",
                 chunk.Text,
-                DateTimeOffset.FromUnixTimeMilliseconds(chunk.Timestamp)));
+                DateTimeOffset.FromUnixTimeMilliseconds(chunk.Timestamp),
+                index));
+            index++;
         }
 
         return items;
@@ -859,6 +932,9 @@ public sealed class AgentConversationProjectionService(
             status,
             text,
             ParseOccurredAt(evt.OccurredAt),
+            // canonical 事实必填（2026-08-25 硬切）：真实 sequence + turnId，
+            // 前端 TurnSurfaceStore 直接按其交错排序/别名归并，零合成顺序。
+            evt.Sequence,
             name,
             arguments,
             output,
@@ -866,9 +942,6 @@ public sealed class AgentConversationProjectionService(
             message,
             toolCallId,
             delegationRunId,
-            // canonical 事实透传：前端 TurnSurfaceStore 用真实 sequence 交错排序、
-            // runId/turnId 参与别名归并，避免数组下标合成顺序破坏重放等价。
-            evt.Sequence,
             string.IsNullOrWhiteSpace(evt.TurnId) ? null : evt.TurnId,
             evt.RunId);
         return true;
@@ -921,17 +994,21 @@ public sealed class AgentConversationProjectionService(
             : DateTimeOffset.UtcNow;
 
     private static bool IsTerminalEvent(string eventType)
-        => eventType is
-            ConversationEventTypes.TurnCompleted or
-            ConversationEventTypes.TurnFailed or
-            ConversationEventTypes.TurnCancelled or
-            ConversationEventTypes.RunLeaseLost;
+        => TerminalEventTypes.Contains(eventType);
+
+    private static readonly string[] TerminalEventTypes =
+    [
+        ConversationEventTypes.TurnCompleted,
+        ConversationEventTypes.TurnFailed,
+        ConversationEventTypes.TurnCancelled,
+        ConversationEventTypes.RunLeaseLost,
+    ];
 
     private sealed record CompletedMessageProcess(
         string? RunId,
         ConversationProcessSummary Summary);
 
-    private sealed record ActiveProcessEventMetadata(string Type, string OccurredAt);
+    private sealed record ActiveProcessEventMetadata(string Type, long Sequence, string OccurredAt);
 
     private sealed record ConversationMessageRow(
         long Id,

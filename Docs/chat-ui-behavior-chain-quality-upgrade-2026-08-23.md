@@ -75,12 +75,13 @@
 - 工具行完成：尾部 `1.2s`（<1s 显示 `123ms`；≥60s 显示 `1m03s`）；error 叠加 `exit 1`。
 - turn 终态：正文下方 StatsLine 一行 `N 段思考 · M 工具 · 3m01s · 4.2k tokens`，数据全部来自 canonical 投影/usage（刷新不归零）。
 
-### 3.4 行为链交错（P2 核心）
+### 3.4 行为链交错（P2 核心 → 2026-08-25 AgentTurnCard 内容块流重构）
 
-- 渲染顺序 = 投影 `nodes` 的 sequence 顺序：reasoning 段 → 工具（含子树）→ reasoning 段 → 委派 → … → 正文（message/terminal 节点由既有正文/错误行承载，不重复渲染）。
-- 多段 reasoning：每段一个 ReasoningDisclosureRow（段首行/最新行摘要 + 段时长），相邻委派节点聚合为一个 DelegationRow。
-- 路径 B（canonical 投影）默认开启；投影为空/灰度关闭时走路径 A adapter：`processItems` 按时间序分组为同样的有序节点，两路径共享同一渲染组件。
+- **（2026-08-25 起）** 渲染结构升级为「正文段 ⇄ 行为组」内容块流（`turnContentBlocks.ts` + `TurnContentStream`）：正文（message 节点 → TextBlock）永久可见且只渲染一次，卡片底部不再有第二个 answer bubble；两个正文段之间的最大连续非正文节点序列形成一个可折叠 `ActivityGroup`（最新尾部组无论运行/完成都默认展开，历史组默认折叠并卸载成员 DOM；组内思考/工具/委派详情默认保持单行折叠，运行态由状态点与扫光表达，避免长 IN/OUT 自动撑开卡片；用户 override 粘性）。新正文到达后，原尾部组在未被用户触碰时自动转为历史折叠组。旧「交错时间线 + 尾段独立正文气泡」的双区域结论作废。
+- 渲染顺序 = 投影 `nodes` 的 sequence 顺序；多段 reasoning：每段一个 ReasoningDisclosureRow（段首行/最新行摘要 + 段时长），相邻委派节点聚合为一个 DelegationRow；retry 节点不渲染行（错误行/摘要计数承载）。
+- 路径 B（canonical 投影）默认开启；投影为空/灰度关闭时走路径 A adapter：`processItems` 适配为同构行为节点集（无正文段，正文回退整块气泡），两路径共享同一块结构与渲染组件。
 - TurnStatus 消费点切 `deriveTurnStatusFromProjection`（投影可用时）；facts 派生保留为回退。
+- 配套纪律：`message.completed.reply` 只作非流式兜底（整 turn 无 content delta 时创建唯一正文段），绝不覆盖/复制已有正文段；节点边界只由 canonical sequence 决定。
 
 ### 3.5 工具展示卡家族（P3）
 
@@ -195,11 +196,11 @@
 - `MessageNode` 语义升级为「一个连续正文段」：相邻 content 增量合并为一段；任何非 content 节点事件（tool/delegation/retry/terminal，含 reasoning delta）切段；后续 content 开新段，按各自首事件 sequence 交错进 nodes（对齐 harness 每 step 一条 AssistantMessageNode）。
 - `message.completed/failed` 应用到当前开放段并关闭；空 delta/纯空白段被投影后过滤（对齐 reasoning 空段语义，failed 段保留 errorMessage）。
 
-### 12.3 时间线内联文本段（ExecutionFlowTimeline / AgentMessageBubble）
+### 12.3 时间线内联文本段 → AgentTurnCard 内容块流（2026-08-25 重构，旧结论作废）
 
-- 新 entry `message` + `MessageSegmentView`（与正文同款 15/1.75 全宽 markdown，`timelineMessageSegment` 样式）；`deriveTrailingMessageNode` 判定尾段（最后一个 message 节点且其后仅剩 terminal）。
-- AgentMessageBubble：`segmentRendering` 备忘录——投影分段并集必须覆盖 `answerMarkdown`（相等或为其前缀；content 为空亦可），否则回退整块正文（防 envelope 缺事件漏段 / 终态改写后的同段双渲染）。分段启用时：中间文本段由时间线内联；尾段由正文气泡承载，`StreamingAnswer` 以 `key=尾段key` 段切换 remount（每段从零平滑敲出）；无尾段（尾文本后仍有工具在跑）→ 正文气泡不渲染，TurnStatus 承载运行态。
-- 正文渲染源切换为 `bodyContent`（尾段文本或整块 content）；操作/复制/TTS/错误摘要仍用全量 `content`。
+- **（旧方案，已退役）**「时间线内联中间段 + 尾段独立正文气泡」的双区域渲染：中间段与尾段由两套组件承载，边界依赖 `deriveTrailingMessageNode` 尾段判定；投影分段与整块正文的一致性靠 `segmentRendering` 守卫兜底。实测存在两大缺陷：`message.completed.reply` 以全量文本覆盖尾段导致重复/错段/两大块；卡片底部尾段气泡与时间线段构成事实上的第二正文源。
+- **（现行方案）** `TurnContentStream` 内容块流（`turnContentBlocks.ts`）：投影 nodes → `TextBlock`（永久可见）⇄ `ActivityGroupBlock`（可折叠，折叠时成员 DOM 卸载）交错块流；`ExecutionFlowTimeline` / `deriveTrailingMessageNode` / `buildEntriesFromProcessItems` / `messageSegments` 退役。`answerMarkdown` 仅作持久化正文、复制/TTS 与无 canonical 正文节点时的旧记录兜底，绝不再用字符串相等/前缀关系切换分段渲染；投影一旦有 TextBlock，正文就全部由块流承载。流式：只有「最后一个正文块 && terminal='none' && run 活跃」走 `useTypewriterStreaming`（`TextSegmentView`），已封闭段静态渲染不重排。
+- 折叠默认值：最新尾部组始终展开，历史组折叠；组内详情默认单行折叠，运行状态用点/扫光表达；turn 终态不折叠仍为尾部的最新组，新正文段到达才使原组转为历史折叠；用户 override 粘性（`useDisclosureRegistry`）。
 
 ### 12.4 重复输出修复（三处加固）
 
@@ -212,3 +213,16 @@
 - 前端新增/更新：投影器分段 5 例（切段/交错序/相邻合并/message.completed/空段过滤）、时间线 5 例（尾段判定×2、内联交错、未启用回退、DOM 序）、消费点 3 例（中间段内联+正文只承载尾段不重复、无尾段正文不渲染、分叉守卫回退整块）、终态 reply 不重复 2 例、打字机替换重置 1 例。chat 目录 106/109 套件通过（IntentConsole/InputArea/DevPanel 3 套件为 HEAD 存量失败，与本次无关）。
 - 后端：`dotnet build` PuddingPlatform/PuddingHost 0 错误；TurnOutputChunker 7/7。
 - 真实模型 smoke（多轮工具调用会话的交错视觉验证）待两段式外部验收。
+
+## 13. AgentTurnCard 内容块流重构（2026-08-25）
+
+验收报告（同日）确认旧双区域方案的四类缺陷后整轮重构，按 8 步施工顺序落地：
+
+1. **projector 纪律**：`message.completed` 只给当前开放正文段落终态，绝不以 `reply` 覆盖段文本；reply 仅在整 turn 无任何 content delta 时创建唯一正文段（非流式兜底）。节点边界只由 canonical sequence 决定。
+2. **后端硬切**（`AgentConversationProjectionService` / `AgentProjectionDtos`）：active run 不再取「最新任意 runId 事件」（子代理生命周期事件携带子 run_id 会整体抢占父快照）——根 run = 最新 `turn.started` 的 RunId，快照按其 TurnId 聚合父正文/思考/工具与子代理生命周期，正文按根 RunId 收敛；`ProcessSummaryItem.Sequence` 必填（前端删 `baseSequence+index` 合成与 `-1_000_000` 负段回退）；快照/明细携带 `TurnEventWindow`（throughSequence/min/max/hasMoreBefore，64 条窗口的截断边界显性化）。
+3. **纯投影** `turnContentBlocks.ts`：`buildTurnContentBlocks`（正文 ⇄ 行为组块流）+ 组摘要（N 段思考/M 次工具/K 个子代理/时长）+ `deriveStatsFromProjection`；固定 11 事件验收基准（乱序重放等价 / T4 result 原位更新不改组 key / text D 到达组转历史）。
+4. **组件**：`TurnContentStream`（块流编排 + 路径 A `buildActivityNodesFromProcessItems` 适配）、`ActivityGroup`（折叠=成员 DOM 卸载；尾部组始终展开；组内详情默认折叠，运行态用点/扫光表达）、`TextSegmentView`（封闭段静态 / 尾部开放段打字机；语义 memo 避免 append 时重渲染旧段）、`useDisclosureRegistry`（用户 override 粘性且引用稳定）。
+5. **消费点**：AgentMessageBubble 删除 `segmentRendering/bodyContent/trailingMessageKey` 双区域逻辑；不再用 `answerMarkdown` 字符串关系关闭 TextBlock，投影一旦含正文节点就只有块流一个正文源；无 canonical 正文节点的旧记录才回退整块气泡。完成粒子在两种正文模式下都可达。`ExecutionFlowTimeline.tsx` 及其测试退役。
+6. **受控折叠**：ExecutionDisclosureRow 家族（Reasoning/ToolCall/Delegation 行）补受控 props 透传。
+7. **验收**：turnContentBlocks、TurnContentStream、消费点、projector/TurnSurfaceStore 定向用例覆盖交错、折叠、reply 不覆盖、sequence fail-closed 与历史正文段不重渲染；生产前端构建通过。真实运行时 smoke 必须在新 Core/新前端部署后执行，源码存在不等于当前进程已加载。
+8. **遗留**（下轮）：TurnSurfaceStore 全量重投影改增量（revision 下沉单 turn）；SSE delta RAF 合帧（agent-client 轮询架构下暂无 SSE 路径）；最新组超 ~100 节点的外层滚动窗口化。

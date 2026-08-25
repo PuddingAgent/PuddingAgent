@@ -447,9 +447,14 @@ describe('AgentMessageBubble streaming presentation', () => {
       'running',
     );
     expect(screen.getByText('shell')).toBeTruthy();
+    // AgentTurnCard 重构：尾部组展开，但运行中工具详情保持折叠；行状态点与
+    // 扫光已经表达“正在执行”，避免长 IN 自动撑开卡片。
     expect(
-      screen.getByText('dotnet build Source/PuddingAgent/PuddingAgent.csproj'),
-    ).toBeTruthy();
+      screen.getAllByText('dotnet build Source/PuddingAgent/PuddingAgent.csproj'),
+    ).toHaveLength(1);
+    expect(screen.queryByTestId('toolcall-in')).toBeNull();
+    fireEvent.click(screen.getByTestId('toolcall-row'));
+    expect(screen.getByTestId('toolcall-in')).toBeTruthy();
     expect(container.querySelector('.agentActiveOutputSurface')).toBeNull();
   });
 
@@ -523,12 +528,17 @@ describe('AgentMessageBubble streaming presentation', () => {
     );
 
     expect(screen.getByText('spawn_sub_agent')).toBeTruthy();
-    expect(
-      screen.getByText(
-        '对 PuddingAgent 项目进行代码 QA，重点检查注释是否完成。',
-      ),
-    ).toBeTruthy();
-    expect(document.body.textContent).not.toContain('"perspective"');
+    // 行摘要仍是 presenter 摘要（不带原始 JSON 字段名）；IN 详情只在用户
+    // 显式展开后展示，两者职责分离。
+    expect(screen.getByTestId('toolcall-summary').textContent).toContain(
+      '对 PuddingAgent 项目进行代码 QA，重点检查注释是否完成。',
+    );
+    expect(screen.getByTestId('toolcall-summary').textContent).not.toContain(
+      '"perspective"',
+    );
+    expect(screen.queryByTestId('toolcall-in')).toBeNull();
+    fireEvent.click(screen.getByTestId('toolcall-row'));
+    expect(screen.getByTestId('toolcall-in')).toBeTruthy();
     expect(
       screen.queryByTestId('antd-tooltip')?.getAttribute('data-title') ?? '',
     ).not.toContain(rawArguments);

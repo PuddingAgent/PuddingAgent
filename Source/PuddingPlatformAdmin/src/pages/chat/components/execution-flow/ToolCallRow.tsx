@@ -249,10 +249,17 @@ const buildOutBody = (node: ToolNode, status: ToolCallRowStatus): OutBody => {
 export interface ToolCallRowProps {
   /** 单个工具节点（投影器已配对 + 建树后的 ToolNode）。 */
   node: ToolNode;
+  /** 受控展开（TurnContentStream 注册表）；未传时内部自管。 */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
 /** 单个工具调用行：单行摘要 + 整行展开（IN/OUT 卡 + presentation renderer 分派）。 */
-export const ToolCallRow: React.FC<ToolCallRowProps> = ({ node }) => {
+export const ToolCallRow: React.FC<ToolCallRowProps> = ({
+  node,
+  expanded,
+  onExpandedChange,
+}) => {
   const { styles, cx } = useToolCallStyles();
   const { styles: flowStyles, cx: flowCx } = useExecutionFlowStyles();
   const [showFullOut, setShowFullOut] = useState(false);
@@ -293,6 +300,8 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({ node }) => {
         status === 'running' ? '执行中' : status === 'error' ? '失败' : '成功'
       }）`}
       className={cx(status === 'running' && styles.rowRunning)}
+      expanded={expanded}
+      onExpandedChange={onExpandedChange}
       dataAttrs={{
         'data-status': status,
         'data-toolname': name,
