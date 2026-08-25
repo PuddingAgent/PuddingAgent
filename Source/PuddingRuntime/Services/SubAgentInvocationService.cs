@@ -225,6 +225,8 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         ParentExecutionDeadlineUtc = request.ParentExecutionDeadlineUtc,
         InvocationId = request.InvocationId,
         OriginToolId = request.OriginToolId,
+        InvocationMode = request.EffectiveInvocationMode,
+        BlocksParentTurn = request.EffectiveBlocksParentTurn,
         ParentExecutionIdentity = request.ParentExecutionIdentity,
     };
 
@@ -262,6 +264,8 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         InvocationId = $"subinv-{Guid.NewGuid():N}",
         BatchId = batchId,
         OriginToolId = request.OriginToolId,
+        InvocationMode = request.EffectiveInvocationMode,
+        BlocksParentTurn = request.EffectiveBlocksParentTurn,
         ParentExecutionIdentity = request.ParentExecutionIdentity,
     };
 

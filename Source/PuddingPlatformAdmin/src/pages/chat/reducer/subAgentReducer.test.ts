@@ -293,4 +293,45 @@ describe('subAgentReducer', () => {
       error: 'resume the preserved child session',
     });
   });
+
+  it('projects invocation_mode and blocks_parent_turn onto the card (571fb2fa)', () => {
+    const state = reduceSubAgentRunEvent(
+      {},
+      {
+        eventId: 'event-created-sync',
+        type: 'subagent.run.created',
+        occurredAt: '2026-07-19T00:00:00Z',
+        run_id: 'run-sync',
+        sub_agent_id: 'sub-sync',
+        parent_session_id: 'conversation-1',
+        invocation_mode: 'sync',
+        blocks_parent_turn: true,
+        task_summary: 'sync task',
+      },
+    );
+
+    const card = projectSubAgentRunsToCards(state)['sa-run-sync'];
+    expect(card.invocationMode).toBe('sync');
+    expect(card.blocksParentTurn).toBe(true);
+  });
+
+  it('merges invocation_mode from a later event onto an existing run', () => {
+    const created = reduceSubAgentRunEvent(
+      {},
+      {
+        type: 'subagent.run.created',
+        run_id: 'run-merge',
+        sub_agent_id: 'sub-merge',
+        invocation_mode: 'async',
+      },
+    );
+    const started = reduceSubAgentRunEvent(created, {
+      type: 'subagent.run.started',
+      run_id: 'run-merge',
+      sub_agent_id: 'sub-merge',
+      invocationMode: 'sync',
+    });
+
+    expect(started['run-merge'].invocationMode).toBe('sync');
+  });
 });

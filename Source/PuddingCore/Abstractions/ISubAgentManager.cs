@@ -153,6 +153,14 @@ public sealed record SubAgentSpawnRequest
     public string? BatchId { get; init; }
     public string OriginToolId { get; init; } = "spawn_sub_agent";
     public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
+    /// <summary>
+    /// 调用模式（sync/async，571fb2fa）。缺省由入口归一：
+    /// SpawnAsync 入口回退 async，ExecuteSyncAsync 入口回退 sync。
+    /// 贯穿 run 归档与 subagent.run.created 事件，前端据此区分主消息等待卡片与托盘坞呈现。
+    /// </summary>
+    public string? InvocationMode { get; init; }
+    /// <summary>是否阻塞父 Turn；缺省与调用模式一致（sync 阻塞 / async 不阻塞）。</summary>
+    public bool? BlocksParentTurn { get; init; }
 }
 
 /// <summary>子代理创建结果。</summary>

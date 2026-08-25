@@ -971,11 +971,23 @@ const MessageList: React.FC<MessageListProps> = ({
   );
   const delegationTargetId = useMemo(() => {
     if (!parentDelegationActivity) return undefined;
-    if (projection.activeItemId) return projection.activeItemId;
-    return [...projection.items]
-      .reverse()
-      .find((item) => item.kind === 'message' && item.block.role === 'agent')
-      ?.id;
+    const parentTurnId = parentDelegationActivity.turnId;
+    // 571fb2fa：缺 parentTurnId 的委派事件不绑，宁缺勿滥（防串台）。
+    if (!parentTurnId) return undefined;
+    const matching = projection.items.filter(
+      (item) =>
+        item.kind === 'message' &&
+        item.block.role === 'agent' &&
+        item.block.turnId === parentTurnId,
+    );
+    // 活动消息若同属该父 Turn，优先绑定它（保持流式渲染原位）。
+    if (
+      projection.activeItemId &&
+      matching.some((item) => item.id === projection.activeItemId)
+    ) {
+      return projection.activeItemId;
+    }
+    return matching[matching.length - 1]?.id;
   }, [parentDelegationActivity, projection.activeItemId, projection.items]);
 
   const viewport = useMessageViewportRuntime({

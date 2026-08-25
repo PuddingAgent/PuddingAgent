@@ -327,12 +327,18 @@ const ChatMain: React.FC<ChatMainProps> = ({
       ),
     [subAgentCards],
   );
-  const subAgentCount = activeSubAgentCards.length;
+    const subAgentCount = activeSubAgentCards.length;
+  // 571fb2fa：等待卡片仅聚合「同步委派」（invocationMode !== 'async'）；
+  // 异步/后台子代理只在右侧托盘坞呈现，不进入主消息等待卡片。
+  const syncSubAgentCards = React.useMemo(
+    () => activeSubAgentCards.filter((card) => card.invocationMode !== 'async'),
+    [activeSubAgentCards],
+  );
   const parentDelegationActivity = React.useMemo<
     ParentDelegationActivity | undefined
   >(() => {
-    if (activeSubAgentCards.length === 0) return undefined;
-    const latest = [...activeSubAgentCards].sort(
+    if (syncSubAgentCards.length === 0) return undefined;
+    const latest = [...syncSubAgentCards].sort(
       (left, right) =>
         (right.lastActivityAt ?? right.spawnedAt) -
         (left.lastActivityAt ?? left.spawnedAt),
@@ -343,16 +349,17 @@ const ChatMain: React.FC<ChatMainProps> = ({
         ? latest.originToolId
         : undefined);
     return {
-      activeCount: activeSubAgentCards.length,
+      activeCount: syncSubAgentCards.length,
       label,
-      startedAt: Math.min(...activeSubAgentCards.map((card) => card.spawnedAt)),
+      turnId: latest.parentTurnId,
+      startedAt: Math.min(...syncSubAgentCards.map((card) => card.spawnedAt)),
       updatedAt: Math.max(
-        ...activeSubAgentCards.map(
+        ...syncSubAgentCards.map(
           (card) => card.lastActivityAt ?? card.spawnedAt,
         ),
       ),
     };
-  }, [activeSubAgentCards]);
+  }, [syncSubAgentCards]);
   const hasSubAgentActivity = React.useMemo(
     () => Object.keys(subAgentCards ?? {}).length > 0,
     [subAgentCards],

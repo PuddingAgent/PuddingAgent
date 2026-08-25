@@ -36,6 +36,8 @@ export interface SubAgentRunView {
   parentRunId?: string;
   parentToolCallId?: string;
   originToolId?: string;
+  invocationMode?: string;
+  blocksParentTurn?: boolean;
   role?: string;
   templateId?: string;
   providerId?: string;
@@ -417,6 +419,8 @@ const createRun = (
   parentRunId: text(event, 'parent_run_id', 'parentRunId'),
   parentToolCallId: text(event, 'parent_tool_call_id', 'parentToolCallId'),
   originToolId: text(event, 'origin_tool_id', 'originToolId'),
+  invocationMode: text(event, 'invocation_mode', 'invocationMode'),
+  blocksParentTurn: boolean(event, 'blocks_parent_turn', 'blocksParentTurn'),
   role: text(event, 'role'),
   templateId: text(event, 'template', 'template_id', 'templateId'),
   providerId: text(event, 'provider_id', 'providerId'),
@@ -466,6 +470,11 @@ const mergeIdentity = (
     current.parentToolCallId,
   originToolId:
     text(event, 'origin_tool_id', 'originToolId') ?? current.originToolId,
+  invocationMode:
+    text(event, 'invocation_mode', 'invocationMode') ?? current.invocationMode,
+  blocksParentTurn:
+    boolean(event, 'blocks_parent_turn', 'blocksParentTurn') ??
+    current.blocksParentTurn,
   role: text(event, 'role') ?? current.role,
   templateId:
     text(event, 'template', 'template_id', 'templateId') ?? current.templateId,
@@ -700,6 +709,8 @@ export function projectSubAgentRunsToCards(
       providerId: run.providerId,
       profileId: run.profileId,
       originToolId: run.originToolId,
+      invocationMode: run.invocationMode,
+      blocksParentTurn: run.blocksParentTurn,
       role: run.role,
       taskSummary: run.taskSummary,
       status: toCardStatus(run.status),

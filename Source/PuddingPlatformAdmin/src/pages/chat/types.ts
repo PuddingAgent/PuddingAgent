@@ -416,7 +416,9 @@ export interface SubAgentCard {
   modelId?: string;
   providerId?: string;
   profileId?: string;
-  originToolId?: string;
+    originToolId?: string;
+  invocationMode?: string;
+  blocksParentTurn?: boolean;
   role?: string;
   taskSummary: string;
   status: SubAgentCardStatus;
@@ -455,6 +457,8 @@ export type SubAgentCardMap = Record<string, SubAgentCard>;
 export interface ParentDelegationActivity {
   activeCount: number;
   label?: string;
+  /** 该委派所绑定的父 Turn（同步等待卡片严格按此匹配；缺省不绑）。 */
+  turnId?: string;
   startedAt: number;
   updatedAt: number;
 }

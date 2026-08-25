@@ -1,4 +1,4 @@
-﻿using PuddingCode.Observability;
+using PuddingCode.Observability;
 using PuddingCode.Platform;
 
 namespace PuddingCode.Runtime;
@@ -12,6 +12,21 @@ public static class SubAgentPermissionModes
         public const string Inherit = "inherit";
     public const string Low = "low";
     public const string None = "none";
+}
+
+/// <summary>
+/// 子代理调用模式（571fb2fa）。
+/// sync = 父 Turn 内联等待子代理返回（阻塞父 Turn，UI 显示“主代理正在等待子代理返回”）；
+/// async = 后台执行，父 Turn 不等待（UI 只在托盘坞呈现，不打扰主消息）。
+/// </summary>
+public static class SubAgentInvocationModes
+{
+    public const string Sync = "sync";
+    public const string Async = "async";
+
+    /// <summary>归一化 invocation mode；未知值回退到 fallback（按调用入口的 IsAsync 语义推导）。</summary>
+    public static string Normalize(string? value, bool isAsync)
+        => value == Sync || value == Async ? value : (isAsync ? Async : Sync);
 }
 
 /// <summary>单个批量子代理任务的结构化输入。</summary>
@@ -53,6 +68,18 @@ public sealed record SubAgentInvocationRequest
     public string? StopCondition { get; init; }
     public string? OutputContract { get; init; }
     public bool IsAsync { get; init; }
+    /// <summary>
+    /// 调用模式（sync/async）。缺省按 IsAsync 推导（571fb2fa）：
+    /// 该维度贯穿 spawn 请求与 subagent.run.created 事件，供前端区分
+    /// “主代理等待卡片”（仅 sync）与“托盘坞后台徽标”（async 亦显示）。
+    /// </summary>
+    public string? InvocationMode { get; init; }
+    /// <summary>是否阻塞父 Turn。缺省与调用模式一致（sync 阻塞 / async 不阻塞）。</summary>
+    public bool? BlocksParentTurn { get; init; }
+    /// <summary>归一化后的调用模式（未知值回退 IsAsync 推导）。</summary>
+    public string EffectiveInvocationMode => SubAgentInvocationModes.Normalize(InvocationMode, IsAsync);
+    /// <summary>归一化后的父 Turn 阻塞语义。</summary>
+    public bool EffectiveBlocksParentTurn => BlocksParentTurn ?? EffectiveInvocationMode == SubAgentInvocationModes.Sync;
     /// <summary>调用入口解析出的不可变 LLM 配置快照。</summary>
     public required LlmConfig LlmConfig { get; init; }
     /// <summary>调用入口已解析的不可变 Provider/Profile/Model 路由身份。</summary>
@@ -106,6 +133,14 @@ public sealed record SubAgentBatchInvocationRequest
     public required string TemplateId { get; init; }
     public required IReadOnlyList<SubAgentBatchTask> Tasks { get; init; }
     public bool IsAsync { get; init; }
+    /// <summary>调用模式（sync/async）；缺省按 IsAsync 推导（571fb2fa，与单任务语义一致）。</summary>
+    public string? InvocationMode { get; init; }
+    /// <summary>是否阻塞父 Turn；缺省与调用模式一致。</summary>
+    public bool? BlocksParentTurn { get; init; }
+    /// <summary>归一化后的调用模式（未知值回退 IsAsync 推导）。</summary>
+    public string EffectiveInvocationMode => SubAgentInvocationModes.Normalize(InvocationMode, IsAsync);
+    /// <summary>归一化后的父 Turn 阻塞语义。</summary>
+    public bool EffectiveBlocksParentTurn => BlocksParentTurn ?? EffectiveInvocationMode == SubAgentInvocationModes.Sync;
     /// <summary>调用入口解析出的不可变 LLM 配置快照。</summary>
     public required LlmConfig LlmConfig { get; init; }
     /// <summary>批次内所有任务共用的不可变 Provider/Profile/Model 路由身份。</summary>

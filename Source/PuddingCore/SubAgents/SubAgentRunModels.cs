@@ -1,4 +1,4 @@
-﻿using PuddingCode.Runtime;
+using PuddingCode.Runtime;
 
 namespace PuddingCode.SubAgents;
 
@@ -40,8 +40,12 @@ public sealed record SubAgentRunManifest
     public string? ModelId { get; init; }
     public int? TimeoutSeconds { get; init; }
     public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
-    public int? MaxRounds { get; init; }
+                public int? MaxRounds { get; init; }
     public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
+    /// <summary>调用模式（sync/async，571fb2fa）；已由入口归一，非空。</summary>
+    public string? InvocationMode { get; init; }
+    /// <summary>是否阻塞父 Turn；与调用模式一致。</summary>
+    public bool? BlocksParentTurn { get; init; }
     public int? TotalRounds { get; init; }
     public int? TotalToolCalls { get; init; }
     public long? TotalDurationMs { get; init; }
@@ -57,6 +61,10 @@ public sealed record SubAgentRunCreateRequest
     public required string AgentInstanceId { get; init; }
     public required string TemplateId { get; init; }
     public required string Task { get; init; }
+    /// <summary>调用模式（sync/async，571fb2fa）；入口归一后非空。</summary>
+    public string? InvocationMode { get; init; }
+    /// <summary>是否阻塞父 Turn；与调用模式一致。</summary>
+    public bool? BlocksParentTurn { get; init; }
     public string? TaskPlanId { get; init; }
     public string? TaskNodeId { get; init; }
     public string? ParentTaskNodeId { get; init; }

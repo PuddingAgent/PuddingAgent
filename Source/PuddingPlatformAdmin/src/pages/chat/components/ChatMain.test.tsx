@@ -391,12 +391,13 @@ describe('ChatMain workbench header', () => {
   it('counts only active sub-agents in the composer status summary', () => {
     renderChatMain({
       subAgentCards: {
-        'sa-running': {
+                'sa-running': {
           turnId: 'sa-running',
           subSessionId: 'session-1-sub-running',
           status: 'running',
           originToolId: 'spawn_sub_agent',
           taskSummary: 'running task',
+          parentTurnId: 'turn-running',
           spawnedAt: 1_000,
         },
         'sa-completed': {
@@ -413,14 +414,50 @@ describe('ChatMain workbench header', () => {
 
     expect(_mockLatestInputAreaProps.subAgentsRunning).toBe(1);
     expect(_mockLatestMessageListProps.subAgentCards).toBeUndefined();
-    expect(_mockLatestMessageListProps.parentDelegationActivity).toEqual({
+        expect(_mockLatestMessageListProps.parentDelegationActivity).toEqual({
       activeCount: 1,
       label: undefined,
+      turnId: 'turn-running',
       startedAt: 1_000,
       updatedAt: 1_000,
     });
     expect(screen.getByTestId('subagent-activity-dock')).toBeTruthy();
     expect(screen.queryByTestId('subagent-anchor')).toBeNull();
+  });
+
+  it('excludes async sub-agents from the parent waiting card but keeps them in the dock count', () => {
+    renderChatMain({
+      subAgentCards: {
+        'sa-sync': {
+          turnId: 'sa-sync',
+          subSessionId: 'session-1-sub-sync',
+          status: 'running',
+          invocationMode: 'sync',
+          originToolId: 'spawn_sub_agent',
+          taskSummary: 'sync task',
+          parentTurnId: 'turn-sync',
+          spawnedAt: 1_000,
+        },
+        'sa-async': {
+          turnId: 'sa-async',
+          subSessionId: 'session-1-sub-async',
+          status: 'running',
+          invocationMode: 'async',
+          originToolId: 'spawn_sub_agent',
+          taskSummary: 'async task',
+          spawnedAt: 2_000,
+        },
+      },
+    });
+
+    expect(_mockLatestInputAreaProps.subAgentsRunning).toBe(2);
+    expect(_mockLatestMessageListProps.parentDelegationActivity).toEqual({
+      activeCount: 1,
+      label: undefined,
+      turnId: 'turn-sync',
+      startedAt: 1_000,
+      updatedAt: 1_000,
+    });
   });
 
   it('mounts history search only after the user opens it', () => {
