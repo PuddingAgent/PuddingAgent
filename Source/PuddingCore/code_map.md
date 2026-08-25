@@ -2,6 +2,17 @@
 
 > 核心抽象与契约 | 接口 · 模型 · 配置 · 序列化 · Agent 定义
 
+## Goal 域（Goals/ · ADR-074 G0 合同层）
+
+| 文件 | 用途 |
+|------|------|
+| `Goals/GoalContracts.cs` | GoalPhase/GoalCommandKind 枚举、GoalSnapshot、GoalCommand、GoalCommandRequest/Result、GoalLimits（256 硬上限、objective 1-4000）与 GoalErrorCodes |
+| `Goals/GoalStateMachine.cs` | 纯状态机：转换矩阵、终态判定、resume/edit 卫兵、计数不变量、CanAcceptNewIteration 预算裁决 |
+| `Goals/GoalEventTypes.cs` | goal.* canonical 事件目录 + ProducerComponent 常量（G1 冻结全部命名） |
+| `Goals/GoalCommandTextParser.cs` | /goal 严格 grammar（中文/多行 objective、--rounds 1..256、子命令消歧） |
+| `Goals/IGoalCommandService.cs` + `IGoalQueryService.cs` | 命令/查询应用服务契约（slash 与结构化 API 共用） |
+| `Goals/GoalRunOptions.cs` | GoalRuns 配置节（Enabled 默认 false；局部配置不得扩大硬边界） |
+
 ## 抽象层
 
 | 文件/目录 | 用途 |
@@ -12,6 +23,7 @@
 | `Abstractions/ILlmGatewayUsageRecorder.cs` | 一次 Provider usage 对应一条本地计费事实的必达写入契约 |
 | `Abstractions/ISubAgentPool.cs` | Runtime 调用子代理池所需的最小契约、池状态与池快照模型；实现留在 Platform |
 | `Platform/IPlatformRepositories.cs` | Platform 持久化仓储契约；包含 Agent Token/熵诊断的 Core DTO 查询边界 |
+| `Platform/AgentProjectionDtos.cs` | Agent 会话读模型；`ProcessSummaryItem.Sequence` 为 canonical 必填，active/detail 输出携带 `TurnEventWindow`（through/min/max/hasMoreBefore）供前端识别截断 |
 
 ## 模型（Models/）
 

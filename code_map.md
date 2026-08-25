@@ -30,13 +30,15 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/07架构/85*.md` | 分期交付、测试、安全、性能、Desktop 部署、浏览器 smoke、恢复与验收证据图册 |
 | `Docs/07架构/86ADR-072*.md` | 工作区 TODO 第一阶段任务领域 ADR；覆盖五列 Board、Task Failed/Reopen、Task Ledger、手工/Auto 派发、受限 Cron/Message Event、Agent Availability、Task executionWindow 与 provider/model 价格时段 Resolver；完整 Auto 受 Goal 前置约束，不新增 `work-policy.json` |
 | `Docs/07架构/87ADR-073*.md` | 当前产品施工总表与冲突裁决基线；列出 30 项产品任务、17 项 T00–T16 平台底座任务及专项 Phase 去重映射，覆盖目标、优先级、工作量、难度、依赖、设计位置和里程碑 |
-| `Docs/07架构/89ADR-074*.md` | Goal 专项架构决策；冻结外层 GoalRun/内层 Agent Loop 双层预算、单 Goal 256 accepted Iteration 硬上限、durable outbox 续行、独立证据验证、重启 disarm、Task-bound Goal、Availability Sensor、低峰派发与不依赖 Heartbeat |
+| `Docs/07架构/89ADR-074*.md` | Goal 专项架构决策；冻结外层 GoalRun/内层 Agent Loop 双层预算、单 Goal 256 accepted Iteration 硬上限、durable outbox 续行、独立证据验证、重启 disarm、Task-bound Goal、Availability Sensor、低峰派发与不依赖 Heartbeat；**G0+G1 已实现（2026-08-24）**：`PuddingCore/Goals/` 合同层与纯状态机、`PuddingPlatform/Services/Goals/` 五表 schema + `/goal` 多端统一命令 + 启动 disarm + GoalBanner/Admin 前端最小闭环；命令不创建 Agent Turn，G2 durable outbox 续行起后续批次交付 |
 | `Docs/07架构/90ADR-075*.md` / `Docs/Features/第三方任务看板AccessToken与外部API详细设计方案.md` | 第三方任务看板开发合同；冻结 hashed opaque Access Token、ASP.NET Core 独立 scheme + scope/workspace Policy、外部 API v1、ETag/幂等、追加式 TaskEvaluation 与 Admin Access Token 管理器；P1（Token 后端）+ P3（Admin UI）+ P2 基本功能已实现：`pdt_v1_` opaque Token 摘要存储、PuddingExternalAccessToken scheme、Admin 管理 API/UI、last-used 合并写、External Task API v1（list/get/create/patch/comments/evaluations/commands + ETag/428/412 + 简化幂等）共 65 项后端测试；SSE Watch/RateLimiter/OpenAPI 与 P4（部署收口）未实现，External API 默认关闭 |
-| `Docs/07架构/91ADR-076*.md` / `Docs/Features/遥测调试数据自动过期与Web存储管理设计方案.md` | 遥测/Debug 存储治理目标设计；Core + Web `/storage`、缓存快照与有界增量估算、分类图表/趋势报表、语义类型目录、自动/人工唯一维护 writer、按类型/时间清理、关键事实保护、长期聚合和禁止在线全库 VACUUM；Desktop 不扩展，当前未实现；2026-08-24 代码级现状核对补充：上下文日聚合复用既有 `context_layer_daily_rollups`、retention 索引收编目录所有权（终止 `ix_prune_*` 运行时补建双轨）、`CompactAfterCleanup` 默认值随 Phase 1 翻转、旧 /databases 端点与 Desktop 旧页面捆绑退役、appsettings `Retention` 节整体迁移 system.json |
+| `Docs/07架构/91ADR-076*.md` / `Docs/Features/遥测调试数据自动过期与Web存储管理设计方案.md` | 遥测/Debug 存储治理设计 + 首轮实现（Phase 0–3 已落地：语义目录/快照估算/单 writer 协调器/语义 API/Web /storage 页面；Phase 4 生产验收待做）；上下文日聚合复用既有 `context_layer_daily_rollups`、retention 索引收编目录所有权、旧 /databases 端点与 Desktop 旧页面捆绑退役、appsettings Retention 节已迁移 system.json |
 | `Docs/07架构/92ADR-077*.md` | 主代理原生视觉目标设计；typed image content、Workspace Artifact、DeepSeek Responses `input_image`/图片型工具结果、Files API、多轮/重启恢复、fail-closed；Image Reader 重定位为 URL/任意绝对路径/Artifact 取用工具，默认当前模型原生读取，文本模型或第二意见才委派 helper；V0–V2 已实现（typed parts、fail-closed Planner、图片工具结果、visionHelperModel、删除自动预观察），V3 Files API 与 V4 真实模型 smoke 待做 |
 | `Docs/07架构/tool-infrastructure-layering.md` | Tool 分层、强制委派合同、Smart 参数与结果合同 |
 | `Docs/deepseek-harness-message-card-alignment-2026-08-14.md` | 对照 deepseek-harness 的消息、推理和工具调用 UI 目标架构；定义 TurnStatus、Reasoning/Tool/Delegation 行、toolCallId 投影、分期与验收矩阵 |
 | `Docs/chat-ui-behavior-chain-quality-upgrade-2026-08-23.md` | 聊天前端「行为链 + 质感」升级：harness 质感纪律与 Hermes/业界 12 原则调研、四档灰阶 token、交错时间线（路径 A/B 统一 ViewModel）、五类 presentation renderer 设计与实施记录 |
+| `Docs/Features/Agent消息交错内容流与最新行为组披露完整实施方案.md` | Flash 代码级施工合同：canonical sequence、TextBlock ⇄ ActivityGroup、会话级唯一最新披露 owner、完整 reasoning、工具详情懒加载、柔和收起/卸载、逐文件任务卡、测试命令和双阶段验收 |
+| `Docs/07架构/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md` | 冻结 AgentTurnCard 单一有序内容流与唯一正文源；当前最新 Agent 回合的最后行为组持续展开，最终正文不关闭，新行为/新回合转移 owner 并柔和收起旧组 |
 | `Docs/deepseek-harness-tool-system-alignment-2026-08-14.md` | 对照 deepseek-harness 的工具定义与执行协议；规划 canonical output、端到端 callId、结构化错误、管线、并发、spill、可回放 presentation 与 DeepSeek Code Mode |
 | `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md` | 对照 deepseek-harness 与 pi 的统一目标架构与 2026-08-15 复评；定义 Plugin/Function/Hook/Event/Projection、Agent Transition+Effect FSM、Function Graph、Composition Snapshot、前端解释层、底座缺口与分期路线 |
 | `Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md` | 7 日 Token 构成、工具结果重放、搜索失败和 ZIP 稀疏度基线；定义原文不脱敏的 artifact/envelope、T0-T4 分级压缩、Compact 覆盖门禁、冷启动去重、稳定前缀与 DeepSeek 缓存 >99% 验收 |
@@ -115,6 +117,20 @@ Terminal 长命令能耗协议（2026-08-22）
     主 Agent 57 技能的索引从 29K 字符/轮显著缩减，全文仍由 agent_skill 渐进加载
   → 前缀稳定性结论：分层排序已正确（稳→动）；L9-INBOUND/L6-AGENT-LOG-RECALL 变化属尾部动态层，
     缓存损伤被限制在其自身与 <1K 尾巴，无需整改
+
+缓存命中率冲刺（2026-08-25，基线 8/22-24 DeepSeek 96.783% → 目标 >99%，设计方案 §1.2）
+  → 有界冷启动重组：ContextCompactionOptions.MaxHydrationTokenBudget(49152,0=禁用) 钳制重水合
+    预算（DB/JSONL 双路径）；摘要链优先占预算，JSONL 胜出时补拼（原会静默丢摘要）
+  → 滚动摘要链：压缩候选纳入旧代 compact_summary，新摘要统一标记 CompactedBy；
+    CompactionCoverageFilter 改全部 manifest 并集（修多代 JSONL 复活缺口）
+  → 绝对窗口 proactive 压缩：MaxActiveRawTokenBudget(131072) 与 0.65 比例 OR 触发
+    （大窗口模型旧阈值 16 万 token 才压缩）；Streaming 路径补齐轮内软压缩
+  → 前缀字节稳定：ToolLoopInstruction 可见集清单（原全注册表）；ContextAssemblyService
+    首组装透传 LoadedToolIds/Capability（灭 turn1→turn2 必变）；L0-AGENTS-ROSTER session 冻结
+  → 归因卫生：vision-helper:/subconscious: sessionId 命名空间；image_reader 委派稳定 system 前缀
+    + (artifact,prompt) 观察缓存；ConversationProjector usage 指纹查重（灭双计 NULL 桶）；
+    session_rehydrated 显式归因；会话默认驻留 1h→4h
+  → 验收：TestScripts/deepseek-cache-hitrate.py 日报；连续 7 完整自然日 >99%（§15.3）
 
 审批命令防火墙（任务 ce63f8c0，2026-08-22，确定性 Gate 0）
   → ToolApprovalCommandFirewall（静态字符串判定）接入 CheckAsync：工单匹配后、LLM 隐式审计前
@@ -220,10 +236,24 @@ Desktop Storage → CoreStorageManagementClient
     → PreviewId（10 分钟）→ 白名单批量删除 → checkpoint/VACUUM → 重扫
     → session_event_log / conversation_events / ChatMessages / memory 永不进入清理目标
 
-PuddingHost → RetentionPruningService（platform.db 唯一在线保留期任务）
-  → `Retention` 顶层配置 → 小批 DELETE + 批间让步 + 单表单轮批数上限
-  → conversation_events 先写 `retention-archive/<day>/conversation_events.jsonl` 再删
-  → VACUUM 默认关闭；不与第二套诊断裁剪服务并行争用 SQLite writer
+PuddingHost → RetentionPruningService（platform.db 自动保留调度壳，ADR-076 收编）
+  → 策略读 <DataRoot>/config/system.json storageManagement（StorageRetentionPolicyService，CAS + fail closed）
+  → 执行全部委托 StorageMaintenanceCoordinator（唯一在线维护 writer：双优先级队列 + DataRoot maintenance.lock）
+    → StorageCleanupExecutor 小批执行器（100 行/批、250ms 让步、busy 退避、rowid cursor 续行）
+    → conversation_events 证据先 RetentionArchiveWriter 归档再删；在线 VACUUM 已全线移除
+  → 遥测/上下文原始行自动清理默认关闭（聚合未实现 fail-safe）；Debug 字段/运行活动/日志默认开启
+  → 旧 /api/admin/storage/databases 三端点保留双通道鉴权，Execute 内部经协调器，Desktop 旧页面无感
+
+ADR-076 存储管理（Core + Web /storage，2026-08-24 首轮实现 Phase 0–3）
+  → StorageDataClassCatalog 语义目录（9 类型 + evidence.conversation-events，物理白名单 + 保护清单）
+  → StorageInventorySampler 有界采样（50–100ms slice、LIMIT 300 样本、索引探测 min/max、目录分片）
+    → StorageInventorySnapshotStore 原子合并快照 + history.jsonl（每小时一点、90 天趋势）
+    → POST inventory/refresh 立即 202、重复请求合并；GET overview 只读缓存
+  → StorageMaintenanceJobStore durable 作业（maintenance/storage/jobs/<id>/job.json + events.jsonl，90 天轮转）
+  → StorageAdminController 语义 API（overview/data-classes/refresh/history/policy(CAS)/preview/job/confirm/cancel，Admin JWT）
+  → Admin /storage 页面：总览（文件+可复用页+分类估算）、SVG 占比圆环+趋势堆叠图、分类报表、
+    可清理选择器（Evidence 只读展示）、受保护区、策略 Drawer、Preview 确认 Modal、作业列表（轮询+取消+确认）
+  → 消费循环修复：writer Complete 后 WaitToReadAsync 同步 false 自旋会挂死宿主 StopAsync（测试抓出）
 
 DesignRequest + ExpertGroupDefinition → DesignCouncilPlanCompiler
   → 上下文审计 → 调研 → 独立提案 → 交叉批判 → 主席综合 → 独立终审
@@ -265,18 +295,21 @@ Chat first paint → AgentConversationProjectionService
   → 验收二轮修复（2026-08-24）：委派节点按 subAgentId upsert（重复 spawn 不再
     留下永久 running）；DTO 透传 canonical sequence/turnId/runId + activeRun 快照
     补正文事件（运行态即可交错文本段）；懒水合有界化（MessageRow 挂载注册可见
-    turn、单批并发 ≤2，替代首屏全量 8 回合 5288 事件）；content-visibility 占位
+    turn、并发窗口 ≤2 且槽位完成后持续排空可见队列，替代首屏全量并发；旧实现只
+    水合首批两条、导致最新消息永久无轨迹）；content-visibility 占位
     改 auto 120px + 虚拟化按内容权重即时开启（不再要求 ≥24 条）；
     AgentTurnCard 大卡片外壳（暖色表面/1px 边界/14px 圆角，终态不重挂载）；
     工具行 aria-label 带状态 + 成功终态卡「已完成」标记
   → MessageList → messageProjection（保持已组装消息顺序，未匹配 active run 留在当前流末端）→ MessageViewportRuntime（虚拟化、锚点、贴底）
   → ChatMessageStyleProvider（消息树共享一次聚合样式注册）
   → MessageRow（稳定块直接渲染 + 语义 memo；不再经过单条 MessageStream 兼容重建）
-  → AgentMessageBubble → ExecutionFlowTimeline（行为链交错，2026-08-23；正文分段交错 2026-08-24）
-     （per-turn canonical 投影 nodes 按 sequence 交错 文本段/reasoning 段/工具树/委派；
-       路径 A processItems adapter 同构回退，featureFlag 默认开、'0' 逃生门；
-       正文分段：中间文本段（MessageNode 段）时间线内联、尾段独占正文气泡（段切换 remount 打字机），
-       分段并集必须覆盖 answerMarkdown 否则回退整块（防同段双渲染）；
+  → AgentMessageBubble → TurnContentStream（AgentTurnCard 内容块流，2026-08-25）
+     （per-turn canonical 投影 nodes 按 sequence 形成 TextBlock ⇄ ActivityGroup 交错流；
+       正文永久可见且只渲染一次，answerMarkdown 不再以字符串关系切回第二正文气泡；
+       最新尾部组始终展开、历史组折叠并卸载成员 DOM，组内长详情默认单行折叠；
+       路径 A processItems adapter 只作无 canonical 正文节点时的旧记录回退；
+       ProcessSummaryItem 必须透传服务端 sequence，缺失即 fail closed，不用下标伪造；
+       已封闭 TextBlock/ActivityGroup 语义 memo，append 只更新尾段/状态变化组；
        TurnOutputChunker 非 delta 事件先 flush 正文/思考缓冲，轮次边界进 canonical sequence；
        终态 reply 分叉以服务端为准不再拼接（重复输出修复）；
        流式中同回复单卡：activeRun↔本地 turn 合并移除「本地正文为空」门槛

@@ -57,6 +57,7 @@
 | 文件 | 用途 |
 |------|------|
 | `Tools/BuiltIns/` | 内置工具（Git 20 工具在此） |
+| `Tools/BuiltIns/Llm/ListLlmProvidersTool.cs` | `list_llm_providers` LLM 路由表查询；数据来自 ILlmConfigService 内存快照（llm.providers.json），输出 providerId/modelId/route/protocol/capabilityTags/价格/isEnabled/isDeprecated 与 ambiguous_model_ids 歧义清单（与 FileLlmResolver 裸 modelId 解析语义一致）；严禁输出 apiKey/baseUrl；已入 ToolExposurePlanner.CoreToolIds 常驻可见，spawn_sub_agent 描述同步指向 |
 | `Tools/BuiltIns/Search/SearchGrepTool.cs` | 代码文本搜索；排除目录在枚举前裁剪（修复 false-negative）；默认额外排除 `.pudding`，结果默认 20 条/16 KiB，支持显式扩大与继续检索 |
 | `Tools/BuiltIns/Git/GitCommitTool.cs` | git_commit 提交工具；files 数组反序列化兼容 `string` 与 `string[]`（`StringOrStringArrayConverter`） |
 | `Tools/BuiltIns/Files/FileChunkService.cs` | Runtime 文件工具的大文件分块/流式读取服务；不再反向依赖 Platform |
@@ -146,4 +147,4 @@
 
 ## 测试
 
-对应测试项目：`../PuddingRuntimeTests/` — Agent Loop、上下文管线、语音/图片 Provider；SubAgent/输入 resolver/图片生成/图片展示编排定向测试 4/4 ✅
+对应测试项目：`../PuddingRuntimeTests/` — Agent Loop、上下文管线、语音/图片 Provider；SubAgent/输入 resolver/图片生成/图片展示编排定向测试 4/4 ✅；list_llm_providers 工具合同测试（歧义/过滤/敏感字段/路由可解析）7/7 ✅

@@ -22,6 +22,7 @@
 | `Services/ChatMessageSchemaBootstrapper.cs` | 存量 SQLite 幂等补 `ChatMessages.content_parts_json` 列 |
 | `Services/AgentChat/ExecutionRunCoordinator.cs` | ADR-077：canonical parts + 冻结 Snapshot 判定 vision/文本占位；已删除自动预观察旁路，消息正文不再含本地绝对路径 |
 | `Services/AgentChat/TurnOutputChunker.cs` | Delta 聚合分块器；非 delta 事件（工具/step）先 flush 已缓冲正文/思考再透传——「文本 → 工具 → 文本」轮次边界进入 canonical sequence（chat 交错时间线依赖，2026-08-24）；测试 `PuddingPlatformTests/Services/TurnOutputChunkerPayloadOwnershipTests.cs` |
+| `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 首屏/活动 run/消息明细投影；活动根 run 以最新根 `turn.started` 锚定，避免子代理 runId 抢占；active/full detail 都把 `message.content.appended` 与思考/工具/委派按真实 sequence 返回，并用 `TurnEventWindow` 显式标记 64 条活动窗口边界 |
 | `Services/ChatTranscriptWriter.cs` | 转录写入 |
 | `Services/ChatTelemetryRecorder.cs` | 遥测记录 |
 
@@ -87,6 +88,21 @@
 | `Data/Entities/TaskEventEntity.cs` | `task_events` 实体（long Id 自增 + 18 业务列）|
 | `Data/Entities/TaskAssignmentAttemptEntity.cs` | `task_assignment_attempts` 实体 + partial unique index（task_id WHERE released_at_utc IS NULL）|
 
+## Goal 持久控制面（Services/Goals/ · ADR-074 G1 已实现：持久 Goal + 多端命令，不自动续行）
+
+| 文件 | 用途 |
+|------|------|
+| `Services/Goals/GoalSchemaBootstrapper.cs` | goal_runs/goal_iterations/goal_outbox/goal_verifications/task_goal_bindings 五表幂等建表；含"单会话一个非终态 Goal" partial unique 与 outbox 幂等键索引（G1 冻结全部 schema） |
+| `Services/Goals/GoalRunStore.cs` | 聚合写入原语：Create/TryMutate（CAS + Func 卫兵）与 goal.* ConversationEvent 同事务直写（照 AcceptanceStore 序列分配模式，不走自开事务的 EventStore） |
+| `Services/Goals/GoalCommandService.cs` | /goal 全命令合同：set/edit/replace/pause/resume/cancel/clear/status；conflict、幂等重放（source_command_id 唯一）、expectedVersion、budget_exhausted 不可 resume、feature flag 下保留 status/pause/cancel |
+| `Services/Goals/GoalQueryService.cs` | 只读投影（active/latest/iterations） |
+| `Services/Goals/GoalRestartReconciler.cs` | 启动 disarm：active→paused（bootId 锚点 + goal.paused 事件），幂等 |
+| `Controllers/Api/GoalCommandsController.cs` | POST /api/v1/conversations/{id}/goals/commands（结构化命令） |
+| `Controllers/Api/GoalQueriesController.cs` | GET /goal、/api/v1/goals/{id}、/goals/{id}/iterations |
+| `Data/Entities/Goal*Entity.cs` + `TaskGoalBindingEntity.cs` | 五张表实体（枚举 int、snake_case、version CAS） |
+
+关联修改：`SystemCommandHandler`（/goal 分支委托 GoalCommandService，不创建 Turn）；`PlatformDbContext`（5 个 DbSet + partial unique 索引）；`PuddingApplicationInitializer`（GoalSchemaBootstrapper + 启动 disarm）。
+
 ## 外部访问令牌（ADR-075 External Access Token，P1+P3 已实现）
 
 | 文件 | 用途 |
@@ -148,9 +164,14 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/LlmProviderFileService.cs` | LLM Provider/模型文件配置；协议只存在于模型 DTO 与模型写入请求 |
+| `Services/LlmProviderFileService.cs` | LLM Provider/模型文件配置；协议只存在于模型 DTO 与模型写入请求；`GetBalanceAsync` 余额查询——解析 apiKey（ApiKey/${ENV}/{{vault:NAME}}/ApiKeyRef→KeyVault）后按 `ILlmBalanceProvider` 注册表 CanHandle 分发，未注册适配器返回「暂不支持」DTO（apiKey 不进日志） |
+| `Services/ILlmBalanceProvider.cs` | 服务商余额查询适配器契约（多服务商计费抽象）：`CanHandle(provider)` + `QueryAsync(provider, apiKey, ct)`；网络错误抛 HttpRequestException（控制器映射 502），上游业务错误返回 IsAvailable=false DTO |
+| `Services/DeepSeekLlmBalanceProvider.cs` | DeepSeek 适配器：GET {baseUrl 剥掉尾部 /v1}/user/balance + Bearer；解析 is_available/balance_infos（字符串金额兼容）与 error.message；CanHandle=providerId 含 deepseek 或 baseUrl 指向 deepseek.com；命名 HttpClient `LlmBalanceQuery`（30s） |
+| `Controllers/Api/LlmProviderApiController.cs` | Provider CRUD/配额/余额 HTTP 出口；`GET api/llm/providers/{providerId}/balance`（KeyNotFound→404 / InvalidOperation→400 / HttpRequestException→502） |
 | `Services/ChannelConfigurationFileService.cs` | 渠道配置（21KB） |
 | `Services/VoiceProviderFileService.cs` | 语音提供商（18KB） |
+
+余额链路测试：`PuddingPlatformTests/Services/DeepSeekLlmBalanceProviderTests.cs`（8 用例：解析//v1 剥离/Bearer/非 2xx/网络错误/CanHandle 矩阵）+ `LlmProviderBalanceDispatchTests.cs`（4 用例：暂不支持/委托与密钥/404/400）；扩展步骤见 `Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md`。
 
 ## Token 计量
 

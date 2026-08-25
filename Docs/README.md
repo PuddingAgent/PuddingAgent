@@ -1,6 +1,6 @@
 # Pudding Agent Network 文档索引
 
-最后更新：2026-08-22（新增 ADR-077 主代理原生视觉理解与多模态消息链路；既有 Goal/Task/存储设计状态不变）
+最后更新：2026-08-25（新增 Agent 消息交错内容流与最新行为组披露完整实施方案及 ADR-079；设计冻结，实施与生产验收未完成）
 
 ## 文档定位
 
@@ -20,6 +20,10 @@
 
 ## 当前主线文档
 
+- `Docs/Features/Agent消息交错内容流与最新行为组披露完整实施方案.md`
+	- Flash 可直接施工的代码级合同：canonical sequence、TextBlock ⇄ ActivityGroup、会话级唯一最新披露 owner、完整 reasoning 换行、工具详情懒加载、柔和收起/卸载、性能、逐文件任务卡、测试命令和双阶段真实验收。
+- `Docs/07架构/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md`
+	- 冻结一个 AgentTurnCard 内真实交错、唯一正文源，以及“当前最新 Agent 回合最后行为组持续展开；最终正文不关闭；新行为/新回合才转移并收起旧组”的架构决策。Accepted 只表示设计决策冻结，不表示实现完成。
 - `Docs/07架构/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md`
 	- 冻结主视觉模型直接消费 typed image content、Workspace Artifact、DeepSeek Responses `input_image`/图片型工具结果、Files API、多轮重启恢复、fail-closed 与视觉用量；Image Reader 改为默认只传路径的按需取图工具，支持 URL/任意绝对路径，并保留显式 helper 委派能力。当前为 Proposed。
 - `Docs/07架构/89ADR-074Goal持久目标自主续行与自动压缩ADR.md`
@@ -56,6 +60,8 @@
 	- Compact API、上下文健康状态、InputCompression 原型和验收计划。
 - `Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md`
 	- 7 日 Token/工具重放/搜索失败/ZIP 基线，以及无损 artifact、分级压缩、Compact 覆盖门禁和 DeepSeek 缓存 `>99%` 的施工与验收合同。
+- `Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md`
+	- 聊天页主代理余额徽标（DeepSeek 首个落地）+ 前后端双注册表计费抽象：后端 `ILlmBalanceProvider` 查询适配器、前端 `providerBilling.ts` 展示适配器；含新服务商扩展步骤、刷新策略与 apiKey 安全约束。已实施（2026-08-24）。
 
 ## 主题文档分组
 

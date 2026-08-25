@@ -103,7 +103,7 @@
 
 ## Chat 流式 UI（deepseek-harness 对齐，2026-08-23）
 
-参考 `E:\github\deepseek\deepseek-harness`（dsh-0.1.1-rc.2）流式 UI 设计 + `Docs/deepseek-harness-message-card-alignment-2026-08-14.md`；保留 Pudding 色板/头像身份，采用 harness 的信息架构与流式渲染模式。行为链交错时间线 + 质感升级见 `Docs/chat-ui-behavior-chain-quality-upgrade-2026-08-23.md`（2026-08-23）。
+参考 `E:\github\deepseek\deepseek-harness`（dsh-0.1.1-rc.2）流式 UI 设计 + `Docs/deepseek-harness-message-card-alignment-2026-08-14.md`；保留 Pudding 色板/头像身份，采用 harness 的信息架构与流式渲染模式。行为链质感演进记录见 `Docs/chat-ui-behavior-chain-quality-upgrade-2026-08-23.md`；2026-08-25 后续施工以 `Docs/Features/Agent消息交错内容流与最新行为组披露完整实施方案.md` + ADR-079 为权威合同。
 
 | 文件 | 职责与边界 |
 |------|------------|
@@ -121,9 +121,9 @@
 | `src/pages/chat/components/messageTurnMerge.test.ts` | BUG2 守卫单测：终态不回退、同 messageId 不追加第二卡 |
 | `src/pages/chat/components/MessageItem.streaming.test.tsx` | BUG1 单测：完整表格渲染 `<table>`、流式尾段表格走 markdown、纯文本尾段保留打字机 |
 | `src/pages/chat/projections/turnContentBlocks.ts` | 把 canonical nodes 解释为 TextBlock ⇄ ActivityGroupBlock；每个最大连续非正文区间一组，不重排；组 key 锚定首节点，摘要/运行态/Stats 纯派生 |
-| `src/pages/chat/components/execution-flow/TurnContentStream.tsx` | AgentTurnCard 唯一内容渲染器；最新尾部组始终展开，历史组折叠；只有尾部开放正文段走打字机。路径 A 仅适配无正文的旧 TimelineItem，不参与 canonical 顺序合成 |
-| `src/pages/chat/components/execution-flow/ActivityGroup.tsx` / `TextSegmentView.tsx` / `useDisclosureRegistry.ts` | 折叠时卸载成员 DOM，组内详情默认单行折叠并用状态点/扫光表示运行；用户 override 粘性；已封闭正文段/历史组按可见语义 memo，SSE append 不重渲染旧内容 |
-| `src/pages/chat/components/execution-flow/ReasoningDisclosureRow.tsx` | 多段推理行：每段一行，折叠摘要运行中=最新非空行+扫光、完成=首行+段时长 chip（`思考 · 12s`，对齐 "Thought for Ns"）；hooks 必须先于空 payload 早退 |
+| `src/pages/chat/components/execution-flow/TurnContentStream.tsx` | AgentTurnCard 唯一内容渲染器；按 ADR-079 逆向寻找最后 ActivityGroup，不能把“整个块流最后一块”当最新行为组；只有尾部开放正文段走打字机 |
+| `src/pages/chat/components/execution-flow/ActivityGroup.tsx` / `TextSegmentView.tsx` / `useDisclosureRegistry.ts` | ADR-079 目标：默认 owner 在会话内唯一（最新 Agent 回合最后行为组），最终正文不关闭；owner 转移柔和收起并在动画后卸载成员 DOM；用户 tri-state override 粘性；封闭正文段/历史组按可见语义 memo |
+| `src/pages/chat/components/execution-flow/ReasoningDisclosureRow.tsx` | 多段推理行；ADR-079 要求 ActivityGroup 展开态使用 `inline-full` 完整 canonical reasoning 换行且无二级 disclosure，standalone 折叠摘要模式仍可保留；hooks 必须先于空 payload 早退 |
 | `src/pages/chat/components/execution-flow/ToolCallRow.tsx` | 完成态耗时/非零 exit code 上折叠行尾部（caption 灰 tabular-nums，error 染红）；presentation 卡经 `resolveRenderer` 分派（P3 五类已注册） |
 | `src/pages/chat/components/execution-flow/TurnStatsLine.tsx` | turn 终态计量行：`N 段思考 · M 工具 · 3m01s · 4.2k tokens`；缺失项省略不伪造，全缺失不渲染 |
 | `src/pages/chat/presentation/PresentationRegistry.ts` | kind→renderer 分派表：generic/terminal/diff/read/search/web 已注册，delegation/job 回落 Generic；禁止按 toolName 分支 |
@@ -132,6 +132,7 @@
 | `src/pages/chat/client/featureFlag.ts` | `isExecutionFlowProjectionEnabled` 默认开启（P2 转正：live turn 消费 canonical 投影交错）；localStorage `pudding-exec-flow-proj==='0'` 为逃生门；历史/无投影 turn 走路径 A adapter |
 | `src/pages/chat/projections/executionFlowProjector.ts` | `MessageNode` = 一个连续正文段，任何非 content 节点事件切段；`message.completed.reply` 只在整 turn 无 content delta 时创建兜底正文，绝不覆盖已有段文本；空段过滤、reasoning/tool/delegation 仍按 canonical sequence 投影 |
 | `src/pages/chat/projections/turnSurfaceStore.ts` / `client/types.ts` | bootstrap/activeRun/live 三源按 eventId 幂等合流；`ProcessSummaryItem.sequence` 必填且运行时校验，缺失 fail closed，禁止数组下标伪造跨源顺序 |
+| `src/pages/chat/hooks/useTurnSurfaceStore.ts` | 可见 turn 懒水合调度器：最多 2 个并发槽，任一完成继续排空队列；会话切换丢弃迟到响应，同轮失败项跳过并在下一服务端投影重试，避免“仅最早两条有轨迹” |
 | `src/pages/chat/utils/chatStateUtils.ts` | `resolveTerminalAssistantMarkdown` 分叉兜底：current 与终态 reply 完全分叉且无后缀衔接时返回 reply（服务端 canonical），不再整段拼接（旧实现任何一次流内偏差都会让正文显示两遍） |
 | `src/pages/chat/hooks/useTypewriterStreaming.ts` | stale-stable 守卫：`stableTextRef` 镜像已提交前缀，`text` 不再以其开头（快照/终态改写）时整体重置 stable/live 游标，杜绝 stale stable + 新 live 同段双渲染 |
 | `src/pages/chat/components/execution-flow/TurnStatus.tsx` | 单行运行态（唯一 aria-live）；leading 槽渲染阶段墨球 TurnStatusOrb（pending/五阶段 → breathing/connecting/working/solving/weaving/composing） |
