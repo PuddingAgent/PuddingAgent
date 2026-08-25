@@ -277,15 +277,37 @@ public sealed class ContextWindowManager
         // 按 Sequence 升序得到稳定有序的消息列表（Sequence 是稳定顺序）。
         var ordered = entities.OrderBy(m => m.Sequence).ToList();
 
+        // 摘要链优先保证：compact_summary 不参与 tier 竞争（它按轮距会被判为 T3/T4 冷数据，
+        // 在预算紧张时最先被驱逐），而是先占用预算、按 Sequence 追加在原文尾部。
+        var summaryEntities = ordered
+            .Where(m => string.Equals(
+                m.ContentType,
+                ContextWindowConstants.CompactSummaryContentType,
+                StringComparison.OrdinalIgnoreCase))
+            .OrderBy(m => m.Sequence)
+            .ToList();
+        if (summaryEntities.Count > ContextWindowConstants.MaxActiveCompactSummaries)
+            summaryEntities = summaryEntities
+                .Skip(summaryEntities.Count - ContextWindowConstants.MaxActiveCompactSummaries)
+                .ToList();
+        var rawEntities = ordered
+            .Where(m => !string.Equals(
+                m.ContentType,
+                ContextWindowConstants.CompactSummaryContentType,
+                StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var summaryTokens = summaryEntities.Sum(m =>
+            Math.Max(1, (m.Content ?? string.Empty).Length / ContextWindowConstants.TokenEstimateCharDivisor));
+
         // Tier 化分级：user 消息为轮次边界，最后 user 轮视为当前轮（T0），保证最近轮全保真。
-        var inputs = MapToTierInputs(ordered, query);
+        var inputs = MapToTierInputs(rawEntities, query);
         var plan = _tierPlanner.Plan(inputs, options: null);
         var assignments = plan.Assignments;
 
         // 按 Tier 保真度填充：T0 → T4，同 tier 内新的（Sequence 大）在前；
         // 预算耗尽后更冷 tier 整体不再填充（保新弃旧，替代旧的"从旧到新累加 + break"）。
-        var selected = new List<MessageEntity>(ordered.Count);
-        var estimatedTokens = 0;
+        var selected = new List<MessageEntity>(rawEntities.Count);
+        var estimatedTokens = summaryTokens;
         var budgetExhausted = false;
 
         foreach (var tier in Enum.GetValues<ContextSegmentTier>().OrderBy(t => (int)t))
@@ -294,7 +316,7 @@ public sealed class ContextWindowManager
                 break;
 
             foreach (var (entity, _) in assignments
-                         .Select((a, i) => (Entity: ordered[i], a.Tier))
+                         .Select((a, i) => (Entity: rawEntities[i], a.Tier))
                          .Where(p => p.Tier == tier)
                          .OrderByDescending(p => p.Entity.Sequence))
             {
@@ -313,7 +335,9 @@ public sealed class ContextWindowManager
             }
         }
 
-        // 最终输出仍按 Sequence 升序（旧→新），与历史直觉一致。
+        // 最终输出仍按 Sequence 升序（旧→新），摘要链追加在原文尾部（与 Sequence 语义一致：
+        // 摘要 Sequence = 压缩时 max+1，本就晚于被压缩消息）。
+        selected.AddRange(summaryEntities);
         var lastCreatedAt = selected.Count > 0 ? selected.Max(m => m.CreatedAt) : 0L;
         var messages = selected
             .OrderBy(m => m.Sequence)
@@ -335,6 +359,9 @@ public sealed class ContextWindowManager
 
     /// <summary>
     /// SSE 路径优先按数据库重建上下文；失败时保持现有内存历史不变。
+    /// 重水合预算受 <see cref="ContextCompactionOptions.MaxHydrationTokenBudget"/> 钳制（有界冷启动重组）：
+    /// provider 前缀缓存过期后的首次重放只携带摘要链 + 近期原文 + query 命中晋升，
+    /// 不再把整个模型窗口的原文一次性重传。
     /// </summary>
     public async Task TryHydrateStreamHistoryFromDbAsync(
         string sessionId,
@@ -362,11 +389,24 @@ public sealed class ContextWindowManager
                     removedRuntimeControls);
             }
 
+            // 有界冷启动重组：钳制重水合预算。预算从摘要链开始分摊——
+            // 摘要链先保留（信息密度最高），剩余预算给原文 tier 填充。
+            var summaries = await LoadActiveCompactSummariesAsync(sessionId, ct);
+            var summaryTokens = summaries.Sum(m =>
+                Math.Max(1, (m.Content ?? string.Empty).Length / ContextWindowConstants.TokenEstimateCharDivisor));
+            var hydrationBudget = maxTokenBudget;
+            if (_compactionOptions is { MaxHydrationTokenBudget: > 0 })
+                hydrationBudget = Math.Min(hydrationBudget, _compactionOptions.MaxHydrationTokenBudget);
+            var rawBudget = Math.Max(
+                ContextWindowConstants.MinMessagesBeforeTokenBreak + 1,
+                hydrationBudget - summaryTokens);
+
             HydratedHistorySnapshot? hydrated = null;
+            var hydratedFromJsonl = false;
 
             if (_memoryDbFactory is not null)
             {
-                var dbHistory = await BuildContextFromDbSnapshotAsync(sessionId, maxTokenBudget, ct, query);
+                var dbHistory = await BuildContextFromDbSnapshotAsync(sessionId, rawBudget, ct, query);
                 if (dbHistory.Messages.Count > 0)
                 {
                     hydrated = dbHistory;
@@ -375,16 +415,26 @@ public sealed class ContextWindowManager
 
             if (_jsonlReader is not null)
             {
-                var jsonlHistory = await BuildContextFromJsonlSnapshotAsync(sessionId, maxTokenBudget, ct, query);
+                var jsonlHistory = await BuildContextFromJsonlSnapshotAsync(sessionId, rawBudget, ct, query);
                 if (jsonlHistory.Messages.Count > 0
                     && (hydrated is null || jsonlHistory.LastCreatedAt > hydrated.LastCreatedAt))
                 {
                     hydrated = jsonlHistory;
+                    hydratedFromJsonl = true;
                 }
             }
 
             if (hydrated is null || hydrated.Messages.Count == 0)
                 return;
+
+            // JSONL 不含压缩摘要（摘要只落 memory-DB）；JSONL 胜出时补拼摘要链，
+            // 否则压缩过的会话重水合会静默丢摘要。DB 胜出路径的快照已内含摘要，不重复追加。
+            if (summaries.Count > 0 && hydratedFromJsonl)
+            {
+                hydrated = new HydratedHistorySnapshot(
+                    hydrated.Messages.Concat(summaries).ToList(),
+                    hydrated.LastCreatedAt);
+            }
 
             var hydratedContext = SanitizeForLlmContext(hydrated.Messages.Where(m => m.Role != ChatRole.System));
 
@@ -518,6 +568,42 @@ public sealed class ContextWindowManager
 
     private async Task<CompactionCoverage> LoadCoverageAsync(string sessionId, CancellationToken ct)
         => await new CompactionCoverageFilter(_memoryDbFactory).LoadAsync(sessionId, ct);
+
+    /// <summary>
+    /// 读取会话当前生效的压缩摘要链（active compact_summary，旧→新）。
+    /// 滚动摘要链改造后旧代摘要会被下一代标记 CompactedBy，这里只取仍生效的；
+    /// 兜底最多保留最近 4 代，防止历史多代堆积撑爆重水合预算。
+    /// </summary>
+    private async Task<List<ChatMessage>> LoadActiveCompactSummariesAsync(string sessionId, CancellationToken ct)
+    {
+        if (_memoryDbFactory is null)
+            return [];
+
+        try
+        {
+            await using var db = await _memoryDbFactory.CreateDbContextAsync(ct);
+            var summaries = await db.Messages
+                .AsNoTracking()
+                .Where(m => m.SessionId == sessionId
+                    && m.ContentType == ContextWindowConstants.CompactSummaryContentType
+                    && m.CompactedBy == null)
+                .OrderByDescending(m => m.CreatedAt)
+                .Take(ContextWindowConstants.MaxActiveCompactSummaries)
+                .ToListAsync(ct);
+
+            return summaries
+                .OrderBy(m => m.Sequence)
+                .Select(m => new ChatMessage(ChatRole.Assistant, m.Content ?? string.Empty))
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[AgentExec] Load compact summaries failed session={Session}; hydrate without summaries",
+                sessionId);
+            return [];
+        }
+    }
 
     private static bool IsJsonlMessageEntry(JsonlEntry entry)
     {

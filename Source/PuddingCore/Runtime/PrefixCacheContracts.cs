@@ -42,6 +42,13 @@ public sealed record PromptPrefixSnapshot
     public DateTimeOffset CreatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
 }
 
+/// <summary>Prefix 变化原因常量；与 TokenUsageEvents.PrefixChangeReason、缓存报表 SQL 共用。</summary>
+public static class PrefixChangeReasons
+{
+    /// <summary>进程重启或内存会话过期后从持久层重水合历史，provider 前缀缓存大概率已过期。</summary>
+    public const string SessionRehydrated = "session_rehydrated";
+}
+
 /// <summary>
 /// Prefix 缓存快照构建器。目标是提供稳定、可测试、可归因的 prefix 指纹。
 /// </summary>

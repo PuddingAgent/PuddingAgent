@@ -175,7 +175,7 @@ public sealed class MemoryLlmInvocationClient(
     {
         var profile = ResolveSubconsciousProfile(overrideConfig);
         var workspaceId = overrideConfig?.WorkspaceId ?? DefaultWorkspaceId;
-        var sessionId = overrideConfig?.SessionId ?? DefaultSessionId;
+        var sessionId = NamespaceSessionId(overrideConfig?.SessionId ?? DefaultSessionId);
         var agentInstanceId = overrideConfig?.AgentInstanceId ?? DefaultAgentInstanceId;
         var invocationRequest = new LlmInvocationRequest
         {
@@ -227,7 +227,10 @@ public sealed class MemoryLlmInvocationClient(
     {
         var profile = ResolveSubconsciousProfile(overrideConfig);
         var workspaceId = targetScope?.WorkspaceId ?? overrideConfig?.WorkspaceId ?? DefaultWorkspaceId;
-        var sessionId = targetScope?.SessionId ?? overrideConfig?.SessionId ?? DefaultSessionId;
+        // 后台整合调用若沿用聊天 sessionId，会把主会话的前缀变化判定与缓存统计一并污染；
+        // 这里统一落到 subconscious 命名空间（usage 归因仍带 workspace/agent 关联）。
+        var sessionId = NamespaceSessionId(
+            targetScope?.SessionId ?? overrideConfig?.SessionId ?? DefaultSessionId);
         var agentInstanceId = targetScope?.AgentId
             ?? overrideConfig?.AgentInstanceId
             ?? DefaultAgentInstanceId;
@@ -276,6 +279,15 @@ public sealed class MemoryLlmInvocationClient(
         => string.IsNullOrWhiteSpace(stage)
             ? $"llm:{invocationId}"
             : $"llm:{stage.Trim().ToLowerInvariant()}:{invocationId}";
+
+    /// <summary>
+    /// 潜意识调用统一使用 subconscious 命名空间 sessionId，避免污染聊天会话的前缀缓存归因。
+    /// 已自带命名空间（ subconscious 前缀或含冒号的后台 scope，如 daily-summary:YYYY-MM-DD）不再重复加前缀。
+    /// </summary>
+    private static string NamespaceSessionId(string sessionId)
+        => sessionId.StartsWith("subconscious", StringComparison.Ordinal) || sessionId.Contains(':')
+            ? sessionId
+            : $"subconscious:{sessionId}";
 
     private LlmInvocationProfile ResolveSubconsciousProfile(MemoryLlmConfig? overrideConfig)
     {

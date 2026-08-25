@@ -1012,8 +1012,195 @@ public sealed class ContextWindowManagerTests
                 CancellationToken.None);
 
             Assert.IsTrue(history.Any(m => m.Content == "fresh compact summary"),
-                "A newer DB compact summary must keep precedence over older raw JSONL history.");
+                "A newer DB compact summary must keep precedence over older raw JSONL history (summary CreatedAt drives DB snapshot freshness).");
             Assert.IsFalse(history.Any(m => m.Content == "older raw jsonl message"));
+        }
+        finally
+        {
+            Directory.Delete(jsonlRoot, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task TryHydrateStreamHistoryFromDbAsync_RespectsMaxHydrationTokenBudget()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var jsonlRoot = CreateTempJsonlRoot();
+        try
+        {
+            // 6 条 × 30000 字符 ≈ 60000 估算 token（1 token ≈ 3 字符），
+            // 远超 MaxHydrationTokenBudget=2000；重水合必须只保留最近少量原文。
+            var writer = new JsonlSessionWriter(jsonlRoot);
+            for (var i = 1; i <= 6; i++)
+            {
+                writer.Enqueue("session-budget", new JsonlEntry
+                {
+                    Type = "user",
+                    MessageId = $"jsonl-{i}",
+                    SessionId = "session-budget",
+                    Role = "user",
+                    ContentType = "text",
+                    Content = $"budget message {i} " + new string('x', 30_000),
+                    BranchType = "MAIN",
+                    CreatedAt = i,
+                });
+            }
+
+            var manager = CreateManager(
+                null,
+                new TestMemoryDbContextFactory(options),
+                jsonlReader: new JsonlSessionReader(jsonlRoot),
+                compactionOptions: new ContextCompactionOptions { MaxHydrationTokenBudget = 2000 });
+            var history = manager.GetOrCreateHistory("session-budget");
+
+            await manager.TryHydrateStreamHistoryFromDbAsync(
+                "session-budget",
+                history,
+                maxTokenBudget: 1_000_000,
+                CancellationToken.None);
+
+            var estimatedTokens = history.Sum(m => Math.Max(1, (m.Content ?? string.Empty).Length / 3));
+            Assert.IsTrue(
+                estimatedTokens <= 2000 + 3 * 30_000 / 3,
+                $"Hydration must respect MaxHydrationTokenBudget modulo the MinMessagesBeforeTokenBreak protective window (estimated={estimatedTokens}).");
+            Assert.IsTrue(history.Count <= 3,
+                "Budget-constrained hydration should retain only the most recent messages.");
+            Assert.IsTrue(history.Any(m => m.Content?.Contains("budget message 6", StringComparison.Ordinal) == true),
+                "The newest message must always survive budget eviction.");
+        }
+        finally
+        {
+            Directory.Delete(jsonlRoot, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task TryHydrateStreamHistoryFromDbAsync_ZeroHydrationBudget_DisablesCap()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var jsonlRoot = CreateTempJsonlRoot();
+        try
+        {
+            var writer = new JsonlSessionWriter(jsonlRoot);
+            for (var i = 1; i <= 6; i++)
+            {
+                writer.Enqueue("session-nocap", new JsonlEntry
+                {
+                    Type = "user",
+                    MessageId = $"jsonl-{i}",
+                    SessionId = "session-nocap",
+                    Role = "user",
+                    ContentType = "text",
+                    Content = $"nocap message {i} " + new string('x', 30_000),
+                    BranchType = "MAIN",
+                    CreatedAt = i,
+                });
+            }
+
+            var manager = CreateManager(
+                null,
+                new TestMemoryDbContextFactory(options),
+                jsonlReader: new JsonlSessionReader(jsonlRoot),
+                compactionOptions: new ContextCompactionOptions { MaxHydrationTokenBudget = 0 });
+            var history = manager.GetOrCreateHistory("session-nocap");
+
+            await manager.TryHydrateStreamHistoryFromDbAsync(
+                "session-nocap",
+                history,
+                maxTokenBudget: 1_000_000,
+                CancellationToken.None);
+
+            Assert.AreEqual(6, history.Count,
+                "MaxHydrationTokenBudget=0 must disable the cap (legacy full-window replay).");
+        }
+        finally
+        {
+            Directory.Delete(jsonlRoot, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task TryHydrateStreamHistoryFromDbAsync_AppendsSummaryChain_AfterRawOnJsonlWin()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-merge", messageCount: 2, charsPerMessage: 0);
+
+        // 活动摘要链：两条 compact_summary（模拟两代），其中旧代已被新一代标记 CompactedBy。
+        db.Messages.Add(new MessageEntity
+        {
+            MessageId = "summary-gen1",
+            SessionId = "session-merge",
+            Sequence = 90,
+            Role = "system",
+            ContentType = "compact_summary",
+            Content = "generation one summary",
+            CreatedAt = 15,
+            CompactedBy = "summary-gen2",
+        });
+        db.Messages.Add(new MessageEntity
+        {
+            MessageId = "summary-gen2",
+            SessionId = "session-merge",
+            Sequence = 91,
+            Role = "system",
+            ContentType = "compact_summary",
+            Content = "generation two summary",
+            CreatedAt = 16,
+        });
+        await db.SaveChangesAsync();
+
+        var jsonlRoot = CreateTempJsonlRoot();
+        try
+        {
+            var writer = new JsonlSessionWriter(jsonlRoot);
+            writer.Enqueue("session-merge", new JsonlEntry
+            {
+                Type = "user",
+                MessageId = "jsonl-newest",
+                SessionId = "session-merge",
+                Role = "user",
+                ContentType = "text",
+                Content = "newest raw message",
+                BranchType = "MAIN",
+                CreatedAt = 20,
+            });
+
+            var manager = CreateManager(
+                null,
+                new TestMemoryDbContextFactory(options),
+                jsonlReader: new JsonlSessionReader(jsonlRoot));
+            var history = manager.GetOrCreateHistory("session-merge");
+
+            await manager.TryHydrateStreamHistoryFromDbAsync(
+                "session-merge",
+                history,
+                maxTokenBudget: 8000,
+                CancellationToken.None);
+
+            Assert.IsTrue(history.Any(m => m.Content == "newest raw message"),
+                "Newest JSONL raw message must hydrate.");
+            Assert.IsTrue(history.Any(m => m.Content == "generation two summary"),
+                "Active (latest) compact summary must be appended on JSONL win.");
+            Assert.IsFalse(history.Any(m => m.Content == "generation one summary"),
+                "Summaries already covered by a newer generation must not be appended.");
+            var summaryIndex = history.FindIndex(m => m.Content == "generation two summary");
+            var rawIndex = history.FindIndex(m => m.Content == "newest raw message");
+            Assert.IsTrue(summaryIndex > rawIndex,
+                "Summary chain appends after raw messages (Sequence-order compatible).");
         }
         finally
         {

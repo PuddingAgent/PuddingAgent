@@ -122,6 +122,7 @@ public sealed partial class AgentExecutionService
         var perfHistorySw = System.Diagnostics.Stopwatch.StartNew();
         var perfHistoryStartedAt = DateTimeOffset.UtcNow;
         var history = _contextManager.GetOrCreateHistory(request.SessionId);
+        var rehydratedFromDbThisDispatch = false;
 
         // ── 入站消息去重：同一 message_id 因 Ack 丢失/重试被重复 dispatch 时，
         //     不再重复进入 LLM 历史、不再重复执行。
@@ -150,12 +151,16 @@ public sealed partial class AgentExecutionService
         }
         try
         {
+            var historyCountBeforeHydration = history.Count;
             await _contextManager.TryHydrateStreamHistoryFromDbAsync(
                 request.SessionId,
                 history,
                 template.Runtime?.MaxContextTokens ?? 8000,
                 ct,
                 query: request.MessageText);
+            // 冷重水合（重启/内存会话过期后从 DB 回放）后的首轮请求显式归因，
+            // 供缓存报表区分"重水合全量重传"与"前缀漂移"。
+            rehydratedFromDbThisDispatch = history.Count > historyCountBeforeHydration;
             perfHistorySw.Stop();
             await RecordActivityAsync(
                 streamTrace,
@@ -720,6 +725,38 @@ public sealed partial class AgentExecutionService
                 ContextUsageSnapshot? contextUsageSnapshot = null;
                 if (_contextUsageSnapshotStore is not null)
                 {
+                    // 轮内软压缩（与 Buffered 路径对齐，ADR-060 §3.12）：估算达到 trigger×有效上限
+                    // 即驱逐最旧会话单元并回写 history，避免长 Streaming 会话养到硬悬崖才一次性裁剪。
+                    if (history.Count > 12)
+                    {
+                        var (softTrigger, softTarget) = ResolveContextSoftCompactionRatios();
+                        var softCompaction = LlmRequestBudgetGuard.PrepareSoftCompaction(
+                            _contextUsageSnapshotStore,
+                            request.SessionId,
+                            history,
+                            llmTools,
+                            effectiveLlmConfig,
+                            softTrigger,
+                            softTarget);
+                        if (softCompaction.Compacted)
+                        {
+                            history.Clear();
+                            history.AddRange(softCompaction.Messages);
+                            injectedHistory = await BuildInjectedHistoryAsync(history, ct);
+                            _logger.LogWarning(
+                                "[AgentExec:ContextBudget] Soft compaction session={Session} round={Round} removed={Removed} messages {Before}->{After} estimated={BeforeTokens}->{AfterTokens} limit={Limit} trigger={Trigger:F2}",
+                                request.SessionId,
+                                round + 1,
+                                softCompaction.RemovedMessageCount,
+                                softCompaction.InitialMessageCount,
+                                history.Count,
+                                softCompaction.InitialUsedTokens,
+                                softCompaction.Snapshot.UsedTokens,
+                                softCompaction.EffectiveInputLimit,
+                                softTrigger);
+                        }
+                    }
+
                     var budgetedRequest = LlmRequestBudgetGuard.Prepare(
                         _contextUsageSnapshotStore,
                         request.SessionId,
@@ -744,7 +781,12 @@ public sealed partial class AgentExecutionService
 
                 var prefixStartedAt = DateTimeOffset.UtcNow;
                 var prefixSw = System.Diagnostics.Stopwatch.StartNew();
-                var prefixSnapshot = PrefixCacheSnapshotBuilder.Build(injectedHistory, llmTools);
+                var prefixSnapshot = PrefixCacheSnapshotBuilder.Build(
+                    injectedHistory,
+                    llmTools,
+                    prefixChangeReason: rehydratedFromDbThisDispatch && round == 0
+                        ? PrefixChangeReasons.SessionRehydrated
+                        : null);
                 prefixSw.Stop();
                 await RecordActivityAsync(
                     streamTrace,

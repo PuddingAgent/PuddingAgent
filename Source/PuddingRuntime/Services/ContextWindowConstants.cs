@@ -57,6 +57,9 @@ public static class ContextWindowConstants
     /// <summary>压缩摘要的内容类型标识。</summary>
     public const string CompactSummaryContentType = "compact_summary";
 
+    /// <summary>重水合/DB 回填时保留的活动摘要链最大代数（滚动链改造后通常只有 1 代）。</summary>
+    public const int MaxActiveCompactSummaries = 4;
+
     // ── 提示词标记字符串 ────────────────────────────────────────
     /// <summary>工作总结提示词注入时的去重检测标记。</summary>
     public const string WorkSummaryPromptMarker = "会话压缩即将触发";

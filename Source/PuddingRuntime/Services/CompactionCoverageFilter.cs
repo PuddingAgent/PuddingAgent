@@ -19,7 +19,8 @@ public sealed class CompactionCoverageFilter
     }
 
     /// <summary>
-    /// 加载指定 session 最新（TargetGeneration 最大）覆盖清单的覆盖集合。
+    /// 加载指定 session 全部已提交覆盖清单的并集（滚动摘要链下各代 manifest 链式衔接；
+    /// 只看最新代会漏掉旧代覆盖的消息，使其经 JSONL 旁路复活）。
     /// </summary>
     public async Task<CompactionCoverage> LoadAsync(string sessionId, CancellationToken ct = default)
     {
@@ -27,17 +28,23 @@ public sealed class CompactionCoverageFilter
             return CompactionCoverage.Empty;
 
         await using var db = await _memoryDbFactory.CreateDbContextAsync(ct);
-        var manifest = await db.CompactionCoverageManifests
+        var manifests = await db.CompactionCoverageManifests
             .AsNoTracking()
             .Where(m => m.SessionId == sessionId)
-            .OrderByDescending(m => m.TargetGeneration)
-            .FirstOrDefaultAsync(ct);
-        if (manifest is null)
+            .ToListAsync(ct);
+        if (manifests.Count == 0)
             return CompactionCoverage.Empty;
 
-        var coveredMessageIds = ParseIdArray(manifest.SourceMessageIds);
-        var coveredHashes = ParseIdArray(manifest.SourceHashes);
-        return new CompactionCoverage(coveredMessageIds, coveredHashes, manifest.TargetGeneration);
+        var coveredMessageIds = new HashSet<string>();
+        var coveredHashes = new HashSet<string>();
+        foreach (var manifest in manifests)
+        {
+            coveredMessageIds.UnionWith(ParseIdArray(manifest.SourceMessageIds));
+            coveredHashes.UnionWith(ParseIdArray(manifest.SourceHashes));
+        }
+
+        var latestGeneration = manifests.Max(m => m.TargetGeneration);
+        return new CompactionCoverage(coveredMessageIds, coveredHashes, latestGeneration);
     }
 
     /// <summary>解析 JSON 数组字符串；非法/空输入一律返回空集合。</summary>

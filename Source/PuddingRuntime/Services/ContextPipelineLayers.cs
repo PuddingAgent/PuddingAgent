@@ -41,6 +41,24 @@ public sealed partial class ContextPipeline
         return content;
     }
 
+    /// <summary>
+    /// L0-AGENTS-ROSTER 的 session 冻结版：名册内容随工作区 Agent 生成/结束而变化
+    /// （活跃子代理委派期间反复改写），而它位于 system 消息前部，任何字节变化都会使
+    /// 整个后续历史失去前缀缓存。冻结首组装字节，进程重启或 InvalidateSession 后刷新；
+    /// 会话内新 Agent 由 subagent_result 消息自行介绍，名册陈旧一个会话周期可接受。
+    /// </summary>
+    private async Task<string> GetOrBuildWorkspaceAgentsLayerAsync(ContextRequest request, CancellationToken ct)
+    {
+        if (_workspaceAgentsCache.TryGetValue(request.SessionId, out var cached))
+            return cached;
+
+        var content = _workspaceAgentsContextBuilder is null
+            ? "--- LAYER: WORKSPACE AGENTS ---\n(No workspace agents available.)\n"
+            : await _workspaceAgentsContextBuilder.BuildAsync(request.WorkspaceId, "default", ct);
+        _workspaceAgentsCache[request.SessionId] = content;
+        return content;
+    }
+
     private async Task<string> BuildStaticLayerAsync(ContextRequest request, CancellationToken ct)
     {
         var sb = new StringBuilder();
@@ -907,16 +925,32 @@ public sealed partial class ContextPipeline
         }
         else
         {
-            sb.Append(BuildLoopInstructions(request.Capability, request.WorkspaceId));
+            sb.Append(BuildLoopInstructions(request.Capability, request.WorkspaceId, request));
         }
     }
 
-    private string BuildLoopInstructions(CapabilityPolicy? capability, string workspaceId)
+    private string BuildLoopInstructions(CapabilityPolicy? capability, string workspaceId, ContextRequest request)
     {
         if (_toolRegistry is null)
             return _skillRuntime.BuildLoopInstructions(capability);
 
-        return ToolLoopInstructionBuilder.BuildFromDescriptors(_toolRegistry.ListAvailable(capability, workspaceId));
+        var registryTools = _toolRegistry.ListAvailable(capability, workspaceId);
+
+        // 前缀稳定：Available Tools 清单只列可见集（Core ∪ loaded），与 L1-TOOLS 索引和
+        // tools 参数口径一致。全注册表清单会把 registry/MCP 变化放大成 RUNTIME 层字节
+        // 漂移，破坏稳定前缀缓存。LoadedToolIds 为 null（非 Agent 路径）保持旧行为。
+        if (request.LoadedToolIds is { } loaded)
+        {
+            var visibleIds = new HashSet<string>(ToolExposurePlanner.CoreToolIds, StringComparer.OrdinalIgnoreCase);
+            visibleIds.UnionWith(loaded);
+            var visibleTools = registryTools
+                .Where(tool => visibleIds.Contains(tool.ToolId))
+                .ToList();
+            if (visibleTools.Count > 0)
+                return ToolLoopInstructionBuilder.BuildFromDescriptors(visibleTools);
+        }
+
+        return ToolLoopInstructionBuilder.BuildFromDescriptors(registryTools);
     }
 
     // ═══════════════════════════════════════════════════════════════

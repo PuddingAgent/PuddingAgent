@@ -8,7 +8,9 @@ namespace PuddingRuntime.Services;
 /// </summary>
 public sealed class AgentSessionManager
 {
-    private static readonly TimeSpan DefaultSessionTimeout = TimeSpan.FromHours(1);
+    // 与 AgentExecutionService.DefaultSessionTimeout 保持一致（4h）：
+    // 减少日间空闲后的全量重水合；模板 runtime.sessionTimeout 可覆盖。
+    private static readonly TimeSpan DefaultSessionTimeout = TimeSpan.FromHours(4);
 
     private readonly ConcurrentDictionary<string, AgentInstanceRecord> _instances = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastAccessedAt = new();

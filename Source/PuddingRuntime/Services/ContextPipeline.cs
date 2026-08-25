@@ -56,6 +56,7 @@ public sealed partial class ContextPipeline
 
     // 静态层缓存：sessionId → StaticContextCache
     private readonly ConcurrentDictionary<string, StaticContextCache> _staticCache = new();
+    private readonly ConcurrentDictionary<string, string> _workspaceAgentsCache = new();
 
     // 环境层缓存：workspaceId → EnvironmentLayerCache
     private readonly ConcurrentDictionary<string, EnvironmentLayerCache> _envCache = new();
@@ -206,6 +207,7 @@ public sealed partial class ContextPipeline
     public void InvalidateSession(string sessionId)
     {
         _staticCache.TryRemove(sessionId, out _);
+        _workspaceAgentsCache.TryRemove(sessionId, out _);
     }
 
     /// <summary>使指定 Workspace 的环境层缓存失效。</summary>

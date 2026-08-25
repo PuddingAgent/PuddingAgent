@@ -3115,3 +3115,26 @@ Desktop(127.0.0.1:80) ──后端前缀(/api /swagger /health /healthz /metrics
 - DebugFailed 且错误带 `pnpm` → pnpm 不在 PATH，或 install/启动失败，错误自带前端日志尾部。
 - 页面 502 `Proxy error` → 上游（Core 或前端 dev server）未就绪或已退出；Core 起来前 /api 短暂 502 属正常。
 - HMR 不生效 → 确认页面确实经 80 端口访问（WebSocket 需经代理中继），而不是直连 8000。
+
+## 11.35 DeepSeek 缓存命中率日报与 miss 归因（>99% 验收）
+
+验收口径见《上下文Token效率缓存命中与分级压缩优化设计方案》§15.3：连续 7 个完整自然日、按 Token 加权总命中率
+`>99%`；单日输入 ≥10M 的模型分组各自 `>99%`。日常检查直接运行：
+
+```bash
+python TestScripts/deepseek-cache-hitrate.py            # 最近 7 天逐日/分模型/归因/Top miss
+python TestScripts/deepseek-cache-hitrate.py --days 3   # 短窗口
+```
+
+要点：
+- 总量与命中率一律以 `llm_gateway_usage_events` 为准（与服务商账单对账，覆盖 ~99.8%）。`TokenUsageEvents`
+  只用于归因：`PrefixChangeReason` 取值含 `session_rehydrated`（进程重启/内存会话过期后重水合，2026-08-25 起）、
+  `system_prompt_changed`、`tool_spec_changed`、`memory_changed`、`few_shot_changed`、`prefix_hash_changed`。
+- 归因桶规则：无 reason 的请求按 `miss/输入` 分为 full-rebuild（≥80%）、half-rebuild（40–80%）、partial
+  （10–40%）、incremental（<10%）。incremental 是健康底噪；full/half-rebuild 桶占比升高说明重水合或窗口
+  重建回潮。
+- Top miss 表定位到具体会话后：`session_rehydrated` 或凌晨/早晨时段的大 miss 属于 provider 缓存过期后的
+  重水合全量重传，检查水合预算（`runtime.execution.json` → `context.reassembly`）；白天成对出现
+  `system_prompt_changed`/`tool_spec_changed` 属于前缀漂移，查 `composition_snapshot` 指标与 L1-TOOLS 层。
+- 委派视觉（`vision-helper:{sessionId}`）与潜意识（`subconscious:{sessionId}` / `subconscious-memory`）调用
+  是独立 sessionId，其结构性低命中不应计入主会话前缀漂移；报表第 3 节按 reason 分组时它们自带桶。

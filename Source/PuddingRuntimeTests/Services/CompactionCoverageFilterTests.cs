@@ -43,7 +43,7 @@ public sealed class CompactionCoverageFilterTests
     }
 
     [TestMethod]
-    public async Task LoadAsync_ParsesSourceIdsAndHashes_FromLatestManifestOnly()
+    public async Task LoadAsync_ParsesSourceIdsAndHashes_AsUnionOfAllManifests()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -77,8 +77,13 @@ public sealed class CompactionCoverageFilterTests
         var coverage = await filter.LoadAsync("session-1");
 
         Assert.AreEqual(2, coverage.LatestTargetGeneration, "Latest manifest is the one with max TargetGeneration.");
-        CollectionAssert.AreEquivalent(new[] { "msg-3" }, coverage.CoveredMessageIds.ToArray());
-        CollectionAssert.AreEquivalent(new[] { "hash-3" }, coverage.CoveredHashes.ToArray());
+        CollectionAssert.AreEquivalent(
+            new[] { "msg-1", "msg-2", "msg-3" },
+            coverage.CoveredMessageIds.ToArray(),
+            "Multi-generation sessions must union every committed manifest; latest-only would let gen-1 covered messages revive via JSONL.");
+        CollectionAssert.AreEquivalent(
+            new[] { "hash-1", "hash-2", "hash-3" },
+            coverage.CoveredHashes.ToArray());
     }
 
     [TestMethod]

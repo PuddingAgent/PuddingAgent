@@ -6,6 +6,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
+using PuddingPlatform.Data.Entities;
 
 namespace PuddingPlatform.Services;
 
@@ -125,6 +126,17 @@ public sealed class ConversationProjector(
             return;
         }
 
+        // 同一次 LLM 调用通常已由执行服务直记（ADR-043，携带 prefix snapshot，sourceId 含 traceId/round）。
+        // 投影路径按 usage 指纹在时间窗内查重，只在直记缺失时补记，避免 TokenUsageEvents 双计归因。
+        if (await HasDirectlyRecordedUsageAsync(evt, usage, providerId, modelId))
+        {
+            logger.LogDebug(
+                "[ConversationProjector] Skip duplicated usage event={EventId} conversation={ConversationId}",
+                evt.EventId,
+                evt.ConversationId);
+            return;
+        }
+
                 var parentSessionId = await ResolveParentSessionAsync(evt.ConversationId);
 
         await tokenUsageRecorder.RecordRequiredAsync(
@@ -155,6 +167,46 @@ public sealed class ConversationProjector(
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// 检查同一次 LLM 调用是否已被执行服务直记（TokenUsageEvents 中携带 prefix hash 的行）。
+    /// 指纹 = 会话 + 路由 + prompt/completion token 计数，容许 ±2 分钟投影延迟。
+    /// DTO 缺 prompt 计数时无法构成可靠指纹，返回 false 以保持补记语义。
+    /// </summary>
+    private async Task<bool> HasDirectlyRecordedUsageAsync(
+        ConversationEvent evt,
+        TokenUsageDto usage,
+        string providerId,
+        string modelId)
+    {
+        if (usage.PromptTokens is not > 0)
+            return false;
+
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var windowStart = evt.OccurredAt.AddMinutes(-2);
+            var windowEnd = evt.OccurredAt.AddMinutes(2);
+            return await db.Set<TokenUsageEventEntity>()
+                .AsNoTracking()
+                .AnyAsync(e => e.SessionId == evt.ConversationId
+                    && e.ProviderId == providerId
+                    && e.ModelId == modelId
+                    && e.PrefixHash != null
+                    && e.OccurredAtUtc >= windowStart
+                    && e.OccurredAtUtc <= windowEnd
+                    && e.PromptTokens == usage.PromptTokens
+                    && (usage.CompletionTokens == null || e.CompletionTokens == usage.CompletionTokens));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "[ConversationProjector] Usage fingerprint check failed event={EventId}, fallback to record",
+                evt.EventId);
+            return false;
         }
     }
 

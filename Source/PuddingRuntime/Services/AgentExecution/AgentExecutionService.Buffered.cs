@@ -125,6 +125,7 @@ public sealed partial class AgentExecutionService
 
         // ── 构建对话历史 ─────────────────────────────────────────────
         var history = _contextManager.GetOrCreateHistory(request.SessionId);
+        var rehydratedFromDbThisDispatch = false;
         string? userContextPrefix = null;
 
         // ── 入站消息去重：同一 message_id 因 Ack 丢失/重试被重复 dispatch 时，
@@ -175,6 +176,8 @@ public sealed partial class AgentExecutionService
                         AssignedObjective = request.AssignedObjective,
                         ExpectedOutputContract = request.ExpectedOutputContract,
                         TraceId = request.ExecutionIdentity?.TraceId,
+                        LoadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId),
+                        Capability = effectiveCapability,
                     }, ct);
                     systemPromptText = facadeResult.Messages.FirstOrDefault(m => m.Role == ChatRole.System)?.Content ?? string.Empty;
                     userContextPrefix = facadeResult.UserContextPrefix;
@@ -277,6 +280,7 @@ public sealed partial class AgentExecutionService
                 if (persistedHistory.Count > 0)
                 {
                     history.AddRange(persistedHistory.Where(message => message.Role != ChatRole.System));
+                    rehydratedFromDbThisDispatch = true;
                     _logger.LogInformation(
                         "[AgentExec:SubAgent] Rehydrated {Count} persisted messages for resumed child session={Session}",
                         persistedHistory.Count,
@@ -693,7 +697,12 @@ public sealed partial class AgentExecutionService
                             budgetedRequest.Snapshot.PromptCalibrationRatio);
                     }
                 }
-                var prefixSnapshot = PrefixCacheSnapshotBuilder.Build(injectedHistory, llmTools);
+                var prefixSnapshot = PrefixCacheSnapshotBuilder.Build(
+                    injectedHistory,
+                    llmTools,
+                    prefixChangeReason: rehydratedFromDbThisDispatch && round == 0
+                        ? PrefixChangeReasons.SessionRehydrated
+                        : null);
                 lastPrefixSnapshot = prefixSnapshot;
                 await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.llm.started", new
                 {

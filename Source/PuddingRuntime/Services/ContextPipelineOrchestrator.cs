@@ -51,9 +51,8 @@ public sealed partial class ContextPipeline
         RecordLayer(sb, envCtx, "运行环境不变量", "L0-ENVIRONMENT", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L0-AGENTS-ROSTER: 当前工作区可见 Agent 名册，用于 agent-to-agent 消息寻址 ──
-        var workspaceAgentsCtx = _workspaceAgentsContextBuilder is null
-            ? "--- LAYER: WORKSPACE AGENTS ---\n(No workspace agents available.)\n"
-            : await _workspaceAgentsContextBuilder.BuildAsync(request.WorkspaceId, "default", ct);
+        // session 冻结：子代理生成/结束会改写名册，若每轮实时重建将反复击穿稳定前缀。
+        var workspaceAgentsCtx = await GetOrBuildWorkspaceAgentsLayerAsync(request, ct);
         RecordLayer(sb, workspaceAgentsCtx, "工作区 Agents", "L0-AGENTS-ROSTER", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L0-TASK-PLANNING: 系统生成的任务树位置与委派约束 ──

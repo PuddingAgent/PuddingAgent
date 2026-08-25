@@ -54,4 +54,20 @@ public sealed class ContextCompactionOptions
     /// 0 或负数表示禁用该驱逐，保持旧行为，便于回滚。默认 16*1024。
     /// </summary>
     public int MaxVerbatimMessageBytes { get; init; } = 16 * 1024;
+
+    /// <summary>
+    /// 冷启动/重水合（进程重启、内存会话过期后从 DB/JSONL 回放）的 token 预算上限。
+    /// 重水合请求在 provider 前缀缓存过期后必然全量 miss；把重放体积限制在
+    /// 摘要链 + 近期原文 + query 命中晋升的范围内，可把单次 miss 从数十万 token 压到该预算级。
+    /// 0 或负数表示不设上限（旧行为：预算 = 整个模型窗口）。默认 49152。
+    /// </summary>
+    public int MaxHydrationTokenBudget { get; init; } = 49152;
+
+    /// <summary>
+    /// 会话活动原文（未压缩消息）的绝对 token 上限；估算超过该值即触发自动压缩，
+    /// 与 <see cref="AutoCompactionThreshold"/>（相对窗口比例）构成 OR 条件。
+    /// 大窗口模型（256K+）下仅靠 0.65×比例意味着 16 万 token 才压缩，重水合重传代价过高。
+    /// 0 或负数表示禁用绝对上限。默认 131072。
+    /// </summary>
+    public int MaxActiveRawTokenBudget { get; init; } = 131072;
 }

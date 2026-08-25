@@ -77,6 +77,10 @@ public sealed class ContextAssemblyService : IContextAssemblyService
             AssignedObjective = request.AssignedObjective,
             ExpectedOutputContract = request.ExpectedOutputContract,
             ParentContextSnapshot = request.ParentContextSnapshot,
+            // 与逐轮重组装保持同一来源（Core ∪ loaded / capability），
+            // 否则首组装与后续轮的 L1-TOOLS/RUNTIME 层字节必然漂移。
+            LoadedToolIds = request.LoadedToolIds,
+            Capability = request.Capability,
         };
 
         var pipelineResult = await _pipeline.AssembleAsync(contextRequest, ct);

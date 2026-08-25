@@ -457,12 +457,20 @@ public sealed class ContextCompactionContentSummaryTests
             Level: ContextCompactionLevel.Full,
             Reason: "manual slash command"));
 
-        Assert.AreEqual(4, result.CompactedMessageCount);
+        // 滚动摘要链：旧代 compact_summary（Sequence 31）进入候选后，候选数 10→11，
+        // 压缩对象相应 21-24 变为 21-25（旧摘要 Sequence 最高，落在 keep-6 保留窗口内不被吸收）；
+        // 回填窗口 needed=15 → Sequence 6-20，总输入仍为 MIN=20。
+        Assert.AreEqual(5, result.CompactedMessageCount);
         Assert.AreEqual(20, generator.LastMessages.Count);
-        Assert.AreEqual(5, generator.LastMessages[0].Sequence);
-        Assert.AreEqual(24, generator.LastMessages[^1].Sequence);
+        Assert.AreEqual(6, generator.LastMessages[0].Sequence);
+        Assert.AreEqual(25, generator.LastMessages[^1].Sequence);
         StringAssert.Contains(result.SummaryMarkdown, "不足 MIN=20");
-        StringAssert.Contains(result.SummaryMarkdown, "Sequence 5-20");
+        StringAssert.Contains(result.SummaryMarkdown, "Sequence 6-20");
+
+        await using var verifyDb = new MemoryDbContext(options);
+        var previousSummaryRow = await verifyDb.Messages.SingleAsync(m => m.MessageId == "previous-summary");
+        Assert.IsNull(previousSummaryRow.CompactedBy,
+            "A summary inside the keep-recent window must stay active (absorption happens only when it falls out).");
     }
 
     private static async Task SeedMessagesAsync(MemoryDbContext db, string sessionId, int messageCount)

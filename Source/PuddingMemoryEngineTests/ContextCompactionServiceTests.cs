@@ -70,6 +70,80 @@ public sealed class ContextCompactionServiceTests
     }
 
     [TestMethod]
+    public async Task GetHealthAsync_AbsoluteRawTokenCap_EscalatesBelowRatioThreshold()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-abscap", messageCount: 2);
+
+        // 大窗口（512K）下 0.65×比例 = 33 万 token 才触发；140K 用量按比例仍是 Healthy，
+        // 但超过 MaxActiveRawTokenBudget=131072 必须升级为 Critical 触发 proactive 压缩。
+        var usageStore = new ContextUsageSnapshotStore();
+        usageStore.Set(new ContextUsageSnapshot
+        {
+            SessionId = "session-abscap",
+            UsedTokens = 140_000,
+            Confidence = "estimated",
+            Source = "llm_request",
+            RecordedAt = DateTimeOffset.UtcNow,
+        });
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new FixedSummaryGenerator("summary"),
+            NullLogger<ContextCompactionService>.Instance,
+            contextUsageSnapshotStore: usageStore,
+            options: new ContextCompactionOptions());
+
+        var health = await service.GetHealthAsync(
+            "session-abscap",
+            contextWindowTokens: 512_000,
+            maxOutputTokens: 8_000);
+
+        Assert.AreEqual(ContextHealthState.Critical, health.State,
+            "Absolute raw-token cap must escalate below the ratio threshold (large-window models).");
+        Assert.IsTrue(health.ShouldAutoCompact);
+    }
+
+    [TestMethod]
+    public async Task GetHealthAsync_AbsoluteRawTokenCap_Disabled_WhenZero()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-abscap-off", messageCount: 2);
+
+        var usageStore = new ContextUsageSnapshotStore();
+        usageStore.Set(new ContextUsageSnapshot
+        {
+            SessionId = "session-abscap-off",
+            UsedTokens = 140_000,
+            Confidence = "estimated",
+            Source = "llm_request",
+            RecordedAt = DateTimeOffset.UtcNow,
+        });
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new FixedSummaryGenerator("summary"),
+            NullLogger<ContextCompactionService>.Instance,
+            contextUsageSnapshotStore: usageStore,
+            options: new ContextCompactionOptions { MaxActiveRawTokenBudget = 0 });
+
+        var health = await service.GetHealthAsync(
+            "session-abscap-off",
+            contextWindowTokens: 512_000,
+            maxOutputTokens: 8_000);
+
+        Assert.AreNotEqual(ContextHealthState.Critical, health.State,
+            "MaxActiveRawTokenBudget=0 must disable the absolute cap (ratio-only behavior).");
+        Assert.IsFalse(health.ShouldAutoCompact);
+    }
+
+    [TestMethod]
     public async Task GetHealthAsync_UsesProviderReportedUsage_WhenSnapshotIsUpdated()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -628,6 +702,76 @@ public sealed class ContextCompactionServiceTests
 
         var session = await db.Sessions.SingleAsync(s => s.SessionId == "session-gen");
         Assert.AreEqual(2, session.CompactionGeneration);
+    }
+
+    [TestMethod]
+    public async Task FullCompactAsync_SecondGeneration_AbsorbsPreviousSummaryIntoRollingChain()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-rolling", messageCount: 10);
+
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            new FixedSummaryGenerator("## 摘要\nrolling"),
+            NullLogger<ContextCompactionService>.Instance,
+            compactionCoordinator: new CompactionCoordinator(cooldown: TimeSpan.Zero));
+
+        await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1", SessionId: "session-rolling", AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual, Level: ContextCompactionLevel.Full,
+            Reason: "manual slash command"));
+
+        var firstSummary = await db.Messages
+            .SingleAsync(m => m.SessionId == "session-rolling" && m.ContentType == "compact_summary");
+        Assert.IsNull(firstSummary.CompactedBy, "Generation-1 summary must start active.");
+
+        // 追加足量新消息（Sequence 12..25），让第二次压缩有超出保留窗口的可压缩对象。
+        for (var i = 12; i <= 25; i++)
+        {
+            db.Messages.Add(new MessageEntity
+            {
+                MessageId = $"msg-{i}",
+                SessionId = "session-rolling",
+                Sequence = i,
+                Role = i % 2 == 0 ? "agent" : "user",
+                ContentType = "text",
+                Content = $"message {i}",
+                CreatedAt = i,
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var second = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1", SessionId: "session-rolling", AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual, Level: ContextCompactionLevel.Full,
+            Reason: "manual slash command"));
+
+        db.ChangeTracker.Clear();
+
+        // 滚动摘要链：旧代摘要进入第二代压缩输入（SourceMessageIds 含其 id）并被标记 CompactedBy；
+        // 活动摘要链只剩最新一代，不再逐代堆积。
+        var secondManifest = await db.CompactionCoverageManifests
+            .SingleAsync(m => m.SessionId == "session-rolling" && m.TargetGeneration == 2);
+        var sourceIds = JsonSerializer.Deserialize<List<string>>(secondManifest.SourceMessageIds!);
+        Assert.IsNotNull(sourceIds);
+        CollectionAssert.Contains(sourceIds, firstSummary.MessageId,
+            "The previous-generation compact summary must feed the next generation (rolling chain).");
+
+        var firstSummaryAfter = await db.Messages.SingleAsync(m => m.MessageId == firstSummary.MessageId);
+        Assert.AreEqual(second.SummaryMessageId, firstSummaryAfter.CompactedBy,
+            "The previous-generation summary must be marked compacted by the new summary.");
+
+        var activeSummaries = await db.Messages
+            .Where(m => m.SessionId == "session-rolling"
+                && m.ContentType == "compact_summary"
+                && m.CompactedBy == null)
+            .ToListAsync();
+        Assert.AreEqual(1, activeSummaries.Count,
+            "Only the latest-generation summary must remain active after rolling-chain compaction.");
     }
 
     [TestMethod]

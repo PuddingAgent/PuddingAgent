@@ -37,7 +37,10 @@ namespace PuddingRuntime.Services;
 /// </summary>
 public sealed partial class AgentExecutionService
 {
-    private static readonly TimeSpan DefaultSessionTimeout = TimeSpan.FromHours(1);
+    // 默认会话驻留时长：provider 前缀缓存通常存活数小时，1h 丢弃内存历史会把
+    // 日间空闲后的下一次请求变成全量重水合重传（缓存 miss 主因之一）。
+    // 模板 manifest 的 runtime.sessionTimeout 仍可按模板覆盖。
+    private static readonly TimeSpan DefaultSessionTimeout = TimeSpan.FromHours(4);
 
     private readonly AgentSessionManager _sessionManager;
     private readonly InMemoryRuntimeSessionStore _runtimeSessionStore;

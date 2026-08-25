@@ -1,4 +1,5 @@
 using PuddingCode.Models;
+using PuddingCode.Platform;
 
 namespace PuddingCode.Runtime;
 
@@ -39,6 +40,16 @@ public sealed record ContextAssemblyRequest
 
     /// <summary>P0-4f-1a step6: 本次上下文合成所属执行的 trace_id（可空；不可得时显式传 null，不 fallback 生成）。</summary>
     public string? TraceId { get; init; }
+
+    /// <summary>
+    /// Session append-only loaded tool set snapshot (Core ∪ loaded)。与逐轮重组装传相同值；
+    /// 为 null 保持旧的全量 registry L1-TOOLS 索引。首组装缺失而逐轮提供时，
+    /// 会在 turn1→turn2 之间产生一次必然的 system prompt 字节变化（前缀缓存 miss）。
+    /// </summary>
+    public IReadOnlySet<string>? LoadedToolIds { get; init; }
+
+    /// <summary>能力策略；null 时由 ContextPipeline 自行解析（旧行为）。</summary>
+    public CapabilityPolicy? Capability { get; init; }
 }
 
 /// <summary>上下文合成结果，包含消息列表、token 估算、层级摘要。</summary>

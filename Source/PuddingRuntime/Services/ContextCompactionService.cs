@@ -85,16 +85,36 @@ public sealed class ContextCompactionService : IContextCompactionService
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var usage = await ResolveCurrentContextUsageAsync(db, sessionId, ct);
 
-                var threshold = _options?.AutoCompactionThreshold is > 0 and <= 1
+        var threshold = _options?.AutoCompactionThreshold is > 0 and <= 1
             ? _options.AutoCompactionThreshold
             : 0.65;
-        return new ContextHealthEvaluator().Evaluate(
+        var snapshot = new ContextHealthEvaluator().Evaluate(
             sessionId,
             usage.UsedTokens,
             contextWindowTokens: contextWindowTokens.Value,
             maxOutputTokens: maxOutputTokens ?? 2_048,
             maxInputTokens: maxInputTokens,
-            compactionThreshold: threshold) with
+            compactionThreshold: threshold);
+
+        // 绝对窗口上限：大窗口模型（256K+）下 0.65×比例意味着 16 万 token 才压缩，
+        // 重水合全量重传代价过高。活动 token 超过 MaxActiveRawTokenBudget 时
+        // 直接升级为 Critical（ShouldAutoCompact=true），与比例条件构成 OR。0/负数 = 禁用。
+        if (_options is { MaxActiveRawTokenBudget: > 0 }
+            && usage.UsedTokens > _options.MaxActiveRawTokenBudget
+            && snapshot.State < ContextHealthState.Critical)
+        {
+            snapshot = snapshot with
+            {
+                State = ContextHealthState.Critical,
+                ShouldSuggestCompact = true,
+                ShouldAutoCompact = true,
+            };
+            _logger.LogInformation(
+                "[ContextCompaction] Absolute raw-token cap exceeded session={SessionId} used={UsedTokens} cap={Cap}; escalating to Critical",
+                sessionId, usage.UsedTokens, _options.MaxActiveRawTokenBudget);
+        }
+
+        return snapshot with
         {
             UsageSource = usage.Source,
             UsageConfidence = usage.Confidence,
@@ -309,9 +329,14 @@ public sealed class ContextCompactionService : IContextCompactionService
                 request.SessionId, activeMessages.Count);
         }
 
+        // 滚动摘要链：旧代 compact_summary 与普通 text 消息一起进入下一代压缩输入，
+        // 压缩后由新摘要统一标记 CompactedBy——否则每代压缩各留一条独立摘要，
+        // 重水合窗口里逐代堆积（设计 §9"唯一 summary chain"）。
         var candidates = activeMessages
-            .Where(m => string.Equals(m.ContentType, "text", StringComparison.OrdinalIgnoreCase))
-            .Where(m => !string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase))
+            .Where(m => string.Equals(m.ContentType, "text", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(m.ContentType, ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase))
+            .Where(m => !string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(m.ContentType, ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase))
             .OrderBy(m => m.Sequence)
             .ToList();
 

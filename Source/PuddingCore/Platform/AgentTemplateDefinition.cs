@@ -102,7 +102,8 @@ public sealed record RuntimeProfile
     public string? PreferredModel { get; init; }
     public int? MaxContextTokens { get; init; }
     public int MaxTurnsPerSession { get; init; } = 100;
-    public TimeSpan SessionTimeout { get; init; } = TimeSpan.FromHours(1);
+    /// <summary>默认 4h：与 provider 前缀缓存存活期对齐，减少日间空闲后的全量重水合重传。</summary>
+    public TimeSpan SessionTimeout { get; init; } = TimeSpan.FromHours(4);
 }
 
 /// <summary>Agent 记忆策略。</summary>

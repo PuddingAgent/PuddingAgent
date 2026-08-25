@@ -27,6 +27,19 @@ Pudding 的主要成本问题不是输出 Token，而是大体积历史在每轮
 - 已完成 P0-1 遗留：`CompactionCoverageManifests` 覆盖清单持久化（§6.3 数据合同 + entity + 表）；session 递增 `CompactionGeneration`（`Sessions.CompactionGeneration` 列，manifest 记 Source/TargetGeneration）；写 `CompactedBy` 前强制 `OmittedCount == 0` 的持久化门禁；失败不写 `CompactedBy`、不切 successor。
 - 尚未完成：generation/recall 过滤、逐 segment 的服务商 Token 精确归因、日报自动对账和生产 7 日验收。因此本文件的总体状态仍为 Proposed，不能据此宣称缓存目标已达成。
 
+### 1.2 实施进度（2026-08-25，缓存命中率冲刺批次）
+
+8 月 22–24 日基线：DeepSeek 按 Token 加权命中率 96.783%（503.28M 输入 / 16.19M miss），距 99% 差 11.16M。miss 结构：约 68% 来自重水合全量重传（晨间 07–09 点峰值）、约 19% 来自主会话前缀漂移（68 个 PrefixHash，top5 同一会话）、约 24% 来自无前缀一次性调用（image_reader 委派 + 潜意识，859 行 NULL PrefixHash）。本批次实施：
+
+- **P1-1 核心（有界冷启动重组 + 滚动摘要链）**：`ContextCompactionOptions` 新增 `MaxHydrationTokenBudget`（默认 49152，0=禁用）与 `MaxActiveRawTokenBudget`（默认 131072，0=禁用）；重水合预算统一钳制，摘要链优先占用预算、JSONL 胜出时补拼（此前 JSONL 路径会静默丢摘要）；压缩候选纳入旧代 `compact_summary`（滚动链，消灭逐代堆积）；`GetHealthAsync` 绝对窗口上限与 0.65 比例构成 OR；Streaming 路径补齐软压缩（对齐 Buffered）。
+- **P0-4 补齐（前缀字节稳定）**：`ToolLoopInstructionBuilder` Available Tools 清单只列可见集（Core ∪ loaded，原为全注册表）；`ContextAssemblyService` 首组装透传 `LoadedToolIds`/`Capability`（消灭 turn1→turn2 必然 system 变更）；L0-AGENTS-ROSTER 按 session 冻结首组装字节（子代理生成/结束不再击穿前缀；`InvalidateSession` 失效）。
+- **归因卫生**：image_reader 委派调用 sessionId 独立命名空间 `vision-helper:{sessionId}` 且带稳定 system 前缀 + 同 (artifact, prompt) 观察缓存；潜意识调用统一 `subconscious:` 命名空间（含冒号的既有 scope 不重复加前缀）；`ConversationProjector` usage 投影按指纹查重补记（消灭与执行服务直记的双计，即 859 行 NULL PrefixHash 桶的主因）；新增 `PrefixChangeReasons.SessionRehydrated`（水合后首轮显式归因）。
+- **会话驻留**：默认会话超时 1h → 4h（`RuntimeProfile.SessionTimeout` 与两处 Default 常量；模板 manifest 可覆盖），减少日间空闲后的全量重水合。
+- **多代覆盖缺口修复**：`CompactionCoverageFilter` 从"最新 manifest"改为该会话全部 manifest 并集——旧代码多代压缩后，第一代覆盖的原始消息可经 JSONL 旁路复活。
+- **验收工具**：`TestScripts/deepseek-cache-hitrate.py` 逐日/分模型/归因桶/Top-miss 报表；How-Debuge §11.35。
+- 上述改动均为 additive、可用配置回退（预算设 0 = 行为不变）；单元测试覆盖预算钳制、摘要链滚动、绝对上限升级、JSONL 合并（PuddingRuntimeTests 963 中 960 绿，3 个预存速率限制器时序失败与 MemoryEngine 5 个预存失败与本批次无关，已用 stash 基线对照确认）。
+- **状态**：待新 Core 进程部署后按 §15.3 连续 7 个完整自然日验收；增量底噪（同前缀复用 miss ≈0.86%）使最后 0.5% 空间很薄，若报表显示底噪高于预算，按 §15.3 成本口径重议验收线。
+
 ## 2. 目标与非目标
 
 ### 2.1 目标
