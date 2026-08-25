@@ -58,6 +58,37 @@ public sealed record PuddingSystemConfig
     /// 缺失节 = 全默认值（Enabled=false）；显式越界值在启动期报配置错误，不静默回默认。
     /// </summary>
     public PuddingExternalTaskApiConfig? ExternalTaskApi { get; init; }
+
+    /// <summary>
+    /// ADR-076 存储管理策略（config/system.json → storageManagement）。
+    /// 全部字段可空：缺失 = 代码安全默认值；非法值使自动作业 fail closed 并在页面报警。
+    /// </summary>
+    public PuddingStorageManagementConfig? StorageManagement { get; init; }
+}
+
+/// <summary>ADR-076 存储管理策略根（system.json → storageManagement）。</summary>
+public sealed record PuddingStorageManagementConfig
+{
+    /// <summary>乐观并发 revision；API 修改必须携带 expectedRevision。</summary>
+    public int? PolicyRevision { get; init; }
+    public PuddingStorageAutomaticCleanupConfig? AutomaticCleanup { get; init; }
+    /// <summary>调度器持久状态：上次自动清理完成时间（判断是否到期）。</summary>
+    public DateTimeOffset? LastCompletedAtUtc { get; init; }
+}
+
+public sealed record PuddingStorageAutomaticCleanupConfig
+{
+    public bool? Enabled { get; init; }
+    public int? RunIntervalHours { get; init; }
+    public int? StartupDelaySeconds { get; init; }
+    public Dictionary<string, PuddingStorageTargetPolicy>? Targets { get; init; }
+}
+
+/// <summary>单语义类型策略。缺失 = 目录默认；0 不是合法保留期，禁用用 Enabled=false。</summary>
+public sealed record PuddingStorageTargetPolicy
+{
+    public bool? Enabled { get; init; }
+    public int? RetentionDays { get; init; }
 }
 
 /// <summary>ADR-075 External Task API 运行策略（config/system.json → externalTaskApi）。</summary>

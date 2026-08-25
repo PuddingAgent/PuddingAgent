@@ -2,6 +2,7 @@
 
 > - 状态：**Proposed（设计完成，尚未实现或验收）**
 > - 日期：2026-08-20
+> - 2026-08-24：完成代码级现状核对，补充聚合表复用、retention 索引所有权、旧端点过渡与配置迁移四项规划决策（§2.1、§4.1、§4.3、§7.1、§8、§9、§10.1）
 > - 决策入口：[ADR-076 遥测与调试数据保留及 Core 存储管理](../07架构/91ADR-076遥测与调试数据保留及Core存储管理ADR.md)
 > - 适用范围：`pudding_platform.db` 中的非关键遥测/性能/调试数据，以及 Core 日志和可重建派生数据
 > - 产品入口：`PuddingPlatformAdmin` Web 管理端 `/storage`
@@ -34,6 +35,17 @@
 | 当前保留配置使用物理表名 | 管理 API 和配置不应暴露物理表结构，应改用稳定语义类型 ID |
 | Desktop 已有历史 Storage 页面，Web Admin 没有 `/storage` | 新功能只落到 Core + Web Admin；Desktop 历史页面不扩展 |
 | 当前数据库清理 Preview 会对超期行执行完整 `COUNT(*)`，文件页也容易把“重新扫描”理解成完整遍历 | 百万级历史垃圾下可能长时间占用后台读线程和 SQLite 资源；目标方案改为缓存快照 + 有界增量估算，刷新和 Preview 都不得等待全量精确统计 |
+
+### 2.1 2026-08-24 代码级现状核对补充
+
+对 §2 与实际代码逐条核对后确认的补充缺口：
+
+| 现状（代码证据） | 设计判断 |
+|---|---|
+| `context_layer_daily_rollups` 已存在（`ContextLayerDailyRollupEntity`，day × layer × provider × model，`payload_json` 保存 token/压缩/缓存命中标量、分布数组与去重哈希集合；stats 页面月度报表缓存，已结束日懒构建） | §4.3 的上下文日聚合复用该表作为唯一载体：retention 协调器删除某日 raw 前先幂等补建该日 rollup（懒构建不保证历史日已存在），不新建平行的 `context_layer_metric_rollups_daily`；遥测小时聚合无既有物，仍新建 `telemetry_metric_rollups_hourly` |
+| retention 索引双轨：`RetentionPruningService` 运行时补建 `ix_prune_<table>_<column>`；`StorageMaintenanceService` 把 `ix_retention_conversation_events_committed_at` 列为“废弃可删索引”，而 conversation_events 自动保留恰恰按 `committed_at` 删除 | retention 索引命名与所有权统一收编进语义目录的“依赖索引”声明并在 `PlatformDbContext` 正式声明（`telemetry_metric_events.occurred_at_utc` 当前无单列索引，仅靠运行时补建）；人工“重复索引”目标不得包含任何语义目录声明仍在使用的索引 |
+| `StorageCleanupPreviewRequest.CompactAfterCleanup` 契约默认 `true`，`ReleasedBytes` 定义为压缩前后物理字节差（`Source/PuddingCore/Storage/StorageMaintenanceContracts.cs`） | Phase 1 移除在线 VACUUM 时必须同步翻转该默认值、下线压缩路径，并把结果口径改为“逻辑删除 + 库内可复用页”；否则契约默认行为仍是在线全库压缩 |
+| 自动保留配置当前位于 appsettings.json 顶层 `Retention` 节（物理表名键） | 迁移到 `<DataRoot>/config/system.json` `storageManagement` 段（§9）后，appsettings `Retention` 节整体移除，开发阶段不留双读兼容层 |
 
 最重要的事故约束是：同一 `pudding_platform.db` 只能有一个在线维护写协调器。此前两个保留服务同时运行曾造成 `SQLite Error 5: database is locked`，并使聊天受理在 `BeginTransactionAsync` 阶段失败。因此本方案不能再增加第二个 BackgroundService 或让人工 Execute 绕过统一协调器。
 
@@ -86,6 +98,8 @@ Core 内置 `StorageDataClassCatalog`。目录项包含稳定 ID、展示名称�
 
 默认值是“平衡”预设，不是写死的产品上限：管理员可在目录允许范围内设置 1–365 天；聚合数据允许 30–1,825 天。`0` 永远不是“立即删除”，也不作为合法保留期。禁用自动清理使用显式 `enabled=false`。
 
+与现行 `StorageMaintenanceTargetIds` 的映射：`diagnostics.telemetry` 拆分为 `diagnostics.telemetry-raw` + `diagnostics.context-layer-raw` + `diagnostics.debug-payload`，`platform.duplicate-indexes` 更名 `storage.redundant-indexes`，`diagnostics.runtime-activity` 与 `code-index.obsolete-scopes` 保持不变。开发阶段直接切换到新 ID 集合，不保留旧 ID 兼容层。
+
 ### 4.2 为什么单独清理 Debug 字段
 
 `telemetry_metric_events` 同时保存可聚合数值和最多 16KiB 的 `debug_json`。如果只能整行删除，用户无法短期保留 Debug 详情、较长期保留性能趋势。先把 `debug_json`/`metadata_json` 独立置空，可以显著降低内容体积，同时保留时间、类别、名称、状态、耗时和错误码等低基数字段。
@@ -97,7 +111,7 @@ Core 内置 `StorageDataClassCatalog`。目录项包含稳定 ID、展示名称�
 删除原始性能数据前先幂等聚合：
 
 - `telemetry_metric_rollups_hourly`：UTC 小时、category、name、status、source，以及 count、error count、duration sum/min/max、numeric sum/min/max；
-- `context_layer_metric_rollups_daily`：UTC 日期、provider/model、layer name、change reason，以及 token/raw/gzip/cache hit/cache miss 的 sum/count；
+- 上下文日聚合复用既有 `context_layer_daily_rollups`（day × layer × provider × model，`payload_json` 含 token/压缩/缓存命中标量与分布数组）：retention 协调器删除某日 raw 前先幂等补建该日 rollup——该表是 stats 页面的懒构建缓存，不保证历史日已构建；若 change reason 维度缺失，在 `payload_json` 内扩展键，不新建平行表；
 - 高基数的 session、trace、execution、user、content hash 和任意 Debug JSON 不进入聚合；
 - 聚合使用唯一键 + upsert，作业重试不能重复计数；
 - 只有聚合提交成功后，才允许删除对应高水位以内的原始行。
@@ -253,7 +267,7 @@ Preview 有效期十分钟，只保存在 Core 内存；Core 重启、策略 rev
 - 数据来源：同源 Core API；
 - Desktop：不新增 API Client、ViewModel、XAML 页面、磁盘扫描或清理编排。
 
-现有 Desktop Phase 1B-S 页面属于历史实现，本方案不扩展它。是否隐藏或退役旧入口应作为单独的 Desktop 整理任务，不阻塞 Web Storage 上线。
+现有 Desktop Phase 1B-S 页面属于历史实现，本方案不扩展它。是否隐藏或退役旧入口应作为单独的 Desktop 整理任务，不阻塞 Web Storage 上线。旧 `/api/admin/storage/databases` 三端点及其双通道鉴权（Admin JWT 或 DesktopChild ControlToken）在 Desktop 旧页面退役前保持可用：旧端点下线必须与 Desktop 页面退役捆绑为同一个切换任务，防止新语义 API 收敛后旧页面直接失去后端。新语义 API（§8）只使用 Admin JWT。
 
 ### 7.2 页面信息架构
 
@@ -359,11 +373,11 @@ GET  /api/admin/storage/cleanup/jobs/{jobId}/events
 - 400/401/403/404/409/410/423/429 返回统一 ProblemDetails 和稳定错误码；
 - API 永不返回完整本机绝对路径、SQL、用户正文、Debug JSON、Token 或密钥。
 
-现有 `/api/admin/storage/databases` 可在实施期内部重用分析器，但目标合同应收敛为上述语义 API，不为开发阶段旧 DTO 增加长期兼容层。
+现有 `/api/admin/storage/databases` 可在实施期内部重用分析器，但目标合同应收敛为上述语义 API，不为开发阶段旧 DTO 增加长期兼容层。旧端点当前由 Desktop StorageView 经 ControlToken 消费：其下线必须与 Desktop 旧页面的退役捆绑为同一任务（§7.1），在此之前旧端点维持双通道鉴权现状，不受本方案收敛影响。
 
 ## 9. 配置合同
 
-用户策略写入 `<DataRoot>/config/system.json`，发布包 `appsettings.json` 只提供安全默认值。Core 通过 Admin API 校验并原子写入配置，Web 不直接编辑文件，策略不存业务数据库。
+用户策略写入 `<DataRoot>/config/system.json`，发布包 `appsettings.json` 只提供安全默认值。Core 通过 Admin API 校验并原子写入配置，Web 不直接编辑文件，策略不存业务数据库。现状 appsettings.json 顶层 `Retention` 节在 `storageManagement` 生效后整体移除，不做双读迁移（开发阶段无历史配置需要兼容）。
 
 ```json
 {
@@ -411,7 +425,7 @@ GET  /api/admin/storage/cleanup/jobs/{jobId}/events
 
 ### 10.1 SQLite
 
-- 每个可清理表必须有与时间 + 主键顺序匹配的 retention 索引；
+- 每个可清理表必须有与时间 + 主键顺序匹配的 retention 索引；索引在 `PlatformDbContext` 正式声明并统一命名，所有权属于语义目录的“依赖索引”声明，禁止运行时静默补建（现状 `ix_prune_*` 双轨），也不得被“重复索引”清理目标删除（现状 `ix_retention_conversation_events_committed_at` 冲突）；
 - 每批先选择有限主键，再在同一短事务内聚合/清字段/删除；
 - 使用 UTC，旧时间格式不合法的行跳过并报告，不把解析失败当成最旧数据；
 - 聚合、cursor 和删除形成可重试提交边界；
@@ -468,7 +482,7 @@ Core 记录低基数事件：
 
 | 文件/目录 | 计划 |
 |---|---|
-| `Source/PuddingCore/Storage/` | 新增语义目录、策略、Preview、Job、状态与错误合同；不引用 EF/WPF/ASP.NET Core |
+| `Source/PuddingCore/Storage/` | 目录已存在（含现行 `StorageMaintenanceContracts.cs`）；在其内演进语义目录、策略、Preview、Job、状态与错误合同，同步翻转 `CompactAfterCleanup` 默认值并下线 `ReleasedBytes` 物理差口径；不引用 EF/WPF/ASP.NET Core |
 | `Source/PuddingPlatform/Services/StorageManagement/StorageDataClassCatalog.cs` | 固定白名单和安全分级 |
 | `Source/PuddingPlatform/Services/StorageManagement/StorageInventorySampler.cs` | 有界时间片、目录/页 cursor、采样估算与请求合并 |
 | `Source/PuddingPlatform/Services/StorageManagement/StorageInventorySnapshotStore.cs` | 当前快照原子发布与 90 天有界历史，供趋势报表读取 |
@@ -545,6 +559,7 @@ Core 记录低基数事件：
 - Preview 过期/消费/重启后不可执行；
 - Preview 不为追求精确候选数执行全表扫描；Execute 始终受固定类型、cutoff 和作业预算约束；
 - Debug 字段清理不改变指标数值、状态、耗时和聚合结果；
+- “重复索引”清理目标与语义目录声明的依赖索引无交集；retention 索引全部在 `PlatformDbContext` 正式声明，不存在运行时补建的第二套命名；
 - 日志清理不越过 DataRoot，不跟随 reparse point。
 
 ### 14.2 正确性
@@ -576,6 +591,8 @@ Core 记录低基数事件：
 - API/UI 不返回或显示 confidence、coverage、上下界等预测器字段；
 - 后台估算时页面滚动、筛选、tooltip、路由切换和策略编辑无长任务卡顿或全屏等待；
 - 用户可以按类型和时间预览、确认、观察、取消；
+- 旧 `/api/admin/storage/databases` 端点在 Desktop 旧页面退役前保持双通道鉴权可用，其下线与 Desktop 退役同任务交付；
+- 上下文长期趋势由既有 `context_layer_daily_rollups` 单一载体提供，删除 raw 前缺失日已幂等补建，不出现第二张平行日聚合表；
 - Core 离线时 Web 页面不可用是符合边界的，Desktop 不降级为直写数据库；
 - 本设计落地前只能标记“设计完成”，不能描述为实现、自动验收或生产接受。
 

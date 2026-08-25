@@ -4,6 +4,8 @@ using PuddingCode.Configuration;
 using PuddingCode.Storage;
 using PuddingCodeIntelligence.Contracts;
 using PuddingHost.Storage;
+using PuddingPlatform.Services;
+using PuddingPlatform.Services.StorageManagement;
 
 namespace PuddingHost.Tests.Storage;
 
@@ -26,17 +28,16 @@ public sealed class StorageMaintenanceServiceTests : IDisposable
         await CreatePlatformDatabaseAsync(platformPath);
         await CreateCodeIndexDatabaseAsync(codeIndexPath);
 
-        using var service = new StorageMaintenanceService(
-            paths,
-            new IdleCodeIndexScheduler(),
-            NullLogger<StorageMaintenanceService>.Instance);
-
+        using var service = CreateService(paths, out var coordinator);
+        await coordinator.StartAsync(CancellationToken.None);
+        try
+        {
         var analysis = await service.AnalyzeAsync();
         Assert.True(analysis.TotalBytes > 0);
         Assert.True(analysis.Items.Single(item => item.ItemId == "platform.execution-facts").IsProtected);
         Assert.True(analysis.Items.Single(item =>
             item.ItemId == StorageMaintenanceTargetIds.Telemetry).CanClean);
-        Assert.Equal(4, analysis.Items.Single(item =>
+        Assert.Equal(3, analysis.Items.Single(item =>
             item.ItemId == StorageMaintenanceTargetIds.DuplicateIndexes).RowCount);
         Assert.True(analysis.Items.Single(item =>
             item.ItemId == StorageMaintenanceTargetIds.ObsoleteCodeIndexScopes).CanClean);
@@ -54,10 +55,10 @@ public sealed class StorageMaintenanceServiceTests : IDisposable
             CompactAfterCleanup = false,
         });
 
-        Assert.Equal(13, preview.CandidateRows);
+        Assert.Equal(12, preview.CandidateRows);
         var result = await service.ExecuteCleanupAsync(preview.PreviewId);
         Assert.Equal(9, result.DeletedRows);
-        Assert.Equal(4, result.DroppedIndexes);
+        Assert.Equal(3, result.DroppedIndexes);
         Assert.Equal(1, result.RemovedCodeIndexScopes);
 
         await using (var connection = await OpenAsync(platformPath))
@@ -77,8 +78,9 @@ public sealed class StorageMaintenanceServiceTests : IDisposable
                 await ScalarAsync(
                     connection,
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name LIKE 'IX_conversation_events_%'"));
+            // ADR-076：retention 依赖索引收编目录所有权，不再作为“废弃索引”删除。
             Assert.Equal(
-                0,
+                1,
                 await ScalarAsync(
                     connection,
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='ix_retention_conversation_events_committed_at'"));
@@ -102,6 +104,11 @@ public sealed class StorageMaintenanceServiceTests : IDisposable
                     connection,
                     "SELECT COUNT(*) FROM CodeReferences WHERE ProjectId='stale-scope'"));
         }
+        }
+        finally
+        {
+            await coordinator.StopAsync(CancellationToken.None);
+        }
     }
 
     [Fact]
@@ -111,10 +118,8 @@ public sealed class StorageMaintenanceServiceTests : IDisposable
         Directory.CreateDirectory(paths.DatabasesRoot);
         var platformPath = Path.Combine(paths.DatabasesRoot, "pudding_platform.db");
         await CreatePlatformDatabaseAsync(platformPath);
-        using var service = new StorageMaintenanceService(
-            paths,
-            new IdleCodeIndexScheduler(),
-            NullLogger<StorageMaintenanceService>.Instance);
+        using var service = CreateService(paths, out var coordinator);
+        await coordinator.StartAsync(CancellationToken.None);
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             service.PreviewCleanupAsync(new StorageCleanupPreviewRequest
@@ -123,21 +128,26 @@ public sealed class StorageMaintenanceServiceTests : IDisposable
                 RetentionDays = 14,
             }));
 
-        await using var connection = await OpenAsync(platformPath);
-        Assert.Equal(1, await ScalarAsync(connection, "SELECT COUNT(*) FROM session_event_log"));
+        try
+        {
+            await using var connection = await OpenAsync(platformPath);
+            Assert.Equal(1, await ScalarAsync(connection, "SELECT COUNT(*) FROM session_event_log"));
+        }
+        finally
+        {
+            await coordinator.StopAsync(CancellationToken.None);
+        }
     }
 
     [Fact]
-    public async Task Execute_With_Compaction_Checkpoints_And_Vacuums_Modified_Database()
+    public async Task Execute_Ignores_Online_Compaction_And_Reports_Reusable_Pages()
     {
         var paths = PuddingDataPaths.FromRoot(_dataRoot);
         Directory.CreateDirectory(paths.DatabasesRoot);
         var platformPath = Path.Combine(paths.DatabasesRoot, "pudding_platform.db");
         await CreatePlatformDatabaseAsync(platformPath);
-        using var service = new StorageMaintenanceService(
-            paths,
-            new IdleCodeIndexScheduler(),
-            NullLogger<StorageMaintenanceService>.Instance);
+        using var service = CreateService(paths, out var coordinator);
+        await coordinator.StartAsync(CancellationToken.None);
         var preview = await service.PreviewCleanupAsync(new StorageCleanupPreviewRequest
         {
             TargetIds = [StorageMaintenanceTargetIds.Telemetry],
@@ -147,11 +157,20 @@ public sealed class StorageMaintenanceServiceTests : IDisposable
 
         var result = await service.ExecuteCleanupAsync(preview.PreviewId);
 
-        Assert.Contains("Pudding 平台数据库", result.CompactedDatabases);
+        // ADR-076：在线 VACUUM 已下线——压缩请求被忽略并转换为可复用页说明。
+        Assert.Empty(result.CompactedDatabases);
+        Assert.Contains(result.Warnings, warning => warning.Contains("VACUUM", StringComparison.Ordinal));
         Assert.Equal(2, result.DeletedRows);
-        await using var connection = await OpenAsync(platformPath);
-        Assert.Equal(1, await ScalarAsync(connection, "SELECT COUNT(*) FROM telemetry_metric_events"));
-        Assert.Equal(0, await ScalarAsync(connection, "SELECT COUNT(*) FROM context_layer_metric_events"));
+        try
+        {
+            await using var connection = await OpenAsync(platformPath);
+            Assert.Equal(1, await ScalarAsync(connection, "SELECT COUNT(*) FROM telemetry_metric_events"));
+            Assert.Equal(0, await ScalarAsync(connection, "SELECT COUNT(*) FROM context_layer_metric_events"));
+        }
+        finally
+        {
+            await coordinator.StopAsync(CancellationToken.None);
+        }
     }
 
     [Fact]
@@ -161,10 +180,8 @@ public sealed class StorageMaintenanceServiceTests : IDisposable
         Directory.CreateDirectory(Path.Combine(paths.DatabasesRoot, "code-index"));
         var codeIndexPath = Path.Combine(paths.DatabasesRoot, "code-index", "code_index.db");
         await CreateCodeIndexDatabaseAsync(codeIndexPath);
-        using var service = new StorageMaintenanceService(
-            paths,
-            new IdleCodeIndexScheduler(),
-            NullLogger<StorageMaintenanceService>.Instance);
+        using var service = CreateService(paths, out var coordinator);
+        await coordinator.StartAsync(CancellationToken.None);
         var preview = await service.PreviewCleanupAsync(new StorageCleanupPreviewRequest
         {
             TargetIds = [StorageMaintenanceTargetIds.ObsoleteCodeIndexScopes],
@@ -182,14 +199,48 @@ public sealed class StorageMaintenanceServiceTests : IDisposable
 
         var result = await service.ExecuteCleanupAsync(preview.PreviewId);
 
+        // 新语义：执行时按当前状态重新查找，预览后恢复 fresh 的作用域静默跳过。
         Assert.Equal(0, result.RemovedCodeIndexScopes);
-        Assert.Contains(result.Warnings, warning => warning.Contains("状态已变化", StringComparison.Ordinal));
+        try
+        {
         await using var verification = await OpenAsync(codeIndexPath);
         Assert.Equal(
             1,
             await ScalarAsync(
                 verification,
                 "SELECT COUNT(*) FROM CodeProjects WHERE ProjectId='stale-scope'"));
+        }
+        finally
+        {
+            await coordinator.StopAsync(CancellationToken.None);
+        }
+    }
+
+    private static StorageMaintenanceService CreateService(
+        PuddingDataPaths paths,
+        out StorageMaintenanceCoordinator coordinator)
+    {
+        var jobStore = new StorageMaintenanceJobStore(paths, NullLogger<StorageMaintenanceJobStore>.Instance);
+        var executor = new StorageCleanupExecutor(
+            paths,
+            new RetentionArchiveWriter(paths, NullLogger<RetentionArchiveWriter>.Instance),
+            new IStorageDerivedTargetHandler[]
+            {
+                new CodeIndexScopeCleanupHandler(paths, new IdleCodeIndexScheduler(), NullLogger<CodeIndexScopeCleanupHandler>.Instance),
+                new RedundantIndexCleanupHandler(paths, NullLogger<RedundantIndexCleanupHandler>.Instance),
+            },
+            NullLogger<StorageCleanupExecutor>.Instance);
+        coordinator = new StorageMaintenanceCoordinator(
+            jobStore,
+            executor,
+            [],
+            paths,
+            NullLogger<StorageMaintenanceCoordinator>.Instance);
+        return new StorageMaintenanceService(
+            paths,
+            new IdleCodeIndexScheduler(),
+            coordinator,
+            NullLogger<StorageMaintenanceService>.Instance);
     }
 
     private static async Task CreatePlatformDatabaseAsync(string path)

@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using PuddingCode.Configuration;
 using PuddingCode.Storage;
 using PuddingCodeIntelligence.Contracts;
+using PuddingPlatform.Services.StorageManagement;
 
 namespace PuddingHost.Storage;
 
@@ -11,10 +12,13 @@ namespace PuddingHost.Storage;
 /// selected from a fixed semantic whitelist and require a short-lived preview.
 /// Source files, chat transcripts, session facts, memory and configuration are
 /// never deletion targets.
+/// ADR-076: 写操作统一委托 StorageMaintenanceCoordinator（单 writer），
+/// 在线 VACUUM 已下线——删除只转为 SQLite 可复用页。
 /// </summary>
 public sealed class StorageMaintenanceService(
     PuddingDataPaths dataPaths,
     ICodeIndexScheduler codeIndexScheduler,
+    StorageMaintenanceCoordinator maintenanceCoordinator,
     ILogger<StorageMaintenanceService> logger) : IStorageMaintenanceService, IDisposable
 {
     private static readonly TimeSpan PreviewLifetime = TimeSpan.FromMinutes(10);
@@ -42,16 +46,12 @@ public sealed class StorageMaintenanceService(
         "CodeIndexRuns",
     ];
 
-    private static readonly IReadOnlyDictionary<string, string> RedundantConversationIndexes =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["ix_ce_seq"] = "IX_conversation_events_conversation_id_sequence",
-            ["ix_ce_eid"] = "IX_conversation_events_event_id",
-            ["ix_ce_turn"] = "IX_conversation_events_turn_id_type",
-        };
-
-    private const string ObsoleteConversationRetentionIndex =
-        "ix_retention_conversation_events_committed_at";
+    private static readonly string[] RedundantConversationIndexKeys =
+    [
+        "ix_ce_seq",
+        "ix_ce_eid",
+        "ix_ce_turn",
+    ];
 
     private readonly SemaphoreSlim _maintenanceLock = new(1, 1);
     private readonly ConcurrentDictionary<Guid, PendingPreview> _previews = new();
@@ -108,7 +108,7 @@ public sealed class StorageMaintenanceService(
             var warnings = new List<string>();
             var analysis = await AnalyzeCoreAsync(cancellationToken);
             var targets = new List<StorageCleanupTargetPreview>();
-            var obsoleteScopes = Array.Empty<CodeIndexScopeCandidate>();
+            var obsoleteScopes = Array.Empty<StorageMaintenanceQueries.CodeIndexScopeCandidate>();
             var redundantIndexes = Array.Empty<string>();
 
             foreach (var targetId in targetIds)
@@ -222,6 +222,11 @@ public sealed class StorageMaintenanceService(
         }
     }
 
+    /// <summary>
+    /// ADR-076：Execute 不再直接写数据库。旧目标 ID 翻译为新语义集合后提交
+    /// StorageMaintenanceCoordinator（单 writer、小批、busy 让步），并同步等待终态
+    /// 以保持旧 /databases 端点的同步契约（Desktop 旧页面不改）。在线 VACUUM 已下线。
+    /// </summary>
     public async Task<StorageCleanupResult> ExecuteCleanupAsync(
         Guid previewId,
         CancellationToken cancellationToken = default)
@@ -238,107 +243,56 @@ public sealed class StorageMaintenanceService(
             if (pending.Preview.ExpiresAt <= DateTimeOffset.UtcNow)
                 throw new InvalidOperationException("清理预览已过期，请重新生成预览。");
 
-            var warnings = new List<string>();
-            var compacted = new List<string>();
-            var modifiedDatabases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var bytesBefore = GetDatabaseFilesTotalBytes();
-            long deletedRows = 0;
-            var droppedIndexes = 0;
-            var removedScopes = 0;
+            // 旧目标 ID → 新语义目录 ID（过渡期翻译，ADR-076 §4.1）。
+            var semanticTargets = pending.TargetIds
+                .SelectMany(StorageDataClassCatalog.TranslateLegacyTarget)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
 
-            foreach (var targetId in pending.TargetIds)
+            var job = await maintenanceCoordinator.SubmitLegacyAsync(
+                semanticTargets, pending.CutoffUtc, cancellationToken);
+
+            // 同步等待终态：作业按 200 批/目标分轮执行，轮间让位人工作业；
+            // 每 5 分钟检查一次（Desktop HttpClient 超时 6 分钟内必须返回）。
+            while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                switch (targetId)
+                job = await maintenanceCoordinator.WaitForNextCheckpointAsync(
+                    job.JobId, TimeSpan.FromMinutes(2), cancellationToken);
+                if (job.Status is StorageCleanupJobStatus.Completed
+                    or StorageCleanupJobStatus.Partial
+                    or StorageCleanupJobStatus.Failed
+                    or StorageCleanupJobStatus.Cancelled)
                 {
-                    case StorageMaintenanceTargetIds.Telemetry:
-                        deletedRows += await DeleteExpiredRowsAsync(
-                            PlatformDatabasePath,
-                            TelemetryTables.Select(table => (table, "occurred_at_utc")),
-                            pending.CutoffUtc,
-                            cancellationToken);
-                        modifiedDatabases.Add(PlatformDatabasePath);
-                        break;
-                    case StorageMaintenanceTargetIds.RuntimeActivity:
-                        deletedRows += await DeleteExpiredRowsAsync(
-                            PlatformDatabasePath,
-                            RuntimeActivityTables.Select(table => (table, "started_at_utc")),
-                            pending.CutoffUtc,
-                            cancellationToken);
-                        modifiedDatabases.Add(PlatformDatabasePath);
-                        break;
-                    case StorageMaintenanceTargetIds.DuplicateIndexes:
-                        droppedIndexes += await DropRedundantIndexesAsync(
-                            PlatformDatabasePath,
-                            pending.RedundantIndexes,
-                            cancellationToken);
-                        if (pending.RedundantIndexes.Count > 0)
-                            modifiedDatabases.Add(PlatformDatabasePath);
-                        break;
-                    case StorageMaintenanceTargetIds.ObsoleteCodeIndexScopes:
-                    {
-                        foreach (var scope in pending.ObsoleteScopes)
-                        {
-                            if (codeIndexScheduler.IsIndexing(scope.WorkspaceId, scope.ProjectId))
-                            {
-                                warnings.Add($"代码索引 {scope.DisplayName} 在确认后开始运行，已跳过。");
-                                continue;
-                            }
-
-                            var removed = await RemoveObsoleteCodeIndexScopeAsync(
-                                CodeIndexDatabasePath,
-                                scope,
-                                cancellationToken);
-                            if (!removed)
-                            {
-                                warnings.Add($"代码索引 {scope.DisplayName} 的状态已变化，已跳过。");
-                                continue;
-                            }
-
-                            deletedRows += scope.ArtifactRows + 1;
-                            removedScopes++;
-                        }
-                        if (removedScopes > 0)
-                            modifiedDatabases.Add(CodeIndexDatabasePath);
-                        break;
-                    }
+                    break;
                 }
             }
 
+            var warnings = new List<string>(job.Warnings);
             if (pending.Preview.CompactAfterCleanup)
             {
-                foreach (var databasePath in modifiedDatabases)
-                {
-                    var displayName = GetDatabaseDisplayName(databasePath);
-                    if (await TryCompactDatabaseAsync(databasePath, warnings, cancellationToken))
-                        compacted.Add(displayName);
-                }
+                warnings.Add(
+                    "在线数据库压缩（VACUUM）已按存储治理设计下线：本次清理的空间已转为 SQLite 库内可复用页，数据库文件不会立即缩小。");
             }
 
             var analysis = await AnalyzeCoreAsync(cancellationToken);
             var bytesAfter = GetDatabaseFilesTotalBytes();
             logger.LogInformation(
-                "[StorageMaintenance] preview={PreviewId} deletedRows={DeletedRows} " +
-                "droppedIndexes={DroppedIndexes} removedScopes={RemovedScopes} " +
-                "bytesBefore={BytesBefore} bytesAfter={BytesAfter} compacted={Compacted}",
-                previewId,
-                deletedRows,
-                droppedIndexes,
-                removedScopes,
-                bytesBefore,
-                bytesAfter,
-                compacted);
+                "[StorageMaintenance] legacy preview={PreviewId} job={JobId} status={Status} " +
+                "deletedRows={DeletedRows} clearedRows={ClearedRows}",
+                previewId, job.JobId, job.Status, job.DeletedRows, job.ClearedRows);
 
             return new StorageCleanupResult
             {
                 PreviewId = previewId,
                 CompletedAt = DateTimeOffset.UtcNow,
-                DeletedRows = deletedRows,
-                DroppedIndexes = droppedIndexes,
-                RemovedCodeIndexScopes = removedScopes,
-                BytesBefore = bytesBefore,
+                DeletedRows = job.DeletedRows + job.ClearedRows
+                    + job.TargetProcessed.GetValueOrDefault(StorageAdminTargetIds.ObsoleteCodeIndexScopes),
+                DroppedIndexes = (int)job.TargetUnits.GetValueOrDefault(StorageAdminTargetIds.RedundantIndexes),
+                RemovedCodeIndexScopes = (int)job.TargetUnits.GetValueOrDefault(StorageAdminTargetIds.ObsoleteCodeIndexScopes),
+                BytesBefore = bytesAfter,
                 BytesAfter = bytesAfter,
-                CompactedDatabases = compacted,
+                CompactedDatabases = [],
                 Warnings = warnings,
                 Analysis = analysis,
             };
@@ -387,8 +341,7 @@ public sealed class StorageMaintenanceService(
             PlatformDatabasePath,
             TelemetryTables
                 .Concat(RuntimeActivityTables)
-                .Concat(RedundantConversationIndexes.Keys)
-                .Append(ObsoleteConversationRetentionIndex)
+                .Concat(RedundantConversationIndexKeys)
                 .ToArray(),
             warnings,
             ct);
@@ -791,307 +744,13 @@ public sealed class StorageMaintenanceService(
         return total;
     }
 
-    private static async Task<long> DeleteExpiredRowsAsync(
-        string databasePath,
-        IEnumerable<(string Table, string TimestampColumn)> specs,
-        DateTimeOffset cutoff,
-        CancellationToken ct)
-    {
-        if (!File.Exists(databasePath))
-            return 0;
+    private static Task<StorageMaintenanceQueries.CodeIndexScopeCandidate[]> FindObsoleteCodeIndexScopesAsync(
+        string databasePath, DateTimeOffset now, CancellationToken ct)
+        => StorageMaintenanceQueries.FindObsoleteCodeIndexScopesAsync(databasePath, now, ct);
 
-        long total = 0;
-        await using var connection = await OpenConnectionAsync(databasePath, readOnly: false, ct);
-        foreach (var (table, timestampColumn) in specs)
-        {
-            if (!await TableExistsAsync(connection, table, ct))
-                continue;
-            while (true)
-            {
-                await using var command = connection.CreateCommand();
-                command.CommandText = $$"""
-                    DELETE FROM {{QuoteIdentifier(table)}}
-                    WHERE rowid IN (
-                        SELECT rowid FROM {{QuoteIdentifier(table)}}
-                        WHERE {{QuoteIdentifier(timestampColumn)}} < $cutoff
-                        LIMIT $batchSize
-                    )
-                    """;
-                command.Parameters.AddWithValue("$cutoff", cutoff.ToString("O"));
-                command.Parameters.AddWithValue("$batchSize", DeleteBatchSize);
-                command.CommandTimeout = 60;
-                var affected = await command.ExecuteNonQueryAsync(ct);
-                total += affected;
-                if (affected < DeleteBatchSize)
-                    break;
-                await Task.Yield();
-            }
-        }
-        return total;
-    }
-
-    private async Task<CodeIndexScopeCandidate[]> FindObsoleteCodeIndexScopesAsync(
-        string databasePath,
-        DateTimeOffset now,
-        CancellationToken ct)
-    {
-        if (!File.Exists(databasePath))
-            return [];
-
-        await using var connection = await OpenConnectionAsync(databasePath, readOnly: true, ct);
-        if (!await TableExistsAsync(connection, "CodeProjects", ct))
-            return [];
-
-        var staleBefore = now.Subtract(StaleCodeIndexThreshold).ToString("O");
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT WorkspaceId, ProjectId, COALESCE(DisplayName, ProjectPath, ProjectId)
-            FROM CodeProjects
-            WHERE ScopeState IN ('Covered', 'Removed')
-               OR (
-                    ScopeState IS NULL
-                    AND Status IN ('Removed', 'Failed', 'Registering')
-                    AND COALESCE(UpdatedAtUtc, AddedAtUtc, '') < $staleBefore
-               )
-            ORDER BY WorkspaceId, ProjectId
-            """;
-        command.Parameters.AddWithValue("$staleBefore", staleBefore);
-        var candidates = new List<CodeIndexScopeCandidate>();
-        await using (var reader = await command.ExecuteReaderAsync(ct))
-        {
-            while (await reader.ReadAsync(ct))
-            {
-                candidates.Add(new CodeIndexScopeCandidate(
-                    reader.GetString(0),
-                    reader.GetString(1),
-                    reader.GetString(2),
-                    ArtifactRows: 0));
-            }
-        }
-
-        for (var i = 0; i < candidates.Count; i++)
-        {
-            var candidate = candidates[i];
-            long rows = 0;
-            foreach (var table in CodeIndexArtifactTables)
-            {
-                if (!await TableExistsAsync(connection, table, ct))
-                    continue;
-                await using var countCommand = connection.CreateCommand();
-                countCommand.CommandText =
-                    $"SELECT COUNT(*) FROM {QuoteIdentifier(table)} " +
-                    "WHERE WorkspaceId = $workspaceId AND ProjectId = $projectId";
-                countCommand.Parameters.AddWithValue("$workspaceId", candidate.WorkspaceId);
-                countCommand.Parameters.AddWithValue("$projectId", candidate.ProjectId);
-                countCommand.CommandTimeout = 60;
-                rows += Convert.ToInt64(await countCommand.ExecuteScalarAsync(ct));
-            }
-            candidates[i] = candidate with { ArtifactRows = rows };
-        }
-
-        return candidates.ToArray();
-    }
-
-    private static async Task<bool> RemoveObsoleteCodeIndexScopeAsync(
-        string databasePath,
-        CodeIndexScopeCandidate candidate,
-        CancellationToken ct)
-    {
-        if (!File.Exists(databasePath))
-            return false;
-
-        await using var connection = await OpenConnectionAsync(databasePath, readOnly: false, ct);
-        await using var transaction = await connection.BeginTransactionAsync(ct);
-        await using var recheck = connection.CreateCommand();
-        recheck.Transaction = (SqliteTransaction)transaction;
-        recheck.CommandText = """
-            SELECT COUNT(*)
-            FROM CodeProjects
-            WHERE WorkspaceId = $workspaceId AND ProjectId = $projectId
-              AND (
-                    ScopeState IN ('Covered', 'Removed')
-                    OR (
-                         ScopeState IS NULL
-                         AND Status IN ('Removed', 'Failed', 'Registering')
-                         AND COALESCE(UpdatedAtUtc, AddedAtUtc, '') < $staleBefore
-                       )
-                  )
-            """;
-        recheck.Parameters.AddWithValue("$workspaceId", candidate.WorkspaceId);
-        recheck.Parameters.AddWithValue("$projectId", candidate.ProjectId);
-        recheck.Parameters.AddWithValue(
-            "$staleBefore",
-            DateTimeOffset.UtcNow.Subtract(StaleCodeIndexThreshold).ToString("O"));
-        if (Convert.ToInt64(await recheck.ExecuteScalarAsync(ct)) != 1)
-        {
-            await transaction.RollbackAsync(ct);
-            return false;
-        }
-
-        foreach (var table in CodeIndexArtifactTables)
-        {
-            if (!await TableExistsAsync(connection, table, ct, (SqliteTransaction)transaction))
-                continue;
-            await using var delete = connection.CreateCommand();
-            delete.Transaction = (SqliteTransaction)transaction;
-            delete.CommandText =
-                $"DELETE FROM {QuoteIdentifier(table)} " +
-                "WHERE WorkspaceId = $workspaceId AND ProjectId = $projectId";
-            delete.Parameters.AddWithValue("$workspaceId", candidate.WorkspaceId);
-            delete.Parameters.AddWithValue("$projectId", candidate.ProjectId);
-            delete.CommandTimeout = 120;
-            await delete.ExecuteNonQueryAsync(ct);
-        }
-
-        await using var deleteProject = connection.CreateCommand();
-        deleteProject.Transaction = (SqliteTransaction)transaction;
-        deleteProject.CommandText = """
-            DELETE FROM CodeProjects
-            WHERE WorkspaceId = $workspaceId AND ProjectId = $projectId
-            """;
-        deleteProject.Parameters.AddWithValue("$workspaceId", candidate.WorkspaceId);
-        deleteProject.Parameters.AddWithValue("$projectId", candidate.ProjectId);
-        await deleteProject.ExecuteNonQueryAsync(ct);
-        await transaction.CommitAsync(ct);
-        return true;
-    }
-
-    private static async Task<string[]> FindRedundantConversationIndexesAsync(
-        string databasePath,
-        CancellationToken ct)
-    {
-        if (!File.Exists(databasePath))
-            return [];
-
-        await using var connection = await OpenConnectionAsync(databasePath, readOnly: true, ct);
-        if (!await TableExistsAsync(connection, "conversation_events", ct))
-            return [];
-
-        var indexDefinitions = await ReadIndexDefinitionsAsync(connection, "conversation_events", ct);
-        var redundant = new List<string>();
-        foreach (var (legacyName, canonicalName) in RedundantConversationIndexes)
-        {
-            if (!indexDefinitions.TryGetValue(legacyName, out var legacy)
-                || !indexDefinitions.TryGetValue(canonicalName, out var canonical))
-            {
-                continue;
-            }
-            if (legacy.Unique == canonical.Unique
-                && legacy.Columns.SequenceEqual(canonical.Columns, StringComparer.OrdinalIgnoreCase))
-            {
-                redundant.Add(legacyName);
-            }
-        }
-        if (indexDefinitions.TryGetValue(ObsoleteConversationRetentionIndex, out var retention)
-            && !retention.Unique
-            && retention.Columns.SequenceEqual(["committed_at"], StringComparer.OrdinalIgnoreCase))
-        {
-            redundant.Add(ObsoleteConversationRetentionIndex);
-        }
-        return redundant.ToArray();
-    }
-
-    private static async Task<int> DropRedundantIndexesAsync(
-        string databasePath,
-        IReadOnlyList<string> previewedIndexes,
-        CancellationToken ct)
-    {
-        if (!File.Exists(databasePath) || previewedIndexes.Count == 0)
-            return 0;
-
-        var currentlyRedundant = await FindRedundantConversationIndexesAsync(databasePath, ct);
-        var allowed = previewedIndexes
-            .Intersect(currentlyRedundant, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        if (allowed.Length == 0)
-            return 0;
-
-        await using var connection = await OpenConnectionAsync(databasePath, readOnly: false, ct);
-        var dropped = 0;
-        foreach (var indexName in allowed)
-        {
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"DROP INDEX IF EXISTS {QuoteIdentifier(indexName)}";
-            await command.ExecuteNonQueryAsync(ct);
-            dropped++;
-        }
-        return dropped;
-    }
-
-    private static async Task<Dictionary<string, IndexDefinition>> ReadIndexDefinitionsAsync(
-        SqliteConnection connection,
-        string tableName,
-        CancellationToken ct)
-    {
-        var definitions = new Dictionary<string, IndexDefinition>(StringComparer.OrdinalIgnoreCase);
-        var indexRows = new List<(string Name, bool Unique)>();
-        await using (var listCommand = connection.CreateCommand())
-        {
-            listCommand.CommandText = $"PRAGMA index_list({QuoteIdentifier(tableName)})";
-            await using var reader = await listCommand.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct))
-                indexRows.Add((reader.GetString(1), reader.GetInt64(2) != 0));
-        }
-
-        foreach (var (name, unique) in indexRows)
-        {
-            var columns = new List<string>();
-            await using var infoCommand = connection.CreateCommand();
-            infoCommand.CommandText = $"PRAGMA index_info({QuoteIdentifier(name)})";
-            await using var infoReader = await infoCommand.ExecuteReaderAsync(ct);
-            while (await infoReader.ReadAsync(ct))
-                columns.Add(infoReader.GetString(2));
-            definitions[name] = new IndexDefinition(unique, columns.ToArray());
-        }
-        return definitions;
-    }
-
-    private static async Task<bool> TryCompactDatabaseAsync(
-        string databasePath,
-        ICollection<string> warnings,
-        CancellationToken ct)
-    {
-        if (!File.Exists(databasePath))
-            return false;
-
-        var databaseBytes = GetFileLength(databasePath);
-        try
-        {
-            var root = Path.GetPathRoot(Path.GetFullPath(databasePath));
-            if (!string.IsNullOrWhiteSpace(root))
-            {
-                var drive = new DriveInfo(root);
-                var required = databaseBytes + 64L * 1024 * 1024;
-                if (drive.IsReady && drive.AvailableFreeSpace < required)
-                {
-                    warnings.Add(
-                        $"{Path.GetFileName(databasePath)} 已完成行清理，但可用空间不足以安全压缩数据库文件。");
-                    return false;
-                }
-            }
-
-            await using var connection = await OpenConnectionAsync(databasePath, readOnly: false, ct);
-            await using (var checkpoint = connection.CreateCommand())
-            {
-                checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE)";
-                checkpoint.CommandTimeout = 60;
-                await checkpoint.ExecuteNonQueryAsync(ct);
-            }
-            await using (var vacuum = connection.CreateCommand())
-            {
-                vacuum.CommandText = "VACUUM";
-                vacuum.CommandTimeout = 300;
-                await vacuum.ExecuteNonQueryAsync(ct);
-            }
-            return true;
-        }
-        catch (Exception ex) when (ex is SqliteException or IOException or UnauthorizedAccessException)
-        {
-            warnings.Add(
-                $"{Path.GetFileName(databasePath)} 已完成行清理，但压缩失败：{ex.Message}");
-            return false;
-        }
-    }
+    private static Task<string[]> FindRedundantConversationIndexesAsync(
+        string databasePath, CancellationToken ct)
+        => StorageMaintenanceQueries.FindRedundantIndexesAsync(databasePath, ct);
 
     private static async Task<SqliteConnection> OpenConnectionAsync(
         string databasePath,
@@ -1253,14 +912,8 @@ public sealed class StorageMaintenanceService(
         StorageCleanupPreview Preview,
         DateTimeOffset CutoffUtc,
         IReadOnlyList<string> TargetIds,
-        IReadOnlyList<CodeIndexScopeCandidate> ObsoleteScopes,
+        IReadOnlyList<StorageMaintenanceQueries.CodeIndexScopeCandidate> ObsoleteScopes,
         IReadOnlyList<string> RedundantIndexes);
 
-    private sealed record CodeIndexScopeCandidate(
-        string WorkspaceId,
-        string ProjectId,
-        string DisplayName,
-        long ArtifactRows);
 
-    private sealed record IndexDefinition(bool Unique, IReadOnlyList<string> Columns);
 }

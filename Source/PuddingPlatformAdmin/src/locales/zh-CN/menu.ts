@@ -23,6 +23,7 @@ export default {
   'menu.accessTokenManagement': '访问令牌',
   'menu.session': '会话记录',
   'menu.memoryLibrary': '记忆图书馆',
+  'menu.storage': '存储管理',
   'menu.tokenStats': 'Token 统计',
   'menu.runtimeManagement': 'Runtime 节点',
   'menu.orchestration': 'Agent 编排',

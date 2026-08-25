@@ -382,6 +382,8 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(m => new { m.WorkspaceId, m.OccurredAtUtc });
             e.HasIndex(m => new { m.Category, m.Name, m.OccurredAtUtc });
             e.HasIndex(m => m.Status);
+            // ADR-076 retention 索引：时间列单列正式声明（终止运行时 ix_prune_* 补建双轨）。
+            e.HasIndex(m => m.OccurredAtUtc);
             e.Property(m => m.DimensionsJson).HasColumnType("TEXT");
             e.Property(m => m.DebugJson).HasColumnType("TEXT");
         });
@@ -543,6 +545,8 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(x => new { x.ConversationId, x.Sequence }).IsUnique();
             e.HasIndex(x => x.EventId).IsUnique();
             e.HasIndex(x => new { x.TurnId, x.Type });
+            // ADR-076 retention 索引：证据保留裁剪按 committed_at 定位。
+            e.HasIndex(x => x.CommittedAt);
         });
 
         modelBuilder.Entity<ConversationHeadEntity>(e =>

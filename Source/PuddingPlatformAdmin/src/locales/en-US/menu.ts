@@ -54,6 +54,7 @@ export default {
   'menu.editor.mind': 'Mind Editor',
   'menu.editor.koni': 'Koni Editor',
   'menu.memoryLibrary': 'Memory Library',
+  'menu.storage': 'Storage',
   'menu.workspace': 'Workspace',
   'menu.workspaceTasks': 'Workspace Tasks',
   'menu.llmResourcePool': 'LLM Resource Pool',

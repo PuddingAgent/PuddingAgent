@@ -73,6 +73,7 @@
 - Debug JSON/metadata 默认 7 天后先清字段；
 - 原始遥测、上下文指标和运行活动默认 14 天；
 - 遥测小时聚合和上下文日聚合默认保留 365 天；
+- 上下文日聚合复用既有 `context_layer_daily_rollups` 表（retention 删除前幂等补建缺失日），不新建平行聚合表；遥测小时聚合无既有物，新建 `telemetry_metric_rollups_hourly`；
 - 聚合幂等提交成功后才删除原始行；
 - 若聚合未实现，原始 telemetry/context 自动删除保持关闭。
 
@@ -147,4 +148,5 @@
 5. 定向测试必须使用系统 Temp 隔离 DataRoot，禁止触碰 `D:\data`；
 6. 外部重启到明确新构建后，使用用户授权的测试 DataRoot 做真实大表与聊天并发 smoke；
 7. Host composition 必须证明只有一个在线维护 hosted service；
-8. 设计完成、代码存在、自动测试通过和生产接受是四个不同状态，不得混用。
+8. 设计完成、代码存在、自动测试通过和生产接受是四个不同状态，不得混用；
+9. 旧 `/api/admin/storage/databases` 端点下线必须与 Desktop 旧 Storage 页面退役捆绑为同一任务，在此之前保持双通道鉴权（Admin JWT 或 ControlToken）现状。

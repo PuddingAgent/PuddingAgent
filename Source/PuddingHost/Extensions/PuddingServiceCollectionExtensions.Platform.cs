@@ -21,6 +21,7 @@ using PuddingCode.Tools;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
 using PuddingPlatform.Services.Diagnostics;
+using PuddingPlatform.Services.StorageManagement;
 using PuddingPlatform.Services.Conversation;
 using PuddingPlatform.Services.Execution;
 using PuddingPlatform.Services.AgentChat;
@@ -338,9 +339,22 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IStorageMaintenanceService>(sp =>
             sp.GetRequiredService<StorageMaintenanceService>());
 
-        // ── platform.db 单一保留期裁剪服务（Retention，覆盖 telemetry_metric_events /
-        //    runtime_activity / conversation_events；ChatMessages 永不裁剪）──────
-        // 不再并行注册旧 DiagnosticRetentionService；两套清理器会争用 SQLite writer。
+        // ── ADR-076 存储管理：语义目录 / 快照采样 / 单 writer 协调器 / 策略 ──
+        // StorageMaintenanceCoordinator 是唯一在线维护写 hosted service：
+        // 自动保留调度（RetentionPruningService）、Web 人工清理与旧 /databases 端点
+        // 的全部删除都经它串行执行；StorageInventorySampler 是只读 reader 不占 writer。
+        builder.Services.AddSingleton<StorageRetentionPolicyService>();
+        builder.Services.AddSingleton<StorageInventorySnapshotStore>();
+        builder.Services.AddHostedService<StorageInventorySampler>();
+        builder.Services.AddSingleton<StorageMaintenanceJobStore>();
+        builder.Services.AddSingleton<StorageCleanupExecutor>();
+        builder.Services.AddSingleton<StorageMaintenanceCoordinator>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<StorageMaintenanceCoordinator>());
+        builder.Services.AddSingleton<IStorageDerivedTargetHandler, CodeIndexScopeCleanupHandler>();
+        builder.Services.AddSingleton<IStorageDerivedTargetHandler, RedundantIndexCleanupHandler>();
+
+        // ── platform.db 自动保留调度（ADR-076：调度壳，写全部经协调器）────
+        // 策略来自 <DataRoot>/config/system.json storageManagement 段；
         // 证据流表（conversation_events）DELETE 前先归档到 WORM jsonl。
         builder.Services.AddSingleton<RetentionArchiveWriter>();
         builder.Services.AddHostedService<RetentionPruningService>();

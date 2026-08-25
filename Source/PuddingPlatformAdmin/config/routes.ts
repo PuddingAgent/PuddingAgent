@@ -123,6 +123,12 @@ const routeCatalog = [
     component: './memory-library',
   },
   {
+    path: '/storage',
+    name: 'storage',
+    icon: 'hdd',
+    component: './storage',
+  },
+  {
     path: '/diagnostics',
     name: 'diagnostics',
     icon: 'bug',
