@@ -25,6 +25,7 @@ internal static class ToolExposurePlanner
         "agent_diagnostics",
         "spawn_sub_agent",
         "query_sub_agents",
+        "list_llm_providers",
         "sleep",
     };
 

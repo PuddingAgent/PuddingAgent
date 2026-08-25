@@ -280,11 +280,12 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddScoped<IVisualReasoningService, DefaultVisualReasoningService>();
         builder.Services.AddHttpClient("DashScopeVisualReasoning");
 
-        // ── LLM Provider 余额查询 HTTP 客户端（DeepSeek /user/balance 等）──
-        // 30s 超时；由 LlmProviderFileService.GetBalanceAsync 创建。
+        // ── LLM Provider 余额查询（多服务商计费适配器注册表）──
+        // DeepSeek 适配器：GET {baseUrl}/user/balance；新服务商实现 ILlmBalanceProvider 后在此注册。
         builder.Services.AddHttpClient(
-            LlmProviderFileService.BalanceHttpClientName,
+            DeepSeekLlmBalanceProvider.BalanceHttpClientName,
             client => client.Timeout = TimeSpan.FromSeconds(30));
+        builder.Services.AddSingleton<ILlmBalanceProvider, DeepSeekLlmBalanceProvider>();
         builder.Services.AddScoped<IVisualReasoningProvider>(sp =>
         {
             var config = sp.GetRequiredService<IConfiguration>();

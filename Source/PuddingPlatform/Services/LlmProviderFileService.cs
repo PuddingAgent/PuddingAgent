@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 using System.Text.Json;
 using PuddingCode.Abstractions;
@@ -24,22 +22,22 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
     private readonly PuddingDataPaths _paths;
     private readonly ILogger<LlmProviderFileService> _logger;
     private readonly ILlmConfigService? _llmConfigService;
-    private readonly IHttpClientFactory? _httpClientFactory;
     private readonly IKeyVaultService? _keyVaultService;
+    private readonly IReadOnlyList<ILlmBalanceProvider> _balanceProviders;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
     public LlmProviderFileService(
         PuddingDataPaths paths,
         ILogger<LlmProviderFileService> logger,
         ILlmConfigService? llmConfigService = null,
-        IHttpClientFactory? httpClientFactory = null,
-        IKeyVaultService? keyVaultService = null)
+        IKeyVaultService? keyVaultService = null,
+        IEnumerable<ILlmBalanceProvider>? balanceProviders = null)
     {
         _paths = paths;
         _logger = logger;
         _llmConfigService = llmConfigService;
-        _httpClientFactory = httpClientFactory;
         _keyVaultService = keyVaultService;
+        _balanceProviders = balanceProviders?.ToList() ?? [];
     }
 
     private string ConfigPath => _paths.SystemConfigFile("llm.providers.json");
@@ -629,17 +627,14 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
         };
     }
 
-    // ─── Provider Balance Query (DeepSeek get-user-balance 等 OpenAI 兼容 provider) ──
-
-    /// <summary>Named HttpClient used for live balance queries.</summary>
-    public const string BalanceHttpClientName = "LlmBalanceQuery";
+    // ─── Provider Balance Query（多服务商计费适配器注册表分发）──
 
     /// <summary>
-    /// 查询 provider 账户余额（DeepSeek: GET {baseUrl}/user/balance）。
-    /// 支持 DeepSeek、OpenAI 等 OpenAI 兼容协议服务商——只要 provider 暴露 /user/balance 端点。
-    /// apiKey 优先从 llm.providers.json ApiKey 字段读取，按需展开 ${ENV_VAR} 占位符与
-    /// {{vault:NAME}} 密钥注入；找不到 ApiKey 时回退到 ApiKeyRef 经 KeyVault 解析。
-    /// apiKey 不会出现在任何日志中（仅记录 providerId、状态码、耗时等）。
+    /// 查询 provider 账户余额——按注册的 ILlmBalanceProvider 适配器分发（DeepSeek:
+    /// GET {baseUrl 剥掉 /v1}/user/balance）。未注册适配器的服务商直接返回
+    /// IsAvailable=false 的「暂不支持」DTO（HTTP 200），由前端优雅降级。
+    /// apiKey 解析链：ApiKey → 展开 ${ENV_VAR} → {{vault:NAME}} 注入 → ApiKeyRef 经 KeyVault；
+    /// apiKey 不会出现在任何日志中（适配器日志仅含 providerId、状态码、耗时等）。
     /// </summary>
     public async Task<LlmProviderBalanceDto> GetBalanceAsync(
         string providerId,
@@ -652,63 +647,22 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
         if (provider is null)
             throw new KeyNotFoundException($"Provider '{providerId}' 不存在");
 
+        var adapter = _balanceProviders.FirstOrDefault(item => item.CanHandle(provider));
+        if (adapter is null)
+        {
+            return new LlmProviderBalanceDto(
+                provider.ProviderId, provider.BaseUrl,
+                IsAvailable: false, [],
+                Error: $"服务商 '{providerId}' 暂不支持余额查询（未注册计费适配器）",
+                QueriedAt: DateTimeOffset.UtcNow);
+        }
+
         var apiKey = await ResolveApiKeyForBalanceAsync(provider, ct);
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException(
                 $"Provider '{providerId}' 未配置 ApiKey（既无明文 apiKey 也无有效的 ApiKeyRef），无法查询余额。");
 
-        var baseUrl = provider.BaseUrl.TrimEnd('/');
-        // DeepSeek 余额端点：/user/balance（注意：不带 /v1）。
-        var url = baseUrl.EndsWith("/user/balance", StringComparison.OrdinalIgnoreCase)
-            ? baseUrl
-            : baseUrl + "/user/balance";
-
-        var httpClient = _httpClientFactory?.CreateClient(BalanceHttpClientName) ?? new HttpClient();
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-
-        var sw = Stopwatch.StartNew();
-        try
-        {
-            using var response = await httpClient.SendAsync(request, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
-            sw.Stop();
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorMessage = TryParseBalanceErrorMessage(body)
-                    ?? $"余额 API 返回状态码 {(int)response.StatusCode}";
-                _logger.LogWarning(
-                    "[LlmBalance] FAIL provider={ProviderId} status={Status} elapsed={ElapsedMs}ms",
-                    providerId, (int)response.StatusCode, sw.ElapsedMilliseconds);
-                return new LlmProviderBalanceDto(
-                    provider.ProviderId, url,
-                    IsAvailable: false, [], Error: errorMessage, QueriedAt: DateTimeOffset.UtcNow);
-            }
-
-            var parsed = ParseBalanceResponse(body);
-            _logger.LogInformation(
-                "[LlmBalance] OK provider={ProviderId} available={IsAvailable} infos={Count} elapsed={ElapsedMs}ms",
-                providerId, parsed.IsAvailable, parsed.BalanceInfos.Count, sw.ElapsedMilliseconds);
-            return new LlmProviderBalanceDto(
-                provider.ProviderId, url,
-                parsed.IsAvailable, parsed.BalanceInfos,
-                Error: null, QueriedAt: DateTimeOffset.UtcNow);
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogError(
-                ex, "[LlmBalance] HTTP ERROR provider={ProviderId} url={Url} elapsed={ElapsedMs}ms",
-                providerId, url, sw.ElapsedMilliseconds);
-            throw;
-        }
-        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
-        {
-            _logger.LogError(
-                ex, "[LlmBalance] TIMEOUT provider={ProviderId} url={Url} elapsed={ElapsedMs}ms",
-                providerId, url, sw.ElapsedMilliseconds);
-            throw new HttpRequestException("余额查询请求超时", ex);
-        }
+        return await adapter.QueryAsync(provider, apiKey, ct);
     }
 
     /// <summary>
@@ -795,80 +749,5 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             var envValue = Environment.GetEnvironmentVariable(m.Groups["name"].Value);
             return string.IsNullOrEmpty(envValue) ? m.Value : envValue;
         });
-    }
-
-    // ── DeepSeek 余额响应 JSON 解析 ──
-
-    /// <summary>
-    /// 解析成功响应：{"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":"110.00","granted_balance":"10.00","topped_up_balance":"100.00"}]}。
-    /// </summary>
-    private static (bool IsAvailable, List<LlmBalanceInfoDto> BalanceInfos) ParseBalanceResponse(string json)
-    {
-        var balanceInfos = new List<LlmBalanceInfoDto>();
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            var isAvailable = root.TryGetProperty("is_available", out var avail)
-                              && avail.ValueKind == JsonValueKind.True;
-
-            if (root.TryGetProperty("balance_infos", out var arr)
-                && arr.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in arr.EnumerateArray())
-                {
-                    balanceInfos.Add(new LlmBalanceInfoDto(
-                        Currency: item.TryGetProperty("currency", out var c)
-                            ? c.GetString() ?? "UNKNOWN"
-                            : "UNKNOWN",
-                        TotalBalance: TryGetDecimal(item, "total_balance"),
-                        GrantedBalance: TryGetDecimal(item, "granted_balance"),
-                        ToppedUpBalance: TryGetDecimal(item, "topped_up_balance")));
-                }
-            }
-
-            return (isAvailable, balanceInfos);
-        }
-        catch (JsonException)
-        {
-            return (false, balanceInfos);
-        }
-    }
-
-    private static decimal TryGetDecimal(JsonElement obj, string propertyName)
-    {
-        if (!obj.TryGetProperty(propertyName, out var element))
-            return 0m;
-
-        if (element.ValueKind == JsonValueKind.Number && element.TryGetDecimal(out var dec))
-            return dec;
-
-        // DeepSeek 实际返回字符串数字（如 "110.00"）——回退到字符串解析
-        var str = element.GetString();
-        return string.IsNullOrEmpty(str) || !decimal.TryParse(str, out var parsed)
-            ? 0m
-            : parsed;
-    }
-
-    /// <summary>
-    /// 解析失败响应：{"error":{"message":"...","type":"authentication_error","param":null,"code":"invalid_request_error"}}。
-    /// </summary>
-    private static string? TryParseBalanceErrorMessage(string json)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("error", out var err)
-                && err.TryGetProperty("message", out var msg)
-                && msg.ValueKind == JsonValueKind.String)
-            {
-                return msg.GetString();
-            }
-        }
-        catch (JsonException)
-        {
-            // 忽略非 JSON 错误响应，由调用方回退到状态码消息
-        }
-        return null;
     }
 }

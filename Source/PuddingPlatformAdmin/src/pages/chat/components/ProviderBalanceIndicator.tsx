@@ -8,6 +8,8 @@ interface ProviderBalanceIndicatorProps {
   provider?: string;
   balance?: number;
   currency?: string;
+  /** Tooltip 第二行补充文案（查询失败原因 / 刷新提示等）。 */
+  detail?: string;
 }
 
 /** DeepSeek 风格 SVG 图标（占位） */
@@ -82,13 +84,22 @@ const ProviderBalanceIndicator: React.FC<ProviderBalanceIndicatorProps> = ({
   provider = 'DeepSeek',
   balance,
   currency = '¥',
+  detail,
 }) => {
   const { styles } = useChatStyles();
 
   const display = balance != null ? `${currency}${balance.toFixed(2)}` : '—';
+  const tooltip = detail ? (
+    <div>
+      <div>{`${provider} 余额：${display}`}</div>
+      <div style={{ opacity: 0.75 }}>{detail}</div>
+    </div>
+  ) : (
+    `${provider} 余额：${display}`
+  );
 
   return (
-    <Tooltip title={`${provider} 余额：${display}`}>
+    <Tooltip title={tooltip}>
       <span className={styles.statusIconGroup}>
         <ProviderIcon provider={provider} />
         <span className={styles.statusIconLabel}>{display}</span>

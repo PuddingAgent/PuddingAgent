@@ -407,6 +407,26 @@ export interface UpsertLlmProviderRequest {
   requestsPerMinute?: number;
 }
 
+// ─── LLM Provider Balance 余额查询 ────────────────────────────────
+
+/** 单个币种余额项（对应后端 LlmBalanceInfoDto）。 */
+export interface LlmBalanceInfoDto {
+  currency: string;
+  totalBalance: number;
+  grantedBalance: number;
+  toppedUpBalance: number;
+}
+
+/** 余额查询结果（对应后端 LlmProviderBalanceDto）；isAvailable=false 或 error 非空表示查询失败。 */
+export interface LlmProviderBalanceDto {
+  providerId: string;
+  endpoint: string;
+  isAvailable: boolean;
+  balanceInfos: LlmBalanceInfoDto[];
+  error?: string | null;
+  queriedAt: string;
+}
+
 export interface UpsertLlmModelRequest {
   modelId: string;
   name: string;
@@ -759,6 +779,15 @@ export async function listLlmProviders(): Promise<LlmProviderDto[]> {
 
 export async function getLlmProvider(providerId: string): Promise<LlmProviderDetailDto> {
   return request(`/api/llm/providers/${encodeURIComponent(providerId)}`, { method: 'GET' });
+}
+
+/** 查询服务商账户余额（多服务商计费适配器分发；不支持的厂商返回 isAvailable=false + error）。 */
+export async function getLlmProviderBalance(
+  providerId: string,
+): Promise<LlmProviderBalanceDto> {
+  return request(`/api/llm/providers/${encodeURIComponent(providerId)}/balance`, {
+    method: 'GET',
+  });
 }
 
 export async function createLlmProvider(req: UpsertLlmProviderRequest): Promise<LlmProviderDto> {

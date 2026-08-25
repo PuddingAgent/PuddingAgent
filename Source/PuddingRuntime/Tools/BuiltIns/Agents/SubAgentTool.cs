@@ -34,7 +34,8 @@ namespace PuddingRuntime.Services.Skills;
                  "推荐使用结构化委派协议参数：question、scope、already_known、effort、stop_condition、output；" +
                  "也可以使用旧 task，或使用 tasks JSON array 批量发起多个结构化子任务。" +
                  "参数：task（任务描述）、agent_template（可选，默认 workspace-task-agent）、" +
-                 "model（可选，如 mimo/mimo-v2.5-pro 或 deepseek/deepseek-v3，不指定则用平台默认模型）、" +
+                 "model（可选，必须是 providerId/modelId 完整路由，如 deepseek/deepseek-v3；" +
+                 "多 provider 注册的裸 modelId 会报错，先用 list_llm_providers 查 route，不指定则用平台默认模型）、" +
                  "sync（可选，true=同步阻塞等待结果 / false=异步立即返回，默认 true）。" +
                  "同步模式返回结构化结果合同：SUMMARY、CHANGES、EVIDENCE、RISKS、BLOCKERS。" +
                  "异步模式下立即返回 agentId，稍后通过 subagent_result 消息通道通知结果。" +
@@ -1293,7 +1294,7 @@ public sealed record SubAgentToolArgs
     [ToolParam("true to wait for completion, false to run asynchronously.")]
     public bool? Sync { get; init; }
 
-    [ToolParam("Optional model id or provider/model id.")]
+    [ToolParam("Optional model route. Prefer the full 'providerId/modelId' form (look it up with list_llm_providers); a bare modelId registered under multiple providers fails resolution.")]
     public string? Model { get; init; }
 
     [ToolParam("复用父代理的上下文环境（Fork + 分支 + 注入到子代理上下文），默认 false")]
