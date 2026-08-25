@@ -1,7 +1,8 @@
 // ── TurnContentStream 组件验收（AgentTurnCard 重构 2026-08-25）─────────────
 // 验收锚点：
 //  - 正文段永久可见且只渲染一次；历史组默认折叠（成员 DOM 卸载，非 CSS 隐藏）；
-//  - 尾部组无论运行/完成都默认展开；新正文段到达后原尾部组自动折叠；
+//  - 最新行为组无论运行/完成都默认展开；尾部正文不会把刚完成的轨迹藏掉；
+//    只有更新的行为组出现后，原组才自动折叠；
 //  - 用户手动展开/折叠 override 粘性（新事件不抢夺）；
 //  - TextBlock 一旦存在就永远参与块流，不能被 answerMarkdown 字符串关系关闭；
 //  - 流式尾部段（run 活跃 && terminal='none'）标记 data-streaming。
@@ -124,7 +125,7 @@ describe('TurnContentStream（内容块流）', () => {
     expect(screen.getAllByTestId('activity-group')[0].getAttribute('data-expanded')).toBe(
       'true',
     );
-    // 文本D 到达：原尾部组自动折叠，用户展开的历史组保持展开
+    // 文本D 到达：最新行为组仍展开，用户展开的历史组也保持展开。
     rerender(
       <TurnContentStream
         projection={projectExecutionFlow(
@@ -139,8 +140,28 @@ describe('TurnContentStream（内容块流）', () => {
     const groups = screen.getAllByTestId('activity-group');
     expect(groups[0].getAttribute('data-expanded')).toBe('true'); // 用户 override
     expect(groups[1].getAttribute('data-expanded')).toBe('false');
-    expect(groups[2].getAttribute('data-expanded')).toBe('false'); // 自动转历史组
+    expect(groups[2].getAttribute('data-expanded')).toBe('true'); // 仍是最新行为组
+    expect(groups[2].getAttribute('data-latest')).toBe('true');
     expect(screen.getAllByTestId('message-item')).toHaveLength(4);
+
+    // 文本D 后出现新思考组：原最新组才转为历史，新组默认展开。
+    rerender(
+      <TurnContentStream
+        projection={projectExecutionFlow(
+          fixtureEvents([
+            ev('tool.call.completed', 14, { toolCallId: 't4', name: 'w', exitCode: 0, output: 'done' }),
+            ev('message.content.appended', 15, { delta: '文本D' }),
+            ev('message.thinking_summary.appended', 16, { delta: 'R4' }),
+          ]),
+        )}
+        isRunActive
+      />,
+    );
+    const nextGroups = screen.getAllByTestId('activity-group');
+    expect(nextGroups[0].getAttribute('data-expanded')).toBe('true'); // 用户 override
+    expect(nextGroups[2].getAttribute('data-expanded')).toBe('false');
+    expect(nextGroups[3].getAttribute('data-expanded')).toBe('true');
+    expect(nextGroups[3].getAttribute('data-latest')).toBe('true');
   });
 
   it('canonical TextBlock 永远参与块流，不提供关闭正文的双路径开关', () => {

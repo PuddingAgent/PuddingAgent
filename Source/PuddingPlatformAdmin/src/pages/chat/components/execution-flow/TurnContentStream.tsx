@@ -195,6 +195,10 @@ export const TurnContentStream: React.FC<TurnContentStreamProps> = ({
 
   if (blocks.length === 0) return null;
 
+  const latestActivityGroupKey = [...blocks]
+    .reverse()
+    .find((block) => block.kind === 'activity-group')?.key;
+
   return (
     <div
       className={styles.turnContentStream}
@@ -213,6 +217,7 @@ export const TurnContentStream: React.FC<TurnContentStreamProps> = ({
           <ActivityGroup
             key={block.key}
             block={block}
+            isLatestGroup={block.key === latestActivityGroupKey}
             isTailGroup={index === blocks.length - 1}
             isRunActive={isRunActive}
             registry={registry}

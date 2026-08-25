@@ -76,8 +76,10 @@ export function useTurnSurfaceStore({
   const store = storeRef.current;
   const [revision, setRevision] = useState(0);
   const [registerRevision, setRegisterRevision] = useState(0);
+  const [hydrationDrainRevision, setHydrationDrainRevision] = useState(0);
   const hydratedMessageIdsRef = useRef<Set<string>>(new Set());
   const inFlightRef = useRef<Set<string>>(new Set());
+  const failedMessageIdsRef = useRef<Set<string>>(new Set());
   const visibleTurnIdsRef = useRef<Set<string>>(new Set());
 
   // 会话切换：就地清空 store（实例身份恒定，闭包不会捕获到孤儿 store）。
@@ -88,9 +90,15 @@ export function useTurnSurfaceStore({
     boundConversationRef.current = conversationId;
     hydratedMessageIdsRef.current.clear();
     inFlightRef.current.clear();
+    failedMessageIdsRef.current.clear();
     store.reset();
     setRevision(0);
   }, [conversationId, store]);
+  // 新一轮服务端投影到达后允许失败项重试；同一轮 drain 内先跳过，防止网络
+  // 故障造成无界立即重试，同时不阻塞队列里的其他可见消息。
+  useEffect(() => {
+    failedMessageIdsRef.current.clear();
+  }, [conversationView]);
   const notifyMutated = useCallback(() => {
     setRevision(store.getRevision());
   }, [store]);
@@ -150,13 +158,17 @@ export function useTurnSurfaceStore({
       if (!visibleTurnIdsRef.current.has(turnId)) return false;
       if (hydratedMessageIdsRef.current.has(message.messageId)) return false;
       if (inFlightRef.current.has(message.messageId)) return false;
+      if (failedMessageIdsRef.current.has(message.messageId)) return false;
       return true;
     }).slice(0, 2);
     for (const message of targets) {
       inFlightRef.current.add(message.messageId);
       const turnId = message.turnId || message.runId || message.messageId;
+      const requestConversationId = view.mainSessionId;
       void getAgentMessageProcessItems(workspaceId, agentId, message.messageId)
         .then((details) => {
+          // 会话切换后到达的旧请求不得污染新 store。
+          if (boundConversationRef.current !== requestConversationId) return;
           hydratedMessageIdsRef.current.add(message.messageId);
           if (!details.processItems?.length) return;
           const events = processItemsToFlowEvents(details.processItems, {
@@ -166,11 +178,28 @@ export function useTurnSurfaceStore({
           if (result.applied > 0) notifyMutated();
         })
         .catch(() => {
-          // 水合失败（网络/权限）：移出 in-flight，待下次视图轮询重试。
+          // 网络/权限失败保持未水合；后续投影轮询/重新进入视口可重试。
+          failedMessageIdsRef.current.add(message.messageId);
+        })
+        .finally(() => {
           inFlightRef.current.delete(message.messageId);
+          // slice(0, 2) 是并发窗口而不是总量上限：任一槽位完成即调度下一条
+          // 已注册的可见消息。否则初始列表只有最早两条有轨迹，最新消息永远
+          // 停留在“底部整段正文”的旧 UI。
+          if (boundConversationRef.current === requestConversationId) {
+            setHydrationDrainRevision((n) => n + 1);
+          }
         });
     }
-  }, [workspaceId, agentId, conversationView, store, notifyMutated, registerRevision]);
+  }, [
+    workspaceId,
+    agentId,
+    conversationView,
+    store,
+    notifyMutated,
+    registerRevision,
+    hydrationDrainRevision,
+  ]);
 
   const getSurfaceProjection = useCallback(
     (turnIdOrAlias?: string | null) =>

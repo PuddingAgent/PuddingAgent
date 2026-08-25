@@ -45,7 +45,9 @@ const diffIsoMs = (first?: string, last?: string): number | null => {
 
 export interface ActivityGroupProps {
   block: ActivityGroupBlock;
-  /** 是否为尾部（最新）行为组：组默认展开，组内详情仍保持单行折叠。 */
+  /** 是否为当前块流中最新的行为组：默认展开，组内详情仍保持单行折叠。 */
+  isLatestGroup: boolean;
+  /** 是否为整个块流的尾块：仅用于判断当前运行态，不决定默认展开。 */
   isTailGroup: boolean;
   /** run 是否仍在运行（尾部连续 reasoning 的当前段判定）。 */
   isRunActive: boolean;
@@ -56,15 +58,17 @@ export interface ActivityGroupProps {
 
 export const ActivityGroup: React.FC<ActivityGroupProps> = ({
   block,
+  isLatestGroup,
   isTailGroup,
   isRunActive,
   registry,
   onOpenInspector,
 }) => {
   const { styles, cx } = useExecutionFlowStyles();
-  // 默认值：最新行为组始终展开（运行中和完成态一致）；新正文到达后原尾组
-  // 转为历史组并自动折叠。用户 override 优先且粘性。
-  const groupExpanded = registry.isExpanded(block.key, isTailGroup);
+  // 默认值：最新行为组始终展开（运行中和完成态一致）；尾部新正文不会把
+  // 刚完成的行为轨迹藏掉。只有新行为组出现时，原组才转为历史组。
+  // 用户 override 优先且粘性。
+  const groupExpanded = registry.isExpanded(block.key, isLatestGroup);
   const label = buildActivityGroupLabel(block.summary);
   const durationText =
     block.summary.durationMs !== null
@@ -160,6 +164,7 @@ export const ActivityGroup: React.FC<ActivityGroupProps> = ({
       data-testid="activity-group"
       data-group-key={block.key}
       data-expanded={groupExpanded}
+      data-latest={isLatestGroup}
       data-tail={isTailGroup}
     >
       <ExecutionDisclosureRow
@@ -250,6 +255,7 @@ export default React.memo(
     previous.block.nodes.every((node, index) =>
       sameActivityNode(node, next.block.nodes[index]),
     ) &&
+    previous.isLatestGroup === next.isLatestGroup &&
     previous.isTailGroup === next.isTailGroup &&
     previous.isRunActive === next.isRunActive &&
     previous.registry === next.registry &&
