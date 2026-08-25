@@ -3138,3 +3138,29 @@ python TestScripts/deepseek-cache-hitrate.py --days 3   # 短窗口
   `system_prompt_changed`/`tool_spec_changed` 属于前缀漂移，查 `composition_snapshot` 指标与 L1-TOOLS 层。
 - 委派视觉（`vision-helper:{sessionId}`）与潜意识（`subconscious:{sessionId}` / `subconscious-memory`）调用
   是独立 sessionId，其结构性低命中不应计入主会话前缀漂移；报表第 3 节按 reason 分组时它们自带桶。
+
+## 11.36 Agent 可见新消息却继续执行上一轮请求
+
+典型症状：Chat UI 已显示新的长用户消息，但 Agent 的第一段 reasoning 仍复述更早的短命令（例如继续
+列任务）；用户会感觉 Agent “停留在上一轮”。不要只凭 UI 归因给前端，也不要只查 `ChatMessages`。
+
+按同一身份链排查：
+
+1. 从新用户消息取得 `conversationId/messageId`，关联 `Command → Turn → Run → Trace`；确认
+   `turn.accepted` 的 `userMessageId` 正是新消息，而不是旧消息或 steering。
+2. 查该 Trace 的上下文活动：水合 `history_count`、`agent.history.inject_secrets` 的
+   `message_count/system_user_message_count`、最终 `agent.llm.prepare`。若 `turn.accepted` 正确且网关
+   收到预期消息数，说明不是“前端没发出”或“Runtime 丢了整条请求”。
+3. 比对当前 `ChatMessages.Content` 的长度/SHA-256 与水合历史。历史可能仍含一条语义非常清晰的旧命令，
+   而新输入像粘贴的 assistant 报告、日志或文档；没有当前轮边界时，模型可能语义回退到旧命令。
+4. 2026-08-25 起，实际 provider 输入必须含最后一个
+   `[CURRENT USER TURN input_sha256=…]…[/CURRENT USER TURN input_sha256=…]`；typed `ContentParts`
+   同样必须有带同一 hash 的首尾围栏。
+   `agent.llm.prepare`（Streaming）或 `subagent.llm.started`（Buffered）应有
+   `current_message_id/current_input_sha256`。secret injection、软压缩或硬预算裁剪若移除了围栏，
+   Runtime 应在 provider 前抛出 `Outbound LLM history is missing the accepted current user turn`，而不是
+   静默发送旧历史。
+
+判定分支：`turn.accepted` 指向旧 ID → 查 Dispatcher/ExecutionRunCoordinator；ID 正确但门禁报错 → 查
+ContextBudget/历史投影；围栏与 hash 均正确而模型仍答旧任务 → 查实际 gateway request/provider 响应，
+再评估 prompt 行为。修复 Runtime 后必须重启 Core 才能验证，新源码不能由承载它的旧进程自证已加载。

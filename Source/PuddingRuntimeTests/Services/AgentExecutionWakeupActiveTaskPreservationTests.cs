@@ -19,7 +19,7 @@ namespace PuddingRuntimeTests.Services;
 ///
 /// 断言点 = 工具调用边界 <see cref="ToolInvocationRequest.ActiveTask"/> 与原值相等，
 /// 这正是线上 task_claim/task_update 返回 active_context_missing 的故障点。
-/// 生产代码零改动。
+/// 同时覆盖当前用户 Turn 围栏在 Buffered/Streaming/typed ContentParts 路径的一致性。
 /// </summary>
 [TestClass]
 public sealed class AgentExecutionWakeupActiveTaskPreservationTests
@@ -182,6 +182,109 @@ public sealed class AgentExecutionWakeupActiveTaskPreservationTests
         AssertActiveTaskEqual(CreateActiveTask(), activeTask);
     }
 
+    [TestMethod]
+    public async Task ExecuteAsync_NewReviewLikeInput_IsFencedAsTheAuthoritativeCurrentTurn()
+    {
+        const string sessionId = "session-current-turn-fence";
+        const string oldInstruction = "列出全部任务（任务看板）";
+        const string currentReview =
+            "## 审阅结论\n这是一段很长的代码审阅报告，包含提交、测试与风险说明。\n" +
+            "请审阅这份报告，并给出下一步的代码级修改建议。";
+        var llm = new ScriptedLlmClient(DoneJson, DoneJson);
+        var service = CreateService(llm, new RecordingToolInvocationService(), new ExecutionJournal());
+
+        await service.ExecuteAsync(CreateDispatchRequest(
+            sessionId,
+            activeTask: null,
+            messageText: oldInstruction,
+            messageId: "msg-old-task"));
+        await service.ExecuteAsync(CreateDispatchRequest(
+            sessionId,
+            activeTask: null,
+            messageText: currentReview,
+            messageId: "msg-current-review"));
+
+        Assert.AreEqual(2, llm.Requests.Count);
+        var secondRequest = llm.Requests[1];
+        var userMessages = secondRequest.Where(message => message.Role == ChatRole.User).ToList();
+        Assert.IsTrue(userMessages.Any(message => message.Content?.Contains(oldInstruction, StringComparison.Ordinal) == true),
+            "The older task may remain as history; the repair must establish precedence rather than erase history.");
+
+        var currentTurn = userMessages.Last(message =>
+            message.Content?.Contains(currentReview, StringComparison.Ordinal) == true);
+        StringAssert.Contains(currentTurn.Content!, "[CURRENT USER TURN input_sha256=");
+        StringAssert.Contains(currentTurn.Content!, "This is the user's latest input and the active request for this turn.");
+        StringAssert.Contains(currentTurn.Content!, "Do not resume an earlier user request");
+        StringAssert.Contains(currentTurn.Content!, "[/CURRENT USER TURN input_sha256=");
+        Assert.IsFalse(currentTurn.Content!.Contains(oldInstruction, StringComparison.Ordinal),
+            "The current-turn fence must contain only the accepted current input, not a merged stale task.");
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_MultimodalInput_PreservesPartsInsideCurrentTurnFence()
+    {
+        const string currentText = "请审阅截图中的行为，并给出修复建议。";
+        var originalParts = new LlmContentPart[]
+        {
+            new LlmTextPart(currentText),
+            new LlmImagePart("artifact-current-turn"),
+        };
+        var llm = new ScriptedLlmClient(DoneJson);
+        var service = CreateService(llm, new RecordingToolInvocationService(), new ExecutionJournal());
+
+        await service.ExecuteAsync(CreateDispatchRequest(
+            "session-current-turn-multimodal",
+            activeTask: null,
+            messageText: currentText,
+            messageId: "msg-current-multimodal",
+            contentParts: originalParts));
+
+        var outboundUser = llm.Requests.Single()
+            .Last(message => message.Role == ChatRole.User);
+        Assert.IsNotNull(outboundUser.ContentParts);
+        Assert.AreEqual(4, outboundUser.ContentParts!.Count,
+            "The fence adds one text part before and after the two canonical input parts.");
+        StringAssert.Contains(((LlmTextPart)outboundUser.ContentParts[0]).Text, "[CURRENT USER TURN input_sha256=");
+        Assert.AreEqual(originalParts[0], outboundUser.ContentParts[1]);
+        Assert.AreEqual(originalParts[1], outboundUser.ContentParts[2]);
+        StringAssert.Contains(((LlmTextPart)outboundUser.ContentParts[3]).Text, "[/CURRENT USER TURN input_sha256=");
+    }
+
+    [TestMethod]
+    public async Task ExecuteStreamAsync_NewInput_UsesTheSameCurrentTurnFence()
+    {
+        const string oldInstruction = "请更新任务看板的任务状态。";
+        const string currentInput = "这是新的长消息：请诊断为什么 Agent 仍在回复上一条消息。";
+        var llm = new ScriptedLlmClient();
+        var service = CreateService(llm, new RecordingToolInvocationService(), new ExecutionJournal());
+
+        await DrainAsync(service.ExecuteStreamAsync(CreateDispatchRequest(
+            "session-stream-current-turn",
+            activeTask: null,
+            messageText: oldInstruction,
+            messageId: "msg-stream-old")));
+        await DrainAsync(service.ExecuteStreamAsync(CreateDispatchRequest(
+            "session-stream-current-turn",
+            activeTask: null,
+            messageText: currentInput,
+            messageId: "msg-stream-current")));
+
+        Assert.AreEqual(2, llm.StreamRequests.Count);
+        var currentTurn = llm.StreamRequests[1]
+            .Last(message => message.Role == ChatRole.User
+                             && message.Content?.Contains(currentInput, StringComparison.Ordinal) == true);
+        StringAssert.Contains(currentTurn.Content!, "[CURRENT USER TURN input_sha256=");
+        StringAssert.Contains(currentTurn.Content!, "[/CURRENT USER TURN input_sha256=");
+        Assert.IsFalse(currentTurn.Content!.Contains(oldInstruction, StringComparison.Ordinal));
+    }
+
+    private static async Task DrainAsync(IAsyncEnumerable<ServerSentEventFrame> frames)
+    {
+        await foreach (var _ in frames)
+        {
+        }
+    }
+
     // ── Fixture 工厂 ────────────────────────────────────────────────────────
     private static AgentExecutionService CreateService(
         ScriptedLlmClient llm,
@@ -264,17 +367,22 @@ public sealed class AgentExecutionWakeupActiveTaskPreservationTests
 
     private static RuntimeDispatchRequest CreateDispatchRequest(
         string sessionId,
-        ActiveTaskRuntimeContext? activeTask) => new()
+        ActiveTaskRuntimeContext? activeTask,
+        string messageText = "please claim the task",
+        string? messageId = null,
+        IReadOnlyList<LlmContentPart>? contentParts = null) => new()
     {
         SessionId = sessionId,
         AgentTemplateId = "workspace-task-agent",
-        MessageText = "please claim the task",
+        MessageText = messageText,
+        MessageId = messageId,
         WorkspaceId = "ws-1",
         AgentInstanceId = "agent-1",
         LlmConfig = CreateLlmConfig(),
         SuppressContextAutoCompaction = true,
         MaxRounds = 5,
         ActiveTask = activeTask,
+        ContentParts = contentParts,
     };
 
     private static DispatchWakeupRequest CreateWakeupRequest(string sessionId) => new()
@@ -315,6 +423,9 @@ public sealed class AgentExecutionWakeupActiveTaskPreservationTests
     {
         private readonly Queue<LlmResponse> _responses;
 
+        public List<IReadOnlyList<ChatMessage>> Requests { get; } = [];
+        public List<IReadOnlyList<ChatMessage>> StreamRequests { get; } = [];
+
         public ScriptedLlmClient(params string[] contents)
             => _responses = new Queue<LlmResponse>(contents.Select(c => new LlmResponse(c, null)));
 
@@ -330,18 +441,24 @@ public sealed class AgentExecutionWakeupActiveTaskPreservationTests
             if (_responses.Count == 0)
                 throw new InvalidOperationException(
                     "ScriptedLlmClient exhausted: more LLM rounds than scripted responses.");
+            Requests.Add(messages.ToList());
             return Task.FromResult(_responses.Dequeue());
         }
 
-        public IAsyncEnumerable<StreamDelta> ChatStreamAsync(
+        public async IAsyncEnumerable<StreamDelta> ChatStreamAsync(
             string workspaceId,
             string sessionId,
             string agentTemplateId,
             IReadOnlyList<ChatMessage> messages,
             IReadOnlyList<LlmToolDefinition>? tools = null,
             LlmConfig? llmConfig = null,
-            CancellationToken ct = default)
-            => throw new NotSupportedException("Buffered path only in these tests.");
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            StreamRequests.Add(messages.ToList());
+            await Task.Yield();
+            yield return new StreamDelta { ContentDelta = "finished" };
+            yield return new StreamDelta { FinishReason = "stop" };
+        }
     }
 
     private sealed class RecordingToolInvocationService : IToolInvocationService

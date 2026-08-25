@@ -147,6 +147,7 @@ Terminal 长命令能耗协议（2026-08-22）
 
 ContextPipeline → stable system prefix + volatile User tail
   → 当前消息、日期、召回与 inbound context 不再插入 system prompt
+  → AgentExecutionService 用 `[CURRENT USER TURN input_sha256=…]` 围住本轮文本与 typed ContentParts；若预算裁剪/投影后围栏缺失，Buffered/Streaming 在 provider 调用前 fail-closed
   → AgentExecutionService → ToolResultContextPolicy（模型历史最多 8 KiB；原始完整结果写入工作区 `.pudding/context-tool-results`，不做模型输入脱敏）
   → search_tools 已发现 schema 在 live session 内保持加载，避免跨 dispatch 重复收缩/扩张
 

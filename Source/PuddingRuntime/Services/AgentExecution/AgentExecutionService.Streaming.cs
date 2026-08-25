@@ -296,12 +296,7 @@ public sealed partial class AgentExecutionService
             history[0] = new ChatMessage(ChatRole.System, streamingSystemPrompt.SystemPrompt);
         }
 
-        history.Add(new ChatMessage(
-            ChatRole.User,
-            BuildUserMessageForLlm(request, streamingSystemPrompt.UserContextPrefix),
-            VisualArtifactIds: request.VisualArtifactIds,
-            AudioArtifactIds: request.AudioArtifactIds,
-            ContentParts: request.ContentParts));
+        history.Add(BuildCurrentUserChatMessage(request, streamingSystemPrompt.UserContextPrefix));
 
         var loopCtx = new AgentLoopContext
         {
@@ -779,6 +774,8 @@ public sealed partial class AgentExecutionService
                     }
                 }
 
+                EnsureCurrentTurnInputPresent(injectedHistory, request);
+
                 var prefixStartedAt = DateTimeOffset.UtcNow;
                 var prefixSw = System.Diagnostics.Stopwatch.StartNew();
                 var prefixSnapshot = PrefixCacheSnapshotBuilder.Build(
@@ -856,6 +853,8 @@ public sealed partial class AgentExecutionService
                         ["model_id"] = effectiveLlmConfig?.ModelId ?? "",
                         ["endpoint_host"] = SafeHost(effectiveLlmConfig?.Endpoint),
                         ["path"] = _llmInvocationService is not null ? "llm_invocation_service" : "direct_llm_client",
+                        ["current_message_id"] = request.MessageId ?? "",
+                        ["current_input_sha256"] = ComputeCurrentTurnInputHash(request),
                     },
                     error: null,
                     ct: CancellationToken.None);

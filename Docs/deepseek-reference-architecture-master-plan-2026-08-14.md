@@ -495,6 +495,15 @@ public sealed record AgentSessionEventEnvelope
 - token 预算和 deadline；
 - 不包含 Secret 的 canonical request hash。
 
+过渡期安全门禁（2026-08-25 已实现，不代表本节 canonical projector 已完成）：现有
+`AgentExecutionService` 在接受当前用户输入后，以含 `input_sha256` 的 `CURRENT USER TURN` 同步围住
+文本与 typed `ContentParts`。围栏明确“仅消息序中的最后一个块是当前轮”，避免新输入看起来像历史
+assistant 报告、日志或文档时，模型退回执行水合历史里的旧命令。Buffered/Streaming 均在 secret injection、
+软压缩和硬预算裁剪完成后验证围栏；缺失则 fail-closed，不允许调用 Provider。Streaming 的
+`agent.llm.prepare` 与 Buffered 的 `subagent.llm.started` 记录 `current_message_id/current_input_sha256`。
+该门禁只保证“已接受的本轮输入不会静默丢失且具有明确优先级”，最终仍须由
+`AgentHistoryProjector + Agent Session Log` 取代多源水合历史。
+
 ### 6.6 持久化策略
 
 不能机械复制 Harness 的“同步内存 append + 全量 write-behind”。Pudding 有 SQLite 和外部副作用，按风险分级：

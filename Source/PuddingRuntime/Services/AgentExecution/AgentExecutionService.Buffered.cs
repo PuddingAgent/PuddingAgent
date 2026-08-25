@@ -377,12 +377,7 @@ public sealed partial class AgentExecutionService
                 userContextPrefix = systemPrompt.UserContextPrefix;
             }
         }
-                history.Add(new ChatMessage(
-                    ChatRole.User,
-                    BuildUserMessageForLlm(request, userContextPrefix),
-                    VisualArtifactIds: request.VisualArtifactIds,
-                    AudioArtifactIds: request.AudioArtifactIds,
-                    ContentParts: request.ContentParts));
+                history.Add(BuildCurrentUserChatMessage(request, userContextPrefix));
 
         // ── 初始化 Loop 上下文 ────────────────────────────────────────
         var maxRounds = request.MaxRounds > 0
@@ -697,6 +692,7 @@ public sealed partial class AgentExecutionService
                             budgetedRequest.Snapshot.PromptCalibrationRatio);
                     }
                 }
+                EnsureCurrentTurnInputPresent(injectedHistory, request);
                 var prefixSnapshot = PrefixCacheSnapshotBuilder.Build(
                     injectedHistory,
                     llmTools,
@@ -714,6 +710,8 @@ public sealed partial class AgentExecutionService
                     message_count = injectedHistory.Count,
                     tool_count = llmTools.Count,
                     estimated_context_tokens = contextUsageSnapshot?.UsedTokens,
+                    current_message_id = request.MessageId,
+                    current_input_sha256 = ComputeCurrentTurnInputHash(request),
                 });
                                 var llmResult = await LlmInvoker.InvokeAsync(
                     request,

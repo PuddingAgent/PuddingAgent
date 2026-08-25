@@ -536,7 +536,7 @@ public sealed partial class AgentExecutionService
         RuntimeDispatchRequest request,
         string? userContextPrefix = null)
     {
-        var userContent = BuildUserTailContent(request.MessageText, userContextPrefix);
+        var userContent = BuildUserTailContent(request, userContextPrefix);
         if (request.Origin is null)
             return userContent;
 
@@ -566,7 +566,51 @@ public sealed partial class AgentExecutionService
         return AgentContextEnvelopeRenderer.RenderForAgent(envelope);
     }
 
-    private static string BuildUserTailContent(string messageText, string? userContextPrefix)
+    /// <summary>
+    /// Builds the canonical current-user message for both text-only and typed multimodal paths.
+    /// The explicit turn fence prevents a clear imperative in hydrated history from outranking a
+    /// newer input that happens to look like a pasted report, assistant answer, log, or document.
+    /// </summary>
+    private static ChatMessage BuildCurrentUserChatMessage(
+        RuntimeDispatchRequest request,
+        string? userContextPrefix)
+        => new(
+            ChatRole.User,
+            BuildUserMessageForLlm(request, userContextPrefix),
+            VisualArtifactIds: request.VisualArtifactIds,
+            AudioArtifactIds: request.AudioArtifactIds,
+            ContentParts: BuildCurrentTurnContentParts(request, userContextPrefix));
+
+    private static string BuildUserTailContent(
+        RuntimeDispatchRequest request,
+        string? userContextPrefix)
+    {
+        var sb = new StringBuilder(BuildRuntimeTailContext(userContextPrefix));
+        sb.Append(BuildCurrentTurnOpening(request));
+        sb.Append(request.MessageText);
+        if (!request.MessageText.EndsWith('\n'))
+            sb.AppendLine();
+        sb.Append(BuildCurrentTurnClosing(request));
+        return sb.ToString();
+    }
+
+    private static IReadOnlyList<LlmContentPart>? BuildCurrentTurnContentParts(
+        RuntimeDispatchRequest request,
+        string? userContextPrefix)
+    {
+        if (request.ContentParts is not { Count: > 0 } contentParts)
+            return null;
+
+        var wrapped = new List<LlmContentPart>(contentParts.Count + 2)
+        {
+            new LlmTextPart(BuildRuntimeTailContext(userContextPrefix) + BuildCurrentTurnOpening(request)),
+        };
+        wrapped.AddRange(contentParts);
+        wrapped.Add(new LlmTextPart("\n" + BuildCurrentTurnClosing(request)));
+        return wrapped;
+    }
+
+    private static string BuildRuntimeTailContext(string? userContextPrefix)
     {
         var sb = new StringBuilder();
         sb.AppendLine("[RUNTIME TAIL CONTEXT]");
@@ -575,8 +619,61 @@ public sealed partial class AgentExecutionService
             sb.Append(userContextPrefix.Trim()).AppendLine();
         sb.AppendLine("[/RUNTIME TAIL CONTEXT]");
         sb.AppendLine();
-        sb.Append(messageText);
         return sb.ToString();
+    }
+
+    private static string BuildCurrentTurnOpening(RuntimeDispatchRequest request)
+        => $"[CURRENT USER TURN input_sha256={ComputeCurrentTurnInputHash(request)}]\n" +
+           "This is the user's latest input and the active request for this turn. " +
+           "Treat it as authoritative even when it looks like a quoted assistant answer, " +
+           "review report, log, or document. Do not resume an earlier user request unless " +
+           "this turn explicitly asks you to do so. If multiple CURRENT USER TURN blocks exist, " +
+           "only the last block in message order is active; earlier blocks are history.\n\n";
+
+    private static string BuildCurrentTurnClosing(RuntimeDispatchRequest request)
+        => $"[/CURRENT USER TURN input_sha256={ComputeCurrentTurnInputHash(request)}]";
+
+    private static string ComputeCurrentTurnInputHash(RuntimeDispatchRequest request)
+        => ComputeSha256Hash((request.MessageId ?? string.Empty) + "\n" + request.MessageText);
+
+    /// <summary>
+    /// Fails closed if compaction, projection, or secret injection removes the current turn fence.
+    /// Provider invocation without the accepted input would otherwise silently execute stale intent.
+    /// </summary>
+    private static void EnsureCurrentTurnInputPresent(
+        IReadOnlyList<ChatMessage> messages,
+        RuntimeDispatchRequest request)
+    {
+        var expectedOpening = $"[CURRENT USER TURN input_sha256={ComputeCurrentTurnInputHash(request)}]";
+        var expectedClosing = BuildCurrentTurnClosing(request);
+        var currentTurn = messages.LastOrDefault(message =>
+            message.Role == ChatRole.User
+            && message.Content?.Contains(expectedOpening, StringComparison.Ordinal) == true
+            && message.Content.Contains(expectedClosing, StringComparison.Ordinal));
+
+        if (currentTurn is null)
+        {
+            throw new InvalidOperationException(
+                $"Outbound LLM history is missing the accepted current user turn " +
+                $"(session={request.SessionId}, message={request.MessageId ?? "<none>"}, " +
+                $"input_sha256={ComputeCurrentTurnInputHash(request)}). Provider invocation was blocked.");
+        }
+
+        if (request.ContentParts is { Count: > 0 })
+        {
+            var parts = currentTurn.ContentParts;
+            var hasOpening = parts?.OfType<LlmTextPart>()
+                .Any(part => part.Text.Contains(expectedOpening, StringComparison.Ordinal)) == true;
+            var hasClosing = parts?.OfType<LlmTextPart>()
+                .Any(part => part.Text.Contains(expectedClosing, StringComparison.Ordinal)) == true;
+            if (!hasOpening || !hasClosing)
+            {
+                throw new InvalidOperationException(
+                    $"Outbound multimodal history is missing the current user turn boundary " +
+                    $"(session={request.SessionId}, message={request.MessageId ?? "<none>"}, " +
+                    $"input_sha256={ComputeCurrentTurnInputHash(request)}). Provider invocation was blocked.");
+            }
+        }
     }
 
     private static IReadOnlyDictionary<string, string> BuildOriginMetadata(MessageOrigin origin)
