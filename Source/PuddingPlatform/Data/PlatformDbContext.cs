@@ -122,6 +122,13 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // Task Execution Bindings（TB-05 Task/Assignment/Delivery/Execution 绑定）
     public DbSet<TaskExecutionBindingEntity> TaskExecutionBindings => Set<TaskExecutionBindingEntity>();
 
+    // Goal 持久控制面（ADR-074；G1 冻结全部 schema，iterations/outbox/verifications/bindings 由后续批次写入）
+    public DbSet<GoalRunEntity> GoalRuns => Set<GoalRunEntity>();
+    public DbSet<GoalIterationEntity> GoalIterations => Set<GoalIterationEntity>();
+    public DbSet<GoalOutboxEntity> GoalOutbox => Set<GoalOutboxEntity>();
+    public DbSet<GoalVerificationEntity> GoalVerifications => Set<GoalVerificationEntity>();
+    public DbSet<TaskGoalBindingEntity> TaskGoalBindings => Set<TaskGoalBindingEntity>();
+
     // External Access Token（ADR-075 第三方任务看板认证）
     public DbSet<ExternalAccessTokenEntity> ExternalAccessTokens => Set<ExternalAccessTokenEntity>();
     public DbSet<ExternalAccessTokenScopeEntity> ExternalAccessTokenScopes => Set<ExternalAccessTokenScopeEntity>();
@@ -615,6 +622,60 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasKey(b => b.Id);
             e.HasIndex(b => new { b.TaskId, b.AssignmentId, b.DeliveryId }).IsUnique();
             e.HasIndex(b => b.DeliveryId);
+        });
+
+        // ── Goal 持久控制面（ADR-074 §12）─────────────────────────
+        modelBuilder.Entity<GoalRunEntity>(e =>
+        {
+            e.ToTable("goal_runs");
+            e.HasKey(g => g.GoalRunId);
+            // partial unique：同一 (conversation, agent) 最多一个非终态 Goal（Active=1/Paused=2/Blocked=3）。
+            e.HasIndex(g => new { g.CurrentConversationId, g.AgentInstanceId })
+                .IsUnique()
+                .HasFilter("status IN (1, 2, 3)")
+                .HasDatabaseName("UX_goal_runs_active");
+            e.HasIndex(g => g.SourceCommandId)
+                .IsUnique()
+                .HasFilter("source_command_id IS NOT NULL")
+                .HasDatabaseName("UX_goal_runs_source_command");
+            e.HasIndex(g => new { g.WorkspaceId, g.UpdatedAtUtc });
+        });
+
+        modelBuilder.Entity<GoalIterationEntity>(e =>
+        {
+            e.ToTable("goal_iterations");
+            e.HasKey(i => i.GoalIterationId);
+            e.HasIndex(i => new { i.GoalRunId, i.ActivationEpoch, i.IterationNo }).IsUnique();
+            e.HasIndex(i => new { i.GoalRunId, i.Status });
+        });
+
+        modelBuilder.Entity<GoalOutboxEntity>(e =>
+        {
+            e.ToTable("goal_outbox");
+            e.HasKey(o => o.OutboxId);
+            e.HasIndex(o => o.IdempotencyKey).IsUnique();
+            e.HasIndex(o => new { o.Status, o.DueAtUtc });
+            e.HasIndex(o => o.GoalRunId);
+        });
+
+        modelBuilder.Entity<GoalVerificationEntity>(e =>
+        {
+            e.ToTable("goal_verifications");
+            e.HasKey(v => v.VerificationId);
+            e.HasIndex(v => new { v.GoalRunId, v.ActivationEpoch, v.SourceTurnId, v.ContractVersion }).IsUnique();
+            e.HasIndex(v => new { v.GoalRunId, v.IterationNo });
+        });
+
+        modelBuilder.Entity<TaskGoalBindingEntity>(e =>
+        {
+            e.ToTable("task_goal_bindings");
+            e.HasKey(b => b.BindingId);
+            e.HasIndex(b => b.GoalRunId).IsUnique();
+            e.HasIndex(b => b.TaskId)
+                .IsUnique()
+                .HasFilter("status = 'active'")
+                .HasDatabaseName("UX_task_goal_bindings_task_active");
+            e.HasIndex(b => new { b.WorkspaceId, b.Status });
         });
 
         // ── External Access Token（ADR-075）──────────────────────────

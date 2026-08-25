@@ -1075,6 +1075,18 @@ Verifier route 必须冻结到 Goal snapshot；配置变更不悄悄改变进行
 
 出口：所有 chaos/权限/成本/数据完整性 gate 通过后再默认启用。
 
+### 18.1 G0+G1 施工记录（2026-08-24 第一批交付）
+
+G0（合同与测试夹具）与 G1（持久 Goal 与多端命令，不自动续行）已按本方案交付：
+
+- **PuddingCore/Goals/**：`GoalContracts`（GoalPhase/GoalSnapshot/GoalLimits/错误码）、`GoalStateMachine`（转换矩阵、终态、resume/edit 卫兵、计数不变量、CanAcceptNewIteration）、`GoalEventTypes`（goal.* 目录一次性冻结）、`GoalCommandTextParser`（严格 grammar：中文/多行 objective、--rounds 1..256 显式拒绝越界、保留字子命令消歧）、`IGoalCommandService`/`IGoalQueryService`、`GoalRunOptions`（`GoalRuns` 节，Enabled 默认 false）。
+- **ToolAuthorization**：`SystemCommandKind.Goal` + `/goal` 识别（RawText 原样透传，不走参数清洗）；`/goal` 全部视为 privileged（外部渠道白名单裁决）。`ConversationEventSourceKind.Goal` + 诊断投影映射。
+- **PuddingPlatform/Services/Goals/**：5 张表实体与 `GoalSchemaBootstrapper`（含"单 (conversation,agent) 一个非终态 Goal" partial unique、`source_command_id` 幂等唯一、outbox 幂等键）；`GoalRunStore`（Create/TryMutate CAS + goal.* 事件同事务直写，照 AcceptanceStore 模式）；`GoalCommandService`（set/edit/replace/pause/resume/cancel/clear/status 全合同：conflict、幂等重放、expectedVersion、budget_exhausted 不可 resume、flag 关闭时保留 status/pause/clear 语义、clear 拒绝藏匿 active Goal）；`GoalQueryService`；`GoalRestartReconciler`（启动 active→paused disarm，bootId 锚点，幂等）。
+- **入口**：`SystemCommandHandler` /goal 分支（Web/Desktop WebView/Connector 网关统一）；`GoalCommandsController`（POST /api/v1/conversations/{id}/goals/commands）与 `GoalQueriesController`（GET /goal、/goals/{id}、/goals/{id}/iterations）。
+- **Admin 前端**：`api.ts` Goal fetchers、`useGoal` hook、`GoalBanner`（objective/phase/iteration + pause/resume/cancel；终态隐藏控件）、CommandPalette /goal 提示；5 项 jest 组件测试通过。
+- **已知边界**：G2 起才有的 durable outbox 续行/256 计数/Verifier 未包含在本批；`GoalApiContractTests` 已编写但受环境限制未运行（PuddingHost 曾被并行进行中的 ADR-076 Storage 在制品阻塞编译，随后恢复；最终受阻于运行中的 PuddingAgent 开发进程锁定 PuddingAgent.dll 的已知问题，需停掉 dev 栈后运行）；旧 `PuddingRuntime/Services/GoalMode`（JSON 注入队列原型）按计划原样保留，待 G2 落地后另行处理。
+- **验收证据（2026-08-24 实测）**：`PuddingCoreTests` Goals+SystemCommandParser 过滤集 40/40 通过；`GoalRunStoreTests`/`GoalCommandServiceTests`/`GoalRestartReconcilerTests`/`SystemCommandHandlerTests`（含 /goal 分支）34/34 通过（因共享测试项目一度被并行会话的在制品阻塞，经临时隔离项目以相同源文件与项目引用验证后删除）；`PuddingPlatform`/`PuddingHost` 生产编译通过；Admin 前端 `GoalBanner.test.tsx` 5/5 通过。G1 出口三条（命令不创建 Turn、重投不重复建 Goal、重启 active→paused）均有对应用例。
+
 ## 19. 验收矩阵
 
 ### 19.1 命令与渠道

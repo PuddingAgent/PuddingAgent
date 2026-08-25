@@ -145,4 +145,44 @@ public sealed class SystemCommandParserTests
         Assert.IsTrue(SystemCommandParser.TryParse("/authorize shell", out var authorize));
         Assert.IsTrue(SystemCommandParser.RequiresPrivilege(authorize));
     }
+
+    [TestMethod]
+    public void TryParse_Goal_Commands_Keep_Raw_Text_For_Goal_Service()
+    {
+        // ADR-074：/goal 的 objective 是自由文本，SystemCommandParser 只负责识别，
+        // RawText 原样透传给 Goal 应用服务做完整 grammar 解析。
+        var parsed = SystemCommandParser.TryParse(
+            "/goal 修复全部失败测试 --rounds 32", out var command);
+
+        Assert.IsTrue(parsed);
+        Assert.AreEqual(SystemCommandAction.Run, command.Action);
+        Assert.AreEqual(SystemCommandKind.Goal, command.CommandKind);
+        Assert.AreEqual("goal", command.TargetId);
+        Assert.AreEqual("/goal 修复全部失败测试 --rounds 32", command.RawText);
+    }
+
+    [TestMethod]
+    public void TryParse_Goal_Multiline_Objective_Is_Preserved()
+    {
+        var raw = "/goal set 第一行\n第二行 --rounds 8";
+        Assert.IsTrue(SystemCommandParser.TryParse(raw, out var command));
+        Assert.AreEqual(SystemCommandKind.Goal, command.CommandKind);
+        Assert.AreEqual(raw, command.RawText);
+    }
+
+    [TestMethod]
+    public void TryParse_Goal_Like_Commands_Do_Not_LeakInto_Other_Kinds()
+    {
+        Assert.IsFalse(SystemCommandParser.TryParse("/goals", out _));
+        Assert.IsFalse(SystemCommandParser.TryParse("/goalkeeper save", out _));
+    }
+
+    [TestMethod]
+    public void RequiresPrivilege_Goal_Is_Privileged()
+    {
+        // 保守裁决：外部 Connector 必须在白名单内才能使用 /goal（含 status），
+        // 防止未经授权的渠道建立后台执行权限。
+        Assert.IsTrue(SystemCommandParser.TryParse("/goal", out var goal));
+        Assert.IsTrue(SystemCommandParser.RequiresPrivilege(goal));
+    }
 }

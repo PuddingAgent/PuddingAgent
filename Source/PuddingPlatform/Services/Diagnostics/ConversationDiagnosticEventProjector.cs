@@ -311,6 +311,7 @@ public sealed class ConversationDiagnosticEventProjector : IConversationDiagnost
         ConversationEventSourceKind.SubAgent => "subagent",
         ConversationEventSourceKind.Steering => "steering",
         ConversationEventSourceKind.Compaction => "compaction",
+        ConversationEventSourceKind.Goal => "goal",
         _ => null,
     };
 

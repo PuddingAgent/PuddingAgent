@@ -28,6 +28,7 @@ public enum SystemCommandKind
     Resume,
     Yolo,
     WhoAmI,
+    Goal,
 }
 
 /// <summary>Action parsed from a user-authored slash command before routing.</summary>
@@ -170,7 +171,10 @@ public static class ToolAuthorizationDefaults
                    "- `/mode list` - List runtime modes and examples." + Environment.NewLine +
                    "- `/estop` - Emergency stop the backend after writing a best-effort response." + Environment.NewLine +
                    "- `/compact` - Compact the current session context and refresh the current-day agent summary." + Environment.NewLine +
-                   "- `/memory` - Manage or write memories. Current feature is not implemented.";
+                   "- `/memory` - Manage or write memories. Current feature is not implemented." + Environment.NewLine +
+                   "- `/goal` - Show the persistent goal status for this conversation." + Environment.NewLine +
+                   "- `/goal <objective> [--rounds N]` - Start a persistent goal (1-256 iterations)." + Environment.NewLine +
+                   "- `/goal pause|resume|cancel|edit|replace|clear` - Control the persistent goal.";
         }
 
         return normalized switch
@@ -205,6 +209,16 @@ public static class ToolAuthorizationDefaults
                       "- `/mode list` - List modes and examples.",
             "estop" => "Help for `/estop`:" + Environment.NewLine + Environment.NewLine +
                        "- `/estop` - Emergency stop the backend process after best-effort audit/log snapshot.",
+            "goal" => "Help for `/goal`:" + Environment.NewLine + Environment.NewLine +
+                      "- `/goal` - Show the persistent goal status (same as `/goal status`)." + Environment.NewLine +
+                      "- `/goal <objective> [--rounds N]` - Start (set) a persistent goal; --rounds must be 1-256, default 256." + Environment.NewLine +
+                      "- `/goal set <objective> [--rounds N]` - Explicit form of goal creation; conflicts with an existing non-terminal goal." + Environment.NewLine +
+                      "- `/goal edit <objective>` - Change the objective, keeping goal identity and consumed budget." + Environment.NewLine +
+                      "- `/goal replace <objective> [--rounds N]` - Cancel the current goal and create a new one." + Environment.NewLine +
+                      "- `/goal pause [reason]` - Pause autonomous continuation." + Environment.NewLine +
+                      "- `/goal resume` - Resume a paused or blocked goal (never resets consumed iterations)." + Environment.NewLine +
+                      "- `/goal cancel [reason]` - Cancel the goal with an auditable terminal state." + Environment.NewLine +
+                      "- `/goal clear` - Clear the goal banner display; never deletes events, iterations, or artifacts.",
             _ => $"Unknown system command '/{normalized}'. Send /help for available commands.",
         };
     }
@@ -319,6 +333,21 @@ public static partial class SystemCommandParser
                 Action = SystemCommandAction.Help,
                 CommandKind = SystemCommandKind.Help,
                 TargetId = ToolAuthorizationDefaults.NormalizeToolId(commandHelpMatch.Groups["command"].Value),
+            };
+            return true;
+        }
+
+        // ADR-074 /goal：objective 是自由文本（可中文/多行），不能经过通用参数清洗；
+        // 完整 grammar 由 PuddingCode.Goals.GoalCommandTextParser 在应用服务层解析。
+        var goalMatch = GoalCommandRegex().Match(text);
+        if (goalMatch.Success)
+        {
+            command = new SystemCommand
+            {
+                RawText = text,
+                Action = SystemCommandAction.Run,
+                CommandKind = SystemCommandKind.Goal,
+                TargetId = "goal",
             };
             return true;
         }
@@ -457,6 +486,9 @@ public static partial class SystemCommandParser
 
     [GeneratedRegex(@"^/(?<command>compact|memory|status|stop|mode|estop|resume|yolo|whoami)(?:\s+(?<argument>[a-zA-Z0-9_]+))?$", RegexOptions.IgnoreCase)]
     private static partial Regex SystemCommandRegex();
+
+    [GeneratedRegex(@"^/goal(?:\s[\s\S]*)?$", RegexOptions.IgnoreCase)]
+    private static partial Regex GoalCommandRegex();
 
     [GeneratedRegex(@"^/(?<command>[a-zA-Z0-9_-]+)\s+-help$", RegexOptions.IgnoreCase)]
     private static partial Regex CommandHelpRegex();

@@ -50,7 +50,7 @@ public sealed record ConversationEvent
 
 /// <summary>
 /// ADR-057: Conversation 事件来源分类。
-/// 序列化为小写字符串：user / agent / system / subagent / steering / compaction。
+/// 序列化为小写字符串：user / agent / system / subagent / steering / compaction / goal。
 /// </summary>
 public enum ConversationEventSourceKind
 {
@@ -60,6 +60,7 @@ public enum ConversationEventSourceKind
     SubAgent,
     Steering,
     Compaction,
+    Goal,
 }
 
 /// <summary>

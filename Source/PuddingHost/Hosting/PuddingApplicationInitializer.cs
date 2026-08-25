@@ -14,6 +14,7 @@ using PuddingPlatform.Services.Execution;
 using PuddingPlatform.Services.MessageFabric;
 using PuddingPlatform.Services.Orchestration;
 using PuddingPlatform.Services.ExternalApi;
+using PuddingPlatform.Services.Goals;
 using PuddingPlatform.Services.Security;
 using PuddingPlatform.Services.Tasks;
 
@@ -48,8 +49,23 @@ public static class PuddingApplicationInitializer
             await AgentOrchestrationSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await TaskDispatchSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await WorkspaceTaskSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            await GoalSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await ExternalAccessTokenSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await ExternalTaskApiSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+
+            // ── ADR-074 §12：Core 重启后 active Goal 默认 disarm 为 paused，显式 /goal resume 才恢复 ──
+            try
+            {
+                var goalReconciler = scope.ServiceProvider.GetRequiredService<GoalRestartReconciler>();
+                var disarmed = await goalReconciler.DisarmActiveGoalsAsync(
+                    Guid.NewGuid().ToString("N"), cancellationToken);
+                if (disarmed > 0)
+                    Console.WriteLine($"[Startup] Goal restart disarm: {disarmed} active goal(s) -> paused");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Startup] Goal restart disarm failed: {ex.Message}");
+            }
 
             // ── ADR-075: ExternalTaskApi 显式配置校验（越界即启动错误，不静默回默认）──
             var externalApiOptions = scope.ServiceProvider.GetRequiredService<ExternalTaskApiOptionsProvider>();

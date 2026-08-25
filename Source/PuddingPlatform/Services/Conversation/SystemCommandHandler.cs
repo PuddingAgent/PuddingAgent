@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using PuddingCode.Goals;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
@@ -20,6 +21,7 @@ public sealed class SystemCommandHandler(
     IRuntimeControlService runtimeControl,
     IRequestCompactionHandler requestCompactionHandler,
     ISystemStatusSnapshotProvider statusSnapshotProvider,
+    IGoalCommandService goalCommandService,
     ILogger<SystemCommandHandler> logger) : ISystemCommandHandler
 {
     private static readonly JsonSerializerOptions JsonOptions =
@@ -97,6 +99,13 @@ public sealed class SystemCommandHandler(
                  && command.Action == SystemCommandAction.Run)
         {
             responseMessage = await HandleCompactAsync(request, ct);
+        }
+        else if (command.CommandKind == SystemCommandKind.Goal
+                 && command.Action == SystemCommandAction.Run)
+        {
+            // ADR-074 G1：/goal 统一入口（Web/Desktop WebView/Connector 网关共用）。
+            // 命令不创建 Agent Turn；完整 grammar 由 GoalCommandTextParser 裁决。
+            responseMessage = await HandleGoalAsync(request, command.RawText, ct);
         }
         else if (IsYolo(command))
         {
@@ -349,6 +358,30 @@ public sealed class SystemCommandHandler(
         }
 
         return $"Your Feishu user ID (open_id) is `{request.ExternalUserId}`.";
+    }
+
+    private async Task<string> HandleGoalAsync(
+        SystemCommandRequest request,
+        string commandText,
+        CancellationToken ct)
+    {
+        if (!GoalCommandRequest.TryCreate(
+                request.WorkspaceId,
+                request.ConversationId,
+                request.AgentId,
+                request.UserId,
+                request.ClientRequestId,
+                commandText,
+                request.SourceChannel,
+                out var goalRequest,
+                out var errorCode,
+                out var errorMessage))
+        {
+            return $"Goal 命令无法解析：{errorMessage} 发送 /goal -help 查看语法。";
+        }
+
+        var result = await goalCommandService.ExecuteAsync(goalRequest!, ct);
+        return result.Message;
     }
 
     private static void Validate(SystemCommandRequest request)

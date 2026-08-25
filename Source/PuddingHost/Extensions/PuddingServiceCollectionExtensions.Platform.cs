@@ -7,6 +7,7 @@ using PuddingCode.Agents;
 using PuddingCode.Configuration;
 using PuddingCode.Core;
 using PuddingCode.Diagnostics;
+using PuddingCode.Goals;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Orchestration;
@@ -32,6 +33,7 @@ using PuddingPlatform.Services.MessageGateway;
 using PuddingPlatform.Services.Mcp;
 using PuddingPlatform.Services.Orchestration;
 using PuddingPlatform.Services.ExternalApi;
+using PuddingPlatform.Services.Goals;
 using PuddingPlatform.Services.Security;
 using PuddingPlatform.Services.TaskPlanning;
 using PuddingPlatform.Services.Tasks;
@@ -143,6 +145,15 @@ public static partial class PuddingServiceCollectionExtensions
             builder.Services.AddScoped<IConversationAcceptanceStore, ConversationAcceptanceStore>();
             builder.Services.AddScoped<ISystemStatusSnapshotProvider, SystemStatusSnapshotProvider>();
             builder.Services.AddScoped<ISystemCommandHandler, SystemCommandHandler>();
+
+            // ── Goal 持久控制面（ADR-074 G1：持久 Goal + 多端命令，不自动续行）──
+            builder.Services.AddScoped<GoalRunStore>();
+            builder.Services.AddScoped<IGoalCommandService, GoalCommandService>();
+            builder.Services.AddScoped<IGoalQueryService, GoalQueryService>();
+            builder.Services.AddScoped<GoalRestartReconciler>();
+            builder.Services.Configure<GoalRunOptions>(
+                builder.Configuration.GetSection(GoalRunOptions.SectionName));
+            builder.Services.TryAddSingleton(TimeProvider.System);
 
             // ── Conversation Event Store（ADR-057 Phase 2）────
             builder.Services.AddSingleton<IConversationEventStore, ConversationEventStore>();

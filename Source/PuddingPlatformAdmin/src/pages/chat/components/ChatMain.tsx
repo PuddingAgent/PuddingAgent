@@ -28,6 +28,7 @@ import type {
 } from '../hooks/useChatState';
 import { useNotificationSound } from '../hooks/useNotificationSound';
 import { useProviderBalance } from '../hooks/useProviderBalance';
+import { useGoal } from '../hooks/useGoal';
 import type {
   SandboxBoundaryInfo,
   SandboxNetworkMode,
@@ -42,6 +43,7 @@ import type {
 import type { PermissionMode } from '../types/chatStateTypes';
 import { currencySymbolFor, resolveBillingAdapter } from '../utils/providerBilling';
 import CheckpointTimelinePanel from './CheckpointTimelinePanel';
+import GoalBanner from './GoalBanner';
 import IntentConsole, { type ChatStatus } from './IntentConsole';
 import MessageList from './MessageList';
 import ProviderBalanceIndicator from './ProviderBalanceIndicator';
@@ -474,6 +476,13 @@ const ChatMain: React.FC<ChatMainProps> = ({
     return () => clearInterval(timer);
   }, [reconnectCountRef]);
 
+  // ADR-074 G1：Goal 持久控制面状态条（服务端投影；无 Goal 时渲染 null）
+  const goalState = useGoal({
+    workspaceId,
+    conversationId: selectedSessionId ?? undefined,
+    agentId,
+  });
+
   return (
     <main
       className={`${styles.mainArea} ${styles.workbenchShell}`}
@@ -489,6 +498,11 @@ const ChatMain: React.FC<ChatMainProps> = ({
             style={{ marginBottom: 0, borderRadius: 0 }}
           />
         )}
+        <GoalBanner
+          goal={goalState.goal}
+          commandRunning={goalState.commandRunning}
+          onCommand={goalState.runCommand}
+        />
         <WorkspaceNavigationHeader
           leading={
             !sidebarOpen ? (

@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
+using PuddingCode.Goals;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingPlatform.Data;
@@ -385,13 +386,23 @@ public sealed class SystemCommandHandlerTests
         PlatformDbContext db,
         IRuntimeControlService runtime,
         IRequestCompactionHandler? compaction = null,
-        ISystemStatusSnapshotProvider? statusSnapshotProvider = null) =>
+        ISystemStatusSnapshotProvider? statusSnapshotProvider = null,
+        IGoalCommandService? goalCommandService = null) =>
         new(
             db,
             runtime,
             compaction ?? new UnexpectedRequestCompactionHandler(),
             statusSnapshotProvider ?? new UnexpectedSystemStatusSnapshotProvider(),
+            goalCommandService ?? new UnexpectedGoalCommandService(),
             NullLogger<SystemCommandHandler>.Instance);
+
+    private sealed class UnexpectedGoalCommandService : IGoalCommandService
+    {
+        public Task<GoalCommandResult> ExecuteAsync(
+            GoalCommandRequest request,
+            CancellationToken ct = default) =>
+            throw new AssertFailedException("This test must not execute a goal command.");
+    }
 
     private sealed class UnexpectedSystemStatusSnapshotProvider : ISystemStatusSnapshotProvider
     {
@@ -446,6 +457,74 @@ public sealed class SystemCommandHandlerTests
                     SummaryMarkdown: "summary markdown"),
                 "conversation-feishu-compact-next",
                 "压缩 - Fake Command Conversation"));
+        }
+    }
+
+    [TestMethod]
+    public async Task Goal_Command_Delegates_To_Goal_Service_And_Writes_Transcript_Pair()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var goalService = new RecordingGoalCommandService();
+        var handler = CreateHandler(db, new RuntimeControlService(), goalCommandService: goalService);
+
+        var result = await handler.HandleAsync(new SystemCommandRequest(
+            "conversation-1",
+            "default",
+            "agent-1",
+            "admin",
+            "request-1",
+            "user-message-1",
+            "system-message-1",
+            "/goal 修复全部失败测试 --rounds 32"));
+
+        // 回执来自 Goal 服务；同时写入 user/agent transcript 对。
+        Assert.AreEqual("Goal active · iteration 0/32", result.Message);
+        Assert.AreEqual(1, goalService.Requests.Count);
+        Assert.AreEqual("request-1", goalService.Requests[0].ClientRequestId);
+        Assert.AreEqual("conversation-1", goalService.Requests[0].ConversationId);
+        Assert.AreEqual(GoalCommandKind.Set, goalService.Requests[0].Command.Kind);
+        Assert.AreEqual(32, goalService.Requests[0].Command.Rounds);
+        Assert.AreEqual(2, await db.ChatMessages.CountAsync());
+        // G1 出口：/goal 命令不创建 Agent Turn。
+        Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
+        Assert.AreEqual(0, await db.ConversationTurns.CountAsync());
+    }
+
+    private sealed class RecordingGoalCommandService : IGoalCommandService
+    {
+        public List<GoalCommandRequest> Requests { get; } = [];
+
+        public Task<GoalCommandResult> ExecuteAsync(
+            GoalCommandRequest request,
+            CancellationToken ct = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(GoalCommandResult.Ok(
+                $"Goal active · iteration 0/{request.Command.Rounds ?? 256}",
+                new GoalSnapshot
+                {
+                    GoalRunId = "goal-fake",
+                    WorkspaceId = request.WorkspaceId,
+                    ConversationId = request.ConversationId,
+                    AgentInstanceId = request.AgentInstanceId,
+                    Objective = request.Command.Objective ?? string.Empty,
+                    ObjectiveVersion = 1,
+                    Phase = GoalPhase.Active,
+                    MaxIterations = request.Command.Rounds ?? 256,
+                    IterationsStarted = 0,
+                    IterationsSettled = 0,
+                    ActivationEpoch = 1,
+                    AggregateVersion = 1,
+                    CreatedAtUtc = DateTimeOffset.UtcNow,
+                    UpdatedAtUtc = DateTimeOffset.UtcNow,
+                }));
         }
     }
 }

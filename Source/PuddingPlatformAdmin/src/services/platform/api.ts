@@ -2783,6 +2783,90 @@ export async function executeConversationSystemCommand(
   );
 }
 
+// ── ADR-074 Goal 持久控制面（G1：持久 Goal + 多端命令，不自动续行）──────
+
+export interface GoalSnapshot {
+  goalRunId: string;
+  conversationId: string;
+  agentInstanceId: string;
+  objective: string;
+  objectiveVersion: number;
+  phase:
+    | 'active'
+    | 'paused'
+    | 'blocked'
+    | 'budget_exhausted'
+    | 'completed'
+    | 'cancelled'
+    | 'failed';
+  blockedCode?: string | null;
+  statusReason?: string | null;
+  maxIterations: number;
+  iterationsStarted: number;
+  iterationsSettled: number;
+  activationEpoch: number;
+  aggregateVersion: number;
+  lastNextAction?: string | null;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  terminalAtUtc?: string | null;
+}
+
+export interface GoalCommandResponse {
+  success: boolean;
+  errorCode?: string | null;
+  message: string;
+  goal?: GoalSnapshot | null;
+}
+
+export type GoalAction =
+  | 'status'
+  | 'set'
+  | 'edit'
+  | 'replace'
+  | 'pause'
+  | 'resume'
+  | 'cancel'
+  | 'clear';
+
+/** 读取会话当前 Goal（优先活动 Goal，无则返回最近终态 Goal 供回执展示）。 */
+export async function getConversationGoal(
+  workspaceId: string,
+  conversationId: string,
+): Promise<{ goal: GoalSnapshot | null }> {
+  return request(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/goal`,
+    {
+      method: 'GET',
+      headers: { 'X-Workspace-Id': workspaceId },
+    },
+  );
+}
+
+/** 结构化 Goal 命令（与 /goal slash 文本共用同一服务端语义与幂等键）。 */
+export async function executeGoalCommand(
+  workspaceId: string,
+  conversationId: string,
+  req: {
+    agentId: string;
+    clientRequestId: string;
+    action: GoalAction;
+    objective?: string;
+    rounds?: number;
+    reason?: string;
+    expectedVersion?: number;
+  },
+): Promise<GoalCommandResponse> {
+  return request(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/goals/commands`,
+    {
+      method: 'POST',
+      data: req,
+      headers: { 'X-Workspace-Id': workspaceId },
+    },
+  );
+}
+
 export async function awaitConversationTurn(
   conversationId: string,
   turnId: string,

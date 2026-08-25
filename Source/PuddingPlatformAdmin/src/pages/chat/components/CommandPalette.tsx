@@ -10,6 +10,7 @@ import {
   StopOutlined,
   ThunderboltOutlined,
   UndoOutlined,
+  AimOutlined,
 } from '@ant-design/icons';
 import { Typography } from 'antd';
 import React, { useEffect, useRef } from 'react';
@@ -217,6 +218,46 @@ const COMMANDS: Command[] = [
     shortcut: '/memory',
     description: '管理或写入记忆（暂未实现）',
     group: 'Context',
+  },
+  {
+    id: 'goal-status',
+    icon: <AimOutlined />,
+    label: '目标状态',
+    shortcut: '/goal',
+    description: '查看会话的持久 Goal 状态',
+    group: 'System',
+  },
+  {
+    id: 'goal-set',
+    icon: <AimOutlined />,
+    label: '创建目标',
+    shortcut: '/goal set ',
+    description: '创建持久 Goal（--rounds 1-256，默认 256）',
+    group: 'System',
+  },
+  {
+    id: 'goal-pause',
+    icon: <AimOutlined />,
+    label: '暂停目标',
+    shortcut: '/goal pause',
+    description: '暂停 Goal 自主续行',
+    group: 'System',
+  },
+  {
+    id: 'goal-resume',
+    icon: <AimOutlined />,
+    label: '恢复目标',
+    shortcut: '/goal resume',
+    description: '恢复暂停/受阻的 Goal（不重置额度）',
+    group: 'System',
+  },
+  {
+    id: 'goal-cancel',
+    icon: <AimOutlined />,
+    label: '取消目标',
+    shortcut: '/goal cancel',
+    description: '取消 Goal（可审计终态）',
+    group: 'System',
   },
 ];
 
