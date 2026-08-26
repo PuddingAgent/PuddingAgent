@@ -122,12 +122,20 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // Task Execution Bindings（TB-05 Task/Assignment/Delivery/Execution 绑定）
     public DbSet<TaskExecutionBindingEntity> TaskExecutionBindings => Set<TaskExecutionBindingEntity>();
 
+    // Provider File 引用（ADR-077 §6.2：llm_provider_file_refs 持久化地基）
+    public DbSet<ProviderFileRefEntity> ProviderFileRefs => Set<ProviderFileRefEntity>();
+
     // Goal 持久控制面（ADR-074；G1 冻结全部 schema，iterations/outbox/verifications/bindings 由后续批次写入）
     public DbSet<GoalRunEntity> GoalRuns => Set<GoalRunEntity>();
     public DbSet<GoalIterationEntity> GoalIterations => Set<GoalIterationEntity>();
     public DbSet<GoalOutboxEntity> GoalOutbox => Set<GoalOutboxEntity>();
     public DbSet<GoalVerificationEntity> GoalVerifications => Set<GoalVerificationEntity>();
     public DbSet<TaskGoalBindingEntity> TaskGoalBindings => Set<TaskGoalBindingEntity>();
+
+    // Agent 状态感知与自动派发安全底座（ADR-072/074）
+    public DbSet<AgentAvailabilityProjectionEntity> AgentAvailabilityProjections => Set<AgentAvailabilityProjectionEntity>();
+    public DbSet<AgentExecutionReservationEntity> AgentExecutionReservations => Set<AgentExecutionReservationEntity>();
+    public DbSet<TaskDependencyEntity> TaskDependencies => Set<TaskDependencyEntity>();
 
     // External Access Token（ADR-075 第三方任务看板认证）
     public DbSet<ExternalAccessTokenEntity> ExternalAccessTokens => Set<ExternalAccessTokenEntity>();
@@ -576,6 +584,44 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(t => new { t.WorkspaceId, t.SortOrder });
         });
 
+        modelBuilder.Entity<TaskDependencyEntity>(e =>
+        {
+            e.ToTable("task_dependencies");
+            e.HasKey(d => d.DependencyId);
+            e.HasIndex(d => new
+            {
+                d.WorkspaceId,
+                d.PredecessorTaskId,
+                d.SuccessorTaskId,
+            }).IsUnique();
+            e.HasIndex(d => new { d.WorkspaceId, d.SuccessorTaskId });
+            e.HasIndex(d => new { d.WorkspaceId, d.PredecessorTaskId });
+        });
+
+        modelBuilder.Entity<AgentAvailabilityProjectionEntity>(e =>
+        {
+            e.ToTable("agent_availability_projection");
+            e.HasKey(a => a.Id);
+            e.Property(a => a.Id).ValueGeneratedOnAdd();
+            e.HasIndex(a => new { a.WorkspaceId, a.AgentId }).IsUnique();
+            e.HasIndex(a => new { a.WorkspaceId, a.State, a.ValidUntilUtc });
+        });
+
+        modelBuilder.Entity<AgentExecutionReservationEntity>(e =>
+        {
+            e.ToTable("agent_execution_reservations");
+            e.HasKey(r => r.FencingToken);
+            e.Property(r => r.FencingToken).ValueGeneratedOnAdd();
+            e.HasIndex(r => r.ReservationId).IsUnique();
+            e.HasIndex(r => new { r.WorkspaceId, r.AgentId })
+                .IsUnique()
+                .HasFilter("status = 'active'");
+            e.HasIndex(r => new { r.WorkspaceId, r.TaskId })
+                .IsUnique()
+                .HasFilter("status = 'active'");
+            e.HasIndex(r => new { r.Status, r.LeaseUntilUtc });
+        });
+
         modelBuilder.Entity<TaskEventEntity>(e =>
         {
             e.ToTable("task_events");
@@ -626,6 +672,16 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasKey(b => b.Id);
             e.HasIndex(b => new { b.TaskId, b.AssignmentId, b.DeliveryId }).IsUnique();
             e.HasIndex(b => b.DeliveryId);
+        });
+
+        // ── Provider File 引用（ADR-077 §6.2）──────────────────────
+        modelBuilder.Entity<ProviderFileRefEntity>(e =>
+        {
+            e.ToTable("llm_provider_file_refs");
+            // 唯一键 = (provider_id, credential_epoch, artifact_sha256)，主键即唯一约束。
+            e.HasKey(r => new { r.ProviderId, r.CredentialEpoch, r.ArtifactSha256 });
+            e.HasIndex(r => r.Status);
+            e.HasIndex(r => r.ExpiresAt);
         });
 
         // ── Goal 持久控制面（ADR-074 §12）─────────────────────────
@@ -680,6 +736,10 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
                 .HasFilter("status = 'active'")
                 .HasDatabaseName("UX_task_goal_bindings_task_active");
             e.HasIndex(b => new { b.WorkspaceId, b.Status });
+            e.HasIndex(b => b.IdempotencyKey)
+                .IsUnique()
+                .HasFilter("idempotency_key IS NOT NULL")
+                .HasDatabaseName("UX_task_goal_bindings_idempotency");
         });
 
         // ── External Access Token（ADR-075）──────────────────────────
