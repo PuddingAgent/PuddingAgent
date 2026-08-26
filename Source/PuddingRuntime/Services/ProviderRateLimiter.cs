@@ -43,15 +43,19 @@ public sealed class ProviderRateLimiter
     /// 获取并发配额并返回可释放的租约，适用于流式等长时间操作。
     /// 调用方用 using 包裹即可在流结束时自动释放。
     /// </summary>
-    public async Task<IDisposable> AcquireAsync(
+    public async Task<ProviderRateLimitLease> AcquireAsync(
         string providerId,
         string modelId,
         CancellationToken ct = default)
     {
         var gate = GetOrCreateGate(providerId, modelId);
+        var (maxConcurrent, _) = GetStatus(providerId, modelId);
+        var availableBeforeAcquire = gate.CurrentCount;
         var waitStart = System.Diagnostics.Stopwatch.GetTimestamp();
         await gate.WaitAsync(ct);
-        var waitMs = System.Diagnostics.Stopwatch.GetElapsedTime(waitStart).TotalMilliseconds;
+        var waitMs = (long)Math.Ceiling(
+            System.Diagnostics.Stopwatch.GetElapsedTime(waitStart).TotalMilliseconds);
+        var availableAfterAcquire = gate.CurrentCount;
 
         if (waitMs > 10)
         {
@@ -60,7 +64,12 @@ public sealed class ProviderRateLimiter
                 providerId, modelId, waitMs);
         }
 
-        return new GateLease(gate);
+        return new ProviderRateLimitLease(
+            gate,
+            waitMs,
+            maxConcurrent,
+            availableBeforeAcquire,
+            availableAfterAcquire);
     }
 
     /// <summary>向后兼容：仅指定 Provider 时使用默认模型级信号量。</summary>
@@ -120,8 +129,39 @@ public sealed class ProviderRateLimiter
         });
     }
 
-    private sealed class GateLease(SemaphoreSlim gate) : IDisposable
+}
+
+/// <summary>
+/// Provider concurrency lease plus bounded queue diagnostics used by Runtime telemetry.
+/// Counts are point-in-time observations and are not synchronization guarantees.
+/// </summary>
+public sealed class ProviderRateLimitLease : IDisposable
+{
+    private readonly SemaphoreSlim _gate;
+    private int _disposed;
+
+    internal ProviderRateLimitLease(
+        SemaphoreSlim gate,
+        long waitMs,
+        int maxConcurrent,
+        int availableBeforeAcquire,
+        int availableAfterAcquire)
     {
-        public void Dispose() => gate.Release();
+        _gate = gate;
+        WaitMs = waitMs;
+        MaxConcurrent = maxConcurrent;
+        AvailableBeforeAcquire = availableBeforeAcquire;
+        AvailableAfterAcquire = availableAfterAcquire;
+    }
+
+    public long WaitMs { get; }
+    public int MaxConcurrent { get; }
+    public int AvailableBeforeAcquire { get; }
+    public int AvailableAfterAcquire { get; }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) == 0)
+            _gate.Release();
     }
 }

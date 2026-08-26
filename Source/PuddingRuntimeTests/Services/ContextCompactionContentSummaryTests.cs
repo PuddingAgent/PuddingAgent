@@ -189,7 +189,7 @@ public sealed class ContextCompactionContentSummaryTests
     }
 
     [TestMethod]
-    public async Task FullCompactAsync_GeneratesSummary_WhenNoMessagesAreCompacted()
+    public async Task FullCompactAsync_ReturnsNoOp_WhenNoMessagesAreEligibleForCompaction()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -216,30 +216,26 @@ public sealed class ContextCompactionContentSummaryTests
             Reason: "manual slash command"));
 
         Assert.AreEqual(0, result.CompactedMessageCount);
-        Assert.IsFalse(string.IsNullOrWhiteSpace(result.SummaryMessageId));
-        StringAssert.Contains(result.SummaryMarkdown, "当前会话正在排查手动压缩");
-        Assert.AreEqual(4, generator.LastMessages.Count);
+        Assert.IsTrue(string.IsNullOrWhiteSpace(result.SummaryMessageId));
+        Assert.IsTrue(string.IsNullOrWhiteSpace(result.SummaryMarkdown));
+        Assert.AreEqual(0, generator.Invocations.Count);
         Assert.IsNotNull(result.Diagnostics);
         Assert.AreEqual(0, result.Diagnostics.CompactedMessageCount);
         Assert.AreEqual(4, result.Diagnostics.KeptRecentMessageCount);
-        Assert.AreEqual(4, result.Diagnostics.SummaryInputMessageCount);
-        Assert.IsTrue(result.Diagnostics.SummaryCharacterCount > 0);
-        Assert.IsTrue(result.Diagnostics.SummaryEstimatedTokens > 0);
+        Assert.AreEqual(0, result.Diagnostics.SummaryInputMessageCount);
+        Assert.AreEqual(0, result.Diagnostics.SummaryCharacterCount);
+        Assert.AreEqual(0, result.Diagnostics.SummaryEstimatedTokens);
 
         await using var verifyDb = new MemoryDbContext(options);
-        Assert.AreEqual(1, await verifyDb.Messages.CountAsync(m =>
+        Assert.AreEqual(0, await verifyDb.Messages.CountAsync(m =>
             m.SessionId == "session-small" && m.ContentType == "compact_summary"));
         Assert.AreEqual(0, await verifyDb.Messages.CountAsync(m =>
             m.SessionId == "session-small" && m.CompactedBy != null));
 
         var contentPath = temp.Paths.AgentInstanceContentSummaryFile("agent-1");
-        Assert.IsTrue(File.Exists(contentPath));
-        StringAssert.Contains(
-            await File.ReadAllTextAsync(contentPath),
-            "当前会话正在排查手动压缩没有写入 content.md 的问题。");
+        Assert.IsFalse(File.Exists(contentPath));
         var metadata = await contentSummary.ReadMetadataAsync("agent-1");
-        Assert.IsNotNull(metadata);
-        Assert.AreEqual("session-small", metadata.LastSessionId);
+        Assert.IsNull(metadata);
     }
 
     [TestMethod]
@@ -293,6 +289,192 @@ public sealed class ContextCompactionContentSummaryTests
             m.SessionId == "session-from-chat" && m.ContentType == "compact_summary"));
         Assert.AreEqual(4, await verifyDb.Messages.CountAsync(m =>
             m.SessionId == "session-from-chat" && m.CompactedBy != null));
+    }
+
+    [TestMethod]
+    public async Task FullCompactAsync_IncrementallyImportsTranscript_WhenMemoryDbAlreadyHasActiveMessages()
+    {
+        await using var memoryConnection = new SqliteConnection("Data Source=:memory:");
+        await memoryConnection.OpenAsync();
+        var memoryOptions = CreateOptions(memoryConnection);
+        await using (var memoryDb = new MemoryDbContext(memoryOptions))
+        {
+            await memoryDb.Database.EnsureCreatedAsync();
+        }
+
+        await using var platformConnection = new SqliteConnection("Data Source=:memory:");
+        await platformConnection.OpenAsync();
+        var platformOptions = CreatePlatformOptions(platformConnection);
+        await using (var platformDb = new PlatformDbContext(platformOptions))
+        {
+            await platformDb.Database.EnsureCreatedAsync();
+            SeedTranscript(platformDb, "session-incremental", "agent-1", messageCount: 270);
+            await platformDb.SaveChangesAsync();
+        }
+
+        var generator = new RecordingSummaryGenerator("## 摘要\nincremental import");
+        var messageStore = new TrackingCompactionChatMessageStore(
+            new ChatMessageRepository(new TestPlatformDbContextFactory(platformOptions)));
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(memoryOptions),
+            generator,
+            NullLogger<ContextCompactionService>.Instance,
+            messageStore: messageStore);
+        var request = new ContextCompactionRequest(
+            WorkspaceId: "workspace-1",
+            SessionId: "session-incremental",
+            AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual,
+            Level: ContextCompactionLevel.Full,
+            Reason: "manual slash command");
+
+        var firstResult = await service.CompactAsync(request);
+        Assert.IsTrue(firstResult.CompactedMessageCount > 0);
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                new TranscriptPageRequest(0, 256),
+                new TranscriptPageRequest(256, 256),
+            },
+            messageStore.PageRequests.ToArray());
+
+        await using (var platformDb = new PlatformDbContext(platformOptions))
+        {
+            SeedTranscript(platformDb, "session-incremental", "agent-1", messageCount: 8, startAt: 271);
+            await platformDb.SaveChangesAsync();
+        }
+
+        // Simulate a later compaction attempt without inheriting the first service instance's cooldown.
+        var laterService = new ContextCompactionService(
+            new TestMemoryDbContextFactory(memoryOptions),
+            generator,
+            NullLogger<ContextCompactionService>.Instance,
+            messageStore: messageStore);
+        var secondResult = await laterService.CompactAsync(request);
+
+        Assert.IsTrue(secondResult.CompactedMessageCount > 0);
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                new TranscriptPageRequest(0, 256),
+                new TranscriptPageRequest(256, 256),
+                new TranscriptPageRequest(270, 256),
+            },
+            messageStore.PageRequests.ToArray());
+        await using var verifyDb = new MemoryDbContext(memoryOptions);
+        Assert.AreEqual(278, await verifyDb.Messages.CountAsync(m =>
+            m.SessionId == "session-incremental" && m.Source == "chat_transcript"));
+        Assert.AreEqual(1, await verifyDb.Messages.CountAsync(m =>
+            m.SessionId == "session-incremental" && m.Content == "session-incremental message 278"));
+    }
+
+    [TestMethod]
+    public async Task FullCompactAsync_ReturnsNoOp_WhenOnlyPreviousSummaryWouldBeCompacted()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "session-summary-only", messageCount: 6);
+        db.Messages.Add(new MessageEntity
+        {
+            MessageId = "previous-summary",
+            SessionId = "session-summary-only",
+            Sequence = 0,
+            Role = "system",
+            ContentType = "compact_summary",
+            Content = "previous compact summary",
+            Source = "context_compaction",
+            CreatedAt = 0,
+        });
+        await db.SaveChangesAsync();
+
+        var generator = new RecordingSummaryGenerator("must not be generated");
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            generator,
+            NullLogger<ContextCompactionService>.Instance);
+
+        var result = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1",
+            SessionId: "session-summary-only",
+            AgentId: "agent-1",
+            Mode: ContextCompactionMode.Auto,
+            Level: ContextCompactionLevel.Full,
+            Reason: "automatic threshold"));
+
+        Assert.AreEqual(0, result.CompactedMessageCount);
+        Assert.IsTrue(string.IsNullOrWhiteSpace(result.SummaryMessageId));
+        Assert.AreEqual(0, generator.Invocations.Count);
+        Assert.IsNotNull(result.Diagnostics);
+        Assert.AreEqual(0, result.Diagnostics.CompactedMessageCount);
+        await using var verifyDb = new MemoryDbContext(options);
+        Assert.AreEqual(1, await verifyDb.Messages.CountAsync(m =>
+            m.SessionId == "session-summary-only" && m.ContentType == "compact_summary"));
+    }
+
+    [TestMethod]
+    public async Task FullCompactAsync_ReturnsNoOp_WhenOnlyOversizedPreviousSummaryRemains()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        const string sessionId = "session-oversized-summary-only";
+        var oversizedSummary = new string('s', 20_000);
+
+        await using (var db = new MemoryDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            db.Sessions.Add(new SessionEntity
+            {
+                SessionId = sessionId,
+                WorkspaceId = "workspace-1",
+                AgentId = "agent-1",
+                Status = "active",
+                CreatedAt = 1,
+                LastActivityAt = 1,
+                MessageCount = 1,
+            });
+            db.Messages.Add(new MessageEntity
+            {
+                MessageId = "oversized-previous-summary",
+                SessionId = sessionId,
+                Sequence = 1,
+                Role = "system",
+                ContentType = "compact_summary",
+                Content = oversizedSummary,
+                Source = "context_compaction",
+                CreatedAt = 1,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var generator = new RecordingSummaryGenerator("must not be generated");
+        var service = new ContextCompactionService(
+            new TestMemoryDbContextFactory(options),
+            generator,
+            NullLogger<ContextCompactionService>.Instance);
+
+        var result = await service.CompactAsync(new ContextCompactionRequest(
+            WorkspaceId: "workspace-1",
+            SessionId: sessionId,
+            AgentId: "agent-1",
+            Mode: ContextCompactionMode.Manual,
+            Level: ContextCompactionLevel.Full,
+            Reason: "manual slash command"));
+
+        Assert.AreEqual(0, result.CompactedMessageCount);
+        Assert.IsTrue(string.IsNullOrWhiteSpace(result.SummaryMessageId));
+        Assert.AreEqual(0, generator.Invocations.Count);
+        Assert.IsNotNull(result.Diagnostics);
+        Assert.AreEqual(0, result.Diagnostics.CompactedMessageCount);
+
+        await using var verifyDb = new MemoryDbContext(options);
+        var storedSummary = await verifyDb.Messages.SingleAsync(m => m.SessionId == sessionId);
+        Assert.AreEqual(oversizedSummary, storedSummary.Content);
+        Assert.IsNull(storedSummary.CompactedBy);
+        Assert.AreEqual(0, await verifyDb.CompactionCoverageManifests.CountAsync());
     }
 
     [TestMethod]
@@ -459,13 +641,12 @@ public sealed class ContextCompactionContentSummaryTests
 
         // 滚动摘要链：旧代 compact_summary（Sequence 31）进入候选后，候选数 10→11，
         // 压缩对象相应 21-24 变为 21-25（旧摘要 Sequence 最高，落在 keep-6 保留窗口内不被吸收）；
-        // 回填窗口 needed=15 → Sequence 6-20，总输入仍为 MIN=20。
+        // 已被上一代摘要覆盖的 Sequence 1-20 不得作为原文回流；本轮只摘要新 active 原文 21-25。
         Assert.AreEqual(5, result.CompactedMessageCount);
-        Assert.AreEqual(20, generator.LastMessages.Count);
-        Assert.AreEqual(6, generator.LastMessages[0].Sequence);
+        Assert.AreEqual(5, generator.LastMessages.Count);
+        Assert.AreEqual(21, generator.LastMessages[0].Sequence);
         Assert.AreEqual(25, generator.LastMessages[^1].Sequence);
-        StringAssert.Contains(result.SummaryMarkdown, "不足 MIN=20");
-        StringAssert.Contains(result.SummaryMarkdown, "Sequence 6-20");
+        Assert.IsFalse(result.SummaryMarkdown.Contains("不足 MIN=20", StringComparison.Ordinal));
 
         await using var verifyDb = new MemoryDbContext(options);
         var previousSummaryRow = await verifyDb.Messages.SingleAsync(m => m.MessageId == "previous-summary");
@@ -506,9 +687,10 @@ public sealed class ContextCompactionContentSummaryTests
         PlatformDbContext db,
         string sessionId,
         string agentId,
-        int messageCount)
+        int messageCount,
+        int startAt = 1)
     {
-        for (var i = 1; i <= messageCount; i++)
+        for (var i = startAt; i < startAt + messageCount; i++)
         {
             db.ChatMessages.Add(new ChatMessageEntity
             {
@@ -548,6 +730,35 @@ public sealed class ContextCompactionContentSummaryTests
 
         public Task<PlatformDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(CreateDbContext());
+    }
+
+    private sealed record TranscriptPageRequest(long AfterId, int Limit);
+
+    private sealed class TrackingCompactionChatMessageStore(ICompactionChatMessageStore inner)
+        : ICompactionChatMessageStore
+    {
+        public List<TranscriptPageRequest> PageRequests { get; } = [];
+
+        public Task<IReadOnlyList<ChatMessageRow>> GetForSessionAfterIdAsync(
+            string sessionId,
+            long afterId,
+            int limit,
+            CancellationToken ct = default)
+        {
+            PageRequests.Add(new TranscriptPageRequest(afterId, limit));
+            return inner.GetForSessionAfterIdAsync(sessionId, afterId, limit, ct);
+        }
+
+        public Task<IReadOnlyList<ChatMessageRow>> GetRecentForSessionAsync(
+            string sessionId,
+            int limit,
+            CancellationToken ct = default) =>
+            inner.GetRecentForSessionAsync(sessionId, limit, ct);
+
+        public Task<int> GetCountForSessionAsync(
+            string sessionId,
+            CancellationToken ct = default) =>
+            inner.GetCountForSessionAsync(sessionId, ct);
     }
 
     private sealed class FixedSummaryGenerator(string summary) : IContextCompactionSummaryGenerator

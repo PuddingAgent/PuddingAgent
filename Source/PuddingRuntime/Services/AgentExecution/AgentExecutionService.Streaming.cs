@@ -80,21 +80,7 @@ public sealed partial class AgentExecutionService
             request.WorkspaceId, request.AgentTemplateId);
 
         // ── Streaming trace context ─────────────────────────────────
-        var streamTraceId = request.ExecutionIdentity?.TraceId;
-        var streamTrace = (string.IsNullOrWhiteSpace(streamTraceId)
-            ? RuntimeTraceContext.CreateNew(
-                sessionId: request.SessionId,
-                workspaceId: request.WorkspaceId,
-                userId: request.UserId)
-            : new RuntimeTraceContext
-            {
-                TraceId = streamTraceId,
-                CorrelationId = streamTraceId,
-                SessionId = request.SessionId,
-                WorkspaceId = request.WorkspaceId,
-                UserId = request.UserId,
-            })
-            .WithAgent(request.AgentInstanceId, request.AgentTemplateId);
+        var streamTrace = CreateExecutionTrace(request);
 
         // ── 子代理运行归档（ADR-021）───────────────────────────────
         var streamSubAgentRunId = await TryCreateSubAgentRunAndEmitStartedAsync(
@@ -587,6 +573,7 @@ public sealed partial class AgentExecutionService
             var lastToolResult = "(未执行任何工具)";
             var consecutiveShortReplies = 0;
             var totalToolCalls = 0;
+            var failedToolCallTracker = new FailedToolCallTracker();
             var faultedByFuse = false;
             string? faultSummary = null;
             var toolFailureCount = 0;
@@ -1103,22 +1090,19 @@ public sealed partial class AgentExecutionService
                         "\u001e",
                         accumulatedToolCalls.Select(call => $"{call.Name}:{call.Arguments}")));
 
-                // 发送 usage
-                if (usage is not null)
-                {
-                    var usageFrame = ServerSentEventFrame.Json(SseEventTypes.Usage, usage);
-                    await Append(usageFrame);
-                    yield return usageFrame;
-                }
-
                 // ADR-043 Prefix Hash 数据流修复：LLM 流式调用完成后将本轮 prefix snapshot
                 // 与 usage 一起写入 TokenUsageEvents，供 agent_diagnostics cache_health
-                // 统计 distinct_prefix_hashes（此前快照只写入活动/遥测日志，从未落库）。
+                // 统计 distinct_prefix_hashes（此前快照只写入活动/遥测日志，从未落库）。必须先于
+                // usage SSE 暴露给 ConversationProjector，避免投影 fallback 与 direct row 发生竞态双写。
                 if (usage is not null && _tokenUsageRecorder is not null)
                 {
                     try
                     {
-                        await _tokenUsageRecorder.RecordRequiredAsync(
+                        var canonicalToolNames = accumulatedToolCalls
+                            .Select(call => HarnessToolCompatibilityAdapter
+                                .Normalize(call.Name, call.Arguments)
+                                .ToolName);
+                        await _tokenUsageRecorder.RecordAttributedRequiredAsync(
                             usage,
                             sourceType: "agent_llm",
                             sourceId: $"{request.SessionId}:{streamTrace.TraceId}:{round + 1}",
@@ -1126,6 +1110,10 @@ public sealed partial class AgentExecutionService
                             sessionId: request.SessionId,
                             providerId: request.LlmProfile?.ProviderId ?? request.LlmConfig?.Endpoint,
                             modelId: request.LlmProfile?.ModelId ?? request.LlmConfig?.ModelId,
+                            attribution: BuildTokenUsageAttribution(
+                                request,
+                                round,
+                                canonicalToolNames),
                             prefixSnapshot: prefixSnapshot,
                             occurredAtUtc: DateTimeOffset.UtcNow);
                     }
@@ -1135,6 +1123,14 @@ public sealed partial class AgentExecutionService
                             "[AgentExec:Stream] Token usage recording deferred session={Session} round={Round}",
                             request.SessionId, round + 1);
                     }
+                }
+
+                // direct attribution 已提交（或明确失败）后再发送 usage；失败时投影器仍可补记。
+                if (usage is not null)
+                {
+                    var usageFrame = ServerSentEventFrame.Json(SseEventTypes.Usage, usage);
+                    await Append(usageFrame);
+                    yield return usageFrame;
                 }
 
                 // 无工具调用 → 终止循环，replyBuf 即为最终回复
@@ -1189,7 +1185,11 @@ public sealed partial class AgentExecutionService
                         SafeHost(effectiveLlmConfig?.Endpoint));
                 }
                 var assistantToolCalls = accumulatedToolCalls
-                    .Select(tc => new ToolCall(tc.Id, tc.Name, tc.Arguments))
+                    .Select(tc =>
+                    {
+                        var compatibility = HarnessToolCompatibilityAdapter.Normalize(tc.Name, tc.Arguments);
+                        return new ToolCall(tc.Id, compatibility.ToolName, compatibility.ArgumentsJson);
+                    })
                     .ToList();
                 var assistantContent = replyBuf.Length > 0
                     ? replyBuf.ToString()
@@ -1206,7 +1206,7 @@ public sealed partial class AgentExecutionService
 
                 // 逐个工具调用：发送 tool_call → 执行 → 发送 tool_result
                 var stopAfterTool = false;
-                foreach (var tc in accumulatedToolCalls)
+                foreach (var tc in assistantToolCalls)
                 {
                     var toolDecision = _runtimeControl?.CanInvokeTool(request.SessionId, tc.Name);
                     if (toolDecision is { Allowed: false })
@@ -1227,7 +1227,7 @@ public sealed partial class AgentExecutionService
                     }
 
                     var toolCallFrame = ServerSentEventFrame.Json(SseEventTypes.ToolCall,
-                        new { name = tc.Name, arguments = tc.Arguments, toolCallId = tc.Id });
+                        new { name = tc.Name, arguments = tc.ArgumentsJson, toolCallId = tc.Id });
                     ReportLiveness(request, $"tool.started:{tc.Name}");
                     await Append(toolCallFrame);
                     yield return toolCallFrame;
@@ -1236,12 +1236,19 @@ public sealed partial class AgentExecutionService
                     _ = _eventBus?.EmitAsync(new StreamingEvent
                     {
                         Type = StreamingEventTypes.AgentToolCall,
-                        Data = new { name = tc.Name, arguments = tc.Arguments, toolCallId = tc.Id }
+                        Data = new { name = tc.Name, arguments = tc.ArgumentsJson, toolCallId = tc.Id }
                     }, ct);
 
-                    var injectedArgsJson = await _keyVaultService.InjectAsync(tc.Arguments, ct);
+                    var injectedArgsJson = await _keyVaultService.InjectAsync(tc.ArgumentsJson, ct);
+                    var safeToolArgs = await _keyVaultService.StripAsync(injectedArgsJson, ct);
+                    var repeatKey = $"{tc.Name}|{injectedArgsJson}";
+                    var toolStartedAt = DateTimeOffset.UtcNow;
+                    var toolSw = System.Diagnostics.Stopwatch.StartNew();
                     SkillResult result;
-                    if (_toolInvocationService is not null)
+                    var executionBlocked = failedToolCallTracker.TryCreateBlockedResult(
+                        repeatKey,
+                        out result);
+                    if (!executionBlocked && _toolInvocationService is not null)
                     {
                         var toolResult = await _toolInvocationService.InvokeAsync(new PuddingCode.Runtime.ToolInvocationRequest
                         {
@@ -1256,7 +1263,7 @@ public sealed partial class AgentExecutionService
                             ToolName = tc.Name,
                             ArgumentsJson = injectedArgsJson,
                             CapabilityPolicy = effectiveCapability,
-                            Trace = null, // Streaming local function scope
+                            Trace = streamTrace,
                             ExecutionIdentity = request.ExecutionIdentity,
                             ExecutionDeadlineUtc = request.ExecutionDeadlineUtc,
                             DelegationDepth = request.DelegationDepth,
@@ -1276,7 +1283,7 @@ public sealed partial class AgentExecutionService
                             ContentParts = toolResult.ToolContentParts,
                         };
                     }
-                    else
+                    else if (!executionBlocked)
                     {
                         // ADR-027 legacy fallback for tests only (SkillRuntime streaming)
                         result = await _skillRuntime.InvokeAsync(
@@ -1292,6 +1299,28 @@ public sealed partial class AgentExecutionService
                             effectiveCapability,
                             ct);
                     }
+                    if (!executionBlocked)
+                        result = failedToolCallTracker.Observe(repeatKey, result);
+                    toolSw.Stop();
+
+                    await RecordToolMetricAsync(
+                        streamTrace,
+                        tc.Name,
+                        tc.Id,
+                        instance.AgentInstanceId,
+                        request.SessionId,
+                        round,
+                        totalToolCalls + 1,
+                        toolStartedAt,
+                        toolSw.ElapsedMilliseconds,
+                        result.Success
+                            ? RuntimeActivityStatuses.Succeeded
+                            : RuntimeActivityStatuses.Failed,
+                        injectedArgsJson,
+                        safeToolArgs,
+                        result,
+                        error: null,
+                        ct: CancellationToken.None);
 
                     hasExecutedAnyTool = true;
                     totalToolCalls++;

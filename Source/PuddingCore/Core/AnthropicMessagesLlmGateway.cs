@@ -227,14 +227,20 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
             });
         }
 
-        var plan = await LlmVisualInputPlanner.PlanAsync(
+                var plan = await LlmVisualInputPlanner.PlanAsync(
             WorkspaceId!,
             imageParts,
             VisualArtifactResolver,
-            VisionPolicy,
-            ct);
-        foreach (var image in plan.Images)
+            policy: VisionPolicy,
+            ct: ct);
+                foreach (var image in plan.Images)
         {
+            if (image.DataUri is null)
+                throw new VisionPipelineException(
+                    VisionErrorCodes.MediaInvalid,
+                    $"Image artifact {image.ArtifactId} resolved to a provider file reference; " +
+                    "this protocol does not support file_id image inputs.");
+
             if (!TryParseDataUri(image.DataUri, out var mediaType, out var data))
                 throw new VisionPipelineException(
                     VisionErrorCodes.MediaInvalid,

@@ -12,6 +12,9 @@
 | `Goals/GoalCommandTextParser.cs` | /goal 严格 grammar（中文/多行 objective、--rounds 1..256、子命令消歧） |
 | `Goals/IGoalCommandService.cs` + `IGoalQueryService.cs` | 命令/查询应用服务契约（slash 与结构化 API 共用） |
 | `Goals/GoalRunOptions.cs` | GoalRuns 配置节（Enabled 默认 false；局部配置不得扩大硬边界） |
+| `Goals/GoalContinuationContracts.cs` | durable continuation outbox wire 值、受信 Acceptance fence 与稳定失败码 |
+| `Goals/GoalVerificationContracts.cs` | 有界 Evidence Capsule、Verifier verdict/decision 与只读接口 |
+| `Goals/TaskBoundGoalContracts.cs` | `StartGoalFromTaskCommand`、原子启动结果/稳定码与跨域事务 Store 契约 |
 
 ## 抽象层
 
@@ -22,6 +25,7 @@
 | `Platform/` | 平台抽象 |
 | `Abstractions/ILlmGatewayUsageRecorder.cs` | 一次 Provider usage 对应一条本地计费事实的必达写入契约 |
 | `Abstractions/ISubAgentPool.cs` | Runtime 调用子代理池所需的最小契约、池状态与池快照模型；实现留在 Platform |
+| `Abstractions/ITokenUsageRecorder.cs` | Token 归因写入边界；`TokenUsageAttribution` 承载 canonical parent/sub-agent、零基 round 与本轮工具事实，并以默认接口实现保持旧 recorder 源码兼容 |
 | `Platform/IPlatformRepositories.cs` | Platform 持久化仓储契约；包含 Agent Token/熵诊断的 Core DTO 查询边界 |
 | `Platform/AgentProjectionDtos.cs` | Agent 会话读模型；`ProcessSummaryItem.Sequence` 为 canonical 必填，active/detail 输出携带 `TurnEventWindow`（through/min/max/hasMoreBefore）供前端识别截断 |
 
@@ -57,8 +61,13 @@
 | 文件 | 用途 |
 |------|------|
 | `OpenAiLlmGateway.cs` | OpenAI-compatible Chat Completions 网关 |
-| `ResponsesLlmGateway.cs` | OpenAI/DeepSeek Responses API 网关；flat tools、明文 reasoning SSE、completed/failed/incomplete 终态、截断工具调用隔离与 output items 回放；ADR-077：user `input_image`（original→high）与 `function_call_output.output` [input_text, input_image] 数组，图片经 LlmVisualInputPlanner fail-closed |
+| `ResponsesLlmGateway.cs` | OpenAI/DeepSeek Responses API 网关；flat tools、明文 reasoning SSE、completed/failed/incomplete 终态、截断工具调用隔离与 output items 回放；ADR-077：user `input_image`（original→high）与 `function_call_output.output` [input_text, input_image] 数组，图片经 LlmVisualInputPlanner fail-closed；V3-S2a：大图（>2MB）经 DeepSeekFilesApiClient 上传后以 `file_id` 引用（不输出 image_url/detail） |
 | `AnthropicMessagesLlmGateway.cs` | Anthropic Messages API 网关；`x-api-key`、顶层 system、content blocks、工具回放和 SSE state |
+| `LlmVisualInputPlanner.cs` | ADR-077 图片请求预算与规划：inline 小图（≤2MB）data URL、大图 fail-closed 或（V3-S2a，有 uploader 时）Files API 上传 file_id 互斥规划；`VisionRequestPolicy` 含 Files 常量（64 MiB 单文件 / 200 MiB 总量 / lifetime 1h–30d） |
+| `DeepSeekFilesApiClient.cs` | ADR-077 V3-S1 DeepSeek Files API 上传客户端（multipart purpose=user_data）；ApiKey 脱敏，异常只含 HTTP status + 错误摘要 |
+| `ProviderFileReference.cs` | ADR-077 Files API 值类型：`ProviderFileUploadResult`（FileId/ExpiresAt 计算）与轻量 `ProviderFileReference` |
+| `ProviderFileRefRecord.cs` | ADR-077 V3-S2b-1 行值类型：`ProviderFileRefRecord`（llm_provider_file_refs 行）+ `ProviderFileRefStatus` 枚举 + wire 映射（uploading/ready/delete_pending/expired/failed）；`ToReference()` 映射轻量引用 |
+| `IFileRefStore.cs` | ADR-077 V3-S2b-1 存储接口：`TryGetReadyRefAsync`/`SaveAsync`（幂等 upsert）/`UpdateExpiryAsync`/`MarkExpiredAsync`/`MarkDeletePendingAsync`/`ListExpiredAsync`；`FileRefNearExpirySkewSeconds=300`（近过期不分配） |
 
 ## 推理紧凑编解码（Services/）
 
@@ -118,6 +127,15 @@
 | `Tasks/TaskDispatchModels.cs` | 任务派发模型（RuntimeDispatchRequest.ActiveTask 注入）|
 | `Tasks/TaskAgentCommandContracts.cs` | task_* 工具命令契约（List/Get/Claim/Update + `ITaskAgentCommandService`）|
 | `Tasks/ActiveTaskRuntimeContext.cs` | ActiveTask 运行时上下文（派发链注入 ToolExecutionContext，含 ExpectedVersion）|
+
+## 自动调度契约（Scheduling/）
+
+| 文件 | 用途 |
+|------|------|
+| `Scheduling/AgentAvailabilityModels.cs` | 保守持久 Availability 状态、busy reason、版本/TTL 快照与 Store 边界 |
+| `Scheduling/AgentExecutionReservationContracts.cs` | 单 Agent 自动工作 Reservation、lease 与 fencing token 契约 |
+| `Scheduling/ExecutionWindowModels.cs` | Allow/Defer/Unknown 窗口裁决及 route/profile/TTL 快照 |
+| `Scheduling/TaskAutoDispatchContracts.cs` | evaluate-only 候选 verdict，携带 Task/Availability/Conversation/Window 版本事实 |
 
 ## 配置 & 序列化
 

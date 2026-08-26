@@ -137,9 +137,13 @@ public sealed class ConversationProjector(
             return;
         }
 
-                var parentSessionId = await ResolveParentSessionAsync(evt.ConversationId);
+        var parentSessionId = await ResolveParentSessionAsync(evt.ConversationId);
+        var invocationIndex = evt.Payload.TryGetProperty("invocationIndex", out var invocationElement)
+                              && invocationElement.TryGetInt32(out var parsedInvocationIndex)
+            ? parsedInvocationIndex
+            : 0;
 
-        await tokenUsageRecorder.RecordRequiredAsync(
+        await tokenUsageRecorder.RecordAttributedRequiredAsync(
             usage,
             sourceType: "agent_llm",
             sourceId: evt.EventId,
@@ -147,9 +151,27 @@ public sealed class ConversationProjector(
             sessionId: evt.ConversationId,
             providerId: providerId,
             modelId: modelId,
+            attribution: CreateFallbackAttribution(
+                evt.ConversationId,
+                parentSessionId,
+                invocationIndex),
             occurredAtUtc: evt.OccurredAt,
-            parentSessionId: parentSessionId);
+            prefixSnapshot: null);
     }
+
+    internal static TokenUsageAttribution CreateFallbackAttribution(
+        string conversationId,
+        string? parentSessionId,
+        int invocationIndex)
+        => new()
+        {
+            ParentSessionId = parentSessionId,
+            SubAgentId = string.IsNullOrWhiteSpace(parentSessionId)
+                ? null
+                : conversationId,
+            TurnRound = invocationIndex > 0 ? invocationIndex - 1 : null,
+            ToolCallCount = null,
+        };
 
     private async Task<string?> ResolveParentSessionAsync(string conversationId)
     {
@@ -171,7 +193,7 @@ public sealed class ConversationProjector(
     }
 
     /// <summary>
-    /// 检查同一次 LLM 调用是否已被执行服务直记（TokenUsageEvents 中携带 prefix hash 的行）。
+    /// 检查同一次 LLM 调用是否已被执行服务直记（sourceId=session:trace:round）。
     /// 指纹 = 会话 + 路由 + prompt/completion token 计数，容许 ±2 分钟投影延迟。
     /// DTO 缺 prompt 计数时无法构成可靠指纹，返回 false 以保持补记语义。
     /// </summary>
@@ -190,12 +212,14 @@ public sealed class ConversationProjector(
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
             var windowStart = evt.OccurredAt.AddMinutes(-2);
             var windowEnd = evt.OccurredAt.AddMinutes(2);
+            var directSourcePrefix = evt.ConversationId + ":";
             return await db.Set<TokenUsageEventEntity>()
                 .AsNoTracking()
                 .AnyAsync(e => e.SessionId == evt.ConversationId
                     && e.ProviderId == providerId
                     && e.ModelId == modelId
-                    && e.PrefixHash != null
+                    && e.SourceType == "agent_llm"
+                    && e.SourceId.StartsWith(directSourcePrefix)
                     && e.OccurredAtUtc >= windowStart
                     && e.OccurredAtUtc <= windowEnd
                     && e.PromptTokens == usage.PromptTokens

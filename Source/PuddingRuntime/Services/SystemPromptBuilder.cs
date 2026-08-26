@@ -193,9 +193,9 @@ public sealed class SystemPromptBuilder
         // ADR-xxx: 子代理委托硬编码协议 — 防止子代理伪阴性失败
         sb.AppendLine();
         sb.AppendLine("## 子代理委托硬编码协议");
-        sb.AppendLine("- 子代理不得自行运行编译验证（dotnet build / tsc / jest / shell 等）。编译验证由父 Agent 统一执行。");
-        sb.AppendLine("- 子代理的职责是完成代码改动（file_write / file_patch / apply_patch），完成后直接输出 SUMMARY 交付。");
-        sb.AppendLine("- 若子代理违反上述规则自行运行 shell 编译验证导致 exit code 1，父 Agent 应判定为伪阴性，验收代码改动后由父 Agent 自行编译。");
+        sb.AppendLine("- 子代理按委派任务的 STOP_CONDITION 执行范围内验证；父 Agent 负责最终集成与串行构建。若委派明确把验证保留给父 Agent，子代理不得重复执行全仓构建。");
+        sb.AppendLine("- 完成时必须返回 Runtime JSON 控制信封：status=DONE、tool=null，并把完整 SUMMARY/CHANGES/EVIDENCE/RISKS/BLOCKERS 放入 message；不得在信封外直接输出五段报告。");
+        sb.AppendLine("- 非零退出码不是文件或任务失败的充分证据。先检查命令语义、输出和目标后置条件；rg/grep 的 exit code 1 表示 no_match，不应把已完成代码直接判为失败。");
 
         // ── 4. TOOLS 层 ──
         sb.AppendLine("--- LAYER: TOOLS ---");

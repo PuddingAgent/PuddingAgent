@@ -35,6 +35,14 @@ public sealed class AgentLoopResponse
     [JsonIgnore]
     public bool IsFailed => Status.Equals("FAILED", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Whether the provider output was successfully parsed as the Runtime control envelope.
+    /// Plain-text fallback responses keep this false so delegated output-contract recovery can
+    /// distinguish an omitted envelope from an explicit structured CONTINUE decision.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsStructured { get; init; }
+
     // ── 解析 ──────────────────────────────────────────────────────────────
 
     private static readonly JsonSerializerOptions _parseOptions =
@@ -51,7 +59,17 @@ public sealed class AgentLoopResponse
         try
         {
             var result = JsonSerializer.Deserialize<AgentLoopResponse>(json, _parseOptions);
-            if (result is not null) return result;
+            if (result is not null)
+            {
+                return new AgentLoopResponse
+                {
+                    Status = result.Status,
+                    Message = result.Message,
+                    Tool = result.Tool,
+                    Meta = result.Meta,
+                    IsStructured = true,
+                };
+            }
         }
         catch { /* 解析失败，进入降级逻辑 */ }
 

@@ -169,6 +169,7 @@ public sealed class AgentExecutionWakeupActiveTaskPreservationTests
                 ["expected_version"] = "3",
                 ["policy_version"] = "v1",
                 ["dispatch_idempotency_key"] = "idem-1",
+                ["reservation_fencing_token"] = "42",
             },
         };
 
@@ -357,6 +358,7 @@ public sealed class AgentExecutionWakeupActiveTaskPreservationTests
         ExpectedVersion = 3,
         PolicyVersion = "v1",
         DispatchIdempotencyKey = "idem-1",
+        ReservationFencingToken = "42",
     };
 
     private static LlmConfig CreateLlmConfig() => new()

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
+using PuddingCode.Scheduling;
 using PuddingPlatform.Services;
 using PuddingRuntime;
 using PuddingRuntime.Models;
@@ -175,7 +176,7 @@ public sealed class HeartbeatOrchestrator : IHostedService
                     .GetRequiredService<IAgentExecutionStateRegistry>()
                     .Get(workspaceId, request.AgentId);
 
-                        if (!availability.CanStartMessageDelivery)
+            if (!availability.CanStartMessageDelivery)
             {
                 _logger.LogInformation(
                     "[HeartbeatOrchestrator] Skip heartbeat agent={Agent} (busy: {Status})",
@@ -187,6 +188,46 @@ public sealed class HeartbeatOrchestrator : IHostedService
                 await _wakeQueue.EnqueueAsync(request.AgentId, skipDelay, request.MaxIdle, ct);
                 _idleDetector.ReArm();
                 return;
+            }
+
+            // “Runtime 当前没在生成”不等于 Agent 没有在工作。Agent 可能正在等待
+            // 子代理、持有 Task/Goal，或已有持久投递/自动工作租约。心跳必须同时通过
+            // 持久事实投影；投影缺失/过期/重建失败均 fail closed，避免打断长任务节奏。
+            var durableAvailability = scope.ServiceProvider
+                .GetService<IAgentAvailabilityProjectionStore>();
+            if (durableAvailability is not null)
+            {
+                AgentAvailabilitySnapshot durableSnapshot;
+                try
+                {
+                    durableSnapshot = await durableAvailability.RebuildAsync(
+                        workspaceId,
+                        request.AgentId,
+                        ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "[HeartbeatOrchestrator] Skip heartbeat agent={Agent} (durable availability rebuild failed)",
+                        request.AgentId);
+                    await RequeueSkippedHeartbeatAsync(request, ct);
+                    return;
+                }
+
+                if (!durableSnapshot.CanAcceptAutomaticTask(DateTimeOffset.UtcNow))
+                {
+                    _logger.LogInformation(
+                        "[HeartbeatOrchestrator] Skip heartbeat agent={Agent} (durable state={State} reason={Reason} task={TaskId} goal={GoalRunId} child={SubAgentRunId})",
+                        request.AgentId,
+                        durableSnapshot.State,
+                        durableSnapshot.ActivityReason,
+                        durableSnapshot.ActiveTaskId,
+                        durableSnapshot.ActiveGoalRunId,
+                        durableSnapshot.ActiveSubAgentRunId);
+                    await RequeueSkippedHeartbeatAsync(request, ct);
+                    return;
+                }
             }
 
                         var agentConfig = scope.ServiceProvider.GetRequiredService<WorkspaceAgentFileService>();
@@ -325,6 +366,17 @@ public sealed class HeartbeatOrchestrator : IHostedService
                 request.AgentId, 1, (_, c) => c + 1);
             await _wakeQueue.EnqueueRetryAsync(request.AgentId, retryCount - 1, ct);
         }
+    }
+
+    private async Task RequeueSkippedHeartbeatAsync(
+        WakeRequest request,
+        CancellationToken ct)
+    {
+        var skipDelay = request.MinIdle < TimeSpan.FromSeconds(30)
+            ? TimeSpan.FromSeconds(30)
+            : request.MinIdle;
+        await _wakeQueue.EnqueueAsync(request.AgentId, skipDelay, request.MaxIdle, ct);
+        _idleDetector.ReArm();
     }
 
     /// <summary>

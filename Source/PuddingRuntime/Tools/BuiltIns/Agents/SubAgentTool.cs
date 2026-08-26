@@ -555,14 +555,14 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             $"STOP_CONDITION: {input.StopCondition ?? "Stop when the requested question can be answered with evidence, or when the stated scope is exhausted."}",
             $"OUTPUT: {input.Output}",
             "",
-            "Return exactly these top-level sections, in this order:",
+            "The Runtime JSON control envelope remains mandatory. When the task is complete, return status=DONE, tool=null, and put exactly these top-level sections inside the message field, in this order:",
             "SUMMARY:",
             "CHANGES:",
             "EVIDENCE:",
             "RISKS:",
             "BLOCKERS:",
             "",
-            "Evidence must use path:line references when source files are involved. If a section has no content, write \"none\"."
+            "Do not emit the five sections outside the Runtime envelope. Evidence must use path:line references when source files are involved. If a section has no content, write \"none\"."
         };
 
         if (!string.IsNullOrWhiteSpace(legacyTask) && !string.Equals(legacyTask, input.Question, StringComparison.Ordinal))

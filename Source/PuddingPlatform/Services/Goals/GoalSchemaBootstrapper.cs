@@ -180,6 +180,7 @@ public static class GoalSchemaBootstrapper
         """,
         "CREATE UNIQUE INDEX IF NOT EXISTS UX_task_goal_bindings_goal ON task_goal_bindings(goal_run_id);",
         "CREATE UNIQUE INDEX IF NOT EXISTS UX_task_goal_bindings_task_active ON task_goal_bindings(task_id) WHERE status = 'active';",
+        "CREATE UNIQUE INDEX IF NOT EXISTS UX_task_goal_bindings_idempotency ON task_goal_bindings(idempotency_key) WHERE idempotency_key IS NOT NULL;",
         "CREATE INDEX IF NOT EXISTS IX_task_goal_bindings_workspace_status ON task_goal_bindings(workspace_id, status);",
     ];
 

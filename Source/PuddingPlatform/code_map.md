@@ -61,7 +61,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/SubAgentManager.cs` | 子代理管理；固化系统预算/收尾宽限；以同一 SubSessionId + 新 runId 透明续跑并重置计数器 |
+| `Services/SubAgentManager.cs` | 子代理管理；固化系统预算/收尾宽限；以同一 SubSessionId + 新 runId 透明续跑并重置计数器；终态 usage 只存运行摘要，不重复写逐轮 TokenUsageEvents |
 | `Services/SubAgentPool.cs` | Core `ISubAgentPool` 的 Platform 子代理池实现 |
 | `Services/SubAgentTransientDirectoryGcService.cs` | 历史临时执行身份空 Skill 脚手架 GC；以精确目录形状 + 子代理池 + durable run 终态多重门禁，先移入 retention-archive 隔离，延迟后再安全删除 |
 | `Services/SubAgentDiagnosticsService.cs` | 子代理诊断 |
@@ -80,20 +80,44 @@
 | `Services/Tasks/TaskDispatchOutboxStore.cs` | 派发 outbox 持久化 |
 | `Services/Tasks/TaskDispatchSchemaBootstrapper.cs` | 派发 schema 幂等建表 |
 | `Services/Tasks/TaskDispatchSerialization.cs` | 派发序列化 |
+| `Services/Tasks/TaskDependencyStore.cs` | finish-to-start Task 依赖图；同 Workspace 校验、幂等增删、环检测与 Satisfied/Waiting/Broken 评估 |
+| `Services/Files/SqliteProviderFileRefStore.cs` | ADR-077 V3-S2b-1 `IFileRefStore` SQLite 实现（llm_provider_file_refs）：原始 SQL + 参数化、`ON CONFLICT DO UPDATE` 幂等 upsert、BEGIN IMMEDIATE + status CAS 并发防重复、近过期（<300s）不分配；RemoteFileId 只存不打印 |
+| `Services/Files/ProviderFileRefSchemaBootstrapper.cs` | ADR-077 V3-S2b-1 `llm_provider_file_refs` 幂等建表（唯一主键 + status/expires_at 索引）|
 | `Services/Tasks/TaskWireMaps.cs` | 枚举↔wire 双向映射 + ErrorCode→wire/HTTP |
 | `Services/Tasks/ManualAlwaysAllowFence.cs` | manual always allow fence |
 | `Controllers/Api/TaskController.cs` | Control Plane 13 端点 + `GET /tasks/watch` SSE（快照+游标+Last-Event-ID）+ boardColumn 五列过滤；`DELETE` 智能删除返回 200 deleted/archived |
+| `Controllers/Api/TaskSchedulingController.cs` | 认证调度诊断：Agent Availability query/rebuild、Auto evaluate-only、Task 依赖增删与评估 |
 | `Controllers/Api/TaskDtos.cs` | 8 个 wire DTO |
 | `Data/Entities/WorkspaceTaskEntity.cs` | `workspace_tasks` 实体（28 列）|
 | `Data/Entities/TaskEventEntity.cs` | `task_events` 实体（long Id 自增 + 18 业务列）|
 | `Data/Entities/TaskAssignmentAttemptEntity.cs` | `task_assignment_attempts` 实体 + partial unique index（task_id WHERE released_at_utc IS NULL）|
 
-## Goal 持久控制面（Services/Goals/ · ADR-074 G1 已实现：持久 Goal + 多端命令，不自动续行）
+## Agent Availability 与自动派发（Services/Scheduling/，2026-08-26）
+
+| 文件 | 用途 |
+|------|------|
+| `Services/Scheduling/AgentAvailabilityProjectionStore.cs` | 从配置、Task/Goal、Chat command、Message delivery、SubAgent 与 Reservation 的持久事实保守重建 Agent 状态；Unknown/过期不接 Auto |
+| `Services/Scheduling/AgentExecutionReservationStore.cs` | 单 Agent/Task active 自动工作槽、lease、fencing token、renew/release/expiry |
+| `Services/Scheduling/ConservativeExecutionWindowResolver.cs` | `anytime` allow；`inherit/off_peak_only` 在路由价格档案缺失时 Unknown/fail-closed |
+| `Services/Scheduling/TaskAutoDispatchEvaluator.cs` | 无副作用确定性候选评估；偏好 Agent、依赖、30 分钟 idle grace、窗口、同轮单任务 |
+| `Services/Scheduling/TaskAutoDispatchWorker.cs` | 默认关闭的有界恢复扫描；shadow 只评估，authoritative 对 eligible 候选重算窗口后调用唯一 Task→Goal 原子事务；同 Agent 每轮至多一个 Task |
+| `Services/Scheduling/TaskBoundGoalOptions.cs` | Task-bound Goal 独立安全开关、Iteration 预算与 Reservation lease（默认关闭） |
+| `Services/Scheduling/TaskSchedulingSchemaBootstrapper.cs` | Availability、Reservation、Task dependency 三表与唯一索引幂等建表 |
+| `Data/Entities/AgentAvailabilityProjectionEntity.cs` | 持久 Availability 投影实体 |
+| `Data/Entities/AgentExecutionReservationEntity.cs` | 自动工作租约与单调 fencing 实体 |
+| `Data/Entities/TaskDependencyEntity.cs` | Task finish-to-start 依赖边实体 |
+
+## Goal 持久控制面（Services/Goals/ · ADR-074 G1–G3 + Task-bound 原子启动源码链）
 
 | 文件 | 用途 |
 |------|------|
 | `Services/Goals/GoalSchemaBootstrapper.cs` | goal_runs/goal_iterations/goal_outbox/goal_verifications/task_goal_bindings 五表幂等建表；含"单会话一个非终态 Goal" partial unique 与 outbox 幂等键索引（G1 冻结全部 schema） |
 | `Services/Goals/GoalRunStore.cs` | 聚合写入原语：Create/TryMutate（CAS + Func 卫兵）与 goal.* ConversationEvent 同事务直写（照 AcceptanceStore 序列分配模式，不走自开事务的 EventStore） |
+| `Services/Goals/GoalOutboxStore.cs` + `GoalOutboxSignal.cs` | continuation due/claim/lease/fencing/recovery/defer/suppress/dead-letter；signal 只降延迟 |
+| `Services/Goals/GoalContinuationWorker.cs` | durable intent → 受信 synthetic Acceptance；用户 Turn 优先，Task-bound metadata 注入 ActiveTask |
+| `Services/Goals/GoalSettlementStore.cs` + `GoalSettlementWorker.cs` | canonical Turn 终态 → Evidence Capsule → version/epoch/Task/Reservation gates → 下一 outbox 或终态 |
+| `Services/Goals/ConservativeGoalIterationVerifier.cs` | fail-closed 只读 Verifier；自然语言完成无权写终态，Task canonical Completed 才允许 bound Goal 完成 |
+| `Services/Goals/TaskGoalDispatchTransactionStore.cs` | Task/Assignment/Reservation/Binding/Goal/首个 Outbox/事件/Availability 单 Serializable 事务与幂等 replay |
 | `Services/Goals/GoalCommandService.cs` | /goal 全命令合同：set/edit/replace/pause/resume/cancel/clear/status；conflict、幂等重放（source_command_id 唯一）、expectedVersion、budget_exhausted 不可 resume、feature flag 下保留 status/pause/cancel |
 | `Services/Goals/GoalQueryService.cs` | 只读投影（active/latest/iterations） |
 | `Services/Goals/GoalRestartReconciler.cs` | 启动 disarm：active→paused（bootId 锚点 + goal.paused 事件），幂等 |
@@ -177,7 +201,8 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/TokenUsageRecorder.cs` | Token 用量记录；把 context layer 的 Token、UTF-8/GZIP 字节、压缩比、hash、变化原因和估算 cache hit/miss 持久化，不复制 prompt 正文 |
+| `Services/TokenUsageRecorder.cs` | Token 用量记录；持久化 RuntimeExecutionIdentity 提供的 parent/sub-agent、零基 round、本轮 canonical 工具及 context layer Token/UTF-8/GZIP/hash/cache 诊断，不复制 prompt 正文 |
+| `Services/ConversationProjector.cs` | Conversation Event 增量投影；usage 仅在 direct `session:trace:round` 行缺失时补记，父子身份来自持久关系、零基 round 来自 invocation index，未知工具数保持 NULL |
 | `Services/TokenUsageEventRepository.cs` | Token 事件持久化与最近层级/熵诊断查询；向 Runtime 返回 Core 诊断 DTO |
 | `Services/LlmGatewayUsageRecorder.cs` | Provider 成功边界逐请求计费账本；与会话归因投影解耦 |
 | `Data/Entities/LlmGatewayUsageEventEntity.cs` | `llm_gateway_usage_events` 本地计费事实；sourceId 唯一 |

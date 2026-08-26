@@ -15,14 +15,15 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/AgentExecutionService.cs` | 🔑 执行编排入口，session 单写者，liveness/progress 报告；把日期、召回和 inbound context 与当前消息组成 volatile User tail；以 `CURRENT USER TURN/input_sha256` 同步围栏文本与 typed `ContentParts`，使像审阅报告/日志的最新输入仍具明确轮次权威性 |
-| `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial）；子代理 LLM 完成事件携带已脱敏的消息预览与不脱敏但有界的实际推理预览；重复消息只返回结构化 stop reason；预算裁剪后以当前轮围栏 fail-closed，阻止缺失本轮输入的 provider 调用 |
-| `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial）；重复 message_id 的 done 帧标记 `DuplicateMessage` 且不产生可展示 reply；与 Buffered 共用当前轮围栏及裁剪后 provider 前置门禁，并在 `agent.llm.prepare` 记录 message/hash |
+| `Services/AgentExecutionService.cs` | 🔑 执行编排入口，session 单写者，liveness/progress 报告；把日期、召回和 inbound context 与当前消息组成 volatile User tail；以 `CURRENT USER TURN/input_sha256` 同步围栏文本与 typed `ContentParts`；从 RuntimeExecutionIdentity 构造 trace 和逐轮 Token 主/子代理归因，不按 session 文本猜身份 |
+| `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial）；子代理 LLM 完成事件携带有界实际推理预览；预算裁剪后以当前轮围栏 fail-closed；canonical 相同调用第二次得到不变失败时转 `execution_stalled`，后续原样调用不再执行 |
+| `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial）；重复 message_id 不产生展示 reply；与 Buffered 共用当前轮围栏、canonical Token attribution 与失败熔断，并补齐带 canonical trace 的 `tool.call` 指标；direct Token 先提交、usage SSE 后发布，消除投影竞态双写 |
+| `Services/AgentExecution/FailedToolCallTracker.cs` | 对 canonical tool+args 的有界失败结果做 SHA-256 指纹；第二次不变失败标记 `execution_stalled`，后续阻断，参数/结果变化或成功后重置 |
 | `Services/AgentExecution/ToolResultContextPolicy.cs` | 工具结果进入模型历史前的统一 8 KiB 边界；完整原文作为 workspace-scoped artifact 保存，sidecar manifest 固化 SHA-256、UTF-8 字节、行数和 session/tool/call 身份；模型输入不做脱敏并提供渐进读取路径，存储失败时 fail-open |
 | `Services/Messaging/MessageDeliveryDispatcher.cs` | durable Message Fabric 投递；按 wake event 的 deliveryId 精确领取；后台投递持有可抢占 admission lease，用户 Turn 到达时取消执行并立即回队列；入站转录沿用稳定 messageId，重复命中不得持久化或回发占位回复；P1-3 起 thinking 落库改为 v2 紧凑格式（ReasoningCompactCodec.Encode：UTF-8 字节偏移 + delta 时间戳 + SHA-256） |
 | `Services/Messaging/AgentExecutionAdmissionCoordinator.cs` | workspace/agent 级前后台准入协调器；用户 Turn/Connector handoff 形成 foreground demand，抢占活动后台投递并阻止 recovery/idle drain 抢跑 |
 | `Services/AgentExecution/AgentToolArguments.cs` | tool-call JSON → 参数转换 |
-| `Services/AgentLoop/CanonicalWorkReport.cs` | 子代理五段报告解析/校验 |
+| `Services/AgentLoop/CanonicalWorkReport.cs` | 子代理五段报告解析/校验；无 native tool call、非结构化响应且完整满足 canonical 合同时同轮提升 DONE，显式结构化 CONTINUE 不被覆盖 |
 | `Services/GoalMode/` | 🆕 Goal 模式 v2 执行器 |
 | `Services/TurnExecutorAdapter.cs` | Turn 执行适配器；用户 Turn 获取 foreground admission，Busy 等待采用 100ms→1s 有界指数退避与 10 秒节流日志 |
 
@@ -44,13 +45,13 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/DirectLlmClient.cs` | 🔑 直接 LLM 客户端；只按选中模型 protocol 路由；Provider 成功后以共享 ActivityId 必达写入逐请求 usage 账本；vision 能力才注入视觉 resolver，网关层 fail-closed |
+| `Services/DirectLlmClient.cs` | 🔑 直接 LLM 客户端；只按选中模型 protocol 路由；Provider 成功后以共享 ActivityId 必达写入逐请求 usage 账本；流式路径分别记录 rate-limit wait 与 provider first-chunk wait；vision 能力才注入视觉 resolver，网关层 fail-closed |
 | `Services/CompositionSnapshot.cs` | 前缀缓存归因：逐请求计算 systemPromptHash/toolSpecHash/prefixHash（SHA-256 小写 hex）与 compositionVersion（进程内按 session 递增） |
 | `Services/SqliteCompositionStore.cs` | 🆕 P0-5 `ICompositionStore` SQLite 实现：落 `CompositionSnapshots` 表（MemoryDbContext 同库），append-only（版本严格递增，重写/乱序抛 InvalidOperationException）、写穿、GetLatest 取最大版本 |
 | `Services/LlmInvocationService.cs` | LLM 调用编排；把模型配置解析出的 protocol 传给 Direct/Controller 路径 |
 | `Services/LlmProfileResolver.cs` | Profile 解析 |
 | `Services/LlmRequestBudgetGuard.cs` | 预算守卫 |
-| `Services/ProviderRateLimiter.cs` | 速率限制 |
+| `Services/ProviderRateLimiter.cs` | Provider/model 并发速率限制；租约携带等待时长与 acquire 前后可用槽位的只读诊断 |
 
 ## 工具系统
 
@@ -64,7 +65,8 @@
 | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | Agent 上下文/Token 诊断；通过 Core 仓储契约读取持久化诊断 |
 | `Tools/BuiltIns/SmartWorkflow/` | 七个角色化 Smart 入口；统一 `task` schema、历史参数归一化、子代理报告校验；`SmartWorkflowToolBase.cs` 校验失败时 partial-salvage：附验证说明后原样返回子代理实际产出，父 Agent 仍可用 |
 | `Tools/Platform/` | 平台工具实现 |
-| `Tools/Platform/ToolInvocationService.cs` | 统一调用入口；模型 callId、执行身份、CapabilityPolicy、deadline 与委派上下文的传递边界；目标协议要求 callId 进入 Registry 后保持不变 |
+| `Tools/Platform/ToolInvocationService.cs` | 统一调用入口；模型 callId、执行身份、CapabilityPolicy、deadline 与委派上下文的传递边界；Harness 别名和参数在 RuntimeControl/WorkspaceGuard/Firewall/哈希/执行前归一化；目标协议要求 callId 进入 Registry 后保持不变 |
+| `Tools/Platform/HarnessToolCompatibilityAdapter.cs` | `rg/exec_command/write_stdin/read_file/write_file/list_directory/apply_patch/pwsh/WSL` 的窄范围 deterministic 兼容；保持 canonical 工具唯一并识别搜索 exit 1 no_match；统一入口记录 requested/canonical/adaptation/version 遥测 |
 | `Tools/Platform/PuddingToolRegistry.cs` | Tool Registry、LLM schema 投影、AgentFirewall 门控与统一执行服务；canonical output/结构化错误/分阶段执行管线的主要改造入口 |
 | `Services/Tools/` | 工具运行时服务 |
 | `Services/Tools/ToolExposurePlanner.cs` | Provider 无关的工具暴露规划；名称稳定排序，超过阈值时保留核心工具并通过 `search_tools` 下一轮加载能力；已发现工具由 AgentSessionManager 在 live session 内保持加载 |
@@ -129,6 +131,8 @@
 | `Services/SessionExecutionGate.cs` | 执行门控 |
 | `Services/SessionArchiver.cs` | 会话归档 |
 | `Services/HeartbeatService.cs` | 会话超时资源清理（不是 Agent 自主心跳编排） |
+| `Tools/BuiltIns/Agents/AgentStatusTool.cs` | Agent 状态只读诊断；优先返回持久 Availability version/reason/active Task/Goal/SubAgent，投影缺失或过期报告 unknown，不从 wake queue 缺席推导 idle |
+| `Services/AgentInvocationDispatchFactory.cs` | 服务端 message metadata → Runtime dispatch；Task-bound Goal 透传 task/assignment/version 与 reservation fencing token 到 ActiveTask |
 | `Services/AgentWakeQueue.cs` | 唤醒队列 |
 | `Services/StreamWatchdog.cs` | 流看门狗 |
 | `Services/Events/InternalEventBus.cs` | 当前进程内 fire-and-forget pub/sub；目标只保留 non-critical live notification 或作为 durable publisher adapter |

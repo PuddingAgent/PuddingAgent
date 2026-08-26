@@ -23,7 +23,9 @@ public sealed class GoalCommandServiceTests
     }
 
     private static async Task<(PlatformDbContext Db, GoalCommandService Service)> CreateAsync(
-        bool enabled = true, int defaultMaxIterations = 256)
+        bool enabled = true,
+        int defaultMaxIterations = 256,
+        bool continuationEnabled = false)
     {
         var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -39,6 +41,7 @@ public sealed class GoalCommandServiceTests
             {
                 Enabled = enabled,
                 DefaultMaxIterations = defaultMaxIterations,
+                ContinuationEnabled = continuationEnabled,
             }),
             TimeProvider.System,
             NullLogger<GoalCommandService>.Instance);
@@ -71,6 +74,25 @@ public sealed class GoalCommandServiceTests
         Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
         Assert.AreEqual(0, await db.ConversationTurns.CountAsync());
         Assert.AreEqual(1, await db.GoalRuns.CountAsync());
+    }
+
+    [TestMethod]
+    public async Task Set_With_ContinuationEnabled_Commits_First_Durable_Intent_But_No_Turn()
+    {
+        var (db, service) = await CreateAsync(continuationEnabled: true);
+        await using var _ = db;
+
+        var result = await service.ExecuteAsync(SetRequest(), CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        var outbox = await db.GoalOutbox.SingleAsync();
+        Assert.AreEqual(GoalOutboxValues.Pending, outbox.Status);
+        Assert.AreEqual(result.Snapshot!.GoalRunId, outbox.GoalRunId);
+        Assert.AreEqual(1, outbox.ActivationEpoch);
+        Assert.AreEqual(1, outbox.AggregateVersion);
+        Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
+        Assert.AreEqual(1, await db.ConversationEvents.CountAsync(
+            item => item.Type == GoalEventTypes.ContinuationRequested));
     }
 
     [TestMethod]

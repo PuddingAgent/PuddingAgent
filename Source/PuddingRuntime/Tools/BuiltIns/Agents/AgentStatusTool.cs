@@ -3,6 +3,7 @@ using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
+using PuddingCode.Scheduling;
 using PuddingCode.Tools;
 using PuddingRuntime.Models;
 using PuddingRuntime.Services;
@@ -16,7 +17,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "agent_status",
     name: "Agent status",
-    description: "查看工作区内 Agent 的运行时状态：心跳频率、目标状态、队列状态、近期活动等。【何时用】想了解工作区有哪些 Agent、各自休眠/空闲状态、心跳配置是否生效、目标是否活跃、距下次唤醒多久时使用；也是排查「某 Agent 为何未按预期唤醒」的入口。【怎么用】直接调用列出全部 Agent；传 agent_id 只看单个；返回文本报告 + JSON（status、heartbeat.min/max_idle_seconds、goal.has_goal/summary、last_activity_minutes_ago、estimated_wake_seconds）。【坑】只读无副作用；无心跳配置的 Agent 显示默认 3600s；无日志文件时 last_activity 为未知。",
+    description: "查看工作区内 Agent 的持久可用性与运行状态：忙碌原因、Task/Goal/子代理、心跳和近期活动等。【何时用】想确认 Agent 是否真的空闲、是否在等待子代理、为何未被自动派发或唤醒时使用。【怎么用】直接调用列出全部 Agent；传 agent_id 只看单个；返回文本报告 + JSON（status、activity_reason、active_task_id/goal_run_id/sub_agent_run_id、availability_version/valid_until、heartbeat、last_activity）。【坑】只读无副作用；缺失或过期投影显示 unknown，绝不把未知 Agent 默认报告为 idle。",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe)]
@@ -29,19 +30,22 @@ public sealed class AgentStatusTool : PuddingToolBase<AgentStatusArgs>
     private readonly AgentWakeQueue _wakeQueue;
     private readonly IIdleDetector _idleDetector;
     private readonly ILogger<AgentStatusTool> _logger;
+    private readonly IAgentAvailabilityProjectionStore? _availabilityStore;
 
     public AgentStatusTool(
         IWorkspaceAgentQueryService catalog,
         PuddingDataPaths paths,
         AgentWakeQueue wakeQueue,
         IIdleDetector idleDetector,
-        ILogger<AgentStatusTool> logger)
+        ILogger<AgentStatusTool> logger,
+        IAgentAvailabilityProjectionStore? availabilityStore = null)
     {
         _catalog = catalog;
         _paths = paths;
         _wakeQueue = wakeQueue;
         _idleDetector = idleDetector;
         _logger = logger;
+        _availabilityStore = availabilityStore;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -81,8 +85,13 @@ public sealed class AgentStatusTool : PuddingToolBase<AgentStatusArgs>
             var inQueue = await _wakeQueue.IsInQueueAsync(agent.AgentId, ct);
             var wake = inQueue ? await _wakeQueue.GetWakeRequestAsync(agent.AgentId, ct) : null;
             var lastActivityMinutes = GetLastActivityMinutes(agent.AgentId);
-
-            var status = inQueue ? "sleeping" : "idle";
+            var availability = _availabilityStore is null
+                ? null
+                : await _availabilityStore.GetAsync("default", agent.AgentId, ct);
+            var availabilityIsFresh = availability?.IsFresh(DateTimeOffset.UtcNow) == true;
+            var status = availabilityIsFresh
+                ? availability!.State.ToString().ToLowerInvariant()
+                : inQueue ? "sleeping" : "unknown";
 
             reports.Add(new
             {
@@ -90,6 +99,16 @@ public sealed class AgentStatusTool : PuddingToolBase<AgentStatusArgs>
                 name = agent.DisplayName ?? agent.Name,
                 role = ResolveRole(agent.SourceTemplateId),
                 status,
+                activity_reason = availabilityIsFresh
+                    ? availability!.ActivityReason.ToString().ToLowerInvariant()
+                    : "availability_unknown",
+                availability_version = availability?.Version,
+                availability_valid_until_utc = availabilityIsFresh
+                    ? (DateTimeOffset?)availability!.ValidUntilUtc
+                    : null,
+                active_task_id = availabilityIsFresh ? availability!.ActiveTaskId : null,
+                active_goal_run_id = availabilityIsFresh ? availability!.ActiveGoalRunId : null,
+                active_sub_agent_run_id = availabilityIsFresh ? availability!.ActiveSubAgentRunId : null,
                 heartbeat = new
                 {
                     active = heartbeat is not null,
@@ -197,6 +216,7 @@ public sealed class AgentStatusTool : PuddingToolBase<AgentStatusArgs>
             sb.AppendLine($"{r.name} ({r.role})");
             sb.AppendLine($"  Agent ID:  {r.agent_id}");
             sb.AppendLine($"  Status:    {StatusLabel((string)r.status)}");
+            sb.AppendLine($"  Activity:  {r.activity_reason}");
             sb.AppendLine($"  Heartbeat: {(r.heartbeat.active ? $"active (min={r.heartbeat.min_idle_seconds}s, max={r.heartbeat.max_idle_seconds}s)" : "inactive (无心跳配置)")}");
             sb.AppendLine($"  Goal:      {(r.goal.has_goal ? r.goal.summary + " (活跃)" : "无")}");
 

@@ -167,7 +167,11 @@ public sealed record SessionTokenDiagnostics
 /// </summary>
 public interface ICompactionChatMessageStore
 {
-    Task<IReadOnlyList<ChatMessageRow>> GetAllForSessionAsync(string sessionId, CancellationToken ct = default);
+    Task<IReadOnlyList<ChatMessageRow>> GetForSessionAfterIdAsync(
+        string sessionId,
+        long afterId,
+        int limit,
+        CancellationToken ct = default);
     Task<IReadOnlyList<ChatMessageRow>> GetRecentForSessionAsync(
         string sessionId,
         int limit,

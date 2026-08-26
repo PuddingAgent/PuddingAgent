@@ -136,7 +136,11 @@ public sealed class GoalCommandService(
             UpdatedAtUtc = now,
         };
 
-        await store.CreateAsync(goal, request.ClientRequestId, ct);
+        await store.CreateAsync(
+            goal,
+            request.ClientRequestId,
+            ct,
+            enqueueContinuation: options.Value.ContinuationEnabled);
 
         logger.LogInformation(
             "[GoalCommand] Created goal={GoalRunId} conv={ConversationId} rounds={Rounds} channel={Channel} user={UserId}",
@@ -176,7 +180,8 @@ public sealed class GoalCommandService(
             },
             new GoalRunStore.GoalEventAppend(GoalEventTypes.Edited, new { reason = "user_edit" }),
             request.ClientRequestId,
-            ct);
+            ct,
+            enqueueContinuation: options.Value.ContinuationEnabled && goal.Status == GoalPhase.Active);
 
         return mutated is null
             ? VersionConflict(goal)
@@ -318,7 +323,8 @@ public sealed class GoalCommandService(
             },
             new GoalRunStore.GoalEventAppend(GoalEventTypes.Resumed, new { }),
             request.ClientRequestId,
-            ct);
+            ct,
+            enqueueContinuation: options.Value.ContinuationEnabled);
 
         return mutated is null
             ? VersionConflict(goal)

@@ -74,6 +74,32 @@ public sealed class ExpectedOutputCandidateTrackerTests
     }
 
     [TestMethod]
+    public void AutoCompletes_UnstructuredContractCompleteResponse()
+    {
+        var tracker = new ExpectedOutputCandidateTracker(
+            CanonicalWorkReport.ExpectedOutputContract);
+        var response = AgentLoopResponse.Parse(CompleteReport);
+
+        Assert.IsTrue(tracker.ShouldAutoComplete(response, response.Message));
+    }
+
+    [TestMethod]
+    public void DoesNotOverride_ExplicitStructuredContinue()
+    {
+        var tracker = new ExpectedOutputCandidateTracker(
+            CanonicalWorkReport.ExpectedOutputContract);
+        var response = AgentLoopResponse.Parse(System.Text.Json.JsonSerializer.Serialize(new
+        {
+            status = "CONTINUE",
+            message = CompleteReport,
+            tool = (object?)null,
+        }));
+
+        Assert.IsTrue(response.IsStructured);
+        Assert.IsFalse(tracker.ShouldAutoComplete(response, response.Message));
+    }
+
+    [TestMethod]
     public void ToolLoopPromptRequiresCompleteDeliverableInsideDoneEnvelope()
     {
         var prompt = ToolLoopInstructionBuilder.BuildFromDescriptors([]);
@@ -81,5 +107,6 @@ public sealed class ExpectedOutputCandidateTrackerTests
         StringAssert.Contains(prompt, "Runtime control envelope");
         StringAssert.Contains(prompt, "COMPLETE requested deliverable");
         StringAssert.Contains(prompt, "must never be only a status sentence");
+        StringAssert.Contains(prompt, "`search_grep` is the rg-like content-search tool");
     }
 }

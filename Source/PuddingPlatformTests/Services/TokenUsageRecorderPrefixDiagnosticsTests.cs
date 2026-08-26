@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
@@ -13,6 +14,69 @@ namespace PuddingPlatformTests.Services;
 [TestClass]
 public sealed class TokenUsageRecorderPrefixDiagnosticsTests
 {
+    [TestMethod]
+    public void ConversationProjectorFallback_UsesPersistentParentAndInvocationIndex()
+    {
+        var attributed = ConversationProjector.CreateFallbackAttribution(
+            "session-child",
+            "session-parent",
+            invocationIndex: 3);
+        var unknown = ConversationProjector.CreateFallbackAttribution(
+            "session-main",
+            parentSessionId: null,
+            invocationIndex: 0);
+
+        Assert.AreEqual("session-parent", attributed.ParentSessionId);
+        Assert.AreEqual("session-child", attributed.SubAgentId);
+        Assert.AreEqual(2, attributed.TurnRound);
+        Assert.IsNull(attributed.ToolCallCount);
+        Assert.IsNull(unknown.ParentSessionId);
+        Assert.IsNull(unknown.SubAgentId);
+        Assert.IsNull(unknown.TurnRound);
+    }
+
+    [TestMethod]
+    public async Task RecordAttributedRequiredAsync_PersistsCanonicalAgentLoopAttribution()
+    {
+        await using var scope = await CreateScopeAsync();
+        var recorder = new TokenUsageRecorder(
+            scope.Provider.GetRequiredService<IServiceScopeFactory>(),
+            new TokenUsageNormalizer(),
+            NullLogger<TokenUsageRecorder>.Instance);
+
+        await recorder.RecordAttributedRequiredAsync(
+            new TokenUsageDto
+            {
+                PromptTokens = 100,
+                CompletionTokens = 10,
+                TotalTokens = 110,
+                PromptCacheHitTokens = 80,
+                PromptCacheMissTokens = 20,
+            },
+            sourceType: "agent_llm",
+            sourceId: "run-child:trace-1:3",
+            workspaceId: "w1",
+            sessionId: "session-child",
+            providerId: "deepseek",
+            modelId: "deepseek-chat",
+            attribution: new TokenUsageAttribution
+            {
+                ParentSessionId = "session-parent",
+                SubAgentId = "session-child",
+                TurnRound = 2,
+                ToolCallCount = 3,
+                ToolNames = ["search_grep", "shell", "search_grep"],
+            });
+
+        var db = scope.Provider.GetRequiredService<PlatformDbContext>();
+        var saved = await db.TokenUsageEvents.SingleAsync();
+        Assert.AreEqual("session-parent", saved.ParentSessionId);
+        Assert.AreEqual("session-child", saved.SubAgentId);
+        Assert.AreEqual(2, saved.TurnRound);
+        Assert.AreEqual(3, saved.ToolCallCount);
+        Assert.AreEqual("search_grep,shell", saved.ToolNames);
+    }
+
     [TestMethod]
     public async Task RecordAsync_WhenToolSpecHashChanges_StoresToolSpecChangedReason()
     {

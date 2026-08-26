@@ -19,6 +19,7 @@ public sealed class ContextCompactionService : IContextCompactionService
     // implementation used it as Take(500), then marked messages outside the
     // summary input as compacted.
     private const int ActiveMessageLoadPageSize = 500;
+    private const int TranscriptImportPageSize = 256;
     private const int MaxMessagesPerSummaryChunk = 80;
     private const int CanonicalTranscriptEstimateSampleSize = 500;
     private const int MaxHealthEstimateSampleSize = 2000;
@@ -311,23 +312,16 @@ public sealed class ContextCompactionService : IContextCompactionService
             compactionId, request.SessionId, request.Mode, request.Reason);
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        // platform 转录是 canonical 事实源：CoordinatorCanonical 轮次 Runtime 不直写 memory DB
+        // （P0-4f-3 JSONL 门禁后无旁路），active 消息只能靠这里镜像。导入按 MessageId 幂等，
+        // 必须每次压缩前执行——只在 active 为空时导入会让 memory DB 停留在旧代，
+        // 水合/压缩输入/健康度统计全部看不到新对话（会话失忆回归）。
+        await TryImportCurrentSessionTranscriptAsync(db, request, ct);
         var activeMessages = await LoadActiveMessagesAsync(db, request.SessionId, ct);
         var loadMs = sw.ElapsedMilliseconds;
         _logger.LogInformation(
             "[ContextCompaction:Phase] loadActive session={SessionId} count={Count} elapsedMs={ElapsedMs}",
             request.SessionId, activeMessages.Count, loadMs);
-
-        if (activeMessages.Count == 0)
-        {
-            _logger.LogInformation(
-                "[ContextCompaction:Phase] importTranscript session={SessionId}",
-                request.SessionId);
-            await TryImportCurrentSessionTranscriptAsync(db, request, ct);
-            activeMessages = await LoadActiveMessagesAsync(db, request.SessionId, ct);
-            _logger.LogInformation(
-                "[ContextCompaction:Phase] afterImport session={SessionId} count={Count}",
-                request.SessionId, activeMessages.Count);
-        }
 
         // 滚动摘要链：旧代 compact_summary 与普通 text 消息一起进入下一代压缩输入，
         // 压缩后由新摘要统一标记 CompactedBy——否则每代压缩各留一条独立摘要，
@@ -350,40 +344,7 @@ public sealed class ContextCompactionService : IContextCompactionService
 
         if (candidates.Count == 0)
         {
-            sw.Stop();
-            var noOpBeforeTokens = EstimateMessages(activeMessages);
-            var noOpDiagnostics = BuildDiagnostics(
-                request,
-                compactionId,
-                startedAtUtc,
-                DateTimeOffset.UtcNow,
-                sw.ElapsedMilliseconds,
-                activeMessages,
-                candidates,
-                messagesToCompact,
-                summaryInputMessages: [],
-                summaryMessageId: string.Empty,
-                beforeTokens: noOpBeforeTokens,
-                afterTokens: noOpBeforeTokens,
-                summary: string.Empty,
-                summaryGenerator: ResolveSummaryGeneratorName());
-            _logger.LogInformation(
-                "[ContextCompaction:Phase] skipNoOp compactionId={CompactionId} session={SessionId} elapsedMs={ElapsedMs}",
-                compactionId, request.SessionId, sw.ElapsedMilliseconds);
-                        var noOpResult = new ContextCompactionResult(
-                request.SessionId,
-                SummaryMessageId: string.Empty,
-                request.Mode,
-                request.Level,
-                BeforeTokens: noOpBeforeTokens,
-                AfterTokens: noOpBeforeTokens,
-                CompactedMessageCount: 0,
-                SummaryPreview: string.Empty,
-                SummaryMarkdown: string.Empty,
-                MemoryNotes: [],
-                Diagnostics: noOpDiagnostics);
-            await WriteCompactionLogAsync(request, noOpResult, ct);
-            return noOpResult;
+            return await FinishNoOpAsync();
         }
 
         // ── 尺寸驱逐：保留窗口内超大消息不再原样保留全文 ──
@@ -392,9 +353,16 @@ public sealed class ContextCompactionService : IContextCompactionService
         // 这里在保留逻辑内增加尺寸判定：单条消息（含 tool 载荷）超过 MaxVerbatimMessageBytes 时，
         // 保留副本被截断为"头部摘要 + 截断标记"，完整原文以克隆形式进入摘要侧输入照常参与摘要处理；
         // 尺寸正常的最近消息仍按原规则原样保留，逐条保留数量逻辑不变。
-                var beforeTokens = EstimateMessages(activeMessages); // 截断前快照，保证诊断口径准确
+        var beforeTokens = EstimateMessages(activeMessages); // 截断前快照，保证诊断口径准确
         var rawBytesBefore = EstimateUtf8Bytes(activeMessages); // 截断前快照（UTF-8 字节）
         var verbatimEvictionClones = ApplyVerbatimSizeEviction(candidates, messagesToCompact);
+
+        // 滚动摘要链必须由新原文驱动：摘要侧输入只剩上一代 compact_summary（无新对话导入、
+        // 无尺寸驱逐）时，再压缩只会产出"摘要的摘要"叠加范围提示，信息趋零体积逐代膨胀。
+        if (!HasRawTextInput(messagesToCompact, verbatimEvictionClones))
+        {
+            return await FinishNoOpAsync();
+        }
 
         var expandStart = sw.ElapsedMilliseconds;
         var summaryBaseMessages = messagesToCompact.Count > 0
@@ -421,14 +389,14 @@ public sealed class ContextCompactionService : IContextCompactionService
             "[ContextCompaction:Phase] expandInput session={SessionId} baseCount={BaseCount} expandedCount={ExpandedCount} supBefore={SuppBefore} elapsedMs={ElapsedMs}",
             request.SessionId, summaryBaseMessages.Count, expandedInput.Messages.Count, expandedInput.SupplementalBeforeCount, sw.ElapsedMilliseconds - expandStart);
 
-                var windowStart = sw.ElapsedMilliseconds;
+        var windowStart = sw.ElapsedMilliseconds;
         var summaryInput = SelectSummaryInputWindow(expandedInput);
         var coverage = EnsureCompactionCoverage(messagesToCompact, summaryInput.Messages);
         _logger.LogInformation(
             "[ContextCompaction:Phase] selectWindow session={SessionId} windowCount={WindowCount} firstSeq={FirstSeq} lastSeq={LastSeq} omitted={Omitted}",
             request.SessionId, summaryInput.Messages.Count, summaryInput.FirstIncludedSequence, summaryInput.LastIncludedSequence, summaryInput.OmittedBeforeCount);
 
-                var summaryStart = sw.ElapsedMilliseconds;
+        var summaryStart = sw.ElapsedMilliseconds;
         
         // 如果有 Agent 工作总结，记录日志
                 if (!string.IsNullOrWhiteSpace(request.AgentWorkSummary))
@@ -714,9 +682,55 @@ public sealed class ContextCompactionService : IContextCompactionService
             memoryNotes,
             diagnostics);
 
-                await PublishSessionCompressedHookAsync(request, result, ct);
+        await PublishSessionCompressedHookAsync(request, result, ct);
         await WriteCompactionLogAsync(request, result, ct);
         return result;
+
+        async Task<ContextCompactionResult> FinishNoOpAsync()
+        {
+            sw.Stop();
+            var noOpBeforeTokens = EstimateMessages(activeMessages);
+            var noOpDiagnostics = BuildDiagnostics(
+                request,
+                compactionId,
+                startedAtUtc,
+                DateTimeOffset.UtcNow,
+                sw.ElapsedMilliseconds,
+                activeMessages,
+                candidates,
+                messagesToCompact: [],
+                summaryInputMessages: [],
+                summaryMessageId: string.Empty,
+                beforeTokens: noOpBeforeTokens,
+                afterTokens: noOpBeforeTokens,
+                summary: string.Empty,
+                summaryGenerator: ResolveSummaryGeneratorName());
+            _logger.LogInformation(
+                "[ContextCompaction:Phase] skipNoOp compactionId={CompactionId} session={SessionId} elapsedMs={ElapsedMs}",
+                compactionId, request.SessionId, sw.ElapsedMilliseconds);
+            var noOpResult = new ContextCompactionResult(
+                request.SessionId,
+                SummaryMessageId: string.Empty,
+                request.Mode,
+                request.Level,
+                BeforeTokens: noOpBeforeTokens,
+                AfterTokens: noOpBeforeTokens,
+                CompactedMessageCount: 0,
+                SummaryPreview: string.Empty,
+                SummaryMarkdown: string.Empty,
+                MemoryNotes: [],
+                Diagnostics: noOpDiagnostics);
+            await WriteCompactionLogAsync(request, noOpResult, ct);
+            return noOpResult;
+        }
+
+        static bool HasRawTextInput(
+            IReadOnlyList<MessageEntity> messagesToCompact,
+            IReadOnlyList<MessageEntity> verbatimEvictionClones)
+            => messagesToCompact
+               .Concat(verbatimEvictionClones)
+               .Any(m =>
+                   !string.Equals(m.ContentType, ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -957,103 +971,48 @@ public sealed class ContextCompactionService : IContextCompactionService
         if (_messageStore is null)
             return;
 
-        var transcriptRows = await _messageStore.GetAllForSessionAsync(request.SessionId, ct);
-
-        if (transcriptRows.Count == 0)
-            return;
-
+        var transcriptMessagePrefix = BuildTranscriptMessagePrefix(request.SessionId);
+        var lastImportedMessageId = await memoryDb.Messages
+            .AsNoTracking()
+            .Where(m => m.SessionId == request.SessionId
+                && m.Source == "chat_transcript"
+                && m.MessageId.StartsWith(transcriptMessagePrefix))
+            .OrderByDescending(m => m.Sequence)
+            .Select(m => m.MessageId)
+            .FirstOrDefaultAsync(ct);
+        var afterPlatformId = TryParseTranscriptPlatformId(
+            lastImportedMessageId,
+            transcriptMessagePrefix,
+            out var parsedPlatformId)
+            ? parsedPlatformId
+            : 0L;
         var session = await memoryDb.Sessions
             .FirstOrDefaultAsync(s => s.SessionId == request.SessionId, ct);
-        var firstRow = transcriptRows[0];
-        var lastActivityAt = transcriptRows.Max(m => m.CreatedAt);
-        var agentId = string.IsNullOrWhiteSpace(request.AgentId)
-            ? firstRow.AgentInstanceId
-            : request.AgentId;
-
-        if (session is null)
-        {
-            session = new SessionEntity
-            {
-                SessionId = request.SessionId,
-                WorkspaceId = request.WorkspaceId,
-                AgentId = agentId ?? string.Empty,
-                Status = "active",
-                CreatedAt = firstRow.CreatedAt,
-                LastActivityAt = lastActivityAt,
-            };
-            memoryDb.Sessions.Add(session);
-        }
-        else
-        {
-            session.WorkspaceId = string.IsNullOrWhiteSpace(session.WorkspaceId)
-                ? request.WorkspaceId
-                : session.WorkspaceId;
-            session.AgentId = string.IsNullOrWhiteSpace(session.AgentId)
-                ? agentId ?? string.Empty
-                : session.AgentId;
-            session.LastActivityAt = Math.Max(session.LastActivityAt, lastActivityAt);
-        }
-
-        var existingMessageIds = await memoryDb.Messages
-            .Where(m => m.SessionId == request.SessionId)
-            .Select(m => m.MessageId)
-            .ToListAsync(ct);
-        var existing = existingMessageIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var nextSequence = await memoryDb.Messages
             .Where(m => m.SessionId == request.SessionId)
             .Select(m => (long?)m.Sequence)
             .MaxAsync(ct) ?? 0;
 
-        var importedCount = 0;
-        foreach (var row in transcriptRows)
+        var totalRowsRead = 0;
+        var totalImported = 0;
+        while (true)
         {
-            var messageId = BuildTranscriptMessageId(row.Id, request.SessionId);
-            if (existing.Contains(messageId))
-                continue;
+            var transcriptRows = await _messageStore.GetForSessionAfterIdAsync(
+                request.SessionId,
+                afterPlatformId,
+                TranscriptImportPageSize,
+                ct);
+            if (transcriptRows.Count == 0)
+                break;
 
-            memoryDb.Messages.Add(new MessageEntity
-            {
-                MessageId = messageId,
-                SessionId = request.SessionId,
-                Sequence = ++nextSequence,
-                Role = string.IsNullOrWhiteSpace(row.Role) ? "user" : row.Role,
-                ContentType = "text",
-                Content = row.Content,
-                ThinkingJson = row.ThinkingJson,
-                UsageJson = row.UsageJson,
-                AgentId = string.IsNullOrWhiteSpace(row.AgentInstanceId) ? agentId : row.AgentInstanceId,
-                Source = "chat_transcript",
-                CreatedAt = row.CreatedAt,
-                CanonicalContentHash = CompositionSnapshot.Sha256Hex(row.Content ?? string.Empty),
-                // ADR-077 §7.1：多模态 canonical 信封随消息镜像，供上下文水合恢复图片 part。
-                AttachmentsJson = row.ContentPartsJson,
-            });
-            importedCount++;
-        }
+            totalRowsRead += transcriptRows.Count;
+            var firstRow = transcriptRows[0];
+            var lastActivityAt = transcriptRows.Max(m => m.CreatedAt);
+            var agentId = string.IsNullOrWhiteSpace(request.AgentId)
+                ? firstRow.AgentInstanceId
+                : request.AgentId;
 
-        if (session is not null)
-        {
-            session.MessageCount += importedCount;
-        }
-
-        try
-        {
-            await memoryDb.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 19 })
-        {
-            // UNIQUE 冲突：上次 compact 可能已部分导入相同消息（跨 session 的 chat- 前缀冲突或旧导入残留）。
-            // 逐条重试，跳过冲突消息。
-            _logger.LogWarning(
-                ex,
-                "[ContextCompaction] UNIQUE conflict during transcript import session={SessionId}; retrying with per-message skip",
-                request.SessionId);
-
-            memoryDb.ChangeTracker.Clear();
-            // 重新 attach/lookup Session 以避免 Clear 丢失
-            var retrySession = await memoryDb.Sessions
-                .FirstOrDefaultAsync(s => s.SessionId == request.SessionId, ct);
-            if (retrySession is null)
+            if (session is null)
             {
                 session = new SessionEntity
                 {
@@ -1068,49 +1027,79 @@ public sealed class ContextCompactionService : IContextCompactionService
             }
             else
             {
-                session = retrySession;
+                session.WorkspaceId = string.IsNullOrWhiteSpace(session.WorkspaceId)
+                    ? request.WorkspaceId
+                    : session.WorkspaceId;
+                session.AgentId = string.IsNullOrWhiteSpace(session.AgentId)
+                    ? agentId ?? string.Empty
+                    : session.AgentId;
+                session.LastActivityAt = Math.Max(session.LastActivityAt, lastActivityAt);
             }
 
-            var retryImported = 0;
+            var pageMessageIds = transcriptRows
+                .Select(row => BuildTranscriptMessageId(row.Id, request.SessionId))
+                .ToArray();
+            var existing = (await memoryDb.Messages
+                    .AsNoTracking()
+                    .Where(m => pageMessageIds.Contains(m.MessageId))
+                    .Select(m => m.MessageId)
+                    .ToListAsync(ct))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var importedThisPage = 0;
             foreach (var row in transcriptRows)
             {
                 var messageId = BuildTranscriptMessageId(row.Id, request.SessionId);
                 if (existing.Contains(messageId))
                     continue;
 
-                try
-                {
-                    memoryDb.Messages.Add(new MessageEntity
-                    {
-                        MessageId = messageId,
-                        SessionId = request.SessionId,
-                        Sequence = ++nextSequence,
-                        Role = string.IsNullOrWhiteSpace(row.Role) ? "user" : row.Role,
-                        ContentType = "text",
-                        Content = row.Content,
-                        ThinkingJson = row.ThinkingJson,
-                        UsageJson = row.UsageJson,
-                        AgentId = string.IsNullOrWhiteSpace(row.AgentInstanceId) ? agentId : row.AgentInstanceId,
-                        Source = "chat_transcript",
-                        CreatedAt = row.CreatedAt,
-                        CanonicalContentHash = CompositionSnapshot.Sha256Hex(row.Content ?? string.Empty),
-                    });
-                    await memoryDb.SaveChangesAsync(ct);
-                    retryImported++;
-                }
-                catch (DbUpdateException retryEx) when (retryEx.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 19 })
-                {
-                    memoryDb.ChangeTracker.Clear();
-                }
+                memoryDb.Messages.Add(CreateTranscriptMessage(
+                    row,
+                    request.SessionId,
+                    messageId,
+                    ++nextSequence,
+                    agentId));
+                importedThisPage++;
             }
-            importedCount = retryImported;
+
+            session.MessageCount += importedThisPage;
+            await memoryDb.SaveChangesAsync(ct);
+            totalImported += importedThisPage;
+            afterPlatformId = transcriptRows[^1].Id;
+
+            if (transcriptRows.Count < TranscriptImportPageSize)
+                break;
         }
 
         _logger.LogInformation(
-            "[ContextCompaction] Imported current session transcript session={SessionId} rows={RowCount}",
+            "[ContextCompaction] Incrementally imported current session transcript session={SessionId} rowsRead={RowsRead} imported={Imported} highWatermark={HighWatermark}",
             request.SessionId,
-            transcriptRows.Count);
+            totalRowsRead,
+            totalImported,
+            afterPlatformId);
     }
+
+    private static MessageEntity CreateTranscriptMessage(
+        ChatMessageRow row,
+        string sessionId,
+        string messageId,
+        long sequence,
+        string? fallbackAgentId) => new()
+    {
+        MessageId = messageId,
+        SessionId = sessionId,
+        Sequence = sequence,
+        Role = string.IsNullOrWhiteSpace(row.Role) ? "user" : row.Role,
+        ContentType = "text",
+        Content = row.Content,
+        ThinkingJson = row.ThinkingJson,
+        UsageJson = row.UsageJson,
+        AgentId = string.IsNullOrWhiteSpace(row.AgentInstanceId) ? fallbackAgentId : row.AgentInstanceId,
+        Source = "chat_transcript",
+        CreatedAt = row.CreatedAt,
+        CanonicalContentHash = CompositionSnapshot.Sha256Hex(row.Content ?? string.Empty),
+        AttachmentsJson = row.ContentPartsJson,
+    };
 
     private static async Task<List<MessageEntity>> LoadActiveMessagesAsync(
         MemoryDbContext db,
@@ -1393,8 +1382,23 @@ public sealed class ContextCompactionService : IContextCompactionService
         return text[..maxLength] + "…";
     }
 
+    private static string BuildTranscriptMessagePrefix(string sessionId) =>
+        $"chat-{sessionId[..Math.Min(8, sessionId.Length)]}-";
+
     private static string BuildTranscriptMessageId(long transcriptId, string sessionId) =>
-        $"chat-{sessionId[..Math.Min(8, sessionId.Length)]}-{transcriptId}";
+        $"{BuildTranscriptMessagePrefix(sessionId)}{transcriptId}";
+
+    private static bool TryParseTranscriptPlatformId(
+        string? messageId,
+        string expectedPrefix,
+        out long platformId)
+    {
+        platformId = 0;
+        return !string.IsNullOrWhiteSpace(messageId)
+            && messageId.StartsWith(expectedPrefix, StringComparison.Ordinal)
+            && long.TryParse(messageId.AsSpan(expectedPrefix.Length), out platformId)
+            && platformId >= 0;
+    }
 
     private static SummaryInputWindow SelectSummaryInputWindow(MinimumInputExpansion expandedInput)
     {
@@ -1539,6 +1543,9 @@ public sealed class ContextCompactionService : IContextCompactionService
             .AsNoTracking()
             .Where(m => m.SessionId == sessionId)
             .Where(m => m.Sequence < firstSequence)
+            // 只补读 active 原文：已被压缩覆盖的消息语义已在对应摘要里（设计 §9 去重规则），
+            // 回流原文会虚增摘要输入并让上一代摘要被再压缩成套娃。
+            .Where(m => m.CompactedBy == null)
             .Where(m => m.ContentType == "text")
             .Where(m => m.Role != "system")
             .OrderByDescending(m => m.Sequence)

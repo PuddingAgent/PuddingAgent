@@ -1,10 +1,13 @@
 ﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using PuddingCode.Goals;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services.Scheduling;
 
 namespace PuddingPlatform.Services;
 
@@ -15,9 +18,12 @@ namespace PuddingPlatform.Services;
 public sealed class ConversationAcceptanceStore(
     PlatformDbContext db,
     ICommittedEventSignal committedSignal,
-    ILogger<ConversationAcceptanceStore> logger) : IConversationAcceptanceStore
+    ILogger<ConversationAcceptanceStore> logger,
+    IOptions<TaskBoundGoalOptions>? taskBoundOptions = null) : IConversationAcceptanceStore
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
+    private readonly TimeSpan _taskBoundReservationLease =
+        taskBoundOptions?.Value.ReservationLease ?? TimeSpan.FromHours(2);
 
     public async Task<AcceptanceResult> AcceptBatchAsync(
         SubmitTurnRequest request,
@@ -63,12 +69,22 @@ public sealed class ConversationAcceptanceStore(
             var agentIds = request.Recipients.AgentIds
                 ?? throw new InvalidOperationException(
                     "Validated turn acceptance requires explicit agent IDs.");
+            var goalContinuation = request.GoalContinuation;
+            (GoalRunEntity Goal, GoalOutboxEntity Outbox)? goalFence = goalContinuation is null
+                ? null
+                : await ValidateGoalContinuationAsync(
+                    goalContinuation,
+                    workspaceId,
+                    conversationId,
+                    agentIds,
+                    ct);
             // ADR-077 §4.2：Content 为全部 text part 的稳定拼接投影；ContentPartsJson 才是多模态 canonical fact。
             var contentParts = ConversationContentValidator.ToLlmContentParts(
                 request.Content,
                 out var textContent);
             var contentPartsJson = contentParts is null ? null : ContentPartsEnvelope.Encode(contentParts);
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var nowUtc = DateTimeOffset.UtcNow;
+            var now = nowUtc.ToUnixTimeMilliseconds();
 
             // 2a: 用户消息
             var message = new ChatMessageEntity
@@ -129,7 +145,9 @@ public sealed class ConversationAcceptanceStore(
             db.ChatExecutionCommands.AddRange(commands);
 
             // 2d: 为每个 Command 分配 Event Store sequence 并写 turn.accepted
-            var headSeq = await AllocateSequencesAsync(conversationId, commands.Count, ct);
+            var goalEventCount = goalFence is null ? 0 : 2;
+            var eventCount = commands.Count + goalEventCount;
+            var headSeq = await AllocateSequencesAsync(conversationId, eventCount, ct);
             var events = new List<ConversationEventEntity>();
             for (int i = 0; i < commands.Count; i++)
             {
@@ -178,7 +196,80 @@ public sealed class ConversationAcceptanceStore(
                     CommittedAt = DateTimeOffset.UtcNow.ToString("O"),
                     CorrelationId = conversationId,
                     TraceId = cmd.TraceId,
+                    AgentId = goalFence is null ? null : cmd.AgentInstanceId,
+                    SourceKind = goalFence is null
+                        ? ConversationEventSourceKind.User.ToString().ToLowerInvariant()
+                        : ConversationEventSourceKind.Goal.ToString().ToLowerInvariant(),
+                    ProducerComponent = goalFence is null
+                        ? "chat.acceptance"
+                        : GoalProducerComponents.Continuation,
                 });
+            }
+
+            if (goalFence is not null)
+            {
+                var (goal, outbox) = goalFence.Value;
+                var cmd = commands.Single();
+                var acceptedSequence = headSeq + commands.Count + 1;
+
+                goal.IterationsStarted++;
+                goal.AggregateVersion++;
+                goal.UpdatedAtUtc = nowUtc;
+
+                db.GoalIterations.Add(new GoalIterationEntity
+                {
+                    GoalIterationId = $"gi-{goal.GoalRunId}-{goalContinuation!.ActivationEpoch}-{goalContinuation.IterationNo}",
+                    GoalRunId = goal.GoalRunId,
+                    ActivationEpoch = goalContinuation.ActivationEpoch,
+                    IterationNo = goalContinuation.IterationNo,
+                    Status = "accepted",
+                    CommandId = cmd.CommandId,
+                    TurnId = cmd.TurnId,
+                    TraceId = cmd.TraceId,
+                    AcceptedSequence = acceptedSequence,
+                    CreatedAtUtc = nowUtc,
+                });
+
+                outbox.Status = GoalOutboxValues.Completed;
+                outbox.LeaseOwner = null;
+                outbox.LeaseUntilUtc = null;
+                outbox.LastError = null;
+                outbox.CompletedAtUtc = nowUtc;
+
+                events.Add(BuildGoalContinuationEvent(
+                    goal,
+                    outbox,
+                    cmd,
+                    request.ClientMessageId,
+                    acceptedSequence,
+                    GoalEventTypes.IterationAccepted,
+                    new
+                    {
+                        goalRunId = goal.GoalRunId,
+                        activationEpoch = goalContinuation.ActivationEpoch,
+                        aggregateVersion = goal.AggregateVersion,
+                        iterationNumber = goalContinuation.IterationNo,
+                        commandId = cmd.CommandId,
+                        turnId = cmd.TurnId,
+                        acceptedSequence,
+                    }));
+                events.Add(BuildGoalContinuationEvent(
+                    goal,
+                    outbox,
+                    cmd,
+                    request.ClientMessageId,
+                    acceptedSequence + 1,
+                    GoalEventTypes.ContinuationDispatched,
+                    new
+                    {
+                        goalRunId = goal.GoalRunId,
+                        activationEpoch = goalContinuation.ActivationEpoch,
+                        aggregateVersion = goal.AggregateVersion,
+                        iterationNumber = goalContinuation.IterationNo,
+                        outboxId = outbox.OutboxId,
+                        commandId = cmd.CommandId,
+                        turnId = cmd.TurnId,
+                    }));
             }
             db.ConversationEvents.AddRange(events);
 
@@ -193,7 +284,7 @@ public sealed class ConversationAcceptanceStore(
                     WorkspaceId = workspaceId,
                     UserId = userId,
                     Status = "accepted",
-                    AcceptedSequence = headSeq + commands.Count,
+                    AcceptedSequence = headSeq + commands.IndexOf(cmd) + 1,
                     CreatedAt = now,
                 });
             }
@@ -206,18 +297,18 @@ public sealed class ConversationAcceptanceStore(
                 head = new ConversationHeadEntity
                 {
                     ConversationId = conversationId,
-                    HeadSequence = headSeq + commands.Count,
+                    HeadSequence = headSeq + eventCount,
                 };
                 db.ConversationHeads.Add(head);
             }
             else
             {
-                head.HeadSequence = headSeq + commands.Count;
+                head.HeadSequence = headSeq + eventCount;
                 db.ConversationHeads.Update(head);
             }
 
             // 2f: 记录 acceptedSequence
-            batch.AcceptedSequence = headSeq + commands.Count;
+            batch.AcceptedSequence = headSeq + eventCount;
 
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
@@ -296,4 +387,155 @@ public sealed class ConversationAcceptanceStore(
            && !string.IsNullOrWhiteSpace(value)
             ? value
             : null;
+
+    private async Task<(GoalRunEntity Goal, GoalOutboxEntity Outbox)> ValidateGoalContinuationAsync(
+        GoalContinuationAcceptanceContext context,
+        string workspaceId,
+        string conversationId,
+        IReadOnlyList<string> agentIds,
+        CancellationToken ct)
+    {
+        if (agentIds.Count != 1)
+            throw Reject(GoalContinuationAcceptanceErrorCodes.IterationConflict,
+                "Goal continuation must target exactly one Agent.");
+
+        var goal = await db.GoalRuns
+            .SingleOrDefaultAsync(item => item.GoalRunId == context.GoalRunId, ct)
+            ?? throw Reject(GoalContinuationAcceptanceErrorCodes.GoalMissing,
+                $"Goal {context.GoalRunId} no longer exists.");
+
+        if (!string.Equals(goal.WorkspaceId, workspaceId, StringComparison.Ordinal)
+            || !string.Equals(goal.CurrentConversationId, conversationId, StringComparison.Ordinal)
+            || !string.Equals(goal.AgentInstanceId, agentIds[0], StringComparison.Ordinal))
+        {
+            throw Reject(GoalContinuationAcceptanceErrorCodes.StaleEpoch,
+                "Goal continuation routing no longer matches the Goal aggregate.");
+        }
+        if (goal.Status != GoalPhase.Active)
+            throw Reject(GoalContinuationAcceptanceErrorCodes.GoalInactive,
+                $"Goal is {goal.Status}, not active.");
+        if (goal.ActivationEpoch != context.ActivationEpoch)
+            throw Reject(GoalContinuationAcceptanceErrorCodes.StaleEpoch,
+                $"Goal epoch changed from {context.ActivationEpoch} to {goal.ActivationEpoch}.");
+        if (goal.AggregateVersion != context.AggregateVersion)
+            throw Reject(GoalContinuationAcceptanceErrorCodes.StaleVersion,
+                $"Goal version changed from {context.AggregateVersion} to {goal.AggregateVersion}.");
+        if (!GoalStateMachine.CanAcceptNewIteration(
+                goal.Status,
+                goal.MaxIterations,
+                goal.IterationsStarted))
+        {
+            throw Reject(GoalContinuationAcceptanceErrorCodes.BudgetExhausted,
+                "Goal has no remaining accepted Iteration budget.");
+        }
+        if (context.IterationNo != goal.IterationsStarted + 1
+            || goal.IterationsSettled != goal.IterationsStarted)
+        {
+            throw Reject(GoalContinuationAcceptanceErrorCodes.IterationConflict,
+                "Another Goal Iteration is already accepted or the requested number is stale.");
+        }
+
+        var outbox = await db.GoalOutbox.SingleOrDefaultAsync(
+            item => item.OutboxId == context.OutboxId, ct);
+        if (outbox is null
+            || outbox.Status != GoalOutboxValues.Leased
+            || !string.Equals(outbox.GoalRunId, context.GoalRunId, StringComparison.Ordinal)
+            || outbox.ActivationEpoch != context.ActivationEpoch
+            || outbox.AggregateVersion != context.AggregateVersion
+            || !string.Equals(outbox.LeaseOwner, context.LeaseOwner, StringComparison.Ordinal)
+            || outbox.FencingToken != context.FencingToken
+            || outbox.LeaseUntilUtc is null
+            || outbox.LeaseUntilUtc <= DateTimeOffset.UtcNow)
+        {
+            throw Reject(GoalContinuationAcceptanceErrorCodes.StaleLease,
+                "Goal continuation outbox lease is missing, expired or fenced out.");
+        }
+
+        var binding = await db.TaskGoalBindings.SingleOrDefaultAsync(
+            item => item.GoalRunId == goal.GoalRunId, ct);
+        if (binding is not null)
+        {
+            var task = await db.WorkspaceTasks.SingleOrDefaultAsync(
+                item => item.WorkspaceId == binding.WorkspaceId
+                    && item.TaskId == binding.TaskId, ct);
+            var reservation = binding.ReservationId is null
+                ? null
+                : await db.AgentExecutionReservations.SingleOrDefaultAsync(
+                    item => item.ReservationId == binding.ReservationId, ct);
+            if (binding.Status != "active"
+                || context.TaskId != binding.TaskId
+                || context.ExpectedTaskVersion != binding.ExpectedTaskVersion
+                || context.ReservationFencingToken != binding.ReservationFencingToken
+                || task is null
+                || task.Version != binding.ExpectedTaskVersion
+                || task.ActiveAssignmentId != binding.AssignmentId
+                || task.Status is not (PuddingCode.Tasks.WorkspaceTaskStatus.Assigned
+                    or PuddingCode.Tasks.WorkspaceTaskStatus.InProgress)
+                || reservation is null
+                || reservation.Status != "active"
+                || reservation.FencingToken != binding.ReservationFencingToken
+                || reservation.LeaseUntilUtc <= DateTimeOffset.UtcNow
+                || reservation.TaskId != binding.TaskId
+                || reservation.AgentId != binding.AgentInstanceId
+                || reservation.GoalRunId != binding.GoalRunId)
+            {
+                throw Reject(
+                    GoalContinuationAcceptanceErrorCodes.TaskFenceChanged,
+                    "Task-bound Goal ownership, Task version or reservation fence changed before acceptance.");
+            }
+
+            reservation.LeaseUntilUtc = DateTimeOffset.UtcNow.Add(_taskBoundReservationLease);
+            reservation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        }
+
+        var conversationBusy = await db.ChatExecutionCommands.AnyAsync(
+            command => command.SessionId == conversationId
+                && (command.Status == "pending"
+                    || command.Status == "leased"
+                    || command.Status == "running"
+                    || command.Status == "cancel_requested"), ct);
+        if (conversationBusy)
+        {
+            throw new GoalContinuationAcceptanceException(
+                GoalContinuationAcceptanceErrorCodes.ConversationBusy,
+                "Conversation has an earlier accepted or running Turn.",
+                deferred: true);
+        }
+
+        return (goal, outbox);
+    }
+
+    private static GoalContinuationAcceptanceException Reject(string code, string message)
+        => new(code, message);
+
+    private static ConversationEventEntity BuildGoalContinuationEvent(
+        GoalRunEntity goal,
+        GoalOutboxEntity outbox,
+        ChatExecutionCommandEntity command,
+        string messageId,
+        long sequence,
+        string eventType,
+        object payload)
+        => new()
+        {
+            ConversationId = goal.CurrentConversationId,
+            Sequence = sequence,
+            EventId = $"{(eventType == GoalEventTypes.IterationAccepted ? "gia" : "gcd")}-{outbox.OutboxId}",
+            WorkspaceId = goal.WorkspaceId,
+            TurnId = command.TurnId,
+            CommandId = command.CommandId,
+            RunId = null,
+            MessageId = messageId,
+            Type = eventType,
+            SchemaVersion = 1,
+            Payload = JsonSerializer.SerializeToElement(payload, JsonOpts).GetRawText(),
+            OccurredAt = DateTimeOffset.UtcNow.ToString("O"),
+            CommittedAt = DateTimeOffset.UtcNow.ToString("O"),
+            CorrelationId = goal.GoalRunId,
+            CausationId = outbox.OutboxId,
+            AgentId = goal.AgentInstanceId,
+            SourceKind = ConversationEventSourceKind.Goal.ToString().ToLowerInvariant(),
+            TraceId = command.TraceId,
+            ProducerComponent = GoalProducerComponents.Continuation,
+        };
 }

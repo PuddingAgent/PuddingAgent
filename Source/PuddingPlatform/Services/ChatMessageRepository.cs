@@ -65,13 +65,23 @@ public sealed class ChatMessageRepository : IChatMessageRepository, ICompactionC
         ContentPartsJson = e.ContentPartsJson,
     };
 
-    public async Task<IReadOnlyList<ChatMessageRow>> GetAllForSessionAsync(string sessionId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<ChatMessageRow>> GetForSessionAfterIdAsync(
+        string sessionId,
+        long afterId,
+        int limit,
+        CancellationToken ct = default)
     {
+        if (limit <= 0)
+            return [];
+
+        var boundedLimit = Math.Min(limit, 1_000);
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var messages = await db.ChatMessages.AsNoTracking()
-            .Where(m => m.SessionId == sessionId && !string.IsNullOrWhiteSpace(m.Content))
-            .OrderBy(m => m.CreatedAt)
-            .ThenBy(m => m.Id)
+            .Where(m => m.SessionId == sessionId
+                && m.Id > afterId
+                && !string.IsNullOrWhiteSpace(m.Content))
+            .OrderBy(m => m.Id)
+            .Take(boundedLimit)
             .ToListAsync(ct);
         return messages.Select(Map).ToList();
     }

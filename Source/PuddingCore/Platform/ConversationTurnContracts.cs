@@ -46,6 +46,11 @@ public sealed record SubmitTurnRequest
     public bool ForceNewSession { get; init; }
     /// <summary>附加元数据。</summary>
     public IReadOnlyDictionary<string, string>? Metadata { get; init; }
+    /// <summary>
+    /// 仅供进程内 GoalContinuationWorker 设置的受信上下文。普通 HTTP SubmitTurn
+    /// 不映射此字段；非空时 Acceptance 在同一事务执行 Goal/epoch/version/lease fence。
+    /// </summary>
+    public PuddingCode.Goals.GoalContinuationAcceptanceContext? GoalContinuation { get; init; }
 }
 
 /// <summary>

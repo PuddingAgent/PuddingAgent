@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "shell",
     name: "Shell 命令执行",
-    description: "在宿主机上执行命令，支持 auto、WSL/Bash、CMD 或 PowerShell 模式。在 Agent 私有目录运行时需提供 reason。Execute a command on the host using auto, WSL/Bash, CMD, or PowerShell mode",
+    description: "在宿主机上执行命令，支持 auto、WSL/Bash、CMD 或 PowerShell 模式。在 Windows 上需要真实 Unix/Linux 语义时显式使用 shell=wsl；working_directory 会通过 wsl.exe --cd 映射到发行版路径，但不要假设 WSL 已安装 rg，内容检索优先 search_grep。在 Agent 私有目录运行时需提供 reason。Execute a command on the host using auto, WSL/Bash, CMD, or PowerShell mode.",
     category: ToolCategory.Execute,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresShell)]
@@ -68,10 +68,24 @@ public sealed class HostShellTool : PuddingToolBase<HostShellToolArgs>
             ct,
             _commandPolicy);
 
-                _audit.Write(zone, "shell", context.AgentInstanceId,
-            args.Command, args.Reason, result.Success, sw.ElapsedMilliseconds, context.Trace);
+        var expectedNoMatch = HarnessToolCompatibilityAdapter.IsExpectedNoMatchExit(
+            args.Command,
+            result.ExitCode,
+            result.Output);
+        var effectiveSuccess = result.Success || expectedNoMatch;
+
+        _audit.Write(zone, "shell", context.AgentInstanceId,
+            args.Command, args.Reason, effectiveSuccess, sw.ElapsedMilliseconds, context.Trace);
 
         var output = result.Output;
+        if (expectedNoMatch)
+        {
+            const string noMatchMessage =
+                "[status=no_match exit_code=1] rg/grep completed normally and found no matches.";
+            output = string.IsNullOrWhiteSpace(output)
+                ? noMatchMessage
+                : output + "\n" + noMatchMessage;
+        }
         var tailLines = args.TailLines ?? 0;
         if (tailLines > 0 && !string.IsNullOrEmpty(output))
         {
@@ -85,15 +99,16 @@ public sealed class HostShellTool : PuddingToolBase<HostShellToolArgs>
         // shell 是 Get-ChildItem/Select-String/Get-Content）。用返回值教育比工具描述教育
         // 有效——一句提示把下一次调用引导到零噪声、带游标的专用工具。
         var tip = BuildSpecializedToolTip(args.Command);
-        if (tip is not null && result.Success)
+        if (tip is not null && (effectiveSuccess || HarnessToolCompatibilityAdapter.IsRipgrepCommand(args.Command)))
             output = string.IsNullOrEmpty(output) ? tip : output + "\n" + tip;
 
         return new ToolExecutionResult
         {
-            Success = result.Success,
+            Success = effectiveSuccess,
             Output = output,
-            Error = result.Error,
+            Error = expectedNoMatch ? null : result.Error,
             ExitCode = result.ExitCode,
+            Status = expectedNoMatch ? ToolResultStatuses.NoMatch : null,
         };
     }
 
@@ -120,7 +135,7 @@ public sealed record HostShellToolArgs
     [ToolParam("Command to execute on the host. Relative paths inside the command are resolved against working_directory when it is provided; avoid repeating the same directory prefix in both fields. Use absolute paths when unsure.")]
     public required string Command { get; init; }
 
-    [ToolParam("Shell mode: auto, wsl, bash, cmd, or powershell. Default: auto.")]
+    [ToolParam("Shell mode: auto, wsl, bash, cmd, powershell, or pwsh (alias of powershell). Default: auto.")]
     public string? Shell { get; init; }
 
     [ToolParam("Host working directory. Default: current runtime directory. If this points at the workspace directory, command paths should be relative to that directory or absolute, not prefixed again with the workspace path.")]

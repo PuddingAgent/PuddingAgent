@@ -113,6 +113,30 @@ public class TokenUsageRecorder : ITokenUsageRecorder
             occurredAtUtc,
             parentSessionId);
 
+    public Task RecordAttributedRequiredAsync(
+        TokenUsageDto usage,
+        string sourceType,
+        string sourceId,
+        string? workspaceId,
+        string? sessionId,
+        string? providerId,
+        string? modelId,
+        TokenUsageAttribution attribution,
+        PromptPrefixSnapshot? prefixSnapshot = null,
+        DateTimeOffset? occurredAtUtc = null)
+        => RecordCoreAsync(
+            usage,
+            sourceType,
+            sourceId,
+            workspaceId,
+            sessionId,
+            providerId,
+            modelId,
+            prefixSnapshot,
+            occurredAtUtc,
+            attribution.ParentSessionId,
+            attribution);
+
     private async Task RecordCoreAsync(
         TokenUsageDto usage,
         string sourceType,
@@ -123,7 +147,8 @@ public class TokenUsageRecorder : ITokenUsageRecorder
         string? modelId,
                 PromptPrefixSnapshot? prefixSnapshot,
         DateTimeOffset? occurredAtUtc,
-        string? parentSessionId = null)
+        string? parentSessionId = null,
+        TokenUsageAttribution? attribution = null)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
@@ -221,7 +246,12 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                 PrefixChangeReason = resolvedPrefixSnapshot?.PrefixChangeReason,
                 PrefixMessageCount = resolvedPrefixSnapshot?.MessageCount,
                                 PrefixToolCount = resolvedPrefixSnapshot?.ToolCount,
-                ParentSessionId = parentSessionId,
+                ParentSessionId = attribution?.ParentSessionId ?? parentSessionId,
+                TurnRound = attribution?.TurnRound,
+                ToolCallCount = attribution?.ToolCallCount,
+                ToolNames = SerializeToolNames(attribution?.ToolNames),
+                SubAgentId = attribution?.SubAgentId
+                    ?? (!string.IsNullOrWhiteSpace(parentSessionId) ? sessionId : null),
                 CreatedAtUtc = DateTimeOffset.UtcNow,
         });
 
@@ -615,6 +645,23 @@ public class TokenUsageRecorder : ITokenUsageRecorder
             return selector(snapshot);
 
         return null;
+    }
+
+    private static string? SerializeToolNames(IReadOnlyList<string>? toolNames)
+    {
+        if (toolNames is not { Count: > 0 })
+            return null;
+
+        var joined = string.Join(",", toolNames
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+        return joined.Length switch
+        {
+            0 => null,
+            <= 512 => joined,
+            _ => joined[..512],
+        };
     }
 
     private static string ClassifyPrefixChange(

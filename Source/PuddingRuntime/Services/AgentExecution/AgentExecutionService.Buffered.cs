@@ -53,21 +53,7 @@ public sealed partial class AgentExecutionService
         var maxElapsed = ResolveMaxElapsed(request);
         var maxToolCallsTotal = ResolveMaxToolCallsTotal(request.MaxToolCallsTotal, _guardrails);
 
-        var execTraceId = request.ExecutionIdentity?.TraceId;
-        var execTrace = (string.IsNullOrWhiteSpace(execTraceId)
-            ? RuntimeTraceContext.CreateNew(
-                sessionId: request.SessionId,
-                workspaceId: request.WorkspaceId,
-                userId: request.UserId)
-            : new RuntimeTraceContext
-            {
-                TraceId = execTraceId,
-                CorrelationId = execTraceId,
-                SessionId = request.SessionId,
-                WorkspaceId = request.WorkspaceId,
-                UserId = request.UserId,
-            })
-            .WithAgent(request.AgentInstanceId, request.AgentTemplateId);
+        var execTrace = CreateExecutionTrace(request);
         var execStartedAt = DateTimeOffset.UtcNow;
         var maxRoundsForActivity = request.MaxRounds > 0
             ? Math.Min(request.MaxRounds, _guardrails.MaxRounds)
@@ -439,6 +425,7 @@ public sealed partial class AgentExecutionService
         int  roundsStarted    = 0;
         int  noProgressCount  = 0;   // 连续无工具调用进展的轮次计数
         var  toolRepeatMap    = new Dictionary<string, int>(StringComparer.Ordinal);
+        var  failedToolCallTracker = new FailedToolCallTracker();
         int  toolFailureCount = 0;
         int  toolOutputTruncatedCount = 0;
         long toolOutputChars = 0;
@@ -767,7 +754,28 @@ public sealed partial class AgentExecutionService
                 {
                     try
                     {
-                        await _tokenUsageRecorder.RecordRequiredAsync(
+                        var canonicalToolNames = llmResp.ToolCalls?
+                            .Select(call => HarnessToolCompatibilityAdapter
+                                .Normalize(call.Name, call.ArgumentsJson)
+                                .ToolName)
+                            .ToArray() ?? [];
+                        if (canonicalToolNames.Length == 0)
+                        {
+                            var legacyLoopResponse = AgentLoopResponse.Parse(llmResp.Content ?? string.Empty);
+                            if (legacyLoopResponse.IsStructured
+                                && legacyLoopResponse.Status.Equals("CONTINUE", StringComparison.OrdinalIgnoreCase)
+                                && !string.IsNullOrWhiteSpace(legacyLoopResponse.Tool?.Name))
+                            {
+                                canonicalToolNames =
+                                [
+                                    HarnessToolCompatibilityAdapter.Normalize(
+                                        legacyLoopResponse.Tool.Name,
+                                        legacyLoopResponse.Tool.Args?.GetRawText() ?? "{}")
+                                    .ToolName,
+                                ];
+                            }
+                        }
+                        await _tokenUsageRecorder.RecordAttributedRequiredAsync(
                             usage,
                             sourceType: "agent_llm",
                             sourceId: $"{request.SessionId}:{execTrace.TraceId}:{round + 1}",
@@ -775,6 +783,10 @@ public sealed partial class AgentExecutionService
                             sessionId: request.SessionId,
                             providerId: request.LlmProfile?.ProviderId ?? request.LlmConfig?.Endpoint,
                             modelId: request.LlmProfile?.ModelId ?? request.LlmConfig?.ModelId,
+                            attribution: BuildTokenUsageAttribution(
+                                request,
+                                round,
+                                canonicalToolNames),
                             prefixSnapshot: prefixSnapshot,
                             occurredAtUtc: DateTimeOffset.UtcNow);
                     }
@@ -871,22 +883,29 @@ public sealed partial class AgentExecutionService
                         }
 
                         var injectedArgsJson = await _keyVaultService.InjectAsync(call.ArgumentsJson ?? "{}", ct);
+                        var compatibility = HarnessToolCompatibilityAdapter.Normalize(call.Name, injectedArgsJson);
+                        var canonicalCall = call with
+                        {
+                            Name = compatibility.ToolName,
+                            ArgumentsJson = compatibility.ArgumentsJson,
+                        };
+                        injectedArgsJson = canonicalCall.ArgumentsJson;
                         var safeToolArgs = await _keyVaultService.StripAsync(injectedArgsJson, ct);
 
-                        var repeatKey = $"{call.Name}|{injectedArgsJson}";
+                        var repeatKey = $"{canonicalCall.Name}|{injectedArgsJson}";
                         toolRepeatMap.TryGetValue(repeatKey, out var repeatCount);
                         if (repeatCount >= _guardrails.MaxSameToolRepeat)
                         {
                             toolRoundMessages.Add(new ChatMessage(ChatRole.Tool,
-                                $"Tool '{call.Name}' blocked: repeated identical arguments {repeatCount} times.",
+                                $"Tool '{canonicalCall.Name}' blocked: repeated identical arguments {repeatCount} times.",
                                 ToolCallId: call.Id));
                             continue;
                         }
                         toolRepeatMap[repeatKey] = repeatCount + 1;
 
                         totalToolCalls++;
-                        await FireHooksAsync(h => h.OnToolCallAsync(loopCtx, round, call.Name, safeToolArgs, ct));
-                        ReportLiveness(request, $"tool.started:{call.Name}");
+                        await FireHooksAsync(h => h.OnToolCallAsync(loopCtx, round, canonicalCall.Name, safeToolArgs, ct));
+                        ReportLiveness(request, $"tool.started:{canonicalCall.Name}");
                         var subAgentToolSw = System.Diagnostics.Stopwatch.StartNew();
                         var subAgentToolArgsHash = ComputeSha256Hash(injectedArgsJson ?? "");
                         await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.tool.started", new
@@ -894,7 +913,7 @@ public sealed partial class AgentExecutionService
                             sub_agent_id = request.SessionId,
                             round = round + 1,
                             tool_call_id = call.Id,
-                            tool_name = call.Name,
+                            tool_name = canonicalCall.Name,
                             args_hash = subAgentToolArgsHash,
                             arguments_preview = Truncate(safeToolArgs, 1024),
                             arguments_truncated = safeToolArgs.Length > 1024,
@@ -903,9 +922,13 @@ public sealed partial class AgentExecutionService
 
                         // 统一 Tool 执行服务已经按 CapabilityPolicy 做模板授权门控。
                         // 仅 legacy fallback 保留旧的用户确认占位逻辑，避免非流式路径绕过新工具注册表。
-                        var skill = _skillRuntime.TryGetSkill(call.Name);
+                        var skill = _skillRuntime.TryGetSkill(canonicalCall.Name);
                         SkillResult skillResult;
-                        if (_toolInvocationService is null
+                        var executionBlocked = failedToolCallTracker.TryCreateBlockedResult(
+                            repeatKey,
+                            out skillResult);
+                        if (!executionBlocked
+                            && _toolInvocationService is null
                             && skill is not null
                             && !await CheckToolPermissionAsync(skill, request.SessionId, ct))
                         {
@@ -913,11 +936,11 @@ public sealed partial class AgentExecutionService
                             {
                                 Success = false,
                                 Output = "",
-                                Error = $"Tool '{call.Name}' requires user confirmation (High permission). Execution denied.",
+                                Error = $"Tool '{canonicalCall.Name}' requires user confirmation (High permission). Execution denied.",
                                 ExitCode = 1,
                             };
                         }
-                        else
+                        else if (!executionBlocked)
                         {
                             var toolStartedAt = DateTimeOffset.UtcNow;
                             var toolSw = System.Diagnostics.Stopwatch.StartNew();
@@ -935,7 +958,7 @@ public sealed partial class AgentExecutionService
                                         WorkingDirectory = request.WorkingDirectory,
                                         AgentTemplateId = request.AgentTemplateId,
                                         ToolCallId = call.Id,
-                                        ToolName = call.Name,
+                                        ToolName = canonicalCall.Name,
                                         ArgumentsJson = injectedArgsJson,
                                         CapabilityPolicy = effectiveCapability,
                                         Trace = execTrace,
@@ -962,7 +985,7 @@ public sealed partial class AgentExecutionService
                                 {
                                     // ADR-027 legacy fallback for tests only (SkillRuntime)
                                     skillResult = await _skillRuntime.InvokeAsync(
-                                        call.Name,
+                                        canonicalCall.Name,
                                         new SkillInvokeRequest
                                         {
                                             AgentInstanceId = instance.AgentInstanceId,
@@ -986,10 +1009,10 @@ public sealed partial class AgentExecutionService
                                         toolStartedAt,
                                         endedAt: DateTimeOffset.UtcNow,
                                         durationMs: toolSw.ElapsedMilliseconds,
-                                        summary: $"Tool '{call.Name}' executed successfully.",
+                                        summary: $"Tool '{canonicalCall.Name}' executed successfully.",
                                         metadata: new Dictionary<string, string>
                                         {
-                                            ["tool_name"] = call.Name,
+                                            ["tool_name"] = canonicalCall.Name,
                                             ["tool_args_hash"] = toolArgsHash,
                                             ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
                                             ["tool_duration_ms"] = toolSw.ElapsedMilliseconds.ToString(),
@@ -1000,7 +1023,7 @@ public sealed partial class AgentExecutionService
                                         ct: CancellationToken.None);
                                     await RecordToolMetricAsync(
                                         execTrace,
-                                        call.Name,
+                                        canonicalCall.Name,
                                         call.Id,
                                         instance.AgentInstanceId,
                                         request.SessionId,
@@ -1025,10 +1048,10 @@ public sealed partial class AgentExecutionService
                                         toolStartedAt,
                                         endedAt: DateTimeOffset.UtcNow,
                                         durationMs: toolSw.ElapsedMilliseconds,
-                                        summary: $"Tool '{call.Name}' execution failed.",
+                                        summary: $"Tool '{canonicalCall.Name}' execution failed.",
                                         metadata: new Dictionary<string, string>
                                         {
-                                            ["tool_name"] = call.Name,
+                                            ["tool_name"] = canonicalCall.Name,
                                             ["tool_args_hash"] = toolArgsHash,
                                             ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
                                             ["tool_duration_ms"] = toolSw.ElapsedMilliseconds.ToString(),
@@ -1040,7 +1063,7 @@ public sealed partial class AgentExecutionService
                                         ct: CancellationToken.None);
                                     await RecordToolMetricAsync(
                                         execTrace,
-                                        call.Name,
+                                        canonicalCall.Name,
                                         call.Id,
                                         instance.AgentInstanceId,
                                         request.SessionId,
@@ -1057,7 +1080,7 @@ public sealed partial class AgentExecutionService
                                 }
                                 _logger.LogInformation(
                                     "[AgentExec:ToolAudit] Tool={ToolName} Success={Success} DurationMs={DurationMs} ArgsHash={ArgsHash} OutputLen={OutputLen} Session={SessionId}",
-                                    call.Name, skillResult.Success, toolSw.ElapsedMilliseconds, toolArgsHash,
+                                    canonicalCall.Name, skillResult.Success, toolSw.ElapsedMilliseconds, toolArgsHash,
                                     skillResult.Output?.Length ?? 0, request.SessionId);
                             }
                             catch (Exception ex)
@@ -1072,10 +1095,10 @@ public sealed partial class AgentExecutionService
                                     toolStartedAt,
                                     endedAt: DateTimeOffset.UtcNow,
                                     durationMs: toolSw.ElapsedMilliseconds,
-                                    summary: $"Tool '{call.Name}' threw exception.",
+                                    summary: $"Tool '{canonicalCall.Name}' threw exception.",
                                     metadata: new Dictionary<string, string>
                                     {
-                                        ["tool_name"] = call.Name,
+                                        ["tool_name"] = canonicalCall.Name,
                                         ["tool_args_hash"] = toolArgsHash,
                                         ["tool_args_length"] = (injectedArgsJson?.Length ?? 0).ToString(),
                                         ["tool_duration_ms"] = toolSw.ElapsedMilliseconds.ToString(),
@@ -1087,7 +1110,7 @@ public sealed partial class AgentExecutionService
                                     ct: CancellationToken.None);
                                 await RecordToolMetricAsync(
                                     execTrace,
-                                    call.Name,
+                                    canonicalCall.Name,
                                     call.Id,
                                     instance.AgentInstanceId,
                                     request.SessionId,
@@ -1103,9 +1126,9 @@ public sealed partial class AgentExecutionService
                                     ct: CancellationToken.None);
                                 _logger.LogError(ex,
                                     "[AgentExec:ToolAudit] Tool={ToolName} Exception DurationMs={DurationMs} ArgsHash={ArgsHash} Session={SessionId}",
-                                    call.Name, toolSw.ElapsedMilliseconds, toolArgsHash, request.SessionId);
+                                    canonicalCall.Name, toolSw.ElapsedMilliseconds, toolArgsHash, request.SessionId);
                                 ObserveToolExecutionFacts(
-                                    call.Name,
+                                    canonicalCall.Name,
                                     success: false,
                                     output: null,
                                     error: ex.Message,
@@ -1119,7 +1142,7 @@ public sealed partial class AgentExecutionService
                                     sub_agent_id = request.SessionId,
                                     round = round + 1,
                                     tool_call_id = call.Id,
-                                    tool_name = call.Name,
+                                    tool_name = canonicalCall.Name,
                                     success = false,
                                     duration_ms = subAgentToolSw.ElapsedMilliseconds,
                                     args_hash = subAgentToolArgsHash,
@@ -1134,7 +1157,7 @@ public sealed partial class AgentExecutionService
                                         new SubAgentToolAuditEntry
                                         {
                                             ToolCallId = call.Id,
-                                            ToolName = call.Name,
+                                            ToolName = canonicalCall.Name,
                                             ArgsHash = subAgentToolArgsHash,
                                             Success = false,
                                             DurationMs = subAgentToolSw.ElapsedMilliseconds,
@@ -1146,9 +1169,28 @@ public sealed partial class AgentExecutionService
                                 throw;
                             }
                         }
+                        if (!executionBlocked)
+                            skillResult = failedToolCallTracker.Observe(repeatKey, skillResult);
+                        else
+                            await RecordToolMetricAsync(
+                                execTrace,
+                                canonicalCall.Name,
+                                call.Id,
+                                instance.AgentInstanceId,
+                                request.SessionId,
+                                round,
+                                totalToolCalls,
+                                DateTimeOffset.UtcNow,
+                                0,
+                                RuntimeActivityStatuses.Failed,
+                                injectedArgsJson,
+                                safeToolArgs,
+                                skillResult,
+                                error: null,
+                                ct: CancellationToken.None);
 
                         ObserveToolExecutionFacts(
-                            call.Name,
+                            canonicalCall.Name,
                             skillResult.Success,
                             skillResult.Output,
                             skillResult.Error,
@@ -1165,8 +1207,8 @@ public sealed partial class AgentExecutionService
                             : await _keyVaultService.StripAsync(skillResult.Error, ct);
                         ReportMeaningfulProgress(
                             request,
-                            $"tool.completed:{call.Name}",
-                            $"{call.Name}\u001f{safeToolArgs}\u001f{safeSubAgentToolOutput}\u001f{safeToolError}");
+                            $"tool.completed:{canonicalCall.Name}",
+                            $"{canonicalCall.Name}\u001f{safeToolArgs}\u001f{safeSubAgentToolOutput}\u001f{safeToolError}");
 
                         await TryAppendSubAgentEventAsync(
                             subAgentRunId,
@@ -1178,7 +1220,7 @@ public sealed partial class AgentExecutionService
                                 sub_agent_id = request.SessionId,
                                 round = round + 1,
                                 tool_call_id = call.Id,
-                                tool_name = call.Name,
+                                tool_name = canonicalCall.Name,
                                 success = skillResult.Success,
                                 duration_ms = subAgentToolSw.ElapsedMilliseconds,
                                 args_hash = subAgentToolArgsHash,
@@ -1197,7 +1239,7 @@ public sealed partial class AgentExecutionService
                                 new SubAgentToolAuditEntry
                                 {
                                     ToolCallId = call.Id,
-                                    ToolName = call.Name,
+                                    ToolName = canonicalCall.Name,
                                     ArgsHash = subAgentToolArgsHash,
                                     Success = skillResult.Success,
                                     DurationMs = subAgentToolSw.ElapsedMilliseconds,
@@ -1209,10 +1251,10 @@ public sealed partial class AgentExecutionService
                                 CancellationToken.None);
                         }
 
-                        await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, call.Name, skillResult, ct));
+                        await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, canonicalCall.Name, skillResult, ct));
 
                         var newlyLoadedToolCount = ToolExposurePlanner.RegisterSearchResult(
-                            call.Name,
+                            canonicalCall.Name,
                             skillResult.Success,
                             skillResult.Output,
                             loadedToolIds,
@@ -1228,8 +1270,8 @@ public sealed partial class AgentExecutionService
                         }
 
                         var toolPayloadRaw = skillResult.Success
-                            ? $"✅ Tool '{call.Name}' succeeded (exit={skillResult.ExitCode}):\n{skillResult.Output}"
-                            : BuildToolFailurePayload(call.Name, skillResult, request.SessionId, isPermissionError:
+                            ? $"✅ Tool '{canonicalCall.Name}' succeeded (exit={skillResult.ExitCode}):\n{skillResult.Output}"
+                            : BuildToolFailurePayload(canonicalCall.Name, skillResult, request.SessionId, isPermissionError:
                                 skillResult.Error?.Contains("permission", StringComparison.OrdinalIgnoreCase) == true ||
                                 skillResult.Error?.Contains("not allowed", StringComparison.OrdinalIgnoreCase) == true ||
                                 skillResult.Error?.Contains("rejected", StringComparison.OrdinalIgnoreCase) == true);
@@ -1237,7 +1279,7 @@ public sealed partial class AgentExecutionService
                             toolPayloadRaw,
                             request.WorkingDirectory,
                             request.SessionId,
-                            call.Name,
+                            canonicalCall.Name,
                             call.Id,
                             _logger,
                             ct);
@@ -1252,7 +1294,7 @@ public sealed partial class AgentExecutionService
                             CompletedAt = DateTimeOffset.UtcNow,
                             Status = "CONTINUE",
                             MessageSummary = Truncate(rawText, 512),
-                            ToolName = call.Name,
+                            ToolName = canonicalCall.Name,
                             ToolArgs = safeToolArgs,
                             ToolSuccess = skillResult.Success,
                             ToolError = safeToolError,
@@ -1283,7 +1325,33 @@ public sealed partial class AgentExecutionService
 
                 var loopResp = AgentLoopResponse.Parse(rawText);
                 finalMessage = loopResp.Message ?? rawText;
-                expectedOutputTracker.Observe(finalMessage);
+                if (expectedOutputTracker.ShouldAutoComplete(loopResp, finalMessage))
+                {
+                    loopResp = new AgentLoopResponse
+                    {
+                        Status = "DONE",
+                        Message = finalMessage,
+                        Meta = new AgentLoopMeta
+                        {
+                            Reason = "Runtime accepted an unstructured response that satisfied the expected output contract.",
+                            Confidence = 1,
+                        },
+                    };
+                    _logger.LogInformation(
+                        "[AgentExec] Promoted contract-complete plain output to DONE session={Session} round={Round}",
+                        request.SessionId,
+                        round + 1);
+                    await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.output_contract.completed", new
+                    {
+                        sub_agent_id = request.SessionId,
+                        round = round + 1,
+                        completion_source = "canonical_plain_text",
+                    });
+                }
+                else
+                {
+                    expectedOutputTracker.Observe(finalMessage);
+                }
 
                 await FireHooksAsync(h => h.OnRoundCompleteAsync(loopCtx, round, loopResp, ct));
                 await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.round.completed", new
@@ -1438,6 +1506,9 @@ public sealed partial class AgentExecutionService
 
                     var argsJson = loopResp.Tool!.Args?.GetRawText() ?? "{}";
                     var injectedArgsJson = await _keyVaultService.InjectAsync(argsJson, ct);
+                    var compatibility = HarnessToolCompatibilityAdapter.Normalize(toolName, injectedArgsJson);
+                    toolName = compatibility.ToolName;
+                    injectedArgsJson = compatibility.ArgumentsJson;
                     toolArgs = await _keyVaultService.StripAsync(injectedArgsJson, ct);
 
                     // 检查点 D：相同工具相同参数重复次数
@@ -1478,7 +1549,10 @@ public sealed partial class AgentExecutionService
                     SkillResult skillResult;
                     try
                     {
-                        if (_toolInvocationService is not null)
+                        var executionBlocked = failedToolCallTracker.TryCreateBlockedResult(
+                            repeatKey,
+                            out skillResult);
+                        if (!executionBlocked && _toolInvocationService is not null)
                         {
                             var toolResult = await _toolInvocationService.InvokeAsync(new PuddingCode.Runtime.ToolInvocationRequest
                             {
@@ -1510,7 +1584,7 @@ public sealed partial class AgentExecutionService
                                 ExitCode = toolResult.Success ? 0 : 1,
                             };
                         }
-                        else
+                        else if (!executionBlocked)
                         {
                             // ADR-027 legacy fallback for tests only (SkillRuntime)
                             skillResult = await _skillRuntime.InvokeAsync(
@@ -1525,6 +1599,8 @@ public sealed partial class AgentExecutionService
                                 },
                                 effectiveCapability, ct);
                         }
+                        if (!executionBlocked)
+                            skillResult = failedToolCallTracker.Observe(repeatKey, skillResult);
                         toolSw2.Stop();
                         ReportMeaningfulProgress(
                             request,

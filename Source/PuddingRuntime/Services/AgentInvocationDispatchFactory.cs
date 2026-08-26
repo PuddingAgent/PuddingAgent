@@ -146,6 +146,7 @@ public sealed class AgentInvocationDispatchFactory(
             ExpectedVersion = GetMetadataInt(invocation.Metadata, "expected_version", "expectedVersion", "ExpectedVersion"),
             PolicyVersion = GetMetadataValue(invocation.Metadata, "policy_version", "policyVersion", "PolicyVersion"),
             DispatchIdempotencyKey = GetMetadataValue(invocation.Metadata, "dispatch_idempotency_key", "dispatchIdempotencyKey", "DispatchIdempotencyKey"),
+            ReservationFencingToken = GetMetadataValue(invocation.Metadata, "reservation_fencing_token", "reservationFencingToken", "ReservationFencingToken"),
         };
     }
 

@@ -139,6 +139,19 @@ internal sealed class ExpectedOutputCandidateTracker
         return true;
     }
 
+    /// <summary>
+    /// Promotes only an unstructured plain-text response that already satisfies the delegated
+    /// output contract. An explicit JSON CONTINUE/WAIT/FAILED decision remains authoritative.
+    /// The caller invokes this only after confirming the provider returned no native tool calls.
+    /// </summary>
+    internal bool ShouldAutoComplete(AgentLoopResponse response, string? candidate)
+    {
+        if (response.IsStructured || response.IsDone || response.IsWaiting || response.IsFailed)
+            return false;
+
+        return Observe(candidate);
+    }
+
     internal bool RestoreIfFinalIsIncomplete(ref string finalMessage)
     {
         if (!_requiresCanonicalWorkReport

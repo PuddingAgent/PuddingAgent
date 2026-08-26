@@ -15,6 +15,7 @@ public static partial class HostShellExecutor
         "bash",
         "cmd",
         "powershell",
+        "pwsh",
     };
 
     public static async Task<HostShellResult> ExecuteAsync(
@@ -45,7 +46,7 @@ public static partial class HostShellExecutor
             ? "auto"
             : request.Shell.Trim();
         if (!SupportedShells.Contains(requestedShell))
-            return Fail($"Unsupported shell '{requestedShell}'. Supported shells: auto, wsl, bash, cmd, powershell.");
+            return Fail($"Unsupported shell '{requestedShell}'. Supported shells: auto, wsl, bash, cmd, powershell, pwsh.");
 
         var timeoutSeconds = request.TimeoutSeconds ?? 30;
         if (timeoutSeconds is < 1 or > 600)
@@ -186,6 +187,9 @@ public static partial class HostShellExecutor
 
     private static string ResolveShell(string requestedShell)
     {
+        if (requestedShell.Equals("pwsh", StringComparison.OrdinalIgnoreCase))
+            return "powershell";
+
         if (!requestedShell.Equals("auto", StringComparison.OrdinalIgnoreCase))
             return requestedShell.ToLowerInvariant();
 

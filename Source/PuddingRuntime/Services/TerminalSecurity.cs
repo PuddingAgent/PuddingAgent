@@ -46,10 +46,10 @@ public sealed class DefaultTerminalCommandPolicy : ITerminalCommandPolicy
     /// <summary>第二层：默认允许的安全命令前缀白名单。</summary>
     public static readonly string[] DefaultWhitelist =
     [
-        "dotnet", "git", "python", "python3", "node", "npm", "pnpm", "yarn",
+        "dotnet", "git", "python", "python3", "node", "npm", "npx", "pnpm", "yarn",
         "ls", "dir", "cat", "echo", "mkdir", "rmdir",
         "curl", "wget", "ping", "nslookup", "ipconfig", "ifconfig",
-        "type", "find", "grep", "findstr", "tail", "head", "wc",
+        "type", "find", "grep", "findstr", "rg", "tail", "head", "wc",
         "cp", "mv", "copy", "move", "tar", "zip", "unzip",
         "chmod", "chown", "whoami", "hostname", "date", "time",
         "ps", "top", "df", "du", "netstat", "ss",

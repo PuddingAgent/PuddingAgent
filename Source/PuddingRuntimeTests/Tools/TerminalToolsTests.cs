@@ -336,6 +336,39 @@ public sealed class TerminalToolsTests
     }
 
     [TestMethod]
+    public async Task TerminalWait_Classifies_SearchExitOne_As_NoMatch()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Inconclusive("This regression test uses the Windows development harness.");
+
+        using var scope = CreateScope();
+        var start = new TerminalStartTool(scope.Manager, NullLogger<TerminalStartTool>.Instance);
+        var wait = new TerminalWaitTool(scope.Manager);
+        var startResult = await ExecuteAsync(start, """
+        {
+          "command": "findstr pudding-definitely-not-present Agents.md"
+        }
+        """);
+
+        Assert.IsTrue(startResult.Success, startResult.Error);
+        var jobId = ReadString(startResult.Output, "job", "job_id");
+        var waitResult = await ExecuteAsync(wait, $$"""
+        {
+          "job_id": "{{jobId}}",
+          "wait_seconds": 5,
+          "from_offset": 0
+        }
+        """);
+
+        Assert.IsTrue(waitResult.Success, waitResult.Error);
+        StringAssert.Contains(waitResult.Output, "\"status\":\"NoMatch\"");
+        StringAssert.Contains(waitResult.Output, "\"exit_code\":1");
+        StringAssert.Contains(waitResult.Output, "\"command_failed\":false");
+        StringAssert.Contains(waitResult.Output, "status=no_match");
+        Assert.IsFalse(waitResult.Output.Contains("\"recovery\":{", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public async Task TerminalWait_Blocks_Until_Job_Exit_Instead_Of_First_Output()
     {
         // 回归（2026-08-22 能耗修复）：旧语义一出现新输出就返回，流式构建被拆成

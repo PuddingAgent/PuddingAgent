@@ -30,19 +30,31 @@ internal static class TerminalToolJson
         ExitCode = info.ExitCode,
     };
 
-    public static TerminalOutputDto ToOutputDto(TerminalOutputSnapshot snapshot) => new()
+    public static TerminalOutputDto ToOutputDto(TerminalOutputSnapshot snapshot)
     {
-        Job = ToJobDto(snapshot.Process),
-        Offset = snapshot.Offset,
-        NextOffset = snapshot.NextOffset,
-        TotalLines = snapshot.TotalLines,
-        Truncated = snapshot.Truncated,
-        CommandFailed = IsCommandFailed(snapshot.Process),
-        Output = string.Join(Environment.NewLine, snapshot.Lines),
-        Lines = snapshot.Lines,
-        Handle = snapshot.Truncated ? ToOutputHandle(snapshot) : null,
-        Recovery = ToRecoveryDto(snapshot.Process),
-    };
+        var output = string.Join(Environment.NewLine, snapshot.Lines);
+        var expectedNoMatch = HarnessToolCompatibilityAdapter.IsExpectedNoMatchExit(
+            snapshot.Process.Command,
+            snapshot.Process.ExitCode ?? 0,
+            output);
+        var job = ToJobDto(snapshot.Process);
+        if (expectedNoMatch)
+            job = job with { Status = "NoMatch" };
+
+        return new TerminalOutputDto
+        {
+            Job = job,
+            Offset = snapshot.Offset,
+            NextOffset = snapshot.NextOffset,
+            TotalLines = snapshot.TotalLines,
+            Truncated = snapshot.Truncated,
+            CommandFailed = IsCommandFailed(snapshot.Process, output),
+            Output = output,
+            Lines = snapshot.Lines,
+            Handle = snapshot.Truncated ? ToOutputHandle(snapshot) : null,
+            Recovery = ToRecoveryDto(snapshot.Process, output),
+        };
+    }
 
     public static TerminalOutputHandleDto ToOutputHandle(TerminalOutputSnapshot snapshot) => new()
     {
@@ -76,21 +88,34 @@ internal static class TerminalToolJson
         if (snapshot.Truncated)
             return "Output was truncated. Use terminal_read with handle.read_args to read the next slice without rerunning the command.";
 
-        if (IsCommandFailed(snapshot.Process))
+        var output = string.Join(Environment.NewLine, snapshot.Lines);
+        if (IsCommandFailed(snapshot.Process, output))
             return "Command exited with a non-zero exit_code. Do not blindly rerun the same command unchanged. Diagnose the output first; rerun only when retry/restart is intentional or after changing command, inputs, cwd, environment, or timing.";
+
+        if (HarnessToolCompatibilityAdapter.IsExpectedNoMatchExit(
+                snapshot.Process.Command,
+                snapshot.Process.ExitCode ?? 0,
+                output))
+        {
+            return "Command completed with status=no_match. rg/grep exit_code 1 is a normal no-match result; change the query or scope only when the task requires it.";
+        }
 
         return snapshot.Process.Status == TerminalProcessStatus.Running
             ? runningAction
             : completedAction;
     }
 
-    private static bool IsCommandFailed(TerminalProcessInfo process)
-        => process.Status == TerminalProcessStatus.Failed
-        || process.ExitCode is int exitCode && exitCode != 0;
+    private static bool IsCommandFailed(TerminalProcessInfo process, string? output)
+        => !HarnessToolCompatibilityAdapter.IsExpectedNoMatchExit(
+               process.Command,
+               process.ExitCode ?? 0,
+               output)
+           && (process.Status == TerminalProcessStatus.Failed
+               || process.ExitCode is int exitCode && exitCode != 0);
 
-    private static TerminalRecoveryDto? ToRecoveryDto(TerminalProcessInfo process)
+    private static TerminalRecoveryDto? ToRecoveryDto(TerminalProcessInfo process, string? output)
     {
-        if (!IsCommandFailed(process))
+        if (!IsCommandFailed(process, output))
             return null;
 
         return new TerminalRecoveryDto

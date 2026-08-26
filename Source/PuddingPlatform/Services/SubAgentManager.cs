@@ -28,7 +28,6 @@ public sealed class SubAgentManager : ISubAgentManager
     private readonly IRuntimeActivitySink _activitySink;
     private readonly IRuntimeTraceAccessor _traceAccessor;
         private readonly IRuntimeExecutionConfigService? _executionConfig;
-    private readonly TokenUsageRecorder _tokenUsageRecorder;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _workspaceGates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _templateGates = new(StringComparer.Ordinal);
 
@@ -40,8 +39,7 @@ public sealed class SubAgentManager : ISubAgentManager
         ILogger<SubAgentManager> logger,
         IRuntimeActivitySink activitySink,
         IRuntimeTraceAccessor traceAccessor,
-        IRuntimeExecutionConfigService? executionConfig = null,
-        TokenUsageRecorder? tokenUsageRecorder = null)
+        IRuntimeExecutionConfigService? executionConfig = null)
     {
         _ssm = ssm;
         _services = services;
@@ -51,7 +49,6 @@ public sealed class SubAgentManager : ISubAgentManager
         _activitySink = activitySink;
         _traceAccessor = traceAccessor;
         _executionConfig = executionConfig;
-        _tokenUsageRecorder = tokenUsageRecorder!;
     }
 
     /// <summary>子代理 subSessionId → runId 的内存映射（供异步完成回调使用）。</summary>
@@ -170,27 +167,9 @@ public sealed class SubAgentManager : ISubAgentManager
                     CompletedAt = completedAt,
                 }, CancellationToken.None);
 
-                // 记录子代理 Token 使用量（异步路径，与同步路径对齐）
-                if (usage is not null && _tokenUsageRecorder is not null)
-                {
-                    try
-                    {
-                        await _tokenUsageRecorder.RecordRequiredAsync(
-                            usage,
-                            sourceType: $"sub_agent:{request.TemplateId ?? "unknown"}",
-                            sourceId: subSessionId,
-                            workspaceId: request.WorkspaceId,
-                            sessionId: subSessionId,
-                            providerId: request.LlmProfile?.ProviderId ?? request.LlmConfig?.Endpoint,
-                            modelId: request.LlmProfile?.ModelId ?? request.LlmConfig?.ModelId,
-                            occurredAtUtc: DateTimeOffset.UtcNow,
-                            parentSessionId: request.ParentSessionId);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "[SubAgentMgr] Async token recording deferred sub={Sub}", subSessionId);
-                    }
-                }
+                // AgentExecutionService 已按每个 LLM round 写入 authoritative attribution。
+                // Manager 只保存终态 usage 摘要供状态展示，禁止再次写 TokenUsageEvents，
+                // 否则同一子代理会同时出现 agent_llm 明细和 sub_agent 终态汇总双计。
 
                 // 正常路径由 Runtime 提交终态；异常边界由 Manager 兜底尝试。
                 // ISubAgentRunStore 负责终态唯一性与幂等投影。
@@ -453,27 +432,8 @@ public sealed class SubAgentManager : ISubAgentManager
         }, CancellationToken.None);
         _runIdMap.TryRemove(subSessionId, out _);
 
-        if (r.Usage is not null && _tokenUsageRecorder is not null)
-        {
-            try
-            {
-                await _tokenUsageRecorder.RecordRequiredAsync(
-                    r.Usage,
-                    sourceType: $"sub_agent:{request.TemplateId ?? "unknown"}",
-                    sourceId: runHandle.RunId,
-                    workspaceId: request.WorkspaceId,
-                    sessionId: subSessionId,
-                    providerId: request.LlmProfile?.ProviderId ?? request.LlmConfig?.Endpoint,
-                    modelId: request.LlmProfile?.ModelId ?? request.LlmConfig?.ModelId,
-                    occurredAtUtc: DateTimeOffset.UtcNow,
-                    parentSessionId: request.ParentSessionId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "[SubAgentMgr] Token usage recording deferred sub={SubSessionId}", subSessionId);
-            }
-        }
+        // Token usage is persisted per LLM round by AgentExecutionService. Do not add a second
+        // run-terminal aggregate row here; TrackSubAgentCompleteAsync already keeps the summary.
 
         return new SubAgentExecuteResult
         {

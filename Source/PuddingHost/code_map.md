@@ -53,7 +53,8 @@ HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 St
 
 | 文件 | 用途 |
 |------|------|
-| `Services/HeartbeatService.cs` | 当前 Agent 心跳编排；实例提示词后追加自主执行契约。目标拆为 scheduler plugin + WakeAgent command + before-run/context Hook，以 `agent.run.settled` 重新调度并发布 scheduled/skipped/run-linked/completed 事实 |
+| `Services/HeartbeatService.cs` | 当前 Agent 心跳编排；实例提示词后追加自主执行契约；2026-08-26 增加持久 Availability gate，等待 SubAgent/Task/Goal、消息排队、Reservation、Unknown 或重建失败均跳过并重新排队，避免把 runtime 暂停误判为空闲 |
+| `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 组合 Goal outbox/settlement workers、Task-bound 原子 Store、Availability/Reservation/Dependency/Window/Auto Worker；authoritative flag 前置条件 ValidateOnStart |
 | `Services/CronSchedulerService.cs` | Cron 调度 |
 | `Services/ConfigHotReloadService.cs` | 配置热重载 |
 | `Services/IndexPrebuildService.cs` | 索引预构建 |

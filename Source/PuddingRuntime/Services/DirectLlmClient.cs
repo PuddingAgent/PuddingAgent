@@ -28,11 +28,12 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     private readonly IRuntimeTraceAccessor? _traceAccessor;
     private readonly ProviderRateLimiter? _rateLimiter;
     private readonly ConcurrentDictionary<string, CircuitBreakerState> _circuitBreakers = new();
-    private readonly IVisualArtifactResolver? _visualArtifactResolver;
+        private readonly IVisualArtifactResolver? _visualArtifactResolver;
     private readonly IAudioArtifactResolver? _audioArtifactResolver;
     private readonly IRuntimeExecutionConfigService? _executionConfig;
     private readonly ILlmGatewayUsageRecorder? _gatewayUsageRecorder;
     private readonly ICompositionVersionRegistry _compositionVersions;
+    private readonly IFileRefStore? _fileRefStore;
 
     public DirectLlmClient(
     IHttpClientFactory httpClientFactory,
@@ -43,11 +44,12 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     ITelemetryMetricSink? telemetrySink = null,
     IRuntimeTraceAccessor? traceAccessor = null,
     ProviderRateLimiter? rateLimiter = null,
-    IVisualArtifactResolver? visualArtifactResolver = null,
+        IVisualArtifactResolver? visualArtifactResolver = null,
     IRuntimeExecutionConfigService? executionConfig = null,
     IAudioArtifactResolver? audioArtifactResolver = null,
     ILlmGatewayUsageRecorder? gatewayUsageRecorder = null,
-    ICompositionVersionRegistry? compositionVersions = null)
+    ICompositionVersionRegistry? compositionVersions = null,
+    IFileRefStore? fileRefStore = null)
     {
         _httpClientFactory = httpClientFactory;
         _llmConfigService = llmConfigService;
@@ -60,9 +62,11 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         _visualArtifactResolver = visualArtifactResolver;
         _executionConfig = executionConfig;
         _audioArtifactResolver = audioArtifactResolver;
-        _gatewayUsageRecorder = gatewayUsageRecorder;
+                _gatewayUsageRecorder = gatewayUsageRecorder;
         // DI 未注册时回退纯内存登记表（进程内行为与既有实现一致，不依赖持久化 store）。
         _compositionVersions = compositionVersions ?? new CompositionVersionRegistry();
+        // Provider File 引用 store（ADR-077 V3-S2b-2）：null 时视觉大图退化为 uploader-only，不强依赖。
+        _fileRefStore = fileRefStore;
     }
 
     public async Task<LlmResponse> ChatAsync(
@@ -390,9 +394,79 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         var hasYieldedDelta = false;
 
         // ── 并发限流（流式请求在整个流生命周期内持有槽位）──
-        var rateLimitLease = _rateLimiter is not null
-            ? await _rateLimiter.AcquireAsync(config.ProviderId, config.Model, effectiveCt)
-            : null;
+        // 限流等待属于首块等待预算。它发生在 provider 枚举器创建之前，因此必须在
+        // 此处单独记录；否则超时会绕过下面的 try/finally，形成不可见的长等待。
+        ProviderRateLimitLease? rateLimitLease = null;
+        if (_rateLimiter is not null)
+        {
+            var rateLimitStartedAt = DateTimeOffset.UtcNow;
+            var rateLimitWait = Stopwatch.StartNew();
+            try
+            {
+                rateLimitLease = await _rateLimiter.AcquireAsync(
+                    config.ProviderId,
+                    config.Model,
+                    effectiveCt);
+                rateLimitWait.Stop();
+                await RecordLlmMetricAsync(
+                    trace,
+                    operation: "rate_limit.wait",
+                    status: RuntimeActivityStatuses.Succeeded,
+                    occurredAtUtc: rateLimitStartedAt,
+                    durationMs: rateLimitLease.WaitMs,
+                    summary: "Provider concurrency slot acquired.",
+                    metadata: BuildRateLimitMetadata(
+                        config,
+                        acquired: true,
+                        waitMs: rateLimitLease.WaitMs,
+                        lease: rateLimitLease),
+                    error: null,
+                    CancellationToken.None);
+            }
+            catch (OperationCanceledException ex)
+            {
+                rateLimitWait.Stop();
+                terminalRecorded = true;
+                sw.Stop();
+                var status = ct.IsCancellationRequested
+                    ? RuntimeActivityStatuses.Cancelled
+                    : RuntimeActivityStatuses.Failed;
+                var waitMs = rateLimitWait.ElapsedMilliseconds;
+                streamDiagnostics.ObserveFirstChunkWait(sw.ElapsedMilliseconds, received: false);
+                var rateLimitMetadata = BuildRateLimitMetadata(
+                    config,
+                    acquired: false,
+                    waitMs,
+                    lease: null);
+                await RecordLlmMetricAsync(
+                    trace,
+                    operation: "rate_limit.wait",
+                    status,
+                    occurredAtUtc: rateLimitStartedAt,
+                    durationMs: waitMs,
+                    summary: "Provider concurrency slot wait ended before acquisition.",
+                    metadata: rateLimitMetadata,
+                    error: ex,
+                    CancellationToken.None);
+                var terminalMetadata = MergeMetadata(
+                    MergeMetadata(
+                        BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
+                        streamDiagnostics.ToMetadata()),
+                    rateLimitMetadata);
+                await RecordActivityAsync(
+                    trace,
+                    operation: "chat_stream",
+                    status,
+                    startedAt,
+                    endedAt: DateTimeOffset.UtcNow,
+                    durationMs: sw.ElapsedMilliseconds,
+                    summary: "Direct LLM streaming request ended while waiting for provider concurrency.",
+                    metadata: terminalMetadata,
+                    error: ex,
+                    CancellationToken.None);
+                throw;
+            }
+        }
         using var _ = rateLimitLease;
 
         IAsyncEnumerator<StreamDelta>? enumerator = null;
@@ -422,12 +496,16 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                             break;
 
                         delta = enumerator.Current;
+                        if (!hasYieldedDelta)
+                            streamDiagnostics.ObserveFirstChunkWait(sw.ElapsedMilliseconds, received: true);
                         streamDiagnostics.Observe(delta);
                     }
                     catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
                     {
                         terminalRecorded = true;
                         sw.Stop();
+                        if (!hasYieldedDelta)
+                            streamDiagnostics.ObserveFirstChunkWait(sw.ElapsedMilliseconds, received: false);
                         var metadata = MergeMetadata(
                             BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
                             streamDiagnostics.ToMetadata());
@@ -449,6 +527,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     {
                         terminalRecorded = true;
                         sw.Stop();
+                        streamDiagnostics.ObserveFirstChunkWait(sw.ElapsedMilliseconds, received: false);
                         _logger.LogError(ex, "[DirectLlm] STREAM FIRST CHUNK TIMEOUT provider={Provider} elapsed={Elapsed}ms",
                             config.ProviderId, sw.ElapsedMilliseconds);
                         var metadata = MergeMetadata(
@@ -486,6 +565,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     {
                         terminalRecorded = true;
                         sw.Stop();
+                        if (!hasYieldedDelta)
+                            streamDiagnostics.ObserveFirstChunkWait(sw.ElapsedMilliseconds, received: false);
                         _logger.LogError(ex, "[DirectLlm] STREAM IDLE TIMEOUT provider={Provider} elapsed={Elapsed}ms",
                             config.ProviderId, sw.ElapsedMilliseconds);
                         var metadata = MergeMetadata(
@@ -521,6 +602,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                         // （既不是外部取消也不是流式超时策略，归类为 HTTP 层超时）
                         terminalRecorded = true;
                         sw.Stop();
+                        if (!hasYieldedDelta)
+                            streamDiagnostics.ObserveFirstChunkWait(sw.ElapsedMilliseconds, received: false);
                         _logger.LogError(ex, "[DirectLlm] STREAM TRANSPORT CANCELLATION provider={Provider} elapsed={Elapsed}ms",
                             config.ProviderId, sw.ElapsedMilliseconds);
                         var metadata = MergeMetadata(
@@ -552,6 +635,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     {
                         terminalRecorded = true;
                         sw.Stop();
+                        if (!hasYieldedDelta)
+                            streamDiagnostics.ObserveFirstChunkWait(sw.ElapsedMilliseconds, received: false);
                         _logger.LogError(ex, "[DirectLlm] STREAM ERROR elapsed={Elapsed}ms", sw.ElapsedMilliseconds);
                         var metadata = MergeMetadata(
                             BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
@@ -614,6 +699,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
             terminalRecorded = true;
             sw.Stop();
+            if (!hasYieldedDelta)
+                streamDiagnostics.ObserveFirstChunkWait(sw.ElapsedMilliseconds, received: false);
             var succeededMetadata = MergeMetadata(
                 BuildMetadata(
                     config,
@@ -658,6 +745,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             if (!terminalRecorded)
             {
                 sw.Stop();
+                if (!hasYieldedDelta)
+                    streamDiagnostics.ObserveFirstChunkWait(sw.ElapsedMilliseconds, received: false);
                 var metadata = MergeMetadata(
                     BuildMetadata(config, agentTemplateId, messages.Count, toolSpecs.Count),
                     streamDiagnostics.ToMetadata());
@@ -780,7 +869,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     {
         if (string.Equals(config.Protocol, "responses", StringComparison.OrdinalIgnoreCase))
         {
-            return new ResponsesLlmGateway(
+            var responsesGateway = new ResponsesLlmGateway(
                 _httpClientFactory.CreateClient("DirectLlm"),
                 new PuddingCode.Platform.Options.LlmOptions(
                     config.Endpoint,
@@ -794,6 +883,22 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 AudioArtifactResolver = config.SupportsAudio ? _audioArtifactResolver : null,
                 WorkspaceId = workspaceId,
             };
+                        if (config.SupportsVision)
+            {
+                // ADR-077 V3-S2a：responses + vision 路由注入 DeepSeek Files uploader，
+                // 大图经 file_id 引用（上传即用）；ApiKey 只进入 client 内部字段，不进日志/异常。
+                responsesGateway.DeepSeekFilesUploader = new DeepSeekFilesApiClient(
+                    _httpClientFactory.CreateClient("DirectLlm"),
+                    config.ApiKey);
+                // ADR-077 V3-S2b-2：同时注入 IFileRefStore 与 provider 上下文，使 file_id 跨轮复用；
+                // store 未注册时退化为 S2a 上传即用。credentialEpoch 无现成值，用 "default" 常量
+                // （credential 变化应使 epoch 递增以强制轮换，ADR §6.2）。
+                responsesGateway.FileRefStore = _fileRefStore;
+                responsesGateway.ProviderId = config.ProviderId;
+                responsesGateway.CredentialEpoch = "default";
+            }
+
+            return responsesGateway;
         }
 
         if (string.Equals(config.Protocol, "anthropic", StringComparison.OrdinalIgnoreCase))
@@ -1030,7 +1135,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         string status,
         CancellationToken ct)
     {
-        if (_telemetrySink is null || diagnostics.ChunkCount == 0)
+        if (_telemetrySink is null)
             return;
 
         foreach (var metric in diagnostics.ToMetrics(trace, status))
@@ -1081,6 +1186,23 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
         return metadata;
     }
+
+    private static IReadOnlyDictionary<string, string> BuildRateLimitMetadata(
+        ResolvedGatewayConfig config,
+        bool acquired,
+        long waitMs,
+        ProviderRateLimitLease? lease)
+        => new Dictionary<string, string>
+        {
+            ["rate_limit_provider_id"] = config.ProviderId,
+            ["rate_limit_model"] = config.Model,
+            ["rate_limit_acquired"] = acquired.ToString().ToLowerInvariant(),
+            ["rate_limit_waited"] = (waitMs >= 10).ToString().ToLowerInvariant(),
+            ["rate_limit_wait_ms"] = waitMs.ToString(),
+            ["rate_limit_max_concurrent"] = lease?.MaxConcurrent.ToString() ?? string.Empty,
+            ["rate_limit_available_before"] = lease?.AvailableBeforeAcquire.ToString() ?? string.Empty,
+            ["rate_limit_available_after"] = lease?.AvailableAfterAcquire.ToString() ?? string.Empty,
+        };
 
     private static IReadOnlyDictionary<string, string> MergeMetadata(
         IReadOnlyDictionary<string, string> first,
@@ -1199,6 +1321,9 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         private long _usageChunkCount;
         private TokenUsageDto? _usage;
         private long _timeToFirstTokenMs;
+        private long _firstChunkWaitMs;
+        private bool _firstChunkWaitObserved;
+        private bool _firstChunkReceived;
         private string? _finishReason;
 
         public long ChunkCount { get; private set; }
@@ -1206,6 +1331,16 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         public long TimeToFirstTokenMs => _timeToFirstTokenMs;
 
         public TokenUsageDto? Usage => _usage;
+
+        public void ObserveFirstChunkWait(long waitMs, bool received)
+        {
+            if (_firstChunkWaitObserved)
+                return;
+
+            _firstChunkWaitObserved = true;
+            _firstChunkWaitMs = Math.Max(0, waitMs);
+            _firstChunkReceived = received;
+        }
 
         public void Observe(StreamDelta delta)
         {
@@ -1237,12 +1372,12 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
 
         public IReadOnlyDictionary<string, string> ToMetadata()
         {
-            if (ChunkCount == 0)
-                return new Dictionary<string, string>();
-
             var metadata = new Dictionary<string, string>
             {
                 ["stream_chunk_count"] = ChunkCount.ToString(),
+                ["stream_no_chunks"] = (ChunkCount == 0).ToString().ToLowerInvariant(),
+                ["first_chunk_received"] = _firstChunkReceived.ToString().ToLowerInvariant(),
+                ["stream_first_chunk_wait_ms"] = _firstChunkWaitMs.ToString(),
                 ["stream_provider_read_avg_ms"] = Average(_readTotalMs, ChunkCount).ToString("0.###"),
                 ["stream_provider_read_max_ms"] = _readMaxMs.ToString(),
                 ["stream_provider_gap_avg_ms"] = Average(_gapTotalMs, _gapCount).ToString("0.###"),
@@ -1265,6 +1400,27 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         {
             var metadata = ToMetadata();
             var debugJson = JsonSerializer.Serialize(metadata);
+            yield return new TelemetryMetric
+            {
+                Trace = trace,
+                Source = "backend",
+                Category = TelemetryMetricCategories.Llm,
+                Name = "llm.stream.provider_first_chunk_wait",
+                Status = status,
+                CountValue = 1,
+                NumericValue = _firstChunkWaitMs,
+                DurationMs = _firstChunkWaitMs,
+                Unit = "ms",
+                Severity = status == RuntimeActivityStatuses.Failed ? "error" : "info",
+                Summary = _firstChunkReceived
+                    ? "Provider first chunk received."
+                    : "Provider first chunk was not received.",
+                Dimensions = metadata,
+                DebugJson = debugJson,
+            };
+            if (ChunkCount == 0)
+                yield break;
+
             yield return BuildMetric(
                 trace,
                 "llm.stream.provider_chunk_read",

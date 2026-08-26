@@ -943,6 +943,57 @@ public sealed partial class AgentExecutionService
                 ? guardrails.MaxToolCallsTotal
                 : RuntimeDispatchRequest.DefaultMaxToolCallsTotal;
 
+    internal static RuntimeTraceContext CreateExecutionTrace(RuntimeDispatchRequest request)
+    {
+        var identity = request.ExecutionIdentity;
+        var traceId = identity?.TraceId;
+        var trace = (string.IsNullOrWhiteSpace(traceId)
+            ? RuntimeTraceContext.CreateNew(
+                sessionId: request.SessionId,
+                workspaceId: request.WorkspaceId,
+                userId: request.UserId)
+            : new RuntimeTraceContext
+            {
+                TraceId = traceId,
+                CorrelationId = traceId,
+                SessionId = request.SessionId,
+                WorkspaceId = request.WorkspaceId,
+                UserId = request.UserId,
+            })
+            .WithAgent(request.AgentInstanceId, request.AgentTemplateId);
+
+        return trace with
+        {
+            ExecutionId = identity?.RunId,
+            ParentExecutionId = identity?.ParentRunId,
+            SubAgentId = identity?.Kind == RuntimeExecutionKind.SubAgent
+                ? request.SessionId
+                : null,
+        };
+    }
+
+    internal static TokenUsageAttribution BuildTokenUsageAttribution(
+        RuntimeDispatchRequest request,
+        int round,
+        IEnumerable<string>? canonicalToolNames)
+    {
+        var toolNames = canonicalToolNames?
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .ToArray() ?? [];
+        var identity = request.ExecutionIdentity;
+        var isSubAgent = identity?.Kind == RuntimeExecutionKind.SubAgent;
+
+        return new TokenUsageAttribution
+        {
+            ParentSessionId = isSubAgent ? identity!.ConversationId : null,
+            SubAgentId = isSubAgent ? request.SessionId : null,
+            TurnRound = round,
+            ToolCallCount = toolNames.Length,
+            ToolNames = toolNames,
+        };
+    }
+
     private static TimeSpan NormalizeSessionTimeout(TimeSpan timeout) =>
         timeout > TimeSpan.Zero ? timeout : DefaultSessionTimeout;
 

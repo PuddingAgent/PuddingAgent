@@ -38,6 +38,26 @@ public sealed class AgentLoopResponseTests
         var parsed = AgentLoopResponse.Parse(providerOutput);
 
         Assert.IsTrue(parsed.IsDone);
+        Assert.IsTrue(parsed.IsStructured);
         Assert.AreEqual(report, parsed.Message);
+    }
+
+    [TestMethod]
+    public void Parse_PlainCanonicalReport_RemainsUnstructuredContinueForContractPolicy()
+    {
+        const string providerOutput = """
+            SUMMARY: Completed the requested delegated implementation with verified behavior.
+            CHANGES: Updated the runtime completion policy and focused regression tests.
+            EVIDENCE: The canonical report contains enough concrete source and test evidence.
+            RISKS: Deployment still requires an external process restart.
+            BLOCKERS: none because the scoped implementation is complete.
+            """;
+
+        var parsed = AgentLoopResponse.Parse(providerOutput);
+
+        Assert.IsFalse(parsed.IsStructured);
+        Assert.IsFalse(parsed.IsDone);
+        Assert.AreEqual("CONTINUE", parsed.Status);
+        Assert.AreEqual(providerOutput, parsed.Message);
     }
 }

@@ -73,6 +73,46 @@ public sealed class HostShellToolTests
     }
 
     [TestMethod]
+    public async Task HostShellExecutor_AcceptsPwshAsPowerShellAlias()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Inconclusive("PowerShell alias regression test is Windows-specific.");
+
+        var result = await HostShellExecutor.ExecuteAsync(new HostShellRequest
+        {
+            Command = "Write-Output 'pwsh-alias-ok'",
+            Shell = "pwsh",
+            TimeoutSeconds = 10,
+        }, NullLogger.Instance);
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "pwsh-alias-ok");
+        Assert.AreEqual("powershell", result.Shell);
+    }
+
+    [TestMethod]
+    public async Task HostShellExecutor_WslMode_UsesWindowsWorkingDirectoryMapping()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Inconclusive("WSL regression test is Windows-specific.");
+
+        var result = await HostShellExecutor.ExecuteAsync(new HostShellRequest
+        {
+            Command = "pwd",
+            Shell = "wsl",
+            WorkingDirectory = Directory.GetCurrentDirectory(),
+            TimeoutSeconds = 30,
+        }, NullLogger.Instance);
+
+        if (!result.Success && result.Error?.Contains("wsl.exe is not available", StringComparison.OrdinalIgnoreCase) == true)
+            Assert.Inconclusive("WSL is not installed on this test host.");
+
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("wsl", result.Shell);
+        StringAssert.Contains(result.Output.Replace('\\', '/'), "/mnt/");
+    }
+
+    [TestMethod]
     public async Task HostShellExecutor_Blocks_Process_Termination_At_Execution_Boundary()
     {
         var command = OperatingSystem.IsWindows()

@@ -18,7 +18,8 @@ namespace PuddingPlatform.Services.Goals;
 public sealed class GoalRunStore(
     PlatformDbContext db,
     ICommittedEventSignal committedSignal,
-    ILogger<GoalRunStore> logger)
+    ILogger<GoalRunStore> logger,
+    GoalOutboxSignal? outboxSignal = null)
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
@@ -61,6 +62,17 @@ public sealed class GoalRunStore(
         => await db.GoalRuns.AsNoTracking()
             .FirstOrDefaultAsync(g => g.SourceCommandId == sourceCommandId, ct);
 
+    public async Task<TaskGoalBindingEntity?> FindTaskBindingAsync(
+        string goalRunId, CancellationToken ct = default)
+        => await db.TaskGoalBindings.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.GoalRunId == goalRunId, ct);
+
+    public async Task<WorkspaceTaskEntity?> FindTaskAsync(
+        string workspaceId, string taskId, CancellationToken ct = default)
+        => await db.WorkspaceTasks.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.WorkspaceId == workspaceId
+                && item.TaskId == taskId, ct);
+
     public async Task<IReadOnlyList<GoalIterationEntity>> GetIterationsAsync(
         string goalRunId, CancellationToken ct = default)
         => await db.GoalIterations.AsNoTracking()
@@ -75,8 +87,10 @@ public sealed class GoalRunStore(
     public async Task<GoalRunEntity> CreateAsync(
         GoalRunEntity goal,
         string traceId,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool enqueueContinuation = false)
     {
+        var continuationEnqueued = false;
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         try
         {
@@ -85,11 +99,21 @@ public sealed class GoalRunStore(
             db.GoalRuns.Add(goal);
             await db.SaveChangesAsync(ct);
 
-            await AppendEventsAsync(goal, traceId,
-            [
-                new GoalEventAppend(GoalEventTypes.Created, BuildPayload(goal)),
-                new GoalEventAppend(GoalEventTypes.Activated, BuildPayload(goal)),
-            ], ct);
+            var events = new List<GoalEventAppend>
+            {
+                new(GoalEventTypes.Created, BuildPayload(goal)),
+                new(GoalEventTypes.Activated, BuildPayload(goal)),
+            };
+            if (enqueueContinuation && TryEnqueueContinuation(goal, goal.CreatedAtUtc, out _))
+            {
+                continuationEnqueued = true;
+                events.Add(new GoalEventAppend(
+                    GoalEventTypes.ContinuationRequested,
+                    BuildContinuationPayload(goal),
+                    ProducerComponent: GoalProducerComponents.Continuation));
+            }
+
+            await AppendEventsAsync(goal, traceId, events, ct);
 
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
@@ -101,6 +125,8 @@ public sealed class GoalRunStore(
         }
 
         committedSignal.Signal(goal.CurrentConversationId, -1);
+        if (continuationEnqueued)
+            outboxSignal?.Signal();
 
         logger.LogInformation(
             "[GoalStore] Created goal={GoalRunId} conv={ConversationId} agent={AgentInstanceId} maxIterations={MaxIterations}",
@@ -121,9 +147,11 @@ public sealed class GoalRunStore(
         Func<GoalRunEntity, bool> mutate,
         GoalEventAppend append,
         string traceId,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool enqueueContinuation = false)
     {
         GoalRunEntity? goal = null;
+        var continuationEnqueued = false;
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         try
         {
@@ -146,7 +174,17 @@ public sealed class GoalRunStore(
             goal.AggregateVersion++;
             goal.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
-            await AppendEventsAsync(goal, traceId, [append], ct);
+            var events = new List<GoalEventAppend> { append };
+            if (enqueueContinuation && TryEnqueueContinuation(goal, goal.UpdatedAtUtc, out _))
+            {
+                continuationEnqueued = true;
+                events.Add(new GoalEventAppend(
+                    GoalEventTypes.ContinuationRequested,
+                    BuildContinuationPayload(goal),
+                    ProducerComponent: GoalProducerComponents.Continuation));
+            }
+
+            await AppendEventsAsync(goal, traceId, events, ct);
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
         }
@@ -157,7 +195,48 @@ public sealed class GoalRunStore(
         }
 
         committedSignal.Signal(goal!.CurrentConversationId, -1);
+        if (continuationEnqueued)
+            outboxSignal?.Signal();
         return (goal, false);
+    }
+
+    private bool TryEnqueueContinuation(
+        GoalRunEntity goal,
+        DateTimeOffset dueAtUtc,
+        out GoalOutboxEntity? outbox)
+    {
+        outbox = null;
+        if (!GoalStateMachine.CanAcceptNewIteration(
+                goal.Status,
+                goal.MaxIterations,
+                goal.IterationsStarted)
+            || goal.IterationsSettled != goal.IterationsStarted)
+            return false;
+
+        var iterationNo = goal.IterationsStarted + 1;
+        var outboxId = $"gc-{goal.GoalRunId}-{goal.ActivationEpoch}-{iterationNo}";
+        outbox = new GoalOutboxEntity
+        {
+            OutboxId = outboxId,
+            GoalRunId = goal.GoalRunId,
+            ActivationEpoch = goal.ActivationEpoch,
+            AggregateVersion = goal.AggregateVersion,
+            Kind = GoalOutboxValues.Continuation,
+            IdempotencyKey = outboxId,
+            PayloadJson = JsonSerializer.Serialize(new
+            {
+                goalRunId = goal.GoalRunId,
+                objectiveVersion = goal.ObjectiveVersion,
+                iterationNo,
+            }, JsonOpts),
+            Status = GoalOutboxValues.Pending,
+            DueAtUtc = dueAtUtc,
+            FencingToken = 0,
+            AttemptCount = 0,
+            CreatedAtUtc = dueAtUtc,
+        };
+        db.GoalOutbox.Add(outbox);
+        return true;
     }
 
     /// <summary>同事务分配 sequence 并直写 ConversationEventEntity（envelope 规则见 ADR-074 §12.5）。</summary>
@@ -191,7 +270,7 @@ public sealed class GoalRunStore(
                 CausationId = append.CausationId,
                 ProducerEventId = null,
                 AgentId = goal.AgentInstanceId,
-                SourceKind = ConversationEventSourceKind.Goal.ToString(),
+                SourceKind = ConversationEventSourceKind.Goal.ToString().ToLowerInvariant(),
                 TraceId = traceId,
                 ProducerComponent = append.ProducerComponent,
             });
@@ -257,5 +336,14 @@ public sealed class GoalRunStore(
         reason = goal.StatusReason,
         blockedCode = goal.BlockedCode,
         sourceChannel = goal.SourceChannel,
+    };
+
+    private static object BuildContinuationPayload(GoalRunEntity goal) => new
+    {
+        goalRunId = goal.GoalRunId,
+        activationEpoch = goal.ActivationEpoch,
+        aggregateVersion = goal.AggregateVersion,
+        iterationNumber = goal.IterationsStarted + 1,
+        remainingIterations = goal.MaxIterations - goal.IterationsStarted,
     };
 }

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Agents;
+using PuddingCode.Observability;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
 
@@ -17,6 +18,7 @@ public sealed class ToolInvocationService : IToolInvocationService
     private readonly IAgentWorkspaceGuard? _workspaceGuard;
     private readonly IRuntimeControlService? _runtimeControl;
     private readonly IIdleDetector? _idleDetector;
+    private readonly ITelemetryMetricSink? _telemetrySink;
     private readonly ILogger<ToolInvocationService> _logger;
 
     public ToolInvocationService(
@@ -24,18 +26,41 @@ public sealed class ToolInvocationService : IToolInvocationService
         IAgentWorkspaceGuard? workspaceGuard = null,
         ILogger<ToolInvocationService>? logger = null,
         IRuntimeControlService? runtimeControl = null,
-        IIdleDetector? idleDetector = null)
+        IIdleDetector? idleDetector = null,
+        ITelemetryMetricSink? telemetrySink = null)
     {
         _toolExecutionService = toolExecutionService;
         _workspaceGuard = workspaceGuard;
         _runtimeControl = runtimeControl;
         _idleDetector = idleDetector;
+        _telemetrySink = telemetrySink;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ToolInvocationService>.Instance;
     }
 
     public async Task<ToolInvocationResult> InvokeAsync(ToolInvocationRequest request, CancellationToken ct = default)
     {
         var startedAt = DateTimeOffset.UtcNow;
+        var compatibility = HarnessToolCompatibilityAdapter.Normalize(
+            request.ToolName,
+            request.ArgumentsJson);
+        if (compatibility.Adapted)
+        {
+            _logger.LogInformation(
+                "[ToolInvocation] Harness compatibility adapted tool={RequestedTool}->{CanonicalTool} callId={ToolCallId}",
+                compatibility.RequestedToolName,
+                compatibility.ToolName,
+                request.ToolCallId);
+            await RecordHarnessCompatibilityMetricAsync(
+                compatibility,
+                request,
+                startedAt,
+                ct);
+            request = request with
+            {
+                ToolName = compatibility.ToolName,
+                ArgumentsJson = compatibility.ArgumentsJson,
+            };
+        }
         var argsHash = ComputeArgsHash(request.ArgumentsJson);
 
         _logger.LogDebug(
@@ -166,6 +191,63 @@ public sealed class ToolInvocationService : IToolInvocationService
                 DurationMs = durationMs,
                 ArgsHash = argsHash,
             };
+        }
+    }
+
+    private async Task RecordHarnessCompatibilityMetricAsync(
+        HarnessToolInvocation compatibility,
+        ToolInvocationRequest request,
+        DateTimeOffset occurredAtUtc,
+        CancellationToken ct)
+    {
+        if (_telemetrySink is null)
+            return;
+
+        var adaptationKind = (compatibility.ToolNameAdapted, compatibility.ArgumentsAdapted) switch
+        {
+            (true, true) => "tool_and_arguments",
+            (true, false) => "tool_name",
+            _ => "arguments",
+        };
+
+        try
+        {
+            await _telemetrySink.RecordAsync(new TelemetryMetric
+            {
+                Trace = request.Trace ?? RuntimeTraceContext.CreateNew(
+                    sessionId: request.SessionId,
+                    workspaceId: request.WorkspaceId),
+                Source = "runtime",
+                Category = TelemetryMetricCategories.Tool,
+                Name = "tool.harness_compatibility",
+                Status = TelemetryMetricStatuses.Recorded,
+                OccurredAtUtc = occurredAtUtc,
+                CountValue = 1,
+                Unit = "call",
+                Summary = $"Harness tool contract adapted to '{compatibility.ToolName}'.",
+                Dimensions = new Dictionary<string, string>
+                {
+                    ["requested_tool"] = compatibility.RequestedToolName,
+                    ["canonical_tool"] = compatibility.ToolName,
+                    ["tool_name_adapted"] = compatibility.ToolNameAdapted.ToString().ToLowerInvariant(),
+                    ["arguments_adapted"] = compatibility.ArgumentsAdapted.ToString().ToLowerInvariant(),
+                    ["adaptation_kind"] = adaptationKind,
+                    ["adapter_version"] = "1",
+                    ["agent_instance_id"] = request.AgentInstanceId,
+                    ["agent_template_id"] = request.AgentTemplateId ?? string.Empty,
+                },
+            }, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Compatibility telemetry is best-effort and must not change tool cancellation.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "[ToolInvocation] Failed to record Harness compatibility telemetry callId={ToolCallId}",
+                request.ToolCallId);
         }
     }
 

@@ -495,20 +495,25 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
 
         if (imageParts.Count > 0 && VisualArtifactResolver is not null)
         {
-            var plan = await LlmVisualInputPlanner.PlanAsync(
+                        var plan = await LlmVisualInputPlanner.PlanAsync(
                 WorkspaceId!,
                 imageParts,
                 VisualArtifactResolver,
-                VisionPolicy,
-                ct);
-            foreach (var image in plan.Images)
+                policy: VisionPolicy,
+                ct: ct);
+                        foreach (var image in plan.Images)
             {
+                var dataUri = image.DataUri
+                    ?? throw new VisionPipelineException(
+                        VisionErrorCodes.MediaInvalid,
+                        $"Image artifact {image.ArtifactId} resolved to a provider file reference; " +
+                        "this protocol does not support file_id image inputs.");
                 content.Add(new JsonObject
                 {
                     ["type"] = "image_url",
                     ["image_url"] = new JsonObject
                     {
-                        ["url"] = image.DataUri,
+                        ["url"] = dataUri,
                         ["detail"] = string.Equals(image.Detail, VisionContentPartDetails.Low, StringComparison.Ordinal)
                             ? "low"
                             : "high",
