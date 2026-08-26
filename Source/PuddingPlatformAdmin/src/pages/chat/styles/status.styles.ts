@@ -1,4 +1,4 @@
-﻿// ── 状态栏、Token 统计、运行时状态指示器样式 ─────────────────
+// ── 状态栏、Token 统计、运行时状态指示器样式 ─────────────────
 import { createStyles } from 'antd-style';
 
 export const useStatusStyles = createStyles(() => ({
@@ -136,5 +136,118 @@ export const useStatusStyles = createStyles(() => ({
   statusTextTool: { color: 'var(--tool-signal, #22D3EE)' },
   statusTextStreaming: { color: 'var(--accent-purple, #7c3aed)' },
   statusTextSuccess: { color: 'var(--success-signal, #22C55E)' },
+
   statusTextError: { color: 'var(--error-signal, #EF4444)' },
+  // ── 余额徽标（ProviderBalanceIndicator）：在通用图标组之上略增强，不影响其他指示器 ──
+  balanceBadgeGroup: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    cursor: 'pointer',
+    flexShrink: 0,
+    padding: '1px 6px',
+    borderRadius: 9,
+    transition: 'background-color 0.2s ease, transform 0.2s ease',
+    '&:hover': {
+      backgroundColor:
+        'color-mix(in srgb, var(--earth-brown) 8%, transparent)',
+      transform: 'scale(1.04)',
+    },
+  },
+  balanceBadgeLabel: {
+    fontSize: 11,
+    fontWeight: 600 as const,
+    lineHeight: '16px',
+    whiteSpace: 'nowrap' as const,
+    fontVariantNumeric: 'tabular-nums' as const,
+    transition: 'color 0.2s ease',
+  },
+  balanceBadgeLabelError: {
+    color: 'var(--error-signal, #EF4444)',
+  },
+  // 刷新请求在途：品牌图标轻微旋转反馈
+  balanceBadgeSpin: {
+    display: 'inline-flex',
+    animation: 'balanceBadgeSpinAnim 1s linear infinite',
+  },
+  '@keyframes balanceBadgeSpinAnim': {
+    from: { transform: 'rotate(0deg)' },
+    to: { transform: 'rotate(360deg)' },
+  },
+  // ── 余额悬浮富卡片（HoverCard）：参考 DeepSeek 余额卡片布局，
+  //    配色全部走 --pudding-chat-* 主题变量，浅色暖米系/深色自动适配 ──
+  balanceCard: {
+    width: 252,
+    padding: 12,
+    boxSizing: 'border-box' as const,
+    background: 'var(--pudding-chat-surface)',
+    border: '1px solid',
+    borderColor: 'var(--pudding-chat-border-strong)',
+    borderRadius: 'var(--pudding-chat-radius-md)',
+    boxShadow: 'var(--pudding-chat-shadow-md)',
+    fontSize: 11,
+    color: 'var(--pudding-chat-text-muted)',
+  },
+  // 标题行：服务商图标 + “XX 余额：¥xx”
+  balanceCardHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+    fontSize: 11,
+    fontWeight: 500 as const,
+    color: 'var(--pudding-chat-text-subtle)',
+    whiteSpace: 'nowrap' as const,
+  },
+  // 大号余额：卡片视觉焦点
+  balanceCardAmount: {
+    fontSize: 26,
+    fontWeight: 700 as const,
+    lineHeight: 1.2,
+    letterSpacing: '-0.5px',
+    color: 'var(--pudding-chat-text)',
+    fontVariantNumeric: 'tabular-nums' as const,
+  },
+  balanceCardAmountError: {
+    color: 'var(--pudding-chat-danger)',
+  },
+  balanceCardDivider: {
+    height: 1,
+    margin: '10px 0',
+    background: 'var(--pudding-chat-border)',
+  },
+  // 明细区：赠送 / 充值 / 查询时间，label 左、value 右对齐
+  balanceCardMeta: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 6,
+  },
+  balanceCardMetaRow: {
+    display: 'flex',
+    justifyContent: 'space-between' as const,
+    gap: 16,
+    fontSize: 11,
+    lineHeight: '16px',
+  },
+  balanceCardMetaLabel: {
+    color: 'var(--pudding-chat-text-subtle)',
+    whiteSpace: 'nowrap' as const,
+  },
+  balanceCardMetaValue: {
+    color: 'var(--pudding-chat-text-muted)',
+    fontVariantNumeric: 'tabular-nums' as const,
+    whiteSpace: 'nowrap' as const,
+  },
+  // 底部行：查询失败原因 / “点击刷新”提示
+  balanceCardFooter: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTop: '1px solid',
+    borderColor: 'var(--pudding-chat-border)',
+    fontSize: 11,
+    color: 'var(--pudding-chat-text-caption)',
+    whiteSpace: 'nowrap' as const,
+    overflow: 'hidden' as const,
+    textOverflow: 'ellipsis' as const,
+  },
 }));
