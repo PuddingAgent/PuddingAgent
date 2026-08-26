@@ -20,6 +20,14 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
     public string? WorkspaceId { get; set; }
     /// <summary>图片请求预算（ADR-077）；由 DirectLlmClient 按快照策略注入，默认产品上限。</summary>
     public VisionRequestPolicy? VisionPolicy { get; set; }
+    /// <summary>DeepSeek Files API 上传器（ADR-077 V3-S2a）：大图经 file_id 引用时非 null；否则大图 fail closed。</summary>
+    public IDeepSeekFilesUploader? DeepSeekFilesUploader { get; set; }
+    /// <summary>Provider File 引用 store（ADR-077 V3-S2b-2）：跨轮复用 file_id；null 时 Planner 退化为上传即用。</summary>
+    public IFileRefStore? FileRefStore { get; set; }
+    /// <summary>目标模型 route 的 providerId（如 deepseek）；与 <see cref="CredentialEpoch"/> 组成 store 唯一键前缀。</summary>
+    public string? ProviderId { get; set; }
+    /// <summary>Secret 配置版本号；credential 变化应使 epoch 递增以强制轮换（ADR §6.2），无现成值时用 "default"。</summary>
+    public string? CredentialEpoch { get; set; }
 
     public ResponsesLlmGateway(HttpClient httpClient, PlatformLlmOptions options)
         : this(httpClient, new LlmOptions(
@@ -35,14 +43,14 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
 
     private readonly string _responsesEndpoint = NormalizeResponsesEndpoint(options.Endpoint);
 
-    public async Task<LlmResponse> ChatAsync(
+        public async Task<LlmResponse> ChatAsync(
         IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<ITool> tools,
         CancellationToken ct = default)
     {
-        var requestBody = await BuildResponsesRequestBodyAsync(messages, tools, stream: false, ct);
-        using var request = CreateRequest(requestBody);
-        using var response = await httpClient.SendAsync(request, ct);
+        // ADR-077 V3-S2b-2「调用时过期」：provider 返回 file 失效错误时，SendWithFileRebuildAsync
+        // 会在内部触发恰好一次重建（MarkExpired → 重新上传落库 → 重发），重建后仍失败抛 ProviderFileExpired。
+        using var response = await SendWithFileRebuildAsync(messages, tools, stream: false, ct);
         var json = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
@@ -61,12 +69,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         IReadOnlyList<ITool> tools,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var requestBody = await BuildResponsesRequestBodyAsync(messages, tools, stream: true, ct);
-        using var request = CreateRequest(requestBody);
-        using var response = await httpClient.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
-            ct);
+        using var response = await SendWithFileRebuildAsync(messages, tools, stream: true, ct);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -127,7 +130,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         }
     }
 
-    private HttpRequestMessage CreateRequest(string requestBody)
+        private HttpRequestMessage CreateRequest(string requestBody)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, _responsesEndpoint)
         {
@@ -137,7 +140,117 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         return request;
     }
 
-    private async Task<string> BuildResponsesRequestBodyAsync(
+    /// <summary>
+    /// ADR-077 V3-S2b-2「调用时过期」：发送请求；若 provider 返回 file 失效错误且本次请求含 file 模式图片
+    /// 且具备重建上下文，则恰好一次 <see cref="IFileRefStore.MarkExpiredAsync"/> + 重新构建请求体
+    /// （Planner 未命中 → 重新上传并落库 ready）后重发一次。重建后仍失败抛 <see cref="VisionErrorCodes.ProviderFileExpired"/>，
+    /// 不盲目重试。非 file 失效错误原样返回给调用方处理。
+    /// </summary>
+    private async Task<HttpResponseMessage> SendWithFileRebuildAsync(
+        IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ITool> tools,
+        bool stream,
+        CancellationToken ct)
+    {
+        var (requestBody, fileImages) = await BuildResponsesRequestBodyAsync(messages, tools, stream, ct);
+        using var request = CreateRequest(requestBody);
+        var response = stream
+            ? await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
+            : await httpClient.SendAsync(request, ct);
+
+        if (response.IsSuccessStatusCode || !CanRebuildFileReferences(fileImages))
+            return response;
+
+        var failedStatusCode = response.StatusCode;
+        var errorJson = await response.Content.ReadAsStringAsync(ct);
+        response.Dispose();
+        if (!IsProviderFileExpiredError(errorJson))
+        {
+            // 非 file 失效错误：不重建，按原始失败重新构造响应交给调用方抛错（保持既有语义）。
+            throw new HttpRequestException(
+                $"LLM Responses API error ({failedStatusCode}): {errorJson}",
+                inner: null,
+                failedStatusCode);
+        }
+
+        // 恰好一次重建：MarkExpired 所有 file 引用 → 重新 Build（Planner 对过期引用 miss → 重新上传落库）。
+        var now = DateTimeOffset.UtcNow;
+        foreach (var image in fileImages)
+        {
+            if (string.IsNullOrWhiteSpace(image.ArtifactSha256))
+                continue;
+            await FileRefStore!.MarkExpiredAsync(
+                ProviderId!,
+                CredentialEpoch!,
+                image.ArtifactSha256,
+                now,
+                ct);
+        }
+
+        var (rebuiltBody, _) = await BuildResponsesRequestBodyAsync(messages, tools, stream, ct);
+        using var rebuiltRequest = CreateRequest(rebuiltBody);
+        var rebuiltResponse = stream
+            ? await httpClient.SendAsync(rebuiltRequest, HttpCompletionOption.ResponseHeadersRead, ct)
+            : await httpClient.SendAsync(rebuiltRequest, ct);
+        if (!rebuiltResponse.IsSuccessStatusCode)
+        {
+            var rebuiltError = await rebuiltResponse.Content.ReadAsStringAsync(ct);
+            rebuiltResponse.Dispose();
+            throw new VisionPipelineException(
+                VisionErrorCodes.ProviderFileExpired,
+                "Provider file reference expired even after one rebuild; aborting without blind retries.");
+        }
+        return rebuiltResponse;
+    }
+
+    /// <summary>具备重建上下文（store + providerId + credentialEpoch + uploader 齐全）且本次请求含 file 模式图片。</summary>
+    private bool CanRebuildFileReferences(IReadOnlyList<PlannedVisualInput> fileImages)
+        => DeepSeekFilesUploader is not null
+           && FileRefStore is not null
+           && !string.IsNullOrWhiteSpace(ProviderId)
+           && !string.IsNullOrWhiteSpace(CredentialEpoch)
+           && fileImages.Any(image =>
+               !string.IsNullOrWhiteSpace(image.FileId) && !string.IsNullOrWhiteSpace(image.ArtifactSha256));
+
+    /// <summary>
+    /// 识别 provider 错误响应是否为 file 失效（如 file expired / not found / invalid file_id）。
+    /// 只做保守匹配；无法解析或信号不明显时返回 false（不触发重建）。
+    /// 错误文本可能包含 provider 回显的 file_id，这里只返回布尔信号，绝不写入日志/异常 message。
+    /// </summary>
+    internal static bool IsProviderFileExpiredError(string errorJson)
+    {
+        if (string.IsNullOrWhiteSpace(errorJson))
+            return false;
+
+        string? message = null;
+        string? code = null;
+        try
+        {
+            var root = JsonNode.Parse(errorJson);
+            var errorNode = root?["error"] as JsonObject ?? root as JsonObject;
+            message = errorNode?["message"]?.GetValue<string>();
+            code = errorNode?["code"]?.GetValue<string>();
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        var haystack = string.Concat(message ?? string.Empty, " ", code ?? string.Empty);
+        var normalized = haystack.ToLowerInvariant();
+        // file 失效信号：同时提到 file 与失效/过期/找不到。
+        return normalized.Contains("file", StringComparison.Ordinal)
+               && (normalized.Contains("expired", StringComparison.Ordinal)
+                   || normalized.Contains("not found", StringComparison.Ordinal)
+                   || normalized.Contains("not_found", StringComparison.Ordinal)
+                   || normalized.Contains("invalid", StringComparison.Ordinal)
+                   || normalized.Contains("no longer", StringComparison.Ordinal)
+                   || normalized.Contains("does not exist", StringComparison.Ordinal)
+                   || normalized.Contains("unavailable", StringComparison.Ordinal)
+                   || normalized.Contains("stale", StringComparison.Ordinal));
+    }
+
+        private async Task<(string Body, IReadOnlyList<PlannedVisualInput> FileImages)> BuildResponsesRequestBodyAsync(
         IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<ITool> tools,
         bool stream,
@@ -161,9 +274,10 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         }
 
         var input = new JsonArray();
+        var fileImages = new List<PlannedVisualInput>();
         var protocolSafeMessages = LlmMessageSequenceNormalizer.Normalize(messages).Messages;
         foreach (var message in protocolSafeMessages)
-            await AddInputItemsAsync(input, message, ct);
+            await AddInputItemsAsync(input, message, fileImages, ct);
         root["input"] = input;
 
         if (tools.Count > 0)
@@ -194,10 +308,14 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             };
         }
 
-        return root.ToJsonString();
+                return (root.ToJsonString(), fileImages);
     }
 
-    private async Task AddInputItemsAsync(JsonArray input, ChatMessage message, CancellationToken ct)
+    private async Task AddInputItemsAsync(
+        JsonArray input,
+        ChatMessage message,
+        List<PlannedVisualInput> fileImages,
+        CancellationToken ct)
     {
         if (message.Role == ChatRole.Assistant
             && message.ContinuationState is { OutputItemsJson.Count: > 0 } continuation
@@ -231,9 +349,13 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
                         ["text"] = message.Content,
                     });
 
-                var plan = await PlanVisualInputsAsync(toolImageParts, ct);
+                                var plan = await PlanVisualInputsAsync(toolImageParts, ct);
                 foreach (var image in plan.Images)
+                {
                     outputParts.Add(BuildInputImageNode(image));
+                    if (!string.IsNullOrWhiteSpace(image.FileId))
+                        fileImages.Add(image);
+                }
 
                 outputNode = outputParts;
             }
@@ -251,9 +373,9 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             return;
         }
 
-        if (message.Role == ChatRole.User)
+                if (message.Role == ChatRole.User)
         {
-            var multimodalContent = await BuildMultimodalContentAsync(message, ct);
+            var multimodalContent = await BuildMultimodalContentAsync(message, fileImages, ct);
             JsonNode contentNode = (JsonNode?)multimodalContent
                 ?? JsonValue.Create(message.Content ?? string.Empty)!;
             input.Add(new JsonObject
@@ -289,7 +411,10 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         }
     }
 
-    private async Task<JsonArray?> BuildMultimodalContentAsync(ChatMessage message, CancellationToken ct)
+        private async Task<JsonArray?> BuildMultimodalContentAsync(
+        ChatMessage message,
+        List<PlannedVisualInput> fileImages,
+        CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(WorkspaceId))
             return null;
@@ -307,11 +432,15 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         var imageParts = ChatMessageMultimodalNormalizer.GetImageParts(message);
         // ADR-077 §5.5：无视觉解析通道 = 文本路由；图片部件不进入请求（文本模型的附件
         // 以消息正文 artifact:// 占位为准）。有解析通道而解析失败才由 Planner fail closed。
-        if (imageParts.Count > 0 && VisualArtifactResolver is not null)
+                if (imageParts.Count > 0 && VisualArtifactResolver is not null)
         {
             var plan = await PlanVisualInputsAsync(imageParts, ct);
             foreach (var image in plan.Images)
+            {
                 content.Add(BuildInputImageNode(image));
+                if (!string.IsNullOrWhiteSpace(image.FileId))
+                    fileImages.Add(image);
+            }
         }
 
         if (message.AudioArtifactIds is { Count: > 0 } && AudioArtifactResolver is not null)
@@ -356,23 +485,40 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
                 VisionErrorCodes.ModelCapabilityMismatch,
                 "Visual inputs require a workspace and a vision-capable route.");
 
-        return await LlmVisualInputPlanner.PlanAsync(
+                return await LlmVisualInputPlanner.PlanAsync(
             WorkspaceId!,
             imageParts,
             VisualArtifactResolver,
             VisionPolicy,
+            DeepSeekFilesUploader,
+            FileRefStore,
+            ProviderId,
+            CredentialEpoch,
             ct);
     }
 
     /// <summary>canonical detail → DeepSeek Responses detail（original 等价 high）。</summary>
-    private static JsonObject BuildInputImageNode(PlannedVisualInput image) => new()
+    private static JsonObject BuildInputImageNode(PlannedVisualInput image)
     {
-        ["type"] = "input_image",
-        ["image_url"] = image.DataUri,
-        ["detail"] = string.Equals(image.Detail, VisionContentPartDetails.Low, StringComparison.Ordinal)
-            ? "low"
-            : "high",
-    };
+        if (!string.IsNullOrWhiteSpace(image.FileId))
+        {
+            // ADR-077 §6.1：file_id 模式只引用 provider 侧文件，不输出 image_url/detail。
+            return new JsonObject
+            {
+                ["type"] = "input_image",
+                ["file_id"] = image.FileId,
+            };
+        }
+
+        return new JsonObject
+        {
+            ["type"] = "input_image",
+            ["image_url"] = image.DataUri!,
+            ["detail"] = string.Equals(image.Detail, VisionContentPartDetails.Low, StringComparison.Ordinal)
+                ? "low"
+                : "high",
+        };
+    }
 
     private static JsonNode BuildParametersNode(ITool tool)
     {
