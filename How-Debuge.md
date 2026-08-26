@@ -3164,3 +3164,55 @@ python TestScripts/deepseek-cache-hitrate.py --days 3   # 短窗口
 判定分支：`turn.accepted` 指向旧 ID → 查 Dispatcher/ExecutionRunCoordinator；ID 正确但门禁报错 → 查
 ContextBudget/历史投影；围栏与 hash 均正确而模型仍答旧任务 → 查实际 gateway request/provider 响应，
 再评估 prompt 行为。修复 Runtime 后必须重启 Core 才能验证，新源码不能由承载它的旧进程自证已加载。
+
+## 11.37 Agent Harness 适配、低效工具循环与首块等待诊断
+
+模型反复猜工具名、把“无匹配”当失败或在完整子代理报告后继续一轮时，先区分 Harness 协议不匹配、
+工具真实失败、Runtime 循环控制和 Provider 等待，不要只看最终 `tool_result`：
+
+1. 日志 `[ToolInvocation] Harness compatibility adapted tool=A->B callId=...` 表示统一执行入口已把熟悉调用归一化；
+   `tool.harness_compatibility` 指标可按 `requested_tool/canonical_tool/adaptation_kind/adapter_version` 聚合别名命中。
+2. `rg/grep/findstr` exit code 1 且无缺失命令诊断是 `status=NoMatch`，不是失败；应改变 query/path，不能原样重试。
+   exit code 2、`CommandNotFoundException`、`command not found` 仍是真失败。
+3. `subagent.output_contract.completed` 表示模型已输出完整五段报告但漏掉 Runtime JSON 信封，Runtime 在无 native
+   tool call 且非结构化输出时同轮收口；显式结构化 `CONTINUE/WAIT/FAILED` 不得自动完成。
+4. LLM 慢先比较 `llm.rate_limit.wait` 与 `llm.stream.provider_first_chunk_wait`：前者高是本地 provider/model
+   并发排队，后者高而前者低才是 Provider 建连/首块慢。`chat_stream` metadata 同时带
+   `rate_limit_wait_ms/stream_first_chunk_wait_ms/first_chunk_received/stream_no_chunks`。
+5. Windows 下代码搜索优先 `search_grep`；需要真实 Bash/管道时显式 `shell=wsl`。当前 WSL 不保证安装 `rg`，
+   每个 run 最多探测一次 `command -v`，不得让 Agent 自动 `apt install`。
+6. 相同 canonical 工具、相同参数且失败结果未变化时，第二次结果应带
+   `runtime_status=execution_stalled`；之后原样调用应在 Agent Loop 内阻断，不再出现新的底层
+   `tool.execution`。改变参数、错误结果发生变化或执行成功会重置指纹。若仍反复执行，比较
+   `tool.call` 与 `tool.execution` 的 callId/参数 hash，确认运行进程是否已加载新构建。
+7. 2026-08-26 新构建起，`TokenUsageEvents` 的 `agent_llm` 行由 Agent Loop 从
+   `RuntimeExecutionIdentity` 直写 `ParentSessionId/SubAgentId/TurnRound/ToolCallCount/ToolNames`；不得再用
+   session 名称里的 `-sub-` 推断角色。`TurnRound` 为零基轮号，展示轮数时加一。
+8. `SubAgentManager` 不再写 `source_type=sub_agent:*` 的终态 Token 汇总；终态 usage 仍在 sub-agent run
+   摘要中。分析部署前历史数据时，旧 `sub_agent:*` 行与逐轮 `agent_llm` 是重复口径，禁止相加；不修改
+   历史库，按部署时间切片或只选 `agent_llm`。
+9. `tool.call` 是 Agent Loop 调用事实，新构建同时覆盖 Buffered 和 Streaming；`tool.execution` 是统一底层
+   执行事实。被 `execution_stalled` 预阻断的调用可以有 `tool.call`，但不应新增 `tool.execution`，二者差值
+   是循环控制证据，不是遥测丢失。
+10. Streaming 的 direct Token 行应早于对应 `usage.recorded` 投影出现；`ConversationProjector` 只在 direct
+    行缺失时补记。若同一调用仍出现两行，比较 direct `sourceId=session:trace:round` 与 eventId 行的时间，
+    再检查新构建是否确实先写 TokenUsage、后发布 usage SSE。fallback 的未知 `ToolCallCount` 应为 NULL。
+
+代码和单测通过只说明新构建可用；必须由进程外控制器重启 Core，再用新会话检查上述日志/指标和主、子代理
+真实 smoke，才能证明当前产品进程已加载修复。
+
+## 11.38 u1s1 Provider：模型列表正常但推理返回 403
+
+`https://api.u1s1.io/v1/models` 使用账号 API Key 可以返回模型列表，不代表同一 Key 可以从任意 OpenAI
+兼容客户端发起推理。2026-08-26 实测无 u1s1 客户端凭据的 `/chat/completions` 返回
+`403 / u1s1_client_only`；u1s1 官方首页同时声明当前所有 Token 只接受来自 u1s1 客户端的请求。
+
+排查时依次区分：
+
+1. `/models` 非 200：检查 endpoint、账号 Key 和网络；不得在日志、终端输出或诊断包中回显 Key。
+2. `/models` 为 200、推理为 `u1s1_client_only`：模型 ID、Bearer 和 OpenAI JSON 并非根因；当前 Pudding
+   没有 u1s1 浏览器批准的设备凭据与逐请求签名合同。
+3. 不要猜测私有 header、冒充官方客户端或复制其他设备凭据。只有 u1s1 发布稳定的第三方客户端合同后，
+   才能在 provider-specific gateway 中实现；不能把签名逻辑塞进通用 OpenAI gateway。
+4. 直接编辑 `D:\data\config\llm.providers.json` 后，当前 Core 的 `PuddingFileLlmConfigService` 不会自动
+   重新加载；必须由进程外控制器重启 Core，再检查管理端 Provider/Model 列表。

@@ -138,6 +138,8 @@ IDLE
 11. `scroll` 事件按 animation frame 合并；同一帧只允许读取一次 `scrollTop/scrollHeight/clientHeight` 并执行一次状态迁移。
 12. 采用自适应渲染：少于 80 个 timeline row 时使用正常文档流；80-199 个 row 仅在全部为 compact 稳定短行时启用 virtualizer，包含 normal/rich/streaming 动态行时继续使用正常流；200 个及以上才强制启用 virtualizer。这样中等长度富文本会话不会暴露估高到实测之间的短暂覆盖窗口。
 13. 历史前插是 viewport transaction：更新前捕获第一条可见 row 的稳定 id、像素 offset 和 scrollHeight，更新后由 runtime 恢复。正常文档流使用新增高度差恢复，虚拟模式使用 `itemId + offset` 恢复；组件不得绕过 runtime 直接加载。
+14. 正常文档流必须保留消息行真实高度，不得用 `content-visibility` + `contain-intrinsic-size` 代替离屏行高度。Agent 行在流式、行为组展开/收起后会让浏览器 remembered size 失真，用户滚回时会造成 `scrollHeight` 大幅跳变。
+15. “可见 Turn”由消息滚动容器上的 `IntersectionObserver` 判定，并允许一屏预取；组件挂载不等于可见。已水合 canonical 行为链的文本与结构成本必须进入 viewport render weight，避免 `block.content/processItems` 低估实际 DOM 后错误停留在正常流。
 
 ## 视觉与交互
 
@@ -161,6 +163,8 @@ IDLE
 
 - 1000 条消息下只渲染视口附近 rows，滚动无明显掉帧。
 - 短会话中的超高 Markdown、表格和工具输出使用正常文档流，连续上下滚动时 `scrollHeight` 不因 row 进入视口而变化。
+- 正常流中离屏 Agent 行不因 React 挂载而批量水合；只水合当前视口及预取区。
+- canonical 行为链水合后，虚拟化决策能感知 reasoning/tool/delegation 节点的结构成本。
 - 历史 prepend 后当前第一条可见消息不跳动。
 - 同一动画帧内多个 scroll event 只触发一次布局读取。
 - 所有 viewport row 使用真实 user/assistant message id；同一 canonical Turn 的多条消息不得复用 React/virtualizer key，高度缓存也必须按 message id 而非数组下标索引。
@@ -207,3 +211,10 @@ IDLE
 - `MessageRow` 的 memo 比较覆盖正文、状态、视觉制品、Agent 信息、过程事件、过程摘要、usage 和引用消息。等价的服务端投影对象重建不得提交历史行；活动行正文或正文前的 thinking/tool 变化必须触发更新。
 - 每条 Agent 消息的完整操作栏在首次 hover 前不实例化；不可见时不保留 button/Tooltip DOM。首次激活后允许保留组件状态，以免朗读状态因指针离开被强制销毁。
 - 构建门禁除聚焦 Jest 外，还必须执行生产 `max build`，并阻断 Chat 样式模块的循环依赖警告。
+
+## 2026-08-26 Chat 首载边界补充
+
+- 会话投影、当前 Agent 与消息视口仍是首屏关键路径；余额、Goal 和用于推断会话的 `/api/sessions` 属于辅助数据，统一推迟到首帧后的浏览器空闲期。旧 WebView2 不支持 `requestIdleCallback` 时使用不超过 250ms 的退化计时器，不能让辅助功能永久饥饿。
+- 任务看板、Checkpoint 时间线、历史搜索、开发面板、子代理检查器和消息右键菜单必须保持独立动态模块；关闭状态不下载、不解析也不挂载。工具栏入口允许在 pointer hover 或 keyboard focus 时预取，以缩短首次点击等待。
+- `npm run build` 必须在生产构建后执行 `scripts/check-chat-bundle-budget.cjs`。当前门禁要求 HTML 同步脚本不超过 1536 KiB、Chat 路由 chunk 不超过 480 KiB，并验证任务看板源码不得回流 `common-async`，Checkpoint、ContextMenu 与任务看板入口不得回流 Chat 首始 chunk。
+- 体积门禁是回归保护，不替代运行时验收。部署新静态资源后仍需采集实际 WebView2 的请求瀑布、首屏时间、长任务和长消息连续滚动帧率。

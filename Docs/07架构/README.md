@@ -71,6 +71,8 @@
 65. [ADR-077 主代理原生视觉理解与多模态消息链路](92ADR-077主代理原生视觉理解与多模态消息链路ADR.md)
 66. [ADR-078 PuddingDesktop 调试模式——源码启动前后端与本机反向代理](92ADR-078Desktop调试模式源码启动与反向代理ADR.md)
 67. [ADR-079 Agent 消息交错内容流与最新行为组披露](93ADR-079Agent消息交错内容流与最新行为组披露ADR.md)
+68. [ADR-080 任务看板分层读取、子任务与命令化拖拽](94ADR-080任务看板分层读取子任务与命令化拖拽ADR.md)
+69. [ADR-081 Agent Harness 兼容边界与工具协议适配](95ADR-081AgentHarness兼容边界与工具协议适配ADR.md)
 
 文档分工：
 
@@ -92,6 +94,8 @@
 - 遥测、上下文指标、运行活动与 Debug 数据的自动过期、缓存快照与后台增量估算、分类图表/趋势报表、用户按类型/时间清理、唯一在线维护 writer、Web `/storage` 和 Desktop 非目标边界以 [ADR-076](91ADR-076遥测与调试数据保留及Core存储管理ADR.md) 与 [详细设计](../Features/遥测调试数据自动过期与Web存储管理设计方案.md) 为准；当前仅设计完成，未实现或验收。
 - 主代理原生图片理解、typed image content、Workspace Artifact、DeepSeek Responses `input_image`/图片型工具结果、Files API、大图/多轮/重启恢复和 fail-closed 以 [ADR-077](92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) 为准；Image Reader 重定位为读取 URL、任意绝对路径和 Artifact 的按需取图工具，默认把图片交给调用模型，仅在文本模型或显式第二意见时调用 `visionHelperModel`。当前仅设计完成，既有多模态代码骨架不等于端到端验收。
 - Agent 消息正文、可披露思考、工具与委派的真实交错、唯一正文源、会话级唯一最新行为组披露、柔和收起/卸载和 viewport 单一滚动权威以 [ADR-079](93ADR-079Agent消息交错内容流与最新行为组披露ADR.md) 为准；代码级施工见 [完整实施方案](../Features/Agent消息交错内容流与最新行为组披露完整实施方案.md)。
+- Task `Ready -> Completed` 的证据化命令、单层子任务、普通 List 仅 `taskId/title`、Index/Card/Detail 三层投影、评论与备注分型、命令化看板拖拽、global-cursor Watch 和规模化性能门禁以 [ADR-080](94ADR-080任务看板分层读取子任务与命令化拖拽ADR.md) 与 [详细设计](../Features/任务看板状态机子任务渐进披露与高性能拖拽优化设计方案.md) 为准；当前仅完成设计，未实现、部署或生产验收。
+- 模型后训练 Harness 与 Pudding 工具协议的差异，以 [ADR-081](95ADR-081AgentHarness兼容边界与工具协议适配ADR.md) 和 [详细设计](../Features/AgentHarness兼容与工具调用效率修复设计方案.md) 为准：canonical 工具唯一，别名在统一执行门禁前归一化，提示保持短且稳定，`rg` no-match 与真实失败分离；H0 已实现，当前进程部署和真实模型验收未完成。
 - 若需要继续细化事件命名、Envelope、重放与死信策略，应优先阅读 [10事件系统与事件总线](10事件系统与事件总线.md)。
 - 若需要研究 token 成本、前缀缓存命中、工具输出/日志/RAG 进入 LLM 前压缩和 Headroom 参考路线，应优先阅读 [18上下文缓存可观测性ADR](18上下文缓存可观测性ADR.md)、[43ADR-042上下文自动压缩与主动Compact命令ADR](43ADR-042上下文自动压缩与主动Compact命令ADR.md) 与 [44ADR-043缓存统计闭环ADR](44ADR-043缓存统计闭环ADR.md)。
 - 若需要讨论 Hermes 型系统的 1~7 开发方向、优先级和待细化问题，应优先阅读 [49ADR-048Hermes型系统开发方向参考ADR](49ADR-048Hermes型系统开发方向参考ADR.md)。

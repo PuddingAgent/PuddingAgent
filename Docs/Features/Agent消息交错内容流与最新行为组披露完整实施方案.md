@@ -52,6 +52,8 @@ AgentTurnCard
 └─ Actions：复制、重试、朗读、删除
 ```
 
+宽屏下正文/行为内容列最大宽度为 720px，AgentTurnCard 外壳最大宽度为 750px（内容宽度 + 28px 横向 padding + 2px border）；窄屏继续受 82% 可用宽度约束。不得让外壳占满 82% 而内部内容仍固定 720px，否则会在卡片右侧制造大块无效空白。
+
 不得恢复以下双区域结构：
 
 ```text
@@ -277,8 +279,8 @@ resolvedExpanded = userOverride[groupKey] ?? defaultExpanded(groupKey)
 
 | 文件 | 施工内容 |
 |---|---|
-| `MessageList.tsx` | 派生 `newestAgentMessageId`；不在消息组件内猜当前 owner |
-| `MessageRow.tsx` / `AgentMessageBubble.tsx` | 透传 `isDefaultDisclosureOwnerTurn`；大卡片只保留一个正文源 |
+| `MessageList.tsx` | 派生 `newestAgentMessageId`；不在消息组件内猜当前 owner；把已水合 canonical 行为链成本计入 viewport render weight |
+| `MessageRow.tsx` / `AgentMessageBubble.tsx` | 透传 `isDefaultDisclosureOwnerTurn`；大卡片只保留一个正文源；仅在进入视口一屏预取区后注册可见 turn |
 | `execution-flow/TurnContentStream.tsx` | 按块顺序渲染；以“最后 ActivityGroup”而非“最后 block”选 owner |
 | `execution-flow/ActivityGroup.tsx` | 摘要、默认披露、成员 DOM 生命周期、closing 动画、病理大组保护 |
 | `execution-flow/ReasoningDisclosureRow.tsx` | 新增组内 `inline-full` 模式：完整 reasoning 自然换行、无二级 chevron |
@@ -286,7 +288,8 @@ resolvedExpanded = userOverride[groupKey] ?? defaultExpanded(groupKey)
 | `execution-flow/useDisclosureRegistry.ts` | tri-state 用户 override；默认值改变不抢夺用户选择 |
 | `styles/execution-flow.styles.ts` | full reasoning 两行布局、折叠过渡、reduced-motion |
 | `styles/toolcall.styles.ts` | 多行工具摘要、错误/运行/完成状态、长内容边界 |
-| `viewport/useMessageViewportRuntime.ts` | 唯一 scroll writer；高度变化时吸底或恢复锚点，不由行为组件写 scrollTop |
+| `viewport/useMessageViewportRuntime.ts` | 唯一 scroll writer；高度变化时吸底或恢复锚点，不由行为组件写 scrollTop；正常流保留真实行高，虚拟化决策包含 canonical render weight |
+| `viewport/executionFlowRenderWeight.ts` | 按 reasoning/tool/delegation/message 节点计算结构与文本成本，避免只看消息正文而低估行为链 DOM |
 
 建议新增小型通用组件 `CollapsibleUnmountRegion.tsx`，只负责 open/opening/closing/closed 和 transitionend 后卸载，不承担业务展开策略。
 
@@ -540,6 +543,12 @@ reasoningFullText: {
 6. 工具 presentation、IN/OUT 和超长日志点击后创建。
 7. 消息虚拟化以 message block 为单位；ActivityGroup 不引入第二个滚动容器。
 8. ResizeObserver 只进入 viewport runtime；组件不得直接修正 scrollTop。
+9. 正常文档流使用真实消息高度，不使用 `content-visibility` + remembered `contain-intrinsic-size` 估算动态 Agent 行。
+10. 历史 Agent turn 仅在进入视口的一屏预取区后加入 hydration 队列；React 挂载不等于可见。
+11. 已水合 canonical 行为节点的结构和文本成本必须计入 render weight，使重型短会话也能及时启用虚拟化。
+12. 任务看板、Checkpoint、历史搜索、开发面板、子代理检查器和右键菜单是非首屏模块；关闭时不下载、不解析、不挂载，工具栏 hover/focus 仅做意图预取。
+13. 余额、Goal 和会话推断请求在首帧后的 idle window 才启动；消息投影、Agent 选择和实时事件不得等待这些辅助请求。
+14. 生产构建必须运行 Chat bundle budget，阻断非首屏模块重新泄漏到 `common-async` 或 Chat 路由首始 chunk。
 
 性能门禁：
 
@@ -547,6 +556,8 @@ reasoningFullText: {
 - 10 秒持续 append 期间不出现 >50ms 的重复主线程长任务；历史 TextBlock render 次数保持不变。
 - 收起过渡只作用一个旧 owner，结束后成员 DOM 数归零。
 - 自动跟随底部时折叠不跳离底部；用户上滚时保持锚点，不抢回底部。
+- 正常流连续上下滚动时 `scrollHeight` 不因离屏 Agent 行进入视口而产生千像素级跳变。
+- HTML 同步脚本不超过 1536 KiB，Chat 路由 chunk 不超过 480 KiB；任务看板源码不进入 `common-async`，Checkpoint、ContextMenu 和任务看板入口不进入 Chat 首始 chunk。
 
 ## 9. 无障碍与国际化
 
@@ -604,7 +615,12 @@ reasoningFullText: {
 - append 新事件不重渲染已封闭 TextBlock。
 - 折叠历史组无成员 DOM。
 - hydration 三条以上消息时队列持续排空且并发不超过 2。
+- 离屏 Agent 行不因组件初次挂载而批量加入 hydration 队列。
+- canonical reasoning/tool/delegation 节点较多时，即使消息数少于 80 条也能按 render weight 启用虚拟化。
 - 自动吸底、用户上滚、加载更早历史、折叠高度变化分别保持正确锚点。
+- 正常流上下滚动时 `scrollHeight` 保持稳定，不依赖刷新恢复。
+- 首屏消息可见后才启动余额、Goal 和会话推断辅助请求；关闭的任务看板、Checkpoint、历史搜索、开发面板与右键菜单无对应资源请求和 DOM。
+- hover/focus 对非首屏入口做预取后，点击仍保持键盘可达且只挂载一次目标模块。
 - reduced-motion 下无高度动画。
 
 ### 11.5 真实 smoke
@@ -667,6 +683,8 @@ npm test -- --runInBand `
   src/pages/chat/viewport/useMessageViewportRuntime.test.tsx
 npm run build
 ```
+
+`npm run build` 已包含 `scripts/check-chat-bundle-budget.cjs`，不得用单独执行 `max build` 绕过 Chat 首载体积与模块归属门禁。
 
 若仓库全量 `tsc` 存在基线错误，必须同时提供：
 

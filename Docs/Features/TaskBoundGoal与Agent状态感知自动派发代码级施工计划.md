@@ -1,11 +1,11 @@
 # Task-bound Goal 与 Agent 状态感知自动派发代码级施工计划
 
-> 状态：设计定稿，待实现与验收；不表示代码已交付
+> 状态：实施中；G2/G3、Task-bound Goal 原子启动与 authoritative 调度代码已落源码；全部开关默认关闭，低峰价格路由仍未开放
 > 日期：2026-08-21
 > 权威决策：[ADR-074 Goal 持久目标、自主续行与自动压缩](../07架构/89ADR-074Goal持久目标自主续行与自动压缩ADR.md)
 > 任务领域边界：[ADR-072 工作区 TODO、峰谷 Auto 派发与定时任务第一阶段](../07架构/86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md)
 > Goal 完整设计：[Goal 持久目标、自主续行与自动压缩完整设计方案](Goal持久目标自主续行与自动压缩完整设计方案.md)
-> 本轮边界：只形成代码级施工计划，未修改源码、配置、数据库或运行数据
+> 2026-08-26 实施边界：已修改源码与测试；未修改配置、`D:\data` 数据或当前运行进程
 
 ## 1. 施工结论
 
@@ -29,6 +29,52 @@ Task 进入 Ready/Deferred
 3. 再建立 provider/model 价格时段 Resolver；
 4. 最后启用 TaskGoalDispatchCoordinator 和低峰窗口触发；
 5. Heartbeat 只保留原有周期检查用途，不参与 Task 启动、Goal 续行或终态判定。
+
+### 1.1 2026-08-26 第一批实施记录
+
+本批次先落“不会误派发、不会把等待子代理误判为空闲”的安全底座，没有绕过第 1 节的强依赖链：
+
+- 新增持久 `agent_availability_projection`，从 Agent 配置、Task/Goal 占用、Chat execution command、Message delivery、运行中子代理和自动工作租约重建；缺失或过期投影为 `Unknown`，不存在直接 `SetIdle`。
+- 新增 `agent_execution_reservations`，以 partial unique index 保证同一 Workspace 内一个 Agent/Task 只有一个 active 自动工作槽；租约带单调 fencing token，并支持 renew/release/expiry。
+- 新增 `task_dependencies` 与 finish-to-start 图 API；拒绝自依赖和环，前置失败/取消/无完成证据归档会产生 `Broken`，非终态为 `Waiting`。
+- `HeartbeatOrchestrator` 在原进程内 execution gate 之后增加持久 Availability gate；等待子代理、持有 Task/Goal、排队消息、Reservation、未知或投影重建失败时均跳过并重新排队，不打断 Agent 节奏。
+- `agent_status` 改读持久投影；无新鲜投影时报告 `unknown`，并返回 busy reason、active Task/Goal/SubAgent，不再用“未在 wake queue”推导 `idle`。
+- 新增确定性 `TaskAutoDispatchEvaluator`：priority → due/notBefore → created → sortOrder → taskId；要求偏好 Agent、依赖满足、30 分钟 idle grace、窗口允许，同一轮同一 Agent 最多选择一个 Task。
+- 新增 `TaskAutoDispatchWorker`，默认 `Enabled=false`，当前只接受 `Mode=shadow`；配置为其他模式会拒绝运行。它不会写 Task、获取 Reservation、发送消息或创建 Goal。
+- 新增认证诊断 API：Availability 查询/重建、Auto evaluate-only、依赖增删/读取/评估。Admin 后续只消费这些 canonical 结果，不在浏览器复制状态机。
+- 执行窗口首批仅能证明 `anytime`；`inherit` 与 `off_peak_only` 在 provider/model 价格档案 Resolver 未落地前统一 `Unknown` 并 fail closed。
+
+### 1.2 2026-08-26 第二批实施记录
+
+- `GoalContinuationWorker` 已实现 durable outbox 的 due scan、claim/lease/fencing、过期恢复、busy defer、stale suppress 与有界 dead-letter；synthetic Turn 统一进入 `ConversationAcceptanceStore -> ChatExecutionCommand -> ChatExecutionWorker`，不直接调用 LLM。
+- Conversation Acceptance 在同一事务中重验 Goal `activationEpoch/aggregateVersion`、单 Iteration、outbox lease；Task-bound Goal 还重验 Task version、active Assignment、Binding、Reservation fencing token 和 lease，并原子消费一次 Iteration 预算。
+- `GoalSettlementWorker` 已从 canonical Turn 终态构造有界 Evidence Capsule，保守 Verifier 不接受自然语言 DONE；无独立完成事实只会继续，失败/取消/证据不完整进入 Blocked，Task canonical Completed 才允许 Task-bound Goal 完成。
+- `TaskGoalDispatchTransactionStore` 已把 Task `Ready/Deferred -> Assigned`、Assignment、Agent Reservation、TaskGoalBinding、GoalRun、首个 GoalOutbox、Task events、canonical Goal events 和 Availability Reserved 投影放进同一个 Serializable SQLite 事务，并提供确定性幂等回放与 lost-race 稳定码。
+- `TaskAutoDispatchWorker` 支持 `shadow | authoritative`。authoritative 仍要求 `TaskAutoDispatch.Enabled && TaskBoundGoals.Enabled && GoalRuns.Enabled && GoalRuns.ContinuationEnabled`，配置不满足时启动校验失败；默认配置四项均不开放自动执行。
+- 自动 Goal Turn 注入服务端生成的 Active Task metadata（task/assignment/version/reservation fence），Runtime 继续使用原生 `task_claim/task_update` 工具更新 Task；普通 Message Delivery 不参与 Task-bound Goal。
+- 聚焦验证：Platform 46 tests（Goal/settlement/atomic start/evaluator/reservation）通过；Runtime ActiveTask reservation fence 映射 1 test 通过；PuddingHost build 0 error。
+
+当前明确未完成：provider/model 价格时段解析与 `off_peak_only` 真实开放、事件驱动边界调度（当前由有界恢复扫描降低延迟）、完整只读 LLM Verifier/证据策略、Task-bound blocked 后的重新预约恢复、Admin 联合状态面板，以及进程外重启/真实 Provider smoke。因此这是“安全默认关闭的 authoritative 源码链路”，不是自动任务生产验收，ADR-074 继续保持 Proposed。
+
+配置入口（默认值无需写入配置文件）：
+
+```json
+{
+  "TaskAutoDispatch": {
+    "Enabled": false,
+    "Mode": "shadow",
+    "WorkspaceIds": ["default"],
+    "ScanInterval": "00:00:30",
+    "MinimumIdle": "00:30:00",
+    "CandidateLimit": 100
+  },
+  "TaskBoundGoals": {
+    "Enabled": false,
+    "GoalIterationBudget": 32,
+    "ReservationLease": "02:00:00"
+  }
+}
+```
 
 ## 2. 冻结不变量
 

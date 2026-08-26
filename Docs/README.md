@@ -1,6 +1,6 @@
 # Pudding Agent Network 文档索引
 
-最后更新：2026-08-25（新增 Agent 消息交错内容流与最新行为组披露完整实施方案及 ADR-079；设计冻结，实施与生产验收未完成）
+最后更新：2026-08-26（新增 Agent Harness 兼容与工具调用效率修复设计及 ADR-081；H0 已实现，部署与真实模型验收未完成）
 
 ## 文档定位
 
@@ -20,6 +20,8 @@
 
 ## 当前主线文档
 
+- `Docs/Features/AgentHarness兼容与工具调用效率修复设计方案.md` / `Docs/07架构/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md`
+	- 冻结“canonical 工具唯一、统一执行边界前适配、短稳定提示、no-match 结构化、可选而非默认 bundled rg”的 Harness 兼容边界；H0 源码与定向测试已落，H1 观测/重复指纹和进程外真实模型验收未完成。
 - `Docs/Features/Agent消息交错内容流与最新行为组披露完整实施方案.md`
 	- Flash 可直接施工的代码级合同：canonical sequence、TextBlock ⇄ ActivityGroup、会话级唯一最新披露 owner、完整 reasoning 换行、工具详情懒加载、柔和收起/卸载、性能、逐文件任务卡、测试命令和双阶段真实验收。
 - `Docs/07架构/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md`

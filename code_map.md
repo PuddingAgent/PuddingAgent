@@ -13,7 +13,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `README.md` / `README_zh-CN.md` | 中英文产品与目标架构入口；Windows Desktop/Core 产品边界、Plugin/Function/Hook/Event/Projection 五类合同、Agent FSM、函数图编排、前端思想、现状缺口与路线 |
 | `Docs/Features/工作区TODO与峰谷节能任务编排设计方案.md` | 工作区 TODO 台账、Agent 认领/拒绝/回报、durable 自动派发与定时消息、可信 idle、心跳 0、峰谷 WorkAdmissionFence，以及 Hook 触发的临时质询子代理、GoalRun 有界循环、manifest/Admin 模型路由、防无限循环熔断和公共 Plugin/Function/Event/Projection 映射 |
 | `Docs/Features/Goal持久目标自主续行与自动压缩完整设计方案.md` | `/goal` 完整专项设计；统一 Web/Desktop/Connector 命令、持久 GoalRun、事件驱动 continuation、256 个外层 Goal Iteration、证据 Verifier、用户抢占、重启停用、自动压缩和 Task-bound Goal；明确不依赖 Heartbeat |
-| `Docs/Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md` | 低峰自动执行施工图；冻结 Goal 前置、持久 Agent Availability Sensor、provider/model 价格时段 Resolver、TaskGoalDispatchCoordinator、原子 Task/Goal 绑定、文件矩阵、测试、切换与生产门禁 |
+| `Docs/Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md` | 低峰自动执行施工图；2026-08-26 已落持久 Availability/Reservation/依赖、G2/G3 durable Goal、Task-bound 原子启动、三重版本/租约 fence 与默认关闭的 authoritative 扫描；真实 off-peak route/profile、完整 Verifier/Admin/进程外验收仍未完成 |
 | `Docs/deepseek-reference-architecture-master-plan-2026-08-14.md` | 本次会话的 deepseek-harness/pi 参考架构总蓝图；以“一切业务能力皆插件”为第一原则，覆盖 Model/Tool/Skill/Session/Agent Loop/Sandbox/Storage/Schedule/UI、统一运行事实、文件级改造矩阵、任务图与 T00-T16 施工步骤 |
 | `Docs/07架构/67ADR-066*.md` | Browser 能力与 Douyin 分层决策 |
 | `Docs/07架构/68*.md` | WebView2 自动化分阶段实施规格 |
@@ -30,7 +30,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/07架构/85*.md` | 分期交付、测试、安全、性能、Desktop 部署、浏览器 smoke、恢复与验收证据图册 |
 | `Docs/07架构/86ADR-072*.md` | 工作区 TODO 第一阶段任务领域 ADR；覆盖五列 Board、Task Failed/Reopen、Task Ledger、手工/Auto 派发、受限 Cron/Message Event、Agent Availability、Task executionWindow 与 provider/model 价格时段 Resolver；完整 Auto 受 Goal 前置约束，不新增 `work-policy.json` |
 | `Docs/07架构/87ADR-073*.md` | 当前产品施工总表与冲突裁决基线；列出 30 项产品任务、17 项 T00–T16 平台底座任务及专项 Phase 去重映射，覆盖目标、优先级、工作量、难度、依赖、设计位置和里程碑 |
-| `Docs/07架构/89ADR-074*.md` | Goal 专项架构决策；冻结外层 GoalRun/内层 Agent Loop 双层预算、单 Goal 256 accepted Iteration 硬上限、durable outbox 续行、独立证据验证、重启 disarm、Task-bound Goal、Availability Sensor、低峰派发与不依赖 Heartbeat；**G0+G1 已实现（2026-08-24）**：`PuddingCore/Goals/` 合同层与纯状态机、`PuddingPlatform/Services/Goals/` 五表 schema + `/goal` 多端统一命令 + 启动 disarm + GoalBanner/Admin 前端最小闭环；命令不创建 Agent Turn，G2 durable outbox 续行起后续批次交付 |
+| `Docs/07架构/89ADR-074*.md` | Goal 专项架构决策；冻结外层 GoalRun/内层 Agent Loop 双层预算、256 accepted Iteration、durable outbox、证据验证、Task-bound Goal、Availability 与低峰派发；2026-08-26 G2/G3 和 Task-bound authoritative 源码链已落但默认关闭，真实低峰/完整 Verifier/Admin/进程外门禁未通过，ADR 仍为 Proposed |
 | `Docs/07架构/90ADR-075*.md` / `Docs/Features/第三方任务看板AccessToken与外部API详细设计方案.md` | 第三方任务看板开发合同；冻结 hashed opaque Access Token、ASP.NET Core 独立 scheme + scope/workspace Policy、外部 API v1、ETag/幂等、追加式 TaskEvaluation 与 Admin Access Token 管理器；P1（Token 后端）+ P3（Admin UI）+ P2 基本功能已实现：`pdt_v1_` opaque Token 摘要存储、PuddingExternalAccessToken scheme、Admin 管理 API/UI、last-used 合并写、External Task API v1（list/get/create/patch/comments/evaluations/commands + ETag/428/412 + 简化幂等）共 65 项后端测试；SSE Watch/RateLimiter/OpenAPI 与 P4（部署收口）未实现，External API 默认关闭 |
 | `Docs/07架构/91ADR-076*.md` / `Docs/Features/遥测调试数据自动过期与Web存储管理设计方案.md` | 遥测/Debug 存储治理设计 + 首轮实现（Phase 0–3 已落地：语义目录/快照估算/单 writer 协调器/语义 API/Web /storage 页面；Phase 4 生产验收待做）；上下文日聚合复用既有 `context_layer_daily_rollups`、retention 索引收编目录所有权、旧 /databases 端点与 Desktop 旧页面捆绑退役、appsettings Retention 节已迁移 system.json |
 | `Docs/07架构/92ADR-077*.md` | 主代理原生视觉目标设计；typed image content、Workspace Artifact、DeepSeek Responses `input_image`/图片型工具结果、Files API、多轮/重启恢复、fail-closed；Image Reader 重定位为 URL/任意绝对路径/Artifact 取用工具，默认当前模型原生读取，文本模型或第二意见才委派 helper；V0–V2 已实现（typed parts、fail-closed Planner、图片工具结果、visionHelperModel、删除自动预观察），V3 Files API 与 V4 真实模型 smoke 待做 |
@@ -39,6 +39,8 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/chat-ui-behavior-chain-quality-upgrade-2026-08-23.md` | 聊天前端「行为链 + 质感」升级：harness 质感纪律与 Hermes/业界 12 原则调研、四档灰阶 token、交错时间线（路径 A/B 统一 ViewModel）、五类 presentation renderer 设计与实施记录 |
 | `Docs/Features/Agent消息交错内容流与最新行为组披露完整实施方案.md` | Flash 代码级施工合同：canonical sequence、TextBlock ⇄ ActivityGroup、会话级唯一最新披露 owner、完整 reasoning、工具详情懒加载、柔和收起/卸载、逐文件任务卡、测试命令和双阶段验收 |
 | `Docs/07架构/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md` | 冻结 AgentTurnCard 单一有序内容流与唯一正文源；当前最新 Agent 回合的最后行为组持续展开，最终正文不关闭，新行为/新回合转移 owner 并柔和收起旧组 |
+| `Docs/07架构/94ADR-080任务看板分层读取子任务与命令化拖拽ADR.md` / `Docs/Features/任务看板状态机子任务渐进披露与高性能拖拽优化设计方案.md` | 任务看板下一阶段 Proposed 设计：Ready 证据化直达 Completed、单层独立状态子任务、普通 List/工具仅 id+title、Index/Card/Detail 三层投影、评论/备注分型、命令化拖拽、global-cursor Watch 修复与 10k 任务性能门禁；尚未实现或验收 |
+| `Docs/07架构/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md` / `Docs/Features/AgentHarness兼容与工具调用效率修复设计方案.md` | 模型后训练 Harness 适配；canonical 工具保持唯一，`rg/exec_command/write_stdin/apply_patch/pwsh` 在统一门禁前归一化，WSL 作为显式 Unix 通道，搜索 no-match 与真实失败分离，完整普通文本五段报告同轮收口；相同失败二次熔断为 `execution_stalled`，Token 主/子代理/轮次/工具从 RuntimeExecutionIdentity 直记且删除 Manager 重复汇总；聚合报表和部署 smoke 待完成 |
 | `Docs/deepseek-harness-tool-system-alignment-2026-08-14.md` | 对照 deepseek-harness 的工具定义与执行协议；规划 canonical output、端到端 callId、结构化错误、管线、并发、spill、可回放 presentation 与 DeepSeek Code Mode |
 | `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md` | 对照 deepseek-harness 与 pi 的统一目标架构与 2026-08-15 复评；定义 Plugin/Function/Hook/Event/Projection、Agent Transition+Effect FSM、Function Graph、Composition Snapshot、前端解释层、底座缺口与分期路线 |
 | `Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md` | 7 日 Token 构成、工具结果重放、搜索失败和 ZIP 稀疏度基线；定义原文不脱敏的 artifact/envelope、T0-T4 分级压缩、Compact 覆盖门禁、冷启动去重、稳定前缀与 DeepSeek 缓存 >99% 验收 |
@@ -123,6 +125,10 @@ Terminal 长命令能耗协议（2026-08-22）
     预算（DB/JSONL 双路径）；摘要链优先占预算，JSONL 胜出时补拼（原会静默丢摘要）
   → 滚动摘要链：压缩候选纳入旧代 compact_summary，新摘要统一标记 CompactedBy；
     CompactionCoverageFilter 改全部 manifest 并集（修多代 JSONL 复活缺口）
+  → 转录连续性：每次压缩前从 platform ChatMessages 按稳定 MessageId + durable platform Id
+    高水位 after-Id 升序分页（256 条）镜像当前 session 到 memory Messages，不全扫会话/既有 ID
+    （禁止 active.Count==0 门禁）；summary-only（含超大旧摘要）/无可压缩原文直接 no-op，
+    result/diagnostics compacted count 均为 0；补读排除 CompactedBy!=null 原文（阻止失忆/套娃）
   → 绝对窗口 proactive 压缩：MaxActiveRawTokenBudget(131072) 与 0.65 比例 OR 触发
     （大窗口模型旧阈值 16 万 token 才压缩）；Streaming 路径补齐轮内软压缩
   → 前缀字节稳定：ToolLoopInstruction 可见集清单（原全注册表）；ContextAssemblyService
@@ -295,10 +301,11 @@ Chat first paint → AgentConversationProjectionService
     补 text 事件 + delegation 三重排除修复（canonical 事件名/kind 映射/run 过滤）
   → 验收二轮修复（2026-08-24）：委派节点按 subAgentId upsert（重复 spawn 不再
     留下永久 running）；DTO 透传 canonical sequence/turnId/runId + activeRun 快照
-    补正文事件（运行态即可交错文本段）；懒水合有界化（MessageRow 挂载注册可见
-    turn、并发窗口 ≤2 且槽位完成后持续排空可见队列，替代首屏全量并发；旧实现只
-    水合首批两条、导致最新消息永久无轨迹）；content-visibility 占位
-    改 auto 120px + 虚拟化按内容权重即时开启（不再要求 ≥24 条）；
+    补正文事件（运行态即可交错文本段）；懒水合有界化（MessageRow 通过消息滚动
+    容器 IntersectionObserver 在 600px 预取区注册可见 turn、并发窗口 ≤2 且槽位
+    完成后持续排空可见队列；组件挂载不再批量水合全部历史）；正常流保留真实行高，
+    删除会在动态 Agent 行上积累过期 remembered size 的 content-visibility 占位；
+    虚拟化按消息内容 + 已水合 canonical 行为链 render weight 即时开启；
     AgentTurnCard 大卡片外壳（暖色表面/1px 边界/14px 圆角，终态不重挂载）；
     工具行 aria-label 带状态 + 成功终态卡「已完成」标记
   → MessageList → messageProjection（保持已组装消息顺序，未匹配 active run 留在当前流末端）→ MessageViewportRuntime（虚拟化、锚点、贴底）
@@ -323,8 +330,13 @@ Chat first paint → AgentConversationProjectionService
   → SubAgentActivityDock（实时 reducer + 终态 run 归档一次性回放；活动 run 零归档轮询=ADR-060 §3.11；归档降级时展示 archive-degraded 提示；刷新后按 canonical runId 恢复子代理任务/推理/工具/轮次/耗时/输出；Agent-first 路由回退 mainSessionId 保证图标可见）
   → 展开过程摘要时才构建 rounds / trace chips
   → MessageItem 先渲染纯文本，异步加载 Markdown/KaTeX 增强块
-  → 子代理检查器、会话诊断 Drawer、摄像头输入仅在首次打开时加载
+  → 任务看板、Checkpoint、历史搜索、开发面板、子代理检查器、右键菜单、
+    会话诊断 Drawer 与摄像头输入仅在首次使用时加载；工具栏 hover/focus 可预取
+  → 余额、Goal、会话推断等辅助请求在首帧后的 idle window 启动，
+    不阻塞消息投影、当前 Agent 与实时事件；旧 WebView2 以短 timer 有界退化
   → 常驻埋点使用 perfEventRuntime；完整诊断模块仅在 perf/debug 模式加载
+  → npm run build 强制 Chat bundle budget：同步脚本 ≤1536 KiB、Chat 路由 ≤480 KiB，
+    并阻断任务看板/Checkpoint/ContextMenu 回流首载共同块
 ```
 
 ## 测试项目

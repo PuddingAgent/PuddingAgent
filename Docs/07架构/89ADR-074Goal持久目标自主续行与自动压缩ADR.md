@@ -8,6 +8,7 @@
 > 压缩边界：[ADR-042 上下文自动压缩与主动 Compact 命令](43ADR-042上下文自动压缩与主动Compact命令ADR.md)
 > 执行边界：[ADR-059 Conversation 执行内核与可靠命令链路](60ADR-059Conversation执行内核与可靠命令链路ADR.md)
 > 任务边界：[ADR-072 工作区 TODO、峰谷 Auto 派发与定时任务第一阶段](86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md)
+> 2026-08-26 实施注记：G2 durable continuation、G3 保守终态协调、Task-bound Goal 原子启动与 authoritative 扫描链已落源码且默认关闭；provider/model 低峰价格档案、完整 Verifier、事件边界调度、Admin 与进程外 smoke 尚未通过，故本 ADR 仍为 Proposed。
 
 ## 1. 决策
 

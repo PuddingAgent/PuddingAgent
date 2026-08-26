@@ -36,6 +36,7 @@ Pudding 的主要成本问题不是输出 Token，而是大体积历史在每轮
 - **归因卫生**：image_reader 委派调用 sessionId 独立命名空间 `vision-helper:{sessionId}` 且带稳定 system 前缀 + 同 (artifact, prompt) 观察缓存；潜意识调用统一 `subconscious:` 命名空间（含冒号的既有 scope 不重复加前缀）；`ConversationProjector` usage 投影按指纹查重补记（消灭与执行服务直记的双计，即 859 行 NULL PrefixHash 桶的主因）；新增 `PrefixChangeReasons.SessionRehydrated`（水合后首轮显式归因）。
 - **会话驻留**：默认会话超时 1h → 4h（`RuntimeProfile.SessionTimeout` 与两处 Default 常量；模板 manifest 可覆盖），减少日间空闲后的全量重水合。
 - **多代覆盖缺口修复**：`CompactionCoverageFilter` 从"最新 manifest"改为该会话全部 manifest 并集——旧代码多代压缩后，第一代覆盖的原始消息可经 JSONL 旁路复活。
+- **压缩转录断供与套娃修复**：每次压缩前按稳定 `MessageId` 从 platform `ChatMessages` 增量镜像当前 session；高水位从既有 `chat_transcript` MessageId 持久派生，按 platform Id `afterId` 升序有界分页（256 条）续读，不再每次全量扫描会话转录或全部既有 MessageId；删除 `activeMessages.Count == 0` 才导入的错误门禁。无可压缩候选，或待压缩集合及尺寸驱逐克隆只含旧 `compact_summary`（含超大旧摘要）时 no-op，结果与 diagnostics 的 compacted count 均为 0；最小输入补读排除 `CompactedBy != null` 的已覆盖原文，避免旧事实回流和摘要逐代膨胀。该修复恢复“压缩后失效 → memory DB 水合”的近期对话连续性；压缩前 Core 重启缺口仍需持续 history projector/platform 冷水合后续消除。
 - **验收工具**：`TestScripts/deepseek-cache-hitrate.py` 逐日/分模型/归因桶/Top-miss 报表；How-Debuge §11.35。
 - 上述改动均为 additive、可用配置回退（预算设 0 = 行为不变）；单元测试覆盖预算钳制、摘要链滚动、绝对上限升级、JSONL 合并（PuddingRuntimeTests 963 中 960 绿，3 个预存速率限制器时序失败与 MemoryEngine 5 个预存失败与本批次无关，已用 stash 基线对照确认）。
 - **状态**：待新 Core 进程部署后按 §15.3 连续 7 个完整自然日验收；增量底噪（同前缀复用 miss ≈0.86%）使最后 0.5% 空间很薄，若报表显示底噪高于预算，按 §15.3 成本口径重议验收线。

@@ -217,6 +217,14 @@ Admin Chat 的 Slash 命令面板新增：
 
 对应代码约束见 `Source/PuddingRuntime/Services/CompactionCoordinator.cs` 类注释与 `ContextCompactionService.CompactAsync` 入口。
 
+### ADR-042-J：压缩前增量对齐 canonical 转录，空窗口不得生成摘要
+
+CoordinatorCanonical 轮次的用户与 assistant 转录由平台投影器写入 platform DB `ChatMessages`；Runtime 不再保证同步写入 memory DB `Messages` 或 JSONL。因此 `ContextCompactionService` 在每次实际压缩前必须把当前 session 的 `ChatMessages` 增量镜像到 `Messages`，并以平台行派生的稳定 `MessageId` 幂等去重。导入高水位持久地派生自已镜像 `chat_transcript` 消息的稳定 `MessageId`，从最大 platform row Id 之后按 Id 升序有界分页（当前每页 256）续读；首次导入或旧数据无法解析高水位时也必须分页追平，禁止每次物化整个会话转录或全部既有 `MessageId`。禁止仅在 `activeMessages.Count == 0` 时导入：只要 memory DB 留有旧 active/summary，该门禁就会永久跳过后续转录，使压缩输入、健康度和压缩后水合停留在旧代。
+
+滚动摘要必须由尚未覆盖的新原文或尺寸驱逐原文驱动。若没有可压缩候选，或待压缩集合与尺寸驱逐克隆都只含上一代 `compact_summary`（包括超过逐字保留字节阈值的旧摘要），本次压缩必须 no-op：不调用摘要生成器，不新增 summary/coverage manifest，不更新 `CompactedBy`，诊断中的 compacted count 固定为 0，也不触发 history invalidation。为满足最小摘要输入而补读时，只能读取 `CompactedBy == null` 的 active 原文；已覆盖原文的语义已经属于对应摘要，禁止再次回流形成重复证据和套娃压缩。
+
+此决定修复压缩触发后的历史连续性；它不把“压缩时镜像”定义为理想的长期写入模型。Core 在下一次压缩前重启时仍可能存在短暂缺口，后续应由持续的 Agent History 投影或受控的 platform transcript 冷水合消除，且不得把 UI 本地状态作为模型历史源。
+
 ## 后果
 
 ### 正向影响
@@ -254,6 +262,8 @@ Admin Chat 的 Slash 命令面板新增：
 | CCR 取回失败 | 压缩 artifact 使用 session/workspace 作用域本地存储；过期/缺失时向模型返回明确错误并记录指标 |
 | 外部 Headroom 依赖不可用 | Headroom 只作为 opt-in provider；任何异常必须 passthrough 原文 |
 | RAG 压缩影响召回质量 | 先通过 Pudding eval 验证 answer quality、citation hit 和 retrieval fallback，再按知识库/助手开关启用 |
+| memory DB 留有旧消息导致新转录不再导入 | 每次压缩前按稳定 MessageId 与 durable platform Id 高水位分页镜像当前 session 的 platform `ChatMessages`；回归覆盖非空 DB 场景与 after-Id 续读 |
+| 无新原文时重复压缩旧摘要 | summary-only/无可压缩窗口直接 no-op，不写摘要、coverage 或 `CompactedBy` |
 
 ## API 决策
 
@@ -301,6 +311,8 @@ context.compaction.failed
 10. 大型工具输出/日志进入 LLM 前能记录 before/after tokens、压缩率、跳过原因和 artifact hash。
 11. LLM 能通过受限内部工具取回被压缩 artifact；跨 session/workspace 取回必须失败。
 12. 对同一测试集，启用输入压缩后缓存命中率不下降，答案质量通过 Pudding benchmark 门禁。
+13. memory DB 已有旧 active/summary 时，platform `ChatMessages` 的新增轮次仍会从 durable platform Id 高水位之后按 256 条有界分页幂等导入，且不全量扫描会话转录或既有 MessageId；压缩后水合可看到上一轮完整 user/assistant 转录。
+14. 仅剩旧摘要（包括超过逐字保留阈值的旧摘要）或没有可覆盖原文时，压缩结果及 diagnostics 均返回 `CompactedMessageCount=0`，且不调用摘要生成器、不新增摘要或 coverage manifest。
 
 ## 相关文件
 
