@@ -25,15 +25,22 @@ import { conversationNeedsProjectionCatchUp } from './client/chatClientStore';
 import { isAgentClientArchitectureEnabled } from './client/featureFlag';
 import { createIndexedDbAgentChatCache } from './client/localCache';
 import ChatLayout from './components/ChatLayout';
-import ContextMenu, { type ContextMenuState } from './components/ContextMenu';
+import type { ContextMenuState } from './components/ContextMenu';
 import { useAgentChatClient } from './hooks/useAgentChatClient';
 import { useChatState } from './hooks/useChatState';
-import { useTurnSurfaceStore } from './hooks/useTurnSurfaceStore';
 import { useTtsPlayer } from './hooks/useTtsPlayer';
+import { useTurnSurfaceStore } from './hooks/useTurnSurfaceStore';
 import {
   savePinnedMessage,
   summarizePinnedMessage,
 } from './utils/pinnedMessage';
+
+const loadContextMenu = () => import('./components/ContextMenu');
+const ContextMenu =
+  process.env.NODE_ENV === 'test'
+    ? (require('./components/ContextMenu')
+        .default as typeof import('./components/ContextMenu').default)
+    : React.lazy(loadContextMenu);
 
 /** 浅比较两个 Record 是否内容相同（用于避免轮询状态创建新引用导致下游重渲染） */
 function shallowEqualRecord(
@@ -222,6 +229,7 @@ const ChatPageContent: React.FC = () => {
       content: string,
     ) => {
       e.preventDefault();
+      void loadContextMenu();
       setContextMenu({
         visible: true,
         x: e.clientX,
@@ -752,20 +760,24 @@ const ChatPageContent: React.FC = () => {
         />
       </Modal>
 
-      <ContextMenu
-        state={contextMenu}
-        onClose={closeContextMenu}
-        onCopy={ctxCallbacks.onCopy}
-        onQuote={ctxCallbacks.onQuote}
-        onDelete={ctxCallbacks.onDelete}
-        onSpeak={ctxCallbacks.onSpeak}
-        onRerun={ctxCallbacks.onRerun}
-        onEditAndRerun={ctxCallbacks.onEditAndRerun}
-        onAddToMemory={ctxCallbacks.onAddToMemory}
-        onPinContext={ctxCallbacks.onPinContext}
-        onPin={ctxCallbacks.onPin}
-        onBranch={ctxCallbacks.onBranch}
-      />
+      {contextMenu.visible && (
+        <React.Suspense fallback={null}>
+          <ContextMenu
+            state={contextMenu}
+            onClose={closeContextMenu}
+            onCopy={ctxCallbacks.onCopy}
+            onQuote={ctxCallbacks.onQuote}
+            onDelete={ctxCallbacks.onDelete}
+            onSpeak={ctxCallbacks.onSpeak}
+            onRerun={ctxCallbacks.onRerun}
+            onEditAndRerun={ctxCallbacks.onEditAndRerun}
+            onAddToMemory={ctxCallbacks.onAddToMemory}
+            onPinContext={ctxCallbacks.onPinContext}
+            onPin={ctxCallbacks.onPin}
+            onBranch={ctxCallbacks.onBranch}
+          />
+        </React.Suspense>
+      )}
     </>
   );
 };

@@ -132,7 +132,7 @@
 | `src/pages/chat/client/featureFlag.ts` | `isExecutionFlowProjectionEnabled` 默认开启（P2 转正：live turn 消费 canonical 投影交错）；localStorage `pudding-exec-flow-proj==='0'` 为逃生门；历史/无投影 turn 走路径 A adapter |
 | `src/pages/chat/projections/executionFlowProjector.ts` | `MessageNode` = 一个连续正文段，任何非 content 节点事件切段；`message.completed.reply` 只在整 turn 无 content delta 时创建兜底正文，绝不覆盖已有段文本；空段过滤、reasoning/tool/delegation 仍按 canonical sequence 投影 |
 | `src/pages/chat/projections/turnSurfaceStore.ts` / `client/types.ts` | bootstrap/activeRun/live 三源按 eventId 幂等合流；`ProcessSummaryItem.sequence` 必填且运行时校验，缺失 fail closed，禁止数组下标伪造跨源顺序 |
-| `src/pages/chat/hooks/useTurnSurfaceStore.ts` | 可见 turn 懒水合调度器：最多 2 个并发槽，任一完成继续排空队列；会话切换丢弃迟到响应，同轮失败项跳过并在下一服务端投影重试，避免“仅最早两条有轨迹” |
+| `src/pages/chat/hooks/useTurnSurfaceStore.ts` | 可见 turn 懒水合调度器：最多 2 个并发槽，任一完成继续排空队列；可见性由 MessageRow 的滚动容器 IntersectionObserver（600px 预取）注册，组件挂载不再等同可见；会话切换丢弃迟到响应，同轮失败项跳过并在下一服务端投影重试 |
 | `src/pages/chat/utils/chatStateUtils.ts` | `resolveTerminalAssistantMarkdown` 分叉兜底：current 与终态 reply 完全分叉且无后缀衔接时返回 reply（服务端 canonical），不再整段拼接（旧实现任何一次流内偏差都会让正文显示两遍） |
 | `src/pages/chat/hooks/useTypewriterStreaming.ts` | stale-stable 守卫：`stableTextRef` 镜像已提交前缀，`text` 不再以其开头（快照/终态改写）时整体重置 stable/live 游标，杜绝 stale stable + 新 live 同段双渲染 |
 | `src/pages/chat/components/execution-flow/TurnStatus.tsx` | 单行运行态（唯一 aria-live）；leading 槽渲染阶段墨球 TurnStatusOrb（pending/五阶段 → breathing/connecting/working/solving/weaving/composing） |
@@ -141,9 +141,10 @@
 | `src/pages/chat/components/IntentConsole.tsx` | Composer 壳：不再持有草稿态/面板态（下沉叶子），仅订阅低频事件（focus 变化、hasText 空↔非空翻转）；外部改写走 textInputRef.setValue；发送门控用 composerHasText |
 | `src/pages/chat/components/ChatMain.tsx` | `handlePinnedQuote` 用 inputValueRef 消除 inputValue 依赖（回调身份稳定，MessageList 的 React.memo 不再被逐键 lift 击穿） |
 | `src/pages/chat/types.ts` | `buildMessageBlocks` 仅滤除 `subagent_progress`（托盘坞承载）；spawned/completed 父级委派事实保留进主消息（DelegationRow 路径 A 数据源） |
-| `src/pages/chat/styles/message.styles.ts` | 消息操作条去「白色药丸悬浮卡」：agent 侧常驻透明图标行（28px 热区、tertiary 色、-6px 光学对齐），用户侧同步去白卡；CurrentActivityPanel 委派大卡退役（TurnStatus delegating + DelegationRow 承载） |
+| `src/pages/chat/styles/message.styles.ts` | AgentTurnCard 宽屏最大 750px（720px 内容列 + 外壳），消除右侧卡内空白；正常流保留真实高度，不使用 `content-visibility` remembered intrinsic size；消息操作条为透明图标行，CurrentActivityPanel 委派大卡退役 |
 | `src/pages/chat/components/MarkdownBlock.tsx` | `preprocessMarkdown` 增量：正文 emoji run 包 `<span data-md-emoji>`（0.95em 收敛，围栏代码/行内 code 跳过；fence 状态跟踪） |
-| `src/pages/chat/viewport/useMessageViewportRuntime.ts` | 吸底阈值 `BOTTOM_THRESHOLD_PX`=24（对齐 harness FOLLOW_THRESHOLD；原 80px 底部附近想停会被 auto-follow 反复拉回）；scrollTop 单一写入者/instant snap/上滚停跟随/内容权重计价虚拟化保持；**流式跳变修复**：follow effect 依赖补 `totalSize`（高度修正后必须重新收敛底部，否则视口停在半高显示旧消息直到下个 delta 猛跳）+ ResizeObserver auto 模式底部阈值内收敛（布局收缩漂移跟随） |
+| `src/pages/chat/viewport/useMessageViewportRuntime.ts` | 吸底阈值 `BOTTOM_THRESHOLD_PX`=24；scrollTop 单一写入者/instant snap/上滚停跟随；虚拟化权重同时计入消息正文、过程项和已水合 canonical render weight；follow effect 依赖 `totalSize`，ResizeObserver auto 模式在底部阈值内收敛 |
+| `src/pages/chat/viewport/executionFlowRenderWeight.ts` | 递归计算 reasoning/tool/delegation/message canonical 节点的结构与文本渲染成本，使 DOM 很重但消息数较少的会话提前进入虚拟化 |
 | `src/pages/chat/components/AgentMessageBubble.tsx` | 流式打字机不再覆盖 tick/maxLag（40/48 滞后余量过小致 bursts 式蹦出）；交给 hook 的 B2 自适应（24ms tick、速率追踪、拥堵降速、分档 charsPerTick） |
 | `src/pages/chat/components/IncrementalMarkdown.tsx` | 流式 markdown 增量渲染（对齐 harness IncrementalMarkdownParser 架构）：围栏外空行切块 + 冻结块 memo 缓存（key=偏移:长度），提交只重解析尾部块，长文流式从 O(n·parse) 降为 O(tail)；`splitMarkdownBlocks` 纯函数（fence 内空行保护、连续空行跳过、前缀偏移） |
 | `src/pages/chat/components/MessageItem.tsx` | append 风格：stable 走 IncrementalMarkdown；live 尾段一律消费打字机推进的 visibleLiveText（原实现含语法尾段整段渲染 liveText 造成"瞬跳块+逐打文字"混合节奏），markdown 对未完成结构按前缀渐进渲染 |
@@ -155,15 +156,17 @@
 | 文件 | 职责与性能边界 |
 |------|----------------|
 | `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；相同状态轮询必须短路，不重复写缓存或通知订阅者 |
-| `src/pages/chat/components/MessageList.tsx` | 将历史消息与 active run 快照投影为稳定消息行；active run 无法匹配现有 Turn 时追加到当前消息流末端；直接渲染 `MessageRow`，并只给当前主代理行附加有界委派摘要；`mergeActiveRunAssistant` 带终态守卫（本地 SSE 终态后轮询快照不得把 status/isStreaming 拉回运行态）、`mergeProjectedMessageIntoTurns` 同 messageId 原地更新（刷新不得追加第二张卡片）；三源去重（本地 SSE / 投影 / activeRun）：`hasProjectedUserTurn` 按 turnId 关联（POST 确认后本地与服务端 turnId 一致）、`mergeLocalTurnsAwaitingProjection` 覆盖时保留本地 userMessage.id（供 commandClientId 匹配）、`findActiveRunPendingTurnIndex` 不再因本地已有正文而拒绝匹配（2026-08-24 修复同回复三卡） |
+| `src/pages/chat/components/MessageList.tsx` | 将历史消息与 active run 快照投影为稳定消息行；把已水合 turn 的 execution-flow render weight 附到 viewport item；active run 无法匹配现有 Turn 时追加到当前消息流末端；直接渲染 `MessageRow`，并只给当前主代理行附加有界委派摘要；保留终态守卫、同 messageId 原地更新与三源去重 |
 | `src/pages/chat/styles/messageStyleContext.tsx` | 消息树样式边界；`MessageList` 注册一次聚合 Chat 样式并通过 Context 共享，消息叶子不得重复调用 `useChatStyles` |
-| `src/pages/chat/components/MessageRow.tsx` | 单消息渲染与语义 memo 边界；投影重建等价对象时保持历史行不提交，正文或过程事件变化仍立即更新 |
+| `src/pages/chat/components/MessageRow.tsx` | 单消息渲染与语义 memo 边界；Agent 行通过根滚动容器 IntersectionObserver 在 600px 预取区注册可见 turn，避免初次挂载批量水合全部历史；投影重建等价对象时保持历史行不提交 |
 | `src/pages/chat/components/MessageProcessSummary.tsx` | 思考/工具过程摘要；折叠时不得构建完整 rounds、trace chips 和展示项 |
 | `../../Docs/deepseek-harness-message-card-alignment-2026-08-14.md` | Chat 执行流目标设计：同一 assistant turn 内用 TurnStatus、ReasoningDisclosureRow、ToolCallRow、DelegationRow 分层呈现，按 toolCallId 配对并复用实时/历史 projector |
 | `src/pages/chat/components/MessageItem.tsx` | 消息文本轻量壳；立即显示纯文本 fallback，并异步加载 Markdown 增强器 |
 | `src/pages/chat/components/MarkdownBlock.tsx` | ReactMarkdown、KaTeX、HTML parser 和 Prism 的独立按需 chunk |
 | `src/pages/chat/reducer/subAgentReducer.ts` | 子代理事件与状态快照的统一投影；即使页面漏收 `created/started`，也会按状态接口的 canonical `runId` 重建缺失运行；`budget_exhausted` 是可恢复终态，任何终态进入后不得被迟到事件降级；`subagent.llm.completed.reasoning_preview` 作为实际“模型推理”展示，旧字符数占位不再生成 |
-| `src/pages/chat/components/ChatMain.tsx` | Chat 主壳；顶栏在当前工作区选择器旁提供常驻“任务看板”入口；完整子代理卡片只进入托盘坞，主消息仅接收 active count/时间锚点等父级委派摘要；运行检查器仅在存在卡片或显式打开时加载 |
+| `src/pages/chat/components/ChatMain.tsx` | Chat 主壳；消息与当前 Agent 保持首屏关键路径，余额、Goal、会话推断在首帧 idle 后启动；任务看板、Checkpoint、历史搜索、开发面板和子代理检查器保持动态模块，并在入口 hover/focus 时意图预取；完整子代理卡片只进入托盘坞，主消息仅接收有界父级委派摘要 |
+| `src/pages/chat/index.tsx` | Chat 路由装配；消息右键菜单只有右键触发时才下载并挂载，不得把 ContextMenu 拉回首始 chunk |
+| `src/pages/chat/hooks/useInitialIdleReady.ts` | 首帧后辅助工作调度边界；优先 `requestIdleCallback(timeout=1200)`，旧 WebView2 回退到不超过 250ms 的 timer，并提供卸载取消 |
 | `src/pages/chat/components/HistorySearchModal.tsx` | 历史搜索弹窗；只有 `historyModalOpen` 时才挂载并触发异步 chunk |
 | `src/pages/chat/components/AgentMessageBubble.tsx` | Agent 消息气泡；首 Token 前用一条 compact reasoning disclosure 与 canonical ToolCallRow 连续展示主代理轨迹，不再重复渲染 thinking/tool 活动大卡；无事件时才显示等待占位，子代理内部过程不得进入主消息 |
 | `src/pages/chat/components/ReasoningPreview.tsx` | DeepSeek Harness 风格思考 disclosure；折叠态只显示最新可见推理摘要，点击后展示完整 model-visible reasoning，不伪造隐藏思维链 |
@@ -177,6 +180,7 @@
 | `src/pages/chat/viewport/useMessageViewportRuntime.ts` | 虚拟列表、锚点与贴底；scroll 状态未变化时不得触发 React commit，首屏稳定轮询应尽快结束 |
 | `src/utils/perfEventRuntime.ts` | 首屏常驻的轻量性能事件缓冲；不得反向静态导入完整诊断模块 |
 | `src/utils/debug.ts` | 完整性能快照、观察器和诊断建议；仅由 perf/debug 模式或开发面板异步加载 |
+| `scripts/check-chat-bundle-budget.cjs` / `package.json` | `npm run build` 后的 Chat 体积门禁；同步脚本 ≤1536 KiB、Chat 路由 ≤480 KiB，并验证任务看板/Checkpoint/ContextMenu 未回流首载共同块 |
 
 ## 工作空间与静态资源边界
 
@@ -199,6 +203,8 @@
 后端对应入口：`PuddingPlatform/Services/AgentChat/AgentConversationProjectionService.cs` 首屏只返回最近 20 条消息；active run 返回最近 64 条可见过程明细，同时用 `processSummary` 保留全量计数。`PuddingPlatform/Controllers/Api/SessionEventsController.cs` 的 bootstrap 子代理事件快照上限为 500 条。
 
 全局壳：`src/app.tsx` 只保留所有路由真正共享的认证、主题和 request；管理端 ProLayout、全局操作和开发态 `SettingDrawer` 必须留在异步 `AdminLayout`。不要仅为减小 `umi.js` 启用 `granularChunks`；必须合计 HTML 同步引用的 framework chunk 与 Chat 路由首始 chunk，确认真实首载字节和请求顺序确有改善。
+
+2026-08-26 生产构建基线：同步 HTML 脚本 1,375,324 bytes，Chat 路由 454,635 bytes，`common-async` 187,591 bytes；从 Chat 触发的任务看板 41,670 bytes、开发面板 48,405 bytes、历史搜索 9,988 bytes、Checkpoint 4,941 bytes、ContextMenu 4,604 bytes 均为独立异步块。该数据是构建产物证据，不等同于已部署 WebView2 的真实网络/交互验收。
 
 ## 测试
 

@@ -1,16 +1,13 @@
 // ── MessageRow：单条消息行（路由到 User/Agent/Heartbeat 气泡）──
 import { HeartOutlined } from '@ant-design/icons';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 import { useChatMessageStyles } from '../styles/messageStyleContext';
 import type { ChatMessageBlock, ParentDelegationActivity } from '../types';
-import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 import AgentMessageBubble from './AgentMessageBubble';
 import FocusViewRow, { type FocusViewRowTone } from './FocusViewRow';
 import MessageItem from './MessageItem';
-import {
-  getCurrentRunActivity,
-  sanitizeProcessText,
-} from './processPreview';
+import { getCurrentRunActivity, sanitizeProcessText } from './processPreview';
 import type { TranscriptMode } from './TranscriptModeSwitch';
 import UserMessageBubble from './UserMessageBubble';
 
@@ -38,7 +35,7 @@ interface MessageRowProps {
   focusView?: boolean;
   /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
   getTurnProjection?: (turnId: string) => ExecutionFlowProjection | undefined;
-  /** 挂载即上报可见 turnId（虚拟化窗口=近视口），驱动有界懒水合。 */
+  /** 进入消息视口附近时上报 turnId，驱动有界懒水合。 */
   onTurnVisible?: (turnId: string) => void;
 }
 
@@ -242,12 +239,50 @@ const MessageRow: React.FC<MessageRowProps> = ({
   onTurnVisible,
 }) => {
   const { styles, cx } = useChatMessageStyles();
+  const agentRowRef = useRef<HTMLDivElement | null>(null);
+  const registeredVisibleTurnRef = useRef<string | null>(null);
   // P2#8：Focus view 单行展开状态（折叠/展开同一行内切换，保持完整内容在同一
   // 虚拟行内渲染，避免折叠展开引发整列重渲染）。
   const [focusExpanded, setFocusExpanded] = useState(false);
   useEffect(() => {
-    if (block.turnId) onTurnVisible?.(block.turnId);
-  }, [block.turnId, onTurnVisible]);
+    const turnId = block.turnId;
+    if (
+      block.role !== 'agent' ||
+      !turnId ||
+      !onTurnVisible ||
+      registeredVisibleTurnRef.current === turnId
+    ) {
+      return;
+    }
+
+    const registerVisibleTurn = () => {
+      if (registeredVisibleTurnRef.current === turnId) return;
+      registeredVisibleTurnRef.current = turnId;
+      onTurnVisible(turnId);
+    };
+    const row = agentRowRef.current;
+    if (!row || typeof IntersectionObserver === 'undefined') {
+      // JSDOM / 旧 WebView 降级：保持功能可用；产品 WebView2 走真实近视口观察。
+      registerVisibleTurn();
+      return;
+    }
+
+    const root = row.closest<HTMLElement>('[data-testid="chat-message-list"]');
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        registerVisibleTurn();
+        observer.disconnect();
+      },
+      {
+        root,
+        // 提前一屏水合，既避免滚入时空壳，又不把正常流中的全部历史误判为可见。
+        rootMargin: '600px 0px',
+      },
+    );
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [block.role, block.turnId, onTurnVisible]);
   const focusSummary = useMemo(() => getFocusViewSummary(block), [block]);
   const focusTone = useMemo(() => getFocusViewTone(block), [block]);
 
@@ -337,6 +372,7 @@ const MessageRow: React.FC<MessageRowProps> = ({
     if (focusView) {
       return (
         <div
+          ref={agentRowRef}
           className={rowClassName}
           data-agent={block.agentName}
           data-streaming={block.isStreaming ? 'true' : undefined}
@@ -360,6 +396,7 @@ const MessageRow: React.FC<MessageRowProps> = ({
     }
     return (
       <div
+        ref={agentRowRef}
         className={rowClassName}
         data-agent={block.agentName}
         data-streaming={block.isStreaming ? 'true' : undefined}

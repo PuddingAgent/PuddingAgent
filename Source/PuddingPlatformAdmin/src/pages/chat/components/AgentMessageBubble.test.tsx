@@ -492,12 +492,58 @@ describe('AgentMessageBubble streaming presentation', () => {
     expect(
       screen.queryByText('主代理正在等待子代理返回；内部进度请查看右侧托盘坞'),
     ).toBeNull();
-    expect(document.body.textContent).not.toContain('子代理任务详情');
+        expect(document.body.textContent).not.toContain('子代理任务详情');
     // CU-10：MessageProcessSummary 已退出主生产路径 → 不再渲染「查看过程」折叠摘要入口。
     expect(screen.queryByText('查看过程')).toBeNull();
     expect(
       screen.queryByText(/主代理过程可在当前消息的“查看过程”中展开/),
     ).toBeNull();
+  });
+
+  it('does not show delegation waiting state when the activity turnId does not match this bubble (571fb2fa)', () => {
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        turnId="turn-a"
+        status="executing"
+        isStreaming={false}
+        content=""
+        parentDelegationActivity={{
+          activeCount: 1,
+          label: 'reviewer',
+          turnId: 'turn-b',
+          startedAt: Date.now() - 2_000,
+          updatedAt: Date.now() - 200,
+        }}
+      />,
+    );
+
+    // 归属校验：等待卡片必须精确绑定当前父 Turn，turnId 不匹配不显示（防串台）。
+    expect(screen.queryByText('正在等待子代理')).toBeNull();
+    expect(screen.queryByText('正在调用子代理')).toBeNull();
+  });
+
+  it('does not show delegation waiting state when the parent turn is not active (571fb2fa)', () => {
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        turnId="turn-a"
+        status="success"
+        isStreaming={false}
+        content="完成。"
+        parentDelegationActivity={{
+          activeCount: 1,
+          label: 'reviewer',
+          turnId: 'turn-a',
+          startedAt: Date.now() - 2_000,
+          updatedAt: Date.now() - 200,
+        }}
+      />,
+    );
+
+    // 父 Turn 已封口（success）→ 不再显示等待卡片。
+    expect(screen.queryByText('正在等待子代理')).toBeNull();
+    expect(screen.queryByText('正在调用子代理')).toBeNull();
   });
 
   it('summarizes JSON tool arguments instead of showing raw JSON in the default activity panel', () => {

@@ -450,7 +450,7 @@ describe('ChatMain workbench header', () => {
       },
     });
 
-    expect(_mockLatestInputAreaProps.subAgentsRunning).toBe(2);
+        expect(_mockLatestInputAreaProps.subAgentsRunning).toBe(2);
     expect(_mockLatestMessageListProps.parentDelegationActivity).toEqual({
       activeCount: 1,
       label: undefined,
@@ -458,6 +458,26 @@ describe('ChatMain workbench header', () => {
       startedAt: 1_000,
       updatedAt: 1_000,
     });
+  });
+
+  it('excludes sync sub-agents without a parentTurnId from the waiting card (571fb2fa no-orphan)', () => {
+    renderChatMain({
+      subAgentCards: {
+        'sa-orphan': {
+          turnId: 'sa-orphan',
+          subSessionId: 'session-1-sub-orphan',
+          status: 'running',
+          invocationMode: 'sync',
+          originToolId: 'spawn_sub_agent',
+          taskSummary: 'orphan task',
+          spawnedAt: 1_000,
+        },
+      },
+    });
+
+    // 缺 parentTurnId 的 sync 卡宁缺勿滥：不进入主消息等待卡片（防串台）。
+    expect(_mockLatestInputAreaProps.subAgentsRunning).toBe(1);
+    expect(_mockLatestMessageListProps.parentDelegationActivity).toBeUndefined();
   });
 
   it('mounts history search only after the user opens it', () => {

@@ -26,6 +26,7 @@ import type {
   PlanStepData,
   ProcessSummaryItem,
 } from '../client/types';
+import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 import { useChatStyles } from '../styles';
 import { ChatMessageStyleProvider } from '../styles/messageStyleContext';
 import type {
@@ -37,18 +38,18 @@ import type {
   TimelineItem,
 } from '../types';
 import { inboundDebug } from '../utils/inboundDebug';
+import { getExecutionFlowRenderWeight } from '../viewport/executionFlowRenderWeight';
 import { buildVirtualMessageItems } from '../viewport/messageProjection';
 import type { ScrollIntent, VirtualMessageItem } from '../viewport/types';
 import { useMessageViewportRuntime } from '../viewport/useMessageViewportRuntime';
 import ApprovalCard from './ApprovalCard';
-import EditablePlanCard from './EditablePlanCard';
 import type { ChatEmptyStateMode } from './ChatEmptyState';
 import ChatEmptyState from './ChatEmptyState';
+import EditablePlanCard from './EditablePlanCard';
 import FocusViewToggle from './FocusViewToggle';
 import MessageRow from './MessageRow';
 import PinnedMessageButton from './PinnedMessageButton';
 import type { TranscriptMode } from './TranscriptModeSwitch';
-import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 
 interface MessageListProps {
   turns: ChatTurn[];
@@ -83,14 +84,14 @@ interface MessageListProps {
   onViewportScrollIntentHandled?: () => void;
   /** 主代理对当前委派的有界摘要；子代理内部过程仍只在托盘坞展示。 */
   parentDelegationActivity?: ParentDelegationActivity;
-    /** P0#2：转录视图分级（normal | verbose | summary） */
+  /** P0#2：转录视图分级（normal | verbose | summary） */
   transcriptMode?: TranscriptMode;
   onTranscriptModeChange?: (mode: TranscriptMode) => void;
   /** P2#9：用户在审批卡点击「拒绝」时通知（进入 Recently denied 面板）。 */
   onApprovalDenied?: (card: ApprovalCardData) => void;
   /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
   getTurnProjection?: (turnId: string) => ExecutionFlowProjection | undefined;
-  /** MessageRow 挂载上报可见 turnId（有界懒水合驱动）。 */
+  /** MessageRow 进入近视口预取区时上报 turnId（有界懒水合驱动）。 */
   onTurnVisible?: (turnId: string) => void;
   /** P2#8：Focus view 单行折叠模式 */
   focusView?: boolean;
@@ -157,10 +158,7 @@ const toTimelineItems = (items: ProcessSummaryItem[]): TimelineItem[] =>
   items
     // 'text' 是正文增量（历史明细接口提供；由投影分段/正文气泡承载），
     // 'subagent.*' 是旧会话级事件 kind——都不进入路径 A 时间线。
-    .filter(
-      (item) =>
-        !isSubAgentProcessItem(item.kind) && item.kind !== 'text',
-    )
+    .filter((item) => !isSubAgentProcessItem(item.kind) && item.kind !== 'text')
     .map((item) => ({
       id: item.id,
       toolCallId: item.toolCallId ?? undefined,
@@ -704,7 +702,9 @@ const selectMonotonicMarkdown = (local: string, active: string): string => {
   return active;
 };
 
-const isTerminalAssistantStatus = (status: ChatTurn['assistant']['status']): boolean =>
+const isTerminalAssistantStatus = (
+  status: ChatTurn['assistant']['status'],
+): boolean =>
   status === 'success' || status === 'error' || status === 'cancelled';
 
 /**
@@ -990,8 +990,20 @@ const MessageList: React.FC<MessageListProps> = ({
     return matching[matching.length - 1]?.id;
   }, [parentDelegationActivity, projection.activeItemId, projection.items]);
 
+  const viewportItems = useMemo(
+    () =>
+      projection.items.map((item) => {
+        if (item.kind !== 'message' || item.block.role !== 'agent') return item;
+        const renderWeight = getExecutionFlowRenderWeight(
+          getTurnProjection?.(item.block.turnId),
+        );
+        return renderWeight > 0 ? { ...item, renderWeight } : item;
+      }),
+    [getTurnProjection, projection.items],
+  );
+
   const viewport = useMessageViewportRuntime({
-    items: projection.items,
+    items: viewportItems,
     hasMoreBefore: hasMoreMessages,
     loadingBefore: loadingMore,
     onRequestLoadBefore: () => onLoadMore(),
@@ -1138,30 +1150,30 @@ const MessageList: React.FC<MessageListProps> = ({
     return (
       <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
         {messageRow}
-                  {approvalCardData && (
-            <ApprovalCard
-              approvalId={approvalCardData.approvalId}
-              toolName={approvalCardData.toolName}
-              description={approvalCardData.description}
-              riskLevel={approvalCardData.riskLevel}
-              arguments={approvalCardData.arguments}
-              status={approvalCardData.status}
-              decision={approvalCardData.decision}
-              reason={approvalCardData.reason}
-              requestedAt={approvalCardData.requestedAt}
-              expiresAt={approvalCardData.expiresAt}
-              onDecide={(decision, reason) => {
-                if (decision === 'deny') {
-                  onApprovalDenied?.(approvalCardData);
-                }
-                handleDecideApproval(
-                  approvalCardData.approvalId,
-                  decision,
-                  reason,
-                );
-              }}
-            />
-          )}
+        {approvalCardData && (
+          <ApprovalCard
+            approvalId={approvalCardData.approvalId}
+            toolName={approvalCardData.toolName}
+            description={approvalCardData.description}
+            riskLevel={approvalCardData.riskLevel}
+            arguments={approvalCardData.arguments}
+            status={approvalCardData.status}
+            decision={approvalCardData.decision}
+            reason={approvalCardData.reason}
+            requestedAt={approvalCardData.requestedAt}
+            expiresAt={approvalCardData.expiresAt}
+            onDecide={(decision, reason) => {
+              if (decision === 'deny') {
+                onApprovalDenied?.(approvalCardData);
+              }
+              handleDecideApproval(
+                approvalCardData.approvalId,
+                decision,
+                reason,
+              );
+            }}
+          />
+        )}
         {planCardData && (
           <EditablePlanCard
             planId={planCardData.planId}
@@ -1184,7 +1196,10 @@ const MessageList: React.FC<MessageListProps> = ({
     <ChatMessageStyleProvider value={chatStyles}>
       <div className={styles.messageListShell}>
         {projection.items.length > 0 && (
-          <div className={styles.focusViewToolbar} data-testid="focus-view-toolbar">
+          <div
+            className={styles.focusViewToolbar}
+            data-testid="focus-view-toolbar"
+          >
             <FocusViewToggle
               value={Boolean(focusView)}
               onChange={onFocusViewChange ?? (() => undefined)}
@@ -1204,194 +1219,200 @@ const MessageList: React.FC<MessageListProps> = ({
           onScroll={viewport.onScroll}
           data-testid="chat-message-list"
         >
-        {(() => {
-          const emptyStateMode: ChatEmptyStateMode | null = (() => {
-            if (historyLoading || projection.items.length > 0 || activeRun)
-              return null;
-            if (error) return 'error';
-            if (!agentId) return 'no-agent';
-            return 'ready';
-          })();
-          return emptyStateMode ? (
-            <ChatEmptyState
-              mode={emptyStateMode}
-              errorText={error ?? undefined}
-              onRetry={onClearError}
-              onSuggestionClick={(text) => {
-                window.dispatchEvent(
-                  new CustomEvent('pudding:chat:suggestion', { detail: text }),
-                );
-              }}
-            />
-          ) : null;
-        })()}
-        {historyLoading && turns.length === 0 && (
-          <div className={styles.historyLoading}>
-            <Skeleton
-              active
-              avatar
-              paragraph={{ rows: 4 }}
-              style={{ padding: 16 }}
-            />
-          </div>
-        )}
-        {historyLoading && turns.length > 0 && (
-          <div className={styles.historyLoading}>
-            <Spin />
-          </div>
-        )}
-        {/* 虚拟滚动容器 */}
-        {projection.items.length > 0 && (
-          <div
-            ref={viewport.contentRef}
-            data-testid="chat-message-viewport-content"
-            data-virtualized={viewport.virtualizationEnabled ? 'true' : 'false'}
-            style={
-              viewport.virtualizationEnabled
-                ? {
-                    height: `${viewport.totalSize}px`,
-                    width: '100%',
-                    position: 'relative',
-                  }
-                : { width: '100%', position: 'relative' }
-            }
-          >
-            {viewport.virtualizationEnabled
-              ? viewport.virtualRows.map((virtualRow) => {
-                  const item = projection.items[virtualRow.index];
-                  if (!item) return null;
-                  return (
+          {(() => {
+            const emptyStateMode: ChatEmptyStateMode | null = (() => {
+              if (historyLoading || projection.items.length > 0 || activeRun)
+                return null;
+              if (error) return 'error';
+              if (!agentId) return 'no-agent';
+              return 'ready';
+            })();
+            return emptyStateMode ? (
+              <ChatEmptyState
+                mode={emptyStateMode}
+                errorText={error ?? undefined}
+                onRetry={onClearError}
+                onSuggestionClick={(text) => {
+                  window.dispatchEvent(
+                    new CustomEvent('pudding:chat:suggestion', {
+                      detail: text,
+                    }),
+                  );
+                }}
+              />
+            ) : null;
+          })()}
+          {historyLoading && turns.length === 0 && (
+            <div className={styles.historyLoading}>
+              <Skeleton
+                active
+                avatar
+                paragraph={{ rows: 4 }}
+                style={{ padding: 16 }}
+              />
+            </div>
+          )}
+          {historyLoading && turns.length > 0 && (
+            <div className={styles.historyLoading}>
+              <Spin />
+            </div>
+          )}
+          {/* 虚拟滚动容器 */}
+          {projection.items.length > 0 && (
+            <div
+              ref={viewport.contentRef}
+              data-testid="chat-message-viewport-content"
+              data-virtualized={
+                viewport.virtualizationEnabled ? 'true' : 'false'
+              }
+              style={
+                viewport.virtualizationEnabled
+                  ? {
+                      height: `${viewport.totalSize}px`,
+                      width: '100%',
+                      position: 'relative',
+                    }
+                  : { width: '100%', position: 'relative' }
+              }
+            >
+              {viewport.virtualizationEnabled
+                ? viewport.virtualRows.map((virtualRow) => {
+                    const item = projection.items[virtualRow.index];
+                    if (!item) return null;
+                    return (
+                      <div
+                        key={virtualRow.key}
+                        data-index={virtualRow.index}
+                        data-viewport-item-id={item.id}
+                        ref={viewport.virtualizer.measureElement}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
+                      >
+                        {renderProjectionItem(item)}
+                      </div>
+                    );
+                  })
+                : projection.items.map((item, index) => (
                     <div
-                      key={virtualRow.key}
-                      data-index={virtualRow.index}
+                      key={item.id}
+                      data-index={index}
                       data-viewport-item-id={item.id}
-                      ref={viewport.virtualizer.measureElement}
                       style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
                         width: '100%',
-                        transform: `translateY(${virtualRow.start}px)`,
+                        position: 'relative',
+                        display: 'flow-root',
                       }}
                     >
                       {renderProjectionItem(item)}
                     </div>
-                  );
-                })
-              : projection.items.map((item, index) => (
-                  <div
-                    key={item.id}
-                    data-index={index}
-                    data-viewport-item-id={item.id}
-                    style={{
-                      width: '100%',
-                      position: 'relative',
-                      display: 'flow-root',
-                    }}
-                  >
-                    {renderProjectionItem(item)}
-                  </div>
-                ))}
-          </div>
-        )}
-        {error && (
-          <Alert
-            type="error"
-            message={error}
-            closable
-            onClose={onClearError}
-            className={styles.errorAlert}
-            action={
-              <Button
-                size="small"
-                type="link"
-                onClick={() => {
-                  const payload = {
-                    timestamp: new Date().toISOString(),
-                    userAgent: navigator.userAgent,
-                    url: window.location.href,
-                    sessionId: sessionId ?? null,
-                    agentId: agentId ?? null,
-                    turnsCount: turns.length,
-                    lastTurnStatus:
-                      turns.length > 0
-                        ? ((turns[turns.length - 1] as { status?: string })
-                            .status ?? null)
-                        : null,
-                    error,
-                    recentPerfEvents: getPerfEvents().slice(-5),
-                  };
-                  navigator.clipboard
-                    .writeText(JSON.stringify(payload, null, 2))
-                    .then(() => {
-                      setDiagCopied(true);
-                      setTimeout(() => setDiagCopied(false), 2000);
-                    });
-                }}
-              >
-                {diagCopied ? '✓ 已复制' : '复制诊断信息'}
-              </Button>
-            }
-          />
-        )}
-        {/* 底部滚动控制（messageViewportControls 锚定 messageListShell 右下角，
-            不再使用视口 fixed 内联样式） */}
-        {projection.items.length > 0 && (
-          <div
-            data-testid="chat-bottom-scroll-controls"
-            className={styles.messageViewportControls}
-          >
-            {onPinnedQuote && (
-              <PinnedMessageButton
-                onQuote={onPinnedQuote}
-                className={styles.messageViewportControlButton}
-              />
-            )}
-            <Tooltip
-              title={
-                viewport.state.followMode === 'pinned'
-                  ? '取消贴底跟随'
-                  : '开启贴底跟随'
+                  ))}
+            </div>
+          )}
+          {error && (
+            <Alert
+              type="error"
+              message={error}
+              closable
+              onClose={onClearError}
+              className={styles.errorAlert}
+              action={
+                <Button
+                  size="small"
+                  type="link"
+                  onClick={() => {
+                    const payload = {
+                      timestamp: new Date().toISOString(),
+                      userAgent: navigator.userAgent,
+                      url: window.location.href,
+                      sessionId: sessionId ?? null,
+                      agentId: agentId ?? null,
+                      turnsCount: turns.length,
+                      lastTurnStatus:
+                        turns.length > 0
+                          ? ((turns[turns.length - 1] as { status?: string })
+                              .status ?? null)
+                          : null,
+                      error,
+                      recentPerfEvents: getPerfEvents().slice(-5),
+                    };
+                    navigator.clipboard
+                      .writeText(JSON.stringify(payload, null, 2))
+                      .then(() => {
+                        setDiagCopied(true);
+                        setTimeout(() => setDiagCopied(false), 2000);
+                      });
+                  }}
+                >
+                  {diagCopied ? '✓ 已复制' : '复制诊断信息'}
+                </Button>
               }
+            />
+          )}
+          {/* 底部滚动控制（messageViewportControls 锚定 messageListShell 右下角，
+            不再使用视口 fixed 内联样式） */}
+          {projection.items.length > 0 && (
+            <div
+              data-testid="chat-bottom-scroll-controls"
+              className={styles.messageViewportControls}
             >
-              <Button
-                type={
-                  viewport.state.followMode === 'pinned' ? 'primary' : 'default'
-                }
-                icon={<VerticalAlignBottomOutlined />}
-                onClick={() =>
-                  viewport.setPinnedBottom(
-                    viewport.state.followMode !== 'pinned',
-                  )
-                }
-                aria-label={
+              {onPinnedQuote && (
+                <PinnedMessageButton
+                  onQuote={onPinnedQuote}
+                  className={styles.messageViewportControlButton}
+                />
+              )}
+              <Tooltip
+                title={
                   viewport.state.followMode === 'pinned'
                     ? '取消贴底跟随'
                     : '开启贴底跟随'
                 }
-                className={styles.messageViewportControlButton}
-              />
-            </Tooltip>
-            {viewport.state.showBottomButton && (
-              <Tooltip title="回到底部">
-                <Badge dot offset={[-3, 3]}>
-                  <Button
-                    type="default"
-                    icon={<ArrowDownOutlined />}
-                    onClick={() =>
-                      viewport.scrollToBottom({
-                        behavior: 'smooth',
-                        reason: 'manual-bottom',
-                      })
-                    }
-                    aria-label="回到底部"
-                    className={styles.messageViewportControlButton}
-                  />
-                </Badge>
+              >
+                <Button
+                  type={
+                    viewport.state.followMode === 'pinned'
+                      ? 'primary'
+                      : 'default'
+                  }
+                  icon={<VerticalAlignBottomOutlined />}
+                  onClick={() =>
+                    viewport.setPinnedBottom(
+                      viewport.state.followMode !== 'pinned',
+                    )
+                  }
+                  aria-label={
+                    viewport.state.followMode === 'pinned'
+                      ? '取消贴底跟随'
+                      : '开启贴底跟随'
+                  }
+                  className={styles.messageViewportControlButton}
+                />
               </Tooltip>
-            )}
-          </div>
-        )}
+              {viewport.state.showBottomButton && (
+                <Tooltip title="回到底部">
+                  <Badge dot offset={[-3, 3]}>
+                    <Button
+                      type="default"
+                      icon={<ArrowDownOutlined />}
+                      onClick={() =>
+                        viewport.scrollToBottom({
+                          behavior: 'smooth',
+                          reason: 'manual-bottom',
+                        })
+                      }
+                      aria-label="回到底部"
+                      className={styles.messageViewportControlButton}
+                    />
+                  </Badge>
+                </Tooltip>
+              )}
+            </div>
+          )}
           <div ref={listEndRef} />
         </div>
       </div>

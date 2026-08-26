@@ -1,6 +1,10 @@
 import type { ChatMessageBlock } from '../types';
 
-export type VirtualMessageHeightHint = 'compact' | 'normal' | 'rich' | 'streaming';
+export type VirtualMessageHeightHint =
+  | 'compact'
+  | 'normal'
+  | 'rich'
+  | 'streaming';
 
 export type VirtualMessageItem =
   | {
@@ -9,6 +13,8 @@ export type VirtualMessageItem =
       createdAt: number;
       block: ChatMessageBlock;
       heightHint: VirtualMessageHeightHint;
+      /** 已水合 canonical 行为链的近似渲染成本；用于补足 block 文本权重。 */
+      renderWeight?: number;
     }
   | {
       kind: 'loader';

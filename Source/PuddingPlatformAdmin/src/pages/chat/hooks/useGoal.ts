@@ -4,9 +4,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  executeGoalCommand,
   type GoalAction,
   type GoalSnapshot,
-  executeGoalCommand,
   getConversationGoal,
 } from '@/services/platform/api';
 
@@ -14,6 +14,8 @@ interface UseGoalOptions {
   workspaceId?: string;
   conversationId?: string;
   agentId?: string;
+  /** 首屏关键内容完成前可关闭辅助 Goal 查询。 */
+  enabled?: boolean;
 }
 
 interface UseGoalResult {
@@ -48,6 +50,7 @@ export function useGoal({
   workspaceId,
   conversationId,
   agentId,
+  enabled = true,
 }: UseGoalOptions): UseGoalResult {
   const [goal, setGoal] = useState<GoalSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
@@ -56,12 +59,13 @@ export function useGoal({
   const requestSeqRef = useRef(0);
 
   const refresh = useCallback(async () => {
-    if (!workspaceId || !conversationId) {
+    const seq = ++requestSeqRef.current;
+    if (!enabled || !workspaceId || !conversationId) {
       setGoal(null);
       setError(null);
+      setLoading(false);
       return;
     }
-    const seq = ++requestSeqRef.current;
     setLoading(true);
     try {
       const { goal: snapshot } = await getConversationGoal(
@@ -78,7 +82,7 @@ export function useGoal({
     } finally {
       if (seq === requestSeqRef.current) setLoading(false);
     }
-  }, [workspaceId, conversationId]);
+  }, [enabled, workspaceId, conversationId]);
 
   useEffect(() => {
     void refresh();

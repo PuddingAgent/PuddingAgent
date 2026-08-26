@@ -19,16 +19,17 @@ import {
 } from '@/utils/workspaceNavigation';
 import type { RecentlyDeniedItem } from '../classifier/autoReviewClassifier';
 import type { AgentConversationView } from '../client/types';
-import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 import { useAutoReviewClassifier } from '../hooks/useAutoReviewClassifier';
 import { useAutoTts } from '../hooks/useAutoTts';
 import type {
   ChatInteractionQueueItem,
   ChatInteractionRuntimeEvent,
 } from '../hooks/useChatState';
+import { useGoal } from '../hooks/useGoal';
+import { useInitialIdleReady } from '../hooks/useInitialIdleReady';
 import { useNotificationSound } from '../hooks/useNotificationSound';
 import { useProviderBalance } from '../hooks/useProviderBalance';
-import { useGoal } from '../hooks/useGoal';
+import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 import type {
   SandboxBoundaryInfo,
   SandboxNetworkMode,
@@ -42,28 +43,47 @@ import type {
 } from '../types';
 import type { PermissionMode } from '../types/chatStateTypes';
 import { currencySymbolFor, resolveBillingAdapter } from '../utils/providerBilling';
-import CheckpointTimelinePanel from './CheckpointTimelinePanel';
 import GoalBanner from './GoalBanner';
 import IntentConsole, { type ChatStatus } from './IntentConsole';
 import MessageList from './MessageList';
 import ProviderBalanceIndicator from './ProviderBalanceIndicator';
 import type { TranscriptMode } from './TranscriptModeSwitch';
-import { TaskBoardModal } from '@/pages/workspace-tasks';
+
+const loadCheckpointTimelinePanel = () =>
+  import('./CheckpointTimelinePanel');
+const loadDevPanel = () => import('./DevPanel');
+const loadHistorySearchModal = () => import('./HistorySearchModal');
+const loadSubAgentActivityDock = () => import('./SubAgentActivityDock');
+const loadTaskBoardModal = async () => {
+  const module = await import('@/pages/workspace-tasks');
+  return { default: module.TaskBoardModal };
+};
+
+const CheckpointTimelinePanel =
+  process.env.NODE_ENV === 'test'
+    ? (require('./CheckpointTimelinePanel')
+        .default as typeof import('./CheckpointTimelinePanel').default)
+    : React.lazy(loadCheckpointTimelinePanel);
 
 const DevPanel =
   process.env.NODE_ENV === 'test'
     ? (require('./DevPanel').default as typeof import('./DevPanel').default)
-    : React.lazy(() => import('./DevPanel'));
+    : React.lazy(loadDevPanel);
 const HistorySearchModal =
   process.env.NODE_ENV === 'test'
     ? (require('./HistorySearchModal')
         .default as typeof import('./HistorySearchModal').default)
-    : React.lazy(() => import('./HistorySearchModal'));
+    : React.lazy(loadHistorySearchModal);
 const SubAgentActivityDock =
   process.env.NODE_ENV === 'test'
     ? (require('./SubAgentActivityDock')
         .default as typeof import('./SubAgentActivityDock').default)
-    : React.lazy(() => import('./SubAgentActivityDock'));
+    : React.lazy(loadSubAgentActivityDock);
+const TaskBoardModal =
+  process.env.NODE_ENV === 'test'
+    ? (require('@/pages/workspace-tasks')
+        .TaskBoardModal as typeof import('@/pages/workspace-tasks').TaskBoardModal)
+    : React.lazy(loadTaskBoardModal);
 
 import { useDevRuntimeEvents } from './useDevRuntimeEvents';
 
@@ -242,6 +262,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   clearRestoredMarker,
 }) => {
   const { styles } = useChatStyles();
+  const auxiliaryDataReady = useInitialIdleReady();
   // ── 主代理服务商余额徽标（多服务商计费展示适配器；非 DeepSeek 等未适配服务商不渲染）──
   const billingAdapter = resolveBillingAdapter(selectedAgent?.preferredProviderId);
   const {
@@ -249,7 +270,10 @@ const ChatMain: React.FC<ChatMainProps> = ({
     currency: providerBalanceCurrency,
     errorText: providerBalanceError,
     refresh: refreshProviderBalance,
-  } = useProviderBalance(selectedAgent?.preferredProviderId, !!billingAdapter);
+  } = useProviderBalance(
+    selectedAgent?.preferredProviderId,
+    !!billingAdapter && auxiliaryDataReady,
+  );
   // ── P2#9：Auto-review classifier 状态机（回退自动切手动）──
   const autoReview = useAutoReviewClassifier({
     enabled: permissionMode === 'auto',
@@ -330,8 +354,14 @@ const ChatMain: React.FC<ChatMainProps> = ({
     const subAgentCount = activeSubAgentCards.length;
   // 571fb2fa：等待卡片仅聚合「同步委派」（invocationMode !== 'async'）；
   // 异步/后台子代理只在右侧托盘坞呈现，不进入主消息等待卡片。
+  // 归属校验：缺 parentTurnId 的 sync 卡不聚合（宁缺勿滥）——与 MessageList
+  // 的「缺 parentTurnId 不绑」一致，防止无法精确归属的委派状态串台。
   const syncSubAgentCards = React.useMemo(
-    () => activeSubAgentCards.filter((card) => card.invocationMode !== 'async'),
+    () =>
+      activeSubAgentCards.filter(
+        (card) =>
+          card.invocationMode !== 'async' && Boolean(card.parentTurnId),
+      ),
     [activeSubAgentCards],
   );
   const parentDelegationActivity = React.useMemo<
@@ -429,6 +459,10 @@ const ChatMain: React.FC<ChatMainProps> = ({
   }, [agentId, workspaceId]);
 
   useEffect(() => {
+    if (!auxiliaryDataReady) {
+      setInferredSessionId(null);
+      return;
+    }
     if (!workspaceId) {
       setInferredSessionId(null);
       return;
@@ -470,7 +504,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
     return () => {
       alive = false;
     };
-  }, [selectedSessionId, workspaceId]);
+  }, [auxiliaryDataReady, selectedSessionId, workspaceId]);
 
   // SSE 断流状态轮询
   const [reconnectCount, setReconnectCount] = React.useState(0);
@@ -488,6 +522,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
     workspaceId,
     conversationId: selectedSessionId ?? undefined,
     agentId,
+    enabled: auxiliaryDataReady,
   });
 
   return (
@@ -545,6 +580,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
                 className={styles.taskBoardButton}
                 disabled={!workspaceId}
                 aria-label="任务看板"
+                onMouseEnter={() => void loadTaskBoardModal()}
+                onFocus={() => void loadTaskBoardModal()}
                 onClick={() => {
                   if (workspaceId) {
                     setTaskBoardOpen(true);
@@ -584,6 +621,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
                   size="small"
                   icon={<HistoryOutlined />}
                   aria-label="搜索历史消息"
+                  onMouseEnter={() => void loadHistorySearchModal()}
+                  onFocus={() => void loadHistorySearchModal()}
                   onClick={() => setHistoryModalOpen(true)}
                 />
               </Tooltip>
@@ -593,6 +632,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
                   size="small"
                   icon={<FieldTimeOutlined />}
                   aria-label="Checkpoint 时间线"
+                  onMouseEnter={() => void loadCheckpointTimelinePanel()}
+                  onFocus={() => void loadCheckpointTimelinePanel()}
                   onClick={onToggleCheckpointTimeline}
                   className={checkpointTimelineOpen ? styles.devModeActive : ''}
                 />
@@ -613,6 +654,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
                   size="small"
                   icon={<BugOutlined />}
                   aria-label="开发者模式"
+                  onMouseEnter={() => void loadDevPanel()}
+                  onFocus={() => void loadDevPanel()}
                   onClick={() => setDevMode(!devMode)}
                   className={devMode ? styles.devModeActive : ''}
                 />
@@ -762,27 +805,31 @@ const ChatMain: React.FC<ChatMainProps> = ({
       )}
 
       {taskBoardOpen && workspaceId && (
-        <TaskBoardModal
-          open
-          workspaceId={workspaceId}
-          onClose={() => setTaskBoardOpen(false)}
-        />
+        <React.Suspense fallback={null}>
+          <TaskBoardModal
+            open
+            workspaceId={workspaceId}
+            onClose={() => setTaskBoardOpen(false)}
+          />
+        </React.Suspense>
       )}
 
       {checkpointTimelineOpen && (
         <div className={styles.checkpointPanelHost}>
-          <CheckpointTimelinePanel
-            open
-            sessionId={selectedSessionId}
-            checkpoints={checkpoints}
-            restoredCheckpointId={restoredCheckpointId}
-            formatTime={formatTime}
-            onRestore={(checkpointId) => onRestoreCheckpoint?.(checkpointId)}
-            onFork={(checkpointId) => onForkCheckpoint?.(checkpointId)}
-            onDelete={(checkpointId) => onDeleteCheckpoint?.(checkpointId)}
-            onClearAll={() => onClearAllCheckpoints?.()}
-            onClose={() => onToggleCheckpointTimeline?.()}
-          />
+          <React.Suspense fallback={null}>
+            <CheckpointTimelinePanel
+              open
+              sessionId={selectedSessionId}
+              checkpoints={checkpoints}
+              restoredCheckpointId={restoredCheckpointId}
+              formatTime={formatTime}
+              onRestore={(checkpointId) => onRestoreCheckpoint?.(checkpointId)}
+              onFork={(checkpointId) => onForkCheckpoint?.(checkpointId)}
+              onDelete={(checkpointId) => onDeleteCheckpoint?.(checkpointId)}
+              onClearAll={() => onClearAllCheckpoints?.()}
+              onClose={() => onToggleCheckpointTimeline?.()}
+            />
+          </React.Suspense>
         </div>
       )}
     </main>

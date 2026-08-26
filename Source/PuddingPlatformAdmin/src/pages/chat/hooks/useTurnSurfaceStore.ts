@@ -60,7 +60,7 @@ export interface UseTurnSurfaceStoreResult {
    */
   revision: number;
   /**
-   * 注册「近视口回合」：MessageRow 挂载（虚拟化窗口内可见）时上报 turnId，
+   * 注册「近视口回合」：MessageRow 进入滚动容器的预取区时上报 turnId，
    * 懒水合只对已注册回合 + 活跃回合发起，替代首屏全量并发拉取。
    */
   registerVisibleTurn: (turnId?: string | null) => void;

@@ -1,10 +1,10 @@
 import { act, renderHook } from '@testing-library/react';
+import type { VirtualMessageItem } from './types';
 import {
   getVirtualMessageContentFingerprint,
   shouldVirtualizeMessageViewport,
   useMessageViewportRuntime,
 } from './useMessageViewportRuntime';
-import type { VirtualMessageItem } from './types';
 
 type MessageItem = Extract<VirtualMessageItem, { kind: 'message' }>;
 
@@ -75,6 +75,18 @@ describe('useMessageViewportRuntime', () => {
     expect(shouldVirtualizeMessageViewport(shortTallTimeline)).toBe(true);
   });
 
+  it('counts hydrated execution-flow render weight when choosing virtualization', () => {
+    const hydratedTimeline = Array.from({ length: 12 }, (_, index) => ({
+      ...makeItem(`hydrated-${index}`, index),
+      heightHint: 'rich' as const,
+      renderWeight: 1_400,
+    }));
+
+    // Canonical reasoning/tool nodes are supplied outside block.content/processItems.
+    // Their structural DOM cost must still activate virtualization.
+    expect(shouldVirtualizeMessageViewport(hydratedTimeline)).toBe(true);
+  });
+
   it('tracks active process item growth for bottom-follow updates', () => {
     const baseItem = {
       ...makeItem('m1', 1),
@@ -133,7 +145,10 @@ describe('useMessageViewportRuntime', () => {
     const node = document.createElement('div');
     Object.defineProperty(node, 'scrollTop', { value: 0, writable: true });
     Object.defineProperty(node, 'clientHeight', { value: 400, writable: true });
-    Object.defineProperty(node, 'scrollHeight', { value: 1200, writable: true });
+    Object.defineProperty(node, 'scrollHeight', {
+      value: 1200,
+      writable: true,
+    });
     result.current.parentRef.current = node;
 
     try {

@@ -430,6 +430,19 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   const hasReasoningContent = reasoningLines.length > 0;
   const delegationActivity = React.useMemo<CurrentRunActivity | null>(() => {
     if (!parentDelegationActivity?.activeCount) return null;
+    // 571fb2fa：等待卡片 4 条件（防御纵深，防直接使用组件时串台）——
+    // ① 仅同步委派：ChatMain 聚合已过滤 async，activity 只含 sync；
+    // ② 属于当前父 Turn：activity.turnId 与气泡 turnId 必须匹配；
+    // ③ 父 Turn 活动：仅运行态显示；
+    // ④ parentToolCallId 未完成：聚合只含 running/spawning 卡，隐含未完成。
+    if (!isRunActive) return null;
+    if (
+      parentDelegationActivity.turnId &&
+      turnId &&
+      parentDelegationActivity.turnId !== turnId
+    ) {
+      return null;
+    }
     const { activeCount, label, startedAt, updatedAt } =
       parentDelegationActivity;
     return {
@@ -445,7 +458,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
       startedAt,
       updatedAt,
     };
-  }, [parentDelegationActivity]);
+  }, [parentDelegationActivity, isRunActive, turnId]);
   const currentActivity = React.useMemo(() => {
     if (!delegationActivity) return processActivity;
     if (!processActivity) return delegationActivity;

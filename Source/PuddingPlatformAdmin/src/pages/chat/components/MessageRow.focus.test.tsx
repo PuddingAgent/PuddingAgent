@@ -1,5 +1,5 @@
 ﻿// ── MessageRow P2#8 Focus view 单行折叠模式测试 ─────────────
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 import MessageRow from './MessageRow';
 import { makeAgentBlock, makeUserBlock } from './MessageRow.focus.fixtures';
@@ -38,7 +38,9 @@ describe('MessageRow Focus view', () => {
     expect(screen.queryByTestId('agent-bubble-has-process')).toBeNull();
     // 单行摘要可见
     expect(
-      screen.getByText('这是一段完整的 Agent 回复内容，用于验证展开后完整渲染。'),
+      screen.getByText(
+        '这是一段完整的 Agent 回复内容，用于验证展开后完整渲染。',
+      ),
     ).toBeTruthy();
   });
 
@@ -150,5 +152,64 @@ describe('MessageRow Focus view', () => {
     expect(screen.getByTestId('agent-bubble').textContent).toContain(
       '普通模式正文',
     );
+  });
+});
+
+describe('MessageRow visible-turn hydration', () => {
+  const originalIntersectionObserver = window.IntersectionObserver;
+
+  afterEach(() => {
+    window.IntersectionObserver = originalIntersectionObserver;
+  });
+
+  it('registers an agent turn only after it enters the message viewport buffer', () => {
+    let observerCallback: IntersectionObserverCallback | undefined;
+    const observe = jest.fn();
+    const disconnect = jest.fn();
+    const observer = {
+      root: null,
+      rootMargin: '600px 0px',
+      thresholds: [0],
+      observe,
+      unobserve: jest.fn(),
+      disconnect,
+      takeRecords: () => [],
+    } as unknown as IntersectionObserver;
+    window.IntersectionObserver = jest.fn((callback) => {
+      observerCallback = callback;
+      return observer;
+    }) as unknown as typeof IntersectionObserver;
+    const onTurnVisible = jest.fn();
+
+    render(
+      <div data-testid="chat-message-list">
+        <MessageRow
+          block={makeAgentBlock({ turnId: 'turn-visible' })}
+          onTurnVisible={onTurnVisible}
+          {...baseHandlers}
+        />
+      </div>,
+    );
+
+    expect(observe).toHaveBeenCalledTimes(1);
+    expect(onTurnVisible).not.toHaveBeenCalled();
+
+    act(() => {
+      observerCallback?.(
+        [{ isIntersecting: false } as IntersectionObserverEntry],
+        observer,
+      );
+    });
+    expect(onTurnVisible).not.toHaveBeenCalled();
+
+    act(() => {
+      observerCallback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        observer,
+      );
+    });
+    expect(onTurnVisible).toHaveBeenCalledTimes(1);
+    expect(onTurnVisible).toHaveBeenCalledWith('turn-visible');
+    expect(disconnect).toHaveBeenCalled();
   });
 });

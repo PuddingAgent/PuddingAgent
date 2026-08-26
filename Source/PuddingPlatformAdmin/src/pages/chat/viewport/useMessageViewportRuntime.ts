@@ -1,5 +1,11 @@
 ﻿import { useVirtualizer } from '@tanstack/react-virtual';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type {
   LoadBeforeRequest,
   MessageViewportState,
@@ -88,6 +94,7 @@ export const getVirtualMessageContentFingerprint = (
       last.block.isStreaming ? 'streaming' : 'settled',
       last.block.content.length,
       getProcessItemsFingerprint(last.block.processItems),
+      last.renderWeight ?? 0,
     ].join(':');
   }
 
@@ -116,6 +123,7 @@ export const shouldVirtualizeMessageViewport = (
       total +
       (item.kind === 'message'
         ? item.block.content.length +
+          (item.renderWeight ?? 0) +
           (item.block.processItems?.reduce(
             (processTotal, processItem) =>
               processTotal +
@@ -133,9 +141,7 @@ export const shouldVirtualizeMessageViewport = (
 
   if (items.length < MESSAGE_VIEWPORT_VIRTUALIZATION_MIN_ITEMS) return false;
   const hasDynamicTallRows = items.some(
-    (item) =>
-      item.kind === 'message' &&
-      item.heightHint !== 'compact',
+    (item) => item.kind === 'message' && item.heightHint !== 'compact',
   );
   return (
     !hasDynamicTallRows ||
@@ -143,7 +149,9 @@ export const shouldVirtualizeMessageViewport = (
   );
 };
 
-export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOptions) {
+export function useMessageViewportRuntime(
+  options: UseMessageViewportRuntimeOptions,
+) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<MessageViewportState>(initialState);
@@ -186,7 +194,7 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     [options.items],
   );
 
-    const virtualizer = useVirtualizer({
+  const virtualizer = useVirtualizer({
     count: options.items.length,
     getScrollElement: () => parentRef.current,
     enabled: virtualizationEnabled,
@@ -228,7 +236,8 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
       return { nearTop: false, atBottom: true, scrollTop: 0 };
     }
     const nearTop = el.scrollTop <= NEAR_TOP_PX;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_THRESHOLD_PX;
+    const atBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_THRESHOLD_PX;
     return { nearTop, atBottom, scrollTop: el.scrollTop };
   }, []);
 
@@ -293,7 +302,12 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
   );
 
   const requestLoadBefore = useCallback(() => {
-    if (!options.hasMoreBefore || options.loadingBefore || options.items.length === 0) return;
+    if (
+      !options.hasMoreBefore ||
+      options.loadingBefore ||
+      options.items.length === 0
+    )
+      return;
     const fallbackItem =
       options.items.find((item) => item.kind !== 'loader') ?? options.items[0];
     const anchor =
@@ -389,8 +403,10 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
       }
       initialBottomSettleLastHeightRef.current = scrollHeight;
       if (
-        initialBottomSettleStableTicksRef.current >= INITIAL_BOTTOM_SETTLE_STABLE_TICKS &&
-        Date.now() - initialBottomSettleStartedAtRef.current >= INITIAL_BOTTOM_SETTLE_MIN_MS
+        initialBottomSettleStableTicksRef.current >=
+          INITIAL_BOTTOM_SETTLE_STABLE_TICKS &&
+        Date.now() - initialBottomSettleStartedAtRef.current >=
+          INITIAL_BOTTOM_SETTLE_MIN_MS
       ) {
         // Keep the observer-owned flag active for genuinely late images, but
         // stop the 100ms polling loop once layout has stayed stable briefly.
@@ -408,11 +424,7 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
       if (current.followMode === 'pinned') {
         if (!next.atBottom) scheduleBottomSettlement();
         followModeRef.current = 'pinned';
-        if (
-          current.atBottom &&
-          !current.nearTop &&
-          !current.showBottomButton
-        ) {
+        if (current.atBottom && !current.nearTop && !current.showBottomButton) {
           return current;
         }
         return {
@@ -687,13 +699,7 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
   );
 
   const scrollToBottom = useCallback(
-    ({
-      behavior,
-      reason,
-    }: {
-      behavior: ScrollBehavior;
-      reason: string;
-    }) => {
+    ({ behavior, reason }: { behavior: ScrollBehavior; reason: string }) => {
       if (options.items.length === 0) return;
       if (reason === 'initial-session-load') {
         initialBottomSettlingRef.current = true;
@@ -739,11 +745,7 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
     (enabled: boolean) => {
       setState((current) => ({
         ...current,
-        followMode: enabled
-          ? 'pinned'
-          : current.atBottom
-            ? 'auto'
-            : 'off',
+        followMode: enabled ? 'pinned' : current.atBottom ? 'auto' : 'off',
         atBottom: enabled ? true : current.atBottom,
         showBottomButton: enabled ? false : current.showBottomButton,
       }));
@@ -782,9 +784,14 @@ export function useMessageViewportRuntime(options: UseMessageViewportRuntimeOpti
           pendingIntent: intent,
           followMode: 'off',
         }));
-        const index = options.items.findIndex((item) => item.id === intent.itemId);
+        const index = options.items.findIndex(
+          (item) => item.id === intent.itemId,
+        );
         if (index >= 0) {
-          virtualizer.scrollToIndex(index, { align: 'start', behavior: 'auto' });
+          virtualizer.scrollToIndex(index, {
+            align: 'start',
+            behavior: 'auto',
+          });
         }
       }
     },

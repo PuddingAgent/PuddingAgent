@@ -93,11 +93,9 @@ export const useMessageStyles = createStyles(({ token }) => ({
     marginBottom: 2,
     padding: '8px 0',
     contain: 'layout paint style',
-    contentVisibility: 'auto' as const,
-    // auto 前缀：浏览器记忆元素最近渲染高度作为占位，仅首次进入视口用
-    // 120px 兜底——固定 120px 会让 2k+px 的 Agent 行每次离屏/回视口都发生
-    // 大幅高度修正与 scrollHeight 跳变（2026-08-24 验收 4）。
-    containIntrinsicSize: 'auto 120px',
+    // 不使用 content-visibility/contain-intrinsic-size：行为组在流式与折叠切换后
+    // 会留下陈旧的 remembered size，滚回长卡片时 scrollHeight 可瞬增数千像素。
+    // 离屏成本由真实近视口水合 + viewport 虚拟化承担，正常流必须保持实高。
   },
   messageRowUser: {
     justifyContent: 'flex-end',
@@ -118,7 +116,10 @@ export const useMessageStyles = createStyles(({ token }) => ({
     display: 'flex',
     flexDirection: 'column' as const,
     alignItems: 'flex-start',
-    maxWidth: '82%',
+    // 内容列统一以 720px 为阅读上限；卡片额外预留 28px 横向 padding + 2px
+    // border，避免外壳扩到 82% 而内部只占 720px，形成大块卡内空白。
+    width: '100%',
+    maxWidth: 'min(750px, 82%)',
     minWidth: 0,
     // P0-2: 为气泡外绝对定位的操作按钮预留落点，长气泡/贴底场景防裁切
     paddingBottom: 8,
@@ -253,7 +254,7 @@ export const useMessageStyles = createStyles(({ token }) => ({
     pointerEvents: 'auto' as const,
     transform: 'translateY(0)',
   },
-    userErrorText: {
+  userErrorText: {
     fontSize: 11,
     lineHeight: '16px',
     color: 'var(--pudding-status-error)',
