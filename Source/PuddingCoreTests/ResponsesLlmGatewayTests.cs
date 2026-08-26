@@ -291,8 +291,265 @@ public sealed class ResponsesLlmGatewayTests
         var output = toolOutput["output"]!.AsArray();
         Assert.AreEqual("input_text", output[0]!["type"]!.GetValue<string>());
         Assert.AreEqual("image_reader loaded one image", output[0]!["text"]!.GetValue<string>());
-        Assert.AreEqual("input_image", output[1]!["type"]!.GetValue<string>());
+                Assert.AreEqual("input_image", output[1]!["type"]!.GetValue<string>());
         Assert.AreEqual("data:image/png;base64,iVBORw0KGgo=", output[1]!["image_url"]!.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_FileModeImage_UsesFileIdWithoutImageUrl()
+    {
+        // ADR-077 V3-S2a：大图（>2MB）经 Files API 上传后以 file_id 引用，不输出 image_url/detail。
+        string? requestBody = null;
+        var gateway = CreateGateway(request =>
+        {
+            requestBody = ReadBody(request);
+            return OkResponsesResponse();
+        });
+        gateway.WorkspaceId = "workspace-1";
+        gateway.VisualArtifactResolver = new OversizeVisualResolver();
+        gateway.DeepSeekFilesUploader = new RecordingFilesUploader();
+
+        await gateway.ChatAsync(
+            [new ChatMessage(ChatRole.User, "describe", VisualArtifactIds: ["vision-big"])],
+            []);
+
+                var content = JsonNode.Parse(requestBody!)!["input"]![0]!["content"]!.AsArray();
+        var image = content.First(node => node?["type"]?.GetValue<string>() == "input_image");
+        Assert.AreEqual("file-uploaded-001", image!["file_id"]!.GetValue<string>());
+        Assert.IsNull(image["image_url"], "file 模式不得输出 image_url");
+        Assert.IsNull(image["detail"], "file 模式忽略 detail（ADR-077 §6.1）");
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_FileModeImage_ProviderFileExpired_RebuildsOnce()
+    {
+        // ADR-077 V3-S2b-2「调用时过期」：store 命中复用 file_id → Gateway 调用发现 file 已失效
+        // （provider 报 file expired）→ 恰好一次 MarkExpired + 重新上传落库 + 重发，第二次成功。
+        var store = new GatewayFileRefStore();
+        store.Seed(
+            ComputeHash("data:image/png;base64," + new string('A', 3_000_000)),
+            new ProviderFileRefRecord(
+                ProviderId: "deepseek",
+                CredentialEpoch: "default",
+                ArtifactId: "vision-big",
+                ArtifactSha256: ComputeHash(
+                    "data:image/png;base64," + new string('A', 3_000_000)),
+                RemoteFileId: "file-cached-001",
+                Bytes: 2_250_000,
+                MimeType: "image/png",
+                ExpiresAt: DateTimeOffset.UtcNow.AddHours(1),
+                LastUsedAt: null,
+                Status: ProviderFileRefStatus.Ready,
+                CreatedAt: DateTimeOffset.UtcNow.AddHours(-2),
+                UpdatedAt: DateTimeOffset.UtcNow.AddHours(-2)));
+
+        var capturedBodies = new List<string>();
+        var sendCount = 0;
+        var gateway = CreateGateway(_ =>
+        {
+            sendCount++;
+            if (sendCount == 1)
+            {
+                // 首次调用：provider 报 file 已失效（HTTP 400 + file expired 信号）。
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent(
+                        """{"error":{"message":"File file-cached-001 has expired","type":"invalid_request_error"}}""",
+                        Encoding.UTF8,
+                        "application/json"),
+                };
+            }
+            capturedBodies.Add(ReadBody(_));
+            return OkResponsesResponse();
+        });
+        gateway.WorkspaceId = "workspace-1";
+        gateway.VisualArtifactResolver = new OversizeVisualResolver();
+        gateway.DeepSeekFilesUploader = new RecordingFilesUploader();
+        gateway.FileRefStore = store;
+        gateway.ProviderId = "deepseek";
+        gateway.CredentialEpoch = "default";
+
+        var response = await gateway.ChatAsync(
+            [new ChatMessage(ChatRole.User, "describe", VisualArtifactIds: ["vision-big"])],
+            []);
+
+        Assert.AreEqual("ok", response.Content, "重建后第二次调用应成功");
+        Assert.AreEqual(2, sendCount, "首次失败 + 重建后重发 = 恰好两次 provider 调用");
+        Assert.AreEqual(1, store.MarkExpiredCount, "过期引用恰好 MarkExpired 一次");
+        Assert.AreEqual(1, store.SaveCount, "重建后落库 ready 一次");
+        var rebuiltBody = capturedBodies.Single();
+        var content = JsonNode.Parse(rebuiltBody)!["input"]![0]!["content"]!.AsArray();
+        var image = content.First(node => node?["type"]?.GetValue<string>() == "input_image");
+        Assert.AreEqual("file-uploaded-001", image!["file_id"]!.GetValue<string>(),
+            "重建后的请求体应使用重新上传的新 file_id");
+        var saved = store.Saved.Single();
+        Assert.AreEqual(ProviderFileRefStatus.Ready, saved.Status);
+        Assert.AreEqual("file-uploaded-001", saved.RemoteFileId);
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_FileModeImage_ProviderFileExpired_RebuildFails_ThrowsProviderFileExpired()
+    {
+        // ADR-077 V3-S2b-2：重建后 provider 仍报错 → 抛 ProviderFileExpired（不盲目重试）。
+        var store = new GatewayFileRefStore();
+        store.Seed(
+            ComputeHash("data:image/png;base64," + new string('A', 3_000_000)),
+            new ProviderFileRefRecord(
+                ProviderId: "deepseek",
+                CredentialEpoch: "default",
+                ArtifactId: "vision-big",
+                ArtifactSha256: ComputeHash(
+                    "data:image/png;base64," + new string('A', 3_000_000)),
+                RemoteFileId: "file-cached-001",
+                Bytes: 2_250_000,
+                MimeType: "image/png",
+                ExpiresAt: DateTimeOffset.UtcNow.AddHours(1),
+                LastUsedAt: null,
+                Status: ProviderFileRefStatus.Ready,
+                CreatedAt: DateTimeOffset.UtcNow.AddHours(-2),
+                UpdatedAt: DateTimeOffset.UtcNow.AddHours(-2)));
+
+        var sendCount = 0;
+        var gateway = CreateGateway(_ =>
+        {
+            sendCount++;
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"error":{"message":"File still expired","type":"invalid_request_error"}}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            };
+        });
+        gateway.WorkspaceId = "workspace-1";
+        gateway.VisualArtifactResolver = new OversizeVisualResolver();
+        gateway.DeepSeekFilesUploader = new RecordingFilesUploader();
+        gateway.FileRefStore = store;
+        gateway.ProviderId = "deepseek";
+        gateway.CredentialEpoch = "default";
+
+        var ex = await Assert.ThrowsExactlyAsync<VisionPipelineException>(() =>
+            gateway.ChatAsync(
+                [new ChatMessage(ChatRole.User, "describe", VisualArtifactIds: ["vision-big"])],
+                []));
+        Assert.AreEqual(VisionErrorCodes.ProviderFileExpired, ex.Code);
+        Assert.AreEqual(2, sendCount, "重建后仍失败不得再次重试");
+        Assert.AreEqual(1, store.MarkExpiredCount);
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_FileModeImage_NonFileError_DoesNotRebuild()
+    {
+        // ADR-077 V3-S2b-2：非 file 失效错误不得触发重建（保持既有失败语义）。
+        var store = new GatewayFileRefStore();
+        store.Seed(
+            ComputeHash("data:image/png;base64," + new string('A', 3_000_000)),
+            new ProviderFileRefRecord(
+                ProviderId: "deepseek",
+                CredentialEpoch: "default",
+                ArtifactId: "vision-big",
+                ArtifactSha256: ComputeHash(
+                    "data:image/png;base64," + new string('A', 3_000_000)),
+                RemoteFileId: "file-cached-001",
+                Bytes: 2_250_000,
+                MimeType: "image/png",
+                ExpiresAt: DateTimeOffset.UtcNow.AddHours(1),
+                LastUsedAt: null,
+                Status: ProviderFileRefStatus.Ready,
+                CreatedAt: DateTimeOffset.UtcNow.AddHours(-2),
+                UpdatedAt: DateTimeOffset.UtcNow.AddHours(-2)));
+
+        var sendCount = 0;
+        var gateway = CreateGateway(_ =>
+        {
+            sendCount++;
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"error":{"message":"rate limit exceeded","type":"rate_limit"}}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            };
+        });
+        gateway.WorkspaceId = "workspace-1";
+        gateway.VisualArtifactResolver = new OversizeVisualResolver();
+        gateway.DeepSeekFilesUploader = new RecordingFilesUploader();
+        gateway.FileRefStore = store;
+        gateway.ProviderId = "deepseek";
+        gateway.CredentialEpoch = "default";
+
+        await Assert.ThrowsExactlyAsync<HttpRequestException>(() =>
+            gateway.ChatAsync(
+                [new ChatMessage(ChatRole.User, "describe", VisualArtifactIds: ["vision-big"])],
+                []));
+        Assert.AreEqual(1, sendCount, "非 file 失效错误不得重试");
+        Assert.AreEqual(0, store.MarkExpiredCount);
+        Assert.AreEqual(0, store.SaveCount);
+    }
+
+    [TestMethod]
+    public async Task ChatStreamAsync_FileModeImage_ProviderFileExpired_RebuildsOnce()
+    {
+        // ADR-077 V3-S2b-2：流式同样覆盖「调用时过期」重建一次。
+        var store = new GatewayFileRefStore();
+        store.Seed(
+            ComputeHash("data:image/png;base64," + new string('A', 3_000_000)),
+            new ProviderFileRefRecord(
+                ProviderId: "deepseek",
+                CredentialEpoch: "default",
+                ArtifactId: "vision-big",
+                ArtifactSha256: ComputeHash(
+                    "data:image/png;base64," + new string('A', 3_000_000)),
+                RemoteFileId: "file-cached-001",
+                Bytes: 2_250_000,
+                MimeType: "image/png",
+                ExpiresAt: DateTimeOffset.UtcNow.AddHours(1),
+                LastUsedAt: null,
+                Status: ProviderFileRefStatus.Ready,
+                CreatedAt: DateTimeOffset.UtcNow.AddHours(-2),
+                UpdatedAt: DateTimeOffset.UtcNow.AddHours(-2)));
+
+        var sendCount = 0;
+        var gateway = CreateGateway(_ =>
+        {
+            sendCount++;
+            return sendCount == 1
+                ? new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent(
+                        """{"error":{"message":"File file-cached-001 has expired","type":"invalid_request_error"}}""",
+                        Encoding.UTF8,
+                        "application/json"),
+                }
+                : SseResponse(
+                    """
+data:{"type":"response.output_text.delta","delta":"ok"}
+
+data:{"type":"response.completed","response":{"status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":3,"output_tokens":1,"total_tokens":4}}}
+
+data:[DONE]
+
+""");
+        });
+        gateway.WorkspaceId = "workspace-1";
+        gateway.VisualArtifactResolver = new OversizeVisualResolver();
+        gateway.DeepSeekFilesUploader = new RecordingFilesUploader();
+        gateway.FileRefStore = store;
+        gateway.ProviderId = "deepseek";
+        gateway.CredentialEpoch = "default";
+
+        var deltas = new List<StreamDelta>();
+        await foreach (var delta in gateway.ChatStreamAsync(
+                           [new ChatMessage(ChatRole.User, "describe", VisualArtifactIds: ["vision-big"])],
+                           []))
+        {
+            deltas.Add(delta);
+        }
+
+        Assert.IsTrue(deltas.Count > 0, "重建后流式第二次调用应产生输出");
+        Assert.AreEqual(2, sendCount, "首次失败 + 重建后重发 = 恰好两次 provider 调用");
+        Assert.AreEqual(1, store.MarkExpiredCount);
+        Assert.AreEqual(1, store.SaveCount);
     }
 
     [TestMethod]
@@ -687,6 +944,41 @@ public sealed class ResponsesLlmGatewayTests
             => Task.FromResult("ok");
     }
 
+    private sealed class OversizeVisualResolver : IVisualArtifactResolver
+    {
+        public Task<VisualArtifactResolveResult?> ResolveAsync(
+            string workspaceId,
+            string artifactId,
+            CancellationToken ct = default)
+            => Task.FromResult<VisualArtifactResolveResult?>(new(
+                artifactId,
+                "data:image/png;base64," + new string('A', 3_000_000),
+                "image/png"));
+    }
+
+    private static string ComputeHash(string dataUri)
+    {
+        var comma = dataUri.IndexOf(',');
+        var payload = dataUri[(comma + 1)..];
+        var bytes = Convert.FromBase64String(payload);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+    }
+
+    private sealed class RecordingFilesUploader : IDeepSeekFilesUploader
+    {
+        public Task<ProviderFileUploadResult> UploadAsync(
+            byte[] imageBytes,
+            string mimeType,
+            long lifetimeSeconds,
+            CancellationToken ct = default)
+            => Task.FromResult(new ProviderFileUploadResult(
+                "file-uploaded-001",
+                mimeType,
+                imageBytes.Length,
+                lifetimeSeconds,
+                DateTimeOffset.UnixEpoch));
+    }
+
     private sealed class ThrowingVisualResolver : IVisualArtifactResolver
     {
         public Task<VisualArtifactResolveResult?> ResolveAsync(
@@ -721,11 +1013,88 @@ public sealed class ResponsesLlmGatewayTests
                 "wav"));
     }
 
-    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> send) : HttpMessageHandler
+        private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> send) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
             => Task.FromResult(send(request));
+    }
+
+    /// <summary>内存版 <see cref="IFileRefStore"/>（ADR-077 V3-S2b-2 Gateway 调用时过期重建测试用）。</summary>
+    private sealed class GatewayFileRefStore : IFileRefStore
+    {
+        private readonly Dictionary<string, ProviderFileRefRecord> _records = new();
+
+        public int MarkExpiredCount { get; private set; }
+        public int SaveCount { get; private set; }
+        public List<ProviderFileRefRecord> Saved { get; } = new();
+
+        public void Seed(string artifactSha256, ProviderFileRefRecord record)
+            => _records[artifactSha256] = record;
+
+        public Task<ProviderFileRefRecord?> TryGetReadyRefAsync(
+            string providerId,
+            string credentialEpoch,
+            string artifactSha256,
+            CancellationToken ct = default)
+        {
+            if (!_records.TryGetValue(artifactSha256, out var record)
+                || record.ProviderId != providerId
+                || record.CredentialEpoch != credentialEpoch
+                || record.Status != ProviderFileRefStatus.Ready)
+                return Task.FromResult<ProviderFileRefRecord?>(null);
+            return Task.FromResult<ProviderFileRefRecord?>(record);
+        }
+
+        public Task<ProviderFileRefRecord> SaveAsync(ProviderFileRefRecord record, CancellationToken ct = default)
+        {
+            SaveCount++;
+            Saved.Add(record);
+            _records[record.ArtifactSha256] = record;
+            return Task.FromResult(record);
+        }
+
+        public Task<ProviderFileRefRecord?> MarkExpiredAsync(
+            string providerId,
+            string credentialEpoch,
+            string artifactSha256,
+            DateTimeOffset updatedAt,
+            CancellationToken ct = default)
+        {
+            MarkExpiredCount++;
+            if (!_records.TryGetValue(artifactSha256, out var record))
+                return Task.FromResult<ProviderFileRefRecord?>(null);
+            var expired = record with
+            {
+                Status = ProviderFileRefStatus.Expired,
+                UpdatedAt = updatedAt,
+            };
+            _records[artifactSha256] = expired;
+            return Task.FromResult<ProviderFileRefRecord?>(expired);
+        }
+
+        public Task<ProviderFileRefRecord?> UpdateExpiryAsync(
+            string providerId,
+            string credentialEpoch,
+            string artifactSha256,
+            DateTimeOffset newExpiresAt,
+            DateTimeOffset updatedAt,
+            CancellationToken ct = default)
+            => Task.FromResult<ProviderFileRefRecord?>(null);
+
+        public Task<ProviderFileRefRecord?> MarkDeletePendingAsync(
+            string providerId,
+            string credentialEpoch,
+            string artifactSha256,
+            DateTimeOffset updatedAt,
+            CancellationToken ct = default)
+            => Task.FromResult<ProviderFileRefRecord?>(null);
+
+        public Task<IReadOnlyList<ProviderFileRefRecord>> ListExpiredAsync(
+            DateTimeOffset before,
+            int limit,
+            CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<ProviderFileRefRecord>>([]);
     }
 }
