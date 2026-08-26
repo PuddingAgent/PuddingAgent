@@ -5,8 +5,8 @@
 > 实施进度（2026-08-23）：Phase V0–V2 已实现并通过单元/请求体测试（typed content parts 持久化、
 > 冻结 Snapshot 能力判定、删除自动预观察、Planner fail-closed、Responses 图片型工具结果、
 > image_reader 重定位为 path/auto/native/delegate、imageReaderModel 改名 visionHelperModel、
-> Web typed parts 收发与回放）。V3 Files API 未实现：>2MB 单图暂按 vision_request_limit_exceeded
-> fail closed。V4 真实 DeepSeek smoke 与进程外生命周期验收未执行，ADR 保持 Proposed。
+> Web typed parts 收发与回放）。
+> 实施进度（2026-08-26）：V3 Files API 已实现（V3-S2 提交链 0a9807bf→393a11bf→f940e8ed→fed8fe91→b7727bed→2175ca1d，作者 hyfree）：大图>2MB 走 Files API 上传并复用 file_id、inline/file_id 互斥、Provider File 引用持久化 store/过期重建、Secret 不进入 DTO/数据库/环境变量/remote ref 表。V4 真实 DeepSeek smoke 与进程外生命周期验收未执行，ADR 保持 Proposed。
 > 范围：Web/Camera Snapshot/Connector 图片进入主 Agent 的 canonical Conversation、Runtime、LLM Gateway、上下文恢复与用量观测
 > 首个目标模型：`deepseek/deepseek-v4-flash-vision-exp`，`protocol=responses`
 > 目标：主代理直接理解用户图片；`image_reader` 从“自动代读拐杖”重定位为按需图片取用工具
