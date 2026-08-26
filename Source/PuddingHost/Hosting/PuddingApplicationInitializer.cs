@@ -14,8 +14,10 @@ using PuddingPlatform.Services.Execution;
 using PuddingPlatform.Services.MessageFabric;
 using PuddingPlatform.Services.Orchestration;
 using PuddingPlatform.Services.ExternalApi;
+using PuddingPlatform.Services.Files;
 using PuddingPlatform.Services.Goals;
 using PuddingPlatform.Services.Security;
+using PuddingPlatform.Services.Scheduling;
 using PuddingPlatform.Services.Tasks;
 
 namespace PuddingHost.Hosting;
@@ -50,8 +52,10 @@ public static class PuddingApplicationInitializer
             await TaskDispatchSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await WorkspaceTaskSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await GoalSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
-            await ExternalAccessTokenSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            await TaskSchedulingSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+                        await ExternalAccessTokenSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await ExternalTaskApiSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            await ProviderFileRefSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
 
             // ── ADR-074 §12：Core 重启后 active Goal 默认 disarm 为 paused，显式 /goal resume 才恢复 ──
             try
