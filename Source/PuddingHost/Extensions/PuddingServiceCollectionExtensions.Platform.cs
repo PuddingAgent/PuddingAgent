@@ -36,8 +36,10 @@ using PuddingPlatform.Services.Orchestration;
 using PuddingPlatform.Services.ExternalApi;
 using PuddingPlatform.Services.Goals;
 using PuddingPlatform.Services.Security;
+using PuddingPlatform.Services.Scheduling;
 using PuddingPlatform.Services.TaskPlanning;
 using PuddingPlatform.Services.Tasks;
+using PuddingPlatform.Services.Files;
 using PuddingController;
 using PuddingController.Data;
 using PuddingController.Services;
@@ -147,13 +149,19 @@ public static partial class PuddingServiceCollectionExtensions
             builder.Services.AddScoped<ISystemStatusSnapshotProvider, SystemStatusSnapshotProvider>();
             builder.Services.AddScoped<ISystemCommandHandler, SystemCommandHandler>();
 
-            // ── Goal 持久控制面（ADR-074 G1：持久 Goal + 多端命令，不自动续行）──
+            // ── Goal 持久控制面（ADR-074 G1/G2：持久 Goal + durable 单轮续行）──
+            builder.Services.AddSingleton<GoalOutboxSignal>();
+            builder.Services.AddSingleton<GoalOutboxStore>();
+            builder.Services.AddSingleton<GoalSettlementStore>();
+            builder.Services.AddSingleton<IGoalIterationVerifier, ConservativeGoalIterationVerifier>();
             builder.Services.AddScoped<GoalRunStore>();
             builder.Services.AddScoped<IGoalCommandService, GoalCommandService>();
             builder.Services.AddScoped<IGoalQueryService, GoalQueryService>();
             builder.Services.AddScoped<GoalRestartReconciler>();
             builder.Services.Configure<GoalRunOptions>(
                 builder.Configuration.GetSection(GoalRunOptions.SectionName));
+            builder.Services.AddHostedService<GoalContinuationWorker>();
+            builder.Services.AddHostedService<GoalSettlementWorker>();
             builder.Services.TryAddSingleton(TimeProvider.System);
 
             // ── Conversation Event Store（ADR-057 Phase 2）────
@@ -173,6 +181,46 @@ public static partial class PuddingServiceCollectionExtensions
         // Task Ledger（TB-02 SQLite Task Store）
         builder.Services.AddScoped<SqliteWorkspaceTaskStore>();
         builder.Services.AddScoped<ITaskStore>(sp => sp.GetRequiredService<SqliteWorkspaceTaskStore>());
+        // Provider File 引用 Store（ADR-077 V3-S2b-1：llm_provider_file_refs 持久化地基）
+        builder.Services.AddSingleton<SqliteProviderFileRefStore>();
+        builder.Services.AddSingleton<IFileRefStore>(sp => sp.GetRequiredService<SqliteProviderFileRefStore>());
+        // Agent 状态感知、单 Agent 自动工作槽与 Task 依赖（Auto 仍由 feature flag 默认关闭）。
+        builder.Services.AddSingleton<AgentAvailabilityProjectionStore>();
+        builder.Services.AddSingleton<IAgentAvailabilityProjectionStore>(sp =>
+            sp.GetRequiredService<AgentAvailabilityProjectionStore>());
+        builder.Services.AddSingleton<AgentExecutionReservationStore>();
+        builder.Services.AddSingleton<IAgentExecutionReservationStore>(sp =>
+            sp.GetRequiredService<AgentExecutionReservationStore>());
+        builder.Services.AddSingleton<TaskDependencyStore>();
+        builder.Services.AddSingleton<ITaskDependencyStore>(sp =>
+            sp.GetRequiredService<TaskDependencyStore>());
+        builder.Services.AddSingleton<IExecutionWindowResolver, ConservativeExecutionWindowResolver>();
+        var taskBoundGoalConfig = builder.Configuration
+            .GetSection(TaskBoundGoalOptions.SectionName)
+            .Get<TaskBoundGoalOptions>() ?? new TaskBoundGoalOptions();
+        var goalRunConfig = builder.Configuration
+            .GetSection(GoalRunOptions.SectionName)
+            .Get<GoalRunOptions>() ?? new GoalRunOptions();
+        builder.Services.AddOptions<TaskBoundGoalOptions>()
+            .Bind(builder.Configuration.GetSection(TaskBoundGoalOptions.SectionName))
+            .Validate(
+                options => TaskBoundGoalOptions.Validate(options).Count == 0,
+                "Invalid TaskBoundGoals configuration.")
+            .ValidateOnStart();
+        builder.Services.AddOptions<TaskAutoDispatchOptions>()
+            .Bind(builder.Configuration.GetSection(TaskAutoDispatchOptions.SectionName))
+            .Validate(
+                options => TaskAutoDispatchOptions.Validate(
+                    options, taskBoundGoalConfig, goalRunConfig).Count == 0,
+                "Invalid TaskAutoDispatch configuration or disabled Goal prerequisite.")
+            .ValidateOnStart();
+        builder.Services.AddSingleton<TaskGoalDispatchTransactionStore>();
+        builder.Services.AddSingleton<ITaskGoalDispatchTransactionStore>(sp =>
+            sp.GetRequiredService<TaskGoalDispatchTransactionStore>());
+        builder.Services.AddSingleton<TaskAutoDispatchEvaluator>();
+        builder.Services.AddSingleton<ITaskAutoDispatchEvaluator>(sp =>
+            sp.GetRequiredService<TaskAutoDispatchEvaluator>());
+        builder.Services.AddHostedService<TaskAutoDispatchWorker>();
         // Task Command 服务（TB-03：状态机校验 + CAS + Assignment + AppendEvent 原子语义）
         builder.Services.AddScoped<TaskCommandService>();
         // Task Agent 命令服务（TB-06：ClaimAsync / ApplyDispositionAsync / ListMineAsync / GetAsync）。
