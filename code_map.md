@@ -34,13 +34,16 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/07架构/90ADR-075*.md` / `Docs/Features/第三方任务看板AccessToken与外部API详细设计方案.md` | 第三方任务看板开发合同；冻结 hashed opaque Access Token、ASP.NET Core 独立 scheme + scope/workspace Policy、外部 API v1、ETag/幂等、追加式 TaskEvaluation 与 Admin Access Token 管理器；P1（Token 后端）+ P3（Admin UI）+ P2 基本功能已实现：`pdt_v1_` opaque Token 摘要存储、PuddingExternalAccessToken scheme、Admin 管理 API/UI、last-used 合并写、External Task API v1（list/get/create/patch/comments/evaluations/commands + ETag/428/412 + 简化幂等）共 65 项后端测试；SSE Watch/RateLimiter/OpenAPI 与 P4（部署收口）未实现，External API 默认关闭 |
 | `Docs/07架构/91ADR-076*.md` / `Docs/Features/遥测调试数据自动过期与Web存储管理设计方案.md` | 遥测/Debug 存储治理设计 + 首轮实现（Phase 0–3 已落地：语义目录/快照估算/单 writer 协调器/语义 API/Web /storage 页面；Phase 4 生产验收待做）；上下文日聚合复用既有 `context_layer_daily_rollups`、retention 索引收编目录所有权、旧 /databases 端点与 Desktop 旧页面捆绑退役、appsettings Retention 节已迁移 system.json |
 | `Docs/07架构/92ADR-077*.md` | 主代理原生视觉目标设计；typed image content、Workspace Artifact、DeepSeek Responses `input_image`/图片型工具结果、Files API、多轮/重启恢复、fail-closed；Image Reader 重定位为 URL/任意绝对路径/Artifact 取用工具，默认当前模型原生读取，文本模型或第二意见才委派 helper；V0–V2 已实现（typed parts、fail-closed Planner、图片工具结果、visionHelperModel、删除自动预观察），V3 Files API 与 V4 真实模型 smoke 待做 |
+| `Docs/Features/Chat图片消息回放与前端旧Bundle缓存修复方案.md` | 2026-08-26 Chat 图片占位事故的可施工修复方案；冻结 Agent-first `contentParts` 透传、typed parts 优先兼容、localhost 旧 Service Worker 清理、入口/哈希资源缓存合同、build identity 和两段式产品验收；关联 P1 Task `ceba781342aa4353901654d1897092cb`，尚未实施 |
+| `Docs/Features/子代理活动轨迹实时回放与运行检查器修复方案.md` | 2026-08-26 子代理检查器空时间线事故的证据化施工方案；活动 Run 继续零 archive 轮询，改由 Conversation SSE + active-subagent gap replay + 可对账状态水位恢复；修正有界工具详情导致的聚合少计、增加轨迹同步降级与 build identity 门禁；关联 P1 Task `791d062fa6ea44f18bfe5027a37696d0`，尚未实施 |
 | `Docs/07架构/tool-infrastructure-layering.md` | Tool 分层、强制委派合同、Smart 参数与结果合同 |
 | `Docs/deepseek-harness-message-card-alignment-2026-08-14.md` | 对照 deepseek-harness 的消息、推理和工具调用 UI 目标架构；定义 TurnStatus、Reasoning/Tool/Delegation 行、toolCallId 投影、分期与验收矩阵 |
 | `Docs/chat-ui-behavior-chain-quality-upgrade-2026-08-23.md` | 聊天前端「行为链 + 质感」升级：harness 质感纪律与 Hermes/业界 12 原则调研、四档灰阶 token、交错时间线（路径 A/B 统一 ViewModel）、五类 presentation renderer 设计与实施记录 |
 | `Docs/Features/Agent消息交错内容流与最新行为组披露完整实施方案.md` | Flash 代码级施工合同：canonical sequence、TextBlock ⇄ ActivityGroup、会话级唯一最新披露 owner、完整 reasoning、工具详情懒加载、柔和收起/卸载、逐文件任务卡、测试命令和双阶段验收 |
 | `Docs/07架构/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md` | 冻结 AgentTurnCard 单一有序内容流与唯一正文源；当前最新 Agent 回合的最后行为组持续展开，最终正文不关闭，新行为/新回合转移 owner 并柔和收起旧组 |
 | `Docs/07架构/94ADR-080任务看板分层读取子任务与命令化拖拽ADR.md` / `Docs/Features/任务看板状态机子任务渐进披露与高性能拖拽优化设计方案.md` | 任务看板下一阶段 Proposed 设计：Ready 证据化直达 Completed、单层独立状态子任务、普通 List/工具仅 id+title、Index/Card/Detail 三层投影、评论/备注分型、命令化拖拽、global-cursor Watch 修复与 10k 任务性能门禁；尚未实现或验收 |
-| `Docs/07架构/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md` / `Docs/Features/AgentHarness兼容与工具调用效率修复设计方案.md` | 模型后训练 Harness 适配；canonical 工具保持唯一，`rg/exec_command/write_stdin/apply_patch/pwsh` 在统一门禁前归一化，WSL 作为显式 Unix 通道，搜索 no-match 与真实失败分离，完整普通文本五段报告同轮收口；相同失败二次熔断为 `execution_stalled`，Token 主/子代理/轮次/工具从 RuntimeExecutionIdentity 直记且删除 Manager 重复汇总；聚合报表和部署 smoke 待完成 |
+| `Docs/07架构/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md` / `Docs/Features/AgentHarness兼容与工具调用效率修复设计方案.md` | 模型后训练 Harness 适配；canonical 工具保持唯一，`rg/exec_command/write_stdin/apply_patch/pwsh` 在统一门禁前归一化，WSL 作为显式 Unix 通道，搜索 no-match 与真实失败分离，完整普通文本五段报告同轮收口；`BuiltInAgentTemplates` 收敛到 Core 单一权威源，Low 投影保留读取/搜索/`search_tools`；精确重复第二次 `execution_stalled`，参数变化的同失败族第 5 次 Runtime 熔断；Token 主/子代理/轮次/工具从 RuntimeExecutionIdentity 直记且删除 Manager 重复汇总；聚合报表和部署 smoke 待完成 |
+| `Docs/Features/Chat独立插嘴按钮与当前Turn即时Steering设计方案.md` / `Docs/superpowers/specs/2026-06-06-runtime-steering-queue-design.md` | current-Turn Steering + 无人值守队列合同：普通消息立即进 canonical Turn；队列只含未认领 delivery/Turn，认领后由消息卡与轨迹接管；Agent/heartbeat delivery 受理为 canonical Turn；独立 `⚡` 复用 Steering admission。源码已实施，产品进程重启/smoke 待做 |
 | `Docs/deepseek-harness-tool-system-alignment-2026-08-14.md` | 对照 deepseek-harness 的工具定义与执行协议；规划 canonical output、端到端 callId、结构化错误、管线、并发、spill、可回放 presentation 与 DeepSeek Code Mode |
 | `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md` | 对照 deepseek-harness 与 pi 的统一目标架构与 2026-08-15 复评；定义 Plugin/Function/Hook/Event/Projection、Agent Transition+Effect FSM、Function Graph、Composition Snapshot、前端解释层、底座缺口与分期路线 |
 | `Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md` | 7 日 Token 构成、工具结果重放、搜索失败和 ZIP 稀疏度基线；定义原文不脱敏的 artifact/envelope、T0-T4 分级压缩、Compact 覆盖门禁、冷启动去重、稳定前缀与 DeepSeek 缓存 >99% 验收 |
@@ -55,7 +58,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | 项目 | 说明 | 详细索引 |
 |------|------|----------|
 | `Source/PuddingAgent/` | 🔑 入口 (Program.cs · Console/DesktopChild 薄壳) | [code_map](Source/PuddingAgent/code_map.md) |
-| `Source/PuddingRuntime/` | 🔑 Agent Loop · LLM · 工具 · 上下文管线 | [code_map](Source/PuddingRuntime/code_map.md) |
+| `Source/PuddingRuntime/` | 🔑 Agent Loop · LLM · 工具 · 上下文管线；压缩与冷水合共享 canonical ChatMessages 增量同步门禁 | [code_map](Source/PuddingRuntime/code_map.md) |
 | `Source/PuddingDesktop/` | 🔑 WPF Launcher · 固定端口 Core 子进程 · Browser 工作区 · 调试模式（源码前后端 + 80 端口反向代理）· 运行中心前端构建部署按钮 · 客户端精灵源素材 | [code_map](Source/PuddingDesktop/code_map.md) |
 | `Source/PuddingHost/` | 🔑 组合根 · 全网卡 HTTP/本机控制地址 · Browser Bridge · 飞书连接器 | [code_map](Source/PuddingHost/code_map.md) |
 | `Source/PuddingCore/` | 🔑 抽象与契约 · 接口 · 模型 | [code_map](Source/PuddingCore/code_map.md) |
@@ -125,8 +128,9 @@ Terminal 长命令能耗协议（2026-08-22）
     预算（DB/JSONL 双路径）；摘要链优先占预算，JSONL 胜出时补拼（原会静默丢摘要）
   → 滚动摘要链：压缩候选纳入旧代 compact_summary，新摘要统一标记 CompactedBy；
     CompactionCoverageFilter 改全部 manifest 并集（修多代 JSONL 复活缺口）
-  → 转录连续性：每次压缩前从 platform ChatMessages 按稳定 MessageId + durable platform Id
-    高水位 after-Id 升序分页（256 条）镜像当前 session 到 memory Messages，不全扫会话/既有 ID
+  → 转录连续性：每次压缩和 memory DB 冷水合前从 platform ChatMessages 按稳定 MessageId + durable platform Id
+    高水位 after-Id 升序分页（256 条）镜像当前 session 到 memory Messages，不全扫会话/既有 ID；同步失败时水合 fail-closed，
+    当前 turn/message 从历史水合排除，pre-projection live 历史不被 DB 覆盖，自动压缩后只合并完整 hash 围栏的当前 live Turn
     （禁止 active.Count==0 门禁）；summary-only（含超大旧摘要）/无可压缩原文直接 no-op，
     result/diagnostics compacted count 均为 0；补读排除 CompactedBy!=null 原文（阻止失忆/套娃）
   → 绝对窗口 proactive 压缩：MaxActiveRawTokenBudget(131072) 与 0.65 比例 OR 触发
@@ -138,12 +142,13 @@ Terminal 长命令能耗协议（2026-08-22）
     session_rehydrated 显式归因；会话默认驻留 1h→4h
   → 验收：TestScripts/deepseek-cache-hitrate.py 日报；连续 7 完整自然日 >99%（§15.3）
 
-审批命令防火墙（任务 ce63f8c0，2026-08-22，确定性 Gate 0）
-  → ToolApprovalCommandFirewall（静态字符串判定）接入 CheckAsync：工单匹配后、LLM 隐式审计前
-  → 危险命令（rm/del/Remove-Item/format/taskkill/force-push/reset --hard，引号外匹配+危险首词）秒拒并引导 request_tool_approval
-  → 安全命令（git 常规动词白名单含 -C 解析、构建/测试、只读探查、cd 前缀）秒放，与既有 builtin allowlist 协同
-  → 灰区落回 LLM 隐式审计；v2 三层漏斗（feature/auto-approval-v2，62/62 测试、部署就绪）合入后接管灰区
-  → 动机：隐式审计裁决 14-39 秒且同参数先拒后过；防火墙判定 0ms 可复现
+自动权限审查（唯一任务 e187a8bbd2d640bb87b96fd3cf548966；ce63f8c0 已合并）
+  → master 已有 ToolApprovalCommandFirewall：安全命令秒放、危险命令秒拒；后续规则迁入 v2 StaticDangerClassifier，删除双重分类路径
+  → feature/auto-approval-v2 的 e716829 已实现 Gate1 静态分级 / Gate2 事实自检 / Gate3 单次 LLM，62/62 测试通过，但尚未合入/部署且 AgentFirewall 仍传 Evidence=null
+  → 参数级风险：save_memory get=L0、upsert/set_important=L1、delete=L2；风险事实由 descriptor+实际参数+系统证据派生，Agent 不能用 may_damage_or_delete_data=false 降级
+  → 用户审批降为最后手段：L0/L1 无感放行，StaticDeny 不可覆盖，Challenge 只反馈 Agent，仅 HumanRequired 弹一次审批；相同 args/evidence 重复拒绝触发 approval_loop_detected
+  → 配置由程序默认 + <DataRoot>/config/system.json ToolReview 覆盖，review profile 走 llm_resource_pool；分阶段部署/启用/下线旧 audit-agent 与默认工单入口
+  → 权威设计：Docs/superpowers/specs/2026-06-03-auto-tool-approval-design.md
 
 工具模型倾向适配（2026-08-22，实测子代理调用链驱动）
   → shell 输出去 ANSI：pwsh 注入 $PSStyle.OutputRendering='PlainText' + NO_COLOR=1 + 输出侧正则剥离兜底
@@ -162,6 +167,13 @@ ContextPipeline → stable system prefix + volatile User tail
   → MessageDeliveryDispatcher 取消旧执行并把 exact delivery 立即 defer 回队列
   → foreground demand 存续期间 recovery/idle drain 不领取后台 delivery
   → MessageFabricStore 依据 wake event deliveryId 精确 claim，避免旧队首抢在用户事件前执行
+
+Agent `send_message` → MessageDeliveryPolicy → Message Fabric 反风暴消费
+  → 默认 `inform/report_result` 为 `notify`：不创建 Turn、不调用模型；`ask/request_review/delegate` 才为 `execute`
+  → `agent_reply` 永远被动，ConversationReplyProjectionWorker 最多投影一次，切断 A→B→A 自动回声
+  → MessageDeliveryDispatcher 按 workspace/Agent 跨 room 原子领取最多 20 条 notify，ConversationNotificationStore 逐条原子写 ChatMessage + message.created 后 ACK
+  → 合并 claim 不合并内容/因果链/UI 卡片；execute 仍一条 delivery 对应一个 canonical Turn
+  → `message_deliveries.handling_mode` + bootstrap/migration 回填历史普通 inform/report_result/agent_reply
 
 P1-2 召回同源去重（压缩摘要/原文/recall 片段 ≤1 次注入）
   → SessionChunkIndexer（写侧）回查 Messages 补齐 CanonicalContentHash/ContextGeneration 冗余列
@@ -229,7 +241,7 @@ Desktop → Core Ready 契约（2026-08-24 修复连接器阻塞启动）
   → LlmVisualInputPlanner fail-closed（缺图/超限抛稳定错误码，不再静默丢图）；inline-only：单图 2MB、聚合 40MiB、8 张上限
   → Responses：user `input_image`（detail original→high）；`function_call_output.output` 支持 [input_text, input_image] 数组
   → ChatCompletions/Anthropic 遇图片工具结果抛 vision_tool_output_not_supported
-  → Image Reader（image_reader）：path 唯一必填（http(s) URL / 宿主绝对路径 / artifact://），High 权限 ReadOnly|RequiresNetwork
+  → Image Reader（image_reader）：path 唯一必填（http(s) URL / 宿主绝对路径 / artifact://），Low 权限 ReadOnly|RequiresNetwork（2026-08-28 裁定：纯只读无写/删路径，免审直通）
     → auto 优先 native（ToolExecutionResult.ToolContentParts 图片部件回交调用模型，零辅助 invocation）
     → 文本调用模型或显式 mode=delegate 时用 manifest `visionHelperModel`（原 imageReaderModel 已改名）单次可归因 invocation
   → image_reader source resolver：URL 有界下载（每跳 SSRF/DNS 重校验、禁内网）、本地只读、内容哈希稳定 vision-* Artifact
@@ -290,6 +302,18 @@ DesignRequest + ExpertGroupDefinition → DesignCouncilPlanCompiler
      → Admin /orchestration
        （紧凑 Graph/Run 控制条 + 顶部运行 → 全宽画布 → 悬浮工作台 → SubAgent 模型/模板/角色设置与文本输出 → 图片生成/展示组件自有预览 → Revision/Layout CAS）
 
+Chat 插嘴模式（当前 Turn steering）
+  → useMessageInteractionQueue：busy 时 Enter 仍立即提交 canonical Turn API，受理后由 chat_execution_commands + ChatExecutionWorker 持久排队；不创建 React local_pending
+  → Composer 独立 ⚡ 设计增量：active Turn + 非空纯文本时直达同一 Steering admission，不写 pendingSendQueue、不创建普通 delivery/第二 Turn；202 后 compare-and-clear，409/失败保留草稿且不自动排队
+  → MessageQueueProjectionService：默认只读投影 queued/retrying deliveries + pending commands；claimed/running 只在诊断查询出现
+  → MessageQueueDropdown：内容宽度胶囊摘要；详情向上悬浮限高，明确“认领后转入会话轨迹”
+  → POST /api/v1/conversations/{conversationId}/turns/{turnId}/steering + X-Workspace-Id
+  → ConversationTurnsController → CreateSteeringHandler（Running + Workspace/Agent 围栏）
+  → SessionSteeringService → session_steering_messages durable queue（不可变 target_turn_id；source_queue_item_id 重试幂等；旧库由 bootstrapper 原地升级）
+  → AgentExecutionService：每次 LLM 前只 drain 当前 Turn；最终回复后的 late safe boundary 命中则继续同一个 Turn
+  → steering.injected + agent.steering.inject 形成消费证据；不取消正在运行的工具/模型请求
+  → 独立按钮方案：Docs/Features/Chat独立插嘴按钮与当前Turn即时Steering设计方案.md（Proposed；P1 Task ed88185f1d3b4e16a70e9b9ea0f0e040）
+
 Chat first paint → AgentConversationProjectionService
   → 过滤 transport duplicate 占位、按 pudding-message envelope message_id 折叠历史重复入站
   → system/heartbeat envelope 正文投影为 context.text，不把协议 JSON 显示在聊天气泡
@@ -308,13 +332,18 @@ Chat first paint → AgentConversationProjectionService
     虚拟化按消息内容 + 已水合 canonical 行为链 render weight 即时开启；
     AgentTurnCard 大卡片外壳（暖色表面/1px 边界/14px 圆角，终态不重挂载）；
     工具行 aria-label 带状态 + 成功终态卡「已完成」标记
+  → canonical event → ExecutionFlowProjectionIndex（2026-08-27）
+    （eventId 先去重；同帧按 Turn 合并；只重投影 dirty Turn；快照结构共享；
+      终态释放原始事件/eventId；session switch 硬 reset；collector 保留 typed payload）
   → MessageList → messageProjection（保持已组装消息顺序，未匹配 active run 留在当前流末端）→ MessageViewportRuntime（虚拟化、锚点、贴底）
   → ChatMessageStyleProvider（消息树共享一次聚合样式注册）
-  → MessageRow（稳定块直接渲染 + 语义 memo；不再经过单条 MessageStream 兼容重建）
+  → MessageRow（稳定块直接渲染 + 语义 memo；接收本 Turn 具体 Projection，其他 Turn revision 不失效；不再经过单条 MessageStream 兼容重建）
   → AgentMessageBubble → TurnContentStream（AgentTurnCard 内容块流，2026-08-25）
      （per-turn canonical 投影 nodes 按 sequence 形成 TextBlock ⇄ ActivityGroup 交错流；
        正文永久可见且只渲染一次，answerMarkdown 不再以字符串关系切回第二正文气泡；
        最新尾部组始终展开、历史组折叠并卸载成员 DOM，组内长详情默认单行折叠；
+       单 Turn 默认只挂载最新 40 个内容块、单 ActivityGroup 最新 24 个行为节点，
+       较早轨迹按 40/24 项渐进揭示，避免单个长 Turn 绕过消息级虚拟化撑爆 DOM；
        路径 A processItems adapter 只作无 canonical 正文节点时的旧记录回退；
        ProcessSummaryItem 必须透传服务端 sequence，缺失即 fail closed，不用下标伪造；
        已封闭 TextBlock/ActivityGroup 语义 memo，append 只更新尾段/状态变化组；

@@ -1,6 +1,6 @@
 # Pudding Agent Network 文档索引
 
-最后更新：2026-08-26（新增 Agent Harness 兼容与工具调用效率修复设计及 ADR-081；H0 已实现，部署与真实模型验收未完成）
+最后更新：2026-08-26（新增 Chat 独立“⚡ 插嘴”按钮设计；自动权限审查与危险操作防火墙已统一设计并合并任务；新增子代理活动轨迹实时回放与运行检查器修复方案；Agent Harness H0 已实现；以上均待部署或产品验收）
 
 ## 文档定位
 
@@ -20,6 +20,10 @@
 
 ## 当前主线文档
 
+- `Docs/Features/Chat独立插嘴按钮与当前Turn即时Steering设计方案.md` / `Docs/superpowers/specs/2026-06-06-runtime-steering-queue-design.md`
+	- 复用既有 current-Turn durable Steering，为运行中 Composer 增加独立 `⚡` 直达入口；明确不进入普通待发队列、不创建第二个 Turn、202 后 compare-and-clear、409/失败保留草稿、图片 fail closed、单飞幂等和明确部署 smoke。当前仅设计，关联 P1 任务 `ed88185f1d3b4e16a70e9b9ea0f0e040`，尚未实施/部署。
+- `Docs/superpowers/specs/2026-06-03-auto-tool-approval-design.md`
+	- 自动权限审查唯一设计入口：合并确定性危险命令防火墙与三层漏斗，冻结用户审批最后手段、参数级风险分类、系统派生风险事实、重复审批熔断和 `save_memory upsert` 零审批；关联唯一 P1 任务 `e187a8bbd2d640bb87b96fd3cf548966`，尚未部署验收。
 - `Docs/Features/AgentHarness兼容与工具调用效率修复设计方案.md` / `Docs/07架构/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md`
 	- 冻结“canonical 工具唯一、统一执行边界前适配、短稳定提示、no-match 结构化、可选而非默认 bundled rg”的 Harness 兼容边界；H0 源码与定向测试已落，H1 观测/重复指纹和进程外真实模型验收未完成。
 - `Docs/Features/Agent消息交错内容流与最新行为组披露完整实施方案.md`
@@ -28,6 +32,10 @@
 	- 冻结一个 AgentTurnCard 内真实交错、唯一正文源，以及“当前最新 Agent 回合最后行为组持续展开；最终正文不关闭；新行为/新回合才转移并收起旧组”的架构决策。Accepted 只表示设计决策冻结，不表示实现完成。
 - `Docs/07架构/92ADR-077主代理原生视觉理解与多模态消息链路ADR.md`
 	- 冻结主视觉模型直接消费 typed image content、Workspace Artifact、DeepSeek Responses `input_image`/图片型工具结果、Files API、多轮重启恢复、fail-closed 与视觉用量；Image Reader 改为默认只传路径的按需取图工具，支持 URL/任意绝对路径，并保留显式 helper 委派能力。当前为 Proposed。
+- `Docs/Features/Chat图片消息回放与前端旧Bundle缓存修复方案.md`
+	- 记录 2026-08-26 图片占位故障的消息/Artifact/DOM/Bundle 证据链；修复 Agent-first `contentParts` 投影断点、localhost 旧 Service Worker 清理、静态资源缓存合同、build identity 与两段式产品验收。当前为 Proposed，关联任务 `ceba781342aa4353901654d1897092cb`。
+- `Docs/Features/子代理活动轨迹实时回放与运行检查器修复方案.md`
+	- 记录 Run `run_20260826_111621_3a711865a9f8` 的 archive/cursor/canonical event/UI/Bundle 证据链；修复活动子代理未纳入 gap replay、空卡片无同步降级、聚合计数受有界详情截断与 build identity 不可见问题，坚持活动 Run 零归档轮询。当前为 Proposed，关联 P1 任务 `791d062fa6ea44f18bfe5027a37696d0`。
 - `Docs/07架构/89ADR-074Goal持久目标自主续行与自动压缩ADR.md`
 	- 冻结 GoalRun 持久续行、证据验证、Task-bound Goal、Agent 可用性感知与低峰自动派发；明确 Auto Task 以 Goal 为前置且不依赖 Heartbeat。
 - `Docs/Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md`

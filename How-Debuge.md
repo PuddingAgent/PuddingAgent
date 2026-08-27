@@ -2668,27 +2668,57 @@ dotnet build .\Tests\PuddingBrowser.WebView2.Smoke\PuddingBrowser.WebView2.Smoke
 
 1. `chat_execution_commands` / Turn / Run：确认消息已受理，区分 `pending` 与 `running`，记录 `commandId/turnId/runId`；
 2. `session_event_log`：确认该 run 是否只有 `turn.accepted/turn.started`，以及同 Agent 另一会话最近执行的首条 thinking 是否来自 `system:heartbeat`；
-3. `message_deliveries`：检查心跳 delivery 的 `attempt_count/lease_until/claimed_by_execution_id/status`，重点查“旧 execution lease 过期 → recovery/reclaim → 新 execution Busy 后 ACK，但旧 execution 后续仍产生日志”；
-4. `runtime_activity` 与 `AgentExecutionStateRegistry`：若 Agent 实际持续跑工具而 registry 仍显示 idle，说明存在绕过 `RuntimeAgentDispatcher` 的入口。
+3. `message_deliveries`：只检查 claim 前投递与受理审计。先按 `handling_mode` 分流：`execute` 的 Agent/获准 heartbeat 在 canonical Turn 受理后应很快变为 `delivered`；`notify` 在被动消息事件落盘后 ACK。两类受理失败才进入 `retrying/dead_letter`；
+4. `ChatMessages`、`session_event_log` 与 Conversation projection：确认 Message Fabric 输入卡已经出现，随后是否有 `turn.started/thinking/tool/delta/terminal`。输入卡存在而无处理卡属于 canonical Turn 消费问题，不再属于消息队列问题；
+5. `runtime_activity` 与 `AgentExecutionStateRegistry`：若 command 已是 `running`、Agent 实际持续跑工具而 registry 仍显示 idle，再检查是否绕过 `RuntimeAgentDispatcher`。
 
-若用户消息停在 `turn.accepted`，而同 Agent 的 `message_deliveries` 正在执行 `source=subagent` / `intent=subagent_result`，说明隐藏后台投递占用了 Agent 单写执行槽。Provider 甚至可能还没收到用户请求。这个组合表明卡点在执行准入和 delivery fencing，不是 SSE 渲染。当前不变量是：
+若用户消息停在 `turn.accepted`，而同 Agent 的 `source=subagent` / `intent=subagent_result` 专用 continuation 正在执行，可能是该专用后台路径占用了 Agent 单写执行槽。可执行 Agent-to-Agent 消息与获准 heartbeat 不应再长时间停在 `message_deliveries=delivering`：它们在 claim 后受理 canonical Turn 并立即 ACK，执行状态迁入 `chat_execution_commands` 与 Conversation 事件；被动通知则直接进入 Conversation 消息事件。当前不变量是：
 
-- 所有用户 Turn、Agent 消息和心跳必须经 `RuntimeAgentDispatcher` 共用 `TryBegin/Complete`；用户 Turn 遇 Busy 等待，心跳遇 Busy 丢弃；
-- `AgentExecutionAdmissionCoordinator` 以 workspace/agent 为键；用户 Turn 获取 foreground lease 时必须取消正在运行的后台 Message Fabric 投递，被取消 delivery 立即 defer 回队列，不能 ACK、retry 或 dead-letter；foreground demand 存续期间 recovery/idle drain 不得抢先 claim；
+- 用户 Turn、`handling_mode=execute` Agent 消息与获准 heartbeat 最终都由 canonical `ChatExecutionWorker -> RuntimeAgentDispatcher` 执行，并产生一致的消息卡、处理卡、思考和工具轨迹；`notify` 只有消息卡，不应伪造处理卡或思考轨迹；
+- `MessageDelivery` 队列所有权在 claim 时结束：默认队列只展示 `queued/retrying` delivery 与 `pending` command；`delivering/leased/running/cancel_requested` 仅在显式诊断查询出现，不能作为 Composer 的“处理中”队列项；
+- 可执行 Agent/heartbeat delivery 使用 delivery 派生的稳定 `clientRequestId/clientMessageId` 受理 Turn；只有 durable acceptance 成功才能 ACK。通知则只有在消息/事件原子落盘后才能 ACK。任一路径受理失败都必须 retry/dead-letter，不能 ACK 后丢失；
+- 受理前必须剥离 sender metadata 中伪造的 `message_fabric_*`，再从已 claim 的 delivery 重建 source/reply/room/correlation 路由；若终态回复投向错误 Agent，先对比原 delivery 与 command metadata，不能信任发送方自带保留键；
+- `AgentExecutionAdmissionCoordinator` 以 workspace/agent 为键；foreground demand 存续期间 recovery/idle drain 不得抢先 claim。heartbeat 在 claim 后遇 Busy、foreground demand 或 firewall denial 时 ACK/drop，不创建 Turn、不重试；
 - `message.deliver` wake event 必须把 `deliveryId` 传给 `MessageClaimRequest` 做精确领取；否则用户 delivery 的事件可能领取更旧的队首后台 delivery，再次形成饥饿；
-- 普通用户/Agent 消息到达时取消同 workspace/agent 的活动心跳；心跳是可抢占的低优先级工作；
-- Message Fabric 长执行每 2 分钟续 5 分钟租约，终态或回复前再校验一次；`RenewLeaseAsync=false` 后旧执行必须取消且不得 ACK/retry/dead-letter/reply；
-- 非空 `executionId` 必须与 `ClaimedByExecutionId` 完全相等，owner 被回收清空也不能让旧 execution 回写。
+- Agent 的 canonical reply 由 `ConversationReplyProjectionWorker` 在 committed terminal event 后按原 `replyTo/room/conversation/priority` 投递；`ReplyProjectedAt` 保证一次，MessageDelivery dispatcher 不等待回复；
+- Agent 消息不得再默认形成“收到即执行并回复”。`inform/report_result/agent_reply + requires_response!=true` 必须是 `handling_mode=notify`，不创建 Turn、不调用模型；`ask/request_review/delegate` 或显式 `requires_response=true` 才是 `execute`。未知旧 intent 可以执行但不得自动回复；
+- `notify` drain 按 workspace/Agent 跨 room 一次最多原子领取 20 条，并逐条写 `ChatMessage + message.created`、逐条 ACK。目标 Agent Busy 时仍应排空；如果这些通知还停在 `queued`，优先查 Hosted Service/DI/schema，而不是 availability；
+- 合并领取不等于合并 Prompt。可执行 delivery 仍是一条一个 Turn；通知也必须保留独立 messageId、correlation/causation、卡片与失败状态；
+- SubAgent continuation 等仍保留的长执行路径必须每 2 分钟续 5 分钟租约；`RenewLeaseAsync=false` 后旧执行必须取消且不得 ACK/retry/dead-letter/reply，非空 `executionId` 必须与 `ClaimedByExecutionId` 完全相等。
 
 关键日志：
 
 ```text
 [TurnExecutorAdapter] Waiting for foreground admission
-[MessageDeliveryDispatcher] Background delivery preempted for foreground Turn
-[MessageDeliveryDispatcher] User activity interrupted active heartbeat
+[MessageDeliveryDispatcher] Message Fabric delivery handed off to canonical Turn
+[MessageFabric] Canonical Turn reply projected
+[MessageFabric] Passive notification accepted
+[MessageDeliveryDispatcher] Passive notification batch drained
+[MessageDeliveryDispatcher] Heartbeat skipped because foreground work is pending
 [MessageDeliveryDispatcher] Delivery lease ownership lost; cancelling stale runtime execution
 [MessageDeliveryDispatcher] Discarded stale execution before delivery mutation
 ```
+
+若出现“B 每完成一条就新增 2~3 条”或 A/B 乒乓，先做只读聚合（不要直接更新运行库）：
+
+```sql
+SELECT d.handling_mode,
+       json_extract(m.metadata_json, '$.intent') AS intent,
+       json_extract(m.metadata_json, '$.requires_response') AS requires_response,
+       d.status,
+       COUNT(*) AS n
+FROM message_deliveries d
+JOIN room_messages m ON m.message_id = d.message_id
+WHERE d.target_kind = 'agent' AND d.target_id = $agentId
+GROUP BY d.handling_mode, intent, requires_response, d.status
+ORDER BY n DESC;
+```
+
+异常特征是 `intent=inform/agent_reply` 却为 `handling_mode=execute`，或 command 的
+`message_fabric_reply_expected=true` 与消息合同不符。新版本启动时 schema bootstrap 会把历史普通
+`inform/report_result/agent_reply` 回填为 `notify`；只有外部重启到新构建后才能验证该回填和 drain，编译通过不等于线上队列已恢复。
+
+若前端仍显示“处理中”但时间线没有卡片，先调用队列 API 的默认查询和 `includeTerminal=true` 诊断查询做差集：默认结果中出现 `message_deliveries=delivering` 或 `chat_execution_commands=running` 是投影回归；只在诊断结果出现则队列正确。随后核对 `message_fabric_delivery_id` 对应 command 是否存在、`ChatMessages.MessageId` 是否与稳定 clientMessageId 一致，以及 SSE 是否回放该 command 的 canonical events。不要通过前端本地状态伪造消息卡或处理卡。
 
 定向回归：
 
@@ -2696,7 +2726,7 @@ dotnet build .\Tests\PuddingBrowser.WebView2.Smoke\PuddingBrowser.WebView2.Smoke
 dotnet test .\Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --no-restore --nologo `
   --filter "FullyQualifiedName~MessageDeliveryDispatcherTests|FullyQualifiedName~TurnExecutorAdapterTests"
 dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-restore --nologo `
-  --filter "FullyQualifiedName~MessageFabricStoreTests"
+  --filter "FullyQualifiedName~MessageFabricStoreTests|FullyQualifiedName~MessageQueueProjectionServiceTests|FullyQualifiedName~ConversationReplyProjectionWorkerTests|FullyQualifiedName~SubmitTurnHandlerTests"
 ```
 
 ## 11.17 Desktop 重启 Core 固定 60 秒失败，SessionChunk 回填反复从头开始
@@ -3151,8 +3181,10 @@ python TestScripts/deepseek-cache-hitrate.py --days 3   # 短窗口
 2. 查该 Trace 的上下文活动：水合 `history_count`、`agent.history.inject_secrets` 的
    `message_count/system_user_message_count`、最终 `agent.llm.prepare`。若 `turn.accepted` 正确且网关
    收到预期消息数，说明不是“前端没发出”或“Runtime 丢了整条请求”。
-3. 比对当前 `ChatMessages.Content` 的长度/SHA-256 与水合历史。历史可能仍含一条语义非常清晰的旧命令，
-   而新输入像粘贴的 assistant 报告、日志或文档；没有当前轮边界时，模型可能语义回退到旧命令。
+3. 比对当前 `ChatMessages.Content` 的长度/SHA-256 与水合历史；再按同一 session 比较 platform DB
+   `ChatMessages.Id/CreatedAt` 最大值和 memory DB 中 `Source=chat_transcript` 的稳定 MessageId 高水位、
+   `CreatedAt` 最大值。若 platform 已前进而 memory 停在数小时前，即使当前输入围栏存在，冷启动仍会把旧命令
+   作为最近历史交给模型；这属于 canonical 转录冷水合缺口，不是前端丢消息，也不能归因于模型随机性。
 4. 2026-08-25 起，实际 provider 输入必须含最后一个
    `[CURRENT USER TURN input_sha256=…]…[/CURRENT USER TURN input_sha256=…]`；typed `ContentParts`
    同样必须有带同一 hash 的首尾围栏。
@@ -3163,7 +3195,23 @@ python TestScripts/deepseek-cache-hitrate.py --days 3   # 短窗口
 
 判定分支：`turn.accepted` 指向旧 ID → 查 Dispatcher/ExecutionRunCoordinator；ID 正确但门禁报错 → 查
 ContextBudget/历史投影；围栏与 hash 均正确而模型仍答旧任务 → 查实际 gateway request/provider 响应，
-再评估 prompt 行为。修复 Runtime 后必须重启 Core 才能验证，新源码不能由承载它的旧进程自证已加载。
+但必须先排除 platform/memory 高水位差。新构建在 DB 历史水合前应记录
+`Canonical transcript synchronized before DB hydration`；缺少该日志或同步失败后仍读取 memory DB 都是回归。
+修复 Runtime 后必须重启 Core 才能验证，新源码不能由承载它的旧进程自证已加载。
+
+还要检查两个时序不变量：
+
+- 当前 user 虽已先写入 `ChatMessages`，但 provider history 中只能出现一次，且必须是带
+  `[CURRENT USER TURN input_sha256=…]` 的版本。若同一正文同时出现无围栏 DB 行与围栏行，检查
+  `ChatMessageRow.turnId/messageId → MessageEntity.Metadata → BuildContextFromDbSnapshotAsync` 的当前 Turn 排除。
+- `turn.completed` 之前 assistant 可能尚未物化到 `ChatMessages`。Streaming 后处理不得用此时的 DB 快照覆盖
+  已包含 assistant/tool 的 live history；如果下一轮又缺少刚完成的 assistant，检查 `TrimHistoryAsync` 是否记录了
+  pre-projection DB 覆盖，或自动压缩后是否漏合并当前 live Turn。自动压缩后的 live 尾部必须从 opening/closing
+  配对且携带 64 位输入 hash 的当前轮围栏开始；若围栏缺失却仍把最后一条历史 user 合并为当前轮，属于 fail-closed
+  门禁失效，会重新激活旧指令。
+
+纯图片消息的 `Content` 可以为空；排查高水位时同时看 `content_parts_json`。若 after-Id 查询只筛非空正文，
+或者 canonical hash 只覆盖正文，图片轮会被静默跳过或互相误判为同源。
 
 ## 11.37 Agent Harness 适配、低效工具循环与首块等待诊断
 
@@ -3201,6 +3249,41 @@ ContextBudget/历史投影；围栏与 hash 均正确而模型仍答旧任务 �
 代码和单测通过只说明新构建可用；必须由进程外控制器重启 Core，再用新会话检查上述日志/指标和主、子代理
 真实 smoke，才能证明当前产品进程已加载修复。
 
+## 11.39 插嘴（Steering）已受理但 Agent 没有改变方向
+
+插嘴不是取消：当前正在执行的工具调用或模型请求会自然结束，Runtime 在下一次 LLM 请求前注入；如果它在
+可能成为最终回复的模型请求期间到达，新构建会在回复结束后的安全边界继续同一个 Turn。按以下证据链排查：
+
+1. 前端检查 `chat.steering.submit/submitted/submitFailed`。`Enter` 是普通排队，`Ctrl/Cmd+Enter` 或本地队列
+   闪电按钮才是插嘴；后端投递队列项不能直接转换，以免原投递和 Steering 重复执行。
+2. 网络请求必须是
+   `POST /api/v1/conversations/{conversationId}/turns/{turnId}/steering`，带 `X-Workspace-Id`。`202` 表示已写入
+   Runtime 消费队列；`409` 表示 Turn 已终态或 Workspace/Agent 围栏不匹配。旧 workspace/session 路由的
+   `404` 或 canonical 路由的 `501` 都说明当前客户端或 Core 仍是旧构建。
+3. 查 `session_steering_messages` 的
+   `steering_id/session_id/target_turn_id/agent_id/source_queue_item_id/status/consumed_round`：
+   `pending` 长期不变说明 Runtime 未到安全边界或未加载新构建；`consumed` 说明已进入模型历史，不等于模型
+   一定采纳指令。Runtime 只消费与当前 `RuntimeExecutionIdentity.TurnId` 精确匹配的行，旧库升级时无法绑定
+   Turn 的历史 pending 行会被置为 `expired`，不得猜测后注入下一轮。同一 `source_queue_item_id` 的网络重试
+   应返回相同 `steering_id`；若产生多行，检查是否绕过了 canonical Handler 或运行的是旧构建。
+4. 日志链应依次出现 `[Steering] accepted`、`[SessionSteering] Consumed`、
+   `[AgentExec:Steering] Injected`；若插嘴在最后一次模型生成期间到达，还应出现
+   `[AgentExec:Steering] Continuing after ... late steering message(s)`。
+5. `steering.injected` canonical event 和 `agent.steering.inject` activity 是实际注入证据；只看到 HTTP 202
+   不能证明 Runtime 已消费。源码构建通过后仍需由进程外控制器重启 Core，再用新 Turn 做产品内 smoke。
+
+## 11.40 本地待发消息在 Turn 结束后长时间仍显示“排队中”
+
+先用同一 `sessionId/turnId` 对齐 Runtime、Journal、Coordinator 和 Worker 的终态时间，再查下一次
+`SubmitTurn`/首个 `llm_gateway started`。若后端已四层 `Completed`、期间没有第二次 Submit，但随后又在无
+用户操作时突然发送，这是前端本地队列 drain 的唤醒问题，不是 Agent 仍在运行或后端排队。
+
+`useMessageInteractionQueue` 的 drain effect 必须读当前 render 的 `turns`，并订阅
+`pendingSendQueue`。`useChatState` 在队列 hook 之后才用 effect 同步 `turnsRef.current`；如果 drain 读
+ref，终态 render 会看到上一帧 `streaming`，而 ref 同步本身不会触发下一次 render，最终表现
+为等到轮询或无关 UI 更新才“碰巧出队”。回归测试应专门复现“队列 hook 先运行、外层后同步
+`turnsRef`”的 effect 顺序，不得用人为的第二次 busy→idle 切换才使断言通过。
+
 ## 11.38 u1s1 Provider：模型列表正常但推理返回 403
 
 `https://api.u1s1.io/v1/models` 使用账号 API Key 可以返回模型列表，不代表同一 Key 可以从任意 OpenAI
@@ -3216,3 +3299,50 @@ ContextBudget/历史投影；围栏与 hash 均正确而模型仍答旧任务 �
    才能在 provider-specific gateway 中实现；不能把签名逻辑塞进通用 OpenAI gateway。
 4. 直接编辑 `D:\data\config\llm.providers.json` 后，当前 Core 的 `PuddingFileLlmConfigService` 不会自动
    重新加载；必须由进程外控制器重启 Core，再检查管理端 Provider/Model 列表。
+
+## 11.41 长会话 Chat CPU、内存与 DOM 持续增长
+
+浏览器任务管理器中的高 CPU/内存只能证明页面进程有压力，不能直接区分事件投影、React 提交、Markdown、
+布局或 WebView2 旧资源。先部署明确的新前端构建，再用同一会话按以下证据链判断：
+
+1. 开启 Chat perf 诊断，检查 `chat.executionFlow.incrementalFlush`。正常单 Agent 流式阶段
+   `changedTurnCount` 通常为 1，`pendingEvents` 在帧后为 0；若每个事件都随历史 Turn 数增长，说明仍在运行
+   旧的“全事件 × 全 Turn”投影路径或静态资源未更新。
+2. 重复 replay/bootstrap 事件应只出现 `chat.event.duplicateSkipped`，不得同时出现新的 incremental flush。
+   session 切换后索引 stats 应从当前会话重新累计，不能保留上一会话 turns/events。
+3. 在 Elements/Performance 面板检查 `data-testid="turn-content-stream"`：单个超长 Turn 默认只挂载最新 40 个
+   内容块；展开的 `activity-group` 默认只挂载最新 24 个行为节点。较早节点只在点击“加载较早”后渐进增加。
+   若一打开就出现数百 `toolcall-row`，运行的仍是旧前端。
+4. `data-testid="chat-message-viewport-content"` 的 `data-virtualized=true` 表示消息级 virtualizer 已启用。
+   若单条 Turn 很重但仍卡顿，优先查 Turn 级窗口；若大量独立消息同时挂载，查 render weight 与 viewport 阈值。
+5. React Profiler 中更新一个活动 Turn 时，历史 `MessageRow` 不应提交。若全部行一起 commit，检查是否又把
+   全局 selector/revision 当成 MessageRow prop；正确实现传入本 Turn 的具体 Projection 对象并按引用比较。
+6. 代码门禁：运行 `executionFlowProjectionIndex.test.ts`、`TurnContentStream.test.tsx`、
+   `MessageRow.memo.test.ts`，再执行 `npm run build`。全量 `tsc` 若仍命中既有 Admin Shell/DevPanel 基线，需确认
+   输出中没有本节涉及文件的新错误，不能把基线失败描述为通过。
+
+## 11.42 子代理只有 Browser Tools 并连续 `browser_not_available`
+
+`No authenticated Desktop connected` 只说明 Browser Bridge 当时无认证 Desktop；如果任务本应读文件，
+不要直接把根因归结为“重连 Desktop”。按以下顺序对齐证据：
+
+1. 从父会话 `spawn_sub_agent` 的 tool event 记录 `sessionId/turnId/runId/subSessionId/template_id/permission_mode/tools`，
+   先确认父代理要求的能力和实际委派参数。
+2. 读 `<workspace>/agents/<agent>/runs/<runId>/events.jsonl` 的第一轮 LLM 请求，以 function schema/
+   `Total: N tools available` 为可用工具事实；提示词中出现工具名不等于 schema 可调用。
+3. 汇总同 Run `tools.jsonl` 的 `tool/success/error/args_hash`。如果同类错误很多而 args hash 持续变化，
+   说明精确 tool+args 重试跟踪无法止损，必须再查 Runtime 失败族熔断。
+4. 沿 `BuiltInAgentTemplates -> SubAgentTool.ResolveTemplate/BuildChildCapability -> CapabilityPolicy.GetAllEffectiveToolNames
+   -> ToolExposurePlanner -> LLM schemas` 追踪。Low 投影的权威是 V2 `DefaultToolNames + RequiresGrantToolNames`，
+   不能用把 V1 `AllowedToolNames` 求并后的测试代替实际投影验证。
+5. 全库搜索同全名 `BuiltInAgentTemplates`；它必须只存在于 PuddingCore。Host 本地同名类会让
+   Host/UI 测试与 Runtime 分别看到两份策略，造成构建通过但产品行为漂移。
+6. 查 `RuntimeControlService` 的 `windowErrorCount/sameFingerprintCount/trigger`。精确调用第二次由
+   `FailedToolCallTracker` 转 `execution_stalled`；参数改变但 kind+component+归一化错误不变时，
+   第 5 次应触发 `same_failure_fingerprint` 熔断。配置总量阈值必须小于等于内部保留容量。
+7. Buffered 终止应归档为 Failed 并携带 `Session fuse triggered` 摘要；若只看到 Cancelled，
+   检查 `OperationCanceledException` 分支是否在通用取消之前读取 RuntimeControl Faulted 状态。
+
+源码修复后的最低回归：Core 模板/RuntimeControl 定向测试、Runtime 提示/参数变化失败族测试、
+WebApi 模板单程序集测试、`dotnet build PuddingRuntime --no-restore`。当前运行中的 Desktop/Core 不会自动加载新 DLL，
+必须由进程外控制器重启后，再用新子代会话检查它能否首先看到 `search_tools`、并发现/调用 `file_read`。
