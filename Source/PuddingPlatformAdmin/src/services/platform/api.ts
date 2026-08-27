@@ -2445,11 +2445,6 @@ export interface AdminChatSteeringRequest {
 
 export interface AdminChatSteeringResponse {
   steeringId: string;
-  sessionId: string;
-  workspaceId: string;
-  agentId?: string;
-  status: string;
-  createdAt: number;
 }
 
 export interface MessageAddressDto {
@@ -2480,6 +2475,7 @@ export interface MessageSendResult {
 
 export interface AgentMessageQueueItem {
   deliveryId: string;
+  queueKind: 'message_delivery' | 'chat_turn' | string;
   messageId: string;
   workspaceId: string;
   roomId?: string;
@@ -2498,7 +2494,7 @@ export interface AgentMessageQueueItem {
   leaseUntil?: number;
   readAt?: number;
   ackAt?: number;
-    claimedByExecutionId?: string;
+  claimedByExecutionId?: string;
   lastError?: string;
   // ── Phase 2 投影字段（后端 commit 22f5b0bb，契约已锁定）──
   substate?: 'fresh' | 'waiting' | 'retrying' | 'delivered' | 'dead_letter' | 'failed' | 'cancelled' | 'expired' | string;
@@ -2951,13 +2947,23 @@ export async function awaitConversationTurn(
 
 export async function createChatSteeringMessage(
   workspaceId: string,
-  sessionId: string,
+  conversationId: string,
+  turnId: string,
   req: AdminChatSteeringRequest,
 ): Promise<AdminChatSteeringResponse> {
-  return request(`/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions/${encodeURIComponent(sessionId)}/steering`, {
-    method: 'POST',
-    data: req,
-  });
+  return request(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/steering`,
+    {
+      method: 'POST',
+      data: {
+        text: req.messageText,
+        priority: req.priority,
+        agentId: req.agentId,
+        sourceQueueItemId: req.sourceQueueItemId,
+      },
+      headers: { 'X-Workspace-Id': workspaceId },
+    },
+  );
 }
 
 export async function uploadVisionArtifact(

@@ -840,7 +840,11 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
           onHasTextChange={handleHasTextChange}
           onEnterWithImages={handleEnterWithImages}
           hasPendingImages={pendingImages.length > 0}
-          placeholder={loading ? '正在生成回复…' : '输入你的问题或任务…'}
+          placeholder={
+            loading
+              ? '继续输入：Enter 排队，Ctrl/Cmd+Enter 插嘴当前 Agent…'
+              : '输入你的问题或任务…'
+          }
           disabled={disabled}
           className={styles.composerTextarea}
           onPaste={handlePasteImage}

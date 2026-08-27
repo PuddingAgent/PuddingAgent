@@ -1,6 +1,9 @@
 ﻿import { act, renderHook, waitFor } from '@testing-library/react';
-import { useRef } from 'react';
-import { getAgentMessageQueue } from '@/services/platform/api';
+import { useEffect, useRef } from 'react';
+import {
+  createChatSteeringMessage,
+  getAgentMessageQueue,
+} from '@/services/platform/api';
 import { useMessageInteractionQueue } from './useMessageInteractionQueue';
 
 jest.mock('@/services/platform/api', () => ({
@@ -21,6 +24,7 @@ const messageApi = {
 interface QueueHarnessOptions {
   loading?: boolean;
   busyTurns?: boolean;
+  turns?: any[];
 }
 
 function useQueueHarness(
@@ -32,11 +36,13 @@ function useQueueHarness(
     options.busyTurns
       ? [
           {
+            turnId: 'active-turn-1',
             assistant: { isStreaming: true, status: 'streaming' },
           },
         ]
       : [],
   );
+  const projectedTurns = options.turns ?? turnsRef.current;
   const activeMessageIdsRef = useRef(new Set<string>());
   const messageIdToTurnIdRef = useRef(new Map<string, string>());
   const handleCompactCommandRef = useRef(jest.fn(async () => {}));
@@ -50,7 +56,7 @@ function useQueueHarness(
     },
     execution: {
       loading: options.loading ?? false,
-      turns: turnsRef.current,
+      turns: projectedTurns,
       turnsRef: turnsRef as never,
       activeMessageIdsRef,
       messageIdToTurnIdRef,
@@ -58,6 +64,11 @@ function useQueueHarness(
     },
     messageApi: messageApi as never,
   });
+  // Mirror useChatState's ordering: the queue hook registers its effects before
+  // the outer owner synchronizes the canonical turns ref.
+  useEffect(() => {
+    turnsRef.current = projectedTurns;
+  }, [projectedTurns]);
   return { ...queue, handleCompactCommand, turnsRef };
 }
 
@@ -65,6 +76,9 @@ describe('useMessageInteractionQueue', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (getAgentMessageQueue as jest.Mock).mockResolvedValue({ items: [] });
+    (createChatSteeringMessage as jest.Mock).mockResolvedValue({
+      steeringId: 'steering-1',
+    });
   });
 
   it('forwards trimmed interaction commands through the bound sender', async () => {
@@ -99,15 +113,28 @@ describe('useMessageInteractionQueue', () => {
         items: [
           {
             deliveryId: 'delivered-1',
+            queueKind: 'message_delivery',
             content: '已完成历史',
             createdAt: 1,
             status: 'delivered',
           },
           {
-            deliveryId: 'queued-1',
-            content: '等待处理',
+            deliveryId: 'claimed-1',
+            queueKind: 'message_delivery',
+            content: '已被消费者认领',
             createdAt: 2,
+            status: 'delivering',
+          },
+          {
+            deliveryId: 'queued-1',
+            queueKind: 'chat_turn',
+            messageId: 'user-1',
+            workspaceId: 'ws-1',
+            content: '等待处理',
+            createdAt: 3,
             status: 'queued',
+            priority: 0,
+            attemptCount: 0,
           },
         ],
       });
@@ -115,6 +142,9 @@ describe('useMessageInteractionQueue', () => {
     expect(result.current.interactionQueue.map((item) => item.id)).toEqual([
       'queued-1',
     ]);
+    expect(result.current.interactionQueue[0].metadata?.queueKind).toBe(
+      'chat_turn',
+    );
   });
 
   it('routes the compact command without invoking the message sender', () => {
@@ -139,156 +169,154 @@ describe('useMessageInteractionQueue', () => {
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it('P1#6: auto-queues messages locally while busy and drains them in order when idle', async () => {
+  it('submits every normal message to the durable Turn API even while busy', async () => {
     const sendMessage = jest.fn(async () => {});
-    const { result, rerender } = renderHook(
-      ({ loading }: { loading: boolean }) =>
-        useQueueHarness('ws-1', { loading }),
-      { initialProps: { loading: true } },
+    const { result } = renderHook(() =>
+      useQueueHarness('ws-1', { loading: true, busyTurns: true }),
     );
-
     act(() => result.current.bindSendMessage(sendMessage));
-    // busy → both messages go to the local pending queue, not the sender
     await act(async () => result.current.submitInteraction('first'));
     await act(async () => result.current.submitInteraction('second'));
-    expect(sendMessage).not.toHaveBeenCalled();
 
-    const queued = result.current.interactionQueue.filter(
-      (item) => item.source === 'local_pending',
-    );
-    expect(queued.map((item) => item.text)).toEqual(['first', 'second']);
-
-    // idle → drain sends the first queued item
-    rerender({ loading: false });
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(sendMessage).toHaveBeenCalledWith('first', undefined);
-    expect(
-      result.current.interactionQueue.filter(
-        (item) => item.source === 'local_pending',
-      ),
-    ).toHaveLength(1);
-
-    // second idle transition drains the remaining item
-    rerender({ loading: true });
-    rerender({ loading: false });
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(sendMessage).toHaveBeenCalledTimes(2);
-    expect(sendMessage).toHaveBeenLastCalledWith('second', undefined);
+    expect(sendMessage).toHaveBeenNthCalledWith(1, 'first', undefined);
+    expect(sendMessage).toHaveBeenNthCalledWith(2, 'second', undefined);
+    expect(result.current.interactionQueue).toHaveLength(0);
   });
 
-  it('P1#6: deletes a local pending queue item without touching the sender', async () => {
-    const sendMessage = jest.fn(async () => {});
-    const { result } = renderHook(
-      ({ loading }: { loading: boolean }) =>
-        useQueueHarness('ws-1', { loading }),
-      { initialProps: { loading: true } },
-    );
-    act(() => result.current.bindSendMessage(sendMessage));
-    await act(async () => result.current.submitInteraction('keep'));
-    await act(async () => result.current.submitInteraction('drop'));
-    const dropId = result.current.interactionQueue.find(
-      (item) => item.source === 'local_pending' && item.text === 'drop',
-    )?.id;
-    expect(dropId).toBeTruthy();
-
-    act(() => result.current.deleteQueuedInteraction(dropId as string));
-
-    expect(
-      result.current.interactionQueue.filter(
-        (item) => item.source === 'local_pending',
-      ),
-    ).toHaveLength(1);
-    expect(sendMessage).not.toHaveBeenCalled();
-  });
-
-  it('P1#6: steer on a local pending item yields to the next message (swap)', async () => {
+  it('enqueueInteraction returns no browser-owned id and forwards while busy', () => {
     const sendMessage = jest.fn(async () => {});
     const { result } = renderHook(() =>
-      useQueueHarness('ws-1', { loading: true }),
+      useQueueHarness('ws-1', { loading: true, busyTurns: true }),
     );
     act(() => result.current.bindSendMessage(sendMessage));
-    await act(async () => result.current.submitInteraction('A'));
-    await act(async () => result.current.submitInteraction('B'));
-    await act(async () => result.current.submitInteraction('C'));
 
-    // 让位给下一条：A 与 B 交换 → [B, A, C]
-    const aId = result.current.interactionQueue.find(
-      (item) => item.source === 'local_pending' && item.text === 'A',
-    )?.id;
+    let queueItemId: string | null = 'unexpected';
     act(() => {
-      void result.current.steerQueuedInteraction(aId as string);
+      queueItemId = result.current.enqueueInteraction('queued-message');
     });
-    const order = result.current.interactionQueue
-      .filter((item) => item.source === 'local_pending')
-      .map((item) => item.text);
-    expect(order).toEqual(['B', 'A', 'C']);
+
+    expect(queueItemId).toBeNull();
+    expect(sendMessage).toHaveBeenCalledWith('queued-message', undefined);
   });
 
-  it('P1#6: reorders local pending items via drag drop mapping', async () => {
-    const sendMessage = jest.fn(async () => {});
+  it('allows only one steering admission in flight for the same source item', async () => {
+    let resolveAdmission!: (value: { steeringId: string }) => void;
+    (createChatSteeringMessage as jest.Mock).mockImplementationOnce(
+      () =>
+        new Promise<{ steeringId: string }>((resolve) => {
+          resolveAdmission = resolve;
+        }),
+    );
     const { result } = renderHook(() =>
-      useQueueHarness('ws-1', { loading: true }),
+      useQueueHarness('ws-1', { loading: true, busyTurns: true }),
     );
-    act(() => result.current.bindSendMessage(sendMessage));
-    await act(async () => result.current.submitInteraction('A'));
-    await act(async () => result.current.submitInteraction('B'));
-    await act(async () => result.current.submitInteraction('C'));
 
-    const aId = result.current.interactionQueue.find(
-      (item) => item.source === 'local_pending' && item.text === 'A',
-    )?.id;
-    const cId = result.current.interactionQueue.find(
-      (item) => item.source === 'local_pending' && item.text === 'C',
-    )?.id;
+    let firstAdmission!: Promise<boolean>;
+    let secondAccepted = true;
+    await act(async () => {
+      firstAdmission = result.current.submitSteeringInteraction(
+        '只注入一次',
+        'source-1',
+      );
+      secondAccepted = await result.current.submitSteeringInteraction(
+        '不应重复注入',
+        'source-1',
+      );
+    });
+    expect(createChatSteeringMessage).toHaveBeenCalledTimes(1);
+    expect(secondAccepted).toBe(false);
 
-    act(() =>
-      result.current.reorderQueuedInteraction(aId as string, cId as string),
-    );
-    const order = result.current.interactionQueue
-      .filter((item) => item.source === 'local_pending')
-      .map((item) => item.text);
-    expect(order).toEqual(['B', 'C', 'A']);
+    await act(async () => {
+      resolveAdmission({ steeringId: 'steering-once' });
+      expect(await firstAdmission).toBe(true);
+    });
   });
 
-  it('P1#6: stopQueue aborts in-flight request, clears local queue and pending steering', async () => {
-    const sendMessage = jest.fn(async () => {});
-    const cancelAll = jest.fn();
+  it('uses Ctrl+Enter as insertion mode while the active turn is running', async () => {
     const { result } = renderHook(() =>
-      useQueueHarness('ws-1', { loading: true }),
+      useQueueHarness('ws-1', { loading: true, busyTurns: true }),
     );
-    act(() => result.current.bindSendMessage(sendMessage));
-    act(() => result.current.bindCancelAll(cancelAll));
-    await act(async () => result.current.submitInteraction('pending-1'));
-    await act(async () => result.current.submitInteraction('pending-2'));
+    act(() => result.current.setInputValue('立即改查日志'));
+    const preventDefault = jest.fn();
 
-    act(() => result.current.stopQueue());
+    await act(async () => {
+      result.current.handleKeyDown({
+        key: 'Enter',
+        ctrlKey: true,
+        metaKey: false,
+        shiftKey: false,
+        preventDefault,
+      } as never);
+      await Promise.resolve();
+    });
 
-    expect(cancelAll).toHaveBeenCalledTimes(1);
+    expect(preventDefault).toHaveBeenCalled();
+    expect(createChatSteeringMessage).toHaveBeenCalledWith(
+      'ws-1',
+      'session-1',
+      'active-turn-1',
+      expect.objectContaining({ messageText: '立即改查日志' }),
+    );
     expect(
       result.current.interactionQueue.filter(
         (item) => item.source === 'local_pending',
       ),
     ).toHaveLength(0);
-    expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it('P1#6: enqueueInteraction returns the local item id when busy', async () => {
-    const sendMessage = jest.fn(async () => {});
+  it('restores direct insertion text when the active turn rejects steering', async () => {
+    (createChatSteeringMessage as jest.Mock).mockRejectedValueOnce(
+      new Error('Steering rejected: turn is succeeded.'),
+    );
+    const { result } = renderHook(() =>
+      useQueueHarness('ws-1', { loading: true, busyTurns: true }),
+    );
+    act(() => result.current.setInputValue('不要丢失这条插嘴'));
+
+    await act(async () => {
+      result.current.handleKeyDown({
+        key: 'Enter',
+        ctrlKey: true,
+        metaKey: false,
+        shiftKey: false,
+        preventDefault: jest.fn(),
+      } as never);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.inputValue).toBe('不要丢失这条插嘴');
+    });
+  });
+
+  it('stopQueue aborts the current request without deleting server-owned queue items', async () => {
+    (getAgentMessageQueue as jest.Mock).mockResolvedValue({
+      items: [
+        {
+          deliveryId: 'turn:cmd-1',
+          queueKind: 'chat_turn',
+          messageId: 'user-1',
+          workspaceId: 'ws-1',
+          content: '服务端已受理',
+          status: 'queued',
+          priority: 0,
+          attemptCount: 0,
+          createdAt: 1,
+        },
+      ],
+    });
+    const cancelAll = jest.fn();
     const { result } = renderHook(() =>
       useQueueHarness('ws-1', { loading: true }),
     );
-    act(() => result.current.bindSendMessage(sendMessage));
+    act(() => result.current.bindCancelAll(cancelAll));
+    await waitFor(() => expect(result.current.interactionQueue).toHaveLength(1));
 
-    let queuedId: string | null = null;
-    act(() => {
-      queuedId = result.current.enqueueInteraction('queued-message');
-    });
-    expect(queuedId).toMatch(/^local-/);
-    expect(sendMessage).not.toHaveBeenCalled();
+    act(() => result.current.stopQueue());
+
+    expect(cancelAll).toHaveBeenCalledTimes(1);
+    expect(result.current.interactionQueue).toEqual([
+      expect.objectContaining({ id: 'turn:cmd-1', text: '服务端已受理' }),
+    ]);
   });
 });

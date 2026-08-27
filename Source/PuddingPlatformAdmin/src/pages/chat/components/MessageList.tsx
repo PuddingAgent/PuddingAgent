@@ -1140,7 +1140,11 @@ const MessageList: React.FC<MessageListProps> = ({
         transcriptMode={transcriptMode}
         onTranscriptModeChange={onTranscriptModeChange}
         focusView={focusView}
-        getTurnProjection={getTurnProjection}
+        executionFlowProjection={
+          item.block.role === 'agent'
+            ? getTurnProjection?.(item.block.turnId)
+            : undefined
+        }
         onTurnVisible={onTurnVisible}
       />
     );

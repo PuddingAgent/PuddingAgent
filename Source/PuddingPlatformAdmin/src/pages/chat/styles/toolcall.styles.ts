@@ -112,6 +112,26 @@ export const useToolCallStyles = createStyles(() => ({
   summaryError: {
     color: 'var(--pudding-status-error)',
   },
+  /** 标题换行安全（I-10 §7.8）：长工具名自然折行，替代强制 nowrap 挤压摘要 */
+  titleWrap: {
+    whiteSpace: 'normal' as const,
+    overflowWrap: 'anywhere' as const,
+    wordBreak: 'break-word' as const,
+  },
+  /**
+   * 多行摘要（I-10 §7.8）：主参数 command/path/query/task 原文自然换行，
+   * 替代单行 ellipsis；有界截断在数据层（truncateMultiline）完成，样式只管换行。
+   */
+  summaryMulti: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 12,
+    lineHeight: '20px',
+    whiteSpace: 'pre-wrap' as const,
+    overflowWrap: 'anywhere' as const,
+    wordBreak: 'break-word' as const,
+    color: 'var(--pudding-chat-text-tertiary)',
+  },
   /** chevron：展开旋转 180°（caption 档） */
   chevron: {
     flexShrink: 0,

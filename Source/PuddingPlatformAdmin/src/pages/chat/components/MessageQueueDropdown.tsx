@@ -1,9 +1,7 @@
-// ── P1#6 MessageQueueDropdown：三态消息队列（排队 / 让位 / 取消）──
-// 对齐 Copilot Send 三态（Add to Queue / Steer with Message / Stop and Send）：
-// - 排队（queue）：busy 期间输入的多条消息由 useMessageInteractionQueue 自动进入本地待发队列；
-// - 让位（steer）：本地待发项与下一条交换（最后一条轮转到队首）；后端排队项则注入下一次上下文；
-// - 取消（stop）：取消全部 — 中止在途请求并清空本地待发队列。
-// 本地待发项（source=local_pending）支持拖拽重排与单条删除；后端项为只读快照。
+// ── MessageQueueDropdown：服务端持久化队列的紧凑只读投影 ──
+// 普通 Turn 由 chat_execution_commands + ChatExecutionWorker 执行，
+// Agent-to-Agent 消息由 Message Fabric 投递，页面关闭不影响两者继续运行。
+// Steering 是独立的当前 Turn 插嘴通道，不从普通队列项在前端转换。
 import {
   DeleteOutlined,
   DownOutlined,
@@ -14,7 +12,14 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import { Button, Input, Tooltip } from 'antd';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { ChatInteractionQueueItem } from '../hooks/useChatState';
 import { useChatStyles } from '../styles';
 
@@ -31,7 +36,7 @@ interface MessageQueueDropdownProps {
   onStopAll?: () => void;
 }
 
-/** 三态归类：排队中 / 投递中（含引导注入）/ 终态（完成、失败、取消、过期） */
+/** 三态归类：待认领 / 引导注入 / 终态（仅显式诊断时出现） */
 const getQueuePhase = (item: ChatInteractionQueueItem): QueuePhase => {
   if (item.status === 'queued') return 'queued';
   // P1#10：retrying（含 busy-wait 假 retrying）归入排队计数 ——
@@ -75,7 +80,8 @@ const getQueueStatusLabel = (item: ChatInteractionQueueItem): string => {
   if (item.substate === 'expired') return '已过期';
 
   // 兜底：无 substate 时回落 status 驱动（旧后端兼容）
-  if (item.status === 'delivering') return '投递中';
+  if (item.status === 'delivering')
+    return item.metadata?.queueKind === 'chat_turn' ? '执行中' : '投递中';
   if (item.status === 'retrying') {
     if (item.waitReason === 'busy-wait') return '排队中 · 等待 Agent 空闲';
     const attempt = item.metadata?.attemptCount;
@@ -137,7 +143,9 @@ const getQueueMetaText = (item: ChatInteractionQueueItem): string => {
   if (item.source === 'local_pending')
     return '等待当前回复完成后自动发送，可拖拽重排';
   if (item.source === 'backend_message_queue')
-    return '后端消息队列快照，调度由 Agent 服务管理';
+    return item.metadata?.queueKind === 'chat_turn'
+      ? '已由 Core 受理，等待 Agent 认领'
+      : '等待 Agent 认领；认领后转入会话时间线';
   return '后端队列状态';
 };
 
@@ -154,6 +162,9 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
   const { styles } = useChatStyles();
   /** 默认收起，避免活动队列长期挤占消息区；用户需要时再展开详情。 */
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
   /** HTML5 拖拽重排状态 */
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
@@ -190,28 +201,58 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
     setOverId(null);
   }, []);
 
+  /**
+   * 详情是脱离文档流的轻量浮层：点击外部或按 Escape 关闭，避免浮层遮挡
+   * 最近消息后还要再点一次触发器。Escape 关闭后把焦点还给触发器。
+   */
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && !rootRef.current?.contains(target)) {
+        setOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
   if (count === 0) return null;
 
   return (
     <div
+      ref={rootRef}
       className={styles.messageQueueDropdown}
       data-testid="interaction-queue"
       data-open={open ? 'true' : 'false'}
       data-count={count}
     >
       <button
+        ref={triggerRef}
         type="button"
         className={styles.messageQueueTrigger}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        aria-controls={panelId}
         data-testid="message-queue-trigger"
       >
         <OrderedListOutlined className={styles.messageQueueTriggerIcon} />
-        <span className={styles.messageQueueTriggerTitle}>消息队列</span>
+        <span className={styles.messageQueueTriggerTitle}>待发消息</span>
         <span className={styles.messageQueueCount}>{count}</span>
         <span className={styles.messageQueuePhaseSummary}>
-          排队 {phaseCounts.queued} · 执行 {phaseCounts.delivering} · 终态{' '}
-          {phaseCounts.terminal}
+          {phaseCounts.queued} 待认领 · {phaseCounts.delivering} 引导中 ·{' '}
+          {phaseCounts.terminal} 已结束
         </span>
         <DownOutlined
           className={styles.messageQueueChevron}
@@ -219,15 +260,18 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
         />
       </button>
 
-      <div
+      <section
+        id={panelId}
         className={styles.messageQueuePanel}
         data-open={open ? 'true' : undefined}
+        aria-label="待发消息详情"
+        aria-hidden={!open}
       >
         <div className={styles.messageQueuePanelHeader}>
           <span className={styles.messageQueuePanelHint}>
-            排队中的消息将在当前回复完成后按序发送
+            仅显示未认领消息；认领后转入会话轨迹 · ⚡ 可插嘴当前 Agent
           </span>
-          <Tooltip title="取消全部：中止当前请求并清空待发队列">
+          <Tooltip title="中止当前页面请求；已由 Core 受理的 Turn 不会在前端丢弃">
             <Button
               type="text"
               size="small"
@@ -237,7 +281,7 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
               onClick={() => onStopAll?.()}
               data-testid="message-queue-stop-all"
             >
-              取消全部
+              中止当前
             </Button>
           </Tooltip>
         </div>
@@ -253,11 +297,7 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
             const isEditable = item.status === 'queued' && !isBackendQueueItem;
             const canDelete = isSteering || isLocalPending;
             const canSteer =
-              (isLocalPending &&
-                interactionQueue.filter(
-                  (candidate) => candidate.source === 'local_pending',
-                ).length > 1) ||
-              (item.status === 'queued' && isBackendQueueItem && loading);
+              isLocalPending && item.status === 'queued' && loading;
             const phase = getQueuePhase(item);
             // Phase 2：substate 驱动 —— waiting（busy 挂起）不渲染错误、按普通排队展示；
             // retrying（真实失败重试）展示警示。旧后端（无 substate）回落 waitReason
@@ -361,9 +401,9 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
                   <Tooltip
                     title={
                       isLocalPending
-                        ? '让位给下一条'
+                        ? '插嘴：当前步骤结束后注入 Agent 上下文'
                         : isBackendQueueItem
-                          ? '注入下一次上下文'
+                          ? '后端投递项不能直接转换，避免重复执行'
                           : '引导状态'
                     }
                   >
@@ -375,9 +415,7 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
                       onClick={() => {
                         void onSteerQueuedInteraction?.(item.id);
                       }}
-                      aria-label={
-                        isLocalPending ? '让位给下一条' : '引导 Agent'
-                      }
+                      aria-label={isLocalPending ? '插嘴发送' : '引导 Agent'}
                     />
                   </Tooltip>
                   <Tooltip
@@ -492,18 +530,7 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
             );
           })}
         </div>
-
-        <div className={styles.messageQueueFooter}>
-          <span>让位 = 下一条优先</span>
-          <span>·</span>
-          <span>取消全部 = 中止当前并清空待发</span>
-          {!hasLocalPending && (
-            <span className={styles.messageQueueFooterMuted}>
-              · 后端已受理消息由 Agent 服务调度
-            </span>
-          )}
-        </div>
-      </div>
+      </section>
     </div>
   );
 };

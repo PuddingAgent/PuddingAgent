@@ -1,4 +1,5 @@
 ﻿import type { ChatMessageBlock } from '../types';
+import { projectExecutionFlow } from '../projections/executionFlowProjector';
 import { areMessageRowPropsEqual } from './MessageRow';
 
 const formatTime = (timestamp: number) => String(timestamp);
@@ -114,5 +115,21 @@ describe('MessageRow memo boundary', () => {
         },
       ),
     ).toBe(true);
+  });
+
+  it('rerenders only when this row receives a new execution-flow projection', () => {
+    const projection = projectExecutionFlow([]);
+    expect(
+      areMessageRowPropsEqual(
+        { ...props, executionFlowProjection: projection },
+        { ...props, executionFlowProjection: projection },
+      ),
+    ).toBe(true);
+    expect(
+      areMessageRowPropsEqual(
+        { ...props, executionFlowProjection: projection },
+        { ...props, executionFlowProjection: projectExecutionFlow([]) },
+      ),
+    ).toBe(false);
   });
 });

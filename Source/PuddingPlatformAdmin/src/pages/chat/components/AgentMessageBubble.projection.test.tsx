@@ -412,10 +412,19 @@ describe('AgentMessageBubble projection dual-path equivalence (CU-11 Phase 2)', 
     );
     expect(screen.getAllByTestId('turn-text-segment')).toHaveLength(1);
     expect(screen.getAllByTestId('activity-group-header')).toHaveLength(1);
-    // 此行为组后面还有正文，因此属于历史组，默认折叠；显式展开后再核对成员结构。
-    fireEvent.click(screen.getByTestId('activity-group-header'));
+    // I-09 权威语义：唯一行为组 = 最新组，默认展开（成员 DOM 挂载），与 path A 等价。
+    // （旧断言按 CU-11 语义「组后还有正文即历史组默认折叠」点击 header，实际会把
+    // 已展开的组折叠，与「折叠历史组卸载成员 DOM」的 I-09 设计直接冲突。）
     expect(screen.getAllByTestId('toolcall-row')).toHaveLength(2);
     expect(screen.getByTestId('delegation-list')).toBeTruthy();
+    expect(screen.getByTestId('delegation-item-sa-1')).toBeTruthy();
+    // 折叠态：成员 DOM 完全卸载（不是 CSS 隐藏），即 CollapsibleUnmountRegion 关闭语义。
+    fireEvent.click(screen.getByTestId('activity-group-header'));
+    expect(screen.queryByTestId('toolcall-row')).toBeNull();
+    expect(screen.queryByTestId('delegation-list')).toBeNull();
+    // 再次展开：成员 DOM 重新挂载。
+    fireEvent.click(screen.getByTestId('activity-group-header'));
+    expect(screen.getAllByTestId('toolcall-row')).toHaveLength(2);
     expect(screen.getByTestId('delegation-item-sa-1')).toBeTruthy();
   });
 
@@ -429,6 +438,12 @@ describe('AgentMessageBubble projection dual-path equivalence (CU-11 Phase 2)', 
     );
     const pathAToolRows = screen.getAllByTestId('toolcall-row').length;
     const pathADelegation = Boolean(screen.queryByTestId('delegation-list'));
+    // 路径 A 折叠态：成员 DOM 完全卸载（I-09 语义）。
+    fireEvent.click(screen.getByTestId('activity-group-header'));
+    const pathACollapsedToolRows = screen.queryAllByTestId('toolcall-row').length;
+    const pathACollapsedDelegation = Boolean(
+      screen.queryByTestId('delegation-list'),
+    );
     unmount();
 
     render(
@@ -438,12 +453,19 @@ describe('AgentMessageBubble projection dual-path equivalence (CU-11 Phase 2)', 
         executionFlowProjection={turn1Projection}
       />,
     );
-    fireEvent.click(screen.getByTestId('activity-group-header'));
+    // I-09 语义：唯一行为组 = 最新组，默认展开——与 path A 相同，无需点击。
     const pathBToolRows = screen.getAllByTestId('toolcall-row').length;
     const pathBDelegation = Boolean(screen.queryByTestId('delegation-list'));
+    fireEvent.click(screen.getByTestId('activity-group-header'));
+    const pathBCollapsedToolRows = screen.queryAllByTestId('toolcall-row').length;
+    const pathBCollapsedDelegation = Boolean(
+      screen.queryByTestId('delegation-list'),
+    );
 
     expect(pathBToolRows).toBe(pathAToolRows);
     expect(pathBDelegation).toBe(pathADelegation);
+    expect(pathBCollapsedToolRows).toBe(pathACollapsedToolRows);
+    expect(pathBCollapsedDelegation).toBe(pathACollapsedDelegation);
   });
 });
 

@@ -80,7 +80,7 @@ describe('MessageQueueDropdown', () => {
     );
 
     expect(screen.getByTestId('interaction-queue')).toBeTruthy();
-    expect(screen.getByText('排队 3 · 执行 2 · 终态 1')).toBeTruthy();
+    expect(screen.getByText('3 待认领 · 2 引导中 · 1 已结束')).toBeTruthy();
     // 本地待发项标注"排队中 · 待发送"
     expect(screen.getAllByText('排队中 · 待发送')).toHaveLength(2);
   });
@@ -118,7 +118,7 @@ describe('MessageQueueDropdown', () => {
 
     // queued×1（b1）+ retrying×1（b3）+ queued×1（b4，substate=waiting）归入排队 = 3；
     // delivering=1；终态=1（substate 不改变 phase 计数，phase 仍由 status 归类）
-    expect(screen.getByText('排队 3 · 执行 1 · 终态 1')).toBeTruthy();
+    expect(screen.getByText('3 待认领 · 1 引导中 · 1 已结束')).toBeTruthy();
     // 真实失败重试：警示标签 + 尝试次数
     expect(screen.getByText('重试中 · 第 3 次')).toBeTruthy();
     // substate=waiting（busy 挂起）：等待 Agent 空闲
@@ -239,8 +239,8 @@ describe('MessageQueueDropdown', () => {
     expect(screen.getByText('排队中')).toBeTruthy();
     expect(screen.getByText('已取消')).toBeTruthy();
     expect(screen.getByText('已过期')).toBeTruthy();
-    // 头部计数：排队 1 · 执行 0 · 终态 2
-    expect(screen.getByText('排队 1 · 执行 0 · 终态 2')).toBeTruthy();
+    // 紧凑触发器计数：1 待认领 · 0 引导中 · 2 已结束
+    expect(screen.getByText('1 待认领 · 0 引导中 · 2 已结束')).toBeTruthy();
   });
 
   it('Phase 2: terminal items render placeholder action buttons (disabled until backend endpoints land)', () => {
@@ -298,8 +298,8 @@ describe('MessageQueueDropdown', () => {
     expect(screen.getByText('已送达')).toBeTruthy();
     expect(screen.getByText('死信')).toBeTruthy();
     expect(screen.getByText('失败')).toBeTruthy();
-    // 头部计数：终态聚合显示
-    expect(screen.getByText('排队 0 · 执行 0 · 终态 3')).toBeTruthy();
+    // 紧凑触发器计数：终态聚合显示
+    expect(screen.getByText('0 待认领 · 0 引导中 · 3 已结束')).toBeTruthy();
   });
 
   it('P1#6: local pending items are draggable and reorder on drop', () => {
@@ -359,7 +359,7 @@ describe('MessageQueueDropdown', () => {
     expect(onDelete).toHaveBeenCalledTimes(2);
   });
 
-  it('P1#6: steer button yields local pending and steers backend queued items', () => {
+  it('uses the lightning action to insert local pending messages only', () => {
     const onSteer = jest.fn(async () => {});
     render(
       <MessageQueueDropdown
@@ -374,17 +374,16 @@ describe('MessageQueueDropdown', () => {
       />,
     );
 
-    // 本地项：让位给下一条（需至少两个本地项才可用）
-    const yieldButtons = screen.getAllByRole('button', {
-      name: '让位给下一条',
+    fireEvent.click(screen.getByTestId('message-queue-trigger'));
+    const insertButtons = screen.getAllByRole('button', {
+      name: '插嘴发送',
     });
-    fireEvent.click(yieldButtons[0] as Element);
+    expect(insertButtons).toHaveLength(2);
+    fireEvent.click(insertButtons[0] as Element);
     expect(onSteer).toHaveBeenCalledWith('l1');
 
-    // 后端排队项：引导 Agent（注入下一次上下文）
-    const steerButton = screen.getByRole('button', { name: '引导 Agent' });
-    fireEvent.click(steerButton);
-    expect(onSteer).toHaveBeenCalledWith('b1');
+    const backendSteer = screen.getByRole('button', { name: '引导 Agent' });
+    expect((backendSteer as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('P1#6: stop-all clears the queue through onStopAll', () => {
@@ -409,12 +408,37 @@ describe('MessageQueueDropdown', () => {
       />,
     );
     const root = screen.getByTestId('interaction-queue');
+    const trigger = screen.getByTestId('message-queue-trigger');
+    const panel = screen.getByRole('region', { hidden: true });
     expect(root.getAttribute('data-open')).toBe('false');
+    expect(trigger.getAttribute('aria-controls')).toBe(panel.id);
+    expect(panel.getAttribute('aria-hidden')).toBe('true');
 
-    fireEvent.click(screen.getByTestId('message-queue-trigger'));
+    fireEvent.click(trigger);
     expect(root.getAttribute('data-open')).toBe('true');
+    expect(panel.getAttribute('aria-hidden')).toBe('false');
 
-    fireEvent.click(screen.getByTestId('message-queue-trigger'));
+    fireEvent.click(trigger);
     expect(root.getAttribute('data-open')).toBe('false');
+  });
+
+  it('closes the floating details panel on outside click and Escape', () => {
+    render(
+      <MessageQueueDropdown
+        {...defaultProps}
+        interactionQueue={[localItem('l1', '本地一')]}
+      />,
+    );
+    const root = screen.getByTestId('interaction-queue');
+    const trigger = screen.getByTestId('message-queue-trigger');
+
+    fireEvent.click(trigger);
+    fireEvent.pointerDown(document.body);
+    expect(root.getAttribute('data-open')).toBe('false');
+
+    fireEvent.click(trigger);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(root.getAttribute('data-open')).toBe('false');
+    expect(document.activeElement).toBe(trigger);
   });
 });

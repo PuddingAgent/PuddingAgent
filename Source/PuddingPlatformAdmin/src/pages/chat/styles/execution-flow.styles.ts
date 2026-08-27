@@ -244,6 +244,44 @@ export const useExecutionFlowStyles = createStyles(() => ({
     wordBreak: 'break-word' as const,
   },
 
+  // ── ReasoningDisclosureRow inline-full（I-10 §7.8：行为组内完整推理自然换行，无二级披露）──
+  /** 行容器：同执行流行左边界（16px leading 槽），纵向承载 meta + 全文 */
+  reasoningFullRow: {
+    display: 'flex',
+    alignItems: 'flex-start' as const,
+    gap: 6,
+    width: '100%',
+    maxWidth: 'min(720px, 100%)',
+    padding: '2px 4px',
+    boxSizing: 'border-box' as const,
+  },
+  /** 内容列：弹性填充 + minWidth:0，允许内部文本任意断行 */
+  reasoningFullContent: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 2,
+  },
+  /** 「思考 · 12s」meta：caption 档小字（无 nowrap，随内容列纵排） */
+  reasoningFullMeta: {
+    fontSize: 11,
+    lineHeight: '18px',
+    color: 'var(--pudding-chat-text-caption)',
+    fontVariantNumeric: 'tabular-nums' as const,
+  },
+  /** 完整推理正文：自然换行（禁止复用 reasoningSummary 的 nowrap/ellipsis 类名） */
+  reasoningFullText: {
+    margin: 0,
+    fontSize: 12.5,
+    lineHeight: 1.6,
+    color: 'var(--pudding-chat-text)',
+    whiteSpace: 'pre-wrap' as const,
+    overflowWrap: 'anywhere' as const,
+    wordBreak: 'break-word' as const,
+    minWidth: 0,
+  },
+
   // ── TurnContentStream（AgentTurnCard 重构：正文段 ⇄ 行为组内容块流）──
   /** 内容块流容器：与时间线同规格（gap 4 / 720px 上限） */
   turnContentStream: {
@@ -264,6 +302,20 @@ export const useExecutionFlowStyles = createStyles(() => ({
     display: 'flex',
     flexDirection: 'column' as const,
     gap: 4,
+  },
+  /** 超长 Turn/行为组的渐进揭示入口；默认只挂载最新窗口，旧内容按需恢复。 */
+  trajectoryWindowButton: {
+    alignSelf: 'flex-start',
+    border: 0,
+    padding: '2px 0',
+    background: 'transparent',
+    color: 'var(--pudding-chat-text-tertiary)',
+    fontSize: 12,
+    lineHeight: '20px',
+    cursor: 'pointer',
+    '&:hover': {
+      color: 'var(--pudding-chat-primary)',
+    },
   },
   /** 交错文本段：与正文同款排版（15/1.75 全宽），区别于过程行的 tertiary 灰阶 */
   timelineMessageSegment: {

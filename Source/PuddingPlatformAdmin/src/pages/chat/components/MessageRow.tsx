@@ -33,8 +33,8 @@ interface MessageRowProps {
   onTranscriptModeChange?: (mode: TranscriptMode) => void;
   /** P2#8：Focus view 单行折叠模式 */
   focusView?: boolean;
-  /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
-  getTurnProjection?: (turnId: string) => ExecutionFlowProjection | undefined;
+  /** 当前 Turn 的 canonical 投影；未变化的 Turn 保持对象引用稳定。 */
+  executionFlowProjection?: ExecutionFlowProjection;
   /** 进入消息视口附近时上报 turnId，驱动有界懒水合。 */
   onTurnVisible?: (turnId: string) => void;
 }
@@ -146,7 +146,7 @@ export const areMessageRowPropsEqual = (
   previous.transcriptMode === next.transcriptMode &&
   previous.onTranscriptModeChange === next.onTranscriptModeChange &&
   (previous.focusView ?? false) === (next.focusView ?? false) &&
-  previous.getTurnProjection === next.getTurnProjection &&
+  previous.executionFlowProjection === next.executionFlowProjection &&
   previous.onTurnVisible === next.onTurnVisible &&
   optionalRecordEquals(
     previous.parentDelegationActivity,
@@ -235,7 +235,7 @@ const MessageRow: React.FC<MessageRowProps> = ({
   transcriptMode,
   onTranscriptModeChange,
   focusView = false,
-  getTurnProjection,
+  executionFlowProjection,
   onTurnVisible,
 }) => {
   const { styles, cx } = useChatMessageStyles();
@@ -334,7 +334,7 @@ const MessageRow: React.FC<MessageRowProps> = ({
       parentDelegationActivity={parentDelegationActivity}
       transcriptMode={transcriptMode}
       onTranscriptModeChange={onTranscriptModeChange}
-      executionFlowProjection={getTurnProjection?.(block.turnId)}
+      executionFlowProjection={executionFlowProjection}
     />
   );
 

@@ -1,7 +1,7 @@
 ﻿// ── composer styles ─────────────────────────────────
 import { createStyles } from 'antd-style';
 
-export const useComposerStyles = createStyles(({ token }) => ({
+export const useComposerStyles = createStyles(() => ({
   composerSurface: {
     position: 'sticky' as const,
     bottom: 0,
@@ -87,9 +87,10 @@ export const useComposerStyles = createStyles(({ token }) => ({
     display: 'flex',
     flexDirection: 'column' as const,
     gap: 5,
-    maxHeight: 'min(24vh, 128px)',
+    maxHeight: 'min(42vh, 300px)',
     overflowY: 'auto' as const,
     scrollbarGutter: 'stable',
+    paddingRight: 2,
   },
   composerQueueItem: {
     display: 'grid',
@@ -101,6 +102,9 @@ export const useComposerStyles = createStyles(({ token }) => ({
     background: 'var(--pudding-chat-surface)',
     border:
       '1px solid color-mix(in srgb, var(--pudding-chat-border) 62%, transparent)',
+    '&[data-draggable="true"]': {
+      gridTemplateColumns: '18px minmax(0, 1fr) auto',
+    },
     '&[data-status="steering_pending"]': {
       borderColor:
         'color-mix(in srgb, #c8943d 48%, var(--pudding-chat-border))',
@@ -130,6 +134,8 @@ export const useComposerStyles = createStyles(({ token }) => ({
     },
   },
   composerQueueInput: {
+    width: '100%',
+    minWidth: 0,
     fontSize: 12,
     lineHeight: 1.5,
     resize: 'none' as const,
@@ -158,6 +164,9 @@ export const useComposerStyles = createStyles(({ token }) => ({
     justifyContent: 'flex-end',
     gap: 2,
     minHeight: 28,
+    '@media (max-width: 640px)': {
+      gridColumn: '1 / -1',
+    },
   },
   composerQueueStatus: {
     maxWidth: 118,
@@ -193,30 +202,40 @@ export const useComposerStyles = createStyles(({ token }) => ({
   },
   // ── P1#6 三态消息队列 Dropdown ──
   messageQueueDropdown: {
-    margin: '4px 0 8px',
-    borderRadius: 9,
-    border:
-      '1px solid color-mix(in srgb, var(--pudding-chat-border) 76%, transparent)',
-    background:
-      'color-mix(in srgb, var(--pudding-chat-surface-muted) 62%, transparent)',
-    overflow: 'hidden' as const,
+    position: 'relative' as const,
+    display: 'inline-flex',
+    alignItems: 'center',
+    width: 'fit-content',
+    maxWidth: '100%',
+    margin: '2px 0 6px',
+    overflow: 'visible' as const,
+    '&[data-open="true"]': {
+      zIndex: 12,
+    },
   },
   messageQueueTrigger: {
     display: 'flex',
     alignItems: 'center',
-    gap: 7,
-    width: '100%',
-    minHeight: 30,
-    padding: '5px 10px',
-    border: 'none',
-    background: 'transparent',
+    gap: 6,
+    width: 'auto',
+    maxWidth: 'min(420px, 100%)',
+    minHeight: 28,
+    padding: '4px 9px',
+    borderRadius: 999,
+    border:
+      '1px solid color-mix(in srgb, var(--pudding-chat-border) 76%, transparent)',
+    background:
+      'color-mix(in srgb, var(--pudding-chat-surface-muted) 72%, transparent)',
     color: 'var(--pudding-chat-text)',
     fontSize: 12,
     cursor: 'pointer' as const,
     textAlign: 'left' as const,
     transition: 'background 140ms ease',
     '&:hover': {
-      background: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
+      background:
+        'color-mix(in srgb, var(--pudding-chat-accent) 8%, var(--pudding-chat-surface-muted))',
+      borderColor:
+        'color-mix(in srgb, var(--pudding-chat-accent) 24%, var(--pudding-chat-border))',
     },
     '&:focus-visible': {
       outline:
@@ -255,6 +274,9 @@ export const useComposerStyles = createStyles(({ token }) => ({
     textOverflow: 'ellipsis',
     fontSize: 11,
     color: 'var(--pudding-chat-text-muted)',
+    '@media (max-width: 520px)': {
+      display: 'none',
+    },
   },
   messageQueueChevron: {
     fontSize: 10,
@@ -264,9 +286,20 @@ export const useComposerStyles = createStyles(({ token }) => ({
   },
   messageQueuePanel: {
     display: 'none',
-    padding: '0 6px 6px',
-    borderTop:
-      '1px solid color-mix(in srgb, var(--pudding-chat-border) 62%, transparent)',
+    position: 'absolute' as const,
+    left: 0,
+    bottom: 'calc(100% + 8px)',
+    width: 'min(540px, calc(100vw - 48px))',
+    padding: 8,
+    borderRadius: 12,
+    border:
+      '1px solid color-mix(in srgb, var(--pudding-chat-border-strong) 82%, transparent)',
+    background:
+      'color-mix(in srgb, var(--pudding-chat-surface) 96%, transparent)',
+    boxShadow:
+      '0 18px 48px rgba(55, 43, 33, 0.16), 0 4px 12px rgba(55, 43, 33, 0.08)',
+    backdropFilter: 'blur(16px)',
+    zIndex: 20,
     '&[data-open="true"]': {
       display: 'block',
     },
@@ -276,27 +309,20 @@ export const useComposerStyles = createStyles(({ token }) => ({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
-    minHeight: 28,
-    padding: '2px 4px 4px',
+    minHeight: 30,
+    padding: '0 2px 7px',
+    marginBottom: 6,
+    borderBottom:
+      '1px solid color-mix(in srgb, var(--pudding-chat-border) 58%, transparent)',
   },
   messageQueuePanelHint: {
+    minWidth: 0,
+    overflow: 'hidden',
+    whiteSpace: 'nowrap' as const,
+    textOverflow: 'ellipsis',
     fontSize: 11,
     color: 'var(--pudding-chat-text-muted)',
-    opacity: 0.75,
-  },
-  messageQueueFooter: {
-    display: 'flex',
-    alignItems: 'center',
-    flexWrap: 'wrap' as const,
-    gap: 6,
-    minHeight: 22,
-    padding: '2px 4px 4px',
-    fontSize: 11,
-    color: 'var(--pudding-chat-text-muted)',
-    opacity: 0.72,
-  },
-  messageQueueFooterMuted: {
-    opacity: 0.62,
+    opacity: 0.82,
   },
   messageQueueDragHandle: {
     display: 'inline-flex',

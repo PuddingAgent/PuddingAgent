@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { getLlmProviderBalance } from '@/services/platform/api';
 import { useProviderBalance } from './useProviderBalance';
 
@@ -40,7 +40,21 @@ describe('useProviderBalance', () => {
     await waitFor(() => expect(result.current.balance).toBe(110));
     expect(result.current.currency).toBe('CNY');
     expect(result.current.errorText).toBeUndefined();
+    expect(result.current.loading).toBe(false);
     expect(mockedGetBalance).toHaveBeenCalledWith('deepseek');
+  });
+
+  it('exposes granted/topped-up balances and query time from the first info', async () => {
+    mockedGetBalance.mockResolvedValue(
+      balanceDto({ queriedAt: '2026-08-24T01:02:03Z' }),
+    );
+
+    const { result } = renderHook(() => useProviderBalance('deepseek', true));
+
+    await waitFor(() => expect(result.current.balance).toBe(110));
+    expect(result.current.grantedBalance).toBe(10);
+    expect(result.current.toppedUpBalance).toBe(100);
+    expect(result.current.queriedAt).toBe('2026-08-24T01:02:03Z');
   });
 
   it('degrades to undefined balance with error when upstream is unavailable', async () => {
@@ -88,9 +102,41 @@ describe('useProviderBalance', () => {
         ],
       }),
     );
-    result.current.refresh();
+    // 新增 loading 状态后 refresh 内含同步 setState，需 act 包裹避免告警
+    act(() => {
+      result.current.refresh();
+    });
 
     await waitFor(() => expect(result.current.balance).toBe(90));
     expect(mockedGetBalance).toHaveBeenCalledTimes(2);
+  });
+
+  it('toggles loading during a manual refresh and clears on settle', async () => {
+    mockedGetBalance.mockResolvedValue(balanceDto());
+    const { result } = renderHook(() => useProviderBalance('deepseek', true));
+    await waitFor(() => expect(result.current.balance).toBe(110));
+    expect(result.current.loading).toBe(false);
+
+    let rejectNext!: (err: Error) => void;
+    mockedGetBalance.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectNext = reject;
+        }),
+    );
+
+    act(() => {
+      result.current.refresh();
+    });
+    // 请求在途：loading 置位（供徽标旋转反馈）
+    expect(result.current.loading).toBe(true);
+
+    await act(async () => {
+      rejectNext(new Error('超时'));
+    });
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+      expect(result.current.errorText).toBe('超时');
+    });
   });
 });

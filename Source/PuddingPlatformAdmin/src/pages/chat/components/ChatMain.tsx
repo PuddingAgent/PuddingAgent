@@ -265,10 +265,14 @@ const ChatMain: React.FC<ChatMainProps> = ({
   const auxiliaryDataReady = useInitialIdleReady();
   // ── 主代理服务商余额徽标（多服务商计费展示适配器；非 DeepSeek 等未适配服务商不渲染）──
   const billingAdapter = resolveBillingAdapter(selectedAgent?.preferredProviderId);
-  const {
+    const {
     balance: providerBalance,
     currency: providerBalanceCurrency,
+    grantedBalance: providerBalanceGranted,
+    toppedUpBalance: providerBalanceToppedUp,
+    queriedAt: providerBalanceQueriedAt,
     errorText: providerBalanceError,
+    loading: providerBalanceLoading,
     refresh: refreshProviderBalance,
   } = useProviderBalance(
     selectedAgent?.preferredProviderId,
@@ -604,13 +608,18 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     cursor: 'pointer',
                   }}
                 >
-                  <ProviderBalanceIndicator
+                                    <ProviderBalanceIndicator
                     provider={billingAdapter.displayName}
                     balance={providerBalance}
                     currency={currencySymbolFor(
                       providerBalanceCurrency,
                       billingAdapter,
                     )}
+                    grantedBalance={providerBalanceGranted}
+                    toppedUpBalance={providerBalanceToppedUp}
+                    queriedAt={providerBalanceQueriedAt}
+                    loading={providerBalanceLoading}
+                    error={!!providerBalanceError}
                     detail={providerBalanceError ?? '点击刷新'}
                   />
                 </span>

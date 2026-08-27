@@ -16,6 +16,7 @@ import {
   COMPACT_COMMAND,
   createId,
   hasBlockingActiveTurn,
+  isActiveAssistantTurn,
   removeInjectedSteeringQueueItem,
   toChatInteractionQueueItem,
 } from '../utils/chatStateUtils';
@@ -24,7 +25,6 @@ type SendMessage = (text: string, options?: ChatSendOptions) => Promise<void>;
 
 const ACTIVE_BACKEND_QUEUE_STATUSES = new Set([
   'queued',
-  'delivering',
   'retrying',
 ]);
 
@@ -75,23 +75,18 @@ export function useMessageInteractionQueue({
   const [steeringInteractionQueue, setSteeringInteractionQueue] = useState<
     ChatInteractionQueueItem[]
   >([]);
-  /** P1#6：本地待发队列 — 用户 busy 期间输入的多条消息自动排队（可重排/删除/让位/取消） */
-  const [pendingSendQueue, setPendingSendQueue] = useState<
-    ChatInteractionQueueItem[]
-  >([]);
-  const pendingSendQueueRef = useRef<ChatInteractionQueueItem[]>([]);
   /** P0#9 后端队列快照指纹：相同快照短路，避免高频轮询触发无谓 React commit */
-  const serverQueueSnapshotKeyRef = useRef<string>('');
+  const serverQueueSnapshotKeyRef = useRef<string>('[]');
   const sendMessageRef = useRef<SendMessage>(async () => {});
   const inputValueRef = useRef(inputValue);
   inputValueRef.current = inputValue;
   const steeringInjectedDismissTimersRef = useRef<Map<string, number>>(
     new Map(),
   );
-  /** P1#6：取消全部时中止当前在途请求（由 useChatState 绑定 abortRef） */
+  /** 同一来源项只允许一个 steering admission 请求在途。 */
+  const steeringSubmissionIdsRef = useRef<Set<string>>(new Set());
+  /** 取消全部时中止当前在途请求（由 useChatState 绑定 abortRef） */
   const cancelAllRef = useRef<() => void>(() => {});
-  /** 本地待发队列排空锁，防止同一空闲窗口重复发送 */
-  const drainLockRef = useRef(false);
 
   const bindSendMessage = useCallback((handler: SendMessage) => {
     sendMessageRef.current = handler;
@@ -100,21 +95,6 @@ export function useMessageInteractionQueue({
   const bindCancelAll = useCallback((handler: () => void) => {
     cancelAllRef.current = handler;
   }, []);
-
-  const updateLocalQueue = useCallback(
-    (
-      updater: (
-        previous: ChatInteractionQueueItem[],
-      ) => ChatInteractionQueueItem[],
-    ) => {
-      setPendingSendQueue((previous) => {
-        const next = updater(previous);
-        pendingSendQueueRef.current = next;
-        return next;
-      });
-    },
-    [],
-  );
 
   const clearInjectedSteeringDismissTimer = useCallback(
     (steeringId: string) => {
@@ -191,9 +171,9 @@ export function useMessageInteractionQueue({
   );
 
   /**
-   * P1#6 三态消息队列核心分发：
-   * - busy（loading 或存在阻塞中的活跃 turn）→ 本地自动排队（queue），返回本地项 id
-   * - 空闲 → 立即发送（immediate）
+   * 普通消息无论 Agent 是否 busy，都立即提交 canonical Turn API。
+   * API 受理后由 chat_execution_commands + ChatExecutionWorker 持久化排队，
+   * 不再把可执行消息留在 React 内存里等待页面排空。
    */
   const dispatchInteraction = useCallback(
     (trimmed: string, options?: ChatSendOptions): string | null => {
@@ -204,35 +184,11 @@ export function useMessageInteractionQueue({
           activeMessageIdsRef.current,
           messageIdToTurnIdRef.current,
         );
-      if (localBusy) {
-        const id = `local-${createId()}`;
-        updateLocalQueue((previous) => [
-          ...previous,
-          {
-            id,
-            text: trimmed,
-            createdAt: Date.now(),
-            status: 'queued',
-            source: 'local_pending',
-            metadata: options?.metadata,
-          },
-        ]);
-        recordPerfEvent(
-          'chat.queue.autoQueued',
-          {
-            queueSize: pendingSendQueueRef.current.length + 1,
-            loading,
-            activeMessageCount: activeMessageIdsRef.current.size,
-            messageChars: trimmed.length,
-          },
-          { throttleMs: 1_000 },
-        );
-        return id;
-      }
       recordPerfEvent(
         'chat.queue.dispatch',
         {
-          mode: 'immediate',
+          mode: 'durable-server',
+          localBusy,
           messageChars: trimmed.length,
           hasMetadata: Boolean(options?.metadata),
         },
@@ -241,13 +197,7 @@ export function useMessageInteractionQueue({
       void sendMessageRef.current(trimmed, options);
       return null;
     },
-    [
-      activeMessageIdsRef,
-      loading,
-      messageIdToTurnIdRef,
-      turnsRef,
-      updateLocalQueue,
-    ],
+    [activeMessageIdsRef, loading, messageIdToTurnIdRef, turnsRef],
   );
 
   const enqueueInteraction = useCallback(
@@ -297,8 +247,9 @@ export function useMessageInteractionQueue({
           includeTerminal: false,
         });
         const next = (snapshot.items ?? [])
-          // Composer 只展示尚待处理的活动队列。终态 delivery 是持久化审计
-          // 历史，不应长期占据输入区或被误解为“未消费”。即使旧后端忽略
+          // Composer 只展示尚未被消费者认领的 queued/retrying 项。delivery
+          // 已认领或 Turn 已 leased/running 后，所有权已转入会话时间线，不能
+          // 再以“处理中”副本占据消息队列。即使旧后端忽略
           // includeTerminal=false，也在客户端边界再次过滤。
           .filter((item) => ACTIVE_BACKEND_QUEUE_STATUSES.has(item.status))
           .map(toChatInteractionQueueItem)
@@ -376,48 +327,9 @@ export function useMessageInteractionQueue({
     if (!workspaceId || !agentId) setSteeringInteractionQueue([]);
   }, [agentId, workspaceId]);
 
-  /**
-   * P1#6：待发队列排空 — 空闲时按序发送下一条本地待发消息。
-   * busy 判定与 dispatch 保持一致，避免在活跃 turn 期间误发。
-   */
-  useEffect(() => {
-    const busy =
-      loading ||
-      hasBlockingActiveTurn(
-        turnsRef.current,
-        activeMessageIdsRef.current,
-        messageIdToTurnIdRef.current,
-      );
-    if (busy || drainLockRef.current) return;
-    const pending = pendingSendQueueRef.current;
-    if (pending.length === 0) return;
-    drainLockRef.current = true;
-    const [next, ...rest] = pending;
-    pendingSendQueueRef.current = rest;
-    setPendingSendQueue(rest);
-    recordPerfEvent('chat.queue.drain', {
-      queueSizeBefore: pending.length,
-      messageChars: next.text.length,
-    });
-    void sendMessageRef
-      .current(
-        next.text,
-        next.metadata && Object.keys(next.metadata).length > 0
-          ? { metadata: next.metadata }
-          : undefined,
-      )
-      .finally(() => {
-        drainLockRef.current = false;
-      });
-  }, [activeMessageIdsRef, loading, messageIdToTurnIdRef, turns, turnsRef]);
-
   const visibleInteractionQueue = useMemo(
-    () => [
-      ...serverInteractionQueue,
-      ...steeringInteractionQueue,
-      ...pendingSendQueue,
-    ],
-    [pendingSendQueue, serverInteractionQueue, steeringInteractionQueue],
+    () => [...serverInteractionQueue, ...steeringInteractionQueue],
+    [serverInteractionQueue, steeringInteractionQueue],
   );
 
   const findVisibleQueueItem = useCallback(
@@ -434,13 +346,6 @@ export function useMessageInteractionQueue({
         );
         return;
       }
-      if (item?.source === 'local_pending') {
-        updateLocalQueue((previous) =>
-          previous.filter((candidate) => candidate.id !== id),
-        );
-        recordPerfEvent('chat.queue.localDelete', { queueItemId: id });
-        return;
-      }
       recordPerfEvent(
         'chat.queue.localDeleteIgnored',
         {
@@ -452,7 +357,7 @@ export function useMessageInteractionQueue({
       );
       messageApi.info('消息队列由后端管理，当前暂不支持本地删除队列项');
     },
-    [findVisibleQueueItem, messageApi, updateLocalQueue],
+    [findVisibleQueueItem, messageApi],
   );
 
   const sendQueuedInteractionNow = useCallback(
@@ -472,40 +377,50 @@ export function useMessageInteractionQueue({
     [findVisibleQueueItem, messageApi],
   );
 
-  const steerQueuedInteraction = useCallback(
-    async (id: string) => {
-      const item = findVisibleQueueItem(id);
-      if (item?.source === 'local_pending') {
-        // P1#6 让位给下一条：与下一条交换；已是最后一条则轮转到队首
-        updateLocalQueue((previous) => {
-          const index = previous.findIndex((candidate) => candidate.id === id);
-          if (index < 0) return previous;
-          const next = [...previous];
-          if (index < next.length - 1) {
-            [next[index], next[index + 1]] = [next[index + 1], next[index]];
-          } else if (next.length > 1) {
-            const last = next.pop() as ChatInteractionQueueItem;
-            next.unshift(last);
-          }
-          return next;
-        });
-        recordPerfEvent('chat.queue.steerYield', { queueItemId: id });
-        return;
+  /**
+   * 将文本注入当前正在运行的 Turn。Steering 不创建第二个并发 Turn；Runtime 会在
+   * 当前工具或模型步骤结束后的下一次 LLM 请求前消费它。
+   */
+  const submitSteeringInteraction = useCallback(
+    async (text: string, sourceQueueItemId?: string): Promise<boolean> => {
+      const trimmed = text.trim();
+      if (!trimmed) return false;
+      if (
+        sourceQueueItemId &&
+        steeringSubmissionIdsRef.current.has(sourceQueueItemId)
+      ) {
+        return false;
       }
+
       const sessionId = sessionIdRef.current ?? selectedSessionId;
-      if (!item || item.status !== 'queued') return;
-      if (!workspaceId || !sessionId) {
-        messageApi.error('当前会话尚未建立，无法注入引导');
-        return;
+      const trackedTurnIds = new Set(
+        [...activeMessageIdsRef.current]
+          .map((messageId) => messageIdToTurnIdRef.current.get(messageId))
+          .filter((turnId): turnId is string => Boolean(turnId)),
+      );
+      const activeTurn = [...turnsRef.current]
+        .reverse()
+        .find(
+          (turn) =>
+            isActiveAssistantTurn(turn) || trackedTurnIds.has(turn.turnId),
+        );
+
+      if (!workspaceId || !sessionId || !activeTurn) {
+        messageApi.error('当前没有可插嘴的运行中 Agent，消息仍保留在队列中');
+        return false;
+      }
+
+      if (sourceQueueItemId) {
+        steeringSubmissionIdsRef.current.add(sourceQueueItemId);
       }
 
       const submittedStartAt = Date.now();
-      const localSteeringId = `steering-local-${id}`;
+      const localSteeringId = `steering-local-${sourceQueueItemId ?? createId()}`;
       setSteeringInteractionQueue((previous) => [
         ...previous.filter((candidate) => candidate.id !== localSteeringId),
         {
           id: localSteeringId,
-          text: item.text,
+          text: trimmed,
           createdAt: submittedStartAt,
           status: 'steering_pending',
           source: 'steering',
@@ -514,24 +429,26 @@ export function useMessageInteractionQueue({
         },
       ]);
       recordPerfEvent('chat.steering.submit', {
-        queueItemId: item.id,
+        queueItemId: sourceQueueItemId,
         sessionId,
+        turnId: activeTurn.turnId,
         agentId,
-        messageChars: item.text.length,
-        queueAgeMs: Math.max(0, submittedStartAt - item.createdAt),
+        messageChars: trimmed.length,
       });
 
       try {
         const response = await createChatSteeringMessage(
           workspaceId,
           sessionId,
+          activeTurn.turnId,
           {
-            messageText: item.text,
+            messageText: trimmed,
             agentId,
-            sourceQueueItemId: item.id,
+            sourceQueueItemId,
             priority: 1000,
           },
         );
+        const acceptedAt = Date.now();
         setSteeringInteractionQueue((previous) =>
           previous.map((candidate) =>
             candidate.id === localSteeringId
@@ -539,24 +456,28 @@ export function useMessageInteractionQueue({
                   ...candidate,
                   status: 'steering_pending',
                   steeringId: response.steeringId,
-                  submittedAt: response.createdAt,
+                  submittedAt: acceptedAt,
                 }
               : candidate,
           ),
         );
         recordPerfEvent('chat.steering.submitted', {
-          queueItemId: item.id,
+          queueItemId: sourceQueueItemId,
           steeringId: response.steeringId,
-          sessionId: response.sessionId,
-          workspaceId: response.workspaceId,
-          agentId: response.agentId,
-          createdAt: response.createdAt,
-          requestLatencyMs: Math.max(0, Date.now() - submittedStartAt),
+          sessionId,
+          workspaceId,
+          agentId,
+          turnId: activeTurn.turnId,
+          createdAt: acceptedAt,
+          requestLatencyMs: Math.max(0, acceptedAt - submittedStartAt),
         });
-        messageApi.success('引导已提交，将在下一次模型请求前注入上下文');
+        messageApi.success(
+          '插嘴已受理，将在当前步骤结束后的下一次模型请求前生效',
+        );
+        return true;
       } catch (error: unknown) {
         const errorMessage =
-          error instanceof Error ? error.message : '引导提交失败';
+          error instanceof Error ? error.message : '插嘴提交失败';
         setSteeringInteractionQueue((previous) =>
           previous.map((candidate) =>
             candidate.id === localSteeringId
@@ -569,59 +490,67 @@ export function useMessageInteractionQueue({
           ),
         );
         recordPerfEvent('chat.steering.submitFailed', {
-          queueItemId: item.id,
+          queueItemId: sourceQueueItemId,
           sessionId,
+          turnId: activeTurn.turnId,
           agentId,
           requestLatencyMs: Math.max(0, Date.now() - submittedStartAt),
           error: errorMessage,
         });
         messageApi.error(errorMessage);
+        return false;
+      } finally {
+        if (sourceQueueItemId) {
+          steeringSubmissionIdsRef.current.delete(sourceQueueItemId);
+        }
       }
     },
     [
+      activeMessageIdsRef,
       agentId,
-      findVisibleQueueItem,
       messageApi,
+      messageIdToTurnIdRef,
       selectedSessionId,
       sessionIdRef,
-      updateLocalQueue,
+      turnsRef,
       workspaceId,
     ],
   );
 
-  /** P1#6：本地待发队列内重排（拖拽），仅作用于 source=local_pending 的项 */
+  const steerQueuedInteraction = useCallback(
+    async (id: string) => {
+      const item = findVisibleQueueItem(id);
+      recordPerfEvent('chat.queue.steerIgnored', {
+        reason: 'backend-owned-queue',
+        queueItemId: id,
+        status: item?.status,
+      });
+      messageApi.info('后端投递队列项暂不能安全转换为插嘴，避免消息重复执行');
+    },
+    [findVisibleQueueItem, messageApi],
+  );
+
+  /** 服务端队列尚未开放重排命令；不在前端伪造顺序。 */
   const reorderQueuedInteraction = useCallback(
     (fromId: string, toId: string) => {
       if (fromId === toId) return;
-      updateLocalQueue((previous) => {
-        const fromIndex = previous.findIndex(
-          (candidate) => candidate.id === fromId,
-        );
-        const toIndex = previous.findIndex(
-          (candidate) => candidate.id === toId,
-        );
-        if (fromIndex < 0 || toIndex < 0) return previous;
-        const next = [...previous];
-        const [moved] = next.splice(fromIndex, 1);
-        next.splice(toIndex, 0, moved);
-        return next;
+      recordPerfEvent('chat.queue.reorderIgnored', {
+        reason: 'backend-owned-queue',
+        fromId,
+        toId,
       });
-      recordPerfEvent('chat.queue.reorder', { fromId, toId });
     },
-    [updateLocalQueue],
+    [],
   );
 
-  /** P1#6：取消全部 — 中止在途请求 + 清空本地待发队列 + 移除未注入的 steering 项 */
+  /** 取消当前请求并移除未注入的 steering 投影。已受理 Turn 不会被前端丢弃。 */
   const stopQueue = useCallback(() => {
     cancelAllRef.current?.();
-    updateLocalQueue(() => []);
     setSteeringInteractionQueue((previous) =>
       previous.filter((candidate) => candidate.status !== 'steering_pending'),
     );
-    recordPerfEvent('chat.queue.stopAll', {
-      droppedLocalCount: pendingSendQueueRef.current.length,
-    });
-  }, [updateLocalQueue]);
+    recordPerfEvent('chat.queue.stopAll', { droppedLocalCount: 0 });
+  }, []);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -636,6 +565,21 @@ export function useMessageInteractionQueue({
         setInputValue('');
         if (trimmed.toLowerCase() === COMPACT_COMMAND) {
           void handleCompactCommand();
+        } else if (
+          (event.ctrlKey || event.metaKey) &&
+          (loading ||
+            hasBlockingActiveTurn(
+              turnsRef.current,
+              activeMessageIdsRef.current,
+              messageIdToTurnIdRef.current,
+            ))
+        ) {
+          void submitSteeringInteraction(trimmed).then((accepted) => {
+            if (!accepted) {
+              // 不覆盖用户在请求期间新输入的内容；空输入框才恢复失败的插嘴文本。
+              setInputValue((current) => current || trimmed);
+            }
+          });
         } else {
           void submitInteraction(trimmed);
         }
@@ -649,7 +593,16 @@ export function useMessageInteractionQueue({
         }
       }
     },
-    [handleCompactCommand, submitInteraction, turns],
+    [
+      activeMessageIdsRef,
+      handleCompactCommand,
+      loading,
+      messageIdToTurnIdRef,
+      submitInteraction,
+      submitSteeringInteraction,
+      turns,
+      turnsRef,
+    ],
   );
 
   useEffect(() => {
@@ -669,6 +622,7 @@ export function useMessageInteractionQueue({
     interactionQueue: visibleInteractionQueue,
     enqueueInteraction,
     submitInteraction,
+    submitSteeringInteraction,
     updateQueuedInteraction,
     deleteQueuedInteraction,
     sendQueuedInteractionNow,
@@ -679,6 +633,5 @@ export function useMessageInteractionQueue({
     markSteeringInjected,
     bindSendMessage,
     bindCancelAll,
-    pendingSendQueue,
   };
 }
