@@ -1,7 +1,7 @@
 # Agent Harness 兼容与工具调用效率修复设计方案
 
 > 日期：2026-08-26  
-> 状态：H0、H1 重复失败熔断与 canonical Token 归因已实现并通过定向测试；聚合报表、进程外部署和真实模型 smoke 未完成  
+> 状态：H0、H1 重复失败熔断、内置模板单一权威源与 canonical Token 归因已实现并通过定向测试；聚合报表、进程外部署和真实模型 smoke 未完成
 > 架构决策：[ADR-081](../07架构/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md)
 
 ## 1. 问题与目标
@@ -181,3 +181,41 @@ Runtime JSON 信封仍是正常路径：完成时必须 `status=DONE`、`tool=nu
   不得当成正式验收口径。按该临时口径，24 小时主路径命中 96.234%，子代理 98.154%，后台管道
   14.761%。源码现已改为从 `RuntimeExecutionIdentity` 直写 canonical attribution，并删除 Manager 终态重复行；
   该结论须在进程外重启后仅用新数据验证，历史数据不原地回填。
+
+## 11. 2026-08-27 `browser_context` 连续失败事故
+
+### 11.1 证据轨迹
+
+- 主会话 `206a9b48ec904ebb93e7541131fbb835`、Turn `a06d3bd381f94859b02c7f127169b7e7`
+  两次委派 `workspace-task-agent`，请求文本明确要求 `file_read`，但传入 `permission_mode=low`
+  后子代实际只看到 7 个 Browser Tools。
+- 首个子运行 `run_20260827_044716_89e15ca4c288` 持续约 906 秒，339 轮、319 次工具调用；
+  其中 309 次 `browser_context` 返回 `browser_not_available: No authenticated Desktop connected`，
+  319 次调用出现 313 个不同 args hash。
+- 第二个子运行 `run_20260827_050242_7f1a15cf8cac` 仅 4 轮，仍全部是 Browser Tools 且全部
+  `browser_not_available`。Browser Bridge 断开时立即返回该结构化错误符合设计，它是暴露条件，不是选错工具的责任层。
+
+### 11.2 根因链
+
+1. `PuddingCore` 和 `PuddingHost` 同时声明了同全名 `BuiltInAgentTemplates`，两份 V2 工具集发生漂移。
+   Runtime 引用 Core 副本，其 Task/Code `DefaultToolNames` 只有 7 个 Browser Tools；Host 和其测试却看到较完整的本地副本。
+2. `SubAgentTool` 的 Low 权限投影只使用 V2 `DefaultToolNames + RequiresGrantToolNames`，不使用旧
+   `AllowedToolNames`；因此旧测试把 V1/V2 集合求并后检查“存在 file_read”，也无法证明 Low 实际投影可用。
+3. `ToolLoopInstructionBuilder` 和 Skills 层在 `search_tools` 不可见时仍宣称可用它发现工具。
+   模型 reasoning 识别到应使用 `file_read/search_tools`，但 provider function schema 中两者均不存在，只能从 Browser Tools 中继续选择。
+4. `FailedToolCallTracker` 按 canonical tool+args+结果阻断完全重复，313 个 args hash 绕过该层；
+   `RuntimeControlService` 已计算忽略参数的同失败族计数，却未将它用于熔断。且默认总量阈值为 50，队列最多保留 10 条，总量熔断数学上不可达。
+
+### 11.3 修复决策
+
+- 删除 Host 副本，以 `PuddingCore/Platform/BuiltInAgentTemplates.cs` 作唯一权威源；Task/Code Low
+  默认保留 `search_tools/file_read/list_dir/file_search/search_grep`，写入和 Shell 仍要求 grant。
+- 只在 `search_tools` 真实出现在可见 schema 时注入递延发现提示，不再制造“提示可用、schema 不可用”的分裂。
+- 保留精确调用第二次 `execution_stalled`，并增加失败族 5 次熔断；窗口保留容量至少等于配置总量阈值。
+  Buffered 在 Runtime cancellation 后先检查 Faulted，将运行归档为 Failed 并返回熔断摘要，而不是误报普通 Cancelled。
+
+### 11.4 验收边界
+
+定向测试覆盖 Low 模板投影、模板类单一程序集、按可见集生成发现提示、
+参数持续变化时第 5 次同失败族熔断，以及配置总量阈值大于 10 时仍可达。
+这些证明源码修复，不证明当前 Desktop/Core 已加载新构建；还需进程外重启后用新子代会话进行功能 smoke。
