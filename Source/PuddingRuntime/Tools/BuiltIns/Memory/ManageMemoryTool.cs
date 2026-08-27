@@ -10,14 +10,15 @@ namespace PuddingRuntime.Services.Tools;
 
 /// <summary>
 /// 记忆工具编排器：只负责 action 分发，具体逻辑委托给 Handler。
+/// Agent 自有 Memory 库写入属低风险自治操作，经用户指示（2026-08-27）归类 AutoAllowed 免运行时审批。
 /// </summary>
 [Tool(
     id: "manage_memory",
     name: "manage_memory",
     description: "管理记忆图书馆结构。action: list_books|create_book|list_chapters|add_chapter|update_chapter|delete_book|add_pointer|list_pointers|add_relation|list_relations|get_related|dedup_report|merge_chapters。章节支持设置 scene（场景）/ constraints（约束）/ tags（标签）和 source_reference（引用来源），用于溯源核实和知识图谱关联。",
     category: ToolCategory.Memory,
-    permission: ToolPermissionLevel.Medium,
-    safety: ToolSafetyFlags.Destructive)]
+    permission: ToolPermissionLevel.Low,
+    safety: ToolSafetyFlags.ConcurrencySafe)]
 public sealed class ManageMemoryTool : PuddingToolBase<ManageMemoryArgs>
 {
     private readonly ILogger<ManageMemoryTool> _logger;

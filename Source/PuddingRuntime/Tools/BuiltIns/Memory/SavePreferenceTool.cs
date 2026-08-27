@@ -13,14 +13,15 @@ namespace PuddingRuntime.Services.Tools;
 /// 用户偏好存储 Tool：Agent 在对话中感知到用户的明确偏好（语言、风格、习惯、约束等）时，
 /// 调用本工具写入记忆图书馆的「用户偏好」Book。同一 key 重复写入为幂等覆盖。
 /// 会话启动时 ContextPipeline 会把这些偏好自动注入 System Prompt（Prefetch）。
+/// Agent 自有 Memory 库写入属低风险自治操作，经用户指示（2026-08-27）归类 AutoAllowed 免运行时审批。
 /// </summary>
 [Tool(
     id: "save_preference",
     name: "save_preference",
     description: "存储用户偏好。当用户在对话中明确表达偏好（语言、风格、习惯、沟通方式、禁忌等）时使用。同一 key 重复保存会覆盖旧值。参数：key（偏好名称）、value（偏好值）。",
     category: ToolCategory.Memory,
-    permission: ToolPermissionLevel.Medium,
-    safety: ToolSafetyFlags.Destructive)]
+    permission: ToolPermissionLevel.Low,
+    safety: ToolSafetyFlags.ConcurrencySafe)]
 public sealed class SavePreferenceTool : PuddingToolBase<SavePreferenceArgs>
 {
     private static readonly JsonSerializerOptions JsonOptions = new()

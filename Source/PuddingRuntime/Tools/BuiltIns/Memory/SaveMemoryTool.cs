@@ -12,14 +12,15 @@ namespace PuddingRuntime.Services.Tools;
 
 /// <summary>
 /// 主动记忆写入 Tool：Agent 可直接将事实、偏好、摘要写入 MemoryLibrary。
+/// Agent 自有 Memory 库写入属低风险自治操作，经用户指示（2026-08-27）归类 AutoAllowed 免运行时审批。
 /// </summary>
 [Tool(
     id: "save_memory",
     name: "save_memory",
     description: "写入或更新记忆。最小用法仅需 content——其余自动推断。完整参数：action, type, book, content, key, value。",
     category: ToolCategory.Memory,
-    permission: ToolPermissionLevel.Medium,
-    safety: ToolSafetyFlags.Destructive)]
+    permission: ToolPermissionLevel.Low,
+    safety: ToolSafetyFlags.ConcurrencySafe)]
 public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
 {
     private readonly IMemoryLibraryConvenience _library;
