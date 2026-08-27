@@ -137,32 +137,39 @@ public sealed partial class AgentExecutionService
         }
         try
         {
-            var historyCountBeforeHydration = history.Count;
-            await _contextManager.TryHydrateStreamHistoryFromDbAsync(
+            var hydration = await _contextManager.TryHydrateStreamHistoryFromDbAsync(
                 request.SessionId,
                 history,
                 template.Runtime?.MaxContextTokens ?? 8000,
                 ct,
-                query: request.MessageText);
+                query: request.MessageText,
+                currentMessageId: request.MessageId,
+                currentTurnId: request.ExecutionIdentity?.TurnId);
             // 冷重水合（重启/内存会话过期后从 DB 回放）后的首轮请求显式归因，
             // 供缓存报表区分"重水合全量重传"与"前缀漂移"。
-            rehydratedFromDbThisDispatch = history.Count > historyCountBeforeHydration;
+            rehydratedFromDbThisDispatch = hydration.ReplacedHistory;
             perfHistorySw.Stop();
             await RecordActivityAsync(
                 streamTrace,
                 component: RuntimeActivityComponents.AgentExecution,
                 operation: "agent.history.hydrate",
-                status: RuntimeActivityStatuses.Succeeded,
+                status: hydration.Succeeded
+                    ? RuntimeActivityStatuses.Succeeded
+                    : RuntimeActivityStatuses.Failed,
                 perfHistoryStartedAt,
                 endedAt: DateTimeOffset.UtcNow,
                 durationMs: perfHistorySw.ElapsedMilliseconds,
-                summary: "Stream history hydrated before LLM preparation.",
+                summary: hydration.Succeeded
+                    ? "Stream history evaluated before LLM preparation."
+                    : "Canonical history hydration failed closed; retained in-memory history.",
                 metadata: new Dictionary<string, string>
                 {
                     ["history_count"] = history.Count.ToString(),
                     ["max_context_tokens"] = (template.Runtime?.MaxContextTokens ?? 8000).ToString(),
+                    ["hydration_source"] = hydration.Source,
+                    ["history_replaced"] = hydration.ReplacedHistory.ToString(),
                 },
-                error: null,
+                error: hydration.Error,
                 ct: CancellationToken.None);
         }
         catch (Exception ex)
@@ -1535,7 +1542,9 @@ public sealed partial class AgentExecutionService
                     maxInputTokens: effectiveLlmConfig?.MaxInputTokens,
                     agentTemplateId: request.AgentTemplateId,
                     traceId: request.ExecutionIdentity?.TraceId,
-                    query: request.MessageText);
+                    query: request.MessageText,
+                    currentMessageId: request.MessageId,
+                    currentTurnId: request.ExecutionIdentity?.TurnId);
             }
             _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
             _sessionManager.Touch(request.SessionId);

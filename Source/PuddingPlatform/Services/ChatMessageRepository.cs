@@ -54,7 +54,10 @@ public sealed class ChatMessageRepository : IChatMessageRepository, ICompactionC
     private static ChatMessageRow Map(ChatMessageEntity e) => new()
     {
         Id = e.Id,
+        MessageId = e.MessageId,
+        TurnId = e.TurnId,
         SessionId = e.SessionId,
+        WorkspaceId = e.WorkspaceId,
         Role = e.Role,
         Content = e.Content,
         UsageJson = e.UsageJson,
@@ -78,8 +81,7 @@ public sealed class ChatMessageRepository : IChatMessageRepository, ICompactionC
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var messages = await db.ChatMessages.AsNoTracking()
             .Where(m => m.SessionId == sessionId
-                && m.Id > afterId
-                && !string.IsNullOrWhiteSpace(m.Content))
+                && m.Id > afterId)
             .OrderBy(m => m.Id)
             .Take(boundedLimit)
             .ToListAsync(ct);
@@ -96,7 +98,9 @@ public sealed class ChatMessageRepository : IChatMessageRepository, ICompactionC
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var messages = await db.ChatMessages.AsNoTracking()
-            .Where(m => m.SessionId == sessionId && !string.IsNullOrWhiteSpace(m.Content))
+            .Where(m => m.SessionId == sessionId
+                && (!string.IsNullOrWhiteSpace(m.Content)
+                    || !string.IsNullOrWhiteSpace(m.ContentPartsJson)))
             .OrderByDescending(m => m.CreatedAt)
             .ThenByDescending(m => m.Id)
             .Take(limit)

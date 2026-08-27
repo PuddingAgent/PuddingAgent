@@ -255,15 +255,17 @@ public sealed partial class AgentExecutionService
                 // If process restart or history expiry cleared it, rehydrate the persisted conversation
                 // before adding the new continuation task. The freshly assembled system prompt remains first.
                 var persistedHistory = new List<ChatMessage>();
-                await _contextManager.TryHydrateStreamHistoryFromDbAsync(
+                var hydration = await _contextManager.TryHydrateStreamHistoryFromDbAsync(
                     request.SessionId,
                     persistedHistory,
                                         request.LlmConfig?.MaxInputTokens
                         ?? template.Runtime?.MaxContextTokens
                         ?? 8192,
                     ct,
-                    query: request.MessageText);
-                if (persistedHistory.Count > 0)
+                    query: request.MessageText,
+                    currentMessageId: request.MessageId,
+                    currentTurnId: request.ExecutionIdentity?.TurnId);
+                if (hydration.ReplacedHistory && persistedHistory.Count > 0)
                 {
                     history.AddRange(persistedHistory.Where(message => message.Role != ChatRole.System));
                     rehydratedFromDbThisDispatch = true;
@@ -411,6 +413,7 @@ public sealed partial class AgentExecutionService
         string?            executionError = null;
         string?            subAgentTerminalStatus = null;
         string?            resumeAnchorId = null;
+        var                runtimeFuseFaulted = false;
         TokenUsageDto?     usage          = null;
         PromptPrefixSnapshot? lastPrefixSnapshot = null;
         var expectedOutputTracker =
@@ -1869,35 +1872,52 @@ public sealed partial class AgentExecutionService
         }
         catch (OperationCanceledException)
         {
-            var deadlineReached =
-                request.ExecutionDeadlineUtc is { } deadline &&
-                DateTimeOffset.UtcNow >= deadline.AddMilliseconds(-250);
-            var subAgentDeadlineReached = deadlineReached && subAgentBudget is not null;
-            stopReason = subAgentDeadlineReached
-                ? AgentLoopStopReason.BudgetExhausted
-                : deadlineReached
-                    ? AgentLoopStopReason.MaxElapsedReached
-                : AgentLoopStopReason.Cancelled;
-            execState = subAgentDeadlineReached
-                ? AgentExecutionState.BudgetExhausted
-                : deadlineReached
-                    ? AgentExecutionState.Failed
-                : AgentExecutionState.Cancelled;
-            subAgentTerminalStatus = subAgentDeadlineReached
-                ? "budget_exhausted"
-                : deadlineReached ? "timed_out" : "cancelled";
-            executionError = subAgentDeadlineReached
-                ? "Sub-agent cleanup grace reached the hard execution deadline; the preserved session can be resumed with a fresh system budget."
-                : deadlineReached
-                    ? $"Execution timed out at {request.ExecutionDeadlineUtc:O}."
-                : "Cancelled";
-            _logger.LogInformation(
-                "[AgentExec] {Termination} session={Session}",
-                deadlineReached ? "Timed out" : "Cancelled",
-                request.SessionId);
-            await FireHooksAsync(h => h.OnCancelledAsync(loopCtx, default));
-            // Do not write a terminal run here. The common terminal path below computes the
-            // real round/tool totals and performs the single first-writer-wins commit.
+            var runtimeControlState = _runtimeControl?.GetStatus(request.SessionId).Session;
+            if (runtimeControlState?.State == SessionState.Faulted)
+            {
+                runtimeFuseFaulted = true;
+                stopReason = AgentLoopStopReason.Failed;
+                execState = AgentExecutionState.Failed;
+                subAgentTerminalStatus = "failed";
+                executionError = runtimeControlState.FaultSummary ?? "Session fuse triggered.";
+                finalMessage = executionError;
+                _logger.LogWarning(
+                    "[AgentExec] Runtime fuse stopped buffered execution session={Session}",
+                    request.SessionId);
+                await FireHooksAsync(h => h.OnFailedAsync(loopCtx, executionError, null, default));
+            }
+            else
+            {
+                var deadlineReached =
+                    request.ExecutionDeadlineUtc is { } deadline &&
+                    DateTimeOffset.UtcNow >= deadline.AddMilliseconds(-250);
+                var subAgentDeadlineReached = deadlineReached && subAgentBudget is not null;
+                stopReason = subAgentDeadlineReached
+                    ? AgentLoopStopReason.BudgetExhausted
+                    : deadlineReached
+                        ? AgentLoopStopReason.MaxElapsedReached
+                        : AgentLoopStopReason.Cancelled;
+                execState = subAgentDeadlineReached
+                    ? AgentExecutionState.BudgetExhausted
+                    : deadlineReached
+                        ? AgentExecutionState.Failed
+                        : AgentExecutionState.Cancelled;
+                subAgentTerminalStatus = subAgentDeadlineReached
+                    ? "budget_exhausted"
+                    : deadlineReached ? "timed_out" : "cancelled";
+                executionError = subAgentDeadlineReached
+                    ? "Sub-agent cleanup grace reached the hard execution deadline; the preserved session can be resumed with a fresh system budget."
+                    : deadlineReached
+                        ? $"Execution timed out at {request.ExecutionDeadlineUtc:O}."
+                        : "Cancelled";
+                _logger.LogInformation(
+                    "[AgentExec] {Termination} session={Session}",
+                    deadlineReached ? "Timed out" : "Cancelled",
+                    request.SessionId);
+                await FireHooksAsync(h => h.OnCancelledAsync(loopCtx, default));
+                // Do not write a terminal run here. The common terminal path below computes the
+                // real round/tool totals and performs the single first-writer-wins commit.
+            }
         }
         catch (Exception ex)
         {
@@ -1945,7 +1965,8 @@ public sealed partial class AgentExecutionService
         }
 
         var terminatedByCancellationOrTimeout =
-            subAgentTerminalStatus is "cancelled" or "timed_out" or "budget_exhausted";
+            runtimeFuseFaulted
+            || subAgentTerminalStatus is "cancelled" or "timed_out" or "budget_exhausted";
 
         // ── 记忆写回 ──────────────────────────────────────────────────
         // A cancelled/timed-out run must not start new post-loop work with an already cancelled token.
@@ -1976,7 +1997,9 @@ public sealed partial class AgentExecutionService
                 maxInputTokens: effectiveLlmConfig?.MaxInputTokens,
                 agentTemplateId: request.AgentTemplateId,
                 traceId: request.ExecutionIdentity?.TraceId,
-                query: request.MessageText);
+                query: request.MessageText,
+                currentMessageId: request.MessageId,
+                currentTurnId: request.ExecutionIdentity?.TurnId);
         }
         _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
         _sessionManager.Touch(request.SessionId);

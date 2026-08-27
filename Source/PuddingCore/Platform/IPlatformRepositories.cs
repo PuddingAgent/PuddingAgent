@@ -20,7 +20,10 @@ public sealed class WorkspaceRow
 public sealed class ChatMessageRow
 {
     public long Id { get; init; }
+    public string MessageId { get; init; } = string.Empty;
+    public string? TurnId { get; init; }
     public string SessionId { get; init; } = string.Empty;
+    public string WorkspaceId { get; init; } = string.Empty;
     public string Role { get; init; } = string.Empty;
     public string Content { get; init; } = string.Empty;
     public string? UsageJson { get; init; }
