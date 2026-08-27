@@ -2,7 +2,7 @@
 
 ## 状态
 
-Proposed
+Accepted（核心运行时已实现；进程外部署与产品内性能 smoke 待验收）
 
 ## 背景
 
@@ -218,3 +218,46 @@ IDLE
 - 任务看板、Checkpoint 时间线、历史搜索、开发面板、子代理检查器和消息右键菜单必须保持独立动态模块；关闭状态不下载、不解析也不挂载。工具栏入口允许在 pointer hover 或 keyboard focus 时预取，以缩短首次点击等待。
 - `npm run build` 必须在生产构建后执行 `scripts/check-chat-bundle-budget.cjs`。当前门禁要求 HTML 同步脚本不超过 1536 KiB、Chat 路由 chunk 不超过 480 KiB，并验证任务看板源码不得回流 `common-async`，Checkpoint、ContextMenu 与任务看板入口不得回流 Chat 首始 chunk。
 - 体积门禁是回归保护，不替代运行时验收。部署新静态资源后仍需采集实际 WebView2 的请求瀑布、首屏时间、长任务和长消息连续滚动帧率。
+
+## 2026-08-27 长会话 CPU、内存与 DOM 收敛补充
+
+### 事件投影边界
+
+旧路径把 SSE/bootstrap/gap 信封 append-only 保存在 React hook 中；每到一个事件，先重收集全量事件，再为会话内每个 `turnId` 过滤、排序、执行一次 `projectExecutionFlow`。其成本会随事件数与 Turn 数共同增长，并且重复信封在幂等判断前也会推进 React revision。该路径被以下单会话增量索引替代：
+
+```text
+canonical envelope
+  -> session + eventId dedupe
+  -> payload-preserving execution-event collector
+  -> pendingByTurn
+  -> requestAnimationFrame flush
+  -> only dirty Turn projectExecutionFlow
+  -> structurally shared ReadonlyMap<turnId, projection>
+```
+
+约束：
+
+1. 幂等判断必须发生在投影入队和 React revision 之前；重复 bootstrap/gap/live 信封不得占内存、不得触发提交。
+2. 同一动画帧的增量按 Turn 合并；一次 flush 只重投影 dirty Turn。禁止恢复“全事件 × 全 Turn”扫描。
+3. 未变化 Turn 的 `ExecutionFlowProjection` 对象身份必须稳定；`MessageRow` 接收本 Turn 的具体 Projection，不以全局 selector 函数身份作为 memo 失效条件。
+4. Turn 终态单调。最终 Projection 落定后释放该 Turn 的原始事件和 eventId 集，只保留可见快照；迟到 progress 不得重新激活终态 Turn。
+5. 会话切换是硬 reset：pending、active events、终态 Projection 和索引快照不得跨会话残留。
+6. collector 必须保留白名单 canonical 事件的 typed payload（`delta/toolCallId/arguments/output/reply/...`），但不得把音频、图片字节或其他非执行流大帧带入索引。
+
+### 两级有界 DOM
+
+消息级 virtualizer 只能卸载离屏消息行，无法约束“一个超长 Turn 自身包含数千轨迹节点”的情况。因此渲染预算分两级：
+
+- 会话级：`MessageViewportRuntime` 继续依据消息数和 render weight 启用 message-row virtualization。
+- Turn 级：`TurnContentStream` 默认只挂载最新 40 个内容块；`ActivityGroup` 默认只挂载最新 24 个行为节点。较早内容通过明确按钮每次追加 40/24 项，保持可审计但不在首个 commit 全量建 DOM。
+- 折叠的 ActivityGroup 继续完全卸载成员 DOM；工具输入/输出仍由用户显式展开。
+- execution-flow render weight 以 Projection 对象身份存入 `WeakMap`；未变化 Projection 不再递归扫描推理块和工具树，且缓存不会延长历史快照生命周期。
+
+### 验收补充
+
+- 构造 100 个 Turn 后只向其中一个 Turn 追加事件：flush 的 `changedTurnIds` 必须只有该 Turn，其余 99 个 Projection 引用不变。
+- pending 与已投影重复 `eventId` 都不得推进索引；终态 Turn 的 `activeEvents` 必须归零。
+- reset 后快照、active/pending 事件和 Turn 计数全部归零。
+- 单行为组 60 个工具节点默认最多挂载 24 行；单 Turn 100 个交错内容块默认最多挂载最新 40 块，用户可渐进恢复旧内容。
+- `chat.executionFlow.incrementalFlush` 记录 dirty Turn 数、active/pending event 数和 terminal Turn 数；稳定长会话中 `changedTurnCount` 通常应为 1，且 `pendingEvents` 在帧后回到 0。
+- Jest、生产构建与 bundle budget 是代码门禁；CPU、内存、DOM 节点数和滚动帧率必须在进程外部署新静态资源后，用同一长会话重新采集，不能用旧页面截图代替上线验收。

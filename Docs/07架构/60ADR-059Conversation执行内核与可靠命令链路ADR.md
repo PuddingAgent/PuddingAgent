@@ -1,6 +1,6 @@
 # ADR-059：Conversation 执行内核与可靠命令链路
 
-状态：已实施（2026-07-18）
+状态：已实施（主链路 2026-07-18；Turn Steering 扩展 2026-08-26）
 
 关联：ADR-056、ADR-057
 
@@ -79,6 +79,7 @@ Tool 与 Skill；运行时不得再次读取来源模板；
 | Run 领取、续租、释放、fencing token | `IExecutionLeaseStore` | 不直接改租约 |
 | 输出事件与 Turn/Run/Command 终态 | `IExecutionJournal` | 不直接提交终态 |
 | Cancel/Control + 对应事件 | `IExecutionControlService` | Inbox 只读/确认 |
+| 当前 Turn 的 Steering | `ICreateSteeringHandler` → `SessionSteeringService` | UI/Controller 不直接写队列 |
 | Command 稳定执行引用 | `IExecutionCommandReader` | 不提供写方法 |
 | Agent Instance/LLM/Tool/Skill 配置解析 | `IAgentRuntimeProfileResolver` | Controller、Worker、Runtime 不自行读取；来源模板只在创建实例时读取 |
 | 不含秘密的执行快照 | `IAgentExecutionSnapshotFactory` | 只消费已解析 Profile |
@@ -134,8 +135,17 @@ Tool 与 Skill；运行时不得再次读取来源模板；
 - `IControlInbox.ReadPendingAsync` 不修改状态。
 - Cancel 只有在 Runtime 已停止且终态提交成功后才 `AcknowledgeAsync`。
 - Acknowledge 必须校验 Conversation、Turn、Run、Worker 和 fencing token。
-- Steering 的 Runtime 消费器尚未实现，因此端点返回 `501`，不写入“永远不会
-  消费”的伪命令。
+- Steering 已开放 canonical 端点
+  `POST /api/v1/conversations/{conversationId}/turns/{turnId}/steering`。Handler 必须从
+  `IExecutionCommandReader` 解析精确 Turn，只接受 `Running`，并校验 Workspace/Agent 围栏后写入
+  `SessionSteeringService` 的 durable queue。每行必须携带不可变 `target_turn_id`；Runtime 只消费与自身
+  `RuntimeExecutionIdentity.TurnId` 精确相等的行。终态或身份不匹配返回 `409`，不得伪受理或跨 Turn 泄漏。
+- 本地队列转 Steering 时透传稳定 `source_queue_item_id`；前端对同一 item 只允许一个在途 admission，服务端
+  对相同 Workspace/Session/Turn/source item 的 pending/consumed 重试返回原 `steering_id`，避免网络歧义重试
+  产生重复注入。
+- Runtime 在每次 LLM 请求前消费全部待处理 Steering；若消息在“可能成为最终回复”的模型请求期间到达，
+  则在该请求结束后的安全边界再次消费并继续同一个 Turn。它不取消正在运行的模型或工具调用，也不创建
+  第二个并发 Turn。
 
 ### 3.7 前端
 
@@ -244,7 +254,8 @@ Tool 与 Skill；运行时不得再次读取来源模板；
 5. Worker 异常最终产生持久 `turn.failed`，或因 fencing 失效明确拒绝旧 Worker
    写入；不得永久 Running。
 6. 终态前尚未提交的输出不会丢失，也不会重复写入。
-7. 未实现的 Steering/多媒体/广播返回明确错误，不产生伪受理。
+7. Steering 只对 Running Turn 返回 202 并落入 Runtime 实际消费的 durable queue；终态 Turn 返回 409。
+   尚未实现的多媒体/广播仍返回明确错误，不产生伪受理。
 8. Host 在 DI 图不合法时启动失败；ready 探针在执行链不可用时返回 503。
 9. LLM 调用日志中的 Provider 必须是配置 ID（例如 `deepseek`），不得出现服务商 URL
    或 KeyVault ID。
@@ -275,8 +286,9 @@ Tool 与 Skill；运行时不得再次读取来源模板；
 
 1. 使用数据库级原子 head 分配替换 Acceptance/Control 中的 read-modify-write，
    增加同一 Conversation 并发受理压力测试。
-2. 实现 Runtime Steering 消费器后再开放 Steering 端点，并验证
-   `created -> applied -> acknowledged`。
+2. 用终态事务关闭“最后一次安全边界之后、Command 提交终态之前”的极窄 accepted-but-not-injected 竞态，
+   并补充 `accepted -> injected/expired` 故障注入、用户状态反馈与重启恢复测试；`target_turn_id` 已阻止其
+   被下一 Turn 误消费。
 3. 将视觉、文件输入建模为持久 ContentPart/Artifact 引用并进入 Snapshot，
    不恢复自由格式 metadata 透传。
 4. 增加 Worker crash、租约过期、SSE 断线重连、浏览器离线 Outbox 的端到端故障注入测试。

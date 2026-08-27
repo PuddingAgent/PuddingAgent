@@ -217,13 +217,19 @@ Admin Chat 的 Slash 命令面板新增：
 
 对应代码约束见 `Source/PuddingRuntime/Services/CompactionCoordinator.cs` 类注释与 `ContextCompactionService.CompactAsync` 入口。
 
-### ADR-042-J：压缩前增量对齐 canonical 转录，空窗口不得生成摘要
+### ADR-042-J：压缩与冷水合前增量对齐 canonical 转录，空窗口不得生成摘要
 
-CoordinatorCanonical 轮次的用户与 assistant 转录由平台投影器写入 platform DB `ChatMessages`；Runtime 不再保证同步写入 memory DB `Messages` 或 JSONL。因此 `ContextCompactionService` 在每次实际压缩前必须把当前 session 的 `ChatMessages` 增量镜像到 `Messages`，并以平台行派生的稳定 `MessageId` 幂等去重。导入高水位持久地派生自已镜像 `chat_transcript` 消息的稳定 `MessageId`，从最大 platform row Id 之后按 Id 升序有界分页（当前每页 256）续读；首次导入或旧数据无法解析高水位时也必须分页追平，禁止每次物化整个会话转录或全部既有 `MessageId`。禁止仅在 `activeMessages.Count == 0` 时导入：只要 memory DB 留有旧 active/summary，该门禁就会永久跳过后续转录，使压缩输入、健康度和压缩后水合停留在旧代。
+CoordinatorCanonical 轮次的用户与 assistant 转录由平台投影器写入 platform DB `ChatMessages`；Runtime 不再保证同步写入 memory DB `Messages` 或 JSONL。因此压缩与任何 memory DB 历史水合都必须先通过同一个 `CanonicalChatTranscriptSynchronizer`，把当前 session 的 `ChatMessages` 增量镜像到 `Messages`，并以平台行派生的稳定 `MessageId` 幂等去重。导入高水位写入 memory session metadata，并以已镜像 `chat_transcript` 消息的稳定 `MessageId` 作为恢复兜底；从最大 platform row Id 之后按 Id 升序有界分页（当前每页 256）续读。高水位必须越过完全无正文/parts 的非语义行，避免每次重扫尾部空行；首次导入或旧数据无法解析高水位时也必须分页追平，禁止每次物化整个会话转录或全部既有 `MessageId`。禁止仅在 `activeMessages.Count == 0` 时导入：只要 memory DB 留有旧 active/summary，该门禁就会永久跳过后续转录，使压缩输入、健康度和冷启动水合停留在旧代。
+
+冷水合必须与压缩共享 session 级 `CompactionCoordinator`，先完成 canonical 同步，再读取 memory DB 快照，避免同步与 `CompactedBy`/摘要提交交错。若 canonical 仓储不可用或同步失败，本次 DB 水合必须 fail-closed：保留当前进程已有历史并继续携带当前用户输入，禁止回退读取已知可能陈旧的 memory DB。UI 本地状态始终不是模型历史源。
+
+受理当前 Turn 时，platform `ChatMessages` 已包含本轮 user 行，但 provider 输入仍必须只有一个当前轮入口。同步器应把该行连同稳定 `turnId/messageId` 镜像进 memory DB 以保证持久性；历史水合则按当前 `turnId`（缺失时按 `messageId`）排除整轮，随后只由 `BuildCurrentUserChatMessage` 追加带 hash 围栏和 typed parts 的当前输入。禁止同时把无围栏 DB 行和围栏当前输入交给模型。
+
+运行中内存历史承载尚未由 Platform 投影完成的 assistant/tool 轮次，因此不能因为 `preferDbContextWindow=true` 或 DB 消息数不同，就在流式执行结束时用 DB 快照覆盖活跃历史。仅冷启动空历史可直接采用 DB 快照；自动压缩完成后的 DB 刷新必须把水合出的摘要/历史与当前 live Turn 尾部合并。live 尾部的起点必须是带 64 位输入 hash 且 opening/closing 配对的当前轮围栏；围栏缺失或畸形时不得把“最后一条历史 user”提升为当前轮。否则 assistant 终态提交前的时间窗会把刚完成的回答再次回退为“只有旧历史或当前 user”，异常投影还可能重新激活旧指令。纯图片/typed-parts 消息也属于 canonical 转录：增量扫描不得因文本为空而越过，内容 hash 同时覆盖文本与 `ContentPartsJson`。
 
 滚动摘要必须由尚未覆盖的新原文或尺寸驱逐原文驱动。若没有可压缩候选，或待压缩集合与尺寸驱逐克隆都只含上一代 `compact_summary`（包括超过逐字保留字节阈值的旧摘要），本次压缩必须 no-op：不调用摘要生成器，不新增 summary/coverage manifest，不更新 `CompactedBy`，诊断中的 compacted count 固定为 0，也不触发 history invalidation。为满足最小摘要输入而补读时，只能读取 `CompactedBy == null` 的 active 原文；已覆盖原文的语义已经属于对应摘要，禁止再次回流形成重复证据和套娃压缩。
 
-此决定修复压缩触发后的历史连续性；它不把“压缩时镜像”定义为理想的长期写入模型。Core 在下一次压缩前重启时仍可能存在短暂缺口，后续应由持续的 Agent History 投影或受控的 platform transcript 冷水合消除，且不得把 UI 本地状态作为模型历史源。
+共享同步器消除了“上次压缩后产生新轮次、Core 在下次压缩前重启”造成的冷启动缺口。持续的 Agent History 投影仍可作为降低水合延迟的后续优化，但不能替代水合入口的同步正确性门禁。
 
 ## 后果
 
@@ -262,7 +268,11 @@ CoordinatorCanonical 轮次的用户与 assistant 转录由平台投影器写入
 | CCR 取回失败 | 压缩 artifact 使用 session/workspace 作用域本地存储；过期/缺失时向模型返回明确错误并记录指标 |
 | 外部 Headroom 依赖不可用 | Headroom 只作为 opt-in provider；任何异常必须 passthrough 原文 |
 | RAG 压缩影响召回质量 | 先通过 Pudding eval 验证 answer quality、citation hit 和 retrieval fallback，再按知识库/助手开关启用 |
-| memory DB 留有旧消息导致新转录不再导入 | 每次压缩前按稳定 MessageId 与 durable platform Id 高水位分页镜像当前 session 的 platform `ChatMessages`；回归覆盖非空 DB 场景与 after-Id 续读 |
+| memory DB 留有旧消息导致新转录不再导入 | 每次压缩和 DB 历史水合前按稳定 MessageId 与 durable platform Id 高水位分页镜像当前 session 的 platform `ChatMessages`；两条入口共享 session 锁和同步器，回归覆盖非空 DB、冷启动与 after-Id 续读 |
+| canonical 同步失败后读取陈旧 memory DB | DB 历史水合 fail-closed，保留进程内历史和当前用户输入并记录失败；禁止继续读取陈旧快照 |
+| 当前 user 同时从 DB 与当前轮入口注入 | 镜像时保存稳定 `turnId/messageId`；水合排除当前 Turn，provider 前只由当前轮围栏路径追加一次 |
+| assistant 尚未投影时 DB 快照覆盖 live Turn | 非空活跃历史不接受 pre-projection DB 覆盖；自动压缩刷新时仅合并通过完整 hash 围栏验证的 live 当前轮尾部，缺失围栏时禁止提升最后一条历史 user |
+| 纯图片消息因空文本被增量扫描跳过 | after-Id 扫描包含所有行，仅完全无文本且无 typed parts 的行不生成上下文消息；hash 同时覆盖正文与 parts |
 | 无新原文时重复压缩旧摘要 | summary-only/无可压缩窗口直接 no-op，不写摘要、coverage 或 `CompactedBy` |
 
 ## API 决策
@@ -311,13 +321,16 @@ context.compaction.failed
 10. 大型工具输出/日志进入 LLM 前能记录 before/after tokens、压缩率、跳过原因和 artifact hash。
 11. LLM 能通过受限内部工具取回被压缩 artifact；跨 session/workspace 取回必须失败。
 12. 对同一测试集，启用输入压缩后缓存命中率不下降，答案质量通过 Pudding benchmark 门禁。
-13. memory DB 已有旧 active/summary 时，platform `ChatMessages` 的新增轮次仍会从 durable platform Id 高水位之后按 256 条有界分页幂等导入，且不全量扫描会话转录或既有 MessageId；压缩后水合可看到上一轮完整 user/assistant 转录。
+13. memory DB 已有旧 active/summary 时，platform `ChatMessages` 的新增轮次仍会从 durable platform Id 高水位之后按 256 条有界分页幂等导入，且不全量扫描会话转录或既有 MessageId；压缩和冷启动水合都能看到最新完整 user/assistant/typed-parts 转录，重复水合不产生重复消息。
 14. 仅剩旧摘要（包括超过逐字保留阈值的旧摘要）或没有可覆盖原文时，压缩结果及 diagnostics 均返回 `CompactedMessageCount=0`，且不调用摘要生成器、不新增摘要或 coverage manifest。
+15. 当前 user 已存在于 platform DB 时，水合结果按稳定 `turnId/messageId` 排除当前 Turn，最终 provider 历史中只有一个带当前轮 hash 围栏的 user 输入。
+16. Streaming 完成但 assistant 尚未投影时，后处理裁剪保留 live assistant/tool 尾部；自动压缩发生时，DB 摘要只与通过完整 hash 围栏验证的 live 当前 Turn 合并，不能回退到 pre-projection 快照，也不能把无围栏的最后一条历史 user 提升为当前 Turn。
 
 ## 相关文件
 
 - `Docs/Tasks/task40-context-compaction.md`
 - `Source/PuddingRuntime/Services/ContextPipeline.cs`
+- `Source/PuddingRuntime/Services/CanonicalChatTranscriptSynchronizer.cs`
 - `Source/PuddingRuntime/Services/ContextWindowManager.cs`
 - `Source/PuddingRuntime/Services/ContextAssemblyService.cs`
 - `Source/PuddingMemoryEngine/Entities/MessageEntity.cs`

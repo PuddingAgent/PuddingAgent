@@ -7,6 +7,34 @@
 
 ---
 
+## 2026-08-27 Agent 消息反乒乓与合并领取修订
+
+Agent 目标投递新增服务端权威 `handling_mode`，把“传递事实”和“请求执行”拆开：
+
+- `notify`：`inform`、`report_result`、`agent_reply` 且未显式要求回复。消费者不创建 Turn、不调用模型，直接把每条投递独立追加为目标 Agent 主会话的 `ChatMessage + message.created`，随后 ACK。
+- `execute`：`ask`、`request_review`、`delegate`、显式 `requires_response=true`，以及无法安全判定的旧消息。每条投递仍独立受理 canonical Turn，不能拼接成一个 Prompt。
+- 自动回复采用 fail-closed 合同：仅 `requires_response=true` 或上述三种工作意图产生最多一次终态投影；`agent_reply` 永远是 `notify`，不能再次唤醒接收 Agent。未知旧意图可以执行，但默认不自动回复。
+
+被动通知按 `workspace + target agent` 串行、跨 room 一次原子领取最多 20 条；领取只是减少数据库争抢，不合并消息正文、`messageId`、correlation/causation 或 UI 卡片。每条通知独立落盘、独立 ACK/retry/dead-letter。通知 drain 不受 Agent Busy/foreground admission 阻塞，因此接收者执行长任务时也不会继续堆积通知。
+
+`send_message` 默认 `intent=inform, requires_response=false`。只有调用方明确表达 `ask/request_review/delegate` 才创建对方执行；处理这类请求的终态答复由平台投影一次，模型不得再调用 `send_message` 发送同一终态答复。广播仍排除发送者并使用稳定 `(messageId,target)` delivery ID；同一消息重试不能扩增目标，也不能形成回声。
+
+## 2026-08-26 Delivery claim 与 Conversation Turn 所有权交接修订
+
+Composer 队列只表达“尚未被消费者认领”，不表达 Agent 如何处理消息。默认投影仅包含
+`MessageDelivery queued/retrying` 与 `ChatExecutionCommand pending`；delivery `delivering` 以及 Turn
+`leased/running/cancel_requested` 已进入执行所有权，必须从队列消失并由会话消息卡与 canonical
+行为轨迹表达。`includeTerminal=true` 仍可用于诊断完整历史。
+
+Agent-to-Agent 消息与实际获准执行的 heartbeat 在 delivery claim 后不再直接形成一条隐形 Runtime
+执行：Dispatcher 使用 delivery 派生的稳定幂等 ID 原子受理 canonical Turn，受理成功后立即 ACK
+delivery。入站 `pudding-message` 形成发送者消息卡；`turn.started`、thinking、tool 与 terminal 事件形成
+普通 Agent 处理卡。心跳遇 Busy 或 foreground demand 时继续 ACK/drop，不创建 Turn、不重试。
+
+Agent-to-Agent 原有回信语义改由 `ConversationReplyProjectionWorker` 从 committed terminal event
+可靠投影回 Message Fabric；稳定 reply MessageId 使投影重试不会重复执行 Agent。由此 Message Fabric
+只负责 claim 前排队与投递审计，Conversation command/event pipeline 负责 claim 后执行、恢复和 UI 轨迹。
+
 ## 2026-07-28 OpenAI-compatible 流式工具调用兼容修订
 
 部分标记为 OpenAI-compatible 的 Provider 会在流式 `tool_calls` 中省略 `id`、重复使用 `id`，或在同一
@@ -52,14 +80,14 @@ Conversation terminal event
 
 - 以 Hosted Service 启动并订阅 `message.deliver` / `agent.availability.changed`。
 - 每轮恢复从 `IMessageInbox` 查询存在 `queued/retrying` 投递的 Agent 目标，不能只依赖进程内见过的目标。
-- 通过原子 claim 进入 Runtime，成功 ack，失败 retry/dead-letter，并周期恢复过期 lease。
+- 通过原子 claim 获取投递；Agent/heartbeat 在 canonical Turn 受理成功后 ack，受理失败 retry/dead-letter，并周期恢复过期 lease；SubAgent continuation 保留专用 stream 执行路径。
 - `Busy` 只表示调度竞争，必须延后重试且不得触发业务失败死信阈值。
-- 入站执行确认与回复发送是两个投递事务；回复目标失效不得回滚已成功的入站 delivery，批量 claim 的每条记录必须一起完成状态迁移。
+- 入站 Turn 受理与终态回复发送是两个事务；回复目标失效不得回滚已成功的入站 delivery。可执行 Agent delivery 一条 delivery 对应一个 Turn；被动通知只允许合并 claim，不得合并消息事实、卡片或轨迹。
 - Chat 的交互队列默认只显示用户可见投递；`visibility=system` 仅供显式诊断查询，且协议 envelope 投影为上下文正文。
 
 ### Runtime 会话完整性边界
 
-`MessageDeliveryDispatcher` 与 ADR-059 `ChatExecutionWorker` 是不同的可靠性入口：前者拥有 `MessageDelivery` 的 claim/ack/retry，后者拥有 Conversation Turn/Run 的 lease/fence。二者可以继续保留各自事实源，但只要解析到同一个 Runtime `sessionId`，就必须服从同一个会话单写者。
+`MessageDeliveryDispatcher` 与 ADR-059 `ChatExecutionWorker` 是前后相接的可靠性入口：前者只拥有 Turn 受理前的 `MessageDelivery` claim/ack/retry，后者拥有受理后的 Conversation Turn/Run lease/fence。Agent-to-Agent 与 heartbeat 在受理边界转移所有权；SubAgent continuation 的专用 stream 路径仍必须服从同一个会话单写者。
 
 - `ISessionExecutionGate` 是进程内 Runtime 会话状态的唯一写入门。用户 Turn、Agent 消息、Heartbeat、直接 Runtime 调度进入 `AgentExecutionService` 时都必须先按 `sessionId` 串行化。
 - `ChatExecutionWorker` 的每 Conversation 锁只是命令领取优化，不能被视为 Runtime 全局锁；Conversation Run 的数据库 lease/fence 仍是跨进程正确性权威。
@@ -177,7 +205,7 @@ MessageEnvelope
 | `IMessageInbox` | 查询、领取、确认端点收件箱 | 决定消息目标、调用 LLM |
 | `IInternalEventBus` | 纯事件管道、优先级队列、重试、死信 | 理解 Chat UI 或房间语义 |
 | `IPriorityEventQueue` | 按事件优先级持久化推进、ack、retry、dead-letter | 持有消息领域状态、解析 room/endpoint |
-| `MessageDeliveryDispatcher` | 发现/领取持久化 Agent 投递，检查可用性，构造 Runtime 执行并 ack/retry/dead-letter | 解析 `@all`、决定群发目标、依赖浏览器在线 |
+| `MessageDeliveryDispatcher` | 发现/领取持久化 Agent 投递；Agent/heartbeat 以稳定幂等键受理 canonical Turn 后 ack，受理失败 retry/dead-letter；SubAgent continuation 保留专用 stream 路径 | 在 delivery claim 后继续持有普通 Agent Turn 的执行状态、解析 `@all`、决定群发目标、依赖浏览器在线 |
 | `AgentEventHandler` | 消费非消息类通用内部事件 | 消费 `message.deliver`、重复触发消息执行 |
 | `SessionStateManager` | 会话事件日志、实时观察、回放 | 消息路由和投递策略 |
 | `ChatApiController` | 接收 Web 客户端消息意图 | secondary fan-out、Agent 调度 |
@@ -445,13 +473,16 @@ public sealed record MessageEnvelope
 
 ```text
 Web Chat Client
-  -> IMessageSystem.SendAsync(from=user, to=agent)
-  -> MessageRouter resolves one delivery
-  -> RoomMessageLog appends public/direct transcript
-  -> MessageDelivery queued for target agent
-  -> IInternalEventBus publishes message.deliver
-  -> MessageDeliveryDispatcher atomically claims delivery and invokes Runtime
+  -> canonical SubmitTurnHandler atomically appends ChatMessage + chat_execution_command
+  -> ChatExecutionWorker claims pending command and emits turn.started
+  -> Runtime emits thinking/tool/delta/terminal events into the same Conversation timeline
   -> Agent may respond via send_message(from=agent, to=user or room)
+
+Agent/heartbeat Message Fabric ingress
+  -> MessageDeliveryDispatcher atomically claims delivery
+  -> canonical SubmitTurnHandler accepts a stable delivery-derived Turn
+  -> delivery ACK; queue ownership ends
+  -> ChatExecutionWorker and Conversation events own execution/recovery/presentation
 ```
 
 ### 5.2 用户 `@all`
@@ -656,7 +687,11 @@ Admin Chat 应从“单 Agent 对话页”转为“聊天室客户端”：
 15. Web Chat 发送给 Agent，Agent 再通过 `send_message` 主动回复用户，必须走同一条 `IMessageSystem -> MessageDelivery -> message.deliver/event/projection` 管道。
 16. 未收到 `message.deliver` 或 Runtime 重启后，`queued/retrying` 投递仍能被持久化扫描发现并进入同一原子 claim 路径。
 17. Chat 交互队列默认不显示 `visibility=system` 的内部投递；显式诊断查询返回正文投影而不是原始 envelope JSON。
-18. Composer 的消息队列只展示 `queued/delivering/retrying` 活动投递并默认收起；`delivered/dead_letter/failed/cancelled/expired` 终态记录继续持久化用于审计与显式诊断，但不常驻占用输入区。
+18. Composer 的消息队列只展示尚未认领的 `queued/retrying` delivery 与 `pending` Turn 并默认收起；认领后的 `delivering/leased/running/cancel_requested` 进入会话卡片/轨迹，终态记录继续持久化用于显式诊断，但不常驻占用输入区。
+19. `send_message` 默认通知不会创建目标 Agent Turn，也不会产生自动回复；显式工作意图最多产生一次终态回复投影。
+20. `agent_reply`、普通 `inform` 与 `report_result` 在目标 Agent Busy 时仍可领取并进入会话时间线，不依赖浏览器或 Agent 空闲。
+21. 同一 Agent 的被动通知一次最多领取 20 条，但每条保留独立 `messageId`、事件、卡片、ACK 与失败状态。
+22. 未知/旧 intent 默认不自动回复；广播排除发送者，重试复用稳定 per-target delivery ID。
 
 ---
 

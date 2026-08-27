@@ -1,6 +1,6 @@
 # ADR-081：Agent Harness 兼容边界与工具协议适配
 
-> 状态：Accepted；H0、H1 重复失败熔断与 canonical Token 归因已实现，聚合报表、部署与真实模型验收未完成
+> 状态：Accepted；H0、H1 重复失败熔断、模板单一权威源与 canonical Token 归因已实现，聚合报表、部署与真实模型验收未完成
 >
 > 日期：2026-08-26
 >
@@ -26,6 +26,9 @@ LLM 在后训练 Harness 中形成了 `rg`、`exec_command`、`write_stdin`、Co
 10. 相同 canonical 工具、参数和失败结果连续两次不变时，第二次显式返回 `execution_stalled`；后续原样调用在 Agent Loop 内阻断，改变输入或结果后才重新计数。
 11. 主/子代理身份与逐轮 Token attribution 只来自 `RuntimeExecutionIdentity`。Agent Loop 的逐 LLM round 行是 `TokenUsageEvents` 唯一归因事实，`SubAgentManager` 终态 usage 只用于运行摘要，不再重复写入该表。
 12. Streaming 必须先提交 direct Token attribution，再向 Conversation Event 管线发布 `usage`；投影器仅作失败补记并以持久父子关系和 invocation index 归因，避免 direct/fallback 竞态双写。
+13. `BuiltInAgentTemplates` 只能由 `PuddingCore` 定义；Host/UI/Runtime 共用同一实例源，不得在 Host 再声明同全名类。Low 权限投影以 V2 `DefaultToolNames + RequiresGrantToolNames` 为权威，文件读取/搜索/发现工具进入 Default，写入和 Shell 进入 Grant。
+14. 提示词不得宣称不在当前 function schema 中的工具可用；只有 `search_tools` 实际可见时才提示递延工具发现。
+15. 工具循环采用两层止损：`FailedToolCallTracker` 处理完全相同的 canonical tool+args+失败结果；`RuntimeControlService` 按 kind+component+归一化错误构造失败族指纹，参数改变也在第 5 次同族失败熔断。窗口总量阈值的保留队列容量必须不小于阈值，Buffered/Streaming 均将熔断终态报为 Failed，不得降级为普通 Cancelled。
 
 ## 3. 结果
 
@@ -66,6 +69,7 @@ LLM 在后训练 Harness 中形成了 `rg`、`exec_command`、`write_stdin`、Co
 - H0 源码：已实现；
 - 定向自动测试：已实现，结果以本次变更交付记录为准；
 - H1 canonical 重复指纹、`execution_stalled` 熔断、逐轮 Token 归因、Streaming `tool.call`、适配命中、限流等待和首块等待遥测：已实现；
+- 2026-08-27 `browser_context` 循环事故修复：模板已收敛到 Core 单一权威源，Low 投影保留读取/搜索/`search_tools`，发现提示按实际可见集生成，同失败族 5 次熔断且窗口总量阈值可达；已补定向测试；
 - H1 历史 fixture 聚合报表与进程外新数据 A/B：未实现；历史 Token 行不回填，部署前 `sub_agent:*` 汇总行不得与逐轮 `agent_llm` 相加；
 - H2 bundled ripgrep：未批准、未实现；
 - 当前 Desktop/Core 部署和真实模型主/子代理 smoke：未完成。
