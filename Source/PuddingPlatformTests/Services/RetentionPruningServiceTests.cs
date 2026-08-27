@@ -1,481 +1,152 @@
-using System.Text.Json;
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Configuration;
-using PuddingPlatform.Data;
-using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
+using PuddingPlatform.Services.StorageManagement;
 
 namespace PuddingPlatformTests.Services;
 
 /// <summary>
-/// RetentionPruningService 行为验证：
-/// 1) 从 "Retention" 节读取三张表配置并裁剪过期行（"O" 格式时间戳字典序比较安全）
-/// 2) 仅删超过保留期的行，新鲜行保留
-/// 3) conversation_events / telemetry / runtime_activity 均按各自保留期裁剪
-/// 4) chat_messages 不在白名单 → 永不裁剪
-/// 5) 白名单外表名被忽略（防注入设计副作用）
+/// RetentionPruningService（ADR-076 §5.2）调度行为专项测试。
+///
+/// 自 c3deb2d 起，服务仅负责"何时清理"（策略读取、闸门、抖动调度）；
+/// 数据库删除统一委托 StorageMaintenanceCoordinator（sealed、Channel 队列消费模型，
+/// 无法在单元测试内轻量驱动）。因此：
+///  - 本文件覆盖策略闸门与 fail-closed 合成逻辑；
+///  - 三表裁剪/归档先于删除等行为归属 Coordinator/Executor 层测试（当前缺口，另行登记）。
+///
+/// 哨兵约定：以下用例均处于 RunOnceAsync 不触达 coordinator 的安全分支，
+/// 以 null! 占位注入——若未来分支改动意外触达 coordinator 将直接 NRE 报红，
+/// 提醒测试随架构同步演进。
 /// </summary>
 [TestClass]
 public sealed class RetentionPruningServiceTests
 {
-    private static IConfiguration MakeConfiguration(params (string Key, string Value)[] entries)
+    private const string TidPlaceholder = "__TID__";
+
+    /// <summary>策略合成用 system.json 模板：__TID__ 由真实 TargetId 运行时替换。</summary>
+    private const string SyntheticPolicyJsonTemplate =
+        "{\"storageManagement\":{\"automaticCleanup\":{\"enabled\":true,\"targets\":{\"__TID__\":{\"retentionDays\":0},\"ghost-target-x\":{\"enabled\":true}}}}}";
+
+    private static (PuddingDataPaths Paths, string RootDir) MakePaths()
     {
-        var builder = new ConfigurationBuilder();
-        foreach (var (key, value) in entries)
-            builder.AddInMemoryCollection(new Dictionary<string, string?> { [key] = value });
-        return builder.Build();
+        var root = Path.Combine(Path.GetTempPath(), "pudding-retention-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        return (PuddingDataPaths.FromRoot(root), root);
     }
 
-    private static (ServiceProvider Provider, SqliteConnection Connection) CreateProvider()
+    private static string WriteSystemJson(PuddingDataPaths paths, string json)
     {
-        var connection = new SqliteConnection("DataSource=:memory:");
-        connection.Open();
-
-        var services = new ServiceCollection();
-        services.AddDbContext<PlatformDbContext>(o => o.UseSqlite(connection));
-        var provider = services.BuildServiceProvider();
-
-        using (var db = provider.GetRequiredService<PlatformDbContext>())
-        {
-            db.Database.EnsureCreated();
-        }
-
-        return (provider, connection);
+        var configPath = paths.SystemConfigFile("system.json");
+        var dir = Path.GetDirectoryName(configPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+        File.WriteAllText(configPath, json);
+        return configPath;
     }
 
     private static RetentionPruningService CreateService(
-        ServiceProvider provider, IConfiguration configuration)
-        => CreateService(provider, configuration, CreateArchiveWriter());
-
-    private static RetentionPruningService CreateService(
-        ServiceProvider provider, IConfiguration configuration, RetentionArchiveWriter archiveWriter)
+        PuddingDataPaths paths,
+        CapturingLogger logger)
         => new(
-            configuration,
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<RetentionPruningService>.Instance,
-            archiveWriter);
+            new StorageRetentionPolicyService(paths, NullLogger<StorageRetentionPolicyService>.Instance),
+            /* ADR-076 后仅在自动清理启用时触达；闸门用例以 null 哨兵占位 */
+            null!,
+            logger);
 
-    private static RetentionArchiveWriter CreateArchiveWriter()
-        => new(
-            PuddingDataPaths.FromRoot(CreateArchiveRoot()),
-            NullLogger<RetentionArchiveWriter>.Instance);
-
-    private static string CreateArchiveRoot()
-        => Path.Combine(Path.GetTempPath(), "pudding-retention-tests", Guid.NewGuid().ToString("N"));
-
-    private static ConversationEventEntity MakeConversationEvent(string conversationId, DateTimeOffset committedAt) => new()
+    private static async Task<EffectiveStoragePolicy> LoadPolicyAsync(PuddingDataPaths paths)
     {
-        ConversationId = conversationId,
-        Sequence = 1,
-        EventId = "evt-" + conversationId,
-        WorkspaceId = "default",
-        TurnId = "turn-" + conversationId,
-        Type = "test",
-        Payload = "{}",
-        CommittedAt = committedAt.ToString("O"),
-        OccurredAt = committedAt.ToString("O"),
-    };
-
-    private static TelemetryMetricEventEntity MakeTelemetry(string id, DateTimeOffset occurredAt) => new()
-    {
-        MetricId = id,
-        TraceId = "trace-" + id,
-        CorrelationId = "corr-" + id,
-        Source = "test",
-        Category = "retention-test",
-        Name = "retention.test.metric",
-        OccurredAtUtc = occurredAt.ToString("O"),
-    };
-
-    private static RuntimeActivityEntity MakeRuntimeActivity(string id, DateTimeOffset startedAt) => new()
-    {
-        ActivityId = id,
-        TraceId = "trace-" + id,
-        CorrelationId = "corr-" + id,
-        Component = "test",
-        Operation = "retention.test",
-        Status = "ok",
-        StartedAtUtc = startedAt.ToString("O"),
-    };
-
-    [TestMethod]
-    public async Task Trims_All_Three_Tables_And_Keeps_Fresh_Rows()
-    {
-        var (provider, connection) = CreateProvider();
-        await using (connection)
-        {
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                db.Set<ConversationEventEntity>().AddRange(
-                    MakeConversationEvent("old-c", DateTimeOffset.UtcNow.AddDays(-40)),
-                    MakeConversationEvent("fresh-c", DateTimeOffset.UtcNow.AddDays(-1)));
-                db.Set<TelemetryMetricEventEntity>().AddRange(
-                    MakeTelemetry("old-t", DateTimeOffset.UtcNow.AddDays(-20)),
-                    MakeTelemetry("fresh-t", DateTimeOffset.UtcNow.AddDays(-1)));
-                db.Set<RuntimeActivityEntity>().AddRange(
-                    MakeRuntimeActivity("old-r", DateTimeOffset.UtcNow.AddDays(-20)),
-                    MakeRuntimeActivity("fresh-r", DateTimeOffset.UtcNow.AddDays(-1)));
-                await db.SaveChangesAsync();
-            }
-
-            var config = MakeConfiguration(
-                ("Retention:telemetry_metric_events:RetentionDays", "14"),
-                ("Retention:runtime_activity:RetentionDays", "14"),
-                ("Retention:conversation_events:RetentionDays", "30"),
-                ("Retention:Vacuum:Enabled", "false"));
-
-            var service = CreateService(provider, config);
-            await service.RunOnceAsync();
-
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                Assert.AreEqual(1, await db.Set<ConversationEventEntity>().CountAsync(e => e.ConversationId == "fresh-c"));
-                Assert.AreEqual(0, await db.Set<ConversationEventEntity>().CountAsync(e => e.ConversationId == "old-c"));
-                Assert.AreEqual(1, await db.Set<TelemetryMetricEventEntity>().CountAsync(e => e.MetricId == "fresh-t"));
-                Assert.AreEqual(0, await db.Set<TelemetryMetricEventEntity>().CountAsync(e => e.MetricId == "old-t"));
-                Assert.AreEqual(1, await db.Set<RuntimeActivityEntity>().CountAsync(e => e.ActivityId == "fresh-r"));
-                Assert.AreEqual(0, await db.Set<RuntimeActivityEntity>().CountAsync(e => e.ActivityId == "old-r"));
-            }
-        }
+        var policyService = new StorageRetentionPolicyService(
+            paths, NullLogger<StorageRetentionPolicyService>.Instance);
+        return await policyService.GetEffectivePolicyAsync(CancellationToken.None);
     }
 
     [TestMethod]
-    public async Task Conversation_Events_Uses_30_Day_Retention()
+    public async Task Disabled_By_Policy_Short_Circuits_Skip_Sweep()
     {
-        var (provider, connection) = CreateProvider();
-        await using (connection)
-        {
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                // 20 天前：超过 telemetry/runtime 的 14 天，但未超过 conversation_events 的 30 天
-                db.Set<ConversationEventEntity>().Add(
-                    MakeConversationEvent("twenty-days", DateTimeOffset.UtcNow.AddDays(-20)));
-                await db.SaveChangesAsync();
-            }
+        var (paths, _) = MakePaths();
+        WriteSystemJson(paths, "{\"storageManagement\":{\"automaticCleanup\":{\"enabled\":false}}}");
 
-            var config = MakeConfiguration(
-                ("Retention:telemetry_metric_events:RetentionDays", "14"),
-                ("Retention:runtime_activity:RetentionDays", "14"),
-                ("Retention:conversation_events:RetentionDays", "30"),
-                ("Retention:Vacuum:Enabled", "false"));
+        var logger = new CapturingLogger();
+        var service = CreateService(paths, logger);
+        await service.RunOnceAsync();
 
-            var service = CreateService(provider, config);
-            await service.RunOnceAsync();
-
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                Assert.AreEqual(
-                    1,
-                    await db.Set<ConversationEventEntity>().CountAsync(),
-                    "conversation_events 保留 30 天：20 天前的行必须保留");
-            }
-        }
+        Assert.IsTrue(logger.ContainsMessage("disabled by policy"),
+            "策略禁用时 RunOnceAsync 应短路并记录 skip sweep 日志");
     }
 
     [TestMethod]
-    public async Task ChatMessages_Are_Never_Trimmed()
+    public async Task Corrupted_System_Json_Fails_Closed_As_Disabled()
     {
-        var (provider, connection) = CreateProvider();
-        await using (connection)
-        {
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                db.Set<ChatMessageEntity>().Add(new ChatMessageEntity
-                {
-                    MessageId = "m-old",
-                    WorkspaceId = "default",
-                    SessionId = "s1",
-                    Role = "user",
-                    Content = "hello",
-                    CreatedAt = DateTimeOffset.UtcNow.AddDays(-90).ToUnixTimeMilliseconds(),
-                });
-                await db.SaveChangesAsync();
-            }
+        var (paths, _) = MakePaths();
+        // 文件存在但无法解析 → 读取异常分支必须 fail closed（绝不按默认开启清理）
+        WriteSystemJson(paths, "{ this is not valid json ");
 
-            var config = MakeConfiguration(
-                ("Retention:telemetry_metric_events:RetentionDays", "14"),
-                ("Retention:runtime_activity:RetentionDays", "14"),
-                ("Retention:conversation_events:RetentionDays", "30"),
-                ("Retention:chat_messages:RetentionDays", "14"),
-                ("Retention:Vacuum:Enabled", "false"));
+        var logger = new CapturingLogger();
+        var service = CreateService(paths, logger);
+        await service.RunOnceAsync();
 
-            var service = CreateService(provider, config);
-            await service.RunOnceAsync(); // 不应抛异常
+        Assert.IsTrue(logger.ContainsMessage("disabled by policy"),
+            "system.json 损坏时应 fail closed 短路清理");
 
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                Assert.AreEqual(1, await db.Set<ChatMessageEntity>().CountAsync(), "chat_messages 永不裁剪");
-            }
-        }
+        var policy = await LoadPolicyAsync(paths);
+        Assert.IsFalse(policy.AutomaticCleanupEnabled, "fail closed 场景下 AutomaticCleanupEnabled 必须为 false");
+        Assert.IsTrue(policy.Warnings.Any(w => w.Contains("fail closed")),
+            "应包含 fail closed 警告文案");
     }
 
     [TestMethod]
-    public async Task Unknown_Table_Is_Ignored_Safely()
+    public async Task Policy_Synthesis_Warns_Unknown_Target_And_Suspends_Illegal_Retention()
     {
-        var (provider, connection) = CreateProvider();
-        await using (connection)
-        {
-            var config = MakeConfiguration(
-                ("Retention:not_a_real_table:RetentionDays", "14"),
-                ("Retention:Vacuum:Enabled", "false"));
+        var (paths, _) = MakePaths();
+        WriteSystemJson(paths, "{}"); // 无 storageManagement 节 → 目标清单来自代码目录定义
 
-            var service = CreateService(provider, config);
-            await service.RunOnceAsync(); // 不应抛异常
-        }
+        var baseline = await LoadPolicyAsync(paths);
+        var eligible = baseline.Targets.FirstOrDefault(t => t.AutomaticCleanupAllowed);
+        if (eligible is null)
+            Assert.Inconclusive("StorageDataClassCatalog 未定义任何允许自动清理的目标，跳过合成断言");
+        var realTargetId = eligible!.TargetId;
+
+        // retentionDays=0 属非法值（0 不代表立即删除）→ 目标挂起；ghost 目标 → 未知警告。
+        var json = SyntheticPolicyJsonTemplate.Replace(TidPlaceholder, realTargetId, StringComparison.Ordinal);
+        WriteSystemJson(paths, json);
+
+        var policy = await LoadPolicyAsync(paths);
+
+        var overridden = policy.Targets.Single(t => t.TargetId == realTargetId);
+        Assert.IsTrue(overridden.Suspended, "retentionDays=0 属非法值，目标必须挂起");
+        Assert.IsFalse(overridden.Enabled, "挂起目标同时禁用");
+        Assert.IsTrue(policy.Warnings.Any(w => w.Contains(realTargetId) && w.Contains("暂停")),
+            "非法保留期应产生挂起警告");
+        Assert.IsTrue(policy.Warnings.Any(w => w.Contains("未知策略目标 ghost-target-x")),
+            "未知目标应被忽略并警告");
     }
 
-    [TestMethod]
-    public async Task Top_Level_Scalar_Batch_Settings_Are_Applied()
+    /// <summary>轻量内存日志捕获器：用于断言关键控制流日志。</summary>
+    public sealed class CapturingLogger : ILogger<RetentionPruningService>
     {
-        var (provider, connection) = CreateProvider();
-        var recordingWriter = new RecordingRetentionArchiveWriter(
-            PuddingDataPaths.FromRoot(CreateArchiveRoot()));
+        private readonly object _gate = new();
+        private readonly List<string> _messages = [];
 
-        await using (connection)
+        public bool ContainsMessage(string fragment)
         {
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                db.Set<ConversationEventEntity>().AddRange(
-                    Enumerable.Range(0, 5)
-                        .Select(i => MakeConversationEvent(
-                            $"old-config-{i}",
-                            DateTimeOffset.UtcNow.AddDays(-40))));
-                await db.SaveChangesAsync();
-            }
-
-            var config = MakeConfiguration(
-                ("Retention:Enabled", "true"),
-                ("Retention:BatchSize", "2"),
-                ("Retention:BatchDelayMs", "0"),
-                ("Retention:MaxBatchesPerTablePerRun", "10"),
-                ("Retention:conversation_events:RetentionDays", "30"),
-                ("Retention:Vacuum:Enabled", "false"));
-
-            var service = CreateService(provider, config, recordingWriter);
-            await service.RunOnceAsync();
-
-            CollectionAssert.AreEqual(new[] { 2, 2, 1 }, recordingWriter.BatchSizes);
-        }
-    }
-
-    [TestMethod]
-    public async Task Missing_Scalar_Settings_Use_Online_Safe_Default_Batch_Size()
-    {
-        var (provider, connection) = CreateProvider();
-        var recordingWriter = new RecordingRetentionArchiveWriter(
-            PuddingDataPaths.FromRoot(CreateArchiveRoot()));
-
-        await using (connection)
-        {
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                db.Set<ConversationEventEntity>().AddRange(
-                    Enumerable.Range(0, 101)
-                        .Select(i => MakeConversationEvent(
-                            $"old-default-{i}",
-                            DateTimeOffset.UtcNow.AddDays(-40))));
-                await db.SaveChangesAsync();
-            }
-
-            var config = MakeConfiguration(
-                ("Retention:conversation_events:RetentionDays", "30"),
-                ("Retention:Vacuum:Enabled", "false"));
-
-            var service = CreateService(provider, config, recordingWriter);
-            await service.RunOnceAsync();
-
-            CollectionAssert.AreEqual(new[] { 100, 1 }, recordingWriter.BatchSizes);
-        }
-    }
-
-    [TestMethod]
-    public async Task Max_Batches_Per_Table_Defers_Remaining_Rows()
-    {
-        var (provider, connection) = CreateProvider();
-        var recordingWriter = new RecordingRetentionArchiveWriter(
-            PuddingDataPaths.FromRoot(CreateArchiveRoot()));
-
-        await using (connection)
-        {
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                db.Set<ConversationEventEntity>().AddRange(
-                    Enumerable.Range(0, 5)
-                        .Select(i => MakeConversationEvent(
-                            $"old-capped-{i}",
-                            DateTimeOffset.UtcNow.AddDays(-40))));
-                await db.SaveChangesAsync();
-            }
-
-            var config = MakeConfiguration(
-                ("Retention:Enabled", "true"),
-                ("Retention:conversation_events:RetentionDays", "30"),
-                ("Retention:BatchSize", "2"),
-                ("Retention:BatchDelayMs", "0"),
-                ("Retention:MaxBatchesPerTablePerRun", "1"),
-                ("Retention:Vacuum:Enabled", "false"));
-
-            var service = CreateService(provider, config, recordingWriter);
-            await service.RunOnceAsync();
-
-            await using var verifyScope = provider.CreateAsyncScope();
-            var verifyDb = verifyScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-            Assert.AreEqual(3, await verifyDb.Set<ConversationEventEntity>().CountAsync());
-            CollectionAssert.AreEqual(new[] { 2 }, recordingWriter.BatchSizes);
-        }
-    }
-
-    [TestMethod]
-    public async Task Disabled_Service_Does_Not_Delete_Rows()
-    {
-        var (provider, connection) = CreateProvider();
-        await using (connection)
-        {
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                db.Set<RuntimeActivityEntity>().Add(
-                    MakeRuntimeActivity("disabled-old", DateTimeOffset.UtcNow.AddDays(-40)));
-                await db.SaveChangesAsync();
-            }
-
-            var config = MakeConfiguration(
-                ("Retention:Enabled", "false"),
-                ("Retention:runtime_activity:RetentionDays", "14"));
-
-            var service = CreateService(provider, config);
-            await service.RunOnceAsync();
-
-            await using var verifyScope = provider.CreateAsyncScope();
-            var verifyDb = verifyScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-            Assert.AreEqual(1, await verifyDb.Set<RuntimeActivityEntity>().CountAsync());
-        }
-    }
-
-    [TestMethod]
-    public async Task Archives_ConversationEvents_Before_Delete()
-    {
-        var (provider, connection) = CreateProvider();
-        var archiveRoot = CreateArchiveRoot();
-        var archiveWriter = new RetentionArchiveWriter(
-            PuddingDataPaths.FromRoot(archiveRoot),
-            NullLogger<RetentionArchiveWriter>.Instance);
-
-        await using (connection)
-        {
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                db.Set<ConversationEventEntity>().Add(
-                    MakeConversationEvent("old-c", DateTimeOffset.UtcNow.AddDays(-40)));
-                await db.SaveChangesAsync();
-            }
-
-            var config = MakeConfiguration(
-                ("Retention:conversation_events:RetentionDays", "30"),
-                ("Retention:telemetry_metric_events:RetentionDays", "14"),
-                ("Retention:runtime_activity:RetentionDays", "14"),
-                ("Retention:Vacuum:Enabled", "false"));
-
-            var service = CreateService(provider, config, archiveWriter);
-            await service.RunOnceAsync();
-
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                Assert.AreEqual(0, await db.Set<ConversationEventEntity>().CountAsync(e => e.ConversationId == "old-c"));
-            }
-
-            var day = DateTimeOffset.UtcNow.UtcDateTime.ToString("yyyy-MM-dd");
-            var archiveFile = PuddingDataPaths.FromRoot(archiveRoot)
-                .PlatformRetentionArchiveFile("conversation_events", day);
-            Assert.IsTrue(File.Exists(archiveFile), $"archive file not found: {archiveFile}");
-
-            var lines = await File.ReadAllLinesAsync(archiveFile);
-            Assert.AreEqual(1, lines.Length);
-            using var doc = JsonDocument.Parse(lines[0]);
-            var root = doc.RootElement;
-            Assert.AreEqual("old-c", root.GetProperty("ConversationId").GetString());
-            Assert.AreEqual("conversation_events", root.GetProperty("table_name").GetString());
-        }
-    }
-
-    [TestMethod]
-    public async Task Archive_Failure_Aborts_Delete()
-    {
-        var (provider, connection) = CreateProvider();
-        await using (connection)
-        {
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                db.Set<ConversationEventEntity>().Add(
-                    MakeConversationEvent("old-c", DateTimeOffset.UtcNow.AddDays(-40)));
-                await db.SaveChangesAsync();
-            }
-
-            var config = MakeConfiguration(
-                ("Retention:conversation_events:RetentionDays", "30"),
-                ("Retention:telemetry_metric_events:RetentionDays", "14"),
-                ("Retention:runtime_activity:RetentionDays", "14"),
-                ("Retention:Vacuum:Enabled", "false"));
-
-            var failingWriter = new FailingRetentionArchiveWriter(
-                PuddingDataPaths.FromRoot(CreateArchiveRoot()));
-            var service = CreateService(provider, config, failingWriter);
-
-            // 归档失败 → 直调 RunOnceAsync 抛异常（生产环境由 RunLoopAsync 捕获重试）
-            await Assert.ThrowsExactlyAsync<IOException>(() => service.RunOnceAsync());
-
-            // 行未被删除（绝不先删后归档）
-            await using (var scope = provider.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-                Assert.AreEqual(1, await db.Set<ConversationEventEntity>().CountAsync(e => e.ConversationId == "old-c"));
-            }
-        }
-    }
-
-    private sealed class FailingRetentionArchiveWriter : RetentionArchiveWriter
-    {
-        public FailingRetentionArchiveWriter(PuddingDataPaths paths)
-            : base(paths, NullLogger<RetentionArchiveWriter>.Instance)
-        {
+            lock (_gate)
+                return _messages.Any(m => m.Contains(fragment, StringComparison.Ordinal));
         }
 
-        public override Task ArchiveBatchAsync<T>(
-            string tableName, IReadOnlyList<T> rows, DateTimeOffset cutoff, CancellationToken ct = default)
-            => throw new IOException("simulated archive failure");
-    }
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-    private sealed class RecordingRetentionArchiveWriter(PuddingDataPaths paths)
-        : RetentionArchiveWriter(paths, NullLogger<RetentionArchiveWriter>.Instance)
-    {
-        private readonly List<int> _batchSizes = [];
+        public bool IsEnabled(LogLevel logLevel) => true;
 
-        public int[] BatchSizes => _batchSizes.ToArray();
-
-        public override Task ArchiveBatchAsync<T>(
-            string tableName,
-            IReadOnlyList<T> rows,
-            DateTimeOffset cutoff,
-            CancellationToken ct = default)
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
         {
-            _batchSizes.Add(rows.Count);
-            return Task.CompletedTask;
+            lock (_gate)
+                _messages.Add(formatter(state, exception));
         }
     }
 }
