@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
@@ -215,6 +215,14 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
             ? review.AllowedScope ?? request.RequestedScope
             : request.RequestedScope;
         var grantedDuration = review.AllowedDuration ?? requestedDuration;
+                // P0-6：授权成功路径捕获当时的工具定义 canonical 哈希与版本（只存哈希不存 schema 全文）。
+        string? definitionHash = null;
+        int definitionVersion = 0;
+        if (isApproved)
+        {
+            definitionHash = ToolDefinitionHash.Compute(descriptor);
+            definitionVersion = await ResolveNextDefinitionVersionAsync(normalizedToolId, ct);
+        }
         var ticket = new ToolApprovalTicketRecord
         {
             TicketId = ticketId,
@@ -234,6 +242,8 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
                 ? now.Add(grantedDuration.Value)
                 : null,
             RemainingUses = isApproved && grantedScope == ToolApprovalScope.Once ? OnceTicketAllowedUses : null,
+            DefinitionHash = definitionHash,
+            DefinitionVersion = definitionVersion,
         };
         await _ticketStore.SaveAsync(ticket, ct);
         var allowlistRuleIds = isApproved
@@ -319,9 +329,19 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
         var normalizedToolId = ToolAuthorizationDefaults.NormalizeToolId(request.ToolId);
         var now = _timeProvider.GetUtcNow();
         var startedAt = now;
-        var allowlist = await FindMatchingAllowlistRuleAsync(request, normalizedToolId, now, ct);
+                var allowlist = await FindMatchingAllowlistRuleAsync(request, normalizedToolId, now, ct);
         if (allowlist is not null)
         {
+            // P0-6 漂移审计：allowlist 规则定义哈希 ≠ 当前定义时记录事件（v1 不阻断）。
+            await RecordDefinitionDriftAsync(
+                normalizedToolId,
+                descriptor,
+                allowlist.DefinitionHash,
+                allowlist.DefinitionVersion,
+                request,
+                "allowlist",
+                now,
+                ct);
             _logger?.LogInformation(
                 "[ToolApproval] check allowed source=allowlist rule={AllowlistRuleId} tool={ToolId} workspace={WorkspaceId} session={SessionId} agent={AgentInstanceId} durationMs={DurationMs}",
                 allowlist.RuleId,
@@ -359,10 +379,22 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
         var builtInPolicyApproval = TryGetBuiltInPolicyApproval(request, descriptor, normalizedToolId);
         if (builtInPolicyApproval is not null)
         {
-            var policyRule = await RecordBuiltInPolicyAllowlistHitAsync(
+                        var policyRule = await RecordBuiltInPolicyAllowlistHitAsync(
                 request,
+                descriptor,
                 normalizedToolId,
                 builtInPolicyApproval,
+                now,
+                ct);
+
+            // P0-6 漂移审计：v1 不硬阻断，仅记录事件与告警。
+            await RecordDefinitionDriftAsync(
+                normalizedToolId,
+                descriptor,
+                policyRule.DefinitionHash,
+                policyRule.DefinitionVersion,
+                request,
+                "built_in_policy",
                 now,
                 ct);
 
@@ -416,8 +448,19 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
                 continue;
             }
 
-            if (!MatchesApprovedOperation(ticket, request))
+                        if (!MatchesApprovedOperation(ticket, request))
                 continue;
+
+            // P0-6 漂移审计：ticket 定义哈希 ≠ 当前定义时记录事件（v1 不阻断）。
+            await RecordDefinitionDriftAsync(
+                normalizedToolId,
+                descriptor,
+                ticket.DefinitionHash,
+                ticket.DefinitionVersion,
+                request,
+                "ticket",
+                now,
+                ct);
 
             var eventType = ToolApprovalAuditEventType.TicketMatched;
             var isVerificationReplay = false;
@@ -1116,24 +1159,31 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
         return null;
     }
 
-    private async Task<ToolApprovalAllowlistRule> RecordBuiltInPolicyAllowlistHitAsync(
+        private async Task<ToolApprovalAllowlistRule> RecordBuiltInPolicyAllowlistHitAsync(
         ToolApprovalExecutionRequest request,
+        ToolDescriptor descriptor,
         string normalizedToolId,
         ToolApprovalBuiltInPolicyApproval approval,
         DateTimeOffset now,
         CancellationToken ct)
     {
-        var rule = await _allowlistStore.GetAsync(approval.RuleId, ct)
-                   ?? new ToolApprovalAllowlistRule
-                   {
-                       RuleId = approval.RuleId,
-                       WorkspaceId = null,
-                       ToolId = normalizedToolId,
-                       Source = ToolApprovalAllowlistRuleSource.BuiltIn,
-                       Status = ToolApprovalAllowlistRuleStatus.Enabled,
-                       Reason = approval.Reason,
-                       CreatedAtUtc = now,
-                   };
+        var rule = await _allowlistStore.GetAsync(approval.RuleId, ct);
+        if (rule is null)
+        {
+            // P0-6：内置策略规则首次落库时捕获授权时刻的定义哈希/版本。
+            rule = new ToolApprovalAllowlistRule
+            {
+                RuleId = approval.RuleId,
+                WorkspaceId = null,
+                ToolId = normalizedToolId,
+                Source = ToolApprovalAllowlistRuleSource.BuiltIn,
+                Status = ToolApprovalAllowlistRuleStatus.Enabled,
+                Reason = approval.Reason,
+                CreatedAtUtc = now,
+                DefinitionHash = ToolDefinitionHash.Compute(descriptor),
+                DefinitionVersion = await ResolveNextDefinitionVersionAsync(normalizedToolId, ct),
+            };
+        }
 
         return await RecordAllowlistRuleHitAsync(
             request,
@@ -1180,7 +1230,72 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
             CreatedAtUtc = now,
         }, ct);
 
-        return updated;
+                return updated;
+    }
+
+    /// <summary>
+    /// P0-6：存储的定义哈希与当前定义不一致（定义漂移）时写入审计事件并 log warning；
+    /// v1 不硬阻断。旧记录无哈希（null）时静默跳过（无法判定漂移）。
+    /// </summary>
+    private async Task RecordDefinitionDriftAsync(
+        string normalizedToolId,
+        ToolDescriptor descriptor,
+        string? storedDefinitionHash,
+        int storedDefinitionVersion,
+        ToolApprovalExecutionRequest request,
+        string source,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(storedDefinitionHash))
+            return;
+
+        var currentHash = ToolDefinitionHash.Compute(descriptor);
+        if (string.Equals(currentHash, storedDefinitionHash, StringComparison.Ordinal))
+            return;
+
+        _logger?.LogWarning(
+            "[ToolApproval] tool definition drift detected tool={ToolId} source={Source} storedVersion={StoredVersion} storedHash={StoredHash} currentHash={CurrentHash} workspace={WorkspaceId} session={SessionId} agent={AgentInstanceId}",
+            normalizedToolId,
+            source,
+            storedDefinitionVersion,
+            Truncate(storedDefinitionHash, 16),
+            Truncate(currentHash, 16),
+            request.WorkspaceId,
+            request.SessionId,
+            request.AgentInstanceId);
+        await SaveAuditAsync(new ToolApprovalAuditEvent
+        {
+            EventId = NewAuditEventId(),
+            EventType = ToolApprovalAuditEventType.DefinitionDriftDetected,
+            WorkspaceId = request.WorkspaceId,
+            SessionId = request.SessionId,
+            AgentInstanceId = request.AgentInstanceId,
+            UserId = request.UserId,
+            ToolId = normalizedToolId,
+            Command = ExtractCommand(request.ActualArgumentsJson),
+            ArgumentsJson = request.ActualArgumentsJson,
+            Reason = $"definition drift: storedVersion={storedDefinitionVersion} storedHash={Truncate(storedDefinitionHash, 16)} currentHash={Truncate(currentHash, 16)} source={source}",
+            CreatedAtUtc = now,
+        }, ct);
+    }
+
+    /// <summary>
+    /// P0-6：下一个定义版本 = ticket 与 allowlist 记录中同一工具已记录的最大版本 +1（无记录默认 0），
+    /// 保证同一工具的版本号随授权捕获单调递增。
+    /// </summary>
+    private async Task<int> ResolveNextDefinitionVersionAsync(string normalizedToolId, CancellationToken ct)
+    {
+        var tickets = await _ticketStore.ListAsync(ct);
+        var rules = await _allowlistStore.ListAsync(ct);
+        var maxVersion = Math.Max(
+            tickets
+                .Where(t => string.Equals(ToolAuthorizationDefaults.NormalizeToolId(t.ToolId), normalizedToolId, StringComparison.Ordinal))
+                .Max(t => (int?)t.DefinitionVersion) ?? 0,
+            rules
+                .Where(r => string.Equals(ToolAuthorizationDefaults.NormalizeToolId(r.ToolId), normalizedToolId, StringComparison.Ordinal))
+                .Max(r => (int?)r.DefinitionVersion) ?? 0);
+        return maxVersion + 1;
     }
 
     private static bool MatchesAllowlistOperation(
@@ -1858,11 +1973,14 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
             ArgumentsJson = argumentsJson,
             Source = ToolApprovalAllowlistRuleSource.AuditAgent,
             Status = ToolApprovalAllowlistRuleStatus.Enabled,
-            ApprovedByAgentInstanceId = identity.AgentInstanceId,
+                        ApprovedByAgentInstanceId = identity.AgentInstanceId,
             ApprovedByUserId = identity.UserId,
             ApprovalTicketId = ticket.TicketId,
             Reason = reason,
             CreatedAtUtc = now,
+            // P0-6：同一授权事件复用 ticket 捕获的哈希/版本，保证版本号单调且不重复递增。
+            DefinitionHash = ticket.DefinitionHash,
+            DefinitionVersion = ticket.DefinitionVersion,
         };
 
         await _allowlistStore.SaveAsync(rule, ct);

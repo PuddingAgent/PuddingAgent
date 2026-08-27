@@ -1,4 +1,4 @@
-﻿namespace PuddingCode.Tools;
+namespace PuddingCode.Tools;
 
 /// <summary>Decision returned by the automatic high-risk tool approval layer.</summary>
 public enum ToolApprovalDecision
@@ -70,10 +70,13 @@ public enum ToolApprovalAuditEventType
     TicketMismatch,
     ImplicitApproved,
     ImplicitDenied,
-    AllowlistHit,
+        AllowlistHit,
     AllowlistRuleCreated,
     AllowlistRuleUpdated,
     AllowlistRuleDisabled,
+
+    /// <summary>P0-6：授权时记录的工具定义规范哈希与当前定义不一致（v1 仅审计不阻断）。</summary>
+    DefinitionDriftDetected,
 }
 
 /// <summary>Identity boundary for submitting or checking an automatic tool approval ticket.</summary>
@@ -187,8 +190,17 @@ public sealed record ToolApprovalTicketRecord
     public required DateTimeOffset CreatedAtUtc { get; init; }
     public DateTimeOffset? DecidedAtUtc { get; init; }
     public DateTimeOffset? ExpiresAtUtc { get; init; }
-    public int? RemainingUses { get; init; }
+        public int? RemainingUses { get; init; }
     public DateTimeOffset? ConsumedAtUtc { get; init; }
+
+    /// <summary>
+    /// P0-6：授权成功时捕获的工具定义规范哈希（SHA-256，见 Runtime 侧 ToolDefinitionHash.Compute）。
+    /// 只存哈希不存 schema 全文（ADR-074）；旧记录缺失时为 null（向后兼容读取，容忍为空）。
+    /// </summary>
+    public string? DefinitionHash { get; init; }
+
+    /// <summary>P0-6：定义版本，同一工具每次授权捕获单调 +1；0 表示未记录（旧记录缺省）。</summary>
+    public int DefinitionVersion { get; init; }
 }
 
 /// <summary>Actual high-risk tool call checked against approved automatic tickets.</summary>
@@ -231,8 +243,17 @@ public sealed record ToolApprovalAllowlistRule
     public required DateTimeOffset CreatedAtUtc { get; init; }
     public DateTimeOffset? UpdatedAtUtc { get; init; }
     public DateTimeOffset? DisabledAtUtc { get; init; }
-    public long HitCount { get; init; }
+        public long HitCount { get; init; }
     public DateTimeOffset? LastHitAtUtc { get; init; }
+
+    /// <summary>
+    /// P0-6：授权创建时捕获的工具定义规范哈希（SHA-256，见 Runtime 侧 ToolDefinitionHash.Compute）。
+    /// 只存哈希不存 schema 全文（ADR-074）；旧记录/内置规则缺失时为 null（向后兼容读取）。
+    /// </summary>
+    public string? DefinitionHash { get; init; }
+
+    /// <summary>P0-6：定义版本，同一工具每次授权捕获单调 +1；0 表示未记录（旧记录缺省）。</summary>
+    public int DefinitionVersion { get; init; }
 }
 
 /// <summary>Mutation request for a tool approval allowlist rule.</summary>
