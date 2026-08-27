@@ -74,8 +74,8 @@ namespace PuddingRuntime.Services.Tools
         name: "Git Commit",
         description: "使用给定消息创建提交（commit），可先暂存文件。何时用：把已完成并验证过的改动固化为历史节点；Files 缺省时只提交已暂存内容。怎么用/坑：Message 必填，建议写清变更内容；Files 可选，传入会先 stage 再提交；未配置 user.name/user.email 会失败；无任何暂存改动时默认报错，AllowEmpty 可提交空提交（慎用）。Create a commit with the given message, optionally staging files first; use to persist verified changes as a history node; Message is required, Files are staged first when provided, user.name/user.email must be configured, and AllowEmpty should be used sparingly",
         category: ToolCategory.FileSystem,
-        permission: ToolPermissionLevel.High,
-        safety: ToolSafetyFlags.Destructive,
+        permission: ToolPermissionLevel.Low,
+        safety: ToolSafetyFlags.ConcurrencySafe,
         SortOrder = 67)]
     public sealed class GitCommitTool : PuddingToolBase<GitCommitArgs>
     {

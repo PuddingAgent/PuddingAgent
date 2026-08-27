@@ -20,8 +20,8 @@ namespace PuddingRuntime.Services.Tools
         name: "Git Stash",
         description: "将当前工作目录与索引的改动暂存（stash）起来，稍后可恢复复用。何时用：改动还没做完、不想提交，但要临时切换分支或处理其他事务。怎么用/坑：Message 可选、默认 WIP；stash 后工作区恢复干净；本工具只负责入栈，恢复需要后续的 stash pop/apply 操作；未配置 user.name/user.email 会失败。",
         category: ToolCategory.FileSystem,
-        permission: ToolPermissionLevel.Medium,
-        safety: ToolSafetyFlags.None,
+        permission: ToolPermissionLevel.Low,
+        safety: ToolSafetyFlags.ConcurrencySafe,
         SortOrder = 72)]
     public sealed class GitStashTool : PuddingToolBase<GitStashArgs>
     {
