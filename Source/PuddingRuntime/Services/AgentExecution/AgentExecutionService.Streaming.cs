@@ -357,39 +357,22 @@ public sealed partial class AgentExecutionService
         // 构建工具定义：优先用上游下发的 ToolDefinitions，否则从 SkillRuntime 构建
         var toolBuildStartedAt = DateTimeOffset.UtcNow;
         var toolBuildSw = System.Diagnostics.Stopwatch.StartNew();
-        var loadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
+                var loadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
         HashSet<string> availableToolNames;
-        List<LlmToolDefinition> allLlmTools;
+        IReadOnlyList<LlmToolDefinition> allLlmTools;
         List<LlmToolDefinition> llmTools;
         int runtimeMergedToolCount;
         try
         {
-            var runtimeTools2 = BuildRuntimeToolDefinitions(effectiveCapability, template, request);
-            availableToolNames = runtimeTools2
+            // P0-6：Turn 边界冻结工具暴露清单（与 Buffered 共用 helper）——流内所有 LLM
+            // invoke 复用同一可见集；流内 search_tools 新加载的工具下一 Turn 边界原子生效。
+            var frozenTools = BuildFrozenToolManifest(effectiveCapability, template, request, loadedToolIds);
+            availableToolNames = frozenTools.RuntimeTools
                 .Select(t => t.Name)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            allLlmTools = request.ToolDefinitions is { Count: > 0 }
-                ? request.ToolDefinitions
-                    .Where(t => availableToolNames.Contains(t.Name))
-                    .ToList()
-                : runtimeTools2.ToList();
-
-            // 合并运行时中 DB 未覆盖的工具
-            var dbToolNames2 = allLlmTools.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            runtimeMergedToolCount = 0;
-            var runtimeMergedToolNames = new List<string>();
-            foreach (var rt in runtimeTools2)
-            {
-                if (!dbToolNames2.Contains(rt.Name))
-                {
-                    allLlmTools.Add(rt);
-                    runtimeMergedToolCount++;
-                    runtimeMergedToolNames.Add(rt.Name);
-                    _logger.LogDebug("[AgentExec] Stream merged runtime tool: {Tool}", rt.Name);
-                }
-            }
-            var exposurePlan = ToolExposurePlanner.CreatePlan(allLlmTools, loadedToolIds);
-            llmTools = exposurePlan.VisibleTools.ToList();
+            allLlmTools = frozenTools.AllLlmTools;
+            llmTools = frozenTools.VisibleTools.ToList();
+            runtimeMergedToolCount = frozenTools.RuntimeMergedToolNames.Count;
 
             var terminalToolNames = llmTools
                 .Where(t => t.Name.StartsWith("terminal_", StringComparison.OrdinalIgnoreCase))
@@ -408,22 +391,22 @@ public sealed partial class AgentExecutionService
                 exposesTerminalExecute,
                 terminalToolSummary);
 
-            _logger.LogDebug(
-                "[AgentExec:Tools] Prepared streaming LLM tools session={Session} agent={Agent} template={Template} requestToolCount={RequestToolCount} runtimeToolCount={RuntimeToolCount} filteredRequestToolCount={FilteredRequestToolCount} runtimeMergedToolCount={RuntimeMergedToolCount} availableToolCount={AvailableToolCount} finalToolCount={FinalToolCount} deferredLoading={DeferredLoading} deferredToolCount={DeferredToolCount} requestTools={RequestTools} runtimeTools={RuntimeTools} mergedTools={MergedTools} finalTools={FinalTools}",
+                        _logger.LogDebug(
+                "[AgentExec:Tools] Prepared streaming LLM tools (frozen at dispatch) session={Session} agent={Agent} template={Template} requestToolCount={RequestToolCount} runtimeToolCount={RuntimeToolCount} filteredRequestToolCount={FilteredRequestToolCount} runtimeMergedToolCount={RuntimeMergedToolCount} availableToolCount={AvailableToolCount} finalToolCount={FinalToolCount} deferredLoading={DeferredLoading} deferredToolCount={DeferredToolCount} requestTools={RequestTools} runtimeTools={RuntimeTools} mergedTools={MergedTools} finalTools={FinalTools}",
                 request.SessionId,
                 instance.AgentInstanceId,
                 request.AgentTemplateId,
                 request.ToolDefinitions?.Count ?? 0,
-                runtimeTools2.Count,
+                frozenTools.RuntimeTools.Count,
                 request.ToolDefinitions is { Count: > 0 } ? allLlmTools.Count - runtimeMergedToolCount : 0,
                 runtimeMergedToolCount,
-                exposurePlan.AvailableToolCount,
+                frozenTools.ExposurePlan.AvailableToolCount,
                 llmTools.Count,
-                exposurePlan.DeferredLoadingEnabled,
-                exposurePlan.DeferredToolCount,
+                frozenTools.ExposurePlan.DeferredLoadingEnabled,
+                frozenTools.ExposurePlan.DeferredToolCount,
                 SummarizeToolDefinitions(request.ToolDefinitions),
-                SummarizeToolDefinitions(runtimeTools2),
-                SummarizeToolNames(runtimeMergedToolNames),
+                SummarizeToolDefinitions(frozenTools.RuntimeTools),
+                SummarizeToolNames(frozenTools.RuntimeMergedToolNames),
                 SummarizeToolDefinitions(llmTools));
 
             toolBuildSw.Stop();
@@ -1390,15 +1373,13 @@ public sealed partial class AgentExecutionService
                         result.Output,
                         loadedToolIds,
                         allLlmTools);
-                    if (newlyLoadedToolCount > 0)
+                                        if (newlyLoadedToolCount > 0)
                     {
+                        // P0-6：只持久化（AgentSessionManager append-only 语义不变）；
+                        // 本 Turn 冻结清单不重建，新工具下一 Turn 边界原子生效。
                         _sessionManager.RememberLoadedToolIds(request.SessionId, loadedToolIds);
-                        llmTools = ToolExposurePlanner
-                            .CreatePlan(allLlmTools, loadedToolIds)
-                            .VisibleTools
-                            .ToList();
                         _logger.LogInformation(
-                            "[AgentExec:ToolDiscovery] Stream loaded {AddedCount} tool definition(s) for next round session={Session} loadedTools={LoadedTools}",
+                            "[AgentExec:ToolDiscovery] Stream loaded {AddedCount} tool definition(s) for next dispatch (turn-frozen) session={Session} loadedTools={LoadedTools}",
                             newlyLoadedToolCount,
                             request.SessionId,
                             SummarizeToolNames(loadedToolIds));

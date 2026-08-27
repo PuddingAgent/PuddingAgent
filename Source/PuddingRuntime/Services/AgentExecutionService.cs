@@ -1242,7 +1242,78 @@ public sealed partial class AgentExecutionService
             removedSubAgentTool,
             template.AllowedSkillIds.Count,
             SummarizeToolDefinitions(filtered));
-        return ApplyToolProfile(filtered, request, capability, template);
+                return ApplyToolProfile(filtered, request, capability, template);
+    }
+
+    /// <summary>
+    /// P0-6：在用户 Turn（一次 RuntimeDispatchRequest dispatch）边界一次性构建「冻结工具清单」。
+    /// Buffered/Streaming 两条路径共用本 helper（禁止两路逻辑漂移），同一 dispatch 内所有
+    /// LLM invoke 复用 VisibleTools；turn 内 search_tools 新加载的工具只进入
+    /// AgentSessionManager（append-only 持久化语义不变，唯一所有者仍是 AgentSessionManager），
+    /// 对当前 Turn 不可见，下一个 Turn 边界原子生效。
+    /// committedToolIds = dispatch 开始时的 loadedToolIds 快照（CreatePlan committed 参数生产接线，
+    /// 防可见集收缩）。冻结清单是 dispatch 生命周期内的临时对象：不落盘、不写回。
+    /// </summary>
+    private FrozenToolManifest BuildFrozenToolManifest(
+        CapabilityPolicy? capability,
+        AgentTemplateDefinition? template,
+        RuntimeDispatchRequest request,
+        IReadOnlySet<string> committedToolIds)
+    {
+        var manifest = BuildFrozenToolManifestCore(
+            BuildRuntimeToolDefinitions(capability, template, request),
+            request.ToolDefinitions,
+            committedToolIds);
+        foreach (var merged in manifest.RuntimeMergedToolNames)
+            _logger.LogDebug("[AgentExec] Merged runtime tool: {Tool}", merged);
+        return manifest;
+    }
+
+    /// <summary>
+    /// 冻结清单纯函数核：合并 DB 下发与运行时工具定义并生成冻结暴露计划。internal 供单测直接
+    /// 验证（沿用 InternalsVisibleTo 约定）。committedToolIds 在内部做快照复制——构建完成后对
+    /// 传入集合的变化（如 turn 内 search_tools 追加）不影响已冻结的 VisibleTools；P0-4c 的
+    /// BuildLlmTools 排序稳定性由 CreatePlan 内部继续保证，此处不二次排序。
+    /// </summary>
+    internal static FrozenToolManifest BuildFrozenToolManifestCore(
+        IReadOnlyList<LlmToolDefinition> runtimeTools,
+        IReadOnlyList<LlmToolDefinition>? requestToolDefinitions,
+        IReadOnlySet<string>? committedToolIds)
+    {
+        var availableToolNames = runtimeTools
+            .Select(t => t.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var allLlmTools = requestToolDefinitions is { Count: > 0 }
+            ? requestToolDefinitions
+                .Where(t => availableToolNames.Contains(t.Name))
+                .ToList()
+            : runtimeTools.ToList();
+
+        // 合并运行时中 DB 未覆盖的工具（如 spawn_sub_agent）
+        var runtimeMergedToolNames = new List<string>();
+        if (requestToolDefinitions is { Count: > 0 })
+        {
+            var dbToolNames = allLlmTools.Select(t => t.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var rt in runtimeTools)
+            {
+                if (!dbToolNames.Contains(rt.Name))
+                {
+                    allLlmTools.Add(rt);
+                    runtimeMergedToolNames.Add(rt.Name);
+                }
+            }
+        }
+
+        var committed = committedToolIds?.ToHashSet(StringComparer.OrdinalIgnoreCase)
+            ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var exposurePlan = ToolExposurePlanner.CreatePlan(allLlmTools, committed, committed);
+        return new FrozenToolManifest(
+            runtimeTools,
+            allLlmTools,
+            exposurePlan.VisibleTools.ToList(),
+            committed,
+            runtimeMergedToolNames,
+            exposurePlan);
     }
 
     /// <summary>
@@ -1912,3 +1983,15 @@ public sealed partial class AgentExecutionService
     }
 
 }
+
+/// <summary>
+/// P0-6：dispatch 生命周期内的「Turn 冻结工具清单」——临时对象，不落盘、不写回。
+/// VisibleTools 在构建时物化，同一 dispatch 内所有 LLM invoke 复用同一集合。
+/// </summary>
+internal sealed record FrozenToolManifest(
+    IReadOnlyList<LlmToolDefinition> RuntimeTools,
+    IReadOnlyList<LlmToolDefinition> AllLlmTools,
+    IReadOnlyList<LlmToolDefinition> VisibleTools,
+    IReadOnlySet<string> CommittedToolIds,
+    IReadOnlyList<string> RuntimeMergedToolNames,
+    ToolExposurePlan ExposurePlan);

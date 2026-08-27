@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Tools;
+using PuddingRuntime.Services;
 using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntimeTests.Tools;
@@ -190,6 +191,96 @@ public sealed class ToolDiscoveryTests
             .ToArray();
         CollectionAssert.AreEqual(new[] { "allowed_database" }, loadedIds);
         Assert.IsFalse(result.Output.Contains("hidden_database", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void FrozenManifest_InTurnLoadedTool_NotVisible_NextTurnVisible()
+    {
+        var runtime = new List<LlmToolDefinition> { Definition("search_tools"), Definition("goal_read") };
+        runtime.AddRange(Enumerable.Range(0, 28).Select(index => Definition($"deferred_{index:00}")));
+
+        // committedToolIds = dispatch 开始时的 loadedToolIds 快照（生产由 BuildFrozenToolManifest 传入）
+        var committed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var manifest = AgentExecutionService.BuildFrozenToolManifestCore(runtime, null, committed);
+
+        Assert.IsTrue(manifest.ExposurePlan.DeferredLoadingEnabled);
+        Assert.AreEqual(28, manifest.ExposurePlan.DeferredToolCount);
+
+        // turn 内 search_tools 命中：loadedToolIds（session 快照副本，append-only）被追加
+        var added = ToolExposurePlanner.RegisterSearchResult(
+            "search_tools",
+            success: true,
+            """{"loaded_tool_ids":["deferred_05"]}""",
+            committed,
+            runtime);
+        Assert.AreEqual(1, added);
+
+        // 本 Turn 冻结：新加载工具对已冻结的 VisibleTools 不可见
+        CollectionAssert.DoesNotContain(
+            manifest.VisibleTools.Select(tool => tool.Name).ToArray(),
+            "deferred_05");
+
+        // 下一 Turn：以新快照重建清单 → 新工具原子生效
+        var nextManifest = AgentExecutionService.BuildFrozenToolManifestCore(runtime, null, committed);
+        CollectionAssert.Contains(
+            nextManifest.VisibleTools.Select(tool => tool.Name).ToArray(),
+            "deferred_05");
+    }
+
+    [TestMethod]
+    public void FrozenManifest_CommittedSnapshot_IsDefensiveCopy_AndWiredIntoPlan()
+    {
+        var runtime = new List<LlmToolDefinition> { Definition("search_tools"), Definition("goal_read") };
+        runtime.AddRange(Enumerable.Range(0, 28).Select(index => Definition($"deferred_{index:00}")));
+
+        var committed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "deferred_09" };
+        var manifest = AgentExecutionService.BuildFrozenToolManifestCore(runtime, null, committed);
+
+        // committed 参数生产接线生效：loadedToolIds 为空时 committed 工具仍可见（不收缩）
+        CollectionAssert.Contains(
+            manifest.VisibleTools.Select(tool => tool.Name).ToArray(),
+            "deferred_09");
+
+        // 冻结语义：构建后再改传入集合（模拟 turn 内 search_tools 追加）不影响已冻结清单
+        committed.Add("deferred_21");
+        CollectionAssert.DoesNotContain(
+            manifest.VisibleTools.Select(tool => tool.Name).ToArray(),
+            "deferred_21");
+        Assert.AreEqual(1, manifest.CommittedToolIds.Count);
+    }
+
+    [TestMethod]
+    public void FrozenManifest_MergesRuntimeOnlyTools_AndFiltersRequestDefinitions()
+    {
+        var runtime = new List<LlmToolDefinition>
+        {
+            Definition("spawn_sub_agent"),
+            Definition("goal_read"),
+            Definition("search_tools"),
+        };
+        var request = new List<LlmToolDefinition>
+        {
+            Definition("goal_read"),
+            Definition("db_only_tool"),
+        };
+
+        var manifest = AgentExecutionService.BuildFrozenToolManifestCore(
+            runtime,
+            request,
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+        // DB 下发中被 runtime 过滤掉的 db_only_tool 不进 allLlmTools；runtime 独有工具被合并
+        var allNames = manifest.AllLlmTools.Select(tool => tool.Name).ToArray();
+        CollectionAssert.DoesNotContain(allNames, "db_only_tool");
+        CollectionAssert.Contains(allNames, "spawn_sub_agent");
+        CollectionAssert.Contains(allNames, "search_tools");
+        Assert.AreEqual(2, manifest.RuntimeMergedToolNames.Count);
+
+        // 阈值内（2 ≤ 24）不启用延迟加载，全量可见
+        Assert.IsFalse(manifest.ExposurePlan.DeferredLoadingEnabled);
+        CollectionAssert.AreEquivalent(
+            allNames,
+            manifest.VisibleTools.Select(tool => tool.Name).ToArray());
     }
 
     private static LlmToolDefinition Definition(string name) => new()
