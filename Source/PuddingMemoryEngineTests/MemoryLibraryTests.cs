@@ -1059,6 +1059,71 @@ public sealed class MemoryLibraryTests
         catch (UnauthorizedAccessException) { /* expected */ }
     }
 
+    [TestMethod]
+    public void TerminalSecurity_ShouldAllowWindowsDevVerbs_NonDestructive()
+    {
+        // 看板卡 p2：cd 连锁命令（cd /d ... && git ...）此前被白名单整体拦截
+        Assert.IsTrue(TerminalSecurity.IsAllowed("cd /d E:\\repo && git status"));
+        Assert.IsTrue(TerminalSecurity.IsAllowed("cd frontend && npx tsc --noEmit"));
+        // npx 常规调用
+        Assert.IsTrue(TerminalSecurity.IsAllowed("npx create-next-app demo --yes"));
+        // Windows shell 内建（非破坏形态）
+        Assert.IsTrue(TerminalSecurity.IsAllowed("setlocal enabledelayedexpansion"));
+        Assert.IsTrue(TerminalSecurity.IsAllowed("set MY_VAR=1"));
+        Assert.IsTrue(TerminalSecurity.IsAllowed("pwsh -NoProfile -Command \"Get-ChildItem\""));
+        Assert.IsTrue(TerminalSecurity.IsAllowed("cmd /c echo hello"));
+        Assert.IsTrue(TerminalSecurity.IsAllowed("del temp.txt"));
+        Assert.IsTrue(TerminalSecurity.IsAllowed("reg query HKLM\\Software"));
+        Assert.IsTrue(TerminalSecurity.IsAllowed("dir /b Source"));
+        // 可执行扩展名变体仍放行（git.exe / npx.cmd）
+        Assert.IsTrue(TerminalSecurity.IsAllowed("git.exe status"));
+        Assert.IsTrue(TerminalSecurity.IsAllowed("npx.cmd --version"));
+    }
+
+    [TestMethod]
+    public void TerminalSecurity_ShouldBlockDestructiveWindowsPatterns()
+    {
+        // format 磁盘/分区（直接形态 + 经 pwsh 嵌套绕行）
+        try { TerminalSecurity.IsAllowed("format C:"); Assert.Fail("Expected UnauthorizedAccessException"); }
+        catch (UnauthorizedAccessException) { /* expected */ }
+
+        try { TerminalSecurity.IsAllowed("pwsh -Command \"format C:\""); Assert.Fail("Expected UnauthorizedAccessException"); }
+        catch (UnauthorizedAccessException) { /* expected */ }
+
+        // del /s /q 递归删除（直接形态 + 经 cmd 嵌套绕行）
+        try { TerminalSecurity.IsAllowed("del /s /q C:\\Windows\\*"); Assert.Fail("Expected UnauthorizedAccessException"); }
+        catch (UnauthorizedAccessException) { /* expected */ }
+
+        try { TerminalSecurity.IsAllowed("cmd /c \"del /s /q C:\\Windows\""); Assert.Fail("Expected UnauthorizedAccessException"); }
+        catch (UnauthorizedAccessException) { /* expected */ }
+
+        // rmdir /s 递归删除目录树
+        try { TerminalSecurity.IsAllowed("rmdir /s /q C:\\repo"); Assert.Fail("Expected UnauthorizedAccessException"); }
+        catch (UnauthorizedAccessException) { /* expected */ }
+
+        // reg delete 删除注册表键
+        try { TerminalSecurity.IsAllowed("reg delete HKLM\\Software\\BadKey /f"); Assert.Fail("Expected UnauthorizedAccessException"); }
+        catch (UnauthorizedAccessException) { /* expected */ }
+
+        // rm -rf 指向 Windows 盘符（经 pwsh 嵌套绕行）
+        try { TerminalSecurity.IsAllowed("pwsh -Command \"rm -rf C:\\Windows\""); Assert.Fail("Expected UnauthorizedAccessException"); }
+        catch (UnauthorizedAccessException) { /* expected */ }
+
+        // rm -rf /（验收基线：拒绝）
+        try { TerminalSecurity.IsAllowed("rm -rf /"); Assert.Fail("Expected UnauthorizedAccessException"); }
+        catch (UnauthorizedAccessException) { /* expected */ }
+
+        // 前缀匹配收紧：衍生命令不再被 cmd/reg/set 前缀放行
+        try { TerminalSecurity.IsAllowed("cmdkey /list"); Assert.Fail("Expected UnauthorizedAccessException"); }
+        catch (UnauthorizedAccessException) { /* expected */ }
+
+        try { TerminalSecurity.IsAllowed("regedit /s evil.reg"); Assert.Fail("Expected UnauthorizedAccessException"); }
+        catch (UnauthorizedAccessException) { /* expected */ }
+
+        try { TerminalSecurity.IsAllowed("setx PATH C:\\evil"); Assert.Fail("Expected UnauthorizedAccessException"); }
+        catch (UnauthorizedAccessException) { /* expected */ }
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // ContextPipeline 测试辅助方法
     // ═══════════════════════════════════════════════════════════════════

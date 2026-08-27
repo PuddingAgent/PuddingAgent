@@ -46,11 +46,20 @@ public sealed class DefaultTerminalCommandPolicy : ITerminalCommandPolicy
     /// <summary>第二层：默认允许的安全命令前缀白名单。</summary>
     public static readonly string[] DefaultWhitelist =
     [
-        "dotnet", "git", "python", "python3", "node", "npm", "npx", "pnpm", "yarn",
-        "ls", "dir", "cat", "echo", "mkdir", "rmdir",
+        // .NET / 主流运行时、包管理器与前端工具链
+        "dotnet", "git", "python", "python3", "node", "npm", "npx", "pnpm", "yarn", "bun", "docker",
+        "cargo", "go", "java", "javac", "mvn", "gradle", "pip", "pip3", "conda",
+        // 文件系统与文本查看（非破坏形态）
+        "ls", "dir", "cat", "echo", "mkdir", "rmdir", "type",
+        "cp", "mv", "copy", "move", "del", "erase", "tar", "zip", "unzip",
+        // 网络与诊断
         "curl", "wget", "ping", "nslookup", "ipconfig", "ifconfig",
-        "type", "find", "grep", "findstr", "rg", "tail", "head", "wc",
-        "cp", "mv", "copy", "move", "tar", "zip", "unzip",
+        "find", "grep", "findstr", "rg", "tail", "head", "wc",
+        // Windows shell 内建与目录导航（非破坏形态）
+        "cd", "pushd", "popd", "set", "setlocal", "endlocal", "cls", "where", "ver", "timeout",
+        // Shell 宿主与注册表查询（破坏形态由 DangerousPatterns 兜底）
+        "pwsh", "powershell", "cmd", "reg",
+        // 进程 / 系统查看
         "chmod", "chown", "whoami", "hostname", "date", "time",
         "ps", "top", "df", "du", "netstat", "ss",
     ];
@@ -78,6 +87,14 @@ public sealed class DefaultTerminalCommandPolicy : ITerminalCommandPolicy
         new(@"rm\s+(-rf?|--recursive).*/etc|.*/var|.*/usr|.*/boot", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         // PowerShell 危险命令
         new(@"Remove-Item\s+-Recurse\s+-Force\s+[A-Z]:\\", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        // Windows 磁盘/分区格式化（直接执行或经 pwsh/cmd -Command 嵌套绕行）
+        new(@"\bformat\s+[A-Za-z]:", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        // 注册表删除键：reg delete（reg query 保持允许）
+        new(@"\breg\s+delete\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        // Windows 递归删除：del /s、erase /s、rmdir /s（覆盖 del /s /q 形态）
+        new(@"\b(del|erase|rmdir)\b[^\r\n]*?/s\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        // rm -rf 指向 Windows 盘符（经 pwsh/cmd 嵌套的绕行场景）
+        new(@"\brm\s+(-rf?|--recursive)\s+[A-Za-z]:", RegexOptions.IgnoreCase | RegexOptions.Compiled),
     ];
 
     /// <summary>
@@ -190,10 +207,14 @@ public sealed class DefaultTerminalCommandPolicy : ITerminalCommandPolicy
         var firstWordEnd = trimmed.IndexOf(' ');
         var firstWord = firstWordEnd > 0 ? trimmed[..firstWordEnd] : trimmed;
 
-        // 第二层：检查白名单
-        if (!DefaultWhitelist.Any(w =>
-                firstWord.Equals(w, StringComparison.OrdinalIgnoreCase) ||
-                firstWord.StartsWith(w, StringComparison.OrdinalIgnoreCase)))
+        // 第二层：检查白名单——精确匹配，或仅接受 `<命令>.<扩展名>` 变体（git.exe、npx.cmd、pwsh.exe）。
+        // 不用纯前缀匹配：避免 cmdkey/regedit/regsvr32/setx 等衍生命令被 cmd/reg/set 前缀误放行。
+        var allowlisted = DefaultWhitelist.Any(w =>
+            firstWord.Equals(w, StringComparison.OrdinalIgnoreCase) ||
+            (firstWord.Length > w.Length
+             && firstWord.StartsWith(w, StringComparison.OrdinalIgnoreCase)
+             && firstWord[w.Length] == '.'));
+        if (!allowlisted)
         {
             return new TerminalCommandDecision(
                 Allowed: false,

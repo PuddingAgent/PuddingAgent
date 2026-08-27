@@ -126,11 +126,13 @@ public sealed class TerminalToolsTests
     }
 
     [TestMethod]
-    public async Task TerminalStart_Rejects_Cd_Command_In_Normal_Mode()
+    public async Task TerminalStart_Allows_Cd_Command_In_Normal_Mode()
     {
+        // 看板卡 p2：cd 连锁命令（cd /d ... && echo/git ...）在 Normal 模式放行
         using var scope = CreateScope();
         var start = new TerminalStartTool(scope.Manager, NullLogger<TerminalStartTool>.Instance);
-        var command = CdThenEchoCommand(scope.Root, "normal-cd-blocked");
+        var wait = new TerminalWaitTool(scope.Manager);
+        var command = CdThenEchoCommand(scope.Root, "normal-cd-ok");
 
         var startResult = await ExecuteAsync(start, $$"""
         {
@@ -138,8 +140,19 @@ public sealed class TerminalToolsTests
         }
         """);
 
-        Assert.IsFalse(startResult.Success);
-        StringAssert.Contains(startResult.Error ?? string.Empty, "不在终端白名单");
+        Assert.IsTrue(startResult.Success, startResult.Error);
+        var jobId = ReadString(startResult.Output, "job", "job_id");
+
+        var waitResult = await ExecuteAsync(wait, $$"""
+        {
+          "job_id": "{{jobId}}",
+          "wait_seconds": 5,
+          "from_offset": 0
+        }
+        """);
+
+        Assert.IsTrue(waitResult.Success, waitResult.Error);
+        StringAssert.Contains(waitResult.Output, "normal-cd-ok");
     }
 
     [TestMethod]
