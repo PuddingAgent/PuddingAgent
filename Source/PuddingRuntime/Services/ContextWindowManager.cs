@@ -12,6 +12,12 @@ using PuddingRuntime.Services.AgentLoop;
 
 namespace PuddingRuntime.Services;
 
+public sealed record HistoryHydrationOutcome(
+    bool Succeeded,
+    bool ReplacedHistory,
+    string Source,
+    Exception? Error = null);
+
 /// <summary>
 /// 上下文窗口与会话历史管理器。
 /// 负责内存历史、DB/JSONL 回填、历史裁剪与过期清理。
@@ -39,6 +45,8 @@ public sealed class ContextWindowManager
     private readonly ISessionCompactionEventEmitter? _compactionEventEmitter;
     private readonly ITelemetryMetricSink? _telemetrySink;
     private readonly IContextTierPlanner _tierPlanner;
+    private readonly ICompactionChatMessageStore? _canonicalMessageStore;
+    private readonly CompactionCoordinator _compactionCoordinator;
 
         // 工作总结重试跟踪：每个 session 注入提示词的次数和首次注入时间
     private readonly ConcurrentDictionary<string, int> _workSummaryRetryCount = new();
@@ -66,7 +74,9 @@ public sealed class ContextWindowManager
         ISessionCompactionEventEmitter? compactionEventEmitter = null,
         ITelemetryMetricSink? telemetrySink = null,
         int defaultToolCount = 50,
-        IContextTierPlanner? tierPlanner = null)
+        IContextTierPlanner? tierPlanner = null,
+        ICompactionChatMessageStore? canonicalMessageStore = null,
+        CompactionCoordinator? compactionCoordinator = null)
     {
         _sessionManager = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -83,6 +93,8 @@ public sealed class ContextWindowManager
         _telemetrySink = telemetrySink;
                 _defaultToolCount = defaultToolCount;
         _tierPlanner = tierPlanner ?? new ContextTierPlanner();
+        _canonicalMessageStore = canonicalMessageStore;
+        _compactionCoordinator = compactionCoordinator ?? new CompactionCoordinator();
 
         _strategy = new ContextCompactionStrategy(_logger, _workSummaryRetryCount, _workSummaryFirstInjectedAt);
 
@@ -254,22 +266,70 @@ public sealed class ContextWindowManager
         string sessionId,
                 int maxTokenBudget = ContextWindowConstants.DefaultMaxTokenBudget,
         CancellationToken ct = default,
-        string? query = null)
-        => (await BuildContextFromDbSnapshotAsync(sessionId, maxTokenBudget, ct, query)).Messages;
+        string? query = null,
+        string? currentMessageId = null,
+        string? currentTurnId = null)
+        => (await BuildContextFromDbSnapshotAsync(
+            sessionId,
+            maxTokenBudget,
+            ct,
+            query,
+            currentMessageId,
+            currentTurnId)).Messages;
 
     private async Task<HydratedHistorySnapshot> BuildContextFromDbSnapshotAsync(
         string sessionId,
         int maxTokenBudget = ContextWindowConstants.DefaultMaxTokenBudget,
         CancellationToken ct = default,
-        string? query = null)
+        string? query = null,
+        string? currentMessageId = null,
+        string? currentTurnId = null)
     {
         if (_memoryDbFactory is null)
             return new([], 0);
 
+        if (_canonicalMessageStore is null)
+        {
+            throw new InvalidOperationException(
+                $"Canonical ChatMessages source is required before hydrating session '{sessionId}' from the Runtime memory database.");
+        }
+
+        await using var lease = await _compactionCoordinator.AcquireAsync(sessionId, ct);
         await using var db = await _memoryDbFactory.CreateDbContextAsync(ct);
-        var entities = await db.Messages
+        var sync = await CanonicalChatTranscriptSynchronizer.SynchronizeAsync(
+            db,
+            _canonicalMessageStore,
+            sessionId,
+            fallbackWorkspaceId: null,
+            fallbackAgentId: null,
+            ct);
+        _logger.LogInformation(
+            "[AgentExec] Canonical transcript synchronized before DB hydration session={Session} rowsRead={RowsRead} imported={Imported} highWatermark={HighWatermark}",
+            sessionId,
+            sync.RowsRead,
+            sync.Imported,
+            sync.HighWatermark);
+        var queryable = db.Messages
             .AsNoTracking()
-            .Where(m => m.SessionId == sessionId && m.CompactedBy == null)
+            .Where(m => m.SessionId == sessionId && m.CompactedBy == null);
+        if (!string.IsNullOrWhiteSpace(currentTurnId))
+        {
+            var turnPrefix = currentTurnId + "\n";
+            queryable = queryable.Where(m =>
+                m.Source != "chat_transcript"
+                || m.Metadata == null
+                || !m.Metadata.StartsWith(turnPrefix));
+        }
+        else if (!string.IsNullOrWhiteSpace(currentMessageId))
+        {
+            var messageSuffix = "\n" + currentMessageId;
+            queryable = queryable.Where(m =>
+                m.Source != "chat_transcript"
+                || m.Metadata == null
+                || !m.Metadata.EndsWith(messageSuffix));
+        }
+
+        var entities = await queryable
             .OrderByDescending(m => m.CreatedAt)
             .Take(ContextWindowConstants.MaxDbFetchMessages)
             .ToListAsync(ct);
@@ -363,12 +423,14 @@ public sealed class ContextWindowManager
     /// provider 前缀缓存过期后的首次重放只携带摘要链 + 近期原文 + query 命中晋升，
     /// 不再把整个模型窗口的原文一次性重传。
     /// </summary>
-    public async Task TryHydrateStreamHistoryFromDbAsync(
+    public async Task<HistoryHydrationOutcome> TryHydrateStreamHistoryFromDbAsync(
         string sessionId,
         List<ChatMessage> history,
         int maxTokenBudget,
         CancellationToken ct,
-        string? query = null)
+        string? query = null,
+        string? currentMessageId = null,
+        string? currentTurnId = null)
     {
         try
         {
@@ -406,7 +468,13 @@ public sealed class ContextWindowManager
 
             if (_memoryDbFactory is not null)
             {
-                var dbHistory = await BuildContextFromDbSnapshotAsync(sessionId, rawBudget, ct, query);
+                var dbHistory = await BuildContextFromDbSnapshotAsync(
+                    sessionId,
+                    rawBudget,
+                    ct,
+                    query,
+                    currentMessageId,
+                    currentTurnId);
                 if (dbHistory.Messages.Count > 0)
                 {
                     hydrated = dbHistory;
@@ -425,7 +493,7 @@ public sealed class ContextWindowManager
             }
 
             if (hydrated is null || hydrated.Messages.Count == 0)
-                return;
+                return new(true, false, "no_persisted_history");
 
             // JSONL 不含压缩摘要（摘要只落 memory-DB）；JSONL 胜出时补拼摘要链，
             // 否则压缩过的会话重水合会静默丢摘要。DB 胜出路径的快照已内含摘要，不重复追加。
@@ -463,11 +531,12 @@ public sealed class ContextWindowManager
                     sessionId,
                     hydratedContext.Count,
                     existingContextCount);
-                return;
+                return new(true, false, "richer_in_memory_history");
             }
 
             history.Clear();
             history.AddRange(hydratedContext);
+            return new(true, true, hydratedFromJsonl ? "jsonl" : "memory_db");
         }
         catch (Exception ex)
         {
@@ -475,6 +544,7 @@ public sealed class ContextWindowManager
                 ex,
                 "[AgentExec] Build context from db/jsonl failed; fallback to in-memory history. session={Session}",
                 sessionId);
+            return new(false, false, "in_memory_fail_closed", ex);
         }
     }
 
@@ -636,7 +706,9 @@ public sealed class ContextWindowManager
         bool preferDbContextWindow,
         CancellationToken ct,
         string? traceId = null,
-        string? query = null)
+        string? query = null,
+        string? currentMessageId = null,
+        string? currentTurnId = null)
         => await TrimHistoryAsync(
             sessionId,
             history,
@@ -646,7 +718,9 @@ public sealed class ContextWindowManager
             agentId: null,
             ct,
             traceId: traceId,
-            query: query);
+            query: query,
+            currentMessageId: currentMessageId,
+            currentTurnId: currentTurnId);
 
     public async Task TrimHistoryAsync(
         string sessionId,
@@ -660,7 +734,9 @@ public sealed class ContextWindowManager
         int? maxInputTokens = null,
         string? agentTemplateId = null,
         string? traceId = null,
-        string? query = null)
+        string? query = null,
+        string? currentMessageId = null,
+        string? currentTurnId = null)
     {
         var autoCompacted = await TryAutoCompactAsync(
             sessionId,
@@ -673,11 +749,30 @@ public sealed class ContextWindowManager
             traceId,
             ct);
 
-        if ((preferDbContextWindow || autoCompacted) && _memoryDbFactory is not null)
+        var hasLiveContext = history.Any(message => message.Role != ChatRole.System);
+        if (preferDbContextWindow && hasLiveContext && !autoCompacted)
+        {
+            _logger.LogDebug(
+                "[AgentExec] Preserved live history instead of applying a pre-projection DB snapshot session={Session} liveCount={LiveCount}",
+                sessionId,
+                history.Count);
+        }
+
+        if ((autoCompacted || (preferDbContextWindow && !hasLiveContext))
+            && _memoryDbFactory is not null)
         {
             try
             {
-                var dbHistory = await BuildContextFromDbAsync(sessionId, maxTokenBudget, ct, query);
+                var liveCurrentTurn = autoCompacted
+                    ? CaptureCurrentTurn(history, currentMessageId, currentTurnId)
+                    : [];
+                var dbHistory = await BuildContextFromDbAsync(
+                    sessionId,
+                    maxTokenBudget,
+                    ct,
+                    query,
+                    currentMessageId,
+                    currentTurnId);
                 if (dbHistory.Count > 0)
                 {
                     var system = history.FirstOrDefault(m => m.Role == ChatRole.System);
@@ -685,6 +780,15 @@ public sealed class ContextWindowManager
                     if (system is not null)
                         history.Add(system);
                     history.AddRange(SanitizeForLlmContext(dbHistory.Where(m => m.Role != ChatRole.System)));
+                    history.AddRange(liveCurrentTurn);
+                    if (liveCurrentTurn.Count > 0)
+                    {
+                        _logger.LogInformation(
+                            "[AgentExec] Merged persisted compacted history with live current turn session={Session} persisted={PersistedCount} liveTurn={LiveTurnCount}",
+                            sessionId,
+                            dbHistory.Count,
+                            liveCurrentTurn.Count);
+                    }
                     return;
                 }
             }
@@ -698,6 +802,43 @@ public sealed class ContextWindowManager
         }
 
         TrimHistory(history, maxTokenBudget, query);
+    }
+
+    private static List<ChatMessage> CaptureCurrentTurn(
+        List<ChatMessage> history,
+        string? currentMessageId,
+        string? currentTurnId)
+    {
+        if (string.IsNullOrWhiteSpace(currentMessageId)
+            && string.IsNullOrWhiteSpace(currentTurnId))
+        {
+            return [];
+        }
+
+        var currentUserIndex = history.FindLastIndex(message => message.Role == ChatRole.User);
+        if (currentUserIndex < 0)
+            return [];
+
+        var currentUserContent = history[currentUserIndex].Content;
+        const string openingPrefix = "[CURRENT USER TURN input_sha256=";
+        var openingStart = currentUserContent?.LastIndexOf(openingPrefix, StringComparison.Ordinal) ?? -1;
+        if (openingStart < 0)
+            return [];
+
+        var hashStart = openingStart + openingPrefix.Length;
+        var hashEnd = currentUserContent!.IndexOf(']', hashStart);
+        if (hashEnd < 0)
+            return [];
+
+        var inputHash = currentUserContent[hashStart..hashEnd];
+        if (inputHash.Length != 64 || inputHash.Any(character => !Uri.IsHexDigit(character)))
+            return [];
+
+        var expectedClosing = $"[/CURRENT USER TURN input_sha256={inputHash}]";
+        if (!currentUserContent.Contains(expectedClosing, StringComparison.Ordinal))
+            return [];
+
+        return SanitizeForLlmContext(history.Skip(currentUserIndex));
     }
 
     private bool _compactionServiceNullLogged;

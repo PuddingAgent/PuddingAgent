@@ -418,6 +418,297 @@ public sealed class ContextWindowManagerTests
     }
 
     [TestMethod]
+    public async Task BuildContextFromDbAsync_ImportsCanonicalTurnsBeforeColdHydration()
+    {
+        const string sessionId = "cold1234-session";
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        db.Sessions.Add(new SessionEntity
+        {
+            SessionId = sessionId,
+            WorkspaceId = "workspace-1",
+            AgentId = "agent-1",
+            Status = "active",
+            CreatedAt = 1,
+            LastActivityAt = 100,
+            MessageCount = 2,
+        });
+        db.Messages.AddRange(
+            new MessageEntity
+            {
+                MessageId = "chat-cold1234-100",
+                SessionId = sessionId,
+                Sequence = 1,
+                Role = "user",
+                ContentType = "text",
+                Content = "旧指令：继续审查 Git 权限。",
+                Source = "chat_transcript",
+                CreatedAt = 100,
+            },
+            new MessageEntity
+            {
+                MessageId = "summary-stale",
+                SessionId = sessionId,
+                Sequence = 2,
+                Role = "system",
+                ContentType = ContextWindowConstants.CompactSummaryContentType,
+                Content = "旧摘要：当前工作是 Git 权限审查。",
+                Source = "context_compaction",
+                CreatedAt = 101,
+            });
+        await db.SaveChangesAsync();
+
+        var canonicalStore = new InMemoryCompactionChatMessageStore(
+        [
+            new ChatMessageRow
+            {
+                Id = 101,
+                MessageId = "assistant-previous",
+                TurnId = "turn-previous",
+                SessionId = sessionId,
+                WorkspaceId = "workspace-1",
+                AgentInstanceId = "agent-1",
+                Role = "agent",
+                Content = string.Empty,
+                ContentPartsJson = ContentPartsEnvelope.Encode(
+                    [new LlmImagePart("artifact-canonical-history")]),
+                CreatedAt = 200,
+            },
+            new ChatMessageRow
+            {
+                Id = 102,
+                MessageId = "user-current",
+                TurnId = "turn-current",
+                SessionId = sessionId,
+                WorkspaceId = "workspace-1",
+                AgentInstanceId = "agent-1",
+                Role = "user",
+                Content = "本轮前一条指令：先看任务看板，再推进全部任务。",
+                CreatedAt = 201,
+            },
+            new ChatMessageRow
+            {
+                Id = 103,
+                MessageId = "empty-projection-checkpoint",
+                TurnId = "turn-empty",
+                SessionId = sessionId,
+                WorkspaceId = "workspace-1",
+                AgentInstanceId = "agent-1",
+                Role = "agent",
+                Content = string.Empty,
+                ContentPartsJson = null,
+                CreatedAt = 202,
+            },
+        ]);
+        var dbFactory = new TestMemoryDbContextFactory(options);
+        var manager = CreateManager(
+            compactionService: null,
+            memoryDbFactory: dbFactory,
+            canonicalMessageStore: canonicalStore);
+
+        var history = new List<ChatMessage>();
+        await manager.TryHydrateStreamHistoryFromDbAsync(
+            sessionId,
+            history,
+            maxTokenBudget: 8_000,
+            CancellationToken.None,
+            currentMessageId: "user-current",
+            currentTurnId: "turn-current");
+        history.Add(new ChatMessage(ChatRole.User, "本轮前一条指令：先看任务看板，再推进全部任务。"));
+        var latestUser = history.Last(message => message.Role == ChatRole.User);
+
+        Assert.AreEqual("本轮前一条指令：先看任务看板，再推进全部任务。", latestUser.Content,
+            "The accepted current instruction must be appended through the explicit current-turn path.");
+        Assert.AreEqual(1, history.Count(message =>
+            message.Role == ChatRole.User
+            && message.Content == "本轮前一条指令：先看任务看板，再推进全部任务。"),
+            "Cold hydration must mirror the current row durably without duplicating it in provider history.");
+        Assert.IsTrue(history.Any(message =>
+            message.ContentParts?.OfType<LlmImagePart>().Any(part =>
+                part.ArtifactId == "artifact-canonical-history") == true),
+            "Canonical typed-parts rows must survive cold hydration even when their text projection is empty.");
+        CollectionAssert.AreEqual(new long[] { 100 }, canonicalStore.AfterIds.ToArray());
+
+        var secondHydration = await manager.BuildContextFromDbAsync(
+            sessionId,
+            currentMessageId: "user-current",
+            currentTurnId: "turn-current");
+        Assert.IsFalse(secondHydration.Any(message =>
+            message.Role == ChatRole.User
+            && message.Content == "本轮前一条指令：先看任务看板，再推进全部任务。"),
+            "The accepted current row must stay excluded from historical hydration on repeated reads.");
+        CollectionAssert.AreEqual(new long[] { 100, 103 }, canonicalStore.AfterIds.ToArray(),
+            "The durable high-water mark must advance past non-semantic rows instead of rescanning them on every hydration.");
+
+        await using var assertDb = await dbFactory.CreateDbContextAsync();
+        Assert.AreEqual(1, await assertDb.Messages.CountAsync(message =>
+            message.MessageId == "chat-cold1234-101"));
+        Assert.AreEqual(1, await assertDb.Messages.CountAsync(message =>
+            message.MessageId == "chat-cold1234-102"));
+        Assert.AreEqual("turn-current\nuser-current", await assertDb.Messages
+            .Where(message => message.MessageId == "chat-cold1234-102")
+            .Select(message => message.Metadata)
+            .SingleAsync());
+        StringAssert.Contains((await assertDb.Sessions.SingleAsync()).Metadata!,
+            "\"canonicalChatTranscriptHighWatermark\":103");
+    }
+
+    [TestMethod]
+    public async Task TrimHistoryAsync_DoesNotReplaceCompletedLiveTurnWithPreProjectionDbSnapshot()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "live1234-session", messageCount: 4, charsPerMessage: 32);
+
+        var manager = CreateManager(
+            compactionService: null,
+            memoryDbFactory: new TestMemoryDbContextFactory(options));
+        var history = new List<ChatMessage>
+        {
+            new(ChatRole.System, "system"),
+            new(ChatRole.User, "previous user"),
+            new(ChatRole.Assistant, "previous assistant"),
+            new(ChatRole.User, $"[CURRENT USER TURN input_sha256={new string('a', 64)}]current instruction[/CURRENT USER TURN input_sha256={new string('a', 64)}]"),
+            new(ChatRole.Assistant, "live assistant result that is not projected yet"),
+        };
+
+        await manager.TrimHistoryAsync(
+            "live1234-session",
+            history,
+            maxTokenBudget: 8_000,
+            preferDbContextWindow: true,
+            workspaceId: "workspace-1",
+            agentId: "agent-1",
+            CancellationToken.None,
+            currentMessageId: "user-current",
+            currentTurnId: "turn-current");
+
+        Assert.AreEqual("live assistant result that is not projected yet", history[^1].Content,
+            "Post-loop trimming must not overwrite the completed in-memory turn with a DB snapshot taken before assistant projection.");
+        Assert.IsTrue(history.Any(message => message.Content?.Contains("CURRENT USER TURN", StringComparison.Ordinal) == true));
+    }
+
+    [TestMethod]
+    public async Task TrimHistoryAsync_AfterAutoCompaction_MergesPersistedSummaryWithLiveCurrentTurn()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "merge123-session", messageCount: 4, charsPerMessage: 32);
+
+        var manager = CreateManager(
+            new FakeContextCompactionService(shouldAutoCompact: true),
+            new TestMemoryDbContextFactory(options));
+        var history = new List<ChatMessage>
+        {
+            new(ChatRole.System, "system"),
+            new(ChatRole.User, "older live user"),
+            new(ChatRole.Assistant, "older live assistant"),
+            new(ChatRole.User, $"[CURRENT USER TURN input_sha256={new string('b', 64)}]current instruction[/CURRENT USER TURN input_sha256={new string('b', 64)}]"),
+            new(ChatRole.Assistant, "live assistant result"),
+        };
+
+        await manager.TrimHistoryAsync(
+            "merge123-session",
+            history,
+            maxTokenBudget: 8_000,
+            preferDbContextWindow: true,
+            workspaceId: "workspace-1",
+            agentId: "agent-1",
+            CancellationToken.None,
+            currentMessageId: "user-current",
+            currentTurnId: "turn-current");
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                $"[CURRENT USER TURN input_sha256={new string('b', 64)}]current instruction[/CURRENT USER TURN input_sha256={new string('b', 64)}]",
+                "live assistant result",
+            },
+            history.TakeLast(2).Select(message => message.Content).ToArray(),
+            "A successful compaction DB refresh must retain the live current turn that Platform has not projected yet.");
+    }
+
+    [TestMethod]
+    public async Task TrimHistoryAsync_AfterAutoCompaction_DoesNotPromoteUnfencedHistoricalUserToCurrentTurn()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "fence123-session", messageCount: 4, charsPerMessage: 32);
+
+        var manager = CreateManager(
+            new FakeContextCompactionService(shouldAutoCompact: true),
+            new TestMemoryDbContextFactory(options));
+        var history = new List<ChatMessage>
+        {
+            new(ChatRole.System, "system"),
+            new(ChatRole.User, "historical user without a current-turn fence"),
+            new(ChatRole.Assistant, "historical assistant tail"),
+        };
+
+        await manager.TrimHistoryAsync(
+            "fence123-session",
+            history,
+            maxTokenBudget: 8_000,
+            preferDbContextWindow: true,
+            workspaceId: "workspace-1",
+            agentId: "agent-1",
+            CancellationToken.None,
+            currentMessageId: "user-current",
+            currentTurnId: "turn-current");
+
+        Assert.IsFalse(history.Any(message =>
+                message.Content == "historical user without a current-turn fence"
+                || message.Content == "historical assistant tail"),
+            "An incomplete live projection must fail closed instead of relabeling the last historical user as the accepted current turn.");
+    }
+
+    [TestMethod]
+    public async Task TryHydrateStreamHistoryFromDbAsync_FailsClosedWhenCanonicalSyncFails()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, "fail1234-session", messageCount: 4, charsPerMessage: 32);
+
+        var manager = CreateManager(
+            compactionService: null,
+            memoryDbFactory: new TestMemoryDbContextFactory(options),
+            canonicalMessageStore: new ThrowingCompactionChatMessageStore());
+        var history = new List<ChatMessage>
+        {
+            new(ChatRole.User, "newer in-memory instruction"),
+            new(ChatRole.Assistant, "newer in-memory answer"),
+        };
+
+        await manager.TryHydrateStreamHistoryFromDbAsync(
+            "fail1234-session",
+            history,
+            maxTokenBudget: 8_000,
+            CancellationToken.None,
+            currentMessageId: "user-current",
+            currentTurnId: "turn-current");
+
+        CollectionAssert.AreEqual(
+            new[] { "newer in-memory instruction", "newer in-memory answer" },
+            history.Select(message => message.Content).ToArray(),
+            "A canonical sync failure must never replace live history with a known-stale memory DB snapshot.");
+    }
+
+    [TestMethod]
     public async Task BuildContextFromDbAsync_DoesNotHydrate_ThinkingJson_As_ReasoningContent()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -1494,7 +1785,8 @@ public sealed class ContextWindowManagerTests
         ContextCompactionOptions? compactionOptions = null,
         ISessionCompactionEventEmitter? compactionEventEmitter = null,
         ITelemetryMetricSink? telemetrySink = null,
-        IPreCompactionFlushService? preCompactionFlushService = null)
+        IPreCompactionFlushService? preCompactionFlushService = null,
+        ICompactionChatMessageStore? canonicalMessageStore = null)
         => new(
             new AgentSessionManager(NullLogger<AgentSessionManager>.Instance),
             new InMemoryRuntimeSessionStore(),
@@ -1508,7 +1800,9 @@ public sealed class ContextWindowManagerTests
             compactionOptions: compactionOptions,
             compactionEventEmitter: compactionEventEmitter,
             telemetrySink: telemetrySink,
-            preCompactionFlushService: preCompactionFlushService);
+            preCompactionFlushService: preCompactionFlushService,
+            canonicalMessageStore: canonicalMessageStore
+                ?? (memoryDbFactory is null ? null : EmptyCompactionChatMessageStore.Instance));
 
     private static string CreateTempJsonlRoot()
     {
@@ -1679,6 +1973,81 @@ public sealed class ContextWindowManagerTests
 
         public Task<MemoryDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(CreateDbContext());
+    }
+
+    private sealed class InMemoryCompactionChatMessageStore(IReadOnlyList<ChatMessageRow> rows)
+        : ICompactionChatMessageStore
+    {
+        public List<long> AfterIds { get; } = [];
+
+        public Task<IReadOnlyList<ChatMessageRow>> GetForSessionAfterIdAsync(
+            string sessionId,
+            long afterId,
+            int limit,
+            CancellationToken ct = default)
+        {
+            AfterIds.Add(afterId);
+            IReadOnlyList<ChatMessageRow> result = rows
+                .Where(row => row.SessionId == sessionId && row.Id > afterId)
+                .OrderBy(row => row.Id)
+                .Take(limit)
+                .ToList();
+            return Task.FromResult(result);
+        }
+
+        public Task<IReadOnlyList<ChatMessageRow>> GetRecentForSessionAsync(
+            string sessionId,
+            int limit,
+            CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<ChatMessageRow>>(rows
+                .Where(row => row.SessionId == sessionId)
+                .OrderByDescending(row => row.Id)
+                .Take(limit)
+                .OrderBy(row => row.Id)
+                .ToList());
+
+        public Task<int> GetCountForSessionAsync(string sessionId, CancellationToken ct = default)
+            => Task.FromResult(rows.Count(row => row.SessionId == sessionId));
+    }
+
+    private sealed class EmptyCompactionChatMessageStore : ICompactionChatMessageStore
+    {
+        public static EmptyCompactionChatMessageStore Instance { get; } = new();
+
+        public Task<IReadOnlyList<ChatMessageRow>> GetForSessionAfterIdAsync(
+            string sessionId,
+            long afterId,
+            int limit,
+            CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<ChatMessageRow>>([]);
+
+        public Task<IReadOnlyList<ChatMessageRow>> GetRecentForSessionAsync(
+            string sessionId,
+            int limit,
+            CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<ChatMessageRow>>([]);
+
+        public Task<int> GetCountForSessionAsync(string sessionId, CancellationToken ct = default)
+            => Task.FromResult(0);
+    }
+
+    private sealed class ThrowingCompactionChatMessageStore : ICompactionChatMessageStore
+    {
+        public Task<IReadOnlyList<ChatMessageRow>> GetForSessionAfterIdAsync(
+            string sessionId,
+            long afterId,
+            int limit,
+            CancellationToken ct = default)
+            => throw new InvalidOperationException("canonical store unavailable");
+
+        public Task<IReadOnlyList<ChatMessageRow>> GetRecentForSessionAsync(
+            string sessionId,
+            int limit,
+            CancellationToken ct = default)
+            => throw new InvalidOperationException("canonical store unavailable");
+
+        public Task<int> GetCountForSessionAsync(string sessionId, CancellationToken ct = default)
+            => throw new InvalidOperationException("canonical store unavailable");
     }
 
     private sealed class FixedSummaryGenerator(string summary) : IContextCompactionSummaryGenerator

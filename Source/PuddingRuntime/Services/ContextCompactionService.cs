@@ -19,7 +19,6 @@ public sealed class ContextCompactionService : IContextCompactionService
     // implementation used it as Take(500), then marked messages outside the
     // summary input as compacted.
     private const int ActiveMessageLoadPageSize = 500;
-    private const int TranscriptImportPageSize = 256;
     private const int MaxMessagesPerSummaryChunk = 80;
     private const int CanonicalTranscriptEstimateSampleSize = 500;
     private const int MaxHealthEstimateSampleSize = 2000;
@@ -971,135 +970,21 @@ public sealed class ContextCompactionService : IContextCompactionService
         if (_messageStore is null)
             return;
 
-        var transcriptMessagePrefix = BuildTranscriptMessagePrefix(request.SessionId);
-        var lastImportedMessageId = await memoryDb.Messages
-            .AsNoTracking()
-            .Where(m => m.SessionId == request.SessionId
-                && m.Source == "chat_transcript"
-                && m.MessageId.StartsWith(transcriptMessagePrefix))
-            .OrderByDescending(m => m.Sequence)
-            .Select(m => m.MessageId)
-            .FirstOrDefaultAsync(ct);
-        var afterPlatformId = TryParseTranscriptPlatformId(
-            lastImportedMessageId,
-            transcriptMessagePrefix,
-            out var parsedPlatformId)
-            ? parsedPlatformId
-            : 0L;
-        var session = await memoryDb.Sessions
-            .FirstOrDefaultAsync(s => s.SessionId == request.SessionId, ct);
-        var nextSequence = await memoryDb.Messages
-            .Where(m => m.SessionId == request.SessionId)
-            .Select(m => (long?)m.Sequence)
-            .MaxAsync(ct) ?? 0;
-
-        var totalRowsRead = 0;
-        var totalImported = 0;
-        while (true)
-        {
-            var transcriptRows = await _messageStore.GetForSessionAfterIdAsync(
-                request.SessionId,
-                afterPlatformId,
-                TranscriptImportPageSize,
-                ct);
-            if (transcriptRows.Count == 0)
-                break;
-
-            totalRowsRead += transcriptRows.Count;
-            var firstRow = transcriptRows[0];
-            var lastActivityAt = transcriptRows.Max(m => m.CreatedAt);
-            var agentId = string.IsNullOrWhiteSpace(request.AgentId)
-                ? firstRow.AgentInstanceId
-                : request.AgentId;
-
-            if (session is null)
-            {
-                session = new SessionEntity
-                {
-                    SessionId = request.SessionId,
-                    WorkspaceId = request.WorkspaceId,
-                    AgentId = agentId ?? string.Empty,
-                    Status = "active",
-                    CreatedAt = firstRow.CreatedAt,
-                    LastActivityAt = lastActivityAt,
-                };
-                memoryDb.Sessions.Add(session);
-            }
-            else
-            {
-                session.WorkspaceId = string.IsNullOrWhiteSpace(session.WorkspaceId)
-                    ? request.WorkspaceId
-                    : session.WorkspaceId;
-                session.AgentId = string.IsNullOrWhiteSpace(session.AgentId)
-                    ? agentId ?? string.Empty
-                    : session.AgentId;
-                session.LastActivityAt = Math.Max(session.LastActivityAt, lastActivityAt);
-            }
-
-            var pageMessageIds = transcriptRows
-                .Select(row => BuildTranscriptMessageId(row.Id, request.SessionId))
-                .ToArray();
-            var existing = (await memoryDb.Messages
-                    .AsNoTracking()
-                    .Where(m => pageMessageIds.Contains(m.MessageId))
-                    .Select(m => m.MessageId)
-                    .ToListAsync(ct))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            var importedThisPage = 0;
-            foreach (var row in transcriptRows)
-            {
-                var messageId = BuildTranscriptMessageId(row.Id, request.SessionId);
-                if (existing.Contains(messageId))
-                    continue;
-
-                memoryDb.Messages.Add(CreateTranscriptMessage(
-                    row,
-                    request.SessionId,
-                    messageId,
-                    ++nextSequence,
-                    agentId));
-                importedThisPage++;
-            }
-
-            session.MessageCount += importedThisPage;
-            await memoryDb.SaveChangesAsync(ct);
-            totalImported += importedThisPage;
-            afterPlatformId = transcriptRows[^1].Id;
-
-            if (transcriptRows.Count < TranscriptImportPageSize)
-                break;
-        }
+        var sync = await CanonicalChatTranscriptSynchronizer.SynchronizeAsync(
+            memoryDb,
+            _messageStore,
+            request.SessionId,
+            request.WorkspaceId,
+            request.AgentId,
+            ct);
 
         _logger.LogInformation(
             "[ContextCompaction] Incrementally imported current session transcript session={SessionId} rowsRead={RowsRead} imported={Imported} highWatermark={HighWatermark}",
             request.SessionId,
-            totalRowsRead,
-            totalImported,
-            afterPlatformId);
+            sync.RowsRead,
+            sync.Imported,
+            sync.HighWatermark);
     }
-
-    private static MessageEntity CreateTranscriptMessage(
-        ChatMessageRow row,
-        string sessionId,
-        string messageId,
-        long sequence,
-        string? fallbackAgentId) => new()
-    {
-        MessageId = messageId,
-        SessionId = sessionId,
-        Sequence = sequence,
-        Role = string.IsNullOrWhiteSpace(row.Role) ? "user" : row.Role,
-        ContentType = "text",
-        Content = row.Content,
-        ThinkingJson = row.ThinkingJson,
-        UsageJson = row.UsageJson,
-        AgentId = string.IsNullOrWhiteSpace(row.AgentInstanceId) ? fallbackAgentId : row.AgentInstanceId,
-        Source = "chat_transcript",
-        CreatedAt = row.CreatedAt,
-        CanonicalContentHash = CompositionSnapshot.Sha256Hex(row.Content ?? string.Empty),
-        AttachmentsJson = row.ContentPartsJson,
-    };
 
     private static async Task<List<MessageEntity>> LoadActiveMessagesAsync(
         MemoryDbContext db,
@@ -1380,24 +1265,6 @@ public sealed class ContextCompactionService : IContextCompactionService
         if (string.IsNullOrEmpty(text) || text.Length <= maxLength)
             return text;
         return text[..maxLength] + "…";
-    }
-
-    private static string BuildTranscriptMessagePrefix(string sessionId) =>
-        $"chat-{sessionId[..Math.Min(8, sessionId.Length)]}-";
-
-    private static string BuildTranscriptMessageId(long transcriptId, string sessionId) =>
-        $"{BuildTranscriptMessagePrefix(sessionId)}{transcriptId}";
-
-    private static bool TryParseTranscriptPlatformId(
-        string? messageId,
-        string expectedPrefix,
-        out long platformId)
-    {
-        platformId = 0;
-        return !string.IsNullOrWhiteSpace(messageId)
-            && messageId.StartsWith(expectedPrefix, StringComparison.Ordinal)
-            && long.TryParse(messageId.AsSpan(expectedPrefix.Length), out platformId)
-            && platformId >= 0;
     }
 
     private static SummaryInputWindow SelectSummaryInputWindow(MinimumInputExpansion expandedInput)
