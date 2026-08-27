@@ -45,6 +45,19 @@ Message delivery reliability and Conversation Turn reliability remain separate d
 - `ContextWindowManager` repairs a richer in-memory snapshot before deciding whether to keep it over a shorter persisted snapshot.
 - `LlmInvocationService` records repairs, while `OpenAiLlmGateway` normalizes again as the final OpenAI-compatible wire-protocol guard.
 
+## 2026-08-27 Anti-Ping-Pong and Batch-Claim Correction
+
+The protocol intent is now enforced by the server rather than left as prompt guidance:
+
+- `inform`, `report_result`, and `agent_reply` with no explicit response request are `notify` deliveries. They append one canonical message/event per delivery to the target Agent's main Conversation and never invoke the model.
+- `ask`, `request_review`, `delegate`, and explicit `requires_response=true` are `execute` deliveries. Each delivery is admitted as its own canonical Turn.
+- Unknown legacy messages remain executable so work is not silently lost, but automatic reply projection fails closed unless the response contract is explicit.
+- A committed executable response is projected at most once as `intent=agent_reply, requires_response=false`; that projected message is passive and cannot trigger another reply.
+- The notification consumer atomically claims up to 20 deliveries for the same workspace/Agent across rooms, including while the Agent is busy. It then appends and ACKs each fact separately; batch claim is not content batching.
+- Broadcast routing excludes the sender and keeps a stable per-`(messageId,target)` delivery identity, so a publisher retry cannot multiply recipients.
+
+This closes the observed A-to-B-to-A amplification path without preventing deliberate delegation. A model may still explicitly create another work request, but status reports and terminal answers do not recursively create Turns.
+
 Still pending after V1.0:
 
 - Idle-state gating before claim and execution.
@@ -57,9 +70,9 @@ The current implementation proves the path can run. The next implementation pass
 
 ## Non-Goals
 
-V1 does not implement:
+V1.2 still does not implement:
 
-- Loop guard.
+- Adversarial explicit-work loop detection beyond the response-contract guard.
 - Hop count or max hop policy.
 - Sliding-window counters.
 - Similar-content detection.
@@ -478,9 +491,12 @@ After success:
 - The target agent receives a direct durable delivery.
 - The subscription-driven dispatcher claims and executes a target-agent delivery from `message.deliver`.
 - Successful execution marks the delivery delivered.
+- Default `inform` and `report_result` deliveries become visible without model execution.
+- Explicit work requests create one target Turn and at most one passive terminal reply.
+- Passive notifications may be claimed in a bounded batch, while preserving independent message and delivery facts.
 - Failed execution retries according to the simple V1 state machine.
 - Logs and durable tables can reconstruct message send, delivery claims, dispatch attempts, retries, and acknowledgements.
-- V1 does not implement loop guard or sliding-window controls.
+- V1.2 implements response-contract loop termination and stable delivery deduplication; sliding-window abuse controls remain deferred.
 
 V1.1 success criteria:
 
@@ -496,11 +512,11 @@ V2 should be designed from V1 telemetry.
 Deferred topics:
 
 - Sliding-window message counters.
-- Loop and ping-pong detection.
+- Similar-content or adversarial explicit-work loop detection beyond the response-contract guard.
 - Similar-content detection.
 - Dynamic collaboration depth policy.
 - Priority and fairness scheduling.
-- Batch consumption for idle agents.
+- Fairness tuning for bounded passive-notification batch consumption.
 - Smarter `waiting_event` wakeup matching.
 - `@all` rate limiting.
 - Collaboration quality scoring.
