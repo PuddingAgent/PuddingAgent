@@ -21,6 +21,9 @@ public sealed class SessionSteeringMessageEntity
     [Required, MaxLength(64), Column("session_id")]
     public string SessionId { get; set; } = string.Empty;
 
+    [Required, MaxLength(64), Column("target_turn_id")]
+    public string TargetTurnId { get; set; } = string.Empty;
+
     [MaxLength(64), Column("agent_id")]
     public string? AgentId { get; set; }
 

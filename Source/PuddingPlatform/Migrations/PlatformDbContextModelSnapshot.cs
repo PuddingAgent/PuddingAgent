@@ -587,6 +587,12 @@ namespace PuddingPlatform.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("status");
 
+                    b.Property<string>("TargetTurnId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("target_turn_id");
+
                     b.Property<string>("SubAgentId")
                         .HasMaxLength(64)
                         .HasColumnType("TEXT")
@@ -1512,7 +1518,7 @@ namespace PuddingPlatform.Migrations
 
                     b.HasIndex("WorkspaceId", "CreatedAtUtc");
 
-                    b.HasIndex("SessionId", "Status", "Priority");
+                    b.HasIndex("SessionId", "TargetTurnId", "Status", "Priority");
 
                     b.ToTable("session_steering_messages", "platform");
                 });

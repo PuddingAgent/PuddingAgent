@@ -4,11 +4,11 @@ using PuddingCode.Platform;
 namespace PuddingPlatform.Services.Conversation;
 
 /// <summary>
-/// ADR-059: Steering Handler — uses IExecutionControlService as single entry.
-/// Eliminates the dual-ID and triple-write problems.
+/// Steering application boundary. It validates the target turn against the
+/// canonical execution command and writes the durable queue consumed by Runtime.
 /// </summary>
 public sealed class CreateSteeringHandler(
-    IExecutionControlService controlService,
+    SessionSteeringService steeringService,
     IExecutionCommandReader commandReader,
     ILogger<CreateSteeringHandler> logger) : ICreateSteeringHandler
 {
@@ -23,19 +23,36 @@ public sealed class CreateSteeringHandler(
             throw new InvalidOperationException(
                 $"Steering rejected: turn is {cmd.Status}.");
 
-        var receipt = await controlService.SubmitAsync(
-            new ExecutionControlCommand(
-                ConversationId: command.ConversationId,
-                TurnId: command.TurnId,
-                Kind: ControlMessageKind.Steering,
-                Payload: command.Text,
-                SourceUserId: command.UserId,
+        if (!string.IsNullOrWhiteSpace(command.WorkspaceId)
+            && !string.Equals(command.WorkspaceId, cmd.WorkspaceId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Steering rejected: workspace does not match the active turn.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(command.AgentId)
+            && !string.Equals(command.AgentId, cmd.AgentInstanceId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Steering rejected: agent does not match the active turn.");
+        }
+
+        var steering = await steeringService.CreateAsync(
+            new CreateSessionSteeringMessage(
+                WorkspaceId: cmd.WorkspaceId,
+                SessionId: cmd.ConversationId,
+                TargetTurnId: cmd.TurnId,
+                AgentId: cmd.AgentInstanceId,
+                MessageText: command.Text,
+                SourceQueueItemId: command.SourceQueueItemId,
+                CreatedBy: command.UserId,
                 Priority: command.Priority),
             ct);
 
-        logger.LogInformation("[Steering] conv={ConvId} turn={TurnId} controlId={ControlId}",
-            command.ConversationId, command.TurnId, receipt.ControlId);
+        logger.LogInformation(
+            "[Steering] accepted conv={ConvId} turn={TurnId} steeringId={SteeringId}",
+            command.ConversationId,
+            command.TurnId,
+            steering.SteeringId);
 
-        return new CreateSteeringResult(receipt.ControlId);
+        return new CreateSteeringResult(steering.SteeringId);
     }
 }

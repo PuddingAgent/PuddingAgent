@@ -50,6 +50,12 @@ public sealed record SubmitTurnCommand(
     /// 因而普通客户端不能伪造 gateway_* 回复路由事实。
     /// </summary>
     public bool IsTrustedGatewayIngress { get; init; }
+
+    /// <summary>
+    /// Only the in-process Message Fabric dispatcher may set this flag. HTTP
+    /// controllers do not map it, so clients cannot forge reply-routing facts.
+    /// </summary>
+    public bool IsTrustedMessageFabricIngress { get; init; }
 }
 
 public sealed record RequestTurnCancellationCommand(
@@ -62,7 +68,17 @@ public sealed record CreateSteeringCommand(
     string TurnId,
     string Text,
     int Priority,
-    string UserId);
+    string UserId)
+{
+    /// <summary>Optional route fence supplied by HTTP callers.</summary>
+    public string? WorkspaceId { get; init; }
+
+    /// <summary>Optional Agent fence supplied by clients with an Agent-scoped view.</summary>
+    public string? AgentId { get; init; }
+
+    /// <summary>Optional UI queue item that was converted from queued to steering.</summary>
+    public string? SourceQueueItemId { get; init; }
+}
 
 public sealed record RequestCompactionCommand(
     string ConversationId,

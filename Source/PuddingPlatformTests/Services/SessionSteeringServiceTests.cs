@@ -20,17 +20,21 @@ public sealed class SessionSteeringServiceTests
         var created = await service.CreateAsync(new CreateSessionSteeringMessage(
             WorkspaceId: "default",
             SessionId: "session-1",
+            TargetTurnId: "turn-1",
             AgentId: "agent-1",
             MessageText: "请改为先检查错误日志。",
             SourceQueueItemId: "queue-1",
             CreatedBy: "admin",
             Priority: 1000));
 
-        var consumed = await service.ConsumeNextAsync("session-1", "agent-1", 2);
-        var consumedAgain = await service.ConsumeNextAsync("session-1", "agent-1", 3);
+        var wrongTurn = await service.ConsumeNextAsync("session-1", "agent-1", "turn-2", 1);
+        var consumed = await service.ConsumeNextAsync("session-1", "agent-1", "turn-1", 2);
+        var consumedAgain = await service.ConsumeNextAsync("session-1", "agent-1", "turn-1", 3);
 
+        Assert.IsNull(wrongTurn);
         Assert.IsNotNull(consumed);
         Assert.AreEqual(created.SteeringId, consumed.SteeringId);
+        Assert.AreEqual("turn-1", consumed.TargetTurnId);
         Assert.AreEqual("请改为先检查错误日志。", consumed.MessageText);
         Assert.AreEqual(2, consumed.Round);
         Assert.IsNull(consumedAgain);

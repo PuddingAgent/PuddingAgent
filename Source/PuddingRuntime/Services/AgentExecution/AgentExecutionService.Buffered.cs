@@ -1323,6 +1323,37 @@ public sealed partial class AgentExecutionService
                     ReasoningContent: llmResp.ReasoningContent,
                     ContinuationState: llmResp.ContinuationState));
 
+                // Steering may arrive while the model is producing what would otherwise be
+                // the final response. Consume it at this safe boundary and keep the same Turn
+                // alive for one more model request instead of leaking it into a later Turn.
+                if (round < maxRounds - 1)
+                {
+                    var lateSteeringCount = await TryInjectSteeringMessageAsync(
+                        request,
+                        instance.AgentInstanceId,
+                        history,
+                        round,
+                        execTrace,
+                        ct);
+                    if (lateSteeringCount > 0)
+                    {
+                        _journal.Record(request.SessionId, new TurnRecord
+                        {
+                            Round = round,
+                            StartedAt = turnStart,
+                            CompletedAt = DateTimeOffset.UtcNow,
+                            Status = "CONTINUE",
+                            MessageSummary = $"Applied {lateSteeringCount} late steering message(s).",
+                        });
+                        _logger.LogInformation(
+                            "[AgentExec:Steering] Continuing after {Count} late steering message(s) session={Session} round={Round}",
+                            lateSteeringCount,
+                            request.SessionId,
+                            round + 1);
+                        continue;
+                    }
+                }
+
                 var loopResp = AgentLoopResponse.Parse(rawText);
                 finalMessage = loopResp.Message ?? rawText;
                 if (expectedOutputTracker.ShouldAutoComplete(loopResp, finalMessage))

@@ -9,6 +9,7 @@ namespace PuddingPlatform.Services;
 public sealed record CreateSessionSteeringMessage(
     string WorkspaceId,
     string SessionId,
+    string TargetTurnId,
     string? AgentId,
     string MessageText,
     string? SourceQueueItemId,
@@ -39,15 +40,37 @@ public sealed class SessionSteeringService : ISessionSteeringService
         var text = request.MessageText.Trim();
         if (string.IsNullOrWhiteSpace(text))
             throw new ArgumentException("Steering message cannot be empty.", nameof(request));
+        if (string.IsNullOrWhiteSpace(request.TargetTurnId))
+            throw new ArgumentException("Steering target turn cannot be empty.", nameof(request));
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var sourceQueueItemId = string.IsNullOrWhiteSpace(request.SourceQueueItemId)
+            ? null
+            : request.SourceQueueItemId.Trim();
+        if (sourceQueueItemId is not null)
+        {
+            var existing = await db.SessionSteeringMessages
+                .AsNoTracking()
+                .Where(item => item.WorkspaceId == request.WorkspaceId
+                    && item.SessionId == request.SessionId
+                    && item.TargetTurnId == request.TargetTurnId
+                    && item.SourceQueueItemId == sourceQueueItemId
+                    && (item.Status == SessionSteeringStatuses.Pending
+                        || item.Status == SessionSteeringStatuses.Consumed))
+                .OrderBy(item => item.Id)
+                .FirstOrDefaultAsync(ct);
+            if (existing is not null)
+                return existing;
+        }
+
         var entity = new SessionSteeringMessageEntity
         {
             SteeringId = Guid.NewGuid().ToString("N"),
             WorkspaceId = request.WorkspaceId,
             SessionId = request.SessionId,
+            TargetTurnId = request.TargetTurnId.Trim(),
             AgentId = string.IsNullOrWhiteSpace(request.AgentId) ? null : request.AgentId.Trim(),
-            SourceQueueItemId = string.IsNullOrWhiteSpace(request.SourceQueueItemId) ? null : request.SourceQueueItemId.Trim(),
+            SourceQueueItemId = sourceQueueItemId,
             MessageText = text,
             Priority = Math.Clamp(request.Priority, 0, 1000),
             CreatedBy = string.IsNullOrWhiteSpace(request.CreatedBy) ? null : request.CreatedBy.Trim(),
@@ -62,10 +85,11 @@ public sealed class SessionSteeringService : ISessionSteeringService
     public async Task<ConsumedSessionSteeringMessage?> ConsumeNextAsync(
         string sessionId,
         string? agentId,
+        string targetTurnId,
         int round,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(sessionId))
+        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(targetTurnId))
             return null;
 
         var now = DateTimeOffset.UtcNow;
@@ -91,8 +115,10 @@ public sealed class SessionSteeringService : ISessionSteeringService
         }
 
         var normalizedAgentId = string.IsNullOrWhiteSpace(agentId) ? null : agentId.Trim();
+        var normalizedTargetTurnId = targetTurnId.Trim();
         var pending = candidates
             .Where(m => m.Status == SessionSteeringStatuses.Pending
+                && m.TargetTurnId == normalizedTargetTurnId
                 && (m.AgentId == null || m.AgentId == normalizedAgentId))
             .OrderByDescending(m => m.Priority)
             .ThenBy(m => m.CreatedAtUtc)
@@ -107,13 +133,18 @@ public sealed class SessionSteeringService : ISessionSteeringService
         await db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
-            "[SessionSteering] Consumed steering={SteeringId} session={Session} agent={Agent} round={Round}",
-            pending.SteeringId, pending.SessionId, pending.AgentId ?? "(any)", round);
+            "[SessionSteering] Consumed steering={SteeringId} session={Session} turn={Turn} agent={Agent} round={Round}",
+            pending.SteeringId,
+            pending.SessionId,
+            pending.TargetTurnId,
+            pending.AgentId ?? "(any)",
+            round);
 
         return new ConsumedSessionSteeringMessage(
             pending.SteeringId,
             pending.WorkspaceId,
             pending.SessionId,
+            pending.TargetTurnId,
             pending.AgentId,
             pending.MessageText,
             pending.Priority,

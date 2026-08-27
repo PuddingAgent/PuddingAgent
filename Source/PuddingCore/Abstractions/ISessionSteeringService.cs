@@ -7,6 +7,7 @@ public sealed record ConsumedSessionSteeringMessage(
     string SteeringId,
     string WorkspaceId,
     string SessionId,
+    string TargetTurnId,
     string? AgentId,
     string MessageText,
     int Priority,
@@ -22,6 +23,7 @@ public interface ISessionSteeringService
     Task<ConsumedSessionSteeringMessage?> ConsumeNextAsync(
         string sessionId,
         string? agentId,
+        string targetTurnId,
         int round,
         CancellationToken ct = default);
 }

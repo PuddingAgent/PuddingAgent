@@ -85,15 +85,56 @@ public class ConversationTurnsController : ControllerBase
 
     /// <summary>Steering — POST /{conversationId}/turns/{turnId}/steering</summary>
     [HttpPost("{conversationId}/turns/{turnId}/steering")]
-    public IActionResult CreateSteering(
+    public async Task<IActionResult> CreateSteering(
         [FromRoute] string conversationId,
         [FromRoute] string turnId,
-        [FromBody] SteeringHttpRequest request)
+        [FromBody] SteeringHttpRequest request,
+        [FromHeader(Name = "X-Workspace-Id")] string workspaceId,
+        [FromServices] ICreateSteeringHandler handler,
+        CancellationToken ct)
     {
-        return Problem(
-            statusCode: StatusCodes.Status501NotImplemented,
-            title: "Steering is not available",
-            detail: "The Runtime control consumer is not implemented; the command was not accepted.");
+        var errors = new Dictionary<string, string[]>();
+        AddRequiredIdError(errors, nameof(conversationId), conversationId, 64);
+        AddRequiredIdError(errors, nameof(turnId), turnId, 64);
+        AddRequiredIdError(errors, nameof(workspaceId), workspaceId, 64);
+        if (string.IsNullOrWhiteSpace(request.Text))
+            errors[nameof(request.Text)] = ["Steering text is required."];
+        else if (request.Text.Length > 32_768)
+            errors[nameof(request.Text)] = ["Steering text cannot exceed 32768 characters."];
+
+        if (errors.Count > 0)
+        {
+            return ValidationProblem(new ValidationProblemDetails(errors)
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "The steering request is invalid.",
+            });
+        }
+
+        try
+        {
+            var result = await handler.HandleAsync(
+                new CreateSteeringCommand(
+                    conversationId,
+                    turnId,
+                    request.Text,
+                    Math.Clamp(request.Priority, 0, 1000),
+                    ResolveUserId())
+                {
+                    WorkspaceId = workspaceId,
+                    AgentId = request.AgentId,
+                    SourceQueueItemId = request.SourceQueueItemId,
+                },
+                ct);
+            return Accepted(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Steering was not accepted",
+                detail: ex.Message);
+        }
     }
 
     private string ResolveUserId() =>
@@ -178,4 +219,6 @@ public sealed record SteeringHttpRequest
 {
     public required string Text { get; init; }
     public int Priority { get; init; } = 100;
+    public string? AgentId { get; init; }
+    public string? SourceQueueItemId { get; init; }
 }

@@ -362,7 +362,7 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
         {
             e.ToTable("session_steering_messages");
             e.HasIndex(m => m.SteeringId).IsUnique();
-            e.HasIndex(m => new { m.SessionId, m.Status, m.Priority });
+            e.HasIndex(m => new { m.SessionId, m.TargetTurnId, m.Status, m.Priority });
             e.HasIndex(m => new { m.WorkspaceId, m.CreatedAtUtc });
             e.Property(m => m.MessageText).HasColumnType("TEXT");
         });

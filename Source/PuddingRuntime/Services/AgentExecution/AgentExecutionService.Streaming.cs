@@ -1161,6 +1161,25 @@ public sealed partial class AgentExecutionService
                     history.Add(new ChatMessage(ChatRole.Assistant, reply,
                         ReasoningContent: assistantReasoningContent,
                         ContinuationState: continuationState));
+                    if (round < maxRounds - 1)
+                    {
+                        var lateSteeringCount = await TryInjectSteeringMessageAsync(
+                            request,
+                            instance.AgentInstanceId,
+                            history,
+                            round,
+                            streamTrace,
+                            ct);
+                        if (lateSteeringCount > 0)
+                        {
+                            _logger.LogInformation(
+                                "[AgentExec:Steering] Continuing after {Count} late steering message(s) session={Session} round={Round}",
+                                lateSteeringCount,
+                                request.SessionId,
+                                round + 1);
+                            continue;
+                        }
+                    }
                     break;
                 }
                 consecutiveShortReplies = 0;

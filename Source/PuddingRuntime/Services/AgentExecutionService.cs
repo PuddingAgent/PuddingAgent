@@ -351,7 +351,7 @@ public sealed partial class AgentExecutionService
 
     // ── 私有辅助 ──────────────────────────────────────────────────────────
 
-    private async Task TryInjectSteeringMessageAsync(
+    private async Task<int> TryInjectSteeringMessageAsync(
         RuntimeDispatchRequest request,
         string agentInstanceId,
         ICollection<ChatMessage> history,
@@ -360,90 +360,102 @@ public sealed partial class AgentExecutionService
         CancellationToken ct)
     {
         if (_steeringService is null)
-            return;
+            return 0;
 
+        var targetTurnId = request.ExecutionIdentity?.TurnId;
+        if (string.IsNullOrWhiteSpace(targetTurnId))
+            return 0;
+
+        var injectedCount = 0;
         try
         {
-            var steering = await _steeringService.ConsumeNextAsync(
-                request.SessionId,
-                agentInstanceId,
-                round + 1,
-                ct);
-            if (steering is null)
-                return;
-
-            var content = BuildSteeringInstruction(steering.MessageText);
-            history.Add(new ChatMessage(ChatRole.User, content));
-
-            var workspaceId = request.WorkspaceId ?? steering.WorkspaceId;
-            await RecordActivityAsync(
-                trace,
-                RuntimeActivityComponents.AgentExecution,
-                "agent.steering.inject",
-                RuntimeActivityStatuses.Succeeded,
-                steering.ConsumedAtUtc,
-                endedAt: DateTimeOffset.UtcNow,
-                durationMs: null,
-                summary: "Injected runtime user steering guidance before LLM invocation.",
-                metadata: new Dictionary<string, string>
-                {
-                    ["steering_id"] = steering.SteeringId,
-                    ["session_id"] = steering.SessionId,
-                    ["agent_id"] = steering.AgentId ?? agentInstanceId,
-                    ["round"] = steering.Round.ToString(),
-                    ["message_chars"] = steering.MessageText.Length.ToString(),
-                },
-                error: null,
-                ct: CancellationToken.None);
-
-            // P0-4f-3: CoordinatorCanonical 时 Runtime 只产流，不写旧流表。
-            // 此处仅 gate SSM 旧流持久化；P0-2 canonical conversation_events 留痕
-            // （PersistSteeringInjectedEventAsync）在下文保留，不受此 gate 影响。
-            if (_ssm is not null
-                && request.OutputOwnership != TurnOutputOwnership.CoordinatorCanonical)
+            while (true)
             {
-                await _ssm.AppendAsync(
+                var steering = await _steeringService.ConsumeNextAsync(
                     request.SessionId,
-                    workspaceId ?? string.Empty,
-                    ServerSentEventFrame.Json("steering.injected", new
-                    {
-                        steeringId = steering.SteeringId,
-                        sessionId = steering.SessionId,
-                        agentId = steering.AgentId ?? agentInstanceId,
-                        round = steering.Round,
-                        messageChars = steering.MessageText.Length,
-                        content,
-                        injectedAt = steering.ConsumedAtUtc.ToUnixTimeMilliseconds(),
-                    }),
-                    CancellationToken.None,
+                    agentInstanceId,
+                    targetTurnId,
+                    round + 1,
+                    ct);
+                if (steering is null)
+                    break;
+
+                var content = BuildSteeringInstruction(steering.MessageText);
+                history.Add(new ChatMessage(ChatRole.User, content));
+                injectedCount++;
+
+                var workspaceId = request.WorkspaceId ?? steering.WorkspaceId;
+                await RecordActivityAsync(
                     trace,
                     RuntimeActivityComponents.AgentExecution,
-                    "steering.injected");
-            }
+                    "agent.steering.inject",
+                    RuntimeActivityStatuses.Succeeded,
+                    steering.ConsumedAtUtc,
+                    endedAt: DateTimeOffset.UtcNow,
+                    durationMs: null,
+                    summary: "Injected runtime user steering guidance before LLM invocation.",
+                    metadata: new Dictionary<string, string>
+                    {
+                        ["steering_id"] = steering.SteeringId,
+                        ["session_id"] = steering.SessionId,
+                        ["target_turn_id"] = steering.TargetTurnId,
+                        ["agent_id"] = steering.AgentId ?? agentInstanceId,
+                        ["round"] = steering.Round.ToString(),
+                        ["message_chars"] = steering.MessageText.Length.ToString(),
+                    },
+                    error: null,
+                    ct: CancellationToken.None);
 
-            // P0-2：steering 正文写入 canonical conversation_events（合规审计留痕）。
-            // fire-and-forget：失败只记日志，绝不阻断 steering 注入与主执行链。
-            if (_conversationEventStore is not null)
-            {
-                _ = PersistSteeringInjectedEventAsync(
+                // P0-4f-3: CoordinatorCanonical 时 Runtime 只产流，不写旧流表。
+                // 此处仅 gate SSM 旧流持久化；P0-2 canonical conversation_events 留痕
+                // （PersistSteeringInjectedEventAsync）在下文保留，不受此 gate 影响。
+                if (_ssm is not null
+                    && request.OutputOwnership != TurnOutputOwnership.CoordinatorCanonical)
+                {
+                    await _ssm.AppendAsync(
+                        request.SessionId,
+                        workspaceId ?? string.Empty,
+                        ServerSentEventFrame.Json("steering.injected", new
+                        {
+                            steeringId = steering.SteeringId,
+                            sessionId = steering.SessionId,
+                            targetTurnId = steering.TargetTurnId,
+                            agentId = steering.AgentId ?? agentInstanceId,
+                            round = steering.Round,
+                            messageChars = steering.MessageText.Length,
+                            content,
+                            injectedAt = steering.ConsumedAtUtc.ToUnixTimeMilliseconds(),
+                        }),
+                        CancellationToken.None,
+                        trace,
+                        RuntimeActivityComponents.AgentExecution,
+                        "steering.injected");
+                }
+
+                // P0-2：steering 正文写入 canonical conversation_events（合规审计留痕）。
+                // fire-and-forget：失败只记日志，绝不阻断 steering 注入与主执行链。
+                if (_conversationEventStore is not null)
+                {
+                    _ = PersistSteeringInjectedEventAsync(
+                        steering,
+                        agentInstanceId,
+                        workspaceId,
+                        content,
+                        trace,
+                        CancellationToken.None);
+                }
+
+                await RecordSteeringTelemetryAsync(
+                    trace,
                     steering,
                     agentInstanceId,
                     workspaceId,
-                    content,
-                    trace,
                     CancellationToken.None);
+
+                _logger.LogInformation(
+                    "[AgentExec:Steering] Injected steering={SteeringId} session={Session} round={Round}",
+                    steering.SteeringId, request.SessionId, steering.Round);
             }
-
-            await RecordSteeringTelemetryAsync(
-                trace,
-                steering,
-                agentInstanceId,
-                workspaceId,
-                CancellationToken.None);
-
-            _logger.LogInformation(
-                "[AgentExec:Steering] Injected steering={SteeringId} session={Session} round={Round}",
-                steering.SteeringId, request.SessionId, steering.Round);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -455,6 +467,8 @@ public sealed partial class AgentExecutionService
                 "[AgentExec:Steering] Failed to inject steering session={Session}",
                 request.SessionId);
         }
+
+        return injectedCount;
     }
 
     /// <summary>
@@ -480,6 +494,7 @@ public sealed partial class AgentExecutionService
             {
                 steeringId = steering.SteeringId,
                 sessionId = steering.SessionId,
+                targetTurnId = steering.TargetTurnId,
                 agentId,
                 round = steering.Round,
                 messageChars = steering.MessageText.Length,
@@ -499,7 +514,7 @@ public sealed partial class AgentExecutionService
                         ConversationEventTypes.SteeringInjected,
                         SchemaVersion: 1,
                         WorkspaceId: workspaceId,
-                        TurnId: null,
+                        TurnId: steering.TargetTurnId,
                         CommandId: null,
                         RunId: null,
                         MessageId: null,
@@ -725,6 +740,7 @@ public sealed partial class AgentExecutionService
                 Dimensions = new Dictionary<string, string>
                 {
                     ["steering_id"] = steering.SteeringId,
+                    ["target_turn_id"] = steering.TargetTurnId,
                     ["agent_id"] = steering.AgentId ?? agentInstanceId,
                     ["priority"] = steering.Priority.ToString(),
                     ["round"] = steering.Round.ToString(),
