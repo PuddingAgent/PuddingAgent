@@ -15,7 +15,8 @@ namespace PuddingRuntime.Services.Events;
     name: "事件订阅管理",
     description: "管理Agent的事件订阅：subscribe_events（订阅事件类型，支持通配符如 mqtt.sensor.*）、unsubscribe_events（取消订阅）、list_subscriptions（列出当前订阅）。【何时用】Agent 需要被动接收工作区/系统事件（如 mqtt.sensor.* 传感器上报）时订阅；不再需要时取消；排查订阅状态时列出。【怎么用】operation=subscribe + event_type_patterns（逗号分隔、支持 * 通配符），可选 filter_expression（如 priority>=5）；operation=unsubscribe + subscription_id（来自 subscribe 返回值或 list 结果）；operation=list 列出当前订阅（默认）。【坑】订阅是进程内内存状态，重启即失效需重新订阅；subscribe 缺 event_type_patterns 会失败；unsubscribe 的 subscription_id 无效时静默不删除。",
     category: ToolCategory.Query,
-    permission: ToolPermissionLevel.Medium)]
+    permission: ToolPermissionLevel.Low)]
+    // 2026-08-28 裁定：event_subscribe 为自身私有数据读写（订阅列表，进程内内存状态）（用户原则：仅直接损坏/泄露用户数据需门禁）
 public class EventSubscriptionTool : PuddingToolBase<EventSubscriptionArgs>, IEventSubscriptionTool
 {
     private readonly ILogger<EventSubscriptionTool> _logger;

@@ -22,9 +22,10 @@ namespace PuddingRuntime.Services.Tools
         name: "Git Clone",
         description: "将远程 Git 仓库克隆（clone）到本地目录。何时用：第一次把远程仓库拉到本地开始工作。怎么用/坑：Url 与 LocalPath 必填，LocalPath 必须不存在或为空目录；Branch 可选、缺省检出差远端 HEAD；需要网络与远程凭据，失败常见于网络不通、凭据不足或 URL 错误；克隆包含完整历史，大仓库耗时较长。",
         category: ToolCategory.FileSystem,
-        permission: ToolPermissionLevel.Medium,
+        permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.RequiresNetwork | ToolSafetyFlags.ConcurrencySafe,
         SortOrder = 71)]
+    // 2026-08-28 裁定：git_clone 为创建型无损写（目标目录必须为空，不覆盖既有数据）；RequiresNetwork 现行不触发门禁（用户原则：仅直接损坏/泄露用户数据需门禁）
     public sealed class GitCloneTool : PuddingToolBase<GitCloneArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(

@@ -13,8 +13,9 @@ namespace PuddingRuntime.Services.Tools;
     name: "query_sessions",
     description: "查询会话消息转录。支持两种模式：1) messages：指定 session_id 查询该会话消息（分页）；2) recent：查询最近消息。",
     category: ToolCategory.Query,
-    permission: ToolPermissionLevel.Medium,
+    permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe)]
+    // 2026-08-28 裁定：query_sessions 纯只读查询，与 query_session_logs(Low) 同类对齐（用户原则：仅直接损坏/泄露用户数据需门禁）
 public sealed class QuerySessionsTool : PuddingToolBase<QuerySessionsArgs>
 {
     private readonly IChatHistoryService _chatHistory;
