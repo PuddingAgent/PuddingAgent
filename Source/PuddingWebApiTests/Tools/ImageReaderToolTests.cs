@@ -291,4 +291,22 @@ public sealed class ImageReaderToolTests
             Path.Combine(instanceRoot, "manifest.json"),
             System.Text.Json.JsonSerializer.Serialize(manifest));
     }
+
+    [TestMethod]
+    public void ImageReader_Is_AutoAllowed_After_Low_Reclassification()
+    {
+        // 2026-08-28 裁定：image_reader 纯只读（ReadOnly 标注），无写/删用户数据，由 High 降为 Low ⇒ AutoAllowed 免审直通。
+        var root = Path.Combine(Path.GetTempPath(), $"pudding-image-reader-perm-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var (_, storage) = CreateStorageAsync(root).GetAwaiter().GetResult();
+        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+
+        var descriptor = tool.Descriptor;
+        var decision = new PuddingRuntime.Services.Tools.ToolPermissionPolicyService().Classify(descriptor);
+
+        Assert.AreEqual(PuddingCode.Models.ToolPermissionLevel.Low, descriptor.PermissionLevel);
+        Assert.IsTrue(descriptor.Safety.HasFlag(PuddingCode.Tools.ToolSafetyFlags.ReadOnly));
+        Assert.AreEqual(PuddingCode.Tools.ToolPermissionTier.AutoAllowed, decision.Tier);
+        Assert.IsFalse(decision.RequiresRuntimeAuthorization);
+    }
 }

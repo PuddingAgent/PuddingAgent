@@ -23,6 +23,7 @@ namespace PuddingRuntime.Services.Tools
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.ConcurrencySafe,
         SortOrder = 72)]
+    // 2026-08-28 裁定复核（依据用户 2026-08-28 指示）：git_stash 仅入栈（Stashes.Add），未暴露 drop/clear/pop 破坏性路径，数据可恢复，Low+ConcurrencySafe 免审直通
     public sealed class GitStashTool : PuddingToolBase<GitStashArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(

@@ -21,9 +21,10 @@ namespace PuddingAgent.Tools;
     name: "Image Reader",
     description: "Fetch one image from an http(s) URL, an absolute host file path, or an artifact://vision-... reference and hand it to the calling model. Only `path` is required. Default mode=auto returns the image natively to the current model when it supports vision (no second model); otherwise the explicitly configured visionHelperModel produces a textual observation. Use mode=delegate for an explicit second opinion.",
     category: ToolCategory.FileSystem,
-    permission: ToolPermissionLevel.High,
+    permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.RequiresNetwork,
     SortOrder = 35)]
+    // 2026-08-28 裁定：image_reader 纯只读（ReadOnly 标注），无写/删用户数据（用户原则：仅直接损坏/泄露用户数据需门禁）
 public sealed class ImageReaderTool(
     ImageReaderSourceResolver sourceResolver,
     VisionArtifactStorageService artifactStorage,

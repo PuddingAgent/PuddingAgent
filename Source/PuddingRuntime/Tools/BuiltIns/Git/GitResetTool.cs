@@ -25,6 +25,7 @@ namespace PuddingRuntime.Services.Tools
         permission: ToolPermissionLevel.High,
         safety: ToolSafetyFlags.Destructive,
         SortOrder = 78)]
+    // 2026-08-28 裁定复核（依据用户 2026-08-28 指示）：git_reset 暴露 Mode=hard（丢弃工作区与索引所有未提交改动且不可恢复），属「可直接损坏用户数据」，保留 High+Destructive 运行时授权门禁；soft/mixed 为无损路径
     public sealed class GitResetTool : PuddingToolBase<GitResetArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(

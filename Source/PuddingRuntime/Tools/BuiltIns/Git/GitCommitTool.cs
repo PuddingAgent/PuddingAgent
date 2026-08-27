@@ -77,6 +77,7 @@ namespace PuddingRuntime.Services.Tools
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.ConcurrencySafe,
         SortOrder = 67)]
+    // 2026-08-28 裁定（依据用户 2026-08-28 指示）：git_commit 仅追加提交历史（不删除/改写已有对象，误提交可 reset --soft 撤销），不构成数据损坏，Low+ConcurrencySafe 免审直通
     public sealed class GitCommitTool : PuddingToolBase<GitCommitArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(

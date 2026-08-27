@@ -25,6 +25,7 @@ namespace PuddingRuntime.Services.Tools
         permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
         SortOrder = 62)]
+    // 2026-08-28 裁定（依据用户 2026-08-28 指示）：git_diff 纯本地只读查询（ReadOnly 标注），不写/删任何数据，Low+ReadOnly|ConcurrencySafe 免审直通
     public sealed class GitDiffTool : PuddingToolBase<GitDiffArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(
