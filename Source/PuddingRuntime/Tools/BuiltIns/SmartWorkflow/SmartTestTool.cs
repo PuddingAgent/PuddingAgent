@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -8,13 +8,14 @@ namespace PuddingRuntime.Services.Tools;
     id: "smart_test",
     name: "Smart Test",
     description: "智能测试执行。用自然语言描述测试需求，内部委托 Tester 子代理自动运行测试、" +
-                 "分析失败原因、生成测试报告。需要显式授权（High 权限）。" +
+                 "分析失败原因、生成测试报告。" +
                  "参数：task（测试任务）、scope（可选，测试范围/项目）。执行预算由 Pudding 系统配置。" +
                  "模型由 Agent 配置的 Tester_Model 决定。",
     category: ToolCategory.Orchestration,
-    permission: ToolPermissionLevel.High,
-    safety: ToolSafetyFlags.None,
+    permission: ToolPermissionLevel.Low,
+    safety: ToolSafetyFlags.ConcurrencySafe,
     SubAgentExposure = SubAgentExposure.MainAgentOnly)]
+    // 2026-08-28 裁定（依据用户 2026-08-27 指示）：smart_test 无文件写/删路径，仅委托 Tester 子代理跑测试+读码，不直接损坏/泄露用户数据，由 High 降为 Low+ConcurrencySafe 免审直通（写路径由子代理侧 file_write/file_patch 门禁兜底）
 public sealed class SmartTestTool : SmartWorkflowToolBase<SmartTestArgs>
 {
     private readonly IServiceProvider _serviceProvider;
