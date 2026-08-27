@@ -14,7 +14,8 @@ namespace PuddingRuntime.Services.TaskTools;
     name: "认领工作区任务",
     description: "认领分配给我的工作区任务（Assigned→InProgress）。【何时用】开始执行已分配任务时使用。【怎么用】task_id、assignment_id、expected_version 三个参数都必须等于运行时注入的 Active Task Context 值；重复认领（已 InProgress）幂等 no-op。【坑】强制要求 Active Task Context 非空；版本不匹配返回 version_conflict；迟到调用（已重派/已闭合）返回 assignment.stale/state_conflict；workspace_id 由运行时注入。Claim the assigned workspace task (Assigned→InProgress); task_id/assignment_id/expected_version must match the injected Active Task Context; idempotent no-op when already InProgress.",
     category: ToolCategory.Orchestration,
-    permission: ToolPermissionLevel.Medium)]
+    permission: ToolPermissionLevel.Low)]
+    // 2026-08-28 裁定：task 看板元数据（用户原则：仅直接损坏/泄露用户数据需门禁）
 public sealed class TaskClaimTool : PuddingToolBase<TaskClaimArgs>
 {
     private readonly ITaskAgentCommandService _service;

@@ -14,7 +14,8 @@ namespace PuddingRuntime.Services.TaskTools;
     name: "更新工作区任务",
     description: "提交 disposition，由后端状态机解释并推进工作区任务。【何时用】任务执行过程中汇报进展/阻塞/完成/拒绝/回退时使用。【怎么用】task_id、assignment_id、expected_version 必须等于 Active Task Context 注入值；disposition 取 accept/progress/todo/blocked/needs_approval/rejected/completed；blocked/rejected/needs_approval 必填 reason；completed 必填 result_summary；progress 必填 progress_summary 或 next_action 之一。【坑】迟到调用（已重派/已闭合）返回 assignment.stale/state_conflict/version_conflict；自然语言说“完成”不改变 Task，只有本工具生效。",
     category: ToolCategory.Orchestration,
-    permission: ToolPermissionLevel.Medium)]
+    permission: ToolPermissionLevel.Low)]
+    // 2026-08-28 裁定：task 看板元数据（用户原则：仅直接损坏/泄露用户数据需门禁）
 public sealed class TaskUpdateTool : PuddingToolBase<TaskUpdateArgs>
 {
     private readonly ITaskAgentCommandService _service;

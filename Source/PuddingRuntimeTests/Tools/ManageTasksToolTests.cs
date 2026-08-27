@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using PuddingCode.Models;
 using PuddingCode.Tasks;
 using PuddingCode.Tools;
 using PuddingRuntime.Services.TaskTools;
@@ -422,5 +423,18 @@ public sealed class ManageTasksToolTests
         var error = ParseError(result);
         Assert.AreEqual("task.version_conflict", error.GetProperty("code").GetString());
         Assert.AreEqual(5, error.GetProperty("current_version").GetInt32());
+    }
+
+    [TestMethod]
+    public void ManageTasks_Is_AutoAllowed_After_Low_Reclassification()
+    {
+        // 2026-08-28 裁定：task 看板元数据，非用户数据直接损坏/泄露，由 Medium 降为 Low ⇒ AutoAllowed 免审直通。
+        var policy = new PuddingRuntime.Services.Tools.ToolPermissionPolicyService();
+        var descriptor = Tool(new FakeWorkspaceTaskAdminService()).Descriptor;
+        var decision = policy.Classify(descriptor);
+
+        Assert.AreEqual(ToolPermissionLevel.Low, descriptor.PermissionLevel);
+        Assert.AreEqual(ToolPermissionTier.AutoAllowed, decision.Tier);
+        Assert.IsFalse(decision.RequiresRuntimeAuthorization);
     }
 }

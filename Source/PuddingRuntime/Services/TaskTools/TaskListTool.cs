@@ -14,7 +14,8 @@ namespace PuddingRuntime.Services.TaskTools;
     name: "列出工作区任务",
     description: "列出分配给当前 Agent 的工作区任务（mine 范围）。【何时用】需要查看自己名下任务时使用。【怎么用】可选 status（Backlog/Ready/Deferred/Reserved/Assigned/NeedsReview/InProgress/Blocked/Completed/Failed/Cancelled/Archived）、board_column（Backlog/Todo/InProgress/Done/Failed，与 status 互斥）、priority（p0/p1/p2/p3）、limit（1..100，默认 50）、cursor（分页游标，取上次返回的 next_cursor）。【坑】只返回 active assignment 属于自己的任务；默认不含 Archived/Cancelled；workspace_id 由运行时注入，不接受 Agent 指定。",
     category: ToolCategory.Orchestration,
-    permission: ToolPermissionLevel.Medium)]
+    permission: ToolPermissionLevel.Low)]
+    // 2026-08-28 裁定：task 看板元数据（用户原则：仅直接损坏/泄露用户数据需门禁）
 public sealed class TaskListTool : PuddingToolBase<TaskListArgs>
 {
     private readonly ITaskAgentCommandService _service;

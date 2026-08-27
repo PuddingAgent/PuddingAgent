@@ -16,7 +16,8 @@ namespace PuddingRuntime.Services.TaskTools;
     name: "管理工作区任务",
     description: "管理者视角的任务看板交互（跨 Agent 的完整 CRUD + 命令）。【何时用】需要创建任务、查看整个看板、分配任务给 Agent、或执行状态命令（assign/run_now/cancel/reopen/archive/mark_failed/resume/requeue）时使用。【怎么用】action 指定操作：list/create/get/update/delete/assign/run_now/cancel/reopen/archive/mark_failed/resume/requeue；workspace_id 由运行时注入。【坑】与 task_list/task_get/task_claim/task_update 区分：那些是执行者视角（处理自己被派发的任务），本工具是管理者视角（跨 Agent 管理整个看板）。",
     category: ToolCategory.Orchestration,
-    permission: ToolPermissionLevel.Medium)]
+    permission: ToolPermissionLevel.Low)]
+    // 2026-08-28 裁定：task 看板元数据（delete 受 TaskCannotHardDelete 保护仅删无历史 Backlog 任务）（用户原则：仅直接损坏/泄露用户数据需门禁）
 public sealed class ManageTasksTool : PuddingToolBase<ManageTasksArgs>
 {
     private readonly IWorkspaceTaskAdminService _service;

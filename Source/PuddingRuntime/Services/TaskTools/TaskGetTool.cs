@@ -14,7 +14,8 @@ namespace PuddingRuntime.Services.TaskTools;
     name: "查看工作区任务详情",
     description: "查看单个工作区任务的完整详情：字段、允许的状态转换、允许的 disposition、当前 Assignment 摘要、近期事件、验收标准。【何时用】认领/更新任务前需要确认当前状态、版本、验收标准时使用。【怎么用】task_id 必填；可选 assignment_id（提供时与当前 active assignment 比对）、events_limit（近期事件条数，1..100，默认 20）。【坑】仅允许查看 active assignment 属于自己的任务；非 mine 任务与不存在返回 task.not_found（信息隐藏）；已取消/已归档任务 board_column 为 null。Get a single workspace task's full detail (fields, allowed transitions/dispositions, active assignment summary, recent events, acceptance criteria).",
     category: ToolCategory.Orchestration,
-    permission: ToolPermissionLevel.Medium)]
+    permission: ToolPermissionLevel.Low)]
+    // 2026-08-28 裁定：task 看板元数据（用户原则：仅直接损坏/泄露用户数据需门禁）
 public sealed class TaskGetTool : PuddingToolBase<TaskGetArgs>
 {
     private readonly ITaskAgentCommandService _service;
