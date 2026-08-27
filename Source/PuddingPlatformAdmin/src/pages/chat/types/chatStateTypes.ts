@@ -92,6 +92,7 @@ export interface ChatInteractionQueueItem {
   text: string;
   createdAt: number;
   status: ChatInteractionQueueStatus | string;
+  /** local_pending 仅保留给旧组件契约；新消息不再创建浏览器内存队列项。 */
   source?: 'backend_message_queue' | 'steering' | 'local_pending';
   metadata?: Record<string, string>;
   steeringId?: string;
@@ -237,9 +238,9 @@ export interface UseChatStateReturn {
   deleteQueuedInteraction: (id: string) => void;
   sendQueuedInteractionNow: (id: string) => Promise<void>;
   steerQueuedInteraction: (id: string) => Promise<void>;
-  /** P1#6：本地待发队列内重排（拖拽） */
+  /** 后端尚未开放重排命令，当前调用会被安全忽略。 */
   reorderQueuedInteraction: (fromId: string, toId: string) => void;
-  /** P1#6：取消全部 — 中止当前请求并清空本地待发队列 */
+  /** 中止当前页面请求；已受理的服务端 Turn 不会被清空。 */
   stopQueue: () => void;
   handleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   loadMoreMessages: () => Promise<void>;

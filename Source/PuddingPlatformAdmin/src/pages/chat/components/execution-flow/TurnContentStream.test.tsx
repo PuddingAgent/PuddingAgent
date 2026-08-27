@@ -245,4 +245,58 @@ describe('TurnContentStream（内容块流）', () => {
     );
     expect(container.firstElementChild).toBeNull();
   });
+
+  it('超长行为组默认只挂载最新节点窗口，并可渐进加载较早轨迹', () => {
+    const events = Array.from({ length: 60 }, (_, index) => [
+      ev('tool.call.requested', index * 2 + 1, {
+        toolCallId: `tool-${index}`,
+        name: 'shell',
+        arguments: '{}',
+      }),
+      ev('tool.call.completed', index * 2 + 2, {
+        toolCallId: `tool-${index}`,
+        name: 'shell',
+        exitCode: 0,
+        output: 'ok',
+      }),
+    ]).flat();
+    render(
+      <TurnContentStream
+        projection={projectExecutionFlow(events)}
+        isRunActive={false}
+      />,
+    );
+
+    expect(screen.getAllByTestId('toolcall-row')).toHaveLength(24);
+    fireEvent.click(screen.getByTestId('activity-group-reveal-earlier'));
+    expect(screen.getAllByTestId('toolcall-row')).toHaveLength(48);
+  });
+
+  it('超长 Turn 默认只挂载最新内容块窗口', () => {
+    const events = Array.from({ length: 50 }, (_, index) => [
+      ev('message.content.appended', index * 3 + 1, {
+        delta: `文本-${index}`,
+      }),
+      ev('tool.call.requested', index * 3 + 2, {
+        toolCallId: `tool-${index}`,
+        name: 'shell',
+        arguments: '{}',
+      }),
+      ev('tool.call.completed', index * 3 + 3, {
+        toolCallId: `tool-${index}`,
+        name: 'shell',
+        exitCode: 0,
+        output: 'ok',
+      }),
+    ]).flat();
+    render(
+      <TurnContentStream
+        projection={projectExecutionFlow(events)}
+        isRunActive={false}
+      />,
+    );
+
+    expect(screen.getAllByTestId('turn-text-segment')).toHaveLength(20);
+    expect(screen.getByTestId('turn-content-reveal-earlier')).toBeTruthy();
+  });
 });

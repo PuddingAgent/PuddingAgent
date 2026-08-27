@@ -33,6 +33,9 @@ import {
 } from './ToolCallTree';
 import { useDisclosureRegistry } from './useDisclosureRegistry';
 
+const INITIAL_VISIBLE_TURN_BLOCKS = 40;
+const TURN_BLOCK_REVEAL_BATCH = 40;
+
 /** timestamp（毫秒）→ ISO；非法/缺失 → undefined（不伪造时间源）。 */
 const isoFromTimestamp = (timestamp?: number): string | undefined =>
   typeof timestamp === 'number' && Number.isFinite(timestamp) && timestamp > 0
@@ -167,6 +170,9 @@ export const TurnContentStream: React.FC<TurnContentStreamProps> = ({
 }) => {
   const { styles } = useExecutionFlowStyles();
   const registry = useDisclosureRegistry();
+  const [visibleBlockLimit, setVisibleBlockLimit] = React.useState(
+    INITIAL_VISIBLE_TURN_BLOCKS,
+  );
 
   const blocks = React.useMemo<TurnContentBlock[]>(() => {
     const nodes = projection
@@ -195,6 +201,10 @@ export const TurnContentStream: React.FC<TurnContentStreamProps> = ({
 
   if (blocks.length === 0) return null;
 
+  const hiddenBlockCount = Math.max(0, blocks.length - visibleBlockLimit);
+  const visibleBlocks =
+    hiddenBlockCount > 0 ? blocks.slice(hiddenBlockCount) : blocks;
+
   const latestActivityGroupKey = [...blocks]
     .reverse()
     .find((block) => block.kind === 'activity-group')?.key;
@@ -204,7 +214,22 @@ export const TurnContentStream: React.FC<TurnContentStreamProps> = ({
       className={styles.turnContentStream}
       data-testid="turn-content-stream"
     >
-      {blocks.map((block, index) =>
+      {hiddenBlockCount > 0 && (
+        <button
+          type="button"
+          className={styles.trajectoryWindowButton}
+          data-testid="turn-content-reveal-earlier"
+          onClick={() =>
+            setVisibleBlockLimit((current) =>
+              Math.min(blocks.length, current + TURN_BLOCK_REVEAL_BATCH),
+            )
+          }
+        >
+          加载较早 {Math.min(hiddenBlockCount, TURN_BLOCK_REVEAL_BATCH)} 个内容块
+          （尚有 {hiddenBlockCount} 个）
+        </button>
+      )}
+      {visibleBlocks.map((block, index) =>
         block.kind === 'text' ? (
           <TextSegmentView
             key={block.key}
@@ -218,7 +243,7 @@ export const TurnContentStream: React.FC<TurnContentStreamProps> = ({
             key={block.key}
             block={block}
             isLatestGroup={block.key === latestActivityGroupKey}
-            isTailGroup={index === blocks.length - 1}
+            isTailGroup={hiddenBlockCount + index === blocks.length - 1}
             isRunActive={isRunActive}
             registry={registry}
             onOpenInspector={onOpenInspector}

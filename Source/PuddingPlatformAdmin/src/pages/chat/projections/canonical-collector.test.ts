@@ -53,6 +53,12 @@ describe('executionFlowCollector', () => {
         runId: 'run-1',
         turnId: 'turn-1',
         type: 'message.thinking_summary.appended',
+        delta: '先分析',
+      });
+      expect(res.events[1]).toMatchObject({
+        toolCallId: 't1',
+        name: 'search',
+        arguments: '{"q":"x"}',
       });
       expect(res.events[2].type).toBe('turn.completed');
     });

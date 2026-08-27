@@ -55,8 +55,21 @@ const nodeRenderWeight = (node: ExecutionFlowNode): number => {
 
 export const getExecutionFlowRenderWeight = (
   projection: ExecutionFlowProjection | undefined,
-): number =>
-  projection?.nodes.reduce(
+): number => {
+  if (!projection) return 0;
+  const cached = executionFlowRenderWeightCache.get(projection);
+  if (cached !== undefined) return cached;
+  const weight = projection.nodes.reduce(
     (total, node) => total + nodeRenderWeight(node),
     0,
-  ) ?? 0;
+  );
+  executionFlowRenderWeightCache.set(projection, weight);
+  return weight;
+};
+
+// Projection 是不可变快照；以对象身份缓存深层工具树/推理块的结构权重。
+// WeakMap 不延长历史 Projection 生命周期，会话切换后可由 GC 自然回收。
+const executionFlowRenderWeightCache = new WeakMap<
+  ExecutionFlowProjection,
+  number
+>();

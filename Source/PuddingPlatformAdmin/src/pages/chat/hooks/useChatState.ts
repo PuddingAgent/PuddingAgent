@@ -116,8 +116,7 @@ import { useMessageSend } from './useMessageSend';
 import { useSessionCatalog } from './useSessionCatalog';
 import { useSessionEventBuffers } from './useSessionEventBuffers';
 import { useSessionEventConnection } from './useSessionEventConnection';
-import { collectExecutionEvents } from '../projections/executionFlowCollector';
-import { projectExecutionFlow, type ExecutionFlowEvent, type ExecutionFlowProjection } from '../projections/executionFlowProjector';
+import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 import { isExecutionFlowProjectionEnabled } from '../client/featureFlag';
 import { useSessionEventProjection } from './useSessionEventProjection';
 import { useSessionEventReplay } from './useSessionEventReplay';
@@ -470,8 +469,8 @@ export function useChatState(
     resetStreamCursorForSessionChange,
     pruneTrackedActiveMessages,
     applySessionEvent,
-    rawEnvelopeRef,
-    envelopeRevision,
+    executionFlowProjectionIndexRef,
+    executionFlowRevision,
   } = useSessionEventProjection({
     identity: {
       agentId,
@@ -508,33 +507,14 @@ export function useChatState(
     },
   });
 
-  // CU-11 Phase 2: gray-branch projection. Default off -> old path A unchanged (undefined).
-  // On: collect raw envelope -> ExecutionEventDto -> projectExecutionFlow output.
-  const executionFlowProjection = useMemo<ExecutionFlowProjection | undefined>(() => {
-    if (!isExecutionFlowProjectionEnabled()) return undefined;
-    if (envelopeRevision === 0 || rawEnvelopeRef.current.length === 0) return undefined;
-    const collected = collectExecutionEvents(rawEnvelopeRef.current);
-    return projectExecutionFlow(collected.events as ExecutionFlowEvent[]);
-  }, [envelopeRevision, rawEnvelopeRef]);
-
-  // CU-11 Phase 2: per-turn projection selector. Gray off -> undefined (old path A).
-  // On: build Map<turnId, ExecutionFlowProjection> from collected events so each
-  // AgentMessageBubble consumes its own turn's canonical projection (new path B).
-  const turnProjectionMap = useMemo<Map<string, ExecutionFlowProjection>>(() => {
-    const map = new Map<string, ExecutionFlowProjection>();
-    if (!isExecutionFlowProjectionEnabled()) return map;
-    if (envelopeRevision === 0 || rawEnvelopeRef.current.length === 0) return map;
-    const collected = collectExecutionEvents(rawEnvelopeRef.current);
-    const events = collected.events as ExecutionFlowEvent[];
-    const turnIds = new Set<string>();
-    for (const event of events) {
-      if (event.turnId) turnIds.add(event.turnId);
-    }
-    for (const turnId of turnIds) {
-      map.set(turnId, projectExecutionFlow(events, { turnId }));
-    }
-    return map;
-  }, [envelopeRevision, rawEnvelopeRef]);
+  // CU-11 / ADR-055：索引已在事件入口按 Turn 增量维护。这里仅读取结构共享
+  // 快照，不再对全部会话事件执行 collect × turn filter × sort/project。
+  const turnProjectionMap = useMemo<
+    ReadonlyMap<string, ExecutionFlowProjection>
+  >(() => {
+    if (!isExecutionFlowProjectionEnabled()) return new Map();
+    return executionFlowProjectionIndexRef.current.getSnapshot();
+  }, [executionFlowProjectionIndexRef, executionFlowRevision]);
 
   const getTurnProjection = useCallback(
     (turnId: string): ExecutionFlowProjection | undefined =>
@@ -1516,7 +1496,6 @@ export function useChatState(
     clearRestoredMarker: checkpointTimeline.clearRestoredMarker,
     handleSetMainSession,
     subAgentCards: visibleSubAgentCards,
-    executionFlowProjection,
     getTurnProjection,
     sessionUnreadCounts,
     startWorkspaceNotificationStream,

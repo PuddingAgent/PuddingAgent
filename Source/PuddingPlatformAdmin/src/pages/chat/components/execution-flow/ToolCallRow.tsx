@@ -8,6 +8,9 @@
 // 保留旧实现算法：summarizeArguments / truncateSingleLine / firstNonEmptyLine /
 // tryParseObject / getStringField / buildOutBody（迁移自 components/ToolCallRow.tsx）。
 // 摘要映射对齐 G1/G2 服务端契约：ToolNode.presentation.kind（八类 intent 词表）。
+// I-10（§7.8）：title 与主参数 command/path/query/task 摘要多行化
+// （truncateMultiline 有界 + titleWrap/summaryMulti 可换行样式）；
+// 原始 arguments/output/presentation renderer 仍受行自身 expanded 控制（详情仍懒）。
 import React, { useState } from 'react';
 import type { ToolNode } from '../../projections/executionFlowProjector';
 import type { ToolPresentationKind } from '@/services/platform/api';
@@ -39,6 +42,23 @@ const truncateSingleLine = (text: string, max = 140): string => {
   const clean = text.replace(/\s+/g, ' ').trim();
   if (!clean) return '';
   return clean.length > max ? `${clean.slice(0, max)}…` : clean;
+};
+
+/**
+ * 多行摘要上限（I-10 §7.8）：保留换行的同时保证有界，
+ * 不把任意长原文整段挂进折叠行（摘要生成必须有界）。
+ */
+const MULTILINE_SUMMARY_MAX = 280;
+
+/** 多行截断摘要（I-10）：保留换行与原始缩进，超长有界追加 …；空白压缩只属于单行路径。 */
+const truncateMultiline = (
+  text: string,
+  max = MULTILINE_SUMMARY_MAX,
+): string => {
+  const clean = text.replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '');
+  const trimmed = clean.replace(/^\n+/, '').replace(/\s+$/, '');
+  if (!trimmed) return '';
+  return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed;
 };
 
 /** 首个非空行（output/message 摘要用） */
@@ -116,6 +136,8 @@ const PRESENTATION_LABELS: Partial<Record<ToolPresentationKind, string>> = {
  * 参数摘要（简化 presenter，对齐 D5 5.3；与 processPreview.formatActivityInput 同规则但省略前缀标签）：
  * 按 presentation.kind 优先取对应字段原文；无法结构化时安全截断原文。
  * 摘要绝不把原始 JSON 字段名带进默认面板。
+ * I-10：主参数（task/command/query）走 truncateMultiline —— 保留换行、有界截断；
+ * 非结构化原文回退仍走单行压缩（不把任意原始 JSON 整段放进摘要）。
  */
 const summarizeArguments = (
   node: ToolNode,
@@ -132,7 +154,7 @@ const summarizeArguments = (
 
   const task = getStringField(parsed, effectiveFields);
   if (task) {
-    return { summary: truncateSingleLine(task), summaryFull: task };
+    return { summary: truncateMultiline(task), summaryFull: task };
   }
   const command = getStringField(parsed, [
     'command',
@@ -148,7 +170,7 @@ const summarizeArguments = (
     const raw =
       command ||
       sanitizeProcessText(node.arguments, { compact: false, maxLength: 260 });
-    return { summary: truncateSingleLine(raw), summaryFull: raw };
+    return { summary: truncateMultiline(raw), summaryFull: raw };
   }
   const query = getStringField(parsed, [
     'query',
@@ -158,7 +180,7 @@ const summarizeArguments = (
     'path',
   ]);
   if (query) {
-    return { summary: truncateSingleLine(query), summaryFull: query };
+    return { summary: truncateMultiline(query), summaryFull: query };
   }
   const safe = sanitizeProcessText(node.arguments, { compact: false });
   if (parsed) {
@@ -380,7 +402,11 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({
         ) : undefined
       }
     >
-      <span className={styles.title} data-testid="toolcall-title">
+      {/* I-10 §7.8：title 叠加 titleWrap —— 长工具名自然折行，不再 nowrap 挤压摘要 */}
+      <span
+        className={cx(styles.title, styles.titleWrap)}
+        data-testid="toolcall-title"
+      >
         {name}
       </span>
       <span className={styles.dotGrid} aria-hidden="true">
@@ -389,9 +415,10 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({
         <span className={styles.dot} />
         <span className={styles.dot} />
       </span>
+      {/* I-10 §7.8：主参数摘要走 summaryMulti（pre-wrap/anywhere/break-word），替代单行 ellipsis */}
       <span
         className={cx(
-          styles.summary,
+          styles.summaryMulti,
           status === 'error' && styles.summaryError,
         )}
         data-testid="toolcall-summary"
@@ -413,5 +440,3 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({
     </ExecutionDisclosureRow>
   );
 };
-
-export default React.memo(ToolCallRow);

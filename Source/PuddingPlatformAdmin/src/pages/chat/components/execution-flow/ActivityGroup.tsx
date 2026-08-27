@@ -4,9 +4,10 @@
 //    隐藏）——这是历史卡片 DOM/卡顿治理的主手段；
 //  - 展开态：成员按 canonical sequence 原序渲染（reasoning 行 / 工具树 /
 //    委派行），子代理连续委派聚合为一行；
-//  - 受控折叠（注册表）：默认尾部组展开、历史组折叠；组内节点默认保持
+//  - 受控折叠（注册表）：默认尾部组展开、历史组折叠；组内工具/委派默认保持
 //    单行折叠，运行态通过对应行的状态点/扫光表达，避免自动展开大段 IN/OUT；
-//    用户 override 粘性。
+//    reasoning 行以 mode="inline-full" 内联完整文本自然换行（I-10 §7.8，
+//    无二级披露）；用户 override 粘性。
 // retry 节点不渲染行（ModelRetryRow / 错误行既有承载），只计入摘要。
 import React from 'react';
 import type {
@@ -22,6 +23,9 @@ import { ExecutionDisclosureRow } from './ExecutionDisclosureRow';
 import { ReasoningDisclosureRow } from './ReasoningDisclosureRow';
 import type { DisclosureRegistry } from './useDisclosureRegistry';
 import { isPlaceholderVoid, ToolCallTreeBranch } from './ToolCallTree';
+
+const INITIAL_VISIBLE_ACTIVITY_NODES = 24;
+const ACTIVITY_NODE_REVEAL_BATCH = 24;
 
 /** 折叠态摘要文案：「N 段思考 · M 次工具 · K 个子代理 · R 次重试」。 */
 export const buildActivityGroupLabel = (
@@ -65,6 +69,9 @@ export const ActivityGroup: React.FC<ActivityGroupProps> = ({
   onOpenInspector,
 }) => {
   const { styles, cx } = useExecutionFlowStyles();
+  const [visibleNodeLimit, setVisibleNodeLimit] = React.useState(
+    INITIAL_VISIBLE_ACTIVITY_NODES,
+  );
   // 默认值：最新行为组始终展开（运行中和完成态一致）；尾部新正文不会把
   // 刚完成的行为轨迹藏掉。只有新行为组出现时，原组才转为历史组。
   // 用户 override 优先且粘性。
@@ -74,8 +81,12 @@ export const ActivityGroup: React.FC<ActivityGroupProps> = ({
     block.summary.durationMs !== null
       ? formatDurationMs(block.summary.durationMs)
       : null;
+  const hiddenNodeCount = Math.max(0, block.nodes.length - visibleNodeLimit);
+  const visibleNodes =
+    hiddenNodeCount > 0 ? block.nodes.slice(hiddenNodeCount) : block.nodes;
 
-  // 尾部组内从末尾起连续 reasoning 且 run 活跃 → 当前段（最新行摘要 + 扫光）。
+  // 尾部组内从末尾起连续 reasoning 且 run 活跃 → 当前段（inline-full 下由
+  // StateDot ongoing 表达运行态）。
   const currentNodeKeys = new Set<string>();
   if (isTailGroup && isRunActive) {
     for (let i = block.nodes.length - 1; i >= 0; i--) {
@@ -97,6 +108,7 @@ export const ActivityGroup: React.FC<ActivityGroupProps> = ({
           rows.push(
             <ReasoningDisclosureRow
               key={node.key}
+              mode="inline-full"
               lines={
                 node.blocks.length > 0
                   ? node.blocks.map((blk) => ({ id: blk.id, text: blk.text }))
@@ -178,7 +190,27 @@ export const ActivityGroup: React.FC<ActivityGroupProps> = ({
         onExpandedChange={() => registry.toggle(block.key, groupExpanded)}
         expandedContent={
           groupExpanded ? (
-            <div className={styles.activityGroupBody}>{renderNodes(block.nodes)}</div>
+            <div className={styles.activityGroupBody}>
+              {hiddenNodeCount > 0 && (
+                <button
+                  type="button"
+                  className={styles.trajectoryWindowButton}
+                  data-testid="activity-group-reveal-earlier"
+                  onClick={() =>
+                    setVisibleNodeLimit((current) =>
+                      Math.min(
+                        block.nodes.length,
+                        current + ACTIVITY_NODE_REVEAL_BATCH,
+                      ),
+                    )
+                  }
+                >
+                  加载较早 {Math.min(hiddenNodeCount, ACTIVITY_NODE_REVEAL_BATCH)} 项
+                  （尚有 {hiddenNodeCount} 项）
+                </button>
+              )}
+              {renderNodes(visibleNodes)}
+            </div>
           ) : null
         }
       >

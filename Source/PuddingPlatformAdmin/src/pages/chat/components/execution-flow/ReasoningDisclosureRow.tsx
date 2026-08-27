@@ -8,6 +8,8 @@
 // 复用 ExecutionDisclosureRow 行式 chrome（16px leading 槽 / chevron / 32px 缩进展开体，
 // 对齐 CU-05 §5.1 + §6.1；TurnStatus / ToolCallRow(CU-07) / DelegationRow(CU-09) 同源）。
 // P2 多段：每个 ReasoningNode（一段连续推理）渲染一行；本组件不做跨段聚合。
+// I-10（§7.8）：新增 mode='inline-full' —— ActivityGroup 行为组内直接渲染完整推理，
+// 自然换行、无二级 chevron/disclosure；不传 mode 保持 standalone 旧行为。
 import React, { useCallback, useState } from 'react';
 import { useExecutionFlowStyles } from '../../styles/execution-flow.styles';
 import { formatDurationMs } from '../../utils/formatDuration';
@@ -21,6 +23,8 @@ export interface ReasoningDisclosureRowProps {
   isCurrent?: boolean;
   /** 段时长（毫秒，服务端事实派生：段首/段末 occurredAt 差）；缺失时不渲染 chip。 */
   durationMs?: number | null;
+  /** 渲染模式（I-10 §7.8）：disclosure=行式披露（默认，standalone 旧行为）；inline-full=行为组内完整文本自然换行（无二级披露）。 */
+  mode?: 'disclosure' | 'inline-full';
   /** 受控展开（TurnContentStream 注册表）；未传时内部自管。 */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
@@ -30,6 +34,7 @@ export const ReasoningDisclosureRow: React.FC<ReasoningDisclosureRowProps> = ({
   lines,
   isCurrent = true,
   durationMs,
+  mode = 'disclosure',
   expanded,
   onExpandedChange,
 }) => {
@@ -63,6 +68,34 @@ export const ReasoningDisclosureRow: React.FC<ReasoningDisclosureRowProps> = ({
 
   // 无 payload → 不渲染（验收 3：不用字符数/占位文案伪造内容）
   if (visibleLines.length === 0) return null;
+
+  // I-10 §7.8：行为组内联完整推理 —— 无二级 chevron/disclosure，
+  // 全文自然换行（reasoningFullText 禁止复用 reasoningSummary 的 nowrap/ellipsis 类名）；
+  // meta：有段时长显示「思考 · Ns」，否则仅「思考」（running 不伪造数值）。
+  if (mode === 'inline-full') {
+    return (
+      <div
+        data-testid="reasoning-inline-full"
+        className={styles.reasoningFullRow}
+      >
+        <StateDot state={isCurrent ? 'ongoing' : 'done'} size={10} />
+        <div className={styles.reasoningFullContent}>
+          <div
+            className={styles.reasoningFullMeta}
+            data-testid="reasoning-full-meta"
+          >
+            {chipText ? `思考 · ${chipText}` : '思考'}
+          </div>
+          <div
+            className={styles.reasoningFullText}
+            data-testid="reasoning-full-text"
+          >
+            {fullText}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <ExecutionDisclosureRow

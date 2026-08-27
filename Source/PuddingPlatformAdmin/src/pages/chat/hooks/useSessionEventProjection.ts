@@ -1,5 +1,5 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AdminChatStreamEvent,
   TokenUsageDto,
@@ -7,6 +7,10 @@ import type {
 } from '@/services/platform/api';
 import { recordPerfEvent, writeDebugTrace } from '@/utils/perfEventRuntime';
 import { sanitizeProcessText } from '../components/processPreview';
+import { isExecutionFlowProjectionEnabled } from '../client/featureFlag';
+import { collectExecutionEvents } from '../projections/executionFlowCollector';
+import type { ExecutionFlowEvent } from '../projections/executionFlowProjector';
+import { ExecutionFlowProjectionIndex } from '../projections/executionFlowProjectionIndex';
 import {
   projectSubAgentRunsToCards,
   reduceSubAgentRunEvent,
@@ -170,13 +174,62 @@ export function useSessionEventProjection({
   const duplicateDeltaReplayOffsetRef = useRef<Map<string, number>>(new Map());
   const eventCountsRef = useRef<Map<string, number>>(new Map());
   const seenEventIdsRef = useRef<Set<string>>(new Set());
-  // CU-11 Phase 2: accumulate raw AdminChatStreamEvent envelope (SSE live + history replay)
-  // for useChatState gray-branch collection into ExecutionEventDto + projection. append-only.
-  const rawEnvelopeRef = useRef<AdminChatStreamEvent[]>([]);
-  const [envelopeRevision, setEnvelopeRevision] = useState(0);
+  // CU-11 / ADR-055：按 Turn 增量投影；原始信封不再 append-only 常驻内存。
+  // 事件在一个 animation frame 内合并，只重投影发生变化的 Turn。
+  const executionFlowProjectionIndexRef = useRef(
+    new ExecutionFlowProjectionIndex(),
+  );
+  const [executionFlowRevision, setExecutionFlowRevision] = useState(0);
+  const executionFlowFlushFrameRef = useRef<number | null>(null);
   const streamStartAtRef = useRef<Map<string, number>>(new Map());
   const messageIdToAgentIdsRef = useRef<Map<string, string[]>>(new Map());
   const sessionIdToAgentIdsRef = useRef<Map<string, string[]>>(new Map());
+
+  const flushExecutionFlowProjection = useCallback(() => {
+    executionFlowFlushFrameRef.current = null;
+    const result = executionFlowProjectionIndexRef.current.flush();
+    if (!result.changed) return;
+    setExecutionFlowRevision((revision) => revision + 1);
+    recordPerfEvent(
+      'chat.executionFlow.incrementalFlush',
+      {
+        changedTurnCount: result.changedTurnIds.length,
+        ...executionFlowProjectionIndexRef.current.getStats(),
+      },
+      { throttleMs: 500 },
+    );
+  }, []);
+
+  const scheduleExecutionFlowProjection = useCallback(() => {
+    if (executionFlowFlushFrameRef.current !== null) return;
+    if (
+      typeof window === 'undefined' ||
+      typeof window.requestAnimationFrame !== 'function'
+    ) {
+      flushExecutionFlowProjection();
+      return;
+    }
+    executionFlowFlushFrameRef.current = window.requestAnimationFrame(
+      flushExecutionFlowProjection,
+    );
+  }, [flushExecutionFlowProjection]);
+
+  const cancelExecutionFlowProjectionFlush = useCallback(() => {
+    const frame = executionFlowFlushFrameRef.current;
+    if (frame === null) return;
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.cancelAnimationFrame === 'function'
+    ) {
+      window.cancelAnimationFrame(frame);
+    }
+    executionFlowFlushFrameRef.current = null;
+  }, []);
+
+  useEffect(
+    () => () => cancelExecutionFlowProjectionFlush(),
+    [cancelExecutionFlowProjectionFlush],
+  );
 
   const setAgentIdsWorking = useCallback(
     (agentIds: Iterable<string | undefined>, isWorking: boolean) => {
@@ -262,9 +315,13 @@ export function useSessionEventProjection({
       streamStartAtRef.current.clear();
       duplicateDeltaReplayOffsetRef.current.clear();
       seenEventIdsRef.current.clear();
+      cancelExecutionFlowProjectionFlush();
+      if (executionFlowProjectionIndexRef.current.reset()) {
+        setExecutionFlowRevision((revision) => revision + 1);
+      }
       resetSessionEventBuffers();
     },
-    [resetSessionEventBuffers],
+    [cancelExecutionFlowProjectionFlush, resetSessionEventBuffers],
   );
 
   const pruneTrackedActiveMessages = useCallback((reason: string): boolean => {
@@ -1003,9 +1060,6 @@ export function useSessionEventProjection({
   const applySessionEvent = useCallback(
     (ev: AdminChatStreamEvent) => {
       const applyStart = performance.now();
-      // CU-11 Phase 2: every canonical event goes into envelope (dedupe handled by projector).
-      rawEnvelopeRef.current.push(ev);
-      setEnvelopeRevision((v) => v + 1);
       const eventType = String(ev.type);
       const anyEv = ev as Record<string, unknown>;
       // CU-03：bootstrap/gap/live 三路输入统一进入同一投影。同一 eventId
@@ -1026,6 +1080,14 @@ export function useSessionEventProjection({
           return;
         }
         seenEventIdsRef.current.add(dedupeKey);
+      }
+
+      if (isExecutionFlowProjectionEnabled()) {
+        const collected = collectExecutionEvents([ev]);
+        const accepted = executionFlowProjectionIndexRef.current.enqueue(
+          collected.events as ExecutionFlowEvent[],
+        );
+        if (accepted > 0) scheduleExecutionFlowProjection();
       }
       const isSubAgentEvent = isSubAgentConversationEvent(eventType);
       if (isSubAgentEvent) {
@@ -1652,6 +1714,7 @@ export function useSessionEventProjection({
       selectedSessionId,
       appendChatInteractionRuntimeEvent,
       handleCompactionLifecycleEvent,
+      scheduleExecutionFlowProjection,
     ],
   );
 
@@ -1670,8 +1733,8 @@ export function useSessionEventProjection({
     duplicateDeltaReplayOffsetRef,
     eventCountsRef,
     seenEventIdsRef,
-    rawEnvelopeRef,
-    envelopeRevision,
+    executionFlowProjectionIndexRef,
+    executionFlowRevision,
     streamStartAtRef,
     messageIdToAgentIdsRef,
     sessionIdToAgentIdsRef,

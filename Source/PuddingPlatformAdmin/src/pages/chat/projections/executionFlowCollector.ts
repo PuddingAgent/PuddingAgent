@@ -54,6 +54,7 @@ export function collectExecutionEvents(
   let protocolErrors = 0;
 
   for (const ev of envelope) {
+    const rawEvent = ev as Record<string, unknown>;
     const type = ev.type as string;
     if (!EXECUTION_FLOW_TYPES.has(type)) {
       filteredCount += 1;
@@ -68,14 +69,18 @@ export function collectExecutionEvents(
     const sequence = typeof ev.sequence === 'number' ? ev.sequence : null;
     const turnId = typeof ev.turnId === 'string' ? ev.turnId : '';
     const runId = typeof ev.runId === 'string' ? ev.runId : '';
-    const step = typeof ev.step === 'number' ? ev.step : undefined;
+    const step = typeof rawEvent.step === 'number' ? rawEvent.step : undefined;
 
     if (!eventId || !occurredAt || sequence === null) {
       protocolErrors += 1;
       continue;
     }
 
+    // 保留各 canonical 事件的 typed payload（delta/toolCallId/output/...）。
+    // 旧实现只重建公共信封字段，导致投影器虽然收到正确 type，却丢失正文、
+    // 推理和工具结果。这里仍只接纳白名单事件，因此不会把音频等大帧带入索引。
     events.push({
+      ...ev,
       eventId,
       sequence,
       occurredAt,
@@ -83,7 +88,7 @@ export function collectExecutionEvents(
       turnId,
       ...(step !== undefined ? { step } : {}),
       type,
-    });
+    } as ExecutionEventDto);
   }
 
   return { events, filteredCount, protocolErrors };

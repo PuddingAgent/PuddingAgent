@@ -337,6 +337,7 @@ export function toChatInteractionQueueItem(
           : null,
     metadata: {
       deliveryId: item.deliveryId,
+      queueKind: item.queueKind,
       messageId: item.messageId,
       priority: String(item.priority),
       attemptCount: String(item.attemptCount),
