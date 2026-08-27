@@ -22,9 +22,10 @@ namespace PuddingRuntime.Services.Tools
         name: "Git Pull",
         description: "从远程仓库拉取（pull）并将远程分支合并到当前分支。何时用：与远端保持同步，把别人推送的提交拉到本地并合并。怎么用/坑：Remote 默认 origin，Branch 缺省为当前分支；本质是 fetch + merge，可能产生冲突（返回 has_conflicts=true），需手动解决；工作区有未提交改动时合并可能失败；需要网络。",
         category: ToolCategory.FileSystem,
-        permission: ToolPermissionLevel.Medium,
+        permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.ConcurrencySafe | ToolSafetyFlags.RequiresNetwork,
         SortOrder = 69)]
+    // 2026-08-27 裁定（依据用户 2026-08-27 指示）：git_pull 为无损写（fetch+merge，冲突可 abort 全恢复），由 Medium 降为 Low+ConcurrencySafe 免审直通；RequiresNetwork 仅标记、现行不触发门禁
     public sealed class GitPullTool : PuddingToolBase<GitPullArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(

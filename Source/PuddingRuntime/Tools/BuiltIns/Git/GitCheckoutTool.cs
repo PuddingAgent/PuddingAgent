@@ -19,9 +19,10 @@ namespace PuddingRuntime.Services.Tools
         name: "Git Checkout",
         description: "检出（checkout）提交、分支或标签；检出非分支时会分离 HEAD。何时用：查看历史提交或标签的快照、临时切到某次提交验证行为。怎么用/坑：Target 必填，可为分支、tag 或 commit SHA；检出 commit/tag 进入 detached HEAD，此时新提交不属于任何分支、容易丢失，若想基于旧提交继续工作应先建分支；工作区有未提交改动时可能被拒绝。",
         category: ToolCategory.FileSystem,
-        permission: ToolPermissionLevel.Medium,
-        safety: ToolSafetyFlags.None,
+        permission: ToolPermissionLevel.Low,
+        safety: ToolSafetyFlags.ConcurrencySafe,
         SortOrder = 77)]
+    // 2026-08-27 裁定（依据用户 2026-08-27 指示）：git_checkout 为无损写（仅移动 HEAD/更新工作区，无删除路径；未提交改动冲突时拒绝），由 Medium 降为 Low+ConcurrencySafe 免审直通
     public sealed class GitCheckoutTool : PuddingToolBase<GitCheckoutArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(

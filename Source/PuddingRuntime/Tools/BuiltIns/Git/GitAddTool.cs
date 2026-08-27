@@ -20,8 +20,9 @@ namespace PuddingRuntime.Services.Tools
         description: "将文件路径暂存（stage）到 Git 索引，用于提交前准备。何时用：commit 前需要把改动加入暂存区，或只想提交部分文件时精确指定 Files。怎么用/坑：Files 必填、相对仓库根目录、可传多个；未跟踪的新文件必须先 add 才能被提交；误暂存可用 git_reset 撤销。",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
-        safety: ToolSafetyFlags.None,
+        safety: ToolSafetyFlags.ConcurrencySafe,
         SortOrder = 66)]
+    // 2026-08-27 裁定（依据用户 2026-08-27 指示）：git_add 为无损写（误暂存可 git_reset 撤销），Low+ConcurrencySafe 免审直通（用户原则：仅直接损坏/泄露用户数据需门禁）
     public sealed class GitAddTool : PuddingToolBase<GitAddArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(

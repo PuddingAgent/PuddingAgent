@@ -19,9 +19,10 @@ namespace PuddingRuntime.Services.Tools
         name: "Git Init",
         description: "在指定目录初始化（init）新的 Git 仓库。何时用：把尚未纳入版本控制的项目目录变成 Git 仓库开始跟踪文件。怎么用/坑：Path 缺省为当前工作目录；Bare=true 创建裸仓库（无工作区，一般用于服务端共享）；新仓库还没有任何提交，git_log 等基于历史的操作可能无输出，也需先配置 user.name/user.email 才能提交。",
         category: ToolCategory.FileSystem,
-        permission: ToolPermissionLevel.Medium,
-        safety: ToolSafetyFlags.None,
+        permission: ToolPermissionLevel.Low,
+        safety: ToolSafetyFlags.ConcurrencySafe,
         SortOrder = 70)]
+    // 2026-08-27 裁定（依据用户 2026-08-27 指示）：git_init 为创建型无损写（初始化新仓库），不覆盖/删除既有数据，Low+ConcurrencySafe 免审直通（用户原则：仅直接损坏/泄露用户数据需门禁）
     public sealed class GitInitTool : PuddingToolBase<GitInitArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(

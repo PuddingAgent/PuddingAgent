@@ -20,8 +20,9 @@ namespace PuddingRuntime.Services.Tools
         description: "在仓库中创建新分支（branch）。何时用：开始新功能或修复前，从当前 HEAD 拉一条独立分支，避免直接污染主干。怎么用/坑：BranchName 必填；创建后不会自动切换，需再用 git_branch_switch 或 git_checkout 切过去；分支名不能含空格或非法字符。",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
-        safety: ToolSafetyFlags.None,
+        safety: ToolSafetyFlags.ConcurrencySafe,
         SortOrder = 64)]
+    // 2026-08-27 裁定（依据用户 2026-08-27 指示）：git_branch_create 为创建型无损写（仅新增引用，不触碰工作区），Low+ConcurrencySafe 免审直通
     public sealed class GitBranchCreateTool : PuddingToolBase<GitBranchCreateArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(

@@ -19,9 +19,10 @@ namespace PuddingRuntime.Services.Tools
         name: "Git Merge",
         description: "将指定分支合并（merge）到当前分支。何时用：把已完成的分支（如 feature）合入主干，或把他人改动并入当前分支。怎么用/坑：Branch 必填且须存在；合并前建议先 commit/stash 未提交改动，保证工作区干净；若产生冲突，结果 status 为 Conflicts，需手动解决后再次提交；快进场景不会产生 merge commit。Merge the given branch into the current branch; use to integrate a finished feature branch or sync others' work; Branch is required, keep the working tree clean first, and conflicts (status=Conflicts) must be resolved manually",
         category: ToolCategory.FileSystem,
-        permission: ToolPermissionLevel.Medium,
-        safety: ToolSafetyFlags.None,
+        permission: ToolPermissionLevel.Low,
+        safety: ToolSafetyFlags.ConcurrencySafe,
         SortOrder = 73)]
+    // 2026-08-27 裁定（依据用户 2026-08-27 指示）：git_merge 为无损写（冲突可 abort 全恢复，不删除数据），由 Medium 降为 Low+ConcurrencySafe 免审直通
     public sealed class GitMergeTool : PuddingToolBase<GitMergeArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(

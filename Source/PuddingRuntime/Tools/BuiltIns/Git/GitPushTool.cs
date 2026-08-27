@@ -25,9 +25,10 @@ namespace PuddingRuntime.Services.Tools
         name: "Git Push",
         description: "将本地分支的提交推送（push）到远程仓库。何时用：把本地已提交的成果发布到远端，让其他人可见。怎么用/坑：Remote 默认 origin，Branch 缺省为当前分支；远端领先于本地时推送会被拒绝，需先 pull 合并；Force=true 强制覆盖远端历史（带 lease 语义），仅当确定要改写远端历史时使用，否则有丢失他人提交的风险；需要网络与推送权限。",
         category: ToolCategory.FileSystem,
-        permission: ToolPermissionLevel.Medium,
+        permission: ToolPermissionLevel.Low,
         safety: ToolSafetyFlags.RequiresNetwork | ToolSafetyFlags.ConcurrencySafe,
         SortOrder = 68)]
+    // 2026-08-27 裁定（依据用户 2026-08-27 指示）：git_push 为无损写（普通 push 可再推送纠正；force 自带 lease 保护；泄密风险源于 commit 内容而非 push 动作），由 Medium 降为 Low+ConcurrencySafe 免审直通；RequiresNetwork 仅标记、现行不触发门禁
     public sealed class GitPushTool : PuddingToolBase<GitPushArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(

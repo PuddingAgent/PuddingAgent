@@ -19,9 +19,10 @@ namespace PuddingRuntime.Services.Tools
         name: "Git Branch Switch",
         description: "检出并切换到已有分支（branch checkout/switch）。何时用：在已存在的分支之间切换工作上下文。怎么用/坑：BranchName 必填且分支必须已存在（不存在先用 git_branch_create 创建）；工作区有未提交改动且与目标分支冲突时切换会失败，先 commit 或 stash；切换会直接改变工作区文件内容。",
         category: ToolCategory.FileSystem,
-        permission: ToolPermissionLevel.Medium,
-        safety: ToolSafetyFlags.None,
+        permission: ToolPermissionLevel.Low,
+        safety: ToolSafetyFlags.ConcurrencySafe,
         SortOrder = 65)]
+    // 2026-08-27 裁定（依据用户 2026-08-27 指示）：git_branch_switch 为无损写（可再 switch 回原分支；与未提交改动冲突时拒绝），由 Medium 降为 Low+ConcurrencySafe 免审直通
     public sealed class GitBranchSwitchTool : PuddingToolBase<GitBranchSwitchArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(

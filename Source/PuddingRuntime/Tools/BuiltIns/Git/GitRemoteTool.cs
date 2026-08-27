@@ -17,8 +17,9 @@ namespace PuddingRuntime.Services.Tools
         description: "列出仓库配置的全部远程仓库（remote）。何时用：执行 clone/pull/push/fetch 前确认远端名称与 URL，或排查远端配置问题。怎么用/坑：只读操作；结果含远端名与 URL；未配置任何 remote 时 count 为 0，此时 pull/push 会失败，需先用 git clone 或手动添加远端。",
         category: ToolCategory.FileSystem,
         permission: ToolPermissionLevel.Low,
-        safety: ToolSafetyFlags.None,
+        safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
         SortOrder = 76)]
+    // 2026-08-27 裁定（依据用户 2026-08-27 指示）：git_remote 为纯只读列举，补标 ReadOnly|ConcurrencySafe 强化免审直通语义
     public sealed class GitRemoteTool : PuddingToolBase<GitRemoteArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(
