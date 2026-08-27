@@ -9,7 +9,8 @@
 | `Services/SessionStateManager.cs` | 🔑 会话状态管理（88KB，核心） |
 | `Services/SessionEventStreamService.cs` | 会话事件流 |
 | `Services/SessionStateStore.cs` | 会话状态持久化 |
-| `Services/SessionSteeringService.cs` | 会话路由 |
+| `Services/SessionSteeringService.cs` | 当前 Turn Steering durable queue；以不可变 `target_turn_id` 精确消费，支持优先级、consume-once、过期与注入状态持久化 |
+| `Services/SessionSteeringSchemaBootstrapper.cs` | existing SQLite 原地补 `target_turn_id` 和新索引；无法绑定 Turn 的历史 pending 行 fail closed 为 expired |
 | `Services/SessionCompactionEventEmitter.cs` | 压缩事件发射 |
 | `Services/SessionTitleService.cs` | 会话标题 |
 
@@ -18,7 +19,7 @@
 | 文件 | 用途 |
 |------|------|
 | `Services/ChatHistoryService.cs` | 聊天历史 |
-| `Services/ChatMessageRepository.cs` | 消息仓储；ChatMessageRow 透传 `ContentPartsJson` canonical 信封 |
+| `Services/ChatMessageRepository.cs` | 消息仓储；ChatMessageRow 透传 `WorkspaceId/MessageId/TurnId` 与 `ContentPartsJson` canonical 信封；after-Id 增量扫描不因空正文越过纯 typed-parts 消息，支持 Runtime 冷水合与当前 Turn 排除 |
 | `Services/ChatMessageSchemaBootstrapper.cs` | 存量 SQLite 幂等补 `ChatMessages.content_parts_json` 列 |
 | `Services/AgentChat/ExecutionRunCoordinator.cs` | ADR-077：canonical parts + 冻结 Snapshot 判定 vision/文本占位；已删除自动预观察旁路，消息正文不再含本地绝对路径 |
 | `Services/AgentChat/TurnOutputChunker.cs` | Delta 聚合分块器；非 delta 事件（工具/step）先 flush 已缓冲正文/思考再透传——「文本 → 工具 → 文本」轮次边界进入 canonical sequence（chat 交错时间线依赖，2026-08-24）；测试 `PuddingPlatformTests/Services/TurnOutputChunkerPayloadOwnershipTests.cs` |
@@ -31,7 +32,14 @@
 | 文件 | 用途 |
 |------|------|
 | `Services/MessageGateway/` | 🔑 消息网关投影（FeishuImageArtifactProjection 等） |
+| `Services/MessageFabric/MessageQueueProjectionService.cs` | 未认领消息队列统一只读投影；默认仅 `message_deliveries queued/retrying` + `chat_execution_commands pending`，认领/运行后转入会话轨迹；`includeTerminal=true` 才返回完整诊断，`queueKind` 区分事实源 |
+| `Services/MessageFabric/MessageRouter.cs` / `MessageFabricStore.cs` | Agent 目标按 intent/requires_response 固化 `execute/notify`；稳定 per-target delivery ID；支持按 handling mode 原子批量领取最多 20 条 |
+| `Services/MessageFabric/MessageFabricSchemaBootstrapper.cs` | 旧 SQLite 幂等补 `handling_mode` 与索引，并把普通 `inform/report_result/agent_reply` 历史投递回填为被动通知 |
+| `Services/Conversation/ConversationNotificationStore.cs` | 被动 Message Fabric 通知的原子受理：每条独立写 `ChatMessage + message.created + ConversationHead`，不创建 Turn/command，提交后唤醒 SSE |
+| `Services/MessageGateway/ConversationReplyProjectionWorker.cs` | 从 committed terminal event 投影 Connector 回信；trusted Message Fabric Agent ingress 仅在显式 reply contract 下，以稳定 MessageId 投影一次被动 `agent_reply`，失败重试不重跑 Agent |
 | `Services/Conversation/` | 对话接受/投影/事件存储 |
+| `Services/Conversation/CreateSteeringHandler.cs` | Steering 单一受理边界；只接受 canonical Running Turn，校验 Workspace/Agent 后写 Runtime 消费队列 |
+| `Controllers/Api/ConversationTurnsController.cs` | canonical Turn HTTP API；Steering 为 `POST /api/v1/conversations/{conversationId}/turns/{turnId}/steering`，202/409 fail closed |
 | `Services/ConversationEventStore.cs` | 对话事件存储（18KB） |
 | `Services/ConversationProjectionWorker.cs` | 对话投影 Worker |
 | `Services/Execution/SqliteExecutionJournal.cs` | canonical execution journal；开事务前处理 SQLite pooled-handle 激活异常，且只在尚未写入事件时清池并有限重试，避免瞬时连接故障直接终止 Agent turn |

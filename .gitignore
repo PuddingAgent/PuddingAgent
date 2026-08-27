@@ -398,6 +398,10 @@ FodyWeavers.xsd
 # jieba.NET dictionary files (auto-copied from NuGet cache)
 Resources/
 /.codex-out
+
+# 联网调研缓存与流程锁（2026-08-28 清理：不属于仓库内容）
+.firecrawl/
+.pudding-claim
 /.tmp-build
 /.tmp-test-out
 /build_out.txt

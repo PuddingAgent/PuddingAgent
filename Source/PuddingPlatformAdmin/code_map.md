@@ -131,6 +131,8 @@
 | `src/pages/chat/utils/formatDuration.ts` | `formatDurationMs`（123ms/1.2s/1m03s，缺失 null 不伪造）+ `formatTokenCount`（4.2k tokens）；计量 chip/工具行耗时/StatsLine 共用 |
 | `src/pages/chat/client/featureFlag.ts` | `isExecutionFlowProjectionEnabled` 默认开启（P2 转正：live turn 消费 canonical 投影交错）；localStorage `pudding-exec-flow-proj==='0'` 为逃生门；历史/无投影 turn 走路径 A adapter |
 | `src/pages/chat/projections/executionFlowProjector.ts` | `MessageNode` = 一个连续正文段，任何非 content 节点事件切段；`message.completed.reply` 只在整 turn 无 content delta 时创建兜底正文，绝不覆盖已有段文本；空段过滤、reasoning/tool/delegation 仍按 canonical sequence 投影 |
+| `src/pages/chat/projections/executionFlowCollector.ts` | 白名单 canonical 信封规整；保留 `delta/toolCallId/arguments/output/reply` 等 typed payload，过滤音频/视觉等非执行流大帧，缺事件身份计协议错误 |
+| `src/pages/chat/projections/executionFlowProjectionIndex.ts` | 当前会话按 Turn 的帧合并增量索引；只重投影 dirty Turn、快照结构共享、pending/已投影 eventId 幂等、终态释放原始事件、会话切换硬 reset |
 | `src/pages/chat/projections/turnSurfaceStore.ts` / `client/types.ts` | bootstrap/activeRun/live 三源按 eventId 幂等合流；`ProcessSummaryItem.sequence` 必填且运行时校验，缺失 fail closed，禁止数组下标伪造跨源顺序 |
 | `src/pages/chat/hooks/useTurnSurfaceStore.ts` | 可见 turn 懒水合调度器：最多 2 个并发槽，任一完成继续排空队列；可见性由 MessageRow 的滚动容器 IntersectionObserver（600px 预取）注册，组件挂载不再等同可见；会话切换丢弃迟到响应，同轮失败项跳过并在下一服务端投影重试 |
 | `src/pages/chat/utils/chatStateUtils.ts` | `resolveTerminalAssistantMarkdown` 分叉兜底：current 与终态 reply 完全分叉且无后缀衔接时返回 reply（服务端 canonical），不再整段拼接（旧实现任何一次流内偏差都会让正文显示两遍） |
@@ -144,7 +146,7 @@
 | `src/pages/chat/styles/message.styles.ts` | AgentTurnCard 宽屏最大 750px（720px 内容列 + 外壳），消除右侧卡内空白；正常流保留真实高度，不使用 `content-visibility` remembered intrinsic size；消息操作条为透明图标行，CurrentActivityPanel 委派大卡退役 |
 | `src/pages/chat/components/MarkdownBlock.tsx` | `preprocessMarkdown` 增量：正文 emoji run 包 `<span data-md-emoji>`（0.95em 收敛，围栏代码/行内 code 跳过；fence 状态跟踪） |
 | `src/pages/chat/viewport/useMessageViewportRuntime.ts` | 吸底阈值 `BOTTOM_THRESHOLD_PX`=24；scrollTop 单一写入者/instant snap/上滚停跟随；虚拟化权重同时计入消息正文、过程项和已水合 canonical render weight；follow effect 依赖 `totalSize`，ResizeObserver auto 模式在底部阈值内收敛 |
-| `src/pages/chat/viewport/executionFlowRenderWeight.ts` | 递归计算 reasoning/tool/delegation/message canonical 节点的结构与文本渲染成本，使 DOM 很重但消息数较少的会话提前进入虚拟化 |
+| `src/pages/chat/viewport/executionFlowRenderWeight.ts` | 递归计算 reasoning/tool/delegation/message canonical 节点的结构与文本渲染成本，使 DOM 很重但消息数较少的会话提前进入虚拟化；按 immutable Projection 身份 WeakMap 缓存，未变化 Turn 不重复扫描 |
 | `src/pages/chat/components/AgentMessageBubble.tsx` | 流式打字机不再覆盖 tick/maxLag（40/48 滞后余量过小致 bursts 式蹦出）；交给 hook 的 B2 自适应（24ms tick、速率追踪、拥堵降速、分档 charsPerTick） |
 | `src/pages/chat/components/IncrementalMarkdown.tsx` | 流式 markdown 增量渲染（对齐 harness IncrementalMarkdownParser 架构）：围栏外空行切块 + 冻结块 memo 缓存（key=偏移:长度），提交只重解析尾部块，长文流式从 O(n·parse) 降为 O(tail)；`splitMarkdownBlocks` 纯函数（fence 内空行保护、连续空行跳过、前缀偏移） |
 | `src/pages/chat/components/MessageItem.tsx` | append 风格：stable 走 IncrementalMarkdown；live 尾段一律消费打字机推进的 visibleLiveText（原实现含语法尾段整段渲染 liveText 造成"瞬跳块+逐打文字"混合节奏），markdown 对未完成结构按前缀渐进渲染 |
@@ -158,7 +160,8 @@
 | `src/pages/chat/client/chatClientStore.ts` | 会话/状态缓存；相同状态轮询必须短路，不重复写缓存或通知订阅者 |
 | `src/pages/chat/components/MessageList.tsx` | 将历史消息与 active run 快照投影为稳定消息行；把已水合 turn 的 execution-flow render weight 附到 viewport item；active run 无法匹配现有 Turn 时追加到当前消息流末端；直接渲染 `MessageRow`，并只给当前主代理行附加有界委派摘要；保留终态守卫、同 messageId 原地更新与三源去重 |
 | `src/pages/chat/styles/messageStyleContext.tsx` | 消息树样式边界；`MessageList` 注册一次聚合 Chat 样式并通过 Context 共享，消息叶子不得重复调用 `useChatStyles` |
-| `src/pages/chat/components/MessageRow.tsx` | 单消息渲染与语义 memo 边界；Agent 行通过根滚动容器 IntersectionObserver 在 600px 预取区注册可见 turn，避免初次挂载批量水合全部历史；投影重建等价对象时保持历史行不提交 |
+| `src/pages/chat/components/MessageRow.tsx` | 单消息渲染与语义 memo 边界；Agent 行通过根滚动容器 IntersectionObserver 在 600px 预取区注册可见 turn；直接接收本 Turn 的 Projection 对象，任一其他 Turn/全局 selector revision 不得击穿历史行 memo |
+| `src/pages/chat/components/execution-flow/TurnContentStream.tsx` / `ActivityGroup.tsx` | 超长单 Turn 的二级 DOM 预算：默认最新 40 个内容块、每组最新 24 个行为节点；旧内容每次 40/24 项渐进揭示，折叠组成员完全卸载 |
 | `src/pages/chat/components/MessageProcessSummary.tsx` | 思考/工具过程摘要；折叠时不得构建完整 rounds、trace chips 和展示项 |
 | `../../Docs/deepseek-harness-message-card-alignment-2026-08-14.md` | Chat 执行流目标设计：同一 assistant turn 内用 TurnStatus、ReasoningDisclosureRow、ToolCallRow、DelegationRow 分层呈现，按 toolCallId 配对并复用实时/历史 projector |
 | `src/pages/chat/components/MessageItem.tsx` | 消息文本轻量壳；立即显示纯文本 fallback，并异步加载 Markdown 增强器 |
@@ -173,9 +176,9 @@
 | `src/pages/chat/components/ToolCallRow.tsx` | 24px 工具轨迹行；call/result 只按 canonical `toolCallId` 精确配对，IN/OUT 按需展开，不按工具名或到达顺序兼容猜测 |
 | `src/pages/chat/hooks/useSessionEventReplay.ts` | 会话 bootstrap/gap replay 与子代理状态校正；进入会话后始终立即并低频读取状态接口，不能以本地已有 active run 为轮询前提 |
 | `src/pages/chat/components/SubAgentActivityDock.tsx` | 子代理任务、推理、工具、轮次和输出详情的唯一入口；选中 run 后分页读取归档并用同一 reducer 投影恢复历史时间线/终态统计，实时运行每 3 秒追平；Agent-first 路由回退 `mainSessionId` 绑定卡片 |
-| `src/pages/chat/components/IntentConsole.tsx` | Composer；摄像头弹窗只在用户打开视觉输入时加载和挂载 |
-| `src/pages/chat/hooks/useMessageInteractionQueue.ts` | Composer 活动消息队列投影；只请求并保留 queued/delivering/retrying，终态 delivery 留在持久化审计/诊断入口，不进入常驻输入区 |
-| `src/pages/chat/components/MessageQueueDropdown.tsx` | 活动消息队列紧凑入口；无活动项时不渲染，有活动项时默认收起并可按需展开详情 |
+| `src/pages/chat/components/IntentConsole.tsx` | Composer；busy 时提示 Enter 排队、Ctrl/Cmd+Enter 插嘴；摄像头弹窗只在用户打开视觉输入时加载和挂载 |
+| `src/pages/chat/hooks/useMessageInteractionQueue.ts` | Composer 服务端队列投影与当前 Turn Steering 入口；busy 下普通消息立即进 canonical Turn，不创建 `local_pending`；旧后端也只接收 queued/retrying，claimed/running 项由会话时间线接管 |
+| `src/pages/chat/components/MessageQueueDropdown.tsx` | 未认领队列的内容宽度胶囊 + 向上悬浮限高详情层；文案明确“认领后转入会话轨迹”，不把 Agent 执行状态重复显示为队列处理中 |
 | `src/pages/chat/viewport/messageProjection.ts` | 将 MessageList 已组装的权威消息顺序转换为虚拟行；不得按 active run 的原始启动时间二次排序，避免长任务状态回跳到历史顶部 |
 | `src/pages/chat/viewport/useMessageViewportRuntime.ts` | 虚拟列表、锚点与贴底；scroll 状态未变化时不得触发 React commit，首屏稳定轮询应尽快结束 |
 | `src/utils/perfEventRuntime.ts` | 首屏常驻的轻量性能事件缓冲；不得反向静态导入完整诊断模块 |
