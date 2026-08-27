@@ -19,9 +19,9 @@ public sealed class GitToolPermissionTests
     private static readonly ToolPermissionPolicyService s_policy = new();
 
     [TestMethod]
-    public void All_Git_Tools_Except_Reset_Are_AutoAllowed()
+    public void All_Git_Tools_Except_Reset_And_Push_Are_AutoAllowed()
     {
-        // 20 个 git 工具中 19 个应为 AutoAllowed（免运行时授权），仅 git_reset 保持 High。
+        // 20 个 git 工具中 18 个应为 AutoAllowed（免运行时授权），git_reset 与 git_push 保持 High。
         IPuddingTool[] tools =
         [
             new GitAddTool(),
@@ -38,7 +38,6 @@ public sealed class GitToolPermissionTests
             new GitLogTool(),
             new GitMergeTool(),
             new GitPullTool(),
-            new GitPushTool(),
             new GitRemoteTool(),
             new GitStashTool(),
             new GitStatusTool(),
@@ -60,6 +59,21 @@ public sealed class GitToolPermissionTests
     }
 
     [TestMethod]
+    public void GitPush_Remains_High_Destructive_Requires_Runtime_Authorization()
+    {
+        // 2026-08-28 复审裁定（依据用户裁定矩阵 (A)）：git_push 支持 Force=true 强制推送可覆写远端历史，
+        // 属「可直接覆写远端用户数据」，恢复 High+Destructive 运行时授权门禁（此前被错误降为 Low）。
+        var descriptor = new GitPushTool().Descriptor;
+        var decision = s_policy.Classify(descriptor);
+
+        Assert.AreEqual(ToolPermissionLevel.High, descriptor.PermissionLevel);
+        Assert.IsTrue(descriptor.Safety.HasFlag(ToolSafetyFlags.Destructive));
+        Assert.IsTrue(descriptor.Safety.HasFlag(ToolSafetyFlags.RequiresNetwork));
+        Assert.IsTrue(decision.RequiresRuntimeAuthorization);
+        Assert.AreEqual(ToolPermissionTier.RuntimeGranted, decision.Tier);
+    }
+
+    [TestMethod]
     public void GitReset_Remains_High_Destructive_Requires_Runtime_Authorization()
     {
         // git_reset 是唯一可永久丢弃工作区未提交改动（--hard）的 git 工具，保持 High+Destructive。
@@ -76,7 +90,7 @@ public sealed class GitToolPermissionTests
     public void GitClone_And_GitFetch_RequireNetwork_But_Do_Not_Trigger_Gate()
     {
         // RequiresNetwork 现行不参与门禁判定（仅标记），网络类工具风险靠实现级防护兜底。
-        foreach (var tool in new IPuddingTool[] { new GitCloneTool(), new GitFetchTool(), new GitPullTool(), new GitPushTool() })
+        foreach (var tool in new IPuddingTool[] { new GitCloneTool(), new GitFetchTool(), new GitPullTool() })
         {
             var descriptor = tool.Descriptor;
             Assert.IsTrue(descriptor.Safety.HasFlag(ToolSafetyFlags.RequiresNetwork), descriptor.ToolId);

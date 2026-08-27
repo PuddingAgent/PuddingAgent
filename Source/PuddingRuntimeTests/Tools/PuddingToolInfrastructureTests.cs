@@ -55,13 +55,15 @@ public sealed partial class PuddingToolInfrastructureTests
         Assert.AreEqual(ToolPermissionLevel.Low, remove.PermissionLevel);
         Assert.IsTrue(add.Safety.HasFlag(ToolSafetyFlags.ConcurrencySafe));
         Assert.IsTrue(remove.Safety.HasFlag(ToolSafetyFlags.ConcurrencySafe));
-        Assert.IsTrue(add.Safety.HasFlag(ToolSafetyFlags.ReadOnly));
+        Assert.IsFalse(add.Safety.HasFlag(ToolSafetyFlags.ReadOnly));
         Assert.IsFalse(add.Safety.HasFlag(ToolSafetyFlags.RequiresFileWrite));
         Assert.IsFalse(add.Safety.HasFlag(ToolSafetyFlags.Destructive));
         Assert.IsFalse(remove.Safety.HasFlag(ToolSafetyFlags.RequiresFileWrite));
         Assert.IsFalse(remove.Safety.HasFlag(ToolSafetyFlags.Destructive));
         StringAssert.Contains(add.Description, "低风险索引状态变更");
         StringAssert.Contains(remove.Description, "低风险索引状态变更");
+        // 2026-08-28 复审裁定：code_index_register_project 为写操作（登记注册表/触发索引），不再标注 ReadOnly（误标修正），
+        // 但索引数据可重建、不碰源文件，保持 Low+ConcurrencySafe 免审直通。
     }
 
     [TestMethod]

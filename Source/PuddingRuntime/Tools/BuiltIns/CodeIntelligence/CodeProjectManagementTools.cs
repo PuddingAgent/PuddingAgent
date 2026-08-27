@@ -15,8 +15,11 @@ namespace PuddingRuntime.Services.Tools;
     description: "在 Pudding 的代码索引注册表中登记本地项目目录（register project）。低风险索引状态变更——不修改或删除任何源文件。索引数据始终可重建。index=true 时在登记后触发语义索引。【何时用】所有基于索引的 CodeIntelligence 查询（code_symbol_search/code_callers/code_callees/code_impact/code_summary）之前必须先登记项目；查询报 project_id is required 或结果为空时，多半是项目未登记。【怎么用】传 project_path（本地目录，必须存在）；可选 project_id/display_name；index=true 在登记后触发后台语义索引，否则仅登记不建索引。【坑】目录不存在会失败；非 YOLO 模式受工作区边界限制；索引是异步后台任务，登记后需用 code_index_status 确认 Completed 再查询，否则查不到符号。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.Low,
-    safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
+    safety: ToolSafetyFlags.ConcurrencySafe,
     SortOrder = 200)]
+    // 2026-08-28 复审裁定（依据用户 2026-08-28 裁定矩阵）：code_index_register_project 实际是写操作（登记索引注册表、
+    // 可能触发后台索引），原误标 ReadOnly 语义不实；但索引数据可重建、不碰源文件，属低风险状态变更，
+    // Low+ConcurrencySafe 免审直通（去掉 ReadOnly 位）
 public sealed class CodeProjectAddTool : PuddingToolBase<CodeProjectAddArgs>
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)

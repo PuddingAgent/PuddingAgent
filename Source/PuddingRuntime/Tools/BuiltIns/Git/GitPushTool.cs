@@ -25,10 +25,12 @@ namespace PuddingRuntime.Services.Tools
         name: "Git Push",
         description: "将本地分支的提交推送（push）到远程仓库。何时用：把本地已提交的成果发布到远端，让其他人可见。怎么用/坑：Remote 默认 origin，Branch 缺省为当前分支；远端领先于本地时推送会被拒绝，需先 pull 合并；Force=true 强制覆盖远端历史（带 lease 语义），仅当确定要改写远端历史时使用，否则有丢失他人提交的风险；需要网络与推送权限。",
         category: ToolCategory.FileSystem,
-        permission: ToolPermissionLevel.Low,
-        safety: ToolSafetyFlags.RequiresNetwork | ToolSafetyFlags.ConcurrencySafe,
+        permission: ToolPermissionLevel.High,
+        safety: ToolSafetyFlags.RequiresNetwork | ToolSafetyFlags.Destructive,
         SortOrder = 68)]
-    // 2026-08-27 裁定（依据用户 2026-08-27 指示）：git_push 为无损写（普通 push 可再推送纠正；force 自带 lease 保护；泄密风险源于 commit 内容而非 push 动作），由 Medium 降为 Low+ConcurrencySafe 免审直通；RequiresNetwork 仅标记、现行不触发门禁
+    // 2026-08-28 复审裁定（依据用户 2026-08-28 裁定矩阵 (A)）：git_push 支持 Force=true（+refs/heads 强制推送）可覆写远端历史，
+    // 属「可直接损坏/覆写远端用户数据」，恢复 High+Destructive 运行时授权门禁；普通 push（Force=false）为无损路径，
+    // 但同一工具暴露强制覆写能力，故整工具保持 High 待用户在场授权（与 git_reset 同理）
     public sealed class GitPushTool : PuddingToolBase<GitPushArgs>
     {
         protected override Task<ToolExecutionResult> ExecuteCoreAsync(
