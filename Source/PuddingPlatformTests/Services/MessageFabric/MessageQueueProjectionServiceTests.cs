@@ -2,6 +2,7 @@
 using PuddingCode.Models;
 using PuddingCode.Services;
 using PuddingPlatform.Data;
+using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services.MessageFabric;
 
 namespace PuddingPlatformTests.Services.MessageFabric;
@@ -40,7 +41,7 @@ public sealed class MessageQueueProjectionServiceTests
     }
 
     [TestMethod]
-    public async Task GetAgentQueueAsync_ExcludesTerminalByDefault_AndCanIncludeTerminal()
+    public async Task GetAgentQueueAsync_DefaultContainsOnlyUnclaimedDeliveries_AndDiagnosticsCanIncludeAll()
     {
         using var temp = TemporaryDirectory.Create();
         var options = CreateOptions(temp.Path);
@@ -54,6 +55,9 @@ public sealed class MessageQueueProjectionServiceTests
         var delivered = await db.MessageDeliveries.SingleAsync(item => item.DeliveryId == "d-done");
         delivered.Status = MessageDeliveryStatuses.Delivered;
         delivered.AckAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var claimed = await db.MessageDeliveries.SingleAsync(item => item.DeliveryId == "d-active");
+        claimed.Status = MessageDeliveryStatuses.Delivering;
+        claimed.ClaimedByExecutionId = "execution-1";
         await db.SaveChangesAsync();
 
         var service = new MessageQueueProjectionService(db);
@@ -69,7 +73,7 @@ public sealed class MessageQueueProjectionServiceTests
             IncludeTerminal = true,
         }, CancellationToken.None);
 
-        CollectionAssert.AreEqual(new[] { "d-active" }, activeOnly.Items.Select(item => item.DeliveryId).ToArray());
+        Assert.IsEmpty(activeOnly.Items);
         CollectionAssert.AreEqual(new[] { "d-done", "d-active" }, withTerminal.Items.Select(item => item.DeliveryId).ToArray());
     }
 
@@ -98,6 +102,57 @@ public sealed class MessageQueueProjectionServiceTests
         Assert.AreEqual("assistant", snapshot.AgentId);
         Assert.AreEqual("room-a", snapshot.RoomId);
         CollectionAssert.AreEqual(new[] { "d-a" }, snapshot.Items.Select(item => item.DeliveryId).ToArray());
+    }
+
+    [TestMethod]
+    public async Task GetAgentQueueAsync_ProjectsDurableChatTurnsWithoutBrowserOwnedQueue()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var options = CreateOptions(temp.Path);
+
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        db.ChatMessages.AddRange(
+            ChatMessage("user-pending", "session-a", "queued after busy", 100),
+            ChatMessage("user-running", "session-a", "already running", 200),
+            ChatMessage("user-done", "session-a", "already done", 300));
+        db.ChatExecutionCommands.AddRange(
+            ChatCommand("cmd-pending", "user-pending", "session-a", "pending", 100),
+            ChatCommand("cmd-running", "user-running", "session-a", "running", 200, runId: "run-1"),
+            ChatCommand("cmd-done", "user-done", "session-a", "succeeded", 300));
+        await db.SaveChangesAsync();
+
+        var service = new MessageQueueProjectionService(db);
+        var active = await service.GetAgentQueueAsync(new MessageQueueProjectionQuery
+        {
+            WorkspaceId = "default",
+            AgentId = "assistant",
+            RoomId = "session-a",
+        }, CancellationToken.None);
+
+        CollectionAssert.AreEqual(
+            new[] { "turn:cmd-pending" },
+            active.Items.Select(item => item.DeliveryId).ToArray());
+        Assert.IsTrue(active.Items.All(item => item.QueueKind == MessageQueueKinds.ChatTurn));
+        Assert.AreEqual("queued after busy", active.Items[0].Content);
+        Assert.AreEqual(MessageDeliveryStatuses.Queued, active.Items[0].Status);
+        Assert.AreEqual("pending", active.Items[0].ExecutionState);
+        Assert.IsFalse(active.Items.Any(item => item.DeliveryId == "turn:cmd-running"));
+
+        var withTerminal = await service.GetAgentQueueAsync(new MessageQueueProjectionQuery
+        {
+            WorkspaceId = "default",
+            AgentId = "assistant",
+            RoomId = "session-a",
+            IncludeTerminal = true,
+        }, CancellationToken.None);
+
+        var completed = withTerminal.Items.Single(item => item.DeliveryId == "turn:cmd-done");
+        var running = withTerminal.Items.Single(item => item.DeliveryId == "turn:cmd-running");
+        Assert.AreEqual(MessageDeliveryStatuses.Delivering, running.Status);
+        Assert.AreEqual("run-1", running.ClaimedByExecutionId);
+        Assert.AreEqual(MessageDeliveryStatuses.Delivered, completed.Status);
+        Assert.AreEqual("delivered", completed.Substate);
     }
 
     [TestMethod]
@@ -302,6 +357,43 @@ public sealed class MessageQueueProjectionServiceTests
         delivery.UpdatedAt = createdAt;
         await db.SaveChangesAsync();
     }
+
+    private static ChatMessageEntity ChatMessage(
+        string messageId,
+        string sessionId,
+        string content,
+        long createdAt) => new()
+    {
+        MessageId = messageId,
+        SessionId = sessionId,
+        WorkspaceId = "default",
+        AgentInstanceId = "assistant",
+        Role = "user",
+        Content = content,
+        CreatedAt = createdAt,
+    };
+
+    private static ChatExecutionCommandEntity ChatCommand(
+        string commandId,
+        string userMessageId,
+        string sessionId,
+        string status,
+        long createdAt,
+        string? runId = null) => new()
+    {
+        CommandId = commandId,
+        BatchId = $"batch-{commandId}",
+        WorkspaceId = "default",
+        SessionId = sessionId,
+        MessageId = $"response-{commandId}",
+        UserMessageId = userMessageId,
+        TurnId = $"turn-{commandId}",
+        AgentInstanceId = "assistant",
+        UserId = "owner",
+        Status = status,
+        RunId = runId,
+        CreatedAt = createdAt,
+    };
 
     private static MessageRoutePlan RoutePlan(
         string messageId,

@@ -1,4 +1,3 @@
-using System.Reflection;
 using PuddingCode.Platform;
 
 namespace PuddingWebApiTests;
@@ -9,9 +8,11 @@ public sealed class BuiltInAgentTemplateToolIdTests
     [TestMethod]
     public void PuddingAgentBuiltInTemplates_Use_Registered_Runtime_Tool_Ids()
     {
-        var templateType = typeof(Program).Assembly.GetType("PuddingCode.Platform.BuiltInAgentTemplates", throwOnError: true)!;
-        var getAll = templateType.GetMethod("GetAll", BindingFlags.Public | BindingFlags.Static)!;
-        var templates = ((IEnumerable<AgentTemplateDefinition>)getAll.Invoke(null, null)!).ToArray();
+        Assert.AreSame(
+            typeof(AgentTemplateDefinition).Assembly,
+            typeof(BuiltInAgentTemplates).Assembly,
+            "Built-in template policy must have one authoritative definition in PuddingCore.");
+        var templates = BuiltInAgentTemplates.GetAll();
 
         var toolNames = templates
             .SelectMany(t => (t.Capability?.AllowedToolNames ?? [])

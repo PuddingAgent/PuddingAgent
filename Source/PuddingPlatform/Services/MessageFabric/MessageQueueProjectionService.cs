@@ -14,8 +14,12 @@ public sealed class MessageQueueProjectionService
     private static readonly string[] ActiveStatuses =
     [
         MessageDeliveryStatuses.Queued,
-        MessageDeliveryStatuses.Delivering,
         MessageDeliveryStatuses.Retrying,
+    ];
+
+    private static readonly string[] ActiveTurnStatuses =
+    [
+        "pending",
     ];
 
     private readonly PlatformDbContext _db;
@@ -54,25 +58,58 @@ public sealed class MessageQueueProjectionService
         if (!query.IncludeTerminal)
             deliveriesQuery = deliveriesQuery.Where(delivery => ActiveStatuses.Contains(delivery.Status));
 
-        // Fetch the full filtered candidate queue once, ordered by availableAt
-        // ascending (null = immediately available sorts first, SQLite semantics)
-        // so every returned item can carry its true queue position for the Phase 2
-        // "让位" (give-way) action. The display order (priority desc, created asc)
-        // is applied afterwards in memory.
-        var candidates = await deliveriesQuery
+        var deliveryCandidates = await deliveriesQuery
             .OrderBy(delivery => delivery.AvailableAt)
             .ThenBy(delivery => delivery.CreatedAt)
             .ThenBy(delivery => delivery.DeliveryId)
             .ToListAsync(ct);
 
-        var positionByDeliveryId = new Dictionary<string, int>(StringComparer.Ordinal);
-        for (var i = 0; i < candidates.Count; i++)
-            positionByDeliveryId[candidates[i].DeliveryId] = i;
+        var commandsQuery = _db.ChatExecutionCommands.AsNoTracking()
+            .Where(command =>
+                command.WorkspaceId == query.WorkspaceId &&
+                command.AgentInstanceId == query.AgentId);
 
-        var deliveries = candidates
-            .OrderByDescending(delivery => delivery.Priority)
-            .ThenBy(delivery => delivery.CreatedAt)
+        if (!string.IsNullOrWhiteSpace(query.RoomId))
+            commandsQuery = commandsQuery.Where(command => command.SessionId == query.RoomId);
+
+        if (!query.IncludeTerminal)
+            commandsQuery = commandsQuery.Where(command => ActiveTurnStatuses.Contains(command.Status));
+
+        var turnCandidates = await commandsQuery
+            .OrderBy(command => command.CreatedAt)
+            .ThenBy(command => command.CommandId)
+            .ToListAsync(ct);
+
+        // This endpoint is a unified read model, not a shared scheduler. Message
+        // deliveries and accepted Turns keep their own durable stores/executors.
+        // A global display position makes both sources observable without making
+        // the browser the owner of either queue.
+        var candidates = deliveryCandidates
+            .Select(delivery => QueueCandidate.ForDelivery(delivery))
+            .Concat(turnCandidates.Select(command => QueueCandidate.ForTurn(command)))
+            .ToList();
+
+        var positionByQueueItemId = candidates
+            .OrderBy(candidate => candidate.AvailableAt)
+            .ThenBy(candidate => candidate.CreatedAt)
+            .ThenBy(candidate => candidate.QueueItemId, StringComparer.Ordinal)
+            .Select((candidate, position) => (candidate.QueueItemId, position))
+            .ToDictionary(pair => pair.QueueItemId, pair => pair.position, StringComparer.Ordinal);
+
+        var selectedCandidates = candidates
+            .OrderByDescending(candidate => candidate.Priority)
+            .ThenBy(candidate => candidate.CreatedAt)
+            .ThenBy(candidate => candidate.QueueItemId, StringComparer.Ordinal)
             .Take(limit)
+            .ToList();
+
+        var deliveries = selectedCandidates
+            .Where(candidate => candidate.Delivery is not null)
+            .Select(candidate => candidate.Delivery!)
+            .ToList();
+        var commands = selectedCandidates
+            .Where(candidate => candidate.Command is not null)
+            .Select(candidate => candidate.Command!)
             .ToList();
 
         var messageIds = deliveries
@@ -90,8 +127,27 @@ public sealed class MessageQueueProjectionService
             .GroupBy(message => message.MessageId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
 
-        var items = deliveries
-            .Select(delivery => Map(delivery, messages, positionByDeliveryId))
+        var userMessageIds = commands
+            .Select(command => command.UserMessageId)
+            .Where(messageId => !string.IsNullOrWhiteSpace(messageId))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var chatMessageRows = userMessageIds.Count == 0
+            ? new List<ChatMessageEntity>()
+            : await _db.ChatMessages.AsNoTracking()
+                .Where(message =>
+                    message.WorkspaceId == query.WorkspaceId &&
+                    userMessageIds.Contains(message.MessageId))
+                .OrderByDescending(message => message.CreatedAt)
+                .ToListAsync(ct);
+        var chatMessages = chatMessageRows
+            .GroupBy(message => message.MessageId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+
+        var items = selectedCandidates
+            .Select(candidate => candidate.Delivery is not null
+                ? MapDelivery(candidate.Delivery, messages, positionByQueueItemId)
+                : MapTurn(candidate.Command!, chatMessages, positionByQueueItemId))
             .ToList();
 
         return new MessageQueueSnapshot
@@ -103,7 +159,7 @@ public sealed class MessageQueueProjectionService
         };
     }
 
-    private static MessageQueueItem Map(
+    private static MessageQueueItem MapDelivery(
         MessageDeliveryEntity delivery,
         IReadOnlyDictionary<string, RoomMessageEntity> messages,
         IReadOnlyDictionary<string, int> positionByDeliveryId)
@@ -116,6 +172,7 @@ public sealed class MessageQueueProjectionService
         return new MessageQueueItem
         {
             DeliveryId = delivery.DeliveryId,
+            QueueKind = MessageQueueKinds.MessageDelivery,
             MessageId = delivery.MessageId,
             WorkspaceId = delivery.WorkspaceId,
             RoomId = delivery.RoomId,
@@ -155,6 +212,67 @@ public sealed class MessageQueueProjectionService
         };
     }
 
+    private static MessageQueueItem MapTurn(
+        ChatExecutionCommandEntity command,
+        IReadOnlyDictionary<string, ChatMessageEntity> messages,
+        IReadOnlyDictionary<string, int> positionByQueueItemId)
+    {
+        messages.TryGetValue(command.UserMessageId, out var message);
+        var queueItemId = QueueCandidate.TurnQueueItemId(command.CommandId);
+        var status = MapTurnStatus(command.Status);
+
+        return new MessageQueueItem
+        {
+            DeliveryId = queueItemId,
+            QueueKind = MessageQueueKinds.ChatTurn,
+            MessageId = command.UserMessageId,
+            WorkspaceId = command.WorkspaceId,
+            RoomId = command.SessionId,
+            From = new MessageAddress
+            {
+                Kind = MessageEndpointKinds.User,
+                Id = command.UserId ?? "owner",
+                WorkspaceId = command.WorkspaceId,
+            },
+            Target = new MessageAddress
+            {
+                Kind = MessageEndpointKinds.Agent,
+                Id = command.AgentInstanceId,
+                WorkspaceId = command.WorkspaceId,
+            },
+            Content = message?.Content ?? string.Empty,
+            Audience = MessageAudiences.Direct,
+            Visibility = MessageVisibilities.Public,
+            MessageType = "user_turn",
+            ContentType = "text/plain",
+            Status = status,
+            Substate = status == MessageDeliveryStatuses.Queued ? "fresh" : status,
+            Priority = 0,
+            AttemptCount = command.AttemptCount,
+            DeferCount = 0,
+            ExecutionState = command.Status,
+            Position = positionByQueueItemId.TryGetValue(queueItemId, out var position) ? position : -1,
+            CreatedAt = command.CreatedAt,
+            AvailableAt = null,
+            LeaseUntil = command.LeaseUntil,
+            ReadAt = command.StartedAt,
+            AckAt = command.CompletedAt,
+            ClaimedByExecutionId = command.RunId ?? command.LeaseOwner,
+            LastError = command.LastError,
+        };
+    }
+
+    private static string MapTurnStatus(string status)
+        => status switch
+        {
+            "pending" => MessageDeliveryStatuses.Queued,
+            "leased" or "running" or "cancel_requested" => MessageDeliveryStatuses.Delivering,
+            "succeeded" => MessageDeliveryStatuses.Delivered,
+            "failed" => MessageDeliveryStatuses.Failed,
+            "cancelled" => MessageDeliveryStatuses.Cancelled,
+            _ => status,
+        };
+
     /// <summary>
     /// Phase 2 projection contract — locked semantics, do not change:
     /// <list type="bullet">
@@ -176,6 +294,41 @@ public sealed class MessageQueueProjectionService
             MessageDeliveryStatuses.Failed => "failed",
             _ => delivery.Status,
         };
+
+    private sealed record QueueCandidate(
+        string QueueItemId,
+        int Priority,
+        long CreatedAt,
+        long? AvailableAt,
+        MessageDeliveryEntity? Delivery,
+        ChatExecutionCommandEntity? Command)
+    {
+        public static QueueCandidate ForDelivery(MessageDeliveryEntity delivery)
+            => new(
+                delivery.DeliveryId,
+                delivery.Priority,
+                delivery.CreatedAt,
+                delivery.AvailableAt,
+                delivery,
+                null);
+
+        public static QueueCandidate ForTurn(ChatExecutionCommandEntity command)
+            => new(
+                TurnQueueItemId(command.CommandId),
+                0,
+                command.CreatedAt,
+                null,
+                null,
+                command);
+
+        public static string TurnQueueItemId(string commandId) => $"turn:{commandId}";
+    }
+}
+
+public static class MessageQueueKinds
+{
+    public const string MessageDelivery = "message_delivery";
+    public const string ChatTurn = "chat_turn";
 }
 
 public sealed record MessageQueueProjectionQuery
@@ -199,6 +352,7 @@ public sealed record MessageQueueSnapshot
 public sealed record MessageQueueItem
 {
     public required string DeliveryId { get; init; }
+    public required string QueueKind { get; init; }
     public required string MessageId { get; init; }
     public required string WorkspaceId { get; init; }
     public string? RoomId { get; init; }

@@ -438,6 +438,7 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(d => d.MessageId);
             e.HasIndex(d => new { d.MessageId, d.TargetKind, d.TargetId }).IsUnique();
             e.HasIndex(d => new { d.WorkspaceId, d.TargetKind, d.TargetId, d.Status });
+            e.HasIndex(d => new { d.WorkspaceId, d.TargetKind, d.TargetId, d.HandlingMode, d.Status });
             e.HasIndex(d => new { d.WorkspaceId, d.TargetKind, d.TargetId, d.Status, d.AvailableAt, d.Priority, d.CreatedAt });
             e.HasIndex(d => new { d.WorkspaceId, d.RoomId, d.CreatedAt });
             e.HasIndex(d => d.LeaseUntil);

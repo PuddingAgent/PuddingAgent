@@ -34,6 +34,13 @@ public sealed class MessageDeliveryEntity
     [Required, MaxLength(32), Column("status")]
     public string Status { get; set; } = "queued";
 
+    /// <summary>
+    /// execute starts canonical Agent work; notify only appends the message to
+    /// the target conversation and never wakes the model.
+    /// </summary>
+    [Required, MaxLength(16), Column("handling_mode")]
+    public string HandlingMode { get; set; } = "execute";
+
     [Column("priority")]
     public int Priority { get; set; }
 

@@ -69,6 +69,7 @@ public sealed class MessageFabricStore : IMessageInbox
                 TargetId = delivery.Target.Id,
                 TargetDisplayName = delivery.Target.DisplayName,
                 Status = MessageDeliveryStatuses.Queued,
+                HandlingMode = MessageDeliveryPolicy.NormalizeHandlingMode(delivery.HandlingMode),
                 Priority = delivery.Priority,
                 AttemptCount = 0,
                 CreatedAt = now,
@@ -140,6 +141,7 @@ public sealed class MessageFabricStore : IMessageInbox
                 delivery.RoomId,
                 delivery.TargetKind,
                 delivery.TargetId,
+                delivery.HandlingMode,
             })
             .Distinct()
             .ToListAsync(ct);
@@ -151,6 +153,7 @@ public sealed class MessageFabricStore : IMessageInbox
                 RoomId = target.RoomId,
                 TargetKind = target.TargetKind,
                 TargetId = target.TargetId,
+                HandlingMode = target.HandlingMode,
             })
             .ToList();
     }
@@ -180,6 +183,9 @@ public sealed class MessageFabricStore : IMessageInbox
 
         if (!string.IsNullOrWhiteSpace(request.DeliveryId))
             query = query.Where(delivery => delivery.DeliveryId == request.DeliveryId);
+
+        if (!string.IsNullOrWhiteSpace(request.HandlingMode))
+            query = query.Where(delivery => delivery.HandlingMode == request.HandlingMode);
 
         var delivery = await query
             .OrderByDescending(item => item.Priority)
@@ -228,6 +234,9 @@ public sealed class MessageFabricStore : IMessageInbox
 
         if (!string.IsNullOrWhiteSpace(request.RoomId))
             query = query.Where(delivery => delivery.RoomId == request.RoomId);
+
+        if (!string.IsNullOrWhiteSpace(request.HandlingMode))
+            query = query.Where(delivery => delivery.HandlingMode == request.HandlingMode);
 
         var deliveries = await query
             .OrderByDescending(item => item.Priority)
@@ -443,6 +452,7 @@ public sealed class MessageFabricStore : IMessageInbox
         return deliveries.Select(delivery =>
         {
             messages.TryGetValue(delivery.MessageId, out var message);
+            var metadata = DeserializeMetadata(message?.MetadataJson);
             return new MessageInboxItem
             {
                 DeliveryId = delivery.DeliveryId,
@@ -469,6 +479,9 @@ public sealed class MessageFabricStore : IMessageInbox
                 },
                 Content = message?.Content ?? string.Empty,
                 Status = delivery.Status,
+                HandlingMode = MessageDeliveryPolicy.NormalizeHandlingMode(
+                    delivery.HandlingMode,
+                    metadata),
                 Priority = delivery.Priority,
                 AttemptCount = delivery.AttemptCount,
                 CreatedAt = delivery.CreatedAt,
@@ -478,7 +491,7 @@ public sealed class MessageFabricStore : IMessageInbox
                 AckAt = delivery.AckAt,
                 ClaimedByExecutionId = delivery.ClaimedByExecutionId,
                 LastError = delivery.LastError,
-                Metadata = DeserializeMetadata(message?.MetadataJson),
+                Metadata = metadata,
             };
         }).ToList();
     }

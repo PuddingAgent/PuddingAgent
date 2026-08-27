@@ -73,10 +73,20 @@ public sealed class MessageDeliveryDispatcherTests
     }
 
     [TestMethod]
-    public async Task HandleAsync_OrdinaryAgentDeliveryFromAgent_IncludesSenderContext()
+    public async Task HandleAsync_AgentDelivery_HandsOffCanonicalTurnWithSenderContext()
     {
         var inbox = new RecordingMessageInbox
         {
+            ClaimContent = "hello",
+            ClaimMetadata = new Dictionary<string, string>
+            {
+                ["custom_key"] = "custom-value",
+                [MessageFabricTurnMetadata.FromId] = "forged-agent",
+                [MessageFabricTurnMetadata.RoomId] = "forged-room",
+                [MessageFabricTurnMetadata.ReplyExpected] = "false",
+                [MessageDeliveryPolicy.IntentMetadataKey] = MessageIntents.Ask,
+                [MessageDeliveryPolicy.RequiresResponseMetadataKey] = "true",
+            },
             ClaimFrom = new MessageAddress
             {
                 Kind = MessageEndpointKinds.Agent,
@@ -85,16 +95,37 @@ public sealed class MessageDeliveryDispatcherTests
             },
         };
         var runtime = new RecordingRuntimeAgentDispatcher();
-        var dispatcher = CreateDispatcher(inbox, runtime);
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            submitTurnHandler: submit);
 
         await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
 
-        Assert.HasCount(1, runtime.StreamRequests);
-        Assert.AreEqual("hello", runtime.StreamRequests[0].MessageText);
-        Assert.IsNotNull(runtime.StreamRequests[0].Origin);
-        Assert.AreEqual(MessageEndpointKinds.Agent, runtime.StreamRequests[0].Origin!.FromKind);
-        Assert.AreEqual("agent-a", runtime.StreamRequests[0].Origin!.FromId);
-        Assert.AreEqual("Agent A", runtime.StreamRequests[0].Origin!.FromDisplayName);
+        Assert.IsEmpty(runtime.StreamRequests);
+        Assert.HasCount(1, submit.Commands);
+        var command = submit.Commands.Single();
+        Assert.IsTrue(command.IsTrustedMessageFabricIngress);
+        Assert.AreEqual("agent-b-main-session", command.ConversationId);
+        var envelope = AgentContextEnvelopeRenderer.TryParse(
+            command.Content.Single().Text);
+        Assert.IsNotNull(envelope);
+        Assert.AreEqual("hello", envelope.Context.Text);
+        Assert.AreEqual(MessageEndpointKinds.Agent, envelope.From.Kind);
+        Assert.AreEqual("agent-a", envelope.From.Id);
+        Assert.AreEqual("Agent A", envelope.From.DisplayName);
+        Assert.AreEqual(
+            "true",
+            command.Metadata![MessageFabricTurnMetadata.ReplyExpected]);
+        Assert.AreEqual(
+            "agent-a",
+            command.Metadata[MessageFabricTurnMetadata.FromId]);
+        Assert.AreEqual(
+            "room-default",
+            command.Metadata[MessageFabricTurnMetadata.RoomId]);
+        Assert.AreEqual("custom-value", command.Metadata["custom_key"]);
+        Assert.HasCount(1, inbox.Acked);
     }
 
 
@@ -150,7 +181,7 @@ public sealed class MessageDeliveryDispatcherTests
     }
 
     [TestMethod]
-    public async Task HandleAsync_HeartbeatDeliveryWhenRuntimeBusy_AcksWithoutRetry()
+    public async Task HandleAsync_HeartbeatWhenAgentBusy_AcksAndDropsWithoutCanonicalTurn()
     {
         var heartbeatFrom = new MessageAddress { Kind = MessageEndpointKinds.System, Id = "heartbeat" };
         var inbox = new RecordingMessageInbox
@@ -158,24 +189,21 @@ public sealed class MessageDeliveryDispatcherTests
             ClaimFrom = heartbeatFrom,
             ClaimContent = "── 系统心跳 ──\n\n[系统心跳] 你醒来了。",
         };
-        var runtime = new RecordingRuntimeAgentDispatcher
-        {
-            StreamFrames =
-            [
-                ServerSentEventFrame.Json("error", new
-                {
-                    error = "Agent 'agent-b' is busy.",
-                    executionState = "Busy",
-                }),
-            ],
-        };
-        var dispatcher = CreateDispatcher(inbox, runtime);
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var availability = new RecordingAgentExecutionAvailabilityProvider("busy");
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            availability,
+            submitTurnHandler: submit);
 
         await dispatcher.HandleAsync(
             CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: heartbeatFrom),
             CancellationToken.None);
 
-        Assert.HasCount(1, runtime.StreamRequests);
+        Assert.IsEmpty(runtime.StreamRequests);
+        Assert.IsEmpty(submit.Commands);
         Assert.HasCount(1, inbox.Acked);
         Assert.AreEqual("d1", inbox.Acked[0].DeliveryId);
         Assert.IsEmpty(inbox.Retried);
@@ -183,29 +211,39 @@ public sealed class MessageDeliveryDispatcherTests
     }
 
     [TestMethod]
-    public async Task HandleAsync_UserActivityCancelsRunningHeartbeatAndAcksItsDelivery()
+    public async Task HandleAsync_AvailableHeartbeat_HandsOffCanonicalTurnAndAcksDelivery()
     {
         var heartbeatFrom = new MessageAddress { Kind = MessageEndpointKinds.System, Id = "heartbeat" };
         var inbox = new RecordingMessageInbox
         {
             ClaimFrom = heartbeatFrom,
             ClaimContent = "── 系统心跳 ──\n\n[系统心跳] 你醒来了。",
-            MaxClaimCount = 1,
         };
-        var runtime = new BlockingRuntimeAgentDispatcher();
-        var dispatcher = CreateDispatcher(inbox, runtime);
-
-        var heartbeatTask = dispatcher.HandleAsync(
-            CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: heartbeatFrom),
-            CancellationToken.None);
-        await runtime.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var availability = new RecordingAgentExecutionAvailabilityProvider("idle");
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            availability,
+            submitTurnHandler: submit);
 
         await dispatcher.HandleAsync(
-            CreateEvent(MessageEndpointKinds.Agent, "agent-b"),
+            CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: heartbeatFrom),
             CancellationToken.None);
-        await heartbeatTask.WaitAsync(TimeSpan.FromSeconds(2));
 
-        Assert.IsTrue(runtime.CancellationObserved);
+        Assert.IsEmpty(runtime.StreamRequests);
+        Assert.HasCount(1, submit.Commands);
+        var command = submit.Commands.Single();
+        var envelope = AgentContextEnvelopeRenderer.TryParse(
+            command.Content.Single().Text);
+        Assert.IsNotNull(envelope);
+        Assert.AreEqual("heartbeat", envelope.MessageType);
+        Assert.AreEqual(MessageEndpointKinds.System, envelope.From.Kind);
+        Assert.AreEqual("heartbeat", envelope.From.Id);
+        Assert.AreEqual(
+            "false",
+            command.Metadata![MessageFabricTurnMetadata.ReplyExpected]);
         Assert.HasCount(1, inbox.Acked);
         Assert.AreEqual("d1", inbox.Acked[0].DeliveryId);
         Assert.IsEmpty(inbox.Retried);
@@ -277,11 +315,11 @@ public sealed class MessageDeliveryDispatcherTests
         // increments AttemptCount, so without the cooldown a busy target would be
         // hot-looped claim → dispatch → busy → defer and AttemptCount would inflate
         // without any progress.
-        var agentSender = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "agent-a" };
+        var backgroundSender = new MessageAddress { Kind = MessageEndpointKinds.System, Id = "scheduler" };
         var inbox = new RecordingMessageInbox
         {
             ClaimAttemptCount = 3,
-            ClaimFrom = agentSender,
+            ClaimFrom = backgroundSender,
         };
         var runtime = new RecordingRuntimeAgentDispatcher
         {
@@ -297,14 +335,14 @@ public sealed class MessageDeliveryDispatcherTests
         var dispatcher = CreateDispatcher(inbox, runtime);
 
         await dispatcher.HandleAsync(
-            CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: agentSender),
+            CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: backgroundSender),
             CancellationToken.None);
         var firstExecution = inbox.LastClaim!.ExecutionId;
 
         // Second dispatch attempt inside the cooldown window must be skipped before
         // claiming, so no new execution is created and no second defer happens.
         await dispatcher.HandleAsync(
-            CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: agentSender),
+            CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: backgroundSender),
             CancellationToken.None);
 
         Assert.HasCount(1, inbox.Deferred);
@@ -438,6 +476,101 @@ public sealed class MessageDeliveryDispatcherTests
         Assert.IsEmpty(runtime.Requests);
         Assert.HasCount(1, runtime.StreamRequests);
         Assert.IsEmpty(availability.Requests);
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_PassiveNotificationWhileAgentBusy_AppendsAndAcksWithoutModelTurn()
+    {
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimMetadata = new Dictionary<string, string>
+            {
+                [MessageDeliveryPolicy.IntentMetadataKey] = MessageIntents.Inform,
+                [MessageDeliveryPolicy.RequiresResponseMetadataKey] = "false",
+            },
+            ClaimHandlingMode = MessageDeliveryHandlingModes.Notify,
+        };
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var availability = new RecordingAgentExecutionAvailabilityProvider("busy");
+        var submit = new RecordingSubmitTurnHandler();
+        var notifications = new RecordingConversationNotificationStore();
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            availability,
+            submitTurnHandler: submit,
+            notificationStore: notifications);
+
+        await dispatcher.HandleAsync(
+            CreateEvent(
+                MessageEndpointKinds.Agent,
+                "agent-b",
+                inbox.ClaimMetadata,
+                handlingMode: null),
+            CancellationToken.None);
+
+        Assert.IsEmpty(availability.Requests);
+        Assert.IsEmpty(runtime.Requests);
+        Assert.IsEmpty(runtime.StreamRequests);
+        Assert.IsEmpty(submit.Commands);
+        Assert.HasCount(1, notifications.Requests);
+        Assert.AreEqual("agent-b-main-session", notifications.Requests[0].ConversationId);
+        Assert.HasCount(1, inbox.Acked);
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_PassiveNotifications_ClaimsBoundedBatchButAppendsSeparateFacts()
+    {
+        var metadata = new Dictionary<string, string>
+        {
+            [MessageDeliveryPolicy.IntentMetadataKey] = MessageIntents.AgentReply,
+            [MessageDeliveryPolicy.RequiresResponseMetadataKey] = "false",
+        };
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimMetadata = metadata,
+            ClaimHandlingMode = MessageDeliveryHandlingModes.Notify,
+            BatchClaims =
+            [
+                new MessageInboxItem
+                {
+                    DeliveryId = "d2",
+                    MessageId = "m2",
+                    WorkspaceId = "default",
+                    RoomId = "room-other",
+                    From = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "agent-c" },
+                    Target = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "agent-b" },
+                    Content = "second notification",
+                    Status = MessageDeliveryStatuses.Delivering,
+                    HandlingMode = MessageDeliveryHandlingModes.Notify,
+                    AttemptCount = 1,
+                    CreatedAt = 101,
+                    Metadata = metadata,
+                },
+            ],
+        };
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var notifications = new RecordingConversationNotificationStore();
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            notificationStore: notifications);
+
+        await dispatcher.HandleAsync(
+            CreateEvent(
+                MessageEndpointKinds.Agent,
+                "agent-b",
+                metadata,
+                handlingMode: MessageDeliveryHandlingModes.Notify),
+            CancellationToken.None);
+
+        Assert.AreEqual(19, inbox.LastBatchMax);
+        Assert.IsNull(inbox.LastBatchClaim?.RoomId);
+        Assert.AreEqual(MessageDeliveryHandlingModes.Notify, inbox.LastBatchClaim?.HandlingMode);
+        Assert.HasCount(2, notifications.Requests);
+        Assert.AreNotEqual(notifications.Requests[0].MessageId, notifications.Requests[1].MessageId);
+        Assert.HasCount(2, inbox.Acked);
+        Assert.IsEmpty(runtime.StreamRequests);
     }
 
     [TestMethod]
@@ -600,9 +733,9 @@ public sealed class MessageDeliveryDispatcherTests
         {
             ClaimFrom = new MessageAddress
             {
-                Kind = MessageEndpointKinds.Agent,
-                Id = "agent-a",
-                DisplayName = "Agent A",
+                Kind = MessageEndpointKinds.User,
+                Id = "owner",
+                DisplayName = "Owner",
             },
             ClaimContent = "already delivered",
         };
@@ -671,10 +804,15 @@ public sealed class MessageDeliveryDispatcherTests
     }
 
     [TestMethod]
-    public async Task HandleAsync_OrdinaryAgentDeliveryFromAgent_SendsReplyBackToSender()
+    public async Task HandleAsync_AgentDelivery_RecordsDeferredReplyProjectionRoute()
     {
         var inbox = new RecordingMessageInbox
         {
+            ClaimMetadata = new Dictionary<string, string>
+            {
+                [MessageDeliveryPolicy.IntentMetadataKey] = MessageIntents.Ask,
+                [MessageDeliveryPolicy.RequiresResponseMetadataKey] = "true",
+            },
             ClaimFrom = new MessageAddress
             {
                 Kind = MessageEndpointKinds.Agent,
@@ -682,34 +820,34 @@ public sealed class MessageDeliveryDispatcherTests
                 DisplayName = "Agent A",
             },
         };
-        var runtime = new RecordingRuntimeAgentDispatcher
-        {
-            StreamFrames =
-            [
-                ServerSentEventFrame.Json("delta", new { delta = "reply " }),
-                ServerSentEventFrame.Json("done", new { reply = "reply from target" }),
-            ],
-        };
+        var runtime = new RecordingRuntimeAgentDispatcher();
         var messageSystem = new RecordingMessageSystem();
-        var dispatcher = CreateDispatcher(inbox, runtime, messageSystem: messageSystem);
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            messageSystem: messageSystem,
+            submitTurnHandler: submit);
 
         await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
 
-        Assert.HasCount(1, messageSystem.Sent);
-        var reply = messageSystem.Sent[0];
-        Assert.AreEqual(MessageEndpointKinds.Agent, reply.From.Kind);
-        Assert.AreEqual("agent-b", reply.From.Id);
-        Assert.HasCount(1, reply.To);
-        Assert.AreEqual(MessageEndpointKinds.Agent, reply.To[0].Kind);
-        Assert.AreEqual("agent-a", reply.To[0].Id);
-        Assert.AreEqual("reply from target", reply.Content);
-        Assert.AreEqual("agent_reply", reply.Metadata["intent"]);
-        Assert.AreEqual("m1", reply.ReplyToMessageId);
+        Assert.IsEmpty(runtime.StreamRequests);
+        Assert.IsEmpty(messageSystem.Sent);
+        var command = submit.Commands.Single();
+        Assert.AreEqual(
+            "true",
+            command.Metadata![MessageFabricTurnMetadata.ReplyExpected]);
+        Assert.AreEqual(
+            "agent-a",
+            command.Metadata[MessageFabricTurnMetadata.FromId]);
+        Assert.AreEqual(
+            "m1",
+            command.Metadata[MessageFabricTurnMetadata.MessageId]);
         Assert.HasCount(1, inbox.Acked);
     }
 
     [TestMethod]
-    public async Task HandleAsync_ReplyRoutingFailure_DoesNotRetryCompletedInboundDelivery()
+    public async Task HandleAsync_CanonicalHandoffFailure_RetriesInboundDelivery()
     {
         var inbox = new RecordingMessageInbox
         {
@@ -720,26 +858,27 @@ public sealed class MessageDeliveryDispatcherTests
                 DisplayName = "Retired Child Agent",
             },
         };
-        var runtime = new RecordingRuntimeAgentDispatcher
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var submit = new RecordingSubmitTurnHandler
         {
-            StreamFrames = [ServerSentEventFrame.Json("done", new { reply = "completed work" })],
+            Failure = new InvalidOperationException("acceptance store unavailable"),
         };
-        var messageSystem = new RecordingMessageSystem
-        {
-            Failure = new InvalidOperationException("Sender no longer accepts messages."),
-        };
-        var dispatcher = CreateDispatcher(inbox, runtime, messageSystem: messageSystem);
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            submitTurnHandler: submit);
 
         await dispatcher.HandleAsync(CreateEvent(MessageEndpointKinds.Agent, "agent-b"), CancellationToken.None);
 
-        Assert.HasCount(1, messageSystem.Sent);
-        Assert.HasCount(1, inbox.Acked);
-        Assert.IsEmpty(inbox.Retried);
+        Assert.IsEmpty(runtime.StreamRequests);
+        Assert.IsEmpty(inbox.Acked);
+        Assert.HasCount(1, inbox.Retried);
+        StringAssert.Contains(inbox.Retried[0].Error, "acceptance store unavailable");
         Assert.IsEmpty(inbox.DeadLettered);
     }
 
     [TestMethod]
-    public async Task HandleAsync_BatchedRuntimeFailure_RetriesEveryClaimedDelivery()
+    public async Task HandleAsync_AgentDelivery_IsAcceptedAsIndependentTurnWithoutBatching()
     {
         var agentSender = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "agent-a" };
         var inbox = new RecordingMessageInbox
@@ -763,20 +902,24 @@ public sealed class MessageDeliveryDispatcherTests
                 },
             ],
         };
-        var runtime = new RecordingRuntimeAgentDispatcher
-        {
-            StreamFrames = [ServerSentEventFrame.Json("error", new { message = "model failed" })],
-        };
-        var dispatcher = CreateDispatcher(inbox, runtime);
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            submitTurnHandler: submit);
 
         await dispatcher.HandleAsync(
             CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: agentSender),
             CancellationToken.None);
 
-        CollectionAssert.AreEquivalent(
-            new[] { "d1", "d2" },
-            inbox.Retried.Select(item => item.DeliveryId).ToArray());
-        Assert.IsEmpty(inbox.Acked);
+        Assert.HasCount(1, submit.Commands);
+        Assert.AreEqual("hello", AgentContextEnvelopeRenderer.TryParse(
+            submit.Commands.Single().Content.Single().Text)!.Context.Text);
+        Assert.HasCount(1, inbox.Acked);
+        Assert.AreEqual("d1", inbox.Acked.Single().DeliveryId);
+        Assert.IsFalse(inbox.Acked.Any(item => item.DeliveryId == "d2"));
+        Assert.IsEmpty(inbox.Retried);
     }
 
     [TestMethod]
@@ -796,7 +939,12 @@ public sealed class MessageDeliveryDispatcherTests
             StreamFrames = [ServerSentEventFrame.Json("done", new { reply = "ack" })],
         };
         var messageSystem = new RecordingMessageSystem();
-        var dispatcher = CreateDispatcher(inbox, runtime, messageSystem: messageSystem);
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            messageSystem: messageSystem,
+            submitTurnHandler: submit);
 
         await dispatcher.HandleAsync(
             CreateEvent(
@@ -806,6 +954,10 @@ public sealed class MessageDeliveryDispatcherTests
             CancellationToken.None);
 
         Assert.IsEmpty(messageSystem.Sent);
+        Assert.IsEmpty(runtime.StreamRequests);
+        Assert.AreEqual(
+            "false",
+            submit.Commands.Single().Metadata![MessageFabricTurnMetadata.ReplyExpected]);
         Assert.HasCount(1, inbox.Acked);
     }
 
@@ -887,30 +1039,34 @@ public sealed class MessageDeliveryDispatcherTests
     }
 
     [TestMethod]
-    public async Task HandleAsync_ForegroundAdmissionCancelsRunningHeartbeatAndAcksItsDelivery()
+    public async Task HandleAsync_ForegroundDemandClaimsAndDropsHeartbeatWithoutCreatingTurn()
     {
         var heartbeatFrom = new MessageAddress { Kind = MessageEndpointKinds.System, Id = "heartbeat" };
         var inbox = new RecordingMessageInbox
         {
             ClaimFrom = heartbeatFrom,
             ClaimContent = "── 系统心跳 ──\n\n[系统心跳] 你醒来了。",
-            MaxClaimCount = 1,
         };
-        var runtime = new BlockingRuntimeAgentDispatcher();
+        var runtime = new RecordingRuntimeAgentDispatcher();
         var coordinator = new AgentExecutionAdmissionCoordinator();
-        var dispatcher = CreateDispatcher(inbox, runtime, admissionCoordinator: coordinator);
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            submitTurnHandler: submit,
+            admissionCoordinator: coordinator);
 
-        var heartbeatTask = dispatcher.HandleAsync(
-            CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: heartbeatFrom),
-            CancellationToken.None);
-        await runtime.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        using (coordinator.AcquireForeground("default", "agent-b"))
+        {
+            await dispatcher.HandleAsync(
+                CreateEvent(MessageEndpointKinds.Agent, "agent-b", from: heartbeatFrom),
+                CancellationToken.None);
+        }
 
-        using var foreground = coordinator.AcquireForeground("default", "agent-b");
-        await heartbeatTask.WaitAsync(TimeSpan.FromSeconds(2));
-
-        Assert.IsTrue(runtime.CancellationObserved);
+        Assert.IsNotNull(inbox.LastClaim);
+        Assert.IsEmpty(submit.Commands);
         Assert.HasCount(1, inbox.Acked);
-        Assert.AreEqual("d1", inbox.Acked[0].DeliveryId);
+        Assert.AreEqual("d1", inbox.Acked.Single().DeliveryId);
         Assert.IsEmpty(inbox.Deferred);
         Assert.IsEmpty(inbox.Retried);
         Assert.IsEmpty(inbox.DeadLettered);
@@ -1144,6 +1300,7 @@ public sealed class MessageDeliveryDispatcherTests
         RecordingWorkspaceAgentCatalog? catalog = null,
         RecordingMessageSystem? messageSystem = null,
         RecordingSubmitTurnHandler? submitTurnHandler = null,
+        RecordingConversationNotificationStore? notificationStore = null,
         AgentExecutionAdmissionCoordinator? admissionCoordinator = null)
     {
         var services = new ServiceCollection();
@@ -1152,15 +1309,21 @@ public sealed class MessageDeliveryDispatcherTests
         services.AddScoped<IMessageInbox>(_ => inbox);
         services.AddScoped<IRuntimeAgentDispatcher>(_ => runtime);
         if (availability is not null)
+        {
             services.AddScoped<IAgentExecutionAvailabilityProvider>(_ => availability);
+            services.AddScoped<IAgentFirewall>(
+                _ => new AgentFirewall(availabilityProvider: availability));
+        }
         services.AddScoped<IWorkspaceAgentCatalog>(_ => effectiveCatalog);
         services.AddScoped<IAgentRuntimeProfileResolver>(_ => new RecordingAgentRuntimeProfileResolver(effectiveCatalog.Agents));
         services.AddScoped<IAgentInvocationDispatchFactory, AgentInvocationDispatchFactory>();
         services.AddLogging();
         if (messageSystem is not null)
             services.AddScoped<IMessageSystem>(_ => messageSystem);
-        if (submitTurnHandler is not null)
-            services.AddScoped<ISubmitTurnHandler>(_ => submitTurnHandler);
+        services.AddScoped<ISubmitTurnHandler>(
+            _ => submitTurnHandler ?? new RecordingSubmitTurnHandler());
+        services.AddScoped<IConversationNotificationStore>(
+            _ => notificationStore ?? new RecordingConversationNotificationStore());
 
         var provider = services.BuildServiceProvider();
         return new MessageDeliveryDispatcher(
@@ -1193,7 +1356,8 @@ public sealed class MessageDeliveryDispatcherTests
         string targetKind,
         string targetId,
         IReadOnlyDictionary<string, string>? metadata = null,
-        MessageAddress? from = null) =>
+        MessageAddress? from = null,
+        string? handlingMode = MessageDeliveryHandlingModes.Execute) =>
         new()
         {
             Type = "message.deliver",
@@ -1209,6 +1373,7 @@ public sealed class MessageDeliveryDispatcherTests
                 From = from ?? new MessageAddress { Kind = MessageEndpointKinds.User, Id = "owner" },
                 Target = new MessageAddress { Kind = targetKind, Id = targetId },
                 Content = "hello",
+                HandlingMode = handlingMode,
                 Metadata = metadata ?? new Dictionary<string, string>(),
             },
         };
@@ -1262,6 +1427,7 @@ public sealed class MessageDeliveryDispatcherTests
         public int ClaimAttemptCount { get; init; } = 1;
         public int? MaxClaimCount { get; init; }
         public IReadOnlyDictionary<string, string>? ClaimMetadata { get; init; }
+        public string ClaimHandlingMode { get; init; } = MessageDeliveryHandlingModes.Execute;
         public string? ClaimConversationId { get; init; }
         public string? ClaimContent { get; init; }
         public MessageAddress? ClaimFrom { get; init; }
@@ -1274,6 +1440,8 @@ public sealed class MessageDeliveryDispatcherTests
         public List<(string DeliveryId, string ExecutionId, string Error, DateTimeOffset AvailableAt)> Retried { get; } = [];
         public List<(string DeliveryId, string ExecutionId, string Error, DateTimeOffset AvailableAt)> Deferred { get; } = [];
         public List<(string DeliveryId, string ExecutionId, string Error)> DeadLettered { get; } = [];
+        public MessageClaimRequest? LastBatchClaim { get; private set; }
+        public int LastBatchMax { get; private set; }
 
         public Task<IReadOnlyList<MessageInboxItem>> ListAsync(MessageInboxQuery query, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<MessageInboxItem>>([]);
@@ -1304,6 +1472,7 @@ public sealed class MessageDeliveryDispatcherTests
                 Target = request.Endpoint,
                 Content = ClaimContent ?? (ClaimMetadata is null ? "hello" : "subagent result"),
                 Status = MessageDeliveryStatuses.Delivering,
+                HandlingMode = ClaimHandlingMode,
                 Priority = 0,
                 AttemptCount = ClaimAttemptCount,
                 CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
@@ -1315,8 +1484,12 @@ public sealed class MessageDeliveryDispatcherTests
         public Task<IReadOnlyList<MessageInboxItem>> ClaimBatchAsync(
             MessageClaimRequest request,
             int maxBatch,
-            CancellationToken ct = default) =>
-            Task.FromResult(BatchClaims);
+            CancellationToken ct = default)
+        {
+            LastBatchClaim = request;
+            LastBatchMax = maxBatch;
+            return Task.FromResult(BatchClaims);
+        }
 
         public Task<bool> RenewLeaseAsync(
             string deliveryId,
@@ -1362,12 +1535,15 @@ public sealed class MessageDeliveryDispatcherTests
     private sealed class RecordingSubmitTurnHandler : ISubmitTurnHandler
     {
         public List<SubmitTurnCommand> Commands { get; } = [];
+        public Exception? Failure { get; init; }
 
         public Task<AcceptanceResult> HandleAsync(
             SubmitTurnCommand command,
             CancellationToken ct)
         {
             Commands.Add(command);
+            if (Failure is not null)
+                throw Failure;
             return Task.FromResult(new AcceptanceResult
             {
                 ConversationId = command.ConversationId,
@@ -1376,6 +1552,24 @@ public sealed class MessageDeliveryDispatcherTests
                 CommandIds = ["command-1"],
                 AcceptedSequence = 1,
             });
+        }
+    }
+
+    private sealed class RecordingConversationNotificationStore
+        : IConversationNotificationStore
+    {
+        public List<ConversationNotificationRequest> Requests { get; } = [];
+
+        public Task<ConversationNotificationResult> AcceptAsync(
+            ConversationNotificationRequest request,
+            CancellationToken ct = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(new ConversationNotificationResult(
+                request.ConversationId,
+                request.MessageId,
+                Requests.Count,
+                AlreadyAccepted: false));
         }
     }
 

@@ -141,6 +141,7 @@ public static partial class PuddingServiceCollectionExtensions
 
             // ── Conversation 命令受理（ADR-059）─────────────
             builder.Services.AddScoped<ISubmitTurnHandler, SubmitTurnHandler>();
+            builder.Services.AddScoped<IConversationNotificationStore, ConversationNotificationStore>();
             builder.Services.AddScoped<IRequestTurnCancellationHandler, RequestTurnCancellationHandler>();
             builder.Services.AddScoped<ICreateSteeringHandler, CreateSteeringHandler>();
             builder.Services.AddScoped<IRequestCompactionHandler, RequestCompactionHandler>();

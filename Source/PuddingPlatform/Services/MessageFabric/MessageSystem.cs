@@ -92,6 +92,7 @@ public sealed class MessageSystem : IMessageSystem
                     From = envelope.From,
                     Target = delivery.Target,
                     Content = envelope.Content,
+                    HandlingMode = delivery.HandlingMode,
                     ReplyToMessageId = envelope.ReplyToMessageId,
                     Metadata = envelope.Metadata,
                 },

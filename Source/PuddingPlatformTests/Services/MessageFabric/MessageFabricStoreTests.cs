@@ -218,6 +218,77 @@ public sealed class MessageFabricStoreTests
     }
 
     [TestMethod]
+    public async Task ClaimBatchAsync_HandlingModeFilter_ClaimsOnlyPassiveNotificationsAcrossRooms()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var options = CreateOptions(temp.Path);
+
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var store = new MessageFabricStore(db);
+        await store.PersistRouteAsync("default", RoutePlan(), CancellationToken.None);
+        await store.PersistRouteAsync("default", new MessageRoutePlan
+        {
+            MessageId = "m-notify",
+            RoomMessage = new RoomMessageDraft
+            {
+                RoomId = "room-other",
+                MessageId = "m-notify",
+                From = new MessageAddress
+                {
+                    Kind = MessageEndpointKinds.Agent,
+                    Id = "consultant",
+                    WorkspaceId = "default",
+                },
+                Audience = MessageAudiences.Direct,
+                Visibility = MessageVisibilities.Public,
+                Content = "passive update",
+                Metadata = new Dictionary<string, string>
+                {
+                    [MessageDeliveryPolicy.IntentMetadataKey] = MessageIntents.Inform,
+                    [MessageDeliveryPolicy.RequiresResponseMetadataKey] = "false",
+                },
+                CreatedAt = 200,
+            },
+            Deliveries =
+            [
+                new MessageDeliveryDraft
+                {
+                    DeliveryId = "d-notify",
+                    MessageId = "m-notify",
+                    Target = new MessageAddress
+                    {
+                        Kind = MessageEndpointKinds.Agent,
+                        Id = "assistant",
+                        WorkspaceId = "default",
+                    },
+                    HandlingMode = MessageDeliveryHandlingModes.Notify,
+                },
+            ],
+        }, CancellationToken.None);
+
+        var claimed = await store.ClaimBatchAsync(new MessageClaimRequest
+        {
+            Endpoint = new MessageAddress
+            {
+                Kind = MessageEndpointKinds.Agent,
+                Id = "assistant",
+            },
+            WorkspaceId = "default",
+            HandlingMode = MessageDeliveryHandlingModes.Notify,
+            ExecutionId = "notify-batch",
+        }, 20, CancellationToken.None);
+
+        Assert.HasCount(1, claimed);
+        Assert.AreEqual("d-notify", claimed[0].DeliveryId);
+        Assert.AreEqual("room-other", claimed[0].RoomId);
+        Assert.AreEqual(MessageDeliveryHandlingModes.Notify, claimed[0].HandlingMode);
+        Assert.AreEqual(
+            MessageDeliveryStatuses.Queued,
+            (await db.MessageDeliveries.SingleAsync(item => item.DeliveryId == "d1")).Status);
+    }
+
+    [TestMethod]
     public async Task ListPendingTargetsAsync_ReturnsDistinctQueuedAndRetryingAgentScopes()
     {
         using var temp = TemporaryDirectory.Create();

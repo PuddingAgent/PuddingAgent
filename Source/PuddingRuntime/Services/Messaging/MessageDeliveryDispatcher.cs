@@ -43,6 +43,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
     private readonly AgentExecutionAdmissionCoordinator _admissionCoordinator;
     private readonly ILogger<MessageDeliveryDispatcher> _logger;
     private readonly ConcurrentDictionary<string, AgentDeliveryTarget> _knownAgentTargets = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _notificationDrainGates = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeHeartbeatExecutions = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _busyTargetCooldowns = new();
     private IEventSubscriptionHandle? _messageDeliverSubscription;
@@ -157,7 +158,31 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         var isForegroundIngress =
             IsGatewayConversationIngress(payload.Metadata)
             || string.Equals(payload.From.Kind, MessageEndpointKinds.User, StringComparison.OrdinalIgnoreCase);
-        RememberTarget(payload.WorkspaceId, payload.RoomId, payload.Target.Id);
+        var handlingMode = MessageDeliveryPolicy.NormalizeHandlingMode(
+            payload.HandlingMode,
+            payload.Metadata);
+        RememberTarget(
+            payload.WorkspaceId,
+            payload.RoomId,
+            payload.Target.Id,
+            handlingMode);
+
+        // Passive Agent notifications are durable conversation input, not
+        // execution work. Drain them independently of foreground/Busy state so
+        // inform/report_result/agent_reply cannot accumulate behind a long Turn.
+        if (string.Equals(
+                handlingMode,
+                MessageDeliveryHandlingModes.Notify,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            await DrainNotificationDeliveriesAsync(
+                payload.WorkspaceId,
+                payload.RoomId,
+                payload.Target.Id,
+                payload.DeliveryId,
+                ct);
+            return;
+        }
 
         // Only real user ingress may preempt background work. Sub-agent results
         // and agent-to-agent messages remain durable background deliveries.
@@ -260,7 +285,11 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         // Idle → the drain must claim immediately, so clear any busy cooldown
         // before dispatching. This keeps busy deferral latency-free.
         ClearTargetBusy(targetKey);
-        RememberTarget(payload.WorkspaceId, payload.RoomId, payload.AgentId);
+        RememberTarget(
+            payload.WorkspaceId,
+            payload.RoomId,
+            payload.AgentId,
+            MessageDeliveryHandlingModes.Execute);
         await TryClaimAndDispatchAsync(
             payload.WorkspaceId,
             payload.RoomId,
@@ -335,46 +364,6 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         using var scope = _scopeFactory.CreateScope();
         var inbox = scope.ServiceProvider.GetRequiredService<IMessageInbox>();
         var runtime = scope.ServiceProvider.GetRequiredService<IRuntimeAgentDispatcher>();
-        // StateGate cooldown check for heartbeat deliveries (Phase 3: unified via AgentFirewall)
-        if (isHeartbeat)
-        {
-            var firewall = scope.ServiceProvider.GetService<IAgentFirewall>();
-            if (firewall is not null)
-            {
-                var fwCtx = new FirewallContext
-                {
-                    WorkspaceId = workspaceId,
-                    SessionId = sessionId ?? string.Empty,
-                    AgentInstanceId = agentId,
-                    ToolId = "message.deliver",
-                    RuntimeMode = RuntimeExecutionMode.Normal,
-                    IsHeartbeat = true,
-                    IsAgentToAgent = false,
-                };
-                var fwDecision = await firewall.EvaluateAsync(fwCtx, ct);
-                if (!fwDecision.Allowed)
-                {
-                    LogDecision(
-                        workspaceId,
-                        roomId,
-                        messageIdHint,
-                        deliveryHint,
-                        MessageEndpointKinds.Agent,
-                        agentId,
-                        "skipped_unavailable",
-                        attemptCount: 0,
-                        executionId: executionId,
-                        correlationId: correlationId,
-                        causationId: causationId);
-                    _logger.LogInformation(
-                        "[MessageDeliveryDispatcher] Firewall blocked heartbeat delivery target={AgentId} gate={Gate} reason={Reason}",
-                        agentId,
-                        fwDecision.DeniedAtGate,
-                        fwDecision.DenyReason);
-                    return;
-                }
-            }
-        }
 
         var claimed = await inbox.ClaimNextAsync(new MessageClaimRequest
         {
@@ -417,12 +406,94 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             && !claimedIsSubAgentResult
             && string.Equals(claimed.From.Kind, MessageEndpointKinds.User, StringComparison.OrdinalIgnoreCase);
 
+        // Heartbeats are expendable when the Agent cannot accept background
+        // work. Evaluate after claim so both event-driven and restart-recovery
+        // paths can ACK/drop the occurrence instead of leaving it permanently
+        // queued. A heartbeat that passes this gate enters the same canonical
+        // Conversation path as other observable work.
+        if (claimedIsHeartbeat)
+        {
+            var firewall = scope.ServiceProvider.GetService<IAgentFirewall>();
+            if (firewall is not null)
+            {
+                var fwDecision = await firewall.EvaluateAsync(
+                    new FirewallContext
+                    {
+                        WorkspaceId = workspaceId,
+                        SessionId = sessionId ?? string.Empty,
+                        AgentInstanceId = agentId,
+                        ToolId = "message.deliver",
+                        RuntimeMode = RuntimeExecutionMode.Normal,
+                        IsHeartbeat = true,
+                        IsAgentToAgent = false,
+                    },
+                    ct);
+                if (!fwDecision.Allowed)
+                {
+                    await inbox.AckAsync(claimed.DeliveryId, executionId, ct);
+                    LogExecutionResult(
+                        claimed,
+                        MessageDeliveryStatuses.Delivered,
+                        executionId,
+                        correlationId,
+                        causationId);
+                    _logger.LogInformation(
+                        "[MessageDeliveryDispatcher] Dropped claimed heartbeat target={AgentId} delivery={DeliveryId} gate={Gate} reason={Reason}",
+                        agentId,
+                        claimed.DeliveryId,
+                        fwDecision.DeniedAtGate,
+                        fwDecision.DenyReason);
+                    return;
+                }
+            }
+        }
+
         // Connector chat ingress must enter the canonical ADR-059 command/event
         // path. It is intentionally one delivery = one Turn and never participates
         // in the legacy message batching/direct Runtime path.
         if (IsGatewayConversationIngress(effectiveMetadata))
         {
             await AcceptGatewayConversationTurnAsync(
+                scope.ServiceProvider,
+                inbox,
+                claimed,
+                executionId,
+                effectiveMetadata,
+                ct);
+            return;
+        }
+
+        if (claimedIsHeartbeat
+            && !_admissionCoordinator.CanStartBackground(workspaceId, agentId))
+        {
+            await inbox.AckAsync(claimed.DeliveryId, executionId, ct);
+            LogExecutionResult(
+                claimed,
+                MessageDeliveryStatuses.Delivered,
+                executionId,
+                correlationId,
+                causationId);
+            _logger.LogInformation(
+                "[MessageDeliveryDispatcher] Dropped claimed heartbeat because foreground admission is pending delivery={DeliveryId} agent={AgentId}",
+                claimed.DeliveryId,
+                claimed.Target.Id);
+            return;
+        }
+
+        // Agent-to-Agent messages and heartbeats are observable autonomous
+        // Turns. Claiming a MessageDelivery transfers ownership to the canonical
+        // Conversation command/event pipeline; the delivery is ACKed immediately
+        // after durable acceptance and no longer remains in the queue while the
+        // Agent executes it. Sub-agent results keep their dedicated continuation
+        // stream path.
+        if (!claimedIsSubAgentResult
+            && (claimedIsHeartbeat
+                || string.Equals(
+                    claimed.From.Kind,
+                    MessageEndpointKinds.Agent,
+                    StringComparison.OrdinalIgnoreCase)))
+        {
+            await AcceptMessageFabricConversationTurnAsync(
                 scope.ServiceProvider,
                 inbox,
                 claimed,
@@ -1313,6 +1384,407 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         return false;
     }
 
+    /// <summary>
+    /// Bounded, per-target drain for passive notifications. It never resolves or
+    /// invokes IRuntimeAgentDispatcher and therefore remains available while the
+    /// target Agent is running a foreground Turn.
+    /// </summary>
+    private async Task DrainNotificationDeliveriesAsync(
+        string workspaceId,
+        string? roomId,
+        string agentId,
+        string? deliveryId,
+        CancellationToken ct)
+    {
+        // Passive notifications all land in the Agent's main Conversation, so
+        // serialize and batch by Agent rather than by source room.
+        var gateKey = $"{workspaceId}\u001f{agentId}";
+        var gate = _notificationDrainGates.GetOrAdd(
+            gateKey,
+            _ => new SemaphoreSlim(1, 1));
+        if (!await gate.WaitAsync(0, ct))
+        {
+            _logger.LogDebug(
+                "[MessageDeliveryDispatcher] Notification drain coalesced target={AgentId} delivery={DeliveryId}",
+                agentId,
+                deliveryId);
+            return;
+        }
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var inbox = scope.ServiceProvider.GetRequiredService<IMessageInbox>();
+            var claimed = new List<MessageInboxItem>();
+            var executionId = $"notify-{deliveryId ?? agentId}-{Guid.NewGuid():N}";
+            var request = new MessageClaimRequest
+            {
+                Endpoint = new MessageAddress
+                {
+                    Kind = MessageEndpointKinds.Agent,
+                    Id = agentId,
+                    WorkspaceId = workspaceId,
+                },
+                WorkspaceId = workspaceId,
+                RoomId = roomId,
+                DeliveryId = deliveryId,
+                HandlingMode = MessageDeliveryHandlingModes.Notify,
+                ExecutionId = executionId,
+                LeaseDuration = DeliveryLeaseDuration,
+            };
+
+            if (!string.IsNullOrWhiteSpace(deliveryId))
+            {
+                var exact = await inbox.ClaimNextAsync(request, ct);
+                if (exact is not null)
+                    claimed.Add(exact);
+            }
+
+            var remaining = 20 - claimed.Count;
+            if (remaining > 0)
+            {
+                var additional = await inbox.ClaimBatchAsync(
+                    request with { DeliveryId = null, RoomId = null },
+                    remaining,
+                    ct);
+                claimed.AddRange(additional);
+            }
+
+            foreach (var item in claimed)
+            {
+                await AcceptMessageFabricNotificationAsync(
+                    scope.ServiceProvider,
+                    inbox,
+                    item,
+                    executionId,
+                    ct);
+            }
+
+            if (claimed.Count > 0)
+            {
+                _logger.LogInformation(
+                    "[MessageDeliveryDispatcher] Passive notification batch drained agent={AgentId} count={Count}",
+                    agentId,
+                    claimed.Count);
+            }
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task AcceptMessageFabricNotificationAsync(
+        IServiceProvider serviceProvider,
+        IMessageInbox inbox,
+        MessageInboxItem claimed,
+        string executionId,
+        CancellationToken ct)
+    {
+        try
+        {
+            var profileResolver = serviceProvider
+                .GetRequiredService<IAgentRuntimeProfileResolver>();
+            var profile = await profileResolver.ResolveAsync(
+                claimed.WorkspaceId,
+                claimed.Target.Id,
+                ct);
+            if (string.IsNullOrWhiteSpace(profile.MainSessionId))
+            {
+                throw new InvalidOperationException(
+                    $"Agent '{claimed.Target.Id}' does not have a bound main session.");
+            }
+
+            var sink = serviceProvider
+                .GetRequiredService<IConversationNotificationStore>();
+            await sink.AcceptAsync(
+                new ConversationNotificationRequest(
+                    WorkspaceId: claimed.WorkspaceId,
+                    ConversationId: profile.MainSessionId!,
+                    AgentInstanceId: claimed.Target.Id,
+                    MessageId: StableMessageFabricId(
+                        "fabric-notification",
+                        claimed.DeliveryId),
+                    Content: BuildMessageFabricEnvelopeText(
+                        claimed,
+                        claimed.Metadata),
+                    CreatedAt: claimed.CreatedAt > 0
+                        ? claimed.CreatedAt
+                        : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    UserId: StableMessageFabricUserId(claimed.From),
+                    Metadata: claimed.Metadata,
+                    CorrelationId: claimed.CorrelationId,
+                    CausationId: claimed.CausationId),
+                ct);
+
+            await inbox.AckAsync(claimed.DeliveryId, executionId, ct);
+            LogExecutionResult(
+                claimed,
+                MessageDeliveryStatuses.Delivered,
+                executionId,
+                claimed.CorrelationId,
+                claimed.CausationId);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var deadLettered = await RetryOrDeadLetterAsync(
+                inbox,
+                claimed,
+                executionId,
+                ex.Message,
+                CancellationToken.None);
+            LogExecutionResult(
+                claimed,
+                deadLettered
+                    ? MessageDeliveryStatuses.DeadLetter
+                    : MessageDeliveryStatuses.Retrying,
+                executionId,
+                claimed.CorrelationId,
+                claimed.CausationId);
+            _logger.LogError(
+                ex,
+                "[MessageDeliveryDispatcher] Passive notification acceptance failed delivery={DeliveryId} agent={AgentId} deadLettered={DeadLettered}",
+                claimed.DeliveryId,
+                claimed.Target.Id,
+                deadLettered);
+        }
+    }
+
+    private async Task AcceptMessageFabricConversationTurnAsync(
+        IServiceProvider serviceProvider,
+        IMessageInbox inbox,
+        MessageInboxItem claimed,
+        string executionId,
+        IReadOnlyDictionary<string, string> metadata,
+        CancellationToken ct)
+    {
+        try
+        {
+            var profileResolver = serviceProvider.GetRequiredService<IAgentRuntimeProfileResolver>();
+            var profile = await profileResolver.ResolveAsync(
+                claimed.WorkspaceId,
+                claimed.Target.Id,
+                ct);
+            if (string.IsNullOrWhiteSpace(profile.MainSessionId))
+                throw new InvalidOperationException(
+                    $"Agent '{claimed.Target.Id}' does not have a bound main session.");
+
+            var handoffMetadata = BuildMessageFabricTurnMetadata(claimed, metadata);
+            var existingEnvelope = AgentContextEnvelopeRenderer.TryParse(claimed.Content);
+            var canonicalContent = existingEnvelope is null
+                ? BuildMessageFabricEnvelopeText(claimed, metadata)
+                : claimed.Content;
+            var handler = serviceProvider.GetRequiredService<ISubmitTurnHandler>();
+
+            await handler.HandleAsync(
+                new SubmitTurnCommand(
+                    ConversationId: profile.MainSessionId!,
+                    WorkspaceId: claimed.WorkspaceId,
+                    UserId: StableMessageFabricUserId(claimed.From),
+                    ClientRequestId: StableMessageFabricId(
+                        "fabric-turn-request",
+                        claimed.DeliveryId),
+                    ClientMessageId: StableMessageFabricId(
+                        "fabric-turn-message",
+                        claimed.DeliveryId),
+                    Recipients: new RecipientRequest
+                    {
+                        Type = "agent",
+                        AgentIds = [claimed.Target.Id],
+                    },
+                    Content:
+                    [
+                        new ContentPart
+                        {
+                            Type = "text",
+                            Text = canonicalContent,
+                        },
+                    ],
+                    Metadata: handoffMetadata)
+                {
+                    IsTrustedMessageFabricIngress = true,
+                },
+                ct);
+
+            // Acceptance is the ownership boundary. From this point the
+            // Conversation command/event pipeline owns execution and recovery;
+            // Message Fabric only retains the terminal delivery audit row.
+            await inbox.AckAsync(claimed.DeliveryId, executionId, ct);
+            LogExecutionResult(
+                claimed,
+                MessageDeliveryStatuses.Delivered,
+                executionId,
+                claimed.CorrelationId,
+                claimed.CausationId);
+            _logger.LogInformation(
+                "[MessageDeliveryDispatcher] Message Fabric delivery handed off to canonical Turn delivery={DeliveryId} message={MessageId} agent={AgentId} conversation={ConversationId}",
+                claimed.DeliveryId,
+                claimed.MessageId,
+                claimed.Target.Id,
+                profile.MainSessionId);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var deadLettered = await RetryOrDeadLetterAsync(
+                inbox,
+                claimed,
+                executionId,
+                ex.Message,
+                CancellationToken.None);
+            LogExecutionResult(
+                claimed,
+                deadLettered
+                    ? MessageDeliveryStatuses.DeadLetter
+                    : MessageDeliveryStatuses.Retrying,
+                executionId,
+                claimed.CorrelationId,
+                claimed.CausationId);
+            _logger.LogError(
+                ex,
+                "[MessageDeliveryDispatcher] Message Fabric -> Conversation handoff failed delivery={DeliveryId} agent={AgentId} deadLettered={DeadLettered}",
+                claimed.DeliveryId,
+                claimed.Target.Id,
+                deadLettered);
+        }
+    }
+
+    private static Dictionary<string, string> BuildMessageFabricTurnMetadata(
+        MessageInboxItem claimed,
+        IReadOnlyDictionary<string, string> metadata)
+    {
+        // A sender may attach ordinary delivery metadata but must not be able to
+        // forge the trusted handoff/reply route. Rebuild every reserved key from
+        // the claimed durable delivery before SubmitTurn marks the ingress trusted.
+        var result = metadata
+            .Where(pair => !pair.Key.StartsWith(
+                "message_fabric_",
+                StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value,
+                StringComparer.Ordinal);
+        result[MessageFabricTurnMetadata.IsIngress] = "true";
+        result[MessageFabricTurnMetadata.DeliveryId] = claimed.DeliveryId;
+        result[MessageFabricTurnMetadata.MessageId] = claimed.MessageId;
+        result[MessageFabricTurnMetadata.FromKind] = claimed.From.Kind;
+        result[MessageFabricTurnMetadata.FromId] = claimed.From.Id;
+        result[MessageFabricTurnMetadata.Priority] = claimed.Priority.ToString(
+            System.Globalization.CultureInfo.InvariantCulture);
+        result[MessageFabricTurnMetadata.ReplyExpected] =
+            MessageDeliveryPolicy.RequiresResponse(metadata) ? "true" : "false";
+
+        AddIfPresent(result, MessageFabricTurnMetadata.FromDisplayName, claimed.From.DisplayName);
+        AddIfPresent(result, MessageFabricTurnMetadata.RoomId, claimed.RoomId);
+        AddIfPresent(result, MessageFabricTurnMetadata.ConversationId, claimed.ConversationId);
+        AddIfPresent(result, MessageFabricTurnMetadata.ReplyToMessageId, claimed.ReplyToMessageId);
+        AddIfPresent(result, MessageFabricTurnMetadata.CorrelationId, claimed.CorrelationId);
+        AddIfPresent(result, MessageFabricTurnMetadata.CausationId, claimed.CausationId);
+        return result;
+    }
+
+    private static void AddIfPresent(
+        IDictionary<string, string> metadata,
+        string key,
+        string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+            metadata[key] = value;
+    }
+
+    private static string BuildMessageFabricEnvelopeText(
+        MessageInboxItem claimed,
+        IReadOnlyDictionary<string, string> metadata)
+    {
+        var explicitType = GetMetadataValue(
+            metadata,
+            "message_type",
+            "messageType",
+            "MessageType");
+        var intent = GetMetadataValue(metadata, "intent", "Intent");
+        var messageType = IsHeartbeat(claimed)
+            ? "heartbeat"
+            : explicitType
+              ?? (string.Equals(intent, "agent_reply", StringComparison.OrdinalIgnoreCase)
+                  ? "agent_reply"
+                  : "agent_message");
+        var envelope = new AgentContextEnvelope
+        {
+            Version = 1,
+            MessageId = claimed.MessageId,
+            MessageType = messageType,
+            ContentType = "text/markdown",
+            CreatedAt = claimed.CreatedAt > 0
+                ? claimed.CreatedAt
+                : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            WorkspaceId = claimed.WorkspaceId,
+            RoomId = claimed.RoomId,
+            ConversationId = claimed.ConversationId,
+            ReplyToMessageId = claimed.ReplyToMessageId,
+            CorrelationId = claimed.CorrelationId,
+            CausationId = claimed.CausationId,
+            From = new AgentContextEndpoint(
+                claimed.From.Kind,
+                claimed.From.Id,
+                claimed.From.DisplayName),
+            To =
+            [
+                new AgentContextEndpoint(
+                    claimed.Target.Kind,
+                    claimed.Target.Id,
+                    claimed.Target.DisplayName),
+            ],
+            Constraints = BuildMessageFabricConstraints(metadata),
+            Context = new AgentContextPayload("text/markdown", claimed.Content),
+            Metadata = metadata,
+        };
+        return AgentContextEnvelopeRenderer.RenderForAgent(envelope);
+    }
+
+    private static IReadOnlyList<string> BuildMessageFabricConstraints(
+        IReadOnlyDictionary<string, string> metadata)
+    {
+        var constraints = new List<string>
+        {
+            "This message was delivered by Pudding Message Fabric.",
+        };
+        if (MessageDeliveryPolicy.RequiresResponse(metadata))
+        {
+            constraints.Add(
+                "Complete the request once. Do not call send_message merely to return the answer; the platform projects your committed terminal reply exactly once.");
+        }
+        else
+        {
+            constraints.Add(
+                "This message does not request a response. Do not send an acknowledgement or echo with send_message.");
+        }
+
+        return constraints;
+    }
+
+    private static string StableMessageFabricId(string prefix, string value)
+    {
+        var hash = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes($"{prefix}\n{value}")))
+            .ToLowerInvariant();
+        return $"{prefix}:{hash[..32]}";
+    }
+
+    private static string StableMessageFabricUserId(MessageAddress from)
+    {
+        var hash = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes($"{from.Kind}\n{from.Id}")))
+            .ToLowerInvariant();
+        return $"fabric:{hash[..32]}";
+    }
+
     private async Task AcceptGatewayConversationTurnAsync(
         IServiceProvider serviceProvider,
         IMessageInbox inbox,
@@ -1476,7 +1948,11 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         var inbox = scope.ServiceProvider.GetRequiredService<IMessageInbox>();
         var targets = await inbox.ListPendingTargetsAsync(MessageEndpointKinds.Agent, ct);
         foreach (var target in targets)
-            RememberTarget(target.WorkspaceId, target.RoomId, target.TargetId);
+            RememberTarget(
+                target.WorkspaceId,
+                target.RoomId,
+                target.TargetId,
+                target.HandlingMode);
 
         if (targets.Count > 0)
         {
@@ -1490,6 +1966,20 @@ public sealed class MessageDeliveryDispatcher : IHostedService
     {
         foreach (var target in _knownAgentTargets.Values.ToArray())
         {
+            if (string.Equals(
+                    target.HandlingMode,
+                    MessageDeliveryHandlingModes.Notify,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                await DrainNotificationDeliveriesAsync(
+                    target.WorkspaceId,
+                    target.RoomId,
+                    target.AgentId,
+                    deliveryId: null,
+                    ct);
+                continue;
+            }
+
             await TryClaimAndDispatchAsync(
                 target.WorkspaceId,
                 target.RoomId,
@@ -1518,11 +2008,27 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         }
     }
 
-    private void RememberTarget(string workspaceId, string? roomId, string agentId)
+    private void RememberTarget(
+        string workspaceId,
+        string? roomId,
+        string agentId,
+        string handlingMode)
     {
-        _knownAgentTargets[BuildTargetKey(workspaceId, roomId, agentId)] =
-            new AgentDeliveryTarget(workspaceId, roomId, agentId);
+        var normalizedMode = MessageDeliveryPolicy.NormalizeHandlingMode(handlingMode);
+        _knownAgentTargets[BuildKnownTargetKey(
+            workspaceId,
+            roomId,
+            agentId,
+            normalizedMode)] =
+            new AgentDeliveryTarget(workspaceId, roomId, agentId, normalizedMode);
     }
+
+    private static string BuildKnownTargetKey(
+        string workspaceId,
+        string? roomId,
+        string agentId,
+        string handlingMode)
+        => $"{BuildTargetKey(workspaceId, roomId, agentId)}\u001f{handlingMode}";
 
     private static string BuildTargetKey(string workspaceId, string? roomId, string agentId)
         => $"{workspaceId}\u001f{roomId}\u001f{agentId}";
@@ -1702,6 +2208,9 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         if (RuntimeDispatchMarkers.IsDuplicateMessage(result.StopReason, result.ReplyText))
             return false;
 
+        if (!MessageDeliveryPolicy.RequiresResponse(metadata))
+            return false;
+
         var intent = GetMetadataValue(metadata, "intent", "Intent");
         if (string.Equals(intent, "agent_reply", StringComparison.OrdinalIgnoreCase)
             || string.Equals(intent, "subagent_result", StringComparison.OrdinalIgnoreCase))
@@ -1743,7 +2252,11 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         return AgentContextEnvelopeRenderer.RenderForAgent(envelope);
     }
 
-    private sealed record AgentDeliveryTarget(string WorkspaceId, string? RoomId, string AgentId);
+    private sealed record AgentDeliveryTarget(
+        string WorkspaceId,
+        string? RoomId,
+        string AgentId,
+        string HandlingMode);
 
     private static bool LooksLikeFailureReply(string? reply)
         => AgentLoop.AgentExecutionOutcomePolicy.LooksLikeFailureReply(reply);

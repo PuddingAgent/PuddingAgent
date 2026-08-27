@@ -24,6 +24,8 @@ public sealed class SubmitTurnHandlerTests
                 ["client_fact"] = "kept",
                 [MessageGatewayMetadata.IsGatewayIngress] = "true",
                 [MessageGatewayMetadata.ConnectorId] = "feishu:forged",
+                [MessageFabricTurnMetadata.IsIngress] = "true",
+                [MessageFabricTurnMetadata.FromId] = "agent:forged",
             },
         }, CancellationToken.None);
 
@@ -35,6 +37,40 @@ public sealed class SubmitTurnHandlerTests
         Assert.IsFalse(
             store.LastRequest.Metadata.ContainsKey(
                 MessageGatewayMetadata.ConnectorId));
+        Assert.IsFalse(
+            store.LastRequest.Metadata.ContainsKey(
+                MessageFabricTurnMetadata.IsIngress));
+        Assert.IsFalse(
+            store.LastRequest.Metadata.ContainsKey(
+                MessageFabricTurnMetadata.FromId));
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_TrustedMessageFabricCommand_PreservesReservedMetadata()
+    {
+        var store = new RecordingAcceptanceStore();
+        var handler = new SubmitTurnHandler(
+            store,
+            new NullVisualArtifactResolver(),
+            NullLogger<SubmitTurnHandler>.Instance);
+        var command = Command() with
+        {
+            Metadata = new Dictionary<string, string>
+            {
+                [MessageFabricTurnMetadata.IsIngress] = "true",
+                [MessageFabricTurnMetadata.FromId] = "agent-a",
+            },
+            IsTrustedMessageFabricIngress = true,
+        };
+
+        await handler.HandleAsync(command, CancellationToken.None);
+
+        Assert.AreEqual(
+            "true",
+            store.LastRequest!.Metadata![MessageFabricTurnMetadata.IsIngress]);
+        Assert.AreEqual(
+            "agent-a",
+            store.LastRequest.Metadata[MessageFabricTurnMetadata.FromId]);
     }
 
     [TestMethod]

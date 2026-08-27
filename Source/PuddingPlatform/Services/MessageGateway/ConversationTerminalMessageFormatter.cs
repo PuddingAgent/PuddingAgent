@@ -9,6 +9,8 @@ namespace PuddingPlatform.Services.MessageGateway;
 /// </summary>
 public static class ConversationTerminalMessageFormatter
 {
+    public const string SyntheticEmptyReply = "（Agent 未返回可展示文本）";
+
     public static ConversationTerminalPresentation? Parse(string payload)
     {
         try
@@ -20,7 +22,11 @@ public static class ConversationTerminalMessageFormatter
             var errorCode = ReadString(root, "errorCode");
             var errorMessage = ReadString(root, "errorMessage");
 
-            if (!string.IsNullOrWhiteSpace(reply))
+            if (!string.IsNullOrWhiteSpace(reply)
+                && !string.Equals(
+                    reply.Trim(),
+                    SyntheticEmptyReply,
+                    StringComparison.Ordinal))
             {
                 return new ConversationTerminalPresentation(
                     reply.Trim(),

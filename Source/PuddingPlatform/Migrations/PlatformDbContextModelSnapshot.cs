@@ -1070,6 +1070,12 @@ namespace PuddingPlatform.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("execution_state");
 
+                    b.Property<string>("HandlingMode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("handling_mode");
+
                     b.Property<string>("LastError")
                         .HasMaxLength(1024)
                         .HasColumnType("TEXT")
@@ -1143,6 +1149,8 @@ namespace PuddingPlatform.Migrations
                     b.HasIndex("WorkspaceId", "RoomId", "CreatedAt");
 
                     b.HasIndex("WorkspaceId", "TargetKind", "TargetId", "Status");
+
+                    b.HasIndex("WorkspaceId", "TargetKind", "TargetId", "HandlingMode", "Status");
 
                     b.HasIndex("WorkspaceId", "TargetKind", "TargetId", "Status", "AvailableAt", "Priority", "CreatedAt");
 

@@ -60,6 +60,31 @@ public sealed class RuntimeControlServiceTests
     }
 
     [TestMethod]
+    public void RecordError_AggregateFuse_RemainsReachableAboveLegacyQueueCap()
+    {
+        var service = new RuntimeControlService(maxErrorsInWindow: 12, warningThreshold: 10);
+        const string sessionId = "session_aggregate";
+
+        RuntimeFuseResult result = null!;
+        for (var i = 0; i < 12; i++)
+        {
+            result = service.RecordError(
+                sessionId,
+                RuntimeErrorKind.Tool,
+                "tool",
+                $"distinct-error-{(char)('a' + i)}");
+
+            if (i < 11)
+                Assert.IsFalse(result.Triggered);
+        }
+
+        Assert.IsTrue(result.Triggered);
+        Assert.AreEqual(12, result.WindowErrorCount);
+        Assert.AreEqual(1, result.SameFingerprintCount);
+        StringAssert.Contains(result.Summary, "aggregate_error_window");
+    }
+
+    [TestMethod]
     public void ResetSessionFault_Clears_RecentErrors_For_Completed_Session()
     {
         var service = new RuntimeControlService(maxErrorsInWindow: 5, warningThreshold: 3);

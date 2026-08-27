@@ -49,7 +49,8 @@ public sealed class SubmitTurnHandler(
                 Content = command.Content,
                 Metadata = NormalizeMetadata(
                     command.Metadata,
-                    command.IsTrustedGatewayIngress),
+                    command.IsTrustedGatewayIngress,
+                    command.IsTrustedMessageFabricIngress),
             },
             command.WorkspaceId,
             command.ConversationId,
@@ -79,16 +80,22 @@ public sealed class SubmitTurnHandler(
 
     private static IReadOnlyDictionary<string, string>? NormalizeMetadata(
         IReadOnlyDictionary<string, string>? metadata,
-        bool isTrustedGatewayIngress)
+        bool isTrustedGatewayIngress,
+        bool isTrustedMessageFabricIngress)
     {
-        if (metadata is null || isTrustedGatewayIngress)
+        if (metadata is null)
             return metadata;
 
         var filtered = metadata
             .Where(pair =>
-                !pair.Key.StartsWith(
-                    "gateway_",
-                    StringComparison.OrdinalIgnoreCase))
+                (isTrustedGatewayIngress
+                 || !pair.Key.StartsWith(
+                     "gateway_",
+                     StringComparison.OrdinalIgnoreCase))
+                && (isTrustedMessageFabricIngress
+                    || !pair.Key.StartsWith(
+                        "message_fabric_",
+                        StringComparison.OrdinalIgnoreCase)))
             .ToDictionary(
                 pair => pair.Key,
                 pair => pair.Value,

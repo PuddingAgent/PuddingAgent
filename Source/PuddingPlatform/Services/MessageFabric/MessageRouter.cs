@@ -20,6 +20,7 @@ public sealed class MessageRouter : IMessageRouter
             throw new InvalidOperationException("RoomId is required for room message routing.");
 
         var targets = ResolveTargets(envelope, participants);
+        var handlingMode = MessageDeliveryPolicy.ResolveHandlingMode(envelope.Metadata);
         var deliveries = targets.Select(target => new MessageDeliveryDraft
         {
             // Stable per (message,target) so a reply projector may safely retry
@@ -28,6 +29,12 @@ public sealed class MessageRouter : IMessageRouter
             MessageId = envelope.MessageId,
             Target = target,
             Priority = envelope.Priority,
+            HandlingMode = string.Equals(
+                target.Kind,
+                MessageEndpointKinds.Agent,
+                StringComparison.OrdinalIgnoreCase)
+                ? handlingMode
+                : MessageDeliveryHandlingModes.Execute,
         }).ToList();
 
         return Task.FromResult(new MessageRoutePlan

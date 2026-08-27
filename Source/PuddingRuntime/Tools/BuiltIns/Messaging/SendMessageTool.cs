@@ -18,7 +18,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "send_message",
     name: "发送消息",
-    description: "通过消息系统发送消息。支持发送给 user:id、agent:id、room:id、connector:id，或使用 @all/all 广播到当前聊天室。",
+    description: "通过消息系统发送消息。Agent 目标默认 intent=inform（只通知、不唤醒模型、不自动回复）；需要对方执行时使用 ask/request_review/delegate，平台最多投影一次被动回复。支持 user:id、agent:id、room:id、connector:id 或 @all/all。",
     category: ToolCategory.Messaging,
     permission: ToolPermissionLevel.Low)]
 public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
@@ -41,6 +41,19 @@ public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
         var targets = ParseTargets(rawTo, context.WorkspaceId, roomId);
         if (targets.Count == 0)
             return ToolExecutionResult.Fail("to is required. Use an address like user:owner, agent:assistant, room:default, or @all.");
+
+        var intent = string.IsNullOrWhiteSpace(args.Intent)
+            ? MessageIntents.Inform
+            : args.Intent.Trim().ToLowerInvariant();
+        if (!MessageIntents.AgentToolAllowed.Contains(intent))
+        {
+            return ToolExecutionResult.Fail(
+                "intent must be one of: inform, ask, request_review, delegate, report_result.");
+        }
+        var requiresResponse = args.RequiresResponse
+            ?? (intent is MessageIntents.Ask
+                or MessageIntents.RequestReview
+                or MessageIntents.Delegate);
 
         // 分支 B：任何非 agent 目标（user / room / connector / @all）都通过
         // 当前飞书命令路由投递，避免 user/room/connector 投递落入无人认领的
@@ -69,7 +82,11 @@ public sealed class SendMessageTool : PuddingToolBase<SendMessageArgs>
             Priority = args.Priority ?? 0,
             Metadata = new Dictionary<string, string>
             {
-                ["source"] = "agent_tool", ["tool"] = "send_message", ["intent"] = "inform",
+                ["source"] = "agent_tool",
+                ["tool"] = "send_message",
+                [MessageDeliveryPolicy.IntentMetadataKey] = intent,
+                [MessageDeliveryPolicy.RequiresResponseMetadataKey] =
+                    requiresResponse ? "true" : "false",
             },
         };
 
@@ -362,6 +379,10 @@ public sealed record SendMessageArgs
     public string? RoomId { get; init; }
     [ToolParam("Optional numeric priority. 5 maps to important, 10 maps to urgent.")]
     public int? Priority { get; init; }
+    [ToolParam("Agent message intent. inform/report_result are passive notifications; ask/request_review/delegate create one executable request. Defaults to inform.")]
+    public string? Intent { get; init; }
+    [ToolParam("Optional response contract. Defaults true for ask/request_review/delegate and false for inform/report_result. Replies never wake the receiving model.")]
+    public bool? RequiresResponse { get; init; }
     [ToolParam("Optional message id this message replies to.")]
     public string? ReplyToMessageId { get; init; }
 }

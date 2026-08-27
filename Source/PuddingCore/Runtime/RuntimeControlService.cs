@@ -129,10 +129,10 @@ public interface IRuntimeControlService
 
 public sealed partial class RuntimeControlService : IRuntimeControlService
 {
-    private const int DefaultMaxErrorsInWindow = 50;
-    private const int DefaultWarningThreshold = 30;
+    private const int DefaultMaxErrorsInWindow = 10;
+    private const int DefaultWarningThreshold = 5;
     private const int DefaultWindowSeconds = 60;
-    private const int MaxRecentErrors = 10;
+    private const int SameFingerprintFuseThreshold = 5;
 
     private readonly ConcurrentDictionary<string, SessionControlState> _sessions = new(StringComparer.Ordinal);
     private readonly ILogger<RuntimeControlService> _logger;
@@ -142,6 +142,7 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
     private readonly int _maxErrorsInWindow;
     private readonly int _warningThreshold;
     private readonly TimeSpan _errorWindow;
+    private readonly int _recentErrorCapacity;
 
     /// <param name="logger">Optional logger.</param>
     /// <param name="maxErrorsInWindow">Max errors in sliding window before fuse triggers.</param>
@@ -154,9 +155,15 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
         int? windowSeconds = null)
     {
         _logger = logger ?? NullLogger<RuntimeControlService>.Instance;
-        _maxErrorsInWindow = maxErrorsInWindow ?? DefaultMaxErrorsInWindow;
-        _warningThreshold = warningThreshold ?? DefaultWarningThreshold;
-        _errorWindow = TimeSpan.FromSeconds(windowSeconds ?? DefaultWindowSeconds);
+        _maxErrorsInWindow = Math.Max(1, maxErrorsInWindow ?? DefaultMaxErrorsInWindow);
+        _warningThreshold = Math.Clamp(
+            warningThreshold ?? DefaultWarningThreshold,
+            1,
+            _maxErrorsInWindow);
+        _errorWindow = TimeSpan.FromSeconds(Math.Max(1, windowSeconds ?? DefaultWindowSeconds));
+        // The queue must retain enough evidence for every configured trigger. A fixed cap below
+        // MaxErrorsInWindow makes the aggregate fuse mathematically unreachable.
+        _recentErrorCapacity = Math.Max(_maxErrorsInWindow, SameFingerprintFuseThreshold);
     }
 
     public RuntimeExecutionMode Mode => _mode;
@@ -274,7 +281,7 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
                 Fingerprint = fingerprint,
             };
             state.RecentErrors.Enqueue(record);
-            while (state.RecentErrors.Count > MaxRecentErrors)
+            while (state.RecentErrors.Count > _recentErrorCapacity)
                 state.RecentErrors.Dequeue();
 
             // ── 窗口内同类错误计数 ──
@@ -285,28 +292,43 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
 
             // ── 渐进式预警等级 ──
             FuseWarningLevel warningLevel = FuseWarningLevel.None;
-            if (state.State != SessionState.Faulted && windowErrorCount >= _warningThreshold)
+            if (state.State != SessionState.Faulted
+                && (windowErrorCount >= _warningThreshold
+                    || sameFingerprintCount >= SameFingerprintFuseThreshold - 2))
             {
                 warningLevel = windowErrorCount >= _maxErrorsInWindow - 1
+                               || sameFingerprintCount >= SameFingerprintFuseThreshold - 1
                     ? FuseWarningLevel.Critical  // 濒临熔断
                     : FuseWarningLevel.Warning;  // 接近阈值
             }
 
-            // ── 熔断判断：滑动窗口内错误数达到阈值 ──
+            // ── 熔断判断：同一失败族快速止损，或窗口内总错误数达到阈值 ──
+            // Fingerprint deliberately excludes arguments. Exact tool+arguments retries are
+            // handled earlier by FailedToolCallTracker; this layer catches callers that keep
+            // changing irrelevant arguments while receiving the same underlying failure.
+            var sameFingerprintTriggered = sameFingerprintCount >= SameFingerprintFuseThreshold;
+            var aggregateTriggered = windowErrorCount >= _maxErrorsInWindow;
             var triggered = state.State != SessionState.Faulted
-                            && windowErrorCount >= _maxErrorsInWindow;
+                            && (sameFingerprintTriggered || aggregateTriggered);
 
             if (triggered)
             {
+                var triggerCause = sameFingerprintTriggered
+                    ? "same_failure_fingerprint"
+                    : "aggregate_error_window";
                 state.State = SessionState.Faulted;
-                state.FaultSummary = BuildFuseSummary(sessionId, state);
+                state.FaultSummary = BuildFuseSummary(
+                    sessionId,
+                    state,
+                    triggerCause,
+                    sameFingerprintCount);
                 state.Cancellation.Cancel();
                 _logger.LogError(
                     "[RuntimeFuse] Triggered session={SessionId} kind={Kind} component={Component} " +
                     "windowErrors={WindowErrors} sameFingerprint={SameFp} windowSec={WindowSec} " +
-                    "maxErrors={MaxErrors} fingerprint={Fingerprint}",
+                    "maxErrors={MaxErrors} trigger={TriggerCause} fingerprint={Fingerprint}",
                     sessionId, kind, component, windowErrorCount, sameFingerprintCount,
-                    _errorWindow.TotalSeconds, _maxErrorsInWindow, fingerprint);
+                    _errorWindow.TotalSeconds, _maxErrorsInWindow, triggerCause, fingerprint);
             }
 
             result = new RuntimeFuseResult
@@ -454,16 +476,16 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
         }
     }
 
-    private static RuntimeSessionControlSnapshot Snapshot(SessionControlState state)
+    private RuntimeSessionControlSnapshot Snapshot(SessionControlState state)
     {
         lock (state.Sync)
         {
             var now = DateTimeOffset.UtcNow;
             // 滑动窗口内有效错误
             var windowErrors = state.RecentErrors
-                .Where(e => now - e.TimestampUtc <= TimeSpan.FromSeconds(60))
+                .Where(e => now - e.TimestampUtc <= _errorWindow)
                 .ToList();
-            var fingerprint = windowErrors.FirstOrDefault()?.Fingerprint;
+            var fingerprint = windowErrors.LastOrDefault()?.Fingerprint;
             var sameFp = fingerprint is null ? 0
                 : windowErrors.Count(e => e.Fingerprint == fingerprint);
             return new RuntimeSessionControlSnapshot
@@ -484,13 +506,19 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
            + Environment.NewLine
            + "Send /resume to recover this session (clears error counters and allows the session to continue).";
 
-    private static string BuildFuseSummary(string sessionId, SessionControlState state)
+    private static string BuildFuseSummary(
+        string sessionId,
+        SessionControlState state,
+        string triggerCause,
+        int sameFingerprintCount)
     {
         var windowErrors = state.RecentErrors.Count;
         return "Session fuse triggered." + Environment.NewLine +
                $"Session: {sessionId}" + Environment.NewLine +
                $"State: {SessionState.Faulted}" + Environment.NewLine +
                $"Errors in window: {windowErrors}" + Environment.NewLine +
+               $"Same failure fingerprint: {sameFingerprintCount}" + Environment.NewLine +
+               $"Trigger: {triggerCause}" + Environment.NewLine +
                "Action: stopped agent output, blocked further tool calls." + Environment.NewLine +
                "Recovery: Send /resume to clear error counters and continue this session.";
     }
@@ -505,28 +533,21 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
         if (warningLevel == FuseWarningLevel.None)
             return $"Session '{sessionId}' has {windowErrorCount} recent error(s) in the last {_errorWindow.TotalSeconds:F0}s.";
 
-        var remaining = _maxErrorsInWindow - windowErrorCount;
-        var sameFp = state.RecentErrors.FirstOrDefault()?.Fingerprint;
-        var toolInfo = !string.IsNullOrWhiteSpace(sameFp) ? ExtractComponentFromFingerprint(sameFp) : "this tool";
+        var aggregateRemaining = Math.Max(_maxErrorsInWindow - windowErrorCount, 0);
+        var sameFingerprintRemaining = Math.Max(SameFingerprintFuseThreshold - sameFingerprintCount, 0);
+        var toolInfo = state.RecentErrors.LastOrDefault()?.Component ?? "this tool";
 
         if (warningLevel == FuseWarningLevel.Critical)
-            return $"⛔ FUSE WARNING: {toolInfo} has been rejected {sameFingerprintCount} times. " +
-                   $"This is the {windowErrorCount}th error in the last {_errorWindow.TotalSeconds:F0}s. " +
-                   $"Only {remaining} more error(s) will trigger session fuse. " +
+            return $"⛔ FUSE WARNING: {toolInfo} has produced the same failure {sameFingerprintCount} times. " +
+                   $"There are {windowErrorCount} errors in the last {_errorWindow.TotalSeconds:F0}s. " +
+                   $"Only {Math.Min(aggregateRemaining, sameFingerprintRemaining)} more matching error(s) will trigger session fuse. " +
                    "STOP retrying immediately — call request_tool_approval or try a different approach.";
 
-        return $"⚠️ Note: {toolInfo} has been rejected {sameFingerprintCount} times recently. " +
+        return $"⚠️ Note: {toolInfo} has produced the same failure {sameFingerprintCount} times recently. " +
                $"{windowErrorCount} error(s) in the last {_errorWindow.TotalSeconds:F0}s. " +
-               $"If {remaining} more error(s) occur, session fuse will suspend this session. " +
+               $"The fuse triggers after {sameFingerprintRemaining} more matching error(s) or " +
+               $"{aggregateRemaining} more error(s) of any kind. " +
                "Consider: (1) call request_tool_approval to request authorization, or (2) try an alternative tool/approach.";
-    }
-
-    /// <summary>从指纹中尝试提取工具/组件名用于更友好的提示。</summary>
-    private static string ExtractComponentFromFingerprint(string fingerprint)
-    {
-        // fingerprint 格式: kind|component|normalized_message 的 SHA256 前16位 hex
-        // 直接返回 "the tool" 即可 — 具体工具名从 error 消息中获取
-        return "the tool";
     }
 
     private static string Fingerprint(RuntimeErrorKind kind, string component, string message)

@@ -39,9 +39,47 @@ public sealed class MessageToolsTests
         Assert.AreEqual("你好", envelope.Content);
         Assert.AreEqual(5, envelope.Priority);
         Assert.AreEqual("inform", envelope.Metadata["intent"]);
+        Assert.AreEqual("false", envelope.Metadata["requires_response"]);
         Assert.AreEqual(MessageEndpointKinds.Agent, envelope.To[0].Kind);
         Assert.AreEqual("agent-b", envelope.To[0].Id);
         StringAssert.Contains(result.Output, "m-recorded");
+    }
+
+    [TestMethod]
+    public async Task SendMessageTool_Ask_RequestsOneExecutableResponse()
+    {
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric));
+
+        var result = await ExecuteAsync(tool, new Dictionary<string, string>
+        {
+            ["to"] = "agent:agent-b",
+            ["content"] = "review this",
+            ["intent"] = "request_review",
+        });
+
+        Assert.IsTrue(result.Success, result.Error);
+        var metadata = fabric.Sent.Single().Metadata;
+        Assert.AreEqual("request_review", metadata["intent"]);
+        Assert.AreEqual("true", metadata["requires_response"]);
+    }
+
+    [TestMethod]
+    public async Task SendMessageTool_RejectsUnknownIntent()
+    {
+        var fabric = new RecordingMessageSystem();
+        var tool = new SendMessageTool(CreateScopeFactory(fabric));
+
+        var result = await ExecuteAsync(tool, new Dictionary<string, string>
+        {
+            ["to"] = "agent:agent-b",
+            ["content"] = "loop forever",
+            ["intent"] = "ping_pong",
+        });
+
+        Assert.IsFalse(result.Success);
+        Assert.IsEmpty(fabric.Sent);
+        StringAssert.Contains(result.Error, "intent must be one of");
     }
 
     [TestMethod]

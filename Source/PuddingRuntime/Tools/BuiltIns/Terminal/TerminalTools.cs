@@ -221,13 +221,14 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs, Termi
 }
 
 /// <summary>Blocks on a background terminal job until it exits, output saturates the preview cap, or the wait deadline.</summary>
+/// <remarks>只读轮询：仅读取既有 job 的输出快照，不执行命令、不写文件。经用户指示（2026-08-27）由 High 降为 Low，归类 AutoAllowed 免运行时审批。</remarks>
 [Tool(
     id: "terminal_wait",
     name: "Terminal wait",
     description: "阻塞等待后台终端任务：直到任务退出、输出超过预览上限（返回截断句柄）或 wait_seconds 超时，一次性返回全部增量输出。每次工具调用都消耗一个完整模型轮——按预期耗时设置 wait_seconds（构建/测试类 180-600 秒），禁止 1-2 秒式反复轮询。取消等待不会杀死任务，请用 terminal_cancel 停止任务。",
     category: ToolCategory.Execute,
-    permission: ToolPermissionLevel.High,
-    safety: ToolSafetyFlags.RequiresShell,
+    permission: ToolPermissionLevel.Low,
+    safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
     SortOrder = 31)]
 public sealed class TerminalWaitTool : PuddingToolBase<TerminalWaitArgs, TerminalWaitResult>
 {
@@ -288,13 +289,14 @@ public sealed class TerminalWaitTool : PuddingToolBase<TerminalWaitArgs, Termina
 }
 
 /// <summary>Reads a terminal output slice without waiting for new process output.</summary>
+/// <remarks>只读轮询：仅读取缓冲输出切片，不执行命令、不写文件。经用户指示（2026-08-27）由 High 降为 Low，归类 AutoAllowed 免运行时审批。</remarks>
 [Tool(
     id: "terminal_read",
     name: "Terminal read",
     description: "按 job_id 和 from_offset 读取缓冲的终端输出切片。当 terminal_wait 返回截断句柄时使用。",
     category: ToolCategory.Execute,
-    permission: ToolPermissionLevel.High,
-    safety: ToolSafetyFlags.RequiresShell,
+    permission: ToolPermissionLevel.Low,
+    safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
     SortOrder = 32)]
 public sealed class TerminalReadTool : PuddingToolBase<TerminalReadArgs, TerminalWaitResult>
 {
@@ -336,13 +338,14 @@ public sealed class TerminalReadTool : PuddingToolBase<TerminalReadArgs, Termina
 }
 
 /// <summary>Lists terminal job status for the current session.</summary>
+/// <remarks>只读轮询：仅列出/查询本会话终端任务状态，不执行命令、不写文件。经用户指示（2026-08-27）由 High 降为 Low，归类 AutoAllowed 免运行时审批。</remarks>
 [Tool(
     id: "terminal_status",
     name: "Terminal status",
     description: "列出当前会话的后台终端任务，或按 job_id 检查单个任务。",
     category: ToolCategory.Execute,
-    permission: ToolPermissionLevel.High,
-    safety: ToolSafetyFlags.RequiresShell,
+    permission: ToolPermissionLevel.Low,
+    safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe,
     SortOrder = 33)]
 public sealed class TerminalStatusTool : PuddingToolBase<TerminalStatusArgs>
 {

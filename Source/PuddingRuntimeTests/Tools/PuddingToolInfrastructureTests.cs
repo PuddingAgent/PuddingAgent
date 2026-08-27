@@ -3603,6 +3603,38 @@ public sealed partial class PuddingToolInfrastructureTests
         Assert.AreEqual(1, idleDetector.ToolCompletedCount);
     }
 
+    [TestMethod]
+    public async Task ToolInvocationService_FusesSameFailureFamily_WhenArgumentsKeepChanging()
+    {
+        var runtime = new RuntimeControlService(maxErrorsInWindow: 50, warningThreshold: 30);
+        var service = new ToolInvocationService(
+            new FailingToolExecutionService("browser_not_available: No authenticated Desktop connected."),
+            workspaceGuard: null,
+            NullLogger<ToolInvocationService>.Instance,
+            runtimeControl: runtime);
+
+        ToolInvocationResult result = null!;
+        for (var i = 0; i < 5; i++)
+        {
+            result = await service.InvokeAsync(new ToolInvocationRequest
+            {
+                WorkspaceId = "workspace-1",
+                SessionId = "session-browser-disconnected",
+                AgentInstanceId = "agent-1",
+                ToolCallId = $"call-{i}",
+                ToolName = "browser_context",
+                ArgumentsJson = $$"""{"attempt":{{i}}}""",
+            });
+        }
+
+        Assert.IsFalse(result.Success);
+        StringAssert.StartsWith(result.Error, "Session fuse triggered.");
+        var status = runtime.GetStatus("session-browser-disconnected").Session;
+        Assert.IsNotNull(status);
+        Assert.AreEqual(SessionState.Faulted, status.State);
+        Assert.AreEqual(5, status.SameFingerprintCount);
+    }
+
     private static ToolApprovalIdentity SampleApprovalIdentity() => new()
     {
         WorkspaceId = "workspace-1",
@@ -3894,6 +3926,17 @@ public sealed partial class PuddingToolInfrastructureTests
 
             return Task.FromResult(ToolExecutionResult.Ok("executed via unified tool service"));
         }
+    }
+
+    private sealed class FailingToolExecutionService(string error) : IPuddingToolExecutionService
+    {
+        public Task<ToolExecutionResult> ExecuteAsync(
+            string toolId,
+            string argumentsJson,
+            ToolExecutionContext context,
+            CapabilityPolicy? policy,
+            CancellationToken ct = default)
+            => Task.FromResult(ToolExecutionResult.Fail(error));
     }
 
     private sealed class RecordingTelemetrySink : ITelemetryMetricSink

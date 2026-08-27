@@ -31,6 +31,39 @@ public sealed class MessageRouterTests
         Assert.AreEqual("assistant", plan.Deliveries[0].Target.Id);
         Assert.AreEqual(MessageEndpointKinds.Agent, plan.Deliveries[0].Target.Kind);
         Assert.AreEqual(5, plan.Deliveries[0].Priority);
+        Assert.AreEqual(
+            MessageDeliveryHandlingModes.Execute,
+            plan.Deliveries[0].HandlingMode);
+    }
+
+    [TestMethod]
+    public async Task RouteAsync_InformToAgent_CreatesPassiveNotificationDelivery()
+    {
+        var router = new MessageRouter();
+        var plan = await router.RouteAsync(new MessageEnvelope
+        {
+            MessageId = "m-inform",
+            RoomId = "room-default",
+            From = new MessageAddress
+            {
+                Kind = MessageEndpointKinds.Agent,
+                Id = "consultant",
+                WorkspaceId = "default",
+            },
+            To = [new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "assistant" }],
+            Audience = MessageAudiences.Direct,
+            Visibility = MessageVisibilities.Public,
+            Content = "status update",
+            Metadata = new Dictionary<string, string>
+            {
+                ["intent"] = MessageIntents.Inform,
+                ["requires_response"] = "false",
+            },
+        }, Participants());
+
+        Assert.AreEqual(
+            MessageDeliveryHandlingModes.Notify,
+            plan.Deliveries.Single().HandlingMode);
     }
 
     [TestMethod]

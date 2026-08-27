@@ -58,6 +58,29 @@ public sealed partial class BuiltInAgentTemplatesTests
     }
 
     [TestMethod]
+    public void TaskAndCodeTemplates_KeepLowRiskDiscoveryAndFileReadsInV2Defaults()
+    {
+        string[] lowRiskTools = ["search_tools", "file_read", "list_dir", "file_search", "search_grep"];
+        string[] grantRequiredTools = ["file_write", "file_patch", "apply_patch", "terminal_start", "shell"];
+
+        foreach (var template in new[] { BuiltInAgentTemplates.WorkspaceTaskAgent, BuiltInAgentTemplates.CodeAgent })
+        {
+            var defaults = template.Capability!.DefaultToolNames
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var grants = template.Capability.RequiresGrantToolNames
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var tool in lowRiskTools)
+                Assert.Contains(tool, defaults, template.TemplateId);
+            foreach (var tool in grantRequiredTools)
+            {
+                Assert.DoesNotContain(tool, defaults, template.TemplateId);
+                Assert.Contains(tool, grants, template.TemplateId);
+            }
+        }
+    }
+
+    [TestMethod]
     public void NonAuditTemplates_ExposeMinimalBrowserToolSet()
     {
         foreach (var template in new[]

@@ -49,7 +49,10 @@ internal static class ToolLoopInstructionBuilder
             sb.AppendLine(string.Join(", ", available
                 .OrderBy(tool => tool.ToolId, StringComparer.OrdinalIgnoreCase)
                 .Select(tool => $"`{tool.ToolId}`")));
-            sb.AppendLine("Function schemas are authoritative for descriptions and arguments. To call a tool, set `tool.name` to its id and `tool.args` to the validated arguments; use `search_tools` to discover deferred tools.");
+            sb.Append("Function schemas are authoritative for descriptions and arguments. To call a tool, set `tool.name` to its id and `tool.args` to the validated arguments.");
+            if (HasTool(available, ToolExposurePlanner.SearchToolId))
+                sb.Append(" Use `search_tools` to discover deferred tools.");
+            sb.AppendLine();
             if (HasTool(available, "terminal_start"))
             {
                 sb.AppendLine();

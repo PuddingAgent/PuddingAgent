@@ -24,4 +24,11 @@ public sealed class ConversationTerminalMessageFormatterTests
         Assert.IsNull(ConversationTerminalMessageFormatter.Parse(
             """{"kind":"Completed","errorCode":null,"errorMessage":null,"reply":null}"""));
     }
+
+    [TestMethod]
+    public void Parse_SyntheticEmptyReply_ReturnsNull()
+    {
+        Assert.IsNull(ConversationTerminalMessageFormatter.Parse(
+            $$"""{"kind":"Completed","reply":"{{ConversationTerminalMessageFormatter.SyntheticEmptyReply}}"}"""));
+    }
 }

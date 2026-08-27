@@ -48,3 +48,25 @@ public static class MessageGatewayMetadata
     /// </summary>
     public const string IsProjection = "gateway_is_projection";
 }
+
+/// <summary>
+/// Message Fabric delivery -> canonical Conversation Turn handoff metadata.
+/// These keys are process-internal routing facts and must not be accepted from
+/// ordinary HTTP SubmitTurn callers.
+/// </summary>
+public static class MessageFabricTurnMetadata
+{
+    public const string IsIngress = "message_fabric_ingress";
+    public const string DeliveryId = "message_fabric_delivery_id";
+    public const string MessageId = "message_fabric_message_id";
+    public const string FromKind = "message_fabric_from_kind";
+    public const string FromId = "message_fabric_from_id";
+    public const string FromDisplayName = "message_fabric_from_display_name";
+    public const string RoomId = "message_fabric_room_id";
+    public const string ConversationId = "message_fabric_conversation_id";
+    public const string ReplyToMessageId = "message_fabric_reply_to_message_id";
+    public const string CorrelationId = "message_fabric_correlation_id";
+    public const string CausationId = "message_fabric_causation_id";
+    public const string Priority = "message_fabric_priority";
+    public const string ReplyExpected = "message_fabric_reply_expected";
+}

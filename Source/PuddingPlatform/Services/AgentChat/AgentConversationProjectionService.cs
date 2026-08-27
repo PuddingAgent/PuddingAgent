@@ -635,9 +635,11 @@ public sealed class AgentConversationProjectionService(
             : string.Equals(sourceKind, "system", StringComparison.OrdinalIgnoreCase)
                 ? "system"
                 : "user";
-        var displayContent = string.Equals(sourceKind, "system", StringComparison.OrdinalIgnoreCase)
-                             && string.Equals(sourceId, "heartbeat", StringComparison.OrdinalIgnoreCase)
-                             && !string.IsNullOrWhiteSpace(envelope?.Context.Text)
+        // Canonical Message Fabric handoff stores the complete pudding-message
+        // envelope for Runtime context, while the Chat UI must render its human
+        // payload. This applies to Agent messages and heartbeat/system messages;
+        // exposing the transport JSON would make the accepted input card useless.
+        var displayContent = !string.IsNullOrWhiteSpace(envelope?.Context.Text)
             ? envelope.Context.Text
             : message.Content;
         completedProcessByMessageId.TryGetValue(message.MessageId, out var completedProcess);

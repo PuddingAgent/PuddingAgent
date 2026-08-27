@@ -56,6 +56,7 @@ public static class MessageFabricSchemaBootstrapper
             target_id             TEXT    NOT NULL,
             target_display_name   TEXT,
             status                TEXT    NOT NULL DEFAULT 'queued',
+            handling_mode         TEXT    NOT NULL DEFAULT 'execute',
             priority              INTEGER NOT NULL DEFAULT 0,
             attempt_count         INTEGER NOT NULL DEFAULT 0,
             available_at          INTEGER,
@@ -74,7 +75,26 @@ public static class MessageFabricSchemaBootstrapper
         "ALTER TABLE message_deliveries ADD COLUMN claimed_by_execution_id TEXT;",
         "ALTER TABLE message_deliveries ADD COLUMN defer_count INTEGER NOT NULL DEFAULT 0;",
         "ALTER TABLE message_deliveries ADD COLUMN execution_state TEXT;",
+        "ALTER TABLE message_deliveries ADD COLUMN handling_mode TEXT NOT NULL DEFAULT 'execute';",
         "ALTER TABLE message_deliveries ADD COLUMN last_error TEXT;",
+        // Historical send_message defaults used intent=inform but the old
+        // dispatcher treated every Agent delivery as executable and replyable.
+        // Backfill those notifications, terminal reports, and agent replies so
+        // the new recovery drain can clear an existing queue without waking LLMs.
+        """
+        UPDATE message_deliveries
+        SET handling_mode = 'notify'
+        WHERE message_id IN (
+            SELECT message_id
+            FROM room_messages
+            WHERE replace(lower(coalesce(metadata_json, '')), ' ', '') LIKE '%"intent":"agent_reply"%'
+               OR replace(lower(coalesce(metadata_json, '')), ' ', '') LIKE '%"intent":"report_result"%'
+               OR (
+                    replace(lower(coalesce(metadata_json, '')), ' ', '') LIKE '%"intent":"inform"%'
+                    AND replace(lower(coalesce(metadata_json, '')), ' ', '') NOT LIKE '%"requires_response":"true"%'
+               )
+        );
+        """,
         // Phase 2 projection contract: one-time dirty-data normalization (idempotent).
         // attempt_count > 3 truncation: historical attempt counts up to 248 were
         // inflated by the old busy spin-loop bug; the real retry cap is 3.
@@ -87,6 +107,7 @@ public static class MessageFabricSchemaBootstrapper
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_message_deliveries_delivery_id ON message_deliveries(delivery_id);",
         "CREATE INDEX IF NOT EXISTS idx_message_deliveries_message_id ON message_deliveries(message_id);",
         "CREATE INDEX IF NOT EXISTS idx_message_deliveries_endpoint_status ON message_deliveries(workspace_id, target_kind, target_id, status);",
+        "CREATE INDEX IF NOT EXISTS idx_message_deliveries_mode_status ON message_deliveries(workspace_id, target_kind, target_id, handling_mode, status);",
         "CREATE INDEX IF NOT EXISTS idx_message_deliveries_claim ON message_deliveries(workspace_id, target_kind, target_id, status, available_at, priority, created_at);",
         "CREATE INDEX IF NOT EXISTS idx_message_deliveries_room_time ON message_deliveries(workspace_id, room_id, created_at);",
         "CREATE INDEX IF NOT EXISTS idx_message_deliveries_lease_until ON message_deliveries(lease_until);",

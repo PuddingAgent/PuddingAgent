@@ -480,7 +480,11 @@ public sealed partial class ContextPipeline
             // Function schemas and the compact L1 tool index are authoritative. Repeating
             // every tool description here added thousands of stable-but-low-value tokens
             // to every request and defeated deferred tool discovery.
-            sb.AppendLine($"Callable tool/skill count: {availableSkills.Count}. Use the visible function schemas; use `search_tools` for deferred capabilities.");
+            var discoveryHint = availableSkills.Any(skill =>
+                skill.SkillId.Equals(ToolExposurePlanner.SearchToolId, StringComparison.OrdinalIgnoreCase))
+                ? " Use `search_tools` for deferred capabilities."
+                : string.Empty;
+            sb.AppendLine($"Callable tool/skill count: {availableSkills.Count}. Use the visible function schemas.{discoveryHint}");
         }
 
         if (pkgs.Count > 0)

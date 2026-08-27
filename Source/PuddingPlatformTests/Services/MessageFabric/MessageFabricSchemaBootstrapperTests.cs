@@ -113,6 +113,7 @@ public sealed class MessageFabricSchemaBootstrapperTests
             Assert.IsTrue(await ColumnExistsAsync(db, "message_deliveries", "last_error"));
             Assert.IsTrue(await ColumnExistsAsync(db, "message_deliveries", "defer_count"));
             Assert.IsTrue(await ColumnExistsAsync(db, "message_deliveries", "execution_state"));
+            Assert.IsTrue(await ColumnExistsAsync(db, "message_deliveries", "handling_mode"));
 
             var store = new MessageFabricStore(db);
             await store.PersistRouteAsync("default", new MessageRoutePlan
@@ -228,6 +229,52 @@ public sealed class MessageFabricSchemaBootstrapperTests
             Assert.IsNull(clean.ExecutionState);
         }
     }
+
+    [TestMethod]
+    public async Task EnsureCreatedAsync_BackfillsPassiveIntentDeliveriesWithoutReclassifyingWork()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        await using (var db = new PlatformDbContext(options))
+        {
+            await MessageFabricSchemaBootstrapper.EnsureCreatedAsync(db);
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO room_messages
+                    (message_id, workspace_id, room_id, from_kind, from_id, audience, visibility, content, metadata_json, created_at)
+                VALUES
+                    ('m-inform', 'default', 'room-1', 'agent', 'agent-a', 'direct', 'public', 'inform', '{"intent":"inform","requires_response":"false"}', 1),
+                    ('m-reply',  'default', 'room-1', 'agent', 'agent-a', 'direct', 'public', 'reply',  '{"intent":"agent_reply","requires_response":"false"}', 2),
+                    ('m-ask',    'default', 'room-1', 'agent', 'agent-a', 'direct', 'public', 'ask',    '{"intent":"ask","requires_response":"true"}', 3),
+                    ('m-work',   'default', 'room-1', 'agent', 'agent-a', 'direct', 'public', 'work',   '{"intent":"inform","requires_response":"true"}', 4);
+
+                INSERT INTO message_deliveries
+                    (delivery_id, message_id, workspace_id, room_id, target_kind, target_id, status, handling_mode, created_at, updated_at)
+                VALUES
+                    ('d-inform', 'm-inform', 'default', 'room-1', 'agent', 'agent-b', 'queued', 'execute', 1, 1),
+                    ('d-reply',  'm-reply',  'default', 'room-1', 'agent', 'agent-b', 'queued', 'execute', 2, 2),
+                    ('d-ask',    'm-ask',    'default', 'room-1', 'agent', 'agent-b', 'queued', 'execute', 3, 3),
+                    ('d-work',   'm-work',   'default', 'room-1', 'agent', 'agent-b', 'queued', 'execute', 4, 4);
+                """);
+
+            await MessageFabricSchemaBootstrapper.EnsureCreatedAsync(db);
+        }
+
+        await using (var db = new PlatformDbContext(options))
+        {
+            var modes = await db.MessageDeliveries.AsNoTracking()
+                .ToDictionaryAsync(item => item.DeliveryId, item => item.HandlingMode);
+            Assert.AreEqual(MessageDeliveryHandlingModes.Notify, modes["d-inform"]);
+            Assert.AreEqual(MessageDeliveryHandlingModes.Notify, modes["d-reply"]);
+            Assert.AreEqual(MessageDeliveryHandlingModes.Execute, modes["d-ask"]);
+            Assert.AreEqual(MessageDeliveryHandlingModes.Execute, modes["d-work"]);
+        }
+    }
+
     private static async Task<bool> TableExistsAsync(DbContext db, string tableName)
     {
         var connection = db.Database.GetDbConnection();

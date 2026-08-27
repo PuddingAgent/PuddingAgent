@@ -18,6 +18,97 @@ namespace PuddingPlatformTests.Services.MessageGateway;
 public sealed class ConversationReplyProjectionWorkerTests
 {
     [TestMethod]
+    public async Task ProjectBatchAsync_ProjectsCanonicalMessageFabricReplyOnce_ToSourceAgent()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+
+        var sent = new RecordingMessageSystem();
+        var services = new ServiceCollection();
+        services.AddDbContext<PlatformDbContext>(
+            options => options.UseSqlite(connection));
+        services.AddSingleton<IMessageSystem>(sent);
+        services.AddSingleton<IImageGenerationService>(
+            new StubImageGenerationService());
+        services.AddSingleton(CreateVisionStorage());
+        await using var provider = services.BuildServiceProvider();
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            await db.Database.EnsureCreatedAsync();
+            db.ChatExecutionCommands.Add(new ChatExecutionCommandEntity
+            {
+                CommandId = "fabric-command-1",
+                BatchId = "fabric-batch-1",
+                ClientRequestId = "fabric-request-1",
+                WorkspaceId = "default",
+                SessionId = "agent-b-main-session",
+                MessageId = "assistant-message-1",
+                UserMessageId = "fabric-user-message-1",
+                TurnId = "fabric-turn-1",
+                AgentInstanceId = "agent-b",
+                Status = "succeeded",
+                TerminalSequence = 2,
+                CreatedAt = 100,
+                CompletedAt = 200,
+                MetadataJson = JsonSerializer.Serialize(
+                    new Dictionary<string, string>
+                    {
+                        [MessageFabricTurnMetadata.IsIngress] = "true",
+                        [MessageFabricTurnMetadata.MessageId] = "original-message-1",
+                        [MessageFabricTurnMetadata.FromKind] = MessageEndpointKinds.Agent,
+                        [MessageFabricTurnMetadata.FromId] = "agent-a",
+                        [MessageFabricTurnMetadata.FromDisplayName] = "Agent A",
+                        [MessageFabricTurnMetadata.RoomId] = "room-1",
+                        [MessageFabricTurnMetadata.ConversationId] = "conversation-1",
+                        [MessageFabricTurnMetadata.Priority] = "7",
+                        [MessageFabricTurnMetadata.ReplyExpected] = "true",
+                    }),
+            });
+            db.ConversationEvents.Add(new ConversationEventEntity
+            {
+                ConversationId = "agent-b-main-session",
+                Sequence = 2,
+                EventId = "fabric-event-2",
+                WorkspaceId = "default",
+                TurnId = "fabric-turn-1",
+                CommandId = "fabric-command-1",
+                RunId = "fabric-run-1",
+                MessageId = "assistant-message-1",
+                Type = ConversationEventTypes.TurnCompleted,
+                Payload = """{"kind":"Completed","reply":"reply to agent A"}""",
+                OccurredAt = "2026-08-26T00:00:00Z",
+                CommittedAt = "2026-08-26T00:00:00Z",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var worker = new ConversationReplyProjectionWorker(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<ConversationReplyProjectionWorker>.Instance);
+
+        Assert.AreEqual(1, await worker.ProjectBatchAsync());
+        Assert.AreEqual(0, await worker.ProjectBatchAsync());
+        var reply = sent.Envelopes.Single();
+        Assert.AreEqual("agent-b", reply.From.Id);
+        Assert.AreEqual("agent-a", reply.To.Single().Id);
+        Assert.AreEqual("reply to agent A", reply.Content);
+        Assert.AreEqual("original-message-1", reply.ReplyToMessageId);
+        Assert.AreEqual("room-1", reply.RoomId);
+        Assert.AreEqual("conversation-1", reply.ConversationId);
+        Assert.AreEqual(7, reply.Priority);
+        Assert.AreEqual("agent_reply", reply.Metadata["intent"]);
+
+        await using var verifyScope = provider.CreateAsyncScope();
+        Assert.IsNotNull(
+            (await verifyScope.ServiceProvider
+                .GetRequiredService<PlatformDbContext>()
+                .ChatExecutionCommands.SingleAsync())
+            .ReplyProjectedAt);
+    }
+
+    [TestMethod]
     public async Task ProjectBatchAsync_ProjectsTerminalReplyOnce_ToBoundConnector()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

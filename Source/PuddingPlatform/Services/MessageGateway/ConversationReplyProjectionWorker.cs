@@ -64,7 +64,8 @@ public sealed class ConversationReplyProjectionWorker(
                 && command.TerminalSequence != null
                 && command.ReplyProjectedAt == null
                 && command.MetadataJson != null
-                && command.MetadataJson.Contains(MessageGatewayMetadata.IsGatewayIngress))
+                && (command.MetadataJson.Contains(MessageGatewayMetadata.IsGatewayIngress)
+                    || command.MetadataJson.Contains(MessageFabricTurnMetadata.IsIngress)))
             .OrderBy(command => command.CompletedAt)
             .Take(20)
             .ToListAsync(ct);
@@ -73,6 +74,22 @@ public sealed class ConversationReplyProjectionWorker(
         foreach (var command in commands)
         {
             var metadata = DeserializeMetadata(command.MetadataJson);
+            if (IsTrue(Get(metadata, MessageFabricTurnMetadata.IsIngress)))
+            {
+                if (await ProjectMessageFabricReplyAsync(
+                        db,
+                        messageSystem,
+                        command,
+                        metadata,
+                        ct))
+                {
+                    command.ReplyProjectedAt =
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    projected++;
+                }
+                continue;
+            }
+
             if (!IsTrue(Get(
                     metadata,
                     MessageGatewayMetadata.IsGatewayIngress)))
@@ -279,6 +296,107 @@ public sealed class ConversationReplyProjectionWorker(
             await db.SaveChangesAsync(ct);
 
         return projected;
+    }
+
+    private async Task<bool> ProjectMessageFabricReplyAsync(
+        PlatformDbContext db,
+        IMessageSystem messageSystem,
+        PuddingPlatform.Data.Entities.ChatExecutionCommandEntity command,
+        Dictionary<string, string> metadata,
+        CancellationToken ct)
+    {
+        // The inbound handoff records whether legacy Message Fabric semantics
+        // expect a reply. Heartbeats, agent_reply and subagent_result never echo.
+        if (!IsTrue(Get(metadata, MessageFabricTurnMetadata.ReplyExpected))
+            || !string.Equals(command.Status, "succeeded", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var fromKind = Get(metadata, MessageFabricTurnMetadata.FromKind);
+        var fromId = Get(metadata, MessageFabricTurnMetadata.FromId);
+        if (!string.Equals(fromKind, MessageEndpointKinds.Agent, StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(fromId))
+            return true;
+
+        var terminalEvent = await db.ConversationEvents
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                evt => evt.ConversationId == command.SessionId
+                       && evt.Sequence == command.TerminalSequence,
+                ct);
+        if (terminalEvent is null)
+            return false;
+
+        var presentation = ConversationTerminalMessageFormatter.Parse(terminalEvent.Payload);
+        if (presentation is null || presentation.IsError || string.IsNullOrWhiteSpace(presentation.Content))
+            return true;
+
+        var originalMessageId = Get(metadata, MessageFabricTurnMetadata.MessageId)
+                                ?? command.UserMessageId;
+        var replyMessageId = StableId(
+            "fabric-reply",
+            command.CommandId,
+            fromId,
+            originalMessageId);
+        var priority = int.TryParse(
+            Get(metadata, MessageFabricTurnMetadata.Priority),
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var parsedPriority)
+            ? parsedPriority
+            : 0;
+
+        await messageSystem.SendAsync(
+            new MessageEnvelope
+            {
+                MessageId = replyMessageId,
+                From = new MessageAddress
+                {
+                    Kind = MessageEndpointKinds.Agent,
+                    Id = command.AgentInstanceId,
+                    WorkspaceId = command.WorkspaceId,
+                },
+                To =
+                [
+                    new MessageAddress
+                    {
+                        Kind = MessageEndpointKinds.Agent,
+                        Id = fromId,
+                        WorkspaceId = command.WorkspaceId,
+                        DisplayName = Get(
+                            metadata,
+                            MessageFabricTurnMetadata.FromDisplayName),
+                    },
+                ],
+                RoomId = Get(metadata, MessageFabricTurnMetadata.RoomId),
+                ConversationId = Get(
+                    metadata,
+                    MessageFabricTurnMetadata.ConversationId),
+                ReplyToMessageId = originalMessageId,
+                CorrelationId = Get(metadata, MessageFabricTurnMetadata.CorrelationId)
+                                ?? command.SessionId,
+                CausationId = Get(metadata, MessageFabricTurnMetadata.CausationId)
+                              ?? command.TurnId,
+                Audience = MessageAudiences.Direct,
+                Visibility = MessageVisibilities.Public,
+                ContentType = MessageContentTypes.Text,
+                Content = presentation.Content,
+                Priority = priority,
+                Metadata = new Dictionary<string, string>
+                {
+                    ["source"] = "conversation_reply_projection",
+                    ["intent"] = "agent_reply",
+                    ["requires_response"] = "false",
+                    ["reply_to_message_id"] = originalMessageId,
+                },
+            },
+            ct);
+
+        logger.LogInformation(
+            "[MessageFabric] Canonical Turn reply projected command={CommandId} target={TargetAgentId} message={MessageId}",
+            command.CommandId,
+            fromId,
+            replyMessageId);
+        return true;
     }
 
     private static Dictionary<string, string> DeserializeMetadata(string? json)

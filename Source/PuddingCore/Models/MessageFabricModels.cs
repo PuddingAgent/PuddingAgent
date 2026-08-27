@@ -49,6 +49,121 @@ public static class MessageDeliveryStatuses
     public const string Expired = "expired";
 }
 
+/// <summary>
+/// How an Agent-targeted delivery is consumed. Execute deliveries may start a
+/// canonical Turn; notify deliveries are appended to the Agent conversation
+/// without waking the model.
+/// </summary>
+public static class MessageDeliveryHandlingModes
+{
+    public const string Execute = "execute";
+    public const string Notify = "notify";
+}
+
+/// <summary>Stable Agent-to-Agent message intents understood by Message Fabric.</summary>
+public static class MessageIntents
+{
+    public const string Inform = "inform";
+    public const string Ask = "ask";
+    public const string RequestReview = "request_review";
+    public const string Delegate = "delegate";
+    public const string ReportResult = "report_result";
+    public const string AgentReply = "agent_reply";
+    public const string SubAgentResult = "subagent_result";
+
+    public static readonly IReadOnlySet<string> AgentToolAllowed =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            Inform,
+            Ask,
+            RequestReview,
+            Delegate,
+            ReportResult,
+        };
+}
+
+/// <summary>
+/// Central intent policy. Unknown/legacy intents remain executable, but no
+/// message receives an automatic reply unless the protocol explicitly asks for
+/// one. This fail-closed response rule prevents accidental A-to-B-to-A loops.
+/// </summary>
+public static class MessageDeliveryPolicy
+{
+    public const string IntentMetadataKey = "intent";
+    public const string RequiresResponseMetadataKey = "requires_response";
+
+    public static string ResolveHandlingMode(
+        IReadOnlyDictionary<string, string>? metadata)
+    {
+        var intent = Get(metadata, IntentMetadataKey);
+        var explicitlyRequiresResponse = TryReadBoolean(
+            Get(metadata, RequiresResponseMetadataKey));
+
+        if (explicitlyRequiresResponse == true)
+            return MessageDeliveryHandlingModes.Execute;
+
+        return intent?.ToLowerInvariant() switch
+        {
+            MessageIntents.Inform
+                or MessageIntents.ReportResult
+                or MessageIntents.AgentReply
+                => MessageDeliveryHandlingModes.Notify,
+            _ => MessageDeliveryHandlingModes.Execute,
+        };
+    }
+
+    public static bool RequiresResponse(
+        IReadOnlyDictionary<string, string>? metadata)
+    {
+        var explicitValue = TryReadBoolean(
+            Get(metadata, RequiresResponseMetadataKey));
+        if (explicitValue.HasValue)
+            return explicitValue.Value;
+
+        var intent = Get(metadata, IntentMetadataKey);
+        return string.Equals(intent, MessageIntents.Ask, StringComparison.OrdinalIgnoreCase)
+               || string.Equals(intent, MessageIntents.RequestReview, StringComparison.OrdinalIgnoreCase)
+               || string.Equals(intent, MessageIntents.Delegate, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static string NormalizeHandlingMode(
+        string? value,
+        IReadOnlyDictionary<string, string>? metadata = null)
+        => string.Equals(value, MessageDeliveryHandlingModes.Notify, StringComparison.OrdinalIgnoreCase)
+            ? MessageDeliveryHandlingModes.Notify
+            : string.Equals(value, MessageDeliveryHandlingModes.Execute, StringComparison.OrdinalIgnoreCase)
+                ? MessageDeliveryHandlingModes.Execute
+                : ResolveHandlingMode(metadata);
+
+    private static string? Get(
+        IReadOnlyDictionary<string, string>? metadata,
+        string key)
+    {
+        if (metadata is null)
+            return null;
+
+        foreach (var pair in metadata)
+        {
+            if (string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(pair.Value))
+                return pair.Value;
+        }
+
+        return null;
+    }
+
+    private static bool? TryReadBoolean(string? value)
+    {
+        if (bool.TryParse(value, out var parsed))
+            return parsed;
+        if (string.Equals(value, "1", StringComparison.Ordinal))
+            return true;
+        if (string.Equals(value, "0", StringComparison.Ordinal))
+            return false;
+        return null;
+    }
+}
+
 /// <summary>Address of a message endpoint such as a user, agent, room, connector, or system actor.</summary>
 public sealed record MessageAddress
 {
@@ -117,6 +232,7 @@ public sealed record MessageDeliveryDraft
     public required string MessageId { get; init; }
     public required MessageAddress Target { get; init; }
     public int Priority { get; init; }
+    public string HandlingMode { get; init; } = MessageDeliveryHandlingModes.Execute;
 }
 
 /// <summary>Routing output containing one room message and zero or more endpoint deliveries.</summary>
@@ -156,6 +272,8 @@ public sealed record MessageClaimRequest
     /// this null to claim the highest-priority queued delivery for the endpoint.
     /// </summary>
     public string? DeliveryId { get; init; }
+    /// <summary>Optional execute/notify filter used by bounded recovery drains.</summary>
+    public string? HandlingMode { get; init; }
     public required string ExecutionId { get; init; }
     public TimeSpan LeaseDuration { get; init; } = TimeSpan.FromMinutes(5);
 }
@@ -169,6 +287,7 @@ public sealed record MessageDeliveryTarget
     public string? RoomId { get; init; }
     public required string TargetKind { get; init; }
     public required string TargetId { get; init; }
+    public string HandlingMode { get; init; } = MessageDeliveryHandlingModes.Execute;
 }
 
 /// <summary>Inbox projection over a durable message delivery.</summary>
@@ -186,6 +305,7 @@ public sealed record MessageInboxItem
     public required MessageAddress Target { get; init; }
     public required string Content { get; init; }
     public required string Status { get; init; }
+    public string HandlingMode { get; init; } = MessageDeliveryHandlingModes.Execute;
     public int Priority { get; init; }
     public int AttemptCount { get; init; }
     public long CreatedAt { get; init; }
@@ -209,6 +329,11 @@ public sealed record MessageDeliverEventPayload
     public required MessageAddress From { get; init; }
     public required MessageAddress Target { get; init; }
     public required string Content { get; init; }
+    /// <summary>
+    /// Null for pre-V1.2 events; consumers derive the mode from metadata so an
+    /// old serialized inform event cannot be misclassified as executable.
+    /// </summary>
+    public string? HandlingMode { get; init; }
     public string? ReplyToMessageId { get; init; }
     public IReadOnlyDictionary<string, string> Metadata { get; init; } = new Dictionary<string, string>();
 }

@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using PuddingCode.Tools;
 using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Tools;
 
@@ -109,4 +110,22 @@ public sealed class ExpectedOutputCandidateTrackerTests
         StringAssert.Contains(prompt, "must never be only a status sentence");
         StringAssert.Contains(prompt, "`search_grep` is the rg-like content-search tool");
     }
+
+    [TestMethod]
+    public void ToolLoopPromptMentionsDeferredDiscoveryOnlyWhenSearchToolsIsVisible()
+    {
+        var withoutDiscovery = ToolLoopInstructionBuilder.BuildFromDescriptors([Descriptor("browser_context")]);
+        var withDiscovery = ToolLoopInstructionBuilder.BuildFromDescriptors(
+            [Descriptor("browser_context"), Descriptor("search_tools")]);
+
+        Assert.DoesNotContain("Use `search_tools` to discover deferred tools", withoutDiscovery);
+        StringAssert.Contains(withDiscovery, "Use `search_tools` to discover deferred tools");
+    }
+
+    private static ToolDescriptor Descriptor(string toolId) => new()
+    {
+        ToolId = toolId,
+        Name = toolId,
+        Description = toolId,
+    };
 }
