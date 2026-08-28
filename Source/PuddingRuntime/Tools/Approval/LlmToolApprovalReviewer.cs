@@ -286,6 +286,7 @@ public sealed class InvocationToolApprovalLlmClient : IToolApprovalLlmClient
                 ModelId = profile.ModelId,
                 Role = "approval",
             },
+            Purpose = "approval",
             Messages =
             [
                 new ChatMessage(ChatRole.System, prompt.SystemPrompt),

@@ -116,6 +116,81 @@ public sealed class ToolApprovalCommandFirewallTests
     }
 
     [TestMethod]
+    public async Task Real_ReadOnly_PowerShell_Pipelines_Avoid_Approval_Llm()
+    {
+        var reviewer = new CountingReviewer();
+        foreach (var command in new[]
+                 {
+                     // 2026-08-27 runtime samples: these previously fell through because
+                     // string.Split treated pipes, quoted regex pipes and 2>&1 as commands.
+                     "npx tsc --noEmit 2>&1 | Tee-Object -FilePath temp/tsc.log",
+                     "npx jest --runInBand --json > temp/jest-results.json 2>&1",
+                     "Select-String -Path temp/tsc.log -Pattern 'error TS|warning TS' | Measure-Object",
+                     "$j = Get-Content temp/jest-results.json -Raw | ConvertFrom-Json; $j.testResults | ForEach-Object { $_.status }",
+                     "Get-Content temp/jest-results.json | ConvertFrom-Json | Select-Object -ExpandProperty success",
+                 })
+        {
+            var result = await CheckAsync(reviewer, "shell", command);
+            Assert.IsTrue(result.IsApproved, $"{command} → {result.Message}");
+            Assert.IsFalse(string.Equals(result.ApprovalSource, "ImplicitAudit", StringComparison.Ordinal));
+        }
+
+        Assert.AreEqual(0, reviewer.Calls, "已知只读/构建测试管道不应消耗审批模型 tokens");
+    }
+
+    [TestMethod]
+    public async Task Unsafe_Redirection_And_Unknown_Pipeline_Remain_Gray()
+    {
+        var reviewer = new CountingReviewer();
+
+        var absoluteOutput = await CheckAsync(
+            reviewer,
+            "shell",
+            "npx jest --json > C:\\Users\\Public\\jest-results.json");
+        Assert.IsFalse(absoluteOutput.IsApproved);
+
+        var unknownPipeline = await CheckAsync(
+            reviewer,
+            "shell",
+            "Get-Content a.txt | Invoke-CustomProcessor");
+        Assert.IsFalse(unknownPipeline.IsApproved);
+
+        var callOperator = await CheckAsync(
+            reviewer,
+            "shell",
+            "& $scriptPath");
+        Assert.IsFalse(callOperator.IsApproved);
+
+        var attachedOutput = await CheckAsync(
+            reviewer,
+            "shell",
+            "dotnet test>result.log");
+        Assert.IsFalse(attachedOutput.IsApproved);
+
+        var subexpression = await CheckAsync(
+            reviewer,
+            "shell",
+            "$value = $(Get-Content package.json)");
+        Assert.IsFalse(subexpression.IsApproved);
+
+        Assert.AreEqual(5, reviewer.Calls, "未知执行形态必须继续交给隐式审计");
+    }
+
+    [TestMethod]
+    public async Task Dangerous_Command_Inside_Pipeline_Block_Is_Still_Denied_Deterministically()
+    {
+        var reviewer = new CountingReviewer();
+        var result = await CheckAsync(
+            reviewer,
+            "shell",
+            "Get-ChildItem temp | ForEach-Object { Remove-Item -Force $_.FullName }");
+
+        Assert.IsFalse(result.IsApproved);
+        Assert.AreEqual("CommandFirewall", result.ApprovalSource);
+        Assert.AreEqual(0, reviewer.Calls);
+    }
+
+    [TestMethod]
     public async Task Compound_Command_With_Any_Dangerous_Segment_Is_Denied()
     {
         var reviewer = new CountingReviewer();
