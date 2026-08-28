@@ -25,7 +25,7 @@
 - `Docs/superpowers/specs/2026-06-03-auto-tool-approval-design.md`
 	- 自动权限审查唯一设计入口：合并确定性危险命令防火墙与三层漏斗，冻结用户审批最后手段、参数级风险分类、系统派生风险事实、重复审批熔断和 `save_memory upsert` 零审批；关联唯一 P1 任务 `e187a8bbd2d640bb87b96fd3cf548966`，尚未部署验收。
 - `Docs/Features/AgentHarness兼容与工具调用效率修复设计方案.md` / `Docs/07架构/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md`
-	- 冻结“canonical 工具唯一、统一执行边界前适配、短稳定提示、no-match 结构化、可选而非默认 bundled rg”的 Harness 兼容边界；H0 源码与定向测试已落，H1 观测/重复指纹和进程外真实模型验收未完成。
+	- 冻结“canonical 工具唯一、统一执行边界前适配、短稳定提示、no-match 结构化、round-boundary 动态工具激活、discovery-only 熔断、可选而非默认 bundled rg”的 Harness 兼容边界；2026-08-28 已修复 216 次 `search_tools` 高命中零 Goodput 事故，进程外部署与真实模型验收未完成。
 - `Docs/Features/Agent消息交错内容流与最新行为组披露完整实施方案.md`
 	- Flash 可直接施工的代码级合同：canonical sequence、TextBlock ⇄ ActivityGroup、会话级唯一最新披露 owner、完整 reasoning 换行、工具详情懒加载、柔和收起/卸载、性能、逐文件任务卡、测试命令和双阶段真实验收。
 - `Docs/07架构/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md`
@@ -39,7 +39,8 @@
 - `Docs/07架构/89ADR-074Goal持久目标自主续行与自动压缩ADR.md`
 	- 冻结 GoalRun 持久续行、证据验证、Task-bound Goal、Agent 可用性感知与低峰自动派发；明确 Auto Task 以 Goal 为前置且不依赖 Heartbeat。
 - `Docs/Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md`
-	- 按 Core/Platform/Runtime/Host/Admin 列出类、表、事务、事件、文件、施工卡、测试、切换和生产验收门禁。
+	- 2026-08-28 已部署的是五分钟 Shadow；后续源码已补结构化路由、auto-dispatch opt-in、Backlog refinement、版本化 WorkUnit、Acceptance/执行前双重 Plan/Node 围栏、顺序推进、round/tool/time/input/output/cost 硬预算和五分钟确定性 repair。新源码尚未进程外部署；AwaitHandle/checkpoint、blocked 重预约、动态模型反馈、authoritative 与七夜验收仍未完成。
+	- 按 Core/Platform/Runtime/Host/Admin 列出类、表、事务、事件、文件、施工卡、测试、切换和生产验收门禁；2026-08-28 已进入五分钟 shadow 对账，修复终态 Assignment false-busy 与通用 PATCH 伪完成，authoritative 仍未开放。
 - `Docs/07架构/91ADR-076遥测与调试数据保留及Core存储管理ADR.md`
 	- 冻结 Core + Web Admin `/storage` 边界、语义数据类型目录、唯一在线维护 writer、关键事实保护和禁止在线全库 VACUUM；当前为 Proposed。
 - `Docs/Features/遥测调试数据自动过期与Web存储管理设计方案.md`
@@ -69,7 +70,7 @@
 - `Docs/Features/上下文自动压缩与Compact命令设计方案.md`
 	- Compact API、上下文健康状态、InputCompression 原型和验收计划。
 - `Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md`
-	- 7 日 Token/工具重放/搜索失败/ZIP 基线，以及无损 artifact、分级压缩、Compact 覆盖门禁和 DeepSeek 缓存 `>99%` 的施工与验收合同。
+	- 7 日 Token/工具重放/搜索失败/ZIP 基线，以及无损 artifact、分级压缩、Compact 覆盖门禁和 DeepSeek 缓存 `>99%` 的施工与验收合同；2026-08-28 追加 95.92% 事故基线、Harness warm-prefix checkpoint、prefix-v2 与审批控制面降耗实施记录。
 - `Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md`
 	- 聊天页主代理余额徽标（DeepSeek 首个落地）+ 前后端双注册表计费抽象：后端 `ILlmBalanceProvider` 查询适配器、前端 `providerBilling.ts` 展示适配器；含新服务商扩展步骤、刷新策略与 apiKey 安全约束。已实施（2026-08-24）。
 

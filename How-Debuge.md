@@ -255,9 +255,18 @@ dotnet test .\Tests\PuddingHost.Tests\PuddingHost.Tests.csproj --no-restore --no
 #### Desktop 报 "Core did not emit a Ready signal within 60 seconds"
 
 Ready 信号在 `Program.cs` 的 `app.StartAsync()`（全部 hosted service StartAsync 返回）之后才写
-stdout，Desktop 固定等 60 秒。定位方法：看 Desktop 运行中心 Core 日志最后停在哪一行——停在
+stdout。2026-08-28 起，DesktopChild 初始化期间每 5 秒输出 `PUDDING_DESKTOP_STARTING`；
+Desktop 把 `startupTimeoutSeconds` 解释为无有效进度的静默超时，并另设 5 倍、最高 10 分钟的
+绝对上限。租约必须携带当前子进程 PID、协议版本和递增序号，不能替代 Ready 与
+`/health/ready`。定位方法：看 Desktop 运行中心 Core 日志最后停在哪一行——停在
 `[Feishu] Connector starting WebSocket long connection...` 说明启动被远程网络 I/O 卡住
 （外网黑洞/代理挂起时 HttpClient 默认超时 100s > 60s）。
+
+若 Core 系统日志已经出现 Connector/ChatWorker 启动，而运行中心仍按旧文案在固定 60 秒杀掉
+进程，说明当前 Desktop 仍是旧程序集；只重建 Core 不会更新 Desktop 的
+`CoreProcessSupervisor`。必须由进程外控制器停止旧托盘实例、构建并启动新 Desktop。若只看到
+历史 `lastResult.success=true`，还要对账当前 `coreState`、新 PID、80 端口和 `/health/ready`；
+历史点火结果不能证明当前启动成功。
 
 2026-08-24 修复后的不变量：
 
@@ -2519,7 +2528,7 @@ Desktop 使用本地命名 `Semaphore` 保证单实例，并通过仅当前 Wind
 
 从 Visual Studio 启动 Desktop 后，若 Core 在 Ready 前连续退出并报告 `DirectoryNotFoundException: Source\PuddingAgent\wwwroot`，说明 WPF 启动环境错误地把 ASP.NET Core 的 Development 静态资源清单行为传给了子进程。`CoreProcessSupervisor` 必须对 DesktopChild 显式设置 `ASPNETCORE_ENVIRONMENT=Production` 和 `DOTNET_ENVIRONMENT=Production`，并把工作目录设为 Core 可执行文件目录；Workbench 由输出或发布目录中的物理 `wwwroot` 提供。`PuddingDesktop/Properties/launchSettings.json` 不应包含 ASP.NET Core URL 或环境变量。
 
-从 Visual Studio 直接启动 `PuddingDesktop.csproj` 时，Desktop 不再通过 ProjectReference 隐式构建 Core；WPF 与 ASP.NET Core 保持独立进程/项目边界。开发态解析顺序仍是显式配置、发布包 `core/PuddingAgent.exe`、Desktop 同目录产物、`Source/PuddingAgent` 旧布局兜底，因此只重新构建 Desktop 可能继续启动旧 Core。若运行中心反复退出，且异常文案与当前源码不一致（例如旧二进制仍要求 loopback，而 Desktop 已传入 `http://0.0.0.0:<port>`），先核对日志中的实际 `ExecutablePath`、文件时间和完整启动参数；自动恢复只会重启同一产物，不会编译源码。应在 Core 完全停止后，通过引导重建入口 `/desktop/bootstrap/start`（或对应 UI 操作）执行 `stop → dotnet build Source/PuddingAgent/PuddingAgent.csproj → restart`。验收必须同时看到 `/desktop/bootstrap/status` 的 `coreState=Ready`、新的 Core PID/产物时间，以及 `http://127.0.0.1:<port>/health` 返回 `healthy`；不能只看 build exit code。DesktopChild 不是 `dotnet watch`，源码修改不会热替换到已运行进程。
+从 Visual Studio 直接启动 `PuddingDesktop.csproj` 时，Desktop 不再通过 ProjectReference 隐式构建 Core；WPF 与 ASP.NET Core 保持独立进程/项目边界。开发态解析顺序仍是显式配置、发布包 `core/PuddingAgent.exe`、Desktop 同目录产物、`Source/PuddingAgent` 旧布局兜底，因此只重新构建 Desktop 可能继续启动旧 Core。若运行中心反复退出，且异常文案与当前源码不一致，先核对日志中的实际 `ExecutablePath`、文件时间和完整启动参数；自动恢复只会重启同一产物，不会编译源码。通过 `/desktop/bootstrap/start` 点火时默认使用 `deploymentMode=desktop-build`：Core 全停后由 Desktop 编译，把完整产物先暂存再提交到实际 `CoreExecutablePath` 所在目录，并在重启前后校验入口 DLL 与全部托管 DLL/EXE/deps/runtimeconfig 的确定性清单指纹。验收必须同时满足 `/desktop/bootstrap/status` 的 `coreState=Ready`、`lastResult.success=true`、`assembliesReloaded=true`、`preparedArtifactManifestSha256 == loadedArtifactManifestSha256`、新 Core PID，以及 `http://127.0.0.1:<port>/health` 返回 `healthy`；不能只看 build exit code，也不能只校验 `PuddingAgent.dll` 而漏掉实际承载点火工具的 `PuddingRuntime.dll`。`prebuilt-artifact` 仅接受仓库根内的绝对产物目录，可附期望哈希；`restart-only` 是显式降级，不代表源码已加载。DesktopChild 不是 `dotnet watch`，源码修改不会热替换到已运行进程。
 
 Desktop 默认关闭到托盘且是单实例：窗口消失不代表进程退出。若旧实例仍在托盘，VS 启动的新进程只会激活旧实例，旧 Core 也会继续运行，看起来就像新后端没有生效。调试新构建前先从托盘选择“退出 Pudding”，再确认 `PuddingDesktop.exe` / 其子 `PuddingAgent.exe` 已退出；不要同时用 `dev-up.py` 和 Desktop 访问同一个 DataRoot。
 
@@ -2737,8 +2746,9 @@ dotnet test .\Source\PuddingPlatformTests\PuddingPlatformTests.csproj --no-resto
 
 - DesktopChild 只有在 `await app.StartAsync()` 返回后才输出 `PUDDING_DESKTOP_READY`；
 - `IHostedService.StartAsync` 若直接等待完整历史扫描，Ready 信号会被回填时长阻塞；
-- Desktop 的 Core Supervisor 到达 `startupTimeoutSeconds` 后会终止该子进程，所以下次启动
-  又从 `lastId=0` 扫描，看起来像回填卡死或反复重启。
+- 旧版 Desktop 的 Core Supervisor 到达固定 `startupTimeoutSeconds` 后会终止该子进程，所以下次启动
+  又从 `lastId=0` 扫描，看起来像回填卡死或反复重启；新版启动租约只保护 Ready 前必须完成的
+  有限初始化，后台历史回填仍不得依赖租约占用启动窗口。
 
 修复边界是让一次性长回填继承 `BackgroundService`，在 `ExecuteAsync` 首先异步让出执行，
 并用 stopping token 支持宿主退出；不能靠单纯增大 Desktop 启动超时掩盖。验收必须同时满足：
@@ -3346,3 +3356,17 @@ ref，终态 render 会看到上一帧 `streaming`，而 ref 同步本身不会�
 源码修复后的最低回归：Core 模板/RuntimeControl 定向测试、Runtime 提示/参数变化失败族测试、
 WebApi 模板单程序集测试、`dotnet build PuddingRuntime --no-restore`。当前运行中的 Desktop/Core 不会自动加载新 DLL，
 必须由进程外控制器重启后，再用新子代会话检查它能否首先看到 `search_tools`、并发现/调用 `file_read`。
+
+## 11.43 调度/Token 执行内核的串行验证与产品态边界
+
+调度、Goal、Runtime 测试共同引用 Platform/Runtime 产物并会创建 SQLite 夹具。不要并行运行
+`PuddingRuntimeTests` 与 `PuddingPlatformTests`：并行构建会争用 `PuddingPlatform.dll`，并可能把临时 SQLite I/O
+或外键错误伪装成功能回归。应先完成一次构建，再串行运行聚焦集和全量集；测试夹具必须创建真实
+`SessionEntity`，`CompactedBy` 也必须指向存在的摘要消息，不能通过关闭外键绕过生产 schema。
+
+仓库根目录当前没有名为 `PuddingRuntime` 的 solution/project；若
+`dotnet build PuddingRuntime --no-restore` 返回 `MSB1009`，使用真实入口
+`dotnet build Source/PuddingRuntime/PuddingRuntime.csproj --no-restore --nologo`，并额外构建
+`Source/PuddingHost/PuddingHost.csproj` 验证 Platform DI 组合。构建成功仍只证明源码，不证明当前
+Desktop/Core 已加载。重启前先检查任务看板的 InProgress/Assigned、active Assignment、待认领 Delivery
+和当前 Run；存在活跃工作时不得为了 smoke 强制重启，应报告 `ready-for-external-deploy` 并等待可中断窗口。

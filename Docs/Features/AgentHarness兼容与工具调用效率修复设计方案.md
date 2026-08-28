@@ -1,7 +1,7 @@
 # Agent Harness 兼容与工具调用效率修复设计方案
 
 > 日期：2026-08-26  
-> 状态：H0、H1 重复失败熔断、内置模板单一权威源与 canonical Token 归因已实现并通过定向测试；聚合报表、进程外部署和真实模型 smoke 未完成
+> 状态：H0、H1 重复失败熔断、动态工具下一 LLM round 生效、discovery-only 熔断、内置模板单一权威源、canonical Token 归因与 WorkUnit 调用边界 Token/成本硬预算已实现并通过定向测试；聚合 Goodput 报表、进程外部署和真实模型 smoke 未完成
 > 架构决策：[ADR-081](../07架构/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md)
 
 ## 1. 问题与目标
@@ -98,7 +98,7 @@ Runtime JSON 信封仍是正常路径：完成时必须 `status=DONE`、`tool=nu
 ## 6. 缓存与 Token 效率
 
 - L0 兼容提示是固定短块，不按模型或轮次动态拼接。
-- L1 只在执行边界工作，不向每个模型重复发布别名工具 schema，因此 canonical tool list 与顺序保持稳定。
+- L1 只在执行边界工作，不向每个模型重复发布别名工具 schema；基础 catalog 与既有定义顺序稳定。仅 `search_tools` 成功激活时在下一 LLM round 单调增加定义，并显式形成一次 `tool_spec_changed` epoch。
 - 参数归一化发生在统一调用哈希之前，使 `rg` 与等价 `search_grep` 进入同一执行身份和审计语义。
 - 完整报告自动终止直接避免一轮 LLM 输入重放和一次可能失败的 reasoning continuation。
 - buffered outer loop 的重复调用指纹与 streaming 的 RuntimeControl/历史已使用 canonical 调用；`tool.harness_compatibility` 固化 `requested_tool/canonical_tool/adapter_version/adaptation_kind`，可以按模型、Agent 和时间窗口计算别名命中率与退役依据。
@@ -219,3 +219,39 @@ Runtime JSON 信封仍是正常路径：完成时必须 `status=DONE`、`tool=nu
 定向测试覆盖 Low 模板投影、模板类单一程序集、按可见集生成发现提示、
 参数持续变化时第 5 次同失败族熔断，以及配置总量阈值大于 10 时仍可达。
 这些证明源码修复，不证明当前 Desktop/Core 已加载新构建；还需进程外重启后用新子代会话进行功能 smoke。
+
+## 12. 2026-08-28 `search_tools` 高命中零 Goodput 事故
+
+### 12.1 现场证据
+
+- Run `run_20260828_040203_f615402b25d6` 在约 36 分钟内完成 267 次 LLM 调用和 216 次工具调用；
+  216/216 全部是 `search_tools`，`file_read/file_patch/shell/test` 等实际任务工具为 0。
+- Prompt 35,073,967、Completion 57,027、cache hit 34,816,704、miss 257,263，加权命中率
+  99.2665%。这证明缓存率本身不是 Goodput：稳定地重放错误循环同样可以得到很高命中率。
+- 每轮 provider 事件的 `tool_count` 始终为 10、`prefix_hash` 始终相同；`search_tools` 返回“下一轮暴露”后，
+  下一轮定义数量没有增加。上下文由约 2.3 万增长到 30.6 万 Token。
+
+### 12.2 根因与修复
+
+P0-6 把“当前 model round 冻结、下一 round 生效”错误实现成了“整个 Runtime dispatch/外部用户 Turn
+冻结、下一外部 Turn 才生效”。子代理长任务通常只有一个外部 Turn，因而动态工具在整个 600-round Run
+内永远不可调用。
+
+修复后的唯一语义：
+
+1. dispatch 开始时冻结授权后的 tool catalog、capability 与每个 definition bytes；
+2. 当前 provider request 使用 immutable visible list；
+3. `search_tools` 结果完成后，AgentSessionManager append-only 持久化 loaded IDs；
+4. Runtime 以同一 frozen catalog 重算下一 round 可见集，只允许单调增加，Buffered/Streaming 共用实现；
+5. 下一次 LLM invoke 携带新定义并以 `tool_spec_changed` 归因；
+6. 连续 8 次只发现工具而未执行任何业务工具时，以 `tool_discovery_stalled` 终止，查询换词不能绕过。
+
+源码和单测通过不等于在线 Run 已修复。必须由进程外控制器部署新 Core，再用全新子代理 Run 验证：
+第一次 `search_tools(file_read)` 后下一轮 `tool_count` 增加并实际调用 `file_read`；不允许继续观察到 8 次
+discovery-only 调用；缓存报表同时报告 hit rate 与 verified Goodput。
+
+### 12.3 Token 利用率止损与验收口径补充
+
+本次执行内核进一步加入 WorkUnit 级 input/output/cost 硬预算：价格在 Run 启动时按实际 provider/model 冻结，Buffered/Streaming 每次 provider call 后只记账一次，并在任何工具或下一轮 LLM 前执行停止裁决。成本预算启用但价格未知、或 provider 不返回 usage 时 fail closed；Streaming 不再跨 round 复用旧 usage。这样可以给“高缓存但零业务进展”的循环设置确定损失上限，但不能把缓存命中率本身变成任务完成证据。
+
+源码聚焦验证已串行通过 Runtime 36/36、Platform 31/31。真实验收仍必须使用新部署进程和新 Run，同时报告：token-weighted cache hit、完成 WorkUnit/Task 数、有效业务工具调用数、失败/发现循环 Token、每个完成任务 Token 与成本。只有命中率提高且 verified Goodput 不下降，才算 Token 效率提升；当前已部署旧进程与七夜数据尚未满足该门禁。

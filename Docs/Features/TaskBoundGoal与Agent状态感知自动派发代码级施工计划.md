@@ -1,11 +1,11 @@
 # Task-bound Goal 与 Agent 状态感知自动派发代码级施工计划
 
-> 状态：实施中；G2/G3、Task-bound Goal 原子启动与 authoritative 调度代码已落源码；全部开关默认关闭，低峰价格路由仍未开放
+> 状态：实施中；G2/G3、Task-bound Goal 原子启动、结构化 Agent 路由、版本化 WorkUnit 执行计划、WorkUnit 顺序推进、调用边界 Token/成本硬预算和五分钟 Tracker 确定性 repair 已落源码；2026-08-28 已部署的仍是五分钟 shadow 旧构建，本次执行内核改造尚未进程外部署，authoritative、低峰价格路由与七夜生产验收仍未开放
 > 日期：2026-08-21
 > 权威决策：[ADR-074 Goal 持久目标、自主续行与自动压缩](../07架构/89ADR-074Goal持久目标自主续行与自动压缩ADR.md)
 > 任务领域边界：[ADR-072 工作区 TODO、峰谷 Auto 派发与定时任务第一阶段](../07架构/86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md)
 > Goal 完整设计：[Goal 持久目标、自主续行与自动压缩完整设计方案](Goal持久目标自主续行与自动压缩完整设计方案.md)
-> 2026-08-26 实施边界：已修改源码与测试；未修改配置、`D:\data` 数据或当前运行进程
+> 2026-08-28 当前边界：已修改源码、测试与 Shadow 配置，并由 Desktop 产品主管重建/重启 Core；仅执行幂等 schema 升级，未清理或重置 `D:\data`
 
 ## 1. 施工结论
 
@@ -56,17 +56,47 @@ Task 进入 Ready/Deferred
 
 当前明确未完成：provider/model 价格时段解析与 `off_peak_only` 真实开放、事件驱动边界调度（当前由有界恢复扫描降低延迟）、完整只读 LLM Verifier/证据策略、Task-bound blocked 后的重新预约恢复、Admin 联合状态面板，以及进程外重启/真实 Provider smoke。因此这是“安全默认关闭的 authoritative 源码链路”，不是自动任务生产验收，ADR-074 继续保持 Proposed。
 
+### 1.3 2026-08-28 夜间吞吐复盘后的安全灰度
+
+- 产品配置把 `TaskAutoDispatch` 设为 `Enabled=true, Mode=shadow`，恢复扫描与前台 idle grace 均为 5 分钟。该阶段只读取任务看板、重建 Agent Availability 并输出候选结果，不创建 Assignment、Reservation 或 Goal。
+- Availability 不再把终态 Task 遗留的未释放 Assignment 当作活跃容量事实；只有与 `WorkspaceTask.ActiveAssignmentId` 一致且 Task 非终态的 attempt 才能占用 Agent。历史脏行继续保留审计，不在重建时直接改写 `D:\data`。
+- Task→Goal 原子启动的最终 Agent fence 使用同一条 canonical active/non-terminal Assignment 规则；终态脏 attempt 不再出现“Availability 判 Idle、事务又判 Busy”的双重事实冲突。
+- Goal continuation acceptance 统一使用注入的 `TimeProvider` 校验 outbox/reservation lease 与续租，避免测试时钟、系统时钟和调度器时钟不一致造成假 `stale_lease`。
+- 通用 Task PATCH 对无 Assignment 的人工完成写 canonical `TaskCompleted`，并标记 `manual_without_execution`；已有 active Assignment 的 Task 必须走带证据的 `task_update completed` / Task-bound Goal settlement，不能再由看板状态 PATCH 伪造执行完成。`mark_failed` 同事务释放 Assignment。
+- Scheduler 恢复扫描默认周期从 30 秒改为 5 分钟，避免无候选时高频轮询；未来事件信号负责低延迟唤醒，五分钟扫描只承担恢复与对账。
+- 实时审计显示所有 8 张实施卡仍为 Backlog；Shadow evaluator 不会擅自 refinement Backlog。因此五分钟扫描上线不等于统一调度器生产验收，更不允许直接切 authoritative。2026-08-28 后续源码批次已补结构化路由、Backlog 准入、Tracker、确定性 repair 与 WorkUnit 执行推进；这些源码尚未部署，权威切换门仍未完成。
+
+authoritative 准入新增以下硬门：
+
+1. Backlog refinement 必须产生稳定 `ready | needs_refinement` 决策，并显式提交 Ready；不得把全部 Backlog 无条件点火。
+2. 历史非终态 Assignment 必须经 Tracker 对账为 running/waiting/requeue/blocked，不能靠“清表”恢复空闲。
+3. Task 必须具有结构化 taskType/requiredCapabilities；Agent 匹配必须记录 capability、route、health、capacity 的 score breakdown，不能只依赖 `preferredAgentId`。
+4. 先在 shadow 对账候选与真实前台占用，再按 `authoritative-single -> authoritative-bounded` 灰度；生产完成仍需 7 个夜间窗口。
+
 配置入口（默认值无需写入配置文件）：
 
 ```json
 {
   "TaskAutoDispatch": {
-    "Enabled": false,
+    "Enabled": true,
     "Mode": "shadow",
     "WorkspaceIds": ["default"],
-    "ScanInterval": "00:00:30",
-    "MinimumIdle": "00:30:00",
-    "CandidateLimit": 100
+    "ScanInterval": "00:05:00",
+    "MinimumIdle": "00:05:00",
+    "CandidateLimit": 100,
+    "TaskTypeRoutes": {
+      "implementation": {
+        "RequiredCapabilityIds": ["cap-file-write", "cap-shell"],
+        "AllowedRoles": ["Service"]
+      },
+      "research": {
+        "RequiredCapabilityIds": ["cap-http-fetch"],
+        "AllowedRoles": ["Service"]
+      },
+      "review": {
+        "AllowedRoles": ["Service", "Audit"]
+      }
+    }
   },
   "TaskBoundGoals": {
     "Enabled": false,
@@ -75,6 +105,19 @@ Task 进入 Ready/Deferred
   }
 }
 ```
+
+### 1.4 2026-08-28 结构化任务与模型路由实施记录
+
+本批次把“根据任务类型合理分配”从标题猜测改为稳定合同，并保持旧任务安全语义：
+
+1. `WorkspaceTask` 新增 `taskType`、`requiredCapabilityIds`、`requiredProviderId`、`requiredModelId`、`allowAgentFallback`。SQLite 启动 bootstrap 对现有表幂等补列；Internal/External API、Admin/Agent 详情和 CAS Store 使用同一字段集。
+2. `preferredAgentId` 是亲和性而不是天然全局锁。旧任务的 `allowAgentFallback=false` 保持首选独占；只有显式开启 fallback 或没有首选 Agent 时，Scheduler 才能选择其它兼容 Agent。
+3. `TaskTypeRoutes` 由配置声明任务类型的 `AllowedRoles`、能力、provider/model 约束；任务自身显式约束与类型规则取交集。Provider/model 仍由 Agent 模板单一拥有，Task 只能声明要求，不能在派发时改写模板。
+4. `TaskAgentRouteMatcher` 只读取结构化字段、Agent 模板和运行能力标记，不读取 title/description。首选优先，其余候选按稳定 AgentId 排序；Availability、idle grace、执行窗口和同轮单 Agent 单任务逐候选重验。
+5. 路由选择生成包含 Task 约束、TaskTypeRoute、Agent provider/model/capabilities 和模板更新时间的 SHA-256。`TaskGoalDispatchTransactionStore` 在原子事务前重新读取 Agent 目录、重新应用当前类型规则并重算指纹；不兼容或配置漂移返回 `agent_changed`，不产生 Assignment/Reservation/Goal。
+6. 产品经 Desktop 主管原子重建后由 PID 8824 加载；启动日志确认 5 个路由列原地补齐，Shadow 扫描执行且 `goal_runs=0`、active reservation=0。Task 路由/Store/完成事实/Availability/Goal 原子栅栏聚焦回归 46/46 通过。
+
+仍未完成：不确定状态的人工/策略化 repair、checkpoint/AwaitHandle 消费、Task-bound blocked 后重新预约、动态质量/成本/TPS 模型评分、真实 off-peak Resolver、`authoritative-single` 灰度和七个夜间窗口验收。结构化路由、确定性 repair 和执行快照关闭了部分派发与恢复缺口，但不代表端到端自动执行已生产验收。
 
 ## 2. 冻结不变量
 
@@ -88,6 +131,51 @@ Task 进入 Ready/Deferred
 8. Task/Assignment/Reservation/Binding/Goal/Outbox 在一个 SQLite 短事务中全成或全不成；LLM、Message Send、Tool 和网络不在事务内。
 9. 用户消息、pause/cancel、approval、权限收紧和 Run Now override 优先于自动续行。
 10. 正确性不依赖 signal、Timer、SSE、浏览器、Heartbeat 或进程内 Channel；这些只能降低延迟。
+11. Scheduler 不从任务标题/描述推断能力或模型；路由只使用结构化 Task metadata、版本化 TaskTypeRoute 和 Agent 模板快照。
+12. 兼容 Agent fallback 必须由 `allowAgentFallback` 显式授权；路由指纹在最终启动事务前重算，配置漂移 fail closed。
+13. 自动派发必须由 Task 的 `autoDispatchEnabled=true` 显式 opt-in；普通 Ready/Deferred Task 默认不属于后台自动候选。
+
+### 1.5 2026-08-28 自动执行 opt-in 与 Backlog refinement Shadow
+
+- `WorkspaceTask` 与全部 Task API/Store 新增 `autoDispatchEnabled`，SQLite 既有表幂等补列且默认 `false`。`TaskAutoDispatchEvaluator` 的 Ready/Deferred 查询和最终 Task→Goal 事务都重验该字段；关闭 opt-in 会使启动 fail closed。
+- 新增只读 `TaskBacklogRefinementEvaluator`。每五分钟只检查已 opt-in 的 Backlog，依次验证 description、acceptance criteria、非 `general` 的 taskType、TaskTypeRoute 与至少一个兼容 Agent；输出 `ready_for_auto_dispatch | description_required | acceptance_criteria_required | task_type_unclassified | no_compatible_agent`，Shadow 不改变 Task 状态。
+- 8 张实施卡已显式登记 `taskType=implementation`、canonical `cap-file-write/cap-shell`、`allowAgentFallback=true` 与 `autoDispatchEnabled=true`，当前版本 v4；它们继续留在 Backlog，不由 Shadow 私自点火。首次真实 Shadow 曾因错误使用粗粒度 `runtime:*` 约束而将 8 张全部判为 NeedsRefinement；模板证据显示两个 Service Agent 的粗粒度布尔开关为 false、但能力注册表拥有 `cap-file-write/cap-shell`，因此路由已收敛到 canonical Capability ID，不修改 Agent 权限。
+- `TaskBacklogRefinementStore` 已实现 future authoritative 模式的唯一 Backlog→Ready CAS：重验 Task version/opt-in/内容/Agent/TaskTypeRoute/路由 SHA-256，单事务写 Ready、version 与 canonical `TaskReady/backlog_refined`；任何漂移不产生状态事件。
+- 新增 `TaskExecutionTracker`，与同一五分钟 Worker 同周期关联 Task、Assignment、Reservation、Binding、Goal、Iteration、ExecutionCommand/Run 与 continuation outbox，输出 `Healthy/Waiting/Stalled/Inconsistent/CleanupRequired` 及稳定 reason code。authoritative 模式下，独立 repair coordinator 仅对白名单中的确定性状态重新读取全部 fence 后修复；Tracker 本身仍不写状态。
+- 最终产品由 PID 13084 加载且 `/health/ready=200`；`pudding-20260828_036.log` 的 Shadow 显示 `backlog=8, refinementReady=8, needsRefinement=0, promoted=0, candidates=0, started=0, tracked=0, healthy=0, waiting=0, stalled=0, inconsistent=0, cleanupRequired=0`。数据库保持 auto Backlog=8、Ready=0、Goal=0、active Reservation=0、active Binding=0；聚焦回归 55/55 通过。
+
+本阶段已完成 opt-in、refinement/route/tracking 判断、authoritative Backlog CAS 和确定性 repair 源码，但产品仍为 Shadow，且 8 张卡尚未登记完整依赖，不确定的历史非终态 Assignment 也不会被自动猜测清算。不得把日志中的 `refinementReady` 当作 Ready 或已派发，也不得据此提前开启 authoritative。
+
+### 1.6 2026-08-28 WorkUnit 执行计划与原子计划围栏
+
+- 不新建第二套 Task 台账：`WorkspaceTask` 保持看板与状态权威，复用 `task_plan_runs/task_nodes` 保存某个 Task version 的不可变执行快照。计划表新增 `workspaceTaskId/version`、`schemaVersion/planVersion`、`planKind` 和 `planFingerprint`；节点新增 WorkUnit kind/sequence、依赖、能力、冲突范围、轮次/工具/时长/token/cost 预算、重试策略、进度指纹和 checkpoint artifact。
+- 新增纯函数 `TaskExecutionPlanCompiler`，只读取结构化 `taskType`、Task 能力约束和 `TaskTypeRoute`，不读取标题/描述，也不调用模型。`implementation/operations/deployment` 编译为 `Explore -> Plan -> Change -> Test -> Review`；research/test/review/documentation 使用各自有界子图；未知 `general` fail closed。
+- 计划 SHA-256 覆盖 Task version、schema/plan version、WorkUnit 顺序/依赖、能力、默认 checkout 冲突范围、预算和重试策略。Shadow 候选携带该指纹；`TaskGoalDispatchTransactionStore` 在任何写入前重编译并比较，不一致返回 `execution_plan_changed`，且不留下 Plan、Node、Assignment、Reservation 或 Goal。
+- authoritative 启动时，执行计划根节点、全部 WorkUnit、Assignment、Reservation、TaskGoalBinding、GoalRun、首个 Outbox 和 canonical events 位于同一个 Serializable SQLite 事务。Binding、Goal route snapshot、Outbox 和 `task.goal_bound` 事件都记录 `taskPlanId/planFingerprint`；幂等 replay 不重复创建计划或节点。
+- 新增 `work_unit_await_handles` 持久合同，冻结 `waiting/signaled/consumed/cancelled`、external id、fencing token 和时间戳边界；本批次没有实现其运行时生产/消费，不会把“表已存在”报告成异步等待闭环已完成。
+- 启动初始化器现在显式调用 `TaskPlanningSchemaBootstrapper`；旧 SQLite 库幂等补列/表/索引。只读 `TaskExecutionTracker` 进一步投影 plan fingerprint、plan status 和当前 WorkUnit，并对 plan missing/fence mismatch/work-unit missing fail closed。
+- 聚焦验证 30/30 通过：确定性计划与指纹、schema 旧库升级、原子全成/全不成、幂等无重复、指纹漂移拒绝、Tracker 当前 WorkUnit/缺失计划诊断。产品部署后仍保持 `Mode=shadow` 与 `TaskBoundGoals.Enabled=false`，因此运行库不会因本批次自动创建 Goal/Plan。
+- 扩大调度回归 70/70、Host composition 1/1、Runtime build 0 error；最后一次 Desktop 主管重建结果 success，Core 新 PID 9116，`/health/ready=200`，加载二进制 SHA-256=`fc7fabc8cc9b629d9432b3294c11637f4f3f274a2e9d1a31c1f539b539adbed4`。运行库已出现全部新列和 `work_unit_await_handles`，但 `task_plan_runs/work-unit/await-handle/goal_runs/active binding/active reservation` 均为 0；`pudding-20260828_038.log` 继续报告 `mode=shadow, backlog=8, refinementReady=8, promoted=0, candidates=0, started=0, tracked=0`。
+
+### 1.7 2026-08-28 WorkUnit Runtime 预算交接与二次围栏
+
+- `GoalContinuationWorker` 现在从 Binding 的 `taskPlanId` 选择序号最小的非终态 WorkUnit，把 plan/node/fingerprint、目标、输出合同与预算写入 synthetic Turn 的受信上下文；这些字段用于可观察性和选择，不作为预算权威。
+- `ConversationAcceptanceStore` 在创建 Command 的同一事务内重读 Task、Assignment、Reservation、Plan 和全部 WorkUnit，要求 plan fingerprint、当前 node、前置完成关系、Agent 所有权及正数预算全部一致；成功后原子把 WorkUnit 置为 `Running`，任何漂移以 `task_plan_changed` fail closed。
+- `ExecutionCommandReader` 在真正执行前再次沿 `Command -> GoalIteration -> TaskGoalBinding -> Task/Reservation -> Plan/Node` 重读 canonical 事实。普通用户 metadata 不能凭空获得 WorkUnit 预算；租约过期、Task version 漂移、Plan/Node 变化或非法预算都会阻止 Runtime 启动。
+- `ExecutionRunCoordinator` 将 Agent profile 与 WorkUnit 的轮次、工具调用、时长预算逐项取更严格值，并冻结绝对 deadline；`TurnExecutorAdapter` 把 canonical plan/node/parent identity 传入 `RuntimeDispatchRequest`，供上下文、journal 和子代理继承。以 Explore 默认值为例，全局 `600 rounds / 2400 tools / 24h` 会被钳制为 `25 / 60 / 30m`。
+- WorkUnit 的 input/output token 与 cost 上限先从 canonical row 解析；后续第 1.8 节已经补齐调用边界累计扣减与硬停止。本节当时的 23/23 仅是阶段性验证记录，不能覆盖后续实现，也不代表当前 Desktop/Core 已加载新构建。
+
+### 1.8 2026-08-28 执行内核、Token 硬预算与五分钟 repair 收口
+
+- `GoalSettlementStore` 现在在同一事务中重读 Binding、不可变 Plan fingerprint、根节点与唯一 Running WorkUnit。成功迭代原子完成当前 WorkUnit；有后继时强制继续并由下一次 Acceptance 启动下一节点；最后节点只有在 Task 存在 canonical Completed fact 时才完成 Plan/Goal，否则转 `NeedsReview/task_completion_fact_missing` 并释放 Assignment/Reservation，禁止伪完成或空转。
+- Plan snapshot 中的 Task version 只属于编译指纹，不再错误地与运行期间会递增的 live Task version 比较；live Task 乐观锁继续由 Binding 的 `ExpectedTaskVersion` 管理。该修复避免第二个 WorkUnit 因正常 `task_claim/task_update` 导致的版本增长被永久拒绝。
+- `ExecutionRunCoordinator` 在 Run 开始时冻结 provider/model 价格快照和 WorkUnit input/output/cost 上限。Buffered/Streaming 通过同一 `ExecutionUsageBudgetTracker` 按 provider 调用累计 prompt、completion、cache-hit 与成本；达到上限后不再执行工具或发起下一轮 LLM。启用成本预算但价格未知、或 provider 未返回 usage 时 fail closed，分别记录稳定终态码。
+- Streaming 每轮先清空 usage，避免 provider 某轮未返回 usage 时沿用上一轮数据造成重复记账。Token/cost 的最小可执行硬边界是 provider call：无法撤回已发生的一次调用，但调用完成后先记账、再决定是否允许工具和下一轮。
+- 五分钟 `TaskAutoDispatchWorker` 在 authoritative 模式下运行独立 `TaskExecutionRepairCoordinator`。白名单只包括：清理已终态 Goal/Task 遗留的 active Binding/Assignment/Reservation、回收过期 continuation lease、在 Task/Goal/Reservation/版本/无开放 Iteration 等 fence 全部成立时补建缺失 continuation intent。它不猜测 Task 成功、不续期已过期 Reservation、不合成 Turn。
+- Tracker 增加 Reservation fencing token 对账；repair 每次写入前在 Serializable 事务内重读 canonical facts，避免拿五分钟前的投影直接写库。
+- 聚焦源码验证串行通过：Runtime 36/36（Token/成本预算、当前 Turn compaction guard、工具发现、Turn 交接），Platform 31/31（Goal/WorkUnit 推进、Tracker/repair、计划编译与自动派发）。并行测试曾因共享产物和 SQLite 夹具产生非功能性争用，随后按仓库约定串行复核通过。
+
+仍未完成的是 checkpoint 生成/恢复、AwaitHandle signal/consume、冲突范围的实际锁管理、Task-bound blocked 后重新预约、动态质量/成本/TPS 路由反馈、真实 off-peak Resolver、新构建进程外部署与七个夜间窗口验收。authoritative 在这些准入门关闭前保持禁用；任务卡只能登记“源码实现/验证”，不能登记“生产完成”。
 
 ## 3. 现有代码基线与差距
 
@@ -123,6 +211,7 @@ Task 进入 Ready/Deferred
 | `ProviderModelExecutionWindowResolver` | PuddingPlatform | 解析 Task 偏好 + Agent route + 价格时段 |
 | `ExecutionWindowBoundaryScheduler` | PuddingPlatform | 为已计算 `nextEligibleAt` 的 Deferred Task 生成一次边界 signal |
 | `TaskGoalDispatchCoordinator` | PuddingPlatform | 确定性选候选、三次 fence、调用原子启动事务 |
+| `TaskExecutionTracker` | PuddingPlatform | 五分钟只读关联 Task→Execution 全链事实，分类健康/等待/卡住/不一致/待清理，不直接修复 |
 | `TaskGoalProjector` | PuddingPlatform | 投影 Task/Goal 联合状态和可解释的等待原因 |
 
 Runtime 不成为 Task/Goal 事务写入者，Desktop 不承载任务调度业务逻辑，Admin 不维护第二套状态机。

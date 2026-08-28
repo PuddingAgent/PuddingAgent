@@ -8,7 +8,7 @@
 > 压缩边界：[ADR-042 上下文自动压缩与主动 Compact 命令](43ADR-042上下文自动压缩与主动Compact命令ADR.md)
 > 执行边界：[ADR-059 Conversation 执行内核与可靠命令链路](60ADR-059Conversation执行内核与可靠命令链路ADR.md)
 > 任务边界：[ADR-072 工作区 TODO、峰谷 Auto 派发与定时任务第一阶段](86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md)
-> 2026-08-26 实施注记：G2 durable continuation、G3 保守终态协调、Task-bound Goal 原子启动与 authoritative 扫描链已落源码且默认关闭；provider/model 低峰价格档案、完整 Verifier、事件边界调度、Admin 与进程外 smoke 尚未通过，故本 ADR 仍为 Proposed。
+> 2026-08-28 实施注记：G2 durable continuation、G3 保守终态协调、Task-bound Goal 原子启动与 authoritative 扫描链已落源码；五分钟 Shadow、显式 opt-in、Backlog refinement、结构化路由、Execution Tracker、确定性 repair、版本化 WorkUnit 顺序推进和 round/tool/time/input/output/cost 硬预算已实现，authoritative 仍关闭。checkpoint/AwaitHandle 消费、blocked 重预约、provider/model 低峰价格档案、动态模型评分、完整 Verifier、Admin、新构建部署与七夜生产验收尚未通过，故本 ADR 仍为 Proposed。
 
 ## 1. 决策
 
@@ -32,6 +32,12 @@ Pudding 将 `/goal` 实现为 Conversation 之上的持久 `GoalRun` 控制面�
 14. Agent Availability Sensor 必须由已提交的 Session/Turn/Tool/Approval/Message/Reservation 事实构建可持久投影。重启后从 `unknown` 重建；进程内字典、在线标识或最近一次心跳不得单独证明 `idle`。
 15. Task Dispatch Coordinator 由 `task.ready`、`agent.availability.changed`、`execution_window.opened` 和事务提交后 signal 驱动；低频恢复扫描只修复已存在的 Ready/Deferred/Outbox/Expired Lease 事实。Heartbeat 只能作为原有周期检查的降级能力，不创建派发意图。
 16. Task 完成必须由 Task-bound Goal 的终态 CAS 与 Task 结果/证据门禁一致提交。Agent 的自然语言“已完成”、Delivery ACK 或 Goal `DONE` 都不能单独使 Task 进入 Completed。
+17. 自动派发不得从 Task 标题或正文猜测执行类型。Task 必须以结构化 `taskType/requiredCapabilityIds/requiredProviderId/requiredModelId` 声明约束；类型默认规则由版本化 `TaskTypeRoutes` 配置拥有，任务显式约束只能收紧、不能放宽类型规则。
+18. `preferredAgentId` 只在 `allowAgentFallback=false` 时是独占约束。显式允许 fallback 后，Scheduler 可依稳定顺序尝试其它兼容 Agent，但每个候选仍必须通过模板能力、provider/model、Availability、idle grace 和 execution-window 全部门禁。
+19. 自动启动命令必须携带 Agent 路由 SHA-256。唯一 Task→Goal 事务写入者在提交前重新读取当前 Agent 模板和 TaskTypeRoute 并重算；指纹不一致或候选不再兼容时返回 `agent_changed`，不得建立任何 Assignment、Reservation、Binding、Goal 或 Outbox。
+20. Ready/Deferred 状态本身不授权后台执行。每个自动任务还必须持久化 `autoDispatchEnabled=true`；缺省值固定为 false，Evaluator 与最终事务都重复检查。Backlog refinement 只检查显式 opt-in 的任务；Shadow 仅输出决策，authoritative 必须由唯一 Store 重验 Task/Agent/Route 指纹并以 CAS + canonical `TaskReady` 提交。
+21. 自动派发后的五分钟恢复扫描必须关联 Task、Assignment、Reservation、Binding、Goal、Iteration、ExecutionCommand/Run 与 outbox 的 canonical facts，输出健康、等待、卡住、不一致和待清理五类 verdict。该 Tracker 只读；任何 renew/retry/requeue/release/block 修复必须由独立唯一写入者重新校验版本、lease 和 fencing token 后提交，不能把 Watchdog 观察结果直接当命令。
+22. `WorkspaceTask` 继续是任务台账权威，`task_plan_runs/task_nodes` 只保存该 Task 版本编译出的不可变执行快照。评估器与最终事务必须分别编译同一 `Explore/Plan/Change/Test/Review` WorkUnit DAG，并校验包含依赖、能力、冲突范围和预算的 SHA-256；漂移返回 `execution_plan_changed`。计划、WorkUnit、Assignment、Reservation、Binding、Goal 和首个 Outbox 必须同事务全成或全不成。AwaitHandle 只表达持久等待，不以轮询占用 Agent Loop。
 
 ## 2. 背景与问题
 

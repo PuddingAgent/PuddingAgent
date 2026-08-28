@@ -1,6 +1,6 @@
 # ADR-081：Agent Harness 兼容边界与工具协议适配
 
-> 状态：Accepted；H0、H1 重复失败熔断、模板单一权威源与 canonical Token 归因已实现，聚合报表、部署与真实模型验收未完成
+> 状态：Accepted；H0、H1 重复失败熔断、模板单一权威源、round-boundary 工具激活、discovery-only 熔断、canonical Token 归因与 WorkUnit 调用边界 Token/成本止损已实现，聚合 Goodput 报表、部署与真实模型验收未完成
 >
 > 日期：2026-08-26
 >
@@ -29,6 +29,8 @@ LLM 在后训练 Harness 中形成了 `rg`、`exec_command`、`write_stdin`、Co
 13. `BuiltInAgentTemplates` 只能由 `PuddingCore` 定义；Host/UI/Runtime 共用同一实例源，不得在 Host 再声明同全名类。Low 权限投影以 V2 `DefaultToolNames + RequiresGrantToolNames` 为权威，文件读取/搜索/发现工具进入 Default，写入和 Shell 进入 Grant。
 14. 提示词不得宣称不在当前 function schema 中的工具可用；只有 `search_tools` 实际可见时才提示递延工具发现。
 15. 工具循环采用两层止损：`FailedToolCallTracker` 处理完全相同的 canonical tool+args+失败结果；`RuntimeControlService` 按 kind+component+归一化错误构造失败族指纹，参数改变也在第 5 次同族失败熔断。窗口总量阈值的保留队列容量必须不小于阈值，Buffered/Streaming 均将熔断终态报为 Failed，不得降级为普通 Cancelled。
+16. `search_tools` 激活语义是“当前 provider request 冻结、下一次 LLM round 生效”，不是“下一个外部用户 Turn 生效”。dispatch 内 catalog/capability/schema 为权威冻结面，可见工具 ID 只在 round 边界单调增加，并记录一次 `tool_spec_changed`。连续 8 次只调用 `search_tools`、没有执行任何已发现业务工具时，参数文本即使变化也按同一 discovery-only 族返回 `tool_discovery_stalled`。
+17. 自动 WorkUnit 的 input/output/cost 预算由 Execution Kernel 按实际 provider/model 冻结，Buffered/Streaming 在每次 provider call 后统一记账，并在工具或下一轮 LLM 前硬停止；价格或 usage 缺失时 fail closed。缓存命中率不是完成事实，验收必须同时报告 verified Goodput。
 
 ## 3. 结果
 
@@ -70,6 +72,7 @@ LLM 在后训练 Harness 中形成了 `rg`、`exec_command`、`write_stdin`、Co
 - 定向自动测试：已实现，结果以本次变更交付记录为准；
 - H1 canonical 重复指纹、`execution_stalled` 熔断、逐轮 Token 归因、Streaming `tool.call`、适配命中、限流等待和首块等待遥测：已实现；
 - 2026-08-27 `browser_context` 循环事故修复：模板已收敛到 Core 单一权威源，Low 投影保留读取/搜索/`search_tools`，发现提示按实际可见集生成，同失败族 5 次熔断且窗口总量阈值可达；已补定向测试；
+- 2026-08-28 `search_tools` 空转事故修复：现场 Run 约 36 分钟内 216/216 工具调用均为 discovery、实际任务工具 0 次；源码已把动态定义从错误的“下一外部 Turn”改为下一 LLM round 单调生效，Buffered/Streaming 共用同一提升函数，并增加 discovery-only 熔断；12/12 定向测试通过；
 - H1 历史 fixture 聚合报表与进程外新数据 A/B：未实现；历史 Token 行不回填，部署前 `sub_agent:*` 汇总行不得与逐轮 `agent_llm` 相加；
 - H2 bundled ripgrep：未批准、未实现；
 - 当前 Desktop/Core 部署和真实模型主/子代理 smoke：未完成。

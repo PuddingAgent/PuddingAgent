@@ -1,10 +1,10 @@
 # 上下文 Token 效率、缓存命中与分级压缩优化设计方案
 
-> 状态：Proposed，尚未实施或发布  
+> 状态：分批实施中；2026-08-28 源码修复已完成定向验证，尚未部署或通过连续 7 日生产验收
 > 日期：2026-08-17  
 > 数据基线：2026-08-11 至 2026-08-17，8 月 17 日为 16:59 左右导出的部分日  
 > 关联文档：[ADR-042 上下文自动压缩与主动 Compact 命令](../07架构/43ADR-042上下文自动压缩与主动Compact命令ADR.md)、[上下文自动压缩与 Compact 命令设计方案](上下文自动压缩与Compact命令设计方案.md)、[上下文缓存可观测性 ADR](../07架构/18上下文缓存可观测性ADR.md)、[缓存统计闭环 ADR](../07架构/44ADR-043缓存统计闭环ADR.md)  
-> 本轮边界：只形成设计和施工/验收合同，不修改源码、配置、数据库或运行数据。
+> 初始设计边界：2026-08-17 只形成设计和施工/验收合同；后续实施进度按本文件逐批追加，不能由文档状态替代部署和生产验收。
 
 ## 1. 结论
 
@@ -36,10 +36,43 @@ Pudding 的主要成本问题不是输出 Token，而是大体积历史在每轮
 - **归因卫生**：image_reader 委派调用 sessionId 独立命名空间 `vision-helper:{sessionId}` 且带稳定 system 前缀 + 同 (artifact, prompt) 观察缓存；潜意识调用统一 `subconscious:` 命名空间（含冒号的既有 scope 不重复加前缀）；`ConversationProjector` usage 投影按指纹查重补记（消灭与执行服务直记的双计，即 859 行 NULL PrefixHash 桶的主因）；新增 `PrefixChangeReasons.SessionRehydrated`（水合后首轮显式归因）。
 - **会话驻留**：默认会话超时 1h → 4h（`RuntimeProfile.SessionTimeout` 与两处 Default 常量；模板 manifest 可覆盖），减少日间空闲后的全量重水合。
 - **多代覆盖缺口修复**：`CompactionCoverageFilter` 从"最新 manifest"改为该会话全部 manifest 并集——旧代码多代压缩后，第一代覆盖的原始消息可经 JSONL 旁路复活。
-- **压缩转录断供与套娃修复**：每次压缩前按稳定 `MessageId` 从 platform `ChatMessages` 增量镜像当前 session；高水位从既有 `chat_transcript` MessageId 持久派生，按 platform Id `afterId` 升序有界分页（256 条）续读，不再每次全量扫描会话转录或全部既有 MessageId；删除 `activeMessages.Count == 0` 才导入的错误门禁。无可压缩候选，或待压缩集合及尺寸驱逐克隆只含旧 `compact_summary`（含超大旧摘要）时 no-op，结果与 diagnostics 的 compacted count 均为 0；最小输入补读排除 `CompactedBy != null` 的已覆盖原文，避免旧事实回流和摘要逐代膨胀。该修复恢复“压缩后失效 → memory DB 水合”的近期对话连续性；压缩前 Core 重启缺口仍需持续 history projector/platform 冷水合后续消除。
-- **验收工具**：`TestScripts/deepseek-cache-hitrate.py` 逐日/分模型/归因桶/Top-miss 报表；How-Debuge §11.35。
+- **压缩转录断供、当前轮越界与套娃修复**：每次压缩前按稳定 `MessageId` 从 platform `ChatMessages` 增量镜像当前 session；高水位从既有 `chat_transcript` MessageId 持久派生，按 platform Id `afterId` 升序有界分页（256 条）续读，不再每次全量扫描会话转录或全部既有 MessageId；删除 `activeMessages.Count == 0` 才导入的错误门禁。若当前围栏 Turn 或最后一个未围栏 user 消息进入压缩候选，`CurrentTurnCompactionGuard` 在任何摘要调用或数据库写入前返回 `current_turn_in_compaction_scope`，保留原消息且压缩数为 0。无可压缩候选，或待压缩集合及尺寸驱逐克隆只含旧 `compact_summary`（含超大旧摘要）时 no-op，结果与 diagnostics 的 compacted count 均为 0；最小输入补读排除 `CompactedBy != null` 的已覆盖原文，避免旧事实回流和摘要逐代膨胀。该修复恢复“压缩后失效 → memory DB 水合”的近期对话连续性；压缩前 Core 重启缺口仍需持续 history projector/platform 冷水合后续消除。
+- **验收工具**：`TestScripts/deepseek-cache-e2e.py` 在任务、Agent、模型、系统提示和工具清单不变的前提下执行双轮真实 DeepSeek 探针，从网关权威账本与 `prefix-v2` 归因账本交叉验证；`TestScripts/deepseek-cache-hitrate.py` 生成逐日/分模型/归因桶/Top-miss 报表；How-Debuge §11.35。
+- **真实链路反例（2026-08-28）**：新 Core 的第二轮探针稳定命中 49,024 个旧前缀 token，system/tool hash 均不变，但每轮重复追加的 `L6-AGENT-LOG-RECALL` 占 798 token，将命中率理论上限压至 97.737%。按 DeepSeek Harness `agent-instructions` 的 durable-surface reuse 原则，只有在完全相同召回内容仍存在于模型可见历史时才不再追加；召回内容改变或旧内容已被压缩时仍正常注入，不以删除上下文换取指标。
 - 上述改动均为 additive、可用配置回退（预算设 0 = 行为不变）；单元测试覆盖预算钳制、摘要链滚动、绝对上限升级、JSONL 合并（PuddingRuntimeTests 963 中 960 绿，3 个预存速率限制器时序失败与 MemoryEngine 5 个预存失败与本批次无关，已用 stash 基线对照确认）。
 - **状态**：待新 Core 进程部署后按 §15.3 连续 7 个完整自然日验收；增量底噪（同前缀复用 miss ≈0.86%）使最后 0.5% 空间很薄，若报表显示底噪高于预算，按 §15.3 成本口径重议验收线。
+
+### 1.3 实施进度（2026-08-28，95.92% 事故修复批次）
+
+#### 1.3.1 冻结基线与缺口
+
+本批次以北京时间 `2026-08-27 22:00:00` 至 `2026-08-28 07:58:58` 的 provider usage ledger 为事实源。DeepSeek 子代理共 398 次请求、34,894,026 input tokens，其中 cache hit 33,470,336、cache miss 1,423,690，Token 加权命中率为 `95.9200%`。严格达到 `>99%` 至少需要把 1,074,751 个旧前缀 input tokens 转成命中。
+
+审批审计小请求共 120 次，只贡献 313,416 input tokens，却产生 257,480 miss。即使把这批请求全部从 LLM 路径消除，剩余 Agent 主请求的理论命中率也仅约 `96.6%`，因此不能把“审批优化”冒充整个修复。真正的主缺口来自长上下文 prefix epoch 被非追加式改写：最大单次 miss 为 219,084、202,036、178,637、91,399 和 53,618 tokens。
+
+#### 1.3.2 问题清单与处置
+
+| 问题 | 机制影响 | 本批次处置 | 当前状态 |
+|---|---|---|---|
+| 旧 `PrefixHash` 只覆盖 system/tool | 历史头被驱逐或 checkpoint 替换时仍显示同一个 PrefixHash，Cache Miss Inspector 看不到真实首变段 | `prefix-v2` 加入 `HistoryAnchorHash` 和请求 envelope `SerializationVersion`；补充 `compaction_replay` / `compaction_checkpoint` 原因 | 源码和测试完成，待部署 |
+| Buffered/Streaming 每次 dispatch 无条件重建 message-zero system | 动态内容或非确定性组装可能让同一 session 的稳定前缀漂移 | `EnsureFrozenSystemPrompt` 在同一 epoch 保留精确 bytes；动态内容继续走尾部 User context；模板/配置/工具 manifest 的真实变化只提交一次并标记 `system_prompt_changed`，不为命中率保留陈旧合同 | 源码和测试完成，待部署 |
+| 旧“软压缩”直接把逐条驱逐结果写回 history | 未经模型 checkpoint 便丢失旧语义，同时产生一次大范围 prefix miss | 改为 Harness 对齐的 warm-prefix checkpoint：摘要请求原样重放当前 system/tools/history，仅在尾部追加固定指令；只有无 tool call、非空且确实缩小的摘要才原子替换旧区间；失败完全保留原 history | 源码和测试完成，待部署 |
+| 工具审批按 `; & | \n` 直接切字符串 | 引号内正则、`2>&1`、PowerShell pipeline/变量赋值被误判，安全构建/只读调用落入昂贵的 LLM 审批 | 引号/括号感知解析；确定性放行已知只读/构建/测试 pipeline；危险命令确定性拒绝；未知、绝对输出、调用运算符和子表达式继续 LLM 审批 | 源码和测试完成，待部署 |
+| Agent、approval、compaction 共用 `chat` 计费桶 | 一次性审批调用污染 Agent cache aggregate，无法区分控制面成本 | `LlmInvocationRequest.Purpose` + AsyncLocal scope；provider ledger operation 细分 `chat[:approval|:compaction]`，不改模型可见 prompt | 源码完成，待部署 |
+| 压缩调用可能形成低效循环 | 失败摘要会持续消耗相同的大前缀 | 每个 dispatch 最多尝试一次；不缩小/失败/tool call 均拒绝提交并保留原 surface | 源码和测试完成，待部署 |
+
+#### 1.3.3 与 DeepSeek Harness 的结构对齐
+
+本批次不是复制客户端外观，而是对齐其真正影响缓存的执行合同：
+
+1. system 与工具定义构成确定性 request header，同一 epoch 正常轮次只在历史尾部追加；真实 header 变化开启可解释的新 epoch。
+2. compaction 辅助请求复用当前 warm prefix，在末尾追加固定指令，以便 provider 复用既有缓存。
+3. 只有有效 checkpoint 生成后，才以一次显式的历史 epoch 变更替换旧区间；失败不能逐条驱逐或半提交。
+4. 运行账本把 Agent 工作、审批控制面、compaction 控制面拆开统计，但保持任务目标、工具集合、工具调用参数和模型可见语义不变。
+
+#### 1.3.4 验收边界
+
+本批次的源码构建和定向测试只证明实现符合合同，不证明当前 Desktop/Core 已加载新代码，也不证明线上命中率已经超过 99%。部署后必须继续执行 §15.3：以 provider ledger 与账单对账，连续 7 个完整自然日同时观察整体、DeepSeek Pro/Flash、main/sub-agent，以及 `approval` / `compaction` 控制面分桶；整体及达到样本门槛的模型/路由均须严格 `>99%`。若仍失败，按 `HistoryAnchorHash + PrefixChangeReason + first changed segment + miss tokens` 排序修复，不允许靠减少任务、隐藏工具或丢弃执行证据达标。
 
 ## 2. 目标与非目标
 
@@ -571,8 +604,9 @@ duplicateRate  = duplicatedSourceBytes / rawBytesBefore
 
 - 连续 7 个完整自然日，DeepSeek 直连按 Token 加权总命中率 `>99%`。
 - 当日输入达到 10M Token 的 Pro/Flash 分组各自 `>99%`；小样本单独展示，不用大流量掩盖。
+- main/sub-agent 作为任务数据面分别展示；`approval` / `compaction` 作为控制面单列请求数、Token、延迟和命中率，不能混入 Agent 分母后掩盖问题。
 - 同一 Composition Snapshot 预热后的稳定前缀请求命中率 `>=99.5%`。
-- `system_prompt_changed` 和非预期 `tool_spec_changed` 在 session 预热后合计低于请求数 `0.1%`。
+- `system_prompt_changed` 和非预期 `tool_spec_changed` 在 session 预热后合计低于请求数 `0.1%`；历史头变化必须由 `session_rehydrated` 或 `compaction_checkpoint` 等明确 epoch 原因解释。
 - 本地 usage 与服务商账单输入 Token 差异 `<0.5%`；否则该日不作为最终验收日。
 
 ### 15.4 ZIP 有效性

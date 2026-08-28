@@ -1,6 +1,6 @@
 ﻿# ADR-068：桌面引导式自举闭环（重建-重启）
 
-- **状态**：已接受（实现完成并经两次实战演练验证）
+- **状态**：已接受（2026-08-28 修订：程序集部署与加载校验闭环）
 - **日期**：2026-08-06
 - **相关**：ADR-041（开发构建与发布打包链路分离）、`YoloSignalService`（信号先例）、`How-Debuge.md §11.17`、`Source/code_map.md`
 - **提交**：`0bbb223`（WP-B1 信号服务）、`4a09175`（WP-B2 HTTP 端点）、`b6e1bc4`（回填不阻塞修复）
@@ -37,26 +37,41 @@ Desktop 的定位是未来的开发控制台（VS 启动/双击启动，`dev-up.
 
 ```
 停 Core → 等 Core 完全退出（≤30s 轮询，Stopped/Idle 才算全停）
-        → dotnet 增量构建（超时默认 300s）
-        → （可选）构建产物同步到 Desktop 运行目录（SyncBuildOutput，默认 false）
+        → Desktop 构建或接收 Agent 预构建产物
+        → 事务部署到实际 CoreExecutablePath 所在目录（不是 Desktop 根目录）
+        → 校验部署前后 PuddingAgent.dll SHA-256
         → （可选）写 yolo.signal（AutoYolo 且请求带 yolo）
-        → 重启 Core → 写 <SignalPath>.result.json
+        → 重启 Core → 再次核对实际启动目录与程序集 SHA-256
+        → 写 <SignalPath>.result.json
 ```
+
+`deploymentMode` 是显式执行策略：
+
+| 模式 | 编译责任 | Desktop 责任 | 适用场景 |
+|---|---|---|---|
+| `desktop-build`（默认） | Desktop | 停 Core、`dotnet build`、事务部署、校验、重启 | 方案 B，点火工具默认路径 |
+| `prebuilt-artifact` | Agent/外部构建器 | 校验仓库内绝对产物目录、事务部署、校验、重启 | 方案 A，复用已完成构建 |
+| `restart-only` | 无 | 仅重启 | 明确只需要配置重载时使用；不得用于源码更新验收 |
 
 关键不变量：
 
 1. **构建前 Core 必须完全退出**——否则运行中的二进制持有文件锁，增量构建会失败。Core 未全停时**跳过构建但仍重启 Core**（旧二进制兜底），并把原因记入 result。
-2. **任何失败都写 result.json**：`success/action/startedAt/finishedAt/buildExitCode/buildLogTail(30行)/coreRestarted/yoloSignalWritten/errors[]`，WriteThrough 落盘。
-3. **构建失败 → 旧二进制备份**：构建/同步失败只记录错误、清掉 `success`，不阻止 Core 用旧二进制恢复——闭环永不把系统弄死。
-4. **零硬编码**：信号路径、构建目标（`BuildProjectPath` 绝对路径优先，否则 `BuildProjectRelativePath` 拼仓库根）、构建参数、超时全部来自 `system.json → desktop.bootstrap`。
+2. **部署目标唯一来自实际启动路径**：使用 `DesktopApplicationCoordinator.CoreExecutablePath` 的父目录；禁止把产物默认复制到 `AppContext.BaseDirectory`，因为发布包的 Core 位于 `core/` 子目录。
+3. **事务部署与可回滚**：所有变更文件先在目标同卷暂存并逐字节校验，再逐文件提交；提交失败恢复已覆盖文件。构建/部署失败仍重启旧 Core。
+4. **程序集加载必须有证据**：除 `restart-only` 外，同时校验入口 `PuddingAgent.dll` 与完整托管启动产物清单。清单覆盖排序后的全部 DLL、EXE、deps.json、runtimeconfig.json，以相对路径 + 单文件 SHA-256 合成总指纹，确保 `PuddingRuntime.dll` 等依赖也进入加载验收。只有准备产物、目标目录、重启后实际启动目录三方指纹一致且 Core Ready，`assembliesReloaded=true`、`success=true` 才成立。
+5. **任何失败都写 result.json**：除原有字段外，记录 `deploymentMode/buildOutputDirectory/deploymentDirectory/coreExecutablePath/deploymentCopied/deploymentSkipped/preparedAssemblySha256/loadedAssemblySha256/preparedArtifactManifestSha256/loadedArtifactManifestSha256/managedArtifactFileCount/assembliesReloaded`，WriteThrough 落盘。
+6. **构建失败 → 旧二进制备份**：构建/部署失败只记录错误、清掉 `success`，不阻止 Core 用旧二进制恢复——闭环永不把系统弄死。
+7. **零硬编码**：信号路径、构建目标（`BuildProjectPath` 绝对路径优先，否则 `BuildProjectRelativePath` 拼仓库根）、默认部署模式、构建参数、超时全部来自 `system.json → desktop.bootstrap`。
 
 ### 2.3 启动侧不变量（实战教训）
 
-Core 启动路径上的任何 Hosted Service **不得阻塞 `app.StartAsync()`**：DesktopChild 只有在 `StartAsync` 返回后才输出 `PUDDING_DESKTOP_READY`，Desktop Supervisor 到 `startupTimeoutSeconds`（60s）即杀进程。一次性长任务（如 SessionChunkVectors 存量回填）必须继承 `BackgroundService` 并在 `ExecuteAsync` 首句 `await Task.Yield()`（见 `b6e1bc4` 与 How-Debuge §11.17）。
+Core 启动路径上的任何 Hosted Service **不得阻塞 `app.StartAsync()`**：DesktopChild 只有在 `StartAsync` 返回后才输出 `PUDDING_DESKTOP_READY`。一次性长任务（如 SessionChunkVectors 存量回填）必须继承 `BackgroundService` 并在 `ExecuteAsync` 首句 `await Task.Yield()`（见 `b6e1bc4` 与 How-Debuge §11.17）。
+
+数据库冷升级等必须在 Ready 前完成的有限初始化通过 stdout 控制协议每 5 秒发送 `PUDDING_DESKTOP_STARTING` 租约（协议版本、当前 Core PID、单调序号、阶段、耗时）。`startupTimeoutSeconds` 表示“无有效进度的最大静默时间”；Desktop 只接受当前子进程且序号递增的租约，并保留 `5 × startupTimeoutSeconds`、最高 10 分钟的绝对上限。租约不等于 Ready，不能绕过最终 `PUDDING_DESKTOP_READY`、PID 校验和 `/health/ready`。这样既允许一次性 schema/index 冷升级超过 60 秒，也不会让卡死或伪造旧消息无限续命。
 
 ### 2.4 Desktop 自身不在闭环内
 
-闭环只重建 `Source/PuddingAgent/PuddingAgent.csproj`（Core）。Desktop 自身更新仍需 VS/手工重建——自举不能提着自己的鞋带把自己拉起来。Desktop 与 Agent 运行时的依赖已切断（`4a09175` 移除 Desktop→PuddingAgent 项目引用），Desktop 以外部进程方式监督 Core。
+闭环只重建/部署 `Source/PuddingAgent/PuddingAgent.csproj`（Core）。Desktop 自身更新仍由进程外控制器停止旧 Desktop、编译并启动新 Desktop；运行中的 Desktop 不覆盖自己的程序集。Desktop 与 Agent 运行时的依赖保持进程隔离，Desktop 以外部进程方式监督 Core。
 
 ## 3. 拒绝的方案
 
@@ -73,13 +88,15 @@ Invoke-RestMethod http://127.0.0.1:8199/desktop/bootstrap/status
 
 # 2) 点火（token 在 D:\data\config\system.json → desktop.core.controlToken）
 Invoke-RestMethod -Method Post http://127.0.0.1:8199/desktop/bootstrap/start `
-  -Body (@{ token='<TOKEN>'; requestedBy='ops'; yolo=$true; message='...' } | ConvertTo-Json) `
+  -Body (@{ token='<TOKEN>'; requestedBy='ops'; yolo=$true; deploymentMode='desktop-build' } | ConvertTo-Json) `
   -ContentType 'application/json'
 # → 202；触发方（Agent）会随 Core 一起下线 1~2 分钟
 
 # 3) 重启后验收
 Get-Content D:\data\config\rebuild.signal.result.json
-# success=true, buildExitCode=0, coreRestarted=true, yoloSignalWritten=true, errors=[]
+# success=true, buildExitCode=0, assembliesReloaded=true,
+# preparedArtifactManifestSha256 == loadedArtifactManifestSha256,
+# assembliesReloaded=true, coreRestarted=true, errors=[]
 ```
 
 失败诊断顺序：`result.json errors[]` → `<DataRoot>\logs\desktop-bootstrap-build.log` → 确认旧二进制已自动恢复 Core（status coreState=Ready 即系统存活）。
@@ -90,11 +107,13 @@ Get-Content D:\data\config\rebuild.signal.result.json
 |---|---|---|
 | #1 | 2026-08-06 16:28 | success=true，构建 7.76s，全程 19s |
 | #2（修复回填阻塞后复测） | 2026-08-06 17:03 | success=true，构建 13.38s（增量 no-op），全程 39s |
+| #3（程序集部署修订实机复测） | 2026-08-28 14:35 | `desktop-build`，success/assembliesReloaded/coreRestarted=true；Core PID 3108→13308；268 个托管产物清单指纹一致，全程 37s，health=healthy |
+| #4（冷升级越过 60s 事故） | 2026-08-28 19:08 | Core 已完成 Platform schema 并启动到 Connector/ChatWorker，但旧 Desktop 在 Ready 前按固定 60s 杀进程；受控二次启动约 5s Ready，确认不是崩溃。修订为 5s 启动租约 + 60s 静默超时 + 300s 绝对上限，仍保留 Ready/health 双门禁。 |
 
-测试：`PuddingDesktopBootstrapConfigTests` + `PuddingBuildOutputSyncTests` 9/9（commit 前验证）；`SessionChunkBackfillServiceTests` 含「回填运行中宿主 StartAsync 不阻塞」回归用例。
+测试：2026-08-28 定向 `PuddingDesktopBootstrapConfigTests` + `PuddingBuildOutputSyncTests` 14/14，`BootstrapRebootToolTests` 13/13，Desktop 请求协议 6/6，启动租约/主管定向 23/23；`PuddingDesktop.Tests` 全量 222/222；`PuddingApplicationHostCompositionTests` 1/1。`SessionChunkBackfillServiceTests` 继续覆盖「回填运行中宿主 StartAsync 不阻塞」。
 
 ## 6. 后果与后续
 
-- **已得**：Agent 可全自助完成「改码 → 提交 → 重建 → 重启 → 验收」；每次尝试都有结构化 result 审计。
+- **已得**：Agent 可全自助完成「改码 → 构建/交付产物 → 事务部署 → 重启 → 程序集哈希验收」；每次尝试都有结构化 result 审计。
 - **约束**：触发方会随 Core 重启掉线，必须在 goal/记忆中预置「重启后第一件事」清单（本会话两次演练均靠此恢复）。
 - **后续阶段**：增量编译提速、热重载、Desktop 自更新（需独立 updater 进程）、UI 触发按钮接线 `TriggerBootstrapAsync`。
