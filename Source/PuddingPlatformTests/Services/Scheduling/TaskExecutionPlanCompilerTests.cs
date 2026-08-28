@@ -40,6 +40,21 @@ public sealed class TaskExecutionPlanCompilerTests
     }
 
     [TestMethod]
+    public void WorkUnitBudgetTemplates_ConvergeRoundsToWorkUnitDesignWindow()
+    {
+        // P0-06580c4d Phase 3：全部模板默认轮次必须落在 25-40 设计区间，
+        // 禁止靠 LargeTaskMaxRounds(600) 硬撑。
+        Assert.IsTrue(TaskExecutionPlanCompiler.TryCompile(Task("implementation"), null, out var plan, out _));
+
+        foreach (var unit in plan!.WorkUnits)
+        {
+            Assert.IsTrue(
+                unit.Budget.MaxRounds is >= 25 and <= 40,
+                $"{unit.Kind} budget rounds={unit.Budget.MaxRounds} outside [25,40].");
+        }
+    }
+
+    [TestMethod]
     public void TaskVersionOrTypeChange_ChangesFingerprint()
     {
         Assert.IsTrue(TaskExecutionPlanCompiler.TryCompile(Task("implementation"), null, out var baseline, out _));

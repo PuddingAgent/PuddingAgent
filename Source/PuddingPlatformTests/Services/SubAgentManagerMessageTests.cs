@@ -72,7 +72,7 @@ public sealed class SubAgentManagerMessageTests
         Assert.AreEqual("subagent.conscious", dispatcher.LastRequest.LlmProfile?.ProfileId);
         Assert.AreEqual("test-model", dispatcher.LastRequest.LlmProfile?.ModelId);
         Assert.AreEqual("test-model", dispatcher.LastRequest.LlmConfig?.ModelId);
-        Assert.AreEqual(SubAgentExecutionOptions.LargeTaskMaxRounds, dispatcher.LastRequest.MaxRounds);
+        Assert.AreEqual(SubAgentExecutionOptions.DefaultWorkUnitMaxRounds, dispatcher.LastRequest.MaxRounds);
         Assert.AreEqual(
             SubAgentExecutionOptions.LargeTaskMaxToolCallsTotal,
             dispatcher.LastRequest.MaxToolCallsTotal);
@@ -111,11 +111,85 @@ public sealed class SubAgentManagerMessageTests
         Assert.AreEqual("sub-parent-session-resume", dispatcher.LastRequest!.SessionId);
         Assert.IsTrue(dispatcher.LastRequest.IsResumedSubAgentRun);
         Assert.AreEqual(
-            SubAgentExecutionOptions.LargeTaskMaxRounds,
+            SubAgentExecutionOptions.DefaultWorkUnitMaxRounds,
             dispatcher.LastRequest.MaxRounds);
         Assert.AreEqual(
             SubAgentExecutionOptions.DefaultBudgetGraceTimeoutSeconds,
             dispatcher.LastRequest.BudgetGraceTimeoutSeconds);
+    }
+
+    [TestMethod]
+    public async Task ExecuteSyncAsync_DefaultMaxRounds_ConvergesToWorkUnitDesignWindow()
+    {
+        // P0-06580c4d Phase 3：未显式指定时默认轮次必须落在 25-40 设计区间，
+        // 禁止隐式继承 LargeTaskMaxRounds(600) 硬撑。
+        Assert.IsTrue(SubAgentExecutionOptions.DefaultWorkUnitMaxRounds is >= 25 and <= 40);
+
+        var dispatcher = new RecordingRuntimeAgentDispatcher();
+        var manager = CreateManager(dispatcher);
+
+        var result = await manager.ExecuteSyncAsync(new SubAgentSpawnRequest
+        {
+            ParentSessionId = "parent-session",
+            ParentAgentId = "agent-parent",
+            WorkspaceId = "default",
+            TaskDescription = "Default work unit budget probe.",
+            TemplateId = "workspace-task-agent",
+            LlmConfig = CreateLlmConfig(),
+            LlmProfile = CreateLlmProfile(),
+        });
+
+        Assert.IsNotNull(result);
+        Assert.IsNotNull(dispatcher.LastRequest);
+        Assert.AreEqual(
+            SubAgentExecutionOptions.DefaultWorkUnitMaxRounds,
+            dispatcher.LastRequest.MaxRounds);
+    }
+
+    [TestMethod]
+    public async Task ExecuteSyncAsync_ExplicitMaxRoundsWithinDesignWindow_IsRespected()
+    {
+        var dispatcher = new RecordingRuntimeAgentDispatcher();
+        var manager = CreateManager(dispatcher);
+
+        var result = await manager.ExecuteSyncAsync(new SubAgentSpawnRequest
+        {
+            ParentSessionId = "parent-session",
+            ParentAgentId = "agent-parent",
+            WorkspaceId = "default",
+            TaskDescription = "Explicit work unit budget probe.",
+            TemplateId = "workspace-task-agent",
+            LlmConfig = CreateLlmConfig(),
+            LlmProfile = CreateLlmProfile(),
+            MaxRounds = 40,
+        });
+
+        Assert.IsNotNull(result);
+        Assert.IsNotNull(dispatcher.LastRequest);
+        Assert.AreEqual(40, dispatcher.LastRequest.MaxRounds);
+    }
+
+    [TestMethod]
+    public async Task SpawnAsync_MaxRoundsBeyondGuardrail_IsRejected()
+    {
+        var dispatcher = new RecordingRuntimeAgentDispatcher();
+        var manager = CreateManager(dispatcher);
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            manager.SpawnAsync(new SubAgentSpawnRequest
+            {
+                ParentSessionId = "parent-session",
+                ParentAgentId = "agent-parent",
+                WorkspaceId = "default",
+                TaskDescription = "Must not dispatch.",
+                TemplateId = "workspace-task-agent",
+                LlmConfig = CreateLlmConfig(),
+                LlmProfile = CreateLlmProfile(),
+                MaxRounds = SubAgentExecutionOptions.LargeTaskMaxRounds + 1,
+            }));
+
+        StringAssert.Contains(error.Message, "exceeds configured maxRounds");
+        Assert.IsNull(dispatcher.LastRequest);
     }
 
     [TestMethod]

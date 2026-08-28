@@ -186,6 +186,11 @@ public sealed record SubAgentExecutionOptions
     public const int LargeTaskMaxRounds = 600;
     public const int LargeTaskMaxToolCallsTotal = 2400;
     public const int LargeTaskMaxTimeoutSeconds = 24 * 60 * 60;
+    /// <summary>
+    /// WorkUnit 未显式指定轮次时的默认预算。设计区间 25-40：配合
+    /// budget_exhausted→checkpoint/resume 链路，禁止靠 600 轮绝对护栏硬撑。
+    /// </summary>
+    public const int DefaultWorkUnitMaxRounds = 32;
     public const int DefaultBudgetGraceRounds = 20;
     public const int DefaultBudgetGraceTimeoutSeconds = 30 * 60;
     public const double DefaultContextSoftCompactionTriggerRatio = 0.65;

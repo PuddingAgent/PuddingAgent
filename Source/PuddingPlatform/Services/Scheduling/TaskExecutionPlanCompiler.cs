@@ -141,7 +141,7 @@ public static class TaskExecutionPlanCompiler
     private static TaskWorkUnitBudget Budget(TaskWorkUnitKind kind) => kind switch
     {
         TaskWorkUnitKind.Explore => NewBudget(25, 60, 30, 150_000, 20_000, 1.00m),
-        TaskWorkUnitKind.Plan => NewBudget(20, 30, 20, 100_000, 20_000, 0.75m),
+        TaskWorkUnitKind.Plan => NewBudget(25, 30, 20, 100_000, 20_000, 0.75m),
         TaskWorkUnitKind.Change => NewBudget(40, 120, 60, 250_000, 40_000, 2.50m),
         TaskWorkUnitKind.Test => NewBudget(30, 100, 60, 200_000, 30_000, 1.75m),
         TaskWorkUnitKind.Review => NewBudget(25, 60, 30, 150_000, 25_000, 1.00m),

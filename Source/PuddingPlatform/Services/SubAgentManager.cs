@@ -943,7 +943,9 @@ public sealed class SubAgentManager : ISubAgentManager
                 $"Sub-agent timeout_seconds={requestedSeconds} exceeds configured maxTimeoutSeconds={options.MaxTimeoutSeconds}.");
         }
 
-        var maxRounds = request.MaxRounds ?? options.MaxRounds;
+        // 未显式指定时默认收敛到 WorkUnit 轮次预算（设计区间 25-40），
+        // 不再隐式继承 600 轮护栏；显式值仍被尊重且不得超过护栏上限。
+        var maxRounds = request.MaxRounds ?? SubAgentExecutionOptions.DefaultWorkUnitMaxRounds;
         if (maxRounds <= 0)
             throw new InvalidOperationException("Sub-agent max rounds must be greater than 0.");
         if (maxRounds > options.MaxRounds)
