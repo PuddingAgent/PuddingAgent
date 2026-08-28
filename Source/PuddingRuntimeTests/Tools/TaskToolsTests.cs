@@ -214,21 +214,24 @@ public sealed class TaskToolsTests
         string taskId = "task-1",
         string? activeAssignmentId = "assign-1",
         string? boardColumn = "Todo",
-        bool archived = false) => new()
+        bool archived = false,
+        string? status = null,
+        int version = 1,
+        string? assignmentAgentId = null) => new()
     {
         Task = new TaskAgentTaskDetail
         {
             TaskId = taskId,
             WorkspaceId = WorkspaceId,
             Title = "Write report",
-            Status = archived ? "Cancelled" : "Assigned",
+            Status = status ?? (archived ? "Cancelled" : "Assigned"),
             BoardColumn = boardColumn,
             Archived = archived,
             Priority = "p1",
             ExecutionWindow = "anytime",
             ActiveAssignmentId = activeAssignmentId,
             SortOrder = 1,
-            Version = 1,
+            Version = version,
             CreatedAtUtc = new DateTimeOffset(2026, 8, 16, 0, 0, 0, TimeSpan.Zero),
             UpdatedAtUtc = new DateTimeOffset(2026, 8, 16, 1, 0, 0, TimeSpan.Zero),
         },
@@ -237,7 +240,7 @@ public sealed class TaskToolsTests
         ActiveAssignment = new TaskAgentAssignmentSummary
         {
             AssignmentId = activeAssignmentId ?? "assign-1",
-            AgentId = AgentId,
+            AgentId = assignmentAgentId ?? AgentId,
             Status = "Assigned",
         },
         RecentEvents =
@@ -926,6 +929,207 @@ public sealed class TaskToolsTests
             Context(activeTask: ActiveTask()));
 
         AssertErrorCode(result, "capability.missing");
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // ⑥ ActiveTask 丢失 → 服务端反查重建（缺陷 3f8df399）
+    // ─────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task Claim_ActiveTaskLost_LegalOwnership_RebuildsContextAndSucceeds()
+    {
+        var service = new FakeTaskAgentCommandService
+        {
+            Get = (_, _, _, _, _) => Task.FromResult<TaskAgentGetResult?>(GetResult(status: "Assigned", version: 1)),
+        };
+
+        var root = ParseOutput(await RunAsync(
+            ClaimTool(service),
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":1}""",
+            Context())); // 宿主重启后的新 run：无 ActiveTask
+
+        Assert.AreEqual("task-1", root.GetProperty("task_id").GetString());
+        Assert.AreEqual("InProgress", root.GetProperty("status").GetString());
+        var request = service.LastClaimRequest!;
+        Assert.AreEqual(WorkspaceId, request.WorkspaceId);
+        Assert.AreEqual("task-1", request.TaskId);
+        Assert.AreEqual("assign-1", request.AssignmentId);
+        Assert.AreEqual(1, request.ExpectedVersion);
+        Assert.AreEqual(AgentId, request.AgentId);
+
+        // 反查使用当前 Agent 身份（mine 过滤），eventsLimit 收敛为 1。
+        var getArgs = service.LastGetArgs!.Value;
+        Assert.AreEqual(WorkspaceId, getArgs.WorkspaceId);
+        Assert.AreEqual("task-1", getArgs.TaskId);
+        Assert.AreEqual(AgentId, getArgs.AgentId);
+        Assert.AreEqual(1, getArgs.EventsLimit);
+    }
+
+    [TestMethod]
+    public async Task Claim_ActiveTaskLost_NotMineOrMissing_StaysRejected()
+    {
+        // GetAsync 未配置 → 返回 null（mine 信息隐藏：不存在与归属他人统一 null）。
+        var service = new FakeTaskAgentCommandService();
+
+        var result = await RunAsync(
+            ClaimTool(service),
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":1}""",
+            Context());
+
+        AssertErrorCode(result, "task.active_context_missing");
+        Assert.IsNull(service.LastClaimRequest, "重建失败时不得调用 ClaimAsync");
+    }
+
+    [TestMethod]
+    public async Task Claim_ActiveTaskLost_AssignmentAgentMismatch_StaysRejected()
+    {
+        var service = new FakeTaskAgentCommandService
+        {
+            Get = (_, _, _, _, _) => Task.FromResult<TaskAgentGetResult?>(
+                GetResult(status: "Assigned", assignmentAgentId: "agent-2")),
+        };
+
+        var result = await RunAsync(
+            ClaimTool(service),
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":1}""",
+            Context());
+
+        AssertErrorCode(result, "task.active_context_missing");
+        Assert.IsNull(service.LastClaimRequest, "归属防御校验失败时不得调用 ClaimAsync");
+    }
+
+    [TestMethod]
+    public async Task Claim_ActiveTaskLost_VersionMismatch_ReturnsVersionConflict()
+    {
+        var service = new FakeTaskAgentCommandService
+        {
+            Get = (_, _, _, _, _) => Task.FromResult<TaskAgentGetResult?>(GetResult(status: "Assigned", version: 5)),
+        };
+
+        var result = await RunAsync(
+            ClaimTool(service),
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":1}""",
+            Context());
+
+        var error = ParseError(result);
+        Assert.AreEqual("task.version_conflict", error.GetProperty("code").GetString());
+        Assert.AreEqual(5, error.GetProperty("current_version").GetInt32());
+        Assert.IsNull(service.LastClaimRequest);
+    }
+
+    [TestMethod]
+    public async Task Claim_ActiveTaskLost_TerminalState_ReturnsStateConflict()
+    {
+        var service = new FakeTaskAgentCommandService
+        {
+            Get = (_, _, _, _, _) => Task.FromResult<TaskAgentGetResult?>(GetResult(status: "Completed", version: 7)),
+        };
+
+        var result = await RunAsync(
+            ClaimTool(service),
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":7}""",
+            Context());
+
+        var error = ParseError(result);
+        Assert.AreEqual("task.state_conflict", error.GetProperty("code").GetString());
+        Assert.AreEqual("Completed", error.GetProperty("current_status").GetString());
+        Assert.IsNull(service.LastClaimRequest);
+    }
+
+    [TestMethod]
+    public async Task Claim_ActiveTaskLost_AssignmentNotActive_ReturnsAssignmentStale()
+    {
+        var service = new FakeTaskAgentCommandService
+        {
+            Get = (_, _, _, _, _) => Task.FromResult<TaskAgentGetResult?>(
+                GetResult(status: "InProgress", activeAssignmentId: "assign-2")),
+        };
+
+        var result = await RunAsync(
+            ClaimTool(service),
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":1}""",
+            Context());
+
+        AssertErrorCode(result, "assignment.stale");
+        Assert.IsNull(service.LastClaimRequest);
+    }
+
+    [TestMethod]
+    public async Task Update_ActiveTaskLost_InProgress_RebuildsContextAndSucceeds()
+    {
+        var service = new FakeTaskAgentCommandService
+        {
+            Get = (_, _, _, _, _) => Task.FromResult<TaskAgentGetResult?>(GetResult(status: "InProgress", version: 3)),
+        };
+
+        var root = ParseOutput(await RunAsync(
+            UpdateTool(service),
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":3,"disposition":"completed","result_summary":"done"}""",
+            Context()));
+
+        Assert.AreEqual("completed", root.GetProperty("disposition").GetString());
+        var request = service.LastUpdateRequest!;
+        Assert.AreEqual(WorkspaceId, request.WorkspaceId);
+        Assert.AreEqual("task-1", request.TaskId);
+        Assert.AreEqual("assign-1", request.AssignmentId);
+        Assert.AreEqual(3, request.ExpectedVersion);
+        Assert.AreEqual(AgentId, request.AgentId);
+    }
+
+    [TestMethod]
+    public async Task Update_ActiveTaskLost_AssignedState_Rejected()
+    {
+        // update 场景要求 InProgress；Assigned（未认领）不得绕过状态机。
+        var service = new FakeTaskAgentCommandService
+        {
+            Get = (_, _, _, _, _) => Task.FromResult<TaskAgentGetResult?>(GetResult(status: "Assigned", version: 1)),
+        };
+
+        var result = await RunAsync(
+            UpdateTool(service),
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":1,"disposition":"accept"}""",
+            Context());
+
+        var error = ParseError(result);
+        Assert.AreEqual("task.state_conflict", error.GetProperty("code").GetString());
+        Assert.AreEqual("Assigned", error.GetProperty("current_status").GetString());
+        Assert.IsNull(service.LastUpdateRequest);
+    }
+
+    [TestMethod]
+    public async Task Update_ActiveTaskLost_VersionMismatch_ReturnsVersionConflict()
+    {
+        var service = new FakeTaskAgentCommandService
+        {
+            Get = (_, _, _, _, _) => Task.FromResult<TaskAgentGetResult?>(GetResult(status: "InProgress", version: 9)),
+        };
+
+        var result = await RunAsync(
+            UpdateTool(service),
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":2,"disposition":"progress","progress_summary":"doing"}""",
+            Context());
+
+        var error = ParseError(result);
+        Assert.AreEqual("task.version_conflict", error.GetProperty("code").GetString());
+        Assert.AreEqual(9, error.GetProperty("current_version").GetInt32());
+        Assert.IsNull(service.LastUpdateRequest);
+    }
+
+    [TestMethod]
+    public async Task Claim_ActiveTaskPresent_Mismatch_DoesNotRebuild()
+    {
+        // 注入上下文存在时的参数不匹配仍是真实错误：不得触发反查。
+        var service = new FakeTaskAgentCommandService
+        {
+            Get = (_, _, _, _, _) => throw new InvalidOperationException("rebuild must not run when ActiveTask is present"),
+        };
+
+        var result = await RunAsync(
+            ClaimTool(service),
+            """{"task_id":"task-2","assignment_id":"assign-1","expected_version":1}""",
+            Context(activeTask: ActiveTask(taskId: "task-1")));
+
+        AssertErrorCode(result, "task.state_conflict");
     }
 
     [TestMethod]

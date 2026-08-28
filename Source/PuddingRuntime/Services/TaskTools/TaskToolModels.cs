@@ -200,4 +200,109 @@ internal static class TaskToolGuard
 
         return null;
     }
+
+    /// <summary>
+    /// 缺陷 3f8df399：宿主重启后恢复 session 的新 run 无派发 metadata（context.ActiveTask==null），
+    /// task_claim/task_update 直接拒绝导致已 InProgress 的任务永远无法 canonical 关单。
+    /// 当且仅当注入上下文缺失时，经任务查询服务反查 assignment 归属，安全重建等效上下文，
+    /// 校验强度与派发注入等效：
+    ///   ① GetAsync(workspaceId, taskId, 当前 AgentInstanceId)——mine 过滤下非 mine 与不存在统一
+    ///      返回 null（Platform 信息隐藏裁决），跨 Agent 伪造无法通过；
+    ///   ② active assignment 存在且 AssignmentId 与入参一致（过期/伪造 → assignment.stale，
+    ///      与 ClaimAsync 服务端守卫同语义）；
+    ///   ③ assignment.AgentId == 当前 Agent（防御性双保险）；
+    ///   ④ 状态门槛：claim 受理 Assigned/InProgress（InProgress 由 ClaimAsync 幂等 no-op）；
+    ///      update 要求 InProgress；不符 → task.state_conflict（附 current_status）；
+    ///   ⑤ task.Version == expected_version（CAS；后续 Claim/Apply 服务端二次 CAS），
+    ///      不符 → task.version_conflict（附 current_version）。
+    /// 任一不满足则返回原拒绝语义（行为与未引入 fallback 时一致）。查询服务故障（TaskStoreException）
+    /// 不在此吞掉，交由调用方既有的 catch 统一映射。
+    /// </summary>
+    /// <returns>Error 非 null 表示拒绝；否则 ActiveTask 为可继续 canonical 流程的有效上下文。</returns>
+    public static async Task<(string? Error, ActiveTaskRuntimeContext? ActiveTask)> ValidateActiveTaskOrRebuildAsync(
+        string taskId,
+        string assignmentId,
+        int expectedVersion,
+        ToolExecutionContext context,
+        ITaskAgentCommandService service,
+        CancellationToken ct,
+        bool requireInProgress)
+    {
+        var error = ValidateActiveTask(taskId, assignmentId, expectedVersion, context);
+        if (error is null)
+        {
+            return (null, context.ActiveTask);
+        }
+
+        // 注入上下文存在时的参数不匹配是真实调用错误，不做重建。
+        if (context.ActiveTask is not null)
+        {
+            return (error, null);
+        }
+
+        // 入参不完整无法反查，保持原拒绝。
+        if (string.IsNullOrWhiteSpace(taskId) || string.IsNullOrWhiteSpace(assignmentId))
+        {
+            return (error, null);
+        }
+
+        var lookup = await service.GetAsync(context.WorkspaceId, taskId, context.AgentInstanceId, eventsLimit: 1, ct);
+        if (lookup is null)
+        {
+            // mine 信息隐藏：任务不存在或归属其他 Agent → 无法安全重建，保持原拒绝（不泄露归属）。
+            return (error, null);
+        }
+
+        var assignment = lookup.ActiveAssignment;
+        if (assignment is null
+            || !string.Equals(assignment.AssignmentId, assignmentId, StringComparison.Ordinal))
+        {
+            return (TaskToolErrors.BuildErrorJson(
+                TaskErrorCode.AssignmentStale,
+                $"Assignment '{assignmentId}' is not the active assignment for task '{taskId}'.",
+                taskId,
+                lookup.Task.Version,
+                lookup.Task.Status), null);
+        }
+
+        if (!string.Equals(assignment.AgentId, context.AgentInstanceId, StringComparison.Ordinal))
+        {
+            return (error, null);
+        }
+
+        var statusOk = requireInProgress
+            ? string.Equals(lookup.Task.Status, "InProgress", StringComparison.Ordinal)
+            : lookup.Task.Status is "Assigned" or "InProgress";
+        if (!statusOk)
+        {
+            return (TaskToolErrors.BuildErrorJson(
+                TaskErrorCode.TaskStateConflict,
+                $"Task '{taskId}' is in state '{lookup.Task.Status}'; {(requireInProgress ? "task_update" : "task_claim")} requires {(requireInProgress ? "InProgress" : "Assigned or InProgress")}.",
+                taskId,
+                lookup.Task.Version,
+                lookup.Task.Status), null);
+        }
+
+        if (lookup.Task.Version != expectedVersion)
+        {
+            return (TaskToolErrors.BuildErrorJson(
+                TaskErrorCode.TaskVersionConflict,
+                $"Task '{taskId}' version conflict: expected {expectedVersion}, actual {lookup.Task.Version}.",
+                taskId,
+                lookup.Task.Version), null);
+        }
+
+        var rebuilt = new ActiveTaskRuntimeContext
+        {
+            WorkspaceId = context.WorkspaceId,
+            TaskId = taskId,
+            AssignmentId = assignmentId,
+            AgentId = context.AgentInstanceId,
+            Origin = lookup.Task.Origin ?? string.Empty,
+            Priority = lookup.Task.Priority,
+            ExecutionWindow = lookup.Task.ExecutionWindow,
+            ExpectedVersion = expectedVersion,
+        };
+        return (null, rebuilt);
+    }
 }

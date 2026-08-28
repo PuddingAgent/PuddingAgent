@@ -175,9 +175,9 @@ public sealed class TaskActiveTaskFourChainE2ETests
         Assert.AreEqual(1, task.Version);
     }
 
-    // ── T6 执行链守卫（反向）：无 ActiveContext → active_context_missing ──────
+    // ── T6 执行链守卫（反向）：无 ActiveContext → 服务端反查 + 状态门槛（缺陷 3f8df399）──────
     [TestMethod]
-    public async Task UpdateCompleted_WithoutActiveContext_ReturnsActiveContextMissing()
+    public async Task UpdateCompleted_WithoutActiveContext_RebuildChecksState_ReturnsStateConflict()
     {
         // 种子后验证 DB 无变化。
         await _harness.SeedAssignedTaskAsync(WorkspaceId, TaskId, AssignmentId, AgentId);
@@ -203,11 +203,13 @@ public sealed class TaskActiveTaskFourChainE2ETests
             Context = context,
         });
 
-        AssertToolExecutionErrorCode(result, "task.active_context_missing");
+        // 缺陷 3f8df399：无 ActiveContext 时经服务端反查归属（mine 过滤 + assignment 匹配 + 版本 CAS 均通过），
+        // 状态门槛要求 InProgress，种子任务为 Assigned → 精确返回 task.state_conflict（原为笼统 active_context_missing）。
+        AssertToolExecutionErrorCode(result, "task.state_conflict");
 
         var task = await _harness.Probe.GetTaskAsync(WorkspaceId, TaskId);
         Assert.IsNotNull(task);
-        Assert.AreEqual(WorkspaceTaskStatus.Assigned, task!.Status, "无 ActiveContext 时 DB 不得变化。");
+        Assert.AreEqual(WorkspaceTaskStatus.Assigned, task!.Status, "状态门槛拒绝时 DB 不得变化。");
         Assert.AreEqual(1, task.Version);
     }
 

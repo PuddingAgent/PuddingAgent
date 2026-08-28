@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services.TaskTools;
 [Tool(
     id: "task_update",
     name: "更新工作区任务",
-    description: "提交 disposition，由后端状态机解释并推进工作区任务。【何时用】任务执行过程中汇报进展/阻塞/完成/拒绝/回退时使用。【怎么用】task_id、assignment_id、expected_version 必须等于 Active Task Context 注入值；disposition 取 accept/progress/todo/blocked/needs_approval/rejected/completed；blocked/rejected/needs_approval 必填 reason；completed 必填 result_summary；progress 必填 progress_summary 或 next_action 之一。【坑】迟到调用（已重派/已闭合）返回 assignment.stale/state_conflict/version_conflict；自然语言说“完成”不改变 Task，只有本工具生效。",
+    description: "提交 disposition，由后端状态机解释并推进工作区任务。【何时用】任务执行过程中汇报进展/阻塞/完成/拒绝/回退时使用。【怎么用】task_id、assignment_id、expected_version 必须等于 Active Task Context 注入值；disposition 取 accept/progress/todo/blocked/needs_approval/rejected/completed；blocked/rejected/needs_approval 必填 reason；completed 必填 result_summary；progress 必填 progress_summary 或 next_action 之一。【坑】上下文丢失（宿主重启）时经服务端反查 assignment 归属（任务须 InProgress、版本 CAS 匹配）安全重建后继续；迟到调用（已重派/已闭合）返回 assignment.stale/state_conflict/version_conflict；自然语言说“完成”不改变 Task，只有本工具生效。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low)]
     // 2026-08-28 裁定：task 看板元数据（用户原则：仅直接损坏/泄露用户数据需门禁）
@@ -42,7 +42,9 @@ public sealed class TaskUpdateTool : PuddingToolBase<TaskUpdateArgs>
                 "Workspace task tools are disabled (WorkspaceTasks.Enabled=false)."));
         }
 
-        var guard = TaskToolGuard.ValidateActiveTask(args.TaskId, args.AssignmentId, args.ExpectedVersion, context);
+        // 缺陷 3f8df399：ActiveTask 因宿主重启丢失时，经服务端反查归属安全重建等效上下文。
+        var (guard, rebuiltActiveTask) = await TaskToolGuard.ValidateActiveTaskOrRebuildAsync(
+            args.TaskId, args.AssignmentId, args.ExpectedVersion, context, _service, ct, requireInProgress: true);
         if (guard is not null)
         {
             return ToolExecutionResult.Fail(guard);
@@ -96,7 +98,7 @@ public sealed class TaskUpdateTool : PuddingToolBase<TaskUpdateArgs>
             return ToolExecutionResult.Fail("artifacts must contain only non-empty strings.");
         }
 
-        var active = context.ActiveTask!;
+        var active = rebuiltActiveTask!;
         var progressSummary = Merge(args.ProgressSummary, args.NextAction);
 
         try
