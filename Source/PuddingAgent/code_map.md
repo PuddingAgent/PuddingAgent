@@ -6,7 +6,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Program.cs` | 🔑 薄入口：`--desktop-child` 分派 `PuddingHostOptionsFactory`，委托 `PuddingApplicationHost` 组合根完成构建/初始化/启动；DesktopChild 输出 `PUDDING_DESKTOP_READY` JSON 就绪信号；`partial class Program` 支持 WebApplicationFactory 集成测试 |
+| `Program.cs` | 🔑 薄入口：`--desktop-child` 分派 `PuddingHostOptionsFactory`，委托 `PuddingApplicationHost` 组合根完成构建/初始化/启动；初始化期间每 5 秒输出 `PUDDING_DESKTOP_STARTING` 单调租约，最终输出 `PUDDING_DESKTOP_READY` JSON 就绪信号；`partial class Program` 支持 WebApplicationFactory 集成测试 |
 
 ## DI 组合扩展
 

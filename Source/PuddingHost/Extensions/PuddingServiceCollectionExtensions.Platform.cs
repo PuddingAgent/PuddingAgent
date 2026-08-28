@@ -221,6 +221,18 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<TaskAutoDispatchEvaluator>();
         builder.Services.AddSingleton<ITaskAutoDispatchEvaluator>(sp =>
             sp.GetRequiredService<TaskAutoDispatchEvaluator>());
+        builder.Services.AddSingleton<TaskBacklogRefinementEvaluator>();
+        builder.Services.AddSingleton<ITaskBacklogRefinementEvaluator>(sp =>
+            sp.GetRequiredService<TaskBacklogRefinementEvaluator>());
+        builder.Services.AddSingleton<TaskBacklogRefinementStore>();
+        builder.Services.AddSingleton<ITaskBacklogRefinementStore>(sp =>
+            sp.GetRequiredService<TaskBacklogRefinementStore>());
+        builder.Services.AddSingleton<TaskExecutionTracker>();
+        builder.Services.AddSingleton<ITaskExecutionTracker>(sp =>
+            sp.GetRequiredService<TaskExecutionTracker>());
+        builder.Services.AddSingleton<TaskExecutionRepairCoordinator>();
+        builder.Services.AddSingleton<ITaskExecutionRepairCoordinator>(sp =>
+            sp.GetRequiredService<TaskExecutionRepairCoordinator>());
         builder.Services.AddHostedService<TaskAutoDispatchWorker>();
         // Task Command 服务（TB-03：状态机校验 + CAS + Assignment + AppendEvent 原子语义）
         builder.Services.AddScoped<TaskCommandService>();

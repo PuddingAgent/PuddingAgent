@@ -19,12 +19,39 @@ var options = isDesktopChild
 
 var builder = PuddingApplicationHost.CreateBuilder(args, options);
 var app = PuddingApplicationHost.Build(builder);
-await PuddingApplicationHost.InitializeAsync(app, CancellationToken.None);
+CancellationTokenSource? startupLeaseCts = null;
+Task startupLeaseTask = Task.CompletedTask;
 
-if (!isDesktopChild)
-    Console.WriteLine("[Startup] Starting server...");
+if (isDesktopChild)
+{
+    startupLeaseCts = new CancellationTokenSource();
+    startupLeaseTask = EmitDesktopStartupLeaseAsync(startupLeaseCts.Token);
+}
 
-await app.StartAsync();
+try
+{
+    await PuddingApplicationHost.InitializeAsync(app, CancellationToken.None);
+
+    if (!isDesktopChild)
+        Console.WriteLine("[Startup] Starting server...");
+
+    await app.StartAsync();
+}
+finally
+{
+    if (startupLeaseCts is not null)
+    {
+        await startupLeaseCts.CancelAsync();
+        try
+        {
+            await startupLeaseTask;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        startupLeaseCts.Dispose();
+    }
+}
 
 var address = PuddingApplicationHost.CaptureBoundAddresses(app);
 
@@ -51,6 +78,27 @@ try
 finally
 {
     Serilog.Log.CloseAndFlush();
+}
+
+static async Task EmitDesktopStartupLeaseAsync(CancellationToken cancellationToken)
+{
+    var sequence = 0L;
+    var startedAt = DateTimeOffset.UtcNow;
+
+    while (!cancellationToken.IsCancellationRequested)
+    {
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            protocolVersion = 1,
+            processId = Environment.ProcessId,
+            sequence = Interlocked.Increment(ref sequence),
+            phase = "initializing",
+            elapsedMilliseconds = (long)(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
+        });
+        Console.WriteLine($"PUDDING_DESKTOP_STARTING {payload}");
+
+        await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+    }
 }
 
 /// <summary>
