@@ -321,7 +321,10 @@ public sealed class HeartbeatOrchestrator : IHostedService
                         WorkspaceId = workspaceId,
                     },
                 },
-                Audience = MessageAudiences.Broadcast,
+                // 心跳内容是目标 Agent 专属提示词渲染：Broadcast 会把 A 的提示词投给 B，
+                // 造成上下文污染（曾出现 audit-agent.001 的心跳内容被投给 6a8 的事故）。
+                // 必须 Direct 定向投递（MessageRouter 非 Broadcast 分支按 envelope.To 精确投递）。
+                Audience = MessageAudiences.Direct,
                 Visibility = MessageVisibilities.Public,
                 ContentType = MessageContentTypes.Heartbeat,
                 Content = heartbeatContentWithPrefix,
@@ -331,7 +334,8 @@ public sealed class HeartbeatOrchestrator : IHostedService
                 {
                     ["source"] = "heartbeat",
                     ["agent_id"] = request.AgentId,
-                    ["idle_duration_seconds"] = ((int)(DateTime.UtcNow - request.EnqueuedAt).TotalSeconds).ToString(),
+                    ["idle_duration_seconds"] = ((int)idleDuration.TotalSeconds).ToString(),
+                    ["queue_wait_seconds"] = queuedSeconds.ToString(),
                     ["min_idle_seconds"] = ((int)request.MinIdle.TotalSeconds).ToString(),
                     ["max_idle_seconds"] = ((int)request.MaxIdle.TotalSeconds).ToString(),
                 },
