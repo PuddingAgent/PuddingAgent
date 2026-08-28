@@ -45,6 +45,57 @@ public sealed class FileLlmResolverTests
     }
 
     [TestMethod]
+    public async Task ResolveRouteAsync_PlainDuplicateModel_ListsAllCandidateRoutes()
+    {
+        var resolver = CreateResolver(CreateConfig(duplicateDefaultModel: true));
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => resolver.ResolveRouteAsync("shared-model"));
+
+        StringAssert.Contains(error.Message, "provider-a/shared-model");
+        StringAssert.Contains(error.Message, "provider-b/shared-model");
+    }
+
+    [TestMethod]
+    public async Task ResolveRouteAsync_UnregisteredModel_ErrorsWithSuggestedAlternatives()
+    {
+        var resolver = CreateResolver(CreateConfig());
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => resolver.ResolveRouteAsync("provider-a/model-x"));
+
+        StringAssert.Contains(error.Message, "provider-a/model-x");
+        StringAssert.Contains(error.Message, "not registered");
+        StringAssert.Contains(error.Message, "Suggested alternatives under provider 'provider-a': provider-a/model-a");
+    }
+
+    [TestMethod]
+    public async Task ResolveRouteAsync_DeprecatedModel_ErrorsWithDisabledModelDiagnostics()
+    {
+        var resolver = CreateResolver(CreateConfig(withDeprecatedModel: true));
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => resolver.ResolveRouteAsync("provider-a/legacy-model"));
+
+        StringAssert.Contains(error.Message, "provider-a/legacy-model");
+        StringAssert.Contains(error.Message, "is disabled (isDeprecated=true)");
+        StringAssert.Contains(error.Message, "Suggested alternatives under provider 'provider-a': provider-a/model-a");
+    }
+
+    [TestMethod]
+    public async Task ResolveRouteAsync_ModelOnlyUnderOtherProvider_ErrorsWithAvailableRoutes()
+    {
+        // 复现真实事故形态：provider 启用但其模型列表无该模型，同 modelId 挂在其他 provider 下。
+        var resolver = CreateResolver(CreateConfig());
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => resolver.ResolveRouteAsync("provider-a/shared-model"));
+
+        StringAssert.Contains(error.Message, "not registered under enabled provider 'provider-a'");
+        StringAssert.Contains(error.Message, "provider-b/shared-model");
+    }
+
+    [TestMethod]
     public async Task ResolveRouteAsync_CapabilityTags_SelectsConfiguredRoute()
     {
         var resolver = CreateResolver(CreateConfig());
@@ -101,29 +152,42 @@ public sealed class FileLlmResolverTests
             new PuddingFileLlmConfigService(config),
             NullLogger<FileLlmResolver>.Instance);
 
-    private static PuddingLlmProvidersConfig CreateConfig(bool duplicateDefaultModel = false)
+    private static PuddingLlmProvidersConfig CreateConfig(
+        bool duplicateDefaultModel = false,
+        bool withDeprecatedModel = false)
     {
         var providerAModelId = duplicateDefaultModel ? "shared-model" : "model-a";
+        var providerA = new PuddingLlmProviderConfig
+        {
+            ProviderId = "provider-a",
+            Name = "Provider A",
+            BaseUrl = "https://provider-a.invalid/v1",
+            IsEnabled = true,
+            Models =
+            [
+                new PuddingLlmModelConfig
+                {
+                    ModelId = providerAModelId,
+                    IsDefault = true,
+                    CapabilityTags = ["fast"],
+                },
+            ],
+        };
+        if (withDeprecatedModel)
+        {
+            providerA.Models.Add(new PuddingLlmModelConfig
+            {
+                ModelId = "legacy-model",
+                IsDeprecated = true,
+                CapabilityTags = ["fast"],
+            });
+        }
+
         return new PuddingLlmProvidersConfig
         {
             Providers =
             [
-                new PuddingLlmProviderConfig
-                {
-                    ProviderId = "provider-a",
-                    Name = "Provider A",
-                    BaseUrl = "https://provider-a.invalid/v1",
-                    IsEnabled = true,
-                    Models =
-                    [
-                        new PuddingLlmModelConfig
-                        {
-                            ModelId = providerAModelId,
-                            IsDefault = true,
-                            CapabilityTags = ["fast"],
-                        },
-                    ],
-                },
+                providerA,
                 new PuddingLlmProviderConfig
                 {
                     ProviderId = "provider-b",

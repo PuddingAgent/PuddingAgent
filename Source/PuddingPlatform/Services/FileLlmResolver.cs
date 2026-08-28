@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
 
@@ -30,7 +30,10 @@ public sealed class FileLlmResolver : ILlmResolver
         var enabledProviderIds = _llmConfigService.GetEnabledProviders()
             .Select(provider => provider.ProviderId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var models = _llmConfigService.GetAllModels()
+        // allModels 保留全量注册信息（含已弃用模型与禁用 provider 下的模型），
+        // 仅用于失败路径的区分度诊断；models 才是可解析候选集。
+        var allModels = _llmConfigService.GetAllModels().ToList();
+        var models = allModels
             .Where(model => !model.IsDeprecated && enabledProviderIds.Contains(model.ProviderId))
             .ToList();
         var requiredTags = requiredCapabilityTags?
@@ -63,8 +66,10 @@ public sealed class FileLlmResolver : ILlmResolver
                 .ToList();
             if (matches.Count > 1)
             {
+                var candidateRoutes = string.Join(", ",
+                    matches.Select(m => $"{m.ProviderId}/{m.ModelId}"));
                 throw new InvalidOperationException(
-                    $"Model '{modelRoute}' exists under multiple providers. " +
+                    $"Model '{modelRoute}' exists under multiple providers: {candidateRoutes}. " +
                     "Specify the route as 'providerId/modelId'.");
             }
             if (matches.Count == 1)
@@ -74,8 +79,7 @@ public sealed class FileLlmResolver : ILlmResolver
                     requiredTags));
 
             throw new InvalidOperationException(
-                $"Model '{modelRoute}' not found in any enabled provider. " +
-                "Specify a configured route as 'providerId/modelId'.");
+                BuildUnknownModelError(modelRoute, allModels, models));
         }
 
         if (requiredTags.Length > 0)
@@ -105,12 +109,14 @@ public sealed class FileLlmResolver : ILlmResolver
                 string.Join(",", requiredTags));
             throw new InvalidOperationException(
                 $"No enabled LLM model matches required capabilities: {string.Join(", ", requiredTags)}. " +
-                "Add a matching model capabilityTags entry to data/config/llm.providers.json.");
+                "Add a matching model capabilityTags entry to data/config/llm.providers.json. " +
+                BuildRouteAdvisory(providerId: null, models));
         }
 
         throw new InvalidOperationException(
             "An explicit LLM route is required. Configure providerId/modelId on the Agent manifest " +
-            "or pass modelRoute as 'providerId/modelId'; the LLM resource pool does not select defaults.");
+            "or pass modelRoute as 'providerId/modelId'; the LLM resource pool does not select defaults. " +
+            BuildRouteAdvisory(providerId: null, models));
 
         ResolvedLlmRoute ResolveRequired(
             string providerId,
@@ -119,7 +125,7 @@ public sealed class FileLlmResolver : ILlmResolver
         {
             var config = _llmConfigService.Resolve(providerId, modelId)
                 ?? throw new InvalidOperationException(
-                    $"LLM route '{providerId}/{modelId}' is not configured or is disabled.");
+                    BuildUnresolvedRouteError(providerId, modelId, allModels, models, enabledProviderIds));
 
             if (capabilityTags.Count > 0)
             {
@@ -141,6 +147,117 @@ public sealed class FileLlmResolver : ILlmResolver
 
             return CreateRoute(providerId, modelId, config);
         }
+    }
+
+    // ── 失败路径诊断：区分度明确的错误 + 建议替代路由 ──────────────────────
+
+    /// <summary>
+    /// 裸 modelId 未命中可解析候选集时的错误：先区分「已注册但不可解析」
+    /// （模型 isDeprecated 或 provider 禁用）与「完全未注册」，再附建议替代。
+    /// </summary>
+    private static string BuildUnknownModelError(
+        string modelRoute,
+        IReadOnlyList<LlmModelInfo> allModels,
+        IReadOnlyList<LlmModelInfo> models)
+    {
+        var registered = allModels
+            .Where(m => string.Equals(m.ModelId, modelRoute, StringComparison.OrdinalIgnoreCase))
+            .Select(m => $"{m.ProviderId}/{m.ModelId}{(m.IsDeprecated ? " (deprecated)" : string.Empty)}")
+            .ToArray();
+        if (registered.Length > 0)
+        {
+            return
+                $"Model '{modelRoute}' is registered but not resolvable (model deprecated or provider disabled): " +
+                $"{string.Join(", ", registered)}. " +
+                BuildRouteAdvisory(providerId: null, models);
+        }
+
+        return
+            $"Model '{modelRoute}' not found in any enabled provider. " +
+            "Specify a configured route as 'providerId/modelId'. " +
+            BuildRouteAdvisory(providerId: null, models);
+    }
+
+    /// <summary>
+    /// 显式 'providerId/modelId' 解析失败时的错误，按三种根因区分：
+    /// provider 未启用 / 模型已注册但被禁用（isDeprecated）/ 模型未注册（含
+    /// 同 modelId 挂在其他 provider 下的候选路由提示）。
+    /// </summary>
+    private static string BuildUnresolvedRouteError(
+        string providerId,
+        string modelId,
+        IReadOnlyList<LlmModelInfo> allModels,
+        IReadOnlyList<LlmModelInfo> models,
+        HashSet<string> enabledProviderIds)
+    {
+        if (!enabledProviderIds.Contains(providerId))
+        {
+            var enabledList = string.Join(", ",
+                enabledProviderIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase));
+            return
+                $"LLM provider '{providerId}' is disabled or unknown; route '{providerId}/{modelId}' cannot be resolved. " +
+                $"Enabled providers: {enabledList}. " +
+                BuildRouteAdvisory(providerId: null, models);
+        }
+
+        var registeredHere = allModels
+            .Where(m => string.Equals(m.ProviderId, providerId, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(m.ModelId, modelId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (registeredHere.Count > 0 && registeredHere.All(m => m.IsDeprecated))
+        {
+            return
+                $"LLM route '{providerId}/{modelId}' is registered but the model is disabled (isDeprecated=true) and cannot be resolved. " +
+                BuildRouteAdvisory(providerId, models);
+        }
+
+        var otherRoutes = models
+            .Where(m => string.Equals(m.ModelId, modelId, StringComparison.OrdinalIgnoreCase))
+            .Select(m => $"{m.ProviderId}/{m.ModelId}")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (otherRoutes.Length > 0)
+        {
+            return
+                $"LLM route '{providerId}/{modelId}' is not registered under enabled provider '{providerId}'. " +
+                $"The same modelId is available under: {string.Join(", ", otherRoutes)}. " +
+                BuildRouteAdvisory(providerId, models);
+        }
+
+        return
+            $"LLM route '{providerId}/{modelId}' is not registered in data/config/llm.providers.json. " +
+            BuildRouteAdvisory(providerId, models);
+    }
+
+    /// <summary>建议替代：优先同 provider 已启用模型，其次平台默认路由（isDefault）。</summary>
+    private static string BuildRouteAdvisory(
+        string? providerId,
+        IReadOnlyList<LlmModelInfo> models)
+    {
+        if (providerId is not null)
+        {
+            var sameProvider = models
+                .Where(m => string.Equals(m.ProviderId, providerId, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(m => m.SortOrder)
+                .ThenBy(m => m.ModelId, StringComparer.OrdinalIgnoreCase)
+                .Select(m => $"{m.ProviderId}/{m.ModelId}")
+                .Take(3)
+                .ToArray();
+            if (sameProvider.Length > 0)
+                return $"Suggested alternatives under provider '{providerId}': {string.Join(", ", sameProvider)}.";
+        }
+
+        var defaults = models
+            .Where(m => m.IsDefault)
+            .OrderBy(m => m.SortOrder)
+            .ThenBy(m => m.ProviderId, StringComparer.OrdinalIgnoreCase)
+            .Select(m => $"{m.ProviderId}/{m.ModelId}")
+            .Take(3)
+            .ToArray();
+        if (defaults.Length > 0)
+            return $"Suggested platform default routes: {string.Join(", ", defaults)}.";
+
+        return "No enabled LLM model is available in data/config/llm.providers.json.";
     }
 
     private static ResolvedLlmRoute CreateRoute(string providerId, string modelId, LlmConfig config)

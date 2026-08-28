@@ -36,6 +36,7 @@ namespace PuddingRuntime.Services.Skills;
                  "参数：task（任务描述）、agent_template（可选，默认 workspace-task-agent）、" +
                  "model（可选，必须是 providerId/modelId 完整路由，如 deepseek/deepseek-v3；" +
                  "多 provider 注册的裸 modelId 会报错，先用 list_llm_providers 查 route，不指定则用平台默认模型）、" +
+                 "fallback_model（可选，模型路由解析失败时自动回退一次并在结果中告警，默认 bigmodel/glm-5.3-flash；与 model 相同则禁用回退）、" +
                  "sync（可选，true=同步阻塞等待结果 / false=异步立即返回，默认 true）。" +
                  "同步模式返回结构化结果合同：SUMMARY、CHANGES、EVIDENCE、RISKS、BLOCKERS。" +
                  "异步模式下立即返回 agentId，稍后通过 subagent_result 消息通道通知结果。" +
@@ -58,6 +59,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
     private const string DelegationProtocolVersion = "SUBAGENTS.md/v1";
     private const string DefaultSubAgentOutputContract = "SUMMARY, CHANGES, EVIDENCE, RISKS, BLOCKERS";
     private static readonly string[] ResultSectionNames = ["SUMMARY", "CHANGES", "EVIDENCE", "RISKS", "BLOCKERS"];
+    private const string DefaultFallbackModelRoute = "bigmodel/glm-5.3-flash";
 
     public SubAgentTool(
         IServiceProvider services,
@@ -67,10 +69,24 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         _logger = logger;
     }
 
-    protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
+        protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SubAgentToolArgs args,
         ToolExecutionContext context,
         CancellationToken ct)
+    {
+        // 模型路由回退告警一次性穿透所有返回路径（sync/async/pool/batch 共用）。
+        var routeAdvisories = new List<string>();
+        var result = await ExecuteCoreInternalAsync(args, context, ct, routeAdvisories);
+        if (routeAdvisories.Count > 0 && result.Success && !string.IsNullOrEmpty(result.Output))
+            result = result with { Output = string.Join("\n", routeAdvisories) + "\n\n" + result.Output };
+        return result;
+    }
+
+    private async Task<ToolExecutionResult> ExecuteCoreInternalAsync(
+        SubAgentToolArgs args,
+        ToolExecutionContext context,
+        CancellationToken ct,
+        List<string> routeAdvisories)
     {
         var request = SubAgentToolRequest.From(args, context);
         var subAgentInvocation = _services.GetService<ISubAgentInvocationService>();
@@ -118,8 +134,11 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         if (!HasProp(json, "sync") && !request.Parameters.ContainsKey("sync"))
             isSync = true;
 
-        var modelId = GetStringProp(json, "model")
+                var modelId = GetStringProp(json, "model")
                    ?? request.Parameters.GetValueOrDefault("model");
+        var fallbackModel = GetStringProp(json, "fallback_model")
+                        ?? GetStringProp(json, "fallbackModel")
+                        ?? request.Parameters.GetValueOrDefault("fallback_model");
         var permissionMode = GetStringProp(json, "permission_mode")
                           ?? GetStringProp(json, "permissionMode")
                           ?? SubAgentPermissionModes.Inherit;
@@ -165,7 +184,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
         // �ڵ������һ���Խ������ɱ�·�����ݺ͵������á�
         // ���� InvocationService / Manager ֻ��͸������ֹ�� Endpoint����Կ�� model �ַ������� Provider��
-        ResolvedChildLlmRoute childLlmRoute;
+                ResolvedChildLlmRoute childLlmRoute;
         try
         {
             childLlmRoute = await ResolveChildLlmRouteAsync(
@@ -175,7 +194,35 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         }
         catch (InvalidOperationException ex)
         {
-            return Fail(ex.Message);
+            // 仅对「路由解析失败」自动回退一次；运行中 LLM 调用失败不在此回退。
+            var fallbackRoute = string.IsNullOrWhiteSpace(fallbackModel)
+                ? DefaultFallbackModelRoute
+                : fallbackModel.Trim();
+            if (string.Equals(fallbackRoute, modelId?.Trim(), StringComparison.OrdinalIgnoreCase))
+                return Fail(ex.Message);
+
+            try
+            {
+                childLlmRoute = await ResolveChildLlmRouteAsync(
+                    fallbackRoute,
+                    capabilityRequirements,
+                    ct);
+            }
+            catch (InvalidOperationException fallbackEx)
+            {
+                return Fail(
+                    $"{ex.Message} | 自动回退路由 '{fallbackRoute}' 同样解析失败：{fallbackEx.Message}");
+            }
+
+            routeAdvisories.Add(
+                $"⚠️ [spawn_sub_agent] 模型路由回退告警：请求的模型路由 " +
+                $"'{(string.IsNullOrWhiteSpace(modelId) ? "(未指定，平台默认)" : modelId)}' 解析失败（{ex.Message}），" +
+                $"已自动回退到 '{fallbackRoute}' 执行本次任务。后续派发请用 list_llm_providers 查询并显式指定可用路由。");
+            _logger.LogWarning(
+                "[SubAgent] Child LLM route fallback original={OriginalRoute} fallback={FallbackRoute} reason={Reason}",
+                modelId,
+                fallbackRoute,
+                ex.Message);
         }
         var taskPlanning = ReadTaskPlanningContext(json, request, task ?? batchTasksResult.Tasks![0].Task);
         var policyDeny = await CheckTaskPlanningPolicyAsync(taskPlanning, ct);
@@ -1085,6 +1132,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 ["template"] = args.Template,
                 ["sync"] = args.Sync,
                 ["model"] = args.Model,
+                ["fallback_model"] = args.FallbackModel,
                 ["reuse_parent_context"] = args.ReuseParentContext,
                 ["resume_sub_agent_id"] = args.ResumeSubAgentId,
                 ["tools"] = args.Tools,
@@ -1296,6 +1344,9 @@ public sealed record SubAgentToolArgs
 
     [ToolParam("Optional model route. Prefer the full 'providerId/modelId' form (look it up with list_llm_providers); a bare modelId registered under multiple providers fails resolution.")]
     public string? Model { get; init; }
+
+    [ToolParam("Optional fallback model route tried once when the requested model route fails to resolve (route-resolution failure only). Default 'bigmodel/glm-5.3-flash'. Set equal to model to disable the fallback.")]
+    public string? FallbackModel { get; init; }
 
     [ToolParam("复用父代理的上下文环境（Fork + 分支 + 注入到子代理上下文），默认 false")]
     public bool? ReuseParentContext { get; init; }

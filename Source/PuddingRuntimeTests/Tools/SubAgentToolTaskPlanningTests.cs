@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
@@ -320,13 +320,85 @@ public sealed class SubAgentToolTaskPlanningTests
         Assert.IsNull(invocation.LastRequest);
     }
 
+    [TestMethod]
+    public async Task ExecuteAsync_RouteResolutionFailure_FallsBackOnceWithAdvisory()
+    {
+        var invocation = new RecordingSubAgentInvocationService
+        {
+            NextStatus = "completed",
+        };
+        var resolver = new SelectiveLlmResolver("bad/model-x");
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2),
+            resolver);
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+
+        var result = await tool.ExecuteAsync(CreateRequest(
+            """{"task":"Route fallback probe","sync":true,"model":"bad/model-x"}"""));
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "模型路由回退告警");
+        StringAssert.Contains(result.Output, "bad/model-x");
+        StringAssert.Contains(result.Output, "bigmodel/glm-5.3-flash");
+        Assert.IsNotNull(invocation.LastRequest);
+        Assert.AreEqual("bigmodel", invocation.LastRequest!.LlmProfile.ProviderId);
+        Assert.AreEqual("glm-5.3-flash", invocation.LastRequest.LlmProfile.ModelId);
+        Assert.AreEqual(2, resolver.Calls);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_RouteResolutionFailure_FallbackAlsoFails_ReportsOriginalErrorWithAttempt()
+    {
+        var invocation = new RecordingSubAgentInvocationService();
+        var resolver = new SelectiveLlmResolver("bad/model-x", "bigmodel/glm-5.3-flash");
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2),
+            resolver);
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+
+        var result = await tool.ExecuteAsync(CreateRequest(
+            """{"task":"Route fallback probe","sync":true,"model":"bad/model-x"}"""));
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "bad/model-x");
+        StringAssert.Contains(result.Error, "bigmodel/glm-5.3-flash");
+        Assert.IsNull(invocation.LastRequest);
+        Assert.AreEqual(2, resolver.Calls);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_ModelEqualsFallback_DoesNotRetryFallback()
+    {
+        var invocation = new RecordingSubAgentInvocationService();
+        var resolver = new SelectiveLlmResolver("bigmodel/glm-5.3-flash");
+        var services = CreateServices(
+            invocation,
+            new AllowingDelegationPolicy(),
+            CreateStore(depth: 0, maxDepth: 2),
+            resolver);
+        var tool = new SubAgentTool(services, NullLogger<SubAgentTool>.Instance);
+
+        var result = await tool.ExecuteAsync(CreateRequest(
+            """{"task":"Route fallback probe","sync":true,"model":"bigmodel/glm-5.3-flash"}"""));
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "not registered");
+        Assert.AreEqual(1, resolver.Calls);
+        Assert.IsNull(invocation.LastRequest);
+    }
+
     private static IServiceProvider CreateServices(
         RecordingSubAgentInvocationService invocation,
         ITaskDelegationPolicy policy,
-        ITaskPlanStore store)
+        ITaskPlanStore store,
+        ILlmResolver? resolver = null)
     {
         return new ServiceCollection()
-            .AddSingleton<ILlmResolver>(new FakeLlmResolver())
+            .AddSingleton<ILlmResolver>(resolver ?? new FakeLlmResolver())
             .AddSingleton<ISubAgentInvocationService>(invocation)
             .AddSingleton<ITaskDelegationPolicy>(policy)
             .AddSingleton<ITaskPlanStore>(store)
@@ -398,6 +470,46 @@ public sealed class SubAgentToolTaskPlanningTests
                         Status = "running",
                     })
                     .ToArray(),
+            });
+        }
+    }
+
+    /// <summary>
+    /// 按路由名选择性失败的解析器：命中的路由抛 InvalidOperationException（复现路由解析失败），
+    /// 其余路由按 'providerId/modelId' 正常解析。Calls 记录解析次数。
+    /// </summary>
+    private sealed class SelectiveLlmResolver(params string[] failingRoutes) : ILlmResolver
+    {
+        public int Calls { get; private set; }
+
+        public Task<ResolvedLlmRoute> ResolveRouteAsync(
+            string? modelRoute = null,
+            IReadOnlyCollection<string>? requiredCapabilityTags = null,
+            CancellationToken ct = default)
+        {
+            Calls++;
+            if (modelRoute is not null
+                && failingRoutes.Contains(modelRoute, StringComparer.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"LLM route '{modelRoute}' is not registered under any enabled provider.");
+            }
+
+            var route = string.IsNullOrWhiteSpace(modelRoute)
+                ? "bigmodel/glm-5.3-flash"
+                : modelRoute;
+            var parts = route.Split('/', 2, StringSplitOptions.TrimEntries);
+            var providerId = parts.Length == 2 ? parts[0] : "bigmodel";
+            var modelId = parts.Length == 2 ? parts[1] : parts[0];
+            return Task.FromResult(new ResolvedLlmRoute
+            {
+                ProviderId = providerId,
+                ModelId = modelId,
+                Config = new LlmConfig
+                {
+                    Endpoint = "https://example.invalid/v1",
+                    ModelId = modelId,
+                },
             });
         }
     }
