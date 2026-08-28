@@ -28,7 +28,7 @@ public sealed record SessionCompositionRecord
     /// <summary>Runtime Skill Index 的稳定 SHA-256 指纹（小写 hex）；未启用时可为空。</summary>
     public string? SkillManifestHash { get; init; }
 
-    /// <summary>序列化/规范化算法版本，复用 <see cref="PrefixCacheSnapshotBuilder.Version"/>（"prefix-v1"）。</summary>
+    /// <summary>序列化/规范化算法版本，复用 <see cref="PrefixCacheSnapshotBuilder.Version"/>。</summary>
     public string SerializationVersion { get; init; } = PrefixCacheSnapshotBuilder.Version;
 
     /// <summary>有序 append-only 全量工具 ID 列表（只增不收缩）。</summary>

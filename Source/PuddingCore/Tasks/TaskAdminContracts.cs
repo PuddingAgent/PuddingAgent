@@ -47,6 +47,12 @@ public sealed record TaskAdminCreateRequest
     public string? ExecutionWindow { get; init; }
 
     public string? PreferredAgentId { get; init; }
+    public string? TaskType { get; init; }
+    public IReadOnlyList<string>? RequiredCapabilityIds { get; init; }
+    public string? RequiredProviderId { get; init; }
+    public string? RequiredModelId { get; init; }
+    public bool AllowAgentFallback { get; init; }
+    public bool AutoDispatchEnabled { get; init; }
     public DateTimeOffset? NotBeforeUtc { get; init; }
     public DateTimeOffset? DueAtUtc { get; init; }
     public long? SortOrder { get; init; }
@@ -94,6 +100,12 @@ public sealed record TaskAdminListItem
     public required string Priority { get; init; }
     public required string ExecutionWindow { get; init; }
     public string? PreferredAgentId { get; init; }
+    public string TaskType { get; init; } = "general";
+    public IReadOnlyList<string> RequiredCapabilityIds { get; init; } = [];
+    public string? RequiredProviderId { get; init; }
+    public string? RequiredModelId { get; init; }
+    public bool AllowAgentFallback { get; init; }
+    public bool AutoDispatchEnabled { get; init; }
     public string? ActiveAssignmentId { get; init; }
     public int? ProgressPercent { get; init; }
     public DateTimeOffset? DueAtUtc { get; init; }
@@ -135,6 +147,12 @@ public sealed record TaskAdminUpdateRequest
     public string? Priority { get; init; }
     public string? ExecutionWindow { get; init; }
     public string? PreferredAgentId { get; init; }
+    public string? TaskType { get; init; }
+    public IReadOnlyList<string>? RequiredCapabilityIds { get; init; }
+    public string? RequiredProviderId { get; init; }
+    public string? RequiredModelId { get; init; }
+    public bool? AllowAgentFallback { get; init; }
+    public bool? AutoDispatchEnabled { get; init; }
 
     /// <summary>显式状态迁移（wire Status）。</summary>
     public string? Status { get; init; }

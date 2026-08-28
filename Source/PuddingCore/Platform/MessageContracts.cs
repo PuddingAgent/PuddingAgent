@@ -183,6 +183,8 @@ public sealed record RuntimeDispatchRequest
     public string? TaskNodeId { get; init; }
     /// <summary>Parent task node identity, if this execution handles a child node.</summary>
     public string? ParentTaskNodeId { get; init; }
+    /// <summary>Execution Kernel 冻结的 WorkUnit Token/成本预算与价格快照。</summary>
+    public ExecutionUsageBudget? UsageBudget { get; init; }
     /// <summary>Current delegation depth where the root task node is depth 0.</summary>
     public int? DelegationDepth { get; init; }
     /// <summary>Maximum delegation depth allowed for the current plan.</summary>

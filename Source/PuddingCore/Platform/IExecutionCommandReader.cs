@@ -35,4 +35,28 @@ public sealed record ExecutionCommandRecord
     public string? ChannelId { get; init; }
     public required CommandStatus Status { get; init; }
     public string? RunId { get; init; }
+    public ExecutionWorkUnitContext? WorkUnit { get; init; }
+}
+
+/// <summary>
+/// Canonical Task WorkUnit identity and guardrails resolved from persisted
+/// Goal/Task/Plan facts. Command metadata may select the node, but never defines
+/// its budget.
+/// </summary>
+public sealed record ExecutionWorkUnitContext
+{
+    public required string TaskId { get; init; }
+    public required string GoalRunId { get; init; }
+    public required string PlanId { get; init; }
+    public required string PlanFingerprint { get; init; }
+    public required string TaskNodeId { get; init; }
+    public string? ParentTaskNodeId { get; init; }
+    public required string WorkUnitKind { get; init; }
+    public required string Objective { get; init; }
+    public required int MaxRounds { get; init; }
+    public required int MaxToolCallsTotal { get; init; }
+    public required int MaxDurationSeconds { get; init; }
+    public required long MaxInputTokens { get; init; }
+    public required long MaxOutputTokens { get; init; }
+    public required decimal MaxCost { get; init; }
 }

@@ -28,6 +28,10 @@ public sealed record GoalContinuationAcceptanceContext
     public string? TaskId { get; init; }
     public int? ExpectedTaskVersion { get; init; }
     public long? ReservationFencingToken { get; init; }
+    public string? TaskPlanId { get; init; }
+    public string? TaskPlanFingerprint { get; init; }
+    public string? TaskNodeId { get; init; }
+    public string? ParentTaskNodeId { get; init; }
 }
 
 /// <summary>Goal synthetic message 使用的受控 metadata 键。</summary>
@@ -42,6 +46,10 @@ public static class GoalContinuationMetadata
     public const string ObjectiveVersion = "goal_objective_version";
     public const string IterationNo = "goal_iteration_no";
     public const string OutboxId = "goal_outbox_id";
+    public const string TaskPlanId = "task_plan_id";
+    public const string TaskPlanFingerprint = "task_plan_fingerprint";
+    public const string TaskNodeId = "task_node_id";
+    public const string ParentTaskNodeId = "parent_task_node_id";
 }
 
 /// <summary>受理时可判定的稳定失败码。</summary>
@@ -56,6 +64,7 @@ public static class GoalContinuationAcceptanceErrorCodes
     public const string IterationConflict = "iteration_conflict";
     public const string ConversationBusy = "conversation_busy";
     public const string TaskFenceChanged = "task_fence_changed";
+    public const string TaskPlanChanged = "task_plan_changed";
 }
 
 /// <summary>

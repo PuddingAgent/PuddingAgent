@@ -108,6 +108,12 @@ public sealed record TaskAgentTaskDetail
     public required string Priority { get; init; }
     public required string ExecutionWindow { get; init; }
     public string? PreferredAgentId { get; init; }
+    public string TaskType { get; init; } = "general";
+    public IReadOnlyList<string> RequiredCapabilityIds { get; init; } = [];
+    public string? RequiredProviderId { get; init; }
+    public string? RequiredModelId { get; init; }
+    public bool AllowAgentFallback { get; init; }
+    public bool AutoDispatchEnabled { get; init; }
     public string? ActiveAssignmentId { get; init; }
     public DateTimeOffset? NotBeforeUtc { get; init; }
     public DateTimeOffset? DueAtUtc { get; init; }

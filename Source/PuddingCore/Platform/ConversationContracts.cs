@@ -73,6 +73,9 @@ public static class TerminalErrorCodes
     public const string ExecutionCancelled = "execution_cancelled";
     public const string ExecutionTimeout = "execution_timeout";
     public const string ExecutionStalled = "execution_stalled";
+    public const string WorkUnitBudgetExhausted = "work_unit_budget_exhausted";
+    public const string WorkUnitUsageUnavailable = "work_unit_usage_unavailable";
+    public const string WorkUnitPricingUnavailable = "work_unit_pricing_unavailable";
     public const string LeaseLost = "lease_lost";
     public const string EventCommitFailed = "event_commit_failed";
 }

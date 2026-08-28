@@ -12,9 +12,13 @@
 | `Goals/GoalCommandTextParser.cs` | /goal 严格 grammar（中文/多行 objective、--rounds 1..256、子命令消歧） |
 | `Goals/IGoalCommandService.cs` + `IGoalQueryService.cs` | 命令/查询应用服务契约（slash 与结构化 API 共用） |
 | `Goals/GoalRunOptions.cs` | GoalRuns 配置节（Enabled 默认 false；局部配置不得扩大硬边界） |
-| `Goals/GoalContinuationContracts.cs` | durable continuation outbox wire 值、受信 Acceptance fence 与稳定失败码 |
+| `Goals/GoalContinuationContracts.cs` | durable continuation outbox wire 值、受信 Acceptance fence、Task plan/node/fingerprint metadata 与稳定失败码 |
 | `Goals/GoalVerificationContracts.cs` | 有界 Evidence Capsule、Verifier verdict/decision 与只读接口 |
-| `Goals/TaskBoundGoalContracts.cs` | `StartGoalFromTaskCommand`、原子启动结果/稳定码与跨域事务 Store 契约 |
+| `Goals/TaskBoundGoalContracts.cs` | `StartGoalFromTaskCommand`（含 Agent 路由 SHA-256）、原子启动结果/稳定码与跨域事务 Store 契约 |
+| `Scheduling/TaskAutoDispatchContracts.cs` | evaluate-only 候选结果；携带 taskType、Agent 选择原因与路由指纹，不代表已派发 |
+| `Scheduling/TaskBacklogRefinementContracts.cs` | 已 opt-in Backlog 的只读 ReadyCandidate/NeedsRefinement 合同；不代表状态已迁移 |
+| `Scheduling/TaskExecutionTrackingContracts.cs` | 自动 Task 的只读五态跟踪 verdict 与跨层事实摘要；不授权 repair/requeue/release |
+| `Tasks/WorkspaceTaskModels.cs` + `Tasks/TaskPersistenceContracts.cs` | Task 状态/持久合同；含结构化 taskType、能力、provider/model 要求、显式 Agent fallback 与默认关闭的 auto-dispatch opt-in |
 
 ## 抽象层
 
@@ -27,6 +31,7 @@
 | `Abstractions/ISubAgentPool.cs` | Runtime 调用子代理池所需的最小契约、池状态与池快照模型；实现留在 Platform |
 | `Abstractions/ITokenUsageRecorder.cs` | Token 归因写入边界；`TokenUsageAttribution` 承载 canonical parent/sub-agent、零基 round 与本轮工具事实，并以默认接口实现保持旧 recorder 源码兼容 |
 | `Platform/IPlatformRepositories.cs` | Platform 持久化仓储契约；`ChatMessageRow` 含 WorkspaceId、稳定 platform/business MessageId、TurnId 与消息内容，供 Runtime 在压缩与冷水合前增量镜像 canonical 转录并排除当前 Turn；包含 Agent Token/熵诊断的 Core DTO 查询边界 |
+| `Platform/IExecutionCommandReader.cs` | ExecutionCommand 只读边界；返回从 canonical Goal/Task/Plan 解析的 `ExecutionWorkUnitContext` 及 rounds/tools/duration/token/cost 冻结预算 |
 | `Platform/AgentProjectionDtos.cs` | Agent 会话读模型；`ProcessSummaryItem.Sequence` 为 canonical 必填，active/detail 输出携带 `TurnEventWindow`（through/min/max/hasMoreBefore）供前端识别截断 |
 
 ## 模型（Models/）
@@ -88,6 +93,8 @@
 | `Runtime/ContextTierPlannerContracts.cs` | T0–T4 分级规划器契约：段输入/分配结果/阈值选项 + IContextTierPlanner |
 | `Runtime/ContextTierPlanner.cs` | 纯函数式分级规划器：轮次距离基础分级 → 原子组校正 → query 有界晋升 |
 | `Runtime/CompositionContracts.cs` | 🆕 P0-5 SessionCompositionRecord（SessionId/CompositionVersion/SystemPromptHash/ToolSpecHash/PrefixHash/SkillManifestHash/SerializationVersion/ToolIds/ChangeReason/PermissionEpoch/CanonicalSystemPrefixHash）+ `ICompositionStore`（GetLatest/Append/Load，append-only）|
+| `Runtime/PrefixCacheContracts.cs` | `prefix-v2` 请求前缀快照；稳定 system/tool/envelope version 加首条非 system `HistoryAnchorHash`，区分正常尾部 append 与 rehydrate/checkpoint 造成的历史 epoch 变化 |
+| `Runtime/LlmInvocationContracts.cs` | 统一 LLM invocation 合同；`Purpose` 以非模型可见方式区分 agent/approval/compaction 计费与诊断 |
 
 ## 子代理编排（Orchestration/）
 
@@ -136,13 +143,15 @@
 | `Scheduling/AgentAvailabilityModels.cs` | 保守持久 Availability 状态、busy reason、版本/TTL 快照与 Store 边界 |
 | `Scheduling/AgentExecutionReservationContracts.cs` | 单 Agent 自动工作 Reservation、lease 与 fencing token 契约 |
 | `Scheduling/ExecutionWindowModels.cs` | Allow/Defer/Unknown 窗口裁决及 route/profile/TTL 快照 |
-| `Scheduling/TaskAutoDispatchContracts.cs` | evaluate-only 候选 verdict，携带 Task/Availability/Conversation/Window 版本事实 |
+| `Scheduling/TaskAutoDispatchContracts.cs` | evaluate-only 候选 verdict，携带 Task/Availability/Conversation/Window、Agent route SHA 与 execution-plan SHA/version 事实 |
+| `Scheduling/TaskExecutionPlanContracts.cs` | 版本化 `TaskExecutionPlanSnapshot`、Explore/Plan/Change/Test/Review WorkUnit、依赖/冲突范围与轮次/工具/时长/token/cost 预算合同 |
+| `Scheduling/TaskExecutionTrackingContracts.cs` | Task→Plan/WorkUnit→Goal/Execution 五态健康投影、outbox identity 与有界 repair coordinator 合同；写入权限仅授予独立白名单 repair 实现 |
 
 ## 配置 & 序列化
 
 | 目录/文件 | 用途 |
 |------|------|
-| `Configuration/` | 配置抽象；`PuddingDataPaths` 提供临时子代理目录隔离根；`llm.providers.json` 的协议归属模型支持同一 Provider 混合 `openai` / `responses` / `anthropic` |
+| `Configuration/` | 配置抽象；`PuddingDataPaths` 提供临时子代理目录隔离根；`PuddingBuildOutputSync` 提供同卷暂存、逐文件回滚、路径边界和 SHA-256 点火部署原语；`llm.providers.json` 的协议归属模型支持同一 Provider 混合 `openai` / `responses` / `anthropic` |
 | `Serialization/` | 序列化契约 |
 | `Skills/` | 技能系统抽象 |
 
@@ -159,6 +168,8 @@
 目标新增 `Plugins/`、`Hooks/`、`Lifecycle/` 与 `Events/DomainEventContracts.cs`，分别承载 PluginActivation/Scope、Guard/Transform/Around、各 aggregate 状态机，以及 durable event envelope；详见 `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`。
 
 ## 运行时抽象
+
+- `Runtime/ITurnExecutor.cs`：`TurnExecutionContext` 除 Agent 预算外携带 canonical TaskPlan/TaskNode/ParentNode identity，供 Platform→Runtime 交接。
 
 | 目录/文件 | 用途 |
 |------|------|

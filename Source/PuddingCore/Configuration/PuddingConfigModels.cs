@@ -133,8 +133,8 @@ public sealed record PuddingDesktopCoreConfig
 /// Desktop guided-bootstrap configuration (system.json → desktop.bootstrap).
 /// The Desktop exposes a loopback HTTP control endpoint (default on) plus an
 /// opt-in signal-file polling loop. On a valid "rebuild-restart" trigger it
-/// stops Core, runs an incremental dotnet build, optionally writes yolo.signal,
-/// copies the build output into the Desktop run directory and restarts Core.
+/// stops Core, prepares a Core artifact, deploys it into the actual Core launch
+/// directory, optionally writes yolo.signal and restarts Core.
 /// All paths are dynamic; nothing is hardcoded at runtime.
 /// </summary>
 public sealed record PuddingDesktopBootstrapConfig
@@ -149,13 +149,12 @@ public sealed record PuddingDesktopBootstrapConfig
     public int HttpPort { get; init; } = 8199;
 
     /// <summary>
-    /// When true, copies the build output into the Desktop run directory after
-    /// a successful build so Core starts side-by-side. Defaults to false — the
-    /// primary model is CoreExecutablePath pointing directly at the PuddingAgent
-    /// Debug output directory; output sync is only an optional compatibility
-    /// shim for the legacy layout.
+    /// Default deployment mode used when a caller omits deploymentMode.
+    /// desktop-build: Desktop builds, transactionally deploys and verifies the
+    /// Core artifact; prebuilt-artifact: caller supplies a prepared directory;
+    /// restart-only: explicitly restart without changing assemblies.
     /// </summary>
-    public bool SyncBuildOutput { get; init; } = false;
+    public string DefaultDeploymentMode { get; init; } = "desktop-build";
 
     /// <summary>Absolute signal file path. When null/empty defaults to &lt;DataRoot&gt;\config\rebuild.signal.</summary>
     public string? SignalPath { get; init; }

@@ -71,6 +71,55 @@ public sealed class PrefixCacheSnapshotBuilderTests
         Assert.AreEqual(first.ToolSpecHash, second.ToolSpecHash);
     }
 
+    [TestMethod]
+    public void Build_HistoryHeadReplacement_ChangesPrefixHash_WhenSystemAndToolsStaySame()
+    {
+        var tools = new[] { CreateTool("file_read") };
+        var original = PrefixCacheSnapshotBuilder.Build(new[]
+        {
+            new ChatMessage(ChatRole.System, "You are Pudding."),
+            new ChatMessage(ChatRole.User, "original task"),
+            new ChatMessage(ChatRole.Assistant, "working"),
+        }, tools);
+        var checkpoint = PrefixCacheSnapshotBuilder.Build(new[]
+        {
+            new ChatMessage(ChatRole.System, "You are Pudding."),
+            new ChatMessage(ChatRole.User, "<compacted-summary>checkpoint</compacted-summary>"),
+            new ChatMessage(ChatRole.Assistant, "working"),
+        }, tools);
+
+        Assert.AreEqual(original.SystemPromptHash, checkpoint.SystemPromptHash);
+        Assert.AreEqual(original.ToolSpecHash, checkpoint.ToolSpecHash);
+        Assert.AreNotEqual(original.HistoryAnchorHash, checkpoint.HistoryAnchorHash);
+        Assert.AreNotEqual(original.PrefixHash, checkpoint.PrefixHash);
+    }
+
+    [TestMethod]
+    public void Build_ContextLayerDynamicSuffix_DoesNotPolluteStableSystemHash()
+    {
+        var first = PrefixCacheSnapshotBuilder.Build(new[]
+        {
+            new ChatMessage(ChatRole.System, """
+                --- CONTEXT-LAYER: L0-STATIC ---
+                stable
+                --- CONTEXT-LAYER: L6-CONTEXT-AUGMENT ---
+                recalled-a
+                """),
+        }, []);
+        var second = PrefixCacheSnapshotBuilder.Build(new[]
+        {
+            new ChatMessage(ChatRole.System, """
+                --- CONTEXT-LAYER: L0-STATIC ---
+                stable
+                --- CONTEXT-LAYER: L6-CONTEXT-AUGMENT ---
+                recalled-b
+                """),
+        }, []);
+
+        Assert.AreEqual(first.SystemPromptHash, second.SystemPromptHash);
+        Assert.AreEqual(first.PrefixHash, second.PrefixHash);
+    }
+
     private static LlmToolDefinition CreateTool(string name) => new()
     {
         Name = name,

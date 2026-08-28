@@ -11,6 +11,7 @@ public static class TaskBoundGoalStartCodes
     public const string TaskChanged = "task_changed";
     public const string TaskNotEligible = "task_not_eligible";
     public const string AgentChanged = "agent_changed";
+    public const string PlanChanged = "execution_plan_changed";
     public const string AgentNotIdle = "agent_not_idle";
     public const string ConversationMissing = "agent_conversation_missing";
     public const string DependencyChanged = "task_dependency_changed";
@@ -30,6 +31,10 @@ public sealed record StartGoalFromTaskCommand
     public required string TaskId { get; init; }
     public required int ExpectedTaskVersion { get; init; }
     public required string AgentId { get; init; }
+    /// <summary>评估器对任务路由约束与 Agent 模板快照生成的 SHA-256。</summary>
+    public required string ExpectedAgentRoutingFingerprint { get; init; }
+    /// <summary>评估器基于 canonical Task version 生成的执行计划 SHA-256。</summary>
+    public required string ExpectedExecutionPlanFingerprint { get; init; }
     public required string ConversationId { get; init; }
     public required long ExpectedAvailabilityVersion { get; init; }
     public required TaskExecutionWindow ExecutionWindow { get; init; }
@@ -53,6 +58,8 @@ public sealed record TaskBoundGoalStartResult
     public string? ReservationId { get; init; }
     public long? ReservationFencingToken { get; init; }
     public int? TaskVersion { get; init; }
+    public string? TaskPlanId { get; init; }
+    public string? ExecutionPlanFingerprint { get; init; }
 }
 
 public interface ITaskGoalDispatchTransactionStore

@@ -34,6 +34,11 @@ public sealed record LlmInvocationRequest
     public required string AgentTemplateId { get; init; }
     /// <summary>LLM 调用 Profile（provider/profile/model/role 完整建模）。</summary>
     public required LlmInvocationProfile Profile { get; init; }
+    /// <summary>
+    /// Non-model-visible billing/diagnostic purpose (agent / approval / compaction).
+    /// It must never be inferred from SessionId or injected into prompt text.
+    /// </summary>
+    public string Purpose { get; init; } = "agent";
     public required IReadOnlyList<ChatMessage> Messages { get; init; }
     public IReadOnlyList<LlmToolDefinition> Tools { get; init; } = Array.Empty<LlmToolDefinition>();
     public RuntimeTraceContext? Trace { get; init; }

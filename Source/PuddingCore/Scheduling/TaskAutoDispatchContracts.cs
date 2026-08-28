@@ -16,6 +16,12 @@ public sealed record TaskAutoDispatchCandidateDecision
     public required string TaskId { get; init; }
     public int? TaskVersion { get; init; }
     public string? AgentId { get; init; }
+    public string? TaskType { get; init; }
+    public string? AgentSelectionCode { get; init; }
+    public string? AgentRoutingFingerprint { get; init; }
+    public string? ExecutionPlanFingerprint { get; init; }
+    public int? ExecutionPlanSchemaVersion { get; init; }
+    public int? ExecutionPlanVersion { get; init; }
     public string? ConversationId { get; init; }
     public TaskExecutionWindow? ExecutionWindow { get; init; }
     public required TaskAutoDispatchCandidateVerdict Verdict { get; init; }

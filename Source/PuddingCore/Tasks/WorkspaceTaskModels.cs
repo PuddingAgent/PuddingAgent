@@ -350,6 +350,50 @@ public enum AssignmentStatus
     Rejected
 }
 
+/// <summary>Task 路由元数据的单一规范化与边界。</summary>
+public static class TaskRoutingMetadata
+{
+    public const int MaxTaskTypeLength = 64;
+    public const int MaxCapabilityCount = 64;
+    public const int MaxCapabilityIdLength = 128;
+
+    public static string NormalizeTaskType(string? value)
+    {
+        var normalized = string.IsNullOrWhiteSpace(value) ? "general" : value.Trim().ToLowerInvariant();
+        if (normalized.Length > MaxTaskTypeLength)
+            throw Invalid($"taskType must be at most {MaxTaskTypeLength} characters.");
+        return normalized;
+    }
+
+    public static IReadOnlyList<string> NormalizeCapabilityIds(IEnumerable<string>? values)
+    {
+        var normalized = (values ?? [])
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim().ToLowerInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
+        if (normalized.Length > MaxCapabilityCount)
+            throw Invalid($"requiredCapabilityIds must contain at most {MaxCapabilityCount} values.");
+        if (normalized.Any(value => value.Length > MaxCapabilityIdLength))
+            throw Invalid($"Each required capability ID must be at most {MaxCapabilityIdLength} characters.");
+        return normalized;
+    }
+
+    public static string? NormalizeOptionalIdentifier(string? value, int maxLength, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        var normalized = value.Trim();
+        if (normalized.Length > maxLength)
+            throw Invalid($"{fieldName} must be at most {maxLength} characters.");
+        return normalized;
+    }
+
+    private static TaskStoreException Invalid(string message)
+        => new(TaskErrorCode.PolicyInvalid, message);
+}
+
 /// <summary>工作区任务台账（与 TaskPlanRun/TaskNode 严格分离，不复用不继承）。</summary>
 public sealed record WorkspaceTask
 {
@@ -379,6 +423,24 @@ public sealed record WorkspaceTask
 
     /// <summary>偏好 Agent ID。</summary>
     public string? PreferredAgentId { get; init; }
+
+    /// <summary>结构化任务类型；供调度路由使用，不从标题猜测。</summary>
+    public string TaskType { get; init; } = "general";
+
+    /// <summary>执行 Agent 必须具备的 Capability ID 集合。</summary>
+    public IReadOnlyList<string> RequiredCapabilityIds { get; init; } = [];
+
+    /// <summary>执行 Agent 模板必须使用的 Provider；空表示不限制。</summary>
+    public string? RequiredProviderId { get; init; }
+
+    /// <summary>执行 Agent 模板必须使用的 Model；空表示不限制。</summary>
+    public string? RequiredModelId { get; init; }
+
+    /// <summary>首选 Agent 不可用时，是否允许选择满足约束的兼容 Agent。</summary>
+    public bool AllowAgentFallback { get; init; }
+
+    /// <summary>是否显式允许后台自动派发；默认关闭。</summary>
+    public bool AutoDispatchEnabled { get; init; }
 
     /// <summary>当前活跃 Assignment ID。</summary>
     public string? ActiveAssignmentId { get; init; }

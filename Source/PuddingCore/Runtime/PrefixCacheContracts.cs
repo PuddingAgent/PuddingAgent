@@ -23,6 +23,15 @@ public sealed record PromptPrefixSnapshot
     /// <summary>工具规格哈希；工具增删、重排、描述或 schema 改变都会反映在这里。</summary>
     public required string ToolSpecHash { get; init; }
 
+    /// <summary>
+    /// system 之后第一条历史消息的规范哈希。正常尾部 append 不改变该值；
+    /// 头部裁剪、重水合重排或 checkpoint 替换会改变，用于补足旧版仅看 system/tool 的盲区。
+    /// </summary>
+    public string? HistoryAnchorHash { get; init; }
+
+    /// <summary>Provider 请求 envelope 的稳定序列化版本。</summary>
+    public string SerializationVersion { get; init; } = PrefixCacheSnapshotBuilder.SerializationVersion;
+
     /// <summary>长期记忆哈希；当前版本尚未从 system prompt 中拆分时可为空。</summary>
     public string? MemoryHash { get; init; }
 
@@ -45,8 +54,24 @@ public sealed record PromptPrefixSnapshot
 /// <summary>Prefix 变化原因常量；与 TokenUsageEvents.PrefixChangeReason、缓存报表 SQL 共用。</summary>
 public static class PrefixChangeReasons
 {
+    public const string SystemPromptChanged = "system_prompt_changed";
+
+    public const string ToolSpecChanged = "tool_spec_changed";
+
     /// <summary>进程重启或内存会话过期后从持久层重水合历史，provider 前缀缓存大概率已过期。</summary>
     public const string SessionRehydrated = "session_rehydrated";
+
+    /// <summary>辅助压缩请求原样重放当前 warm prefix，只在尾部追加固定摘要指令。</summary>
+    public const string CompactionReplay = "compaction_replay";
+
+    /// <summary>成功摘要后用单个 checkpoint 原子替换旧历史区间，显式开启新的历史 epoch。</summary>
+    public const string CompactionCheckpoint = "compaction_checkpoint";
+
+    /// <summary>首条稳定历史锚点变化；通常表示历史头被替换、驱逐或重排。</summary>
+    public const string HistoryAnchorChanged = "history_anchor_changed";
+
+    /// <summary>prefix 快照或 provider envelope 序列化版本变化。</summary>
+    public const string SerializationVersionChanged = "serialization_version_changed";
 }
 
 /// <summary>
@@ -54,7 +79,8 @@ public static class PrefixChangeReasons
 /// </summary>
 public static class PrefixCacheSnapshotBuilder
 {
-    public const string Version = "prefix-v1";
+    public const string Version = "prefix-v2";
+    public const string SerializationVersion = "pudding-request-envelope-v1";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -90,11 +116,29 @@ public static class PrefixCacheSnapshotBuilder
         var toolSpecHash = HashCanonical(canonicalTools);
         var stableSystemPrompt = ExtractStableSystemPrompt(systemPrompt);
         var systemPromptHash = HashText(stableSystemPrompt);
+        var historyAnchor = messages.FirstOrDefault(message => message.Role != ChatRole.System);
+        var historyAnchorHash = historyAnchor is null
+            ? null
+            : HashCanonical(new
+            {
+                Role = historyAnchor.Role.ToString(),
+                historyAnchor.Content,
+                historyAnchor.ToolCallId,
+                historyAnchor.ToolName,
+                historyAnchor.ToolCalls,
+                historyAnchor.ReasoningContent,
+                historyAnchor.VisualArtifactIds,
+                historyAnchor.AudioArtifactIds,
+                historyAnchor.ContinuationState,
+                historyAnchor.ContentParts,
+            });
         var prefixHash = HashCanonical(new
         {
             Version,
+            SerializationVersion,
             SystemPrompt = stableSystemPrompt,
             Tools = canonicalTools,
+            HistoryAnchorHash = historyAnchorHash,
         });
 
         return new PromptPrefixSnapshot
@@ -103,6 +147,8 @@ public static class PrefixCacheSnapshotBuilder
             PrefixHash = prefixHash,
             SystemPromptHash = systemPromptHash,
             ToolSpecHash = toolSpecHash,
+            HistoryAnchorHash = historyAnchorHash,
+            SerializationVersion = SerializationVersion,
             PrefixChangeReason = NormalizeReason(prefixChangeReason),
             MessageCount = messages.Count,
             ToolCount = tools.Count,
@@ -123,7 +169,8 @@ public static class PrefixCacheSnapshotBuilder
         for (var i = 0; i < lines.Length; i++)
         {
             var trimmed = lines[i].TrimStart();
-            if (trimmed.StartsWith("--- LAYER:") is false)
+            if (trimmed.StartsWith("--- LAYER:") is false
+                && trimmed.StartsWith("--- CONTEXT-LAYER:") is false)
                 continue;
             if (trimmed.Contains("RECALLED") || trimmed.Contains("CONTEXT-AUGMENT") || trimmed.Contains("CURRENT"))
                 return string.Join('\n', lines, 0, i).TrimEnd();

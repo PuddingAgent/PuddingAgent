@@ -69,8 +69,38 @@ public sealed record TurnExecutionContext(
     /// </summary>
     public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
 
+    /// <summary>Canonical scheduler plan identity used by Runtime task context and journals.</summary>
+    public string? TaskPlanId { get; init; }
+
+    /// <summary>Canonical WorkUnit identity whose budget was applied to this Turn.</summary>
+    public string? TaskNodeId { get; init; }
+
+    /// <summary>Parent execution-plan node for hierarchical task context.</summary>
+    public string? ParentTaskNodeId { get; init; }
+
+    /// <summary>
+    /// Execution Kernel 在 Run 启动时冻结的 WorkUnit Token/成本预算与模型价格。
+    /// Runtime 只能递减这份预算，禁止重新解析配置或放宽上限。
+    /// </summary>
+    public ExecutionUsageBudget? UsageBudget { get; init; }
+
     /// <summary>P0-4f-2: 输出所有权契约。默认 LegacySessionStream（不切流）；第 3 步 Coordinator 显式置 CoordinatorCanonical。</summary>
     public TurnOutputOwnership OutputOwnership { get; init; } = TurnOutputOwnership.LegacySessionStream;
+}
+
+/// <summary>
+/// 单个 WorkUnit 的调用边界 Token/成本预算。价格单位均为每一百万 Token；
+/// 当启用 MaxCost 且 PricingKnown=false 时 Runtime 必须失败关闭。
+/// </summary>
+public sealed record ExecutionUsageBudget
+{
+    public long MaxInputTokens { get; init; }
+    public long MaxOutputTokens { get; init; }
+    public decimal MaxCost { get; init; }
+    public bool PricingKnown { get; init; }
+    public decimal InputPricePer1MTokens { get; init; }
+    public decimal OutputPricePer1MTokens { get; init; }
+    public decimal CacheHitPricePer1MTokens { get; init; }
 }
 
 /// <summary>

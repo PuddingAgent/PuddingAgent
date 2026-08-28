@@ -14,7 +14,7 @@ public sealed class PuddingDesktopBootstrapConfigTests
         Assert.IsFalse(config.Enabled);
         Assert.IsTrue(config.HttpEnabled);
         Assert.AreEqual(8199, config.HttpPort);
-        Assert.IsFalse(config.SyncBuildOutput);
+        Assert.AreEqual("desktop-build", config.DefaultDeploymentMode);
         Assert.IsNull(config.BuildProjectPath);
 
         // Existing defaults must stay untouched.
@@ -37,7 +37,7 @@ public sealed class PuddingDesktopBootstrapConfigTests
                   "enabled": true,
                   "httpEnabled": false,
                   "httpPort": 9001,
-                  "syncBuildOutput": false,
+                  "defaultDeploymentMode": "prebuilt-artifact",
                   "buildProjectPath": "D:\\repos\\PuddingAgent\\Source\\PuddingAgent\\PuddingAgent.csproj"
                   }
               }
@@ -53,7 +53,7 @@ public sealed class PuddingDesktopBootstrapConfigTests
         Assert.IsTrue(bootstrap.Enabled);
         Assert.IsFalse(bootstrap.HttpEnabled);
         Assert.AreEqual(9001, bootstrap.HttpPort);
-        Assert.IsFalse(bootstrap.SyncBuildOutput);
+        Assert.AreEqual("prebuilt-artifact", bootstrap.DefaultDeploymentMode);
         Assert.AreEqual("D:\\repos\\PuddingAgent\\Source\\PuddingAgent\\PuddingAgent.csproj", bootstrap.BuildProjectPath);
         Assert.AreEqual("Source/PuddingAgent/PuddingAgent.csproj", bootstrap.BuildProjectRelativePath);
     }

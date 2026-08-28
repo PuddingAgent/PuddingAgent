@@ -134,7 +134,8 @@ public sealed record ContextCompactionResult(
     string SummaryMarkdown,
     IReadOnlyList<string>? MemoryNotes = null,
     ContextCompactionDiagnostics? Diagnostics = null,
-    bool SkippedDueToTokenIncrease = false);
+    bool SkippedDueToTokenIncrease = false,
+    bool SkippedDueToCurrentTurnGuard = false);
 
 /// <summary>
 /// 压缩覆盖清单（方案 §6.3）。

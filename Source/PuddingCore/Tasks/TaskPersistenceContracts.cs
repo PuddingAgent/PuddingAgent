@@ -46,6 +46,17 @@ public sealed record CreateTaskRequest
     /// <summary>偏好 Agent ID。</summary>
     public string? PreferredAgentId { get; init; }
 
+    /// <summary>结构化任务类型；默认 general。</summary>
+    public string TaskType { get; init; } = "general";
+
+    /// <summary>执行 Agent 必须具备的 Capability ID 集合。</summary>
+    public IReadOnlyList<string> RequiredCapabilityIds { get; init; } = [];
+
+    public string? RequiredProviderId { get; init; }
+    public string? RequiredModelId { get; init; }
+    public bool AllowAgentFallback { get; init; }
+    public bool AutoDispatchEnabled { get; init; }
+
     /// <summary>最早可执行时间（UTC）。</summary>
     public DateTimeOffset? NotBeforeUtc { get; init; }
 
@@ -91,6 +102,13 @@ public sealed record UpdateTaskRequest
 
     /// <summary>偏好 Agent ID。</summary>
     public string? PreferredAgentId { get; init; }
+
+    public string? TaskType { get; init; }
+    public IReadOnlyList<string>? RequiredCapabilityIds { get; init; }
+    public string? RequiredProviderId { get; init; }
+    public string? RequiredModelId { get; init; }
+    public bool? AllowAgentFallback { get; init; }
+    public bool? AutoDispatchEnabled { get; init; }
 
     /// <summary>最早可执行时间（UTC）。</summary>
     public DateTimeOffset? NotBeforeUtc { get; init; }
