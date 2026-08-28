@@ -19,11 +19,13 @@ public sealed class ConversationAcceptanceStore(
     PlatformDbContext db,
     ICommittedEventSignal committedSignal,
     ILogger<ConversationAcceptanceStore> logger,
-    IOptions<TaskBoundGoalOptions>? taskBoundOptions = null) : IConversationAcceptanceStore
+    IOptions<TaskBoundGoalOptions>? taskBoundOptions = null,
+    TimeProvider? timeProvider = null) : IConversationAcceptanceStore
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
     private readonly TimeSpan _taskBoundReservationLease =
         taskBoundOptions?.Value.ReservationLease ?? TimeSpan.FromHours(2);
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     public async Task<AcceptanceResult> AcceptBatchAsync(
         SubmitTurnRequest request,
@@ -83,7 +85,7 @@ public sealed class ConversationAcceptanceStore(
                 request.Content,
                 out var textContent);
             var contentPartsJson = contentParts is null ? null : ContentPartsEnvelope.Encode(contentParts);
-            var nowUtc = DateTimeOffset.UtcNow;
+            var nowUtc = _timeProvider.GetUtcNow();
             var now = nowUtc.ToUnixTimeMilliseconds();
 
             // 2a: 用户消息
@@ -192,8 +194,8 @@ public sealed class ConversationAcceptanceStore(
                     Type = ConversationEventTypes.TurnAccepted,
                     SchemaVersion = 1,
                     Payload = payload.GetRawText(),
-                    OccurredAt = DateTimeOffset.UtcNow.ToString("O"),
-                    CommittedAt = DateTimeOffset.UtcNow.ToString("O"),
+                    OccurredAt = nowUtc.ToString("O"),
+                    CommittedAt = nowUtc.ToString("O"),
                     CorrelationId = conversationId,
                     TraceId = cmd.TraceId,
                     AgentId = goalFence is null ? null : cmd.AgentInstanceId,
@@ -445,7 +447,7 @@ public sealed class ConversationAcceptanceStore(
             || !string.Equals(outbox.LeaseOwner, context.LeaseOwner, StringComparison.Ordinal)
             || outbox.FencingToken != context.FencingToken
             || outbox.LeaseUntilUtc is null
-            || outbox.LeaseUntilUtc <= DateTimeOffset.UtcNow)
+            || outbox.LeaseUntilUtc <= _timeProvider.GetUtcNow())
         {
             throw Reject(GoalContinuationAcceptanceErrorCodes.StaleLease,
                 "Goal continuation outbox lease is missing, expired or fenced out.");
@@ -474,7 +476,7 @@ public sealed class ConversationAcceptanceStore(
                 || reservation is null
                 || reservation.Status != "active"
                 || reservation.FencingToken != binding.ReservationFencingToken
-                || reservation.LeaseUntilUtc <= DateTimeOffset.UtcNow
+                || reservation.LeaseUntilUtc <= _timeProvider.GetUtcNow()
                 || reservation.TaskId != binding.TaskId
                 || reservation.AgentId != binding.AgentInstanceId
                 || reservation.GoalRunId != binding.GoalRunId)
@@ -484,8 +486,71 @@ public sealed class ConversationAcceptanceStore(
                     "Task-bound Goal ownership, Task version or reservation fence changed before acceptance.");
             }
 
-            reservation.LeaseUntilUtc = DateTimeOffset.UtcNow.Add(_taskBoundReservationLease);
-            reservation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            TaskNodeEntity? workUnit = null;
+            if (!string.IsNullOrWhiteSpace(binding.TaskPlanId))
+            {
+                var plan = await db.TaskPlanRuns.SingleOrDefaultAsync(
+                    item => item.PlanId == binding.TaskPlanId, ct);
+                var workUnits = await db.TaskNodes
+                    .Where(item => item.PlanId == binding.TaskPlanId && item.Depth == 1)
+                    .OrderBy(item => item.SequenceNo)
+                    .ToListAsync(ct);
+                workUnit = workUnits.FirstOrDefault(item =>
+                    item.Status is not ("Completed" or "Cancelled" or "Superseded"));
+                var predecessorsCompleted = workUnit is not null
+                    && workUnits.Where(item => item.SequenceNo < workUnit.SequenceNo)
+                        .All(item => item.Status == TaskNodeStatuses.Completed.ToString());
+
+                if (plan is null
+                    || plan.Status != TaskPlanStatuses.Active.ToString()
+                    || plan.WorkspaceId != binding.WorkspaceId
+                    || plan.WorkspaceTaskId != binding.TaskId
+                    // WorkspaceTaskVersion is the immutable compile-time input embedded in
+                    // PlanFingerprint. Live Task revisions are fenced by the binding above.
+                    || plan.LeaderAgentId != binding.AgentInstanceId
+                    || string.IsNullOrWhiteSpace(binding.PlanFingerprint)
+                    || plan.PlanFingerprint != binding.PlanFingerprint
+                    || context.TaskPlanId != binding.TaskPlanId
+                    || context.TaskPlanFingerprint != binding.PlanFingerprint
+                    || workUnit is null
+                    || context.TaskNodeId != workUnit.TaskNodeId
+                    || context.ParentTaskNodeId != workUnit.ParentTaskNodeId
+                    || workUnit.AssignedToId != binding.AgentInstanceId
+                    || workUnit.Status is not ("Draft" or "Planned" or "Assigned" or "Running")
+                    || !predecessorsCompleted
+                    || string.IsNullOrWhiteSpace(workUnit.WorkUnitKind)
+                    || string.IsNullOrWhiteSpace(workUnit.Objective)
+                    || workUnit.MaxRounds is null or <= 0
+                    || workUnit.MaxToolCalls is null or <= 0
+                    || workUnit.MaxDurationSeconds is null or <= 0
+                    || workUnit.MaxInputTokens is null or <= 0
+                    || workUnit.MaxOutputTokens is null or <= 0
+                    || workUnit.MaxCost is null or <= 0)
+                {
+                    throw Reject(
+                        GoalContinuationAcceptanceErrorCodes.TaskPlanChanged,
+                        "Task execution plan or current WorkUnit changed before acceptance.");
+                }
+            }
+            else if (context.TaskPlanId is not null
+                     || context.TaskPlanFingerprint is not null
+                     || context.TaskNodeId is not null
+                     || context.ParentTaskNodeId is not null)
+            {
+                throw Reject(
+                    GoalContinuationAcceptanceErrorCodes.TaskPlanChanged,
+                    "Goal binding has no execution plan but the continuation supplied one.");
+            }
+
+            var renewedAtUtc = _timeProvider.GetUtcNow();
+            reservation.LeaseUntilUtc = renewedAtUtc.Add(_taskBoundReservationLease);
+            reservation.UpdatedAtUtc = renewedAtUtc;
+            if (workUnit is not null)
+            {
+                workUnit.Status = TaskNodeStatuses.Running.ToString();
+                workUnit.StartedAt ??= renewedAtUtc.ToUnixTimeMilliseconds();
+                workUnit.UpdatedAt = renewedAtUtc.ToUnixTimeMilliseconds();
+            }
         }
 
         var conversationBusy = await db.ChatExecutionCommands.AnyAsync(
@@ -508,7 +573,7 @@ public sealed class ConversationAcceptanceStore(
     private static GoalContinuationAcceptanceException Reject(string code, string message)
         => new(code, message);
 
-    private static ConversationEventEntity BuildGoalContinuationEvent(
+    private ConversationEventEntity BuildGoalContinuationEvent(
         GoalRunEntity goal,
         GoalOutboxEntity outbox,
         ChatExecutionCommandEntity command,
@@ -529,8 +594,8 @@ public sealed class ConversationAcceptanceStore(
             Type = eventType,
             SchemaVersion = 1,
             Payload = JsonSerializer.SerializeToElement(payload, JsonOpts).GetRawText(),
-            OccurredAt = DateTimeOffset.UtcNow.ToString("O"),
-            CommittedAt = DateTimeOffset.UtcNow.ToString("O"),
+            OccurredAt = _timeProvider.GetUtcNow().ToString("O"),
+            CommittedAt = _timeProvider.GetUtcNow().ToString("O"),
             CorrelationId = goal.GoalRunId,
             CausationId = outbox.OutboxId,
             AgentId = goal.AgentInstanceId,

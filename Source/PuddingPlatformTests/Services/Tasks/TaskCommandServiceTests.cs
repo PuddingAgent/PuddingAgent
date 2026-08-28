@@ -216,6 +216,44 @@ public sealed class TaskCommandServiceTests
     }
 
     [TestMethod]
+    public async Task Patch_ManualCompletionWithoutAssignment_AppendsCanonicalCompletedEvent()
+    {
+        var task = await CreateTaskAsync();
+        await SetStatusAsync(task.TaskId, WorkspaceTaskStatus.Assigned);
+
+        var result = await _service.PatchAsync(
+            WorkspaceId, task.TaskId, expectedVersion: 1,
+            title: null, description: null, acceptanceCriteria: null,
+            priority: null, executionWindow: null,
+            preferredAgentId: null, notBeforeUtc: null, dueAtUtc: null, sortOrder: null,
+            status: WorkspaceTaskStatus.Completed);
+
+        Assert.AreEqual(WorkspaceTaskStatus.Completed, result.Status);
+        var events = await GetEventsAsync(task.TaskId);
+        Assert.AreEqual(TaskEventType.TaskCompleted, events[^1].EventType);
+        Assert.AreEqual("manual_without_execution", events[^1].DecisionCode);
+    }
+
+    [TestMethod]
+    public async Task Patch_AssignedTaskWithActiveAssignment_ToCompleted_IsRejected()
+    {
+        var task = await CreateTaskAsync();
+        await SetStatusAsync(task.TaskId, WorkspaceTaskStatus.Ready);
+        var assigned = await _service.ApplyCommandAsync(
+            WorkspaceId, task.TaskId, TaskCommand.Assign, expectedVersion: 1, agentId: "agent-1");
+
+        var ex = await Assert.ThrowsExactlyAsync<TaskStoreException>(() =>
+            _service.PatchAsync(
+                WorkspaceId, task.TaskId, expectedVersion: assigned.Version,
+                title: null, description: null, acceptanceCriteria: null,
+                priority: null, executionWindow: null,
+                preferredAgentId: null, notBeforeUtc: null, dueAtUtc: null, sortOrder: null,
+                status: WorkspaceTaskStatus.Completed));
+
+        Assert.AreEqual(TaskErrorCode.TaskInvalidTransition, ex.ErrorCode);
+    }
+
+    [TestMethod]
     public async Task Patch_BacklogToInProgress_ThrowsInvalidTransition()
     {
         var task = await CreateTaskAsync(); // Backlog

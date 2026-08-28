@@ -22,6 +22,48 @@ public sealed class TaskNodeEntity
     [Column("depth")]
     public int Depth { get; set; }
 
+    [Column("sequence_no")]
+    public int SequenceNo { get; set; }
+
+    [MaxLength(32), Column("work_unit_kind")]
+    public string? WorkUnitKind { get; set; }
+
+    [Column("depends_on_json")]
+    public string? DependsOnJson { get; set; }
+
+    [Column("scope_json")]
+    public string? ScopeJson { get; set; }
+
+    [Column("required_capability_ids_json")]
+    public string? RequiredCapabilityIdsJson { get; set; }
+
+    [Column("max_rounds")]
+    public int? MaxRounds { get; set; }
+
+    [Column("max_tool_calls")]
+    public int? MaxToolCalls { get; set; }
+
+    [Column("max_duration_seconds")]
+    public int? MaxDurationSeconds { get; set; }
+
+    [Column("max_input_tokens")]
+    public long? MaxInputTokens { get; set; }
+
+    [Column("max_output_tokens")]
+    public long? MaxOutputTokens { get; set; }
+
+    [Column("max_cost")]
+    public decimal? MaxCost { get; set; }
+
+    [Column("retry_policy_json")]
+    public string? RetryPolicyJson { get; set; }
+
+    [MaxLength(64), Column("progress_fingerprint")]
+    public string? ProgressFingerprint { get; set; }
+
+    [Column("checkpoint_artifact_ref")]
+    public string? CheckpointArtifactRef { get; set; }
+
     [MaxLength(256), Column("title")]
     public string? Title { get; set; }
 

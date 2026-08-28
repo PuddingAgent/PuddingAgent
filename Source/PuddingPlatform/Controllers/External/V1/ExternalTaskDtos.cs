@@ -20,6 +20,12 @@ public sealed class ExternalTaskDto
     public string Priority { get; set; } = string.Empty;
     public string ExecutionWindow { get; set; } = string.Empty;
     public string? PreferredAgentId { get; set; }
+    public string TaskType { get; set; } = "general";
+    public IReadOnlyList<string> RequiredCapabilityIds { get; set; } = [];
+    public string? RequiredProviderId { get; set; }
+    public string? RequiredModelId { get; set; }
+    public bool AllowAgentFallback { get; set; }
+    public bool AutoDispatchEnabled { get; set; }
     public string? ActiveAssignmentId { get; set; }
     public DateTimeOffset? NotBeforeUtc { get; set; }
     public DateTimeOffset? DueAtUtc { get; set; }
@@ -56,6 +62,12 @@ public sealed class ExternalCreateTaskRequest
     public string? Priority { get; set; }
     public string? ExecutionWindow { get; set; }
     public string? PreferredAgentId { get; set; }
+    public string? TaskType { get; set; }
+    public IReadOnlyList<string>? RequiredCapabilityIds { get; set; }
+    public string? RequiredProviderId { get; set; }
+    public string? RequiredModelId { get; set; }
+    public bool AllowAgentFallback { get; set; }
+    public bool AutoDispatchEnabled { get; set; }
     public DateTimeOffset? NotBeforeUtc { get; set; }
     public DateTimeOffset? DueAtUtc { get; set; }
     public long? SortOrder { get; set; }
@@ -70,6 +82,12 @@ public sealed class ExternalPatchTaskRequest
     public string? Priority { get; set; }
     public string? ExecutionWindow { get; set; }
     public string? PreferredAgentId { get; set; }
+    public string? TaskType { get; set; }
+    public IReadOnlyList<string>? RequiredCapabilityIds { get; set; }
+    public string? RequiredProviderId { get; set; }
+    public string? RequiredModelId { get; set; }
+    public bool? AllowAgentFallback { get; set; }
+    public bool? AutoDispatchEnabled { get; set; }
     public DateTimeOffset? NotBeforeUtc { get; set; }
     public DateTimeOffset? DueAtUtc { get; set; }
     public long? SortOrder { get; set; }

@@ -137,6 +137,12 @@ public class ExternalTaskController(
                 Priority = TaskWireMaps.PriorityFromString(request.Priority ?? "p3"),
                 ExecutionWindow = TaskWireMaps.ExecutionWindowFromString(request.ExecutionWindow ?? "inherit"),
                 PreferredAgentId = request.PreferredAgentId,
+                TaskType = request.TaskType ?? "general",
+                RequiredCapabilityIds = request.RequiredCapabilityIds ?? [],
+                RequiredProviderId = request.RequiredProviderId,
+                RequiredModelId = request.RequiredModelId,
+                AllowAgentFallback = request.AllowAgentFallback,
+                AutoDispatchEnabled = request.AutoDispatchEnabled,
                 NotBeforeUtc = request.NotBeforeUtc,
                 DueAtUtc = request.DueAtUtc,
                 SortOrder = request.SortOrder ?? 0,
@@ -195,7 +201,13 @@ public class ExternalTaskController(
                 request.SortOrder,
                 status: null,
                 updatedBy: ActorId,
-                ct);
+                ct,
+                taskType: request.TaskType,
+                requiredCapabilityIds: request.RequiredCapabilityIds,
+                requiredProviderId: request.RequiredProviderId,
+                requiredModelId: request.RequiredModelId,
+                allowAgentFallback: request.AllowAgentFallback,
+                autoDispatchEnabled: request.AutoDispatchEnabled);
 
             Response.Headers.ETag = ETag(updated.Version);
             return Ok(ToDto(updated));
@@ -520,6 +532,12 @@ public class ExternalTaskController(
         Priority = TaskWireMaps.PriorityToString(t.Priority),
         ExecutionWindow = TaskWireMaps.ExecutionWindowToString(t.ExecutionWindow),
         PreferredAgentId = t.PreferredAgentId,
+        TaskType = t.TaskType,
+        RequiredCapabilityIds = t.RequiredCapabilityIds,
+        RequiredProviderId = t.RequiredProviderId,
+        RequiredModelId = t.RequiredModelId,
+        AllowAgentFallback = t.AllowAgentFallback,
+        AutoDispatchEnabled = t.AutoDispatchEnabled,
         ActiveAssignmentId = t.ActiveAssignmentId,
         NotBeforeUtc = t.NotBeforeUtc,
         DueAtUtc = t.DueAtUtc,

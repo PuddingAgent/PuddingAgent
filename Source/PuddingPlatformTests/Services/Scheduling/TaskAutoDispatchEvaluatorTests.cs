@@ -6,6 +6,8 @@ using PuddingCode.Scheduling;
 using PuddingCode.Tasks;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Data.Dtos;
+using PuddingPlatform.Services;
 using PuddingPlatform.Services.Scheduling;
 using PuddingPlatform.Services.Tasks;
 
@@ -97,6 +99,83 @@ public sealed class TaskAutoDispatchEvaluatorTests
     }
 
     [TestMethod]
+    public async Task Evaluate_PreferredBusy_UsesExplicitCompatibleFallback()
+    {
+        var task = TaskEntity("task-1", TaskPriority.P0, "agent-1");
+        task.AllowAgentFallback = true;
+        task.RequiredCapabilitiesJson = "[\"cap-shell\"]";
+        await AddTasksAsync(task);
+        var busy = Idle("agent-1") with
+        {
+            State = AgentAvailabilityState.Busy,
+            ActivityReason = AgentActivityReason.RuntimeExecution,
+            IdleSinceUtc = null,
+            ReasonCode = "foreground_turn",
+        };
+        var evaluator = CreateEvaluator(
+            [busy, Idle("agent-2")],
+            new AllowWindow(),
+            [Agent("agent-1"), Agent("agent-2")]);
+
+        var decision = AssertSingle(await evaluator.EvaluateAsync("ws", 20));
+
+        Assert.AreEqual(TaskAutoDispatchCandidateVerdict.Eligible, decision.Verdict);
+        Assert.AreEqual("agent-2", decision.AgentId);
+        Assert.AreEqual("compatible_agent", decision.AgentSelectionCode);
+        Assert.AreEqual(64, decision.AgentRoutingFingerprint!.Length);
+    }
+
+    [TestMethod]
+    public async Task Evaluate_MissingRequiredCapability_FailsClosed()
+    {
+        var task = TaskEntity("task-1", TaskPriority.P0, "agent-1");
+        task.RequiredCapabilitiesJson = "[\"cap-http-fetch\"]";
+        await AddTasksAsync(task);
+        var evaluator = CreateEvaluator(
+            [Idle("agent-1")],
+            new AllowWindow(),
+            [Agent("agent-1") with { SelectedCapabilityIds = ["cap-shell", "cap-file-write"] }]);
+
+        var decision = AssertSingle(await evaluator.EvaluateAsync("ws", 20));
+
+        Assert.AreEqual(TaskAutoDispatchCandidateVerdict.Denied, decision.Verdict);
+        Assert.AreEqual("preferred_agent_unavailable_or_incompatible", decision.Code);
+    }
+
+    [TestMethod]
+    public async Task Evaluate_ReadyTaskWithoutExplicitAutoOptIn_IsNotACandidate()
+    {
+        var task = TaskEntity("task-1", TaskPriority.P0, "agent-1");
+        task.AutoDispatchEnabled = false;
+        await AddTasksAsync(task);
+        var evaluator = CreateEvaluator(Idle("agent-1"), new AllowWindow());
+
+        var decisions = await evaluator.EvaluateAsync("ws", 20);
+
+        Assert.IsEmpty(decisions);
+    }
+
+    [TestMethod]
+    public void RouteMatcher_TaskTypeRoleAndModelConstraints_AreFailClosed()
+    {
+        var task = TaskEntity("task-1", TaskPriority.P0, "agent-1");
+        task.TaskType = "review";
+        var roleMismatch = TaskAgentRouteMatcher.Evaluate(
+            task,
+            Agent("agent-1"),
+            new TaskTypeRouteOptions { AllowedRoles = ["Audit"] });
+        var modelMismatch = TaskAgentRouteMatcher.Evaluate(
+            task,
+            Agent("agent-1"),
+            new TaskTypeRouteOptions { RequiredModelId = "deepseek-v4" });
+
+        Assert.IsFalse(roleMismatch.Compatible);
+        Assert.AreEqual("role_mismatch", roleMismatch.Code);
+        Assert.IsFalse(modelMismatch.Compatible);
+        Assert.AreEqual("model_mismatch", modelMismatch.Code);
+    }
+
+    [TestMethod]
     public void AuthoritativeMode_RequiresAllGoalSafetySwitches()
     {
         var errors = TaskAutoDispatchOptions.Validate(
@@ -110,16 +189,45 @@ public sealed class TaskAutoDispatchEvaluatorTests
 
     private TaskAutoDispatchEvaluator CreateEvaluator(
         AgentAvailabilitySnapshot snapshot,
-        IExecutionWindowResolver windowResolver) => new(
+        IExecutionWindowResolver windowResolver) => CreateEvaluator(
+            [snapshot], windowResolver, [Agent(snapshot.AgentId)]);
+
+    private TaskAutoDispatchEvaluator CreateEvaluator(
+        IReadOnlyList<AgentAvailabilitySnapshot> snapshots,
+        IExecutionWindowResolver windowResolver,
+        IReadOnlyList<WorkspaceAgentDto> agents) => new(
             _factory,
             _dependencies,
-            new FixedAvailability(snapshot),
+            new FixedAvailability(snapshots),
             windowResolver,
+            new FixedAgentCatalog(agents),
             Options.Create(new TaskAutoDispatchOptions
             {
                 MinimumIdle = TimeSpan.FromMinutes(30),
             }),
             new FixedTimeProvider(_now));
+
+    private WorkspaceAgentDto Agent(string agentId) => new(
+        AgentId: agentId,
+        Name: agentId,
+        Description: null,
+        DisplayName: agentId,
+        AvatarId: null,
+        AvatarUrl: null,
+        SourceTemplateId: "service",
+        MainSessionId: $"conversation-{agentId}",
+        SystemPromptOverride: null,
+        PreferredProviderId: "bigmodel",
+        PreferredModelId: "glm-5.3-flash",
+        IsEnabled: true,
+        IsFrozen: false,
+        CreatedAt: _now.AddDays(-1),
+        UpdatedAt: _now.AddDays(-1),
+        Role: "Service",
+        AllowFileWrite: true,
+        AllowShellExecution: true,
+        AllowNetworkAccess: true,
+        SelectedCapabilityIds: ["cap-shell", "cap-file-write", "cap-http-fetch"]);
 
     private async Task AddTasksAsync(params WorkspaceTaskEntity[] tasks)
     {
@@ -140,6 +248,8 @@ public sealed class TaskAutoDispatchEvaluatorTests
         Priority = priority,
         ExecutionWindow = TaskExecutionWindow.Anytime,
         PreferredAgentId = agentId,
+        TaskType = "implementation",
+        AutoDispatchEnabled = true,
         SortOrder = 0,
         Version = 1,
         CreatedAtUtc = _now,
@@ -166,18 +276,29 @@ public sealed class TaskAutoDispatchEvaluatorTests
         return decisions[0];
     }
 
-    private sealed class FixedAvailability(AgentAvailabilitySnapshot snapshot)
+    private sealed class FixedAvailability(IReadOnlyList<AgentAvailabilitySnapshot> snapshots)
         : IAgentAvailabilityProjectionStore
     {
         public Task<AgentAvailabilitySnapshot> GetAsync(
             string workspaceId,
             string agentId,
-            CancellationToken ct = default) => Task.FromResult(snapshot);
+            CancellationToken ct = default) => Task.FromResult(Find(agentId));
 
         public Task<AgentAvailabilitySnapshot> RebuildAsync(
             string workspaceId,
             string agentId,
-            CancellationToken ct = default) => Task.FromResult(snapshot);
+            CancellationToken ct = default) => Task.FromResult(Find(agentId));
+
+        private AgentAvailabilitySnapshot Find(string agentId)
+            => snapshots.Single(item => item.AgentId == agentId);
+    }
+
+    private sealed class FixedAgentCatalog(IReadOnlyList<WorkspaceAgentDto> agents)
+        : IWorkspaceAgentCatalog
+    {
+        public Task<IReadOnlyList<WorkspaceAgentDto>> ListAgentsAsync(
+            string workspaceId,
+            CancellationToken ct = default) => Task.FromResult(agents);
     }
 
     private sealed class AllowWindow : IExecutionWindowResolver

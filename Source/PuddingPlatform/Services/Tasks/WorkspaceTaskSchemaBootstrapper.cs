@@ -18,7 +18,7 @@ public static class WorkspaceTaskSchemaBootstrapper
 {
     private static readonly string[] Ddl =
     [
-        // ── workspace_tasks（TB-02，29 列）────────────────────────────
+        // ── workspace_tasks（TB-02 + structured routing）─────────────
         """
         CREATE TABLE IF NOT EXISTS workspace_tasks (
             task_id              TEXT    NOT NULL,
@@ -30,6 +30,12 @@ public static class WorkspaceTaskSchemaBootstrapper
             priority             INTEGER NOT NULL,
             execution_window     INTEGER NOT NULL,
             preferred_agent_id   TEXT,
+            task_type            TEXT    NOT NULL DEFAULT 'general',
+            required_capabilities_json TEXT NOT NULL DEFAULT '[]',
+            required_provider_id TEXT,
+            required_model_id    TEXT,
+            allow_agent_fallback INTEGER NOT NULL DEFAULT 0,
+            auto_dispatch_enabled INTEGER NOT NULL DEFAULT 0,
             active_assignment_id TEXT,
             not_before_utc       TEXT,
             due_at_utc           TEXT,
@@ -149,5 +155,40 @@ public static class WorkspaceTaskSchemaBootstrapper
                 throw;
             }
         }
+
+        await EnsureColumnAsync(db, "workspace_tasks", "task_type", "TEXT NOT NULL DEFAULT 'general'", logger, ct);
+        await EnsureColumnAsync(db, "workspace_tasks", "required_capabilities_json", "TEXT NOT NULL DEFAULT '[]'", logger, ct);
+        await EnsureColumnAsync(db, "workspace_tasks", "required_provider_id", "TEXT", logger, ct);
+        await EnsureColumnAsync(db, "workspace_tasks", "required_model_id", "TEXT", logger, ct);
+        await EnsureColumnAsync(db, "workspace_tasks", "allow_agent_fallback", "INTEGER NOT NULL DEFAULT 0", logger, ct);
+        await EnsureColumnAsync(db, "workspace_tasks", "auto_dispatch_enabled", "INTEGER NOT NULL DEFAULT 0", logger, ct);
+    }
+
+    private static async Task EnsureColumnAsync(
+        PlatformDbContext db,
+        string tableName,
+        string columnName,
+        string definition,
+        ILogger? logger,
+        CancellationToken ct)
+    {
+        var connection = db.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+            await connection.OpenAsync(ct);
+
+        await using var check = connection.CreateCommand();
+        check.CommandText = $"PRAGMA table_info({tableName})";
+        await using var reader = await check.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+                return;
+        }
+
+        await reader.DisposeAsync();
+        await using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {definition}";
+        logger?.LogInformation("[WorkspaceTaskSchema] adding column {Table}.{Column}", tableName, columnName);
+        await alter.ExecuteNonQueryAsync(ct);
     }
 }

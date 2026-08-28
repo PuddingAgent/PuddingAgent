@@ -21,7 +21,7 @@
 | `Services/ChatHistoryService.cs` | 聊天历史 |
 | `Services/ChatMessageRepository.cs` | 消息仓储；ChatMessageRow 透传 `WorkspaceId/MessageId/TurnId` 与 `ContentPartsJson` canonical 信封；after-Id 增量扫描不因空正文越过纯 typed-parts 消息，支持 Runtime 冷水合与当前 Turn 排除 |
 | `Services/ChatMessageSchemaBootstrapper.cs` | 存量 SQLite 幂等补 `ChatMessages.content_parts_json` 列 |
-| `Services/AgentChat/ExecutionRunCoordinator.cs` | ADR-077：canonical parts + 冻结 Snapshot 判定 vision/文本占位；已删除自动预观察旁路，消息正文不再含本地绝对路径 |
+| `Services/AgentChat/ExecutionRunCoordinator.cs` | ADR-077 canonical parts；执行前应用 canonical WorkUnit context，将 Agent/WorkUnit rounds、tools、duration 逐项取最严值并冻结 deadline，按实际 provider/model 冻结价格与 input/output/cost 预算，透传 plan/node identity |
 | `Services/AgentChat/TurnOutputChunker.cs` | Delta 聚合分块器；非 delta 事件（工具/step）先 flush 已缓冲正文/思考再透传——「文本 → 工具 → 文本」轮次边界进入 canonical sequence（chat 交错时间线依赖，2026-08-24）；测试 `PuddingPlatformTests/Services/TurnOutputChunkerPayloadOwnershipTests.cs` |
 | `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 首屏/活动 run/消息明细投影；活动根 run 以最新根 `turn.started` 锚定，避免子代理 runId 抢占；active/full detail 都把 `message.content.appended` 与思考/工具/委派按真实 sequence 返回，并用 `TurnEventWindow` 显式标记 64 条活动窗口边界 |
 | `Services/ChatTranscriptWriter.cs` | 转录写入 |
@@ -81,9 +81,10 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/Tasks/SqliteWorkspaceTaskStore.cs` | SQLite Task Ledger：`workspace_tasks` + `task_events` 两表、snake_case 列、CAS 乐观并发、Task+Event 原子提交、硬删语义、keyset 分页 |
+| `Services/Tasks/SqliteWorkspaceTaskStore.cs` | SQLite Task Ledger：`workspace_tasks` + `task_events` 两表、snake_case 列、CAS 乐观并发、Task+Event 原子提交、结构化 taskType/capability/provider/model/fallback 与 auto-dispatch opt-in、硬删语义、keyset 分页 |
+| `Services/Tasks/WorkspaceTaskSchemaBootstrapper.cs` | Task 表/事件/评论启动建表；对既有 SQLite 幂等补齐结构化路由与 `auto_dispatch_enabled` 列 |
 | `Services/Tasks/TaskAgentCommandService.cs` | task_* 工具命令服务：claim/update 原子写回 Task+Attempt+Event+Binding 四表 |
-| `Services/Tasks/TaskCommandService.cs` | PATCH/ApplyCommand 原子语义（含 status 显式迁移走 `CanTransition` 校验）；`DeleteTaskAsync` 智能删除（无历史 Backlog 硬删，其余任意状态归档软删）|
+| `Services/Tasks/TaskCommandService.cs` | PATCH/ApplyCommand 原子语义；无 Assignment 的人工完成写 `TaskCompleted/manual_without_execution`，active Assignment 禁止 PATCH 伪完成，`mark_failed` 原子释放 attempt；`DeleteTaskAsync` 智能删除 |
 | `Services/Tasks/TaskDispatcher.cs` | 任务派发（RuntimeDispatchRequest.ActiveTask 注入到派发链）|
 | `Services/Tasks/TaskDispatchOutboxStore.cs` | 派发 outbox 持久化 |
 | `Services/Tasks/TaskDispatchSchemaBootstrapper.cs` | 派发 schema 幂等建表 |
@@ -104,11 +105,17 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/Scheduling/AgentAvailabilityProjectionStore.cs` | 从配置、Task/Goal、Chat command、Message delivery、SubAgent 与 Reservation 的持久事实保守重建 Agent 状态；Unknown/过期不接 Auto |
+| `Services/Scheduling/AgentAvailabilityProjectionStore.cs` | 从配置、Task/Goal、Chat command、Message delivery、SubAgent 与 Reservation 的持久事实保守重建 Agent 状态；仅 canonical active assignment 的非终态 Task 占用 Agent，终态历史脏 attempt 不再造成 false-busy；Unknown/过期不接 Auto |
 | `Services/Scheduling/AgentExecutionReservationStore.cs` | 单 Agent/Task active 自动工作槽、lease、fencing token、renew/release/expiry |
 | `Services/Scheduling/ConservativeExecutionWindowResolver.cs` | `anytime` allow；`inherit/off_peak_only` 在路由价格档案缺失时 Unknown/fail-closed |
-| `Services/Scheduling/TaskAutoDispatchEvaluator.cs` | 无副作用确定性候选评估；偏好 Agent、依赖、30 分钟 idle grace、窗口、同轮单任务 |
-| `Services/Scheduling/TaskAutoDispatchWorker.cs` | 默认关闭的有界恢复扫描；shadow 只评估，authoritative 对 eligible 候选重算窗口后调用唯一 Task→Goal 原子事务；同 Agent 每轮至多一个 Task |
+| `Services/Scheduling/TaskAutoDispatchEvaluator.cs` | 无副作用确定性候选评估；结构化 TaskTypeRoute/能力/provider/model、首选亲和、显式 fallback、依赖、5 分钟 idle grace、窗口与同轮单 Agent 单任务 |
+| `Services/Scheduling/TaskAgentRouteMatcher.cs` | 不读任务标题的确定性 Agent 路由；类型规则与任务显式约束取交集，输出 provider/model/capability 解释和 SHA-256 快照 |
+| `Services/Scheduling/TaskExecutionPlanCompiler.cs` | 不读任务正文的纯 WorkUnit 计划编译器；按 taskType 生成有界 DAG，将依赖/能力/冲突范围/预算冻结为 SHA-256；未知类型 fail closed |
+| `Services/Scheduling/TaskBacklogRefinementEvaluator.cs` | 每五分钟只读检查已 opt-in Backlog 的描述、验收标准、任务类型与兼容 Agent；Shadow 输出 ReadyCandidate/NeedsRefinement，不改状态 |
+| `Services/Scheduling/TaskBacklogRefinementStore.cs` | future authoritative 的 Backlog→Ready 唯一 CAS 写入者；重验任务、Agent、TaskTypeRoute 与路由 SHA-256，原子写 canonical `TaskReady/backlog_refined` |
+| `Services/Scheduling/TaskExecutionTracker.cs` | 五分钟只读关联 Task/Plan/当前 WorkUnit/Assignment/Reservation fencing/Binding/Goal/Iteration/ExecutionCommand/Run/outbox；输出 Healthy/Waiting/Stalled/Inconsistent/CleanupRequired，本身不执行修复 |
+| `Services/Scheduling/TaskExecutionRepairCoordinator.cs` | authoritative 五分钟确定性 repair；Serializable 重读 fence 后仅清理终态遗留 binding/assignment/reservation、回收过期 continuation lease、补建安全可证明缺失的 continuation intent；不猜 Task 成功、不续过期 reservation、不合成 Turn |
+| `Services/Scheduling/TaskAutoDispatchWorker.cs` | 五分钟有界恢复扫描；产品当前启用 shadow，统一运行 Backlog refinement、Ready route 和 active execution tracking；authoritative 对 eligible 候选重算窗口后调用唯一 Task→Goal 原子事务，并调用白名单 repair；同 Agent 每轮至多一个 Task |
 | `Services/Scheduling/TaskBoundGoalOptions.cs` | Task-bound Goal 独立安全开关、Iteration 预算与 Reservation lease（默认关闭） |
 | `Services/Scheduling/TaskSchedulingSchemaBootstrapper.cs` | Availability、Reservation、Task dependency 三表与唯一索引幂等建表 |
 | `Data/Entities/AgentAvailabilityProjectionEntity.cs` | 持久 Availability 投影实体 |
@@ -120,12 +127,15 @@
 | 文件 | 用途 |
 |------|------|
 | `Services/Goals/GoalSchemaBootstrapper.cs` | goal_runs/goal_iterations/goal_outbox/goal_verifications/task_goal_bindings 五表幂等建表；含"单会话一个非终态 Goal" partial unique 与 outbox 幂等键索引（G1 冻结全部 schema） |
-| `Services/Goals/GoalRunStore.cs` | 聚合写入原语：Create/TryMutate（CAS + Func 卫兵）与 goal.* ConversationEvent 同事务直写（照 AcceptanceStore 序列分配模式，不走自开事务的 EventStore） |
+| `Services/Goals/GoalRunStore.cs` | 聚合写入原语：Create/TryMutate（CAS + Func 卫兵）与 goal.* ConversationEvent 同事务直写；提供按 sequence 选择当前非终态 WorkUnit 的只读查询 |
 | `Services/Goals/GoalOutboxStore.cs` + `GoalOutboxSignal.cs` | continuation due/claim/lease/fencing/recovery/defer/suppress/dead-letter；signal 只降延迟 |
-| `Services/Goals/GoalContinuationWorker.cs` | durable intent → 受信 synthetic Acceptance；用户 Turn 优先，Task-bound metadata 注入 ActiveTask |
+| `Services/Goals/GoalContinuationWorker.cs` | durable intent → 受信 synthetic Acceptance；用户 Turn 优先；从 Binding 解析当前 WorkUnit，将 plan/node/fingerprint/预算放入受信 Acceptance 与 prompt |
 | `Services/Goals/GoalSettlementStore.cs` + `GoalSettlementWorker.cs` | canonical Turn 终态 → Evidence Capsule → version/epoch/Task/Reservation gates → 下一 outbox 或终态 |
 | `Services/Goals/ConservativeGoalIterationVerifier.cs` | fail-closed 只读 Verifier；自然语言完成无权写终态，Task canonical Completed 才允许 bound Goal 完成 |
-| `Services/Goals/TaskGoalDispatchTransactionStore.cs` | Task/Assignment/Reservation/Binding/Goal/首个 Outbox/事件/Availability 单 Serializable 事务与幂等 replay |
+| `Services/Goals/TaskGoalDispatchTransactionStore.cs` | Task/ExecutionPlan/WorkUnits/Assignment/Reservation/Binding/Goal/首个 Outbox/事件/Availability 单 Serializable 事务与幂等 replay；事务前重读 Agent/类型规则并重算 route/plan 双 SHA-256，任一漂移 fail closed |
+| `Services/TaskPlanning/TaskPlanningSchemaBootstrapper.cs` + `Data/Entities/TaskPlanRunEntity.cs` / `TaskNodeEntity.cs` / `WorkUnitAwaitHandleEntity.cs` | 复用规划表冻结 WorkspaceTask version 对应的执行快照、WorkUnit budgets/scopes/dependencies/checkpoint 与 durable AwaitHandle；启动初始化器显式幂等升级旧 SQLite |
+| `Services/ConversationAcceptanceStore.cs` | Chat/Goal synthetic Turn 原子受理；重验 Goal/outbox/Task/Assignment/Reservation/Plan/当前 WorkUnit 全围栏并原子置 Running；lease 校验/续租统一使用注入 `TimeProvider` |
+| `Services/ExecutionCommandReader.cs` | 执行前沿 Command→GoalIteration→Binding→Task/Reservation→Plan/Node 重读 canonical WorkUnit 身份与预算；metadata 只选择、不授权，漂移 fail closed |
 | `Services/Goals/GoalCommandService.cs` | /goal 全命令合同：set/edit/replace/pause/resume/cancel/clear/status；conflict、幂等重放（source_command_id 唯一）、expectedVersion、budget_exhausted 不可 resume、feature flag 下保留 status/pause/cancel |
 | `Services/Goals/GoalQueryService.cs` | 只读投影（active/latest/iterations） |
 | `Services/Goals/GoalRestartReconciler.cs` | 启动 disarm：active→paused（bootId 锚点 + goal.paused 事件），幂等 |
@@ -209,7 +219,8 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/TokenUsageRecorder.cs` | Token 用量记录；持久化 RuntimeExecutionIdentity 提供的 parent/sub-agent、零基 round、本轮 canonical 工具及 context layer Token/UTF-8/GZIP/hash/cache 诊断，不复制 prompt 正文 |
+| `Services/TokenUsageRecorder.cs` | Token 用量记录；持久化 RuntimeExecutionIdentity 提供的 parent/sub-agent、零基 round、本轮 canonical 工具及 context layer Token/UTF-8/GZIP/hash/cache 诊断；prefix-v2 在 system/tool 不变而 PrefixHash 变化时归因为 `history_anchor_changed`，版本切换归因为 `serialization_version_changed`；不复制 prompt 正文 |
+| `Services/CacheDiagnosticsService.cs` | 会话级 Cache Miss Inspector 后端；汇总 token-weighted hit/miss、prefix churn、首次变化原因与逐轮事实 |
 | `Services/ConversationProjector.cs` | Conversation Event 增量投影；usage 仅在 direct `session:trace:round` 行缺失时补记，父子身份来自持久关系、零基 round 来自 invocation index，未知工具数保持 NULL |
 | `Services/TokenUsageEventRepository.cs` | Token 事件持久化与最近层级/熵诊断查询；向 Runtime 返回 Core 诊断 DTO |
 | `Services/LlmGatewayUsageRecorder.cs` | Provider 成功边界逐请求计费账本；与会话归因投影解耦 |

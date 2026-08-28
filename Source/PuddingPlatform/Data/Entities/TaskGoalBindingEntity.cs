@@ -38,6 +38,12 @@ public class TaskGoalBindingEntity
     [Column("reservation_fencing_token")]
     public long? ReservationFencingToken { get; set; }
 
+    [MaxLength(64), Column("task_plan_id")]
+    public string? TaskPlanId { get; set; }
+
+    [MaxLength(64), Column("plan_fingerprint")]
+    public string? PlanFingerprint { get; set; }
+
     [Column("execution_window_snapshot_json")]
     public string? ExecutionWindowSnapshotJson { get; set; }
 

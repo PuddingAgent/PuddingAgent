@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using PuddingCode.Tasks;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
@@ -40,7 +41,13 @@ public sealed class TaskCommandService(
         long? sortOrder,
         WorkspaceTaskStatus? status = null,
         string? updatedBy = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? taskType = null,
+        IReadOnlyList<string>? requiredCapabilityIds = null,
+        string? requiredProviderId = null,
+        string? requiredModelId = null,
+        bool? allowAgentFallback = null,
+        bool? autoDispatchEnabled = null)
     {
         var current = await _store.GetTaskAsync(workspaceId, taskId, ct);
         if (current is null)
@@ -76,6 +83,12 @@ public sealed class TaskCommandService(
                 Priority = priority,
                 ExecutionWindow = executionWindow,
                 PreferredAgentId = preferredAgentId,
+                TaskType = taskType,
+                RequiredCapabilityIds = requiredCapabilityIds,
+                RequiredProviderId = requiredProviderId,
+                RequiredModelId = requiredModelId,
+                AllowAgentFallback = allowAgentFallback,
+                AutoDispatchEnabled = autoDispatchEnabled,
                 NotBeforeUtc = notBeforeUtc,
                 DueAtUtc = dueAtUtc,
                 SortOrder = sortOrder,
@@ -90,6 +103,20 @@ public sealed class TaskCommandService(
             throw new TaskStoreException(
                 TaskErrorCode.TaskInvalidTransition,
                 $"Task '{taskId}' cannot transition from '{current.Status}' to '{target}'.",
+                taskId,
+                expectedVersion,
+                current.Version);
+        }
+
+        // A Task that has entered execution may only complete through the
+        // evidence-bearing task disposition / Task-bound Goal settlement path.
+        // Generic board metadata updates cannot manufacture execution success.
+        if (target == WorkspaceTaskStatus.Completed
+            && current.ActiveAssignmentId is not null)
+        {
+            throw new TaskStoreException(
+                TaskErrorCode.TaskInvalidTransition,
+                $"Task '{taskId}' has an active assignment and must complete through the canonical task completion path.",
                 taskId,
                 expectedVersion,
                 current.Version);
@@ -130,7 +157,10 @@ public sealed class TaskCommandService(
         }
 
         ApplyFieldUpdates(entity, title, description, acceptanceCriteria, priority, executionWindow,
-            preferredAgentId, notBeforeUtc, dueAtUtc, sortOrder);
+            preferredAgentId, notBeforeUtc, dueAtUtc, sortOrder, taskType, requiredCapabilityIds,
+            requiredProviderId, requiredModelId, allowAgentFallback);
+        if (autoDispatchEnabled.HasValue)
+            entity.AutoDispatchEnabled = autoDispatchEnabled.Value;
 
         entity.Status = target;
         entity.Version += 1;
@@ -164,6 +194,9 @@ public sealed class TaskCommandService(
             WorkspaceId = workspaceId,
             Sequence = nextSequence + 1,
             EventType = eventType,
+            DecisionCode = target == WorkspaceTaskStatus.Completed
+                ? "manual_without_execution"
+                : null,
             CreatedAtUtc = now,
         });
 
@@ -328,6 +361,19 @@ public sealed class TaskCommandService(
                 break;
             case TaskCommand.MarkFailed:
                 entity.FailedAtUtc = now;
+                if (entity.ActiveAssignmentId is not null)
+                {
+                    var active = await db.TaskAssignmentAttempts
+                        .SingleOrDefaultAsync(a => a.AttemptId == entity.ActiveAssignmentId, ct);
+                    if (active is not null)
+                    {
+                        active.Status = AssignmentAttemptStatus.Failed;
+                        active.ReleasedAtUtc = now;
+                        active.UpdatedAtUtc = now;
+                    }
+
+                    entity.ActiveAssignmentId = null;
+                }
                 if (reason is not null)
                 {
                     entity.FailureReason = reason;
@@ -465,10 +511,12 @@ public sealed class TaskCommandService(
         _ => throw new ArgumentOutOfRangeException(nameof(command), command, "未知任务命令。"),
     };
 
-    /// <summary>PATCH 状态迁移目标 → 事件类型（Ready/Cancelled/Archived 有专门事件，其余用通用 updated）。</summary>
+    /// <summary>PATCH 状态迁移目标 → canonical event type.</summary>
     private static TaskEventType EventTypeForStatus(WorkspaceTaskStatus target) => target switch
     {
         WorkspaceTaskStatus.Ready => TaskEventType.TaskReady,
+        WorkspaceTaskStatus.Completed => TaskEventType.TaskCompleted,
+        WorkspaceTaskStatus.Failed => TaskEventType.TaskFailed,
         WorkspaceTaskStatus.Cancelled => TaskEventType.TaskCancelled,
         WorkspaceTaskStatus.Archived => TaskEventType.TaskArchived,
         _ => TaskEventType.TaskUpdated,
@@ -484,7 +532,12 @@ public sealed class TaskCommandService(
         string? preferredAgentId,
         DateTimeOffset? notBeforeUtc,
         DateTimeOffset? dueAtUtc,
-        long? sortOrder)
+        long? sortOrder,
+        string? taskType,
+        IReadOnlyList<string>? requiredCapabilityIds,
+        string? requiredProviderId,
+        string? requiredModelId,
+        bool? allowAgentFallback)
     {
         if (title is not null) entity.Title = title;
         if (description is not null) entity.Description = description;
@@ -492,8 +545,20 @@ public sealed class TaskCommandService(
         if (priority.HasValue) entity.Priority = priority.Value;
         if (executionWindow.HasValue) entity.ExecutionWindow = executionWindow.Value;
         if (preferredAgentId is not null) entity.PreferredAgentId = preferredAgentId;
+        if (taskType is not null) entity.TaskType = TaskRoutingMetadata.NormalizeTaskType(taskType);
+        if (requiredCapabilityIds is not null)
+        {
+            entity.RequiredCapabilitiesJson = JsonSerializer.Serialize(
+                TaskRoutingMetadata.NormalizeCapabilityIds(requiredCapabilityIds));
+        }
+        if (requiredProviderId is not null)
+            entity.RequiredProviderId = TaskRoutingMetadata.NormalizeOptionalIdentifier(requiredProviderId, 64, "requiredProviderId");
+        if (requiredModelId is not null)
+            entity.RequiredModelId = TaskRoutingMetadata.NormalizeOptionalIdentifier(requiredModelId, 128, "requiredModelId");
+        if (allowAgentFallback.HasValue) entity.AllowAgentFallback = allowAgentFallback.Value;
         if (notBeforeUtc.HasValue) entity.NotBeforeUtc = notBeforeUtc.Value;
         if (dueAtUtc.HasValue) entity.DueAtUtc = dueAtUtc.Value;
         if (sortOrder.HasValue) entity.SortOrder = sortOrder.Value;
     }
+
 }

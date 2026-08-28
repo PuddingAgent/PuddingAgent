@@ -38,6 +38,24 @@ public class WorkspaceTaskEntity
     [MaxLength(64), Column("preferred_agent_id")]
     public string? PreferredAgentId { get; set; }
 
+    [Required, MaxLength(64), Column("task_type")]
+    public string TaskType { get; set; } = "general";
+
+    [Required, Column("required_capabilities_json")]
+    public string RequiredCapabilitiesJson { get; set; } = "[]";
+
+    [MaxLength(64), Column("required_provider_id")]
+    public string? RequiredProviderId { get; set; }
+
+    [MaxLength(128), Column("required_model_id")]
+    public string? RequiredModelId { get; set; }
+
+    [Required, Column("allow_agent_fallback")]
+    public bool AllowAgentFallback { get; set; }
+
+    [Required, Column("auto_dispatch_enabled")]
+    public bool AutoDispatchEnabled { get; set; }
+
     [MaxLength(64), Column("active_assignment_id")]
     public string? ActiveAssignmentId { get; set; }
 

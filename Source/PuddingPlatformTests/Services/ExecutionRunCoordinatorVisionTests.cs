@@ -105,6 +105,52 @@ public class ExecutionRunCoordinatorVisionTests
         Assert.IsNotNull(ConversationContentValidator.Validate(nine));
     }
 
+    [TestMethod]
+    public void ResolveExecutionBudget_WorkUnitClampsLargeAgentBudget()
+    {
+        var budget = ExecutionRunCoordinator.ResolveExecutionBudget(
+            profileMaxRounds: 600,
+            profileMaxToolCalls: 2400,
+            profileMaxElapsed: TimeSpan.FromHours(24),
+            workUnit: CreateWorkUnit(rounds: 25, tools: 60, seconds: 1800));
+
+        Assert.AreEqual(25, budget.MaxRounds);
+        Assert.AreEqual(60, budget.MaxToolCallsTotal);
+        Assert.AreEqual(TimeSpan.FromMinutes(30), budget.MaxElapsed);
+    }
+
+    [TestMethod]
+    public void ResolveExecutionBudget_WorkUnitCannotExpandAgentBudget()
+    {
+        var budget = ExecutionRunCoordinator.ResolveExecutionBudget(
+            profileMaxRounds: 10,
+            profileMaxToolCalls: 20,
+            profileMaxElapsed: TimeSpan.FromMinutes(5),
+            workUnit: CreateWorkUnit(rounds: 25, tools: 60, seconds: 1800));
+
+        Assert.AreEqual(10, budget.MaxRounds);
+        Assert.AreEqual(20, budget.MaxToolCallsTotal);
+        Assert.AreEqual(TimeSpan.FromMinutes(5), budget.MaxElapsed);
+    }
+
+    private static ExecutionWorkUnitContext CreateWorkUnit(int rounds, int tools, int seconds) => new()
+    {
+        TaskId = "task-1",
+        GoalRunId = "goal-1",
+        PlanId = "plan-1",
+        PlanFingerprint = new string('a', 64),
+        TaskNodeId = "node-1",
+        ParentTaskNodeId = "root-1",
+        WorkUnitKind = "Explore",
+        Objective = "Collect evidence",
+        MaxRounds = rounds,
+        MaxToolCallsTotal = tools,
+        MaxDurationSeconds = seconds,
+        MaxInputTokens = 150_000,
+        MaxOutputTokens = 20_000,
+        MaxCost = 1m,
+    };
+
     private static void Contains(string text, string expected)
         => Assert.IsTrue(text.Contains(expected, StringComparison.Ordinal), $"expected to find: {expected}");
 

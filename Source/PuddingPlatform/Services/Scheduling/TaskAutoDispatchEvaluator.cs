@@ -4,6 +4,7 @@ using PuddingCode.Goals;
 using PuddingCode.Scheduling;
 using PuddingCode.Tasks;
 using PuddingPlatform.Data;
+using PuddingPlatform.Services;
 
 namespace PuddingPlatform.Services.Scheduling;
 
@@ -21,9 +22,19 @@ public sealed class TaskAutoDispatchOptions
     public string Mode { get; set; } = "shadow";
 
     public string[] WorkspaceIds { get; set; } = ["default"];
-    public TimeSpan ScanInterval { get; set; } = TimeSpan.FromSeconds(30);
-    public TimeSpan MinimumIdle { get; set; } = TimeSpan.FromMinutes(30);
+    /// <summary>Recovery reconciliation cadence. Events may wake work sooner.</summary>
+    public TimeSpan ScanInterval { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>Foreground-idle grace before automatic work can reserve an Agent.</summary>
+    public TimeSpan MinimumIdle { get; set; } = TimeSpan.FromMinutes(5);
     public int CandidateLimit { get; set; } = 100;
+    /// <summary>
+    /// Maximum age without a newer canonical Task/Goal/Iteration/Execution fact
+    /// before the read-only tracker reports a stalled execution.
+    /// </summary>
+    public TimeSpan TrackerStallThreshold { get; set; } = TimeSpan.FromMinutes(30);
+    public Dictionary<string, TaskTypeRouteOptions> TaskTypeRoutes { get; set; }
+        = new(StringComparer.OrdinalIgnoreCase);
 
     public static IReadOnlyList<string> Validate(
         TaskAutoDispatchOptions options,
@@ -41,6 +52,18 @@ public sealed class TaskAutoDispatchOptions
             errors.Add("TaskAutoDispatch:MinimumIdle must be between 0 and 24h.");
         if (options.CandidateLimit is < 1 or > 500)
             errors.Add("TaskAutoDispatch:CandidateLimit must be between 1 and 500.");
+        if (options.TrackerStallThreshold < TimeSpan.FromMinutes(5)
+            || options.TrackerStallThreshold > TimeSpan.FromDays(1))
+            errors.Add("TaskAutoDispatch:TrackerStallThreshold must be between 5m and 24h.");
+        foreach (var (taskType, route) in options.TaskTypeRoutes)
+        {
+            if (string.IsNullOrWhiteSpace(taskType) || taskType.Length > 64)
+                errors.Add("TaskAutoDispatch:TaskTypeRoutes keys must be 1-64 characters.");
+            if (route.RequiredCapabilityIds.Any(string.IsNullOrWhiteSpace))
+                errors.Add($"TaskAutoDispatch:TaskTypeRoutes:{taskType} contains an empty capability.");
+            if (route.AllowedRoles.Any(string.IsNullOrWhiteSpace))
+                errors.Add($"TaskAutoDispatch:TaskTypeRoutes:{taskType} contains an empty role.");
+        }
         if (options.Enabled
             && string.Equals(options.Mode, "authoritative", StringComparison.OrdinalIgnoreCase)
             && (!taskBoundGoals.Enabled || !goalRuns.Enabled || !goalRuns.ContinuationEnabled))
@@ -53,6 +76,14 @@ public sealed class TaskAutoDispatchOptions
     }
 }
 
+public sealed class TaskTypeRouteOptions
+{
+    public string[] RequiredCapabilityIds { get; set; } = [];
+    public string[] AllowedRoles { get; set; } = [];
+    public string? RequiredProviderId { get; set; }
+    public string? RequiredModelId { get; set; }
+}
+
 /// <summary>
 /// Deterministic, side-effect-free scheduler planner. It proves dependency,
 /// logical availability and execution-window gates and selects at most one
@@ -63,6 +94,7 @@ public sealed class TaskAutoDispatchEvaluator(
     ITaskDependencyStore dependencyStore,
     IAgentAvailabilityProjectionStore availabilityStore,
     IExecutionWindowResolver executionWindowResolver,
+    IWorkspaceAgentCatalog agentCatalog,
     IOptions<TaskAutoDispatchOptions> options,
     TimeProvider timeProvider) : ITaskAutoDispatchEvaluator
 {
@@ -88,6 +120,7 @@ public sealed class TaskAutoDispatchEvaluator(
                 FROM workspace_tasks
                 WHERE workspace_id = {workspaceId}
                   AND status IN ({(int)WorkspaceTaskStatus.Ready}, {(int)WorkspaceTaskStatus.Deferred})
+                  AND auto_dispatch_enabled = 1
                 ORDER BY priority ASC,
                          CASE WHEN due_at_utc IS NULL THEN 1 ELSE 0 END ASC,
                          julianday(due_at_utc) ASC,
@@ -101,25 +134,18 @@ public sealed class TaskAutoDispatchEvaluator(
             .AsNoTracking()
             .ToListAsync(ct);
 
+        var agents = await agentCatalog.ListAgentsAsync(workspaceId, ct);
         var decisions = new List<TaskAutoDispatchCandidateDecision>(candidates.Count);
         var selectedAgents = new HashSet<string>(StringComparer.Ordinal);
         foreach (var task in candidates)
         {
             ct.ThrowIfCancellationRequested();
-
-            if (string.IsNullOrWhiteSpace(task.PreferredAgentId))
-            {
-                decisions.Add(Decision(workspaceId, task.TaskId, null, TaskAutoDispatchCandidateVerdict.Denied,
-                    "preferred_agent_required", now));
-                continue;
-            }
-
-            var agentId = task.PreferredAgentId;
             var timeGate = Later(task.NotBeforeUtc, task.NextEligibleAtUtc);
             if (timeGate > now)
             {
-                decisions.Add(Decision(workspaceId, task.TaskId, agentId, TaskAutoDispatchCandidateVerdict.Deferred,
-                    "task_not_yet_eligible", now, nextEligibleAtUtc: timeGate));
+                decisions.Add(Decision(workspaceId, task.TaskId, task.PreferredAgentId,
+                    TaskAutoDispatchCandidateVerdict.Deferred, "task_not_yet_eligible", now,
+                    taskType: task.TaskType, nextEligibleAtUtc: timeGate));
                 continue;
             }
 
@@ -129,7 +155,7 @@ public sealed class TaskAutoDispatchEvaluator(
                 decisions.Add(Decision(
                     workspaceId,
                     task.TaskId,
-                    agentId,
+                    task.PreferredAgentId,
                     dependency.State == TaskDependencyEvaluationState.Broken
                         ? TaskAutoDispatchCandidateVerdict.Denied
                         : TaskAutoDispatchCandidateVerdict.Deferred,
@@ -137,101 +163,142 @@ public sealed class TaskAutoDispatchEvaluator(
                         ? "task_dependency_broken"
                         : "task_dependency_waiting",
                     now,
+                    taskType: task.TaskType,
                     dependencyState: dependency.State.ToString().ToLowerInvariant()));
                 continue;
             }
 
-            var availability = await availabilityStore.RebuildAsync(workspaceId, agentId, ct);
-            if (!availability.CanAcceptAutomaticTask(now))
+            _options.TaskTypeRoutes.TryGetValue(task.TaskType, out var typeRoute);
+            if (!TaskExecutionPlanCompiler.TryCompile(task, typeRoute, out var executionPlan, out var planCode))
             {
                 decisions.Add(Decision(
                     workspaceId,
                     task.TaskId,
-                    agentId,
-                    TaskAutoDispatchCandidateVerdict.Deferred,
-                    "agent_not_idle",
+                    task.PreferredAgentId,
+                    TaskAutoDispatchCandidateVerdict.Denied,
+                    planCode,
                     now,
-                    availabilityVersion: availability.Version,
-                    availabilityReason: availability.ReasonCode,
+                    taskType: task.TaskType,
+                    taskVersion: task.Version,
+                    dependencyState: "satisfied"));
+                continue;
+            }
+            var routedAgents = agents
+                .Select(agent => (Agent: agent, Route: TaskAgentRouteMatcher.Evaluate(task, agent, typeRoute)))
+                .Where(item => item.Route.Compatible)
+                .OrderByDescending(item => string.Equals(
+                    task.PreferredAgentId, item.Agent.AgentId, StringComparison.Ordinal))
+                .ThenBy(item => item.Agent.AgentId, StringComparer.Ordinal)
+                .ToArray();
+            if (routedAgents.Length == 0)
+            {
+                decisions.Add(Decision(
+                    workspaceId,
+                    task.TaskId,
+                    task.PreferredAgentId,
+                    TaskAutoDispatchCandidateVerdict.Denied,
+                    !task.AllowAgentFallback && !string.IsNullOrWhiteSpace(task.PreferredAgentId)
+                        ? "preferred_agent_unavailable_or_incompatible"
+                        : "no_compatible_agent",
+                    now,
+                    taskType: task.TaskType,
                     dependencyState: "satisfied"));
                 continue;
             }
 
-            var minimumIdle = _options.MinimumIdle < TimeSpan.Zero
-                ? TimeSpan.FromMinutes(30)
-                : _options.MinimumIdle;
-            var minimumIdleUntil = availability.IdleSinceUtc?.Add(minimumIdle);
-            if (minimumIdleUntil > now)
+            TaskAutoDispatchCandidateDecision? lastDeferred = null;
+            foreach (var routed in routedAgents)
             {
-                decisions.Add(Decision(
-                    workspaceId,
-                    task.TaskId,
-                    agentId,
-                    TaskAutoDispatchCandidateVerdict.Deferred,
-                    "agent_idle_grace_period",
-                    now,
-                    nextEligibleAtUtc: minimumIdleUntil,
-                    availabilityVersion: availability.Version,
-                    availabilityReason: availability.ReasonCode,
-                    dependencyState: "satisfied"));
-                continue;
-            }
+                var agentId = routed.Agent.AgentId;
+                var availability = await availabilityStore.RebuildAsync(workspaceId, agentId, ct);
+                if (!availability.CanAcceptAutomaticTask(now))
+                {
+                    lastDeferred = Decision(workspaceId, task.TaskId, agentId,
+                        TaskAutoDispatchCandidateVerdict.Deferred, "agent_not_idle", now,
+                        taskType: task.TaskType,
+                        agentSelectionCode: routed.Route.Code,
+                        routingFingerprint: routed.Route.Fingerprint,
+                        availabilityVersion: availability.Version,
+                        availabilityReason: availability.ReasonCode,
+                        dependencyState: "satisfied");
+                    continue;
+                }
 
-            var window = await executionWindowResolver.EvaluateAsync(
-                workspaceId,
-                agentId,
-                task.ExecutionWindow,
-                now,
-                ct);
-            if (window.Verdict != ExecutionWindowVerdict.Allow)
-            {
-                decisions.Add(Decision(
-                    workspaceId,
-                    task.TaskId,
-                    agentId,
-                    TaskAutoDispatchCandidateVerdict.Deferred,
-                    window.Verdict == ExecutionWindowVerdict.Unknown
-                        ? "execution_window_unknown"
-                        : "execution_window_closed",
-                    now,
-                    nextEligibleAtUtc: window.NextEligibleAtUtc,
+                var minimumIdle = _options.MinimumIdle < TimeSpan.Zero
+                    ? TimeSpan.FromMinutes(30)
+                    : _options.MinimumIdle;
+                var minimumIdleUntil = availability.IdleSinceUtc?.Add(minimumIdle);
+                if (minimumIdleUntil > now)
+                {
+                    lastDeferred = Decision(workspaceId, task.TaskId, agentId,
+                        TaskAutoDispatchCandidateVerdict.Deferred, "agent_idle_grace_period", now,
+                        taskType: task.TaskType,
+                        agentSelectionCode: routed.Route.Code,
+                        routingFingerprint: routed.Route.Fingerprint,
+                        nextEligibleAtUtc: minimumIdleUntil,
+                        availabilityVersion: availability.Version,
+                        availabilityReason: availability.ReasonCode,
+                        dependencyState: "satisfied");
+                    continue;
+                }
+
+                var window = await executionWindowResolver.EvaluateAsync(
+                    workspaceId, agentId, task.ExecutionWindow, now, ct);
+                if (window.Verdict != ExecutionWindowVerdict.Allow)
+                {
+                    lastDeferred = Decision(workspaceId, task.TaskId, agentId,
+                        TaskAutoDispatchCandidateVerdict.Deferred,
+                        window.Verdict == ExecutionWindowVerdict.Unknown
+                            ? "execution_window_unknown"
+                            : "execution_window_closed",
+                        now,
+                        taskType: task.TaskType,
+                        agentSelectionCode: routed.Route.Code,
+                        routingFingerprint: routed.Route.Fingerprint,
+                        nextEligibleAtUtc: window.NextEligibleAtUtc,
+                        availabilityVersion: availability.Version,
+                        availabilityReason: availability.ReasonCode,
+                        dependencyState: "satisfied",
+                        windowCode: window.Code);
+                    continue;
+                }
+
+                if (!selectedAgents.Add(agentId))
+                {
+                    lastDeferred = Decision(workspaceId, task.TaskId, agentId,
+                        TaskAutoDispatchCandidateVerdict.Deferred,
+                        "agent_already_selected_this_scan", now,
+                        taskType: task.TaskType,
+                        agentSelectionCode: routed.Route.Code,
+                        routingFingerprint: routed.Route.Fingerprint,
+                        availabilityVersion: availability.Version,
+                        availabilityReason: availability.ReasonCode,
+                        dependencyState: "satisfied",
+                        windowCode: window.Code);
+                    continue;
+                }
+
+                decisions.Add(Decision(workspaceId, task.TaskId, agentId,
+                    TaskAutoDispatchCandidateVerdict.Eligible, "eligible", now,
+                    taskType: task.TaskType,
+                    agentSelectionCode: routed.Route.Code,
+                    routingFingerprint: routed.Route.Fingerprint,
+                    taskVersion: task.Version,
+                    conversationId: availability.MainConversationId,
+                    executionWindow: task.ExecutionWindow,
+                    executionPlanFingerprint: executionPlan!.Fingerprint,
+                    executionPlanSchemaVersion: executionPlan.SchemaVersion,
+                    executionPlanVersion: executionPlan.PlanVersion,
                     availabilityVersion: availability.Version,
                     availabilityReason: availability.ReasonCode,
                     dependencyState: "satisfied",
                     windowCode: window.Code));
-                continue;
+                lastDeferred = null;
+                break;
             }
 
-            if (!selectedAgents.Add(agentId))
-            {
-                decisions.Add(Decision(
-                    workspaceId,
-                    task.TaskId,
-                    agentId,
-                    TaskAutoDispatchCandidateVerdict.Deferred,
-                    "agent_already_selected_this_scan",
-                    now,
-                    availabilityVersion: availability.Version,
-                    availabilityReason: availability.ReasonCode,
-                    dependencyState: "satisfied",
-                    windowCode: window.Code));
-                continue;
-            }
-
-            decisions.Add(Decision(
-                workspaceId,
-                task.TaskId,
-                agentId,
-                TaskAutoDispatchCandidateVerdict.Eligible,
-                "eligible",
-                now,
-                taskVersion: task.Version,
-                conversationId: availability.MainConversationId,
-                executionWindow: task.ExecutionWindow,
-                availabilityVersion: availability.Version,
-                availabilityReason: availability.ReasonCode,
-                dependencyState: "satisfied",
-                windowCode: window.Code));
+            if (lastDeferred is not null)
+                decisions.Add(lastDeferred);
         }
 
         return decisions;
@@ -244,10 +311,16 @@ public sealed class TaskAutoDispatchEvaluator(
         TaskAutoDispatchCandidateVerdict verdict,
         string code,
         DateTimeOffset now,
+        string? taskType = null,
+        string? agentSelectionCode = null,
+        string? routingFingerprint = null,
         DateTimeOffset? nextEligibleAtUtc = null,
         int? taskVersion = null,
         string? conversationId = null,
         TaskExecutionWindow? executionWindow = null,
+        string? executionPlanFingerprint = null,
+        int? executionPlanSchemaVersion = null,
+        int? executionPlanVersion = null,
         long? availabilityVersion = null,
         string? availabilityReason = null,
         string? dependencyState = null,
@@ -257,8 +330,14 @@ public sealed class TaskAutoDispatchEvaluator(
         TaskId = taskId,
         TaskVersion = taskVersion,
         AgentId = agentId,
+        TaskType = taskType,
+        AgentSelectionCode = agentSelectionCode,
+        AgentRoutingFingerprint = routingFingerprint,
         ConversationId = conversationId,
         ExecutionWindow = executionWindow,
+        ExecutionPlanFingerprint = executionPlanFingerprint,
+        ExecutionPlanSchemaVersion = executionPlanSchemaVersion,
+        ExecutionPlanVersion = executionPlanVersion,
         Verdict = verdict,
         Code = code,
         EvaluatedAtUtc = now,

@@ -14,6 +14,10 @@ namespace PuddingPlatform.Services.Scheduling;
 /// </summary>
 public sealed class TaskAutoDispatchWorker(
     ITaskAutoDispatchEvaluator evaluator,
+    ITaskBacklogRefinementEvaluator backlogRefinementEvaluator,
+    ITaskBacklogRefinementStore backlogRefinementStore,
+    ITaskExecutionTracker executionTracker,
+    ITaskExecutionRepairCoordinator executionRepairCoordinator,
     IExecutionWindowResolver executionWindowResolver,
     ITaskGoalDispatchTransactionStore transactionStore,
     IOptions<TaskAutoDispatchOptions> options,
@@ -59,6 +63,13 @@ public sealed class TaskAutoDispatchWorker(
             {
                 try
                 {
+                    var backlog = await backlogRefinementEvaluator.EvaluateAsync(
+                        workspaceId,
+                        Math.Clamp(_options.CandidateLimit, 1, 500),
+                        stoppingToken);
+                    var promoted = authoritative
+                        ? await PromoteBacklogAsync(backlog, stoppingToken)
+                        : 0;
                     var decisions = await evaluator.EvaluateAsync(
                         workspaceId,
                         Math.Clamp(_options.CandidateLimit, 1, 500),
@@ -66,15 +77,42 @@ public sealed class TaskAutoDispatchWorker(
                     var started = authoritative
                         ? await DispatchEligibleAsync(decisions, stoppingToken)
                         : 0;
+                    var tracking = await executionTracker.EvaluateAsync(
+                        workspaceId,
+                        Math.Clamp(_options.CandidateLimit, 1, 500),
+                        stoppingToken);
+                    var repairs = authoritative
+                        ? await executionRepairCoordinator.RepairAsync(
+                            workspaceId,
+                            tracking,
+                            stoppingToken)
+                        : new TaskExecutionRepairSummary
+                        {
+                            Examined = tracking.Count,
+                            Repaired = 0,
+                            RepairedByCode = new Dictionary<string, int>(),
+                        };
                     logger.LogInformation(
-                        "[TaskAutoDispatch] mode={Mode} workspace={WorkspaceId} candidates={Candidates} eligible={Eligible} started={Started} deferred={Deferred} denied={Denied}",
+                        "[TaskAutoDispatch] mode={Mode} workspace={WorkspaceId} backlog={Backlog} refinementReady={RefinementReady} needsRefinement={NeedsRefinement} promoted={Promoted} candidates={Candidates} eligible={Eligible} started={Started} deferred={Deferred} denied={Denied} tracked={Tracked} healthy={Healthy} waiting={Waiting} stalled={Stalled} inconsistent={Inconsistent} cleanupRequired={CleanupRequired} repaired={Repaired} repairCodes={RepairCodes}",
                         authoritative ? "authoritative" : "shadow",
                         workspaceId,
+                        backlog.Count,
+                        backlog.Count(item => item.Verdict == TaskBacklogRefinementVerdict.ReadyCandidate),
+                        backlog.Count(item => item.Verdict == TaskBacklogRefinementVerdict.NeedsRefinement),
+                        promoted,
                         decisions.Count,
                         decisions.Count(item => item.Verdict == TaskAutoDispatchCandidateVerdict.Eligible),
                         started,
                         decisions.Count(item => item.Verdict == TaskAutoDispatchCandidateVerdict.Deferred),
-                        decisions.Count(item => item.Verdict == TaskAutoDispatchCandidateVerdict.Denied));
+                        decisions.Count(item => item.Verdict == TaskAutoDispatchCandidateVerdict.Denied),
+                        tracking.Count,
+                        tracking.Count(item => item.Verdict == TaskExecutionTrackingVerdict.Healthy),
+                        tracking.Count(item => item.Verdict == TaskExecutionTrackingVerdict.Waiting),
+                        tracking.Count(item => item.Verdict == TaskExecutionTrackingVerdict.Stalled),
+                        tracking.Count(item => item.Verdict == TaskExecutionTrackingVerdict.Inconsistent),
+                        tracking.Count(item => item.Verdict == TaskExecutionTrackingVerdict.CleanupRequired),
+                        repairs.Repaired,
+                        string.Join(",", repairs.RepairedByCode.OrderBy(item => item.Key).Select(item => $"{item.Key}:{item.Value}")));
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -101,6 +139,35 @@ public sealed class TaskAutoDispatchWorker(
         }
     }
 
+    private async Task<int> PromoteBacklogAsync(
+        IReadOnlyList<TaskBacklogRefinementDecision> decisions,
+        CancellationToken ct)
+    {
+        var promoted = 0;
+        foreach (var decision in decisions.Where(item =>
+                     item.Verdict == TaskBacklogRefinementVerdict.ReadyCandidate))
+        {
+            if (decision.CompatibleAgentId is null || decision.AgentRoutingFingerprint is null)
+                continue;
+            var result = await backlogRefinementStore.TryPromoteAsync(new PromoteBacklogTaskCommand
+            {
+                WorkspaceId = decision.WorkspaceId,
+                TaskId = decision.TaskId,
+                ExpectedTaskVersion = decision.TaskVersion,
+                CompatibleAgentId = decision.CompatibleAgentId,
+                ExpectedAgentRoutingFingerprint = decision.AgentRoutingFingerprint,
+            }, ct);
+            if (result.Promoted)
+                promoted++;
+            else
+                logger.LogInformation(
+                    "[TaskAutoDispatch] backlog promotion refused task={TaskId} code={Code}",
+                    decision.TaskId,
+                    result.Code);
+        }
+        return promoted;
+    }
+
     private async Task<int> DispatchEligibleAsync(
         IReadOnlyList<TaskAutoDispatchCandidateDecision> decisions,
         CancellationToken ct)
@@ -111,6 +178,8 @@ public sealed class TaskAutoDispatchWorker(
         {
             if (candidate.AgentId is null
                 || candidate.ConversationId is null
+                || candidate.AgentRoutingFingerprint is null
+                || candidate.ExecutionPlanFingerprint is null
                 || candidate.TaskVersion is null
                 || candidate.AvailabilityVersion is null
                 || candidate.ExecutionWindow is null)
@@ -147,6 +216,8 @@ public sealed class TaskAutoDispatchWorker(
                 TaskId = candidate.TaskId,
                 ExpectedTaskVersion = candidate.TaskVersion.Value,
                 AgentId = candidate.AgentId,
+                ExpectedAgentRoutingFingerprint = candidate.AgentRoutingFingerprint,
+                ExpectedExecutionPlanFingerprint = candidate.ExecutionPlanFingerprint,
                 ConversationId = candidate.ConversationId,
                 ExpectedAvailabilityVersion = candidate.AvailabilityVersion.Value,
                 ExecutionWindow = candidate.ExecutionWindow.Value,

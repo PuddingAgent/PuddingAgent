@@ -28,6 +28,12 @@ public sealed record TaskDto
     public required string ExecutionWindow { get; init; }
 
     public string? PreferredAgentId { get; init; }
+    public string TaskType { get; init; } = "general";
+    public IReadOnlyList<string> RequiredCapabilityIds { get; init; } = [];
+    public string? RequiredProviderId { get; init; }
+    public string? RequiredModelId { get; init; }
+    public bool AllowAgentFallback { get; init; }
+    public bool AutoDispatchEnabled { get; init; }
     public string? ActiveAssignmentId { get; init; }
     public DateTimeOffset? NotBeforeUtc { get; init; }
     public DateTimeOffset? DueAtUtc { get; init; }
@@ -62,6 +68,12 @@ public sealed record CreateTaskDto
     public string? Priority { get; init; }
     public string? ExecutionWindow { get; init; }
     public string? PreferredAgentId { get; init; }
+    public string? TaskType { get; init; }
+    public IReadOnlyList<string>? RequiredCapabilityIds { get; init; }
+    public string? RequiredProviderId { get; init; }
+    public string? RequiredModelId { get; init; }
+    public bool AllowAgentFallback { get; init; }
+    public bool AutoDispatchEnabled { get; init; }
     public DateTimeOffset? NotBeforeUtc { get; init; }
     public DateTimeOffset? DueAtUtc { get; init; }
     public long? SortOrder { get; init; }
@@ -81,6 +93,12 @@ public sealed record PatchTaskDto
     public string? Priority { get; init; }
     public string? ExecutionWindow { get; init; }
     public string? PreferredAgentId { get; init; }
+    public string? TaskType { get; init; }
+    public IReadOnlyList<string>? RequiredCapabilityIds { get; init; }
+    public string? RequiredProviderId { get; init; }
+    public string? RequiredModelId { get; init; }
+    public bool? AllowAgentFallback { get; init; }
+    public bool? AutoDispatchEnabled { get; init; }
     public DateTimeOffset? NotBeforeUtc { get; init; }
     public DateTimeOffset? DueAtUtc { get; init; }
     public long? SortOrder { get; init; }

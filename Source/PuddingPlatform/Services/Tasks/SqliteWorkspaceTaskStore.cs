@@ -1,5 +1,6 @@
 using System.Data;
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Tasks;
@@ -25,7 +26,9 @@ public sealed class SqliteWorkspaceTaskStore(
 
     private const string TaskColumns = """
         task_id, workspace_id, title, description, acceptance_criteria, status, priority,
-        execution_window, preferred_agent_id, active_assignment_id, not_before_utc, due_at_utc,
+        execution_window, preferred_agent_id, task_type, required_capabilities_json,
+        required_provider_id, required_model_id, allow_agent_fallback, auto_dispatch_enabled,
+        active_assignment_id, not_before_utc, due_at_utc,
         next_eligible_at_utc, sort_order, progress_percent, progress_summary, blocker_kind,
         blocker_reason, failure_code, failure_reason, version, created_by, updated_by,
         created_at_utc, updated_at_utc, completed_at_utc, failed_at_utc, archived_at_utc, origin
@@ -48,6 +51,12 @@ public sealed class SqliteWorkspaceTaskStore(
             Priority = request.Priority,
             ExecutionWindow = request.ExecutionWindow,
             PreferredAgentId = request.PreferredAgentId,
+            TaskType = TaskRoutingMetadata.NormalizeTaskType(request.TaskType),
+            RequiredCapabilityIds = TaskRoutingMetadata.NormalizeCapabilityIds(request.RequiredCapabilityIds),
+            RequiredProviderId = TaskRoutingMetadata.NormalizeOptionalIdentifier(request.RequiredProviderId, 64, "requiredProviderId"),
+            RequiredModelId = TaskRoutingMetadata.NormalizeOptionalIdentifier(request.RequiredModelId, 128, "requiredModelId"),
+            AllowAgentFallback = request.AllowAgentFallback,
+            AutoDispatchEnabled = request.AutoDispatchEnabled,
             NotBeforeUtc = request.NotBeforeUtc,
             DueAtUtc = request.DueAtUtc,
             SortOrder = request.SortOrder,
@@ -404,13 +413,17 @@ public sealed class SqliteWorkspaceTaskStore(
         cmd.CommandText = """
             INSERT INTO workspace_tasks
               (task_id, workspace_id, title, description, acceptance_criteria, status, priority,
-               execution_window, preferred_agent_id, active_assignment_id, not_before_utc, due_at_utc,
+               execution_window, preferred_agent_id, task_type, required_capabilities_json,
+               required_provider_id, required_model_id, allow_agent_fallback, auto_dispatch_enabled,
+               active_assignment_id, not_before_utc, due_at_utc,
                next_eligible_at_utc, sort_order, progress_percent, progress_summary, blocker_kind,
                blocker_reason, failure_code, failure_reason, version, created_by, updated_by,
                created_at_utc, updated_at_utc, completed_at_utc, failed_at_utc, archived_at_utc, origin)
             VALUES
               (@taskId, @workspaceId, @title, @description, @acceptanceCriteria, @status, @priority,
-               @executionWindow, @preferredAgentId, @activeAssignmentId, @notBeforeUtc, @dueAtUtc,
+               @executionWindow, @preferredAgentId, @taskType, @requiredCapabilitiesJson,
+               @requiredProviderId, @requiredModelId, @allowAgentFallback, @autoDispatchEnabled,
+               @activeAssignmentId, @notBeforeUtc, @dueAtUtc,
                @nextEligibleAtUtc, @sortOrder, @progressPercent, @progressSummary, @blockerKind,
                @blockerReason, @failureCode, @failureReason, @version, @createdBy, @updatedBy,
                @createdAtUtc, @updatedAtUtc, @completedAtUtc, @failedAtUtc, @archivedAtUtc, @origin)
@@ -424,6 +437,12 @@ public sealed class SqliteWorkspaceTaskStore(
         AddParam(cmd, "@priority", (int)t.Priority);
         AddParam(cmd, "@executionWindow", (int)t.ExecutionWindow);
         AddParam(cmd, "@preferredAgentId", t.PreferredAgentId);
+        AddParam(cmd, "@taskType", t.TaskType);
+        AddParam(cmd, "@requiredCapabilitiesJson", JsonSerializer.Serialize(t.RequiredCapabilityIds));
+        AddParam(cmd, "@requiredProviderId", t.RequiredProviderId);
+        AddParam(cmd, "@requiredModelId", t.RequiredModelId);
+        AddParam(cmd, "@allowAgentFallback", t.AllowAgentFallback ? 1 : 0);
+        AddParam(cmd, "@autoDispatchEnabled", t.AutoDispatchEnabled ? 1 : 0);
         AddParam(cmd, "@activeAssignmentId", t.ActiveAssignmentId);
         AddParam(cmd, "@notBeforeUtc", t.NotBeforeUtc?.ToString("O"));
         AddParam(cmd, "@dueAtUtc", t.DueAtUtc?.ToString("O"));
@@ -601,6 +620,43 @@ public sealed class SqliteWorkspaceTaskStore(
             parameters.Add(("@preferredAgentId", request.PreferredAgentId));
         }
 
+        if (request.TaskType is not null)
+        {
+            sets.Add("task_type = @taskType");
+            parameters.Add(("@taskType", TaskRoutingMetadata.NormalizeTaskType(request.TaskType)));
+        }
+
+        if (request.RequiredCapabilityIds is not null)
+        {
+            sets.Add("required_capabilities_json = @requiredCapabilitiesJson");
+            parameters.Add(("@requiredCapabilitiesJson", JsonSerializer.Serialize(
+                TaskRoutingMetadata.NormalizeCapabilityIds(request.RequiredCapabilityIds))));
+        }
+
+        if (request.RequiredProviderId is not null)
+        {
+            sets.Add("required_provider_id = @requiredProviderId");
+            parameters.Add(("@requiredProviderId", TaskRoutingMetadata.NormalizeOptionalIdentifier(request.RequiredProviderId, 64, "requiredProviderId")));
+        }
+
+        if (request.RequiredModelId is not null)
+        {
+            sets.Add("required_model_id = @requiredModelId");
+            parameters.Add(("@requiredModelId", TaskRoutingMetadata.NormalizeOptionalIdentifier(request.RequiredModelId, 128, "requiredModelId")));
+        }
+
+        if (request.AllowAgentFallback.HasValue)
+        {
+            sets.Add("allow_agent_fallback = @allowAgentFallback");
+            parameters.Add(("@allowAgentFallback", request.AllowAgentFallback.Value ? 1 : 0));
+        }
+
+        if (request.AutoDispatchEnabled.HasValue)
+        {
+            sets.Add("auto_dispatch_enabled = @autoDispatchEnabled");
+            parameters.Add(("@autoDispatchEnabled", request.AutoDispatchEnabled.Value ? 1 : 0));
+        }
+
         if (request.NotBeforeUtc.HasValue)
         {
             sets.Add("not_before_utc = @notBeforeUtc");
@@ -688,28 +744,47 @@ public sealed class SqliteWorkspaceTaskStore(
             Priority = (TaskPriority)reader.GetInt32(6),
             ExecutionWindow = (TaskExecutionWindow)reader.GetInt32(7),
             PreferredAgentId = ReadStringNullable(reader, 8),
-            ActiveAssignmentId = ReadStringNullable(reader, 9),
-            NotBeforeUtc = ReadUtcNullable(reader, 10),
-            DueAtUtc = ReadUtcNullable(reader, 11),
-            NextEligibleAtUtc = ReadUtcNullable(reader, 12),
-            SortOrder = reader.GetInt64(13),
-            ProgressPercent = ReadIntNullable(reader, 14),
-            ProgressSummary = ReadStringNullable(reader, 15),
-            BlockerKind = ReadStringNullable(reader, 16),
-            BlockerReason = ReadStringNullable(reader, 17),
-            FailureCode = ReadStringNullable(reader, 18),
-            FailureReason = ReadStringNullable(reader, 19),
-            Version = reader.GetInt32(20),
-            CreatedBy = ReadStringNullable(reader, 21),
-            UpdatedBy = ReadStringNullable(reader, 22),
-            CreatedAtUtc = ReadUtc(reader, 23),
-            UpdatedAtUtc = ReadUtc(reader, 24),
-            CompletedAtUtc = ReadUtcNullable(reader, 25),
-            FailedAtUtc = ReadUtcNullable(reader, 26),
-            ArchivedAtUtc = ReadUtcNullable(reader, 27),
-            Origin = ReadOriginNullable(reader, 28),
+            TaskType = reader.GetString(9),
+            RequiredCapabilityIds = DeserializeCapabilities(reader.GetString(10)),
+            RequiredProviderId = ReadStringNullable(reader, 11),
+            RequiredModelId = ReadStringNullable(reader, 12),
+            AllowAgentFallback = reader.GetInt32(13) != 0,
+            AutoDispatchEnabled = reader.GetInt32(14) != 0,
+            ActiveAssignmentId = ReadStringNullable(reader, 15),
+            NotBeforeUtc = ReadUtcNullable(reader, 16),
+            DueAtUtc = ReadUtcNullable(reader, 17),
+            NextEligibleAtUtc = ReadUtcNullable(reader, 18),
+            SortOrder = reader.GetInt64(19),
+            ProgressPercent = ReadIntNullable(reader, 20),
+            ProgressSummary = ReadStringNullable(reader, 21),
+            BlockerKind = ReadStringNullable(reader, 22),
+            BlockerReason = ReadStringNullable(reader, 23),
+            FailureCode = ReadStringNullable(reader, 24),
+            FailureReason = ReadStringNullable(reader, 25),
+            Version = reader.GetInt32(26),
+            CreatedBy = ReadStringNullable(reader, 27),
+            UpdatedBy = ReadStringNullable(reader, 28),
+            CreatedAtUtc = ReadUtc(reader, 29),
+            UpdatedAtUtc = ReadUtc(reader, 30),
+            CompletedAtUtc = ReadUtcNullable(reader, 31),
+            FailedAtUtc = ReadUtcNullable(reader, 32),
+            ArchivedAtUtc = ReadUtcNullable(reader, 33),
+            Origin = ReadOriginNullable(reader, 34),
         };
     }
+
+    private static IReadOnlyList<string> DeserializeCapabilities(string json)
+    {
+        try
+        {
+            return TaskRoutingMetadata.NormalizeCapabilityIds(JsonSerializer.Deserialize<string[]>(json));
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
 
     private static TaskOrigin? ReadOriginNullable(SqliteDataReader reader, int ordinal)
         => reader.IsDBNull(ordinal) ? null : (TaskOrigin)reader.GetInt32(ordinal);

@@ -152,6 +152,195 @@ public sealed class GoalContinuationTests
     }
 
     [TestMethod]
+    public async Task TaskPlanAcceptance_StartsWorkUnit_AndCommandReaderResolvesCanonicalBudget()
+    {
+        var goal = await CreateGoalWithContinuationAsync();
+        var (binding, workUnit) = await CreateBoundExecutionPlanAsync(goal);
+        var lease = await ClaimAsync();
+
+        AcceptanceResult accepted;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var store = new ConversationAcceptanceStore(
+                db,
+                new NoopSignal(),
+                NullLogger<ConversationAcceptanceStore>.Instance);
+            accepted = await store.AcceptBatchAsync(
+                BuildContinuationRequest(goal, lease, binding, workUnit),
+                goal.WorkspaceId,
+                goal.CurrentConversationId,
+                userId: null,
+                CancellationToken.None);
+        }
+
+        var reader = new ExecutionCommandReader(_factory);
+        var command = await reader.GetAsync(accepted.CommandIds.Single());
+        Assert.IsNotNull(command?.WorkUnit);
+        Assert.AreEqual(binding.TaskPlanId, command.WorkUnit.PlanId);
+        Assert.AreEqual(workUnit.TaskNodeId, command.WorkUnit.TaskNodeId);
+        Assert.AreEqual(25, command.WorkUnit.MaxRounds);
+        Assert.AreEqual(60, command.WorkUnit.MaxToolCallsTotal);
+        Assert.AreEqual(1800, command.WorkUnit.MaxDurationSeconds);
+        Assert.AreEqual(150_000, command.WorkUnit.MaxInputTokens);
+
+        await using var verify = await _factory.CreateDbContextAsync();
+        var persistedNode = await verify.TaskNodes.SingleAsync(
+            item => item.TaskNodeId == workUnit.TaskNodeId);
+        Assert.AreEqual(PuddingCode.Models.TaskNodeStatuses.Running.ToString(), persistedNode.Status);
+        Assert.IsNotNull(persistedNode.StartedAt);
+    }
+
+    [TestMethod]
+    public async Task TaskPlanAcceptance_RejectsChangedCanonicalBudget()
+    {
+        var goal = await CreateGoalWithContinuationAsync();
+        var (binding, workUnit) = await CreateBoundExecutionPlanAsync(goal);
+        var lease = await ClaimAsync();
+        var request = BuildContinuationRequest(goal, lease, binding, workUnit);
+
+        await using (var mutateDb = await _factory.CreateDbContextAsync())
+        {
+            var node = await mutateDb.TaskNodes.SingleAsync(
+                item => item.TaskNodeId == workUnit.TaskNodeId);
+            node.MaxRounds = 0;
+            await mutateDb.SaveChangesAsync();
+        }
+
+        await using var db = await _factory.CreateDbContextAsync();
+        var store = new ConversationAcceptanceStore(
+            db,
+            new NoopSignal(),
+            NullLogger<ConversationAcceptanceStore>.Instance);
+        var error = await Assert.ThrowsAsync<GoalContinuationAcceptanceException>(() =>
+            store.AcceptBatchAsync(
+                request,
+                goal.WorkspaceId,
+                goal.CurrentConversationId,
+                userId: null,
+                CancellationToken.None));
+
+        Assert.AreEqual(GoalContinuationAcceptanceErrorCodes.TaskPlanChanged, error.Code);
+        Assert.IsFalse(error.Deferred);
+    }
+
+    [TestMethod]
+    public async Task TaskPlanSettlement_CompletesCurrentWorkUnit_AndAdmitsNextAfterTaskVersionAdvances()
+    {
+        var goal = await CreateGoalWithContinuationAsync();
+        var (binding, firstWorkUnit) = await CreateBoundExecutionPlanAsync(goal, includeNext: true);
+        var lease = await ClaimAsync();
+        AcceptanceResult accepted;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var store = new ConversationAcceptanceStore(
+                db,
+                new NoopSignal(),
+                NullLogger<ConversationAcceptanceStore>.Instance);
+            accepted = await store.AcceptBatchAsync(
+                BuildContinuationRequest(goal, lease, binding, firstWorkUnit),
+                goal.WorkspaceId,
+                goal.CurrentConversationId,
+                userId: null,
+                CancellationToken.None);
+        }
+
+        // Normal task_claim/update advances the live Task revision. It must not invalidate
+        // the immutable compile-time plan fingerprint for the next WorkUnit.
+        await using (var updateDb = await _factory.CreateDbContextAsync())
+        {
+            var task = await updateDb.WorkspaceTasks.SingleAsync();
+            task.Status = PuddingCode.Tasks.WorkspaceTaskStatus.InProgress;
+            task.Version++;
+            task.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            var attempt = await updateDb.TaskAssignmentAttempts.SingleAsync();
+            attempt.Status = AssignmentAttemptStatus.InProgress;
+            attempt.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            await updateDb.SaveChangesAsync();
+        }
+
+        await CommitSyntheticTerminalAsync(accepted.TurnIds.Single(), "completed");
+        var settlement = NewSettlementStore();
+        var candidate = (await settlement.GetCandidatesAsync(8)).Single();
+        var decision = await new ConservativeGoalIterationVerifier().VerifyAsync(candidate.ToCapsule());
+        Assert.IsTrue(await settlement.ApplyAsync(candidate, decision));
+
+        await using (var verify = await _factory.CreateDbContextAsync())
+        {
+            var nodes = await verify.TaskNodes.Where(item => item.Depth == 1)
+                .OrderBy(item => item.SequenceNo)
+                .ToListAsync();
+            Assert.AreEqual(PuddingCode.Models.TaskNodeStatuses.Completed.ToString(), nodes[0].Status);
+            Assert.AreEqual(PuddingCode.Models.TaskNodeStatuses.Planned.ToString(), nodes[1].Status);
+            Assert.AreEqual(PuddingCode.Models.TaskPlanStatuses.Active.ToString(),
+                (await verify.TaskPlanRuns.SingleAsync()).Status);
+            Assert.AreEqual(4, (await verify.TaskGoalBindings.SingleAsync()).ExpectedTaskVersion);
+        }
+
+        var nextLease = await ClaimAsync();
+        await using var nextDb = await _factory.CreateDbContextAsync();
+        var currentGoal = await nextDb.GoalRuns.AsNoTracking().SingleAsync();
+        var currentBinding = await nextDb.TaskGoalBindings.AsNoTracking().SingleAsync();
+        var nextWorkUnit = await nextDb.TaskNodes.AsNoTracking().SingleAsync(
+            item => item.Depth == 1 && item.SequenceNo == 2);
+        var nextStore = new ConversationAcceptanceStore(
+            nextDb,
+            new NoopSignal(),
+            NullLogger<ConversationAcceptanceStore>.Instance);
+        var nextAccepted = await nextStore.AcceptBatchAsync(
+            BuildContinuationRequest(currentGoal, nextLease, currentBinding, nextWorkUnit),
+            currentGoal.WorkspaceId,
+            currentGoal.CurrentConversationId,
+            userId: null,
+            CancellationToken.None);
+        var command = await new ExecutionCommandReader(_factory).GetAsync(nextAccepted.CommandIds.Single());
+        Assert.AreEqual(nextWorkUnit.TaskNodeId, command?.WorkUnit?.TaskNodeId);
+    }
+
+    [TestMethod]
+    public async Task TaskPlanSettlement_FinalWorkUnitWithoutTaskCompletion_StopsForReview()
+    {
+        var goal = await CreateGoalWithContinuationAsync();
+        var (binding, workUnit) = await CreateBoundExecutionPlanAsync(goal);
+        var lease = await ClaimAsync();
+        AcceptanceResult accepted;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var store = new ConversationAcceptanceStore(
+                db,
+                new NoopSignal(),
+                NullLogger<ConversationAcceptanceStore>.Instance);
+            accepted = await store.AcceptBatchAsync(
+                BuildContinuationRequest(goal, lease, binding, workUnit),
+                goal.WorkspaceId,
+                goal.CurrentConversationId,
+                userId: null,
+                CancellationToken.None);
+        }
+
+        await CommitSyntheticTerminalAsync(accepted.TurnIds.Single(), "completed");
+        var settlement = NewSettlementStore();
+        var candidate = (await settlement.GetCandidatesAsync(8)).Single();
+        var proposed = await new ConservativeGoalIterationVerifier().VerifyAsync(candidate.ToCapsule());
+        Assert.AreEqual(GoalVerificationVerdict.Continue, proposed.Verdict);
+        Assert.IsTrue(await settlement.ApplyAsync(candidate, proposed));
+
+        await using var verify = await _factory.CreateDbContextAsync();
+        Assert.AreEqual(GoalPhase.Blocked, (await verify.GoalRuns.SingleAsync()).Status);
+        Assert.AreEqual("task_completion_fact_missing", (await verify.GoalRuns.SingleAsync()).BlockedCode);
+        Assert.AreEqual(PuddingCode.Tasks.WorkspaceTaskStatus.NeedsReview,
+            (await verify.WorkspaceTasks.SingleAsync()).Status);
+        Assert.IsNull((await verify.WorkspaceTasks.SingleAsync()).ActiveAssignmentId);
+        Assert.AreEqual("terminal", (await verify.TaskGoalBindings.SingleAsync()).Status);
+        Assert.IsNotNull((await verify.TaskAssignmentAttempts.SingleAsync()).ReleasedAtUtc);
+        Assert.AreEqual(PuddingCode.Models.TaskNodeStatuses.Completed.ToString(),
+            (await verify.TaskNodes.SingleAsync(item => item.Depth == 1)).Status);
+        Assert.AreEqual(PuddingCode.Models.TaskPlanStatuses.Completed.ToString(),
+            (await verify.TaskPlanRuns.SingleAsync()).Status);
+        Assert.AreEqual(0, await verify.GoalOutbox.CountAsync(
+            item => item.Status == GoalOutboxValues.Pending));
+    }
+
+    [TestMethod]
     public async Task EpochChangeRejectsLateAcceptance()
     {
         var goal = await CreateGoalWithContinuationAsync();
@@ -401,6 +590,157 @@ public sealed class GoalContinuationTests
             TimeSpan.FromMinutes(2)))!;
     }
 
+    private async Task<(TaskGoalBindingEntity Binding, TaskNodeEntity WorkUnit)>
+        CreateBoundExecutionPlanAsync(GoalRunEntity goal, bool includeNext = false)
+    {
+        await using var db = await _factory.CreateDbContextAsync();
+        var now = DateTimeOffset.UtcNow;
+        const string taskId = "task-planned";
+        const string assignmentId = "assignment-planned";
+        const string reservationId = "reservation-planned";
+        const string planId = "plan-planned";
+        const string rootNodeId = "node-root";
+        const string workUnitId = "node-explore";
+        var fingerprint = new string('a', 64);
+        db.WorkspaceTasks.Add(new WorkspaceTaskEntity
+        {
+            TaskId = taskId,
+            WorkspaceId = goal.WorkspaceId,
+            Title = "Planned task",
+            AcceptanceCriteria = "focused tests pass",
+            Status = PuddingCode.Tasks.WorkspaceTaskStatus.Assigned,
+            Priority = PuddingCode.Tasks.TaskPriority.P0,
+            ExecutionWindow = PuddingCode.Tasks.TaskExecutionWindow.Anytime,
+            Version = 3,
+            SortOrder = 0,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+            ActiveAssignmentId = assignmentId,
+        });
+        db.TaskAssignmentAttempts.Add(new TaskAssignmentAttemptEntity
+        {
+            AttemptId = assignmentId,
+            TaskId = taskId,
+            WorkspaceId = goal.WorkspaceId,
+            AgentId = goal.AgentInstanceId,
+            AttemptNumber = 1,
+            Status = AssignmentAttemptStatus.Assigned,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+            ActiveAtUtc = now,
+        });
+        var reservation = new AgentExecutionReservationEntity
+        {
+            ReservationId = reservationId,
+            WorkspaceId = goal.WorkspaceId,
+            AgentId = goal.AgentInstanceId,
+            TaskId = taskId,
+            GoalRunId = goal.GoalRunId,
+            OwnerId = "scheduler",
+            Status = "active",
+            LeaseUntilUtc = now.AddHours(1),
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        };
+        db.AgentExecutionReservations.Add(reservation);
+        db.TaskPlanRuns.Add(new TaskPlanRunEntity
+        {
+            PlanId = planId,
+            WorkspaceId = goal.WorkspaceId,
+            WorkspaceTaskId = taskId,
+            WorkspaceTaskVersion = 3,
+            PlanVersion = 1,
+            SchemaVersion = 1,
+            PlanKind = "workspace-task-v1",
+            PlanFingerprint = fingerprint,
+            RootSessionId = goal.CurrentConversationId,
+            LeaderAgentId = goal.AgentInstanceId,
+            Objective = "Execute planned task",
+            Status = PuddingCode.Models.TaskPlanStatuses.Active.ToString(),
+            CreatedAt = now.ToUnixTimeMilliseconds(),
+            UpdatedAt = now.ToUnixTimeMilliseconds(),
+        });
+        db.TaskNodes.Add(new TaskNodeEntity
+        {
+            TaskNodeId = rootNodeId,
+            PlanId = planId,
+            Depth = 0,
+            SequenceNo = 0,
+            Objective = "Execute plan",
+            AssignedToKind = "Leader",
+            AssignedToId = goal.AgentInstanceId,
+            Status = PuddingCode.Models.TaskNodeStatuses.Running.ToString(),
+            CreatedAt = now.ToUnixTimeMilliseconds(),
+            UpdatedAt = now.ToUnixTimeMilliseconds(),
+        });
+        var workUnit = new TaskNodeEntity
+        {
+            TaskNodeId = workUnitId,
+            PlanId = planId,
+            ParentTaskNodeId = rootNodeId,
+            Depth = 1,
+            SequenceNo = 1,
+            WorkUnitKind = "Explore",
+            Objective = "Collect canonical evidence",
+            MaxRounds = 25,
+            MaxToolCalls = 60,
+            MaxDurationSeconds = 1800,
+            MaxInputTokens = 150_000,
+            MaxOutputTokens = 20_000,
+            MaxCost = 1m,
+            AssignedToKind = "Leader",
+            AssignedToId = goal.AgentInstanceId,
+            Status = PuddingCode.Models.TaskNodeStatuses.Planned.ToString(),
+            CreatedAt = now.ToUnixTimeMilliseconds(),
+            UpdatedAt = now.ToUnixTimeMilliseconds(),
+        };
+        db.TaskNodes.Add(workUnit);
+        if (includeNext)
+        {
+            db.TaskNodes.Add(new TaskNodeEntity
+            {
+                TaskNodeId = "node-change",
+                PlanId = planId,
+                ParentTaskNodeId = rootNodeId,
+                Depth = 1,
+                SequenceNo = 2,
+                WorkUnitKind = "Change",
+                Objective = "Apply bounded changes",
+                MaxRounds = 40,
+                MaxToolCalls = 120,
+                MaxDurationSeconds = 3600,
+                MaxInputTokens = 250_000,
+                MaxOutputTokens = 40_000,
+                MaxCost = 2.5m,
+                AssignedToKind = "Leader",
+                AssignedToId = goal.AgentInstanceId,
+                Status = PuddingCode.Models.TaskNodeStatuses.Planned.ToString(),
+                CreatedAt = now.ToUnixTimeMilliseconds(),
+                UpdatedAt = now.ToUnixTimeMilliseconds(),
+            });
+        }
+        await db.SaveChangesAsync();
+        var binding = new TaskGoalBindingEntity
+        {
+            BindingId = "binding-planned",
+            WorkspaceId = goal.WorkspaceId,
+            TaskId = taskId,
+            AssignmentId = assignmentId,
+            ExpectedTaskVersion = 3,
+            GoalRunId = goal.GoalRunId,
+            AgentInstanceId = goal.AgentInstanceId,
+            ReservationId = reservationId,
+            ReservationFencingToken = reservation.FencingToken,
+            TaskPlanId = planId,
+            PlanFingerprint = fingerprint,
+            Status = "active",
+            CreatedAtUtc = now,
+        };
+        db.TaskGoalBindings.Add(binding);
+        await db.SaveChangesAsync();
+        return (binding, workUnit);
+    }
+
     private async Task<AcceptanceResult> AcceptContinuationAsync(
         GoalRunEntity goal,
         GoalOutboxEntity lease)
@@ -440,6 +780,12 @@ public sealed class GoalContinuationTests
         turn.TerminalSequence = sequence;
         turn.CompletedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         head.HeadSequence = sequence;
+        var command = await db.ChatExecutionCommands.SingleAsync(item => item.TurnId == turnId);
+        command.Status = kind == "completed" ? "completed" : kind;
+        command.TerminalSequence = sequence;
+        command.CompletedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        command.LeaseOwner = null;
+        command.LeaseUntil = null;
         db.ConversationEvents.Add(new ConversationEventEntity
         {
             ConversationId = goal.CurrentConversationId,
@@ -468,31 +814,51 @@ public sealed class GoalContinuationTests
     private static SubmitTurnRequest BuildContinuationRequest(
         GoalRunEntity goal,
         GoalOutboxEntity lease,
-        TaskGoalBindingEntity? binding = null)
-        => new()
+        TaskGoalBindingEntity? binding = null,
+        TaskNodeEntity? workUnit = null)
+    {
+        var iterationNo = goal.IterationsStarted + 1;
+        var metadata = new Dictionary<string, string>
+        {
+            [GoalContinuationMetadata.Managed] = "true",
+        };
+        if (!string.IsNullOrWhiteSpace(binding?.TaskPlanId))
+            metadata[GoalContinuationMetadata.TaskPlanId] = binding.TaskPlanId;
+        if (!string.IsNullOrWhiteSpace(binding?.PlanFingerprint))
+            metadata[GoalContinuationMetadata.TaskPlanFingerprint] = binding.PlanFingerprint;
+        if (workUnit is not null)
+        {
+            metadata[GoalContinuationMetadata.TaskNodeId] = workUnit.TaskNodeId;
+            if (!string.IsNullOrWhiteSpace(workUnit.ParentTaskNodeId))
+                metadata[GoalContinuationMetadata.ParentTaskNodeId] = workUnit.ParentTaskNodeId;
+        }
+
+        return new SubmitTurnRequest
         {
             ClientRequestId = lease.OutboxId,
-            ClientMessageId = $"gm-{goal.GoalRunId}-{goal.ActivationEpoch}-1",
+            ClientMessageId = $"gm-{goal.GoalRunId}-{goal.ActivationEpoch}-{iterationNo}",
             Recipients = new RecipientRequest { Type = "agent", AgentIds = [goal.AgentInstanceId] },
             Content = [new ContentPart { Type = "text", Text = "continue" }],
-            Metadata = new Dictionary<string, string>
-            {
-                [GoalContinuationMetadata.Managed] = "true",
-            },
+            Metadata = metadata,
             GoalContinuation = new GoalContinuationAcceptanceContext
             {
                 OutboxId = lease.OutboxId,
                 GoalRunId = goal.GoalRunId,
                 ActivationEpoch = goal.ActivationEpoch,
                 AggregateVersion = goal.AggregateVersion,
-                IterationNo = 1,
+                IterationNo = iterationNo,
                 LeaseOwner = lease.LeaseOwner!,
                 FencingToken = lease.FencingToken,
                 TaskId = binding?.TaskId,
                 ExpectedTaskVersion = binding?.ExpectedTaskVersion,
                 ReservationFencingToken = binding?.ReservationFencingToken,
+                TaskPlanId = binding?.TaskPlanId,
+                TaskPlanFingerprint = binding?.PlanFingerprint,
+                TaskNodeId = workUnit?.TaskNodeId,
+                ParentTaskNodeId = workUnit?.ParentTaskNodeId,
             },
         };
+    }
 
     private static SubmitTurnRequest BuildUserRequest() => new()
     {

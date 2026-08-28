@@ -16,6 +16,24 @@ public sealed class TaskPlanRunEntity
     [Required, MaxLength(64), Column("workspace_id")]
     public string WorkspaceId { get; set; } = string.Empty;
 
+    [MaxLength(64), Column("workspace_task_id")]
+    public string? WorkspaceTaskId { get; set; }
+
+    [Column("workspace_task_version")]
+    public int? WorkspaceTaskVersion { get; set; }
+
+    [Column("plan_version")]
+    public int PlanVersion { get; set; } = 1;
+
+    [Column("schema_version")]
+    public int SchemaVersion { get; set; } = 1;
+
+    [Required, MaxLength(32), Column("plan_kind")]
+    public string PlanKind { get; set; } = "delegation";
+
+    [MaxLength(64), Column("plan_fingerprint")]
+    public string? PlanFingerprint { get; set; }
+
     [Required, MaxLength(64), Column("root_session_id")]
     public string RootSessionId { get; set; } = string.Empty;
 

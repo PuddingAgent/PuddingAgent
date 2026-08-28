@@ -85,6 +85,7 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<SubAgentRunEntity> SubAgentRuns => Set<SubAgentRunEntity>();
     public DbSet<TaskPlanRunEntity> TaskPlanRuns => Set<TaskPlanRunEntity>();
     public DbSet<TaskNodeEntity> TaskNodes => Set<TaskNodeEntity>();
+    public DbSet<WorkUnitAwaitHandleEntity> WorkUnitAwaitHandles => Set<WorkUnitAwaitHandleEntity>();
 
     // 聊天执行命令队列（ADR-056 Phase 1）
     public DbSet<ChatExecutionCommandEntity> ChatExecutionCommands => Set<ChatExecutionCommandEntity>();
@@ -485,6 +486,12 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.ToTable("task_plan_runs");
             e.HasIndex(x => x.PlanId).IsUnique();
             e.HasIndex(x => new { x.WorkspaceId, x.Status, x.UpdatedAt });
+            e.HasIndex(x => new { x.WorkspaceId, x.WorkspaceTaskId, x.WorkspaceTaskVersion, x.PlanVersion })
+                .IsUnique()
+                .HasFilter("workspace_task_id IS NOT NULL")
+                .HasDatabaseName("UX_task_plan_runs_workspace_task_version");
+            e.HasIndex(x => x.PlanFingerprint)
+                .HasFilter("plan_fingerprint IS NOT NULL");
         });
 
         modelBuilder.Entity<TaskNodeEntity>(e =>
@@ -493,6 +500,16 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(x => x.TaskNodeId).IsUnique();
             e.HasIndex(x => new { x.PlanId, x.ParentTaskNodeId, x.Status });
             e.HasIndex(x => new { x.PlanId, x.Depth, x.Status });
+            e.HasIndex(x => new { x.PlanId, x.SequenceNo });
+        });
+
+        modelBuilder.Entity<WorkUnitAwaitHandleEntity>(e =>
+        {
+            e.ToTable("work_unit_await_handles");
+            e.HasKey(x => x.AwaitHandleId);
+            e.HasIndex(x => new { x.PlanId, x.TaskNodeId, x.Status });
+            e.HasIndex(x => new { x.Kind, x.ExternalId })
+                .HasFilter("external_id IS NOT NULL");
         });
 
         // ── Chat Execution Commands（ADR-056 Phase 1）──────────────────
@@ -737,6 +754,8 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
                 .HasFilter("status = 'active'")
                 .HasDatabaseName("UX_task_goal_bindings_task_active");
             e.HasIndex(b => new { b.WorkspaceId, b.Status });
+            e.HasIndex(b => b.TaskPlanId)
+                .HasFilter("task_plan_id IS NOT NULL");
             e.HasIndex(b => b.IdempotencyKey)
                 .IsUnique()
                 .HasFilter("idempotency_key IS NOT NULL")

@@ -73,6 +73,21 @@ public sealed class GoalRunStore(
             .SingleOrDefaultAsync(item => item.WorkspaceId == workspaceId
                 && item.TaskId == taskId, ct);
 
+    /// <summary>
+    /// Returns the first non-terminal leaf in the frozen Task execution plan.
+    /// Sequence order is canonical; a later WorkUnit cannot overtake an earlier one.
+    /// </summary>
+    public async Task<TaskNodeEntity?> FindCurrentTaskWorkUnitAsync(
+        string taskPlanId, CancellationToken ct = default)
+        => await db.TaskNodes.AsNoTracking()
+            .Where(item => item.PlanId == taskPlanId
+                && item.Depth == 1
+                && item.Status != "Completed"
+                && item.Status != "Cancelled"
+                && item.Status != "Superseded")
+            .OrderBy(item => item.SequenceNo)
+            .FirstOrDefaultAsync(ct);
+
     public async Task<IReadOnlyList<GoalIterationEntity>> GetIterationsAsync(
         string goalRunId, CancellationToken ct = default)
         => await db.GoalIterations.AsNoTracking()

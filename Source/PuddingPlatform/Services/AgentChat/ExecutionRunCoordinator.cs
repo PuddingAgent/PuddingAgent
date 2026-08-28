@@ -87,9 +87,36 @@ public sealed class ExecutionRunCoordinator(
             hardTimeout = TimeSpan.FromSeconds(Math.Min(
                 requestedHardTimeout.TotalSeconds,
                 turnOptions.MaxHardTimeoutSeconds));
+            var effectiveBudget = ResolveExecutionBudget(
+                snapshot.BudgetMaxRounds,
+                snapshot.BudgetMaxToolCalls,
+                hardTimeout,
+                command.WorkUnit);
+            hardTimeout = effectiveBudget.MaxElapsed;
             executionDeadlineUtc = _timeProvider.GetUtcNow().Add(hardTimeout);
+            if (command.WorkUnit is not null)
+            {
+                logger.LogInformation(
+                    "[Coordinator] Applied WorkUnit budget run={RunId} task={TaskId} plan={PlanId} node={TaskNodeId} kind={Kind} rounds={MaxRounds} tools={MaxTools} seconds={MaxSeconds} inputTokens={MaxInputTokens} outputTokens={MaxOutputTokens} maxCost={MaxCost}",
+                    lease.RunId,
+                    command.WorkUnit.TaskId,
+                    command.WorkUnit.PlanId,
+                    command.WorkUnit.TaskNodeId,
+                    command.WorkUnit.WorkUnitKind,
+                    effectiveBudget.MaxRounds,
+                    effectiveBudget.MaxToolCallsTotal,
+                    (int)Math.Ceiling(effectiveBudget.MaxElapsed.TotalSeconds),
+                    command.WorkUnit.MaxInputTokens,
+                    command.WorkUnit.MaxOutputTokens,
+                    command.WorkUnit.MaxCost);
+            }
             var providerId = RequireRoutingValue(snapshot.ProviderId, "provider", command.AgentInstanceId);
             var modelId = RequireRoutingValue(snapshot.ModelId, "model", command.AgentInstanceId);
+            var usageBudget = ResolveUsageBudget(
+                command.WorkUnit,
+                llmConfigService,
+                providerId,
+                modelId);
             var llmProfile = new LlmInvocationProfile
             {
                 ProviderId = providerId,
@@ -162,9 +189,9 @@ public sealed class ExecutionRunCoordinator(
                 SkillPackages: profile.SkillPackages,
                 LlmProfile: llmProfile,
                 LlmConfig: profile.LlmConfig,
-                MaxRounds: snapshot.BudgetMaxRounds,
+                MaxRounds: effectiveBudget.MaxRounds,
                 MaxElapsedSeconds: (int)Math.Ceiling(hardTimeout.TotalSeconds),
-                MaxToolCallsTotal: snapshot.BudgetMaxToolCalls,
+                MaxToolCallsTotal: effectiveBudget.MaxToolCallsTotal,
                 ChannelId: command.ChannelId,
                 UserExternalId: command.UserId,
                 RunCancellation: new RunCancellation(ctsRun.Token),
@@ -183,6 +210,10 @@ public sealed class ExecutionRunCoordinator(
                 CallerVisionHelperRoute: snapshot.VisionHelperRoute)
             {
                 ExecutionDeadlineUtc = executionDeadlineUtc,
+                TaskPlanId = command.WorkUnit?.PlanId,
+                TaskNodeId = command.WorkUnit?.TaskNodeId,
+                ParentTaskNodeId = command.WorkUnit?.ParentTaskNodeId,
+                UsageBudget = usageBudget,
                 InboundMessageId = command.UserMessageId,
                 Origin = messageOrigin,
                 TraceId = command.TraceId,
@@ -772,6 +803,44 @@ public sealed class ExecutionRunCoordinator(
     }
 
     /// <summary>
+    /// Applies the most restrictive positive limit from the Agent profile and
+    /// the canonical scheduler WorkUnit. A WorkUnit may only reduce runtime
+    /// authority; it can never expand the profile or system hard ceiling.
+    /// </summary>
+    internal static EffectiveExecutionBudget ResolveExecutionBudget(
+        int? profileMaxRounds,
+        int? profileMaxToolCalls,
+        TimeSpan profileMaxElapsed,
+        ExecutionWorkUnitContext? workUnit)
+    {
+        if (profileMaxElapsed <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(profileMaxElapsed));
+
+        var maxElapsed = workUnit is { MaxDurationSeconds: > 0 }
+            ? TimeSpan.FromSeconds(Math.Min(
+                profileMaxElapsed.TotalSeconds,
+                workUnit.MaxDurationSeconds))
+            : profileMaxElapsed;
+        return new EffectiveExecutionBudget(
+            MinPositive(profileMaxRounds, workUnit?.MaxRounds),
+            MinPositive(profileMaxToolCalls, workUnit?.MaxToolCallsTotal),
+            maxElapsed);
+    }
+
+    private static int? MinPositive(int? left, int? right)
+    {
+        var normalizedLeft = left is > 0 ? left : null;
+        var normalizedRight = right is > 0 ? right : null;
+        return (normalizedLeft, normalizedRight) switch
+        {
+            ({ } l, { } r) => Math.Min(l, r),
+            ({ } l, null) => l,
+            (null, { } r) => r,
+            _ => null,
+        };
+    }
+
+    /// <summary>
     /// ADR-077 §5.2/§8.3：附件提示不再携带本地绝对路径（视觉模型原生看图，路径只会泄漏宿主目录）。
     /// vision → 固定安全提示（图片内命令不可升级为指令）；
     /// 文本模型 → artifact:// 占位 + image_reader 显式调用引导，替代已删除的自动预观察。
@@ -882,6 +951,33 @@ public sealed class ExecutionRunCoordinator(
                 "audio",
                 StringComparer.OrdinalIgnoreCase));
 
+    internal static ExecutionUsageBudget? ResolveUsageBudget(
+        ExecutionWorkUnitContext? workUnit,
+        ILlmConfigService configService,
+        string providerId,
+        string modelId)
+    {
+        if (workUnit is null)
+            return null;
+
+        var model = configService.GetAllModels().FirstOrDefault(candidate =>
+            string.Equals(candidate.ProviderId, providerId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(candidate.ModelId, modelId, StringComparison.OrdinalIgnoreCase));
+
+        return new ExecutionUsageBudget
+        {
+            MaxInputTokens = Math.Max(0, workUnit.MaxInputTokens),
+            MaxOutputTokens = Math.Max(0, workUnit.MaxOutputTokens),
+            MaxCost = Math.Max(0, workUnit.MaxCost),
+            PricingKnown = model is not null,
+            InputPricePer1MTokens = model?.InputPricePer1MTokens ?? 0m,
+            OutputPricePer1MTokens = model?.OutputPricePer1MTokens ?? 0m,
+            CacheHitPricePer1MTokens = model is { CacheHitPricePer1MTokens: > 0 }
+                ? model.CacheHitPricePer1MTokens
+                : model?.InputPricePer1MTokens ?? 0m,
+        };
+    }
+
     private sealed record ControlMonitorOutcome(
         bool LeaseLost,
         string? CancelControlId,
@@ -891,3 +987,8 @@ public sealed class ExecutionRunCoordinator(
         TurnTerminal Terminal,
         long Sequence);
 }
+
+internal sealed record EffectiveExecutionBudget(
+    int? MaxRounds,
+    int? MaxToolCallsTotal,
+    TimeSpan MaxElapsed);

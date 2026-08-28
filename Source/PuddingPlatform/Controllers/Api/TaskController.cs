@@ -111,6 +111,12 @@ public class TaskController : ControllerBase
                 Priority = priority,
                 ExecutionWindow = executionWindow,
                 PreferredAgentId = dto.PreferredAgentId,
+                TaskType = dto.TaskType ?? "general",
+                RequiredCapabilityIds = dto.RequiredCapabilityIds ?? [],
+                RequiredProviderId = dto.RequiredProviderId,
+                RequiredModelId = dto.RequiredModelId,
+                AllowAgentFallback = dto.AllowAgentFallback,
+                AutoDispatchEnabled = dto.AutoDispatchEnabled,
                 NotBeforeUtc = dto.NotBeforeUtc,
                 DueAtUtc = dto.DueAtUtc,
                 SortOrder = dto.SortOrder ?? 0,
@@ -188,7 +194,13 @@ public class TaskController : ControllerBase
                 dto.SortOrder,
                 targetStatus,
                 ResolveAuthorId(),
-                ct);
+                ct,
+                taskType: dto.TaskType,
+                requiredCapabilityIds: dto.RequiredCapabilityIds,
+                requiredProviderId: dto.RequiredProviderId,
+                requiredModelId: dto.RequiredModelId,
+                allowAgentFallback: dto.AllowAgentFallback,
+                autoDispatchEnabled: dto.AutoDispatchEnabled);
 
             return Ok(ToDto(updated));
         }
@@ -551,6 +563,12 @@ public class TaskController : ControllerBase
         Priority = TaskWireMaps.PriorityToString(t.Priority),
         ExecutionWindow = TaskWireMaps.ExecutionWindowToString(t.ExecutionWindow),
         PreferredAgentId = t.PreferredAgentId,
+        TaskType = t.TaskType,
+        RequiredCapabilityIds = t.RequiredCapabilityIds,
+        RequiredProviderId = t.RequiredProviderId,
+        RequiredModelId = t.RequiredModelId,
+        AllowAgentFallback = t.AllowAgentFallback,
+        AutoDispatchEnabled = t.AutoDispatchEnabled,
         ActiveAssignmentId = t.ActiveAssignmentId,
         NotBeforeUtc = t.NotBeforeUtc,
         DueAtUtc = t.DueAtUtc,

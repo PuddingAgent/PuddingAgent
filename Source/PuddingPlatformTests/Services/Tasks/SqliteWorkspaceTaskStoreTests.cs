@@ -98,6 +98,62 @@ public sealed class SqliteWorkspaceTaskStoreTests
         Assert.IsNull(fetchedManual!.Origin);
     }
 
+    [TestMethod]
+    public async Task RoutingMetadata_RoundTripsAndUpdatesWithCas()
+    {
+        var created = await _store.CreateTaskAsync(new CreateTaskRequest
+        {
+            WorkspaceId = "ws-1",
+            Title = "route-aware",
+            TaskType = "Implementation",
+            RequiredCapabilityIds = ["runtime:shell_execution", "CODE", "code"],
+            RequiredProviderId = "bigmodel",
+            RequiredModelId = "glm-5.3-flash",
+            PreferredAgentId = "agent-1",
+            AllowAgentFallback = true,
+            AutoDispatchEnabled = true,
+        });
+
+        Assert.AreEqual("implementation", created.TaskType);
+        CollectionAssert.AreEqual(
+            new[] { "code", "runtime:shell_execution" },
+            created.RequiredCapabilityIds.ToArray());
+        Assert.IsTrue(created.AllowAgentFallback);
+        Assert.IsTrue(created.AutoDispatchEnabled);
+
+        var updated = await _store.UpdateTaskAsync(new UpdateTaskRequest
+        {
+            TaskId = created.TaskId,
+            ExpectedVersion = created.Version,
+            TaskType = "review",
+            RequiredCapabilityIds = [],
+            RequiredModelId = "deepseek-v4",
+            AllowAgentFallback = false,
+            AutoDispatchEnabled = false,
+        });
+
+        Assert.AreEqual("review", updated.TaskType);
+        Assert.IsEmpty(updated.RequiredCapabilityIds);
+        Assert.AreEqual("deepseek-v4", updated.RequiredModelId);
+        Assert.IsFalse(updated.AllowAgentFallback);
+        Assert.IsFalse(updated.AutoDispatchEnabled);
+    }
+
+    [TestMethod]
+    public async Task RoutingMetadata_InvalidCapabilityCardinality_IsRejectedWithoutPartialTask()
+    {
+        var ex = await Assert.ThrowsExactlyAsync<TaskStoreException>(() =>
+            _store.CreateTaskAsync(new CreateTaskRequest
+            {
+                WorkspaceId = "ws-1",
+                Title = "invalid-route",
+                RequiredCapabilityIds = Enumerable.Range(0, 65).Select(index => $"cap-{index}").ToArray(),
+            }));
+
+        Assert.AreEqual(TaskErrorCode.PolicyInvalid, ex.ErrorCode);
+        Assert.AreEqual(0, await CountTasksAsync());
+    }
+
     // ── 2. GetTaskAsync ─────────────────────────────────────────────
 
     [TestMethod]

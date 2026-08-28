@@ -6,12 +6,15 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PuddingCode.Goals;
+using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Scheduling;
 using PuddingCode.Tasks;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services.Scheduling;
 
 namespace PuddingPlatform.Services.Goals;
 
@@ -25,6 +28,8 @@ public sealed class TaskGoalDispatchTransactionStore(
     ICommittedEventSignal committedSignal,
     GoalOutboxSignal outboxSignal,
     TimeProvider timeProvider,
+    IWorkspaceAgentCatalog agentCatalog,
+    IOptions<TaskAutoDispatchOptions> dispatchOptions,
     ILogger<TaskGoalDispatchTransactionStore> logger)
     : ITaskGoalDispatchTransactionStore
 {
@@ -36,6 +41,8 @@ public sealed class TaskGoalDispatchTransactionStore(
     {
         ValidateCommand(command);
         var now = timeProvider.GetUtcNow();
+        var agentSnapshot = (await agentCatalog.ListAgentsAsync(command.WorkspaceId, ct))
+            .SingleOrDefault(agent => string.Equals(agent.AgentId, command.AgentId, StringComparison.Ordinal));
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         try
@@ -44,6 +51,14 @@ public sealed class TaskGoalDispatchTransactionStore(
                 item => item.IdempotencyKey == command.IdempotencyKey, ct);
             if (replay is not null)
             {
+                if (!string.Equals(
+                        replay.PlanFingerprint,
+                        command.ExpectedExecutionPlanFingerprint,
+                        StringComparison.Ordinal))
+                {
+                    return await RejectAsync(tx, TaskBoundGoalStartCodes.PlanChanged, ct,
+                        replay.ExpectedTaskVersion);
+                }
                 var replayReservation = replay.ReservationId is null
                     ? null
                     : await db.AgentExecutionReservations.AsNoTracking().SingleOrDefaultAsync(
@@ -51,7 +66,7 @@ public sealed class TaskGoalDispatchTransactionStore(
                 await tx.CommitAsync(ct);
                 return Result(true, TaskBoundGoalStartCodes.IdempotentReplay, replay.GoalRunId,
                     replay.AssignmentId, replay.ReservationId, replayReservation?.FencingToken,
-                    replay.ExpectedTaskVersion);
+                    replay.ExpectedTaskVersion, replay.TaskPlanId, replay.PlanFingerprint);
             }
 
             var task = await db.WorkspaceTasks.SingleOrDefaultAsync(
@@ -61,10 +76,28 @@ public sealed class TaskGoalDispatchTransactionStore(
             if (task.Version != command.ExpectedTaskVersion)
                 return await RejectAsync(tx, TaskBoundGoalStartCodes.TaskChanged, ct, task.Version);
             if (task.Status is not (WorkspaceTaskStatus.Ready or WorkspaceTaskStatus.Deferred)
-                || task.ActiveAssignmentId is not null)
+                || task.ActiveAssignmentId is not null
+                || !task.AutoDispatchEnabled)
                 return await RejectAsync(tx, TaskBoundGoalStartCodes.TaskNotEligible, ct, task.Version);
-            if (!string.Equals(task.PreferredAgentId, command.AgentId, StringComparison.Ordinal))
+            if (!task.AllowAgentFallback
+                && !string.IsNullOrWhiteSpace(task.PreferredAgentId)
+                && !string.Equals(task.PreferredAgentId, command.AgentId, StringComparison.Ordinal))
                 return await RejectAsync(tx, TaskBoundGoalStartCodes.AgentChanged, ct, task.Version);
+            if (!IsSha256(command.ExpectedAgentRoutingFingerprint))
+                return await RejectAsync(tx, TaskBoundGoalStartCodes.AgentChanged, ct, task.Version);
+            dispatchOptions.Value.TaskTypeRoutes.TryGetValue(task.TaskType, out var typeRoute);
+            if (agentSnapshot is null)
+                return await RejectAsync(tx, TaskBoundGoalStartCodes.AgentChanged, ct, task.Version);
+            var route = TaskAgentRouteMatcher.Evaluate(task, agentSnapshot, typeRoute);
+            if (!route.Compatible
+                || !string.Equals(route.Fingerprint, command.ExpectedAgentRoutingFingerprint, StringComparison.Ordinal))
+                return await RejectAsync(tx, TaskBoundGoalStartCodes.AgentChanged, ct, task.Version);
+            if (!TaskExecutionPlanCompiler.TryCompile(task, typeRoute, out var executionPlan, out _)
+                || !string.Equals(
+                    executionPlan!.Fingerprint,
+                    command.ExpectedExecutionPlanFingerprint,
+                    StringComparison.Ordinal))
+                return await RejectAsync(tx, TaskBoundGoalStartCodes.PlanChanged, ct, task.Version);
             if (task.ExecutionWindow != command.ExecutionWindow)
                 return await RejectAsync(tx, TaskBoundGoalStartCodes.WindowChanged, ct, task.Version);
             if (Later(task.NotBeforeUtc, task.NextEligibleAtUtc) > now)
@@ -106,9 +139,21 @@ public sealed class TaskGoalDispatchTransactionStore(
             var activeBinding = await db.TaskGoalBindings.AnyAsync(
                 item => item.WorkspaceId == command.WorkspaceId
                     && item.AgentInstanceId == command.AgentId && item.Status == "active", ct);
-            var activeAssignment = await db.TaskAssignmentAttempts.AnyAsync(
-                item => item.WorkspaceId == command.WorkspaceId
-                    && item.AgentId == command.AgentId && item.ReleasedAtUtc == null, ct);
+            var activeAssignment = await (
+                    from attempt in db.TaskAssignmentAttempts
+                    join ownedTask in db.WorkspaceTasks
+                        on new { attempt.WorkspaceId, attempt.TaskId }
+                        equals new { ownedTask.WorkspaceId, ownedTask.TaskId }
+                    where attempt.WorkspaceId == command.WorkspaceId
+                        && attempt.AgentId == command.AgentId
+                        && attempt.ReleasedAtUtc == null
+                        && ownedTask.ActiveAssignmentId == attempt.AttemptId
+                        && ownedTask.Status != WorkspaceTaskStatus.Completed
+                        && ownedTask.Status != WorkspaceTaskStatus.Failed
+                        && ownedTask.Status != WorkspaceTaskStatus.Cancelled
+                        && ownedTask.Status != WorkspaceTaskStatus.Archived
+                    select attempt)
+                .AnyAsync(ct);
             if (conversationBusy || activeBinding || activeAssignment)
                 return await RejectAsync(tx, TaskBoundGoalStartCodes.AgentNotIdle, ct, task.Version);
 
@@ -131,6 +176,7 @@ public sealed class TaskGoalDispatchTransactionStore(
             var reservationId = Guid.NewGuid().ToString("N");
             var bindingId = Guid.NewGuid().ToString("N");
             var goalRunId = BuildGoalRunId(command.IdempotencyKey);
+            var taskPlanId = BuildTaskPlanId(task, executionPlan!);
             var attemptNo = (await db.TaskAssignmentAttempts
                 .Where(item => item.TaskId == task.TaskId)
                 .MaxAsync(item => (int?)item.AttemptNumber, ct) ?? 0) + 1;
@@ -170,12 +216,24 @@ public sealed class TaskGoalDispatchTransactionStore(
             task.UpdatedBy = "task-auto-dispatch";
             db.TaskAssignmentAttempts.Add(assignment);
             db.AgentExecutionReservations.Add(reservation);
+            AddExecutionPlan(db, task, executionPlan!, taskPlanId, command, now);
             await db.SaveChangesAsync(ct); // obtains the SQLite identity fencing token; still inside this transaction.
 
             var windowSnapshot = JsonSerializer.Serialize(new
             {
                 command.ExecutionWindow,
                 decision = command.WindowDecision,
+                agentRoutingFingerprint = command.ExpectedAgentRoutingFingerprint,
+                executionPlanFingerprint = executionPlan!.Fingerprint,
+                executionPlanSchemaVersion = executionPlan.SchemaVersion,
+                executionPlanVersion = executionPlan.PlanVersion,
+                taskPlanId,
+                task.TaskType,
+                task.RequiredCapabilitiesJson,
+                task.RequiredProviderId,
+                task.RequiredModelId,
+                task.AllowAgentFallback,
+                task.AutoDispatchEnabled,
                 availabilityVersion = command.ExpectedAvailabilityVersion,
                 reservationLeaseSeconds = (long)command.ReservationLease.TotalSeconds,
             }, JsonOpts);
@@ -190,6 +248,8 @@ public sealed class TaskGoalDispatchTransactionStore(
                 AgentInstanceId = command.AgentId,
                 ReservationId = reservationId,
                 ReservationFencingToken = reservation.FencingToken,
+                TaskPlanId = taskPlanId,
+                PlanFingerprint = executionPlan.Fingerprint,
                 ExecutionWindowSnapshotJson = windowSnapshot,
                 Status = "active",
                 IdempotencyKey = command.IdempotencyKey,
@@ -232,6 +292,8 @@ public sealed class TaskGoalDispatchTransactionStore(
                     taskId = task.TaskId,
                     assignmentId,
                     reservationFencingToken = reservation.FencingToken,
+                    taskPlanId,
+                    executionPlanFingerprint = executionPlan.Fingerprint,
                 }, JsonOpts),
                 Status = GoalOutboxValues.Pending,
                 DueAtUtc = now,
@@ -252,18 +314,19 @@ public sealed class TaskGoalDispatchTransactionStore(
             await AppendTaskEventsAsync(db, task, assignmentId, command.AgentId,
                 command.ConversationId, command, now, ct);
             await AppendGoalEventsAsync(db, goal, task, assignmentId, reservation, bindingId,
-                command, now, ct);
+                taskPlanId, command, now, ct);
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
 
             committedSignal.Signal(command.ConversationId, -1);
             outboxSignal.Signal();
             logger.LogInformation(
-                "[TaskGoalDispatch] started workspace={WorkspaceId} task={TaskId} taskVersion={TaskVersion} agent={AgentId} goal={GoalRunId} assignment={AssignmentId} reservation={ReservationId} fence={Fence}",
+                "[TaskGoalDispatch] started workspace={WorkspaceId} task={TaskId} taskVersion={TaskVersion} agent={AgentId} goal={GoalRunId} assignment={AssignmentId} reservation={ReservationId} fence={Fence} plan={TaskPlanId} planFingerprint={PlanFingerprint}",
                 command.WorkspaceId, command.TaskId, task.Version, command.AgentId, goalRunId,
-                assignmentId, reservationId, reservation.FencingToken);
+                assignmentId, reservationId, reservation.FencingToken, taskPlanId, executionPlan.Fingerprint);
             return Result(true, TaskBoundGoalStartCodes.Started, goalRunId, assignmentId,
-                reservationId, reservation.FencingToken, task.Version);
+                reservationId, reservation.FencingToken, task.Version, taskPlanId,
+                executionPlan.Fingerprint);
         }
         catch (DbUpdateException ex)
         {
@@ -285,6 +348,94 @@ public sealed class TaskGoalDispatchTransactionStore(
         {
             await tx.RollbackAsync(ct);
             throw;
+        }
+    }
+
+    private static void AddExecutionPlan(
+        PlatformDbContext db,
+        WorkspaceTaskEntity task,
+        TaskExecutionPlanSnapshot plan,
+        string taskPlanId,
+        StartGoalFromTaskCommand command,
+        DateTimeOffset now)
+    {
+        var nowMs = now.ToUnixTimeMilliseconds();
+        var rootNodeId = $"tn-{Hash($"{taskPlanId}:root")[..32]}";
+        db.TaskPlanRuns.Add(new TaskPlanRunEntity
+        {
+            PlanId = taskPlanId,
+            WorkspaceId = task.WorkspaceId,
+            WorkspaceTaskId = task.TaskId,
+            WorkspaceTaskVersion = plan.TaskVersion,
+            PlanVersion = plan.PlanVersion,
+            SchemaVersion = plan.SchemaVersion,
+            PlanKind = plan.PlanKind,
+            PlanFingerprint = plan.Fingerprint,
+            RootSessionId = command.ConversationId,
+            LeaderAgentId = command.AgentId,
+            Objective = task.Title.Length <= 1024 ? task.Title : task.Title[..1024],
+            Status = TaskPlanStatuses.Active.ToString(),
+            MaxDelegationDepth = 1,
+            DefaultAllowSubDelegation = false,
+            AllowAgentCreationByLeader = false,
+            MaxActiveTaskNodesPerPlan = plan.WorkUnits.Count + 1,
+            CreatedAt = nowMs,
+            UpdatedAt = nowMs,
+            TraceId = command.CorrelationId,
+            CorrelationId = command.CorrelationId,
+        });
+        db.TaskNodes.Add(new TaskNodeEntity
+        {
+            TaskNodeId = rootNodeId,
+            PlanId = taskPlanId,
+            Depth = 0,
+            SequenceNo = 0,
+            Title = task.Title.Length <= 256 ? task.Title : task.Title[..256],
+            Objective = "Execute the frozen WorkspaceTask plan and produce completion proof.",
+            AssignedToKind = TaskAssignmentKinds.Leader.ToString(),
+            AssignedToId = command.AgentId,
+            CreatedByAgentId = command.AgentId,
+            Status = TaskNodeStatuses.Running.ToString(),
+            AllowSubDelegation = false,
+            AllowAgentCreation = false,
+            CreatedAt = nowMs,
+            UpdatedAt = nowMs,
+        });
+
+        foreach (var unit in plan.WorkUnits)
+        {
+            db.TaskNodes.Add(new TaskNodeEntity
+            {
+                TaskNodeId = $"tn-{Hash($"{taskPlanId}:{unit.WorkUnitId}")[..32]}",
+                PlanId = taskPlanId,
+                ParentTaskNodeId = rootNodeId,
+                Depth = 1,
+                SequenceNo = unit.Sequence,
+                WorkUnitKind = unit.Kind.ToString(),
+                DependsOnJson = JsonSerializer.Serialize(unit.DependsOn, JsonOpts),
+                ScopeJson = JsonSerializer.Serialize(unit.ConflictScopes, JsonOpts),
+                RequiredCapabilityIdsJson = JsonSerializer.Serialize(unit.RequiredCapabilityIds, JsonOpts),
+                MaxRounds = unit.Budget.MaxRounds,
+                MaxToolCalls = unit.Budget.MaxToolCalls,
+                MaxDurationSeconds = unit.Budget.MaxDurationSeconds,
+                MaxInputTokens = unit.Budget.MaxInputTokens,
+                MaxOutputTokens = unit.Budget.MaxOutputTokens,
+                MaxCost = unit.Budget.MaxCost,
+                RetryPolicyJson = JsonSerializer.Serialize(new { policy = unit.RetryPolicy }, JsonOpts),
+                Title = unit.Kind.ToString(),
+                Objective = unit.Objective,
+                ExpectedOutputContract = "checkpoint-v1 with evidence refs, progress fingerprint and terminal verdict",
+                AssignedToKind = TaskAssignmentKinds.Leader.ToString(),
+                AssignedToId = command.AgentId,
+                CreatedByAgentId = command.AgentId,
+                Status = unit.Sequence == 1
+                    ? TaskNodeStatuses.Planned.ToString()
+                    : TaskNodeStatuses.Draft.ToString(),
+                AllowSubDelegation = false,
+                AllowAgentCreation = false,
+                CreatedAt = nowMs,
+                UpdatedAt = nowMs,
+            });
         }
     }
 
@@ -347,6 +498,7 @@ public sealed class TaskGoalDispatchTransactionStore(
         string assignmentId,
         AgentExecutionReservationEntity reservation,
         string bindingId,
+        string taskPlanId,
         StartGoalFromTaskCommand command,
         DateTimeOffset now,
         CancellationToken ct)
@@ -373,6 +525,8 @@ public sealed class TaskGoalDispatchTransactionStore(
                 bindingId,
                 reservationId = reservation.ReservationId,
                 reservationFencingToken = reservation.FencingToken,
+                taskPlanId,
+                executionPlanFingerprint = command.ExpectedExecutionPlanFingerprint,
             }),
             (GoalEventTypes.ContinuationRequested, new
             {
@@ -422,6 +576,8 @@ public sealed class TaskGoalDispatchTransactionStore(
             sourceChannel = goal.SourceChannel,
             taskId = task.TaskId,
             assignmentId,
+            taskPlanId,
+            executionPlanFingerprint = command.ExpectedExecutionPlanFingerprint,
         };
     }
 
@@ -436,6 +592,8 @@ public sealed class TaskGoalDispatchTransactionStore(
     }
 
     private static string BuildGoalRunId(string key) => $"tg-{Hash(key)[..32]}";
+    private static string BuildTaskPlanId(WorkspaceTaskEntity task, TaskExecutionPlanSnapshot plan)
+        => $"tp-{Hash($"{task.WorkspaceId}:{task.TaskId}:{task.Version}:{plan.Fingerprint}")[..32]}";
     private static string BuildSourceCommandId(string key) => $"task-goal-{Hash(key)[..48]}";
     private static string Hash(string value) => Convert.ToHexString(
         SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
@@ -452,7 +610,8 @@ public sealed class TaskGoalDispatchTransactionStore(
 
     private static TaskBoundGoalStartResult Result(
         bool started, string code, string? goalRunId = null, string? assignmentId = null,
-        string? reservationId = null, long? fence = null, int? taskVersion = null) => new()
+        string? reservationId = null, long? fence = null, int? taskVersion = null,
+        string? taskPlanId = null, string? executionPlanFingerprint = null) => new()
     {
         Started = started,
         Code = code,
@@ -461,6 +620,8 @@ public sealed class TaskGoalDispatchTransactionStore(
         ReservationId = reservationId,
         ReservationFencingToken = fence,
         TaskVersion = taskVersion,
+        TaskPlanId = taskPlanId,
+        ExecutionPlanFingerprint = executionPlanFingerprint,
     };
 
     private static void ValidateCommand(StartGoalFromTaskCommand command)
@@ -468,6 +629,10 @@ public sealed class TaskGoalDispatchTransactionStore(
         ArgumentException.ThrowIfNullOrWhiteSpace(command.WorkspaceId);
         ArgumentException.ThrowIfNullOrWhiteSpace(command.TaskId);
         ArgumentException.ThrowIfNullOrWhiteSpace(command.AgentId);
+        if (!IsSha256(command.ExpectedAgentRoutingFingerprint))
+            throw new ArgumentException("ExpectedAgentRoutingFingerprint must be a lowercase SHA-256 hex value.", nameof(command));
+        if (!IsSha256(command.ExpectedExecutionPlanFingerprint))
+            throw new ArgumentException("ExpectedExecutionPlanFingerprint must be a lowercase SHA-256 hex value.", nameof(command));
         ArgumentException.ThrowIfNullOrWhiteSpace(command.ConversationId);
         ArgumentException.ThrowIfNullOrWhiteSpace(command.OwnerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(command.IdempotencyKey);
@@ -478,4 +643,8 @@ public sealed class TaskGoalDispatchTransactionStore(
         if (command.MinimumIdle < TimeSpan.Zero || command.ReservationLease <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(command));
     }
+
+    private static bool IsSha256(string? value)
+        => value is { Length: 64 }
+            && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
 }

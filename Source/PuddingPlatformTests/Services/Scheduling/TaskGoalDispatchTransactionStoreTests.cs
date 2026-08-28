@@ -1,14 +1,17 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using PuddingCode.Goals;
 using PuddingCode.Platform;
 using PuddingCode.Scheduling;
 using PuddingCode.Tasks;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;
 using PuddingPlatform.Services.Goals;
+using PuddingPlatform.Services.Scheduling;
 
 namespace PuddingPlatformTests.Services.Scheduling;
 
@@ -18,6 +21,9 @@ public sealed class TaskGoalDispatchTransactionStoreTests
     private string _root = null!;
     private PlatformDbContextFactory _factory = null!;
     private FixedTimeProvider _clock = null!;
+    private WorkspaceAgentDto _agent = null!;
+    private string _routingFingerprint = null!;
+    private string _planFingerprint = null!;
     private TaskGoalDispatchTransactionStore _store = null!;
 
     [TestInitialize]
@@ -32,11 +38,14 @@ public sealed class TaskGoalDispatchTransactionStoreTests
         await using var db = await _factory.CreateDbContextAsync();
         await db.Database.EnsureCreatedAsync();
         _clock = new FixedTimeProvider(DateTimeOffset.Parse("2026-08-26T08:00:00Z"));
+        _agent = Agent();
         _store = new TaskGoalDispatchTransactionStore(
             _factory,
             new NoopSignal(),
             new GoalOutboxSignal(),
             _clock,
+            new FixedAgentCatalog([_agent]),
+            Options.Create(new TaskAutoDispatchOptions()),
             NullLogger<TaskGoalDispatchTransactionStore>.Instance);
         await SeedEligibleAsync();
     }
@@ -64,6 +73,8 @@ public sealed class TaskGoalDispatchTransactionStoreTests
         var goal = await db.GoalRuns.SingleAsync();
         var outbox = await db.GoalOutbox.SingleAsync();
         var availability = await db.AgentAvailabilityProjections.SingleAsync();
+        var plan = await db.TaskPlanRuns.SingleAsync();
+        var nodes = await db.TaskNodes.OrderBy(item => item.SequenceNo).ToListAsync();
         Assert.AreEqual(WorkspaceTaskStatus.Assigned, task.Status);
         Assert.AreEqual(3, task.Version);
         Assert.AreEqual(AssignmentAttemptStatus.Assigned, assignment.Status);
@@ -73,6 +84,16 @@ public sealed class TaskGoalDispatchTransactionStoreTests
         Assert.AreEqual(reservation.FencingToken, binding.ReservationFencingToken);
         Assert.AreEqual(task.Version, binding.ExpectedTaskVersion);
         Assert.AreEqual(goal.GoalRunId, binding.GoalRunId);
+        Assert.AreEqual(plan.PlanId, binding.TaskPlanId);
+        Assert.AreEqual(plan.PlanFingerprint, binding.PlanFingerprint);
+        Assert.AreEqual(result.TaskPlanId, plan.PlanId);
+        Assert.AreEqual(result.ExecutionPlanFingerprint, plan.PlanFingerprint);
+        Assert.AreEqual(1, plan.WorkspaceTaskVersion);
+        Assert.AreEqual(6, nodes.Count);
+        Assert.AreEqual("Running", nodes[0].Status);
+        CollectionAssert.AreEqual(
+            new[] { "Explore", "Plan", "Change", "Test", "Review" },
+            nodes.Skip(1).Select(item => item.WorkUnitKind).ToArray());
         Assert.AreEqual(GoalPhase.Active, goal.Status);
         Assert.AreEqual(32, goal.MaxIterations);
         Assert.AreEqual(GoalOutboxValues.Pending, outbox.Status);
@@ -99,6 +120,42 @@ public sealed class TaskGoalDispatchTransactionStoreTests
         Assert.AreEqual(1, await db.GoalRuns.CountAsync());
         Assert.AreEqual(1, await db.TaskGoalBindings.CountAsync());
         Assert.AreEqual(1, await db.AgentExecutionReservations.CountAsync());
+        Assert.AreEqual(1, await db.TaskPlanRuns.CountAsync());
+        Assert.AreEqual(6, await db.TaskNodes.CountAsync());
+    }
+
+    [TestMethod]
+    public async Task ChangedExecutionPlanFingerprint_FailsWithoutPartialWrites()
+    {
+        var result = await _store.StartAsync(Command() with
+        {
+            ExpectedExecutionPlanFingerprint = new string('c', 64),
+        });
+
+        Assert.IsFalse(result.Started);
+        Assert.AreEqual(TaskBoundGoalStartCodes.PlanChanged, result.Code);
+        await using var db = await _factory.CreateDbContextAsync();
+        Assert.AreEqual(0, await db.TaskPlanRuns.CountAsync());
+        Assert.AreEqual(0, await db.TaskNodes.CountAsync());
+        Assert.AreEqual(0, await db.TaskAssignmentAttempts.CountAsync());
+        Assert.AreEqual(0, await db.AgentExecutionReservations.CountAsync());
+        Assert.AreEqual(0, await db.GoalRuns.CountAsync());
+    }
+
+    [TestMethod]
+    public async Task ChangedAgentRoutingFingerprint_FailsWithoutPartialWrites()
+    {
+        var result = await _store.StartAsync(Command() with
+        {
+            ExpectedAgentRoutingFingerprint = new string('b', 64),
+        });
+
+        Assert.IsFalse(result.Started);
+        Assert.AreEqual(TaskBoundGoalStartCodes.AgentChanged, result.Code);
+        await using var db = await _factory.CreateDbContextAsync();
+        Assert.AreEqual(0, await db.GoalRuns.CountAsync());
+        Assert.AreEqual(0, await db.TaskAssignmentAttempts.CountAsync());
+        Assert.AreEqual(0, await db.AgentExecutionReservations.CountAsync());
     }
 
     [TestMethod]
@@ -109,6 +166,8 @@ public sealed class TaskGoalDispatchTransactionStoreTests
             new NoopSignal(),
             new GoalOutboxSignal(),
             _clock,
+            new FixedAgentCatalog([_agent]),
+            Options.Create(new TaskAutoDispatchOptions()),
             NullLogger<TaskGoalDispatchTransactionStore>.Instance);
 
         var results = await System.Threading.Tasks.Task.WhenAll(
@@ -147,6 +206,46 @@ public sealed class TaskGoalDispatchTransactionStoreTests
         Assert.AreEqual(TaskBoundGoalStartCodes.AgentChanged, result.Code);
         await using var db = await _factory.CreateDbContextAsync();
         Assert.AreEqual(0, await db.GoalRuns.CountAsync());
+    }
+
+    [TestMethod]
+    public async Task HistoricalTerminalAssignment_DoesNotBlockAtomicStartForAgent()
+    {
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            db.WorkspaceTasks.Add(new WorkspaceTaskEntity
+            {
+                TaskId = "completed-task",
+                WorkspaceId = "ws",
+                Title = "historical completed task",
+                Status = WorkspaceTaskStatus.Completed,
+                Priority = TaskPriority.P3,
+                ExecutionWindow = TaskExecutionWindow.Anytime,
+                ActiveAssignmentId = "historical-assignment",
+                SortOrder = 0,
+                Version = 2,
+                CreatedAtUtc = _clock.GetUtcNow().AddDays(-1),
+                UpdatedAtUtc = _clock.GetUtcNow().AddDays(-1),
+                CompletedAtUtc = _clock.GetUtcNow().AddDays(-1),
+            });
+            db.TaskAssignmentAttempts.Add(new TaskAssignmentAttemptEntity
+            {
+                AttemptId = "historical-assignment",
+                TaskId = "completed-task",
+                WorkspaceId = "ws",
+                AgentId = "agent-1",
+                AttemptNumber = 1,
+                Status = AssignmentAttemptStatus.InProgress,
+                CreatedAtUtc = _clock.GetUtcNow().AddDays(-1),
+                UpdatedAtUtc = _clock.GetUtcNow().AddDays(-1),
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var result = await _store.StartAsync(Command());
+
+        Assert.IsTrue(result.Started);
+        Assert.AreEqual(TaskBoundGoalStartCodes.Started, result.Code);
     }
 
     [TestMethod]
@@ -203,7 +302,11 @@ public sealed class TaskGoalDispatchTransactionStoreTests
 
         await using var db = await _factory.CreateDbContextAsync();
         var acceptance = new ConversationAcceptanceStore(
-            db, new NoopSignal(), NullLogger<ConversationAcceptanceStore>.Instance);
+            db,
+            new NoopSignal(),
+            NullLogger<ConversationAcceptanceStore>.Instance,
+            taskBoundOptions: null,
+            timeProvider: _clock);
         var error = await Assert.ThrowsAsync<GoalContinuationAcceptanceException>(() =>
             acceptance.AcceptBatchAsync(
                 ContinuationRequest(started, lease),
@@ -215,7 +318,7 @@ public sealed class TaskGoalDispatchTransactionStoreTests
     private async Task SeedEligibleAsync()
     {
         await using var db = await _factory.CreateDbContextAsync();
-        db.WorkspaceTasks.Add(new WorkspaceTaskEntity
+        var task = new WorkspaceTaskEntity
         {
             TaskId = "task-1",
             WorkspaceId = "ws",
@@ -226,11 +329,17 @@ public sealed class TaskGoalDispatchTransactionStoreTests
             Priority = TaskPriority.P1,
             ExecutionWindow = TaskExecutionWindow.Anytime,
             PreferredAgentId = "agent-1",
+            TaskType = "implementation",
+            AutoDispatchEnabled = true,
             SortOrder = 0,
             Version = 1,
             CreatedAtUtc = _clock.GetUtcNow(),
             UpdatedAtUtc = _clock.GetUtcNow(),
-        });
+        };
+        _routingFingerprint = TaskAgentRouteMatcher.Fingerprint(task, _agent);
+        Assert.IsTrue(TaskExecutionPlanCompiler.TryCompile(task, null, out var plan, out _));
+        _planFingerprint = plan!.Fingerprint;
+        db.WorkspaceTasks.Add(task);
         db.AgentAvailabilityProjections.Add(new AgentAvailabilityProjectionEntity
         {
             WorkspaceId = "ws",
@@ -253,6 +362,8 @@ public sealed class TaskGoalDispatchTransactionStoreTests
         TaskId = "task-1",
         ExpectedTaskVersion = 1,
         AgentId = "agent-1",
+        ExpectedAgentRoutingFingerprint = _routingFingerprint,
+        ExpectedExecutionPlanFingerprint = _planFingerprint,
         ConversationId = "conversation-1",
         ExpectedAvailabilityVersion = 7,
         ExecutionWindow = TaskExecutionWindow.Anytime,
@@ -303,6 +414,36 @@ public sealed class TaskGoalDispatchTransactionStoreTests
         public void Signal(string conversationId, long committedThroughSequence)
         {
         }
+    }
+
+    private WorkspaceAgentDto Agent() => new(
+        AgentId: "agent-1",
+        Name: "agent-1",
+        Description: null,
+        DisplayName: "Agent 1",
+        AvatarId: null,
+        AvatarUrl: null,
+        SourceTemplateId: "service",
+        MainSessionId: "conversation-1",
+        SystemPromptOverride: null,
+        PreferredProviderId: "bigmodel",
+        PreferredModelId: "glm-5.3-flash",
+        IsEnabled: true,
+        IsFrozen: false,
+        CreatedAt: _clock.GetUtcNow().AddDays(-1),
+        UpdatedAt: _clock.GetUtcNow().AddDays(-1),
+        Role: "Service",
+        AllowFileWrite: true,
+        AllowShellExecution: true,
+        AllowNetworkAccess: true,
+        SelectedCapabilityIds: ["code"]);
+
+    private sealed class FixedAgentCatalog(IReadOnlyList<WorkspaceAgentDto> agents)
+        : IWorkspaceAgentCatalog
+    {
+        public Task<IReadOnlyList<WorkspaceAgentDto>> ListAgentsAsync(
+            string workspaceId,
+            CancellationToken ct = default) => Task.FromResult(agents);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

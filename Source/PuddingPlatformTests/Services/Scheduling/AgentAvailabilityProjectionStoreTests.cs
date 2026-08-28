@@ -135,7 +135,9 @@ public sealed class AgentAvailabilityProjectionStoreTests
     {
         await using (var db = await _factory.CreateDbContextAsync())
         {
-            db.WorkspaceTasks.Add(Task("task-1", WorkspaceTaskStatus.InProgress));
+            var task = Task("task-1", WorkspaceTaskStatus.InProgress);
+            task.ActiveAssignmentId = "assignment-1";
+            db.WorkspaceTasks.Add(task);
             db.TaskAssignmentAttempts.Add(new TaskAssignmentAttemptEntity
             {
                 AttemptId = "assignment-1",
@@ -156,6 +158,36 @@ public sealed class AgentAvailabilityProjectionStoreTests
         Assert.AreEqual(AgentAvailabilityState.Busy, snapshot.State);
         Assert.AreEqual(AgentActivityReason.TaskExecution, snapshot.ActivityReason);
         Assert.AreEqual("task-1", snapshot.ActiveTaskId);
+    }
+
+    [TestMethod]
+    public async Task TerminalTask_WithUnreleasedHistoricalAssignment_DoesNotKeepAgentBusy()
+    {
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var task = Task("task-1", WorkspaceTaskStatus.Completed);
+            task.ActiveAssignmentId = "assignment-1";
+            db.WorkspaceTasks.Add(task);
+            db.TaskAssignmentAttempts.Add(new TaskAssignmentAttemptEntity
+            {
+                AttemptId = "assignment-1",
+                TaskId = "task-1",
+                WorkspaceId = "ws",
+                AgentId = "agent-1",
+                Status = AssignmentAttemptStatus.InProgress,
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var now = DateTimeOffset.Parse("2026-08-26T00:00:00Z");
+        var snapshot = await CreateStore([Agent("agent-1", "conv-1")], now)
+            .RebuildAsync("ws", "agent-1");
+
+        Assert.AreEqual(AgentAvailabilityState.Idle, snapshot.State);
+        Assert.AreEqual("idle_confirmed", snapshot.ReasonCode);
+        Assert.IsNull(snapshot.ActiveTaskId);
     }
 
     [TestMethod]

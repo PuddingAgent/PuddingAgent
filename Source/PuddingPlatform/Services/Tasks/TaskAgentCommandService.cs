@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Scheduling;
 using PuddingCode.Tasks;
@@ -364,6 +365,7 @@ public sealed class TaskAgentCommandService(
                 break;
             case TaskDisposition.Completed:
                 task.CompletedAtUtc = now;
+                task.ActiveAssignmentId = null;
                 break;
         }
 
@@ -577,6 +579,12 @@ public sealed class TaskAgentCommandService(
             Priority = TaskWireMaps.PriorityToString(t.Priority),
             ExecutionWindow = TaskWireMaps.ExecutionWindowToString(t.ExecutionWindow),
             PreferredAgentId = t.PreferredAgentId,
+            TaskType = t.TaskType,
+            RequiredCapabilityIds = DeserializeCapabilities(t.RequiredCapabilitiesJson),
+            RequiredProviderId = t.RequiredProviderId,
+            RequiredModelId = t.RequiredModelId,
+            AllowAgentFallback = t.AllowAgentFallback,
+            AutoDispatchEnabled = t.AutoDispatchEnabled,
             ActiveAssignmentId = t.ActiveAssignmentId,
             NotBeforeUtc = t.NotBeforeUtc,
             DueAtUtc = t.DueAtUtc,
@@ -613,6 +621,23 @@ public sealed class TaskAgentCommandService(
         => status is WorkspaceTaskStatus.Cancelled or WorkspaceTaskStatus.Archived
             ? null
             : TaskWireMaps.BoardColumnToString(TaskStateMachine.ProjectBoardColumn(status));
+
+    private static IReadOnlyList<string> DeserializeCapabilities(string json)
+    {
+        try
+        {
+            return (JsonSerializer.Deserialize<string[]>(json) ?? [])
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim().ToLowerInvariant())
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(value => value, StringComparer.Ordinal)
+                .ToArray();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
 
     private static TaskEventType EventTypeForDisposition(TaskDisposition disposition) => disposition switch
     {

@@ -97,6 +97,9 @@ public sealed class GoalContinuationWorker(
         var task = taskBinding is null
             ? null
             : await goalStore.FindTaskAsync(taskBinding.WorkspaceId, taskBinding.TaskId, ct);
+        var workUnit = string.IsNullOrWhiteSpace(taskBinding?.TaskPlanId)
+            ? null
+            : await goalStore.FindCurrentTaskWorkUnitAsync(taskBinding.TaskPlanId, ct);
 
         var suppression = ValidateLeaseAgainstGoal(lease, goal);
         if (suppression is not null)
@@ -138,6 +141,16 @@ public sealed class GoalContinuationWorker(
             metadata["dispatch_idempotency_key"] = taskBinding.IdempotencyKey ?? taskBinding.BindingId;
             if (taskBinding.ReservationFencingToken.HasValue)
                 metadata["reservation_fencing_token"] = taskBinding.ReservationFencingToken.Value.ToString();
+            if (!string.IsNullOrWhiteSpace(taskBinding.TaskPlanId))
+                metadata[GoalContinuationMetadata.TaskPlanId] = taskBinding.TaskPlanId;
+            if (!string.IsNullOrWhiteSpace(taskBinding.PlanFingerprint))
+                metadata[GoalContinuationMetadata.TaskPlanFingerprint] = taskBinding.PlanFingerprint;
+            if (workUnit is not null)
+            {
+                metadata[GoalContinuationMetadata.TaskNodeId] = workUnit.TaskNodeId;
+                if (!string.IsNullOrWhiteSpace(workUnit.ParentTaskNodeId))
+                    metadata[GoalContinuationMetadata.ParentTaskNodeId] = workUnit.ParentTaskNodeId;
+            }
         }
 
         try
@@ -157,7 +170,7 @@ public sealed class GoalContinuationWorker(
                         new ContentPart
                         {
                             Type = "text",
-                            Text = BuildPrompt(goal, taskBinding, task, iterationNo),
+                            Text = BuildPrompt(goal, taskBinding, task, workUnit, iterationNo),
                         },
                     ],
                     Metadata = metadata,
@@ -173,6 +186,10 @@ public sealed class GoalContinuationWorker(
                         TaskId = taskBinding?.TaskId,
                         ExpectedTaskVersion = taskBinding?.ExpectedTaskVersion,
                         ReservationFencingToken = taskBinding?.ReservationFencingToken,
+                        TaskPlanId = taskBinding?.TaskPlanId,
+                        TaskPlanFingerprint = taskBinding?.PlanFingerprint,
+                        TaskNodeId = workUnit?.TaskNodeId,
+                        ParentTaskNodeId = workUnit?.ParentTaskNodeId,
                     },
                 },
                 goal.WorkspaceId,
@@ -256,6 +273,7 @@ public sealed class GoalContinuationWorker(
         GoalRunEntity goal,
         TaskGoalBindingEntity? binding,
         WorkspaceTaskEntity? task,
+        TaskNodeEntity? workUnit,
         int iterationNo)
     {
         var payload = JsonSerializer.Serialize(new
@@ -273,6 +291,26 @@ public sealed class GoalContinuationWorker(
                 expectedVersion = binding.ExpectedTaskVersion,
                 status = task.Status.ToString(),
                 acceptanceCriteria = task.AcceptanceCriteria,
+                planId = binding.TaskPlanId,
+                planFingerprint = binding.PlanFingerprint,
+                workUnit = workUnit is null ? null : new
+                {
+                    taskNodeId = workUnit.TaskNodeId,
+                    parentTaskNodeId = workUnit.ParentTaskNodeId,
+                    sequence = workUnit.SequenceNo,
+                    kind = workUnit.WorkUnitKind,
+                    objective = workUnit.Objective,
+                    expectedOutputContract = workUnit.ExpectedOutputContract,
+                    budget = new
+                    {
+                        maxRounds = workUnit.MaxRounds,
+                        maxToolCalls = workUnit.MaxToolCalls,
+                        maxDurationSeconds = workUnit.MaxDurationSeconds,
+                        maxInputTokens = workUnit.MaxInputTokens,
+                        maxOutputTokens = workUnit.MaxOutputTokens,
+                        maxCost = workUnit.MaxCost,
+                    },
+                },
             },
         });
         return "You are executing one system-managed Goal iteration. " +

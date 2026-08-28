@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PuddingCode.Goals;
+using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Tasks;
 using PuddingPlatform.Data;
@@ -234,6 +235,8 @@ public sealed class GoalSettlementStore(
                     && item.Status == "active", ct);
 
             var decision = ApplyDeterministicGates(proposed, task, candidate);
+            var boundPlan = await LoadBoundPlanAsync(db, binding, ct);
+            decision = ApplyBoundPlanGates(decision, task, candidate, boundPlan);
             if (!reservationValid)
             {
                 decision = BlockedDecision(
@@ -320,7 +323,17 @@ public sealed class GoalSettlementStore(
                 && goal.ActivationEpoch == iteration.ActivationEpoch;
             if (currentEpoch)
             {
-                ApplyCurrentVerdict(db, goal, binding, task, iteration, decision, now, events, ref nextContinuation);
+                ApplyCurrentVerdict(
+                    db,
+                    goal,
+                    binding,
+                    task,
+                    iteration,
+                    decision,
+                    boundPlan,
+                    now,
+                    events,
+                    ref nextContinuation);
             }
 
             await AppendGoalEventsAsync(db, goal, iteration, events, ct);
@@ -378,6 +391,166 @@ public sealed class GoalSettlementStore(
         return proposed with { EvidenceRefs = candidate.EvidenceRefs };
     }
 
+    private static async Task<BoundPlanState?> LoadBoundPlanAsync(
+        PlatformDbContext db,
+        TaskGoalBindingEntity? binding,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(binding?.TaskPlanId))
+            return null;
+
+        var plan = await db.TaskPlanRuns.SingleOrDefaultAsync(
+            item => item.PlanId == binding.TaskPlanId,
+            ct);
+        if (plan is null)
+            return BoundPlanState.Invalid("The bound execution plan no longer exists.");
+        if (!string.Equals(plan.PlanFingerprint, binding.PlanFingerprint, StringComparison.Ordinal))
+            return BoundPlanState.Invalid("The bound execution plan fingerprint no longer matches the Task binding.");
+        if (!string.Equals(plan.WorkspaceId, binding.WorkspaceId, StringComparison.Ordinal)
+            || !string.Equals(plan.WorkspaceTaskId, binding.TaskId, StringComparison.Ordinal)
+            || !string.Equals(plan.LeaderAgentId, binding.AgentInstanceId, StringComparison.Ordinal))
+        {
+            return BoundPlanState.Invalid("The bound execution plan ownership no longer matches the Task binding.");
+        }
+
+        var nodes = await db.TaskNodes
+            .Where(item => item.PlanId == plan.PlanId)
+            .OrderBy(item => item.Depth)
+            .ThenBy(item => item.SequenceNo)
+            .ThenBy(item => item.Id)
+            .ToListAsync(ct);
+        var root = nodes.SingleOrDefault(item => item.Depth == 0);
+        var running = nodes.Where(item =>
+                item.Depth == 1
+                && item.Status == TaskNodeStatuses.Running.ToString())
+            .ToList();
+        if (root is null || running.Count != 1)
+        {
+            return BoundPlanState.Invalid(
+                $"The bound execution plan must have one root and exactly one running WorkUnit; running={running.Count}.");
+        }
+
+        var current = running[0];
+        var next = nodes.FirstOrDefault(item =>
+            item.Depth == 1
+            && item.SequenceNo > current.SequenceNo
+            && item.Status is not ("Completed" or "Cancelled" or "Superseded"));
+        return new BoundPlanState(plan, root, current, next, null);
+    }
+
+    private static GoalVerificationDecision ApplyBoundPlanGates(
+        GoalVerificationDecision decision,
+        WorkspaceTaskEntity? task,
+        GoalSettlementCandidate candidate,
+        BoundPlanState? plan)
+    {
+        if (plan is null)
+            return decision;
+        if (plan.Error is not null)
+        {
+            return BlockedDecision(
+                "task_plan_state_invalid",
+                plan.Error,
+                candidate.EvidenceRefs);
+        }
+        if (!string.Equals(candidate.TerminalKind, "completed", StringComparison.OrdinalIgnoreCase)
+            || decision.Verdict is GoalVerificationVerdict.Blocked
+                or GoalVerificationVerdict.NeedsUser
+                or GoalVerificationVerdict.Unsafe)
+        {
+            return decision;
+        }
+
+        if (plan.Next is not null)
+        {
+            return decision with
+            {
+                Verdict = GoalVerificationVerdict.Continue,
+                Reason = decision.Verdict == GoalVerificationVerdict.Complete
+                    ? "Task completion was deferred because the bound execution plan still has WorkUnits to run."
+                    : decision.Reason,
+                NextAction = plan.Next.Objective,
+                EvidenceRefs = candidate.EvidenceRefs,
+            };
+        }
+
+        if (task?.Status == WorkspaceTaskStatus.Completed)
+        {
+            return decision with
+            {
+                Verdict = GoalVerificationVerdict.Complete,
+                EvidenceRefs = candidate.EvidenceRefs,
+            };
+        }
+
+        return BlockedDecision(
+            "task_completion_fact_missing",
+            "The final WorkUnit completed, but the bound Task has no canonical Completed fact.",
+            candidate.EvidenceRefs) with
+        {
+            NextAction = "Review the WorkUnit evidence and explicitly complete or resume the Task.",
+        };
+    }
+
+    private static void ApplyBoundPlanVerdict(
+        BoundPlanState? plan,
+        GoalIterationEntity iteration,
+        GoalVerificationDecision decision,
+        DateTimeOffset now)
+    {
+        if (plan is null || plan.Error is not null
+            || plan.Plan is null || plan.Root is null || plan.Current is null)
+            return;
+
+        var nowMs = now.ToUnixTimeMilliseconds();
+        var finalWorkUnitWithoutTaskFact = string.Equals(
+            decision.BlockerCode,
+            "task_completion_fact_missing",
+            StringComparison.Ordinal);
+        var successfulWorkUnit = string.Equals(iteration.StopReason, "completed", StringComparison.Ordinal)
+            && (decision.Verdict is GoalVerificationVerdict.Continue or GoalVerificationVerdict.Complete
+                || finalWorkUnitWithoutTaskFact);
+
+        if (successfulWorkUnit)
+        {
+            plan.Current.Status = TaskNodeStatuses.Completed.ToString();
+            plan.Current.ResultSummary = decision.Reason;
+            plan.Current.ResultArtifactRef =
+                $"conversation-turn:{iteration.TurnId}:terminal:{iteration.TerminalSequence}";
+            plan.Current.ProgressFingerprint = decision.ProgressFingerprint;
+            plan.Current.CompletedAt ??= nowMs;
+            plan.Current.UpdatedAt = nowMs;
+
+            if (decision.Verdict == GoalVerificationVerdict.Complete
+                || finalWorkUnitWithoutTaskFact)
+            {
+                plan.Plan.Status = TaskPlanStatuses.Completed.ToString();
+                plan.Plan.ResultSummary = decision.Reason;
+                plan.Plan.CompletedAt ??= nowMs;
+                plan.Root.Status = TaskNodeStatuses.Completed.ToString();
+                plan.Root.ResultSummary = decision.Reason;
+                plan.Root.CompletedAt ??= nowMs;
+                plan.Root.UpdatedAt = nowMs;
+            }
+
+            plan.Plan.UpdatedAt = nowMs;
+            return;
+        }
+
+        plan.Current.Status = TaskNodeStatuses.Failed.ToString();
+        plan.Current.ErrorMessage = decision.BlockerMessage ?? decision.Reason;
+        plan.Current.CompletedAt ??= nowMs;
+        plan.Current.UpdatedAt = nowMs;
+        plan.Plan.Status = TaskPlanStatuses.Failed.ToString();
+        plan.Plan.ErrorMessage = decision.BlockerMessage ?? decision.Reason;
+        plan.Plan.CompletedAt ??= nowMs;
+        plan.Plan.UpdatedAt = nowMs;
+        plan.Root.Status = TaskNodeStatuses.Failed.ToString();
+        plan.Root.ErrorMessage = decision.BlockerMessage ?? decision.Reason;
+        plan.Root.CompletedAt ??= nowMs;
+        plan.Root.UpdatedAt = nowMs;
+    }
+
     private void ApplyCurrentVerdict(
         PlatformDbContext db,
         GoalRunEntity goal,
@@ -385,10 +558,13 @@ public sealed class GoalSettlementStore(
         WorkspaceTaskEntity? task,
         GoalIterationEntity iteration,
         GoalVerificationDecision decision,
+        BoundPlanState? boundPlan,
         DateTimeOffset now,
         List<GoalEventDraft> events,
         ref bool nextContinuation)
     {
+        ApplyBoundPlanVerdict(boundPlan, iteration, decision, now);
+
         if (decision.Verdict == GoalVerificationVerdict.Complete)
         {
             goal.Status = GoalPhase.Completed;
@@ -408,6 +584,13 @@ public sealed class GoalSettlementStore(
                     iterationNumber = iteration.IterationNo,
                 }));
                 ReleaseReservation(db, binding, now, "goal_completed");
+                if (task is not null
+                    && ReleaseAssignment(db, binding, task, now, AssignmentAttemptStatus.Completed))
+                {
+                    task.Version++;
+                    task.UpdatedAtUtc = now;
+                    AppendTaskEvent(db, task, binding, TaskEventType.TaskUpdated, now, goal.GoalRunId);
+                }
             }
             return;
         }
@@ -424,7 +607,21 @@ public sealed class GoalSettlementStore(
             events.Add(new(GoalEventTypes.Blocked, GoalProducerComponents.Coordinator, VerdictPayload(goal, iteration, decision)));
             if (binding is not null)
             {
+                var completionFactMissing = string.Equals(
+                    decision.BlockerCode,
+                    "task_completion_fact_missing",
+                    StringComparison.Ordinal);
+                var taskUpdatedForReview = false;
                 if (task is not null
+                    && completionFactMissing
+                    && TaskStateMachine.CanTransition(task.Status, WorkspaceTaskStatus.NeedsReview))
+                {
+                    task.Status = WorkspaceTaskStatus.NeedsReview;
+                    task.BlockerKind = decision.BlockerCode;
+                    task.BlockerReason = goal.BlockedMessage;
+                    taskUpdatedForReview = true;
+                }
+                else if (task is not null
                     && TaskStateMachine.CanTransition(task.Status, WorkspaceTaskStatus.Blocked))
                 {
                     task.Status = WorkspaceTaskStatus.Blocked;
@@ -443,12 +640,33 @@ public sealed class GoalSettlementStore(
                     iterationNumber = iteration.IterationNo,
                 }));
                 ReleaseReservation(db, binding, now, "goal_blocked");
+                if (completionFactMissing)
+                {
+                    binding.Status = "terminal";
+                    binding.ReleasedAtUtc = now;
+                    if (task is not null)
+                    {
+                        taskUpdatedForReview |= ReleaseAssignment(
+                            db,
+                            binding,
+                            task,
+                            now,
+                            AssignmentAttemptStatus.Failed);
+                        if (taskUpdatedForReview)
+                        {
+                            task.Version++;
+                            task.UpdatedAtUtc = now;
+                            AppendTaskEvent(db, task, binding, TaskEventType.TaskUpdated, now, goal.GoalRunId);
+                        }
+                    }
+                }
             }
             return;
         }
 
         if (GoalStateMachine.IsBudgetExhausted(goal.MaxIterations, goal.IterationsStarted))
         {
+            FailIncompleteBoundPlan(boundPlan, "Goal accepted-iteration budget exhausted.", now);
             goal.Status = GoalPhase.BudgetExhausted;
             goal.StatusReason = "accepted_iteration_budget_exhausted";
             goal.TerminalAtUtc = now;
@@ -459,6 +677,13 @@ public sealed class GoalSettlementStore(
                 binding.Status = "terminal";
                 binding.ReleasedAtUtc = now;
                 ReleaseReservation(db, binding, now, "goal_budget_exhausted");
+                if (task is not null
+                    && ReleaseAssignment(db, binding, task, now, AssignmentAttemptStatus.Failed))
+                {
+                    task.Version++;
+                    task.UpdatedAtUtc = now;
+                    AppendTaskEvent(db, task, binding, TaskEventType.TaskUpdated, now, goal.GoalRunId);
+                }
             }
             return;
         }
@@ -504,6 +729,52 @@ public sealed class GoalSettlementStore(
             remainingIterations = goal.MaxIterations - goal.IterationsStarted,
         }));
         nextContinuation = true;
+    }
+
+    private static void FailIncompleteBoundPlan(
+        BoundPlanState? plan,
+        string error,
+        DateTimeOffset now)
+    {
+        if (plan?.Plan is null || plan.Root is null
+            || plan.Plan.Status == TaskPlanStatuses.Completed.ToString())
+            return;
+        var nowMs = now.ToUnixTimeMilliseconds();
+        plan.Plan.Status = TaskPlanStatuses.Failed.ToString();
+        plan.Plan.ErrorMessage = error;
+        plan.Plan.CompletedAt ??= nowMs;
+        plan.Plan.UpdatedAt = nowMs;
+        plan.Root.Status = TaskNodeStatuses.Failed.ToString();
+        plan.Root.ErrorMessage = error;
+        plan.Root.CompletedAt ??= nowMs;
+        plan.Root.UpdatedAt = nowMs;
+    }
+
+    private static bool ReleaseAssignment(
+        PlatformDbContext db,
+        TaskGoalBindingEntity binding,
+        WorkspaceTaskEntity task,
+        DateTimeOffset now,
+        AssignmentAttemptStatus terminalStatus)
+    {
+        if (string.IsNullOrWhiteSpace(binding.AssignmentId))
+            return false;
+
+        var attempt = db.TaskAssignmentAttempts.Local.FirstOrDefault(
+            item => item.AttemptId == binding.AssignmentId)
+            ?? db.TaskAssignmentAttempts.SingleOrDefault(
+                item => item.AttemptId == binding.AssignmentId);
+        if (attempt is not null && attempt.ReleasedAtUtc is null)
+        {
+            attempt.Status = terminalStatus;
+            attempt.ReleasedAtUtc = now;
+            attempt.UpdatedAtUtc = now;
+        }
+
+        if (!string.Equals(task.ActiveAssignmentId, binding.AssignmentId, StringComparison.Ordinal))
+            return false;
+        task.ActiveAssignmentId = null;
+        return true;
     }
 
     private static void ReleaseReservation(
@@ -555,9 +826,15 @@ public sealed class GoalSettlementStore(
         DateTimeOffset now,
         string goalRunId)
     {
-        var next = (db.TaskEvents
+        var persistedHead = db.TaskEvents
             .Where(item => item.TaskId == task.TaskId)
-            .Max(item => (long?)item.Sequence) ?? 0) + 1;
+            .Max(item => (long?)item.Sequence) ?? 0;
+        var localHead = db.TaskEvents.Local
+            .Where(item => item.TaskId == task.TaskId)
+            .Select(item => item.Sequence)
+            .DefaultIfEmpty(0)
+            .Max();
+        var next = Math.Max(persistedHead, localHead) + 1;
         db.TaskEvents.Add(new TaskEventEntity
         {
             EventId = $"tgb-{task.TaskId}-{task.Version}",
@@ -656,4 +933,14 @@ public sealed class GoalSettlementStore(
     };
 
     private sealed record GoalEventDraft(string EventType, string ProducerComponent, object Payload);
+
+    private sealed record BoundPlanState(
+        TaskPlanRunEntity? Plan,
+        TaskNodeEntity? Root,
+        TaskNodeEntity? Current,
+        TaskNodeEntity? Next,
+        string? Error)
+    {
+        public static BoundPlanState Invalid(string error) => new(null, null, null, null, error);
+    }
 }

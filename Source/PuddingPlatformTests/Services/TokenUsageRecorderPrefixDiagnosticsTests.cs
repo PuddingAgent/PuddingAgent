@@ -123,6 +123,53 @@ public sealed class TokenUsageRecorderPrefixDiagnosticsTests
     }
 
     [TestMethod]
+    public async Task RecordAsync_WhenOnlyHistoryAnchorChanges_StoresHistoryAnchorChangedReason()
+    {
+        await using var scope = await CreateScopeAsync();
+        var recorder = new TokenUsageRecorder(
+            scope.Provider.GetRequiredService<IServiceScopeFactory>(),
+            new TokenUsageNormalizer(),
+            NullLogger<TokenUsageRecorder>.Instance);
+        var usage = new TokenUsageDto
+        {
+            PromptTokens = 100,
+            CompletionTokens = 10,
+            TotalTokens = 110,
+            PromptCacheHitTokens = 20,
+            PromptCacheMissTokens = 80,
+        };
+
+        await recorder.RecordAsync(
+            usage,
+            "agent_llm",
+            "history-m1",
+            "w1",
+            "history-session",
+            "deepseek",
+            "deepseek-chat",
+            prefixSnapshot: CreateSnapshot("prefix-a", "system-a", "tool-a") with
+            {
+                HistoryAnchorHash = "anchor-a",
+            });
+        await recorder.RecordAsync(
+            usage,
+            "agent_llm",
+            "history-m2",
+            "w1",
+            "history-session",
+            "deepseek",
+            "deepseek-chat",
+            prefixSnapshot: CreateSnapshot("prefix-b", "system-a", "tool-a") with
+            {
+                HistoryAnchorHash = "anchor-b",
+            });
+
+        var db = scope.Provider.GetRequiredService<PlatformDbContext>();
+        var second = await db.TokenUsageEvents.SingleAsync(e => e.SourceId == "history-m2");
+        Assert.AreEqual(PrefixChangeReasons.HistoryAnchorChanged, second.PrefixChangeReason);
+    }
+
+    [TestMethod]
     public async Task RecordAsync_WhenContextSnapshotExists_StoresContextLayerMetrics()
     {
         await using var scope = await CreateScopeAsync();

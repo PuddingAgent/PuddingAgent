@@ -163,13 +163,26 @@ public sealed class AgentAvailabilityProjectionStore(
             .OrderBy(item => item.BindingId)
             .FirstOrDefaultAsync(ct);
 
-        var activeAssignment = await db.TaskAssignmentAttempts
-            .AsNoTracking()
-            .Where(item => item.WorkspaceId == workspaceId
-                && item.AgentId == agentId
-                && item.ReleasedAtUtc == null)
-            .OrderBy(item => item.AttemptNumber)
-            .ThenBy(item => item.AttemptId)
+        // Assignment ownership is only an active-capacity fact while it still
+        // matches the Task's canonical active assignment and the Task itself is
+        // non-terminal. Historical imports and administrative terminal updates
+        // may leave an unreleased attempt behind; those rows remain audit data
+        // but must not keep an Agent false-busy forever.
+        var activeAssignment = await (
+                from attempt in db.TaskAssignmentAttempts.AsNoTracking()
+                join task in db.WorkspaceTasks.AsNoTracking()
+                    on new { attempt.WorkspaceId, attempt.TaskId }
+                    equals new { task.WorkspaceId, task.TaskId }
+                where attempt.WorkspaceId == workspaceId
+                    && attempt.AgentId == agentId
+                    && attempt.ReleasedAtUtc == null
+                    && task.ActiveAssignmentId == attempt.AttemptId
+                    && task.Status != WorkspaceTaskStatus.Completed
+                    && task.Status != WorkspaceTaskStatus.Failed
+                    && task.Status != WorkspaceTaskStatus.Cancelled
+                    && task.Status != WorkspaceTaskStatus.Archived
+                orderby attempt.AttemptNumber, attempt.AttemptId
+                select attempt)
             .FirstOrDefaultAsync(ct);
 
         var activeTaskId = binding?.TaskId ?? activeAssignment?.TaskId;

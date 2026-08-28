@@ -668,6 +668,8 @@ public class TokenUsageRecorder : ITokenUsageRecorder
         TokenUsageEventEntity previous,
         PromptPrefixSnapshot current)
     {
+        if (!string.Equals(previous.PrefixVersion, current.Version, StringComparison.Ordinal))
+            return PrefixChangeReasons.SerializationVersionChanged;
         if (!string.Equals(previous.ToolSpecHash, current.ToolSpecHash, StringComparison.Ordinal))
             return "tool_spec_changed";
         if (!string.Equals(previous.SystemPromptHash, current.SystemPromptHash, StringComparison.Ordinal))
@@ -676,6 +678,8 @@ public class TokenUsageRecorder : ITokenUsageRecorder
             return "memory_changed";
         if (!string.Equals(previous.FewShotHash, current.FewShotHash, StringComparison.Ordinal))
             return "few_shot_changed";
-        return "prefix_hash_changed";
+        // prefix-v2 includes the first non-system history anchor. Once all separately
+        // persisted header hashes are stable, the remaining change is a history-head epoch.
+        return PrefixChangeReasons.HistoryAnchorChanged;
     }
 }

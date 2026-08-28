@@ -170,6 +170,8 @@ public static class GoalSchemaBootstrapper
             agent_instance_id            TEXT    NOT NULL,
             reservation_id               TEXT,
             reservation_fencing_token    INTEGER,
+            task_plan_id                 TEXT,
+            plan_fingerprint             TEXT,
             execution_window_snapshot_json TEXT,
             status                       TEXT    NOT NULL DEFAULT 'active',
             idempotency_key              TEXT,
@@ -182,6 +184,9 @@ public static class GoalSchemaBootstrapper
         "CREATE UNIQUE INDEX IF NOT EXISTS UX_task_goal_bindings_task_active ON task_goal_bindings(task_id) WHERE status = 'active';",
         "CREATE UNIQUE INDEX IF NOT EXISTS UX_task_goal_bindings_idempotency ON task_goal_bindings(idempotency_key) WHERE idempotency_key IS NOT NULL;",
         "CREATE INDEX IF NOT EXISTS IX_task_goal_bindings_workspace_status ON task_goal_bindings(workspace_id, status);",
+        "ALTER TABLE task_goal_bindings ADD COLUMN task_plan_id TEXT;",
+        "ALTER TABLE task_goal_bindings ADD COLUMN plan_fingerprint TEXT;",
+        "CREATE INDEX IF NOT EXISTS IX_task_goal_bindings_task_plan ON task_goal_bindings(task_plan_id) WHERE task_plan_id IS NOT NULL;",
     ];
 
     public static async Task EnsureCreatedAsync(
@@ -202,6 +207,12 @@ public static class GoalSchemaBootstrapper
             }
             catch (Exception ex)
             {
+                if (ddl.StartsWith("ALTER TABLE", System.StringComparison.OrdinalIgnoreCase)
+                    && ex.Message.Contains("duplicate column name", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 logger?.LogWarning(
                     ex,
                     "[GoalSchema] SQLite schema bootstrap failed: {Ddl}",
