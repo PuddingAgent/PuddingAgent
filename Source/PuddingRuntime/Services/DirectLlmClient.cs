@@ -34,6 +34,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     private readonly ILlmGatewayUsageRecorder? _gatewayUsageRecorder;
     private readonly ICompositionVersionRegistry _compositionVersions;
     private readonly IFileRefStore? _fileRefStore;
+    private readonly LlmInvocationPurposeAccessor? _purposeAccessor;
 
     public DirectLlmClient(
     IHttpClientFactory httpClientFactory,
@@ -49,7 +50,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     IAudioArtifactResolver? audioArtifactResolver = null,
     ILlmGatewayUsageRecorder? gatewayUsageRecorder = null,
     ICompositionVersionRegistry? compositionVersions = null,
-    IFileRefStore? fileRefStore = null)
+    IFileRefStore? fileRefStore = null,
+    LlmInvocationPurposeAccessor? purposeAccessor = null)
     {
         _httpClientFactory = httpClientFactory;
         _llmConfigService = llmConfigService;
@@ -67,6 +69,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         _compositionVersions = compositionVersions ?? new CompositionVersionRegistry();
         // Provider File 引用 store（ADR-077 V3-S2b-2）：null 时视觉大图退化为 uploader-only，不强依赖。
         _fileRefStore = fileRefStore;
+        _purposeAccessor = purposeAccessor;
     }
 
     public async Task<LlmResponse> ChatAsync(
@@ -84,6 +87,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         var trace = ResolveTrace(workspaceId, sessionId);
         var startedAt = DateTimeOffset.UtcNow;
         var usageActivityId = Guid.NewGuid().ToString("N");
+        var gatewayUsageOperation = BuildGatewayUsageOperation("chat");
         var sw = Stopwatch.StartNew();
         var strategy = config.Strategy;
 
@@ -209,7 +213,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     await _gatewayUsageRecorder.RecordRequiredAsync(
                         result.Usage,
                         $"runtime-activity:{usageActivityId}",
-                        "chat",
+                        gatewayUsageOperation,
                         workspaceId,
                         sessionId,
                         agentTemplateId,
@@ -333,6 +337,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         var trace = ResolveTrace(workspaceId, sessionId);
         var startedAt = DateTimeOffset.UtcNow;
         var usageActivityId = Guid.NewGuid().ToString("N");
+        var gatewayUsageOperation = BuildGatewayUsageOperation("chat_stream");
         var sw = Stopwatch.StartNew();
         var strategy = config.Strategy;
 
@@ -727,7 +732,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 await _gatewayUsageRecorder.RecordRequiredAsync(
                     streamDiagnostics.Usage,
                     $"runtime-activity:{usageActivityId}",
-                    "chat_stream",
+                    gatewayUsageOperation,
                     workspaceId,
                     sessionId,
                     agentTemplateId,
@@ -955,6 +960,14 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         => tools.Count == 0
             ? ""
             : string.Join(",", tools.Select(t => t.Name).OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
+
+    private string BuildGatewayUsageOperation(string baseOperation)
+    {
+        var purpose = _purposeAccessor?.Current ?? "agent";
+        return string.Equals(purpose, "agent", StringComparison.OrdinalIgnoreCase)
+            ? baseOperation
+            : $"{baseOperation}:{purpose}";
+    }
 
     private RuntimeTraceContext ResolveTrace(string workspaceId, string sessionId)
     {

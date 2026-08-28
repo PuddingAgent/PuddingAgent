@@ -36,4 +36,11 @@ public sealed record AgentExecutionGuardrails
     /// 超出后注入系统引导消息，提示 LLM 调用工具、收口或声明 FAILED。默认 3。
     /// </summary>
     public int MaxNoProgressRounds { get; init; } = 3;
+
+    /// <summary>
+    /// 连续只调用 <c>search_tools</c>、但始终不执行任何已发现业务工具的上限。
+    /// 查询文本变化也计入同一 discovery-only 族；达到上限后以
+    /// <c>tool_discovery_stalled</c> 终止，避免通过换词绕过精确参数重复护栏。
+    /// </summary>
+    public int MaxConsecutiveToolDiscoveryCalls { get; init; } = 8;
 }

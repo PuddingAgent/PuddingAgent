@@ -256,7 +256,6 @@ public sealed partial class ContextPipeline
             var rawContextAugmentTokens = contextAugmentTokens;
             contextAugmentStr = TrimToTokenBudget(contextAugmentStr, MaxContextAugmentTokens);
             contextAugmentTokens = EstimateTokens(contextAugmentStr);
-            usedBudget += contextAugmentTokens;
 
             if (contextAugmentTokens < rawContextAugmentTokens)
             {
@@ -267,6 +266,27 @@ public sealed partial class ContextPipeline
                     rawContextAugmentTokens,
                     contextAugmentTokens,
                     MaxContextAugmentTokens);
+            }
+
+            // Match the durable-surface reuse rule used by DeepSeek Harness context
+            // plugins: an exact context payload that is still model-visible must not
+            // be appended again. Repeating the same recall block at every user turn
+            // preserves semantics poorly and converts the entire block into mandatory
+            // cache-miss tokens. A changed recall result, or one shadowed by compaction,
+            // is still injected normally.
+            if (IsExactUserContextVisible(request.SessionHistory, contextAugmentStr))
+            {
+                _logger.LogInformation(
+                    "[ContextPipeline:Prefix] Reused model-visible {LayerName} session={Session} tokensAvoided={Tokens}",
+                    contextAugmentLayerName,
+                    request.SessionId,
+                    contextAugmentTokens);
+                contextAugmentStr = null;
+                contextAugmentTokens = 0;
+            }
+            else
+            {
+                usedBudget += contextAugmentTokens;
             }
         }
 
@@ -428,6 +448,19 @@ public sealed partial class ContextPipeline
                 ct: CancellationToken.None);
             throw;
         }
+    }
+
+    private static bool IsExactUserContextVisible(
+        IReadOnlyList<ChatMessage> history,
+        string context)
+    {
+        var needle = context.Trim();
+        if (needle.Length == 0)
+            return false;
+
+        return history.Any(message =>
+            message.Role == ChatRole.User
+            && message.Content?.Contains(needle, StringComparison.Ordinal) == true);
     }
 
     private void RecordLayer(

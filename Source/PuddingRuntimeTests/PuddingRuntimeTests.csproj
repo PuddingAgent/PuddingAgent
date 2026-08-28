@@ -8,7 +8,7 @@
     <UseVSTest>true</UseVSTest>
   </PropertyGroup>
 
-  <ItemGroup>
+    <ItemGroup>
     <ProjectReference Include="..\PuddingRuntime\PuddingRuntime.csproj" />
     <ProjectReference Include="..\PuddingPlatform\PuddingPlatform.csproj" />
   </ItemGroup>

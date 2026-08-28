@@ -97,6 +97,7 @@ public sealed class BootstrapRebootToolTests
         StringAssert.Contains(body, "\"token\":\"tok\"");
         StringAssert.Contains(body, "\"requestedBy\":\"agent:x\"");
         StringAssert.Contains(body, "\"yolo\":true");
+        StringAssert.Contains(body, "\"deploymentMode\":\"desktop-build\"");
     }
 
     [TestMethod]
@@ -105,4 +106,32 @@ public sealed class BootstrapRebootToolTests
         var body = BootstrapRebootTool.BuildStartRequestJson("tok", "agent:x", yolo: false);
         StringAssert.Contains(body, "\"yolo\":false");
     }
+
+    [TestMethod]
+    public void BuildStartRequestJson_PrebuiltArtifact_SerializesArtifactEvidence()
+    {
+        var body = BootstrapRebootTool.BuildStartRequestJson(
+            "tok",
+            "agent:x",
+            yolo: false,
+            deploymentMode: "prebuilt-artifact",
+            artifactDirectory: @"E:\repo\.tmp-build\core",
+            artifactAssemblySha256: "abc");
+
+        StringAssert.Contains(body, "\"deploymentMode\":\"prebuilt-artifact\"");
+        StringAssert.Contains(body, "\"artifactDirectory\":\"E:\\\\repo\\\\.tmp-build\\\\core\"");
+        StringAssert.Contains(body, "\"artifactAssemblySha256\":\"abc\"");
+    }
+
+    [DataTestMethod]
+    [DataRow(null, "desktop-build")]
+    [DataRow("build", "desktop-build")]
+    [DataRow("prebuilt_artifact", "prebuilt-artifact")]
+    [DataRow("restart", "restart-only")]
+    public void NormalizeDeploymentMode_SupportedAliases_ReturnCanonical(string? value, string expected)
+        => Assert.AreEqual(expected, BootstrapRebootTool.NormalizeDeploymentMode(value));
+
+    [TestMethod]
+    public void NormalizeDeploymentMode_Unknown_ReturnsNull()
+        => Assert.IsNull(BootstrapRebootTool.NormalizeDeploymentMode("hot-swap"));
 }

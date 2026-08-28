@@ -79,7 +79,7 @@ public sealed class SqliteCompositionStoreTests
         Assert.AreEqual("skill-1", latest.SkillManifestHash);
         Assert.AreEqual("canonical-1", latest.CanonicalSystemPrefixHash);
         Assert.AreEqual("initial", latest.ChangeReason);
-        Assert.AreEqual("prefix-v1", latest.SerializationVersion);
+        Assert.AreEqual(PrefixCacheSnapshotBuilder.Version, latest.SerializationVersion);
         CollectionAssert.AreEqual(
             new[] { "search_tools", "file_read", "file_write" },
             latest.ToolIds.ToArray());
@@ -194,7 +194,7 @@ public sealed class SqliteCompositionStoreTests
         var latest = await _store.GetLatestAsync("session-a");
         Assert.IsNotNull(latest);
         Assert.AreEqual(3, latest.PermissionEpoch);
-        Assert.AreEqual("prefix-v1", latest.SerializationVersion);
+        Assert.AreEqual(PrefixCacheSnapshotBuilder.Version, latest.SerializationVersion);
     }
 
     [TestMethod]

@@ -764,7 +764,7 @@ public sealed class ContextWindowManager
             try
             {
                 var liveCurrentTurn = autoCompacted
-                    ? CaptureCurrentTurn(history, currentMessageId, currentTurnId)
+                    ? await CaptureCurrentTurnWithRecoveryAsync(history, sessionId, currentMessageId, currentTurnId, ct)
                     : [];
                 var dbHistory = await BuildContextFromDbAsync(
                     sessionId,
@@ -840,6 +840,77 @@ public sealed class ContextWindowManager
 
         return SanitizeForLlmContext(history.Skip(currentUserIndex));
     }
+
+    /// <summary>
+    /// P0-TXN Phase 1（事故1 补救）：CaptureCurrentTurn 解析失败时的补救路径——
+    /// 先从 DB 原始历史（未裁剪、不过滤 CompactedBy）按当前轮身份/围栏重查，仍找不到才返回空。
+    /// 无当前轮身份或 DB 工厂不可用时维持原行为（返回空），不产生额外日志噪音。
+    /// internal 以便单测直接验证（沿用 InternalsVisibleTo 约定）。
+    /// </summary>
+    internal async Task<List<ChatMessage>> CaptureCurrentTurnWithRecoveryAsync(
+        List<ChatMessage> history,
+        string? sessionId,
+        string? currentMessageId,
+        string? currentTurnId,
+        CancellationToken ct)
+    {
+        var segment = CaptureCurrentTurn(history, currentMessageId, currentTurnId);
+        if (segment.Count > 0)
+            return segment;
+
+        if ((string.IsNullOrWhiteSpace(currentMessageId) && string.IsNullOrWhiteSpace(currentTurnId))
+            || _memoryDbFactory is null
+            || string.IsNullOrWhiteSpace(sessionId))
+        {
+            return [];
+        }
+
+        _logger.LogWarning(
+            "[ContextWindow] Current turn fence parse failed; attempting raw DB recovery session={Session} message={MessageId} turn={TurnId}",
+            sessionId,
+            currentMessageId ?? "<none>",
+            currentTurnId ?? "<none>");
+
+        var recovered = await CurrentTurnDbRecovery.TryRecoverCurrentTurnTailAsync(
+            _memoryDbFactory,
+            _canonicalMessageStore,
+            sessionId,
+            currentMessageId,
+            currentTurnId,
+            _logger,
+            ct);
+        if (recovered.Count == 0)
+        {
+            _logger.LogWarning(
+                "[ContextWindow] Current turn raw DB recovery returned empty; continuing without current turn segment session={Session} message={MessageId}",
+                sessionId,
+                currentMessageId ?? "<none>");
+            return [];
+        }
+
+        _logger.LogInformation(
+            "[ContextWindow] Recovered current turn segment from raw DB session={Session} message={MessageId} recoveredCount={RecoveredCount}",
+            sessionId,
+            currentMessageId ?? "<none>",
+            recovered.Count);
+        return SanitizeForLlmContext(recovered);
+    }
+
+    /// <summary>
+    /// P0-TXN Phase 1（事故1 补救）：按 input_sha256 从 DB 原始历史（不过滤 CompactedBy、
+    /// 不排除当前 Turn）精确找回 accepted current turn 消息。找不到返回 null，调用方继续 fail-closed。
+    /// </summary>
+    public Task<ChatMessage?> TryFindCurrentTurnMessageByInputHashAsync(
+        string sessionId,
+        string inputSha256,
+        CancellationToken ct)
+        => CurrentTurnDbRecovery.TryFindMessageByInputHashAsync(
+            _memoryDbFactory,
+            _canonicalMessageStore,
+            sessionId,
+            inputSha256,
+            _logger,
+            ct);
 
     private bool _compactionServiceNullLogged;
 

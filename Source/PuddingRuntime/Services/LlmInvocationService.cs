@@ -15,19 +15,23 @@ public sealed class LlmInvocationService : ILlmInvocationService
     private readonly IRuntimeLlmClient _llmClient;
     private readonly ILlmProfileResolver? _profileResolver;
     private readonly ILogger<LlmInvocationService> _logger;
+    private readonly LlmInvocationPurposeAccessor? _purposeAccessor;
 
     public LlmInvocationService(
         IRuntimeLlmClient llmClient,
         ILogger<LlmInvocationService> logger,
-        ILlmProfileResolver? profileResolver = null)
+        ILlmProfileResolver? profileResolver = null,
+        LlmInvocationPurposeAccessor? purposeAccessor = null)
     {
         _llmClient = llmClient;
         _logger = logger;
         _profileResolver = profileResolver;
+        _purposeAccessor = purposeAccessor;
     }
 
     public async Task<LlmInvocationResult> InvokeAsync(LlmInvocationRequest request, CancellationToken ct = default)
     {
+        using var purposeScope = _purposeAccessor?.Push(request.Purpose);
         var messages = NormalizeMessages(request);
         _logger.LogDebug(
             "[LlmInvocation] Invoke session={SessionId} provider={ProviderId} profile={ProfileId} model={ModelId} msgCount={MsgCount} toolCount={ToolCount} prefix={PrefixHash}",
@@ -99,6 +103,7 @@ public sealed class LlmInvocationService : ILlmInvocationService
         LlmInvocationRequest request,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        using var purposeScope = _purposeAccessor?.Push(request.Purpose);
         ResolvedLlmInvocationProfile resolved;
         var messages = NormalizeMessages(request);
         _logger.LogDebug(

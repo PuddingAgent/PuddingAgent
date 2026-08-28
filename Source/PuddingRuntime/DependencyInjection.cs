@@ -143,6 +143,7 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<TaskPlannerContextBuilder>();
         services.AddSingleton<ContextPipeline>();
         services.AddSingleton<ContextUsageSnapshotStore>();
+        services.AddSingleton<LlmInvocationPurposeAccessor>();
         services.AddSingleton<CroppedLayersProvider>();
         services.AddSingleton<TimeClusterAnalyzer>();
         services.AddSingleton<MemorySnippetRelevanceCalculator>();

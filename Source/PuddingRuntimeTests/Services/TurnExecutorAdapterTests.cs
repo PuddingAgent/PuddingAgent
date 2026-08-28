@@ -56,6 +56,42 @@ public sealed class TurnExecutorAdapterTests
         Assert.AreEqual("ok", events[1].TerminalInfo?.Reply);
     }
 
+    [TestMethod]
+    public async Task ExecuteAsync_PropagatesCanonicalTaskPlanIdentity()
+    {
+        var runtime = new BusyThenSuccessRuntimeDispatcher();
+        var adapter = new TurnExecutorAdapter(
+            runtime,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TurnExecutorAdapter>.Instance);
+        var context = CreateContext() with
+        {
+            TaskPlanId = "plan-1",
+            TaskNodeId = "node-1",
+            ParentTaskNodeId = "root-1",
+            UsageBudget = new ExecutionUsageBudget
+            {
+                MaxInputTokens = 1000,
+                MaxOutputTokens = 100,
+                MaxCost = 0.5m,
+                PricingKnown = true,
+                InputPricePer1MTokens = 1m,
+                OutputPricePer1MTokens = 2m,
+                CacheHitPricePer1MTokens = 0.1m,
+            },
+        };
+
+        await foreach (var _ in adapter.ExecuteAsync(context, CancellationToken.None))
+        {
+        }
+
+        Assert.IsNotNull(runtime.LastRequest);
+        Assert.AreEqual("plan-1", runtime.LastRequest.TaskPlanId);
+        Assert.AreEqual("node-1", runtime.LastRequest.TaskNodeId);
+        Assert.AreEqual("root-1", runtime.LastRequest.ParentTaskNodeId);
+        Assert.AreEqual(1000L, runtime.LastRequest.UsageBudget?.MaxInputTokens);
+        Assert.AreEqual(0.5m, runtime.LastRequest.UsageBudget?.MaxCost);
+    }
+
     private static TurnExecutionContext CreateContext() => new(
         ConversationId: "conversation-1",
         WorkspaceId: "default",
@@ -92,6 +128,7 @@ public sealed class TurnExecutorAdapterTests
     private sealed class BusyThenSuccessRuntimeDispatcher : IRuntimeAgentDispatcher
     {
         public int DispatchCount { get; private set; }
+        public RuntimeDispatchRequest? LastRequest { get; private set; }
 
         public Task<RuntimeDispatchResult> DispatchAsync(
             RuntimeDispatchRequest request,
@@ -102,6 +139,7 @@ public sealed class TurnExecutorAdapterTests
             RuntimeDispatchRequest request,
             [EnumeratorCancellation] CancellationToken ct = default)
         {
+            LastRequest = request;
             DispatchCount++;
             if (DispatchCount == 1)
             {

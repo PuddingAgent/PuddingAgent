@@ -89,7 +89,7 @@ public sealed class PersistentCompositionVersionRegistryTests
             record.PrefixHash);
         Assert.IsNull(record.SkillManifestHash);
         Assert.IsNull(record.CanonicalSystemPrefixHash);
-        Assert.AreEqual("prefix-v1", record.SerializationVersion);
+        Assert.AreEqual(PrefixCacheSnapshotBuilder.Version, record.SerializationVersion);
         Assert.AreEqual(2, record.PermissionEpoch);
         Assert.AreEqual("initial", record.ChangeReason);
         CollectionAssert.AreEqual(toolIds, record.ToolIds.ToArray());

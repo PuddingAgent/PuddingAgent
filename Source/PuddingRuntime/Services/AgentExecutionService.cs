@@ -651,6 +651,68 @@ public sealed partial class AgentExecutionService
     private static string ComputeCurrentTurnInputHash(RuntimeDispatchRequest request)
         => ComputeSha256Hash((request.MessageId ?? string.Empty) + "\n" + request.MessageText);
 
+        /// <summary>
+    /// 定位出站历史中携带 accepted current turn 围栏（opening+closing）的最后一条 User 消息。
+    /// </summary>
+    private static ChatMessage? TryFindCurrentTurnMessage(
+        IReadOnlyList<ChatMessage> messages,
+        string expectedOpening,
+        string expectedClosing)
+        => messages.LastOrDefault(message =>
+            message.Role == ChatRole.User
+            && message.Content?.Contains(expectedOpening, StringComparison.Ordinal) == true
+            && message.Content.Contains(expectedClosing, StringComparison.Ordinal));
+
+    /// <summary>
+    /// P0-TXN Phase 1（事故1 补救）：EnsureCurrentTurnInputPresent 的 fail-closed 语义保留，
+    /// 但 throw 前增加一次性恢复尝试——从 DB 原始历史（含已压缩行）按 input_sha256 精确找回
+    /// accepted current turn 并注入出站历史尾部（幂等，不重复注入）；仍找不到才 throw。
+    /// </summary>
+    public static async Task EnsureCurrentTurnInputPresentWithRecoveryAsync(
+        List<ChatMessage> messages,
+        RuntimeDispatchRequest request,
+        Func<CancellationToken, Task<ChatMessage?>>? recoverCurrentTurnFromDb,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        var expectedOpening = $"[CURRENT USER TURN input_sha256={ComputeCurrentTurnInputHash(request)}]";
+        var expectedClosing = BuildCurrentTurnClosing(request);
+        if (TryFindCurrentTurnMessage(messages, expectedOpening, expectedClosing) is not null)
+            return;
+
+        if (recoverCurrentTurnFromDb is not null)
+        {
+            ChatMessage? recovered = null;
+            try
+            {
+                recovered = await recoverCurrentTurnFromDb(ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "[AgentExec] Current turn DB recovery lookup failed session={SessionId} message={MessageId}",
+                    request.SessionId,
+                    request.MessageId ?? "<none>");
+            }
+
+            if (recovered is not null)
+            {
+                messages.Add(recovered);
+                logger.LogWarning(
+                    "[AgentExec] Recovered accepted current turn from raw DB and appended to outbound history session={SessionId} message={MessageId}",
+                    request.SessionId,
+                    request.MessageId ?? "<none>");
+            }
+        }
+
+        EnsureCurrentTurnInputPresent(messages, request);
+    }
+
     /// <summary>
     /// Fails closed if compaction, projection, or secret injection removes the current turn fence.
     /// Provider invocation without the accepted input would otherwise silently execute stale intent.
@@ -661,10 +723,7 @@ public sealed partial class AgentExecutionService
     {
         var expectedOpening = $"[CURRENT USER TURN input_sha256={ComputeCurrentTurnInputHash(request)}]";
         var expectedClosing = BuildCurrentTurnClosing(request);
-        var currentTurn = messages.LastOrDefault(message =>
-            message.Role == ChatRole.User
-            && message.Content?.Contains(expectedOpening, StringComparison.Ordinal) == true
-            && message.Content.Contains(expectedClosing, StringComparison.Ordinal));
+        var currentTurn = TryFindCurrentTurnMessage(messages, expectedOpening, expectedClosing);
 
         if (currentTurn is null)
         {
@@ -1246,11 +1305,10 @@ public sealed partial class AgentExecutionService
     }
 
     /// <summary>
-    /// P0-6：在用户 Turn（一次 RuntimeDispatchRequest dispatch）边界一次性构建「冻结工具清单」。
-    /// Buffered/Streaming 两条路径共用本 helper（禁止两路逻辑漂移），同一 dispatch 内所有
-    /// LLM invoke 复用 VisibleTools；turn 内 search_tools 新加载的工具只进入
-    /// AgentSessionManager（append-only 持久化语义不变，唯一所有者仍是 AgentSessionManager），
-    /// 对当前 Turn 不可见，下一个 Turn 边界原子生效。
+    /// P0-6：在用户 Turn（一次 RuntimeDispatchRequest dispatch）边界一次性构建工具 catalog 与
+    /// 初始可见清单。Buffered/Streaming 两条路径共用本 helper（禁止两路逻辑漂移）。catalog、
+    /// capability 与每个工具的 schema 在 dispatch 内冻结；search_tools 激活只允许在 LLM round
+    /// 边界单调追加可见定义，当前 provider request 绝不原地变化。
     /// committedToolIds = dispatch 开始时的 loadedToolIds 快照（CreatePlan committed 参数生产接线，
     /// 防可见集收缩）。冻结清单是 dispatch 生命周期内的临时对象：不落盘、不写回。
     /// </summary>
@@ -1315,6 +1373,44 @@ public sealed partial class AgentExecutionService
             runtimeMergedToolNames,
             exposurePlan);
     }
+
+    /// <summary>
+    /// 将 search_tools 已提交的工具定义单调提升到下一次 LLM invoke。当前 round 使用的列表只有
+    /// 在工具结果完成后才调用本方法，因此满足“当前 round 冻结、下一 round 生效”。既有定义
+    /// 不重建、不改序、不收缩；只追加经 dispatch catalog/capability 已授权的定义。
+    /// </summary>
+    internal static int PromoteLoadedToolsForNextRound(
+        FrozenToolManifest manifest,
+        IReadOnlySet<string> loadedToolIds,
+        List<LlmToolDefinition> currentVisibleTools)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentNullException.ThrowIfNull(loadedToolIds);
+        ArgumentNullException.ThrowIfNull(currentVisibleTools);
+
+        var nextPlan = ToolExposurePlanner.CreatePlan(
+            manifest.AllLlmTools,
+            loadedToolIds,
+            manifest.CommittedToolIds);
+        var currentIds = currentVisibleTools
+            .Select(tool => tool.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (nextPlan.VisibleTools.Any(tool => !currentIds.Contains(tool.Name)))
+        {
+            var previousCount = currentVisibleTools.Count;
+            currentVisibleTools.Clear();
+            currentVisibleTools.AddRange(nextPlan.VisibleTools);
+            return currentVisibleTools.Count - previousCount;
+        }
+
+        return 0;
+    }
+
+    internal static string BuildToolDiscoveryStalledMessage(int consecutiveCalls)
+        => "tool_discovery_stalled: search_tools was called " +
+           $"{Math.Max(1, consecutiveCalls)} consecutive times without executing a discovered task tool. " +
+           "The runtime stopped this loop to protect the round, token, and time budgets. " +
+           "Verify that loaded tool definitions are visible on the next LLM round before resuming.";
 
     /// <summary>
     /// 根据执行场景（心跳 / 子代理）过滤工具定义，减少发送给 LLM 的 tool schema token 占用。
@@ -1877,6 +1973,136 @@ public sealed partial class AgentExecutionService
     }
 
     /// <summary>
+    /// Harness-aligned warm-prefix compaction. The summary request is the exact outbound
+    /// conversation plus one fixed trailing instruction, so the provider can reuse the
+    /// already-warm prefix. History is replaced only after a non-empty shrinking summary
+    /// returns; failure preserves the original surface.
+    /// </summary>
+    private async Task<WarmPrefixCompactionOutcome> TryWarmPrefixCompactionAsync(
+        RuntimeDispatchRequest request,
+        string agentInstanceId,
+        List<ChatMessage> durableHistory,
+        IReadOnlyList<ChatMessage> exactOutboundHistory,
+        IReadOnlyList<LlmToolDefinition> llmTools,
+        LlmConfig? effectiveLlmConfig,
+        int round,
+        CancellationToken ct)
+    {
+        if (_contextUsageSnapshotStore is null)
+            return WarmPrefixCompactionOutcome.NotNeeded;
+
+        var (trigger, target) = ResolveContextSoftCompactionRatios();
+        if (!WarmPrefixCompaction.TryCreatePlan(
+                _contextUsageSnapshotStore,
+                request.SessionId,
+                durableHistory,
+                exactOutboundHistory,
+                llmTools,
+                effectiveLlmConfig,
+                trigger,
+                target,
+                out var plan)
+            || plan is null)
+        {
+            return WarmPrefixCompactionOutcome.NotNeeded;
+        }
+
+        var replayPrefix = PrefixCacheSnapshotBuilder.Build(
+            plan.SummaryRequestMessages,
+            llmTools,
+            PrefixChangeReasons.CompactionReplay);
+        var summaryOutputTokens = effectiveLlmConfig?.MaxOutputTokens is > 0
+            ? Math.Min(effectiveLlmConfig.MaxOutputTokens.Value, 8192)
+            : 8192;
+        var summaryConfig = (effectiveLlmConfig ?? new LlmConfig()) with
+        {
+            MaxOutputTokens = summaryOutputTokens,
+        };
+        var summaryStartedAt = DateTimeOffset.UtcNow;
+        var summaryResult = await LlmInvoker.InvokeAsync(
+            request,
+            agentInstanceId,
+            plan.SummaryRequestMessages,
+            llmTools,
+            summaryConfig,
+            replayPrefix,
+            providerInputRecoveryAlreadyAttempted: true,
+            round,
+            ct,
+            purpose: "compaction");
+
+        // The provider call is billable even if its result is rejected. Keep it in the
+        // canonical attribution ledger under an explicit compaction source type.
+        if (summaryResult.Usage is not null && _tokenUsageRecorder is not null)
+        {
+            try
+            {
+                await _tokenUsageRecorder.RecordAttributedRequiredAsync(
+                    summaryResult.Usage,
+                    sourceType: "agent_compaction_llm",
+                    sourceId: $"{request.SessionId}:{request.ExecutionIdentity?.RunId ?? "no-run"}:{round + 1}:warm-prefix",
+                    workspaceId: request.WorkspaceId,
+                    sessionId: request.SessionId,
+                    providerId: request.LlmProfile?.ProviderId ?? request.LlmConfig?.Endpoint,
+                    modelId: request.LlmProfile?.ModelId ?? request.LlmConfig?.ModelId,
+                    attribution: BuildTokenUsageAttribution(request, round, []),
+                    prefixSnapshot: replayPrefix,
+                    occurredAtUtc: DateTimeOffset.UtcNow);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[AgentExec:Compaction] Warm-prefix usage recording deferred session={Session} round={Round}",
+                    request.SessionId,
+                    round + 1);
+            }
+        }
+
+        if (!summaryResult.Success
+            || summaryResult.Response is null
+            || summaryResult.Response.ToolCalls is { Count: > 0 })
+        {
+            _logger.LogWarning(
+                "[AgentExec:Compaction] Warm-prefix summary rejected; history preserved session={Session} round={Round} success={Success} toolCalls={ToolCalls} error={Error}",
+                request.SessionId,
+                round + 1,
+                summaryResult.Success,
+                summaryResult.Response?.ToolCalls?.Count ?? 0,
+                summaryResult.ExecutionError);
+            return new WarmPrefixCompactionOutcome(false, plan, trigger, target, summaryStartedAt);
+        }
+
+        var safeSummary = await _keyVaultService.StripAsync(
+            summaryResult.Response.Content ?? string.Empty,
+            ct);
+        var checkpoint = WarmPrefixCompaction.TryCreateCheckpoint(plan, safeSummary);
+        if (checkpoint is null)
+        {
+            _logger.LogWarning(
+                "[AgentExec:Compaction] Warm-prefix summary did not shrink selected history; history preserved session={Session} round={Round} removedTokens={RemovedTokens} summaryTokens={SummaryTokens}",
+                request.SessionId,
+                round + 1,
+                plan.RemovedTokenEstimate,
+                ContextUsageSnapshotStore.CountTokens(safeSummary));
+            return new WarmPrefixCompactionOutcome(false, plan, trigger, target, summaryStartedAt);
+        }
+
+        durableHistory.Clear();
+        durableHistory.AddRange(checkpoint);
+        _logger.LogInformation(
+            "[AgentExec:Compaction] Warm-prefix checkpoint committed session={Session} round={Round} removed={Removed} messages={Before}->{After} estimated={BeforeTokens}->{AfterTokens} durationMs={DurationMs}",
+            request.SessionId,
+            round + 1,
+            plan.RemovedMessageCount,
+            plan.InitialMessageCount,
+            durableHistory.Count,
+            plan.InitialUsedTokens,
+            plan.EstimatedRetainedSnapshot.UsedTokens,
+            Math.Max(0, (long)(DateTimeOffset.UtcNow - summaryStartedAt).TotalMilliseconds));
+        return new WarmPrefixCompactionOutcome(true, plan, trigger, target, summaryStartedAt);
+    }
+
+    /// <summary>
     /// 提交子代理终态。ISubAgentRunStore 负责唯一性、稳定终态事件与幂等投影；
     /// Runtime 和调度器都可在各自异常边界尝试提交。
     /// </summary>
@@ -1982,6 +2208,51 @@ public sealed partial class AgentExecutionService
         };
     }
 
+    /// <summary>
+    /// Keeps the first model-visible system prompt byte-stable for the lifetime of the
+    /// current session/work unit. Per-turn recall is carried by UserContextPrefix at the
+    /// tail; silently replacing message zero would invalidate the entire provider prefix.
+    /// A hydrated compaction summary is not a prompt and therefore receives a new prompt
+    /// before it instead of being overwritten.
+    /// </summary>
+    internal static SystemPromptUpdateKind EnsureFrozenSystemPrompt(
+        List<ChatMessage> history,
+        string assembledSystemPrompt)
+    {
+        ArgumentNullException.ThrowIfNull(history);
+        assembledSystemPrompt ??= string.Empty;
+
+        if (history.Count == 0 || history[0].Role != ChatRole.System)
+        {
+            history.Insert(0, new ChatMessage(ChatRole.System, assembledSystemPrompt));
+            return SystemPromptUpdateKind.Inserted;
+        }
+
+        var firstContent = history[0].Content ?? string.Empty;
+        if (firstContent.Contains("<compact_summary>", StringComparison.OrdinalIgnoreCase)
+            || firstContent.Contains("<compacted-summary>", StringComparison.OrdinalIgnoreCase))
+        {
+            history.Insert(0, new ChatMessage(ChatRole.System, assembledSystemPrompt));
+            return SystemPromptUpdateKind.Inserted;
+        }
+
+        if (string.Equals(firstContent, assembledSystemPrompt, StringComparison.Ordinal))
+            return SystemPromptUpdateKind.Unchanged;
+
+        // Stable-header changes (template/config/tool-manifest) are semantically meaningful.
+        // Commit exactly once and let the caller emit an explicit epoch reason; silently
+        // keeping a stale prompt would change the task/tool contract to improve a metric.
+        history[0] = new ChatMessage(ChatRole.System, assembledSystemPrompt);
+        return SystemPromptUpdateKind.Replaced;
+    }
+
+}
+
+internal enum SystemPromptUpdateKind
+{
+    Unchanged,
+    Inserted,
+    Replaced,
 }
 
 /// <summary>

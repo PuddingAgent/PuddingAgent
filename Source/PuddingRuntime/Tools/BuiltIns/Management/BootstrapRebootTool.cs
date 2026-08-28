@@ -14,13 +14,14 @@ namespace PuddingRuntime.Services.Tools;
 /// 从 &lt;DataRoot&gt;/config/system.json 读取 desktop.core.controlToken 与
 /// desktop.bootstrap.httpPort，向 Desktop 环回控制端点
 /// POST /desktop/bootstrap/start（X-Control-Token 头 + JSON body）。
-/// Desktop 接受后：停 Core → dotnet 增量构建 → 按需写 yolo.signal → 重启 Core。
+/// Desktop 接受后：停 Core → 构建/接收预构建产物 → 事务部署到实际 Core
+/// 启动目录 → SHA-256 校验 → 重启 Core。
 /// 成功触发后本进程将在数秒内被停止，会话于重启后自动恢复（心跳/消息唤醒）。
 /// </summary>
 [Tool(
     id: "bootstrap_reboot",
     name: "Bootstrap reboot",
-    description: "触发 Desktop 引导的 Core 进程重建与重启（自举重启 self-ignition）。在提交需要重启生效的代码或配置改动后使用。Desktop 停止 Core、运行增量 dotnet build 并重启；触发成功后本进程在数秒内终止，会话在重启后自动恢复。会写入 yolo.signal 使 YOLO 模式在重启后存活（可用 keepYolo 覆盖）。警告：重启会终止所有运行中的子代理。",
+    description: "触发 Desktop 引导的 Core 程序集部署与重启（自举点火）。默认 desktop-build：Desktop 停止 Core、编译、把产物事务部署到实际 Core 启动目录、校验 PuddingAgent.dll SHA-256 后重启；prebuilt-artifact 可接收 Agent 已编译产物；restart-only 才只重启。触发后本进程会终止并在新 Core 中恢复。警告：重启会终止所有运行中的子代理。",
     category: ToolCategory.General,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.None)]
@@ -69,13 +70,25 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
             return Fail("Desktop bootstrap HTTP endpoint is disabled (desktop.bootstrap.httpEnabled=false).");
 
         var yolo = args.KeepYolo ?? _runtimeControl.Mode == RuntimeExecutionMode.Yolo;
+        var deploymentMode = NormalizeDeploymentMode(args.DeploymentMode);
+        if (deploymentMode is null)
+            return Fail("deploymentMode must be desktop-build, prebuilt-artifact, or restart-only.");
+        if (deploymentMode == "prebuilt-artifact" && string.IsNullOrWhiteSpace(args.ArtifactDirectory))
+            return Fail("prebuilt-artifact mode requires artifactDirectory.");
+
         var requestedBy = $"agent:{context.AgentInstanceId}";
         var url = $"http://127.0.0.1:{port}/desktop/bootstrap/start";
-        var body = BuildStartRequestJson(token, requestedBy, yolo);
+        var body = BuildStartRequestJson(
+            token,
+            requestedBy,
+            yolo,
+            deploymentMode,
+            args.ArtifactDirectory,
+            args.ArtifactAssemblySha256);
 
         _logger.LogWarning(
-            "[BootstrapReboot] Agent {Agent} triggered rebuild-restart. endpoint={Endpoint} yolo={Yolo} reason={Reason}",
-            context.AgentInstanceId, url, yolo, args.Reason ?? "(none)");
+            "[BootstrapReboot] Agent {Agent} triggered deployment restart. endpoint={Endpoint} mode={Mode} yolo={Yolo} reason={Reason}",
+            context.AgentInstanceId, url, deploymentMode, yolo, args.Reason ?? "(none)");
 
         try
         {
@@ -110,6 +123,7 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
                 status = statusText,
                 http_status = statusCode,
                 yolo_signal_requested = yolo,
+                deployment_mode = deploymentMode,
                 desktop_response = responseBody,
                 notice,
             }, OutputJsonOptions));
@@ -158,8 +172,36 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
     }
 
     /// <summary>Builds the POST /desktop/bootstrap/start JSON body.</summary>
-    public static string BuildStartRequestJson(string token, string requestedBy, bool yolo)
-        => JsonSerializer.Serialize(new { token, requestedBy, yolo }, OutputJsonOptions);
+    public static string BuildStartRequestJson(
+        string token,
+        string requestedBy,
+        bool yolo,
+        string deploymentMode = "desktop-build",
+        string? artifactDirectory = null,
+        string? artifactAssemblySha256 = null)
+        => JsonSerializer.Serialize(
+            new
+            {
+                token,
+                requestedBy,
+                yolo,
+                deploymentMode,
+                artifactDirectory,
+                artifactAssemblySha256,
+            },
+            OutputJsonOptions);
+
+    public static string? NormalizeDeploymentMode(string? mode)
+    {
+        var value = string.IsNullOrWhiteSpace(mode) ? "desktop-build" : mode;
+        return value.Trim().ToLowerInvariant().Replace('_', '-') switch
+        {
+            "desktop-build" or "build" => "desktop-build",
+            "prebuilt-artifact" or "prebuilt" => "prebuilt-artifact",
+            "restart-only" or "restart" => "restart-only",
+            _ => null,
+        };
+    }
 
     private static readonly JsonSerializerOptions ConfigJsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -187,4 +229,13 @@ public sealed record BootstrapRebootArgs
 
     [ToolParam("Whether Desktop should write yolo.signal so YOLO mode survives the restart. Default: preserve the current mode (true only when currently in YOLO).")]
     public bool? KeepYolo { get; init; }
+
+    [ToolParam("Deployment mode: desktop-build (default; Desktop compiles, deploys, verifies and restarts), prebuilt-artifact (deploy an Agent-built directory), or restart-only.")]
+    public string? DeploymentMode { get; init; }
+
+    [ToolParam("Absolute prepared PuddingAgent output directory. Required only for prebuilt-artifact mode; it must be inside the configured repository root.")]
+    public string? ArtifactDirectory { get; init; }
+
+    [ToolParam("Optional expected SHA-256 of artifactDirectory/PuddingAgent.dll. Desktop rejects deployment on mismatch.")]
+    public string? ArtifactAssemblySha256 { get; init; }
 }

@@ -44,7 +44,8 @@ internal sealed class AgentExecutionLlmInvoker
         PromptPrefixSnapshot? prefixSnapshot,
         bool providerInputRecoveryAlreadyAttempted,
         int round,
-        CancellationToken ct)
+        CancellationToken ct,
+        string purpose = "agent")
     {
         LlmResponse llmResp;
 
@@ -59,6 +60,7 @@ internal sealed class AgentExecutionLlmInvoker
                     AgentInstanceId = agentInstanceId,
                     AgentTemplateId = request.AgentTemplateId,
                     Profile = RequireInvocationProfile(request),
+                    Purpose = purpose,
                     Messages = injectedHistory,
                     Tools = llmTools,
                     PrefixSnapshot = prefixSnapshot,

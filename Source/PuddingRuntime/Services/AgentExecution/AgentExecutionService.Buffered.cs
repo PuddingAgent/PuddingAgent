@@ -112,6 +112,7 @@ public sealed partial class AgentExecutionService
         // ── 构建对话历史 ─────────────────────────────────────────────
         var history = _contextManager.GetOrCreateHistory(request.SessionId);
         var rehydratedFromDbThisDispatch = false;
+        var systemPromptEpochChanged = false;
         string? userContextPrefix = null;
 
         // ── 入站消息去重：同一 message_id 因 Ack 丢失/重试被重复 dispatch 时，
@@ -361,7 +362,18 @@ public sealed partial class AgentExecutionService
                         ct: CancellationToken.None);
                     throw;
                 }
-                history[0] = new ChatMessage(ChatRole.System, systemPrompt.SystemPrompt);
+                // Same-epoch bytes stay frozen. A real stable-header change is committed once
+                // as an explicit prefix epoch; volatile recall/inbound data remains in User tail.
+                var systemPromptUpdate = EnsureFrozenSystemPrompt(
+                    history,
+                    systemPrompt.SystemPrompt ?? string.Empty);
+                systemPromptEpochChanged = systemPromptUpdate == SystemPromptUpdateKind.Replaced;
+                if (systemPromptEpochChanged)
+                {
+                    _logger.LogWarning(
+                        "[AgentExec:Prefix] Started explicit system-prompt epoch session={Session}",
+                        request.SessionId);
+                }
                 userContextPrefix = systemPrompt.UserContextPrefix;
             }
         }
@@ -418,6 +430,7 @@ public sealed partial class AgentExecutionService
         PromptPrefixSnapshot? lastPrefixSnapshot = null;
         var expectedOutputTracker =
             new ExpectedOutputCandidateTracker(request.ExpectedOutputContract);
+        var usageBudgetTracker = new ExecutionUsageBudgetTracker(request.UsageBudget);
 
         // 记录本次 dispatch 前已有的 journal 条数，用于在结束时截取本次新增的 turns
         var journalStartCount = _journal.GetTurns(request.SessionId).Count;
@@ -429,13 +442,14 @@ public sealed partial class AgentExecutionService
         int  noProgressCount  = 0;   // 连续无工具调用进展的轮次计数
         var  toolRepeatMap    = new Dictionary<string, int>(StringComparer.Ordinal);
         var  failedToolCallTracker = new FailedToolCallTracker();
+        var  toolDiscoveryLoopTracker = new ToolDiscoveryLoopTracker(
+            _guardrails.MaxConsecutiveToolDiscoveryCalls);
         int  toolFailureCount = 0;
         int  toolOutputTruncatedCount = 0;
         long toolOutputChars = 0;
         string? firstToolFailureSummary = null;
                 var loadedToolIds = _sessionManager.GetLoadedToolIds(request.SessionId);
-        // P0-6：Turn 边界冻结工具暴露清单——本 dispatch 内所有 LLM invoke 复用同一可见集；
-        // turn 内 search_tools 新加载的工具仅持久化到 AgentSessionManager，下一 Turn 才生效。
+        // Dispatch 冻结 catalog/capability/schema；可见集只允许在 LLM round 边界单调追加。
         var frozenTools = BuildFrozenToolManifest(effectiveCapability, template, request, loadedToolIds);
         var allLlmTools = frozenTools.AllLlmTools;
         var llmTools = frozenTools.VisibleTools.ToList();
@@ -457,6 +471,8 @@ public sealed partial class AgentExecutionService
             SummarizeToolNames(frozenTools.RuntimeMergedToolNames),
             SummarizeToolDefinitions(llmTools));
         var providerInputRecoveryAttempted = false;
+        var warmPrefixCompactionAttempted = false;
+        var toolSpecChangedForNextRound = false;
 
         try
         {
@@ -551,6 +567,26 @@ public sealed partial class AgentExecutionService
                     break;
                 }
 
+                var budgetBeforeRound = usageBudgetTracker.EvaluateBeforeRound();
+                if (budgetBeforeRound.ShouldStop)
+                {
+                    stopReason = AgentLoopStopReason.BudgetExhausted;
+                    execState = AgentExecutionState.BudgetExhausted;
+                    subAgentTerminalStatus = "budget_exhausted";
+                    executionError = budgetBeforeRound.Message;
+                    finalMessage = budgetBeforeRound.Message ?? "WorkUnit usage budget exhausted.";
+                    _logger.LogError(
+                        "[AgentExec:WorkUnitBudget] Refused LLM round session={Session} round={Round} code={Code} input={InputTokens} output={OutputTokens} cost={Cost}",
+                        request.SessionId,
+                        round + 1,
+                        budgetBeforeRound.ErrorCode,
+                        budgetBeforeRound.InputTokens,
+                        budgetBeforeRound.OutputTokens,
+                        budgetBeforeRound.Cost);
+                    await FireHooksAsync(h => h.OnMaxRoundsReachedAsync(loopCtx, ct));
+                    break;
+                }
+
                 roundsStarted = round + 1;
                 await FireHooksAsync(h => h.OnRoundStartAsync(loopCtx, round, ct));
                 var turnStart = DateTimeOffset.UtcNow;
@@ -567,8 +603,7 @@ public sealed partial class AgentExecutionService
                 // ── LLM 调用 ──────────────────────────────────────────
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
                 ReportLiveness(request, "llm.started");
-                                // P0-6：工具清单已在 dispatch 边界冻结（frozenTools/llmTools），轮内不再重建；
-                // turn 内 search_tools 新加载的工具仅持久化，下一 Turn 边界原子生效。
+                // 当前 provider request 的工具定义已冻结；上轮 search_tools 的单调追加从本轮生效。
 
                 await TryInjectSteeringMessageAsync(
                     request,
@@ -577,7 +612,7 @@ public sealed partial class AgentExecutionService
                     round,
                     execTrace,
                     ct);
-                var injectedHistory = await BuildInjectedHistoryAsync(history, ct);
+                var injectedHistory = (await BuildInjectedHistoryAsync(history, ct)).ToList();
                 // PreMessageHook: 自动加载匹配的技能（借鉴 Claude Code Hooks 理念）
                 if (_skillEnforcer is not null)
                 {
@@ -591,54 +626,53 @@ public sealed partial class AgentExecutionService
                                 ChatRole.System,
                                 $"[AUTO-LOADED SKILL: {result.SkillId}]\n{result.MarkdownContent}"));
                         }
-                        injectedHistory = await BuildInjectedHistoryAsync(history, ct);
+                        injectedHistory = (await BuildInjectedHistoryAsync(history, ct)).ToList();
                     }
                 }
                 ContextUsageSnapshot? contextUsageSnapshot = null;
+                var toolSpecChangedThisRound = toolSpecChangedForNextRound;
+                toolSpecChangedForNextRound = false;
+                string? roundPrefixChangeReason = rehydratedFromDbThisDispatch && round == 0
+                    ? PrefixChangeReasons.SessionRehydrated
+                    : systemPromptEpochChanged && round == 0
+                        ? PrefixChangeReasons.SystemPromptChanged
+                        : toolSpecChangedThisRound
+                            ? PrefixChangeReasons.ToolSpecChanged
+                            : null;
                 if (_contextUsageSnapshotStore is not null)
                 {
-                    // 轮内软压缩（P1 能耗修复）：估算达到 trigger×有效上限即驱逐最旧会话单元并
-                    // 回写 history。此前子代理路径只有硬悬崖（run_20260820_232511 曾把上下文
-                    // 养到 61.3 万 tokens 才一次性裁剪），每轮重放 30-60 万 tokens。
-                    if (history.Count > 12)
+                    // Warm-prefix checkpoint：原样重放当前 provider 请求并只在尾部追加固定摘要
+                    // 指令；摘要成功且确实缩小时才一次性替换旧历史。失败保留原 surface，
+                    // 禁止旧实现直接逐轮删除历史头部造成语义丢失和全前缀 miss。
+                    if (history.Count > 12 && !warmPrefixCompactionAttempted)
                     {
-                        var (softTrigger, softTarget) = ResolveContextSoftCompactionRatios();
-                        var softCompaction = LlmRequestBudgetGuard.PrepareSoftCompaction(
-                            _contextUsageSnapshotStore,
-                            request.SessionId,
+                        var compaction = await TryWarmPrefixCompactionAsync(
+                            request,
+                            instance.AgentInstanceId,
                             history,
+                            injectedHistory,
                             llmTools,
                             effectiveLlmConfig,
-                            softTrigger,
-                            softTarget);
-                        if (softCompaction.Compacted)
+                            round,
+                            ct);
+                        warmPrefixCompactionAttempted = compaction.Plan is not null;
+                        if (compaction.Compacted && compaction.Plan is not null)
                         {
-                            history.Clear();
-                            history.AddRange(softCompaction.Messages);
-                            injectedHistory = await BuildInjectedHistoryAsync(history, ct);
-                            _logger.LogWarning(
-                                "[AgentExec:ContextBudget] Soft compaction session={Session} round={Round} removed={Removed} messages {Before}->{After} estimated={BeforeTokens}->{AfterTokens} limit={Limit} trigger={Trigger:F2}",
-                                request.SessionId,
-                                round + 1,
-                                softCompaction.RemovedMessageCount,
-                                softCompaction.InitialMessageCount,
-                                history.Count,
-                                softCompaction.InitialUsedTokens,
-                                softCompaction.Snapshot.UsedTokens,
-                                softCompaction.EffectiveInputLimit,
-                                softTrigger);
+                            roundPrefixChangeReason = PrefixChangeReasons.CompactionCheckpoint;
+                            injectedHistory = (await BuildInjectedHistoryAsync(history, ct)).ToList();
                             await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.context.compacted", new
                             {
                                 sub_agent_id = request.SessionId,
                                 round = round + 1,
-                                removed_messages = softCompaction.RemovedMessageCount,
-                                messages_before = softCompaction.InitialMessageCount,
+                                mode = "warm_prefix_checkpoint",
+                                removed_messages = compaction.Plan.RemovedMessageCount,
+                                messages_before = compaction.Plan.InitialMessageCount,
                                 messages_after = history.Count,
-                                estimated_tokens_before = softCompaction.InitialUsedTokens,
-                                estimated_tokens_after = softCompaction.Snapshot.UsedTokens,
-                                effective_input_limit = softCompaction.EffectiveInputLimit,
-                                trigger_ratio = softTrigger,
-                                target_ratio = softTarget,
+                                estimated_tokens_before = compaction.Plan.InitialUsedTokens,
+                                estimated_tokens_after = compaction.Plan.EstimatedRetainedSnapshot.UsedTokens,
+                                effective_input_limit = compaction.Plan.EffectiveInputLimit,
+                                trigger_ratio = compaction.TriggerRatio,
+                                target_ratio = compaction.TargetRatio,
                             });
                         }
                     }
@@ -664,13 +698,19 @@ public sealed partial class AgentExecutionService
                             budgetedRequest.Snapshot.PromptCalibrationRatio);
                     }
                 }
-                EnsureCurrentTurnInputPresent(injectedHistory, request);
+                await EnsureCurrentTurnInputPresentWithRecoveryAsync(
+            injectedHistory,
+            request,
+            recoveryCt => _contextManager.TryFindCurrentTurnMessageByInputHashAsync(
+                request.SessionId,
+                ComputeCurrentTurnInputHash(request),
+                recoveryCt),
+            _logger,
+            ct);
                 var prefixSnapshot = PrefixCacheSnapshotBuilder.Build(
                     injectedHistory,
                     llmTools,
-                    prefixChangeReason: rehydratedFromDbThisDispatch && round == 0
-                        ? PrefixChangeReasons.SessionRehydrated
-                        : null);
+                    prefixChangeReason: roundPrefixChangeReason);
                 lastPrefixSnapshot = prefixSnapshot;
                 await TryAppendSubAgentEventAsync(subAgentRunId, "subagent.llm.started", new
                 {
@@ -681,6 +721,10 @@ public sealed partial class AgentExecutionService
                     model_id = request.LlmProfile?.ModelId,
                     message_count = injectedHistory.Count,
                     tool_count = llmTools.Count,
+                    prefix_hash = prefixSnapshot.PrefixHash,
+                    history_anchor_hash = prefixSnapshot.HistoryAnchorHash,
+                    prefix_change_reason = prefixSnapshot.PrefixChangeReason,
+                    serialization_version = prefixSnapshot.SerializationVersion,
                     estimated_context_tokens = contextUsageSnapshot?.UsedTokens,
                     current_message_id = request.MessageId,
                     current_input_sha256 = ComputeCurrentTurnInputHash(request),
@@ -781,6 +825,27 @@ public sealed partial class AgentExecutionService
                             "[AgentExec] Token usage recording deferred session={Session} round={Round}",
                             request.SessionId, round + 1);
                     }
+                }
+
+                var budgetAfterRound = usageBudgetTracker.Record(usage);
+                if (budgetAfterRound.ShouldStop)
+                {
+                    stopReason = AgentLoopStopReason.BudgetExhausted;
+                    execState = AgentExecutionState.BudgetExhausted;
+                    subAgentTerminalStatus = "budget_exhausted";
+                    executionError = budgetAfterRound.Message;
+                    finalMessage = budgetAfterRound.Message ?? "WorkUnit usage budget exhausted.";
+                    _logger.LogWarning(
+                        "[AgentExec:WorkUnitBudget] Stopped after LLM round session={Session} round={Round} code={Code} input={InputTokens} output={OutputTokens} cacheHit={CacheHitTokens} cost={Cost}",
+                        request.SessionId,
+                        round + 1,
+                        budgetAfterRound.ErrorCode,
+                        budgetAfterRound.InputTokens,
+                        budgetAfterRound.OutputTokens,
+                        budgetAfterRound.CacheHitTokens,
+                        budgetAfterRound.Cost);
+                    await FireHooksAsync(h => h.OnMaxRoundsReachedAsync(loopCtx, ct));
+                    break;
                 }
 
                 // Note: the LLM call (facade / legacy) and error handling
@@ -1238,7 +1303,7 @@ public sealed partial class AgentExecutionService
 
                         await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, canonicalCall.Name, skillResult, ct));
 
-                                                var newlyLoadedToolCount = ToolExposurePlanner.RegisterSearchResult(
+                        var newlyLoadedToolCount = ToolExposurePlanner.RegisterSearchResult(
                             canonicalCall.Name,
                             skillResult.Success,
                             skillResult.Output,
@@ -1246,15 +1311,21 @@ public sealed partial class AgentExecutionService
                             allLlmTools);
                         if (newlyLoadedToolCount > 0)
                         {
-                            // P0-6：只持久化（AgentSessionManager append-only 语义不变）；
-                            // 本 Turn 冻结清单不重建，新工具下一 Turn 边界原子生效。
                             _sessionManager.RememberLoadedToolIds(request.SessionId, loadedToolIds);
+                            var promotedToolCount = PromoteLoadedToolsForNextRound(
+                                frozenTools,
+                                loadedToolIds,
+                                llmTools);
+                            toolSpecChangedForNextRound |= promotedToolCount > 0;
                             _logger.LogInformation(
-                                "[AgentExec:ToolDiscovery] Loaded {AddedCount} tool definition(s) for next dispatch (turn-frozen) session={Session} loadedTools={LoadedTools}",
+                                "[AgentExec:ToolDiscovery] Loaded {AddedCount} and promoted {PromotedCount} tool definition(s) for next LLM round session={Session} visibleToolCount={VisibleToolCount} loadedTools={LoadedTools}",
                                 newlyLoadedToolCount,
+                                promotedToolCount,
                                 request.SessionId,
+                                llmTools.Count,
                                 SummarizeToolNames(loadedToolIds));
                         }
+                        var toolDiscoveryStalled = toolDiscoveryLoopTracker.Observe(canonicalCall.Name);
 
                         var toolPayloadRaw = skillResult.Success
                             ? $"✅ Tool '{canonicalCall.Name}' succeeded (exit={skillResult.ExitCode}):\n{skillResult.Output}"
@@ -1286,6 +1357,32 @@ public sealed partial class AgentExecutionService
                             ToolSuccess = skillResult.Success,
                             ToolError = safeToolError,
                         });
+                        if (toolDiscoveryStalled)
+                        {
+                            executionError = BuildToolDiscoveryStalledMessage(
+                                toolDiscoveryLoopTracker.ConsecutiveCalls);
+                            finalMessage = executionError;
+                            stopReason = AgentLoopStopReason.Failed;
+                            execState = AgentExecutionState.Failed;
+                            subAgentTerminalStatus = "failed";
+                            _logger.LogError(
+                                "[AgentExec:ToolDiscovery] {Error} session={Session} round={Round}",
+                                executionError,
+                                request.SessionId,
+                                round + 1);
+                            await TryAppendSubAgentEventAsync(
+                                subAgentRunId,
+                                "subagent.tool_discovery.stalled",
+                                new
+                                {
+                                    sub_agent_id = request.SessionId,
+                                    round = round + 1,
+                                    consecutive_search_tools = toolDiscoveryLoopTracker.ConsecutiveCalls,
+                                    visible_tool_count = llmTools.Count,
+                                    loaded_tool_count = loadedToolIds.Count,
+                                });
+                            break;
+                        }
                     }
 
                     if (execState == AgentExecutionState.Failed)
@@ -1780,7 +1877,7 @@ public sealed partial class AgentExecutionService
 
                     await FireHooksAsync(h => h.OnToolResultAsync(loopCtx, round, toolName, skillResult, ct));
 
-                                        var newlyLoadedToolCount = ToolExposurePlanner.RegisterSearchResult(
+                    var newlyLoadedToolCount = ToolExposurePlanner.RegisterSearchResult(
                         toolName,
                         skillResult.Success,
                         skillResult.Output,
@@ -1788,15 +1885,21 @@ public sealed partial class AgentExecutionService
                         allLlmTools);
                     if (newlyLoadedToolCount > 0)
                     {
-                        // P0-6：只持久化（AgentSessionManager append-only 语义不变）；
-                        // 本 Turn 冻结清单不重建，新工具下一 Turn 边界原子生效。
                         _sessionManager.RememberLoadedToolIds(request.SessionId, loadedToolIds);
+                        var promotedToolCount = PromoteLoadedToolsForNextRound(
+                            frozenTools,
+                            loadedToolIds,
+                            llmTools);
+                        toolSpecChangedForNextRound |= promotedToolCount > 0;
                         _logger.LogInformation(
-                            "[AgentExec:ToolDiscovery] Loaded {AddedCount} tool definition(s) for next dispatch (turn-frozen) session={Session} loadedTools={LoadedTools}",
+                            "[AgentExec:ToolDiscovery] Loaded {AddedCount} and promoted {PromotedCount} tool definition(s) for next LLM round session={Session} visibleToolCount={VisibleToolCount} loadedTools={LoadedTools}",
                             newlyLoadedToolCount,
+                            promotedToolCount,
                             request.SessionId,
+                            llmTools.Count,
                             SummarizeToolNames(loadedToolIds));
                     }
+                    var toolDiscoveryStalled = toolDiscoveryLoopTracker.Observe(toolName);
 
                     var toolMsgRaw = skillResult.Success
                         ? $"✅ Tool '{toolName}' succeeded (exit={skillResult.ExitCode}):\n{skillResult.Output}"
@@ -1812,6 +1915,21 @@ public sealed partial class AgentExecutionService
                         _logger,
                         ct);
                     history.Add(new ChatMessage(ChatRole.User, toolMsg));
+
+                    if (toolDiscoveryStalled)
+                    {
+                        executionError = BuildToolDiscoveryStalledMessage(
+                            toolDiscoveryLoopTracker.ConsecutiveCalls);
+                        finalMessage = executionError;
+                        stopReason = AgentLoopStopReason.Failed;
+                        execState = AgentExecutionState.Failed;
+                        subAgentTerminalStatus = "failed";
+                        _logger.LogError(
+                            "[AgentExec:ToolDiscovery] {Error} session={Session} round={Round}",
+                            executionError,
+                            request.SessionId,
+                            round + 1);
+                    }
                 }
 
                 // 无工具调用的 CONTINUE —— 计入无进展计数
@@ -1843,6 +1961,9 @@ public sealed partial class AgentExecutionService
                     ToolSuccess    = toolSuccess,
                     ToolError      = toolError,
                 });
+
+                if (execState == AgentExecutionState.Failed)
+                    break;
 
                 // 最后一轮 CONTINUE → MaxRoundsReached
                 if (subAgentBudget is null && round == maxRounds - 1)

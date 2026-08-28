@@ -50,6 +50,10 @@ public sealed class TurnExecutorAdapter(
             CallerVisionHelperRoute = context.CallerVisionHelperRoute,
             Origin = context.Origin,
             OutputOwnership = context.OutputOwnership,
+            TaskPlanId = context.TaskPlanId,
+            TaskNodeId = context.TaskNodeId,
+            ParentTaskNodeId = context.ParentTaskNodeId,
+            UsageBudget = context.UsageBudget,
         };
 
         var agentId = !string.IsNullOrWhiteSpace(context.AgentInstanceId)

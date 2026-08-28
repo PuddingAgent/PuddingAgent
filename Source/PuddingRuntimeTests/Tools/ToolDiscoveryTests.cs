@@ -4,6 +4,7 @@ using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Tools;
 using PuddingRuntime.Services;
+using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntimeTests.Tools;
@@ -194,7 +195,7 @@ public sealed class ToolDiscoveryTests
     }
 
     [TestMethod]
-    public void FrozenManifest_InTurnLoadedTool_NotVisible_NextTurnVisible()
+    public void FrozenManifest_DiscoveredTool_IsPromoted_AtNextLlmRoundBoundary()
     {
         var runtime = new List<LlmToolDefinition> { Definition("search_tools"), Definition("goal_read") };
         runtime.AddRange(Enumerable.Range(0, 28).Select(index => Definition($"deferred_{index:00}")));
@@ -206,7 +207,7 @@ public sealed class ToolDiscoveryTests
         Assert.IsTrue(manifest.ExposurePlan.DeferredLoadingEnabled);
         Assert.AreEqual(28, manifest.ExposurePlan.DeferredToolCount);
 
-        // turn 内 search_tools 命中：loadedToolIds（session 快照副本，append-only）被追加
+        // 当前 LLM round 内 search_tools 命中：loadedToolIds append-only 追加。
         var added = ToolExposurePlanner.RegisterSearchResult(
             "search_tools",
             success: true,
@@ -215,16 +216,37 @@ public sealed class ToolDiscoveryTests
             runtime);
         Assert.AreEqual(1, added);
 
-        // 本 Turn 冻结：新加载工具对已冻结的 VisibleTools 不可见
+        // 当前 provider request 已冻结：执行 search_tools 时不能原地修改该 round 的 schema。
         CollectionAssert.DoesNotContain(
             manifest.VisibleTools.Select(tool => tool.Name).ToArray(),
             "deferred_05");
 
-        // 下一 Turn：以新快照重建清单 → 新工具原子生效
-        var nextManifest = AgentExecutionService.BuildFrozenToolManifestCore(runtime, null, committed);
+        // 下一 LLM round：显式单调提升，不等待下一个外部用户 Turn。
+        var roundVisibleTools = manifest.VisibleTools.ToList();
+        var promoted = AgentExecutionService.PromoteLoadedToolsForNextRound(
+            manifest,
+            committed,
+            roundVisibleTools);
+
+        Assert.AreEqual(1, promoted);
         CollectionAssert.Contains(
-            nextManifest.VisibleTools.Select(tool => tool.Name).ToArray(),
+            roundVisibleTools.Select(tool => tool.Name).ToArray(),
             "deferred_05");
+    }
+
+    [TestMethod]
+    public void ToolDiscoveryLoopTracker_Fuses_ChangedQueries_And_Resets_OnTaskTool()
+    {
+        var tracker = new ToolDiscoveryLoopTracker(maxConsecutiveCalls: 3);
+
+        Assert.IsFalse(tracker.Observe("search_tools"));
+        Assert.IsFalse(tracker.Observe("SEARCH_TOOLS"));
+        Assert.IsTrue(tracker.Observe("search_tools"));
+        Assert.AreEqual(3, tracker.ConsecutiveCalls);
+
+        Assert.IsFalse(tracker.Observe("file_read"));
+        Assert.AreEqual(0, tracker.ConsecutiveCalls);
+        Assert.IsFalse(tracker.Observe("search_tools"));
     }
 
     [TestMethod]

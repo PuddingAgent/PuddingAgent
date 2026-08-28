@@ -280,13 +280,15 @@ public sealed partial class AgentExecutionService
         // 子代理上下文装配完毕事件（ADR-021）
         await TryEmitContextAssembledAsync(streamSubAgentRunId, request, CancellationToken.None);
 
-        if (history.Count == 0 || history[0].Role != ChatRole.System)
+        var systemPromptUpdate = EnsureFrozenSystemPrompt(
+            history,
+            streamingSystemPrompt.SystemPrompt);
+        var systemPromptEpochChanged = systemPromptUpdate == SystemPromptUpdateKind.Replaced;
+        if (systemPromptEpochChanged)
         {
-            history.Insert(0, new ChatMessage(ChatRole.System, streamingSystemPrompt.SystemPrompt));
-        }
-        else
-        {
-            history[0] = new ChatMessage(ChatRole.System, streamingSystemPrompt.SystemPrompt);
+            _logger.LogWarning(
+                "[AgentExec:Prefix] Started explicit system-prompt epoch session={Session}",
+                request.SessionId);
         }
 
         history.Add(BuildCurrentUserChatMessage(request, streamingSystemPrompt.UserContextPrefix));
@@ -361,12 +363,12 @@ public sealed partial class AgentExecutionService
         HashSet<string> availableToolNames;
         IReadOnlyList<LlmToolDefinition> allLlmTools;
         List<LlmToolDefinition> llmTools;
+        FrozenToolManifest frozenTools;
         int runtimeMergedToolCount;
         try
         {
-            // P0-6：Turn 边界冻结工具暴露清单（与 Buffered 共用 helper）——流内所有 LLM
-            // invoke 复用同一可见集；流内 search_tools 新加载的工具下一 Turn 边界原子生效。
-            var frozenTools = BuildFrozenToolManifest(effectiveCapability, template, request, loadedToolIds);
+            // Dispatch 冻结 catalog/capability/schema；可见集只允许在 LLM round 边界单调追加。
+            frozenTools = BuildFrozenToolManifest(effectiveCapability, template, request, loadedToolIds);
             availableToolNames = frozenTools.RuntimeTools
                 .Select(t => t.Name)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -558,12 +560,15 @@ public sealed partial class AgentExecutionService
                 : _guardrails.MaxRounds;
             var reply = "(no response)";
             TokenUsageDto? usage = null;
+            var usageBudgetTracker = new ExecutionUsageBudgetTracker(request.UsageBudget);
             PromptPrefixSnapshot? lastPrefixSnapshot = null;
             var hasExecutedAnyTool = false;
             var lastToolResult = "(未执行任何工具)";
             var consecutiveShortReplies = 0;
             var totalToolCalls = 0;
             var failedToolCallTracker = new FailedToolCallTracker();
+            var toolDiscoveryLoopTracker = new ToolDiscoveryLoopTracker(
+                _guardrails.MaxConsecutiveToolDiscoveryCalls);
             var faultedByFuse = false;
             string? faultSummary = null;
             var toolFailureCount = 0;
@@ -576,9 +581,14 @@ public sealed partial class AgentExecutionService
             string? terminalStreamStatus = null;
             var streamRoundsStarted = 0;
             var providerInputRecoveryAttempted = false;
+            var warmPrefixCompactionAttempted = false;
+            var toolSpecChangedForNextRound = false;
 
             for (int round = 0; round < maxRounds; round++)
             {
+                // Usage is per provider invocation. Never carry a previous round's usage
+                // into a round whose provider omitted usage.
+                usage = null;
                 var roundSw = System.Diagnostics.Stopwatch.StartNew();
                 int roundDeltaFrames = 0;
                 int roundThinkingFrames = 0;
@@ -625,6 +635,31 @@ public sealed partial class AgentExecutionService
                         });
                     await Append(timeoutFrame);
                     yield return timeoutFrame;
+                    break;
+                }
+                var budgetBeforeRound = usageBudgetTracker.EvaluateBeforeRound();
+                if (budgetBeforeRound.ShouldStop)
+                {
+                    terminalStreamStatus = "budget_exhausted";
+                    reply = budgetBeforeRound.Message ?? "WorkUnit usage budget exhausted.";
+                    _logger.LogError(
+                        "[AgentExec:WorkUnitBudget] Refused streaming LLM round session={Session} round={Round} code={Code} input={InputTokens} output={OutputTokens} cost={Cost}",
+                        request.SessionId,
+                        round + 1,
+                        budgetBeforeRound.ErrorCode,
+                        budgetBeforeRound.InputTokens,
+                        budgetBeforeRound.OutputTokens,
+                        budgetBeforeRound.Cost);
+                    var budgetFrame = ServerSentEventFrame.Json(
+                        SseEventTypes.Error,
+                        new
+                        {
+                            code = budgetBeforeRound.ErrorCode,
+                            message = reply,
+                            status = terminalStreamStatus,
+                        });
+                    await Append(budgetFrame);
+                    yield return budgetFrame;
                     break;
                 }
                 if (totalToolCalls >= maxToolCallsTotal)
@@ -674,7 +709,7 @@ public sealed partial class AgentExecutionService
                     round,
                     streamTrace,
                     ct);
-                var injectedHistory = await BuildInjectedHistoryAsync(history, ct);
+                var injectedHistory = (await BuildInjectedHistoryAsync(history, ct)).ToList();
                 injectSw.Stop();
                 await RecordActivityAsync(
                     streamTrace,
@@ -695,37 +730,34 @@ public sealed partial class AgentExecutionService
                     ct: CancellationToken.None);
 
                 ContextUsageSnapshot? contextUsageSnapshot = null;
+                var toolSpecChangedThisRound = toolSpecChangedForNextRound;
+                toolSpecChangedForNextRound = false;
+                string? roundPrefixChangeReason = rehydratedFromDbThisDispatch && round == 0
+                    ? PrefixChangeReasons.SessionRehydrated
+                    : systemPromptEpochChanged && round == 0
+                        ? PrefixChangeReasons.SystemPromptChanged
+                        : toolSpecChangedThisRound
+                            ? PrefixChangeReasons.ToolSpecChanged
+                            : null;
                 if (_contextUsageSnapshotStore is not null)
                 {
-                    // 轮内软压缩（与 Buffered 路径对齐，ADR-060 §3.12）：估算达到 trigger×有效上限
-                    // 即驱逐最旧会话单元并回写 history，避免长 Streaming 会话养到硬悬崖才一次性裁剪。
-                    if (history.Count > 12)
+                    // 与 Buffered 共用 warm-prefix checkpoint；失败保留原历史，不再静默驱逐。
+                    if (history.Count > 12 && !warmPrefixCompactionAttempted)
                     {
-                        var (softTrigger, softTarget) = ResolveContextSoftCompactionRatios();
-                        var softCompaction = LlmRequestBudgetGuard.PrepareSoftCompaction(
-                            _contextUsageSnapshotStore,
-                            request.SessionId,
+                        var compaction = await TryWarmPrefixCompactionAsync(
+                            request,
+                            instance.AgentInstanceId,
                             history,
+                            injectedHistory,
                             llmTools,
                             effectiveLlmConfig,
-                            softTrigger,
-                            softTarget);
-                        if (softCompaction.Compacted)
+                            round,
+                            ct);
+                        warmPrefixCompactionAttempted = compaction.Plan is not null;
+                        if (compaction.Compacted)
                         {
-                            history.Clear();
-                            history.AddRange(softCompaction.Messages);
-                            injectedHistory = await BuildInjectedHistoryAsync(history, ct);
-                            _logger.LogWarning(
-                                "[AgentExec:ContextBudget] Soft compaction session={Session} round={Round} removed={Removed} messages {Before}->{After} estimated={BeforeTokens}->{AfterTokens} limit={Limit} trigger={Trigger:F2}",
-                                request.SessionId,
-                                round + 1,
-                                softCompaction.RemovedMessageCount,
-                                softCompaction.InitialMessageCount,
-                                history.Count,
-                                softCompaction.InitialUsedTokens,
-                                softCompaction.Snapshot.UsedTokens,
-                                softCompaction.EffectiveInputLimit,
-                                softTrigger);
+                            roundPrefixChangeReason = PrefixChangeReasons.CompactionCheckpoint;
+                            injectedHistory = (await BuildInjectedHistoryAsync(history, ct)).ToList();
                         }
                     }
 
@@ -751,16 +783,22 @@ public sealed partial class AgentExecutionService
                     }
                 }
 
-                EnsureCurrentTurnInputPresent(injectedHistory, request);
+                await EnsureCurrentTurnInputPresentWithRecoveryAsync(
+            injectedHistory,
+            request,
+            recoveryCt => _contextManager.TryFindCurrentTurnMessageByInputHashAsync(
+                request.SessionId,
+                ComputeCurrentTurnInputHash(request),
+                recoveryCt),
+            _logger,
+            ct);
 
                 var prefixStartedAt = DateTimeOffset.UtcNow;
                 var prefixSw = System.Diagnostics.Stopwatch.StartNew();
                 var prefixSnapshot = PrefixCacheSnapshotBuilder.Build(
                     injectedHistory,
                     llmTools,
-                    prefixChangeReason: rehydratedFromDbThisDispatch && round == 0
-                        ? PrefixChangeReasons.SessionRehydrated
-                        : null);
+                    prefixChangeReason: roundPrefixChangeReason);
                 prefixSw.Stop();
                 await RecordActivityAsync(
                     streamTrace,
@@ -777,6 +815,9 @@ public sealed partial class AgentExecutionService
                         ["message_count"] = injectedHistory.Count.ToString(),
                         ["tool_count"] = llmTools.Count.ToString(),
                         ["prefix_hash"] = prefixSnapshot.PrefixHash ?? "",
+                        ["history_anchor_hash"] = prefixSnapshot.HistoryAnchorHash ?? "",
+                        ["prefix_change_reason"] = prefixSnapshot.PrefixChangeReason ?? "",
+                        ["serialization_version"] = prefixSnapshot.SerializationVersion,
                     },
                     error: null,
                     ct: CancellationToken.None);
@@ -1123,6 +1164,33 @@ public sealed partial class AgentExecutionService
                     yield return usageFrame;
                 }
 
+                var budgetAfterRound = usageBudgetTracker.Record(usage);
+                if (budgetAfterRound.ShouldStop)
+                {
+                    terminalStreamStatus = "budget_exhausted";
+                    reply = budgetAfterRound.Message ?? "WorkUnit usage budget exhausted.";
+                    _logger.LogWarning(
+                        "[AgentExec:WorkUnitBudget] Stopped after streaming LLM round session={Session} round={Round} code={Code} input={InputTokens} output={OutputTokens} cacheHit={CacheHitTokens} cost={Cost}",
+                        request.SessionId,
+                        round + 1,
+                        budgetAfterRound.ErrorCode,
+                        budgetAfterRound.InputTokens,
+                        budgetAfterRound.OutputTokens,
+                        budgetAfterRound.CacheHitTokens,
+                        budgetAfterRound.Cost);
+                    var budgetFrame = ServerSentEventFrame.Json(
+                        SseEventTypes.Error,
+                        new
+                        {
+                            code = budgetAfterRound.ErrorCode,
+                            message = reply,
+                            status = terminalStreamStatus,
+                        });
+                    await Append(budgetFrame);
+                    yield return budgetFrame;
+                    break;
+                }
+
                 // 无工具调用 → 终止循环，replyBuf 即为最终回复
                 if (!hasToolCalls)
                 {
@@ -1373,17 +1441,23 @@ public sealed partial class AgentExecutionService
                         result.Output,
                         loadedToolIds,
                         allLlmTools);
-                                        if (newlyLoadedToolCount > 0)
+                    if (newlyLoadedToolCount > 0)
                     {
-                        // P0-6：只持久化（AgentSessionManager append-only 语义不变）；
-                        // 本 Turn 冻结清单不重建，新工具下一 Turn 边界原子生效。
                         _sessionManager.RememberLoadedToolIds(request.SessionId, loadedToolIds);
+                        var promotedToolCount = PromoteLoadedToolsForNextRound(
+                            frozenTools,
+                            loadedToolIds,
+                            llmTools);
+                        toolSpecChangedForNextRound |= promotedToolCount > 0;
                         _logger.LogInformation(
-                            "[AgentExec:ToolDiscovery] Stream loaded {AddedCount} tool definition(s) for next dispatch (turn-frozen) session={Session} loadedTools={LoadedTools}",
+                            "[AgentExec:ToolDiscovery] Stream loaded {AddedCount} and promoted {PromotedCount} tool definition(s) for next LLM round session={Session} visibleToolCount={VisibleToolCount} loadedTools={LoadedTools}",
                             newlyLoadedToolCount,
+                            promotedToolCount,
                             request.SessionId,
+                            llmTools.Count,
                             SummarizeToolNames(loadedToolIds));
                     }
+                    var toolDiscoveryStalled = toolDiscoveryLoopTracker.Observe(tc.Name);
 
                     // ── terminal_execute 兼容入口：立即转为后台 terminal job ──
                     if (tc.Name is "terminal_execute" && result.Success)
@@ -1443,6 +1517,31 @@ public sealed partial class AgentExecutionService
                         ct);
                     toolRoundMessages.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: tc.Id,
                         ContentParts: result.ContentParts));
+                    if (toolDiscoveryStalled)
+                    {
+                        faultedByFuse = true;
+                        faultSummary = BuildToolDiscoveryStalledMessage(
+                            toolDiscoveryLoopTracker.ConsecutiveCalls);
+                        reply = faultSummary;
+                        terminalStreamStatus = "failed";
+                        stopAfterTool = true;
+                        _logger.LogError(
+                            "[AgentExec:ToolDiscovery] {Error} session={Session} round={Round}",
+                            faultSummary,
+                            request.SessionId,
+                            round + 1);
+                        var stalledFrame = ServerSentEventFrame.Json(
+                            SseEventTypes.Error,
+                            new
+                            {
+                                code = TerminalErrorCodes.ExecutionStalled,
+                                message = faultSummary,
+                                status = terminalStreamStatus,
+                            });
+                        await Append(stalledFrame);
+                        yield return stalledFrame;
+                        break;
+                    }
                     var controlSnapshot = _runtimeControl?.GetStatus(request.SessionId).Session;
                     if (controlSnapshot?.State == SessionState.Faulted)
                     {

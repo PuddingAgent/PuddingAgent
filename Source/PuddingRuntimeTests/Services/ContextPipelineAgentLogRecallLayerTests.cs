@@ -101,6 +101,59 @@ public sealed class ContextPipelineAgentLogRecallLayerTests
             "UsedTokens must charge the trimmed L6 payload, not the oversized raw recall payload.");
     }
 
+    [TestMethod]
+    public async Task AssembleAsync_Reuses_Exact_Log_Recall_Already_Visible_In_History()
+    {
+        using var temp = new TempDataRoot();
+        var agentId = "agent-visible-recall";
+        var messageRoot = temp.Paths.AgentInstanceMessageLogsRoot(agentId);
+        Directory.CreateDirectory(Path.Combine(messageRoot, "2026-06-15"));
+        var engine = new FakeFullTextSearchEngine
+        {
+            Results =
+            {
+                [messageRoot] =
+                [
+                    new FullTextSearchMatch(
+                        Path.Combine(messageRoot, "2026-06-15", "s1.md"),
+                        2,
+                        "stable recall payload")
+                ],
+            },
+        };
+        var logRecallService = new AgentLogRecallService(
+            temp.Paths,
+            engine,
+            () => new DateTimeOffset(2026, 6, 16, 10, 0, 0, TimeSpan.Zero));
+        var store = new ContextAssemblyStore();
+        var pipeline = CreatePipeline(store, logRecallService);
+
+        var first = await pipeline.AssembleAsync(CreateRequest(agentId), CancellationToken.None);
+        Assert.IsNotNull(first.UserContextPrefix);
+
+        var secondRequest = CreateRequest(agentId) with
+        {
+            SessionHistory =
+            [
+                new ChatMessage(
+                    ChatRole.User,
+                    $"[RUNTIME TAIL CONTEXT]\n{first.UserContextPrefix!.Trim()}\n[/RUNTIME TAIL CONTEXT]\nuser input"),
+                new ChatMessage(ChatRole.Assistant, "assistant reply"),
+            ],
+        };
+        var second = await pipeline.AssembleAsync(secondRequest, CancellationToken.None);
+
+        Assert.IsNull(
+            second.UserContextPrefix,
+            "An exact recall payload that remains in model-visible history must not be appended again.");
+        Assert.IsFalse(
+            second.Layers.Any(layer => layer.LayerName == "上下文增强"),
+            "Reused context must not be charged as newly injected L6 tokens.");
+        Assert.IsTrue(store.TryGet("session-1", out var snapshot));
+        Assert.IsNotNull(snapshot);
+        Assert.IsFalse(snapshot!.Layers.Any(layer => layer.LayerName == "L6-AGENT-LOG-RECALL"));
+    }
+
     private static ContextRequest CreateRequest(string agentInstanceId) => new()
     {
         Template = new AgentTemplateDefinition

@@ -8,9 +8,9 @@ using PuddingRuntime.Services;
 namespace PuddingRuntimeTests.Services;
 
 /// <summary>
-/// 子代理轮内软压缩回归测试（P1 能耗修复，2026-08-22）。
-/// 背景：Buffered 子代理路径此前只有 LlmRequestBudgetGuard 硬悬崖，
-/// 上下文被养到 ~61 万 tokens 才一次性裁剪；软压缩在 0.65×有效上限即驱逐最旧会话单元。
+/// 长循环上下文水位与 warm-prefix checkpoint 回归测试。
+/// PrepareSoftCompaction 只负责选择候选区间；产品路径必须先用原请求 warm prefix
+/// 生成摘要，再原子提交 checkpoint，禁止直接把选择结果写回历史。
 /// </summary>
 [TestClass]
 public sealed class LlmRequestBudgetGuardTests
@@ -90,6 +90,119 @@ public sealed class LlmRequestBudgetGuardTests
         Assert.IsFalse(result.Compacted);
         Assert.AreEqual(0, result.RemovedMessageCount);
         Assert.AreEqual(1, result.Messages.Count);
+    }
+
+    [TestMethod]
+    public void WarmPrefixPlan_ReplaysExactOutbound_AndAppendsOnlyInstruction()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+
+        var created = WarmPrefixCompaction.TryCreatePlan(
+            store,
+            "session-1",
+            history,
+            history,
+            tools: null,
+            BuildConfig(),
+            triggerRatio: 0.65,
+            targetRatio: 0.5,
+            out var plan);
+
+        Assert.IsTrue(created);
+        Assert.IsNotNull(plan);
+        Assert.AreEqual(history.Count + 1, plan.SummaryRequestMessages.Count);
+        for (var index = 0; index < history.Count; index++)
+        {
+            Assert.AreEqual(history[index], plan.SummaryRequestMessages[index],
+                $"message {index} must be replayed byte-for-byte");
+        }
+        Assert.AreEqual(ChatRole.User, plan.SummaryRequestMessages[^1].Role);
+        Assert.AreEqual(WarmPrefixCompaction.SummaryInstruction, plan.SummaryRequestMessages[^1].Content);
+    }
+
+    [TestMethod]
+    public void WarmPrefixCheckpoint_ReplacesOldHeadOnce_AndPreservesSystemAndTail()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+        var expectedTail = history.TakeLast(8).ToArray();
+        Assert.IsTrue(WarmPrefixCompaction.TryCreatePlan(
+            store,
+            "session-1",
+            history,
+            history,
+            tools: null,
+            BuildConfig(),
+            triggerRatio: 0.65,
+            targetRatio: 0.5,
+            out var plan));
+
+        var checkpoint = WarmPrefixCompaction.TryCreateCheckpoint(
+            plan!,
+            "## Primary Request and Intent\n- continue implementation\n\n## Next Step\n- run tests");
+
+        Assert.IsNotNull(checkpoint);
+        Assert.AreEqual(history[0], checkpoint[0], "system prompt bytes must remain unchanged");
+        Assert.AreEqual(ChatRole.User, checkpoint[1].Role);
+        StringAssert.Contains(checkpoint[1].Content, "<compacted-summary>");
+        CollectionAssert.AreEqual(
+            expectedTail,
+            checkpoint.TakeLast(8).ToArray(),
+            "protected recent messages must remain byte-for-byte after the checkpoint");
+        Assert.IsTrue(checkpoint.Count < history.Count);
+    }
+
+    [TestMethod]
+    public void WarmPrefixCheckpoint_RejectsEmptyOrNonShrinkingSummary()
+    {
+        var store = new ContextUsageSnapshotStore();
+        var history = BuildHistory(pairs: 40);
+        Assert.IsTrue(WarmPrefixCompaction.TryCreatePlan(
+            store,
+            "session-1",
+            history,
+            history,
+            tools: null,
+            BuildConfig(),
+            triggerRatio: 0.65,
+            targetRatio: 0.5,
+            out var plan));
+
+        Assert.IsNull(WarmPrefixCompaction.TryCreateCheckpoint(plan!, ""));
+        var strictPlan = plan! with { RemovedTokenEstimate = 1 };
+        Assert.IsNull(WarmPrefixCompaction.TryCreateCheckpoint(
+            strictPlan,
+            "two tokens"));
+    }
+
+    [TestMethod]
+    public void FrozenSystemPrompt_MaintainsSameEpochBytes_AndPreservesHydratedCheckpoint()
+    {
+        var history = new List<ChatMessage>
+        {
+            new(ChatRole.System, "system-v1"),
+            new(ChatRole.User, "hello"),
+        };
+
+        var update = AgentExecutionService.EnsureFrozenSystemPrompt(history, "system-v2");
+        Assert.AreEqual(SystemPromptUpdateKind.Replaced, update);
+        Assert.AreEqual("system-v2", history[0].Content);
+
+        var frozenMessage = history[0];
+        update = AgentExecutionService.EnsureFrozenSystemPrompt(history, "system-v2");
+        Assert.AreEqual(SystemPromptUpdateKind.Unchanged, update);
+        Assert.AreSame(frozenMessage, history[0], "same epoch must retain exact message bytes/object");
+
+        var hydrated = new List<ChatMessage>
+        {
+            new(ChatRole.System, "<compact_summary>prior facts</compact_summary>"),
+            new(ChatRole.User, "continue"),
+        };
+        update = AgentExecutionService.EnsureFrozenSystemPrompt(hydrated, "system-v2");
+        Assert.AreEqual(SystemPromptUpdateKind.Inserted, update);
+        Assert.AreEqual("system-v2", hydrated[0].Content);
+        Assert.AreEqual("<compact_summary>prior facts</compact_summary>", hydrated[1].Content);
     }
 
     [TestMethod]

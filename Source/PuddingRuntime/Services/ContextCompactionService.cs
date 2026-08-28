@@ -346,6 +346,24 @@ public sealed class ContextCompactionService : IContextCompactionService
             return await FinishNoOpAsync();
         }
 
+        // ── P0-TXN Phase 1（事故1 不变量）：current turn 不落入压缩区间 ──
+        // accepted 的当前轮用户消息（含 [CURRENT USER TURN input_sha256= 围栏，或按
+        // Sequence 判定的最后一条 User 消息）一旦落入 messagesToCompact，会被摘要吞掉，
+        // 下一轮 EnsureCurrentTurnInputPresent fail-closed 直接报废 Run。
+        // 命中即中止：不写库、不生成摘要，原 history 完整保留，仅记录 compaction-log。
+        if (CurrentTurnCompactionGuard.ShouldAbortCompaction(
+                candidates.Select(m => new CurrentTurnCompactionGuardMessage(m.MessageId, m.Role, m.Content)).ToList(),
+                messagesToCompact.Select(m => new CurrentTurnCompactionGuardMessage(m.MessageId, m.Role, m.Content)).ToList()))
+        {
+            return await AbortForCurrentTurnInScopeAsync(
+                request,
+                compactionId,
+                messagesToCompact,
+                EstimateMessages(activeMessages),
+                sw,
+                ct);
+        }
+
         // ── 尺寸驱逐：保留窗口内超大消息不再原样保留全文 ──
         // 事故背景：保留窗口内存在一条数百 KB 的巨型 tool_output（如 grep 命中整个 minified JS bundle）时，
         // 按"最近 N 条原样保留"规则它永远豁免压缩，导致压缩后上下文仍接近满窗。
@@ -721,6 +739,56 @@ public sealed class ContextCompactionService : IContextCompactionService
                 Diagnostics: noOpDiagnostics);
             await WriteCompactionLogAsync(request, noOpResult, ct);
             return noOpResult;
+        }
+
+        async Task<ContextCompactionResult> AbortForCurrentTurnInScopeAsync(
+            ContextCompactionRequest originalRequest,
+            string currentCompactionId,
+            IReadOnlyList<MessageEntity> guardedMessages,
+            int currentTokens,
+            System.Diagnostics.Stopwatch stopwatch,
+            CancellationToken cancellationToken)
+        {
+            stopwatch.Stop();
+            const string guardReason = "current_turn_in_compaction_scope";
+            var guardedRequest = originalRequest with { Reason = guardReason };
+            var diagnostics = BuildDiagnostics(
+                guardedRequest,
+                currentCompactionId,
+                startedAtUtc,
+                DateTimeOffset.UtcNow,
+                stopwatch.ElapsedMilliseconds,
+                activeMessages,
+                candidates,
+                messagesToCompact: [],
+                summaryInputMessages: [],
+                summaryMessageId: string.Empty,
+                beforeTokens: currentTokens,
+                afterTokens: currentTokens,
+                summary: string.Empty,
+                summaryGenerator: ResolveSummaryGeneratorName());
+            var guardedResult = new ContextCompactionResult(
+                originalRequest.SessionId,
+                SummaryMessageId: string.Empty,
+                originalRequest.Mode,
+                originalRequest.Level,
+                BeforeTokens: currentTokens,
+                AfterTokens: currentTokens,
+                CompactedMessageCount: 0,
+                SummaryPreview: string.Empty,
+                SummaryMarkdown: string.Empty,
+                MemoryNotes: [],
+                Diagnostics: diagnostics,
+                SkippedDueToTokenIncrease: false,
+                SkippedDueToCurrentTurnGuard: true);
+
+            _logger.LogWarning(
+                "[ContextCompaction:Guard] Aborted compaction because current user turn is in scope compactionId={CompactionId} session={SessionId} guardedMessageCount={GuardedMessageCount}",
+                currentCompactionId,
+                originalRequest.SessionId,
+                guardedMessages.Count);
+            await WriteCompactionLogAsync(guardedRequest, guardedResult, cancellationToken);
+            return guardedResult;
         }
 
         static bool HasRawTextInput(
