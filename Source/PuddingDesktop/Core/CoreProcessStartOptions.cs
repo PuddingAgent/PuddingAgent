@@ -20,7 +20,10 @@ public sealed record CoreProcessStartOptions
     /// <summary>Control token for POST /internal/desktop/shutdown. NOT passed to Core command line.</summary>
     public required string ControlToken { get; init; }
 
-    /// <summary>Maximum time to wait for Ready signal.</summary>
+    /// <summary>
+    /// Maximum silence between process start/progress messages while waiting
+    /// for Ready. A separate bounded hard timeout prevents infinite renewal.
+    /// </summary>
     public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(60);
 
     /// <summary>Maximum time to wait for graceful shutdown.</summary>

@@ -69,7 +69,7 @@ public static class CoreReadyMessageParser
     /// Handles nested braces and strings.
     /// Returns -1 if no matching brace found.
     /// </summary>
-    private static int FindJsonObjectEnd(string text)
+    internal static int FindJsonObjectEnd(string text)
     {
         var depth = 0;
         var inString = false;

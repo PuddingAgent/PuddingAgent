@@ -19,6 +19,9 @@ internal static class DesktopBootstrapSignalParser
     };
 
     public const string RebuildRestartAction = "rebuild-restart";
+    public const string DesktopBuildMode = "desktop-build";
+    public const string PrebuiltArtifactMode = "prebuilt-artifact";
+    public const string RestartOnlyMode = "restart-only";
     public const string RepositoryRootEnvironmentVariable = "PUDDING_REPOSITORY_ROOT";
     public const string YoloSignalFileName = "yolo.signal";
     public const string DefaultSignalFileName = "rebuild.signal";
@@ -62,6 +65,19 @@ internal static class DesktopBootstrapSignalParser
     /// <summary>Checks the action field against the supported "rebuild-restart" action.</summary>
     public static bool IsSupportedAction(string? action)
         => string.Equals(action, RebuildRestartAction, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Normalizes supported deployment mode aliases; null means unsupported.</summary>
+    public static string? NormalizeDeploymentMode(string? mode, string? defaultMode = DesktopBuildMode)
+    {
+        var value = string.IsNullOrWhiteSpace(mode) ? defaultMode : mode;
+        return value?.Trim().ToLowerInvariant().Replace('_', '-') switch
+        {
+            "desktop-build" or "build" => DesktopBuildMode,
+            "prebuilt-artifact" or "prebuilt" => PrebuiltArtifactMode,
+            "restart-only" or "restart" => RestartOnlyMode,
+            _ => null,
+        };
+    }
 
     /// <summary>
     /// Resolves the repository root: PUDDING_REPOSITORY_ROOT environment variable

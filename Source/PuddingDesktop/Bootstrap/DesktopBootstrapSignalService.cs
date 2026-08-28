@@ -14,8 +14,8 @@ namespace PuddingDesktop.Bootstrap;
 /// and exposes the manual API trigger used by the loopback HTTP endpoint
 /// (DesktopBootstrapHttpEndpoint) and the UI. On a valid "rebuild-restart"
 /// trigger it runs the closed loop:
-///   stop Core → dotnet incremental build → sync build output (optional)
-///   → write yolo.signal (optional) → restart Core → write &lt;SignalPath&gt;.result.json.
+///   stop Core → build or accept a prebuilt artifact → transactional deployment
+///   → hash verification → write yolo.signal (optional) → restart Core.
 /// Every attempt (success or failure) writes a result file; malformed signals are
 /// deleted to prevent a retry loop. No behavior change when the signal never appears.
 /// </summary>
@@ -41,7 +41,7 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
     private readonly string _buildTarget;
     private readonly IReadOnlyList<string> _buildArguments;
     private readonly bool _autoYolo;
-    private readonly bool _syncBuildOutput;
+    private readonly string _defaultDeploymentMode;
     private readonly string _projectName;
     private readonly TimeSpan _buildTimeout;
 
@@ -83,7 +83,9 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
             config.BuildTimeoutSeconds > 0
                 ? config.BuildTimeoutSeconds
                 : DesktopBootstrapSignalParser.DefaultBuildTimeoutSeconds);
-        _syncBuildOutput = config.SyncBuildOutput;
+        _defaultDeploymentMode = DesktopBootstrapSignalParser.NormalizeDeploymentMode(
+                                     config.DefaultDeploymentMode)
+                                 ?? DesktopBootstrapSignalParser.DesktopBuildMode;
         _projectName = Path.GetFileNameWithoutExtension(_buildTarget);
     }
 
@@ -104,8 +106,8 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
     }
 
     /// <summary>
-    /// Runs one rebuild-restart cycle (stop Core → build → optional sync/yolo →
-    /// restart Core) and writes the result file. Shared by the signal-file
+    /// Runs one rebuild-restart cycle (stop Core → prepare/deploy/verify →
+    /// optional yolo → restart Core) and writes the result file. Shared by the signal-file
     /// polling loop and the HTTP API / UI trigger paths.
     /// </summary>
     /// <param name="requestedBy">Optional free-form requester identity.</param>
@@ -114,13 +116,39 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
     /// <exception cref="InvalidOperationException">Thrown when another rebuild-restart attempt is already running.</exception>
     public async Task<DesktopBootstrapResult> TriggerRebuildRestartAsync(
         string? requestedBy, bool yolo, CancellationToken ct)
+        => await TriggerRebuildRestartAsync(
+            requestedBy,
+            yolo,
+            deploymentMode: null,
+            artifactDirectory: null,
+            artifactAssemblySha256: null,
+            ct);
+
+    /// <summary>
+    /// Runs a deployment-aware rebuild-restart cycle. desktop-build delegates
+    /// compilation to Desktop; prebuilt-artifact accepts an Agent-produced build;
+    /// restart-only is an explicit no-deployment escape hatch.
+    /// </summary>
+    public async Task<DesktopBootstrapResult> TriggerRebuildRestartAsync(
+        string? requestedBy,
+        bool yolo,
+        string? deploymentMode,
+        string? artifactDirectory,
+        string? artifactAssemblySha256,
+        CancellationToken ct)
     {
         if (Interlocked.CompareExchange(ref _busyFlag, 1, 0) != 0)
             throw new InvalidOperationException("bootstrap already running");
 
         try
         {
-            var result = await RunRebuildRestartCoreAsync(requestedBy, yolo, ct);
+            var result = await RunRebuildRestartCoreAsync(
+                requestedBy,
+                yolo,
+                deploymentMode,
+                artifactDirectory,
+                artifactAssemblySha256,
+                ct);
             await WriteResultAndDeleteSignalAsync(result);
             return result;
         }
@@ -376,7 +404,12 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
             try
             {
                 orchestratedResult = await TriggerRebuildRestartAsync(
-                    signal.RequestedBy, signal.Yolo, cancellationToken);
+                    signal.RequestedBy,
+                    signal.Yolo,
+                    signal.DeploymentMode,
+                    signal.ArtifactDirectory,
+                    signal.ArtifactAssemblySha256,
+                    cancellationToken);
             }
             catch (InvalidOperationException) when (IsBusy)
             {
@@ -427,21 +460,82 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
     }
 
     /// <summary>
-    /// The shared rebuild-restart orchestration: stop Core → incremental build →
-    /// optional build-output sync → optional yolo.signal → restart Core.
-    /// Build/sync failures are recorded in the result but never block the
-    /// Core restart (the old binary is the fallback).
+    /// The shared rebuild-restart orchestration: stop Core → prepare artifact →
+    /// transactional deployment → hash verification → optional yolo.signal →
+    /// restart Core. Preparation/deployment failures are recorded and the old
+    /// Core is restarted as the fallback.
     /// </summary>
     private async Task<DesktopBootstrapResult> RunRebuildRestartCoreAsync(
-        string? requestedBy, bool yolo, CancellationToken cancellationToken)
+        string? requestedBy,
+        bool yolo,
+        string? requestedDeploymentMode,
+        string? artifactDirectory,
+        string? artifactAssemblySha256,
+        CancellationToken cancellationToken)
     {
         var startedAt = DateTimeOffset.UtcNow;
         var errors = new List<string>();
         var buildLogTail = new List<string>();
         int? buildExitCode = null;
-        var buildSucceeded = false;
+        var deploymentMode = DesktopBootstrapSignalParser.NormalizeDeploymentMode(
+            requestedDeploymentMode,
+            _defaultDeploymentMode);
+        var buildOutputDirectory = default(string);
+        var deploymentDirectory = default(string);
+        var preparedAssemblySha256 = default(string);
+        var loadedAssemblySha256 = default(string);
+        var preparedArtifactManifestSha256 = default(string);
+        var loadedArtifactManifestSha256 = default(string);
+        ManagedArtifactManifestResult? preparedArtifactManifest = null;
+        var deploymentCopied = 0;
+        var deploymentSkipped = 0;
+        var preparationSucceeded = deploymentMode == DesktopBootstrapSignalParser.RestartOnlyMode;
+        var deploymentVerified = false;
         var yoloSignalWritten = false;
         var coreRestarted = false;
+
+        if (deploymentMode is null)
+        {
+            errors.Add($"不支持的 deploymentMode: {requestedDeploymentMode ?? "(null)"}");
+            return new DesktopBootstrapResult
+            {
+                Success = false,
+                Action = DesktopBootstrapSignalParser.RebuildRestartAction,
+                StartedAt = startedAt,
+                FinishedAt = DateTimeOffset.UtcNow,
+                Errors = errors,
+            };
+        }
+
+        if (deploymentMode == DesktopBootstrapSignalParser.PrebuiltArtifactMode)
+        {
+            if (string.IsNullOrWhiteSpace(artifactDirectory) || !Path.IsPathRooted(artifactDirectory))
+            {
+                errors.Add("prebuilt-artifact 模式要求绝对 artifactDirectory。");
+            }
+            else
+            {
+                buildOutputDirectory = Path.GetFullPath(artifactDirectory);
+                if (!PuddingBuildOutputSync.IsPathWithin(buildOutputDirectory, _repositoryRoot))
+                    errors.Add($"预构建产物目录必须位于仓库根目录内: {_repositoryRoot}");
+                else if (!Directory.Exists(buildOutputDirectory))
+                    errors.Add($"预构建产物目录不存在: {buildOutputDirectory}");
+            }
+
+            if (errors.Count > 0)
+            {
+                return new DesktopBootstrapResult
+                {
+                    Success = false,
+                    Action = DesktopBootstrapSignalParser.RebuildRestartAction,
+                    DeploymentMode = deploymentMode,
+                    BuildOutputDirectory = buildOutputDirectory,
+                    StartedAt = startedAt,
+                    FinishedAt = DateTimeOffset.UtcNow,
+                    Errors = errors,
+                };
+            }
+        }
 
         // a) Stop Core. No-op when Core is already stopped.
         try
@@ -474,18 +568,25 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
             skipBuild = true;
         }
 
-        // b) Incremental dotnet build (working directory = repository root).
+        // b) Desktop-owned incremental build, unless the caller supplied a
+        //    prepared artifact or explicitly requested restart-only.
         BuildRunResult? build = null;
-        if (!skipBuild)
+        if (!skipBuild && deploymentMode == DesktopBootstrapSignalParser.DesktopBuildMode)
         {
             try
             {
                 build = await RunBuildAsync(cancellationToken);
                 buildExitCode = build.ExitCode;
                 buildLogTail = build.LogTail;
-                buildSucceeded = build.ExitCode == 0;
-                if (!buildSucceeded)
+                if (build.ExitCode != 0)
                     errors.Add($"dotnet build 失败，退出码: {build.ExitCode}");
+                else
+                    buildOutputDirectory = PuddingBuildOutputSync.TryParseBuildOutputDirectory(
+                        build.FullLog,
+                        _projectName);
+
+                if (build.ExitCode == 0 && buildOutputDirectory is null)
+                    errors.Add("未能从构建输出中解析 PuddingAgent 产物目录。");
             }
             catch (Exception ex)
             {
@@ -494,43 +595,95 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
             }
         }
 
-        // b2) Sync build output into the Desktop run directory (only after a
-        //     successful build, and while Core is stopped so its files are not
-        //     locked). Failure does NOT block the Core restart — the old binary
-        //     is the fallback — but it is recorded and clears result.Success.
-        if (buildSucceeded && _syncBuildOutput && build is not null)
+        // b2) Deploy into the directory of the executable Desktop will actually
+        //     launch. Never use AppContext.BaseDirectory: packaged Desktop keeps
+        //     Core under a side-by-side core/ directory.
+        if (!skipBuild
+            && deploymentMode != DesktopBootstrapSignalParser.RestartOnlyMode
+            && errors.Count == 0
+            && buildOutputDirectory is not null)
         {
-            var outputDirectory = PuddingBuildOutputSync.TryParseBuildOutputDirectory(
-                build.FullLog, _projectName);
-            if (outputDirectory is null)
+            var preparedAssemblyPath = Path.Combine(buildOutputDirectory, "PuddingAgent.dll");
+            var coreExecutablePath = _coordinator.CoreExecutablePath;
+            deploymentDirectory = string.IsNullOrWhiteSpace(coreExecutablePath)
+                ? null
+                : Path.GetDirectoryName(Path.GetFullPath(coreExecutablePath));
+
+            if (!File.Exists(preparedAssemblyPath))
             {
-                errors.Add("未能从构建输出中解析产物目录，跳过产物同步。");
+                errors.Add($"预构建产物缺少 PuddingAgent.dll: {preparedAssemblyPath}");
+            }
+            else if (string.IsNullOrWhiteSpace(deploymentDirectory))
+            {
+                errors.Add("Desktop 尚未解析实际 CoreExecutablePath，拒绝部署到不确定目录。");
             }
             else
             {
                 try
                 {
-                    var syncResult = PuddingBuildOutputSync.SyncDirectory(
-                        outputDirectory, AppContext.BaseDirectory);
+                    preparedAssemblySha256 = PuddingBuildOutputSync.ComputeSha256(preparedAssemblyPath);
+                    preparedArtifactManifest = PuddingBuildOutputSync.ComputeManagedArtifactManifest(
+                        buildOutputDirectory);
+                    preparedArtifactManifestSha256 = preparedArtifactManifest.Sha256;
+                    if (!string.IsNullOrWhiteSpace(artifactAssemblySha256)
+                        && !string.Equals(
+                            preparedAssemblySha256,
+                            artifactAssemblySha256.Trim(),
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        errors.Add(
+                            $"预构建产物 SHA-256 不匹配: expected={artifactAssemblySha256.Trim()}, " +
+                            $"actual={preparedAssemblySha256}");
+                    }
+
+                    var syncResult = errors.Count == 0
+                        ? PuddingBuildOutputSync.DeployDirectoryTransactional(
+                            buildOutputDirectory,
+                            deploymentDirectory)
+                        : new BuildOutputSyncResult();
+                    deploymentCopied = syncResult.Copied;
+                    deploymentSkipped = syncResult.Skipped;
                     if (syncResult.Failures.Count > 0)
                     {
                         errors.Add(
-                            $"构建产物同步存在失败: 复制 {syncResult.Copied} 个, " +
+                            $"构建产物事务部署失败: 复制 {syncResult.Copied} 个, " +
                             $"跳过 {syncResult.Skipped} 个, 失败 {syncResult.Failures.Count} 个。");
                         foreach (var failure in syncResult.Failures)
-                            errors.Add($"  产物同步失败: {failure}");
+                            errors.Add($"  产物部署失败: {failure}");
+                    }
+
+                    var deployedAssemblyPath = Path.Combine(deploymentDirectory, "PuddingAgent.dll");
+                    if (errors.Count == 0 && File.Exists(deployedAssemblyPath))
+                    {
+                        loadedAssemblySha256 = PuddingBuildOutputSync.ComputeSha256(deployedAssemblyPath);
+                        var loadedManifest = PuddingBuildOutputSync.ComputeManagedArtifactManifest(
+                            deploymentDirectory,
+                            preparedArtifactManifest.RelativePaths);
+                        loadedArtifactManifestSha256 = loadedManifest.Sha256;
+                        deploymentVerified = string.Equals(
+                            preparedAssemblySha256,
+                            loadedAssemblySha256,
+                            StringComparison.OrdinalIgnoreCase)
+                            && string.Equals(
+                                preparedArtifactManifestSha256,
+                                loadedArtifactManifestSha256,
+                                StringComparison.OrdinalIgnoreCase);
+                        if (!deploymentVerified)
+                            errors.Add("部署后的托管程序集清单与预构建产物不一致。");
                     }
                 }
                 catch (Exception ex)
                 {
-                    errors.Add($"同步构建产物失败: {ex.Message}");
+                    errors.Add($"部署构建产物失败: {ex.Message}");
                     DesktopDiagnosticLog.Write("BootstrapSyncOutput", ex);
                 }
             }
+
+            preparationSucceeded = deploymentVerified && errors.Count == 0;
         }
 
-        // c) yolo.signal (only after a successful build).
-        if (buildSucceeded && _autoYolo && yolo)
+        // c) yolo.signal (only after the requested preparation succeeded).
+        if (preparationSucceeded && _autoYolo && yolo)
         {
             try
             {
@@ -543,8 +696,8 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
             }
         }
 
-        // d) Restart Core with the last configured start options.
-        //    On build failure this restores Core with the old binary.
+        // d) Restart Core with the last configured start options. On a
+        //    preparation failure this restores Core with the previous binary.
         try
         {
             await _coordinator.StartCoreAsync(cancellationToken);
@@ -555,14 +708,75 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
             errors.Add($"启动 Core 失败: {ex.Message}");
         }
 
+        var assembliesReloaded = false;
+        var launchedCoreExecutablePath = _coordinator.CoreExecutablePath;
+        if (coreRestarted
+            && deploymentMode != DesktopBootstrapSignalParser.RestartOnlyMode
+            && preparationSucceeded
+            && !string.IsNullOrWhiteSpace(deploymentDirectory)
+            && !string.IsNullOrWhiteSpace(preparedAssemblySha256)
+            && preparedArtifactManifest is not null)
+        {
+            try
+            {
+                var launchedDirectory = string.IsNullOrWhiteSpace(launchedCoreExecutablePath)
+                    ? null
+                    : Path.GetDirectoryName(Path.GetFullPath(launchedCoreExecutablePath));
+                var launchDirectoryMatches = !string.IsNullOrWhiteSpace(launchedDirectory)
+                    && string.Equals(
+                        Path.TrimEndingDirectorySeparator(launchedDirectory),
+                        Path.TrimEndingDirectorySeparator(deploymentDirectory),
+                        StringComparison.OrdinalIgnoreCase);
+                if (!launchDirectoryMatches)
+                {
+                    errors.Add("Core 重启后的实际启动目录与部署目录不一致。");
+                }
+
+                loadedAssemblySha256 = PuddingBuildOutputSync.ComputeSha256(
+                    Path.Combine(launchedDirectory ?? deploymentDirectory, "PuddingAgent.dll"));
+                var launchedManifest = PuddingBuildOutputSync.ComputeManagedArtifactManifest(
+                    launchedDirectory ?? deploymentDirectory,
+                    preparedArtifactManifest.RelativePaths);
+                loadedArtifactManifestSha256 = launchedManifest.Sha256;
+                assembliesReloaded = launchDirectoryMatches && string.Equals(
+                    preparedAssemblySha256,
+                    loadedAssemblySha256,
+                    StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(
+                        preparedArtifactManifestSha256,
+                        loadedArtifactManifestSha256,
+                        StringComparison.OrdinalIgnoreCase);
+                if (!assembliesReloaded)
+                    errors.Add("Core 重启后实际托管程序集清单与部署产物不一致。");
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Core 重启后程序集校验失败: {ex.Message}");
+            }
+        }
+
         return new DesktopBootstrapResult
         {
-            Success = buildSucceeded && coreRestarted && errors.Count == 0,
+            Success = coreRestarted
+                      && errors.Count == 0
+                      && (deploymentMode == DesktopBootstrapSignalParser.RestartOnlyMode || assembliesReloaded),
             Action = DesktopBootstrapSignalParser.RebuildRestartAction,
+            DeploymentMode = deploymentMode,
             StartedAt = startedAt,
             FinishedAt = DateTimeOffset.UtcNow,
             BuildExitCode = buildExitCode,
             BuildLogTail = buildLogTail,
+            BuildOutputDirectory = buildOutputDirectory,
+            DeploymentDirectory = deploymentDirectory,
+            CoreExecutablePath = launchedCoreExecutablePath,
+            DeploymentCopied = deploymentCopied,
+            DeploymentSkipped = deploymentSkipped,
+            PreparedAssemblySha256 = preparedAssemblySha256,
+            LoadedAssemblySha256 = loadedAssemblySha256,
+            PreparedArtifactManifestSha256 = preparedArtifactManifestSha256,
+            LoadedArtifactManifestSha256 = loadedArtifactManifestSha256,
+            ManagedArtifactFileCount = preparedArtifactManifest?.FileCount ?? 0,
+            AssembliesReloaded = assembliesReloaded,
             CoreRestarted = coreRestarted,
             YoloSignalWritten = yoloSignalWritten,
             Errors = errors,

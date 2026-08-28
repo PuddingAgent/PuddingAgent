@@ -16,9 +16,13 @@
 |------|------|
 | `Hosting/DesktopApplicationCoordinator.cs` | 🔑 Launcher↔Core 状态机，协调 Runtime、Bridge、Workbench、调试组件；`DeployFrontendAsync` 独立锁执行前端构建部署（目标=当前 Core 可执行目录，调试模式取源码构建输出目录） |
 | `Core/CoreExecutableResolver.cs` | Core 路径确定性解析（配置→发布包→同源→兜底） |
-| `Core/CoreProcessSupervisor.cs` | Core 子进程固定端口 `0.0.0.0` 启动、本机健康检查、环形 stdout/stderr、进程树回收；`EnvironmentName` 可覆盖 Production |
+| `Core/CoreProcessSupervisor.cs` | Core 子进程固定端口 `0.0.0.0` 启动、本机健康检查、环形 stdout/stderr、进程树回收；启动超时采用有效进度租约（静默超时 + 有界绝对上限）；`EnvironmentName` 可覆盖 Production |
+| `Core/CoreStartupProgressMessage*.cs` | `PUDDING_DESKTOP_STARTING` 协议、严格解析与单调租约；校验协议版本/PID/序号，租约不替代 Ready/health 门禁 |
 | `Runtime/DesktopRuntimeOrchestrator.cs` | 异常退出恢复、退避熔断（2s/4s/8s，60s 3 次） |
 | `Runtime/CoreRestartPolicy.cs` | 重启策略与取消语义 |
+| `Bootstrap/DesktopBootstrapSignalService.cs` | 🔑 Core 点火部署主管：`desktop-build` / `prebuilt-artifact` / `restart-only`，停 Core 后把产物事务部署到实际 `CoreExecutablePath` 目录，重启前后校验 `PuddingAgent.dll` SHA-256 |
+| `Bootstrap/DesktopBootstrapHttpEndpoint.cs` | 仅回环 + ControlToken 的点火遥控 API；接收部署模式/预构建目录/期望哈希并返回结构化结果路径 |
+| `Bootstrap/DesktopBootstrapSignal*.cs` | 信号协议、部署模式归一化与结果证据模型（产物/加载路径、复制计数、哈希、`assembliesReloaded`） |
 
 ## 调试模式（Debug）
 

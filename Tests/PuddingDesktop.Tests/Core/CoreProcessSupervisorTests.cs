@@ -130,6 +130,20 @@ public class CoreProcessSupervisorTests
         Assert.Equal("secret-token-abc", options.ControlToken);
     }
 
+    [Theory]
+    [InlineData(60, 300)]
+    [InlineData(120, 600)]
+    [InlineData(300, 600)]
+    public void ResolveHardStartupTimeout_IsBounded(
+        int inactivitySeconds,
+        int expectedHardSeconds)
+    {
+        var actual = CoreProcessSupervisor.ResolveHardStartupTimeout(
+            TimeSpan.FromSeconds(inactivitySeconds));
+
+        Assert.Equal(TimeSpan.FromSeconds(expectedHardSeconds), actual);
+    }
+
     [Fact]
     public void CreateProcessStartInfo_IsolatesDesktopChildEnvironment()
     {

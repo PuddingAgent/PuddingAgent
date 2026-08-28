@@ -157,7 +157,13 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
     {
         var body = await ReadBodyAsync(context.Request, cancellationToken);
         DesktopBootstrapHttpRequestParser.TryParseStartBody(
-            body, out _, out var requestedBy, out var yolo);
+            body,
+            out _,
+            out var requestedBy,
+            out var yolo,
+            out var deploymentMode,
+            out var artifactDirectory,
+            out var artifactAssemblySha256);
 
         if (!await CheckTokenAsync(context, body, cancellationToken))
         {
@@ -173,7 +179,18 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
 
         // Accepted: run the rebuild-restart in the background; the signal
         // service still writes the result to rebuild.signal.result.json.
-        _ = RunInBackgroundAsync(requestedBy, yolo);
+        if (DesktopBootstrapSignalParser.NormalizeDeploymentMode(deploymentMode) is null)
+        {
+            await WriteJsonAsync(context, 400, """{"error":"unsupported_deployment_mode"}""");
+            return;
+        }
+
+        _ = RunInBackgroundAsync(
+            requestedBy,
+            yolo,
+            deploymentMode,
+            artifactDirectory,
+            artifactAssemblySha256);
         await WriteJsonAsync(
             context,
             202,
@@ -188,7 +205,8 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
     private async Task<bool> CheckTokenAsync(
         HttpListenerContext context, string body, CancellationToken cancellationToken)
     {
-        DesktopBootstrapHttpRequestParser.TryParseStartBody(body, out var bodyToken, out _, out _);
+        DesktopBootstrapHttpRequestParser.TryParseStartBody(
+            body, out var bodyToken, out _, out _, out _, out _, out _);
 
         var headerToken = context.Request.Headers["X-Control-Token"];
         var expectedToken = await _tokenService.GetOrCreateAsync(_dataRoot, cancellationToken);
@@ -306,11 +324,22 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
             context, 200, JsonSerializer.Serialize(result, ResponseJsonOptions), cancellationToken);
     }
 
-    private async Task RunInBackgroundAsync(string? requestedBy, bool yolo)
+    private async Task RunInBackgroundAsync(
+        string? requestedBy,
+        bool yolo,
+        string? deploymentMode,
+        string? artifactDirectory,
+        string? artifactAssemblySha256)
     {
         try
         {
-            await _signalService.TriggerRebuildRestartAsync(requestedBy, yolo, CancellationToken.None);
+            await _signalService.TriggerRebuildRestartAsync(
+                requestedBy,
+                yolo,
+                deploymentMode,
+                artifactDirectory,
+                artifactAssemblySha256,
+                CancellationToken.None);
         }
         catch (OperationCanceledException)
         {
@@ -413,14 +442,26 @@ internal static class DesktopBootstrapHttpRequestParser
 
     /// <summary>
     /// Parses the POST /desktop/bootstrap/start JSON body
-    /// {"token":"...","requestedBy":"...","yolo":true}.
+    /// {"token":"...","requestedBy":"...","yolo":true,
+    ///  "deploymentMode":"desktop-build","artifactDirectory":"...",
+    ///  "artifactAssemblySha256":"..."}.
     /// Returns false when the body is empty or not valid JSON.
     /// </summary>
-    public static bool TryParseStartBody(string? body, out string? token, out string? requestedBy, out bool yolo)
+    public static bool TryParseStartBody(
+        string? body,
+        out string? token,
+        out string? requestedBy,
+        out bool yolo,
+        out string? deploymentMode,
+        out string? artifactDirectory,
+        out string? artifactAssemblySha256)
     {
         token = null;
         requestedBy = null;
         yolo = false;
+        deploymentMode = null;
+        artifactDirectory = null;
+        artifactAssemblySha256 = null;
 
         if (string.IsNullOrWhiteSpace(body))
             return false;
@@ -434,6 +475,9 @@ internal static class DesktopBootstrapHttpRequestParser
             token = payload.Token;
             requestedBy = payload.RequestedBy;
             yolo = payload.Yolo;
+            deploymentMode = payload.DeploymentMode;
+            artifactDirectory = payload.ArtifactDirectory;
+            artifactAssemblySha256 = payload.ArtifactAssemblySha256;
             return true;
         }
         catch (JsonException)
@@ -447,5 +491,8 @@ internal static class DesktopBootstrapHttpRequestParser
         public string? Token { get; init; }
         public string? RequestedBy { get; init; }
         public bool Yolo { get; init; }
+        public string? DeploymentMode { get; init; }
+        public string? ArtifactDirectory { get; init; }
+        public string? ArtifactAssemblySha256 { get; init; }
     }
 }

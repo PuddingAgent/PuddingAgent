@@ -12,6 +12,9 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
     internal const string DesktopChildEnvironmentName = "Production";
     internal const string DesktopChildListenHost = "0.0.0.0";
     private static readonly TimeSpan HealthPollInterval = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan StartupWaitPollInterval = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan MaximumHardStartupTimeout = TimeSpan.FromMinutes(10);
+    private const int StartupProgressExtensionFactor = 5;
 
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly CoreProcessLogBuffer _logBuffer = new(500);
@@ -73,6 +76,7 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
             var process = CreateProcess(options);
             var readyTcs = new TaskCompletionSource<CoreReadyMessage>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
+            var startupLease = new CoreStartupProgressLease(DateTimeOffset.UtcNow);
             process.Exited += (_, _) => OnProcessExited(process, readyTcs);
             _process = process;
 
@@ -83,20 +87,19 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
                     throw new InvalidOperationException("The operating system refused to start Core.");
 
                 _ioCts = new CancellationTokenSource();
-                _stdoutReadTask = ReadStdoutAsync(process, readyTcs, _ioCts.Token);
+                _stdoutReadTask = ReadStdoutAsync(
+                    process,
+                    readyTcs,
+                    startupLease,
+                    _ioCts.Token);
                 _stderrReadTask = ReadStderrAsync(process, _ioCts.Token);
 
-                CoreReadyMessage readyMessage;
-                try
-                {
-                    readyMessage = await readyTcs.Task.WaitAsync(options.StartupTimeout, cancellationToken);
-                }
-                catch (TimeoutException ex)
-                {
-                    throw new TimeoutException(
-                        $"Core did not emit a Ready signal within {options.StartupTimeout.TotalSeconds:0.###} seconds.",
-                        ex);
-                }
+                var readyMessage = await WaitForReadyAsync(
+                    readyTcs.Task,
+                    startupLease,
+                    startedAt,
+                    options.StartupTimeout,
+                    cancellationToken);
 
                 if (readyMessage.ProtocolVersion != 1)
                     throw new InvalidOperationException(
@@ -110,7 +113,7 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
                     throw CreateExitedBeforeReadyException(process);
 
                 _logBuffer.Append($"[Desktop] Core Ready signal received: {readyMessage.BaseAddress}");
-                var startupDeadline = startedAt + options.StartupTimeout;
+                var startupDeadline = DateTimeOffset.UtcNow + options.StartupTimeout;
                 if (!await WaitForHealthAsync(readyMessage.BaseAddress, startupDeadline, cancellationToken))
                     throw new InvalidOperationException(
                         "Core emitted Ready but /health/ready did not become healthy before the startup deadline.");
@@ -414,6 +417,7 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
     private async Task ReadStdoutAsync(
         Process process,
         TaskCompletionSource<CoreReadyMessage> readyTcs,
+        CoreStartupProgressLease startupLease,
         CancellationToken cancellationToken)
     {
         try
@@ -427,6 +431,19 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
                 _logBuffer.Append($"[stdout] {line}");
                 try
                 {
+                    var progress = CoreStartupProgressMessageParser.TryParse(line);
+                    if (progress is not null)
+                    {
+                        if (progress.ProtocolVersion != 1)
+                            throw new InvalidOperationException(
+                                $"Unsupported Core startup progress protocol version {progress.ProtocolVersion}.");
+                        if (progress.ProcessId != process.Id)
+                            throw new InvalidOperationException(
+                                $"Core startup progress processId {progress.ProcessId} did not match child process {process.Id}.");
+
+                        startupLease.TryRenew(progress.Sequence, DateTimeOffset.UtcNow);
+                    }
+
                     var parsed = CoreReadyMessageParser.TryParse(line);
                     if (parsed is not null)
                         readyTcs.TrySetResult(parsed);
@@ -434,7 +451,7 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
                 catch (Exception ex)
                 {
                     readyTcs.TrySetException(ex);
-                    _logBuffer.Append($"[Desktop] Invalid Ready signal: {ex.Message}");
+                    _logBuffer.Append($"[Desktop] Invalid startup control signal: {ex.Message}");
                     return;
                 }
             }
@@ -447,6 +464,72 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
             readyTcs.TrySetException(ex);
             _logBuffer.Append($"[Desktop] stdout reader failed: {ex.Message}");
         }
+    }
+
+    private static async Task<CoreReadyMessage> WaitForReadyAsync(
+        Task<CoreReadyMessage> readyTask,
+        CoreStartupProgressLease startupLease,
+        DateTimeOffset startedAt,
+        TimeSpan inactivityTimeout,
+        CancellationToken cancellationToken)
+    {
+        if (inactivityTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(inactivityTimeout));
+
+        var hardTimeout = ResolveHardStartupTimeout(inactivityTimeout);
+        var hardDeadline = startedAt + hardTimeout;
+
+        while (true)
+        {
+            if (readyTask.IsCompleted)
+                return await readyTask;
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var now = DateTimeOffset.UtcNow;
+            if (now >= hardDeadline)
+            {
+                throw new TimeoutException(
+                    $"Core did not emit a Ready signal within the bounded {hardTimeout.TotalSeconds:0.###} seconds despite startup progress.");
+            }
+
+            var inactivityDeadline = startupLease.LastProgressAt + inactivityTimeout;
+            if (now >= inactivityDeadline)
+            {
+                throw new TimeoutException(
+                    $"Core did not emit a Ready signal or renew its startup lease within {inactivityTimeout.TotalSeconds:0.###} seconds.");
+            }
+
+            var delay = Min(
+                StartupWaitPollInterval,
+                hardDeadline - now,
+                inactivityDeadline - now);
+            var delayTask = Task.Delay(delay, cancellationToken);
+            var completed = await Task.WhenAny(readyTask, delayTask);
+            if (completed == readyTask)
+                return await readyTask;
+
+            await delayTask;
+        }
+    }
+
+    internal static TimeSpan ResolveHardStartupTimeout(TimeSpan inactivityTimeout)
+    {
+        if (inactivityTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(inactivityTimeout));
+
+        var scaledTicks = inactivityTimeout.Ticks > long.MaxValue / StartupProgressExtensionFactor
+            ? long.MaxValue
+            : inactivityTimeout.Ticks * StartupProgressExtensionFactor;
+        var scaled = TimeSpan.FromTicks(scaledTicks);
+        return scaled <= MaximumHardStartupTimeout
+            ? scaled
+            : MaximumHardStartupTimeout;
+    }
+
+    private static TimeSpan Min(TimeSpan first, TimeSpan second, TimeSpan third)
+    {
+        var result = first <= second ? first : second;
+        return result <= third ? result : third;
     }
 
     private async Task ReadStderrAsync(Process process, CancellationToken cancellationToken)
