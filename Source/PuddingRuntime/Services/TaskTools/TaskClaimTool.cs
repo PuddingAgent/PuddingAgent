@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services.TaskTools;
 [Tool(
     id: "task_claim",
     name: "认领工作区任务",
-    description: "认领分配给我的工作区任务（Assigned→InProgress）。【何时用】开始执行已分配任务时使用。【怎么用】task_id、assignment_id、expected_version 三个参数都必须等于运行时注入的 Active Task Context 值；重复认领（已 InProgress）幂等 no-op。【坑】正常路径强制要求 Active Task Context 非空；宿主重启导致上下文丢失时，若入参完整且服务端反查确认 assignment 归属当前 Agent（任务状态 Assigned/InProgress、版本 CAS 匹配）则自动重建等效上下文继续；版本不匹配返回 version_conflict；迟到调用（已重派/已闭合）返回 assignment.stale/state_conflict；workspace_id 由运行时注入。Claim the assigned workspace task (Assigned→InProgress); task_id/assignment_id/expected_version must match the injected Active Task Context; idempotent no-op when already InProgress. When the injected context is lost after a host restart, an equivalent context is rebuilt via a server-side ownership lookup.",
+    description: "认领分配给我的工作区任务（Assigned→InProgress）。【何时用】开始执行已分配任务时使用。【怎么用】task_id、assignment_id 必须等于运行时注入的 Active Task Context 值；expected_version 传 worker 最新已知的服务端活版本（优先于注入快照，缺陷 2d5a2ebe），服务端 CAS 校验；重复认领（已 InProgress）幂等 no-op。【坑】正常路径强制要求 Active Task Context 非空；宿主重启导致上下文丢失时，若入参完整且服务端反查确认 assignment 归属当前 Agent（任务状态 Assigned/InProgress、版本 CAS 匹配）则自动重建等效上下文继续；版本不匹配返回 version_conflict；迟到调用（已重派/已闭合）返回 assignment.stale/state_conflict；workspace_id 由运行时注入。Claim the assigned workspace task (Assigned→InProgress); task_id/assignment_id must match the injected Active Task Context; expected_version is the worker's latest known live version (takes priority over the injected snapshot, defect 2d5a2ebe) and is CAS-verified server-side; idempotent no-op when already InProgress. When the injected context is lost after a host restart, an equivalent context is rebuilt via a server-side ownership lookup.",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low)]
     // 2026-08-28 裁定：task 看板元数据（用户原则：仅直接损坏/泄露用户数据需门禁）
@@ -58,7 +58,7 @@ public sealed class TaskClaimTool : PuddingToolBase<TaskClaimArgs>
                 WorkspaceId = context.WorkspaceId,
                 TaskId = active.TaskId,
                 AssignmentId = active.AssignmentId,
-                ExpectedVersion = active.ExpectedVersion ?? args.ExpectedVersion,
+                ExpectedVersion = args.ExpectedVersion,
                 AgentId = context.AgentInstanceId,
                 ExecutionId = context.ExecutionIdentity?.RunId,
                 SessionId = context.SessionId,

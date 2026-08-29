@@ -4,8 +4,9 @@ namespace PuddingCode.Tasks;
 /// Active Task Runtime Context — 由派发链注入，随本次 Agent Run 存活。
 /// <para>
 /// 权威来源：ADR-072 §9.1 Envelope metadata + §9.2 注入字段。Tool 不得自行解析 Transcript；
-/// task_id/assignment_id/expected_version 由 Runtime 注入，模型不得伪造（工具执行时以 Context 为准，
-/// 忽略参数中与之冲突的值）。
+/// task_id/assignment_id 由 Runtime 注入，模型不得伪造（工具执行时以 Context 为准，
+/// 忽略参数中与之冲突的值）；expected_version 为派发时刻快照，仅作缺省回退——worker
+/// 传入的 expected_version 优先（缺陷 2d5a2ebe 后由服务端活版本 CAS 唯一裁决）。
 /// </para>
 /// </summary>
 public sealed record ActiveTaskRuntimeContext
@@ -31,7 +32,8 @@ public sealed record ActiveTaskRuntimeContext
     /// <summary>wire: inherit | anytime | off_peak_only。</summary>
     public required string ExecutionWindow { get; init; }
 
-    /// <summary>派发时刻的 Task.Version（审计与迟到校验基线，见 §4.3）。</summary>
+    /// <summary>派发时刻的 Task.Version 快照（仅作缺省回退；worker 入参 expected_version 优先，
+    /// 服务端活版本 CAS 为唯一权威，见缺陷 2d5a2ebe）。</summary>
     public int? ExpectedVersion { get; init; }
 
     /// <summary>派发时的 policy 版本（ADR-072 §9.1 metadata.policy_version）。</summary>

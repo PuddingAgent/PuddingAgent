@@ -102,7 +102,7 @@ public sealed record TaskClaimArgs
     [ToolParam("Assignment ID，必须等于 Active Task Context 注入的 assignment_id。")]
     public required string AssignmentId { get; init; }
 
-    [ToolParam("期望版本，必须等于 Active Task Context 注入的 expected_version 且等于当前 task.Version。")]
+    [ToolParam("期望版本：worker 最新已知的服务端活版本（优先于注入快照，缺陷 2d5a2ebe）；服务端 CAS 校验，不符返回 task.version_conflict。")]
     public required int ExpectedVersion { get; init; }
 }
 
@@ -128,7 +128,7 @@ public sealed record TaskUpdateArgs
     [ToolParam("Assignment ID，必须等于 Active Task Context 注入的 assignment_id。")]
     public required string AssignmentId { get; init; }
 
-    [ToolParam("期望版本，必须等于 Active Task Context 注入的 expected_version 且等于当前 task.Version。")]
+    [ToolParam("期望版本：worker 最新已知的服务端活版本（优先于注入快照，缺陷 2d5a2ebe）；服务端 CAS 校验，不符返回 task.version_conflict。")]
     public required int ExpectedVersion { get; init; }
 
     [ToolParam("disposition：accept/progress/todo/blocked/needs_approval/rejected/completed。")]
@@ -157,12 +157,15 @@ public sealed record TaskUpdateArgs
 internal static class TaskToolGuard
 {
     /// <summary>
-    /// 校验参数与注入的 Active Task Context 一致；返回 null 表示通过，否则返回统一错误体 JSON。
+    /// 校验 task_id/assignment_id 与注入的 Active Task Context 一致；返回 null 表示通过，否则返回统一错误体 JSON。
+    /// <para>
+    /// expected_version 不再与注入快照比对（缺陷 2d5a2ebe 移除第一重 CAS 互斥）；
+    /// 服务端活版本 CAS 是唯一权威，由调用方/服务端在 Claim/Apply 时裁决。
+    /// </para>
     /// </summary>
     public static string? ValidateActiveTask(
         string taskId,
         string assignmentId,
-        int expectedVersion,
         ToolExecutionContext context)
     {
         if (context.ActiveTask is null)
@@ -190,14 +193,6 @@ internal static class TaskToolGuard
                 taskId);
         }
 
-        if (expectedVersion != active.ExpectedVersion)
-        {
-            return TaskToolErrors.BuildErrorJson(
-                TaskErrorCode.TaskStateConflict,
-                $"expected_version {expectedVersion} does not match the Active Task Context expected_version {active.ExpectedVersion}.",
-                taskId);
-        }
-
         return null;
     }
 
@@ -205,7 +200,8 @@ internal static class TaskToolGuard
     /// 缺陷 3f8df399：宿主重启后恢复 session 的新 run 无派发 metadata（context.ActiveTask==null），
     /// task_claim/task_update 直接拒绝导致已 InProgress 的任务永远无法 canonical 关单。
     /// 当且仅当注入上下文缺失时，经任务查询服务反查 assignment 归属，安全重建等效上下文，
-    /// 校验强度与派发注入等效：
+    /// 校验强度不低于派发注入（注入路径不做 expected_version 快照比对——缺陷 2d5a2ebe；
+    /// 反查路径额外执行 ⑤ 服务端活版本 CAS）：
     ///   ① GetAsync(workspaceId, taskId, 当前 AgentInstanceId)——mine 过滤下非 mine 与不存在统一
     ///      返回 null（Platform 信息隐藏裁决），跨 Agent 伪造无法通过；
     ///   ② active assignment 存在且 AssignmentId 与入参一致（过期/伪造 → assignment.stale，
@@ -228,7 +224,7 @@ internal static class TaskToolGuard
         CancellationToken ct,
         bool requireInProgress)
     {
-        var error = ValidateActiveTask(taskId, assignmentId, expectedVersion, context);
+        var error = ValidateActiveTask(taskId, assignmentId, context);
         if (error is null)
         {
             return (null, context.ActiveTask);

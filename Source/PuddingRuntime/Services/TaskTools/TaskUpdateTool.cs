@@ -12,7 +12,7 @@ namespace PuddingRuntime.Services.TaskTools;
 [Tool(
     id: "task_update",
     name: "更新工作区任务",
-    description: "提交 disposition，由后端状态机解释并推进工作区任务。【何时用】任务执行过程中汇报进展/阻塞/完成/拒绝/回退时使用。【怎么用】task_id、assignment_id、expected_version 必须等于 Active Task Context 注入值；disposition 取 accept/progress/todo/blocked/needs_approval/rejected/completed；blocked/rejected/needs_approval 必填 reason；completed 必填 result_summary；progress 必填 progress_summary 或 next_action 之一。【坑】上下文丢失（宿主重启）时经服务端反查 assignment 归属（任务须 InProgress、版本 CAS 匹配）安全重建后继续；迟到调用（已重派/已闭合）返回 assignment.stale/state_conflict/version_conflict；自然语言说“完成”不改变 Task，只有本工具生效。",
+    description: "提交 disposition，由后端状态机解释并推进工作区任务。【何时用】任务执行过程中汇报进展/阻塞/完成/拒绝/回退时使用。【怎么用】task_id、assignment_id 必须等于 Active Task Context 注入值；expected_version 传 worker 最新已知的服务端活版本（优先于注入快照，缺陷 2d5a2ebe），服务端 CAS 校验；disposition 取 accept/progress/todo/blocked/needs_approval/rejected/completed；blocked/rejected/needs_approval 必填 reason；completed 必填 result_summary；progress 必填 progress_summary 或 next_action 之一。【坑】上下文丢失（宿主重启）时经服务端反查 assignment 归属（任务须 InProgress、版本 CAS 匹配）安全重建后继续；迟到调用（已重派/已闭合）返回 assignment.stale/state_conflict/version_conflict；自然语言说“完成”不改变 Task，只有本工具生效。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low)]
     // 2026-08-28 裁定：task 看板元数据（用户原则：仅直接损坏/泄露用户数据需门禁）
@@ -108,7 +108,7 @@ public sealed class TaskUpdateTool : PuddingToolBase<TaskUpdateArgs>
                 WorkspaceId = context.WorkspaceId,
                 TaskId = active.TaskId,
                 AssignmentId = active.AssignmentId,
-                ExpectedVersion = active.ExpectedVersion ?? args.ExpectedVersion,
+                ExpectedVersion = args.ExpectedVersion,
                 Disposition = disposition,
                 AgentId = context.AgentInstanceId,
                 Reason = args.Reason,

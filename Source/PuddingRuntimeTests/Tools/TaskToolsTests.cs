@@ -17,7 +17,8 @@ namespace PuddingRuntimeTests.Tools;
 ///   ① 四工具注册（PuddingToolRegistry 出现 4 个 id、无重复、参数 schema 正确）；
 ///   ② TaskListTool（mine 过滤透传、status/board_column/priority/limit/cursor、空结果）；
 ///   ③ TaskGetTool（序列化详情、Cancelled/Archived board_column=null 不抛错、不存在统一 not_found）；
-///   ④ TaskClaimTool（成功、无上下文 422、状态冲突 409、版本冲突 409、assignment.stale 409）；
+///   ④ TaskClaimTool（成功、无上下文 422、状态冲突 409、版本冲突 409、assignment.stale 409、
+///      缺陷 2d5a2ebe 回归：注入快照过期 + worker 传新活版本 → 成功）；
 ///   ⑤ TaskUpdateTool（7 disposition 成功 + 全部 422 规则 + 迟到拒绝）；
 ///   ⑥ ActiveTask 注入（ToolExecutionContext.ActiveTask + ExecutionIdentity 关联透传）；
 ///   ⑦ Feature Flag（WorkspaceTasks.Enabled=false → capability.missing）。
@@ -596,16 +597,23 @@ public sealed class TaskToolsTests
     }
 
     [TestMethod]
-    public async Task Claim_ExpectedVersionMismatch_ReturnsStateConflict()
+    public async Task Claim_InjectedSnapshotStale_WorkerPassesLiveVersion_Succeeds()
     {
-        var service = new FakeTaskAgentCommandService();
+        // 缺陷 2d5a2ebe 回归：注入快照 v1（派发时刻）vs 服务端活版本 v2；worker 传 expected_version=2
+        // → 不再被注入快照第一重 CAS 拦死，请求 ExpectedVersion==2 且成功（旧语义此处返回 state_conflict）。
+        var service = new FakeTaskAgentCommandService
+        {
+            Get = (_, _, _, _, _) => Task.FromResult<TaskAgentGetResult?>(GetResult(status: "Assigned", version: 2)),
+        };
 
-        var result = await RunAsync(
+        var root = ParseOutput(await RunAsync(
             ClaimTool(service),
-            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":99}""",
-            Context(activeTask: ActiveTask(expectedVersion: 1)));
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":2}""",
+            Context(activeTask: ActiveTask(expectedVersion: 1))));
 
-        AssertErrorCode(result, "task.state_conflict");
+        Assert.AreEqual("task-1", root.GetProperty("task_id").GetString());
+        Assert.AreEqual("InProgress", root.GetProperty("status").GetString());
+        Assert.AreEqual(2, service.LastClaimRequest!.ExpectedVersion);
     }
 
     [TestMethod]
@@ -849,16 +857,22 @@ public sealed class TaskToolsTests
     }
 
     [TestMethod]
-    public async Task Update_ExpectedVersionMismatch_ReturnsStateConflict()
+    public async Task Update_InjectedSnapshotStale_WorkerPassesLiveVersion_Succeeds()
     {
-        var service = new FakeTaskAgentCommandService();
+        // 缺陷 2d5a2ebe 回归：注入快照 v1 vs 服务端活版本 v2；worker 传 expected_version=2
+        // → 请求 ExpectedVersion==2 且成功（旧语义第一重校验会拦死该路径）。
+        var service = new FakeTaskAgentCommandService
+        {
+            Get = (_, _, _, _, _) => Task.FromResult<TaskAgentGetResult?>(GetResult(status: "InProgress", version: 2)),
+        };
 
-        var result = await RunAsync(
+        var root = ParseOutput(await RunAsync(
             UpdateTool(service),
-            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":99,"disposition":"accept"}""",
-            Context(activeTask: ActiveTask(expectedVersion: 1)));
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":2,"disposition":"progress","progress_summary":"doing"}""",
+            Context(activeTask: ActiveTask(expectedVersion: 1))));
 
-        AssertErrorCode(result, "task.state_conflict");
+        Assert.AreEqual("progress", root.GetProperty("disposition").GetString());
+        Assert.AreEqual(2, service.LastUpdateRequest!.ExpectedVersion);
     }
 
     [TestMethod]

@@ -307,9 +307,9 @@ public sealed class TaskActiveTaskFourChainE2ETests
         AssertActiveTaskEqual(activeTask, _harness.Tools.Captured[0].ActiveTask);
 
         // ④ 真实工具 + 真实库闭环：task 已认领（Assigned → InProgress）。
-        //    （契约 T9 原文标注 DB Task=Completed；因生产代码的 ExpectedVersion 为派发快照、
-        //     无法在同一恢复上下文内推进 claim→completed 两段，故此处按「claim 真写库」断言
-        //     恢复链闭环，完整 claim→completed 由 T4 覆盖。见交付 RISKS。）
+        //    （契约 T9 原文标注 DB Task=Completed；缺陷 2d5a2ebe 修复后 worker 可显式传
+        //     claim 后的新版本在同一恢复上下文内继续推进 claim→completed，此处仍按
+        //     「claim 真写库」断言恢复链闭环，完整 claim→completed 由 T4 覆盖。见交付 RISKS。）
         var task = await _harness.Probe.GetTaskAsync(WorkspaceId, TaskId);
         Assert.IsNotNull(task);
         Assert.AreEqual(WorkspaceTaskStatus.InProgress, task!.Status);
