@@ -106,7 +106,7 @@ public sealed class TaskSchedulingCoordinator(
                     workspaceId,
                     Math.Clamp(current.CandidateLimit, 1, 500),
                     ct);
-                var started = await starter.DispatchAsync(decisions, ct);
+                var started = await starter.DispatchAsync(decisions, maxStartsOverride: null, ct);
                 startedTotal += started;
                 foreach (var intent in intents)
                 {

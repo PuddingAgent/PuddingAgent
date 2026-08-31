@@ -19,6 +19,7 @@ public sealed class TaskAutoDispatchScanRunner(
     IWorkspaceAgentCatalog agentCatalog,
     IAgentAvailabilityProjectionStore availabilityStore,
     ITaskAutoDispatchStarter starter,
+    TaskSchedulerDecisionStore decisionStore,
     TimeProvider timeProvider,
     ILogger<TaskAutoDispatchScanRunner> logger)
 {
@@ -30,11 +31,15 @@ public sealed class TaskAutoDispatchScanRunner(
         CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
-        var authoritative = string.Equals(mode, "authoritative", StringComparison.OrdinalIgnoreCase);
-        if (!authoritative && !string.Equals(mode, "shadow", StringComparison.OrdinalIgnoreCase))
+        // Staged mode（五值）：shadow 只评估；authoritative-single/-bounded/-authoritative 共享派发线；
+        // disabled 不应进入扫描（控制面已拦，双保险拒绝）。
+        var normalizedMode = TaskAutoDispatchOptions.NormalizeMode(mode);
+        var authoritative = TaskAutoDispatchOptions.IsAuthoritativeMode(normalizedMode);
+        if (!authoritative && !TaskAutoDispatchOptions.IsShadowMode(normalizedMode))
             throw new InvalidOperationException("scheduler_mode_invalid");
 
         var startedAt = timeProvider.GetUtcNow();
+        var scanId = $"scan-{startedAt:yyyyMMddTHHmmssfff}-{Guid.NewGuid().ToString("N")[..8]}";
         var sw = Stopwatch.StartNew();
         var limit = Math.Clamp(candidateLimit, 1, 500);
 
@@ -47,12 +52,43 @@ public sealed class TaskAutoDispatchScanRunner(
         var backlog = await backlogRefinementEvaluator.EvaluateAsync(workspaceId, limit, ct);
         var promoted = authoritative ? await PromoteBacklogAsync(backlog, ct) : 0;
         var decisions = await evaluator.EvaluateAsync(workspaceId, limit, ct);
-        var started = authoritative ? await starter.DispatchAsync(decisions, ct) : 0;
+        // 缺口 2 写点①/②：candidate 与 refinement 决策持久化（shadow 与 authoritative 都落，
+        // mode 列分流；UNIQUE(scan_id, task_id, phase) 保证同 scan 重放幂等）。
+        // 写点③：defer/deny 门写回 workspace_tasks.next_eligible_at_utc（只前推不回拨）。
+        // 决策持久化是观测能力，落库失败不拖垮扫描轮，记日志后继续。
+        int recorded;
+        int refinementRecorded;
+        int writeBacks;
+        try
+        {
+            recorded = await decisionStore.RecordCandidateDecisionsAsync(
+                workspaceId, normalizedMode, scanId, decisions, ct);
+            refinementRecorded = await decisionStore.RecordRefinementDecisionsAsync(
+                workspaceId, normalizedMode, scanId, backlog, ct);
+            writeBacks = await decisionStore.ApplyNextEligibleWriteBackAsync(workspaceId, decisions, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "[TaskAutoDispatch] decision persistence failed workspace={WorkspaceId} scanId={ScanId}",
+                workspaceId,
+                scanId);
+            recorded = 0;
+            refinementRecorded = 0;
+            writeBacks = 0;
+        }
+        // 缺口 3：authoritative-single 强制单卡启动（灰度试运行）；bounded 用配置值（默认 2）。
+        var maxStartsOverride = string.Equals(normalizedMode, "authoritative-single", StringComparison.Ordinal)
+            ? 1
+            : (int?)null;
+        var started = authoritative ? await starter.DispatchAsync(decisions, maxStartsOverride, ct) : 0;
 
         var summary = new TaskAutoDispatchScanSummary
         {
             WorkspaceId = workspaceId,
-            Mode = authoritative ? "authoritative" : "shadow",
+            Mode = normalizedMode,
+            ScanId = scanId,
             Trigger = trigger,
             StartedAtUtc = startedAt,
             CompletedAtUtc = timeProvider.GetUtcNow(),
@@ -70,6 +106,9 @@ public sealed class TaskAutoDispatchScanRunner(
             Deferred = decisions.Count(item => item.Verdict == TaskAutoDispatchCandidateVerdict.Deferred),
             Denied = decisions.Count(item => item.Verdict == TaskAutoDispatchCandidateVerdict.Denied),
             Started = started,
+            DecisionsRecorded = recorded,
+            RefinementRecorded = refinementRecorded,
+            NextEligibleWriteBacks = writeBacks,
             Tracked = tracking.Count,
             Healthy = tracking.Count(item => item.Verdict == TaskExecutionTrackingVerdict.Healthy),
             Waiting = tracking.Count(item => item.Verdict == TaskExecutionTrackingVerdict.Waiting),
@@ -209,6 +248,7 @@ public sealed record TaskAutoDispatchScanSummary
 {
     public required string WorkspaceId { get; init; }
     public required string Mode { get; init; }
+    public string? ScanId { get; init; }
     public required string Trigger { get; init; }
     public required DateTimeOffset StartedAtUtc { get; init; }
     public required DateTimeOffset CompletedAtUtc { get; init; }
@@ -226,6 +266,9 @@ public sealed record TaskAutoDispatchScanSummary
     public int Deferred { get; init; }
     public int Denied { get; init; }
     public int Started { get; init; }
+    public int DecisionsRecorded { get; init; }
+    public int RefinementRecorded { get; init; }
+    public int NextEligibleWriteBacks { get; init; }
     public int Tracked { get; init; }
     public int Healthy { get; init; }
     public int Waiting { get; init; }

@@ -187,6 +187,7 @@ public sealed class TaskSchedulingCoordinatorTests
 
         public Task<int> DispatchAsync(
             IReadOnlyList<TaskAutoDispatchCandidateDecision> decisions,
+            int? maxStartsOverride = null,
             CancellationToken ct = default)
         {
             Calls.Add(decisions);

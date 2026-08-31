@@ -68,16 +68,19 @@ public sealed class TaskSchedulerControlService(
             GoalRunsEnabled = goalOptions.CurrentValue.Enabled,
             GoalContinuationEnabled = goalOptions.CurrentValue.ContinuationEnabled,
         };
+        var normalizedMode = TaskAutoDispatchOptions.NormalizeMode(current.Mode);
         var state = scanning
             ? "scanning"
-            : !current.Enabled || !current.WorkspaceIds.Contains(workspaceId, StringComparer.Ordinal)
+            : !current.Enabled
+                || TaskAutoDispatchOptions.IsDisabledMode(current.Mode)
+                || !current.WorkspaceIds.Contains(workspaceId, StringComparer.Ordinal)
                 ? "disabled"
                 : paused
                     ? "paused"
                     : lastError is not null && failedAt >= summary?.CompletedAtUtc
                         ? "faulted"
-                        : string.Equals(current.Mode, "authoritative", StringComparison.OrdinalIgnoreCase)
-                            ? "authoritative"
+                        : TaskAutoDispatchOptions.IsAuthoritativeMode(normalizedMode)
+                            ? normalizedMode
                             : "shadow";
         var nextScan = current.Enabled && !paused && summary is not null
             ? summary.CompletedAtUtc + current.ScanInterval
@@ -182,6 +185,10 @@ public sealed class TaskSchedulerControlService(
         var current = options.CurrentValue;
         if (!current.Enabled || !current.WorkspaceIds.Contains(workspaceId, StringComparer.Ordinal))
             throw new TaskSchedulerControlException("scheduler_disabled", "该工作区的自动调度尚未启用。");
+        if (TaskAutoDispatchOptions.IsDisabledMode(current.Mode))
+            throw new TaskSchedulerControlException(
+                "scheduler_disabled",
+                "TaskAutoDispatch:Mode=disabled，调度已全关（staged 灰度第一档）。");
         if (!allowWhenPaused && current.PausedWorkspaceIds.Contains(workspaceId, StringComparer.Ordinal))
             throw new TaskSchedulerControlException("scheduler_paused", "该工作区的自动调度已暂停。");
         EnsureAuthoritativePrerequisites(current);
@@ -269,7 +276,7 @@ public sealed class TaskSchedulerControlService(
 
     private void EnsureAuthoritativePrerequisites(TaskAutoDispatchOptions current)
     {
-        if (!string.Equals(current.Mode, "authoritative", StringComparison.OrdinalIgnoreCase))
+        if (!TaskAutoDispatchOptions.IsAuthoritativeMode(current.Mode))
             return;
         if (!taskBoundOptions.CurrentValue.Enabled
             || !goalOptions.CurrentValue.Enabled

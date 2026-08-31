@@ -24,11 +24,40 @@ public sealed class TaskAutoDispatchOptions
     /// <summary>CAS revision for Admin policy updates.</summary>
     public int PolicyRevision { get; set; }
 
-    /// <summary>
-    /// shadow performs evaluation only; authoritative calls the Task-bound Goal
-    /// atomic startup store. Both modes default to disabled.
+        /// <summary>
+    /// Staged rollout 灰度模式（五值）：
+    /// <c>disabled</c>（全关）、<c>shadow</c>（只评估不派发，行为不变）、
+    /// <c>authoritative-single</c>（试运行，强制 MaxStartsPerScan=1）、
+    /// <c>authoritative-bounded</c>（受限批量，用 MaxStartsPerScan 配置值，默认 2）、
+    /// <c>authoritative</c>（全量）。旧两值（shadow|authoritative）语义保留。
     /// </summary>
     public string Mode { get; set; } = "shadow";
+
+    /// <summary>归一化 mode（Trim + lower）。配置与控制面传入一律先归一。</summary>
+    public static string NormalizeMode(string? mode)
+        => (mode ?? string.Empty).Trim().ToLowerInvariant();
+
+    public static bool IsDisabledMode(string? mode)
+        => string.Equals(NormalizeMode(mode), "disabled", StringComparison.Ordinal);
+
+    public static bool IsShadowMode(string? mode)
+        => string.Equals(NormalizeMode(mode), "shadow", StringComparison.Ordinal);
+
+    /// <summary>authoritative 系（authoritative / -single / -bounded）共享同一套安全前置与派发线。</summary>
+    public static bool IsAuthoritativeMode(string? mode)
+        => NormalizeMode(mode) is "authoritative" or "authoritative-single" or "authoritative-bounded";
+
+    /// <summary>
+    /// 生效的单轮启动上限：authoritative-single 强制 1（灰度试运行），其余用配置值（clamp 1-32）。
+    /// </summary>
+    public static int EffectiveMaxStartsPerScan(TaskAutoDispatchOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var configured = Math.Clamp(options.MaxStartsPerScan, 1, 32);
+        return string.Equals(NormalizeMode(options.Mode), "authoritative-single", StringComparison.Ordinal)
+            ? Math.Min(configured, 1)
+            : configured;
+    }
 
     public string[] WorkspaceIds { get; set; } = ["default"];
     /// <summary>Recovery reconciliation cadence. Events may wake work sooner.</summary>
@@ -72,10 +101,10 @@ public sealed class TaskAutoDispatchOptions
         TaskBoundGoalOptions taskBoundGoals,
         GoalRunOptions goalRuns)
     {
-        var errors = new List<string>();
-        if (!string.Equals(options.Mode, "shadow", StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(options.Mode, "authoritative", StringComparison.OrdinalIgnoreCase))
-            errors.Add("TaskAutoDispatch:Mode must be shadow or authoritative.");
+                var errors = new List<string>();
+        var normalizedMode = NormalizeMode(options.Mode);
+        if (normalizedMode is not ("disabled" or "shadow" or "authoritative" or "authoritative-single" or "authoritative-bounded"))
+            errors.Add("TaskAutoDispatch:Mode must be disabled, shadow, authoritative-single, authoritative-bounded or authoritative.");
         if (options.ScanInterval < TimeSpan.FromSeconds(1)
             || options.ScanInterval > TimeSpan.FromHours(1))
             errors.Add("TaskAutoDispatch:ScanInterval must be between 1s and 1h.");
@@ -108,8 +137,8 @@ public sealed class TaskAutoDispatchOptions
             if (route.AllowedRoles.Any(string.IsNullOrWhiteSpace))
                 errors.Add($"TaskAutoDispatch:TaskTypeRoutes:{taskType} contains an empty role.");
         }
-        if (options.Enabled
-            && string.Equals(options.Mode, "authoritative", StringComparison.OrdinalIgnoreCase)
+                if (options.Enabled
+            && IsAuthoritativeMode(options.Mode)
             && (!taskBoundGoals.Enabled || !goalRuns.Enabled || !goalRuns.ContinuationEnabled))
         {
             errors.Add(
@@ -193,12 +222,14 @@ public sealed class TaskAutoDispatchEvaluator(
         foreach (var task in candidates)
         {
             ct.ThrowIfCancellationRequested();
+            var taskScore = TaskSchedulerScorer.Score(task, now);
             var timeGate = Later(task.NotBeforeUtc, task.NextEligibleAtUtc);
             if (timeGate > now)
             {
                 decisions.Add(Decision(workspaceId, task.TaskId, task.PreferredAgentId,
                     TaskAutoDispatchCandidateVerdict.Deferred, "task_not_yet_eligible", now,
-                    taskType: task.TaskType, nextEligibleAtUtc: timeGate));
+                    taskType: task.TaskType, nextEligibleAtUtc: timeGate,
+                    scoreBreakdown: taskScore));
                 continue;
             }
 
@@ -217,7 +248,8 @@ public sealed class TaskAutoDispatchEvaluator(
                         : "task_dependency_waiting",
                     now,
                     taskType: task.TaskType,
-                    dependencyState: dependency.State.ToString().ToLowerInvariant()));
+                    dependencyState: dependency.State.ToString().ToLowerInvariant(),
+                    scoreBreakdown: taskScore));
                 continue;
             }
 
@@ -233,14 +265,24 @@ public sealed class TaskAutoDispatchEvaluator(
                     now,
                     taskType: task.TaskType,
                     taskVersion: task.Version,
-                    dependencyState: "satisfied"));
+                    dependencyState: "satisfied",
+                    scoreBreakdown: taskScore));
                 continue;
             }
+
+            // Agent 选择：确定性加权评分（total desc）→ AgentId 稳定序。
+            // RouteMatcher 兼容性仍是硬门：不兼容 agent 不进入排序，仅通过 deny 行的
+            // breakdown（agent 因子全 0）承载 task 侧信号。
             var routedAgents = agents
-                .Select(agent => (Agent: agent, Route: TaskAgentRouteMatcher.Evaluate(task, agent, typeRoute)))
+                .Select(agent =>
+                {
+                    var route = TaskAgentRouteMatcher.Evaluate(task, agent, typeRoute);
+                    var score = TaskSchedulerScorer.Score(
+                        task, availabilityByAgent[agent.AgentId], route.Compatible, route.Code, now);
+                    return (Agent: agent, Route: route, Score: score);
+                })
                 .Where(item => item.Route.Compatible)
-                .OrderByDescending(item => string.Equals(
-                    task.PreferredAgentId, item.Agent.AgentId, StringComparison.Ordinal))
+                .OrderByDescending(item => item.Score.Total)
                 .ThenBy(item => item.Agent.AgentId, StringComparer.Ordinal)
                 .ToArray();
             if (routedAgents.Length == 0)
@@ -255,7 +297,8 @@ public sealed class TaskAutoDispatchEvaluator(
                         : "no_compatible_agent",
                     now,
                     taskType: task.TaskType,
-                    dependencyState: "satisfied"));
+                    dependencyState: "satisfied",
+                    scoreBreakdown: taskScore));
                 continue;
             }
 
@@ -273,7 +316,8 @@ public sealed class TaskAutoDispatchEvaluator(
                         routingFingerprint: routed.Route.Fingerprint,
                         availabilityVersion: availability.Version,
                         availabilityReason: availability.ReasonCode,
-                        dependencyState: "satisfied");
+                        dependencyState: "satisfied",
+                        scoreBreakdown: routed.Score);
                     continue;
                 }
 
@@ -291,7 +335,8 @@ public sealed class TaskAutoDispatchEvaluator(
                         nextEligibleAtUtc: minimumIdleUntil,
                         availabilityVersion: availability.Version,
                         availabilityReason: availability.ReasonCode,
-                        dependencyState: "satisfied");
+                        dependencyState: "satisfied",
+                        scoreBreakdown: routed.Score);
                     continue;
                 }
 
@@ -312,7 +357,8 @@ public sealed class TaskAutoDispatchEvaluator(
                         availabilityVersion: availability.Version,
                         availabilityReason: availability.ReasonCode,
                         dependencyState: "satisfied",
-                        windowCode: window.Code);
+                        windowCode: window.Code,
+                        scoreBreakdown: routed.Score);
                     continue;
                 }
 
@@ -327,7 +373,8 @@ public sealed class TaskAutoDispatchEvaluator(
                         availabilityVersion: availability.Version,
                         availabilityReason: availability.ReasonCode,
                         dependencyState: "satisfied",
-                        windowCode: window.Code);
+                        windowCode: window.Code,
+                        scoreBreakdown: routed.Score);
                     continue;
                 }
 
@@ -345,7 +392,8 @@ public sealed class TaskAutoDispatchEvaluator(
                     availabilityVersion: availability.Version,
                     availabilityReason: availability.ReasonCode,
                     dependencyState: "satisfied",
-                    windowCode: window.Code));
+                    windowCode: window.Code,
+                    scoreBreakdown: routed.Score));
                 lastDeferred = null;
                 break;
             }
@@ -376,8 +424,9 @@ public sealed class TaskAutoDispatchEvaluator(
         int? executionPlanVersion = null,
         long? availabilityVersion = null,
         string? availabilityReason = null,
-        string? dependencyState = null,
-        string? windowCode = null) => new()
+                string? dependencyState = null,
+        string? windowCode = null,
+        TaskSchedulerScoreBreakdown? scoreBreakdown = null) => new()
     {
         WorkspaceId = workspaceId,
         TaskId = taskId,
@@ -396,9 +445,10 @@ public sealed class TaskAutoDispatchEvaluator(
         EvaluatedAtUtc = now,
         NextEligibleAtUtc = nextEligibleAtUtc,
         AvailabilityVersion = availabilityVersion,
-        AvailabilityReason = availabilityReason,
+                AvailabilityReason = availabilityReason,
         DependencyState = dependencyState,
         WindowCode = windowCode,
+        ScoreBreakdown = scoreBreakdown,
     };
 
     private static DateTimeOffset? Later(DateTimeOffset? first, DateTimeOffset? second)

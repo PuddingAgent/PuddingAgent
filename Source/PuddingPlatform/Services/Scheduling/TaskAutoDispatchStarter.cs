@@ -9,9 +9,11 @@ namespace PuddingPlatform.Services.Scheduling;
 /// <summary>事件驱动协调器使用的派发启动边界（与 Worker 的 DispatchEligibleAsync 同语义）。</summary>
 public interface ITaskAutoDispatchStarter
 {
-    /// <summary>对 Eligible 决策执行围栏校验 + 二次 window fence + 原子启动，返回启动数。</summary>
+    /// <summary>对 Eligible 决策执行围栏校验 + 二次 window fence + 原子启动，返回启动数。
+    /// maxStartsOverride 供 staged 灰度（authoritative-single 强制 1）覆盖配置值。</summary>
     Task<int> DispatchAsync(
         IReadOnlyList<TaskAutoDispatchCandidateDecision> decisions,
+        int? maxStartsOverride = null,
         CancellationToken ct = default);
 }
 
@@ -36,14 +38,16 @@ public sealed class TaskAutoDispatchStarter(
 
     public async Task<int> DispatchAsync(
         IReadOnlyList<TaskAutoDispatchCandidateDecision> decisions,
+        int? maxStartsOverride = null,
         CancellationToken ct = default)
     {
         var current = options.CurrentValue;
+        var maxStarts = Math.Clamp(maxStartsOverride ?? current.MaxStartsPerScan, 1, 32);
         var started = 0;
         foreach (var candidate in decisions.Where(item =>
                      item.Verdict == TaskAutoDispatchCandidateVerdict.Eligible))
         {
-            if (started >= Math.Clamp(current.MaxStartsPerScan, 1, 32))
+            if (started >= maxStarts)
                 break;
             if (candidate.AgentId is null
                 || candidate.ConversationId is null

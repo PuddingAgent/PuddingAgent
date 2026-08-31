@@ -240,6 +240,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<TaskAutoDispatchStarter>();
         builder.Services.AddSingleton<ITaskAutoDispatchStarter>(sp =>
             sp.GetRequiredService<TaskAutoDispatchStarter>());
+        // 调度决策 durable 持久化（task_scheduler_decisions；ScanRunner 三写点共享）
+        builder.Services.AddSingleton<TaskSchedulerDecisionStore>();
         builder.Services.AddSingleton<TaskAutoDispatchScanRunner>();
         builder.Services.AddSingleton<TaskSchedulerControlService>();
         builder.Services.AddHostedService<TaskAutoDispatchWorker>();
