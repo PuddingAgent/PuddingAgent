@@ -3,7 +3,6 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PuddingCode.Configuration;
@@ -21,7 +20,7 @@ public sealed class TaskSchedulerControlService(
     IOptionsMonitor<TaskAutoDispatchOptions> options,
     IOptionsMonitor<TaskBoundGoalOptions> taskBoundOptions,
     IOptionsMonitor<GoalRunOptions> goalOptions,
-    IHostEnvironment hostEnvironment,
+    PuddingDataPaths dataPaths,
     TimeProvider timeProvider,
     ILogger<TaskSchedulerControlService> logger)
 {
@@ -43,7 +42,7 @@ public sealed class TaskSchedulerControlService(
         SingleWriter = false,
     });
 
-    private string ConfigurationPath => Path.Combine(hostEnvironment.ContentRootPath, "appsettings.json");
+    private string ConfigurationPath => dataPaths.SystemConfigFile("system.json");
 
     public TaskSchedulerStatusSnapshot GetStatus(string workspaceId)
     {
@@ -124,8 +123,15 @@ public sealed class TaskSchedulerControlService(
                 throw new TaskSchedulerControlException("scheduler_policy_invalid", string.Join("; ", errors));
 
             var root = await ReadConfigurationAsync(ct);
-            var section = root[TaskAutoDispatchOptions.SectionName] as JsonObject ?? new JsonObject();
-            root[TaskAutoDispatchOptions.SectionName] = section;
+            var sectionKey = root
+                .Select(entry => entry.Key)
+                .FirstOrDefault(key => string.Equals(
+                    key,
+                    TaskAutoDispatchOptions.SectionName,
+                    StringComparison.OrdinalIgnoreCase))
+                ?? "taskAutoDispatch";
+            var section = root[sectionKey] as JsonObject ?? new JsonObject();
+            root[sectionKey] = section;
             WritePolicy(section, candidate, current.PolicyRevision + 1);
             await AtomicFileWriter.WriteAsync(ConfigurationPath, root.ToJsonString(JsonOptions), ct);
             await WaitForRevisionAsync(current.PolicyRevision + 1, ct);
@@ -283,7 +289,7 @@ public sealed class TaskSchedulerControlService(
                 return new JsonObject();
             var node = JsonNode.Parse(await File.ReadAllTextAsync(ConfigurationPath, ct));
             return node as JsonObject
-                ?? throw new TaskSchedulerControlException("scheduler_config_invalid", "appsettings.json 根节点不是对象。");
+                ?? throw new TaskSchedulerControlException("scheduler_config_invalid", "system.json 根节点不是对象。");
         }
         catch (TaskSchedulerControlException)
         {

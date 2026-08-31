@@ -49,7 +49,7 @@ public sealed class TaskSchedulingCoordinatorTests
             Directory.Delete(_root, recursive: true);
     }
 
-    private TaskSchedulingCoordinator CreateCoordinator(int maxAttempts) => new(
+    private TaskSchedulingCoordinator CreateCoordinator(int maxAttempts, bool paused = false) => new(
         _store,
         _evaluator,
         _starter,
@@ -58,8 +58,10 @@ public sealed class TaskSchedulingCoordinatorTests
         new StaticOptionsMonitor<TaskAutoDispatchOptions>(new TaskAutoDispatchOptions
         {
             Enabled = true,
+            EventDrivenEnabled = true,
             Mode = "authoritative",
             WorkspaceIds = ["ws"],
+            PausedWorkspaceIds = paused ? ["ws"] : [],
             CandidateLimit = 100,
             IntentBatchSize = 50,
             IntentLease = TimeSpan.FromMinutes(2),
@@ -145,6 +147,21 @@ public sealed class TaskSchedulingCoordinatorTests
         Assert.HasCount(1, _evaluator.Calls);
         await using var db = await _factory.CreateDbContextAsync();
         Assert.AreEqual(TaskSchedulerIntentStatuses.Done, (await db.TaskSchedulerIntents.SingleAsync()).Status);
+    }
+
+    [TestMethod]
+    public async Task Coordinator_PausedWorkspace_DoesNotConsumeOrStart()
+    {
+        await _store.EnqueueAsync(TaskIntent(6));
+
+        await CreateCoordinator(maxAttempts: 3, paused: true).ProcessOnceAsync();
+
+        Assert.IsEmpty(_evaluator.Calls);
+        Assert.IsEmpty(_starter.Calls);
+        await using var db = await _factory.CreateDbContextAsync();
+        Assert.AreEqual(
+            TaskSchedulerIntentStatuses.Pending,
+            (await db.TaskSchedulerIntents.SingleAsync()).Status);
     }
 
     private sealed class FakeEvaluator : ITaskAutoDispatchEvaluator

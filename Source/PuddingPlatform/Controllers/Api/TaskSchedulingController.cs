@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Scheduling;
 using PuddingCode.Tasks;
+using PuddingPlatform.Services.Scheduling;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -16,8 +17,88 @@ namespace PuddingPlatform.Controllers.Api;
 public sealed class TaskSchedulingController(
     IAgentAvailabilityProjectionStore availabilityStore,
     ITaskAutoDispatchEvaluator autoDispatchEvaluator,
-    ITaskDependencyStore dependencyStore) : ControllerBase
+    ITaskDependencyStore dependencyStore,
+    TaskSchedulerControlService schedulerControl) : ControllerBase
 {
+    [HttpGet("auto-dispatch/status")]
+    [Authorize(Roles = "admin")]
+    public ActionResult<TaskSchedulerStatusSnapshot> GetAutoDispatchStatus(string workspaceId) =>
+        Ok(schedulerControl.GetStatus(workspaceId));
+
+    [HttpPut("auto-dispatch/policy")]
+    [Authorize(Roles = "admin")]
+    public async Task<ActionResult<TaskSchedulerStatusSnapshot>> UpdateAutoDispatchPolicy(
+        string workspaceId,
+        [FromBody] TaskSchedulerPolicyUpdate request,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            return Ok(await schedulerControl.UpdatePolicyAsync(workspaceId, request, ct));
+        }
+        catch (TaskSchedulerControlException ex)
+        {
+            return SchedulerProblem(ex);
+        }
+    }
+
+    [HttpPost("auto-dispatch/actions/{action}")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> ExecuteAutoDispatchAction(
+        string workspaceId,
+        string action,
+        [FromBody] TaskSchedulerActionRequest? request,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            switch (action.Trim().ToLowerInvariant())
+            {
+                case "pause":
+                    return Ok(await schedulerControl.SetPausedAsync(
+                        workspaceId,
+                        true,
+                        RequireRevision(request),
+                        ct));
+                case "resume":
+                    return Ok(await schedulerControl.SetPausedAsync(
+                        workspaceId,
+                        false,
+                        RequireRevision(request),
+                        ct));
+                case "scan":
+                    return Ok(new
+                    {
+                        summary = await schedulerControl.RunScanAsync(
+                            workspaceId,
+                            "admin_manual",
+                            allowWhenPaused: true,
+                            ct),
+                        status = schedulerControl.GetStatus(workspaceId),
+                    });
+                case "repair":
+                    return Ok(new
+                    {
+                        summary = await schedulerControl.RunRepairAsync(
+                            workspaceId,
+                            "admin_manual_repair",
+                            ct),
+                        status = schedulerControl.GetStatus(workspaceId),
+                    });
+                default:
+                    return UnprocessableEntity(new
+                    {
+                        code = "scheduler_action_invalid",
+                        message = "action 必须是 pause、resume、scan 或 repair。",
+                    });
+            }
+        }
+        catch (TaskSchedulerControlException ex)
+        {
+            return SchedulerProblem(ex);
+        }
+    }
+
     [HttpGet("agents/{agentId}/availability")]
     public async Task<ActionResult<AgentAvailabilitySnapshot>> GetAvailability(
         string workspaceId,
@@ -94,6 +175,25 @@ public sealed class TaskSchedulingController(
         await dependencyStore.RemoveAsync(workspaceId, dependencyId, ct)
             ? NoContent()
             : NotFound(new { code = "task_dependency_not_found" });
+
+    private static int RequireRevision(TaskSchedulerActionRequest? request) =>
+        request?.ExpectedRevision
+        ?? throw new TaskSchedulerControlException(
+            "scheduler_policy_revision_required",
+            "pause/resume 必须携带 expectedRevision。");
+
+    private ObjectResult SchedulerProblem(TaskSchedulerControlException ex)
+    {
+        var status = ex.Code is "scheduler_policy_conflict" or "scheduler_scan_in_progress"
+            ? StatusCodes.Status409Conflict
+            : StatusCodes.Status422UnprocessableEntity;
+        return StatusCode(status, new
+        {
+            code = ex.Code,
+            message = ex.Message,
+            traceId = HttpContext.TraceIdentifier,
+        });
+    }
 }
 
 public sealed record AddTaskDependencyDto(
@@ -103,3 +203,5 @@ public sealed record AddTaskDependencyDto(
 public sealed record TaskDependenciesDto(
     IReadOnlyList<TaskDependency> Items,
     TaskDependencyEvaluation Evaluation);
+
+public sealed record TaskSchedulerActionRequest(int? ExpectedRevision);

@@ -18,7 +18,7 @@ public sealed class TaskDispatcherOptions
     /// <summary>领取租约时长（默认 2min）。</summary>
     public TimeSpan LeaseDuration { get; set; } = TimeSpan.FromMinutes(2);
 
-    /// <summary>发送失败重试上限（超过 → dead）。</summary>
+    /// <summary>派发失败重试上限（达到 → dead）。</summary>
     public int MaxAttempts { get; set; } = 3;
 }
 
@@ -113,9 +113,45 @@ public sealed class TaskDispatcher : BackgroundService
             {
                 await DispatchOneAsync(scope, store, messages, taskStore, claimed, ct);
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // Keep the durable lease intact. Recovery will make the item reclaimable after
+                // the lease expires; shutdown cancellation must not be misclassified as a failure.
+                throw;
+            }
+            catch (TaskStoreException ex) when (
+                ex.ErrorCode is TaskErrorCode.TaskStateConflict
+                    or TaskErrorCode.AssignmentStale
+                    or TaskErrorCode.TaskNotFound)
+            {
+                // The durable outbox can outlive the assignment it was created for. Retrying that
+                // entry can never make the Task Reserved for the old assignment again, and would
+                // only re-send an already de-duplicated message forever.
+                await store.MarkOutboxDeadAsync(
+                    claimed.Id,
+                    $"terminal_dispatch_conflict:{ex.ErrorCode}:{ex.Message}",
+                    ct);
+                _logger.LogWarning(
+                    "[TaskDispatcher] terminal dispatch conflict; outbox dead-lettered outbox_id={OutboxId} task_id={TaskId} assignment_id={AssignmentId} code={Code}",
+                    claimed.Id,
+                    claimed.TaskId,
+                    claimed.AssignmentId,
+                    ex.ErrorCode);
+            }
             catch (Exception ex)
             {
-                // 单条失败不中断整轮扫描；失败按 attempt_count 上限在 DispatchOneAsync 内已标记。
+                // A failure outside SendAsync (for example persistence/binding) must also consume
+                // the bounded retry budget. Previously those failures retained the claimed lease
+                // and then retried forever after recovery.
+                if (claimed.AttemptCount >= _options.MaxAttempts)
+                {
+                    await store.MarkOutboxDeadAsync(claimed.Id, ex.Message, ct);
+                }
+                else
+                {
+                    await store.MarkOutboxFailedAsync(claimed.Id, ex.Message, ct);
+                }
+
                 _logger.LogError(
                     ex,
                     "[TaskDispatcher] dispatch failed outbox_id={OutboxId} task_id={TaskId}",
@@ -141,6 +177,24 @@ public sealed class TaskDispatcher : BackgroundService
                 TaskErrorCode.TaskNotFound,
                 $"Task '{entry.TaskId}' not found while dispatching.",
                 entry.TaskId);
+
+        if (task.Status != WorkspaceTaskStatus.Reserved
+            || !string.Equals(task.ActiveAssignmentId, entry.AssignmentId, StringComparison.Ordinal))
+        {
+            await store.MarkOutboxDeadAsync(
+                entry.Id,
+                $"stale_assignment:status={task.Status}:active_assignment={task.ActiveAssignmentId ?? "none"}",
+                ct);
+            _logger.LogInformation(
+                "[TaskDispatcher] stale outbox skipped before send outbox_id={OutboxId} task_id={TaskId} assignment_id={AssignmentId} task_status={TaskStatus} active_assignment_id={ActiveAssignmentId}",
+                entry.Id,
+                entry.TaskId,
+                entry.AssignmentId,
+                task.Status,
+                task.ActiveAssignmentId);
+            return;
+        }
+
         var decision = await _fence.EvaluateAsync(new WorkAdmissionFenceInput
         {
             WorkspaceId = entry.WorkspaceId,
@@ -167,24 +221,9 @@ public sealed class TaskDispatcher : BackgroundService
         var envelope = entry.Envelope with { ExpectedVersion = task.Version + 1 };
 
         // ── Message Fabric SendAsync（幂等，外部发送不在 DB 事务内，不变量 #7）──
-        MessageSendResult result;
-        try
-        {
-            result = await messages.SendAsync(envelope.ToMessageEnvelope(), ct);
-        }
-        catch (Exception ex)
-        {
-            if (entry.AttemptCount >= _options.MaxAttempts)
-            {
-                await store.MarkOutboxDeadAsync(entry.Id, ex.Message, ct);
-            }
-            else
-            {
-                await store.MarkOutboxFailedAsync(entry.Id, ex.Message, ct);
-            }
-
-            return;
-        }
+        // Let the common failure path settle both send and post-send persistence failures with
+        // the same bounded retry policy and structured error log.
+        var result = await messages.SendAsync(envelope.ToMessageEnvelope(), ct);
 
         // ── 幂等找回 Delivery（不变量 #8）：首次发送返回 deliveryId；去重后按 message_id 找回 ──
         string deliveryId;

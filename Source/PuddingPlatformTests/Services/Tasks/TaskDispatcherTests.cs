@@ -33,7 +33,8 @@ public sealed class TaskDispatcherTests
     private SqliteWorkspaceTaskStore _store = null!;
     private TaskCommandService _commands = null!;
     private TaskDispatchOutboxStore _outbox = null!;
-    private IMessageSystem _messages = null!;
+    private ControlledMessageSystem _messages = null!;
+    private ControlledWorkAdmissionFence _fence = null!;
     private TaskDispatcher _dispatcher = null!;
 
     [TestInitialize]
@@ -65,12 +66,14 @@ public sealed class TaskDispatcherTests
         services.AddSingleton<SqliteWorkspaceTaskStore>();
         services.AddSingleton<ITaskStore>(sp => sp.GetRequiredService<SqliteWorkspaceTaskStore>());
         services.AddSingleton<TaskCommandService>();
-        services.AddSingleton<IMessageSystem>(new MessageSystem(
+        _messages = new ControlledMessageSystem(new MessageSystem(
             new MessageRouter(),
             new MessageFabricStore(_fabricDb),
             bus,
             participants));
-        services.AddSingleton<IWorkAdmissionFence, ManualAlwaysAllowFence>();
+        _fence = new ControlledWorkAdmissionFence();
+        services.AddSingleton<IMessageSystem>(_messages);
+        services.AddSingleton<IWorkAdmissionFence>(_fence);
         services.AddSingleton(TimeProvider.System);
         services.Configure<TaskDispatcherOptions>(_ => { });
         services.AddSingleton<TaskDispatcher>();
@@ -79,7 +82,6 @@ public sealed class TaskDispatcherTests
         _store = _provider.GetRequiredService<SqliteWorkspaceTaskStore>();
         _commands = _provider.GetRequiredService<TaskCommandService>();
         _outbox = _provider.GetRequiredService<TaskDispatchOutboxStore>();
-        _messages = _provider.GetRequiredService<IMessageSystem>();
         _dispatcher = _provider.GetRequiredService<TaskDispatcher>();
     }
 
@@ -177,6 +179,123 @@ public sealed class TaskDispatcherTests
 
         var after = await _store.GetTaskAsync(WorkspaceId, task.TaskId);
         Assert.AreEqual(WorkspaceTaskStatus.Assigned, after!.Status);
+    }
+
+    [TestMethod]
+    public async Task StaleAssignment_IsDeadLetteredBeforeMessageSend()
+    {
+        var task = await CreateReadyTaskAsync();
+        await _commands.ApplyCommandAsync(
+            WorkspaceId, task.TaskId, TaskCommand.Assign, expectedVersion: 1, agentId: AgentId);
+
+        await using (var db = await _dbFactory.CreateDbContextAsync())
+        {
+            var entity = await db.WorkspaceTasks.SingleAsync(t => t.TaskId == task.TaskId);
+            entity.Status = WorkspaceTaskStatus.Blocked;
+            entity.ActiveAssignmentId = null;
+            await db.SaveChangesAsync();
+        }
+
+        Assert.AreEqual(1, await _dispatcher.ProcessOnceAsync(CancellationToken.None));
+
+        var outbox = await _outbox.GetOutboxAsync(await GetSingleOutboxIdAsync());
+        Assert.AreEqual(TaskDispatchOutboxStatuses.Dead, outbox!.Status);
+        StringAssert.StartsWith(outbox.LastError, "stale_assignment:");
+        Assert.AreEqual(0, await CountDeliveriesAsync());
+        Assert.AreEqual(0, await _dispatcher.ProcessOnceAsync(CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task AssignmentBecomesStaleAfterPreflight_IsDeadLetteredAfterSingleSend()
+    {
+        var task = await CreateReadyTaskAsync();
+        await _commands.ApplyCommandAsync(
+            WorkspaceId, task.TaskId, TaskCommand.Assign, expectedVersion: 1, agentId: AgentId);
+
+        _fence.BeforeDecisionAsync = async (_, ct) =>
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync(ct);
+            var entity = await db.WorkspaceTasks.SingleAsync(t => t.TaskId == task.TaskId, ct);
+            entity.Status = WorkspaceTaskStatus.Blocked;
+            entity.ActiveAssignmentId = null;
+            await db.SaveChangesAsync(ct);
+        };
+
+        Assert.AreEqual(1, await _dispatcher.ProcessOnceAsync(CancellationToken.None));
+
+        var outbox = await _outbox.GetOutboxAsync(await GetSingleOutboxIdAsync());
+        Assert.AreEqual(TaskDispatchOutboxStatuses.Dead, outbox!.Status);
+        StringAssert.StartsWith(outbox.LastError, "terminal_dispatch_conflict:TaskStateConflict:");
+        Assert.AreEqual(1, await CountDeliveriesAsync());
+        Assert.AreEqual(0, await CountBindingsAsync());
+        Assert.AreEqual(WorkspaceTaskStatus.Blocked, (await _store.GetTaskAsync(WorkspaceId, task.TaskId))!.Status);
+        Assert.AreEqual(0, await _dispatcher.ProcessOnceAsync(CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task SendFailure_ReachesDeadLetterAtConfiguredMaxAttempts()
+    {
+        var task = await CreateReadyTaskAsync();
+        await _commands.ApplyCommandAsync(
+            WorkspaceId, task.TaskId, TaskCommand.Assign, expectedVersion: 1, agentId: AgentId);
+        _messages.FailuresRemaining = 3;
+
+        Assert.AreEqual(1, await _dispatcher.ProcessOnceAsync(CancellationToken.None));
+        var outboxId = await GetSingleOutboxIdAsync();
+        var first = await _outbox.GetOutboxAsync(outboxId);
+        Assert.AreEqual(TaskDispatchOutboxStatuses.Failed, first!.Status);
+        Assert.AreEqual(1, first.AttemptCount);
+
+        Assert.AreEqual(1, await _dispatcher.ProcessOnceAsync(CancellationToken.None));
+        var second = await _outbox.GetOutboxAsync(outboxId);
+        Assert.AreEqual(TaskDispatchOutboxStatuses.Failed, second!.Status);
+        Assert.AreEqual(2, second.AttemptCount);
+
+        Assert.AreEqual(1, await _dispatcher.ProcessOnceAsync(CancellationToken.None));
+        var dead = await _outbox.GetOutboxAsync(outboxId);
+        Assert.AreEqual(TaskDispatchOutboxStatuses.Dead, dead!.Status);
+        Assert.AreEqual(3, dead.AttemptCount);
+        Assert.AreEqual("synthetic send failure", dead.LastError);
+        Assert.AreEqual(0, await CountDeliveriesAsync());
+        Assert.AreEqual(0, await CountBindingsAsync());
+        Assert.AreEqual(0, await _dispatcher.ProcessOnceAsync(CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task ShutdownCancellation_LeavesLeaseForRecoveryWithoutDeadLettering()
+    {
+        var task = await CreateReadyTaskAsync();
+        await _commands.ApplyCommandAsync(
+            WorkspaceId, task.TaskId, TaskCommand.Assign, expectedVersion: 1, agentId: AgentId);
+        using var cts = new CancellationTokenSource();
+        _fence.BeforeDecisionAsync = (_, ct) =>
+        {
+            cts.Cancel();
+            ct.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        };
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => _dispatcher.ProcessOnceAsync(cts.Token));
+
+        var outboxId = await GetSingleOutboxIdAsync();
+        var cancelled = await _outbox.GetOutboxAsync(outboxId);
+        Assert.AreEqual(TaskDispatchOutboxStatuses.Pending, cancelled!.Status);
+        Assert.AreEqual(1, cancelled.AttemptCount);
+        Assert.IsNotNull(cancelled.LeaseUntilUtc);
+        Assert.IsNull(cancelled.LastError);
+        Assert.AreEqual(0, await CountDeliveriesAsync());
+
+        _fence.BeforeDecisionAsync = null;
+        Assert.AreEqual(
+            1,
+            await _outbox.RecoverPendingOutboxAsync(cancelled.LeaseUntilUtc!.Value.AddTicks(1)));
+        Assert.AreEqual(1, await _dispatcher.ProcessOnceAsync(CancellationToken.None));
+
+        var recovered = await _outbox.GetOutboxAsync(outboxId);
+        Assert.AreEqual(TaskDispatchOutboxStatuses.Sent, recovered!.Status);
+        Assert.AreEqual(2, recovered.AttemptCount);
+        Assert.AreEqual(1, await CountDeliveriesAsync());
     }
 
     // ── helpers ─────────────────────────────────────────────
@@ -287,6 +406,41 @@ public sealed class TaskDispatcherTests
         public void Dispose()
         {
             IsActive = false;
+        }
+    }
+
+    private sealed class ControlledMessageSystem(IMessageSystem inner) : IMessageSystem
+    {
+        public int FailuresRemaining { get; set; }
+
+        public Task<MessageSendResult> SendAsync(MessageEnvelope envelope, CancellationToken ct = default)
+        {
+            if (FailuresRemaining > 0)
+            {
+                FailuresRemaining--;
+                throw new InvalidOperationException("synthetic send failure");
+            }
+
+            return inner.SendAsync(envelope, ct);
+        }
+    }
+
+    private sealed class ControlledWorkAdmissionFence : IWorkAdmissionFence
+    {
+        public Func<WorkAdmissionFenceInput, CancellationToken, Task>? BeforeDecisionAsync { get; set; }
+
+        public async Task<WorkAdmissionDecision> EvaluateAsync(
+            WorkAdmissionFenceInput input,
+            CancellationToken ct = default)
+        {
+            if (BeforeDecisionAsync is not null)
+            {
+                await BeforeDecisionAsync(input, ct);
+            }
+
+            return WorkAdmissionDecision.Allow(
+                DecisionCode.AllowedUserDirect,
+                reason: "Controlled test fence allowed dispatch.");
         }
     }
 }
