@@ -41,7 +41,7 @@
 | `Services/Conversation/CreateSteeringHandler.cs` | Steering 单一受理边界；只接受 canonical Running Turn，校验 Workspace/Agent 后写 Runtime 消费队列 |
 | `Controllers/Api/ConversationTurnsController.cs` | canonical Turn HTTP API；Steering 为 `POST /api/v1/conversations/{conversationId}/turns/{turnId}/steering`，202/409 fail closed |
 | `Services/ConversationEventStore.cs` | 对话事件存储（18KB） |
-| `Services/ConversationProjectionWorker.cs` | 对话投影 Worker |
+| `Services/ConversationProjectionWorker.cs` | 对话投影 Worker；活跃流小积压短 coalescing，批量 checkpoint/catalog，避免每个 raw source event 触发 SQLite/日志紧循环 |
 | `Services/Execution/SqliteExecutionJournal.cs` | canonical execution journal；开事务前处理 SQLite pooled-handle 激活异常，且只在尚未写入事件时清池并有限重试，避免瞬时连接故障直接终止 Agent turn |
 | `Services/MessageTopicService.cs` | 消息主题 |
 
@@ -60,16 +60,18 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Controllers/Api/AuthApiController.cs` | 登录、JWT/Session 当前用户投影；`/api/currentUser` 异步读取 `AppUsers.Avatar`（空值回退自有 `/admin/assets/images/me.png`），刷新/重登后头像保持数据库最新值 |
+| `Controllers/Api/AuthApiController.cs` | 登录、JWT/Session 当前用户投影；认证成功/失败按 Information 记录且不记录用户标识、密码长度或账户存在性；`/api/currentUser` 异步读取 `AppUsers.Avatar`（空值回退自有 `/admin/assets/images/me.png`），刷新/重登后头像保持数据库最新值 |
 | `Controllers/Api/UserAvatarApiController.cs` | 头像唯一上传契约 `POST /api/users/{userId}/avatar`（multipart 字段 `file`，返回 `{ avatar }`）；上传自己需登录、为他人上传需 Admin（403）；统一 PNG/JPG/WebP、5 MiB 上限；`SaveForUserAsync` 复用落盘/写库/旧文件清理；`GET` 匿名查任意用户头像 |
 | `Controllers/Api/AppUserApiController.cs` | 用户管理 CRUD/密码/角色，收紧为 `[Authorize(Roles = "admin")]`；`AppUserDto` 携带 `Avatar` |
 | `Services/UserAvatarStorageService.cs` | 头像落盘 `wwwroot/user-avatars/`（userId 前缀防穿越、原子写、TryDelete 限根内）；允许 MIME 仅 PNG/JPEG/WebP（GIF 已移除） |
+| `Services/Sm2JwtSigner.cs` | ECDSA-P256 JWT payload 签名；缺少持久密钥时仅记录进程临时密钥告警与公钥 SHA-256 指纹，禁止日志输出私钥/公钥材料 |
 
 ## 子代理 & 诊断
 
 | 文件 | 用途 |
 |------|------|
-| `Services/SubAgentManager.cs` | 子代理管理；固化系统预算/收尾宽限；以同一 SubSessionId + 新 runId 透明续跑并重置计数器；终态 usage 只存运行摘要，不重复写逐轮 TokenUsageEvents |
+| `Middleware/TraceableExceptionMiddleware.cs` | 未处理异常生成可检索 errorId/500；仅当 `RequestAborted` 已取消时把 `OperationCanceledException` 视为客户端断开（499 + Debug），不污染 Error 日志 |
+| `Services/SubAgentManager.cs` | 子代理管理；固化系统预算/收尾宽限；managed `workspace-task-agent`/TaskPlan WorkUnit 强制钳制为最多 40 rounds/120 tools，普通显式大任务仍服从系统 600/2400 护栏；以同一 SubSessionId + 新 runId 透明续跑并重置计数器；终态 usage 只存运行摘要 |
 | `Services/SubAgentPool.cs` | Core `ISubAgentPool` 的 Platform 子代理池实现 |
 | `Services/SubAgentTransientDirectoryGcService.cs` | 历史临时执行身份空 Skill 脚手架 GC；以精确目录形状 + 子代理池 + durable run 终态多重门禁，先移入 retention-archive 隔离，延迟后再安全删除 |
 | `Services/SubAgentDiagnosticsService.cs` | 子代理诊断 |
@@ -85,7 +87,7 @@
 | `Services/Tasks/WorkspaceTaskSchemaBootstrapper.cs` | Task 表/事件/评论启动建表；对既有 SQLite 幂等补齐结构化路由与 `auto_dispatch_enabled` 列 |
 | `Services/Tasks/TaskAgentCommandService.cs` | task_* 工具命令服务：claim/update 原子写回 Task+Attempt+Event+Binding 四表 |
 | `Services/Tasks/TaskCommandService.cs` | PATCH/ApplyCommand 原子语义；无 Assignment 的人工完成写 `TaskCompleted/manual_without_execution`，active Assignment 禁止 PATCH 伪完成，`mark_failed` 原子释放 attempt；`DeleteTaskAsync` 智能删除 |
-| `Services/Tasks/TaskDispatcher.cs` | 任务派发（RuntimeDispatchRequest.ActiveTask 注入到派发链）|
+| `Services/Tasks/TaskDispatcher.cs` | 任务派发（RuntimeDispatchRequest.ActiveTask 注入到派发链）；发送前重验 Task/Assignment owner，stale 与确定性终态冲突 dead-letter，其他失败受 MaxAttempts 限制 |
 | `Services/Tasks/TaskDispatchOutboxStore.cs` | 派发 outbox 持久化 |
 | `Services/Tasks/TaskDispatchSchemaBootstrapper.cs` | 派发 schema 幂等建表 |
 | `Services/Tasks/TaskDispatchSerialization.cs` | 派发序列化 |
@@ -108,16 +110,22 @@
 | `Services/Scheduling/AgentAvailabilityProjectionStore.cs` | 从配置、Task/Goal、Chat command、Message delivery、SubAgent 与 Reservation 的持久事实保守重建 Agent 状态；仅 canonical active assignment 的非终态 Task 占用 Agent，终态历史脏 attempt 不再造成 false-busy；Unknown/过期不接 Auto |
 | `Services/Scheduling/AgentExecutionReservationStore.cs` | 单 Agent/Task active 自动工作槽、lease、fencing token、renew/release/expiry |
 | `Services/Scheduling/ConservativeExecutionWindowResolver.cs` | `anytime` allow；`inherit/off_peak_only` 在路由价格档案缺失时 Unknown/fail-closed |
-| `Services/Scheduling/TaskAutoDispatchEvaluator.cs` | 无副作用确定性候选评估；结构化 TaskTypeRoute/能力/provider/model、首选亲和、显式 fallback、依赖、5 分钟 idle grace、窗口与同轮单 Agent 单任务 |
-| `Services/Scheduling/TaskAgentRouteMatcher.cs` | 不读任务标题的确定性 Agent 路由；类型规则与任务显式约束取交集，输出 provider/model/capability 解释和 SHA-256 快照 |
+| `Services/Scheduling/ProviderModelExecutionWindowResolver.cs` | 生产 Resolver；按 Agent 实际 provider/model 和 `llm.providers.json` 版本化价格窗口解析时区/跨午夜/边界；`inherit/off_peak_only` 未知即 fail closed |
+| `Services/Scheduling/TaskAutoDispatchEvaluator.cs` | 无副作用确定性候选评估；每轮每 Agent 只重建一次 Availability 并让全部候选共享同一 version fence；结构化 TaskTypeRoute/能力/provider/model、首选亲和、显式 fallback、依赖、5 分钟 idle grace、窗口与同轮单 Agent 单任务 |
+| `Services/Scheduling/TaskAgentRouteMatcher.cs` | 不读任务标题的确定性 Agent 路由；类型规则与任务显式约束取交集，输出 provider/model/capability 解释和 SHA-256 快照；投影 CreatedAt/UpdatedAt 不进入原子路由指纹 |
 | `Services/Scheduling/TaskExecutionPlanCompiler.cs` | 不读任务正文的纯 WorkUnit 计划编译器；按 taskType 生成有界 DAG，将依赖/能力/冲突范围/预算冻结为 SHA-256；未知类型 fail closed |
 | `Services/Scheduling/TaskBacklogRefinementEvaluator.cs` | 每五分钟只读检查已 opt-in Backlog 的描述、验收标准、任务类型与兼容 Agent；Shadow 输出 ReadyCandidate/NeedsRefinement，不改状态 |
 | `Services/Scheduling/TaskBacklogRefinementStore.cs` | future authoritative 的 Backlog→Ready 唯一 CAS 写入者；重验任务、Agent、TaskTypeRoute 与路由 SHA-256，原子写 canonical `TaskReady/backlog_refined` |
-| `Services/Scheduling/TaskExecutionTracker.cs` | 五分钟只读关联 Task/Plan/当前 WorkUnit/Assignment/Reservation fencing/Binding/Goal/Iteration/ExecutionCommand/Run/outbox；输出 Healthy/Waiting/Stalled/Inconsistent/CleanupRequired，本身不执行修复 |
-| `Services/Scheduling/TaskExecutionRepairCoordinator.cs` | authoritative 五分钟确定性 repair；Serializable 重读 fence 后仅清理终态遗留 binding/assignment/reservation、回收过期 continuation lease、补建安全可证明缺失的 continuation intent；不猜 Task 成功、不续过期 reservation、不合成 Turn |
-| `Services/Scheduling/TaskAutoDispatchWorker.cs` | 五分钟有界恢复扫描；产品当前启用 shadow，统一运行 Backlog refinement、Ready route 和 active execution tracking；authoritative 对 eligible 候选重算窗口后调用唯一 Task→Goal 原子事务，并调用白名单 repair；同 Agent 每轮至多一个 Task |
+| `Services/Scheduling/TaskExecutionTracker.cs` | 五分钟只读关联 Task/Plan/当前 WorkUnit/Assignment/Reservation fencing/Binding/Goal/Iteration/ExecutionCommand/Run/outbox；同时跟踪 legacy Delivery→Execution 断链；输出 Healthy/Waiting/Stalled/Inconsistent/CleanupRequired；Blocked Goal 仍持 active binding 为 `blocked_binding_still_active`，Delivery 已确认但超时无 execution claim 为 `legacy_assignment_execution_missing`，终态 Delivery 无 execution 为即时 cleanup |
+| `Services/Scheduling/TaskExecutionRepairCoordinator.cs` | authoritative 五分钟确定性 repair；Serializable 重读 fence 后清理终态或 Blocked Goal 遗留 binding/assignment/reservation，以及超时未被 execution claim 的 legacy assignment（Task 保持 Blocked）；回收过期 continuation lease、补建安全可证明缺失的 continuation intent；不猜 Task 成功、不续过期 reservation、不合成 Turn |
+| `Services/Scheduling/TaskAutoDispatchWorker.cs` | 五分钟 bounded authoritative；每轮严格按 tracking/repair → 全 Agent Availability 重建 → Backlog refinement/Ready route → dispatch，避免修复后仍浪费一个扫描周期；eligible 重算窗口后调用唯一 Task→Goal 原子事务；同 Agent 每轮至多一个、全局受 `MaxStartsPerScan` 限制 |
 | `Services/Scheduling/TaskBoundGoalOptions.cs` | Task-bound Goal 独立安全开关、Iteration 预算与 Reservation lease（默认关闭） |
 | `Services/Scheduling/TaskSchedulingSchemaBootstrapper.cs` | Availability、Reservation、Task dependency 三表与唯一索引幂等建表 |
+| `Services/Scheduling/TaskSchedulerIntentStore.cs` | P0 事件驱动层 durable intent 队列（task_scheduler_intents）：INSERT OR IGNORE 幂等入队、事务内单 UPDATE 抢占式 Dequeue（pending/过期 lease 回收+attempt 自增）、Complete/Fail（超限→dead）、GetTailCursor；时间列固定宽度 UTC TEXT 保证 SQL 字典序=时间序 |
+| `Services/Scheduling/TaskSchedulerIntentSchemaBootstrapper.cs` | task_scheduler_intents 幂等建表（UNIQUE(source,source_event_id) 等 4 索引），注册于 PuddingApplicationInitializer |
+| `Services/Scheduling/TaskAutoDispatchStarter.cs` | 事件驱动派发启动器：与 Worker DispatchEligibleAsync 同语义（围栏字段校验+二次 window fence+原子 StartAsync+LostRace 容忍）；TODO-unify 待统一收编 |
+| `Services/Scheduling/TaskEventLedgerTailBridge.cs` | 账本尾游标桥：IntentPollInterval 轮询 task_events/conversation_events 新行（游标=账本 MAX 懒初始化，不回放历史），按事件清单过滤入队 intent；shadow 只推进游标不入队 |
+| `Services/Scheduling/TaskSchedulingCoordinator.cs` | 事件驱动协调器（authoritative-only）：Dequeue→按 workspace 合并→goal 终态先重建 Availability→Evaluate→Starter 派发→Complete/Fail（超限 dead）；结构化轮次日志与过期 lease 崩溃恢复 |
 | `Data/Entities/AgentAvailabilityProjectionEntity.cs` | 持久 Availability 投影实体 |
 | `Data/Entities/AgentExecutionReservationEntity.cs` | 自动工作租约与单调 fencing 实体 |
 | `Data/Entities/TaskDependencyEntity.cs` | Task finish-to-start 依赖边实体 |
@@ -130,9 +138,9 @@
 | `Services/Goals/GoalRunStore.cs` | 聚合写入原语：Create/TryMutate（CAS + Func 卫兵）与 goal.* ConversationEvent 同事务直写；提供按 sequence 选择当前非终态 WorkUnit 的只读查询 |
 | `Services/Goals/GoalOutboxStore.cs` + `GoalOutboxSignal.cs` | continuation due/claim/lease/fencing/recovery/defer/suppress/dead-letter；signal 只降延迟 |
 | `Services/Goals/GoalContinuationWorker.cs` | durable intent → 受信 synthetic Acceptance；用户 Turn 优先；从 Binding 解析当前 WorkUnit，将 plan/node/fingerprint/预算放入受信 Acceptance 与 prompt |
-| `Services/Goals/GoalSettlementStore.cs` + `GoalSettlementWorker.cs` | canonical Turn 终态 → Evidence Capsule → version/epoch/Task/Reservation gates → 下一 outbox 或终态 |
+| `Services/Goals/GoalSettlementStore.cs` + `GoalSettlementWorker.cs` | canonical Turn 全窗口终态判定 → 最新 128 条有界 Evidence Capsule → version/epoch/Task/Reservation gates → 下一 outbox 或终态；主 Turn canonical usage 加当前 Turn 时间窗内递归子会话 TokenUsageEvents，连同 Run/耗时/工具聚合到 Iteration/Goal；普通 Goal 阻塞仍可恢复，Task-bound 阻塞尝试以 Failed 保留审计并释放 Binding/Assignment/Reservation |
 | `Services/Goals/ConservativeGoalIterationVerifier.cs` | fail-closed 只读 Verifier；自然语言完成无权写终态，Task canonical Completed 才允许 bound Goal 完成 |
-| `Services/Goals/TaskGoalDispatchTransactionStore.cs` | Task/ExecutionPlan/WorkUnits/Assignment/Reservation/Binding/Goal/首个 Outbox/事件/Availability 单 Serializable 事务与幂等 replay；事务前重读 Agent/类型规则并重算 route/plan 双 SHA-256，任一漂移 fail closed |
+| `Services/Goals/TaskGoalDispatchTransactionStore.cs` | Task/ExecutionPlan/WorkUnits/Assignment/Reservation/Binding/Goal/首个 Outbox/事件/Availability 单 Serializable 事务与幂等 replay；事务前重读 Agent/类型规则并重算 route/plan 双 SHA-256，任一漂移 fail closed；派发时原子退役同 Workspace/Agent/会话且 terminal Task binding 的遗留 Blocked Goal（可来自前一 Task），释放 active-Goal 唯一索引，并将 SQLite 约束详情写入诊断日志 |
 | `Services/TaskPlanning/TaskPlanningSchemaBootstrapper.cs` + `Data/Entities/TaskPlanRunEntity.cs` / `TaskNodeEntity.cs` / `WorkUnitAwaitHandleEntity.cs` | 复用规划表冻结 WorkspaceTask version 对应的执行快照、WorkUnit budgets/scopes/dependencies/checkpoint 与 durable AwaitHandle；启动初始化器显式幂等升级旧 SQLite |
 | `Services/ConversationAcceptanceStore.cs` | Chat/Goal synthetic Turn 原子受理；重验 Goal/outbox/Task/Assignment/Reservation/Plan/当前 WorkUnit 全围栏并原子置 Running；lease 校验/续租统一使用注入 `TimeProvider` |
 | `Services/ExecutionCommandReader.cs` | 执行前沿 Command→GoalIteration→Binding→Task/Reservation→Plan/Node 重读 canonical WorkUnit 身份与预算；metadata 只选择、不授权，漂移 fail closed |
@@ -221,7 +229,7 @@
 |------|------|
 | `Services/TokenUsageRecorder.cs` | Token 用量记录；持久化 RuntimeExecutionIdentity 提供的 parent/sub-agent、零基 round、本轮 canonical 工具及 context layer Token/UTF-8/GZIP/hash/cache 诊断；prefix-v2 在 system/tool 不变而 PrefixHash 变化时归因为 `history_anchor_changed`，版本切换归因为 `serialization_version_changed`；不复制 prompt 正文 |
 | `Services/CacheDiagnosticsService.cs` | 会话级 Cache Miss Inspector 后端；汇总 token-weighted hit/miss、prefix churn、首次变化原因与逐轮事实 |
-| `Services/ConversationProjector.cs` | Conversation Event 增量投影；usage 仅在 direct `session:trace:round` 行缺失时补记，父子身份来自持久关系、零基 round 来自 invocation index，未知工具数保持 NULL |
+| `Services/ConversationProjector.cs` | Conversation Event 增量投影；usage 仅在 direct `session:trace:round` 行缺失时补记，SQLite 查询先按稳定 route/token 指纹取最近 32 行、再在内存应用 DateTimeOffset 窗口，避免查询翻译失败后双记账；父子身份来自持久关系、零基 round 来自 invocation index，未知工具数保持 NULL |
 | `Services/TokenUsageEventRepository.cs` | Token 事件持久化与最近层级/熵诊断查询；向 Runtime 返回 Core 诊断 DTO |
 | `Services/LlmGatewayUsageRecorder.cs` | Provider 成功边界逐请求计费账本；与会话归因投影解耦 |
 | `Data/Entities/LlmGatewayUsageEventEntity.cs` | `llm_gateway_usage_events` 本地计费事实；sourceId 唯一 |

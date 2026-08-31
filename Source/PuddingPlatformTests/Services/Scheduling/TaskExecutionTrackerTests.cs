@@ -155,6 +155,153 @@ public sealed class TaskExecutionTrackerTests
     }
 
     [TestMethod]
+    public async Task RepairCoordinator_CleansBlockedGoalBindingAndReleasesAgentOwnership()
+    {
+        await SeedAsync(
+            taskStatus: WorkspaceTaskStatus.Blocked,
+            goalStatus: GoalPhase.Blocked);
+        // Mirrors the historical settlement bug: Reservation was released, while
+        // Binding + Assignment stayed active and permanently occupied the Agent.
+        await using (var mutate = await _factory.CreateDbContextAsync())
+        {
+            var reservation = await mutate.AgentExecutionReservations.SingleAsync();
+            reservation.Status = "released";
+            reservation.ReleaseReason = "goal_blocked";
+            reservation.ReleasedAtUtc = _now.AddMinutes(-1);
+            reservation.UpdatedAtUtc = _now.AddMinutes(-1);
+            await mutate.SaveChangesAsync();
+        }
+        var decisions = await CreateTracker().EvaluateAsync("ws", 10);
+        var decision = AssertSingle(decisions);
+        Assert.AreEqual(TaskExecutionTrackingVerdict.CleanupRequired, decision.Verdict);
+        Assert.AreEqual("blocked_binding_still_active", decision.Code);
+
+        var summary = await CreateRepairCoordinator().RepairAsync("ws", decisions);
+
+        Assert.AreEqual(1, summary.Repaired);
+        Assert.AreEqual(1, summary.RepairedByCode["blocked_binding_still_active"]);
+        await using var db = await _factory.CreateDbContextAsync();
+        Assert.AreEqual(WorkspaceTaskStatus.Blocked, (await db.WorkspaceTasks.SingleAsync()).Status);
+        Assert.IsNull((await db.WorkspaceTasks.SingleAsync()).ActiveAssignmentId);
+        Assert.AreEqual("terminal", (await db.TaskGoalBindings.SingleAsync()).Status);
+        Assert.AreEqual(AssignmentAttemptStatus.Failed,
+            (await db.TaskAssignmentAttempts.SingleAsync()).Status);
+        Assert.AreEqual("released", (await db.AgentExecutionReservations.SingleAsync()).Status);
+        Assert.AreEqual("goal_blocked",
+            (await db.AgentExecutionReservations.SingleAsync()).ReleaseReason);
+    }
+
+    [TestMethod]
+    public async Task RepairCoordinator_ReleasesDeliveredLegacyAssignmentWithoutExecutionClaim()
+    {
+        await SeedAsync(taskStatus: WorkspaceTaskStatus.InProgress);
+        await using (var mutate = await _factory.CreateDbContextAsync())
+        {
+            mutate.TaskGoalBindings.RemoveRange(mutate.TaskGoalBindings);
+            mutate.AgentExecutionReservations.RemoveRange(mutate.AgentExecutionReservations);
+            mutate.GoalOutbox.RemoveRange(mutate.GoalOutbox);
+            mutate.GoalRuns.RemoveRange(mutate.GoalRuns);
+            var task = await mutate.WorkspaceTasks.SingleAsync();
+            var assignment = await mutate.TaskAssignmentAttempts.SingleAsync();
+            var stale = _now.AddHours(-1);
+            task.UpdatedAtUtc = stale;
+            assignment.UpdatedAtUtc = stale;
+            mutate.TaskExecutionBindings.Add(new TaskExecutionBindingEntity
+            {
+                TaskId = task.TaskId,
+                AssignmentId = assignment.AttemptId,
+                DeliveryId = "delivery-1",
+                BoundAtUtc = stale,
+            });
+            mutate.MessageDeliveries.Add(new MessageDeliveryEntity
+            {
+                DeliveryId = "delivery-1",
+                MessageId = "message-legacy-1",
+                WorkspaceId = "ws",
+                TargetKind = "agent",
+                TargetId = assignment.AgentId,
+                Status = "delivered",
+                HandlingMode = "execute",
+                CreatedAt = stale.ToUnixTimeMilliseconds(),
+                UpdatedAt = stale.ToUnixTimeMilliseconds(),
+                AckAt = stale.ToUnixTimeMilliseconds(),
+            });
+            await mutate.SaveChangesAsync();
+        }
+
+        var decisions = await CreateTracker().EvaluateAsync("ws", 10);
+        var decision = AssertSingle(decisions);
+        Assert.AreEqual(TaskExecutionTrackingVerdict.CleanupRequired, decision.Verdict);
+        Assert.AreEqual("legacy_assignment_execution_missing", decision.Code);
+
+        var summary = await CreateRepairCoordinator().RepairAsync("ws", decisions);
+
+        Assert.AreEqual(1, summary.Repaired);
+        await using var verify = await _factory.CreateDbContextAsync();
+        var taskAfter = await verify.WorkspaceTasks.SingleAsync();
+        var assignmentAfter = await verify.TaskAssignmentAttempts.SingleAsync();
+        Assert.AreEqual(WorkspaceTaskStatus.Blocked, taskAfter.Status);
+        Assert.AreEqual("assignment_execution_missing", taskAfter.BlockerKind);
+        Assert.IsNull(taskAfter.ActiveAssignmentId);
+        Assert.AreEqual(AssignmentAttemptStatus.Failed, assignmentAfter.Status);
+        Assert.IsNotNull(assignmentAfter.ReleasedAtUtc);
+        Assert.AreEqual(1, await verify.TaskEvents.CountAsync(
+            item => item.EventType == TaskEventType.TaskBlocked));
+    }
+
+    [TestMethod]
+    public async Task RepairCoordinator_ReleasesTerminalLegacyDeliveryWithoutWaitingForThreshold()
+    {
+        await SeedAsync(taskStatus: WorkspaceTaskStatus.InProgress);
+        await using (var mutate = await _factory.CreateDbContextAsync())
+        {
+            mutate.TaskGoalBindings.RemoveRange(mutate.TaskGoalBindings);
+            mutate.AgentExecutionReservations.RemoveRange(mutate.AgentExecutionReservations);
+            mutate.GoalOutbox.RemoveRange(mutate.GoalOutbox);
+            mutate.GoalRuns.RemoveRange(mutate.GoalRuns);
+            var task = await mutate.WorkspaceTasks.SingleAsync();
+            var assignment = await mutate.TaskAssignmentAttempts.SingleAsync();
+            var recent = _now.AddMinutes(-1);
+            task.UpdatedAtUtc = recent;
+            assignment.UpdatedAtUtc = recent;
+            mutate.TaskExecutionBindings.Add(new TaskExecutionBindingEntity
+            {
+                TaskId = task.TaskId,
+                AssignmentId = assignment.AttemptId,
+                DeliveryId = "delivery-dead-1",
+                BoundAtUtc = recent,
+            });
+            mutate.MessageDeliveries.Add(new MessageDeliveryEntity
+            {
+                DeliveryId = "delivery-dead-1",
+                MessageId = "message-dead-1",
+                WorkspaceId = "ws",
+                TargetKind = "agent",
+                TargetId = assignment.AgentId,
+                Status = "dead_letter",
+                HandlingMode = "execute",
+                CreatedAt = recent.ToUnixTimeMilliseconds(),
+                UpdatedAt = recent.ToUnixTimeMilliseconds(),
+            });
+            await mutate.SaveChangesAsync();
+        }
+
+        var decisions = await CreateTracker().EvaluateAsync("ws", 10);
+        var decision = AssertSingle(decisions);
+        Assert.AreEqual(TaskExecutionTrackingVerdict.CleanupRequired, decision.Verdict);
+        Assert.AreEqual("legacy_delivery_terminal_without_execution", decision.Code);
+
+        var summary = await CreateRepairCoordinator().RepairAsync("ws", decisions);
+
+        Assert.AreEqual(1, summary.Repaired);
+        await using var verify = await _factory.CreateDbContextAsync();
+        Assert.AreEqual(WorkspaceTaskStatus.Blocked, (await verify.WorkspaceTasks.SingleAsync()).Status);
+        Assert.IsNull((await verify.WorkspaceTasks.SingleAsync()).ActiveAssignmentId);
+        Assert.AreEqual(AssignmentAttemptStatus.Failed,
+            (await verify.TaskAssignmentAttempts.SingleAsync()).Status);
+    }
+
+    [TestMethod]
     public async Task RepairCoordinator_RecoversExpiredContinuationLease()
     {
         await SeedAsync();
@@ -191,6 +338,10 @@ public sealed class TaskExecutionTrackerTests
     private TaskExecutionRepairCoordinator CreateRepairCoordinator() => new(
         _factory,
         new GoalOutboxSignal(),
+        Options.Create(new TaskAutoDispatchOptions
+        {
+            TrackerStallThreshold = TimeSpan.FromMinutes(30),
+        }),
         new FixedTimeProvider(_now),
         Microsoft.Extensions.Logging.Abstractions.NullLogger<TaskExecutionRepairCoordinator>.Instance);
 
@@ -199,7 +350,8 @@ public sealed class TaskExecutionTrackerTests
         bool addRunningIteration = false,
         string commandStatus = "running",
         string activeAssignmentId = "assignment-1",
-        WorkspaceTaskStatus taskStatus = WorkspaceTaskStatus.Assigned)
+        WorkspaceTaskStatus taskStatus = WorkspaceTaskStatus.Assigned,
+        GoalPhase goalStatus = GoalPhase.Active)
     {
         await using var db = await _factory.CreateDbContextAsync();
         var created = _now.AddMinutes(-5);
@@ -238,7 +390,7 @@ public sealed class TaskExecutionTrackerTests
             CurrentConversationId = "conversation-1",
             AgentInstanceId = "agent-1",
             Objective = "tracked task",
-            Status = GoalPhase.Active,
+            Status = goalStatus,
             MaxIterations = 32,
             ActivationEpoch = 1,
             AggregateVersion = 1,

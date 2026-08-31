@@ -82,8 +82,7 @@ public static class TaskAgentRouteMatcher
             Normalize(agent.PreferredModelId),
             string.Join(',', AgentCapabilities(agent)),
             agent.IsEnabled ? "1" : "0",
-            agent.IsFrozen ? "1" : "0",
-            agent.UpdatedAt.ToUniversalTime().ToString("O"));
+            agent.IsFrozen ? "1" : "0");
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
 

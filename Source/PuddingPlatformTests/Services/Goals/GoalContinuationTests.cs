@@ -325,7 +325,8 @@ public sealed class GoalContinuationTests
         Assert.IsTrue(await settlement.ApplyAsync(candidate, proposed));
 
         await using var verify = await _factory.CreateDbContextAsync();
-        Assert.AreEqual(GoalPhase.Blocked, (await verify.GoalRuns.SingleAsync()).Status);
+        Assert.AreEqual(GoalPhase.Failed, (await verify.GoalRuns.SingleAsync()).Status);
+        Assert.IsNotNull((await verify.GoalRuns.SingleAsync()).TerminalAtUtc);
         Assert.AreEqual("task_completion_fact_missing", (await verify.GoalRuns.SingleAsync()).BlockedCode);
         Assert.AreEqual(PuddingCode.Tasks.WorkspaceTaskStatus.NeedsReview,
             (await verify.WorkspaceTasks.SingleAsync()).Status);
@@ -335,6 +336,51 @@ public sealed class GoalContinuationTests
         Assert.AreEqual(PuddingCode.Models.TaskNodeStatuses.Completed.ToString(),
             (await verify.TaskNodes.SingleAsync(item => item.Depth == 1)).Status);
         Assert.AreEqual(PuddingCode.Models.TaskPlanStatuses.Completed.ToString(),
+            (await verify.TaskPlanRuns.SingleAsync()).Status);
+        Assert.AreEqual(0, await verify.GoalOutbox.CountAsync(
+            item => item.Status == GoalOutboxValues.Pending));
+    }
+
+    [TestMethod]
+    public async Task TaskPlanSettlement_FailedTurn_ReleasesAssignmentAndAgentOwnership()
+    {
+        var goal = await CreateGoalWithContinuationAsync();
+        var (binding, workUnit) = await CreateBoundExecutionPlanAsync(goal);
+        var lease = await ClaimAsync();
+        AcceptanceResult accepted;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var store = new ConversationAcceptanceStore(
+                db,
+                new NoopSignal(),
+                NullLogger<ConversationAcceptanceStore>.Instance);
+            accepted = await store.AcceptBatchAsync(
+                BuildContinuationRequest(goal, lease, binding, workUnit),
+                goal.WorkspaceId,
+                goal.CurrentConversationId,
+                userId: null,
+                CancellationToken.None);
+        }
+
+        await CommitSyntheticTerminalAsync(accepted.TurnIds.Single(), "failed");
+        var settlement = NewSettlementStore();
+        var candidate = (await settlement.GetCandidatesAsync(8)).Single();
+        var decision = await new ConservativeGoalIterationVerifier().VerifyAsync(candidate.ToCapsule());
+        Assert.AreEqual(GoalVerificationVerdict.Blocked, decision.Verdict);
+        Assert.AreEqual("iteration_failed", decision.BlockerCode);
+        Assert.IsTrue(await settlement.ApplyAsync(candidate, decision));
+
+        await using var verify = await _factory.CreateDbContextAsync();
+        Assert.AreEqual(GoalPhase.Failed, (await verify.GoalRuns.SingleAsync()).Status);
+        Assert.IsNotNull((await verify.GoalRuns.SingleAsync()).TerminalAtUtc);
+        Assert.AreEqual(PuddingCode.Tasks.WorkspaceTaskStatus.Blocked,
+            (await verify.WorkspaceTasks.SingleAsync()).Status);
+        Assert.IsNull((await verify.WorkspaceTasks.SingleAsync()).ActiveAssignmentId);
+        Assert.AreEqual("terminal", (await verify.TaskGoalBindings.SingleAsync()).Status);
+        Assert.AreEqual(AssignmentAttemptStatus.Failed,
+            (await verify.TaskAssignmentAttempts.SingleAsync()).Status);
+        Assert.AreEqual("released", (await verify.AgentExecutionReservations.SingleAsync()).Status);
+        Assert.AreEqual(PuddingCode.Models.TaskPlanStatuses.Failed.ToString(),
             (await verify.TaskPlanRuns.SingleAsync()).Status);
         Assert.AreEqual(0, await verify.GoalOutbox.CountAsync(
             item => item.Status == GoalOutboxValues.Pending));
@@ -437,6 +483,195 @@ public sealed class GoalContinuationTests
         // Settlement is idempotent: the same terminal fact cannot create another continuation.
         Assert.IsFalse(await settlement.ApplyAsync(candidate, decision));
         Assert.AreEqual(2, await verify.GoalOutbox.CountAsync());
+    }
+
+    [TestMethod]
+    public async Task Settlement_RetainsTerminalEvidenceAfterMoreThan128StreamEvents()
+    {
+        var goal = await CreateGoalWithContinuationAsync();
+        var lease = await ClaimAsync();
+        var accepted = await AcceptContinuationAsync(goal, lease);
+        var turnId = accepted.TurnIds.Single();
+
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var head = await db.ConversationHeads.SingleAsync(
+                item => item.ConversationId == goal.CurrentConversationId);
+            for (var i = 0; i < 150; i++)
+            {
+                head.HeadSequence++;
+                db.ConversationEvents.Add(new ConversationEventEntity
+                {
+                    ConversationId = goal.CurrentConversationId,
+                    Sequence = head.HeadSequence,
+                    EventId = $"thinking-{turnId}-{i}",
+                    WorkspaceId = goal.WorkspaceId,
+                    TurnId = turnId,
+                    Type = ConversationEventTypes.MessageThinkingSummaryAppended,
+                    SchemaVersion = 1,
+                    Payload = "{\"delta\":\"x\"}",
+                    OccurredAt = DateTimeOffset.UtcNow.ToString("O"),
+                    CommittedAt = DateTimeOffset.UtcNow.ToString("O"),
+                    CorrelationId = goal.CurrentConversationId,
+                    SourceKind = "agent",
+                });
+            }
+            head.HeadSequence++;
+            db.ConversationEvents.Add(new ConversationEventEntity
+            {
+                ConversationId = goal.CurrentConversationId,
+                Sequence = head.HeadSequence,
+                EventId = $"usage-{turnId}",
+                WorkspaceId = goal.WorkspaceId,
+                TurnId = turnId,
+                Type = ConversationEventTypes.UsageRecorded,
+                SchemaVersion = 2,
+                Payload = "{\"usage\":{\"promptTokens\":1200,\"completionTokens\":300}}",
+                OccurredAt = DateTimeOffset.UtcNow.ToString("O"),
+                CommittedAt = DateTimeOffset.UtcNow.ToString("O"),
+                CorrelationId = goal.CurrentConversationId,
+                SourceKind = "agent",
+            });
+            head.HeadSequence++;
+            db.ConversationEvents.Add(new ConversationEventEntity
+            {
+                ConversationId = goal.CurrentConversationId,
+                Sequence = head.HeadSequence,
+                EventId = $"tool-{turnId}",
+                WorkspaceId = goal.WorkspaceId,
+                TurnId = turnId,
+                Type = ConversationEventTypes.ToolCallRequested,
+                SchemaVersion = 1,
+                Payload = "{}",
+                OccurredAt = DateTimeOffset.UtcNow.ToString("O"),
+                CommittedAt = DateTimeOffset.UtcNow.ToString("O"),
+                CorrelationId = goal.CurrentConversationId,
+                SourceKind = "agent",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        await CommitSyntheticTerminalAsync(turnId, "completed");
+        var settlement = NewSettlementStore();
+        var candidate = (await settlement.GetCandidatesAsync(8)).Single();
+
+        Assert.IsTrue(candidate.EvidenceComplete);
+        Assert.IsTrue(candidate.EvidenceRefs.Any(item => item.Contains($"terminal-{turnId}")));
+        Assert.AreEqual(1, candidate.LlmRounds);
+        Assert.AreEqual(1, candidate.ToolCalls);
+        Assert.AreEqual(1200L, candidate.InputTokens);
+        Assert.AreEqual(300L, candidate.OutputTokens);
+        var decision = await new ConservativeGoalIterationVerifier().VerifyAsync(candidate.ToCapsule());
+        Assert.AreEqual(GoalVerificationVerdict.Continue, decision.Verdict);
+        Assert.IsTrue(await settlement.ApplyAsync(candidate, decision));
+
+        await using var verify = await _factory.CreateDbContextAsync();
+        var persistedGoal = await verify.GoalRuns.SingleAsync();
+        var persistedIteration = await verify.GoalIterations.SingleAsync();
+        Assert.AreEqual(1, persistedIteration.LlmRounds);
+        Assert.AreEqual(1, persistedIteration.ToolCalls);
+        Assert.AreEqual(1200L, persistedGoal.InputTokens);
+        Assert.AreEqual(300L, persistedGoal.OutputTokens);
+    }
+
+    [TestMethod]
+    public async Task Settlement_AddsRecursiveDelegatedUsageWithinCurrentTurnWindow()
+    {
+        var goal = await CreateGoalWithContinuationAsync();
+        var lease = await ClaimAsync();
+        var accepted = await AcceptContinuationAsync(goal, lease);
+        var turnId = accepted.TurnIds.Single();
+        var childSessionId = $"{goal.CurrentConversationId}-sub-child";
+        var grandchildSessionId = $"{childSessionId}-sub-grandchild";
+
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var turn = await db.ConversationTurns.SingleAsync(item => item.TurnId == turnId);
+            var occurredAt = DateTimeOffset.UtcNow;
+            var head = await db.ConversationHeads.SingleAsync(
+                item => item.ConversationId == goal.CurrentConversationId);
+            head.HeadSequence++;
+            db.ConversationEvents.Add(new ConversationEventEntity
+            {
+                ConversationId = goal.CurrentConversationId,
+                Sequence = head.HeadSequence,
+                EventId = $"usage-{turnId}",
+                WorkspaceId = goal.WorkspaceId,
+                TurnId = turnId,
+                Type = ConversationEventTypes.UsageRecorded,
+                SchemaVersion = 2,
+                Payload = "{\"usage\":{\"promptTokens\":100,\"completionTokens\":10}}",
+                OccurredAt = occurredAt.ToString("O"),
+                CommittedAt = occurredAt.ToString("O"),
+                CorrelationId = goal.CurrentConversationId,
+                SourceKind = "agent",
+            });
+            db.SessionSubAgents.AddRange(
+                new SessionSubAgentEntity
+                {
+                    ParentSessionId = goal.CurrentConversationId,
+                    SubSessionId = childSessionId,
+                    Status = "completed",
+                    TaskSummary = "child",
+                    SpawnedAt = occurredAt.ToString("O"),
+                },
+                new SessionSubAgentEntity
+                {
+                    ParentSessionId = childSessionId,
+                    SubSessionId = grandchildSessionId,
+                    Status = "completed",
+                    TaskSummary = "grandchild",
+                    SpawnedAt = occurredAt.ToString("O"),
+                });
+            db.TokenUsageEvents.AddRange(
+                new TokenUsageEventEntity
+                {
+                    SourceType = "runtime_activity",
+                    SourceId = "child-current",
+                    WorkspaceId = goal.WorkspaceId,
+                    SessionId = childSessionId,
+                    ParentSessionId = goal.CurrentConversationId,
+                    OccurredAtUtc = occurredAt,
+                    YearMonth = occurredAt.ToString("yyyy-MM"),
+                    PromptTokens = 200,
+                    CompletionTokens = 20,
+                    TotalTokens = 220,
+                },
+                new TokenUsageEventEntity
+                {
+                    SourceType = "runtime_activity",
+                    SourceId = "grandchild-current",
+                    WorkspaceId = goal.WorkspaceId,
+                    SessionId = grandchildSessionId,
+                    ParentSessionId = childSessionId,
+                    OccurredAtUtc = occurredAt,
+                    YearMonth = occurredAt.ToString("yyyy-MM"),
+                    PromptTokens = 300,
+                    CompletionTokens = 30,
+                    TotalTokens = 330,
+                },
+                new TokenUsageEventEntity
+                {
+                    SourceType = "runtime_activity",
+                    SourceId = "child-previous-turn",
+                    WorkspaceId = goal.WorkspaceId,
+                    SessionId = childSessionId,
+                    ParentSessionId = goal.CurrentConversationId,
+                    OccurredAtUtc = DateTimeOffset.FromUnixTimeMilliseconds(turn.CreatedAt).AddSeconds(-1),
+                    YearMonth = occurredAt.ToString("yyyy-MM"),
+                    PromptTokens = 9_999,
+                    CompletionTokens = 999,
+                    TotalTokens = 10_998,
+                });
+            await db.SaveChangesAsync();
+        }
+
+        await CommitSyntheticTerminalAsync(turnId, "completed");
+        var candidate = (await NewSettlementStore().GetCandidatesAsync(8)).Single();
+
+        Assert.AreEqual(3, candidate.LlmRounds);
+        Assert.AreEqual(600L, candidate.InputTokens);
+        Assert.AreEqual(60L, candidate.OutputTokens);
     }
 
     [TestMethod]

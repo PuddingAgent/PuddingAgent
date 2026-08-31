@@ -36,9 +36,6 @@ public sealed class TaskExecutionTracker(
             .OrderBy(item => item.BindingId)
             .Take(limit)
             .ToListAsync(ct);
-        if (bindings.Count == 0)
-            return [];
-
         var taskIds = bindings.Select(item => item.TaskId).Distinct(StringComparer.Ordinal).ToArray();
         var assignmentIds = bindings.Where(item => item.AssignmentId != null)
             .Select(item => item.AssignmentId!).Distinct(StringComparer.Ordinal).ToArray();
@@ -128,7 +125,7 @@ public sealed class TaskExecutionTracker(
                     .First(),
                 StringComparer.Ordinal);
 
-        return bindings.Select(binding => EvaluateOne(
+        var results = bindings.Select(binding => EvaluateOne(
                 binding,
                 tasks.GetValueOrDefault(binding.TaskId),
                 binding.AssignmentId is null ? null : assignments.GetValueOrDefault(binding.AssignmentId),
@@ -141,7 +138,122 @@ public sealed class TaskExecutionTracker(
                 commands,
                 latestRuns,
                 now))
+            .ToList();
+        if (results.Count < limit)
+        {
+            var boundAssignmentIds = bindings
+                .Where(item => item.AssignmentId is not null)
+                .Select(item => item.AssignmentId!)
+                .ToArray();
+            results.AddRange(await EvaluateLegacyAssignmentsAsync(
+                db,
+                workspaceId,
+                boundAssignmentIds,
+                limit - results.Count,
+                now,
+                ct));
+        }
+        return results;
+    }
+
+    private async Task<IReadOnlyList<TaskExecutionTrackingDecision>> EvaluateLegacyAssignmentsAsync(
+        PlatformDbContext db,
+        string workspaceId,
+        IReadOnlyCollection<string> boundAssignmentIds,
+        int limit,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        if (limit <= 0)
+            return [];
+
+        var candidates = await (
+                from attempt in db.TaskAssignmentAttempts.AsNoTracking()
+                join task in db.WorkspaceTasks.AsNoTracking()
+                    on new { attempt.WorkspaceId, attempt.TaskId }
+                    equals new { task.WorkspaceId, task.TaskId }
+                where attempt.WorkspaceId == workspaceId
+                    && attempt.ReleasedAtUtc == null
+                    && task.ActiveAssignmentId == attempt.AttemptId
+                    && !boundAssignmentIds.Contains(attempt.AttemptId)
+                    && task.Status != WorkspaceTaskStatus.Completed
+                    && task.Status != WorkspaceTaskStatus.Failed
+                    && task.Status != WorkspaceTaskStatus.Cancelled
+                    && task.Status != WorkspaceTaskStatus.Archived
+                // SQLite cannot translate DateTimeOffset ORDER BY. AttemptId is a
+                // stable bounded scan key; recency is evaluated in memory below.
+                orderby attempt.AttemptId
+                select new { Attempt = attempt, Task = task })
+            .Take(limit)
+            .ToListAsync(ct);
+        if (candidates.Count == 0)
+            return [];
+
+        var assignmentIds = candidates.Select(item => item.Attempt.AttemptId).ToArray();
+        var executionBindings = await db.TaskExecutionBindings.AsNoTracking()
+            .Where(item => assignmentIds.Contains(item.AssignmentId))
+            .ToListAsync(ct);
+        var deliveryIds = executionBindings.Select(item => item.DeliveryId)
+            .Distinct(StringComparer.Ordinal)
             .ToArray();
+        var deliveries = deliveryIds.Length == 0
+            ? new Dictionary<string, MessageDeliveryEntity>(StringComparer.Ordinal)
+            : await db.MessageDeliveries.AsNoTracking()
+                .Where(item => deliveryIds.Contains(item.DeliveryId))
+                .ToDictionaryAsync(item => item.DeliveryId, StringComparer.Ordinal, ct);
+
+        return candidates.Select(candidate =>
+        {
+            var executionBinding = executionBindings
+                .OrderByDescending(item => item.Id)
+                .FirstOrDefault(item => item.AssignmentId == candidate.Attempt.AttemptId);
+            var delivery = executionBinding is null
+                ? null
+                : deliveries.GetValueOrDefault(executionBinding.DeliveryId);
+            var lastProgress = Latest(
+                candidate.Task.UpdatedAtUtc,
+                candidate.Attempt.UpdatedAtUtc,
+                executionBinding?.BoundAtUtc,
+                UnixMs(delivery?.UpdatedAt));
+
+            TaskExecutionTrackingDecision Result(
+                TaskExecutionTrackingVerdict verdict,
+                string code) => new()
+            {
+                WorkspaceId = workspaceId,
+                TaskId = candidate.Task.TaskId,
+                AgentId = candidate.Attempt.AgentId,
+                AssignmentId = candidate.Attempt.AttemptId,
+                TaskStatus = candidate.Task.Status,
+                Verdict = verdict,
+                Code = code,
+                ObservedAtUtc = now,
+                LastProgressAtUtc = lastProgress,
+            };
+
+            if (executionBinding is null)
+                return Result(TaskExecutionTrackingVerdict.Inconsistent, "legacy_execution_binding_missing");
+            if (delivery is null)
+                return Result(TaskExecutionTrackingVerdict.Inconsistent, "legacy_delivery_missing");
+            if (!string.IsNullOrWhiteSpace(executionBinding.ExecutionId)
+                || !string.IsNullOrWhiteSpace(executionBinding.SessionId)
+                || !string.IsNullOrWhiteSpace(delivery.ClaimedByExecutionId))
+            {
+                return Result(TaskExecutionTrackingVerdict.Healthy, "legacy_execution_claimed");
+            }
+            if (delivery.Status is "dead_letter" or "failed" or "cancelled")
+            {
+                return Result(
+                    TaskExecutionTrackingVerdict.CleanupRequired,
+                    "legacy_delivery_terminal_without_execution");
+            }
+            if (string.Equals(delivery.Status, "delivered", StringComparison.Ordinal)
+                && IsOverdue(lastProgress, now))
+            {
+                return Result(TaskExecutionTrackingVerdict.CleanupRequired, "legacy_assignment_execution_missing");
+            }
+            return Result(TaskExecutionTrackingVerdict.Waiting, "legacy_assignment_waiting_execution");
+        }).ToArray();
     }
 
     private TaskExecutionTrackingDecision EvaluateOne(
@@ -225,6 +337,11 @@ public sealed class TaskExecutionTracker(
             return Result(TaskExecutionTrackingVerdict.Inconsistent, "goal_agent_mismatch");
         if (TaskStateMachine.IsTerminal(task.Status) || GoalStateMachine.IsTerminal(goal.Status))
             return Result(TaskExecutionTrackingVerdict.CleanupRequired, "terminal_binding_still_active");
+        // Blocked Task-bound Goals no longer own execution. Evaluate this before
+        // reservation health because older settlement code already released the
+        // reservation while leaving the binding and assignment active.
+        if (goal.Status == GoalPhase.Blocked)
+            return Result(TaskExecutionTrackingVerdict.CleanupRequired, "blocked_binding_still_active");
         if (reservation is null || binding.ReservationId is null)
             return Result(TaskExecutionTrackingVerdict.Inconsistent, "reservation_missing");
         if (!string.Equals(reservation.AgentId, binding.AgentInstanceId, StringComparison.Ordinal)
@@ -239,8 +356,6 @@ public sealed class TaskExecutionTracker(
             return Result(TaskExecutionTrackingVerdict.Stalled, "reservation_expired");
         if (goal.Status == GoalPhase.Paused)
             return Result(TaskExecutionTrackingVerdict.Waiting, "goal_paused");
-        if (goal.Status == GoalPhase.Blocked)
-            return Result(TaskExecutionTrackingVerdict.Stalled, "goal_blocked");
         if (goal.Status != GoalPhase.Active)
             return Result(TaskExecutionTrackingVerdict.Inconsistent, "goal_phase_unsupported");
 

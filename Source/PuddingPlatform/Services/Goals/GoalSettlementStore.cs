@@ -36,6 +36,13 @@ public sealed record GoalSettlementCandidate
     public string? TaskAcceptanceCriteria { get; init; }
     public bool HasPendingExecutionFacts { get; init; }
     public bool EvidenceComplete { get; init; }
+    public string? RunId { get; init; }
+    public DateTimeOffset? StartedAtUtc { get; init; }
+    public long ActiveElapsedMs { get; init; }
+    public int LlmRounds { get; init; }
+    public int ToolCalls { get; init; }
+    public long InputTokens { get; init; }
+    public long OutputTokens { get; init; }
 
     public GoalEvidenceCapsule ToCapsule() => new()
     {
@@ -112,21 +119,6 @@ public sealed class GoalSettlementStore(
                     ct);
             }
 
-            var evidenceEvents = await db.ConversationEvents.AsNoTracking()
-                .Where(item => item.ConversationId == goal.CurrentConversationId
-                    && item.TurnId == iteration.TurnId
-                    && item.Sequence >= (iteration.AcceptedSequence ?? 0)
-                    && item.Sequence <= turn.TerminalSequence.Value)
-                .OrderBy(item => item.Sequence)
-                .Take(128)
-                .Select(item => new { item.EventId, item.Type })
-                .ToListAsync(ct);
-            var hasPending = await db.ExecutionRuns.AsNoTracking().AnyAsync(
-                item => item.TurnId == iteration.TurnId
-                    && (item.Status == "leased"
-                        || item.Status == "running"
-                        || item.Status == "cancel_requested"),
-                ct);
             var expectedTerminalType = turn.TerminalKind switch
             {
                 "completed" => ConversationEventTypes.TurnCompleted,
@@ -134,11 +126,64 @@ public sealed class GoalSettlementStore(
                 "cancelled" => ConversationEventTypes.TurnCancelled,
                 _ => string.Empty,
             };
+            var evidenceQuery = db.ConversationEvents.AsNoTracking()
+                .Where(item => item.ConversationId == goal.CurrentConversationId
+                    && item.TurnId == iteration.TurnId
+                    && item.Sequence >= (iteration.AcceptedSequence ?? 0)
+                    && item.Sequence <= turn.TerminalSequence.Value);
+            var evidenceComplete = !string.IsNullOrWhiteSpace(expectedTerminalType)
+                && await evidenceQuery.AnyAsync(item => item.Type == expectedTerminalType, ct);
+            // Keep the evidence capsule bounded, but retain the terminal edge. Taking
+            // the oldest 128 events drops turn.completed when a model streams many
+            // thinking deltas and incorrectly blocks an otherwise terminal iteration.
+            var evidenceEvents = await evidenceQuery
+                .OrderByDescending(item => item.Sequence)
+                .Take(128)
+                .Select(item => new { item.EventId, item.Type, item.Sequence })
+                .ToListAsync(ct);
+            evidenceEvents.Reverse();
+            var hasPending = await db.ExecutionRuns.AsNoTracking().AnyAsync(
+                item => item.TurnId == iteration.TurnId
+                    && (item.Status == "leased"
+                        || item.Status == "running"
+                        || item.Status == "cancel_requested"),
+                ct);
             var refs = evidenceEvents
                 .Select(item => $"conversation-event:{item.EventId}")
                 .ToList();
             if (task is not null)
                 refs.Add($"workspace-task:{task.TaskId}:version:{task.Version}:status:{task.Status}");
+            var usagePayloads = await evidenceQuery
+                .Where(item => item.Type == ConversationEventTypes.UsageRecorded)
+                .OrderBy(item => item.Sequence)
+                .Select(item => item.Payload)
+                .ToListAsync(ct);
+            var (llmRounds, inputTokens, outputTokens) = SumUsage(usagePayloads);
+            var delegatedUsage = await SumDelegatedUsageAsync(
+                db,
+                goal.CurrentConversationId,
+                DateTimeOffset.FromUnixTimeMilliseconds(turn.CreatedAt),
+                turn.CompletedAt is long completedAt
+                    ? DateTimeOffset.FromUnixTimeMilliseconds(completedAt)
+                    : null,
+                ct);
+            llmRounds += delegatedUsage.Rounds;
+            inputTokens += delegatedUsage.InputTokens;
+            outputTokens += delegatedUsage.OutputTokens;
+            var toolCalls = await evidenceQuery.CountAsync(
+                item => item.Type == ConversationEventTypes.ToolCallRequested,
+                ct);
+            var execution = await db.ExecutionRuns.AsNoTracking()
+                .Where(item => item.TurnId == iteration.TurnId)
+                .OrderByDescending(item => item.Attempt)
+                .Select(item => new { item.RunId, item.StartedAt, item.CompletedAt })
+                .FirstOrDefaultAsync(ct);
+            var startedAtUtc = execution?.StartedAt is long startedAt
+                ? DateTimeOffset.FromUnixTimeMilliseconds(startedAt)
+                : (DateTimeOffset?)null;
+            var activeElapsedMs = execution is { StartedAt: long started, CompletedAt: long completed }
+                ? Math.Max(0, completed - started)
+                : 0;
 
             results.Add(new GoalSettlementCandidate
             {
@@ -163,11 +208,105 @@ public sealed class GoalSettlementStore(
                 TaskStatus = task?.Status.ToString(),
                 TaskAcceptanceCriteria = task?.AcceptanceCriteria,
                 HasPendingExecutionFacts = hasPending,
-                EvidenceComplete = evidenceEvents.Any(item => item.Type == expectedTerminalType),
+                EvidenceComplete = evidenceComplete,
+                RunId = execution?.RunId,
+                StartedAtUtc = startedAtUtc,
+                ActiveElapsedMs = activeElapsedMs,
+                LlmRounds = llmRounds,
+                ToolCalls = toolCalls,
+                InputTokens = inputTokens,
+                OutputTokens = outputTokens,
             });
         }
 
         return results;
+    }
+
+    private static (int Rounds, long InputTokens, long OutputTokens) SumUsage(
+        IReadOnlyList<string> payloads)
+    {
+        var rounds = 0;
+        long inputTokens = 0;
+        long outputTokens = 0;
+        foreach (var payload in payloads)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(payload);
+                if (!document.RootElement.TryGetProperty("usage", out var usageElement)
+                    || usageElement.ValueKind != JsonValueKind.Object)
+                    continue;
+                var usage = JsonSerializer.Deserialize<TokenUsageDto>(usageElement.GetRawText(), JsonOpts);
+                if (usage is null)
+                    continue;
+                rounds++;
+                inputTokens += usage.PromptTokens ?? 0;
+                outputTokens += usage.CompletionTokens ?? 0;
+            }
+            catch (JsonException)
+            {
+                // The canonical event remains evidence, but malformed accounting
+                // metadata must not stop deterministic Goal settlement.
+            }
+        }
+        return (rounds, inputTokens, outputTokens);
+    }
+
+    private static async Task<(int Rounds, long InputTokens, long OutputTokens)> SumDelegatedUsageAsync(
+        PlatformDbContext db,
+        string rootSessionId,
+        DateTimeOffset startedAtUtc,
+        DateTimeOffset? completedAtUtc,
+        CancellationToken ct)
+    {
+        if (completedAtUtc is null || completedAtUtc < startedAtUtc)
+            return default;
+
+        // Each spawn receives a distinct sub-session id. Resolve the whole bounded
+        // descendant tree instead of accounting only the first delegation level.
+        // A visited set also makes malformed historical cycles harmless.
+        const int maxAttributedSessions = 256;
+        var visited = new HashSet<string>(StringComparer.Ordinal) { rootSessionId };
+        var descendants = new HashSet<string>(StringComparer.Ordinal);
+        var frontier = new[] { rootSessionId };
+        while (frontier.Length > 0 && visited.Count < maxAttributedSessions)
+        {
+            var children = await db.SessionSubAgents.AsNoTracking()
+                .Where(item => frontier.Contains(item.ParentSessionId))
+                .Select(item => item.SubSessionId)
+                .ToListAsync(ct);
+            var remaining = maxAttributedSessions - visited.Count;
+            frontier = children
+                .Where(item => !string.IsNullOrWhiteSpace(item) && visited.Add(item))
+                .Take(remaining)
+                .ToArray();
+            descendants.UnionWith(frontier);
+        }
+
+        if (descendants.Count == 0)
+            return default;
+
+        var descendantIds = descendants.ToArray();
+        // SQLite's DateTimeOffset range translation is provider-sensitive. Session
+        // ids are indexed and bounded, so load only descendant facts and apply the
+        // exact Turn window in memory.
+        var usageRows = await db.TokenUsageEvents.AsNoTracking()
+            .Where(item => item.SessionId != null && descendantIds.Contains(item.SessionId))
+            .Select(item => new
+            {
+                item.OccurredAtUtc,
+                item.PromptTokens,
+                item.CompletionTokens,
+            })
+            .ToListAsync(ct);
+        var inWindow = usageRows
+            .Where(item => item.OccurredAtUtc >= startedAtUtc
+                && item.OccurredAtUtc <= completedAtUtc.Value)
+            .ToList();
+        return (
+            inWindow.Count,
+            inWindow.Sum(item => item.PromptTokens),
+            inWindow.Sum(item => item.CompletionTokens));
     }
 
     public async Task<bool> ApplyAsync(
@@ -254,11 +393,21 @@ public sealed class GoalSettlementStore(
             iteration.TerminalSequence = turn.TerminalSequence;
             iteration.StopReason = turn.TerminalKind;
             iteration.SettledAtUtc = now;
+            iteration.RunId ??= candidate.RunId;
+            iteration.StartedAtUtc ??= candidate.StartedAtUtc;
+            iteration.LlmRounds = candidate.LlmRounds;
+            iteration.ToolCalls = candidate.ToolCalls;
+            iteration.InputTokens = candidate.InputTokens;
+            iteration.OutputTokens = candidate.OutputTokens;
 
             // accepted Iteration 永不退还预算；即使 epoch 已变化也要结算计数，
             // 但旧 epoch 绝不能创建 continuation 或改变当前 phase。
             if (goal.IterationsSettled < goal.IterationsStarted)
                 goal.IterationsSettled++;
+            goal.ActiveElapsedMs += candidate.ActiveElapsedMs;
+            goal.TotalToolCalls += candidate.ToolCalls;
+            goal.InputTokens += candidate.InputTokens;
+            goal.OutputTokens += candidate.OutputTokens;
             goal.AggregateVersion++;
             goal.UpdatedAtUtc = now;
 
@@ -599,19 +748,33 @@ public sealed class GoalSettlementStore(
             or GoalVerificationVerdict.NeedsUser
             or GoalVerificationVerdict.Unsafe)
         {
-            goal.Status = GoalPhase.Blocked;
+            // A standalone Goal remains resumable while blocked. A Task-bound Goal,
+            // however, releases its binding, reservation and assignment below so a
+            // later Task Resume/Requeue can create a fresh fenced attempt. Leaving
+            // that detached Goal in the non-terminal Blocked phase violates the
+            // (conversation, agent) active-Goal invariant and makes every retry hit
+            // UX_goal_runs_active. The Task remains Blocked/NeedsReview, while this
+            // particular execution attempt becomes an auditable Failed terminal Goal.
+            var taskBoundAttempt = binding is not null;
+            goal.Status = taskBoundAttempt ? GoalPhase.Failed : GoalPhase.Blocked;
             goal.BlockedCode = decision.BlockerCode ?? ToWire(decision.Verdict);
             goal.BlockedMessage = decision.BlockerMessage ?? decision.Reason;
             goal.StatusReason = decision.Reason;
+            if (taskBoundAttempt)
+                goal.TerminalAtUtc = now;
             goal.ActivationEpoch++;
-            events.Add(new(GoalEventTypes.Blocked, GoalProducerComponents.Coordinator, VerdictPayload(goal, iteration, decision)));
+            events.Add(new(
+                taskBoundAttempt ? GoalEventTypes.Failed : GoalEventTypes.Blocked,
+                GoalProducerComponents.Coordinator,
+                VerdictPayload(goal, iteration, decision)));
             if (binding is not null)
             {
                 var completionFactMissing = string.Equals(
                     decision.BlockerCode,
                     "task_completion_fact_missing",
                     StringComparison.Ordinal);
-                var taskUpdatedForReview = false;
+                var taskChanged = false;
+                var taskBlocked = false;
                 if (task is not null
                     && completionFactMissing
                     && TaskStateMachine.CanTransition(task.Status, WorkspaceTaskStatus.NeedsReview))
@@ -619,7 +782,7 @@ public sealed class GoalSettlementStore(
                     task.Status = WorkspaceTaskStatus.NeedsReview;
                     task.BlockerKind = decision.BlockerCode;
                     task.BlockerReason = goal.BlockedMessage;
-                    taskUpdatedForReview = true;
+                    taskChanged = true;
                 }
                 else if (task is not null
                     && TaskStateMachine.CanTransition(task.Status, WorkspaceTaskStatus.Blocked))
@@ -627,9 +790,8 @@ public sealed class GoalSettlementStore(
                     task.Status = WorkspaceTaskStatus.Blocked;
                     task.BlockerKind = goal.BlockedCode;
                     task.BlockerReason = goal.BlockedMessage;
-                    task.Version++;
-                    task.UpdatedAtUtc = now;
-                    AppendTaskEvent(db, task, binding, TaskEventType.TaskBlocked, now, goal.GoalRunId);
+                    taskChanged = true;
+                    taskBlocked = true;
                 }
                 events.Add(new(GoalEventTypes.TaskGoalBlocked, GoalProducerComponents.Coordinator, new
                 {
@@ -639,25 +801,31 @@ public sealed class GoalSettlementStore(
                     aggregateVersion = goal.AggregateVersion,
                     iterationNumber = iteration.IterationNo,
                 }));
+                // The failed Goal remains as immutable audit history, but it is not an
+                // executing lease. Explicit Task resume/requeue creates a fresh fenced
+                // Goal and assignment without inheriting the failed attempt's budget.
+                binding.Status = "terminal";
+                binding.ReleasedAtUtc = now;
                 ReleaseReservation(db, binding, now, "goal_blocked");
-                if (completionFactMissing)
+                if (task is not null)
                 {
-                    binding.Status = "terminal";
-                    binding.ReleasedAtUtc = now;
-                    if (task is not null)
+                    taskChanged |= ReleaseAssignment(
+                        db,
+                        binding,
+                        task,
+                        now,
+                        AssignmentAttemptStatus.Failed);
+                    if (taskChanged)
                     {
-                        taskUpdatedForReview |= ReleaseAssignment(
+                        task.Version++;
+                        task.UpdatedAtUtc = now;
+                        AppendTaskEvent(
                             db,
-                            binding,
                             task,
+                            binding,
+                            taskBlocked ? TaskEventType.TaskBlocked : TaskEventType.TaskUpdated,
                             now,
-                            AssignmentAttemptStatus.Failed);
-                        if (taskUpdatedForReview)
-                        {
-                            task.Version++;
-                            task.UpdatedAtUtc = now;
-                            AppendTaskEvent(db, task, binding, TaskEventType.TaskUpdated, now, goal.GoalRunId);
-                        }
+                            goal.GoalRunId);
                     }
                 }
             }

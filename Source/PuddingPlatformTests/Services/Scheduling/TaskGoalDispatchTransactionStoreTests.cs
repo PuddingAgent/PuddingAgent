@@ -249,6 +249,57 @@ public sealed class TaskGoalDispatchTransactionStoreTests
     }
 
     [TestMethod]
+    public async Task DetachedBlockedTaskGoalFromPriorTask_IsRetiredBeforeFreshDispatchStarts()
+    {
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var now = _clock.GetUtcNow().AddMinutes(-5);
+            db.GoalRuns.Add(new GoalRunEntity
+            {
+                GoalRunId = "blocked-goal",
+                WorkspaceId = "ws",
+                CurrentConversationId = "conversation-1",
+                AgentInstanceId = "agent-1",
+                Objective = "previous task attempt",
+                Status = GoalPhase.Blocked,
+                BlockedCode = "iteration_failed",
+                BlockedMessage = "previous attempt failed",
+                SourceCommandId = "old-task-goal-command",
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+            });
+            db.TaskGoalBindings.Add(new TaskGoalBindingEntity
+            {
+                BindingId = "terminal-binding",
+                WorkspaceId = "ws",
+                TaskId = "previous-task",
+                ExpectedTaskVersion = 1,
+                GoalRunId = "blocked-goal",
+                AgentInstanceId = "agent-1",
+                Status = "terminal",
+                IdempotencyKey = "task-goal:ws:task-1:old",
+                CreatedAtUtc = now,
+                ReleasedAtUtc = now.AddMinutes(1),
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var result = await _store.StartAsync(Command());
+
+        Assert.IsTrue(result.Started);
+        Assert.AreEqual(TaskBoundGoalStartCodes.Started, result.Code);
+        await using var verify = await _factory.CreateDbContextAsync();
+        var oldGoal = await verify.GoalRuns.SingleAsync(item => item.GoalRunId == "blocked-goal");
+        Assert.AreEqual(GoalPhase.Failed, oldGoal.Status);
+        Assert.AreEqual("superseded_by_task_retry", oldGoal.StatusReason);
+        Assert.IsNotNull(oldGoal.TerminalAtUtc);
+        Assert.AreEqual(1, await verify.GoalRuns.CountAsync(item => item.Status == GoalPhase.Active));
+        Assert.AreEqual(1, await verify.ConversationEvents.CountAsync(
+            item => item.Type == GoalEventTypes.Failed
+                && item.EventId.StartsWith("tgr-blocked-goal-")));
+    }
+
+    [TestMethod]
     public async Task DependencyChangedAfterEvaluation_FailsClosed()
     {
         await using (var db = await _factory.CreateDbContextAsync())

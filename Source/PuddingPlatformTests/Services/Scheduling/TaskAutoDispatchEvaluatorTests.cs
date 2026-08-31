@@ -61,6 +61,35 @@ public sealed class TaskAutoDispatchEvaluatorTests
     }
 
     [TestMethod]
+    public async Task Evaluate_RebuildsEachAgentOnceAndReusesOneFencedSnapshot()
+    {
+        await AddTasksAsync(
+            TaskEntity("task-1", TaskPriority.P0, "agent-1"),
+            TaskEntity("task-2", TaskPriority.P1, "agent-1"));
+        var availability = new CountingAvailability(Idle("agent-1"));
+        var evaluator = new TaskAutoDispatchEvaluator(
+            _factory,
+            _dependencies,
+            availability,
+            new AllowWindow(),
+            new FixedAgentCatalog([Agent("agent-1")]),
+            Options.Create(new TaskAutoDispatchOptions
+            {
+                MinimumIdle = TimeSpan.FromMinutes(30),
+            }),
+            new FixedTimeProvider(_now));
+
+        var decisions = await evaluator.EvaluateAsync("ws", 20);
+
+        Assert.HasCount(2, decisions);
+        Assert.AreEqual(1, availability.RebuildCount);
+        Assert.AreEqual(
+            decisions[0].AvailabilityVersion,
+            decisions[1].AvailabilityVersion,
+            "Every candidate in one scan must reference the same per-Agent availability fence.");
+    }
+
+    [TestMethod]
     public async Task Evaluate_WaitingSubAgent_IsNotEligible()
     {
         await AddTasksAsync(TaskEntity("task-1", TaskPriority.P1, "agent-1"));
@@ -173,6 +202,24 @@ public sealed class TaskAutoDispatchEvaluatorTests
         Assert.AreEqual("role_mismatch", roleMismatch.Code);
         Assert.IsFalse(modelMismatch.Compatible);
         Assert.AreEqual("model_mismatch", modelMismatch.Code);
+    }
+
+    [TestMethod]
+    public void RouteMatcher_Fingerprint_IgnoresDtoProjectionTimestamps()
+    {
+        var task = TaskEntity("task-1", TaskPriority.P0, "agent-1");
+        var original = Agent("agent-1");
+        var reprojected = original with
+        {
+            CreatedAt = original.CreatedAt.AddYears(1),
+            UpdatedAt = original.UpdatedAt.AddYears(1),
+        };
+
+        var first = TaskAgentRouteMatcher.Fingerprint(task, original);
+        var second = TaskAgentRouteMatcher.Fingerprint(task, reprojected);
+
+        Assert.AreEqual(first, second,
+            "Projection timestamps are not routing facts and must not invalidate an atomic dispatch fence.");
     }
 
     [TestMethod]
@@ -291,6 +338,26 @@ public sealed class TaskAutoDispatchEvaluatorTests
 
         private AgentAvailabilitySnapshot Find(string agentId)
             => snapshots.Single(item => item.AgentId == agentId);
+    }
+
+    private sealed class CountingAvailability(AgentAvailabilitySnapshot snapshot)
+        : IAgentAvailabilityProjectionStore
+    {
+        public int RebuildCount { get; private set; }
+
+        public Task<AgentAvailabilitySnapshot> GetAsync(
+            string workspaceId,
+            string agentId,
+            CancellationToken ct = default) => Task.FromResult(snapshot);
+
+        public Task<AgentAvailabilitySnapshot> RebuildAsync(
+            string workspaceId,
+            string agentId,
+            CancellationToken ct = default)
+        {
+            RebuildCount++;
+            return Task.FromResult(snapshot);
+        }
     }
 
     private sealed class FixedAgentCatalog(IReadOnlyList<WorkspaceAgentDto> agents)

@@ -157,6 +157,18 @@ public sealed class TaskGoalDispatchTransactionStore(
             if (conversationBusy || activeBinding || activeAssignment)
                 return await RejectAsync(tx, TaskBoundGoalStartCodes.AgentNotIdle, ct, task.Version);
 
+            // Compatibility repair for Task-bound Goals settled by older builds:
+            // those builds released the terminal binding/reservation/assignment but
+            // left the Goal in Blocked. Blocked participates in UX_goal_runs_active,
+            // so a resumed Task could never create its fresh fenced Goal and the
+            // resulting constraint was misleadingly reported as task_goal_lost_race.
+            // Retire only the detached Task-bound blocked Goal for this exact
+            // workspace/agent/conversation. It may belong to a prior Task: once its
+            // binding is terminal it owns no execution lease and must not prevent the
+            // Agent from accepting a different Task. Standalone blocked Goals and
+            // active bindings are untouched.
+            await RetireDetachedBlockedGoalAsync(db, task, command, now, ct);
+
             var expiredReservations = await db.AgentExecutionReservations
                 .Where(item => item.Status == "active"
                     && item.WorkspaceId == command.WorkspaceId
@@ -331,9 +343,11 @@ public sealed class TaskGoalDispatchTransactionStore(
         catch (DbUpdateException ex)
         {
             await tx.RollbackAsync(ct);
-            logger.LogDebug(ex,
-                "[TaskGoalDispatch] lost race workspace={WorkspaceId} task={TaskId} agent={AgentId}",
-                command.WorkspaceId, command.TaskId, command.AgentId);
+            var sqlite = ex.InnerException as SqliteException;
+            logger.LogWarning(ex,
+                "[TaskGoalDispatch] persistence conflict workspace={WorkspaceId} task={TaskId} agent={AgentId} sqliteCode={SqliteCode} sqliteExtendedCode={SqliteExtendedCode} sqliteMessage={SqliteMessage}",
+                command.WorkspaceId, command.TaskId, command.AgentId,
+                sqlite?.SqliteErrorCode, sqlite?.SqliteExtendedErrorCode, sqlite?.Message);
             return Result(false, TaskBoundGoalStartCodes.LostRace);
         }
         catch (SqliteException ex) when (ex.SqliteErrorCode is 5 or 6)
@@ -349,6 +363,80 @@ public sealed class TaskGoalDispatchTransactionStore(
             await tx.RollbackAsync(ct);
             throw;
         }
+    }
+
+    private async Task RetireDetachedBlockedGoalAsync(
+        PlatformDbContext db,
+        WorkspaceTaskEntity task,
+        StartGoalFromTaskCommand command,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        var detached = await (
+                from binding in db.TaskGoalBindings
+                join blockedGoal in db.GoalRuns on binding.GoalRunId equals blockedGoal.GoalRunId
+                where binding.WorkspaceId == task.WorkspaceId
+                    && binding.Status == "terminal"
+                    && binding.ReleasedAtUtc != null
+                    && blockedGoal.Status == GoalPhase.Blocked
+                    && blockedGoal.CurrentConversationId == command.ConversationId
+                    && blockedGoal.AgentInstanceId == command.AgentId
+                select new { Binding = binding, Goal = blockedGoal })
+            .FirstOrDefaultAsync(ct);
+        if (detached is null)
+            return;
+
+        var goal = detached.Goal;
+        goal.Status = GoalPhase.Failed;
+        goal.StatusReason = "superseded_by_task_retry";
+        goal.TerminalAtUtc = now;
+        goal.ActivationEpoch++;
+        goal.AggregateVersion++;
+        goal.UpdatedAtUtc = now;
+
+        var head = await db.ConversationHeads.SingleOrDefaultAsync(
+            item => item.ConversationId == goal.CurrentConversationId, ct);
+        var previous = head?.HeadSequence ?? 0;
+        if (head is null)
+        {
+            head = new ConversationHeadEntity { ConversationId = goal.CurrentConversationId };
+            db.ConversationHeads.Add(head);
+        }
+
+        head.HeadSequence = previous + 1;
+        db.ConversationEvents.Add(new ConversationEventEntity
+        {
+            ConversationId = goal.CurrentConversationId,
+            Sequence = previous + 1,
+            EventId = $"tgr-{goal.GoalRunId}-{goal.AggregateVersion}",
+            WorkspaceId = goal.WorkspaceId,
+            TurnId = string.Empty,
+            CommandId = goal.SourceCommandId,
+            Type = GoalEventTypes.Failed,
+            SchemaVersion = 1,
+            Payload = JsonSerializer.Serialize(new
+            {
+                goalRunId = goal.GoalRunId,
+                previousTaskId = detached.Binding.TaskId,
+                replacementTaskId = task.TaskId,
+                reason = goal.StatusReason,
+                previousBlockedCode = goal.BlockedCode,
+                previousBlockedMessage = goal.BlockedMessage,
+                aggregateVersion = goal.AggregateVersion,
+            }, JsonOpts),
+            OccurredAt = now.ToString("O"),
+            CommittedAt = now.ToString("O"),
+            CorrelationId = command.CorrelationId,
+            CausationId = command.CausationId,
+            AgentId = goal.AgentInstanceId,
+            SourceKind = "goal",
+            TraceId = command.CorrelationId,
+            ProducerComponent = GoalProducerComponents.Coordinator,
+        });
+
+        logger.LogInformation(
+            "[TaskGoalDispatch] retired detached blocked Goal before dispatch workspace={WorkspaceId} previousTask={PreviousTaskId} replacementTask={ReplacementTaskId} goal={GoalRunId} agent={AgentId}",
+            task.WorkspaceId, detached.Binding.TaskId, task.TaskId, goal.GoalRunId, command.AgentId);
     }
 
     private static void AddExecutionPlan(

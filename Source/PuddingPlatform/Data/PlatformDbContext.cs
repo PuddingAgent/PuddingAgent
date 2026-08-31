@@ -120,6 +120,10 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     // Task Dispatch Outbox（TB-05 手工派发持久 Outbox）
     public DbSet<TaskDispatchOutboxEntity> TaskDispatchOutbox => Set<TaskDispatchOutboxEntity>();
 
+    // P0 Scheduler 事件驱动层：task_scheduler_intents durable 调度意图队列
+    public DbSet<TaskSchedulerIntentEntity> TaskSchedulerIntents => Set<TaskSchedulerIntentEntity>();
+
+
     // Task Execution Bindings（TB-05 Task/Assignment/Delivery/Execution 绑定）
     public DbSet<TaskExecutionBindingEntity> TaskExecutionBindings => Set<TaskExecutionBindingEntity>();
 
@@ -674,6 +678,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
         });
 
         // ── Task Dispatch Outbox（TB-05）──────────────────────────
+        
+
+        // ── Task Dispatch Outbox（TB-05）──────────────────────
         modelBuilder.Entity<TaskDispatchOutboxEntity>(e =>
         {
             e.ToTable("task_dispatch_outbox");
@@ -681,6 +688,18 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(o => o.IdempotencyKey).IsUnique();
             e.HasIndex(o => new { o.Status, o.LeaseUntilUtc });
             e.HasIndex(o => o.AssignmentId);
+        });
+
+        // ── Task Scheduler Intents（P0 Scheduler 事件驱动层）──────
+        modelBuilder.Entity<TaskSchedulerIntentEntity>(e =>
+        {
+            e.ToTable("task_scheduler_intents");
+            e.HasKey(i => i.IntentId);
+            e.HasIndex(i => new { i.Source, i.SourceEventId }).IsUnique()
+                .HasDatabaseName("UX_task_scheduler_intents_source_event");
+            e.HasIndex(i => new { i.Status, i.CreatedAtUtc })
+                .HasDatabaseName("IX_task_scheduler_intents_status_created");
+            e.HasIndex(i => i.TaskId).HasDatabaseName("IX_task_scheduler_intents_task");
         });
 
         // ── Task Execution Bindings（TB-05）────────────────────────

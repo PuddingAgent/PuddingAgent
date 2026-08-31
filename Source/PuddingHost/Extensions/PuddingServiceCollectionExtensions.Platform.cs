@@ -195,7 +195,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<TaskDependencyStore>();
         builder.Services.AddSingleton<ITaskDependencyStore>(sp =>
             sp.GetRequiredService<TaskDependencyStore>());
-        builder.Services.AddSingleton<IExecutionWindowResolver, ConservativeExecutionWindowResolver>();
+        builder.Services.AddSingleton<IExecutionWindowResolver, ProviderModelExecutionWindowResolver>();
         var taskBoundGoalConfig = builder.Configuration
             .GetSection(TaskBoundGoalOptions.SectionName)
             .Get<TaskBoundGoalOptions>() ?? new TaskBoundGoalOptions();
@@ -233,7 +233,18 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<TaskExecutionRepairCoordinator>();
         builder.Services.AddSingleton<ITaskExecutionRepairCoordinator>(sp =>
             sp.GetRequiredService<TaskExecutionRepairCoordinator>());
+        // P0 Scheduler 事件驱动层：durable intent 队列 + 账本尾桥 + 事件驱动协调器
+        builder.Services.AddSingleton<TaskSchedulerIntentStore>();
+        builder.Services.AddSingleton<ITaskSchedulerIntentStore>(sp =>
+            sp.GetRequiredService<TaskSchedulerIntentStore>());
+        builder.Services.AddSingleton<TaskAutoDispatchStarter>();
+        builder.Services.AddSingleton<ITaskAutoDispatchStarter>(sp =>
+            sp.GetRequiredService<TaskAutoDispatchStarter>());
+        builder.Services.AddSingleton<TaskAutoDispatchScanRunner>();
+        builder.Services.AddSingleton<TaskSchedulerControlService>();
         builder.Services.AddHostedService<TaskAutoDispatchWorker>();
+        builder.Services.AddHostedService<TaskEventLedgerTailBridge>();
+        builder.Services.AddHostedService<TaskSchedulingCoordinator>();
         // Task Command 服务（TB-03：状态机校验 + CAS + Assignment + AppendEvent 原子语义）
         builder.Services.AddScoped<TaskCommandService>();
         // Task Agent 命令服务（TB-06：ClaimAsync / ApplyDispositionAsync / ListMineAsync / GetAsync）。
