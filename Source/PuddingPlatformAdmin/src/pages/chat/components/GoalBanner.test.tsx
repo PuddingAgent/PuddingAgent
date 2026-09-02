@@ -1,12 +1,10 @@
-// ── ADR-074 G1 GoalBanner 组件测试 ─────────────────
-import { fireEvent, render, screen } from '@testing-library/react';
+// ── ADR-074 Goal 顶部状态入口组件测试 ────────────────────────────────
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
 import type { GoalSnapshot } from '@/services/platform/api';
 import GoalBanner from './GoalBanner';
 
-const makeGoal = (
-  overrides: Partial<GoalSnapshot> = {},
-): GoalSnapshot => ({
+const makeGoal = (overrides: Partial<GoalSnapshot> = {}): GoalSnapshot => ({
   goalRunId: 'goal-1',
   conversationId: 'conv-1',
   agentInstanceId: 'agent-1',
@@ -27,15 +25,30 @@ const makeGoal = (
   ...overrides,
 });
 
+const openDetails = () =>
+  fireEvent.click(screen.getByRole('button', { name: /Goal .*查看详情/ }));
+
 describe('GoalBanner', () => {
-  it('renders nothing when goal is null', () => {
-    const { container } = render(
-      <GoalBanner goal={null} commandRunning={false} onCommand={jest.fn()} />,
+  it('offers a start control when the conversation has no goal', async () => {
+    const onCommand = jest.fn().mockResolvedValue('Goal 已创建');
+    render(
+      <GoalBanner goal={null} commandRunning={false} onCommand={onCommand} />,
     );
-    expect(container.firstChild).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '开始 Goal' }));
+    fireEvent.change(await screen.findByPlaceholderText(/描述要持续完成的目标/), {
+      target: { value: '完成调度器控制台并通过测试' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^开\s*始$/ }));
+
+    await waitFor(() =>
+      expect(onCommand).toHaveBeenCalledWith('set', {
+        objective: '完成调度器控制台并通过测试',
+        rounds: 32,
+      }),
+    );
   });
 
-  it('renders active goal with iteration progress and controls', () => {
+  it('renders a compact active status button and keeps details in popover', async () => {
     render(
       <GoalBanner
         goal={makeGoal()}
@@ -43,18 +56,57 @@ describe('GoalBanner', () => {
         onCommand={jest.fn()}
       />,
     );
-    expect(screen.getByText(/Goal 运行中/)).toBeTruthy();
-    expect(screen.getByText(/18\/256/)).toBeTruthy();
+
+    const statusButton = screen.getByRole('button', {
+      name: /Goal 运行中.*18\/256.*查看详情/,
+    });
+    expect(statusButton.getAttribute('data-goal-phase')).toBe('active');
+    expect(screen.queryByRole('dialog', { name: 'Goal 详情' })).toBeNull();
+
+    openDetails();
+
     expect(
-      screen.getByText(/修复全部失败测试并保持公开 API 不变/),
+      await screen.findByRole('dialog', { name: 'Goal 详情' }),
     ).toBeTruthy();
+    expect(
+      screen.getAllByText(/修复全部失败测试并保持公开 API 不变/).length,
+    ).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /暂停/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /取消/ })).toBeTruthy();
-    // active 状态不显示恢复按钮
+    expect(screen.getByRole('button', { name: /停止/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /恢复/ })).toBeNull();
   });
 
-  it('shows resume instead of pause for paused goal and calls command', async () => {
+  it('does not render a long task objective until the status opens', async () => {
+    const longObjective =
+      'Workspace Task: P0 统一 Scheduler 内核\n\nDescription:\n' +
+      '很长的任务说明 '.repeat(80);
+    render(
+      <GoalBanner
+        goal={makeGoal({
+          objective: longObjective,
+          phase: 'failed',
+          statusReason: 'Iteration ended as failed.',
+          terminalAtUtc: '2026-08-24T01:00:00Z',
+        })}
+        commandRunning={false}
+        onCommand={jest.fn()}
+      />,
+    );
+
+    const statusButton = screen.getByRole('button', {
+      name: /Goal 失败.*查看详情/,
+    });
+    expect(statusButton.getAttribute('data-goal-phase')).toBe('failed');
+    expect(screen.queryByText(/很长的任务说明/)).toBeNull();
+
+    openDetails();
+
+    expect(await screen.findByLabelText('Goal 目标详情')).toBeTruthy();
+    expect(screen.getByText(/原因：Iteration ended as failed/)).toBeTruthy();
+    expect(screen.getByText(/终止于/)).toBeTruthy();
+  });
+
+  it('shows resume for paused goal and calls command', async () => {
     const onCommand = jest.fn().mockResolvedValue('Goal 已恢复 active');
     render(
       <GoalBanner
@@ -63,15 +115,14 @@ describe('GoalBanner', () => {
         onCommand={onCommand}
       />,
     );
-    expect(screen.getByText(/Goal 已暂停/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /暂停/ })).toBeNull();
+    openDetails();
 
-    fireEvent.click(screen.getByRole('button', { name: /恢复/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /恢复/ }));
     await screen.findByText(/Goal 已恢复 active/);
     expect(onCommand).toHaveBeenCalledWith('resume', undefined);
   });
 
-  it('hides controls for terminal goal and shows terminal time', () => {
+  it('hides controls for terminal goal', async () => {
     render(
       <GoalBanner
         goal={makeGoal({
@@ -82,23 +133,27 @@ describe('GoalBanner', () => {
         onCommand={jest.fn()}
       />,
     );
-    expect(screen.getByText(/Goal 已完成/)).toBeTruthy();
+    openDetails();
+    await screen.findByRole('dialog', { name: 'Goal 详情' });
+
     expect(screen.queryByRole('button', { name: /暂停/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /恢复/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /取消/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /停止/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /新建 Goal/ })).toBeTruthy();
   });
 
-  it('disables buttons while a command is running', () => {
+  it('disables controls while a command is running', async () => {
     render(
-      <GoalBanner
-        goal={makeGoal()}
-        commandRunning
-        onCommand={jest.fn()}
-      />,
+      <GoalBanner goal={makeGoal()} commandRunning onCommand={jest.fn()} />,
     );
+    openDetails();
+
     expect(
-      (screen.getByRole('button', { name: /暂停/ }) as HTMLButtonElement)
-        .disabled,
+      (
+        (await screen.findByRole('button', {
+          name: /暂停/,
+        })) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
   });
 });
