@@ -9,14 +9,14 @@ Agent 模板只有一个全局层级，配置主源为 `data/agent-templates/{te
 
 ### 系统预制模板（AgentTemplatePreset）
 
-系统预制模板是软件随包资源，不属于用户数据目录的主源：
+系统预制模板是软件随包资源，不属于用户数据目录的主源。ADR-083 目标格式改为与正式模板同构的版本化目录包：
 
-- 源码位置：`Source/PuddingAgent/default-data/agent-template-presets/*.json`
-- 运行位置：应用输出目录 `default-data/agent-template-presets/*.json`
+- 源码位置：`Source/PuddingHost/default-data/agent-template-presets/{presetId}/`
+- 运行位置：应用输出目录 `default-data/agent-template-presets/{presetId}/`
 - 读取方式：`/api/global-agent-templates/presets` 直接读取软件输出物
-- 导入方式：用户在 `/global-agent-template` 点击“导入预制”，系统把 JSON 转成正式全局模板并写入 `data/agent-templates/{templateId}/`
+- 导入方式：用户在 `/global-agent-template` 点击“导入预制”，系统把目录包快照转成正式全局模板并写入 `data/agent-templates/{templateId}/`
 
-预制模板不复制到启动参数指定的 `data` 目录。`data` 目录只保存已导入、可编辑、可备份的正式模板。后续新增软件内置助手时，只需要新增一个 preset JSON 文件并随软件发布。
+预制目录包包含版本、来源、许可、Prompt Markdown、能力、Skill、模型、记忆与护栏；服务端按规范化内容计算 SHA-256。预制模板不复制到启动参数指定的 `data` 目录。`data` 目录只保存已导入、可编辑、可备份的正式模板。预制升级必须显式预览/确认，不得静默覆盖已导入模板或既有 Agent。完整决策见 [ADR-083](97ADR-083Agent系统预制模板版本化快照与DeepSeek鲸鱼娘模板ADR.md)。
 
 首批系统预制模板：
 
@@ -24,6 +24,7 @@ Agent 模板只有一个全局层级，配置主源为 `data/agent-templates/{te
 - `research-assistant`：研究助手，Service
 - `code-assistant`：代码助手，Service
 - `workspace-audit-assistant`：审计助手，Audit；用于审计工作空间内其他 Agent 的计划、执行过程、工具调用、证据链和风险，不是代码审计模板
+- `deepseek-whalechan`：DeepSeek 鲸鱼娘（社区角色），Service；使用原创文本人设与中性头像，不打包上游角色图片、Skill 文本或 Prompt 原文
 
 ### 全局 Agent 模板（GlobalAgentTemplate）
 
@@ -65,6 +66,8 @@ Workspace Agent 实例负责场景化与个性化字段：
 
 创建请求未填写某个可复制字段时，创建服务可以使用模板值完成一次性填充；
 实例创建后，读取、更新和执行均以 Agent 实例目录为配置源，不再产生继承关系。
+
+Workspace Agent 创建页选择来源模板后，应获取单一 `AgentTemplateCreationSnapshot`，原子填充基础信息、能力与 Skill、角色与 Prompt、模型与记忆、Smart 子代理和执行护栏；创建请求携带来源版本与内容哈希。模板选择后发生变化时必须提示重新加载，不能静默混用两个版本。系统预制或全局模板更新不修改既有 Agent。
 
 ### Agent 实例配置边界
 

@@ -73,6 +73,8 @@
 67. [ADR-079 Agent 消息交错内容流与最新行为组披露](93ADR-079Agent消息交错内容流与最新行为组披露ADR.md)
 68. [ADR-080 任务看板分层读取、子任务与命令化拖拽](94ADR-080任务看板分层读取子任务与命令化拖拽ADR.md)
 69. [ADR-081 Agent Harness 兼容边界与工具协议适配](95ADR-081AgentHarness兼容边界与工具协议适配ADR.md)
+70. [ADR-082 Pudding 外部工作空间、Agent 与消息 API](96ADR-082Pudding外部工作空间Agent消息APIADR.md)
+71. [ADR-083 Agent 系统预制模板版本化快照与 DeepSeek 鲸鱼娘模板](97ADR-083Agent系统预制模板版本化快照与DeepSeek鲸鱼娘模板ADR.md)
 
 文档分工：
 
@@ -96,6 +98,8 @@
 - Agent 消息正文、可披露思考、工具与委派的真实交错、唯一正文源、会话级唯一最新行为组披露、柔和收起/卸载和 viewport 单一滚动权威以 [ADR-079](93ADR-079Agent消息交错内容流与最新行为组披露ADR.md) 为准；代码级施工见 [完整实施方案](../Features/Agent消息交错内容流与最新行为组披露完整实施方案.md)。
 - Task `Ready -> Completed` 的证据化命令、单层子任务、普通 List 仅 `taskId/title`、Index/Card/Detail 三层投影、评论与备注分型、命令化看板拖拽、global-cursor Watch 和规模化性能门禁以 [ADR-080](94ADR-080任务看板分层读取子任务与命令化拖拽ADR.md) 与 [详细设计](../Features/任务看板状态机子任务渐进披露与高性能拖拽优化设计方案.md) 为准；当前仅完成设计，未实现、部署或生产验收。
 - 模型后训练 Harness 与 Pudding 工具协议的差异，以 [ADR-081](95ADR-081AgentHarness兼容边界与工具协议适配ADR.md) 和 [详细设计](../Features/AgentHarness兼容与工具调用效率修复设计方案.md) 为准：canonical 工具唯一，别名在统一执行门禁前归一化，提示保持短且稳定，`rg` no-match 与真实失败分离；H0 已实现，当前进程部署和真实模型验收未完成。
+- 外部工作空间/Agent 发现与消息接入以 [ADR-082](96ADR-082Pudding外部工作空间Agent消息APIADR.md) 和 [使用说明](../Features/Pudding外部工作空间Agent消息API设计与使用说明.md) 为准：复用 ADR-075 opaque Token 与 scope/workspace Policy，消息统一进入 Message Fabric 和 canonical Conversation；`202`/Delivery ACK 不等于 Agent 执行完成，执行结果由自有 message receipt 关联 canonical terminal event。源码与定向测试已完成，产品部署、RateLimiter、OpenAPI 和真实模型 smoke 未完成。
+- 系统预制模板目录包、完整 Creation Snapshot、版本/内容哈希/许可来源、显式导入升级、Workspace Agent 创建时全字段自动填充，以及 `general-assistant` 重写和 `deepseek-whalechan` 社区角色模板以 [ADR-083](97ADR-083Agent系统预制模板版本化快照与DeepSeek鲸鱼娘模板ADR.md) 与 [完整设计](../Features/Agent系统预制模板完整快照与DeepSeek鲸鱼娘模板设计方案.md) 为准；模板更新不得反向覆盖既有 Agent，当前仅设计完成。
 - 若需要继续细化事件命名、Envelope、重放与死信策略，应优先阅读 [10事件系统与事件总线](10事件系统与事件总线.md)。
 - 若需要研究 token 成本、前缀缓存命中、工具输出/日志/RAG 进入 LLM 前压缩和 Headroom 参考路线，应优先阅读 [18上下文缓存可观测性ADR](18上下文缓存可观测性ADR.md)、[43ADR-042上下文自动压缩与主动Compact命令ADR](43ADR-042上下文自动压缩与主动Compact命令ADR.md) 与 [44ADR-043缓存统计闭环ADR](44ADR-043缓存统计闭环ADR.md)。
 - 若需要讨论 Hermes 型系统的 1~7 开发方向、优先级和待细化问题，应优先阅读 [49ADR-048Hermes型系统开发方向参考ADR](49ADR-048Hermes型系统开发方向参考ADR.md)。

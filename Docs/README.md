@@ -26,6 +26,8 @@
 	- 自动权限审查唯一设计入口：合并确定性危险命令防火墙与三层漏斗，冻结用户审批最后手段、参数级风险分类、系统派生风险事实、重复审批熔断和 `save_memory upsert` 零审批；关联唯一 P1 任务 `e187a8bbd2d640bb87b96fd3cf548966`，尚未部署验收。
 - `Docs/Features/AgentHarness兼容与工具调用效率修复设计方案.md` / `Docs/07架构/95ADR-081AgentHarness兼容边界与工具协议适配ADR.md`
 	- 冻结“canonical 工具唯一、统一执行边界前适配、短稳定提示、no-match 结构化、round-boundary 动态工具激活、discovery-only 熔断、可选而非默认 bundled rg”的 Harness 兼容边界；2026-08-28 已修复 216 次 `search_tools` 高命中零 Goodput 事故，进程外部署与真实模型验收未完成。
+- `Docs/Features/Agent系统预制模板完整快照与DeepSeek鲸鱼娘模板设计方案.md` / `Docs/07架构/97ADR-083Agent系统预制模板版本化快照与DeepSeek鲸鱼娘模板ADR.md`
+	- 冻结系统预制目录包、完整 Creation Snapshot、版本/哈希/许可、显式升级与 Workspace 创建时全字段自动填充；重写通用助手并增加 `deepseek-whalechan` 原创文本社区角色模板。当前为 Proposed，未修改产品代码或运行数据。
 - `Docs/Features/Agent消息交错内容流与最新行为组披露完整实施方案.md`
 	- Flash 可直接施工的代码级合同：canonical sequence、TextBlock ⇄ ActivityGroup、会话级唯一最新披露 owner、完整 reasoning 换行、工具详情懒加载、柔和收起/卸载、性能、逐文件任务卡、测试命令和双阶段真实验收。
 - `Docs/07架构/93ADR-079Agent消息交错内容流与最新行为组披露ADR.md`
@@ -41,6 +43,8 @@
 - `Docs/Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md`
 	- 2026-08-28 已部署的是五分钟 Shadow；后续源码已补结构化路由、auto-dispatch opt-in、Backlog refinement、版本化 WorkUnit、Acceptance/执行前双重 Plan/Node 围栏、顺序推进、round/tool/time/input/output/cost 硬预算和五分钟确定性 repair。新源码尚未进程外部署；AwaitHandle/checkpoint、blocked 重预约、动态模型反馈、authoritative 与七夜验收仍未完成。
 	- 按 Core/Platform/Runtime/Host/Admin 列出类、表、事务、事件、文件、施工卡、测试、切换和生产验收门禁；2026-08-28 已进入五分钟 shadow 对账，修复终态 Assignment false-busy 与通用 PATCH 伪完成，authoritative 仍未开放。
+- `Docs/Features/Scheduler夜间有效调度与Execution生命周期闭环代码级实施方案.md`
+	- 记录 2026-08-31 夜间“Intent 已 done 但无 durable decision、自动派发为 0、legacy execution claim 永久占用 Agent、Blocked 卡不可干预”的证据，给出 Tracker/Repair、task-scoped Outcome、staged mode、scan-run、Blocked UI、预算硬门禁和真实自动派发 smoke 的文件级施工步骤；状态为 Proposed，不代表源码或产品验收完成。
 - `Docs/07架构/91ADR-076遥测与调试数据保留及Core存储管理ADR.md`
 	- 冻结 Core + Web Admin `/storage` 边界、语义数据类型目录、唯一在线维护 writer、关键事实保护和禁止在线全库 VACUUM；当前为 Proposed。
 - `Docs/Features/遥测调试数据自动过期与Web存储管理设计方案.md`

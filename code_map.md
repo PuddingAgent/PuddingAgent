@@ -1,6 +1,6 @@
 # PuddingAgent CodeMAP
 
-> 顶层快速索引 | 2026-08-28 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
+> 顶层快速索引 | 2026-08-31 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
 
 ## 项目定位
 
@@ -13,7 +13,8 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `README.md` / `README_zh-CN.md` | 中英文产品与目标架构入口；Windows Desktop/Core 产品边界、Plugin/Function/Hook/Event/Projection 五类合同、Agent FSM、函数图编排、前端思想、现状缺口与路线 |
 | `Docs/Features/工作区TODO与峰谷节能任务编排设计方案.md` | 工作区 TODO 台账、Agent 认领/拒绝/回报、durable 自动派发与定时消息、可信 idle、心跳 0、峰谷 WorkAdmissionFence，以及 Hook 触发的临时质询子代理、GoalRun 有界循环、manifest/Admin 模型路由、防无限循环熔断和公共 Plugin/Function/Event/Projection 映射 |
 | `Docs/Features/Goal持久目标自主续行与自动压缩完整设计方案.md` | `/goal` 完整专项设计；统一 Web/Desktop/Connector 命令、持久 GoalRun、事件驱动 continuation、256 个外层 Goal Iteration、证据 Verifier、用户抢占、重启停用、自动压缩和 Task-bound Goal；明确不依赖 Heartbeat |
-| `Docs/Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md` | 低峰自动执行施工图；2026-08-28 已部署五分钟 shadow；后续源码已补结构化路由、显式 opt-in、Backlog refinement、版本化 WorkUnit、acceptance/execution 双 fence、顺序推进、round/tool/time/input/output/cost 硬预算，以及五分钟 Tracker 确定性 repair。新源码尚未进程外部署；AwaitHandle/checkpoint、blocked 重预约、动态模型反馈、authoritative、真实 off-peak 与 7 夜验收仍未完成 |
+| `Docs/Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md` | 低峰自动执行施工图；2026-08-29 已由 Desktop 构建/加载新程序集并完成真实自动派发 smoke：同步后代 Token 预算传播、Task-bound Failed 释放和 stale Message target 淘汰已验证；warm cache 97.31%（DeepSeek 98.78%）仍低于 >99%，事件驱动 intent、Goal 成本/后代工具归因、AwaitHandle/checkpoint、动态模型反馈与 7 夜验收仍未完成 |
+| `Docs/Features/Scheduler夜间有效调度与Execution生命周期闭环代码级实施方案.md` | 2026-08-31 夜间调度复盘的代码级收口方案；把有效调度冻结为 Intent→Decision/Outcome→Assignment/Reservation→TaskGoalBinding/GoalRun→ExecutionRun→Verifier/Task terminal，并细化 legacy false-busy 修复、事件 Intent 可靠结算、staged mode、scan-run 持久化、Blocked 恢复 UI、Runtime 预算与无人工 smoke 的实施顺序和验收门禁 |
 | `Docs/deepseek-reference-architecture-master-plan-2026-08-14.md` | 本次会话的 deepseek-harness/pi 参考架构总蓝图；以“一切业务能力皆插件”为第一原则，覆盖 Model/Tool/Skill/Session/Agent Loop/Sandbox/Storage/Schedule/UI、统一运行事实、文件级改造矩阵、任务图与 T00-T16 施工步骤 |
 | `Docs/07架构/67ADR-066*.md` | Browser 能力与 Douyin 分层决策 |
 | `Docs/07架构/68*.md` | WebView2 自动化分阶段实施规格 |
@@ -32,6 +33,8 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/07架构/87ADR-073*.md` | 当前产品施工总表与冲突裁决基线；列出 30 项产品任务、17 项 T00–T16 平台底座任务及专项 Phase 去重映射，覆盖目标、优先级、工作量、难度、依赖、设计位置和里程碑 |
 | `Docs/07架构/89ADR-074*.md` | Goal 专项架构决策；冻结外层 GoalRun/内层 Agent Loop 双层预算、256 accepted Iteration、durable outbox、证据验证、Task-bound Goal、Availability 与低峰派发；2026-08-26 G2/G3 和 Task-bound authoritative 源码链已落但默认关闭，真实低峰/完整 Verifier/Admin/进程外门禁未通过，ADR 仍为 Proposed |
 | `Docs/07架构/90ADR-075*.md` / `Docs/Features/第三方任务看板AccessToken与外部API详细设计方案.md` | 第三方任务看板开发合同；冻结 hashed opaque Access Token、ASP.NET Core 独立 scheme + scope/workspace Policy、外部 API v1、ETag/幂等、追加式 TaskEvaluation 与 Admin Access Token 管理器；P1（Token 后端）+ P3（Admin UI）+ P2 基本功能已实现：`pdt_v1_` opaque Token 摘要存储、PuddingExternalAccessToken scheme、Admin 管理 API/UI、last-used 合并写、External Task API v1（list/get/create/patch/comments/evaluations/commands + ETag/428/412 + 简化幂等）共 65 项后端测试；SSE Watch/RateLimiter/OpenAPI 与 P4（部署收口）未实现，External API 默认关闭 |
+| `Docs/07架构/96ADR-082*.md` / `Docs/Features/Pudding外部工作空间Agent消息API设计与使用说明.md` | External API v1 的 Workspace/Agent/消息扩展；新增 `workspaces.read`、`agents.read`、`messages.send`，安全目录投影、`canonical_turn` Message Fabric ingress、幂等 `202 + Location` 和 Token-owned execution receipt；明确 Delivery accepted 不等于 Agent terminal。External/Token 7/7 + Dispatcher 2/2 聚焦测试与 Desktop Loopback 真实模型 smoke 已通过；非 Loopback HTTPS、RateLimiter/OpenAPI/P4 运维收口待完成 |
+| `Docs/07架构/97ADR-083*.md` / `Docs/Features/Agent系统预制模板完整快照与DeepSeek鲸鱼娘模板设计方案.md` | Agent 系统预制模板 v2 目标设计；目录包、完整 Creation Snapshot、版本/内容哈希/许可来源、显式导入升级与 drift 保护，Workspace 创建时选择模板即原子填充全部六组配置；重写通用助手并新增原创文本的 `deepseek-whalechan` 社区角色预制，既有 Agent 不被模板更新反向覆盖。当前仅设计完成，未实施或产品验收 |
 | `Docs/07架构/91ADR-076*.md` / `Docs/Features/遥测调试数据自动过期与Web存储管理设计方案.md` | 遥测/Debug 存储治理设计 + 首轮实现（Phase 0–3 已落地：语义目录/快照估算/单 writer 协调器/语义 API/Web /storage 页面；Phase 4 生产验收待做）；上下文日聚合复用既有 `context_layer_daily_rollups`、retention 索引收编目录所有权、旧 /databases 端点与 Desktop 旧页面捆绑退役、appsettings Retention 节已迁移 system.json |
 | `Docs/07架构/92ADR-077*.md` | 主代理原生视觉目标设计；typed image content、Workspace Artifact、DeepSeek Responses `input_image`/图片型工具结果、Files API、多轮/重启恢复、fail-closed；Image Reader 重定位为 URL/任意绝对路径/Artifact 取用工具，默认当前模型原生读取，文本模型或第二意见才委派 helper；V0–V2 已实现（typed parts、fail-closed Planner、图片工具结果、visionHelperModel、删除自动预观察），V3 Files API 与 V4 真实模型 smoke 待做 |
 | `Docs/Features/Chat图片消息回放与前端旧Bundle缓存修复方案.md` | 2026-08-26 Chat 图片占位事故的可施工修复方案；冻结 Agent-first `contentParts` 透传、typed parts 优先兼容、localhost 旧 Service Worker 清理、入口/哈希资源缓存合同、build identity 和两段式产品验收；关联 P1 Task `ceba781342aa4353901654d1897092cb`，尚未实施 |
@@ -50,7 +53,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md` | 聊天页主代理余额徽标 + 前后端双注册表计费抽象：后端 `ILlmBalanceProvider` 查询适配器（DeepSeek `/user/balance` 首个落地，`/v1` 剥离修复）+ 前端 `providerBilling.ts` 展示适配器；新服务商扩展步骤、5min 低频轮询/手动刷新、apiKey 不进日志约束 |
 | `Docs/QA/QA-2026-08-03*.md` | Qwen 输入上限修复验收 |
 | `Agents.md` | 仓库级开发约束 |
-| `dev-up.py` | 本地开发监督器 |
+| `dev-up.py` | 本地开发监督器；Codex MCP 子进程必须通过 5100 TCP readiness 后才启动 Backend，避免 MCP workspace reconciliation 启动竞态 |
 | `How-Debuge.md` | 诊断路径 |
 
 ## 顶层目录
@@ -59,7 +62,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 |------|------|----------|
 | `Source/PuddingAgent/` | 🔑 入口 (Program.cs · Console/DesktopChild 薄壳) | [code_map](Source/PuddingAgent/code_map.md) |
 | `Source/PuddingRuntime/` | 🔑 Agent Loop · LLM · 工具 · 上下文管线；压缩与冷水合共享 canonical ChatMessages 增量同步门禁 | [code_map](Source/PuddingRuntime/code_map.md) |
-| `Source/PuddingDesktop/` | 🔑 WPF Launcher · 固定端口 Core 子进程 · Core 点火构建/事务部署/程序集哈希验收 · Browser 工作区 · 调试模式（源码前后端 + 80 端口反向代理）· 运行中心前端构建部署按钮 · 客户端精灵源素材 | [code_map](Source/PuddingDesktop/code_map.md) |
+| `Source/PuddingDesktop/` | 🔑 WPF Launcher · 固定端口 Core 子进程 · 回环鉴权控制面（Core/前端制品加载、重启、诊断）· Core 点火事务部署/程序集哈希验收 · Browser 工作区 · 调试模式与运行中心 · 客户端精灵源素材 | [code_map](Source/PuddingDesktop/code_map.md) |
 | `Source/PuddingHost/` | 🔑 组合根 · 全网卡 HTTP/本机控制地址 · Browser Bridge · 飞书连接器 | [code_map](Source/PuddingHost/code_map.md) |
 | `Source/PuddingCore/` | 🔑 抽象与契约 · 接口 · 模型 | [code_map](Source/PuddingCore/code_map.md) |
 | `Source/PuddingPlatform/` | 🔑 Session · API（含认证/当前用户投影）· EF Core · 消息网关 | [code_map](Source/PuddingPlatform/code_map.md) |
@@ -99,14 +102,16 @@ Agent Loop → LlmInvocationService → DirectLlmClient
         stats_daily_cache_days 完成标记；当天实时计算，Rebuild 后按月失效）
     → TokenUsageEvents 继续只承担会话/角色/上下文归因
 
-TaskAutoDispatchWorker（5min Shadow）
-  → BacklogRefinementEvaluator（显式 autoDispatchEnabled；只读 ReadyCandidate/NeedsRefinement）
+TaskAutoDispatchWorker（5min bounded authoritative；MaxStartsPerScan=2）
+  → AgentAvailabilityProjectionStore（每轮先刷新全部 Agent；即使候选为 0 也输出 idle/busy/unknown）
+  → BacklogRefinementEvaluator/Store（显式 autoDispatchEnabled；结构化准入后 CAS Backlog→Ready）
   → TaskAutoDispatchEvaluator（Ready/Deferred；结构化类型/能力/模型路由 + Availability/Window）
+  → ProviderModelExecutionWindowResolver（llm.providers.json 版本化价格窗口；未知 fail closed）
   → TaskExecutionPlanCompiler（结构化 Task → 版本化 WorkUnit DAG + budget/scope/dependency SHA-256）
   → TaskExecutionTracker（active Binding；Task→Plan/WorkUnit→Assignment→Reservation→Goal→Iteration→Execution→Outbox 五态跟踪）
   → GoalContinuationWorker / ConversationAcceptanceStore（canonical plan/node/fingerprint + reservation 二次围栏；首个 WorkUnit 原子 Running）
   → ExecutionCommandReader / ExecutionRunCoordinator（执行前重读 Command→Goal→Binding→Plan/Node；Agent 与 WorkUnit rounds/tools/duration 取更严格值）
-  → authoritative 仍关闭；任何 promotion/start/repair 都必须经唯一 CAS/fencing 写入者
+  → 每 Agent 每轮最多一个、全局最多两个；任何 promotion/start/repair 都必须经唯一 CAS/fencing 写入者
 
 Admin ChatMain 余额徽标 → useProviderBalance (5min 轮询/手动刷新)
   → GET /api/llm/providers/{id}/balance → LlmProviderApiController.GetBalance
@@ -383,6 +388,35 @@ Chat first paint → AgentConversationProjectionService
   → npm run build 强制 Chat bundle budget：同步脚本 ≤1536 KiB、Chat 路由 ≤480 KiB，
     并阻断任务看板/Checkpoint/ContextMenu 回流首载共同块
 ```
+
+Task auto execution settlement (2026-08-29 hardening)
+  → GoalSettlementStore: terminal completeness scans the full Turn window; EvidenceRefs retain the newest bounded 128 events
+  → settlement atomically projects RunId/elapsed/LLM rounds/tool calls/input-output tokens into GoalIteration + Goal totals
+    (root Turn canonical usage + recursive descendant TokenUsageEvents inside the exact Turn window)
+  → blocked Task-bound attempt atomically releases Binding/Assignment/Reservation, keeps Task Blocked/NeedsReview and terminals the attempt Goal as Failed audit history
+  → dispatch atomically retires legacy detached Blocked Task Goals for the same Agent/conversation (including a prior Task) before creating a fresh fenced Goal, preventing UX_goal_runs_active from masquerading as task_goal_lost_race
+  → five-minute tracker/repair heals historical blocked_binding_still_active ownership before the next dispatch
+  → legacy delivered-without-execution assignments are fail-closed to Blocked and released after the stall threshold
+  → scan order is tracking/repair → availability rebuild → candidate evaluation → dispatch in the same interval
+  → task dispatch outbox revalidates Task/Assignment before send and again at atomic bind; stale/terminal conflicts dead-letter, transient send/bind failures stop at MaxAttempts, shutdown cancellation stays lease-recoverable
+  → WorkUnit remaining input/output/cost budgets propagate through tool and sub-agent boundaries; synchronous delegated usage returns to the parent ledger
+  → AgentOutputTruncationPolicy: one action-forcing recovery for length/incomplete, then explicit failure
+  → ConversationProjector: direct usage dedup uses SQL-stable fingerprint candidates + bounded in-memory time fence
+
+Task scheduler + Goal user control plane (2026-08-31 source-ready)
+  → Admin Task board exposes explicit auto-dispatch opt-in and structured task routing facts
+  → SchedulerDrawer consumes server status/policy/actions/evaluate: pause/resume, immediate scan/repair, revision-CAS hot policy
+  → TaskAutoDispatchScanRunner is the shared periodic/manual reconciliation order; dynamic policy reaches worker, event bridge, coordinator and starter
+  → GoalBanner covers start/pause/resume/stop/new without deleting durable Goal history
+  → Goal continuation transport keeps new Unicode readable while escaping envelope delimiters; Admin projections decode legacy JSON escapes only for server-marked goal_continuation messages
+  → authoritative design: Docs/Features/任务调度器与Goal用户控制面设计.md; external Desktop/Core deploy and product smoke remain separate gates
+
+Task scheduler effective-dispatch closure (2026-09-01 proposed)
+  → effective dispatch requires Intent → durable task-scoped Decision/Outcome → fenced Assignment/Reservation → TaskGoalBinding/GoalRun → canonical ExecutionRun → verified Task settlement
+  → legacy execution claims must join execution_runs terminal state; terminal/orphaned claims release ownership through Serializable deterministic repair instead of remaining Healthy forever
+  → event Coordinator completes each Intent only after its triggering Task has a durable stable outcome; single/bounded modes share the same Bridge/Coordinator/Starter gates
+  → durable scan-run summaries preserve empty/failed scans across restart; Blocked recovery UI uses diagnostics + preview + per-task ETag commands
+  → code-level implementation and task slicing: Docs/Features/Scheduler夜间有效调度与Execution生命周期闭环代码级实施方案.md
 
 ## 测试项目
 

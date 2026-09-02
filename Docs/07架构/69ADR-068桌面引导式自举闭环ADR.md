@@ -1,6 +1,6 @@
 ﻿# ADR-068：桌面引导式自举闭环（重建-重启）
 
-- **状态**：已接受（2026-08-28 修订：程序集部署与加载校验闭环）
+- **状态**：已接受（2026-08-29 修订：Codex 可调用的 Desktop 本机制品控制面）
 - **日期**：2026-08-06
 - **相关**：ADR-041（开发构建与发布打包链路分离）、`YoloSignalService`（信号先例）、`How-Debuge.md §11.17`、`Source/code_map.md`
 - **提交**：`0bbb223`（WP-B1 信号服务）、`4a09175`（WP-B2 HTTP 端点）、`b6e1bc4`（回填不阻塞修复）
@@ -28,10 +28,17 @@ Desktop 的定位是未来的开发控制台（VS 启动/双击启动，`dev-up.
   | `POST /desktop/bootstrap/core/stop` | 原子停 Core | 200 / 401 / 409 |
   | `POST /desktop/bootstrap/build` | 原子构建（前置：Core 已全停） | 200 / 401 / 409 |
   | `POST /desktop/bootstrap/core/start` | 原子启 Core | 200 / 401 / 409 |
+  | `POST /desktop/bootstrap/core/restart` | 不替换制品，仅冷重启 Core | 200 / 401 / 409 / 422 |
+  | `POST /desktop/bootstrap/core/deploy-restart` | 加载仓库内预构建 Core 制品、清单校验并重启 | 200 / 401 / 409 / 422 |
+  | `POST /desktop/bootstrap/frontend/build-deploy` | Desktop 执行 `pnpm run build` 并热部署 Admin 静态制品 | 200 / 401 / 409 / 500 |
+  | `POST /desktop/bootstrap/frontend/load` | 不重新编译，加载仓库内已构建 `dist`；可校验 `index.html` SHA-256 | 200 / 400 / 401 / 409 / 500 |
+  | `GET /desktop/bootstrap/diagnostics` | 鉴权后的 Desktop/Core 状态、部署忙状态、路径与最近 100 行有界日志 | 200 / 401 |
   | `GET /desktop/bootstrap/status` | busy 标志 + coreState + 上次结果 | 200 |
 - **鉴权**：`X-Control-Token` 头或 body `token` 字段，与 `<DataRoot>/config/system.json → desktop.core.controlToken` 比对，恒定时间比较。token 由 `DesktopControlTokenService` 生成（32 字节 hex），UI 只显示「已生成/重新生成」，不回显全文。
 - **信号文件轮询**（`Enabled` 默认 false）：保留 `<DataRoot>\config\rebuild.signal` 文件协议作为备用通道；畸形信号删除防重试循环；关机时保留信号防误导。
-- **并发守卫**：`busy` 标志（Interlocked）保证同一时刻只有一个引导操作；重复触发得到 409 或「信号已忽略」。
+- **并发守卫**：Core 生命周期/程序集操作由 `busy`（Interlocked）串行化；前端构建/加载由独立 `SemaphoreSlim` 串行化，避免两个请求互相删除 `wwwroot/admin`。重复触发统一返回 409。前端静态替换不占用 Core 生命周期锁，因此 Core 运行中可热部署。
+- **制品路径围栏**：Core 与前端预构建目录都必须是仓库根内的绝对路径；前端目标仍强制以 `wwwroot/admin` 结尾，避免控制面退化为任意本地文件复制器。
+- **诊断边界**：`/diagnostics` 必须鉴权，返回有界日志且绝不回显 ControlToken；公开 `/status` 只保留低敏状态与上次结构化结果。
 
 ### 2.2 闭环流程
 
@@ -97,6 +104,16 @@ Get-Content D:\data\config\rebuild.signal.result.json
 # success=true, buildExitCode=0, assembliesReloaded=true,
 # preparedArtifactManifestSha256 == loadedArtifactManifestSha256,
 # assembliesReloaded=true, coreRestarted=true, errors=[]
+
+# 4) Codex/外部控制器加载已经编译好的前端 dist（不再次运行 pnpm）
+$systemConfig = Get-Content D:\data\config\system.json -Raw | ConvertFrom-Json
+$headers = @{ 'X-Control-Token' = $systemConfig.desktop.core.controlToken }
+$body = @{ artifactDirectory='E:\github\AgentNetworkPlan\PuddingAgent\Source\PuddingPlatformAdmin\dist' } | ConvertTo-Json
+Invoke-RestMethod -Method Post http://127.0.0.1:8199/desktop/bootstrap/frontend/load `
+  -Headers $headers -Body $body -ContentType 'application/json'
+
+# 5) 鉴权诊断（不得输出或记录 $headers）
+Invoke-RestMethod http://127.0.0.1:8199/desktop/bootstrap/diagnostics -Headers $headers
 ```
 
 失败诊断顺序：`result.json errors[]` → `<DataRoot>\logs\desktop-bootstrap-build.log` → 确认旧二进制已自动恢复 Core（status coreState=Ready 即系统存活）。
@@ -115,5 +132,6 @@ Get-Content D:\data\config\rebuild.signal.result.json
 ## 6. 后果与后续
 
 - **已得**：Agent 可全自助完成「改码 → 构建/交付产物 → 事务部署 → 重启 → 程序集哈希验收」；每次尝试都有结构化 result 审计。
+- **已得**：Codex 等本机自动化客户端可通过同一鉴权控制面加载前端/Core 预构建制品、执行冷重启并取得有界诊断，不需要复制 Desktop 内部状态机。
 - **约束**：触发方会随 Core 重启掉线，必须在 goal/记忆中预置「重启后第一件事」清单（本会话两次演练均靠此恢复）。
 - **后续阶段**：增量编译提速、热重载、Desktop 自更新（需独立 updater 进程）、UI 触发按钮接线 `TriggerBootstrapAsync`。
