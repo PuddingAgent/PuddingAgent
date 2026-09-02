@@ -34,6 +34,13 @@
 | `Platform/IExecutionCommandReader.cs` | ExecutionCommand 只读边界；返回从 canonical Goal/Task/Plan 解析的 `ExecutionWorkUnitContext` 及 rounds/tools/duration/token/cost 冻结预算 |
 | `Platform/AgentProjectionDtos.cs` | Agent 会话读模型；`ProcessSummaryItem.Sequence` 为 canonical 必填，active/detail 输出携带 `TurnEventWindow`（through/min/max/hasMoreBefore）供前端识别截断 |
 
+## 外部 API 安全合同（ADR-075 / ADR-082）
+
+| 文件 | 用途 |
+|------|------|
+| `Security/ExternalAccessTokenContracts.cs` | opaque Token 创建/查询合同、claims 与认证 scheme 常量；External principal 不获得 Admin role |
+| `Security/ExternalTaskApiScopes.cs` | External API v1 scope 唯一白名单；除 `tasks.*` 外包含 `workspaces.read`、`agents.read`、`messages.send`，无 `*` 超级权限 |
+
 ## 模型（Models/）
 
 | 文件 | 用途 |
@@ -87,7 +94,7 @@
 | `Agents/` | Agent 抽象定义 |
 | `SubAgents/` | 子代理抽象 |
 | `Platform/BuiltInAgentTemplates.cs` | 内置 Agent 模板的唯一权威源；V2 Default/Grant 直接决定 Low/High 子代理工具投影，Host 不得复制同全名类 |
-| `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约；大型任务基线 600 轮/2400 工具调用/24h + 20 轮/30 分钟收尾宽限，并定义临时执行身份目录保留/隔离配置；父 Agent 只可指定 `resume_sub_agent_id`，不可传数值预算 |
+| `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约；普通大型任务基线 600 轮/2400 工具调用/24h，managed WorkUnit 硬上限 40 轮/120 工具调用，并定义收尾宽限与临时目录保留；父 Agent 只可指定 `resume_sub_agent_id`，不可扩大系统预算 |
 | `Runtime/ContextAssemblyContracts.cs` | 上下文装配契约；同时携带执行 AgentInstanceId 与稳定 ConfigurationAgentInstanceId，避免把 SubSessionId 当持久配置目录 |
 | `Runtime/ContextSegmentContracts.cs` | ContextSegmentLedger 数据契约（§6.1）+ ContextSegmentTier（T0–T4 分级枚举）|
 | `Runtime/ContextTierPlannerContracts.cs` | T0–T4 分级规划器契约：段输入/分配结果/阈值选项 + IContextTierPlanner |
@@ -151,7 +158,7 @@
 
 | 目录/文件 | 用途 |
 |------|------|
-| `Configuration/` | 配置抽象；`PuddingDataPaths` 提供临时子代理目录隔离根；`PuddingBuildOutputSync` 提供同卷暂存、逐文件回滚、路径边界和 SHA-256 点火部署原语；`llm.providers.json` 的协议归属模型支持同一 Provider 混合 `openai` / `responses` / `anthropic` |
+| `Configuration/` | 配置抽象；`PuddingDataPaths` 提供临时子代理目录隔离根；`PuddingBuildOutputSync` 提供同卷暂存、逐文件回滚、路径边界和 SHA-256 点火部署原语；`llm.providers.json` 支持每模型协议与版本化 `priceWindows/profileVersion/sourceUrl`，供低价自动调度 fail-closed 解析 |
 | `Serialization/` | 序列化契约 |
 | `Skills/` | 技能系统抽象 |
 

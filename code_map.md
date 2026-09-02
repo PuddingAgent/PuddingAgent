@@ -53,6 +53,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md` | 聊天页主代理余额徽标 + 前后端双注册表计费抽象：后端 `ILlmBalanceProvider` 查询适配器（DeepSeek `/user/balance` 首个落地，`/v1` 剥离修复）+ 前端 `providerBilling.ts` 展示适配器；新服务商扩展步骤、5min 低频轮询/手动刷新、apiKey 不进日志约束 |
 | `Docs/QA/QA-2026-08-03*.md` | Qwen 输入上限修复验收 |
 | `Agents.md` | 仓库级开发约束 |
+| `Directory.Build.props` | 全项目通用 .NET 构建属性；SDK 默认项统一排除项目内 `temp/**`、`tmp/**`，避免测试/构建输出递归自复制并触发 Windows 超长路径评估失败 |
 | `dev-up.py` | 本地开发监督器；Codex MCP 子进程必须通过 5100 TCP readiness 后才启动 Backend，避免 MCP workspace reconciliation 启动竞态 |
 | `How-Debuge.md` | 诊断路径 |
 
@@ -249,7 +250,7 @@ PuddingHost 产品组合根 → Runtime tool assembly scan
   → PuddingApplicationHostCompositionTests 用 DesktopChild 入口防止“构建成功、Core 启动即退出”
 
 Desktop → Core Ready 契约（2026-08-28 增加冷升级启动租约）
-  → Core 初始化期间每 5s 发 PUDDING_DESKTOP_STARTING（协议/PID/单调序号）；Desktop 以 startupTimeoutSeconds 作为静默超时，绝对上限为 5 倍且最高 10 分钟
+  → Core 初始化期间每 5s 发 PUDDING_DESKTOP_STARTING（协议/PID/单调序号）；Desktop 以 startupTimeoutSeconds 作为静默超时，合法租约允许 10 倍且最高 10 分钟的有界冷升级窗口
   → Core 在全部 hosted service StartAsync 返回后才发 PUDDING_DESKTOP_READY；租约不能替代 Ready、PID 校验或 /health/ready
   → ConnectorHostLifecycleService 本地注册保持同步，StartAllAsync 后台执行（ApplicationStopping 绑定）
   → FeishuWebSocket 端点发现/WS 握手各 15s 上限；飞书不可达只 Faulted 单个连接器，不阻塞 Ready

@@ -17,16 +17,17 @@
 |------|------|
 | `Services/AgentExecutionService.cs` | 🔑 执行编排入口，session 单写者，liveness/progress 报告；把日期、召回和 inbound context 与当前消息组成 volatile User tail；同一 prefix epoch 冻结 message-zero system bytes，真实稳定头变化一次性提交并显式归因；以 `CURRENT USER TURN/input_sha256` 围栏当前输入；提供 Harness 对齐的 warm-prefix checkpoint（原样 replay、有效缩小时原子提交、失败保留 history、每 dispatch 一次）和 compaction Token 归因 |
 | `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial）；共用冻结 system 与 warm-prefix checkpoint；dispatch 冻结 tool catalog/schema，`search_tools` 激活在下一 LLM round 单调生效并标记 `tool_spec_changed`；prefix-v2 事件带 history anchor/reason/serialization；预算裁剪后以当前轮围栏 fail-closed；canonical 相同调用第二次得到不变失败时转 `execution_stalled`；最终回复边界命中 late Steering 时继续同一 Turn |
-| `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial）；与 Buffered 共用 round-boundary 动态工具激活、冻结 system、warm-prefix checkpoint、prefix-v2、当前轮围栏、canonical Token attribution 与失败熔断；direct Token 先提交、usage SSE 后发布；最终流式回复边界命中 late Steering 时继续同一 Turn |
+| `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial）；与 Buffered 共用 round-boundary 动态工具激活、冻结 system、warm-prefix checkpoint、prefix-v2、当前轮围栏、canonical Token attribution 与失败熔断；direct Token 先提交、usage SSE 后发布；provider length/incomplete 只允许一次立即行动恢复，再截断显式失败；最终流式回复边界命中 late Steering 时继续同一 Turn |
 | `Services/AgentExecution/FailedToolCallTracker.cs` | 第一层止损：对 canonical tool+args 的有界失败结果做 SHA-256 指纹；第二次不变失败标记 `execution_stalled`，后续阻断；参数变化后的同失败族由 Core `RuntimeControlService` 第 5 次熔断 |
 | `Services/AgentExecution/ToolDiscoveryLoopTracker.cs` | 动态工具发现止损；不同查询文本仍归一为 discovery-only 进展族，连续 8 次只调用 `search_tools` 而不执行已发现业务工具时触发 `tool_discovery_stalled`，任一实际业务工具会重置计数 |
-| `Services/AgentExecution/ExecutionUsageBudgetTracker.cs` | WorkUnit 调用边界 input/output/cache-hit/cost 累计账本；provider call 后先记账，再决定工具/下一 LLM round；价格或 usage 不可用时 fail closed，Buffered/Streaming 共用 |
+| `Services/AgentExecution/ExecutionUsageBudgetTracker.cs` | WorkUnit 调用边界 input/output/cache-hit/cost 累计账本；生成剩余预算供工具/子代理继承并输出含同步后代的累计 usage；provider/child call 后先记账，再决定工具/下一 LLM round，Buffered/Streaming 共用 |
 | `Services/AgentExecution/ToolResultContextPolicy.cs` | 工具结果进入模型历史前的统一 8 KiB 边界；完整原文作为 workspace-scoped artifact 保存，sidecar manifest 固化 SHA-256、UTF-8 字节、行数和 session/tool/call 身份；模型输入不做脱敏并提供渐进读取路径，存储失败时 fail-open |
-| `Services/Messaging/MessageDeliveryDispatcher.cs` | durable Message Fabric 投递；`execute` 按 deliveryId 精确领取并以 delivery 派生幂等 ID 受理 canonical Turn；`notify` 按 workspace/Agent 跨 room 一次领取最多 20 条，逐条写 Conversation 消息事实后 ACK，Busy 时也可排空且不唤醒模型；Busy/foreground heartbeat ACK/drop；SubAgent continuation 保留可抢占 stream 路径 |
+| `Services/Messaging/MessageDeliveryDispatcher.cs` | durable Message Fabric 投递；`execute` 按 deliveryId 精确领取并以 delivery 派生幂等 ID 受理 canonical Turn；`notify` 按 workspace/Agent 跨 room 一次领取最多 20 条，逐条写 Conversation 消息事实后 ACK，Busy 时也可排空且不唤醒模型；Busy/foreground heartbeat ACK/drop；SubAgent continuation 保留可抢占 stream 路径；恢复扫描 claim=null 时淘汰无 durable row 的 stale target，避免每 10 秒永久 `no_claim` |
 | `Tools/BuiltIns/Messaging/SendMessageTool.cs` | Agent 发消息；默认 `intent=inform, requires_response=false`，只有 ask/request_review/delegate 创建对方执行；未知 intent fail closed，终态回复由平台一次性投影 |
 | `Services/Messaging/AgentExecutionAdmissionCoordinator.cs` | workspace/agent 级前后台准入协调器；用户 Turn/Connector handoff 形成 foreground demand，抢占活动后台投递并阻止 recovery/idle drain 抢跑 |
 | `Services/AgentExecution/AgentToolArguments.cs` | tool-call JSON → 参数转换 |
 | `Services/AgentLoop/CanonicalWorkReport.cs` | 子代理五段报告解析/校验；无 native tool call、非结构化响应且完整满足 canonical 合同时同轮提升 DONE，显式结构化 CONTINUE 不被覆盖 |
+| `Services/AgentLoop/AgentOutputTruncationPolicy.cs` | provider `length/incomplete` 输出的有界恢复策略；仅允许一次“不重放 reasoning、立即工具行动”的短恢复，再次截断显式失败 |
 | `Services/GoalMode/` | 🆕 Goal 模式 v2 执行器 |
 | `Services/TurnExecutorAdapter.cs` | Turn 执行适配器；用户 Turn 获取 foreground admission，Busy 等待采用 100ms→1s 有界指数退避与 10 秒节流日志；透传 canonical TaskPlan/TaskNode/ParentNode identity 到 RuntimeDispatchRequest |
 
@@ -72,7 +73,7 @@
 | `Tools/BuiltIns/Management/BootstrapRebootTool.cs` | `bootstrap_reboot` 点火遥控；默认请求 Desktop `desktop-build` 构建+事务部署+哈希校验，也支持 `prebuilt-artifact` 交付 Agent 已编译产物与显式 `restart-only` |
 | `Tools/BuiltIns/SmartWorkflow/` | 七个角色化 Smart 入口；统一 `task` schema、历史参数归一化、子代理报告校验；`SmartWorkflowToolBase.cs` 校验失败时 partial-salvage：附验证说明后原样返回子代理实际产出，父 Agent 仍可用 |
 | `Tools/Platform/` | 平台工具实现 |
-| `Tools/Platform/ToolInvocationService.cs` | 统一调用入口；模型 callId、执行身份、CapabilityPolicy、deadline 与委派上下文的传递边界；Harness 别名和参数在 RuntimeControl/WorkspaceGuard/Firewall/哈希/执行前归一化；目标协议要求 callId 进入 Registry 后保持不变 |
+| `Tools/Platform/ToolInvocationService.cs` | 统一调用入口；模型 callId、执行身份、CapabilityPolicy、deadline、剩余 usage budget 与 delegated cumulative usage 的双向传递边界；Harness 别名和参数在 RuntimeControl/WorkspaceGuard/Firewall/哈希/执行前归一化；目标协议要求 callId 进入 Registry 后保持不变 |
 | `Tools/Platform/HarnessToolCompatibilityAdapter.cs` | `rg/exec_command/write_stdin/read_file/write_file/list_directory/apply_patch/pwsh/WSL` 的窄范围 deterministic 兼容；保持 canonical 工具唯一并识别搜索 exit 1 no_match；统一入口记录 requested/canonical/adaptation/version 遥测 |
 | `Tools/Platform/ToolLoopInstructionBuilder.cs` | 按当前真实可见 descriptor 生成稳定工具循环指引；只有 `search_tools` 可见时才宣称可发现 deferred tools |
 | `Tools/Platform/PuddingToolRegistry.cs` | Tool Registry、LLM schema 投影、AgentFirewall 门控与统一执行服务；canonical output/结构化错误/分阶段执行管线的主要改造入口 |
@@ -86,7 +87,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/SubAgentInvocationService.cs` | 子代理调用；固化统一系统预算，并把公开 `resume_sub_agent_id` 映射为稳定 SubSessionId 续跑 |
+| `Services/SubAgentInvocationService.cs` | 子代理调用；继承父剩余 usage budget，批量任务等分预算，返回同步 child 累计 usage，并把公开 `resume_sub_agent_id` 映射为稳定 SubSessionId 续跑 |
 | `Services/AgentLoop/SubAgentBudgetLifecycle.cs` | 子代理预算状态机：启动/80%/50% 通知、10-50 轮收尾宽限、可恢复终止判定 |
 | `Services/DesignCouncilRuntimeService.cs` | MOA 运行时适配器；精确 provider/model 路由、可见性裁剪、只读派发、结果回填与暂停输入 |
 | `Services/InMemorySubAgentOrchestrationRunStore.cs` | 进程内 MOA run 快照 store；Version CAS 防止重复 claim，不支持跨重启恢复 |

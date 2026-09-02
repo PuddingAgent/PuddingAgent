@@ -118,14 +118,15 @@
 | `Services/Scheduling/TaskBacklogRefinementStore.cs` | future authoritative 的 Backlog→Ready 唯一 CAS 写入者；重验任务、Agent、TaskTypeRoute 与路由 SHA-256，原子写 canonical `TaskReady/backlog_refined` |
 | `Services/Scheduling/TaskExecutionTracker.cs` | 五分钟只读关联 Task/Plan/当前 WorkUnit/Assignment/Reservation fencing/Binding/Goal/Iteration/ExecutionCommand/Run/outbox；同时跟踪 legacy Delivery→Execution 断链；输出 Healthy/Waiting/Stalled/Inconsistent/CleanupRequired；Blocked Goal 仍持 active binding 为 `blocked_binding_still_active`，Delivery 已确认但超时无 execution claim 为 `legacy_assignment_execution_missing`，终态 Delivery 无 execution 为即时 cleanup |
 | `Services/Scheduling/TaskExecutionRepairCoordinator.cs` | authoritative 五分钟确定性 repair；Serializable 重读 fence 后清理终态或 Blocked Goal 遗留 binding/assignment/reservation，以及超时未被 execution claim 的 legacy assignment（Task 保持 Blocked）；回收过期 continuation lease、补建安全可证明缺失的 continuation intent；不猜 Task 成功、不续过期 reservation、不合成 Turn |
-| `Services/Scheduling/TaskAutoDispatchWorker.cs` | 五分钟 bounded authoritative；每轮严格按 tracking/repair → 全 Agent Availability 重建 → Backlog refinement/Ready route → dispatch，避免修复后仍浪费一个扫描周期；eligible 重算窗口后调用唯一 Task→Goal 原子事务；同 Agent 每轮至多一个、全局受 `MaxStartsPerScan` 限制 |
+| `Services/Scheduling/TaskAutoDispatchWorker.cs` + `TaskAutoDispatchScanRunner.cs` | `IOptionsMonitor` 驱动的低频恢复扫描；周期轮次与 Admin 立即扫描复用同一 runner，严格按 tracking/repair → 全 Agent Availability 重建 → Backlog refinement/Ready route → dispatch；按 workspace gate 串行并输出结构化摘要 |
+| `Services/Scheduling/TaskSchedulerControlService.cs` + `Controllers/Api/TaskSchedulingController.cs` | Admin 调度控制面：权威 status、revision CAS 策略热加载、workspace pause/resume、立即 scan/repair；原子写回 `<DataRoot>/config/system.json` 的 `taskAutoDispatch`，不创建浏览器状态机，控制端点限 admin |
 | `Services/Scheduling/TaskBoundGoalOptions.cs` | Task-bound Goal 独立安全开关、Iteration 预算与 Reservation lease（默认关闭） |
 | `Services/Scheduling/TaskSchedulingSchemaBootstrapper.cs` | Availability、Reservation、Task dependency 三表与唯一索引幂等建表 |
 | `Services/Scheduling/TaskSchedulerIntentStore.cs` | P0 事件驱动层 durable intent 队列（task_scheduler_intents）：INSERT OR IGNORE 幂等入队、事务内单 UPDATE 抢占式 Dequeue（pending/过期 lease 回收+attempt 自增）、Complete/Fail（超限→dead）、GetTailCursor；时间列固定宽度 UTC TEXT 保证 SQL 字典序=时间序 |
 | `Services/Scheduling/TaskSchedulerIntentSchemaBootstrapper.cs` | task_scheduler_intents 幂等建表（UNIQUE(source,source_event_id) 等 4 索引），注册于 PuddingApplicationInitializer |
-| `Services/Scheduling/TaskAutoDispatchStarter.cs` | 事件驱动派发启动器：与 Worker DispatchEligibleAsync 同语义（围栏字段校验+二次 window fence+原子 StartAsync+LostRace 容忍）；TODO-unify 待统一收编 |
-| `Services/Scheduling/TaskEventLedgerTailBridge.cs` | 账本尾游标桥：IntentPollInterval 轮询 task_events/conversation_events 新行（游标=账本 MAX 懒初始化，不回放历史），按事件清单过滤入队 intent；shadow 只推进游标不入队 |
-| `Services/Scheduling/TaskSchedulingCoordinator.cs` | 事件驱动协调器（authoritative-only）：Dequeue→按 workspace 合并→goal 终态先重建 Availability→Evaluate→Starter 派发→Complete/Fail（超限 dead）；结构化轮次日志与过期 lease 崩溃恢复 |
+| `Services/Scheduling/TaskAutoDispatchStarter.cs` | 事件驱动派发启动器：围栏字段校验+二次 window fence+原子 StartAsync+LostRace 容忍；从动态策略读取 MaxStarts/MinimumIdle |
+| `Services/Scheduling/TaskEventLedgerTailBridge.cs` | 账本尾游标桥：IntentPollInterval 轮询 task_events/conversation_events 新行（游标=账本 MAX 懒初始化，不回放历史），按事件清单过滤入队 intent；动态响应 enabled/event/mode/pause，shadow 只推进游标不入队 |
+| `Services/Scheduling/TaskSchedulingCoordinator.cs` | 事件驱动协调器（authoritative-only）：Dequeue→按 workspace 合并→goal 终态先重建 Availability→Evaluate→Starter 派发→Complete/Fail（超限 dead）；动态 pause 后不消费该 workspace intent |
 | `Data/Entities/AgentAvailabilityProjectionEntity.cs` | 持久 Availability 投影实体 |
 | `Data/Entities/AgentExecutionReservationEntity.cs` | 自动工作租约与单调 fencing 实体 |
 | `Data/Entities/TaskDependencyEntity.cs` | Task finish-to-start 依赖边实体 |
@@ -137,7 +138,7 @@
 | `Services/Goals/GoalSchemaBootstrapper.cs` | goal_runs/goal_iterations/goal_outbox/goal_verifications/task_goal_bindings 五表幂等建表；含"单会话一个非终态 Goal" partial unique 与 outbox 幂等键索引（G1 冻结全部 schema） |
 | `Services/Goals/GoalRunStore.cs` | 聚合写入原语：Create/TryMutate（CAS + Func 卫兵）与 goal.* ConversationEvent 同事务直写；提供按 sequence 选择当前非终态 WorkUnit 的只读查询 |
 | `Services/Goals/GoalOutboxStore.cs` + `GoalOutboxSignal.cs` | continuation due/claim/lease/fencing/recovery/defer/suppress/dead-letter；signal 只降延迟 |
-| `Services/Goals/GoalContinuationWorker.cs` | durable intent → 受信 synthetic Acceptance；用户 Turn 优先；从 Binding 解析当前 WorkUnit，将 plan/node/fingerprint/预算放入受信 Acceptance 与 prompt |
+| `Services/Goals/GoalContinuationWorker.cs` | durable intent → 受信 synthetic Acceptance；用户 Turn 优先；从 Binding 解析当前 WorkUnit，将 plan/node/fingerprint/预算放入受信 Acceptance 与 prompt；payload JSON 保留可读 Unicode，同时继续转义 HTML 敏感字符以保护 envelope 边界 |
 | `Services/Goals/GoalSettlementStore.cs` + `GoalSettlementWorker.cs` | canonical Turn 全窗口终态判定 → 最新 128 条有界 Evidence Capsule → version/epoch/Task/Reservation gates → 下一 outbox 或终态；主 Turn canonical usage 加当前 Turn 时间窗内递归子会话 TokenUsageEvents，连同 Run/耗时/工具聚合到 Iteration/Goal；普通 Goal 阻塞仍可恢复，Task-bound 阻塞尝试以 Failed 保留审计并释放 Binding/Assignment/Reservation |
 | `Services/Goals/ConservativeGoalIterationVerifier.cs` | fail-closed 只读 Verifier；自然语言完成无权写终态，Task canonical Completed 才允许 bound Goal 完成 |
 | `Services/Goals/TaskGoalDispatchTransactionStore.cs` | Task/ExecutionPlan/WorkUnits/Assignment/Reservation/Binding/Goal/首个 Outbox/事件/Availability 单 Serializable 事务与幂等 replay；事务前重读 Agent/类型规则并重算 route/plan 双 SHA-256，任一漂移 fail closed；派发时原子退役同 Workspace/Agent/会话且 terminal Task binding 的遗留 Blocked Goal（可来自前一 Task），释放 active-Goal 唯一索引，并将 SQLite 约束详情写入诊断日志 |
@@ -153,28 +154,29 @@
 
 关联修改：`SystemCommandHandler`（/goal 分支委托 GoalCommandService，不创建 Turn）；`PlatformDbContext`（5 个 DbSet + partial unique 索引）；`PuddingApplicationInitializer`（GoalSchemaBootstrapper + 启动 disarm）。
 
-## 外部访问令牌（ADR-075 External Access Token，P1+P3 已实现）
+## 外部访问令牌与 Agent 消息 API（ADR-075 / ADR-082）
 
 | 文件 | 用途 |
 |------|------|
 | `Services/Security/ExternalAccessTokenStore.cs` | Token 持久化：`external_access_tokens` + scopes/workspaces/audit 四表、CAS rename/revoke、按 keyId 索引查询、last-used 合并写落库 |
 | `Services/Security/ExternalAccessTokenService.cs` | 领域服务：RNG 生成 `pdt_v1_<keyId>.<secret>`、SHA-256 摘要固定时间比较、生命周期规则（默认 90d/上限 365d/每人 Active 上限）、认证 fail-closed（malformed/unknown/bad-secret/revoked/expired/owner-disabled）、auth-fail 节流审计 |
 | `Services/Security/ExternalAccessTokenHandler.cs` | `PuddingExternalAccessToken` ASP.NET Core 认证 scheme（AuthenticationHandler）：Header 解析 → 验证 → ClaimsPrincipal（无 admin role）；成功投递 last-used 合并器 |
-| `Services/Security/ExternalAccessTokenAuthorization.cs` | ExternalScopeRequirement/ExternalWorkspaceRequirement + Policy 名称；handler 校验 scheme 身份 + scope/workspace claim（ordinal）|
+| `Services/Security/ExternalAccessTokenAuthorization.cs` | ExternalScopeRequirement/ExternalWorkspaceRequirement + Policy 名称；handler 校验 scheme 身份 + scope/workspace claim（ordinal）；ADR-082 增加 workspaces/agents/messages Policies |
 | `Services/Security/ExternalAccessTokenUsageCoalescer.cs` | last-used 有界合并写（首次立即、之后每 5 分钟至多一次；停机 force flush）|
 | `Services/Security/ExternalAccessTokenSchemaBootstrapper.cs` | 四张 Token 表幂等建表（与 EF 实体列名一致）|
 | `Services/Security/ExternalTaskApiOptionsProvider.cs` | `config/system.json` externalTaskApi 节读取（30s 缓存）+ 启动期越界校验 |
 | `Controllers/Api/AdminAccessTokenController.cs` | JWT-admin-only 管理 API：status/list/create（明文仅 201 一次）/detail/rename(CAS)/revoke(CAS)；不提供 reveal/unrevoke/删除/扩权 |
 | `Controllers/External/V1/ExternalTokenInfoController.cs` | `GET /api/external/v1/token` whoami 自检（ExternalApiGateFilter 门控）|
 | `Controllers/External/V1/ExternalTaskController.cs` | External Task API v1（ADR-075 P2 基本功能）：list/get/create/patch(If-Match→CAS，428/412+currentTask 快照)/comments/evaluations/commands(白名单)；Actor=access-token:{tokenId}、Origin=external.api 注入；mutation 要求 Idempotency-Key；无 delete；RateLimiter/SSE Watch/OpenAPI 未实现 |
+| `Controllers/External/V1/ExternalWorkspaceAgentController.cs` | ADR-082：授权 Workspace/Agent 安全目录；消息以 connector/access-token actor 进入 Message Fabric，强制 Idempotency-Key；`202 + Location` 与 Token-owned receipt 分离 delivery acceptance 和 canonical Agent terminal reply |
 | `Controllers/External/V1/ExternalApiGateFilter.cs` | External API 门控：Enabled=false → 404；非 Loopback 明文 HTTP → 400 |
-| `Controllers/External/V1/ExternalTaskDtos.cs` | V1 稳定 wire DTO（与 Internal TaskDtos 分 namespace） |
+| `Controllers/External/V1/ExternalTaskDtos.cs` / `ExternalWorkspaceAgentDtos.cs` | V1 稳定 wire DTO（与 Internal DTO/EF Entity 分 namespace）；Workspace/Agent 投影排除成员、Profile、Prompt、MainSessionId 和 Secret |
 | `Services/ExternalApi/TaskEvaluationStore.cs` | 追加式评价：task_evaluations + task.evaluated 事件同事务；score/verdict/taskVersionObserved/supersedes 校验；不改 Task 状态/version |
 | `Services/ExternalApi/ExternalApiIdempotencyStore.cs` | 简化幂等：key=SHA-256(token+method+route+key)、claim-then-execute、replay/409/失败释放、保留期顺带清理 |
 | `Services/ExternalApi/ExternalTaskApiSchemaBootstrapper.cs` | task_evaluations + external_api_idempotency 幂等建表 |
 | `Data/Entities/ExternalAccessToken*.cs` | 主表/scope/workspace/audit 四实体（复合主键联结 + append-only 审计）|
 | `Data/Entities/TaskEvaluationEntity.cs` / `Data/Entities/ExternalApiIdempotencyEntity.cs` | 评价 + 幂等实体 |
-| 测试 | `PuddingPlatformTests/Security/ExternalAccessToken*Tests.cs`（42 项）+ `Controllers/ExternalTaskApiV1Tests.cs` + `Services/TaskEvaluationStoreTests.cs` + `Services/ExternalApiIdempotencyStoreTests.cs`（P2 共 23 项）|
+| 测试 | `PuddingPlatformTests/Security/ExternalAccessToken*Tests.cs` + `Controllers/ExternalTaskApiV1Tests.cs` + `Controllers/ExternalWorkspaceAgentApiV1Tests.cs` + 评价/幂等 Store 测试；ADR-082 新增 5 项，External API 相关聚焦回归 45/45 |
 
 ## 持久化
 

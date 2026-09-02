@@ -14,14 +14,14 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Hosting/DesktopApplicationCoordinator.cs` | 🔑 Launcher↔Core 状态机，协调 Runtime、Bridge、Workbench、调试组件；`DeployFrontendAsync` 独立锁执行前端构建部署（目标=当前 Core 可执行目录，调试模式取源码构建输出目录） |
+| `Hosting/DesktopApplicationCoordinator.cs` | 🔑 Launcher↔Core 状态机，协调 Runtime、Bridge、Workbench、调试组件；独立前端锁支持源码构建部署与仓库内预构建 `dist` 加载，并投影受控诊断快照 |
 | `Core/CoreExecutableResolver.cs` | Core 路径确定性解析（配置→发布包→同源→兜底） |
 | `Core/CoreProcessSupervisor.cs` | Core 子进程固定端口 `0.0.0.0` 启动、本机健康检查、环形 stdout/stderr、进程树回收；启动超时采用有效进度租约（静默超时 + 有界绝对上限）；`EnvironmentName` 可覆盖 Production |
-| `Core/CoreStartupProgressMessage*.cs` | `PUDDING_DESKTOP_STARTING` 协议、严格解析与单调租约；校验协议版本/PID/序号，租约不替代 Ready/health 门禁 |
+| `Core/CoreStartupProgressMessage*.cs` | `PUDDING_DESKTOP_STARTING` 协议、严格解析与单调租约；校验协议版本/PID/序号，默认 60 秒静默门禁下允许最高 10 分钟冷升级，租约不替代 Ready/health 门禁 |
 | `Runtime/DesktopRuntimeOrchestrator.cs` | 异常退出恢复、退避熔断（2s/4s/8s，60s 3 次） |
 | `Runtime/CoreRestartPolicy.cs` | 重启策略与取消语义 |
 | `Bootstrap/DesktopBootstrapSignalService.cs` | 🔑 Core 点火部署主管：`desktop-build` / `prebuilt-artifact` / `restart-only`，停 Core 后把产物事务部署到实际 `CoreExecutablePath` 目录，重启前后校验 `PuddingAgent.dll` SHA-256 |
-| `Bootstrap/DesktopBootstrapHttpEndpoint.cs` | 仅回环 + ControlToken 的点火遥控 API；接收部署模式/预构建目录/期望哈希并返回结构化结果路径 |
+| `Bootstrap/DesktopBootstrapHttpEndpoint.cs` | 仅回环 + ControlToken 的 Desktop 控制面：Core stop/build/start/restart/预构建制品部署，前端 build-deploy/预构建 dist 加载，以及有界诊断；返回稳定 JSON/HTTP 状态 |
 | `Bootstrap/DesktopBootstrapSignal*.cs` | 信号协议、部署模式归一化与结果证据模型（产物/加载路径、复制计数、哈希、`assembliesReloaded`） |
 
 ## 调试模式（Debug）
@@ -32,7 +32,7 @@
 | `Debug/ProxyRoutePlanner.cs` | 纯路由决策：8 个后端前缀 + /admin SPA fallback（与 dev-up.py 语义逐条对齐） |
 | `Debug/DebugBackendLauncher.cs` | `dotnet build` 源码后端并解析 `bin/Debug/net10.0/PuddingAgent.exe`（desktop-child 协议不变，Development 环境）；`ResolveOutputDirectory` 无需先构建即可给出输出目录 |
 | `Debug/FrontendDevSupervisor.cs` | `pnpm run start:dev`（缺 node_modules 自动 install）、/admin/ 就绪探测、进程树回收、环形日志 |
-| `Debug/FrontendBuildDeployService.cs` | 运行中心「构建并部署前端」：`pnpm run build` 出 dist 后清空并复制到 Core 可执行目录 `wwwroot\admin`（仅动静态文件，Core 运行中可安全执行）；目标目录防御性限定 `wwwroot\admin` 后缀 |
+| `Debug/FrontendBuildDeployService.cs` | 运行中心/API 前端制品服务：可 `pnpm run build` 或直接加载预构建 dist，部署前后校验 `index.html` SHA-256；只替换 Core 可执行目录 `wwwroot\admin`，目标后缀强校验 |
 | `Debug/DebugRepositoryResolver.cs` | 仓库根向上自动解析 + 显式覆盖（repositoryRoot/frontendWorkingDirectory/backendProjectPath） |
 | `Configuration/DesktopBootstrapSettings.cs` | `DesktopDebugSettings`（desktop.json `debug` 节：Enabled/端口/超时） |
 | `Hosting/DesktopStateChangedEventArgs.cs` | `WorkbenchAddress`（调试=代理源）与 `CoreAddress`（控制面）分离 |

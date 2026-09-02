@@ -41,6 +41,13 @@
 | `src/pages/stats/tokens/index.tsx` | 月度 Provider/Model Token 页面；显示本地网关或旧投影数据源；趋势图使用整列命中区和受控 HTML tooltip，稳定显示分项 Token、缓存命中率与请求数 |
 | `src/services/platform/api.ts` | `MonthlyTokenStatsResponse.dataSource` 区分 `local_gateway` 与 `legacy_projection` |
 
+## External Access Token 管理（ADR-075 / ADR-082）
+
+| 文件 | 用途 |
+|------|------|
+| `src/pages/access-token-management/index.tsx` | External Token 列表/创建/重命名/撤销；scope 选择包含 tasks.* 与 ADR-082 `workspaces.read`、`agents.read`、高风险 `messages.send`，默认仍仅最小 `tasks.read` |
+| `src/pages/access-token-management/index.test.tsx` | 一次性 Secret、撤销/CAS 与最小 scope UI 回归；验证 `messages.send` 可见且默认不选中 |
+
 ## LLM 资源池
 
 | 文件 | 用途 |
@@ -56,8 +63,12 @@
 | `src/pages/chat/utils/providerBilling.ts` | 展示适配器注册表 `{id,match,displayName,fallbackCurrencySymbol}` + `resolveBillingAdapter`/`currencySymbolFor`（CNY→¥/USD→$）；providerId 未命中不渲染徽标；新服务商在此加一项即可 |
 | `src/pages/chat/hooks/useProviderBalance.ts` | 余额拉取：providerId 变化即取 + 5min 低频轮询（`usePollingLoader` 页面隐藏自动暂停）+ 手动 `refresh`；任何失败静默降级为 `balance=undefined` + `errorText`，不抛错 |
 | `src/pages/chat/components/ProviderBalanceIndicator.tsx` | 品牌图标（DeepSeek/Mimo 内联 SVG）+ `¥xx.xx` 徽标；`detail` prop 进 Tooltip 第二行（错误原因/刷新提示） |
-| `src/pages/chat/components/GoalBanner.tsx` + `hooks/useGoal.ts` | ADR-074 G1 Goal 状态条：服务端投影（GET /api/v1/conversations/{id}/goal）驱动 objective/phase/iteration 与 pause/resume/cancel；终态隐藏控件；`api.ts` 含 `getConversationGoal`/`executeGoalCommand`；CommandPalette 有 /goal 提示；5 项 jest 通过 |
-| `src/pages/chat/components/ChatMain.tsx` | 挂载点：头部 `extraActions` 首位，`selectedAgent.preferredProviderId` 命中适配器才渲染；点击徽标手动刷新 |
+| `src/pages/chat/components/GoalBanner.tsx` + `hooks/useGoal.ts` | ADR-074 Goal 状态控件：无 Goal 可开始，Active 可暂停/停止，Paused/Blocked 可恢复/停止，终态可新建；顶栏紧凑按钮显示 phase/iteration，Popover 承载完整 objective、原因与终态时间 |
+| `src/pages/chat/utils/goalContinuationMessage.ts` + `types.ts` + `projections/messageProjection.ts` | 仅对服务端 `goal_managed + goal_continuation` 消息解析 `<goal_payload>`；历史 `\\uXXXX` 由 JSON parser 还原为可读 Goal/Task/工作单元文本，普通用户消息与损坏 payload 均原样保留 |
+| `src/pages/workspace-tasks/SchedulerDrawer.tsx` | Task 看板“调度中心”：权威状态、候选决策码、Pause/Resume/Scan/Repair、revision CAS 策略表单与 Authoritative 前置门禁 |
+| `src/pages/workspace-tasks/TaskEditorDrawer.tsx` + `TaskCard.tsx` + `TaskDetailsDrawer.tsx` | 暴露 Task 自动调度 opt-in、taskType/capability/provider/model/fallback/window；卡片显示“自动”标记并提供纳入/退出、Blocked Resume/Requeue 等用户干预 |
+| `src/services/platform/api.ts` | 调度 status/policy/actions/evaluate API；Goal 与 Task 继续使用服务端结构化命令，不在浏览器复制状态机 |
+| `src/pages/chat/components/ChatMain.tsx` | Goal 状态控件挂到 WorkspaceNavigationHeader 的「任务看板」旁；消息首屏不再被 Goal 长正文下推；其余余额/推断辅助请求继续 idle 后启动 |
 | `src/services/platform/api.ts` | `getLlmProviderBalance` → `GET /api/llm/providers/{id}/balance`；`LlmProviderBalanceDto`/`LlmBalanceInfoDto` 类型 |
 
 后端查询适配器注册表（`ILlmBalanceProvider`/`DeepSeekLlmBalanceProvider`）见 `PuddingPlatform/code_map.md` 提供商配置节；完整设计与扩展步骤见 `Docs/Features/服务商余额查询与多服务商计费适配器设计方案.md`。
@@ -110,7 +121,7 @@
 | `src/pages/chat/components/MarkdownBlock.tsx` | `preprocessMarkdown` 只做逐行 `` `` ``→``` 归一；历史「管道行收集 + 标题拆 \|」hack 会破坏 GFM 表格（分隔行与正文合并/空行被吞→整表降级为 `<p>` 原文），已删除 |
 | `src/pages/chat/hooks/useTypewriterStreaming.ts` | `findStableMarkdownBoundary`（已导出）表格感知：前导 `\|` 识别（不要求尾管道）、分隔行到达才允许整表提交、半截表头滞留 live 段、表格 run 中间不提交 |
 | `src/pages/chat/components/MessageItem.tsx` | 流式尾段含块级/强调语法（`\|`、反引号、`#`、列表、`>*_~`、链接）时走 ReactMarkdown 渲染（不再以纯文本 span 显示原始管道/星号）；纯文本尾段保留打字机 span + 墨迹光标（零解析路径） |
-| `src/pages/chat/components/AgentMessageBubble.tsx` | 行序 TurnStatus → TurnContentStream（正文 ⇄ 行为组单一内容流）→ ModelRetryRow → 错误行 → actions/StatsLine；投影一旦含 TextBlock 就不再渲染第二个 answer bubble，`answerMarkdown` 仅作复制/TTS/无 canonical 正文节点时的旧记录兜底；TurnStatus 有 canonical 投影时直接消费 `deriveTurnStatusFromProjection`，turn 终态渲染 TurnStatsLine |
+| `src/pages/chat/components/AgentMessageBubble.tsx` | 行序 TurnStatus → TurnContentStream（正文 ⇄ 行为组单一内容流）→ ModelRetryRow → 错误行 → actions/StatsLine；ModelRetryRow 只接收 canonical `subconscious_step` LLM retry 摘要并按 Turn/后续过程事实区分“重试中/已重试”，普通 thinking 中的 retry 不触发；投影一旦含 TextBlock 就不再渲染第二个 answer bubble，`answerMarkdown` 仅作复制/TTS/无 canonical 正文节点时的旧记录兜底；TurnStatus 有 canonical 投影时直接消费 `deriveTurnStatusFromProjection`，turn 终态渲染 TurnStatsLine |
 | `src/pages/chat/hooks/useSessionEventProjection.ts` | `message.content.appended` 到达即翻转 status=streaming（首个回答增量 = 已知事实「正在生成回答」，状态条与正文不再各说各话）；`enqueueDelta` 携带入队基准长度 |
 | `src/pages/chat/hooks/useSessionEventBuffers.ts` | 回答增量缓冲 `{delta, baseLength}`；flush 经 `applyBufferedDeltaToTurn` 按基准位置幂等应用——基准漂移（activeRun 快照竞态）丢弃缓冲，杜绝直播期间正文整段重复 |
 | `src/pages/chat/components/IntentConsole.tsx` | Composer §6.2：Sandbox/Auto-review 收敛进设置 Popover（活动态角标浮出）；执行偏好/权限/语音/发送保持直达 |
@@ -129,6 +140,7 @@
 | `src/pages/chat/presentation/PresentationRegistry.ts` | kind→renderer 分派表：generic/terminal/diff/read/search/web 已注册，delegation/job 回落 Generic；禁止按 toolName 分支 |
 | `src/pages/chat/presentation/renderers/*.tsx` | 五类专用 renderer + `rendererKit`（卡片家族：banner + 224px 内容窗口、圆角 radius-md、meta 契约字段优先、payload 回退解析、payload 即调用参数 JSON 时不重复展示正文）；diff 解析 +/−/@@ 着色与增删计数，search 命中数组有界 20 条 |
 | `src/pages/chat/utils/formatDuration.ts` | `formatDurationMs`（123ms/1.2s/1m03s，缺失 null 不伪造）+ `formatTokenCount`（4.2k tokens）；计量 chip/工具行耗时/StatsLine 共用 |
+| `src/pages/chat/utils/modelRetry.ts` | DirectLlmClient 两种 canonical LLM retry 摘要的单一解析器；要求合法 `attempt/maxRetries`，供 ModelRetryRow 与 executionFlowProjector 共用，禁止用任意 `retry` 文本猜测模型状态 |
 | `src/pages/chat/client/featureFlag.ts` | `isExecutionFlowProjectionEnabled` 默认开启（P2 转正：live turn 消费 canonical 投影交错）；localStorage `pudding-exec-flow-proj==='0'` 为逃生门；历史/无投影 turn 走路径 A adapter |
 | `src/pages/chat/projections/executionFlowProjector.ts` | `MessageNode` = 一个连续正文段，任何非 content 节点事件切段；`message.completed.reply` 只在整 turn 无 content delta 时创建兜底正文，绝不覆盖已有段文本；空段过滤、reasoning/tool/delegation 仍按 canonical sequence 投影 |
 | `src/pages/chat/projections/executionFlowCollector.ts` | 白名单 canonical 信封规整；保留 `delta/toolCallId/arguments/output/reply` 等 typed payload，过滤音频/视觉等非执行流大帧，缺事件身份计协议错误 |
