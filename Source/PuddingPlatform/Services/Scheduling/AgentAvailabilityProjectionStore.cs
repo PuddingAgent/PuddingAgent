@@ -155,12 +155,24 @@ public sealed class AgentAvailabilityProjectionStore(
         DateTimeOffset now,
         CancellationToken ct)
     {
-        var binding = await db.TaskGoalBindings
-            .AsNoTracking()
-            .Where(item => item.WorkspaceId == workspaceId
-                && item.AgentInstanceId == agentId
-                && item.Status == "active")
-            .OrderBy(item => item.BindingId)
+        // A binding is an active-capacity fact only while its Task is still
+        // non-terminal. Historical imports and administrative terminal updates
+        // may leave a stale active binding behind; a Completed/Failed/Cancelled
+        // Task must not keep an Agent false-busy through it.
+        var binding = await (
+                from tie in db.TaskGoalBindings.AsNoTracking()
+                join task in db.WorkspaceTasks.AsNoTracking()
+                    on new { tie.WorkspaceId, tie.TaskId }
+                    equals new { task.WorkspaceId, task.TaskId }
+                where tie.WorkspaceId == workspaceId
+                    && tie.AgentInstanceId == agentId
+                    && tie.Status == "active"
+                    && task.Status != WorkspaceTaskStatus.Completed
+                    && task.Status != WorkspaceTaskStatus.Failed
+                    && task.Status != WorkspaceTaskStatus.Cancelled
+                    && task.Status != WorkspaceTaskStatus.Archived
+                orderby tie.BindingId
+                select tie)
             .FirstOrDefaultAsync(ct);
 
         // Assignment ownership is only an active-capacity fact while it still

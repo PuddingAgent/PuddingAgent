@@ -191,6 +191,63 @@ public sealed class AgentAvailabilityProjectionStoreTests
     }
 
     [TestMethod]
+    public async Task CompletedTask_WithActiveBinding_DoesNotKeepAgentBusy()
+    {
+        await SeedTaskWithActiveBindingAsync("task-done", WorkspaceTaskStatus.Completed);
+
+        var now = DateTimeOffset.Parse("2026-08-26T00:00:00Z");
+        var snapshot = await CreateStore([Agent("agent-1", "conv-1")], now)
+            .RebuildAsync("ws", "agent-1");
+
+        Assert.AreEqual(AgentAvailabilityState.Idle, snapshot.State);
+        Assert.AreEqual("idle_confirmed", snapshot.ReasonCode);
+        Assert.IsNull(snapshot.ActiveTaskId);
+    }
+
+    [TestMethod]
+    public async Task FailedTask_WithActiveBinding_DoesNotKeepAgentBusy()
+    {
+        await SeedTaskWithActiveBindingAsync("task-failed", WorkspaceTaskStatus.Failed);
+
+        var now = DateTimeOffset.Parse("2026-08-26T00:00:00Z");
+        var snapshot = await CreateStore([Agent("agent-1", "conv-1")], now)
+            .RebuildAsync("ws", "agent-1");
+
+        Assert.AreEqual(AgentAvailabilityState.Idle, snapshot.State);
+        Assert.AreEqual("idle_confirmed", snapshot.ReasonCode);
+        Assert.IsNull(snapshot.ActiveTaskId);
+    }
+
+    [TestMethod]
+    public async Task CancelledTask_WithActiveBinding_DoesNotKeepAgentBusy()
+    {
+        await SeedTaskWithActiveBindingAsync("task-cancelled", WorkspaceTaskStatus.Cancelled);
+
+        var now = DateTimeOffset.Parse("2026-08-26T00:00:00Z");
+        var snapshot = await CreateStore([Agent("agent-1", "conv-1")], now)
+            .RebuildAsync("ws", "agent-1");
+
+        Assert.AreEqual(AgentAvailabilityState.Idle, snapshot.State);
+        Assert.AreEqual("idle_confirmed", snapshot.ReasonCode);
+        Assert.IsNull(snapshot.ActiveTaskId);
+    }
+
+    [TestMethod]
+    public async Task ActiveTask_WithActiveBinding_RemainsBusy()
+    {
+        await SeedTaskWithActiveBindingAsync("task-live", WorkspaceTaskStatus.InProgress);
+
+        var now = DateTimeOffset.Parse("2026-08-26T00:00:00Z");
+        var snapshot = await CreateStore([Agent("agent-1", "conv-1")], now)
+            .RebuildAsync("ws", "agent-1");
+
+        Assert.AreEqual(AgentAvailabilityState.Busy, snapshot.State);
+        Assert.AreEqual(AgentActivityReason.TaskExecution, snapshot.ActivityReason);
+        Assert.AreEqual("active_task_owned", snapshot.ReasonCode);
+        Assert.AreEqual("task-live", snapshot.ActiveTaskId);
+    }
+
+    [TestMethod]
     public async Task PendingUserTurn_TakesPriorityOverAutomaticWork()
     {
         await using (var db = await _factory.CreateDbContextAsync())
@@ -257,6 +314,23 @@ public sealed class AgentAvailabilityProjectionStoreTests
         CreatedAtUtc = DateTimeOffset.UtcNow,
         UpdatedAtUtc = DateTimeOffset.UtcNow,
     };
+
+    private async Task SeedTaskWithActiveBindingAsync(string taskId, WorkspaceTaskStatus status)
+    {
+        await using var db = await _factory.CreateDbContextAsync();
+        db.WorkspaceTasks.Add(Task(taskId, status));
+        db.TaskGoalBindings.Add(new TaskGoalBindingEntity
+        {
+            BindingId = $"binding-{taskId}",
+            WorkspaceId = "ws",
+            TaskId = taskId,
+            GoalRunId = $"goal-{taskId}",
+            AgentInstanceId = "agent-1",
+            Status = "active",
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+    }
 
     private sealed class Catalog(IReadOnlyList<WorkspaceAgentDto> agents) : IWorkspaceAgentCatalog
     {
