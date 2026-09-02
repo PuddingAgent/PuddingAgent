@@ -1,10 +1,13 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Scheduling;
 using PuddingCode.Tasks;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services.Scheduling;
 
 namespace PuddingPlatform.Services.Tasks;
 
@@ -19,10 +22,15 @@ namespace PuddingPlatform.Services.Tasks;
 /// </summary>
 public sealed class TaskAgentCommandService(
     IDbContextFactory<PlatformDbContext> dbFactory,
-    IWorkAdmissionFence fence) : ITaskAgentCommandService
+    IWorkAdmissionFence fence,
+    IAgentAvailabilityProjectionStore? availabilityStore = null,
+    ILogger<TaskAgentCommandService>? logger = null) : ITaskAgentCommandService
 {
     private readonly IDbContextFactory<PlatformDbContext> _dbFactory = dbFactory;
     private readonly IWorkAdmissionFence _fence = fence;
+    private readonly IAgentAvailabilityProjectionStore? _availabilityStore = availabilityStore;
+    private readonly ILogger<TaskAgentCommandService> _logger =
+        logger ?? NullLogger<TaskAgentCommandService>.Instance;
 
     // ── 查询 ────────────────────────────────────────────────
 
@@ -415,11 +423,50 @@ public sealed class TaskAgentCommandService(
                 break;
         }
 
+        // 4ed930e7 统一完成事实：真实完成与 TaskCompletionSettlementService 的 deterministic
+        // settlement 共用同一所有权释放语义——完成事务内释放该 Task 的 active reservation。
+        if (disposition == TaskDisposition.Completed)
+        {
+            var activeReservations = await db.AgentExecutionReservations
+                .Where(r => r.WorkspaceId == request.WorkspaceId
+                    && r.TaskId == task.TaskId
+                    && r.Status == "active")
+                .ToListAsync(ct);
+            foreach (var reservation in activeReservations)
+            {
+                reservation.Status = "released";
+                reservation.ReleaseReason = "task_completed";
+                reservation.ReleasedAtUtc = now;
+                reservation.UpdatedAtUtc = now;
+            }
+        }
+
         await AppendEventAsync(db, task, request.AgentId, request.AssignmentId,
             request.ExecutionId, request.SessionId, request.TraceId, eventType, now, ct);
         await BackfillBindingAsync(db, task.TaskId, request.AssignmentId, request.ExecutionId, request.SessionId, ct);
 
         await db.SaveChangesAsync(ct);
+
+        // 4ed930e7：完成后 best-effort 重建 Agent availability 投影（与
+        // TaskCompletionSettlementService 一致——已提交事实不因投影失败而回滚）。
+        if (disposition == TaskDisposition.Completed && _availabilityStore is not null && attempt is not null)
+        {
+            try
+            {
+                await _availabilityStore.RebuildAsync(task.WorkspaceId, attempt.AgentId, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[Disposition] availability rebuild failed after completion task={TaskId} agent={AgentId}",
+                    task.TaskId,
+                    attempt.AgentId);
+            }
+        }
 
         return BuildMutationResult(task, request.AssignmentId, request.Disposition,
             TaskWireMaps.EventTypeToString(eventType), attempt?.Status.ToString() ?? string.Empty);
