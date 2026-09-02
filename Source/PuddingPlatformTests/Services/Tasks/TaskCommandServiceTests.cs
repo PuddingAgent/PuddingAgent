@@ -215,23 +215,80 @@ public sealed class TaskCommandServiceTests
         Assert.AreEqual(2, events[^1].Sequence);
     }
 
+    // ── Card 4ed930e7-②：PATCH 完成旁路防护 ──
+    // 执行中任务（Assigned/InProgress，无论是否仍持有 active assignment——含 orphaned
+    // claim 形态）不得经通用 PATCH 写成 Completed；完成事实只能经 TaskAgentCommandService
+    // disposition / TaskCompletionSettlementService 唯一路径产生。
+
     [TestMethod]
-    public async Task Patch_ManualCompletionWithoutAssignment_AppendsCanonicalCompletedEvent()
+    public async Task Patch_AssignedTaskWithoutAssignment_ToCompleted_IsRejected()
     {
         var task = await CreateTaskAsync();
         await SetStatusAsync(task.TaskId, WorkspaceTaskStatus.Assigned);
 
-        var result = await _service.PatchAsync(
-            WorkspaceId, task.TaskId, expectedVersion: 1,
-            title: null, description: null, acceptanceCriteria: null,
-            priority: null, executionWindow: null,
-            preferredAgentId: null, notBeforeUtc: null, dueAtUtc: null, sortOrder: null,
-            status: WorkspaceTaskStatus.Completed);
+        var ex = await Assert.ThrowsExactlyAsync<TaskStoreException>(() =>
+            _service.PatchAsync(
+                WorkspaceId, task.TaskId, expectedVersion: 1,
+                title: null, description: null, acceptanceCriteria: null,
+                priority: null, executionWindow: null,
+                preferredAgentId: null, notBeforeUtc: null, dueAtUtc: null, sortOrder: null,
+                status: WorkspaceTaskStatus.Completed));
 
-        Assert.AreEqual(WorkspaceTaskStatus.Completed, result.Status);
-        var events = await GetEventsAsync(task.TaskId);
-        Assert.AreEqual(TaskEventType.TaskCompleted, events[^1].EventType);
-        Assert.AreEqual("manual_without_execution", events[^1].DecisionCode);
+        Assert.AreEqual(TaskErrorCode.TaskInvalidTransition, ex.ErrorCode);
+        await AssertNoCompletionFactsAsync(task.TaskId, WorkspaceTaskStatus.Assigned, expectedVersion: 1);
+    }
+
+    [TestMethod]
+    public async Task Patch_InProgressTaskWithoutAssignment_ToCompleted_IsRejected()
+    {
+        var task = await CreateTaskAsync();
+        await SetStatusAsync(task.TaskId, WorkspaceTaskStatus.InProgress);
+
+        var ex = await Assert.ThrowsExactlyAsync<TaskStoreException>(() =>
+            _service.PatchAsync(
+                WorkspaceId, task.TaskId, expectedVersion: 1,
+                title: null, description: null, acceptanceCriteria: null,
+                priority: null, executionWindow: null,
+                preferredAgentId: null, notBeforeUtc: null, dueAtUtc: null, sortOrder: null,
+                status: WorkspaceTaskStatus.Completed));
+
+        Assert.AreEqual(TaskErrorCode.TaskInvalidTransition, ex.ErrorCode);
+        await AssertNoCompletionFactsAsync(task.TaskId, WorkspaceTaskStatus.InProgress, expectedVersion: 1);
+    }
+
+    [TestMethod]
+    public async Task Patch_InProgressTaskWithActiveAssignment_ToCompleted_IsRejected()
+    {
+        var task = await CreateTaskAsync();
+        await SeedActiveAssignmentAsync(task.TaskId, "agent-3");
+
+        var ex = await Assert.ThrowsExactlyAsync<TaskStoreException>(() =>
+            _service.PatchAsync(
+                WorkspaceId, task.TaskId, expectedVersion: 1,
+                title: null, description: null, acceptanceCriteria: null,
+                priority: null, executionWindow: null,
+                preferredAgentId: null, notBeforeUtc: null, dueAtUtc: null, sortOrder: null,
+                status: WorkspaceTaskStatus.Completed));
+
+        Assert.AreEqual(TaskErrorCode.TaskInvalidTransition, ex.ErrorCode);
+        await AssertNoCompletionFactsAsync(task.TaskId, WorkspaceTaskStatus.InProgress, expectedVersion: 1);
+    }
+
+    private async Task AssertNoCompletionFactsAsync(
+        string taskId,
+        WorkspaceTaskStatus expectedStatus,
+        int expectedVersion)
+    {
+        var after = await _store.GetTaskAsync(WorkspaceId, taskId);
+        Assert.IsNotNull(after);
+        Assert.AreEqual(expectedStatus, after.Status);
+        Assert.AreEqual(expectedVersion, after.Version);
+        Assert.IsNull(after.CompletedAtUtc);
+
+        var events = await GetEventsAsync(taskId);
+        CollectionAssert.DoesNotContain(
+            events.Select(e => e.EventType).ToArray(),
+            TaskEventType.TaskCompleted);
     }
 
     [TestMethod]

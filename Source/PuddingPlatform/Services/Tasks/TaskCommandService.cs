@@ -108,15 +108,18 @@ public sealed class TaskCommandService(
                 current.Version);
         }
 
-        // A Task that has entered execution may only complete through the
-        // evidence-bearing task disposition / Task-bound Goal settlement path.
-        // Generic board metadata updates cannot manufacture execution success.
+        // Card 4ed930e7-②：完成事实唯一路径防护。执行中任务（Assigned/InProgress，无论
+        // 是否仍持有 active assignment——含 orphaned claim 形态）不得经通用 PATCH 写成
+        // Completed；完成只能经 TaskAgentCommandService disposition / 完成结算服务
+        // （TaskCompletionSettlementService）产生。凡持有 active assignment 的其他状态
+        // 同样拒绝，防止未来状态表扩张时旁路回潮。
         if (target == WorkspaceTaskStatus.Completed
-            && current.ActiveAssignmentId is not null)
+            && (current.Status is WorkspaceTaskStatus.Assigned or WorkspaceTaskStatus.InProgress
+                || current.ActiveAssignmentId is not null))
         {
             throw new TaskStoreException(
                 TaskErrorCode.TaskInvalidTransition,
-                $"Task '{taskId}' has an active assignment and must complete through the canonical task completion path.",
+                $"Task '{taskId}' is in execution status '{current.Status}' and must complete through the canonical task completion path (task disposition / completion settlement), not a generic PATCH.",
                 taskId,
                 expectedVersion,
                 current.Version);
