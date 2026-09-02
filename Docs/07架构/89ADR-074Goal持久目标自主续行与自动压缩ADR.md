@@ -568,3 +568,14 @@ compactionId, admissionDecision, suppressionReason, errorId
 13. Task 执行偏好来自 `Task.executionWindow`，低价时段来自现有提供商/模型配置；不存在平行的工作区 `work-policy.json` 权威。
 14. 低峰派发由事件和 durable intent 驱动；Heartbeat 不得决定任务是否开始、继续或完成。
 15. Task 和 Goal 的绑定、版本、Reservation token、证据与终态可从 canonical facts 完整重建。
+
+## 19. 2026-08-31 Goal 用户控制补充裁决
+
+Goal Header 必须始终给用户一个结构化控制入口，详细矩阵见
+`Docs/Features/任务调度器与Goal用户控制面设计.md`：
+
+1. 无 Goal 时可 `set` 创建；Active 可 pause/cancel；Paused 或 Blocked 可 resume/cancel；终态只能新建；
+2. UI 文案使用“停止”，服务端语义仍是可审计的 `cancel`，不得物理删除 Goal、Iteration 或证据；
+3. resume 不重置已消费 Iteration，`budget_exhausted` 不可恢复额度；
+4. Scheduler Pause 与 Goal Pause 是两个不同动作：前者只关闭新自动准入，后者才暂停具体 Goal 的 continuation；
+5. 所有 Web/Desktop/Connector 客户端复用服务端 Goal command 和 snapshot，不从消息文本或本地状态反推 phase。

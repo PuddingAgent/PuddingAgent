@@ -1,6 +1,6 @@
 # Task-bound Goal 与 Agent 状态感知自动派发代码级施工计划
 
-> 状态：实施中；G2/G3、Task-bound Goal 原子启动、结构化 Agent 路由、版本化 WorkUnit 执行计划、WorkUnit 顺序推进、调用边界 Token/成本硬预算和五分钟 Tracker 确定性 repair 已落源码；2026-08-28 已部署的仍是五分钟 shadow 旧构建，本次执行内核改造尚未进程外部署，authoritative、低峰价格路由与七夜生产验收仍未开放
+> 状态：实施中；G2/G3、Task-bound Goal 原子启动、结构化 Agent 路由、版本化 WorkUnit、调用边界 Token/成本硬预算、五分钟 Tracker/repair、全 Agent Availability 扫描与 provider/model 低价窗口 Resolver 已落源码；2026-08-29 已由 Desktop 构建并加载新程序集，完成一次真实自动派发 smoke；事件驱动唤醒、Goal 成本/后代工具归因、缓存 >99% 与七夜生产验收仍未完成
 > 日期：2026-08-21
 > 权威决策：[ADR-074 Goal 持久目标、自主续行与自动压缩](../07架构/89ADR-074Goal持久目标自主续行与自动压缩ADR.md)
 > 任务领域边界：[ADR-072 工作区 TODO、峰谷 Auto 派发与定时任务第一阶段](../07架构/86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md)
@@ -48,8 +48,8 @@ Task 进入 Ready/Deferred
 
 - `GoalContinuationWorker` 已实现 durable outbox 的 due scan、claim/lease/fencing、过期恢复、busy defer、stale suppress 与有界 dead-letter；synthetic Turn 统一进入 `ConversationAcceptanceStore -> ChatExecutionCommand -> ChatExecutionWorker`，不直接调用 LLM。
 - Conversation Acceptance 在同一事务中重验 Goal `activationEpoch/aggregateVersion`、单 Iteration、outbox lease；Task-bound Goal 还重验 Task version、active Assignment、Binding、Reservation fencing token 和 lease，并原子消费一次 Iteration 预算。
-- `GoalSettlementWorker` 已从 canonical Turn 终态构造有界 Evidence Capsule，保守 Verifier 不接受自然语言 DONE；无独立完成事实只会继续，失败/取消/证据不完整进入 Blocked，Task canonical Completed 才允许 Task-bound Goal 完成。
-- `TaskGoalDispatchTransactionStore` 已把 Task `Ready/Deferred -> Assigned`、Assignment、Agent Reservation、TaskGoalBinding、GoalRun、首个 GoalOutbox、Task events、canonical Goal events 和 Availability Reserved 投影放进同一个 Serializable SQLite 事务，并提供确定性幂等回放与 lost-race 稳定码。
+- `GoalSettlementWorker` 已从 canonical Turn 终态构造有界 Evidence Capsule，保守 Verifier 不接受自然语言 DONE；无独立完成事实只会继续。普通 Goal 的失败/取消/证据不完整进入可恢复 Blocked；Task-bound 尝试释放执行权时本次 Goal 终结为 Failed、Task 保持 Blocked/NeedsReview，Task canonical Completed 才允许 Task-bound Goal 完成。
+- `TaskGoalDispatchTransactionStore` 已把 Task `Ready/Deferred -> Assigned`、Assignment、Agent Reservation、TaskGoalBinding、GoalRun、首个 GoalOutbox、Task events、canonical Goal events 和 Availability Reserved 投影放进同一个 Serializable SQLite 事务，并提供确定性幂等回放与 lost-race 稳定码；派发会在同一事务内将该 Agent/会话由旧版本遗留的 detached Blocked Task Goal 可审计退役（允许来自前一 Task），避免 `UX_goal_runs_active` 被误报为竞争。
 - `TaskAutoDispatchWorker` 支持 `shadow | authoritative`。authoritative 仍要求 `TaskAutoDispatch.Enabled && TaskBoundGoals.Enabled && GoalRuns.Enabled && GoalRuns.ContinuationEnabled`，配置不满足时启动校验失败；默认配置四项均不开放自动执行。
 - 自动 Goal Turn 注入服务端生成的 Active Task metadata（task/assignment/version/reservation fence），Runtime 继续使用原生 `task_claim/task_update` 工具更新 Task；普通 Message Delivery 不参与 Task-bound Goal。
 - 聚焦验证：Platform 46 tests（Goal/settlement/atomic start/evaluator/reservation）通过；Runtime ActiveTask reservation fence 映射 1 test 通过；PuddingHost build 0 error。
@@ -175,7 +175,60 @@ authoritative 准入新增以下硬门：
 - Tracker 增加 Reservation fencing token 对账；repair 每次写入前在 Serializable 事务内重读 canonical facts，避免拿五分钟前的投影直接写库。
 - 聚焦源码验证串行通过：Runtime 36/36（Token/成本预算、当前 Turn compaction guard、工具发现、Turn 交接），Platform 31/31（Goal/WorkUnit 推进、Tracker/repair、计划编译与自动派发）。并行测试曾因共享产物和 SQLite 夹具产生非功能性争用，随后按仓库约定串行复核通过。
 
-仍未完成的是 checkpoint 生成/恢复、AwaitHandle signal/consume、冲突范围的实际锁管理、Task-bound blocked 后重新预约、动态质量/成本/TPS 路由反馈、真实 off-peak Resolver、新构建进程外部署与七个夜间窗口验收。authoritative 在这些准入门关闭前保持禁用；任务卡只能登记“源码实现/验证”，不能登记“生产完成”。
+仍未完成的是 checkpoint 生成/恢复、AwaitHandle signal/consume、冲突范围的实际锁管理、Task-bound blocked 后重新预约、动态质量/成本/TPS 路由反馈、新构建进程外部署与七个夜间窗口验收。任务卡必须把“源码实现/验证”“产品部署”“真实任务 smoke”“七夜生产验收”分开登记。
+
+### 1.9 2026-08-29 夜间低吞吐修复：bounded authoritative + 价格窗口 + WorkUnit 护栏
+
+本批次针对“Shadow 只观察、无 Ready 时不刷新 Availability、任务型子代理可显式索取 600 轮”的组合故障完成以下闭环：
+
+1. `TaskAutoDispatchWorker` 每次五分钟扫描先列举 Workspace Agent，并从 canonical Task/Goal/ChatCommand/SubAgent/Reservation 事实重建全部 Availability；即使 Ready 候选为 0，也会输出 `availabilityRefreshed/idle/busy/unknown`，不再让“无候选”掩盖陈旧空闲投影。
+2. 产品源码配置开启 `GoalRuns + Continuation + TaskBoundGoals`，`TaskAutoDispatch.Mode=authoritative`；每个 Agent 每轮仍最多一个 Task，新增 `MaxStartsPerScan=2` 限制全局启动突发。最终启动继续走唯一 Serializable Task→Plan→Assignment→Reservation→Binding→Goal→Outbox 事务及 live foreground fence。
+3. `PuddingLlmModelConfig` 新增版本化 `priceWindows/profileVersion/sourceUrl`。`ProviderModelExecutionWindowResolver` 使用 Agent 实际 provider/model route；`anytime` 直接允许，`inherit/off_peak_only` 只在版本化低价窗口内允许，缺 route/profile、过期或非法时 fail closed；支持时区、跨午夜、星期与生效/失效边界。
+4. 当前价格档案必须通过 LLM Model API 写入 `D:\data\config\llm.providers.json` 并热重载，不新增 `work-policy.json`。BigModel Coding Plan 当前官方高峰为北京时间 14:00–18:00（<https://docs.bigmodel.cn/cn/coding-plan/overview>）；DeepSeek V4 当前高峰为北京时间 09:00–12:00、14:00–18:00，其余为低峰（<https://api-docs.deepseek.com/quick_start/pricing/>）。价格规则会变化，因此生产判断读取版本化配置，不在 Resolver 代码中硬编码供应商时段。
+5. `workspace-task-agent`、带 TaskPlan/TaskNode 的 managed WorkUnit 无论调用方请求多少，均限制为最多 40 rounds、120 tool calls；普通非任务子代理仍可在系统显式授权下使用 600/2400 大任务护栏。该边界直接阻断“单一实施卡跑 109/600 轮”的 token 空转。
+6. 源码聚焦验证为 Platform 32/32、Core LLM 配置 14/14；这只证明代码和契约，部署后仍需用任务看板选择有限任务，核对 `GoalRun/Reservation/ExecutionCommand/Run` 及 provider usage/cache 事件。
+
+### 1.10 2026-08-29 首次 authoritative smoke 暴露的执行/结算缺口
+
+首次真实自动派发已证明 Task→Plan→Assignment→Reservation→Binding→Goal→Outbox→ChatCommand→Run 能原子启动，
+同时暴露出调度器之后的三个吞吐故障，必须作为同一执行架构修复，而不是只调整五分钟扫描：
+
+1. BigModel 首轮在 38,994 prompt + 4,096 completion 后以 `finishReason=length` 截断，只有 16,841 字符 reasoning、
+   没有工具调用和正文；旧 Runtime 把它转成“未返回可展示文本”的成功 Turn。新策略只允许一次不重放 reasoning 的
+   短恢复轮，明确要求立即调用单一最佳工具；再次截断以 `llm_output_truncated` 失败收口，防止无动作推理循环。
+2. 该 Turn 产生 728 条 thinking event。旧 `GoalSettlementStore` 取最早 128 条 evidence，导致真实
+   `turn.completed` 被挤掉并错误进入 `evidence_incomplete`。完整性现对全 Turn 事件窗口判断，EvidenceRefs 取最新
+   128 条；同一 settlement 事务回填 Run、耗时、LLM rounds、工具次数、输入/输出 tokens 到 Iteration 和 Goal 聚合。
+3. Runtime 已直记 `session:trace:round` usage，但 ConversationProjector 的 SQLite `DateTimeOffset`/nullable 指纹
+   查询无法翻译，catch 后又按 eventId 补记，造成一调用两行。修复后 SQL 只筛稳定 route/token 候选并限制最新
+   32 行，时间窗在内存判断；历史账本保留不就地删除，正式统计按唯一网关事实或 canonical invocation 去重。
+
+上述修复的源码门禁包括：输出截断一次恢复策略、150 条 thinking 后仍保留终态、Goal 指标聚合、SQLite usage
+指纹可翻译。它们通过后仍需部署并用下一张自动任务确认：一次调用只记一条 direct usage、Goal 不再伪阻塞、Plan
+从 Explore 推进到 Plan，才可把本批次记为产品 smoke 完成；七夜吞吐和缓存目标仍是独立生产验收门。
+
+### 1.11 2026-08-29 第二次真实自动派发 smoke 与剩余瓶颈
+
+- Desktop 点火链已完成 build → artifact prepare → Core restart → 新程序集加载，加载程序集 SHA-256 为
+  `413db0ac7e5bf432af0c43bd7ced561dbb2351f31d0d752701ad8262d165c47a`；最终 Core PID 24160 进入 Ready。
+- 启动扫描无需人工 RunNow 自动建立 Goal `tg-0d688d4937a48de7b947e4d5b293a904`。本次累计
+  157,059 input / 3,291 output，较修复前 1,666,495 input 的 runaway 降低 90.58%；最后一个 provider call
+  允许把 150k input 上限轻微越过 4.71%，随后父/子执行均立即停止。
+- 五次真实调用整体缓存 88,832 / 157,059 = 56.56%，包含 GLM 与 DeepSeek 各自冷启动；只统计 warm 调用为
+  88,832 / 91,285 = 97.31%。其中 GLM warm 95.85%，DeepSeek 两次 warm 合计 98.78%，仍未达到 >99% 门禁。
+- Goal/Iteration 已正确聚合父执行及递归子会话 Token，并在 Task-bound 尝试失败后以 Goal Failed、Task Blocked、
+  Binding/Reservation/Assignment 释放收口，不再留下可恢复 Blocked Goal 抢占下一次唯一键。
+- 仍存在两个归因缺口：Goal `cost=0` 未聚合 gateway usage 成本，`total_tool_calls=2` 只反映根执行而未包含同步后代；
+  两者不得用于当前吞吐 KPI。GLM 首轮 1,648 个 thinking frame、约 216 秒且无有效行动，是模型路由/推理预算瓶颈。
+- Message Fabric 恢复器曾把已无待投递行的子代理目标永久保存在内存，每 10 秒产生一次 `no_claim` 探测；
+  新源码在恢复扫描无可领取行时淘汰该 target，未来 durable row/event 会重新登记，回归测试覆盖不再重复探测。
+- 最终程序集下另一个自动任务的 GLM 冷轮 39,466 prompt / 4,096 output、93.2 秒后 length 截断；唯一短恢复轮
+  39,512 prompt 中命中 39,424（99.777%），16.6 秒并产出工具调用。稳定前缀与有界恢复在线生效，但冷轮
+  无行动输出仍属于未解决的模型路由/goodput 损耗。
+
+这次 smoke 证明了“有界自动启动、Token 预算向同步后代传播、Task-bound 失败释放”的在线链路，但并不等于
+P0 调度器验收完成。当前仍以五分钟恢复扫描为权威节拍，尚缺 Task/Availability/窗口边界事件驱动 intent，
+也尚未完成连续七夜 goodput、吞吐和缓存对照。
 
 ## 3. 现有代码基线与差距
 
@@ -796,6 +849,20 @@ git diff --check
 - 一 Task 一 active Goal，一 Agent 一 auto Reservation。
 - Task-bound Goal 不 batch，Runtime context 的 task/assignment/goal/epoch/fence 全部一致。
 - Goal 终态与 Task 终态双 CAS，Delivery ACK 不误完成。
+- Task-bound Goal 进入 Blocked/NeedsUser/Unsafe 时，同一结算事务必须释放 Binding、Assignment 与
+  Reservation；Task 保留 Blocked/NeedsReview，本次 Goal 以 Failed 终态保留审计证据。历史
+  `Blocked + active binding` 由五分钟 tracker/repair 自愈；历史 `Blocked + terminal binding` 在该 Agent
+  下次 Task 派发事务内转为 `superseded_by_task_retry` Failed，然后才允许新 Goal 创建，不能长期占用 Agent 或
+  伪装成 `task_goal_lost_race`。
+- legacy 手工派发若 Delivery 已确认但超过 stall threshold 仍无 execution/session/claim 事实，必须 fail closed
+  为 Blocked 并释放 Assignment；Delivery 已 dead-letter/failed/cancelled 则立即收口。扫描内 repair 必须先于
+  Availability 重建和候选派发，不能浪费下一周期。
+- `task_dispatch_outbox` 在发送前重验 Task/Assignment owner；失去所有权或确定性终态冲突必须 dead-letter，
+  原子 Binding 前再次重验以关闭发送期间的并发失效窗口；其他发送/持久化错误统一受 `MaxAttempts` 限制，
+  Core 停机取消保留 lease 等待恢复，禁止每五分钟永久重放已 stale 的派发。
+- WorkUnit 的 input/output/cost budget 必须沿 ToolInvocation → 单个/批量 SubAgent → RuntimeDispatch 传播；
+  同步 child 累计 usage 返回父级并由 Buffered/Streaming 共同计账。Goal 结算采用“主 Turn canonical usage +
+  当前 Turn 时间窗内递归子会话 TokenUsageEvents”，不得遗漏委派，也不得重复加入 root ledger。
 
 ### A5 低峰实效
 

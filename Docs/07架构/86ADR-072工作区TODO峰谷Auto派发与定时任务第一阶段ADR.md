@@ -1170,3 +1170,16 @@ Source/PuddingPlatformAdmin/src/pages/workspace-tasks/
 8. 关闭 Feature Flag 可以停止自动工作而不丢历史；
 9. 所有定向测试、恢复测试、Admin Build 和外部部署验收通过；
 10. Questioner、Goal 内核、自动监督、Graph 生成等高阶能力没有混入第一阶段手工路径；Auto 与 Goal 只通过 ADR-074 冻结的内部命令和绑定表交界。
+
+## 21. 2026-08-31 控制面补充裁决
+
+任务调度器必须提供服务端权威的 Web 管理面，具体按钮、状态矩阵和 API 合同见
+`Docs/Features/任务调度器与Goal用户控制面设计.md`。本补充冻结以下边界：
+
+1. Task 只有显式 `autoDispatchEnabled=true` 才进入自动候选；Web 必须允许用户编辑任务类型、能力、Provider/Model、fallback 与执行窗口，不能由标题猜测；
+2. 调度中心提供 Pause/Resume、Scan、Repair 与 CAS 策略更新。Pause 只阻止新的自动准入，不强杀已经开始的 Goal/Turn；
+3. 周期恢复扫描和人工 Scan 必须调用同一 runner 与同一事务 Fence；浏览器不得实现第二套 scheduler；
+4. `assignment_execution_missing` 表示 Delivery 已确认但没有 canonical execution claim。Repair 释放旧所有权并保持 Task Blocked，用户再通过 Resume/Requeue 建立新的 fenced 尝试；
+5. 配置变更读取 `IOptionsMonitor`；worker、event bridge、coordinator 与 starter 必须同步响应 pause/mode/limit，不能出现 UI 显示已暂停但事件路径仍派发；
+6. 控制 API 仅允许 admin；源码测试通过只到 `ready-for-external-deploy`，产品验收仍要求新进程加载后验证日志、状态和真实 Task→Goal 链。
+7. 发布包 `appsettings.json` 只保留 `TaskAutoDispatch` 安全默认；Admin 策略通过 revision CAS 原子写入 `<DataRoot>/config/system.json` 的 `taskAutoDispatch`，Core 热加载后立即驱动上述动态组件。
