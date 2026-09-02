@@ -65,6 +65,7 @@ public sealed class TaskSchedulingCoordinatorTests
         int maxAttempts,
         bool paused = false,
         int maxStartsPerScan = 2,
+        string mode = "authoritative",
         IDbContextFactory<PlatformDbContext>? brokenDecisionDbFactory = null) => new(
         _store,
         _evaluator,
@@ -80,7 +81,7 @@ public sealed class TaskSchedulingCoordinatorTests
         {
             Enabled = true,
             EventDrivenEnabled = true,
-            Mode = "authoritative",
+            Mode = mode,
             WorkspaceIds = ["ws"],
             PausedWorkspaceIds = paused ? ["ws"] : [],
             CandidateLimit = 100,
@@ -275,6 +276,52 @@ public sealed class TaskSchedulingCoordinatorTests
 
         Assert.HasCount(1, _starter.DetailedCalls);
         Assert.AreEqual(3, _starter.DetailedCalls[0].maxStartsOverride);
+    }
+
+    [TestMethod]
+    public async Task Coordinator_AuthoritativeSingleMode_EventPathStartsWithForcedMaxOne()
+    {
+        await SeedReadyTaskAsync("task-s1");
+        await SeedReadyTaskAsync("task-s2");
+        await _store.EnqueueAsync(TaskIntent(1, "task-s1"));
+        await _store.EnqueueAsync(TaskIntent(2, "task-s2"));
+
+        // authoritative-single（灰度试运行）：启动门控归一放行 + EffectiveMaxStartsPerScan 强制 1。
+        await CreateCoordinator(maxAttempts: 3, maxStartsPerScan: 5, mode: "authoritative-single")
+            .ProcessOnceAsync();
+
+        Assert.HasCount(1, _starter.DetailedCalls);
+        Assert.AreEqual(1, _starter.DetailedCalls[0].maxStartsOverride);
+        await using var db = await _factory.CreateDbContextAsync();
+        var intents = await db.TaskSchedulerIntents.OrderBy(item => item.SourceEventId).ToListAsync();
+        Assert.HasCount(2, intents);
+        Assert.IsTrue(intents.All(item => item.Status == TaskSchedulerIntentStatuses.Done));
+        foreach (var intent in intents)
+        {
+            var outcome = await _outcomeStore.GetOutcomeAsync(intent.IntentId);
+            Assert.IsNotNull(outcome);
+            Assert.AreEqual(TaskSchedulerIntentOutcomes.Started, outcome.Outcome);
+        }
+    }
+
+    [TestMethod]
+    public async Task Coordinator_AuthoritativeBoundedMode_EventPathUsesConfiguredCap()
+    {
+        await SeedReadyTaskAsync("task-b1");
+        await SeedReadyTaskAsync("task-b2");
+        await _store.EnqueueAsync(TaskIntent(1, "task-b1"));
+        await _store.EnqueueAsync(TaskIntent(2, "task-b2"));
+
+        // authoritative-bounded（受限批量）：启动门控归一放行 + 上限用配置值（EffectiveMaxStartsPerScan=4）。
+        await CreateCoordinator(maxAttempts: 3, maxStartsPerScan: 4, mode: "authoritative-bounded")
+            .ProcessOnceAsync();
+
+        Assert.HasCount(1, _starter.DetailedCalls);
+        Assert.AreEqual(4, _starter.DetailedCalls[0].maxStartsOverride);
+        await using var db = await _factory.CreateDbContextAsync();
+        var intents = await db.TaskSchedulerIntents.OrderBy(item => item.SourceEventId).ToListAsync();
+        Assert.HasCount(2, intents);
+        Assert.IsTrue(intents.All(item => item.Status == TaskSchedulerIntentStatuses.Done));
     }
 
     [TestMethod]

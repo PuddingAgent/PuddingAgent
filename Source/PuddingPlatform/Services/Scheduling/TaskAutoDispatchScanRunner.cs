@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PuddingCode.Scheduling;
 using PuddingPlatform.Services;
 
@@ -20,6 +21,7 @@ public sealed class TaskAutoDispatchScanRunner(
     IAgentAvailabilityProjectionStore availabilityStore,
     ITaskAutoDispatchStarter starter,
     TaskSchedulerDecisionStore decisionStore,
+    IOptionsMonitor<TaskAutoDispatchOptions> options,
     TimeProvider timeProvider,
     ILogger<TaskAutoDispatchScanRunner> logger)
 {
@@ -78,11 +80,10 @@ public sealed class TaskAutoDispatchScanRunner(
             refinementRecorded = 0;
             writeBacks = 0;
         }
-        // 缺口 3：authoritative-single 强制单卡启动（灰度试运行）；bounded 用配置值（默认 2）。
-        var maxStartsOverride = string.Equals(normalizedMode, "authoritative-single", StringComparison.Ordinal)
-            ? 1
-            : (int?)null;
-        var started = authoritative ? await starter.DispatchAsync(decisions, maxStartsOverride, ct) : 0;
+        // 缺口 3：上限统一走 EffectiveMaxStartsPerScan（authoritative-single 强制 1，其余 clamp 配置值），
+        // 与事件驱动 Coordinator（§5.3 步骤 6）同一归一语义；shadow 不派发。
+        var effectiveMaxStarts = TaskAutoDispatchOptions.EffectiveMaxStartsPerScan(options.CurrentValue);
+        var started = authoritative ? await starter.DispatchAsync(decisions, effectiveMaxStarts, ct) : 0;
 
         var summary = new TaskAutoDispatchScanSummary
         {

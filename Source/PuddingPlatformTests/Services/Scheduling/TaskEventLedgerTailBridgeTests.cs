@@ -41,14 +41,14 @@ public sealed class TaskEventLedgerTailBridgeTests
             Directory.Delete(_root, recursive: true);
     }
 
-    private TaskEventLedgerTailBridge CreateBridge(bool authoritative = true) => new(
+    private TaskEventLedgerTailBridge CreateBridge(bool authoritative = true, string? modeOverride = null) => new(
         _factory,
         _store,
         new StaticOptionsMonitor<TaskAutoDispatchOptions>(new TaskAutoDispatchOptions
         {
             Enabled = true,
             EventDrivenEnabled = true,
-            Mode = authoritative ? "authoritative" : "shadow",
+            Mode = modeOverride ?? (authoritative ? "authoritative" : "shadow"),
             WorkspaceIds = ["ws"],
             IntentBatchSize = 50,
             IntentPollInterval = TimeSpan.FromSeconds(2),
@@ -186,6 +186,26 @@ public sealed class TaskEventLedgerTailBridgeTests
 
         await using var db = await _factory.CreateDbContextAsync();
         Assert.IsFalse(await db.TaskSchedulerIntents.AnyAsync(item => item.SourceEventId == ready));
+    }
+
+    [TestMethod]
+    public async Task AuthoritativeSingleMode_EnqueuesTaskAndGoalEvents()
+    {
+        // authoritative-single 归一后与 authoritative 同走事件入队路径（此前精确匹配 "authoritative" 被排除）。
+        var bridge = CreateBridge(modeOverride: "authoritative-single");
+        await bridge.PollOnceAsync(); // 空表：游标 = 0
+
+        var ready = await InsertTaskEventAsync(TaskEventType.TaskReady);
+        var convCompleted = await InsertConversationEventAsync("goal.completed", runId: "goal-1");
+        await bridge.PollOnceAsync();
+
+        await using var db = await _factory.CreateDbContextAsync();
+        var intents = await db.TaskSchedulerIntents.OrderBy(item => item.Source).ThenBy(item => item.SourceEventId).ToListAsync();
+        Assert.HasCount(2, intents);
+        Assert.IsTrue(intents.Any(item =>
+            item.Source == TaskSchedulerIntentSources.TaskEvents && item.SourceEventId == ready));
+        Assert.IsTrue(intents.Any(item =>
+            item.Source == TaskSchedulerIntentSources.ConversationEvents && item.SourceEventId == convCompleted));
     }
 
     private async Task<long> CountTailMaxAsync(string source) => await _store.GetTailCursorAsync(source);

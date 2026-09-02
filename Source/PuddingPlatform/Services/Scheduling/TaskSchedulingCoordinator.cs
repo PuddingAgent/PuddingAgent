@@ -20,7 +20,8 @@ namespace PuddingPlatform.Services.Scheduling;
 /// outcome（task_scheduler_intent_outcomes，PK intent_id 幂等）才能 done；
 /// candidate decision 在派发「之前」落库；决策落库失败即 fail closed——不启动、不结算，
 /// Intent 走 FailAsync 保留租约重试。crash 后重放依赖 Intent 主键幂等与 starter fence。
-/// 仅在 TaskAutoDispatch.Enabled 且 Mode=authoritative 时启动（mode 归一化收编属下一批次）。
+/// 启动门控：TaskAutoDispatch.Enabled 且 Mode 为 authoritative 系（authoritative / authoritative-single /
+/// authoritative-bounded，经 TaskAutoDispatchOptions.IsAuthoritativeMode 归一；mode 归一化已收编）。
 /// </para>
 /// </summary>
 public sealed class TaskSchedulingCoordinator(
@@ -45,7 +46,7 @@ public sealed class TaskSchedulingCoordinator(
             {
                 if (current.Enabled
                     && current.EventDrivenEnabled
-                    && string.Equals(current.Mode, "authoritative", StringComparison.OrdinalIgnoreCase))
+                    && TaskAutoDispatchOptions.IsAuthoritativeMode(current.Mode))
                     await ProcessOnceAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -78,7 +79,7 @@ public sealed class TaskSchedulingCoordinator(
         var current = options.CurrentValue;
         if (!current.Enabled
             || !current.EventDrivenEnabled
-            || !string.Equals(current.Mode, "authoritative", StringComparison.OrdinalIgnoreCase))
+            || !TaskAutoDispatchOptions.IsAuthoritativeMode(current.Mode))
             return;
         var startedTotal = 0;
         var completedTotal = 0;

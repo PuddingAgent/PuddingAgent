@@ -110,10 +110,10 @@ public sealed class TaskEventLedgerTailBridge(
         await InitializeCursorsAsync(ct);
         var current = options.CurrentValue;
         var batch = Math.Clamp(current.IntentBatchSize, 1, 500);
-        // shadow 模式跳过入队、只推进游标（Coordinator 不存在，入队只会在表里积压）。
+        // shadow/disabled 等非 authoritative 系跳过入队、只推进游标（Coordinator 不消费，入队只会在表里积压）。
         var enqueue = current.Enabled
             && current.EventDrivenEnabled
-            && string.Equals(current.Mode, "authoritative", StringComparison.OrdinalIgnoreCase);
+            && TaskAutoDispatchOptions.IsAuthoritativeMode(current.Mode);
         _taskEventsCursor = await PollTaskEventsAsync(_taskEventsCursor, batch, enqueue, current, ct);
         _conversationEventsCursor = await PollConversationEventsAsync(
             _conversationEventsCursor, batch, enqueue, current, ct);
