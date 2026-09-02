@@ -150,6 +150,16 @@ export interface TaskDto {
   /** wire: "inherit"/"anytime"/"off_peak_only" */
   executionWindow: TaskExecutionWindowWire;
   preferredAgentId?: string;
+  /** 结构化任务类型；调度器按类型路由，不从标题猜测。 */
+  taskType: string;
+  /** 执行 Agent 必须具备的 Capability ID。 */
+  requiredCapabilityIds: string[];
+  requiredProviderId?: string;
+  requiredModelId?: string;
+  /** 首选 Agent 不可用时是否允许选择兼容 Agent。 */
+  allowAgentFallback: boolean;
+  /** 任务是否显式进入后台自动派发候选集；默认关闭。 */
+  autoDispatchEnabled: boolean;
   activeAssignmentId?: string;
   /** ISO8601 UTC */
   notBeforeUtc?: string;
@@ -185,6 +195,107 @@ export interface TaskDeleteResult {
   task?: TaskDto;
 }
 
+// ─── Scheduler Control Plane ────────────────────────────────────────────
+
+export interface TaskSchedulerPolicyDto {
+  revision: number;
+  enabled: boolean;
+  paused: boolean;
+  mode: 'shadow' | 'authoritative';
+  scanIntervalSeconds: number;
+  minimumIdleSeconds: number;
+  candidateLimit: number;
+  maxStartsPerScan: number;
+  trackerStallSeconds: number;
+  eventDrivenEnabled: boolean;
+}
+
+export interface TaskSchedulerPrerequisitesDto {
+  taskBoundGoalsEnabled: boolean;
+  goalRunsEnabled: boolean;
+  goalContinuationEnabled: boolean;
+  authoritativeReady: boolean;
+}
+
+export interface TaskAutoDispatchScanSummaryDto {
+  workspaceId: string;
+  mode: string;
+  trigger: string;
+  startedAtUtc: string;
+  completedAtUtc: string;
+  durationMs: number;
+  availabilityRefreshed: number;
+  idleAgents: number;
+  busyAgents: number;
+  unknownAgents: number;
+  backlog: number;
+  refinementReady: number;
+  needsRefinement: number;
+  promoted: number;
+  candidates: number;
+  eligible: number;
+  deferred: number;
+  denied: number;
+  started: number;
+  tracked: number;
+  healthy: number;
+  waiting: number;
+  stalled: number;
+  inconsistent: number;
+  cleanupRequired: number;
+  repaired: number;
+  decisionCodes: Record<string, number>;
+  repairCodes: Record<string, number>;
+}
+
+export interface TaskSchedulerStatusDto {
+  workspaceId: string;
+  state:
+    | 'disabled'
+    | 'paused'
+    | 'shadow'
+    | 'authoritative'
+    | 'scanning'
+    | 'faulted';
+  policy: TaskSchedulerPolicyDto;
+  prerequisites: TaskSchedulerPrerequisitesDto;
+  lastScan?: TaskAutoDispatchScanSummaryDto;
+  nextScanEstimateUtc?: string;
+  lastError?: string;
+  lastFailedAtUtc?: string;
+}
+
+export interface TaskSchedulerPolicyUpdateRequest {
+  expectedRevision: number;
+  enabled: boolean;
+  paused: boolean;
+  mode: 'shadow' | 'authoritative';
+  scanIntervalSeconds: number;
+  candidateLimit: number;
+  maxStartsPerScan: number;
+  eventDrivenEnabled: boolean;
+}
+
+export interface TaskAutoDispatchCandidateDecisionDto {
+  workspaceId: string;
+  taskId: string;
+  taskVersion?: number;
+  agentId?: string;
+  taskType?: string;
+  verdict: 'Eligible' | 'Deferred' | 'Denied' | number;
+  code: string;
+  evaluatedAtUtc: string;
+  nextEligibleAtUtc?: string;
+  availabilityReason?: string;
+  dependencyState?: string;
+  windowCode?: string;
+}
+
+export interface TaskSchedulerActionResultDto {
+  summary: TaskAutoDispatchScanSummaryDto;
+  status: TaskSchedulerStatusDto;
+}
+
 // ─── 评论/备注（TB-12 F-1，对齐 TB-11 B-5 DTO）─────────────────────────
 
 export type TaskCommentAuthorKindWire = 'user' | 'agent' | 'system';
@@ -215,6 +326,12 @@ export interface CreateTaskRequest {
   /** 默认 "inherit" */
   executionWindow?: TaskExecutionWindowWire;
   preferredAgentId?: string;
+  taskType?: string;
+  requiredCapabilityIds?: string[];
+  requiredProviderId?: string;
+  requiredModelId?: string;
+  allowAgentFallback?: boolean;
+  autoDispatchEnabled?: boolean;
   notBeforeUtc?: string;
   dueAtUtc?: string;
   /** 默认 0 */
@@ -232,6 +349,12 @@ export interface PatchTaskRequest {
   priority?: TaskPriorityWire;
   executionWindow?: TaskExecutionWindowWire;
   preferredAgentId?: string;
+  taskType?: string;
+  requiredCapabilityIds?: string[];
+  requiredProviderId?: string;
+  requiredModelId?: string;
+  allowAgentFallback?: boolean;
+  autoDispatchEnabled?: boolean;
   notBeforeUtc?: string;
   dueAtUtc?: string;
   sortOrder?: number;

@@ -241,6 +241,29 @@ export const TaskDetailsDrawer: React.FC<TaskDetailsDrawerProps> = ({
             <Descriptions.Item label="偏好 Agent">
               {task.preferredAgentId ?? '—'}
             </Descriptions.Item>
+            <Descriptions.Item label="自动调度">
+              <Tag color={task.autoDispatchEnabled ? 'green' : 'default'}>
+                {task.autoDispatchEnabled ? '已纳入候选集' : '未纳入候选集'}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="任务类型">
+              {task.taskType || 'general'}
+            </Descriptions.Item>
+            <Descriptions.Item label="所需能力">
+              {(task.requiredCapabilityIds?.length ?? 0) > 0
+                ? task.requiredCapabilityIds?.map((capability) => (
+                    <Tag key={capability}>{capability}</Tag>
+                  ))
+                : '—'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Provider / Model">
+              {task.requiredProviderId || task.requiredModelId
+                ? `${task.requiredProviderId ?? '*'} / ${task.requiredModelId ?? '*'}`
+                : '—'}
+            </Descriptions.Item>
+            <Descriptions.Item label="兼容 Agent 回退">
+              {task.allowAgentFallback ? '允许' : '禁止'}
+            </Descriptions.Item>
             <Descriptions.Item label="活跃 Assignment">
               <TaskExecutionLink task={task} />
             </Descriptions.Item>

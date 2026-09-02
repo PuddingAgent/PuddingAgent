@@ -29,6 +29,7 @@ export interface TaskActions {
   onEdit: (task: TaskDto) => void;
   onAssign: (task: TaskDto) => void;
   onRunNow: (task: TaskDto) => void;
+  onToggleAutoDispatch: (task: TaskDto) => void;
   onCommand: (task: TaskDto, command: TaskCommandWire) => void;
 }
 
@@ -86,6 +87,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, actions }) => {
           label: '编辑',
           icon: <EditOutlined />,
           onClick: () => actions.onEdit(task),
+        }
+      : null,
+    canEditTask(task.status)
+      ? {
+          key: 'auto-dispatch',
+          label: task.autoDispatchEnabled ? '退出自动调度' : '纳入自动调度',
+          onClick: () => actions.onToggleAutoDispatch(task),
         }
       : null,
     canApplyCommand(task.status, 'Assign')
@@ -186,6 +194,11 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, actions }) => {
           <PuddingStatusBadge tone={statusTone(task.status)}>
             {TASK_STATUS_LABELS[task.status]}
           </PuddingStatusBadge>
+          {task.autoDispatchEnabled && (
+            <Tag color="purple" style={{ marginInlineEnd: 0, fontSize: 11 }}>
+              自动
+            </Tag>
+          )}
           <span style={{ flex: 1 }} />
           <Dropdown
             menu={{ items: menuItems }}

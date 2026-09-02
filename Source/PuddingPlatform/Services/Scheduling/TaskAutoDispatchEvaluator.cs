@@ -75,10 +75,11 @@ public sealed class TaskAutoDispatchOptions
     /// Maximum age without a newer canonical Task/Goal/Iteration/Execution fact
     /// before the read-only tracker reports a stalled execution.
     /// </summary>
-
     public TimeSpan TrackerStallThreshold { get; set; } = TimeSpan.FromMinutes(30);
     public Dictionary<string, TaskTypeRouteOptions> TaskTypeRoutes { get; set; }
         = new(StringComparer.OrdinalIgnoreCase);
+
+
 
     // ── P0 Scheduler 事件驱动层（event-driven intents）──────────
     /// <summary>Event-driven layer master switch. Default false: the ledger tail bridge stays off and the periodic worker scan remains the only wake-up.</summary>

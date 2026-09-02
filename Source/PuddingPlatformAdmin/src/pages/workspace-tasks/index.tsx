@@ -1,4 +1,5 @@
 import {
+  ControlOutlined,
   PlusOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
@@ -39,6 +40,7 @@ import { TaskBoard } from './TaskBoard';
 import type { TaskActions } from './TaskCard';
 import { TaskDetailsDrawer } from './TaskDetailsDrawer';
 import { TaskEditorDrawer } from './TaskEditorDrawer';
+import { SchedulerDrawer } from './SchedulerDrawer';
 import { TaskTable } from './TaskTable';
 import {
   BOARD_COLUMN_ORDER,
@@ -121,6 +123,7 @@ export function WorkspaceTasksPanel({ workspaceId }: WorkspaceTasksPanelProps) {
   const [editingTask, setEditingTask] = useState<TaskDto | null>(null);
   const [assignment, setAssignment] = useState<AssignmentState | null>(null);
   const [markFailed, setMarkFailed] = useState<TaskDto | null>(null);
+  const [schedulerOpen, setSchedulerOpen] = useState(false);
   const [eventsByTask, setEventsByTask] = useState<
     Record<string, TaskEventWatchEvent[]>
   >({});
@@ -490,9 +493,29 @@ export function WorkspaceTasksPanel({ workspaceId }: WorkspaceTasksPanelProps) {
       },
       onAssign: (task) => setAssignment({ task, mode: 'assign' }),
       onRunNow: (task) => setAssignment({ task, mode: 'runNow' }),
+      onToggleAutoDispatch: async (task) => {
+        try {
+          const updated = await updateTask(workspaceId, task.taskId, {
+            expectedVersion: task.version,
+            autoDispatchEnabled: !task.autoDispatchEnabled,
+          });
+          handleSaved(updated);
+          message.success(
+            updated.autoDispatchEnabled ? '已纳入自动调度' : '已退出自动调度',
+          );
+        } catch (error) {
+          const parsed = parseTaskError(error);
+          if (parsed.body?.code === 'task.version_conflict') {
+            message.error('任务已被更新，已刷新最新状态');
+            void reconcileTask(task.taskId);
+          } else {
+            message.error(parsed.body?.message ?? '自动调度设置失败');
+          }
+        }
+      },
       onCommand: handleCommand,
     }),
-    [handleCommand],
+    [handleCommand, handleSaved, message, reconcileTask, workspaceId],
   );
 
   // ─── 派生：搜索过滤 + 表格数据 ────────────────────────────────────────
@@ -567,6 +590,13 @@ export function WorkspaceTasksPanel({ workspaceId }: WorkspaceTasksPanelProps) {
         ),
         subTitle: `工作区 ID：${workspaceId}`,
         extra: [
+          <Button
+            key="scheduler"
+            icon={<ControlOutlined />}
+            onClick={() => setSchedulerOpen(true)}
+          >
+            调度中心
+          </Button>,
           <Button
             key="refresh"
             icon={<ReloadOutlined />}
@@ -656,6 +686,13 @@ export function WorkspaceTasksPanel({ workspaceId }: WorkspaceTasksPanelProps) {
         agents={agents}
         onClose={() => setEditorOpen(false)}
         onSaved={handleSaved}
+      />
+
+      <SchedulerDrawer
+        open={schedulerOpen}
+        workspaceId={workspaceId}
+        onClose={() => setSchedulerOpen(false)}
+        onReconciled={() => void loadSnapshot()}
       />
 
       <TaskDetailsDrawer

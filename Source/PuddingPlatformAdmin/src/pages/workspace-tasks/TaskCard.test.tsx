@@ -14,6 +14,10 @@ function makeTask(overrides: Partial<TaskDto> = {}): TaskDto {
     allowedTransitions: [],
     priority: 'p3',
     executionWindow: 'inherit',
+    taskType: 'general',
+    requiredCapabilityIds: [],
+    allowAgentFallback: true,
+    autoDispatchEnabled: false,
     sortOrder: 0,
     version: 1,
     createdAtUtc: '2026-08-16T00:00:00Z',
@@ -27,6 +31,7 @@ const actions: TaskActions = {
   onEdit: jest.fn(),
   onAssign: jest.fn(),
   onRunNow: jest.fn(),
+  onToggleAutoDispatch: jest.fn(),
   onCommand: jest.fn(),
 };
 
