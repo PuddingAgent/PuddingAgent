@@ -6,12 +6,29 @@ using PuddingPlatform.Services.Goals;
 
 namespace PuddingPlatform.Services.Scheduling;
 
+/// <summary>单卡启动结果（事件驱动 Coordinator 用于逐 Intent 落 outcome，§5.3 步骤 6）。</summary>
+public sealed record TaskAutoDispatchStartOutcome
+{
+    public required string TaskId { get; init; }
+    public required bool Started { get; init; }
+    public required string Code { get; init; }
+    public string? AgentId { get; init; }
+    public string? AssignmentId { get; init; }
+    public string? GoalRunId { get; init; }
+}
+
 /// <summary>事件驱动协调器使用的派发启动边界（与 Worker 的 DispatchEligibleAsync 同语义）。</summary>
 public interface ITaskAutoDispatchStarter
 {
     /// <summary>对 Eligible 决策执行围栏校验 + 二次 window fence + 原子启动，返回启动数。
     /// maxStartsOverride 供 staged 灰度（authoritative-single 强制 1）覆盖配置值。</summary>
     Task<int> DispatchAsync(
+        IReadOnlyList<TaskAutoDispatchCandidateDecision> decisions,
+        int? maxStartsOverride = null,
+        CancellationToken ct = default);
+
+    /// <summary>同 DispatchAsync，但返回逐 Task 启动结果（含拒绝码与 Assignment/Goal id）。</summary>
+    Task<IReadOnlyList<TaskAutoDispatchStartOutcome>> DispatchDetailedAsync(
         IReadOnlyList<TaskAutoDispatchCandidateDecision> decisions,
         int? maxStartsOverride = null,
         CancellationToken ct = default);
@@ -41,13 +58,23 @@ public sealed class TaskAutoDispatchStarter(
         int? maxStartsOverride = null,
         CancellationToken ct = default)
     {
+        var outcomes = await DispatchDetailedAsync(decisions, maxStartsOverride, ct);
+        return outcomes.Count(item => item.Started);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TaskAutoDispatchStartOutcome>> DispatchDetailedAsync(
+        IReadOnlyList<TaskAutoDispatchCandidateDecision> decisions,
+        int? maxStartsOverride = null,
+        CancellationToken ct = default)
+    {
+        var outcomes = new List<TaskAutoDispatchStartOutcome>();
         var current = options.CurrentValue;
         var maxStarts = Math.Clamp(maxStartsOverride ?? current.MaxStartsPerScan, 1, 32);
-        var started = 0;
         foreach (var candidate in decisions.Where(item =>
                      item.Verdict == TaskAutoDispatchCandidateVerdict.Eligible))
         {
-            if (started >= maxStarts)
+            if (outcomes.Count(item => item.Started) >= maxStarts)
                 break;
             if (candidate.AgentId is null
                 || candidate.ConversationId is null
@@ -61,6 +88,13 @@ public sealed class TaskAutoDispatchStarter(
                     "[TaskAutoDispatchStarter] incomplete eligible candidate refused task={TaskId} agent={AgentId}",
                     candidate.TaskId,
                     candidate.AgentId);
+                outcomes.Add(new TaskAutoDispatchStartOutcome
+                {
+                    TaskId = candidate.TaskId,
+                    Started = false,
+                    Code = "incomplete_candidate",
+                    AgentId = candidate.AgentId,
+                });
                 continue;
             }
 
@@ -80,6 +114,13 @@ public sealed class TaskAutoDispatchStarter(
                     candidate.TaskId,
                     candidate.AgentId,
                     window.Code);
+                outcomes.Add(new TaskAutoDispatchStartOutcome
+                {
+                    TaskId = candidate.TaskId,
+                    Started = false,
+                    Code = string.IsNullOrWhiteSpace(window.Code) ? "window_refused" : window.Code,
+                    AgentId = candidate.AgentId,
+                });
                 continue;
             }
 
@@ -106,9 +147,16 @@ public sealed class TaskAutoDispatchStarter(
                 CorrelationId = candidate.TaskId,
                 IdempotencyKey = $"task-goal:{candidate.WorkspaceId}:{candidate.TaskId}:{candidate.TaskVersion.Value}",
             }, ct);
-            if (result.Started && result.Code == TaskBoundGoalStartCodes.Started)
-                started++;
-            else if (!result.Started)
+            outcomes.Add(new TaskAutoDispatchStartOutcome
+            {
+                TaskId = candidate.TaskId,
+                Started = result.Started,
+                Code = result.Code,
+                AgentId = candidate.AgentId,
+                AssignmentId = result.AssignmentId,
+                GoalRunId = result.GoalRunId,
+            });
+            if (!result.Started)
                 logger.LogInformation(
                     "[TaskAutoDispatchStarter] atomic start refused task={TaskId} agent={AgentId} code={Code}",
                     candidate.TaskId,
@@ -116,6 +164,6 @@ public sealed class TaskAutoDispatchStarter(
                     result.Code);
         }
 
-        return started;
+        return outcomes;
     }
 }

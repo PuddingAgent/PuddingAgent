@@ -245,8 +245,12 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<TaskAutoDispatchStarter>();
         builder.Services.AddSingleton<ITaskAutoDispatchStarter>(sp =>
             sp.GetRequiredService<TaskAutoDispatchStarter>());
-        // 调度决策 durable 持久化（task_scheduler_decisions；ScanRunner 三写点共享）
+                // 调度决策 durable 持久化（task_scheduler_decisions；ScanRunner 三写点共享）
         builder.Services.AddSingleton<TaskSchedulerDecisionStore>();
+        // Intent 结算 outcome durable 持久化（task_scheduler_intent_outcomes；事件驱动 Coordinator 专用）
+        builder.Services.AddSingleton<TaskSchedulerIntentOutcomeStore>();
+        builder.Services.AddSingleton<ITaskSchedulerIntentOutcomeStore>(sp =>
+            sp.GetRequiredService<TaskSchedulerIntentOutcomeStore>());
         builder.Services.AddSingleton<TaskAutoDispatchScanRunner>();
         builder.Services.AddSingleton<TaskSchedulerControlService>();
         builder.Services.AddHostedService<TaskAutoDispatchWorker>();

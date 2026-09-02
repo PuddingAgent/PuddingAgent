@@ -72,6 +72,28 @@ public sealed class TaskSchedulerDecisionStore(
         return inserted;
     }
 
+    /// <summary>读取同 scan 的 candidate 决策 id（taskId → decision_id），供 Intent outcome 关联（§5.3 步骤 7）。</summary>
+    public async Task<IReadOnlyDictionary<string, string>> GetCandidateDecisionIdsAsync(
+        string scanId,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scanId);
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Database.SqlQuery<DecisionIdRow>(
+            $"""
+            SELECT task_id AS TaskId, decision_id AS DecisionId
+            FROM task_scheduler_decisions
+            WHERE scan_id = {scanId} AND phase = 'candidate'
+            """).ToListAsync(ct);
+        return rows.ToDictionary(row => row.TaskId, row => row.DecisionId, StringComparer.Ordinal);
+    }
+
+    private sealed record DecisionIdRow
+    {
+        public string TaskId { get; init; } = string.Empty;
+        public string DecisionId { get; init; } = string.Empty;
+    }
+
     /// <summary>Backlog refinement verdict 落库（5 种 verdict 稳定 snake_case），返回新插入行数。</summary>
     public async Task<int> RecordRefinementDecisionsAsync(
         string workspaceId,

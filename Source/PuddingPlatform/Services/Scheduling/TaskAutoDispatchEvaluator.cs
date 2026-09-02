@@ -4,6 +4,7 @@ using PuddingCode.Goals;
 using PuddingCode.Scheduling;
 using PuddingCode.Tasks;
 using PuddingPlatform.Data;
+using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
 
 namespace PuddingPlatform.Services.Scheduling;
@@ -183,8 +184,7 @@ public sealed class TaskAutoDispatchEvaluator(
         if (limit is < 1 or > 500)
             throw new ArgumentOutOfRangeException(nameof(limit));
 
-        var now = timeProvider.GetUtcNow();
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
+                await using var db = await dbFactory.CreateDbContextAsync(ct);
         // EF SQLite cannot translate DateTimeOffset ORDER BY. The columns are
         // persisted as ISO timestamps, so SQLite julianday gives deterministic
         // UTC ordering while the LIMIT keeps every scan bounded.
@@ -205,9 +205,63 @@ public sealed class TaskAutoDispatchEvaluator(
                          task_id ASC
                 LIMIT {limit}
                 """)
-            .AsNoTracking()
+                        .AsNoTracking()
             .ToListAsync(ct);
 
+        return await EvaluateCandidatesAsync(workspaceId, candidates, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TaskAutoDispatchCandidateDecision>> EvaluateTasksAsync(
+        string workspaceId,
+        IReadOnlyCollection<string> taskIds,
+        int candidateLimit,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
+        ArgumentNullException.ThrowIfNull(taskIds);
+        if (candidateLimit is < 1 or > 500)
+            throw new ArgumentOutOfRangeException(nameof(candidateLimit));
+        var distinctIds = taskIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (distinctIds.Length == 0)
+            return [];
+
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var candidates = await db.WorkspaceTasks
+            .AsNoTracking()
+            .Where(entity => entity.WorkspaceId == workspaceId
+                             && distinctIds.Contains(entity.TaskId)
+                             && (entity.Status == WorkspaceTaskStatus.Ready
+                                 || entity.Status == WorkspaceTaskStatus.Deferred)
+                             && entity.AutoDispatchEnabled)
+            .ToListAsync(ct);
+        // 与工作区扫描 SQL 的排序保持一致（priority ASC → due 空值靠后 → not_before 空值靠后
+        // → created → sort_order → task_id），保证 candidateLimit 截断的确定性。
+        var ordered = candidates
+            .OrderBy(entity => (int)entity.Priority)
+            .ThenBy(entity => entity.DueAtUtc.HasValue ? 0 : 1)
+            .ThenBy(entity => entity.DueAtUtc ?? DateTimeOffset.MaxValue)
+            .ThenBy(entity => entity.NotBeforeUtc.HasValue ? 0 : 1)
+            .ThenBy(entity => entity.NotBeforeUtc ?? DateTimeOffset.MaxValue)
+            .ThenBy(entity => entity.CreatedAtUtc)
+            .ThenBy(entity => entity.SortOrder)
+            .ThenBy(entity => entity.TaskId, StringComparer.Ordinal)
+            .Take(candidateLimit)
+            .ToList();
+
+        return await EvaluateCandidatesAsync(workspaceId, ordered, ct);
+    }
+
+    /// <summary>工作区扫描与 task-scoped 入口共享的逐卡评估管线（可用性重建 + 各道门 + 评分 + 每 Agent 单卡）。</summary>
+    private async Task<List<TaskAutoDispatchCandidateDecision>> EvaluateCandidatesAsync(
+        string workspaceId,
+        List<WorkspaceTaskEntity> candidates,
+        CancellationToken ct)
+    {
+        var now = timeProvider.GetUtcNow();
         var agents = await agentCatalog.ListAgentsAsync(workspaceId, ct);
         var availabilityByAgent = new Dictionary<string, AgentAvailabilitySnapshot>(
             StringComparer.Ordinal);

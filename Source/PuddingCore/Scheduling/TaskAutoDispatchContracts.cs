@@ -84,4 +84,15 @@ public interface ITaskAutoDispatchEvaluator
         string workspaceId,
         int limit,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Task-scoped 事件驱动评估（实施方案 §5.2）：只评估指定的 taskIds（仍限于 Ready/Deferred
+    /// 且 auto_dispatch_enabled 的候选），供事件驱动 Coordinator 按触发 Task 结算 Intent。
+    /// 不在可评估集合内的 taskId 不产生 decision——由调用方落 terminal/ineligible outcome。
+    /// </summary>
+    Task<IReadOnlyList<TaskAutoDispatchCandidateDecision>> EvaluateTasksAsync(
+        string workspaceId,
+        IReadOnlyCollection<string> taskIds,
+        int candidateLimit,
+        CancellationToken ct = default);
 }
