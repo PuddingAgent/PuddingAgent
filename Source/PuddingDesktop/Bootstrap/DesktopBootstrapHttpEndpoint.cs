@@ -2,6 +2,7 @@
 using System.Text;
 using System.Text.Json;
 using PuddingDesktop.Configuration;
+using PuddingDesktop.Debug;
 using PuddingDesktop.Diagnostics;
 
 namespace PuddingDesktop.Bootstrap;
@@ -14,6 +15,11 @@ namespace PuddingDesktop.Bootstrap;
 ///   POST /desktop/bootstrap/core/stop   — atomic stop Core → 200 / 401 / 409
 ///   POST /desktop/bootstrap/build       — atomic build only → 200 / 401 / 409 (core_running)
 ///   POST /desktop/bootstrap/core/start  — atomic start Core → 200 / 401 / 409
+///   POST /desktop/bootstrap/core/restart — restart Core without replacing artifacts
+///   POST /desktop/bootstrap/core/deploy-restart — load prebuilt Core artifacts, verify, restart
+///   POST /desktop/bootstrap/frontend/build-deploy — build and hot-deploy Admin frontend
+///   POST /desktop/bootstrap/frontend/load — load an already-built frontend dist
+///   GET  /desktop/bootstrap/diagnostics — token-checked bounded runtime/log snapshot
 ///   GET  /desktop/bootstrap/status      — {"busy":bool,"coreState":str,"lastResult":&lt;result file content or null&gt;}
 ///   anything else                       → 404
 /// Every response is application/json; charset=utf-8. Listener failures (port
@@ -29,10 +35,18 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
     private const string CoreStopPath = "/desktop/bootstrap/core/stop";
     private const string BuildPath = "/desktop/bootstrap/build";
     private const string CoreStartPath = "/desktop/bootstrap/core/start";
+    internal const string CoreRestartPath = "/desktop/bootstrap/core/restart";
+    internal const string CoreDeployRestartPath = "/desktop/bootstrap/core/deploy-restart";
+    internal const string FrontendBuildDeployPath = "/desktop/bootstrap/frontend/build-deploy";
+    internal const string FrontendLoadPath = "/desktop/bootstrap/frontend/load";
+    internal const string DiagnosticsPath = "/desktop/bootstrap/diagnostics";
 
     private readonly DesktopBootstrapSignalService _signalService;
     private readonly IDesktopControlTokenService _tokenService;
     private readonly Func<string> _coreStateProvider;
+    private readonly Func<CancellationToken, Task<FrontendDeployResult>> _frontendBuildDeploy;
+    private readonly Func<string, string?, CancellationToken, Task<FrontendDeployResult>> _frontendLoad;
+    private readonly Func<DesktopControlDiagnosticsSnapshot> _diagnosticsProvider;
     private readonly string _dataRoot;
     private readonly int _port;
     private readonly CancellationTokenSource _cts = new();
@@ -44,11 +58,17 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
         IDesktopControlTokenService tokenService,
         string dataRoot,
         int port,
-        Func<string> coreStateProvider)
+        Func<string> coreStateProvider,
+        Func<CancellationToken, Task<FrontendDeployResult>> frontendBuildDeploy,
+        Func<string, string?, CancellationToken, Task<FrontendDeployResult>> frontendLoad,
+        Func<DesktopControlDiagnosticsSnapshot> diagnosticsProvider)
     {
         ArgumentNullException.ThrowIfNull(signalService);
         ArgumentNullException.ThrowIfNull(tokenService);
         ArgumentNullException.ThrowIfNull(coreStateProvider);
+        ArgumentNullException.ThrowIfNull(frontendBuildDeploy);
+        ArgumentNullException.ThrowIfNull(frontendLoad);
+        ArgumentNullException.ThrowIfNull(diagnosticsProvider);
         ArgumentException.ThrowIfNullOrWhiteSpace(dataRoot);
         if (port is < 1 or > 65535)
             throw new ArgumentOutOfRangeException(nameof(port));
@@ -56,6 +76,9 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
         _signalService = signalService;
         _tokenService = tokenService;
         _coreStateProvider = coreStateProvider;
+        _frontendBuildDeploy = frontendBuildDeploy;
+        _frontendLoad = frontendLoad;
+        _diagnosticsProvider = diagnosticsProvider;
         _dataRoot = dataRoot;
         _port = port;
     }
@@ -129,6 +152,14 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
                     await HandleBuildAsync(context, cancellationToken);
                 else if (string.Equals(path, CoreStartPath, StringComparison.OrdinalIgnoreCase))
                     await HandleCoreStartAsync(context, cancellationToken);
+                else if (string.Equals(path, CoreRestartPath, StringComparison.OrdinalIgnoreCase))
+                    await HandleCoreRestartAsync(context, cancellationToken);
+                else if (string.Equals(path, CoreDeployRestartPath, StringComparison.OrdinalIgnoreCase))
+                    await HandleCoreDeployRestartAsync(context, cancellationToken);
+                else if (string.Equals(path, FrontendBuildDeployPath, StringComparison.OrdinalIgnoreCase))
+                    await HandleFrontendBuildDeployAsync(context, cancellationToken);
+                else if (string.Equals(path, FrontendLoadPath, StringComparison.OrdinalIgnoreCase))
+                    await HandleFrontendLoadAsync(context, cancellationToken);
                 else
                     await WriteJsonAsync(context, 404, """{"error":"not_found"}""");
             }
@@ -136,6 +167,11 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
                 && string.Equals(path, StatusPath, StringComparison.OrdinalIgnoreCase))
             {
                 await HandleStatusAsync(context, cancellationToken);
+            }
+            else if (string.Equals(context.Request.HttpMethod, "GET", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(path, DiagnosticsPath, StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleDiagnosticsAsync(context, cancellationToken);
             }
             else
             {
@@ -324,6 +360,162 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
             context, 200, JsonSerializer.Serialize(result, ResponseJsonOptions), cancellationToken);
     }
 
+    private Task HandleCoreRestartAsync(
+        HttpListenerContext context,
+        CancellationToken cancellationToken)
+        => HandleCoreDeployOperationAsync(
+            context,
+            DesktopBootstrapSignalParser.RestartOnlyMode,
+            cancellationToken);
+
+    private Task HandleCoreDeployRestartAsync(
+        HttpListenerContext context,
+        CancellationToken cancellationToken)
+        => HandleCoreDeployOperationAsync(
+            context,
+            DesktopBootstrapSignalParser.PrebuiltArtifactMode,
+            cancellationToken);
+
+    private async Task HandleCoreDeployOperationAsync(
+        HttpListenerContext context,
+        string deploymentMode,
+        CancellationToken cancellationToken)
+    {
+        var body = await ReadBodyAsync(context.Request, cancellationToken);
+        if (!await CheckTokenAsync(context, body, cancellationToken))
+        {
+            await WriteJsonAsync(context, 401, """{"error":"unauthorized"}""");
+            return;
+        }
+
+        DesktopBootstrapHttpRequestParser.TryParseStartBody(
+            body,
+            out _,
+            out var requestedBy,
+            out var yolo,
+            out _,
+            out var artifactDirectory,
+            out var artifactAssemblySha256);
+
+        if (_signalService.IsBusy)
+        {
+            await WriteJsonAsync(context, 409, """{"error":"busy"}""");
+            return;
+        }
+
+        try
+        {
+            var result = await _signalService.TriggerRebuildRestartAsync(
+                requestedBy,
+                yolo,
+                deploymentMode,
+                deploymentMode == DesktopBootstrapSignalParser.PrebuiltArtifactMode
+                    ? artifactDirectory
+                    : null,
+                deploymentMode == DesktopBootstrapSignalParser.PrebuiltArtifactMode
+                    ? artifactAssemblySha256
+                    : null,
+                cancellationToken);
+            await WriteJsonAsync(
+                context,
+                result.Success ? 200 : 422,
+                JsonSerializer.Serialize(result, ResponseJsonOptions),
+                cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (
+            ex.Message.Contains("bootstrap already running", StringComparison.OrdinalIgnoreCase))
+        {
+            await WriteJsonAsync(context, 409, """{"error":"busy"}""");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Builds the Admin frontend and replaces only the running Core's
+    /// wwwroot/admin static subtree. Core stays running.
+    /// </summary>
+    private Task HandleFrontendBuildDeployAsync(
+        HttpListenerContext context,
+        CancellationToken cancellationToken)
+        => HandleFrontendOperationAsync(context, loadPrebuilt: false, cancellationToken);
+
+    /// <summary>Loads a caller-built dist directory without invoking pnpm.</summary>
+    private Task HandleFrontendLoadAsync(
+        HttpListenerContext context,
+        CancellationToken cancellationToken)
+        => HandleFrontendOperationAsync(context, loadPrebuilt: true, cancellationToken);
+
+    private async Task HandleFrontendOperationAsync(
+        HttpListenerContext context,
+        bool loadPrebuilt,
+        CancellationToken cancellationToken)
+    {
+        var body = await ReadBodyAsync(context.Request, cancellationToken);
+        if (!await CheckTokenAsync(context, body, cancellationToken))
+        {
+            await WriteJsonAsync(context, 401, """{"error":"unauthorized"}""");
+            return;
+        }
+
+        DesktopBootstrapHttpRequestParser.TryParseFrontendBody(
+            body,
+            out _,
+            out var artifactDirectory,
+            out var artifactIndexSha256);
+        if (loadPrebuilt && string.IsNullOrWhiteSpace(artifactDirectory))
+        {
+            await WriteJsonAsync(context, 400, """{"error":"artifact_directory_required"}""");
+            return;
+        }
+
+        try
+        {
+            var result = loadPrebuilt
+                ? await _frontendLoad(
+                    artifactDirectory!,
+                    artifactIndexSha256,
+                    cancellationToken)
+                : await _frontendBuildDeploy(cancellationToken);
+            await WriteJsonAsync(
+                context,
+                200,
+                JsonSerializer.Serialize(
+                    new
+                    {
+                        success = true,
+                        result.TargetAdminDirectory,
+                        result.CopiedFileCount,
+                        result.RanInstall,
+                        result.BuiltFromSource,
+                        result.IndexSha256,
+                    },
+                    ResponseJsonOptions),
+                cancellationToken);
+        }
+        catch (FrontendDeployInProgressException)
+        {
+            await WriteJsonAsync(context, 409, """{"error":"frontend_deploy_busy"}""");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            DesktopDiagnosticLog.Write("BootstrapHttpFrontendDeploy", ex);
+            await WriteJsonAsync(
+                context,
+                500,
+                JsonSerializer.Serialize(
+                    new { error = "frontend_deploy_failed", message = ex.Message },
+                    ResponseJsonOptions),
+                cancellationToken);
+        }
+    }
+
     private async Task RunInBackgroundAsync(
         string? requestedBy,
         bool yolo,
@@ -361,6 +553,28 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
             lastResult = ReadLastResult(),
         };
         await WriteJsonAsync(context, 200, JsonSerializer.Serialize(payload), cancellationToken);
+    }
+
+    private async Task HandleDiagnosticsAsync(
+        HttpListenerContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!await CheckTokenAsync(context, string.Empty, cancellationToken))
+        {
+            await WriteJsonAsync(context, 401, """{"error":"unauthorized"}""");
+            return;
+        }
+
+        var payload = new
+        {
+            diagnostics = _diagnosticsProvider(),
+            lastDeploymentResult = ReadLastResult(),
+        };
+        await WriteJsonAsync(
+            context,
+            200,
+            JsonSerializer.Serialize(payload, ResponseJsonOptions),
+            cancellationToken);
     }
 
     /// <summary>Reads the result file and returns it as raw JSON (or null when absent/unreadable).</summary>
@@ -429,6 +643,31 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
     }
 }
 
+/// <summary>Bounded, token-protected Desktop/Core diagnostic snapshot for local automation.</summary>
+public sealed record DesktopControlDiagnosticsSnapshot
+{
+    public required DateTimeOffset CapturedAt { get; init; }
+    public required string DesktopVersion { get; init; }
+    public required string DesktopState { get; init; }
+    public required string CoreState { get; init; }
+    public int? CoreProcessId { get; init; }
+    public DateTimeOffset? CoreStartedAt { get; init; }
+    public DateTimeOffset? CoreReadyAt { get; init; }
+    public int? LastExitCode { get; init; }
+    public DateTimeOffset? LastExitAt { get; init; }
+    public int RestartAttemptsInWindow { get; init; }
+    public bool AutoRestartEnabled { get; init; }
+    public bool UserStopRequested { get; init; }
+    public bool BootstrapBusy { get; init; }
+    public bool FrontendDeployBusy { get; init; }
+    public string? CoreAddress { get; init; }
+    public string? WorkbenchAddress { get; init; }
+    public string? DataRoot { get; init; }
+    public string? CoreExecutablePath { get; init; }
+    public string? LastError { get; init; }
+    public IReadOnlyList<string> CoreLogTail { get; init; } = [];
+}
+
 /// <summary>
 /// Pure, side-effect-free parsing for the bootstrap HTTP endpoint (request body).
 /// Kept static so it can be unit tested when a PuddingDesktop test project exists.
@@ -486,6 +725,40 @@ internal static class DesktopBootstrapHttpRequestParser
         }
     }
 
+    /// <summary>
+    /// Parses the prebuilt frontend request body
+    /// {"token":"...","artifactDirectory":"...","artifactIndexSha256":"..."}.
+    /// </summary>
+    public static bool TryParseFrontendBody(
+        string? body,
+        out string? token,
+        out string? artifactDirectory,
+        out string? artifactIndexSha256)
+    {
+        token = null;
+        artifactDirectory = null;
+        artifactIndexSha256 = null;
+
+        if (string.IsNullOrWhiteSpace(body))
+            return false;
+
+        try
+        {
+            var payload = JsonSerializer.Deserialize<FrontendRequestBody>(body, JsonOptions);
+            if (payload is null)
+                return false;
+
+            token = payload.Token;
+            artifactDirectory = payload.ArtifactDirectory;
+            artifactIndexSha256 = payload.ArtifactIndexSha256;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     private sealed record StartRequestBody
     {
         public string? Token { get; init; }
@@ -494,5 +767,12 @@ internal static class DesktopBootstrapHttpRequestParser
         public string? DeploymentMode { get; init; }
         public string? ArtifactDirectory { get; init; }
         public string? ArtifactAssemblySha256 { get; init; }
+    }
+
+    private sealed record FrontendRequestBody
+    {
+        public string? Token { get; init; }
+        public string? ArtifactDirectory { get; init; }
+        public string? ArtifactIndexSha256 { get; init; }
     }
 }

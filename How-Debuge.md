@@ -70,6 +70,28 @@ PowerShell 包装命令等价为 `.\dev-up.ps1 -Clear`。`--clear` 只删除仓�
 该命令不清理 `D:\data`、项目 `bin/obj`、`publish`、前端 `dist/node_modules`、
 源码或 `data/agents`。需要保留诊断证据时，先归档对应日志再执行清理。
 
+#### Visual Studio 报 `%(FullPath)` / 路径超过 260 字符
+
+如果项目评估错误指向 `Microsoft.NET.Sdk.DefaultItems.targets`，并且路径形如
+`Source/<Project>/temp/.../temp/.../BuildHost-netcore`，根因通常不是 SDK 表达式本身，
+而是把测试或构建输出写进了项目目录下的 `temp/`。SDK 默认 `None` 项会把该输出再次
+当作项目内容，后续输出继续复制前一次输出，最终形成递归嵌套和超长路径。
+
+1. 用 `git check-ignore -v Source/<Project>/temp` 和 `git ls-files -- Source/<Project>/temp/**`
+   确认目标确实是忽略的生成目录且没有跟踪文件；
+2. 删除精确的项目内 `temp/` 生成目录，并在 Visual Studio 中重新加载项目；
+3. 后续构建输出只放仓库根 `.tmp-build/`，测试结果只放仓库根 `.tmp-test-out/`
+   或系统 Temp，不要从项目目录使用相对 `temp/...` 作为 `OutDir`、`OutputPath` 或测试输出；
+4. 根 `Directory.Build.props` 通过 `DefaultItemExcludes` 排除所有项目内 `temp/**` 和
+   `tmp/**`，防止误放的输出再次进入 SDK 默认项枚举。
+
+可用以下命令确认排除已生效；输出中不应再出现项目内 `temp/` 项：
+
+```powershell
+dotnet msbuild Source\PuddingRuntime\PuddingRuntime.csproj -getItem:None -nologo |
+    Select-String -SimpleMatch 'temp\\'
+```
+
 ### 3.2 应用结构化日志
 
 应用日志位于 `<dataRoot>/logs`：
@@ -256,7 +278,7 @@ dotnet test .\Tests\PuddingHost.Tests\PuddingHost.Tests.csproj --no-restore --no
 
 Ready 信号在 `Program.cs` 的 `app.StartAsync()`（全部 hosted service StartAsync 返回）之后才写
 stdout。2026-08-28 起，DesktopChild 初始化期间每 5 秒输出 `PUDDING_DESKTOP_STARTING`；
-Desktop 把 `startupTimeoutSeconds` 解释为无有效进度的静默超时，并另设 5 倍、最高 10 分钟的
+Desktop 把 `startupTimeoutSeconds` 解释为无有效进度的静默超时，并另设 10 倍、最高 10 分钟的
 绝对上限。租约必须携带当前子进程 PID、协议版本和递增序号，不能替代 Ready 与
 `/health/ready`。定位方法：看 Desktop 运行中心 Core 日志最后停在哪一行——停在
 `[Feishu] Connector starting WebSocket long connection...` 说明启动被远程网络 I/O 卡住
@@ -267,6 +289,12 @@ Desktop 把 `startupTimeoutSeconds` 解释为无有效进度的静默超时，�
 `CoreProcessSupervisor`。必须由进程外控制器停止旧托盘实例、构建并启动新 Desktop。若只看到
 历史 `lastResult.success=true`，还要对账当前 `coreState`、新 PID、80 端口和 `/health/ready`；
 历史点火结果不能证明当前启动成功。
+
+若错误文案是 `bounded 300 seconds despite startup progress`，同时启动周期内
+`pudding_platform.db`/WAL 很大、schema 日志仍在向前推进，通常是首次加载新 Core 后的一次性
+SQLite schema/index 升级超过旧版 5 分钟硬上限。不能把它误判成租约失效或连接器卡死：先确认
+同一制品在升级落盘后的隔离端口复启能够快速发出 Ready，再使用已加载新版 Desktop 的 10 分钟
+有界硬上限完成冷升级。60 秒无进度超时、PID/序号校验、Ready 和 `/health/ready` 门禁保持不变。
 
 2026-08-24 修复后的不变量：
 

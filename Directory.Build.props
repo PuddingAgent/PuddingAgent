@@ -10,6 +10,13 @@
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!--
+      Project-local scratch/output directories are ignored by Git and must not
+      be re-ingested by SDK default item globs. Otherwise an output written to
+      temp/ can be copied into the next output recursively until Windows path
+      evaluation fails.
+    -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);**/temp/**;**/tmp/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <!-- 测试项目通用设置（仅对 TestProject 生效） -->

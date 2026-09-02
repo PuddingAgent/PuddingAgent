@@ -29,19 +29,23 @@ public class AuthApiController(IConfiguration config, IAppUserRepository appUser
         [FromServices] ILogger<AuthApiController> logger,
         CancellationToken ct)
     {
-        logger.LogWarning("[Auth:Login] Received Username={Username} PasswordLen={PwdLen} Type={Type}",
-            request.Username ?? "(null)", request.Password?.Length ?? 0, request.Type ?? "(null)");
-
         var user = await appUserRepo.FindByUserIdOrEmailAsync(request.Username ?? "", ct);
 
-        logger.LogWarning("[Auth:Login] User found={Found} UserId={UserId} IsEnabled={Enabled}",
-            user is not null, user?.UserId, user?.IsEnabled);
-
         if (user is null || !user.IsEnabled || !PasswordHasher.Verify(request.Password, user.PasswordHash))
+        {
+            // Do not reveal whether the account exists/is enabled and never log credential shape.
+            logger.LogInformation(
+                "[Auth:Login] Authentication failed type={Type}",
+                request.Type ?? "account");
             return Ok(new { status = "error", type = "account", currentAuthority = "guest" });
+        }
 
         var authority = user.UserType == "admin" ? "admin" : "user";
         var token = GenerateJwt(user.UserId, user.DisplayName ?? user.Username, user.Email, authority);
+
+        logger.LogInformation(
+            "[Auth:Login] Authentication succeeded authority={Authority}",
+            authority);
 
         // 同时写入 Session，兼容 SSR 页面
         HttpContext.Session.SetString("username", user.UserId);

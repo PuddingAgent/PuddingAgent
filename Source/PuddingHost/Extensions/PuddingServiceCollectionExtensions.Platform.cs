@@ -233,10 +233,15 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<TaskExecutionRepairCoordinator>();
         builder.Services.AddSingleton<ITaskExecutionRepairCoordinator>(sp =>
             sp.GetRequiredService<TaskExecutionRepairCoordinator>());
-        // P0 Scheduler 事件驱动层：durable intent 队列 + 账本尾桥 + 事件驱动协调器
         builder.Services.AddSingleton<TaskSchedulerIntentStore>();
         builder.Services.AddSingleton<ITaskSchedulerIntentStore>(sp =>
             sp.GetRequiredService<TaskSchedulerIntentStore>());
+        builder.Services.AddOptions<PuddingPlatform.Services.Tasks.CompletionSettlementOptions>()
+            .Bind(builder.Configuration.GetSection(PuddingPlatform.Services.Tasks.CompletionSettlementOptions.SectionName));
+        builder.Services.AddSingleton<PuddingPlatform.Services.Tasks.TaskCompletionSettlementService>();
+
+        // P0 Scheduler 事件驱动层：durable intent 队列 + 账本尾桥 + 事件驱动协调器
+
         builder.Services.AddSingleton<TaskAutoDispatchStarter>();
         builder.Services.AddSingleton<ITaskAutoDispatchStarter>(sp =>
             sp.GetRequiredService<TaskAutoDispatchStarter>());

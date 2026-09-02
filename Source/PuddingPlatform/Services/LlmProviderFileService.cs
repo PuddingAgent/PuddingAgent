@@ -110,7 +110,10 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 MaxConcurrentRequests: m.MaxConcurrentRequests,
                 CreatedAt: DateTimeOffset.UtcNow,
                 UpdatedAt: DateTimeOffset.UtcNow,
-                MaxInputTokens: m.MaxInputTokens
+                MaxInputTokens: m.MaxInputTokens,
+                PriceWindows: ToPriceWindowDtos(m.PriceWindows),
+                PriceWindowProfileVersion: m.PriceWindowProfileVersion,
+                PriceWindowSourceUrl: m.PriceWindowSourceUrl
             )).ToList(),
             CreatedAt: DateTimeOffset.UtcNow,
             UpdatedAt: DateTimeOffset.UtcNow
@@ -351,7 +354,10 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             MaxConcurrentRequests: m.MaxConcurrentRequests,
             CreatedAt: DateTimeOffset.UtcNow,
             UpdatedAt: DateTimeOffset.UtcNow,
-            MaxInputTokens: m.MaxInputTokens
+            MaxInputTokens: m.MaxInputTokens,
+            PriceWindows: ToPriceWindowDtos(m.PriceWindows),
+            PriceWindowProfileVersion: m.PriceWindowProfileVersion,
+            PriceWindowSourceUrl: m.PriceWindowSourceUrl
         )).ToList();
     }
 
@@ -387,6 +393,9 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 IsEmbedding = req.IsEmbedding,
                 SortOrder = req.SortOrder,
                 MaxConcurrentRequests = req.MaxConcurrentRequests,
+                PriceWindows = ToPriceWindowConfigs(req.PriceWindows),
+                PriceWindowProfileVersion = req.PriceWindowProfileVersion,
+                PriceWindowSourceUrl = req.PriceWindowSourceUrl,
             };
 
             p.Models.Add(newModel);
@@ -412,7 +421,10 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 MaxConcurrentRequests: newModel.MaxConcurrentRequests,
                 CreatedAt: DateTimeOffset.UtcNow,
                 UpdatedAt: DateTimeOffset.UtcNow,
-                MaxInputTokens: newModel.MaxInputTokens
+                MaxInputTokens: newModel.MaxInputTokens,
+                PriceWindows: ToPriceWindowDtos(newModel.PriceWindows),
+                PriceWindowProfileVersion: newModel.PriceWindowProfileVersion,
+                PriceWindowSourceUrl: newModel.PriceWindowSourceUrl
             );
         }
         finally
@@ -455,6 +467,11 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 IsEmbedding = req.IsEmbedding,
                 SortOrder = req.SortOrder,
                 MaxConcurrentRequests = req.MaxConcurrentRequests,
+                PriceWindows = req.PriceWindows is null
+                    ? m.PriceWindows
+                    : ToPriceWindowConfigs(req.PriceWindows),
+                PriceWindowProfileVersion = req.PriceWindowProfileVersion ?? m.PriceWindowProfileVersion,
+                PriceWindowSourceUrl = req.PriceWindowSourceUrl ?? m.PriceWindowSourceUrl,
             };
             p.Models.Add(updated);
             await SaveConfigAsync(config, ct);
@@ -479,7 +496,10 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 MaxConcurrentRequests: updated.MaxConcurrentRequests,
                 CreatedAt: DateTimeOffset.UtcNow,
                 UpdatedAt: DateTimeOffset.UtcNow,
-                MaxInputTokens: updated.MaxInputTokens
+                MaxInputTokens: updated.MaxInputTokens,
+                PriceWindows: ToPriceWindowDtos(updated.PriceWindows),
+                PriceWindowProfileVersion: updated.PriceWindowProfileVersion,
+                PriceWindowSourceUrl: updated.PriceWindowSourceUrl
             );
         }
         finally
@@ -550,6 +570,11 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
                 IsDeprecated = req.IsDeprecated,
                 SortOrder = req.SortOrder,
                 MaxConcurrentRequests = req.MaxConcurrentRequests,
+                PriceWindows = req.PriceWindows is null
+                    ? existing?.PriceWindows ?? []
+                    : ToPriceWindowConfigs(req.PriceWindows),
+                PriceWindowProfileVersion = req.PriceWindowProfileVersion ?? existing?.PriceWindowProfileVersion,
+                PriceWindowSourceUrl = req.PriceWindowSourceUrl ?? existing?.PriceWindowSourceUrl,
             });
         }
 
@@ -558,6 +583,34 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             .ThenBy(m => m.ModelId, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
+
+    private static List<LlmPriceWindowDto> ToPriceWindowDtos(
+        IReadOnlyList<PuddingLlmPriceWindowConfig>? windows) => (windows ?? [])
+        .Select(window => new LlmPriceWindowDto(
+            window.WindowKey,
+            window.TimeZoneId,
+            window.StartLocalTime,
+            window.EndLocalTime,
+            window.DaysOfWeek,
+            window.IsOffPeak,
+            window.EffectiveAtUtc,
+            window.ExpiresAtUtc))
+        .ToList();
+
+    private static List<PuddingLlmPriceWindowConfig> ToPriceWindowConfigs(
+        IReadOnlyList<LlmPriceWindowDto>? windows) => (windows ?? [])
+        .Select(window => new PuddingLlmPriceWindowConfig
+        {
+            WindowKey = window.WindowKey,
+            TimeZoneId = window.TimeZoneId,
+            StartLocalTime = window.StartLocalTime,
+            EndLocalTime = window.EndLocalTime,
+            DaysOfWeek = window.DaysOfWeek ?? [],
+            IsOffPeak = window.IsOffPeak,
+            EffectiveAtUtc = window.EffectiveAtUtc,
+            ExpiresAtUtc = window.ExpiresAtUtc,
+        })
+        .ToList();
 
     private async Task SaveConfigAsync(PuddingLlmProvidersConfig config, CancellationToken ct)
     {

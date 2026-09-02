@@ -161,7 +161,10 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
             {
                 var endpoint = new DesktopBootstrapHttpEndpoint(
                     _bootstrapSignalService, _tokenService, dataRoot, bootstrapConfig.HttpPort,
-                    () => RuntimeSnapshot.State.ToString());
+                    () => RuntimeSnapshot.State.ToString(),
+                    DeployFrontendAsync,
+                    LoadFrontendArtifactsAsync,
+                    CreateControlDiagnosticsSnapshot);
                 endpoint.Start(cancellationToken);
                 _bootstrapHttpEndpoint = endpoint;
             }
@@ -363,34 +366,103 @@ public sealed class DesktopApplicationCoordinator : IAsyncDisposable
     /// never block Start/Stop/Restart, and replacing static files is safe
     /// while Core is running.
     /// </summary>
-    public async Task<FrontendDeployResult> DeployFrontendAsync(CancellationToken cancellationToken)
+    public Task<FrontendDeployResult> DeployFrontendAsync(CancellationToken cancellationToken)
+        => RunFrontendDeployLockedAsync(
+            async () =>
+            {
+                var settings = await _bootstrapStore.LoadAsync(cancellationToken);
+                var frontendWorkingDirectory =
+                    DebugRepositoryResolver.ResolveFrontendWorkingDirectory(settings.Debug);
+
+                return await new FrontendBuildDeployService().DeployAsync(
+                    new FrontendDeployOptions
+                    {
+                        FrontendWorkingDirectory = frontendWorkingDirectory,
+                        TargetAdminDirectory = ResolveFrontendDeployTarget(settings),
+                    },
+                    _supervisor.LogBuffer,
+                    cancellationToken);
+            },
+            cancellationToken);
+
+    /// <summary>
+    /// Loads an already-built frontend dist directory without running pnpm.
+    /// The artifact must be inside the configured repository root; this keeps
+    /// the authenticated API from becoming an arbitrary local-file copier.
+    /// </summary>
+    public Task<FrontendDeployResult> LoadFrontendArtifactsAsync(
+        string artifactDirectory,
+        string? expectedIndexSha256,
+        CancellationToken cancellationToken)
+        => RunFrontendDeployLockedAsync(
+            async () =>
+            {
+                ArgumentException.ThrowIfNullOrWhiteSpace(artifactDirectory);
+                var settings = await _bootstrapStore.LoadAsync(cancellationToken);
+                var repositoryRoot = DebugRepositoryResolver.ResolveRepositoryRoot(
+                    settings.Debug.RepositoryRoot);
+                var fullArtifactDirectory = Path.GetFullPath(artifactDirectory);
+                if (!PuddingBuildOutputSync.IsPathWithin(fullArtifactDirectory, repositoryRoot))
+                {
+                    throw new InvalidOperationException(
+                        $"Frontend artifact directory must be inside the repository root: {repositoryRoot}");
+                }
+
+                return new FrontendBuildDeployService().DeployPrebuiltArtifacts(
+                    fullArtifactDirectory,
+                    ResolveFrontendDeployTarget(settings),
+                    expectedIndexSha256,
+                    _supervisor.LogBuffer);
+            },
+            cancellationToken);
+
+    private async Task<FrontendDeployResult> RunFrontendDeployLockedAsync(
+        Func<Task<FrontendDeployResult>> operation,
+        CancellationToken cancellationToken)
     {
         if (!await _frontendDeployLock.WaitAsync(0, cancellationToken))
-            throw new InvalidOperationException("前端构建部署正在进行中，请稍候。");
+            throw new FrontendDeployInProgressException();
 
         try
         {
-            var settings = await _bootstrapStore.LoadAsync(cancellationToken);
-            var frontendWorkingDirectory =
-                DebugRepositoryResolver.ResolveFrontendWorkingDirectory(settings.Debug);
-            var targetAdminDirectory = Path.Combine(
-                ResolveFrontendDeployCoreDirectory(settings),
-                "wwwroot",
-                "admin");
-
-            return await new FrontendBuildDeployService().DeployAsync(
-                new FrontendDeployOptions
-                {
-                    FrontendWorkingDirectory = frontendWorkingDirectory,
-                    TargetAdminDirectory = targetAdminDirectory,
-                },
-                _supervisor.LogBuffer,
-                cancellationToken);
+            return await operation();
         }
         finally
         {
             _frontendDeployLock.Release();
         }
+    }
+
+    private string ResolveFrontendDeployTarget(DesktopBootstrapSettings settings)
+        => Path.Combine(ResolveFrontendDeployCoreDirectory(settings), "wwwroot", "admin");
+
+    private DesktopControlDiagnosticsSnapshot CreateControlDiagnosticsSnapshot()
+    {
+        var runtime = RuntimeSnapshot;
+        return new DesktopControlDiagnosticsSnapshot
+        {
+            CapturedAt = DateTimeOffset.UtcNow,
+            DesktopVersion = typeof(DesktopApplicationCoordinator).Assembly.GetName().Version?.ToString()
+                ?? "unknown",
+            DesktopState = State.ToString(),
+            CoreState = runtime.State.ToString(),
+            CoreProcessId = runtime.Session?.ProcessId ?? runtime.LastProcessId,
+            CoreStartedAt = runtime.Session?.StartedAt,
+            CoreReadyAt = runtime.Session?.ReadyAt,
+            LastExitCode = runtime.LastExitCode,
+            LastExitAt = runtime.LastExitAt,
+            RestartAttemptsInWindow = runtime.RestartAttemptsInWindow,
+            AutoRestartEnabled = runtime.AutoRestartEnabled,
+            UserStopRequested = runtime.UserStopRequested,
+            BootstrapBusy = _bootstrapSignalService?.IsBusy ?? false,
+            FrontendDeployBusy = _frontendDeployLock.CurrentCount == 0,
+            CoreAddress = CoreAddress?.ToString(),
+            WorkbenchAddress = WorkbenchAddress?.ToString(),
+            DataRoot = DataRoot,
+            CoreExecutablePath = CoreExecutablePath,
+            LastError = runtime.LastError ?? _lastError,
+            CoreLogTail = CoreLogBuffer.Snapshot().TakeLast(100).ToArray(),
+        };
     }
 
     /// <summary>

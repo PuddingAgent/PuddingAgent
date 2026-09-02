@@ -77,10 +77,26 @@ public sealed class ConversationProjector(
                 await SetCheckpointAsync(conversationId, lastSeq, ct);
             }
 
-            logger.LogInformation(
-                "[ConversationProjector] Projected conv={ConvId} events={Count} checkpoint={Prev}->{Next}",
-                conversationId, projectedCount, checkpoint,
-                batch.Events.Count > 0 ? batch.Events[^1].Sequence : checkpoint);
+            var nextCheckpoint = batch.Events.Count > 0 ? batch.Events[^1].Sequence : checkpoint;
+            if (projectedCount > 0)
+            {
+                logger.LogInformation(
+                    "[ConversationProjector] Projected conv={ConvId} materialized={MaterializedCount} sourceEvents={SourceEventCount} checkpoint={Prev}->{Next}",
+                    conversationId,
+                    projectedCount,
+                    batch.Events.Count,
+                    checkpoint,
+                    nextCheckpoint);
+            }
+            else
+            {
+                logger.LogDebug(
+                    "[ConversationProjector] Advanced conv={ConvId} sourceEvents={SourceEventCount} checkpoint={Prev}->{Next} without transcript materialization",
+                    conversationId,
+                    batch.Events.Count,
+                    checkpoint,
+                    nextCheckpoint);
+            }
 
             return new ProjectionResult(projectedCount, batch.HasMore, null);
         }
@@ -212,18 +228,17 @@ public sealed class ConversationProjector(
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
             var windowStart = evt.OccurredAt.AddMinutes(-2);
             var windowEnd = evt.OccurredAt.AddMinutes(2);
-            var directSourcePrefix = evt.ConversationId + ":";
-            return await db.Set<TokenUsageEventEntity>()
-                .AsNoTracking()
-                .AnyAsync(e => e.SessionId == evt.ConversationId
-                    && e.ProviderId == providerId
-                    && e.ModelId == modelId
-                    && e.SourceType == "agent_llm"
-                    && e.SourceId.StartsWith(directSourcePrefix)
-                    && e.OccurredAtUtc >= windowStart
-                    && e.OccurredAtUtc <= windowEnd
-                    && e.PromptTokens == usage.PromptTokens
-                    && (usage.CompletionTokens == null || e.CompletionTokens == usage.CompletionTokens));
+            var candidates = await ApplyDirectUsageFingerprintCandidates(
+                    db.Set<TokenUsageEventEntity>().AsNoTracking(),
+                    evt.ConversationId,
+                    providerId,
+                    modelId,
+                    usage)
+                .OrderByDescending(item => item.Id)
+                .Take(32)
+                .Select(item => item.OccurredAtUtc)
+                .ToListAsync();
+            return candidates.Any(occurredAt => occurredAt >= windowStart && occurredAt <= windowEnd);
         }
         catch (Exception ex)
         {
@@ -232,6 +247,35 @@ public sealed class ConversationProjector(
                 evt.EventId);
             return false;
         }
+    }
+
+    internal static IQueryable<TokenUsageEventEntity> ApplyDirectUsageFingerprintCandidates(
+        IQueryable<TokenUsageEventEntity> source,
+        string conversationId,
+        string providerId,
+        string modelId,
+        TokenUsageDto usage)
+    {
+        var directSourcePrefix = conversationId + ":";
+        var promptTokens = (long)(usage.PromptTokens ?? 0);
+        var query = source.Where(e => e.SessionId == conversationId
+            && e.ProviderId == providerId
+            && e.ModelId == modelId
+            && e.SourceType == "agent_llm"
+            && e.SourceId.StartsWith(directSourcePrefix)
+            && e.PromptTokens == promptTokens);
+
+        // Do not embed a captured nullable comparison as
+        // `(completion == null || column == completion)`. The SQLite EF provider
+        // can leave that expression as `False || ...` and fail translation,
+        // which made the projector fall back and double-record every usage row.
+        if (usage.CompletionTokens is int completionTokens)
+        {
+            var completionTokenCount = (long)completionTokens;
+            query = query.Where(e => e.CompletionTokens == completionTokenCount);
+        }
+
+        return query;
     }
 
     private static (string role, string? content, string? thinking, string? usage) ExtractFields(ConversationEvent evt)

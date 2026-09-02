@@ -127,7 +127,21 @@ public record LlmModelDto(
     int? MaxConcurrentRequests,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    int? MaxInputTokens = null
+    int? MaxInputTokens = null,
+    List<LlmPriceWindowDto>? PriceWindows = null,
+    string? PriceWindowProfileVersion = null,
+    string? PriceWindowSourceUrl = null
+);
+
+public record LlmPriceWindowDto(
+    string WindowKey,
+    string TimeZoneId,
+    string StartLocalTime,
+    string EndLocalTime,
+    List<string>? DaysOfWeek,
+    bool IsOffPeak = true,
+    DateTimeOffset? EffectiveAtUtc = null,
+    DateTimeOffset? ExpiresAtUtc = null
 );
 
 public record UpsertLlmModelRequest(
@@ -146,7 +160,10 @@ public record UpsertLlmModelRequest(
     bool IsEmbedding,
     int SortOrder,
     int? MaxConcurrentRequests,
-    int? MaxInputTokens = null
+    int? MaxInputTokens = null,
+    List<LlmPriceWindowDto>? PriceWindows = null,
+    string? PriceWindowProfileVersion = null,
+    string? PriceWindowSourceUrl = null
 );
 
 // ── TTS/ASR 语音服务商 ────────────────────────────────────────

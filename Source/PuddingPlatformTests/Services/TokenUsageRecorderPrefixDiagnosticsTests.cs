@@ -36,6 +36,39 @@ public sealed class TokenUsageRecorderPrefixDiagnosticsTests
     }
 
     [TestMethod]
+    public async Task ConversationProjectorFingerprint_WithCompletionTokens_TranslatesOnSqlite()
+    {
+        await using var scope = await CreateScopeAsync();
+        var db = scope.Provider.GetRequiredService<PlatformDbContext>();
+        var occurredAt = DateTimeOffset.Parse("2026-08-29T01:08:54Z");
+        db.TokenUsageEvents.Add(new PuddingPlatform.Data.Entities.TokenUsageEventEntity
+        {
+            SourceType = "agent_llm",
+            SourceId = "session-1:trace-1:1",
+            WorkspaceId = "default",
+            SessionId = "session-1",
+            ProviderId = "bigmodel",
+            ModelId = "glm-5.3-flash",
+            OccurredAtUtc = occurredAt,
+            YearMonth = "2026-08",
+            PromptTokens = 38994,
+            CompletionTokens = 4096,
+            TotalTokens = 43090,
+        });
+        await db.SaveChangesAsync();
+
+        var exists = await ConversationProjector.ApplyDirectUsageFingerprintCandidates(
+                db.TokenUsageEvents.AsNoTracking(),
+                "session-1",
+                "bigmodel",
+                "glm-5.3-flash",
+                new TokenUsageDto { PromptTokens = 38994, CompletionTokens = 4096 })
+            .AnyAsync();
+
+        Assert.IsTrue(exists);
+    }
+
+    [TestMethod]
     public async Task RecordAttributedRequiredAsync_PersistsCanonicalAgentLoopAttribution()
     {
         await using var scope = await CreateScopeAsync();

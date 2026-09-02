@@ -131,7 +131,7 @@ public class CoreProcessSupervisorTests
     }
 
     [Theory]
-    [InlineData(60, 300)]
+    [InlineData(60, 600)]
     [InlineData(120, 600)]
     [InlineData(300, 600)]
     public void ResolveHardStartupTimeout_IsBounded(

@@ -14,7 +14,11 @@ public sealed class CoreProcessSupervisor : ICoreProcessSupervisor
     private static readonly TimeSpan HealthPollInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan StartupWaitPollInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan MaximumHardStartupTimeout = TimeSpan.FromMinutes(10);
-    private const int StartupProgressExtensionFactor = 5;
+    // A valid, monotonically increasing startup lease may cover a one-time
+    // SQLite schema/index upgrade. Keep the ordinary inactivity timeout at
+    // its configured value, but let the default 60-second setting reach the
+    // existing bounded 10-minute ceiling instead of terminating at 5 minutes.
+    private const int StartupProgressExtensionFactor = 10;
 
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly CoreProcessLogBuffer _logBuffer = new(500);

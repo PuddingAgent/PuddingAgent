@@ -16,6 +16,11 @@ public sealed class ConversationProjectionWorker(
     ILogger<ConversationProjectionWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan IdleDelay = TimeSpan.FromMilliseconds(250);
+    // When a streaming response is active, the head usually advances by only a few token events
+    // between scans. Coalesce those fragments before the next durable projection pass; SSE remains
+    // the live UI path, while the materialized transcript stays near-real-time without a tight
+    // read/checkpoint/catalog write loop.
+    private static readonly TimeSpan ActiveCoalescingDelay = TimeSpan.FromMilliseconds(750);
     private const int ScanBatchSize = 32;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -44,6 +49,14 @@ public sealed class ConversationProjectionWorker(
                             conversationId,
                             result.Error);
                     }
+                }
+
+                // If any conversation still has more than one projector batch pending, immediately
+                // catch up. Otherwise allow active streams to accumulate a useful batch.
+                var hasBacklog = await HasProjectionBacklogAsync(stoppingToken);
+                if (!hasBacklog)
+                {
+                    await Task.Delay(ActiveCoalescingDelay, stoppingToken);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -84,5 +97,24 @@ public sealed class ConversationProjectionWorker(
             .Select(item => item.ConversationId)
             .Take(ScanBatchSize)
             .ToListAsync(ct);
+    }
+
+    private async Task<bool> HasProjectionBacklogAsync(CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.ConversationHeads
+            .AsNoTracking()
+            .GroupJoin(
+                db.ConversationProjectionCheckpoints.AsNoTracking(),
+                head => head.ConversationId,
+                checkpoint => checkpoint.ConversationId,
+                (head, checkpoints) => new
+                {
+                    head.HeadSequence,
+                    ProjectedThrough = checkpoints
+                        .Select(checkpoint => (long?)checkpoint.ProjectedThrough)
+                        .FirstOrDefault() ?? 0,
+                })
+            .AnyAsync(item => item.HeadSequence - item.ProjectedThrough >= 200, ct);
     }
 }

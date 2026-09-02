@@ -25,13 +25,14 @@ public sealed class Sm2JwtSigner
         if (string.IsNullOrWhiteSpace(privateKeyHex) || string.IsNullOrWhiteSpace(publicKeyHex))
         {
             _ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-            var exportedPrivate = _ecdsa.ExportECPrivateKey();
             var exportedPublic = _ecdsa.ExportSubjectPublicKeyInfo();
+            var publicKeyFingerprint = Convert.ToHexString(
+                    SHA256.HashData(exportedPublic))
+                .ToLowerInvariant();
 
             logger.LogWarning(
-                "[ECDSA-JWT] 未配置完整密钥对，已自动生成临时密钥。请尽快持久化到配置。私钥Base64={PrivateKey}; 公钥Base64={PublicKey}",
-                Convert.ToBase64String(exportedPrivate),
-                Convert.ToBase64String(exportedPublic));
+                "[ECDSA-JWT] 未配置完整密钥对，已生成仅限本进程的临时密钥。请通过安全配置持久化密钥；日志不会输出密钥材料。PublicKeyFingerprintSha256={PublicKeyFingerprint}",
+                publicKeyFingerprint);
         }
         else
         {

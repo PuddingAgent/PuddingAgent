@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 using PuddingDesktop.Core;
 
@@ -17,6 +18,17 @@ public sealed record FrontendDeployResult
     public required string TargetAdminDirectory { get; init; }
     public required int CopiedFileCount { get; init; }
     public required bool RanInstall { get; init; }
+    public bool BuiltFromSource { get; init; } = true;
+    public string? IndexSha256 { get; init; }
+}
+
+/// <summary>Raised when another frontend build/deploy already owns the Desktop operation slot.</summary>
+public sealed class FrontendDeployInProgressException : InvalidOperationException
+{
+    public FrontendDeployInProgressException()
+        : base("前端构建部署正在进行中，请稍候。")
+    {
+    }
 }
 
 /// <summary>
@@ -66,13 +78,74 @@ public sealed class FrontendBuildDeployService
             cancellationToken);
 
         var distDirectory = Path.Combine(options.FrontendWorkingDirectory, DistDirectoryName);
-        var copiedFileCount = DeployDistFiles(distDirectory, options.TargetAdminDirectory);
-        logBuffer.Append($"[frontend-deploy] Deployed {copiedFileCount} files to {options.TargetAdminDirectory}");
+        return DeployArtifacts(
+            distDirectory,
+            options.TargetAdminDirectory,
+            expectedIndexSha256: null,
+            ranInstall,
+            builtFromSource: true,
+            logBuffer);
+    }
+
+    /// <summary>
+    /// Deploys an already-built dist directory without invoking pnpm. An optional
+    /// index.html SHA-256 fences the caller's artifact identity; the copied entry
+    /// file is hashed again after deployment before success is returned.
+    /// </summary>
+    public FrontendDeployResult DeployPrebuiltArtifacts(
+        string distDirectory,
+        string targetAdminDirectory,
+        string? expectedIndexSha256,
+        CoreProcessLogBuffer logBuffer)
+        => DeployArtifacts(
+            distDirectory,
+            targetAdminDirectory,
+            expectedIndexSha256,
+            ranInstall: false,
+            builtFromSource: false,
+            logBuffer);
+
+    private FrontendDeployResult DeployArtifacts(
+        string distDirectory,
+        string targetAdminDirectory,
+        string? expectedIndexSha256,
+        bool ranInstall,
+        bool builtFromSource,
+        CoreProcessLogBuffer logBuffer)
+    {
+        ArgumentNullException.ThrowIfNull(logBuffer);
+
+        var sourceIndexPath = Path.Combine(Path.GetFullPath(distDirectory), DistEntryFileName);
+        if (!File.Exists(sourceIndexPath))
+            throw new FileNotFoundException($"Frontend artifact has no {DistEntryFileName}: {sourceIndexPath}");
+
+        var sourceIndexSha256 = ComputeSha256(sourceIndexPath);
+        if (!string.IsNullOrWhiteSpace(expectedIndexSha256)
+            && !string.Equals(
+                sourceIndexSha256,
+                expectedIndexSha256.Trim(),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Frontend index SHA-256 mismatch: expected={expectedIndexSha256.Trim()}, " +
+                $"actual={sourceIndexSha256}.");
+        }
+
+        var copiedFileCount = DeployDistFiles(distDirectory, targetAdminDirectory);
+        var deployedIndexSha256 = ComputeSha256(Path.Combine(targetAdminDirectory, DistEntryFileName));
+        if (!string.Equals(sourceIndexSha256, deployedIndexSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Deployed frontend index.html does not match the source artifact.");
+
+        logBuffer.Append(
+            $"[frontend-deploy] Deployed {copiedFileCount} files to {targetAdminDirectory}; " +
+            $"indexSha256={deployedIndexSha256}");
         return new FrontendDeployResult
         {
-            TargetAdminDirectory = options.TargetAdminDirectory,
+            TargetAdminDirectory = targetAdminDirectory,
             CopiedFileCount = copiedFileCount,
             RanInstall = ranInstall,
+            BuiltFromSource = builtFromSource,
+            IndexSha256 = deployedIndexSha256,
         };
     }
 
@@ -100,6 +173,13 @@ public sealed class FrontendBuildDeployService
 
         var fullDist = Path.GetFullPath(distDirectory);
         var fullTarget = Path.GetFullPath(targetAdminDirectory);
+        if (PathsOverlap(fullDist, fullTarget))
+        {
+            throw new InvalidOperationException(
+                $"Refusing to deploy overlapping frontend source and target directories: " +
+                $"source={fullDist}, target={fullTarget}.");
+        }
+
         if (!File.Exists(Path.Combine(fullDist, DistEntryFileName)))
             throw new FileNotFoundException(
                 $"Frontend build produced no {DistEntryFileName} under {fullDist}. " +
@@ -126,6 +206,21 @@ public sealed class FrontendBuildDeployService
         }
 
         return copiedFileCount;
+    }
+
+    private static bool PathsOverlap(string first, string second)
+    {
+        var normalizedFirst = Path.TrimEndingDirectorySeparator(first);
+        var normalizedSecond = Path.TrimEndingDirectorySeparator(second);
+        if (string.Equals(normalizedFirst, normalizedSecond, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return normalizedFirst.StartsWith(
+                   normalizedSecond + Path.DirectorySeparatorChar,
+                   StringComparison.OrdinalIgnoreCase)
+               || normalizedSecond.StartsWith(
+                   normalizedFirst + Path.DirectorySeparatorChar,
+                   StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task RunPnpmAsync(
@@ -167,5 +262,11 @@ public sealed class FrontendBuildDeployService
             throw new InvalidOperationException(
                 $"pnpm failed with exit code {process.ExitCode}. " +
                 $"Last output:{Environment.NewLine}{logBuffer.GetTail(40)}");
+    }
+
+    private static string ComputeSha256(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 }

@@ -54,6 +54,14 @@ public static class PuddingApplicationHost
 
         // ── WebApplicationBuilder ────────────────────────────
         var builder = WebApplication.CreateBuilder(args);
+        // Product/user-owned runtime policy lives below DataRoot. Add it after
+        // the packaged appsettings defaults, then restore environment/CLI as
+        // the highest-precedence operational overrides.
+        builder.Configuration
+            .AddJsonFile(dataPaths.SystemConfigFile("system.json"), optional: true, reloadOnChange: true)
+            .AddEnvironmentVariables();
+        if (args.Length > 0)
+            builder.Configuration.AddCommandLine(args);
         builder.Services.AddSingleton(dataPaths);
 
         // ── DI validation ────────────────────────────────────
@@ -147,7 +155,7 @@ public static class PuddingApplicationHost
                 PuddingAuthorizationPolicies.StorageManagement,
                 policy => policy.AddRequirements(new StorageManagementRequirement()));
 
-            // ── ADR-075 External Access Token policies ──────────
+            // ── ADR-075/082 External Access Token policies ──────
             // Token 管理锁定 JWT scheme + admin role：External Token 无 admin role
             // 且 scheme 不匹配，永远无法进入管理 API。
             authorization.AddPolicy(
@@ -185,6 +193,26 @@ public static class PuddingApplicationHost
                 authorization,
                 ExternalAccessTokenPolicyNames.ExternalTasksCommand,
                 ExternalTaskApiScopes.TasksCommand,
+                requireWorkspace: true);
+            AddExternalTaskApiPolicy(
+                authorization,
+                ExternalAccessTokenPolicyNames.ExternalWorkspacesRead,
+                ExternalTaskApiScopes.WorkspacesRead,
+                requireWorkspace: false);
+            AddExternalTaskApiPolicy(
+                authorization,
+                ExternalAccessTokenPolicyNames.ExternalWorkspaceRead,
+                ExternalTaskApiScopes.WorkspacesRead,
+                requireWorkspace: true);
+            AddExternalTaskApiPolicy(
+                authorization,
+                ExternalAccessTokenPolicyNames.ExternalAgentsRead,
+                ExternalTaskApiScopes.AgentsRead,
+                requireWorkspace: true);
+            AddExternalTaskApiPolicy(
+                authorization,
+                ExternalAccessTokenPolicyNames.ExternalMessagesSend,
+                ExternalTaskApiScopes.MessagesSend,
                 requireWorkspace: true);
         });
         builder.Services.AddSingleton<IAuthorizationHandler, ExternalAccessTokenAuthorizationHandler>();

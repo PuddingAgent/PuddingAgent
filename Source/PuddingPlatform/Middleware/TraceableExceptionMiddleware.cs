@@ -23,6 +23,23 @@ public sealed class TraceableExceptionMiddleware
         {
             await _next(ctx);
         }
+        catch (OperationCanceledException) when (ctx.RequestAborted.IsCancellationRequested)
+        {
+            // A browser navigation, refresh, or closed tab cancels the request token. This is a
+            // normal transport outcome, not an application failure and must not mint an errorId or
+            // pollute the Error log with a synthetic HTTP 500.
+            var trace = RuntimeTraceContextAccessor.Current;
+            _logger.LogDebug(
+                "[RequestCancelled] traceId={TraceId} sessionId={SessionId} path={Path}",
+                trace?.TraceId ?? ctx.TraceIdentifier,
+                trace?.SessionId,
+                ctx.Request.Path);
+
+            if (!ctx.Response.HasStarted)
+            {
+                ctx.Response.StatusCode = 499;
+            }
+        }
         catch (Exception ex)
         {
             var trace = RuntimeTraceContextAccessor.Current;
