@@ -1,4 +1,5 @@
 using System.Text;
+using System.Security.Cryptography;
 using PuddingDesktop.Core;
 using PuddingDesktop.Debug;
 
@@ -92,6 +93,61 @@ public sealed class FrontendBuildDeployServiceTests : IDisposable
     }
 
     [Fact]
+    public void DeployDistFiles_RejectsOverlappingSourceAndTargetBeforeDelete()
+    {
+        var adminDirectory = Path.Combine(_tempRoot, "core", "wwwroot", "admin");
+        Directory.CreateDirectory(adminDirectory);
+        File.WriteAllText(Path.Combine(adminDirectory, "index.html"), "loaded artifact");
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            FrontendBuildDeployService.DeployDistFiles(adminDirectory, adminDirectory));
+
+        Assert.Contains("overlapping", ex.Message);
+        Assert.Equal("loaded artifact", File.ReadAllText(Path.Combine(adminDirectory, "index.html")));
+    }
+
+    [Fact]
+    public void DeployPrebuiltArtifacts_VerifiesIdentityAndReportsPrebuiltMode()
+    {
+        var dist = CreateDist(
+            indexContent: "prebuilt index",
+            extraFiles: [Path.Combine("static", "app.hash.js")]);
+        var adminDirectory = Path.Combine(_tempRoot, "core", "wwwroot", "admin");
+        var expectedSha256 = ComputeSha256(Path.Combine(dist, "index.html"));
+
+        var result = new FrontendBuildDeployService().DeployPrebuiltArtifacts(
+            dist,
+            adminDirectory,
+            expectedSha256,
+            new CoreProcessLogBuffer());
+
+        Assert.Equal(2, result.CopiedFileCount);
+        Assert.False(result.BuiltFromSource);
+        Assert.False(result.RanInstall);
+        Assert.Equal(expectedSha256, result.IndexSha256);
+        Assert.Equal("prebuilt index", File.ReadAllText(Path.Combine(adminDirectory, "index.html")));
+    }
+
+    [Fact]
+    public void DeployPrebuiltArtifacts_RejectsHashMismatchBeforeReplacingTarget()
+    {
+        var dist = CreateDist(indexContent: "wrong artifact");
+        var adminDirectory = Path.Combine(_tempRoot, "core", "wwwroot", "admin");
+        Directory.CreateDirectory(adminDirectory);
+        File.WriteAllText(Path.Combine(adminDirectory, "index.html"), "currently loaded");
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            new FrontendBuildDeployService().DeployPrebuiltArtifacts(
+                dist,
+                adminDirectory,
+                new string('0', 64),
+                new CoreProcessLogBuffer()));
+
+        Assert.Contains("SHA-256 mismatch", ex.Message);
+        Assert.Equal("currently loaded", File.ReadAllText(Path.Combine(adminDirectory, "index.html")));
+    }
+
+    [Fact]
     public async Task DeployAsync_ThrowsWhenBuildFailsAndIncludesLogTail()
     {
         // `pnpm run build` inside a directory without package.json exits
@@ -128,6 +184,12 @@ public sealed class FrontendBuildDeployServiceTests : IDisposable
         }
 
         return dist;
+    }
+
+    private static string ComputeSha256(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 
     public void Dispose()

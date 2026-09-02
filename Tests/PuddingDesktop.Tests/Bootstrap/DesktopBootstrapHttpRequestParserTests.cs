@@ -36,6 +36,43 @@ public sealed class DesktopBootstrapHttpRequestParserTests
         Assert.Equal("abc123", artifactAssemblySha256);
     }
 
+    [Fact]
+    public void TryParseFrontendBody_ArtifactFields_ArePreserved()
+    {
+        const string json = """
+            {
+              "token": "tok",
+              "artifactDirectory": "E:\\repo\\Source\\PuddingPlatformAdmin\\dist",
+              "artifactIndexSha256": "def456"
+            }
+            """;
+
+        var parsed = DesktopBootstrapHttpRequestParser.TryParseFrontendBody(
+            json,
+            out var token,
+            out var artifactDirectory,
+            out var artifactIndexSha256);
+
+        Assert.True(parsed);
+        Assert.Equal("tok", token);
+        Assert.Equal(@"E:\repo\Source\PuddingPlatformAdmin\dist", artifactDirectory);
+        Assert.Equal("def456", artifactIndexSha256);
+    }
+
+    [Fact]
+    public void ControlRoutePaths_AreStableForAutomationClients()
+    {
+        Assert.Equal("/desktop/bootstrap/core/restart", DesktopBootstrapHttpEndpoint.CoreRestartPath);
+        Assert.Equal(
+            "/desktop/bootstrap/core/deploy-restart",
+            DesktopBootstrapHttpEndpoint.CoreDeployRestartPath);
+        Assert.Equal(
+            "/desktop/bootstrap/frontend/build-deploy",
+            DesktopBootstrapHttpEndpoint.FrontendBuildDeployPath);
+        Assert.Equal("/desktop/bootstrap/frontend/load", DesktopBootstrapHttpEndpoint.FrontendLoadPath);
+        Assert.Equal("/desktop/bootstrap/diagnostics", DesktopBootstrapHttpEndpoint.DiagnosticsPath);
+    }
+
     [Theory]
     [InlineData(null, "desktop-build")]
     [InlineData("build", "desktop-build")]
