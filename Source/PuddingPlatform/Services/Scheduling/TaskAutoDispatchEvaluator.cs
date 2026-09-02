@@ -285,6 +285,25 @@ public sealed class TaskAutoDispatchEvaluator(
                 .OrderByDescending(item => item.Score.Total)
                 .ThenBy(item => item.Agent.AgentId, StringComparer.Ordinal)
                 .ToArray();
+
+            // 显式 preferred_agent_id 是硬亲和而非偏好（事故卡 4ed930e7）：preferred 兼容时
+            // 恒排第一；其门控未过则整卡 Deferred(preferred_busy)，本轮绝不静默 fallback 给
+            // 其他 agent。allow_agent_fallback 布尔仍只作用于 RouteMatcher 的硬过滤。
+            var preferredAgentId = task.PreferredAgentId;
+            var hasPreferred = !string.IsNullOrWhiteSpace(preferredAgentId);
+            var preferredIndex = hasPreferred
+                ? Array.FindIndex(
+                    routedAgents,
+                    item => string.Equals(item.Agent.AgentId, preferredAgentId, StringComparison.Ordinal))
+                : -1;
+            if (preferredIndex > 0)
+            {
+                var preferred = routedAgents[preferredIndex];
+                routedAgents = new[] { preferred }
+                    .Concat(routedAgents.Where((_, index) => index != preferredIndex))
+                    .ToArray();
+            }
+
             if (routedAgents.Length == 0)
             {
                 decisions.Add(Decision(
@@ -305,6 +324,16 @@ public sealed class TaskAutoDispatchEvaluator(
             TaskAutoDispatchCandidateDecision? lastDeferred = null;
             foreach (var routed in routedAgents)
             {
+                // 硬亲和：上一 candidate 即 preferred 且门控未过 → 整卡 preferred_busy，
+                // 不再尝试其余 agent（禁用静默 fallback）。
+                if (hasPreferred && lastDeferred is not null && string.Equals(
+                        lastDeferred.AgentId, preferredAgentId, StringComparison.Ordinal))
+                {
+                    decisions.Add(AsPreferredBusy(lastDeferred, now, _options.ScanInterval));
+                    lastDeferred = null;
+                    break;
+                }
+
                 var agentId = routed.Agent.AgentId;
                 var availability = availabilityByAgent[agentId];
                 if (!availability.CanAcceptAutomaticTask(now))
@@ -398,8 +427,13 @@ public sealed class TaskAutoDispatchEvaluator(
                 break;
             }
 
-            if (lastDeferred is not null)
-                decisions.Add(lastDeferred);
+                        if (lastDeferred is not null)
+            {
+                decisions.Add(
+                    hasPreferred && string.Equals(lastDeferred.AgentId, preferredAgentId, StringComparison.Ordinal)
+                        ? AsPreferredBusy(lastDeferred, now, _options.ScanInterval)
+                        : lastDeferred);
+            }
         }
 
         return decisions;
@@ -449,6 +483,20 @@ public sealed class TaskAutoDispatchEvaluator(
         DependencyState = dependencyState,
         WindowCode = windowCode,
         ScoreBreakdown = scoreBreakdown,
+    };
+
+    /// <summary>
+    /// 显式 preferred 的门控未过 → 整卡推迟（硬亲和）。保留底层门控行的诊断字段
+    /// （availabilityReason/windowCode/selection/fingerprint/scoreBreakdown），code 统一为
+    /// preferred_busy；nextEligible 取「下一扫描周期」与底层 defer 约定的较晚者。
+    /// </summary>
+    private static TaskAutoDispatchCandidateDecision AsPreferredBusy(
+        TaskAutoDispatchCandidateDecision underlying,
+        DateTimeOffset now,
+        TimeSpan scanInterval) => underlying with
+    {
+        Code = TaskSchedulerDecisionCodes.PreferredBusy,
+        NextEligibleAtUtc = Later(now.Add(scanInterval), underlying.NextEligibleAtUtc),
     };
 
     private static DateTimeOffset? Later(DateTimeOffset? first, DateTimeOffset? second)

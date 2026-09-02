@@ -14,6 +14,7 @@ public static class TaskSchedulerDecisionCodes
     public const string TaskDependencyWaiting = "task_dependency_waiting";
     public const string TaskDependencyBroken = "task_dependency_broken";
     public const string PreferredAgentUnavailableOrIncompatible = "preferred_agent_unavailable_or_incompatible";
+    public const string PreferredBusy = "preferred_busy";
     public const string NoCompatibleAgent = "no_compatible_agent";
     public const string AgentNotIdle = "agent_not_idle";
     public const string AgentIdleGracePeriod = "agent_idle_grace_period";
@@ -53,6 +54,7 @@ public static class TaskSchedulerDecisionCodes
             ["TaskDependencyWaiting"] = TaskDependencyWaiting,
             ["TaskDependencyBroken"] = TaskDependencyBroken,
             ["PreferredAgentUnavailableOrIncompatible"] = PreferredAgentUnavailableOrIncompatible,
+            ["PreferredBusy"] = PreferredBusy,
             ["NoCompatibleAgent"] = NoCompatibleAgent,
             ["AgentNotIdle"] = AgentNotIdle,
             ["AgentIdleGracePeriod"] = AgentIdleGracePeriod,

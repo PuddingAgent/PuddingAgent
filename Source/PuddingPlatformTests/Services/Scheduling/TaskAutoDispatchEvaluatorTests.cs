@@ -55,8 +55,9 @@ public sealed class TaskAutoDispatchEvaluatorTests
 
         Assert.AreEqual("p0", decisions[0].TaskId);
         Assert.AreEqual(TaskAutoDispatchCandidateVerdict.Eligible, decisions[0].Verdict);
-        Assert.AreEqual("p3", decisions[1].TaskId);
-        Assert.AreEqual("agent_already_selected_this_scan", decisions[1].Code);
+                Assert.AreEqual("p3", decisions[1].TaskId);
+        Assert.AreEqual(TaskAutoDispatchCandidateVerdict.Deferred, decisions[1].Verdict);
+        Assert.AreEqual("preferred_busy", decisions[1].Code);
         Assert.IsTrue(decisions.All(item => item.WorkspaceId == "ws"));
     }
 
@@ -103,10 +104,11 @@ public sealed class TaskAutoDispatchEvaluatorTests
         };
         var evaluator = CreateEvaluator(availability, new AllowWindow());
 
-        var decision = AssertSingle(await evaluator.EvaluateAsync("ws", 20));
+                var decision = AssertSingle(await evaluator.EvaluateAsync("ws", 20));
 
         Assert.AreEqual(TaskAutoDispatchCandidateVerdict.Deferred, decision.Verdict);
-        Assert.AreEqual("agent_not_idle", decision.Code);
+        Assert.AreEqual("preferred_busy", decision.Code);
+        Assert.AreEqual("agent-1", decision.AgentId);
         Assert.AreEqual("waiting_subagent", decision.AvailabilityReason);
     }
 
@@ -120,15 +122,16 @@ public sealed class TaskAutoDispatchEvaluatorTests
             Idle("agent-1"),
             new ConservativeExecutionWindowResolver());
 
-        var decision = AssertSingle(await evaluator.EvaluateAsync("ws", 20));
+                var decision = AssertSingle(await evaluator.EvaluateAsync("ws", 20));
 
         Assert.AreEqual(TaskAutoDispatchCandidateVerdict.Deferred, decision.Verdict);
-        Assert.AreEqual("execution_window_unknown", decision.Code);
+        Assert.AreEqual("preferred_busy", decision.Code);
+        Assert.AreEqual("agent-1", decision.AgentId);
         Assert.AreEqual("execution_window_route_profile_unknown", decision.WindowCode);
     }
 
     [TestMethod]
-    public async Task Evaluate_PreferredBusy_UsesExplicitCompatibleFallback()
+    public async Task Evaluate_PreferredBusyWithFallbackAllowed_DefersWholeCard_WithoutSilentFallback()
     {
         var task = TaskEntity("task-1", TaskPriority.P0, "agent-1");
         task.AllowAgentFallback = true;
@@ -148,10 +151,72 @@ public sealed class TaskAutoDispatchEvaluatorTests
 
         var decision = AssertSingle(await evaluator.EvaluateAsync("ws", 20));
 
+        Assert.AreEqual(TaskAutoDispatchCandidateVerdict.Deferred, decision.Verdict);
+        Assert.AreEqual("preferred_busy", decision.Code);
+        Assert.AreEqual("agent-1", decision.AgentId);
+        Assert.AreEqual(_now.AddMinutes(5), decision.NextEligibleAtUtc);
+        Assert.AreEqual("preferred_agent", decision.AgentSelectionCode);
+        Assert.AreEqual(64, decision.AgentRoutingFingerprint!.Length);
+    }
+
+    [TestMethod]
+    public async Task Evaluate_PreferredIdle_IsChosenOverCompatiblePeers()
+    {
+        var task = TaskEntity("task-1", TaskPriority.P0, "agent-1");
+        task.AllowAgentFallback = true;
+        await AddTasksAsync(task);
+        var evaluator = CreateEvaluator(
+            [Idle("agent-1"), Idle("agent-2")],
+            new AllowWindow(),
+            [Agent("agent-1"), Agent("agent-2")]);
+
+        var decision = AssertSingle(await evaluator.EvaluateAsync("ws", 20));
+
+        Assert.AreEqual(TaskAutoDispatchCandidateVerdict.Eligible, decision.Verdict);
+        Assert.AreEqual("agent-1", decision.AgentId);
+        Assert.AreEqual("eligible", decision.Code);
+        Assert.AreEqual("preferred_agent", decision.AgentSelectionCode);
+    }
+
+    [TestMethod]
+    public async Task Evaluate_WithoutPreferredAgent_KeepsScoreOrderFallback()
+    {
+        var task = TaskEntity("task-1", TaskPriority.P0, "agent-1");
+        task.PreferredAgentId = null;
+        task.AllowAgentFallback = true;
+        await AddTasksAsync(task);
+        var busy = Idle("agent-1") with
+        {
+            State = AgentAvailabilityState.Busy,
+            ActivityReason = AgentActivityReason.RuntimeExecution,
+            IdleSinceUtc = null,
+            ReasonCode = "foreground_turn",
+        };
+        var evaluator = CreateEvaluator(
+            [busy, Idle("agent-2")],
+            new AllowWindow(),
+            [Agent("agent-1"), Agent("agent-2")]);
+
+        var decision = AssertSingle(await evaluator.EvaluateAsync("ws", 20));
+
         Assert.AreEqual(TaskAutoDispatchCandidateVerdict.Eligible, decision.Verdict);
         Assert.AreEqual("agent-2", decision.AgentId);
         Assert.AreEqual("compatible_agent", decision.AgentSelectionCode);
-        Assert.AreEqual(64, decision.AgentRoutingFingerprint!.Length);
+    }
+
+    [TestMethod]
+    public void RouteMatcher_PreferredExclusive_BlocksOtherAgentsWhenFallbackDisabled()
+    {
+        var task = TaskEntity("task-1", TaskPriority.P0, "agent-1");
+        task.AllowAgentFallback = false;
+
+        var preferred = TaskAgentRouteMatcher.Evaluate(task, Agent("agent-1"));
+        var other = TaskAgentRouteMatcher.Evaluate(task, Agent("agent-2"));
+
+        Assert.IsTrue(preferred.Compatible);
+        Assert.AreEqual("preferred_agent", preferred.Code);
+        Assert.IsFalse(other.Compatible);
+        Assert.AreEqual("preferred_agent_exclusive", other.Code);
     }
 
     [TestMethod]
