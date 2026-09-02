@@ -5,6 +5,7 @@
 > 决策范围：第三方任务看板认证、授权、外部 API、任务评价与 Admin Token 管理
 > 详细设计：[第三方任务看板 Access Token 与外部 API 详细设计方案](../Features/第三方任务看板AccessToken与外部API详细设计方案.md)
 > 实施状态：P1 Token 后端与 P3 Admin 管理器已于 2026-08-22 实现并通过定向测试（PuddingPlatformTests/Security 42 项 + Admin UI 8 项）；P2 基本功能（External Task API v1：任务 list/get/create/patch、comments/evaluations/commands、ETag/If-Match 428/412、简化幂等）同日实现（后端累计 65 项测试通过）。SSE Watch、per-token RateLimiter、OpenAPI 快照与 P4 部署收口未实现。External API 默认关闭（externalTaskApi.enabled=false）。
+> 资源扩展：2026-08-31 的 [ADR-082](96ADR-082Pudding外部工作空间Agent消息APIADR.md) 复用本 ADR 的 Token、安全门禁和 v1 边界，新增安全 Workspace/Agent 目录与 canonical Agent 消息 receipt；本 ADR 中“仅 Task 资源”的描述仅对 ADR-075 初始范围有效。
 
 ## 1. 背景
 

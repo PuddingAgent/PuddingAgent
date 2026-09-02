@@ -4,6 +4,7 @@
 > 日期：2026-08-21（P1+P3 与 P2 基本功能实施于 2026-08-22；SSE Watch/RateLimiter/OpenAPI/P4 未实现）
 > 对应 ADR：[ADR-075 第三方任务看板 Access Token 与外部 API](../07架构/90ADR-075第三方任务看板AccessToken与外部APIADR.md)
 > P1/P3 实施摘要：Core 合同（ExternalAccessTokenContracts/ExternalTaskApiScopes/PuddingExternalTaskApiConfig）、Platform 四实体+SchemaBootstrapper+Store/Service/Handler/Authorization/UsageCoalescer、`/api/admin/access-tokens` 管理 API、`/api/external/v1/token` whoami（默认关闭）、Admin `/system-config/access-tokens` 页面；测试见 `PuddingPlatformTests/Security/ExternalAccessToken*Tests.cs`（42 项）与 `src/pages/access-token-management/index.test.tsx`（8 项）。
+> 后续扩展：Workspace/Agent 安全目录与 Agent 消息发送/执行回执由 [ADR-082](../07架构/96ADR-082Pudding外部工作空间Agent消息APIADR.md) 和 [使用说明](Pudding外部工作空间Agent消息API设计与使用说明.md) 冻结；复用本文 Token/Policy/HTTPS/幂等基线，不开放任意内部 Session。
 
 ## 0. 结论摘要
 
