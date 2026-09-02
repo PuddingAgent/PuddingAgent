@@ -35,6 +35,26 @@ function makeTurn(
 }
 
 describe('buildMessageBlocks', () => {
+  it('keeps the experimental projection equivalent for managed Goal text', () => {
+    const turn = makeTurn(
+      'goal-turn',
+      String.raw`prompt<goal_payload>{"objective":"\u53EF\u8BFB\u76EE\u6807","iteration":3,"maxIterations":9}</goal_payload>`,
+      '',
+    );
+    turn.userMessage.metadata = {
+      goal_managed: 'true',
+      automation_origin: 'goal_continuation',
+    };
+
+    const userBlock = buildMessageBlocks([turn]).find(
+      (block) => block.role === 'user',
+    );
+
+    expect(userBlock?.content).toBe(
+      'Goal 自动续行 · 第 3/9 轮\n\n可读目标',
+    );
+  });
+
   it('converts turns to message blocks', () => {
     const turns = [makeTurn('t1', 'hello', 'hi there')];
     const blocks = buildMessageBlocks(turns, 'Agent', undefined);

@@ -1023,6 +1023,7 @@ describe('AgentMessageBubble model retry row hook (P1-2)', () => {
 
     expect(mockModelRetryRow).toHaveBeenCalledWith(
       expect.objectContaining({
+        active: true,
         items: expect.arrayContaining([
           expect.objectContaining({ id: 'retry-1' }),
         ]),
@@ -1050,6 +1051,9 @@ describe('AgentMessageBubble model retry row hook (P1-2)', () => {
     );
 
     expect(mockModelRetryRow).toHaveBeenCalledTimes(1);
+    expect(mockModelRetryRow).toHaveBeenCalledWith(
+      expect.objectContaining({ active: false }),
+    );
     expect(screen.queryByTestId('agent-error-summary-row')).toBeNull();
   });
 });

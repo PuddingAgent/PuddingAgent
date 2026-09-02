@@ -8,6 +8,7 @@ import type {
   ConversationProcessSummary,
   PlanCardData,
 } from './client/types';
+import { formatGoalContinuationMessage } from './utils/goalContinuationMessage';
 
 export type MessageStatus = 'sending' | 'success' | 'error';
 export type AssistantStatus =
@@ -210,7 +211,10 @@ export function buildMessageBlocks(
         id: `${turn.userMessage.id}:user`,
         turnId: turn.turnId,
         role: 'user',
-        content: turn.userMessage.text,
+        content: formatGoalContinuationMessage(
+          turn.userMessage.text,
+          turn.userMessage.metadata,
+        ),
         status: turn.userMessage.status === 'sending' ? 'sending' : 'success',
         createdAt: turn.userMessage.timestamp,
         metadata: turn.userMessage.metadata,

@@ -544,11 +544,6 @@ const ChatMain: React.FC<ChatMainProps> = ({
             style={{ marginBottom: 0, borderRadius: 0 }}
           />
         )}
-        <GoalBanner
-          goal={goalState.goal}
-          commandRunning={goalState.commandRunning}
-          onCommand={goalState.runCommand}
-        />
         <WorkspaceNavigationHeader
           leading={
             !sidebarOpen ? (
@@ -594,6 +589,11 @@ const ChatMain: React.FC<ChatMainProps> = ({
               >
                 任务看板
               </Button>
+              <GoalBanner
+                goal={goalState.goal}
+                commandRunning={goalState.commandRunning}
+                onCommand={goalState.runCommand}
+              />
             </>
           }
           extraActions={

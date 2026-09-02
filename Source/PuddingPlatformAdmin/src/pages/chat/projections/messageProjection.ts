@@ -10,6 +10,7 @@ import {
   type ChatTurn as SystemChatTurn,
   type TimelineItem,
 } from '../types';
+import { formatGoalContinuationMessage } from '../utils/goalContinuationMessage';
 
 // ── 类型定义 ────────────────────────────────────────────
 
@@ -100,7 +101,10 @@ export function buildMessageBlocks(
         id: `${turn.userMessage.id}:user`,
         turnId: turn.turnId,
         role: 'user',
-        content: turn.userMessage.text,
+        content: formatGoalContinuationMessage(
+          turn.userMessage.text,
+          turn.userMessage.metadata,
+        ),
         status: turn.userMessage.status === 'sending' ? 'sending' : 'success',
         createdAt: turn.userMessage.timestamp,
                 metadata: turn.userMessage.metadata,

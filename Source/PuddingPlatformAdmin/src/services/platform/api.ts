@@ -12,6 +12,10 @@ import type {
   TaskDeleteResult,
   TaskDto,
   TaskPageDto,
+  TaskAutoDispatchCandidateDecisionDto,
+  TaskSchedulerActionResultDto,
+  TaskSchedulerPolicyUpdateRequest,
+  TaskSchedulerStatusDto,
 } from '@/pages/workspace-tasks/types';
 
 // ─── 类型定义（与 C# 模型对齐）───────────────────────────────────
@@ -3829,6 +3833,61 @@ export async function listTasks(
     method: 'GET',
     params,
   });
+}
+
+export async function getTaskSchedulerStatus(
+  workspaceId: string,
+): Promise<TaskSchedulerStatusDto> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/task-scheduling/auto-dispatch/status`,
+    { method: 'GET' },
+  );
+}
+
+export async function updateTaskSchedulerPolicy(
+  workspaceId: string,
+  body: TaskSchedulerPolicyUpdateRequest,
+): Promise<TaskSchedulerStatusDto> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/task-scheduling/auto-dispatch/policy`,
+    { method: 'PUT', data: body },
+  );
+}
+
+export async function executeTaskSchedulerAction(
+  workspaceId: string,
+  action: 'pause' | 'resume',
+  expectedRevision: number,
+): Promise<TaskSchedulerStatusDto>;
+export async function executeTaskSchedulerAction(
+  workspaceId: string,
+  action: 'scan' | 'repair',
+): Promise<TaskSchedulerActionResultDto>;
+export async function executeTaskSchedulerAction(
+  workspaceId: string,
+  action: 'pause' | 'resume' | 'scan' | 'repair',
+  expectedRevision?: number,
+): Promise<TaskSchedulerStatusDto | TaskSchedulerActionResultDto> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/task-scheduling/auto-dispatch/actions/${action}`,
+    {
+      method: 'POST',
+      data:
+        typeof expectedRevision === 'number'
+          ? { expectedRevision }
+          : {},
+    },
+  );
+}
+
+export async function evaluateTaskAutoDispatch(
+  workspaceId: string,
+  limit = 100,
+): Promise<TaskAutoDispatchCandidateDecisionDto[]> {
+  return request(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/task-scheduling/auto-dispatch/evaluate`,
+    { method: 'GET', params: { limit } },
+  );
 }
 
 export async function createTask(

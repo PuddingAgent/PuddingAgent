@@ -687,8 +687,8 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
               </div>
             )}
 
-            {/* P1-2: 模型重试行 — 嗅探 processItems 中的 LLM retry 条目；无条目时组件内部返回 null，不占用布局 */}
-            <ModelRetryRow items={processItems} />
+            {/* P1-2: 模型重试行 — 仅识别 canonical LLM retry 运行事实；普通思考文本不触发 */}
+            <ModelRetryRow items={processItems} active={isRunActive} />
 
             {/* 回退正文气泡（守卫失败/无投影）：整块 content 单一承载 */}
             {shouldRenderAnswerBubble &&

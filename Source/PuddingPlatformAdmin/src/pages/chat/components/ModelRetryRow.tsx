@@ -1,9 +1,10 @@
 // ── ModelRetryRow：模型重试状态行（P1-2，对齐 deepseek-harness D3 ModelRetryItem）──────────
-// 数据驱动：嗅探 processItems 中后端投影的 LLM retry 条目（DirectLlmClient 重试 summary：
+// 数据驱动：只接收 processItems 中后端投影的 canonical LLM retry 条目（DirectLlmClient 重试 summary：
 // 「LLM call retry {n}/{max}.」/「LLM stream retry before first delta {n}/{max}.」，
 // 经 ProcessSummaryItem.kind/text 投影进 TimelineItem：type='subconscious_step'、text=summary、
 // message=底层错误）。
-// 渲染单行：StateDot(warning) + 「模型重试中」 + (n/max) + 原因摘要（summarizeError，title 挂全量）。
+// 普通 thinking/tool/user 文本即使含 retry 也不得触发；运行中显示「模型重试中」，
+// 后续已有新过程或 Turn 终态时显示「模型已重试」。
 // 多条 retry 条目 = 多次重试：折叠行取最新一条，展开体列历次重试时间线（timestamp + 原因摘要）。
 // 数据无 deadline/delayMs → 不做倒计时，仅状态 + 次数 + 原因。
 // 样式：自包含 createStyles（参考 toolcall.styles 的 card/行式模式，深底浅字卡省略，轻量即可）；
@@ -11,6 +12,7 @@
 import { createStyles } from 'antd-style';
 import React, { useMemo, useState } from 'react';
 import type { TimelineItem } from '../types';
+import { parseCanonicalModelRetrySummary } from '../utils/modelRetry';
 import { summarizeError } from '../utils/summarizeError';
 import { sanitizeProcessText } from './processPreview';
 import StateDot from './StateDot';
@@ -30,36 +32,23 @@ export interface ModelRetryEntry {
 }
 
 /**
- * 嗅探规则：kind 非 tool_call/tool_result 且文本命中 LLM retry 形态，或文本含「retry」。
+ * 识别规则：必须是后端运行事实投影的 subconscious_step，且文本严格命中
+ * DirectLlmClient canonical LLM retry 摘要。普通思考中的 retry 不是运行状态。
  * 对齐 ALREADY_KNOWN：DirectLlmClient.cs L255「LLM call retry {attempt+1}/{maxRetries}.」
  * 与 L600「LLM stream retry before first delta {retryAttempt}/{maxRetries}.」。
  */
 export const isModelRetryItem = (item: TimelineItem): boolean => {
-  if (item.type === 'tool_call' || item.type === 'tool_result') return false;
+  if (item.type !== 'subconscious_step') return false;
   const text = sanitizeProcessText(item.text || item.message);
   if (!text) return false;
-  return /LLM (call |stream )?retry/i.test(text) || /retry/i.test(text);
+  return parseCanonicalModelRetrySummary(text) !== null;
 };
 
 /** 从「LLM call retry 2/3.」类文本提取 (n/max)；无匹配返回 null。 */
 export const parseRetryRatio = (
   text?: string,
-): { attempt: number; maxRetries: number } | null => {
-  const safe = sanitizeProcessText(text);
-  const match = /(\d+)\s*\/\s*(\d+)/.exec(safe);
-  if (!match) return null;
-  const attempt = Number(match[1]);
-  const maxRetries = Number(match[2]);
-  if (
-    !Number.isInteger(attempt) ||
-    !Number.isInteger(maxRetries) ||
-    attempt < 1 ||
-    maxRetries < 1
-  ) {
-    return null;
-  }
-  return { attempt, maxRetries };
-};
+): { attempt: number; maxRetries: number } | null =>
+  parseCanonicalModelRetrySummary(sanitizeProcessText(text));
 
 /**
  * 纯函数：筛出 retry 条目并按时间升序排列（展开时间线顺序；折叠行取末位 = 最新）。
@@ -74,7 +63,7 @@ export const buildModelRetryEntries = (
         compact: false,
       });
       const err = summarizeError(raw);
-      const ratio = parseRetryRatio(item.text);
+      const ratio = parseRetryRatio(item.text || item.message);
       return {
         id: item.id,
         attempt: ratio?.attempt ?? 0,
@@ -236,13 +225,15 @@ const formatTime = (timestamp: number): string => {
 export interface ModelRetryRowProps {
   /** 消息过程时间线（TimelineItem[]）；无 retry 条目时组件返回 null */
   items?: TimelineItem[];
+  /** 当前 Turn 是否仍活跃；只在 retry 仍为最新过程事实时显示“重试中”。 */
+  active?: boolean;
 }
 
 /**
  * 模型重试状态行：单行摘要（StateDot(warning) + 模型重试中 + (n/max) + 原因摘要），
  * 整行可点展开历次重试时间线。仅当嗅探到 retry 条目时渲染。
  */
-const ModelRetryRow: React.FC<ModelRetryRowProps> = ({ items }) => {
+const ModelRetryRow: React.FC<ModelRetryRowProps> = ({ items, active = false }) => {
   const { styles, cx } = useModelRetryStyles();
   const [expanded, setExpanded] = useState(false);
   const entries = useMemo(() => buildModelRetryEntries(items), [items]);
@@ -253,7 +244,11 @@ const ModelRetryRow: React.FC<ModelRetryRowProps> = ({ items }) => {
     latest.attempt > 0 && latest.maxRetries > 0
       ? `(${latest.attempt}/${latest.maxRetries})`
       : '';
-  const ariaLabel = ratioText ? `模型重试中 ${ratioText}` : '模型重试中';
+  const hasNewerProcessFact = (items ?? []).some(
+    (item) => item.timestamp > latest.timestamp,
+  );
+  const retryTitle = active && !hasNewerProcessFact ? '模型重试中' : '模型已重试';
+  const ariaLabel = ratioText ? `${retryTitle} ${ratioText}` : retryTitle;
 
   return (
     <div className={styles.list} data-testid="model-retry-list">
@@ -277,7 +272,7 @@ const ModelRetryRow: React.FC<ModelRetryRowProps> = ({ items }) => {
           <StateDot state="warning" size={10} />
         </span>
         <span className={styles.title} data-testid="model-retry-title">
-          模型重试中
+          {retryTitle}
         </span>
         {ratioText && (
           <span className={styles.ratio} data-testid="model-retry-ratio">

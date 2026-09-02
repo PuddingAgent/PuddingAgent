@@ -539,6 +539,10 @@ describe('projectExecutionFlow', () => {
     it('非 retry 形态 subconscious_step 不投影为节点', () => {
       const proj = projectExecutionFlow([
         ev('subconscious_step', 1, { status: 'thinking', message: '整理上下文' }),
+        ev('subconscious_step', 2, {
+          status: 'thinking',
+          message: 'provider reset, will retry.',
+        }),
       ]);
       expect(proj.nodes).toHaveLength(0);
     });

@@ -1,5 +1,5 @@
 // ── ModelRetryRow 测试（P1-2，对齐 deepseek-harness D3 ModelRetryItem）─────────────
-// 覆盖：嗅探规则（kind 非 tool_call/tool_result）、(n/max) 提取、message 优先原因、
+// 覆盖：canonical 类型/格式识别、普通思考 retry 误报、(n/max) 提取、message 优先原因、
 // 无 retry 不渲染、单条渲染、多条取最新 + 展开历次时间线、键盘 Enter/Space、reduced-motion 不崩。
 import { fireEvent, render } from '@testing-library/react';
 import * as React from 'react';
@@ -42,10 +42,31 @@ describe('isModelRetryItem（嗅探规则）', () => {
     ).toBe(true);
   });
 
-  it('含 retry 且 kind 非 tool_call/tool_result 时命中', () => {
+  it('普通 subconscious_step 即使含 retry 也不命中', () => {
     expect(
       isModelRetryItem(makeRetryItem('c', 'provider reset, will retry.')),
-    ).toBe(true);
+    ).toBe(false);
+  });
+
+  it('普通 thinking 中的 task_get retry 文本不命中', () => {
+    expect(
+      isModelRetryItem({
+        id: 'thinking-retry',
+        type: 'thinking',
+        text: '-fetch (task_get) and retry',
+        timestamp: 1,
+        collapsed: true,
+      }),
+    ).toBe(false);
+    expect(
+      isModelRetryItem({
+        id: 'thinking-canonical-lookalike',
+        type: 'thinking',
+        text: 'LLM call retry 2/3.',
+        timestamp: 2,
+        collapsed: true,
+      }),
+    ).toBe(false);
   });
 
   it('普通 subconscious_step 文本不命中', () => {
@@ -86,6 +107,8 @@ describe('parseRetryRatio / buildModelRetryEntries（纯函数）', () => {
       parseRetryRatio('LLM stream retry before first delta 1/3.'),
     ).toEqual({ attempt: 1, maxRetries: 3 });
     expect(parseRetryRatio('no ratio here')).toBeNull();
+    expect(parseRetryRatio('provider reset, will retry 2/3')).toBeNull();
+    expect(parseRetryRatio('LLM call retry 4/3.')).toBeNull();
   });
 
   it('原因摘要优先取 message（经 summarizeError），title 挂全量', () => {
@@ -109,6 +132,16 @@ describe('parseRetryRatio / buildModelRetryEntries（纯函数）', () => {
       makeRetryItem('a', 'LLM call retry 2/3.'),
     ]);
     expect(entries[0].reasonSummary).toContain('LLM call retry 2/3.');
+  });
+
+  it('实时 subconscious_step 只有 message 时仍识别 canonical 次数', () => {
+    const entries = buildModelRetryEntries([
+      makeRetryItem('live', '', {
+        message: '🧠 LLM stream retry before first delta 1/3.',
+      }),
+    ]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ attempt: 1, maxRetries: 3 });
   });
 
   it('按时间升序排列（折叠行取末位 = 最新）', () => {
@@ -148,6 +181,7 @@ describe('ModelRetryRow 条件渲染', () => {
   it('单条 retry：StateDot(warning) + 模型重试中 + (n/max) + 原因摘要', () => {
     const { container } = render(
       <ModelRetryRow
+        active
         items={[
           makeRetryItem('a', 'LLM call retry 2/3.', {
             message: 'connection reset by peer',
@@ -185,6 +219,37 @@ describe('ModelRetryRow 条件渲染', () => {
     expect(summary.getAttribute('title')).toBe('connection reset by peer');
     // 折叠态不渲染展开时间线
     expect(container.querySelector('[data-testid="model-retry-expanded"]')).toBeNull();
+  });
+
+  it('Turn 终态或 retry 之后已有新过程事实时显示模型已重试', () => {
+    const retry = makeRetryItem('retry', 'LLM call retry 1/3.', {
+      timestamp: 100,
+    });
+    const { container, rerender } = render(
+      <ModelRetryRow active={false} items={[retry]} />,
+    );
+    expect(
+      container.querySelector('[data-testid="model-retry-title"]')?.textContent,
+    ).toBe('模型已重试');
+
+    rerender(
+      <ModelRetryRow
+        active
+        items={[
+          retry,
+          {
+            id: 'later-thinking',
+            type: 'thinking',
+            text: '继续处理任务',
+            timestamp: 200,
+            collapsed: true,
+          },
+        ]}
+      />,
+    );
+    expect(
+      container.querySelector('[data-testid="model-retry-title"]')?.textContent,
+    ).toBe('模型已重试');
   });
 
   it('多条 retry：折叠行取最新一条，展开列出历次重试时间线', () => {

@@ -1,6 +1,38 @@
 ﻿import { buildMessageBlocks, type ChatTurn } from './types';
 
 describe('buildMessageBlocks', () => {
+  it('projects a managed Goal envelope as readable user-facing text', () => {
+    const turn: ChatTurn = {
+      turnId: 'turn-goal',
+      userMessage: {
+        id: 'goal-message',
+        text: String.raw`internal prompt<goal_payload>{"objective":"\u5B8C\u6210\u8C03\u5EA6\u5668","iteration":2,"maxIterations":8}</goal_payload>`,
+        timestamp: 1,
+        status: 'success',
+        metadata: {
+          goal_managed: 'true',
+          automation_origin: 'goal_continuation',
+        },
+      },
+      assistant: {
+        id: 'assistant-goal',
+        status: 'thinking',
+        timelineItems: [],
+        answerMarkdown: '',
+        isStreaming: false,
+        renderMode: 'structured',
+      },
+    };
+
+    const userBlock = buildMessageBlocks([turn]).find(
+      (block) => block.role === 'user',
+    );
+
+    expect(userBlock?.content).toBe(
+      'Goal 自动续行 · 第 2/8 轮\n\n完成调度器',
+    );
+  });
+
   it('creates an agent block for a thinking assistant before the first answer token', () => {
     const turns: ChatTurn[] = [
       {

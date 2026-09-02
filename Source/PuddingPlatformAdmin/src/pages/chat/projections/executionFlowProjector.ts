@@ -23,6 +23,7 @@ import type {
   ToolPresentationDto,
 } from '@/services/platform/api';
 import { sanitizeProcessText } from '../components/processPreview';
+import { parseCanonicalModelRetrySummary } from '../utils/modelRetry';
 
 // ── 输入事件（冻结 DTO + 各 canonical 事件携带的 payload 字段）──────────────
 
@@ -432,9 +433,6 @@ function buildToolTree(toolNodes: readonly ToolNode[]): ToolNode[] {
 
 // ── retry 嗅探（镜像 ModelRetryRow.isModelRetryItem / parseRetryRatio 语义）──
 
-const LLM_RETRY_RE = /LLM (call |stream )?retry/i;
-const RETRY_RATIO_RE = /(\d+)\s*\/\s*(\d+)/;
-
 function tryParseRetry(message?: string): {
   attempt: number;
   maxRetries: number;
@@ -443,24 +441,9 @@ function tryParseRetry(message?: string): {
 } | null {
   const reasonFull = sanitizeProcessText(message, { compact: false });
   const compact = sanitizeProcessText(message);
-  if (!compact || !LLM_RETRY_RE.test(compact)) return null;
-  const match = RETRY_RATIO_RE.exec(compact);
-  let attempt = 0;
-  let maxRetries = 0;
-  if (match) {
-    const parsedAttempt = Number(match[1]);
-    const parsedMax = Number(match[2]);
-    if (
-      Number.isInteger(parsedAttempt) &&
-      Number.isInteger(parsedMax) &&
-      parsedAttempt >= 1 &&
-      parsedMax >= 1
-    ) {
-      attempt = parsedAttempt;
-      maxRetries = parsedMax;
-    }
-  }
-  return { attempt, maxRetries, reasonSummary: compact, reasonFull };
+  const retry = parseCanonicalModelRetrySummary(compact);
+  if (!retry) return null;
+  return { ...retry, reasonSummary: compact, reasonFull };
 }
 // ── 主投影函数 ──────────────────────────────────────────────────────────────
 
