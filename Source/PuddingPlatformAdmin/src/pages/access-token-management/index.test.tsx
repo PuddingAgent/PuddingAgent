@@ -109,6 +109,11 @@ describe('Access Token 管理页（ADR-075 §15.3）', () => {
       name: /tasks\.command/,
     }) as HTMLInputElement;
     expect(commandCheckbox.checked).toBe(false);
+    // 新增的高风险消息权限必须可见，且仍由 Checkbox.Group 的空缺省值保持未选中。
+    const messagesLabel = screen.getByText('messages.send');
+    const messagesCheckbox = messagesLabel.closest('label')?.querySelector('input[type="checkbox"]');
+    expect(messagesCheckbox).toBeTruthy();
+    expect((messagesCheckbox as HTMLInputElement).checked).toBe(false);
 
     // 只填名称，workspace 留空 → 校验失败，不发起创建请求。
     const nameInput = await screen.findByRole('textbox', { name: /名称/ });

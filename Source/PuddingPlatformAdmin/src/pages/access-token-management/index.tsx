@@ -54,6 +54,9 @@ const SCOPE_OPTIONS: { value: string; label: string; risk: 'low' | 'medium' | 'h
   { value: 'tasks.comment', label: 'tasks.comment — 追加评论', risk: 'medium' },
   { value: 'tasks.evaluate', label: 'tasks.evaluate — 追加结构化评价（不改任务状态）', risk: 'medium' },
   { value: 'tasks.command', label: 'tasks.command — 状态/执行命令（高风险）', risk: 'high' },
+  { value: 'workspaces.read', label: 'workspaces.read — 列出授权工作空间及详情', risk: 'low' },
+  { value: 'agents.read', label: 'agents.read — 读取授权工作空间的 Agent 目录', risk: 'low' },
+  { value: 'messages.send', label: 'messages.send — 向 Agent 投递消息并读取执行回执', risk: 'high' },
 ];
 
 const STATUS_META: Record<
@@ -241,7 +244,7 @@ export default function AccessTokenManagementPage() {
       render: (_, record) => (
         <Space wrap size={4}>
           {record.scopes.map((s) => (
-            <Tag key={s} color={s === 'tasks.command' ? 'volcano' : 'blue'}>
+            <Tag key={s} color={['tasks.command', 'messages.send'].includes(s) ? 'volcano' : 'blue'}>
               {s}
             </Tag>
           ))}

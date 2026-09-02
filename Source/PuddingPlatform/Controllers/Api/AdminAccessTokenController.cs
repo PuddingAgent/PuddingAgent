@@ -63,7 +63,17 @@ public class AdminAccessTokenController(
             PageSize = pageSize,
         }, ct);
 
-        return Ok(new { items, total, page, pageSize });
+        // Do not return the persistence projection directly: its enum would be
+        // serialized as a number by the platform MVC settings, which breaks the
+        // Admin UI's status/revoke state machine. Keep list/detail on one stable
+        // string wire contract.
+        return Ok(new
+        {
+            items = items.Select(ToResponse).ToArray(),
+            total,
+            page,
+            pageSize,
+        });
     }
 
     /// <summary>POST /api/admin/access-tokens — 创建；明文 accessToken 只在本响应出现一次。</summary>
@@ -108,7 +118,7 @@ public class AdminAccessTokenController(
             ExpiresAtUtc = created.Item.ExpiresAtUtc,
             Scopes = created.Item.Scopes,
             Workspaces = created.Item.Workspaces,
-            Status = created.Item.Status,
+            Status = created.Item.Status.ToString(),
             /// 明文只出现一次，此后任何响应都不再包含。
             AccessToken = created.AccessToken,
         });
@@ -138,7 +148,7 @@ public class AdminAccessTokenController(
             LastUsedAtUtc = record.LastUsedAtUtc,
             Scopes = record.Scopes,
             Workspaces = record.Workspaces,
-            Status = record.Status,
+            Status = record.Status.ToString(),
         });
     }
 
@@ -188,7 +198,7 @@ public class AdminAccessTokenController(
             LastUsedAtUtc = item.LastUsedAtUtc,
             Scopes = item.Scopes,
             Workspaces = item.Workspaces,
-            Status = item.Status,
+            Status = item.Status.ToString(),
         };
 
     private IActionResult MapError(ExternalAccessTokenManagementError error)
@@ -235,7 +245,8 @@ public class AdminAccessTokenController(
         public DateTimeOffset? LastUsedAtUtc { get; set; }
         public IReadOnlyList<string> Scopes { get; set; } = [];
         public IReadOnlyList<string> Workspaces { get; set; } = [];
-        public ExternalAccessTokenStatus Status { get; set; }
+        /// <summary>稳定 wire 名称（Active/Revoked/Expired），不依赖 JSON enum converter。</summary>
+        public string Status { get; set; } = string.Empty;
     }
 
     public sealed class RenameAccessTokenRequest
