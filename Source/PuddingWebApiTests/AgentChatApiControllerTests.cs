@@ -977,6 +977,15 @@ public sealed class AgentChatApiControllerTests
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
             var now = DateTimeOffset.UtcNow;
             db.ConversationEvents.AddRange(
+                // canonical 语义：根 run = 最新 turn.started；种子补上 TurnStarted
+                // （Sequence 置 0，保住 EventCursor=5 断言）。
+                NewConversationEvent(
+                    session.SessionId,
+                    0,
+                    ConversationEventTypes.TurnStarted,
+                    "{}",
+                    now,
+                    runId: "run-active-output"),
                 NewConversationEvent(
                     session.SessionId,
                     1,
@@ -1024,7 +1033,9 @@ public sealed class AgentChatApiControllerTests
         Assert.AreEqual("running", view.ActiveRun!.Status);
         Assert.AreEqual("partial answer", view.ActiveRun.OutputSnapshot.Markdown);
         Assert.AreEqual(5, view.EventCursor);
-        Assert.HasCount(3, view.ActiveRun.OutputSnapshot.ProcessItems);
+        // canonical 语义：正文增量（kind=text）也计入过程项与 TotalItems
+        //（3 个行为项 + 2 个正文条目）。
+        Assert.HasCount(5, view.ActiveRun.OutputSnapshot.ProcessItems);
         Assert.AreEqual("thinking", view.ActiveRun.OutputSnapshot.ProcessItems[0].Kind);
         Assert.AreEqual("分析需求", view.ActiveRun.OutputSnapshot.ProcessItems[0].Text);
         Assert.AreEqual("tool_call", view.ActiveRun.OutputSnapshot.ProcessItems[1].Kind);
@@ -1033,7 +1044,11 @@ public sealed class AgentChatApiControllerTests
         Assert.AreEqual("tool_result", view.ActiveRun.OutputSnapshot.ProcessItems[2].Kind);
         Assert.AreEqual("README.md", view.ActiveRun.OutputSnapshot.ProcessItems[2].Output);
         Assert.AreEqual(0, view.ActiveRun.OutputSnapshot.ProcessItems[2].ExitCode);
-        Assert.AreEqual(3, view.ActiveRun.OutputSnapshot.ProcessSummary?.TotalItems);
+        Assert.AreEqual("text", view.ActiveRun.OutputSnapshot.ProcessItems[3].Kind);
+        Assert.AreEqual("partial ", view.ActiveRun.OutputSnapshot.ProcessItems[3].Text);
+        Assert.AreEqual("text", view.ActiveRun.OutputSnapshot.ProcessItems[4].Kind);
+        Assert.AreEqual("answer", view.ActiveRun.OutputSnapshot.ProcessItems[4].Text);
+        Assert.AreEqual(5, view.ActiveRun.OutputSnapshot.ProcessSummary?.TotalItems);
         Assert.AreEqual(1, view.ActiveRun.OutputSnapshot.ProcessSummary?.ThinkingSteps);
         Assert.AreEqual(1, view.ActiveRun.OutputSnapshot.ProcessSummary?.ToolCalls);
         Assert.AreEqual(1, view.ActiveRun.OutputSnapshot.ProcessSummary?.ToolResults);
@@ -1065,15 +1080,26 @@ public sealed class AgentChatApiControllerTests
 
             var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
             var now = DateTimeOffset.UtcNow;
-            var events = Enumerable.Range(1, 70)
+            var events = new List<ConversationEventEntity>
+            {
+                // canonical 语义：根 run = 最新 turn.started；种子补上 TurnStarted
+                // （Sequence 置 0，思考/正文事件顺延为 1..71）。
+                NewConversationEvent(
+                    session.SessionId,
+                    0,
+                    ConversationEventTypes.TurnStarted,
+                    "{}",
+                    now,
+                    runId: "run-active-bounded"),
+            };
+            events.AddRange(Enumerable.Range(1, 70)
                 .Select(sequence => NewConversationEvent(
                     session.SessionId,
                     sequence,
                     ConversationEventTypes.MessageThinkingSummaryAppended,
                     $"{{\"delta\":\"step-{sequence}\"}}",
                     now.AddMilliseconds(sequence),
-                    runId: "run-active-bounded"))
-                .ToList();
+                    runId: "run-active-bounded")));
             events.Add(NewConversationEvent(
                 session.SessionId,
                 71,
@@ -1093,9 +1119,11 @@ public sealed class AgentChatApiControllerTests
         Assert.IsNotNull(view?.ActiveRun);
         Assert.AreEqual("bounded answer", view!.ActiveRun!.OutputSnapshot.Markdown);
         Assert.HasCount(64, view.ActiveRun.OutputSnapshot.ProcessItems);
-        Assert.AreEqual("step-7", view.ActiveRun.OutputSnapshot.ProcessItems[0].Text);
-        Assert.AreEqual("step-70", view.ActiveRun.OutputSnapshot.ProcessItems[^1].Text);
-        Assert.AreEqual(70, view.ActiveRun.OutputSnapshot.ProcessSummary?.TotalItems);
+        // canonical 语义：正文增量（kind=text）计入过程项与 TotalItems；64 条窗口
+        // 取最近活动（step-8..step-70 思考项 + 正文条目），正文条目按 sequence 殿后。
+        Assert.AreEqual("step-8", view.ActiveRun.OutputSnapshot.ProcessItems[0].Text);
+        Assert.AreEqual("bounded answer", view.ActiveRun.OutputSnapshot.ProcessItems[^1].Text);
+        Assert.AreEqual(71, view.ActiveRun.OutputSnapshot.ProcessSummary?.TotalItems);
         Assert.AreEqual(70, view.ActiveRun.OutputSnapshot.ProcessSummary?.ThinkingSteps);
         Assert.AreEqual(1, view.ActiveRun.OutputSnapshot.ProcessSummary?.ThinkingRounds);
     }
@@ -1248,6 +1276,61 @@ public sealed class AgentChatApiControllerTests
         Assert.IsNotNull(view);
         Assert.IsNull(view!.ActiveRun);
         Assert.AreEqual(3, view.EventCursor);
+    }
+
+    [TestMethod]
+    public async Task AgentConversationEndpoint_WithoutTurnStartedDoesNotProjectActiveRun()
+    {
+        // canonical 语义（14feceb）：根 run = 最新 turn.started 事件。会话缺
+        // turn.started 时，即便存在未终态的 runId 事件也不投影 ActiveRun。
+        var createResponse = await _client.PostAsJsonAsync("/api/sessions/main", new
+        {
+            workspaceId = "default",
+            principalKind = "agent",
+            principalId = "agent-active-no-turn-started",
+            agentTemplateId = "global:general-assistant",
+            title = "No Turn Started Agent"
+        });
+        createResponse.EnsureSuccessStatusCode();
+        var session = await createResponse.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
+        Assert.IsNotNull(session);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var api = scope.ServiceProvider.GetRequiredService<PlatformApiClient>();
+            await api.UpdateSessionAsync(
+                session!.SessionId,
+                new UpdateSessionRequest { Status = SessionStatus.Active },
+                CancellationToken.None);
+
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var now = DateTimeOffset.UtcNow;
+            db.ConversationEvents.AddRange(
+                NewConversationEvent(
+                    session.SessionId,
+                    1,
+                    ConversationEventTypes.MessageThinkingSummaryAppended,
+                    "{\"delta\":\"orphan step\"}",
+                    now,
+                    runId: "run-no-turn-started"),
+                NewConversationEvent(
+                    session.SessionId,
+                    2,
+                    ConversationEventTypes.MessageContentAppended,
+                    "{\"delta\":\"orphan answer\"}",
+                    now.AddMilliseconds(1),
+                    runId: "run-no-turn-started"));
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync(
+            "/api/workspaces/default/agents/agent-active-no-turn-started/conversation");
+        response.EnsureSuccessStatusCode();
+
+        var view = await response.Content.ReadFromJsonAsync<AgentConversationViewDto>(JsonOpts);
+        Assert.IsNotNull(view);
+        Assert.IsNull(view!.ActiveRun);
+        Assert.AreEqual(2, view.EventCursor);
     }
 
     private sealed record AgentStatusProjectionDto(
