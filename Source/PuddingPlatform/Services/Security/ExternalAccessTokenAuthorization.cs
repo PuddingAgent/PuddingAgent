@@ -5,7 +5,7 @@ using PuddingCode.Security;
 
 namespace PuddingPlatform.Services.Security;
 
-/// <summary>ADR-075 冻结的 Policy 名称（Host 组合根与 Controller 共用）。</summary>
+/// <summary>ADR-075/082 冻结的 Policy 名称（Host 组合根与 Controller 共用）。</summary>
 public static class ExternalAccessTokenPolicyNames
 {
     /// <summary>Token 管理：JWT scheme + admin role。</summary>
@@ -19,6 +19,10 @@ public static class ExternalAccessTokenPolicyNames
     public const string ExternalTasksComment = "ExternalTasksComment";
     public const string ExternalTasksEvaluate = "ExternalTasksEvaluate";
     public const string ExternalTasksCommand = "ExternalTasksCommand";
+    public const string ExternalWorkspacesRead = "ExternalWorkspacesRead";
+    public const string ExternalWorkspaceRead = "ExternalWorkspaceRead";
+    public const string ExternalAgentsRead = "ExternalAgentsRead";
+    public const string ExternalMessagesSend = "ExternalMessagesSend";
 }
 
 /// <summary>要求 principal 拥有指定 scope（AND 语义，无通配符）。</summary>
