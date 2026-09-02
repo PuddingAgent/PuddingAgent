@@ -87,12 +87,27 @@ public sealed record LlmModelInfo
     public decimal InputPricePer1MTokens { get; init; }
     public decimal OutputPricePer1MTokens { get; init; }
     public decimal CacheHitPricePer1MTokens { get; init; }
+    public IReadOnlyList<LlmPriceWindowInfo> PriceWindows { get; init; } = [];
+    public string? PriceWindowProfileVersion { get; init; }
+    public string? PriceWindowSourceUrl { get; init; }
     public bool IsDefault { get; init; }
     public bool IsDeprecated { get; init; }
     public bool IsEmbedding { get; init; }
         public int SortOrder { get; init; }
     public List<string> CapabilityTags { get; init; } = [];
     public int? MaxConcurrentRequests { get; init; }
+}
+
+public sealed record LlmPriceWindowInfo
+{
+    public string WindowKey { get; init; } = "";
+    public string TimeZoneId { get; init; } = "UTC";
+    public string StartLocalTime { get; init; } = "";
+    public string EndLocalTime { get; init; } = "";
+    public IReadOnlyList<string> DaysOfWeek { get; init; } = [];
+    public bool IsOffPeak { get; init; } = true;
+    public DateTimeOffset? EffectiveAtUtc { get; init; }
+    public DateTimeOffset? ExpiresAtUtc { get; init; }
 }
 
 /// <summary>显式 LLM profile 解析结果。</summary>
