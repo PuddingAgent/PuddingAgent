@@ -91,6 +91,12 @@ public static class MessageDeliveryPolicy
 {
     public const string IntentMetadataKey = "intent";
     public const string RequiresResponseMetadataKey = "requires_response";
+    /// <summary>
+    /// Process-internal ingress hint: execute this delivery through the durable
+    /// ADR-059 Conversation Turn pipeline instead of the legacy direct Runtime
+    /// path. HTTP clients must not be allowed to set this metadata themselves.
+    /// </summary>
+    public const string CanonicalTurnMetadataKey = "canonical_turn";
 
     public static string ResolveHandlingMode(
         IReadOnlyDictionary<string, string>? metadata)
@@ -125,6 +131,10 @@ public static class MessageDeliveryPolicy
                || string.Equals(intent, MessageIntents.RequestReview, StringComparison.OrdinalIgnoreCase)
                || string.Equals(intent, MessageIntents.Delegate, StringComparison.OrdinalIgnoreCase);
     }
+
+    public static bool RequiresCanonicalTurn(
+        IReadOnlyDictionary<string, string>? metadata)
+        => TryReadBoolean(Get(metadata, CanonicalTurnMetadataKey)) == true;
 
     public static string NormalizeHandlingMode(
         string? value,

@@ -447,6 +447,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                            ?? GetStringProp(json, "batchId"),
                     OriginToolId = originToolId,
                     ParentExecutionIdentity = context.ExecutionIdentity,
+                    UsageBudget = context.UsageBudget,
                 }, ct);
 
                 return new ToolExecutionResult
@@ -455,6 +456,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                     Output = BuildBatchToolOutput(batch),
                     Error = batch.Error,
                     ExitCode = batch.Status is "completed" or "running" or "budget_exhausted" or "partial_budget_exhausted" ? 0 : 1,
+                    DelegatedUsage = isSync ? SumUsage(batch.Results) : null,
                 };
             }
             catch (InvalidOperationException ex)
@@ -504,6 +506,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                             ?? GetStringProp(json, "invocationId"),
                 OriginToolId = originToolId,
                 ParentExecutionIdentity = context.ExecutionIdentity,
+                UsageBudget = context.UsageBudget,
             }, ct);
 
             if (isSync)
@@ -515,6 +518,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                     Output = BuildSingleToolOutput(invocationResult),
                     Error = handled ? null : invocationResult.Error,
                     ExitCode = handled ? 0 : 1,
+                    DelegatedUsage = invocationResult.Usage,
                 };
             }
 
@@ -962,8 +966,43 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         ?? GetStringProp(json, "invocationId"),
             OriginToolId = originToolId,
             ParentExecutionIdentity = context.ExecutionIdentity,
+            UsageBudget = context.UsageBudget,
         };
     }
+
+    private static TokenUsageDto? SumUsage(IReadOnlyList<SubAgentInvocationResult> results)
+    {
+        var usages = results.Select(result => result.Usage).Where(usage => usage is not null).ToArray();
+        if (usages.Length == 0)
+            return null;
+
+        long prompt = 0;
+        long completion = 0;
+        long cacheHit = 0;
+        foreach (var usage in usages)
+        {
+            prompt += Math.Max(0, usage!.PromptTokens ?? 0);
+            completion += Math.Max(0, usage.CompletionTokens ?? 0);
+            cacheHit += Math.Max(0, usage.PromptCacheHitTokens ?? 0);
+        }
+
+        var boundedPrompt = ClampToInt(prompt);
+        var boundedCompletion = ClampToInt(completion);
+        var boundedCacheHit = Math.Min(boundedPrompt, ClampToInt(cacheHit));
+        return new TokenUsageDto
+        {
+            PromptTokens = boundedPrompt,
+            CompletionTokens = boundedCompletion,
+            TotalTokens = boundedPrompt > int.MaxValue - boundedCompletion
+                ? int.MaxValue
+                : boundedPrompt + boundedCompletion,
+            PromptCacheHitTokens = boundedCacheHit,
+            PromptCacheMissTokens = boundedPrompt - boundedCacheHit,
+        };
+    }
+
+    private static int ClampToInt(long value)
+        => value >= int.MaxValue ? int.MaxValue : (int)Math.Max(0, value);
 
 
     /// <summary>

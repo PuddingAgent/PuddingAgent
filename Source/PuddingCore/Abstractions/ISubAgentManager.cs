@@ -129,6 +129,11 @@ public sealed record SubAgentSpawnRequest
     /// This is not exposed by spawn_sub_agent to the parent model.
     /// </summary>
     public int? MaxRounds { get; init; }
+    /// <summary>
+    /// Internal total tool-call budget. Managed Task WorkUnits are clamped by
+    /// the platform and model-facing tools do not control this system budget.
+    /// </summary>
+    public int? MaxToolCallsTotal { get; init; }
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public string? TaskPlanId { get; init; }
     public string? TaskNodeId { get; init; }
@@ -153,6 +158,8 @@ public sealed record SubAgentSpawnRequest
     public string? BatchId { get; init; }
     public string OriginToolId { get; init; } = "spawn_sub_agent";
     public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
+    /// <summary>从父 WorkUnit 继承的剩余 Token/成本预算。</summary>
+    public ExecutionUsageBudget? UsageBudget { get; init; }
     /// <summary>
     /// 调用模式（sync/async，571fb2fa）。缺省由入口归一：
     /// SpawnAsync 入口回退 async，ExecuteSyncAsync 入口回退 sync。

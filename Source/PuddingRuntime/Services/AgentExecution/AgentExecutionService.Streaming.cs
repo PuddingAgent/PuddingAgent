@@ -583,6 +583,7 @@ public sealed partial class AgentExecutionService
             var providerInputRecoveryAttempted = false;
             var warmPrefixCompactionAttempted = false;
             var toolSpecChangedForNextRound = false;
+            var outputTruncationRecoveryAttempts = 0;
 
             for (int round = 0; round < maxRounds; round++)
             {
@@ -1098,7 +1099,8 @@ public sealed partial class AgentExecutionService
 
                 // LLM 调用成功 → 重置连续失败计数
                 consecutiveLlmFailures = 0;
-                if (llmFinishReason is "length" or "incomplete")
+                var llmOutputTruncated = AgentOutputTruncationPolicy.IsTruncated(llmFinishReason);
+                if (llmOutputTruncated)
                 {
                     // Responses may finish while a function_call's JSON arguments are still
                     // incomplete. Preserve the provider output for audit/replay, but never run
@@ -1188,6 +1190,42 @@ public sealed partial class AgentExecutionService
                         });
                     await Append(budgetFrame);
                     yield return budgetFrame;
+                    break;
+                }
+
+                if (llmOutputTruncated)
+                {
+                    if (AgentOutputTruncationPolicy.ShouldRetry(
+                            outputTruncationRecoveryAttempts,
+                            round,
+                            maxRounds))
+                    {
+                        outputTruncationRecoveryAttempts++;
+                        history.Add(new ChatMessage(
+                            ChatRole.User,
+                            AgentOutputTruncationPolicy.RecoveryPrompt(replyBuf.Length > 0)));
+                        _logger.LogWarning(
+                            "[AgentExec:Stream] Recovering truncated provider output session={Session} round={Round} attempt={Attempt} contentChars={ContentChars} reasoningChars={ReasoningChars}",
+                            request.SessionId,
+                            round + 1,
+                            outputTruncationRecoveryAttempts,
+                            replyBuf.Length,
+                            reasoningBuf.Length);
+                        continue;
+                    }
+
+                    terminalStreamStatus = "llm_output_truncated";
+                    reply = "Model output reached its limit before producing a complete action or answer.";
+                    var truncatedFrame = ServerSentEventFrame.Json(
+                        SseEventTypes.Error,
+                        new
+                        {
+                            code = "llm_output_truncated",
+                            message = reply,
+                            status = terminalStreamStatus,
+                        });
+                    await Append(truncatedFrame);
+                    yield return truncatedFrame;
                     break;
                 }
 
@@ -1322,6 +1360,7 @@ public sealed partial class AgentExecutionService
                     var toolStartedAt = DateTimeOffset.UtcNow;
                     var toolSw = System.Diagnostics.Stopwatch.StartNew();
                     SkillResult result;
+                    TokenUsageDto? delegatedUsage = null;
                     var executionBlocked = failedToolCallTracker.TryCreateBlockedResult(
                         repeatKey,
                         out result);
@@ -1347,6 +1386,7 @@ public sealed partial class AgentExecutionService
                             MaxDelegationDepth = request.MaxDelegationDepth,
                             AllowSubDelegation = request.AllowSubDelegation,
                             RoleInPlan = request.RoleInPlan,
+                            UsageBudget = usageBudgetTracker.CreateRemainingBudget(),
                             ActiveTask = request.ActiveTask,
                             CallerLlmSnapshot = request.CallerLlmSnapshot,
                             CallerVisionHelperRoute = request.CallerVisionHelperRoute,
@@ -1359,6 +1399,7 @@ public sealed partial class AgentExecutionService
                             ExitCode = toolResult.Success ? 0 : 1,
                             ContentParts = toolResult.ToolContentParts,
                         };
+                        delegatedUsage = toolResult.DelegatedUsage;
                     }
                     else if (!executionBlocked)
                     {
@@ -1517,6 +1558,36 @@ public sealed partial class AgentExecutionService
                         ct);
                     toolRoundMessages.Add(new ChatMessage(ChatRole.Tool, toolPayload, ToolCallId: tc.Id,
                         ContentParts: result.ContentParts));
+                    if (delegatedUsage is not null)
+                    {
+                        var delegatedBudget = usageBudgetTracker.Record(delegatedUsage);
+                        if (delegatedBudget.ShouldStop)
+                        {
+                            terminalStreamStatus = "budget_exhausted";
+                            reply = delegatedBudget.Message ?? "WorkUnit usage budget exhausted by delegated execution.";
+                            stopAfterTool = true;
+                            _logger.LogWarning(
+                                "[AgentExec:WorkUnitBudget] Stopped after delegated execution session={Session} round={Round} code={Code} input={InputTokens} output={OutputTokens} cacheHit={CacheHitTokens} cost={Cost}",
+                                request.SessionId,
+                                round + 1,
+                                delegatedBudget.ErrorCode,
+                                delegatedBudget.InputTokens,
+                                delegatedBudget.OutputTokens,
+                                delegatedBudget.CacheHitTokens,
+                                delegatedBudget.Cost);
+                            var delegatedBudgetFrame = ServerSentEventFrame.Json(
+                                SseEventTypes.Error,
+                                new
+                                {
+                                    code = delegatedBudget.ErrorCode,
+                                    message = reply,
+                                    status = terminalStreamStatus,
+                                });
+                            await Append(delegatedBudgetFrame);
+                            yield return delegatedBudgetFrame;
+                            break;
+                        }
+                    }
                     if (toolDiscoveryStalled)
                     {
                         faultedByFuse = true;

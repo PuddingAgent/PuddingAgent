@@ -872,7 +872,8 @@ public sealed class SubAgentManager : ISubAgentManager
             ParentContextSnapshot = request.ParentContextSnapshot,
             MaxRounds = request.MaxRounds ?? subAgentOptions.MaxRounds,
             MaxElapsedSeconds = timeoutSeconds,
-            MaxToolCallsTotal = subAgentOptions.MaxToolCallsTotal,
+            MaxToolCallsTotal = request.MaxToolCallsTotal
+                ?? subAgentOptions.MaxToolCallsTotal,
             BudgetGraceRounds = subAgentOptions.BudgetGraceRounds,
             BudgetGraceTimeoutSeconds = subAgentOptions.BudgetGraceTimeoutSeconds,
             IsResumedSubAgentRun = !string.IsNullOrWhiteSpace(request.ReuseSubSessionId),
@@ -887,6 +888,7 @@ public sealed class SubAgentManager : ISubAgentManager
             AllowAgentCreation = request.AllowAgentCreation,
             AssignedObjective = request.AssignedObjective,
             ExpectedOutputContract = request.ExpectedOutputContract,
+            UsageBudget = request.UsageBudget,
             ExecutionIdentity = BuildChildExecutionIdentity(request, runId),
         };
 
@@ -943,8 +945,16 @@ public sealed class SubAgentManager : ISubAgentManager
                 $"Sub-agent timeout_seconds={requestedSeconds} exceeds configured maxTimeoutSeconds={options.MaxTimeoutSeconds}.");
         }
 
-        // 未显式指定时默认收敛到 WorkUnit 轮次预算（设计区间 25-40），
-        // 不再隐式继承 600 轮护栏；显式值仍被尊重且不得超过护栏上限。
+        var isManagedWorkUnit = string.Equals(
+                request.TemplateId,
+                "workspace-task-agent",
+                StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrWhiteSpace(request.TaskPlanId)
+            || !string.IsNullOrWhiteSpace(request.TaskNodeId);
+
+        // Generic explicitly-requested children may use the system large-task
+        // guardrail. Managed Task WorkUnits are a different budget domain and
+        // can never turn a 25-40 round plan into an unbounded 600-round loop.
         var maxRounds = request.MaxRounds ?? SubAgentExecutionOptions.DefaultWorkUnitMaxRounds;
         if (maxRounds <= 0)
             throw new InvalidOperationException("Sub-agent max rounds must be greater than 0.");
@@ -952,6 +962,26 @@ public sealed class SubAgentManager : ISubAgentManager
         {
             throw new InvalidOperationException(
                 $"Sub-agent max rounds={maxRounds} exceeds configured maxRounds={options.MaxRounds}.");
+        }
+        if (isManagedWorkUnit)
+            maxRounds = Math.Min(maxRounds, SubAgentExecutionOptions.MaxWorkUnitMaxRounds);
+
+        var maxToolCallsTotal = request.MaxToolCallsTotal
+            ?? (isManagedWorkUnit
+                ? SubAgentExecutionOptions.DefaultWorkUnitMaxToolCallsTotal
+                : options.MaxToolCallsTotal);
+        if (maxToolCallsTotal <= 0)
+            throw new InvalidOperationException("Sub-agent max tool calls must be greater than 0.");
+        if (maxToolCallsTotal > options.MaxToolCallsTotal)
+        {
+            throw new InvalidOperationException(
+                $"Sub-agent max tool calls={maxToolCallsTotal} exceeds configured maxToolCallsTotal={options.MaxToolCallsTotal}.");
+        }
+        if (isManagedWorkUnit)
+        {
+            maxToolCallsTotal = Math.Min(
+                maxToolCallsTotal,
+                SubAgentExecutionOptions.DefaultWorkUnitMaxToolCallsTotal);
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -980,6 +1010,7 @@ public sealed class SubAgentManager : ISubAgentManager
             TimeoutSeconds = effectiveSeconds,
             ExecutionDeadlineUtc = effectiveDeadlineUtc,
             MaxRounds = maxRounds,
+            MaxToolCallsTotal = maxToolCallsTotal,
         };
     }
 

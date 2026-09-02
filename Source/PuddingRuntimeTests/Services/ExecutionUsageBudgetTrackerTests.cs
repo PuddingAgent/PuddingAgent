@@ -81,6 +81,49 @@ public sealed class ExecutionUsageBudgetTrackerTests
         Assert.AreEqual(TerminalErrorCodes.WorkUnitUsageUnavailable, decision.ErrorCode);
     }
 
+    [TestMethod]
+    public void RemainingBudget_IsReducedBeforeDelegatedExecution()
+    {
+        var tracker = new ExecutionUsageBudgetTracker(new ExecutionUsageBudget
+        {
+            MaxInputTokens = 1_000,
+            MaxOutputTokens = 200,
+            MaxCost = 1m,
+            PricingKnown = true,
+            InputPricePer1MTokens = 10m,
+            OutputPricePer1MTokens = 20m,
+            CacheHitPricePer1MTokens = 1m,
+        });
+
+        tracker.Record(Usage(prompt: 400, output: 50, cacheHit: 300));
+
+        var remaining = tracker.CreateRemainingBudget();
+        Assert.IsNotNull(remaining);
+        Assert.AreEqual(600L, remaining.MaxInputTokens);
+        Assert.AreEqual(150L, remaining.MaxOutputTokens);
+        Assert.IsLessThan(1m, remaining.MaxCost);
+    }
+
+    [TestMethod]
+    public void UsageSnapshot_AggregatesAllDelegatedRounds()
+    {
+        var tracker = new ExecutionUsageBudgetTracker(new ExecutionUsageBudget
+        {
+            MaxInputTokens = 10_000,
+            PricingKnown = true,
+        });
+
+        tracker.Record(Usage(prompt: 600, output: 50, cacheHit: 500));
+        tracker.Record(Usage(prompt: 700, output: 25, cacheHit: 650));
+
+        var usage = tracker.CreateUsageSnapshot();
+        Assert.IsNotNull(usage);
+        Assert.AreEqual(1_300, usage.PromptTokens);
+        Assert.AreEqual(75, usage.CompletionTokens);
+        Assert.AreEqual(1_150, usage.PromptCacheHitTokens);
+        Assert.AreEqual(150, usage.PromptCacheMissTokens);
+    }
+
     private static TokenUsageDto Usage(int prompt, int output, int cacheHit) => new()
     {
         PromptTokens = prompt,

@@ -19,6 +19,11 @@ public sealed record ToolInvocationRequest
     public CapabilityPolicy? CapabilityPolicy { get; init; }
     public RuntimeTraceContext? Trace { get; init; }
     public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
+    /// <summary>
+    /// 当前执行在进入工具前冻结的剩余 WorkUnit Token/成本预算。
+    /// 派生执行只能继承或缩小，不得重新使用原始满额预算。
+    /// </summary>
+    public ExecutionUsageBudget? UsageBudget { get; init; }
     /// <summary>父 Runtime Run 的绝对截止时间；工具及其派生执行只能缩短。</summary>
     public DateTimeOffset? ExecutionDeadlineUtc { get; init; }
     public int? DelegationDepth { get; init; }
@@ -46,6 +51,8 @@ public sealed record ToolInvocationResult
     public int OutputLength { get; init; }
     /// <summary>typed 富内容部件（ADR-077）：image_reader native 模式把图片交回调用模型的通道。</summary>
     public IReadOnlyList<PuddingCode.Models.LlmContentPart>? ToolContentParts { get; init; }
+    /// <summary>同步派生执行消耗的累计 LLM 用量，供父 WorkUnit 继续扣减。</summary>
+    public PuddingCode.Models.TokenUsageDto? DelegatedUsage { get; init; }
 }
 
 /// <summary>工具调用服务，统一权限、审计、耗时、错误处理。</summary>

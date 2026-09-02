@@ -173,6 +173,7 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
                     Status = result.Status ?? (result.Success ? "completed" : "failed"),
                     Reply = result.Reply,
                     Error = result.Error,
+                    Usage = result.Usage,
                 };
             }
             catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
@@ -228,6 +229,7 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         InvocationMode = request.EffectiveInvocationMode,
         BlocksParentTurn = request.EffectiveBlocksParentTurn,
         ParentExecutionIdentity = request.ParentExecutionIdentity,
+        UsageBudget = request.UsageBudget,
     };
 
     private static SubAgentSpawnRequest BuildSpawnRequest(
@@ -267,7 +269,26 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         InvocationMode = request.EffectiveInvocationMode,
         BlocksParentTurn = request.EffectiveBlocksParentTurn,
         ParentExecutionIdentity = request.ParentExecutionIdentity,
+        UsageBudget = DivideUsageBudget(request.UsageBudget, request.Tasks.Count),
     };
+
+    private static ExecutionUsageBudget? DivideUsageBudget(
+        ExecutionUsageBudget? budget,
+        int divisor)
+    {
+        if (budget is null || divisor <= 1)
+            return budget;
+
+        return budget with
+        {
+            MaxInputTokens = DividePositive(budget.MaxInputTokens, divisor),
+            MaxOutputTokens = DividePositive(budget.MaxOutputTokens, divisor),
+            MaxCost = budget.MaxCost > 0 ? budget.MaxCost / divisor : 0,
+        };
+    }
+
+    private static long DividePositive(long value, int divisor)
+        => value > 0 ? Math.Max(1, value / divisor) : 0;
 
     private static int ResolveTimeoutSeconds(int? requested, SubAgentExecutionOptions options)
     {

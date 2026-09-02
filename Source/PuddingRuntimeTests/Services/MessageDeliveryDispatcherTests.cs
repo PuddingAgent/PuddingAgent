@@ -19,6 +19,39 @@ namespace PuddingRuntimeTests.Services;
 public sealed class MessageDeliveryDispatcherTests
 {
     [TestMethod]
+    public async Task RecoveryPass_NoClaim_PrunesStaleKnownTarget()
+    {
+        var pendingTargets = new List<MessageDeliveryTarget>
+        {
+            new()
+            {
+                WorkspaceId = "default",
+                RoomId = "room-default",
+                TargetKind = MessageEndpointKinds.Agent,
+                TargetId = "retired-sub-agent",
+                HandlingMode = MessageDeliveryHandlingModes.Execute,
+            },
+        };
+        var inbox = new RecordingMessageInbox
+        {
+            MaxClaimCount = 0,
+            PendingTargets = pendingTargets,
+        };
+        var dispatcher = CreateDispatcher(inbox, new RecordingRuntimeAgentDispatcher());
+
+        await dispatcher.RunRecoveryPassOnceAsync(CancellationToken.None);
+        Assert.AreEqual(1, inbox.ClaimCount);
+
+        pendingTargets.Clear();
+        await dispatcher.RunRecoveryPassOnceAsync(CancellationToken.None);
+
+        Assert.AreEqual(
+            1,
+            inbox.ClaimCount,
+            "A durable target with no claimable row must not be probed every recovery interval.");
+    }
+
+    [TestMethod]
     public async Task HandleAsync_ClaimsDispatchesAndAcksAgentDelivery()
     {
         var inbox = new RecordingMessageInbox();
@@ -515,6 +548,61 @@ public sealed class MessageDeliveryDispatcherTests
         Assert.IsEmpty(submit.Commands);
         Assert.HasCount(1, notifications.Requests);
         Assert.AreEqual("agent-b-main-session", notifications.Requests[0].ConversationId);
+        Assert.HasCount(1, inbox.Acked);
+    }
+
+    [TestMethod]
+    public async Task HandleAsync_ConnectorCanonicalTurn_HandsOffAndPreservesReceiptCorrelation()
+    {
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimContent = "external request",
+            ClaimMetadata = new Dictionary<string, string>
+            {
+                [MessageDeliveryPolicy.IntentMetadataKey] = MessageIntents.Ask,
+                [MessageDeliveryPolicy.RequiresResponseMetadataKey] = "true",
+                [MessageDeliveryPolicy.CanonicalTurnMetadataKey] = "true",
+                ["source"] = "external.api",
+            },
+            ClaimFrom = new MessageAddress
+            {
+                Kind = MessageEndpointKinds.Connector,
+                Id = "access-token:token-1",
+                DisplayName = "External API",
+            },
+        };
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            submitTurnHandler: submit);
+
+        await dispatcher.HandleAsync(
+            CreateEvent(
+                MessageEndpointKinds.Agent,
+                "agent-b",
+                metadata: inbox.ClaimMetadata,
+                from: inbox.ClaimFrom),
+            CancellationToken.None);
+
+        Assert.IsEmpty(runtime.StreamRequests);
+        Assert.HasCount(1, submit.Commands);
+        var command = submit.Commands.Single();
+        Assert.IsTrue(command.IsTrustedMessageFabricIngress);
+        Assert.AreEqual("agent-b-main-session", command.ConversationId);
+        Assert.AreEqual(
+            "m1",
+            command.Metadata![MessageFabricTurnMetadata.MessageId]);
+        Assert.AreEqual(
+            MessageEndpointKinds.Connector,
+            command.Metadata[MessageFabricTurnMetadata.FromKind]);
+        Assert.AreEqual(
+            "access-token:token-1",
+            command.Metadata[MessageFabricTurnMetadata.FromId]);
+        Assert.AreEqual(
+            "true",
+            command.Metadata[MessageFabricTurnMetadata.ReplyExpected]);
         Assert.HasCount(1, inbox.Acked);
     }
 
@@ -1424,6 +1512,7 @@ public sealed class MessageDeliveryDispatcherTests
         private int _claimCount;
 
         public MessageClaimRequest? LastClaim { get; private set; }
+        public int ClaimCount => Volatile.Read(ref _claimCount);
         public int ClaimAttemptCount { get; init; } = 1;
         public int? MaxClaimCount { get; init; }
         public IReadOnlyDictionary<string, string>? ClaimMetadata { get; init; }
@@ -1457,8 +1546,8 @@ public sealed class MessageDeliveryDispatcherTests
         public Task<MessageInboxItem?> ClaimNextAsync(MessageClaimRequest request, CancellationToken ct = default)
         {
             LastClaim = request;
-            if (MaxClaimCount is int maxClaimCount
-                && Interlocked.Increment(ref _claimCount) > maxClaimCount)
+            var claimCount = Interlocked.Increment(ref _claimCount);
+            if (MaxClaimCount is int maxClaimCount && claimCount > maxClaimCount)
                 return Task.FromResult<MessageInboxItem?>(null);
 
             return Task.FromResult<MessageInboxItem?>(new MessageInboxItem

@@ -175,6 +175,8 @@ public sealed record ToolExecutionContext
     /// 当前 Tool 所属执行身份。ToolCallId 在 ToolInvocationService 进入工具前冻结。
     /// </summary>
     public RuntimeExecutionIdentity? ExecutionIdentity { get; init; }
+    /// <summary>调用工具时剩余的 WorkUnit Token/成本预算；派生工具只能继续缩小。</summary>
+    public PuddingCode.Runtime.ExecutionUsageBudget? UsageBudget { get; init; }
     /// <summary>
     /// Active Task Runtime Context（TB-06）：task_claim/task_update 强制要求非空；
     /// task_list/task_get 用 workspace/agent 身份。由派发链注入，工具不得自行解析。
@@ -229,6 +231,8 @@ public sealed record ToolExecutionResult
     /// Base64、绝对路径或伪造的图片描述。
     /// </summary>
     public IReadOnlyList<PuddingCode.Models.LlmContentPart>? ToolContentParts { get; init; }
+    /// <summary>同步派生执行消耗的累计 LLM 用量，父循环必须继续扣减。</summary>
+    public PuddingCode.Models.TokenUsageDto? DelegatedUsage { get; init; }
 
     public static ToolExecutionResult Ok(string output, string? status = null) => new()
     {

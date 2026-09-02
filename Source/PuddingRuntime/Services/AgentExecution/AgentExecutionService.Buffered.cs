@@ -974,6 +974,9 @@ public sealed partial class AgentExecutionService
                         // 仅 legacy fallback 保留旧的用户确认占位逻辑，避免非流式路径绕过新工具注册表。
                         var skill = _skillRuntime.TryGetSkill(canonicalCall.Name);
                         SkillResult skillResult;
+                        TokenUsageDto? delegatedUsage = null;
+                        var delegatedBudgetShouldStop = false;
+                        string? delegatedBudgetMessage = null;
                         var executionBlocked = failedToolCallTracker.TryCreateBlockedResult(
                             repeatKey,
                             out skillResult);
@@ -1018,6 +1021,7 @@ public sealed partial class AgentExecutionService
                                         MaxDelegationDepth = request.MaxDelegationDepth,
                                         AllowSubDelegation = request.AllowSubDelegation,
                                         RoleInPlan = request.RoleInPlan,
+                                        UsageBudget = usageBudgetTracker.CreateRemainingBudget(),
                                         ActiveTask = request.ActiveTask,
                                         CallerLlmSnapshot = request.CallerLlmSnapshot,
                                         CallerVisionHelperRoute = request.CallerVisionHelperRoute,
@@ -1030,6 +1034,7 @@ public sealed partial class AgentExecutionService
                                         ExitCode = toolResult.Success ? 0 : 1,
                                         ContentParts = toolResult.ToolContentParts,
                                     };
+                                    delegatedUsage = toolResult.DelegatedUsage;
                                 }
                                 else
                                 {
@@ -1239,6 +1244,13 @@ public sealed partial class AgentExecutionService
                                 error: null,
                                 ct: CancellationToken.None);
 
+                        if (delegatedUsage is not null)
+                        {
+                            var delegatedBudget = usageBudgetTracker.Record(delegatedUsage);
+                            delegatedBudgetShouldStop = delegatedBudget.ShouldStop;
+                            delegatedBudgetMessage = delegatedBudget.Message;
+                        }
+
                         ObserveToolExecutionFacts(
                             canonicalCall.Name,
                             skillResult.Success,
@@ -1357,6 +1369,22 @@ public sealed partial class AgentExecutionService
                             ToolSuccess = skillResult.Success,
                             ToolError = safeToolError,
                         });
+                        if (delegatedBudgetShouldStop)
+                        {
+                            executionError = delegatedBudgetMessage
+                                ?? "WorkUnit usage budget exhausted by delegated execution.";
+                            finalMessage = executionError;
+                            stopReason = AgentLoopStopReason.BudgetExhausted;
+                            execState = AgentExecutionState.BudgetExhausted;
+                            subAgentTerminalStatus = "budget_exhausted";
+                            _logger.LogWarning(
+                                "[AgentExec:WorkUnitBudget] Stopped buffered execution after delegated tool session={Session} round={Round} input={InputTokens} output={OutputTokens}",
+                                request.SessionId,
+                                round + 1,
+                                delegatedUsage?.PromptTokens,
+                                delegatedUsage?.CompletionTokens);
+                            break;
+                        }
                         if (toolDiscoveryStalled)
                         {
                             executionError = BuildToolDiscoveryStalledMessage(
@@ -1385,7 +1413,7 @@ public sealed partial class AgentExecutionService
                         }
                     }
 
-                    if (execState == AgentExecutionState.Failed)
+                    if (execState != AgentExecutionState.Running)
                         break;
 
                     // History is a provider protocol document. Publish the
@@ -1662,6 +1690,7 @@ public sealed partial class AgentExecutionService
                     var toolStartedAt2 = DateTimeOffset.UtcNow;
                     var toolSw2 = System.Diagnostics.Stopwatch.StartNew();
                     SkillResult skillResult;
+                    TokenUsageDto? delegatedUsage = null;
                     try
                     {
                         var executionBlocked = failedToolCallTracker.TryCreateBlockedResult(
@@ -1689,6 +1718,7 @@ public sealed partial class AgentExecutionService
                                 MaxDelegationDepth = request.MaxDelegationDepth,
                                 AllowSubDelegation = request.AllowSubDelegation,
                                 RoleInPlan = request.RoleInPlan,
+                                UsageBudget = usageBudgetTracker.CreateRemainingBudget(),
                                 ActiveTask = request.ActiveTask,
                             }, ct);
                             skillResult = new SkillResult
@@ -1698,6 +1728,7 @@ public sealed partial class AgentExecutionService
                                 Error = toolResult.Error,
                                 ExitCode = toolResult.Success ? 0 : 1,
                             };
+                            delegatedUsage = toolResult.DelegatedUsage;
                         }
                         else if (!executionBlocked)
                         {
@@ -1916,6 +1947,26 @@ public sealed partial class AgentExecutionService
                         ct);
                     history.Add(new ChatMessage(ChatRole.User, toolMsg));
 
+                    if (delegatedUsage is not null)
+                    {
+                        var delegatedBudget = usageBudgetTracker.Record(delegatedUsage);
+                        if (delegatedBudget.ShouldStop)
+                        {
+                            executionError = delegatedBudget.Message
+                                ?? "WorkUnit usage budget exhausted by delegated execution.";
+                            finalMessage = executionError;
+                            stopReason = AgentLoopStopReason.BudgetExhausted;
+                            execState = AgentExecutionState.BudgetExhausted;
+                            subAgentTerminalStatus = "budget_exhausted";
+                            _logger.LogWarning(
+                                "[AgentExec:WorkUnitBudget] Stopped buffered execution after delegated tool session={Session} round={Round} input={InputTokens} output={OutputTokens}",
+                                request.SessionId,
+                                round + 1,
+                                delegatedUsage.PromptTokens,
+                                delegatedUsage.CompletionTokens);
+                        }
+                    }
+
                     if (toolDiscoveryStalled)
                     {
                         executionError = BuildToolDiscoveryStalledMessage(
@@ -1962,7 +2013,7 @@ public sealed partial class AgentExecutionService
                     ToolError      = toolError,
                 });
 
-                if (execState == AgentExecutionState.Failed)
+                if (execState != AgentExecutionState.Running)
                     break;
 
                 // 最后一轮 CONTINUE → MaxRoundsReached
@@ -2249,7 +2300,7 @@ public sealed partial class AgentExecutionService
             StopReason      = stopReason.ToString(),
             ResumeAnchorId  = resumeAnchorId,
             ErrorMessage    = isSuccess ? null : finalErrorMessage,
-            Usage           = usage,
+            Usage           = usageBudgetTracker.CreateUsageSnapshot() ?? usage,
             PrefixSnapshot  = lastPrefixSnapshot,
             TurnSteps       = CollectNewTurnSteps(request.SessionId, journalStartCount),
             ToolFailureCount = toolFailureCount,

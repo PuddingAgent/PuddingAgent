@@ -106,6 +106,8 @@ public sealed record SubAgentInvocationRequest
     public string? InvocationId { get; init; }
     public string OriginToolId { get; init; } = "spawn_sub_agent";
     public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
+    /// <summary>父 WorkUnit 在进入派生工具时的剩余预算。</summary>
+    public ExecutionUsageBudget? UsageBudget { get; init; }
 }
 
 /// <summary>子代理调用结果。</summary>
@@ -117,6 +119,8 @@ public sealed record SubAgentInvocationResult
     public required string Status { get; init; }
     public string? Reply { get; init; }
     public string? Error { get; init; }
+    /// <summary>同步子代理本次运行累计消耗；异步启动时为空。</summary>
+    public PuddingCode.Models.TokenUsageDto? Usage { get; init; }
 }
 
 /// <summary>
@@ -165,6 +169,8 @@ public sealed record SubAgentBatchInvocationRequest
     public string? BatchId { get; init; }
     public string OriginToolId { get; init; } = "spawn_sub_agent";
     public RuntimeExecutionIdentity? ParentExecutionIdentity { get; init; }
+    /// <summary>批次共享的剩余预算；运行时按子任务数量确定性切分。</summary>
+    public ExecutionUsageBudget? UsageBudget { get; init; }
 }
 
 /// <summary>批量子代理调用聚合结果。</summary>
@@ -191,6 +197,8 @@ public sealed record SubAgentExecutionOptions
     /// budget_exhausted→checkpoint/resume 链路，禁止靠 600 轮绝对护栏硬撑。
     /// </summary>
     public const int DefaultWorkUnitMaxRounds = 32;
+    public const int MaxWorkUnitMaxRounds = 40;
+    public const int DefaultWorkUnitMaxToolCallsTotal = 120;
     public const int DefaultBudgetGraceRounds = 20;
     public const int DefaultBudgetGraceTimeoutSeconds = 30 * 60;
     public const double DefaultContextSoftCompactionTriggerRatio = 0.65;

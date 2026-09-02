@@ -65,6 +65,39 @@ internal sealed class ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget)
         return EvaluateLimits();
     }
 
+    public ExecutionUsageBudget? CreateRemainingBudget()
+    {
+        if (budget is null)
+            return null;
+
+        return budget with
+        {
+            MaxInputTokens = Remaining(budget.MaxInputTokens, InputTokens),
+            MaxOutputTokens = Remaining(budget.MaxOutputTokens, OutputTokens),
+            MaxCost = Remaining(budget.MaxCost, Cost),
+        };
+    }
+
+    public TokenUsageDto? CreateUsageSnapshot()
+    {
+        if (budget is null)
+            return null;
+
+        var prompt = ClampToInt(InputTokens);
+        var completion = ClampToInt(OutputTokens);
+        var cacheHit = Math.Min(prompt, ClampToInt(CacheHitTokens));
+        return new TokenUsageDto
+        {
+            PromptTokens = prompt,
+            CompletionTokens = completion,
+            TotalTokens = prompt > int.MaxValue - completion
+                ? int.MaxValue
+                : prompt + completion,
+            PromptCacheHitTokens = cacheHit,
+            PromptCacheMissTokens = prompt - cacheHit,
+        };
+    }
+
     private ExecutionUsageBudgetDecision EvaluateLimits()
     {
         if (budget is null)
@@ -105,6 +138,15 @@ internal sealed class ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget)
 
     private static long SaturatingAdd(long left, int right)
         => left > long.MaxValue - right ? long.MaxValue : left + right;
+
+    private static long Remaining(long limit, long consumed)
+        => limit > 0 ? Math.Max(1, limit - consumed) : 0;
+
+    private static decimal Remaining(decimal limit, decimal consumed)
+        => limit > 0 ? Math.Max(0.0000000001m, limit - consumed) : 0;
+
+    private static int ClampToInt(long value)
+        => value >= int.MaxValue ? int.MaxValue : (int)Math.Max(0, value);
 }
 
 internal sealed record ExecutionUsageBudgetDecision(

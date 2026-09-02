@@ -157,6 +157,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         var isHeartbeat = IsHeartbeat(payload.From);
         var isForegroundIngress =
             IsGatewayConversationIngress(payload.Metadata)
+            || MessageDeliveryPolicy.RequiresCanonicalTurn(payload.Metadata)
             || string.Equals(payload.From.Kind, MessageEndpointKinds.User, StringComparison.OrdinalIgnoreCase);
         var handlingMode = MessageDeliveryPolicy.NormalizeHandlingMode(
             payload.HandlingMode,
@@ -317,7 +318,8 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         IReadOnlyDictionary<string, string>? metadata,
         CancellationToken ct,
         bool isHeartbeat = false,
-        bool isForeground = false)
+        bool isForeground = false,
+        string? staleKnownTargetKey = null)
     {
         var targetKey = BuildTargetKey(workspaceId, roomId, agentId);
         if (!isHeartbeat
@@ -377,6 +379,9 @@ public sealed class MessageDeliveryDispatcher : IHostedService
 
         if (claimed is null)
         {
+            if (staleKnownTargetKey is not null)
+                _knownAgentTargets.TryRemove(staleKnownTargetKey, out _);
+
             LogDecision(
                 workspaceId,
                 roomId,
@@ -404,7 +409,8 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         var claimedIsForeground =
             !claimedIsHeartbeat
             && !claimedIsSubAgentResult
-            && string.Equals(claimed.From.Kind, MessageEndpointKinds.User, StringComparison.OrdinalIgnoreCase);
+            && (string.Equals(claimed.From.Kind, MessageEndpointKinds.User, StringComparison.OrdinalIgnoreCase)
+                || MessageDeliveryPolicy.RequiresCanonicalTurn(effectiveMetadata));
 
         // Heartbeats are expendable when the Agent cannot accept background
         // work. Evaluate after claim so both event-driven and restart-recovery
@@ -487,7 +493,8 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         // Agent executes it. Sub-agent results keep their dedicated continuation
         // stream path.
         if (!claimedIsSubAgentResult
-            && (claimedIsHeartbeat
+            && (MessageDeliveryPolicy.RequiresCanonicalTurn(effectiveMetadata)
+                || claimedIsHeartbeat
                 || string.Equals(
                     claimed.From.Kind,
                     MessageEndpointKinds.Agent,
@@ -1926,8 +1933,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                 // Wakeup events provide low-latency dispatch, but durable delivery
                 // rows are authoritative. Re-discover targets on every recovery pass
                 // so queued/retrying work survives process restarts or lost events.
-                await DiscoverPendingTargetsAsync(ct);
-                await TryDispatchKnownTargetsAsync(ct);
+                await RunRecoveryPassOnceAsync(ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -1940,6 +1946,12 @@ public sealed class MessageDeliveryDispatcher : IHostedService
 
             await timer.WaitForNextTickAsync(ct);
         }
+    }
+
+    internal async Task RunRecoveryPassOnceAsync(CancellationToken ct)
+    {
+        await DiscoverPendingTargetsAsync(ct);
+        await TryDispatchKnownTargetsAsync(ct);
     }
 
     private async Task DiscoverPendingTargetsAsync(CancellationToken ct)
@@ -1991,7 +2003,12 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                 correlationId: null,
                 causationId: null,
                 metadata: null,
-                ct: ct);
+                ct: ct,
+                staleKnownTargetKey: BuildKnownTargetKey(
+                    target.WorkspaceId,
+                    target.RoomId,
+                    target.AgentId,
+                    target.HandlingMode));
         }
     }
 

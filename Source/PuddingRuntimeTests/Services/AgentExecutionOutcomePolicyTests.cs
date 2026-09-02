@@ -41,4 +41,23 @@ public sealed class AgentExecutionOutcomePolicyTests
 
         Assert.IsTrue(shouldDowngrade);
     }
+
+    [TestMethod]
+    public void TruncatedProviderOutput_AllowsExactlyOneBoundedRecoveryRound()
+    {
+        Assert.IsTrue(AgentOutputTruncationPolicy.IsTruncated("length"));
+        Assert.IsTrue(AgentOutputTruncationPolicy.IsTruncated("incomplete"));
+        Assert.IsTrue(AgentOutputTruncationPolicy.ShouldRetry(0, round: 0, maxRounds: 25));
+        Assert.IsFalse(AgentOutputTruncationPolicy.ShouldRetry(1, round: 1, maxRounds: 25));
+        Assert.IsFalse(AgentOutputTruncationPolicy.ShouldRetry(0, round: 0, maxRounds: 1));
+    }
+
+    [TestMethod]
+    public void TruncationRecoveryPrompt_RequiresImmediateActionWithoutReasoningReplay()
+    {
+        var prompt = AgentOutputTruncationPolicy.RecoveryPrompt(hadDisplayableContent: false);
+
+        StringAssert.Contains(prompt, "single best next tool");
+        StringAssert.Contains(prompt, "Do not continue or restate");
+    }
 }

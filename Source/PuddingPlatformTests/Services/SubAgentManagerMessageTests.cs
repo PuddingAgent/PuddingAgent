@@ -74,7 +74,7 @@ public sealed class SubAgentManagerMessageTests
         Assert.AreEqual("test-model", dispatcher.LastRequest.LlmConfig?.ModelId);
         Assert.AreEqual(SubAgentExecutionOptions.DefaultWorkUnitMaxRounds, dispatcher.LastRequest.MaxRounds);
         Assert.AreEqual(
-            SubAgentExecutionOptions.LargeTaskMaxToolCallsTotal,
+            SubAgentExecutionOptions.DefaultWorkUnitMaxToolCallsTotal,
             dispatcher.LastRequest.MaxToolCallsTotal);
         Assert.AreEqual(
             SubAgentExecutionOptions.LargeTaskMaxTimeoutSeconds,
@@ -167,6 +167,62 @@ public sealed class SubAgentManagerMessageTests
         Assert.IsNotNull(result);
         Assert.IsNotNull(dispatcher.LastRequest);
         Assert.AreEqual(40, dispatcher.LastRequest.MaxRounds);
+    }
+
+    [TestMethod]
+    public async Task ExecuteSyncAsync_WorkspaceTaskAgentCannotEscalateToLargeTaskBudget()
+    {
+        var dispatcher = new RecordingRuntimeAgentDispatcher();
+        var manager = CreateManager(dispatcher);
+
+        await manager.ExecuteSyncAsync(new SubAgentSpawnRequest
+        {
+            ParentSessionId = "parent-session",
+            ParentAgentId = "agent-parent",
+            WorkspaceId = "default",
+            TaskDescription = "Attempt an oversized managed WorkUnit.",
+            TemplateId = "workspace-task-agent",
+            LlmConfig = CreateLlmConfig(),
+            LlmProfile = CreateLlmProfile(),
+            MaxRounds = SubAgentExecutionOptions.LargeTaskMaxRounds,
+            MaxToolCallsTotal = SubAgentExecutionOptions.LargeTaskMaxToolCallsTotal,
+        });
+
+        Assert.IsNotNull(dispatcher.LastRequest);
+        Assert.AreEqual(
+            SubAgentExecutionOptions.MaxWorkUnitMaxRounds,
+            dispatcher.LastRequest.MaxRounds);
+        Assert.AreEqual(
+            SubAgentExecutionOptions.DefaultWorkUnitMaxToolCallsTotal,
+            dispatcher.LastRequest.MaxToolCallsTotal);
+    }
+
+    [TestMethod]
+    public async Task ExecuteSyncAsync_GenericAgentMayUseConfiguredLargeTaskBudget()
+    {
+        var dispatcher = new RecordingRuntimeAgentDispatcher();
+        var manager = CreateManager(dispatcher);
+
+        await manager.ExecuteSyncAsync(new SubAgentSpawnRequest
+        {
+            ParentSessionId = "parent-session",
+            ParentAgentId = "agent-parent",
+            WorkspaceId = "default",
+            TaskDescription = "Run a deliberately authorized large child task.",
+            TemplateId = "general-assistant",
+            LlmConfig = CreateLlmConfig(),
+            LlmProfile = CreateLlmProfile(),
+            MaxRounds = SubAgentExecutionOptions.LargeTaskMaxRounds,
+            MaxToolCallsTotal = SubAgentExecutionOptions.LargeTaskMaxToolCallsTotal,
+        });
+
+        Assert.IsNotNull(dispatcher.LastRequest);
+        Assert.AreEqual(
+            SubAgentExecutionOptions.LargeTaskMaxRounds,
+            dispatcher.LastRequest.MaxRounds);
+        Assert.AreEqual(
+            SubAgentExecutionOptions.LargeTaskMaxToolCallsTotal,
+            dispatcher.LastRequest.MaxToolCallsTotal);
     }
 
     [TestMethod]
