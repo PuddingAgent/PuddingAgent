@@ -1,4 +1,4 @@
-﻿<Solution>
+<Solution>
   <Folder Name="/Source/">
     <Project Path="Source/PuddingAgent/PuddingAgent.csproj" Id="e8e75785-2a1b-4438-bca5-575658188476" />
     <Project Path="Source/PuddingBrowser.Abstractions/PuddingBrowser.Abstractions.csproj" />
@@ -17,6 +17,7 @@
     <Project Path="Source/PuddingMemoryEngineBenchmarks/PuddingMemoryEngineBenchmarks.csproj" />
     <Project Path="Source/PuddingPlatform/PuddingPlatform.csproj" />
     <Project Path="Source/PuddingRuntime/PuddingRuntime.csproj" Id="bf7b7efd-1c2a-4e06-9efa-f0e4af746f49" />
+    <Project Path="Source/PuddingTaskRecall.Cli/PuddingTaskRecall.Cli.csproj" />
     <Project Path="external/github.hyfree.GM/github.hyfree.GM/github.hyfree.GM.csproj" Id="2b2be7d9-5aae-437b-89f0-67b77d7f8e80" />
   </Folder>
   <Folder Name="/Tests/">
