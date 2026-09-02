@@ -205,4 +205,33 @@ Prefix cache 命中率：
 .\.venv\Scripts\python.exe Tools\Diagnostics\export_session_bundle.py --session-id <sessionId> --frontend-perf temp\pudding-perf-xxx.json
 ```
 
+
+
 导出结果默认写入 `temp/diagnostics/session-<sessionId>-<timestamp>.zip`。
+
+## 任务看板历史脏数据审计
+
+对任务看板「完成事实侧」的历史脏数据做一次性审计（看板卡 `4ed930e7` 原子任务③）。默认 dry-run 只读：SQLite URI `mode=ro` + `PRAGMA query_only=ON`，绝不写源库；`--apply` 修复模式强制先 `--backup`（sqlite3 backup API 复制到 `temp/diagnostics/`），修复 SQL 只在备份副本上执行。
+
+检测对象（基线记录于看板卡 4ed930e7；枚举常量硬编码处注明 `Source/PuddingCore/Tasks/WorkspaceTaskModels.cs` 文件+行号）：
+
+| 检测 | 表 | 基线 |
+|---|---|---|
+| a) Completed(8) 任务缺 TaskCompleted(10) 事件 | workspace_tasks × task_events | 31 |
+| b) execution_id / session_id 为空的绑定 | task_execution_bindings | 33 |
+| c) 停留在 Assigned(0)/Accepted(1) 的 attempt | task_assignment_attempts | 36 |
+| d) 陈旧 agent 可用性投影 | agent_availability_projection | 1 |
+| e) attempts.status=4（疑似 TaskDisposition.NeedsApproval 泄漏，仅 dump 待人工裁决） | task_assignment_attempts | 19 |
+
+```powershell
+# dry-run：console 摘要
+.\.venv\Scripts\python.exe Tools\Diagnostics\audit_task_board.py
+
+# dry-run：完整 Markdown 报告写入 temp/
+.\.venv\Scripts\python.exe Tools\Diagnostics\audit_task_board.py --out temp\audit-task-board-dryrun.md
+
+# 修复模式（已实现，未随本次提交执行）：强制 --backup，仅改备份副本
+.\.venv\Scripts\python.exe Tools\Diagnostics\audit_task_board.py --apply --backup auto
+```
+
+铁律（已编码进脚本）：agent `default.global_general-assistant.6a8` 挂 task `3bd2a4b0…`（InProgress）的 `active_task_owned` 投影为合法行，任何情况下不进入修复清单；`--apply` 永不触碰 status=4 的 attempt 行。
