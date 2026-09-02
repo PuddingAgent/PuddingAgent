@@ -120,6 +120,43 @@ class DevUpProxyTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 dev_up.choose_proxy_port("127.0.0.1", occupied_port, None)
 
+    def test_wait_until_port_listening_detects_ready_service(self):
+        dev_up = load_dev_up_module()
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            port = listener.getsockname()[1]
+
+            self.assertTrue(
+                dev_up.wait_until_port_listening(
+                    "127.0.0.1",
+                    port,
+                    timeout_seconds=0.1,
+                    poll_interval_seconds=0,
+                )
+            )
+
+    def test_wait_until_port_listening_stops_when_child_exits(self):
+        dev_up = load_dev_up_module()
+
+        class ExitedProcess:
+            @staticmethod
+            def poll():
+                return 17
+
+        with patch.object(dev_up.socket, "create_connection") as connect:
+            ready = dev_up.wait_until_port_listening(
+                "127.0.0.1",
+                5100,
+                process=ExitedProcess(),
+                timeout_seconds=30,
+                poll_interval_seconds=0,
+            )
+
+        self.assertFalse(ready)
+        connect.assert_not_called()
+
     def test_resolve_command_prefers_windows_cmd_shim(self):
         dev_up = load_dev_up_module()
 

@@ -39,6 +39,7 @@ DEV_UP_LOG_PREFIX = "dev-up"
 
 BACKEND_PORT = 5000
 CODEX_SERVICE_PORT = 5100
+CODEX_SERVICE_STARTUP_TIMEOUT_SECONDS = 15.0
 FRONTEND_PORT = 8000
 LOOPBACK_HOST = "0.0.0.0"
 LOCAL_CONNECT_HOST = "127.0.0.1"  # 代理连接后端/前端时使用，0.0.0.0 不可作为连接目标
@@ -472,6 +473,29 @@ def wait_until_port_free(port: int, timeout_seconds: float = 10.0) -> bool:
             return True
         time.sleep(0.2)
     return port_owner_pid(port) is None
+
+
+def wait_until_port_listening(
+    host: str,
+    port: int,
+    process: subprocess.Popen | None = None,
+    timeout_seconds: float = 10.0,
+    poll_interval_seconds: float = 0.1,
+) -> bool:
+    """Wait until the exact child service accepts TCP connections or exits."""
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    while True:
+        if process is not None and process.poll() is not None:
+            return False
+        try:
+            with socket.create_connection((host, port), timeout=0.25):
+                return True
+        except OSError:
+            pass
+
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(max(0.0, poll_interval_seconds))
 
 
 def wait_until_process_exits(pid: int, timeout_seconds: float = PROCESS_STOP_TIMEOUT_SECONDS) -> bool:
@@ -999,7 +1023,21 @@ def start_codex_service() -> subprocess.Popen:
         **popen_kwargs(),
     )
     write_pid(CODEX_SERVICE_PID_FILE, proc.pid)
-    info(f"V Codex Service started (PID {proc.pid})")
+    if not wait_until_port_listening(
+        LOCAL_CONNECT_HOST,
+        CODEX_SERVICE_PORT,
+        process=proc,
+        timeout_seconds=CODEX_SERVICE_STARTUP_TIMEOUT_SECONDS,
+    ):
+        exit_code = proc.poll()
+        stop_process_tree(proc.pid)
+        unlink_pid_if_owned(CODEX_SERVICE_PID_FILE, proc.pid)
+        detail = f"exited with code {exit_code}" if exit_code is not None else "readiness timed out"
+        fail(
+            f"Codex Service {detail} before port {CODEX_SERVICE_PORT} became ready. "
+            f"See {CODEX_SERVICE_OUT_LOG} and {CODEX_SERVICE_ERR_LOG}."
+        )
+    info(f"V Codex Service ready (PID {proc.pid}, port {CODEX_SERVICE_PORT})")
     return proc
 
 
