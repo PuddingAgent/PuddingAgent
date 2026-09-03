@@ -287,8 +287,32 @@ public sealed record PuddingLlmModelConfig
     public decimal? PricePer1MInputTokens { get; init; }
     public decimal? PricePer1MOutputTokens { get; init; }
     public decimal? PricePer1MCacheHitTokens { get; init; }
+    /// <summary>
+    /// Versioned provider/model price windows used by automatic task admission.
+    /// Empty means the low-price window is unknown and off-peak work fails closed.
+    /// </summary>
+    public List<PuddingLlmPriceWindowConfig> PriceWindows { get; init; } = [];
+    public string? PriceWindowProfileVersion { get; init; }
+    public string? PriceWindowSourceUrl { get; init; }
     /// <summary>模型级最大并发请求数（null=继承 Provider 默认 50）</summary>
     public int? MaxConcurrentRequests { get; init; }
+}
+
+/// <summary>
+/// A recurring provider/model billing window. Local start is inclusive and end
+/// is exclusive; an end earlier than start crosses midnight. DaysOfWeek, when
+/// present, apply to the local start date.
+/// </summary>
+public sealed record PuddingLlmPriceWindowConfig
+{
+    public string WindowKey { get; init; } = "";
+    public string TimeZoneId { get; init; } = "UTC";
+    public string StartLocalTime { get; init; } = "";
+    public string EndLocalTime { get; init; } = "";
+    public List<string> DaysOfWeek { get; init; } = [];
+    public bool IsOffPeak { get; init; } = true;
+    public DateTimeOffset? EffectiveAtUtc { get; init; }
+    public DateTimeOffset? ExpiresAtUtc { get; init; }
 }
 
 public sealed record PuddingLlmProfileConfig
