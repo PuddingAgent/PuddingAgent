@@ -462,6 +462,10 @@ public sealed class GoalContinuationTests
         Assert.AreEqual(
             "WorkUnit input Token budget exhausted (input 150000 tokens).",
             archivedTask.BlockerReason);
+        // goal_iterations.error_id must archive the real errorCode from the
+        // turn.failed payload, not stay null.
+        var archivedIteration = await verify.GoalIterations.SingleAsync();
+        Assert.AreEqual("work_unit_budget_exhausted", archivedIteration.ErrorId);
     }
 
     [TestMethod]

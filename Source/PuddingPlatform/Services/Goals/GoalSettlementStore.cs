@@ -434,6 +434,14 @@ public sealed class GoalSettlementStore(
             };
             iteration.TerminalSequence = turn.TerminalSequence;
             iteration.StopReason = turn.TerminalKind;
+            // Archive the authoritative root cause: goal_iterations.error_id must
+            // carry the real errorCode from the terminal turn.failed payload
+            // (e.g. work_unit_budget_exhausted) instead of staying null.
+            if (string.Equals(iteration.Status, "failed", StringComparison.Ordinal)
+                && !string.IsNullOrWhiteSpace(candidate.ErrorCode))
+            {
+                iteration.ErrorId = candidate.ErrorCode;
+            }
             iteration.SettledAtUtc = now;
             iteration.RunId ??= candidate.RunId;
             iteration.StartedAtUtc ??= candidate.StartedAtUtc;
