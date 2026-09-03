@@ -30,6 +30,10 @@ public sealed record GoalSettlementCandidate
     public required string TerminalKind { get; init; }
     public required long TerminalSequence { get; init; }
     public required IReadOnlyList<string> EvidenceRefs { get; init; }
+    /// <summary>Error code from the terminal turn.failed payload (e.g. work_unit_budget_exhausted).</summary>
+    public string? ErrorCode { get; init; }
+    /// <summary>Error message from the terminal turn.failed payload (e.g. WorkUnit input Token budget exhausted).</summary>
+    public string? ErrorMessage { get; init; }
     public string? TaskId { get; init; }
     public int? TaskVersion { get; init; }
     public string? TaskStatus { get; init; }
@@ -184,6 +188,17 @@ public sealed class GoalSettlementStore(
             var activeElapsedMs = execution is { StartedAt: long started, CompletedAt: long completed }
                 ? Math.Max(0, completed - started)
                 : 0;
+            string? failureCode = null;
+            string? failureMessage = null;
+            if (string.Equals(turn.Status, "failed", StringComparison.Ordinal))
+            {
+                var terminalPayload = await evidenceQuery
+                    .Where(item => item.Type == ConversationEventTypes.TurnFailed)
+                    .OrderByDescending(item => item.Sequence)
+                    .Select(item => item.Payload)
+                    .FirstOrDefaultAsync(ct);
+                (failureCode, failureMessage) = ExtractTurnFailure(terminalPayload);
+            }
 
             results.Add(new GoalSettlementCandidate
             {
@@ -203,6 +218,8 @@ public sealed class GoalSettlementStore(
                 TerminalKind = turn.TerminalKind!,
                 TerminalSequence = turn.TerminalSequence.Value,
                 EvidenceRefs = refs,
+                ErrorCode = failureCode,
+                ErrorMessage = failureMessage,
                 TaskId = task?.TaskId,
                 TaskVersion = task?.Version,
                 TaskStatus = task?.Status.ToString(),
@@ -220,6 +237,31 @@ public sealed class GoalSettlementStore(
         }
 
         return results;
+    }
+
+    private static (string? Code, string? Message) ExtractTurnFailure(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+            return (null, null);
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                return (null, null);
+            var code = ReadFailureString(root, "errorCode") ?? ReadFailureString(root, "code");
+            var message = ReadFailureString(root, "errorMessage") ?? ReadFailureString(root, "message");
+            return (code, message);
+        }
+        catch (JsonException)
+        {
+            return (null, null);
+        }
+
+        static string? ReadFailureString(JsonElement root, string name)
+            => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
     }
 
     private static (int Rounds, long InputTokens, long OutputTokens) SumUsage(
@@ -517,10 +559,22 @@ public sealed class GoalSettlementStore(
         }
         if (!string.Equals(candidate.TerminalKind, "completed", StringComparison.OrdinalIgnoreCase))
         {
-            return BlockedDecision(
-                $"iteration_{candidate.TerminalKind}",
-                $"Iteration ended as {candidate.TerminalKind}.",
-                candidate.EvidenceRefs);
+            // Passthrough the authoritative errorCode/errorMessage from the terminal
+            // turn.failed payload so the archived Goal record (blocked_code / blocked_message)
+            // and the bound Task (blocker_kind / blocker_reason) surface the real root cause
+            // instead of the generic iteration_failed marker.
+            var blockedCode = $"iteration_{candidate.TerminalKind}";
+            var blockedMessage = $"Iteration ended as {candidate.TerminalKind}.";
+            if (string.Equals(candidate.TerminalKind, "failed", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(candidate.ErrorCode))
+            {
+                blockedCode = candidate.ErrorCode;
+                blockedMessage = string.IsNullOrWhiteSpace(candidate.ErrorMessage)
+                    ? $"Iteration failed: {candidate.ErrorCode}."
+                    : candidate.ErrorMessage;
+            }
+
+            return BlockedDecision(blockedCode, blockedMessage, candidate.EvidenceRefs);
         }
         if (task is not null
             && proposed.Verdict == GoalVerificationVerdict.Complete

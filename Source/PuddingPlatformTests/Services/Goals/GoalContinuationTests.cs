@@ -413,6 +413,58 @@ public sealed class GoalContinuationTests
     }
 
     [TestMethod]
+    public async Task TaskPlanSettlement_FailedTurn_ArchivesRealErrorCodeAndBlockerReason()
+    {
+        var goal = await CreateGoalWithContinuationAsync();
+        var (binding, workUnit) = await CreateBoundExecutionPlanAsync(goal);
+        var lease = await ClaimAsync();
+        AcceptanceResult accepted;
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            var store = new ConversationAcceptanceStore(
+                db,
+                new NoopSignal(),
+                NullLogger<ConversationAcceptanceStore>.Instance);
+            accepted = await store.AcceptBatchAsync(
+                BuildContinuationRequest(goal, lease, binding, workUnit),
+                goal.WorkspaceId,
+                goal.CurrentConversationId,
+                userId: null,
+                CancellationToken.None);
+        }
+
+        // The journal persists terminal payloads with camelCase errorCode/errorMessage
+        // (see SqliteExecutionJournal.BuildTerminalPayload) — GoalSettlementStore must
+        // surface those real values on the archived Goal and bound Task.
+        const string failedPayload =
+            "{\"kind\":\"failed\",\"errorCode\":\"work_unit_budget_exhausted\"," +
+            "\"errorMessage\":\"WorkUnit input Token budget exhausted (input 150000 tokens).\"}";
+        await CommitSyntheticTerminalAsync(accepted.TurnIds.Single(), "failed", failedPayload);
+        var settlement = NewSettlementStore();
+        var candidate = (await settlement.GetCandidatesAsync(8)).Single();
+        Assert.AreEqual("work_unit_budget_exhausted", candidate.ErrorCode);
+        Assert.AreEqual(
+            "WorkUnit input Token budget exhausted (input 150000 tokens).",
+            candidate.ErrorMessage);
+        var decision = await new ConservativeGoalIterationVerifier().VerifyAsync(candidate.ToCapsule());
+        Assert.IsTrue(await settlement.ApplyAsync(candidate, decision));
+
+        await using var verify = await _factory.CreateDbContextAsync();
+        var archivedGoal = await verify.GoalRuns.SingleAsync();
+        Assert.AreEqual(GoalPhase.Failed, archivedGoal.Status);
+        Assert.AreEqual("work_unit_budget_exhausted", archivedGoal.BlockedCode);
+        Assert.AreEqual(
+            "WorkUnit input Token budget exhausted (input 150000 tokens).",
+            archivedGoal.BlockedMessage);
+        var archivedTask = await verify.WorkspaceTasks.SingleAsync();
+        Assert.AreEqual(PuddingCode.Tasks.WorkspaceTaskStatus.Blocked, archivedTask.Status);
+        Assert.AreEqual("work_unit_budget_exhausted", archivedTask.BlockerKind);
+        Assert.AreEqual(
+            "WorkUnit input Token budget exhausted (input 150000 tokens).",
+            archivedTask.BlockerReason);
+    }
+
+    [TestMethod]
     public async Task EpochChangeRejectsLateAcceptance()
     {
         var goal = await CreateGoalWithContinuationAsync();
@@ -1021,7 +1073,7 @@ public sealed class GoalContinuationTests
             CancellationToken.None);
     }
 
-    private async Task CommitSyntheticTerminalAsync(string turnId, string kind)
+    private async Task CommitSyntheticTerminalAsync(string turnId, string kind, string payload = "{}")
     {
         await using var db = await _factory.CreateDbContextAsync();
         var turn = await db.ConversationTurns.SingleAsync(item => item.TurnId == turnId);
@@ -1057,7 +1109,7 @@ public sealed class GoalContinuationTests
             CommandId = iteration.CommandId,
             Type = eventType,
             SchemaVersion = 1,
-            Payload = "{}",
+            Payload = payload,
             OccurredAt = DateTimeOffset.UtcNow.ToString("O"),
             CommittedAt = DateTimeOffset.UtcNow.ToString("O"),
             CorrelationId = goal.CurrentConversationId,
