@@ -150,6 +150,7 @@ public sealed class PuddingFileConfigLoader
                     errors.Add($"llm.providers.json provider '{provider.ProviderId}' model '{model.ModelId}' protocol must be 'openai', 'responses', or 'anthropic'.");
                 if (model.MaxConcurrentRequests is <= 0)
                     errors.Add($"llm.providers.json provider '{provider.ProviderId}' model '{model.ModelId}' maxConcurrentRequests must be greater than zero.");
+                ValidatePriceWindows(provider.ProviderId, model, errors);
             }
         }
 
@@ -211,6 +212,46 @@ public sealed class PuddingFileConfigLoader
         // so dangling role aliases must not prevent the provider/model registry from starting.
 
         return errors;
+    }
+
+    private static void ValidatePriceWindows(
+        string providerId,
+        PuddingLlmModelConfig model,
+        ICollection<string> errors)
+    {
+        var windows = model.PriceWindows ?? [];
+        if (windows.Count == 0)
+            return;
+
+        if (string.IsNullOrWhiteSpace(model.PriceWindowProfileVersion))
+            errors.Add($"llm.providers.json provider '{providerId}' model '{model.ModelId}' priceWindowProfileVersion is required when priceWindows are configured.");
+
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var window in windows)
+        {
+            var prefix = $"llm.providers.json provider '{providerId}' model '{model.ModelId}' price window";
+            if (string.IsNullOrWhiteSpace(window.WindowKey) || !keys.Add(window.WindowKey))
+                errors.Add($"{prefix} has an empty or duplicate windowKey '{window.WindowKey}'.");
+            if (string.IsNullOrWhiteSpace(window.TimeZoneId))
+                errors.Add($"{prefix} '{window.WindowKey}' has an empty timeZoneId.");
+            if (!TimeOnly.TryParseExact(window.StartLocalTime, "HH:mm", out var start)
+                || !TimeOnly.TryParseExact(window.EndLocalTime, "HH:mm", out var end)
+                || start == end)
+            {
+                errors.Add($"{prefix} '{window.WindowKey}' must define distinct HH:mm startLocalTime/endLocalTime values.");
+            }
+            foreach (var day in window.DaysOfWeek ?? [])
+            {
+                if (!Enum.TryParse<DayOfWeek>(day, ignoreCase: true, out _))
+                    errors.Add($"{prefix} '{window.WindowKey}' contains invalid dayOfWeek '{day}'.");
+            }
+            if (window.EffectiveAtUtc is { } effective
+                && window.ExpiresAtUtc is { } expires
+                && expires <= effective)
+            {
+                errors.Add($"{prefix} '{window.WindowKey}' expiresAtUtc must be after effectiveAtUtc.");
+            }
+        }
     }
 
     private static bool IsSupportedLlmProtocol(string? protocol)
