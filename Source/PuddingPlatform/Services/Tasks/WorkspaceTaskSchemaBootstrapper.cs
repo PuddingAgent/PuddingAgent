@@ -61,7 +61,6 @@ public static class WorkspaceTaskSchemaBootstrapper
         """,
         "CREATE UNIQUE INDEX IF NOT EXISTS UX_workspace_tasks_workspace_task ON workspace_tasks(workspace_id, task_id);",
         "CREATE INDEX IF NOT EXISTS IX_workspace_tasks_workspace_status ON workspace_tasks(workspace_id, status);",
-        "CREATE INDEX IF NOT EXISTS IX_workspace_tasks_workspace_sort ON workspace_tasks(workspace_id, sort_order);",
 
         // ── task_events（TB-02，18 业务列 + long Id 自增主键）─────────
         """
@@ -162,6 +161,13 @@ public static class WorkspaceTaskSchemaBootstrapper
         await EnsureColumnAsync(db, "workspace_tasks", "required_model_id", "TEXT", logger, ct);
         await EnsureColumnAsync(db, "workspace_tasks", "allow_agent_fallback", "INTEGER NOT NULL DEFAULT 0", logger, ct);
         await EnsureColumnAsync(db, "workspace_tasks", "auto_dispatch_enabled", "INTEGER NOT NULL DEFAULT 0", logger, ct);
+        await EnsureColumnAsync(db, "workspace_tasks", "sort_order", "INTEGER NOT NULL DEFAULT 0", logger, ct);
+
+        // IX_workspace_tasks_workspace_sort 引用 sort_order：旧库 ALTER 补列必须发生在索引创建之前，
+        // 故该索引从上方 Ddl 数组移至此（全新库路径 EnsureColumnAsync 为 no-op，行为等价）。
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS IX_workspace_tasks_workspace_sort ON workspace_tasks(workspace_id, sort_order);",
+            ct);
     }
 
     private static async Task EnsureColumnAsync(
