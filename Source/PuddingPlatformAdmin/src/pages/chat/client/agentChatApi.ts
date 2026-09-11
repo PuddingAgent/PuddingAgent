@@ -1,4 +1,4 @@
-﻿import { request } from '@umijs/max';
+import { request } from '@umijs/max';
 import type {
   AgentConversationView,
   AgentStatusProjection,
@@ -39,15 +39,43 @@ export async function getAgentConversation(
   }
 }
 
+/** 明细请求选项（F01/AU-F01-1）：外部取消信号 + 有界超时。 */
+export interface AgentMessageProcessItemsOptions {
+  /** 调度器持有的取消信号：会话切换/卸载时由 AbortController 触发。 */
+  signal?: AbortSignal;
+  /** 有界超时（毫秒）；到时主动 abort，真实终止底层 transport。 */
+  timeoutMs?: number;
+}
+
 export async function getAgentMessageProcessItems(
   workspaceId: string,
   agentId: string,
   messageId: string,
+  options?: AgentMessageProcessItemsOptions,
 ): Promise<MessageProcessDetailsView> {
-  return request(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/conversation/messages/${encodeURIComponent(messageId)}/process-items`,
-    { method: 'GET' },
-  );
+  const external = options?.signal;
+  // 内部 controller 统一承载两类取消：外部 signal（会话切换/卸载）与
+  // 超时定时器。abort 直接作用于传给 transport 的 signal，HTTP 请求被
+// 真实终止；不用 Promise.race 把仍在跑的请求从并发计数里摘掉。
+  const controller = new AbortController();
+  const abortFromExternal = () => controller.abort();
+  if (external) {
+    if (external.aborted) controller.abort();
+    else external.addEventListener('abort', abortFromExternal, { once: true });
+  }
+  const timer =
+    options?.timeoutMs && options.timeoutMs > 0
+      ? setTimeout(() => controller.abort(), options.timeoutMs)
+      : null;
+  try {
+    return await request(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/conversation/messages/${encodeURIComponent(messageId)}/process-items`,
+      { method: 'GET', signal: controller.signal },
+    );
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (external) external.removeEventListener('abort', abortFromExternal);
+  }
 }
 
 // ─── P1#4 权限模式 REST 持久化 ─────────────────────────────
