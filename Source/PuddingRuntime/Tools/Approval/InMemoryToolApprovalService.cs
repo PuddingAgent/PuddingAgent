@@ -231,7 +231,15 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
             Request = request,
             ArgumentsHash = ToolAuthorizationDefaults.ComputeArgumentsHash(request.RequestedArgumentsJson),
             Scope = grantedScope,
-            Status = isApproved ? ToolApprovalTicketStatus.Approved : ToolApprovalTicketStatus.Denied,
+            // Approved=自动批准；Denied=评审明确拒绝（终态）；
+            // NeedHuman=审批方无法裁定（如工作区缺少审计 agent / 审批 LLM 未配置）→ 保持 Pending
+            // 等待人工授权（/authorize）或配置修复，不得折叠成 Denied 终态阻断重试链路。
+            Status = review.Decision switch
+            {
+                ToolApprovalDecision.Approved => ToolApprovalTicketStatus.Approved,
+                ToolApprovalDecision.NeedHuman => ToolApprovalTicketStatus.Pending,
+                _ => ToolApprovalTicketStatus.Denied,
+            },
             DecisionReason = review.DecisionReason,
             CreatedAtUtc = now,
             DecidedAtUtc = now,
@@ -2026,12 +2034,17 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
             Status = ticket.Status,
             DecisionReason = ticket.DecisionReason,
             AllowedScope = decision == ToolApprovalDecision.Approved ? ticket.Scope : null,
-            ExpiresAtUtc = ticket.ExpiresAtUtc,
-            RecommendedNextStep = decision == ToolApprovalDecision.Approved
-                ? allowlistRuleId is null
+                        ExpiresAtUtc = ticket.ExpiresAtUtc,
+            RecommendedNextStep = decision switch
+            {
+                ToolApprovalDecision.Approved => allowlistRuleId is null
                     ? "Continue with the exact approved tool call."
-                    : $"Allowlist rule '{allowlistRuleId}' was created. Future matching calls can use fast approval."
-                : "Add facts, narrow scope, create a rollback plan, then retry request_tool_approval. Use /authorize only as a manual human fallback.",
+                    : $"Allowlist rule '{allowlistRuleId}' was created. Future matching calls can use fast approval.",
+                ToolApprovalDecision.NeedHuman =>
+                    "Ticket is pending human authorization. Ask the user to approve it with /authorize (or fix the approval configuration, e.g. configure a workspace audit agent), then retry the exact tool call.",
+                _ =>
+                    "Add facts, narrow scope, create a rollback plan, then retry request_tool_approval. Use /authorize only as a manual human fallback.",
+            },
             AllowlistRuleId = allowlistRuleId,
         };
 }

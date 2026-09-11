@@ -2250,6 +2250,37 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
+    public async Task ToolApprovalService_NeedHuman_Keeps_Ticket_Pending_For_Human_Authorization()
+    {
+        var store = new InMemoryToolApprovalTicketStore();
+        var approval = new InMemoryToolApprovalService(
+            new StaticToolApprovalReviewer(new ToolApprovalReviewResult
+            {
+                Decision = ToolApprovalDecision.NeedHuman,
+                DecisionReason = "当前工作空间不具有审计类型的agent",
+                RequiresHumanAuthorization = true,
+            }),
+            store);
+
+        var result = await approval.SubmitAsync(
+            ValidApprovalRequest("{}"),
+            SampleApprovalIdentity(),
+            new SampleHighTool().Descriptor);
+
+        Assert.AreEqual(ToolApprovalDecision.NeedHuman, result.Decision);
+        Assert.AreEqual(
+            ToolApprovalTicketStatus.Pending,
+            result.Status,
+            "need_human 语义是等待人工授权（pending），不得折叠成 denied 终态。");
+        StringAssert.Contains(result.RecommendedNextStep, "/authorize");
+
+        var stored = await store.GetAsync(result.TicketId);
+        Assert.IsNotNull(stored);
+        Assert.AreEqual(ToolApprovalTicketStatus.Pending, stored!.Status);
+        Assert.AreEqual("当前工作空间不具有审计类型的agent", stored.DecisionReason);
+    }
+
+    [TestMethod]
     public async Task ToolApprovalService_Checks_Ticket_From_Injected_Store()
     {
         var store = new InMemoryToolApprovalTicketStore();
