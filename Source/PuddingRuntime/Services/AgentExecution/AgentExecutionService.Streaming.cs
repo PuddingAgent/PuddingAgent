@@ -784,6 +784,12 @@ public sealed partial class AgentExecutionService
                     }
                 }
 
+                // S01-B：请求准备边界——冻结本请求的上下文层归因与 usage 估算。
+                // 此后同 session 的后续请求覆盖 store 不会改写本次落账的 shape。
+                var requestContext = FreezeRequestContext(request.SessionId);
+                var llmInvocationId = BuildLlmInvocationId(request, round, "agent");
+                var llmAttemptId = llmInvocationId + ":a" + (providerInputRecoveryAttempted ? 1 : 0);
+
                 await EnsureCurrentTurnInputPresentWithRecoveryAsync(
             injectedHistory,
             request,
@@ -1146,7 +1152,10 @@ public sealed partial class AgentExecutionService
                             attribution: BuildTokenUsageAttribution(
                                 request,
                                 round,
-                                canonicalToolNames),
+                                canonicalToolNames,
+                                requestContext,
+                                llmInvocationId,
+                                llmAttemptId),
                             prefixSnapshot: prefixSnapshot,
                             occurredAtUtc: DateTimeOffset.UtcNow);
                     }

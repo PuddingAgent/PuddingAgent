@@ -86,6 +86,7 @@ public sealed partial class AgentExecutionService
     private readonly IConversationEventStore? _conversationEventStore; // P0-2：steering 正文 canonical 留痕
     private readonly IIdleDetector? _idleDetector;
     private readonly ContextUsageSnapshotStore? _contextUsageSnapshotStore;
+    private readonly ContextAssemblyStore? _contextAssemblyStore;
     private readonly IRuntimeExecutionConfigService? _runtimeExecutionConfig;
     private readonly SkillEnforcerService? _skillEnforcer;
     private readonly ISessionExecutionGate _sessionExecutionGate;
@@ -150,7 +151,8 @@ public sealed partial class AgentExecutionService
         IExecutionProgressRegistry? executionProgress = null,
         IConversationEventStore? conversationEventStore = null,
         CompositionRecoveryService? compositionRecovery = null,
-        IRuntimeExecutionConfigService? runtimeExecutionConfig = null)
+        IRuntimeExecutionConfigService? runtimeExecutionConfig = null,
+        ContextAssemblyStore? contextAssemblyStore = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -197,6 +199,7 @@ public sealed partial class AgentExecutionService
         _steeringService           = steeringService;
         _idleDetector              = idleDetector;
         _contextUsageSnapshotStore = contextUsageSnapshotStore;
+        _contextAssemblyStore     = contextAssemblyStore;
         _skillEnforcer             = skillEnforcer;
         _executionProgress         = executionProgress;
         _conversationEventStore    = conversationEventStore;
@@ -1050,7 +1053,10 @@ public sealed partial class AgentExecutionService
     internal static TokenUsageAttribution BuildTokenUsageAttribution(
         RuntimeDispatchRequest request,
         int round,
-        IEnumerable<string>? canonicalToolNames)
+        IEnumerable<string>? canonicalToolNames,
+        RequestContextAttribution? requestContext = null,
+        string? invocationId = null,
+        string? attemptId = null)
     {
         var toolNames = canonicalToolNames?
             .Where(name => !string.IsNullOrWhiteSpace(name))
@@ -1066,8 +1072,26 @@ public sealed partial class AgentExecutionService
             TurnRound = round,
             ToolCallCount = toolNames.Length,
             ToolNames = toolNames,
+            InvocationId = invocationId,
+            AttemptId = attemptId,
+            Context = requestContext,
         };
     }
+
+    /// <summary>
+    /// S01-B：在请求准备边界冻结请求级上下文归因（上下文层 + usage 估算的深拷贝）。
+    /// 冻结之后，同 session 的后续请求覆盖 ContextAssemblyStore / ContextUsageSnapshotStore
+    /// 也不会改写本次调用落账所用的 shape。
+    /// </summary>
+    private RequestContextAttribution? FreezeRequestContext(string? sessionId)
+        => RequestContextAttribution.Capture(_contextAssemblyStore, _contextUsageSnapshotStore, sessionId);
+
+    /// <summary>
+    /// S01-B：一次逻辑 LLM 调用的稳定身份。provider input recovery 重试复用同一 InvocationId，
+    /// 物理尝试由 AttemptId 区分（重试产生新 AttemptId）。
+    /// </summary>
+    private static string BuildLlmInvocationId(RuntimeDispatchRequest request, int round, string purpose)
+        => $"{request.SessionId}:{request.ExecutionIdentity?.TraceId ?? "no-trace"}:{round + 1}:{purpose}";
 
     private static TimeSpan NormalizeSessionTimeout(TimeSpan timeout) =>
         timeout > TimeSpan.Zero ? timeout : DefaultSessionTimeout;
@@ -2019,6 +2043,9 @@ public sealed partial class AgentExecutionService
             MaxOutputTokens = summaryOutputTokens,
         };
         var summaryStartedAt = DateTimeOffset.UtcNow;
+        // S01-B：请求准备边界——冻结本次 compaction 请求的上下文归因。
+        var summaryRequestContext = FreezeRequestContext(request.SessionId);
+        var summaryInvocationId = BuildLlmInvocationId(request, round, "compaction");
         var summaryResult = await LlmInvoker.InvokeAsync(
             request,
             agentInstanceId,
@@ -2045,7 +2072,13 @@ public sealed partial class AgentExecutionService
                     sessionId: request.SessionId,
                     providerId: request.LlmProfile?.ProviderId ?? request.LlmConfig?.Endpoint,
                     modelId: request.LlmProfile?.ModelId ?? request.LlmConfig?.ModelId,
-                    attribution: BuildTokenUsageAttribution(request, round, []),
+                    attribution: BuildTokenUsageAttribution(
+                        request,
+                        round,
+                        [],
+                        summaryRequestContext,
+                        summaryInvocationId,
+                        summaryInvocationId + ":a0"),
                     prefixSnapshot: replayPrefix,
                     occurredAtUtc: DateTimeOffset.UtcNow);
             }

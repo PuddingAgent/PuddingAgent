@@ -113,6 +113,37 @@ public sealed class TokenUsageDailyAggregateService(
         }
     }
 
+    /// <summary>
+    /// S01-B：迟到 usage 补录作用于已构建的闭日聚合缓存。按自然日失效受影响的那一天
+    /// （同时移除该日的完成标记），下一次查询按账本重算；当前 UTC 日走实时聚合，不失效。
+    /// </summary>
+    public async Task InvalidateDayAsync(DateTimeOffset occurredAtUtc, CancellationToken ct = default)
+    {
+        var day = occurredAtUtc.UtcDateTime.Date;
+        if (day >= DateTime.UtcNow.Date)
+            return;
+
+        var dayText = DailyCacheUtility.FormatDay(day);
+
+        await _buildGate.WaitAsync(ct);
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(ct);
+            db.LlmUsageDailyAggregates.RemoveRange(
+                db.LlmUsageDailyAggregates.Where(a => a.DayUtc == dayText));
+            db.StatsDailyCacheDays.RemoveRange(db.StatsDailyCacheDays
+                .Where(d => d.CacheKey == DailyCacheUtility.TokenUsageCacheKey && d.DayUtc == dayText));
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation(
+                "[TokenDailyAggregate] Invalidated late-arrival day={Day}",
+                dayText);
+        }
+        finally
+        {
+            _buildGate.Release();
+        }
+    }
+
     private async Task EnsureBuiltAsync(DateTime startUtcDate, DateTime endUtcDateExclusive, CancellationToken ct)
     {
         await _buildGate.WaitAsync(ct);

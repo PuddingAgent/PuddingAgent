@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
@@ -156,6 +156,10 @@ public class TokenUsageRecorder : ITokenUsageRecorder
         var occurredAt = (occurredAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
         var yearMonth = occurredAt.ToString("yyyy-MM");
 
+        // S01-B：请求级归因。只消费调用方在请求准备阶段冻结的 RequestContextAttribution；
+        // 缺失时才回退到“写入时刻的 session 最新快照”，并显式标注 provenance。
+        var requestContext = ResolveRequestContext(attribution, sessionId);
+
         // 查询价格配置
         var inputPrice = 0m;
         var outputPrice = 0m;
@@ -212,13 +216,13 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                 CacheHitTokens = normalized.CacheHitTokens,
                 CacheMissTokens = normalized.CacheMissTokens,
                                 CacheEligibleTokens = normalized.CacheEligibleTokens,
-                MessageTokens = ResolveLayerToken(sessionId, s => s.MessageTokens),
-                ToolDefinitionTokens = ResolveLayerToken(sessionId, s => s.ToolDefinitionTokens),
-                SystemMessageTokens = ResolveLayerToken(sessionId, s => s.SystemMessageTokens),
-                HistoryMessageTokens = ResolveLayerToken(sessionId, s => s.HistoryMessageTokens),
-                SystemMessageEntropy = ResolveLayerEntropy(sessionId, s => s.SystemMessageEntropy),
-                HistoryMessageEntropy = ResolveLayerEntropy(sessionId, s => s.HistoryMessageEntropy),
-                ToolDefinitionEntropy = ResolveLayerEntropy(sessionId, s => s.ToolDefinitionEntropy),
+                MessageTokens = requestContext?.MessageTokens,
+                ToolDefinitionTokens = requestContext?.ToolDefinitionTokens,
+                SystemMessageTokens = requestContext?.SystemMessageTokens,
+                HistoryMessageTokens = requestContext?.HistoryMessageTokens,
+                SystemMessageEntropy = requestContext?.SystemMessageEntropy,
+                HistoryMessageEntropy = requestContext?.HistoryMessageEntropy,
+                ToolDefinitionEntropy = requestContext?.ToolDefinitionEntropy,
                 CacheHitRate = normalized.CacheHitRate,
                 InputCost = normalized.InputCost,
                 OutputCost = normalized.OutputCost,
@@ -284,7 +288,8 @@ public class TokenUsageRecorder : ITokenUsageRecorder
             sessionId,
             providerId,
             modelId,
-            occurredAt);
+            occurredAt,
+            requestContext);
 
         // 更新月度聚合（事务内读改写，写者串行）
         var providerIdVal = providerId ?? "unknown";
@@ -363,6 +368,8 @@ public class TokenUsageRecorder : ITokenUsageRecorder
         }
 
         await tx.CommitAsync();
+
+        await InvalidateClosedDayAggregateAsync(scope, occurredAt, sourceType, sourceId);
 
         _logger.LogDebug(
             "[TokenUsageRecorder] Recorded source={SourceType}/{SourceId} provider={Provider} model={Model} cost={Cost}",
@@ -517,21 +524,16 @@ public class TokenUsageRecorder : ITokenUsageRecorder
         string? sessionId,
         string? providerId,
         string? modelId,
-        DateTimeOffset occurredAtUtc)
+        DateTimeOffset occurredAtUtc,
+        RequestContextAttribution? requestContext)
     {
-        if (_contextAssemblyStore is null
-            || string.IsNullOrWhiteSpace(sessionId)
-            || !_contextAssemblyStore.TryGet(sessionId, out var snapshot)
-            || snapshot is null)
+        if (requestContext is null)
         {
             return;
         }
 
-        ContextUsageSnapshot? usageSnapshot = null;
-        var hasToolDefinitionLayer = _contextUsageSnapshotStore is not null
-            && _contextUsageSnapshotStore.TryGet(sessionId, out usageSnapshot)
-            && usageSnapshot is { ToolDefinitionTokens: > 0 };
-        if (snapshot.Layers.Count == 0 && !hasToolDefinitionLayer)
+        var hasToolDefinitionLayer = requestContext.ToolDefinitionTokens is > 0;
+        if (requestContext.Layers.Count == 0 && !hasToolDefinitionLayer)
             return;
 
         var exists = await db.ContextLayerMetricEvents
@@ -549,13 +551,21 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                 g => g.Key,
                 g => g.OrderByDescending(e => e.OccurredAtUtc).ThenByDescending(e => e.Id).First().ContentHash);
 
-        var metricLayers = snapshot.Layers.ToList();
+        var metricLayers = requestContext.Layers
+            .Select(layer => new ContextLayerInfo
+            {
+                LayerName = layer.LayerName,
+                TokenCount = layer.TokenCount,
+                ContentPreview = layer.ContentPreview,
+                FullContent = layer.FullContent,
+            })
+            .ToList();
         if (hasToolDefinitionLayer)
         {
-            var toolHash = usageSnapshot!.ToolDefinitionHash;
+            var toolHash = requestContext.ToolDefinitionHash;
             var toolPreview = string.IsNullOrWhiteSpace(toolHash)
-                ? $"tool_count={usageSnapshot.ToolCount}"
-                : $"tool_count={usageSnapshot.ToolCount};tool_hash={toolHash}";
+                ? $"tool_count={requestContext.ToolCount}"
+                : $"tool_count={requestContext.ToolCount};tool_hash={toolHash}";
             var insertionIndex = metricLayers.FindIndex(
                 layer => !layer.LayerName.StartsWith("L0-", StringComparison.OrdinalIgnoreCase));
             if (insertionIndex < 0)
@@ -563,7 +573,7 @@ public class TokenUsageRecorder : ITokenUsageRecorder
             metricLayers.Insert(insertionIndex, new ContextLayerInfo
             {
                 LayerName = "L1-TOOL-DEFINITIONS",
-                TokenCount = usageSnapshot.ToolDefinitionTokens,
+                TokenCount = requestContext.ToolDefinitionTokens!.Value,
                 ContentPreview = toolPreview,
             });
         }
@@ -577,11 +587,11 @@ public class TokenUsageRecorder : ITokenUsageRecorder
             var tokens = Math.Max(0, layer.TokenCount);
             var layerContent = layer.FullContent ?? layer.ContentPreview ?? string.Empty;
             var compression = layer.LayerName.Equals("L1-TOOL-DEFINITIONS", StringComparison.OrdinalIgnoreCase)
-                              && usageSnapshot is not null
+                              && requestContext.ToolDefinitionTokens is > 0
                 ? new EntropyProbe.GzipMetrics(
-                    usageSnapshot.ToolDefinitionUtf8Bytes,
-                    usageSnapshot.ToolDefinitionGzipBytes,
-                    usageSnapshot.ToolDefinitionEntropy ?? 1.0)
+                    requestContext.ToolDefinitionUtf8Bytes,
+                    requestContext.ToolDefinitionGzipBytes,
+                    requestContext.ToolDefinitionEntropy ?? 1.0)
                 : EntropyProbe.Measure(layerContent);
             var hit = Math.Min(tokens, hitRemaining);
             hitRemaining -= hit;
@@ -589,8 +599,8 @@ public class TokenUsageRecorder : ITokenUsageRecorder
             var miss = Math.Min(remainingTokens, missRemaining);
             missRemaining -= miss;
             var hash = layer.LayerName.Equals("L1-TOOL-DEFINITIONS", StringComparison.OrdinalIgnoreCase)
-                       && !string.IsNullOrWhiteSpace(usageSnapshot?.ToolDefinitionHash)
-                ? usageSnapshot!.ToolDefinitionHash!
+                       && !string.IsNullOrWhiteSpace(requestContext.ToolDefinitionHash)
+                ? requestContext.ToolDefinitionHash!
                 : ComputeLayerHash(layer);
             previousByLayer.TryGetValue(layer.LayerName, out var previousHash);
             var isChanged = !string.IsNullOrWhiteSpace(previousHash)
@@ -698,26 +708,73 @@ public class TokenUsageRecorder : ITokenUsageRecorder
         };
     }
 
-    private int? ResolveLayerToken(string? sessionId, Func<ContextUsageSnapshot, int> selector)
+    /// <summary>
+    /// S01-B：解析本次落账使用的请求级上下文归因。
+    /// 调用方在请求准备阶段冻结的归因优先；缺失时只能回退读 session 最新快照，
+    /// 并把来源标为 session_latest_fallback —— 该来源不得当作请求级事实，
+    /// 也不允许用它填满报表。
+    /// </summary>
+    private RequestContextAttribution? ResolveRequestContext(
+        TokenUsageAttribution? attribution,
+        string? sessionId)
     {
-        if (string.IsNullOrWhiteSpace(sessionId) || _contextUsageSnapshotStore is null)
+        if (attribution?.Context is not null)
+            return attribution.Context;
+
+        var captured = RequestContextAttribution.Capture(
+            _contextAssemblyStore,
+            _contextUsageSnapshotStore,
+            sessionId);
+        if (captured is null)
+        {
+            _logger.LogDebug(
+                "[TokenUsageRecorder] Context attribution missing for session={SessionId}; recorded as unknown",
+                sessionId);
             return null;
+        }
 
-        if (_contextUsageSnapshotStore.TryGet(sessionId, out var snapshot) && snapshot is not null)
-            return selector(snapshot);
-
-        return null;
+        _logger.LogDebug(
+            "[TokenUsageRecorder] Context attribution fell back to session-latest snapshot session={SessionId}",
+            sessionId);
+        return captured with { Source = RequestContextAttributionSources.SessionLatestFallback };
     }
 
-    private double? ResolveLayerEntropy(string? sessionId, Func<ContextUsageSnapshot, double?> selector)
+    /// <summary>
+    /// S01-B：迟到补录作用于已构建的闭日聚合。账本事实提交成功后，若该事实归属的 UTC 日
+    /// 不是今天，则失效该日缓存，下一次查询按账本重算。失效失败不回滚已提交的账本事实。
+    /// </summary>
+    private async Task InvalidateClosedDayAggregateAsync(
+        IServiceScope scope,
+        DateTimeOffset occurredAtUtc,
+        string sourceType,
+        string sourceId)
     {
-        if (string.IsNullOrWhiteSpace(sessionId) || _contextUsageSnapshotStore is null)
-            return null;
+        var occurredDay = occurredAtUtc.UtcDateTime.Date;
+        if (occurredDay >= DateTime.UtcNow.Date)
+            return;
 
-        if (_contextUsageSnapshotStore.TryGet(sessionId, out var snapshot) && snapshot is not null)
-            return selector(snapshot);
+        try
+        {
+            var aggregateService = scope.ServiceProvider
+                .GetService<TokenUsageDailyAggregateService>();
+            if (aggregateService is null)
+                return;
 
-        return null;
+            await aggregateService.InvalidateDayAsync(occurredAtUtc);
+            _logger.LogInformation(
+                "[TokenUsageRecorder] Late-arriving usage invalidated closed-day aggregate day={Day} source={SourceType}/{SourceId}",
+                occurredDay.ToString("yyyy-MM-dd"),
+                sourceType,
+                sourceId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[TokenUsageRecorder] Failed to invalidate closed-day aggregate day={Day} source={SourceType}/{SourceId}",
+                occurredDay.ToString("yyyy-MM-dd"),
+                sourceType,
+                sourceId);
+        }
     }
 
     private static string? SerializeToolNames(IReadOnlyList<string>? toolNames)
