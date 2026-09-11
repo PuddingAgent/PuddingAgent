@@ -153,20 +153,8 @@ public class TokenUsageRecorder : ITokenUsageRecorder
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
 
-        // 幂等检查
-        var exists = await db.Set<TokenUsageEventEntity>()
-            .AnyAsync(e => e.SourceType == sourceType && e.SourceId == sourceId);
-
-        if (exists)
-        {
-            _logger.LogDebug(
-                "[TokenUsageRecorder] Skip duplicate source={SourceType}/{SourceId}",
-                sourceType, sourceId);
-            return;
-        }
-
-        occurredAtUtc ??= DateTimeOffset.UtcNow;
-        var yearMonth = occurredAtUtc.Value.ToString("yyyy-MM");
+        var occurredAt = (occurredAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
+        var yearMonth = occurredAt.ToString("yyyy-MM");
 
         // 查询价格配置
         var inputPrice = 0m;
@@ -203,12 +191,12 @@ public class TokenUsageRecorder : ITokenUsageRecorder
             db,
             sessionId,
             prefixSnapshot,
-            occurredAtUtc.Value);
+            occurredAt);
 
         // 写入明细账本
         var rawJson = System.Text.Json.JsonSerializer.Serialize(usage, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
 
-        db.Set<TokenUsageEventEntity>().Add(new TokenUsageEventEntity
+        var usageEvent = new TokenUsageEventEntity
         {
                 SourceType = sourceType,
                 SourceId = sourceId,
@@ -216,7 +204,7 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                 SessionId = sessionId,
                 ProviderId = providerId,
                 ModelId = modelId,
-                OccurredAtUtc = occurredAtUtc.Value,
+                OccurredAtUtc = occurredAt,
                 YearMonth = yearMonth,
                 PromptTokens = normalized.PromptTokens,
                 CompletionTokens = normalized.CompletionTokens,
@@ -253,7 +241,39 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                 SubAgentId = attribution?.SubAgentId
                     ?? (!string.IsNullOrWhiteSpace(parentSessionId) ? sessionId : null),
                 CreatedAtUtc = DateTimeOffset.UtcNow,
-        });
+        };
+
+        // BEGIN IMMEDIATE：usage 明细与月度聚合处于同一写事务，且写锁从事务
+        // 开始即持有。并发 recorder 被 SQLite 序列化——后到者必须等前者提交后
+        // 才能读到聚合新值，消除「两个连接同读 RequestCount=100、各写回 101」
+        // 的丢失更新。金额仍按既有 decimal 语义在 CLR 内运算，不经 SQLite
+        // 数值转换，精度不回退。
+        await using var tx = await db.Database.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable);
+
+        // 幂等检查（写锁内读取是最终保证；unique 索引作为兜底）。
+        var existing = await db.Set<TokenUsageEventEntity>()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.SourceType == sourceType && e.SourceId == sourceId);
+
+        if (existing is not null)
+        {
+            if (!IsSameUsageFact(existing, usageEvent))
+            {
+                // ConflictDifferent：同一 source 身份，但 usage 内容或不可变身份
+                //（workspace/session/provider/model）不同。冲突上报，不得静默覆盖或双计。
+                throw new InvalidOperationException(
+                    $"[TokenUsageRecorder] Source conflict {sourceType}/{sourceId}: duplicate source id with a different usage payload or immutable identity.");
+            }
+
+            db.Database.RollbackTransaction();
+            _logger.LogDebug(
+                "[TokenUsageRecorder] Skip duplicate source={SourceType}/{SourceId}",
+                sourceType, sourceId);
+            return;
+        }
+
+        db.Set<TokenUsageEventEntity>().Add(usageEvent);
 
         await RecordContextLayerMetricsAsync(
             db,
@@ -264,9 +284,9 @@ public class TokenUsageRecorder : ITokenUsageRecorder
             sessionId,
             providerId,
             modelId,
-            occurredAtUtc.Value);
+            occurredAt);
 
-        // 更新月度聚合
+        // 更新月度聚合（事务内读改写，写者串行）
         var providerIdVal = providerId ?? "unknown";
         var modelIdVal = modelId ?? "unknown";
 
@@ -302,7 +322,47 @@ public class TokenUsageRecorder : ITokenUsageRecorder
             });
         }
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (UsageWriteConflict.IsUniqueSourceConflict(ex))
+        {
+            // 兜底：SQLite 错误码无法区分是本账本 source 约束还是无关约束冲突
+            //（SaveChanges 同时写聚合与 context layer 数据）。事务回滚保证聚合
+            // 零残留，再用干净 context 回查目标 source，做与前置检查相同的比较：
+            // 查得到且内容身份一致才允许按幂等重复成功；查不到目标 source 说明
+            // 是无关唯一失败，原样向 Required 调用方传播，绝不吞成成功。
+            db.Database.RollbackTransaction();
+
+            using var verifyScope = _scopeFactory.CreateScope();
+            var verifyDb = verifyScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var raced = await verifyDb.Set<TokenUsageEventEntity>()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(e => e.SourceType == sourceType && e.SourceId == sourceId);
+
+            if (raced is null)
+            {
+                _logger.LogWarning(
+                    "[TokenUsageRecorder] Unique constraint failure without target source={SourceType}/{SourceId}; rethrowing",
+                    sourceType, sourceId);
+                throw;
+            }
+
+            if (!IsSameUsageFact(raced, usageEvent))
+            {
+                throw new InvalidOperationException(
+                    $"[TokenUsageRecorder] Source conflict {sourceType}/{sourceId}: duplicate source id with a different usage payload or immutable identity.",
+                    ex);
+            }
+
+            _logger.LogWarning(
+                "[TokenUsageRecorder] Duplicate insert raced for source={SourceType}/{SourceId}; skipped",
+                sourceType, sourceId);
+            return;
+        }
+
+        await tx.CommitAsync();
 
         _logger.LogDebug(
             "[TokenUsageRecorder] Recorded source={SourceType}/{SourceId} provider={Provider} model={Model} cost={Cost}",
@@ -317,8 +377,21 @@ public class TokenUsageRecorder : ITokenUsageRecorder
             providerIdVal,
             modelIdVal,
             resolvedPrefixSnapshot,
-            occurredAtUtc.Value);
+            occurredAt);
     }
+
+    /// <summary>
+    /// 幂等身份比较（S01-A-R）：source 键命中后，已有行与本次写入的 usage 内容
+    ///（RawUsageJson）和不可变身份（workspace/session/provider/model）必须全部
+    /// 一致才允许判为 DuplicateSame。CreatedAt、写入时间等本地字段与 context
+    /// layer 派生字段不参与比较，避免合法重投被误判冲突。
+    /// </summary>
+    private static bool IsSameUsageFact(TokenUsageEventEntity existing, TokenUsageEventEntity incoming)
+        => string.Equals(existing.RawUsageJson, incoming.RawUsageJson, StringComparison.Ordinal)
+           && string.Equals(existing.WorkspaceId, incoming.WorkspaceId, StringComparison.Ordinal)
+           && string.Equals(existing.SessionId, incoming.SessionId, StringComparison.Ordinal)
+           && string.Equals(existing.ProviderId, incoming.ProviderId, StringComparison.Ordinal)
+           && string.Equals(existing.ModelId, incoming.ModelId, StringComparison.Ordinal);
 
     private async Task RecordTelemetryAsync(
         TokenUsageNormalizer.NormalizedUsage normalized,
