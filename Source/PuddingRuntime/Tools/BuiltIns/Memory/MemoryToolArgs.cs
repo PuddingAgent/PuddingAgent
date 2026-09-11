@@ -1,4 +1,4 @@
-﻿using PuddingCode.Tools;
+using PuddingCode.Tools;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -8,7 +8,7 @@ namespace PuddingRuntime.Services.Tools;
 
 public sealed record SaveMemoryArgs
 {
-    [ToolParam("Operation: upsert or delete.")]
+    [ToolParam("Operation: upsert / delete / set_important / get_important (default upsert). Unknown values are rejected.")]
     public string? Action { get; init; }
 
     [ToolParam("Content type: fact / preference / summary / chapter.")]

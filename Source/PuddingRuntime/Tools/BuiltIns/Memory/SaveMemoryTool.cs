@@ -1,4 +1,4 @@
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // save_memory — 写入/更新记忆条目
 // ═══════════════════════════════════════════════════════════════
 
@@ -49,7 +49,7 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
         CancellationToken ct)
     {
         var root = BuildRoot(args, context);
-        var action = root.GetString("action", "upsert");
+        var action = NormalizeAction(root.GetOptionalString("action"));
         var type = root.GetString("type", "fact");
         var content = root.GetString("content", "");
         var book = root.GetOptionalString("book");
@@ -61,13 +61,21 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
         var refType = root.GetOptionalString("reference_type");
         var agentInstanceId = context.AgentInstanceId;
 
+        // T01 闭合合同：未知 action 一律 fail-closed，禁止猜成 upsert 落库。
+        if (Array.IndexOf(SupportedActions, action) < 0)
+        {
+            _logger.LogWarning("[SaveMemory] Rejected unknown action={Action}", action);
+            return ToolExecutionResult.Fail(
+                $"Unknown memory action '{action}'. Supported actions: {string.Join(", ", SupportedActions)}.");
+        }
+
         try
         {
             string output;
             if (action == "delete")
             {
                 output = await DeleteMemoryAsync(root, type, workspaceId, ct);
-                return ToolExecutionResult.Ok(output);
+                return ToResult(output);
             }
 
             if (action == "set_important" && _importantMemory is not null)
@@ -92,7 +100,7 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
                     max_lines = IImportantMemoryService.MaxLines,
                     max_chars = IImportantMemoryService.MaxChars,
                 });
-                return ToolExecutionResult.Ok(output);
+                return ToResult(output);
             }
 
             if (action == "get_important" && _importantMemory is not null)
@@ -122,7 +130,7 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
                     action,
                     message = "ImportantMemoryService 未注入，set_important/get_important 不可用。",
                 });
-                return ToolExecutionResult.Ok(output);
+                return ToResult(output);
             }
 
             // ── P2 记忆质量监控：写前校验 + 脏词过滤 ──
@@ -202,10 +210,15 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
             });
             return ToolExecutionResult.Ok(output);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 取消必须向上传播，不得被降级成业务错误结果。
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[SaveMemory] Failed action={Action} type={Type}", action, type);
-            return ToolExecutionResult.Ok(JsonSerializer.Serialize(new { status = "error", message = ex.Message }));
+            return ToolExecutionResult.Fail(ex.Message);
         }
     }
 
@@ -349,6 +362,39 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
             deletedChapterIds,
             deletedPointerIds
         });
+    }
+
+    private static readonly string[] SupportedActions = ["upsert", "delete", "set_important", "get_important"];
+
+    private static string NormalizeAction(string? raw)
+        => string.IsNullOrWhiteSpace(raw) ? "upsert" : raw.Trim().ToLowerInvariant();
+
+    /// <summary>
+    /// 业务级错误（序列化结果 status=error）必须映射为 Success=false，
+    /// 否则调用方会把失败计入成功，并可能在错误前提下继续收敛。
+    /// </summary>
+    private static ToolExecutionResult ToResult(string outputJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(outputJson);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("status", out var status)
+                && status.ValueKind == JsonValueKind.String
+                && string.Equals(status.GetString(), "error", StringComparison.OrdinalIgnoreCase))
+            {
+                var message = doc.RootElement.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String
+                    ? m.GetString()
+                    : null;
+                return ToolExecutionResult.Fail(message ?? "Memory operation failed.");
+            }
+        }
+        catch (JsonException)
+        {
+            // 非 JSON 输出按原样返回。
+        }
+
+        return ToolExecutionResult.Ok(outputJson);
     }
 
     private static JsonElement BuildRoot(SaveMemoryArgs args, ToolExecutionContext context)
