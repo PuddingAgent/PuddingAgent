@@ -1,4 +1,4 @@
-﻿// ══════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════════
 // grep_memory — 全文检索记忆
 // ══════════════════════════════════════════════════════════════════════════════════
 
@@ -40,7 +40,7 @@ public sealed class GrepMemoryTool : PuddingToolBase<GrepMemoryArgs>
         CancellationToken ct)
     {
         var root = BuildRoot(args, context);
-        var action = root.GetString("action", "search");
+        var action = (root.GetOptionalString("action") ?? "search").Trim().ToLowerInvariant();
         var query = root.GetString("query", "");
         var mode = root.GetString("mode", "fts5");
         var book = root.GetOptionalString("book");
@@ -146,16 +146,20 @@ public sealed class GrepMemoryTool : PuddingToolBase<GrepMemoryArgs>
                 }
 
                 default:
-                    result = JsonSerializer.Serialize(new { status = "error", message = $"Unknown action: {action}" });
-                    break;
+                    _logger.LogWarning("[GrepMemory] Rejected unknown action={Action}", action);
+                    return ToolExecutionResult.Fail($"Unknown memory action '{action}'. Supported actions: search, regex, in_book, list_books, toc.");
             }
 
             return ToolExecutionResult.Ok(result);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[GrepMemory] Failed action={Action}", action);
-            return ToolExecutionResult.Ok(JsonSerializer.Serialize(new { status = "error", message = ex.Message }));
+            return ToolExecutionResult.Fail(ex.Message);
         }
     }
 
