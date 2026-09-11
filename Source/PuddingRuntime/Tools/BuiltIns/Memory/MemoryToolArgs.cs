@@ -11,7 +11,7 @@ public sealed record SaveMemoryArgs
     [ToolParam("Operation: upsert / delete / set_important / get_important (default upsert). Unknown values are rejected.")]
     public string? Action { get; init; }
 
-    [ToolParam("Content type: fact / preference / summary / chapter.")]
+    [ToolParam("Content type: fact / preference / summary / chapter (case-insensitive). Unknown values are accepted but reported as an unknown_type quality warning; delete additionally accepts 'book'.")]
     public string? Type { get; init; }
 
     [ToolParam("Optional target book name.")]

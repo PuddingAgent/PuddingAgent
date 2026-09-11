@@ -50,7 +50,7 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
     {
         var root = BuildRoot(args, context);
         var action = NormalizeAction(root.GetOptionalString("action"));
-        var type = root.GetString("type", "fact");
+        var type = NormalizeType(root.GetOptionalString("type"));
         var content = root.GetString("content", "");
         var book = root.GetOptionalString("book");
         var key = root.GetOptionalString("key");
@@ -69,6 +69,31 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
                 $"Unknown memory action '{action}'. Supported actions: {string.Join(", ", SupportedActions)}.");
         }
 
+        // T01-R：未知 type 不 fail-closed —— 既有合同由 MemoryQualityFilter 产出 unknown_type 警告；
+        // 这里只做归一化，避免 'Preference' 通过 OrdinalIgnoreCase 校验后落到通用分支写空内容。
+        // T01 参数组合前置校验：不合格组合在写路径之前拒绝，保证零写入。
+        // 口径与 ToolParam 声明一致：preference 需要 key + value，其余可写类型需要 content。
+        if (action == "upsert")
+        {
+            if (type == "preference")
+            {
+                if (string.IsNullOrWhiteSpace(key))
+                    return ToolExecutionResult.Fail("Preference entries require 'key'.");
+                if (string.IsNullOrWhiteSpace(value))
+                    return ToolExecutionResult.Fail("Preference entries require 'value': the schema declares it required.");
+            }
+            else if (string.IsNullOrWhiteSpace(content))
+            {
+                return ToolExecutionResult.Fail($"'content' is required for type='{type}'.");
+            }
+        }
+
+        if (action == "set_important" && string.IsNullOrWhiteSpace(content))
+        {
+            return ToolExecutionResult.Fail("'content' is required for set_important.");
+        }
+
+
         try
         {
             string output;
@@ -81,10 +106,12 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
             if (action == "set_important" && _importantMemory is not null)
             {
                 var impContent = root.GetString("content", "");
-                var instanceId = root.GetOptionalString("agent_instance_id");
+                // T01：身份按执行上下文派生；模型不得经参数指定 agent_instance_id
+                // 绕过作用域（SaveMemoryArgs 也未声明该字段）。
+                var instanceId = context.AgentInstanceId;
 
                 if (string.IsNullOrWhiteSpace(instanceId))
-                    return ToolExecutionResult.Ok(JsonSerializer.Serialize(new { status = "error", action, message = "agent_instance_id is required." }));
+                    return ToolExecutionResult.Fail("agent_instance_id is not available in the execution context; important memory requires an agent identity.");
 
                 var writeResult = await _importantMemory.WriteAsync(instanceId, impContent, ct);
                 output = JsonSerializer.Serialize(new
@@ -105,10 +132,10 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
 
             if (action == "get_important" && _importantMemory is not null)
             {
-                var instanceId = root.GetOptionalString("agent_instance_id");
+                var instanceId = context.AgentInstanceId;
 
                 if (string.IsNullOrWhiteSpace(instanceId))
-                    return ToolExecutionResult.Ok(JsonSerializer.Serialize(new { status = "error", action, message = "agent_instance_id is required." }));
+                    return ToolExecutionResult.Fail("agent_instance_id is not available in the execution context; important memory requires an agent identity.");
 
                 var impContent = await _importantMemory.ReadAsync(instanceId, ct);
                 output = JsonSerializer.Serialize(new
@@ -365,6 +392,14 @@ public sealed class SaveMemoryTool : PuddingToolBase<SaveMemoryArgs>
     }
 
     private static readonly string[] SupportedActions = ["upsert", "delete", "set_important", "get_important"];
+
+    /// <summary>
+    /// 归一化 type：首尾空白与大小写不应改变语义。
+    /// 修复前 'Preference' 能通过 OrdinalIgnoreCase 校验，却落到 type switch 的通用分支写入空内容。
+    /// 未知 type 仍然放行：既有合同由 MemoryQualityFilter 产出 unknown_type 警告，这里不重复拦截。
+    /// </summary>
+    private static string NormalizeType(string? raw)
+        => string.IsNullOrWhiteSpace(raw) ? "fact" : raw.Trim().ToLowerInvariant();
 
     private static string NormalizeAction(string? raw)
         => string.IsNullOrWhiteSpace(raw) ? "upsert" : raw.Trim().ToLowerInvariant();
