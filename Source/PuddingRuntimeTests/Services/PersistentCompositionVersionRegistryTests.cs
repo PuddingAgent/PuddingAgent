@@ -78,7 +78,7 @@ public sealed class PersistentCompositionVersionRegistryTests
 
         var records = await WaitForCountAsync(_store!, "session-wt", 1);
         var record = records[0];
-        Assert.AreEqual(1, observation.Version);
+        Assert.AreEqual(1, observation.Revision);
         Assert.AreEqual("initial", observation.ChangeReason);
         Assert.AreEqual(1, record.CompositionVersion);
         Assert.AreEqual("session-wt", record.SessionId);
@@ -124,7 +124,7 @@ public sealed class PersistentCompositionVersionRegistryTests
         var changed = registry.Observe("session-wt", "sys-hash-2", "tool-hash-1");
 
         var records = await WaitForCountAsync(_store!, "session-wt", 2);
-        Assert.AreEqual(2, changed.Version);
+        Assert.AreEqual(2, changed.Revision);
         Assert.AreEqual("system_prompt_changed", changed.ChangeReason);
         CollectionAssert.AreEqual(
             new long[] { 1, 2 },
@@ -144,14 +144,14 @@ public sealed class PersistentCompositionVersionRegistryTests
         await WaitForCountAsync(_store!, "session-hit", 1);
 
         var second = registry.Observe("session-hit", "sys-hash-1", "tool-hash-1", toolIds);
-        Assert.AreEqual(1, first.Version);
-        Assert.AreEqual(1, second.Version);
+        Assert.AreEqual(1, first.Revision);
+        Assert.AreEqual(2, second.Revision, "C01-B：revision 每次观测递增（不复用）。");
+        Assert.AreEqual(first.ContentId, second.ContentId, "相同内容 ⇒ ContentId 复用（内容身份维度）。");
         Assert.AreEqual("none", second.ChangeReason);
 
-        // 给异步写穿留出窗口，确认没有重复写。
-        await Task.Delay(150);
-        var records = await _store!.LoadAsync("session-hit");
-        Assert.AreEqual(1, records.Count, "相同 hash 组合必须复用版本，不得重复写穿。");
+        // 每个 revision 都是一次独立提交（内容可复用 ≠ revision 可复用）。
+        var records = await WaitForCountAsync(_store!, "session-hit", 2);
+        Assert.AreEqual(2, records.Count, "两个 revision 各有一条提交记录（不复用 revision）。");
     }
 
     // ── 无 store：降级纯内存，不抛 ──────────────────────
@@ -165,11 +165,11 @@ public sealed class PersistentCompositionVersionRegistryTests
         var same = registry.Observe("session-ns", "sys-hash-1", "tool-hash-1");
         var changed = registry.Observe("session-ns", "sys-hash-2", "tool-hash-1");
 
-        Assert.AreEqual(1, first.Version);
+        Assert.AreEqual(1, first.Revision);
         Assert.AreEqual("initial", first.ChangeReason);
-        Assert.AreEqual(1, same.Version);
+        Assert.AreEqual(2, same.Revision, "C01-B：revision 不复用，每次观测递增。");
         Assert.AreEqual("none", same.ChangeReason);
-        Assert.AreEqual(2, changed.Version);
+        Assert.AreEqual(3, changed.Revision);
         Assert.AreEqual("system_prompt_changed", changed.ChangeReason);
     }
 
@@ -183,7 +183,7 @@ public sealed class PersistentCompositionVersionRegistryTests
 
         var observation = registry.Observe("session-err", "sys-hash-1", "tool-hash-1");
 
-        Assert.AreEqual(1, observation.Version);
+        Assert.AreEqual(1, observation.Revision);
         Assert.AreEqual("initial", observation.ChangeReason);
         // 写穿在后台失败被吞掉并降级纯内存；Observe 必须正常返回。
     }
@@ -196,7 +196,7 @@ public sealed class PersistentCompositionVersionRegistryTests
 
         var observation = registry.Observe("session-rej", "sys-hash-1", "tool-hash-1");
 
-        Assert.AreEqual(1, observation.Version);
+        Assert.AreEqual(1, observation.Revision);
         Assert.AreEqual("initial", observation.ChangeReason);
         // AppendAsync=false 仅记日志，不抛。
     }
@@ -226,7 +226,7 @@ public sealed class PersistentCompositionVersionRegistryTests
         public Task<SessionCompositionRecord?> GetLatestAsync(string sessionId, CancellationToken ct = default)
             => Task.FromResult<SessionCompositionRecord?>(null);
 
-        public Task<bool> AppendAsync(SessionCompositionRecord record, CancellationToken ct = default)
+        public Task<CompositionAppendResult> AppendAsync(SessionCompositionRecord record, long expectedRevision, CancellationToken ct = default)
             => throw new InvalidOperationException("store down");
 
         public Task<IReadOnlyList<SessionCompositionRecord>> LoadAsync(string sessionId, CancellationToken ct = default)
@@ -238,8 +238,8 @@ public sealed class PersistentCompositionVersionRegistryTests
         public Task<SessionCompositionRecord?> GetLatestAsync(string sessionId, CancellationToken ct = default)
             => Task.FromResult<SessionCompositionRecord?>(null);
 
-        public Task<bool> AppendAsync(SessionCompositionRecord record, CancellationToken ct = default)
-            => Task.FromResult(false);
+        public Task<CompositionAppendResult> AppendAsync(SessionCompositionRecord record, long expectedRevision, CancellationToken ct = default)
+            => Task.FromResult(CompositionAppendResult.Unavailable("append rejected by store"));
 
         public Task<IReadOnlyList<SessionCompositionRecord>> LoadAsync(string sessionId, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<SessionCompositionRecord>>(Array.Empty<SessionCompositionRecord>());

@@ -195,17 +195,21 @@ public sealed class CompositionSnapshotTests
         var changed = reg.Observe("s", "sys2", "tool1");
         var back = reg.Observe("s", "sys1", "tool1");
 
-        Assert.AreEqual(1, first.Version);
+        Assert.AreEqual(1, first.Revision);
         Assert.AreEqual("initial", first.ChangeReason);
 
-        Assert.AreEqual(1, same.Version);
+        // C01-B：revision 每次观测递增（不复用）；内容相同 ⇒ ContentId 复用。
+        Assert.AreEqual(2, same.Revision);
         Assert.AreEqual("none", same.ChangeReason);
+        Assert.AreEqual(first.ContentId, same.ContentId);
 
-        Assert.AreEqual(2, changed.Version);
+        Assert.AreEqual(3, changed.Revision);
         Assert.AreEqual("system_prompt_changed", changed.ChangeReason);
+        Assert.AreNotEqual(first.ContentId, changed.ContentId);
 
-        Assert.AreEqual(1, back.Version);          // 复用既有组合
+        Assert.AreEqual(4, back.Revision);          // A→B→A：revision 不倒退也不复用
         Assert.AreEqual("system_prompt_changed", back.ChangeReason); // 相对上次(sys2)变化
+        Assert.AreEqual(first.ContentId, back.ContentId); // 内容回到 A ⇒ ContentId 复用
     }
 
     [TestMethod]
@@ -216,7 +220,7 @@ public sealed class CompositionSnapshotTests
         var obs = reg.Observe("s", "sys", "toolB");
 
         Assert.AreEqual("tool_spec_changed", obs.ChangeReason);
-        Assert.AreEqual(2, obs.Version);
+        Assert.AreEqual(2, obs.Revision);
     }
 
     [TestMethod]
@@ -227,7 +231,7 @@ public sealed class CompositionSnapshotTests
         var obs = reg.Observe("s", "sysB", "toolB");
 
         Assert.AreEqual("system_prompt_changed,tool_spec_changed", obs.ChangeReason);
-        Assert.AreEqual(2, obs.Version);
+        Assert.AreEqual(2, obs.Revision);
     }
 
     [TestMethod]
@@ -237,8 +241,8 @@ public sealed class CompositionSnapshotTests
         var s1 = reg.Observe("s1", "sys", "tool");
         var s2 = reg.Observe("s2", "sys", "tool");
 
-        Assert.AreEqual(1, s1.Version);
-        Assert.AreEqual(1, s2.Version);
+        Assert.AreEqual(1, s1.Revision);
+        Assert.AreEqual(1, s2.Revision);
         Assert.AreEqual("initial", s1.ChangeReason);
         Assert.AreEqual("initial", s2.ChangeReason);
     }
@@ -259,20 +263,21 @@ public sealed class CompositionSnapshotTests
         var first = reg.Observe("s", "sys", "tool", permissionFingerprint: "fp-1");
         var second = reg.Observe("s", "sys", "tool", permissionFingerprint: "fp-2");
 
-        Assert.AreEqual(1, first.Version);
-        Assert.AreEqual(2, second.Version);
+        Assert.AreEqual(1, first.Revision);
+        Assert.AreEqual(2, second.Revision);
         Assert.AreEqual(1, second.PermissionEpoch);
         Assert.IsTrue(second.ChangeReason.Contains("permission_changed"));
     }
 
     [TestMethod]
-    public void Registry_SamePermissionFingerprint_ReusesVersion()
+    public void Registry_SamePermissionFingerprintSameContent_ReusesContentId_AdvancesRevision()
     {
         var reg = new CompositionVersionRegistry();
         var first = reg.Observe("s", "sys", "tool", permissionFingerprint: "fp-1");
         var second = reg.Observe("s", "sys", "tool", permissionFingerprint: "fp-1");
 
-        Assert.AreEqual(1, second.Version);
+        Assert.AreEqual(2, second.Revision);
+        Assert.AreEqual(first.ContentId, second.ContentId);
         Assert.AreEqual(0, second.PermissionEpoch);
         Assert.AreEqual("none", second.ChangeReason);
     }
@@ -285,7 +290,7 @@ public sealed class CompositionSnapshotTests
         var second = reg.Observe("s", "sys", "tool");
 
         Assert.AreEqual(0, second.PermissionEpoch);
-        Assert.AreEqual(1, second.Version);
+        Assert.AreEqual(2, second.Revision);
     }
 
     // ── P0-5 step 4c：权限指纹 / L0 静态层缓存键 ─────

@@ -167,10 +167,10 @@ public sealed class CompositionRecoverySingleFlightTests
             return _records.Count == 0 ? null : _records[^1];
         }
 
-        public Task<bool> AppendAsync(SessionCompositionRecord record, CancellationToken ct = default)
+        public Task<CompositionAppendResult> AppendAsync(SessionCompositionRecord record, long expectedRevision, CancellationToken ct = default)
         {
             _records.Add(record);
-            return Task.FromResult(true);
+            return Task.FromResult(CompositionAppendResult.Committed(record.CompositionVersion));
         }
 
         public async Task<IReadOnlyList<SessionCompositionRecord>> LoadAsync(string sessionId, CancellationToken ct = default)

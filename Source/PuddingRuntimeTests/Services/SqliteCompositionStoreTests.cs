@@ -46,18 +46,19 @@ public sealed class SqliteCompositionStoreTests
 
     // ── 辅助 ─────────────────────────────────────────────
 
-    private static SessionCompositionRecord Record(string sessionId, long version, params string[] toolIds) => new()
+    private static SessionCompositionRecord Record(string sessionId, long revision, params string[] toolIds) => new()
     {
         SessionId = sessionId,
-        CompositionVersion = version,
-        SystemPromptHash = $"sys-{version}",
-        ToolSpecHash = $"tool-{version}",
-        PrefixHash = $"prefix-{version}",
-        SkillManifestHash = $"skill-{version}",
+        CompositionVersion = revision,
+        ContentId = $"cid-{revision}",
+        SystemPromptHash = $"sys-{revision}",
+        ToolSpecHash = $"tool-{revision}",
+        PrefixHash = $"prefix-{revision}",
+        SkillManifestHash = $"skill-{revision}",
         ToolIds = toolIds,
-        ChangeReason = version == 1 ? "initial" : "tool_spec_changed",
+        ChangeReason = revision == 1 ? "initial" : "tool_spec_changed",
         PermissionEpoch = 0,
-        CanonicalSystemPrefixHash = $"canonical-{version}",
+        CanonicalSystemPrefixHash = $"canonical-{revision}",
     };
 
     // ── Append + GetLatest 取最大版本 ────────────────────
@@ -67,12 +68,14 @@ public sealed class SqliteCompositionStoreTests
     {
         var record = Record("session-a", 1, "search_tools", "file_read", "file_write");
 
-        await _store!.AppendAsync(record);
+        var result = await _store!.AppendAsync(record, expectedRevision: 0);
+        Assert.IsTrue(result.IsCommitted);
 
         var latest = await _store.GetLatestAsync("session-a");
         Assert.IsNotNull(latest);
         Assert.AreEqual("session-a", latest.SessionId);
         Assert.AreEqual(1, latest.CompositionVersion);
+        Assert.AreEqual("cid-1", latest.ContentId);
         Assert.AreEqual("sys-1", latest.SystemPromptHash);
         Assert.AreEqual("tool-1", latest.ToolSpecHash);
         Assert.AreEqual("prefix-1", latest.PrefixHash);
@@ -88,9 +91,9 @@ public sealed class SqliteCompositionStoreTests
     [TestMethod]
     public async Task GetLatest_AfterMultipleAppends_ReturnsMaxVersion()
     {
-        await _store!.AppendAsync(Record("session-a", 1, "search_tools"));
-        await _store.AppendAsync(Record("session-a", 2, "search_tools", "file_read"));
-        await _store.AppendAsync(Record("session-a", 3, "search_tools", "file_read", "file_write"));
+        await _store!.AppendAsync(Record("session-a", 1, "search_tools"), expectedRevision: 0);
+        await _store.AppendAsync(Record("session-a", 2, "search_tools", "file_read"), expectedRevision: 1);
+        await _store.AppendAsync(Record("session-a", 3, "search_tools", "file_read", "file_write"), expectedRevision: 2);
 
         var latest = await _store.GetLatestAsync("session-a");
         Assert.IsNotNull(latest);
@@ -110,9 +113,9 @@ public sealed class SqliteCompositionStoreTests
     [TestMethod]
     public async Task Load_ReturnsAllVersionsAscending()
     {
-        await _store!.AppendAsync(Record("session-a", 1, "a"));
-        await _store.AppendAsync(Record("session-a", 2, "a", "b"));
-        await _store.AppendAsync(Record("session-a", 3, "a", "b", "c"));
+        await _store!.AppendAsync(Record("session-a", 1, "a"), expectedRevision: 0);
+        await _store.AppendAsync(Record("session-a", 2, "a", "b"), expectedRevision: 1);
+        await _store.AppendAsync(Record("session-a", 3, "a", "b", "c"), expectedRevision: 2);
 
         var all = await _store.LoadAsync("session-a");
         Assert.AreEqual(3, all.Count);
@@ -121,24 +124,30 @@ public sealed class SqliteCompositionStoreTests
             all.Select(r => r.CompositionVersion).ToArray());
     }
 
-    // ── append-only 语义 ─────────────────────────────────
+    // ── append-only + CAS 语义（C01-B R4）────────────────
 
     [TestMethod]
-    public async Task Append_SameVersion_ReturnsFalse()
+    public async Task Append_SameExpectedRevision_AfterHeadAdvanced_ReturnsConflict()
     {
-        await _store!.AppendAsync(Record("session-a", 1, "search_tools"));
+        await _store!.AppendAsync(Record("session-a", 1, "search_tools"), expectedRevision: 0);
 
-        var ok = await _store.AppendAsync(Record("session-a", 1, "search_tools", "file_read"));
-        Assert.IsFalse(ok);
+        // 目标 revision 已被占用且 expectedRevision 过期 → 明确 Conflict（不再返回裸 false）。
+        var result = await _store.AppendAsync(Record("session-a", 1, "search_tools", "file_read"), expectedRevision: 0);
+
+        Assert.IsTrue(result.IsConflict);
+        Assert.AreEqual(1L, result.ActualRevision);
+        Assert.AreEqual(1, (await _store.LoadAsync("session-a")).Count);
     }
 
     [TestMethod]
-    public async Task Append_LowerVersion_ReturnsFalse()
+    public async Task Append_LowerVersion_ReturnsConflict()
     {
-        await _store!.AppendAsync(Record("session-a", 2, "a", "b"));
+        await _store!.AppendAsync(Record("session-a", 2, "a", "b"), expectedRevision: 0);
 
-        var ok = await _store.AppendAsync(Record("session-a", 1, "a"));
-        Assert.IsFalse(ok);
+        var result = await _store.AppendAsync(Record("session-a", 1, "a"), expectedRevision: 0);
+
+        Assert.IsTrue(result.IsConflict, "低于 head 的版本必须被 CAS 拒绝（不得重写历史）。");
+        Assert.AreEqual(2L, result.ActualRevision);
     }
 
     // ── ToolIds 边界 ─────────────────────────────────────
@@ -146,7 +155,7 @@ public sealed class SqliteCompositionStoreTests
     [TestMethod]
     public async Task Append_EmptyToolIds_RoundTripsAsEmpty()
     {
-        await _store!.AppendAsync(Record("session-a", 1));
+        await _store!.AppendAsync(Record("session-a", 1), expectedRevision: 0);
 
         var latest = await _store.GetLatestAsync("session-a");
         Assert.IsNotNull(latest);
@@ -156,8 +165,8 @@ public sealed class SqliteCompositionStoreTests
     [TestMethod]
     public async Task Append_ThenLoad_IndependentSessions_DoNotInterfere()
     {
-        await _store!.AppendAsync(Record("session-a", 1, "a"));
-        await _store.AppendAsync(Record("session-b", 1, "x", "y"));
+        await _store!.AppendAsync(Record("session-a", 1, "a"), expectedRevision: 0);
+        await _store.AppendAsync(Record("session-b", 1, "x", "y"), expectedRevision: 0);
 
         var latestA = await _store.GetLatestAsync("session-a");
         var latestB = await _store.GetLatestAsync("session-b");
@@ -172,9 +181,9 @@ public sealed class SqliteCompositionStoreTests
     [TestMethod]
     public async Task Append_ToolIdsGrowOnly_AcrossVersions()
     {
-        await _store!.AppendAsync(Record("session-a", 1, "search_tools"));
-        await _store.AppendAsync(Record("session-a", 2, "search_tools", "file_read"));
-        await _store.AppendAsync(Record("session-a", 3, "search_tools", "file_read", "file_write"));
+        await _store!.AppendAsync(Record("session-a", 1, "search_tools"), expectedRevision: 0);
+        await _store.AppendAsync(Record("session-a", 2, "search_tools", "file_read"), expectedRevision: 1);
+        await _store.AppendAsync(Record("session-a", 3, "search_tools", "file_read", "file_write"), expectedRevision: 2);
 
         var latest = await _store.GetLatestAsync("session-a");
         Assert.IsNotNull(latest);
@@ -189,7 +198,7 @@ public sealed class SqliteCompositionStoreTests
     {
         var record = Record("session-a", 1, "search_tools") with { PermissionEpoch = 3 };
 
-        await _store!.AppendAsync(record);
+        await _store!.AppendAsync(record, expectedRevision: 0);
 
         var latest = await _store.GetLatestAsync("session-a");
         Assert.IsNotNull(latest);
@@ -201,8 +210,10 @@ public sealed class SqliteCompositionStoreTests
     public async Task Append_ArgumentValidation_Throws()
     {
         await Assert.ThrowsExactlyAsync<ArgumentOutOfRangeException>(
-            () => _store!.AppendAsync(Record("session-a", 0)));
+            () => _store!.AppendAsync(Record("session-a", 0), expectedRevision: 0));
+        await Assert.ThrowsExactlyAsync<ArgumentOutOfRangeException>(
+            () => _store!.AppendAsync(Record("session-a", 1), expectedRevision: -1));
         await Assert.ThrowsExactlyAsync<ArgumentNullException>(
-            () => _store!.AppendAsync(null!));
+            () => _store!.AppendAsync(null!, expectedRevision: 0));
     }
 }

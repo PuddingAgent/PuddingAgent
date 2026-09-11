@@ -74,6 +74,15 @@ public static class CompositionSnapshot
     public static string ComputePrefixHash(string systemPromptHash, string toolSpecHash)
         => Sha256Hex(systemPromptHash + "\u001f" + toolSpecHash);
 
+    /// <summary>
+    /// 计算 composition 的**内容身份** ContentId（C01-B R1）：
+    /// 与 <see cref="ComputePrefixHash"/> 同源（同一 canonical 形状哈希规范化规则），
+    /// 不引入第三套 hash 口径，保证 C02 的首变定位与缓存归因一致。
+    /// 语义：内容相同 → ContentId 相同（可复用）；与 revision（先后顺序）是两个独立维度。
+    /// </summary>
+    public static string ComputeContentId(string systemPromptHash, string toolSpecHash)
+        => ComputePrefixHash(systemPromptHash, toolSpecHash);
+
     /// <summary>SHA-256，输出小写 hex。</summary>
     public static string Sha256Hex(string text)
     {
@@ -240,8 +249,9 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
     private sealed class SessionState
     {
         private readonly object _gate = new();
-        private readonly Dictionary<string, int> _versions = new(StringComparer.Ordinal);
-        private int _nextVersion = 1;
+        // C01-B：revision 严格单调且**不复用**（A→B→A = 1/2/3），因此不再需要 hash→版本 的复用字典；
+        // 「内容可复用」由 ContentId 承载（由 (systemPromptHash, toolSpecHash) 直接派生，无需查表）。
+        private long _nextVersion = 1;
         private string _lastSystemPromptHash = string.Empty;
         private string _lastToolSpecHash = string.Empty;
         private string? _lastPermissionFingerprint;
@@ -283,33 +293,27 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
                     _hasFingerprintBaseline = true;
                 }
 
-                var key = systemPromptHash + "\u001f" + toolSpecHash;
-                int version;
-                if (permissionChanged && _versions.TryGetValue(key, out var existing))
-                {
-                    // P0-5 step 4c：权限变化必须开新版本（即使 hash 组合复用），
-                    // 否则写穿因版本号不变被抑制，PermissionEpoch 无法持久化。
-                    version = _nextVersion++;
-                    _versions[key] = version;
-                }
-                else if (!_versions.TryGetValue(key, out version))
-                {
-                    version = _nextVersion++;
-                    _versions[key] = version;
-                }
+                // C01-B：revision 与内容身份分离。每次有效观测都分配一个**新的**严格单调 revision
+                // （A→B→A 得 1/2/3，不倒退、不复用）；内容相同则 ContentId 相同（A→B→A 得 A/B/A）。
+                // 权限变化不再需要「强制开新版本」的分支——revision 已必然推进；
+                // PermissionEpoch 的语义仍由 changeReason 的 permission_changed 承载（R2：本片不改权限模型）。
+                var contentId = CompositionSnapshot.ComputeContentId(systemPromptHash, toolSpecHash);
+                var revision = _nextVersion++;
 
                 _lastSystemPromptHash = systemPromptHash;
                 _lastToolSpecHash = toolSpecHash;
                 _hasLast = true;
 
-                return new CompositionObservation(version, changeReason, _permissionEpoch);
+                return new CompositionObservation(revision, contentId, changeReason, _permissionEpoch);
             }
         }
 
         /// <summary>
         /// 用已持久化记录预热版本状态（跨重启恢复，P0-5 缺陷修复）。
-        /// 每条记录：_versions[SystemPromptHash + '\u001f' + ToolSpecHash] = version（更大版本覆盖，防版本分叉）；
-        /// _nextVersion = max(当前, maxVersion + 1)，保证新组合从已持久化最大版本之后继续递增；
+        /// C01-B：revision 不复用，Seed 只负责抬高 **revision 下界**
+        /// （_nextVersion = max(当前, maxVersion + 1)），保证重启后不会倒退/分叉；
+        /// 内容身份由 ContentId 直接派生，无需预置映射。
+        /// _nextVersion = max(当前, maxVersion + 1)，保证重启后从已持久化最大 revision 之后继续递增；
         /// 用版本号最大的记录设置基线 _lastSystemPromptHash/_lastToolSpecHash/_hasLast=true，
         /// _permissionEpoch = max(当前, records.PermissionEpoch)；
         /// _lastPermissionFingerprint 保持 null、_hasFingerprintBaseline 保持 false
@@ -326,13 +330,8 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
                 SessionCompositionRecord? latest = null;
                 foreach (var record in records)
                 {
-                    var key = record.SystemPromptHash + "\u001f" + record.ToolSpecHash;
-                    // C01-A 类型合同最小对齐：契约侧 CompositionVersion 为 long，内存计数为 int，
-                    // 此处显式饱和转换（而非 (int) 隐式窄化），避免极大版本静默回绕成负数。
-                    var version = ToInternalVersion(record.CompositionVersion);
-                    if (!_versions.TryGetValue(key, out var existing) || version > existing)
-                        _versions[key] = version;
-
+                    // C01-B：不再建立 hash→版本 复用映射（revision 不复用）；
+                    // 只抬高 revision 下界并保留最新基线。
                     if (record.CompositionVersion > maxVersion)
                         maxVersion = record.CompositionVersion;
                     if (latest is null || record.CompositionVersion > latest.CompositionVersion)
@@ -341,7 +340,8 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
                         _permissionEpoch = record.PermissionEpoch;
                 }
 
-                _nextVersion = Math.Max(_nextVersion, ToInternalVersion(maxVersion + 1));
+                // C01-B R3：删除饱和转换，revision 全线 long（严格递增语义不再被 int 折损失真）。
+                _nextVersion = Math.Max(_nextVersion, maxVersion + 1);
 
                 if (latest is not null)
                 {
@@ -353,14 +353,6 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
                 // （epoch 用显式传入值做下限），基线由首轮非空指纹 Observe 建立。
             }
         }
-
-        /// <summary>
-        /// C01-A 类型合同最小对齐：契约侧 <see cref="SessionCompositionRecord.CompositionVersion"/> 为 long，
-        /// 内存登记表计数为 int。此处显式饱和转换（而非隐式窄化），避免极大版本静默回绕成负数；
-        /// 超过 int 上限的版本折叠到 int.MaxValue（该量级已远超正常会话版本数，仅作防御）。
-        /// </summary>
-        private static int ToInternalVersion(long version) =>
-            version <= 0 ? 0 : (int)Math.Min(version, int.MaxValue);
 
         private static string AppendChangeReason(string current, string extra)
             => current is "none" or "initial" ? extra : current + "," + extra;

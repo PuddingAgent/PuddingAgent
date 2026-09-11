@@ -1,5 +1,6 @@
 using System.Text.Json;
 
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 using PuddingCode.Runtime;
@@ -9,16 +10,16 @@ using PuddingMemoryEngine.Entities;
 namespace PuddingRuntime.Services;
 
 /// <summary>
-/// <see cref="ICompositionStore"/> 的 SQLite 实现（P0-5 步骤 1）。
+/// <see cref="ICompositionStore"/> 的 SQLite 实现（P0-5 步骤 1 / C01-B CAS）。
 /// 落 <c>CompositionSnapshots</c> 表（MemoryDbContext，与 Sessions/ContextSegments/CompactionCoverageManifests 同库）。
 ///
 /// 语义：
-/// - append-only：只插入、不更新、不删除；<see cref="AppendAsync"/> 要求版本严格单调递增，
-///   小于等于当前最大版本时返回 false（防重写/防乱序），不抛异常；
-/// - 写穿：每次调用直接落库（不缓存、不批量），调用方负责热路径内存缓存；
+/// - append-only：只插入、不更新、不删除；
+/// - **CAS**：<see cref="AppendAsync"/> 携带 <c>expectedRevision</c>，在单事务内与当前 head 比较，
+///   一致才插入。严禁「先查 MAX 再 INSERT」——head 比较与插入必须同事务，否则两个提交者都可能成功；
+/// - 结果结构化：Committed / Conflict（回报 expected/actual）/ Unavailable（可重试，不伪装已提交）；
 /// - <see cref="GetLatestAsync"/> 取该 session 最大 CompositionVersion 的记录；
-/// - 并发安全由 SQLite 主键 (SessionId, CompositionVersion) 唯一约束兜底（并发同版本插入会撞主键，
-///   由调用方捕获 DbUpdateException 或依赖唯一约束冲突判定失败）。
+/// - 并发同 revision 由主键 (SessionId, CompositionVersion) 兜底：撞主键分类为 Conflict，不抛未处理异常。
 /// </summary>
 public sealed class SqliteCompositionStore : ICompositionStore
 {
@@ -36,40 +37,70 @@ public sealed class SqliteCompositionStore : ICompositionStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var db = await _dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var entity = await db.CompositionSnapshots
             .AsNoTracking()
             .Where(e => e.SessionId == sessionId)
             .OrderByDescending(e => e.CompositionVersion)
-            .FirstOrDefaultAsync(ct);
+            .FirstOrDefaultAsync(ct)
+            .ConfigureAwait(false);
 
         return entity is null ? null : ToRecord(entity);
     }
 
     /// <inheritdoc />
-    public async Task<bool> AppendAsync(SessionCompositionRecord record, CancellationToken ct = default)
+    public async Task<CompositionAppendResult> AppendAsync(
+        SessionCompositionRecord record,
+        long expectedRevision,
+        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(record);
         ArgumentException.ThrowIfNullOrWhiteSpace(record.SessionId);
         if (record.CompositionVersion < 1)
             throw new ArgumentOutOfRangeException(nameof(record), record.CompositionVersion, "CompositionVersion 必须 >= 1。");
+        if (expectedRevision < 0)
+            throw new ArgumentOutOfRangeException(nameof(expectedRevision), expectedRevision, "expectedRevision 必须 >= 0。");
 
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var db = await _dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        await using var tx = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
 
-        var currentMax = await db.CompositionSnapshots
+        // 单事务内读取 head：与插入构成真正的 CAS（非「MAX 后 INSERT」的竞态窗口）。
+        var head = await db.CompositionSnapshots
             .Where(e => e.SessionId == record.SessionId)
             .Select(e => (long?)e.CompositionVersion)
-            .MaxAsync(ct);
+            .MaxAsync(ct)
+            .ConfigureAwait(false) ?? 0;
 
-        if (currentMax is not null && record.CompositionVersion <= currentMax.Value)
+        if (head != expectedRevision)
         {
-            // append-only：版本必须严格递增；乱序/重写视为追加失败（不抛异常，由调用方决定重试/降级）。
-            return false;
+            // 期望 head 与实际不符 → 明确冲突（tx 未提交即回滚）。
+            return CompositionAppendResult.Conflict(expectedRevision, head);
+        }
+
+        if (record.CompositionVersion <= head)
+        {
+            // 目标 revision 已被占用（append-only 不允许重写）→ 冲突语义。
+            return CompositionAppendResult.Conflict(expectedRevision, head);
         }
 
         db.CompositionSnapshots.Add(ToEntity(record));
-        await db.SaveChangesAsync(ct);
-        return true;
+        try
+        {
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            await tx.CommitAsync(ct).ConfigureAwait(false);
+        }
+        catch (DbUpdateException)
+        {
+            // 并发提交者同时通过 head 比较时由主键 (SessionId, CompositionVersion) 兜底 → CAS 冲突，不抛未处理异常。
+            return CompositionAppendResult.Conflict(expectedRevision, head);
+        }
+        catch (SqliteException ex)
+        {
+            // busy/locked/IO：可重试不可用，绝不伪装已提交（R5）。
+            return CompositionAppendResult.Unavailable($"{ex.GetType().Name}: {ex.Message}");
+        }
+
+        return CompositionAppendResult.Committed(record.CompositionVersion);
     }
 
     /// <inheritdoc />
@@ -77,12 +108,13 @@ public sealed class SqliteCompositionStore : ICompositionStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var db = await _dbFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var entities = await db.CompositionSnapshots
             .AsNoTracking()
             .Where(e => e.SessionId == sessionId)
             .OrderBy(e => e.CompositionVersion)
-            .ToListAsync(ct);
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
 
         return entities.Select(ToRecord).ToArray();
     }
@@ -93,6 +125,7 @@ public sealed class SqliteCompositionStore : ICompositionStore
     {
         SessionId = record.SessionId,
         CompositionVersion = record.CompositionVersion,
+        ContentId = record.ContentId,
         SystemPromptHash = record.SystemPromptHash,
         ToolSpecHash = record.ToolSpecHash,
         PrefixHash = record.PrefixHash,
@@ -109,6 +142,8 @@ public sealed class SqliteCompositionStore : ICompositionStore
     {
         SessionId = entity.SessionId,
         CompositionVersion = entity.CompositionVersion,
+        // 历史行（C01-B 之前）无 ContentId → null：调用方据此判定「无法证明精确内容」，不得谎称精确恢复。
+        ContentId = entity.ContentId,
         SystemPromptHash = entity.SystemPromptHash,
         ToolSpecHash = entity.ToolSpecHash,
         PrefixHash = entity.PrefixHash,

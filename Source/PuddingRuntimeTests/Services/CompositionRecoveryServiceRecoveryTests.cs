@@ -35,11 +35,12 @@ public sealed class CompositionRecoveryServiceRecoveryTests
 
         await service.RecoverAsync("s1");
 
-        // 版本恢复：同组合复用已存版本（3），不触发写穿。
+        // C01-B：种子抬高 revision 下界（已持久化 max=3）⇒ 本次观测得 max+1=4；
+        // 内容身份仍复用 v2/v3 的 ContentId（内容可复用 ≠ revision 可复用），故仍写穿一次。
         var observation = persistentRegistry.Observe("s1", "sys-b", "tool-a");
-        Assert.AreEqual(3, observation.Version);
+        Assert.AreEqual(4, observation.Revision);
         await Task.Delay(150);
-        Assert.AreEqual(0, store.AppendCount, "恢复后同组合不得触发写穿。");
+        Assert.AreEqual(1, store.AppendCount, "C01-B：新 revision 必须写穿一次（内容复用不豁免写穿）。");
 
         // 工具集合恢复：append-only 水合最新 ToolIds。
         CollectionAssert.AreEquivalent(
@@ -78,11 +79,11 @@ public sealed class CompositionRecoveryServiceRecoveryTests
         public Task<SessionCompositionRecord?> GetLatestAsync(string sessionId, CancellationToken ct = default)
             => Task.FromResult(_records.Count == 0 ? null : _records[^1]);
 
-        public Task<bool> AppendAsync(SessionCompositionRecord record, CancellationToken ct = default)
+        public Task<CompositionAppendResult> AppendAsync(SessionCompositionRecord record, long expectedRevision, CancellationToken ct = default)
         {
             AppendCount++;
             _records.Add(record);
-            return Task.FromResult(true);
+            return Task.FromResult(CompositionAppendResult.Committed(record.CompositionVersion));
         }
 
         public Task<IReadOnlyList<SessionCompositionRecord>> LoadAsync(string sessionId, CancellationToken ct = default)
@@ -98,8 +99,8 @@ public sealed class CompositionRecoveryServiceRecoveryTests
         public Task<SessionCompositionRecord?> GetLatestAsync(string sessionId, CancellationToken ct = default)
             => _inner.GetLatestAsync(sessionId, ct);
 
-        public Task<bool> AppendAsync(SessionCompositionRecord record, CancellationToken ct = default)
-            => _inner.AppendAsync(record, ct);
+        public Task<CompositionAppendResult> AppendAsync(SessionCompositionRecord record, long expectedRevision, CancellationToken ct = default)
+            => _inner.AppendAsync(record, expectedRevision, ct);
 
         public Task<IReadOnlyList<SessionCompositionRecord>> LoadAsync(string sessionId, CancellationToken ct = default)
             => throw new InvalidOperationException("load boom");

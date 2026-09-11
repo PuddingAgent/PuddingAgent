@@ -36,7 +36,7 @@ public sealed class CompositionCommitDecouplingTests
 
         Assert.AreEqual("ok", response.Content);
         Assert.AreEqual(1, registry.ObserveCount, "无 telemetry sink 时 Composition 提交（Observe）必须照常执行。");
-        Assert.AreEqual(1, registry.LastObservation.Version);
+        Assert.AreEqual(1, registry.LastObservation.Revision);
     }
 
     [TestMethod]
@@ -84,7 +84,7 @@ public sealed class CompositionCommitDecouplingTests
             llmConfig: TestConfig());
 
         Assert.AreEqual(2, registry.ObserveCount);
-        Assert.AreEqual(2, registry.LastObservation.Version, "无 telemetry 时 revision 仍必须随组合变化单调递增。");
+        Assert.AreEqual(2, registry.LastObservation.Revision, "无 telemetry 时 revision 仍必须随组合变化单调递增。");
     }
 
     [TestMethod]
@@ -126,7 +126,7 @@ public sealed class CompositionCommitDecouplingTests
             order.Take(2).ToArray());
 
         var metric = sink.Metrics.Single(m => m.Name == "composition_snapshot");
-        Assert.AreEqual("1", metric.Dimensions!["composition_version"]);
+        Assert.AreEqual("1", metric.Dimensions!["composition_revision"]);
         Assert.AreEqual("session-order", metric.Dimensions["session_id"]);
     }
 
@@ -191,10 +191,10 @@ public sealed class CompositionCommitDecouplingTests
         public Task<SessionCompositionRecord?> GetLatestAsync(string sessionId, CancellationToken ct = default)
             => Task.FromResult(_records.Count == 0 ? null : _records[^1]);
 
-        public Task<bool> AppendAsync(SessionCompositionRecord record, CancellationToken ct = default)
+        public Task<CompositionAppendResult> AppendAsync(SessionCompositionRecord record, long expectedRevision, CancellationToken ct = default)
         {
             _records.Add(record);
-            return Task.FromResult(true);
+            return Task.FromResult(CompositionAppendResult.Committed(record.CompositionVersion));
         }
 
         public Task<IReadOnlyList<SessionCompositionRecord>> LoadAsync(string sessionId, CancellationToken ct = default)

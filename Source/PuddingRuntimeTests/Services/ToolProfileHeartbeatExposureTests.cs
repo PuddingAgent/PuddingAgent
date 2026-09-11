@@ -95,7 +95,7 @@ public sealed class ToolProfileHeartbeatExposureTests
     // ── §4.2 回归：心跳 turn → Composition 零新增行 + epoch 零递增 ──
 
     [TestMethod]
-    public async Task HeartbeatTurn_WithCommittedExposure_KeepsFullSet_CompositionReusesVersion_NoEpochIncrement()
+    public async Task HeartbeatTurn_WithCommittedExposure_KeepsFullSet_ReusesContentId_AdvancesRevision_NoEpochIncrement()
     {
         var manager = new AgentSessionManager();
         manager.GetOrCreate("s-heartbeat", "global:general-assistant");
@@ -116,7 +116,7 @@ public sealed class ToolProfileHeartbeatExposureTests
             toolIds: normalTools.Select(t => t.Name).ToList(),
             permissionEpoch: 5,
             permissionFingerprint: fingerprintFull);
-        Assert.AreEqual(1, normalObservation.Version);
+        Assert.AreEqual(1, normalObservation.Revision);
         await Task.Delay(200); // 等待异步写穿
         Assert.AreEqual(1, store.AppendCount, "普通 turn 应写穿 1 条 Composition 记录");
 
@@ -132,7 +132,8 @@ public sealed class ToolProfileHeartbeatExposureTests
         var heartbeatTools = ApplyHeartbeatProfile(normalTools, exposed);
         Assert.AreEqual(normalTools.Count, heartbeatTools.Count, "修后心跳暴露集 ≡ 普通 turn 全量集");
 
-        // ── 心跳 turn 暴露集与普通 turn 一致 → 复用版本：零新增行 + epoch 零递增 ──
+        // ── 心跳 turn 暴露集与普通 turn 一致 → 内容身份复用（ContentId 相同），
+        //    revision 按 C01-B「观测序」递增，epoch 零递增 ──
         var heartbeatObservation = registry.Observe(
             "s-heartbeat",
             sysHash,
@@ -140,11 +141,17 @@ public sealed class ToolProfileHeartbeatExposureTests
             toolIds: heartbeatTools.Select(t => t.Name).ToList(),
             permissionEpoch: 5,
             permissionFingerprint: fingerprintFull);
-        Assert.AreEqual(1, heartbeatObservation.Version, "心跳 turn 不得产生新 Composition 版本");
+        // C01-B：revision 是「观测序」不再复用（每次观测 +1）；「心跳 turn 是否产生新内容」
+        // 改由 ContentId 承担——内容身份不变 ⇒ ContentId 必须复用（卡片 AC1）。
+        Assert.AreEqual(2, heartbeatObservation.Revision, "C01-B：revision 为观测序不复用，心跳 turn 同样 +1");
+        Assert.AreEqual(
+            normalObservation.ContentId,
+            heartbeatObservation.ContentId,
+            "心跳 turn 暴露集与普通 turn 一致 ⇒ 内容身份不变 ⇒ ContentId 必须复用");
         Assert.AreEqual("none", heartbeatObservation.ChangeReason, "心跳 turn 不得上报 tool_spec_changed");
         Assert.AreEqual(5, heartbeatObservation.PermissionEpoch, "心跳 turn 不得递增 permission epoch");
         await Task.Delay(200);
-        Assert.AreEqual(1, store.AppendCount, "心跳 turn 不得新增 CompositionSnapshots 行");
+        Assert.AreEqual(2, store.AppendCount, "C01-B：每次观测写穿一次（内容复用不豁免写穿）；内容身份复用由 ContentId 承担");
     }
 
     [TestMethod]
@@ -181,7 +188,7 @@ public sealed class ToolProfileHeartbeatExposureTests
             permissionEpoch: 5,
             permissionFingerprint: fingerprintShrunk);
 
-        Assert.AreEqual(2, shrunk.Version, "裁剪（修复前行为）应产生新 Composition 版本");
+        Assert.AreEqual(2, shrunk.Revision, "裁剪（修复前行为）应产生新 Composition 版本");
         StringAssert.Contains(shrunk.ChangeReason, "tool_spec_changed");
         StringAssert.Contains(shrunk.ChangeReason, "permission_changed");
         Assert.AreEqual(6, shrunk.PermissionEpoch, "裁剪（修复前行为）epoch 应递增（虚增噪声）");
@@ -221,11 +228,11 @@ public sealed class ToolProfileHeartbeatExposureTests
         public Task<SessionCompositionRecord?> GetLatestAsync(string sessionId, CancellationToken ct = default)
             => Task.FromResult(_records.Count == 0 ? null : _records[^1]);
 
-        public Task<bool> AppendAsync(SessionCompositionRecord record, CancellationToken ct = default)
+        public Task<CompositionAppendResult> AppendAsync(SessionCompositionRecord record, long expectedRevision, CancellationToken ct = default)
         {
             AppendCount++;
             _records.Add(record);
-            return Task.FromResult(true);
+            return Task.FromResult(CompositionAppendResult.Committed(record.CompositionVersion));
         }
 
         public Task<IReadOnlyList<SessionCompositionRecord>> LoadAsync(string sessionId, CancellationToken ct = default)

@@ -87,10 +87,11 @@ public sealed partial class AgentExecutionService
         _sessionManager.MarkRunning(request.SessionId);
         _contextManager.TouchHistoryAccess(request.SessionId, sessionTimeout);
 
-        // P0-5 步骤 5：跨 1h 超时 / Core 重启后从持久化 Composition 水合工具集合（append-only）。
-        // 恢复失败不阻断执行（服务内部静默降级为空集合）。
+        // P0-5 步骤 5 / C01-A：跨 1h 超时 / Core 重启后从持久化 Composition 水合工具集合（append-only）。
+        // 恢复为 per-session single-flight，且取消随调用方传播（不再用 CancellationToken.None）；
+        // 失败以显式状态返回，不阻断执行。
         if (_compositionRecovery is not null)
-            await _compositionRecovery.RecoverAsync(request.SessionId, CancellationToken.None);
+            await _compositionRecovery.RecoverAsync(request.SessionId, external);
 
         _runtimeSessionStore.GetOrCreate(
             request.SessionId, instance.AgentInstanceId,

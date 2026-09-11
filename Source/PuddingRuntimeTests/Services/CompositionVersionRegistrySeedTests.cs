@@ -26,7 +26,7 @@ public sealed class CompositionVersionRegistrySeedTests
     };
 
     [TestMethod]
-    public void Seed_SameCombo_ReusesPersistedVersion()
+    public void Seed_SameCombo_ReusesContentId_SameComboRevisionContinuesFromMax()
     {
         var registry = new CompositionVersionRegistry();
         registry.Seed("s1", new[]
@@ -35,13 +35,16 @@ public sealed class CompositionVersionRegistrySeedTests
             Record(2, "sys-b", "tool-a"),
         });
 
-        // 与已持久化记录完全相同的组合 → 复用已存版本 1，而不是重新分配。
+        // C01-B：revision 不复用——已持久化 max=2 ⇒ 继续递增到 3；内容身份复用同一 ContentId。
         var observation = registry.Observe("s1", "sys-a", "tool-a");
-        Assert.AreEqual(1, observation.Version);
+        Assert.AreEqual(3, observation.Revision);
         Assert.AreEqual("system_prompt_changed", observation.ChangeReason); // 相对最新基线 sys-b 确实变化
+        Assert.AreEqual(CompositionSnapshot.ComputeContentId("sys-a", "tool-a"), observation.ContentId);
 
-        // 连续观察稳定复用。
-        Assert.AreEqual(1, registry.Observe("s1", "sys-a", "tool-a").Version);
+        // 连续观察：revision 继续递增，ContentId 仍相同。
+        var again = registry.Observe("s1", "sys-a", "tool-a");
+        Assert.AreEqual(4, again.Revision);
+        Assert.AreEqual(observation.ContentId, again.ContentId);
     }
 
     [TestMethod]
@@ -56,7 +59,7 @@ public sealed class CompositionVersionRegistrySeedTests
 
         var observation = registry.Observe("s1", "sys-new", "tool-a");
 
-        Assert.AreEqual(11, observation.Version); // max=10 → 从 11 开始
+        Assert.AreEqual(11, observation.Revision); // max=10 → 从 11 开始
     }
 
     [TestMethod]
@@ -72,7 +75,7 @@ public sealed class CompositionVersionRegistrySeedTests
         // 首 Observe 与最新基线（sys-latest/tool-latest）相同 → 不误报 system_prompt_changed。
         var observation = registry.Observe("s1", "sys-latest", "tool-latest");
 
-        Assert.AreEqual(10, observation.Version);
+        Assert.AreEqual(11, observation.Revision);
         Assert.AreEqual("none", observation.ChangeReason);
     }
 
@@ -88,7 +91,7 @@ public sealed class CompositionVersionRegistrySeedTests
 
         var observation = registry.Observe("s1", "sys-c", "tool-a");
 
-        Assert.AreEqual(3, observation.Version);
+        Assert.AreEqual(3, observation.Revision);
         Assert.AreEqual("system_prompt_changed", observation.ChangeReason);
     }
 
@@ -116,7 +119,7 @@ public sealed class CompositionVersionRegistrySeedTests
         registry.Seed("s1", Array.Empty<SessionCompositionRecord>());
 
         var observation = registry.Observe("s1", "sys-a", "tool-a");
-        Assert.AreEqual(1, observation.Version);
+        Assert.AreEqual(1, observation.Revision);
         Assert.AreEqual("initial", observation.ChangeReason);
     }
 
@@ -127,9 +130,9 @@ public sealed class CompositionVersionRegistrySeedTests
         registry.Seed("s1", new[] { Record(1, "sys-a", "tool-a") });
 
         // 未 seed 的 session 从 1 开始，不受 s1 影响。
-        Assert.AreEqual(1, registry.Observe("s2", "sys-a", "tool-a").Version);
-        // 已 seed 的 session 复用 1。
-        Assert.AreEqual(1, registry.Observe("s1", "sys-a", "tool-a").Version);
+        Assert.AreEqual(1, registry.Observe("s2", "sys-a", "tool-a").Revision);
+        // 已 seed 的 session 从 max+1 继续（revision 不复用）。
+        Assert.AreEqual(2, registry.Observe("s1", "sys-a", "tool-a").Revision);
     }
 
     // ── P0-5 指纹基线（重启恢复）回归 ───────────────────────
@@ -154,8 +157,8 @@ public sealed class CompositionVersionRegistrySeedTests
         var observation = registry.Observe(
             "s1", "sys-latest", "tool-latest", permissionEpoch: 0, permissionFingerprint: "fp-1");
 
-        // 同 hash 组合必须复用已存版本 10，不得强制开新版本。
-        Assert.AreEqual(10, observation.Version, "重启后首轮不得因指纹基线缺失强制开新版本。");
+        // 同 hash 组合在 C01-B 下 revision 仍然递增（不复用），且不得被强制开新版本的旧逻辑污染。
+        Assert.AreEqual(11, observation.Revision, "重启后 revision 必须从已持久化 max(10)+1 继续。");
         // changeReason 不得被污染。
         Assert.IsFalse(
             observation.ChangeReason.Contains("permission_changed", StringComparison.Ordinal),
@@ -175,13 +178,13 @@ public sealed class CompositionVersionRegistrySeedTests
         registry.Seed("s1", new[] { Record(1, "sys-a", "tool-a", permissionEpoch: 0) });
 
         var first = registry.Observe("s1", "sys-a", "tool-a", permissionFingerprint: "fp-1");
-        Assert.AreEqual(1, first.Version);
+        Assert.AreEqual(2, first.Revision);
         Assert.IsFalse(first.ChangeReason.Contains("permission_changed", StringComparison.Ordinal));
         Assert.AreEqual(0, first.PermissionEpoch);
 
-        // 第二指纹与基线不同 → 触发 permission_changed：开新版本 + epoch +1 + reason 上报。
+        // 第二指纹与基线不同 → 触发 permission_changed：新 revision + epoch +1 + reason 上报。
         var second = registry.Observe("s1", "sys-a", "tool-a", permissionFingerprint: "fp-2");
-        Assert.AreEqual(2, second.Version, "权限变化必须开新版本。");
+        Assert.AreEqual(3, second.Revision, "权限变化必须开新 revision（revision 不复用）。");
         Assert.IsTrue(second.ChangeReason.Contains("permission_changed", StringComparison.Ordinal));
         Assert.AreEqual(1, second.PermissionEpoch, "权限纪元应自增 +1。");
     }
@@ -190,7 +193,7 @@ public sealed class CompositionVersionRegistrySeedTests
 
     /// <summary>多条记录含同组合不同版本：Seed 必须保留最大版本（防版本分叉）。</summary>
     [TestMethod]
-    public void Seed_DuplicateCombo_KeepsLargestVersion_NoFork()
+    public void Seed_DuplicateCombo_KeepsLargestRevisionFloor_NoFork()
     {
         var registry = new CompositionVersionRegistry();
         registry.Seed("s1", new[]
@@ -200,7 +203,7 @@ public sealed class CompositionVersionRegistrySeedTests
         });
 
         var observation = registry.Observe("s1", "sys-a", "tool-a");
-        Assert.AreEqual(4, observation.Version, "同组合多条记录必须保留最大版本。");
+        Assert.AreEqual(5, observation.Revision, "同组合多条记录必须把 revision 下界抬到 max(4)+1，防分叉/倒退。");
         Assert.AreEqual("none", observation.ChangeReason); // 与最新基线一致
     }
 
@@ -213,9 +216,9 @@ public sealed class CompositionVersionRegistrySeedTests
         registry.Seed("s1", new[] { Record(2, "sys-b", "tool-a"), Record(3, "sys-c", "tool-a") });
 
         // 新组合从 max+1=4 继续（不因重复 Seed 倒退）。
-        Assert.AreEqual(4, registry.Observe("s1", "sys-new", "tool-a").Version);
-        // 旧组合仍复用原版本。
-        Assert.AreEqual(1, registry.Observe("s1", "sys-a", "tool-a").Version);
-        Assert.AreEqual(2, registry.Observe("s1", "sys-b", "tool-a").Version);
+        Assert.AreEqual(4, registry.Observe("s1", "sys-new", "tool-a").Revision);
+        // 旧组合的 revision 也继续递增（不复用），但不得倒退到已持久化 revision。
+        Assert.AreEqual(5, registry.Observe("s1", "sys-a", "tool-a").Revision);
+        Assert.AreEqual(6, registry.Observe("s1", "sys-b", "tool-a").Revision);
     }
 }

@@ -112,8 +112,8 @@ public sealed class CompositionRecoveryServiceTests
             return Task.FromResult(_latest.GetValueOrDefault(sessionId));
         }
 
-        public Task<bool> AppendAsync(SessionCompositionRecord record, CancellationToken ct = default)
-            => Task.FromResult(false);
+        public Task<CompositionAppendResult> AppendAsync(SessionCompositionRecord record, long expectedRevision, CancellationToken ct = default)
+            => Task.FromResult(CompositionAppendResult.Unavailable("store rejects append"));
 
         public Task<IReadOnlyList<SessionCompositionRecord>> LoadAsync(string sessionId, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<SessionCompositionRecord>>(Array.Empty<SessionCompositionRecord>());
