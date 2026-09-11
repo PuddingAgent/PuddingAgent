@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
@@ -15,12 +15,22 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "manage_memory",
     name: "manage_memory",
-    description: "管理记忆图书馆结构。action: list_books|create_book|list_chapters|add_chapter|update_chapter|delete_book|add_pointer|list_pointers|add_relation|list_relations|get_related|dedup_report|merge_chapters。章节支持设置 scene（场景）/ constraints（约束）/ tags（标签）和 source_reference（引用来源），用于溯源核实和知识图谱关联。",
+    description: "管理记忆图书馆结构。action: list_books|create_book|delete_book|list_chapters|add_chapter|update_chapter|delete_chapter|add_pointer|list_pointers|add_relation|list_relations|get_related|dedup_report|merge_chapters。章节支持设置 scene（场景）/ constraints（约束）/ tags（标签）和 source_reference（引用来源），用于溯源核实和知识图谱关联。",
     category: ToolCategory.Memory,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ConcurrencySafe)]
 public sealed class ManageMemoryTool : PuddingToolBase<ManageMemoryArgs>
 {
+    /// <summary>支持的 action 白名单，与下方 switch 分支一一对应；未知 action 一律 fail-closed。</summary>
+    private static readonly string[] SupportedActions = new[]
+    {
+        "list_books", "create_book", "delete_book",
+        "list_chapters", "add_chapter", "update_chapter", "delete_chapter",
+        "add_pointer", "list_pointers",
+        "add_relation", "list_relations", "get_related",
+        "dedup_report", "merge_chapters",
+    };
+
     private readonly ILogger<ManageMemoryTool> _logger;
     private readonly BookHandler _bookHandler;
     private readonly ChapterHandler _chapterHandler;
@@ -51,8 +61,17 @@ public sealed class ManageMemoryTool : PuddingToolBase<ManageMemoryArgs>
         CancellationToken ct)
     {
         var root = BuildRoot(args, context);
-        var action = root.GetOptionalString("action") ?? "list_books";
+        // T01：action 归一化（去空白 + 小写），并在进入任何写路径之前做白名单校验，
+        // 未知 action 一律 fail-closed，不得以成功结果返回错误语义。
+        var action = (root.GetOptionalString("action") ?? "list_books").Trim().ToLowerInvariant();
         var workspaceId = context.WorkspaceId;
+
+        if (Array.IndexOf(SupportedActions, action) < 0)
+        {
+            _logger.LogWarning("[ManageMemory] Rejected unknown action={Action}", action);
+            return ToolExecutionResult.Fail(
+                $"Unknown memory action '{action}'. Supported actions: {string.Join(", ", SupportedActions)}.");
+        }
 
         try
         {
@@ -89,11 +108,16 @@ public sealed class ManageMemoryTool : PuddingToolBase<ManageMemoryArgs>
                     root.GetOptionalString("source_book_id") ?? "",
                     root.GetOptionalString("target_book_id") ?? "", ct),
 
-                // ── 未知 action ──
-                _ => JsonSerializer.Serialize(new { status = "error", message = $"Unknown action: {action}" })
+                // ── 未知 action：上方白名单已拦截，此分支不可达 ──
+                _ => throw new InvalidOperationException($"Unknown memory action '{action}'.")
             };
 
             return ToolExecutionResult.Ok(result);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // T01：取消不是业务错误，必须向上传播，不得被吞成失败结果。
+            throw;
         }
         catch (Exception ex)
         {
@@ -110,14 +134,8 @@ public sealed class ManageMemoryTool : PuddingToolBase<ManageMemoryArgs>
                     $"操作失败 (action={action})：{ex.Message}"
             };
 
-            var result = JsonSerializer.Serialize(new
-            {
-                status = "error",
-                action,
-                message = friendlyMessage
-            });
-
-            return ToolExecutionResult.Ok(result);
+            // T01：业务失败必须以 Success=false 返回，避免调用方把错误当成功。
+            return ToolExecutionResult.Fail(friendlyMessage);
         }
     }
 
