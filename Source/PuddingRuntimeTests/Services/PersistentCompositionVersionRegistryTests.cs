@@ -46,6 +46,22 @@ public sealed class PersistentCompositionVersionRegistryTests
 
     private PersistentCompositionVersionRegistry NewRegistry(ICompositionStore? store) => new(store);
 
+    /// <summary>
+    /// 轮询等待写穿失败被观测到（C01-B AC7：失败不得静默，写穿为异步 fire-and-forget）。
+    /// </summary>
+    private static async Task WaitForWriteThroughFailureAsync(
+        PersistentCompositionVersionRegistry registry,
+        int timeoutMs = 3000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (registry.WriteThroughFailureCount == 0 && DateTime.UtcNow < deadline)
+            await Task.Delay(20);
+
+        Assert.IsTrue(
+            registry.WriteThroughFailureCount > 0,
+            $"写穿失败必须在 {timeoutMs}ms 内计入 WriteThroughFailureCount（AC7：失败可观察）");
+    }
+
     /// <summary>轮询等待 store 中 session 记录数达到 expected（写穿为异步 fire-and-forget）。</summary>
     private static async Task<IReadOnlyList<SessionCompositionRecord>> WaitForCountAsync(
         ICompositionStore store,
@@ -132,10 +148,10 @@ public sealed class PersistentCompositionVersionRegistryTests
         Assert.AreEqual("sys-hash-2", records[1].SystemPromptHash);
     }
 
-    // ── 相同 hash 复用版本：内存命中不重复写 ────────────
+    // ── 相同内容复用 ContentId：revision 仍递增，每个 revision 一次提交 ──
 
     [TestMethod]
-    public async Task Observe_SameHash_ReusesVersion_NoDuplicateWrite()
+    public async Task Observe_SameHash_ReusesContentId_ButCommitsPerRevision()
     {
         var registry = NewRegistry(_store);
         var toolIds = new[] { "search_tools", "file_read", "file_write" };
@@ -173,23 +189,34 @@ public sealed class PersistentCompositionVersionRegistryTests
         Assert.AreEqual("system_prompt_changed", changed.ChangeReason);
     }
 
-    // ── 写穿失败（AppendAsync 抛异常/false）：不阻断 Observe ──
+    // ── 写穿失败（AppendAsync 抛异常 / 返回 Unavailable）：不阻断 Observe，但必须可观察（AC7）──
 
     [TestMethod]
-    public void Observe_StoreThrows_DoesNotPropagate()
+    public async Task Observe_StoreThrows_DoesNotPropagate_ButIsObservable()
     {
         var failingStore = new ThrowingCompositionStore();
         var registry = NewRegistry(failingStore);
 
         var observation = registry.Observe("session-err", "sys-hash-1", "tool-hash-1");
 
+        // C01-B AC7：写穿失败不得静默降级为「纯内存继续」——Observe 热路径仍不抛，
+        // 但失败必须可观察：失败计数递增 + 最近提交结果为可重试 Unavailable。
         Assert.AreEqual(1, observation.Revision);
         Assert.AreEqual("initial", observation.ChangeReason);
-        // 写穿在后台失败被吞掉并降级纯内存；Observe 必须正常返回。
+
+        await WaitForWriteThroughFailureAsync(registry);
+        var last = registry.TryGetLastCommitResult("session-err");
+        Assert.IsTrue(
+            last is { Outcome: CompositionAppendOutcome.Unavailable },
+            "写穿异常必须以 Unavailable（可重试）暴露，不得静默降级为纯内存");
+        StringAssert.Contains(
+            last!.Value.FailureReason,
+            CompositionAppendResult.UnavailableErrorCode,
+            "对外语义必须是可重试 composition_commit_unavailable");
     }
 
     [TestMethod]
-    public void Observe_StoreReturnsFalse_DoesNotPropagate()
+    public async Task Observe_StoreReturnsFalse_DoesNotPropagate_ButIsObservable()
     {
         var rejectingStore = new RejectingCompositionStore();
         var registry = NewRegistry(rejectingStore);
@@ -198,7 +225,13 @@ public sealed class PersistentCompositionVersionRegistryTests
 
         Assert.AreEqual(1, observation.Revision);
         Assert.AreEqual("initial", observation.ChangeReason);
-        // AppendAsync=false 仅记日志，不抛。
+
+        await WaitForWriteThroughFailureAsync(registry);
+        var last = registry.TryGetLastCommitResult("session-rej");
+        Assert.IsTrue(
+            last is { Outcome: CompositionAppendOutcome.Unavailable },
+            "store 拒绝写入必须以 Unavailable（可重试）暴露，不得伪装已提交");
+        Assert.IsFalse(last!.Value.IsCommitted, "未提交不得伪装为已提交（AC7：不得静默发出未提交形状）");
     }
 
     // ── 双 session 相互独立写穿 ─────────────────────────
