@@ -5,6 +5,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Goals;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
+using PuddingCode.Tools;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services.Conversation;
 
@@ -387,13 +388,15 @@ public sealed class SystemCommandHandlerTests
         IRuntimeControlService runtime,
         IRequestCompactionHandler? compaction = null,
         ISystemStatusSnapshotProvider? statusSnapshotProvider = null,
-        IGoalCommandService? goalCommandService = null) =>
+                IGoalCommandService? goalCommandService = null,
+        IToolAuthorizationService? toolAuthorizationService = null) =>
         new(
             db,
             runtime,
             compaction ?? new UnexpectedRequestCompactionHandler(),
             statusSnapshotProvider ?? new UnexpectedSystemStatusSnapshotProvider(),
             goalCommandService ?? new UnexpectedGoalCommandService(),
+            toolAuthorizationService ?? new UnexpectedToolAuthorizationService(),
             NullLogger<SystemCommandHandler>.Instance);
 
     private sealed class UnexpectedGoalCommandService : IGoalCommandService
@@ -402,6 +405,25 @@ public sealed class SystemCommandHandlerTests
             GoalCommandRequest request,
             CancellationToken ct = default) =>
             throw new AssertFailedException("This test must not execute a goal command.");
+    }
+
+    private sealed class UnexpectedToolAuthorizationService : IToolAuthorizationService
+    {
+        public Task<ToolAuthorizationCommandResult> ApplyCommandAsync(
+            ToolAuthorizationCommand command,
+            ToolAuthorizationContext context,
+            CancellationToken ct = default) =>
+            throw new AssertFailedException(
+                "This test must not apply a tool authorization command. Pass a real IToolAuthorizationService from the test.");
+
+        public Task<ToolAuthorizationCheckResult> CheckAsync(
+            ToolAuthorizationContext context,
+            ToolDescriptor descriptor,
+            CancellationToken ct = default) =>
+            throw new AssertFailedException("This test must not check tool authorization.");
+
+        public string BuildRequiredMessage(string toolId, ToolDescriptor? descriptor = null) =>
+            throw new AssertFailedException("This test must not build an authorization message.");
     }
 
     private sealed class UnexpectedSystemStatusSnapshotProvider : ISystemStatusSnapshotProvider

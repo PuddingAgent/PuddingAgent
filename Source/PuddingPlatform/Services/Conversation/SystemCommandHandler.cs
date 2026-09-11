@@ -22,6 +22,7 @@ public sealed class SystemCommandHandler(
     IRequestCompactionHandler requestCompactionHandler,
     ISystemStatusSnapshotProvider statusSnapshotProvider,
     IGoalCommandService goalCommandService,
+    IToolAuthorizationService toolAuthorizationService,
     ILogger<SystemCommandHandler> logger) : ISystemCommandHandler
 {
     private static readonly JsonSerializerOptions JsonOptions =
@@ -106,6 +107,15 @@ public sealed class SystemCommandHandler(
             // ADR-074 G1：/goal 统一入口（Web/Desktop WebView/Connector 网关共用）。
             // 命令不创建 Agent Turn；完整 grammar 由 GoalCommandTextParser 裁决。
             responseMessage = await HandleGoalAsync(request, command.RawText, ct);
+        }
+        else if (command.CommandKind == SystemCommandKind.Authorization)
+        {
+            // P0-AUTH-A：/authorize、/deny、/revoke 过去落到兜底分支，被回答
+            // "this system command is not implemented yet."，使 3df7d2a 新增的
+            // "Ask the user to approve it with /authorize" 引导文案指向死路。
+            // 这里接线到 IToolAuthorizationService：人工授权是持久态 grant，
+            // 与进程态 YOLO（runtimeControl.SetMode）互不耦合。
+            responseMessage = await HandleToolAuthorizationAsync(request, command, ct);
         }
         else if (IsYolo(command))
         {
@@ -381,6 +391,35 @@ public sealed class SystemCommandHandler(
         }
 
         var result = await goalCommandService.ExecuteAsync(goalRequest!, ct);
+        return result.Message;
+    }
+
+    /// <summary>
+    /// Applies a user-authored tool authorization command (/authorize, /deny, /revoke).
+    /// The command boundary stays unchanged: no execution command, ConversationTurn,
+    /// or Agent run is created — only the authorization grant store is mutated and the
+    /// service message is returned as the system reply.
+    /// </summary>
+    private async Task<string> HandleToolAuthorizationAsync(
+        SystemCommandRequest request,
+        SystemCommand command,
+        CancellationToken ct)
+    {
+        var context = new ToolAuthorizationContext
+        {
+            WorkspaceId = request.WorkspaceId,
+            SessionId = request.ConversationId,
+            AgentInstanceId = request.AgentId,
+            UserId = request.UserId,
+            ToolId = command.TargetId,
+        };
+
+        // Handled=false 时也返回服务给的 Message，不吞掉失败原因。
+        var result = await toolAuthorizationService.ApplyCommandAsync(
+            command.ToToolAuthorizationCommand(),
+            context,
+            ct);
+
         return result.Message;
     }
 
