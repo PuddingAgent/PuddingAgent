@@ -5,6 +5,32 @@ using PuddingCode.Runtime;
 namespace PuddingRuntime.Services;
 
 /// <summary>
+/// C01-A：版本恢复结果。替代原 void 返回值 + 「静默降级为纯内存」——读取/恢复失败可被调用方观察。
+/// </summary>
+public readonly record struct CompositionVersionRecoveryResult(
+    bool StoreAvailable,
+    bool RecordsFound,
+    long MaxPersistedVersion,
+    string? FailureReason)
+{
+    /// <summary>是否失败（存在失败原因）。</summary>
+    public bool IsFailure => FailureReason is not null;
+
+    /// <summary>未注册 store（纯内存降级，非失败）。</summary>
+    public static CompositionVersionRecoveryResult NotAvailable => new(false, false, 0, null);
+
+    /// <summary>store 可用但该 session 无记录（合法空态，非失败）。</summary>
+    public static CompositionVersionRecoveryResult NoRecords => new(true, false, 0, null);
+
+    /// <summary>恢复成功（已预热到 <paramref name="maxPersistedVersion"/>）。</summary>
+    public static CompositionVersionRecoveryResult Recovered(long maxPersistedVersion) =>
+        new(true, true, maxPersistedVersion, null);
+
+    /// <summary>恢复失败（读取异常 / 下游取消等）。</summary>
+    public static CompositionVersionRecoveryResult Failed(string reason) => new(true, false, 0, reason);
+}
+
+/// <summary>
 /// 持久化写穿的 composition 版本登记表（P0-5 步骤 2）。
 ///
 /// 职责：
@@ -26,6 +52,14 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
     private readonly ILogger<PersistentCompositionVersionRegistry>? _logger;
     private readonly ConcurrentDictionary<string, long> _persistedVersions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _writeGates = new(StringComparer.Ordinal);
+    private long _writeThroughFailureCount;
+
+    /// <summary>
+    /// C01-A：写穿失败（AppendAsync 被拒 / 抛异常）累计次数。
+    /// 不改变 <see cref="Observe"/> 的非阻塞语义（写穿仍为 fire-and-forget），
+    /// 但把「静默降级为纯内存」变为「可观测降级」——写入失败有明确状态可供诊断。
+    /// </summary>
+    public long WriteThroughFailureCount => Interlocked.Read(ref _writeThroughFailureCount);
 
     public PersistentCompositionVersionRegistry(
         ICompositionStore? store,
@@ -63,36 +97,47 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
     /// 从 store 恢复 session 已持久化版本（跨重启，P0-5 缺陷修复）：
     /// 用全量记录预热内存注册表（同组合复用已存版本），并同步 <see cref="_persistedVersions"/>
     /// 到已持久化最大版本，保证后续写穿从 max+1 继续单调递增、不再被 append-only 拒绝。
-    /// store 为 null / session 无记录 / 任何异常（主动取消除外）：静默降级，不抛
-    /// （对齐恢复服务「失败不阻断」约定）。
+    /// store 为 null（<see cref="CompositionVersionRecoveryResult.NotAvailable"/>）/ session 无记录
+    /// （<see cref="CompositionVersionRecoveryResult.NoRecords"/>）/ 读取异常（<see cref="CompositionVersionRecoveryResult.Failed"/>）：
+    /// 不抛给调用方，但以显式状态返回（C01-A「失败有明确状态」，不再静默降级为成功）。
+    /// 调用方 ct 已取消时抛 <see cref="OperationCanceledException"/>（C01-A 取消传播）。
     /// </summary>
-    public async Task RecoverFromStoreAsync(string sessionId, CancellationToken ct = default)
+    public async Task<CompositionVersionRecoveryResult> RecoverFromStoreAsync(string sessionId, CancellationToken ct = default)
     {
         if (_store is null)
-            return;
+            return CompositionVersionRecoveryResult.NotAvailable;
         if (string.IsNullOrWhiteSpace(sessionId))
-            return;
+            return CompositionVersionRecoveryResult.NoRecords;
 
         try
         {
             var records = await _store.LoadAsync(sessionId, ct).ConfigureAwait(false);
             if (records is null || records.Count == 0)
-                return;
+                return CompositionVersionRecoveryResult.NoRecords;
 
             _inner.Seed(sessionId, records);
-            _persistedVersions[sessionId] = records.Max(r => r.CompositionVersion);
+            var maxPersistedVersion = records.Max(r => r.CompositionVersion);
+            _persistedVersions[sessionId] = maxPersistedVersion;
+            return CompositionVersionRecoveryResult.Recovered(maxPersistedVersion);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // 调用方主动取消：静默返回。
+            // C01-A 取消传播：调用方取消必须可观察，不得伪装成成功/静默降级。
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            // 下游取消但调用方未取消：保持「不抛」约定，但改为显式失败状态（不再静默成功）。
+            return CompositionVersionRecoveryResult.Failed("load cancelled downstream (caller not cancelled)");
         }
         catch (Exception ex)
         {
-            // 版本恢复失败不抛：静默降级为纯内存（后续写穿仍可能被拒，但不阻断调用方）。
+            // 版本恢复失败不抛（不阻断调用方），但以显式失败状态返回，由调用方观察。
             _logger?.LogWarning(
                 ex,
                 "[CompositionRegistry] version recovery failed (session={SessionId}); degraded to in-memory",
                 sessionId);
+            return CompositionVersionRecoveryResult.Failed($"{ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -137,6 +182,7 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
             }
             else
             {
+                Interlocked.Increment(ref _writeThroughFailureCount);
                 _logger?.LogWarning(
                     "[CompositionRegistry] append rejected (session={SessionId} version={Version}); degraded to in-memory",
                     sessionId,
@@ -145,7 +191,8 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
         }
         catch (Exception ex)
         {
-            // 写穿失败不阻断 Observe：仅记录，降级为纯内存。
+            // 写穿失败不阻断 Observe：仅记录 + 计数，降级为纯内存。
+            Interlocked.Increment(ref _writeThroughFailureCount);
             _logger?.LogDebug(
                 ex,
                 "[CompositionRegistry] write-through failed (session={SessionId} version={Version}); degraded to in-memory",

@@ -1073,43 +1073,83 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         ResolvedGatewayConfig config,
         CancellationToken ct)
     {
-        if (_telemetrySink is null)
+        // C01-A Step 1 · 执行状态（必须执行）：不依赖 telemetry sink。
+        var commit = CommitComposition(sessionId, messages, tools);
+
+        // C01-A Step 2 · 遥测（best-effort）：只消费已发生的提交事实。
+        await RecordCompositionTelemetryAsync(
+            trace, workspaceId, sessionId, agentTemplateId, tools, config, commit, ct);
+    }
+
+    /// <summary>
+    /// C01-A 执行状态：计算组合指纹并 <see cref="ICompositionVersionRegistry.Observe"/>，
+    /// 触发 revision 自增与（写穿实现下的）持久化提交。不读取也不依赖 telemetry sink。
+    /// 不做 try/catch：这是执行状态，失败必须可见（区别于下方 best-effort 遥测的静默降级）。
+    /// sessionId 为空时无会话可归因，返回 null（调用方据此跳过遥测）。
+    /// </summary>
+    private CompositionCommit? CommitComposition(
+        string sessionId,
+        IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<LlmToolDefinition>? tools)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return null;
+
+        var systemPromptHash = CompositionSnapshot.ComputeSystemPromptHash(messages);
+        var toolSpecHash = CompositionSnapshot.ComputeToolSpecHash(tools);
+        var prefixHash = CompositionSnapshot.ComputePrefixHash(systemPromptHash, toolSpecHash);
+        var toolIds = tools?.Select(t => t.Name).ToList();
+        // P0-5 step 4c：计算权限指纹（当前工具授权集）与 L0 静态层缓存键，
+        // 传入 Observe 使 permissionEpoch 检测自增与 canonical prefix 持久化生效。
+        var fullSystemPrompt = string.Join('\n',
+            messages.Where(m => m.Role == ChatRole.System).Select(m => m.Content ?? string.Empty));
+        var permissionFingerprint = CompositionSnapshot.ComputePermissionFingerprint(toolIds);
+        var canonicalSystemPrefixHash = CompositionSnapshot.ComputeCanonicalSystemPrefixHashFromPrompt(fullSystemPrompt);
+        // P0-5 step 6b：skillManifestHash 取 L2 SKILLS 层文本的 SHA-256（Skill Manifest 版本指纹），
+        // 提取不到该层时返回 null（遥测维度回退为空串，归因维度键保持恒定）。
+        var skillManifestHash = CompositionSnapshot.ComputeSkillManifestHashFromPrompt(fullSystemPrompt);
+        var observation = _compositionVersions.Observe(
+            sessionId,
+            systemPromptHash,
+            toolSpecHash,
+            toolIds,
+            permissionEpoch: 0,
+            skillManifestHash: skillManifestHash,
+            permissionFingerprint: permissionFingerprint,
+            canonicalSystemPrefixHash: canonicalSystemPrefixHash);
+
+        return new CompositionCommit(systemPromptHash, toolSpecHash, prefixHash, skillManifestHash, observation);
+    }
+
+    /// <summary>
+    /// C01-A best-effort 遥测：只把已完成的 <see cref="CommitComposition"/> 结果报给 sink。
+    /// sink 未注入 → 直接返回；sink 抛异常 → 只记日志，既不影响已完成的提交，也不让请求失败。
+    /// </summary>
+    private async Task RecordCompositionTelemetryAsync(
+        RuntimeTraceContext trace,
+        string workspaceId,
+        string sessionId,
+        string agentTemplateId,
+        IReadOnlyList<LlmToolDefinition>? tools,
+        ResolvedGatewayConfig config,
+        CompositionCommit? commit,
+        CancellationToken ct)
+    {
+        if (commit is null || _telemetrySink is null)
             return;
 
         try
         {
-            var systemPromptHash = CompositionSnapshot.ComputeSystemPromptHash(messages);
-            var toolSpecHash = CompositionSnapshot.ComputeToolSpecHash(tools);
-            var prefixHash = CompositionSnapshot.ComputePrefixHash(systemPromptHash, toolSpecHash);
-            var toolIds = tools?.Select(t => t.Name).ToList();
-            // P0-5 step 4c：计算权限指纹（当前工具授权集）与 L0 静态层缓存键，
-            // 传入 Observe 使 permissionEpoch 检测自增与 canonical prefix 持久化生效。
-            var fullSystemPrompt = string.Join('\n',
-                messages.Where(m => m.Role == ChatRole.System).Select(m => m.Content ?? string.Empty));
-            var permissionFingerprint = CompositionSnapshot.ComputePermissionFingerprint(toolIds);
-            var canonicalSystemPrefixHash = CompositionSnapshot.ComputeCanonicalSystemPrefixHashFromPrompt(fullSystemPrompt);
-            // P0-5 step 6b：skillManifestHash 取 L2 SKILLS 层文本的 SHA-256（Skill Manifest 版本指纹），
-            // 提取不到该层时返回 null（遥测维度回退为空串，归因维度键保持恒定）。
-            var skillManifestHash = CompositionSnapshot.ComputeSkillManifestHashFromPrompt(fullSystemPrompt);
-            var observation = _compositionVersions.Observe(
-                sessionId,
-                systemPromptHash,
-                toolSpecHash,
-                toolIds,
-                permissionEpoch: 0,
-                skillManifestHash: skillManifestHash,
-                permissionFingerprint: permissionFingerprint,
-                canonicalSystemPrefixHash: canonicalSystemPrefixHash);
-
+            var observation = commit.Observation;
             var dimensions = new Dictionary<string, string>
             {
-                ["prefix_hash"] = prefixHash,
-                ["system_prompt_hash"] = systemPromptHash,
-                ["tool_spec_hash"] = toolSpecHash,
+                ["prefix_hash"] = commit.PrefixHash,
+                ["system_prompt_hash"] = commit.SystemPromptHash,
+                ["tool_spec_hash"] = commit.ToolSpecHash,
                 ["composition_version"] = observation.Version.ToString(),
                 ["permission_epoch"] = observation.PermissionEpoch.ToString(),
                 ["tool_count"] = tools?.Count.ToString() ?? "0",
-                ["skill_manifest_hash"] = skillManifestHash ?? string.Empty,
+                ["skill_manifest_hash"] = commit.SkillManifestHash ?? string.Empty,
                 ["session_id"] = sessionId,
                 ["workspace_id"] = workspaceId,
                 ["provider"] = config.ProviderId,
@@ -1141,6 +1181,16 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             _logger.LogDebug(ex, "[DirectLlm] composition snapshot telemetry failed");
         }
     }
+
+    /// <summary>
+    /// C01-A：一次 Composition 提交的事实（执行状态产物），仅作为下游（telemetry）的只读输入。
+    /// </summary>
+    private sealed record CompositionCommit(
+        string SystemPromptHash,
+        string ToolSpecHash,
+        string PrefixHash,
+        string? SkillManifestHash,
+        CompositionObservation Observation);
 
     private async Task RecordLlmStreamDiagnosticsMetricsAsync(
         RuntimeTraceContext trace,

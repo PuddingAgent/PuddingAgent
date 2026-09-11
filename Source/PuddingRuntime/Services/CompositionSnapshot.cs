@@ -327,7 +327,9 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
                 foreach (var record in records)
                 {
                     var key = record.SystemPromptHash + "\u001f" + record.ToolSpecHash;
-                    var version = (int)record.CompositionVersion;
+                    // C01-A 类型合同最小对齐：契约侧 CompositionVersion 为 long，内存计数为 int，
+                    // 此处显式饱和转换（而非 (int) 隐式窄化），避免极大版本静默回绕成负数。
+                    var version = ToInternalVersion(record.CompositionVersion);
                     if (!_versions.TryGetValue(key, out var existing) || version > existing)
                         _versions[key] = version;
 
@@ -339,7 +341,7 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
                         _permissionEpoch = record.PermissionEpoch;
                 }
 
-                _nextVersion = Math.Max(_nextVersion, (int)maxVersion + 1);
+                _nextVersion = Math.Max(_nextVersion, ToInternalVersion(maxVersion + 1));
 
                 if (latest is not null)
                 {
@@ -351,6 +353,14 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
                 // （epoch 用显式传入值做下限），基线由首轮非空指纹 Observe 建立。
             }
         }
+
+        /// <summary>
+        /// C01-A 类型合同最小对齐：契约侧 <see cref="SessionCompositionRecord.CompositionVersion"/> 为 long，
+        /// 内存登记表计数为 int。此处显式饱和转换（而非隐式窄化），避免极大版本静默回绕成负数；
+        /// 超过 int 上限的版本折叠到 int.MaxValue（该量级已远超正常会话版本数，仅作防御）。
+        /// </summary>
+        private static int ToInternalVersion(long version) =>
+            version <= 0 ? 0 : (int)Math.Min(version, int.MaxValue);
 
         private static string AppendChangeReason(string current, string extra)
             => current is "none" or "initial" ? extra : current + "," + extra;
