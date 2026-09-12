@@ -40,3 +40,13 @@ DesktopApplicationCoordinator
 ## 4. 使用与诊断
 
 见 `How-Debuge.md` §11.34（开启方式、端口互斥、日志位置、常见症状）。
+
+### VS Code 启动配置（2026-09-12）
+
+`.vscode/launch.json` 提供 `PuddingDesktop`（普通窗口、`args: []`）和 `PuddingDesktop (后台启动)`（`args: ["--background"]`）。使用 `coreclr` 明确指定程序、参数和环境；二者复用 `pudding-build-desktop`，串行构建实际 Desktop csproj，使用项目标准输出 `Source/PuddingDesktop/bin/Debug/net10.0-windows10.0.17763.0/PuddingDesktop.dll`，不覆盖 `OutDir/OutputPath`。这是日常 F5 调试配置，按用户要求使用标准路径；一次性诊断日志仍留在temp。此任务只构建 Desktop 及项目引用，不额外运行 dev-up 或启动另一个 Core。
+
+可修改的环境选项为 `PUDDING_DESKTOP_HOME`（默认 `${env:LOCALAPPDATA}/Pudding`，读取其中的 `desktop.json`）与 `PUDDING_REPOSITORY_ROOT`（默认 `${workspaceFolder}`，供重建流程定位仓库）。当前 Desktop 只解析 `--background`；不要把 Core 子进程的 `--desktop-child`、`--desktop-parent-pid`、`--data-root` 填到 Desktop 的 args。
+
+DataRoot、CoreExecutablePath、关闭行为及 `debug.enabled/repositoryRoot/backendProjectPath/frontendWorkingDirectory` 仍通过 Desktop 设置或 `desktop.json` 配置；F5 本身不会启用 ADR-078 源码模式。Desktop 是单实例，已有实例时新进程只激活旧窗口；需调试新进程时先从托盘正常退出旧 Desktop。同一 DataRoot 的 dev-up Core 与 Desktop Core 继续遵守互斥规则。
+
+配置验证：launch/tasks JSON可解析，Desktop字段与本机C#扩展的coreclr schema匹配，原PuddingAgent启动配置保留；同时修复tasks.json已有前端命令字符串的JSON转义错误，未执行前端任务。按新Desktop任务原样构建成功（0错误、15个既有警告），未启动Desktop或Core，F5界面调试仍由开发者验证。

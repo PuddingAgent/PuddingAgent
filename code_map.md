@@ -1,5 +1,9 @@
 # PuddingAgent CodeMAP
 
+## 2026-09-12 VS Code Desktop 启动入口
+
+`.vscode/launch.json`：Desktop普通/`--background`两种coreclr配置、DesktopHome与仓库环境选项；`.vscode/tasks.json`的`pudding-build-desktop`构建真实Desktop项目并使用标准`bin/Debug/net10.0-windows10.0.17763.0/`输出。DataRoot/Core路径/源码调试模式仍属于desktop.json，不是Desktop CLI参数；说明见 `Docs/07架构/92ADR-078Desktop调试模式源码启动与反向代理ADR.md` §4。
+
 ## 2026-09-12 MSBuild 非法历史输出路径修复
 
 `Docs/Reports/MSBuild非法输出路径缓存修复-2026-09-12.md`：PuddingCodeIntelligence/PuddingFullTextIndex 的 `obj/Debug/net10.0/*.csproj.FileListAbsolute.txt` 残留150条含引号的历史输出路径，触发Visual Studio MSB3541。已备份并定点移除，两个项目经VS MSBuild实际构建通过；无需改业务代码或SDK targets。复发诊断与OutDir正确传参见 `How-Debuge.md`。

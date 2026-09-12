@@ -2,6 +2,38 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "PuddingDesktop",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "pudding-build-desktop",
+            "program": "${workspaceFolder}/Source/PuddingDesktop/bin/Debug/net10.0-windows10.0.17763.0/PuddingDesktop.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PUDDING_DESKTOP_HOME": "${env:LOCALAPPDATA}/Pudding",
+                "PUDDING_REPOSITORY_ROOT": "${workspaceFolder}"
+            },
+            "console": "internalConsole",
+            "stopAtEntry": false,
+            "justMyCode": true
+        },
+        {
+            "name": "PuddingDesktop (后台启动)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "pudding-build-desktop",
+            "program": "${workspaceFolder}/Source/PuddingDesktop/bin/Debug/net10.0-windows10.0.17763.0/PuddingDesktop.dll",
+            "args": ["--background"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PUDDING_DESKTOP_HOME": "${env:LOCALAPPDATA}/Pudding",
+                "PUDDING_REPOSITORY_ROOT": "${workspaceFolder}"
+            },
+            "console": "internalConsole",
+            "stopAtEntry": false,
+            "justMyCode": true
+        },
+        {
             "name": "PuddingAgent",
             "type": "coreclr",
             "request": "launch",
