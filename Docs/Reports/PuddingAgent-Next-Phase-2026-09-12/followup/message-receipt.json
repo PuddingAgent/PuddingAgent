@@ -1,0 +1,12 @@
+{
+  "messageId": "extmsg-82b6f6dbc36cc0b6edf70e8414a19a3f",
+  "agentId": "default.global_general-assistant.6a8",
+  "conversationId": "206a9b48ec904ebb93e7541131fbb835",
+  "deliveryStatus": "accepted",
+  "executionStatus": "pending",
+  "acceptedAtUtc": "2026-09-12T18:27:13.543+08:00",
+  "completedAtUtc": null,
+  "reply": null,
+  "replyIsError": null,
+  "idempotencyKey": "f0849a89-509e-4b35-9c63-93c4c7370f51"
+}

@@ -1,0 +1,92 @@
+[
+  {
+    "code": "N00",
+    "kind": "updated",
+    "taskId": "6495cee85e104d9ebdaaff7c65f73ccc",
+    "title": "[P0纠偏] 子代理弹性预算与限制收敛：短任务、600及任意正整数轮次",
+    "status": "InProgress",
+    "version": 9,
+    "etag": "\"task-v9\""
+  },
+  {
+    "code": "W01",
+    "kind": "updated",
+    "taskId": "8df6a4d6d66d4c0cb6b02e838ea2e6c3",
+    "title": "P1 ExecutionPlan/WorkUnit：弹性预算、持久等待与系统自动续行",
+    "status": "Blocked",
+    "version": 12,
+    "etag": "\"task-v12\""
+  },
+  {
+    "code": "SA-TRACE",
+    "kind": "updated",
+    "taskId": "791d062fa6ea44f18bfe5027a37696d0",
+    "title": "[P0][SA-TRACE] 修复Web子代理轨迹不显示：事件源、快照与SSE回放",
+    "status": "Backlog",
+    "version": 3,
+    "etag": "\"task-v3\""
+  },
+  {
+    "code": "SA-PROJ",
+    "kind": "updated",
+    "taskId": "571fb2fae35c4fb1896b7e2a0aa187e2",
+    "title": "前端子代理状态投影：异步默认、问答等待与停止范围一致",
+    "status": "Blocked",
+    "version": 6,
+    "etag": "\"task-v6\""
+  },
+  {
+    "code": "SA-TOOLS",
+    "kind": "updated",
+    "taskId": "dfe4679821e34ef09f2e7f6bbd2ffcf7",
+    "title": "子代理工具交互总卡：查询、双向消息、停止与120秒阻塞问答",
+    "status": "Blocked",
+    "version": 7,
+    "etag": "\"task-v7\""
+  },
+  {
+    "code": "L30",
+    "kind": "updated",
+    "taskId": "0114731d95e343faa23b975b459f5533",
+    "title": "[长程自治验收] 72小时、7日及30日：无Web运行、弹性子代理与持久Memory",
+    "status": "Backlog",
+    "version": 3,
+    "etag": "\"task-v3\""
+  },
+  {
+    "code": "SA-OBS",
+    "kind": "created",
+    "taskId": "3d30f71b9da340448664724eda911bfe",
+    "title": "[P1][SA-OBS] 共享子Run快照：已用预算、分项Tokens与最近行为查询",
+    "status": "Backlog",
+    "version": 1,
+    "etag": "\"task-v1\""
+  },
+  {
+    "code": "SA-MSG",
+    "kind": "created",
+    "taskId": "0a6b012b59e64c5dbf5be034a52496c1",
+    "title": "[P1][SA-MSG] 主子双向send_message、Run插嘴与尽快停止",
+    "status": "Backlog",
+    "version": 1,
+    "etag": "\"task-v1\""
+  },
+  {
+    "code": "SA-ASK",
+    "kind": "created",
+    "taskId": "2167bd7f323f496e98f1c39197bab73c",
+    "title": "[P1][SA-ASK] ask_question：子询父、阻塞120秒与持久等待复用",
+    "status": "Backlog",
+    "version": 1,
+    "etag": "\"task-v1\""
+  },
+  {
+    "code": "SA-UI",
+    "kind": "created",
+    "taskId": "04f8ab1892f24ba2a43f305bff399054",
+    "title": "[P1][SA-UI] Web子代理入口与检查器：状态、轨迹、插嘴、答复、停止",
+    "status": "Backlog",
+    "version": 1,
+    "etag": "\"task-v1\""
+  }
+]

@@ -1,0 +1,24 @@
+{
+  "messageId": "extmsg-0563a932f6069435d1d34e3e0b5614a9",
+  "workspaceId": "default",
+  "agentId": "default.global_general-assistant.6a8",
+  "deliveryStatus": "accepted",
+  "executionStatus": "running",
+  "conversationId": "206a9b48ec904ebb93e7541131fbb835",
+  "reply": null,
+  "replyIsError": null,
+  "acceptedAtUtc": "2026-09-12T18:12:01.446+08:00",
+  "completedAtUtc": null,
+  "statusUrl": "/api/external/v1/workspaces/default/agents/default.global_general-assistant.6a8/messages/extmsg-0563a932f6069435d1d34e3e0b5614a9",
+  "idempotencyKey": "b8b7b33c-ea52-43f3-b1eb-2f44eb39a47f",
+  "deliveries": [
+    {
+      "deliveryId": "340c088cb92e2a6a31fd9f95558635ef",
+      "status": "delivered",
+      "attemptCount": 1,
+      "createdAtUtc": "2026-09-12T18:12:01.452+08:00",
+      "updatedAtUtc": "2026-09-12T18:12:01.618+08:00",
+      "acknowledgedAtUtc": "2026-09-12T18:12:01.618+08:00"
+    }
+  ]
+}

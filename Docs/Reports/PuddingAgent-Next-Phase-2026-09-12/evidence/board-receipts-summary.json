@@ -1,0 +1,132 @@
+[
+  {
+    "code": "C99",
+    "kind": "updated",
+    "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+    "title": "P0 Token缓存命中率 >99%：最终请求稳定、Memory启动减负与7日真实验收",
+    "status": "InProgress",
+    "version": 10,
+    "etag": "\"task-v10\"",
+    "priority": "p0"
+  },
+  {
+    "code": "C01",
+    "kind": "updated",
+    "taskId": "9494be33635e4717ba1271a6105aec6a",
+    "title": "[GLM下一步][C01] Composition 执行状态独立提交、单调修订与恢复",
+    "status": "NeedsReview",
+    "version": 6,
+    "etag": "\"task-v6\"",
+    "priority": "p0"
+  },
+  {
+    "code": "C02",
+    "kind": "updated",
+    "taskId": "a8e5340ebb9f421bac7c8b3babb768bc",
+    "title": "[P0][C02] 最终 Provider 请求 Manifest、首轮占用与缓存失效归因",
+    "status": "Backlog",
+    "version": 4,
+    "etag": "\"task-v4\"",
+    "priority": "p0"
+  },
+  {
+    "code": "N00",
+    "kind": "updated",
+    "taskId": "6495cee85e104d9ebdaaff7c65f73ccc",
+    "title": "[P0纠偏] 子代理及WorkUnit支持600正常轮：移除32/40轮与120工具隐式截断",
+    "status": "Backlog",
+    "version": 4,
+    "etag": "\"task-v4\"",
+    "priority": "p0"
+  },
+  {
+    "code": "W01",
+    "kind": "updated",
+    "taskId": "8df6a4d6d66d4c0cb6b02e838ea2e6c3",
+    "title": "P1 ExecutionPlan/WorkUnit：600轮长程工作、检查点续跑与事件等待",
+    "status": "Blocked",
+    "version": 11,
+    "etag": "\"task-v11\"",
+    "priority": "p1"
+  },
+  {
+    "code": "A00",
+    "kind": "updated",
+    "taskId": "38c449e1941e441c8ff99474e2c08de6",
+    "title": "Agent Harness 收缩与模型原生 Runtime：RAW 会话、显式共享记忆与端云执行内核",
+    "status": "Backlog",
+    "version": 3,
+    "etag": "\"task-v3\"",
+    "priority": "p1"
+  },
+  {
+    "code": "E01",
+    "kind": "updated",
+    "taskId": "0b16740022f84b58a9532a87f1bc5509",
+    "title": "P1 调度控制面与 Goodput SLO：Task→Goal→WorkUnit→模型→成本全链路对账",
+    "status": "Blocked",
+    "version": 11,
+    "etag": "\"task-v11\"",
+    "priority": "p1"
+  },
+  {
+    "code": "A08",
+    "kind": "updated",
+    "taskId": "0d191866028a4a89ab00f0419f39463c",
+    "title": "[自主改进 A08] 运行问题到源码修复、外部部署和原任务恢复的证据闭环",
+    "status": "Backlog",
+    "version": 2,
+    "etag": "\"task-v2\"",
+    "priority": "p1"
+  },
+  {
+    "code": "L30",
+    "kind": "updated",
+    "taskId": "0114731d95e343faa23b975b459f5533",
+    "title": "[长程自治验收] 新构建72小时、7日及30日连续工作与Memory增长对照",
+    "status": "Backlog",
+    "version": 2,
+    "etag": "\"task-v2\"",
+    "priority": "p1"
+  },
+  {
+    "code": "M01",
+    "kind": "created",
+    "taskId": "a951d3537f6e4b5ba991144a94de9030",
+    "title": "[P0][M01] 新Session启动减负：有界Memory索引与压力驱动压缩",
+    "status": "Backlog",
+    "version": 2,
+    "etag": "\"task-v2\"",
+    "priority": "p0"
+  },
+  {
+    "code": "M02",
+    "kind": "created",
+    "taskId": "8335911d077d4cbea3e2fcf513cc4957",
+    "title": "[P1][M02] 30日任务Memory：主动写回、版本引用、定向检索与有界维护",
+    "status": "Backlog",
+    "version": 1,
+    "etag": "\"task-v1\"",
+    "priority": "p1"
+  },
+  {
+    "code": "C03",
+    "kind": "created",
+    "taskId": "de9863916058485db7359a6a745efb08",
+    "title": "[P0][C03] 后台记忆与召回miss减量：增量、去重和按需模型调用",
+    "status": "Backlog",
+    "version": 1,
+    "etag": "\"task-v1\"",
+    "priority": "p0"
+  },
+  {
+    "code": "A09",
+    "kind": "created",
+    "taskId": "74a7dccca66f4e67bc17f11bdecd4802",
+    "title": "[P1][A09] 移除反馈与兼容补丁：canonical工具、统一审计与Memory入口",
+    "status": "Backlog",
+    "version": 1,
+    "etag": "\"task-v1\"",
+    "priority": "p1"
+  }
+]

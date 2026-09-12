@@ -1,0 +1,136 @@
+{
+  "updates": [
+    {
+      "code": "C99",
+      "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+      "body": {
+        "title": "P0 Token缓存命中率 >99%：最终请求稳定、Memory启动减负与7日真实验收",
+        "priority": "p0",
+        "description": "本阶段P0总卡。冻结旧窗口898请求输入78,228,078、miss3,533,230、命中95.4834%，不是今日全天数据。分母不变时须减少约2.751M miss才可能>99%。先验收已有C01-B稳定工具定义与A01父接续，再实施C02最终manifest、M01启动上下文及C03后台miss。不能重建第二套Composition。保持任务/工具语义；禁止padding、无用预热、保留重复大历史抬高比例。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md。ADR-084/085/086与配套路线为本阶段实施依据。2026-09-12 用户明确纠偏：支持600正常轮，25–40轮建议已作废；旧证据保留但不是当前预算指令。源码交付、已加载构建与产品验收分开登记。",
+        "acceptanceCriteria": "连续7个完整北京时间自然日，总体和每个实际启用且支持缓存计量的主力模型，每日与7日token加权均>99%；包含冷启动、主/子/后台。未知计量和无样本单列，不冒充通过。另验收每个有效任务的input/miss/output/cost、耗时和质量；新Session启动开销同类对照降≥30%。来源去重，gateway/归因/layer不叠加。"
+      }
+    },
+    {
+      "code": "C01",
+      "taskId": "9494be33635e4717ba1271a6105aec6a",
+      "body": {
+        "title": "[GLM下一步][C01] Composition 执行状态独立提交、单调修订与恢复",
+        "priority": "p0",
+        "description": "当前源码已有c89920f、b29355f及defd1dd等C01-A/B增量；先核对最新HEAD/dirty及提交证据，不重复实现。目标是持久工具有序定义、曝光revision和权限epoch分离、精确恢复、正常轮边界原子提交；与ADR-084唯一Composition所有者一致。保留本卡NeedsReview意义：代码存在不等于已加载或真实恢复通过。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md。ADR-084/085/086与配套路线为本阶段实施依据。2026-09-12 用户明确纠偏：支持600正常轮，25–40轮建议已作废；旧证据保留但不是当前预算指令。源码交付、已加载构建与产品验收分开登记。",
+        "acceptanceCriteria": "保留原卡各失败/恢复边界验收；新增定义内容/顺序恢复一致、工具追加只影响一次边界、撤权及时、新Core恢复真实final request manifest可对账；schema/hash不匹配显式失败而不静默重建错误前缀。提交定向测试+明确新构建smoke证据后再推进状态。"
+      }
+    },
+    {
+      "code": "C02",
+      "taskId": "a8e5340ebb9f421bac7c8b3babb768bc",
+      "body": {
+        "title": "[P0][C02] 最终 Provider 请求 Manifest、首轮占用与缓存失效归因",
+        "priority": "p0",
+        "description": "实施ADR-084 §最终请求观测：在DirectLlmClient/真实provider编码边界记录RequestShapeManifest，包含requestId/attemptId、Task/Run/Session、composition/permission/prefix版本、有序片段和tools定义hash、firstChangedSegment/byte及原因。与S01-B可靠usage关联。新增ContextStartupSnapshot，区分new_main/new_child/restored/rollover；不能把早期layer估计当最终请求。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md。ADR-084/085/086与配套路线为本阶段实施依据。2026-09-12 用户明确纠偏：支持600正常轮，25–40轮建议已作废；旧证据保留但不是当前预算指令。源码交付、已加载构建与产品验收分开登记。",
+        "acceptanceCriteria": "同请求manifest与usage可追溯；重试attempt不重复计费归因；权限/工具/模板/记忆/压缩/恢复均有定位反例。Provider实际总量与层估算分开、差额显式；冷启动当前输入/继承输入/系统/技能/记忆/压缩互斥计数；不记录默认明文prompt。"
+      }
+    },
+    {
+      "code": "N00",
+      "taskId": "6495cee85e104d9ebdaaff7c65f73ccc",
+      "body": {
+        "title": "[P0纠偏] 子代理及WorkUnit支持600正常轮：移除32/40轮与120工具隐式截断",
+        "priority": "p0",
+        "description": "用户2026-09-12明确要求放宽，旧80轮/98工具消耗只是审计样本，不能据此再缩上限。当前SubAgentInvocationContracts默认WorkUnit32、max40；SubAgentManager managed Math.Min40/120；TaskExecutionPlanCompiler又设25–40轮、20–60分钟和小输入/成本阈值。统一EffectiveExecutionBudget，长程profile默认600正常轮/2400工具/24h总硬时限，可显式放宽；尊重明确较小用户预算。删除normalize强制抬600与管理器压40的双向隐式补丁。更新反向固化短预算的测试/文档。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md。ADR-084/085/086与配套路线为本阶段实施依据。2026-09-12 用户明确纠偏：支持600正常轮，25–40轮建议已作废；旧证据保留但不是当前预算指令。源码交付、已加载构建与产品验收分开登记。",
+        "acceptanceCriteria": "普通/managed/batch/模板实例到Loop链路一致；第41/61/201轮有进展不中止，600正常轮可到达，grace不暗扣正常轮；fake Provider测601轮，无需空烧真实调用。同步父预算不足显式处理、异步子Run不绑父HTTP超时；取消/撤权正常。小input/cost阈值不能提前代替600轮，所有预算来源可见；外部部署后自然长任务smoke。"
+      }
+    },
+    {
+      "code": "W01",
+      "taskId": "8df6a4d6d66d4c0cb6b02e838ea2e6c3",
+      "body": {
+        "title": "P1 ExecutionPlan/WorkUnit：600轮长程工作、检查点续跑与事件等待",
+        "priority": "p1",
+        "description": "本描述替代旧25–40轮WorkUnit建议。WorkUnit按交付依赖与所有权切分，不按小轮数强制反复Explore/Plan；简单任务不必五阶段LLM循环。复用Task checkpoint/AwaitHandle，nextAction、Memory版本引用、pendingOperation和完整Task/Run身份可恢复。每20–50轮的可选checkpoint检查是持久化频率，不是停机阈值。N00负责600有效预算，本卡负责跨Run接续与外部等待。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md。ADR-084/085/086与配套路线为本阶段实施依据。2026-09-12 用户明确纠偏：支持600正常轮，25–40轮建议已作废；旧证据保留但不是当前预算指令。源码交付、已加载构建与产品验收分开登记。",
+        "acceptanceCriteria": "用户授权600轮穿透，预算耗尽保存partial而不报完成；等待子Run/工具/部署释放不必要轮询；子结果/超时重启后自动续行一次，所有重复副作用有幂等证明。checkpoint与Memory引用先后写失败可恢复，不新造状态机；相同任务集不重复全量探索。"
+      }
+    },
+    {
+      "code": "A00",
+      "taskId": "38c449e1941e441c8ff99474e2c08de6",
+      "body": {
+        "title": "Agent Harness 收缩与模型原生 Runtime：RAW 会话、显式共享记忆与端云执行内核",
+        "priority": "p1",
+        "description": "本阶段只实施ADR-084/085/086的核心收敛，不借机扩展端云部署。Platform拥有命令/任务状态；Runtime拥有一个Loop/工具结果合同；Composition唯一；Memory写读唯一；Desktop仍仅监督与容器。Feedback按语义分类：UI提示与用户事实保留，重复文字纠错/猜终态/猜工具协议/测试legacy fallback进入删除清单。A09逐项迁移调用者后删除，避免新增兼容层。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md。ADR-084/085/086与配套路线为本阶段实施依据。2026-09-12 用户明确纠偏：支持600正常轮，25–40轮建议已作废；旧证据保留但不是当前预算指令。源码交付、已加载构建与产品验收分开登记。",
+        "acceptanceCriteria": "提交文件/方法/实际调用者/删除理由/替代入口/测试矩阵；核心不并行保留Native与正文JSON工具执行器；生产类无tests-only fallback；删除后Native调用、权限、工具审计、故障恢复和用户反馈不退化。组件边界与依赖方向更明确，非仅拆partial文件。"
+      }
+    },
+    {
+      "code": "E01",
+      "taskId": "0b16740022f84b58a9532a87f1bc5509",
+      "body": {
+        "title": "P1 调度控制面与 Goodput SLO：Task→Goal→WorkUnit→模型→成本全链路对账",
+        "priority": "p1",
+        "description": "按ADR-086与设计§8评估有效产出。每Heartbeat分类progressed/awaiting_external/no_ready_work/recovered/failed，附Task/证据/待等identity与触发条件；维护结果不算任务完成。复用错误族判定与工具postcondition，不用轮次/字数/cache rate单独证明进展。报告active work/LLM wait/tool/wait/queue时间和每verified task输入、miss、输出、费用。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md。ADR-084/085/086与配套路线为本阶段实施依据。2026-09-12 用户明确纠偏：支持600正常轮，25–40轮建议已作废；旧证据保留但不是当前预算指令。源码交付、已加载构建与产品验收分开登记。",
+        "acceptanceCriteria": "同固定任务族前后质量一致；可避免重复失败目标下降≥50%，耗时P95不恶化>10%（说明样本/难度），首轮开销下降≥30%；全部心跳可解释，等待无忙轮询；0usage/缺价/未知归因不被当节省；任务与真实worker/assignment/Run可对账。"
+      }
+    },
+    {
+      "code": "A08",
+      "taskId": "0d191866028a4a89ab00f0419f39463c",
+      "body": {
+        "title": "[自主改进 A08] 运行问题到源码修复、外部部署和原任务恢复的证据闭环",
+        "priority": "p1",
+        "description": "落实设计§8：运行中发现自身工具/预算/记忆/调度问题，记录原Task/Run/request/tool、反例和源码点，去重复用看板，交付最小修复并继续可做原工作。阶段Observed→Planned→SourceVerified→ready-for-external-deploy→BuildLoaded→in-product-functional-complete→OriginalWorkResumed→Accepted。不得用旧Core里编译通过冒充新行为。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md。ADR-084/085/086与配套路线为本阶段实施依据。2026-09-12 用户明确纠偏：支持600正常轮，25–40轮建议已作废；旧证据保留但不是当前预算指令。源码交付、已加载构建与产品验收分开登记。",
+        "acceptanceCriteria": "至少一个真实自身缺陷从发现到修复、新构建产品验证、原任务恢复的全证据闭环；复发率/成本可对比。外部控制器证明部署加载与生命周期；内部新会话证明功能。未部署保留对应待验收阶段，不主动清理D:/data掩盖问题。"
+      }
+    },
+    {
+      "code": "L30",
+      "taskId": "0114731d95e343faa23b975b459f5533",
+      "body": {
+        "title": "[长程自治验收] 新构建72小时、7日及30日连续工作与Memory增长对照",
+        "priority": "p1",
+        "description": "用户目标为连续数十天，本卡从72h/7d扩展到30日逻辑任务连续性。按24h预检→72h soak→7日真实缓存/质量对照→30日跨Session/部署/等待恢复推进；明确buildId/时间窗。保护活跃Memory引用，不靠最近7天Session摘要恢复。按事件推进工作，Heartbeat是可解释兜底，不要求每次造工作。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md。ADR-084/085/086与配套路线为本阶段实施依据。2026-09-12 用户明确纠偏：支持600正常轮，25–40轮建议已作废；旧证据保留但不是当前预算指令。源码交付、已加载构建与产品验收分开登记。",
+        "acceptanceCriteria": "实走30日后才报30日通过；模拟测试单列。跨重启/网络/重复结果/Memory写与checkpoint间崩溃恢复；零活跃引用丢失/零重复副作用，所有心跳有归类。重复固定事实current页数不增长、新知识增长可解释；记录DB/WAL/内存/索引/恢复时延。7日缓存整体及各主力模型每日与加权均>99%，总消耗/任务质量不退化。"
+      }
+    }
+  ],
+  "creates": [
+    {
+      "code": "M01",
+      "body": {
+        "title": "[P0][M01] 新Session启动减负：有界Memory索引与压力驱动压缩",
+        "priority": "p0",
+        "description": "落实设计§2.2/§5与ADR-085。旧12子Session首轮Provider输入20,847–25,148，中位22,773.5；技能估计7047、schema5804、历史3609–4797构成启动负担。默认稳定规则+必要工具/偏好+续行胶囊+Memory引用目录；不首轮注入完整最新摘要/所有技能正文。保留显式compact和压力压缩，UI Tab切换不压缩。统一最终预算与输出保留，删除多套互相冲突触发阈值。依赖C02观测与M02最小关键记忆回执；先观测/减重复层，M02关键恢复完成后启用新启动策略。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md。ADR-084/085/086与配套路线为本阶段实施依据。2026-09-12 用户明确纠偏：支持600正常轮，25–40轮建议已作废；旧证据保留但不是当前预算指令。源码交付、已加载构建与产品验收分开登记。",
+        "acceptanceCriteria": "同类负载首轮开销下降≥30%；默认场景P95≤12K且≤有效输入容量20%，超额理由清晰；new_main/new_child/restored/rollover独立样本。最终实际input与估计分列，不能拿旧主Session第0轮当新会话。切换不丢关键事实，压缩覆盖与summary-only no-op保留，工具组完整。",
+        "autoDispatchEnabled": false
+      }
+    },
+    {
+      "code": "M02",
+      "body": {
+        "title": "[P1][M02] 30日任务Memory：主动写回、版本引用、定向检索与有界维护",
+        "priority": "p1",
+        "description": "落实设计§4与ADR-085；复用Wiki Book v1 edit_page、save_memory和Task checkpoint。关键边界先获得Memory持久版本回执再CAS更新current checkpoint；任务状态不复制到Memory。稳定key upsert、current/archived、sourceRefs及类型化TTL，活跃引用不因7天清理失效。检索key含workspace/principal/permissionEpoch/task/scope/query/filters/indexRevision，替换GetHashCode及跨Session共享状态不清。结果含ID/version/摘要/读取引用和明确no_match/error。取消每5轮强制Recall，无变化不做LLM整理。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md。ADR-084/085/086与配套路线为本阶段实施依据。2026-09-12 用户明确纠偏：支持600正常轮，25–40轮建议已作废；旧证据保留但不是当前预算指令。源码交付、已加载构建与产品验收分开登记。",
+        "acceptanceCriteria": "关键事实切换/崩溃后可找回；Memory成功checkpoint失败、冲突、过期引用、删页索引、撤权/跨范围、旧事实覆盖均验证；稳定重复写入不膨胀current记录。索引≤1K/续行≤2K目标有超额处理；30日活跃任务不依赖最近摘要。保持简单工具面，不重建F0–F10或多阶段语义审批。",
+        "autoDispatchEnabled": false
+      }
+    },
+    {
+      "code": "C03",
+      "body": {
+        "title": "[P0][C03] 后台记忆与召回miss减量：增量、去重和按需模型调用",
+        "priority": "p0",
+        "description": "设计§3.5：旧60次后台输入589,315、命中0.41268%，约占总miss16.61%。确定性去重/upsert零模型；实际变化触发有界增量批处理，固定短提示，候选追加尾部，不反复发送整本Memory。简单检索直接用索引，复杂歧义才用模型排序，保留所有辅助模型usage归因。关键下一轮记忆同步写成功，不受批处理延迟。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md。ADR-084/085/086与配套路线为本阶段实施依据。2026-09-12 用户明确纠偏：支持600正常轮，25–40轮建议已作废；旧证据保留但不是当前预算指令。源码交付、已加载构建与产品验收分开登记。",
+        "acceptanceCriteria": "真实后台/召回各分组input/miss/output/cost和调用次数可对账；无变化零LLM、关键记忆不延迟、批次范围不越权、崩溃重放不重复写。节省须同质量/记忆找回率对照，后台冷miss不能从C99总体分母中排除。",
+        "autoDispatchEnabled": false
+      }
+    },
+    {
+      "code": "A09",
+      "body": {
+        "title": "[P1][A09] 移除反馈与兼容补丁：canonical工具、统一审计与Memory入口",
+        "priority": "p1",
+        "description": "实施ADR-086与设计§7。建候选清单：HarnessToolCompatibilityAdapter历史别名/参数猜测、AgentLoopResponse.Tool正文执行/DONE猜测、Buffered tests-only fallback、Legacy Memory summary/recall、客户端状态猜测与重复usage补写。按真实调用者迁到canonical入口后逐项删除；必要外部协议只在边界明确适配一次。ShowFeedback/ComposerFeedbackStrip及用户feedback事实不是执行补丁，按语义保留。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md。ADR-084/085/086与配套路线为本阶段实施依据。2026-09-12 用户明确纠偏：支持600正常轮，25–40轮建议已作废；旧证据保留但不是当前预算指令。源码交付、已加载构建与产品验收分开登记。",
+        "acceptanceCriteria": "每项文件/调用者/原因/替代/删除commit/验证齐全；核心仅一套工具调用、权限与审计，普通正文JSON不执行副作用；重复分支和状态机数实际减少。Native主/子/streaming/buffered、无依赖组合根、故障恢复对照通过；不通过批删Feedback关键词完成任务，不新造平行Coordinator。",
+        "autoDispatchEnabled": false
+      }
+    }
+  ]
+}

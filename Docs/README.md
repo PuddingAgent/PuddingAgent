@@ -1,8 +1,28 @@
 # Pudding Agent Network 文档索引
 
-最后更新：2026-08-26（新增 Chat 独立“⚡ 插嘴”按钮设计；自动权限审查与危险操作防火墙已统一设计并合并任务；新增子代理活动轨迹实时回放与运行检查器修复方案；Agent Harness H0 已实现；以上均待部署或产品验收）
+## 2026-09-12 子代理后续修订
+
+[子代理弹性预算与双向交互](Features/子代理弹性预算与双向交互设计-2026-09-12.md) · [看板修订](Reports/子代理弹性交互看板修订-2026-09-12.md) · [ADR-087](07架构/101ADR-087子代理托管运行与持久问答ADR.md)。600不是固定上下界；系统托管任意正整数轮次，新增消息/停止/120秒问答与Web观察控制面，统一支持无Web无人值守。
+
+
+## 2026-09-12 下一阶段：缓存与长程自治
+
+[完整设计](Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md) · [路线/任务/证据包](Reports/PuddingAgent-Next-Phase-2026-09-12/README.md)。ADR-084稳定最终请求与>99%验收、ADR-085 Memory主导长程状态、ADR-086 600正常轮与内核收敛均为Proposed。旧25–40轮建议被本次用户要求取代，历史审计数据保留。
+
+
+2026-09-12 抖音续建：[douyin-creator-tools 调研、WebView2 复用与看板方案](Reports/DouyinCreatorTools-WebView2复用与看板方案-2026-09-12.md)。沿用 ADR-066/68，先真实 Agent 验收，再只读 Adapter、可靠回复；研究和登记完成不等于产品验收。
+
+最后更新：2026-09-12（自主工作审计：8次心跳、12个子Run、898次请求、95.48%加权缓存命中；父级接续分叉、低产出心跳与终端/工具轨迹问题已登记；窗口外C01-A c89920f、授权接线b0cfa3a已提交，待独立验收及新构建验证）
+
+2026-09-12 自主工作审计：[轨迹、效率、缓存与自改进设计](Reports/PuddingAgent-Autonomy-Audit-2026-09-12/01-自主工作轨迹与自改进审计.md)，[任务登记和实施顺序](Reports/PuddingAgent-Autonomy-Audit-2026-09-12/02-任务看板登记与实施顺序.md)。统计窗口BJT 09-11 00:00至09-12 06:24，窗口外进展单列；当前可局部自纠错，尚未证明明确新构建上的长期自主工作闭环。
+
+持续推进入口：`Docs/Reports/PuddingAgent持续优化执行台账-2026-09-05.md`。第四轮源码与阶段证据：`Docs/Reports/PuddingAgent第四轮有界查询与流空档修复-2026-09-05.md`；19项定向/96项扩展回归，264制品/148前端核验，同任务56.898s/预热13.253s；资源后续回升仍未收口。
 
 ## 文档定位
+
+2026-09-11 GLM 前端首批复核：[交互审计与下一步](Reports/GLM前端首批交互审计与下一步-2026-09-11.md)。结论 needs_changes；类型检查通过，相关现有测试 40/41，7 个隔离契约反例未满足预期；看板按 Steering、停止、受理恢复、基线与产品验收分别收口。
+
+2026-09-11 前端体验评估：[前端交互体验优化建议](Reports/前端交互体验优化建议-2026-09-11.md)。基于当前源码提出发送/排队/停止、状态反馈、长会话连续性、导航与交付物衔接的分期建议；状态 Proposed，未实施产品代码或完成实机体验验收。
 
 这里是 Pudding Agent 的设计入口。当前产品主线是 Windows First 的 `PuddingDesktop.exe`：WPF 负责 Windows 11 Shell、WebView2 和进程监督，独立的 ASP.NET Core 子进程继续承载 API、Controller、Runtime、Connector 和 SQLite。现有 Web Workbench 通过内置静态资源复用，产品运行不依赖命令行、Python 或 Node。
 
@@ -20,6 +40,20 @@
 
 ## 当前主线文档
 
+- [2026-09-12 GLM 实施进度复核与看板状态修订](Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md)
+	- 当前进度入口：F01真实界面消费者、S01-B持久请求身份/本地恢复待补；C01-A先验收，再C01-B/C02。五卡NeedsReview、C02 Backlog、缓存总卡InProgress；源码accepted不等于生命周期Completed或生产验收。附结构化回执。
+
+- [2026-09-11 GLM 批次1独立审计与下一步](Reports/PuddingAgent-GLM-Optimization-2026-09-11/04-批次1独立审计与下一步.md)
+	- 9月11日历史审计与缺陷设计；同目录 [当时看板回执](Reports/PuddingAgent-GLM-Optimization-2026-09-11/05-后续任务与看板回执.md) 保留六个新任务和四个既有任务更新。原10个失败探针已于9月12日转绿，剩余条款和当前状态以06为准。
+
+- [2026-09-11 架构、代码整洁、稳定性与缓存优化审阅](Reports/PuddingAgent-GLM-Optimization-2026-09-11/01-代码审阅与优化设计.md)
+	- 原始 15 个优化工作包及施工范围：水合并发、usage 原子聚合、Composition 提交/恢复、最终请求 manifest、增量归档、Chat 读模型、资源生命周期和唯一组合根。当前实施和验收状态以同目录06进度复核为准；01/02保留设计合同，03–05保留历史。
+
+- `Docs/Reports/PuddingAgent效率与代码审计-2026-09-05.md`
+	- 2026-08-29–09-04 完整七日账本与 09-05 实时诊断：夜间有效吞吐、legacy claim 假忙、缓存、工具参数合同、Chat 401 重连、归档回放开销、干净提交/脏工作区/已部署 build 的验收差异；只读审计及后续五轮优化方案，未实施修复。
+- `Docs/Reports/PuddingAgent首轮修复与验证-2026-09-05.md`：调度终态/重试 fence、文件补丁、Chat 鉴权退避、执行监视与归档空转优化；已做定向测试，未部署；含七日统计预筛选修正。
+- `Docs/Reports/PuddingAgent第二轮前端修复与发布验证-2026-09-05.md`：修复失效样式、性能面板合同、重连计数传递；全量类型检查与 118 项测试通过，独立 Desktop/Core 发布包及 hash 已核验，尚未切换运行实例。
+- `Docs/Reports/PuddingAgent第三轮部署与产品验收-2026-09-05.md`：经既有 Desktop 主管部署新 Core/前端；264 受管制品与 148 前端源文件核验、1 次 file_read canary 成功。揭示 161.749 秒流事件空档、预热后 Private 回升和无可派库存；更正部署前 idle 误标，不宣称性能收益。
 - `Docs/Features/Chat独立插嘴按钮与当前Turn即时Steering设计方案.md` / `Docs/superpowers/specs/2026-06-06-runtime-steering-queue-design.md`
 	- 复用既有 current-Turn durable Steering，为运行中 Composer 增加独立 `⚡` 直达入口；明确不进入普通待发队列、不创建第二个 Turn、202 后 compare-and-clear、409/失败保留草稿、图片 fail closed、单飞幂等和明确部署 smoke。当前仅设计，关联 P1 任务 `ed88185f1d3b4e16a70e9b9ea0f0e040`，尚未实施/部署。
 - `Docs/superpowers/specs/2026-06-03-auto-tool-approval-design.md`
