@@ -116,7 +116,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                     return ToolExecutionResult.Fail($"Unknown operation type '{opType}' in {relPath}.");
                 if (opType.ToLowerInvariant() is "replace" or "insert" or "replace_lines"
                     && op.NewText is null)
-                    return ToolExecutionResult.Fail($"{opType} operation in {relPath} requires 'new_text'. Use an explicit empty string to delete text; omitted or null text is not a deletion.");
+                    return ToolExecutionResult.Fail($"{opType} operation in {relPath} requires 'new_text' (or 'newText'). Use an explicit empty string to delete text; omitted or null text is not a deletion.");
                 if (opType.Equals("regexReplace", StringComparison.OrdinalIgnoreCase) && op.Replacement is null)
                     return ToolExecutionResult.Fail($"regexReplace operation in {relPath} requires 'replacement'. Use an explicit empty string to delete text.");
                 if (opType.Equals("replace", StringComparison.OrdinalIgnoreCase))
@@ -124,7 +124,7 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
                     if (string.IsNullOrEmpty(op.OldText))
                     {
                         return ToolExecutionResult.Fail(
-                            $"replace operation in {relPath} requires 'old_text'. " +
+                            $"replace operation in {relPath} requires 'old_text' (or 'oldText'). " +
                             "Provide the exact text to find before replacing. " +
                             "Example: operations=[{type='replace', old_text='old code', new_text='new code'}]");
                     }
@@ -295,10 +295,10 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             if (!type.Equals("replace", StringComparison.OrdinalIgnoreCase)) continue;
 
             var oldText = op.OldText ?? "";
-            var newText = op.NewText ?? "";
+            var newText = NormalizeEolToHost(op.NewText ?? "", original);
             if (string.IsNullOrEmpty(oldText))
             {
-                errors.Add("replace operation requires 'old_text' - skipped.");
+                errors.Add("replace operation requires 'old_text' (or 'oldText') - skipped.");
                 continue;
             }
 
@@ -353,6 +353,33 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         return matches;
     }
 
+    // The line-operation path normalizes inserted text before rejoining, but the string-replace
+    // path splices new_text verbatim — an LF snippet inserted into a CRLF file produced mixed
+    // CRLF/LF endings. Convert new_text to the file's dominant line ending.
+    private static string NormalizeEolToHost(string text, string original)
+    {
+        if (string.IsNullOrEmpty(text) || text.IndexOf('\n') < 0)
+            return text;
+
+        var crlfCount = 0;
+        var lfOnlyCount = 0;
+        for (var i = 0; i < original.Length; i++)
+        {
+            if (original[i] != '\n')
+                continue;
+            if (i > 0 && original[i - 1] == '\r')
+                crlfCount++;
+            else
+                lfOnlyCount++;
+        }
+
+        if (crlfCount == 0 && lfOnlyCount == 0)
+            return text;
+
+        var normalized = text.Replace("\r\n", "\n");
+        return crlfCount > lfOnlyCount ? normalized.Replace("\n", "\r\n") : normalized;
+    }
+
     private static IReadOnlyList<TextMatch> FindReplacementCandidates(string original, string oldText)
     {
         var exact = FindLiteralMatches(original, oldText, "exact");
@@ -362,31 +389,68 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         if (IsAmbiguousBlockPattern(oldText, original))
             return [];
 
-        var whitespace = FindNormalizedMatches(
+        List<TextMatch> candidates = FindNormalizedMatches(
             original,
             oldText,
             "whitespace-tolerant",
             static c => char.IsWhiteSpace(c) ? null : c.ToString());
-        if (whitespace.Count > 0)
-            return whitespace;
-
-        // P2-4: CSS-aware normalization
-        if (LooksLikeCssSource(oldText) || LooksLikeCssSource(original))
+        if (candidates.Count == 0)
         {
-            var cssMatches = FindNormalizedMatches(
-                original,
-                oldText,
-                "css-aware",
-                NormalizeCssChar);
-            if (cssMatches.Count > 0)
-                return cssMatches;
+            // P2-4: CSS-aware normalization
+            if (LooksLikeCssSource(oldText) || LooksLikeCssSource(original))
+            {
+                candidates = FindNormalizedMatches(
+                    original,
+                    oldText,
+                    "css-aware",
+                    NormalizeCssChar);
+            }
+
+            if (candidates.Count == 0)
+            {
+                candidates = FindNormalizedMatches(
+                    original,
+                    oldText,
+                    "punctuation-normalized",
+                    NormalizePunctuationChar);
+            }
         }
 
-        return FindNormalizedMatches(
-            original,
-            oldText,
-            "punctuation-normalized",
-            NormalizePunctuationChar);
+        return ExpandLeadingWhitespace(original, oldText, candidates);
+    }
+
+    // Normalized matching skips whitespace, so the match span starts at the first content
+    // character. When old_text itself begins with whitespace (typical snippet indentation), the
+    // original line's leading indent would survive the replacement and stack with the indent
+    // inside new_text (+4/+8/+12 drift). Extend the span left over the same-line indent run —
+    // plus one preceding newline when old_text starts with a newline — so the replacement swaps
+    // the whole region including its indentation.
+    private static List<TextMatch> ExpandLeadingWhitespace(string original, string oldText, List<TextMatch> matches)
+    {
+        if (matches.Count == 0 || !char.IsWhiteSpace(oldText[0]))
+            return matches;
+
+        var includeNewline = oldText[0] == '\n'
+            || (oldText[0] == '\r' && oldText.Length > 1 && oldText[1] == '\n');
+
+        for (var i = 0; i < matches.Count; i++)
+        {
+            var match = matches[i];
+            var start = match.Index;
+            while (start > 0 && (original[start - 1] == ' ' || original[start - 1] == '\t'))
+                start--;
+            if (includeNewline)
+            {
+                if (start >= 2 && original[start - 1] == '\n' && original[start - 2] == '\r')
+                    start -= 2;
+                else if (start >= 1 && (original[start - 1] == '\n' || original[start - 1] == '\r'))
+                    start--;
+            }
+            if (start != match.Index)
+                matches[i] = new TextMatch(start, match.Index + match.Length - start, match.Strategy);
+        }
+
+        return matches;
     }
 
     private static bool IsAmbiguousBlockPattern(string oldText, string original)
@@ -1229,7 +1293,7 @@ public sealed record FilePatchItem
     public required IReadOnlyList<FilePatchOperation> Operations { get; init; }
 }
 
-[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+[JsonConverter(typeof(FilePatchOperationJsonConverter))]
 public sealed record FilePatchOperation
 {
     [ToolParam("Operation type: replace, insert, delete, replace_lines, or regexReplace.")]
@@ -1271,6 +1335,115 @@ public sealed record FilePatchOperation
     [ToolParam("Full content of the line immediately AFTER the target range (whitespace-insensitive match).")]
     [JsonPropertyName("anchor_after")]
     public string? AnchorAfter { get; init; }
+}
+
+/// <summary>
+/// LLM 传参字段名不稳定：工具 schema 用 snake_case（old_text），模型时常改传 camelCase（oldText），
+/// 而 [JsonPropertyName] 只认单一名，camelCase 会被静默丢弃成 null，再触发误导性的 "requires 'old_text'" 报错。
+/// 本 converter 对所有字段做「大小写 + 下划线」无关匹配，两种拼写都能绑定；
+/// 未知字段仍按 Disallow 契约拒绝（工具描述承诺「使用未知参数会拒绝执行」）。
+/// </summary>
+internal sealed class FilePatchOperationJsonConverter : JsonConverter<FilePatchOperation>
+{
+    public override FilePatchOperation Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.StartObject)
+            throw new JsonException("file_patch operation must be a JSON object.");
+
+        string? type = null, oldText = null, newText = null, pattern = null, replacement = null,
+               optionsText = null, anchorBefore = null, anchorAfter = null;
+        bool? replaceAll = null;
+        int? startLine = null, endLine = null;
+
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject)
+            {
+                return new FilePatchOperation
+                {
+                    Type = type,
+                    OldText = oldText,
+                    NewText = newText,
+                    ReplaceAll = replaceAll,
+                    StartLine = startLine,
+                    EndLine = endLine,
+                    Pattern = pattern,
+                    Replacement = replacement,
+                    Options = optionsText,
+                    AnchorBefore = anchorBefore,
+                    AnchorAfter = anchorAfter,
+                };
+            }
+
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                throw new JsonException("Unexpected token in file_patch operation object.");
+
+            var name = reader.GetString() ?? string.Empty;
+            reader.Read();
+            switch (NormalizeKey(name))
+            {
+                case "type": type = ReadString(ref reader, name); break;
+                case "oldtext": oldText = ReadString(ref reader, name); break;
+                case "newtext": newText = ReadString(ref reader, name); break;
+                case "replaceall": replaceAll = ReadBool(ref reader, name); break;
+                case "startline": startLine = ReadInt32(ref reader, name); break;
+                case "endline": endLine = ReadInt32(ref reader, name); break;
+                case "pattern": pattern = ReadString(ref reader, name); break;
+                case "replacement": replacement = ReadString(ref reader, name); break;
+                case "options": optionsText = ReadString(ref reader, name); break;
+                case "anchorbefore": anchorBefore = ReadString(ref reader, name); break;
+                case "anchorafter": anchorAfter = ReadString(ref reader, name); break;
+                default:
+                    throw new JsonException(
+                        $"Unknown parameter '{name}' in file_patch operation. Supported: " +
+                        "type, old_text/oldText, new_text/newText, replace_all/replaceAll, " +
+                        "start_line/startLine, end_line/endLine, pattern, replacement, options, " +
+                        "anchor_before/anchorBefore, anchor_after/anchorAfter.");
+            }
+        }
+
+        throw new JsonException("Incomplete JSON object for file_patch operation.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, FilePatchOperation value, JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        if (value.Type is not null) writer.WriteString("type", value.Type);
+        if (value.OldText is not null) writer.WriteString("old_text", value.OldText);
+        if (value.NewText is not null) writer.WriteString("new_text", value.NewText);
+        if (value.ReplaceAll is not null) writer.WriteBoolean("replace_all", value.ReplaceAll.Value);
+        if (value.StartLine is not null) writer.WriteNumber("start_line", value.StartLine.Value);
+        if (value.EndLine is not null) writer.WriteNumber("end_line", value.EndLine.Value);
+        if (value.Pattern is not null) writer.WriteString("pattern", value.Pattern);
+        if (value.Replacement is not null) writer.WriteString("replacement", value.Replacement);
+        if (value.Options is not null) writer.WriteString("options", value.Options);
+        if (value.AnchorBefore is not null) writer.WriteString("anchor_before", value.AnchorBefore);
+        if (value.AnchorAfter is not null) writer.WriteString("anchor_after", value.AnchorAfter);
+        writer.WriteEndObject();
+    }
+
+    private static string NormalizeKey(string name) =>
+        name.Replace("_", string.Empty, StringComparison.Ordinal).ToLowerInvariant();
+
+    private static string? ReadString(ref Utf8JsonReader reader, string name) => reader.TokenType switch
+    {
+        JsonTokenType.String => reader.GetString(),
+        JsonTokenType.Null => null,
+        _ => throw new JsonException($"Parameter '{name}' in file_patch operation must be a string."),
+    };
+
+    private static bool ReadBool(ref Utf8JsonReader reader, string name) => reader.TokenType switch
+    {
+        JsonTokenType.True => true,
+        JsonTokenType.False => false,
+        _ => throw new JsonException($"Parameter '{name}' in file_patch operation must be a boolean."),
+    };
+
+    private static int ReadInt32(ref Utf8JsonReader reader, string name) => reader.TokenType switch
+    {
+        JsonTokenType.Number => reader.GetInt32(),
+        _ => throw new JsonException($"Parameter '{name}' in file_patch operation must be a number."),
+    };
 }
 
 /// <summary>

@@ -144,15 +144,18 @@ public sealed class FilePatchToolDryRunDefaultTests
     }
 
     [TestMethod]
-    [DataRow("newText")]
+    [DataRow("unknownField")]
     [DataRow("omitted")]
     [DataRow("null")]
     public async Task InvalidReplacement_DoesNotDeleteOrWriteAnyFile(string field)
     {
         File.WriteAllText(Path.Combine(_tempDir, "first.txt"), "keep");
         File.WriteAllText(Path.Combine(_tempDir, "second.txt"), "keep");
+        // Since the D1 alias fix, camelCase new_text is a VALID parameter (covered by
+        // FilePatchToolTests); invalid replacement here means a truly unknown field,
+        // an omitted field, or an explicit null.
         var operation = new Dictionary<string, object?> { ["type"] = "replace", ["old_text"] = "keep" };
-        if (field == "newText") operation[field] = "changed";
+        if (field == "unknownField") operation["newTextt"] = "changed";
         if (field == "null") operation["new_text"] = null;
         var result = await ExecuteFilePatchAsync(CreateFilePatchTool(), new Dictionary<string, object?>
         {
