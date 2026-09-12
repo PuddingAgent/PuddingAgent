@@ -138,13 +138,17 @@ public static class TaskExecutionPlanCompiler
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
+    // ADR-087 §3.2：token 轴是计量轴，不是另一套独立小硬上限。重标定使 token 轴与成本轴
+    // 在同一消耗点触发：MaxInputTokens = MaxCost × 1,000,000（注册表输入单价 1/1M），
+    // MaxOutputTokens = MaxRounds × 4,000（每轮输出余量），避免小 token 轴先于
+    // rounds/cost 轴成为终止轴。六轴保持 > 0（栅栏校验要求，见 ExecutionCommandReader）。
     private static TaskWorkUnitBudget Budget(TaskWorkUnitKind kind) => kind switch
     {
-        TaskWorkUnitKind.Explore => NewBudget(25, 60, 30, 150_000, 20_000, 1.00m),
-        TaskWorkUnitKind.Plan => NewBudget(25, 30, 20, 100_000, 20_000, 0.75m),
-        TaskWorkUnitKind.Change => NewBudget(40, 120, 60, 250_000, 40_000, 2.50m),
-        TaskWorkUnitKind.Test => NewBudget(30, 100, 60, 200_000, 30_000, 1.75m),
-        TaskWorkUnitKind.Review => NewBudget(25, 60, 30, 150_000, 25_000, 1.00m),
+        TaskWorkUnitKind.Explore => NewBudget(25, 60, 30, 1_000_000, 100_000, 1.00m),
+        TaskWorkUnitKind.Plan => NewBudget(25, 30, 20, 750_000, 100_000, 0.75m),
+        TaskWorkUnitKind.Change => NewBudget(40, 120, 60, 2_500_000, 160_000, 2.50m),
+        TaskWorkUnitKind.Test => NewBudget(30, 100, 60, 1_750_000, 120_000, 1.75m),
+        TaskWorkUnitKind.Review => NewBudget(25, 60, 30, 1_000_000, 100_000, 1.00m),
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
