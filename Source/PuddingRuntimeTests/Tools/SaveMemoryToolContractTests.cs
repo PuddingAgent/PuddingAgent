@@ -90,13 +90,103 @@ public sealed class SaveMemoryToolContractTests
             cts.Token));
     }
 
-    private static SaveMemoryTool CreateTool(RecordingMemoryLibraryConvenience library)
-        => new(library, null!, NullLogger<SaveMemoryTool>.Instance);
+    [TestMethod]
+    public async Task GrepMemory_UnknownAction_FailsInsteadOfReportingSuccess()
+    {
+        var library = new RecordingMemoryLibraryConvenience();
+        var tool = new GrepMemoryTool(library, null!, NullLogger<GrepMemoryTool>.Instance);
 
-    private static async Task<ToolExecutionResult> ExecuteAsync(
-        SaveMemoryTool tool,
+        var result = await ExecuteAsync(tool, new Dictionary<string, object?>
+        {
+            ["action"] = "searchh",
+            ["query"] = "x",
+        });
+
+        Assert.IsFalse(result.Success, "unknown grep_memory action must fail closed");
+        Assert.IsNotNull(result.Error);
+        StringAssert.Contains(result.Error!, "searchh");
+    }
+
+    [TestMethod]
+    public async Task UpsertPreferenceWithoutKey_FailsClosedWithoutWriting()
+    {
+        var library = new RecordingMemoryLibraryConvenience();
+        var tool = CreateTool(library);
+
+        var result = await ExecuteAsync(tool, new Dictionary<string, object?>
+        {
+            ["action"] = "upsert",
+            ["type"] = "preference",
+            ["key"] = "",
+            ["value"] = "orphan value",
+        });
+
+        Assert.IsFalse(result.Success, "preference without key must fail before the write path");
+        Assert.AreEqual(0, library.UpsertCalls, "invalid parameter combination must write nothing");
+    }
+
+    [TestMethod]
+    public async Task UpsertFactWithoutContent_FailsClosedWithoutWriting()
+    {
+        var library = new RecordingMemoryLibraryConvenience();
+        var tool = CreateTool(library);
+
+        var result = await ExecuteAsync(tool, new Dictionary<string, object?>
+        {
+            ["action"] = "upsert",
+            ["type"] = "fact",
+            ["content"] = "",
+        });
+
+        Assert.IsFalse(result.Success, "fact without content must fail before the write path");
+        Assert.AreEqual(0, library.UpsertCalls);
+    }
+
+    [TestMethod]
+    public async Task SetImportant_UsesContextDerivedIdentity()
+    {
+        var important = new RecordingImportantMemoryService();
+        var library = new RecordingMemoryLibraryConvenience();
+        var tool = CreateTool(library, important);
+
+        var result = await ExecuteAsync(tool, new Dictionary<string, object?>
+        {
+            ["action"] = "set_important",
+            ["content"] = "user prefers concise answers",
+        });
+
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual("agent", important.LastWriteInstanceId, "identity must derive from the execution context");
+        Assert.AreEqual("user prefers concise answers", important.LastWriteContent);
+        Assert.AreEqual(0, library.UpsertCalls);
+    }
+
+    [TestMethod]
+    public async Task GetImportant_UsesContextDerivedIdentity()
+    {
+        var important = new RecordingImportantMemoryService { Content = "persisted" };
+        var tool = CreateTool(new RecordingMemoryLibraryConvenience(), important);
+
+        var result = await ExecuteAsync(tool, new Dictionary<string, object?>
+        {
+            ["action"] = "get_important",
+        });
+
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual("agent", important.LastReadInstanceId);
+        Assert.IsTrue(result.Output.Contains("persisted", StringComparison.Ordinal));
+    }
+
+    private static SaveMemoryTool CreateTool(
+        RecordingMemoryLibraryConvenience library,
+        IImportantMemoryService? importantMemory = null)
+        => new(library, null!, NullLogger<SaveMemoryTool>.Instance, importantMemory);
+
+    private static async Task<ToolExecutionResult> ExecuteAsync<TArgs>(
+        PuddingToolBase<TArgs> tool,
         IReadOnlyDictionary<string, object?> parameters,
         CancellationToken ct = default)
+        where TArgs : class
     {
         return await tool.ExecuteAsync(new ToolExecutionRequest
         {
@@ -151,5 +241,39 @@ public sealed class SaveMemoryToolContractTests
 
         public IReadOnlyList<RankedResult> GetPendingExplorations(string query)
             => throw new NotSupportedException();
+    }
+
+    /// <summary>记录 important 读写所用的身份与内容，验证 context 派生合同。</summary>
+    private sealed class RecordingImportantMemoryService : IImportantMemoryService
+    {
+        public string? LastWriteInstanceId { get; private set; }
+        public string? LastWriteContent { get; private set; }
+        public string? LastReadInstanceId { get; private set; }
+        public string? Content { get; init; }
+
+        public string? ReadOrNull(string agentInstanceId) => Content;
+
+        public Task<string?> ReadAsync(string agentInstanceId, CancellationToken ct = default)
+        {
+            LastReadInstanceId = agentInstanceId;
+            return Task.FromResult(Content);
+        }
+
+        public Task<bool> EnsureInitializedAsync(string agentInstanceId, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<ImportantMemoryWriteResult> WriteAsync(
+            string agentInstanceId, string content, CancellationToken ct = default)
+        {
+            LastWriteInstanceId = agentInstanceId;
+            LastWriteContent = content;
+            return Task.FromResult(new ImportantMemoryWriteResult
+            {
+                Success = true,
+                LineCount = 1,
+                CharCount = content.Length,
+                ByteCount = System.Text.Encoding.UTF8.GetByteCount(content),
+            });
+        }
     }
 }

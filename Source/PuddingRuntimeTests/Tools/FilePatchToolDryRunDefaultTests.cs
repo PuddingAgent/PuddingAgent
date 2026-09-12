@@ -143,7 +143,54 @@ public sealed class FilePatchToolDryRunDefaultTests
         StringAssert.Contains(result.Output, "no changes written");
     }
 
+    [TestMethod]
+    [DataRow("newText")]
+    [DataRow("omitted")]
+    [DataRow("null")]
+    public async Task InvalidReplacement_DoesNotDeleteOrWriteAnyFile(string field)
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "first.txt"), "keep");
+        File.WriteAllText(Path.Combine(_tempDir, "second.txt"), "keep");
+        var operation = new Dictionary<string, object?> { ["type"] = "replace", ["old_text"] = "keep" };
+        if (field == "newText") operation[field] = "changed";
+        if (field == "null") operation["new_text"] = null;
+        var result = await ExecuteFilePatchAsync(CreateFilePatchTool(), new Dictionary<string, object?>
+        {
+            ["patches"] = new object[]
+            {
+                new { path = "first.txt", operations = new[] { new Dictionary<string, object?> { ["type"] = "replace", ["old_text"] = "keep", ["new_text"] = "changed" } } },
+                new { path = "second.txt", operations = new[] { operation } },
+            },
+        });
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("keep", File.ReadAllText(Path.Combine(_tempDir, "first.txt")));
+        Assert.AreEqual("keep", File.ReadAllText(Path.Combine(_tempDir, "second.txt")));
+    }
+
+    [TestMethod]
+    public async Task ExplicitEmptyReplacement_DeletesOnlyMatchedText()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "sample.txt"), "keep remove");
+        var result = await ExecuteFilePatchAsync(CreateFilePatchTool(), new Dictionary<string, object?>
+        {
+            ["path"] = "sample.txt",
+            ["operations"] = new[] { new Dictionary<string, object?> { ["type"] = "replace", ["old_text"] = " remove", ["new_text"] = "" } },
+        });
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual("keep", File.ReadAllText(Path.Combine(_tempDir, "sample.txt")));
+    }
+
     // ── Helpers ──
+
+    [TestMethod]
+    public void LineOperation_UsesSchemaSnakeCaseParameters()
+    {
+        var operation = JsonSerializer.Deserialize<FilePatchOperation>("""
+            {"type":"delete","start_line":2,"end_line":3}
+            """, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.AreEqual(2, operation!.StartLine);
+        Assert.AreEqual(3, operation.EndLine);
+    }
 
     private static string BuildDiff() =>
         "--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-hello old world\n+hello new world\n";

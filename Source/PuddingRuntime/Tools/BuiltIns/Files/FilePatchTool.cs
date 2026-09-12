@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "file_patch",
     name: "Patch file",
-    description: "补丁宿主工作区文本文件。支持单个/批量替换、基于行的操作（insert/delete/replace_lines）与正则替换，默认忽略空白差异。示例：patches=[{\"path\":\"a.txt\",\"operations\":[{\"op\":\"replace\",\"oldText\":\"旧代码\",\"newText\":\"新代码\"}]}]。",
+    description: "补丁宿主工作区文本文件。支持单个/批量替换、基于行的操作（insert/delete/replace_lines）与正则替换，默认忽略空白差异。示例：patches=[{\"path\":\"a.txt\",\"operations\":[{\"type\":\"replace\",\"old_text\":\"旧代码\",\"new_text\":\"新代码\"}]}]。删除匹配文本须显式提供 new_text=\"\"；省略替换文本或使用未知参数会拒绝执行。",
     category: ToolCategory.FileSystem,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.RequiresFileWrite | ToolSafetyFlags.Destructive,
@@ -112,6 +112,13 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
             foreach (var op in ops)
             {
                 var opType = (op.Type ?? "replace").Trim();
+                if (opType.ToLowerInvariant() is not ("replace" or "insert" or "delete" or "replace_lines" or "regexreplace"))
+                    return ToolExecutionResult.Fail($"Unknown operation type '{opType}' in {relPath}.");
+                if (opType.ToLowerInvariant() is "replace" or "insert" or "replace_lines"
+                    && op.NewText is null)
+                    return ToolExecutionResult.Fail($"{opType} operation in {relPath} requires 'new_text'. Use an explicit empty string to delete text; omitted or null text is not a deletion.");
+                if (opType.Equals("regexReplace", StringComparison.OrdinalIgnoreCase) && op.Replacement is null)
+                    return ToolExecutionResult.Fail($"regexReplace operation in {relPath} requires 'replacement'. Use an explicit empty string to delete text.");
                 if (opType.Equals("replace", StringComparison.OrdinalIgnoreCase))
                 {
                     if (string.IsNullOrEmpty(op.OldText))
@@ -1222,6 +1229,7 @@ public sealed record FilePatchItem
     public required IReadOnlyList<FilePatchOperation> Operations { get; init; }
 }
 
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record FilePatchOperation
 {
     [ToolParam("Operation type: replace, insert, delete, replace_lines, or regexReplace.")]
@@ -1240,9 +1248,11 @@ public sealed record FilePatchOperation
     public bool? ReplaceAll { get; init; }
 
     [ToolParam("1-based start line for insert/delete/replace_lines operations.")]
+    [JsonPropertyName("start_line")]
     public int? StartLine { get; init; }
 
     [ToolParam("1-based end line (inclusive) for delete/replace_lines operations.")]
+    [JsonPropertyName("end_line")]
     public int? EndLine { get; init; }
 
     [ToolParam("Regex pattern for regexReplace operations.")]

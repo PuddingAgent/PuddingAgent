@@ -121,6 +121,7 @@ public sealed class ToolInvocationService : IToolInvocationService
                 ExecutionIdentity = request.ExecutionIdentity is null
                     ? null
                     : request.ExecutionIdentity with { ToolCallId = request.ToolCallId },
+                UsageBudget = request.UsageBudget,
                 ActiveTask = request.ActiveTask,
             };
 
@@ -170,6 +171,7 @@ public sealed class ToolInvocationService : IToolInvocationService
                 ArgsHash = argsHash,
                 OutputLength = result.Output?.Length ?? 0,
                 ToolContentParts = result.ToolContentParts,
+                DelegatedUsage = result.DelegatedUsage,
             };
         }
         catch (Exception ex)

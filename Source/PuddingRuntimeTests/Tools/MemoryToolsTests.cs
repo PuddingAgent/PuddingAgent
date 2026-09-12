@@ -456,29 +456,35 @@ public sealed class MemoryToolsTests
     }
 
     [TestMethod]
-    public async Task SaveMemory_QualityFilter_EmptyContent_Warns()
+    public async Task SaveMemory_EmptyContent_FailsClosedWithoutWriting()
     {
+        // T01 合同：空 content 在写路径之前拒绝，不写空章节（质量过滤器
+        // 的 empty_content warn 语义仅覆盖“过短”等可写内容）。
         await using var scope = await CreateScopeAsync();
         var qualityFilter = CreateQualityFilter();
         var save = new SaveMemoryTool(scope.Convenience, scope.Library, NullLogger<SaveMemoryTool>.Instance, qualityFilter: qualityFilter);
 
-        var result = await ExecuteJsonAsync(save, """
+        var result = await save.ExecuteAsync(new ToolExecutionRequest
         {
-          "action": "upsert",
-          "type": "fact",
-          "book": "Quality Tests",
-          "content": ""
-        }
-        """);
+            ToolCallId = "call-empty-content",
+            ArgumentsJson = """
+            {
+              "action": "upsert",
+              "type": "fact",
+              "book": "Quality Tests",
+              "content": ""
+            }
+            """,
+            Context = new ToolExecutionContext
+            {
+                WorkspaceId = "ws-memory-tools",
+                SessionId = "session-memory-tools",
+                AgentInstanceId = "agent-memory-tools",
+            },
+        });
 
-        var root = JsonDocument.Parse(result).RootElement;
-        Assert.AreEqual("ok", root.GetProperty("status").GetString());
-        Assert.IsTrue(root.TryGetProperty("quality", out var quality));
-        Assert.AreEqual(JsonValueKind.Object, quality.ValueKind);
-        var warnings = quality.GetProperty("warnings");
-        Assert.IsTrue(warnings.GetArrayLength() > 0);
-        Assert.AreEqual("empty_content", warnings[0].GetProperty("Rule").GetString());
-        Assert.AreEqual("warn", warnings[0].GetProperty("Severity").GetString());
+        Assert.IsFalse(result.Success, "empty content must fail before the write path");
+        StringAssert.Contains(result.Error, "content");
     }
 
     [TestMethod]
