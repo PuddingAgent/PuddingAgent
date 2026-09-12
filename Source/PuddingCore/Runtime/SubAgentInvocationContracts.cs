@@ -208,11 +208,21 @@ public sealed record SubAgentExecutionOptions
 
     public int MaxConcurrentPerTemplate { get; init; } = 3;
     public int MaxConcurrentPerWorkspace { get; init; } = 6;
-    /// <summary>System-managed child Agent Loop budget. Parent agents cannot override it.</summary>
+    /// <summary>
+    /// 系统 profile 默认轮次兼校验上限：子代理请求未显式携带 MaxRounds 时以此默认（600）生效；
+    /// 显式携带且不超过上限时忠实采纳，超过时由 SubAgentManager.NormalizeExecutionBudget
+    /// 显式拒绝（InvalidOperationException），不做静默截断。
+    /// </summary>
     public int MaxRounds { get; init; } = LargeTaskMaxRounds;
-    /// <summary>System-managed total child tool-call budget. Parent agents cannot override it.</summary>
+    /// <summary>
+    /// 系统 profile 默认工具调用总预算兼校验上限：请求未显式携带工具预算时以此默认（2400）生效；
+    /// 显式携带且不超过上限时忠实采纳，超过时显式拒绝（不做静默截断）。
+    /// </summary>
     public int MaxToolCallsTotal { get; init; } = LargeTaskMaxToolCallsTotal;
-    /// <summary>System-managed child hard timeout. Parent agents cannot override it.</summary>
+    /// <summary>
+    /// 系统 profile 默认硬超时兼校验上限：请求未显式携带 TimeoutSeconds 时以此默认（24h）生效；
+    /// 显式携带且不超过上限时忠实采纳，超过时显式拒绝（不做静默截断）。
+    /// </summary>
     public int MaxTimeoutSeconds { get; init; } = LargeTaskMaxTimeoutSeconds;
     /// <summary>
     /// 子代理轮内软压缩触发比例：估算输入达到有效输入上限的该比例即压缩历史，

@@ -23,6 +23,22 @@ namespace PuddingRuntime.Services;
 public sealed partial class AgentExecutionService
 {
     /// <summary>
+    /// 轮次预算解析（N00 语义）：显式请求的轮次值忠实生效——超限拒绝由上游
+    /// SubAgentManager.NormalizeExecutionBudget 按系统护栏完成，本层不做
+    /// Math.Min/Math.Max 钳制；未显式请求轮次（0/负数）时回退系统 profile 默认
+    /// （AgentLoop:Guardrails.MaxRounds，其默认值派生自契约唯一权威常量
+    /// SubAgentExecutionOptions.LargeTaskMaxRounds）。
+    /// </summary>
+    internal static int ResolveMaxRounds(
+        int requestedMaxRounds,
+        AgentExecutionGuardrails? guardrails = null)
+        => requestedMaxRounds > 0
+            ? requestedMaxRounds
+            : guardrails is { MaxRounds: > 0 }
+                ? guardrails.MaxRounds
+                : SubAgentExecutionOptions.LargeTaskMaxRounds;
+
+    /// <summary>
     /// 执行 Agent Loop：
     ///   User Message → LLM → [CompletionPolicy → 工具调用 → LLM] × N → 终止
     /// </summary>
@@ -55,9 +71,7 @@ public sealed partial class AgentExecutionService
 
         var execTrace = CreateExecutionTrace(request);
         var execStartedAt = DateTimeOffset.UtcNow;
-        var maxRoundsForActivity = request.MaxRounds > 0
-            ? Math.Min(request.MaxRounds, _guardrails.MaxRounds)
-            : _guardrails.MaxRounds;
+                var maxRoundsForActivity = ResolveMaxRounds(request.MaxRounds, _guardrails);
         await RecordActivityAsync(
             execTrace,
             component: RuntimeActivityComponents.AgentExecution,
@@ -381,9 +395,9 @@ public sealed partial class AgentExecutionService
                 history.Add(BuildCurrentUserChatMessage(request, userContextPrefix));
 
         // ── 初始化 Loop 上下文 ────────────────────────────────────────
-        var maxRounds = request.MaxRounds > 0
-            ? Math.Min(request.MaxRounds, _guardrails.MaxRounds)
-            : _guardrails.MaxRounds;
+        // N00：显式请求轮次已在上游按系统护栏校验（超限显式拒绝），此处忠实采纳；
+        // 未显式请求时回退系统 profile 默认。不做隐式钳制。
+        var maxRounds = ResolveMaxRounds(request.MaxRounds, _guardrails);
         var isSubAgentExecution = request.ExecutionIdentity?.Kind == RuntimeExecutionKind.SubAgent;
         var subAgentBudget = isSubAgentExecution
             ? new SubAgentBudgetLifecycle(
