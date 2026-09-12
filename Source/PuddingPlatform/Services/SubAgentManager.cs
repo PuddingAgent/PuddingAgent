@@ -958,17 +958,10 @@ public sealed class SubAgentManager : ISubAgentManager
                 $"Sub-agent timeout_seconds={requestedSeconds} exceeds configured maxTimeoutSeconds={options.MaxTimeoutSeconds}.");
         }
 
-        var isManagedWorkUnit = string.Equals(
-                request.TemplateId,
-                "workspace-task-agent",
-                StringComparison.OrdinalIgnoreCase)
-            || !string.IsNullOrWhiteSpace(request.TaskPlanId)
-            || !string.IsNullOrWhiteSpace(request.TaskNodeId);
-
-        // Generic explicitly-requested children may use the system large-task
-        // guardrail. Managed Task WorkUnits are a different budget domain and
-        // can never turn a 25-40 round plan into an unbounded 600-round loop.
-        var maxRounds = request.MaxRounds ?? SubAgentExecutionOptions.DefaultWorkUnitMaxRounds;
+                // N00 单一权威预算域：显式请求忠实采纳，未显式请求统一落长程默认
+        // （600 正常轮 / 2400 工具调用 / 24h 硬时限）。显式超过系统护栏仍被拒绝；
+        // 不再对 managed WorkUnit 施加 40 轮 / 120 工具的隐式下压。
+        var maxRounds = request.MaxRounds ?? options.MaxRounds;
         if (maxRounds <= 0)
             throw new InvalidOperationException("Sub-agent max rounds must be greater than 0.");
         if (maxRounds > options.MaxRounds)
@@ -976,25 +969,14 @@ public sealed class SubAgentManager : ISubAgentManager
             throw new InvalidOperationException(
                 $"Sub-agent max rounds={maxRounds} exceeds configured maxRounds={options.MaxRounds}.");
         }
-        if (isManagedWorkUnit)
-            maxRounds = Math.Min(maxRounds, SubAgentExecutionOptions.MaxWorkUnitMaxRounds);
 
-        var maxToolCallsTotal = request.MaxToolCallsTotal
-            ?? (isManagedWorkUnit
-                ? SubAgentExecutionOptions.DefaultWorkUnitMaxToolCallsTotal
-                : options.MaxToolCallsTotal);
+        var maxToolCallsTotal = request.MaxToolCallsTotal ?? options.MaxToolCallsTotal;
         if (maxToolCallsTotal <= 0)
             throw new InvalidOperationException("Sub-agent max tool calls must be greater than 0.");
         if (maxToolCallsTotal > options.MaxToolCallsTotal)
         {
             throw new InvalidOperationException(
                 $"Sub-agent max tool calls={maxToolCallsTotal} exceeds configured maxToolCallsTotal={options.MaxToolCallsTotal}.");
-        }
-        if (isManagedWorkUnit)
-        {
-            maxToolCallsTotal = Math.Min(
-                maxToolCallsTotal,
-                SubAgentExecutionOptions.DefaultWorkUnitMaxToolCallsTotal);
         }
 
         var now = DateTimeOffset.UtcNow;

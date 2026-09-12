@@ -149,6 +149,51 @@ public sealed class SubAgentBudgetLifecycleTests
             "grace_started");
     }
 
+    [TestMethod]
+    public void EvaluateBeforeRound_Round601IsGrantedInsideGraceAfter600NormalRounds()
+    {
+        // N00/S4：600 正常轮完整可用；grace 是加法，第 601 轮仍被授予（进入收尾
+        // grace，剩余 20 轮），600+20 全部耗尽后才停下。grace 从不预扣正常轮。
+        var lifecycle = Create(primaryRounds: 600);
+        _ = lifecycle.EvaluateBeforeRound(0, TimeSpan.Zero);
+
+        var lastNormal = lifecycle.EvaluateBeforeRound(599, TimeSpan.FromMinutes(10));
+        var round601 = lifecycle.EvaluateBeforeRound(600, TimeSpan.FromMinutes(10));
+        var lastGrace = lifecycle.EvaluateBeforeRound(619, TimeSpan.FromMinutes(20));
+        var exhausted = lifecycle.EvaluateBeforeRound(620, TimeSpan.FromMinutes(20));
+
+        Assert.IsFalse(lastNormal.ShouldStop);
+        CollectionAssert.DoesNotContain(
+            lastNormal.Notices.Select(n => n.Kind).ToArray(),
+            "grace_started");
+        Assert.IsFalse(round601.ShouldStop);
+        CollectionAssert.Contains(
+            round601.Notices.Select(n => n.Kind).ToArray(),
+            "grace_started");
+        Assert.AreEqual(20, round601.RemainingGraceRounds);
+        Assert.IsFalse(lastGrace.ShouldStop);
+        Assert.AreEqual(1, lastGrace.RemainingGraceRounds);
+        Assert.IsTrue(exhausted.ShouldStop);
+        Assert.AreEqual(0, exhausted.RemainingGraceRounds);
+    }
+
+    [TestMethod]
+    public void EvaluateBeforeRound_Rounds41_61_201_ProgressWithoutAbortsUnder600Budget()
+    {
+        // N00：长程预算 600 下，旧截断点（40/60/200）之后的轮次照常推进、不中止。
+        var lifecycle = Create(primaryRounds: 600);
+        _ = lifecycle.EvaluateBeforeRound(0, TimeSpan.Zero);
+
+        foreach (var round in new[] { 41, 61, 201 })
+        {
+            var decision = lifecycle.EvaluateBeforeRound(round, TimeSpan.FromMinutes(round));
+            Assert.IsFalse(decision.ShouldStop, $"round {round} must not stop");
+            CollectionAssert.DoesNotContain(
+                decision.Notices.Select(n => n.Kind).ToArray(),
+                "grace_started");
+        }
+    }
+
     private static SubAgentBudgetLifecycle Create(
         int primaryRounds,
         int graceRounds = 20,

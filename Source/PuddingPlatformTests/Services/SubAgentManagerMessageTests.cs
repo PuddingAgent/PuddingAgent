@@ -72,9 +72,9 @@ public sealed class SubAgentManagerMessageTests
         Assert.AreEqual("subagent.conscious", dispatcher.LastRequest.LlmProfile?.ProfileId);
         Assert.AreEqual("test-model", dispatcher.LastRequest.LlmProfile?.ModelId);
         Assert.AreEqual("test-model", dispatcher.LastRequest.LlmConfig?.ModelId);
-        Assert.AreEqual(SubAgentExecutionOptions.DefaultWorkUnitMaxRounds, dispatcher.LastRequest.MaxRounds);
+        Assert.AreEqual(SubAgentExecutionOptions.LargeTaskMaxRounds, dispatcher.LastRequest.MaxRounds);
         Assert.AreEqual(
-            SubAgentExecutionOptions.DefaultWorkUnitMaxToolCallsTotal,
+            SubAgentExecutionOptions.LargeTaskMaxToolCallsTotal,
             dispatcher.LastRequest.MaxToolCallsTotal);
         Assert.AreEqual(
             SubAgentExecutionOptions.LargeTaskMaxTimeoutSeconds,
@@ -111,7 +111,7 @@ public sealed class SubAgentManagerMessageTests
         Assert.AreEqual("sub-parent-session-resume", dispatcher.LastRequest!.SessionId);
         Assert.IsTrue(dispatcher.LastRequest.IsResumedSubAgentRun);
         Assert.AreEqual(
-            SubAgentExecutionOptions.DefaultWorkUnitMaxRounds,
+            SubAgentExecutionOptions.LargeTaskMaxRounds,
             dispatcher.LastRequest.MaxRounds);
         Assert.AreEqual(
             SubAgentExecutionOptions.DefaultBudgetGraceTimeoutSeconds,
@@ -119,11 +119,12 @@ public sealed class SubAgentManagerMessageTests
     }
 
     [TestMethod]
-    public async Task ExecuteSyncAsync_DefaultMaxRounds_ConvergesToWorkUnitDesignWindow()
+    public async Task ExecuteSyncAsync_DefaultMaxRounds_ConvergesToLongRunLargeTaskBudget()
     {
-        // P0-06580c4d Phase 3：未显式指定时默认轮次必须落在 25-40 设计区间，
-        // 禁止隐式继承 LargeTaskMaxRounds(600) 硬撑。
-        Assert.IsTrue(SubAgentExecutionOptions.DefaultWorkUnitMaxRounds is >= 25 and <= 40);
+        // N00：未显式请求预算时统一落长程默认 600 正常轮 / 2400 工具调用，
+        // 不再收敛到旧的 25-40 WorkUnit 设计区间（用户已明确作废该口径）。
+        Assert.AreEqual(600, SubAgentExecutionOptions.LargeTaskMaxRounds);
+        Assert.AreEqual(2400, SubAgentExecutionOptions.LargeTaskMaxToolCallsTotal);
 
         var dispatcher = new RecordingRuntimeAgentDispatcher();
         var manager = CreateManager(dispatcher);
@@ -133,7 +134,7 @@ public sealed class SubAgentManagerMessageTests
             ParentSessionId = "parent-session",
             ParentAgentId = "agent-parent",
             WorkspaceId = "default",
-            TaskDescription = "Default work unit budget probe.",
+            TaskDescription = "Default long-run budget probe.",
             TemplateId = "workspace-task-agent",
             LlmConfig = CreateLlmConfig(),
             LlmProfile = CreateLlmProfile(),
@@ -142,64 +143,44 @@ public sealed class SubAgentManagerMessageTests
         Assert.IsNotNull(result);
         Assert.IsNotNull(dispatcher.LastRequest);
         Assert.AreEqual(
-            SubAgentExecutionOptions.DefaultWorkUnitMaxRounds,
-            dispatcher.LastRequest.MaxRounds);
-    }
-
-    [TestMethod]
-    public async Task ExecuteSyncAsync_ExplicitMaxRoundsWithinDesignWindow_IsRespected()
-    {
-        var dispatcher = new RecordingRuntimeAgentDispatcher();
-        var manager = CreateManager(dispatcher);
-
-        var result = await manager.ExecuteSyncAsync(new SubAgentSpawnRequest
-        {
-            ParentSessionId = "parent-session",
-            ParentAgentId = "agent-parent",
-            WorkspaceId = "default",
-            TaskDescription = "Explicit work unit budget probe.",
-            TemplateId = "workspace-task-agent",
-            LlmConfig = CreateLlmConfig(),
-            LlmProfile = CreateLlmProfile(),
-            MaxRounds = 40,
-        });
-
-        Assert.IsNotNull(result);
-        Assert.IsNotNull(dispatcher.LastRequest);
-        Assert.AreEqual(40, dispatcher.LastRequest.MaxRounds);
-    }
-
-    [TestMethod]
-    public async Task ExecuteSyncAsync_WorkspaceTaskAgentCannotEscalateToLargeTaskBudget()
-    {
-        var dispatcher = new RecordingRuntimeAgentDispatcher();
-        var manager = CreateManager(dispatcher);
-
-        await manager.ExecuteSyncAsync(new SubAgentSpawnRequest
-        {
-            ParentSessionId = "parent-session",
-            ParentAgentId = "agent-parent",
-            WorkspaceId = "default",
-            TaskDescription = "Attempt an oversized managed WorkUnit.",
-            TemplateId = "workspace-task-agent",
-            LlmConfig = CreateLlmConfig(),
-            LlmProfile = CreateLlmProfile(),
-            MaxRounds = SubAgentExecutionOptions.LargeTaskMaxRounds,
-            MaxToolCallsTotal = SubAgentExecutionOptions.LargeTaskMaxToolCallsTotal,
-        });
-
-        Assert.IsNotNull(dispatcher.LastRequest);
-        Assert.AreEqual(
-            SubAgentExecutionOptions.MaxWorkUnitMaxRounds,
+            SubAgentExecutionOptions.LargeTaskMaxRounds,
             dispatcher.LastRequest.MaxRounds);
         Assert.AreEqual(
-            SubAgentExecutionOptions.DefaultWorkUnitMaxToolCallsTotal,
+            SubAgentExecutionOptions.LargeTaskMaxToolCallsTotal,
             dispatcher.LastRequest.MaxToolCallsTotal);
     }
 
     [TestMethod]
-    public async Task ExecuteSyncAsync_GenericAgentMayUseConfiguredLargeTaskBudget()
+    public async Task ExecuteSyncAsync_ExplicitSmallBudget_IsRespectedWithoutElevation()
     {
+        // N00：显式小预算（如 50 轮 / 100 工具调用）必须原样生效，不得被抬到 600/2400。
+        var dispatcher = new RecordingRuntimeAgentDispatcher();
+        var manager = CreateManager(dispatcher);
+
+        var result = await manager.ExecuteSyncAsync(new SubAgentSpawnRequest
+        {
+            ParentSessionId = "parent-session",
+            ParentAgentId = "agent-parent",
+            WorkspaceId = "default",
+            TaskDescription = "Explicit small budget probe.",
+            TemplateId = "workspace-task-agent",
+            LlmConfig = CreateLlmConfig(),
+            LlmProfile = CreateLlmProfile(),
+            MaxRounds = 50,
+            MaxToolCallsTotal = 100,
+        });
+
+        Assert.IsNotNull(result);
+        Assert.IsNotNull(dispatcher.LastRequest);
+        Assert.AreEqual(50, dispatcher.LastRequest.MaxRounds);
+        Assert.AreEqual(100, dispatcher.LastRequest.MaxToolCallsTotal);
+    }
+
+    [TestMethod]
+    public async Task ExecuteSyncAsync_ExplicitLargeTaskBudget_IsRespected()
+    {
+        // N00：显式请求 600 正常轮 / 2400 工具调用（含 managed WorkUnit）原样生效，
+        // 不再被 Math.Min 压回 40 轮 / 120 工具调用。
         var dispatcher = new RecordingRuntimeAgentDispatcher();
         var manager = CreateManager(dispatcher);
 
@@ -208,8 +189,8 @@ public sealed class SubAgentManagerMessageTests
             ParentSessionId = "parent-session",
             ParentAgentId = "agent-parent",
             WorkspaceId = "default",
-            TaskDescription = "Run a deliberately authorized large child task.",
-            TemplateId = "general-assistant",
+            TaskDescription = "Run an authorized long-run child task.",
+            TemplateId = "workspace-task-agent",
             LlmConfig = CreateLlmConfig(),
             LlmProfile = CreateLlmProfile(),
             MaxRounds = SubAgentExecutionOptions.LargeTaskMaxRounds,

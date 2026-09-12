@@ -93,15 +93,15 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
         var subAgents = options.SubAgents ?? new SubAgentExecutionOptions();
         var maxPerTemplate = Math.Max(1, subAgents.MaxConcurrentPerTemplate);
         var maxPerWorkspace = Math.Max(maxPerTemplate, subAgents.MaxConcurrentPerWorkspace);
-        // These are execution safety budgets, not task-planning hints. Keep a large system floor so an
-        // old runtime.execution.json cannot silently restore the former 200/400/3600 limits.
-        var maxRounds = Math.Max(SubAgentExecutionOptions.LargeTaskMaxRounds, subAgents.MaxRounds);
-        var maxToolCallsTotal = Math.Max(
-            SubAgentExecutionOptions.LargeTaskMaxToolCallsTotal,
-            subAgents.MaxToolCallsTotal);
-        var maxTimeout = Math.Max(
-            SubAgentExecutionOptions.LargeTaskMaxTimeoutSeconds,
-            subAgents.MaxTimeoutSeconds);
+        // 配置即权威（N00/S3）：runtime.execution.json 显式配置的预算原样生效
+        // （仅施加 ≥1 的健全性下限），不做向长程默认的隐式抬升，也不做向旧上限
+        // 的隐式压回；未配置时由 SubAgentExecutionOptions 记录默认（600 轮 /
+        // 2400 工具 / 24h）兜底。
+        var maxRounds = Math.Max(1, subAgents.MaxRounds);
+        var maxToolCallsTotal = Math.Max(1, subAgents.MaxToolCallsTotal);
+        var maxTimeout = Math.Max(1, subAgents.MaxTimeoutSeconds);
+        // Grace 是加法：正常轮之外追加的收尾轮（系统设置夹取 10-50），
+        // 不从正常轮预算中预扣。
         var budgetGraceRounds = Math.Clamp(
             subAgents.BudgetGraceRounds,
             10,
