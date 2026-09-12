@@ -1,4 +1,4 @@
-﻿# Pudding Agent 项目指令
+# Pudding Agent 项目指令
 
 ## 项目概述
 Pudding 是 Windows First 的 .NET 10 桌面智能助手与 IDE，支持六层记忆体系、Skill 系统、子代理委派、潜意识后台管道。
@@ -104,3 +104,15 @@ python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --down
 - PuddingAgent.dll 编译后被运行中进程锁定，需重启 Pudding 部署
 - SubconsciousWorkerService 新版代码需重启后生效
 - 记忆库有 11 个 archived Books 待 Auto-Dream 清理
+
+## 仓库卫生与提交纪律（强制）
+
+完整规范见根目录 `Agents-Hygiene.md`；本节只列必须在每个任务里执行的动作。
+
+1. **任务完成即提交**：每个原子任务完成并通过验证后立刻 `git commit`，禁止把多个任务的改动攒在一起；中断/转交前先提交已验证部分。**工作树不允许长期处于脏状态。**
+2. **精确暂存**：使用 `git add <明确文件路径列表>`，禁止裸 `git add -A` / `git add .`（工作树常混有他方并行 WIP）。
+3. **临时产物一律进 `temp/`**（已 ignore）：编译输出、测试输出、临时脚本、commit message 草稿、报告草稿；禁止散落在仓库根或源码目录。
+4. **提交前自检**：`git status` 只含本次预期文件 → `git diff --cached --stat` 无 `bin/`、`obj/`、`pub/`、`.tmp-build/` → 无 `??` 临时/密钥/大文件 → 一个 commit 只做一件事。
+5. **只推自己的 commit**：不代推他方未完成的改动；推送前确认没有夹带。
+
+> 对照断言：`Source/PuddingPlatformTests/Services/AgentTemplateFileServiceTests.cs` 的 `RepoGeneralAssistantPreset_AgentsPrompt_Contains_RepoHygieneClause` 会校验产品预设 `general-assistant.json` 的 `agentsPrompt` 含上述条款，两处需同步维护。
