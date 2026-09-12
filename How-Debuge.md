@@ -4,6 +4,13 @@
 
 ## 1. 基本原则
 
+### MSB3541：Files 路径含引号或重复仓库根目录（2026-09-12）
+
+- 若错误来自 `Microsoft.Common.CurrentVersion.targets` 的 `FindUnderPath`，先检查受影响项目 `obj/<Configuration>/<TFM>/*.csproj.FileListAbsolute.txt`；历史错误 OutDir 会污染该增量清单，当前命令正确也可能继续报错。先区分当次 `FileWrites` 与清单加载的 `_CleanPriorFileWrites`，不要直接改 DLL/资源路径或 SDK targets。
+- 本次两个项目的清单残留150条含字面双引号的非法路径。备份并记录hash后，只移除已核验的非法条目、保留其他历史记录；写入前检查文件未被并行构建修改。无需清空整个obj或增加自动吞错误的全局target。详情见 `Docs/Reports/MSBuild非法输出路径缓存修复-2026-09-12.md`。
+- 使用 Visual Studio 自带 `MSBuild.exe` 复现/验证 IDE 的路径检查，再实际构建受影响项目；不要只凭 dotnet CLI 的不同运行时行为宣称 IDE 已恢复。验证生成文件及清单内容，构建退出码与资源存在性都要检查。
+- PowerShell 正确传参示例：先令 `$taskOutput = Join-Path (Get-Location) 'temp/build-validation'`，再执行 `dotnet build Source/PuddingCodeIntelligence/PuddingCodeIntelligence.csproj --no-restore "-p:OutDir=$taskOutput/"`。引号包裹整个参数，不成为OutDir值；Python参数数组使用 `f'-p:OutDir={output_dir}/'`，不手工再包字面引号。临时构建输出留在temp或系统Temp，不能进入运行DataRoot。
+
 ### 模型升级后仍不能读图、截图或图片预算异常（2026-09-12）
 
 - 先检查选定 Provider/Model/协议、文件配置的 `capabilityTags` 与当前 Run 冻结 Snapshot。当前 `SupportsVision` 依赖 `vision`，Responses 本身不能证明工具图/Files 支持；更新模板/文件不等于既有 Agent/Run 已加载。诊断只输出非敏感能力字段，不能打印整个 provider 配置。

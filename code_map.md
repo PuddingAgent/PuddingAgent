@@ -1,5 +1,9 @@
 # PuddingAgent CodeMAP
 
+## 2026-09-12 MSBuild 非法历史输出路径修复
+
+`Docs/Reports/MSBuild非法输出路径缓存修复-2026-09-12.md`：PuddingCodeIntelligence/PuddingFullTextIndex 的 `obj/Debug/net10.0/*.csproj.FileListAbsolute.txt` 残留150条含引号的历史输出路径，触发Visual Studio MSB3541。已备份并定点移除，两个项目经VS MSBuild实际构建通过；无需改业务代码或SDK targets。复发诊断与OutDir正确传参见 `How-Debuge.md`。
+
 ## 2026-09-12 原生视觉与截图优化入口
 
 `Docs/Features/原生视觉与统一取图截图优化设计-2026-09-12.md`、ADR-088、`Docs/Reports/原生视觉优化看板修订-2026-09-12.md`：当前主力模型文件配置缺 `vision`；Reader 内 Responses/helper 分叉；Resolver 的 Data URI→Planner 解码上传；旧 384 图片估计；WebView2/RemoteBrowserPage ScreenshotAsync Unsupported。按 V5–V10 收敛能力/预算、Reader、Provider 流式传输，补齐 Web/Desktop 采集与共享主子代理图片轨迹。ADR-077 V0–V3 已有实现，本次仅新增设计/看板；V4 真实新构建验收待完成。
