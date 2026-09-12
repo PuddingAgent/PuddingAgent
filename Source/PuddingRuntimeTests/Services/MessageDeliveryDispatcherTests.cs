@@ -1066,66 +1066,72 @@ public sealed class MessageDeliveryDispatcherTests
     }
 
     [TestMethod]
-    public async Task HandleAsync_SubAgentResultMessage_UsesStreamDispatchAndAcks()
+    public async Task HandleAsync_SubAgentResultMessage_HandsOffCanonicalConversationTurnAndAcks()
     {
+        const string parentSessionId = "parent-conversation-canonical";
+        var metadata = SubAgentResultMetadata("run-canonical", parentSessionId);
         var inbox = new RecordingMessageInbox
         {
-            ClaimMetadata = new Dictionary<string, string>
-            {
-                ["source"] = "subagent",
-                ["intent"] = "subagent_result",
-            },
+            ClaimMetadata = metadata,
+            ClaimContent = SubAgentResultEnvelopeContent,
+            ClaimFrom = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "sub-1" },
+            ClaimMessageId = metadata["result_id"],
         };
         var runtime = new RecordingRuntimeAgentDispatcher();
-        var dispatcher = CreateDispatcher(inbox, runtime);
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(inbox, runtime, submitTurnHandler: submit);
 
-        await dispatcher.HandleAsync(CreateSubAgentResultEvent(), CancellationToken.None);
+        await dispatcher.HandleAsync(
+            CreateSubAgentResultDeliveryEvent(eventSessionId: "session-1", metadata),
+            CancellationToken.None);
 
+        // A01-slice-4b：sub-agent 结果必须经 canonical command/turn 入口受理（受理即 ACK），
+        // 不再走 legacy 流式 dispatch。
+        Assert.HasCount(1, submit.Commands);
+        Assert.AreEqual(parentSessionId, submit.Commands[0].ConversationId);
+        Assert.IsEmpty(runtime.StreamRequests);
         Assert.IsEmpty(runtime.Requests);
-        Assert.HasCount(1, runtime.StreamRequests);
-        Assert.AreEqual("agent-b", runtime.StreamRequests[0].AgentInstanceId);
-        Assert.AreEqual("subagent result", runtime.StreamRequests[0].MessageText);
         Assert.HasCount(1, inbox.Acked);
+        Assert.AreEqual("d1", inbox.Acked[0].DeliveryId);
+        Assert.IsEmpty(inbox.Deferred);
+        Assert.IsEmpty(inbox.Retried);
+        Assert.IsEmpty(inbox.DeadLettered);
     }
 
     [TestMethod]
-    public async Task HandleAsync_ForegroundTurnPreemptsRunningSubAgentResultAndDefersDelivery()
+    public async Task HandleAsync_SubAgentResultMessage_SkipsBackgroundPreemptionAndDefersToCanonical()
     {
+        // A01-slice-4b：sub-agent 结果不再走 legacy 后台抢占/延后路径。受理是所有权
+        // 转移点，不存在“被前台抢占后 defer”的中间态（该路径已不可达）。
+        const string parentSessionId = "parent-conversation-preempt";
+        var metadata = SubAgentResultMetadata("run-preempt", parentSessionId);
         var inbox = new RecordingMessageInbox
         {
-            ClaimMetadata = new Dictionary<string, string>
-            {
-                ["source"] = "subagent",
-                ["intent"] = "subagent_result",
-            },
+            ClaimMetadata = metadata,
+            ClaimContent = SubAgentResultEnvelopeContent,
             ClaimFrom = new MessageAddress
             {
                 Kind = MessageEndpointKinds.Agent,
                 Id = "child-agent",
             },
+            ClaimMessageId = metadata["result_id"],
             MaxClaimCount = 1,
         };
-        var runtime = new BlockingRuntimeAgentDispatcher();
-        var coordinator = new AgentExecutionAdmissionCoordinator();
-        var dispatcher = CreateDispatcher(
-            inbox,
-            runtime,
-            admissionCoordinator: coordinator);
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(inbox, runtime, submitTurnHandler: submit);
 
-        var backgroundTask = dispatcher.HandleAsync(
-            CreateSubAgentResultEvent(),
+        await dispatcher.HandleAsync(
+            CreateSubAgentResultDeliveryEvent(eventSessionId: "session-1", metadata),
             CancellationToken.None);
-        await runtime.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
-        using (coordinator.AcquireForeground("default", "agent-b"))
-            await backgroundTask.WaitAsync(TimeSpan.FromSeconds(2));
-
-        Assert.IsTrue(runtime.CancellationObserved);
-        Assert.HasCount(1, inbox.Deferred);
-        Assert.AreEqual("d1", inbox.Deferred[0].DeliveryId);
-        Assert.IsEmpty(inbox.Acked);
+        Assert.HasCount(1, submit.Commands);
+        Assert.HasCount(1, inbox.Acked);
+        Assert.IsEmpty(inbox.Deferred, "sub-agent 结果不再进入 legacy 延后队列");
         Assert.IsEmpty(inbox.Retried);
         Assert.IsEmpty(inbox.DeadLettered);
+        Assert.IsEmpty(runtime.StreamRequests);
+        Assert.IsEmpty(runtime.Requests);
     }
 
     [TestMethod]
@@ -1168,25 +1174,41 @@ public sealed class MessageDeliveryDispatcherTests
         var inbox = new RecordingMessageInbox();
         var runtime = new RecordingRuntimeAgentDispatcher();
         var coordinator = new AgentExecutionAdmissionCoordinator();
+        var submit = new RecordingSubmitTurnHandler();
         var dispatcher = CreateDispatcher(
             inbox,
             runtime,
+            submitTurnHandler: submit,
             admissionCoordinator: coordinator);
 
+        // A01-slice-4b：本用例改用非 sub-agent 消息承载“前台占用时后台不取件”断言。
+        // 取件前的准入早退（MessageDeliveryDispatcher.cs:327）与 canonical 化互不影响，
+        // 而 sub-agent 结果现在会走 canonical 受理，不再适合作为该断言的载体。
         using (coordinator.AcquireForeground("default", "agent-b"))
         {
             await dispatcher.HandleAsync(
-                CreateSubAgentResultEvent(),
+                CreateEvent(
+                    MessageEndpointKinds.Agent,
+                    "agent-b",
+                    from: new MessageAddress
+                    {
+                        Kind = MessageEndpointKinds.System,
+                        Id = "system-probe",
+                    }),
                 CancellationToken.None);
         }
 
         Assert.IsNull(inbox.LastClaim);
         Assert.IsEmpty(runtime.StreamRequests);
+        Assert.IsEmpty(runtime.Requests);
+        Assert.IsEmpty(submit.Commands);
     }
 
     [TestMethod]
-    public async Task HandleAsync_SubAgentResultMessage_PersistsParentContinuationTranscript()
+    public async Task HandleAsync_SubAgentResultMessage_PersistsCanonicalParentTurnAcceptance()
     {
+        const string parentSessionId = "parent-conversation-acceptance";
+        var metadata = SubAgentResultMetadata("run-acceptance", parentSessionId);
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
 
@@ -1194,12 +1216,8 @@ public sealed class MessageDeliveryDispatcherTests
         services.AddDbContext<PlatformDbContext>(options => options.UseSqlite(connection));
         services.AddSingleton(new RecordingMessageInbox
         {
-            ClaimMetadata = new Dictionary<string, string>
-            {
-                ["source"] = "subagent",
-                ["intent"] = "subagent_result",
-                ["sub_agent_id"] = "sub-1",
-            },
+            ClaimMetadata = metadata,
+            ClaimMessageId = metadata["result_id"],
             ClaimContent = """
             {
               "schema": "pudding-message",
@@ -1221,9 +1239,17 @@ public sealed class MessageDeliveryDispatcherTests
                 ServerSentEventFrame.Json("delta", new { delta = "parent " }),
                 ServerSentEventFrame.Json("delta", new { delta = "continuation" }),
                 ServerSentEventFrame.Json("usage", new { promptTokens = 2, completionTokens = 3, totalTokens = 5 }),
-                ServerSentEventFrame.Json("done", new { reply = "parent continuation", usage = new { promptTokens = 2, completionTokens = 3, totalTokens = 5 } }),
+                                ServerSentEventFrame.Json("done", new { reply = "parent continuation", usage = new { promptTokens = 2, completionTokens = 3, totalTokens = 5 } }),
             ],
         });
+        // A01-slice-4b：canonical 受理必须落到真实 ConversationAcceptanceStore，
+        // 才能断言 chat_messages / acceptance_batches / chat_execution_commands 的事实。
+        services.AddScoped<IConversationAcceptanceStore>(sp => new ConversationAcceptanceStore(
+            sp.GetRequiredService<PlatformDbContext>(),
+            new NoopCommittedEventSignal(),
+            NullLogger<ConversationAcceptanceStore>.Instance));
+        services.AddScoped<ISubmitTurnHandler>(sp =>
+            new AcceptanceStoreSubmitTurnHandler(sp.GetRequiredService<IConversationAcceptanceStore>()));
         services.AddScoped<IMessageInbox>(sp => sp.GetRequiredService<RecordingMessageInbox>());
         services.AddScoped<IRuntimeAgentDispatcher>(sp => sp.GetRequiredService<RecordingRuntimeAgentDispatcher>());
         services.AddScoped<IWorkspaceAgentCatalog>(_ => new RecordingWorkspaceAgentCatalog(
@@ -1247,33 +1273,55 @@ public sealed class MessageDeliveryDispatcherTests
             new AgentExecutionAdmissionCoordinator(),
             NullLogger<MessageDeliveryDispatcher>.Instance);
 
-        await dispatcher.HandleAsync(CreateSubAgentResultEvent(), CancellationToken.None);
+                await dispatcher.HandleAsync(CreateSubAgentResultEvent(), CancellationToken.None);
 
         await using var assertScope = provider.CreateAsyncScope();
         var db = assertScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
-        var transcript = await db.ChatMessages.SingleAsync(m => m.SessionId == "session-1" && m.Role == "agent");
-        Assert.AreEqual("parent continuation", transcript.Content);
-        Assert.IsNotNull(transcript.ThinkingJson);
-        StringAssert.Contains(transcript.ThinkingJson!, "thinking about child result");
-        var decodedThinking = ReasoningCompactCodec.Decode(transcript.ThinkingJson);
-        Assert.IsNotNull(decodedThinking);
-        Assert.IsTrue(decodedThinking!.IsCompactFormat, "新写 thinking 必须为 v2 紧凑格式");
-        Assert.IsTrue(decodedThinking.HashValid, "hash 应与 text 匹配");
-        Assert.AreEqual("thinking about child result", decodedThinking.Text);
-        Assert.HasCount(1, decodedThinking.Chunks);
-        Assert.AreEqual("thinking about child result", decodedThinking.Chunks[0].Text);
-        Assert.IsNotNull(transcript.UsageJson);
-        StringAssert.Contains(transcript.UsageJson!, "totalTokens");
+        var message = await db.ChatMessages.SingleAsync();
+        Assert.AreEqual(parentSessionId, message.SessionId, "canonical 受理的用户消息必须落在持久父会话");
+        Assert.AreEqual("user", message.Role);
+        // A01-slice-4b R19：受理侧为 canonical 用户消息行生成的是**消息级**幂等键
+        // （command.ClientMessageId = fabric-subagent-result-message:<sha256(resultId) 前 32 位>，
+        // 长 63 字符），而不是 resultId 本身（42 字符）。该 Id 由结果身份确定性派生、
+        // 与 delivery 无关，因此断言改为「与 canonical message 幂等键同源」，
+        // 而不是「等于 resultId」——后者会错误要求受理侧直接拿 resultId 当消息主键。
+        Assert.AreEqual(
+            FabricId("fabric-subagent-result-message", metadata["result_id"]),
+            message.MessageId,
+            "canonical 受理产生的用户消息行必须复用结果身份派生的 message 幂等键");
+        Assert.IsFalse(
+            message.MessageId.StartsWith("msg-", StringComparison.Ordinal),
+            "受理侧不得伪造 msg-* 消息身份");
+
+        var batch = await db.AcceptanceBatches.SingleAsync();
+        Assert.AreEqual(parentSessionId, batch.ConversationId);
+        Assert.AreEqual(
+            FabricId("fabric-subagent-result", metadata["result_id"]),
+            batch.ClientRequestId,
+            "acceptance 幂等键必须由结果身份派生");
+
+        var command = await db.ChatExecutionCommands.SingleAsync();
+        Assert.AreEqual(parentSessionId, command.SessionId);
+        Assert.AreEqual("agent-b", command.AgentInstanceId);
+        Assert.AreEqual("pending", command.Status);
+
+        var turnAccepted = await db.ConversationEvents
+            .Where(e => e.ConversationId == parentSessionId)
+            .ToListAsync();
+        Assert.HasCount(1, turnAccepted);
+        StringAssert.Contains(turnAccepted[0].Type, "accepted");
+
+        var inbox = provider.GetRequiredService<RecordingMessageInbox>();
+        Assert.HasCount(1, inbox.Acked);
         var runtime = provider.GetRequiredService<RecordingRuntimeAgentDispatcher>();
-        Assert.HasCount(1, runtime.StreamRequests);
-        StringAssert.Contains(runtime.StreamRequests[0].MessageText, "\"schema\": \"pudding-message\"");
-        StringAssert.Contains(runtime.StreamRequests[0].MessageText, "\"message_type\": \"subagent_result\"");
+        Assert.IsEmpty(runtime.StreamRequests);
+        Assert.IsEmpty(runtime.Requests);
     }
 
     [TestMethod]
     public async Task HandleAsync_ThinkingFrames_PersistCompactV2ThinkingJson()
     {
-        var transcript = await PersistSubAgentTranscriptAsync(
+        var transcript = await PersistTranscriptAsync(
         [
             ServerSentEventFrame.Json("thinking", new { delta = "step one " }),
             ServerSentEventFrame.Json("thinking", new { delta = "step two" }),
@@ -1299,7 +1347,7 @@ public sealed class MessageDeliveryDispatcherTests
     [TestMethod]
     public async Task HandleAsync_ThinkingFrames_ChineseMultiByteUtf8Offsets_RoundTrip()
     {
-        var transcript = await PersistSubAgentTranscriptAsync(
+        var transcript = await PersistTranscriptAsync(
         [
             ServerSentEventFrame.Json("thinking", new { delta = "思考中" }),
             ServerSentEventFrame.Json("thinking", new { delta = "，分析" }),
@@ -1421,8 +1469,8 @@ public sealed class MessageDeliveryDispatcherTests
             ClaimContent = SubAgentResultEnvelopeContent,
         };
         var runtime = new RecordingRuntimeAgentDispatcher();
-        var logSink = new List<string>();
-        var dispatcher = CreateDispatcher(inbox, runtime, logSink: logSink);
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(inbox, runtime, submitTurnHandler: submit);
 
         Assert.AreEqual(
             parentSessionId,
@@ -1433,27 +1481,26 @@ public sealed class MessageDeliveryDispatcherTests
             CreateSubAgentResultDeliveryEvent(eventSessionId: null, metadata),
             CancellationToken.None);
 
-        Assert.AreEqual(1, runtime.StreamRequests.Count, "终态结果必须走 sub-agent 续行流式路径");
+        // A01-slice-4b R15：sub-agent 终态结果改由 canonical 受理（受理即 ACK），
+        // “事件 session 为空仍解析到持久父会话”的意图保留，证据面从 legacy 流式请求
+        // 迁移到 canonical command 的会话归属。
+        Assert.HasCount(1, submit.Commands, "终态结果必须经 canonical command 受理");
         Assert.AreEqual(
             parentSessionId,
-            runtime.StreamRequests[0].SessionId,
+            submit.Commands[0].ConversationId,
             "事件 session 为空时仍必须续接持久父会话，不得落 main_session 兜底");
         Assert.AreNotEqual(
             "agent-b-main-session",
-            runtime.StreamRequests[0].SessionId,
+            submit.Commands[0].ConversationId,
             "不得退化为绑定主会话（slice-1 不变式 I1）");
         Assert.IsFalse(
-            runtime.StreamRequests[0].SessionId!.StartsWith("msg-", StringComparison.Ordinal),
+            submit.Commands[0].ConversationId!.StartsWith("msg-", StringComparison.Ordinal),
             "不得新建/落到 msg-* 会话");
-
-        var logs = JoinedLog(logSink);
-        // 注：slice-2 在 MessageDeliveryDispatcher.cs:667-672 已把持久父身份显式传入
-        // ParentConversationId，因此解析来源固定为 parent_param（优先级最高）；
-        // parent_identity 分支由 A01_T4b 直接覆盖 AgentInvocationDispatchFactory。
-        StringAssert.Contains(logs, "sessionSource=parent_param");
-        Assert.IsFalse(
-            logs.Contains("sessionSource=main_session", StringComparison.Ordinal),
-            "事件 session 为空时必须从持久父身份续行，绝不能出现 sessionSource=main_session");
+        Assert.HasCount(1, inbox.Acked, "canonical 受理成功后必须 ACK 原 delivery");
+        Assert.IsEmpty(inbox.Retried);
+        Assert.IsEmpty(inbox.DeadLettered);
+        Assert.IsEmpty(runtime.StreamRequests, "不得回退 legacy 流式路径");
+        Assert.IsEmpty(runtime.Requests, "不得回退 legacy 直连路径");
     }
 
     [TestMethod]
@@ -1503,23 +1550,42 @@ public sealed class MessageDeliveryDispatcherTests
 
         var runtime = new RecordingRuntimeAgentDispatcher();
         var logSink = new List<string>();
-        await using var provider = CreateDispatcherProvider(store, runtime, harness.ConnectionString, logSink);
+        await using var provider = CreateDispatcherProvider(
+            store, runtime, harness.ConnectionString, logSink, useAcceptanceStore: true);
         var dispatcher = CreateDispatcherFromProvider(provider);
 
         // periodic-recovery 形态：sessionId: null / metadata: null
         // （MessageDeliveryDispatcher.cs:1993-2005 的 TryDispatchKnownTargetsAsync）。
         await dispatcher.RunRecoveryPassOnceAsync(CancellationToken.None);
 
-        Assert.AreEqual(1, runtime.StreamRequests.Count, "恢复路径必须接续执行，不得静默丢弃已持久化的终态结果");
+        // A01-slice-4b R16：恢复路径必须走 canonical 受理面。
+        // 断言受理面事实（acceptance/command/消息行 + 原 delivery 已 ACK），
+        // 而不是仅把 legacy 流式断言置空。
+        await using var assertDb = harness.CreateContext();
+        var batch = await assertDb.AcceptanceBatches.SingleAsync();
+        Assert.AreEqual(parentSessionId, batch.ConversationId, "恢复路径的 acceptance 必须落在持久父会话");
         Assert.AreEqual(
-            parentSessionId,
-            runtime.StreamRequests[0].SessionId,
-            "恢复路径必须回到原父会话");
-        var logs = JoinedLog(logSink);
-        StringAssert.Contains(logs, "sessionSource=parent_param");
+            FabricId("fabric-subagent-result", resultId),
+            batch.ClientRequestId,
+            "恢复路径的 acceptance 幂等键必须由结果身份派生");
+        var command = await assertDb.ChatExecutionCommands.SingleAsync();
+        Assert.AreEqual(parentSessionId, command.SessionId, "恢复路径必须产生落持久父会话的 canonical command");
         Assert.IsFalse(
-            logs.Contains("sessionSource=main_session", StringComparison.Ordinal),
+            command.SessionId.StartsWith("msg-", StringComparison.Ordinal),
+            "恢复路径不得落到 msg-* 会话");
+        var persistedMessage = await assertDb.ChatMessages.SingleAsync();
+        Assert.AreEqual(parentSessionId, persistedMessage.SessionId, "恢复路径的用户消息必须落在持久父会话");
+        var delivery = await assertDb.MessageDeliveries.SingleAsync();
+        Assert.AreEqual(
+            MessageDeliveryStatuses.Delivered,
+            delivery.Status,
+            "恢复路径受理成功后必须 ACK 原 delivery（持久事实，等价于 inbox.Acked==1）");
+
+        Assert.IsFalse(
+            JoinedLog(logSink).Contains("sessionSource=main_session", StringComparison.Ordinal),
             "恢复路径不得退化为 sessionSource=main_session");
+        Assert.IsEmpty(runtime.StreamRequests, "恢复路径不得回退 legacy 流式路径");
+        Assert.IsEmpty(runtime.Requests, "恢复路径不得回退 legacy 直连路径");
     }
 
     [TestMethod]
@@ -1535,11 +1601,19 @@ public sealed class MessageDeliveryDispatcherTests
         Assert.IsTrue(await store.PersistRouteAsync("default", plan, CancellationToken.None));
 
         var runtime = new RecordingRuntimeAgentDispatcher();
-        await using var provider = CreateDispatcherProvider(store, runtime, harness.ConnectionString);
+        await using var provider = CreateDispatcherProvider(
+            store, runtime, harness.ConnectionString, useAcceptanceStore: true);
         var dispatcher = CreateDispatcherFromProvider(provider);
 
         await dispatcher.RunRecoveryPassOnceAsync(CancellationToken.None);
-        Assert.AreEqual(1, runtime.StreamRequests.Count, "首次投递必须触发一次父级接续");
+
+        // A01-slice-4b R17：重放语义同样以幂等键为证据。
+        // 首次投递必须产生且只产生一次 canonical 受理。
+        await using (var firstDb = harness.CreateContext())
+        {
+            Assert.AreEqual(1, await firstDb.AcceptanceBatches.CountAsync(), "首次投递必须产生 1 个 acceptance batch");
+            Assert.AreEqual(1, await firstDb.ChatExecutionCommands.CountAsync(), "首次投递必须产生 1 个 canonical command");
+        }
 
         // ACK 前崩溃 → 同一终态 result 被重放：确定性 MessageId 必须命中去重，不产生第二条投递。
         Assert.IsFalse(
@@ -1547,17 +1621,36 @@ public sealed class MessageDeliveryDispatcherTests
             "重放的同一终态结果必须命中去重，不得新增投递");
         await dispatcher.RunRecoveryPassOnceAsync(CancellationToken.None);
 
+        await using var assertDb = harness.CreateContext();
         Assert.AreEqual(
             1,
-            runtime.StreamRequests.Count,
-            "一个 result 只允许触发一次父级业务接续");
-        Assert.AreEqual(1, await storeDb.RoomMessages.CountAsync(), "重放不得新增 room_messages");
-        Assert.AreEqual(1, await storeDb.MessageDeliveries.CountAsync(), "重放不得新增 message_deliveries");
+            await assertDb.AcceptanceBatches.CountAsync(),
+            "一个 result 只允许一个 acceptance batch（重放不得新增）");
+        Assert.AreEqual(
+            1,
+            await assertDb.ChatExecutionCommands.CountAsync(),
+            "一个 result 只允许触发一次父级业务接续（重放不得新增 command）");
+        Assert.AreEqual(1, await assertDb.ChatMessages.CountAsync(), "重放不得新增 chat_messages");
+        Assert.AreEqual(1, await assertDb.MessageDeliveries.CountAsync(), "重放不得新增 message_deliveries");
+        var replayedDelivery = await assertDb.MessageDeliveries.SingleAsync();
+        Assert.AreEqual(
+            MessageDeliveryStatuses.Delivered,
+            replayedDelivery.Status,
+            "一个 result 只允许 ACK 一次（持久事实，等价于 inbox.Acked==1）");
+        Assert.AreEqual(1, await assertDb.RoomMessages.CountAsync(), "重放不得新增 room_messages");
+        Assert.IsEmpty(runtime.StreamRequests, "不得回退 legacy 流式路径");
+        Assert.IsEmpty(runtime.Requests, "不得回退 legacy 直连路径");
     }
 
     [TestMethod]
-    public async Task A01_T7_BusyParent_SubAgentResultDeferredWithoutFakeCompletion()
+    public async Task A01_T7_BusyParent_SubAgentResultAcceptedWithoutFakeCompletion()
     {
+        // A01-slice-4b R18：canonical 化后“父忙 → Deferred”不再可表达。
+        // 语义迁移理由：旧语义（MessageDeliveryDispatcher.cs:831-857）是在
+        // legacy 流式派发中观察到 Agent Busy 错误帧后把 delivery 放回延后队列；
+        // 现在 sub-agent 终态结果在 :498-512 就进入 canonical 受理面，
+        // 声明的所有权在受理那一刻转移，父忙由 command 租约/attempt 承担（R10 边界），
+        // 因此「受理即 ACK + command 落持久父会话」才是正确的可观察结果。
         const string parentSessionId = "parent-conversation-t7";
         var metadata = SubAgentResultMetadata("run-t7", parentSessionId);
         var inbox = new RecordingMessageInbox
@@ -1577,24 +1670,231 @@ public sealed class MessageDeliveryDispatcherTests
                 }),
             ],
         };
-        var dispatcher = CreateDispatcher(inbox, runtime);
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(inbox, runtime, submitTurnHandler: submit);
 
         await dispatcher.HandleAsync(
             CreateSubAgentResultDeliveryEvent(eventSessionId: "session-1", metadata),
             CancellationToken.None);
 
-        Assert.AreEqual(1, inbox.Deferred.Count, "父忙时终态结果必须延后排队（MessageDeliveryDispatcher.cs:831-857）");
-        Assert.AreEqual(0, inbox.Acked.Count, "父忙不得 ACK，否则终态结果丢失");
-        Assert.AreEqual(0, inbox.DeadLettered.Count, "父忙不是失败，不得死信");
-        Assert.AreEqual(0, inbox.Retried.Count, "父忙是排队而非失败退避，不得进入 retry");
-        Assert.AreEqual(1, runtime.StreamRequests.Count, "延后前必须已把父会话目标解析出来");
+        Assert.HasCount(1, inbox.Acked, "canonical 受理即 ACK，不得因父忙而延后或丢弃终态结果");
+        Assert.HasCount(1, submit.Commands, "父忙必须由 canonical command 租约/attempt 承担，而不是 deferred 队列");
         Assert.AreEqual(
             parentSessionId,
-            runtime.StreamRequests[0].SessionId,
-            "父忙延后后目标仍必须是父会话");
+            submit.Commands[0].ConversationId,
+            "接续 Turn 必须落在持久父会话，而不是回退绑定主会话");
+        Assert.AreNotEqual("agent-b-main-session", submit.Commands[0].ConversationId);
         Assert.IsFalse(
-            runtime.StreamRequests[0].SessionId!.StartsWith("msg-", StringComparison.Ordinal),
+            submit.Commands[0].ConversationId!.StartsWith("msg-", StringComparison.Ordinal),
             "父忙场景也绝不落 msg-* 会话");
+        Assert.IsEmpty(inbox.Deferred, "受理后再无 legacy deferred 中间态");
+        Assert.IsEmpty(inbox.Retried, "父忙不是失败，不得进入 retry");
+        Assert.IsEmpty(inbox.DeadLettered, "父忙不是失败，不得死信");
+        Assert.IsEmpty(runtime.StreamRequests, "不得回退 legacy 流式路径");
+        Assert.IsEmpty(runtime.Requests, "不得回退 legacy 直连路径");
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // A01-slice-4b · canonical 受理用例（T8~T12）
+    // 用户可见语义：一个 result 只触发一次业务接续，接续 Turn 落在持久父会话，
+    // 且不再回退到 legacy 流式 dispatch / agent main session / msg-* 会话。
+    // ═════════════════════════════════════════════════════════════════════
+
+    [TestMethod]
+    public async Task A01_T8_SubAgentResult_HandsOffCanonicalTurnAndAcks()
+    {
+        const string parentSessionId = "parent-conversation-t8";
+        var metadata = SubAgentResultMetadata("run-t8", parentSessionId);
+        var resultId = metadata["result_id"];
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimMetadata = metadata,
+            ClaimContent = SubAgentResultEnvelopeContent,
+            ClaimFrom = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "sub-1" },
+            ClaimMessageId = resultId,
+            ClaimDeliveryId = "delivery-t8",
+        };
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(inbox, runtime, submitTurnHandler: submit);
+
+        await dispatcher.HandleAsync(
+            CreateSubAgentResultDeliveryEvent(eventSessionId: "session-1", metadata),
+            CancellationToken.None);
+
+        Assert.HasCount(1, submit.Commands);
+        var command = submit.Commands[0];
+        Assert.AreEqual(parentSessionId, command.ConversationId, "接续 Turn 必须落在持久父会话");
+        Assert.AreNotEqual("agent-b-main-session", command.ConversationId);
+        Assert.AreEqual(FabricId("fabric-subagent-result", resultId), command.ClientRequestId);
+        Assert.AreEqual(FabricId("fabric-subagent-result-message", resultId), command.ClientMessageId);
+        Assert.IsFalse(
+            command.ClientRequestId.Contains("delivery-t8", StringComparison.Ordinal),
+            "幂等键必须由结果身份派生，不得包含 delivery 身份");
+        Assert.AreNotEqual(
+            FabricId("fabric-turn-request", "delivery-t8"),
+            command.ClientRequestId,
+            "不得再用 delivery 级幂等键受理 sub-agent 结果");
+        Assert.HasCount(1, inbox.Acked);
+        Assert.IsEmpty(runtime.StreamRequests);
+        Assert.IsEmpty(runtime.Requests);
+    }
+
+    [TestMethod]
+    public async Task A01_T9_SubAgentResult_DeliveryRebuilt_StillSingleCanonicalCommand()
+    {
+        const string parentSessionId = "parent-conversation-t9";
+        var metadata = SubAgentResultMetadata("run-t9", parentSessionId);
+        var resultId = metadata["result_id"];
+        await using var harness = await MessageFabricHarness.CreateAsync();
+
+        await DispatchWithRebuiltDeliveryAsync(harness, metadata, resultId, "delivery-t9-a", parentSessionId);
+        await DispatchWithRebuiltDeliveryAsync(harness, metadata, resultId, "delivery-t9-b", parentSessionId);
+
+        await using var db = harness.CreateContext();
+        Assert.AreEqual(
+            1,
+            await db.AcceptanceBatches.CountAsync(),
+            "同一 result 重建 delivery 后 acceptance 必须幂等命中，只允许 1 个 batch");
+        Assert.AreEqual(
+            1,
+            await db.ChatExecutionCommands.CountAsync(),
+            "同一 result 重建 delivery 后只允许 1 个 canonical command（否则父级被接续两次）");
+        Assert.AreEqual(1, await db.ChatMessages.CountAsync());
+    }
+
+    [TestMethod]
+    public async Task A01_T10_SubAgentResult_NoMainSession_DeadLettersWithoutMsgStarConversation()
+    {
+        // 无持久父身份且 agent 无绑定主会话：必须失败可观察（retry/dead-letter），
+        // 既不伪造 msg-* 会话，也不静默回退 main session。
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimMetadata = new Dictionary<string, string>
+            {
+                ["source"] = "subagent",
+                ["intent"] = "subagent_result",
+            },
+            ClaimContent = SubAgentResultEnvelopeContent,
+            ClaimFrom = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "sub-1" },
+            ClaimMessageId = "subresult:t10-no-parent",
+        };
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(
+            inbox,
+            runtime,
+            submitTurnHandler: submit,
+            catalog: new RecordingWorkspaceAgentCatalog(Agent("agent-b", mainSessionId: null)));
+
+        await dispatcher.HandleAsync(CreateSubAgentResultEvent(), CancellationToken.None);
+
+        Assert.IsNotNull(inbox.LastClaim);
+        Assert.IsEmpty(submit.Commands, "受理失败不得产生 canonical command");
+        Assert.IsEmpty(inbox.Acked, "受理成功前不得 ACK");
+        Assert.IsTrue(
+            inbox.Retried.Count + inbox.DeadLettered.Count > 0,
+            "无法解析父会话必须进入 retry/dead-letter，不得静默丢弃");
+        Assert.IsEmpty(runtime.StreamRequests);
+        Assert.IsEmpty(runtime.Requests);
+    }
+
+    [TestMethod]
+    public async Task A01_T11_SubAgentResult_EventSessionMissing_TargetsPersistedParentSession()
+    {
+        const string parentSessionId = "parent-conversation-t11";
+        var metadata = SubAgentResultMetadata("run-t11", parentSessionId);
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimContent = SubAgentResultEnvelopeContent,
+            ClaimFrom = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "sub-1" },
+            ClaimMessageId = metadata["result_id"],
+        };
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(inbox, runtime, submitTurnHandler: submit);
+
+        await dispatcher.HandleAsync(
+            CreateSubAgentResultDeliveryEvent(eventSessionId: null, metadata),
+            CancellationToken.None);
+
+        Assert.HasCount(1, submit.Commands);
+        Assert.AreEqual(
+            parentSessionId,
+            submit.Commands[0].ConversationId,
+            "事件 session 缺失时必须回落到持久父身份");
+        Assert.AreNotEqual("session-1", submit.Commands[0].ConversationId);
+        Assert.IsFalse(
+            submit.Commands[0].ConversationId.StartsWith("msg-", StringComparison.Ordinal),
+            "绝不落 msg-* 会话");
+        Assert.HasCount(1, inbox.Acked);
+    }
+
+    [TestMethod]
+    public async Task A01_T12_SubAgentResult_DoesNotFallBackToLegacyStreamDispatch()
+    {
+        const string parentSessionId = "parent-conversation-t12";
+        var metadata = SubAgentResultMetadata("run-t12", parentSessionId);
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimMetadata = metadata,
+            ClaimContent = SubAgentResultEnvelopeContent,
+            ClaimFrom = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "sub-1" },
+            ClaimMessageId = metadata["result_id"],
+        };
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var submit = new RecordingSubmitTurnHandler();
+        var dispatcher = CreateDispatcher(inbox, runtime, submitTurnHandler: submit);
+
+        await dispatcher.HandleAsync(
+            CreateSubAgentResultDeliveryEvent(eventSessionId: "session-1", metadata),
+            CancellationToken.None);
+
+        Assert.IsEmpty(runtime.StreamRequests, "不得回退 legacy 流式 dispatch");
+        Assert.IsEmpty(runtime.Requests, "不得回退 legacy 直接 dispatch");
+        Assert.HasCount(1, submit.Commands, "只能有一个 canonical 入口");
+        Assert.AreEqual(
+            "true",
+            submit.Commands[0].Metadata![MessageFabricTurnMetadata.IsIngress],
+            "受理必须走受信 Message Fabric ingress 信封");
+        Assert.AreEqual(parentSessionId, submit.Commands[0].ConversationId);
+    }
+
+    /// <summary>A01-slice-4b：以同一 resultId 重建新 delivery 行，验证两层幂等键同源。</summary>
+    private static async Task DispatchWithRebuiltDeliveryAsync(
+        MessageFabricHarness harness,
+        IReadOnlyDictionary<string, string> metadata,
+        string resultId,
+        string deliveryId,
+        string parentSessionId)
+    {
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimMetadata = metadata,
+            ClaimContent = SubAgentResultEnvelopeContent,
+            ClaimFrom = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "sub-1" },
+            ClaimMessageId = resultId,
+            ClaimDeliveryId = deliveryId,
+        };
+        await using var provider = CreateDispatcherProvider(
+            inbox,
+            new RecordingRuntimeAgentDispatcher(),
+            harness.ConnectionString,
+            useAcceptanceStore: true);
+        var dispatcher = CreateDispatcherFromProvider(provider);
+
+        await dispatcher.HandleAsync(
+            CreateSubAgentResultDeliveryEvent(eventSessionId: null, metadata),
+            CancellationToken.None);
+
+        Assert.HasCount(1, inbox.Acked);
+        Assert.IsNotNull(inbox.LastClaimedItem);
+        Assert.AreEqual(resultId, inbox.LastClaimedItem!.MessageId);
+        Assert.AreEqual(deliveryId, inbox.LastClaimedItem!.DeliveryId);
+        Assert.AreEqual(
+            parentSessionId,
+            AgentInvocationDispatchFactory.ResolvePersistedParentConversationId(metadata),
+            "接续 Turn 的会话归属必须来自持久父身份");
     }
 
     private const string SubAgentResultEnvelopeContent = """
@@ -1692,18 +1992,33 @@ public sealed class MessageDeliveryDispatcherTests
         IMessageInbox inbox,
         IRuntimeAgentDispatcher runtime,
         string? connectionString = null,
-        List<string>? logSink = null)
+        List<string>? logSink = null,
+        string? mainSessionId = "agent-b-main-session",
+        bool useAcceptanceStore = false)
     {
         var services = new ServiceCollection();
         var catalog = new RecordingWorkspaceAgentCatalog(
-            Agent("agent-b", mainSessionId: "agent-b-main-session"));
+            Agent("agent-b", mainSessionId: mainSessionId));
         services.AddScoped<IMessageInbox>(_ => inbox);
         services.AddScoped<IRuntimeAgentDispatcher>(_ => runtime);
         services.AddScoped<IWorkspaceAgentCatalog>(_ => catalog);
         services.AddScoped<IAgentRuntimeProfileResolver>(
             _ => new RecordingAgentRuntimeProfileResolver(catalog.Agents));
         services.AddScoped<IAgentInvocationDispatchFactory, AgentInvocationDispatchFactory>();
-        services.AddScoped<ISubmitTurnHandler>(_ => new RecordingSubmitTurnHandler());
+        if (useAcceptanceStore)
+        {
+            services.AddScoped<IConversationAcceptanceStore>(sp => new ConversationAcceptanceStore(
+                sp.GetRequiredService<PlatformDbContext>(),
+                new NoopCommittedEventSignal(),
+                NullLogger<ConversationAcceptanceStore>.Instance));
+            services.AddScoped<ISubmitTurnHandler>(sp => new AcceptanceStoreSubmitTurnHandler(
+                sp.GetRequiredService<IConversationAcceptanceStore>()));
+        }
+        else
+        {
+            services.AddScoped<ISubmitTurnHandler>(_ => new RecordingSubmitTurnHandler());
+        }
+
         services.AddScoped<IConversationNotificationStore>(_ => new RecordingConversationNotificationStore());
         if (connectionString is not null)
             services.AddDbContext<PlatformDbContext>(options => options.UseSqlite(connectionString));
@@ -1726,6 +2041,47 @@ public sealed class MessageDeliveryDispatcherTests
     {
         lock (logSink)
             return string.Join("\n", logSink);
+    }
+
+    /// <summary>A01-slice-4b：镜像 MessageDeliveryDispatcher.StableMessageFabricId 的确定性 id 口径。</summary>
+    private static string FabricId(string prefix, string value)
+    {
+        var hash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes($"{prefix}\n{value}")))
+            .ToLowerInvariant();
+        return $"{prefix}:{hash[..32]}";
+    }
+
+    /// <summary>A01-slice-4b：把 canonical 受理直接落到真实 ConversationAcceptanceStore，
+    /// 用于断言 command/turn/batch 的持久化事实（不新增生产依赖）。</summary>
+    private sealed class AcceptanceStoreSubmitTurnHandler(IConversationAcceptanceStore store)
+        : ISubmitTurnHandler
+    {
+        public Task<AcceptanceResult> HandleAsync(SubmitTurnCommand command, CancellationToken ct) =>
+            store.AcceptBatchAsync(
+                new SubmitTurnRequest
+                {
+                    ClientRequestId = command.ClientRequestId,
+                    ClientMessageId = command.ClientMessageId,
+                    Recipients = command.Recipients,
+                    Content = command.Content,
+                    Metadata = command.Metadata,
+                },
+                command.WorkspaceId,
+                command.ConversationId,
+                command.UserId,
+                ct);
+    }
+
+    private sealed class NoopCommittedEventSignal : ICommittedEventSignal
+    {
+        public ValueTask WaitForChangeAsync(string conversationId, long knownHead, CancellationToken ct) =>
+            ValueTask.CompletedTask;
+
+        public void Signal(string conversationId, long committedThroughSequence)
+        {
+        }
     }
 
     private sealed class SinkLogger(List<string> sink, string category) : ILogger
@@ -1809,7 +2165,12 @@ public sealed class MessageDeliveryDispatcherTests
         public async ValueTask DisposeAsync() => await _keepAlive.DisposeAsync();
     }
 
-    private static async Task<ChatMessageEntity> PersistSubAgentTranscriptAsync(
+    /// <summary>
+    /// A01-slice-4b R14：本夹具验证的是 <see cref="ChatTranscriptWriter"/> 的写侧 thinking 转录，
+    /// 与 canonical 受理无关。载具改为非 sub-agent（普通用户消息 + 空 metadata），
+    /// 以继续走 legacy 流式路径（MessageDeliveryDispatcher.cs:683）；断言未做任何削弱。
+    /// </summary>
+    private static async Task<ChatMessageEntity> PersistTranscriptAsync(
         IReadOnlyList<ServerSentEventFrame> frames)
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -1819,32 +2180,19 @@ public sealed class MessageDeliveryDispatcherTests
         services.AddDbContext<PlatformDbContext>(options => options.UseSqlite(connection));
         services.AddSingleton(new RecordingMessageInbox
         {
-            ClaimMetadata = new Dictionary<string, string>
-            {
-                ["source"] = "subagent",
-                ["intent"] = "subagent_result",
-                ["sub_agent_id"] = "sub-1",
-            },
-            ClaimContent = """
-            {
-              "schema": "pudding-message",
-              "version": 1,
-              "message_id": "msg-sub-result",
-              "message_type": "subagent_result",
-              "from": { "kind": "agent", "id": "sub-1", "display_name": "Sub Agent" },
-              "to": [{ "kind": "agent", "id": "parent-agent" }],
-              "constraints": ["This message was delivered by Pudding Message Fabric."],
-              "context": { "format": "text/markdown", "text": "child completed" }
-            }
-            """,
+            // A01-slice-4b R14：非 sub-agent 载具。
+            ClaimContent = "please continue",
         });
         services.AddSingleton(new RecordingRuntimeAgentDispatcher { StreamFrames = frames });
         services.AddScoped<IMessageInbox>(sp => sp.GetRequiredService<RecordingMessageInbox>());
         services.AddScoped<IRuntimeAgentDispatcher>(sp => sp.GetRequiredService<RecordingRuntimeAgentDispatcher>());
+        // A01-slice-4b R21：用户载具（metadata 为空）走非 stream dispatch，会话身份取自
+        // profile.MainSessionId（AgentInvocationDispatchFactory.cs:69-83），不再是事件 session。
+        // 因此把绑定主会话对齐为转录断言会话 session-1；断言本身保持不变。
         services.AddScoped<IWorkspaceAgentCatalog>(_ => new RecordingWorkspaceAgentCatalog(
-            Agent("agent-b", mainSessionId: "agent-b-main-session")));
+            Agent("agent-b", mainSessionId: "session-1")));
         services.AddScoped<IAgentRuntimeProfileResolver>(_ => new RecordingAgentRuntimeProfileResolver(
-            [Agent("agent-b", mainSessionId: "agent-b-main-session")]));
+            [Agent("agent-b", mainSessionId: "session-1")]));
         services.AddScoped<IAgentInvocationDispatchFactory, AgentInvocationDispatchFactory>();
         services.AddSingleton<IChatTranscriptWriter, ChatTranscriptWriter>();
         services.AddLogging();
@@ -1862,7 +2210,7 @@ public sealed class MessageDeliveryDispatcherTests
             new AgentExecutionAdmissionCoordinator(),
             NullLogger<MessageDeliveryDispatcher>.Instance);
 
-        await dispatcher.HandleAsync(CreateSubAgentResultEvent(), CancellationToken.None);
+        await dispatcher.HandleAsync(CreateTranscriptCarrierEvent(), CancellationToken.None);
 
         await using var assertScope = provider.CreateAsyncScope();
         var db = assertScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
@@ -1976,6 +2324,32 @@ public sealed class MessageDeliveryDispatcherTests
             },
         };
 
+    /// <summary>
+    /// A01-slice-4b R13/R14：非 sub-agent 载具事件（用户 → agent），驱动 legacy 流式转录。
+    /// metadata 必须为空：intent / fabric turn / gateway ingress 任一键都会把消息
+    /// 拉回 canonical 受理，从而不再产生任何 ChatMessages 行。
+    /// </summary>
+    private static InternalEvent CreateTranscriptCarrierEvent() =>
+        new()
+        {
+            Type = "message.deliver",
+            SessionId = "session-1",
+            WorkspaceId = "default",
+            Source = new EventSource { SourceType = "message", SourceId = "m-transcript" },
+            Payload = new MessageDeliverEventPayload
+            {
+                MessageId = "m-transcript",
+                DeliveryId = "d-transcript",
+                WorkspaceId = "default",
+                RoomId = "room-default",
+                From = new MessageAddress { Kind = MessageEndpointKinds.User, Id = "owner" },
+                Target = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "agent-b" },
+                Content = "please continue",
+                HandlingMode = MessageDeliveryHandlingModes.Execute,
+                Metadata = new Dictionary<string, string>(),
+            },
+        };
+
     private static InternalEvent CreateSubAgentResultEvent() =>
         new()
         {
@@ -2005,6 +2379,8 @@ public sealed class MessageDeliveryDispatcherTests
         private int _claimCount;
 
         public MessageClaimRequest? LastClaim { get; private set; }
+        // A01-slice-4b：claimed 的 message/delivery 身份在返回项上（入参 MessageClaimRequest 不含 MessageId）。
+        public MessageInboxItem? LastClaimedItem { get; private set; }
         public int ClaimCount => Volatile.Read(ref _claimCount);
         public int ClaimAttemptCount { get; init; } = 1;
         public int? MaxClaimCount { get; init; }
@@ -2012,6 +2388,9 @@ public sealed class MessageDeliveryDispatcherTests
         public string ClaimHandlingMode { get; init; } = MessageDeliveryHandlingModes.Execute;
         public string? ClaimConversationId { get; init; }
         public string? ClaimContent { get; init; }
+        // A01-slice-4b：canonical 受理身份断言需要可控的 message/delivery 身份。
+        public string ClaimMessageId { get; init; } = "m1";
+        public string ClaimDeliveryId { get; init; } = "d1";
         public MessageAddress? ClaimFrom { get; init; }
         public IReadOnlyList<MessageInboxItem> BatchClaims { get; init; } = [];
         public IReadOnlyList<MessageDeliveryTarget> PendingTargets { get; init; } = [];
@@ -2043,10 +2422,10 @@ public sealed class MessageDeliveryDispatcherTests
             if (MaxClaimCount is int maxClaimCount && claimCount > maxClaimCount)
                 return Task.FromResult<MessageInboxItem?>(null);
 
-            return Task.FromResult<MessageInboxItem?>(new MessageInboxItem
+            LastClaimedItem = new MessageInboxItem
             {
-                DeliveryId = "d1",
-                MessageId = "m1",
+                DeliveryId = ClaimDeliveryId,
+                MessageId = ClaimMessageId,
                 WorkspaceId = "default",
                 RoomId = "room-default",
                 ConversationId = ClaimConversationId,
@@ -2059,8 +2438,9 @@ public sealed class MessageDeliveryDispatcherTests
                 AttemptCount = ClaimAttemptCount,
                 CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 ClaimedByExecutionId = request.ExecutionId,
-                Metadata = ClaimMetadata ?? new Dictionary<string, string>(),
-            });
+                                Metadata = ClaimMetadata ?? new Dictionary<string, string>(),
+            };
+            return Task.FromResult<MessageInboxItem?>(LastClaimedItem);
         }
 
         public Task<IReadOnlyList<MessageInboxItem>> ClaimBatchAsync(

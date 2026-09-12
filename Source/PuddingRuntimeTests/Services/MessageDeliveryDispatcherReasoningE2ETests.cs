@@ -37,7 +37,7 @@ public sealed class MessageDeliveryDispatcherReasoningE2ETests
     public async Task E2E_WriteSideV2_ReadSideDecode_RoundTripsByteIdentical()
     {
         // 经完整 dispatcher 调度路径落库（写侧 v2）。
-        var transcript = await PersistSubAgentTranscriptAsync(
+        var transcript = await PersistTranscriptAsync(
         [
             ServerSentEventFrame.Json("thinking", new { delta = "first chunk " }),
             ServerSentEventFrame.Json("thinking", new { delta = "second chunk" }),
@@ -69,7 +69,7 @@ public sealed class MessageDeliveryDispatcherReasoningE2ETests
     [TestMethod]
     public async Task E2E_WriteSide_NoThinking_ThinkingJsonStaysNull()
     {
-        var transcript = await PersistSubAgentTranscriptAsync(
+        var transcript = await PersistTranscriptAsync(
         [
             ServerSentEventFrame.Json("delta", new { delta = "plain reply" }),
             ServerSentEventFrame.Json("done", new { reply = "plain reply" }),
@@ -85,7 +85,7 @@ public sealed class MessageDeliveryDispatcherReasoningE2ETests
     public async Task E2E_ChineseMultiByte_Utf8Offsets_RoundTrip()
     {
         // 中文 3 字节/字：chunk 边界切在汉字之间，是 UTF-8 字节偏移正确性的关键坑。
-        var transcript = await PersistSubAgentTranscriptAsync(
+        var transcript = await PersistTranscriptAsync(
         [
             ServerSentEventFrame.Json("thinking", new { delta = "思考：模型需要优化，" }),
             ServerSentEventFrame.Json("thinking", new { delta = "继续分析用户意图，" }),
@@ -346,7 +346,15 @@ public sealed class MessageDeliveryDispatcherReasoningE2ETests
 
     // ── 写侧闭环基础设施（与 MessageDeliveryDispatcherTests 同构） ──
 
-    private static async Task<ChatMessageEntity> PersistSubAgentTranscriptAsync(
+    /// <summary>
+    /// A01-slice-4b R13：本夹具的验收目标是 <see cref="ChatTranscriptWriter"/> 的字节级
+    /// thinking 转录（UTF-8 offset round-trip），与 canonical 受理无关。
+    /// 因此投递载具必须是「非 sub-agent」：普通用户消息 + 无 subagent metadata，
+    /// 让它继续走 legacy 流式路径（MessageDeliveryDispatcher.cs:498-512 canonical 早退
+    /// 不命中 → MessageDeliveryDispatcher.cs:683 唯一调用点到 DispatchStreamAndCollectAsync）。
+    /// 断言（字节级 offset / v2 thinking_json）原样保留，未做任何削弱。
+    /// </summary>
+    private static async Task<ChatMessageEntity> PersistTranscriptAsync(
         IReadOnlyList<ServerSentEventFrame> frames)
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -356,32 +364,20 @@ public sealed class MessageDeliveryDispatcherReasoningE2ETests
         services.AddDbContext<PlatformDbContext>(options => options.UseSqlite(connection));
         services.AddSingleton(new RecordingMessageInbox
         {
-            ClaimMetadata = new Dictionary<string, string>
-            {
-                ["source"] = "subagent",
-                ["intent"] = "subagent_result",
-                ["sub_agent_id"] = "sub-1",
-            },
-            ClaimContent = """
-            {
-              "schema": "pudding-message",
-              "version": 1,
-              "message_id": "msg-sub-result",
-              "message_type": "subagent_result",
-              "from": { "kind": "agent", "id": "sub-1", "display_name": "Sub Agent" },
-              "to": [{ "kind": "agent", "id": "parent-agent" }],
-              "constraints": ["This message was delivered by Pudding Message Fabric."],
-              "context": { "format": "text/markdown", "text": "child completed" }
-            }
-            """,
+            // A01-slice-4b R13：非 sub-agent 载具 —— 不携带 source=subagent / intent=subagent_result，
+            // 避免命中 canonical 早退；仍使用普通用户消息内容。
+            ClaimContent = "please continue",
         });
         services.AddSingleton(new RecordingRuntimeAgentDispatcher { StreamFrames = frames });
         services.AddScoped<IMessageInbox>(sp => sp.GetRequiredService<RecordingMessageInbox>());
         services.AddScoped<IRuntimeAgentDispatcher>(sp => sp.GetRequiredService<RecordingRuntimeAgentDispatcher>());
+        // A01-slice-4b R21：用户载具（metadata 为空）走非 stream dispatch，会话身份取自
+        // profile.MainSessionId（AgentInvocationDispatchFactory.cs:69-83），不再是事件 session。
+        // 因此把绑定主会话对齐为转录断言会话 session-1；断言本身保持不变。
         services.AddScoped<IWorkspaceAgentCatalog>(_ => new RecordingWorkspaceAgentCatalog(
-            Agent("agent-b", mainSessionId: "agent-b-main-session")));
+            Agent("agent-b", mainSessionId: "session-1")));
         services.AddScoped<IAgentRuntimeProfileResolver>(_ => new RecordingAgentRuntimeProfileResolver(
-            [Agent("agent-b", mainSessionId: "agent-b-main-session")]));
+            [Agent("agent-b", mainSessionId: "session-1")]));
         services.AddScoped<IAgentInvocationDispatchFactory, AgentInvocationDispatchFactory>();
         services.AddSingleton<IChatTranscriptWriter, ChatTranscriptWriter>();
         services.AddLogging();
@@ -399,7 +395,7 @@ public sealed class MessageDeliveryDispatcherReasoningE2ETests
             new AgentExecutionAdmissionCoordinator(),
             NullLogger<MessageDeliveryDispatcher>.Instance);
 
-        await dispatcher.HandleAsync(CreateSubAgentResultEvent(), CancellationToken.None);
+        await dispatcher.HandleAsync(CreateTranscriptCarrierEvent(), CancellationToken.None);
 
         await using var assertScope = provider.CreateAsyncScope();
         var db = assertScope.ServiceProvider.GetRequiredService<PlatformDbContext>();
@@ -438,27 +434,29 @@ public sealed class MessageDeliveryDispatcherReasoningE2ETests
             CreatedAt: DateTimeOffset.UtcNow,
             UpdatedAt: DateTimeOffset.UtcNow);
 
-    private static InternalEvent CreateSubAgentResultEvent() =>
+    /// <summary>
+    /// A01-slice-4b R13：非 sub-agent 载具事件（用户 → agent），驱动 legacy 流式转录。
+    /// metadata 必须为空：intent / fabric turn / gateway ingress 任一键都会把消息
+    /// 拉回 canonical 受理，从而不再产生任何 ChatMessages 行。
+    /// </summary>
+    private static InternalEvent CreateTranscriptCarrierEvent() =>
         new()
         {
             Type = "message.deliver",
             SessionId = "session-1",
             WorkspaceId = "default",
-            Source = new EventSource { SourceType = "message", SourceId = "m-sub" },
+            Source = new EventSource { SourceType = "message", SourceId = "m-transcript" },
             Payload = new MessageDeliverEventPayload
             {
-                MessageId = "m-sub",
-                DeliveryId = "d-sub",
+                MessageId = "m-transcript",
+                DeliveryId = "d-transcript",
                 WorkspaceId = "default",
                 RoomId = "room-default",
-                From = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "parent-sub-child" },
+                From = new MessageAddress { Kind = MessageEndpointKinds.User, Id = "owner" },
                 Target = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "agent-b" },
-                Content = "subagent result",
-                Metadata = new Dictionary<string, string>
-                {
-                    ["source"] = "subagent",
-                    ["intent"] = "subagent_result",
-                },
+                Content = "please continue",
+                HandlingMode = MessageDeliveryHandlingModes.Execute,
+                Metadata = new Dictionary<string, string>(),
             },
         };
 

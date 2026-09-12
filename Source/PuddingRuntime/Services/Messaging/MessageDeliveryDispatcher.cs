@@ -486,26 +486,30 @@ public sealed class MessageDeliveryDispatcher : IHostedService
             return;
         }
 
-        // Agent-to-Agent messages and heartbeats are observable autonomous
-        // Turns. Claiming a MessageDelivery transfers ownership to the canonical
-        // Conversation command/event pipeline; the delivery is ACKed immediately
-        // after durable acceptance and no longer remains in the queue while the
-        // Agent executes it. Sub-agent results keep their dedicated continuation
-        // stream path.
-        if (!claimedIsSubAgentResult
-            && (MessageDeliveryPolicy.RequiresCanonicalTurn(effectiveMetadata)
-                || claimedIsHeartbeat
-                || string.Equals(
-                    claimed.From.Kind,
-                    MessageEndpointKinds.Agent,
-                    StringComparison.OrdinalIgnoreCase)))
+        // Agent-to-Agent messages, heartbeats and sub-agent results are all
+        // observable autonomous Turns. Claiming a MessageDelivery transfers
+        // ownership to the canonical Conversation command/event pipeline; the
+        // delivery is ACKed immediately after durable acceptance and no longer
+        // remains in the queue while the Agent executes it.
+        // A01-slice-4b: sub-agent results are no longer exempted from this entry.
+        // Their continuation Turn is bound to the persisted parent conversation and
+        // carries a result-scoped idempotency key; see
+        // AcceptCanonicalConversationTurnAsync / ResolveCanonicalTurnIdentityAsync.
+        if (MessageDeliveryPolicy.RequiresCanonicalTurn(effectiveMetadata)
+            || claimedIsHeartbeat
+            || claimedIsSubAgentResult
+            || string.Equals(
+                claimed.From.Kind,
+                MessageEndpointKinds.Agent,
+                StringComparison.OrdinalIgnoreCase))
         {
-            await AcceptMessageFabricConversationTurnAsync(
+            await AcceptCanonicalConversationTurnAsync(
                 scope.ServiceProvider,
                 inbox,
                 claimed,
                 executionId,
                 effectiveMetadata,
+                claimedIsSubAgentResult,
                 ct);
             return;
         }
@@ -516,8 +520,10 @@ public sealed class MessageDeliveryDispatcher : IHostedService
 
         // 批量声明：同一目标的其他排队消息一并取出合并。
         // 心跳是低优先级探活，不参与批处理，避免插入或打断真实用户/Agent 消息。
+        // A01-slice-4b 后 sub-agent 结果在上面的 canonical 入口就已受理并 return，
+        // 因此这里不再需要单独的 sub-agent 结果排除项（死分支已删除）。
         var batch = new List<MessageInboxItem> { claimed };
-        if (!claimedIsHeartbeat && !claimedIsForeground && !claimedIsSubAgentResult)
+        if (!claimedIsHeartbeat && !claimedIsForeground)
         {
             var batchRequest = new MessageClaimRequest
             {
@@ -664,12 +670,6 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                     MessageId = claimed.MessageId,
                     MessageText = mergedContent,
                     EventSessionId = sessionId,
-                    // A01-slice-2：sub-agent 续行必须显式携带持久父身份。恢复路径
-                    // （periodic-recovery）没有事件 session，只依赖 metadata 兜底会退化成
-                    // main_session；这里在 claim 之后按 slice-1 的键优先级解析并显式传入。
-                    ParentConversationId = claimedIsSubAgentResult
-                        ? AgentInvocationDispatchFactory.ResolvePersistedParentConversationId(effectiveMetadata)
-                        : null,
                     From = claimed.From,
                     CorrelationId = correlationId,
                     CausationId = causationId,
@@ -1567,25 +1567,135 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         }
     }
 
+    /// <summary>
+    /// A01-slice-4b：canonical 受理的身份（会话归属 + 两层幂等键）必须先于受理确定，
+    /// 且与受理本身共享同一失败边界——父会话解析失败必须走 retry/dead-letter，
+    /// 而不是静默回退到 agent main session（那会让接续 Turn 落错会话）。
+    /// </summary>
+    private async Task AcceptCanonicalConversationTurnAsync(
+        IServiceProvider serviceProvider,
+        IMessageInbox inbox,
+        MessageInboxItem claimed,
+        string executionId,
+        IReadOnlyDictionary<string, string> metadata,
+        bool isSubAgentResult,
+        CancellationToken ct)
+    {
+        try
+        {
+            var identity = await ResolveCanonicalTurnIdentityAsync(
+                serviceProvider,
+                claimed,
+                metadata,
+                isSubAgentResult,
+                ct);
+
+            await AcceptMessageFabricConversationTurnAsync(
+                serviceProvider,
+                inbox,
+                claimed,
+                executionId,
+                metadata,
+                identity.ConversationId,
+                identity.ClientRequestId,
+                identity.ClientMessageId,
+                ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var deadLettered = await RetryOrDeadLetterAsync(
+                inbox,
+                claimed,
+                executionId,
+                ex.Message,
+                CancellationToken.None);
+            LogExecutionResult(
+                claimed,
+                deadLettered
+                    ? MessageDeliveryStatuses.DeadLetter
+                    : MessageDeliveryStatuses.Retrying,
+                executionId,
+                claimed.CorrelationId,
+                claimed.CausationId);
+            _logger.LogError(
+                ex,
+                "[MessageDeliveryDispatcher] Message Fabric -> Conversation handoff failed delivery={DeliveryId} agent={AgentId} deadLettered={DeadLettered}",
+                claimed.DeliveryId,
+                claimed.Target.Id,
+                deadLettered);
+        }
+    }
+
+    /// <summary>
+    /// A01-slice-4b：canonical 受理三元身份 —— 会话归属 + acceptance 幂等键 + message 幂等键。
+    /// </summary>
+    private readonly record struct CanonicalTurnIdentity(
+        string ConversationId,
+        string ClientRequestId,
+        string ClientMessageId);
+
+    /// <summary>
+    /// A01-slice-4b：解析 canonical 受理身份。
+    /// </summary>
+    /// <remarks>
+    /// sub-agent 结果的会话归属取持久父身份（R4），幂等键由结果身份
+    /// <c>claimed.MessageId</c>（= slice-2 的确定性 resultId）派生（R6），两层同源；
+    /// 解析失败即抛异常（R5），绝不回退 profile.MainSessionId；
+    /// 非 sub-agent 消息保持原有 delivery 级幂等键，不扩大语义（R10）。
+    /// </remarks>
+    private static async Task<CanonicalTurnIdentity> ResolveCanonicalTurnIdentityAsync(
+        IServiceProvider serviceProvider,
+        MessageInboxItem claimed,
+        IReadOnlyDictionary<string, string> metadata,
+        bool isSubAgentResult,
+        CancellationToken ct)
+    {
+        var profileResolver = serviceProvider.GetRequiredService<IAgentRuntimeProfileResolver>();
+        var profile = await profileResolver.ResolveAsync(
+            claimed.WorkspaceId,
+            claimed.Target.Id,
+            ct);
+        if (string.IsNullOrWhiteSpace(profile.MainSessionId))
+            throw new InvalidOperationException(
+                $"Agent '{claimed.Target.Id}' does not have a bound main session.");
+
+        if (!isSubAgentResult)
+        {
+            return new CanonicalTurnIdentity(
+                profile.MainSessionId!,
+                StableMessageFabricId("fabric-turn-request", claimed.DeliveryId),
+                StableMessageFabricId("fabric-turn-message", claimed.DeliveryId));
+        }
+
+        var parentConversationId =
+            AgentInvocationDispatchFactory.ResolvePersistedParentConversationId(metadata);
+        if (string.IsNullOrWhiteSpace(parentConversationId))
+            throw new InvalidOperationException(
+                $"Sub-agent result delivery '{claimed.DeliveryId}' message '{claimed.MessageId}' has no persisted parent conversation; refusing to fall back to the bound main session.");
+
+        return new CanonicalTurnIdentity(
+            parentConversationId!,
+            StableMessageFabricId("fabric-subagent-result", claimed.MessageId),
+            StableMessageFabricId("fabric-subagent-result-message", claimed.MessageId));
+    }
+
     private async Task AcceptMessageFabricConversationTurnAsync(
         IServiceProvider serviceProvider,
         IMessageInbox inbox,
         MessageInboxItem claimed,
         string executionId,
         IReadOnlyDictionary<string, string> metadata,
+        string conversationId,
+        string clientRequestId,
+        string clientMessageId,
         CancellationToken ct)
     {
         try
         {
-            var profileResolver = serviceProvider.GetRequiredService<IAgentRuntimeProfileResolver>();
-            var profile = await profileResolver.ResolveAsync(
-                claimed.WorkspaceId,
-                claimed.Target.Id,
-                ct);
-            if (string.IsNullOrWhiteSpace(profile.MainSessionId))
-                throw new InvalidOperationException(
-                    $"Agent '{claimed.Target.Id}' does not have a bound main session.");
-
             var handoffMetadata = BuildMessageFabricTurnMetadata(claimed, metadata);
             var existingEnvelope = AgentContextEnvelopeRenderer.TryParse(claimed.Content);
             var canonicalContent = existingEnvelope is null
@@ -1595,15 +1705,11 @@ public sealed class MessageDeliveryDispatcher : IHostedService
 
             await handler.HandleAsync(
                 new SubmitTurnCommand(
-                    ConversationId: profile.MainSessionId!,
+                    ConversationId: conversationId,
                     WorkspaceId: claimed.WorkspaceId,
                     UserId: StableMessageFabricUserId(claimed.From),
-                    ClientRequestId: StableMessageFabricId(
-                        "fabric-turn-request",
-                        claimed.DeliveryId),
-                    ClientMessageId: StableMessageFabricId(
-                        "fabric-turn-message",
-                        claimed.DeliveryId),
+                    ClientRequestId: clientRequestId,
+                    ClientMessageId: clientMessageId,
                     Recipients: new RecipientRequest
                     {
                         Type = "agent",
@@ -1638,7 +1744,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                 claimed.DeliveryId,
                 claimed.MessageId,
                 claimed.Target.Id,
-                profile.MainSessionId);
+                conversationId);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -1700,6 +1806,13 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         AddIfPresent(result, MessageFabricTurnMetadata.ReplyToMessageId, claimed.ReplyToMessageId);
         AddIfPresent(result, MessageFabricTurnMetadata.CorrelationId, claimed.CorrelationId);
         AddIfPresent(result, MessageFabricTurnMetadata.CausationId, claimed.CausationId);
+
+        // A01-slice-4b（R8）：父/子执行身份只按白名单从 claimed.Metadata 透传，
+        // 缺失即不写；禁止用占位值或新生成 Guid 填充。
+        AddIfPresent(result, "parent_turn_id", GetMetadataValue(metadata, "parent_turn_id"));
+        AddIfPresent(result, "parent_command_id", GetMetadataValue(metadata, "parent_command_id"));
+        AddIfPresent(result, "child_run_id", GetMetadataValue(metadata, "child_run_id"));
+        AddIfPresent(result, "result_id", GetMetadataValue(metadata, "result_id"));
         return result;
     }
 
