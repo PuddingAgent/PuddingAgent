@@ -47,6 +47,13 @@ public class CompositionSnapshotEntity
     /// <summary>有序 append-only 全量工具 ID 列表（JSON 数组字符串，如 ["search_tools","file_read"]）。</summary>
     public string? ToolIds { get; set; }
 
+    /// <summary>
+    /// 工具**定义身份**绑定（JSON 数组字符串，如 [{"toolId":"file_read","definitionHash":"..."}]，C01-B-3）。
+    /// 只存定义指纹，**不存 schema 正文**；与 <see cref="ToolIds"/> 同序。
+    /// NULL（历史行 / 未接线）= 无法证明定义级精确恢复，读取方不得谎称精确（不得用当前定义静默代替）。
+    /// </summary>
+    public string? ToolBindings { get; set; }
+
     /// <summary>本次版本相对上一版本的变化原因。</summary>
     [MaxLength(64)]
     public string? ChangeReason { get; set; }

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 
 using Microsoft.Extensions.Logging;
 
+using PuddingCode.Platform;
 using PuddingCode.Runtime;
 
 namespace PuddingRuntime.Services;
@@ -46,7 +47,7 @@ public readonly record struct CompositionVersionRecoveryResult(
 ///   <c>composition_commit_unavailable</c> 结构化结果，不得静默发出未提交形状。
 /// - 取消照常传播（R6）：调用方 ct 取消 → <see cref="OperationCanceledException"/>，不吞成纯内存继续。
 ///
-/// 只持久化指纹与元数据（含 ContentId 内容身份），绝不保存 prompt/tool schema 正文。
+/// 只持久化指纹与元数据（含 ContentId 内容身份、ToolBindings 工具定义身份），绝不保存 prompt/tool schema 正文。
 /// 构造函数允许 <paramref name="store"/> 为 null：此时整体退化为纯内存登记表。
 /// </summary>
 public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRegistry
@@ -55,6 +56,7 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
     private readonly CompositionVersionRegistry _inner;
     private readonly ICompositionStore? _store;
     private readonly ILogger<PersistentCompositionVersionRegistry>? _logger;
+    private readonly IToolDefinitionCatalog? _toolDefinitionCatalog;
     private readonly ConcurrentDictionary<string, long> _persistedVersions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _writeGates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CompositionAppendResult> _lastCommitResults = new(StringComparer.Ordinal);
@@ -68,10 +70,12 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
 
     public PersistentCompositionVersionRegistry(
         ICompositionStore? store,
-        ILogger<PersistentCompositionVersionRegistry>? logger = null)
+        ILogger<PersistentCompositionVersionRegistry>? logger = null,
+        IToolDefinitionCatalog? toolDefinitionCatalog = null)
     {
         _store = store;
         _logger = logger;
+        _toolDefinitionCatalog = toolDefinitionCatalog;
         _inner = new CompositionVersionRegistry();
     }
 
@@ -248,6 +252,9 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
             PrefixHash = CompositionSnapshot.ComputePrefixHash(systemPromptHash, toolSpecHash),
             SkillManifestHash = skillManifestHash,
             ToolIds = toolIds ?? Array.Empty<string>(),
+            // C01-B-3 AC4-A：工具定义身份（toolId + definitionHash，不存 schema 正文）随记录落库。
+            // 无 catalog（未接线）时为 null → 恢复方不得谎称定义级精确恢复（R13/R15）。
+            ToolBindings = BuildToolBindings(toolIds),
             ChangeReason = observation.ChangeReason,
             // P0-5 step 4c：以注册表内部检测后的权限纪元为准（含指纹变化自增）；显式传入值作为下限。
             PermissionEpoch = observation.PermissionEpoch,
@@ -312,6 +319,54 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
             observation.Revision,
             result.FailureReason);
         return result;
+    }
+
+    /// <summary>
+    /// 生成随记录落库的工具定义身份绑定（C01-B-3 / AC4-A）：与 <paramref name="toolIds"/> 同序，
+    /// 逐项产出 (toolId, definitionHash)，**不复制 schema 正文**。
+    /// - 未接线 catalog（null）→ 返回 null：读取方必须据此判定「无法证明定义级精确恢复」，不得谎称；
+    /// - catalog 中解析不到的 toolId 不伪造哈希，跳过并记警告（写穿路径的 ToolIds 来自实际请求，正常情况下应全部可解析）。
+    /// </summary>
+    private IReadOnlyList<ToolBinding>? BuildToolBindings(IReadOnlyList<string>? toolIds)
+    {
+        if (_toolDefinitionCatalog is null)
+            return null;
+
+        if (toolIds is null || toolIds.Count == 0)
+            return Array.Empty<ToolBinding>();
+
+        var definitions = _toolDefinitionCatalog.GetAvailableToolDefinitions();
+        if (definitions is null || definitions.Count == 0)
+        {
+            _logger?.LogWarning(
+                "[CompositionRegistry] tool definition catalog is empty; ToolBindings not persisted (toolIds={ToolIdCount})",
+                toolIds.Count);
+            return Array.Empty<ToolBinding>();
+        }
+
+        var byId = new Dictionary<string, LlmToolDefinition>(StringComparer.OrdinalIgnoreCase);
+        foreach (var definition in definitions)
+            byId[definition.Name] = definition;
+
+        var bindings = new List<ToolBinding>(toolIds.Count);
+        foreach (var toolId in toolIds)
+        {
+            if (!byId.TryGetValue(toolId, out var definition))
+            {
+                _logger?.LogWarning(
+                    "[CompositionRegistry] tool definition not found in catalog; binding omitted (tool={ToolId})",
+                    toolId);
+                continue;
+            }
+
+            bindings.Add(new ToolBinding
+            {
+                ToolId = toolId,
+                DefinitionHash = CompositionSnapshot.ComputeToolDefinitionHash(definition),
+            });
+        }
+
+        return bindings;
     }
 
     /// <summary>CAS 冲突后重读 store：抬高 revision 下界与已知 head，供重算 proposed composition。</summary>

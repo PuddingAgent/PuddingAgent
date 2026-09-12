@@ -132,6 +132,8 @@ public sealed class SqliteCompositionStore : ICompositionStore
         SkillManifestHash = record.SkillManifestHash,
         SerializationVersion = record.SerializationVersion,
         ToolIds = JsonSerializer.Serialize(record.ToolIds, JsonOptions),
+        // C01-B-3 AC4-A：工具定义身份（toolId + definitionHash）JSON；null 表示无定义身份证据（历史行/未接线）。
+        ToolBindings = SerializeToolBindings(record.ToolBindings),
         ChangeReason = record.ChangeReason,
         PermissionEpoch = record.PermissionEpoch,
         CreatedAtUtc = record.CreatedAtUtc.ToUnixTimeMilliseconds(),
@@ -150,6 +152,8 @@ public sealed class SqliteCompositionStore : ICompositionStore
         SkillManifestHash = entity.SkillManifestHash,
         SerializationVersion = entity.SerializationVersion,
         ToolIds = DeserializeToolIds(entity.ToolIds),
+        // null（历史行/未接线）与空数组语义不同：null = 无法证明定义级精确恢复（不得谎称），空 = 无工具。
+        ToolBindings = DeserializeToolBindings(entity.ToolBindings),
         ChangeReason = entity.ChangeReason,
         PermissionEpoch = entity.PermissionEpoch,
         CreatedAtUtc = DateTimeOffset.FromUnixTimeMilliseconds(entity.CreatedAtUtc),
@@ -161,5 +165,20 @@ public sealed class SqliteCompositionStore : ICompositionStore
         if (string.IsNullOrWhiteSpace(json))
             return Array.Empty<string>();
         return JsonSerializer.Deserialize<List<string>>(json, JsonOptions) ?? [];
+    }
+
+    /// <summary>序列化工具定义身份绑定；null 保持 NULL（不写成 "[]"，两者语义不同）。</summary>
+    private static string? SerializeToolBindings(IReadOnlyList<ToolBinding>? bindings)
+        => bindings is null ? null : JsonSerializer.Serialize(bindings, JsonOptions);
+
+    /// <summary>
+    /// 反序列化工具定义身份绑定。列值为 NULL / 空白 → 返回 null（= 「无法证明定义级精确恢复」），
+    /// 与「绑定为空集合」严格区分（R13/R15）。
+    /// </summary>
+    private static IReadOnlyList<ToolBinding>? DeserializeToolBindings(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+        return JsonSerializer.Deserialize<List<ToolBinding>>(json, JsonOptions);
     }
 }

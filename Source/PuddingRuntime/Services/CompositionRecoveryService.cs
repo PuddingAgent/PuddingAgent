@@ -24,6 +24,8 @@ public enum CompositionRecoveryStatus
 
 /// <summary>
 /// C01-A：Composition 恢复结果（明确状态，可被调用方观察）。
+/// C01-B-3：新增 <see cref="SchemaExactRestore"/> / <see cref="UnresolvedToolIds"/>，
+/// 区分「定义级精确恢复」与「仅 ID 级恢复」（<see cref="HydratedToolCount"/> 不足以证明定义等价）。
 /// </summary>
 public sealed record CompositionRecoveryResult(
     CompositionRecoveryStatus Status,
@@ -32,6 +34,22 @@ public sealed record CompositionRecoveryResult(
     int HydratedToolCount,
     string? FailureReason)
 {
+    /// <summary>
+    /// 是否可判定为**定义级精确恢复**（C01-B-3 / R13）：
+    /// true ⟺ 记录中的**每一条** <see cref="SessionCompositionRecord.ToolBindings"/> 项
+    /// 都能在当前 catalog 找到**同 definitionHash** 的定义。
+    /// false 表示「无法证明定义等价」（历史行 ToolBindings 为 NULL、工具已不存在、定义哈希不符、
+    /// 或未接线 catalog）——此时**不得谎称精确恢复**，也不得因此阻塞会话（R15）。
+    /// </summary>
+    public bool SchemaExactRestore { get; init; }
+
+    /// <summary>
+    /// 已**证明**无法解析的工具定义 ID（工具已不存在或 canonical 定义哈希不符），按绑定顺序、去重。
+    /// 仅当 <see cref="SchemaExactRestore"/> 为 false 时可能非空；
+    /// 历史行（NULL 绑定）无任何「被证明缺失/不符」的项，因此为空（不可恢复的是「证据」本身，不是具体工具）。
+    /// </summary>
+    public IReadOnlyList<string> UnresolvedToolIds { get; init; } = Array.Empty<string>();
+
     /// <summary>是否失败（<see cref="CompositionRecoveryStatus.Failed"/>）。</summary>
     public bool IsFailure => Status == CompositionRecoveryStatus.Failed;
 
@@ -43,20 +61,32 @@ public sealed record CompositionRecoveryResult(
     public static CompositionRecoveryResult NoRecord(string reason) =>
         new(CompositionRecoveryStatus.NoRecord, false, false, 0, reason);
 
-    /// <summary>恢复出内容且无失败。</summary>
+    /// <summary>恢复出内容且无失败。<paramref name="schemaExactRestore"/> 默认 false（未验证即不得谎称精确）。</summary>
     public static CompositionRecoveryResult Recovered(
         bool versionsRecovered,
         bool toolsHydrated,
-        int hydratedToolCount) =>
-        new(CompositionRecoveryStatus.Recovered, versionsRecovered, toolsHydrated, hydratedToolCount, null);
+        int hydratedToolCount,
+        bool schemaExactRestore = false,
+        IReadOnlyList<string>? unresolvedToolIds = null) =>
+        new(CompositionRecoveryStatus.Recovered, versionsRecovered, toolsHydrated, hydratedToolCount, null)
+        {
+            SchemaExactRestore = schemaExactRestore,
+            UnresolvedToolIds = unresolvedToolIds ?? Array.Empty<string>(),
+        };
 
     /// <summary>恢复失败（部分成功也如实记录在 VersionsRecovered / ToolsHydrated / HydratedToolCount）。</summary>
     public static CompositionRecoveryResult Failure(
         bool versionsRecovered,
         bool toolsHydrated,
         int hydratedToolCount,
-        string reason) =>
-        new(CompositionRecoveryStatus.Failed, versionsRecovered, toolsHydrated, hydratedToolCount, reason);
+        string reason,
+        bool schemaExactRestore = false,
+        IReadOnlyList<string>? unresolvedToolIds = null) =>
+        new(CompositionRecoveryStatus.Failed, versionsRecovered, toolsHydrated, hydratedToolCount, reason)
+        {
+            SchemaExactRestore = schemaExactRestore,
+            UnresolvedToolIds = unresolvedToolIds ?? Array.Empty<string>(),
+        };
 }
 
 /// <summary>
@@ -81,6 +111,7 @@ public sealed class CompositionRecoveryService
     private readonly AgentSessionManager _sessionManager;
     private readonly ILogger<CompositionRecoveryService>? _logger;
     private readonly PersistentCompositionVersionRegistry? _persistentRegistry;
+    private readonly IToolDefinitionCatalog? _toolDefinitionCatalog;
 
     // C01-A single-flight：同一 session 的并发恢复复用首个在飞任务。
     // 用 Lazy(ExecutionAndPublication) 保证 GetOrAdd 的工厂即使被并发执行多次，也只有一个主体真正跑恢复。
@@ -91,12 +122,14 @@ public sealed class CompositionRecoveryService
         AgentSessionManager sessionManager,
         ICompositionStore? compositionStore = null,
         ILogger<CompositionRecoveryService>? logger = null,
-        PersistentCompositionVersionRegistry? persistentRegistry = null)
+        PersistentCompositionVersionRegistry? persistentRegistry = null,
+        IToolDefinitionCatalog? toolDefinitionCatalog = null)
     {
         _sessionManager = sessionManager;
         _compositionStore = compositionStore;
         _logger = logger;
         _persistentRegistry = persistentRegistry;
+        _toolDefinitionCatalog = toolDefinitionCatalog;
     }
 
     /// <summary>
@@ -185,6 +218,8 @@ public sealed class CompositionRecoveryService
         // 2) 工具集合水合（append-only 不收缩）。单项失败不阻断另一项，但状态如实上报。
         var toolsHydrated = false;
         var hydratedToolCount = 0;
+        var schemaExactRestore = false;
+        var unresolvedToolIds = (IReadOnlyList<string>)Array.Empty<string>();
         if (_compositionStore is not null)
         {
             try
@@ -195,6 +230,19 @@ public sealed class CompositionRecoveryService
                     _sessionManager.HydrateToolIds(sessionId, record.ToolIds);
                     toolsHydrated = true;
                     hydratedToolCount = record.ToolIds.Count;
+                }
+
+                // C01-B-3 AC4-A：定义级恢复判定（R13）。
+                // 不谎称（无法证明 → SchemaExactRestore=false）、不阻塞（不抛、不收缩可见集）。
+                (schemaExactRestore, unresolvedToolIds) = EvaluateToolBindings(record, _toolDefinitionCatalog);
+                if (!schemaExactRestore && unresolvedToolIds.Count > 0)
+                {
+                    _logger?.LogWarning(
+                        "[CompositionRecovery] tool definition identity not resolvable (session={Session} unresolved={Unresolved}); "
+                        + "reason={Reason}; continuing with current definitions (non-blocking)",
+                        sessionId,
+                        string.Join(",", unresolvedToolIds),
+                        CompositionChangeReasons.ToolDefinitionMissing + "/" + CompositionChangeReasons.ToolDefinitionChanged);
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -213,12 +261,63 @@ public sealed class CompositionRecoveryService
 
         if (failures.Count > 0)
             return CompositionRecoveryResult.Failure(
-                versionsRecovered, toolsHydrated, hydratedToolCount, string.Join("; ", failures));
+                versionsRecovered, toolsHydrated, hydratedToolCount, string.Join("; ", failures),
+                schemaExactRestore, unresolvedToolIds);
 
         if (!versionsRecovered && !toolsHydrated)
             return CompositionRecoveryResult.NoRecord(
                 "no persisted composition version or tool ids for session");
 
-        return CompositionRecoveryResult.Recovered(versionsRecovered, toolsHydrated, hydratedToolCount);
+        return CompositionRecoveryResult.Recovered(
+            versionsRecovered, toolsHydrated, hydratedToolCount, schemaExactRestore, unresolvedToolIds);
+    }
+
+    /// <summary>
+    /// 评估记录中的工具**定义身份**与当前 catalog 的匹配度（C01-B-3 / R13）。
+    /// <para>
+    /// <c>SchemaExactRestore = true</c> ⟺ <c>record.ToolBindings</c> 非空，且**每一条**绑定都能在当前 catalog
+    /// 找到**同 <c>definitionHash</c>** 的定义（哈希口径复用 <see cref="CompositionSnapshot.ComputeToolDefinitionHash"/>）。
+    /// </para>
+    /// <para>
+    /// 不精确的情况（均不得谎称精确，也不得阻塞执行）：
+    /// 工具已不存在 / 定义哈希不符 → 记入 <c>UnresolvedToolIds</c>；
+    /// 绑定为空或 NULL（历史行 / 未接线）→ <c>false</c> 且 <c>UnresolvedToolIds</c> 为空
+    /// （不可恢复的是「证据」本身，不是任何具体工具，不得虚构缺失项）；
+    /// 未接线 catalog → <c>false</c>（无法证明），<c>UnresolvedToolIds</c> 为空。
+    /// </para>
+    /// </summary>
+    internal static (bool SchemaExactRestore, IReadOnlyList<string> UnresolvedToolIds) EvaluateToolBindings(
+        SessionCompositionRecord? record,
+        IToolDefinitionCatalog? catalog)
+    {
+        var bindings = record?.ToolBindings;
+        if (bindings is null || bindings.Count == 0 || catalog is null)
+            return (false, Array.Empty<string>());
+
+        var definitions = catalog.GetAvailableToolDefinitions();
+        if (definitions is null || definitions.Count == 0)
+            return (false, Array.Empty<string>());
+
+        var byId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var definition in definitions)
+            byId[definition.Name] = CompositionSnapshot.ComputeToolDefinitionHash(definition);
+
+        var unresolved = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var binding in bindings)
+        {
+            if (binding is null || string.IsNullOrWhiteSpace(binding.ToolId))
+                continue;
+
+            // 工具已不存在，或定义已变更（canonical 哈希不符）→ 均不得当作可精确恢复。
+            if (!byId.TryGetValue(binding.ToolId, out var currentHash)
+                || !string.Equals(currentHash, binding.DefinitionHash, StringComparison.Ordinal))
+            {
+                if (seen.Add(binding.ToolId))
+                    unresolved.Add(binding.ToolId);
+            }
+        }
+
+        return (unresolved.Count == 0, unresolved);
     }
 }

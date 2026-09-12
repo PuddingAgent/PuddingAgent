@@ -349,6 +349,8 @@ CREATE INDEX IF NOT EXISTS IX_CompactionCoverageManifests_Session_Generation
 -- 只存指纹与元数据，不存 prompt 正文 / 工具 schema 全文；
 -- CompositionVersion = revision，严格单调递增不复用（A→B→A = 1/2/3）；
 -- ContentId = 内容身份（sha256 hex），内容相同可跨 revision 复用（A→B→A = A/B/A）；历史行为 NULL。
+-- ToolBindings = 工具定义身份（toolId + definitionHash 的 JSON 数组，C01-B-3），只存指纹不存 schema 正文；
+-- 与 ToolIds 同序；NULL（历史行）= 无法证明定义级精确恢复，读取方不得谎称精确。
 CREATE TABLE IF NOT EXISTS CompositionSnapshots (
     SessionId               TEXT NOT NULL,
     CompositionVersion      INTEGER NOT NULL,
@@ -359,6 +361,7 @@ CREATE TABLE IF NOT EXISTS CompositionSnapshots (
     SkillManifestHash       TEXT,
     SerializationVersion    TEXT NOT NULL DEFAULT 'prefix-v1',
     ToolIds                 TEXT,
+    ToolBindings            TEXT,
     ChangeReason            TEXT,
     PermissionEpoch         INTEGER NOT NULL DEFAULT 0,
     CreatedAtUtc            INTEGER NOT NULL,

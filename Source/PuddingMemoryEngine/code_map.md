@@ -19,7 +19,7 @@
 |------|------|
 | `Data/` | 数据访问层（`MemoryDbContext` + `init_memory.sql` 幂等建表 + additive 补列迁移） |
 | `Entities/` | 实体定义（含 `CompactionCoverageManifestEntity` 压缩覆盖清单、`ContextSegmentEntity` ContextSegmentLedger 底座、`CompositionSnapshotEntity` P0-5 Composition 快照） |
-| `Schema/` | 数据库 Schema（`CompactionCoverageManifests` 表、`Sessions.CompactionGeneration` 列、`ContextSegments` 表、`CompositionSnapshots` 表（P0-5，复合主键 (SessionId, CompositionVersion)）、`Messages.ContextGeneration/CanonicalContentHash` 列） |
+| `Schema/` | 数据库 Schema（`CompactionCoverageManifests` 表、`Sessions.CompactionGeneration` 列、`ContextSegments` 表、`CompositionSnapshots` 表（P0-5，复合主键 (SessionId, CompositionVersion)）、`CompositionSnapshots.ToolBindings` 列（C01-B-3，工具定义身份 toolId+definitionHash，不存 schema 正文）、`Messages.ContextGeneration/CanonicalContentHash` 列） |
 
 ## 服务
 

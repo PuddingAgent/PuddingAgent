@@ -70,6 +70,41 @@ public static class CompositionSnapshot
         return Sha256Hex(JsonSerializer.Serialize(canonical, CanonicalJson));
     }
 
+    /// <summary>
+    /// 计算**单个**工具定义的 SHA-256 指纹（小写 hex，C01-B-3 / AC4-A）。
+    /// 口径 = 既有整表 canonical 规则（<see cref="ComputeToolSpecHash"/>）的**单工具子集形态**：
+    /// 直接复用同一实现，不新建第三套 canonical 化规则（R9）。
+    /// 不保存/上报 schema 正文，只产出指纹。
+    /// </summary>
+    public static string ComputeToolDefinitionHash(LlmToolDefinition tool)
+    {
+        ArgumentNullException.ThrowIfNull(tool);
+        return ComputeToolSpecHash(new[] { tool });
+    }
+
+    /// <summary>
+    /// 按 <paramref name="tools"/> 的给定顺序生成工具定义身份绑定（C01-B-3 / AC4-A）：
+    /// 每项为 (toolId = 工具名, definitionHash = <see cref="ComputeToolDefinitionHash"/>)。
+    /// 只产出指纹，绝不复制 schema 正文。
+    /// </summary>
+    public static IReadOnlyList<ToolBinding> ComputeToolBindings(IReadOnlyList<LlmToolDefinition>? tools)
+    {
+        if (tools is null || tools.Count == 0)
+            return Array.Empty<ToolBinding>();
+
+        var bindings = new List<ToolBinding>(tools.Count);
+        foreach (var tool in tools)
+        {
+            bindings.Add(new ToolBinding
+            {
+                ToolId = tool.Name,
+                DefinitionHash = ComputeToolDefinitionHash(tool),
+            });
+        }
+
+        return bindings;
+    }
+
     /// <summary>组合 system/tool 两个 hash 得到 prefix hash（分隔符 '\u001f' 不与 hex 冲突）。</summary>
     public static string ComputePrefixHash(string systemPromptHash, string toolSpecHash)
         => Sha256Hex(systemPromptHash + "\u001f" + toolSpecHash);

@@ -1,4 +1,33 @@
+using PuddingCode.Platform;
+
 namespace PuddingCode.Runtime;
+
+/// <summary>
+/// 单个工具的定义身份（C01-B-3 / AC4-A）。只保存**可解析的定义指纹**，绝不保存 schema 正文
+/// （对齐设计文档 <c>01:257</c>「不保存 schema 正文」原则）。
+/// <see cref="DefinitionHash"/> 复用 <see cref="CompositionSnapshot.ComputeToolDefinitionHash"/> 的
+/// canonical 规则（= 整表 <see cref="CompositionSnapshot.ComputeToolSpecHash"/> 的单元素子集投影），
+/// 不引入第三套 hash 口径（R9）。
+/// </summary>
+public sealed record ToolBinding
+{
+    /// <summary>工具 ID（与 <see cref="SessionCompositionRecord.ToolIds"/> 中的项一致）。</summary>
+    public required string ToolId { get; init; }
+
+    /// <summary>该工具定义（Name/Description/Parameters）的 canonical SHA-256 指纹（小写 hex）。</summary>
+    public required string DefinitionHash { get; init; }
+}
+
+/// <summary>
+/// 当前可用工具定义目录（C01-B-3）。
+/// 恢复路径据此判定「定义级精确恢复」，写穿路径据此把每个已曝光工具的定义身份落库。
+/// 只暴露内存中的定义本体，由调用方自行做 canonical 哈希；本身不落盘、不上报、不保存 schema 正文副本。
+/// </summary>
+public interface IToolDefinitionCatalog
+{
+    /// <summary>返回当前可用工具定义全量（顺序不敏感；调用方按需 canonical 化）。</summary>
+    IReadOnlyList<LlmToolDefinition> GetAvailableToolDefinitions();
+}
 
 /// <summary>
 /// Session Composition 不可变快照记录（P0-5 步骤 1 契约）。
@@ -49,6 +78,14 @@ public sealed record SessionCompositionRecord
     /// <summary>有序 append-only 全量工具 ID 列表（只增不收缩）。</summary>
     public required IReadOnlyList<string> ToolIds { get; init; }
 
+    /// <summary>
+    /// 有序工具**定义身份**绑定（C01-B-3 / AC4-A）：与 <see cref="ToolIds"/> 同序、逐项 (toolId, definitionHash)。
+    /// 只保存定义指纹，**绝不保存 schema 正文**（<c>01:257</c>）。
+    /// 历史行（C01-B-3 之前写入）为 null —— 读取方必须据此判定「无法证明定义级精确恢复」
+    /// （<c>SchemaExactRestore=false</c>），不得谎称精确。
+    /// </summary>
+    public IReadOnlyList<ToolBinding>? ToolBindings { get; init; }
+
     /// <summary>本次版本相对上一版本的变化原因（initial / system_prompt_changed / tool_spec_changed / skill_manifest_changed / permission_changed / none）。</summary>
     public string? ChangeReason { get; init; }
 
@@ -94,6 +131,9 @@ public static class CompositionChangeReasons
 
     /// <summary>既有曝光引用的工具定义已不存在 → 不谎称精确恢复，但不阻塞执行。</summary>
     public const string ToolDefinitionMissing = "tool_definition_missing";
+
+    /// <summary>既有曝光引用的工具定义仍在，但 canonical 定义指纹与记录不符（定义已变更）→ 不谎称精确恢复。</summary>
+    public const string ToolDefinitionChanged = "tool_definition_changed";
 
     /// <summary>无变化。</summary>
     public const string None = "none";

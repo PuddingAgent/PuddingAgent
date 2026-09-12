@@ -159,6 +159,7 @@ public static class MemoryDbInitializer
                     SkillManifestHash       TEXT,
                     SerializationVersion    TEXT NOT NULL DEFAULT 'prefix-v1',
                     ToolIds                 TEXT,
+                    ToolBindings            TEXT,
                     ChangeReason            TEXT,
                     PermissionEpoch         INTEGER NOT NULL DEFAULT 0,
                     CreatedAtUtc            INTEGER NOT NULL,
@@ -173,6 +174,12 @@ public static class MemoryDbInitializer
         // 历史行 ContentId 为 NULL = 「无法证明精确内容」，调用方不得谎称精确恢复。
         await EnsureColumnAsync(conn, "CompositionSnapshots", "ContentId",
             "ALTER TABLE CompositionSnapshots ADD COLUMN ContentId TEXT NULL;");
+
+        // C01-B-3：幂等补 ToolBindings 列（工具定义身份：toolId + definitionHash，不存 schema 正文）。
+        // 历史行为 NULL = 「无法证明定义级精确恢复」，读取方不得用当前定义静默代替，也不得阻塞执行（R13/R15）。
+        // 与 init_memory.sql 的 CREATE TABLE 保持同步（两处同名同类型）。
+        await EnsureColumnAsync(conn, "CompositionSnapshots", "ToolBindings",
+            "ALTER TABLE CompositionSnapshots ADD COLUMN ToolBindings TEXT NULL;");
     }
 
     /// <summary>幂等补列：PRAGMA table_info 检测后 ALTER TABLE ADD COLUMN（不删除旧列/旧数据）。</summary>
