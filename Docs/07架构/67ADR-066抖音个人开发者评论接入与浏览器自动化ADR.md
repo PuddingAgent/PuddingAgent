@@ -6,6 +6,12 @@
 > - 实施规格：[68抖音接入与通用WebView2自动化开发实施规格](68抖音接入与通用WebView2自动化开发实施规格.md)
 > - 关联：[ADR-045 双向消息系统与聊天室客户端](46ADR-045双向消息系统与聊天室客户端ADR.md)、[ADR-063 飞书 Agent 绑定与可靠消息网关](63ADR-063飞书Agent绑定与可靠消息网关ADR.md)
 
+## 2026-09-12 复核补充（优先于下文历史宿主描述）
+
+继续沿用通用 WebView2 + Core 侧 Douyin Adapter，Playwright 仅作语义参考，不新增 Sidecar 或兼容层。下文“WPF 进程内启动 ASP.NET Core”“共享 DI 和进程生命周期”已被 68 实施规格与 Agents.md 的独立 Core 子进程方案取代：WPF 不承载业务，二者通过认证 Bridge 通信。
+
+七项 Browser Tool 已有实现，真实 Agent 可见 smoke 门禁仍须按 77/78/79 收口；本轮未重新验收。开源仓库固定提交、代码差距及 DY-00→DY-01→DY-02 工作包见 [2026-09-12 复用与看板方案](../Reports/DouyinCreatorTools-WebView2复用与看板方案-2026-09-12.md)。该补充是实施计划，不表示 Douyin 已实现。
+
 ## 1. 背景
 
 Pudding 需要让个人开发者账号接入抖音，覆盖：

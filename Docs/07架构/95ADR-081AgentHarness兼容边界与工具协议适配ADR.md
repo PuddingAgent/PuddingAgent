@@ -1,5 +1,7 @@
 # ADR-081：Agent Harness 兼容边界与工具协议适配
 
+> **2026-09-12 后续方向修订**：[ADR-086](100ADR-086长程执行预算与运行内核收敛ADR.md)及[新阶段设计](../Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md)要求收敛到canonical工具合同，按调用者清单迁移/删除历史别名猜测、正文工具执行与测试专用fallback；不再默认扩充兼容面。下文为已有决策与实现记录，删除完成须有源码及产品证据。用户已明确否定WorkUnit 25–40轮限制，长程子代理和managed WorkUnit必须支持600正常轮；本ADR的成本治理不得被解释为恢复小轮数截断。
+
 > 状态：Accepted；H0、H1 重复失败熔断、模板单一权威源、round-boundary 工具激活、discovery-only 熔断、canonical Token 归因与 WorkUnit 调用边界 Token/成本止损已实现，聚合 Goodput 报表、部署与真实模型验收未完成
 >
 > 日期：2026-08-26

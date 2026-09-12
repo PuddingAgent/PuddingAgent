@@ -7,6 +7,8 @@
 > - 目标平台：Windows 10/11、.NET 10、WPF、WebView2 Evergreen Runtime
 > - 本文用途：作为开发拆分、接口评审、编码和验收的直接输入
 
+2026-09-12 源码复核与后续拆分见 [douyin-creator-tools / WebView2 续建方案](../Reports/DouyinCreatorTools-WebView2复用与看板方案-2026-09-12.md)：复用现有七工具及 Bridge，先收口真实 Agent 验收，再进入只读 Adapter 和可靠回复；任意 Evaluate/CDP 等接口仍不能按已实现使用。本轮仅更新设计与看板。
+
 ## 0. 产品战略定位
 
 Pudding 是 **Windows 桌面智能助手与 IDE**。
