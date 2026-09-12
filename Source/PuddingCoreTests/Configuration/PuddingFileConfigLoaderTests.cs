@@ -489,6 +489,180 @@ public sealed class PuddingFileConfigLoaderTests
         Assert.IsTrue(result.Errors.Any(e => e.Contains("maxImagesPerRequest must be greater than zero")));
     }
 
+    [TestMethod]
+    public async Task LoadLlmProvidersAsync_VisionContract_LooseningValue_Is_Rejected_With_Dimension_Value_And_Ceiling()
+    {
+        // V5-T4（更松）：maxImagesPerRequest=600 超过产品天花板 8 → 加载期显式拒绝；
+        // 错误信息必须同时点名 provider/model、维度名、配置值与天花板，并注明只许收紧。
+        using var temp = new TempDirectory();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        Directory.CreateDirectory(paths.ConfigRoot);
+        await File.WriteAllTextAsync(paths.SystemConfigFile("llm.providers.json"), """
+            {
+              "providers": [
+                {
+                  "providerId": "deepseek",
+                  "name": "DeepSeek",
+                  "baseUrl": "https://api.deepseek.com",
+                  "apiKey": "key",
+                  "isEnabled": true,
+                  "models": [
+                    {
+                      "modelId": "deepseek-flash",
+                      "name": "deepseek-flash",
+                      "protocol": "responses",
+                      "capabilityTags": ["vision"],
+                      "isDefault": true,
+                      "sortOrder": 1,
+                      "vision": { "version": "v1", "maxImagesPerRequest": 600 }
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        var loader = new PuddingFileConfigLoader(paths);
+
+        var result = await loader.LoadLlmProvidersAsync();
+
+        Assert.IsFalse(result.Success);
+        var error = result.Errors.FirstOrDefault(e =>
+            e.Contains("provider 'deepseek'", StringComparison.Ordinal)
+            && e.Contains("model 'deepseek-flash'", StringComparison.Ordinal)
+            && e.Contains("maxImagesPerRequest=600", StringComparison.Ordinal)
+            && e.Contains("exceeds the product limit 8", StringComparison.Ordinal));
+        Assert.IsNotNull(error);
+        Assert.IsTrue(error.Contains("may only tighten", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task LoadLlmProvidersAsync_VisionContract_AllSevenLoosenedDimensions_Are_Rejected_Individually()
+    {
+        // V5-T4：7 个上限维度逐个点名——每个放宽型维度都产生独立错误（维度名 + 配置值 + 天花板三要素）。
+        // 口径区分：inline *Bytes = 解码后字节，inlineMaxTotalWireBytes / filesMaxTotalBytes = wire 字节，
+        // filesMaxBytesPerImage = 上传原始编码字节。
+        using var temp = new TempDirectory();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        Directory.CreateDirectory(paths.ConfigRoot);
+        await File.WriteAllTextAsync(paths.SystemConfigFile("llm.providers.json"), """
+            {
+              "providers": [
+                {
+                  "providerId": "deepseek",
+                  "name": "DeepSeek",
+                  "baseUrl": "https://api.deepseek.com",
+                  "apiKey": "key",
+                  "isEnabled": true,
+                  "models": [
+                    {
+                      "modelId": "deepseek-flash",
+                      "name": "deepseek-flash",
+                      "protocol": "responses",
+                      "capabilityTags": ["vision"],
+                      "isDefault": true,
+                      "sortOrder": 1,
+                      "vision": {
+                        "version": "v1",
+                        "maxImagesPerRequest": 600,
+                        "inlineMaxBytesPerImage": 4000000,
+                        "inlineMaxTotalBytes": 83886080,
+                        "inlineMaxTotalWireBytes": 134217728,
+                        "filesMaxBytesPerImage": 134217728,
+                        "filesMaxTotalBytes": 268435456,
+                        "estimatedTokensPerImageUpperBound": 2048
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        var loader = new PuddingFileConfigLoader(paths);
+
+        var result = await loader.LoadLlmProvidersAsync();
+
+        Assert.IsFalse(result.Success);
+        Assert.HasCount(7, result.Errors);
+        var loosened = new (string Dimension, string Value, string Ceiling)[]
+        {
+            ("maxImagesPerRequest", "600", "8"),
+            ("inlineMaxBytesPerImage", "4000000", "2000000"),
+            ("inlineMaxTotalBytes", "83886080", "41943040"),
+            ("inlineMaxTotalWireBytes", "134217728", "67108864"),
+            ("filesMaxBytesPerImage", "134217728", "67108864"),
+            ("filesMaxTotalBytes", "268435456", "209715200"),
+            ("estimatedTokensPerImageUpperBound", "2048", "1024"),
+        };
+        foreach (var (dimension, value, ceiling) in loosened)
+        {
+            Assert.IsTrue(
+                result.Errors.Any(e =>
+                    e.Contains($"{dimension}={value}", StringComparison.Ordinal)
+                    && e.Contains($"exceeds the product limit {ceiling}", StringComparison.Ordinal)
+                    && e.Contains("may only tighten", StringComparison.Ordinal)),
+                $"expected a loosening rejection naming {dimension}={value} with ceiling {ceiling}.");
+        }
+    }
+
+    [TestMethod]
+    public async Task LoadLlmProvidersAsync_VisionContract_TighteningValues_Are_Accepted()
+    {
+        // V5-T4（更紧）：合同值全部低于产品天花板 → 正常通过且原值保留（收紧合法）。
+        // 相等情形由既有 C1 用例（值 = 产品默认的合法合同）覆盖。
+        using var temp = new TempDirectory();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        Directory.CreateDirectory(paths.ConfigRoot);
+        await File.WriteAllTextAsync(paths.SystemConfigFile("llm.providers.json"), """
+            {
+              "providers": [
+                {
+                  "providerId": "deepseek",
+                  "name": "DeepSeek",
+                  "baseUrl": "https://api.deepseek.com",
+                  "apiKey": "key",
+                  "isEnabled": true,
+                  "models": [
+                    {
+                      "modelId": "deepseek-flash",
+                      "name": "deepseek-flash",
+                      "protocol": "responses",
+                      "capabilityTags": ["vision"],
+                      "isDefault": true,
+                      "sortOrder": 1,
+                      "vision": {
+                        "version": "v1",
+                        "maxImagesPerRequest": 4,
+                        "inlineMaxBytesPerImage": 1000000,
+                        "inlineMaxTotalBytes": 20971520,
+                        "inlineMaxTotalWireBytes": 33554432,
+                        "filesMaxBytesPerImage": 33554432,
+                        "filesMaxTotalBytes": 104857600,
+                        "estimatedTokensPerImageUpperBound": 512
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        var loader = new PuddingFileConfigLoader(paths);
+
+        var result = await loader.LoadLlmProvidersAsync();
+
+        Assert.IsTrue(result.Success);
+        var vision = result.Config!.Providers[0].Models[0].Vision!;
+        Assert.AreEqual(4, vision.MaxImagesPerRequest);
+        Assert.AreEqual(1000000L, vision.InlineMaxBytesPerImage);
+        Assert.AreEqual(20971520L, vision.InlineMaxTotalBytes);
+        Assert.AreEqual(33554432L, vision.InlineMaxTotalWireBytes);
+        Assert.AreEqual(33554432L, vision.FilesMaxBytesPerImage);
+        Assert.AreEqual(104857600L, vision.FilesMaxTotalBytes);
+        Assert.AreEqual(512, vision.EstimatedTokensPerImageUpperBound);
+    }
+
     private sealed class TempDirectory : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(

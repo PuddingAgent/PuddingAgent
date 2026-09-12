@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PuddingCode.Core;
 
 namespace PuddingCode.Configuration;
 
@@ -219,6 +220,8 @@ public sealed class PuddingFileConfigLoader
     /// V5-T2：vision 合同节校验 — 存在即必须完整有效（显式合同，fail-fast）。
     /// 非法值不允许以「静默忽略」方式伪装成产品默认策略：配置错误必须在加载期显式失败，
     /// 与 protocol / priceWindows 等其他模型级字段的校验风格一致。
+    /// V5-T4：上限类维度「只能收紧、不得放宽」—— 配置值超过产品天花板
+    /// （VisionRequestPolicy.Default）时加载期显式拒绝，不静默钳制后放行。
     /// </summary>
     private static void ValidateVisionContract(
         string providerId,
@@ -246,6 +249,35 @@ public sealed class PuddingFileConfigLoader
             errors.Add($"{prefix} filesMaxTotalBytes (wire bytes) must be greater than zero.");
         if (vision.EstimatedTokensPerImageUpperBound is <= 0)
             errors.Add($"{prefix} estimatedTokensPerImageUpperBound must be greater than zero.");
+
+        // V5-T4：上限类维度只能收紧、不得放宽——逐维度对照产品天花板校验；
+        // 字节口径逐维度标注（解码后字节 / wire 字节 / 上传原始编码字节），不得混用。
+        RejectVisionLimitAboveCeiling(prefix, vision.MaxImagesPerRequest, VisionRequestPolicy.Default.MaxImagesPerRequest, "maxImagesPerRequest", "images per invocation", errors);
+        RejectVisionLimitAboveCeiling(prefix, vision.InlineMaxBytesPerImage, VisionRequestPolicy.Default.InlineMaxBytesPerImage, "inlineMaxBytesPerImage", "decoded bytes per image", errors);
+        RejectVisionLimitAboveCeiling(prefix, vision.InlineMaxTotalBytes, VisionRequestPolicy.Default.InlineMaxTotalBytes, "inlineMaxTotalBytes", "decoded bytes total", errors);
+        RejectVisionLimitAboveCeiling(prefix, vision.InlineMaxTotalWireBytes, VisionRequestPolicy.Default.InlineMaxTotalWireBytes, "inlineMaxTotalWireBytes", "wire bytes (base64 data URI) total", errors);
+        RejectVisionLimitAboveCeiling(prefix, vision.FilesMaxBytesPerImage, VisionRequestPolicy.Default.FilesMaxBytesPerImage, "filesMaxBytesPerImage", "uploaded raw encoded bytes per file", errors);
+        RejectVisionLimitAboveCeiling(prefix, vision.FilesMaxTotalBytes, VisionRequestPolicy.Default.FilesMaxTotalBytes, "filesMaxTotalBytes", "wire bytes total", errors);
+        RejectVisionLimitAboveCeiling(prefix, vision.EstimatedTokensPerImageUpperBound, VisionRequestPolicy.Default.EstimatedTokensPerImageUpperBound, "estimatedTokensPerImageUpperBound", "conservative per-image token estimate", errors);
+    }
+
+    /// <summary>
+    /// V5-T4：单维度天花板校验。仅对已通过正值校验（>0）的配置值比较产品天花板；
+    /// 错误信息同时含 provider/model、维度名、配置值与天花板四个要素。
+    /// </summary>
+    private static void RejectVisionLimitAboveCeiling(
+        string prefix,
+        long? configured,
+        long ceiling,
+        string dimensionName,
+        string unit,
+        ICollection<string> errors)
+    {
+        if (configured is > 0 && configured.GetValueOrDefault() > ceiling)
+        {
+            errors.Add(
+                $"{prefix} {dimensionName}={configured.GetValueOrDefault()} ({unit}) exceeds the product limit {ceiling}; a model contract may only tighten limits.");
+        }
     }
 
     private static void ValidatePriceWindows(

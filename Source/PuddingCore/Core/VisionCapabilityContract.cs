@@ -3,9 +3,10 @@ namespace PuddingCode.Core;
 /// <summary>
 /// 模型级视觉能力合同（V5 切片三 T2；ADR-088 决策 2/5，设计 §4.1「有效能力快照」的来源与投影）。
 /// 唯一来源：data/config/llm.providers.json 模型条目的可选 "vision" 节，启动时由
-/// PuddingFileConfigLoader 校验（存在即必须完整有效，fail-fast）、PuddingFileLlmConfigService.GetAllModels()
-/// 投影到 LlmModelInfo.VisionContract，AgentExecutionSnapshotFactory 生成快照时解析为
-/// VisionRequestPolicy。配置优先、版本化生效，不做在线探测。
+/// PuddingFileConfigLoader 校验（存在即必须完整有效 + 只能收紧不得放宽，fail-fast）、
+/// PuddingFileLlmConfigService.GetAllModels() 投影到 LlmModelInfo.VisionContract，
+/// AgentExecutionSnapshotFactory 生成快照时解析为 VisionRequestPolicy。
+/// 合同只能收紧不放宽、版本化生效，不做在线探测。
 /// 本合同只表达「支持图片输入时的预算策略值」；模型是否支持图片输入由模型类别与
 /// capabilityTags("vision") 判定（快照工厂负责：embedding / image-generation / 无 vision 标签
 /// 一律不投影策略，防止误标）。字节口径在字段名中显式区分：*BytesPerImage / *TotalBytes 为
@@ -38,18 +39,21 @@ public sealed record VisionCapabilityContract
     public int? EstimatedTokensPerImageUpperBound { get; init; }
 
     /// <summary>
-    /// 投影为运行策略：显式配置值覆盖产品默认，未配置字段沿用 <see cref="VisionRequestPolicy.Default"/>；
-    /// 版本取合同 Version（快照日志与 manifest 据此区分「当前执行版本」）。
+    /// 投影为运行策略（V5-T4「只能收紧、不得放宽」收口）：上限类维度按设计 §4.1 交集语义逐维取
+    /// <c>Math.Min(配置值, 产品默认)</c> —— 模型合同不得放大产品护栏（纵深防御：即使绕过 loader
+    /// 校验直接构造合同，投影也不会放宽上限）；未配置字段完全不变，沿用
+    /// <see cref="VisionRequestPolicy.Default"/>；版本取合同 Version（快照日志与 manifest 据此区分
+    /// 「当前执行版本」，不受钳制影响）。
     /// </summary>
     public VisionRequestPolicy ToPolicy() => new()
     {
-        MaxImagesPerRequest = MaxImagesPerRequest ?? VisionRequestPolicy.Default.MaxImagesPerRequest,
-        InlineMaxBytesPerImage = InlineMaxBytesPerImage ?? VisionRequestPolicy.Default.InlineMaxBytesPerImage,
-        InlineMaxTotalBytes = InlineMaxTotalBytes ?? VisionRequestPolicy.Default.InlineMaxTotalBytes,
-        InlineMaxTotalWireBytes = InlineMaxTotalWireBytes ?? VisionRequestPolicy.Default.InlineMaxTotalWireBytes,
-        FilesMaxBytesPerImage = FilesMaxBytesPerImage ?? VisionRequestPolicy.Default.FilesMaxBytesPerImage,
-        FilesMaxTotalBytes = FilesMaxTotalBytes ?? VisionRequestPolicy.Default.FilesMaxTotalBytes,
-        EstimatedTokensPerImageUpperBound = EstimatedTokensPerImageUpperBound ?? VisionRequestPolicy.Default.EstimatedTokensPerImageUpperBound,
+        MaxImagesPerRequest = Math.Min(MaxImagesPerRequest ?? VisionRequestPolicy.Default.MaxImagesPerRequest, VisionRequestPolicy.Default.MaxImagesPerRequest),
+        InlineMaxBytesPerImage = Math.Min(InlineMaxBytesPerImage ?? VisionRequestPolicy.Default.InlineMaxBytesPerImage, VisionRequestPolicy.Default.InlineMaxBytesPerImage),
+        InlineMaxTotalBytes = Math.Min(InlineMaxTotalBytes ?? VisionRequestPolicy.Default.InlineMaxTotalBytes, VisionRequestPolicy.Default.InlineMaxTotalBytes),
+        InlineMaxTotalWireBytes = Math.Min(InlineMaxTotalWireBytes ?? VisionRequestPolicy.Default.InlineMaxTotalWireBytes, VisionRequestPolicy.Default.InlineMaxTotalWireBytes),
+        FilesMaxBytesPerImage = Math.Min(FilesMaxBytesPerImage ?? VisionRequestPolicy.Default.FilesMaxBytesPerImage, VisionRequestPolicy.Default.FilesMaxBytesPerImage),
+        FilesMaxTotalBytes = Math.Min(FilesMaxTotalBytes ?? VisionRequestPolicy.Default.FilesMaxTotalBytes, VisionRequestPolicy.Default.FilesMaxTotalBytes),
+        EstimatedTokensPerImageUpperBound = Math.Min(EstimatedTokensPerImageUpperBound ?? VisionRequestPolicy.Default.EstimatedTokensPerImageUpperBound, VisionRequestPolicy.Default.EstimatedTokensPerImageUpperBound),
         ImageTokenEstimatorVersion = Version,
     };
 }
