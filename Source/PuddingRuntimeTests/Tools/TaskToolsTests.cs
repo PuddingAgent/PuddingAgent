@@ -991,6 +991,14 @@ public sealed class TaskToolsTests
             Context());
 
         AssertErrorCode(result, "task.active_context_missing");
+        var error = ParseError(result);
+        var rebuild = error.GetProperty("context_rebuild");
+        Assert.IsTrue(rebuild.GetProperty("attempted").GetBoolean());
+        Assert.AreEqual("lookup", rebuild.GetProperty("stage").GetString());
+        Assert.AreEqual("not_visible", rebuild.GetProperty("outcome").GetString());
+        // 信息隐藏负向断言：not_visible 不得携带任何任务内部信息（状态/版本/归属）。
+        Assert.IsFalse(error.TryGetProperty("current_status", out _));
+        Assert.IsFalse(error.TryGetProperty("current_version", out _));
         Assert.IsNull(service.LastClaimRequest, "重建失败时不得调用 ClaimAsync");
     }
 
@@ -1008,7 +1016,13 @@ public sealed class TaskToolsTests
             """{"task_id":"task-1","assignment_id":"assign-1","expected_version":1}""",
             Context());
 
-        AssertErrorCode(result, "task.active_context_missing");
+        var error = ParseError(result);
+        Assert.AreEqual("task.active_context_missing", error.GetProperty("code").GetString());
+        var rebuild = error.GetProperty("context_rebuild");
+        Assert.IsTrue(rebuild.GetProperty("attempted").GetBoolean());
+        Assert.AreEqual("ownership", rebuild.GetProperty("stage").GetString());
+        Assert.AreEqual("agent_mismatch", rebuild.GetProperty("outcome").GetString());
+        Assert.IsFalse(error.TryGetProperty("current_status", out _));
         Assert.IsNull(service.LastClaimRequest, "归属防御校验失败时不得调用 ClaimAsync");
     }
 
@@ -1143,7 +1157,33 @@ public sealed class TaskToolsTests
             """{"task_id":"task-2","assignment_id":"assign-1","expected_version":1}""",
             Context(activeTask: ActiveTask(taskId: "task-1")));
 
-        AssertErrorCode(result, "task.state_conflict");
+        var error = ParseError(result);
+        Assert.AreEqual("task.state_conflict", error.GetProperty("code").GetString());
+        Assert.IsFalse(error.TryGetProperty("context_rebuild", out _),
+            "注入上下文存在时的参数不匹配不是重建场景，不应带 context_rebuild");
+    }
+
+    [TestMethod]
+    public async Task Claim_ActiveTaskLost_IncompleteInputs_DiagnosticsMarkSkipped()
+    {
+        // 入参不完整无法反查：attempted=false，且不得向服务端发起 GetAsync。
+        var service = new FakeTaskAgentCommandService
+        {
+            Get = (_, _, _, _, _) => throw new InvalidOperationException("incomplete inputs must not trigger lookup"),
+        };
+
+        var result = await RunAsync(
+            ClaimTool(service),
+            """{"task_id":"","assignment_id":"assign-1","expected_version":1}""",
+            Context());
+
+        var error = ParseError(result);
+        Assert.AreEqual("task.active_context_missing", error.GetProperty("code").GetString());
+        var rebuild = error.GetProperty("context_rebuild");
+        Assert.IsFalse(rebuild.GetProperty("attempted").GetBoolean());
+        Assert.AreEqual("inputs", rebuild.GetProperty("stage").GetString());
+        Assert.AreEqual("incomplete_inputs", rebuild.GetProperty("outcome").GetString());
+        Assert.IsNull(service.LastGetArgs, "入参不完整时不得发起反查");
     }
 
     [TestMethod]

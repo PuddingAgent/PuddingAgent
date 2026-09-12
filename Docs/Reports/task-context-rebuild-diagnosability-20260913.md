@@ -93,3 +93,29 @@ R1/R2 的 `active_context_missing` **文案是错的**——它断言了「没�
 - 不改 mine 信息隐藏策略（`TaskGetTool`/`Platform` 裁决）。
 - 不恢复 `expected_version` 与注入快照的比对（缺陷 2d5a2ebe 已裁决移除）。
 - 不扩大 `:241` 的可见信息（不得区分"不存在"与"非 mine"）。
+
+---
+
+## 8. 实施记录（2026-09-13 06:52 BJT）
+
+**状态：已实施并验证**（本轮心跳，父级直取；未派子代理——该改动是行号级精确编辑，且此前三轮同类子代理均 `budget_exhausted` 零交付）。
+
+| 层 | 落地 |
+|---|---|
+| 契约 | `Source/PuddingCore/Tasks/TaskAgentCommandContracts.cs`：`BuildErrorJson` 新增可选参 `contextRebuild`，错误体新增 `context_rebuild`；新增 `public sealed record TaskContextRebuildDiagnostics { Attempted, Stage, Outcome }`（`required`；`JsonSerializerDefaults.Web` ⇒ camelCase；`WhenWritingNull` ⇒ 未走反查时该字段整体省略） |
+| 守卫 | `Source/PuddingRuntime/Services/TaskTools/TaskToolModels.cs`：抽出常量 `ActiveContextMissingMessage`，新增私有 `BuildRebuildRejectedError(taskId, attempted, stage, outcome)`；三处 `return (error, null)` 改为携带诊断（inputs / lookup / ownership） |
+| 测试 | `Source/PuddingRuntimeTests/Tools/TaskToolsTests.cs`：`Claim_ActiveTaskLost_NotMineOrMissing_StaysRejected` 与 `..._AssignmentAgentMismatch_StaysRejected` 增补诊断断言 + 信息隐藏负向断言（不得出现 `current_status`/`current_version`）；`Claim_ActiveTaskPresent_Mismatch_DoesNotRebuild` 增补负向断言（不得带 `context_rebuild`）；新增 `Claim_ActiveTaskLost_IncompleteInputs_DiagnosticsMarkSkipped`（含 `LastGetArgs is null`，证明确实未发起反查） |
+| 文档 | `Source/PuddingCore/code_map.md`、`Source/PuddingRuntime/code_map.md` 对应条目同步更新 |
+
+**与第 4 节规格的两点有偏差（有意）**：
+
+1. `inputs` 阶段的 outcome 取 `incomplete_inputs`（规格写的是 `incomplete`）——与 `not_visible` / `agent_mismatch` 的下划线风格一致，并避免与 `stage` 同词。
+2. **未**给 `injected/mismatch`（`context.ActiveTask is not null` 的真实调用错误）附加 `context_rebuild`：该路径语义上**没有尝试反查**，带字段反而误导；该约定已用负向断言固化为测试。
+
+**验证证据**：
+
+- `dotnet build Source/PuddingRuntimeTests/PuddingRuntimeTests.csproj -v m` → `BUILD_EXIT=0`（传递覆盖 PuddingCore + PuddingRuntime + PuddingRuntimeTests）。
+- `dotnet test ... --filter "FullyQualifiedName~TaskToolsTests"` → **53/53 通过**（1.96s），含本轮新增/改写的 3 个用例。
+- 全解构建未跑（时间盒）；改动对共享契约是**纯追加**（可选参 + 新类型），无破坏性调用点变更。
+
+**运行期生效条件（未做）**：改动仅入库、未部署 —— 线上进程仍加载旧程序集，真实错误体要等下次点火重启后才会出现 `context_rebuild`；与 PLAT-T2（commit `9365788`，同样"已提交未部署"）同属一个部署批次。

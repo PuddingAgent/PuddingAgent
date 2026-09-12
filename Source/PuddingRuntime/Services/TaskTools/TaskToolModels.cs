@@ -163,6 +163,31 @@ internal static class TaskToolGuard
     /// 服务端活版本 CAS 是唯一权威，由调用方/服务端在 Claim/Apply 时裁决。
     /// </para>
     /// </summary>
+    /// <summary>Active Task Context 缺失的统一消息（反查重建失败时附加 context_rebuild 诊断）。</summary>
+    private const string ActiveContextMissingMessage =
+        "task_claim/task_update requires an Active Task Runtime Context; no task was dispatched to this run.";
+
+    /// <summary>
+    /// 反查重建失败时的拒绝体（卡 3133b149）：错误码与 mine 信息隐藏策略与纯注入路径完全一致，
+    /// 仅附加非泄露诊断 context_rebuild{attempted,stage,outcome}，
+    /// 使心跳/子代理 run 的 active_context_missing 不再与「平台未注入」混为一谈。
+    /// </summary>
+    private static string BuildRebuildRejectedError(
+        string taskId,
+        bool attempted,
+        string stage,
+        string outcome)
+        => TaskToolErrors.BuildErrorJson(
+            TaskErrorCode.TaskActiveContextMissing,
+            ActiveContextMissingMessage,
+            taskId,
+            contextRebuild: new TaskContextRebuildDiagnostics
+            {
+                Attempted = attempted,
+                Stage = stage,
+                Outcome = outcome,
+            });
+
     public static string? ValidateActiveTask(
         string taskId,
         string assignmentId,
@@ -172,7 +197,7 @@ internal static class TaskToolGuard
         {
             return TaskToolErrors.BuildErrorJson(
                 TaskErrorCode.TaskActiveContextMissing,
-                "task_claim/task_update requires an Active Task Runtime Context; no task was dispatched to this run.",
+                ActiveContextMissingMessage,
                 taskId);
         }
 
@@ -211,8 +236,10 @@ internal static class TaskToolGuard
     ///      update 要求 InProgress；不符 → task.state_conflict（附 current_status）；
     ///   ⑤ task.Version == expected_version（CAS；后续 Claim/Apply 服务端二次 CAS），
     ///      不符 → task.version_conflict（附 current_version）。
-    /// 任一不满足则返回原拒绝语义（行为与未引入 fallback 时一致）。查询服务故障（TaskStoreException）
-    /// 不在此吞掉，交由调用方既有的 catch 统一映射。
+    /// 任一不满足则返回原拒绝语义（错误码与 mine 信息隐藏策略均不变），并附加非泄露诊断
+    /// context_rebuild{attempted,stage,outcome}（卡 3133b149）：inputs/incomplete_inputs、
+    /// lookup/not_visible、ownership/agent_mismatch——使「平台未注入」与「卡不属于我」可区分。
+    /// 查询服务故障（TaskStoreException）不在此吞掉，交由调用方既有的 catch 统一映射。
     /// </summary>
     /// <returns>Error 非 null 表示拒绝；否则 ActiveTask 为可继续 canonical 流程的有效上下文。</returns>
     public static async Task<(string? Error, ActiveTaskRuntimeContext? ActiveTask)> ValidateActiveTaskOrRebuildAsync(
@@ -236,17 +263,17 @@ internal static class TaskToolGuard
             return (error, null);
         }
 
-        // 入参不完整无法反查，保持原拒绝。
+        // 入参不完整无法反查，保持原拒绝（diagnostics: inputs/incomplete_inputs）。
         if (string.IsNullOrWhiteSpace(taskId) || string.IsNullOrWhiteSpace(assignmentId))
         {
-            return (error, null);
+            return (BuildRebuildRejectedError(taskId, attempted: false, stage: "inputs", outcome: "incomplete_inputs"), null);
         }
 
         var lookup = await service.GetAsync(context.WorkspaceId, taskId, context.AgentInstanceId, eventsLimit: 1, ct);
         if (lookup is null)
         {
-            // mine 信息隐藏：任务不存在或归属其他 Agent → 无法安全重建，保持原拒绝（不泄露归属）。
-            return (error, null);
+                        // mine 信息隐藏：任务不存在或归属其他 Agent → 无法安全重建，保持原拒绝（不泄露归属）。
+            return (BuildRebuildRejectedError(taskId, attempted: true, stage: "lookup", outcome: "not_visible"), null);
         }
 
         var assignment = lookup.ActiveAssignment;
@@ -261,9 +288,9 @@ internal static class TaskToolGuard
                 lookup.Task.Status), null);
         }
 
-        if (!string.Equals(assignment.AgentId, context.AgentInstanceId, StringComparison.Ordinal))
+                if (!string.Equals(assignment.AgentId, context.AgentInstanceId, StringComparison.Ordinal))
         {
-            return (error, null);
+            return (BuildRebuildRejectedError(taskId, attempted: true, stage: "ownership", outcome: "agent_mismatch"), null);
         }
 
         var statusOk = requireInProgress

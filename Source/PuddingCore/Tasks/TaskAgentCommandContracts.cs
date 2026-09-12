@@ -246,13 +246,14 @@ public static class TaskToolErrors
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
-    /// <summary>构造统一错误体 JSON（§7：code/message/可选 task_id/current_version/current_status）。</summary>
+    /// <summary>构造统一错误体 JSON（§7：code/message/可选 task_id/current_version/current_status/context_rebuild）。</summary>
     public static string BuildErrorJson(
         TaskErrorCode code,
         string message,
         string? taskId = null,
         int? currentVersion = null,
-        string? currentStatus = null)
+        string? currentStatus = null,
+        TaskContextRebuildDiagnostics? contextRebuild = null)
     {
         return JsonSerializer.Serialize(new
         {
@@ -263,6 +264,7 @@ public static class TaskToolErrors
                 task_id = taskId,
                 current_version = currentVersion,
                 current_status = currentStatus,
+                context_rebuild = contextRebuild,
             },
         }, ErrorJsonOptions);
     }
@@ -275,4 +277,24 @@ public static class TaskToolErrors
             ex.TaskId,
             ex.ActualVersion,
             currentStatus: null);
+}
+
+/// <summary>
+/// Active Task Context 缺失时「反查归属重建」失败原因的非泄露诊断（卡 3133b149）。
+/// <para>
+/// 只暴露阶段与结论，不区分「任务不存在」与「任务归属其他 Agent」，也不携带归属方
+/// Agent/任务标题/所有者摘要，故不破坏 Platform 的 mine 信息隐藏裁决。
+/// 缺失该对象 = 调用方未走反查重建（例如注入上下文自身参数不匹配的真实调用错误）。
+/// </para>
+/// </summary>
+public sealed record TaskContextRebuildDiagnostics
+{
+    /// <summary>是否真的执行过反查（入参不完整时为 false）。</summary>
+    public required bool Attempted { get; init; }
+
+    /// <summary>失败阶段：inputs / lookup / ownership（重建成功不产生错误体）。</summary>
+    public required string Stage { get; init; }
+
+    /// <summary>结论：incomplete_inputs / not_visible / agent_mismatch。</summary>
+    public required string Outcome { get; init; }
 }
