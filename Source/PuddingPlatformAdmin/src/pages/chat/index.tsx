@@ -321,9 +321,6 @@ const ChatPageContent: React.FC = () => {
       onAddToMemory: (_turnId: string) => {
         /* TODO: 接入记忆引擎 */
       },
-      onPinContext: (_turnId: string) => {
-        /* TODO: 固定为上下文 */
-      },
       onPin: (turnId: string) => {
         const turn = chat.turns.find((t) => t.turnId === turnId);
         const text =
@@ -795,7 +792,6 @@ const ChatPageContent: React.FC = () => {
             onRerun={ctxCallbacks.onRerun}
             onEditAndRerun={ctxCallbacks.onEditAndRerun}
             onAddToMemory={ctxCallbacks.onAddToMemory}
-            onPinContext={ctxCallbacks.onPinContext}
             onPin={ctxCallbacks.onPin}
             onBranch={ctxCallbacks.onBranch}
           />

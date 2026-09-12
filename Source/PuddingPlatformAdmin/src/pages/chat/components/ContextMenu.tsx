@@ -132,12 +132,6 @@ function buildMenuItems(
         disabled: false,
         onClick: () => callbacks.onAddToMemory(turnId),
       },
-      {
-        icon: <PushpinOutlined />,
-        label: '固定为上下文',
-        disabled: false,
-        onClick: () => callbacks.onPinContext(turnId),
-      },
     ],
     [
       {
@@ -161,7 +155,6 @@ export interface ContextMenuCallbacks {
   onRerun: (turnId: string) => void;
   onEditAndRerun: (turnId: string) => void;
   onAddToMemory: (turnId: string) => void;
-  onPinContext: (turnId: string) => void;
   onBranch: (turnId: string) => void;
 }
 
