@@ -28,10 +28,21 @@ public interface IExecutionLeaseStore
         CancellationToken ct);
 
     /// <summary>
-    /// 释放租约。用于关停或重试前回退。
-    /// 业务终态不得在 LeaseStore 单独提交（应通过 IExecutionJournal.CommitTerminalAsync 原子完成）。
+    /// 释放租约。调用方必须显式声明本次释放的语义（<paramref name="outcome"/>），
+    /// LeaseStore 不得再自行假定终态（历史实现无条件写 lease_lost，把优雅释放也贴成租约丢失）。
+    /// <list type="bullet">
+    /// <item><see cref="RunStatus.LeaseLost"/>：真实丢失 / 中止回退。调用方没有提交任何 Turn 终态，
+    /// run 记为 <c>lease_lost</c>，command 回到 <c>pending</c>，Turn 回到 <c>accepted</c>（可重试）。</item>
+    /// <item><see cref="RunStatus.Succeeded"/> / <see cref="RunStatus.Failed"/> / <see cref="RunStatus.Cancelled"/>：
+    /// 优雅释放。调用方已知该 Turn 的真实终态，run/command 记为对应终态并清空租约；
+    /// <b>不得</b>把 command 退回 <c>pending</c>，<b>不得</b>把 Turn 退回 <c>accepted</c>。</item>
+    /// </list>
+    /// <see cref="RunStatus.Leased"/> / <see cref="RunStatus.Running"/> 不是释放语义，调用即抛 <see cref="ArgumentOutOfRangeException"/>。
+    /// 业务终态应优先通过 IExecutionJournal.CommitTerminalAsync 原子提交；此处终态分支只对仍活跃的
+    /// run/command 生效（已终态的行为幂等空操作）。
     /// </summary>
     Task ReleaseAsync(
         ExecutionLease lease,
+        RunStatus outcome,
         CancellationToken ct);
 }

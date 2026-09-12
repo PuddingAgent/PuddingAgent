@@ -129,7 +129,8 @@ public sealed class ChatExecutionWorker : BackgroundService
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                await _leaseStore.ReleaseAsync(lease, CancellationToken.None);
+                // Worker 关停打断了协调器执行且未提交 Turn 终态：中止回退（可重试）。
+                await _leaseStore.ReleaseAsync(lease, RunStatus.LeaseLost, CancellationToken.None);
             }
             catch (Exception ex)
             {

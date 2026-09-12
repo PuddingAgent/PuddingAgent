@@ -265,7 +265,9 @@ public sealed class ExecutionRunCoordinator(
         catch (OperationCanceledException) when (hostStoppingToken.IsCancellationRequested)
         {
             await SafeCancelAsync(ctsMonitor);
-            await leaseStore.ReleaseAsync(lease, CancellationToken.None);
+            // 宿主关停打断了执行且未提交任何 Turn 终态：按“中止回退”释放（run→lease_lost，
+            // command→pending），使重启后同一命令可被重新领取。不得声明终态。
+            await leaseStore.ReleaseAsync(lease, RunStatus.LeaseLost, CancellationToken.None);
             return Outcome(lease, TurnTerminal.LeaseLost, 0);
         }
         catch (OperationCanceledException) when (ctsRun.IsCancellationRequested)

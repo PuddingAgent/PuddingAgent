@@ -107,29 +107,70 @@ public sealed class SqliteExecutionLeaseStore(
                 return null;
             }
 
-            // Step 3: Create ExecutionRun — FencingToken is auto-increment PK
-            using var runCmd = conn.CreateCommand();
-            runCmd.Transaction = tx;
-            runCmd.CommandText = @"
-                INSERT INTO execution_runs
-                (run_id, command_id, conversation_id, turn_id, attempt,
-                 worker_id, status, lease_until, started_at, trace_id)
-                VALUES
-                (@runId, @commandId, @conversationId, @turnId, @attempt,
-                 @workerId, @status, @leaseUntil, @startedAt, @traceId);
-                SELECT last_insert_rowid()";
-            AddParam(runCmd, "@runId", runId);
-            AddParam(runCmd, "@commandId", commandId);
-            AddParam(runCmd, "@conversationId", conversationId);
-            AddParam(runCmd, "@turnId", turnId);
-            AddParam(runCmd, "@attempt", newAttempt);
-            AddParam(runCmd, "@workerId", workerId);
-            AddParam(runCmd, "@status", "leased");
-            AddParam(runCmd, "@leaseUntil", untilMs);
-            AddParam(runCmd, "@startedAt", nowMs);
-            AddParam(runCmd, "@traceId", traceId ?? (object)DBNull.Value);
+            // Step 3: Create ExecutionRun — FencingToken is auto-increment PK。
+            // G2：(command_id, attempt) 是唯一键。回收/重放会把命令退回 pending 但不回退 attempt_count，
+            // 于是 next attempt 可能与既有 run 行重合；直接 INSERT 会撞唯一键并抛 SqliteException。
+            // 这里在同一持锁事务内先探针、显式分流：同一 (command_id, attempt) 只产生一行 run，且不抛异常。
+            long fencingToken;
+            var existingRun = await FindRunForAttemptAsync(conn, tx, commandId, newAttempt, ct);
+            if (existingRun is null)
+            {
+                using var runCmd = conn.CreateCommand();
+                runCmd.Transaction = tx;
+                runCmd.CommandText = @"
+                    INSERT INTO execution_runs
+                    (run_id, command_id, conversation_id, turn_id, attempt,
+                     worker_id, status, lease_until, started_at, trace_id)
+                    VALUES
+                    (@runId, @commandId, @conversationId, @turnId, @attempt,
+                     @workerId, @status, @leaseUntil, @startedAt, @traceId);
+                    SELECT last_insert_rowid()";
+                AddParam(runCmd, "@runId", runId);
+                AddParam(runCmd, "@commandId", commandId);
+                AddParam(runCmd, "@conversationId", conversationId);
+                AddParam(runCmd, "@turnId", turnId);
+                AddParam(runCmd, "@attempt", newAttempt);
+                AddParam(runCmd, "@workerId", workerId);
+                AddParam(runCmd, "@status", "leased");
+                AddParam(runCmd, "@leaseUntil", untilMs);
+                AddParam(runCmd, "@startedAt", nowMs);
+                AddParam(runCmd, "@traceId", traceId ?? (object)DBNull.Value);
 
-            var fencingToken = (long)(await runCmd.ExecuteScalarAsync(ct))!;
+                fencingToken = (long)(await runCmd.ExecuteScalarAsync(ct))!;
+            }
+            else
+            {
+                // 同一 attempt 已有历史 run 行：复用该行及其 fencing_token（幂等复跑），不新建第二行。
+                if (existingRun.Value.Status is "leased" or "running" or "cancel_requested")
+                {
+                    // 该 attempt 仍被其它 writer 的活跃租约持有：本次 claim 让位（连同上面的 CAS 一起回滚）。
+                    await tx.RollbackAsync(ct);
+                    logger.LogDebug(
+                        "[LeaseStore] Attempt already leased cmd={CmdId} attempt={Attempt} run={RunId}",
+                        commandId, newAttempt, existingRun.Value.RunId);
+                    return null;
+                }
+
+                using var adoptCmd = conn.CreateCommand();
+                adoptCmd.Transaction = tx;
+                adoptCmd.CommandText = @"
+                    UPDATE execution_runs
+                    SET worker_id = @workerId,
+                        status = 'leased',
+                        lease_until = @leaseUntil,
+                        started_at = @startedAt,
+                        completed_at = NULL,
+                        terminal_sequence = NULL
+                    WHERE run_id = @runId";
+                AddParam(adoptCmd, "@workerId", workerId);
+                AddParam(adoptCmd, "@leaseUntil", untilMs);
+                AddParam(adoptCmd, "@startedAt", nowMs);
+                AddParam(adoptCmd, "@runId", existingRun.Value.RunId);
+                await adoptCmd.ExecuteNonQueryAsync(ct);
+
+                runId = existingRun.Value.RunId;
+                fencingToken = existingRun.Value.FencingToken;
+            }
 
             await tx.CommitAsync(ct);
 
@@ -194,8 +235,26 @@ public sealed class SqliteExecutionLeaseStore(
         return affected > 0;
     }
 
-    public async Task ReleaseAsync(ExecutionLease lease, CancellationToken ct)
+    /// <summary>
+    /// G1：按调用方声明的 <paramref name="outcome"/> 释放租约。
+    /// LeaseLost = 真实丢失/中止回退（run→lease_lost，command→pending，Turn→accepted，可重试）；
+    /// Succeeded/Failed/Cancelled = 优雅释放（run/command 记为对应终态并清空租约，不重排队、不回退 Turn）。
+    /// </summary>
+    public async Task ReleaseAsync(ExecutionLease lease, RunStatus outcome, CancellationToken ct)
     {
+        var runStatus = outcome switch
+        {
+            RunStatus.LeaseLost => "lease_lost",
+            RunStatus.Succeeded => "succeeded",
+            RunStatus.Failed => "failed",
+            RunStatus.Cancelled => "cancelled",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(outcome),
+                outcome,
+                "ReleaseAsync 只接受终态或 LeaseLost；Leased/Running 不是释放语义。"),
+        };
+        var retryable = outcome == RunStatus.LeaseLost;
+
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var conn = db.Database.GetDbConnection();
@@ -206,17 +265,19 @@ public sealed class SqliteExecutionLeaseStore(
 
         try
         {
+            // 只有仍活跃的 run 会被本次释放改写；Journal 已提交终态的行保持不变（affected=0）。
             using var runCmd = conn.CreateCommand();
             runCmd.Transaction = tx;
             runCmd.CommandText = @"
                 UPDATE execution_runs
                 SET lease_until = @nowMs,
-                    status = 'lease_lost'
+                    status = @runStatus, completed_at = COALESCE(completed_at, @nowMs)
                 WHERE run_id = @runId
                   AND worker_id = @workerId
                   AND fencing_token = @fencingToken
                   AND status IN ('leased', 'running', 'cancel_requested')";
             AddParam(runCmd, "@nowMs", nowMs);
+            AddParam(runCmd, "@runStatus", runStatus);
             AddParam(runCmd, "@runId", lease.RunId);
             AddParam(runCmd, "@workerId", lease.WorkerId);
             AddParam(runCmd, "@fencingToken", lease.FencingToken);
@@ -226,32 +287,81 @@ public sealed class SqliteExecutionLeaseStore(
             {
                 using var commandCmd = conn.CreateCommand();
                 commandCmd.Transaction = tx;
-                commandCmd.CommandText = @"
-                    UPDATE chat_execution_commands
-                    SET status = 'pending',
-                        lease_owner = NULL,
-                        lease_until = NULL
-                    WHERE command_id = @commandId
-                      AND lease_owner = @workerId
-                      AND status IN ('leased', 'running', 'cancel_requested')";
+                if (retryable)
+                {
+                    // 中止回退：命令回到 pending 以便重启/重试后再次领取（attempt_count 不回退）。
+                    commandCmd.CommandText = @"
+                        UPDATE chat_execution_commands
+                        SET status = 'pending',
+                            lease_owner = NULL,
+                            lease_until = NULL
+                        WHERE command_id = @commandId
+                          AND lease_owner = @workerId
+                          AND status IN ('leased', 'running', 'cancel_requested')";
+                }
+                else
+                {
+                    // 优雅释放：沿用调用方声明的终态，禁止退回 pending（否则已完成的 Turn 会被重复执行）。
+                    commandCmd.CommandText = @"
+                        UPDATE chat_execution_commands
+                        SET status = @commandStatus,
+                            lease_owner = NULL,
+                            lease_until = NULL,
+                            completed_at = COALESCE(completed_at, @nowMs)
+                        WHERE command_id = @commandId
+                          AND lease_owner = @workerId
+                          AND status IN ('leased', 'running', 'cancel_requested')";
+                    AddParam(commandCmd, "@commandStatus", runStatus);
+                    AddParam(commandCmd, "@nowMs", nowMs);
+                }
                 AddParam(commandCmd, "@commandId", lease.CommandId);
                 AddParam(commandCmd, "@workerId", lease.WorkerId);
                 await commandCmd.ExecuteNonQueryAsync(ct);
 
-                await ResetTurnForRetryAsync(
-                    conn, tx, lease.ConversationId, lease.TurnId, ct);
+                if (retryable)
+                {
+                    await ResetTurnForRetryAsync(
+                        conn, tx, lease.ConversationId, lease.TurnId, ct);
+                }
             }
 
             await tx.CommitAsync(ct);
             logger.LogInformation(
-                "[LeaseStore] Released run={RunId} cmd={CmdId} released={Released} → retryable",
-                lease.RunId, lease.CommandId, released > 0);
+                "[LeaseStore] Released run={RunId} cmd={CmdId} outcome={Outcome} released={Released} requeued={Requeued}",
+                lease.RunId, lease.CommandId, outcome, released > 0, retryable && released > 0);
         }
         catch
         {
             await tx.RollbackAsync(ct);
             throw;
         }
+    }
+
+    /// <summary>
+    /// G2：读取同一 (command_id, attempt) 上已存在的 run 行（无则返回 null）。
+    /// 调用方必须已持有该 command 的写事务，否则返回值不能作为幂等依据。
+    /// </summary>
+    private static async Task<(string RunId, long FencingToken, string Status)?> FindRunForAttemptAsync(
+        System.Data.Common.DbConnection conn,
+        System.Data.Common.DbTransaction tx,
+        string commandId,
+        int attempt,
+        CancellationToken ct)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = @"
+            SELECT run_id, fencing_token, status
+            FROM execution_runs
+            WHERE command_id = @commandId AND attempt = @attempt";
+        AddParam(cmd, "@commandId", commandId);
+        AddParam(cmd, "@attempt", attempt);
+
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+            return null;
+
+        return (reader.GetString(0), reader.GetInt64(1), reader.GetString(2));
     }
 
     private async Task ReclaimExpiredRunsAsync(
@@ -291,10 +401,11 @@ public sealed class SqliteExecutionLeaseStore(
             runUpd.Transaction = tx;
             runUpd.CommandText = @"
                 UPDATE execution_runs
-                SET status = 'lease_lost'
+                SET status = 'lease_lost', completed_at = COALESCE(completed_at, @nowMs)
                 WHERE run_id = @runId
                   AND status IN ('leased', 'running', 'cancel_requested')";
             AddParam(runUpd, "@runId", runId);
+            AddParam(runUpd, "@nowMs", nowMs);
             await runUpd.ExecuteNonQueryAsync(ct);
 
             // Reset command to pending (only if not already terminal)
