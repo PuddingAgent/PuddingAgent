@@ -76,7 +76,8 @@
 | `OpenAiLlmGateway.cs` | OpenAI-compatible Chat Completions 网关 |
 | `ResponsesLlmGateway.cs` | OpenAI/DeepSeek Responses API 网关；flat tools、明文 reasoning SSE、completed/failed/incomplete 终态、截断工具调用隔离与 output items 回放；ADR-077：user `input_image`（original→high）与 `function_call_output.output` [input_text, input_image] 数组，图片经 LlmVisualInputPlanner fail-closed；V3-S2a：大图（>2MB）经 DeepSeekFilesApiClient 上传后以 `file_id` 引用（不输出 image_url/detail） |
 | `AnthropicMessagesLlmGateway.cs` | Anthropic Messages API 网关；`x-api-key`、顶层 system、content blocks、工具回放和 SSE state |
-| `LlmVisualInputPlanner.cs` | ADR-077 图片请求预算与规划：inline 小图（≤2MB）data URL、大图 fail-closed 或（V3-S2a，有 uploader 时）Files API 上传 file_id 互斥规划；`VisionRequestPolicy` 含 Files 常量（64 MiB 单文件 / 200 MiB 总量 / lifetime 1h–30d） |
+| `LlmVisualInputPlanner.cs` | ADR-077 图片请求预算与规划：inline 小图（≤2MB）data URL、大图 fail-closed 或（V3-S2a，有 uploader 时）Files API 上传 file_id 互斥规划；`VisionRequestPolicy` 含 Files 常量（64 MiB 单文件 / 200 MiB 总量 / lifetime 1h–30d）；V5 切片二：`PlanAsync` 可选接收 `VisualInputRequestBudget`（budget=null 时行为不变），按实际序列化份数把每张图 charge 进请求级账本（份数/解码字节/wire 字节/token/file 上传字节），越界抛 `RequestLimitExceeded` 整请求 fail closed |
+| `VisualInputRequestBudget.cs` | V5 切片二：一次 LLM payload 构造一个实例的请求级图片预算账本；三 Gateway 在 payload 入口创建并以显式参数贯穿全部 `PlanAsync`（user `input_image` 与工具 `function_call_output` 共用）；累计只增不减，越界异常含维度/累计值/增量/上限/来源与批次序号；无 AsyncLocal/静态状态 |
 | `DeepSeekFilesApiClient.cs` | ADR-077 V3-S1 DeepSeek Files API 上传客户端（multipart purpose=user_data）；ApiKey 脱敏，异常只含 HTTP status + 错误摘要 |
 | `ProviderFileReference.cs` | ADR-077 Files API 值类型：`ProviderFileUploadResult`（FileId/ExpiresAt 计算）与轻量 `ProviderFileReference` |
 | `ProviderFileRefRecord.cs` | ADR-077 V3-S2b-1 行值类型：`ProviderFileRefRecord`（llm_provider_file_refs 行）+ `ProviderFileRefStatus` 枚举 + wire 映射（uploading/ready/delete_pending/expired/failed）；`ToReference()` 映射轻量引用 |

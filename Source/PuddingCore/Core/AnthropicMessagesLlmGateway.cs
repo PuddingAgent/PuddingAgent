@@ -162,8 +162,12 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
             root["system"] = system;
 
         var messageNodes = new JsonArray();
-        foreach (var message in normalized)
+        // V5 切片二：一次 payload 构造一个请求级预算账本（Anthropic 无图片型工具结果，
+        // 仅用户 image block 路径计费；显式参数传递）。
+        var visionBudget = new VisualInputRequestBudget(VisionPolicy);
+        for (var messageOrdinal = 0; messageOrdinal < normalized.Count; messageOrdinal++)
         {
+            var message = normalized[messageOrdinal];
             if (message.Role == ChatRole.System)
                 continue;
 
@@ -173,7 +177,7 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
                     messageNodes.Add(new JsonObject
                     {
                         ["role"] = "user",
-                        ["content"] = await BuildUserContentAsync(message, ct),
+                        ["content"] = await BuildUserContentAsync(message, visionBudget, messageOrdinal + 1, ct),
                     });
                     break;
                 case ChatRole.Assistant:
@@ -207,7 +211,11 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
         return root.ToJsonString();
     }
 
-    private async Task<JsonNode> BuildUserContentAsync(ChatMessage message, CancellationToken ct)
+    private async Task<JsonNode> BuildUserContentAsync(
+        ChatMessage message,
+        VisualInputRequestBudget visionBudget,
+        int messageOrdinal,
+        CancellationToken ct)
     {
         var imageParts = ChatMessageMultimodalNormalizer.GetImageParts(message);
         if (imageParts.Count == 0)
@@ -227,11 +235,13 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
             });
         }
 
-                var plan = await LlmVisualInputPlanner.PlanAsync(
+                                var plan = await LlmVisualInputPlanner.PlanAsync(
             WorkspaceId!,
             imageParts,
             VisualArtifactResolver,
             policy: VisionPolicy,
+            budget: visionBudget,
+            budgetSource: $"user input_image @message#{messageOrdinal} (anthropic)",
             ct: ct);
                 foreach (var image in plan.Images)
         {

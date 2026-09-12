@@ -1,4 +1,4 @@
-﻿using System.Net.Http.Headers;
+using System.Net.Http.Headers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -292,12 +292,16 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         CancellationToken ct = default)
     {
         var messagesArray = new JsonArray();
+        // V5 切片二：一次 payload 构造一个请求级预算账本（Chat Completions 无图片型工具结果，
+        // 仅用户 input_image 路径计费；显式参数传递）。
+        var visionBudget = new VisualInputRequestBudget(VisionPolicy);
         var protocolSafeMessages = LlmMessageSequenceNormalizer.Normalize(messages).Messages;
         // K3 compat: read compat config once before message loop
         var compat = Compat;
 
-        foreach (var msg in protocolSafeMessages)
+        for (var messageOrdinal = 0; messageOrdinal < protocolSafeMessages.Count; messageOrdinal++)
         {
+            var msg = protocolSafeMessages[messageOrdinal];
             var msgObj = new JsonObject
             {
                 ["role"] = msg.Role switch
@@ -331,7 +335,7 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
                 {
                     // ADR-077 §5.5：无视觉解析通道 = 文本路由，图片部件不进入请求；
                     // 有解析通道而失败由 Planner fail closed。
-                    msgObj["content"] = await BuildMultimodalContentArrayAsync(msg, imageParts, ct)
+                                        msgObj["content"] = await BuildMultimodalContentArrayAsync(msg, imageParts, visionBudget, messageOrdinal + 1, ct)
                         ?? (JsonNode?)msg.Content;
                 }
                 else if (msg.Role == ChatRole.User
@@ -339,7 +343,7 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
                          && AudioArtifactResolver is not null
                          && !string.IsNullOrWhiteSpace(WorkspaceId))
                 {
-                    msgObj["content"] = await BuildMultimodalContentArrayAsync(msg, [], ct)
+                                        msgObj["content"] = await BuildMultimodalContentArrayAsync(msg, [], visionBudget, messageOrdinal + 1, ct)
                         ?? (JsonNode?)msg.Content;
                 }
                 else
@@ -482,9 +486,11 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
     /// Vision parts resolve through the fail-closed planner (ADR-077); audio keeps its
     /// per-artifact tolerant path.
     /// </summary>
-    private async Task<JsonArray?> BuildMultimodalContentArrayAsync(
+        private async Task<JsonArray?> BuildMultimodalContentArrayAsync(
         ChatMessage msg,
         IReadOnlyList<LlmImagePart> imageParts,
+        VisualInputRequestBudget visionBudget,
+        int messageOrdinal,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(WorkspaceId))
@@ -495,11 +501,13 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
 
         if (imageParts.Count > 0 && VisualArtifactResolver is not null)
         {
-                        var plan = await LlmVisualInputPlanner.PlanAsync(
+                                                var plan = await LlmVisualInputPlanner.PlanAsync(
                 WorkspaceId!,
                 imageParts,
                 VisualArtifactResolver,
                 policy: VisionPolicy,
+                budget: visionBudget,
+                budgetSource: $"user input_image @message#{messageOrdinal} (chat-completions)",
                 ct: ct);
                         foreach (var image in plan.Images)
             {

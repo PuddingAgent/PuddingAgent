@@ -42,8 +42,8 @@ public sealed class LlmVisualInputPlannerTests
 
         Assert.AreEqual(2, plan.Images.Count);
         Assert.AreEqual(VisionContentPartDetails.Low, plan.Images[1].Detail);
-        // 384 × 图片数的 token 上界
-        Assert.AreEqual(768, plan.EstimatedTokenUpperBound);
+        // 1024 × 图片数的 token 上界（DeepSeek 2026-09 官方上界，版本 deepseek-2026-09-12-1024）
+        Assert.AreEqual(2048, plan.EstimatedTokenUpperBound);
     }
 
     [TestMethod]
@@ -58,7 +58,7 @@ public sealed class LlmVisualInputPlannerTests
         Assert.AreEqual(2, plan.Images.Count);
         // 每张图都计费（同一 part 出现两次仍是两次输入），但解析只发生一次由 resolver 调用数保证；
         // 上界按引用次数估计
-        Assert.AreEqual(768, plan.EstimatedTokenUpperBound);
+        Assert.AreEqual(2048, plan.EstimatedTokenUpperBound);
     }
 
     [TestMethod]

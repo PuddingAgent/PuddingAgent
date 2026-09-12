@@ -275,9 +275,12 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
 
         var input = new JsonArray();
         var fileImages = new List<PlannedVisualInput>();
+        // V5 切片二：一次 payload 构造一个请求级预算账本，贯穿本请求全部图片规划——
+        // 工具 function_call_output 与用户 input_image 共用同一实例（显式参数传递，无 AsyncLocal）。
+        var visionBudget = new VisualInputRequestBudget(VisionPolicy);
         var protocolSafeMessages = LlmMessageSequenceNormalizer.Normalize(messages).Messages;
-        foreach (var message in protocolSafeMessages)
-            await AddInputItemsAsync(input, message, fileImages, ct);
+        for (var messageOrdinal = 0; messageOrdinal < protocolSafeMessages.Count; messageOrdinal++)
+            await AddInputItemsAsync(input, protocolSafeMessages[messageOrdinal], fileImages, visionBudget, messageOrdinal + 1, ct);
         root["input"] = input;
 
         if (tools.Count > 0)
@@ -315,6 +318,8 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         JsonArray input,
         ChatMessage message,
         List<PlannedVisualInput> fileImages,
+        VisualInputRequestBudget visionBudget,
+        int messageOrdinal,
         CancellationToken ct)
     {
         if (message.Role == ChatRole.Assistant
@@ -349,7 +354,11 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
                         ["text"] = message.Content,
                     });
 
-                                var plan = await PlanVisualInputsAsync(toolImageParts, ct);
+                                var plan = await PlanVisualInputsAsync(
+                    toolImageParts,
+                    visionBudget,
+                    $"tool function_call_output @message#{messageOrdinal}",
+                    ct);
                 foreach (var image in plan.Images)
                 {
                     outputParts.Add(BuildInputImageNode(image));
@@ -375,7 +384,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
 
                 if (message.Role == ChatRole.User)
         {
-            var multimodalContent = await BuildMultimodalContentAsync(message, fileImages, ct);
+            var multimodalContent = await BuildMultimodalContentAsync(message, fileImages, visionBudget, messageOrdinal, ct);
             JsonNode contentNode = (JsonNode?)multimodalContent
                 ?? JsonValue.Create(message.Content ?? string.Empty)!;
             input.Add(new JsonObject
@@ -414,6 +423,8 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         private async Task<JsonArray?> BuildMultimodalContentAsync(
         ChatMessage message,
         List<PlannedVisualInput> fileImages,
+        VisualInputRequestBudget visionBudget,
+        int messageOrdinal,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(WorkspaceId))
@@ -434,7 +445,11 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         // 以消息正文 artifact:// 占位为准）。有解析通道而解析失败才由 Planner fail closed。
                 if (imageParts.Count > 0 && VisualArtifactResolver is not null)
         {
-            var plan = await PlanVisualInputsAsync(imageParts, ct);
+            var plan = await PlanVisualInputsAsync(
+                imageParts,
+                visionBudget,
+                $"user input_image @message#{messageOrdinal}",
+                ct);
             foreach (var image in plan.Images)
             {
                 content.Add(BuildInputImageNode(image));
@@ -476,8 +491,10 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             : null;
     }
 
-    private async Task<VisualInputPlan> PlanVisualInputsAsync(
+        private async Task<VisualInputPlan> PlanVisualInputsAsync(
         IReadOnlyList<LlmImagePart> imageParts,
+        VisualInputRequestBudget visionBudget,
+        string budgetSource,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(WorkspaceId) || VisualArtifactResolver is null)
@@ -489,12 +506,14 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             WorkspaceId!,
             imageParts,
             VisualArtifactResolver,
-            VisionPolicy,
-            DeepSeekFilesUploader,
-            FileRefStore,
-            ProviderId,
-            CredentialEpoch,
-            ct);
+            policy: VisionPolicy,
+            fileUploader: DeepSeekFilesUploader,
+            fileRefStore: FileRefStore,
+            providerId: ProviderId,
+            credentialEpoch: CredentialEpoch,
+            budget: visionBudget,
+            budgetSource: budgetSource,
+            ct: ct);
     }
 
     /// <summary>canonical detail → DeepSeek Responses detail（original 等价 high）。</summary>
