@@ -228,7 +228,7 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         var state = _sessions.GetOrAdd(sessionId, static _ => new SessionState());
-        return state.Observe(systemPromptHash, toolSpecHash, permissionEpoch, permissionFingerprint);
+        return state.Observe(systemPromptHash, toolSpecHash, toolIds, permissionEpoch, permissionFingerprint);
     }
 
     /// <summary>
@@ -259,10 +259,17 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
         private bool _hasLast;
         // 指纹基线是否已建立：Seed 不置位（DB 未持久化指纹），仅由首轮非空指纹 Observe 建立。
         private bool _hasFingerprintBaseline;
+        // C01-B AC4：曝光纪元与权限纪元分离。toolIds = 本次实际曝光集合，
+        // 工具按需发现只推进 _exposureRevision 并上报 tool_exposure_changed，
+        // PermissionEpoch 仍只由授权指纹 permissionFingerprint 驱动。
+        private string? _lastExposureFingerprint;
+        private long _exposureRevision;
+        private bool _hasExposureBaseline;
 
         public CompositionObservation Observe(
             string systemPromptHash,
             string toolSpecHash,
+            IReadOnlyList<string>? toolIds,
             int permissionEpoch,
             string? permissionFingerprint)
         {
@@ -297,6 +304,23 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
                 // （A→B→A 得 1/2/3，不倒退、不复用）；内容相同则 ContentId 相同（A→B→A 得 A/B/A）。
                 // 权限变化不再需要「强制开新版本」的分支——revision 已必然推进；
                 // PermissionEpoch 的语义仍由 changeReason 的 permission_changed 承载（R2：本片不改权限模型）。
+                // C01-B AC4：曝光纪元检测（与权限纪元分离，R2 不改权限模型）。
+                // 只在**曝光集合**（toolIds）变化时推进 ExposureRevision 并上报 tool_exposure_changed；
+                // 与 _hasFingerprintBaseline 同构：Seed 不置位，重启后首轮不误报。
+                var exposureFingerprint = CompositionSnapshot.ComputePermissionFingerprint(toolIds);
+                if (exposureFingerprint is not null
+                    && _hasExposureBaseline
+                    && !string.Equals(_lastExposureFingerprint, exposureFingerprint, StringComparison.Ordinal))
+                {
+                    _exposureRevision++;
+                    changeReason = AppendChangeReason(changeReason, CompositionChangeReasons.ExposureChanged);
+                }
+                if (exposureFingerprint is not null)
+                {
+                    _lastExposureFingerprint = exposureFingerprint;
+                    _hasExposureBaseline = true;
+                }
+
                 var contentId = CompositionSnapshot.ComputeContentId(systemPromptHash, toolSpecHash);
                 var revision = _nextVersion++;
 
@@ -304,7 +328,7 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
                 _lastToolSpecHash = toolSpecHash;
                 _hasLast = true;
 
-                return new CompositionObservation(revision, contentId, changeReason, _permissionEpoch);
+                return new CompositionObservation(revision, contentId, changeReason, _permissionEpoch, _exposureRevision);
             }
         }
 
@@ -342,6 +366,10 @@ public sealed class CompositionVersionRegistry : ICompositionVersionRegistry
 
                 // C01-B R3：删除饱和转换，revision 全线 long（严格递增语义不再被 int 折损失真）。
                 _nextVersion = Math.Max(_nextVersion, maxVersion + 1);
+                // C01-B AC4：曝光纪元同样只抬低下界（重启后不倒退）；
+                // _lastExposureFingerprint/_hasExposureBaseline 不置位（DB 未持久化曝光指纹），
+                // 避免重启后首轮把基线差异误报为 tool_exposure_changed。
+                _exposureRevision = Math.Max(_exposureRevision, records.Max(record => record.ExposureRevision));
 
                 if (latest is not null)
                 {

@@ -1334,17 +1334,20 @@ public sealed partial class AgentExecutionService
                         if (newlyLoadedToolCount > 0)
                         {
                             _sessionManager.RememberLoadedToolIds(request.SessionId, loadedToolIds);
-                            var promotedToolCount = PromoteLoadedToolsForNextRound(
+                            var promotion = PromoteLoadedToolsForNextRound(
                                 frozenTools,
                                 loadedToolIds,
                                 llmTools);
-                            toolSpecChangedForNextRound |= promotedToolCount > 0;
+                            // C01-B AC6：轮边界提交 —— 曝光集合变化或一次性排序策略 epoch 都要求下一轮重建形状。
+                            toolSpecChangedForNextRound |= promotion.IsExposureEpochChange;
                             _logger.LogInformation(
-                                "[AgentExec:ToolDiscovery] Loaded {AddedCount} and promoted {PromotedCount} tool definition(s) for next LLM round session={Session} visibleToolCount={VisibleToolCount} loadedTools={LoadedTools}",
+                                "[AgentExec:ToolDiscovery] Loaded {AddedCount} and promoted {PromotedCount} tool definition(s) for next LLM round session={Session} visibleToolCount={VisibleToolCount} exposureRevision={ExposureRevision} changeReason={ChangeReason} loadedTools={LoadedTools}",
                                 newlyLoadedToolCount,
-                                promotedToolCount,
+                                promotion.PromotedToolCount,
                                 request.SessionId,
                                 llmTools.Count,
+                                promotion.ExposureRevision,
+                                promotion.ChangeReason,
                                 SummarizeToolNames(loadedToolIds));
                         }
                         var toolDiscoveryStalled = toolDiscoveryLoopTracker.Observe(canonicalCall.Name);
@@ -1927,17 +1930,20 @@ public sealed partial class AgentExecutionService
                     if (newlyLoadedToolCount > 0)
                     {
                         _sessionManager.RememberLoadedToolIds(request.SessionId, loadedToolIds);
-                        var promotedToolCount = PromoteLoadedToolsForNextRound(
+                        var promotion = PromoteLoadedToolsForNextRound(
                             frozenTools,
                             loadedToolIds,
                             llmTools);
-                        toolSpecChangedForNextRound |= promotedToolCount > 0;
+                        // C01-B AC6：轮边界提交 —— 曝光集合变化或一次性排序策略 epoch 都要求下一轮重建形状。
+                        toolSpecChangedForNextRound |= promotion.IsExposureEpochChange;
                         _logger.LogInformation(
-                            "[AgentExec:ToolDiscovery] Loaded {AddedCount} and promoted {PromotedCount} tool definition(s) for next LLM round session={Session} visibleToolCount={VisibleToolCount} loadedTools={LoadedTools}",
+                            "[AgentExec:ToolDiscovery] Loaded {AddedCount} and promoted {PromotedCount} tool definition(s) for next LLM round session={Session} visibleToolCount={VisibleToolCount} exposureRevision={ExposureRevision} changeReason={ChangeReason} loadedTools={LoadedTools}",
                             newlyLoadedToolCount,
-                            promotedToolCount,
+                            promotion.PromotedToolCount,
                             request.SessionId,
                             llmTools.Count,
+                            promotion.ExposureRevision,
+                            promotion.ChangeReason,
                             SummarizeToolNames(loadedToolIds));
                     }
                     var toolDiscoveryStalled = toolDiscoveryLoopTracker.Observe(toolName);

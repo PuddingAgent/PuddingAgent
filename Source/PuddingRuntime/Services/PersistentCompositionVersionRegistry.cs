@@ -251,6 +251,8 @@ public sealed class PersistentCompositionVersionRegistry : ICompositionVersionRe
             ChangeReason = observation.ChangeReason,
             // P0-5 step 4c：以注册表内部检测后的权限纪元为准（含指纹变化自增）；显式传入值作为下限。
             PermissionEpoch = observation.PermissionEpoch,
+            // C01-B AC4：曝光纪元与权限纪元分离落库（工具发现只推进 ExposureRevision）。
+            ExposureRevision = observation.ExposureRevision,
             CanonicalSystemPrefixHash = canonicalSystemPrefixHash,
         };
 

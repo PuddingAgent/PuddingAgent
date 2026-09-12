@@ -1399,11 +1399,13 @@ public sealed partial class AgentExecutionService
     }
 
     /// <summary>
-    /// 将 search_tools 已提交的工具定义单调提升到下一次 LLM invoke。当前 round 使用的列表只有
-    /// 在工具结果完成后才调用本方法，因此满足“当前 round 冻结、下一 round 生效”。既有定义
-    /// 不重建、不改序、不收缩；只追加经 dispatch catalog/capability 已授权的定义。
+    /// 将 search_tools 已提交的工具定义在**轮边界**一次性提升到下一次 LLM invoke。当前 round 使用的
+    /// 列表只有在工具结果完成后才调用本方法，因此满足「当前 round 冻结、下一 round 生效」。
+    /// C01-B（行为层）：采用**稳定追加序**——既有定义不重建、**相对顺序不变**、不收缩；
+    /// 新增定义只追加到末尾（不再对全量集合重新字母排序）。返回值携带本次轮边界提交的曝光事实
+    /// （ExposureRevision / ChangeReason / MissingToolIds / 排序策略 epoch），供调用方观测与回归断言。
     /// </summary>
-    internal static int PromoteLoadedToolsForNextRound(
+    internal static ToolExposurePromotion PromoteLoadedToolsForNextRound(
         FrozenToolManifest manifest,
         IReadOnlySet<string> loadedToolIds,
         List<LlmToolDefinition> currentVisibleTools)
@@ -1412,22 +1414,35 @@ public sealed partial class AgentExecutionService
         ArgumentNullException.ThrowIfNull(loadedToolIds);
         ArgumentNullException.ThrowIfNull(currentVisibleTools);
 
+        // 稳定追加序基线 = 当前 round 已冻结的可见顺序（已提交曝光顺序），
+        // 曝光纪元基线 = dispatch 冻结计划携带的已提交曝光事实（R2：与权限纪元分离）。
+        var previousVisibleToolIds = currentVisibleTools
+            .Select(tool => tool.Name)
+            .ToList();
+        var epoch = new ToolExposureEpoch(
+            manifest.ExposurePlan.ExposureRevision,
+            manifest.ExposurePlan.OrderingStrategyDeclared);
+
         var nextPlan = ToolExposurePlanner.CreatePlan(
             manifest.AllLlmTools,
             loadedToolIds,
-            manifest.CommittedToolIds);
-        var currentIds = currentVisibleTools
-            .Select(tool => tool.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (nextPlan.VisibleTools.Any(tool => !currentIds.Contains(tool.Name)))
+            manifest.CommittedToolIds,
+            previousVisibleToolIds: previousVisibleToolIds,
+            epoch: epoch);
+
+        var previousCount = currentVisibleTools.Count;
+        // 轮边界一次性提交：既有项相对顺序不变（稳定追加序），新增项追加在末尾。
+        if (!previousVisibleToolIds.SequenceEqual(
+                nextPlan.VisibleTools.Select(tool => tool.Name),
+                StringComparer.OrdinalIgnoreCase))
         {
-            var previousCount = currentVisibleTools.Count;
             currentVisibleTools.Clear();
             currentVisibleTools.AddRange(nextPlan.VisibleTools);
-            return currentVisibleTools.Count - previousCount;
         }
 
-        return 0;
+        return new ToolExposurePromotion(
+            Math.Max(0, currentVisibleTools.Count - previousCount),
+            nextPlan);
     }
 
     internal static string BuildToolDiscoveryStalledMessage(int consecutiveCalls)
@@ -2299,3 +2314,25 @@ internal sealed record FrozenToolManifest(
     IReadOnlySet<string> CommittedToolIds,
     IReadOnlyList<string> RuntimeMergedToolNames,
     ToolExposurePlan ExposurePlan);
+
+/// <summary>
+/// 轮边界工具曝光提升结果（C01-B AC6）：<see cref="PromotedToolCount"/> 为本次追加的定义数，
+/// <see cref="Plan"/> 为已提交的下一次 LLM invoke 曝光计划（含 ExposureRevision / ChangeReason）。
+/// </summary>
+internal readonly record struct ToolExposurePromotion(int PromotedToolCount, ToolExposurePlan Plan)
+{
+    /// <summary>本次提交后的曝光 revision（只在曝光集合变化时推进）。</summary>
+    internal long ExposureRevision => Plan.ExposureRevision;
+
+    /// <summary>本次曝光变化原因（none / tool_exposure_changed / ordering_strategy_changed / tool_definition_missing）。</summary>
+    internal string ChangeReason => Plan.ChangeReason;
+
+    /// <summary>本次是否产生新的曝光纪元（集合变化或一次性排序策略 epoch）。</summary>
+    internal bool IsExposureEpochChange => Plan.ExposureSetChanged || Plan.OrderingStrategyChanged;
+
+    /// <summary>既有曝光是否可精确重建（false = 有已缺失的工具定义，不谎称精确恢复，但不阻塞执行）。</summary>
+    internal bool ExactRestore => Plan.ExactRestore;
+
+    /// <summary>已缺失的工具定义 ID。</summary>
+    internal IReadOnlyList<string> MissingToolIds => Plan.MissingToolIds ?? Array.Empty<string>();
+}

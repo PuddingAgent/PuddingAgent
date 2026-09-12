@@ -55,11 +55,48 @@ public sealed record SessionCompositionRecord
     /// <summary>权限/能力集纪元。权限变化显式 +1，触发开新版本。</summary>
     public int PermissionEpoch { get; init; }
 
+    /// <summary>
+    /// 工具曝光纪元（C01-B R2/AC4）：只在**曝光集合**（工具按需发现 / 显示集合）变化时 +1，
+    /// 与 <see cref="PermissionEpoch"/>（授权配置维度）完全独立——工具发现不得被记为权限变化，
+    /// 权限撤销也不得被记为工具发现。历史行（C01-B 之前写入）为 0。
+    /// </summary>
+    public long ExposureRevision { get; init; }
+
     /// <summary>快照创建时间（UTC）。</summary>
     public DateTimeOffset CreatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
 
     /// <summary>Canonical system prefix 的 SHA-256 指纹（小写 hex）；尚无 canonical 前缀时可为空。</summary>
     public string? CanonicalSystemPrefixHash { get; init; }
+}
+
+/// <summary>
+/// Composition 变更原因常量（C01-B R4/R9）：跨层单一事实来源，禁止各层各写一套字符串字面量。
+/// </summary>
+public static class CompositionChangeReasons
+{
+    /// <summary>system prompt 相对上次观测发生变化。</summary>
+    public const string SystemPromptChanged = "system_prompt_changed";
+
+    /// <summary>工具 schema 全量发生变化。</summary>
+    public const string ToolSpecChanged = "tool_spec_changed";
+
+    /// <summary>Skill manifest 发生变化。</summary>
+    public const string SkillManifestChanged = "skill_manifest_changed";
+
+    /// <summary>权限集合指纹变化 → 权限纪元 +1（<see cref="CompositionObservation.PermissionEpoch"/> 维度）。</summary>
+    public const string PermissionChanged = "permission_changed";
+
+    /// <summary>工具曝光集合变化 → 曝光纪元 +1（<see cref="CompositionObservation.ExposureRevision"/> 维度，工具按需发现）。</summary>
+    public const string ExposureChanged = "tool_exposure_changed";
+
+    /// <summary>曝光排序策略相对 legacy（全量字母序）发生偏差 → 一次性显式 epoch，禁止静默改序。</summary>
+    public const string OrderingStrategyChanged = "ordering_strategy_changed";
+
+    /// <summary>既有曝光引用的工具定义已不存在 → 不谎称精确恢复，但不阻塞执行。</summary>
+    public const string ToolDefinitionMissing = "tool_definition_missing";
+
+    /// <summary>无变化。</summary>
+    public const string None = "none";
 }
 
 /// <summary>append 结果分类（C01-B CAS 合同）。</summary>
@@ -151,12 +188,15 @@ public interface ICompositionStore
 /// <see cref="ChangeReason"/> 为本次相对上次的变化原因（initial / *_changed / none）；
 /// <see cref="PermissionEpoch"/> 为本次观测生效的权限纪元（注册表内部基于权限指纹检测自增，
 /// 或显式传入的基准值；供写穿持久化记录）。
+/// <see cref="ExposureRevision"/> 为本次观测生效的工具曝光纪元（与权限纪元分离，
+/// 只在曝光集合变化时推进，见 <see cref="CompositionChangeReasons.ExposureChanged"/>）。
 /// </summary>
 public readonly record struct CompositionObservation(
     long Revision,
     string ContentId,
     string ChangeReason,
-    int PermissionEpoch = 0);
+    int PermissionEpoch = 0,
+    long ExposureRevision = 0);
 
 /// <summary>
 /// 进程内 composition 版本登记表接口（P0-5 步骤 2）。

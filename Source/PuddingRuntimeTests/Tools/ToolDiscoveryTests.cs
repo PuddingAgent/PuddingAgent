@@ -228,10 +228,29 @@ public sealed class ToolDiscoveryTests
             committed,
             roundVisibleTools);
 
-        Assert.AreEqual(1, promoted);
+        Assert.AreEqual(1, promoted.PromotedToolCount);
         CollectionAssert.Contains(
             roundVisibleTools.Select(tool => tool.Name).ToArray(),
             "deferred_05");
+
+        // C01-B AC6：轮边界提交返回结构化曝光事实。
+        Assert.AreEqual(1, promoted.ExposureRevision, "曝光集合变化 → ExposureRevision 从 0 推进到 1");
+        Assert.IsTrue(promoted.IsExposureEpochChange, "集合变化必须可观测为曝光纪元变更");
+        StringAssert.Contains(promoted.ChangeReason, "tool_exposure_changed");
+        // R4：稳定追加序相对 legacy 全量字母序发生偏差 → 必须是一次显式 epoch（一次且仅一次）。
+        StringAssert.Contains(promoted.ChangeReason, "ordering_strategy_changed");
+        // 稳定追加序：既有可见项相对顺序不变，新增项只追加到末尾。
+        CollectionAssert.AreEqual(
+            manifest.VisibleTools.Select(tool => tool.Name).ToArray(),
+            roundVisibleTools
+                .Take(manifest.VisibleTools.Count)
+                .Select(tool => tool.Name)
+                .ToArray(),
+            "既有项相对顺序不得改变（稳定追加序）");
+        Assert.AreEqual(
+            "deferred_05",
+            roundVisibleTools[^1].Name,
+            "新增定义只允许追加到末尾");
     }
 
     [TestMethod]
