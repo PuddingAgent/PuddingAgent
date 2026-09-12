@@ -20,6 +20,22 @@ public class SubAgentRunEntity
     [Required, MaxLength(64), Column("parent_session_id")]
     public string ParentSessionId { get; set; } = "";
 
+    /// <summary>
+    /// 父执行身份 — 父 Turn ID（RuntimeExecutionIdentity.TurnId）。
+    /// slice-4 «父 Turn 等待异步子代理» 的归属依据：按父 Turn 统计运行中子代理只认此列；
+    /// 本列之前的旧行为 NULL（只能退化到会话粒度）。
+    /// </summary>
+    [MaxLength(64), Column("parent_turn_id")]
+    public string? ParentTurnId { get; set; }
+
+    /// <summary>父执行身份 — 父命令 ID（RuntimeExecutionIdentity.CommandId）；旧行为 NULL。</summary>
+    [MaxLength(64), Column("parent_command_id")]
+    public string? ParentCommandId { get; set; }
+
+    /// <summary>父执行身份 — 父 Run ID（RuntimeExecutionIdentity.RunId）；旧行为 NULL。</summary>
+    [MaxLength(64), Column("parent_run_id")]
+    public string? ParentRunId { get; set; }
+
     [Required, MaxLength(64), Column("sub_session_id")]
     public string SubSessionId { get; set; } = "";
 
@@ -35,6 +51,9 @@ public class SubAgentRunEntity
     /// <summary>运行状态：running / completed / failed / cancelled</summary>
     [Required, MaxLength(16)]
     public string Status { get; set; } = "running";
+
+    /// <summary>非终态（运行中）状态值；创建运行时写入，终态由 UpdateDbIndexAsync 覆盖。</summary>
+    public const string RunningStatus = "running";
 
     [Required, MaxLength(32), Column("started_at")]
     public string StartedAt { get; set; } = "";

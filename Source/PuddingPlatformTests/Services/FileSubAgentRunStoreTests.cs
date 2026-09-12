@@ -8,6 +8,7 @@ using PuddingCode.SubAgents;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingPlatform.Data;
+using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
 
 namespace PuddingPlatformTests.Services;
@@ -59,6 +60,9 @@ public sealed class FileSubAgentRunStoreTests
                     4, 2, 350
                 );
                 """);
+                    // slice-4：实体新增了父执行身份列（parent_turn_id/parent_command_id/parent_run_id），
+            // 旧库必须先跑幂等 schema 升级，EF 才能读到新列。
+            await SubAgentRunSchemaBootstrapper.EnsureCreatedAsync(db);
         }
 
         await using var verifyDb = new PlatformDbContext(options);
@@ -556,6 +560,103 @@ public sealed class FileSubAgentRunStoreTests
         Assert.AreEqual(appendCount + 1, final.Events.Count);
         Assert.IsNull(final.Degraded);
     }
+
+        [TestMethod]
+    public async Task CreateRunAsync_PersistsParentExecutionIdentityIntoDbIndex()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        var dbPath = Path.Combine(temp.Path, "platform.db");
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={dbPath}")
+            .Options;
+
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var store = new FileSubAgentRunStore(
+            paths,
+            NullLogger<FileSubAgentRunStore>.Instance,
+            new TestDbContextFactory(options),
+            new RecordingConversationEventStore());
+
+        var handle = await store.CreateRunAsync(BuildParentIdentityRequest("sub-1", "turn-1"));
+
+        await using var verifyDb = new PlatformDbContext(options);
+        var index = await verifyDb.SubAgentRuns.SingleAsync(r => r.RunId == handle.RunId);
+        Assert.AreEqual("turn-1", index.ParentTurnId);
+        Assert.AreEqual("command-1", index.ParentCommandId);
+        Assert.AreEqual("run-parent-1", index.ParentRunId);
+        Assert.AreEqual(SubAgentRunEntity.RunningStatus, index.Status);
+    }
+
+    [TestMethod]
+    public async Task GetRunningCountByParentTurnAsync_CountsOnlyRunningRunsOfTheGivenTurn()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        var dbPath = Path.Combine(temp.Path, "platform.db");
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={dbPath}")
+            .Options;
+
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var store = new FileSubAgentRunStore(
+            paths,
+            NullLogger<FileSubAgentRunStore>.Instance,
+            new TestDbContextFactory(options),
+            new RecordingConversationEventStore());
+
+        var turnOneRun = await store.CreateRunAsync(BuildParentIdentityRequest("sub-1", "turn-1"));
+        await store.CreateRunAsync(BuildParentIdentityRequest("sub-2", "turn-2"));
+        await store.CreateRunAsync(BuildParentIdentityRequest("sub-3", null));
+
+        Assert.AreEqual(1, await store.GetRunningCountByParentTurnAsync("turn-1"));
+        Assert.AreEqual(1, await store.GetRunningCountByParentTurnAsync("turn-2"));
+        Assert.AreEqual(0, await store.GetRunningCountByParentTurnAsync("turn-missing"));
+        // 无父 Turn 归属的旧运行不得被算到任何 Turn 上（只能走会话粒度统计）。
+        Assert.AreEqual(0, await store.GetRunningCountByParentTurnAsync(null));
+        Assert.AreEqual(0, await store.GetRunningCountByParentTurnAsync("  "));
+
+        await store.CompleteRunAsync(turnOneRun.RunId, new SubAgentRunCompletion
+        {
+            Status = "completed",
+        });
+
+        // 终态后不再计入运行中。
+        Assert.AreEqual(0, await store.GetRunningCountByParentTurnAsync("turn-1"));
+        Assert.AreEqual(1, await store.GetRunningCountByParentTurnAsync("turn-2"));
+    }
+
+    private static SubAgentRunCreateRequest BuildParentIdentityRequest(
+        string subSessionSuffix,
+        string? parentTurnId)
+        => new()
+        {
+            ParentSessionId = "parent-session",
+            SubSessionId = $"parent-session/sub/{subSessionSuffix}",
+            WorkspaceId = "default",
+            AgentInstanceId = "default.researcher-001",
+            TemplateId = "researcher",
+            Task = "Research the current architecture",
+            ParentExecutionIdentity = parentTurnId is null
+                ? null
+                : new RuntimeExecutionIdentity
+                {
+                    Kind = RuntimeExecutionKind.ConversationTurn,
+                    ConversationId = "parent-session",
+                    TurnId = parentTurnId,
+                    CommandId = "command-1",
+                    RunId = "run-parent-1",
+                    TraceId = null,
+                },
+        };
 
     private sealed class TestDbContextFactory(DbContextOptions<PlatformDbContext> options)
         : IDbContextFactory<PlatformDbContext>

@@ -310,6 +310,9 @@ public sealed class SubAgentManagerTerminalStatusMatrixTests
             CancellationToken ct = default) =>
             Task.FromResult(0);
 
+                public Task<int> GetRunningCountByParentTurnAsync(string? parentTurnId, CancellationToken ct = default) =>
+            Task.FromResult(0);
+
         public Task<bool> DeleteRunAsync(string runId, CancellationToken ct = default) =>
             Task.FromResult(false);
     }

@@ -142,6 +142,7 @@ public sealed class SubAgentRunControllerTests
         public Task<SubAgentRunTerminalWriteResult> CompleteRunAsync(string runId, SubAgentRunCompletion completion, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<int> RecoverInterruptedRunsAsync(DateTimeOffset startedBeforeUtc, int maxRuns, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<int> ReplayPendingConversationEventsAsync(int maxRuns, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<int> GetRunningCountByParentTurnAsync(string? parentTurnId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<bool> DeleteRunAsync(string runId, CancellationToken ct = default) => throw new NotSupportedException();
     }
 }

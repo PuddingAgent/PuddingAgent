@@ -8,6 +8,7 @@ using PuddingCode.Configuration;
 using PuddingCode.Serialization;
 using PuddingCode.SubAgents;
 using PuddingCode.Platform;
+using PuddingCode.Runtime;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 
@@ -118,7 +119,8 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         // 同步写 DB 索引
         await WriteDbIndexAsync(runId, request.ParentSessionId, request.SubSessionId,
             request.WorkspaceId, request.AgentInstanceId, request.TemplateId,
-            "running", now.ToString("O"), null, archivePath, taskPlanningMetadata, ct);
+            "running", now.ToString("O"), null, archivePath, request.ParentExecutionIdentity,
+            taskPlanningMetadata, ct);
 
         await AppendEventAsync(runId, ConversationEventTypes.SubAgentRunCreated, new
         {
@@ -365,6 +367,22 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         {
             gate.Release();
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<int> GetRunningCountByParentTurnAsync(string? parentTurnId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(parentTurnId))
+            return 0;
+
+        var turnId = parentTurnId.Trim();
+
+        // DB 索引的写入是 best-effort（文件系统才是主存储），但本方法的返回值是父 Turn 终态裁决的输入：
+        // 把「读不到」当成 0 会让父 Turn 误判为「子代理都跑完了」而提前终结。因此不吞异常、不做降级。
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.SubAgentRuns.CountAsync(
+            e => e.ParentTurnId == turnId && e.Status == SubAgentRunEntity.RunningStatus,
+            ct);
     }
 
     private async Task<SubAgentRunArchive> ReadRunArchiveCoreAsync(string runDir, CancellationToken ct)
@@ -1036,6 +1054,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         string runId, string parentSessionId, string subSessionId,
         string workspaceId, string agentInstanceId, string templateId,
         string status, string startedAt, string? completedAt, string archivePath,
+        RuntimeExecutionIdentity? parentExecutionIdentity,
         IReadOnlyDictionary<string, string> taskPlanningMetadata,
         CancellationToken ct)
     {
@@ -1057,6 +1076,9 @@ public class FileSubAgentRunStore : ISubAgentRunStore
                 StartedAt = startedAt,
                 CompletedAt = completedAt,
                 ArchivePath = archivePath,
+                ParentTurnId = NormalizeIdentityValue(parentExecutionIdentity?.TurnId),
+                ParentCommandId = NormalizeIdentityValue(parentExecutionIdentity?.CommandId),
+                ParentRunId = NormalizeIdentityValue(parentExecutionIdentity?.RunId),
                 TaskPlanningMetadataJson = taskPlanningMetadataJson,
             });
             await db.SaveChangesAsync(ct);
@@ -1096,6 +1118,9 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         Add(metadata, "parent_tool_call_id", request.ParentExecutionIdentity?.ToolCallId);
         return metadata;
     }
+
+    private static string? NormalizeIdentityValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static void Add(Dictionary<string, string> metadata, string key, string? value)
     {

@@ -1,4 +1,4 @@
-﻿using PuddingCode.SubAgents;
+using PuddingCode.SubAgents;
 
 namespace PuddingCode.Abstractions;
 
@@ -14,6 +14,23 @@ public interface ISubAgentRunStore
     Task AppendToolAuditAsync(string runId, SubAgentToolAuditEntry entry, CancellationToken ct = default);
     Task<SubAgentRunTerminalWriteResult> CompleteRunAsync(string runId, SubAgentRunCompletion completion, CancellationToken ct = default);
     Task<SubAgentRunArchive?> GetRunArchiveAsync(string runId, CancellationToken ct = default);
+
+    /// <summary>
+    /// 统计指定父 Turn 下仍处于运行中（非终态）的子代理数量。
+    /// <para>
+    /// 依据是创建运行时写入本表索引的父执行身份列（parent_turn_id），
+    /// 因此只覆盖写入父身份之后创建的运行；父 Turn 归属缺失的旧运行不计入。
+    /// </para>
+    /// <para>
+    /// 与 <c>ISessionStateManager.GetRunningSubAgentCountAsync</c> 的区别：后者是会话粒度，
+    /// 会把兄弟 Turn 的子代理一起算进来；本方法是 Turn 粒度，供父 Turn 判定能否提交终态。
+    /// </para>
+    /// <para>
+    /// 查询失败不降级为 0：调用方必须把异常视为「无法判定」，不得据此提前终结父 Turn。
+    /// </para>
+    /// </summary>
+    /// <param name="parentTurnId">父 Turn ID；为空时无法做 Turn 归属，返回 0。</param>
+    Task<int> GetRunningCountByParentTurnAsync(string? parentTurnId, CancellationToken ct = default);
     /// <summary>
     /// 将本次进程启动前遗留的非终态运行提交为 interrupted。
     /// 子代理执行是进程内任务，进程重启后不得继续显示为 Running。
