@@ -30,10 +30,12 @@ public sealed partial class AgentExecutionService
     /// 它沿用 Session/Memory/LLM 配置链路，但刻意使用直接 Markdown 回复提示，
     /// 避免把结构化 Agent Loop JSON（status/tool/meta）逐 token 暴露给用户界面。
     /// </summary>
-    public async IAsyncEnumerable<ServerSentEventFrame> ExecuteStreamAsync(
+        public async IAsyncEnumerable<ServerSentEventFrame> ExecuteStreamAsync(
         RuntimeDispatchRequest request,
         [EnumeratorCancellation] CancellationToken external = default)
     {
+        // V5：把 Run 启动冻结的路由快照推入异步流，DirectLlmClient 据此单源判定视觉能力/策略。
+        using var frozenVisionScope = _frozenVisionContext?.Push(request.CallerLlmSnapshot);
         await using var executionLease = await _sessionExecutionGate.EnterAsync(
             request.SessionId,
             executionSource: "agent_execute_stream",

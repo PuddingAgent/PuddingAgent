@@ -93,6 +93,9 @@ public sealed partial class AgentExecutionService
     private readonly IExecutionProgressRegistry? _executionProgress;
     private readonly CompositionRecoveryService? _compositionRecovery; // P0-5 步骤 5：跨 1h/重启水合工具集合
 
+    // V5：冻结视觉上下文通道（进程内 AsyncLocal）。执行入口 push 冻结路由快照，DirectLlmClient 单源消费。
+    private readonly FrozenVisionContextAccessor? _frozenVisionContext;
+
     // LLM 调用提取（审计 P0 #1）
     private AgentExecutionLlmInvoker? _llmInvoker;
     private AgentExecutionLlmInvoker LlmInvoker => _llmInvoker ??= new AgentExecutionLlmInvoker(
@@ -151,8 +154,9 @@ public sealed partial class AgentExecutionService
         IExecutionProgressRegistry? executionProgress = null,
         IConversationEventStore? conversationEventStore = null,
         CompositionRecoveryService? compositionRecovery = null,
-        IRuntimeExecutionConfigService? runtimeExecutionConfig = null,
-        ContextAssemblyStore? contextAssemblyStore = null)
+                IRuntimeExecutionConfigService? runtimeExecutionConfig = null,
+        ContextAssemblyStore? contextAssemblyStore = null,
+        FrozenVisionContextAccessor? frozenVisionContext = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -200,6 +204,7 @@ public sealed partial class AgentExecutionService
         _idleDetector              = idleDetector;
         _contextUsageSnapshotStore = contextUsageSnapshotStore;
         _contextAssemblyStore     = contextAssemblyStore;
+        _frozenVisionContext      = frozenVisionContext;
         _skillEnforcer             = skillEnforcer;
         _executionProgress         = executionProgress;
         _conversationEventStore    = conversationEventStore;

@@ -107,12 +107,15 @@ public sealed record TurnTerminal(
 /// <summary>
 /// 冻结的 LLM 路由能力快照（ADR-077 §4.3）。Coordinator、Image Reader 与调用链
 /// 消费同一份快照，不再各自读取可热变的模型目录。
+/// V5：快照同时承载视觉预算策略 <see cref="VisionPolicy"/>，DirectLlmClient 创建
+/// Gateway 时注入；视觉能力与预算策略均以本快照为唯一可信源。
 /// </summary>
 public sealed record LlmRouteSnapshot(
     string ProviderId,
     string ModelId,
     string? Protocol,
-    IReadOnlyList<string> CapabilityTags)
+    IReadOnlyList<string> CapabilityTags,
+    PuddingCode.Core.VisionRequestPolicy? VisionPolicy = null)
 {
     public bool SupportsVision => CapabilityTags.Contains("vision", StringComparer.OrdinalIgnoreCase);
 }

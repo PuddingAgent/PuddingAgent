@@ -115,6 +115,8 @@ public static class RuntimeServiceExtensions
         services.AddHostedService<SubconsciousWorkerService>();
         services.AddHostedService<SessionCompressedMemoryMaintenanceHook>();
 
+        // V5：冻结视觉上下文的进程内通道；Agent 执行入口 push、DirectLlmClient 消费。
+        services.AddSingleton<FrozenVisionContextAccessor>();
         services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
         services.AddSingleton<ILlmInvocationService, LlmInvocationService>();
         services.AddSingleton<ILlmProfileResolver, Services.LlmProfileResolver>();

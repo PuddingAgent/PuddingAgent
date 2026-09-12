@@ -33,6 +33,7 @@
 | `Platform/IPlatformRepositories.cs` | Platform 持久化仓储契约；`ChatMessageRow` 含 WorkspaceId、稳定 platform/business MessageId、TurnId 与消息内容，供 Runtime 在压缩与冷水合前增量镜像 canonical 转录并排除当前 Turn；包含 Agent Token/熵诊断的 Core DTO 查询边界 |
 | `Platform/IExecutionCommandReader.cs` | ExecutionCommand 只读边界；返回从 canonical Goal/Task/Plan 解析的 `ExecutionWorkUnitContext` 及 rounds/tools/duration/token/cost 冻结预算 |
 | `Platform/AgentProjectionDtos.cs` | Agent 会话读模型；`ProcessSummaryItem.Sequence` 为 canonical 必填，active/detail 输出携带 `TurnEventWindow`（through/min/max/hasMoreBefore）供前端识别截断 |
+| `Platform/ExecutionRunContracts.cs` | ExecutionRun 冻结快照合同；V5：`LlmRouteSnapshot`（:110-118）与 `CallerLlmSnapshot`（:165）新增可选 `VisionRequestPolicy? VisionPolicy`；`CallerLlmSnapshot.SupportsVision` 为唯一 vision 能力投影（CapabilityTags 含 vision，OrdinalIgnoreCase） |
 
 ## 外部 API 安全合同（ADR-075 / ADR-082）
 

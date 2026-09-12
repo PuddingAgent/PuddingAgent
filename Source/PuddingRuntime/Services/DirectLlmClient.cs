@@ -35,6 +35,7 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     private readonly ICompositionVersionRegistry _compositionVersions;
     private readonly IFileRefStore? _fileRefStore;
     private readonly LlmInvocationPurposeAccessor? _purposeAccessor;
+    private readonly FrozenVisionContextAccessor? _frozenVisionContext;
 
     public DirectLlmClient(
     IHttpClientFactory httpClientFactory,
@@ -51,7 +52,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
     ILlmGatewayUsageRecorder? gatewayUsageRecorder = null,
     ICompositionVersionRegistry? compositionVersions = null,
     IFileRefStore? fileRefStore = null,
-    LlmInvocationPurposeAccessor? purposeAccessor = null)
+    LlmInvocationPurposeAccessor? purposeAccessor = null,
+    FrozenVisionContextAccessor? frozenVisionContext = null)
     {
         _httpClientFactory = httpClientFactory;
         _llmConfigService = llmConfigService;
@@ -70,6 +72,8 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         // Provider File 引用 store（ADR-077 V3-S2b-2）：null 时视觉大图退化为 uploader-only，不强依赖。
         _fileRefStore = fileRefStore;
         _purposeAccessor = purposeAccessor;
+        // V5：冻结视觉上下文（由 Agent 执行入口 push）；null 时能力判定 fail closed。
+        _frozenVisionContext = frozenVisionContext;
     }
 
     public async Task<LlmResponse> ChatAsync(
@@ -852,8 +856,12 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                 $"Available providers: {string.Join(", ", enabledProviders.Select(p => $"{p.ProviderId}({p.BaseUrl})"))}");
         }
 
-        var strategy = _llmConfigService.GetProviderStrategy(matched.ProviderId) ?? LlmProviderStrategy.Default;
-        var supportsVision = matchedModel.CapabilityTags.Contains("vision", StringComparer.OrdinalIgnoreCase);
+                var strategy = _llmConfigService.GetProviderStrategy(matched.ProviderId) ?? LlmProviderStrategy.Default;
+        // V5 单源化：视觉能力与视觉预算策略以冻结执行快照（AgentExecutionSnapshot 派生的
+        // CallerLlmSnapshot）为唯一可信源，不再对模型目录做第二次热读判定。
+        // 无冻结上下文的路径（非 Coordinator 直连 dispatch）不携带图片，fail closed，不放宽能力。
+        var frozenRoute = _frozenVisionContext?.Current;
+        var supportsVision = frozenRoute?.SupportsVision ?? false;
         var supportsAudio = matchedModel.CapabilityTags.Contains("audio", StringComparer.OrdinalIgnoreCase);
 
         return new ResolvedGatewayConfig(
@@ -865,9 +873,10 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
             thinkingMode,
             effectiveRequestConfig?.MaxOutputTokens,
             matched.ProviderId,
-            strategy,
+                        strategy,
             supportsVision,
-            supportsAudio);
+            supportsAudio,
+            frozenRoute?.VisionPolicy);
     }
 
     private ILlmGateway CreateGateway(ResolvedGatewayConfig config, string workspaceId)
@@ -883,9 +892,11 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     MaxTokens: config.MaxOutputTokens,
                     ReasoningEffort: config.ReasoningEffort,
                     ThinkingMode: config.ThinkingMode))
-            {
+                        {
                 VisualArtifactResolver = config.SupportsVision ? _visualArtifactResolver : null,
                 AudioArtifactResolver = config.SupportsAudio ? _audioArtifactResolver : null,
+                // V5：视觉预算策略来自冻结快照（null 时 Planner 按 Default 处理）。
+                VisionPolicy = config.VisionPolicy,
                 WorkspaceId = workspaceId,
             };
                         if (config.SupportsVision)
@@ -917,8 +928,10 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
                     MaxTokens: config.MaxOutputTokens,
                     ReasoningEffort: config.ReasoningEffort,
                     ThinkingMode: config.ThinkingMode))
-            {
+                        {
                 VisualArtifactResolver = config.SupportsVision ? _visualArtifactResolver : null,
+                // V5：视觉预算策略来自冻结快照（null 时 Planner 按 Default 处理）。
+                VisionPolicy = config.VisionPolicy,
                 WorkspaceId = workspaceId,
             };
         }
@@ -946,9 +959,11 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         gateway.VisualArtifactResolver = config.SupportsVision
             ? _visualArtifactResolver
             : null;
-        gateway.AudioArtifactResolver = config.SupportsAudio
+                gateway.AudioArtifactResolver = config.SupportsAudio
             ? _audioArtifactResolver
             : null;
+        // V5：视觉预算策略来自冻结快照（null 时 Planner 按 Default 处理）。
+        gateway.VisionPolicy = config.VisionPolicy;
         gateway.WorkspaceId = workspaceId;
         return gateway;
     }
@@ -1365,9 +1380,10 @@ public sealed class DirectLlmClient : IRuntimeLlmClient
         string? ThinkingMode,
         int? MaxOutputTokens,
         string ProviderId,
-        LlmProviderStrategy Strategy,
+                LlmProviderStrategy Strategy,
         bool SupportsVision,
-        bool SupportsAudio);
+        bool SupportsAudio,
+        PuddingCode.Core.VisionRequestPolicy? VisionPolicy = null);
 
     private sealed class LlmStreamDiagnosticsAccumulator
     {

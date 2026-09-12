@@ -167,6 +167,7 @@ public sealed class LlmStreamObservabilityTests
     [TestMethod]
     public async Task ChatAsync_TextOnlyModel_DoesNotSerializeHistoricalVisualArtifact()
     {
+        // V5：视觉能力由冻结快照决定；本用例未推送快照且配置声明 supportsVision:false ⇒ fail closed。
         var handler = new CapturingJsonHandler();
         var resolver = new FixedVisualArtifactResolver();
         var client = new DirectLlmClient(
@@ -199,6 +200,50 @@ public sealed class LlmStreamObservabilityTests
     {
         var handler = new CapturingJsonHandler();
         var resolver = new FixedVisualArtifactResolver();
+        // V5 能力单源化：视觉能力由冻结快照（LlmRouteSnapshot.CapabilityTags 含 "vision"）决定，
+        // TestLlmConfigService 的 supportsVision 配置项不再参与判定，保留仅为覆盖模型目录解析路径。
+        var frozenVisionContext = new FrozenVisionContextAccessor();
+        var client = new DirectLlmClient(
+            new FixedHttpClientFactory(new HttpClient(handler)),
+            new TestLlmConfigService(supportsVision: true),
+            NullLogger<DirectLlmClient>.Instance,
+            visualArtifactResolver: resolver,
+            frozenVisionContext: frozenVisionContext);
+
+        using (frozenVisionContext.Push(new LlmRouteSnapshot(
+                   "provider-a",
+                   "test-model",
+                   "openai",
+                   ["text", "vision"])))
+        {
+            await client.ChatAsync(
+                "default",
+                "session-vision",
+                "template-1",
+                [new ChatMessage(ChatRole.User, "hello", VisualArtifactIds: ["artifact-1"])],
+                llmConfig: new LlmConfig
+                {
+                    Endpoint = "https://provider.test/v1",
+                    ApiKey = "test-key",
+                    ModelId = "test-model",
+                });
+        }
+
+        using var body = JsonDocument.Parse(handler.RequestBody!);
+        var content = body.RootElement.GetProperty("messages")[0].GetProperty("content");
+        Assert.AreEqual(JsonValueKind.Array, content.ValueKind);
+        Assert.AreEqual("text", content[0].GetProperty("type").GetString());
+        Assert.AreEqual("image_url", content[1].GetProperty("type").GetString());
+        Assert.AreEqual(1, resolver.ResolveCount);
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_WithoutFrozenVisionContext_DoesNotSerializeVisualArtifactEvenIfConfigDeclaresVision()
+    {
+        // fail-closed 语义：无冻结快照（非 Coordinator 直连派发路径）时，即使模型配置
+        // 声明 vision 也不序列化图片，不得静默放宽能力（ADR-077 V5）。
+        var handler = new CapturingJsonHandler();
+        var resolver = new FixedVisualArtifactResolver();
         var client = new DirectLlmClient(
             new FixedHttpClientFactory(new HttpClient(handler)),
             new TestLlmConfigService(supportsVision: true),
@@ -207,7 +252,7 @@ public sealed class LlmStreamObservabilityTests
 
         await client.ChatAsync(
             "default",
-            "session-vision",
+            "session-vision-fail-closed",
             "template-1",
             [new ChatMessage(ChatRole.User, "hello", VisualArtifactIds: ["artifact-1"])],
             llmConfig: new LlmConfig
@@ -219,10 +264,9 @@ public sealed class LlmStreamObservabilityTests
 
         using var body = JsonDocument.Parse(handler.RequestBody!);
         var content = body.RootElement.GetProperty("messages")[0].GetProperty("content");
-        Assert.AreEqual(JsonValueKind.Array, content.ValueKind);
-        Assert.AreEqual("text", content[0].GetProperty("type").GetString());
-        Assert.AreEqual("image_url", content[1].GetProperty("type").GetString());
-        Assert.AreEqual(1, resolver.ResolveCount);
+        Assert.AreEqual(JsonValueKind.String, content.ValueKind);
+        Assert.AreEqual("hello", content.GetString());
+        Assert.AreEqual(0, resolver.ResolveCount);
     }
 
     [TestMethod]

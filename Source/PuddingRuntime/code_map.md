@@ -6,7 +6,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `DependencyInjection.cs` | Runtime 服务注册入口 |
+| `DependencyInjection.cs` | Runtime 服务注册入口；含 `FrozenVisionContextAccessor` singleton（V5 视觉冻结快照通道，DependencyInjection.cs:119） |
 | `Services/PuddingConfigLoader.cs` | JSON 配置加载 |
 | `Services/PuddingJsonConfig.cs` | 配置模型定义 |
 | `Services/RuntimeExecutionConfigService.cs` | 执行配置：忠实加载 runtime.execution.json（`Math.Max(1, cfg)`，已删除 600/2400/24h 强抬 normalize）；600/2400/24h 仅为系统 profile 默认（非下限/上限/强制统一值）；20 轮/30 分钟收尾宽限；规范化临时子代理目录保留/隔离参数；请求级预算覆盖见 SubAgentInvocationContracts（int? MaxRounds 等） |
@@ -15,9 +15,9 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/AgentExecutionService.cs` | 🔑 执行编排入口，session 单写者，liveness/progress 报告；把日期、召回和 inbound context 与当前消息组成 volatile User tail；同一 prefix epoch 冻结 message-zero system bytes，真实稳定头变化一次性提交并显式归因；以 `CURRENT USER TURN/input_sha256` 围栏当前输入；提供 Harness 对齐的 warm-prefix checkpoint（原样 replay、有效缩小时原子提交、失败保留 history、每 dispatch 一次）和 compaction Token 归因 |
-| `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial）；共用冻结 system 与 warm-prefix checkpoint；dispatch 冻结 tool catalog/schema，`search_tools` 激活在下一 LLM round 单调生效并标记 `tool_spec_changed`；prefix-v2 事件带 history anchor/reason/serialization；预算裁剪后以当前轮围栏 fail-closed；canonical 相同调用第二次得到不变失败时转 `execution_stalled`；最终回复边界命中 late Steering 时继续同一 Turn |
-| `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial）；与 Buffered 共用 round-boundary 动态工具激活、冻结 system、warm-prefix checkpoint、prefix-v2、当前轮围栏、canonical Token attribution 与失败熔断；direct Token 先提交、usage SSE 后发布；provider length/incomplete 只允许一次立即行动恢复，再截断显式失败；最终流式回复边界命中 late Steering 时继续同一 Turn |
+| `Services/AgentExecutionService.cs` | 🔑 执行编排入口，session 单写者，liveness/progress 报告；把日期、召回和 inbound context 与当前消息组成 volatile User tail；同一 prefix epoch 冻结 message-zero system bytes，真实稳定头变化一次性提交并显式归因；以 `CURRENT USER TURN/input_sha256` 围栏当前输入；提供 Harness 对齐的 warm-prefix checkpoint（原样 replay、有效缩小时原子提交、失败保留 history、每 dispatch 一次）和 compaction Token 归因；构造注入 `FrozenVisionContextAccessor`（V5 视觉冻结快照，AgentExecutionService.cs:97/:159/:207） |
+| `Services/AgentExecution/AgentExecutionService.Buffered.cs` | 非流式主循环（partial）；共用冻结 system 与 warm-prefix checkpoint；dispatch 冻结 tool catalog/schema，`search_tools` 激活在下一 LLM round 单调生效并标记 `tool_spec_changed`；prefix-v2 事件带 history anchor/reason/serialization；预算裁剪后以当前轮围栏 fail-closed；canonical 相同调用第二次得到不变失败时转 `execution_stalled`；最终回复边界命中 late Steering 时继续同一 Turn；ExecuteAsync 入口 `Push(CallerLlmSnapshot)` 冻结视觉上下文（V5，AgentExecutionService.Buffered.cs:50） |
+| `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial）；与 Buffered 共用 round-boundary 动态工具激活、冻结 system、warm-prefix checkpoint、prefix-v2、当前轮围栏、canonical Token attribution 与失败熔断；direct Token 先提交、usage SSE 后发布；provider length/incomplete 只允许一次立即行动恢复，再截断显式失败；最终流式回复边界命中 late Steering 时继续同一 Turn；ExecuteStreamAsync 入口 `Push(CallerLlmSnapshot)` 冻结视觉上下文（V5，AgentExecutionService.Streaming.cs:38） |
 | `Services/AgentExecution/FailedToolCallTracker.cs` | 第一层止损：对 canonical tool+args 的有界失败结果做 SHA-256 指纹；第二次不变失败标记 `execution_stalled`，后续阻断；参数变化后的同失败族由 Core `RuntimeControlService` 第 5 次熔断 |
 | `Services/AgentExecution/ToolDiscoveryLoopTracker.cs` | 动态工具发现止损；不同查询文本仍归一为 discovery-only 进展族，连续 8 次只调用 `search_tools` 而不执行已发现业务工具时触发 `tool_discovery_stalled`，任一实际业务工具会重置计数 |
 | `Services/AgentExecution/ExecutionUsageBudgetTracker.cs` | WorkUnit 调用边界 input/output/cache-hit/cost 累计账本；生成剩余预算供工具/子代理继承并输出含同步后代的累计 usage；provider/child call 后先记账，再决定工具/下一 LLM round，Buffered/Streaming 共用 |
@@ -50,7 +50,8 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/DirectLlmClient.cs` | 🔑 直接 LLM 客户端；只按选中模型 protocol 路由；Provider 成功后以共享 ActivityId 必达写入逐请求 usage 账本；operation 按 `chat[:approval|:compaction]` 区分任务数据面与控制面；流式路径分别记录 rate-limit wait 与 provider first-chunk wait；vision 能力才注入视觉 resolver，网关层 fail-closed |
+| `Services/DirectLlmClient.cs` | 🔑 直接 LLM 客户端；只按选中模型 protocol 路由；Provider 成功后以共享 ActivityId 必达写入逐请求 usage 账本；operation 按 `chat[:approval|:compaction]` 区分任务数据面与控制面；流式路径分别记录 rate-limit wait 与 provider first-chunk wait；V5 视觉单源化：构造可选注入 `FrozenVisionContextAccessor`（:38/:56/:76），`supportsVision` 只读冻结快照 `frozenRoute?.SupportsVision ?? false`（:863-864，无冻结上下文 fail closed，删除原热目录 CapabilityTags 二次判定），三个 Gateway（Responses/OpenAI/Anthropic）注入快照 `VisionPolicy`（:879） |
+| `Services/FrozenVisionContextAccessor.cs` | 🆕 V5 视觉冻结上下文通道（AsyncLocal）；`Current` / `Push(LlmRouteSnapshot?)` 返回 IDisposable scope（:14/:29），Agent Loop 入口（Buffered/Streaming）写入、DirectLlmClient 读取；无上下文 = null = fail closed |
 | `Services/CompositionSnapshot.cs` | 前缀缓存归因：逐请求计算 systemPromptHash/toolSpecHash/prefixHash（SHA-256 小写 hex）与 compositionVersion（进程内按 session 递增） |
 | `Services/SqliteCompositionStore.cs` | 🆕 P0-5 `ICompositionStore` SQLite 实现：落 `CompositionSnapshots` 表（MemoryDbContext 同库），append-only（版本严格递增，重写/乱序抛 InvalidOperationException）、写穿、GetLatest 取最大版本 |
 | `Services/LlmInvocationService.cs` | LLM 调用编排；把模型配置解析出的 protocol 传给 Direct/Controller 路径，并以 invocation purpose scope 透传非模型可见计费归因 |

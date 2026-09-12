@@ -203,11 +203,13 @@ public sealed class ExecutionRunCoordinator(
                 ContentParts: primarySupportsVision && visualArtifactIds is { Count: > 0 }
                     ? contentParts
                     : null,
+                                // V5：冻结快照随路下发视觉预算策略，DirectLlmClient 注入 Gateway 时单源消费。
                 CallerLlmSnapshot: new LlmRouteSnapshot(
                     providerId,
                     modelId,
                     snapshot.Protocol,
-                    snapshot.CapabilityTags ?? []),
+                    snapshot.CapabilityTags ?? [],
+                    snapshot.VisionPolicy),
                 CallerVisionHelperRoute: snapshot.VisionHelperRoute)
             {
                 ExecutionDeadlineUtc = executionDeadlineUtc,

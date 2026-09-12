@@ -42,10 +42,12 @@ public sealed partial class AgentExecutionService
     /// 执行 Agent Loop：
     ///   User Message → LLM → [CompletionPolicy → 工具调用 → LLM] × N → 终止
     /// </summary>
-    public async Task<RuntimeDispatchResult> ExecuteAsync(
+        public async Task<RuntimeDispatchResult> ExecuteAsync(
         RuntimeDispatchRequest request,
         CancellationToken external = default)
     {
+        // V5：把 Run 启动冻结的路由快照推入异步流，DirectLlmClient 据此单源判定视觉能力/策略。
+        using var frozenVisionScope = _frozenVisionContext?.Push(request.CallerLlmSnapshot);
         await using var executionLease = await _sessionExecutionGate.EnterAsync(
             request.SessionId,
             executionSource: "agent_execute",
