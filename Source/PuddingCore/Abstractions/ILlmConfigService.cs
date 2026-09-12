@@ -1,4 +1,4 @@
-﻿using PuddingCode.Platform;
+using PuddingCode.Platform;
 
 namespace PuddingCode.Abstractions;
 
@@ -96,6 +96,11 @@ public sealed record LlmModelInfo
         public int SortOrder { get; init; }
     public List<string> CapabilityTags { get; init; } = [];
     public int? MaxConcurrentRequests { get; init; }
+    /// <summary>
+    /// 模型级视觉能力合同（V5-T2，可选；来源 = llm.providers.json 模型条目 "vision" 节）。
+    /// null = 未配置视觉合同；快照端对 vision 模型回退产品默认策略，对非视觉模型明确不投影。
+    /// </summary>
+    public PuddingCode.Core.VisionCapabilityContract? VisionContract { get; init; }
 }
 
 public sealed record LlmPriceWindowInfo

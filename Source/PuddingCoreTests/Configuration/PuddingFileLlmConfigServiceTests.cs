@@ -1,5 +1,6 @@
 using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
+using PuddingCode.Core;
 
 namespace PuddingCoreTests.Configuration;
 
@@ -87,6 +88,60 @@ public sealed class PuddingFileLlmConfigServiceTests
 
         Assert.HasCount(2, providers);
         Assert.IsTrue(providers.All(p => p.HasApiKey));
+    }
+
+    [TestMethod]
+    public void GetAllModels_Projects_Vision_Contract_With_Version()
+    {
+        // V5-T2（C1 配置侧）：模型条目 vision 节 → LlmModelInfo.VisionContract（Core 合同，版本保持）
+        // → ToPolicy() 投影：显式值覆盖、未配置字段沿用产品默认、版本进 ImageTokenEstimatorVersion。
+        var config = new PuddingLlmProvidersConfig
+        {
+            Providers =
+            [
+                new PuddingLlmProviderConfig
+                {
+                    ProviderId = "deepseek",
+                    Name = "DeepSeek",
+                    BaseUrl = "https://api.deepseek.com",
+                    ApiKey = "key",
+                    IsEnabled = true,
+                    Models =
+                    [
+                        new PuddingLlmModelConfig
+                        {
+                            ModelId = "deepseek-flash",
+                            Name = "deepseek-flash",
+                            Protocol = "responses",
+                            CapabilityTags = ["vision"],
+                            IsDefault = true,
+                            SortOrder = 1,
+                            Vision = new PuddingVisionCapabilityConfig
+                            {
+                                Version = "deepseek-2026-09-12-1024",
+                                MaxImagesPerRequest = 8,
+                                InlineMaxBytesPerImage = 2_000_000,
+                                EstimatedTokensPerImageUpperBound = 1024,
+                            },
+                        },
+                    ],
+                },
+            ],
+            Profiles = new Dictionary<string, PuddingLlmProfileConfig>(StringComparer.OrdinalIgnoreCase),
+        };
+        var service = new PuddingFileLlmConfigService(config);
+
+        var model = service.GetAllModels().Single(m => m.ModelId == "deepseek-flash");
+
+        Assert.IsNotNull(model.VisionContract);
+        Assert.AreEqual("deepseek-2026-09-12-1024", model.VisionContract.Version);
+        var policy = model.VisionContract.ToPolicy();
+        Assert.AreEqual("deepseek-2026-09-12-1024", policy.ImageTokenEstimatorVersion);
+        Assert.AreEqual(8, policy.MaxImagesPerRequest);
+        Assert.AreEqual(2_000_000L, policy.InlineMaxBytesPerImage);
+        Assert.AreEqual(1024, policy.EstimatedTokensPerImageUpperBound);
+        // 未配置字段沿用产品默认。
+        Assert.AreEqual(VisionRequestPolicy.Default.InlineMaxTotalBytes, policy.InlineMaxTotalBytes);
     }
 
     private static PuddingLlmProvidersConfig CreateConfig()

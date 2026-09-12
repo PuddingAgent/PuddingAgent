@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 
 namespace PuddingCode.Configuration;
 
@@ -151,6 +151,7 @@ public sealed class PuddingFileConfigLoader
                 if (model.MaxConcurrentRequests is <= 0)
                     errors.Add($"llm.providers.json provider '{provider.ProviderId}' model '{model.ModelId}' maxConcurrentRequests must be greater than zero.");
                 ValidatePriceWindows(provider.ProviderId, model, errors);
+                ValidateVisionContract(provider.ProviderId, model, errors);
             }
         }
 
@@ -212,6 +213,39 @@ public sealed class PuddingFileConfigLoader
         // so dangling role aliases must not prevent the provider/model registry from starting.
 
         return errors;
+    }
+
+    /// <summary>
+    /// V5-T2：vision 合同节校验 — 存在即必须完整有效（显式合同，fail-fast）。
+    /// 非法值不允许以「静默忽略」方式伪装成产品默认策略：配置错误必须在加载期显式失败，
+    /// 与 protocol / priceWindows 等其他模型级字段的校验风格一致。
+    /// </summary>
+    private static void ValidateVisionContract(
+        string providerId,
+        PuddingLlmModelConfig model,
+        ICollection<string> errors)
+    {
+        var vision = model.Vision;
+        if (vision is null)
+            return;
+
+        var prefix = $"llm.providers.json provider '{providerId}' model '{model.ModelId}' vision";
+        if (string.IsNullOrWhiteSpace(vision.Version))
+            errors.Add($"{prefix} version is required when a vision contract is configured.");
+        if (vision.MaxImagesPerRequest is <= 0)
+            errors.Add($"{prefix} maxImagesPerRequest must be greater than zero.");
+        if (vision.InlineMaxBytesPerImage is <= 0)
+            errors.Add($"{prefix} inlineMaxBytesPerImage (decoded bytes) must be greater than zero.");
+        if (vision.InlineMaxTotalBytes is <= 0)
+            errors.Add($"{prefix} inlineMaxTotalBytes (decoded bytes) must be greater than zero.");
+        if (vision.InlineMaxTotalWireBytes is <= 0)
+            errors.Add($"{prefix} inlineMaxTotalWireBytes (wire bytes) must be greater than zero.");
+        if (vision.FilesMaxBytesPerImage is <= 0)
+            errors.Add($"{prefix} filesMaxBytesPerImage (uploaded bytes) must be greater than zero.");
+        if (vision.FilesMaxTotalBytes is <= 0)
+            errors.Add($"{prefix} filesMaxTotalBytes (wire bytes) must be greater than zero.");
+        if (vision.EstimatedTokensPerImageUpperBound is <= 0)
+            errors.Add($"{prefix} estimatedTokensPerImageUpperBound must be greater than zero.");
     }
 
     private static void ValidatePriceWindows(

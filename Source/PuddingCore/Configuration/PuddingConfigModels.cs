@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace PuddingCode.Configuration;
 
@@ -296,6 +296,36 @@ public sealed record PuddingLlmModelConfig
     public string? PriceWindowSourceUrl { get; init; }
     /// <summary>模型级最大并发请求数（null=继承 Provider 默认 50）</summary>
     public int? MaxConcurrentRequests { get; init; }
+    /// <summary>
+    /// 模型级视觉能力合同（V5-T2，可选节）。仅当模型具备 vision 标签且非 embedding/图像生成时生效
+    /// （快照工厂负责模型类别判定）。存在即必须完整有效（loader fail-fast），不静默容忍半成品合同。
+    /// </summary>
+    public PuddingVisionCapabilityConfig? Vision { get; init; }
+}
+
+/// <summary>
+/// 模型级视觉能力合同（V5-T2）：llm.providers.json 模型条目的可选 "vision" 节（文件层 DTO）。
+/// 字节口径显式区分：*BytesPerImage / *TotalBytes = 解码后原始字节；*WireBytes = base64 data URI 的 wire 字节。
+/// 全部字段可空：null = 沿用产品默认（VisionRequestPolicy.Default）。
+/// </summary>
+public sealed record PuddingVisionCapabilityConfig
+{
+    /// <summary>合同版本（必填，如 "deepseek-2026-09-12-1024"），投影为 VisionRequestPolicy.ImageTokenEstimatorVersion。</summary>
+    public string? Version { get; init; }
+    /// <summary>单请求图片份数上限（产品门槛口径）。</summary>
+    public int? MaxImagesPerRequest { get; init; }
+    /// <summary>inline 单图「解码后」字节上限。</summary>
+    public long? InlineMaxBytesPerImage { get; init; }
+    /// <summary>inline 累计「解码后」字节上限。</summary>
+    public long? InlineMaxTotalBytes { get; init; }
+    /// <summary>inline 累计「wire 字节」（base64 data URI）上限。</summary>
+    public long? InlineMaxTotalWireBytes { get; init; }
+    /// <summary>Files 单文件「上传原始编码」字节上限。</summary>
+    public long? FilesMaxBytesPerImage { get; init; }
+    /// <summary>Files 累计「wire 字节」上限。</summary>
+    public long? FilesMaxTotalBytes { get; init; }
+    /// <summary>单图 token 保守上界（仅记录，不硬校验）。</summary>
+    public int? EstimatedTokensPerImageUpperBound { get; init; }
 }
 
 /// <summary>

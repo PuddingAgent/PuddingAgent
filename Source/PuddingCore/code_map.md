@@ -77,6 +77,7 @@
 | `ResponsesLlmGateway.cs` | OpenAI/DeepSeek Responses API 网关；flat tools、明文 reasoning SSE、completed/failed/incomplete 终态、截断工具调用隔离与 output items 回放；ADR-077：user `input_image`（original→high）与 `function_call_output.output` [input_text, input_image] 数组，图片经 LlmVisualInputPlanner fail-closed；V3-S2a：大图（>2MB）经 DeepSeekFilesApiClient 上传后以 `file_id` 引用（不输出 image_url/detail） |
 | `AnthropicMessagesLlmGateway.cs` | Anthropic Messages API 网关；`x-api-key`、顶层 system、content blocks、工具回放和 SSE state |
 | `LlmVisualInputPlanner.cs` | ADR-077 图片请求预算与规划：inline 小图（≤2MB）data URL、大图 fail-closed 或（V3-S2a，有 uploader 时）Files API 上传 file_id 互斥规划；`VisionRequestPolicy` 含 Files 常量（64 MiB 单文件 / 200 MiB 总量 / lifetime 1h–30d）；V5 切片二：`PlanAsync` 可选接收 `VisualInputRequestBudget`（budget=null 时行为不变），按实际序列化份数把每张图 charge 进请求级账本（份数/解码字节/wire 字节/token/file 上传字节），越界抛 `RequestLimitExceeded` 整请求 fail closed |
+| `VisionCapabilityContract.cs` | V5-T2：模型级视觉能力合同（唯一来源 = llm.providers.json 模型 `vision` 节 → `LlmModelInfo.VisionContract`）；`ToPolicy()` 投影 `VisionRequestPolicy`（显式值覆盖产品默认、合同版本进 `ImageTokenEstimatorVersion`）；快照工厂据「合同 ∩ 模型类别」生成 `AgentExecutionSnapshot.VisionPolicy`，embedding/图像生成/无 vision 标签一律不投影 |
 | `VisualInputRequestBudget.cs` | V5 切片二：一次 LLM payload 构造一个实例的请求级图片预算账本；三 Gateway 在 payload 入口创建并以显式参数贯穿全部 `PlanAsync`（user `input_image` 与工具 `function_call_output` 共用）；累计只增不减，越界异常含维度/累计值/增量/上限/来源与批次序号；无 AsyncLocal/静态状态 |
 | `DeepSeekFilesApiClient.cs` | ADR-077 V3-S1 DeepSeek Files API 上传客户端（multipart purpose=user_data）；ApiKey 脱敏，异常只含 HTTP status + 错误摘要 |
 | `ProviderFileReference.cs` | ADR-077 Files API 值类型：`ProviderFileUploadResult`（FileId/ExpiresAt 计算）与轻量 `ProviderFileReference` |
@@ -160,7 +161,7 @@
 
 | 目录/文件 | 用途 |
 |------|------|
-| `Configuration/` | 配置抽象；`PuddingDataPaths` 提供临时子代理目录隔离根；`PuddingBuildOutputSync` 提供同卷暂存、逐文件回滚、路径边界和 SHA-256 点火部署原语；`llm.providers.json` 支持每模型协议与版本化 `priceWindows/profileVersion/sourceUrl`，供低价自动调度 fail-closed 解析 |
+ | `Configuration/` | 配置抽象；`PuddingDataPaths` 提供临时子代理目录隔离根；`PuddingBuildOutputSync` 提供同卷暂存、逐文件回滚、路径边界和 SHA-256 点火部署原语；`llm.providers.json` 支持每模型协议与版本化 `priceWindows/profileVersion/sourceUrl`，供低价自动调度 fail-closed 解析；V5-T2：模型条目可选 `vision` 合同节（`PuddingVisionCapabilityConfig`，字节口径显式区分解码后/wire）由 `ValidateVisionContract` fail-fast 校验（存在即必须完整有效），`PuddingFileLlmConfigService.GetAllModels()` 投影为 `LlmModelInfo.VisionContract` |
 | `Serialization/` | 序列化契约 |
 | `Skills/` | 技能系统抽象 |
 

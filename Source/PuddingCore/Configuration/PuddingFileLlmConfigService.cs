@@ -1,4 +1,5 @@
-﻿using PuddingCode.Abstractions;
+using PuddingCode.Abstractions;
+using PuddingCode.Core;
 using PuddingCode.Platform;
 
 namespace PuddingCode.Configuration;
@@ -83,6 +84,20 @@ public sealed class PuddingFileLlmConfigService : ILlmConfigService
                 IsEmbedding = m.IsEmbedding,
                 SortOrder = m.SortOrder,
                 CapabilityTags = m.CapabilityTags ?? [],
+                // V5-T2："vision" 合同节 → Core 合同类型；Version 非空已由 PuddingFileConfigLoader 校验。
+                VisionContract = m.Vision is null
+                    ? null
+                    : new VisionCapabilityContract
+                    {
+                        Version = m.Vision.Version!,
+                        MaxImagesPerRequest = m.Vision.MaxImagesPerRequest,
+                        InlineMaxBytesPerImage = m.Vision.InlineMaxBytesPerImage,
+                        InlineMaxTotalBytes = m.Vision.InlineMaxTotalBytes,
+                        InlineMaxTotalWireBytes = m.Vision.InlineMaxTotalWireBytes,
+                        FilesMaxBytesPerImage = m.Vision.FilesMaxBytesPerImage,
+                        FilesMaxTotalBytes = m.Vision.FilesMaxTotalBytes,
+                        EstimatedTokensPerImageUpperBound = m.Vision.EstimatedTokensPerImageUpperBound,
+                    },
             }))
             .ToList();
     }

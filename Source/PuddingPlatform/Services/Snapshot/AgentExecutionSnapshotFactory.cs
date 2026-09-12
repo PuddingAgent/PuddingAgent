@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
@@ -61,6 +61,12 @@ public sealed class AgentExecutionSnapshotFactory(
             }
         }
 
+        // V5-T2（ADR-088 决策 2/5）：视觉预算策略来源 = 配置合同 ∩ 模型类别，不再硬编码 Default。
+        // 语义显式（无静默假定支持）：模型不在配置 / IsEmbedding / 含 image-generation 标签 /
+        // 无 vision 标签 → null（明确不支持图片输入，即便误配 vision 节也忽略）；具备 vision 标签 →
+        // 配置合同投影，未配置合同 → VisionRequestPolicy.Default（明确的产品护栏策略，非协议限制）。
+        var (visionPolicy, visionPolicySource) = ResolveVisionPolicy(modelInfo);
+
         var hashInput = JsonSerializer.SerializeToUtf8Bytes(new
         {
             profile.WorkspaceId,
@@ -85,6 +91,20 @@ public sealed class AgentExecutionSnapshotFactory(
             visionHelperRoute = visionHelperRoute is null
                 ? null
                 : new { visionHelperRoute.ProviderId, visionHelperRoute.ModelId },
+            // V5-T2：策略（含版本）进快照哈希 —— 配置热更新后新 Run 冻结新快照，哈希可区分。
+            visionPolicy = visionPolicy is null
+                ? null
+                : new
+                {
+                    visionPolicy.ImageTokenEstimatorVersion,
+                    visionPolicy.MaxImagesPerRequest,
+                    visionPolicy.InlineMaxBytesPerImage,
+                    visionPolicy.InlineMaxTotalBytes,
+                    visionPolicy.InlineMaxTotalWireBytes,
+                    visionPolicy.FilesMaxBytesPerImage,
+                    visionPolicy.FilesMaxTotalBytes,
+                    visionPolicy.EstimatedTokensPerImageUpperBound,
+                },
         });
         var snapshotHash = $"sha256:{Convert.ToHexString(SHA256.HashData(hashInput)).ToLowerInvariant()}";
 
@@ -114,17 +134,44 @@ public sealed class AgentExecutionSnapshotFactory(
             CreatedAt: DateTimeOffset.UtcNow,
             CapabilityTags: capabilityTags,
             Protocol: protocol,
-            VisionPolicy: PuddingCode.Core.VisionRequestPolicy.Default,
+            VisionPolicy: visionPolicy,
             VisionHelperRoute: visionHelperRoute);
 
+        // V5-T2：策略版本随快照创建日志可观测（版本 + 来源），便于区分「当前执行版本」。
         logger.LogInformation(
-            "[SnapshotFactory] Created snapshot={SnapshotId} agent={AgentId} vision={Vision} protocol={Protocol}",
+            "[SnapshotFactory] Created snapshot={SnapshotId} agent={AgentId} vision={Vision} protocol={Protocol} visionPolicy={VisionPolicyVersion} visionPolicySource={VisionPolicySource}",
             snapshot.SnapshotId,
             profile.AgentId,
             snapshot.SupportsVision ? 1 : 0,
-            string.IsNullOrWhiteSpace(protocol) ? "unknown" : protocol);
+            string.IsNullOrWhiteSpace(protocol) ? "unknown" : protocol,
+            visionPolicy?.ImageTokenEstimatorVersion ?? "none",
+            visionPolicySource);
 
         return snapshot;
+    }
+
+    /// <summary>
+    /// V5-T2：解析快照视觉预算策略及其来源标签。模型类别安全（ADR-088 决策 2）：
+    /// embedding / image-generation / 无 vision 标签一律 null（不投影策略，不误标）。
+    /// 图像生成判定锚点与 PuddingFileConfigLoader 的 imageGeneration 节校验一致
+    /// （capabilityTags 含 "image-generation"）；embedding 判定用既有 LlmModelInfo.IsEmbedding。
+    /// </summary>
+    private static (PuddingCode.Core.VisionRequestPolicy? Policy, string Source) ResolveVisionPolicy(
+        PuddingCode.Abstractions.LlmModelInfo? modelInfo)
+    {
+        if (modelInfo is null)
+            return (null, "model-not-found");
+
+        var tags = modelInfo.CapabilityTags ?? [];
+        var unsupported = modelInfo.IsEmbedding
+            || tags.Contains("image-generation", StringComparer.OrdinalIgnoreCase)
+            || !tags.Contains("vision", StringComparer.OrdinalIgnoreCase);
+        if (unsupported)
+            return (null, "model-unsupported");
+
+        return modelInfo.VisionContract is { } contract
+            ? (contract.ToPolicy(), "contract")
+            : (PuddingCode.Core.VisionRequestPolicy.Default, "product-default");
     }
 
     public Task<AgentExecutionSnapshot?> FindByIdAsync(string snapshotId, CancellationToken ct)

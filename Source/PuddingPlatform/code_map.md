@@ -22,6 +22,7 @@
 | `Services/ChatMessageRepository.cs` | 消息仓储；ChatMessageRow 透传 `WorkspaceId/MessageId/TurnId` 与 `ContentPartsJson` canonical 信封；after-Id 增量扫描不因空正文越过纯 typed-parts 消息，支持 Runtime 冷水合与当前 Turn 排除 |
 | `Services/ChatMessageSchemaBootstrapper.cs` | 存量 SQLite 幂等补 `ChatMessages.content_parts_json` 列 |
 | `Services/AgentChat/ExecutionRunCoordinator.cs` | ADR-077 canonical parts；执行前应用 canonical WorkUnit context，将 Agent/WorkUnit rounds、tools、duration 逐项取最严值并冻结 deadline，按实际 provider/model 冻结价格与 input/output/cost 预算，透传 plan/node identity；V5：构建 `CallerLlmSnapshot` 时下发 `snapshot.VisionPolicy`（:212），视觉策略随执行快照单源冻结 |
+| `Services/Snapshot/AgentExecutionSnapshotFactory.cs` | ADR-059/077 执行快照组装；V5-T2：视觉策略不再硬编码 `VisionRequestPolicy.Default`，按「配置合同 ∩ 模型类别」解析（embedding / image-generation / 无 vision 标签一律 null 不误标；vision 模型无合同回退产品默认策略），策略值与版本进快照哈希与创建日志（`visionPolicy=` / `visionPolicySource=`）；旧快照直接复用，冻结语义不变 |
 | `Services/AgentChat/TurnOutputChunker.cs` | Delta 聚合分块器；非 delta 事件（工具/step）先 flush 已缓冲正文/思考再透传——「文本 → 工具 → 文本」轮次边界进入 canonical sequence（chat 交错时间线依赖，2026-08-24）；测试 `PuddingPlatformTests/Services/TurnOutputChunkerPayloadOwnershipTests.cs` |
 | `Services/AgentChat/AgentConversationProjectionService.cs` | Chat 首屏/活动 run/消息明细投影；活动根 run 以最新根 `turn.started` 锚定，避免子代理 runId 抢占；active/full detail 都把 `message.content.appended` 与思考/工具/委派按真实 sequence 返回，并用 `TurnEventWindow` 显式标记 64 条活动窗口边界 |
 | `Services/ChatTranscriptWriter.cs` | 转录写入 |
