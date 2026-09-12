@@ -664,6 +664,12 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                     MessageId = claimed.MessageId,
                     MessageText = mergedContent,
                     EventSessionId = sessionId,
+                    // A01-slice-2：sub-agent 续行必须显式携带持久父身份。恢复路径
+                    // （periodic-recovery）没有事件 session，只依赖 metadata 兜底会退化成
+                    // main_session；这里在 claim 之后按 slice-1 的键优先级解析并显式传入。
+                    ParentConversationId = claimedIsSubAgentResult
+                        ? AgentInvocationDispatchFactory.ResolvePersistedParentConversationId(effectiveMetadata)
+                        : null,
                     From = claimed.From,
                     CorrelationId = correlationId,
                     CausationId = causationId,

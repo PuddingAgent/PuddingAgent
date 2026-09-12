@@ -236,12 +236,7 @@ public sealed class AgentInvocationDispatchFactory(
             return (parentParam, SessionSourceParentParam);
         }
 
-        var parentIdentity = GetMetadataValueCaseInsensitive(
-            invocation.Metadata,
-            "parent_conversation_id",
-            "parent_session_id",
-            "parent_session",
-            "conversation_id");
+        var parentIdentity = ResolvePersistedParentConversationId(invocation.Metadata);
         if (!string.IsNullOrWhiteSpace(parentIdentity))
         {
             WarnIfEventSessionDiffers(invocation, parentIdentity!, SessionSourceParentIdentity);
@@ -288,6 +283,26 @@ public sealed class AgentInvocationDispatchFactory(
             parentSessionId,
             invocation.EventSessionId);
     }
+
+    /// <summary>
+    /// A01-slice-2：解析持久化父会话身份 metadata。
+    /// </summary>
+    /// <remarks>
+    /// 键优先级固定为 <c>parent_conversation_id</c> → <c>parent_session_id</c> →
+    /// <c>parent_session</c> → <c>conversation_id</c>。事件驱动路径与 delivery 恢复路径
+    /// 必须复用本方法，不得各自发明键名或优先级。
+    /// </remarks>
+    public static string? ResolvePersistedParentConversationId(
+        IReadOnlyDictionary<string, string>? metadata)
+        => GetMetadataValueCaseInsensitive(metadata, PersistedParentConversationKeys);
+
+    private static readonly string[] PersistedParentConversationKeys =
+    [
+        "parent_conversation_id",
+        "parent_session_id",
+        "parent_session",
+        "conversation_id",
+    ];
 
     private static string? GetMetadataValueCaseInsensitive(
         IReadOnlyDictionary<string, string>? metadata,

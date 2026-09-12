@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -10,6 +11,7 @@ using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
+using PuddingPlatform.Services.MessageFabric;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.Messaging;
 
@@ -1320,6 +1322,493 @@ public sealed class MessageDeliveryDispatcherTests
         Assert.IsTrue(decoded.Chunks[2].Timestamp >= decoded.Chunks[1].Timestamp);
     }
 
+    // ═════════════════════════════════════════════════════════════════════
+    // A01-slice-2 · G3 端到端恢复用例（T1~T7）
+    // 用户可见语义：事件 session 为空 / 父忙 / 重复投递 / 终态重放，均回到原父会话；
+    // 一个 result 只触发一次业务接续。仅新增测试代码，未改任何生产代码。
+    // ═════════════════════════════════════════════════════════════════════
+
+    [TestMethod]
+    public void A01_T1_SubAgentResultIdentity_SameInput_ProducesSameId()
+    {
+        const string childRunId = "run-t1";
+        const string parentSessionId = "parent-conversation-t1";
+
+        var first = SubAgentResultIdentity.Compute(childRunId, "completed", parentSessionId);
+        var second = SubAgentResultIdentity.Compute(childRunId, "completed", parentSessionId);
+
+        Assert.AreEqual(
+            first,
+            second,
+            "同一 (childRunId, 终态, 父会话) 必须派生出相同 id（幂等键不得含时间戳/随机数/Guid）");
+        Assert.IsTrue(
+            first.StartsWith(SubAgentResultIdentity.Prefix, StringComparison.Ordinal),
+            $"确定性 result id 必须以 '{SubAgentResultIdentity.Prefix}' 开头，实际 '{first}'");
+        Assert.AreEqual(
+            SubAgentResultIdentity.Prefix.Length + 32,
+            first.Length,
+            "result id 必须是 prefix + 32 位小写 hex");
+        Assert.AreEqual(
+            first,
+            SubAgentResultIdentity.Compute($" {childRunId} ", " completed ", $" {parentSessionId} "),
+            "派生前必须规范化（trim）输入，否则崩溃重投会派生不同 id");
+    }
+
+    [TestMethod]
+    public void A01_T2_SubAgentResultIdentity_TerminalStatusParticipatesInDerivation()
+    {
+        const string childRunId = "run-t2";
+        const string parentSessionId = "parent-conversation-t2";
+
+        var completedId = SubAgentResultIdentity.Compute(childRunId, "completed", parentSessionId);
+        var failedId = SubAgentResultIdentity.Compute(childRunId, "failed", parentSessionId);
+
+        Assert.AreNotEqual(
+            completedId,
+            failedId,
+            "终态必须参与派生：running→completed 与 failed→completed 不得互相吞并");
+        Assert.AreEqual(
+            completedId,
+            SubAgentResultIdentity.Compute(childRunId, "Completed", parentSessionId),
+            "终态规范化（trim + ToLowerInvariant）后 Completed 与 completed 必须等价");
+        Assert.AreEqual(
+            "unknown",
+            SubAgentResultIdentity.NormalizeTerminalStatus("   "),
+            "空白终态必须规范化为 unknown，不得落空字符串");
+        Assert.AreNotEqual(
+            completedId,
+            SubAgentResultIdentity.Compute(childRunId, "completed", "parent-conversation-t2-other"),
+            "父会话不同必须派生不同 id，否则兄弟会话的终态结果会互相吞并");
+    }
+
+    [TestMethod]
+    public async Task A01_T3_SameTerminalResult_PersistedTwice_DedupesByDeterministicMessageId()
+    {
+        const string parentSessionId = "parent-conversation-t3";
+        var resultId = SubAgentResultIdentity.Compute("run-t3", "completed", parentSessionId);
+        var plan = SubAgentResultRoutePlan(resultId, parentSessionId, "delivery-t3");
+
+        await using var harness = await MessageFabricHarness.CreateAsync();
+        await using var storeDb = harness.CreateContext();
+        var store = new MessageFabricStore(storeDb);
+
+        Assert.IsTrue(
+            await store.PersistRouteAsync("default", plan, CancellationToken.None),
+            "首次持久化子代理终态结果必须真正落库");
+        Assert.IsFalse(
+            await store.PersistRouteAsync("default", plan, CancellationToken.None),
+            "同一确定性 resultId 的重复终态必须命中 MessageId 去重（MessageFabricStore.cs:36-38）");
+
+        await using var assertDb = harness.CreateContext();
+        Assert.AreEqual(
+            1,
+            await assertDb.RoomMessages.CountAsync(),
+            "重投同一终态结果后 room_messages 只允许 1 行");
+        Assert.AreEqual(
+            1,
+            await assertDb.MessageDeliveries.CountAsync(),
+            "重投同一终态结果后 message_deliveries 只允许 1 行（否则会二次接续父会话）");
+    }
+
+    [TestMethod]
+    public async Task A01_T4_EventSessionMissing_StillResolvesToPersistedParentSession()
+    {
+        const string parentSessionId = "parent-conversation-t4";
+        var metadata = SubAgentResultMetadata("run-t4", parentSessionId);
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimMetadata = metadata,
+            ClaimContent = SubAgentResultEnvelopeContent,
+        };
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var logSink = new List<string>();
+        var dispatcher = CreateDispatcher(inbox, runtime, logSink: logSink);
+
+        Assert.AreEqual(
+            parentSessionId,
+            AgentInvocationDispatchFactory.ResolvePersistedParentConversationId(metadata),
+            "持久父身份必须可从 delivery metadata 解析（键优先级 parent_conversation_id→parent_session_id→parent_session→conversation_id）");
+
+        await dispatcher.HandleAsync(
+            CreateSubAgentResultDeliveryEvent(eventSessionId: null, metadata),
+            CancellationToken.None);
+
+        Assert.AreEqual(1, runtime.StreamRequests.Count, "终态结果必须走 sub-agent 续行流式路径");
+        Assert.AreEqual(
+            parentSessionId,
+            runtime.StreamRequests[0].SessionId,
+            "事件 session 为空时仍必须续接持久父会话，不得落 main_session 兜底");
+        Assert.AreNotEqual(
+            "agent-b-main-session",
+            runtime.StreamRequests[0].SessionId,
+            "不得退化为绑定主会话（slice-1 不变式 I1）");
+        Assert.IsFalse(
+            runtime.StreamRequests[0].SessionId!.StartsWith("msg-", StringComparison.Ordinal),
+            "不得新建/落到 msg-* 会话");
+
+        var logs = JoinedLog(logSink);
+        // 注：slice-2 在 MessageDeliveryDispatcher.cs:667-672 已把持久父身份显式传入
+        // ParentConversationId，因此解析来源固定为 parent_param（优先级最高）；
+        // parent_identity 分支由 A01_T4b 直接覆盖 AgentInvocationDispatchFactory。
+        StringAssert.Contains(logs, "sessionSource=parent_param");
+        Assert.IsFalse(
+            logs.Contains("sessionSource=main_session", StringComparison.Ordinal),
+            "事件 session 为空时必须从持久父身份续行，绝不能出现 sessionSource=main_session");
+    }
+
+    [TestMethod]
+    public async Task A01_T4b_FactoryWithoutExplicitParentParam_ResolvesPersistedParentIdentity()
+    {
+        const string parentSessionId = "parent-conversation-t4b";
+        var logSink = new List<string>();
+        var factory = new AgentInvocationDispatchFactory(
+            new RecordingAgentRuntimeProfileResolver(
+                [Agent("agent-b", mainSessionId: "agent-b-main-session")]),
+            new SinkLogger<AgentInvocationDispatchFactory>(
+                new SinkLogger(logSink, nameof(AgentInvocationDispatchFactory))));
+
+        var dispatch = await factory.CreateForWorkspaceAgentAsync(
+            new WorkspaceAgentInvocation
+            {
+                WorkspaceId = "default",
+                AgentId = "agent-b",
+                MessageId = "m-t4b",
+                MessageText = "child completed",
+                EventSessionId = null,
+                ParentConversationId = null,
+                Metadata = SubAgentResultMetadata("run-t4b", parentSessionId),
+            });
+
+        Assert.IsTrue(dispatch.UsesStreamDispatch, "source=subagent 必须走 sub-agent 续行路径");
+        Assert.AreEqual(
+            parentSessionId,
+            dispatch.Request.SessionId,
+            "没有显式父会话参数时必须回退到持久父身份（agent persistence），而不是事件 session 或主会话");
+        StringAssert.Contains(
+            JoinedLog(logSink),
+            "sessionSource=parent_identity");
+    }
+
+    [TestMethod]
+    public async Task A01_T5_PeriodicRecoveryPath_KeepsParentSessionSource()
+    {
+        const string parentSessionId = "parent-conversation-t5";
+        var resultId = SubAgentResultIdentity.Compute("run-t5", "completed", parentSessionId);
+        var plan = SubAgentResultRoutePlan(resultId, parentSessionId, "delivery-t5");
+
+        await using var harness = await MessageFabricHarness.CreateAsync();
+        await using var storeDb = harness.CreateContext();
+        var store = new MessageFabricStore(storeDb);
+        Assert.IsTrue(await store.PersistRouteAsync("default", plan, CancellationToken.None));
+
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        var logSink = new List<string>();
+        await using var provider = CreateDispatcherProvider(store, runtime, harness.ConnectionString, logSink);
+        var dispatcher = CreateDispatcherFromProvider(provider);
+
+        // periodic-recovery 形态：sessionId: null / metadata: null
+        // （MessageDeliveryDispatcher.cs:1993-2005 的 TryDispatchKnownTargetsAsync）。
+        await dispatcher.RunRecoveryPassOnceAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, runtime.StreamRequests.Count, "恢复路径必须接续执行，不得静默丢弃已持久化的终态结果");
+        Assert.AreEqual(
+            parentSessionId,
+            runtime.StreamRequests[0].SessionId,
+            "恢复路径必须回到原父会话");
+        var logs = JoinedLog(logSink);
+        StringAssert.Contains(logs, "sessionSource=parent_param");
+        Assert.IsFalse(
+            logs.Contains("sessionSource=main_session", StringComparison.Ordinal),
+            "恢复路径不得退化为 sessionSource=main_session");
+    }
+
+    [TestMethod]
+    public async Task A01_T6_ReplayedTerminalResult_TriggersSingleParentContinuation()
+    {
+        const string parentSessionId = "parent-conversation-t6";
+        var resultId = SubAgentResultIdentity.Compute("run-t6", "completed", parentSessionId);
+        var plan = SubAgentResultRoutePlan(resultId, parentSessionId, "delivery-t6");
+
+        await using var harness = await MessageFabricHarness.CreateAsync();
+        await using var storeDb = harness.CreateContext();
+        var store = new MessageFabricStore(storeDb);
+        Assert.IsTrue(await store.PersistRouteAsync("default", plan, CancellationToken.None));
+
+        var runtime = new RecordingRuntimeAgentDispatcher();
+        await using var provider = CreateDispatcherProvider(store, runtime, harness.ConnectionString);
+        var dispatcher = CreateDispatcherFromProvider(provider);
+
+        await dispatcher.RunRecoveryPassOnceAsync(CancellationToken.None);
+        Assert.AreEqual(1, runtime.StreamRequests.Count, "首次投递必须触发一次父级接续");
+
+        // ACK 前崩溃 → 同一终态 result 被重放：确定性 MessageId 必须命中去重，不产生第二条投递。
+        Assert.IsFalse(
+            await store.PersistRouteAsync("default", plan, CancellationToken.None),
+            "重放的同一终态结果必须命中去重，不得新增投递");
+        await dispatcher.RunRecoveryPassOnceAsync(CancellationToken.None);
+
+        Assert.AreEqual(
+            1,
+            runtime.StreamRequests.Count,
+            "一个 result 只允许触发一次父级业务接续");
+        Assert.AreEqual(1, await storeDb.RoomMessages.CountAsync(), "重放不得新增 room_messages");
+        Assert.AreEqual(1, await storeDb.MessageDeliveries.CountAsync(), "重放不得新增 message_deliveries");
+    }
+
+    [TestMethod]
+    public async Task A01_T7_BusyParent_SubAgentResultDeferredWithoutFakeCompletion()
+    {
+        const string parentSessionId = "parent-conversation-t7";
+        var metadata = SubAgentResultMetadata("run-t7", parentSessionId);
+        var inbox = new RecordingMessageInbox
+        {
+            ClaimAttemptCount = 3,
+            ClaimMetadata = metadata,
+            ClaimContent = SubAgentResultEnvelopeContent,
+        };
+        var runtime = new RecordingRuntimeAgentDispatcher
+        {
+            StreamFrames =
+            [
+                ServerSentEventFrame.Json("error", new
+                {
+                    error = "Agent 'agent-b' is busy.",
+                    executionState = "Busy",
+                }),
+            ],
+        };
+        var dispatcher = CreateDispatcher(inbox, runtime);
+
+        await dispatcher.HandleAsync(
+            CreateSubAgentResultDeliveryEvent(eventSessionId: "session-1", metadata),
+            CancellationToken.None);
+
+        Assert.AreEqual(1, inbox.Deferred.Count, "父忙时终态结果必须延后排队（MessageDeliveryDispatcher.cs:831-857）");
+        Assert.AreEqual(0, inbox.Acked.Count, "父忙不得 ACK，否则终态结果丢失");
+        Assert.AreEqual(0, inbox.DeadLettered.Count, "父忙不是失败，不得死信");
+        Assert.AreEqual(0, inbox.Retried.Count, "父忙是排队而非失败退避，不得进入 retry");
+        Assert.AreEqual(1, runtime.StreamRequests.Count, "延后前必须已把父会话目标解析出来");
+        Assert.AreEqual(
+            parentSessionId,
+            runtime.StreamRequests[0].SessionId,
+            "父忙延后后目标仍必须是父会话");
+        Assert.IsFalse(
+            runtime.StreamRequests[0].SessionId!.StartsWith("msg-", StringComparison.Ordinal),
+            "父忙场景也绝不落 msg-* 会话");
+    }
+
+    private const string SubAgentResultEnvelopeContent = """
+    {
+      "schema": "pudding-message",
+      "version": 1,
+      "message_id": "msg-sub-result",
+      "message_type": "subagent_result",
+      "from": { "kind": "agent", "id": "sub-1", "display_name": "Sub Agent" },
+      "to": [{ "kind": "agent", "id": "agent-b" }],
+      "context": { "format": "text/markdown", "text": "child completed" }
+    }
+    """;
+
+    private static Dictionary<string, string> SubAgentResultMetadata(
+        string childRunId,
+        string parentSessionId,
+        string terminalStatus = "completed") =>
+        new()
+        {
+            ["source"] = "subagent",
+            ["intent"] = "subagent_result",
+            ["parent_session"] = parentSessionId,
+            ["parent_agent"] = "agent-b",
+            ["child_run_id"] = childRunId,
+            ["result_id"] = SubAgentResultIdentity.Compute(childRunId, terminalStatus, parentSessionId),
+        };
+
+    private static MessageRoutePlan SubAgentResultRoutePlan(
+        string resultId,
+        string parentSessionId,
+        string deliveryId) =>
+        new()
+        {
+            MessageId = resultId,
+            RoomMessage = new RoomMessageDraft
+            {
+                RoomId = "room-default",
+                MessageId = resultId,
+                From = new MessageAddress
+                {
+                    Kind = MessageEndpointKinds.Agent,
+                    Id = "sub-1",
+                    WorkspaceId = "default",
+                    DisplayName = "Sub Agent",
+                },
+                Audience = MessageAudiences.Direct,
+                Visibility = MessageVisibilities.System,
+                Content = SubAgentResultEnvelopeContent,
+                ConversationId = parentSessionId,
+                CreatedAt = 1_700_000_000_000,
+                Metadata = SubAgentResultMetadata("run-route", parentSessionId),
+            },
+            Deliveries =
+            [
+                new MessageDeliveryDraft
+                {
+                    DeliveryId = deliveryId,
+                    MessageId = resultId,
+                    Target = new MessageAddress
+                    {
+                        Kind = MessageEndpointKinds.Agent,
+                        Id = "agent-b",
+                        WorkspaceId = "default",
+                    },
+                    Priority = 5,
+                },
+            ],
+        };
+
+    private static InternalEvent CreateSubAgentResultDeliveryEvent(
+        string? eventSessionId,
+        IReadOnlyDictionary<string, string> metadata) =>
+        new()
+        {
+            Type = "message.deliver",
+            SessionId = eventSessionId,
+            WorkspaceId = "default",
+            Source = new EventSource { SourceType = "message", SourceId = "m-sub-result" },
+            Payload = new MessageDeliverEventPayload
+            {
+                MessageId = "m-sub-result",
+                DeliveryId = "d-sub-result",
+                WorkspaceId = "default",
+                RoomId = "room-default",
+                From = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "sub-1" },
+                Target = new MessageAddress { Kind = MessageEndpointKinds.Agent, Id = "agent-b" },
+                Content = SubAgentResultEnvelopeContent,
+                HandlingMode = MessageDeliveryHandlingModes.Execute,
+                Metadata = metadata,
+            },
+        };
+
+    private static ServiceProvider CreateDispatcherProvider(
+        IMessageInbox inbox,
+        IRuntimeAgentDispatcher runtime,
+        string? connectionString = null,
+        List<string>? logSink = null)
+    {
+        var services = new ServiceCollection();
+        var catalog = new RecordingWorkspaceAgentCatalog(
+            Agent("agent-b", mainSessionId: "agent-b-main-session"));
+        services.AddScoped<IMessageInbox>(_ => inbox);
+        services.AddScoped<IRuntimeAgentDispatcher>(_ => runtime);
+        services.AddScoped<IWorkspaceAgentCatalog>(_ => catalog);
+        services.AddScoped<IAgentRuntimeProfileResolver>(
+            _ => new RecordingAgentRuntimeProfileResolver(catalog.Agents));
+        services.AddScoped<IAgentInvocationDispatchFactory, AgentInvocationDispatchFactory>();
+        services.AddScoped<ISubmitTurnHandler>(_ => new RecordingSubmitTurnHandler());
+        services.AddScoped<IConversationNotificationStore>(_ => new RecordingConversationNotificationStore());
+        if (connectionString is not null)
+            services.AddDbContext<PlatformDbContext>(options => options.UseSqlite(connectionString));
+        if (logSink is not null)
+            services.AddLogging(builder => builder.AddProvider(new SinkLoggerProvider(logSink)));
+        else
+            services.AddLogging();
+        return services.BuildServiceProvider();
+    }
+
+    private static MessageDeliveryDispatcher CreateDispatcherFromProvider(IServiceProvider provider) =>
+        new(
+            new RecordingInternalEventBus(),
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            new AgentWakeQueue(NullLogger<AgentWakeQueue>.Instance),
+            new AgentExecutionAdmissionCoordinator(),
+            NullLogger<MessageDeliveryDispatcher>.Instance);
+
+    private static string JoinedLog(List<string> logSink)
+    {
+        lock (logSink)
+            return string.Join("\n", logSink);
+    }
+
+    private sealed class SinkLogger(List<string> sink, string category) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            var line = $"{category}|{logLevel}|{formatter(state, exception)}";
+            lock (sink)
+                sink.Add(line);
+        }
+    }
+
+    private sealed class SinkLogger<TCategory>(ILogger inner) : ILogger<TCategory>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull =>
+            inner.BeginScope(state);
+
+        public bool IsEnabled(LogLevel logLevel) => inner.IsEnabled(logLevel);
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            inner.Log(logLevel, eventId, state, exception, formatter);
+    }
+
+    private sealed class SinkLoggerProvider(List<string> sink) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new SinkLogger(sink, categoryName);
+
+        public void Dispose()
+        {
+        }
+    }
+
+    /// <summary>
+    /// 共享缓存内存 SQLite 夹具：每个 PlatformDbContext 使用独立连接（避免单连接并发），
+    /// keep-alive 连接保证内存库在测试期间存活。库名中的 Guid 仅用于测试隔离，
+    /// 不参与任何幂等键派生。
+    /// </summary>
+    private sealed class MessageFabricHarness : IAsyncDisposable
+    {
+        private readonly SqliteConnection _keepAlive;
+
+        private MessageFabricHarness(string connectionString, SqliteConnection keepAlive)
+        {
+            ConnectionString = connectionString;
+            _keepAlive = keepAlive;
+        }
+
+        public string ConnectionString { get; }
+
+        public static async Task<MessageFabricHarness> CreateAsync()
+        {
+            var connectionString =
+                $"Data Source=a01slice2_{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
+            var keepAlive = new SqliteConnection(connectionString);
+            await keepAlive.OpenAsync();
+            var harness = new MessageFabricHarness(connectionString, keepAlive);
+            await using (var db = harness.CreateContext())
+                await db.Database.EnsureCreatedAsync();
+            return harness;
+        }
+
+        public PlatformDbContext CreateContext() =>
+            new(new DbContextOptionsBuilder<PlatformDbContext>()
+                .UseSqlite(ConnectionString)
+                .Options);
+
+        public async ValueTask DisposeAsync() => await _keepAlive.DisposeAsync();
+    }
+
     private static async Task<ChatMessageEntity> PersistSubAgentTranscriptAsync(
         IReadOnlyList<ServerSentEventFrame> frames)
     {
@@ -1380,8 +1869,8 @@ public sealed class MessageDeliveryDispatcherTests
         return await db.ChatMessages.SingleAsync(m => m.SessionId == "session-1" && m.Role == "agent");
     }
 
-    private static MessageDeliveryDispatcher CreateDispatcher(
-        RecordingMessageInbox inbox,
+        private static MessageDeliveryDispatcher CreateDispatcher(
+        IMessageInbox inbox,
         IRuntimeAgentDispatcher runtime,
         RecordingAgentExecutionAvailabilityProvider? availability = null,
         RecordingInternalEventBus? eventBus = null,
@@ -1389,7 +1878,8 @@ public sealed class MessageDeliveryDispatcherTests
         RecordingMessageSystem? messageSystem = null,
         RecordingSubmitTurnHandler? submitTurnHandler = null,
         RecordingConversationNotificationStore? notificationStore = null,
-        AgentExecutionAdmissionCoordinator? admissionCoordinator = null)
+        AgentExecutionAdmissionCoordinator? admissionCoordinator = null,
+        List<string>? logSink = null)
     {
         var services = new ServiceCollection();
         var effectiveCatalog = catalog ?? new RecordingWorkspaceAgentCatalog(
@@ -1404,8 +1894,11 @@ public sealed class MessageDeliveryDispatcherTests
         }
         services.AddScoped<IWorkspaceAgentCatalog>(_ => effectiveCatalog);
         services.AddScoped<IAgentRuntimeProfileResolver>(_ => new RecordingAgentRuntimeProfileResolver(effectiveCatalog.Agents));
-        services.AddScoped<IAgentInvocationDispatchFactory, AgentInvocationDispatchFactory>();
-        services.AddLogging();
+                services.AddScoped<IAgentInvocationDispatchFactory, AgentInvocationDispatchFactory>();
+        if (logSink is not null)
+            services.AddLogging(builder => builder.AddProvider(new SinkLoggerProvider(logSink)));
+        else
+            services.AddLogging();
         if (messageSystem is not null)
             services.AddScoped<IMessageSystem>(_ => messageSystem);
         services.AddScoped<ISubmitTurnHandler>(

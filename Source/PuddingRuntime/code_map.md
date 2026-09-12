@@ -141,7 +141,7 @@
 | `Services/SessionArchiver.cs` | 会话归档 |
 | `Services/HeartbeatService.cs` | 会话超时资源清理（不是 Agent 自主心跳编排） |
 | `Tools/BuiltIns/Agents/AgentStatusTool.cs` | Agent 状态只读诊断；优先返回持久 Availability version/reason/active Task/Goal/SubAgent，投影缺失或过期报告 unknown，不从 wake queue 缺席推导 idle |
-| `Services/AgentInvocationDispatchFactory.cs` | 服务端 message metadata → Runtime dispatch；Task-bound Goal 透传 task/assignment/version 与 reservation fencing token 到 ActiveTask |
+| `Services/AgentInvocationDispatchFactory.cs` | 服务端 message metadata → Runtime dispatch；`WorkspaceAgentInvocation.ParentConversationId` 与 `ResolvePersistedParentConversationId` 固化父身份键优先级 `parent_conversation_id→parent_session_id→parent_session→conversation_id`，stream dispatch 按 显式父身份→元数据→事件 session→主会话 解析并输出 `sessionSource`，缺失时抛错而非伪造 `msg-*` 会话；Task-bound Goal 透传 task/assignment/version 与 reservation fencing token 到 ActiveTask |
 | `Services/AgentWakeQueue.cs` | 唤醒队列 |
 | `Services/StreamWatchdog.cs` | 流看门狗 |
 | `Services/Events/InternalEventBus.cs` | 当前进程内 fire-and-forget pub/sub；目标只保留 non-critical live notification 或作为 durable publisher adapter |

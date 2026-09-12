@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
@@ -701,8 +703,14 @@ public sealed class SubAgentManager : ISubAgentManager
             var status = string.IsNullOrWhiteSpace(terminalStatus)
                 ? success ? "completed" : "failed"
                 : terminalStatus;
+
+            // A01-slice-2：终态结果的确定性幂等身份。
+            // 同一 (childRunId, 终态, 父会话) 必然派生出相同 id，且以该 id 作为 MessageId，
+            // 因此崩溃重投/重复终态会命中 MessageFabricStore 的 MessageId 去重。
+            var resultId = SubAgentResultIdentity.Compute(runId, status, request.ParentSessionId);
             var baseEnvelope = new MessageEnvelope
             {
+                MessageId = resultId,
                 From = new MessageAddress
                 {
                     Kind = MessageEndpointKinds.Agent,
@@ -744,6 +752,8 @@ public sealed class SubAgentManager : ISubAgentManager
             metadata["parent_session"] = request.ParentSessionId;
             metadata["parent_agent"] = request.ParentAgentId!;
             metadata["run_id"] = runId ?? "";
+            metadata["child_run_id"] = runId ?? "";
+            metadata["result_id"] = resultId;
             metadata["tool_failure_count"] = toolFailureCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
             metadata["tool_output_truncated_count"] = toolOutputTruncatedCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
             metadata["tool_output_chars"] = toolOutputChars.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -756,13 +766,16 @@ public sealed class SubAgentManager : ISubAgentManager
                 Metadata = metadata,
             };
 
-            await messageSystem.SendAsync(envelope, ct);
+            var sendResult = await messageSystem.SendAsync(envelope, ct);
             _logger.LogInformation(
-                "[SubAgentMgr] Completion message sent parent={Parent} agent={Agent} sub={Sub} status={Status}",
+                "[SubAgentMgr] Completion message sent parent={Parent} agent={Agent} sub={Sub} status={Status} resultId={ResultId} childRunId={ChildRunId} deliveryCount={DeliveryCount}",
                 request.ParentSessionId,
                 request.ParentAgentId,
                 subSessionId,
-                status);
+                status,
+                resultId,
+                runId ?? "",
+                sendResult.DeliveryIds.Count);
         }
         catch (Exception ex)
         {
@@ -1284,4 +1297,37 @@ internal static class SubAgentManagerMetadataExtensions
         if (!string.IsNullOrWhiteSpace(value))
             metadata[key] = value.Trim();
     }
+}
+
+/// <summary>
+/// A01-slice-2：子代理终态结果的确定性幂等身份。
+/// </summary>
+/// <remarks>
+/// 同一 (childRunId, 终态, 父会话) 必须派生出完全相同的 id：派生过程不含时间戳、
+/// 随机数或 <see cref="Guid"/>，因此进程崩溃后的重投与重复终态都会命中
+/// <c>MessageFabricStore</c> 按 <c>MessageId</c> 的去重，保证“一个 result 只触发一次
+/// 父级接续”。终态参与派生，故 running→completed 与 failed→completed 不会互相吞并。
+/// </remarks>
+public static class SubAgentResultIdentity
+{
+    public const string Prefix = "subresult:";
+
+    public static string Compute(
+        string? childRunId,
+        string? terminalStatus,
+        string? parentSessionId)
+        => Prefix + Hash(string.Join(
+            "|",
+            childRunId?.Trim() ?? string.Empty,
+            NormalizeTerminalStatus(terminalStatus),
+            parentSessionId?.Trim() ?? string.Empty));
+
+    public static string NormalizeTerminalStatus(string? terminalStatus)
+        => string.IsNullOrWhiteSpace(terminalStatus)
+            ? "unknown"
+            : terminalStatus.Trim().ToLowerInvariant();
+
+    private static string Hash(string seed)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(seed)))
+            .ToLowerInvariant()[..32];
 }
