@@ -263,15 +263,25 @@ const timestamp = (event: SubAgentConversationEvent): number => {
   return Date.now();
 };
 
-const canonicalSubAgentEventPrefixes = [
-  'subagent.run.',
-  'subagent.round.',
-  'subagent.llm.',
-  'subagent.tool.',
-];
+// ADR-060：只有带稳定 runId 的 canonical 子代理事件才能进入运行视图；
+// ADR-016 的旧帧没有稳定 runId 与终态语义，回放会把历史运行复活成永久 active。
+// 因此这里用「旧帧黑名单」而不是「canonical 白名单」：后端每新增一族 canonical
+// 事实（subagent.budget.notice / subagent.context.compacted /
+// subagent.tool_discovery.stalled / subagent.output_contract.completed …，见
+// PuddingCore/Platform/ConversationContracts.cs 与
+// PuddingRuntime/Services/AgentExecution/AgentExecutionService.Buffered.cs）
+// 都会被接纳，不再因前端前缀白名单过期而静默丢事件（SA-TRACE）。
+const legacySubAgentEventTypes = new Set([
+  'subagent.spawned',
+  'subagent.delta',
+  'subagent.thinking',
+  'subagent.tool_call',
+  'subagent.tool_result',
+  'subagent.completed',
+]);
 
 const isCanonicalSubAgentEvent = (type: string): boolean =>
-  canonicalSubAgentEventPrefixes.some((prefix) => type.startsWith(prefix));
+  type.startsWith('subagent.') && !legacySubAgentEventTypes.has(type);
 
 const isTerminalType = (type: string): boolean =>
   type === 'subagent.run.completed' ||
@@ -310,6 +320,14 @@ const activityLabel = (
       return `${toolName} 执行完成`;
     case 'subagent.tool.failed':
       return `${toolName} 执行失败`;
+    case 'subagent.budget.notice':
+      return '预算提示';
+    case 'subagent.context.compacted':
+      return '上下文已压缩';
+    case 'subagent.tool_discovery.stalled':
+      return '工具发现停滞';
+    case 'subagent.output_contract.completed':
+      return '输出契约已提交';
     case 'subagent.run.completed':
       return '子代理执行完成';
     case 'subagent.run.budget_exhausted':
