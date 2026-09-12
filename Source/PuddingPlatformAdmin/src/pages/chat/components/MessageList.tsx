@@ -352,6 +352,10 @@ const createProjectedTurn = (
       timestamp,
       status: isUser ? toUserMessageStatus(message.status) : 'success',
       metadata: isUser ? message.metadata : undefined,
+      // ADR-077：图片事实以 canonical contentParts 为准，投影阶段必须透传；
+      // 否则消费侧（extractVisionArtifactIds）取不到 artifactId，用户图片
+      // 只能降级为「图片」占位符。
+      contentParts: isUser ? (message.contentParts ?? undefined) : undefined,
     },
     assistant: {
       id: isUser ? `${turnId}:placeholder-assistant` : message.messageId,

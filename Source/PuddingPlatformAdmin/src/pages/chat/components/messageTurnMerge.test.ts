@@ -4,7 +4,7 @@
 //  2. mergeProjectedMessageIntoTurns：同一 agent 消息（messageId 稳定）经投影
 //     刷新重复到达时原地更新，不得追加为第二张卡片（轨迹卡/正文卡分裂）。
 import type { ConversationMessageView } from '../client/types';
-import type { ChatTurn } from '../types';
+import { extractVisionArtifactIds, type ChatTurn } from '../types';
 import {
   mergeActiveRunAssistant,
   mergeProjectedMessageIntoTurns,
@@ -57,6 +57,20 @@ const createAgentMessage = (
     processItems: [],
     ...overrides,
   }) as unknown as ConversationMessageView;
+
+const createUserMessage = (
+  overrides: Partial<ConversationMessageView> = {},
+): ConversationMessageView => ({
+  messageId: 'msg-user-1',
+  role: 'user',
+  sourceId: 'user',
+  sourceName: '我',
+  content: '看一下这张图',
+  createdAt: '2026-08-23T00:00:00.000Z',
+  status: 'succeeded',
+  processItems: [],
+  ...overrides,
+});
 
 describe('mergeActiveRunAssistant 终态守卫', () => {
   it('本地已终态（success）时，滞后的 activeRun 快照不得回退 status/isStreaming', () => {
@@ -180,5 +194,45 @@ describe('mergeProjectedMessageIntoTurns 同 messageId 原地更新', () => {
 
     expect(turns).toHaveLength(2);
     expect(turns[1].assistant.answerMarkdown).toBe('第二轮回答');
+  });
+});
+
+// ── canonical 投影用户图片部件透传（V6-T8）────────────────────────────────
+//  conversationView.messages 的 canonical 投影曾丢失 contentParts，导致用户
+//  图片经投影后降级为「图片」占位符。此锁定：用户消息必须透传 contentParts。
+describe('createProjectedTurn 用户消息 contentParts 透传', () => {
+  it('投影用户消息时保留 canonical contentParts，图片 artifactId 可被消费', () => {
+    const turns: ChatTurn[] = [];
+
+    mergeProjectedMessageIntoTurns(
+      turns,
+      createUserMessage({
+        contentParts: [
+          { type: 'image', artifactId: 'vision-a', detail: 'original' },
+        ],
+      }),
+      'Pudding',
+    );
+
+    expect(turns).toHaveLength(1);
+    expect(turns[0].userMessage.contentParts).toEqual([
+      { type: 'image', artifactId: 'vision-a', detail: 'original' },
+    ]);
+    expect(extractVisionArtifactIds(turns[0])).toEqual(['vision-a']);
+  });
+
+  it('非用户消息不携带 contentParts（不污染 agent 投影）', () => {
+    const turns: ChatTurn[] = [];
+
+    mergeProjectedMessageIntoTurns(
+      turns,
+      createAgentMessage({
+        contentParts: [{ type: 'image', artifactId: 'vision-a' }],
+      }),
+      'Pudding',
+    );
+
+    expect(turns).toHaveLength(1);
+    expect(turns[0].userMessage.contentParts).toBeUndefined();
   });
 });

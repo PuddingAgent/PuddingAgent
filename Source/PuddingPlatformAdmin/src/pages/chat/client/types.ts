@@ -1,4 +1,7 @@
-import type { ToolPresentationDto } from '@/services/platform/api';
+import type {
+  ConversationContentPartView,
+  ToolPresentationDto,
+} from '@/services/platform/api';
 
 export type AgentRunStatus =
   | 'queued'
@@ -126,6 +129,8 @@ export interface ConversationMessageView {
   createdAt: string;
   content: string;
   metadata?: Record<string, string>;
+  /** ADR-077：服务端 authoritative 内容部件安全摘要（回放图片用）。 */
+  contentParts?: ConversationContentPartView[] | null;
   status:
     | 'sending'
     | 'sent'
