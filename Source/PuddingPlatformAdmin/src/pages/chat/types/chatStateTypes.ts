@@ -1,5 +1,11 @@
 import type { FormInstance } from 'antd';
-import type { KeyboardEvent, ReactNode, RefObject } from 'react';
+import type {
+  Dispatch,
+  KeyboardEvent,
+  ReactNode,
+  RefObject,
+  SetStateAction,
+} from 'react';
 import type {
   TokenUsageDto,
   WorkspaceAgentDto,
@@ -18,6 +24,10 @@ import type { ScrollIntent } from '../viewport/types';
 import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
 
 export const MESSAGE_PAGE_SIZE = 20;
+export interface BufferedAnswerDelta {
+  delta: string;
+  baseLength: number;
+}
 export const SESSION_EVENT_PAGE_SIZE = 50;
 export const ACTIVE_SESSION_REPLAY_POLL_INTERVAL_MS = 900;
 export const IDLE_SESSION_REPLAY_POLL_INTERVAL_MS = 8000;
@@ -141,6 +151,8 @@ export type ChatDiagWindow = Window & {
 };
 
 export interface UseChatStateReturn {
+  reconnectCountRef: RefObject<number>;
+  reconnectCount: number;
   workspaces: WorkspaceWithPermDto[];
   workspaceId: string | undefined;
   workspaceLoading: boolean;
@@ -163,7 +175,7 @@ export interface UseChatStateReturn {
   hasMoreMessages: boolean;
   loadingMore: boolean;
   inputValue: string;
-  setInputValue: (value: string) => void;
+  setInputValue: Dispatch<SetStateAction<string>>;
   loading: boolean;
   workingAgentIds: string[];
   interactionQueue: ChatInteractionQueueItem[];
@@ -230,6 +242,14 @@ export interface UseChatStateReturn {
   ) => Promise<string | undefined>;
   sendMessage: (text: string, options?: ChatSendOptions) => Promise<void>;
   submitInteraction: (text: string, options?: ChatSendOptions) => Promise<void>;
+  /**
+   * 把文本注入当前正在运行的 canonical Turn（Steering）。
+   * 返回是否被受理；失败时调用方应保留/恢复草稿。
+   */
+  submitSteeringInteraction: (
+    text: string,
+    sourceQueueItemId?: string,
+  ) => Promise<boolean>;
   enqueueInteraction: (
     text: string,
     options?: ChatSendOptions,
@@ -240,8 +260,13 @@ export interface UseChatStateReturn {
   steerQueuedInteraction: (id: string) => Promise<void>;
   /** 后端尚未开放重排命令，当前调用会被安全忽略。 */
   reorderQueuedInteraction: (fromId: string, toId: string) => void;
-  /** 中止当前页面请求；已受理的服务端 Turn 不会被清空。 */
+  /** 取消全部：停止当前执行 + 清除未注入的本地补充；已受理的服务端 Turn 不会被丢弃。 */
   stopQueue: () => void;
+  /**
+   * 请求服务端协作式取消当前运行的 canonical Turn（ADR-059）。
+   * 返回成功受理的取消请求数；无运行中执行时返回 0。
+   */
+  requestActiveTurnCancel: () => Promise<number>;
   handleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   loadMoreMessages: () => Promise<void>;
   resetConversation: (

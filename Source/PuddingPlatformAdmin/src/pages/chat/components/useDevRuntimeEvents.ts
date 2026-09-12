@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { ChatTurn } from '../types';
-import type { DevRawEvent } from './DevPanel';
+import type { DevRawEvent } from './DevPanel/types';
 
 type TurnSnapshot = {
   reasoningCount: number;

@@ -180,17 +180,21 @@ describe('IntentConsole', () => {
 
     expect(screen.getByTestId('interaction-queue')).toBeTruthy();
     expect(
-      screen.getByText('后端消息队列快照，调度由 Agent 服务管理'),
+      screen.getByText('仅显示未认领消息；认领后转入会话轨迹 · ⚡ 可插嘴当前 Agent'),
     ).toBeTruthy();
     const queueMessage = screen.getByLabelText('队列消息');
     expect(queueMessage.getAttribute('aria-readonly')).toBe('true');
     expect(queueMessage.tagName).toBe('DIV');
-    fireEvent.click(screen.getByRole('button', { name: '引导 Agent' }));
 
+    // 展开队列面板后动作按钮才进入可访问树（aria-hidden=!open）
+    fireEvent.click(screen.getByTestId('message-queue-trigger'));
+    // 后端队列项不能在前端转换为插嘴（避免重复执行），⚡ 按钮保持禁用
+    const steerButton = screen.getByRole('button', {
+      name: '引导 Agent',
+    }) as HTMLButtonElement;
+    expect(steerButton.disabled).toBe(true);
     expect(updateQueued).not.toHaveBeenCalled();
-    await waitFor(() => {
-      expect(steerQueued).toHaveBeenCalledWith('queue-1');
-    });
+    expect(steerQueued).not.toHaveBeenCalled();
   });
 
   it('P1#10: renders retrying via queue dropdown — real retry warning + summary, busy-wait waiting without error', () => {
@@ -224,8 +228,8 @@ describe('IntentConsole', () => {
       />,
     );
 
-    // retrying ×2 归入排队：排队 2 · 执行 0 · 终态 0
-    expect(screen.getByText('排队 2 · 执行 0 · 终态 0')).toBeTruthy();
+    // retrying ×2 归入排队：2 待认领 · 0 引导中 · 0 已结束
+    expect(screen.getByText('2 待认领 · 0 引导中 · 0 已结束')).toBeTruthy();
     // 真实失败重试：警示标签 + 尝试次数 + 摘要错误
     expect(screen.getByText('重试中 · 第 2 次')).toBeTruthy();
     expect(screen.getByText('执行超时，正在重试')).toBeTruthy();
@@ -378,5 +382,84 @@ describe('IntentConsole', () => {
     } finally {
       createElement.mockRestore();
     }
+  });
+
+  // ── P0-A 第一批：鼠标排队 / 独立停止 / 补充当前任务 ──
+
+  it('running composer sends via the same submit chain as Enter instead of hijacking stop', () => {
+    const onSend = jest.fn();
+    const onStop = jest.fn();
+    render(
+      <IntentConsole
+        {...baseProps}
+        loading
+        status="streaming"
+        inputValue="排队第二条消息"
+        onSend={onSend}
+        onStop={onStop}
+      />,
+    );
+
+    const queueButton = screen.getByRole('button', { name: '加入队列' });
+    fireEvent.click(queueButton);
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onStop).not.toHaveBeenCalled();
+  });
+
+  it('renders a dedicated stop button while running and hides it when idle', () => {
+    const onStop = jest.fn();
+    const { rerender } = render(
+      <IntentConsole
+        {...baseProps}
+        loading
+        status="streaming"
+        onStop={onStop}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '停止当前执行' }));
+    expect(onStop).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <IntentConsole
+        {...baseProps}
+        loading={false}
+        status="completed"
+        onStop={onStop}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: '停止当前执行' })).toBeNull();
+    expect(screen.getByRole('button', { name: '发送' })).toBeTruthy();
+  });
+
+  it('offers a steer menu while running with a text draft, sharing the Ctrl/Cmd+Enter chain', async () => {
+    const onSteerCurrent = jest.fn(async () => true);
+
+    function ControlledComposer() {
+      const [value, setValue] = React.useState('请顺带检查错误日志');
+      return (
+        <IntentConsole
+          {...baseProps}
+          loading
+          status="tool_executing"
+          inputValue={value}
+          onInputChange={setValue}
+          onSteerCurrent={onSteerCurrent}
+        />
+      );
+    }
+
+    render(<ControlledComposer />);
+
+    fireEvent.click(screen.getByRole('button', { name: '补充给当前任务' }));
+    // 菜单项可访问名含图标 aria-label（"thunderbolt …"），用正则匹配文本部分
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /补充给当前任务/ }),
+    );
+
+    await waitFor(() => {
+      expect(onSteerCurrent).toHaveBeenCalledWith('请顺带检查错误日志');
+    });
   });
 });

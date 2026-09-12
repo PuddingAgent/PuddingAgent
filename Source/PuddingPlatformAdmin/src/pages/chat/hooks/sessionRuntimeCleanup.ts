@@ -8,6 +8,7 @@
 //   2. clearDeletedSessionReferences — 只清理 projectionOwned / 间接引用，永远不碰 SSE
 
 import type { MutableRefObject } from 'react';
+import type { BufferedAnswerDelta } from '../types/chatStateTypes';
 
 /** 当 API 返回 404 或 session 被删除/归档时抛出，用于跨层传播 */
 export class SessionNotFoundError extends Error {
@@ -46,7 +47,7 @@ export interface SessionRuntimeRefs {
   sessionEventsReconnectTimerRef: MutableRefObject<number | null>;
   deltaFlushTimerRef: MutableRefObject<number | null>;
   thinkingFlushTimerRef: MutableRefObject<number | null>;
-  pendingDeltaRef: MutableRefObject<Map<string, string>>;
+  pendingDeltaRef: MutableRefObject<Map<string, BufferedAnswerDelta>>;
   pendingThinkingRef: MutableRefObject<Map<string, string>>;
   streamStartAtRef: MutableRefObject<Map<string, number>>;
   messageIdToAgentIdsRef: MutableRefObject<Map<string, string[]>>;

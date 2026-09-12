@@ -8,8 +8,9 @@ import {
   SendOutlined,
   SettingOutlined,
   StopOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
-import { message, Popover, Tooltip } from 'antd';
+import { Dropdown, message, Popover, Tooltip } from 'antd';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   type CacheDiagnosticsReport,
@@ -148,6 +149,12 @@ interface IntentConsoleProps {
     imageParts?: { type: 'image'; artifactId: string; detail?: 'original' | 'low' }[],
   ) => Promise<void> | void;
   onStop: () => void;
+  /**
+   * 运行中把当前草稿补充给正在执行的 Turn（Steering）。
+   * 返回是否被受理；失败时由调用方保留草稿。
+   * 与 Ctrl/Cmd+Enter 走同一提交链，鼠标键盘语义一致。
+   */
+  onSteerCurrent?: (text: string) => Promise<boolean> | boolean;
   onExport: () => void;
   onOpenDevDetails?: () => void;
   disabled: boolean;
@@ -221,6 +228,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   onSend,
   onSendWithMetadata,
   onStop,
+  onSteerCurrent,
   onExport,
   onOpenDevDetails,
   disabled,
@@ -466,10 +474,8 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   }, []);
 
   const handleComposerSend = useCallback(async () => {
-    if (loading) {
-      onStop();
-      return;
-    }
+    // 运行中鼠标与键盘语义一致：有草稿即走同一提交链（Agent 忙碌时由服务端排队）。
+    // “停止”由独立的停止按钮承担，不再挪用发送按钮。
     if (pendingImages.length === 0) {
       onSend();
       return;
@@ -522,16 +528,21 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   }, [
     disabled,
     imageUploading,
-    loading,
     onSend,
     onSendWithMetadata,
-    onStop,
     pendingImages,
     workspaceId,
   ]);
   handleComposerSendRef.current = () => {
     void handleComposerSend();
   };
+
+  /** 运行中把当前草稿补充给正在执行的 Turn；受理与否的草稿处理由上层完成。 */
+  const handleSteerFromDraft = useCallback(() => {
+    const draft = (textInputRef.current?.getValue() ?? '').trim();
+    if (!draft || !onSteerCurrent) return;
+    void Promise.resolve(onSteerCurrent(draft));
+  }, [onSteerCurrent]);
 
   const handleOpenImagePicker = useCallback(() => {
     imageFileInputRef.current?.click();
@@ -755,6 +766,22 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     ],
     );
 
+  /** 发送区状态机：空闲=发送；运行中有草稿=加入队列；“停止当前执行”独立显示。 */
+  const hasComposerDraft = composerHasText || pendingImages.length > 0;
+  /** 补充入口仅在有可注入的文本草稿且当前有运行中 Turn 时出现（图片无法插嘴）。 */
+  const steerEntryAvailable =
+    loading && composerHasText && Boolean(onSteerCurrent);
+  /** 状态胶囊是 role=button 的 span：补键盘激活（Enter/Space），不改变视觉。 */
+  const handleStatusPillKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLSpanElement>) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        handleStatusDetailsOpenChange(true);
+      }
+    },
+    [handleStatusDetailsOpenChange],
+  );
+
   return (
     <div
       className={`${styles.composerSurface} ${recording ? styles.composerRecording : ''}`}
@@ -903,6 +930,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                     tabIndex={0}
                     aria-label="查看运行状态详情"
                     onClick={() => handleStatusDetailsOpenChange(true)}
+                    onKeyDown={handleStatusPillKeyDown}
                   >
                     <span
                       className={styles.composerStatusDot}
@@ -1049,33 +1077,80 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 )}
               </button>
             </Tooltip>
+            {loading && (
+              <Tooltip title="停止当前执行；已排队消息不受影响">
+                <button
+                  type="button"
+                  className={styles.composerStopButton}
+                  onClick={onStop}
+                  disabled={disabled}
+                  data-testid="chat-stop"
+                  aria-label="停止当前执行"
+                >
+                  <StopOutlined />
+                </button>
+              </Tooltip>
+            )}
+            {steerEntryAvailable && (
+              <Dropdown
+                trigger={['click']}
+                placement="topRight"
+                menu={{
+                  items: [
+                    {
+                      key: 'steer-current',
+                      icon: <ThunderboltOutlined />,
+                      label: '补充给当前任务',
+                    },
+                  ],
+                  onClick: ({ key }) => {
+                    if (key === 'steer-current') handleSteerFromDraft();
+                  },
+                }}
+              >
+                <Tooltip title="补充给当前任务：在当前步骤结束后注入运行中的 Agent（同 Ctrl/Cmd+Enter）">
+                  <button
+                    type="button"
+                    className={styles.composerToolbarButton}
+                    data-testid="chat-steer-menu"
+                    aria-label="补充给当前任务"
+                    aria-haspopup="menu"
+                  >
+                    <ThunderboltOutlined />
+                  </button>
+                </Tooltip>
+              </Dropdown>
+            )}
             <Tooltip
               title={
-                loading ? '停止生成' : imageUploading ? '图片上传中…' : '发送'
+                imageUploading
+                  ? '图片上传中…'
+                  : loading
+                    ? hasComposerDraft
+                      ? '加入队列：当前回复完成后自动投递（同 Enter）'
+                      : '输入内容后可加入队列'
+                    : '发送'
               }
             >
               <button
                 type="button"
                 className={styles.composerSendButton}
-                data-loading={loading ? 'true' : undefined}
+                data-queued={loading && hasComposerDraft ? 'true' : undefined}
                 onClick={() => void handleComposerSend()}
                 disabled={
-                  loading
-                    ? false
-                    : (!composerHasText && pendingImages.length === 0) ||
-                      disabled ||
-                      imageUploading
+                  !hasComposerDraft || disabled || imageUploading
                 }
                 data-testid="chat-send"
-                aria-label={loading ? '停止生成' : '发送'}
+                aria-label={
+                  loading && hasComposerDraft ? '加入队列' : '发送'
+                }
               >
-                {loading ? (
-                  <StopOutlined />
-                ) : imageUploading ? (
+                {imageUploading ? (
                   <LoadingOutlined spin />
                 ) : (
                   <SendOutlined />
                 )}
+                {loading && hasComposerDraft && <span>加入队列</span>}
               </button>
             </Tooltip>
           </div>

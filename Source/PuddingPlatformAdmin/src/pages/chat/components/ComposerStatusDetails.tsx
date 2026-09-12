@@ -40,6 +40,7 @@ interface ComposerStatusDetailsProps {
 /** 状态文案映射 */
 const STATUS_LABEL: Record<ComposerRuntimeSummary['status'], string> = {
   idle: '就绪',
+  initializing: '正在初始化…',
   composing: '输入中…',
   thinking: '正在整理上下文…',
   tool_executing: '正在调用工具…',

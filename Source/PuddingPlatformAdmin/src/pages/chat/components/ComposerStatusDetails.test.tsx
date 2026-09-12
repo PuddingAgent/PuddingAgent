@@ -46,6 +46,15 @@ describe('ComposerStatusDetails', () => {
     expect(screen.queryByText('7600%')).toBeNull();
   });
 
+  it('provides the initializing label when no custom status label is set', () => {
+    render(
+      <ComposerStatusDetails
+        summary={{ ...baseSummary, status: 'initializing', statusLabel: '' }}
+      />,
+    );
+    expect(screen.getByText('正在初始化…')).toBeTruthy();
+  });
+
   it('describes token capacity as remaining effective context', () => {
     render(
       <ComposerStatusDetails

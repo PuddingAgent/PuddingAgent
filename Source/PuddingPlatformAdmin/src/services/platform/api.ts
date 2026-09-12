@@ -2949,6 +2949,32 @@ export async function awaitConversationTurn(
   });
 }
 
+export interface CancelConversationTurnResult {
+  conversationId: string;
+  turnId: string;
+  status: string;
+}
+
+/**
+ * ADR-059：请求协作式取消正在运行的 canonical Turn。
+ * 服务端在下一个执行边界消费 CancelRequested 控制命令；返回 200 仅代表
+ * “取消已受理”，实际中断由 turn.cancelled 事件投影确认。Turn 不存在或
+ * 已结束时返回 400，由调用方按竞态处理。
+ */
+export async function cancelConversationTurn(
+  workspaceId: string,
+  conversationId: string,
+  turnId: string,
+): Promise<CancelConversationTurnResult> {
+  return request(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnId)}/cancel`,
+    {
+      method: 'POST',
+      headers: { 'X-Workspace-Id': workspaceId },
+    },
+  );
+}
+
 export async function createChatSteeringMessage(
   workspaceId: string,
   conversationId: string,
@@ -3124,6 +3150,9 @@ export async function unfreezeRuntimeNode(nodeId: string): Promise<void> {
 // ─── Token Stats API (ADR-018) ───────────────────────────────────
 
 export interface MonthlyTokenStatsResponse {
+  inputCost: number;
+  cacheHitCost: number;
+  outputCost: number;
   yearMonth: string;
   totalPromptTokens: number;
   totalCompletionTokens: number;
@@ -3137,6 +3166,9 @@ export interface MonthlyTokenStatsResponse {
 }
 
 export interface MonthlyProviderStats {
+  inputCost: number;
+  cacheHitCost: number;
+  outputCost: number;
   providerId: string;
   promptTokens: number;
   completionTokens: number;
@@ -3149,6 +3181,9 @@ export interface MonthlyProviderStats {
 }
 
 export interface MonthlyModelStats {
+  inputCost: number;
+  cacheHitCost: number;
+  outputCost: number;
   modelId: string;
   promptTokens: number;
   completionTokens: number;

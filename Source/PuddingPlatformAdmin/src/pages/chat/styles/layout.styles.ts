@@ -101,6 +101,23 @@ export const useLayoutStyles = createStyles(({ token }) => ({
     },
   },
   devModeActive: { color: token.colorPrimary },
+  /** 语义按钮复位：让原本用 span onClick 的可点击内容键盘可达（Enter/Space 原生生效）。 */
+  headerTextButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: 0,
+    border: 'none',
+    background: 'none',
+    cursor: 'pointer',
+    color: 'inherit',
+    font: 'inherit',
+    '&:focus-visible': {
+      outline:
+        '2px solid color-mix(in srgb, var(--pudding-chat-accent) 45%, transparent)',
+      outlineOffset: 2,
+      borderRadius: 6,
+    },
+  },
   /** 移动端隐藏元素 */
   hideOnMobile: {
     '@media (max-width: 767px)': { display: 'none' },

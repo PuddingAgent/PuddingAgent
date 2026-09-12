@@ -2,6 +2,7 @@ import type { MessageInstance } from 'antd/es/message/interface';
 import type { KeyboardEvent, MutableRefObject } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  cancelConversationTurn,
   createChatSteeringMessage,
   getAgentMessageQueue,
 } from '@/services/platform/api';
@@ -543,14 +544,60 @@ export function useMessageInteractionQueue({
     [],
   );
 
-  /** 取消当前请求并移除未注入的 steering 投影。已受理 Turn 不会被前端丢弃。 */
+  /**
+   * 请求服务端协作式取消当前正在运行的 canonical Turn（ADR-059）。
+   * 返回成功受理的取消请求数。Turn 已结束/未受理（400）属正常竞态：
+   * 本地 abort 与 SSE 终态事件已兜底，不向用户报错。
+   */
+  const requestActiveTurnCancel = useCallback(async (): Promise<number> => {
+    const conversationId = sessionIdRef.current ?? selectedSessionId;
+    if (!workspaceId || !conversationId) return 0;
+    const activeTurnIds = new Set<string>();
+    for (const messageId of activeMessageIdsRef.current) {
+      const turnId = messageIdToTurnIdRef.current.get(messageId);
+      if (turnId) activeTurnIds.add(turnId);
+    }
+    if (activeTurnIds.size === 0) return 0;
+
+    let requested = 0;
+    for (const turnId of activeTurnIds) {
+      try {
+        await cancelConversationTurn(workspaceId, conversationId, turnId);
+        requested += 1;
+        recordPerfEvent('chat.stop.cancelRequested', {
+          conversationId,
+          turnId,
+        });
+      } catch (error) {
+        recordPerfEvent('chat.stop.cancelRequestFailed', {
+          conversationId,
+          turnId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (requested > 0) {
+      messageApi.success('停止请求已受理，当前执行将尽快中断');
+    }
+    return requested;
+  }, [
+    activeMessageIdsRef,
+    messageApi,
+    messageIdToTurnIdRef,
+    selectedSessionId,
+    sessionIdRef,
+    workspaceId,
+  ]);
+
+  /** 取消全部：停止当前执行 + 清空未注入的本地补充投影。已受理 Turn 不会被前端丢弃。 */
   const stopQueue = useCallback(() => {
     cancelAllRef.current?.();
+    void requestActiveTurnCancel();
     setSteeringInteractionQueue((previous) =>
       previous.filter((candidate) => candidate.status !== 'steering_pending'),
     );
     recordPerfEvent('chat.queue.stopAll', { droppedLocalCount: 0 });
-  }, []);
+  }, [requestActiveTurnCancel]);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -629,6 +676,7 @@ export function useMessageInteractionQueue({
     steerQueuedInteraction,
     reorderQueuedInteraction,
     stopQueue,
+    requestActiveTurnCancel,
     handleKeyDown,
     markSteeringInjected,
     bindSendMessage,

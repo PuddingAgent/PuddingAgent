@@ -2,6 +2,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useRef } from 'react';
 import { recordPerfEvent } from '@/utils/perfEventRuntime';
 import type { ChatTurn } from '../types';
+import type { BufferedAnswerDelta } from '../types/chatStateTypes';
 import { applyBufferedDeltaToTurn } from '../utils/chatStateUtils';
 
 /** TR-01/CU-02：thinking 缓冲的服务端事实锚点（eventId/occurredAt）。 */
@@ -22,7 +23,7 @@ export function useSessionEventBuffers({
 }: UseSessionEventBuffersOptions) {
   /** 回答增量缓冲：delta 文本 + 入队时 answerMarkdown 的基准长度（幂等 flush 依据）。 */
   const pendingDeltaRef = useRef<
-    Map<string, { delta: string; baseLength: number }>
+    Map<string, BufferedAnswerDelta>
   >(new Map());
   const deltaFlushTimerRef = useRef<number | null>(null);
   const deltaHasFlushedRef = useRef(false);

@@ -1,5 +1,6 @@
 ﻿import type { MutableRefObject } from 'react';
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { message } from 'antd';
 import {
   type AdminChatStreamEvent,
   subscribeSessionEvents,
@@ -68,6 +69,7 @@ export function useSessionEventConnection() {
   const sseSessionIdRef = useRef<string | null>(null);
   const lastSseEventAtRef = useRef<number | null>(null);
   const reconnectCountRef = useRef(0);
+  const [reconnectCount, setReconnectCount] = useState(0);
 
   const bindSessionEventConnection = useCallback(
     (ports: SessionEventConnectionPorts) => {
@@ -100,6 +102,7 @@ export function useSessionEventConnection() {
     sseSessionIdRef.current = null;
     lastSseEventAtRef.current = null;
     reconnectCountRef.current = 0;
+    setReconnectCount(0);
     ports.syncSessionIdentity();
   }, [clearSessionEventTimers]);
 
@@ -108,7 +111,11 @@ export function useSessionEventConnection() {
       if (!sessionId) return;
       const ports = portsRef.current;
       const previousStreamSessionId = sseSessionIdRef.current;
+      const previousReconnectCount =
+        previousStreamSessionId === sessionId ? reconnectCountRef.current : 0;
       stopSessionEventStream();
+      reconnectCountRef.current = previousReconnectCount;
+      setReconnectCount(previousReconnectCount);
       // A first connection is opened only after history/bootstrap has advanced
       // lastSequenceNumRef. Do not erase that authoritative cursor merely
       // because there was no previous SSE instance. Explicit session switches
@@ -136,22 +143,64 @@ export function useSessionEventConnection() {
       const controller = new AbortController();
       sessionEventsAbortRef.current = controller;
 
+      const stopForAuthError = (status?: number) => {
+        if (status !== 401 && status !== 403) return false;
+        if (controller.signal.aborted || sseSessionIdRef.current !== sessionId)
+          return true;
+        logChatDiag('sse.authRequired', { sessionId, httpStatus: status });
+        stopSessionEventStream();
+        // Do not dispose the conversation or erase unsent text on an auth failure.
+        if (status === 401) localStorage.removeItem('pudding_token');
+        message.error(
+          status === 401
+            ? '登录已失效，请重新登录后继续。'
+            : '无权访问此会话，已停止自动重连。',
+        );
+        return true;
+      };
+      const errorStatus = (error: unknown): number | undefined => {
+        const value = error as {
+          status?: number;
+          response?: { status?: number };
+        } | null;
+        return value?.response?.status ?? value?.status;
+      };
+
       const scheduleReconnect = () => {
+        if (controller.signal.aborted || sseSessionIdRef.current !== sessionId)
+          return;
         if (sessionEventsReconnectTimerRef.current != null) return;
         reconnectCountRef.current += 1;
-        recordPerfEvent('chat.sse.reconnectScheduled', { sessionId, attempt: reconnectCountRef.current });
-        sessionEventsReconnectTimerRef.current = window.setTimeout(async () => {
-          sessionEventsReconnectTimerRef.current = null;
-          if (sseSessionIdRef.current !== sessionId) return;
-          try {
-            await portsRef.current.replayMissedSessionEvents(sessionId);
-          } catch {
-            // Retry through the next compensation cycle.
-          }
-          if (sseSessionIdRef.current === sessionId) {
-            startSessionEventStream(sessionId);
-          }
-        }, 1200);
+        setReconnectCount(reconnectCountRef.current);
+        recordPerfEvent('chat.sse.reconnectScheduled', {
+          sessionId,
+          attempt: reconnectCountRef.current,
+        });
+        sessionEventsReconnectTimerRef.current = window.setTimeout(
+          async () => {
+            sessionEventsReconnectTimerRef.current = null;
+            if (sseSessionIdRef.current !== sessionId) return;
+            try {
+              await portsRef.current.replayMissedSessionEvents(
+                sessionId,
+                controller.signal,
+              );
+            } catch (error) {
+              if (stopForAuthError(errorStatus(error))) return;
+              // Retry through the next compensation cycle.
+            }
+            if (
+              !controller.signal.aborted &&
+              sseSessionIdRef.current === sessionId
+            ) {
+              startSessionEventStream(sessionId);
+            }
+          },
+          Math.min(
+            30_000,
+            1200 * 2 ** Math.min(reconnectCountRef.current - 1, 5),
+          ),
+        );
       };
 
       const onOnline = () => scheduleReconnect();
@@ -217,7 +266,9 @@ export function useSessionEventConnection() {
               error: error instanceof Error ? error.message : String(error),
               elapsedMs: Math.round(performance.now() - pollStartedAt),
             });
-            if (isSessionNotFoundError(error)) {
+            if (stopForAuthError(errorStatus(error))) {
+              shouldContinue = false;
+            } else if (isSessionNotFoundError(error)) {
               logChatDiag('events.replay.sessionNotFound', {
                 sessionId,
                 error: error.message,
@@ -248,7 +299,10 @@ export function useSessionEventConnection() {
           }
           const lastEvent = lastSseEventAtRef.current;
           if (lastEvent && performance.now() - lastEvent > 90_000) {
-            recordPerfEvent('chat.sse.watchdog', { sessionId, idleMs: Math.round(performance.now() - lastEvent) });
+            recordPerfEvent('chat.sse.watchdog', {
+              sessionId,
+              idleMs: Math.round(performance.now() - lastEvent),
+            });
             scheduleReconnect();
             return;
           }
@@ -268,6 +322,10 @@ export function useSessionEventConnection() {
               return;
             }
             lastSseEventAtRef.current = performance.now();
+            if (reconnectCountRef.current !== 0) {
+              reconnectCountRef.current = 0;
+              setReconnectCount(0);
+            }
             const currentPorts = portsRef.current;
             const rawEvent = event as Record<string, unknown>;
             const messageId =
@@ -301,6 +359,7 @@ export function useSessionEventConnection() {
                 return;
               }
               const currentPorts = portsRef.current;
+              if (stopForAuthError(httpStatus)) return;
               if (httpStatus === 404 || httpStatus === 410) {
                 logChatDiag('sse.sessionTerminal', { sessionId, httpStatus });
                 currentPorts.handleSessionNotFound(
@@ -345,6 +404,7 @@ export function useSessionEventConnection() {
     sseSessionIdRef,
     lastSseEventAtRef,
     reconnectCountRef,
+    reconnectCount,
     startSessionEventStream,
     stopSessionEventStream,
     bindSessionEventConnection,

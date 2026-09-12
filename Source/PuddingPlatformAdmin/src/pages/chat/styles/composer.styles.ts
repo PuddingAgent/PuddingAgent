@@ -741,7 +741,6 @@ export const useComposerStyles = createStyles(() => ({
     opacity: 0.62,
   },
   composerSendButton: {
-    width: 34,
     minWidth: 34,
     height: 34,
     minHeight: 34,
@@ -753,6 +752,7 @@ export const useComposerStyles = createStyles(() => ({
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 5,
     fontSize: 15,
     lineHeight: 1,
     cursor: 'pointer' as const,
@@ -767,14 +767,52 @@ export const useComposerStyles = createStyles(() => ({
       opacity: 0.36,
       transform: 'none',
     },
-    '&[data-loading="true"]': {
-      background:
-        'color-mix(in srgb, var(--pudding-warning, #c4944c) 84%, #1d1b24)',
-      opacity: 1,
+    // 运行中有草稿：胶囊形态承载“加入队列”文字，动作语义不依赖图标或 hover。
+    '&[data-queued="true"]': {
+      width: 'auto',
+      borderRadius: 17,
+      padding: '0 12px 0 10px',
+    },
+    '&[data-queued="true"] > span': {
+      fontSize: 12,
+      fontWeight: 600,
+      lineHeight: 1,
     },
     '&:focus-visible': {
       outline:
         '2px solid color-mix(in srgb, var(--pudding-chat-accent) 45%, transparent)',
+      outlineOffset: 2,
+    },
+  },
+  // “停止当前执行”独立按钮：与发送/排队按钮并排、位置稳定，不与发送共用控件。
+  composerStopButton: {
+    width: 34,
+    minWidth: 34,
+    height: 34,
+    minHeight: 34,
+    padding: 0,
+    border: 'none',
+    borderRadius: '50%',
+    background:
+      'color-mix(in srgb, var(--pudding-danger, #b5543c) 86%, #1d1b24)',
+    color: '#fff',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 14,
+    lineHeight: 1,
+    cursor: 'pointer' as const,
+    transition: 'opacity 140ms ease, background 140ms ease',
+    '&:hover:not(:disabled)': {
+      background: 'var(--pudding-danger, #b5543c)',
+    },
+    '&:disabled': {
+      cursor: 'not-allowed' as const,
+      opacity: 0.36,
+    },
+    '&:focus-visible': {
+      outline:
+        '2px solid color-mix(in srgb, var(--pudding-danger, #b5543c) 55%, transparent)',
       outlineOffset: 2,
     },
   },

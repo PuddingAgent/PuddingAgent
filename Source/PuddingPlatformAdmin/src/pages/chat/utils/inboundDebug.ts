@@ -8,7 +8,7 @@ const KEY = '__puddingDebugInbound';
 
 export const inboundDebug = {
   get enabled(): boolean {
-    const val = (window as Record<string, unknown>)[KEY];
+    const val = (window as Window & { __puddingDebugInbound?: boolean })[KEY];
     return val !== false; // 默认 true，只有显式设为 false 才关闭
   },
   /** 仅在开启时打日志，格式: [InboundDebug] module message */

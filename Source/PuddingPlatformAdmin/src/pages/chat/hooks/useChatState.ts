@@ -328,6 +328,7 @@ export function useChatState(
     lastSseEventAtRef,
     reconnectCountRef,
     startSessionEventStream,
+    reconnectCount,
     stopSessionEventStream,
     bindSessionEventConnection,
   } = useSessionEventConnection();
@@ -403,12 +404,14 @@ export function useChatState(
     interactionQueue,
     enqueueInteraction,
     submitInteraction,
+    submitSteeringInteraction,
     updateQueuedInteraction,
     deleteQueuedInteraction,
         sendQueuedInteractionNow,
     steerQueuedInteraction,
     reorderQueuedInteraction,
     stopQueue,
+    requestActiveTurnCancel,
     handleKeyDown,
     markSteeringInjected,
     bindSendMessage,
@@ -1327,7 +1330,15 @@ export function useChatState(
       messageIdToAgentIdsRef,
       sessionIdToAgentIdsRef,
     },
-    feedback: { setError, messageApi, handleCompactCommand },
+    feedback: {
+      setError,
+      messageApi,
+      handleCompactCommand,
+      // 提交未被受理时恢复草稿：输入框为空才回填，不覆盖用户新输入。
+      restoreDraft: (text: string) => {
+        setInputValue((current) => current || text);
+      },
+    },
     checkpoint: {
       captureBeforeTurn: checkpointTimeline.captureBeforeTurn,
     },
@@ -1520,6 +1531,7 @@ export function useChatState(
     viewportScrollIntent,
     clearViewportScrollIntent,
     submitInteraction,
+    submitSteeringInteraction,
     enqueueInteraction,
     updateQueuedInteraction,
     deleteQueuedInteraction,
@@ -1527,6 +1539,7 @@ export function useChatState(
     steerQueuedInteraction,
     reorderQueuedInteraction,
     stopQueue,
+    requestActiveTurnCancel,
     handleKeyDown,
     loadMoreMessages,
     resetConversation,
@@ -1545,5 +1558,6 @@ export function useChatState(
     agOpts,
     creatingSession,
     reconnectCountRef,
+    reconnectCount,
   };
 }

@@ -89,7 +89,7 @@ import { useDevRuntimeEvents } from './useDevRuntimeEvents';
 
 interface ChatMainProps {
   sidebarOpen: boolean;
-  reconnectCountRef?: React.MutableRefObject<number>;
+  reconnectCount?: number;
   onToggleSidebar: () => void;
   // workspace
   workspaces: WorkspaceWithPermDto[];
@@ -139,6 +139,8 @@ interface ChatMainProps {
     metadata: Record<string, string>,
   ) => Promise<void> | void;
   onStop: () => void;
+  /** 运行中把当前草稿补充给正在执行的 Turn（Steering）；返回是否被受理。 */
+  onSteerCurrent?: (text: string) => Promise<boolean> | boolean;
   onExport: () => void;
   disabled: boolean;
   // token
@@ -154,6 +156,7 @@ interface ChatMainProps {
   /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
   getTurnProjection?: (turnId: string) => ExecutionFlowProjection | undefined;
   onTurnVisible?: (turnId: string) => void;
+  onTurnInvisible?: (turnId: string) => void;
   // message rendering
   formatTime: (ts: number) => string;
   onDeleteTurn: (turnId: string) => void;
@@ -194,7 +197,7 @@ interface ChatMainProps {
 const DEV_MODE_KEY = 'pudding-dev-mode';
 
 const ChatMain: React.FC<ChatMainProps> = ({
-  reconnectCountRef,
+  reconnectCount = 0,
   sidebarOpen,
   onToggleSidebar,
   workspaceId,
@@ -220,6 +223,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   onSend,
   onSendWithMetadata,
   onStop,
+  onSteerCurrent,
   onExport,
   disabled,
   interactionQueue = [],
@@ -244,6 +248,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   messageListRef,
   getTurnProjection,
   onTurnVisible,
+  onTurnInvisible,
   listEndRef,
   subAgentCards,
   currentUser,
@@ -510,17 +515,6 @@ const ChatMain: React.FC<ChatMainProps> = ({
     };
   }, [auxiliaryDataReady, selectedSessionId, workspaceId]);
 
-  // SSE 断流状态轮询
-  const [reconnectCount, setReconnectCount] = React.useState(0);
-  React.useEffect(() => {
-    if (!reconnectCountRef) return;
-    const timer = setInterval(
-      () => setReconnectCount(reconnectCountRef.current),
-      500,
-    );
-    return () => clearInterval(timer);
-  }, [reconnectCountRef]);
-
   // ADR-074 G1：Goal 持久控制面状态条（服务端投影；无 Goal 时渲染 null）
   const goalState = useGoal({
     workspaceId,
@@ -599,16 +593,13 @@ const ChatMain: React.FC<ChatMainProps> = ({
           extraActions={
             <>
               {billingAdapter && (
-                <span
+                <button
+                  type="button"
+                  className={styles.headerTextButton}
                   aria-label="刷新服务商余额"
                   onClick={refreshProviderBalance}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    cursor: 'pointer',
-                  }}
                 >
-                                    <ProviderBalanceIndicator
+                  <ProviderBalanceIndicator
                     provider={billingAdapter.displayName}
                     balance={providerBalance}
                     currency={currencySymbolFor(
@@ -622,7 +613,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     error={!!providerBalanceError}
                     detail={providerBalanceError ?? '点击刷新'}
                   />
-                </span>
+                </button>
               )}
               <Tooltip title="搜索历史消息">
                 <Button
@@ -704,6 +695,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                       onPinTurn={onPinTurn}
                       getTurnProjection={getTurnProjection}
                       onTurnVisible={onTurnVisible}
+                      onTurnInvisible={onTurnInvisible}
                       onPinnedQuote={handlePinnedQuote}
                       messageListRef={messageListRef}
                       listEndRef={listEndRef}
@@ -737,6 +729,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     onSend={onSend}
                     onSendWithMetadata={onSendWithMetadata}
                     onStop={onStop}
+                    onSteerCurrent={onSteerCurrent}
                     onExport={onExport}
                     onOpenDevDetails={() => setDevMode(true)}
                     disabled={disabled}

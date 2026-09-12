@@ -1,12 +1,14 @@
 ﻿import { act, renderHook, waitFor } from '@testing-library/react';
 import { useEffect, useRef } from 'react';
 import {
+  cancelConversationTurn,
   createChatSteeringMessage,
   getAgentMessageQueue,
 } from '@/services/platform/api';
 import { useMessageInteractionQueue } from './useMessageInteractionQueue';
 
 jest.mock('@/services/platform/api', () => ({
+  cancelConversationTurn: jest.fn(),
   createChatSteeringMessage: jest.fn(),
   getAgentMessageQueue: jest.fn(),
 }));
@@ -25,6 +27,8 @@ interface QueueHarnessOptions {
   loading?: boolean;
   busyTurns?: boolean;
   turns?: any[];
+  /** 已受理且仍在运行的 canonical Turn（messageId → server turnId），用于停止测试。 */
+  activeTurns?: Array<{ messageId: string; turnId: string }>;
 }
 
 function useQueueHarness(
@@ -43,8 +47,14 @@ function useQueueHarness(
       : [],
   );
   const projectedTurns = options.turns ?? turnsRef.current;
-  const activeMessageIdsRef = useRef(new Set<string>());
-  const messageIdToTurnIdRef = useRef(new Map<string, string>());
+  const activeMessageIdsRef = useRef(
+    new Set<string>((options.activeTurns ?? []).map((t) => t.messageId)),
+  );
+  const messageIdToTurnIdRef = useRef(
+    new Map<string, string>(
+      (options.activeTurns ?? []).map((t) => [t.messageId, t.turnId] as const),
+    ),
+  );
   const handleCompactCommandRef = useRef(jest.fn(async () => {}));
   const handleCompactCommand = handleCompactCommandRef.current;
   const queue = useMessageInteractionQueue({
@@ -318,5 +328,66 @@ describe('useMessageInteractionQueue', () => {
     expect(result.current.interactionQueue).toEqual([
       expect.objectContaining({ id: 'turn:cmd-1', text: '服务端已受理' }),
     ]);
+  });
+
+  it('requestActiveTurnCancel asks the server to cancel each running canonical turn', async () => {
+    (cancelConversationTurn as jest.Mock).mockResolvedValue({
+      status: 'cancel_requested',
+    });
+    const { result } = renderHook(() =>
+      useQueueHarness('ws-1', {
+        loading: true,
+        activeTurns: [{ messageId: 'msg-1', turnId: 'turn-9' }],
+      }),
+    );
+
+    let requested = -1;
+    await act(async () => {
+      requested = await result.current.requestActiveTurnCancel();
+    });
+
+    expect(cancelConversationTurn).toHaveBeenCalledWith(
+      'ws-1',
+      'session-1',
+      'turn-9',
+    );
+    expect(requested).toBe(1);
+    expect(messageApi.success).toHaveBeenCalledWith(
+      '停止请求已受理，当前执行将尽快中断',
+    );
+    expect(messageApi.error).not.toHaveBeenCalled();
+  });
+
+  it('requestActiveTurnCancel treats already-finished turns as races and stays silent', async () => {
+    (cancelConversationTurn as jest.Mock).mockRejectedValue(
+      new Error('Turn is not running'),
+    );
+    const { result } = renderHook(() =>
+      useQueueHarness('ws-1', {
+        loading: true,
+        activeTurns: [{ messageId: 'msg-1', turnId: 'turn-9' }],
+      }),
+    );
+
+    let requested = -1;
+    await act(async () => {
+      requested = await result.current.requestActiveTurnCancel();
+    });
+
+    expect(requested).toBe(0);
+    expect(messageApi.success).not.toHaveBeenCalled();
+    expect(messageApi.error).not.toHaveBeenCalled();
+  });
+
+  it('requestActiveTurnCancel is a no-op without running turns', async () => {
+    const { result } = renderHook(() => useQueueHarness('ws-1'));
+
+    let requested = -1;
+    await act(async () => {
+      requested = await result.current.requestActiveTurnCancel();
+    });
+
+    expect(requested).toBe(0);
+    expect(cancelConversationTurn).not.toHaveBeenCalled();
   });
 });

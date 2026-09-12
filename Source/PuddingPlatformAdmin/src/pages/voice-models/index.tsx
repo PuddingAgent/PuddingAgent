@@ -78,7 +78,7 @@ const LANGUAGE_OPTIONS = [
 ];
 
 const VoiceProviderPage: React.FC = () => {
-  const actionRef = useRef<ActionType>();
+  const actionRef = useRef<ActionType | undefined>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<VoiceProviderDetailDto | null>(null);
   const [templateValue, setTemplateValue] = useState<string | undefined>();

@@ -93,6 +93,8 @@ interface MessageListProps {
   getTurnProjection?: (turnId: string) => ExecutionFlowProjection | undefined;
   /** MessageRow 进入近视口预取区时上报 turnId（有界懒水合驱动）。 */
   onTurnVisible?: (turnId: string) => void;
+  /** MessageRow 离开预取区/卸载时上报（与 onTurnVisible 配对）。 */
+  onTurnInvisible?: (turnId: string) => void;
   /** P2#8：Focus view 单行折叠模式 */
   focusView?: boolean;
   onFocusViewChange?: (value: boolean) => void;
@@ -887,6 +889,7 @@ const MessageList: React.FC<MessageListProps> = ({
   onApprovalDenied,
   getTurnProjection,
   onTurnVisible,
+  onTurnInvisible,
 }) => {
   const chatStyles = useChatStyles();
   const { styles } = chatStyles;
@@ -1146,6 +1149,7 @@ const MessageList: React.FC<MessageListProps> = ({
             : undefined
         }
         onTurnVisible={onTurnVisible}
+        onTurnInvisible={onTurnInvisible}
       />
     );
 

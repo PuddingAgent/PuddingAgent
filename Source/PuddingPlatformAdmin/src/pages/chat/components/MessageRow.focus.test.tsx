@@ -210,6 +210,70 @@ describe('MessageRow visible-turn hydration', () => {
     });
     expect(onTurnVisible).toHaveBeenCalledTimes(1);
     expect(onTurnVisible).toHaveBeenCalledWith('turn-visible');
+  });
+
+  it('keeps observing and pairs unregister when the turn leaves the viewport', () => {
+    let observerCallback: IntersectionObserverCallback | undefined;
+    const observe = jest.fn();
+    const disconnect = jest.fn();
+    const observer = {
+      root: null,
+      rootMargin: '600px 0px',
+      thresholds: [0],
+      observe,
+      unobserve: jest.fn(),
+      disconnect,
+      takeRecords: () => [],
+    } as unknown as IntersectionObserver;
+    window.IntersectionObserver = jest.fn((callback) => {
+      observerCallback = callback;
+      return observer;
+    }) as unknown as typeof IntersectionObserver;
+    const onTurnVisible = jest.fn();
+    const onTurnInvisible = jest.fn();
+
+    const { unmount } = render(
+      <div data-testid="chat-message-list">
+        <MessageRow
+          block={makeAgentBlock({ turnId: 'turn-visible' })}
+          onTurnVisible={onTurnVisible}
+          onTurnInvisible={onTurnInvisible}
+          {...baseHandlers}
+        />
+      </div>,
+    );
+
+    act(() => {
+      observerCallback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        observer,
+      );
+    });
+    expect(onTurnVisible).toHaveBeenCalledTimes(1);
+
+    // F01：离开预取区不再 disconnect，而是配对注销；observer 保持存活，
+    // 滚回预取区可重新注册。
+    act(() => {
+      observerCallback?.(
+        [{ isIntersecting: false } as IntersectionObserverEntry],
+        observer,
+      );
+    });
+    expect(disconnect).not.toHaveBeenCalled();
+    expect(onTurnInvisible).toHaveBeenCalledTimes(1);
+    expect(onTurnInvisible).toHaveBeenCalledWith('turn-visible');
+
+    act(() => {
+      observerCallback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        observer,
+      );
+    });
+    expect(onTurnVisible).toHaveBeenCalledTimes(2);
+
+    // 卸载时若仍处于注册态，必须配对注销（引用计数防泄漏）。
+    unmount();
     expect(disconnect).toHaveBeenCalled();
+    expect(onTurnInvisible).toHaveBeenCalledTimes(2);
   });
 });

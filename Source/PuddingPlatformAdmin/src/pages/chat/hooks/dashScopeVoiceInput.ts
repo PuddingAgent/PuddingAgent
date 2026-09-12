@@ -15,7 +15,7 @@ export function createDashScopeVoiceInputAdapter(): BrowserVoiceInputAdapter {
   return {
     isSupported: () =>
       !!(
-        navigator.mediaDevices?.getUserMedia &&
+        typeof navigator.mediaDevices?.getUserMedia === 'function' &&
         typeof MediaRecorder !== 'undefined'
       ),
 

@@ -37,6 +37,8 @@ interface MessageRowProps {
   executionFlowProjection?: ExecutionFlowProjection;
   /** 进入消息视口附近时上报 turnId，驱动有界懒水合。 */
   onTurnVisible?: (turnId: string) => void;
+  /** 离开预取区/卸载时上报（与 onTurnVisible 配对），停止尚未开始的预取。 */
+  onTurnInvisible?: (turnId: string) => void;
 }
 
 const optionalRecordEquals = (
@@ -148,6 +150,7 @@ export const areMessageRowPropsEqual = (
   (previous.focusView ?? false) === (next.focusView ?? false) &&
   previous.executionFlowProjection === next.executionFlowProjection &&
   previous.onTurnVisible === next.onTurnVisible &&
+  previous.onTurnInvisible === next.onTurnInvisible &&
   optionalRecordEquals(
     previous.parentDelegationActivity,
     next.parentDelegationActivity,
@@ -237,6 +240,7 @@ const MessageRow: React.FC<MessageRowProps> = ({
   focusView = false,
   executionFlowProjection,
   onTurnVisible,
+  onTurnInvisible,
 }) => {
   const { styles, cx } = useChatMessageStyles();
   const agentRowRef = useRef<HTMLDivElement | null>(null);
@@ -255,24 +259,30 @@ const MessageRow: React.FC<MessageRowProps> = ({
       return;
     }
 
-    const registerVisibleTurn = () => {
-      if (registeredVisibleTurnRef.current === turnId) return;
-      registeredVisibleTurnRef.current = turnId;
-      onTurnVisible(turnId);
+    // 注册/注销必须配对（引用计数）：进入预取区注册、离开或卸载注销；
+    // 已取得的明细不回滚，仅停止尚未开始的预取。
+    const reportVisible = (visible: boolean) => {
+      if (visible && registeredVisibleTurnRef.current !== turnId) {
+        registeredVisibleTurnRef.current = turnId;
+        onTurnVisible(turnId);
+      } else if (!visible && registeredVisibleTurnRef.current === turnId) {
+        registeredVisibleTurnRef.current = null;
+        onTurnInvisible?.(turnId);
+      }
     };
     const row = agentRowRef.current;
     if (!row || typeof IntersectionObserver === 'undefined') {
       // JSDOM / 旧 WebView 降级：保持功能可用；产品 WebView2 走真实近视口观察。
-      registerVisibleTurn();
-      return;
+      reportVisible(true);
+      return () => {
+        reportVisible(false);
+      };
     }
 
     const root = row.closest<HTMLElement>('[data-testid="chat-message-list"]');
     const observer = new IntersectionObserver(
       (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        registerVisibleTurn();
-        observer.disconnect();
+        reportVisible(entries.some((entry) => entry.isIntersecting));
       },
       {
         root,
@@ -281,8 +291,11 @@ const MessageRow: React.FC<MessageRowProps> = ({
       },
     );
     observer.observe(row);
-    return () => observer.disconnect();
-  }, [block.role, block.turnId, onTurnVisible]);
+    return () => {
+      observer.disconnect();
+      reportVisible(false);
+    };
+  }, [block.role, block.turnId, onTurnVisible, onTurnInvisible]);
   const focusSummary = useMemo(() => getFocusViewSummary(block), [block]);
   const focusTone = useMemo(() => getFocusViewTone(block), [block]);
 

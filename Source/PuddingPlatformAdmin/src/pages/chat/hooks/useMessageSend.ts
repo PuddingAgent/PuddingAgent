@@ -20,7 +20,7 @@ import {
   markSending,
 } from '../outbox/commandOutbox';
 import type { ChatTurn, SessionListItem } from '../types';
-import type { ChatSendOptions } from '../types/chatStateTypes';
+import type { BufferedAnswerDelta, ChatSendOptions } from '../types/chatStateTypes';
 import { logChatDiag } from '../utils/chatDiagnostics';
 import {
   buildAgentMainSessionRequest,
@@ -84,7 +84,7 @@ interface MessageSendStreamPort {
     options: { reason: string; hasActiveMessages: boolean },
   ) => Promise<unknown>;
   reconcileCompletedSessionMessages: (sessionId: string) => Promise<void>;
-  pendingDeltaRef: MutableRefObject<Map<string, string>>;
+  pendingDeltaRef: MutableRefObject<Map<string, BufferedAnswerDelta>>;
   pendingThinkingRef: MutableRefObject<Map<string, string>>;
   duplicateDeltaReplayOffsetRef: MutableRefObject<Map<string, number>>;
   streamStartAtRef: MutableRefObject<Map<string, number>>;
@@ -104,6 +104,11 @@ interface MessageSendFeedbackPort {
   setError: Dispatch<SetStateAction<string | null>>;
   messageApi: MessageInstance;
   handleCompactCommand: () => Promise<void>;
+  /**
+   * 提交未被服务端受理时恢复草稿（输入框为空才回填，不覆盖用户新输入）。
+   * 与 Steering 失败恢复同一规则：失败的内容回到可编辑、可重发的位置。
+   */
+  restoreDraft?: (text: string) => void;
 }
 
 /** P2#7：Checkpoint 快照端口 — 每次 turn 提交前保存会话快照。 */
@@ -175,7 +180,7 @@ export function useMessageSend({
   } = stream;
   const { setAgentIdsWorking, messageIdToAgentIdsRef, sessionIdToAgentIdsRef } =
     activity;
-  const { setError, messageApi, handleCompactCommand } = feedback;
+  const { setError, messageApi, handleCompactCommand, restoreDraft } = feedback;
   const abortRef = useRef<AbortController | null>(null);
 
   // T-102: fire-and-forget POST + 持久 SSE 方案。
@@ -457,6 +462,12 @@ export function useMessageSend({
         const serverTurnId = acceptance.turnIds[0];
         await dequeueCommand(clientRequestId);
 
+        // 操作回执：忙碌期间提交的消息已由服务端受理并持久排队，明确告知
+        // “已接收、何时投递”，避免用户把它误读为立即执行或提交失败。
+        if (localBusy) {
+          messageApi.success('已加入队列，将在当前回复完成后自动投递');
+        }
+
         const stillViewingSendSession =
           (sessionIdRef.current ?? null) === previousSessionId;
         const effectiveTurnId = serverTurnId ?? turnId;
@@ -688,7 +699,8 @@ export function useMessageSend({
             ),
           );
         } else {
-          setError(e instanceof Error ? e.message : '请求失败');
+          const errorMessage = e instanceof Error ? e.message : '请求失败';
+          setError(errorMessage);
           setTurns((p) =>
             p.map((t) =>
               t.turnId === turnId
@@ -703,7 +715,10 @@ export function useMessageSend({
                 : t,
             ),
           );
-          // ADR: POST 已成功，会话由后端持久化，不做前端回滚
+          // ADR: POST 已成功，会话由后端持久化，不做前端回滚。
+          // 提交未被受理时把原文交还输入框（输入框为空才回填），
+          // 用户可直接修改重发；失败轮保留在时间线作为记录。
+          restoreDraft?.(route.originalText);
         }
         setLoading(false);
       } finally {
@@ -728,6 +743,7 @@ export function useMessageSend({
       routeSessionId,
       messageApi,
       prepareForNewMessage,
+      restoreDraft,
     ],
   );
 

@@ -18,6 +18,7 @@ import SessionSidebar, {
 } from './SessionSidebar';
 
 interface ChatLayoutProps {
+  reconnectCount?: number;
   // sidebar
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
@@ -75,6 +76,8 @@ interface ChatLayoutProps {
     metadata: Record<string, string>,
   ) => Promise<void> | void;
   onStop: () => void;
+  /** 运行中把当前草稿补充给正在执行的 Turn（Steering）；返回是否被受理。 */
+  onSteerCurrent?: (text: string) => Promise<boolean> | boolean;
   onExport: () => void;
   disabled: boolean;
   tLimit: number;
@@ -88,6 +91,7 @@ interface ChatLayoutProps {
   /** CU-11 Phase 2: per-turn 投影选择器（灰度开启时按 turnId 取 canonical 投影）。 */
   getTurnProjection?: (turnId: string) => import('../projections/executionFlowProjector').ExecutionFlowProjection | undefined;
   onTurnVisible?: (turnId: string) => void;
+  onTurnInvisible?: (turnId: string) => void;
   formatTime: (ts: number) => string;
   onDeleteTurn: (turnId: string) => void;
   onContextMenu: (
@@ -148,9 +152,11 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         workingAgentIds={workingAgentIds}
       />
       <ChatMain
+        reconnectCount={props.reconnectCount}
         sidebarOpen={props.sidebarOpen}
         getTurnProjection={props.getTurnProjection}
         onTurnVisible={props.onTurnVisible}
+        onTurnInvisible={props.onTurnInvisible}
         onToggleSidebar={props.onToggleSidebar}
         workspaces={props.workspaces}
         workspaceId={props.workspaceId}
@@ -188,6 +194,7 @@ const ChatLayout: React.FC<ChatLayoutProps> = (props) => {
         onSend={props.onSend}
         onSendWithMetadata={props.onSendWithMetadata}
         onStop={props.onStop}
+        onSteerCurrent={props.onSteerCurrent}
         onExport={props.onExport}
         disabled={props.disabled}
         tLimit={props.tLimit}

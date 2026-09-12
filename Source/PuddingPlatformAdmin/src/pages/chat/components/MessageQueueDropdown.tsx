@@ -271,7 +271,7 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
           <span className={styles.messageQueuePanelHint}>
             仅显示未认领消息；认领后转入会话轨迹 · ⚡ 可插嘴当前 Agent
           </span>
-          <Tooltip title="中止当前页面请求；已由 Core 受理的 Turn 不会在前端丢弃">
+          <Tooltip title="停止当前执行并清除未注入的补充；已受理消息仍由服务端调度">
             <Button
               type="text"
               size="small"
@@ -281,7 +281,7 @@ const MessageQueueDropdown: React.FC<MessageQueueDropdownProps> = ({
               onClick={() => onStopAll?.()}
               data-testid="message-queue-stop-all"
             >
-              中止当前
+              取消全部
             </Button>
           </Tooltip>
         </div>

@@ -7,7 +7,11 @@
 } from '@ant-design/icons';
 import { Button, Switch, Typography } from 'antd';
 import React from 'react';
-import type { PuddingPerfEvent } from '@/utils/debug';
+import type {
+  PuddingPerfCaptureMetadata,
+  PuddingPerfDiagnosticSnapshot,
+  PuddingPerfEvent,
+} from '@/utils/debug';
 import { useChatStyles } from '../../styles';
 import CountsWorkflowPanel from './CountsWorkflowPanel';
 import PerfEventList from './PerfEventList';
@@ -15,32 +19,25 @@ import PerfMetricsGrid from './PerfMetricsGrid';
 
 const { Paragraph, Text } = Typography;
 
-interface DiagnosisItem {
-  code: string;
-  title: string;
-  severity: string;
-  evidence: string;
-}
-
 interface PerfTabProps {
   perfEvents: PuddingPerfEvent[];
-  perfSummary: Record<string, unknown>;
+  perfSummary: Record<string, unknown> | null;
   diagnosticsEnabled: boolean;
-  diagnosticSnapshot: {
-    diagnosis: DiagnosisItem[];
-    top: { workflowSteps: Array<{ step: string; count: number }> };
-  };
+  diagnosticSnapshot: PuddingPerfDiagnosticSnapshot;
   diagnosticCopiedAt: number | null;
-  captureState: { status: 'idle' | 'recording' };
+  captureState: PuddingPerfCaptureMetadata;
   updateDiagnosticsEnabled: (enabled: boolean) => void;
   copyDiagnosticSnapshot: () => Promise<void>;
   startCapture: () => void;
   stopCapture: () => void;
   downloadDiagnosticSnapshot: () => void;
   clearPerf: () => void;
-  formatMetric: (v: unknown) => string;
-  getEventTone: (evt: PuddingPerfEvent) => string;
-  getNestedNumber: (obj: unknown, path: string) => number;
+  formatMetric: (value: number | null, suffix?: string) => string;
+  getEventTone: (name: string) => string;
+  getNestedNumber: (
+    obj: Record<string, unknown> | null,
+    path: string,
+  ) => number | null;
 }
 
 const PerfTab: React.FC<PerfTabProps> = ({
@@ -60,7 +57,7 @@ const PerfTab: React.FC<PerfTabProps> = ({
   getEventTone,
   getNestedNumber,
 }) => {
-  const styles = useChatStyles();
+  const { styles } = useChatStyles();
 
   return (
     <div className={styles.devPanelSection}>
@@ -75,8 +72,7 @@ const PerfTab: React.FC<PerfTabProps> = ({
         >
           <Text type="secondary" style={{ fontSize: 12 }}>
             前端输出性能 · 最近{' '}
-            {formatMetric(getNestedNumber(perfSummary, 'totalEvents'))}{' '}
-            条事件
+            {formatMetric(getNestedNumber(perfSummary, 'totalEvents'))} 条事件
           </Text>
           <Text style={{ fontSize: 12 }}>诊断模式</Text>
           <Switch
@@ -127,11 +123,7 @@ const PerfTab: React.FC<PerfTabProps> = ({
           >
             下载快照
           </Button>
-          <Button
-            size="small"
-            icon={<SyncOutlined />}
-            onClick={clearPerf}
-          >
+          <Button size="small" icon={<SyncOutlined />} onClick={clearPerf}>
             清空
           </Button>
         </div>
@@ -159,13 +151,10 @@ const PerfTab: React.FC<PerfTabProps> = ({
         getEventTone={getEventTone}
       />
 
-      <PerfEventList
-        perfEvents={perfEvents}
-        getEventTone={getEventTone}
-      />
+      <PerfEventList perfEvents={perfEvents} getEventTone={getEventTone} />
       <Paragraph className={styles.devPanelHint}>
-        复制诊断会包含摘要、瓶颈判断、间隔抖动、Top
-        慢记录和最近原始事件。 Console 输出默认关闭；如需同时打印，设置
+        复制诊断会包含摘要、瓶颈判断、间隔抖动、Top 慢记录和最近原始事件。
+        Console 输出默认关闭；如需同时打印，设置
         localStorage.pudding_perf_console = &quot;1&quot;。 摘要 API:
         window.__PUDDING_PERF__.summary() / snapshot()
       </Paragraph>

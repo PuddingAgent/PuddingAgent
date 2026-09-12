@@ -24,6 +24,7 @@ import { getAgentConversation, listAgentStatuses } from './client/agentChatApi';
 import { conversationNeedsProjectionCatchUp } from './client/chatClientStore';
 import { isAgentClientArchitectureEnabled } from './client/featureFlag';
 import { createIndexedDbAgentChatCache } from './client/localCache';
+import type { AgentStatusProjection } from './client/types';
 import ChatLayout from './components/ChatLayout';
 import type { ContextMenuState } from './components/ContextMenu';
 import { useAgentChatClient } from './hooks/useAgentChatClient';
@@ -36,6 +37,7 @@ import {
 } from './utils/pinnedMessage';
 
 const loadContextMenu = () => import('./components/ContextMenu');
+type ProjectedAgentStatus = Pick<AgentStatusProjection, 'status' | 'summary'>;
 const ContextMenu =
   process.env.NODE_ENV === 'test'
     ? (require('./components/ContextMenu')
@@ -83,9 +85,7 @@ const ChatPageContent: React.FC = () => {
   const currentUser = initialState?.currentUser;
   const [createLoading, setCreateLoading] = useState(false);
   const agentSwitchSeqRef = useRef(0);
-  const projectedStatusesRef = useRef<
-    Record<string, { status: string; summary?: string }>
-  >({});
+  const projectedStatusesRef = useRef<Record<string, ProjectedAgentStatus>>({});
   const agentChatCache = useMemo(() => createIndexedDbAgentChatCache(), []);
   const agentChatApi = useMemo(
     () => ({
@@ -101,13 +101,13 @@ const ChatPageContent: React.FC = () => {
   });
   const projectedAgentStatuses = useMemo(() => {
     if (!useAgentClientArchitecture)
-      return {} as Record<string, { status: string; summary?: string }>;
+      return {} as Record<string, ProjectedAgentStatus>;
     const next = Object.fromEntries(
       agentClient.snapshot.statuses.map((status) => [
         status.agentId,
         { status: status.status, summary: status.summary },
       ]),
-    ) as Record<string, { status: string; summary?: string }>;
+    ) as Record<string, ProjectedAgentStatus>;
     // 与上次结果做深度比较，内容未变则返回旧引用避免下游重渲染
     const prev = projectedStatusesRef.current;
     if (prev && shallowEqualRecord(prev, next)) return prev;
@@ -468,7 +468,8 @@ const ChatPageContent: React.FC = () => {
   );
 
   const handleWorkspaceChange = useCallback(
-    (v: string) => {
+    (v: string | undefined) => {
+      if (!v) return;
       chat.setWorkspaceId(v);
       history.replace(
         buildChatPathWithQuery(
@@ -481,7 +482,8 @@ const ChatPageContent: React.FC = () => {
   );
 
   const handleAgentChange = useCallback(
-    (v: string) => {
+    (v: string | undefined) => {
+      if (!v) return;
       if (
         shouldIgnoreAgentContactClick({
           clickedAgentId: v,
@@ -619,8 +621,27 @@ const ChatPageContent: React.FC = () => {
   );
 
   const handleStop = useCallback(() => {
+    // 1) 中断本地在途提交（202 受理前）；
+    // 2) 已受理的执行向服务端请求协作取消（ADR-059），由 turn.cancelled 投影确认。
     chat.abortRef.current?.abort();
-  }, [chat.abortRef]);
+    void chat.requestActiveTurnCancel();
+  }, [chat.abortRef, chat.requestActiveTurnCancel]);
+
+  /** 运行中把草稿补充给当前 Turn（与 Ctrl/Cmd+Enter 同链）；受理才清空草稿。 */
+  const handleSteerCurrent = useCallback(
+    async (text: string): Promise<boolean> => {
+      const trimmed = text.trim();
+      if (!trimmed) return false;
+      const accepted = await chat.submitSteeringInteraction(trimmed);
+      if (accepted) {
+        chat.setInputValue('');
+      } else {
+        chat.setInputValue((current) => current || trimmed);
+      }
+      return accepted;
+    },
+    [chat.setInputValue, chat.submitSteeringInteraction],
+  );
 
   const handleClearError = useCallback(() => {
     chat.setError(null);
@@ -681,6 +702,7 @@ const ChatPageContent: React.FC = () => {
         onSend={handleSend}
         onSendWithMetadata={handleSendWithMetadata}
         onStop={handleStop}
+        onSteerCurrent={handleSteerCurrent}
         onExport={chat.handleExport}
         disabled={!chat.workspaceId || !chat.agentId}
         tLimit={chat.tLimit}
@@ -692,6 +714,7 @@ const ChatPageContent: React.FC = () => {
         compactionStatus={chat.compactionStatus}
         getTurnProjection={getTurnProjectionWithSurface}
         onTurnVisible={turnSurface.registerVisibleTurn}
+        onTurnInvisible={turnSurface.unregisterVisibleTurn}
         formatTime={chat.formatTime}
         onDeleteTurn={chat.onDeleteTurn}
         onContextMenu={handleContextMenu}
@@ -700,7 +723,7 @@ const ChatPageContent: React.FC = () => {
         messageListRef={chat.messageListRef}
         listEndRef={chat.listEndRef}
         subAgentCards={chat.subAgentCards}
-        reconnectCountRef={chat.reconnectCountRef}
+        reconnectCount={chat.reconnectCount}
         currentUser={currentUser}
         viewportScrollIntent={chat.viewportScrollIntent}
         onViewportScrollIntentHandled={chat.clearViewportScrollIntent}
