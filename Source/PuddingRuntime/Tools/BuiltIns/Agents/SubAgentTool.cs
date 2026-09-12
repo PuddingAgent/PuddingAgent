@@ -527,7 +527,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 invocationResult.SubSessionId, request.SessionId);
 
             return Success(
-                $"�첽�Ӵ����Ѵ�����sub_agent_id = {invocationResult.SubSessionId}��" +
+                $"异步子代理已创建。sub_agent_id = {invocationResult.SubSessionId}。" +
                 $"完成后通过 subagent_result 消息通道通知。",
                 new
                 {
