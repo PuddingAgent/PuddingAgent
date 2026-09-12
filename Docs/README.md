@@ -11,7 +11,7 @@
 
 ## 2026-09-12 下一阶段：缓存与长程自治
 
-[完整设计](Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md) · [路线/任务/证据包](Reports/PuddingAgent-Next-Phase-2026-09-12/README.md)。ADR-084稳定最终请求与>99%验收、ADR-085 Memory主导长程状态、ADR-086 600正常轮与内核收敛均为Proposed。旧25–40轮建议被本次用户要求取代，历史审计数据保留。
+[完整设计](Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md) · [路线/任务/证据包](Reports/PuddingAgent-Next-Phase-2026-09-12/README.md)。ADR-084稳定最终请求与>99%验收、ADR-085 Memory主导长程状态仍为Proposed；ADR-086（已由 ADR-087 修订为弹性预算口径）的预算纠偏部分已实施（commit f096bc5）；ADR-087 双向交互/持久问答为最新权威且仍待实施。旧25–40轮建议被本次用户要求取代，历史审计数据保留。
 
 
 2026-09-12 抖音续建：[douyin-creator-tools 调研、WebView2 复用与看板方案](Reports/DouyinCreatorTools-WebView2复用与看板方案-2026-09-12.md)。沿用 ADR-066/68，先真实 Agent 验收，再只读 Adapter、可靠回复；研究和登记完成不等于产品验收。

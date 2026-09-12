@@ -9,7 +9,7 @@
 | `DependencyInjection.cs` | Runtime 服务注册入口 |
 | `Services/PuddingConfigLoader.cs` | JSON 配置加载 |
 | `Services/PuddingJsonConfig.cs` | 配置模型定义 |
-| `Services/RuntimeExecutionConfigService.cs` | 执行配置：系统统一分配 600 轮、2400 工具调用、24h，以及 20 轮/30 分钟收尾宽限；规范化临时子代理目录保留/隔离参数；父 Agent 不可覆盖 |
+| `Services/RuntimeExecutionConfigService.cs` | 执行配置：忠实加载 runtime.execution.json（`Math.Max(1, cfg)`，已删除 600/2400/24h 强抬 normalize）；600/2400/24h 仅为系统 profile 默认（非下限/上限/强制统一值）；20 轮/30 分钟收尾宽限；规范化临时子代理目录保留/隔离参数；请求级预算覆盖见 SubAgentInvocationContracts（int? MaxRounds 等） |
 
 ## Agent Loop
 

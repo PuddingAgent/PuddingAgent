@@ -11,7 +11,7 @@
 
 ## 2026-09-12 下一阶段设计：缓存99、Memory长程自治与600轮纠偏
 
-权威方案：`Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md`；ADR-084/085/086；交付包与13张看板映射：`Docs/Reports/PuddingAgent-Next-Phase-2026-09-12/README.md`。重点入口为SubAgentManager/TaskExecutionPlanCompiler预算二次截断、ContextPipeline/AgentMemorySummaryContextBuilder首轮装配、SubconsciousRecallPipeline检索与后台miss、C01/C02最终请求、ToolInvocationService与legacy执行分支。本阶段支持600正常轮，取代前轮25–40轮建议；所有新目标仍待实施/验收。
+权威方案：`Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md`；ADR-084/085/086；交付包与13张看板映射：`Docs/Reports/PuddingAgent-Next-Phase-2026-09-12/README.md`。重点入口为SubAgentManager/TaskExecutionPlanCompiler预算二次截断、ContextPipeline/AgentMemorySummaryContextBuilder首轮装配、SubconsciousRecallPipeline检索与后台miss、C01/C02最终请求、ToolInvocationService与legacy执行分支。预算纠偏（N00，commit f096bc5）已实施：子代理/WorkUnit 支持任意合法正整数轮次（8/32/600/1200/10000…），未填由系统 profile 决定，600 仅为 profile 默认示例；已删除 32/40/120 下压与强抬 600 双向补丁。缓存99/Memory/30日等其余新目标仍待实施/验收。
 
 
 ## 2026-09-12 抖音与 WebView2 续建入口
@@ -263,8 +263,9 @@ spawn_sub_agent → SubAgentInvocationService → SubAgentManager
     "exists under multiple providers"（2026-08-24 起 list_llm_providers 内置工具输出实时路由表与
     ambiguous_model_ids 歧义清单，不含 apiKey/baseUrl，已入 CoreToolIds 常驻可见；应急快照
     memory/llm-providers-cheatsheet.md 转兜底）
-  → `runtime.execution.json` 统一配置 600 轮 / 2400 次工具调用 / 24h
-  → 父 Agent 工具 schema 不暴露轮次、工具调用或 timeout 预算字段
+    → `runtime.execution.json` 提供系统 profile（默认 600/2400/24h，非强制统一值）
+  → 内部契约 SubAgentSpawnRequest 已含 `int? MaxRounds` 等请求级预算字段（N00 已实施）
+  → 父代理工具 schema 面向可选 `max_rounds` 的暴露随 ADR-087 后续批次（SA-MSG/SA-ASK）落地
   → AgentExecutionService 在启动、剩余 80%/50% 与预算耗尽时注入预算通知
   → 正常轮次/时间耗尽后提供 20 轮、最多 30 分钟的收尾宽限，终态为可续跑 `budget_exhausted`
   → `resume_sub_agent_id` 复用 SubSessionId/上下文、创建新 runId 并重置系统计数器

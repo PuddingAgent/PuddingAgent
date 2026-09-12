@@ -495,12 +495,12 @@ Agent 的自然语言推断：
    `maxToolCallsTotal`、`maxTimeoutSeconds`、`budgetGraceRounds`、
    `budgetGraceTimeoutSeconds`；它们是普通 `spawn_sub_agent` 的唯一预算来源。
 2. 查看 `runs/{runId}/input.json` 的 `limits` 与 `run.json`，确认固化值；父工具参数不应再出现
-   `max_rounds`、`max_tool_calls_total` 或 `timeout_seconds`。
+   `max_rounds`、`max_tool_calls_total` 或 `timeout_seconds`。（2026-09-12 起 runtime.execution.json 为系统 profile 默认来源；内部契约已支持请求级 `int? MaxRounds`。ADR-087 实施后 `max_rounds` 将成为父代理合法可选参数，届时以 `runs/{runId}/input.json` 的 `limits` 固化值为准）
 3. 查看 `events.jsonl` 的 `subagent.run.started`，核对
    `max_rounds/budget_grace_rounds/max_tool_calls/max_elapsed_seconds/budget_grace_timeout_seconds`
    与系统配置一致；再检查 `subagent.budget.notice` 是否依次出现 `start`、`remaining_80`、
    `remaining_50`、`grace_started`，最后按终态的实际计数判断撞到哪条护栏。
-4. 大型任务基线是 600 轮、2400 次工具调用、24 小时；正常轮次或时间预算用尽后默认还有
+4. 系统 profile 默认是 600 轮、2400 次工具调用、24 小时（非下限/上限；显式请求其他合法值由配置护栏裁决）；正常轮次或时间预算用尽后默认还有
    20 个收尾轮次，且硬时限内预留最多 30 分钟；若父 deadline 压缩了运行窗口，收尾时间最多
    占有效硬时限的 25%。`budget_exhausted` 应保留 `output.md`，父 Agent 可用
    `resume_sub_agent_id=<subSessionId>` 续跑；新 runId 的计数应从零重新开始。

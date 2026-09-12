@@ -94,7 +94,7 @@
 | `Agents/` | Agent 抽象定义 |
 | `SubAgents/` | 子代理抽象 |
 | `Platform/BuiltInAgentTemplates.cs` | 内置 Agent 模板的唯一权威源；V2 Default/Grant 直接决定 Low/High 子代理工具投影，Host 不得复制同全名类 |
-| `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约；普通大型任务基线 600 轮/2400 工具调用/24h，managed WorkUnit 硬上限 40 轮/120 工具调用，并定义收尾宽限与临时目录保留；父 Agent 只可指定 `resume_sub_agent_id`，不可扩大系统预算 |
+| `Runtime/SubAgentInvocationContracts.cs` | 子代理调用与系统执行预算契约；单一预算域（N00，commit f096bc5）：未显式请求时统一使用系统 profile 默认 600 轮/2400 工具调用/24h，请求可显式携带 `int? MaxRounds/MaxToolCallsTotal/TimeoutSeconds`，无 managed WorkUnit 独立预算域，不存在 32/40/120 隐式截断；显式超过配置护栏（options 上限）显式拒绝；收尾宽限 20 轮/30 分钟为加法（不预扣）；父 Agent 可指定 `resume_sub_agent_id` 与可选预算请求字段 |
 | `Runtime/ContextAssemblyContracts.cs` | 上下文装配契约；同时携带执行 AgentInstanceId 与稳定 ConfigurationAgentInstanceId，避免把 SubSessionId 当持久配置目录 |
 | `Runtime/ContextSegmentContracts.cs` | ContextSegmentLedger 数据契约（§6.1）+ ContextSegmentTier（T0–T4 分级枚举）|
 | `Runtime/ContextTierPlannerContracts.cs` | T0–T4 分级规划器契约：段输入/分配结果/阈值选项 + IContextTierPlanner |

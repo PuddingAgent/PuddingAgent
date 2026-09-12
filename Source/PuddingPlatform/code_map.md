@@ -71,7 +71,7 @@
 | 文件 | 用途 |
 |------|------|
 | `Middleware/TraceableExceptionMiddleware.cs` | 未处理异常生成可检索 errorId/500；仅当 `RequestAborted` 已取消时把 `OperationCanceledException` 视为客户端断开（499 + Debug），不污染 Error 日志 |
-| `Services/SubAgentManager.cs` | 子代理管理；固化系统预算/收尾宽限；managed `workspace-task-agent`/TaskPlan WorkUnit 强制钳制为最多 40 rounds/120 tools，普通显式大任务仍服从系统 600/2400 护栏；以同一 SubSessionId + 新 runId 透明续跑并重置计数器；终态 usage 只存运行摘要；`SubAgentResultIdentity.Compute(childRunId, 规范化终态, 父会话)` 派生确定性 `resultId` 并复用为结果消息 `MessageId`（无时间戳/随机成分），借 MessageFabric 按 MessageId 去重保证“一个 result 只触发一次父级接续” |
+| `Services/SubAgentManager.cs` | 子代理管理；统一预算解析（N00）：`maxRounds = request.MaxRounds ?? options.MaxRounds`、`maxToolCallsTotal` 同理（无 isManagedWorkUnit 特判）；显式超过 options 上限抛 InvalidOperationException；收尾宽限与续跑语义不变；以同一 SubSessionId + 新 runId 透明续跑并重置计数器；终态 usage 只存运行摘要；`SubAgentResultIdentity.Compute(childRunId, 规范化终态, 父会话)` 派生确定性 `resultId` 并复用为结果消息 `MessageId`（无时间戳/随机成分），借 MessageFabric 按 MessageId 去重保证“一个 result 只触发一次父级接续” |
 | `Services/SubAgentPool.cs` | Core `ISubAgentPool` 的 Platform 子代理池实现 |
 | `Services/SubAgentTransientDirectoryGcService.cs` | 历史临时执行身份空 Skill 脚手架 GC；以精确目录形状 + 子代理池 + durable run 终态多重门禁，先移入 retention-archive 隔离，延迟后再安全删除 |
 | `Services/SubAgentDiagnosticsService.cs` | 子代理诊断 |

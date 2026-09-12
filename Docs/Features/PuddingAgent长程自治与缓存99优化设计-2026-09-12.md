@@ -27,7 +27,7 @@
 
 | 已核实的问题 | 当前入口 | 优先动作 |
 |---|---|---|
-| 系统上限 600，但普通未指定请求默认 32，managed WorkUnit 被 `Math.Min(...,40)` 限制，工具上限另压到 120 | `SubAgentInvocationContracts.cs`、`SubAgentManager.NormalizeExecutionBudget` | P0 纠偏：单一有效预算，删小轮数截断，补 600 轮穿透测试 |
+| 系统上限 600，但普通未指定请求默认 32，managed WorkUnit 被 `Math.Min(...,40)` 限制，工具上限另压到 120（2026-09-12 已由 N00 修复，commit f096bc5） | `SubAgentInvocationContracts.cs`、`SubAgentManager.NormalizeExecutionBudget` | P0 纠偏：单一有效预算，删小轮数截断，补 600 轮穿透测试 |
 | Planner 固定 Explore/Plan/Change/Test/Review，每类 25–40 轮、20–60 分钟、10万–25万输入预算 | `TaskExecutionPlanCompiler.Budget` | 消除不同入口预算打架；简单任务不强制生成五段重复探索 |
 | 新 Session 整段注入最近摘要，未在该入口应用独立摘要预算 | `AgentMemorySummaryContextBuilder.BuildAsync`、`ContextPipelineOrchestrator` | 改为任务续行引用和有界记忆索引，旧摘要按需读取 |
 | 最近摘要只向前查 7 天；清理默认也为 7 天 | `SessionSummaryStore.LoadLatestAsync/Cleanup` | 长任务恢复不依赖该目录“最近一份”；活跃任务引用不能因摘要过期而失效 |
@@ -237,7 +237,7 @@ Session summary 仍可供用户查阅、旧对话定位和故障恢复，但不�
 
 达到所选轮数N后系统做有界checkpoint与资源清理，不再增加需主代理感知/管理的20–50个LLM grace轮。达到显式资源政策上界时不能靠新Run绕过；确需继续则保留partial与nextAction，通过既有政策授权恢复，不能误标完成。
 
-RuntimeExecutionConfigService 现在用 `Math.Max(600, configured)` 强制抬高配置，也是隐式补丁。新合同分别定义 profile 默认值、实例显式设置、请求显式设置、管理员上界；一个 resolver 一次得出 EffectiveExecutionBudget，显示来源。用户明确设置较小上界也必须尊重，不再出现“配置写40但实际600”反向漂移。
+RuntimeExecutionConfigService 曾用 `Math.Max(600, configured)` 强制抬高配置（已由 N00 删除，现为 `Math.Max(1, cfg)`，commit f096bc5），也是隐式补丁。新合同分别定义 profile 默认值、实例显式设置、请求显式设置、管理员上界；一个 resolver 一次得出 EffectiveExecutionBudget，显示来源。用户明确设置较小上界也必须尊重，不再出现“配置写40但实际600”反向漂移。
 
 必须核对整链：配置文件 → template/instance → task plan → spawn request → manager → invocation → dispatch snapshot → TurnExecutorAdapter → AgentLoop → grace。round/tool/time/input/output/cost 每个维度保留 configured/requested/effective/source，拒绝请求时说清是哪一级限制。禁止 Planner 用固定 100K 输入预算让 600 轮在第几轮就被截断。
 
