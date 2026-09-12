@@ -17,7 +17,7 @@ public sealed class StorageInventorySampler : BackgroundService
     private const int SliceBudgetMs = 100;
     private const int SliceGapDelayMs = 50;
     private const int RowSampleLimit = 300;
-    private const int MaxFilesPerLogRoot = 2_000;
+    private const int MaxDirectoryEntriesPerSample = 2_000;
     private static readonly TimeSpan DefaultRefreshInterval = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(60);
 
@@ -214,7 +214,7 @@ public sealed class StorageInventorySampler : BackgroundService
     {
         yield return new InventorySlice("databases.files", ct => Task.Run(() =>
         {
-            var databases = ReadDatabaseFileSnapshots();
+            var databases = ReadDatabaseFileSnapshots(ct);
             return Task.FromResult<(IReadOnlyList<StorageInventoryDatabaseDto>?, IReadOnlyList<StorageInventoryClassDto>?)>((databases, null));
         }, ct));
 
@@ -257,7 +257,7 @@ public sealed class StorageInventorySampler : BackgroundService
             {
                 yield return new InventorySlice(target.TargetId, ct =>
                     Task.FromResult<(IReadOnlyList<StorageInventoryDatabaseDto>?, IReadOnlyList<StorageInventoryClassDto>?)>(
-                        (null, [SampleLogClass(target)])));
+                        (null, [SampleLogClass(target, ct)])));
             }
         }
     }
@@ -268,7 +268,7 @@ public sealed class StorageInventorySampler : BackgroundService
 
     // ─── 数据库文件元数据（廉价、精确）─────────────────────────────
 
-    private IReadOnlyList<StorageInventoryDatabaseDto> ReadDatabaseFileSnapshots()
+    private IReadOnlyList<StorageInventoryDatabaseDto> ReadDatabaseFileSnapshots(CancellationToken ct)
     {
         var snapshots = new List<StorageInventoryDatabaseDto>();
         snapshots.Add(ReadDatabaseSnapshot(
@@ -280,7 +280,7 @@ public sealed class StorageInventorySampler : BackgroundService
         snapshots.Add(ReadDatabaseSnapshot(
             "controller", "控制面数据库", Path.Combine(_paths.DatabasesRoot, "pudding_controller.db")));
         snapshots.Add(ReadDirectorySnapshot(
-            "fulltext-index", "全文检索索引", Path.Combine(_paths.DataRoot, "fulltext-index")));
+            "fulltext-index", "全文检索索引", Path.Combine(_paths.DataRoot, "fulltext-index"), ct));
         return snapshots;
     }
 
@@ -316,56 +316,16 @@ public sealed class StorageInventorySampler : BackgroundService
         };
     }
 
-    private StorageInventoryDatabaseDto ReadDirectorySnapshot(string databaseId, string displayName, string rootPath)
+    private StorageInventoryDatabaseDto ReadDirectorySnapshot(string databaseId, string displayName, string rootPath, CancellationToken ct)
     {
-        long bytes = 0;
-        if (Directory.Exists(rootPath))
-        {
-            var pending = new Stack<string>([rootPath]);
-            var visited = 0;
-            while (pending.Count > 0 && visited < MaxFilesPerLogRoot)
-            {
-                var current = pending.Pop();
-                FileSystemInfo[] entries;
-                try
-                {
-                    entries = new DirectoryInfo(current).GetFileSystemInfos();
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    continue;
-                }
-
-                foreach (var entry in entries)
-                {
-                    if (visited >= MaxFilesPerLogRoot)
-                        break;
-                    try
-                    {
-                        if (!entry.Exists || (entry.Attributes & FileAttributes.ReparsePoint) != 0)
-                            continue;
-                        if ((entry.Attributes & FileAttributes.Directory) != 0)
-                            pending.Push(entry.FullName);
-                        else if (entry is FileInfo file)
-                        {
-                            bytes += file.Length;
-                            visited++;
-                        }
-                    }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                    {
-                        // 单项失败跳过。
-                    }
-                }
-            }
-        }
+        var sample = SampleDirectoryEntries([rootPath], logsOnly: false, MaxDirectoryEntriesPerSample, ct);
 
         return new StorageInventoryDatabaseDto
         {
             DatabaseId = databaseId,
             DisplayName = displayName,
             RelativePath = Path.GetRelativePath(_paths.DataRoot, rootPath),
-            MainBytes = bytes,
+            MainBytes = sample.Bytes,
             WalBytes = 0,
             SharedMemoryBytes = 0,
             PageSizeBytes = 0,
@@ -403,7 +363,7 @@ public sealed class StorageInventorySampler : BackgroundService
                 continue;
 
             // 时间范围：仅当该表存在以时间列为首列的索引时读取（索引首尾 O(log n)）；无索引时跳过，避免全表扫。
-            var hasTimeIndex = await HasIndexOnColumnAsync(connection, mapping.Table, mapping.TimestampColumn, ct);
+            var timeIndex = await FindTimeIndexAsync(connection, mapping.Table, mapping.TimestampColumn, ct);
 
             // 行数：rowid B-tree 右端探测，O(log n)。
             var rows = await ExecuteScalarLongAsync(
@@ -414,9 +374,9 @@ public sealed class StorageInventorySampler : BackgroundService
             totalRows += rows;
 
             // 时间范围：仅当 retention 索引存在时读取（索引首尾 O(log n)）；无索引时跳过，避免全表扫。
-            if (hasTimeIndex)
+            if (timeIndex is not null)
             {
-                var (minTs, maxTs) = await ReadTimeRangeAsync(connection, mapping.Table, mapping.TimestampColumn, ct);
+                var (minTs, maxTs) = await ReadTimeRangeAsync(connection, mapping.Table, mapping.TimestampColumn, timeIndex, ct);
                 if (TryParseTimestamp(minTs) is { } min && (oldest is null || min < oldest))
                     oldest = min;
                 if (TryParseTimestamp(maxTs) is { } max && (newest is null || max > newest))
@@ -495,13 +455,21 @@ public sealed class StorageInventorySampler : BackgroundService
         return [.. columns];
     }
 
-    private static async Task<(string? Min, string? Max)> ReadTimeRangeAsync(
-        SqliteConnection connection, string table, string timestampColumn, CancellationToken ct)
+    internal static string BuildTimeRangeQuery(string table, string timestampColumn, string indexName)
+    {
+        var column = QuoteIdentifier(timestampColumn);
+        var source = $"{QuoteIdentifier(table)} INDEXED BY {QuoteIdentifier(indexName)}";
+        // Combining MIN and MAX disables SQLite's single-extremum optimization and scans
+        // the entire table/index. Each scalar subquery instead seeks one index endpoint.
+        return $"SELECT (SELECT {column} FROM {source} WHERE {column} IS NOT NULL ORDER BY {column} COLLATE BINARY ASC LIMIT 1), "
+            + $"(SELECT {column} FROM {source} WHERE {column} IS NOT NULL ORDER BY {column} COLLATE BINARY DESC LIMIT 1)";
+    }
+
+    internal static async Task<(string? Min, string? Max)> ReadTimeRangeAsync(
+        SqliteConnection connection, string table, string timestampColumn, string indexName, CancellationToken ct)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"SELECT MIN({QuoteIdentifier(timestampColumn)}), MAX({QuoteIdentifier(timestampColumn)}) " +
-            $"FROM {QuoteIdentifier(table)}";
+        command.CommandText = BuildTimeRangeQuery(table, timestampColumn, indexName);
         command.CommandTimeout = 5;
         await using var reader = await command.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct))
@@ -525,71 +493,94 @@ public sealed class StorageInventorySampler : BackgroundService
 
     // ─── 日志分类（文件数结构性有界）───────────────────────────────
 
-    private StorageInventoryClassDto SampleLogClass(StorageDataClassCatalog.StorageDataClassDefinition definition)
+    private StorageInventoryClassDto SampleLogClass(StorageDataClassCatalog.StorageDataClassDefinition definition, CancellationToken ct)
     {
+        var dataRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_paths.DataRoot));
+        var roots = definition.LogRoots.Select(relative => Path.GetFullPath(Path.Combine(dataRoot, relative)))
+            .Where(root => root.Equals(dataRoot, StringComparison.OrdinalIgnoreCase)
+                || root.StartsWith(dataRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+        var sample = SampleDirectoryEntries(roots, logsOnly: true, MaxDirectoryEntriesPerSample, ct);
+
+        return new StorageInventoryClassDto
+        {
+            TargetId = definition.TargetId,
+            DisplayName = definition.DisplayName,
+            EstimatedBytes = sample.Bytes,
+            EstimatedRows = sample.Files,
+            OldestUtc = sample.OldestUtc,
+            EstimateState = sample.Files > 0 ? StorageEstimateState.Updated : StorageEstimateState.Unavailable,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        };
+    }
+
+    internal readonly record struct DirectorySample(long Bytes, long Files, DateTimeOffset? OldestUtc, int VisitedEntries);
+
+    /// <summary>
+    /// Lazy depth-first traversal. Roots, directories, skipped files and reparse points all
+    /// consume the shared budget; counting only matching files leaves wide trees unbounded.
+    /// No directory is materialized as an array, and all open enumerators are disposed.
+    /// </summary>
+    internal static DirectorySample SampleDirectoryEntries(
+        IEnumerable<string> roots, bool logsOnly, int maxEntries, CancellationToken ct)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxEntries);
         long bytes = 0, files = 0;
         DateTimeOffset? oldest = null;
-
-        foreach (var relativeRoot in definition.LogRoots)
+        var visited = 0;
+        var pending = new Stack<IEnumerator<FileSystemInfo>>();
+        pending.Push(roots.Select(root => (FileSystemInfo)new DirectoryInfo(root)).GetEnumerator());
+        try
         {
-            var root = Path.GetFullPath(Path.Combine(_paths.DataRoot, relativeRoot));
-            if (!root.StartsWith(_paths.DataRoot, StringComparison.OrdinalIgnoreCase) || !Directory.Exists(root))
-                continue;
-
-            var pending = new Stack<string>([root]);
-            while (pending.Count > 0 && files < MaxFilesPerLogRoot)
+            while (pending.Count > 0 && visited < maxEntries)
             {
-                var current = pending.Pop();
-                FileSystemInfo[] entries;
+                ct.ThrowIfCancellationRequested();
+                var current = pending.Peek();
+                FileSystemInfo entry;
                 try
                 {
-                    entries = new DirectoryInfo(current).GetFileSystemInfos();
+                    if (!current.MoveNext())
+                    {
+                        pending.Pop().Dispose();
+                        continue;
+                    }
+                    entry = current.Current;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
+                    pending.Pop().Dispose();
                     continue;
                 }
 
-                foreach (var entry in entries)
+                visited++;
+                try
                 {
-                    if (files >= MaxFilesPerLogRoot)
-                        break;
-                    try
+                    if (!entry.Exists || (entry.Attributes & FileAttributes.ReparsePoint) != 0)
+                        continue;
+                    if (entry is DirectoryInfo directory)
                     {
-                        if (!entry.Exists || (entry.Attributes & FileAttributes.ReparsePoint) != 0)
-                            continue;
-                        if ((entry.Attributes & FileAttributes.Directory) != 0)
-                        {
-                            pending.Push(entry.FullName);
-                            continue;
-                        }
-
-                        if (entry is not FileInfo file || !IsLogFileName(file.Name))
-                            continue;
+                        if (visited < maxEntries)
+                            pending.Push(directory.EnumerateFileSystemInfos().GetEnumerator());
+                    }
+                    else if (entry is FileInfo file && (!logsOnly || IsLogFileName(file.Name)))
+                    {
                         bytes += file.Length;
                         files++;
                         var lastWrite = new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero);
                         if (oldest is null || lastWrite < oldest)
                             oldest = lastWrite;
                     }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                    {
-                        // 单项失败跳过。
-                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Concurrent deletion or an inaccessible entry does not restart the scan.
                 }
             }
         }
-
-        return new StorageInventoryClassDto
+        finally
         {
-            TargetId = definition.TargetId,
-            DisplayName = definition.DisplayName,
-            EstimatedBytes = bytes,
-            EstimatedRows = files,
-            OldestUtc = oldest,
-            EstimateState = files > 0 ? StorageEstimateState.Updated : StorageEstimateState.Unavailable,
-            UpdatedAtUtc = DateTimeOffset.UtcNow,
-        };
+            while (pending.TryPop(out var enumerator)) enumerator.Dispose();
+        }
+        return new DirectorySample(bytes, files, oldest, visited);
     }
 
     internal static bool IsLogFileName(string fileName) =>
@@ -654,8 +645,8 @@ public sealed class StorageInventorySampler : BackgroundService
         return Convert.ToInt64(await command.ExecuteScalarAsync(ct)) > 0;
     }
 
-    /// <summary>该表是否存在以指定列为首列的索引（PRAGMA 驱动，列名非用户输入）。</summary>
-    private static async Task<bool> HasIndexOnColumnAsync(
+    /// <summary>全量 BINARY 时间索引；部分/表达式索引不能证明端点查询有界或覆盖全表。</summary>
+    internal static async Task<string?> FindTimeIndexAsync(
         SqliteConnection connection, string table, string column, CancellationToken ct)
     {
         var indexNames = new List<string>();
@@ -665,23 +656,26 @@ public sealed class StorageInventorySampler : BackgroundService
             listCommand.CommandTimeout = 5;
             await using var reader = await listCommand.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
-                indexNames.Add(reader.GetString(1));
+                if (reader.GetInt32(4) == 0) // partial indexes may exclude the actual oldest/newest row
+                    indexNames.Add(reader.GetString(1));
         }
 
         foreach (var indexName in indexNames)
         {
             await using var infoCommand = connection.CreateCommand();
-            infoCommand.CommandText = $"PRAGMA index_info({QuoteIdentifier(indexName)})";
+            infoCommand.CommandText = $"PRAGMA index_xinfo({QuoteIdentifier(indexName)})";
             infoCommand.CommandTimeout = 5;
             await using var infoReader = await infoCommand.ExecuteReaderAsync(ct);
             if (await infoReader.ReadAsync(ct)
-                && infoReader.GetString(2).Equals(column, StringComparison.OrdinalIgnoreCase))
+                && !infoReader.IsDBNull(2)
+                && infoReader.GetString(2).Equals(column, StringComparison.OrdinalIgnoreCase)
+                && infoReader.GetString(4).Equals("BINARY", StringComparison.OrdinalIgnoreCase))
             {
-                return true;
+                return indexName;
             }
         }
 
-        return false;
+        return null;
     }
 
     private static long GetFileLength(string path)
