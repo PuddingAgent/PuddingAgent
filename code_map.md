@@ -1,5 +1,9 @@
 # PuddingAgent CodeMAP
 
+## 2026-09-12 原生视觉与截图优化入口
+
+`Docs/Features/原生视觉与统一取图截图优化设计-2026-09-12.md`、ADR-088、`Docs/Reports/原生视觉优化看板修订-2026-09-12.md`：当前主力模型文件配置缺 `vision`；Reader 内 Responses/helper 分叉；Resolver 的 Data URI→Planner 解码上传；旧 384 图片估计；WebView2/RemoteBrowserPage ScreenshotAsync Unsupported。按 V5–V10 收敛能力/预算、Reader、Provider 流式传输，补齐 Web/Desktop 采集与共享主子代理图片轨迹。ADR-077 V0–V3 已有实现，本次仅新增设计/看板；V4 真实新构建验收待完成。
+
 ## 2026-09-12 子代理弹性与双向交互修订
 
 `Docs/Features/子代理弹性预算与双向交互设计-2026-09-12.md`、ADR-087、`Docs/Reports/子代理弹性交互看板修订-2026-09-12.md`：600改为可选实例，任意合法正整数预算；系统管理生命周期；query_sub_agents共享快照、send_message主子双向/插嘴、ask_question持久等待120秒与StopRun；Web轨迹空白先修canonical事件/回放，检查器改善发现/状态/行为/操作。复用Message Fabric/AwaitHandle/Steering/Cancellation/SubAgent投影，不建平行生命周期系统；本轮仅设计/看板。
@@ -74,7 +78,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/07架构/96ADR-082*.md` / `Docs/Features/Pudding外部工作空间Agent消息API设计与使用说明.md` | External API v1 的 Workspace/Agent/消息扩展；新增 `workspaces.read`、`agents.read`、`messages.send`，安全目录投影、`canonical_turn` Message Fabric ingress、幂等 `202 + Location` 和 Token-owned execution receipt；明确 Delivery accepted 不等于 Agent terminal。External/Token 7/7 + Dispatcher 2/2 聚焦测试与 Desktop Loopback 真实模型 smoke 已通过；非 Loopback HTTPS、RateLimiter/OpenAPI/P4 运维收口待完成 |
 | `Docs/07架构/97ADR-083*.md` / `Docs/Features/Agent系统预制模板完整快照与DeepSeek鲸鱼娘模板设计方案.md` | Agent 系统预制模板 v2 目标设计；目录包、完整 Creation Snapshot、版本/内容哈希/许可来源、显式导入升级与 drift 保护，Workspace 创建时选择模板即原子填充全部六组配置；重写通用助手并新增原创文本的 `deepseek-whalechan` 社区角色预制，既有 Agent 不被模板更新反向覆盖。当前仅设计完成，未实施或产品验收 |
 | `Docs/07架构/91ADR-076*.md` / `Docs/Features/遥测调试数据自动过期与Web存储管理设计方案.md` | 遥测/Debug 存储治理设计 + 首轮实现（Phase 0–3 已落地：语义目录/快照估算/单 writer 协调器/语义 API/Web /storage 页面；Phase 4 生产验收待做）；上下文日聚合复用既有 `context_layer_daily_rollups`、retention 索引收编目录所有权、旧 /databases 端点与 Desktop 旧页面捆绑退役、appsettings Retention 节已迁移 system.json |
-| `Docs/07架构/92ADR-077*.md` | 主代理原生视觉目标设计；typed image content、Workspace Artifact、DeepSeek Responses `input_image`/图片型工具结果、Files API、多轮/重启恢复、fail-closed；Image Reader 重定位为 URL/任意绝对路径/Artifact 取用工具，默认当前模型原生读取，文本模型或第二意见才委派 helper；V0–V2 已实现（typed parts、fail-closed Planner、图片工具结果、visionHelperModel、删除自动预观察），V3 Files API 与 V4 真实模型 smoke 待做 |
+| `Docs/07架构/92ADR-077*.md` | 原生视觉基础：typed parts、Workspace Artifact、Files API、多轮恢复；V0–V3 已有实现，V4 真实新构建验收待做。后续 ADR-088 收敛 Reader/能力/图片预算/流式传输并补齐 Web/Desktop 截图，自动 helper 移除及显式通用子代理第二意见仍待实施 |
 | `Docs/Features/Chat图片消息回放与前端旧Bundle缓存修复方案.md` | 2026-08-26 Chat 图片占位事故的可施工修复方案；冻结 Agent-first `contentParts` 透传、typed parts 优先兼容、localhost 旧 Service Worker 清理、入口/哈希资源缓存合同、build identity 和两段式产品验收；关联 P1 Task `ceba781342aa4353901654d1897092cb`，尚未实施 |
 | `Docs/Features/子代理活动轨迹实时回放与运行检查器修复方案.md` | 2026-08-26 子代理检查器空时间线事故的证据化施工方案；活动 Run 继续零 archive 轮询，改由 Conversation SSE + active-subagent gap replay + 可对账状态水位恢复；修正有界工具详情导致的聚合少计、增加轨迹同步降级与 build identity 门禁；关联 P1 Task `791d062fa6ea44f18bfe5027a37696d0`，尚未实施 |
 | `Docs/07架构/tool-infrastructure-layering.md` | Tool 分层、强制委派合同、Smart 参数与结果合同 |
@@ -293,12 +297,12 @@ Desktop → Core Ready 契约（2026-08-28 增加冷升级启动租约）
   → ConnectorHostLifecycleService 本地注册保持同步，StartAllAsync 后台执行（ApplicationStopping 绑定）
   → FeishuWebSocket 端点发现/WS 握手各 15s 上限；飞书不可达只 Faulted 单个连接器，不阻塞 Ready
 
-当前视觉链路（ADR-077 V0–V2 已实现，2026-08-23）：typed image content part（`ContentPart{type=image, artifactId, detail}`）
+当前视觉链路（2026-09-12复核：ADR-077 V0–V3 已有实现；ADR-088收敛待实施）：typed image content part（`ContentPart{type=image, artifactId, detail}`）
   → ConversationAcceptanceStore 同事务写 `ChatMessages.ContentPartsJson`（v1 信封，Content 为文本拼接投影）
   → ExecutionRunCoordinator 读 canonical parts + 冻结 AgentExecutionSnapshot（CapabilityTags/Protocol/VisionPolicy/VisionHelperRoute）
   → 主模型带 vision：ChatMessage.ContentParts 原生进入请求；文本模型只收 `artifact://` 占位并显式调用 image_reader
   → 已删除 VisualArtifactObservationService 自动预观察旁路（服务+注册+旧测试）
-  → LlmVisualInputPlanner fail-closed（缺图/超限抛稳定错误码，不再静默丢图）；inline-only：单图 2MB、聚合 40MiB、8 张上限
+  → LlmVisualInputPlanner fail-closed；已有inline/Files两种路径，旧产品策略单图2MB转Files、inline聚合40MiB、默认8张和384估计由V5/V7纠偏，不作为当前各Provider通用限制
   → Responses：user `input_image`（detail original→high）；`function_call_output.output` 支持 [input_text, input_image] 数组
   → ChatCompletions/Anthropic 遇图片工具结果抛 vision_tool_output_not_supported
   → Image Reader（image_reader）：path 唯一必填（http(s) URL / 宿主绝对路径 / artifact://），Low 权限 ReadOnly|RequiresNetwork（2026-08-28 裁定：纯只读无写/删路径，免审直通）
@@ -306,7 +310,7 @@ Desktop → Core Ready 契约（2026-08-28 增加冷升级启动租约）
     → 文本调用模型或显式 mode=delegate 时用 manifest `visionHelperModel`（原 imageReaderModel 已改名）单次可归因 invocation
   → image_reader source resolver：URL 有界下载（每跳 SSRF/DNS 重校验、禁内网）、本地只读、内容哈希稳定 vision-* Artifact
   → DB 水合经 MessageEntity.AttachmentsJson 恢复图片 part；Snapshot 工厂冻结能力，单一判定来源
-  → 待办（V3/V4）：DeepSeek Files API（>2MB 图暂 fail closed vision_request_limit_exceeded）、真实模型 smoke 与进程外验收
+  → V3 Files已实现上传、持久remote ref与过期恢复；V4当前真实模型smoke与进程外验收待做。V7进一步收敛流式读取、多Provider传输、全请求预算和引用生命周期
 
 Desktop Storage → CoreStorageManagementClient
   → GET/POST /api/admin/storage/databases（Admin JWT 或 Loopback ControlToken）

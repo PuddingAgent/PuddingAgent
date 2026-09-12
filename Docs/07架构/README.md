@@ -1,5 +1,9 @@
 # 07架构
 
+## 2026-09-12 原生视觉后续决策
+
+[ADR-088：原生视觉取图与截图统一链路](102ADR-088原生视觉取图与截图统一链路ADR.md)（Proposed）修订 ADR-077 的自动 helper、通用旧图片限制和首个试验模型假设。保留原生 typed parts/Artifact/Files，统一有效视觉能力、取图、流式传输、Web/桌面截图与共享轨迹；[详细方案](../Features/原生视觉与统一取图截图优化设计-2026-09-12.md)与[看板](../Reports/原生视觉优化看板修订-2026-09-12.md)。
+
 ## 2026-09-12 子代理预算后续决策
 
 [ADR-087：子代理托管运行与持久问答](101ADR-087子代理托管运行与持久问答ADR.md)（Proposed）修订ADR-086固定600/grace建议，定义弹性预算、共享快照、双向消息、120秒问答、StopRun及Web/无人值守统一入口。
@@ -106,7 +110,7 @@
 - Goal 命令、多入口控制、持久状态、事件驱动自主续行、256 个 Goal Iteration 硬上限、证据验证、压缩集成、Task-bound Goal、Agent 状态感知和低峰自动派发以 [ADR-074](89ADR-074Goal持久目标自主续行与自动压缩ADR.md)、[完整设计](../Features/Goal持久目标自主续行与自动压缩完整设计方案.md) 和 [代码级施工计划](../Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md) 为准；Goal 不依赖 Heartbeat，Task Auto 不使用普通提醒消息代替 GoalRun。
 - 第三方任务看板调用、opaque Access Token、ASP.NET Core 独立认证方案、scope/workspace Policy、外部 API v1、结构化任务评价和 Admin Token 管理器以 [ADR-075](90ADR-075第三方任务看板AccessToken与外部APIADR.md) 与 [详细设计](../Features/第三方任务看板AccessToken与外部API详细设计方案.md) 为准；实施进度：P1 Token 后端（hashed opaque `pdt_v1_` Token、`PuddingExternalAccessToken` scheme、scope/workspace Policy、last-used 合并写、审计）、P3 Admin 管理器（`/system-config/access-tokens` 页面 + `/api/admin/access-tokens`）与 P2 基本功能（External Task API v1：list/get/create/patch/comments/evaluations/commands、ETag/If-Match 428/412、追加式评价、简化幂等）已实现并通过 65 项测试；SSE Watch、RateLimiter、OpenAPI 快照与 P4 部署收口未实现，External API 默认关闭。
 - 遥测、上下文指标、运行活动与 Debug 数据的自动过期、缓存快照与后台增量估算、分类图表/趋势报表、用户按类型/时间清理、唯一在线维护 writer、Web `/storage` 和 Desktop 非目标边界以 [ADR-076](91ADR-076遥测与调试数据保留及Core存储管理ADR.md) 与 [详细设计](../Features/遥测调试数据自动过期与Web存储管理设计方案.md) 为准；当前仅设计完成，未实现或验收。
-- 主代理原生图片理解、typed image content、Workspace Artifact、DeepSeek Responses `input_image`/图片型工具结果、Files API、大图/多轮/重启恢复和 fail-closed 以 [ADR-077](92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) 为准；Image Reader 重定位为读取 URL、任意绝对路径和 Artifact 的按需取图工具，默认把图片交给调用模型，仅在文本模型或显式第二意见时调用 `visionHelperModel`。当前仅设计完成，既有多模态代码骨架不等于端到端验收。
+- 主代理原生图片理解、typed image content、Workspace Artifact、Files API、大图/多轮/重启恢复以 [ADR-077](92ADR-077主代理原生视觉理解与多模态消息链路ADR.md) 为基础；V0–V3 已有实现，V4 真实当前模型/新构建验收待完成。[ADR-088](102ADR-088原生视觉取图与截图统一链路ADR.md)（Proposed）进一步移除自动 helper，显式第二意见复用通用子代理，统一能力/预算/流式传输和 Web/Desktop 截图；不得用旧的“仅设计/Files 未实现”描述要求重复开发，也不得把新设计当作已部署。
 - Agent 消息正文、可披露思考、工具与委派的真实交错、唯一正文源、会话级唯一最新行为组披露、柔和收起/卸载和 viewport 单一滚动权威以 [ADR-079](93ADR-079Agent消息交错内容流与最新行为组披露ADR.md) 为准；代码级施工见 [完整实施方案](../Features/Agent消息交错内容流与最新行为组披露完整实施方案.md)。
 - Task `Ready -> Completed` 的证据化命令、单层子任务、普通 List 仅 `taskId/title`、Index/Card/Detail 三层投影、评论与备注分型、命令化看板拖拽、global-cursor Watch 和规模化性能门禁以 [ADR-080](94ADR-080任务看板分层读取子任务与命令化拖拽ADR.md) 与 [详细设计](../Features/任务看板状态机子任务渐进披露与高性能拖拽优化设计方案.md) 为准；当前仅完成设计，未实现、部署或生产验收。
 - 模型后训练 Harness 与 Pudding 工具协议的差异，以 [ADR-081](95ADR-081AgentHarness兼容边界与工具协议适配ADR.md) 和 [详细设计](../Features/AgentHarness兼容与工具调用效率修复设计方案.md) 为准：canonical 工具唯一，别名在统一执行门禁前归一化，提示保持短且稳定，`rg` no-match 与真实失败分离；H0 已实现，当前进程部署和真实模型验收未完成。

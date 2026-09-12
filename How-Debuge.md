@@ -4,6 +4,14 @@
 
 ## 1. 基本原则
 
+### 模型升级后仍不能读图、截图或图片预算异常（2026-09-12）
+
+- 先检查选定 Provider/Model/协议、文件配置的 `capabilityTags` 与当前 Run 冻结 Snapshot。当前 `SupportsVision` 依赖 `vision`，Responses 本身不能证明工具图/Files 支持；更新模板/文件不等于既有 Agent/Run 已加载。诊断只输出非敏感能力字段，不能打印整个 provider 配置。
+- 用户图片链路已有 typed parts 和 V3 Files。按 Artifact → canonical ContentPartsJson → Runtime → 最终 Gateway 图片块 → Provider usage 对齐；不要只看 Web 缩略图或模型自述。Reader 的 `auto` helper 分支与用户附件自动预观察是不同路径。
+- `BrowserSnapshotTool` 目前提供 DOM/AX/HTML；`WebView2BrowserPage.ScreenshotAsync` 抛 NotSupported，`RemoteBrowserPage.ScreenshotAsync` Unsupported。BrowserActivity 的 CaptureEvidence 是活动记录，不是桌面像素；接口名、摄像头上传也不能证明通用截图已实现。
+- `LlmVisualInputPlanner` 仍有每图384估计和2MB inline策略；当前公开DeepSeek Vision合同已变化（核验日期2026-09-12），排查时区分产品策略、Provider限制、解码量、最终Base64/JSON body及真实usage。图片分散在多条消息时需要整请求合计。
+- 后续观测字段及错误定位见 `Docs/Features/原生视觉与统一取图截图优化设计-2026-09-12.md` §8；新增事件/采集能力仍为设计，不能假设当前日志已有。先确认工具取得图、请求携带图、任务依赖图完成这三层证据，再判定视觉功能通过。
+
 ### 心跳、子代理接续与效率审计（2026-09-12）
 
 - 心跳以`chat_execution_commands.metadata_json.source=heartbeat`和Fabric可信发送者判定，按emitted/accepted/dropped/started/terminal/实际产物分别核对；成功终态、goal_update或压缩纪要不等于完成任务。逐次检查工具与文件/测试/提交证据，避免把有实际改动但最终输出纪要的回合判为空转。
