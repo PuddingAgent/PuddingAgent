@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Models;
 using PuddingPlatform.Data;
@@ -247,10 +247,10 @@ public sealed class MessageFabricSchemaBootstrapperTests
                 INSERT INTO room_messages
                     (message_id, workspace_id, room_id, from_kind, from_id, audience, visibility, content, metadata_json, created_at)
                 VALUES
-                    ('m-inform', 'default', 'room-1', 'agent', 'agent-a', 'direct', 'public', 'inform', '{"intent":"inform","requires_response":"false"}', 1),
-                    ('m-reply',  'default', 'room-1', 'agent', 'agent-a', 'direct', 'public', 'reply',  '{"intent":"agent_reply","requires_response":"false"}', 2),
-                    ('m-ask',    'default', 'room-1', 'agent', 'agent-a', 'direct', 'public', 'ask',    '{"intent":"ask","requires_response":"true"}', 3),
-                    ('m-work',   'default', 'room-1', 'agent', 'agent-a', 'direct', 'public', 'work',   '{"intent":"inform","requires_response":"true"}', 4);
+                    ('m-inform', 'default', 'room-1', 'agent', 'agent-a', 'direct', 'public', 'inform', '{{"intent":"inform","requires_response":"false"}}', 1),
+                    ('m-reply',  'default', 'room-1', 'agent', 'agent-a', 'direct', 'public', 'reply',  '{{"intent":"agent_reply","requires_response":"false"}}', 2),
+                    ('m-ask',    'default', 'room-1', 'agent', 'agent-a', 'direct', 'public', 'ask',    '{{"intent":"ask","requires_response":"true"}}', 3),
+                    ('m-work',   'default', 'room-1', 'agent', 'agent-a', 'direct', 'public', 'work',   '{{"intent":"inform","requires_response":"true"}}', 4);
 
                 INSERT INTO message_deliveries
                     (delivery_id, message_id, workspace_id, room_id, target_kind, target_id, status, handling_mode, created_at, updated_at)
