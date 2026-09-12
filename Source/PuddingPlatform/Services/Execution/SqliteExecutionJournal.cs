@@ -25,6 +25,16 @@ public sealed class SqliteExecutionJournal(
     /// 用户拍板的三值之一：chat.acceptance / execution.journal / subagent.runtime。
     /// </summary>
     private const string JournalProducerComponent = "execution.journal";
+
+    /// <summary>
+    /// A01-slice-4c：父 Turn park 后的非终态取值。13 字符，满足 execution_runs.status / conversation_turns.status
+    /// 的 MaxLength(16) 约束；不新增列、不改列长度。
+    /// 语义：本 Turn 的 LLM 循环已结束，但本 Turn 仍有 running 子代理，终态提交被推迟到最后一个子代理收口。
+    /// </summary>
+    private const string WaitingChildStatus = "waiting_child";
+
+    /// <summary>命令 metadata_json 中承载「待提交终态」的键（复用既有 JSON 列，不新增列）。</summary>
+    private const string ParkedTerminalKey = "parked_terminal";
     public async Task<AppendResult> StartRunAsync(
         ExecutionLease lease,
         string snapshotId,
@@ -289,6 +299,382 @@ public sealed class SqliteExecutionJournal(
             return new AppendResult(
                 pendingEvents.Count > 0 ? lastSeq - writtenCount + 1 : lastSeq,
                 lastSeq, writtenCount);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// A01-slice-4c：父 Turn park —— 本 Turn 仍有 running 子代理时，把 Turn/Run/Command 收敛为非终态
+    /// waiting_child，并 flush 本 Turn 的非终态 pending 输出。同一事务内：
+    ///   1. 校验 Run（runId + workerId + fencingToken + status = running）；不校验 lease_until，
+    ///      因为 park 的语义就是停止续租、改由 waiting_child 状态承担判活（回收扫描不再命中该行）。
+    ///   2. 写入 pending 非终态输出事件。
+    ///   3. Turn running → waiting_child（CAS）。
+    ///   4. Run running → waiting_child（释放租约，不写 completed_at / terminal_sequence）。
+    ///   5. Command running｜cancel_requested → waiting_child（释放租约）。
+    ///   6. 把待提交终态持久化进命令 metadata_json（merged，保留既有键），使收口不依赖进程内状态。
+    /// 不写任何 terminal 事件、不写业务 completed；任一 CAS 未命中即整事务回滚并返回 null。
+    /// </summary>
+    public async Task<ExecutionParkResult?> ParkForChildrenAsync(
+        ExecutionLease lease,
+        TurnTerminal deferredTerminal,
+        IReadOnlyList<NewConversationEvent> pendingEvents,
+        CancellationToken ct)
+    {
+        if (deferredTerminal.Kind != TurnTerminalKind.Completed)
+            throw new ArgumentException(
+                "Park only accepts a completed terminal.",
+                nameof(deferredTerminal));
+        if (pendingEvents.Any(e => IsTerminalType(e.Type)))
+            throw new InvalidOperationException(
+                "ParkForChildrenAsync rejects terminal events. Use CommitTerminalAsync.");
+
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var conn = db.Database.GetDbConnection();
+        await OpenConnectionAsync(conn, lease, ct);
+
+        using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable, ct);
+        try
+        {
+            var runMatches = false;
+            using (var guardCmd = conn.CreateCommand())
+            {
+                guardCmd.Transaction = tx;
+                guardCmd.CommandText = @"
+                    SELECT worker_id, fencing_token, status
+                    FROM execution_runs
+                    WHERE run_id = @runId";
+                AddParam(guardCmd, "@runId", lease.RunId);
+                using var reader = await guardCmd.ExecuteReaderAsync(ct);
+                runMatches = await reader.ReadAsync(ct)
+                    && reader.GetString(0) == lease.WorkerId
+                    && reader.GetInt64(1) == lease.FencingToken
+                    && reader.GetString(2) == "running";
+            }
+
+            if (!runMatches)
+            {
+                await tx.RollbackAsync(ct);
+                logger.LogWarning(
+                    "[Journal] Park rejected run={RunId} fence={Fence}",
+                    lease.RunId,
+                    lease.FencingToken);
+                return null;
+            }
+
+            var parkedJson = MergeParkedTerminalJson(
+                await ReadCommandMetadataJsonAsync(conn, tx, lease.CommandId, ct),
+                deferredTerminal);
+
+            long lastSeq = 0;
+            if (pendingEvents.Count > 0)
+            {
+                var pendingResult = await AppendEventsInternalAsync(
+                    conn, tx, lease, pendingEvents, ct);
+                lastSeq = pendingResult.LastSequence;
+            }
+
+            using (var turnCmd = conn.CreateCommand())
+            {
+                turnCmd.Transaction = tx;
+                turnCmd.CommandText = @"
+                    UPDATE conversation_turns
+                    SET status = @status
+                    WHERE turn_id = @turnId
+                      AND status = 'running'
+                      AND terminal_sequence IS NULL";
+                AddParam(turnCmd, "@status", WaitingChildStatus);
+                AddParam(turnCmd, "@turnId", lease.TurnId);
+                var turnAffected = await turnCmd.ExecuteNonQueryAsync(ct);
+                if (turnAffected != 1)
+                {
+                    await tx.RollbackAsync(ct);
+                    logger.LogWarning(
+                        "[Journal] Park rejected turn={TurnId} rows={Rows}",
+                        lease.TurnId,
+                        turnAffected);
+                    return null;
+                }
+            }
+
+            using (var runCmd = conn.CreateCommand())
+            {
+                runCmd.Transaction = tx;
+                runCmd.CommandText = @"
+                    UPDATE execution_runs
+                    SET status = @status,
+                        lease_until = NULL
+                    WHERE run_id = @runId
+                      AND fencing_token = @fenceToken
+                      AND worker_id = @workerId
+                      AND status = 'running'";
+                AddParam(runCmd, "@status", WaitingChildStatus);
+                AddParam(runCmd, "@runId", lease.RunId);
+                AddParam(runCmd, "@fenceToken", lease.FencingToken);
+                AddParam(runCmd, "@workerId", lease.WorkerId);
+                var runAffected = await runCmd.ExecuteNonQueryAsync(ct);
+                if (runAffected != 1)
+                {
+                    await tx.RollbackAsync(ct);
+                    logger.LogWarning(
+                        "[Journal] Park rejected run update run={RunId} rows={Rows}",
+                        lease.RunId,
+                        runAffected);
+                    return null;
+                }
+            }
+
+            using (var cmdCmd = conn.CreateCommand())
+            {
+                cmdCmd.Transaction = tx;
+                cmdCmd.CommandText = @"
+                    UPDATE chat_execution_commands
+                    SET status = @status,
+                        metadata_json = @metadataJson,
+                        lease_owner = NULL,
+                        lease_until = NULL
+                    WHERE command_id = @commandId
+                      AND status IN ('running', 'cancel_requested')";
+                AddParam(cmdCmd, "@status", WaitingChildStatus);
+                AddParam(cmdCmd, "@metadataJson", parkedJson);
+                AddParam(cmdCmd, "@commandId", lease.CommandId);
+                var cmdAffected = await cmdCmd.ExecuteNonQueryAsync(ct);
+                if (cmdAffected != 1)
+                {
+                    await tx.RollbackAsync(ct);
+                    logger.LogWarning(
+                        "[Journal] Park rejected command={CommandId} rows={Rows}",
+                        lease.CommandId,
+                        cmdAffected);
+                    return null;
+                }
+            }
+
+            await tx.CommitAsync(ct);
+            if (pendingEvents.Count > 0)
+                signal.Signal(lease.ConversationId, lastSeq);
+
+            logger.LogInformation(
+                "[Journal] Parked run={RunId} turn={TurnId} cmd={CmdId} seq={Seq}",
+                lease.RunId, lease.TurnId, lease.CommandId, lastSeq);
+
+            return new ExecutionParkResult(lastSeq, pendingEvents.Count);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// A01-slice-4c：唤醒收口 —— 父 Turn 已无 running 子代理时，把 park 的父 Turn 收敛为终态。
+    /// 以 WHERE status = 'waiting_child' 的 CAS 抢占唯一收口权：并发或重复触发只允许一次成功，
+    /// 其余调用返回 null（绝不写第二个终态事件）。终态事件与 park 时持久化的待提交终态逐字节一致。
+    /// </summary>
+    public async Task<ExecutionParkFinalizeResult?> TryFinalizeWaitingTurnAsync(
+        string parentTurnId,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(parentTurnId))
+            return null;
+
+        var turnId = parentTurnId.Trim();
+
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var conn = db.Database.GetDbConnection();
+        await conn.OpenAsync(ct);
+
+        using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable, ct);
+        try
+        {
+            string runId;
+            string conversationId;
+            string commandId;
+            string workerId;
+            string workspaceId;
+            long fencingToken;
+            string? metadataJson;
+            string? assistantMessageId;
+            string? traceId;
+
+            using (var selCmd = conn.CreateCommand())
+            {
+                selCmd.Transaction = tx;
+                selCmd.CommandText = @"
+                    SELECT r.run_id, r.conversation_id, r.command_id, r.worker_id, r.fencing_token,
+                           t.workspace_id, c.metadata_json, c.message_id, c.trace_id
+                    FROM execution_runs r
+                    JOIN conversation_turns t ON t.turn_id = r.turn_id
+                    JOIN chat_execution_commands c ON c.command_id = r.command_id
+                    WHERE r.turn_id = @turnId
+                      AND r.status = @parked
+                      AND t.status = @parked
+                    LIMIT 1";
+                AddParam(selCmd, "@turnId", turnId);
+                AddParam(selCmd, "@parked", WaitingChildStatus);
+                using var reader = await selCmd.ExecuteReaderAsync(ct);
+                if (!await reader.ReadAsync(ct))
+                {
+                    await tx.RollbackAsync(ct);
+                    return null;
+                }
+
+                runId = reader.GetString(0);
+                conversationId = reader.GetString(1);
+                commandId = reader.GetString(2);
+                workerId = reader.GetString(3);
+                fencingToken = reader.GetInt64(4);
+                workspaceId = reader.GetString(5);
+                metadataJson = reader.IsDBNull(6) ? null : reader.GetString(6);
+                assistantMessageId = reader.IsDBNull(7) ? null : reader.GetString(7);
+                traceId = reader.IsDBNull(8) ? null : reader.GetString(8);
+            }
+
+            if (!TryReadParkedTerminal(metadataJson, out var parked))
+            {
+                await tx.RollbackAsync(ct);
+                logger.LogWarning(
+                    "[Journal] Finalize skipped — no parked terminal turn={TurnId}", turnId);
+                return null;
+            }
+
+            var lease = new ExecutionLease(
+                commandId,
+                workerId,
+                workspaceId,
+                conversationId,
+                turnId,
+                runId,
+                fencingToken,
+                DateTimeOffset.UtcNow.AddMinutes(2))
+            {
+                TraceId = traceId,
+            };
+
+            var terminalEvent = new NewConversationEvent(
+                EventId: Guid.NewGuid().ToString("N"),
+                Type: parked.TerminalEventType,
+                SchemaVersion: 1,
+                WorkspaceId: workspaceId,
+                TurnId: turnId,
+                CommandId: commandId,
+                RunId: runId,
+                MessageId: assistantMessageId,
+                CorrelationId: conversationId,
+                CausationId: turnId,
+                ProducerEventId: null,
+                Payload: parked.Payload);
+
+            var appendResult = await AppendEventsInternalAsync(
+                conn, tx, lease, [terminalEvent], ct);
+            var lastSeq = appendResult.LastSequence;
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            using (var turnCmd = conn.CreateCommand())
+            {
+                turnCmd.Transaction = tx;
+                turnCmd.CommandText = @"
+                    UPDATE conversation_turns
+                    SET status = @status,
+                        terminal_sequence = @termSeq,
+                        terminal_kind = @termKind,
+                        completed_at = @completedAt
+                    WHERE turn_id = @turnId
+                      AND status = @parked
+                      AND terminal_sequence IS NULL";
+                AddParam(turnCmd, "@status", parked.TurnStatus);
+                AddParam(turnCmd, "@termSeq", lastSeq);
+                AddParam(turnCmd, "@termKind", parked.TerminalKind);
+                AddParam(turnCmd, "@completedAt", nowMs);
+                AddParam(turnCmd, "@turnId", turnId);
+                AddParam(turnCmd, "@parked", WaitingChildStatus);
+                var turnAffected = await turnCmd.ExecuteNonQueryAsync(ct);
+                if (turnAffected != 1)
+                {
+                    // 并发收口：另一个调用已写入终态。回滚本次事件，绝不写第二个终态事实。
+                    await tx.RollbackAsync(ct);
+                    logger.LogInformation(
+                        "[Journal] Finalize lost CAS turn={TurnId} rows={Rows}",
+                        turnId,
+                        turnAffected);
+                    return null;
+                }
+            }
+
+            using (var runCmd = conn.CreateCommand())
+            {
+                runCmd.Transaction = tx;
+                runCmd.CommandText = @"
+                    UPDATE execution_runs
+                    SET status = @status,
+                        terminal_sequence = @termSeq,
+                        completed_at = @completedAt
+                    WHERE run_id = @runId
+                      AND status = @parked";
+                AddParam(runCmd, "@status", parked.RunStatus);
+                AddParam(runCmd, "@termSeq", lastSeq);
+                AddParam(runCmd, "@completedAt", nowMs);
+                AddParam(runCmd, "@runId", runId);
+                AddParam(runCmd, "@parked", WaitingChildStatus);
+                var runAffected = await runCmd.ExecuteNonQueryAsync(ct);
+                if (runAffected != 1)
+                {
+                    await tx.RollbackAsync(ct);
+                    logger.LogWarning(
+                        "[Journal] Finalize run CAS lost run={RunId} rows={Rows}",
+                        runId,
+                        runAffected);
+                    return null;
+                }
+            }
+
+            using (var cmdCmd = conn.CreateCommand())
+            {
+                cmdCmd.Transaction = tx;
+                cmdCmd.CommandText = @"
+                    UPDATE chat_execution_commands
+                    SET status = @status,
+                        terminal_sequence = @termSeq,
+                        completed_at = @completedAt,
+                        lease_owner = NULL,
+                        lease_until = NULL
+                    WHERE command_id = @commandId
+                      AND status = @parked";
+                AddParam(cmdCmd, "@status", parked.CommandStatus);
+                AddParam(cmdCmd, "@termSeq", lastSeq);
+                AddParam(cmdCmd, "@completedAt", nowMs);
+                AddParam(cmdCmd, "@commandId", commandId);
+                AddParam(cmdCmd, "@parked", WaitingChildStatus);
+                var cmdAffected = await cmdCmd.ExecuteNonQueryAsync(ct);
+                if (cmdAffected != 1)
+                {
+                    await tx.RollbackAsync(ct);
+                    logger.LogWarning(
+                        "[Journal] Finalize command CAS lost cmd={CommandId} rows={Rows}",
+                        commandId,
+                        cmdAffected);
+                    return null;
+                }
+            }
+
+            await tx.CommitAsync(ct);
+            signal.Signal(conversationId, lastSeq);
+
+            logger.LogInformation(
+                "[Journal] Finalized waiting turn={TurnId} run={RunId} kind={Kind} seq={Seq}",
+                turnId, runId, parked.TerminalKind, lastSeq);
+
+            return new ExecutionParkFinalizeResult(
+                turnId, runId, lastSeq, parked.TerminalKind);
         }
         catch
         {
@@ -576,6 +962,118 @@ public sealed class SqliteExecutionJournal(
         eventType == ConversationEventTypes.TurnCompleted ||
         eventType == ConversationEventTypes.TurnFailed ||
         eventType == ConversationEventTypes.TurnCancelled;
+
+    private static async Task<string?> ReadCommandMetadataJsonAsync(
+        System.Data.Common.DbConnection conn,
+        System.Data.Common.DbTransaction tx,
+        string commandId,
+        CancellationToken ct)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = @"
+            SELECT metadata_json
+            FROM chat_execution_commands
+            WHERE command_id = @commandId";
+        AddParam(cmd, "@commandId", commandId);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is null or DBNull ? null : Convert.ToString(result);
+    }
+
+    /// <summary>
+    /// 把「待提交终态」并入命令 metadata_json（保留既有键）：终态状态串、事件类型与事件 payload
+    /// 全部取自即将提交的 TurnTerminal，因此收口时写出的事件与正常终态提交逐字节一致。
+    /// 既有 metadata 不可解析时 fail-closed 抛错，由调用方整事务回滚并回退常规终态提交。
+    /// </summary>
+    private static string MergeParkedTerminalJson(string? existingJson, TurnTerminal terminal)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(existingJson))
+        {
+            Dictionary<string, string>? existing;
+            try
+            {
+                existing = System.Text.Json.JsonSerializer
+                    .Deserialize<Dictionary<string, string>>(existingJson);
+            }
+            catch (System.Text.Json.JsonException ex)
+            {
+                throw new InvalidOperationException(
+                    "Command metadata_json is not a flat string map; park is rejected.", ex);
+            }
+
+            if (existing is not null)
+                foreach (var pair in existing)
+                    metadata[pair.Key] = pair.Value;
+        }
+
+        metadata[ParkedTerminalKey] = System.Text.Json.JsonSerializer.Serialize(
+            new Dictionary<string, string>
+            {
+                ["turn_status"] = TurnStatusToString(terminal),
+                ["run_status"] = RunStatusToString(terminal.RunStatus),
+                ["command_status"] = CommandStatusToString(terminal.CommandStatus),
+                ["terminal_event_type"] = terminal.TerminalEventType,
+                ["terminal_kind"] = terminal.Kind.ToString().ToLowerInvariant(),
+                ["payload"] = BuildTerminalPayload(terminal).GetRawText(),
+            });
+
+        return System.Text.Json.JsonSerializer.Serialize(metadata);
+    }
+
+    private static bool TryReadParkedTerminal(string? metadataJson, out ParkedTerminalValue parked)
+    {
+        parked = default;
+        if (string.IsNullOrWhiteSpace(metadataJson))
+            return false;
+
+        Dictionary<string, string>? metadata;
+        try
+        {
+            metadata = System.Text.Json.JsonSerializer
+                .Deserialize<Dictionary<string, string>>(metadataJson);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
+        }
+
+        if (metadata is null || !metadata.TryGetValue(ParkedTerminalKey, out var parkedJson))
+            return false;
+
+        Dictionary<string, string>? parkedFields;
+        try
+        {
+            parkedFields = System.Text.Json.JsonSerializer
+                .Deserialize<Dictionary<string, string>>(parkedJson);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
+        }
+
+        if (parkedFields is null
+            || !parkedFields.TryGetValue("payload", out var payloadText))
+            return false;
+
+        using var doc = System.Text.Json.JsonDocument.Parse(payloadText);
+        parked = new ParkedTerminalValue(
+            parkedFields["turn_status"],
+            parkedFields["run_status"],
+            parkedFields["command_status"],
+            parkedFields["terminal_event_type"],
+            parkedFields["terminal_kind"],
+            doc.RootElement.Clone());
+        return true;
+    }
+
+    private readonly record struct ParkedTerminalValue(
+        string TurnStatus,
+        string RunStatus,
+        string CommandStatus,
+        string TerminalEventType,
+        string TerminalKind,
+        System.Text.Json.JsonElement Payload);
 
     private static string TurnStatusToString(TurnTerminal terminal) => terminal.Kind switch
     {

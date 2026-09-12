@@ -28,20 +28,38 @@ public class FileSubAgentRunStore : ISubAgentRunStore
     private readonly ILogger<FileSubAgentRunStore> _logger;
     private readonly IDbContextFactory<PlatformDbContext> _dbFactory;
     private readonly IConversationEventStore _conversationEventStore;
+    private readonly IExecutionJournal? _executionJournal;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _runGates = new(StringComparer.Ordinal);
     private readonly object _projectionScanGate = new();
     private int _projectionScanOffset;
+    private string[] _projectionRunDirectories = [];
+    private long _projectionDiscoveryAt;
+    private readonly ConcurrentDictionary<string, ProjectionFileStamp> _settledProjections = new(StringComparer.Ordinal);
+
+    private readonly record struct ProjectionFileStamp(long EventLength, DateTime EventWrite,
+        DateTime ManifestWrite, long CursorLength, DateTime CursorWrite);
+
+    private static ProjectionFileStamp GetProjectionStamp(string runDir)
+    {
+        var events = new FileInfo(Path.Combine(runDir, "events.jsonl"));
+        var cursor = new FileInfo(Path.Combine(runDir, "conversation-projection.cursor"));
+        return new(events.Length, events.LastWriteTimeUtc,
+            File.GetLastWriteTimeUtc(Path.Combine(runDir, "run.json")),
+            cursor.Exists ? cursor.Length : -1, cursor.LastWriteTimeUtc);
+    }
 
     public FileSubAgentRunStore(
         PuddingDataPaths paths,
         ILogger<FileSubAgentRunStore> logger,
         IDbContextFactory<PlatformDbContext> dbFactory,
-        IConversationEventStore conversationEventStore)
+        IConversationEventStore conversationEventStore,
+        IExecutionJournal? executionJournal = null)
     {
         _paths = paths;
         _logger = logger;
         _dbFactory = dbFactory;
         _conversationEventStore = conversationEventStore;
+        _executionJournal = executionJournal;
     }
 
     /// <inheritdoc />
@@ -332,16 +350,58 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             "[FileSubAgentRunStore] Completed run runId={RunId} status={Status} rounds={Rounds} tools={Tools}",
             runId, completion.Status, completion.TotalRounds, completion.TotalToolCalls);
 
-        // 同步更新 DB 索引
+                // 同步更新 DB 索引
         await UpdateDbIndexAsync(runId, completion.Status, completedAt.ToString("O"),
             completion.ErrorMessage, completion.TotalRounds, completion.TotalToolCalls,
             completion.TotalDurationMs, ct);
+
+        // A01-slice-4c 唤醒收口：本子代理终态（含 DB 索引）落库后，若父 Turn 已 park 为 waiting_child
+        // 且本 Turn 下再无 running 子代理，则由 execution.journal 以 CAS 把父 Turn 收口为终态。
+        await TryFinalizeWaitingParentTurnAsync(runId, manifest, ct);
 
         return SubAgentRunTerminalWriteResult.Applied;
         }
         finally
         {
             gate.Release();
+        }
+    }
+
+        /// <summary>
+    /// A01-slice-4c：最后一个 running 子代理归零时收口 park 的父 Turn。
+    /// 无父 Turn 身份、仍有 running 子代理、收口被拒或异常——一律只是「未收口」，
+    /// 父 Turn 继续停留在 waiting_child，绝不误报为已终态。
+    /// </summary>
+    private async Task TryFinalizeWaitingParentTurnAsync(
+        string runId,
+        SubAgentRunManifest manifest,
+        CancellationToken ct)
+    {
+        if (_executionJournal is null)
+            return;
+
+        var parentTurnId = manifest.ParentExecutionIdentity?.TurnId;
+        if (string.IsNullOrWhiteSpace(parentTurnId))
+            return;
+
+        try
+        {
+            if (await GetRunningCountByParentTurnAsync(parentTurnId, ct) > 0)
+                return;
+
+            var result = await _executionJournal.TryFinalizeWaitingTurnAsync(parentTurnId, ct);
+            if (result is not null)
+            {
+                _logger.LogInformation(
+                    "[FileSubAgentRunStore] Finalized waiting parent turn={ParentTurnId} after run={RunId} kind={Kind} seq={Seq}",
+                    parentTurnId, runId, result.TerminalKind, result.TerminalSequence);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[FileSubAgentRunStore] Parent turn finalize deferred parentTurnId={ParentTurnId} runId={RunId}",
+                parentTurnId, runId);
         }
     }
 
@@ -537,7 +597,16 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         if (maxRuns <= 0 || !Directory.Exists(_paths.WorkspacesRoot))
             return 0;
 
-        var runDirectories = Directory.EnumerateFiles(
+        string[] runDirectories;
+        int scanCount;
+        int scanStart;
+        lock (_projectionScanGate)
+        {
+            // Direct appends already project immediately. The sweep is a recovery path,
+            // not a reason to rediscover the entire workspace on every two-second tick.
+            if (_projectionRunDirectories.Length == 0 || Environment.TickCount64 - _projectionDiscoveryAt >= 30_000)
+            {
+                _projectionRunDirectories = Directory.EnumerateFiles(
                 _paths.WorkspacesRoot,
                 "events.jsonl",
                 SearchOption.AllDirectories)
@@ -549,13 +618,14 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(static path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        if (runDirectories.Length == 0)
-            return 0;
-
-        var scanCount = Math.Min(maxRuns, runDirectories.Length);
-        int scanStart;
-        lock (_projectionScanGate)
-        {
+                _projectionDiscoveryAt = Environment.TickCount64;
+                var current = _projectionRunDirectories.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                foreach (var cached in _settledProjections.Keys)
+                    if (!current.Contains(cached)) _settledProjections.TryRemove(cached, out _);
+            }
+            runDirectories = _projectionRunDirectories;
+            if (runDirectories.Length == 0) return 0;
+            scanCount = Math.Min(maxRuns, runDirectories.Length);
             scanStart = _projectionScanOffset % runDirectories.Length;
             _projectionScanOffset = (scanStart + scanCount) % runDirectories.Length;
         }
@@ -711,6 +781,10 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         if (!File.Exists(runJsonPath) || !File.Exists(eventsPath))
             return 0;
 
+        var stamp = GetProjectionStamp(runDir);
+        if (_settledProjections.TryGetValue(runDir, out var settled) && settled == stamp)
+            return 0;
+
         var manifestJson = await ReadAllTextSharedAsync(runJsonPath, ct);
         var manifest = JsonSerializer.Deserialize<SubAgentRunManifest>(
             manifestJson,
@@ -721,8 +795,13 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         var cursorPath = Path.Combine(runDir, "conversation-projection.cursor");
         var cursor = await ReadProjectionCursorAsync(cursorPath, ct);
         var lines = await ReadAllLinesSharedAsync(eventsPath, ct);
-        if (cursor >= lines.LongLength)
+        if (cursor == lines.LongLength)
+        {
+            RememberSettledProjection(runDir, stamp);
             return 0;
+        }
+        // A truncated/replaced archive must be replayed, never skipped by an old cursor.
+        if (cursor > lines.LongLength) cursor = 0;
 
         var projected = 0;
         for (var index = cursor; index < lines.LongLength; index++)
@@ -731,6 +810,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             if (string.IsNullOrWhiteSpace(lines[index]))
             {
                 await WriteProjectionCursorAsync(cursorPath, index + 1, ct);
+                cursor = index + 1;
                 continue;
             }
 
@@ -796,6 +876,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
                         -1),
                     ct);
                 await WriteProjectionCursorAsync(cursorPath, index + 1, ct);
+                cursor = index + 1;
                 projected++;
             }
             catch (Exception ex)
@@ -809,7 +890,19 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             }
         }
 
+        if (cursor == lines.LongLength)
+            RememberSettledProjection(runDir, stamp);
         return projected;
+    }
+
+    private void RememberSettledProjection(string runDir, ProjectionFileStamp before)
+    {
+        var after = GetProjectionStamp(runDir);
+        if (before.EventLength != after.EventLength || before.EventWrite != after.EventWrite
+            || before.ManifestWrite != after.ManifestWrite) return;
+        // Cache is only an optimization; the durable cursor remains the authority.
+        if (_settledProjections.Count >= 4096) _settledProjections.Clear();
+        _settledProjections[runDir] = after;
     }
 
     private async Task AppendEventCoreAsync(

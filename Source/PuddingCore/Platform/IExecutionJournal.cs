@@ -63,6 +63,34 @@ public interface IExecutionJournal
         TurnTerminal terminal,
         IReadOnlyList<NewConversationEvent> pendingEvents,
         CancellationToken ct);
+
+    /// <summary>
+    /// A01-slice-4c：父 Turn park —— 本 Turn 仍有 running 子代理时，把 Turn/Run/Command 收敛为非终态
+    /// <c>waiting_child</c>，并 flush 本 Turn 的非终态 pending 输出。同一事务内：
+    ///   1. 校验 Run（runId + workerId + fencingToken + status = running）；不校验 lease_until，
+    ///      因为 park 的语义就是停止续租、改由 waiting_child 状态承担判活（回收扫描不再命中该行）。
+    ///   2. 写入 pending 非终态输出事件。
+    ///   3. Turn running → waiting_child（CAS）。
+    ///   4. Run running → waiting_child（释放租约，不写 completedAt / terminalSequence）。
+    ///   5. Command running｜cancel_requested → waiting_child（释放租约）。
+    ///   6. 把待提交终态持久化进命令 metadata_json，使收口不依赖进程内状态。
+    /// <para>本 API 不写任何 terminal 事件、不写业务 completed；失败（CAS 未命中）返回 null，调用方必须回退常规终态提交。</para>
+    /// </summary>
+    Task<ExecutionParkResult?> ParkForChildrenAsync(
+        ExecutionLease lease,
+        TurnTerminal deferredTerminal,
+        IReadOnlyList<NewConversationEvent> pendingEvents,
+        CancellationToken ct);
+
+    /// <summary>
+    /// A01-slice-4c：唤醒收口 —— 父 Turn 已无 running 子代理时，把 park 的父 Turn 收敛为终态。
+    /// 以 <c>WHERE status = 'waiting_child'</c> 的 CAS 抢占唯一收口权：并发或重复触发只允许一次成功，
+    /// 其余调用返回 null（绝不写第二个终态事件）。终态事件与 park 时持久化的待提交终态逐字节一致。
+    /// 无 park 行、缺待提交终态或 CAS 失败时返回 null，调用方必须把它当作「未收口」。
+    /// </summary>
+    Task<ExecutionParkFinalizeResult?> TryFinalizeWaitingTurnAsync(
+        string parentTurnId,
+        CancellationToken ct);
 }
 
 /// <summary>
@@ -72,3 +100,20 @@ public sealed record RunStartResult(
     long StartedSequence,
     long TurnStartedSequence,
     int EventCount);
+
+/// <summary>
+/// A01-slice-4c：父 Turn park 结果。LastSequence 为本轮 pending 输出的末序列（无输出时为 0）。
+/// 该结果不表示任何终态事实成立。
+/// </summary>
+public sealed record ExecutionParkResult(
+    long LastSequence,
+    int EventCount);
+
+/// <summary>
+/// A01-slice-4c：park 的父 Turn 收口结果。TerminalKind/TerminalSequence 为本次唯一写入的终态事实。
+/// </summary>
+public sealed record ExecutionParkFinalizeResult(
+    string TurnId,
+    string RunId,
+    long TerminalSequence,
+    string TerminalKind);

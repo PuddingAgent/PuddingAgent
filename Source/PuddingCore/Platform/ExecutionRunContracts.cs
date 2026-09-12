@@ -193,7 +193,15 @@ public sealed record ExecutionRunOutcome(
     long TerminalSequence,
     long FirstEventSequence,
     long LastEventSequence,
-    int TotalEventCount);
+    int TotalEventCount)
+{
+    /// <summary>
+    /// A01-slice-4c：本次执行把父 Turn park 为 non-terminal waiting_child（Turn 仍有 running 子代理）。
+    /// true 时 <see cref="Terminal"/> 是「待提交终态」，尚未成为已提交事实、不得当作 completed 投影；
+    /// TerminalSequence/事件计数只反映本轮 park 前已提交的 pending 输出。
+    /// </summary>
+    public bool WaitingForChildren { get; init; }
+}
 
 /// <summary>
 /// Output Chunker 输出契约。Terminal 事件不得与普通 Output 混合；

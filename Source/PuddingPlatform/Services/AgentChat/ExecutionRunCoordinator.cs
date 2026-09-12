@@ -25,7 +25,8 @@ public sealed class ExecutionRunCoordinator(
     ILogger<ExecutionRunCoordinator> logger,
     IRuntimeExecutionConfigService? executionConfig = null,
     IExecutionProgressRegistry? progressRegistry = null,
-    TimeProvider? timeProvider = null) : IExecutionRunCoordinator
+    TimeProvider? timeProvider = null,
+    ISubAgentRunStore? subAgentRunStore = null) : IExecutionRunCoordinator
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan CancelPollInterval = TimeSpan.FromMilliseconds(500);
@@ -251,6 +252,24 @@ public sealed class ExecutionRunCoordinator(
                 monitorOutcome,
                 executionDeadlineUtc,
                 noProgressTimeout);
+            // A01-slice-4c：本 Turn 仍有 running 子代理时，不提交终态，先 park 为 waiting_child；
+            // 最后一个子代理终态由 execution.journal 以 CAS 收口。count == 0 或判定不可用时与改前逐字节一致。
+            var parked = await TryParkForRunningChildrenAsync(lease, terminal, terminalPending);
+            if (parked is not null)
+            {
+                logger.LogInformation(
+                    "[Coordinator] Parked run={RunId} turn={TurnId} children={Children} seq={Seq}",
+                    lease.RunId, lease.TurnId, parked.RunningChildren, parked.Result.LastSequence);
+
+                return new ExecutionRunOutcome(
+                    lease.CommandId, lease.TurnId, lease.RunId,
+                    terminal, parked.Result.LastSequence,
+                    parked.Result.LastSequence, parked.Result.LastSequence, parked.Result.EventCount)
+                {
+                    WaitingForChildren = true,
+                };
+            }
+
             var result = await journal.CommitTerminalAsync(
                 lease, terminal, terminalPending, CancellationToken.None);
 
@@ -282,6 +301,8 @@ public sealed class ExecutionRunCoordinator(
                     ? TurnTerminal.LeaseLost
                     : monitorOutcome.CancelControlId is not null
                         ? TurnTerminal.Cancelled
+                        : monitorOutcome.Failed
+                            ? TurnTerminal.Failure("execution_monitor_failed", "Execution control monitor failed; the run was stopped.")
                         : monitorOutcome.WatchdogDecision.Kind == ExecutionWatchdogDecisionKind.Stalled
                             ? BuildStalledTerminal(monitorOutcome.WatchdogDecision, noProgressTimeout)
                         : deadlineReached
@@ -359,6 +380,64 @@ public sealed class ExecutionRunCoordinator(
         }
     }
 
+    /// <summary>
+    /// A01-slice-4c：只有「正常完成」的父 Turn 才允许 park 等待子代理。
+    /// 失败/取消/超时/租约丢失必须立即终态化，不得悬停等待子代理。
+    /// </summary>
+    internal static bool ShouldParkForChildren(TurnTerminal terminal)
+        => terminal.Kind == TurnTerminalKind.Completed;
+
+    /// <summary>
+    /// A01-slice-4c：Turn 粒度探测 running 子代理，命中则 park 并返回 park 结果。
+    /// 未注册子代理存储、非正常完成终态、计数为 0、计数失败、park 被拒——均返回 null，
+    /// 调用方继续走改前的终态提交路径（不悬停、不重复执行）。
+    /// </summary>
+    private async Task<ParkedForChildren?> TryParkForRunningChildrenAsync(
+        ExecutionLease lease,
+        TurnTerminal terminal,
+        IReadOnlyList<NewConversationEvent> terminalPending)
+    {
+        if (subAgentRunStore is null || !ShouldParkForChildren(terminal))
+            return null;
+
+        int runningChildren;
+        try
+        {
+            runningChildren = await subAgentRunStore
+                .GetRunningCountByParentTurnAsync(lease.TurnId, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // 读不到索引即「无法判定」：不 park，走改前的终态提交，绝不因探测失败而悬停父 Turn。
+            logger.LogWarning(
+                ex, "[Coordinator] Running child probe failed run={RunId} turn={TurnId}",
+                lease.RunId, lease.TurnId);
+            return null;
+        }
+
+        if (runningChildren <= 0)
+            return null;
+
+        try
+        {
+            var result = await journal.ParkForChildrenAsync(
+                lease, terminal, terminalPending, CancellationToken.None);
+            return result is null
+                ? null
+                : new ParkedForChildren(result, runningChildren);
+        }
+        catch (Exception ex)
+        {
+            // park 被拒/失败：回退改前行为提交终态，不得留下未提交的悬停 Turn。
+            logger.LogWarning(
+                ex, "[Coordinator] Park failed run={RunId}; falling back to terminal commit",
+                lease.RunId);
+            return null;
+        }
+    }
+
+    private sealed record ParkedForChildren(ExecutionParkResult Result, int RunningChildren);
+
     private async Task<TerminalFallbackResult?> TryCloseAfterTerminalWriteFailureAsync(
         ExecutionLease lease,
         string errorCode,
@@ -393,7 +472,7 @@ public sealed class ExecutionRunCoordinator(
                 agentId,
                 $"Agent '{agentId}' does not have a resolved LLM {field}.");
 
-    private async Task<ControlMonitorOutcome> MonitorAsync(
+    internal async Task<ControlMonitorOutcome> MonitorAsync(
         ExecutionLease lease,
         CancellationTokenSource ctsRun,
         DateTimeOffset? hardDeadlineUtc,
@@ -414,7 +493,7 @@ public sealed class ExecutionRunCoordinator(
                 await Task.Delay(CancelPollInterval, ct);
 
                 // Poll control inbox for cancel
-                var msgs = await controlInbox.ReadPendingAsync(lease, controlCursor, CancellationToken.None);
+                var msgs = await controlInbox.ReadPendingAsync(lease, controlCursor, ct);
                 foreach (var msg in msgs)
                 {
                     controlCursor = Math.Max(controlCursor, msg.Sequence);
@@ -437,7 +516,7 @@ public sealed class ExecutionRunCoordinator(
                 if (nowTicks - lastLeaseRenew >= leaseIntervalMs)
                 {
                     lastLeaseRenew = nowTicks;
-                    var renewed = await leaseStore.RenewAsync(lease, LeaseDuration, CancellationToken.None);
+                    var renewed = await leaseStore.RenewAsync(lease, LeaseDuration, ct);
                     if (!renewed)
                     {
                         logger.LogWarning("[Coordinator] Lease lost run={RunId}", lease.RunId);
@@ -472,6 +551,12 @@ public sealed class ExecutionRunCoordinator(
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "[Coordinator] Execution monitor failed; cancelling run={RunId}", lease.RunId);
+            await SafeCancelAsync(ctsRun);
+            return new ControlMonitorOutcome(false, null, ExecutionWatchdogDecision.Continue, Failed: true);
+        }
         return new ControlMonitorOutcome(false, null, ExecutionWatchdogDecision.Continue);
     }
 
@@ -567,7 +652,8 @@ public sealed class ExecutionRunCoordinator(
             return new ControlMonitorOutcome(
                 false,
                 null,
-                ExecutionWatchdogDecision.Continue);
+                ExecutionWatchdogDecision.Continue,
+                Failed: true);
         }
     }
 
@@ -586,7 +672,7 @@ public sealed class ExecutionRunCoordinator(
         };
     }
 
-    private static TurnTerminal ApplyMonitorOutcome(
+    internal static TurnTerminal ApplyMonitorOutcome(
         TurnTerminal terminal,
         ControlMonitorOutcome monitorOutcome,
         DateTimeOffset? hardDeadlineUtc,
@@ -596,6 +682,8 @@ public sealed class ExecutionRunCoordinator(
             return TurnTerminal.LeaseLost;
         if (monitorOutcome.CancelControlId is not null)
             return TurnTerminal.Cancelled;
+        if (monitorOutcome.Failed)
+            return TurnTerminal.Failure("execution_monitor_failed", "Execution control monitor failed; the run was stopped.");
 
         return monitorOutcome.WatchdogDecision.Kind switch
         {
@@ -980,10 +1068,11 @@ public sealed class ExecutionRunCoordinator(
         };
     }
 
-    private sealed record ControlMonitorOutcome(
+    internal sealed record ControlMonitorOutcome(
         bool LeaseLost,
         string? CancelControlId,
-        ExecutionWatchdogDecision WatchdogDecision);
+        ExecutionWatchdogDecision WatchdogDecision,
+        bool Failed = false);
 
     private sealed record TerminalFallbackResult(
         TurnTerminal Terminal,
