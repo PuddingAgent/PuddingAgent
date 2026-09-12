@@ -9,6 +9,7 @@ using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
 using PuddingPlatform.Services;
+using SkiaSharp;
 
 namespace PuddingWebApiTests.Tools;
 
@@ -124,8 +125,8 @@ public sealed class ImageReaderToolTests
             It.IsAny<CancellationToken>()), Times.Once);
         Assert.IsNotNull(captured);
         Assert.AreEqual("vision-provider", captured.Profile.ProviderId);
-        // helper 收到的消息携带 canonical 图片部件
-        Assert.AreEqual(1, captured.Messages[0].ContentParts!.OfType<LlmImagePart>().Count());
+                // helper 收到的消息携带 canonical 图片部件（Messages[0] 为稳定 system 前缀，图片在用户消息）
+        Assert.AreEqual(1, captured.Messages[1].ContentParts!.OfType<LlmImagePart>().Count());
         // provenance 可见
         StringAssert.Contains(result.Output, "helper=vision-provider/vision-model");
         StringAssert.Contains(result.Output, "artifact=vision-");
@@ -217,6 +218,195 @@ public sealed class ImageReaderToolTests
 
         Assert.IsFalse(result.Success);
         StringAssert.Contains(result.Error, "vision_source_access_denied");
+    }
+
+    [TestMethod]
+    public async Task Transform_ZoomIn_ProducesDerivedArtifactAndKeepsSourceArtifactIntact()
+    {
+        var imagePath = CreateTestImage(20, 10, SKEncodedImageFormat.Png, SKColors.Red, SKColors.Blue);
+        var root = Path.GetDirectoryName(imagePath)!;
+        var originalBytes = File.ReadAllBytes(imagePath);
+        var (_, storage) = await CreateStorageAsync(root);
+
+        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var native = Context(callerSnapshot: Snapshot(vision: true, protocol: "responses"));
+
+        // 先导入一次，取得源 artifact 身份
+        var import = await tool.ExecuteAsync(Request(imagePath, context: native));
+        Assert.IsTrue(import.Success, import.Error);
+        var sourceArtifactId = ExtractArtifactId(import.Output);
+
+        var result = await tool.ExecuteAsync(Request(
+            imagePath,
+            context: native,
+            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"mode":"native","transform":"zoom_in","scale":2.0}"""));
+
+        Assert.IsTrue(result.Success, result.Error);
+        var derivedArtifactId = ExtractArtifactId(result.Output);
+        Assert.AreNotEqual(sourceArtifactId, derivedArtifactId);
+        StringAssert.Contains(result.Output, "40x20");
+        StringAssert.Contains(result.Output, "the source artifact is unchanged");
+
+        var derived = await storage.ResolveLocalFileAsync("default", derivedArtifactId, CancellationToken.None);
+        Assert.IsNotNull(derived);
+        Assert.AreEqual(40, derived.Width);
+        Assert.AreEqual(20, derived.Height);
+        var sourceAfter = await storage.ResolveLocalFileAsync("default", sourceArtifactId, CancellationToken.None);
+        Assert.IsNotNull(sourceAfter);
+        CollectionAssert.AreEqual(originalBytes, File.ReadAllBytes(sourceAfter.Path));
+    }
+
+    [TestMethod]
+    public async Task Transform_ZoomOut_ScalesDownToDerivedArtifact()
+    {
+        var imagePath = CreateTestImage(40, 20, SKEncodedImageFormat.Png, SKColors.Red, SKColors.Blue);
+        var root = Path.GetDirectoryName(imagePath)!;
+        var (_, storage) = await CreateStorageAsync(root);
+
+        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var result = await tool.ExecuteAsync(Request(
+            imagePath,
+            context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses")),
+            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"mode":"native","transform":"zoom_out","scale":0.5}"""));
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "20x10");
+    }
+
+    [TestMethod]
+    public async Task Transform_Crop_ExtractsExactRectangleWithContent()
+    {
+        // 40x10 左红右蓝：裁剪右半（20,0,20,10）后必须只剩蓝色 → 像素级内容证明
+        var imagePath = CreateTestImage(40, 10, SKEncodedImageFormat.Png, SKColors.Red, SKColors.Blue);
+        var root = Path.GetDirectoryName(imagePath)!;
+        var (_, storage) = await CreateStorageAsync(root);
+
+        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var result = await tool.ExecuteAsync(Request(
+            imagePath,
+            context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses")),
+            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"mode":"native","transform":"crop","cropX":20,"cropY":0,"cropWidth":20,"cropHeight":10}"""));
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "20x10");
+        var artifactId = ExtractArtifactId(result.Output);
+        var local = await storage.ResolveLocalFileAsync("default", artifactId, CancellationToken.None);
+        Assert.IsNotNull(local);
+        using var bitmap = SKBitmap.Decode(File.ReadAllBytes(local.Path));
+        Assert.AreEqual(20, bitmap.Width);
+        Assert.AreEqual(10, bitmap.Height);
+        Assert.IsTrue(SKColors.Blue == bitmap.GetPixel(10, 5));
+    }
+
+    [TestMethod]
+    public async Task Transform_Rotate90_SwapsDimensionsInDerivedArtifact()
+    {
+        var imagePath = CreateTestImage(40, 10, SKEncodedImageFormat.Png, SKColors.Red, SKColors.Blue);
+        var root = Path.GetDirectoryName(imagePath)!;
+        var (_, storage) = await CreateStorageAsync(root);
+
+        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var result = await tool.ExecuteAsync(Request(
+            imagePath,
+            context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses")),
+            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"mode":"native","transform":"rotate","rotation":90}"""));
+
+        Assert.IsTrue(result.Success, result.Error);
+        StringAssert.Contains(result.Output, "10x40");
+        var artifactId = ExtractArtifactId(result.Output);
+        var local = await storage.ResolveLocalFileAsync("default", artifactId, CancellationToken.None);
+        Assert.IsNotNull(local);
+        using var bitmap = SKBitmap.Decode(File.ReadAllBytes(local.Path));
+        Assert.AreEqual(10, bitmap.Width);
+        Assert.AreEqual(40, bitmap.Height);
+    }
+
+    [TestMethod]
+    public async Task Transform_WebPSource_FailsClosedAndNeverTouchesOriginal()
+    {
+        var imagePath = CreateTestImage(20, 10, SKEncodedImageFormat.Webp, SKColors.Red, SKColors.Blue);
+        var root = Path.GetDirectoryName(imagePath)!;
+        var originalBytes = File.ReadAllBytes(imagePath);
+        var (_, storage) = await CreateStorageAsync(root);
+
+        var invocation = new Mock<ILlmInvocationService>();
+        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), invocation);
+        var result = await tool.ExecuteAsync(Request(
+            imagePath,
+            context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses")),
+            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"mode":"native","transform":"zoom_in","scale":2.0}"""));
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "vision_media_invalid");
+        invocation.Verify(service => service.InvokeAsync(
+            It.IsAny<LlmInvocationRequest>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        CollectionAssert.AreEqual(originalBytes, File.ReadAllBytes(imagePath));
+        Assert.IsTrue(File.Exists(imagePath));
+    }
+
+    [TestMethod]
+    public async Task Transform_InvalidParams_ReturnStableErrorCodesWithoutPathLeak()
+    {
+        var imagePath = CreateTestImage(20, 10, SKEncodedImageFormat.Png, SKColors.Red, SKColors.Blue);
+        var root = Path.GetDirectoryName(imagePath)!;
+        var (_, storage) = await CreateStorageAsync(root);
+
+        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var context = Context(callerSnapshot: Snapshot(vision: true, protocol: "responses"));
+        var pathJson = System.Text.Json.JsonSerializer.Serialize(imagePath);
+        string[] payloads =
+        [
+            $$"""{"path":{{pathJson}},"mode":"native","transform":"flip"}""",
+            $$"""{"path":{{pathJson}},"mode":"native","transform":"zoom_in"}""",
+            $$"""{"path":{{pathJson}},"mode":"native","transform":"rotate","rotation":45}""",
+            $$"""{"path":{{pathJson}},"mode":"native","transform":"zoom_in","scale":2.0,"rotation":90}""",
+            $$"""{"path":{{pathJson}},"mode":"native","transform":"crop","cropX":25,"cropY":0,"cropWidth":20,"cropHeight":10}""",
+        ];
+
+        foreach (var payload in payloads)
+        {
+            var result = await tool.ExecuteAsync(Request(imagePath, context, payload));
+            Assert.IsFalse(result.Success, payload);
+            StringAssert.Contains(result.Error, "vision_source_invalid");
+            Assert.IsFalse(result.Error!.Contains(root, StringComparison.Ordinal), "error must not leak the host path");
+        }
+    }
+
+    private static string CreateTestImage(
+        int width,
+        int height,
+        SKEncodedImageFormat format,
+        SKColor leftColor,
+        SKColor rightColor)
+    {
+        using var surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
+        var canvas = surface.Canvas;
+        using (var left = new SKPaint { Color = leftColor })
+            canvas.DrawRect(0, 0, width / 2f, height, left);
+        using (var right = new SKPaint { Color = rightColor })
+            canvas.DrawRect(width / 2f, 0, width - width / 2f, height, right);
+        using var image = surface.Snapshot();
+        using var encoded = image.Encode(format, 90);
+        var root = Path.Combine(Path.GetTempPath(), $"pudding-image-reader-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var extension = format switch
+        {
+            SKEncodedImageFormat.Jpeg => "jpg",
+            SKEncodedImageFormat.Webp => "webp",
+            _ => "png",
+        };
+        var imagePath = Path.Combine(root, $"sample-{width}x{height}.{extension}");
+        File.WriteAllBytes(imagePath, encoded.ToArray());
+        return imagePath;
+    }
+
+    private static string ExtractArtifactId(string output)
+    {
+        const string marker = "(artifact:";
+        var start = output.IndexOf(marker, StringComparison.Ordinal) + marker.Length;
+        var end = output.IndexOf(',', start);
+        return output[start..end].Trim();
     }
 
     private static ImageReaderTool CreateTool(
