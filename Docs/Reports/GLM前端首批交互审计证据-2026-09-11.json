@@ -1,0 +1,243 @@
+{
+  "auditedAtUtc": "2026-09-11T13:43:26.5106388Z",
+  "head": "bd28a11576716397bce734509cfa8762158f10e8",
+  "scope": "Current dirty worktree frontend interaction batch; no product deployment",
+  "verdict": "needs_changes",
+  "typeCheck": {
+    "exitCode": 0,
+    "command": "pnpm exec tsc --noEmit"
+  },
+  "focused": {
+    "failed": 1,
+    "failures": [
+      {
+        "fullName": "IntentConsole sends voice transcript with voice metadata from the console boundary",
+        "status": "failed"
+      }
+    ],
+    "passed": 40
+  },
+  "contractProbes": {
+    "limits": "Isolated Hook/component/callback tests; not live acceptance. Jest open-handle warning remains uninvestigated.",
+    "failed": 7,
+    "results": [
+      {
+        "fullName": "Audit: intended cancellation and steering contracts A1: a visible active Turn remains cancellable without POST-local tracking",
+        "status": "failed"
+      },
+      {
+        "fullName": "Audit: intended cancellation and steering contracts A3: duplicate direct Steering clicks share one in-flight request",
+        "status": "failed"
+      },
+      {
+        "fullName": "Audit: intended cancellation and steering contracts A4: Steering targets the executing Turn rather than the newer accepted queued Turn",
+        "status": "failed"
+      },
+      {
+        "fullName": "Audit: intended cancellation and steering contracts A5: direct Composer Steering does not increase the ordinary queue projection",
+        "status": "failed"
+      },
+      {
+        "fullName": "A7: delayed Steering acceptance preserves text typed after clicking",
+        "status": "failed"
+      },
+      {
+        "fullName": "Audit: admission-aware draft recovery A6: an accepted Turn is not offered as an unsent draft when local outbox cleanup fails",
+        "status": "failed"
+      },
+      {
+        "fullName": "A8: pending images disable direct Steering instead of sending only the text",
+        "status": "failed"
+      }
+    ],
+    "passed": 0
+  },
+  "sourceHashes": [
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/index.tsx",
+      "sha256": "ED2498E84AB8B87EC77FF0E4F380125454AF4BA79A280458BDB087FAB05A38F8"
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/components/IntentConsole.tsx",
+      "sha256": "5E5EC88F3812DF0F774C4EB1D3B58F37779EC274B06B111998227412052A10FA"
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/components/MessageQueueDropdown.tsx",
+      "sha256": "4927F24ADFBA23ECA47C6FC2F6AC28F91EB05F9F51037EA7144F5FCA1A5EC293"
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useMessageInteractionQueue.ts",
+      "sha256": "F474B42C36F992AA496A834D4B46BB30FAAF7151D45DE3632105C36936DACE1C"
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useMessageSend.ts",
+      "sha256": "223C9BACDD1341B130B829C06F9B3B827F79F16A1F0E0589507FBC8065D95B3E"
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts",
+      "sha256": "B1DA5FA814790442DCFACD4ADB8951FDB2C43D9D861957B9EF5B34EDED735A51"
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useSessionSelection.ts",
+      "sha256": "C899C1A1E88594594731A52A1F229A74ACAD2C374DE90E237D48F2F461E6BA8F"
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/SessionSteeringService.cs",
+      "sha256": "AE3213889CCE0A2B3075806ABB4305D9B63895832D414504C23276163BC5CF15"
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/Conversation/RequestTurnCancellationHandler.cs",
+      "sha256": "7A46CBDADA2BA98F71D04D0B02DD0B9097E3AA24240C1D0559F14118E600913D"
+    }
+  ],
+  "boardWrites": [
+    {
+      "key": "stop",
+      "action": "create",
+      "statusCode": 201,
+      "taskId": "a2f78a033f41422a81c6aa91d5bd4bd0",
+      "version": 1,
+      "status": "Backlog",
+      "evaluationId": null,
+      "commentId": null
+    },
+    {
+      "key": "admission",
+      "action": "create",
+      "statusCode": 201,
+      "taskId": "a851a41a07f64b8ca9a08ab77272f985",
+      "version": 1,
+      "status": "Backlog",
+      "evaluationId": null,
+      "commentId": null
+    },
+    {
+      "key": "gate",
+      "action": "create",
+      "statusCode": 201,
+      "taskId": "deb25eb07e20471e8c5a5f70098d5d4e",
+      "version": 1,
+      "status": "Backlog",
+      "evaluationId": null,
+      "commentId": null
+    },
+    {
+      "key": "steering-update",
+      "action": "patch",
+      "statusCode": 200,
+      "taskId": "ed88185f1d3b4e16a70e9b9ea0f0e040",
+      "version": 2,
+      "status": "Backlog",
+      "evaluationId": null,
+      "commentId": null
+    },
+    {
+      "key": "tests-update",
+      "action": "patch",
+      "statusCode": 200,
+      "taskId": "b5ee0cd2c85844a6aca7b17df8699e56",
+      "version": 2,
+      "status": "Backlog",
+      "evaluationId": null,
+      "commentId": null
+    },
+    {
+      "key": "connection-update",
+      "action": "patch",
+      "statusCode": 200,
+      "taskId": "59f9002ebd654e97a74004c0f87378e8",
+      "version": 2,
+      "status": "Backlog",
+      "evaluationId": null,
+      "commentId": null
+    },
+    {
+      "key": "steering-evaluation",
+      "action": "add-evaluation",
+      "statusCode": 201,
+      "taskId": "ed88185f1d3b4e16a70e9b9ea0f0e040",
+      "version": null,
+      "status": null,
+      "evaluationId": "tev_d9bbcd892f1c437f8290435ce8260192",
+      "commentId": null
+    },
+    {
+      "key": "parent-comment",
+      "action": "add-comment",
+      "statusCode": 201,
+      "taskId": "ff1106854d2c42beaab380b9941b51b3",
+      "version": null,
+      "status": null,
+      "evaluationId": null,
+      "commentId": "407f1391bcc44d999184b35d5c58353f"
+    }
+  ],
+  "boardReadback": [
+    {
+      "taskId": "ed88185f1d3b4e16a70e9b9ea0f0e040",
+      "title": "Chat Composer 独立“⚡ 插嘴”按钮（当前 Turn Steering 直达）",
+      "status": "Backlog",
+      "version": 2,
+      "priority": "p1",
+      "sortOrder": -300,
+      "autoDispatchEnabled": false
+    },
+    {
+      "taskId": "a2f78a033f41422a81c6aa91d5bd4bd0",
+      "title": "Chat 首批交互收口：停止当前执行闭环与取消范围纠正",
+      "status": "Backlog",
+      "version": 1,
+      "priority": "p1",
+      "sortOrder": -290,
+      "autoDispatchEnabled": false
+    },
+    {
+      "taskId": "a851a41a07f64b8ca9a08ab77272f985",
+      "title": "Chat 首批交互收口：提交受理边界、草稿恢复与幂等对账",
+      "status": "Backlog",
+      "version": 1,
+      "priority": "p1",
+      "sortOrder": -280,
+      "autoDispatchEnabled": false
+    },
+    {
+      "taskId": "b5ee0cd2c85844a6aca7b17df8699e56",
+      "title": "Chat 前端回归失败清单与基线归因（GLM 首批验收）",
+      "status": "Backlog",
+      "version": 2,
+      "priority": "p1",
+      "sortOrder": -270,
+      "autoDispatchEnabled": false
+    },
+    {
+      "taskId": "deb25eb07e20471e8c5a5f70098d5d4e",
+      "title": "Chat 首批交互产品验收：明确新 Bundle、真实插嘴取消与阅读连续性",
+      "status": "Backlog",
+      "version": 1,
+      "priority": "p1",
+      "sortOrder": -260,
+      "autoDispatchEnabled": false
+    },
+    {
+      "taskId": "59f9002ebd654e97a74004c0f87378e8",
+      "title": "参考 deepseek-harness 0.1.2：Chat 可恢复连接、精确 Turn 指标与已加载 Turn 导航",
+      "status": "Backlog",
+      "version": 2,
+      "priority": "p2",
+      "sortOrder": -200,
+      "autoDispatchEnabled": false
+    },
+    {
+      "taskId": "ff1106854d2c42beaab380b9941b51b3",
+      "title": "chat界面的UI优化",
+      "status": "Blocked",
+      "version": 6,
+      "priority": "p3",
+      "sortOrder": 0,
+      "autoDispatchEnabled": false
+    }
+  ],
+  "evaluationId": "tev_d9bbcd892f1c437f8290435ce8260192",
+  "parentCommentId": "407f1391bcc44d999184b35d5c58353f",
+  "receiptReadbackConfirmed": true
+}
