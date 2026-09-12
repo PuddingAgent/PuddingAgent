@@ -346,10 +346,13 @@ CREATE INDEX IF NOT EXISTS IX_CompactionCoverageManifests_Session_Generation
     ON CompactionCoverageManifests(SessionId, TargetGeneration);
 
 -- P0-5 步骤 1：Session Composition 不可变快照表（append-only，复合主键 (SessionId, CompositionVersion)）。
--- 只存指纹与元数据，不存 prompt 正文 / 工具 schema 全文；版本严格单调递增。
+-- 只存指纹与元数据，不存 prompt 正文 / 工具 schema 全文；
+-- CompositionVersion = revision，严格单调递增不复用（A→B→A = 1/2/3）；
+-- ContentId = 内容身份（sha256 hex），内容相同可跨 revision 复用（A→B→A = A/B/A）；历史行为 NULL。
 CREATE TABLE IF NOT EXISTS CompositionSnapshots (
     SessionId               TEXT NOT NULL,
     CompositionVersion      INTEGER NOT NULL,
+    ContentId               TEXT,
     SystemPromptHash        TEXT NOT NULL,
     ToolSpecHash            TEXT NOT NULL,
     PrefixHash              TEXT NOT NULL,

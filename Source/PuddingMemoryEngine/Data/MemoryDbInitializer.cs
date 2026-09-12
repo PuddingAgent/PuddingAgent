@@ -145,28 +145,65 @@ public static class MemoryDbInitializer
             exists = await reader.ReadAsync();
         }
 
+        if (!exists)
+        {
+            using var create = conn.CreateCommand();
+            create.CommandText = """
+                CREATE TABLE IF NOT EXISTS CompositionSnapshots (
+                    SessionId               TEXT NOT NULL,
+                    CompositionVersion      INTEGER NOT NULL,
+                    ContentId               TEXT,
+                    SystemPromptHash        TEXT NOT NULL,
+                    ToolSpecHash            TEXT NOT NULL,
+                    PrefixHash              TEXT NOT NULL,
+                    SkillManifestHash       TEXT,
+                    SerializationVersion    TEXT NOT NULL DEFAULT 'prefix-v1',
+                    ToolIds                 TEXT,
+                    ChangeReason            TEXT,
+                    PermissionEpoch         INTEGER NOT NULL DEFAULT 0,
+                    CreatedAtUtc            INTEGER NOT NULL,
+                    CanonicalSystemPrefixHash TEXT,
+                    PRIMARY KEY (SessionId, CompositionVersion)
+                );
+                """;
+            await create.ExecuteNonQueryAsync();
+        }
+
+        // C01-B：既有库幂等补 ContentId 列（CREATE TABLE IF NOT EXISTS 不改动已存在的表 ⇒ 必须 PRAGMA + ALTER 自愈）。
+        // 历史行 ContentId 为 NULL = 「无法证明精确内容」，调用方不得谎称精确恢复。
+        await EnsureColumnAsync(conn, "CompositionSnapshots", "ContentId",
+            "ALTER TABLE CompositionSnapshots ADD COLUMN ContentId TEXT NULL;");
+    }
+
+    /// <summary>幂等补列：PRAGMA table_info 检测后 ALTER TABLE ADD COLUMN（不删除旧列/旧数据）。</summary>
+    private static async Task EnsureColumnAsync(
+        System.Data.Common.DbConnection conn,
+        string table,
+        string column,
+        string alterDdl)
+    {
+        var exists = false;
+        using (var check = conn.CreateCommand())
+        {
+            check.CommandText = $"PRAGMA table_info({table});";
+            await using var reader = await check.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                if (reader.FieldCount > 1
+                    && string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                {
+                    exists = true;
+                    break;
+                }
+            }
+        }
+
         if (exists)
             return;
 
-        using var create = conn.CreateCommand();
-        create.CommandText = """
-            CREATE TABLE IF NOT EXISTS CompositionSnapshots (
-                SessionId               TEXT NOT NULL,
-                CompositionVersion      INTEGER NOT NULL,
-                SystemPromptHash        TEXT NOT NULL,
-                ToolSpecHash            TEXT NOT NULL,
-                PrefixHash              TEXT NOT NULL,
-                SkillManifestHash       TEXT,
-                SerializationVersion    TEXT NOT NULL DEFAULT 'prefix-v1',
-                ToolIds                 TEXT,
-                ChangeReason            TEXT,
-                PermissionEpoch         INTEGER NOT NULL DEFAULT 0,
-                CreatedAtUtc            INTEGER NOT NULL,
-                CanonicalSystemPrefixHash TEXT,
-                PRIMARY KEY (SessionId, CompositionVersion)
-            );
-            """;
-        await create.ExecuteNonQueryAsync();
+        using var alter = conn.CreateCommand();
+        alter.CommandText = alterDdl;
+        await alter.ExecuteNonQueryAsync();
     }
 
     /// <summary>

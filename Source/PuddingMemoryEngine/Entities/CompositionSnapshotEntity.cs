@@ -14,8 +14,15 @@ public class CompositionSnapshotEntity
     [MaxLength(32)]
     public string SessionId { get; set; } = string.Empty;
 
-    /// <summary>该 session 的 composition 版本号，单调递增，从 1 开始。</summary>
+    /// <summary>该 session 的 composition revision：严格单调递增，从 1 开始（不复用）。</summary>
     public long CompositionVersion { get; set; }
+
+    /// <summary>
+    /// 内容身份（小写 sha256 hex，C01-B）；内容相同可跨 revision 复用。
+    /// 历史行为 null（无法证明精确内容）。
+    /// </summary>
+    [MaxLength(64)]
+    public string? ContentId { get; set; }
 
     /// <summary>system prompt 的 SHA-256 指纹（小写 hex）。</summary>
     [MaxLength(64)]
