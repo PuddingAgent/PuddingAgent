@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="d23e1807-4161-4f24-948d-0e17ccbd5a0c" name="huany@MSI 2026-09-11 21:38:21" runUser="MSI\huany" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-11T21:38:21.1199683+08:00" queuing="2026-09-11T21:38:21.1199686+08:00" start="2026-09-11T21:38:19.0383408+08:00" finish="2026-09-11T21:38:21.1266149+08:00" />
+  <TestSettings name="default" id="46b7a134-4302-4626-b9e7-4a88f4fd5d05">
+    <Deployment runDeploymentRoot="huany_MSI_2026-09-11_21_38_21" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="7a9d9ab8-887d-48f4-9457-13d41732f717" testId="5a31c545-666e-735e-501a-09d92d4fcfbc" testName="PuddingHost.Tests.Hosting.PuddingApplicationHostCompositionTests.DesktopChild_CompositionRoot_ResolvesSingletonRuntimeToolsAndServices" computerName="MSI" duration="00:00:01.0416144" startTime="2026-09-11T21:38:19.9297463+08:00" endTime="2026-09-11T21:38:20.9799715+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7a9d9ab8-887d-48f4-9457-13d41732f717" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="PuddingHost.Tests.Hosting.PuddingApplicationHostCompositionTests.DesktopChild_CompositionRoot_ResolvesSingletonRuntimeToolsAndServices" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddinghost.tests.dll" id="5a31c545-666e-735e-501a-09d92d4fcfbc">
+      <Execution id="7a9d9ab8-887d-48f4-9457-13d41732f717" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingHost.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="PuddingHost.Tests.Hosting.PuddingApplicationHostCompositionTests" name="DesktopChild_CompositionRoot_ResolvesSingletonRuntimeToolsAndServices" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="5a31c545-666e-735e-501a-09d92d4fcfbc" executionId="7a9d9ab8-887d-48f4-9457-13d41732f717" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="1" executed="1" passed="1" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.2+dd36e86129 (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:00.11]   Discovering: PuddingHost.Tests&#xD;
+[xUnit.net 00:00:00.17]   Discovered:  PuddingHost.Tests&#xD;
+[xUnit.net 00:00:00.20]   Starting:    PuddingHost.Tests&#xD;
+[Startup] Host built, configuring middleware...&#xD;
+[21:38:20 WRN] [trace:] [KeyVault] δ���� PUDDING_KEYVAULT_MASTER_KEY����Ϊ��ǰ�����Զ�������ʱ����Կ����������δ�־û��û������������޷�������ʷ��Կ��&#xD;
+[21:38:20 INF] [trace:] [AgentAvatarCatalog] Loaded 8 avatars (enabled=8), default=neutral, version=1&#xD;
+[21:38:20 INF] [trace:] [SubAgentPool] Initialized with MaxCapacity=15&#xD;
+[21:38:20 INF] [trace:] [YoloSignal] Watching E:\github\AgentNetworkPlan\PuddingAgent\yolo.signal&#xD;
+[21:38:20 INF] [trace:] [PriorityEventQueue] Initialized: SQLite-backed mode&#xD;
+[xUnit.net 00:00:01.29]   Finished:    PuddingHost.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

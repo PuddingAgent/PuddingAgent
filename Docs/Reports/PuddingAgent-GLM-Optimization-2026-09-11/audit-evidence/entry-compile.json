@@ -1,0 +1,23 @@
+{
+  "Items": {
+    "Compile": [
+      {
+        "Identity": "Program.cs",
+        "FullPath": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingAgent\\Program.cs",
+        "RootDir": "E:\\",
+        "Filename": "Program",
+        "Extension": ".cs",
+        "RelativeDir": "",
+        "Directory": "github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingAgent\\",
+        "RecursiveDir": "",
+        "ModifiedTime": "",
+        "CreatedTime": "",
+        "AccessedTime": "",
+        "DefiningProjectFullPath": "C:\\Program Files\\dotnet\\sdk\\10.0.302\\Sdks\\Microsoft.NET.Sdk\\targets\\Microsoft.NET.Sdk.DefaultItems.props",
+        "DefiningProjectDirectory": "C:\\Program Files\\dotnet\\sdk\\10.0.302\\Sdks\\Microsoft.NET.Sdk\\targets\\",
+        "DefiningProjectName": "Microsoft.NET.Sdk.DefaultItems",
+        "DefiningProjectExtension": ".props"
+      }
+    ]
+  }
+}

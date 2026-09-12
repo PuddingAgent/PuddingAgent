@@ -1,0 +1,59 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="3d362f6c-f9cc-4819-997a-0e6a83efc256" name="huany@MSI 2026-09-11 21:39:27" runUser="MSI\huany" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-11T21:39:27.1149171+08:00" queuing="2026-09-11T21:39:27.1149176+08:00" start="2026-09-11T21:39:25.6608574+08:00" finish="2026-09-11T21:39:27.1236775+08:00" />
+  <TestSettings name="default" id="abe45d34-38aa-49a7-bf51-3d6bed143850">
+    <Deployment runDeploymentRoot="huany_MSI_2026-09-11_21_39_27" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="721f6d69-8078-4ede-b891-92eb5328104f" testId="1d688492-4b52-8a51-b6e6-4214ed1bc3b6" testName="PreferenceWithoutValue_MustFailBeforeWriteAsAdvertisedBySchema" computerName="MSI" duration="00:00:00.0835227" startTime="2026-09-11T21:39:26.6962049+08:00" endTime="2026-09-11T21:39:26.8010025+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="721f6d69-8078-4ede-b891-92eb5328104f">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.AreEqual 失败。应为: &lt;0&gt;，实际为: &lt;1&gt;。‘expected’表达式:‘0’,‘actual’表达式:‘library.UpsertCalls’。 Value is declared required in SaveMemoryArgs.</Message>
+          <StackTrace>   at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.ThrowAssertAreEqualFailed(Object expected, Object actual, String userMessage) in /_/src/TestFramework/TestFramework/Assertions/Assert.AreEqual.cs:line 665&#xD;
+   at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.AreEqual[T](T expected, T actual, IEqualityComparer`1 comparer, String message, String expectedExpression, String actualExpression) in /_/src/TestFramework/TestFramework/Assertions/Assert.AreEqual.cs:line 492&#xD;
+   at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.AreEqual[T](T expected, T actual, String message, String expectedExpression, String actualExpression) in /_/src/TestFramework/TestFramework/Assertions/Assert.AreEqual.cs:line 405&#xD;
+   at PuddingRuntimeTests.Tools.AuditMemoryContractTests.PreferenceWithoutValue_MustFailBeforeWriteAsAdvertisedBySchema() in E:\github\AgentNetworkPlan\PuddingAgent\.tmp-test-out\glm-audit-20260911\AuditMemoryContractTests.cs:line 21&#xD;
+   at Microsoft.VisualStudio.TestPlatform.MSTest.TestAdapter.Execution.TestMethodInfo.ExecuteInternalAsync(Object[] arguments, CancellationTokenSource timeoutTokenSource) in /_/src/Adapter/MSTestAdapter.PlatformServices/Execution/TestMethodInfo.cs:line 407</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="6447ee0a-ebb4-4985-ac5d-cb093b722c87" testId="1e86d618-6a98-8429-8ef6-de4c0e9ff119" testName="PreferenceTypeCase_MustNormalizeOrRejectBeforeWrite" computerName="MSI" duration="00:00:00.0031178" startTime="2026-09-11T21:39:26.8070352+08:00" endTime="2026-09-11T21:39:26.8114756+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6447ee0a-ebb4-4985-ac5d-cb093b722c87">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.IsTrue 失败。‘condition’表达式:‘library.UpsertCalls == 0 || library.LastExperience?.Content == "locale: zh-CN"’。 Case-insensitive validation must not route to a blank-content generic write.</Message>
+          <StackTrace>   at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.ThrowAssertIsTrueFailed(String message) in /_/src/TestFramework/TestFramework/Assertions/Assert.IsTrue.cs:line 161&#xD;
+   at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.IsTrue(Nullable`1 condition, String message, String conditionExpression) in /_/src/TestFramework/TestFramework/Assertions/Assert.IsTrue.cs:line 153&#xD;
+   at PuddingRuntimeTests.Tools.AuditMemoryContractTests.PreferenceTypeCase_MustNormalizeOrRejectBeforeWrite() in E:\github\AgentNetworkPlan\PuddingAgent\.tmp-test-out\glm-audit-20260911\AuditMemoryContractTests.cs:line 30&#xD;
+   at Microsoft.VisualStudio.TestPlatform.MSTest.TestAdapter.Execution.TestMethodInfo.ExecuteInternalAsync(Object[] arguments, CancellationTokenSource timeoutTokenSource) in /_/src/Adapter/MSTestAdapter.PlatformServices/Execution/TestMethodInfo.cs:line 407</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="PreferenceWithoutValue_MustFailBeforeWriteAsAdvertisedBySchema" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingruntimetests.dll" id="1d688492-4b52-8a51-b6e6-4214ed1bc3b6">
+      <Execution id="721f6d69-8078-4ede-b891-92eb5328104f" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.AuditMemoryContractTests" name="PreferenceWithoutValue_MustFailBeforeWriteAsAdvertisedBySchema" />
+    </UnitTest>
+    <UnitTest name="PreferenceTypeCase_MustNormalizeOrRejectBeforeWrite" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingruntimetests.dll" id="1e86d618-6a98-8429-8ef6-de4c0e9ff119">
+      <Execution id="6447ee0a-ebb4-4985-ac5d-cb093b722c87" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.AuditMemoryContractTests" name="PreferenceTypeCase_MustNormalizeOrRejectBeforeWrite" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="1d688492-4b52-8a51-b6e6-4214ed1bc3b6" executionId="721f6d69-8078-4ede-b891-92eb5328104f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1e86d618-6a98-8429-8ef6-de4c0e9ff119" executionId="6447ee0a-ebb4-4985-ac5d-cb093b722c87" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="2" executed="2" passed="0" failed="2" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.0.2+dd36e86129 (64-bit .NET 10.0.10)&#xD;
+[xUnit.net 00:00:00.14]   Discovering: PuddingRuntimeTests&#xD;
+[xUnit.net 00:00:00.17]   Discovered:  PuddingRuntimeTests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

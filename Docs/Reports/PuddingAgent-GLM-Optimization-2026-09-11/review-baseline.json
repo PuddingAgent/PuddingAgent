@@ -1,0 +1,775 @@
+{
+  "reviewed_at": "2026-09-11T11:03:32.880993+00:00",
+  "scope": "Source and Tests inventory; targeted static source review; no production runtime verification",
+  "head": "731d5e063cdd888128cbcfc3ba53c32cfae2284d",
+  "working_tree_before_deliverables": [
+    " M Docs/README.md",
+    " M How-Debuge.md",
+    " M Source/PuddingCore/Scheduling/TaskExecutionTrackingContracts.cs",
+    " M Source/PuddingHost/Build/PuddingHostContent.props",
+    " M Source/PuddingPlatform/Data/PlatformDbContext.cs",
+    " M Source/PuddingPlatform/Services/AgentChat/ExecutionRunCoordinator.cs",
+    " M Source/PuddingPlatform/Services/Execution/SqliteExecutionLeaseStore.cs",
+    " M Source/PuddingPlatform/Services/FileSubAgentRunStore.cs",
+    " M Source/PuddingPlatform/Services/Scheduling/TaskExecutionRepairCoordinator.cs",
+    " M Source/PuddingPlatform/Services/Scheduling/TaskExecutionTracker.cs",
+    " M Source/PuddingPlatform/Services/StorageManagement/StorageInventorySampler.cs",
+    " M Source/PuddingPlatform/Services/Tasks/TaskCompletionSettlementService.cs",
+    " M Source/PuddingPlatform/Services/TokenUsageRecorder.cs",
+    " M Source/PuddingPlatform/Services/TokenUsageSchemaBootstrapper.cs",
+    " M Source/PuddingPlatformAdmin/config/config.ts",
+    " M Source/PuddingPlatformAdmin/scripts/check-chat-bundle-budget.cjs",
+    " M Source/PuddingPlatformAdmin/src/components/PuddingAdminShell/index.tsx",
+    " M Source/PuddingPlatformAdmin/src/components/PuddingAdminShell/styles.ts",
+    " M Source/PuddingPlatformAdmin/src/components/PuddingEntityCard/index.tsx",
+    " M Source/PuddingPlatformAdmin/src/components/PuddingEntityCard/styles.ts",
+    " M Source/PuddingPlatformAdmin/src/components/PuddingPageHeader/index.tsx",
+    " M Source/PuddingPlatformAdmin/src/components/PuddingPageHeader/styles.ts",
+    " M Source/PuddingPlatformAdmin/src/components/PuddingStatusBadge/index.tsx",
+    " M Source/PuddingPlatformAdmin/src/components/PuddingStatusBadge/styles.ts",
+    " M Source/PuddingPlatformAdmin/src/components/PuddingToolbar/index.tsx",
+    " M Source/PuddingPlatformAdmin/src/components/PuddingToolbar/styles.ts",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/components/ChatLayout.tsx",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/components/ChatMain.tsx",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/components/ComposerStatusDetails.test.tsx",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/components/ComposerStatusDetails.tsx",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/components/DevPanel/PerfTab.tsx",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/components/useDevRuntimeEvents.ts",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/hooks/dashScopeVoiceInput.ts",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/hooks/sessionRuntimeCleanup.ts",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/hooks/useMessageSend.ts",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventBuffers.ts",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventConnection.test.tsx",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventConnection.ts",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/index.tsx",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/types/chatStateTypes.ts",
+    " M Source/PuddingPlatformAdmin/src/pages/chat/utils/inboundDebug.ts",
+    " M Source/PuddingPlatformAdmin/src/pages/voice-models/index.tsx",
+    " M Source/PuddingPlatformAdmin/src/services/platform/api.ts",
+    " M Source/PuddingPlatformAdmin/tsconfig.json",
+    " M Source/PuddingPlatformTests/Services/ExecutionLeaseStoreRecoveryTests.cs",
+    " M Source/PuddingPlatformTests/Services/FileSubAgentRunStoreTests.cs",
+    " M Source/PuddingPlatformTests/Services/Scheduling/TaskExecutionTrackerTests.cs",
+    " M Source/PuddingPlatformTests/Services/Scheduling/TaskSchedulerIntentOutcomeStoreTests.cs",
+    " M Source/PuddingPlatformTests/Services/Tasks/TaskCompletionSettlementServiceTests.cs",
+    " M Source/PuddingPlatformTests/Services/Tasks/TaskRecallAuditEngineTests.cs",
+    " M Source/PuddingPlatformTests/Services/TokenUsageRecorderPrefixDiagnosticsTests.cs",
+    " M Source/PuddingRuntime/Tools/BuiltIns/Files/FilePatchTool.cs",
+    " M Source/PuddingRuntime/Tools/Platform/ToolInvocationService.cs",
+    " M Source/PuddingRuntimeTests/Tools/FilePatchToolDryRunDefaultTests.cs",
+    " M TestScripts/deepseek-cache-hitrate.py",
+    " M code_map.md",
+    " ? external/github.hyfree.GM",
+    " M memory/INDEX.md",
+    "?? Docs/Reports/",
+    "?? Source/PuddingPlatform/Services/Scheduling/LegacyTaskExecutionProbe.cs",
+    "?? Source/PuddingPlatformAdmin/src/components/PuddingAdminPrimitives.test.tsx",
+    "?? Source/PuddingPlatformAdmin/src/pages/chat/components/DevPanel/PerfTab.test.tsx",
+    "?? Source/PuddingPlatformTests/Services/ExecutionRunCoordinatorMonitorTests.cs",
+    "?? Source/PuddingPlatformTests/Services/StorageInventorySamplerQueryTests.cs",
+    "?? TestScripts/invoke-pudding-desktop-deployment.ps1",
+    "?? TestScripts/measure-pudding-process-baseline.ps1",
+    "?? TestScripts/test-pudding-deployment-gates.ps1",
+    "?? TestScripts/test_deepseek_cache_hitrate.py"
+  ],
+  "counts": {
+    ".cs": 1910,
+    ".ts": 352,
+    ".tsx": 254
+  },
+  "largest_production_files": [
+    {
+      "path": "Source/PuddingPlatformAdmin/src/services/platform/api.ts",
+      "lines": 4169,
+      "bytes": 134623
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/Orchestration/SqliteAgentOrchestrationStore.cs",
+      "lines": 2698,
+      "bytes": 117968
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/orchestration/index.tsx",
+      "lines": 2421,
+      "bytes": 87503
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Buffered.cs",
+      "lines": 2312,
+      "bytes": 132904
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/Messaging/MessageDeliveryDispatcher.cs",
+      "lines": 2280,
+      "bytes": 91263
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/AgentExecutionService.cs",
+      "lines": 2268,
+      "bytes": 99937
+    },
+    {
+      "path": "Source/PuddingRuntime/Tools/Approval/InMemoryToolApprovalService.cs",
+      "lines": 2037,
+      "bytes": 90602
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/ContextCompactionService.cs",
+      "lines": 1932,
+      "bytes": 85353
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Streaming.cs",
+      "lines": 1830,
+      "bytes": 97488
+    },
+    {
+      "path": "Source/PuddingMemoryEngine/Data/MemoryLibrary.cs",
+      "lines": 1764,
+      "bytes": 77317
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/SessionStateManager.cs",
+      "lines": 1756,
+      "bytes": 71657
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventProjection.ts",
+      "lines": 1747,
+      "bytes": 67608
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/ContextWindowManager.cs",
+      "lines": 1700,
+      "bytes": 72941
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/workspace/[id]/index.tsx",
+      "lines": 1696,
+      "bytes": 55893
+    },
+    {
+      "path": "Source/PuddingMemoryEngine/Services/SubconsciousOrchestrator.cs",
+      "lines": 1651,
+      "bytes": 74067
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts",
+      "lines": 1551,
+      "bytes": 49799
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/DirectLlmClient.cs",
+      "lines": 1513,
+      "bytes": 68978
+    },
+    {
+      "path": "Source/PuddingRuntime/Tools/BuiltIns/Agents/SubAgentTool.cs",
+      "lines": 1498,
+      "bytes": 71704
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/components/MessageList.tsx",
+      "lines": 1427,
+      "bytes": 49018
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/WorkspaceAgentFileService.cs",
+      "lines": 1405,
+      "bytes": 68546
+    },
+    {
+      "path": "Source/PuddingRuntime/Tools/BuiltIns/Files/FilePatchTool.cs",
+      "lines": 1365,
+      "bytes": 57564
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/SubAgentManager.cs",
+      "lines": 1287,
+      "bytes": 57564
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/components/SubAgentActivityDock.tsx",
+      "lines": 1248,
+      "bytes": 39783
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/FileSubAgentRunStore.cs",
+      "lines": 1236,
+      "bytes": 50462
+    },
+    {
+      "path": "Source/PuddingDesktop/Browser/BrowserWorkspaceController.cs",
+      "lines": 1235,
+      "bytes": 48268
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/Diagnostics/SessionBenchmarkDiagnosticsService.cs",
+      "lines": 1223,
+      "bytes": 50044
+    },
+    {
+      "path": "Source/PuddingCore/Orchestration/AgentOrchestrationGraphCompiler.cs",
+      "lines": 1200,
+      "bytes": 58192
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/Goals/GoalSettlementStore.cs",
+      "lines": 1176,
+      "bytes": 52842
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/styles/composer.styles.ts",
+      "lines": 1174,
+      "bytes": 31984
+    },
+    {
+      "path": "Source/PuddingPlatform/Controllers/Api/SessionEventsController.cs",
+      "lines": 1123,
+      "bytes": 45551
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/components/IntentConsole.tsx",
+      "lines": 1102,
+      "bytes": 38894
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/utils/debug.ts",
+      "lines": 1102,
+      "bytes": 43215
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/AgentChat/AgentConversationProjectionService.cs",
+      "lines": 1052,
+      "bytes": 44384
+    },
+    {
+      "path": "Source/PuddingDesktop/Hosting/DesktopApplicationCoordinator.cs",
+      "lines": 1036,
+      "bytes": 41121
+    },
+    {
+      "path": "Source/PuddingCore/Core/ResponsesLlmGateway.cs",
+      "lines": 1035,
+      "bytes": 43338
+    }
+  ],
+  "project_references": [
+    {
+      "path": "Source/PuddingAgent/PuddingAgent.csproj",
+      "references": [
+        "..\\PuddingHost\\PuddingHost.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingBrowser.Abstractions/PuddingBrowser.Abstractions.csproj",
+      "references": [
+        "..\\PuddingCore\\PuddingCore.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingBrowser.AgentTools/PuddingBrowser.AgentTools.csproj",
+      "references": [
+        "..\\PuddingBrowser.Abstractions\\PuddingBrowser.Abstractions.csproj",
+        "..\\PuddingCore\\PuddingCore.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingBrowser.Protocol/PuddingBrowser.Protocol.csproj",
+      "references": []
+    },
+    {
+      "path": "Source/PuddingBrowser.WebView2/PuddingBrowser.WebView2.csproj",
+      "references": [
+        "..\\PuddingBrowser.Abstractions\\PuddingBrowser.Abstractions.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingCodeIndexer.Cli/PuddingCodeIndexer.Cli.csproj",
+      "references": [
+        "..\\PuddingCodeIntelligence\\PuddingCodeIntelligence.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingCodeIndexer.Cli/TestFixtures/MiniProject/MiniProject.csproj",
+      "references": []
+    },
+    {
+      "path": "Source/PuddingCodeIntelligence/PuddingCodeIntelligence.csproj",
+      "references": []
+    },
+    {
+      "path": "Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj",
+      "references": [
+        "..\\\\PuddingRuntime\\\\PuddingRuntime.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingCodexService/PuddingCodexService.csproj",
+      "references": []
+    },
+    {
+      "path": "Source/PuddingCodexServiceTests/PuddingCodexServiceTests.csproj",
+      "references": [
+        "..\\PuddingCodexService\\PuddingCodexService.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingController/PuddingController.csproj",
+      "references": [
+        "..\\PuddingCore\\PuddingCore.csproj",
+        "..\\PuddingGateway\\PuddingGateway.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingCore/PuddingCore.csproj",
+      "references": []
+    },
+    {
+      "path": "Source/PuddingCoreTests/PuddingCoreTests.csproj",
+      "references": [
+        "..\\PuddingCore\\PuddingCore.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingDesktop/PuddingDesktop.csproj",
+      "references": [
+        "..\\PuddingCore\\PuddingCore.csproj",
+        "..\\PuddingBrowser.Abstractions\\PuddingBrowser.Abstractions.csproj",
+        "..\\PuddingBrowser.Protocol\\PuddingBrowser.Protocol.csproj",
+        "..\\PuddingBrowser.WebView2\\PuddingBrowser.WebView2.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingFullTextIndex/PuddingFullTextIndex.csproj",
+      "references": []
+    },
+    {
+      "path": "Source/PuddingFullTextIndexTests/PuddingFullTextIndexTests.csproj",
+      "references": [
+        "..\\PuddingFullTextIndex\\PuddingFullTextIndex.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingGateway/PuddingGateway.csproj",
+      "references": [
+        "..\\PuddingCore\\PuddingCore.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingGit.Tools/PuddingGit.Tools.csproj",
+      "references": [
+        "..\\PuddingCore\\PuddingCore.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingHost/PuddingHost.csproj",
+      "references": [
+        "..\\PuddingCore\\PuddingCore.csproj",
+        "..\\PuddingPlatform\\PuddingPlatform.csproj",
+        "..\\PuddingController\\PuddingController.csproj",
+        "..\\PuddingRuntime\\PuddingRuntime.csproj",
+        "..\\PuddingMemoryEngine\\PuddingMemoryEngine.csproj",
+        "..\\..\\external\\github.hyfree.GM\\github.hyfree.GM\\github.hyfree.GM.csproj",
+        "..\\..\\src\\HarnessAgent\\Core\\HarnessAgent.Core.csproj",
+        "..\\PuddingBrowser.Protocol\\PuddingBrowser.Protocol.csproj",
+        "..\\PuddingBrowser.Abstractions\\PuddingBrowser.Abstractions.csproj",
+        "..\\PuddingBrowser.AgentTools\\PuddingBrowser.AgentTools.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingMemoryEngine/PuddingMemoryEngine.csproj",
+      "references": [
+        "..\\PuddingCore\\PuddingCore.csproj",
+        "..\\PuddingFullTextIndex\\PuddingFullTextIndex.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingMemoryEngineBenchmarks/PuddingMemoryEngineBenchmarks.csproj",
+      "references": [
+        "..\\PuddingMemoryEngine\\PuddingMemoryEngine.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingMemoryEngineTests/PuddingMemoryEngineTests.csproj",
+      "references": [
+        "..\\PuddingMemoryEngine\\PuddingMemoryEngine.csproj",
+        "..\\PuddingRuntime\\PuddingRuntime.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingPlatform/PuddingPlatform.csproj",
+      "references": [
+        "..\\PuddingCore\\PuddingCore.csproj",
+        "..\\PuddingMemoryEngine\\PuddingMemoryEngine.csproj",
+        "..\\PuddingFullTextIndex\\PuddingFullTextIndex.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingPlatformTests/PuddingPlatformTests.csproj",
+      "references": [
+        "..\\PuddingPlatform\\PuddingPlatform.csproj",
+        "..\\PuddingCore\\PuddingCore.csproj",
+        "..\\PuddingRuntime\\PuddingRuntime.csproj",
+        "..\\PuddingTaskRecall.Cli\\PuddingTaskRecall.Cli.csproj",
+        "..\\..\\Tests\\Mcp.Cli\\Mcp.Cli.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingRuntime/PuddingRuntime.csproj",
+      "references": [
+        "..\\PuddingCodeIntelligence\\PuddingCodeIntelligence.csproj",
+        "..\\PuddingFullTextIndex\\PuddingFullTextIndex.csproj",
+        "..\\PuddingCore\\PuddingCore.csproj",
+        "..\\PuddingMemoryEngine\\PuddingMemoryEngine.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingRuntimeTests/PuddingRuntimeTests.csproj",
+      "references": [
+        "..\\PuddingRuntime\\PuddingRuntime.csproj",
+        "..\\PuddingPlatform\\PuddingPlatform.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingTaskRecall.Cli/PuddingTaskRecall.Cli.csproj",
+      "references": [
+        "..\\PuddingPlatform\\PuddingPlatform.csproj"
+      ]
+    },
+    {
+      "path": "Source/PuddingWebApiTests/PuddingWebApiTests.csproj",
+      "references": [
+        "..\\PuddingAgent\\PuddingAgent.csproj"
+      ]
+    },
+    {
+      "path": "Tests/HarnessAgent.Cli/HarnessAgent.Cli.csproj",
+      "references": [
+        "..\\..\\src\\HarnessAgent\\Core\\HarnessAgent.Core.csproj"
+      ]
+    },
+    {
+      "path": "Tests/HarnessAgent.Core.Tests/HarnessAgent.Core.Tests.csproj",
+      "references": [
+        "..\\..\\src\\HarnessAgent\\Core\\HarnessAgent.Core.csproj"
+      ]
+    },
+    {
+      "path": "Tests/Mcp.Cli/Mcp.Cli.csproj",
+      "references": []
+    },
+    {
+      "path": "Tests/PuddingAgent.IntegrationTests/PuddingAgent.IntegrationTests.csproj",
+      "references": [
+        "..\\..\\Source\\PuddingAgent\\PuddingAgent.csproj"
+      ]
+    },
+    {
+      "path": "Tests/PuddingBrowser.AgentTools.Tests/PuddingBrowser.AgentTools.Tests.csproj",
+      "references": [
+        "..\\..\\Source\\PuddingBrowser.AgentTools\\PuddingBrowser.AgentTools.csproj"
+      ]
+    },
+    {
+      "path": "Tests/PuddingBrowser.TestSite/PuddingBrowser.TestSite.csproj",
+      "references": []
+    },
+    {
+      "path": "Tests/PuddingBrowser.WebView2.Smoke/PuddingBrowser.WebView2.Smoke.csproj",
+      "references": [
+        "..\\..\\Source\\PuddingBrowser.Abstractions\\PuddingBrowser.Abstractions.csproj",
+        "..\\..\\Source\\PuddingBrowser.WebView2\\PuddingBrowser.WebView2.csproj"
+      ]
+    },
+    {
+      "path": "Tests/PuddingDesktop.Tests/PuddingDesktop.Tests.csproj",
+      "references": [
+        "..\\..\\Source\\PuddingDesktop\\PuddingDesktop.csproj",
+        "..\\..\\Source\\PuddingBrowser.Abstractions\\PuddingBrowser.Abstractions.csproj",
+        "..\\..\\Source\\PuddingBrowser.Protocol\\PuddingBrowser.Protocol.csproj"
+      ]
+    },
+    {
+      "path": "Tests/PuddingHost.Tests/PuddingHost.Tests.csproj",
+      "references": [
+        "..\\..\\Source\\PuddingHost\\PuddingHost.csproj"
+      ]
+    }
+  ],
+  "reviewed_file_hashes": [
+    {
+      "path": "Source/PuddingRuntime/Services/AgentExecutionService.cs",
+      "sha256": "6e5b47461bda7a532417b519a49b93f98857732174c3de53fc956043e7cb6d5f",
+      "lines": 2268
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Buffered.cs",
+      "sha256": "ab07456da986399fdda262e7ca46a688b5cd5046d4dd5cbd03e15ddae4c6e6bb",
+      "lines": 2312
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Streaming.cs",
+      "sha256": "37433af32dcb69ab25bc99462218a50d404ae2ed5931e310a9597fb1323ba3c9",
+      "lines": 1830
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/CompositionSnapshot.cs",
+      "sha256": "7a5fca6606538c297a72824064f5fa257fd96316c7cdce26094c48d7180358c6",
+      "lines": 375
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/PersistentCompositionVersionRegistry.cs",
+      "sha256": "f2bbd1a75db91ac797e7eb7a5db6a7410f4430903624cef226db951799cff562",
+      "lines": 160
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/CompositionRecoveryService.cs",
+      "sha256": "73daeeb55f8c4c2d1e80e55fe85ae5e755b635473c33b11676eb1a53ba763509",
+      "lines": 98
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/SqliteCompositionStore.cs",
+      "sha256": "626ce8f445fe28c409176cc077929345ad8009f1201b6c4dd09beec97b89462a",
+      "lines": 130
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/DirectLlmClient.cs",
+      "sha256": "65e4cc650f1e5fe390d4e332ff2da89857486f7c0914723864d69785cd1eb606",
+      "lines": 1513
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/AgentSessionManager.cs",
+      "sha256": "07a5d5cb88e3e12a42357a9739b3f4b0095d858fafb56d9ab8b2cc8c553f987a",
+      "lines": 234
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/Tools/ToolExposurePlanner.cs",
+      "sha256": "c6e79f81f32d3a2bc9c6a693917edeaf07e913879f23ac203cd76db93351476c",
+      "lines": 132
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/LlmRequestBudgetGuard.cs",
+      "sha256": "547fa311a7c25cca9a88a67d5da370faf6c46f42d87397973dc18f55262e51d8",
+      "lines": 204
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/ContextPipelineOrchestrator.cs",
+      "sha256": "2f92e88079f2969e01f4d9e53f7a8f03f3db505ea4afa31762e77af961b2ce62",
+      "lines": 677
+    },
+    {
+      "path": "Source/PuddingRuntime/Services/SystemPromptBuilder.cs",
+      "sha256": "fb3141c2f3e2269a56e205f13876f95e24275802f2219a8b308f51864a22a187",
+      "lines": 586
+    },
+    {
+      "path": "Source/PuddingCore/Platform/LlmOptions.cs",
+      "sha256": "9b3ae7a9d7dca3c9bc6a1dd2b982b4c6444ed04fafd54504ea7a824f678e26a8",
+      "lines": 397
+    },
+    {
+      "path": "Source/PuddingCore/Runtime/CompositionContracts.cs",
+      "sha256": "0c86dc0000881ad50f7743b63a4781149f00b7898cb6c71f6e767971fbceff62",
+      "lines": 109
+    },
+    {
+      "path": "Source/PuddingCore/Runtime/PrefixCacheContracts.cs",
+      "sha256": "5b0a33aa6d276362f75860deb8f81dcf580776adbb9ad134ef0a217614686a98",
+      "lines": 194
+    },
+    {
+      "path": "Source/PuddingCore/Tools/PuddingToolContracts.cs",
+      "sha256": "08a695247eb0215fb3c2a01169c4bb83b42e01df9656d54a8cb8d4156f42db51",
+      "lines": 554
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/TokenUsageRecorder.cs",
+      "sha256": "9a1e95c10c52302a66ffb8427785412c8a692f999c642cab83b812806d0dc864",
+      "lines": 698
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/LlmGatewayUsageRecorder.cs",
+      "sha256": "7a1db1d84088a61fab924edf521b0a553aa3b08a246de19420ef0a153f183df7",
+      "lines": 86
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/TokenUsageDailyAggregateService.cs",
+      "sha256": "603b4e2f20a4d7c59610565b551253c26248e1e5ce4bd6987c5681021eb2e102",
+      "lines": 293
+    },
+    {
+      "path": "Source/PuddingPlatform/Data/PlatformDbContext.cs",
+      "sha256": "38440fe7dda937552b39e853705ee071e133045c8a2dc0ec1e8ddf5845e55324",
+      "lines": 931
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/FileSubAgentRunStore.cs",
+      "sha256": "dc46b2f2f508193c97ab541a6f50ebf84e921171d909aa91aed43e1dcb35d854",
+      "lines": 1236
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/ConversationAcceptanceStore.cs",
+      "sha256": "26b7d51946d4553581992b479197b9c26e3515d2160a13f956890ec417fa2517",
+      "lines": 606
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/AgentChat/AgentConversationProjectionService.cs",
+      "sha256": "e5d1292a55905fa69c1fe63a5a393ef70032197aaca66a93fe9c4f3186131622",
+      "lines": 1052
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/AgentChat/ChatExecutionWorker.cs",
+      "sha256": "60ffa95ced93630e551f8359714d83d142969024f1f3372632b6a29d0dfc1a6c",
+      "lines": 164
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/AgentChat/ExecutionRunCoordinator.cs",
+      "sha256": "6a6e6ab46c5330f607f92cca5dcf78da3695393db1241f10a3067427c277cf83",
+      "lines": 1006
+    },
+    {
+      "path": "Source/PuddingPlatform/Services/Scheduling/LegacyTaskExecutionProbe.cs",
+      "sha256": "5a16ac758cc89c68e9d20dbc71db4946591c65ec006e6f15de42f1847761356e",
+      "lines": 84
+    },
+    {
+      "path": "Source/PuddingHost/Extensions/PuddingServiceCollectionExtensions.Runtime.cs",
+      "sha256": "233b0e0de8bdee57bd224e947d8966259c1638402b1d49137c5fb3199c292680",
+      "lines": 430
+    },
+    {
+      "path": "Source/PuddingAgent/Services/PuddingServiceCollectionExtensions.Runtime.cs",
+      "sha256": "56057985a632f24e46e0b8caac9241197cf2c856a2a0d5a5bc445cf866f13499",
+      "lines": 400
+    },
+    {
+      "path": "Source/PuddingAgent/Services/PuddingServiceCollectionExtensions.Connectors.cs",
+      "sha256": "107a68210d39d98caf522ce555511794c885e70ee723c9880422688265d8bca7",
+      "lines": 255
+    },
+    {
+      "path": "Source/PuddingAgent/PuddingAgent.csproj",
+      "sha256": "719a12dfeec98439bb47fff32b3c31db5a3a1f97d5b4bd512825939b4e9792ce",
+      "lines": 17
+    },
+    {
+      "path": "Source/PuddingAgent/Program.cs",
+      "sha256": "04599123b5330430d8b692170cabe3e1d9384bf0724d2c40c7ac41b13b33199c",
+      "lines": 107
+    },
+    {
+      "path": "Source/PuddingRuntime/Tools/BuiltIns/Memory/SaveMemoryTool.cs",
+      "sha256": "05f71767d53c28720b7759bea186fff929ced00f56e76746352a8af62ba0abca",
+      "lines": 373
+    },
+    {
+      "path": "Source/PuddingRuntime/Tools/BuiltIns/Memory/MemoryToolArgs.cs",
+      "sha256": "bc300764fc282a1a528a3b12177c2f77f6cde7d9f4623a6f7de0fea8d1ba8fae",
+      "lines": 156
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useTurnSurfaceStore.ts",
+      "sha256": "7ced6ca115d57dbcfc458bdd2d491cdba7c619a153f017f72267a59159954500",
+      "lines": 227
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/__tests__/turnSurfaceStore.hydration.test.ts",
+      "sha256": "7b631de909551d23e9cee5999d16674278ba53ce26ffe548fb00c13a50d6f4fd",
+      "lines": 149
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts",
+      "sha256": "b46c44d91c2a77cb6c2e23c9884a92a66501f678bb9c02efa47d49bf0ef560ba",
+      "lines": 1551
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventBuffers.ts",
+      "sha256": "eff85100bc6328345e67617e5fb3c1ab5c91dd55fddbf056c77e3975d385b063",
+      "lines": 264
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useConversation.ts",
+      "sha256": "3139485a986c718bba37e91a9609814a426c35203c2d16d4c2655d7f3ae13467",
+      "lines": 143
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/state/conversationStore.ts",
+      "sha256": "42b617792672f995a569b2c8df351ec41cfe83a7ee8e043949ae8c6ff0ad3175",
+      "lines": 219
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts",
+      "sha256": "d80bffa8c9a2a8bd1c935a16d88459d354705d9a8965b1327d5e89b39e44847b",
+      "lines": 537
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/client/featureFlag.ts",
+      "sha256": "4fd4f9948d4eb073b368332640834f94edcaae554c13b213997a5e949af076e7",
+      "lines": 17
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/pages/chat/index.tsx",
+      "sha256": "ef4c7cbe4c3cd5c9f05adf5ea3d08c7e8b44490ec508b6fdfb8b5c7958972c2a",
+      "lines": 797
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/src/services/platform/api.ts",
+      "sha256": "599a1c416616b1a5368d7679036cb5c7162ba9596d6bbcc23e9b9ea85f3112bd",
+      "lines": 4169
+    },
+    {
+      "path": "Source/PuddingRuntimeTests/Architecture/ArchitectureGuardTests.cs",
+      "sha256": "2e86bf912ea34e2013ec39eba18837f266de56b27c13c29a42843a0e0395ceb1",
+      "lines": 62
+    },
+    {
+      "path": "Source/PuddingPlatformAdmin/scripts/check-chat-bundle-budget.cjs",
+      "sha256": "15d1aa585a7b5dee5170d80e1271bd9c12ef2d9d7bcaf69949d0b0ddfc00e9c2",
+      "lines": 93
+    },
+    {
+      "path": "TestScripts/deepseek-cache-hitrate.py",
+      "sha256": "ea5a91e9b067d5f0109902a46b0eb4361dff951185604bda01e23ecd98178908",
+      "lines": 176
+    },
+    {
+      "path": "TestScripts/test_deepseek_cache_hitrate.py",
+      "sha256": "faeb54cf86b41032a3aac55cc6b6fffea4747b278ce738a312b7b5ce1ff25672",
+      "lines": 45
+    },
+    {
+      "path": "Docs/架构.md",
+      "sha256": "1f030ed912dde5656d24dd045147fac9bae452832fc3014ec675d6320b72d0e0",
+      "lines": 346
+    },
+    {
+      "path": "Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md",
+      "sha256": "feb79544eb9d86e1fdaacc266420ecbda8a56d11c5ac80704f0e826291effc6b",
+      "lines": 646
+    }
+  ],
+  "checks": [
+    {
+      "name": "python -B TestScripts/test_deepseek_cache_hitrate.py",
+      "status": "passed",
+      "tests": 4,
+      "production_db_accessed": false
+    },
+    {
+      "name": "dotnet msbuild Source/PuddingAgent/PuddingAgent.csproj -nologo -getItem:Compile",
+      "status": "passed",
+      "compile_count": 3,
+      "legacy_composition_files_included": true,
+      "build_performed": false
+    }
+  ],
+  "not_run": [
+    "C# build or tests",
+    "frontend typecheck/build/tests",
+    "live LLM calls",
+    "production cache measurement",
+    "process restart or deployment"
+  ]
+}

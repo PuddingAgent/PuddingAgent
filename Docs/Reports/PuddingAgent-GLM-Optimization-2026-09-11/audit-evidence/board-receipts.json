@@ -1,0 +1,111 @@
+{
+  "workspace": "default",
+  "created": [
+    {
+      "key": "F01-R",
+      "taskId": "9e007db123b04c5fb0f369e2cc126b6f",
+      "title": "[GLM审计][F01-R] 修复明细水合取消、失败预算与生命周期",
+      "status": "Backlog",
+      "version": 1,
+      "etag": "\"task-v1\"",
+      "priority": "p1"
+    },
+    {
+      "key": "S01-A-R",
+      "taskId": "d0ac9f710b944ee5810b48c74128e98b",
+      "title": "[GLM审计][S01-A-R] 修复双账本严格幂等与唯一约束误吞",
+      "status": "Backlog",
+      "version": 1,
+      "etag": "\"task-v1\"",
+      "priority": "p1"
+    },
+    {
+      "key": "T01-R",
+      "taskId": "104fe9c0707f4d458fd9b5f9d96e32d3",
+      "title": "[GLM审计][T01-R] 统一 save_memory 参数声明、校验与内容构造",
+      "status": "Backlog",
+      "version": 1,
+      "etag": "\"task-v1\"",
+      "priority": "p2"
+    },
+    {
+      "key": "S01-B",
+      "taskId": "863193411fa2437babdb37d7f08af325",
+      "title": "[GLM下一步][S01-B] 请求级用量归因与迟到落账恢复",
+      "status": "Backlog",
+      "version": 1,
+      "etag": "\"task-v1\"",
+      "priority": "p1"
+    },
+    {
+      "key": "C01",
+      "taskId": "9494be33635e4717ba1271a6105aec6a",
+      "title": "[GLM下一步][C01] Composition 执行状态独立提交、单调修订与恢复",
+      "status": "Backlog",
+      "version": 1,
+      "etag": "\"task-v1\"",
+      "priority": "p1"
+    },
+    {
+      "key": "C02",
+      "taskId": "a8e5340ebb9f421bac7c8b3babb768bc",
+      "title": "[GLM下一步][C02] 最终 Provider 请求 Manifest 与缓存失效归因",
+      "status": "Backlog",
+      "version": 1,
+      "etag": "\"task-v1\"",
+      "priority": "p1"
+    }
+  ],
+  "updated": [
+    {
+      "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+      "title": "Token缓存命中率优化",
+      "beforeVersion": 6,
+      "afterVersion": 7,
+      "status": "InProgress",
+      "actions": [
+        "patch-description-and-acceptance",
+        "add-comment",
+        "add-evaluation-needs_changes"
+      ],
+      "commentId": "a24017b8becd4cd0a57c6ce0f74affb1",
+      "evaluationId": "tev_57ffab7d6a6d45acb53d0e321dba3aa6",
+      "verdict": "needs_changes",
+      "score": 3,
+      "taskVersionObserved": 7
+    },
+    {
+      "taskId": "2a5e00f93a764bf3bf8d150dffa8be68",
+      "title": "P0-5 Session Composition Snapshot 真正不可变化（持久化+跨重启+仅追加）",
+      "beforeVersion": 9,
+      "afterVersion": 9,
+      "status": "Completed",
+      "actions": [
+        "add-comment"
+      ],
+      "commentId": "c7fb313320714c5fa1d73e675ba6e801"
+    },
+    {
+      "taskId": "2fce98267d5a4fa28682ac0943961f1a",
+      "title": "P0-6 Tool Definition 集合所有权修复（canonical definition + Turn 边界冻结）",
+      "beforeVersion": 6,
+      "afterVersion": 6,
+      "status": "Completed",
+      "actions": [
+        "add-comment"
+      ],
+      "commentId": "227875aaa2014a3487442f1998fe7ac8"
+    },
+    {
+      "taskId": "4b904200a4ff4bbc8303285d4f5ee720",
+      "title": "第三轮：效率修复部署、进程基线与 canonical 产品验收",
+      "beforeVersion": 1,
+      "afterVersion": 1,
+      "status": "Backlog",
+      "actions": [
+        "add-comment"
+      ],
+      "commentId": "87064303b47d455e87be9de3ad0fbe82"
+    }
+  ]
+}

@@ -1,0 +1,502 @@
+[
+  {
+    "key": "F01-R",
+    "taskId": "9e007db123b04c5fb0f369e2cc126b6f",
+    "title": "[GLM审计][F01-R] 修复明细水合取消、失败预算与生命周期",
+    "status": "NeedsReview",
+    "version": 4,
+    "etag": "\"task-v4\"",
+    "description": "【2026-09-12 独立复核：核心补修已提交，界面闭环仍需补齐】\n实现提交 19ec137。hook→adapter→request 已传递 AbortSignal/timeout；scheduler 保留失败预算和认证暂停；effect setup 创建独立实例、cleanup dispose，修复 root StrictMode 复用失效对象。原审计五个探针已全部转绿；本轮前端四套件共 28/28 通过，包含原23项和独立5项。\n剩余：getHydrationFailure、notifyAuthRecovered、retryAll 目前只在 hook 暴露，未查到真实 Chat UI /认证事件消费者。五探针通过不能覆盖原验收第3条。下一步只补认证恢复事件、失败状态展示和用户重试入口，并补界面到 hook 的集成测试；验证 gone 同 revision 不复活、未加载/失败/不存在可区分。保留 owner/generation/引用计数、并发≤2 和取消结算规则。\n验收：保留原条件；补完第3条后再完整复审，给出新 tsc 结果及明确 bundle 的产品 smoke。本轮未重跑 tsc、未加载新 bundle 验收。byte LRU/detailsRevision 仍属更大 F01 范围，不能凭本卡宣告全部完成。\n\n最新复核与回执：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md\n本次只同步看板与文档，不触发 assign/run-now、不部署，不改生产数据。",
+    "acceptanceCriteria": "1. 独立 F01 五个探针转绿（401/404/503 视口出入、root StrictMode、signal）。\n2. 新增 adapter 测试证明 signal 到 request；A→B 旧请求取消结算后 B 自动补位，迟到不污染，总未完成 transport≤2，不以 Promise.race 隐藏仍运行请求。\n3. 真实认证恢复/手动重试可达，gone 同 revision 不复活，未加载/失败/不存在可辨。\n4. 原前端23项与 tsc 通过，提交源码 hash 和独立复审记录；byte LRU/detailsRevision 服务端合同未完成时如实标注。",
+    "autoDispatchEnabled": false,
+    "activeAssignmentId": null,
+    "evaluationId": "tev_cff4303d8fcf420384baa5a2ce6a743d",
+    "comments": [
+      {
+        "commentId": "6fb09e975c1f43de8c7ccf3c3c0bf2aa",
+        "taskId": "9e007db123b04c5fb0f369e2cc126b6f",
+        "workspaceId": "default",
+        "authorKind": "user",
+        "authorId": "admin",
+        "content": "状态 Backlog→Ready：2026-09-12：19ec137 和五探针复核通过；从规划转入剩余接线与验收阶段，自动调度关闭。",
+        "createdAtUtc": "2026-09-12T06:12:23.868579+08:00"
+      },
+      {
+        "commentId": "3316d0ec953b486a9f40fd1d744e8161",
+        "taskId": "9e007db123b04c5fb0f369e2cc126b6f",
+        "workspaceId": "default",
+        "authorKind": "user",
+        "authorId": "admin",
+        "content": "状态 Ready→NeedsReview：仍需补修：hook 的认证恢复、失败状态及手动重试没有真实 UI/认证事件消费者。先补原验收3及集成证据；28项通过不能据此关单。",
+        "createdAtUtc": "2026-09-12T06:12:37.2445274+08:00"
+      }
+    ],
+    "evaluations": {
+      "evaluationId": "tev_cff4303d8fcf420384baa5a2ce6a743d",
+      "taskId": "9e007db123b04c5fb0f369e2cc126b6f",
+      "workspaceId": "default",
+      "verdict": "needs_changes",
+      "score": 4,
+      "comment": "19ec137 修复原5探针，本轮前端28/28通过；真实认证事件/失败投影/手动重试消费者仍缺，原验收3未满足，不能关单。\nE:/github/AgentNetworkPlan/PuddingAgent/Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md",
+      "taskVersionObserved": 4,
+      "supersedesEvaluationId": null,
+      "evaluator": {
+        "type": "external_access_token",
+        "id": "access-token:pat_iHYnrvahfWyQHMoR",
+        "displayName": "codex"
+      },
+      "createdAtUtc": "2026-09-12T06:14:31.5974081+08:00"
+    }
+  },
+  {
+    "key": "S01-A-R",
+    "taskId": "d0ac9f710b944ee5810b48c74128e98b",
+    "title": "[GLM审计][S01-A-R] 修复双账本严格幂等与唯一约束误吞",
+    "status": "NeedsReview",
+    "version": 4,
+    "etag": "\"task-v4\"",
+    "description": "【2026-09-12 独立复核：原三项缺陷已修复，源码验证通过】\n实现提交 9537f60。双账本严格同 source 内容/身份比较、异事实冲突，以及 UNIQUE 误吞修复已落地。上一轮三个独立 SQLite 探针本轮全部转绿；用量/归因相关 Platform 测试 48/48 通过（含独立3项，原39项与新回归）。现有 BEGIN IMMEDIATE、decimal 单事务事件/context layer/月聚合继续保留。\n本卡补修可进入验收收口，不再重复登记三个旧失败为当前故障。未声称生产已部署，未做供应商账单核验。Provider 成功后本地重投、完整 invocation/attempt 归因由 S01-B（863193411fa2437babdb37d7f08af325）承接；本卡通过不代表该链路完成。\n下一步：保留源码/临时库证据，进行看板结算并推进 S01-B 剩余链路。当前卡没有 assignment；不得为了制造 Completed 去派发或伪造执行历史。\n\n最新复核与回执：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md\n本次只同步看板与文档，不触发 assign/run-now、不部署，不改生产数据。",
+    "acceptanceCriteria": "1. 三个 AuditUsageConflictTests 探针转绿；trigger 只用于临时数据库故障注入。\n2. 两本账本均验证同 source 同内容只计一次、异 payload/workspace/provider/model/operation 明确冲突。\n3. 非 source UNIQUE/PK、取消、IO/commit 失败不能冒充成功；失败事务各表零残留。\n4. 原39项和50并发通过，events、Prompt/Completion/Hit/Miss、RequestCount、decimal cost 全量对账。\n5. 本地重投不增加 Provider 调用；尚未接 S01-B 不宣称请求归因完成。",
+    "autoDispatchEnabled": false,
+    "activeAssignmentId": null,
+    "evaluationId": "tev_9c7f65c6c3154cf1acf475d42c527980",
+    "comments": [
+      {
+        "commentId": "f215b16fd73942fa9d474e5a9825d13d",
+        "taskId": "d0ac9f710b944ee5810b48c74128e98b",
+        "workspaceId": "default",
+        "authorKind": "user",
+        "authorId": "admin",
+        "content": "状态 Backlog→Ready：2026-09-12：9537f60 严格幂等补修和独立3探针通过，进入验收收口，自动调度保持关闭。",
+        "createdAtUtc": "2026-09-12T06:11:54.0288552+08:00"
+      },
+      {
+        "commentId": "60b59369543645e3a0bdb696b319a007",
+        "taskId": "d0ac9f710b944ee5810b48c74128e98b",
+        "workspaceId": "default",
+        "authorKind": "user",
+        "authorId": "admin",
+        "content": "状态 Ready→NeedsReview：原三个缺陷源码复核通过；进入待结算。S01-B 请求级持久化及本地补录恢复另行收口；不制造 Assignment 或生产已部署结论。",
+        "createdAtUtc": "2026-09-12T06:12:06.8052576+08:00"
+      }
+    ],
+    "evaluations": {
+      "evaluationId": "tev_9c7f65c6c3154cf1acf475d42c527980",
+      "taskId": "d0ac9f710b944ee5810b48c74128e98b",
+      "workspaceId": "default",
+      "verdict": "accepted",
+      "score": 4,
+      "comment": "限定源码补修复核：9537f60 原3项冲突探针转绿，用量/归因Platform48/48通过。S01-B的本地失败重投及完整请求归因尚未验收；此 accepted 不代表部署或缓存目标通过。\nE:/github/AgentNetworkPlan/PuddingAgent/Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md",
+      "taskVersionObserved": 4,
+      "supersedesEvaluationId": null,
+      "evaluator": {
+        "type": "external_access_token",
+        "id": "access-token:pat_iHYnrvahfWyQHMoR",
+        "displayName": "codex"
+      },
+      "createdAtUtc": "2026-09-12T06:14:42.3925735+08:00"
+    }
+  },
+  {
+    "key": "T01-R",
+    "taskId": "104fe9c0707f4d458fd9b5f9d96e32d3",
+    "title": "[GLM审计][T01-R] 统一 save_memory 参数声明、校验与内容构造",
+    "status": "NeedsReview",
+    "version": 4,
+    "etag": "\"task-v4\"",
+    "description": "【2026-09-12 独立复核：原两项参数合同缺陷已修复，源码验证通过】\n实现提交 33c1489。type 一次归一化后用于验证/构造；preference value 缺失或空白在写入前拒绝；增加 SaveMemoryTypeContractTests。上一轮两个独立探针全部转绿：缺 value 零写入，大小写类型产生正确内容。记忆工具与请求归因 Runtime 定向共 40/40 通过（包含原记忆28项和独立2项，不把40项全部算作记忆测试）。\n保留未知 action/type fail closed、业务错误 Success=false、取消传播和 context 派生身份。该 R 卡只收口参数声明/校验/内容构造；精确 chapterId 读取、分页与 version/hash 回执仍是原 T01 后续切片。修订原验收第4条中跨范围表述，明确不能用本卡通过宣告整个 T01 完成。\n下一步：源码补修进入看板验收收口；不重做已通过两项。当前没有 assignment，不制造执行历史。产品部署与真实会话 smoke 尚未执行。\n\n最新复核与回执：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md\n本次只同步看板与文档，不触发 assign/run-now、不部署，不改生产数据。",
+    "acceptanceCriteria": "1. 两个 AuditMemoryContractTests 转绿：缺 value 零写入；type 大小写要么规范化正确内容，要么拒绝且零写入。\n2. 封闭 action/type、缺参/空白测试与 schema 一致。\n3. 原28项通过；未知 action 零写入、业务错误 Success=false、取消传播、important context 身份不回退。\n4. 只用临时库/替身验证，提供源码 hash。本 R 卡只验收参数合同补修；read-by-id、分页及 version/hash 回执属原 T01 后续切片，未完成前不能宣告整个 T01 完成。",
+    "autoDispatchEnabled": false,
+    "activeAssignmentId": null,
+    "evaluationId": "tev_de829754eb224bdb97b3231bd6cbe33a",
+    "comments": [
+      {
+        "commentId": "0dc287ba42574af99c6d19a5fc4b1d10",
+        "taskId": "104fe9c0707f4d458fd9b5f9d96e32d3",
+        "workspaceId": "default",
+        "authorKind": "user",
+        "authorId": "admin",
+        "content": "状态 Backlog→Ready：2026-09-12 复核：33c1489 参数合同补修及独立两探针通过；从待规划进入验收流程，自动调度保持关闭。",
+        "createdAtUtc": "2026-09-12T06:11:15.2310699+08:00"
+      },
+      {
+        "commentId": "72ad55f6f484489894da403423eed3d7",
+        "taskId": "104fe9c0707f4d458fd9b5f9d96e32d3",
+        "workspaceId": "default",
+        "authorKind": "user",
+        "authorId": "admin",
+        "content": "状态 Ready→NeedsReview：源码补修复核通过，待看板验收结算；Ready 不支持直接 Completed，保留真实无 Assignment 历史。原 T01 的读取/分页扩展及产品 smoke 未在本卡宣告完成。",
+        "createdAtUtc": "2026-09-12T06:11:27.6152188+08:00"
+      }
+    ],
+    "evaluations": {
+      "evaluationId": "tev_de829754eb224bdb97b3231bd6cbe33a",
+      "taskId": "104fe9c0707f4d458fd9b5f9d96e32d3",
+      "workspaceId": "default",
+      "verdict": "accepted",
+      "score": 4,
+      "comment": "限定本R卡参数合同：33c1489，缺value零写入、type大小写正确两探针通过；原记忆28项在本轮Runtime40项组中通过。原T01读byid/分页/version回执不在此次完成范围，产品smoke未执行。\nE:/github/AgentNetworkPlan/PuddingAgent/Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md",
+      "taskVersionObserved": 4,
+      "supersedesEvaluationId": null,
+      "evaluator": {
+        "type": "external_access_token",
+        "id": "access-token:pat_iHYnrvahfWyQHMoR",
+        "displayName": "codex"
+      },
+      "createdAtUtc": "2026-09-12T06:14:53.1587019+08:00"
+    }
+  },
+  {
+    "key": "S01-B",
+    "taskId": "863193411fa2437babdb37d7f08af325",
+    "title": "[GLM下一步][S01-B] 请求级用量归因与迟到落账恢复",
+    "status": "NeedsReview",
+    "version": 4,
+    "etag": "\"task-v4\"",
+    "description": "【2026-09-12 独立复核：首片已提交，完整合同尚未验收】\n前置 S01-A-R（d0ac9f710b944ee5810b48c74128e98b）的三个缺陷探针已通过。实现提交 15842ff：增加 RequestContextAttribution 不可变副本与 InvocationId/AttemptId 字段，在 AgentExecution buffered/streaming/compaction 接入冻结；记录器优先消费冻结副本；迟到落账提交后失效闭日聚合。当前相关 Platform48/48、Runtime40/40 通过，但 RequestAttributionWiringTests 部分是 helper 等价探针，不是生产全链路验证。\n剩余必做：\n1. InvocationId/AttemptId 与 attribution Source 当前没有写入 TokenUsageEventEntity；缺快照仍回退 session-latest。把请求/attempt 身份和 frozen/fallback/unknown provenance 贯通实际 LlmInvocation、Gateway usage、TokenUsage 持久化及查询，禁止把 fallback 作为精确归因，unknown 覆盖率独立统计。run/turn/round、workspace/session、主/子身份在请求准备期冻结；C01/C02 产生 revision/contentId/manifestId 后绑定同一事实。\n2. 实现 Provider 已成功、本地 busy/commit 失败仅重投同一事实；当前 catch 只记录 deferred 日志不能证明恢复。补生产接线 spy：模型调用一次，本地失败后重试成功；重启仍可恢复，无重复金额。\n3. 闭日失效在账本事务之后且失败只记日志；增加可恢复 dirty-day/outbox 或等价原子机制，覆盖提交后崩溃/失效失败/重复补录。明确存储 UTC 日与北京时间报表窗口的转换，按 occurredAt 归属重算。\n4. 集成验证 A 调用进行中 B 改 session 快照、Provider 内部重试、streaming/buffered、主/子与控制流，确认最终账本可精确关联。\n保留已有实现，仅补剩余链路。总卡 af25d72c75634aae8579ec2c0a26ce08；尚无本批部署/完整七日验收。\n\n最新复核与回执：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md\n本次只同步看板与文档，不触发 assign/run-now、不部署，不改生产数据。",
+    "acceptanceCriteria": "1. A 延迟落账、B 更新快照交错时，A 保留自己的归因。\n2. buffered/streaming、主/子和控制流有稳定 invocation/attempt 关联，不以相同 token 或邻近时间去重。\n3. Provider 成功、本地 busy/commit 失败只重投账本，用 spy 证明模型调用一次。\n4. 次日补录昨日用量能失效重算，金额准确。\n5. unknown 覆盖率独立展示；事件/聚合对账与原 usage 回归通过，源码/部署/七日验收分开。",
+    "autoDispatchEnabled": false,
+    "activeAssignmentId": null,
+    "evaluationId": "tev_90d71a64f57940269fc2bfa8a0b6ecc8",
+    "comments": [
+      {
+        "commentId": "abb4c5d491404e348e5a724499ad4375",
+        "taskId": "863193411fa2437babdb37d7f08af325",
+        "workspaceId": "default",
+        "authorKind": "user",
+        "authorId": "admin",
+        "content": "状态 Backlog→Ready：2026-09-12：15842ff 首片已提交；冻结归因和闭日失效已有实现，转入完整合同复审，自动调度关闭。",
+        "createdAtUtc": "2026-09-12T06:12:53.0102056+08:00"
+      },
+      {
+        "commentId": "b1f9cd10d0264ab283055d0c68dd5c86",
+        "taskId": "863193411fa2437babdb37d7f08af325",
+        "workspaceId": "default",
+        "authorKind": "user",
+        "authorId": "admin",
+        "content": "状态 Ready→NeedsReview：首片有实现但未通过完整验收：请求/attempt/provenance 未贯通落账；本地失败重投、闭日失效失败恢复和生产接线 spy 待补。按最新描述收口。",
+        "createdAtUtc": "2026-09-12T06:13:05.5599977+08:00"
+      }
+    ],
+    "evaluations": {
+      "evaluationId": "tev_90d71a64f57940269fc2bfa8a0b6ecc8",
+      "taskId": "863193411fa2437babdb37d7f08af325",
+      "workspaceId": "default",
+      "verdict": "needs_changes",
+      "score": 3,
+      "comment": "15842ff 完成冻结归因/闭日失效首片；持久化 invocation/attempt/provenance、Provider成功后本地失败重投及闭日失效失败恢复仍缺。helper组合测试不能代替生产接线，保持待补修。\nE:/github/AgentNetworkPlan/PuddingAgent/Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md",
+      "taskVersionObserved": 4,
+      "supersedesEvaluationId": null,
+      "evaluator": {
+        "type": "external_access_token",
+        "id": "access-token:pat_iHYnrvahfWyQHMoR",
+        "displayName": "codex"
+      },
+      "createdAtUtc": "2026-09-12T06:15:03.8753568+08:00"
+    }
+  },
+  {
+    "key": "C01",
+    "taskId": "9494be33635e4717ba1271a6105aec6a",
+    "title": "[GLM下一步][C01] Composition 执行状态独立提交、单调修订与恢复",
+    "status": "NeedsReview",
+    "version": 4,
+    "etag": "\"task-v4\"",
+    "description": "【2026-09-12 进度更新：C01-A 有工作树实现，待独立验收；C01-B 待实施】\n前置 S01-B（863193411fa2437babdb37d7f08af325）已提交首片15842ff，但持久化 invocation/attempt/provenance 与本地用量恢复仍未收口，C01 Request Binding 必须对齐后续合同。\n本轮当前工作树已出现 DirectLlmClient、CompositionRecoveryService、CompositionSnapshot、PersistentCompositionVersionRegistry、AgentExecution buffered/streaming 改动，以及 CompositionCommitDecouplingTests、CompositionRecoverySingleFlightTests。此为未提交 WIP 证据，不再写“所有文件与原基线相同/尚未开始”；未将本轮116项测试当作这批新改动的验收。\n下一步 C01-A：核对改动归属和完整 diff，在隔离输出中验证无 telemetry/sink 异常仍提交执行状态、store busy 不冒充提交、恢复 single-flight、取消和失败可见；提交源码与测试证据后独立复审。不得纳入无关 chat/prefix/工具文件改动。\nC01-B：long 单调 revision + 可复用 contentId + CAS head；A→B→A 不倒退；精确 canonical prefix/schema 版本引用可恢复；ToolExposureRevision 与 PermissionEpoch 分离，轮边界采用已提交组成，撤权立即约束调用。覆盖重启、双提交者 CAS 冲突和未知 schema fail closed。A/B 分提交。\n范围：DirectLlmClient、PersistentCompositionVersionRegistry、CompositionRecoveryService、CompositionContracts、CompositionSnapshot、SqliteCompositionStore、ToolExposurePlanner。沿用旧 P0-5（2a5e00f93a764bf3bf8d150dffa8be68）/P0-6（2fce98267d5a4fa28682ac0943961f1a）历史；本卡承接新差距，不改其 Completed 终态。\n\n最新复核与回执：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md\n本次只同步看板与文档，不触发 assign/run-now、不部署，不改生产数据。",
+    "acceptanceCriteria": "1. 无 telemetry/sink 异常不影响执行状态；store busy 不伪装已提交。\n2. 同权限 A→B→A revision 递增、contentId 可复用，重启 latest 恢复 A，双提交者 CAS 明确冲突。\n3. 恢复 single-flight，可取消，热请求不全量重载历史。\n4. 精确 schema 版本引用可恢复，缺失不静默用新定义；发现和撤权分原因，权限边界不变。\n5. buffered/streaming 同合同，A/B 分提交，更新冲突旧断言并给出新回归证据。",
+    "autoDispatchEnabled": false,
+    "activeAssignmentId": null,
+    "evaluationId": null,
+    "comments": [
+      {
+        "commentId": "a6740f967cfb4499b8748a3a05e11dfc",
+        "taskId": "9494be33635e4717ba1271a6105aec6a",
+        "workspaceId": "default",
+        "authorKind": "user",
+        "authorId": "admin",
+        "content": "状态 Backlog→Ready：2026-09-12：C01-A 已有未提交源码与测试文件，转入交付复核；本次没有派发 Agent，自动调度保持关闭。",
+        "createdAtUtc": "2026-09-12T06:13:21.0845232+08:00"
+      },
+      {
+        "commentId": "1ab22065d9f04df781697f9a5d2d44b8",
+        "taskId": "9494be33635e4717ba1271a6105aec6a",
+        "workspaceId": "default",
+        "authorKind": "user",
+        "authorId": "admin",
+        "content": "状态 Ready→NeedsReview：C01-A WIP 待归属确认、隔离测试和提交，不把116项旧目标测试当本批验收。C01-B revision/contentId/CAS 与权限轮边界仍待实现；先对齐 S01-B 合同。",
+        "createdAtUtc": "2026-09-12T06:13:34.0883943+08:00"
+      }
+    ],
+    "evaluations": null
+  },
+  {
+    "key": "C02",
+    "taskId": "a8e5340ebb9f421bac7c8b3babb768bc",
+    "title": "[GLM下一步][C02] 最终 Provider 请求 Manifest 与缓存失效归因",
+    "status": "Backlog",
+    "version": 2,
+    "etag": "\"task-v2\"",
+    "description": "【2026-09-12 进度更新：保持待规划，依赖未完成】\n前置 S01-B（863193411fa2437babdb37d7f08af325）首片已提交但完整归因/恢复仍待收口；C01（9494be33635e4717ba1271a6105aec6a）只有 A 片工作树改动待验收，B 片未完成。未发现本卡最终 Provider RequestShapeManifest 的可验收交付；不标已完成。\n下一步：先冻结 invocation/attempt、compositionRevision/contentId 的唯一合同，再在 OpenAiLlmGateway/ResponsesLlmGateway/AnthropicMessagesLlmGateway 最终序列化边界从实际发送数据生成 manifest。有序 segment hash/bytes、完整 history、firstChangedSegment/offset/前后 hash；区分模型可见与 transport 字段，关联同一 attempt/usage。普通报表不存认证头和秘密配置。\n先做离线协议和首变定位，再接 deepseek-cache-hitrate.py 分桶/unknown/迟到统计，最后明确新构建的产品 smoke 与完整七日窗口。性能索引优化或现有前缀 hash 不等于最终 payload manifest 已完成。\n维持任务语义、工具名称/参数/顺序与权限边界；保持原全部验收门槛。权威设计：Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md §15.3；总卡 af25d72c75634aae8579ec2c0a26ce08。\n\n最新复核与回执：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md\n本次只同步看板与文档，不触发 assign/run-now、不部署，不改生产数据。",
+    "acceptanceCriteria": "1. 尾部追加、第20条历史单字符、第二条 system、tool properties/required、图片 artifact 版本、协议变化的首变定位准确。\n2. manifest 对应实际 payload/attempt；关联覆盖率与 miss 可解释率分别展示，unknown 不删除。\n3. 按 tokens 加权 hit/(hit+miss)，按模型、账本来源、主/子与 approval/compaction、cold/warm/epoch 分桶。\n4. 完整七日按权威 §15.3：总目标>99%；Pro/Flash 逐日≥10M input 各自>99%，小样本显式保留；同 composition warm≥99.5%，非预期 system/tool 变化<0.1%，账单差异<0.5%。缺窗口或账单即未验收。\n5. 成功率、工具正确性、P95 延迟不退化；离线、产品 smoke、七日验收分开记录。",
+    "autoDispatchEnabled": false,
+    "activeAssignmentId": null,
+    "evaluationId": null,
+    "comments": {
+      "commentId": "7f97acce174e4736be166d7cb3e41096",
+      "taskId": "a8e5340ebb9f421bac7c8b3babb768bc",
+      "workspaceId": "default",
+      "authorKind": "agent",
+      "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+      "content": "2026-09-12 状态同步：C02 保持 Backlog，依赖 S01-B 完整归因恢复与 C01-B 尚未完成。描述已改为真实剩余工作，未派发。\nE:/github/AgentNetworkPlan/PuddingAgent/Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md",
+      "createdAtUtc": "2026-09-12T06:15:20.0571049+08:00"
+    },
+    "evaluations": null
+  },
+  {
+    "key": "CACHE",
+    "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+    "title": "Token缓存命中率优化",
+    "status": "InProgress",
+    "version": 8,
+    "etag": "\"task-v8\"",
+    "description": "【2026-09-12 最新复核：保持 InProgress，缓存目标未验收】\nS01-A-R（9537f60）与 T01-R（33c1489）原缺陷已通过独立复核。F01-R（19ec137）五探针全绿，但认证恢复/失败投影/手动重试缺真实消费者；S01-B（15842ff）冻结归因和闭日失效首片已有，持久化 invocation/attempt/provenance、Provider 成功后的本地恢复及失效可靠性待补。C01-A 有未提交实现待独立验收；C01-B、C02 尚待完成。\n本轮定向验证：前端28/28、Platform用量归因48/48、Runtime记忆与归因40/40；上一轮10个独立失败探针均已转绿。此116项不能证明所有原验收条款、C01新WIP或产品缓存目标通过。\n下一步顺序：S01-B剩余链路 + F01真实接线 → C01-A验收/C01-B → C02最终payload manifest → 明确新构建的产品验收 → 连续7个完整北京时间自然日账单/性能对照。已通过 S01-A-R/T01-R 不重复返工。任务ID沿用现有六卡，不另建重复任务。\n没有本批生产部署证据、新七日窗口或供应商账单对账，不宣称>99%。原§15.3样本、工具语义、权限、成功率和P95门槛保持。9月11日报告是当时历史证据，不再作为当前失败状态。\n\n--- 既定方案（保留） ---\n主文档：[上下文 Token 效率、缓存命中与分级压缩优化设计方案](</E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md:1>)\n\n方案已确定：\n\n- 原文不脱敏：采用“窗口内有界投影 + 完整 artifact + SHA-256 + 渐进取回”。\n- Compact 必须先达到 100% 覆盖，才能写入 `CompactedBy`；500/80 截断缺陷列为 P0 阻断项。\n- 使用 T0–T4 分级压缩，越久远压缩越强，当前轮和最近两轮优先保留原文。\n- 消除 Compact 摘要、近期历史、冷启动数据和记忆召回的同源重复。\n- 建设 SearchAttemptLedger、参数归一化、timeout cursor，治理无效 grep/search 循环。\n- 通过 Composition Snapshot、稳定序列化和 append-only 工具 schema，将 DeepSeek 7 日加权缓存命中率提升至 `>99%`。\n- 使用 Token、UTF-8 字节、ZIP/GZIP 比、语义覆盖率联合验收。\n- 明确了 P0-0 至 P2 的文件级施工范围、发布顺序、回滚方案和验收门槛。\n\n同时更新了：\n\n- [Docs 文档索引](</E:/github/AgentNetworkPlan/PuddingAgent/Docs/README.md:47>)\n- [顶层 code_map](</E:/github/AgentNetworkPlan/PuddingAgent/code_map.md:35>)\n\n最新复核与回执：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md\n本次只同步看板与文档，不触发 assign/run-now、不部署，不改生产数据。",
+    "acceptanceCriteria": "1. 在保持任务语义、工具调用名称/参数/顺序与权限边界不变的前提下，引入持久化 RequestShapeManifest/PrefixEpoch；同一 Epoch 内 system、tool schema、provider protocol 的有序字节必须稳定，任何变更均产生可追踪的 request.header change 事件，禁止静默重建。\n2. 将请求组装明确拆为 Stable / Session Context / Volatile Tail；时间、当前轮输入、临时召回、运行状态和 steering 只能进入易变尾部，记忆写入不得改写当前会话已缓存前缀。\n3. 工具定义采用稳定 ID、确定性排序和规范序列化；search_tools 发现流程、权限结果及实际工具调用保持不变，但同一 Epoch 的 provider tool schema 集合不得随轮次振荡。\n4. 至少 95% 的 miss tokens 可归因到 firstChangedSegment、byte/token offset、前后 hash、PrefixChangeReason、session/model/request ordinal；区分不可避免的新尾部与可避免的旧前缀失效。\n5. 建立真实 DeepSeek API 缓存 E2E：覆盖 buffered/streaming、主/子代理、重启恢复、压缩、search_tools、vision、插件/权限变化；首轮后每轮均证明旧前缀复用，出现未解释 Epoch 变化则失败。\n6. Runtime Center 提供 7 日目标、Warm/Cold/Epoch Reset/Degraded 状态和 Cache Miss Inspector，可定位首次变化层、影响 tokens/成本并对比前后请求形状。\n7. 生产验收必须连续 7 个完整自然日满足全局、deepseek-v4-pro、deepseek-v4-flash 各自 token-weighted cache hit rate >99%，且任务成功率、工具调用正确性、P95 延迟不退化；设计文档或局部测试通过不得视为达标。\n\n8. 本轮新增前置：S01-A-R 严格幂等、S01-B 不可变请求归因、C01 持久化 revision/CAS 与 C02 实际 payload manifest 分项复审；Provider 已成功时本地提交重试不能再调模型。\n9. 第7条按权威设计 §15.3 落实样本口径：连续7个完整北京时间自然日，总目标>99%；Pro/Flash 分模型，逐日≥10M input 时单独>99%，小样本显式保留并给累计统计，不能删除样本或直接豁免。warm同composition≥99.5%；非预期system/tool变化<0.1%；本地账本与供应商账单差异<0.5%；主/子执行与approval/compaction分开。缺证据保持未验收。",
+    "autoDispatchEnabled": false,
+    "activeAssignmentId": null,
+    "evaluationId": "tev_0ede506aa5ff4d5a889f4dac434e8586",
+    "comments": [
+      {
+        "commentId": "eac2e29934fa492088fc026c1fbe1fe9",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "## 2026-08-27 DeepSeek Harness / Hermes Agent 对标与当前证据\n\n### 当前 7 日窗口（只读脚本实测）\n- 全局日加权命中率：08-22 96.817%、08-23 96.483%、08-24 96.356%、08-25 96.533%、08-26 96.306%、08-27 96.454%，连续未达 >99%。\n- v4-flash 为 98.233% → 96.524% 区间，vision 约 93.740% → 96.721%；不是单一 Pro 模型问题。\n- miss 归因仍以 unattributed 为主：incremental 36.2%、full-rebuild 29.3%、half-rebuild 9.9%、partial 8.6%；另有 session_rehydrated 5.8%、tool_spec_changed 5.1%、system_prompt_changed 5.1%。当前首要工作应是补齐“首次变化段”证据，而不是继续猜测。\n\n### 业界对标结论\n- DeepSeek Harness：中心化 system-prompt registry、固定 section 顺序、tool schema 规范排序；agent request 从 append-only session log 派生，并记录 request/header initial/resume/change；压缩只生成确定性 model-visible surface，原始事实留在日志；真实 DeepSeek E2E 验证多轮 tool turn 后 cacheReadTokens。来源：https://github.com/deepseek-ai/deepseek-harness\n- Hermes Agent：明确 cached system prompt 与 API-call-only additions；稳定→上下文→易变分层，ephemeral prompt/prefill/recall 追加到当前 user message；记忆写盘不改写当前 session 的 cached prompt，直到显式 rebuild/new session/compression。来源：https://hermes-agent.nousresearch.com/docs/developer-guide/prompt-assembly 和 https://hermes-agent.nousresearch.com/docs/developer-guide/context-compression-and-caching\n\n### 建议实施切片\n1. P0 RequestShapeManifest + PrefixEpoch：保存 ordered segment hash/bytes/tokens、tool schema hash、provider protocol、composition generation；首次请求、恢复和变化都写规范事件。\n2. P0 Stable/Context/Volatile：冻结同一 Epoch 的前缀；时间戳、运行态、动态召回、当前用户输入进入尾部；Memory write 不触发活动会话 prefix rebuild。\n3. P0 Tool Schema Freeze：保留 search_tools 和实际调用不变；按授权/Agent Profile 在 Epoch 开始计算稳定工具并集，确定性序列化，权限在服务端继续 fail-closed；工具或插件变更只能在轮次边界开启新 Epoch。\n4. P0 Miss Attribution：把 unattributed 降到 <5%；记录 firstChangedSegment、offset、prev/current hash、原因、角色、模型、请求序号和 cold/warm/rehydrated。\n5. P1 Append-only Surface：历史只追加；压缩/裁剪产生带 generation 与来源引用的新 surface，不原地改写旧前缀；保护 tool call/result 对、当前轮与多模态 part。\n6. P1 测试与 UI：字节级 prefix 等同性测试 + key-gated DeepSeek 多轮 E2E + Cache Miss Inspector。指标仍以 Provider billing ledger 的全量 token-weighted >99% 为准，不排除冷请求来“优化口径”。\n\n此评论补充现有设计，不代表已实现或生产达标。",
+        "createdAtUtc": "2026-08-27T22:23:08.7044125+08:00"
+      },
+      {
+        "commentId": "cb34cae202da485297e41576402137c0",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "【夜间基线 / 与调度器边界】Provider ledger 732 请求、65.85M prompt、整体 token-weighted cache hit 95.51%；main 91.52%，subagent 96.75%。缓存仍需按本卡推进，但它不是夜间吞吐低的首要根因：同一窗口 eligible work 大量未调度、Goal/Reservation 表为空、执行利用率仅 27.68%。本卡继续负责前缀/缓存 >99%；任务派发、WorkUnit、模型并发和 goodput 指标由 6f49d33e900c4e7e960c630fa7d7c2fb / 0b16740022f84b58a9532a87f1bc5509 负责，避免用命中率代替完成率。",
+        "createdAtUtc": "2026-08-28T08:16:44.1380874+08:00"
+      },
+      {
+        "commentId": "66ab15dd7792449cbc2b53bbbb0a5900",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "2026-08-28 Token 优先修复批次（源码完成，未部署，未宣称 >99%）\n\n基线：北京时间 2026-08-27 22:00 至 2026-08-28 07:58:58。DeepSeek 子代理 398 请求，input 34,894,026，cache hit 33,470,336，miss 1,423,690，token-weighted hit 95.9200%。严格 >99% 需至少再转化 1,074,751 old-prefix tokens。\n\n根因：\n1. 120 个审批小请求产生 257,480 miss；全消除也只能把剩余 Agent 请求推到约 96.6%，不是主修复。\n2. 长会话历史头被直接驱逐/替换，最大单次 miss 219,084 / 202,036 / 178,637 / 91,399 / 53,618 tokens。\n3. Buffered/Streaming 跨 dispatch 覆盖首个 system prompt，破坏稳定前缀。\n4. prefix-v1 只看 system/tool，无法发现 history head replacement。\n5. approval/compaction 与 Agent 调用混在 chat 计费桶，污染归因。\n6. 审批 firewall 按分隔符盲切 quoted pipe、2>&1、PowerShell pipeline，安全探查落入 LLM 审批。\n\n已实施：\n- Harness 对齐 warm-prefix checkpoint：摘要请求原样 replay 当前 system/tools/history，只追加固定尾指令；仅成功、无 tool call、非空且真实缩小才原子提交；失败保留 history；每 dispatch 最多一次。\n- 冻结 message-zero system bytes，动态召回/上下文走 User tail。\n- prefix-v2 增加 HistoryAnchorHash、SerializationVersion、compaction_replay/checkpoint reason。\n- approval firewall 改为引号/括号感知；安全 pipeline 确定性放行，危险确定性拒绝，未知形态仍交 LLM。\n- LlmInvocation Purpose 区分 agent/approval/compaction；provider ledger operation 使用 chat[:purpose]，不改变模型可见 prompt。\n\n验证：PuddingRuntime 定向 17/17；firewall 加固后 9/9；PuddingCore prefix tests 5/5；PuddingRuntime 项目构建成功。权威记录：Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md §1.3。\n\n剩余门禁：外部控制器部署新 Core；真实 DeepSeek E2E；Cache Miss Inspector/UI；连续 7 个完整自然日整体及有样本门槛的 Pro/Flash/route 均严格 >99%，并保持任务、工具调用和质量不退化。本任务保持 InProgress。",
+        "createdAtUtc": "2026-08-28T09:05:22.8885265+08:00"
+      },
+      {
+        "commentId": "3e010695f3b4438f82e948fa4af8ea53",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "2026-08-28 源码验收补充：\n- system prompt 采用显式 epoch，而不是为追指标永久保留旧提示：同一稳定头精确复用；模板/配置/工具 manifest 真变化时提交一次并标记 system_prompt_changed。\n- TokenUsageRecorder 对 prefix-v2 的纯历史头变化归因为 history_anchor_changed；prefix/envelope 版本切换归因为 serialization_version_changed。\n- 最终定向验证：Runtime 19/19，Platform cache/token diagnostics 9/9，Core prefix 5/5；Source/PuddingRuntime/PuddingRuntime.csproj build 0 errors；git diff --check 通过。\n- 仓库指令中的 `dotnet build PuddingRuntime` 当前路径不存在（MSB1009），已使用实际项目路径完成构建。\n\n状态仍为 ready-for-external-deploy / InProgress；未修改 D:\\data，未重启当前 Core，未声称线上 >99%。",
+        "createdAtUtc": "2026-08-28T09:18:07.7477775+08:00"
+      },
+      {
+        "commentId": "21844d18847e4f1d8d27aacabded0277",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "2026-08-28 真实 DeepSeek 部署验收与新增根因修复：\n1. Desktop 受控 rebuild-restart 两次均成功，最终 Core PID=3812，buildExitCode=0，PuddingRuntime 产品 DLL 与源构建哈希一致。\n2. 首次双轮探针（同 Agent/任务/模型/system/tools）第二轮为 prompt=50,159、hit=49,024、miss=1,135、97.737%；prefix-v2 证明 system/tool hash 稳定，问题不是旧前缀漂移。\n3. Context snapshot 定位第二轮新增上下文中 L6-AGENT-LOG-RECALL=798 tokens，而真实当前消息仅 15 tokens；这是每轮重复注入已可见召回内容造成的不可避免 miss。\n4. 对齐 E:\\github\\deepseek\\deepseek-harness 的 durable-surface reuse：完整相同 recall 仍在模型可见历史时不再追加；内容变化或被压缩后仍正常注入，不改变任务、工具、模型或召回语义。\n5. 修复后同探针第二轮 prompt=47,418、hit=47,104、miss=314、hitRate=99.338%，阈值 99% 通过；system/tool hash 稳定，L6 重复层消失。\n6. 新增 TestScripts/deepseek-cache-e2e.py 作为双轮真实 DeepSeek 门禁，并补 ContextPipeline 回归测试。任务继续保持 InProgress：当天总体和连续 7 个完整自然日生产口径尚未达标，不能提前完成。",
+        "createdAtUtc": "2026-08-28T09:41:53.1346516+08:00"
+      },
+      {
+        "commentId": "493c1b540a94442098ea8641fdeedf64",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "最终回归补充：相关 Runtime 回归 22/22 通过，git diff --check 通过；运行日志确认 `[ContextPipeline:Prefix] Reused model-visible L6-AGENT-LOG-RECALL ... tokensAvoided=798`。按用户指定 2026-08-27 22:00（北京时间）到当前的权威网关总账仍为 543 请求、40,878,619 prompt tokens、38,814,720 hit、2,063,899 miss、94.951%，历史冷启动/旧版本 miss 不会被新代码改写。因此当前结论是“新稳态双轮门禁 99.338% 已通过”，不是“生产 7 日目标已通过”；继续保留 InProgress 并等待完整自然日验收。",
+        "createdAtUtc": "2026-08-28T09:45:34.8740174+08:00"
+      },
+      {
+        "commentId": "4bde2265c5654e32924b466bc84716c5",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "2026-08-28 11:12 provider ledger 口径刷新（未改状态）：① 冻结窗口 8/27 22:00–8/28 07:58 的 DeepSeek 子代理 398 请求仍为 33,470,336 hit / 1,423,690 miss = 95.9200%；② 同一起点截至当前的全部 DeepSeek 543 请求为 38,814,720 hit / 2,063,899 miss = 94.951153%；③ 保持 Agent/Task/Model/System/Tools 不变的真实 E2E 第二轮为 47,104 hit / 314 miss = 99.337804%。结论：稳态路径已越过 99%，但总体历史、冷启动/控制面分桶及连续 7 日加权门禁未满足，本卡继续 InProgress，不以单次探针冒充生产完成。",
+        "createdAtUtc": "2026-08-28T11:12:52.8913647+08:00"
+      },
+      {
+        "commentId": "f05a2987faf3416285e79e73c15f3638",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "2026-08-28 Provider 计费账本快照（高水位前 Id=77714）：DeepSeek 子代理 50 次请求，冷启动含首轮命中 97.4457%，去首轮 98.0522%，末 10 轮 99.2771%；prompt 从 23,707 增至 116,157（4.90x），completion/prompt 仅 0.6633%。audit DeepSeek 49 次请求：全量 95.2044%，去首轮 95.9671%，末 10 轮 99.4145%；prompt 3.01x，completion/prompt 0.5737%。默认主代理 GLM 同批前 11 请求全量 87.9838%、热态 93.5323%。因此 95.92% 一类汇总同时混入冷启动、模型/角色切换和 prefix 扩张，不能代表稳定缓存能力；但热态仍未稳定达到 99%。实施要求：Provider ledger/source_id 唯一为账本；按 provider/model/role/session 分 cold/warm/steady 三段；记录 prefix-change reason；以任务与工具调用不变为约束对比官方 Harness；同时治理 prompt 放大和低 output/input，而不是只优化计费命中率。",
+        "createdAtUtc": "2026-08-28T12:07:20.3496201+08:00"
+      },
+      {
+        "commentId": "2a97d5df46db4d35ac2bc133547736ec",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "2026-08-28 关联记录：新增 WorkUnit rounds/tools/duration Runtime 钳制会减少无界循环和重复 prompt 重放，是 Token goodput 的负载侧治理；它不会自动把 95.92% cache hit 提升到目标，也不作为 cache 修复验收。缓存主线仍需以 provider usage ledger 验证 prefix-v2/warm-prefix checkpoint/purpose 分桶，并在明确新构建部署后，用相同任务与工具调用做 PuddingAgent vs E:\\\\github\\\\deepseek 对照；当前任务保持 InProgress。",
+        "createdAtUtc": "2026-08-28T12:34:07.4167302+08:00"
+      },
+      {
+        "commentId": "db83875eb47b4290a5372de7207d1f73",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "【2026-08-28 浏览器 + Run 归档实证】Run `run_20260828_040203_f615402b25d6`（subSession `206a9b48ec904ebb93e7541131fbb835-sub-4a1c754a`）在 12:02:03–12:38:34 的归档已有 1,499 个 canonical 事件：267 个已完成 LLM round、216 个已完成工具调用；Prompt 35,073,967、Completion 57,027、cache hit 34,816,704、miss 257,263，加权命中 99.2665%，模型输出 27.19 token/s。216 个工具调用全部是 `search_tools`，没有进入 file_read/file_patch/shell/test；模型不断搜索“立即执行/读取/写入/验证”等工具，形成高缓存命中但零实施 Goodput 的工具发现循环。Run 仍以 maxRounds=600、24h deadline 执行，证明当前在线进程尚未加载 WorkUnit 25–40 round 预算。\n\n同一时刻浏览器运行检查器显示“启动运行时、0 轮、Token 0、工具 0、暂无运行事件”，但底部显示 1 个子代理运行中。结论：active Run 的 SSE/bootstrap 聚合未收敛，Agent Availability/调度判断不能依赖该 UI 投影；必须 fail closed，禁止在状态矛盾时继续派发。建议新增工具能力激活不变量：search_tools 成功后下一轮必须实际暴露并可调用所选 tool；连续只调用 search_tools 达阈值时以 `tool_discovery_stalled` 终止/checkpoint，记录 normalized query/tool id，而不是允许 600 轮换词搜索。",
+        "createdAtUtc": "2026-08-28T12:40:19.4448177+08:00"
+      },
+      {
+        "commentId": "fd5bc2a86a01403ba38db99e2db5a4b1",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "2026-08-28 源码修复登记（尚未部署）：在线旧进程样本 run_20260828_040203_f615402b25d6 在约 36 分钟内产生 267 次 LLM、216 次工具调用，全部为 search_tools；Prompt 35,073,967、Completion 57,027、缓存命中 34,816,704、miss 257,263，加权命中率 99.2665%，但业务 Goodput=0。根因是 dispatch 级冻结错误地阻止了 search_tools 已加载定义在同一外部 Turn 的下一 LLM round 生效。源码现改为 catalog/schema 冻结、visible definitions 在 round boundary 单调增长，并用 tool_spec_changed 归因；连续 8 次 discovery-only 触发 tool_discovery_stalled。Runtime 完整测试 1030/1030、构建 0 error、diff-check 通过。需重启到新构建后用真实 DeepSeek 复测，当前数据不能作为上线验收。",
+        "createdAtUtc": "2026-08-28T13:10:15.8755919+08:00"
+      },
+      {
+        "commentId": "ab223dc7cc9a44ce9b8ee9ff3d89fe57",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "2026-08-28 13:11 BJT 继续观察旧进程：wall 4,181.2s，400 个已完成 round/LLM；Prompt 75,812,094、Completion 138,862、cache hit 75,420,992、miss 391,102，加权命中率 99.484117%，模型输出 36.036 token/s，LLM 3,853.4s、工具 18.0s、其余 309.8s。归档的 277 个 tool.completed 全部是 search_tools，业务工具 Goodput 仍为 0。结论：命中率单指标可在零任务产出的循环中继续上升，验收必须同时要求 useful_tool_calls、completed_work_units 和 cost_per_completed_work_unit。",
+        "createdAtUtc": "2026-08-28T13:12:20.4753117+08:00"
+      },
+      {
+        "commentId": "dd840cfc14184cb0b2d74fda5eac5978",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "Token 效率优先实施更新：已修 search_tools 动态定义下一 LLM round 生效及 8 次 discovery-only 熔断；warm-prefix/prefix-v2/current-turn guard 与 canonical attribution 保持；新增 WorkUnit input/output/cache-hit/cost 调用边界硬预算，价格/usage 缺失 fail closed，并修复 Streaming stale usage 重复记账。源码验证 Runtime 36/36、全量 1047/1047，构建 0 error。当前已部署旧进程与连续 7 日 DeepSeek >99%（且 Goodput 不下降）尚未验收，不能以一次 99%+ 空转缓存率宣告完成。",
+        "createdAtUtc": "2026-08-28T13:55:54.6043037+08:00"
+      },
+      {
+        "commentId": "e2b319b81c1344148cc4571501c181b8",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "2026-08-29 Tokens 效率优先修复：历史证据显示主代理 GLM 加权缓存命中明显低于 DeepSeek 子代理，且 workspace-task-agent 曾出现 620 rounds/625 tools 的预算耗尽。现已为受管 WorkUnit 增加硬上限：MaxRounds=40、MaxToolCallsTotal=120；即使请求显式传入 600/2400 也会被归一化，普通非 WorkUnit 子代理仍保留系统可配置预算。调度同时接入版本化低价窗口，避免错误价格时段派发。代码已通过 SubAgentManager/Resolver 聚焦测试并部署到新 Core。当前仅能确认机制已加载，尚不能宣称 >99%：需观察新运行的 round/tool 上限、prompt/cache hit/miss、tokens/s、成功任务数，并继续完成该卡既定 7 日 token-weighted 验收。",
+        "createdAtUtc": "2026-08-29T08:52:26.9201603+08:00"
+      },
+      {
+        "commentId": "07742c6a66b845c08e25dc8f19e870a1",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "2026-08-29 Tokens 基线与实施：2026-08-27 22:00 起总体 prompt cache hit 约 95.15%；主代理 GLM 约 86.55%，DeepSeek 子代理约 97.98%，GLM 子代理约 96.86%。已修复 token_usage_events 重复（稳定候选查询 + 调用/时间窗内存去重）、finishReason=length 空内容误成功（单次恢复后显式 llm_output_truncated）、Goal 资源指标和稳定路由指纹，并限制单 WorkUnit 40 轮/120 工具调用。>99% 与官方 Harness 对标仍未验收，需按 model/agent/call/token 加权观察新运行，且保持任务和工具调用不变。",
+        "createdAtUtc": "2026-08-29T09:51:03.1711106+08:00"
+      },
+      {
+        "commentId": "91545e24c6bc41f0863ad4169220e042",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "2026-08-29 Token/缓存实测登记\n\n修复：\n- managed WorkUnit 的 input/output/cost/round/tool/time 预算传播到同步子代理，子代理 delegated usage 回灌父账本；父/子都在调用边界停止。\n- Goal settlement 按 root canonical usage + Turn 时间窗内递归 SessionSubAgents 聚合，避免 root 双计；ConversationProjector 修复 SQLite 不可翻译查询导致的 direct usage 重复写。\n- provider length/incomplete 只允许一次短恢复，二次截断 llm_output_truncated；无动作 reasoning 不再无限消耗。\n- 冻结 route/tool/request shape、prefix change reason 及 projection coalescing 继续保留。\n\n第二次自动 smoke（5 个 gateway usage events）：\n- 总 prompt 157,059，cache hit 88,832，含两个模型冷启动的整体命中率 56.56%。\n- 只统计 warm 调用：88,832 / 91,285 = 97.31%。\n- GLM warm：43,776 / 45,673 = 95.85%。\n- DeepSeek warm：45,056 / 45,612 = 98.78%（单轮 98.63%、98.93%）。\n- 相比修复前 1,666,495 input，本轮 157,059，runaway 减少 90.58%；150k 上限因不可中断的最后 provider call 超 4.71% 后立即停止。\n\n结论：Token runaway 已修复并在线验证，但 >99% 尚未达标，不能完成本卡。剩余重点是 GLM 首轮超长 reasoning/低 warm cache、跨模型冷启动成本、Goal cost 与后代 tool-call 归因、连续7日按模型 token-weighted 验收。",
+        "createdAtUtc": "2026-08-29T10:55:09.986287+08:00"
+      },
+      {
+        "commentId": "57d3c8ba682e42f68ebd04d3bd4558e3",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "2026-08-29 10:56 最终程序集在线补充：新自动任务 4ed930… 的 GLM 首轮再次以 length 截断（39,466 prompt / 4,096 output / 0 cache，93.2s）。新有界策略只执行一次短恢复；恢复轮为 39,512 prompt、39,424 cache hit、88 miss，warm hit=99.777%，16.6s，并成功产生 1 个工具调用，随后进入正常下一轮。该证据说明最终部署的“截断一次恢复 + 稳定前缀”在线生效，但冷启动/首轮 93s 与 4,096 无行动输出仍是待模型路由/推理预算解决的 goodput 损耗。",
+        "createdAtUtc": "2026-08-29T10:56:52.5867945+08:00"
+      },
+      {
+        "commentId": "f2efea7416d2464f833a350b23218a60",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "## 2026-09-02 单链路缓存基线与 miss 归因\n\n审计窗口 09:18–10:25：170 次 Provider 调用，prompt=12,106,401、completion=213,327、total=12,319,728；cache hit=10,967,296、miss=1,139,105，token-weighted hit=90.591%。这是单执行链 baseline，不替代连续 7 日 >99% 验收。\n\n关键分组：6a8 主会话 92.216%；258 主会话 65.840%；亲和修复子会话 93.653%；ActiveRun 诊断 92.024%；测试修复 90.009%；预算耗尽子任务 46.441%。\n\n已定位冷前缀：6a8 两次 `session_rehydrated` 全冷 miss（48,704、40,997 tokens），另有一次 52,515 tokens 全冷但 PrefixChangeReason 为空；258 的三段 Goal/通知首轮均 `system_prompt_changed` 全冷（47,862、52,697、61,793）。\n\n实施增量：\n1. 持久化 RequestShapeManifest/PrefixEpoch，result-driven continuation 不得无解释重建 system/tool prefix。\n2. 为 PrefixChangeReason 为空的全冷请求补 `firstChangedSegment`、offset、before/after hash 与 causation event。\n3. Task/Goal/随机 ID/时间/子代理结果放 Volatile Tail；稳定 system/tool schema/order 保持字节级不变。\n4. 报告同时按 main/subagent、provider/model、Goal/notification/result continuation 分组；账本总量使用 `llm_gateway_usage_events`，不与 TokenUsageEvents 重复相加。\n5. 在保持任务语义、工具名/参数/顺序不变前提下，对同一工作负载做前后对比。\n\n局部验收：已热连续轮旧前缀复用可解释；全冷 miss 100% 有原因；不可解释 Epoch reset=0。生产关闭仍要求连续 7 个完整自然日全局/Pro/Flash 各自 >99%。",
+        "createdAtUtc": "2026-09-02T11:04:57.852525+08:00"
+      },
+      {
+        "commentId": "df4f995e3b854574af07c21631c61f01",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "2026-09-04 上位架构决策已登记为新任务 `38c449e1941e441c8ff99474e2c08de6`「Agent Harness 收缩与模型原生 Runtime：RAW 会话、显式共享记忆与端云执行内核」。\n\n本卡边界保持不变：继续负责 Prefix ABI、Stable/Session/Volatile 请求形状、cache read/write/miss/TTFT/成本观测和连续 7 日 >99% 验收。新任务负责 RAW canonical history、Compaction 降级为可重建投影、`memory.propose -> validate -> commit`、Provider-native state 和端云路由。两卡共享 PrefixEpoch/Composition Snapshot 合同，但不得把新任务的架构设计完成视为本卡生产 SLO 已通过。",
+        "createdAtUtc": "2026-09-04T11:43:22.8133757+08:00"
+      },
+      {
+        "commentId": "696a1fbd99ad417484d5997569f16f44",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_zGdXDsvTM2-ojKXG",
+        "content": "第三轮实测短只读回合（bigmodel/glm-5.3-flash，并非DeepSeek七日验收）：首次44074输入/0hit；工具后44398输入/44032hit（99.176%）；两次合计88472输入/44032hit，输入加权49.769%。同回合1次工具成功，仍耗196.996s。不要只报warm的99%或将hit与有效产出混同；补cold/warm及前缀变化归因、在相同任务工具工作量下A/B。该缓存卡仍无activeAssignment，未宣称正在执行或已经达标。详见第三轮报告。",
+        "createdAtUtc": "2026-09-05T09:35:22.530563+08:00"
+      },
+      {
+        "commentId": "a24017b8becd4cd0a57c6ce0f74affb1",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "独立审计已完成并已登记六个后续任务。【2026-09-11 GLM 批次1独立审计】\n首批实际是 F01/S01-A/T01/A01 的实现切片，并非全部15包完成。独立复跑既有91项通过，但新增10个边界探针失败；F01/S01-A/T01 需补修，A01 删除/构建层面通过，未作生产验收。缓存账本的3个冲突探针表明幂等防线尚不完整。\n下一步：S01-A-R=d0ac9f710b944ee5810b48c74128e98b → S01-B=863193411fa2437babdb37d7f08af325 → C01=9494be33635e4717ba1271a6105aec6a → C02=a8e5340ebb9f421bac7c8b3babb768bc。前端/记忆并行边界修复：F01-R=9e007db123b04c5fb0f369e2cc126b6f；T01-R=104fe9c0707f4d458fd9b5f9d96e32d3。\n原目标及权限/工具调用约束保持；先证明归因与持久化正确，再测命中率。未取得新七日窗口、供应商对账或产品验证，不宣称>99%或已部署。\n报告：Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/04-批次1独立审计与下一步.md",
+        "createdAtUtc": "2026-09-11T21:49:50.7642492+08:00"
+      },
+      {
+        "commentId": "a1c30df3f06b438eac9b9b6252288775",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "authorKind": "agent",
+        "authorId": "access-token:pat_iHYnrvahfWyQHMoR",
+        "content": "2026-09-12 状态同步：总任务保持 InProgress；S01-A-R/T01-R原缺陷复核通过，F01/S01-B需收口，C01-A WIP待验收，C01-B/C02待实施。本轮116项定向通过，未取得本批生产/七日/账单验收。\nE:/github/AgentNetworkPlan/PuddingAgent/Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md",
+        "createdAtUtc": "2026-09-12T06:15:28.1473818+08:00"
+      }
+    ],
+    "evaluations": [
+      {
+        "evaluationId": "tev_57ffab7d6a6d45acb53d0e321dba3aa6",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "verdict": "needs_changes",
+        "score": 3,
+        "comment": "2026-09-11 当前源码阶段评估：S01-A 并发聚合已有有效改进，原39项usage测试通过，但Gateway异payload、TokenUsage跨workspace身份、非source UNIQUE误吞3个独立SQLite探针失败。S01-B/C01/C02未实施，Composition关键文件hash与原审阅基线一致。必须先修严格幂等，再请求归因→持久化组成→最终Provider manifest；无新七日窗口/账单证据，不满足本卡生产门槛。本评估不改变InProgress状态，也不否认历史阶段成果。报告：Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/04-批次1独立审计与下一步.md",
+        "taskVersionObserved": 7,
+        "supersedesEvaluationId": null,
+        "evaluator": {
+          "type": "external_access_token",
+          "id": "access-token:pat_iHYnrvahfWyQHMoR",
+          "displayName": "codex"
+        },
+        "createdAtUtc": "2026-09-11T21:49:56.0063462+08:00"
+      },
+      {
+        "evaluationId": "tev_0ede506aa5ff4d5a889f4dac434e8586",
+        "taskId": "af25d72c75634aae8579ec2c0a26ce08",
+        "workspaceId": "default",
+        "verdict": "needs_changes",
+        "score": 3,
+        "comment": "2026-09-12进度修正：S01-A-R/T01-R原缺陷已通过；F01真实接线和S01-B完整链路仍缺，C01-A WIP未验收/C01-B与C02待实施。116项定向通过不构成生产七日>99%验收。\nE:/github/AgentNetworkPlan/PuddingAgent/Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md",
+        "taskVersionObserved": 8,
+        "supersedesEvaluationId": "tev_57ffab7d6a6d45acb53d0e321dba3aa6",
+        "evaluator": {
+          "type": "external_access_token",
+          "id": "access-token:pat_iHYnrvahfWyQHMoR",
+          "displayName": "codex"
+        },
+        "createdAtUtc": "2026-09-12T06:15:30.8575578+08:00"
+      }
+    ]
+  }
+]

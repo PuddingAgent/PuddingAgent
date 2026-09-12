@@ -1,0 +1,252 @@
+[
+  {
+    "path": "Source/PuddingRuntime/Services/AgentExecutionService.cs",
+    "comparison": "unchanged",
+    "sha256": "6e5b47461bda7a532417b519a49b93f98857732174c3de53fc956043e7cb6d5f"
+  },
+  {
+    "path": "Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Buffered.cs",
+    "comparison": "unchanged",
+    "sha256": "ab07456da986399fdda262e7ca46a688b5cd5046d4dd5cbd03e15ddae4c6e6bb"
+  },
+  {
+    "path": "Source/PuddingRuntime/Services/AgentExecution/AgentExecutionService.Streaming.cs",
+    "comparison": "unchanged",
+    "sha256": "37433af32dcb69ab25bc99462218a50d404ae2ed5931e310a9597fb1323ba3c9"
+  },
+  {
+    "path": "Source/PuddingRuntime/Services/CompositionSnapshot.cs",
+    "comparison": "unchanged",
+    "sha256": "7a5fca6606538c297a72824064f5fa257fd96316c7cdce26094c48d7180358c6"
+  },
+  {
+    "path": "Source/PuddingRuntime/Services/PersistentCompositionVersionRegistry.cs",
+    "comparison": "unchanged",
+    "sha256": "f2bbd1a75db91ac797e7eb7a5db6a7410f4430903624cef226db951799cff562"
+  },
+  {
+    "path": "Source/PuddingRuntime/Services/CompositionRecoveryService.cs",
+    "comparison": "unchanged",
+    "sha256": "73daeeb55f8c4c2d1e80e55fe85ae5e755b635473c33b11676eb1a53ba763509"
+  },
+  {
+    "path": "Source/PuddingRuntime/Services/SqliteCompositionStore.cs",
+    "comparison": "unchanged",
+    "sha256": "626ce8f445fe28c409176cc077929345ad8009f1201b6c4dd09beec97b89462a"
+  },
+  {
+    "path": "Source/PuddingRuntime/Services/DirectLlmClient.cs",
+    "comparison": "unchanged",
+    "sha256": "65e4cc650f1e5fe390d4e332ff2da89857486f7c0914723864d69785cd1eb606"
+  },
+  {
+    "path": "Source/PuddingRuntime/Services/AgentSessionManager.cs",
+    "comparison": "unchanged",
+    "sha256": "07a5d5cb88e3e12a42357a9739b3f4b0095d858fafb56d9ab8b2cc8c553f987a"
+  },
+  {
+    "path": "Source/PuddingRuntime/Services/Tools/ToolExposurePlanner.cs",
+    "comparison": "unchanged",
+    "sha256": "c6e79f81f32d3a2bc9c6a693917edeaf07e913879f23ac203cd76db93351476c"
+  },
+  {
+    "path": "Source/PuddingRuntime/Services/LlmRequestBudgetGuard.cs",
+    "comparison": "unchanged",
+    "sha256": "547fa311a7c25cca9a88a67d5da370faf6c46f42d87397973dc18f55262e51d8"
+  },
+  {
+    "path": "Source/PuddingRuntime/Services/ContextPipelineOrchestrator.cs",
+    "comparison": "unchanged",
+    "sha256": "2f92e88079f2969e01f4d9e53f7a8f03f3db505ea4afa31762e77af961b2ce62"
+  },
+  {
+    "path": "Source/PuddingRuntime/Services/SystemPromptBuilder.cs",
+    "comparison": "unchanged",
+    "sha256": "fb3141c2f3e2269a56e205f13876f95e24275802f2219a8b308f51864a22a187"
+  },
+  {
+    "path": "Source/PuddingCore/Platform/LlmOptions.cs",
+    "comparison": "unchanged",
+    "sha256": "9b3ae7a9d7dca3c9bc6a1dd2b982b4c6444ed04fafd54504ea7a824f678e26a8"
+  },
+  {
+    "path": "Source/PuddingCore/Runtime/CompositionContracts.cs",
+    "comparison": "unchanged",
+    "sha256": "0c86dc0000881ad50f7743b63a4781149f00b7898cb6c71f6e767971fbceff62"
+  },
+  {
+    "path": "Source/PuddingCore/Runtime/PrefixCacheContracts.cs",
+    "comparison": "unchanged",
+    "sha256": "5b0a33aa6d276362f75860deb8f81dcf580776adbb9ad134ef0a217614686a98"
+  },
+  {
+    "path": "Source/PuddingCore/Tools/PuddingToolContracts.cs",
+    "comparison": "unchanged",
+    "sha256": "08a695247eb0215fb3c2a01169c4bb83b42e01df9656d54a8cb8d4156f42db51"
+  },
+  {
+    "path": "Source/PuddingPlatform/Services/TokenUsageRecorder.cs",
+    "comparison": "changed",
+    "sha256": "9c3cc878fb61f384e265e3839d2f44b15bc20b72de1ae19398685c1fa8d94e6f"
+  },
+  {
+    "path": "Source/PuddingPlatform/Services/LlmGatewayUsageRecorder.cs",
+    "comparison": "changed",
+    "sha256": "ce2f0cc31677b76a7275aa78e1577c2d11fee937f4fb3431ef0a7c919601d241"
+  },
+  {
+    "path": "Source/PuddingPlatform/Services/TokenUsageDailyAggregateService.cs",
+    "comparison": "unchanged",
+    "sha256": "603b4e2f20a4d7c59610565b551253c26248e1e5ce4bd6987c5681021eb2e102"
+  },
+  {
+    "path": "Source/PuddingPlatform/Data/PlatformDbContext.cs",
+    "comparison": "unchanged",
+    "sha256": "38440fe7dda937552b39e853705ee071e133045c8a2dc0ec1e8ddf5845e55324"
+  },
+  {
+    "path": "Source/PuddingPlatform/Services/FileSubAgentRunStore.cs",
+    "comparison": "unchanged",
+    "sha256": "dc46b2f2f508193c97ab541a6f50ebf84e921171d909aa91aed43e1dcb35d854"
+  },
+  {
+    "path": "Source/PuddingPlatform/Services/ConversationAcceptanceStore.cs",
+    "comparison": "unchanged",
+    "sha256": "26b7d51946d4553581992b479197b9c26e3515d2160a13f956890ec417fa2517"
+  },
+  {
+    "path": "Source/PuddingPlatform/Services/AgentChat/AgentConversationProjectionService.cs",
+    "comparison": "unchanged",
+    "sha256": "e5d1292a55905fa69c1fe63a5a393ef70032197aaca66a93fe9c4f3186131622"
+  },
+  {
+    "path": "Source/PuddingPlatform/Services/AgentChat/ChatExecutionWorker.cs",
+    "comparison": "unchanged",
+    "sha256": "60ffa95ced93630e551f8359714d83d142969024f1f3372632b6a29d0dfc1a6c"
+  },
+  {
+    "path": "Source/PuddingPlatform/Services/AgentChat/ExecutionRunCoordinator.cs",
+    "comparison": "unchanged",
+    "sha256": "6a6e6ab46c5330f607f92cca5dcf78da3695393db1241f10a3067427c277cf83"
+  },
+  {
+    "path": "Source/PuddingPlatform/Services/Scheduling/LegacyTaskExecutionProbe.cs",
+    "comparison": "unchanged",
+    "sha256": "5a16ac758cc89c68e9d20dbc71db4946591c65ec006e6f15de42f1847761356e"
+  },
+  {
+    "path": "Source/PuddingHost/Extensions/PuddingServiceCollectionExtensions.Runtime.cs",
+    "comparison": "unchanged",
+    "sha256": "233b0e0de8bdee57bd224e947d8966259c1638402b1d49137c5fb3199c292680"
+  },
+  {
+    "path": "Source/PuddingAgent/Services/PuddingServiceCollectionExtensions.Runtime.cs",
+    "comparison": "deleted",
+    "sha256": null
+  },
+  {
+    "path": "Source/PuddingAgent/Services/PuddingServiceCollectionExtensions.Connectors.cs",
+    "comparison": "deleted",
+    "sha256": null
+  },
+  {
+    "path": "Source/PuddingAgent/PuddingAgent.csproj",
+    "comparison": "unchanged",
+    "sha256": "719a12dfeec98439bb47fff32b3c31db5a3a1f97d5b4bd512825939b4e9792ce"
+  },
+  {
+    "path": "Source/PuddingAgent/Program.cs",
+    "comparison": "unchanged",
+    "sha256": "04599123b5330430d8b692170cabe3e1d9384bf0724d2c40c7ac41b13b33199c"
+  },
+  {
+    "path": "Source/PuddingRuntime/Tools/BuiltIns/Memory/SaveMemoryTool.cs",
+    "comparison": "changed",
+    "sha256": "077f7083e90f72e9a3dc4aa57bf705bffea0d9a6b977c7cf88eb6723904e3759"
+  },
+  {
+    "path": "Source/PuddingRuntime/Tools/BuiltIns/Memory/MemoryToolArgs.cs",
+    "comparison": "changed",
+    "sha256": "f8aad7413bca8adc71f9648442f96fbbee8fe5317fbd897c33813958f08b7631"
+  },
+  {
+    "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useTurnSurfaceStore.ts",
+    "comparison": "changed",
+    "sha256": "46cbda6f4cc5d56c83562a2eca7506412e79652eff75e094bc00defa131fafff"
+  },
+  {
+    "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/__tests__/turnSurfaceStore.hydration.test.ts",
+    "comparison": "changed",
+    "sha256": "1d5b8be99060c8ce089663854574e3bf7d53302aa76576344d8662e6d61fc3d4"
+  },
+  {
+    "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useChatState.ts",
+    "comparison": "changed",
+    "sha256": "b1da5fa814790442dcfacd4adb8951fdb2c43d9d861957b9ef5b34eded735a51"
+  },
+  {
+    "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useSessionEventBuffers.ts",
+    "comparison": "unchanged",
+    "sha256": "eff85100bc6328345e67617e5fb3c1ab5c91dd55fddbf056c77e3975d385b063"
+  },
+  {
+    "path": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useConversation.ts",
+    "comparison": "unchanged",
+    "sha256": "3139485a986c718bba37e91a9609814a426c35203c2d16d4c2655d7f3ae13467"
+  },
+  {
+    "path": "Source/PuddingPlatformAdmin/src/pages/chat/state/conversationStore.ts",
+    "comparison": "unchanged",
+    "sha256": "42b617792672f995a569b2c8df351ec41cfe83a7ee8e043949ae8c6ff0ad3175"
+  },
+  {
+    "path": "Source/PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts",
+    "comparison": "unchanged",
+    "sha256": "d80bffa8c9a2a8bd1c935a16d88459d354705d9a8965b1327d5e89b39e44847b"
+  },
+  {
+    "path": "Source/PuddingPlatformAdmin/src/pages/chat/client/featureFlag.ts",
+    "comparison": "unchanged",
+    "sha256": "4fd4f9948d4eb073b368332640834f94edcaae554c13b213997a5e949af076e7"
+  },
+  {
+    "path": "Source/PuddingPlatformAdmin/src/pages/chat/index.tsx",
+    "comparison": "changed",
+    "sha256": "ed2498e84ab8b87ec77ff0e4f380125454af4ba79a280458bdb087fab05a38f8"
+  },
+  {
+    "path": "Source/PuddingPlatformAdmin/src/services/platform/api.ts",
+    "comparison": "changed",
+    "sha256": "cc19579a39ca31de4eee425e83db9806cefbba7b4cfd8b0acdc01b64a67137d5"
+  },
+  {
+    "path": "Source/PuddingRuntimeTests/Architecture/ArchitectureGuardTests.cs",
+    "comparison": "unchanged",
+    "sha256": "2e86bf912ea34e2013ec39eba18837f266de56b27c13c29a42843a0e0395ceb1"
+  },
+  {
+    "path": "Source/PuddingPlatformAdmin/scripts/check-chat-bundle-budget.cjs",
+    "comparison": "unchanged",
+    "sha256": "15d1aa585a7b5dee5170d80e1271bd9c12ef2d9d7bcaf69949d0b0ddfc00e9c2"
+  },
+  {
+    "path": "TestScripts/deepseek-cache-hitrate.py",
+    "comparison": "unchanged",
+    "sha256": "ea5a91e9b067d5f0109902a46b0eb4361dff951185604bda01e23ecd98178908"
+  },
+  {
+    "path": "TestScripts/test_deepseek_cache_hitrate.py",
+    "comparison": "unchanged",
+    "sha256": "faeb54cf86b41032a3aac55cc6b6fffea4747b278ce738a312b7b5ce1ff25672"
+  },
+  {
+    "path": "Docs/架构.md",
+    "comparison": "changed",
+    "sha256": "8f9f7c840a2eaa752a55f164f6869a6c80b8a8da0de978390640beeaa9592550"
+  },
+  {
+    "path": "Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md",
+    "comparison": "unchanged",
+    "sha256": "feb79544eb9d86e1fdaacc266420ecbda8a56d11c5ac80704f0e826291effc6b"
+  }
+]

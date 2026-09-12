@@ -1,0 +1,308 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="6c34f4c8-0565-4b70-86dc-69c299c0be1e" name="huany@MSI 2026-09-11 21:35:29" runUser="MSI\huany" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-11T21:35:29.5217603+08:00" queuing="2026-09-11T21:35:29.5217608+08:00" start="2026-09-11T21:35:26.2617953+08:00" finish="2026-09-11T21:35:43.8794335+08:00" />
+  <TestSettings name="default" id="054e55f7-732e-4b73-9ebf-3dca4ebb2ad7">
+    <Deployment runDeploymentRoot="huany_MSI_2026-09-11_21_35_29" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="791b38e6-d06d-45da-9b44-e46cc4964287" testId="1f0dee0b-3adc-82bf-83d8-aa4193270c06" testName="Normalize_ZeroTokens_HandlesGracefully" computerName="MSI" duration="00:00:00.0002767" startTime="2026-09-11T21:35:32.5283065+08:00" endTime="2026-09-11T21:35:32.5286423+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="791b38e6-d06d-45da-9b44-e46cc4964287" />
+    <UnitTestResult executionId="a74b1f71-42bb-4a37-a201-54393c765023" testId="180a8824-becc-8a68-8c6d-1c6d56655786" testName="ConversationProjectorFallback_UsesPersistentParentAndInvocationIndex" computerName="MSI" duration="00:00:00.0013012" startTime="2026-09-11T21:35:37.3560172+08:00" endTime="2026-09-11T21:35:37.3575001+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a74b1f71-42bb-4a37-a201-54393c765023" />
+    <UnitTestResult executionId="c36b49ef-bd81-471d-aeb2-87cf05338722" testId="1163933a-74fa-8de0-9d6b-b272f987bf8e" testName="RebuildAsync_SkipsUnattributedLegacyUsageWithoutDeletingExistingLedgerFacts" computerName="MSI" duration="00:00:00.1316563" startTime="2026-09-11T21:35:33.0237207+08:00" endTime="2026-09-11T21:35:33.1554726+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c36b49ef-bd81-471d-aeb2-87cf05338722" />
+    <UnitTestResult executionId="522a4013-ef00-4289-995d-fd720c05e159" testId="103be422-9644-871b-a693-23ddc8d9834f" testName="ResolveMissTokens_NoHitNorMiss_ReturnsFullPrompt" computerName="MSI" duration="00:00:00.0001011" startTime="2026-09-11T21:35:32.5224543+08:00" endTime="2026-09-11T21:35:32.5226001+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="522a4013-ef00-4289-995d-fd720c05e159" />
+    <UnitTestResult executionId="16aed594-807b-4f64-8e06-0bcb72cc02d1" testId="1cf61232-f0ef-814a-8885-76ea635ee13e" testName="EnsureCreatedAsync_IsIdempotent" computerName="MSI" duration="00:00:00.0058413" startTime="2026-09-11T21:35:38.5839433+08:00" endTime="2026-09-11T21:35:38.5898744+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="16aed594-807b-4f64-8e06-0bcb72cc02d1" />
+    <UnitTestResult executionId="6ff6f0a4-96dc-4ac6-93a0-a5f9a480f01b" testId="1e66074d-b9dc-868a-acd5-f1a2f6fa6c1e" testName="PreviousLayerHash_UsesCoveringEndpoint_PreservesEventTimeAndIdTies" computerName="MSI" duration="00:00:00.5107100" startTime="2026-09-11T21:35:36.7023991+08:00" endTime="2026-09-11T21:35:37.2133090+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6ff6f0a4-96dc-4ac6-93a0-a5f9a480f01b" />
+    <UnitTestResult executionId="7fcf4e51-2ce0-412a-92c4-87c50192a2ed" testId="173ed750-10ad-8c0c-8e28-c3ac674ebe20" testName="RebuildAsync_RebuildsMonthlyStatsFromNonConversationUsageEvents" computerName="MSI" duration="00:00:00.2632902" startTime="2026-09-11T21:35:32.5294457+08:00" endTime="2026-09-11T21:35:32.7928746+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7fcf4e51-2ce0-412a-92c4-87c50192a2ed" />
+    <UnitTestResult executionId="8d7add07-6439-4ac7-8f6e-3ac1915f57a5" testId="1cd61ae7-b07a-84af-8e56-3f926ae020e4" testName="RecordAsync_WhenOnlyHistoryAnchorChanges_StoresHistoryAnchorChangedReason" computerName="MSI" duration="00:00:00.1211475" startTime="2026-09-11T21:35:37.7830933+08:00" endTime="2026-09-11T21:35:37.9043100+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8d7add07-6439-4ac7-8f6e-3ac1915f57a5" />
+    <UnitTestResult executionId="0bc4fc8c-c2a5-4d47-9dd9-d59265b8054c" testId="1d4ed73f-971d-8676-bc0e-aa9ccd0edc9d" testName="CalculateCost_DeepSeekModel_MatchesExpected" computerName="MSI" duration="00:00:00.0004168" startTime="2026-09-11T21:35:32.5286796+08:00" endTime="2026-09-11T21:35:32.5291499+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0bc4fc8c-c2a5-4d47-9dd9-d59265b8054c" />
+    <UnitTestResult executionId="a899720d-40de-4a35-91f2-261a1c342088" testId="157dbff5-e3e1-8f6a-8726-45dfbd829f47" testName="RecordAttributedRequiredAsync_PersistsCanonicalAgentLoopAttribution" computerName="MSI" duration="00:00:00.1407290" startTime="2026-09-11T21:35:37.4870143+08:00" endTime="2026-09-11T21:35:37.6279637+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a899720d-40de-4a35-91f2-261a1c342088" />
+    <UnitTestResult executionId="c805cb52-6eda-4251-b7fc-bdfb431a4ad1" testId="195ca5a6-8bdc-85bb-9d91-a4359ab5fb06" testName="RecordAsync_WhenToolDefinitionsExist_InsertsOrderedLayerAndTracksSchemaChanges" computerName="MSI" duration="00:00:00.5074859" startTime="2026-09-11T21:35:38.0638484+08:00" endTime="2026-09-11T21:35:38.5714061+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c805cb52-6eda-4251-b7fc-bdfb431a4ad1" />
+    <UnitTestResult executionId="ae9307fc-b7ad-47f2-9b29-3ada9f14ee93" testId="10d28046-b84f-81e4-89eb-f6027fe253c0" testName="Normalize_NoCache_AllPromptAsMiss" computerName="MSI" duration="00:00:00.0003098" startTime="2026-09-11T21:35:32.5253502+08:00" endTime="2026-09-11T21:35:32.5259379+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ae9307fc-b7ad-47f2-9b29-3ada9f14ee93" />
+    <UnitTestResult executionId="39c85806-601f-4204-b8c5-9d289601b8b1" testId="1c985006-be72-86c9-a0fd-5dfe4274ea0c" testName="ConversationProjectorFingerprint_WithCompletionTokens_TranslatesOnSqlite" computerName="MSI" duration="00:00:00.1289628" startTime="2026-09-11T21:35:37.3575677+08:00" endTime="2026-09-11T21:35:37.4868988+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="39c85806-601f-4204-b8c5-9d289601b8b1" />
+    <UnitTestResult executionId="f6acaa70-b0b9-4ed7-86c9-cc0a43e8ffe5" testId="1ddf949c-e71e-8443-a00b-75cff6ea94c0" testName="FirstWriteImmediate_SubsequentWritesAtMostOncePerInterval" computerName="MSI" duration="00:00:00.3214584" startTime="2026-09-11T21:35:39.1044909+08:00" endTime="2026-09-11T21:35:39.4260796+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f6acaa70-b0b9-4ed7-86c9-cc0a43e8ffe5" />
+    <UnitTestResult executionId="d079d8b2-329e-469b-be03-5d88d49fcf70" testId="11b0a5ef-6d56-80db-ba50-2c5b297e6aa7" testName="ConcurrentDuplicateSource_CountsExactlyOnce" computerName="MSI" duration="00:00:01.2163494" startTime="2026-09-11T21:35:35.0219856+08:00" endTime="2026-09-11T21:35:36.2386173+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d079d8b2-329e-469b-be03-5d88d49fcf70" />
+    <UnitTestResult executionId="b9a328a8-2151-4117-acfb-1bc1ab787eab" testId="16d9e920-8488-8dc9-ae3d-1b0a46347ce4" testName="RecordAsync_WhenToolSpecHashChanges_StoresToolSpecChangedReason" computerName="MSI" duration="00:00:00.1548654" startTime="2026-09-11T21:35:37.6280434+08:00" endTime="2026-09-11T21:35:37.7830368+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b9a328a8-2151-4117-acfb-1bc1ab787eab" />
+    <UnitTestResult executionId="4c3be2fc-0e75-4c17-adf5-356318002d9e" testId="14b0ebc7-2921-8073-a822-6abfa8fa05e8" testName="MigrateAsync_CreatesTokenUsageStatsTable" computerName="MSI" duration="00:00:04.2121578" startTime="2026-09-11T21:35:39.5762236+08:00" endTime="2026-09-11T21:35:43.7897048+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4c3be2fc-0e75-4c17-adf5-356318002d9e" />
+    <UnitTestResult executionId="804dd1ac-cb4b-4c25-a352-e6e71f1a8a8a" testId="12b845e1-0446-8fa1-a022-233cdffb74ea" testName="Gateway_ConflictingPayload_MustReject" computerName="MSI" duration="00:00:00.2327392" startTime="2026-09-11T21:35:38.5936949+08:00" endTime="2026-09-11T21:35:38.8265956+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="804dd1ac-cb4b-4c25-a352-e6e71f1a8a8a">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.ThrowsAsync 失败。预期异常类型:&lt;System.InvalidOperationException&gt;，但未引发异常。‘action’表达式:‘() =&gt; recorder.RecordRequiredAsync(&#xD;
+            BaseUsage with { CompletionTokens=9000, TotalTokens=10000 },"gateway-conflict","chat","w","s","agent","prov-x","model-x",At)’。</Message>
+          <StackTrace>   at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.&lt;&gt;c__DisplayClass225_0`1.&lt;IsThrowsAsyncFailingAsync&gt;b__0(String userMessage) in /_/src/TestFramework/TestFramework/Assertions/Assert.ThrowsException.cs:line 553&#xD;
+   at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.ThrowsExceptionAsync[TException](Func`1 action, Boolean isStrictType, String message, String actionExpression, String assertMethodName) in /_/src/TestFramework/TestFramework/Assertions/Assert.ThrowsException.cs:line 486&#xD;
+   at PuddingPlatformTests.Services.AuditUsageConflictTests.Gateway_ConflictingPayload_MustReject() in E:\github\AgentNetworkPlan\PuddingAgent\.tmp-test-out\glm-audit-20260911\AuditUsageConflictTests.cs:line 31&#xD;
+   at PuddingPlatformTests.Services.AuditUsageConflictTests.Gateway_ConflictingPayload_MustReject() in E:\github\AgentNetworkPlan\PuddingAgent\.tmp-test-out\glm-audit-20260911\AuditUsageConflictTests.cs:line 31&#xD;
+   at Microsoft.VisualStudio.TestPlatform.MSTest.TestAdapter.Execution.TestMethodInfo.ExecuteInternalAsync(Object[] arguments, CancellationTokenSource timeoutTokenSource) in /_/src/Adapter/MSTestAdapter.PlatformServices/Execution/TestMethodInfo.cs:line 407</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="5aceeb2e-792f-4d96-9d82-78dcdee2ab85" testId="11610bc6-de4d-8f0f-ac0e-897fff4bf809" testName="ClosedDays_WriteCompletionMarkersForEmptyDays" computerName="MSI" duration="00:00:00.1553055" startTime="2026-09-11T21:35:32.0408565+08:00" endTime="2026-09-11T21:35:32.1965838+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5aceeb2e-792f-4d96-9d82-78dcdee2ab85" />
+    <UnitTestResult executionId="45e205fd-30a3-4a7d-aedd-f6c6717869aa" testId="17a7fcaf-7dcd-8838-bb7c-613cf1b862b0" testName="EnsureCreatedAsync_ColumnAlreadyExists_IsNoOp" computerName="MSI" duration="00:00:00.0035851" startTime="2026-09-11T21:35:38.5899373+08:00" endTime="2026-09-11T21:35:38.5936275+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="45e205fd-30a3-4a7d-aedd-f6c6717869aa" />
+    <UnitTestResult executionId="32ddebc0-999d-447f-a9d9-3b46d9d31ba1" testId="1158ea60-0a48-859a-89a3-f80839fff6b2" testName="FiftyConcurrentDistinctSources_AlignLedgerAndAggregateExactly" computerName="MSI" duration="00:00:01.6466113" startTime="2026-09-11T21:35:33.3723973+08:00" endTime="2026-09-11T21:35:35.0218346+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="32ddebc0-999d-447f-a9d9-3b46d9d31ba1" />
+    <UnitTestResult executionId="55d8c495-8934-497f-b4fb-132d94ffa11e" testId="1f1ec53d-4d55-829f-aba6-1abcde366a00" testName="PreviousLayerHash_BootstrapAddsIndexToExistingLedger_Idempotently" computerName="MSI" duration="00:00:00.1424832" startTime="2026-09-11T21:35:37.2133692+08:00" endTime="2026-09-11T21:35:37.3559580+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="55d8c495-8934-497f-b4fb-132d94ffa11e" />
+    <UnitTestResult executionId="4f96067d-cfd8-4016-b1f1-ef4e87309655" testId="1808befa-2589-890c-a882-ee9e943a6c0f" testName="ResolveMissTokens_HitExceedsPrompt_ReturnsZero" computerName="MSI" duration="00:00:00.0001128" startTime="2026-09-11T21:35:32.5226181+08:00" endTime="2026-09-11T21:35:32.5227629+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4f96067d-cfd8-4016-b1f1-ef4e87309655" />
+    <UnitTestResult executionId="5ed500de-a45e-4591-856d-6708f41bfba3" testId="12dc003b-a62a-8b53-a38f-c6061edf87f6" testName="ResolveMissTokens_ExplicitMiss_ReturnsExplicit" computerName="MSI" duration="00:00:00.0007945" startTime="2026-09-11T21:35:32.5210450+08:00" endTime="2026-09-11T21:35:32.5220330+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5ed500de-a45e-4591-856d-6708f41bfba3" />
+    <UnitTestResult executionId="bc9f82bc-9fe0-414b-a810-9c9d24474567" testId="141638c1-bd41-87f1-897c-8d0e5e52ea60" testName="Token_IdenticalUsageButDifferentWorkspace_MustReject" computerName="MSI" duration="00:00:00.1336387" startTime="2026-09-11T21:35:38.8267175+08:00" endTime="2026-09-11T21:35:38.9604380+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="bc9f82bc-9fe0-414b-a810-9c9d24474567">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.ThrowsAsync 失败。预期异常类型:&lt;System.InvalidOperationException&gt;，但未引发异常。‘action’表达式:‘() =&gt; recorder.RecordRequiredAsync(&#xD;
+            BaseUsage,"audit","identity-conflict","w-b","s","prov-x","model-x",occurredAtUtc:At)’。</Message>
+          <StackTrace>   at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.&lt;&gt;c__DisplayClass225_0`1.&lt;IsThrowsAsyncFailingAsync&gt;b__0(String userMessage) in /_/src/TestFramework/TestFramework/Assertions/Assert.ThrowsException.cs:line 553&#xD;
+   at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.ThrowsExceptionAsync[TException](Func`1 action, Boolean isStrictType, String message, String actionExpression, String assertMethodName) in /_/src/TestFramework/TestFramework/Assertions/Assert.ThrowsException.cs:line 486&#xD;
+   at PuddingPlatformTests.Services.AuditUsageConflictTests.Token_IdenticalUsageButDifferentWorkspace_MustReject() in E:\github\AgentNetworkPlan\PuddingAgent\.tmp-test-out\glm-audit-20260911\AuditUsageConflictTests.cs:line 40&#xD;
+   at PuddingPlatformTests.Services.AuditUsageConflictTests.Token_IdenticalUsageButDifferentWorkspace_MustReject() in E:\github\AgentNetworkPlan\PuddingAgent\.tmp-test-out\glm-audit-20260911\AuditUsageConflictTests.cs:line 40&#xD;
+   at Microsoft.VisualStudio.TestPlatform.MSTest.TestAdapter.Execution.TestMethodInfo.ExecuteInternalAsync(Object[] arguments, CancellationTokenSource timeoutTokenSource) in /_/src/Adapter/MSTestAdapter.PlatformServices/Execution/TestMethodInfo.cs:line 407</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="95ba81e9-16b2-4730-ac0c-0da5ee917c3f" testId="1362b37f-ce33-802d-b164-505132bac266" testName="Token_UnrelatedUniqueConstraint_MustNotBeAcceptedAsDuplicateSource" computerName="MSI" duration="00:00:00.1438663" startTime="2026-09-11T21:35:38.9604836+08:00" endTime="2026-09-11T21:35:39.1044473+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="95ba81e9-16b2-4730-ac0c-0da5ee917c3f">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.ThrowsAsync 失败。预期异常类型:&lt;Microsoft.EntityFrameworkCore.DbUpdateException&gt;，但未引发异常。‘action’表达式:‘() =&gt; recorder.RecordRequiredAsync(&#xD;
+            BaseUsage,"audit","unique-conflict","w","s","prov-x","model-x",occurredAtUtc:At)’。</Message>
+          <StackTrace>   at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.&lt;&gt;c__DisplayClass225_0`1.&lt;IsThrowsAsyncFailingAsync&gt;b__0(String userMessage) in /_/src/TestFramework/TestFramework/Assertions/Assert.ThrowsException.cs:line 553&#xD;
+   at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.ThrowsExceptionAsync[TException](Func`1 action, Boolean isStrictType, String message, String actionExpression, String assertMethodName) in /_/src/TestFramework/TestFramework/Assertions/Assert.ThrowsException.cs:line 486&#xD;
+   at PuddingPlatformTests.Services.AuditUsageConflictTests.Token_UnrelatedUniqueConstraint_MustNotBeAcceptedAsDuplicateSource() in E:\github\AgentNetworkPlan\PuddingAgent\.tmp-test-out\glm-audit-20260911\AuditUsageConflictTests.cs:line 55&#xD;
+   at PuddingPlatformTests.Services.AuditUsageConflictTests.Token_UnrelatedUniqueConstraint_MustNotBeAcceptedAsDuplicateSource() in E:\github\AgentNetworkPlan\PuddingAgent\.tmp-test-out\glm-audit-20260911\AuditUsageConflictTests.cs:line 55&#xD;
+   at Microsoft.VisualStudio.TestPlatform.MSTest.TestAdapter.Execution.TestMethodInfo.ExecuteInternalAsync(Object[] arguments, CancellationTokenSource timeoutTokenSource) in /_/src/Adapter/MSTestAdapter.PlatformServices/Execution/TestMethodInfo.cs:line 407</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="aa1507fa-268e-470c-b8a2-0ed932351db4" testId="1101c23c-a0b3-863d-96d8-a2cf53e68f72" testName="SameSourceWithDifferentPayload_BestEffort_SkipsWithoutThrowing" computerName="MSI" duration="00:00:00.1615916" startTime="2026-09-11T21:35:36.4071762+08:00" endTime="2026-09-11T21:35:36.5688793+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aa1507fa-268e-470c-b8a2-0ed932351db4" />
+    <UnitTestResult executionId="b626dfb7-591a-4590-8b53-25bdca6cd9f9" testId="197bd258-487f-8915-b7aa-6ea62e8bf24c" testName="Normalize_OpenAIFormat_HitDerivesMiss" computerName="MSI" duration="00:00:00.0002958" startTime="2026-09-11T21:35:32.5278169+08:00" endTime="2026-09-11T21:35:32.5282415+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b626dfb7-591a-4590-8b53-25bdca6cd9f9" />
+    <UnitTestResult executionId="a34d84d7-4003-4e6d-8777-204b97d5a724" testId="13d64854-80cd-85cc-a5a8-29fbf2c19434" testName="ForceFlush_PersistsImmediately" computerName="MSI" duration="00:00:00.1487003" startTime="2026-09-11T21:35:39.4261403+08:00" endTime="2026-09-11T21:35:39.5749229+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a34d84d7-4003-4e6d-8777-204b97d5a724" />
+    <UnitTestResult executionId="5acc6ab4-0b6f-4c7e-9b63-36644ab74129" testId="11e07909-8779-83f2-b57a-8600805a4cdb" testName="LiveToday_ReflectsTodayEventsWithoutWritingCache" computerName="MSI" duration="00:00:00.1594872" startTime="2026-09-11T21:35:32.1966908+08:00" endTime="2026-09-11T21:35:32.3563194+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5acc6ab4-0b6f-4c7e-9b63-36644ab74129" />
+    <UnitTestResult executionId="c506a954-ba2c-4403-a794-7998e15f6b51" testId="18bc4f2b-4fbc-8335-a6b8-403e9e75dfab" testName="RebuildAsync_ProjectsAttributedConversationUsageAndIsIdempotent" computerName="MSI" duration="00:00:00.2306378" startTime="2026-09-11T21:35:32.7929213+08:00" endTime="2026-09-11T21:35:33.0236452+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c506a954-ba2c-4403-a794-7998e15f6b51" />
+    <UnitTestResult executionId="abab6608-0dc0-4f74-b381-126966aeb477" testId="1a09c6ab-6c76-8f90-9b50-f6a5bb763f5d" testName="RebuildAsync_ReconstructsOneGatewayFactPerSuccessfulProviderRequest" computerName="MSI" duration="00:00:00.2167369" startTime="2026-09-11T21:35:33.1555353+08:00" endTime="2026-09-11T21:35:33.3723563+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="abab6608-0dc0-4f74-b381-126966aeb477" />
+    <UnitTestResult executionId="3bd5522c-b502-4af7-b75b-48a44c77b455" testId="15045f6b-23c2-8378-8d01-930e4c38d4ca" testName="RecordAsync_WhenContextSnapshotExists_StoresContextLayerMetrics" computerName="MSI" duration="00:00:00.1593876" startTime="2026-09-11T21:35:37.9043487+08:00" endTime="2026-09-11T21:35:38.0638051+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3bd5522c-b502-4af7-b75b-48a44c77b455" />
+    <UnitTestResult executionId="a1ae4a9f-dde1-467a-a92a-b80ec3d09302" testId="147180cb-f60f-88ec-8f46-d022543502e4" testName="CalculateCost_NoCacheHitPrice_FallsBackToInputPrice" computerName="MSI" duration="00:00:00.0001754" startTime="2026-09-11T21:35:32.5291817+08:00" endTime="2026-09-11T21:35:32.5294181+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a1ae4a9f-dde1-467a-a92a-b80ec3d09302" />
+    <UnitTestResult executionId="dd428351-ba9d-4f5a-bd96-9bdf48a52e87" testId="15c43853-fb4e-8745-9c7e-de68869a132f" testName="EnsureCreatedAsync_UpgradesLegacyTableWithColumnsAndIndex" computerName="MSI" duration="00:00:00.0113586" startTime="2026-09-11T21:35:38.5723388+08:00" endTime="2026-09-11T21:35:38.5838816+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="dd428351-ba9d-4f5a-bd96-9bdf48a52e87" />
+    <UnitTestResult executionId="14dffcf2-34a1-4d4f-a302-2cbe2060d996" testId="1555bb99-c44d-8590-a99c-2611ac77fa65" testName="Normalize_DeepSeekFormat_CalculatesCorrectly" computerName="MSI" duration="00:00:00.0024010" startTime="2026-09-11T21:35:32.5227804+08:00" endTime="2026-09-11T21:35:32.5252689+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="14dffcf2-34a1-4d4f-a302-2cbe2060d996" />
+    <UnitTestResult executionId="fe61e5f2-9a2f-476b-9a23-2c6821ead73e" testId="13d98417-4780-80d4-9eca-a27694965123" testName="InvalidateAsync_RemovesCachedMonthSoNextReadRecomputes" computerName="MSI" duration="00:00:00.1643605" startTime="2026-09-11T21:35:32.3564361+08:00" endTime="2026-09-11T21:35:32.5209942+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="fe61e5f2-9a2f-476b-9a23-2c6821ead73e" />
+    <UnitTestResult executionId="e02e08fe-0c5a-4a3e-bf25-ace282a15a37" testId="14f9b010-3720-86dd-828b-a4d5f9bfd9be" testName="ClosedDays_AggregateOnceThenServeFromCacheAfterLedgerDeleted" computerName="MSI" duration="00:00:02.8307944" startTime="2026-09-11T21:35:29.2084720+08:00" endTime="2026-09-11T21:35:32.0395104+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e02e08fe-0c5a-4a3e-bf25-ace282a15a37" />
+    <UnitTestResult executionId="97c1aa03-8cec-4504-a672-6fb7b44c0a6d" testId="1c8bbe8c-45cd-88c2-b0b1-f0194caae575" testName="ResolveMissTokens_NoExplicitMiss_HitPresent_DerivesFromPrompt" computerName="MSI" duration="00:00:00.0002395" startTime="2026-09-11T21:35:32.5221225+08:00" endTime="2026-09-11T21:35:32.5224248+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="97c1aa03-8cec-4504-a672-6fb7b44c0a6d" />
+    <UnitTestResult executionId="79e02ce8-5676-4f98-aee4-ac67f8e9c3f2" testId="178f735e-5eeb-8d14-b4e9-1c4ea84757b1" testName="SameSourceWithDifferentPayload_Required_ThrowsAndKeepsLedgerIntact" computerName="MSI" duration="00:00:00.1681900" startTime="2026-09-11T21:35:36.2387079+08:00" endTime="2026-09-11T21:35:36.4070836+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="79e02ce8-5676-4f98-aee4-ac67f8e9c3f2" />
+    <UnitTestResult executionId="5219474b-6fda-4da0-9ddd-0c27a9ea6ba2" testId="13d0cd97-bb95-8d5a-9989-91cdff74826d" testName="ResolveForMetric_Classifies_TokenUsage_As_Complete" computerName="MSI" duration="00:00:00.0111148" startTime="2026-09-11T21:35:29.1653753+08:00" endTime="2026-09-11T21:35:29.2009010+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5219474b-6fda-4da0-9ddd-0c27a9ea6ba2" />
+    <UnitTestResult executionId="563c3745-d91e-4dfc-9f9f-7df92fec043f" testId="160b6d1d-3b7f-87c4-95fd-9ece7ca90369" testName="ConcurrentDuplicateSource_ToleratesProvidersWithPreexistingRow" computerName="MSI" duration="00:00:00.1332996" startTime="2026-09-11T21:35:36.5689493+08:00" endTime="2026-09-11T21:35:36.7023549+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="563c3745-d91e-4dfc-9f9f-7df92fec043f" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="Token_UnrelatedUniqueConstraint_MustNotBeAcceptedAsDuplicateSource" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1362b37f-ce33-802d-b164-505132bac266">
+      <Execution id="95ba81e9-16b2-4730-ac0c-0da5ee917c3f" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.AuditUsageConflictTests" name="Token_UnrelatedUniqueConstraint_MustNotBeAcceptedAsDuplicateSource" />
+    </UnitTest>
+    <UnitTest name="FirstWriteImmediate_SubsequentWritesAtMostOncePerInterval" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1ddf949c-e71e-8443-a00b-75cff6ea94c0">
+      <Execution id="f6acaa70-b0b9-4ed7-86c9-cc0a43e8ffe5" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Security.ExternalAccessTokenUsageCoalescerTests" name="FirstWriteImmediate_SubsequentWritesAtMostOncePerInterval" />
+    </UnitTest>
+    <UnitTest name="SameSourceWithDifferentPayload_Required_ThrowsAndKeepsLedgerIntact" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="178f735e-5eeb-8d14-b4e9-1c4ea84757b1">
+      <Execution id="79e02ce8-5676-4f98-aee4-ac67f8e9c3f2" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRecorderConcurrencyTests" name="SameSourceWithDifferentPayload_Required_ThrowsAndKeepsLedgerIntact" />
+    </UnitTest>
+    <UnitTest name="Gateway_ConflictingPayload_MustReject" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="12b845e1-0446-8fa1-a022-233cdffb74ea">
+      <Execution id="804dd1ac-cb4b-4c25-a352-e6e71f1a8a8a" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.AuditUsageConflictTests" name="Gateway_ConflictingPayload_MustReject" />
+    </UnitTest>
+    <UnitTest name="ConversationProjectorFallback_UsesPersistentParentAndInvocationIndex" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="180a8824-becc-8a68-8c6d-1c6d56655786">
+      <Execution id="a74b1f71-42bb-4a37-a201-54393c765023" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRecorderPrefixDiagnosticsTests" name="ConversationProjectorFallback_UsesPersistentParentAndInvocationIndex" />
+    </UnitTest>
+    <UnitTest name="ConcurrentDuplicateSource_CountsExactlyOnce" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="11b0a5ef-6d56-80db-ba50-2c5b297e6aa7">
+      <Execution id="d079d8b2-329e-469b-be03-5d88d49fcf70" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRecorderConcurrencyTests" name="ConcurrentDuplicateSource_CountsExactlyOnce" />
+    </UnitTest>
+    <UnitTest name="EnsureCreatedAsync_UpgradesLegacyTableWithColumnsAndIndex" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="15c43853-fb4e-8745-9c7e-de68869a132f">
+      <Execution id="dd428351-ba9d-4f5a-bd96-9bdf48a52e87" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageSchemaBootstrapperTests" name="EnsureCreatedAsync_UpgradesLegacyTableWithColumnsAndIndex" />
+    </UnitTest>
+    <UnitTest name="RebuildAsync_ProjectsAttributedConversationUsageAndIsIdempotent" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="18bc4f2b-4fbc-8335-a6b8-403e9e75dfab">
+      <Execution id="c506a954-ba2c-4403-a794-7998e15f6b51" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRebuildServiceTests" name="RebuildAsync_ProjectsAttributedConversationUsageAndIsIdempotent" />
+    </UnitTest>
+    <UnitTest name="CalculateCost_NoCacheHitPrice_FallsBackToInputPrice" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="147180cb-f60f-88ec-8f46-d022543502e4">
+      <Execution id="a1ae4a9f-dde1-467a-a92a-b80ec3d09302" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageNormalizerTests" name="CalculateCost_NoCacheHitPrice_FallsBackToInputPrice" />
+    </UnitTest>
+    <UnitTest name="RecordAsync_WhenToolDefinitionsExist_InsertsOrderedLayerAndTracksSchemaChanges" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="195ca5a6-8bdc-85bb-9d91-a4359ab5fb06">
+      <Execution id="c805cb52-6eda-4251-b7fc-bdfb431a4ad1" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRecorderPrefixDiagnosticsTests" name="RecordAsync_WhenToolDefinitionsExist_InsertsOrderedLayerAndTracksSchemaChanges" />
+    </UnitTest>
+    <UnitTest name="RebuildAsync_ReconstructsOneGatewayFactPerSuccessfulProviderRequest" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1a09c6ab-6c76-8f90-9b50-f6a5bb763f5d">
+      <Execution id="abab6608-0dc0-4f74-b381-126966aeb477" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRebuildServiceTests" name="RebuildAsync_ReconstructsOneGatewayFactPerSuccessfulProviderRequest" />
+    </UnitTest>
+    <UnitTest name="ClosedDays_WriteCompletionMarkersForEmptyDays" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="11610bc6-de4d-8f0f-ac0e-897fff4bf809">
+      <Execution id="5aceeb2e-792f-4d96-9d82-78dcdee2ab85" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageDailyAggregateServiceTests" name="ClosedDays_WriteCompletionMarkersForEmptyDays" />
+    </UnitTest>
+    <UnitTest name="ConcurrentDuplicateSource_ToleratesProvidersWithPreexistingRow" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="160b6d1d-3b7f-87c4-95fd-9ece7ca90369">
+      <Execution id="563c3745-d91e-4dfc-9f9f-7df92fec043f" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRecorderConcurrencyTests" name="ConcurrentDuplicateSource_ToleratesProvidersWithPreexistingRow" />
+    </UnitTest>
+    <UnitTest name="Token_IdenticalUsageButDifferentWorkspace_MustReject" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="141638c1-bd41-87f1-897c-8d0e5e52ea60">
+      <Execution id="bc9f82bc-9fe0-414b-a810-9c9d24474567" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.AuditUsageConflictTests" name="Token_IdenticalUsageButDifferentWorkspace_MustReject" />
+    </UnitTest>
+    <UnitTest name="RecordAsync_WhenOnlyHistoryAnchorChanges_StoresHistoryAnchorChangedReason" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1cd61ae7-b07a-84af-8e56-3f926ae020e4">
+      <Execution id="8d7add07-6439-4ac7-8f6e-3ac1915f57a5" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRecorderPrefixDiagnosticsTests" name="RecordAsync_WhenOnlyHistoryAnchorChanges_StoresHistoryAnchorChangedReason" />
+    </UnitTest>
+    <UnitTest name="LiveToday_ReflectsTodayEventsWithoutWritingCache" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="11e07909-8779-83f2-b57a-8600805a4cdb">
+      <Execution id="5acc6ab4-0b6f-4c7e-9b63-36644ab74129" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageDailyAggregateServiceTests" name="LiveToday_ReflectsTodayEventsWithoutWritingCache" />
+    </UnitTest>
+    <UnitTest name="Normalize_DeepSeekFormat_CalculatesCorrectly" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1555bb99-c44d-8590-a99c-2611ac77fa65">
+      <Execution id="14dffcf2-34a1-4d4f-a302-2cbe2060d996" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageNormalizerTests" name="Normalize_DeepSeekFormat_CalculatesCorrectly" />
+    </UnitTest>
+    <UnitTest name="EnsureCreatedAsync_IsIdempotent" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1cf61232-f0ef-814a-8885-76ea635ee13e">
+      <Execution id="16aed594-807b-4f64-8e06-0bcb72cc02d1" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageSchemaBootstrapperTests" name="EnsureCreatedAsync_IsIdempotent" />
+    </UnitTest>
+    <UnitTest name="ResolveMissTokens_ExplicitMiss_ReturnsExplicit" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="12dc003b-a62a-8b53-a38f-c6061edf87f6">
+      <Execution id="5ed500de-a45e-4591-856d-6708f41bfba3" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageNormalizerTests" name="ResolveMissTokens_ExplicitMiss_ReturnsExplicit" />
+    </UnitTest>
+    <UnitTest name="ConversationProjectorFingerprint_WithCompletionTokens_TranslatesOnSqlite" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1c985006-be72-86c9-a0fd-5dfe4274ea0c">
+      <Execution id="39c85806-601f-4204-b8c5-9d289601b8b1" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRecorderPrefixDiagnosticsTests" name="ConversationProjectorFingerprint_WithCompletionTokens_TranslatesOnSqlite" />
+    </UnitTest>
+    <UnitTest name="InvalidateAsync_RemovesCachedMonthSoNextReadRecomputes" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="13d98417-4780-80d4-9eca-a27694965123">
+      <Execution id="fe61e5f2-9a2f-476b-9a23-2c6821ead73e" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageDailyAggregateServiceTests" name="InvalidateAsync_RemovesCachedMonthSoNextReadRecomputes" />
+    </UnitTest>
+    <UnitTest name="Normalize_NoCache_AllPromptAsMiss" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="10d28046-b84f-81e4-89eb-f6027fe253c0">
+      <Execution id="ae9307fc-b7ad-47f2-9b29-3ada9f14ee93" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageNormalizerTests" name="Normalize_NoCache_AllPromptAsMiss" />
+    </UnitTest>
+    <UnitTest name="RecordAsync_WhenToolSpecHashChanges_StoresToolSpecChangedReason" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="16d9e920-8488-8dc9-ae3d-1b0a46347ce4">
+      <Execution id="b9a328a8-2151-4117-acfb-1bc1ab787eab" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRecorderPrefixDiagnosticsTests" name="RecordAsync_WhenToolSpecHashChanges_StoresToolSpecChangedReason" />
+    </UnitTest>
+    <UnitTest name="ResolveMissTokens_NoHitNorMiss_ReturnsFullPrompt" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="103be422-9644-871b-a693-23ddc8d9834f">
+      <Execution id="522a4013-ef00-4289-995d-fd720c05e159" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageNormalizerTests" name="ResolveMissTokens_NoHitNorMiss_ReturnsFullPrompt" />
+    </UnitTest>
+    <UnitTest name="ForceFlush_PersistsImmediately" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="13d64854-80cd-85cc-a5a8-29fbf2c19434">
+      <Execution id="a34d84d7-4003-4e6d-8777-204b97d5a724" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Security.ExternalAccessTokenUsageCoalescerTests" name="ForceFlush_PersistsImmediately" />
+    </UnitTest>
+    <UnitTest name="SameSourceWithDifferentPayload_BestEffort_SkipsWithoutThrowing" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1101c23c-a0b3-863d-96d8-a2cf53e68f72">
+      <Execution id="aa1507fa-268e-470c-b8a2-0ed932351db4" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRecorderConcurrencyTests" name="SameSourceWithDifferentPayload_BestEffort_SkipsWithoutThrowing" />
+    </UnitTest>
+    <UnitTest name="PreviousLayerHash_BootstrapAddsIndexToExistingLedger_Idempotently" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1f1ec53d-4d55-829f-aba6-1abcde366a00">
+      <Execution id="55d8c495-8934-497f-b4fb-132d94ffa11e" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRecorderPrefixDiagnosticsTests" name="PreviousLayerHash_BootstrapAddsIndexToExistingLedger_Idempotently" />
+    </UnitTest>
+    <UnitTest name="Normalize_OpenAIFormat_HitDerivesMiss" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="197bd258-487f-8915-b7aa-6ea62e8bf24c">
+      <Execution id="b626dfb7-591a-4590-8b53-25bdca6cd9f9" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageNormalizerTests" name="Normalize_OpenAIFormat_HitDerivesMiss" />
+    </UnitTest>
+    <UnitTest name="RecordAsync_WhenContextSnapshotExists_StoresContextLayerMetrics" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="15045f6b-23c2-8378-8d01-930e4c38d4ca">
+      <Execution id="3bd5522c-b502-4af7-b75b-48a44c77b455" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRecorderPrefixDiagnosticsTests" name="RecordAsync_WhenContextSnapshotExists_StoresContextLayerMetrics" />
+    </UnitTest>
+    <UnitTest name="PreviousLayerHash_UsesCoveringEndpoint_PreservesEventTimeAndIdTies" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1e66074d-b9dc-868a-acd5-f1a2f6fa6c1e">
+      <Execution id="6ff6f0a4-96dc-4ac6-93a0-a5f9a480f01b" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRecorderPrefixDiagnosticsTests" name="PreviousLayerHash_UsesCoveringEndpoint_PreservesEventTimeAndIdTies" />
+    </UnitTest>
+    <UnitTest name="RecordAttributedRequiredAsync_PersistsCanonicalAgentLoopAttribution" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="157dbff5-e3e1-8f6a-8726-45dfbd829f47">
+      <Execution id="a899720d-40de-4a35-91f2-261a1c342088" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRecorderPrefixDiagnosticsTests" name="RecordAttributedRequiredAsync_PersistsCanonicalAgentLoopAttribution" />
+    </UnitTest>
+    <UnitTest name="ResolveMissTokens_NoExplicitMiss_HitPresent_DerivesFromPrompt" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1c8bbe8c-45cd-88c2-b0b1-f0194caae575">
+      <Execution id="97c1aa03-8cec-4504-a672-6fb7b44c0a6d" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageNormalizerTests" name="ResolveMissTokens_NoExplicitMiss_HitPresent_DerivesFromPrompt" />
+    </UnitTest>
+    <UnitTest name="ResolveMissTokens_HitExceedsPrompt_ReturnsZero" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1808befa-2589-890c-a882-ee9e943a6c0f">
+      <Execution id="4f96067d-cfd8-4016-b1f1-ef4e87309655" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageNormalizerTests" name="ResolveMissTokens_HitExceedsPrompt_ReturnsZero" />
+    </UnitTest>
+    <UnitTest name="ResolveForMetric_Classifies_TokenUsage_As_Complete" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="13d0cd97-bb95-8d5a-9989-91cdff74826d">
+      <Execution id="5219474b-6fda-4da0-9ddd-0c27a9ea6ba2" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.RuntimePipelineStagesTests" name="ResolveForMetric_Classifies_TokenUsage_As_Complete" />
+    </UnitTest>
+    <UnitTest name="RebuildAsync_RebuildsMonthlyStatsFromNonConversationUsageEvents" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="173ed750-10ad-8c0c-8e28-c3ac674ebe20">
+      <Execution id="7fcf4e51-2ce0-412a-92c4-87c50192a2ed" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRebuildServiceTests" name="RebuildAsync_RebuildsMonthlyStatsFromNonConversationUsageEvents" />
+    </UnitTest>
+    <UnitTest name="RebuildAsync_SkipsUnattributedLegacyUsageWithoutDeletingExistingLedgerFacts" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1163933a-74fa-8de0-9d6b-b272f987bf8e">
+      <Execution id="c36b49ef-bd81-471d-aeb2-87cf05338722" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRebuildServiceTests" name="RebuildAsync_SkipsUnattributedLegacyUsageWithoutDeletingExistingLedgerFacts" />
+    </UnitTest>
+    <UnitTest name="EnsureCreatedAsync_ColumnAlreadyExists_IsNoOp" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="17a7fcaf-7dcd-8838-bb7c-613cf1b862b0">
+      <Execution id="45e205fd-30a3-4a7d-aedd-f6c6717869aa" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageSchemaBootstrapperTests" name="EnsureCreatedAsync_ColumnAlreadyExists_IsNoOp" />
+    </UnitTest>
+    <UnitTest name="FiftyConcurrentDistinctSources_AlignLedgerAndAggregateExactly" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1158ea60-0a48-859a-89a3-f80839fff6b2">
+      <Execution id="32ddebc0-999d-447f-a9d9-3b46d9d31ba1" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageRecorderConcurrencyTests" name="FiftyConcurrentDistinctSources_AlignLedgerAndAggregateExactly" />
+    </UnitTest>
+    <UnitTest name="Normalize_ZeroTokens_HandlesGracefully" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1f0dee0b-3adc-82bf-83d8-aa4193270c06">
+      <Execution id="791b38e6-d06d-45da-9b44-e46cc4964287" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageNormalizerTests" name="Normalize_ZeroTokens_HandlesGracefully" />
+    </UnitTest>
+    <UnitTest name="ClosedDays_AggregateOnceThenServeFromCacheAfterLedgerDeleted" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="14f9b010-3720-86dd-828b-a4d5f9bfd9be">
+      <Execution id="e02e08fe-0c5a-4a3e-bf25-ace282a15a37" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageDailyAggregateServiceTests" name="ClosedDays_AggregateOnceThenServeFromCacheAfterLedgerDeleted" />
+    </UnitTest>
+    <UnitTest name="MigrateAsync_CreatesTokenUsageStatsTable" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="14b0ebc7-2921-8073-a822-6abfa8fa05e8">
+      <Execution id="4c3be2fc-0e75-4c17-adf5-356318002d9e" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Infrastructure.PlatformMigrationTests" name="MigrateAsync_CreatesTokenUsageStatsTable" />
+    </UnitTest>
+    <UnitTest name="CalculateCost_DeepSeekModel_MatchesExpected" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-audit-platform\puddingplatformtests.dll" id="1d4ed73f-971d-8676-bc0e-aa9ccd0edc9d">
+      <Execution id="0bc4fc8c-c2a5-4d47-9dd9-d59265b8054c" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-audit-platform\PuddingPlatformTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingPlatformTests.Services.TokenUsageNormalizerTests" name="CalculateCost_DeepSeekModel_MatchesExpected" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="1f0dee0b-3adc-82bf-83d8-aa4193270c06" executionId="791b38e6-d06d-45da-9b44-e46cc4964287" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="180a8824-becc-8a68-8c6d-1c6d56655786" executionId="a74b1f71-42bb-4a37-a201-54393c765023" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1163933a-74fa-8de0-9d6b-b272f987bf8e" executionId="c36b49ef-bd81-471d-aeb2-87cf05338722" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="103be422-9644-871b-a693-23ddc8d9834f" executionId="522a4013-ef00-4289-995d-fd720c05e159" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1cf61232-f0ef-814a-8885-76ea635ee13e" executionId="16aed594-807b-4f64-8e06-0bcb72cc02d1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1e66074d-b9dc-868a-acd5-f1a2f6fa6c1e" executionId="6ff6f0a4-96dc-4ac6-93a0-a5f9a480f01b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="173ed750-10ad-8c0c-8e28-c3ac674ebe20" executionId="7fcf4e51-2ce0-412a-92c4-87c50192a2ed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1cd61ae7-b07a-84af-8e56-3f926ae020e4" executionId="8d7add07-6439-4ac7-8f6e-3ac1915f57a5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1d4ed73f-971d-8676-bc0e-aa9ccd0edc9d" executionId="0bc4fc8c-c2a5-4d47-9dd9-d59265b8054c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="157dbff5-e3e1-8f6a-8726-45dfbd829f47" executionId="a899720d-40de-4a35-91f2-261a1c342088" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="195ca5a6-8bdc-85bb-9d91-a4359ab5fb06" executionId="c805cb52-6eda-4251-b7fc-bdfb431a4ad1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="10d28046-b84f-81e4-89eb-f6027fe253c0" executionId="ae9307fc-b7ad-47f2-9b29-3ada9f14ee93" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1c985006-be72-86c9-a0fd-5dfe4274ea0c" executionId="39c85806-601f-4204-b8c5-9d289601b8b1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1ddf949c-e71e-8443-a00b-75cff6ea94c0" executionId="f6acaa70-b0b9-4ed7-86c9-cc0a43e8ffe5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="11b0a5ef-6d56-80db-ba50-2c5b297e6aa7" executionId="d079d8b2-329e-469b-be03-5d88d49fcf70" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="16d9e920-8488-8dc9-ae3d-1b0a46347ce4" executionId="b9a328a8-2151-4117-acfb-1bc1ab787eab" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="14b0ebc7-2921-8073-a822-6abfa8fa05e8" executionId="4c3be2fc-0e75-4c17-adf5-356318002d9e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="12b845e1-0446-8fa1-a022-233cdffb74ea" executionId="804dd1ac-cb4b-4c25-a352-e6e71f1a8a8a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="11610bc6-de4d-8f0f-ac0e-897fff4bf809" executionId="5aceeb2e-792f-4d96-9d82-78dcdee2ab85" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="17a7fcaf-7dcd-8838-bb7c-613cf1b862b0" executionId="45e205fd-30a3-4a7d-aedd-f6c6717869aa" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1158ea60-0a48-859a-89a3-f80839fff6b2" executionId="32ddebc0-999d-447f-a9d9-3b46d9d31ba1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1f1ec53d-4d55-829f-aba6-1abcde366a00" executionId="55d8c495-8934-497f-b4fb-132d94ffa11e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1808befa-2589-890c-a882-ee9e943a6c0f" executionId="4f96067d-cfd8-4016-b1f1-ef4e87309655" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="12dc003b-a62a-8b53-a38f-c6061edf87f6" executionId="5ed500de-a45e-4591-856d-6708f41bfba3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="141638c1-bd41-87f1-897c-8d0e5e52ea60" executionId="bc9f82bc-9fe0-414b-a810-9c9d24474567" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1362b37f-ce33-802d-b164-505132bac266" executionId="95ba81e9-16b2-4730-ac0c-0da5ee917c3f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1101c23c-a0b3-863d-96d8-a2cf53e68f72" executionId="aa1507fa-268e-470c-b8a2-0ed932351db4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="197bd258-487f-8915-b7aa-6ea62e8bf24c" executionId="b626dfb7-591a-4590-8b53-25bdca6cd9f9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="13d64854-80cd-85cc-a5a8-29fbf2c19434" executionId="a34d84d7-4003-4e6d-8777-204b97d5a724" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="11e07909-8779-83f2-b57a-8600805a4cdb" executionId="5acc6ab4-0b6f-4c7e-9b63-36644ab74129" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="18bc4f2b-4fbc-8335-a6b8-403e9e75dfab" executionId="c506a954-ba2c-4403-a794-7998e15f6b51" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1a09c6ab-6c76-8f90-9b50-f6a5bb763f5d" executionId="abab6608-0dc0-4f74-b381-126966aeb477" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="15045f6b-23c2-8378-8d01-930e4c38d4ca" executionId="3bd5522c-b502-4af7-b75b-48a44c77b455" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="147180cb-f60f-88ec-8f46-d022543502e4" executionId="a1ae4a9f-dde1-467a-a92a-b80ec3d09302" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="15c43853-fb4e-8745-9c7e-de68869a132f" executionId="dd428351-ba9d-4f5a-bd96-9bdf48a52e87" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1555bb99-c44d-8590-a99c-2611ac77fa65" executionId="14dffcf2-34a1-4d4f-a302-2cbe2060d996" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="13d98417-4780-80d4-9eca-a27694965123" executionId="fe61e5f2-9a2f-476b-9a23-2c6821ead73e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="14f9b010-3720-86dd-828b-a4d5f9bfd9be" executionId="e02e08fe-0c5a-4a3e-bf25-ace282a15a37" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1c8bbe8c-45cd-88c2-b0b1-f0194caae575" executionId="97c1aa03-8cec-4504-a672-6fb7b44c0a6d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="178f735e-5eeb-8d14-b4e9-1c4ea84757b1" executionId="79e02ce8-5676-4f98-aee4-ac67f8e9c3f2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="13d0cd97-bb95-8d5a-9989-91cdff74826d" executionId="5219474b-6fda-4da0-9ddd-0c27a9ea6ba2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="160b6d1d-3b7f-87c4-95fd-9ece7ca90369" executionId="563c3745-d91e-4dfc-9f9f-7df92fec043f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="42" executed="42" passed="39" failed="3" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+  </ResultSummary>
+</TestRun>

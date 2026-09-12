@@ -1,0 +1,8 @@
+<Project>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'PuddingPlatformTests'">
+    <Compile Include="$(MSBuildThisFileDirectory)AuditUsageConflictTests.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'PuddingRuntimeTests'">
+    <Compile Include="$(MSBuildThisFileDirectory)AuditMemoryContractTests.cs" />
+  </ItemGroup>
+</Project>

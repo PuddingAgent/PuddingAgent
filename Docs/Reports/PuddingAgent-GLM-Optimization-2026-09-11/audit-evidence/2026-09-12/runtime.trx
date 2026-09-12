@@ -1,0 +1,260 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="8bf84a1d-9e24-4047-b4ec-5af56c7d6f03" name="huany@MSI 2026-09-12 05:57:50" runUser="MSI\huany" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-12T05:57:50.3777115+08:00" queuing="2026-09-12T05:57:50.3777119+08:00" start="2026-09-12T05:57:47.9214547+08:00" finish="2026-09-12T05:57:55.8974923+08:00" />
+  <TestSettings name="default" id="39fffffc-b96c-4ee3-a741-9f5a42e6b1fe">
+    <Deployment runDeploymentRoot="huany_MSI_2026-09-12_05_57_50" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="a0cc361a-d780-4328-a88e-628942ac790a" testId="16a9f748-7061-8cab-b316-aeae0f1bb30e" testName="PreferenceWithoutValue_MustFailBeforeWriteAsAdvertisedBySchema" computerName="MSI" duration="00:00:00.0014555" startTime="2026-09-12T05:57:55.8062998+08:00" endTime="2026-09-12T05:57:55.8078766+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a0cc361a-d780-4328-a88e-628942ac790a" />
+    <UnitTestResult executionId="9f7083be-7ad1-4990-bb83-79a2acddaa05" testId="1d356261-7639-8f63-9dab-6f94e5ef59bb" testName="BuildTokenUsageAttribution_CarriesFrozenContextAndInvocationIdentity" computerName="MSI" duration="00:00:00.0037087" startTime="2026-09-12T05:57:55.8176693+08:00" endTime="2026-09-12T05:57:55.8214779+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9f7083be-7ad1-4990-bb83-79a2acddaa05" />
+    <UnitTestResult executionId="f341db76-43c4-4365-9bf0-2ba29f539b3a" testId="16d95a4b-1b17-8048-bda0-86e7b0617636" testName="UpsertPreferenceWithoutValue_FailsClosedWithoutWriting" computerName="MSI" duration="00:00:00.0025960" startTime="2026-09-12T05:57:55.7984142+08:00" endTime="2026-09-12T05:57:55.8011540+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f341db76-43c4-4365-9bf0-2ba29f539b3a" />
+    <UnitTestResult executionId="c8e35a6e-f720-4a4e-8c99-a7ed328d7374" testId="15b72a51-1eb1-835b-9818-b3d5e2dfa20d" testName="DeleteWithBookType_IsStillAccepted" computerName="MSI" duration="00:00:00.0018409" startTime="2026-09-12T05:57:55.8034858+08:00" endTime="2026-09-12T05:57:55.8053775+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c8e35a6e-f720-4a4e-8c99-a7ed328d7374" />
+    <UnitTestResult executionId="db3ac55c-398b-4dd6-9806-8bf53d30079a" testId="193f7993-bcef-85b1-bb01-2eb9d2a74a40" testName="SaveMemory_QualityFilter_TooShort_Warns" computerName="MSI" duration="00:00:00.0765079" startTime="2026-09-12T05:57:55.5364800+08:00" endTime="2026-09-12T05:57:55.6130960+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="db3ac55c-398b-4dd6-9806-8bf53d30079a" />
+    <UnitTestResult executionId="dfdaa85e-b610-426d-9516-ffe9beca2949" testId="16ef27fd-c307-8eed-97df-0a12c9e68435" testName="Capture_WithoutAssemblyStore_StillFreezesUsageFacts" computerName="MSI" duration="00:00:00.0002464" startTime="2026-09-12T05:57:55.8219506+08:00" endTime="2026-09-12T05:57:55.8222437+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="dfdaa85e-b610-426d-9516-ffe9beca2949" />
+    <UnitTestResult executionId="88b46de1-e980-41fd-80d9-faecd6e6030e" testId="1c5becff-9779-8029-a071-85404e2e990d" testName="SaveMemory_Upsert_Uses_Llm_To_Reuse_Semantically_Equivalent_Chapter" computerName="MSI" duration="00:00:00.0818957" startTime="2026-09-12T05:57:55.2328803+08:00" endTime="2026-09-12T05:57:55.3148447+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="88b46de1-e980-41fd-80d9-faecd6e6030e" />
+    <UnitTestResult executionId="c162f55a-d01e-45ac-b255-306498ad8db7" testId="136d5b3c-2460-8bc0-a34c-a0c6aaa42e3e" testName="SaveMemory_QualityFilter_NormalContent_NoWarnings" computerName="MSI" duration="00:00:00.0558434" startTime="2026-09-12T05:57:55.6655870+08:00" endTime="2026-09-12T05:57:55.7215681+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c162f55a-d01e-45ac-b255-306498ad8db7" />
+    <UnitTestResult executionId="b1b74fe4-84ff-49e9-8a7f-d2931bbc2faa" testId="1117d767-d937-897f-b4d5-0a2e55f25375" testName="ManageMemory_ListPointers_Without_ChapterId_Returns_Workspace_Pointers" computerName="MSI" duration="00:00:00.1224361" startTime="2026-09-12T05:57:54.6744033+08:00" endTime="2026-09-12T05:57:54.7969228+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b1b74fe4-84ff-49e9-8a7f-d2931bbc2faa" />
+    <UnitTestResult executionId="93617107-b1f8-47f6-befd-a713cb4dbece" testId="1444e39d-dbc4-8e82-ba34-6a993c6a1c29" testName="GrepMemory_UnknownAction_FailsInsteadOfReportingSuccess" computerName="MSI" duration="00:00:00.0010424" startTime="2026-09-12T05:57:55.7900804+08:00" endTime="2026-09-12T05:57:55.7915220+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="93617107-b1f8-47f6-befd-a713cb4dbece" />
+    <UnitTestResult executionId="81e3c3ab-17c3-40eb-a05e-b852279c10b7" testId="13ec0cc8-c717-8233-8433-68df697e3dce" testName="SaveMemory_Upsert_Uses_Llm_To_Supersede_Existing_Chapter" computerName="MSI" duration="00:00:00.1212197" startTime="2026-09-12T05:57:55.3149095+08:00" endTime="2026-09-12T05:57:55.4363030+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="81e3c3ab-17c3-40eb-a05e-b852279c10b7" />
+    <UnitTestResult executionId="4c5f02c8-d5aa-41ee-9559-6e7be74b038f" testId="117d5da6-8575-8f4b-a85a-70bd0fbc8948" testName="Cancellation_PropagatesOutOfTool" computerName="MSI" duration="00:00:00.0035674" startTime="2026-09-12T05:57:55.7850566+08:00" endTime="2026-09-12T05:57:55.7887021+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4c5f02c8-d5aa-41ee-9559-6e7be74b038f" />
+    <UnitTestResult executionId="4dbc133d-9496-4277-aa3f-a663a039c8d0" testId="17a735cd-76fe-84fd-a804-b6c30340c014" testName="UpsertPreferenceWithoutKey_FailsClosedWithoutWriting" computerName="MSI" duration="00:00:00.0008184" startTime="2026-09-12T05:57:55.7915757+08:00" endTime="2026-09-12T05:57:55.7924716+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4dbc133d-9496-4277-aa3f-a663a039c8d0" />
+    <UnitTestResult executionId="7cb03db0-8175-4f40-9edb-b206c225ccbf" testId="16a28e6e-fea2-8d36-b6c4-a2a614aa0427" testName="FrozenAttribution_KeepsOwnLayerMetrics_WhenLaterRequestOverwritesSessionSnapshot" computerName="MSI" duration="00:00:00.0009160" startTime="2026-09-12T05:57:55.8166685+08:00" endTime="2026-09-12T05:57:55.8176471+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7cb03db0-8175-4f40-9edb-b206c225ccbf" />
+    <UnitTestResult executionId="ec4bc7a4-ed2a-4de3-969f-6138939235b6" testId="16c3e81f-7737-85a2-a364-d3283739f3f9" testName="SaveMemory_Upsert_Does_Not_Route_To_Same_Title_Book_In_Other_Workspace" computerName="MSI" duration="00:00:00.0925732" startTime="2026-09-12T05:57:55.0731792+08:00" endTime="2026-09-12T05:57:55.1658520+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ec4bc7a4-ed2a-4de3-969f-6138939235b6" />
+    <UnitTestResult executionId="0be2a83f-6379-4a48-bb80-c5e604bc6438" testId="1ed3400a-5ffc-858e-943c-2b58fe56c59f" testName="Capture_AtRequestPrepareBoundary_ProducesRequestPrepareFrozenProvenance" computerName="MSI" duration="00:00:00.0074507" startTime="2026-09-12T05:57:55.8090188+08:00" endTime="2026-09-12T05:57:55.8166137+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0be2a83f-6379-4a48-bb80-c5e604bc6438" />
+    <UnitTestResult executionId="f0ff410f-993c-4a09-86d2-139d02418f5f" testId="15878ef3-a435-8e60-8267-00bf99569d06" testName="GrepMemory_Fts5_Falls_Back_To_Scoped_Substring_For_New_Chinese_Text" computerName="MSI" duration="00:00:00.0580730" startTime="2026-09-12T05:57:55.4364293+08:00" endTime="2026-09-12T05:57:55.4946723+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f0ff410f-993c-4a09-86d2-139d02418f5f" />
+    <UnitTestResult executionId="a85eea1d-baac-4cd8-b9c4-b553211617a4" testId="11822a84-632f-8a94-9238-2014ac848aaa" testName="GrepMemoryTool_Uses_Strongly_Typed_Tool_Base" computerName="MSI" duration="00:00:00.0001606" startTime="2026-09-12T05:57:49.1120134+08:00" endTime="2026-09-12T05:57:49.1122236+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a85eea1d-baac-4cd8-b9c4-b553211617a4" />
+    <UnitTestResult executionId="9690f4f7-9ff3-4e40-9a63-b96396e381d7" testId="1a711191-ce01-8c76-9864-77e9826796e8" testName="UnknownAction_WithContent_FailsClosedWithoutWriting" computerName="MSI" duration="00:00:00.0018640" startTime="2026-09-12T05:57:55.7769469+08:00" endTime="2026-09-12T05:57:55.7789559+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9690f4f7-9ff3-4e40-9a63-b96396e381d7" />
+    <UnitTestResult executionId="b8cc5e4d-4306-4c82-847a-22eaadb9b362" testId="141dd5b8-f0a0-81d1-bd08-d6104da71c13" testName="GetImportant_UsesContextDerivedIdentity" computerName="MSI" duration="00:00:00.0022618" startTime="2026-09-12T05:57:55.7960085+08:00" endTime="2026-09-12T05:57:55.7983597+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b8cc5e4d-4306-4c82-847a-22eaadb9b362" />
+    <UnitTestResult executionId="68f18deb-f37e-438c-902f-e349d8debc6b" testId="18ff9f63-c0f5-8875-8d0f-2d05531c880d" testName="Capture_WithoutAnySnapshot_ReturnsNullSoRecorderCanReportUnknown" computerName="MSI" duration="00:00:00.0001223" startTime="2026-09-12T05:57:55.8222722+08:00" endTime="2026-09-12T05:57:55.8231498+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="68f18deb-f37e-438c-902f-e349d8debc6b" />
+    <UnitTestResult executionId="01253fd4-028a-482d-8ea0-38751cadc441" testId="16a295aa-6df6-8c36-a856-a4f3093a9e1a" testName="SaveMemory_EmptyContent_FailsClosedWithoutWriting" computerName="MSI" duration="00:00:00.0402736" startTime="2026-09-12T05:57:55.4960273+08:00" endTime="2026-09-12T05:57:55.5364143+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="01253fd4-028a-482d-8ea0-38751cadc441" />
+    <UnitTestResult executionId="85f5aa2f-6050-4ad8-b374-c84778a56aad" testId="191ed348-6510-887a-b662-4fee8d7853da" testName="ManageMemory_DeleteBook_Removes_Book_From_ListBooks" computerName="MSI" duration="00:00:00.1905798" startTime="2026-09-12T05:57:54.7969718+08:00" endTime="2026-09-12T05:57:54.9876377+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="85f5aa2f-6050-4ad8-b374-c84778a56aad" />
+    <UnitTestResult executionId="eaa6eaa7-acce-493c-ba47-46536f50404f" testId="1284f8b1-2b19-88f2-a6b0-fb6f20cbd78a" testName="BusinessError_IsReportedAsFailureNotSuccess" computerName="MSI" duration="00:00:00.0020716" startTime="2026-09-12T05:57:55.7828549+08:00" endTime="2026-09-12T05:57:55.7850132+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="eaa6eaa7-acce-493c-ba47-46536f50404f" />
+    <UnitTestResult executionId="b5db73de-12bd-4343-9d76-533265eabfa0" testId="1dd5fe03-2340-859d-a7c6-e0b702d33e16" testName="SaveMemory_Delete_ByChapterId_Does_Not_Delete_Other_Workspace_Memory" computerName="MSI" duration="00:00:00.0703059" startTime="2026-09-12T05:57:54.6039212+08:00" endTime="2026-09-12T05:57:54.6743506+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b5db73de-12bd-4343-9d76-533265eabfa0" />
+    <UnitTestResult executionId="b86731b8-e7e2-41de-b26f-63f5a7cea863" testId="1160e80b-83ad-89d2-82df-7a6f28f44153" testName="PaddedUppercaseType_IsAlsoNormalized" computerName="MSI" duration="00:00:00.0006590" startTime="2026-09-12T05:57:55.8027535+08:00" endTime="2026-09-12T05:57:55.8034663+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b86731b8-e7e2-41de-b26f-63f5a7cea863" />
+    <UnitTestResult executionId="4127dd2c-bbd1-4525-9a8f-f00f1a803200" testId="1b221e19-5a65-8ac6-a4d4-edece4dad5b4" testName="SetImportant_UsesContextDerivedIdentity" computerName="MSI" duration="00:00:00.0027834" startTime="2026-09-12T05:57:55.7931340+08:00" endTime="2026-09-12T05:57:55.7959696+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4127dd2c-bbd1-4525-9a8f-f00f1a803200" />
+    <UnitTestResult executionId="cf47bce9-b220-4165-a4a2-c20d82f0f4c9" testId="116b0c7e-ded6-8356-8819-894a0744e0f2" testName="ManageMemoryTool_Uses_Strongly_Typed_Tool_Base" computerName="MSI" duration="00:00:00.0004425" startTime="2026-09-12T05:57:49.1108038+08:00" endTime="2026-09-12T05:57:49.1116283+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cf47bce9-b220-4165-a4a2-c20d82f0f4c9" />
+    <UnitTestResult executionId="dfe7a81f-4e8b-4034-9796-260f7f675401" testId="13dc37f4-6592-83a7-98fa-d7617b39e8f9" testName="PreferenceTypeCase_MustNormalizeOrRejectBeforeWrite" computerName="MSI" duration="00:00:00.0009922" startTime="2026-09-12T05:57:55.8079181+08:00" endTime="2026-09-12T05:57:55.8089723+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="dfe7a81f-4e8b-4034-9796-260f7f675401" />
+    <UnitTestResult executionId="240ab5f8-e944-4f12-a0bc-6d3d2c05332e" testId="1ade634b-bea5-8ca1-864b-ce68304f5d15" testName="SaveMemory_QualityFilter_DirtyWord_Filters" computerName="MSI" duration="00:00:00.0523037" startTime="2026-09-12T05:57:55.6131568+08:00" endTime="2026-09-12T05:57:55.6655456+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="240ab5f8-e944-4f12-a0bc-6d3d2c05332e" />
+    <UnitTestResult executionId="6f791ebc-39b8-42c8-98d7-e24843f190dc" testId="17806c00-ae25-82a2-b6d6-30caca37c060" testName="GrepMemory_Fts5_Finds_Newly_Saved_Memory_Immediately" computerName="MSI" duration="00:00:00.0851335" startTime="2026-09-12T05:57:54.9877333+08:00" endTime="2026-09-12T05:57:55.0731074+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6f791ebc-39b8-42c8-98d7-e24843f190dc" />
+    <UnitTestResult executionId="d78f140f-ffec-4361-83b0-ef6683ac5d13" testId="1ea13e21-63e8-8c14-995e-32a37860615d" testName="UppercaseTypePreference_IsNormalizedAndWritesKeyValueContent" computerName="MSI" duration="00:00:00.0014038" startTime="2026-09-12T05:57:55.8012104+08:00" endTime="2026-09-12T05:57:55.8027116+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d78f140f-ffec-4361-83b0-ef6683ac5d13" />
+    <UnitTestResult executionId="1bd51857-294d-4579-8161-cdcb6200ed08" testId="19ae7b6d-6381-8cd6-8da8-692320842578" testName="SaveMemory_QualityFilter_UnknownType_Warns" computerName="MSI" duration="00:00:00.0544827" startTime="2026-09-12T05:57:55.7218037+08:00" endTime="2026-09-12T05:57:55.7768927+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1bd51857-294d-4579-8161-cdcb6200ed08" />
+    <UnitTestResult executionId="58d263ce-0096-4c74-b24e-19cf7827d071" testId="1952b694-ae02-881f-9025-5a66856bddae" testName="MemoryLibraryTool_Uses_Strongly_Typed_Tool_Base" computerName="MSI" duration="00:00:00.0073031" startTime="2026-09-12T05:57:49.0763392+08:00" endTime="2026-09-12T05:57:49.1026270+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="58d263ce-0096-4c74-b24e-19cf7827d071" />
+    <UnitTestResult executionId="adbf9100-20fa-476f-81f8-8def621b13b5" testId="149e1da6-f01c-8662-bae5-4f0ddb2b696b" testName="SaveMemoryTool_Uses_Strongly_Typed_Tool_Base" computerName="MSI" duration="00:00:00.0002667" startTime="2026-09-12T05:57:49.1122406+08:00" endTime="2026-09-12T05:57:49.1125398+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="adbf9100-20fa-476f-81f8-8def621b13b5" />
+    <UnitTestResult executionId="42977490-2b79-4a0f-ad30-0950f52c8118" testId="11ddf85e-ac0c-80bd-bac7-eda3ce8b3cd4" testName="SaveMemory_Delete_Removes_Chapter_And_Fts_Result" computerName="MSI" duration="00:00:05.4901611" startTime="2026-09-12T05:57:49.1125582+08:00" endTime="2026-09-12T05:57:54.6028213+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="42977490-2b79-4a0f-ad30-0950f52c8118" />
+    <UnitTestResult executionId="a064b2c4-3f79-4b07-b687-87e4954bee04" testId="1a13914f-2282-8e7d-ae2c-60bab7a5d68c" testName="UppercaseAction_IsNormalizedAndReachesLibrary" computerName="MSI" duration="00:00:00.0037193" startTime="2026-09-12T05:57:55.7789933+08:00" endTime="2026-09-12T05:57:55.7827960+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a064b2c4-3f79-4b07-b687-87e4954bee04" />
+    <UnitTestResult executionId="31bb0d5c-5319-40de-b360-e159091d2166" testId="116c9790-f3d0-8299-a7a2-b0d40e14faec" testName="BuildTokenUsageAttribution_WithoutFrozenContext_KeepsLegacyFallbackSemantics" computerName="MSI" duration="00:00:00.0001963" startTime="2026-09-12T05:57:55.8216268+08:00" endTime="2026-09-12T05:57:55.8219133+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="31bb0d5c-5319-40de-b360-e159091d2166" />
+    <UnitTestResult executionId="20ced04e-bd28-45d6-a7ac-d444be701a57" testId="1ee19c81-2424-8c07-90a1-a8f4c2a08057" testName="SaveMemory_Upsert_Reuses_Existing_Chapter_For_Same_Title_And_Content" computerName="MSI" duration="00:00:00.0668595" startTime="2026-09-12T05:57:55.1658932+08:00" endTime="2026-09-12T05:57:55.2328275+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="20ced04e-bd28-45d6-a7ac-d444be701a57" />
+    <UnitTestResult executionId="9399ef73-43bb-4ae8-9635-60c62110bd74" testId="146e5016-b199-8af9-b552-8ba01a0e6d62" testName="UpsertFactWithoutContent_FailsClosedWithoutWriting" computerName="MSI" duration="00:00:00.0005623" startTime="2026-09-12T05:57:55.7925076+08:00" endTime="2026-09-12T05:57:55.7931163+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9399ef73-43bb-4ae8-9635-60c62110bd74" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SetImportant_UsesContextDerivedIdentity" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1b221e19-5a65-8ac6-a4d4-edece4dad5b4">
+      <Execution id="4127dd2c-bbd1-4525-9a8f-f00f1a803200" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.SaveMemoryToolContractTests" name="SetImportant_UsesContextDerivedIdentity" />
+    </UnitTest>
+    <UnitTest name="GrepMemory_Fts5_Falls_Back_To_Scoped_Substring_For_New_Chinese_Text" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="15878ef3-a435-8e60-8267-00bf99569d06">
+      <Execution id="f0ff410f-993c-4a09-86d2-139d02418f5f" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="GrepMemory_Fts5_Falls_Back_To_Scoped_Substring_For_New_Chinese_Text" />
+    </UnitTest>
+    <UnitTest name="SaveMemory_Upsert_Uses_Llm_To_Supersede_Existing_Chapter" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="13ec0cc8-c717-8233-8433-68df697e3dce">
+      <Execution id="81e3c3ab-17c3-40eb-a05e-b852279c10b7" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="SaveMemory_Upsert_Uses_Llm_To_Supersede_Existing_Chapter" />
+    </UnitTest>
+    <UnitTest name="UnknownAction_WithContent_FailsClosedWithoutWriting" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1a711191-ce01-8c76-9864-77e9826796e8">
+      <Execution id="9690f4f7-9ff3-4e40-9a63-b96396e381d7" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.SaveMemoryToolContractTests" name="UnknownAction_WithContent_FailsClosedWithoutWriting" />
+    </UnitTest>
+    <UnitTest name="BuildTokenUsageAttribution_CarriesFrozenContextAndInvocationIdentity" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1d356261-7639-8f63-9dab-6f94e5ef59bb">
+      <Execution id="9f7083be-7ad1-4990-bb83-79a2acddaa05" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Services.RequestAttributionWiringTests" name="BuildTokenUsageAttribution_CarriesFrozenContextAndInvocationIdentity" />
+    </UnitTest>
+    <UnitTest name="BuildTokenUsageAttribution_WithoutFrozenContext_KeepsLegacyFallbackSemantics" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="116c9790-f3d0-8299-a7a2-b0d40e14faec">
+      <Execution id="31bb0d5c-5319-40de-b360-e159091d2166" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Services.RequestAttributionWiringTests" name="BuildTokenUsageAttribution_WithoutFrozenContext_KeepsLegacyFallbackSemantics" />
+    </UnitTest>
+    <UnitTest name="MemoryLibraryTool_Uses_Strongly_Typed_Tool_Base" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1952b694-ae02-881f-9025-5a66856bddae">
+      <Execution id="58d263ce-0096-4c74-b24e-19cf7827d071" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="MemoryLibraryTool_Uses_Strongly_Typed_Tool_Base" />
+    </UnitTest>
+    <UnitTest name="GrepMemory_Fts5_Finds_Newly_Saved_Memory_Immediately" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="17806c00-ae25-82a2-b6d6-30caca37c060">
+      <Execution id="6f791ebc-39b8-42c8-98d7-e24843f190dc" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="GrepMemory_Fts5_Finds_Newly_Saved_Memory_Immediately" />
+    </UnitTest>
+    <UnitTest name="SaveMemory_QualityFilter_NormalContent_NoWarnings" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="136d5b3c-2460-8bc0-a34c-a0c6aaa42e3e">
+      <Execution id="c162f55a-d01e-45ac-b255-306498ad8db7" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="SaveMemory_QualityFilter_NormalContent_NoWarnings" />
+    </UnitTest>
+    <UnitTest name="ManageMemory_DeleteBook_Removes_Book_From_ListBooks" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="191ed348-6510-887a-b662-4fee8d7853da">
+      <Execution id="85f5aa2f-6050-4ad8-b374-c84778a56aad" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="ManageMemory_DeleteBook_Removes_Book_From_ListBooks" />
+    </UnitTest>
+    <UnitTest name="SaveMemory_QualityFilter_TooShort_Warns" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="193f7993-bcef-85b1-bb01-2eb9d2a74a40">
+      <Execution id="db3ac55c-398b-4dd6-9806-8bf53d30079a" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="SaveMemory_QualityFilter_TooShort_Warns" />
+    </UnitTest>
+    <UnitTest name="SaveMemory_Upsert_Uses_Llm_To_Reuse_Semantically_Equivalent_Chapter" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1c5becff-9779-8029-a071-85404e2e990d">
+      <Execution id="88b46de1-e980-41fd-80d9-faecd6e6030e" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="SaveMemory_Upsert_Uses_Llm_To_Reuse_Semantically_Equivalent_Chapter" />
+    </UnitTest>
+    <UnitTest name="PaddedUppercaseType_IsAlsoNormalized" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1160e80b-83ad-89d2-82df-7a6f28f44153">
+      <Execution id="b86731b8-e7e2-41de-b26f-63f5a7cea863" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.SaveMemoryTypeContractTests" name="PaddedUppercaseType_IsAlsoNormalized" />
+    </UnitTest>
+    <UnitTest name="GetImportant_UsesContextDerivedIdentity" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="141dd5b8-f0a0-81d1-bd08-d6104da71c13">
+      <Execution id="b8cc5e4d-4306-4c82-847a-22eaadb9b362" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.SaveMemoryToolContractTests" name="GetImportant_UsesContextDerivedIdentity" />
+    </UnitTest>
+    <UnitTest name="SaveMemory_EmptyContent_FailsClosedWithoutWriting" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="16a295aa-6df6-8c36-a856-a4f3093a9e1a">
+      <Execution id="01253fd4-028a-482d-8ea0-38751cadc441" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="SaveMemory_EmptyContent_FailsClosedWithoutWriting" />
+    </UnitTest>
+    <UnitTest name="UpsertFactWithoutContent_FailsClosedWithoutWriting" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="146e5016-b199-8af9-b552-8ba01a0e6d62">
+      <Execution id="9399ef73-43bb-4ae8-9635-60c62110bd74" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.SaveMemoryToolContractTests" name="UpsertFactWithoutContent_FailsClosedWithoutWriting" />
+    </UnitTest>
+    <UnitTest name="UppercaseAction_IsNormalizedAndReachesLibrary" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1a13914f-2282-8e7d-ae2c-60bab7a5d68c">
+      <Execution id="a064b2c4-3f79-4b07-b687-87e4954bee04" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.SaveMemoryToolContractTests" name="UppercaseAction_IsNormalizedAndReachesLibrary" />
+    </UnitTest>
+    <UnitTest name="UppercaseTypePreference_IsNormalizedAndWritesKeyValueContent" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1ea13e21-63e8-8c14-995e-32a37860615d">
+      <Execution id="d78f140f-ffec-4361-83b0-ef6683ac5d13" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.SaveMemoryTypeContractTests" name="UppercaseTypePreference_IsNormalizedAndWritesKeyValueContent" />
+    </UnitTest>
+    <UnitTest name="BusinessError_IsReportedAsFailureNotSuccess" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1284f8b1-2b19-88f2-a6b0-fb6f20cbd78a">
+      <Execution id="eaa6eaa7-acce-493c-ba47-46536f50404f" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.SaveMemoryToolContractTests" name="BusinessError_IsReportedAsFailureNotSuccess" />
+    </UnitTest>
+    <UnitTest name="SaveMemory_QualityFilter_UnknownType_Warns" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="19ae7b6d-6381-8cd6-8da8-692320842578">
+      <Execution id="1bd51857-294d-4579-8161-cdcb6200ed08" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="SaveMemory_QualityFilter_UnknownType_Warns" />
+    </UnitTest>
+    <UnitTest name="SaveMemory_Delete_Removes_Chapter_And_Fts_Result" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="11ddf85e-ac0c-80bd-bac7-eda3ce8b3cd4">
+      <Execution id="42977490-2b79-4a0f-ad30-0950f52c8118" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="SaveMemory_Delete_Removes_Chapter_And_Fts_Result" />
+    </UnitTest>
+    <UnitTest name="UpsertPreferenceWithoutValue_FailsClosedWithoutWriting" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="16d95a4b-1b17-8048-bda0-86e7b0617636">
+      <Execution id="f341db76-43c4-4365-9bf0-2ba29f539b3a" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.SaveMemoryTypeContractTests" name="UpsertPreferenceWithoutValue_FailsClosedWithoutWriting" />
+    </UnitTest>
+    <UnitTest name="UpsertPreferenceWithoutKey_FailsClosedWithoutWriting" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="17a735cd-76fe-84fd-a804-b6c30340c014">
+      <Execution id="4dbc133d-9496-4277-aa3f-a663a039c8d0" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.SaveMemoryToolContractTests" name="UpsertPreferenceWithoutKey_FailsClosedWithoutWriting" />
+    </UnitTest>
+    <UnitTest name="Capture_WithoutAssemblyStore_StillFreezesUsageFacts" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="16ef27fd-c307-8eed-97df-0a12c9e68435">
+      <Execution id="dfdaa85e-b610-426d-9516-ffe9beca2949" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Services.RequestAttributionWiringTests" name="Capture_WithoutAssemblyStore_StillFreezesUsageFacts" />
+    </UnitTest>
+    <UnitTest name="Capture_WithoutAnySnapshot_ReturnsNullSoRecorderCanReportUnknown" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="18ff9f63-c0f5-8875-8d0f-2d05531c880d">
+      <Execution id="68f18deb-f37e-438c-902f-e349d8debc6b" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Services.RequestAttributionWiringTests" name="Capture_WithoutAnySnapshot_ReturnsNullSoRecorderCanReportUnknown" />
+    </UnitTest>
+    <UnitTest name="DeleteWithBookType_IsStillAccepted" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="15b72a51-1eb1-835b-9818-b3d5e2dfa20d">
+      <Execution id="c8e35a6e-f720-4a4e-8c99-a7ed328d7374" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.SaveMemoryTypeContractTests" name="DeleteWithBookType_IsStillAccepted" />
+    </UnitTest>
+    <UnitTest name="ManageMemoryTool_Uses_Strongly_Typed_Tool_Base" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="116b0c7e-ded6-8356-8819-894a0744e0f2">
+      <Execution id="cf47bce9-b220-4165-a4a2-c20d82f0f4c9" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="ManageMemoryTool_Uses_Strongly_Typed_Tool_Base" />
+    </UnitTest>
+    <UnitTest name="SaveMemoryTool_Uses_Strongly_Typed_Tool_Base" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="149e1da6-f01c-8662-bae5-4f0ddb2b696b">
+      <Execution id="adbf9100-20fa-476f-81f8-8def621b13b5" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="SaveMemoryTool_Uses_Strongly_Typed_Tool_Base" />
+    </UnitTest>
+    <UnitTest name="PreferenceWithoutValue_MustFailBeforeWriteAsAdvertisedBySchema" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="16a9f748-7061-8cab-b316-aeae0f1bb30e">
+      <Execution id="a0cc361a-d780-4328-a88e-628942ac790a" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.IndependentMemoryProbe12" name="PreferenceWithoutValue_MustFailBeforeWriteAsAdvertisedBySchema" />
+    </UnitTest>
+    <UnitTest name="SaveMemory_Upsert_Does_Not_Route_To_Same_Title_Book_In_Other_Workspace" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="16c3e81f-7737-85a2-a364-d3283739f3f9">
+      <Execution id="ec4bc7a4-ed2a-4de3-969f-6138939235b6" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="SaveMemory_Upsert_Does_Not_Route_To_Same_Title_Book_In_Other_Workspace" />
+    </UnitTest>
+    <UnitTest name="Capture_AtRequestPrepareBoundary_ProducesRequestPrepareFrozenProvenance" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1ed3400a-5ffc-858e-943c-2b58fe56c59f">
+      <Execution id="0be2a83f-6379-4a48-bb80-c5e604bc6438" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Services.RequestAttributionWiringTests" name="Capture_AtRequestPrepareBoundary_ProducesRequestPrepareFrozenProvenance" />
+    </UnitTest>
+    <UnitTest name="SaveMemory_Upsert_Reuses_Existing_Chapter_For_Same_Title_And_Content" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1ee19c81-2424-8c07-90a1-a8f4c2a08057">
+      <Execution id="20ced04e-bd28-45d6-a7ac-d444be701a57" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="SaveMemory_Upsert_Reuses_Existing_Chapter_For_Same_Title_And_Content" />
+    </UnitTest>
+    <UnitTest name="GrepMemoryTool_Uses_Strongly_Typed_Tool_Base" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="11822a84-632f-8a94-9238-2014ac848aaa">
+      <Execution id="a85eea1d-baac-4cd8-b9c4-b553211617a4" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="GrepMemoryTool_Uses_Strongly_Typed_Tool_Base" />
+    </UnitTest>
+    <UnitTest name="SaveMemory_QualityFilter_DirtyWord_Filters" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1ade634b-bea5-8ca1-864b-ce68304f5d15">
+      <Execution id="240ab5f8-e944-4f12-a0bc-6d3d2c05332e" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="SaveMemory_QualityFilter_DirtyWord_Filters" />
+    </UnitTest>
+    <UnitTest name="Cancellation_PropagatesOutOfTool" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="117d5da6-8575-8f4b-a85a-70bd0fbc8948">
+      <Execution id="4c5f02c8-d5aa-41ee-9559-6e7be74b038f" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.SaveMemoryToolContractTests" name="Cancellation_PropagatesOutOfTool" />
+    </UnitTest>
+    <UnitTest name="FrozenAttribution_KeepsOwnLayerMetrics_WhenLaterRequestOverwritesSessionSnapshot" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="16a28e6e-fea2-8d36-b6c4-a2a614aa0427">
+      <Execution id="7cb03db0-8175-4f40-9edb-b206c225ccbf" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Services.RequestAttributionWiringTests" name="FrozenAttribution_KeepsOwnLayerMetrics_WhenLaterRequestOverwritesSessionSnapshot" />
+    </UnitTest>
+    <UnitTest name="PreferenceTypeCase_MustNormalizeOrRejectBeforeWrite" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="13dc37f4-6592-83a7-98fa-d7617b39e8f9">
+      <Execution id="dfe7a81f-4e8b-4034-9796-260f7f675401" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.IndependentMemoryProbe12" name="PreferenceTypeCase_MustNormalizeOrRejectBeforeWrite" />
+    </UnitTest>
+    <UnitTest name="ManageMemory_ListPointers_Without_ChapterId_Returns_Workspace_Pointers" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1117d767-d937-897f-b4d5-0a2e55f25375">
+      <Execution id="b1b74fe4-84ff-49e9-8a7f-d2931bbc2faa" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="ManageMemory_ListPointers_Without_ChapterId_Returns_Workspace_Pointers" />
+    </UnitTest>
+    <UnitTest name="SaveMemory_Delete_ByChapterId_Does_Not_Delete_Other_Workspace_Memory" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1dd5fe03-2340-859d-a7c6-e0b702d33e16">
+      <Execution id="b5db73de-12bd-4343-9d76-533265eabfa0" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.MemoryToolsTests" name="SaveMemory_Delete_ByChapterId_Does_Not_Delete_Other_Workspace_Memory" />
+    </UnitTest>
+    <UnitTest name="GrepMemory_UnknownAction_FailsInsteadOfReportingSuccess" storage="e:\github\agentnetworkplan\puddingagent\.tmp-build\glm-board-20260912\puddingruntimetests.dll" id="1444e39d-dbc4-8e82-ba34-6a993c6a1c29">
+      <Execution id="93617107-b1f8-47f6-befd-a713cb4dbece" />
+      <TestMethod codeBase="E:\github\AgentNetworkPlan\PuddingAgent\.tmp-build\glm-board-20260912\PuddingRuntimeTests.dll" adapterTypeName="executor://mstestadapter/v4" className="PuddingRuntimeTests.Tools.SaveMemoryToolContractTests" name="GrepMemory_UnknownAction_FailsInsteadOfReportingSuccess" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="16a9f748-7061-8cab-b316-aeae0f1bb30e" executionId="a0cc361a-d780-4328-a88e-628942ac790a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1d356261-7639-8f63-9dab-6f94e5ef59bb" executionId="9f7083be-7ad1-4990-bb83-79a2acddaa05" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="16d95a4b-1b17-8048-bda0-86e7b0617636" executionId="f341db76-43c4-4365-9bf0-2ba29f539b3a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="15b72a51-1eb1-835b-9818-b3d5e2dfa20d" executionId="c8e35a6e-f720-4a4e-8c99-a7ed328d7374" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="193f7993-bcef-85b1-bb01-2eb9d2a74a40" executionId="db3ac55c-398b-4dd6-9806-8bf53d30079a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="16ef27fd-c307-8eed-97df-0a12c9e68435" executionId="dfdaa85e-b610-426d-9516-ffe9beca2949" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1c5becff-9779-8029-a071-85404e2e990d" executionId="88b46de1-e980-41fd-80d9-faecd6e6030e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="136d5b3c-2460-8bc0-a34c-a0c6aaa42e3e" executionId="c162f55a-d01e-45ac-b255-306498ad8db7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1117d767-d937-897f-b4d5-0a2e55f25375" executionId="b1b74fe4-84ff-49e9-8a7f-d2931bbc2faa" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1444e39d-dbc4-8e82-ba34-6a993c6a1c29" executionId="93617107-b1f8-47f6-befd-a713cb4dbece" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="13ec0cc8-c717-8233-8433-68df697e3dce" executionId="81e3c3ab-17c3-40eb-a05e-b852279c10b7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="117d5da6-8575-8f4b-a85a-70bd0fbc8948" executionId="4c5f02c8-d5aa-41ee-9559-6e7be74b038f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="17a735cd-76fe-84fd-a804-b6c30340c014" executionId="4dbc133d-9496-4277-aa3f-a663a039c8d0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="16a28e6e-fea2-8d36-b6c4-a2a614aa0427" executionId="7cb03db0-8175-4f40-9edb-b206c225ccbf" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="16c3e81f-7737-85a2-a364-d3283739f3f9" executionId="ec4bc7a4-ed2a-4de3-969f-6138939235b6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1ed3400a-5ffc-858e-943c-2b58fe56c59f" executionId="0be2a83f-6379-4a48-bb80-c5e604bc6438" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="15878ef3-a435-8e60-8267-00bf99569d06" executionId="f0ff410f-993c-4a09-86d2-139d02418f5f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="11822a84-632f-8a94-9238-2014ac848aaa" executionId="a85eea1d-baac-4cd8-b9c4-b553211617a4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1a711191-ce01-8c76-9864-77e9826796e8" executionId="9690f4f7-9ff3-4e40-9a63-b96396e381d7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="141dd5b8-f0a0-81d1-bd08-d6104da71c13" executionId="b8cc5e4d-4306-4c82-847a-22eaadb9b362" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="18ff9f63-c0f5-8875-8d0f-2d05531c880d" executionId="68f18deb-f37e-438c-902f-e349d8debc6b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="16a295aa-6df6-8c36-a856-a4f3093a9e1a" executionId="01253fd4-028a-482d-8ea0-38751cadc441" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="191ed348-6510-887a-b662-4fee8d7853da" executionId="85f5aa2f-6050-4ad8-b374-c84778a56aad" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1284f8b1-2b19-88f2-a6b0-fb6f20cbd78a" executionId="eaa6eaa7-acce-493c-ba47-46536f50404f" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1dd5fe03-2340-859d-a7c6-e0b702d33e16" executionId="b5db73de-12bd-4343-9d76-533265eabfa0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1160e80b-83ad-89d2-82df-7a6f28f44153" executionId="b86731b8-e7e2-41de-b26f-63f5a7cea863" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1b221e19-5a65-8ac6-a4d4-edece4dad5b4" executionId="4127dd2c-bbd1-4525-9a8f-f00f1a803200" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="116b0c7e-ded6-8356-8819-894a0744e0f2" executionId="cf47bce9-b220-4165-a4a2-c20d82f0f4c9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="13dc37f4-6592-83a7-98fa-d7617b39e8f9" executionId="dfe7a81f-4e8b-4034-9796-260f7f675401" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1ade634b-bea5-8ca1-864b-ce68304f5d15" executionId="240ab5f8-e944-4f12-a0bc-6d3d2c05332e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="17806c00-ae25-82a2-b6d6-30caca37c060" executionId="6f791ebc-39b8-42c8-98d7-e24843f190dc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1ea13e21-63e8-8c14-995e-32a37860615d" executionId="d78f140f-ffec-4361-83b0-ef6683ac5d13" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="19ae7b6d-6381-8cd6-8da8-692320842578" executionId="1bd51857-294d-4579-8161-cdcb6200ed08" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1952b694-ae02-881f-9025-5a66856bddae" executionId="58d263ce-0096-4c74-b24e-19cf7827d071" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="149e1da6-f01c-8662-bae5-4f0ddb2b696b" executionId="adbf9100-20fa-476f-81f8-8def621b13b5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="11ddf85e-ac0c-80bd-bac7-eda3ce8b3cd4" executionId="42977490-2b79-4a0f-ad30-0950f52c8118" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1a13914f-2282-8e7d-ae2c-60bab7a5d68c" executionId="a064b2c4-3f79-4b07-b687-87e4954bee04" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="116c9790-f3d0-8299-a7a2-b0d40e14faec" executionId="31bb0d5c-5319-40de-b360-e159091d2166" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1ee19c81-2424-8c07-90a1-a8f4c2a08057" executionId="20ced04e-bd28-45d6-a7ac-d444be701a57" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="146e5016-b199-8af9-b552-8ba01a0e6d62" executionId="9399ef73-43bb-4ae8-9635-60c62110bd74" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="列表中未列出的结果" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="所有已加载的结果" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="40" executed="40" passed="40" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+  </ResultSummary>
+</TestRun>

@@ -1,0 +1,540 @@
+{
+  "existingFrontend": [
+    {
+      "file": "Source/PuddingPlatformAdmin/src/pages/chat/hooks/__tests__/turnSurfaceStore.hydration.test.ts",
+      "status": "passed",
+      "tests": [
+        {
+          "name": "useTurnSurfaceStore (real fixture) hydrates completed agent turns and exposes node projections by turnId",
+          "status": "passed"
+        },
+        {
+          "name": "useTurnSurfaceStore (real fixture) drains more than two visible turns while keeping hydration concurrency bounded",
+          "status": "passed"
+        },
+        {
+          "name": "useTurnSurfaceStore hydration concurrency (F01) keeps total in-flight detail requests ≤ 2 across repeated projection updates",
+          "status": "passed"
+        },
+        {
+          "name": "useTurnSurfaceStore hydration concurrency (F01) abandons old conversation work on switch and late callbacks never pollute the new conversation",
+          "status": "passed"
+        },
+        {
+          "name": "useTurnSurfaceStore hydration concurrency (F01) drops queued prefetch for turns that leave the viewport and resumes on re-entry",
+          "status": "passed"
+        },
+        {
+          "name": "useTurnSurfaceStore hydration concurrency (F01) stops fetching after auth failures instead of retrying on every projection update",
+          "status": "passed"
+        },
+        {
+          "name": "useTurnSurfaceStore hydration concurrency (F01) completes hydration after unmount without leaking state updates",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "file": "Source/PuddingPlatformAdmin/src/pages/chat/runtime/detailHydrationScheduler.test.ts",
+      "status": "passed",
+      "tests": [
+        {
+          "name": "detailHydrationRequestKey separates revisions and conversations",
+          "status": "passed"
+        },
+        {
+          "name": "classifyDetailError maps auth/gone/transient",
+          "status": "passed"
+        },
+        {
+          "name": "DetailHydrationScheduler keeps total in-flight at capacity and starts one per released slot",
+          "status": "passed"
+        },
+        {
+          "name": "DetailHydrationScheduler ignores late callbacks from superseded requests and starts queued work when a zombie settles",
+          "status": "passed"
+        },
+        {
+          "name": "DetailHydrationScheduler stops retrying after auth failure until notified, and keeps 404 terminal per revision",
+          "status": "passed"
+        },
+        {
+          "name": "DetailHydrationScheduler transient backoff limits attempts and reopens the budget only via manual retry",
+          "status": "passed"
+        },
+        {
+          "name": "DetailHydrationScheduler dispose aborts in-flight fetches and stops scheduling",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "file": "Source/PuddingPlatformAdmin/src/pages/chat/components/MessageRow.focus.test.tsx",
+      "status": "passed",
+      "tests": [
+        {
+          "name": "MessageRow Focus view renders agent row as a collapsed single line in focus view",
+          "status": "passed"
+        },
+        {
+          "name": "MessageRow Focus view expands the full content when the focus row is clicked",
+          "status": "passed"
+        },
+        {
+          "name": "MessageRow Focus view collapses back after a second click",
+          "status": "passed"
+        },
+        {
+          "name": "MessageRow Focus view renders user row collapsed and expands to the full user bubble",
+          "status": "passed"
+        },
+        {
+          "name": "MessageRow Focus view shows the running tool as the collapsed summary while streaming",
+          "status": "passed"
+        },
+        {
+          "name": "MessageRow Focus view marks error rows with the error tone and keeps the summary visible",
+          "status": "passed"
+        },
+        {
+          "name": "MessageRow Focus view renders the regular bubble directly when focus view is off",
+          "status": "passed"
+        },
+        {
+          "name": "MessageRow visible-turn hydration registers an agent turn only after it enters the message viewport buffer",
+          "status": "passed"
+        },
+        {
+          "name": "MessageRow visible-turn hydration keeps observing and pairs unregister when the turn leaves the viewport",
+          "status": "passed"
+        }
+      ]
+    }
+  ],
+  "independentFrontend": [
+    {
+      "fullName": "Independent F01 acceptance probes retains failure budget through viewport exit/reentry, HTTP 401",
+      "status": "failed",
+      "failureMessages": [
+        "Error: expect(jest.fn()).toHaveBeenCalledTimes(expected)\n\nExpected number of calls: 1\nReceived number of calls: 2\n    at E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\glm-audit-20260911\\audit-f01.test.tsx:34:23"
+      ]
+    },
+    {
+      "fullName": "Independent F01 acceptance probes retains failure budget through viewport exit/reentry, HTTP 404",
+      "status": "failed",
+      "failureMessages": [
+        "Error: expect(jest.fn()).toHaveBeenCalledTimes(expected)\n\nExpected number of calls: 1\nReceived number of calls: 2\n    at E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\glm-audit-20260911\\audit-f01.test.tsx:34:23"
+      ]
+    },
+    {
+      "fullName": "Independent F01 acceptance probes retains failure budget through viewport exit/reentry, HTTP 503",
+      "status": "failed",
+      "failureMessages": [
+        "Error: expect(jest.fn()).toHaveBeenCalledTimes(expected)\n\nExpected number of calls: 1\nReceived number of calls: 2\n    at E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\glm-audit-20260911\\audit-f01.test.tsx:34:23"
+      ]
+    },
+    {
+      "fullName": "Independent F01 acceptance probes hydrates after React StrictMode effect cleanup/setup",
+      "status": "failed",
+      "failureMessages": [
+        "Error: expect(jest.fn()).toHaveBeenCalledTimes(expected)\n\nExpected number of calls: 1\nReceived number of calls: 0\n    at Object.<anonymous> (E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\glm-audit-20260911\\audit-f01.test.tsx:43:17)"
+      ]
+    },
+    {
+      "fullName": "Independent F01 acceptance probes passes a cancellation signal from scheduler into API adapter",
+      "status": "failed",
+      "failureMessages": [
+        "Error: expect(received).toBeInstanceOf(expected)\n\nExpected constructor: AbortSignal\n\nReceived value has no prototype\nReceived value: undefined\n    at Object.<anonymous> (E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\glm-audit-20260911\\audit-f01.test.tsx:52:20)\n    at Promise.finally.completed (E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\node_modules\\.pnpm\\jest-circus@30.3.0_babel-plugin-macros@3.1.0\\node_modules\\jest-circus\\build\\jestAdapterInit.js:1557:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\node_modules\\.pnpm\\jest-circus@30.3.0_babel-plugin-macros@3.1.0\\node_modules\\jest-circus\\build\\jestAdapterInit.js:1497:10)\n    at _callCircusTest (E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\node_modules\\.pnpm\\jest-circus@30.3.0_babel-plugin-macros@3.1.0\\node_modules\\jest-circus\\build\\jestAdapterInit.js:1007:40)\n    at async _runTest (E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\node_modules\\.pnpm\\jest-circus@30.3.0_babel-plugin-macros@3.1.0\\node_modules\\jest-circus\\build\\jestAdapterInit.js:947:3)\n    at async E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\node_modules\\.pnpm\\jest-circus@30.3.0_babel-plugin-macros@3.1.0\\node_modules\\jest-circus\\build\\jestAdapterInit.js:849:7\n    at async _runTestsForDescribeBlock (E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\node_modules\\.pnpm\\jest-circus@30.3.0_babel-plugin-macros@3.1.0\\node_modules\\jest-circus\\build\\jestAdapterInit.js:862:11)\n    at async _runTestsForDescribeBlock (E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\node_modules\\.pnpm\\jest-circus@30.3.0_babel-plugin-macros@3.1.0\\node_modules\\jest-circus\\build\\jestAdapterInit.js:857:11)\n    at async run (E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\node_modules\\.pnpm\\jest-circus@30.3.0_babel-plugin-macros@3.1.0\\node_modules\\jest-circus\\build\\jestAdapterInit.js:761:3)\n    at async runAndTransformResultsToJestFormat (E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\node_modules\\.pnpm\\jest-circus@30.3.0_babel-plugin-macros@3.1.0\\node_modules\\jest-circus\\build\\jestAdapterInit.js:1918:21)\n    at async jestAdapter (E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\node_modules\\.pnpm\\jest-circus@30.3.0_babel-plugin-macros@3.1.0\\node_modules\\jest-circus\\build\\runner.js:111:25)\n    at async runTestInternal (E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\node_modules\\.pnpm\\jest-runner@30.3.0\\node_modules\\jest-runner\\build\\index.js:292:22)\n    at async runTest (E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\node_modules\\.pnpm\\jest-runner@30.3.0\\node_modules\\jest-runner\\build\\index.js:356:13)"
+      ]
+    }
+  ],
+  "platformUsage": {
+    "counters": {
+      "total": "42",
+      "executed": "42",
+      "passed": "39",
+      "failed": "3",
+      "error": "0",
+      "timeout": "0",
+      "aborted": "0",
+      "inconclusive": "0",
+      "passedButRunAborted": "0",
+      "notRunnable": "0",
+      "notExecuted": "0",
+      "disconnected": "0",
+      "warning": "0",
+      "completed": "0",
+      "inProgress": "0",
+      "pending": "0"
+    },
+    "tests": [
+      {
+        "name": "Normalize_ZeroTokens_HandlesGracefully",
+        "outcome": "Passed"
+      },
+      {
+        "name": "ConversationProjectorFallback_UsesPersistentParentAndInvocationIndex",
+        "outcome": "Passed"
+      },
+      {
+        "name": "RebuildAsync_SkipsUnattributedLegacyUsageWithoutDeletingExistingLedgerFacts",
+        "outcome": "Passed"
+      },
+      {
+        "name": "ResolveMissTokens_NoHitNorMiss_ReturnsFullPrompt",
+        "outcome": "Passed"
+      },
+      {
+        "name": "EnsureCreatedAsync_IsIdempotent",
+        "outcome": "Passed"
+      },
+      {
+        "name": "PreviousLayerHash_UsesCoveringEndpoint_PreservesEventTimeAndIdTies",
+        "outcome": "Passed"
+      },
+      {
+        "name": "RebuildAsync_RebuildsMonthlyStatsFromNonConversationUsageEvents",
+        "outcome": "Passed"
+      },
+      {
+        "name": "RecordAsync_WhenOnlyHistoryAnchorChanges_StoresHistoryAnchorChangedReason",
+        "outcome": "Passed"
+      },
+      {
+        "name": "CalculateCost_DeepSeekModel_MatchesExpected",
+        "outcome": "Passed"
+      },
+      {
+        "name": "RecordAttributedRequiredAsync_PersistsCanonicalAgentLoopAttribution",
+        "outcome": "Passed"
+      },
+      {
+        "name": "RecordAsync_WhenToolDefinitionsExist_InsertsOrderedLayerAndTracksSchemaChanges",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Normalize_NoCache_AllPromptAsMiss",
+        "outcome": "Passed"
+      },
+      {
+        "name": "ConversationProjectorFingerprint_WithCompletionTokens_TranslatesOnSqlite",
+        "outcome": "Passed"
+      },
+      {
+        "name": "FirstWriteImmediate_SubsequentWritesAtMostOncePerInterval",
+        "outcome": "Passed"
+      },
+      {
+        "name": "ConcurrentDuplicateSource_CountsExactlyOnce",
+        "outcome": "Passed"
+      },
+      {
+        "name": "RecordAsync_WhenToolSpecHashChanges_StoresToolSpecChangedReason",
+        "outcome": "Passed"
+      },
+      {
+        "name": "MigrateAsync_CreatesTokenUsageStatsTable",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Gateway_ConflictingPayload_MustReject",
+        "outcome": "Failed"
+      },
+      {
+        "name": "ClosedDays_WriteCompletionMarkersForEmptyDays",
+        "outcome": "Passed"
+      },
+      {
+        "name": "EnsureCreatedAsync_ColumnAlreadyExists_IsNoOp",
+        "outcome": "Passed"
+      },
+      {
+        "name": "FiftyConcurrentDistinctSources_AlignLedgerAndAggregateExactly",
+        "outcome": "Passed"
+      },
+      {
+        "name": "PreviousLayerHash_BootstrapAddsIndexToExistingLedger_Idempotently",
+        "outcome": "Passed"
+      },
+      {
+        "name": "ResolveMissTokens_HitExceedsPrompt_ReturnsZero",
+        "outcome": "Passed"
+      },
+      {
+        "name": "ResolveMissTokens_ExplicitMiss_ReturnsExplicit",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Token_IdenticalUsageButDifferentWorkspace_MustReject",
+        "outcome": "Failed"
+      },
+      {
+        "name": "Token_UnrelatedUniqueConstraint_MustNotBeAcceptedAsDuplicateSource",
+        "outcome": "Failed"
+      },
+      {
+        "name": "SameSourceWithDifferentPayload_BestEffort_SkipsWithoutThrowing",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Normalize_OpenAIFormat_HitDerivesMiss",
+        "outcome": "Passed"
+      },
+      {
+        "name": "ForceFlush_PersistsImmediately",
+        "outcome": "Passed"
+      },
+      {
+        "name": "LiveToday_ReflectsTodayEventsWithoutWritingCache",
+        "outcome": "Passed"
+      },
+      {
+        "name": "RebuildAsync_ProjectsAttributedConversationUsageAndIsIdempotent",
+        "outcome": "Passed"
+      },
+      {
+        "name": "RebuildAsync_ReconstructsOneGatewayFactPerSuccessfulProviderRequest",
+        "outcome": "Passed"
+      },
+      {
+        "name": "RecordAsync_WhenContextSnapshotExists_StoresContextLayerMetrics",
+        "outcome": "Passed"
+      },
+      {
+        "name": "CalculateCost_NoCacheHitPrice_FallsBackToInputPrice",
+        "outcome": "Passed"
+      },
+      {
+        "name": "EnsureCreatedAsync_UpgradesLegacyTableWithColumnsAndIndex",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Normalize_DeepSeekFormat_CalculatesCorrectly",
+        "outcome": "Passed"
+      },
+      {
+        "name": "InvalidateAsync_RemovesCachedMonthSoNextReadRecomputes",
+        "outcome": "Passed"
+      },
+      {
+        "name": "ClosedDays_AggregateOnceThenServeFromCacheAfterLedgerDeleted",
+        "outcome": "Passed"
+      },
+      {
+        "name": "ResolveMissTokens_NoExplicitMiss_HitPresent_DerivesFromPrompt",
+        "outcome": "Passed"
+      },
+      {
+        "name": "SameSourceWithDifferentPayload_Required_ThrowsAndKeepsLedgerIntact",
+        "outcome": "Passed"
+      },
+      {
+        "name": "ResolveForMetric_Classifies_TokenUsage_As_Complete",
+        "outcome": "Passed"
+      },
+      {
+        "name": "ConcurrentDuplicateSource_ToleratesProvidersWithPreexistingRow",
+        "outcome": "Passed"
+      }
+    ]
+  },
+  "runtimeMemory": {
+    "counters": {
+      "total": "28",
+      "executed": "28",
+      "passed": "28",
+      "failed": "0",
+      "error": "0",
+      "timeout": "0",
+      "aborted": "0",
+      "inconclusive": "0",
+      "passedButRunAborted": "0",
+      "notRunnable": "0",
+      "notExecuted": "0",
+      "disconnected": "0",
+      "warning": "0",
+      "completed": "0",
+      "inProgress": "0",
+      "pending": "0"
+    },
+    "tests": [
+      {
+        "name": "GrepMemory_Fts5_Falls_Back_To_Scoped_Substring_For_New_Chinese_Text",
+        "outcome": "Passed"
+      },
+      {
+        "name": "ManageMemoryTool_Uses_Strongly_Typed_Tool_Base",
+        "outcome": "Passed"
+      },
+      {
+        "name": "UpsertFactWithoutContent_FailsClosedWithoutWriting",
+        "outcome": "Passed"
+      },
+      {
+        "name": "Cancellation_PropagatesOutOfTool",
+        "outcome": "Passed"
+      },
+      {
+        "name": "GrepMemory_UnknownAction_FailsInsteadOfReportingSuccess",
+        "outcome": "Passed"
+      },
+      {
+        "name": "SaveMemory_Upsert_Uses_Llm_To_Supersede_Existing_Chapter",
+        "outcome": "Passed"
+      },
+      {
+        "name": "SaveMemory_Upsert_Reuses_Existing_Chapter_For_Same_Title_And_Content",
+        "outcome": "Passed"
+      },
+      {
+        "name": "ManageMemory_DeleteBook_Removes_Book_From_ListBooks",
+        "outcome": "Passed"
+      },
+      {
+        "name": "SaveMemory_Delete_Removes_Chapter_And_Fts_Result",
+        "outcome": "Passed"
+      },
+      {
+        "name": "SaveMemory_QualityFilter_DirtyWord_Filters",
+        "outcome": "Passed"
+      },
+      {
+        "name": "SaveMemory_Delete_ByChapterId_Does_Not_Delete_Other_Workspace_Memory",
+        "outcome": "Passed"
+      },
+      {
+        "name": "GrepMemory_Fts5_Finds_Newly_Saved_Memory_Immediately",
+        "outcome": "Passed"
+      },
+      {
+        "name": "GetImportant_UsesContextDerivedIdentity",
+        "outcome": "Passed"
+      },
+      {
+        "name": "MemoryLibraryTool_Uses_Strongly_Typed_Tool_Base",
+        "outcome": "Passed"
+      },
+      {
+        "name": "SaveMemory_Upsert_Uses_Llm_To_Reuse_Semantically_Equivalent_Chapter",
+        "outcome": "Passed"
+      },
+      {
+        "name": "UppercaseAction_IsNormalizedAndReachesLibrary",
+        "outcome": "Passed"
+      },
+      {
+        "name": "SaveMemoryTool_Uses_Strongly_Typed_Tool_Base",
+        "outcome": "Passed"
+      },
+      {
+        "name": "SetImportant_UsesContextDerivedIdentity",
+        "outcome": "Passed"
+      },
+      {
+        "name": "SaveMemory_Upsert_Does_Not_Route_To_Same_Title_Book_In_Other_Workspace",
+        "outcome": "Passed"
+      },
+      {
+        "name": "SaveMemory_QualityFilter_NormalContent_NoWarnings",
+        "outcome": "Passed"
+      },
+      {
+        "name": "SaveMemory_QualityFilter_TooShort_Warns",
+        "outcome": "Passed"
+      },
+      {
+        "name": "UnknownAction_WithContent_FailsClosedWithoutWriting",
+        "outcome": "Passed"
+      },
+      {
+        "name": "BusinessError_IsReportedAsFailureNotSuccess",
+        "outcome": "Passed"
+      },
+      {
+        "name": "SaveMemory_QualityFilter_UnknownType_Warns",
+        "outcome": "Passed"
+      },
+      {
+        "name": "SaveMemory_EmptyContent_FailsClosedWithoutWriting",
+        "outcome": "Passed"
+      },
+      {
+        "name": "UpsertPreferenceWithoutKey_FailsClosedWithoutWriting",
+        "outcome": "Passed"
+      },
+      {
+        "name": "GrepMemoryTool_Uses_Strongly_Typed_Tool_Base",
+        "outcome": "Passed"
+      },
+      {
+        "name": "ManageMemory_ListPointers_Without_ChapterId_Returns_Workspace_Pointers",
+        "outcome": "Passed"
+      }
+    ]
+  },
+  "runtimeMemoryProbes": {
+    "counters": {
+      "total": "2",
+      "executed": "2",
+      "passed": "0",
+      "failed": "2",
+      "error": "0",
+      "timeout": "0",
+      "aborted": "0",
+      "inconclusive": "0",
+      "passedButRunAborted": "0",
+      "notRunnable": "0",
+      "notExecuted": "0",
+      "disconnected": "0",
+      "warning": "0",
+      "completed": "0",
+      "inProgress": "0",
+      "pending": "0"
+    },
+    "tests": [
+      {
+        "name": "PreferenceWithoutValue_MustFailBeforeWriteAsAdvertisedBySchema",
+        "outcome": "Failed"
+      },
+      {
+        "name": "PreferenceTypeCase_MustNormalizeOrRejectBeforeWrite",
+        "outcome": "Failed"
+      }
+    ]
+  },
+  "hostComposition": {
+    "counters": {
+      "total": "1",
+      "executed": "1",
+      "passed": "1",
+      "failed": "0",
+      "error": "0",
+      "timeout": "0",
+      "aborted": "0",
+      "inconclusive": "0",
+      "passedButRunAborted": "0",
+      "notRunnable": "0",
+      "notExecuted": "0",
+      "disconnected": "0",
+      "warning": "0",
+      "completed": "0",
+      "inProgress": "0",
+      "pending": "0"
+    },
+    "tests": [
+      {
+        "name": "PuddingHost.Tests.Hosting.PuddingApplicationHostCompositionTests.DesktopChild_CompositionRoot_ResolvesSingletonRuntimeToolsAndServices",
+        "outcome": "Passed"
+      }
+    ]
+  },
+  "typescriptExitCode": 0,
+  "entryBuildExitCode": 0,
+  "entryBuildWarnings": 49,
+  "existingTestsPassed": 91,
+  "independentProbesFailed": 10,
+  "notes": [
+    "The initial React import harness issue was corrected; independentFrontend is the final root StrictMode run.",
+    "No provider API calls, deployment, runtime data mutation or full-suite acceptance."
+  ]
+}
