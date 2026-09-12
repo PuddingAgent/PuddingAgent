@@ -333,6 +333,9 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
         {
             e.ToTable("context_layer_metric_events");
             e.HasIndex(ev => new { ev.SourceType, ev.SourceId, ev.LayerName }).IsUnique();
+            e.HasIndex(ev => new { ev.SessionId, ev.LayerName, ev.OccurredAtUtc, ev.Id, ev.ContentHash })
+                .HasDatabaseName("IX_context_layer_metric_events_session_layer_time_id_hash")
+                .IsDescending(false, false, true, true, false);
             e.HasIndex(ev => ev.SessionId);
             e.HasIndex(ev => new { ev.ProviderId, ev.ModelId });
             e.HasIndex(ev => ev.OccurredAtUtc);

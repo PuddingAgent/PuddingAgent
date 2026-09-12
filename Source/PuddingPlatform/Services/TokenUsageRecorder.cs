@@ -541,16 +541,6 @@ public class TokenUsageRecorder : ITokenUsageRecorder
         if (exists)
             return;
 
-        var priorCandidates = await db.ContextLayerMetricEvents
-            .AsNoTracking()
-            .Where(e => e.SessionId == sessionId)
-            .ToListAsync();
-        var previousByLayer = priorCandidates
-            .GroupBy(e => e.LayerName)
-            .ToDictionary(
-                g => g.Key,
-                g => g.OrderByDescending(e => e.OccurredAtUtc).ThenByDescending(e => e.Id).First().ContentHash);
-
         var metricLayers = requestContext.Layers
             .Select(layer => new ContextLayerInfo
             {
@@ -577,6 +567,12 @@ public class TokenUsageRecorder : ITokenUsageRecorder
                 ContentPreview = toolPreview,
             });
         }
+
+        // One covering-index endpoint per current layer, not the entire session's
+        // historical ledger (hundreds of thousands of entities for long-lived chats).
+        var previousByLayer = new Dictionary<string, string?>();
+        foreach (var layerName in metricLayers.Select(layer => layer.LayerName).Distinct(StringComparer.Ordinal))
+            previousByLayer[layerName] = await ReadPreviousLayerHashAsync(db, sessionId, layerName);
 
         var hitRemaining = normalized.CacheHitTokens;
         var missRemaining = normalized.CacheMissTokens;
@@ -642,6 +638,23 @@ public class TokenUsageRecorder : ITokenUsageRecorder
             tokenOffset += tokens;
         }
 
+    }
+
+    internal const string PreviousLayerHashSql = """
+        SELECT content_hash AS Value
+        FROM context_layer_metric_events INDEXED BY IX_context_layer_metric_events_session_layer_time_id_hash
+        WHERE session_id = {0} AND layer_name = {1}
+        ORDER BY occurred_at_utc DESC, id DESC LIMIT 1
+        """;
+
+    internal static async Task<string?> ReadPreviousLayerHashAsync(
+        PlatformDbContext db, string sessionId, string layerName)
+    {
+        // occurred_at_utc is the UTC ledger timestamp in the SQLite provider's
+        // canonical format. Sort in SQL (EF cannot OrderBy DateTimeOffset on SQLite),
+        // preserving event-time then Id ordering, including late-arriving facts.
+        var hashes = await db.Database.SqlQueryRaw<string>(PreviousLayerHashSql, sessionId, layerName).ToListAsync();
+        return hashes.Count == 0 ? null : hashes[0];
     }
 
     private static string ClassifyLayerRole(string layerName)

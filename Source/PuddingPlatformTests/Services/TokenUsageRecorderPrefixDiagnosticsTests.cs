@@ -7,6 +7,7 @@ using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingPlatform.Data;
+using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services;
 
 namespace PuddingPlatformTests.Services;
@@ -14,6 +15,59 @@ namespace PuddingPlatformTests.Services;
 [TestClass]
 public sealed class TokenUsageRecorderPrefixDiagnosticsTests
 {
+    [TestMethod]
+    public async Task PreviousLayerHash_UsesCoveringEndpoint_PreservesEventTimeAndIdTies()
+    {
+        await using var scope = await CreateScopeAsync();
+        var db = scope.Provider.GetRequiredService<PlatformDbContext>();
+        var time = DateTimeOffset.Parse("2026-09-05T01:00:00Z");
+        var rows = Enumerable.Range(1, 1000).Select(i => new ContextLayerMetricEventEntity
+        {
+            SourceType = "test", SourceId = $"history-{i}", SessionId = "s-long",
+            LayerName = "L0-STATIC", OccurredAtUtc = time.AddTicks(i), ContentHash = $"hash-{i}",
+        }).ToList();
+        rows.Add(new ContextLayerMetricEventEntity
+        {
+            SourceType = "test", SourceId = "same-time-later-id", SessionId = "s-long",
+            LayerName = "L0-STATIC", OccurredAtUtc = time.AddTicks(1000), ContentHash = "tie-winner",
+        });
+        rows.Add(new ContextLayerMetricEventEntity
+        {
+            SourceType = "test", SourceId = "late-arrival", SessionId = "s-long",
+            LayerName = "L0-STATIC", OccurredAtUtc = time, ContentHash = "not-the-latest-event",
+        });
+        rows.Add(new ContextLayerMetricEventEntity
+        {
+            SourceType = "test", SourceId = "other-session", SessionId = "s-other",
+            LayerName = "L0-STATIC", OccurredAtUtc = time.AddDays(1), ContentHash = "unrelated",
+        });
+        db.ContextLayerMetricEvents.AddRange(rows);
+        await db.SaveChangesAsync();
+        Assert.AreEqual("tie-winner", await TokenUsageRecorder.ReadPreviousLayerHashAsync(db, "s-long", "L0-STATIC"));
+        Assert.IsNull(await TokenUsageRecorder.ReadPreviousLayerHashAsync(db, "s-long", "missing-layer"));
+        Assert.IsNull(await TokenUsageRecorder.ReadPreviousLayerHashAsync(db, "missing-session", "L0-STATIC"));
+
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "EXPLAIN QUERY PLAN " + TokenUsageRecorder.PreviousLayerHashSql
+            .Replace("{0}", "'s-long'", StringComparison.Ordinal).Replace("{1}", "'L0-STATIC'", StringComparison.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync();
+        var details = new List<string>();
+        while (await reader.ReadAsync()) details.Add(reader.GetString(3));
+        Assert.IsTrue(details.Any(d => d.Contains("SEARCH context_layer_metric_events USING COVERING INDEX IX_context_layer_metric_events_session_layer_time_id_hash", StringComparison.Ordinal)));
+        Assert.IsFalse(details.Any(d => d.Contains("SCAN ", StringComparison.Ordinal) || d.Contains("TEMP B-TREE", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task PreviousLayerHash_BootstrapAddsIndexToExistingLedger_Idempotently()
+    {
+        await using var scope = await CreateScopeAsync();
+        var db = scope.Provider.GetRequiredService<PlatformDbContext>();
+        await db.Database.ExecuteSqlRawAsync("DROP INDEX IX_context_layer_metric_events_session_layer_time_id_hash");
+        await TokenUsageSchemaBootstrapper.EnsureCreatedAsync(db);
+        await TokenUsageSchemaBootstrapper.EnsureCreatedAsync(db);
+        Assert.IsNull(await TokenUsageRecorder.ReadPreviousLayerHashAsync(db, "missing", "L0-STATIC"));
+    }
+
     [TestMethod]
     public void ConversationProjectorFallback_UsesPersistentParentAndInvocationIndex()
     {

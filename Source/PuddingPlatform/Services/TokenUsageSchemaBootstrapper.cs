@@ -95,6 +95,12 @@ public static class TokenUsageSchemaBootstrapper
                         columnName);
                 }
             }
+
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE INDEX IF NOT EXISTS "IX_context_layer_metric_events_session_layer_time_id_hash"
+                ON "context_layer_metric_events" ("session_id", "layer_name", "occurred_at_utc" DESC, "id" DESC, "content_hash");
+                """, ct);
         }
 
         await db.Database.ExecuteSqlRawAsync(
