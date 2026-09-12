@@ -3,6 +3,10 @@
     Shared content items for Console (PuddingAgent) and Desktop (PuddingDesktop) hosts.
     Imported by consuming projects. Paths are relative to MSBuildThisFileDirectory (Build/).
   -->
+  <PropertyGroup>
+    <!-- Allow a verified, isolated frontend build to be bundled without replacing dev dist. -->
+    <PuddingAdminDistPath Condition="'$(PuddingAdminDistPath)' == ''">$(MSBuildThisFileDirectory)..\..\PuddingPlatformAdmin\dist</PuddingAdminDistPath>
+  </PropertyGroup>
   <ItemGroup>
     <!-- default-data tree -->
     <Content Include="$(MSBuildThisFileDirectory)..\default-data\**\*"
@@ -33,9 +37,9 @@
     </Content>
 
     <!-- Admin SPA (Workbench) — PuddingPlatformAdmin/dist/** → wwwroot/admin/** -->
-    <Content Include="$(MSBuildThisFileDirectory)..\..\PuddingPlatformAdmin\dist\**\*"
+    <Content Include="$(PuddingAdminDistPath)\**\*"
              Link="wwwroot\admin\%(RecursiveDir)%(Filename)%(Extension)"
-             Condition="Exists('$(MSBuildThisFileDirectory)..\..\PuddingPlatformAdmin\dist\index.html')">
+             Condition="Exists('$(PuddingAdminDistPath)\index.html')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
@@ -43,7 +47,7 @@
 
   <!-- Publish-time check: admin SPA must be built -->
   <Target Name="EnsureAdminDistExists" BeforeTargets="Publish" Condition="'$(SkipAdminDistCheck)' != 'true'">
-    <Error Condition="!Exists('$(MSBuildThisFileDirectory)..\..\PuddingPlatformAdmin\dist\index.html')"
-           Text="Admin SPA dist is missing. Run 'pnpm run build' in Source/PuddingPlatformAdmin first, or set SkipAdminDistCheck=true for backend-only development." />
+    <Error Condition="!Exists('$(PuddingAdminDistPath)\index.html')"
+           Text="Admin SPA is missing at $(PuddingAdminDistPath). Build Source/PuddingPlatformAdmin first and set PuddingAdminDistPath to its output, or set SkipAdminDistCheck=true for backend-only development." />
   </Target>
 </Project>

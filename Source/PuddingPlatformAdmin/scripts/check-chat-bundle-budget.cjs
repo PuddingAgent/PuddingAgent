@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const distDir = path.resolve(__dirname, '..', 'dist');
+const distDir = path.resolve(__dirname, '..', process.env.PUDDING_ADMIN_OUTPUT_PATH || 'dist');
 const maxSynchronousEntryBytes = 1536 * 1024;
 const maxChatRouteChunkBytes = 480 * 1024;
 const forbiddenCommonSources = ['src/pages/workspace-tasks/'];

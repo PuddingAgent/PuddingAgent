@@ -20,7 +20,7 @@ const PUBLIC_PATH: string = '/admin/';
 // 部署链：dist/index.html 消失 → Exists 条件失败不部署，且 MSBuild 增量清理
 // 会把已部署的 wwwroot/admin 文件删掉。dev 输出分流到 dist-dev/（gitignore）。
 const IS_DEV = process.env.NODE_ENV === 'development';
-const OUTPUT_PATH = IS_DEV ? 'dist-dev' : 'dist';
+const OUTPUT_PATH = process.env.PUDDING_ADMIN_OUTPUT_PATH || (IS_DEV ? 'dist-dev' : 'dist');
 
 export default defineConfig({
   outputPath: OUTPUT_PATH,
