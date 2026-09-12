@@ -1,0 +1,18 @@
+{
+  "runId": "run_20260911_140516_0385b03009a9",
+  "toolCount": 2,
+  "uniqueToolIds": 2,
+  "types": {
+    "subagent.run.created": 1,
+    "subagent.run.started": 1,
+    "subagent.run.context_assembled": 1,
+    "subagent.budget.notice": 4,
+    "subagent.round.started": 42,
+    "subagent.llm.started": 42,
+    "subagent.llm.completed": 42,
+    "subagent.round.completed": 42,
+    "subagent.tool.started": 2,
+    "subagent.tool.completed": 2,
+    "subagent.run.completed": 1
+  }
+}

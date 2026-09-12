@@ -1,0 +1,26 @@
+{
+  "date": "2026-09-05",
+  "sourceHead": "731d5e063cdd888128cbcfc3ba53c32cfae2284d",
+  "dirtyWorktree": true,
+  "deployedByThisRound": false,
+  "bundlePath": ".tmp-build/desktop-efficiency-round4",
+  "adminBuildPath": ".tmp-build/admin-efficiency",
+  "validation": {
+    "publishExitCode": 0,
+    "focusedTestsPassed": 19,
+    "focusedTestsFailed": 0,
+    "combinedTestsPassed": 96,
+    "combinedTestsFailed": 0,
+    "combinedTestResults": ".tmp-test-out/efficiency-results/round4-combined.trx",
+    "testResults": ".tmp-test-out/efficiency-results/round4-storage-token.trx",
+    "dependencyWarningsUnresolved": true,
+    "frontendUnchangedFromRound2": true
+  },
+  "sha256": {
+    "PuddingDesktop.dll": "8BD29AAF380B6A65F089ACFDCBE1EE06ED8337EFF91C34A385F7390EADAA00D3",
+    "core/PuddingAgent.dll": "35D0A0C15F9C6F334F568941989375E40D3879401978A0F4EEB5BBE804616308",
+    "core/PuddingPlatform.dll": "4741EC39F1CE9161182AD2F5C0F86A1B02684D3D15B3C076FE1F5FF8C9EF3E22",
+    "core/PuddingRuntime.dll": "0A836187C5FE891F4DB89BA253B74550C85CD82F71A31841C2E8530CFDC68F22",
+    "core/wwwroot/admin/index.html": "9180B14C36BFA0B7DCC4F965076A357FE746E2ACDD0F27A0348700C292F22F6B"
+  }
+}

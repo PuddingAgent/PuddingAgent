@@ -1,0 +1,490 @@
+{
+  "all": [
+    {
+      "prompt_tokens": 78228078.0,
+      "completion_tokens": 1061710.0,
+      "cache_hit_tokens": 74694848.0,
+      "cache_miss_tokens": 3533230.0,
+      "input_cost": 3.53323,
+      "output_cost": 2.41935,
+      "cache_hit_cost": 10.49628672,
+      "total_cost": 16.44886672,
+      "group": [],
+      "requests": 898,
+      "hitRate": 0.9548342476214231
+    }
+  ],
+  "byDayModel": [
+    {
+      "prompt_tokens": 29121387.0,
+      "completion_tokens": 360228.0,
+      "cache_hit_tokens": 27767424.0,
+      "cache_miss_tokens": 1353963.0,
+      "input_cost": 1.353963,
+      "output_cost": 0.720456,
+      "cache_hit_cost": 0.55534848,
+      "total_cost": 2.62976748,
+      "group": [
+        "09-11",
+        "deepseek",
+        "deepseek-flash"
+      ],
+      "requests": 290,
+      "hitRate": 0.9535062323782861
+    },
+    {
+      "prompt_tokens": 9989698.0,
+      "completion_tokens": 147965.0,
+      "cache_hit_tokens": 9186112.0,
+      "cache_miss_tokens": 803586.0,
+      "input_cost": 0.803586,
+      "output_cost": 0.59186,
+      "cache_hit_cost": 9.186112,
+      "total_cost": 10.581558,
+      "group": [
+        "09-11",
+        "bigmodel",
+        "glm-5.3-flash"
+      ],
+      "requests": 142,
+      "hitRate": 0.9195585291967785
+    },
+    {
+      "prompt_tokens": 39116993.0,
+      "completion_tokens": 553517.0,
+      "cache_hit_tokens": 37741312.0,
+      "cache_miss_tokens": 1375681.0,
+      "input_cost": 1.375681,
+      "output_cost": 1.107034,
+      "cache_hit_cost": 0.75482624,
+      "total_cost": 3.23754124,
+      "group": [
+        "09-12",
+        "deepseek",
+        "deepseek-flash"
+      ],
+      "requests": 466,
+      "hitRate": 0.9648316270118207
+    }
+  ],
+  "byBucket": [
+    {
+      "prompt_tokens": 6512668.0,
+      "completion_tokens": 124548.0,
+      "cache_hit_tokens": 5760896.0,
+      "cache_miss_tokens": 751772.0,
+      "input_cost": 0.751772,
+      "output_cost": 0.249096,
+      "cache_hit_cost": 0.11521792,
+      "total_cost": 1.11608592,
+      "group": [
+        "other"
+      ],
+      "requests": 123,
+      "hitRate": 0.8845677378303332
+    },
+    {
+      "prompt_tokens": 32920559.0,
+      "completion_tokens": 335273.0,
+      "cache_hit_tokens": 31998592.0,
+      "cache_miss_tokens": 921967.0,
+      "input_cost": 0.921967,
+      "output_cost": 0.670546,
+      "cache_hit_cost": 0.63997184,
+      "total_cost": 2.23248484,
+      "group": [
+        "main"
+      ],
+      "requests": 280,
+      "hitRate": 0.9719941875835098
+    },
+    {
+      "prompt_tokens": 205567.0,
+      "completion_tokens": 57971.0,
+      "cache_hit_tokens": 2432.0,
+      "cache_miss_tokens": 203135.0,
+      "input_cost": 0.203135,
+      "output_cost": 0.115942,
+      "cache_hit_cost": 4.864e-05,
+      "total_cost": 0.31912564,
+      "group": [
+        "subconscious"
+      ],
+      "requests": 22,
+      "hitRate": 0.011830692669543263
+    },
+    {
+      "prompt_tokens": 38589284.0,
+      "completion_tokens": 543918.0,
+      "cache_hit_tokens": 36932928.0,
+      "cache_miss_tokens": 1656356.0,
+      "input_cost": 1.656356,
+      "output_cost": 1.383766,
+      "cache_hit_cost": 9.74104832,
+      "total_cost": 12.78117032,
+      "group": [
+        "child"
+      ],
+      "requests": 473,
+      "hitRate": 0.9570773067466087
+    }
+  ],
+  "bySession": [
+    {
+      "prompt_tokens": 40080.0,
+      "completion_tokens": 6660.0,
+      "cache_hit_tokens": 0.0,
+      "cache_miss_tokens": 40080.0,
+      "input_cost": 0.04008,
+      "output_cost": 0.01332,
+      "cache_hit_cost": 0.0,
+      "total_cost": 0.0534,
+      "group": [
+        "periodic:skill.extract_patterns"
+      ],
+      "requests": 7,
+      "hitRate": 0.0
+    },
+    {
+      "prompt_tokens": 8215.0,
+      "completion_tokens": 33194.0,
+      "cache_hit_tokens": 0.0,
+      "cache_miss_tokens": 8215.0,
+      "input_cost": 0.008215,
+      "output_cost": 0.066388,
+      "cache_hit_cost": 0.0,
+      "total_cost": 0.074603,
+      "group": [
+        "periodic:skill.improve"
+      ],
+      "requests": 2,
+      "hitRate": 0.0
+    },
+    {
+      "prompt_tokens": 32920559.0,
+      "completion_tokens": 335273.0,
+      "cache_hit_tokens": 31998592.0,
+      "cache_miss_tokens": 921967.0,
+      "input_cost": 0.921967,
+      "output_cost": 0.670546,
+      "cache_hit_cost": 0.63997184,
+      "total_cost": 2.23248484,
+      "group": [
+        "206a9b48ec904ebb93e7541131fbb835"
+      ],
+      "requests": 280,
+      "hitRate": 0.9719941875835098
+    },
+    {
+      "prompt_tokens": 335453.0,
+      "completion_tokens": 12686.0,
+      "cache_hit_tokens": 0.0,
+      "cache_miss_tokens": 335453.0,
+      "input_cost": 0.335453,
+      "output_cost": 0.025372,
+      "cache_hit_cost": 0.0,
+      "total_cost": 0.360825,
+      "group": [
+        "memory-write:default.global_general-assistant.6a8"
+      ],
+      "requests": 29,
+      "hitRate": 0.0
+    },
+    {
+      "prompt_tokens": 186838.0,
+      "completion_tokens": 55493.0,
+      "cache_hit_tokens": 2432.0,
+      "cache_miss_tokens": 184406.0,
+      "input_cost": 0.184406,
+      "output_cost": 0.110986,
+      "cache_hit_cost": 4.864e-05,
+      "total_cost": 0.29544064,
+      "group": [
+        "subconscious:206a9b48ec904ebb93e7541131fbb835"
+      ],
+      "requests": 20,
+      "hitRate": 0.013016624027232148
+    },
+    {
+      "prompt_tokens": 1958104.0,
+      "completion_tokens": 38087.0,
+      "cache_hit_tokens": 1814720.0,
+      "cache_miss_tokens": 143384.0,
+      "input_cost": 0.143384,
+      "output_cost": 0.152348,
+      "cache_hit_cost": 1.81472,
+      "total_cost": 2.110452,
+      "group": [
+        "206a9b48ec904ebb93e7541131fbb835-sub-3573661c"
+      ],
+      "requests": 32,
+      "hitRate": 0.9267740630732586
+    },
+    {
+      "prompt_tokens": 3105370.0,
+      "completion_tokens": 45939.0,
+      "cache_hit_tokens": 2808320.0,
+      "cache_miss_tokens": 297050.0,
+      "input_cost": 0.29705,
+      "output_cost": 0.183756,
+      "cache_hit_cost": 2.80832,
+      "total_cost": 3.289126,
+      "group": [
+        "206a9b48ec904ebb93e7541131fbb835-sub-e6f59aec"
+      ],
+      "requests": 42,
+      "hitRate": 0.9043431217536074
+    },
+    {
+      "prompt_tokens": 3217295.0,
+      "completion_tokens": 24801.0,
+      "cache_hit_tokens": 3084736.0,
+      "cache_miss_tokens": 132559.0,
+      "input_cost": 0.132559,
+      "output_cost": 0.099204,
+      "cache_hit_cost": 3.084736,
+      "total_cost": 3.316499,
+      "group": [
+        "206a9b48ec904ebb93e7541131fbb835-sub-076593c8"
+      ],
+      "requests": 45,
+      "hitRate": 0.9587979964535425
+    },
+    {
+      "prompt_tokens": 4561799.0,
+      "completion_tokens": 37067.0,
+      "cache_hit_tokens": 4355968.0,
+      "cache_miss_tokens": 205831.0,
+      "input_cost": 0.20583100000000001,
+      "output_cost": 0.074134,
+      "cache_hit_cost": 0.08711936,
+      "total_cost": 0.36708436,
+      "group": [
+        "msg-a85ec8a5ee6244ad98a0395d5e80c039"
+      ],
+      "requests": 63,
+      "hitRate": 0.9548794236659703
+    },
+    {
+      "prompt_tokens": 1708929.0,
+      "completion_tokens": 39138.0,
+      "cache_hit_tokens": 1478336.0,
+      "cache_miss_tokens": 230593.0,
+      "input_cost": 0.230593,
+      "output_cost": 0.156552,
+      "cache_hit_cost": 1.478336,
+      "total_cost": 1.865481,
+      "group": [
+        "msg-a85ec8a5ee6244ad98a0395d5e80c039-sub-2815dc57"
+      ],
+      "requests": 23,
+      "hitRate": 0.8650657809657394
+    },
+    {
+      "prompt_tokens": 8803.0,
+      "completion_tokens": 1660.0,
+      "cache_hit_tokens": 0.0,
+      "cache_miss_tokens": 8803.0,
+      "input_cost": 0.008803,
+      "output_cost": 0.00332,
+      "cache_hit_cost": 0.0,
+      "total_cost": 0.012123,
+      "group": [
+        "subconscious:msg-a85ec8a5ee6244ad98a0395d5e80c039"
+      ],
+      "requests": 1,
+      "hitRate": 0.0
+    },
+    {
+      "prompt_tokens": 3553516.0,
+      "completion_tokens": 53934.0,
+      "cache_hit_tokens": 3451008.0,
+      "cache_miss_tokens": 102508.0,
+      "input_cost": 0.102508,
+      "output_cost": 0.107868,
+      "cache_hit_cost": 0.06902016,
+      "total_cost": 0.27939616,
+      "group": [
+        "206a9b48ec904ebb93e7541131fbb835-sub-3fa5877a"
+      ],
+      "requests": 40,
+      "hitRate": 0.9711530776841866
+    },
+    {
+      "prompt_tokens": 4614806.0,
+      "completion_tokens": 48986.0,
+      "cache_hit_tokens": 4492544.0,
+      "cache_miss_tokens": 122262.0,
+      "input_cost": 0.122262,
+      "output_cost": 0.097972,
+      "cache_hit_cost": 0.08985088,
+      "total_cost": 0.31008488,
+      "group": [
+        "206a9b48ec904ebb93e7541131fbb835-sub-dcb8688a"
+      ],
+      "requests": 47,
+      "hitRate": 0.9735065786080715
+    },
+    {
+      "prompt_tokens": 1567121.0,
+      "completion_tokens": 34941.0,
+      "cache_hit_tokens": 1404928.0,
+      "cache_miss_tokens": 162193.0,
+      "input_cost": 0.162193,
+      "output_cost": 0.069882,
+      "cache_hit_cost": 0.02809856,
+      "total_cost": 0.26017356,
+      "group": [
+        "msg-03f3514abfc14c18bb760e7c50330899"
+      ],
+      "requests": 22,
+      "hitRate": 0.8965025674469298
+    },
+    {
+      "prompt_tokens": 1586818.0,
+      "completion_tokens": 28392.0,
+      "cache_hit_tokens": 1514112.0,
+      "cache_miss_tokens": 72706.0,
+      "input_cost": 0.07270599999999999,
+      "output_cost": 0.056784,
+      "cache_hit_cost": 0.03028224,
+      "total_cost": 0.15977224,
+      "group": [
+        "msg-03f3514abfc14c18bb760e7c50330899-sub-70038952"
+      ],
+      "requests": 25,
+      "hitRate": 0.9541812608629345
+    },
+    {
+      "prompt_tokens": 2573646.0,
+      "completion_tokens": 66233.0,
+      "cache_hit_tokens": 2503936.0,
+      "cache_miss_tokens": 69710.0,
+      "input_cost": 0.06971,
+      "output_cost": 0.132466,
+      "cache_hit_cost": 0.05007872,
+      "total_cost": 0.25225472,
+      "group": [
+        "msg-03f3514abfc14c18bb760e7c50330899-sub-98656c52"
+      ],
+      "requests": 35,
+      "hitRate": 0.972913912791425
+    },
+    {
+      "prompt_tokens": 3761108.0,
+      "completion_tokens": 52757.0,
+      "cache_hit_tokens": 3613696.0,
+      "cache_miss_tokens": 147412.0,
+      "input_cost": 0.14741200000000002,
+      "output_cost": 0.105514,
+      "cache_hit_cost": 0.07227392,
+      "total_cost": 0.32519992,
+      "group": [
+        "msg-03f3514abfc14c18bb760e7c50330899-sub-ea61909b"
+      ],
+      "requests": 46,
+      "hitRate": 0.9608062305044152
+    },
+    {
+      "prompt_tokens": 2987907.0,
+      "completion_tokens": 53275.0,
+      "cache_hit_tokens": 2900224.0,
+      "cache_miss_tokens": 87683.0,
+      "input_cost": 0.087683,
+      "output_cost": 0.10655,
+      "cache_hit_cost": 0.05800448,
+      "total_cost": 0.25223748,
+      "group": [
+        "msg-03f3514abfc14c18bb760e7c50330899-sub-94def1e8"
+      ],
+      "requests": 37,
+      "hitRate": 0.9706540397676366
+    },
+    {
+      "prompt_tokens": 9926.0,
+      "completion_tokens": 818.0,
+      "cache_hit_tokens": 0.0,
+      "cache_miss_tokens": 9926.0,
+      "input_cost": 0.009926,
+      "output_cost": 0.001636,
+      "cache_hit_cost": 0.0,
+      "total_cost": 0.011562,
+      "group": [
+        "subconscious:msg-03f3514abfc14c18bb760e7c50330899"
+      ],
+      "requests": 1,
+      "hitRate": 0.0
+    },
+    {
+      "prompt_tokens": 6133308.0,
+      "completion_tokens": 61851.0,
+      "cache_hit_tokens": 6001408.0,
+      "cache_miss_tokens": 131900.0,
+      "input_cost": 0.1319,
+      "output_cost": 0.12370199999999999,
+      "cache_hit_cost": 0.12002816,
+      "total_cost": 0.37563016,
+      "group": [
+        "206a9b48ec904ebb93e7541131fbb835-sub-f878a9a4"
+      ],
+      "requests": 60,
+      "hitRate": 0.9784944763902286
+    },
+    {
+      "prompt_tokens": 3388477.0,
+      "completion_tokens": 30525.0,
+      "cache_hit_tokens": 3269888.0,
+      "cache_miss_tokens": 118589.0,
+      "input_cost": 0.118589,
+      "output_cost": 0.06105,
+      "cache_hit_cost": 0.06539776,
+      "total_cost": 0.24503676,
+      "group": [
+        "206a9b48ec904ebb93e7541131fbb835-sub-9a0bbd24"
+      ],
+      "requests": 41,
+      "hitRate": 0.965002270931749
+    }
+  ],
+  "byOperation": [
+    {
+      "prompt_tokens": 39178599.0,
+      "completion_tokens": 654429.0,
+      "cache_hit_tokens": 36935360.0,
+      "cache_miss_tokens": 2243239.0,
+      "input_cost": 2.243239,
+      "output_cost": 1.604788,
+      "cache_hit_cost": 9.74109696,
+      "total_cost": 13.58912396,
+      "group": [
+        "chat"
+      ],
+      "requests": 533,
+      "hitRate": 0.9427432563374714
+    },
+    {
+      "prompt_tokens": 39049479.0,
+      "completion_tokens": 407281.0,
+      "cache_hit_tokens": 37759488.0,
+      "cache_miss_tokens": 1289991.0,
+      "input_cost": 1.289991,
+      "output_cost": 0.814562,
+      "cache_hit_cost": 0.75518976,
+      "total_cost": 2.85974276,
+      "group": [
+        "chat_stream"
+      ],
+      "requests": 365,
+      "hitRate": 0.9669652186652734
+    }
+  ],
+  "windowStart": "2026-09-11T00:00:00+08:00",
+  "windowEnd": "2026-09-12T06:24:00+08:00",
+  "gatewayFirst": "2026-09-11 11:08:29.5393982+00:00",
+  "gatewayLast": "2026-09-11 22:03:17.3608832+00:00",
+  "projectionCount": 898,
+  "sourceTypeCounts": {
+    "subconscious_memory": 60,
+    "agent_llm": 838
+  }
+}

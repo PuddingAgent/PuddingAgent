@@ -1,0 +1,743 @@
+{
+  "windowBjt": [
+    "2026-09-11T00:00:00+08:00",
+    "2026-09-12T06:24:00+08:00"
+  ],
+  "gateway": {
+    "prompt_tokens": 78228078.0,
+    "completion_tokens": 1061710.0,
+    "cache_hit_tokens": 74694848.0,
+    "cache_miss_tokens": 3533230.0,
+    "total_cost": 16.44886672,
+    "requests": 898,
+    "hitRate": 0.9548342476214231
+  },
+  "attributionLedger": {
+    "PromptTokens": 78228078.0,
+    "CompletionTokens": 1061710.0,
+    "CacheHitTokens": 74694848.0,
+    "CacheMissTokens": 3533230.0,
+    "TotalCost": 16.44886672
+  },
+  "buckets": {
+    "child": {
+      "prompt_tokens": 38589284.0,
+      "completion_tokens": 543918.0,
+      "cache_hit_tokens": 36932928.0,
+      "cache_miss_tokens": 1656356.0,
+      "total_cost": 12.78117032,
+      "requests": 473,
+      "hitRate": 0.9570773067466087
+    },
+    "memory-background": {
+      "prompt_tokens": 589315.0,
+      "completion_tokens": 110511.0,
+      "cache_hit_tokens": 2432.0,
+      "cache_miss_tokens": 586883.0,
+      "total_cost": 0.80795364,
+      "requests": 60,
+      "hitRate": 0.0041268252123227815
+    },
+    "parent-fallback-session": {
+      "prompt_tokens": 6128920.0,
+      "completion_tokens": 72008.0,
+      "cache_hit_tokens": 5760896.0,
+      "cache_miss_tokens": 368024.0,
+      "total_cost": 0.62725792,
+      "requests": 85,
+      "hitRate": 0.9399528791369441
+    },
+    "parent-main": {
+      "prompt_tokens": 32920559.0,
+      "completion_tokens": 335273.0,
+      "cache_hit_tokens": 31998592.0,
+      "cache_miss_tokens": 921967.0,
+      "total_cost": 2.23248484,
+      "requests": 280,
+      "hitRate": 0.9719941875835098
+    }
+  },
+  "prefixReasons": [
+    {
+      "reason": "(null)",
+      "requests": 867,
+      "input": 76492908,
+      "hit": 74250432,
+      "miss": 2242476
+    },
+    {
+      "reason": "session_rehydrated",
+      "requests": 6,
+      "input": 271034,
+      "hit": 154240,
+      "miss": 116794
+    },
+    {
+      "reason": "system_prompt_changed",
+      "requests": 4,
+      "input": 629836,
+      "hit": 22016,
+      "miss": 607820
+    },
+    {
+      "reason": "tool_spec_changed",
+      "requests": 21,
+      "input": 834300,
+      "hit": 268160,
+      "miss": 566140
+    }
+  ],
+  "runs": [
+    {
+      "runId": "run_20260911_140515_37edfa5a1710",
+      "subSessionId": "206a9b48ec904ebb93e7541131fbb835-sub-3573661c",
+      "parentSessionId": "206a9b48ec904ebb93e7541131fbb835",
+      "status": "completed",
+      "startedAt": "2026-09-11T14:05:15.5214449+00:00",
+      "completedAt": "2026-09-11T14:26:50.7130323+00:00",
+      "totalRounds": 32,
+      "maxRounds": 40,
+      "totalToolCalls": 31,
+      "totalDurationMs": 1294021,
+      "errorMessage": null,
+      "invocationMode": "async",
+      "usage": {
+        "prompt_tokens": 1958104.0,
+        "completion_tokens": 38087.0,
+        "cache_hit_tokens": 1814720.0,
+        "cache_miss_tokens": 143384.0,
+        "total_cost": 2.110452,
+        "requests": 32,
+        "hitRate": 0.9267740630732586
+      },
+      "canonicalToolCount": 31,
+      "canonicalFailed": 2
+    },
+    {
+      "runId": "run_20260911_140516_0385b03009a9",
+      "subSessionId": "206a9b48ec904ebb93e7541131fbb835-sub-e6f59aec",
+      "parentSessionId": "206a9b48ec904ebb93e7541131fbb835",
+      "status": "completed",
+      "startedAt": "2026-09-11T14:05:16.0360137+00:00",
+      "completedAt": "2026-09-11T14:28:27.7880308+00:00",
+      "totalRounds": 42,
+      "maxRounds": 40,
+      "totalToolCalls": 41,
+      "totalDurationMs": 1391067,
+      "errorMessage": null,
+      "invocationMode": "async",
+      "usage": {
+        "prompt_tokens": 3105370.0,
+        "completion_tokens": 45939.0,
+        "cache_hit_tokens": 2808320.0,
+        "cache_miss_tokens": 297050.0,
+        "total_cost": 3.289126,
+        "requests": 42,
+        "hitRate": 0.9043431217536074
+      },
+      "canonicalToolCount": 2,
+      "canonicalFailed": 0
+    },
+    {
+      "runId": "run_20260911_143156_2ad8ac0c0f01",
+      "subSessionId": "206a9b48ec904ebb93e7541131fbb835-sub-076593c8",
+      "parentSessionId": "206a9b48ec904ebb93e7541131fbb835",
+      "status": "completed",
+      "startedAt": "2026-09-11T14:31:56.0738358+00:00",
+      "completedAt": "2026-09-11T14:48:15.8539292+00:00",
+      "totalRounds": 45,
+      "maxRounds": 40,
+      "totalToolCalls": 66,
+      "totalDurationMs": 977636,
+      "errorMessage": null,
+      "invocationMode": "async",
+      "usage": {
+        "prompt_tokens": 3217295.0,
+        "completion_tokens": 24801.0,
+        "cache_hit_tokens": 3084736.0,
+        "cache_miss_tokens": 132559.0,
+        "total_cost": 3.316499,
+        "requests": 45,
+        "hitRate": 0.9587979964535425
+      },
+      "canonicalToolCount": 66,
+      "canonicalFailed": 3
+    },
+    {
+      "runId": "run_20260911_143638_2dbfe630e6f3",
+      "subSessionId": "msg-a85ec8a5ee6244ad98a0395d5e80c039-sub-2815dc57",
+      "parentSessionId": "msg-a85ec8a5ee6244ad98a0395d5e80c039",
+      "status": "completed",
+      "startedAt": "2026-09-11T14:36:38.0372367+00:00",
+      "completedAt": "2026-09-11T14:57:27.2128195+00:00",
+      "totalRounds": 23,
+      "maxRounds": 40,
+      "totalToolCalls": 51,
+      "totalDurationMs": 1248786,
+      "errorMessage": null,
+      "invocationMode": "async",
+      "usage": {
+        "prompt_tokens": 1708929.0,
+        "completion_tokens": 39138.0,
+        "cache_hit_tokens": 1478336.0,
+        "cache_miss_tokens": 230593.0,
+        "total_cost": 1.865481,
+        "requests": 23,
+        "hitRate": 0.8650657809657394
+      },
+      "canonicalToolCount": 51,
+      "canonicalFailed": 1
+    },
+    {
+      "runId": "run_20260911_161918_b4adc37c91fc",
+      "subSessionId": "206a9b48ec904ebb93e7541131fbb835-sub-3fa5877a",
+      "parentSessionId": "206a9b48ec904ebb93e7541131fbb835",
+      "status": "failed",
+      "startedAt": "2026-09-11T16:19:18.7712256+00:00",
+      "completedAt": "2026-09-11T16:25:44.0165692+00:00",
+      "totalRounds": 40,
+      "maxRounds": 40,
+      "totalToolCalls": 60,
+      "totalDurationMs": 384770,
+      "errorMessage": "shell: exit code 1",
+      "invocationMode": "async",
+      "usage": {
+        "prompt_tokens": 3553516.0,
+        "completion_tokens": 53934.0,
+        "cache_hit_tokens": 3451008.0,
+        "cache_miss_tokens": 102508.0,
+        "total_cost": 0.27939616,
+        "requests": 40,
+        "hitRate": 0.9711530776841866
+      },
+      "canonicalToolCount": 60,
+      "canonicalFailed": 2
+    },
+    {
+      "runId": "run_20260911_161935_e4b4e0bb2cd8",
+      "subSessionId": "206a9b48ec904ebb93e7541131fbb835-sub-dcb8688a",
+      "parentSessionId": "206a9b48ec904ebb93e7541131fbb835",
+      "status": "completed",
+      "startedAt": "2026-09-11T16:19:35.5513354+00:00",
+      "completedAt": "2026-09-11T16:26:58.3606908+00:00",
+      "totalRounds": 47,
+      "maxRounds": 40,
+      "totalToolCalls": 82,
+      "totalDurationMs": 442078,
+      "errorMessage": null,
+      "invocationMode": "async",
+      "usage": {
+        "prompt_tokens": 4614806.0,
+        "completion_tokens": 48986.0,
+        "cache_hit_tokens": 4492544.0,
+        "cache_miss_tokens": 122262.0,
+        "total_cost": 0.31008488,
+        "requests": 47,
+        "hitRate": 0.9735065786080715
+      },
+      "canonicalToolCount": 82,
+      "canonicalFailed": 0
+    },
+    {
+      "runId": "run_20260911_162840_3765c8126337",
+      "subSessionId": "msg-03f3514abfc14c18bb760e7c50330899-sub-70038952",
+      "parentSessionId": "msg-03f3514abfc14c18bb760e7c50330899",
+      "status": "completed",
+      "startedAt": "2026-09-11T16:28:40.7810066+00:00",
+      "completedAt": "2026-09-11T16:32:35.4066616+00:00",
+      "totalRounds": 25,
+      "maxRounds": 40,
+      "totalToolCalls": 41,
+      "totalDurationMs": 233664,
+      "errorMessage": null,
+      "invocationMode": "sync",
+      "usage": {
+        "prompt_tokens": 1586818.0,
+        "completion_tokens": 28392.0,
+        "cache_hit_tokens": 1514112.0,
+        "cache_miss_tokens": 72706.0,
+        "total_cost": 0.15977224,
+        "requests": 25,
+        "hitRate": 0.9541812608629345
+      },
+      "canonicalToolCount": 41,
+      "canonicalFailed": 0
+    },
+    {
+      "runId": "run_20260911_163300_0e52e1768287",
+      "subSessionId": "msg-03f3514abfc14c18bb760e7c50330899-sub-98656c52",
+      "parentSessionId": "msg-03f3514abfc14c18bb760e7c50330899",
+      "status": "completed",
+      "startedAt": "2026-09-11T16:33:00.9015473+00:00",
+      "completedAt": "2026-09-11T16:41:44.2807938+00:00",
+      "totalRounds": 35,
+      "maxRounds": 40,
+      "totalToolCalls": 34,
+      "totalDurationMs": 522935,
+      "errorMessage": null,
+      "invocationMode": "sync",
+      "usage": {
+        "prompt_tokens": 2573646.0,
+        "completion_tokens": 66233.0,
+        "cache_hit_tokens": 2503936.0,
+        "cache_miss_tokens": 69710.0,
+        "total_cost": 0.25225472,
+        "requests": 35,
+        "hitRate": 0.972913912791425
+      },
+      "canonicalToolCount": 34,
+      "canonicalFailed": 1
+    },
+    {
+      "runId": "run_20260911_164204_40c352632417",
+      "subSessionId": "msg-03f3514abfc14c18bb760e7c50330899-sub-ea61909b",
+      "parentSessionId": "msg-03f3514abfc14c18bb760e7c50330899",
+      "status": "completed",
+      "startedAt": "2026-09-11T16:42:04.2404449+00:00",
+      "completedAt": "2026-09-11T16:50:05.9722755+00:00",
+      "totalRounds": 46,
+      "maxRounds": 40,
+      "totalToolCalls": 66,
+      "totalDurationMs": 481460,
+      "errorMessage": null,
+      "invocationMode": "async",
+      "usage": {
+        "prompt_tokens": 3761108.0,
+        "completion_tokens": 52757.0,
+        "cache_hit_tokens": 3613696.0,
+        "cache_miss_tokens": 147412.0,
+        "total_cost": 0.32519992,
+        "requests": 46,
+        "hitRate": 0.9608062305044152
+      },
+      "canonicalToolCount": 66,
+      "canonicalFailed": 8
+    },
+    {
+      "runId": "run_20260911_165027_0804a4ff31a5",
+      "subSessionId": "msg-03f3514abfc14c18bb760e7c50330899-sub-94def1e8",
+      "parentSessionId": "msg-03f3514abfc14c18bb760e7c50330899",
+      "status": "failed",
+      "startedAt": "2026-09-11T16:50:27.9979316+00:00",
+      "completedAt": "2026-09-11T16:56:52.3208742+00:00",
+      "totalRounds": 37,
+      "maxRounds": 40,
+      "totalToolCalls": 53,
+      "totalDurationMs": 383639,
+      "errorMessage": "shell: exit code 1",
+      "invocationMode": "async",
+      "usage": {
+        "prompt_tokens": 2987907.0,
+        "completion_tokens": 53275.0,
+        "cache_hit_tokens": 2900224.0,
+        "cache_miss_tokens": 87683.0,
+        "total_cost": 0.25223748,
+        "requests": 37,
+        "hitRate": 0.9706540397676366
+      },
+      "canonicalToolCount": 53,
+      "canonicalFailed": 1
+    },
+    {
+      "runId": "run_20260911_215413_db2d8cdfd451",
+      "subSessionId": "206a9b48ec904ebb93e7541131fbb835-sub-f878a9a4",
+      "parentSessionId": "206a9b48ec904ebb93e7541131fbb835",
+      "status": "budget_exhausted",
+      "startedAt": "2026-09-11T21:54:13.4025934+00:00",
+      "completedAt": "2026-09-11T22:02:11.4753028+00:00",
+      "totalRounds": 60,
+      "maxRounds": 40,
+      "totalToolCalls": 86,
+      "totalDurationMs": 476088,
+      "errorMessage": "Sub-agent exhausted its cleanup grace (20 rounds); resume the preserved child session to continue with a fresh system budget.",
+      "invocationMode": "async",
+      "usage": {
+        "prompt_tokens": 6133308.0,
+        "completion_tokens": 61851.0,
+        "cache_hit_tokens": 6001408.0,
+        "cache_miss_tokens": 131900.0,
+        "total_cost": 0.37563016,
+        "requests": 60,
+        "hitRate": 0.9784944763902286
+      },
+      "canonicalToolCount": 86,
+      "canonicalFailed": 0
+    },
+    {
+      "runId": "run_20260911_215514_f61b62f12270",
+      "subSessionId": "206a9b48ec904ebb93e7541131fbb835-sub-9a0bbd24",
+      "parentSessionId": "206a9b48ec904ebb93e7541131fbb835",
+      "status": "completed",
+      "startedAt": "2026-09-11T21:55:14.7169515+00:00",
+      "completedAt": "2026-09-11T22:00:46.2724764+00:00",
+      "totalRounds": 41,
+      "maxRounds": 40,
+      "totalToolCalls": 86,
+      "totalDurationMs": 330923,
+      "errorMessage": null,
+      "invocationMode": "async",
+      "usage": {
+        "prompt_tokens": 3388477.0,
+        "completion_tokens": 30525.0,
+        "cache_hit_tokens": 3269888.0,
+        "cache_miss_tokens": 118589.0,
+        "total_cost": 0.24503676,
+        "requests": 41,
+        "hitRate": 0.965002270931749
+      },
+      "canonicalToolCount": 86,
+      "canonicalFailed": 0
+    }
+  ],
+  "heartbeats": [
+    {
+      "commandId": "b6f9f3fa48aa482c9998bf8997d63f11",
+      "turnId": "b43badb747b9480f8346db1885d4589e",
+      "start": "2026-09-11T19:27:49.123000+08:00",
+      "end": "2026-09-11T19:35:06.453000+08:00",
+      "queueMs": 431,
+      "durationSeconds": 437.33,
+      "tools": 82,
+      "failed": 4,
+      "usageTimeWindowEstimate": {
+        "prompt_tokens": 6979918.0,
+        "completion_tokens": 64955.0,
+        "cache_hit_tokens": 6833536.0,
+        "cache_miss_tokens": 146382.0,
+        "total_cost": 0.41296272,
+        "requests": 49,
+        "hitRate": 0.9790281203876607
+      }
+    },
+    {
+      "commandId": "4f220327bf1f4692a8e66d933c81a288",
+      "turnId": "cd7358e81c9347608d4f02ae2ce0dee2",
+      "start": "2026-09-11T20:34:57.319000+08:00",
+      "end": "2026-09-11T20:37:29.271000+08:00",
+      "queueMs": 1997,
+      "durationSeconds": 151.952,
+      "tools": 21,
+      "failed": 0,
+      "usageTimeWindowEstimate": {
+        "prompt_tokens": 3201438.0,
+        "completion_tokens": 19971.0,
+        "cache_hit_tokens": 2986240.0,
+        "cache_miss_tokens": 215198.0,
+        "total_cost": 0.3148648,
+        "requests": 14,
+        "hitRate": 0.9327808316137935
+      }
+    },
+    {
+      "commandId": "7bcff04cc25e489b82977687b96e6c88",
+      "turnId": "d44ee2a9c73341dcb8fc6a9ac389b51c",
+      "start": "2026-09-11T21:37:01.783000+08:00",
+      "end": "2026-09-11T21:40:39.514000+08:00",
+      "queueMs": 341,
+      "durationSeconds": 217.731,
+      "tools": 35,
+      "failed": 5,
+      "usageTimeWindowEstimate": {
+        "prompt_tokens": 1657044.0,
+        "completion_tokens": 30150.0,
+        "cache_hit_tokens": 1600000.0,
+        "cache_miss_tokens": 57044.0,
+        "total_cost": 0.149344,
+        "requests": 22,
+        "hitRate": 0.9655748429130427
+      }
+    },
+    {
+      "commandId": "64a65ef27d6d432e90b2b155ff0e2598",
+      "turnId": "0e5f190a49d1453e9bd71a0921d26b50",
+      "start": "2026-09-11T23:17:24.977000+08:00",
+      "end": "2026-09-11T23:18:58.665000+08:00",
+      "queueMs": 456,
+      "durationSeconds": 93.688,
+      "tools": 12,
+      "failed": 0,
+      "usageTimeWindowEstimate": {
+        "prompt_tokens": 1022361.0,
+        "completion_tokens": 7195.0,
+        "cache_hit_tokens": 1013376.0,
+        "cache_miss_tokens": 8985.0,
+        "total_cost": 0.04364252,
+        "requests": 8,
+        "hitRate": 0.9912115192187495
+      }
+    },
+    {
+      "commandId": "376b5064acf04c77959e5801ea0f13ad",
+      "turnId": "769753effa964b26af8693779465f10d",
+      "start": "2026-09-12T00:18:55.341000+08:00",
+      "end": "2026-09-12T00:20:11.306000+08:00",
+      "queueMs": 156,
+      "durationSeconds": 75.965,
+      "tools": 10,
+      "failed": 0,
+      "usageTimeWindowEstimate": {
+        "prompt_tokens": 860735.0,
+        "completion_tokens": 8276.0,
+        "cache_hit_tokens": 850688.0,
+        "cache_miss_tokens": 10047.0,
+        "total_cost": 0.04361276,
+        "requests": 6,
+        "hitRate": 0.9883274178463755
+      }
+    },
+    {
+      "commandId": "c846372307bd49c4a3abab03386b36d7",
+      "turnId": "2af7e3b50f9e438b9cc150c83af06f6a",
+      "start": "2026-09-12T01:49:46.600000+08:00",
+      "end": "2026-09-12T01:55:58.456000+08:00",
+      "queueMs": 1987,
+      "durationSeconds": 371.856,
+      "tools": 59,
+      "failed": 3,
+      "usageTimeWindowEstimate": {
+        "prompt_tokens": 4354670.0,
+        "completion_tokens": 38214.0,
+        "cache_hit_tokens": 4314240.0,
+        "cache_miss_tokens": 40430.0,
+        "total_cost": 0.20314279999999998,
+        "requests": 38,
+        "hitRate": 0.9907157143939724
+      }
+    },
+    {
+      "commandId": "b6ba84c6d0d1440eafd7983d41f991a8",
+      "turnId": "32f31ce5a6724eb8a27776de4fe7e20e",
+      "start": "2026-09-12T03:54:33.383000+08:00",
+      "end": "2026-09-12T03:55:16.976000+08:00",
+      "queueMs": 1517,
+      "durationSeconds": 43.593,
+      "tools": 4,
+      "failed": 0,
+      "usageTimeWindowEstimate": {
+        "prompt_tokens": 461985.0,
+        "completion_tokens": 4068.0,
+        "cache_hit_tokens": 459264.0,
+        "cache_miss_tokens": 2721.0,
+        "total_cost": 0.02004228,
+        "requests": 3,
+        "hitRate": 0.9941101983830644
+      }
+    },
+    {
+      "commandId": "158befa2c356420f8c7d1557a1afa784",
+      "turnId": "e013a25a928c4ce8b46edcca90246a87",
+      "start": "2026-09-12T05:53:33.668000+08:00",
+      "end": "2026-09-12T05:56:00.520000+08:00",
+      "queueMs": 178,
+      "durationSeconds": 146.852,
+      "tools": 21,
+      "failed": 0,
+      "usageTimeWindowEstimate": {
+        "prompt_tokens": 865735.0,
+        "completion_tokens": 11950.0,
+        "cache_hit_tokens": 833408.0,
+        "cache_miss_tokens": 32327.0,
+        "total_cost": 0.07289516,
+        "requests": 13,
+        "hitRate": 0.9626594743195088
+      }
+    }
+  ],
+  "notifications": [
+    {
+      "runId": "run_20260911_140515_37edfa5a1710",
+      "messageId": "67ac2e2118f0487db58c0fc7e4a85cba",
+      "subSession": "206a9b48ec904ebb93e7541131fbb835-sub-3573661c",
+      "status": "completed",
+      "created": "2026-09-11T22:26:51.136000+08:00",
+      "ackSeconds": [
+        328.325
+      ],
+      "deliveryAttempts": [
+        1
+      ]
+    },
+    {
+      "runId": "run_20260911_140516_0385b03009a9",
+      "messageId": "a85ec8a5ee6244ad98a0395d5e80c039",
+      "subSession": "206a9b48ec904ebb93e7541131fbb835-sub-e6f59aec",
+      "status": "completed",
+      "created": "2026-09-11T22:28:27.862000+08:00",
+      "ackSeconds": [
+        559.863
+      ],
+      "deliveryAttempts": [
+        2
+      ]
+    },
+    {
+      "runId": "run_20260911_143156_2ad8ac0c0f01",
+      "messageId": "411d8ad7b7b64fc99cc417bbaabb5e6d",
+      "subSession": "206a9b48ec904ebb93e7541131fbb835-sub-076593c8",
+      "status": "completed",
+      "created": "2026-09-11T22:48:15.913000+08:00",
+      "ackSeconds": [
+        46.528
+      ],
+      "deliveryAttempts": [
+        1
+      ]
+    },
+    {
+      "runId": "run_20260911_143638_2dbfe630e6f3",
+      "messageId": "5757dfbda1bd42139a6d0705cbf5e87e",
+      "subSession": "msg-a85ec8a5ee6244ad98a0395d5e80c039-sub-2815dc57",
+      "status": "completed",
+      "created": "2026-09-11T22:57:27.258000+08:00",
+      "ackSeconds": [
+        25.624
+      ],
+      "deliveryAttempts": [
+        1
+      ]
+    },
+    {
+      "runId": "run_20260911_161918_b4adc37c91fc",
+      "messageId": "bd246099af6e487996b55b40bfd30ff6",
+      "subSession": "206a9b48ec904ebb93e7541131fbb835-sub-3fa5877a",
+      "status": "failed",
+      "created": "2026-09-12T00:25:44.541000+08:00",
+      "ackSeconds": [
+        131.1
+      ],
+      "deliveryAttempts": [
+        1
+      ]
+    },
+    {
+      "runId": "run_20260911_161935_e4b4e0bb2cd8",
+      "messageId": "03f3514abfc14c18bb760e7c50330899",
+      "subSession": "206a9b48ec904ebb93e7541131fbb835-sub-dcb8688a",
+      "status": "completed",
+      "created": "2026-09-12T00:26:58.464000+08:00",
+      "ackSeconds": [
+        943.739
+      ],
+      "deliveryAttempts": [
+        1
+      ]
+    },
+    {
+      "runId": "run_20260911_164204_40c352632417",
+      "messageId": "e003bcd9a1a045fcbc376325c4bfc53b",
+      "subSession": "msg-03f3514abfc14c18bb760e7c50330899-sub-ea61909b",
+      "status": "completed",
+      "created": "2026-09-12T00:50:06.013000+08:00",
+      "ackSeconds": [
+        48.981
+      ],
+      "deliveryAttempts": [
+        1
+      ]
+    },
+    {
+      "runId": "run_20260911_165027_0804a4ff31a5",
+      "messageId": "74f79b608acb485788c06ee240d865c6",
+      "subSession": "msg-03f3514abfc14c18bb760e7c50330899-sub-94def1e8",
+      "status": "failed",
+      "created": "2026-09-12T00:56:52.426000+08:00",
+      "ackSeconds": [
+        27.029
+      ],
+      "deliveryAttempts": [
+        1
+      ]
+    },
+    {
+      "runId": "run_20260911_215514_f61b62f12270",
+      "messageId": "2776d78b1da9476a80ab57c7b5c09581",
+      "subSession": "206a9b48ec904ebb93e7541131fbb835-sub-9a0bbd24",
+      "status": "completed",
+      "created": "2026-09-12T06:00:47.175000+08:00",
+      "ackSeconds": [
+        72.811
+      ],
+      "deliveryAttempts": [
+        1
+      ]
+    },
+    {
+      "runId": "run_20260911_215413_db2d8cdfd451",
+      "messageId": "5f0559f7fe354524aec7d00a37995080",
+      "subSession": "206a9b48ec904ebb93e7541131fbb835-sub-f878a9a4",
+      "status": "budget_exhausted",
+      "created": "2026-09-12T06:02:11.514000+08:00",
+      "ackSeconds": [
+        35.723
+      ],
+      "deliveryAttempts": [
+        1
+      ]
+    }
+  ],
+  "llmLatency": [
+    {
+      "group": [
+        "chat",
+        "bigmodel",
+        "glm-5.3-flash"
+      ],
+      "n": 142,
+      "p50ms": 19183.5,
+      "p95ms": 89682,
+      "summs": 4528355
+    },
+    {
+      "group": [
+        "chat",
+        "deepseek",
+        "deepseek-flash"
+      ],
+      "n": 391,
+      "p50ms": 3364,
+      "p95ms": 18711,
+      "summs": 2312798
+    },
+    {
+      "group": [
+        "chat_stream",
+        "deepseek",
+        "deepseek-flash"
+      ],
+      "n": 365,
+      "p50ms": 4132,
+      "p95ms": 16310,
+      "summs": 2100016
+    }
+  ],
+  "tools": {
+    "canonicalMain": 338,
+    "canonicalMainFailed": 16,
+    "mainFailureNames": {
+      "shell": 5,
+      "apply_patch": 1,
+      "git_push": 1,
+      "send_message": 2,
+      "search_grep": 2,
+      "list_dir": 1,
+      "spawn_sub_agent": 1,
+      "file_patch": 1,
+      "terminal_start": 1,
+      "query_session_logs": 1
+    },
+    "canonicalChild": 658,
+    "canonicalChildFailed": 18,
+    "runTotalCalls": 697,
+    "childOutputChars": 2510375,
+    "canonicalPreviewTruncated": 303
+  },
+  "attributionCoverage": {
+    "PrefixHash": 838,
+    "PrefixChangeReason": 31,
+    "SubAgentId": 473,
+    "ParentSessionId": 473,
+    "MessageTokens": 838,
+    "ToolDefinitionTokens": 838,
+    "TurnRound": 838
+  }
+}

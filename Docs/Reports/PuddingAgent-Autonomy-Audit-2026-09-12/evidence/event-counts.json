@@ -1,0 +1,106 @@
+[
+  {
+    "type": "message.thinking_summary.appended",
+    "n": 10375
+  },
+  {
+    "type": "message.content.appended",
+    "n": 984
+  },
+  {
+    "type": "subagent.tool.started",
+    "n": 658
+  },
+  {
+    "type": "subagent.tool.completed",
+    "n": 640
+  },
+  {
+    "type": "subagent.round.started",
+    "n": 473
+  },
+  {
+    "type": "subagent.round.completed",
+    "n": 473
+  },
+  {
+    "type": "subagent.llm.started",
+    "n": 473
+  },
+  {
+    "type": "subagent.llm.completed",
+    "n": 473
+  },
+  {
+    "type": "tool.call.requested",
+    "n": 338
+  },
+  {
+    "type": "tool.call.completed",
+    "n": 338
+  },
+  {
+    "type": "usage.recorded",
+    "n": 216
+  },
+  {
+    "type": "subagent.budget.notice",
+    "n": 42
+  },
+  {
+    "type": "subagent.tool.failed",
+    "n": 18
+  },
+  {
+    "type": "subagent.run.started",
+    "n": 12
+  },
+  {
+    "type": "subagent.run.created",
+    "n": 12
+  },
+  {
+    "type": "subagent.run.context_assembled",
+    "n": 12
+  },
+  {
+    "type": "turn.started",
+    "n": 11
+  },
+  {
+    "type": "turn.completed",
+    "n": 11
+  },
+  {
+    "type": "turn.accepted",
+    "n": 11
+  },
+  {
+    "type": "context",
+    "n": 11
+  },
+  {
+    "type": "subagent.run.completed",
+    "n": 9
+  },
+  {
+    "type": "context.compaction.started",
+    "n": 9
+  },
+  {
+    "type": "context.compaction.requested",
+    "n": 9
+  },
+  {
+    "type": "context.compaction.completed",
+    "n": 9
+  },
+  {
+    "type": "subagent.run.failed",
+    "n": 2
+  },
+  {
+    "type": "subagent.run.budget_exhausted",
+    "n": 1
+  }
+]

@@ -1,0 +1,299 @@
+[
+  {
+    "component": "memory",
+    "operation": "subconscious_job.schedule_skip",
+    "status": "deferred",
+    "n": 19894,
+    "total_ms": null,
+    "first": "2026-09-11T10:50:18.7301333+00:00",
+    "last": "2026-09-11T22:23:58.7045707+00:00"
+  },
+  {
+    "component": "tool_runner",
+    "operation": "execute_tool",
+    "status": "succeeded",
+    "n": 679,
+    "total_ms": 1140201,
+    "first": "2026-09-11T14:05:43.3811786+00:00",
+    "last": "2026-09-11T22:02:11.3538134+00:00"
+  },
+  {
+    "component": "llm_gateway",
+    "operation": "chat",
+    "status": "started",
+    "n": 536,
+    "total_ms": null,
+    "first": "2026-09-11T10:55:26.6161624+00:00",
+    "last": "2026-09-11T22:03:17.3608832+00:00"
+  },
+  {
+    "component": "llm_gateway",
+    "operation": "chat",
+    "status": "succeeded",
+    "n": 533,
+    "total_ms": 6841153,
+    "first": "2026-09-11T11:08:29.5393982+00:00",
+    "last": "2026-09-11T22:03:17.3608832+00:00"
+  },
+  {
+    "component": "agent_execution",
+    "operation": "agent.history.inject_secrets",
+    "status": "succeeded",
+    "n": 365,
+    "total_ms": 525,
+    "first": "2026-09-11T11:27:56.7221003+00:00",
+    "last": "2026-09-11T22:02:15.8458370+00:00"
+  },
+  {
+    "component": "agent_execution",
+    "operation": "agent.llm.prepare",
+    "status": "succeeded",
+    "n": 365,
+    "total_ms": 41639,
+    "first": "2026-09-11T11:27:56.7220998+00:00",
+    "last": "2026-09-11T22:02:15.8458369+00:00"
+  },
+  {
+    "component": "agent_execution",
+    "operation": "agent.prefix_snapshot.build",
+    "status": "succeeded",
+    "n": 365,
+    "total_ms": 858,
+    "first": "2026-09-11T11:27:57.0011566+00:00",
+    "last": "2026-09-11T22:02:15.9104142+00:00"
+  },
+  {
+    "component": "llm_gateway",
+    "operation": "chat_stream",
+    "status": "started",
+    "n": 365,
+    "total_ms": null,
+    "first": "2026-09-11T11:27:57.0529728+00:00",
+    "last": "2026-09-11T22:02:15.9450306+00:00"
+  },
+  {
+    "component": "llm_gateway",
+    "operation": "chat_stream",
+    "status": "succeeded",
+    "n": 365,
+    "total_ms": 2100016,
+    "first": "2026-09-11T11:27:57.0529728+00:00",
+    "last": "2026-09-11T22:02:15.9450306+00:00"
+  },
+  {
+    "component": "event_dispatcher",
+    "operation": "event_bus.publish",
+    "status": "succeeded",
+    "n": 122,
+    "total_ms": null,
+    "first": "2026-09-11T11:27:48.2893339+00:00",
+    "last": "2026-09-11T22:02:47.1937820+00:00"
+  },
+  {
+    "component": "event_queue",
+    "operation": "enqueue",
+    "status": "succeeded",
+    "n": 116,
+    "total_ms": null,
+    "first": "2026-09-11T11:27:48.6296373+00:00",
+    "last": "2026-09-11T22:02:47.2914413+00:00"
+  },
+  {
+    "component": "agent_execution",
+    "operation": "agent.history.hydrate",
+    "status": "succeeded",
+    "n": 21,
+    "total_ms": 8278,
+    "first": "2026-09-11T11:27:49.8501555+00:00",
+    "last": "2026-09-11T22:02:11.6551079+00:00"
+  },
+  {
+    "component": "agent_execution",
+    "operation": "agent.hooks.loop_start",
+    "status": "succeeded",
+    "n": 21,
+    "total_ms": 21,
+    "first": "2026-09-11T11:27:56.6488949+00:00",
+    "last": "2026-09-11T22:02:11.9453270+00:00"
+  },
+  {
+    "component": "agent_execution",
+    "operation": "agent.llm_config.resolve",
+    "status": "succeeded",
+    "n": 21,
+    "total_ms": 1,
+    "first": "2026-09-11T11:27:56.5890016+00:00",
+    "last": "2026-09-11T22:02:11.9240161+00:00"
+  },
+  {
+    "component": "agent_execution",
+    "operation": "agent.tools.build",
+    "status": "succeeded",
+    "n": 21,
+    "total_ms": 27,
+    "first": "2026-09-11T11:27:56.6004697+00:00",
+    "last": "2026-09-11T22:02:11.9308437+00:00"
+  },
+  {
+    "component": "context_pipeline",
+    "operation": "agent.context.assemble",
+    "status": "succeeded",
+    "n": 21,
+    "total_ms": 8664,
+    "first": "2026-09-11T11:27:50.7821499+00:00",
+    "last": "2026-09-11T22:02:11.8229783+00:00"
+  },
+  {
+    "component": "tool_runner",
+    "operation": "execute_tool",
+    "status": "failed",
+    "n": 18,
+    "total_ms": 185303,
+    "first": "2026-09-11T14:15:26.7816038+00:00",
+    "last": "2026-09-11T16:54:44.1035382+00:00"
+  },
+  {
+    "component": "agent_execution",
+    "operation": "execute",
+    "status": "started",
+    "n": 12,
+    "total_ms": null,
+    "first": "2026-09-11T14:05:16.0552674+00:00",
+    "last": "2026-09-11T21:55:14.8270502+00:00"
+  },
+  {
+    "component": "context_pipeline",
+    "operation": "assemble_context",
+    "status": "succeeded",
+    "n": 12,
+    "total_ms": 3954,
+    "first": "2026-09-11T14:05:16.2095788+00:00",
+    "last": "2026-09-11T21:55:15.0069668+00:00"
+  },
+  {
+    "component": "memory",
+    "operation": "subconscious_job.complete",
+    "status": "succeeded",
+    "n": 12,
+    "total_ms": null,
+    "first": "2026-09-11T10:55:41.6540616+00:00",
+    "last": "2026-09-11T22:03:33.5902456+00:00"
+  },
+  {
+    "component": "memory",
+    "operation": "subconscious_job.enqueue",
+    "status": "succeeded",
+    "n": 12,
+    "total_ms": null,
+    "first": "2026-09-11T10:55:23.0527732+00:00",
+    "last": "2026-09-11T22:02:47.0557271+00:00"
+  },
+  {
+    "component": "memory",
+    "operation": "subconscious_job.lease",
+    "status": "started",
+    "n": 12,
+    "total_ms": null,
+    "first": "2026-09-11T10:55:23.3214232+00:00",
+    "last": "2026-09-11T22:03:17.3255807+00:00"
+  },
+  {
+    "component": "sub_agent",
+    "operation": "spawn",
+    "status": "started",
+    "n": 10,
+    "total_ms": null,
+    "first": "2026-09-11T14:05:15.7445120+00:00",
+    "last": "2026-09-11T21:55:14.7893541+00:00"
+  },
+  {
+    "component": "agent_execution",
+    "operation": "execute",
+    "status": "succeeded",
+    "n": 9,
+    "total_ms": 6922570,
+    "first": "2026-09-11T14:05:16.0552674+00:00",
+    "last": "2026-09-11T21:55:14.8270502+00:00"
+  },
+  {
+    "component": "sub_agent",
+    "operation": "complete",
+    "status": "succeeded",
+    "n": 7,
+    "total_ms": null,
+    "first": "2026-09-11T14:26:51.3915136+00:00",
+    "last": "2026-09-11T22:00:47.3915564+00:00"
+  },
+  {
+    "component": "hook_system",
+    "operation": "hook.publish",
+    "status": "succeeded",
+    "n": 6,
+    "total_ms": null,
+    "first": "2026-09-11T12:37:28.9921636+00:00",
+    "last": "2026-09-11T22:02:46.9638537+00:00"
+  },
+  {
+    "component": "llm_gateway",
+    "operation": "chat",
+    "status": "cancelled",
+    "n": 3,
+    "total_ms": 44886,
+    "first": "2026-09-11T10:55:26.6161624+00:00",
+    "last": "2026-09-11T17:02:50.5850679+00:00"
+  },
+  {
+    "component": "agent_execution",
+    "operation": "execute",
+    "status": "failed",
+    "n": 2,
+    "total_ms": 768409,
+    "first": "2026-09-11T16:19:18.8612651+00:00",
+    "last": "2026-09-11T16:50:28.0841795+00:00"
+  },
+  {
+    "component": "sub_agent",
+    "operation": "complete",
+    "status": "failed",
+    "n": 2,
+    "total_ms": null,
+    "first": "2026-09-11T16:25:44.6755724+00:00",
+    "last": "2026-09-11T16:56:52.4921370+00:00"
+  },
+  {
+    "component": "sub_agent",
+    "operation": "execute_sync",
+    "status": "started",
+    "n": 2,
+    "total_ms": null,
+    "first": "2026-09-11T16:28:40.9510475+00:00",
+    "last": "2026-09-11T16:33:00.9605198+00:00"
+  },
+  {
+    "component": "sub_agent",
+    "operation": "execute_sync",
+    "status": "succeeded",
+    "n": 2,
+    "total_ms": null,
+    "first": "2026-09-11T16:32:35.4274323+00:00",
+    "last": "2026-09-11T16:41:44.3030815+00:00"
+  },
+  {
+    "component": "agent_execution",
+    "operation": "execute",
+    "status": "deferred",
+    "n": 1,
+    "total_ms": 476088,
+    "first": "2026-09-11T21:54:14.3600763+00:00",
+    "last": "2026-09-11T21:54:14.3600763+00:00"
+  },
+  {
+    "component": "sub_agent",
+    "operation": "complete",
+    "status": "deferred",
+    "n": 1,
+    "total_ms": null,
+    "first": "2026-09-11T22:02:11.6216627+00:00",
+    "last": "2026-09-11T22:02:11.6216627+00:00"
+  }
+]

@@ -1,0 +1,263 @@
+{
+  "schema": "pudding-efficiency-audit-snapshot/v1",
+  "dataQualityWarning": "Historical prefilter mixed ISO local-time strings with UTC database timestamps, omitting the first eight hours of the intended window. Do not use these original usage aggregates for complete-seven-day acceptance; see the 2026-09-05 first-fix report for corrected gateway aggregates.",
+  "capturedAt": "2026-09-05T07:18:20+08:00",
+  "window": {
+    "start": "2026-08-29T00:00:00+08:00",
+    "endExclusive": "2026-09-05T00:00:00+08:00"
+  },
+  "repositoryHead": "731d5e063cdd888128cbcfc3ba53c32cfae2284d",
+  "runningCoreBuild": "01558a8582f6aa849d6ab25b57ca2e456ab96d5a",
+  "gatewayDaily": {
+    "('2026-08-29', 'bigmodel', 'glm-5.3-flash')": {
+      "n": 34,
+      "prompt_tokens": 2423608,
+      "completion_tokens": 42540,
+      "cache_hit_tokens": 1846656,
+      "cache_miss_tokens": 576952,
+      "total_cost": 2.593767999999999
+    },
+    "('2026-08-29', 'deepseek', 'deepseek-v4-flash')": {
+      "n": 107,
+      "prompt_tokens": 10924287,
+      "completion_tokens": 107556,
+      "cache_hit_tokens": 10403968,
+      "cache_miss_tokens": 520319,
+      "total_cost": 0.9435103599999999
+    },
+    "('2026-08-31', 'bigmodel', 'glm-5.3-flash')": {
+      "n": 346,
+      "prompt_tokens": 35941297,
+      "completion_tokens": 250842,
+      "cache_hit_tokens": 34209472,
+      "cache_miss_tokens": 1731825,
+      "total_cost": 36.944664999999986
+    },
+    "('2026-08-31', 'deepseek', 'deepseek-v4-flash')": {
+      "n": 85,
+      "prompt_tokens": 5968492,
+      "completion_tokens": 139249,
+      "cache_hit_tokens": 5274752,
+      "cache_miss_tokens": 693740,
+      "total_cost": 1.07773304
+    },
+    "('2026-09-01', 'bigmodel', 'glm-5.3-flash')": {
+      "n": 71,
+      "prompt_tokens": 5507702,
+      "completion_tokens": 57587,
+      "cache_hit_tokens": 5048448,
+      "cache_miss_tokens": 459254,
+      "total_cost": 5.7380499999999985
+    },
+    "('2026-09-01', 'deepseek', 'deepseek-v4-flash')": {
+      "n": 35,
+      "prompt_tokens": 1108289,
+      "completion_tokens": 67048,
+      "cache_hit_tokens": 911488,
+      "cache_miss_tokens": 196801,
+      "total_cost": 0.34912676
+    },
+    "('2026-09-02', 'bigmodel', 'glm-5.3')": {
+      "n": 60,
+      "prompt_tokens": 8606960,
+      "completion_tokens": 62633,
+      "cache_hit_tokens": 7997504,
+      "cache_miss_tokens": 609456,
+      "total_cost": 8.857492000000002
+    },
+    "('2026-09-02', 'bigmodel', 'glm-5.3-flash')": {
+      "n": 1053,
+      "prompt_tokens": 101517753,
+      "completion_tokens": 930639,
+      "cache_hit_tokens": 93770368,
+      "cache_miss_tokens": 7747385,
+      "total_cost": 105.24030899999998
+    },
+    "('2026-09-02', 'deepseek', 'deepseek-v4-flash')": {
+      "n": 280,
+      "prompt_tokens": 9863038,
+      "completion_tokens": 1021766,
+      "cache_hit_tokens": 8605056,
+      "cache_miss_tokens": 1257982,
+      "total_cost": 3.4736151199999985
+    },
+    "('2026-09-03', 'bigmodel', 'glm-5.3-flash')": {
+      "n": 398,
+      "prompt_tokens": 28296157,
+      "completion_tokens": 300990,
+      "cache_hit_tokens": 25799040,
+      "cache_miss_tokens": 2497117,
+      "total_cost": 29.500117000000007
+    },
+    "('2026-09-03', 'deepseek', 'deepseek-v4-flash')": {
+      "n": 253,
+      "prompt_tokens": 23824291,
+      "completion_tokens": 246267,
+      "cache_hit_tokens": 22279040,
+      "cache_miss_tokens": 1545251,
+      "total_cost": 2.4833658000000005
+    },
+    "('2026-09-04', 'bigmodel', 'glm-5.3-flash')": {
+      "n": 263,
+      "prompt_tokens": 22160312,
+      "completion_tokens": 169950,
+      "cache_hit_tokens": 20645568,
+      "cache_miss_tokens": 1514744,
+      "total_cost": 22.840111999999984
+    },
+    "('2026-09-04', 'deepseek', 'deepseek-v4-flash')": {
+      "n": 238,
+      "prompt_tokens": 17596029,
+      "completion_tokens": 372348,
+      "cache_hit_tokens": 15946368,
+      "cache_miss_tokens": 1649661,
+      "total_cost": 2.7132843600000007
+    }
+  },
+  "gatewayTotals": {
+    "bigmodel": {
+      "n": 2225,
+      "prompt_tokens": 204453789,
+      "completion_tokens": 1815181,
+      "cache_hit_tokens": 189317056,
+      "cache_miss_tokens": 15136733,
+      "total_cost": 211.71451299999978
+    },
+    "deepseek": {
+      "n": 998,
+      "prompt_tokens": 69284426,
+      "completion_tokens": 1954234,
+      "cache_hit_tokens": 63420672,
+      "cache_miss_tokens": 5863754,
+      "total_cost": 11.040635440000004
+    }
+  },
+  "gatewayLedgerChecks": {
+    "rows": 3223,
+    "source_duplicates": 0,
+    "input_ne_hit_plus_miss": 0
+  },
+  "attributionSources": {
+    "agent_llm": {
+      "n": 2886,
+      "PromptTokens": 260187380,
+      "CompletionTokens": 2255997,
+      "CacheMissTokens": 20172084,
+      "ToolCallCount": 3330
+    },
+    "subconscious_memory": {
+      "n": 59,
+      "PromptTokens": 458531,
+      "CompletionTokens": 324516,
+      "CacheMissTokens": 332963,
+      "ToolCallCount": 0
+    }
+  },
+  "deepseekAttributionPrefix": {
+    "(unknown)": {
+      "n": 742,
+      "PromptTokens": 66678593,
+      "CacheMissTokens": 3794369,
+      "ToolCallCount": 852
+    },
+    "session_rehydrated": {
+      "n": 10,
+      "PromptTokens": 563991,
+      "CacheMissTokens": 472343,
+      "ToolCallCount": 15
+    },
+    "system_prompt_changed": {
+      "n": 2,
+      "PromptTokens": 292455,
+      "CacheMissTokens": 292455,
+      "ToolCallCount": 3
+    },
+    "tool_spec_changed": {
+      "n": 23,
+      "PromptTokens": 1062425,
+      "CacheMissTokens": 724249,
+      "ToolCallCount": 40
+    }
+  },
+  "subagentRecordedStates": {
+    "budget_exhausted": {
+      "n": 20,
+      "total_rounds": 914,
+      "total_tool_calls": 1244,
+      "total_duration_ms": 19704251
+    },
+    "completed": {
+      "n": 20,
+      "total_rounds": 805,
+      "total_tool_calls": 957,
+      "total_duration_ms": 21681608
+    },
+    "failed": {
+      "n": 6,
+      "total_rounds": 77,
+      "total_tool_calls": 94,
+      "total_duration_ms": 2940905
+    },
+    "interrupted": {
+      "n": 1,
+      "total_rounds": 10,
+      "total_tool_calls": 13,
+      "total_duration_ms": 296056
+    }
+  },
+  "subagentRecordedDistribution": {
+    "n": 47,
+    "rounds_avg": 38.42553191489362,
+    "rounds_p95": 60,
+    "tools_avg": 49.1063829787234,
+    "over40": 24,
+    "over80": 1
+  },
+  "board": {
+    "total": 105,
+    "status": {
+      "Backlog": 47,
+      "Ready": 2,
+      "NeedsReview": 2,
+      "InProgress": 2,
+      "Blocked": 11,
+      "Completed": 36,
+      "Cancelled": 3,
+      "Archived": 2
+    },
+    "completedInWindow": 2,
+    "autoEnabled": 8,
+    "backlogAutoEnabled": 0,
+    "autoTaskGoalAttempts": 10,
+    "autoTaskGoalFailed": 10,
+    "readyOptedIn": 1
+  },
+  "scheduler": {
+    "mode": "authoritative",
+    "idleAgents": 2,
+    "busyAgents": 1,
+    "defaultAgentReason": "active_task_owned",
+    "blockingTaskId": "3bd2a4b0ef5f4bff8f175fb7655927ad",
+    "blockingRunId": "f32f8a17c6e94cc38a83e916e36037eb",
+    "blockingRunStatus": "succeeded",
+    "preferredBusyDecisions": 731
+  },
+  "resourceSample": {
+    "seconds": 15.019926,
+    "logicalCPUs": 8,
+    "coreCPUPercent": 2.89,
+    "coreWorkingSetMiB": 1522,
+    "corePrivateMiB": 1408.4,
+    "desktopCPUPercent": 0.81,
+    "desktopWorkingSetMiB": 207.3,
+    "desktopPrivateMiB": 306
+  },
+  "limitations": [
+    "Gateway data is the local provider-response ledger, not an independently reconciled supplier bill.",
+    "2026-08-30 and deepseek-v4-pro have no recorded requests in this window; no 100-percent imputation.",
+    "Task Completed is board state, not independently accepted product completion.",
+    "Subagent rows are run records, not unique tasks; some resume/projection records may differ.",
+    "Resource sample is short and not a controlled idle or leak test.",
+    "Night 00:00-08:00 is a comparison interval, not the complete configured off-peak schedule."
+  ]
+}
