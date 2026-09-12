@@ -456,6 +456,15 @@ public sealed class FileSubAgentRunStoreTests
                 await File.ReadAllTextAsync(
                     Path.Combine(handle.ArchivePath, "conversation-projection.cursor")));
         }
+        // A settled sweep must not open payload files at all, even while another
+        // process holds them exclusively (metadata remains readable on Windows).
+        using (new FileStream(Path.Combine(handles[0].ArchivePath, "run.json"), FileMode.Open, FileAccess.Read, FileShare.None))
+        using (new FileStream(Path.Combine(handles[0].ArchivePath, "events.jsonl"), FileMode.Open, FileAccess.Read, FileShare.None))
+            Assert.AreEqual(0, await store.ReplayPendingConversationEventsAsync(maxRuns: 3));
+
+        // Durable cursor edits invalidate the fast path; it must not hide recovery work.
+        await File.WriteAllTextAsync(Path.Combine(handles[0].ArchivePath, "conversation-projection.cursor"), "0");
+        Assert.AreEqual(1, await store.ReplayPendingConversationEventsAsync(maxRuns: 3));
     }
 
     [TestMethod]
