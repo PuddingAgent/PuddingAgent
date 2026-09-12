@@ -6,9 +6,14 @@
  */
 import React from 'react';
 import classNames from 'classnames';
-import styles from './styles';
+import useStyles from './styles';
 
-export type PuddingStatusTone = 'success' | 'warning' | 'danger' | 'neutral' | 'accent';
+export type PuddingStatusTone =
+  | 'success'
+  | 'warning'
+  | 'danger'
+  | 'neutral'
+  | 'accent';
 
 export interface PuddingStatusBadgeProps {
   tone: PuddingStatusTone;
@@ -20,11 +25,14 @@ export const PuddingStatusBadge: React.FC<PuddingStatusBadgeProps> = ({
   tone,
   children,
   className,
-}) => (
-  <span className={classNames(styles.badge, styles[tone], className)}>
-    <span className={styles.dot} aria-hidden="true" />
-    {children}
-  </span>
-);
+}) => {
+  const { styles } = useStyles();
+  return (
+    <span className={classNames(styles.badge, styles[tone], className)}>
+      <span className={styles.dot} aria-hidden="true" />
+      {children}
+    </span>
+  );
+};
 
 export default PuddingStatusBadge;

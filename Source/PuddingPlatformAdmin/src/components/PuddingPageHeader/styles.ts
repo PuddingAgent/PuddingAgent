@@ -1,3 +1,5 @@
+import { createStyles } from 'antd-style';
+
 /**
  * PuddingPageHeader styles
  *
@@ -5,7 +7,7 @@
  * Token 引用自 --pudding-admin-* CSS 变量。
  */
 
-export default {
+export default createStyles(() => ({
   header: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -47,4 +49,4 @@ export default {
     alignItems: 'center',
     flexShrink: 0,
   },
-};
+}));

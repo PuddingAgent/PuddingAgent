@@ -1,8 +1,10 @@
+import { createStyles } from 'antd-style';
+
 /**
  * PuddingEntityCard styles
  */
 
-export default {
+export default createStyles(() => ({
   card: {
     borderRadius: 'var(--pudding-admin-radius)',
     background: 'var(--pudding-admin-surface)',
@@ -64,4 +66,4 @@ export default {
     borderTop: '1px solid var(--pudding-admin-border)',
     paddingTop: 12,
   },
-};
+}));

@@ -1,8 +1,10 @@
+import { createStyles } from 'antd-style';
+
 /**
  * PuddingToolbar styles
  */
 
-export default {
+export default createStyles(() => ({
   toolbar: {
     display: 'flex',
     alignItems: 'center',
@@ -27,4 +29,4 @@ export default {
     alignItems: 'center',
     marginLeft: 'auto',
   },
-};
+}));

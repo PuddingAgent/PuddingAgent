@@ -7,7 +7,7 @@
  */
 import React from 'react';
 import classNames from 'classnames';
-import styles from './styles';
+import useStyles from './styles';
 
 export interface PuddingToolbarProps {
   leading?: React.ReactNode;
@@ -21,12 +21,15 @@ export const PuddingToolbar: React.FC<PuddingToolbarProps> = ({
   filters,
   actions,
   className,
-}) => (
-  <div className={classNames(styles.toolbar, className)}>
-    <div className={styles.leading}>{leading}</div>
-    <div className={styles.filters}>{filters}</div>
-    <div className={styles.actions}>{actions}</div>
-  </div>
-);
+}) => {
+  const { styles } = useStyles();
+  return (
+    <div className={classNames(styles.toolbar, className)}>
+      <div className={styles.leading}>{leading}</div>
+      <div className={styles.filters}>{filters}</div>
+      <div className={styles.actions}>{actions}</div>
+    </div>
+  );
+};
 
 export default PuddingToolbar;

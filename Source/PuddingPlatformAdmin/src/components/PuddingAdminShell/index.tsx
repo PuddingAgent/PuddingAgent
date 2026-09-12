@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { Layout } from 'antd';
-import styles from './styles';
+import useStyles from './styles';
 
 const { Content } = Layout;
 
@@ -14,7 +14,10 @@ export interface PuddingAdminShellProps {
   children: React.ReactNode;
 }
 
-export const PuddingAdminShell: React.FC<PuddingAdminShellProps> = ({ children }) => {
+export const PuddingAdminShell: React.FC<PuddingAdminShellProps> = ({
+  children,
+}) => {
+  const { styles } = useStyles();
   return (
     <div className={styles.shell}>
       <Content className={styles.content}>{children}</Content>

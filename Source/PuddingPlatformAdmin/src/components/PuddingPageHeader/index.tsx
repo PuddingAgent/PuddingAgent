@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import classNames from 'classnames';
-import styles from './styles';
+import useStyles from './styles';
 
 export interface PuddingPageHeaderProps {
   title: React.ReactNode;
@@ -24,16 +24,19 @@ export const PuddingPageHeader: React.FC<PuddingPageHeaderProps> = ({
   actions,
   meta,
   className,
-}) => (
-  <section className={classNames(styles.header, className)}>
-    <div className={styles.copy}>
-      {eyebrow && <div className={styles.eyebrow}>{eyebrow}</div>}
-      <h1 className={styles.title}>{title}</h1>
-      {description && <p className={styles.description}>{description}</p>}
-      {meta && <div className={styles.meta}>{meta}</div>}
-    </div>
-    {actions && <div className={styles.actions}>{actions}</div>}
-  </section>
-);
+}) => {
+  const { styles } = useStyles();
+  return (
+    <section className={classNames(styles.header, className)}>
+      <div className={styles.copy}>
+        {eyebrow && <div className={styles.eyebrow}>{eyebrow}</div>}
+        <h1 className={styles.title}>{title}</h1>
+        {description && <p className={styles.description}>{description}</p>}
+        {meta && <div className={styles.meta}>{meta}</div>}
+      </div>
+      {actions && <div className={styles.actions}>{actions}</div>}
+    </section>
+  );
+};
 
 export default PuddingPageHeader;

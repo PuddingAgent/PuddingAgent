@@ -8,7 +8,7 @@
 import React from 'react';
 import { Card } from 'antd';
 import classNames from 'classnames';
-import styles from './styles';
+import useStyles from './styles';
 
 export interface PuddingEntityCardProps {
   title: React.ReactNode;
@@ -28,32 +28,35 @@ export const PuddingEntityCard: React.FC<PuddingEntityCardProps> = ({
   actions,
   loading,
   className,
-}) => (
-  <Card
-    className={classNames(styles.card, className)}
-    loading={loading}
-    bordered={false}
-  >
-    <div className={styles.header}>
-      <div className={styles.titleRow}>
-        <span className={styles.title}>{title}</span>
-        {status && <span className={styles.status}>{status}</span>}
+}) => {
+  const { styles } = useStyles();
+  return (
+    <Card
+      className={classNames(styles.card, className)}
+      loading={loading}
+      bordered={false}
+    >
+      <div className={styles.header}>
+        <div className={styles.titleRow}>
+          <span className={styles.title}>{title}</span>
+          {status && <span className={styles.status}>{status}</span>}
+        </div>
+        {description && <p className={styles.description}>{description}</p>}
       </div>
-      {description && <p className={styles.description}>{description}</p>}
-    </div>
-    {meta && meta.length > 0 && (
-      <div className={styles.metaGrid}>
-        {meta.map((item, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: meta items are static label/value pairs, no stable id
-          <div key={index} className={styles.metaItem}>
-            <span className={styles.metaLabel}>{item.label}</span>
-            <span className={styles.metaValue}>{item.value}</span>
-          </div>
-        ))}
-      </div>
-    )}
-    {actions && <div className={styles.actions}>{actions}</div>}
-  </Card>
-);
+      {meta && meta.length > 0 && (
+        <div className={styles.metaGrid}>
+          {meta.map((item, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: meta items are static label/value pairs, no stable id
+            <div key={index} className={styles.metaItem}>
+              <span className={styles.metaLabel}>{item.label}</span>
+              <span className={styles.metaValue}>{item.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {actions && <div className={styles.actions}>{actions}</div>}
+    </Card>
+  );
+};
 
 export default PuddingEntityCard;

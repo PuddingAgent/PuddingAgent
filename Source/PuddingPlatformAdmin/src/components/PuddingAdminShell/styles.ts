@@ -1,8 +1,10 @@
+import { createStyles } from 'antd-style';
+
 /**
  * PuddingAdminShell styles
  */
 
-export default {
+export default createStyles(() => ({
   shell: {
     display: 'flex',
     flexDirection: 'column' as const,
@@ -12,4 +14,4 @@ export default {
     flex: 1,
     padding: 0,
   },
-};
+}));
