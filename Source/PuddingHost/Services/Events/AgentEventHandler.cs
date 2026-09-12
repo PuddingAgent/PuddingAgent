@@ -174,60 +174,6 @@ public class AgentEventHandler : IEventHandler
 
     // ── 私有辅助 ──────────────────────────────────────────────────────
 
-    private RuntimeDispatchRequest? BuildMessageDeliverRequest(InternalEvent evt)
-    {
-        var payload = TryReadMessageDeliverPayload(evt);
-        if (payload is null)
-        {
-            _logger.LogWarning(
-                "[AgentEventHandler] message.deliver missing payload event={EventId}",
-                evt.EventId);
-            return null;
-        }
-
-        if (!string.Equals(payload.Target.Kind, MessageEndpointKinds.Agent, StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.LogDebug(
-                "[AgentEventHandler] Ignoring non-agent message delivery event={EventId} target={Kind}:{Id}",
-                evt.EventId,
-                payload.Target.Kind,
-                payload.Target.Id);
-            return null;
-        }
-
-        return new RuntimeDispatchRequest
-        {
-            SessionId = evt.SessionId ?? $"msg-{payload.MessageId}",
-            WorkspaceId = payload.WorkspaceId,
-            AgentTemplateId = evt.AgentId ?? payload.Target.Id,
-            MessageText = payload.Content,
-            MessageId = payload.MessageId,
-            TaskPlanId = GetMetadataValue(payload.Metadata, "task_plan_id", "taskPlanId", "TaskPlanId"),
-            TaskNodeId = GetMetadataValue(payload.Metadata, "task_node_id", "taskNodeId", "TaskNodeId"),
-            ParentTaskNodeId = GetMetadataValue(payload.Metadata, "parent_task_node_id", "parentTaskNodeId", "ParentTaskNodeId"),
-            DelegationDepth = GetMetadataInt(payload.Metadata, "delegation_depth", "delegationDepth", "DelegationDepth"),
-            MaxDelegationDepth = GetMetadataInt(payload.Metadata, "max_delegation_depth", "maxDelegationDepth", "MaxDelegationDepth"),
-            RoleInPlan = GetMetadataValue(payload.Metadata, "role_in_plan", "roleInPlan", "RoleInPlan"),
-            AllowSubDelegation = GetMetadataBool(payload.Metadata, "allow_sub_delegation", "allowSubDelegation", "AllowSubDelegation"),
-            AllowAgentCreation = GetMetadataBool(payload.Metadata, "allow_agent_creation", "allowAgentCreation", "AllowAgentCreation"),
-            AssignedObjective = GetMetadataValue(payload.Metadata, "assigned_objective", "assignedObjective", "AssignedObjective"),
-            ExpectedOutputContract = GetMetadataValue(payload.Metadata, "expected_output_contract", "expectedOutputContract", "ExpectedOutputContract"),
-        };
-    }
-
-    private static MessageDeliverEventPayload? TryReadMessageDeliverPayload(InternalEvent evt)
-    {
-        if (evt.Payload is MessageDeliverEventPayload payload)
-            return payload;
-
-        if (evt.Payload is JsonElement json && json.ValueKind == JsonValueKind.Object)
-            return JsonSerializer.Deserialize<MessageDeliverEventPayload>(
-                json.GetRawText(),
-                MessageJsonOptions);
-
-        return null;
-    }
-
     private static RuntimeDispatchRequest? BuildRequest(InternalEvent evt)
     {
         var sessionId = evt.SessionId ?? $"evt-{evt.EventId[..Math.Min(evt.EventId.Length, 12)]}";

@@ -37,6 +37,12 @@ public sealed record WorkspaceAgentInvocation
     public required string MessageId { get; init; }
     public required string MessageText { get; init; }
     public string? EventSessionId { get; init; }
+    /// <summary>
+    /// 续行调用的显式父会话身份（A01-slice-1）。
+    /// 调用方已知父会话（如 sub-agent 结果回流）时优先使用；
+    /// 未提供时回退到 delivery metadata 中的持久父身份。
+    /// </summary>
+    public string? ParentConversationId { get; init; }
     public string? UserId { get; init; }
     public PermissionSnapshot? PermissionSnapshot { get; init; }
     public MessageAddress? From { get; init; }
@@ -62,9 +68,19 @@ public sealed class AgentInvocationDispatchFactory(
         var profile = await profileResolver.ResolveAsync(invocation.WorkspaceId, invocation.AgentId, ct);
         var usesStreamDispatch = ShouldUseStreamDispatch(invocation.Metadata);
 
-        var sessionId = usesStreamDispatch
-            ? invocation.EventSessionId ?? $"msg-{invocation.MessageId}"
-            : profile.MainSessionId;
+        // 不变式 I1：sub-agent 续行必须接续父会话身份，绝不伪造 msg-* 会话（A01-slice-1）。
+        string? sessionId;
+        string sessionSource;
+        if (usesStreamDispatch)
+        {
+            (sessionId, sessionSource) = ResolveSubAgentContinuationSession(invocation, profile);
+        }
+        else
+        {
+            sessionId = profile.MainSessionId;
+            sessionSource = SessionSourceMainSession;
+        }
+
         if (string.IsNullOrWhiteSpace(sessionId))
             throw new InvalidOperationException($"Agent '{invocation.AgentId}' does not have a bound main session.");
 
@@ -73,10 +89,11 @@ public sealed class AgentInvocationDispatchFactory(
             : profile.SourceTemplateId!;
 
         logger.LogInformation(
-            "[AgentInvocation] resolved workspace-agent dispatch workspace={WorkspaceId} agent={AgentId} session={SessionId} template={TemplateId} stream={Stream} hasLlmConfig={HasLlmConfig} provider={ProviderId} model={ModelId} toolCount={ToolCount} skillCount={SkillCount}",
+            "[AgentInvocation] resolved workspace-agent dispatch workspace={WorkspaceId} agent={AgentId} session={SessionId} sessionSource={SessionSource} template={TemplateId} stream={Stream} hasLlmConfig={HasLlmConfig} provider={ProviderId} model={ModelId} toolCount={ToolCount} skillCount={SkillCount}",
             invocation.WorkspaceId,
             invocation.AgentId,
             sessionId,
+            sessionSource,
             templateId,
             usesStreamDispatch,
             profile.LlmConfig is not null,
@@ -194,6 +211,102 @@ public sealed class AgentInvocationDispatchFactory(
 
         return string.Equals(source, "subagent", StringComparison.OrdinalIgnoreCase)
             || string.Equals(intent, "subagent_result", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private const string SessionSourceParentParam = "parent_param";
+    private const string SessionSourceParentIdentity = "parent_identity";
+    private const string SessionSourceEventSession = "event_session";
+    private const string SessionSourceMainSession = "main_session";
+
+    /// <summary>
+    /// 解析 sub-agent 续行的父会话身份（A01-slice-1 不变式 I1）。
+    /// </summary>
+    /// <remarks>
+    /// 严格优先级：显式 ParentConversationId → 持久化父身份 metadata →
+    /// 事件 session → 已绑定主会话；全空则抛异常（绝不新建 msg-* 会话）。
+    /// </remarks>
+    private (string? SessionId, string Source) ResolveSubAgentContinuationSession(
+        WorkspaceAgentInvocation invocation,
+        AgentRuntimeProfile profile)
+    {
+        if (!string.IsNullOrWhiteSpace(invocation.ParentConversationId))
+        {
+            var parentParam = invocation.ParentConversationId!;
+            WarnIfEventSessionDiffers(invocation, parentParam, SessionSourceParentParam);
+            return (parentParam, SessionSourceParentParam);
+        }
+
+        var parentIdentity = GetMetadataValueCaseInsensitive(
+            invocation.Metadata,
+            "parent_conversation_id",
+            "parent_session_id",
+            "parent_session",
+            "conversation_id");
+        if (!string.IsNullOrWhiteSpace(parentIdentity))
+        {
+            WarnIfEventSessionDiffers(invocation, parentIdentity!, SessionSourceParentIdentity);
+            return (parentIdentity, SessionSourceParentIdentity);
+        }
+
+        if (!string.IsNullOrWhiteSpace(invocation.EventSessionId))
+            return (invocation.EventSessionId, SessionSourceEventSession);
+
+        if (!string.IsNullOrWhiteSpace(profile.MainSessionId))
+        {
+            logger.LogWarning(
+                "[AgentInvocation] sub-agent continuation has no persisted parent identity; falling back to bound main session workspace={WorkspaceId} agent={AgentId} message={MessageId} session={SessionId}. The delivery metadata likely lost parent_session/conversation_id.",
+                invocation.WorkspaceId,
+                invocation.AgentId,
+                invocation.MessageId,
+                profile.MainSessionId);
+            return (profile.MainSessionId, SessionSourceMainSession);
+        }
+
+        return (null, SessionSourceMainSession);
+    }
+
+    /// <summary>
+    /// 事件携带的 session 与持久父身份不一致时告警；父身份优先，事件 session 仅作回退。
+    /// </summary>
+    private void WarnIfEventSessionDiffers(
+        WorkspaceAgentInvocation invocation,
+        string parentSessionId,
+        string source)
+    {
+        if (string.IsNullOrWhiteSpace(invocation.EventSessionId))
+            return;
+
+        if (string.Equals(invocation.EventSessionId, parentSessionId, StringComparison.Ordinal))
+            return;
+
+        logger.LogWarning(
+            "[AgentInvocation] event session differs from persisted parent identity; parent identity wins workspace={WorkspaceId} agent={AgentId} message={MessageId} sessionSource={SessionSource} parentSession={ParentSessionId} eventSession={EventSessionId}",
+            invocation.WorkspaceId,
+            invocation.AgentId,
+            invocation.MessageId,
+            source,
+            parentSessionId,
+            invocation.EventSessionId);
+    }
+
+    private static string? GetMetadataValueCaseInsensitive(
+        IReadOnlyDictionary<string, string>? metadata,
+        params string[] keys)
+    {
+        if (metadata is null)
+            return null;
+
+        foreach (var key in keys)
+        {
+            foreach (var pair in metadata)
+            {
+                if (string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(pair.Value))
+                    return pair.Value;
+            }
+        }
+
+        return null;
     }
 
     private static string ResolveMessageType(IReadOnlyDictionary<string, string>? metadata)
