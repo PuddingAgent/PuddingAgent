@@ -1,5 +1,9 @@
 # PuddingAgent CodeMAP
 
+## 2026-09-13 自动压缩频次诊断
+
+`Docs/Reports/上下文频繁压缩诊断-2026-09-13.md`：默认助手 9/12 至 9/13 07:41 共 40 次自动压缩流程、39 次写入；raw cap 实际使用整请求估算，Provider 快照采用 max 并混淆实报标签。入口为 `ContextCompactionService.GetHealthAsync`、`ContextUsageSnapshotStore.RecordProviderUsage`、`ContextWindowManager.TryAutoCompactAsync`、`CompactionCoordinator`、Web `useCompaction`；本轮只有诊断/方案，未实施产品变更。
+
 ## 2026-09-12 VS Code Desktop 启动入口
 
 `.vscode/launch.json`：Desktop普通/`--background`两种coreclr配置、DesktopHome与仓库环境选项；`.vscode/tasks.json`的`pudding-build-desktop`构建真实Desktop项目并使用标准`bin/Debug/net10.0-windows10.0.17763.0/`输出。DataRoot/Core路径/源码调试模式仍属于desktop.json，不是Desktop CLI参数；说明见 `Docs/07架构/92ADR-078Desktop调试模式源码启动与反向代理ADR.md` §4。

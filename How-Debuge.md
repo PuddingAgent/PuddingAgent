@@ -4,6 +4,13 @@
 
 ## 1. 基本原则
 
+### 感觉上下文压缩频繁（2026-09-13）
+
+- 先按准确 sessionId 和当地时间窗口关联 `logs/diagnostics/compaction-log.jsonl` 与 `conversation_events` 的 compactionId；started/completed 行数、count>0 写入数、skipped 数分别统计。JSONL 也会记录摘要膨胀被拒绝的尝试，不能把每行都算成功；顶部 toast 和卡片可能是同一 started 事件。
+- 对齐 health 指标中的 used_tokens、usage_source、provider_prompt_tokens、effective_window_tokens 和 TokenUsageEvents 的 MessageTokens/ToolDefinitionTokens；`provider_usage` 标签不保证 UsedTokens 就是模型实报。目前 Store 取本地与 Provider TotalTokens 的 max，raw cap 判断又使用这一整请求值。
+- 压缩 before/after 通常是 DB 活动消息正文估算，不等于整请求/Provider 输入；skipped 日志还可能记录摘要候选输入/输出。回收效果要看下一次实际请求，不能将不同口径相减后宣称节省金额。按 compactionGeneration/当前轮区分旧快照、重组后的请求以及新增长的工具轨迹。
+- 复现数据、关键 sequence、收益准入与验收建议见 `Docs/Reports/上下文频繁压缩诊断-2026-09-13.md`。该检查未调整配置或重启；采样期间外部发生重启时固定截止点，避免混用不同构建的数据。
+
 ### MSB3541：Files 路径含引号或重复仓库根目录（2026-09-12）
 
 - 若错误来自 `Microsoft.Common.CurrentVersion.targets` 的 `FindUnderPath`，先检查受影响项目 `obj/<Configuration>/<TFM>/*.csproj.FileListAbsolute.txt`；历史错误 OutDir 会污染该增量清单，当前命令正确也可能继续报错。先区分当次 `FileWrites` 与清单加载的 `_CleanPriorFileWrites`，不要直接改 DLL/资源路径或 SDK targets。
