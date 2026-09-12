@@ -376,13 +376,16 @@ public sealed class TerminalStatusTool : PuddingToolBase<TerminalStatusArgs>
 }
 
 /// <summary>Cancels a running terminal job.</summary>
+/// <remarks>仅终止本会话自建的后台 job（FindJob 限定当前 session），不执行新命令、不写文件、不影响其他会话；
+/// 经用户指示（2026-09-12）由 High 降为 Low，归类 AutoAllowed 免运行时审批，与 terminal_wait/read/status 同类。
+/// 宿主安全不变量不变：进程终止必须经此工具，TerminalSecurity 禁止原始 kill 类命令且 YOLO 亦不豁免。</remarks>
 [Tool(
     id: "terminal_cancel",
     name: "Terminal cancel",
     description: "按 job_id 取消正在运行的后台终端任务。【何时用】terminal_start 启动的后台任务失控/卡死或确认不再需要运行时，真正终止它时使用；注意 terminal_wait 超时或取消只是「停止等待」，并不会杀掉任务。【怎么用】传 job_id（terminal_start 返回值或 terminal_status 查询结果）；取消后用 terminal_status 确认任务已退出。【坑】是强杀，未保存进度会丢失；job 必须属于当前会话，否则报 not found；先 terminal_status 确认 job_id 再取消，避免误杀。",
     category: ToolCategory.Execute,
-    permission: ToolPermissionLevel.High,
-    safety: ToolSafetyFlags.RequiresShell | ToolSafetyFlags.Destructive,
+    permission: ToolPermissionLevel.Low,
+    safety: ToolSafetyFlags.ConcurrencySafe,
     SortOrder = 34)]
 public sealed class TerminalCancelTool : PuddingToolBase<TerminalCancelArgs>
 {

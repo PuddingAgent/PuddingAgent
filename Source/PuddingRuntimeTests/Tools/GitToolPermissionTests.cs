@@ -19,9 +19,9 @@ public sealed class GitToolPermissionTests
     private static readonly ToolPermissionPolicyService s_policy = new();
 
     [TestMethod]
-    public void All_Git_Tools_Except_Reset_And_Push_Are_AutoAllowed()
+    public void All_Git_Tools_Except_Reset_Are_AutoAllowed()
     {
-        // 20 个 git 工具中 18 个应为 AutoAllowed（免运行时授权），git_reset 与 git_push 保持 High。
+        // 2026-09-12 用户指示：git_push 降为 AutoAllowed（免运行时审批）；至此 20 个 git 工具中仅 git_reset 保持 High+Destructive。
         IPuddingTool[] tools =
         [
             new GitAddTool(),
@@ -38,6 +38,7 @@ public sealed class GitToolPermissionTests
             new GitLogTool(),
             new GitMergeTool(),
             new GitPullTool(),
+            new GitPushTool(),
             new GitRemoteTool(),
             new GitStashTool(),
             new GitStatusTool(),
@@ -59,18 +60,20 @@ public sealed class GitToolPermissionTests
     }
 
     [TestMethod]
-    public void GitPush_Remains_High_Destructive_Requires_Runtime_Authorization()
+    public void GitPush_Is_AutoAllowed_After_User_Reclassification_2026_09_12()
     {
-        // 2026-08-28 复审裁定（依据用户裁定矩阵 (A)）：git_push 支持 Force=true 强制推送可覆写远端历史，
-        // 属「可直接覆写远端用户数据」，恢复 High+Destructive 运行时授权门禁（此前被错误降为 Low）。
+        // 2026-09-12 用户指示：git_push 免运行时授权（不弹审批），取代 2026-08-28 的 High+Destructive 门禁。
+        // 安全边界：Force=true 仍可覆写远端历史；RequiresNetwork 保留（不触发授权门），由「只推自己的 commit」纪律兜底。
         var descriptor = new GitPushTool().Descriptor;
         var decision = s_policy.Classify(descriptor);
 
-        Assert.AreEqual(ToolPermissionLevel.High, descriptor.PermissionLevel);
-        Assert.IsTrue(descriptor.Safety.HasFlag(ToolSafetyFlags.Destructive));
+        Assert.AreEqual(ToolPermissionLevel.Low, descriptor.PermissionLevel);
+        Assert.IsFalse(descriptor.Safety.HasFlag(ToolSafetyFlags.Destructive));
+        Assert.IsFalse(descriptor.Safety.HasFlag(ToolSafetyFlags.RequiresShell));
+        Assert.IsFalse(descriptor.Safety.HasFlag(ToolSafetyFlags.RequiresFileWrite));
         Assert.IsTrue(descriptor.Safety.HasFlag(ToolSafetyFlags.RequiresNetwork));
-        Assert.IsTrue(decision.RequiresRuntimeAuthorization);
-        Assert.AreEqual(ToolPermissionTier.RuntimeGranted, decision.Tier);
+        Assert.IsFalse(decision.RequiresRuntimeAuthorization);
+        Assert.AreEqual(ToolPermissionTier.AutoAllowed, decision.Tier);
     }
 
     [TestMethod]
