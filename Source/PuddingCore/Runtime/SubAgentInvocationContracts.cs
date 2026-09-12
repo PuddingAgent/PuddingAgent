@@ -189,16 +189,18 @@ public sealed record SubAgentBatchInvocationResult
 /// </summary>
 public sealed record SubAgentExecutionOptions
 {
+    /// <summary>
+    /// 单一权威长程预算（N00）：未显式请求预算的子代理/WorkUnit 一律使用
+    /// 600 正常轮 / 2400 工具调用 / 24h 总硬时限；显式更小预算被忠实尊重，
+    /// 显式更大预算由配置护栏拒绝。不存在把 600 压回 32/40/120 的隐式截断。
+    /// </summary>
     public const int LargeTaskMaxRounds = 600;
     public const int LargeTaskMaxToolCallsTotal = 2400;
     public const int LargeTaskMaxTimeoutSeconds = 24 * 60 * 60;
     /// <summary>
-    /// WorkUnit 未显式指定轮次时的默认预算。设计区间 25-40：配合
-    /// budget_exhausted→checkpoint/resume 链路，禁止靠 600 轮绝对护栏硬撑。
+    /// Grace 是加法：正常轮（或时间/工具预算）耗尽后追加的收尾轮，
+    /// 绝不从 600 正常轮中预扣（轮数维度 normal + grace）。
     /// </summary>
-    public const int DefaultWorkUnitMaxRounds = 32;
-    public const int MaxWorkUnitMaxRounds = 40;
-    public const int DefaultWorkUnitMaxToolCallsTotal = 120;
     public const int DefaultBudgetGraceRounds = 20;
     public const int DefaultBudgetGraceTimeoutSeconds = 30 * 60;
     public const double DefaultContextSoftCompactionTriggerRatio = 0.65;
@@ -223,6 +225,7 @@ public sealed record SubAgentExecutionOptions
     public double ContextSoftCompactionTargetRatio { get; init; } = DefaultContextSoftCompactionTargetRatio;
     /// <summary>
     /// Cleanup rounds granted after the normal round or time budget is exhausted.
+    /// Additive on top of the normal-round budget — never deducted from it.
     /// Runtime clamps this system setting to 10-50 rounds.
     /// </summary>
     public int BudgetGraceRounds { get; init; } = DefaultBudgetGraceRounds;
