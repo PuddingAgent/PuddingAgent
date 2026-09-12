@@ -1,6 +1,41 @@
 # PuddingAgent CodeMAP
 
-> 顶层快速索引 | 2026-08-31 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
+## 2026-09-12 子代理弹性与双向交互修订
+
+`Docs/Features/子代理弹性预算与双向交互设计-2026-09-12.md`、ADR-087、`Docs/Reports/子代理弹性交互看板修订-2026-09-12.md`：600改为可选实例，任意合法正整数预算；系统管理生命周期；query_sub_agents共享快照、send_message主子双向/插嘴、ask_question持久等待120秒与StopRun；Web轨迹空白先修canonical事件/回放，检查器改善发现/状态/行为/操作。复用Message Fabric/AwaitHandle/Steering/Cancellation/SubAgent投影，不建平行生命周期系统；本轮仅设计/看板。
+
+
+## 2026-09-12 下一阶段设计：缓存99、Memory长程自治与600轮纠偏
+
+权威方案：`Docs/Features/PuddingAgent长程自治与缓存99优化设计-2026-09-12.md`；ADR-084/085/086；交付包与13张看板映射：`Docs/Reports/PuddingAgent-Next-Phase-2026-09-12/README.md`。重点入口为SubAgentManager/TaskExecutionPlanCompiler预算二次截断、ContextPipeline/AgentMemorySummaryContextBuilder首轮装配、SubconsciousRecallPipeline检索与后台miss、C01/C02最终请求、ToolInvocationService与legacy执行分支。本阶段支持600正常轮，取代前轮25–40轮建议；所有新目标仍待实施/验收。
+
+
+## 2026-09-12 抖音与 WebView2 续建入口
+
+`Docs/Reports/DouyinCreatorTools-WebView2复用与看板方案-2026-09-12.md`：外部仓库 e35dbe2 源码调研及 DY-00/01/02 验收、只读适配、可靠回复拆分。现有实现入口为 `Source/PuddingBrowser.AgentTools`、`Source/PuddingHost/BrowserBridge/RemoteBrowserPage.cs`、`Source/PuddingDesktop/Browser/BrowserBridgeCommandDispatcher.cs`、`Source/PuddingBrowser.WebView2/WebView2DomClient.cs`。七工具已存在，Evaluate/CDP 等仍 Unsupported；本轮仅文档/看板更新，Douyin 业务尚待实施。
+
+> 顶层快速索引 | 2026-09-12 | 29 项目 | .NET 10 / WPF / React / SQLite / WebView2
+
+## 2026-09-12 GLM 进度复核与看板同步
+
+后续运行审计入口：`Docs/Reports/PuddingAgent-Autonomy-Audit-2026-09-12/01-自主工作轨迹与自改进审计.md`及同目录`02-任务看板登记与实施顺序.md`。8心跳/12子Run/898请求；gateway与归因投影分开、token加权命中95.48%。主要源码定位：`MessageDeliveryDispatcher` recovery→`AgentInvocationDispatchFactory`的msg会话回退；`AgentExecutionService.Buffered`结构化文本工具路径与native路径审计不一致（F01 41工具仅2归档）；`TerminalProcessManager`输出/退出并发；`SubconsciousJobQueue`两表重复schedule_skip。方案为父级身份+canonical接续、HeartbeatOutcome/WorkUnit、统一工具审计、错误家族熔断与自修复/外部部署证据闭环。窗口外`c89920f`已提交C01-A、`b0cfa3a`已接Authorization入口；以下旧“WIP”是前轮时点，当前转为待独立验收与明确新构建验证。
+
+当前入口：`Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/06-实施进度复核与看板状态修订-2026-09-12.md`。`19ec137/9537f60/33c1489/15842ff` 已提交；原10探针转绿，前端28、Platform48、Runtime40定向通过。F01 hook恢复/失败/重试无真实消费者，S01-B invocation/attempt/provenance持久化和本地故障恢复待补；C01-A有未提交WIP待验收，C01-B/C02仍待完成。已修订7张描述、5张状态为NeedsReview；S01-A-R/T01-R源码accepted，不等于Completed或产品验收。C02保持Backlog，总卡InProgress；回执在同包`audit-evidence/2026-09-12/`。
+
+## 2026-09-11 GLM 批次1独立审计
+
+历史结论见 `Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/04-批次1独立审计与下一步.md`；当时任务 ID/回执见同目录 `05-后续任务与看板回执.md`。9月11日既有91项通过、TypeScript/入口构建通过，新增10个边界探针失败；这些探针已在9月12日转绿，最新剩余工作以06为准。A01删除与编译层面通过，未做本批生产验收。
+
+## 2026-09-11 GLM 优化批次1实现入口（原交付记录）
+
+`Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/` 的 15 个工作包中，批次1已有以下实现；完成状态以以上独立审计为准：
+
+- **F01 明细水合**：新增 `Source/PuddingPlatformAdmin/src/pages/chat/runtime/detailHydrationScheduler.ts`（页面级 capacity=2 总并发、稳定请求 key、generation/owner token、AbortController、僵尸占位、401/404/transient 分类与有界退避）；`useTurnSurfaceStore` 改为订阅衔接，`registerVisibleTurn` 配对 `unregisterVisibleTurn`（引用计数），MessageRow→MessageList→ChatMain→ChatLayout→index 全链路透传 `onTurnInvisible`；MessageRow 视口观察不再首次相交即 disconnect。测试：`detailHydrationScheduler.test.ts` 7/7、`turnSurfaceStore.hydration.test.ts` 7/7（含 8 可见×20 重渲染并发≤2、A→B→A、迟到回调、离视口剪枝、401 停止、unmount）、`MessageRow.focus.test.tsx` 9/9。
+- **S01-A usage 并发**：`TokenUsageRecorder.RecordCoreAsync` 改为 BEGIN IMMEDIATE 单写事务（明细幂等读 + 月度聚合读改写同事务，decimal 语义不变；同 source 异 payload 抛冲突，best-effort 路径吞掉），新增 `Services/UsageWriteConflict.cs` 唯一索引兜底；`LlmGatewayUsageRecorder` SaveChanges 捕获唯一冲突按幂等成功。顺手收尾了 dirty 树遗留的 `occurredAtUtc` 半成品重构（该文件此前无法编译）。测试：`TokenUsageRecorderConcurrencyTests` 5/5（50 并发对齐、重复 source 计一次、冲突拒绝、best-effort 跳过），usage 相关回归 39/39。
+- **T01 记忆工具**：`SaveMemoryTool` important 分支身份改由 `ToolExecutionContext.AgentInstanceId` 派生（原 root 读取的 agent_instance_id 不可达），upsert 增加 preference 必 key / fact 必 content 前置校验（空 content 由旧“警告后照写”改为 fail-closed 零写入，`MemoryToolsTests` 对应用例同步更新）。测试：`SaveMemoryToolContractTests` + MemoryToolsTests 共 27/27。
+- **A01 组合根**：删除 `Source/PuddingAgent/Services/` 两个旧服务注册副本（msbuild Compile 由 3 项减至 Program.cs 1 项，入口构建 0 错误）；`Docs/架构.md` 开头标注 Desktop + Core 当前形态、单进程 P2P 叙述移为历史背景；PuddingHost.Tests 组合守卫通过，Desktop 不引用 Host。
+
+以上为首批历史记录。批次2+最新状态以同目录06为准：S01-B首片已提交、C01-A WIP待验收，其余未验收工作仍沿01/02设计推进。
 
 ## 项目定位
 
@@ -10,6 +45,9 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 
 | 文档 | 主题 |
 |------|------|
+| `Docs/Reports/GLM前端首批交互审计与下一步-2026-09-11.md` | GLM 首批 Chat 交互独立审计；草稿、重复 Steering、排队目标、图片门禁、受理恢复、停止与队列回执共 7 个契约反例；needs_changes，附看板所有权与产品验收门禁 |
+| `Docs/Reports/前端交互体验优化建议-2026-09-11.md` | 当前前端交互评估；发送/排队/停止一致性、可信反馈、阅读与草稿连续性、导航/交付物衔接和视觉规则；第一批（鼠标排队/补充当前任务/独立停止+服务端取消接线/失败保留草稿/操作回执/键盘可达）已于 2026-09-11 实施，第二批及以后仍为 Proposed |
+| `Docs/Reports/PuddingAgent-GLM-Optimization-2026-09-11/01-代码审阅与优化设计.md` | 原始15包设计和hash基线；同目录06为最新进度复核与看板状态，03–05保留各阶段历史；先补F01/S01-B，验收C01-A后推进C01-B/C02 |
 | `README.md` / `README_zh-CN.md` | 中英文产品与目标架构入口；Windows Desktop/Core 产品边界、Plugin/Function/Hook/Event/Projection 五类合同、Agent FSM、函数图编排、前端思想、现状缺口与路线 |
 | `Docs/Features/工作区TODO与峰谷节能任务编排设计方案.md` | 工作区 TODO 台账、Agent 认领/拒绝/回报、durable 自动派发与定时消息、可信 idle、心跳 0、峰谷 WorkAdmissionFence，以及 Hook 触发的临时质询子代理、GoalRun 有界循环、manifest/Admin 模型路由、防无限循环熔断和公共 Plugin/Function/Event/Projection 映射 |
 | `Docs/Features/Goal持久目标自主续行与自动压缩完整设计方案.md` | `/goal` 完整专项设计；统一 Web/Desktop/Connector 命令、持久 GoalRun、事件驱动 continuation、256 个外层 Goal Iteration、证据 Verifier、用户抢占、重启停用、自动压缩和 Task-bound Goal；明确不依赖 Heartbeat |
@@ -327,6 +365,11 @@ DesignRequest + ExpertGroupDefinition → DesignCouncilPlanCompiler
 Chat 插嘴模式（当前 Turn steering）
   → useMessageInteractionQueue：busy 时 Enter 仍立即提交 canonical Turn API，受理后由 chat_execution_commands + ChatExecutionWorker 持久排队；不创建 React local_pending
   → Composer 独立 ⚡ 设计增量：active Turn + 非空纯文本时直达同一 Steering admission，不写 pendingSendQueue、不创建普通 delivery/第二 Turn；202 后 compare-and-clear，409/失败保留草稿且不自动排队
+  → 第一批交互一致性落地（2026-09-11，Docs/Reports/前端交互体验优化建议-2026-09-11.md §0）：
+    鼠标发送按钮不再挪用作停止——运行中有草稿=「加入队列」（与 Enter 同链）、⚡菜单=「补充给当前任务」（与 Ctrl/Cmd+Enter 同链）、
+    独立「停止当前执行」按钮=本地 abort + requestActiveTurnCancel（新增 cancelConversationTurn 封装，接线既有 ADR-059
+    POST .../turns/{turnId}/cancel；已结束/未受理按竞态静默）；useMessageSend 失败恢复草稿（restoreDraft 端口，空输入框才回填）、
+    busy 提交 202 受理后「已加入队列」回执；状态胶囊/余额徽标补键盘激活
   → MessageQueueProjectionService：默认只读投影 queued/retrying deliveries + pending commands；claimed/running 只在诊断查询出现
   → MessageQueueDropdown：内容宽度胶囊摘要；详情向上悬浮限高，明确“认领后转入会话轨迹”
   → POST /api/v1/conversations/{conversationId}/turns/{turnId}/steering + X-Workspace-Id
@@ -435,3 +478,15 @@ Task scheduler effective-dispatch closure (2026-09-01 proposed)
 | `Tests/PuddingDesktop.Tests/` | Desktop 进程/配置、Browser Controller/Client、Debug 调试模式（路由/反向代理集成/SSE/WS 中继/前端监督器/源码构建器/前端构建部署） |
 | `Tests/PuddingHost.Tests/` | Bridge Endpoint/Remote proxy（56/56 ✅） |
 | `Tests/PuddingBrowser.AgentTools.Tests/` | 七项 Agent Tools（10/10 ✅） |
+
+## 2026-09-05 效率与代码审计入口
+
+持续恢复入口：`Docs/Reports/PuddingAgent持续优化执行台账-2026-09-05.md`（既有 30 分钟 heartbeat）。第四轮：`StorageInventorySampler` 的两个索引端点/2000-entry 惰性目录预算；`TokenUsageRecorder` 每当前层只读上一条 hash，`PlatformDbContext` / `TokenUsageSchemaBootstrapper` 同步覆盖索引。定向19/19、扩展96/96；第四轮已部署，同任务56.898s/预热13.253s。`Docs/Reports/PuddingAgent第四轮有界查询与流空档修复-2026-09-05.md` 区分模型流与本地记账、GC heap与Private；后续Private仍回升，不能宣布整体内存优化通过。
+
+第三轮部署与产品证据：`Docs/Reports/PuddingAgent第三轮部署与产品验收-2026-09-05.md`。Desktop 主管不变，新 Core/前端已部署，hash/Ready/单次只读功能通过；161.749 秒流空档、预热内存与夜间吞吐仍待收口。`TestScripts/invoke-pudding-desktop-deployment.ps1` 提供停机备份/预构建部署/全量前端核验；`test-pudding-deployment-gates.ps1` 覆盖历史 PID 停机判定（7/7）；`measure-pudding-process-baseline.ps1` 记录进程树 CPU/Private/WS，前后负载不一致不得当作 A/B 收益。
+
+第二轮前端与发布：`Docs/Reports/PuddingAgent第二轮前端修复与发布验证-2026-09-05.md`、`Docs/Reports/pudding-agent-round2-build-2026-09-05.json`。`PuddingAdminShell/EntityCard/PageHeader/StatusBadge/Toolbar` 使用 createStyles；`PerfTab` 使用实际诊断合同；SSE reconnectCount 状态穿透 ChatLayout，移除 ChatMain 500ms 轮询；`PuddingHostContent.props` 的 `PuddingAdminDistPath` 与前端 `PUDDING_ADMIN_OUTPUT_PATH` 支持隔离打包。源码检查和发布核验通过，未部署。
+
+首轮实现与验证：`Docs/Reports/PuddingAgent首轮修复与验证-2026-09-05.md`。新增 `Source/PuddingPlatform/Services/Scheduling/LegacyTaskExecutionProbe.cs`，由 Tracker/Repair 与完成结算共用精确 Command→latest Run 解析；`ExecutionRunCoordinatorMonitorTests.cs` 覆盖监视异常取消；`TestScripts/test_deepseek_cache_hitrate.py` 覆盖完整北京时间日→UTC 边界。产品部署与性能对照仍待验收。
+
+`Docs/Reports/PuddingAgent效率与代码审计-2026-09-05.md`：TaskExecutionTracker legacy claim → canonical terminal、FilePatchTool schema/缺字段语义、useSessionEventConnection 鉴权重试、SubAgentConversationProjectionWorker/FileSubAgentRunStore 增量回放边界，以及 ExecutionRunCoordinator monitor fault。报告附七日指标与验证结果；这些是诊断发现，尚未标记为修复或产品验收完成。

@@ -4,6 +4,23 @@
 
 ## 1. 基本原则
 
+### 心跳、子代理接续与效率审计（2026-09-12）
+
+- 心跳以`chat_execution_commands.metadata_json.source=heartbeat`和Fabric可信发送者判定，按emitted/accepted/dropped/started/terminal/实际产物分别核对；成功终态、goal_update或压缩纪要不等于完成任务。逐次检查工具与文件/测试/提交证据，避免把有实际改动但最终输出纪要的回合判为空转。
+- 子代理结果串`sub_agent_runs → room_messages(metadata.intent=subagent_result, run_id) → message_deliveries → 父级实际执行/ChatMessages`。同步子代理无需异步结果消息。Delivered/ACK不能证明回到原父会话；搜索`msg-{MessageId}`用量与Chat记录，检查Dispatcher periodic recovery的sessionId和Factory的fallback。ACK时间包含处理时间，不当作纯排队时间。
+- 工具计数要四路对账：Run总数、runtime_activity、tools/events.jsonl、conversation_events。本次F01共41次实际工具但归档/canonical仅2次；42轮LLM中40轮无native tool_calls而正文含JSON tool，定位Buffered的结构化文本工具分支缺少native分支的审计出口。不要仅修SSE或让前端补造事实。
+- 用量总事实使用gateway，TokenUsage为投影不双加；按Provider/Model/BJT日/主子与后台分别汇总`sum(hit)/sum(hit+miss)`。高命中并不说明推进有效；estimated层tokens不能直接当Provider实测。固定窗口，窗口外新commit单列，不能拿尚未部署的源码解释旧进程指标改善。
+- `D:/data/logs/error/pudding-error-20260912_001.log`记录00:19:56终端清理StreamWriter并发异常，定位TerminalProcessManager.cs:115；需核验stdout/stderr drain与Exited dispose次序，启动成功或exit0之后仍检查实际artifact。`subconscious_job.schedule_skip`本次两表各19,894条，写入源在SubconsciousWorkerService/SubconsciousJobQueue，区分它与Task Scheduler。
+- 本次完整方法、逐心跳表及实施方案：`Docs/Reports/PuddingAgent-Autonomy-Audit-2026-09-12/01-自主工作轨迹与自改进审计.md`。只读SQLite使用mode=ro/query_only，按已有索引限定时间；不复制整个在线库，不把自然语言自述当事件时间或运行身份。
+
+### 流结束后长空档与存储采样（2026-09-05）
+
+- 先对齐 `runtime_activity` 的 chat_stream 结束、gateway `CreatedAtUtc`、`TokenUsageEvents` 的 OccurredAt/CreatedAt、`context_layer_metric_events.created_at_utc` 与 canonical tool 开始。模型流已结束而工具迟迟未开始时，检查同步记账和投影，不能把间隔全记成模型思考。
+- 时间格式不能混用：runtime_activity / telemetry 为带 `T` 的 UTC 文本；gateway / TokenUsageEvents / context_layer_metric_events 为 SQLite provider 的空格分隔 UTC 文本；execution_runs 为 epoch ms。大表按已确认索引和时间范围查询，必要时 sqlite progress handler 设置诊断执行预算，避免诊断本身拖慢 Core。
+- 同时 MIN+MAX 不一定命中 SQLite 单端点优化。用 EXPLAIN 验证两个覆盖索引 SEARCH，无 SCAN 和 TEMP B-TREE。目录上限必须包含目录和不匹配文件，不能先 GetFileSystemInfos 全量物化再 Take。
+- 长会话 token layer 记账不允许 ToList 全部历史实体；新 `IX_context_layer_metric_events_session_layer_time_id_hash` 支撑逐层上一条读取，保留 UTC 事件时间/Id 顺序。既有库首次加索引需维护窗口和备份；完成不代表七日缓存验收完成。
+- 无 dump 的 `dotnet-counters collect` 可采 `EventCounters\System.Runtime` 的 gc-heap-size、alloc-rate、gen-*-gc-count、loh-size 和 threadpool-queue-length。MB 与 MiB 分开记录；Private 不等于 managed heap，不能用冷启动小内存证明预热收益。
+
 1. 先确认环境状态，再分析业务代码。
 2. 先定位失败阶段，再定位具体函数。
 3. 使用 `traceId`、`conversationId`、`turnId`、`commandId`、`runId`、`messageId` 串联证据，不能只按时间猜测。
@@ -3574,6 +3591,20 @@ Desktop 默认在 `127.0.0.1:8199` 提供回环控制面；除低敏 `/desktop/b
 运行中的 Desktop 锁住默认 `Source\PuddingDesktop\bin\Debug` 时，源码验证使用定向 `OutDir` 放到仓库
 `.tmp-test-out`；Desktop 自身更新仍必须由进程外控制器停止旧 Desktop、用隔离发布目录构建并启动新 Desktop。
 
+### 11.52.1 停机备份与历史 PID 的判定（2026-09-05）
+
+`diagnostics.coreProcessId` 来自 `runtime.Session?.ProcessId ?? runtime.LastProcessId`。因此 `Stopped` 后仍有历史 PID 是正常现象，不能用 `!coreProcessId` 判断停机；必须同时核对 `coreState` 为 `Stopped/Idle`、对应 OS 进程已退出、没有活跃执行/预约。`TestScripts/test-pudding-deployment-gates.ps1` 的 7 项纯函数回归覆盖这一点，不执行维护动作。
+
+本机第三轮控制器 `TestScripts/invoke-pudding-desktop-deployment.ps1` 提供 `StopAndBackup`、`Deploy -BackupManifestPath <实际回执路径>`、`Verify`。它仅针对当前仓库 Debug Core 路径和 `D:\data`，其他机器先修改并审核路径门禁。备份位于 `D:\Keys\PuddingDeploymentBackups`，含数据库/WAL、配置和旧 Core；目录 ACL 限当前用户与 SYSTEM，不包含工作区归档。部署前仍要协调停机窗口，不得与 UI 启动并发。失败恢复应明确记录是谁调用 start，避免把脚本自身恢复误判为自动重启。
+
+采样入口 `TestScripts/measure-pudding-process-baseline.ps1` 验证 Desktop→Core 父子 PID 后记录 120 秒 CPU/Private/WS；CPU 除以逻辑 CPU 数，口径为整机百分比。重启前后 uptime、Debug/Release 和界面负载不同会混杂结果，不能直接宣称优化收益。进程私有内存不等于 GC heap，也不等于截图中的工作集。
+
+诊断只输出字段白名单。不要输出整个 `system.json`、`desktop.core` 或登录响应，它们可能带控制令牌/JWT。凭据仅在本地内存中用于请求 Header，不能进入报告或仓库。
+
+资源样本先与执行账本做时间重叠核对：`execution_runs.started_at/completed_at` 与 `chat_execution_commands` 是 epoch 毫秒，不是 ISO 日期文本；误用 julianday 会返回空集并把活跃窗口误标 idle。`llm_gateway_usage_events.occurred_at_utc` 则是 UTC 文本，两种口径不得混用。第三轮部署前 idle 标签因此已在报告中更正。
+
+大历史会话诊断优先按 `turn_id` 走 `ix_ce_turn`，或取有界尾部；只按 command_id，甚至 conversation_id 再过滤 command_id，可能扫描数十万事件。第三轮取消了这种慢查询，改用精确 Turn 与有界 tail。当前 `ConversationEventStore` 将 occurred_at/committed_at 都写为提交时刻；仅比较这两个字段不能测真实接收至落库延迟，事件长空档需跨 provider receive、消费、持久化阶段核对。
+
 ## 11.53 最近日志同时出现 MCP 连接拒绝、HTTP TaskCanceledException 与登录 Warning
 
 先按启动周期聚类，不要把三种不同语义合并成“后端不稳定”：
@@ -3649,3 +3680,20 @@ Admin “访问令牌”页若把 Active/Revoked 显示成数字 `0/1`，同时 
 `GET /api/admin/access-tokens` 列表是否直接序列化了持久化 enum。列表与详情必须统一投影为稳定字符串 wire 名称；只修
 详情 DTO 或添加 enum converter 不足以修复列表。创建的 smoke Token 在测试结束后必须通过管理 API/UI 撤销，不能因为
 页面按钮消失而直接留在 Active 状态。
+
+## 2026-09-05：综合效率审计的四个易错口径
+
+前端及打包补充：全量 `npm run tsc` 必须独立于 Jest 和 production build 检查。若 `className` 得到 object，检查 styles 导出是否真的经过 `createStyles`，不要只做类型强转；若 `useChatStyles` 被直接当作样式表，先取返回值 `.styles`。诊断面板应复用 `utils/debug` 的快照合同，包含 stopped capture 和带 payload 的 workflow event。
+
+隔离前端 build 使用 `PUDDING_ADMIN_OUTPUT_PATH`，Desktop publish 同时传 `-p:PuddingAdminDistPath=<同一绝对输出路径>`；默认 dist 行为不变。除了 index/hash，还核对所有源静态文件。ASP.NET SDK 可生成额外 `.br/.gz`，应解压比对而不是要求总文件数相等。apphost exe hash 可能不随业务源码变化；记录业务 DLL SHA、HEAD 和 dirty 状态。第二轮清单见 `Docs/Reports/pudding-agent-round2-build-2026-09-05.json`，当前是待部署制品。
+
+首轮源码修复与回归见 `Docs/Reports/PuddingAgent首轮修复与验证-2026-09-05.md`。诊断新构建时关注 `legacy_execution_terminal_without_task_settlement` / `legacy_execution_claim_orphaned` / `legacy_execution_command_pending`，以及 `[Coordinator] Execution monitor failed` 与 `execution_monitor_failed`。归档稳态 fast path 仅减少未变化文件正文重读，不能据此宣称已实现字节游标。
+
+时间预筛选特别注意：SQLite 的 UTC `YYYY-MM-DD HH:MM:SS...+00:00` 不能直接与本地 `isoformat()` 的 `T/+08:00` 字符串比较。先将完整北京时间日边界转成 UTC 同格式参数；保留 `>= start AND < end` 的可索引查询。首轮审计曾因此漏掉窗口头八小时，旧报告已标记，不要用原快照背书连续七日命中率。
+
+证据与后续方案见 `Docs/Reports/PuddingAgent效率与代码审计-2026-09-05.md`。
+
+1. `tracked=1 healthy=1` 不保证有活跃执行。若 `reason=active_task_owned`，沿 Task.active_assignment_id → task_execution_bindings.execution_id → execution_runs 查实际 status/terminal；当前 legacy 分支可能因非空 claim 永久返回 Healthy。不能直接改 Availability 投影掩盖所有权问题。
+2. cache hit 必须按显式北京时间自然日起止转换后聚合 UTC usage，七个完整日与当天分开；空日/无调用模型不填 100%。`lease_lost + completed_at=null` 不能算作持续工作至今。TokenUsageEvents 负责归因，不与 gateway 账本叠加。
+3. Chat `sse.error.reconnect httpStatus=401` 若约每 1.2 秒伴随 replay 401，应查 useSessionEventConnection 的鉴权终止分支。Core 空闲占用可先用短 CPU/Private/WS 采样与 dotnet-stack 检查 FileSubAgentRunStore；其 maxRuns 之后才限量、cursor 判断之前整读事件文件，不能认为调用参数 100 就保证扫描有界。
+4. 记录测试时同时记录 HEAD、dirty paths、输出目录、TRX 和已部署程序集 ProductVersion/SHA-256。HEAD fixture 与工作区 fixture 可能不同；AppContext.BaseDirectory 向上找源码的测试在系统 Temp 会失败。不要把“工作区用例通过”写成“干净提交全绿”或“运行产品已修复”。
