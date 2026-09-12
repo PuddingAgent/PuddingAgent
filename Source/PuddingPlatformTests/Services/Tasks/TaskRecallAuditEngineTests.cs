@@ -53,7 +53,7 @@ public class TaskRecallAuditEngineTests
         Assert.AreEqual(1, result.AttemptStatusDistribution.Single(item => item.Status == 0).UnreleasedCount);
         Assert.AreEqual(1, result.AttemptStatusDistribution.Single(item => item.Status == 4).UnreleasedCount);
 
-        // A：缺完成事实 = T1、T2；正样本 = T3 的完成事件
+        // A：缺完成事实 = T1、T2（T6/T7 已种完成事件，不进 A）；正样本 = 全部 TaskCompleted 事件按 created_at DESC 取 3
         Assert.AreEqual(2, result.MissingCompletedFacts.Count);
         var t1 = result.MissingCompletedFacts.Single(item => item.TaskId == T1);
         Assert.AreEqual(2, t1.Sequence);                       // TaskCreated(seq=1) 之后
@@ -67,8 +67,10 @@ public class TaskRecallAuditEngineTests
         Assert.AreEqual(UpdatedAtT2, t2.CreatedAtUtc);
         Assert.AreEqual("updated_at_utc", t2.CreatedAtSource);
         Assert.IsNull(t2.AssignmentId);
-        Assert.AreEqual(1, result.PositiveSamples.Count);
-        Assert.AreEqual(T3, result.PositiveSamples[0].TaskId);
+        Assert.AreEqual(3, result.PositiveSamples.Count);
+        Assert.AreEqual(T3, result.PositiveSamples[0].TaskId);   // created_at DESC：T3(08-25) 最新在前
+        Assert.AreEqual(T7, result.PositiveSamples[1].TaskId);
+        Assert.AreEqual(T6, result.PositiveSamples[2].TaskId);
 
         // B：空绑定 3 行（B1/B2 终态修复，B3 存活跳过）
         Assert.AreEqual(3, result.BindingNormalizations.Count);
@@ -178,7 +180,7 @@ public class TaskRecallAuditEngineTests
         Assert.AreEqual(0, second.RepairableAttempts);
         Assert.AreEqual(1, second.ProjectionCleanups.Count);
         Assert.AreEqual(0, second.DeletableProjections);
-        Assert.AreEqual(1, second.Status4Adjudication.Count);
+        Assert.AreEqual(2, second.Status4Adjudication.Count);
     }
 
     [TestMethod]
@@ -207,7 +209,7 @@ public class TaskRecallAuditEngineTests
         Assert.AreEqual(DBNull.Value,
             QueryRow(connection, $"SELECT execution_id FROM task_execution_bindings WHERE task_id = '{T6}' AND delivery_id = 'd1'")[0]);
         Assert.AreEqual(4, ScalarLong(connection, "SELECT COUNT(*) FROM agent_availability_projection"));
-        Assert.AreEqual(4, ScalarLong(connection, "SELECT COUNT(*) FROM task_events"));  // 仅含种子 + 注入行
+        Assert.AreEqual(6, ScalarLong(connection, "SELECT COUNT(*) FROM task_events"));  // 仅含种子(5) + 注入行
     }
 
     // ─────────────────────── fixture ───────────────────────
@@ -242,10 +244,12 @@ public class TaskRecallAuditEngineTests
         InsertAttempt(connection, A4, T5, (int)AssignmentAttemptStatus.Reserved, "agent-y");
 
         InsertTask(connection, T6, (int)WorkspaceTaskStatus.Completed, version: 2, completedAt: "2026-08-19T08:00:00.0000000+00:00", updatedAt: "2026-08-19T08:05:00.0000000+00:00");
+        InsertEvent(connection, "seed-completed-6", T6, sequence: 1, TaskEventType.TaskCompleted, createdAtUtc: "2026-08-19T08:00:00.0000000+00:00");
         Exec(connection, $"INSERT INTO task_execution_bindings (task_id, assignment_id, delivery_id, execution_id, session_id, bound_at_utc) VALUES ('{T6}', 'at6', 'd1', NULL, NULL, '{Now:O}')");
         Exec(connection, $"INSERT INTO task_execution_bindings (task_id, assignment_id, delivery_id, execution_id, session_id, bound_at_utc) VALUES ('{T6}', 'at6', 'd2', 'run-123', '', '{Now:O}')");
 
         InsertTask(connection, T7, (int)WorkspaceTaskStatus.Completed, version: 2, completedAt: "2026-08-21T08:00:00.0000000+00:00", updatedAt: "2026-08-21T08:05:00.0000000+00:00");
+        InsertEvent(connection, "seed-completed-7", T7, sequence: 1, TaskEventType.TaskCompleted, createdAtUtc: "2026-08-21T08:00:00.0000000+00:00");
         InsertAttempt(connection, A5, T7, 4, "agent-z");
 
         // 投影：P1 陈旧子代理（删）、P2 6a8 挂靠存活任务（跳过）、P3 未过期（不列）、P4 挂靠终态任务（删）
@@ -272,18 +276,18 @@ public class TaskRecallAuditEngineTests
     private static void InsertTask(SqliteConnection connection, string taskId, int status, long version, string? completedAt, string updatedAt, long? origin = null)
         => Exec(connection, $"""
             INSERT INTO workspace_tasks (task_id, workspace_id, title, status, priority, execution_window,
-                origin, version, created_at_utc, updated_at_utc, completed_at_utc)
-            VALUES ('{taskId}', 'ws1', 'title-{taskId}', {status}, 1, 0, {origin?.ToString(CultureInfo.InvariantCulture) ?? "NULL"},
+                sort_order, origin, version, created_at_utc, updated_at_utc, completed_at_utc)
+            VALUES ('{taskId}', 'ws1', 'title-{taskId}', {status}, 1, 0, 0, {origin?.ToString(CultureInfo.InvariantCulture) ?? "NULL"},
                 {version}, '2026-08-01T00:00:00.0000000+00:00', '{updatedAt}', {QuoteOrNull(completedAt)})
             """);
 
     private static void InsertEvent(SqliteConnection connection, string eventId, string taskId, long sequence, TaskEventType eventType,
-        string? assignmentId = null, string? agentId = null, string? executionId = null, string? sessionId = null, string? decisionCode = null)
+        string? assignmentId = null, string? agentId = null, string? executionId = null, string? sessionId = null, string? decisionCode = null, string? createdAtUtc = null)
         => Exec(connection, $"""
             INSERT INTO task_events (event_id, task_id, workspace_id, sequence, event_type, assignment_id, agent_id,
                 execution_id, session_id, decision_code, created_at_utc)
             VALUES ('{eventId}', '{taskId}', 'ws1', {sequence}, {(int)eventType}, {QuoteOrNull(assignmentId)}, {QuoteOrNull(agentId)},
-                {QuoteOrNull(executionId)}, {QuoteOrNull(sessionId)}, {QuoteOrNull(decisionCode)}, '2026-08-25T09:00:00.0000000+00:00')
+                {QuoteOrNull(executionId)}, {QuoteOrNull(sessionId)}, {QuoteOrNull(decisionCode)}, '{createdAtUtc ?? "2026-08-25T09:00:00.0000000+00:00"}')
             """);
 
     private static void InsertAttempt(SqliteConnection connection, string attemptId, string taskId, int status, string agentId)

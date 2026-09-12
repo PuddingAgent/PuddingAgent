@@ -34,6 +34,10 @@ public sealed record TaskExecutionTrackingDecision
     public string? IterationStatus { get; init; }
     public string? CommandStatus { get; init; }
     public string? RunStatus { get; init; }
+    public string? ExecutionRunId { get; init; }
+    public long? ExecutionFencingToken { get; init; }
+    public long? ExecutionBindingId { get; init; }
+    public long? TaskVersion { get; init; }
     public string? OutboxStatus { get; init; }
     public string? OutboxId { get; init; }
     public required TaskExecutionTrackingVerdict Verdict { get; init; }

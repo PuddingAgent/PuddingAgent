@@ -114,12 +114,16 @@ public sealed class TaskCompletionSettlementService(
         if (string.IsNullOrWhiteSpace(claim))
             return await NoopAsync(tx, "execution_claim_missing", ct);
 
-        // Exact-index lookups only: run_id first; a historical command id is accepted
-        // only when it matches exactly one row (no fuzzy matching).
-        var run = await db.ExecutionRuns.AsNoTracking().SingleOrDefaultAsync(
-            item => item.RunId == claim, ct)
-            ?? await db.ExecutionRuns.AsNoTracking().SingleOrDefaultAsync(
-                item => item.CommandId == claim, ct);
+        // Same lineage resolution as Tracker: a historical attempt is not proof
+        // that its command has stopped retrying. No fuzzy/session-only matching.
+        var (run, command) = await LegacyTaskExecutionProbe.ResolveRunAsync(db, claim, ct);
+        if (command is not null)
+        {
+            if (command.WorkspaceId != workspaceId || command.AgentInstanceId != attempt.AgentId)
+                return await NoopAsync(tx, "execution_scope_mismatch", ct);
+            if (command.Status is "pending" or "running" or "leased" or "cancel_requested")
+                return await NoopAsync(tx, "execution_command_not_terminal", ct);
+        }
         if (run is null)
             return await NoopAsync(tx, "execution_run_missing", ct);
         if (!IsExecutionRunTerminal(run.Status))

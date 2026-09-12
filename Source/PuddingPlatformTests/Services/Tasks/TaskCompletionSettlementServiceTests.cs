@@ -74,6 +74,25 @@ public sealed class TaskCompletionSettlementServiceTests
     }
 
     [TestMethod]
+    [DataRow("run-1")]
+    [DataRow("cmd-1")]
+    public async Task OldClaim_WithNewRunningAttempt_DoesNotSettle(string claim)
+    {
+        await SeedAsync(bindingExecutionId: claim);
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            db.ExecutionRuns.Add(new ExecutionRunEntity { RunId = "run-2", CommandId = "cmd-1", ConversationId = "conv-1",
+                Attempt = 2, Status = "running", LeaseUntil = _now.AddMinutes(2).ToUnixTimeMilliseconds() });
+            await db.SaveChangesAsync();
+        }
+        var result = await CreateService().SettleAsync("ws", "task-1");
+        Assert.IsFalse(result.Settled);
+        Assert.AreEqual("execution_run_not_terminal", result.Code);
+        await using var verify = await _factory.CreateDbContextAsync();
+        Assert.AreEqual("assignment-1", (await verify.WorkspaceTasks.SingleAsync()).ActiveAssignmentId);
+    }
+
+    [TestMethod]
     public async Task FailedRun_BeyondGrace_FailsTask()
     {
         await SeedAsync(runStatus: "failed");

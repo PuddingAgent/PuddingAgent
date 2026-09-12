@@ -202,7 +202,8 @@ public sealed class TaskExecutionTracker(
                 .Where(item => deliveryIds.Contains(item.DeliveryId))
                 .ToDictionaryAsync(item => item.DeliveryId, StringComparer.Ordinal, ct);
 
-        return candidates.Select(candidate =>
+        var results = new List<TaskExecutionTrackingDecision>();
+        foreach (var candidate in candidates)
         {
             var executionBinding = executionBindings
                 .OrderByDescending(item => item.Id)
@@ -231,29 +232,24 @@ public sealed class TaskExecutionTracker(
                 LastProgressAtUtc = lastProgress,
             };
 
-            if (executionBinding is null)
-                return Result(TaskExecutionTrackingVerdict.Inconsistent, "legacy_execution_binding_missing");
-            if (delivery is null)
-                return Result(TaskExecutionTrackingVerdict.Inconsistent, "legacy_delivery_missing");
-            if (!string.IsNullOrWhiteSpace(executionBinding.ExecutionId)
-                || !string.IsNullOrWhiteSpace(executionBinding.SessionId)
-                || !string.IsNullOrWhiteSpace(delivery.ClaimedByExecutionId))
+            if (executionBinding is null || delivery is null)
             {
-                return Result(TaskExecutionTrackingVerdict.Healthy, "legacy_execution_claimed");
+                results.Add(Result(TaskExecutionTrackingVerdict.Inconsistent,
+                    executionBinding is null ? "legacy_execution_binding_missing" : "legacy_delivery_missing"));
+                continue;
             }
-            if (delivery.Status is "dead_letter" or "failed" or "cancelled")
+            var probe = await LegacyTaskExecutionProbe.ReadAsync(db, workspaceId, candidate.Attempt.AgentId,
+                executionBinding, delivery, lastProgress, now, _options.TrackerStallThreshold, ct);
+            results.Add(Result(probe.Verdict, probe.Code) with
             {
-                return Result(
-                    TaskExecutionTrackingVerdict.CleanupRequired,
-                    "legacy_delivery_terminal_without_execution");
-            }
-            if (string.Equals(delivery.Status, "delivered", StringComparison.Ordinal)
-                && IsOverdue(lastProgress, now))
-            {
-                return Result(TaskExecutionTrackingVerdict.CleanupRequired, "legacy_assignment_execution_missing");
-            }
-            return Result(TaskExecutionTrackingVerdict.Waiting, "legacy_assignment_waiting_execution");
-        }).ToArray();
+                RunStatus = probe.Run?.Status,
+                ExecutionRunId = probe.Run?.RunId,
+                ExecutionFencingToken = probe.Run?.FencingToken,
+                ExecutionBindingId = executionBinding.Id,
+                TaskVersion = candidate.Task.Version,
+            });
+        }
+        return results;
     }
 
     private TaskExecutionTrackingDecision EvaluateOne(

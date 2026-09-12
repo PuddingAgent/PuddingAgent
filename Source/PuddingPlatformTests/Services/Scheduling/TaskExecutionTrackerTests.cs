@@ -345,6 +345,133 @@ public sealed class TaskExecutionTrackerTests
         new FixedTimeProvider(_now),
         Microsoft.Extensions.Logging.Abstractions.NullLogger<TaskExecutionRepairCoordinator>.Instance);
 
+    [TestMethod]
+    [DataRow("succeeded")]
+    [DataRow("failed")]
+    [DataRow("cancelled")]
+    [DataRow("lease_lost")]
+    public async Task LegacyTerminalRun_ReleasesOwnershipWithoutInventingTaskSuccess(string status)
+    {
+        await SeedLegacyRunAsync(status);
+        var decisions = await CreateTracker().EvaluateAsync("ws", 10);
+        Assert.AreEqual("legacy_execution_terminal_without_task_settlement", AssertSingle(decisions).Code);
+        Assert.AreEqual(1, (await CreateRepairCoordinator().RepairAsync("ws", decisions)).Repaired);
+        Assert.AreEqual(0, (await CreateRepairCoordinator().RepairAsync("ws", decisions)).Repaired);
+        await using var db = await _factory.CreateDbContextAsync();
+        var task = await db.WorkspaceTasks.SingleAsync();
+        Assert.AreEqual(WorkspaceTaskStatus.Blocked, task.Status);
+        Assert.IsNull(task.ActiveAssignmentId);
+        Assert.IsNotNull((await db.TaskAssignmentAttempts.SingleAsync()).ReleasedAtUtc);
+    }
+
+    [TestMethod]
+    public async Task LegacyTerminalRun_RepairRejectsNewAttemptAfterEvaluation()
+    {
+        await SeedLegacyRunAsync("succeeded");
+        var decisions = await CreateTracker().EvaluateAsync("ws", 10);
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            db.ExecutionRuns.Add(new ExecutionRunEntity { RunId = "run-new", CommandId = "command-legacy",
+                ConversationId = "conversation-1", Status = "running", Attempt = 2, LeaseUntil = _now.AddMinutes(2).ToUnixTimeMilliseconds() });
+            await db.SaveChangesAsync();
+        }
+        Assert.AreEqual(0, (await CreateRepairCoordinator().RepairAsync("ws", decisions)).Repaired);
+        Assert.AreEqual("legacy_execution_active", AssertSingle(await CreateTracker().EvaluateAsync("ws", 10)).Code);
+    }
+
+    [TestMethod]
+    public async Task LegacyTerminalRun_WithinGraceWaitsForSettlement()
+    {
+        await SeedLegacyRunAsync("succeeded");
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            (await db.ExecutionRuns.SingleAsync()).CompletedAt = _now.AddMinutes(-1).ToUnixTimeMilliseconds();
+            await db.SaveChangesAsync();
+        }
+        Assert.AreEqual("legacy_execution_terminal_pending_settlement", AssertSingle(await CreateTracker().EvaluateAsync("ws", 10)).Code);
+    }
+
+    [TestMethod]
+    public async Task LegacyOrphanedClaim_IsNotHealthyAndIsReleasedAfterGrace()
+    {
+        await SeedLegacyRunAsync("succeeded");
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            db.ExecutionRuns.RemoveRange(db.ExecutionRuns);
+            db.ChatExecutionCommands.RemoveRange(db.ChatExecutionCommands);
+            await db.SaveChangesAsync();
+        }
+        var decisions = await CreateTracker().EvaluateAsync("ws", 10);
+        Assert.AreEqual("legacy_execution_claim_orphaned", AssertSingle(decisions).Code);
+        Assert.AreEqual(1, (await CreateRepairCoordinator().RepairAsync("ws", decisions)).Repaired);
+    }
+
+    [TestMethod]
+    public async Task LegacyRepair_RejectsChangedTaskVersion()
+    {
+        await SeedLegacyRunAsync("succeeded");
+        var decisions = await CreateTracker().EvaluateAsync("ws", 10);
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            (await db.WorkspaceTasks.SingleAsync()).Version++;
+            await db.SaveChangesAsync();
+        }
+        Assert.AreEqual(0, (await CreateRepairCoordinator().RepairAsync("ws", decisions)).Repaired);
+    }
+
+    [TestMethod]
+    public async Task LegacyCommandClaim_WithMultipleAttemptsUsesLatestAttempt()
+    {
+        await SeedLegacyRunAsync("lease_lost");
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            (await db.TaskExecutionBindings.SingleAsync()).ExecutionId = "command-legacy";
+            (await db.ChatExecutionCommands.SingleAsync()).Status = "running";
+            db.ExecutionRuns.Add(new ExecutionRunEntity { RunId = "run-retry", CommandId = "command-legacy", ConversationId = "conversation-1",
+                Status = "running", Attempt = 2, LeaseUntil = _now.AddMinutes(2).ToUnixTimeMilliseconds() });
+            await db.SaveChangesAsync();
+        }
+        var decision = AssertSingle(await CreateTracker().EvaluateAsync("ws", 10));
+        Assert.AreEqual("legacy_execution_active", decision.Code);
+        Assert.AreEqual("run-retry", decision.ExecutionRunId);
+    }
+
+    [TestMethod]
+    public async Task LegacyTerminalRun_WithRetryPendingDoesNotReleaseAssignment()
+    {
+        await SeedLegacyRunAsync("lease_lost");
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            (await db.ChatExecutionCommands.SingleAsync()).Status = "pending";
+            await db.SaveChangesAsync();
+        }
+        var decisions = await CreateTracker().EvaluateAsync("ws", 10);
+        Assert.AreEqual("legacy_execution_command_pending", AssertSingle(decisions).Code);
+        Assert.AreEqual(0, (await CreateRepairCoordinator().RepairAsync("ws", decisions)).Repaired);
+    }
+
+    private async Task SeedLegacyRunAsync(string status)
+    {
+        await SeedAsync(taskStatus: WorkspaceTaskStatus.InProgress);
+        await using var db = await _factory.CreateDbContextAsync();
+        db.TaskGoalBindings.RemoveRange(db.TaskGoalBindings);
+        db.AgentExecutionReservations.RemoveRange(db.AgentExecutionReservations);
+        db.GoalOutbox.RemoveRange(db.GoalOutbox);
+        db.GoalRuns.RemoveRange(db.GoalRuns);
+        var stale = _now.AddHours(-1);
+        (await db.WorkspaceTasks.SingleAsync()).UpdatedAtUtc = stale;
+        (await db.TaskAssignmentAttempts.SingleAsync()).UpdatedAtUtc = stale;
+        db.TaskExecutionBindings.Add(new TaskExecutionBindingEntity { TaskId = "task-1", AssignmentId = "assignment-1",
+            DeliveryId = "delivery-legacy", ExecutionId = "run-legacy", SessionId = "conversation-1", BoundAtUtc = stale });
+        db.MessageDeliveries.Add(new MessageDeliveryEntity { DeliveryId = "delivery-legacy", MessageId = "message-legacy",
+            WorkspaceId = "ws", TargetKind = "agent", TargetId = "agent-1", Status = "delivered", UpdatedAt = stale.ToUnixTimeMilliseconds() });
+        db.ChatExecutionCommands.Add(new ChatExecutionCommandEntity { CommandId = "command-legacy", BatchId = "batch-legacy",
+            WorkspaceId = "ws", AgentInstanceId = "agent-1", SessionId = "conversation-1", Status = "completed" });
+        db.ExecutionRuns.Add(new ExecutionRunEntity { RunId = "run-legacy", CommandId = "command-legacy", ConversationId = "conversation-1",
+            Status = status, Attempt = 1, CompletedAt = stale.ToUnixTimeMilliseconds() });
+        await db.SaveChangesAsync();
+    }
+
     private async Task SeedAsync(
         DateTimeOffset? reservationLeaseUntil = null,
         bool addRunningIteration = false,

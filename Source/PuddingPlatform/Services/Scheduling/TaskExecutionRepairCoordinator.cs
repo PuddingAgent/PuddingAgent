@@ -44,9 +44,8 @@ public sealed class TaskExecutionRepairCoordinator(
             {
                 "terminal_binding_still_active" or "blocked_binding_still_active" =>
                     await TryCleanupTerminalBindingAsync(decision, ct),
-                "legacy_assignment_execution_missing" =>
-                    await TryCleanupLegacyAssignmentAsync(decision, ct),
-                "legacy_delivery_terminal_without_execution" =>
+                "legacy_assignment_execution_missing" or "legacy_delivery_terminal_without_execution"
+                    or "legacy_execution_terminal_without_task_settlement" or "legacy_execution_claim_orphaned" =>
                     await TryCleanupLegacyAssignmentAsync(decision, ct),
                 "continuation_lease_expired" => await TryRecoverContinuationLeaseAsync(decision, ct),
                 "continuation_intent_missing" or "next_iteration_intent_missing" =>
@@ -188,14 +187,16 @@ public sealed class TaskExecutionRepairCoordinator(
             assignment.UpdatedAtUtc,
             executionBinding?.BoundAtUtc,
             UnixMs(delivery?.UpdatedAt));
-        if (executionBinding is null || delivery is null
-            || !string.IsNullOrWhiteSpace(executionBinding.ExecutionId)
-            || !string.IsNullOrWhiteSpace(executionBinding.SessionId)
-            || !string.IsNullOrWhiteSpace(delivery.ClaimedByExecutionId)
-            || !CanCleanupLegacyDelivery(delivery, lastProgress, now))
+        if (executionBinding is null || delivery is null)
         {
             return await RollbackFalseAsync(tx, ct);
         }
+        var probe = await LegacyTaskExecutionProbe.ReadAsync(db, decision.WorkspaceId, assignment.AgentId,
+            executionBinding, delivery, lastProgress, now, _options.TrackerStallThreshold, ct);
+        if (probe.Verdict != TaskExecutionTrackingVerdict.CleanupRequired || probe.Code != decision.Code
+            || task.Version != decision.TaskVersion || executionBinding.Id != decision.ExecutionBindingId
+            || probe.Run?.RunId != decision.ExecutionRunId || probe.Run?.FencingToken != decision.ExecutionFencingToken)
+            return await RollbackFalseAsync(tx, ct);
 
         if (TaskStateMachine.CanTransition(task.Status, WorkspaceTaskStatus.Blocked))
             task.Status = WorkspaceTaskStatus.Blocked;
@@ -208,6 +209,13 @@ public sealed class TaskExecutionRepairCoordinator(
         task.BlockerReason = deliveryTerminal
             ? $"Delivery ended as {delivery.Status}, but no canonical execution claimed the assignment."
             : "Delivery was acknowledged, but no canonical execution claimed the assignment before the stall threshold.";
+        if (decision.Code is "legacy_execution_terminal_without_task_settlement" or "legacy_execution_claim_orphaned")
+        {
+            task.BlockerKind = decision.Code["legacy_".Length..];
+            task.BlockerReason = probe.Run is null
+                ? "Execution claim has no canonical run after the stall threshold; manual reconciliation is required."
+                : $"Execution run '{probe.Run.RunId}' ended as '{probe.Run.Status}' without evidence-bearing task settlement.";
+        }
         task.ActiveAssignmentId = null;
         task.Version++;
         task.UpdatedAtUtc = now;
@@ -215,11 +223,24 @@ public sealed class TaskExecutionRepairCoordinator(
         assignment.Status = AssignmentAttemptStatus.Failed;
         assignment.ReleasedAtUtc = now;
         assignment.UpdatedAtUtc = now;
+        // Legacy reservations have no assignment column. Only release the current
+        // task/agent's pre-assignment reservation without a Goal owner; never a new reservation.
+        var legacyReservations = await db.AgentExecutionReservations.Where(item =>
+            item.WorkspaceId == decision.WorkspaceId && item.TaskId == decision.TaskId
+            && item.AgentId == assignment.AgentId && item.GoalRunId == null && item.Status == "active").ToListAsync(ct);
+        foreach (var reservation in legacyReservations.Where(item => item.CreatedAtUtc <= (assignment.ActiveAtUtc ?? assignment.CreatedAtUtc)))
+        {
+            reservation.Status = "released";
+            reservation.ReleasedAtUtc = now;
+            reservation.UpdatedAtUtc = now;
+            reservation.ReleaseReason = task.BlockerKind;
+        }
         await AppendLegacyTaskBlockedEventAsync(
             db,
             task,
             assignment,
             task.BlockerKind,
+            probe.Run?.RunId,
             now,
             ct);
 
@@ -231,18 +252,6 @@ public sealed class TaskExecutionRepairCoordinator(
             assignment.AttemptId,
             assignment.AgentId);
         return true;
-    }
-
-    private bool CanCleanupLegacyDelivery(
-        MessageDeliveryEntity delivery,
-        DateTimeOffset? lastProgress,
-        DateTimeOffset now)
-    {
-        if (delivery.Status is "dead_letter" or "failed" or "cancelled")
-            return true;
-        return string.Equals(delivery.Status, "delivered", StringComparison.Ordinal)
-            && lastProgress is not null
-            && now - lastProgress.Value > _options.TrackerStallThreshold;
     }
 
     private async Task<bool> TryRecoverContinuationLeaseAsync(
@@ -394,6 +403,7 @@ public sealed class TaskExecutionRepairCoordinator(
         WorkspaceTaskEntity task,
         TaskAssignmentAttemptEntity assignment,
         string decisionCode,
+        string? executionRunId,
         DateTimeOffset now,
         CancellationToken ct)
     {
@@ -410,7 +420,8 @@ public sealed class TaskExecutionRepairCoordinator(
             AssignmentId = assignment.AttemptId,
             AgentId = assignment.AgentId,
             DecisionCode = decisionCode,
-            CorrelationId = task.TaskId,
+            CorrelationId = executionRunId ?? task.TaskId,
+            ExecutionId = executionRunId,
             CausationId = assignment.AttemptId,
             CreatedAtUtc = now,
         });

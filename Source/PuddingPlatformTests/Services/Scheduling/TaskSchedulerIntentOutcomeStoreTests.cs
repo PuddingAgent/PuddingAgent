@@ -119,9 +119,9 @@ public sealed class TaskSchedulerIntentOutcomeStoreTests
             "PuddingApplicationInitializer must wire TaskSchedulerIntentOutcomeSchemaBootstrapper.EnsureCreatedAsync");
     }
 
-    private static string FindRepoFile(string relativePath)
+    private static string FindRepoFile(string relativePath, [System.Runtime.CompilerServices.CallerFilePath] string sourcePath = "")
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        var directory = new DirectoryInfo(Path.GetDirectoryName(sourcePath)!);
         while (directory is not null
                && !File.Exists(Path.Combine(directory.FullName, relativePath)))
         {
