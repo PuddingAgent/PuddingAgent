@@ -1542,6 +1542,169 @@ public sealed class SearchGrepToolTests
         }
     }
 
+    // ─── ADR-089 U0-G2：SearchGrepTool glob 统一到 RetrievalGlobMatcher 的交叉一致性回归 ───
+
+    [TestMethod]
+    public async Task Search_Grep_WithTxtGlob_Excludes_Atxtx()
+    {
+        // 反证旧语义 B（Win32 searchPattern 的 *.txt 会前导匹配 a.txtx）：
+        // canonical 合同下 *.txt 必须精确到扩展名边界，a.txtx 不得命中。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "a.txt"), "NeedleTarget in a.txt\n");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "a.txtx"), "NeedleTarget in a.txtx\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NeedleTarget", new Dictionary<string, string> { ["pattern"] = "*.txt", ["max_results"] = "10" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "a.txt:1");
+            Assert.IsFalse(result.Output.Contains("a.txtx"), "glob '*.txt' must not match 'a.txtx' (Win32 searchPattern leading-match semantics)");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task Search_Grep_WithStarDotStarGlob_Matches_Extensionless_Makefile()
+    {
+        // 反证旧语义 A（MatchesSimpleExpression 的 *.* 要求文件名含点）：
+        // canonical 规范 3a 整串 *.* ≡ *，无扩展名文件 Makefile 必须命中。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "Makefile"), "NeedleTarget in makefile\n");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "readme.txt"), "NeedleTarget in readme\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            // 不传 pattern：默认 filePattern="*.*"
+            var result = await ExecuteAsync(tool, "NeedleTarget", new Dictionary<string, string> { ["max_results"] = "10" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "Makefile:1");
+            StringAssert.Contains(result.Output, "readme.txt:1");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task Search_Grep_WithKeepPrefixGlob_Matches_Keep1Txt()
+    {
+        // 非纯扩展名 glob（Keep*.txt）完整匹配：Keep1.txt 命中，Skip1.txt 不得命中。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "Keep1.txt"), "NeedleTarget keep\n");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "Skip1.txt"), "NeedleTarget skip\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NeedleTarget", new Dictionary<string, string> { ["pattern"] = "Keep*.txt", ["max_results"] = "10" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "Keep1.txt:1");
+            Assert.IsFalse(result.Output.Contains("Skip1.txt"), "glob 'Keep*.txt' must not match 'Skip1.txt'");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task Search_Grep_WithSeparatorGlob_Matches_RelativePath_And_StarNotCrossSlash()
+    {
+        // 含分隔符 glob 按相对路径匹配；* 不跨 /：src/*.cs 命中 src/a.cs，不命中 src/sub/b.cs。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(tempDir, "src", "sub"));
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "src", "a.cs"), "NeedleTarget in src a\n");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "src", "sub", "b.cs"), "NeedleTarget in src sub b\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NeedleTarget", new Dictionary<string, string> { ["pattern"] = "src/*.cs", ["max_results"] = "10" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, $"src{Path.DirectorySeparatorChar}a.cs:1");
+            Assert.IsFalse(result.Output.Contains("b.cs"), "glob 'src/*.cs' must not cross '/' to match src/sub/b.cs");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task Search_Grep_Candidate_Violating_Glob_Dropped_And_No_Duplicate_Emit()
+    {
+        // 候选-枚举奇偶校验：Lucene 返回违规候选 a.txtx（违反 *.txt）与合规候选 good.txt；
+        // 违规候选必须被准入谓词丢弃，合规候选正常命中且不与枚举路径重复输出。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "good.txt"), "NeedleTarget good\n");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "a.txtx"), "NeedleTarget bad\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(
+                true,
+                [
+                    new FullTextSearchMatch(Path.Combine(tempDir, "a.txtx"), 1, "NeedleTarget bad"),
+                    new FullTextSearchMatch(Path.Combine(tempDir, "good.txt"), 1, "NeedleTarget good"),
+                ],
+                null, 2, 5));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NeedleTarget", new Dictionary<string, string> { ["pattern"] = "*.txt", ["max_results"] = "10" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "good.txt:1");
+            Assert.IsFalse(result.Output.Contains("a.txtx"), "candidate violating the glob must be dropped before scan");
+            Assert.AreEqual(1, result.Output.Split('\n').Count(l => l.Contains("good.txt:") && l.Contains("NeedleTarget")),
+                "good.txt must be emitted exactly once (candidate path merged with enumeration path via processedFiles)");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
     [TestMethod]
     public void SkillId_Is_SearchGrep()
     {

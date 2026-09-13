@@ -354,39 +354,50 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         $"{Path.GetFullPath(filePath).ToLowerInvariant()}|{lineNumber}";
 
     /// <summary>
-    /// ADR-089 U0 R1.2：候选文件必须通过与枚举相同的完整约束校验后才可进入扫描：
-    /// 存在、scope（搜索目录之内）、完整 glob（含 Keep*.txt 这类非纯扩展名 glob）、
-    /// 扩展名过滤、排除目录。任一不满足 → 候选被丢弃，不得作为命中输出，也不得绑定旧路径。
+    /// ADR-089 U0 R1.2 / G2：路径级准入谓词——Lucene 候选与目录枚举共用同一约束：
+    /// 存在、scope（搜索目录之内）、完整 glob（统一走 RetrievalGlobMatcher canonical 合同，
+    /// 含 Keep*.txt 这类非纯扩展名 glob 与含分隔符 glob）、扩展名过滤、排除目录。
+    /// 任一不满足 → 该路径被丢弃，不得作为命中输出。
     /// </summary>
-    private static bool IsCandidateAdmissible(
-        string candidateFullPath, string cwd, string? glob, string[]? extFilter, HashSet<string> excludeDirs)
+    private static bool IsAdmissiblePath(
+        string fullPath, string cwd, string? glob, string[]? extFilter, HashSet<string> excludeDirs)
     {
-        if (!File.Exists(candidateFullPath))
+        if (!File.Exists(fullPath))
             return false;
 
-        // scope：候选必须位于本次声明的搜索目录之内（相对路径已在收集阶段与 directory 合并）。
+        // scope：路径必须位于本次声明的搜索目录之内（相对路径已在收集阶段与 directory 合并）。
         var scopeRoot = Path.GetFullPath(cwd).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             + Path.DirectorySeparatorChar;
-        if (!candidateFullPath.StartsWith(scopeRoot, StringComparison.OrdinalIgnoreCase))
+        if (!fullPath.StartsWith(scopeRoot, StringComparison.OrdinalIgnoreCase))
             return false;
 
-        if (IsPathInExcludedDir(candidateFullPath, cwd, excludeDirs))
+        if (IsPathInExcludedDir(fullPath, cwd, excludeDirs))
             return false;
 
-        var fileName = Path.GetFileName(candidateFullPath);
-        if (!string.IsNullOrWhiteSpace(glob)
-            && !System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(glob, fileName, ignoreCase: true))
-            return false;
+        // ADR-089 U0-G2：glob 判定统一走 RetrievalGlobMatcher，消除仓库内语义分叉
+        // （旧语义 A=MatchesSimpleExpression 仅文件名、*.* 要求含点；旧语义 B=Win32 searchPattern
+        // 的 *.txt 会误配 a.txtx）。含分隔符 glob 按 cwd 相对路径匹配（分隔符归一为 /，* 不跨 /）。
+        // ignoreCase 恒为 true：Windows First，与 Directory.GetFiles 的大小写不敏感行为一致。
+        if (!string.IsNullOrWhiteSpace(glob))
+        {
+            var relative = NormalizeRelativePath(cwd, fullPath);
+            if (!RetrievalGlobMatcher.Matches(Path.GetFileName(fullPath), relative, glob, ignoreCase: true))
+                return false;
+        }
 
         if (extFilter is { Length: > 0 })
         {
-            var ext = Path.GetExtension(candidateFullPath);
+            var ext = Path.GetExtension(fullPath);
             if (!extFilter.Contains(ext, StringComparer.OrdinalIgnoreCase))
                 return false;
         }
 
         return true;
     }
+
+    /// <summary>G2：root 相对路径归一（\ → /），供 RetrievalGlobMatcher 相对路径语义使用。</summary>
+    private static string NormalizeRelativePath(string root, string fullPath) =>
+        Path.GetRelativePath(root, fullPath).Replace('\\', '/');
 
     private async Task<ToolExecutionResult> ManagedGrepAsync(
         RetrievalMatcher matcher, string? pattern, string? directory,
@@ -412,7 +423,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         {
             // 枚举阶段即按目录名剪枝排除目录（bin/obj 等整棵子树不再进入枚举），
             // 避免排除目录中的文件占用 MaxEnumeratedFiles 名额，导致真实源码目录被跳过（假阴性）。
-            files = EnumerateFilesPruningExcluded(cwd, filePattern, excludeDirs, MaxEnumeratedFiles,
+            files = EnumerateFilesMatchingGlob(cwd, filePattern, excludeDirs, MaxEnumeratedFiles,
                 out enumerationTruncated, out enumerationErroredDirs);
         }
         catch (Exception ex)
@@ -425,16 +436,22 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         // 此处只消费；token 是内部预算与调用方取消的联合令牌。
         var token = cts.Token;
 
-        // ADR-089 U0 R1：候选文件排在工作清单最前（Lucene 相关度序），其后是枚举文件。
+        // ADR-089 U0 R1 / G2：候选与枚举文件统一先过同一准入谓词 IsAdmissiblePath 再入工作清单；
+        // 候选排最前（Lucene 相关度序），其后是枚举文件（枚举顺序）。枚举文件再过一次谓词是幂等的
+        // （glob/排除/scope 结论一致），换取「两条路径同一合同」的结构保证。
         // processedFiles 保证每个文件只被处理一次：候选与枚举重叠时不重复扫描、不重复输出。
         var processedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var workList = new List<string>(files.Count + candidatePaths.Count);
         foreach (var candidate in candidatePaths)
         {
-            if (IsCandidateAdmissible(candidate, cwd, pattern, extFilter, excludeDirs))
+            if (IsAdmissiblePath(candidate, cwd, pattern, extFilter, excludeDirs))
                 workList.Add(candidate);
         }
-        workList.AddRange(files);
+        foreach (var file in files)
+        {
+            if (IsAdmissiblePath(file, cwd, pattern, extFilter, excludeDirs))
+                workList.Add(file);
+        }
 
         var results = new List<string>();
         var emittedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -455,12 +472,8 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 break;
             }
 
-            if (extFilter is { Length: > 0 })
-            {
-                var ext = Path.GetExtension(file);
-                if (!extFilter.Contains(ext, StringComparer.OrdinalIgnoreCase)) continue;
-            }
-
+            // ADR-089 U0 G2：扩展名过滤已由工作清单装配阶段的 IsAdmissiblePath 统一覆盖，
+            // 扫描循环内不再重复判断（消除两处语义分叉的死代码）。
             // ADR-089 U0 R1.5：候选与枚举可能命中同一文件——每文件只处理一次。
             if (!processedFiles.Add(Path.GetFullPath(file))) continue;
 
@@ -634,9 +647,13 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     /// 深度优先枚举文件：按目录名剪枝，排除目录（bin/obj 等）的整棵子树直接跳过。
     /// 避免排除目录中的大量文件占用枚举名额，导致真实源码目录被跳过（假阴性），
     /// 同时避免遍历 bin/obj 等大目录带来的无谓开销。
+    /// ADR-089 U0-G2：glob 不再交给 Win32 searchPattern（旧语义 B 的 *.txt 会误配 a.txtx）——
+    /// 目录内取全部文件（pattern 恒为 "*"），统一用 RetrievalGlobMatcher 过滤；
+    /// 上限 maxMatchedFiles 只统计命中文件（matched-only），未命中文件不占名额，杜绝假截断。
+    /// glob 恒用 ignoreCase: true（Windows First；与 Directory.GetFiles 大小写不敏感行为一致）。
     /// </summary>
-    private static List<string> EnumerateFilesPruningExcluded(
-        string root, string pattern, HashSet<string> excludeDirs, int maxFiles,
+    private static List<string> EnumerateFilesMatchingGlob(
+        string root, string? glob, HashSet<string> excludeDirs, int maxMatchedFiles,
         out bool truncated, out int failedDirs)
     {
         var files = new List<string>(1024);
@@ -656,7 +673,8 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             try
             {
                 subDirs = Directory.GetDirectories(dir, "*", SearchOption.TopDirectoryOnly);
-                dirFiles = Directory.GetFiles(dir, pattern, SearchOption.TopDirectoryOnly);
+                // G2：glob 不交给 Win32（语义 B），取全部文件后统一过 RetrievalGlobMatcher。
+                dirFiles = Directory.GetFiles(dir, "*", SearchOption.TopDirectoryOnly);
             }
             catch (Exception) when (dir != root)
             {
@@ -675,7 +693,11 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
             foreach (var file in dirFiles)
             {
-                if (files.Count >= maxFiles)
+                // G2：只有命中 glob 的文件才计入名额（matched-only），未命中文件不占枚举上限。
+                var rel = NormalizeRelativePath(root, file);
+                if (!RetrievalGlobMatcher.Matches(Path.GetFileName(file), rel, glob, ignoreCase: true))
+                    continue;
+                if (files.Count >= maxMatchedFiles)
                 {
                     truncated = true;
                     return files;
