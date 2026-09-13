@@ -16,7 +16,7 @@ namespace PuddingRuntime.Services.Skills;
 [Tool(
     id: "search_grep",
     name: "search_grep",
-    description: "在指定目录的代码文件中搜索指定文本。支持正则表达式。可选参数 pattern 过滤文件名（如 \"*.cs\"），file_ext 过滤扩展名（如 \"cs;ts\"），directory 限定搜索目录，exclude_dirs 排除子目录（默认 $outputWwwroot;dist;node_modules;bin;obj;.git;.pudding;TestResults;artifacts;publish;.venv;.tmp），exclude_dirs_append 追加排除目录，max_line_bytes 单行截断上限（默认 8192），max_total_bytes 结果总量上限（默认 16384）；结果不足时缩小范围后渐进检索。",
+    description: "在指定目录的代码文件中搜索指定文本。支持正则表达式。可选参数 pattern 过滤文件名（如 \"*.cs\"），file_ext 过滤扩展名（如 \"cs;ts\"），directory 限定搜索目录，exclude_dirs 排除子目录（默认 $outputWwwroot;dist;node_modules;bin;obj;.git;.pudding;TestResults;artifacts;publish;.venv;.tmp），exclude_dirs_append 追加排除目录，max_line_bytes 单行截断上限（默认 8192），max_total_bytes 结果总量上限（默认 16384）；结果不足时缩小范围后渐进检索。Hard limits: at most 2000 files are enumerated, at most 2000 files / 64MB are scanned, and one call is capped at 10s. Whenever a limit is hit, the output MUST carry an explicit notice — it never degrades into a silent \"(no matches)\". For large or unknown scopes prefer the indexed tools first: code_symbol_search / code_explore (code index, millisecond latency) or file_search (file-name index); then use search_grep to grep inside a narrow directory.",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe)]
@@ -34,8 +34,10 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     private const long DefaultMaxTotalBytes = 16 * 1024;
     private const string TruncatedMarker = "...[truncated, original={0} bytes]";
     private const string TotalCapMessage = "结果已截断，共命中 {0} 处，请缩小范围";
-    private const string EnumerationTruncatedMessage = "文件枚举已达上限 {0} 个，结果可能不完整（建议缩小 directory/pattern/file_ext 范围）";
-    private const string ScanBudgetMessage = "扫描已达预算上限（{0} 个文件 / {1} 字节），结果可能不完整";
+    private const string EnumerationTruncatedMessage = "文件枚举已达上限 {0} 个，结果可能不完整（建议缩小 directory/pattern/file_ext 范围，或改用索引工具 code_symbol_search / code_explore / file_search 精确定位，毫秒级返回）";
+    private const string ScanBudgetMessage = "扫描已达预算上限（{0} 个文件 / {1} 字节），结果可能不完整（建议缩小 directory/pattern/file_ext 范围，或改用索引工具 code_symbol_search / code_explore / file_search 精确定位）";
+    private const string ErrorBudgetMessage = "有 {0} 个文件读取失败，已提前结束扫描，结果可能不完整";
+    private const string LargeFileSkippedMessage = "已跳过 {0} 个超过 1MB 的大文件，结果可能不完整";
     private const string PaginationReportMessage = "返回数量为 {0} 个超过预算 100，完整结果已释放到临时文件，路径为 {1}，如果需要阅读完整的请使用 file_read 工具以 OffsetLines 参数分页阅读。";
     private const int MaxInlineResults = 100;
 
@@ -333,6 +335,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         long totalResultBytes = 0;
         long matchCount = 0;
         bool totalCapReached = false;
+        int skippedLargeFiles = 0;
 
                 var filePattern = string.IsNullOrWhiteSpace(pattern) ? "*.*" : pattern;
         bool enumerationTruncated = false;
@@ -361,10 +364,11 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         cts.CancelAfter(ManagedSearchTimeout);
 
                 bool scanBudgetExceeded = false;
+        bool errorBudgetExceeded = false;
         foreach (var file in files)
         {
             if (cts.IsCancellationRequested || totalCapReached) break;
-            if (errors >= MaxErrors) break;
+            if (errors >= MaxErrors) { errorBudgetExceeded = true; break; }
             if (scannedFiles >= MaxScannedFiles || scannedBytes >= MaxScannedBytes)
             {
                 scanBudgetExceeded = true;
@@ -380,7 +384,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             try
             {
                 var info = new FileInfo(file);
-                if (info.Length > MaxFileSizeBytes) continue;
+                if (info.Length > MaxFileSizeBytes) { skippedLargeFiles++; continue; }
 
                 var raw = await File.ReadAllBytesAsync(file, cts.Token);
                 scannedFiles++;
@@ -424,13 +428,17 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
         var notes = new List<string>();
         if (timedOut)
-            notes.Add("搜索超时（10s），结果可能不完整，建议缩小 directory/pattern/file_ext 范围");
+            notes.Add("搜索超时（10s），结果可能不完整，建议缩小 directory/pattern/file_ext 范围，或改用索引工具 code_symbol_search / code_explore / file_search");
         if (enumerationTruncated)
             notes.Add(string.Format(EnumerationTruncatedMessage, MaxEnumeratedFiles));
         if (scanBudgetExceeded)
             notes.Add(string.Format(ScanBudgetMessage, MaxScannedFiles, MaxScannedBytes));
         if (totalCapReached)
             notes.Add(string.Format(TotalCapMessage, matchCount));
+        if (errorBudgetExceeded)
+            notes.Add(string.Format(ErrorBudgetMessage, MaxErrors));
+        if (skippedLargeFiles > 0)
+            notes.Add(string.Format(LargeFileSkippedMessage, skippedLargeFiles));
 
         if (results.Count == 0)
         {

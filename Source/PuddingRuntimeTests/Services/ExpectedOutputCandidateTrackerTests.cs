@@ -109,6 +109,7 @@ public sealed class ExpectedOutputCandidateTrackerTests
         StringAssert.Contains(prompt, "COMPLETE requested deliverable");
         StringAssert.Contains(prompt, "must never be only a status sentence");
         StringAssert.Contains(prompt, "`search_grep` is the rg-like content-search tool");
+        StringAssert.Contains(prompt, "code_symbol_search");
     }
 
     [TestMethod]

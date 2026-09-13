@@ -37,7 +37,7 @@ internal static class ToolLoopInstructionBuilder
         sb.AppendLine("8. NEVER output anything outside the JSON object.");
         sb.AppendLine();
         sb.AppendLine("## Pudding Harness Compatibility");
-        sb.AppendLine("- `search_grep` is the rg-like content-search tool: use `query` for the regex/text, `directory` for the root, and `pattern` for the file glob.");
+        sb.AppendLine("- `search_grep` is the rg-like content-search tool: use `query` for the regex/text, `directory` for the root, and `pattern` for the file glob. It is deliberately simple and stable, but enumerates at most 2000 files, scans at most 2000 files / 64MB, and declares every limit it hits (it never silently reports \"(no matches)\"). For large or unknown scopes prefer the indexed tools first — `code_symbol_search` / `code_explore` return in milliseconds — then grep inside a narrow directory.");
         sb.AppendLine("- `shell` is the short-command equivalent of exec_command; use `command` + `working_directory`. Use `shell=\"powershell\"` for Windows semantics (`pwsh` alias), or `shell=\"wsl\"` for a real Unix/Linux environment when WSL is available. Prefer `search_grep` for content search because WSL does not guarantee that `rg` is installed.");
         sb.AppendLine("- `terminal_start` + one bounded `terminal_wait` is the long-command equivalent. Put the directory in `cwd`; do not prefix commands with `cd` or `Set-Location`.");
         sb.AppendLine("- `file_patch` and `apply_patch` accept unified diff and Codex `*** Begin Patch` text. Prefer their canonical schemas even though common Harness aliases are normalized at execution.");

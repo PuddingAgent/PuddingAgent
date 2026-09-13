@@ -465,6 +465,70 @@ public sealed class SearchGrepToolTests
 
             Assert.IsTrue(result.Success, result.Error);
             StringAssert.Contains(result.Output, "文件枚举已达上限 2000 个");
+            StringAssert.Contains(result.Output, "code_symbol_search");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_EnumerationTruncation_Guides_To_Indexed_Tools()
+    {
+        // 枚举截断 note 必须同时声明上限并引导改用索引工具（code_symbol_search 等毫秒级返回）。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        for (int i = 0; i < 2050; i++)
+            await File.WriteAllTextAsync(Path.Combine(tempDir, $"f{i:D4}.txt"), "NEEDLE\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["max_results"] = "50" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "文件枚举已达上限 2000 个");
+            StringAssert.Contains(result.Output, "code_symbol_search");
+            Assert.AreEqual(ToolResultStatuses.Truncated, result.Status);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_LargeFiles_Are_Declared_As_Skipped()
+    {
+        // 回归：超过 1MB 的大文件被静默跳过时必须在输出中声明，否则"小文件命中但大文件内容丢失"对调用方不可见。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var bigLine = new string('x', 1024) + " NEEDLE\n";
+        var bigContent = string.Concat(Enumerable.Repeat(bigLine, 1100)); // ≈1.13MB，含 NEEDLE 但必须被跳过
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "big.txt"), bigContent);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "small.txt"), "tiny NEEDLE sample.\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt", ["max_results"] = "10" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "small.txt:1: tiny NEEDLE sample.");
+            StringAssert.Contains(result.Output, "已跳过 1 个超过 1MB 的大文件");
         }
         finally
         {
