@@ -433,10 +433,16 @@ internal sealed class BuiltInRecursiveFileSearchProvider : IFileSearchProvider
     public string DisplayName => "Built-in recursive file search";
     public bool IsAvailable => true;
 
+    // ADR-089 U0-G3：legacy 非覆盖路径不再把 pattern 直接交给 Win32 searchPattern——
+    // Windows 前导匹配怪癖（*.txt 命中 a.txtx）与统一匹配合同冲突。改为 "*"
+    // 全量枚举 + FileSearchPatternMatcher 过滤（通配 = canonical glob 合同；非通配 =
+    // 大小写不敏感子串包含），先过滤再 Take，防止截断发生在过滤之前造成漏文件。
     public Task<IReadOnlyList<string>> SearchAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct)
     {
         var searchOption = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-        var results = Directory.EnumerateFiles(directory, pattern, searchOption)
+        var root = Path.GetFullPath(directory);
+        var results = Directory.EnumerateFiles(directory, "*", searchOption)
+            .Where(path => FileSearchPatternMatcher.Matches(path, root, pattern))
             .Take(maxResults)
             .Select(Path.GetFullPath)
             .ToArray();
@@ -733,8 +739,25 @@ internal static class FileSearchPathHelpers
     }
 }
 
+/// <summary>
+/// 文件级 pattern 过滤（ADR-089 U0-G3 起分两个显式分支）：
+/// <list type="bullet">
+/// <item>含通配符（<c>*</c>/<c>?</c>）：canonical glob 合同，统一委托
+/// <see cref="RetrievalGlobMatcher"/>（** 前缀单次剥离、[]{} 字面、整串 *.* ≡ *、
+/// 分隔符归一为 /、* 与 ? 不跨 /）。</item>
+/// <item>不含通配符：<b>大小写不敏感子串包含，不是 glob 合同</b>（父级决策 2026-09-13
+/// 显式保留）。依据：Pattern 参数语义是「文件名文本」过滤（工具描述
+/// "File name text or glob pattern. Default: *"，默认值 <c>*</c>），改成精确匹配属未授权
+/// 行为回归；U1 计划把「pattern 文本」与「glob 过滤器」拆为两个参数后在此标注迁移点。</item>
+/// </list>
+/// </summary>
 internal static class FileSearchPatternMatcher
 {
+    /// <summary>
+    /// provider 级 pattern 翻译（把 pattern 折算成 Win32 枚举可用的 searchPattern），
+    /// 不是文件级过滤；文件级过滤一律走 <see cref="Matches"/> / <see cref="MatchesFileOrPath"/>。
+    /// 行为保持不变（G3 只统一文件级通配分支）。
+    /// </summary>
     public static string ToDirectorySearchPattern(string pattern)
     {
         var value = string.IsNullOrWhiteSpace(pattern) ? "*" : pattern;
@@ -750,15 +773,16 @@ internal static class FileSearchPatternMatcher
         var fileName = Path.GetFileName(path);
         var relativePath = Path.GetRelativePath(rootDirectory, path);
 
+        // 非通配分支：大小写不敏感子串包含，不是 glob 合同（见类型级 XML doc；父级决策显式保留）。
         if (!value.Contains('*') && !value.Contains('?'))
         {
             return fileName.Contains(value, StringComparison.OrdinalIgnoreCase)
                    || relativePath.Contains(value, StringComparison.OrdinalIgnoreCase);
         }
 
-        var normalizedPattern = Regex.Replace(value, @"^\*\*[/\\]", "");
-        return GlobLikeMatch(fileName, normalizedPattern)
-               || GlobLikeMatch(relativePath, normalizedPattern);
+        // 通配分支（G3 统一）：** 前缀剥离由 RetrievalGlobMatcher 规范 2 内建；
+        // 本地 **/ 剥离正则与 GlobLikeMatch（* 可跨 / 的旧语义）已删除。
+        return RetrievalGlobMatcher.Matches(fileName, relativePath, value, ignoreCase: true);
     }
 
     public static bool MatchesFileOrPath(string path, string pattern)
@@ -766,22 +790,15 @@ internal static class FileSearchPatternMatcher
         var value = string.IsNullOrWhiteSpace(pattern) ? "*" : pattern;
         var fileName = Path.GetFileName(path);
 
+        // 非通配分支：同 Matches，显式保留子串包含语义（not-glob 契约）。
         if (!value.Contains('*') && !value.Contains('?'))
         {
             return fileName.Contains(value, StringComparison.OrdinalIgnoreCase)
                    || path.Contains(value, StringComparison.OrdinalIgnoreCase);
         }
 
-        var normalizedPattern = Regex.Replace(value, @"^\*\*[/\\]", "");
-        return GlobLikeMatch(fileName, normalizedPattern)
-               || GlobLikeMatch(path, normalizedPattern);
-    }
-
-    private static bool GlobLikeMatch(string value, string pattern)
-    {
-        var regex = "^" + Regex.Escape(pattern)
-            .Replace("\\*", ".*", StringComparison.Ordinal)
-            .Replace("\\?", ".", StringComparison.Ordinal) + "$";
-        return Regex.IsMatch(value, regex, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        // 通配分支（G3 统一）：canonical glob 无绝对路径模式——把绝对路径分隔符归一为 /
+        // 后作为 relativePath 实参传入（父级决策 2026-09-13），glob 含分隔符时按该归一路径匹配。
+        return RetrievalGlobMatcher.Matches(fileName, path.Replace('\\', '/'), value, ignoreCase: true);
     }
 }

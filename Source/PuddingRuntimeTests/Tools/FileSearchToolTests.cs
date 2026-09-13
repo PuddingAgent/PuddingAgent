@@ -3,7 +3,11 @@
 //   L128：专门验证"Everything 清单遗漏新文件"不被误报为 no_match；基线与索引辅助路径同一匹配合同。
 // 覆盖声明单点产出用计数断言锁定（U0-S2 教训：Contains 断言锁不住"同一声明输出两遍"，见 ff79f3b）。
 using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Tools;
+using PuddingFullTextIndex.Contracts;
+using PuddingRuntime.Services.Skills;
+using PuddingRuntime.Services.Search;
 using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntimeTests.Tools;
@@ -255,6 +259,176 @@ public sealed class FileSearchToolTests
         }
     }
 
+    // ===== ADR-089 U0-G3：FileSearchTool 通配分支统一到共享 glob 合同（RetrievalGlobMatcher）=====
+
+    // G3-1：canonical glob 合同下 *.txt 不得命中 b.txtx（反证 Win32 searchPattern 前导匹配怪癖）。
+    [TestMethod]
+    public async Task FileSearch_Glob_WithTxt_Excludes_Atxtx()
+    {
+        var root = CreateTempDir("u0g3-wtxt-");
+        try
+        {
+            await WriteFileAsync(root, "a.txt");
+            await WriteFileAsync(root, "b.txtx");
+
+            var result = await RunBuiltInFileSearchAsync(root, "*.txt");
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "a.txt");
+            Assert.IsFalse(result.Output.Contains("b.txtx"), "glob *.txt must not match b.txtx (Win32 leading-match quirk)");
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
+    // G3-2：规范 8——* 不跨路径分隔符。目录名 "sub" 不得借 s* 跨过 / 命中其中文件
+    // （旧 GlobLikeMatch 相对路径分支会把 * 展开到整个相对路径，形成跨目录误配）；
+    // 而 *a.cs 命中 sub/a.cs 由文件名规则决定（文件名 a.cs 匹配），与 sub/ 前缀无关。
+    [TestMethod]
+    public async Task FileSearch_Glob_Star_Does_Not_Cross_Directory_Separator()
+    {
+        var root = CreateTempDir("u0g3-star-");
+        try
+        {
+            await WriteFileAsync(root, "single.txt");
+            await WriteFileAsync(root, "plain.txt");
+            await WriteFileAsync(root, "a.cs");
+            await WriteFileInSubDirAsync(root, "sub/a.cs");
+
+            var starOnly = await RunBuiltInFileSearchAsync(root, "s*");
+            Assert.IsTrue(starOnly.Success, starOnly.Error);
+            StringAssert.Contains(starOnly.Output, "single.txt");
+            Assert.IsFalse(starOnly.Output.Contains("a.cs"), "s* must not cross '/' and match sub/a.cs (canonical rule 8)");
+            Assert.IsFalse(starOnly.Output.Contains("plain.txt"));
+
+            var endsWithAcs = await RunBuiltInFileSearchAsync(root, "*a.cs");
+            Assert.IsTrue(endsWithAcs.Success, endsWithAcs.Error);
+            StringAssert.Contains(endsWithAcs.Output, "a.cs");
+            Assert.IsFalse(endsWithAcs.Output.Contains("single.txt"));
+            Assert.IsFalse(endsWithAcs.Output.Contains("plain.txt"));
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
+    // G3-3：含分隔符 glob 按相对路径匹配（规范 5），且 * 不跨 /（规范 8）——
+    // sub/*.cs 命中子目录直接子文件，不命中更深层 nested，也不命中根目录同名扩展。
+    [TestMethod]
+    public async Task FileSearch_Glob_WithDirectory_Matches_RelativePath_Without_Crossing()
+    {
+        var root = CreateTempDir("u0g3-dir-");
+        try
+        {
+            await WriteFileAsync(root, "a.cs");
+            await WriteFileInSubDirAsync(root, "sub/a.cs");
+            await WriteFileInSubDirAsync(root, "sub/nested/b.cs");
+
+            var result = await RunBuiltInFileSearchAsync(root, "sub/*.cs");
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "a.cs");
+            Assert.IsFalse(result.Output.Contains("b.cs"), "sub/*.cs must not cross '/' into nested/b.cs (canonical rule 8)");
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
+    // G3-4（父级决策显式登记）：非通配 pattern = 大小写不敏感子串包含，不是 glob 合同。
+    // "logo" 命中 logo.png 与 sub/logo-icon.png；该契约在 U1 拆参（pattern 文本 vs glob 过滤器）前保持不变。
+    [TestMethod]
+    public async Task FileSearch_NonGlob_Substring_Semantics_Is_Explicitly_Preserved()
+    {
+        var root = CreateTempDir("u0g3-substr-");
+        try
+        {
+            await WriteFileAsync(root, "logo.png");
+            await WriteFileInSubDirAsync(root, "sub/logo-icon.png");
+            await WriteFileAsync(root, "unrelated.txt");
+
+            var result = await RunBuiltInFileSearchAsync(root, "logo");
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "logo.png");
+            StringAssert.Contains(result.Output, "logo-icon.png");
+            Assert.IsFalse(result.Output.Contains("unrelated.txt"));
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
+    // G3-5（S3）：legacy 非覆盖 SearchAsync 不再把 pattern 交给 Win32 searchPattern——
+    // 统一 "*" 枚举 + FileSearchPatternMatcher 过滤；*.txt 不得命中 b.txtx，TopDirectoryOnly 语义不变。
+    [TestMethod]
+    public async Task Legacy_SearchAsync_Uses_Unified_Matcher()
+    {
+        var root = CreateTempDir("u0g3-legacy-");
+        try
+        {
+            await WriteFileAsync(root, "a.txt");
+            await WriteFileAsync(root, "b.txtx");
+            await WriteFileInSubDirAsync(root, "sub/c.txt");
+            var provider = new BuiltInRecursiveFileSearchProvider();
+
+            var recursive = await provider.SearchAsync(root, "*.txt", recursive: true, maxResults: 50, ct: CancellationToken.None);
+            CollectionAssert.AreEquivalent(
+                new[] { Path.Combine(root, "a.txt"), Path.Combine(root, "sub", "c.txt") },
+                recursive.ToArray());
+
+            var topOnly = await provider.SearchAsync(root, "*.txt", recursive: false, maxResults: 50, ct: CancellationToken.None);
+            CollectionAssert.AreEquivalent(new[] { Path.Combine(root, "a.txt") }, topOnly.ToArray());
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
+    // G3-6：跨工具奇偶校验——同一目录、同一 glob 下，FileSearchTool（内置枚举路径）与
+    // SearchGrepTool（G2 后同一 glob 合同）的命中文件集合必须一致（含 Win32 陷阱文件 b.txtx）。
+    [TestMethod]
+    public async Task FileSearch_Glob_CrossTool_Parity_With_SearchGrepTool()
+    {
+        var root = CreateTempDir("u0g3-parity-");
+        try
+        {
+            foreach (var name in new[] { "a.txt", "Keep1.txt", "b.txtx" })
+                await WriteFileAsync(root, name, "PARITYNEEDLE");
+            await WriteFileInSubDirAsync(root, "sub/a.cs", "PARITYNEEDLE");
+            await WriteFileInSubDirAsync(root, "sub/Keep2.cs", "PARITYNEEDLE");
+
+            var candidates = new[] { "a.txt", "Keep1.txt", "b.txtx", "a.cs", "Keep2.cs" };
+            foreach (var glob in new[] { "*.txt", "Keep*.txt", "sub/*.cs" })
+            {
+                var fileSearch = await RunBuiltInFileSearchAsync(root, glob);
+                Assert.IsTrue(fileSearch.Success, fileSearch.Error);
+
+                var grep = await ExecuteGrepAsync("PARITYNEEDLE", root, glob);
+                Assert.IsTrue(grep.Success, grep.Error);
+
+                // 集合相等断言：对全部候选文件名逐一做 iff 检查（任一工具单侧命中即失败）。
+                foreach (var name in candidates)
+                {
+                    var inFileSearch = fileSearch.Output.Contains(name);
+                    var inGrep = grep.Output.Contains(name + ":");
+                    Assert.AreEqual(inGrep, inFileSearch,
+                        $"glob '{glob}': cross-tool parity broken for '{name}' (FileSearch={inFileSearch}, SearchGrep={inGrep})");
+                }
+            }
+        }
+        finally
+        {
+            DeleteDir(root);
+        }
+    }
+
     private static string CreateTempDir(string prefix)
     {
         var dir = Path.Combine(Directory.GetCurrentDirectory(), "temp", prefix + Guid.NewGuid().ToString("N"));
@@ -267,6 +441,73 @@ public sealed class FileSearchToolTests
         var path = Path.Combine(root, fileName);
         await File.WriteAllTextAsync(path, "stub content");
         return path;
+    }
+
+    /// <summary>G3：写指定内容的文件（跨工具奇偶校验用例需要命中行文本）。</summary>
+    private static async Task<string> WriteFileAsync(string root, string fileName, string content)
+    {
+        var path = Path.Combine(root, fileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllTextAsync(path, content);
+        return path;
+    }
+
+    /// <summary>G3：在子目录中写文件（相对路径可含子目录段，自动建目录）。</summary>
+    private static async Task<string> WriteFileInSubDirAsync(string root, string relativePath, string content = "stub content")
+    {
+        var path = Path.Combine(root, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllTextAsync(path, content);
+        return path;
+    }
+
+    /// <summary>G3：仅挂内置枚举 provider，直接走统一匹配合同路径（覆盖路径与差分逻辑共用同一 matcher）。</summary>
+    private static Task<ToolExecutionResult> RunBuiltInFileSearchAsync(string root, string pattern, bool recursive = true) =>
+        ExecuteAsync(new FileSearchTool([new BuiltInRecursiveFileSearchProvider()]), $$"""
+        {
+          "directory": "{{JsonEscape(root)}}",
+          "pattern": "{{JsonEscape(pattern)}}",
+          "recursive": {{(recursive ? "true" : "false")}}
+        }
+        """);
+
+    /// <summary>G3：SearchGrepTool 调用辅助（本地全文索引桩 → managed grep 真实文件系统枚举）。</summary>
+    private static Task<ToolExecutionResult> ExecuteGrepAsync(string query, string directory, string pattern) =>
+        new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, new StubFullTextSearchEngine(false, null!))
+            .ExecuteAsync(new ToolExecutionRequest
+            {
+                ToolCallId = "call-g3-parity",
+                ArgumentsJson = JsonSerializer.Serialize(new Dictionary<string, object?>
+                {
+                    ["query"] = query,
+                    ["directory"] = directory,
+                    ["pattern"] = pattern,
+                    ["max_results"] = "50",
+                }),
+                Context = Context(),
+            });
+
+    /// <summary>G3：全文索引桩（hasIndex=false → SearchGrepTool 走真实文件系统 managed grep）。</summary>
+    private sealed class StubFullTextSearchEngine(bool hasIndex, FullTextSearchResult searchResult) : IFullTextSearchEngine
+    {
+        public bool HasIndex(string directoryPath) => hasIndex;
+
+        public Task<FullTextSearchResult> SearchAsync(
+            string query,
+            string directoryPath,
+            int maxResults = 30,
+            string? fileExtensionFilter = null,
+            string? subDirectoryFilter = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(searchResult);
+
+        public Task<FullTextIndexResult> BuildIndexAsync(
+            string directoryPath,
+            string? filePatterns = null,
+            CancellationToken ct = default) =>
+            Task.FromResult(new FullTextIndexResult(true, 0, 0, 0, null));
+
+        public bool RemoveIndex(string directoryPath) => true;
     }
 
     private static void DeleteDir(string dir)
