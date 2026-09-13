@@ -1,6 +1,6 @@
 # memory/ 总索引
 
-> 最后更新：2026-08-27
+> 最后更新：2026-09-13
 
 ## 协作约定
 
@@ -42,6 +42,7 @@
 | `goal-archive-20260821-0505.md` | goal.md 第六次完整归档（真实路径 D:\data\agents\default.global_general-assistant.6a8\goal.md，20,158B / 205 行，2026-08-20 23:12 v5 精简版全文，含 D3 归因完成 sub-0a66dda8→V24 写入者归属 / P0-6 版本乙修订委派 sub-626bb44d / goal 模式任务 d85a107b 拆分委派 sub-4fe6bba2 / 窗口第 1 晚 V30 平稳），BODY_MATCHES_SOURCE=True；同日精简 v6（9,031B）覆盖 | 2026-08-21 |
 | `goal-archive-20260821-0635.md` | goal.md 第七次完整归档（真实路径 D:\data\agents\default.global_general-assistant.6a8\goal.md，16,798B / 151 行，2026-08-21 06:35 精简 v7 前全文，含 06:20 qwen 查证 + 三口径拆解（干净口径 98.58%）/ 06:29-06:31 委派策略授权（开发=glm-5.3 / 探索=deepseek-v4-flash）），BODY_MATCHES_SOURCE=True；同日精简 v7（7,066B 含 BOM / 67 行）覆盖 | 2026-08-21 |
 | `goal-archive-20260821-1131.md` | goal.md 第八次完整归档（真实路径 D:\data\agents\default.global_general-assistant.6a8\goal.md，20,566B / 215 行，2026-08-21 11:31 精简 v8 前全文，含 P0-6 有条件终审 C1/C2 / P0-7 终审通过 / G0 5/5 / 合批剧本 v0.2 定稿 / R1 XSS 修复 1/2 送终审 / 委派纪律教训 f64ea2ce 不存在），BODY_MATCHES_SOURCE=True；同日精简 v8（5,938B 含 BOM / 59 行）覆盖 | 2026-08-21 |
+| `goal-archive-20260913-0835.md` | goal.md **第九次完整归档**（真实路径 D:\data\agents\default.global_general-assistant.6a8\goal.md，48,863B / 406 行 / sha256 `EFD2A519E2408424EC78C9C6B1C69BA0BB79242AC73D4BC2ADF35FB12000EECF`，含 9/12–9/13 V5/V6 视觉线、SA-TRACE 收口、卡 3133b149 转 NeedsReview、卡 3bd2a4b0 Explore checkpoint、P1 Goodput SLO 与 P2 遥测降噪 iteration 1/32、看板进度统计、自举点火、WorkUnit token 轴根因定案、原子片 2 定案与交付），BODY_MATCHES_SOURCE=True；同日精简 **v9**（8,427B 含 BOM / 129 行）覆盖。**归档方法**：字节级复制 + SHA-256 双向校验（`Copy-Item` 后比对源/副本 hash；再以字节拼接前置 249B 元数据头；独立重读文件尾部 48,863B 复算 hash 一致后才置 `BODY_MATCHES_SOURCE: true`），较「子代理转述全文」更严格。**踩坑**：原文件带 UTF-8 BOM，`ReadAllText`/`WriteAllText` 往返会静默剥离 BOM（正文少 3 字节且 hash 不符）→ 字节级操作必须用 `ReadAllBytes`/`WriteAllBytes` | 2026-09-13 |
 
 ## 调查报告
 
