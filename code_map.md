@@ -2,7 +2,7 @@
 
 ## 2026-09-13 统一检索与渐进展开设计
 
-`Docs/Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md`、ADR-089（Proposed）：以 `workspace_search` 聚合 Everything 文件路径、代码符号和内容检索，`workspace_open` 统一读取/Outline/Summary/关系/Map/Status；复用 CodeQueryService、IFileOutlinerRegistry、FileChunkService，tgrep 为待验证内容后端。施工入口为 FileSearchTool、SearchGrepTool、CodeQueryTools、CodeSummaryTool、SearchAttemptLedger、SmartWorkflow 与工具/模板权限投影。本次仅设计，尚未实施或性能/产品验收。
+`Docs/Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md`、ADR-089（Proposed）：以 `workspace_search` 聚合 Everything 文件路径、代码符号和内容检索，`workspace_open` 统一读取/Outline/Summary/关系/Map/Status；复用 CodeQueryService、IFileOutlinerRegistry、FileChunkService、Lucene 与托管搜索。按用户范围仅借鉴 tgrep 思路，不引入程序/服务或新 trigram 引擎；U3 为现有查询计划与变更失效整合。施工入口为 FileSearchTool、SearchGrepTool、CodeQueryTools、CodeSummaryTool、SearchAttemptLedger、SmartWorkflow 与工具/模板权限投影。本次仅设计，尚未实施或性能/产品验收。
 
 ## 2026-09-13 自动压缩频次诊断
 

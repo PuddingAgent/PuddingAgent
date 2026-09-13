@@ -10,18 +10,18 @@ Everything 文件名索引、代码符号/关系索引、内容 grep、Outline�
 
 1. 默认 Agent 只保留一个代码/文件搜索入口 `workspace_search`，联合路径、符号和文本；通过 target 表达对象，不要求选择引擎。
 2. 配套 `workspace_open` 统一 excerpt、outline、summary、relations、map、status。使用同一结果引用、范围、版本、分页与预算；路径也可直接打开。
-3. Everything、现有代码索引、内容搜索器为内部 provider；复用 CodeQueryService、Outliner 和 FileChunkService。tgrep 是首选验证对象，是否成为正式依赖以本地差分和性能门禁决定。
+3. Everything、现有代码索引、Lucene 与托管搜索为内部能力；复用 CodeQueryService、Outliner 和 FileChunkService。按用户当前范围，仅借鉴 tgrep 的候选筛选、增量校准与有界查询思路，不接入其程序/服务，不新建 trigram 引擎。Lucene 候选仅用于优先验证，不能替代同范围其余文件的精确匹配覆盖。
 4. 所有 provider 使用统一匹配/范围合同；按来源报告覆盖和新鲜度。只有完成相应范围才能报告 no_match；验证已命中候选不能替代新增文件召回。
 5. ref 绑定精确身份、版本和授权范围，但不授予权限。重名必须消歧；旧版本不能沿旧行号冒充当前符号。
 6. 负缓存不能仅依赖 Git HEAD；缺少可靠变更版本时禁用负缓存短路，timeout 不永久抑制重试。
-7. Core 拥有服务、预算与可选 tgrep 子进程；Desktop 不承担索引业务。按物理 worktree 隔离，主子 Agent 共享有界服务。
+7. Core 拥有统一查询服务、预算、缓存与既有索引协调；Desktop 不承担索引业务。按物理 worktree 隔离，主子 Agent 共享有界服务，不新增搜索守护进程。
 8. 旧检索工具与只读辅助工具在调用方/模板/权限同步迁移后退出默认 catalog，不长期维护两套执行入口。写入、Shell、索引管理、记忆和日志检索保留各自职责；新工具必须按操作校验权限，不能合并后扩大已有授权。
 
 ## 所有权与代价
 
-Core 契约定义请求/证据/覆盖；Runtime 提供编排、适配器和模型输出；CodeIntelligence 保留符号/关系/Outline 专业实现；Host 负责 DI、进程与存储；Platform 管理投影和配置，不实现第二套查询；Desktop 仅消费现有控制面。
+Core 契约定义请求/证据/覆盖；Runtime 提供编排、现有能力适配器和模型输出；CodeIntelligence 保留符号/关系/Outline 专业实现；Host 负责 DI 与既有存储配置；Platform 管理投影和配置，不实现第二套查询；Desktop 仅消费现有控制面。
 
-增加查询规划、结果引用与跨索引新鲜度管理成本，换取较少工具选择和重复读取。保留两个小工具 schema，避免将搜索、读取、修改和索引运维塞进一个宽权限工具。tgrep 没有符号关系能力，无法单独替代整套工具链。
+增加查询规划、结果引用与跨索引新鲜度管理成本，换取较少工具选择和重复读取。保留两个小工具 schema，避免将搜索、读取、修改和索引运维塞进一个宽权限工具。当前工作的收益来自现有工具集成、重复工作削减与正确性改善；不承诺具备 trigram 索引的加速幅度，也不将引入新引擎作为实施前提。
 
 ## 验收
 
