@@ -5,22 +5,19 @@
 //   C) FileSearchTool.FileSearchPatternMatcher（无通配时子串包含）。
 // 本类型是三者未来的唯一替代品（迁移留 G2/G3 切片），语义逐条实现任务书第 4 节 canonical 规范。
 using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 
-// 任务书要求本类型为 internal 且测试项目可见。仓库现状（PuddingCore.csproj 与既有 .cs）没有
-// 任何 InternalsVisibleTo 声明，故在本新增文件内以程序集属性授予 PuddingCoreTests：
-// 不修改任何现有文件、不改 csproj，也不把类型放宽为 public。
-[assembly: InternalsVisibleTo("PuddingCoreTests")]
-
+// 可见性父级裁决（2026-09-13）：与同目录 RetrievalMatcher 一致取 public。理由：
+//   ① G2 切片需要 PuddingRuntime（SearchGrepTool）直接消费本类型，internal 无法跨程序集；
+//   ② 不再以程序集级 InternalsVisibleTo 把 PuddingCore 全部 internal 成员暴露给测试程序集。
 namespace PuddingCode.Tools.Retrieval;
 
 /// <summary>
 /// 统一 glob 匹配合同（ADR-089 G1，canonical 规范逐条落地）：
 /// <list type="bullet">
 /// <item>规范 1：null / 空串 / 全空白 glob → 匹配一切。</item>
-/// <item>规范 2：<c>**</c>、<c>**/</c>、<c>**\</c> 前缀剥离后再匹配。</item>
+/// <item>规范 2：<c>**</c>、<c>**/</c>、<c>**\</c> 前缀<b>单次</b>剥离后再匹配（<c>**/**/x</c> 只剥一层，父级裁决保持字面）。</item>
 /// <item>规范 3：通配符仅 <c>*</c>（任意长度，可为 0）与 <c>?</c>（恰好一个字符）；
 ///       <c>[</c> <c>]</c> <c>{</c> <c>}</c> 等一律按字面处理。</item>
 /// <item>规范 4：glob 不含路径分隔符 → 只匹配文件名。</item>
@@ -28,12 +25,13 @@ namespace PuddingCode.Tools.Retrieval;
 /// <item>规范 6：glob 无任何通配符 → 精确比较（禁止子串包含语义）。</item>
 /// <item>规范 7：大小写由 <c>ignoreCase</c> 控制（默认 true）；恒用 Ordinal/OrdinalIgnoreCase 与
 ///       RegexOptions.CultureInvariant，禁止 culture 敏感折叠。</item>
+/// <item>规范 3a（父级裁决 2026-09-13）：整串 <c>*.*</c> 与 <c>*</c> 等价；见 <see cref="MatchCore"/>。</item>
 /// <item>规范 8：<c>*</c> 与 <c>?</c> 不跨越路径分隔符（文件名目标天然满足；相对路径目标用
-///       [^/] 字符类保证）。</item>
+///       [^/] 字符类保证）。父级裁决以标题句为准（与 gitignore/bash/MSBuild 同构）。</item>
 /// <item>规范 9：正则编译并缓存，缓存键 = (glob, 目标类型, ignoreCase)，有界（512 条，超限整体清空）。</item>
 /// </list>
 /// </summary>
-internal static class RetrievalGlobMatcher
+public static class RetrievalGlobMatcher
 {
     /// <summary>正则缓存条目上限（规范 9）。淘汰策略：达到上限时整体清空重建——
     /// 代价仅是重新编译若干正则，正确性不受影响；Count 检查与 Clear 之间的并发竞态
@@ -153,11 +151,11 @@ internal static class RetrievalGlobMatcher
                 ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
         }
 
-        // Win32 searchPattern 的历史规范化：整串 *.* 与 * 等价（8.3 时代所有文件名均含点）。
-        // 任务书第 6 节用例 4 明确要求该语义（*.* 必须命中无扩展名的 Makefile，以区别于实现 A），
-        // 且 G2 迁移后 SearchGrepTool 默认 filePattern="*.*" 不得静默丢失无扩展名文件。
-        // 注意：这与第 4 节规范 3「. 按字面」的字面读法存在张力，按验收用例执行并已在交付报告上报。
-        // 特判范围仅限整串 *.*，其它含点模式（如 a.* 、*.*x）一律按字面处理。
+        // canonical 规范 3a（父级裁决 2026-09-13）：整串 "*.*" 与 "*" 等价。依据：
+        //   ① SearchGrepTool 既有默认 filePattern="*.*"，G2 迁移后不得静默丢失 Makefile 等无扩展名文件；
+        //   ② 实现 A 与 B 在 "*.*" 上的既有分歧，正是 U0 门禁要消除的「同一请求跨后端语义一致」缺口；
+        //   ③ ADR-089 以漏检（假阴性）为最严重失败，兼容取「更宽」方向。
+        // 范围严格限于整串 "*.*"；其它含点模式（a.* 、*.*x、a.b）一律按规范 3 字面处理。
         var effective = normalizedGlob == "*.*" ? "*" : normalizedGlob;
         return GetOrAddRegex(effective, targetKind, ignoreCase).IsMatch(target);
     }
