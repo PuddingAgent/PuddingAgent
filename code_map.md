@@ -10,7 +10,7 @@
 
 ## 2026-09-13 自动压缩频次诊断
 
-`Docs/Reports/上下文频繁压缩诊断-2026-09-13.md`：默认助手 9/12 至 9/13 07:41 共 40 次自动压缩流程、39 次写入；raw cap 实际使用整请求估算，Provider 快照采用 max 并混淆实报标签。入口为 `ContextCompactionService.GetHealthAsync`、`ContextUsageSnapshotStore.RecordProviderUsage`、`ContextWindowManager.TryAutoCompactAsync`、`CompactionCoordinator`、Web `useCompaction`；本轮只有诊断/方案，未实施产品变更。
+`Docs/Reports/上下文频繁压缩诊断-2026-09-13.md`：默认助手 9/12 至 9/13 07:41 共 40 次自动压缩流程、39 次写入；同日复查截至 09:44 的诊断日志累计 45 条 Auto、44 次写入（新增部分未重核 canonical）。raw cap 实际使用整请求估算，Provider 快照采用 max 并混淆实报标签。入口为 `ContextCompactionService.GetHealthAsync`、`ContextUsageSnapshotStore.RecordProviderUsage`、`ContextWindowManager.TryAutoCompactAsync`、`CompactionCoordinator`、Web `useCompaction`；本轮只有诊断/方案，未实施产品变更。
 
 ## 2026-09-12 VS Code Desktop 启动入口
 
