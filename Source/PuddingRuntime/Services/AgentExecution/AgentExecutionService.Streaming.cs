@@ -558,9 +558,9 @@ public sealed partial class AgentExecutionService
             }
 
             // ── 流式 Agent Loop（与同步路径共享护栏参数）──────
-            var maxRounds = request.MaxRounds > 0
-                ? Math.Min(request.MaxRounds, _guardrails.MaxRounds)
-                : _guardrails.MaxRounds;
+            // N00：显式请求轮次忠实生效（超限拒绝归上游 SubAgentManager.NormalizeExecutionBudget），
+            // 未显式请求时回退系统 profile 默认；不做隐式钳制（与 Buffered 路径一致）。
+            var maxRounds = ResolveMaxRounds(request.MaxRounds, _guardrails);
             var reply = "(no response)";
             TokenUsageDto? usage = null;
             var usageBudgetTracker = new ExecutionUsageBudgetTracker(request.UsageBudget);

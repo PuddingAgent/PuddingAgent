@@ -75,6 +75,18 @@ public sealed class AgentExecutionBudgetTests
             AgentExecutionService.ResolveMaxRounds(0));
     }
 
+    [TestMethod]
+    public void ResolveMaxRounds_RaisedGuardrailsConfigIsNotAnUpperBoundForLargerExplicitRequests()
+    {
+        // ADR-087 §3.2：系统 profile 默认/配置域（含被管理员抬高后的值）不作上界——
+        // 回归：Streaming 分支曾以 Math.Min(显式, _guardrails.MaxRounds) 把配置抬高后的
+        // 显式大值（如 10000）静默压回配置值；超限拒绝只能由上游策略显式完成。
+        var raisedGuardrails = new AgentExecutionGuardrails { MaxRounds = 1200 };
+
+        Assert.AreEqual(10000, AgentExecutionService.ResolveMaxRounds(10000, raisedGuardrails));
+        Assert.AreEqual(1200, AgentExecutionService.ResolveMaxRounds(1200, raisedGuardrails));
+    }
+
     // ── N00 残留修复：系统 profile 默认单一来源收敛 ────────────────────
 
     [TestMethod]
