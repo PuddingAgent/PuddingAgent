@@ -21,6 +21,7 @@ public sealed class TaskAutoDispatchScanRunner(
     IAgentAvailabilityProjectionStore availabilityStore,
     ITaskAutoDispatchStarter starter,
     TaskSchedulerDecisionStore decisionStore,
+    TaskSchedulerScanRunStore scanRunStore,
     IOptionsMonitor<TaskAutoDispatchOptions> options,
     TimeProvider timeProvider,
     ILogger<TaskAutoDispatchScanRunner> logger)
@@ -41,10 +42,77 @@ public sealed class TaskAutoDispatchScanRunner(
             throw new InvalidOperationException("scheduler_mode_invalid");
 
         var startedAt = timeProvider.GetUtcNow();
-        var scanId = $"scan-{startedAt:yyyyMMddTHHmmssfff}-{Guid.NewGuid().ToString("N")[..8]}";
         var sw = Stopwatch.StartNew();
         var limit = Math.Clamp(candidateLimit, 1, 500);
 
+        // §7.2-1：扫描开始先落 running 行；scanId 由 scan_runs 表生成并贯穿决策持久化，
+        // decisions.scan_id 与 scan_runs.scan_id 由此可追溯互查。开始失败即扫描中止（fail closed）。
+        var scanId = await scanRunStore.TryStartAsync(
+            workspaceId,
+            trigger,
+            normalizedMode,
+            options.CurrentValue.PolicyRevision,
+            TaskSchedulerScanRunStore.HostBootId,
+            ct);
+        try
+        {
+            var summary = await EvaluateCoreAsync(
+                workspaceId, normalizedMode, authoritative, limit, startedAt, sw, scanId, trigger, ct);
+
+            // §7.2-2：成功终态（含 candidates=0 空扫描）；只存汇总与稳定原因分布，不双写明细。
+            await scanRunStore.CompleteAsync(scanId, new TaskSchedulerScanRunCompletion
+            {
+                CompletedAtUtc = summary.CompletedAtUtc,
+                DurationMs = summary.DurationMs,
+                AvailabilityRefreshed = summary.AvailabilityRefreshed,
+                IdleAgents = summary.IdleAgents,
+                BusyAgents = summary.BusyAgents,
+                UnknownAgents = summary.UnknownAgents,
+                Backlog = summary.Backlog,
+                Candidates = summary.Candidates,
+                Eligible = summary.Eligible,
+                Started = summary.Started,
+                Tracked = summary.Tracked,
+                Repaired = summary.Repaired,
+                DecisionCodesJson = TaskSchedulerScanRunStore.SerializeCodeDistribution(summary.DecisionCodes),
+                RepairCodesJson = TaskSchedulerScanRunStore.SerializeCodeDistribution(summary.RepairCodes),
+            }, ct);
+            return summary;
+        }
+        catch (Exception ex)
+        {
+            // §7.2-3：失败终态后重新抛出（禁止吞错）；终态持久化自身失败不得掩盖原异常。
+            try
+            {
+                await scanRunStore.FailAsync(
+                    scanId,
+                    ex is TaskSchedulerControlException control ? control.Code : ex.GetType().Name,
+                    ex.Message,
+                    ct);
+            }
+            catch (Exception persistEx)
+            {
+                logger.LogError(
+                    persistEx,
+                    "[TaskAutoDispatch] scan run failure persistence failed scanId={ScanId}",
+                    scanId);
+            }
+
+            throw;
+        }
+    }
+
+    private async Task<TaskAutoDispatchScanSummary> EvaluateCoreAsync(
+        string workspaceId,
+        string normalizedMode,
+        bool authoritative,
+        int limit,
+        DateTimeOffset startedAt,
+        Stopwatch sw,
+        string scanId,
+        string trigger,
+        CancellationToken ct)
+    {
         // Ownership reconciliation must run before availability and selection.
         var tracking = await executionTracker.EvaluateAsync(workspaceId, limit, ct);
         var repairs = authoritative

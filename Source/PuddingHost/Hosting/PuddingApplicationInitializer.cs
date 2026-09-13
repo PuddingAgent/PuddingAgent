@@ -60,6 +60,7 @@ public static class PuddingApplicationInitializer
             await TaskSchedulerIntentSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await TaskSchedulerIntentOutcomeSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await TaskSchedulerDecisionSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            await TaskSchedulerScanRunSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await ExternalAccessTokenSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await ExternalTaskApiSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await ProviderFileRefSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);

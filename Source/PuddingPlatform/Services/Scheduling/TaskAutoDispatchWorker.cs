@@ -11,11 +11,33 @@ namespace PuddingPlatform.Services.Scheduling;
 /// </summary>
 public sealed class TaskAutoDispatchWorker(
     TaskSchedulerControlService control,
+    TaskSchedulerScanRunStore scanRunStore,
     IOptionsMonitor<TaskAutoDispatchOptions> options,
     ILogger<TaskAutoDispatchWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // §7.2-4 启动恢复：把上一进程（host_boot_id ≠ 当前 boot）遗留的 running 扫描判为
+        // abandoned。一次性、与 enabled/mode 无关——遗留事实无论调度开关状态都应收敛；
+        // 恢复自身失败不阻断 worker（下轮 boot 重试），只记告警。
+        try
+        {
+            var abandoned = await scanRunStore.MarkAbandonedAsync(
+                TaskSchedulerScanRunStore.HostBootId, stoppingToken);
+            if (abandoned > 0)
+                logger.LogInformation(
+                    "[TaskAutoDispatch] startup recovery: {Abandoned} leftover running scan run(s) -> abandoned",
+                    abandoned);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[TaskAutoDispatch] startup recovery: mark abandoned scan runs failed");
+        }
+
         string? lastContainment = null;
         while (!stoppingToken.IsCancellationRequested)
         {
