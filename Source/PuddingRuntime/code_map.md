@@ -67,7 +67,8 @@
 |------|------|
 | `Tools/BuiltIns/` | 内置工具（Git 20 工具在此） |
 | `Tools/BuiltIns/Llm/ListLlmProvidersTool.cs` | `list_llm_providers` LLM 路由表查询；数据来自 ILlmConfigService 内存快照（llm.providers.json），输出 providerId/modelId/route/protocol/capabilityTags/价格/isEnabled/isDeprecated 与 ambiguous_model_ids 歧义清单（与 FileLlmResolver 裸 modelId 解析语义一致）；严禁输出 apiKey/baseUrl；已入 ToolExposurePlanner.CoreToolIds 常驻可见，spawn_sub_agent 描述同步指向 |
-| `Tools/BuiltIns/Search/SearchGrepTool.cs` | 代码文本搜索；排除目录在枚举前裁剪（修复 false-negative）；默认额外排除 `.pudding`，结果默认 20 条/16 KiB，支持显式扩大与继续检索 |
+| `Tools/BuiltIns/Search/SearchGrepTool.cs` | 代码文本搜索（ADR-089 U0）；Lucene 仅作候选优先级，候选与托管扫描共用 RetrievalMatcher 复核，覆盖状态（Complete/Partial/Truncated/Timeout/ContractError）唯一推导，`no_match` 仅在全量覆盖后输出；排除目录在枚举前裁剪（修复 false-negative）；默认额外排除 `.pudding`，结果默认 20 条/16 KiB |
+| `Tools/BuiltIns/Files/FileSearchTool.cs` | 文件名搜索工具（ADR-089 U0-S3）；Everything 清单不可自证时差分补足内置枚举——`no_match` 仅在覆盖 Complete 时输出，非 Complete 附恰好一次覆盖声明；auto 模式降级显式声明 fallbackFrom/fallbackReason |
 | `Tools/BuiltIns/Git/GitCommitTool.cs` | git_commit 提交工具；files 数组反序列化兼容 `string` 与 `string[]`（`StringOrStringArrayConverter`） |
 | `Tools/BuiltIns/Files/FileChunkService.cs` | Runtime 文件工具的大文件分块/流式读取服务；不再反向依赖 Platform |
 | `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | Agent 上下文/Token 诊断；通过 Core 仓储契约读取持久化诊断 |
