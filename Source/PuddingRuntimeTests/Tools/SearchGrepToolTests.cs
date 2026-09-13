@@ -966,6 +966,9 @@ public sealed class SearchGrepToolTests
             StringAssert.Contains(result.Output, "(coverage: partial");
             StringAssert.Contains(result.Output, "结果已截断");
             Assert.IsFalse(result.Output.Contains("(no matches)"), "incomplete empty result must not read as no_match");
+            // 覆盖声明行必须恰好出现一次（防止 notes 与前置文案重复拼接）。
+            Assert.AreEqual(1, result.Output.Split("(coverage: partial").Length - 1,
+                "coverage declaration must appear exactly once");
         }
         finally
         {

@@ -477,10 +477,15 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
             // 空输出时只有 Complete 才允许 (no matches)：非 Complete 必须带 partial 声明，
             // 防止上层把"没扫完"误读为"查无结果"（no_match 仅表示声明范围已完成）。
+            // 覆盖声明行已由 notes 统一产出（!coverageComplete 时必然入列），此处不得重复拼接，
+            // 否则同一行 coverage 声明会出现两次。
             if (!coverageComplete)
-                return ToolExecutionResult.Ok(
-                    string.Format(CoveragePartialMessage, scannedFiles, MaxScannedFiles, scannedBytes, MaxScannedBytes) + notesText,
-                    status: ToolResultStatuses.Truncated);
+            {
+                var partialOutput = notes.Count > 0
+                    ? string.Join("\n", notes)
+                    : string.Format(CoveragePartialMessage, scannedFiles, MaxScannedFiles, scannedBytes, MaxScannedBytes);
+                return ToolExecutionResult.Ok(partialOutput, status: ToolResultStatuses.Truncated);
+            }
 
             var emptyMsg = scannedFiles > 0 ? "(no matches)" : "(no files scanned)";
             return ToolExecutionResult.Ok(emptyMsg + notesText, status: ToolResultStatuses.NoMatch);
