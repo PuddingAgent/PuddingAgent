@@ -158,15 +158,41 @@ public sealed class RetrievalMatcherTests
     // ── 超时：返回 false 且不抛出 ────────────────────────────────────────
 
     [TestMethod]
-    public void IsMatch_RegexTimeout_Returns_False_Without_Throwing()
+    public void TryMatch_RegexTimeout_Returns_Timeout_Not_False()
     {
         // 灾难性回溯模式：regexTimeout 由参数显式传入（本类型不内置常量）。
-        // 求值超时应表现为"不命中"，而不是把 RegexMatchTimeoutException 抛给调用方。
+        // R2 改写：求值超时必须类型化为「未能判定（Timeout）」，绝不吞成不匹配。
+        var matcher = Create(
+            RetrievalMatchMode.Regex, RetrievalCaseMode.Sensitive, "^(a+)+$",
+            TimeSpan.FromMilliseconds(50));
+
+        Assert.AreEqual(RetrievalMatchOutcome.Timeout,
+            matcher.TryMatch(new string('a', 32) + "!", CancellationToken.None));
+    }
+
+    [TestMethod]
+    public void IsMatch_CompatLayer_Returns_False_On_RegexTimeout()
+    {
+        // R2：兼容层合同——正则超时时 IsMatch 仍返回 false（与不匹配不可区分），
+        // 正确性敏感路径必须改用 TryMatch。
         var matcher = Create(
             RetrievalMatchMode.Regex, RetrievalCaseMode.Sensitive, "^(a+)+$",
             TimeSpan.FromMilliseconds(50));
 
         Assert.IsFalse(matcher.IsMatch(new string('a', 32) + "!"));
+    }
+
+    [TestMethod]
+    public void TryMatch_CancelledToken_Throws_OperationCanceled()
+    {
+        // R2：已取消令牌必须抛 OperationCanceledException，不得返回任何结论。
+        var literal = Create(RetrievalMatchMode.Literal, RetrievalCaseMode.Sensitive, "a");
+        var regex = Create(RetrievalMatchMode.Regex, RetrievalCaseMode.Sensitive, "a+");
+
+        Assert.ThrowsExactly<OperationCanceledException>(
+            () => literal.TryMatch("a", new CancellationToken(canceled: true)));
+        Assert.ThrowsExactly<OperationCanceledException>(
+            () => regex.TryMatch("a", new CancellationToken(canceled: true)));
     }
 
     [TestMethod]

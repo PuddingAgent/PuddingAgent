@@ -15,8 +15,11 @@ namespace PuddingCode.Tools.Retrieval;
 ///       超时值必须由调用方经 <paramref name="regexTimeout"/> 传入，本类型不内置常量。</item>
 /// <item>非法正则在 <see cref="TryCreate"/> 即失败并返回含原始 pattern 的可读 contractError，
 ///       绝不静默降级为 literal。</item>
-/// <item><see cref="IsMatch"/> 在正则求值超时（<see cref="RegexMatchTimeoutException"/>）时返回 false 且不抛出；
-///       超时与否由调用方通过 <see cref="RetrievalCoverageStatus.Timeout"/> 表达，本类型不吞掉其它异常。</item>
+/// <item>调用方必须使用 <see cref="TryMatch"/> 区分「不匹配」与「正则求值超时（未能判定）」：
+///       <see cref="TryMatch"/> 在 RegexMatchTimeoutException 时返回 <see cref="RetrievalMatchOutcome.Timeout"/>，
+///       在取消令牌已触发时抛出 OperationCanceledException，且不吞掉其它异常。</item>
+/// <item><see cref="IsMatch"/> 仅为兼容层保留（等价于 TryMatch == Match；正则超时返回 false，
+///       与「不匹配」不可区分），正确性敏感路径禁止使用。</item>
 /// </list>
 /// </summary>
 public sealed class RetrievalMatcher
@@ -113,27 +116,45 @@ public sealed class RetrievalMatcher
         return true;
     }
 
-    /// <summary>对单行文本求值。line 为 null 时返回 false；正则求值超时返回 false 且不抛出。</summary>
-    public bool IsMatch(string line)
+    /// <summary>
+    /// 类型化单行求值（ADR-089 U0 R2）：区分「不匹配」与「正则求值超时（未能判定）」。
+    /// line 为 null → NoMatch；<paramref name="ct"/> 已取消 → 抛 <see cref="OperationCanceledException"/>；
+    /// 正则求值超时（RegexMatchTimeoutException）→ <see cref="RetrievalMatchOutcome.Timeout"/>（不吞、不抛）；
+    /// 其它异常照常上抛。
+    /// </summary>
+    public RetrievalMatchOutcome TryMatch(string? line, CancellationToken ct)
     {
         if (line is null)
         {
-            return false;
+            return RetrievalMatchOutcome.NoMatch;
         }
+
+        ct.ThrowIfCancellationRequested();
 
         if (_regex is not null)
         {
             try
             {
-                return _regex.IsMatch(line);
+                return _regex.IsMatch(line)
+                    ? RetrievalMatchOutcome.Match
+                    : RetrievalMatchOutcome.NoMatch;
             }
             catch (RegexMatchTimeoutException)
             {
-                // 超时属于覆盖状态（Timeout）的表达范畴：本层返回 false 且不抛出；其它异常照常上抛。
-                return false;
+                // 超时是「未能判定」，不是「不匹配」：由调用方表达为覆盖非 Complete（Timeout）。
+                return RetrievalMatchOutcome.Timeout;
             }
         }
 
-        return line.Contains(_query, _comparison);
+        return line.Contains(_query, _comparison)
+            ? RetrievalMatchOutcome.Match
+            : RetrievalMatchOutcome.NoMatch;
     }
+
+    /// <summary>
+    /// 兼容层：等价于 <see cref="TryMatch"/>(line, CancellationToken.None) == Match。
+    /// 注意：正则求值超时在此返回 false，与「不匹配」不可区分——需要区分时必须改用 <see cref="TryMatch"/>。
+    /// </summary>
+    public bool IsMatch(string line) =>
+        TryMatch(line, CancellationToken.None) == RetrievalMatchOutcome.Match;
 }

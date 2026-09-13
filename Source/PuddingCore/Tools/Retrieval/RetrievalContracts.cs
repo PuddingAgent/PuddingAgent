@@ -19,6 +19,22 @@ public enum RetrievalCaseMode
     Insensitive,
 }
 
+/// <summary>
+/// 类型化单行匹配结论（ADR-089 U0 R2）：区分「确定不匹配」与「正则求值超时（未能判定）」，
+/// 调用方不得把 Timeout 当作 NoMatch 缓存或输出。
+/// </summary>
+public enum RetrievalMatchOutcome
+{
+    /// <summary>确定不匹配。</summary>
+    NoMatch,
+
+    /// <summary>匹配。</summary>
+    Match,
+
+    /// <summary>正则求值超时，未能判定（必须使覆盖非 Complete）。</summary>
+    Timeout,
+}
+
 /// <summary>结果新鲜度要求：允许命中索引数据，或要求读取当前数据。</summary>
 public enum RetrievalFreshness
 {

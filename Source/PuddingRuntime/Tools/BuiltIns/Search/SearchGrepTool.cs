@@ -26,6 +26,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     private readonly IFullTextSearchEngine _searchEngine;
     private readonly ITelemetryMetricSink? _telemetry;
     private readonly ISearchAttemptLedger _ledger;
+    private readonly TimeSpan _searchTimeout;
 
     private const int DefaultMaxResults = 20;
     private const long MaxFileSizeBytes = 1 * 1024 * 1024;
@@ -53,12 +54,18 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         ILogger<SearchGrepTool> logger,
         IFullTextSearchEngine searchEngine,
         ITelemetryMetricSink? telemetry = null,
-        ISearchAttemptLedger? ledger = null)
+        ISearchAttemptLedger? ledger = null,
+        TimeSpan? searchTimeout = null)
     {
         _logger = logger;
         _searchEngine = searchEngine;
         _telemetry = telemetry;
         _ledger = ledger ?? new SearchAttemptLedger();
+        // ADR-089 U0 R2：单次调用预算可注入（测试用小预算验证候选+扫描共享同一 deadline），
+        // 未注入或非法时使用产品默认 10s。
+        _searchTimeout = searchTimeout is { } timeout && timeout > TimeSpan.Zero
+            ? timeout
+            : ManagedSearchTimeout;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
@@ -258,13 +265,16 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         bool caseSensitive, int maxResults, HashSet<string> excludeDirs,
         long maxLineBytes, long maxTotalBytes, CancellationToken ct)
     {
+        // ADR-089 U0 R2：调用方取消必须在进入任何后端之前显式传播。
+        ct.ThrowIfCancellationRequested();
+
         // ADR-089 U0-S2（S2-1）：进入任何后端前先按统一合同建 matcher（literal/regex 同源）。
         // 非法正则在此显式失败（ContractError），绝不静默降级为字面搜索，也不触发 Lucene 与扫描。
         bool isRegex = LooksLikeRegex(query);
         if (!RetrievalMatcher.TryCreate(
                 isRegex ? RetrievalMatchMode.Regex : RetrievalMatchMode.Literal,
                 caseSensitive ? RetrievalCaseMode.Sensitive : RetrievalCaseMode.Insensitive,
-                query, ManagedSearchTimeout, out var matcherOrNull, out var contractError)
+                query, _searchTimeout, out var matcherOrNull, out var contractError)
             || matcherOrNull is null)
         {
             return ToolExecutionResult.Fail(
@@ -277,6 +287,11 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         var filter = fileExt?.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(e => e.StartsWith('.') ? e : "." + e).ToArray();
         var patternFilter = PatternToExtensionFilter(pattern);
+
+        // ADR-089 U0 R2：整次调用共享唯一 deadline——覆盖 Lucene 调用、候选准入、目录枚举与扫描全流程，
+        // 候选阶段不再游离于预算之外。内部超时与调用方取消通过令牌对（cts/ct）区分。
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(_searchTimeout);
 
         // ADR-089 U0 R1：Lucene 候选只决定「优先读取哪些文件」——仅产出去重、有序（按 Lucene 相关度）
         // 的候选文件路径集合。候选不再直接输出索引文本、不再预填去重键；
@@ -297,7 +312,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             var luceneResults = await _searchEngine.SearchAsync(query, directory ?? "", luceneFetchCount,
                 fileExtensionFilter: extFilter,
                 subDirectoryFilter: directory,
-                ct: ct);
+                ct: cts.Token);
 
             // Matches 为 null（无索引/异常结果）等同于零候选：不改变后续流程，覆盖由扫描保证。
             foreach (var r in luceneResults.Matches ?? [])
@@ -311,8 +326,13 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                     candidatePaths.Add(full);
             }
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw; // R2.4/R3.3：调用方取消必须传播，不得被 Lucene 兑底分支吞掉
+        }
         catch (Exception ex)
         {
+            // 内部预算超时或 Lucene 故障：不改变流程，覆盖由扫描路径表达。
             _logger.LogWarning(ex, "[SearchGrep] Lucene search failed, falling back");
         }
 
@@ -320,7 +340,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         // Lucene 零候选/未进候选的文件中的真实命中不得被漏掉（假阴性防御），索引不暗示文件系统完整。
         return await ManagedGrepAsync(matcher, pattern, managedDirectory,
             filter ?? patternFilter, excludeDirs, maxLineBytes, maxTotalBytes,
-            maxResults, candidatePaths, ct);
+            maxResults, candidatePaths, cts, ct);
     }
 
     /// <summary>
@@ -368,7 +388,8 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     private async Task<ToolExecutionResult> ManagedGrepAsync(
         RetrievalMatcher matcher, string? pattern, string? directory,
         string[]? extFilter, HashSet<string> excludeDirs, long maxLineBytes, long maxTotalBytes,
-        int maxResults, List<string> candidatePaths, CancellationToken ct)
+        int maxResults, List<string> candidatePaths,
+        CancellationTokenSource cts, CancellationToken ct)
     {
                 var cwd = string.IsNullOrWhiteSpace(directory) ? Environment.CurrentDirectory : directory;
         if (!Directory.Exists(cwd))
@@ -395,10 +416,9 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             return ToolExecutionResult.Fail($"Search error: {ex.Message}");
         }
 
-        // ADR-089 U0-S2（D3 修复）：regex 构造已上移至 SearchCoreAsync 的统一合同入口，
-        // 非法正则显式失败（ContractError），不再静默降级为字面搜索。
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(ManagedSearchTimeout);
+        // ADR-089 U0 R2：唯一 cts 已在 SearchCoreAsync 入口创建（覆盖候选+枚举+扫描全流程），
+        // 此处只消费；token 是内部预算与调用方取消的联合令牌。
+        var token = cts.Token;
 
         // ADR-089 U0 R1：候选文件排在工作清单最前（Lucene 相关度序），其后是枚举文件。
         // processedFiles 保证每个文件只被处理一次：候选与枚举重叠时不重复扫描、不重复输出。
@@ -418,9 +438,10 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         bool totalCapReached = false;
         bool scanBudgetExceeded = false;
         bool errorBudgetExceeded = false;
+        bool regexTimedOut = false;
         foreach (var file in workList)
         {
-            if (cts.IsCancellationRequested || totalCapReached) break;
+            if (token.IsCancellationRequested || totalCapReached) break;
             if (errors >= MaxErrors) { errorBudgetExceeded = true; break; }
             if (scannedFiles >= MaxScannedFiles || scannedBytes >= MaxScannedBytes)
             {
@@ -442,7 +463,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 var info = new FileInfo(file);
                 if (info.Length > MaxFileSizeBytes) { skippedLargeFiles++; continue; }
 
-                var raw = await File.ReadAllBytesAsync(file, cts.Token);
+                var raw = await File.ReadAllBytesAsync(file, token);
                 scannedFiles++;
                 scannedBytes += raw.Length;
 
@@ -456,9 +477,18 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 for (int i = 0; i < lines.Length; i++)
                 {
                     if (totalCapReached) break;
+                    // R2.3：每行先检查取消——内部预算超时也必须及时停下扫描。
+                    if (token.IsCancellationRequested) break;
                     var line = lines[i].TrimEnd('\r');
-                    // 统一匹配合同（ADR-089 L128）：与 Lucene 候选复核同源，两条路径结论一致。
-                    if (!matcher.IsMatch(line)) continue;
+                    // 统一匹配合同（ADR-089 L128）：与候选准入同源，两条路径结论一致；
+                    // TryMatch 区分「不匹配」与「正则求值超时（未能判定）」。
+                    var outcome = matcher.TryMatch(line, token);
+                    if (outcome == RetrievalMatchOutcome.Timeout)
+                    {
+                        regexTimedOut = true;
+                        break;
+                    }
+                    if (outcome == RetrievalMatchOutcome.NoMatch) continue;
 
                     matchCount++;
                     // 行级去重键保留为兜底（R1.5）：同一 (文件, 行) 只输出一次，但仍计入扫描统计（matchCount）。
@@ -476,19 +506,32 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                     results.Add(entry);
                 }
             }
-            catch (OperationCanceledException) { break; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw; // R3.3：调用方取消必须传播，不得落为任何结果状态
+            }
+            catch (OperationCanceledException)
+            {
+                break; // 内部预算超时打断读取：由 timedOut/regexTimedOut 表达
+            }
             catch { errors++; }
         }
 
-        bool timedOut = cts.IsCancellationRequested && !ct.IsCancellationRequested;
+        // R2.4：区分取消来源——调用方取消在上面已直接传播，走到这里 ct 必然未取消；
+        // cts 已触发即内部预算超时。
+        ct.ThrowIfCancellationRequested();
+        bool timedOut = cts.IsCancellationRequested;
 
         // ADR-089 U0-S2（S2-4）：覆盖状态诚实推导——任何预算耗尽/截断/跳过都使覆盖非 Complete。
-        bool coverageComplete = !timedOut && !enumerationTruncated && !scanBudgetExceeded
+        // R2：正则求值超时（regexTimedOut）同样是「未能判定」，必须使覆盖非 Complete（完整公式见 R3）。
+        bool coverageComplete = !timedOut && !regexTimedOut && !enumerationTruncated && !scanBudgetExceeded
             && !errorBudgetExceeded && !totalCapReached && skippedLargeFiles == 0;
 
         var notes = new List<string>();
         if (timedOut)
-            notes.Add("搜索超时（10s），结果可能不完整，建议缩小 directory/pattern/file_ext 范围，或改用索引工具 code_symbol_search / code_explore / file_search");
+            notes.Add($"搜索超时（{_searchTimeout.TotalSeconds:0.##}s），结果可能不完整，建议缩小 directory/pattern/file_ext 范围，或改用索引工具 code_symbol_search / code_explore / file_search");
+        if (regexTimedOut)
+            notes.Add($"正则求值超时（{_searchTimeout.TotalSeconds:0.##}s），未能完成判定，结果可能不完整；建议简化 query（避免灾难性回溯）或缩小范围");
         if (enumerationTruncated)
             notes.Add(string.Format(EnumerationTruncatedMessage, MaxEnumeratedFiles));
         if (scanBudgetExceeded)
@@ -503,8 +546,10 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             notes.Add(string.Format(CoveragePartialMessage, scannedFiles, MaxScannedFiles, scannedBytes, MaxScannedBytes));
 
         // 状态映射（S2-4）：partial/truncated/timeout 一律不得用 Ok；只有覆盖 Complete 的空结果才是 no_match。
+        // R2：内部超时（整体预算或正则求值）都映射 timeout，绝不落为 no_match。
+        bool timeoutLike = timedOut || regexTimedOut;
         string status;
-        if (timedOut)
+        if (timeoutLike)
             status = ToolResultStatuses.Timeout;
         else if (coverageComplete)
             status = results.Count == 0 ? ToolResultStatuses.NoMatch : ToolResultStatuses.Ok;
@@ -514,7 +559,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         if (results.Count == 0)
         {
             var notesText = notes.Count > 0 ? "\n" + string.Join("\n", notes) : string.Empty;
-            if (timedOut)
+            if (timeoutLike)
                 return ToolExecutionResult.Ok("(search timed out)" + notesText, status: ToolResultStatuses.Timeout);
 
             // 空输出时只有 Complete 才允许 (no matches)：非 Complete 必须带 partial 声明，

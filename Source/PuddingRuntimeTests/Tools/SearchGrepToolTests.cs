@@ -1207,6 +1207,78 @@ public sealed class SearchGrepToolTests
     }
 
     [TestMethod]
+    public async Task U0R2_CatastrophicRegex_Bounded_By_SingleCall_Budget_Including_Candidates()
+    {
+        // R2：两条灾难性回溯候选 + 小预算 → 候选与扫描共享同一 deadline，
+        // 整次调用远小于旧实现（每候选各耗一次完整正则超时）的耗时；
+        // 返回 timeout 而非 no_match，且不得输出 (no matches)。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var catastrophic = new string('a', 32) + "!";
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "a1.txt"), catastrophic + "\nfiller\n");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "a2.txt"), "filler\n" + catastrophic + "\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(
+                true,
+                [
+                    new FullTextSearchMatch(Path.Combine(tempDir, "a1.txt"), 1, catastrophic),
+                    new FullTextSearchMatch(Path.Combine(tempDir, "a2.txt"), 2, catastrophic),
+                ],
+                null, 2, 5));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine,
+                searchTimeout: TimeSpan.FromMilliseconds(150));
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var result = await ExecuteAsync(tool, "^(a+)+$", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+            sw.Stop();
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Timeout, result.Status);
+            Assert.IsFalse(result.Output.Contains("(no matches)"), "timeout must never read as no_match");
+            Assert.IsTrue(sw.ElapsedMilliseconds < 10_000,
+                $"entire call must respect the single-call budget (took {sw.ElapsedMilliseconds}ms)");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0R2_CancelledCallerToken_Propagates_OperationCanceled()
+    {
+        // R2.4/R3.3：已取消的调用方令牌必须以 OperationCanceledException 传播，
+        // 不得返回 no_match，也不得被记入失败账本。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "sample.txt"), "NEEDLE in readable file\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+                () => ExecuteAsync(tool, "NEEDLE",
+                    new Dictionary<string, string> { ["pattern"] = "*.txt" },
+                    new CancellationToken(canceled: true)));
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public void SkillId_Is_SearchGrep()
     {
         var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance,
@@ -1217,7 +1289,8 @@ public sealed class SearchGrepToolTests
     private static Task<ToolExecutionResult> ExecuteAsync(
         SearchGrepTool tool,
         string query,
-        IReadOnlyDictionary<string, string> parameters)
+        IReadOnlyDictionary<string, string> parameters,
+        CancellationToken ct = default)
     {
         var args = parameters.ToDictionary(
             p => p.Key,
@@ -1235,7 +1308,7 @@ public sealed class SearchGrepToolTests
                 WorkspaceId = "workspace",
                 SessionId = "session",
             },
-        });
+        }, ct);
     }
 
     private sealed class StubFullTextSearchEngine : IFullTextSearchEngine
