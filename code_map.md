@@ -2,6 +2,8 @@
 
 ## 2026-09-13 统一检索与渐进展开设计
 
+看板已登记总任务 `b74e561e5299479e9afdd5123f26490d` 与 U0–U5 六张阶段卡（default；P1/Backlog；自动派发关闭），已回读核对；完整 Task ID 与依赖映射见下述详细设计 §9，源码/部署/产品验收仍待完成。
+
 `Docs/Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md`、ADR-089（Proposed）：以 `workspace_search` 聚合 Everything 文件路径、代码符号和内容检索，`workspace_open` 统一读取/Outline/Summary/关系/Map/Status；复用 CodeQueryService、IFileOutlinerRegistry、FileChunkService、Lucene 与托管搜索。按用户范围仅借鉴 tgrep 思路，不引入程序/服务或新 trigram 引擎；U3 为现有查询计划与变更失效整合。施工入口为 FileSearchTool、SearchGrepTool、CodeQueryTools、CodeSummaryTool、SearchAttemptLedger、SmartWorkflow 与工具/模板权限投影。本次仅设计，尚未实施或性能/产品验收。
 
 ## 2026-09-13 自动压缩频次诊断
