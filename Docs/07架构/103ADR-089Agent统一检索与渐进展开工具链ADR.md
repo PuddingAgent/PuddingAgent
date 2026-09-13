@@ -16,6 +16,9 @@ Everything 文件名索引、代码符号/关系索引、内容 grep、Outline�
 6. 负缓存不能仅依赖 Git HEAD；缺少可靠变更版本时禁用负缓存短路，timeout 不永久抑制重试。
 7. Core 拥有统一查询服务、预算、缓存与既有索引协调；Desktop 不承担索引业务。按物理 worktree 隔离，主子 Agent 共享有界服务，不新增搜索守护进程。
 8. 旧检索工具与只读辅助工具在调用方/模板/权限同步迁移后退出默认 catalog，不长期维护两套执行入口。写入、Shell、索引管理、记忆和日志检索保留各自职责；新工具必须按操作校验权限，不能合并后扩大已有授权。
+9. U3 扩展为后台异步索引维护：FileSystemWatcher 仅发变化提示，经有界 Channel、防抖合并和持久维护账本交给 Core 单一 worker。增强现有 CodeIndexScheduler/Lucene 更新路径，避免双 writer；队列满、事件丢失与重启由校准补偿，in-flight 期间再次变化必须补跑。
+10. 文件/配置/解析器版本决定索引与缓存失效；只有完整且根可访问的校准才能 sweep 未见条目。确认删除需清理符号/图边/引用/全文与缓存；离线盘或权限失败不能解释为文件批量删除。退休索引在归属、路径与 reader 释放验证后异步 GC；不删除源码或 Everything 数据。
+11. 各 provider 独立 commit 并报告 desired/committed 水位；重建先准备新 generation，成功后切换。查询不阻塞全量维护；不足以保证 current 时如实返回 partial/stale。U5 必测溢出、二次修改、崩溃恢复、删除一致性、离线保护及 Windows 文件占用回收，详见详细设计 §10。
 
 ## 所有权与代价
 
