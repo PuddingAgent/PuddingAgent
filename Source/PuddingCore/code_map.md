@@ -134,6 +134,7 @@
 |------|------|
 | `Tools/Retrieval/RetrievalContracts.cs` | 统一检索合同：`RetrievalCoverage`（`Complete/Partial/Truncated/Timeout/ContractError`，`IsComplete` 仅由 `Status==Complete` 唯一推导；Partial 必须给出原因）+ `RetrievalMatchOutcome`（`NoMatch/Match/Timeout`，超时不降级为 NoMatch） |
 | `Tools/Retrieval/RetrievalMatcher.cs` | 唯一匹配语义实现：字面量 `Ordinal` 与正则 `CultureInvariant` 归一；`TryMatch(line, ct)` 返回三态并把 `RegexMatchTimeoutException` 映射为 `Timeout`（不吞不抛），取消传播 `OperationCanceledException`；`IsMatch` 为兼容层（超时返回 false，须改用 `TryMatch`） |
+| `Tools/Retrieval/RetrievalGlobMatcher.cs` | 共享 glob 匹配合同（ADR-089 U0-G1，`public static`）：`Matches/MatchesFileName/MatchesRelativePath/HasWildcards/Normalize`；`null`/空/全空白匹配一切；`**/`、`**\`、前导 `**` 单次剥离；通配符仅 `*`（任意长度可 0）与 `?`（恰好一个），`[ ] { }` 按字面；不含分隔符→比对文件名，含分隔符→比对相对路径（两侧分隔符归一 `/`）；无通配符→精确比较（禁子串包含）；`*`/`?` 不跨 `/`；整串 `*.*` ≡ `*`（规范 3a，父级裁决：漏检优先 + SearchGrepTool 默认 `filePattern`）；大小写由 `ignoreCase` 控制（默认 true，恒用 Ordinal/CultureInvariant）；正则编译 + 有界缓存 512 |
 
 ## 存储管理契约（Storage/）
 
