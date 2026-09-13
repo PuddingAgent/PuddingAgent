@@ -8,6 +8,10 @@
 
 [审计报告](Reports/blocked-one-way-latch-20260914.md)：`TaskExecutionRepairCoordinator`（生产 `Enabled=true` / `Mode=authoritative`）只写 `Blocked` + 置 `ActiveAssignmentId=null` + 释放 assignment，**从不 re-arm**；此后派发扫描只取 `Ready|Deferred`、Tracker 候选要求 `ActiveAssignmentId == attempt.AttemptId`，worker 侧（`task_claim`/`task_update`）反查又必须命中 active assignment → 该组合态唯一恢复通道是管理面 `resume`/`requeue`，与设计 §8「Blocked 逃生通道」冲突。现场取证：卡 `3bd2a4b0` seq44 `task.accepted` → seq45 `task.blocked` 仅 102 秒，`task_get` 返回 `task.not_found`；已用管理面 `resume` 恢复为 `Ready`（seq46 `task.ready` @ 2026-09-13T19:12:18Z）。
 
+## 2026-09-14 结算单向死胡同（缺陷卡 dc0ac9a8）
+
+[调查报告](Reports/task-bound-goal-settlement-deadend-20260914.md)：`ConservativeGoalIterationVerifier`（非 completed / `evidence_incomplete` → Blocked）与 `GoalSettlementStore`（task-bound 时 Goal=Failed、release assignment 并置 `ActiveAssignmentId=null`）叠加后，与 `TaskAgentCommandService.ApplyDispositionAsync` 的归属校验（要求 `task.ActiveAssignmentId == assignment_id`）构成**硬矛盾**：状态机允许 `Blocked→Ready`，但结算后不存在任何存活路径满足归属校验，归属 Agent 无法 canonical 上报；同时 `TaskExecutionRepairCoordinator` 的 `tracker-legacy-blocked-*` 是第二个独立单向口。现场：卡 `3bd2a4b0` 两轮自动派发分别在 accepted 后 94 s / 108 s 被 `tgb-*`（Goal 结算）判 Blocked。修复顺序 F3（派发端到端携带 task/assignment 元数据，先补单测）→ F1（恢复性结局改 NeedsReview 且不释放 assignment）→ F2（有界 re-arm，需 ADR 对齐）。本轮为取证与方案定稿，未改代码。
+
 ## 2026-09-13 ADR-089 U0 正确性返工（R1–R4）
 
 [审阅意见](Reports/ADR-089-U0审阅与返工意见-2026-09-13.md) · [返工验收](Reports/ADR-089-U0返工验收-2026-09-13.md) · [U0 残差 glob 统一验收（G1–G4）](Reports/ADR-089-U0残差glob统一验收-2026-09-13.md) · [ADR-089](07架构/103ADR-089Agent统一检索与渐进展开工具链ADR.md) · [详细设计](Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md)。Lucene 候选只决定优先读哪些文件、必须按当前内容复核后输出；正则超时保留类型不降级为 `no_match`；单次调用唯一 deadline 覆盖候选/枚举/扫描并传播取消；覆盖完整性从 `errors==0` 起算（错误阈值只决定停止）且 `max_results` 统一作用于合并结果集。父级独立复跑 Retrieval 18/18、SearchGrepTool 45/45、FileSearchTool 21/21。
