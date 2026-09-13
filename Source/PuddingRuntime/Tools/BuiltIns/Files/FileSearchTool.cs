@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Tools;
+using PuddingCode.Tools.Retrieval;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -80,11 +81,18 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
                 provider = everythingProvider;
                 providerId = "Everything";
             }
-            else if (builtInProvider is { IsAvailable: true })
-            {
-                provider = builtInProvider;
-                providerId = "BuiltInRecursiveFileSearch";
-            }
+                else if (builtInProvider is { IsAvailable: true })
+                {
+                    provider = builtInProvider;
+                    providerId = "BuiltInRecursiveFileSearch";
+                    // ADR-089 U0-S3（D-f）：auto 降级不再静默——注册了 Everything provider 但不可用时，
+                    // 显式声明 fallback（覆盖/降级说明单点产出，见 BuildSearchOutput）。
+                    if (everythingProvider is not null)
+                    {
+                        fallbackFrom = everythingProvider.ProviderId;
+                        fallbackReason = "everything is unavailable on this host";
+                    }
+                }
             else
             {
                 return ToolExecutionResult.Fail("No file search provider available.");
@@ -139,14 +147,18 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
 
         try
         {
-            var providerResults = await provider.SearchAsync(directory, pattern, recursive, maxResults, ct);
-            var results = NormalizeAbsolutePaths(providerResults, directory);
+            var primaryResult = await provider.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, ct);
+            var (results, coverage) = await MergeWithBaselineAsync(
+                primaryResult, providerId, requireProvider, directory, pattern, recursive, maxResults, ct);
             var output = BuildSearchOutput(results, fallbackFrom, providerId, fallbackReason);
-            var noMatch = results.Count == 0;
+            // ADR-089 U0-S3：覆盖声明单点产出，且仅非 Complete 时出现（对齐 U0-S2 SearchGrepTool
+            // 惯例：Complete = 无声明行 + status ok/no_match）；同一声明恰好一次（U0-S2 教训见 ff79f3b）。
+            if (!coverage.IsComplete)
+                output += Environment.NewLine + BuildCoverageNote(coverage);
+            var noMatch = coverage.IsComplete && results.Count == 0;
             if (noMatch)
                 output += Environment.NewLine + Environment.NewLine + BuildNoResultsGuidance(providerId, directory, pattern, recursive);
-            return ToolExecutionResult.Ok(output,
-                status: noMatch ? ToolResultStatuses.NoMatch : ToolResultStatuses.Ok);
+            return ToolExecutionResult.Ok(output, status: BuildResultStatus(coverage, results.Count));
         }
         catch (Exception ex) when (
             IsEverythingProvider(providerId)
@@ -156,14 +168,17 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             var builtInFallback = FindBuiltInProvider()!;
             try
             {
-                var providerResults = await builtInFallback.SearchAsync(directory, pattern, recursive, maxResults, ct);
-                var results = NormalizeAbsolutePaths(providerResults, directory);
+                // 降级到基线枚举时其覆盖状态已自定案（Complete/Truncated），无需再差分。
+                var fallbackResult = await builtInFallback.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, ct);
+                var results = NormalizeAbsolutePaths(fallbackResult.Paths, directory);
                 var output = BuildSearchOutput(
                     results,
                     providerId,
                     builtInFallback.ProviderId,
                     $"provider query failed: {ex.Message}");
-                var noMatch = results.Count == 0;
+                if (!fallbackResult.Coverage.IsComplete)
+                    output += Environment.NewLine + BuildCoverageNote(fallbackResult.Coverage);
+                var noMatch = fallbackResult.Coverage.IsComplete && results.Count == 0;
                 if (noMatch)
                 {
                     output += Environment.NewLine + Environment.NewLine +
@@ -174,8 +189,7 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
                                   recursive);
                 }
 
-                return ToolExecutionResult.Ok(output,
-                    status: noMatch ? ToolResultStatuses.NoMatch : ToolResultStatuses.Ok);
+                return ToolExecutionResult.Ok(output, status: BuildResultStatus(fallbackResult.Coverage, results.Count));
             }
             catch (Exception fallbackException)
             {
@@ -227,6 +241,92 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
 
     private static bool IsEverythingProvider(string providerId) =>
         string.Equals(providerId, "Everything", StringComparison.OrdinalIgnoreCase);
+
+    // ADR-089 U0-S3（设计 L100/L107/L128）：主 provider 清单不可验证（Partial）时，
+    // 以内置全量枚举为基线做同 scope 差分补足，防止「索引清单遗漏新文件」被误报为 no_match。
+    private async Task<(IReadOnlyList<string> Paths, RetrievalCoverage Coverage)> MergeWithBaselineAsync(
+        FileSearchProviderResult primary,
+        string primaryProviderId,
+        bool requireProvider,
+        string directory,
+        string pattern,
+        bool recursive,
+        int maxResults,
+        CancellationToken ct)
+    {
+        primary = primary with { Paths = NormalizeAbsolutePaths(primary.Paths, directory) };
+
+        // Complete/Truncated 已定案；Truncated 时结果集已满额，补足不改变覆盖结论（合法集合运算豁免）。
+        if (primary.Coverage.Status is RetrievalCoverageStatus.Complete or RetrievalCoverageStatus.Truncated)
+            return (primary.Paths, primary.Coverage);
+
+        var builtIn = FindBuiltInProvider();
+        if (builtIn is null || requireProvider ||
+            string.Equals(builtIn.ProviderId, primaryProviderId, StringComparison.OrdinalIgnoreCase))
+        {
+            // 无法差分（无基线/显式要求单一 provider）：保持 Partial 诚实上报，不得伪装 Complete 或 no_match。
+            return (primary.Paths, primary.Coverage);
+        }
+
+        FileSearchProviderResult baseline;
+        try
+        {
+            baseline = await builtIn.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, ct);
+        }
+        catch (Exception ex)
+        {
+            // 差分失败不否定主结果：保留清单结果并声明无法补足（设计 L108：不得静默降级）。
+            return (primary.Paths, RetrievalCoverage.Partial(
+                $"differential enumeration failed: {ex.Message}",
+                primary.Coverage.Reasons));
+        }
+
+        var mergedPaths = primary.Paths
+            .Concat(baseline.Paths)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (baseline.Coverage.Status == RetrievalCoverageStatus.Truncated || mergedPaths.Count > maxResults)
+        {
+            return (mergedPaths.Take(maxResults).ToArray(),
+                RetrievalCoverage.Of(RetrievalCoverageStatus.Truncated,
+                    $"scope may contain more matches than the result limit {maxResults}"));
+        }
+
+        if (baseline.Coverage.Status != RetrievalCoverageStatus.Complete)
+        {
+            // 基线自身中断：并集不完整，合并双方原因诚实上报。
+            return (mergedPaths,
+                new RetrievalCoverage(
+                    RetrievalCoverageStatus.Partial,
+                    primary.Coverage.Reasons.Concat(baseline.Coverage.Reasons).ToList(),
+                    isComplete: false));
+        }
+
+        // 基线自然完成 → 差分实测定案（设计 L100：覆盖与时效由差分验证）。
+        var missedCount = mergedPaths
+            .Except(primary.Paths, StringComparer.OrdinalIgnoreCase)
+            .Count();
+        return missedCount > 0
+            ? (mergedPaths, RetrievalCoverage.Partial(
+                $"everything manifest missed {missedCount} file(s) present on disk; differential enumeration added them"))
+            : (mergedPaths, RetrievalCoverage.Complete(
+                ["everything manifest verified against on-disk enumeration"]));
+    }
+
+    // 覆盖声明单点产出：整个输出中恰好出现一次（U0-S2 教训：同一声明出现两次）。
+    private static string BuildCoverageNote(RetrievalCoverage coverage) =>
+        $"(coverage: {coverage.Status.ToString().ToLowerInvariant()}" +
+        (coverage.Status == RetrievalCoverageStatus.Complete
+            ? " — the declared scope was fully enumerated; an empty result is a verified no-match)"
+            : $" — {string.Join("; ", coverage.Reasons)})");
+
+    // 状态映射（对齐 U0-S2 SearchGrepTool）：只有覆盖 Complete 才允许 no_match；
+    // 非 Complete 一律 truncated（结构化状态），细节由覆盖声明承载。
+    private static string BuildResultStatus(RetrievalCoverage coverage, int resultCount) =>
+        !coverage.IsComplete ? ToolResultStatuses.Truncated
+        : resultCount == 0 ? ToolResultStatuses.NoMatch
+        : ToolResultStatuses.Ok;
 
     private static string BuildEverythingDirectoryGuidance(string problem) =>
         problem + Environment.NewLine +
@@ -311,7 +411,21 @@ public interface IFileSearchProvider
     bool IsAvailable { get; }
     /// <summary>Returns normalized absolute file paths.</summary>
     Task<IReadOnlyList<string>> SearchAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct);
+
+    /// <summary>
+    /// ADR-089 U0-S3（设计 L100/L107/L108）：provider 侧必须声明结果覆盖状态，调用方据此决定
+    /// 是否需要差分补足同 scope 枚举。默认实现包装 <see cref="SearchAsync"/> 并声明 Complete——
+    /// 旧合同没有“不完整”信号，按既有语义信任其自述完整，保证外部实现零改动兼容。
+    /// </summary>
+    async Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct)
+    {
+        var paths = await SearchAsync(directory, pattern, recursive, maxResults, ct);
+        return new FileSearchProviderResult(paths, RetrievalCoverage.Complete());
+    }
 }
+
+/// <summary>ADR-089 U0-S3：provider 搜索结果与覆盖报告。复用 U0 覆盖合同（RetrievalCoverage），不新增第二套契约 DTO。</summary>
+public sealed record FileSearchProviderResult(IReadOnlyList<string> Paths, RetrievalCoverage Coverage);
 
 internal sealed class BuiltInRecursiveFileSearchProvider : IFileSearchProvider
 {
@@ -328,6 +442,54 @@ internal sealed class BuiltInRecursiveFileSearchProvider : IFileSearchProvider
             .ToArray();
         return Task.FromResult<IReadOnlyList<string>>(results);
     }
+
+    // ADR-089 U0-S3：基线枚举必须与 Everything 路径同一匹配合同（设计 L128）——
+    // 全量枚举 "*" 后统一用 FileSearchPatternMatcher 复核，消除 Windows searchPattern
+    // （3 字符扩展名怪癖等）与 glob 语义的口径分歧；覆盖状态诚实上报，供上层差分定案。
+    public Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct)
+    {
+        var root = Path.GetFullPath(directory);
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = recursive,
+            IgnoreInaccessible = true,
+            // 仅跳过 reparse point 防 junction 循环；Hidden/System 必须枚举，否则基线漏文件。
+            AttributesToSkip = FileAttributes.ReparsePoint,
+        };
+
+        var results = new List<string>();
+        var hitResultLimit = false;
+        try
+        {
+            foreach (var path in Directory.EnumerateFiles(root, "*", options))
+            {
+                if (!FileSearchPatternMatcher.Matches(path, root, pattern))
+                    continue;
+                if (results.Count >= maxResults)
+                {
+                    // 第 maxResults+1 个匹配出现才判截断：恰好等于上限且枚举自然结束时仍是全量。
+                    hitResultLimit = true;
+                    break;
+                }
+
+                results.Add(path);
+            }
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            // 设计 L108：枚举中断不得伪装完整——保留部分结果并声明 Partial。
+            return Task.FromResult(new FileSearchProviderResult(
+                results.Select(Path.GetFullPath).ToArray(),
+                RetrievalCoverage.Partial($"builtin enumeration interrupted: {ex.Message}")));
+        }
+
+        var coverage = hitResultLimit
+            ? RetrievalCoverage.Of(RetrievalCoverageStatus.Truncated,
+                $"builtin enumeration found more than {maxResults} matches")
+            : RetrievalCoverage.Complete();
+        return Task.FromResult(new FileSearchProviderResult(
+            results.Select(Path.GetFullPath).ToArray(), coverage));
+    }
 }
 
 internal interface IEverythingSdk
@@ -338,7 +500,9 @@ internal interface IEverythingSdk
 
 internal sealed record EverythingQueryRequest(string Directory, string Pattern, int MaxResults);
 
-internal sealed record EverythingQueryResult(IReadOnlyList<EverythingQueryItem> Items);
+// ADR-089 U0-S3：IsCompleteManifest 供测试桩/未来 SDK 自证清单完整；真实 Everything64.dll
+// 无该出口，恒为 false → 上层必须差分补足（设计 L100：覆盖和时效不可验证时补充现有文件枚举）。
+internal sealed record EverythingQueryResult(IReadOnlyList<EverythingQueryItem> Items, bool IsCompleteManifest = false);
 
 internal sealed record EverythingQueryItem(string FullPath);
 
@@ -372,6 +536,43 @@ internal sealed class EverythingSearchProvider : IFileSearchProvider
             .Where(path => FileSearchPatternMatcher.Matches(path, root, pattern))
             .Take(maxResults)
             .ToArray();
+    }
+
+    // ADR-089 U0-S3（设计 L100/L107/L108）：Everything 是索引快照，结果必须按真实路径 +
+    // scope + glob 后置复核；清单完整性无 SDK 自证出口时声明 Partial，由上层差分补足定案。
+    public async Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct)
+    {
+        if (!_sdk.IsAvailable(out var unavailableReason))
+            throw new InvalidOperationException(unavailableReason ?? "Everything SDK is not available.");
+
+        var request = new EverythingQueryRequest(directory, pattern, maxResults);
+        var result = await _sdk.QueryAsync(request, ct);
+        var root = Path.GetFullPath(directory);
+        var rootTrimmed = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        // 后置校验（设计 L107）：File.Exists 滤掉索引滞后的幽灵条目（已删除文件仍可能在清单中）。
+        var paths = result.Items
+            .Select(i => Path.GetFullPath(i.FullPath))
+            .Where(path => File.Exists(path))
+            .Where(path => FileSearchPathHelpers.IsInsideDirectory(path, root))
+            .Where(path => recursive || IsDirectChild(path, rootTrimmed))
+            .Where(path => FileSearchPatternMatcher.Matches(path, root, pattern))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        // 截断判定：结果集满额；或 SDK 原始条目已撞 Everything_SetMax 上限——SetMax 截断发生在
+        // 过滤之前，过滤后不满额不代表没截断，按可能截断处理并要求差分，不得当作完整清单。
+        var coverage = paths.Length >= maxResults
+            ? RetrievalCoverage.Of(RetrievalCoverageStatus.Truncated,
+                $"everything manifest reached the result limit {maxResults}; scope may contain more matches")
+            : result.Items.Count >= maxResults
+                ? RetrievalCoverage.Partial(
+                    $"everything index hit its result limit {maxResults} before filtering; manifest may omit matches")
+                : result.IsCompleteManifest
+                    ? RetrievalCoverage.Complete()
+                    : RetrievalCoverage.Partial(
+                        "everything manifest completeness is not verifiable for this scope; differential enumeration required");
+        return new FileSearchProviderResult(paths, coverage);
     }
 
     private static bool IsDirectChild(string path, string rootDirectory)
