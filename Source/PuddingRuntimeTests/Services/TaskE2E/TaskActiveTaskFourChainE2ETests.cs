@@ -19,7 +19,7 @@ namespace PuddingRuntimeTests.Services.TaskE2E;
 /// + 真实 SQLite + 真实 <see cref="AgentExecutionService"/>。生产代码零改动。
 /// </para>
 /// <para>
-/// 已实现 7 个新增测试：
+/// 已实现 11 个新增测试：
 ///   T1 派发链  ActiveTask → ToolInvocationRequest
 ///   T4 执行链  task_claim → task_update(completed) 四表原子写回
 ///   T5 执行链  assignment.stale 守卫
@@ -27,6 +27,10 @@ namespace PuddingRuntimeTests.Services.TaskE2E;
 ///   T7 回写链  ToolInvocationService.ActiveTask → ToolExecutionContext 透传
 ///   T8 回写链  task_claim 以 Context 为准，冲突参数 state_conflict
 ///   T9 恢复链  WAIT → wakeup 恢复 ActiveTask → 真实工具写库
+///   T12 恢复链 Blocked + active assignment 持有者 canonical 恢复到 Ready（卡 813ad427）
+///   T13 恢复链 Blocked 态非法 disposition fail closed → task.state_conflict
+///   T14 恢复链 Blocked 态版本 CAS 仍生效 → task.version_conflict
+///   T15 恢复链 Blocked 不可被 task_claim 认领 → task.state_conflict
 /// </para>
 /// <para>
 /// 沿用 B2（不重复实现）：
@@ -316,6 +320,106 @@ public sealed class TaskActiveTaskFourChainE2ETests
         Assert.AreEqual(2, task.Version);
     }
 
+    // ── T12 恢复链：Blocked + active assignment 持有者可 canonical 恢复到 Ready（卡 813ad427）──
+    [TestMethod]
+    public async Task UpdateTodo_WithoutActiveContext_BlockedTask_RebuildsAndRecoversToReady()
+    {
+        var seeded = await _harness.SeedAssignedTaskAsync(WorkspaceId, TaskId, AssignmentId, AgentId);
+        var tool = UpdateTool();
+
+        // ① 正常派发路径把卡打成 Blocked（Assigned v1 → Blocked v2）。
+        var blocked = await ExecuteUpdateAsync(tool, seeded, "call-t12-block",
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":1,"disposition":"blocked","reason":"tracker_blocked"}""");
+        Assert.IsTrue(blocked.Success, blocked.Error);
+
+        var afterBlock = await _harness.Probe.GetTaskAsync(WorkspaceId, TaskId);
+        Assert.IsNotNull(afterBlock);
+        Assert.AreEqual(WorkspaceTaskStatus.Blocked, afterBlock!.Status);
+        Assert.AreEqual(2, afterBlock.Version);
+        Assert.AreEqual(AssignmentId, afterBlock.ActiveAssignmentId, "blocked 不移除 active assignment。");
+
+        // ② 新 run 无派发 metadata（ActiveTask=null）：Blocked + active assignment 归属当前 Agent + CAS 匹配
+        //    → 允许重建；disposition=todo 在状态机中 Blocked→Ready 合法 → canonical 恢复通道生效。
+        var recovered = await ExecuteUpdateAsync(tool, activeTask: null, "call-t12-todo",
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":2,"disposition":"todo","next_action":"exit blocked loop"}""");
+        Assert.IsTrue(recovered.Success, recovered.Error);
+
+        var afterRecover = await _harness.Probe.GetTaskAsync(WorkspaceId, TaskId);
+        Assert.IsNotNull(afterRecover);
+        Assert.AreEqual(WorkspaceTaskStatus.Ready, afterRecover!.Status, "Blocked → Ready 恢复通道应生效。");
+        Assert.AreEqual(3, afterRecover.Version);
+        Assert.IsNull(afterRecover.ActiveAssignmentId, "恢复后必须释放 active assignment。");
+    }
+
+    // ── T13 恢复链（反向）：Blocked 态非法 disposition fail closed（卡 813ad427）──
+    [TestMethod]
+    public async Task UpdateProgress_WithoutActiveContext_BlockedTask_RejectedAsStateConflict()
+    {
+        await SeedBlockedTaskAsync();
+        var tool = UpdateTool();
+
+        var rejected = await ExecuteUpdateAsync(tool, activeTask: null, "call-t13-progress",
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":2,"disposition":"progress","progress_summary":"still working"}""");
+
+        // 重建门槛放宽但合法性不放宽：Blocked 下 progress 非法 → 服务端 task.state_conflict。
+        AssertToolExecutionErrorCode(rejected, "task.state_conflict");
+
+        var after = await _harness.Probe.GetTaskAsync(WorkspaceId, TaskId);
+        Assert.IsNotNull(after);
+        Assert.AreEqual(WorkspaceTaskStatus.Blocked, after!.Status, "非法 disposition 不得推进状态。");
+        Assert.AreEqual(2, after.Version);
+    }
+
+    // ── T14 恢复链：Blocked 态版本 CAS 仍然生效（卡 813ad427）──
+    [TestMethod]
+    public async Task UpdateTodo_WithoutActiveContext_BlockedTask_StaleVersion_ReturnsVersionConflict()
+    {
+        await SeedBlockedTaskAsync();
+        var tool = UpdateTool();
+
+        var stale = await ExecuteUpdateAsync(tool, activeTask: null, "call-t14-stale",
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":1,"disposition":"todo","next_action":"exit blocked loop"}""");
+
+        AssertToolExecutionErrorCode(stale, "task.version_conflict");
+
+        var after = await _harness.Probe.GetTaskAsync(WorkspaceId, TaskId);
+        Assert.IsNotNull(after);
+        Assert.AreEqual(WorkspaceTaskStatus.Blocked, after!.Status, "CAS 失败不得推进状态。");
+        Assert.AreEqual(2, after.Version);
+    }
+
+    // ── T15 恢复链（反向）：Blocked 不可被 task_claim 认领（claim 门槛不随 update 放宽）──
+    [TestMethod]
+    public async Task TaskClaimTool_WithoutActiveContext_BlockedTask_RejectedAsStateConflict()
+    {
+        await SeedBlockedTaskAsync();
+        var tool = new TaskClaimTool(
+            _harness.CommandService,
+            Options.Create(new WorkspaceTaskFeatureOptions { Enabled = true }),
+            NullLogger<TaskClaimTool>.Instance);
+
+        var rejected = await tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = "call-t15-claim",
+            ArgumentsJson =
+                """{"task_id":"task-1","assignment_id":"assign-1","expected_version":2}""",
+            Context = new ToolExecutionContext
+            {
+                WorkspaceId = WorkspaceId,
+                SessionId = "session-t15",
+                AgentInstanceId = AgentId,
+                ActiveTask = null,
+            },
+        });
+
+        AssertToolExecutionErrorCode(rejected, "task.state_conflict");
+
+        var after = await _harness.Probe.GetTaskAsync(WorkspaceId, TaskId);
+        Assert.IsNotNull(after);
+        Assert.AreEqual(WorkspaceTaskStatus.Blocked, after!.Status, "认领被拒不得推进状态。");
+        Assert.AreEqual(2, after.Version);
+    }
+
     // ── Fixture 帮助 ────────────────────────────────────────────────────────
 
     private static RuntimeExecutionIdentity CreateIdentity(string runId, string traceId) => new()
@@ -357,6 +461,40 @@ public sealed class TaskActiveTaskFourChainE2ETests
             disposition = "completed",
             result_summary = "done",
         });
+
+    /// <summary>走真实派发路径把卡打成 Blocked（Assigned v1 → Blocked v2），供卡 813ad427 恢复链测试复用。</summary>
+    private async Task SeedBlockedTaskAsync()
+    {
+        var seeded = await _harness.SeedAssignedTaskAsync(WorkspaceId, TaskId, AssignmentId, AgentId);
+        var blocked = await ExecuteUpdateAsync(UpdateTool(), seeded, "call-seed-block",
+            """{"task_id":"task-1","assignment_id":"assign-1","expected_version":1,"disposition":"blocked","reason":"tracker_blocked"}""");
+        Assert.IsTrue(blocked.Success, blocked.Error);
+    }
+
+    /// <summary>直接执行 task_update 工具（activeTask=null 表示新 run 无派发 metadata）。</summary>
+    private static Task<ToolExecutionResult> ExecuteUpdateAsync(
+        TaskUpdateTool tool,
+        ActiveTaskRuntimeContext? activeTask,
+        string callId,
+        string argumentsJson)
+        => tool.ExecuteAsync(new ToolExecutionRequest
+        {
+            ToolCallId = callId,
+            ArgumentsJson = argumentsJson,
+            Context = new ToolExecutionContext
+            {
+                WorkspaceId = WorkspaceId,
+                SessionId = callId,
+                AgentInstanceId = AgentId,
+                ActiveTask = activeTask,
+            },
+        });
+
+    private TaskUpdateTool UpdateTool()
+        => new(
+            _harness.CommandService,
+            Options.Create(new WorkspaceTaskFeatureOptions { Enabled = true }),
+            NullLogger<TaskUpdateTool>.Instance);
 
     private static string ScriptJson(string toolName, object args)
         => JsonSerializer.Serialize(new

@@ -44,7 +44,7 @@ public sealed class TaskClaimTool : PuddingToolBase<TaskClaimArgs>
 
         // 缺陷 3f8df399：ActiveTask 因宿主重启丢失时，经服务端反查归属安全重建等效上下文。
         var (guard, rebuiltActiveTask) = await TaskToolGuard.ValidateActiveTaskOrRebuildAsync(
-            args.TaskId, args.AssignmentId, args.ExpectedVersion, context, _service, ct, requireInProgress: false);
+            args.TaskId, args.AssignmentId, args.ExpectedVersion, context, _service, ct, allowBlockedRecovery: false);
         if (guard is not null)
         {
             return ToolExecutionResult.Fail(guard);

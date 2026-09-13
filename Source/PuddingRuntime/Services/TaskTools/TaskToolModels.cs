@@ -233,7 +233,9 @@ internal static class TaskToolGuard
     ///      与 ClaimAsync 服务端守卫同语义）；
     ///   ③ assignment.AgentId == 当前 Agent（防御性双保险）；
     ///   ④ 状态门槛：claim 受理 Assigned/InProgress（InProgress 由 ClaimAsync 幂等 no-op）；
-    ///      update 要求 InProgress；不符 → task.state_conflict（附 current_status）；
+    ///      update 受理 InProgress/Blocked（卡 813ad427：Blocked 且 active assignment 归属当前 Agent 时
+    ///      允许 canonical 恢复上报，合法 disposition 仍由服务端状态机 fail closed 裁决）；
+    ///      不符 → task.state_conflict（附 current_status）；
     ///   ⑤ task.Version == expected_version（CAS；后续 Claim/Apply 服务端二次 CAS），
     ///      不符 → task.version_conflict（附 current_version）。
     /// 任一不满足则返回原拒绝语义（错误码与 mine 信息隐藏策略均不变），并附加非泄露诊断
@@ -249,7 +251,7 @@ internal static class TaskToolGuard
         ToolExecutionContext context,
         ITaskAgentCommandService service,
         CancellationToken ct,
-        bool requireInProgress)
+        bool allowBlockedRecovery)
     {
         var error = ValidateActiveTask(taskId, assignmentId, context);
         if (error is null)
@@ -293,14 +295,19 @@ internal static class TaskToolGuard
             return (BuildRebuildRejectedError(taskId, attempted: true, stage: "ownership", outcome: "agent_mismatch"), null);
         }
 
-        var statusOk = requireInProgress
-            ? string.Equals(lookup.Task.Status, "InProgress", StringComparison.Ordinal)
+        // 卡 813ad427（2026-09-14 裁定）：Blocked + active assignment 归属当前 Agent 时，其所属
+        // Task-bound Goal 必须能 canonical 上报，不得只留「管理者手工改状态」一条路。
+        // 状态机已允许 Blocked→Ready（TryInterpretDisposition(Todo)）与 Blocked→Failed（MarkFailed），
+        // 故此处只放开「能否重建上下文」，disposition 的合法性仍由服务端状态机裁决：
+        // Blocked 下 progress/completed/blocked/needs_approval 仍返回 task.state_conflict。
+        var statusOk = allowBlockedRecovery
+            ? lookup.Task.Status is "InProgress" or "Blocked"
             : lookup.Task.Status is "Assigned" or "InProgress";
         if (!statusOk)
         {
             return (TaskToolErrors.BuildErrorJson(
                 TaskErrorCode.TaskStateConflict,
-                $"Task '{taskId}' is in state '{lookup.Task.Status}'; {(requireInProgress ? "task_update" : "task_claim")} requires {(requireInProgress ? "InProgress" : "Assigned or InProgress")}.",
+                $"Task '{taskId}' is in state '{lookup.Task.Status}'; {(allowBlockedRecovery ? "task_update" : "task_claim")} requires {(allowBlockedRecovery ? "InProgress or Blocked" : "Assigned or InProgress")}.",
                 taskId,
                 lookup.Task.Version,
                 lookup.Task.Status), null);
