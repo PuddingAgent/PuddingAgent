@@ -2,11 +2,13 @@
 
 ## 2026-09-13 统一检索与渐进展开设计
 
+U0 独立审阅：`Docs/Reports/ADR-089-U0审阅与返工意见-2026-09-13.md`。`bf6f91e/1f687d7/fe49137/ff79f3b` 落地 RetrievalContracts/RetrievalMatcher 与 SearchGrepTool 改造；Core 16、Runtime 32 项定向通过，补充复现暴露旧索引文本、正则超时丢失/整体预算、读取错误/取消误报 no_match、max_results 合并上限四项问题。U0 评价 needs_changes，S3 与 U1–U5 待交付；不能将已提交片段等同产品完成。
+
 后台维护扩展（详细设计 §10）：U3 `8bddf9017b2d40049f8ea88823c2078a` 增补 FileSystemWatcher→有界 Channel→持久维护账本→后台单 writer，覆盖 in-flight 二次修改、增量提交、失效/删除、完整扫描后 sweep 与退休 generation GC；复用 CodeIndexScheduler/SqliteCodeIndexStore/LuceneSearchEngine，离线/读取异常不触发批量删除。总任务与 U5 同步扩展，仍仅设计。
 
-看板已登记总任务 `b74e561e5299479e9afdd5123f26490d` 与 U0–U5 六张阶段卡（default；P1/Backlog；自动派发关闭），已回读核对；完整 Task ID 与依赖映射见下述详细设计 §9，源码/部署/产品验收仍待完成。
+看板已登记总任务 `b74e561e5299479e9afdd5123f26490d` 与 U0–U5 六张阶段卡（default；P1；自动派发关闭），U0 审阅时为 Ready、其余为 Backlog；完整 Task ID 与依赖映射见下述详细设计 §9，整体源码/部署/产品验收仍待完成。
 
-`Docs/Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md`、ADR-089（Proposed）：以 `workspace_search` 聚合 Everything 文件路径、代码符号和内容检索，`workspace_open` 统一读取/Outline/Summary/关系/Map/Status；复用 CodeQueryService、IFileOutlinerRegistry、FileChunkService、Lucene 与托管搜索。按用户范围仅借鉴 tgrep 思路，不引入程序/服务或新 trigram 引擎；U3 为现有查询计划与变更失效整合。施工入口为 FileSearchTool、SearchGrepTool、CodeQueryTools、CodeSummaryTool、SearchAttemptLedger、SmartWorkflow 与工具/模板权限投影。本次仅设计，尚未实施或性能/产品验收。
+`Docs/Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md`、ADR-089（Proposed）：以 `workspace_search` 聚合 Everything 文件路径、代码符号和内容检索，`workspace_open` 统一读取/Outline/Summary/关系/Map/Status；复用 CodeQueryService、IFileOutlinerRegistry、FileChunkService、Lucene 与托管搜索。按用户范围仅借鉴 tgrep 思路，不引入程序/服务或新 trigram 引擎；U3 为现有查询计划与变更失效整合。施工入口为 FileSearchTool、SearchGrepTool、CodeQueryTools、CodeSummaryTool、SearchAttemptLedger、SmartWorkflow 与工具/模板权限投影。U0 部分源码已落地并待返工，统一入口及后台维护尚未交付，未完成性能/产品验收。
 
 ## 2026-09-13 自动压缩频次诊断
 
