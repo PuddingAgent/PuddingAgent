@@ -2,7 +2,7 @@
 
 ## 2026-09-13 ADR-089 U0 正确性返工（R1–R4）
 
-[审阅意见](Reports/ADR-089-U0审阅与返工意见-2026-09-13.md) · [返工验收](Reports/ADR-089-U0返工验收-2026-09-13.md) · [ADR-089](07架构/103ADR-089Agent统一检索与渐进展开工具链ADR.md) · [详细设计](Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md)。Lucene 候选只决定优先读哪些文件、必须按当前内容复核后输出；正则超时保留类型不降级为 `no_match`；单次调用唯一 deadline 覆盖候选/枚举/扫描并传播取消；覆盖完整性从 `errors==0` 起算（错误阈值只决定停止）且 `max_results` 统一作用于合并结果集。父级独立复跑 Retrieval 18/18、SearchGrepTool 45/45、FileSearchTool 21/21。
+[审阅意见](Reports/ADR-089-U0审阅与返工意见-2026-09-13.md) · [返工验收](Reports/ADR-089-U0返工验收-2026-09-13.md) · [U0 残差 glob 统一验收（G1–G4）](Reports/ADR-089-U0残差glob统一验收-2026-09-13.md) · [ADR-089](07架构/103ADR-089Agent统一检索与渐进展开工具链ADR.md) · [详细设计](Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md)。Lucene 候选只决定优先读哪些文件、必须按当前内容复核后输出；正则超时保留类型不降级为 `no_match`；单次调用唯一 deadline 覆盖候选/枚举/扫描并传播取消；覆盖完整性从 `errors==0` 起算（错误阈值只决定停止）且 `max_results` 统一作用于合并结果集。父级独立复跑 Retrieval 18/18、SearchGrepTool 45/45、FileSearchTool 21/21。
 
 ## 2026-09-12 原生视觉与取图截图收敛
 
