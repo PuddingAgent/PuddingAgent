@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Configuration;
@@ -753,20 +752,6 @@ internal static class FileSearchPathHelpers
 /// </summary>
 internal static class FileSearchPatternMatcher
 {
-    /// <summary>
-    /// provider 级 pattern 翻译（把 pattern 折算成 Win32 枚举可用的 searchPattern），
-    /// 不是文件级过滤；文件级过滤一律走 <see cref="Matches"/> / <see cref="MatchesFileOrPath"/>。
-    /// 行为保持不变（G3 只统一文件级通配分支）。
-    /// </summary>
-    public static string ToDirectorySearchPattern(string pattern)
-    {
-        var value = string.IsNullOrWhiteSpace(pattern) ? "*" : pattern;
-        var searchPattern = value.Contains('*') || value.Contains('?')
-            ? Regex.Replace(value, @"^\*\*[/\\]", "")
-            : "*";
-        return string.IsNullOrWhiteSpace(searchPattern) ? "*" : searchPattern;
-    }
-
     public static bool Matches(string path, string rootDirectory, string pattern)
     {
         var value = string.IsNullOrWhiteSpace(pattern) ? "*" : pattern;
