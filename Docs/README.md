@@ -150,6 +150,7 @@
 - `Docs/07架构/18上下文缓存可观测性ADR.md`
 - `Docs/07架构/43ADR-042上下文自动压缩与主动Compact命令ADR.md`
 - `Docs/07架构/44ADR-043缓存统计闭环ADR.md`
+- `Docs/07架构/104ADR-090上下文压缩触发口径来源标注与收益准入收敛ADR.md`
 - `Docs/Features/上下文自动压缩与Compact命令设计方案.md`
 - `Docs/Features/上下文Token效率缓存命中与分级压缩优化设计方案.md`
 
