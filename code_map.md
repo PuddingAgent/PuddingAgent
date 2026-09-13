@@ -1,5 +1,9 @@
 # PuddingAgent CodeMAP
 
+## 2026-09-13 统一检索与渐进展开设计
+
+`Docs/Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md`、ADR-089（Proposed）：以 `workspace_search` 聚合 Everything 文件路径、代码符号和内容检索，`workspace_open` 统一读取/Outline/Summary/关系/Map/Status；复用 CodeQueryService、IFileOutlinerRegistry、FileChunkService，tgrep 为待验证内容后端。施工入口为 FileSearchTool、SearchGrepTool、CodeQueryTools、CodeSummaryTool、SearchAttemptLedger、SmartWorkflow 与工具/模板权限投影。本次仅设计，尚未实施或性能/产品验收。
+
 ## 2026-09-13 自动压缩频次诊断
 
 `Docs/Reports/上下文频繁压缩诊断-2026-09-13.md`：默认助手 9/12 至 9/13 07:41 共 40 次自动压缩流程、39 次写入；raw cap 实际使用整请求估算，Provider 快照采用 max 并混淆实报标签。入口为 `ContextCompactionService.GetHealthAsync`、`ContextUsageSnapshotStore.RecordProviderUsage`、`ContextWindowManager.TryAutoCompactAsync`、`CompactionCoordinator`、Web `useCompaction`；本轮只有诊断/方案，未实施产品变更。

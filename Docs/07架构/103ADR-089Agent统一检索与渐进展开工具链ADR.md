@@ -1,0 +1,28 @@
+# ADR-089：Agent 统一检索与渐进展开工具链
+
+日期：2026-09-13。状态：Proposed（未实施、未部署、未验收）。
+
+## 背景
+
+Everything 文件名索引、代码符号/关系索引、内容 grep、Outline、Summary、ProjectMap 和文件读取已形成能力基础，但 Agent 必须选多个工具并重复传递路径与符号身份。仅替换 grep 后端不能解决入口碎片化；Lucene 与 grep 匹配语义不一致、摘要模糊取首项、未提交编辑未使负缓存失效也需要在统一链路内解决。
+
+## 决策
+
+1. 默认 Agent 只保留一个代码/文件搜索入口 `workspace_search`，联合路径、符号和文本；通过 target 表达对象，不要求选择引擎。
+2. 配套 `workspace_open` 统一 excerpt、outline、summary、relations、map、status。使用同一结果引用、范围、版本、分页与预算；路径也可直接打开。
+3. Everything、现有代码索引、内容搜索器为内部 provider；复用 CodeQueryService、Outliner 和 FileChunkService。tgrep 是首选验证对象，是否成为正式依赖以本地差分和性能门禁决定。
+4. 所有 provider 使用统一匹配/范围合同；按来源报告覆盖和新鲜度。只有完成相应范围才能报告 no_match；验证已命中候选不能替代新增文件召回。
+5. ref 绑定精确身份、版本和授权范围，但不授予权限。重名必须消歧；旧版本不能沿旧行号冒充当前符号。
+6. 负缓存不能仅依赖 Git HEAD；缺少可靠变更版本时禁用负缓存短路，timeout 不永久抑制重试。
+7. Core 拥有服务、预算与可选 tgrep 子进程；Desktop 不承担索引业务。按物理 worktree 隔离，主子 Agent 共享有界服务。
+8. 旧检索工具与只读辅助工具在调用方/模板/权限同步迁移后退出默认 catalog，不长期维护两套执行入口。写入、Shell、索引管理、记忆和日志检索保留各自职责；新工具必须按操作校验权限，不能合并后扩大已有授权。
+
+## 所有权与代价
+
+Core 契约定义请求/证据/覆盖；Runtime 提供编排、适配器和模型输出；CodeIntelligence 保留符号/关系/Outline 专业实现；Host 负责 DI、进程与存储；Platform 管理投影和配置，不实现第二套查询；Desktop 仅消费现有控制面。
+
+增加查询规划、结果引用与跨索引新鲜度管理成本，换取较少工具选择和重复读取。保留两个小工具 schema，避免将搜索、读取、修改和索引运维塞进一个宽权限工具。tgrep 没有符号关系能力，无法单独替代整套工具链。
+
+## 验收
+
+按 [详细设计](../Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md) U0–U5 执行。先保证精确搜索完整性、重名/旧 ref 正确、权限等价与局部故障透明，再测冷暖性能、资源和 Agent 端到端调用/Token。源码测试通过只表示 ready-for-external-deploy；新构建内功能 smoke 与进程外生命周期验收分别完成前，不能宣布产品完成。
