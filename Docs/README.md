@@ -4,6 +4,10 @@
 
 [设计裁定](Reports/blocked-recovery-channel-decision-20260914.md)：`task_update` 的上下文重建门槛放宽为 `InProgress｜Blocked`（仍需 active assignment 归属调用方 + 版本 CAS），Blocked 下合法 disposition 仍由服务端状态机 fail closed 裁决（仅 `todo` → Ready 并释放 active assignment）；`task_claim` 门槛不变。回归 `TaskActiveTaskFourChainE2ETests` T12–T15，`FullyQualifiedName~Task` 123/123 通过。
 
+## 2026-09-14 Blocked 单向闩锁（缺陷卡 e2c35d6e）
+
+[审计报告](Reports/blocked-one-way-latch-20260914.md)：`TaskExecutionRepairCoordinator`（生产 `Enabled=true` / `Mode=authoritative`）只写 `Blocked` + 置 `ActiveAssignmentId=null` + 释放 assignment，**从不 re-arm**；此后派发扫描只取 `Ready|Deferred`、Tracker 候选要求 `ActiveAssignmentId == attempt.AttemptId`，worker 侧（`task_claim`/`task_update`）反查又必须命中 active assignment → 该组合态唯一恢复通道是管理面 `resume`/`requeue`，与设计 §8「Blocked 逃生通道」冲突。现场取证：卡 `3bd2a4b0` seq44 `task.accepted` → seq45 `task.blocked` 仅 102 秒，`task_get` 返回 `task.not_found`；已用管理面 `resume` 恢复为 `Ready`（seq46 `task.ready` @ 2026-09-13T19:12:18Z）。
+
 ## 2026-09-13 ADR-089 U0 正确性返工（R1–R4）
 
 [审阅意见](Reports/ADR-089-U0审阅与返工意见-2026-09-13.md) · [返工验收](Reports/ADR-089-U0返工验收-2026-09-13.md) · [U0 残差 glob 统一验收（G1–G4）](Reports/ADR-089-U0残差glob统一验收-2026-09-13.md) · [ADR-089](07架构/103ADR-089Agent统一检索与渐进展开工具链ADR.md) · [详细设计](Features/Agent统一检索与渐进展开工具链设计-2026-09-13.md)。Lucene 候选只决定优先读哪些文件、必须按当前内容复核后输出；正则超时保留类型不降级为 `no_match`；单次调用唯一 deadline 覆盖候选/枚举/扫描并传播取消；覆盖完整性从 `errors==0` 起算（错误阈值只决定停止）且 `max_results` 统一作用于合并结果集。父级独立复跑 Retrieval 18/18、SearchGrepTool 45/45、FileSearchTool 21/21。
