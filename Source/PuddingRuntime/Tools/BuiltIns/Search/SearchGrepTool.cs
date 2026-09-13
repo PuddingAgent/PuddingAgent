@@ -1,8 +1,8 @@
 using System.Text;
-using System.Text.RegularExpressions;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Tools;
+using PuddingCode.Tools.Retrieval;
 using PuddingFullTextIndex.Contracts;
 using PuddingRuntime.Services.Search;
 using PuddingRuntime.Services.Tools;
@@ -39,6 +39,8 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     private const string ErrorBudgetMessage = "有 {0} 个文件读取失败，已提前结束扫描，结果可能不完整";
     private const string LargeFileSkippedMessage = "已跳过 {0} 个超过 1MB 的大文件，结果可能不完整";
     private const string PaginationReportMessage = "返回数量为 {0} 个超过预算 100，完整结果已释放到临时文件，路径为 {1}，如果需要阅读完整的请使用 file_read 工具以 OffsetLines 参数分页阅读。";
+    // ADR-089 U0-S2：覆盖声明行。非 Complete 的结果必须显式声明剩余范围未搜索，空输出不得伪装为"查无结果"。
+    private const string CoveragePartialMessage = "(coverage: partial — scanned {0}/{1} files, {2}/{3} bytes; remaining files not searched)";
     private const int MaxInlineResults = 100;
 
     private static readonly TimeSpan ManagedSearchTimeout = TimeSpan.FromSeconds(10);
@@ -256,11 +258,35 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         bool caseSensitive, int maxResults, HashSet<string> excludeDirs,
         long maxLineBytes, long maxTotalBytes, CancellationToken ct)
     {
+        // ADR-089 U0-S2（S2-1）：进入任何后端前先按统一合同建 matcher（literal/regex 同源）。
+        // 非法正则在此显式失败（ContractError），绝不静默降级为字面搜索，也不触发 Lucene 与扫描。
+        bool isRegex = LooksLikeRegex(query);
+        if (!RetrievalMatcher.TryCreate(
+                isRegex ? RetrievalMatchMode.Regex : RetrievalMatchMode.Literal,
+                caseSensitive ? RetrievalCaseMode.Sensitive : RetrievalCaseMode.Insensitive,
+                query, ManagedSearchTimeout, out var matcherOrNull, out var contractError)
+            || matcherOrNull is null)
+        {
+            return ToolExecutionResult.Fail(
+                $"{contractError ?? "matcher initialization failed"}. Fix the regex pattern, or remove regex metacharacters to search it as literal text.",
+                status: ToolResultStatuses.ContractError);
+        }
+
+        var matcher = matcherOrNull;
+
         var filter = fileExt?.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(e => e.StartsWith('.') ? e : "." + e).ToArray();
         var patternFilter = PatternToExtensionFilter(pattern);
 
-        // 优先级1：Lucene 全文索引
+        // ADR-089 U0-S2（S2-2）：Lucene 只做候选优先级。
+        // 候选行必须经同一 matcher 精确复核，分词召回的假阳性在此丢弃；
+        // Lucene 抛错/无索引/零命中一律不改变后续流程（覆盖由托管扫描保证）。
+        var results = new List<string>();
+        var emittedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        long totalResultBytes = 0;
+        long matchCount = 0;
+        bool totalCapReached = false;
+
         try
         {
             string? extFilter = null;
@@ -276,35 +302,24 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 subDirectoryFilter: directory,
                 ct: ct);
 
-            if (luceneResults.Matches.Count > 0)
+            // Matches 为 null（无索引/异常结果）等同于零候选：不改变后续流程，覆盖由扫描保证。
+            foreach (var r in luceneResults.Matches ?? [])
             {
-                var sb = new StringBuilder();
-                var added = 0;
-                long totalBytes = 0;
-                long matchCount = 0;
-                bool capReached = false;
-                foreach (var r in luceneResults.Matches)
+                if (results.Count >= maxResults) break;
+                if (IsPathInExcludedDir(r.FilePath, directory, excludeDirs)) continue;
+                if (!matcher.IsMatch(r.LineText)) continue; // 候选复核：未通过统一 matcher 的一律丢弃
+                matchCount++;
+                var lineText = TruncateLine(r.LineText, maxLineBytes);
+                var entry = $"{r.FilePath}:{r.LineNumber}: {lineText}";
+                var entryBytes = Encoding.UTF8.GetByteCount(entry);
+                if (maxTotalBytes > 0 && totalResultBytes + entryBytes > maxTotalBytes)
                 {
-                    if (added >= maxResults) break;
-                    if (IsPathInExcludedDir(r.FilePath, directory, excludeDirs)) continue;
-                    matchCount++;
-                    var lineText = TruncateLine(r.LineText, maxLineBytes);
-                    var entry = $"{r.FilePath}:{r.LineNumber}: {lineText}";
-                    var entryBytes = Encoding.UTF8.GetByteCount(entry);
-                    if (maxTotalBytes > 0 && totalBytes + entryBytes > maxTotalBytes)
-                    {
-                        capReached = true;
-                        break;
-                    }
-                    totalBytes += entryBytes;
-                    sb.AppendLine(entry);
-                    added++;
+                    totalCapReached = true;
+                    break;
                 }
-                if (capReached)
-                    sb.AppendLine(string.Format(TotalCapMessage, matchCount));
-                if (added > 0)
-                    return ToolExecutionResult.Ok(sb.ToString().TrimEnd(),
-                        status: capReached ? ToolResultStatuses.Truncated : ToolResultStatuses.Ok);
+                totalResultBytes += entryBytes;
+                results.Add(entry);
+                emittedKeys.Add(BuildDedupKey(r.FilePath, r.LineNumber));
             }
         }
         catch (Exception ex)
@@ -312,29 +327,35 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             _logger.LogWarning(ex, "[SearchGrep] Lucene search failed, falling back");
         }
 
-        // 优先级2：托管 grep
-        return await ManagedGrepAsync(query, pattern, managedDirectory, caseSensitive, maxResults,
-            filter ?? patternFilter, excludeDirs, maxLineBytes, maxTotalBytes, ct);
+        // ADR-089 U0-S2（S2-3）：候选非空也必须继续托管扫描同 scope/glob 的允许文件——
+        // Lucene 零候选/未进候选的文件中的真实命中不得被漏掉（假阴性防御），索引不暗示文件系统完整。
+        return await ManagedGrepAsync(matcher, pattern, managedDirectory,
+            filter ?? patternFilter, excludeDirs, maxLineBytes, maxTotalBytes,
+            results, totalResultBytes, matchCount, totalCapReached, emittedKeys, ct);
     }
 
+    /// <summary>
+    /// 命中行去重键：归一化绝对路径 + 行号。Lucene 候选与托管扫描两条路径共用，
+    /// 同一 (文件, 行) 只输出一次。
+    /// </summary>
+    private static string BuildDedupKey(string filePath, int lineNumber) =>
+        $"{Path.GetFullPath(filePath).ToLowerInvariant()}|{lineNumber}";
+
     private async Task<ToolExecutionResult> ManagedGrepAsync(
-        string query, string? pattern, string? directory,
-        bool caseSensitive, int maxResults, string[]? extFilter,
-        HashSet<string> excludeDirs, long maxLineBytes, long maxTotalBytes, CancellationToken ct)
+        RetrievalMatcher matcher, string? pattern, string? directory,
+        string[]? extFilter, HashSet<string> excludeDirs, long maxLineBytes, long maxTotalBytes,
+        List<string> results, long totalResultBytes, long matchCount, bool totalCapReached,
+        HashSet<string> emittedKeys, CancellationToken ct)
     {
                 var cwd = string.IsNullOrWhiteSpace(directory) ? Environment.CurrentDirectory : directory;
         if (!Directory.Exists(cwd))
             return ToolExecutionResult.Fail(
                 $"Directory '{cwd}' not found. Use 'directory' to specify an existing path, or omit it to search the workspace root ({cwd}).");
 
-        var results = new List<string>();
         var files = new List<string>();
         var errors = 0;
         var scannedFiles = 0;
         long scannedBytes = 0;
-        long totalResultBytes = 0;
-        long matchCount = 0;
-        bool totalCapReached = false;
         int skippedLargeFiles = 0;
 
                 var filePattern = string.IsNullOrWhiteSpace(pattern) ? "*.*" : pattern;
@@ -351,15 +372,8 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             return ToolExecutionResult.Fail($"Search error: {ex.Message}");
         }
 
-        var comparison = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        bool isRegex = LooksLikeRegex(query);
-        Regex? regex = null;
-        if (isRegex)
-        {
-            try { regex = new Regex(query, caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase, ManagedSearchTimeout); }
-            catch { isRegex = false; }
-        }
-
+        // ADR-089 U0-S2（D3 修复）：regex 构造已上移至 SearchCoreAsync 的统一合同入口，
+        // 非法正则显式失败（ContractError），不再静默降级为字面搜索。
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(ManagedSearchTimeout);
 
@@ -401,12 +415,12 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 {
                     if (totalCapReached) break;
                     var line = lines[i].TrimEnd('\r');
-                    bool match = isRegex
-                        ? regex?.IsMatch(line) == true
-                        : line.IndexOf(query, comparison) >= 0;
-                    if (!match) continue;
+                    // 统一匹配合同（ADR-089 L128）：与 Lucene 候选复核同源，两条路径结论一致。
+                    if (!matcher.IsMatch(line)) continue;
 
                     matchCount++;
+                    // 已由 Lucene 候选输出的命中行不再重复输出，但仍计入扫描统计（matchCount）。
+                    if (emittedKeys.Contains(BuildDedupKey(file, i + 1))) continue;
                     var lineText = TruncateLine(line.Trim(), maxLineBytes);
                     var relPath = Path.GetRelativePath(cwd, file);
                     var entry = $"{relPath}:{i + 1}: {lineText}";
@@ -426,6 +440,10 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
         bool timedOut = cts.IsCancellationRequested && !ct.IsCancellationRequested;
 
+        // ADR-089 U0-S2（S2-4）：覆盖状态诚实推导——任何预算耗尽/截断/跳过都使覆盖非 Complete。
+        bool coverageComplete = !timedOut && !enumerationTruncated && !scanBudgetExceeded
+            && !errorBudgetExceeded && !totalCapReached && skippedLargeFiles == 0;
+
         var notes = new List<string>();
         if (timedOut)
             notes.Add("搜索超时（10s），结果可能不完整，建议缩小 directory/pattern/file_ext 范围，或改用索引工具 code_symbol_search / code_explore / file_search");
@@ -439,6 +457,17 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             notes.Add(string.Format(ErrorBudgetMessage, MaxErrors));
         if (skippedLargeFiles > 0)
             notes.Add(string.Format(LargeFileSkippedMessage, skippedLargeFiles));
+        if (!coverageComplete)
+            notes.Add(string.Format(CoveragePartialMessage, scannedFiles, MaxScannedFiles, scannedBytes, MaxScannedBytes));
+
+        // 状态映射（S2-4）：partial/truncated/timeout 一律不得用 Ok；只有覆盖 Complete 的空结果才是 no_match。
+        string status;
+        if (timedOut)
+            status = ToolResultStatuses.Timeout;
+        else if (coverageComplete)
+            status = results.Count == 0 ? ToolResultStatuses.NoMatch : ToolResultStatuses.Ok;
+        else
+            status = ToolResultStatuses.Truncated;
 
         if (results.Count == 0)
         {
@@ -446,15 +475,16 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             if (timedOut)
                 return ToolExecutionResult.Ok("(search timed out)" + notesText, status: ToolResultStatuses.Timeout);
 
-            var incomplete = enumerationTruncated || scanBudgetExceeded;
-            var status = incomplete ? ToolResultStatuses.Truncated : ToolResultStatuses.NoMatch;
-            var emptyMsg = scannedFiles > 0 ? "(no matches)" : "(no files scanned)";
-            return ToolExecutionResult.Ok(emptyMsg + notesText, status: status);
-        }
+            // 空输出时只有 Complete 才允许 (no matches)：非 Complete 必须带 partial 声明，
+            // 防止上层把"没扫完"误读为"查无结果"（no_match 仅表示声明范围已完成）。
+            if (!coverageComplete)
+                return ToolExecutionResult.Ok(
+                    string.Format(CoveragePartialMessage, scannedFiles, MaxScannedFiles, scannedBytes, MaxScannedBytes) + notesText,
+                    status: ToolResultStatuses.Truncated);
 
-        var truncatedStatus = enumerationTruncated || scanBudgetExceeded || totalCapReached
-            ? ToolResultStatuses.Truncated
-            : ToolResultStatuses.Ok;
+            var emptyMsg = scannedFiles > 0 ? "(no matches)" : "(no files scanned)";
+            return ToolExecutionResult.Ok(emptyMsg + notesText, status: ToolResultStatuses.NoMatch);
+        }
 
         if (results.Count > MaxInlineResults)
         {
@@ -468,7 +498,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 if (notes.Count > 0)
                     output += "\n" + string.Join("\n", notes);
                 output += "\n" + string.Format(PaginationReportMessage, results.Count, tmpPath);
-                return ToolExecutionResult.Ok(output, status: truncatedStatus);
+                return ToolExecutionResult.Ok(output, status: status);
             }
             catch (Exception ex)
             {
@@ -483,7 +513,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         var finalOutput = string.Join("\n", results);
         if (notes.Count > 0)
             finalOutput += "\n" + string.Join("\n", notes);
-        return ToolExecutionResult.Ok(finalOutput, status: truncatedStatus);
+        return ToolExecutionResult.Ok(finalOutput, status: status);
     }
 
         /// <summary>

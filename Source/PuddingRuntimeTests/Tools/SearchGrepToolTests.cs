@@ -746,6 +746,266 @@ public sealed class SearchGrepToolTests
         }
     }
 
+    // ── ADR-089 U0-S2：候选-复核-覆盖改造新增用例 ─────────────────────────────
+
+    [TestMethod]
+    public async Task U0S2_LuceneCandidate_Failing_Exact_Review_Is_Dropped()
+    {
+        // 分词假阳性防御：Lucene 召回只是候选，query "foo_bar" 不得命中被切词的 "public void Foo()"。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "code.txt"), "public void Foo()\nnothing relevant\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(
+                true,
+                [new FullTextSearchMatch(Path.Combine(tempDir, "code.txt"), 1, "public void Foo()")],
+                null, 1, 5));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "foo_bar", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.IsFalse(result.Output.Contains("Foo()"), "token-recall candidate must be dropped by exact review");
+            Assert.AreEqual(ToolResultStatuses.NoMatch, result.Status);
+            StringAssert.Contains(result.Output, "(no matches)");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0S2_LuceneZeroCandidates_SourceHit_Still_Returned_As_Complete()
+    {
+        // L128：Lucene 无候选不能证明无命中；托管扫描必须继续并给出命中，覆盖为 Complete。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "sample.txt"), "Needle in source\nfiller\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: true,
+                new FullTextSearchResult(true, [], null, 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "Needle in source", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Ok, result.Status);
+            StringAssert.Contains(result.Output, "sample.txt:1: Needle in source");
+            Assert.IsFalse(result.Output.Contains("(coverage: partial"), "complete scan must not declare partial");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0S2_Candidate_Line_And_Scan_Lines_Merge_Without_Duplicates()
+    {
+        // 候选行与扫描行合并去重；同文件其它精确命中行不得因整文件跳过而漏掉（假阴性防御）。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "doc.txt"), "NEEDLE first\nfiller\nfiller\nfiller\nNEEDLE fifth\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(
+                true,
+                [new FullTextSearchMatch(Path.Combine(tempDir, "doc.txt"), 1, "NEEDLE first")],
+                null, 1, 5));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Ok, result.Status);
+            StringAssert.Contains(result.Output, "doc.txt:1: NEEDLE first");
+            StringAssert.Contains(result.Output, "doc.txt:5: NEEDLE fifth");
+            var hitLines = result.Output.Split('\n').Count(l => l.Contains("NEEDLE"));
+            Assert.AreEqual(2, hitLines, "candidate line and scan line must not be duplicated");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0S2_InvalidRegex_Fails_Explicitly_Without_Literal_Fallback()
+    {
+        // 非法正则明确失败（ContractError），不得静默降级为字面搜索，也不得扫描返回字面命中。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "literal.txt"), "a([ literal content\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "a([", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+
+            Assert.IsFalse(result.Success, "invalid regex must fail, not fall back to literal search");
+            Assert.AreEqual(ToolResultStatuses.ContractError, result.Status);
+            StringAssert.Contains(result.Error, "a([", "contract error must contain the original pattern");
+            Assert.IsFalse((result.Output ?? string.Empty).Contains("literal.txt"), "must not scan/return literal fallback hits");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0S2_CaseSensitive_Same_Contract_On_Candidate_And_Scan()
+    {
+        // 大小写合同在候选复核路径与托管扫描路径一致：同一 query/case 下结论相同。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "sample.txt"), "needle lower case\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(
+                true,
+                [new FullTextSearchMatch(Path.Combine(tempDir, "other.txt"), 7, "NEEDLE UPPER")],
+                null, 1, 5));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            // 敏感：候选 "NEEDLE UPPER" 复核失败被丢弃；扫描命中小写行
+            var sensitive = await ExecuteAsync(tool, "needle", new Dictionary<string, string> { ["pattern"] = "*.txt", ["case_sensitive"] = "true" });
+            Assert.IsTrue(sensitive.Success, sensitive.Error);
+            Assert.AreEqual(ToolResultStatuses.Ok, sensitive.Status);
+            StringAssert.Contains(sensitive.Output, "sample.txt:1");
+            Assert.IsFalse(sensitive.Output.Contains("NEEDLE UPPER"), "case-sensitive review must drop the mismatching candidate");
+
+            // 不敏感：候选复核通过保留，扫描命中同样保留
+            var insensitive = await ExecuteAsync(tool, "needle", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+            Assert.IsTrue(insensitive.Success, insensitive.Error);
+            Assert.AreEqual(ToolResultStatuses.Ok, insensitive.Status);
+            StringAssert.Contains(insensitive.Output, "other.txt:7: NEEDLE UPPER");
+            StringAssert.Contains(insensitive.Output, "sample.txt:1");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0S2_Chinese_Query_Hits()
+    {
+        // 中文 query（literal 路径）命中中文内容行。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "sample.txt"), "这是中文目标行\n其它内容\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "中文目标", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Ok, result.Status);
+            StringAssert.Contains(result.Output, "sample.txt:1: 这是中文目标行");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0S2_ByteCap_Truncation_Declares_Partial_And_Never_NoMatch()
+    {
+        // 覆盖语义：输出字节上限截断 → 非 Complete → 必须带 partial 声明，
+        // 空结果不得伪装为 "(no matches)"（no_match 仅表示声明范围已完成）。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "sample.txt"), "NEEDLE with some longer content\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt", ["max_total_bytes"] = "1" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Truncated, result.Status);
+            StringAssert.Contains(result.Output, "(coverage: partial");
+            StringAssert.Contains(result.Output, "结果已截断");
+            Assert.IsFalse(result.Output.Contains("(no matches)"), "incomplete empty result must not read as no_match");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0S2_EmptyResult_NotComplete_Is_Not_Recorded_As_NoMatch()
+    {
+        // S2-5：空结果 + 非 Complete 不得记为 NoMatch，否则同一查询会被失败账本错误抑制。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "sample.txt"), "NEEDLE with some longer content\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var ledger = new SearchAttemptLedger();
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine, ledger: ledger);
+
+            var r1 = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt", ["max_total_bytes"] = "1" });
+            Assert.AreEqual(ToolResultStatuses.Truncated, r1.Status);
+
+            // 同一查询重试：Truncated 不是确定性终态，不得被 exact-retry 抑制。
+            var r2 = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt", ["max_total_bytes"] = "1" });
+            Assert.AreNotEqual(ToolResultStatuses.ExactRetrySuppressed, r2.Status, "partial empty result must not suppress retry");
+            Assert.AreEqual(ToolResultStatuses.Truncated, r2.Status);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
     [TestMethod]
     public void SkillId_Is_SearchGrep()
     {
