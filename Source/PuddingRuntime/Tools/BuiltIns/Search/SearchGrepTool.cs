@@ -278,15 +278,12 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             .Select(e => e.StartsWith('.') ? e : "." + e).ToArray();
         var patternFilter = PatternToExtensionFilter(pattern);
 
-        // ADR-089 U0-S2（S2-2）：Lucene 只做候选优先级。
-        // 候选行必须经同一 matcher 精确复核，分词召回的假阳性在此丢弃；
+        // ADR-089 U0 R1：Lucene 候选只决定「优先读取哪些文件」——仅产出去重、有序（按 Lucene 相关度）
+        // 的候选文件路径集合。候选不再直接输出索引文本、不再预填去重键；
+        // 当前内容复核统一由托管扫描路径完成（候选文件优先，其次枚举文件）。
         // Lucene 抛错/无索引/零命中一律不改变后续流程（覆盖由托管扫描保证）。
-        var results = new List<string>();
-        var emittedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        long totalResultBytes = 0;
-        long matchCount = 0;
-        bool totalCapReached = false;
-
+        var candidatePaths = new List<string>();
+        var candidateSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             string? extFilter = null;
@@ -305,21 +302,13 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             // Matches 为 null（无索引/异常结果）等同于零候选：不改变后续流程，覆盖由扫描保证。
             foreach (var r in luceneResults.Matches ?? [])
             {
-                if (results.Count >= maxResults) break;
                 if (IsPathInExcludedDir(r.FilePath, directory, excludeDirs)) continue;
-                if (!matcher.IsMatch(r.LineText)) continue; // 候选复核：未通过统一 matcher 的一律丢弃
-                matchCount++;
-                var lineText = TruncateLine(r.LineText, maxLineBytes);
-                var entry = $"{r.FilePath}:{r.LineNumber}: {lineText}";
-                var entryBytes = Encoding.UTF8.GetByteCount(entry);
-                if (maxTotalBytes > 0 && totalResultBytes + entryBytes > maxTotalBytes)
-                {
-                    totalCapReached = true;
-                    break;
-                }
-                totalResultBytes += entryBytes;
-                results.Add(entry);
-                emittedKeys.Add(BuildDedupKey(r.FilePath, r.LineNumber));
+                var full = Path.IsPathRooted(r.FilePath)
+                    ? Path.GetFullPath(r.FilePath)
+                    : Path.GetFullPath(Path.Combine(
+                        string.IsNullOrWhiteSpace(directory) ? managedDirectory : directory, r.FilePath));
+                if (candidateSeen.Add(full))
+                    candidatePaths.Add(full);
             }
         }
         catch (Exception ex)
@@ -331,7 +320,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         // Lucene 零候选/未进候选的文件中的真实命中不得被漏掉（假阴性防御），索引不暗示文件系统完整。
         return await ManagedGrepAsync(matcher, pattern, managedDirectory,
             filter ?? patternFilter, excludeDirs, maxLineBytes, maxTotalBytes,
-            results, totalResultBytes, matchCount, totalCapReached, emittedKeys, ct);
+            maxResults, candidatePaths, ct);
     }
 
     /// <summary>
@@ -341,11 +330,45 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     private static string BuildDedupKey(string filePath, int lineNumber) =>
         $"{Path.GetFullPath(filePath).ToLowerInvariant()}|{lineNumber}";
 
+    /// <summary>
+    /// ADR-089 U0 R1.2：候选文件必须通过与枚举相同的完整约束校验后才可进入扫描：
+    /// 存在、scope（搜索目录之内）、完整 glob（含 Keep*.txt 这类非纯扩展名 glob）、
+    /// 扩展名过滤、排除目录。任一不满足 → 候选被丢弃，不得作为命中输出，也不得绑定旧路径。
+    /// </summary>
+    private static bool IsCandidateAdmissible(
+        string candidateFullPath, string cwd, string? glob, string[]? extFilter, HashSet<string> excludeDirs)
+    {
+        if (!File.Exists(candidateFullPath))
+            return false;
+
+        // scope：候选必须位于本次声明的搜索目录之内（相对路径已在收集阶段与 directory 合并）。
+        var scopeRoot = Path.GetFullPath(cwd).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        if (!candidateFullPath.StartsWith(scopeRoot, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (IsPathInExcludedDir(candidateFullPath, cwd, excludeDirs))
+            return false;
+
+        var fileName = Path.GetFileName(candidateFullPath);
+        if (!string.IsNullOrWhiteSpace(glob)
+            && !System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(glob, fileName, ignoreCase: true))
+            return false;
+
+        if (extFilter is { Length: > 0 })
+        {
+            var ext = Path.GetExtension(candidateFullPath);
+            if (!extFilter.Contains(ext, StringComparer.OrdinalIgnoreCase))
+                return false;
+        }
+
+        return true;
+    }
+
     private async Task<ToolExecutionResult> ManagedGrepAsync(
         RetrievalMatcher matcher, string? pattern, string? directory,
         string[]? extFilter, HashSet<string> excludeDirs, long maxLineBytes, long maxTotalBytes,
-        List<string> results, long totalResultBytes, long matchCount, bool totalCapReached,
-        HashSet<string> emittedKeys, CancellationToken ct)
+        int maxResults, List<string> candidatePaths, CancellationToken ct)
     {
                 var cwd = string.IsNullOrWhiteSpace(directory) ? Environment.CurrentDirectory : directory;
         if (!Directory.Exists(cwd))
@@ -377,9 +400,25 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(ManagedSearchTimeout);
 
-                bool scanBudgetExceeded = false;
+        // ADR-089 U0 R1：候选文件排在工作清单最前（Lucene 相关度序），其后是枚举文件。
+        // processedFiles 保证每个文件只被处理一次：候选与枚举重叠时不重复扫描、不重复输出。
+        var processedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var workList = new List<string>(files.Count + candidatePaths.Count);
+        foreach (var candidate in candidatePaths)
+        {
+            if (IsCandidateAdmissible(candidate, cwd, pattern, extFilter, excludeDirs))
+                workList.Add(candidate);
+        }
+        workList.AddRange(files);
+
+        var results = new List<string>();
+        var emittedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        long totalResultBytes = 0;
+        long matchCount = 0;
+        bool totalCapReached = false;
+        bool scanBudgetExceeded = false;
         bool errorBudgetExceeded = false;
-        foreach (var file in files)
+        foreach (var file in workList)
         {
             if (cts.IsCancellationRequested || totalCapReached) break;
             if (errors >= MaxErrors) { errorBudgetExceeded = true; break; }
@@ -394,6 +433,9 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 var ext = Path.GetExtension(file);
                 if (!extFilter.Contains(ext, StringComparer.OrdinalIgnoreCase)) continue;
             }
+
+            // ADR-089 U0 R1.5：候选与枚举可能命中同一文件——每文件只处理一次。
+            if (!processedFiles.Add(Path.GetFullPath(file))) continue;
 
             try
             {
@@ -419,8 +461,8 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                     if (!matcher.IsMatch(line)) continue;
 
                     matchCount++;
-                    // 已由 Lucene 候选输出的命中行不再重复输出，但仍计入扫描统计（matchCount）。
-                    if (emittedKeys.Contains(BuildDedupKey(file, i + 1))) continue;
+                    // 行级去重键保留为兜底（R1.5）：同一 (文件, 行) 只输出一次，但仍计入扫描统计（matchCount）。
+                    if (!emittedKeys.Add(BuildDedupKey(file, i + 1))) continue;
                     var lineText = TruncateLine(line.Trim(), maxLineBytes);
                     var relPath = Path.GetRelativePath(cwd, file);
                     var entry = $"{relPath}:{i + 1}: {lineText}";

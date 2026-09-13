@@ -14,19 +14,46 @@ public sealed class SearchGrepToolTests
     [TestMethod]
     public async Task ExecuteAsync_Uses_Lucene_Index_When_Available()
     {
-        var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(
-            true,
-            [
-                new FullTextSearchMatch("C:\\temp\\Program.cs", 5, "        var needle = \"NeedleTarget\";"),
-            ],
-            null, 1, 5));
+        // ADR-089 U0 R1：候选只决定优先读取哪个文件；输出必须是当前内容的真实行号与文本，
+        // 旧索引的行号/文本不得返回。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var programPath = Path.Combine(tempDir, "Program.cs");
+        await File.WriteAllLinesAsync(programPath,
+        [
+            "using System;",
+            "",
+            "class Program",
+            "{",
+            "        var needle = \"NeedleTarget\";",
+            "}",
+        ]);
 
-        var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(
+                true,
+                [
+                    new FullTextSearchMatch(programPath, 3, "class Program // stale index snapshot"),
+                ],
+                null, 1, 5));
 
-        var result = await ExecuteAsync(tool, "NeedleTarget", new Dictionary<string, string> { ["pattern"] = "*.cs", ["max_results"] = "5" });
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
 
-        Assert.IsTrue(result.Success, result.Error);
-        StringAssert.Contains(result.Output, "Program.cs:5");
+            var result = await ExecuteAsync(tool, "NeedleTarget", new Dictionary<string, string> { ["pattern"] = "*.cs", ["max_results"] = "5" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "Program.cs:5");
+            StringAssert.Contains(result.Output, "var needle = \"NeedleTarget\";");
+            Assert.IsFalse(result.Output.Contains("stale index snapshot"), "stale index text must never be returned");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
     }
 
     [TestMethod]
@@ -882,10 +909,12 @@ public sealed class SearchGrepToolTests
         var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
         await File.WriteAllTextAsync(Path.Combine(tempDir, "sample.txt"), "needle lower case\n");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "other.txt"), "NEEDLE UPPER\n");
 
         try
         {
             Directory.SetCurrentDirectory(tempDir);
+            // 旧索引声称 other.txt 行 7 内容 "NEEDLE UPPER"（行号已过期：文件当前只有 1 行）。
             var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(
                 true,
                 [new FullTextSearchMatch(Path.Combine(tempDir, "other.txt"), 7, "NEEDLE UPPER")],
@@ -899,11 +928,12 @@ public sealed class SearchGrepToolTests
             StringAssert.Contains(sensitive.Output, "sample.txt:1");
             Assert.IsFalse(sensitive.Output.Contains("NEEDLE UPPER"), "case-sensitive review must drop the mismatching candidate");
 
-            // 不敏感：候选复核通过保留，扫描命中同样保留
+            // 不敏感：候选文件存在且当前内容命中，输出当前内容的真实行号（旧索引声称行 7）。
             var insensitive = await ExecuteAsync(tool, "needle", new Dictionary<string, string> { ["pattern"] = "*.txt" });
             Assert.IsTrue(insensitive.Success, insensitive.Error);
             Assert.AreEqual(ToolResultStatuses.Ok, insensitive.Status);
-            StringAssert.Contains(insensitive.Output, "other.txt:7: NEEDLE UPPER");
+            StringAssert.Contains(insensitive.Output, "other.txt:1: NEEDLE UPPER");
+            Assert.IsFalse(insensitive.Output.Contains("other.txt:7"), "stale index line numbers must not be returned");
             StringAssert.Contains(insensitive.Output, "sample.txt:1");
         }
         finally
@@ -1001,6 +1031,173 @@ public sealed class SearchGrepToolTests
             var r2 = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt", ["max_total_bytes"] = "1" });
             Assert.AreNotEqual(ToolResultStatuses.ExactRetrySuppressed, r2.Status, "partial empty result must not suppress retry");
             Assert.AreEqual(ToolResultStatuses.Truncated, r2.Status);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0R1_StaleIndexLine_NotReturned_When_CurrentContent_NoMatch()
+    {
+        // R1：候选只是优先读取提示；当前文件已改写为无 NEEDLE 内容时，
+        // 完整扫描后必须 no_match，绝不返回旧索引文本。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "sample.txt"), "replacement content only\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(
+                true,
+                [new FullTextSearchMatch(Path.Combine(tempDir, "sample.txt"), 1, "NEEDLE from stale index")],
+                null, 1, 5));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.NoMatch, result.Status);
+            StringAssert.Contains(result.Output, "(no matches)");
+            Assert.IsFalse(result.Output.Contains("NEEDLE"), "stale index hit must not be returned");
+            Assert.IsFalse(result.Output.Contains("stale"), "stale index text must not leak into output");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0R1_ChangedLine_Returns_Current_Content_Not_Index_Text()
+    {
+        // R1：当前行已改写时，输出必须是当前内容（而非索引旧文本），且真实行号只出现一次。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "doc.txt"), "NEEDLE current content\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(
+                true,
+                [new FullTextSearchMatch(Path.Combine(tempDir, "doc.txt"), 1, "NEEDLE old content")],
+                null, 1, 5));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Ok, result.Status);
+            StringAssert.Contains(result.Output, "doc.txt:1: NEEDLE current content");
+            Assert.IsFalse(result.Output.Contains("old content"), "stale index text must not be returned");
+            Assert.AreEqual(1, result.Output.Split('\n').Count(l => l.Contains("doc.txt:")),
+                "current line must be emitted exactly once");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0R1_DeletedCandidate_Is_Not_Returned()
+    {
+        // R1：候选文件已从磁盘删除 → 不得作为命中输出、不得绑定旧路径；
+        // 声明范围内无现存文件 → 完整覆盖的空结果。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(
+                true,
+                [new FullTextSearchMatch(Path.Combine(tempDir, "ghost.txt"), 3, "NEEDLE ghost line")],
+                null, 1, 5));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.NoMatch, result.Status);
+            Assert.IsFalse(result.Output.Contains("ghost"), "deleted candidate must not be returned");
+            Assert.IsFalse(result.Output.Contains("NEEDLE"), "deleted candidate text must not leak");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0R1_NonPureExtensionGlob_Candidate_Is_Filtered()
+    {
+        // R1：pattern=Keep*.txt（非纯扩展名 glob）时，不符合 glob 的候选 sample.txt
+        // 不得进入结果；仅磁盘现存且符合 glob 的 KeepMe.txt 命中。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "sample.txt"), "NEEDLE in sample\n");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "KeepMe.txt"), "NEEDLE in keep\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(
+                true,
+                [new FullTextSearchMatch(Path.Combine(tempDir, "sample.txt"), 1, "NEEDLE in sample")],
+                null, 1, 5));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "Keep*.txt" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Ok, result.Status);
+            StringAssert.Contains(result.Output, "KeepMe.txt:1: NEEDLE in keep");
+            Assert.IsFalse(result.Output.Contains("sample.txt"), "candidate outside glob must not enter results");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0R1_RenamedCandidate_Returns_Only_Existing_Path()
+    {
+        // R1：候选路径已重命名（旧路径不存在）→ 只返回磁盘现存路径的命中。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "renamed.txt"), "NEEDLE in renamed file\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(
+                true,
+                [new FullTextSearchMatch(Path.Combine(tempDir, "old-name.txt"), 1, "NEEDLE old location")],
+                null, 1, 5));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Ok, result.Status);
+            StringAssert.Contains(result.Output, "renamed.txt:1: NEEDLE in renamed file");
+            Assert.IsFalse(result.Output.Contains("old-name.txt"), "stale candidate path must not be returned");
+            Assert.IsFalse(result.Output.Contains("old location"), "stale candidate text must not be returned");
         }
         finally
         {
