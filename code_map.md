@@ -1,3 +1,7 @@
+## 2026-09-13 Desktop 启动恢复验证
+
+见 [启动恢复记录](Docs/Reports/Desktop启动恢复验证-2026-09-13.md)：重新启动当前 Desktop 后 Core 约 30 秒进入 Ready，健康检查 HTTP 200；原 60 秒超时未复现，未修改产品代码，根因待失败周期诊断确认。
+
 # PuddingAgent CodeMAP
 
 ## 2026-09-13 统一检索与渐进展开设计
