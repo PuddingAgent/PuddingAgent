@@ -331,7 +331,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            throw; // R2.4/R3.3：调用方取消必须传播，不得被 Lucene 兑底分支吞掉
+            throw; // R2.4/R3.3：调用方取消必须传播，不得被 Lucene 兜底分支吞掉
         }
         catch (Exception ex)
         {
