@@ -114,6 +114,10 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
             1,
             Math.Max(1, maxTimeout - 1));
         var parentFinalizationReserve = Math.Max(0, subAgents.ParentFinalizationReserveSeconds);
+        // 派生预算可执行下限：非负即可（0 = 关闭该轴下限判定，耗尽轴仍拒绝），负值夹回 0。
+        var minViableInputTokens = Math.Max(0, subAgents.MinViableInputTokens);
+        var minViableOutputTokens = Math.Max(0, subAgents.MinViableOutputTokens);
+        var minViableCost = Math.Max(0m, subAgents.MinViableCost);
         // 软压缩触发/目标比例必须形成有效区间：trigger ∈ (0,1]，target ∈ (0, trigger]。
         var softTrigger = subAgents.ContextSoftCompactionTriggerRatio > 0
             ? Math.Min(1.0, subAgents.ContextSoftCompactionTriggerRatio)
@@ -168,6 +172,9 @@ public sealed class RuntimeExecutionConfigService : IRuntimeExecutionConfigServi
                 BudgetGraceRounds = budgetGraceRounds,
                 BudgetGraceTimeoutSeconds = budgetGraceTimeoutSeconds,
                 ParentFinalizationReserveSeconds = parentFinalizationReserve,
+                MinViableInputTokens = minViableInputTokens,
+                MinViableOutputTokens = minViableOutputTokens,
+                MinViableCost = minViableCost,
                 ContextSoftCompactionTriggerRatio = softTrigger,
                 ContextSoftCompactionTargetRatio = softTarget,
                 DefaultPermissionMode = permissionMode,

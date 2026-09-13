@@ -20,7 +20,7 @@
 | `Services/AgentExecution/AgentExecutionService.Streaming.cs` | SSE 流式主循环（partial）；与 Buffered 共用 round-boundary 动态工具激活、冻结 system、warm-prefix checkpoint、prefix-v2、当前轮围栏、canonical Token attribution 与失败熔断；direct Token 先提交、usage SSE 后发布；provider length/incomplete 只允许一次立即行动恢复，再截断显式失败；最终流式回复边界命中 late Steering 时继续同一 Turn；ExecuteStreamAsync 入口 `Push(CallerLlmSnapshot)` 冻结视觉上下文（V5，AgentExecutionService.Streaming.cs:38） |
 | `Services/AgentExecution/FailedToolCallTracker.cs` | 第一层止损：对 canonical tool+args 的有界失败结果做 SHA-256 指纹；第二次不变失败标记 `execution_stalled`，后续阻断；参数变化后的同失败族由 Core `RuntimeControlService` 第 5 次熔断 |
 | `Services/AgentExecution/ToolDiscoveryLoopTracker.cs` | 动态工具发现止损；不同查询文本仍归一为 discovery-only 进展族，连续 8 次只调用 `search_tools` 而不执行已发现业务工具时触发 `tool_discovery_stalled`，任一实际业务工具会重置计数 |
-| `Services/AgentExecution/ExecutionUsageBudgetTracker.cs` | WorkUnit 调用边界 input/output/cache-hit/cost 累计账本；生成剩余预算供工具/子代理继承并输出含同步后代的累计 usage；provider/child call 后先记账，再决定工具/下一 LLM round，Buffered/Streaming 共用 |
+| `Services/AgentExecution/ExecutionUsageBudgetTracker.cs` | WorkUnit 调用边界 input/output/cache-hit/cost 累计账本；生成剩余预算供工具/子代理继承并输出含同步后代的累计 usage；provider/child call 后先记账，再决定工具/下一 LLM round，Buffered/Streaming 共用；剩余值诚实归零并打 IsDerivedRemainder 标（含单轮峰值输入追踪），0 值轴=父级已耗尽 |
 | `Services/AgentExecution/ToolResultContextPolicy.cs` | 工具结果进入模型历史前的统一 8 KiB 边界；完整原文作为 workspace-scoped artifact 保存，sidecar manifest 固化 SHA-256、UTF-8 字节、行数和 session/tool/call 身份；模型输入不做脱敏并提供渐进读取路径，存储失败时 fail-open |
 | `Services/Messaging/MessageDeliveryDispatcher.cs` | durable Message Fabric 投递；`execute` 按 deliveryId 精确领取，**所有**投递（用户/Agent/心跳/sub-agent 结果）一律经 `AcceptCanonicalConversationTurnAsync` 受理 canonical Turn：身份由 `ResolveCanonicalTurnIdentityAsync` 显式给出——sub-agent 结果的会话归属取持久父身份（`parent_conversation_id/parent_session_id/parent_session/conversation_id`），解析失败即 retry/dead-letter，绝不回退 `profile.MainSessionId`、绝不落 `msg-*`；其 `client_request_id/client_message_id` 均由确定性 resultId（`claimed.MessageId`）派生（`fabric-subagent-result*`，不含 deliveryId），与 acceptance 层 `(workspace_id, client_request_id)` 幂等键两层同源；受理成功即 ACK；父/子执行身份（`parent_turn_id/parent_command_id/child_run_id/result_id`）按白名单透传进 turn metadata；`notify` 按 workspace/Agent 跨 room 一次领取最多 20 条，逐条写 Conversation 消息事实后 ACK，Busy 时也可排空且不唤醒模型；Busy/foreground heartbeat ACK/drop；恢复扫描 claim=null 时淘汰无 durable row 的 stale target，避免每 10 秒永久 `no_claim` |
 | `Tools/BuiltIns/Messaging/SendMessageTool.cs` | Agent 发消息；默认 `intent=inform, requires_response=false`，只有 ask/request_review/delegate 创建对方执行；未知 intent fail closed，终态回复由平台一次性投影 |
@@ -88,7 +88,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Services/SubAgentInvocationService.cs` | 子代理调用；继承父剩余 usage budget，批量任务等分预算，返回同步 child 累计 usage，并把公开 `resume_sub_agent_id` 映射为稳定 SubSessionId 续跑 |
+| `Services/SubAgentInvocationService.cs` | 子代理调用；继承父剩余 usage budget，批量任务等分预算（诚实除法+派生标记，除后份额过可执行性判据，不可行拒绝整批 sub_agent_batch_budget_infeasible），返回同步 child 累计 usage，并把公开 `resume_sub_agent_id` 映射为稳定 SubSessionId 续跑 |
 | `Services/AgentLoop/SubAgentBudgetLifecycle.cs` | 子代理预算状态机：启动/80%/50% 通知、10-50 轮收尾宽限、可恢复终止判定 |
 | `Services/DesignCouncilRuntimeService.cs` | MOA 运行时适配器；精确 provider/model 路由、可见性裁剪、只读派发、结果回填与暂停输入 |
 | `Services/InMemorySubAgentOrchestrationRunStore.cs` | 进程内 MOA run 快照 store；Version CAS 防止重复 claim，不支持跨重启恢复 |

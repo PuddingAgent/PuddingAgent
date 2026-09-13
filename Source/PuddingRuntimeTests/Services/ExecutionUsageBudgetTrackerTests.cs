@@ -124,6 +124,52 @@ public sealed class ExecutionUsageBudgetTrackerTests
         Assert.AreEqual(150, usage.PromptCacheMissTokens);
     }
 
+    [TestMethod]
+    public void CreateRemainingBudget_ExhaustedAxisReportsHonestZeroWithDerivedMarker()
+    {
+        // 原子片2：剩余值必须诚实归零——轴耗尽后剩余为 0 且带 IsDerivedRemainder，
+        // 不再 Math.Max(1, …) 伪造非零（那会派发首轮即死的子代理）。
+        var tracker = new ExecutionUsageBudgetTracker(new ExecutionUsageBudget
+        {
+            MaxInputTokens = 500,
+            MaxOutputTokens = 200,
+            MaxCost = 1m,
+            PricingKnown = true,
+            InputPricePer1MTokens = 10m,
+            OutputPricePer1MTokens = 20m,
+            CacheHitPricePer1MTokens = 1m,
+        });
+
+        var decision = tracker.Record(Usage(prompt: 600, output: 50, cacheHit: 300));
+        Assert.IsTrue(decision.ShouldStop); // 600 >= 500，输入轴已耗尽
+
+        var remaining = tracker.CreateRemainingBudget();
+        Assert.IsNotNull(remaining);
+        Assert.IsTrue(remaining.IsDerivedRemainder);
+        Assert.AreEqual(0L, remaining.MaxInputTokens); // 诚实归零，不是 1
+        Assert.AreEqual(150L, remaining.MaxOutputTokens);
+    }
+
+    [TestMethod]
+    public void CreateRemainingBudget_TracksPeakRoundInputTokensAndDerivedMarker()
+    {
+        var tracker = new ExecutionUsageBudgetTracker(new ExecutionUsageBudget
+        {
+            MaxInputTokens = 100_000,
+            PricingKnown = true,
+        });
+
+        tracker.Record(Usage(prompt: 12_000, output: 100, cacheHit: 2_000));
+        tracker.Record(Usage(prompt: 24_473, output: 100, cacheHit: 3_000)); // 单轮峰值（sub-feca2176 实测）
+        tracker.Record(Usage(prompt: 18_000, output: 100, cacheHit: 1_000));
+
+        var remaining = tracker.CreateRemainingBudget();
+        Assert.IsNotNull(remaining);
+        Assert.IsTrue(remaining.IsDerivedRemainder);
+        Assert.AreEqual(24_473L, remaining.PeakRoundInputTokens); // 取 max，不是末轮
+        Assert.AreEqual(100_000L - 54_473L, remaining.MaxInputTokens);
+    }
+
     private static TokenUsageDto Usage(int prompt, int output, int cacheHit) => new()
     {
         PromptTokens = prompt,

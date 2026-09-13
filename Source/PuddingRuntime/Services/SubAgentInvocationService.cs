@@ -65,6 +65,18 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         ValidatePermissionMode(request.PermissionMode);
         ValidateBatchTasks(request.Tasks, options);
 
+        // 批量预算除法诚实化后必须在派发前过可执行性判据：除出来的份额若不足以
+        // 支撑一次可执行子运行，直接拒绝整个批次（向上冒泡为工具层 Fail），
+        // 而不是派发 N 个首轮即死的子代理。
+        if (options.DescribeBudgetInfeasibility(
+                DivideUsageBudget(request.UsageBudget, request.Tasks.Count),
+                errorPrefix: "sub_agent_batch_budget_infeasible:",
+                advice: "请减少批量任务数（tasks）或收敛父级轮次后再委派。")
+            is { } batchInfeasible)
+        {
+            throw new InvalidOperationException(batchInfeasible);
+        }
+
         var timeoutSeconds = ResolveTimeoutSeconds(request.TimeoutSeconds, options);
         var maxRounds = ResolveMaxRounds(request.MaxRounds, options);
         var batchId = !string.IsNullOrWhiteSpace(request.BatchId)
@@ -272,23 +284,29 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         UsageBudget = DivideUsageBudget(request.UsageBudget, request.Tasks.Count),
     };
 
-    private static ExecutionUsageBudget? DivideUsageBudget(
+    internal static ExecutionUsageBudget? DivideUsageBudget(
         ExecutionUsageBudget? budget,
         int divisor)
     {
         if (budget is null || divisor <= 1)
             return budget;
 
+        // 除法份额属于派生预算：0 值语义 = 除后耗尽/为零，必须打标并继承父级单轮峰值，
+        // 让批量守卫能据可执行下限拒绝不可行份额。
         return budget with
         {
             MaxInputTokens = DividePositive(budget.MaxInputTokens, divisor),
             MaxOutputTokens = DividePositive(budget.MaxOutputTokens, divisor),
             MaxCost = budget.MaxCost > 0 ? budget.MaxCost / divisor : 0,
+            IsDerivedRemainder = true,
+            PeakRoundInputTokens = budget.PeakRoundInputTokens,
         };
     }
 
-    private static long DividePositive(long value, int divisor)
-        => value > 0 ? Math.Max(1, value / divisor) : 0;
+    // 诚实除法：除后为 0 就返回 0，由 IsDerivedRemainder + 可执行性判据在边界拒绝。
+    // 禁止回到 Math.Max(1, …) 夹出「出生即死」的最小值。
+    internal static long DividePositive(long value, int divisor)
+        => value > 0 ? value / divisor : 0;
 
     private static int ResolveTimeoutSeconds(int? requested, SubAgentExecutionOptions options)
     {

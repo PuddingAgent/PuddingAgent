@@ -248,8 +248,65 @@ public sealed record SubAgentExecutionOptions
     /// 用于让父 Agent 消化结果、生成最终回复并提交唯一终态。
     /// </summary>
     public int ParentFinalizationReserveSeconds { get; init; } = 120;
+
+    /// <summary>
+    /// 派生剩余预算的最小可执行输入 Token 下限：父级剩余低于该值时委派在边界显式拒绝
+    /// （sub_agent_parent_budget_infeasible），而不是派发一个首轮即死的子代理。
+    /// 典型对照：子代理仅系统提示就超过 2 万 Token（实测 sub-feca2176 首轮 24473）。
+    /// 0 表示关闭该轴下限判定（耗尽轴仍拒绝）。
+    /// </summary>
+    public const long DefaultMinViableInputTokens = 20_000;
+    /// <summary>派生剩余预算的最小可执行输出 Token 下限，语义同 MinViableInputTokens。</summary>
+    public const long DefaultMinViableOutputTokens = 1_000;
+    /// <summary>派生剩余预算的最小可执行成本下限，语义同 MinViableInputTokens。</summary>
+    public const decimal DefaultMinViableCost = 0.01m;
+
+    public long MinViableInputTokens { get; init; } = DefaultMinViableInputTokens;
+    public long MinViableOutputTokens { get; init; } = DefaultMinViableOutputTokens;
+    public decimal MinViableCost { get; init; } = DefaultMinViableCost;
+
     public string DefaultPermissionMode { get; init; } = SubAgentPermissionModes.Inherit;
     public SubAgentTransientDirectoryRetentionOptions TransientDirectoryRetention { get; init; } = new();
+
+    /// <summary>
+    /// 派生预算可执行性统一判据：判定一份派生剩余预算（IsDerivedRemainder=true）
+    /// 是否足以支撑一次可执行子运行。返回 null 表示放行；返回文本为带数值的可诊断拒绝原因。
+    /// 轴语义：&lt;=0 = 父级该轴已耗尽；(0, 下限) = 不可执行；其余放行。
+    /// 只对派生预算生效：非派生预算（IsDerivedRemainder=false）的 0 表示「未设置上限」，直接放行。
+    /// SubAgentTool 委派边界与 SubAgentInvocationService 批量除法共用本判据，禁止各自复制一套。
+    /// </summary>
+    public string? DescribeBudgetInfeasibility(
+        ExecutionUsageBudget? budget,
+        string errorPrefix = "sub_agent_parent_budget_infeasible:",
+        string advice = "请先收敛父级轮次或减少批量任务数后再委派。")
+    {
+        if (budget is null || !budget.IsDerivedRemainder)
+            return null;
+
+        var failures = new List<string>(3);
+        if (budget.MaxInputTokens <= 0)
+            failures.Add("input 已耗尽（剩余 0）");
+        else if (MinViableInputTokens > 0 && budget.MaxInputTokens < MinViableInputTokens)
+            failures.Add($"input 剩余 {budget.MaxInputTokens} < 最小可执行 {MinViableInputTokens}");
+
+        if (budget.MaxOutputTokens <= 0)
+            failures.Add("output 已耗尽（剩余 0）");
+        else if (MinViableOutputTokens > 0 && budget.MaxOutputTokens < MinViableOutputTokens)
+            failures.Add($"output 剩余 {budget.MaxOutputTokens} < 最小可执行 {MinViableOutputTokens}");
+
+        if (budget.MaxCost <= 0m)
+            failures.Add("cost 已耗尽（剩余 0）");
+        else if (MinViableCost > 0m && budget.MaxCost < MinViableCost)
+            failures.Add($"cost 剩余 {budget.MaxCost} < 最小可执行 {MinViableCost}");
+
+        if (failures.Count == 0)
+            return null;
+
+        var peak = budget.PeakRoundInputTokens > 0
+            ? $"；父级单轮峰值 {budget.PeakRoundInputTokens}"
+            : string.Empty;
+        return $"{errorPrefix} 父级剩余预算不足以支撑一次可执行子运行（{string.Join("；", failures)}{peak}）。{advice}";
+    }
 }
 
 /// <summary>

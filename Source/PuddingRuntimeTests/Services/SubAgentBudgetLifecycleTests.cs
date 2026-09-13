@@ -1,3 +1,5 @@
+using PuddingCode.Runtime;
+using PuddingRuntime.Services;
 using PuddingRuntime.Services.AgentLoop;
 
 namespace PuddingRuntimeTests.Services;
@@ -192,6 +194,110 @@ public sealed class SubAgentBudgetLifecycleTests
                 decision.Notices.Select(n => n.Kind).ToArray(),
                 "grace_started");
         }
+    }
+
+    // === 原子片2：派生预算可执行性统一判据（SubAgentTool 委派边界与批量除法共用） ===
+
+    [TestMethod]
+    public void DescribeBudgetInfeasibility_RejectsExhaustedAndBelowFloorAxesWithNumbers()
+    {
+        // 派生预算不可执行时必须在边界给出带数值的可诊断拒绝，而不是派发首轮即死的子代理。
+        var options = new SubAgentExecutionOptions(); // 默认下限 20000 / 1000 / 0.01
+
+        var infeasible = new ExecutionUsageBudget
+        {
+            MaxInputTokens = 10_323,  // sub-feca2176 实测：父级剩余 10323 < 子代理首轮 24473
+            MaxOutputTokens = 0,      // 已耗尽
+            MaxCost = 0.001m,         // 低于 0.01 下限
+            IsDerivedRemainder = true,
+            PeakRoundInputTokens = 24_473,
+        };
+
+        var error = options.DescribeBudgetInfeasibility(infeasible);
+
+        Assert.IsNotNull(error);
+        StringAssert.Contains(error, "sub_agent_parent_budget_infeasible:");
+        StringAssert.Contains(error, "input 剩余 10323 < 最小可执行 20000");
+        StringAssert.Contains(error, "output 已耗尽（剩余 0）");
+        StringAssert.Contains(error, "cost 剩余 0.001 < 最小可执行 0.01");
+        StringAssert.Contains(error, "父级单轮峰值 24473");
+    }
+
+    [TestMethod]
+    public void DescribeBudgetInfeasibility_AllowsViableDerivedBudget()
+    {
+        var options = new SubAgentExecutionOptions();
+        var viable = new ExecutionUsageBudget
+        {
+            MaxInputTokens = 1_000_000,
+            MaxOutputTokens = 100_000,
+            MaxCost = 1m,
+            IsDerivedRemainder = true,
+            PeakRoundInputTokens = 24_473,
+        };
+
+        Assert.IsNull(options.DescribeBudgetInfeasibility(viable));
+    }
+
+    [TestMethod]
+    public void DescribeBudgetInfeasibility_NonDerivedBudgetIsNotGuarded()
+    {
+        // 回归保护：未派生预算（如 WorkUnit 冻结预算原样透传）的 0 表示「未设置上限」，不受守卫影响。
+        var options = new SubAgentExecutionOptions();
+        var nonDerived = new ExecutionUsageBudget
+        {
+            MaxInputTokens = 0,
+            MaxOutputTokens = 0,
+            MaxCost = 0m,
+            IsDerivedRemainder = false,
+        };
+
+        Assert.IsNull(options.DescribeBudgetInfeasibility(nonDerived));
+    }
+
+    [TestMethod]
+    public void DivideUsageBudget_DividesHonestlyAndMarksDerived()
+    {
+        // 批量除法必须诚实——不再 Math.Max(1, …) 夹出「出生即死」的最小值；
+        // 除后份额打 IsDerivedRemainder 标并继承父级单轮峰值，供可执行性判据拒绝。
+        var budget = new ExecutionUsageBudget
+        {
+            MaxInputTokens = 30_000,
+            MaxOutputTokens = 2,
+            MaxCost = 0.009m,
+            PricingKnown = true,
+            PeakRoundInputTokens = 24_473,
+        };
+
+        var divided = SubAgentInvocationService.DivideUsageBudget(budget, divisor: 3);
+
+        Assert.IsNotNull(divided);
+        Assert.AreEqual(10_000L, divided.MaxInputTokens);
+        Assert.AreEqual(0L, divided.MaxOutputTokens); // 诚实归零，旧实现会夹成 1
+        Assert.AreEqual(0.003m, divided.MaxCost);
+        Assert.IsTrue(divided.IsDerivedRemainder);
+        Assert.AreEqual(24_473L, divided.PeakRoundInputTokens);
+
+        // 低于下限的份额必须被判据拒绝（批量前缀 + 减少 tasks 建议）
+        var options = new SubAgentExecutionOptions();
+        var error = options.DescribeBudgetInfeasibility(
+            divided,
+            errorPrefix: "sub_agent_batch_budget_infeasible:",
+            advice: "请减少批量任务数（tasks）或收敛父级轮次后再委派。");
+        Assert.IsNotNull(error);
+        StringAssert.Contains(error, "sub_agent_batch_budget_infeasible:");
+        StringAssert.Contains(error, "output 已耗尽（剩余 0）");
+    }
+
+    [TestMethod]
+    public void DivideUsageBudget_SingleTaskKeepsBudgetUntouched()
+    {
+        // divisor<=1 原样返回：非派生预算保持 IsDerivedRemainder=false，不受守卫影响（回归保护）。
+        var budget = new ExecutionUsageBudget { MaxInputTokens = 500, IsDerivedRemainder = false };
+        var divided = SubAgentInvocationService.DivideUsageBudget(budget, divisor: 1);
+        Assert.IsNotNull(divided);
+        Assert.AreSame(budget, divided);
+        Assert.IsFalse(divided.IsDerivedRemainder);
     }
 
     private static SubAgentBudgetLifecycle Create(

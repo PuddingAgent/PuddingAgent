@@ -268,6 +268,10 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                             taskPlanning, permissionMode,
                             workingDirectory, originToolId,
                             parentContextSnapshot, delegation);
+                        // 池化创建也必须过预算守卫：池化子代理同样消费派生预算。
+                        if (DescribeParentBudgetInfeasibility(context) is { } poolCreateBudgetGuardError)
+                            return Fail(poolCreateBudgetGuardError);
+
                         var createResult = await pool.CreateAsync(
                             args.PoolName, spawnRequest, ct);
                         return Success(
@@ -379,6 +383,10 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                             taskPlanning, permissionMode,
                             workingDirectory, originToolId,
                             parentContextSnapshot, delegation);
+                        // 池化执行也必须过预算守卫：池化子代理同样消费派生预算。
+                        if (DescribeParentBudgetInfeasibility(context) is { } poolExecuteBudgetGuardError)
+                            return Fail(poolExecuteBudgetGuardError);
+
                         var result = await pool.ExecuteAsync(
                             args.PoolName, execSpawnRequest, ct);
 
@@ -416,6 +424,10 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
         if (batchTasksResult.Tasks is not null)
         {
+            // 委派边界守卫：父级派生预算已耗尽/低于可执行下限时直接拒绝，不派发注定首轮即死的子代理。
+            if (DescribeParentBudgetInfeasibility(context) is { } budgetGuardError)
+                return Fail(budgetGuardError);
+
             try
             {
                 var batch = await subAgentInvocation.InvokeBatchAsync(new SubAgentBatchInvocationRequest
@@ -464,6 +476,10 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 return Fail(ex.Message);
             }
         }
+
+        // 委派边界守卫：父级派生预算已耗尽/低于可执行下限时直接拒绝，不派发注定首轮即死的子代理。
+        if (DescribeParentBudgetInfeasibility(context) is { } singleBudgetGuardError)
+            return Fail(singleBudgetGuardError);
 
         try
         {
@@ -1121,6 +1137,19 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
     }
 
     private static ToolExecutionResult Fail(string error) => ToolExecutionResult.Fail(error);
+
+    /// <summary>
+    /// 派生剩余预算可执行性守卫：父级真实剩余不足以支撑一次可执行子运行时，
+    /// 在委派边界显式拒绝（带数值可诊断），而不是派发一个首轮即死的子代理。
+    /// 非派生预算（IsDerivedRemainder=false）不受影响；判据本体在
+    /// SubAgentExecutionOptions.DescribeBudgetInfeasibility（与批量除法共用，禁止另建一套）。
+    /// </summary>
+    private string? DescribeParentBudgetInfeasibility(ToolExecutionContext context)
+    {
+        var options = _services.GetService<IRuntimeExecutionConfigService>()?.GetOptions().SubAgents
+                      ?? new SubAgentExecutionOptions();
+        return options.DescribeBudgetInfeasibility(context.UsageBudget);
+    }
 
     private sealed record ResolvedChildLlmRoute(
         LlmInvocationProfile Profile,

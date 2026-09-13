@@ -18,6 +18,9 @@ internal sealed class ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget)
     public long CacheHitTokens { get; private set; }
     public decimal Cost { get; private set; }
 
+    /// <summary>已观测到的单轮最大输入 Token；派生预算用它让父级判断剩余是否还够一轮真实调用。</summary>
+    public long PeakRoundInputTokens { get; private set; }
+
     public ExecutionUsageBudgetDecision EvaluateBeforeRound()
     {
         if (budget is null)
@@ -53,6 +56,7 @@ internal sealed class ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget)
         InputTokens = SaturatingAdd(InputTokens, input);
         OutputTokens = SaturatingAdd(OutputTokens, output);
         CacheHitTokens = SaturatingAdd(CacheHitTokens, cacheHit);
+        PeakRoundInputTokens = Math.Max(PeakRoundInputTokens, input);
 
         if (budget.PricingKnown)
         {
@@ -75,6 +79,8 @@ internal sealed class ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget)
             MaxInputTokens = Remaining(budget.MaxInputTokens, InputTokens),
             MaxOutputTokens = Remaining(budget.MaxOutputTokens, OutputTokens),
             MaxCost = Remaining(budget.MaxCost, Cost),
+            IsDerivedRemainder = true,
+            PeakRoundInputTokens = PeakRoundInputTokens,
         };
     }
 
@@ -139,11 +145,14 @@ internal sealed class ExecutionUsageBudgetTracker(ExecutionUsageBudget? budget)
     private static long SaturatingAdd(long left, int right)
         => left > long.MaxValue - right ? long.MaxValue : left + right;
 
+    // 剩余值必须诚实归零：轴耗尽后返回 0，由 ExecutionUsageBudget.IsDerivedRemainder
+    // 消除「0 = 未设上限」的歧义，委派边界再据可执行下限显式拒绝。
+    // 禁止回到 Math.Max(1, …) 伪造非零——那会派发一个首轮即死的子代理。
     private static long Remaining(long limit, long consumed)
-        => limit > 0 ? Math.Max(1, limit - consumed) : 0;
+        => limit > 0 ? Math.Max(0, limit - consumed) : 0;
 
     private static decimal Remaining(decimal limit, decimal consumed)
-        => limit > 0 ? Math.Max(0.0000000001m, limit - consumed) : 0;
+        => limit > 0 ? Math.Max(0m, limit - consumed) : 0;
 
     private static int ClampToInt(long value)
         => value >= int.MaxValue ? int.MaxValue : (int)Math.Max(0, value);
