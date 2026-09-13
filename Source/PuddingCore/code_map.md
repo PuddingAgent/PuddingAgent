@@ -128,6 +128,13 @@
 | `Tools/` | 工具接口与基类 |
 | `Tools/PuddingToolContracts.cs` | 原生 Tool 描述、反序列化与执行基类；当前结果仍为 Output/Error string，deepseek-harness 对齐方案将从这里演进 input/output schema、canonical value、结构化错误与不可变调用身份 |
 
+## 检索合同（Tools/Retrieval/，ADR-089 U0）
+
+| 文件 | 用途 |
+|------|------|
+| `Tools/Retrieval/RetrievalContracts.cs` | 统一检索合同：`RetrievalCoverage`（`Complete/Partial/Truncated/Timeout/ContractError`，`IsComplete` 仅由 `Status==Complete` 唯一推导；Partial 必须给出原因）+ `RetrievalMatchOutcome`（`NoMatch/Match/Timeout`，超时不降级为 NoMatch） |
+| `Tools/Retrieval/RetrievalMatcher.cs` | 唯一匹配语义实现：字面量 `Ordinal` 与正则 `CultureInvariant` 归一；`TryMatch(line, ct)` 返回三态并把 `RegexMatchTimeoutException` 映射为 `Timeout`（不吞不抛），取消传播 `OperationCanceledException`；`IsMatch` 为兼容层（超时返回 false，须改用 `TryMatch`） |
+
 ## 存储管理契约（Storage/）
 
 | 文件 | 用途 |
