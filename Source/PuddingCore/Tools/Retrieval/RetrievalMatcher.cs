@@ -4,7 +4,7 @@
 using System.Text.RegularExpressions;
 using System.Threading;
 
-namespace PuddingCore.Tools.Retrieval;
+namespace PuddingCode.Tools.Retrieval;
 
 /// <summary>
 /// 统一匹配器：按同一合同对单行文本做 literal/regex 匹配复核。
@@ -88,9 +88,11 @@ public sealed class RetrievalMatcher
 
             try
             {
+                // CultureInvariant 必加：literal 走 Ordinal/OrdinalIgnoreCase（culture 无关），
+                // 正则若不抑制 culture 折叠（如土耳其语 i），两条路径会对同一输入给出不同结论。
                 var options = caseMode == RetrievalCaseMode.Insensitive
-                    ? RegexOptions.IgnoreCase
-                    : RegexOptions.None;
+                    ? RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
+                    : RegexOptions.CultureInvariant;
                 var regex = new Regex(query, options, regexTimeout);
                 matcher = new RetrievalMatcher(query, StringComparison.Ordinal, mode, caseMode, regex);
             }

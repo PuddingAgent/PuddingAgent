@@ -3,7 +3,7 @@
 // 切片任务书：temp/adr089-u0-s1-taskbook-20260913.md（U0-S1）。
 using System.Collections.Generic;
 
-namespace PuddingCore.Tools.Retrieval;
+namespace PuddingCode.Tools.Retrieval;
 
 /// <summary>匹配模式：字面量或正则。</summary>
 public enum RetrievalMatchMode

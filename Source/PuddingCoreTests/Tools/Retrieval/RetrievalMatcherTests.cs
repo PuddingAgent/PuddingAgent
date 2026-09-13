@@ -1,7 +1,7 @@
 // ADR-089 U0-S1：统一检索匹配合同与 RetrievalMatcher / RetrievalCoverage 单测。
 // 覆盖：literal 大小写语义（Ordinal/OrdinalIgnoreCase，不依赖 culture）、非法正则明确报错（不静默降级）、
 // 正则命中、中文匹配、空 query 拒绝、正则求值超时不抛出，以及 RetrievalCoverage 的 IsComplete 硬性语义。
-using PuddingCore.Tools.Retrieval;
+using PuddingCode.Tools.Retrieval;
 
 namespace PuddingCoreTests.Tools.Retrieval;
 
