@@ -567,8 +567,8 @@ public sealed class SearchGrepToolTests
     [TestMethod]
     public async Task ExecuteAsync_MoreThan100Results_Are_Persisted_To_Temp_File()
     {
-        // 回归：maxResults 不再是托管分支的硬上限。即使 max_results=10，
-        // 仍持续收集全部命中；总数 >100 时内联前 100 条并把完整结果写入临时文件。
+        // 回归（ADR-089 U0 R4 后口径）：max_results 是合并结果集的上限；
+        // max_results=150 > 120 时不截断，全部命中被收集；总数 >100 时内联前 100 条并把完整结果写入临时文件。
         var previousCwd = Directory.GetCurrentDirectory();
         var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
@@ -587,7 +587,7 @@ public sealed class SearchGrepToolTests
             var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
             {
                 ["pattern"] = "*.txt",
-                ["max_results"] = "10",
+                ["max_results"] = "150",
             });
 
             Assert.IsTrue(result.Success, result.Error);
@@ -1275,6 +1275,270 @@ public sealed class SearchGrepToolTests
         {
             Directory.SetCurrentDirectory(previousCwd);
             Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0R3_LockedFile_Is_Not_NoMatch_And_Retryable_After_Release()
+    {
+        // R3：独占锁定含 NEEDLE 的文件 → 非 no_match（truncated + 覆盖声明）；
+        // 释放后同一 query 必须能重新执行并返回真实命中（不得被 exact-retry 抑制）。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var lockedPath = Path.Combine(tempDir, "locked.txt");
+        await File.WriteAllTextAsync(lockedPath, "NEEDLE behind exclusive lock\n");
+
+        var fs = new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.None);
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var ledger = new SearchAttemptLedger();
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine, ledger: ledger);
+
+            var r1 = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+            Assert.IsTrue(r1.Success, r1.Error);
+            Assert.AreEqual(ToolResultStatuses.Truncated, r1.Status,
+                "locked file must degrade coverage, never fabricate no_match");
+            Assert.IsFalse(r1.Output.Contains("(no matches)"), "incomplete empty result must not read as no_match");
+            Assert.AreEqual(1, r1.Output.Split("(coverage: partial").Length - 1,
+                "coverage declaration must appear exactly once");
+
+            fs.Dispose(); // 释放独占锁
+
+            var r2 = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+            Assert.IsTrue(r2.Success, r2.Error);
+            Assert.AreEqual(ToolResultStatuses.Ok, r2.Status);
+            StringAssert.Contains(r2.Output, "locked.txt:1: NEEDLE behind exclusive lock");
+        }
+        finally
+        {
+            fs.Dispose();
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0R3_SingleReadError_Below_Threshold_Is_Not_Complete_Or_NoMatch()
+    {
+        // R3：1 个不可读文件（未达 MaxErrors 阈值）也必须使覆盖非 Complete；
+        // 声明范围内无其它命中时空结果不得伪装为 no_match。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var lockedPath = Path.Combine(tempDir, "locked.txt");
+        await File.WriteAllTextAsync(lockedPath, "NEEDLE hidden by lock\n");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "clean.txt"), "alpha only\n");
+
+        var fs = new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.None);
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Truncated, result.Status);
+            StringAssert.Contains(result.Output, "有 1 个文件读取失败，结果可能不完整");
+            StringAssert.Contains(result.Output, "(coverage: partial");
+            Assert.IsFalse(result.Output.Contains("(no matches)"), "incomplete empty result must not read as no_match");
+        }
+        finally
+        {
+            fs.Dispose();
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0R3_SubdirectoryEnumerationFailure_Declares_Incomplete_Coverage()
+    {
+        // R3：子目录枚举失败（指向不存在目标的悬空联接）→ enumerationErrored →
+        // 覆盖非 Complete、状态 truncated、输出声明失败目录数，绝不静默吞掉。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var junction = Path.Combine(tempDir, "broken_link");
+        if (!TryCreateDanglingJunction(junction, Path.Combine(tempDir, "missing-target")))
+        {
+            Assert.Inconclusive("dangling junction cannot be created on this volume; enumeration-error path unverified");
+            return;
+        }
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "real.txt"), "no needle here\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["pattern"] = "*.txt" });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Truncated, result.Status);
+            StringAssert.Contains(result.Output, "1 个子目录枚举失败，结果可能不完整");
+            StringAssert.Contains(result.Output, "(coverage: partial");
+            Assert.AreEqual(1, result.Output.Split("(coverage: partial").Length - 1,
+                "coverage declaration must appear exactly once");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            try { Directory.Delete(junction, recursive: false); } catch { /* best effort */ }
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0R4_MaxResults_Caps_Merged_Output_And_Declares_Truncation()
+    {
+        // R4：单文件 3 行 NEEDLE + max_results=1 → 最终输出恰好 1 行且 truncated（改动前会输出 3 行）。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "sample.txt"), "NEEDLE one\nfiller\nNEEDLE two\nNEEDLE three\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["pattern"] = "*.txt",
+                ["max_results"] = "1",
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Truncated, result.Status);
+            StringAssert.Contains(result.Output, "sample.txt:1: NEEDLE one");
+            Assert.AreEqual(1, result.Output.Split('\n').Count(l => l.Contains("sample.txt:")),
+                "output must contain exactly max_results hit lines");
+            StringAssert.Contains(result.Output, "达到 max_results 上限（1）");
+            Assert.AreEqual(1, result.Output.Split("(coverage: partial").Length - 1,
+                "coverage declaration must appear exactly once");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0R4_ExactMaxResults_NaturalCompletion_Is_Complete()
+    {
+        // R4：恰好 maxResults 个匹配且扫描自然完成 → Complete（Ok，无 partial/上限声明）。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "sample.txt"), "NEEDLE one\nNEEDLE two\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: false,
+                new FullTextSearchResult(false, [], "not indexed", 0, 0));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["pattern"] = "*.txt",
+                ["max_results"] = "2",
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Ok, result.Status);
+            StringAssert.Contains(result.Output, "sample.txt:1: NEEDLE one");
+            StringAssert.Contains(result.Output, "sample.txt:2: NEEDLE two");
+            Assert.IsFalse(result.Output.Contains("(coverage: partial"), "natural completion must not declare partial");
+            Assert.IsFalse(result.Output.Contains("达到 max_results 上限"), "exact match count must not declare truncation");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task U0R4_Candidate_And_Scan_Merge_Respect_Shared_MaxResults()
+    {
+        // R4：索引候选文件与枚举扫描文件共用同一 results 计数——
+        // cand.txt 1 行命中 + scan.txt 2 行命中、max_results=2 → 恰好 2 行 + truncated + 上限声明（2）。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "cand.txt"), "NEEDLE in candidate\n");
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "scan.txt"), "NEEDLE s1\nfiller\nNEEDLE s2\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var searchEngine = new StubFullTextSearchEngine(hasIndex: true, new FullTextSearchResult(
+                true,
+                [new FullTextSearchMatch(Path.Combine(tempDir, "cand.txt"), 1, "NEEDLE in candidate")],
+                null, 1, 5));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, searchEngine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["pattern"] = "*.txt",
+                ["max_results"] = "2",
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.Truncated, result.Status);
+            StringAssert.Contains(result.Output, "cand.txt:1: NEEDLE in candidate");
+            StringAssert.Contains(result.Output, "scan.txt:1: NEEDLE s1");
+            Assert.AreEqual(2, result.Output.Split('\n').Count(l =>
+                (l.Contains("cand.txt:") || l.Contains("scan.txt:")) && l.Contains("NEEDLE")),
+                "merged output must contain exactly max_results hit lines");
+            StringAssert.Contains(result.Output, "达到 max_results 上限（2）");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousCwd);
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// 用 mklink /J 创建指向不存在目标的目录联接（无需管理员权限），用于构造子目录枚举失败场景。
+    /// 返回是否成功创建（非 NTFS 等环境返回 false，调用方以 Inconclusive 表达环境限制）。
+    /// </summary>
+    private static bool TryCreateDanglingJunction(string junctionPath, string targetPath)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(
+                "cmd.exe", $"/c mklink /J \"{junctionPath}\" \"{targetPath}\"")
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            using var process = System.Diagnostics.Process.Start(psi);
+            if (process is null) return false;
+            _ = process.StandardOutput.ReadToEnd();
+            _ = process.StandardError.ReadToEnd();
+            process.WaitForExit(5000);
+            return process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
         }
     }
 

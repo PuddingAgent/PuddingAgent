@@ -38,6 +38,9 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     private const string EnumerationTruncatedMessage = "文件枚举已达上限 {0} 个，结果可能不完整（建议缩小 directory/pattern/file_ext 范围，或改用索引工具 code_symbol_search / code_explore / file_search 精确定位，毫秒级返回）";
     private const string ScanBudgetMessage = "扫描已达预算上限（{0} 个文件 / {1} 字节），结果可能不完整（建议缩小 directory/pattern/file_ext 范围，或改用索引工具 code_symbol_search / code_explore / file_search 精确定位）";
     private const string ErrorBudgetMessage = "有 {0} 个文件读取失败，已提前结束扫描，结果可能不完整";
+    private const string ReadErrorsMessage = "有 {0} 个文件读取失败，结果可能不完整";
+    private const string EnumerationErroredMessage = "{0} 个子目录枚举失败，结果可能不完整";
+    private const string MaxResultsReachedMessage = "达到 max_results 上限（{0}），结果可能不完整";
     private const string LargeFileSkippedMessage = "已跳过 {0} 个超过 1MB 的大文件，结果可能不完整";
     private const string PaginationReportMessage = "返回数量为 {0} 个超过预算 100，完整结果已释放到临时文件，路径为 {1}，如果需要阅读完整的请使用 file_read 工具以 OffsetLines 参数分页阅读。";
     // ADR-089 U0-S2：覆盖声明行。非 Complete 的结果必须显式声明剩余范围未搜索，空输出不得伪装为"查无结果"。
@@ -404,11 +407,13 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
                 var filePattern = string.IsNullOrWhiteSpace(pattern) ? "*.*" : pattern;
         bool enumerationTruncated = false;
+        int enumerationErroredDirs = 0;
         try
         {
             // 枚举阶段即按目录名剪枝排除目录（bin/obj 等整棵子树不再进入枚举），
             // 避免排除目录中的文件占用 MaxEnumeratedFiles 名额，导致真实源码目录被跳过（假阴性）。
-            files = EnumerateFilesPruningExcluded(cwd, filePattern, excludeDirs, MaxEnumeratedFiles, out enumerationTruncated);
+            files = EnumerateFilesPruningExcluded(cwd, filePattern, excludeDirs, MaxEnumeratedFiles,
+                out enumerationTruncated, out enumerationErroredDirs);
         }
         catch (Exception ex)
         {
@@ -439,9 +444,10 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         bool scanBudgetExceeded = false;
         bool errorBudgetExceeded = false;
         bool regexTimedOut = false;
+        bool maxResultsReached = false;
         foreach (var file in workList)
         {
-            if (token.IsCancellationRequested || totalCapReached) break;
+            if (token.IsCancellationRequested || totalCapReached || maxResultsReached) break;
             if (errors >= MaxErrors) { errorBudgetExceeded = true; break; }
             if (scannedFiles >= MaxScannedFiles || scannedBytes >= MaxScannedBytes)
             {
@@ -476,7 +482,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
                 for (int i = 0; i < lines.Length; i++)
                 {
-                    if (totalCapReached) break;
+                    if (totalCapReached || maxResultsReached) break;
                     // R2.3：每行先检查取消——内部预算超时也必须及时停下扫描。
                     if (token.IsCancellationRequested) break;
                     var line = lines[i].TrimEnd('\r');
@@ -493,6 +499,14 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                     matchCount++;
                     // 行级去重键保留为兜底（R1.5）：同一 (文件, 行) 只输出一次，但仍计入扫描统计（matchCount）。
                     if (!emittedKeys.Add(BuildDedupKey(file, i + 1))) continue;
+
+                    // ADR-089 U0 R4.1：max_results 统一作用于合并后的结果集——
+                    // 候选文件与枚举文件共用 results 计数，出现第 maxResults+1 个匹配即停止扫描并声明 truncated。
+                    if (results.Count >= maxResults)
+                    {
+                        maxResultsReached = true;
+                        break;
+                    }
                     var lineText = TruncateLine(line.Trim(), maxLineBytes);
                     var relPath = Path.GetRelativePath(cwd, file);
                     var entry = $"{relPath}:{i + 1}: {lineText}";
@@ -522,10 +536,12 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         ct.ThrowIfCancellationRequested();
         bool timedOut = cts.IsCancellationRequested;
 
-        // ADR-089 U0-S2（S2-4）：覆盖状态诚实推导——任何预算耗尽/截断/跳过都使覆盖非 Complete。
-        // R2：正则求值超时（regexTimedOut）同样是「未能判定」，必须使覆盖非 Complete（完整公式见 R3）。
-        bool coverageComplete = !timedOut && !regexTimedOut && !enumerationTruncated && !scanBudgetExceeded
-            && !errorBudgetExceeded && !totalCapReached && skippedLargeFiles == 0;
+        // ADR-089 U0 R3.1：覆盖完整性覆盖「任何未完成的部分」——错误预算（MaxErrors）只是停止阈值，
+        // 任何已发生的读取失败（哪怕 1 次、未达阈值）都使覆盖非 Complete；
+        // 调用方取消已向上传播不会到达这里；regexTimedOut 同样是「未能判定」。
+        bool coverageComplete = !timedOut && !regexTimedOut && !enumerationTruncated
+            && enumerationErroredDirs == 0 && !scanBudgetExceeded && !maxResultsReached
+            && !totalCapReached && skippedLargeFiles == 0 && errors == 0;
 
         var notes = new List<string>();
         if (timedOut)
@@ -534,14 +550,20 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             notes.Add($"正则求值超时（{_searchTimeout.TotalSeconds:0.##}s），未能完成判定，结果可能不完整；建议简化 query（避免灾难性回溯）或缩小范围");
         if (enumerationTruncated)
             notes.Add(string.Format(EnumerationTruncatedMessage, MaxEnumeratedFiles));
+        if (enumerationErroredDirs > 0)
+            notes.Add(string.Format(EnumerationErroredMessage, enumerationErroredDirs));
         if (scanBudgetExceeded)
             notes.Add(string.Format(ScanBudgetMessage, MaxScannedFiles, MaxScannedBytes));
         if (totalCapReached)
             notes.Add(string.Format(TotalCapMessage, matchCount));
         if (errorBudgetExceeded)
             notes.Add(string.Format(ErrorBudgetMessage, MaxErrors));
+        else if (errors > 0)
+            notes.Add(string.Format(ReadErrorsMessage, errors));
         if (skippedLargeFiles > 0)
             notes.Add(string.Format(LargeFileSkippedMessage, skippedLargeFiles));
+        if (maxResultsReached)
+            notes.Add(string.Format(MaxResultsReachedMessage, maxResults));
         if (!coverageComplete)
             notes.Add(string.Format(CoveragePartialMessage, scannedFiles, MaxScannedFiles, scannedBytes, MaxScannedBytes));
 
@@ -614,10 +636,12 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     /// 同时避免遍历 bin/obj 等大目录带来的无谓开销。
     /// </summary>
     private static List<string> EnumerateFilesPruningExcluded(
-        string root, string pattern, HashSet<string> excludeDirs, int maxFiles, out bool truncated)
+        string root, string pattern, HashSet<string> excludeDirs, int maxFiles,
+        out bool truncated, out int failedDirs)
     {
         var files = new List<string>(1024);
         truncated = false;
+        failedDirs = 0;
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var stack = new Stack<string>();
         stack.Push(root);
@@ -636,7 +660,10 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             }
             catch (Exception) when (dir != root)
             {
-                continue; // 子目录不可访问或枚举失败：跳过该目录
+                // ADR-089 U0 R3.2：子目录枚举失败必须计入完整性（failedDirs），
+                // 不得与符号链接防循环跳过（visited 集合）混同后静默吞掉。
+                failedDirs++;
+                continue;
             }
             // 根目录枚举失败则向上抛出，由调用方转换为 Fail
 
