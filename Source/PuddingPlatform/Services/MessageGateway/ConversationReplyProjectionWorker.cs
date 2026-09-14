@@ -76,16 +76,43 @@ public sealed class ConversationReplyProjectionWorker(
             var metadata = DeserializeMetadata(command.MetadataJson);
             if (IsTrue(Get(metadata, MessageFabricTurnMetadata.IsIngress)))
             {
-                if (await ProjectMessageFabricReplyAsync(
-                        db,
-                        messageSystem,
-                        command,
-                        metadata,
-                        ct))
+                try
                 {
+                    if (await ProjectMessageFabricReplyAsync(
+                            db,
+                            messageSystem,
+                            command,
+                            metadata,
+                            ct))
+                    {
+                        command.ReplyProjectedAt =
+                            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        projected++;
+                    }
+                }
+                catch (MessageTargetUnavailableException ex)
+                {
+                    // Permanent routing rejection is a terminal projection outcome,
+                    // not a successful delivery. Keep the committed reply and its
+                    // failure evidence; do not retry a dead child every five seconds.
+                    metadata["reply_projection_status"] = "failed";
+                    metadata["reply_projection_error_code"] = MessageTargetUnavailableException.ErrorCode;
+                    metadata["reply_projection_target"] = ex.TargetId;
+                    command.MetadataJson = JsonSerializer.Serialize(metadata, JsonOptions);
                     command.ReplyProjectedAt =
                         DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     projected++;
+                    logger.LogWarning(
+                        "[MessageFabric] Reply projection rejected command={CommandId} target={TargetAgentId} code={Code}",
+                        command.CommandId, ex.TargetId, MessageTargetUnavailableException.ErrorCode);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Isolate a retryable failure from the other replies in this
+                    // batch. Stable reply IDs make the next attempt idempotent.
+                    logger.LogError(ex,
+                        "[MessageFabric] Reply projection retry pending command={CommandId}",
+                        command.CommandId);
                 }
                 continue;
             }

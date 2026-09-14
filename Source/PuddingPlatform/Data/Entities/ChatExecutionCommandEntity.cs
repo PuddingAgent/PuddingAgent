@@ -95,8 +95,9 @@ public class ChatExecutionCommandEntity
     public string? MetadataJson { get; set; }
 
     /// <summary>
-    /// Gateway terminal reply 已可靠投影到 Message Fabric 的时间。
-    /// null 表示 ReplyProjectionWorker 仍需投影；连接器发送状态由 MessageDelivery 独立负责。
+    /// Gateway terminal reply 投影已结算的时间。路由永久拒绝时，MetadataJson 中
+    /// reply_projection_status/error_code/target 保存失败结论；非空不代表送达。
+    /// null 表示 ReplyProjectionWorker 仍需投影；发送状态由 MessageDelivery 独立负责。
     /// </summary>
     [Column("reply_projected_at")]
     public long? ReplyProjectedAt { get; set; }

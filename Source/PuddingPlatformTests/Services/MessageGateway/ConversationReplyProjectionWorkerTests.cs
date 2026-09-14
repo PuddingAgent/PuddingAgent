@@ -18,6 +18,86 @@ namespace PuddingPlatformTests.Services.MessageGateway;
 public sealed class ConversationReplyProjectionWorkerTests
 {
     [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task ProjectBatchAsync_OneRejectedReplyDoesNotBlockOthers(bool permanent)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var sent = new RecordingMessageSystem
+        {
+            FailureFor = envelope => envelope.To.Single().Id == "gone-child"
+                ? permanent ? new MessageTargetUnavailableException("gone-child") : new IOException("transient store failure")
+                : null,
+        };
+        var services = new ServiceCollection();
+        services.AddDbContext<PlatformDbContext>(options => options.UseSqlite(connection));
+        services.AddSingleton<IMessageSystem>(sent);
+        services.AddSingleton<IImageGenerationService>(new StubImageGenerationService());
+        services.AddSingleton(CreateVisionStorage());
+        await using var provider = services.BuildServiceProvider();
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            await db.Database.EnsureCreatedAsync();
+            for (var i = 0; i < 3; i++)
+            {
+                db.ChatExecutionCommands.Add(new ChatExecutionCommandEntity
+                {
+                    CommandId = $"isolation-command-{i}", BatchId = $"batch-{i}",
+                    WorkspaceId = "default", SessionId = "isolation-session",
+                    MessageId = $"assistant-{i}", UserMessageId = $"user-{i}",
+                    TurnId = $"turn-{i}", AgentInstanceId = "parent", Status = "succeeded",
+                    TerminalSequence = i + 1, CreatedAt = i, CompletedAt = i + 10,
+                    MetadataJson = JsonSerializer.Serialize(new Dictionary<string, string>
+                    {
+                        [MessageFabricTurnMetadata.IsIngress] = "true",
+                        [MessageFabricTurnMetadata.FromKind] = MessageEndpointKinds.Agent,
+                        [MessageFabricTurnMetadata.FromId] = i == 1 ? "gone-child" : $"live-agent-{i}",
+                        [MessageFabricTurnMetadata.RoomId] = "default",
+                        [MessageFabricTurnMetadata.ReplyExpected] = "true",
+                    }),
+                });
+                db.ConversationEvents.Add(new ConversationEventEntity
+                {
+                    ConversationId = "isolation-session", Sequence = i + 1, EventId = $"event-{i}",
+                    WorkspaceId = "default", TurnId = $"turn-{i}", CommandId = $"isolation-command-{i}",
+                    RunId = $"run-{i}", MessageId = $"assistant-{i}",
+                    Type = ConversationEventTypes.TurnCompleted,
+                    Payload = """{"kind":"Completed","reply":"committed reply remains available"}""",
+                    OccurredAt = "2026-09-14T00:00:00Z", CommittedAt = "2026-09-14T00:00:00Z",
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        var worker = new ConversationReplyProjectionWorker(provider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<ConversationReplyProjectionWorker>.Instance);
+        Assert.AreEqual(permanent ? 3 : 2, await worker.ProjectBatchAsync());
+        Assert.AreEqual(2, sent.Envelopes.Count, "A failed middle item cannot roll back or block its siblings.");
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var rejected = await db.ChatExecutionCommands.SingleAsync(c => c.CommandId == "isolation-command-1");
+            Assert.AreEqual("succeeded", rejected.Status, "Delivery failure cannot rewrite the execution terminal.");
+            if (permanent)
+            {
+                Assert.IsNotNull(rejected.ReplyProjectedAt);
+                var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(rejected.MetadataJson!)!;
+                Assert.AreEqual("failed", metadata["reply_projection_status"]);
+                Assert.AreEqual(MessageTargetUnavailableException.ErrorCode, metadata["reply_projection_error_code"]);
+                Assert.AreEqual("gone-child", metadata["reply_projection_target"]);
+            }
+            else
+                Assert.IsNull(rejected.ReplyProjectedAt);
+        }
+        sent.FailureFor = null;
+        Assert.AreEqual(permanent ? 0 : 1, await worker.ProjectBatchAsync());
+        Assert.AreEqual(permanent ? 2 : 3, sent.Envelopes.Count);
+        Assert.AreEqual(0, await worker.ProjectBatchAsync());
+    }
+
+    [TestMethod]
     public async Task ProjectBatchAsync_ProjectsCanonicalMessageFabricReplyOnce_ToSourceAgent()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -435,11 +515,14 @@ public sealed class ConversationReplyProjectionWorkerTests
     private sealed class RecordingMessageSystem : IMessageSystem
     {
         public List<MessageEnvelope> Envelopes { get; } = [];
+        public Func<MessageEnvelope, Exception?>? FailureFor { get; set; }
 
         public Task<MessageSendResult> SendAsync(
             MessageEnvelope envelope,
             CancellationToken ct = default)
         {
+            if (FailureFor?.Invoke(envelope) is { } failure)
+                throw failure;
             Envelopes.Add(envelope);
             return Task.FromResult(new MessageSendResult
             {

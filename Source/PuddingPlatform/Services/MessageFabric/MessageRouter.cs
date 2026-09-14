@@ -127,7 +127,7 @@ public sealed class MessageRouter : IMessageRouter
         if (matches.Count > 1)
             throw new InvalidOperationException($"Agent address '{target.Id}' is ambiguous in this workspace.");
 
-        throw new InvalidOperationException($"Agent address '{target.Id}' was not found or cannot receive messages in this workspace.");
+        throw new MessageTargetUnavailableException(target.Id);
     }
 
     private static bool MatchesAgentAddress(RoomParticipant participant, string rawAddress)

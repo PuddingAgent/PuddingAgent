@@ -110,6 +110,8 @@ public sealed class MessageRouterTests
         }
 
         Assert.IsNotNull(ex);
+        Assert.IsInstanceOfType<MessageTargetUnavailableException>(ex);
+        Assert.AreEqual("missing-agent", ((MessageTargetUnavailableException)ex).TargetId);
         StringAssert.Contains(ex!.Message, "missing-agent");
         StringAssert.Contains(ex.Message, "cannot receive messages");
     }
