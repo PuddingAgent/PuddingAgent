@@ -169,6 +169,7 @@ public sealed class SqliteExecutionJournal(
         IReadOnlyList<NewConversationEvent> pendingEvents,
         CancellationToken ct)
     {
+        var allowPrestartCancel = terminal.Kind == TurnTerminalKind.Cancelled && pendingEvents.Count == 0;
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var conn = db.Database.GetDbConnection();
@@ -234,7 +235,8 @@ public sealed class SqliteExecutionJournal(
                     terminal_kind = @termKind,
                     completed_at = @completedAt
                 WHERE turn_id = @turnId
-                  AND status = 'running'";
+                  AND (status = 'running' OR (@allowPrestartCancel = 1 AND status = 'accepted'))";
+            AddParam(turnCmd, "@allowPrestartCancel", allowPrestartCancel);
             AddParam(turnCmd, "@status", TurnStatusToString(terminal));
             AddParam(turnCmd, "@termSeq", lastSeq);
             AddParam(turnCmd, "@termKind", terminal.Kind.ToString().ToLowerInvariant());
@@ -256,7 +258,8 @@ public sealed class SqliteExecutionJournal(
                 WHERE run_id = @runId
                   AND fencing_token = @fenceToken
                   AND worker_id = @workerId
-                  AND status IN ('running', 'cancel_requested')";
+                  AND (status IN ('running', 'cancel_requested') OR (@allowPrestartCancel = 1 AND status = 'leased'))";
+            AddParam(runCmd, "@allowPrestartCancel", allowPrestartCancel);
             AddParam(runCmd, "@status", RunStatusToString(terminal.RunStatus));
             AddParam(runCmd, "@termSeq", lastSeq);
             AddParam(runCmd, "@completedAt", nowMs);
@@ -279,7 +282,8 @@ public sealed class SqliteExecutionJournal(
                     lease_owner = NULL,
                     lease_until = NULL
                 WHERE command_id = @commandId
-                  AND status IN ('running', 'cancel_requested')";
+                  AND (status IN ('running', 'cancel_requested') OR (@allowPrestartCancel = 1 AND status = 'leased'))";
+            AddParam(cmdCmd, "@allowPrestartCancel", allowPrestartCancel);
             AddParam(cmdCmd, "@status", CommandStatusToString(terminal.CommandStatus));
             AddParam(cmdCmd, "@termSeq", lastSeq);
             AddParam(cmdCmd, "@completedAt", nowMs);

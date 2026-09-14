@@ -98,6 +98,30 @@ public sealed class ExecutionJournalInfrastructureFailureTests
     }
 
     [TestMethod]
+    public async Task PrestartCancel_RejectsStaleFenceWithoutWritingTerminal()
+    {
+        var lease = await SeedLeasedExecutionAsync();
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            _journal.CommitTerminalAsync(lease with { FencingToken = lease.FencingToken + 1 },
+                TurnTerminal.Cancelled, [], CancellationToken.None));
+        await using var db = await CreateDbAsync();
+        Assert.AreEqual("leased", (await db.ExecutionRuns.AsNoTracking().SingleAsync()).Status);
+        Assert.AreEqual(0, await db.ConversationEvents.CountAsync());
+    }
+
+    [TestMethod]
+    public async Task PrestartExecution_CannotCommitSuccess()
+    {
+        var lease = await SeedLeasedExecutionAsync();
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            _journal.CommitTerminalAsync(lease, TurnTerminal.Success("not executed", null), [], CancellationToken.None));
+        await using var db = await CreateDbAsync();
+        Assert.AreEqual("leased", (await db.ExecutionRuns.AsNoTracking().SingleAsync()).Status);
+        Assert.AreEqual("accepted", (await db.ConversationTurns.AsNoTracking().SingleAsync()).Status);
+        Assert.AreEqual(0, await db.ConversationEvents.CountAsync());
+    }
+
+    [TestMethod]
     public async Task TryCommitInfrastructureFailure_WithStaleFence_DoesNotOverwrite()
     {
         var lease = await SeedLeasedExecutionAsync();

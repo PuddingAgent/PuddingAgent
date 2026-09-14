@@ -46,6 +46,8 @@ public interface IExecutionJournal
     ///   8. 更新 Command（status + terminalSequence + completedAt）
     ///   9. 验证所有 UPDATE affected rows == 1
     /// 每个 Turn 只能调用一次；Turn 终态后任何追加或再次提交均拒绝。
+    /// 取消且无 pending 输出时允许 accepted Turn / leased Run 直接终态，供恢复前取消使用；
+    /// 不产生虚假的 turn.started，不允许未启动的执行直接成功。
     /// </summary>
     Task<AppendResult> CommitTerminalAsync(
         ExecutionLease lease,

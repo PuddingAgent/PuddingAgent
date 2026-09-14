@@ -59,6 +59,21 @@ public sealed class ExecutionRunCoordinator(
                 "[Coordinator] Start run={RunId} cmd={CmdId} turn={TurnId}",
                 lease.RunId, lease.CommandId, lease.TurnId);
 
+            // Cancellation remains pending until its terminal is committed. A recovered lease
+            // must settle it before loading a profile, rebuilding context, or invoking Runtime.
+            var pendingControls = await controlInbox.ReadPendingAsync(lease, 0, ctsRun.Token);
+            var pendingCancel = pendingControls.FirstOrDefault(m => m.Kind == ControlMessageKind.CancelRequested);
+            if (pendingCancel is not null)
+            {
+                var cancelled = await journal.CommitTerminalAsync(
+                    lease, TurnTerminal.Cancelled, [], ctsRun.Token);
+                await controlInbox.AcknowledgeAsync(lease, pendingCancel.ControlId, CancellationToken.None);
+                logger.LogInformation(
+                    "[Coordinator] Cancelled before runtime run={RunId} controlId={ControlId} seq={Sequence}",
+                    lease.RunId, pendingCancel.ControlId, cancelled.LastSequence);
+                return Outcome(lease, TurnTerminal.Cancelled, cancelled.LastSequence);
+            }
+
             command = await commandReader.GetAsync(lease.CommandId, ctsRun.Token)
                 ?? throw new InvalidOperationException($"Command {lease.CommandId} not found.");
 

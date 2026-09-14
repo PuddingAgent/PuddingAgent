@@ -6,6 +6,7 @@ using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services.Execution;
+using PuddingPlatform.Services.AgentChat;
 
 namespace PuddingPlatformTests.Services;
 
@@ -94,6 +95,60 @@ public sealed class ExecutionLeaseStoreRecoveryTests
         Assert.AreEqual("lease_lost", runs[0].Status);
         Assert.IsNotNull(runs[0].CompletedAt);
         Assert.AreEqual("leased", runs[1].Status);
+    }
+
+    [TestMethod]
+    public async Task RecoveredLease_PendingCancellation_ClosesBeforeRuntimeAndAcknowledgesAfterCommit()
+    {
+        var expiredLease = await SeedRunningExecutionAsync(expired: true);
+        await using (var scope = _provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            db.ControlMessages.Add(new ControlMessageEntity
+            {
+                ControlId = "cancel-1", Sequence = 2,
+                ConversationId = expiredLease.ConversationId, TurnId = expiredLease.TurnId,
+                Kind = nameof(ControlMessageKind.CancelRequested), Payload = "user_cancelled",
+                Status = "pending", CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var lease = await _store.TryAcquireAsync("worker-2", TimeSpan.FromMinutes(2), CancellationToken.None);
+        Assert.IsNotNull(lease);
+        var scopes = _provider.GetRequiredService<IServiceScopeFactory>();
+        var journal = new SqliteExecutionJournal(scopes, new NoopSignal(), NullLogger<SqliteExecutionJournal>.Instance);
+        var inbox = new SqliteControlInbox(scopes, NullLogger<SqliteControlInbox>.Instance);
+        // Null execution dependencies deliberately prove cancellation precedes command/profile/LLM/tool work.
+        var coordinator = new ExecutionRunCoordinator(_store, journal, null!, null!, null!, null!, null!,
+            inbox, null!, null!, NullLogger<ExecutionRunCoordinator>.Instance);
+        var outcome = await coordinator.ExecuteAsync(lease, CancellationToken.None);
+
+        Assert.AreEqual(TurnTerminalKind.Cancelled, outcome.Terminal.Kind);
+        await using var verify = _provider.CreateAsyncScope();
+        var state = verify.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var command = await state.ChatExecutionCommands.AsNoTracking().SingleAsync();
+        var turn = await state.ConversationTurns.AsNoTracking().SingleAsync();
+        var control = await state.ControlMessages.AsNoTracking().SingleAsync();
+        var runs = await state.ExecutionRuns.AsNoTracking().OrderBy(r => r.FencingToken).ToListAsync();
+        Assert.AreEqual("cancelled", command.Status);
+        Assert.AreEqual("cancelled", turn.Status);
+        Assert.AreEqual(outcome.TerminalSequence, turn.TerminalSequence);
+        Assert.AreEqual("lease_lost", runs[0].Status);
+        Assert.AreEqual("cancelled", runs[1].Status);
+        Assert.AreEqual("acknowledged", control.Status);
+        Assert.AreEqual(lease.RunId, control.ConsumedByRunId);
+        CollectionAssert.AreEqual(new[] { ConversationEventTypes.TurnCancelled },
+            await state.ConversationEvents.Select(e => e.Type).ToArrayAsync());
+        Assert.IsNull(await _store.TryAcquireAsync("worker-3", TimeSpan.FromMinutes(2), CancellationToken.None));
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            journal.CommitTerminalAsync(lease, TurnTerminal.Cancelled, [], CancellationToken.None));
+    }
+
+    private sealed class NoopSignal : ICommittedEventSignal
+    {
+        public void Signal(string conversationId, long committedThroughSequence) { }
+        public ValueTask WaitForChangeAsync(string conversationId, long knownHead, CancellationToken ct) => ValueTask.CompletedTask;
     }
 
     [TestMethod]
