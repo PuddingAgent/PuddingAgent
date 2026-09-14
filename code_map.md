@@ -4,6 +4,10 @@
 
 # PuddingAgent CodeMAP
 
+## 2026-09-14 首轮上下文准备性能修复
+
+`Docs/Reports/首轮上下文准备性能修复-2026-09-14.md`：AgentRunProjectionService 改用有界事件头查询（00bd0af）；ContextPipeline/ContextWindowManager 增加阶段计时（ddc25a2）；LuceneSearchEngine 使用稳定 SHA-256 目录，Host 从 PuddingDataPaths 注入索引路径，AgentLogRecall 每次增量刷新（8ddd0d3）。新 Core PID29400 跨进程复用索引，日志召回12.8秒→243毫秒、上下文13.7秒→683毫秒；相同两工具任务 canonical completed。用户同期恢复LM Studio，因此原87.6秒全量变化不能只归因代码。M01输入减负/99%/长程仍未验收；新增看板bfe2286047da49ec969c11717c46a81c修复归档身份与DataRoot。
+
 ## 2026-09-14 默认助手停滞与输入预算接管修复
 
 `Docs/Reports/默认助手停滞修复与预算接管-2026-09-14.md`：Codex 直接修复 FileSearchTool 内置扫描的时间/条目预算与取消（4ce9d6f）、MessageRouter 类型化目标拒绝与 ConversationReplyProjectionWorker 逐项结算（8d2ad3b）、ExecutionUsageBudgetTracker / SubAgentInvocationService / LlmRequestBudgetGuard 的单请求容量和父子累计账本（990673e，PlanVersion=2）、ExecutionRunCoordinator 恢复前检查 pending cancel 并由 SqliteExecutionJournal 原子终态（a18702b）。204 项定向测试通过；新 Core PID25584，旧指令直接取消，真实两次 file_search 后 canonical succeeded。根目录仍可能明确部分覆盖；A2–A4、首轮上下文性能、task-bound 长程与99%缓存仍待验收。

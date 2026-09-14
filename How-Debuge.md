@@ -4,6 +4,15 @@
 
 ## 1. 基本原则
 
+### Core 重启后首轮上下文慢、全文索引反复重建（2026-09-14）
+
+- 先按同一turn的canonical turn.started→context计时，再用`[HistoryHydration:Stage]`及`[ContextPipeline:Stage]`分解；现有FIRST_TOKEN日志早于Provider请求，不能当模型TTFT。阶段耗时另附加在agent.context.assemble指标的`stage.<name>.duration_ms`。
+- 排查状态轮询是否GroupBy+First读取大量事件payload。AgentRunProjectionService现只按ix_ce_seq取最新四字段，最新游标与生命周期仍各自保持；不要靠扩大状态缓存掩盖慢SQL。
+- Lucene磁盘键不得使用String.GetHashCode：进程随机盐会使每次Core重启找不到旧索引。8ddd0d3改为规范化路径SHA-256并由Host用PuddingDataPaths.DataRoot配置索引根；Desktop不必设置PUDDING_DATA_ROOT。新格式首次建立后至少再次重启验证目录复用；不能只测同进程第二次调用。
+- 索引存在不代表新鲜：AgentLogRecall使用引擎现有增量更新后搜索，覆盖新增与删除。旧随机缓存目录无可靠映射，不做猜测迁移/删除，交由存储维护登记。
+- LM Studio端口1234拒绝连接时先查服务可用性与实际embedding请求；后台EmbeddingHook的session标签不代表主调用同步等待。本轮LM Studio恢复与代码部署同期发生，必须分开解释归因。
+- 若出现`Skip private file write because agent is missing`，DB已持久化不等于私人日志已写；核对canonical稳定Agent身份与AgentConversationLogWriteRequest。SessionArchiver仍写程序目录data的遗留问题已登记独立修复，详见性能报告§4。
+
 ### 工具无结果、取消后恢复又重放（2026-09-14）
 
 - 用同一 turn 的 tool.call.requested/completed 定位最后进展；max_results 只限制命中条数，不保证递归扫描有界。FileSearchTool 内置 Provider 现默认10秒/50,000 entries，目录和未命中项都计数；timeout/truncated 必须带 partial 覆盖声明，不能据此宣布无匹配。时间预算是协作检查，不能打断内核单次阻塞 I/O。
