@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
-using PuddingPlatform.Data.Entities;
 
 namespace PuddingPlatform.Services.AgentChat;
 
@@ -68,31 +67,16 @@ public sealed class AgentRunProjectionService(
             .Cast<string>()
             .ToList();
 
-        var latestEvents = conversationIds.Count == 0
-            ? new Dictionary<string, ConversationEventEntity>(StringComparer.Ordinal)
-            : await db.ConversationEvents
-                .AsNoTracking()
-                .Where(e => conversationIds.Contains(e.ConversationId))
-                .GroupBy(e => e.ConversationId)
-                .Select(g => g.OrderByDescending(e => e.Sequence).First())
-                .ToDictionaryAsync(e => e.ConversationId, StringComparer.Ordinal, ct);
-        var latestLifecycleEvents = conversationIds.Count == 0
-            ? new Dictionary<string, ConversationEventEntity>(StringComparer.Ordinal)
-            : await db.ConversationEvents
-                .AsNoTracking()
-                .Where(e => conversationIds.Contains(e.ConversationId))
-                .Where(e => LifecycleEventTypes.Contains(e.Type))
-                .GroupBy(e => e.ConversationId)
-                .Select(g => g.OrderByDescending(e => e.Sequence).First())
-                .ToDictionaryAsync(e => e.ConversationId, StringComparer.Ordinal, ct);
+        var eventHeads = await LoadEventHeadsAsync(db, conversationIds, ct);
 
         return projectedSessions
             .Select(item =>
             {
                 var session = item.Session;
                 var conversationId = session?.SessionId ?? "";
-                latestEvents.TryGetValue(conversationId, out var latestEvent);
-                latestLifecycleEvents.TryGetValue(conversationId, out var latestLifecycleEvent);
+                eventHeads.TryGetValue(conversationId, out var heads);
+                var latestEvent = heads.Latest;
+                var latestLifecycleEvent = heads.Lifecycle;
                 var status = session is null ? "idle" : MapStatus(session.Status, latestLifecycleEvent);
 
                 return new AgentStatusProjection(
@@ -110,6 +94,35 @@ public sealed class AgentRunProjectionService(
                         : ParseOccurredAt(latestEvent.OccurredAt));
             })
             .ToList();
+    }
+
+    internal sealed record EventHead(long Sequence, string Type, string? RunId, string OccurredAt);
+
+    internal static async Task<Dictionary<string, (EventHead? Latest, EventHead? Lifecycle)>> LoadEventHeadsAsync(
+        PlatformDbContext db, IReadOnlyList<string> conversationIds, CancellationToken ct)
+    {
+        var result = new Dictionary<string, (EventHead?, EventHead?)>(StringComparer.Ordinal);
+        foreach (var conversationId in conversationIds.Distinct(StringComparer.Ordinal))
+        {
+            // One indexed reverse seek per main conversation, usually one row. GroupBy/First
+            // translates into ROW_NUMBER over the entire history and reads large payloads
+            // on every status poll. Keep only the fields this projection actually consumes.
+            var events = db.ConversationEvents.AsNoTracking()
+                .Where(e => e.ConversationId == conversationId);
+            var latest = await events.OrderByDescending(e => e.Sequence)
+                .Select(e => new EventHead(e.Sequence, e.Type, e.RunId, e.OccurredAt))
+                .FirstOrDefaultAsync(ct);
+            var lifecycle = latest;
+            if (latest is not null && !LifecycleEventTypes.Contains(latest.Type))
+            {
+                lifecycle = await events.Where(e => LifecycleEventTypes.Contains(e.Type))
+                    .OrderByDescending(e => e.Sequence)
+                    .Select(e => new EventHead(e.Sequence, e.Type, e.RunId, e.OccurredAt))
+                    .FirstOrDefaultAsync(ct);
+            }
+            result[conversationId] = (latest, lifecycle);
+        }
+        return result;
     }
 
     private static string NormalizeOwnerUserId(string? ownerUserId)
@@ -154,7 +167,7 @@ public sealed class AgentRunProjectionService(
 
     private static string MapStatus(
         SessionStatus sessionStatus,
-        ConversationEventEntity? latestLifecycleEvent)
+        EventHead? latestLifecycleEvent)
     {
         if (sessionStatus == SessionStatus.Frozen)
             return "offline";
