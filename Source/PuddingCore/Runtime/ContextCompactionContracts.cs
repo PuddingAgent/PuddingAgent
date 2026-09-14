@@ -5,6 +5,12 @@ using PuddingCode.Platform;
 
 namespace PuddingCode.Runtime;
 
+/// <summary>Shared defaults for automatic context pressure protection.</summary>
+public static class ContextCompactionDefaults
+{
+    public const double TriggerRatio = 0.80;
+}
+
 [JsonConverter(typeof(JsonStringEnumConverter<ContextHealthState>))]
 public enum ContextHealthState
 {

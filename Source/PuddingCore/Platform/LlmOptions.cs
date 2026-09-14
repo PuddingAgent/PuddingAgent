@@ -247,12 +247,18 @@ namespace PuddingCode.Platform
                     (_, current) => Math.Max(current, observedRatio));
             }
 
-            // Provider TotalTokens is the best lower bound for the next request:
-            // the completion becomes the next assistant-history message. Never let
-            // a provider-reported value be replaced by a smaller local estimate.
-            var usedTokens = Math.Max(
-                existing?.UsedTokens ?? 0,
-                Math.Max(0, usage.TotalTokens ?? usage.PromptTokens ?? 0));
+            // Total usage estimates the next input including this assistant response.
+            // A local overestimate is not provider-reported usage. Preserve conservative
+            // calibration for the outbound hard-limit guard, not in measured telemetry.
+            var providerTokens = Math.Max(0, usage.TotalTokens is > 0
+                ? usage.TotalTokens.Value
+                : (usage.PromptTokens is not null
+                    ? (int)Math.Min(int.MaxValue, (long)providerPromptTokens + Math.Max(0, usage.CompletionTokens ?? 0))
+                    : 0));
+            var hasProviderUsage = providerTokens > 0;
+            if (!hasProviderUsage && existing is not null)
+                return existing;
+            var usedTokens = hasProviderUsage ? providerTokens : existing?.UsedTokens ?? 0;
 
             var snapshot = new ContextUsageSnapshot
             {
@@ -269,8 +275,8 @@ namespace PuddingCode.Platform
                 ToolDefinitionHash = existing?.ToolDefinitionHash,
                 ToolDefinitionUtf8Bytes = existing?.ToolDefinitionUtf8Bytes ?? 0,
                 ToolDefinitionGzipBytes = existing?.ToolDefinitionGzipBytes ?? 0,
-                Source = "provider_usage",
-                Confidence = "provider_reported",
+                Source = hasProviderUsage ? "provider_usage" : existing?.Source ?? "unknown",
+                Confidence = hasProviderUsage ? "provider_reported" : existing?.Confidence ?? "estimated",
                 ProviderPromptTokens = usage.PromptTokens,
                 ProviderCompletionTokens = usage.CompletionTokens,
                 ProviderTotalTokens = usage.TotalTokens,

@@ -264,7 +264,7 @@ public sealed class LlmRequestBudgetGuardTests
                 PuddingDataPaths.FromRoot(root),
                 NullLogger<RuntimeExecutionConfigService>.Instance);
             var seeded = service.GetOptions().SubAgents;
-            Assert.AreEqual(0.65, seeded.ContextSoftCompactionTriggerRatio, 0.0001);
+            Assert.AreEqual(0.80, seeded.ContextSoftCompactionTriggerRatio, 0.0001);
             Assert.AreEqual(0.5, seeded.ContextSoftCompactionTargetRatio, 0.0001);
 
             // 非法配置：trigger > 1、target > trigger —— 必须被夹取回有效区间。

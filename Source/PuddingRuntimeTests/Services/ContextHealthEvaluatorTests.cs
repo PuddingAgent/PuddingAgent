@@ -7,19 +7,19 @@ namespace PuddingRuntimeTests.Services;
 public sealed class ContextHealthEvaluatorTests
 {
     [TestMethod]
-    public void Evaluate_DefaultThreshold_Is0_65()
+    public void Evaluate_DefaultThreshold_Is0_80()
     {
         var evaluator = new ContextHealthEvaluator();
 
-        // ratio = 120000 / 180000 = 0.667, which is >= 0.65 → Critical
+        // ratio = 120000 / 180000 = 0.667, which is < 0.80 → Warning
         var health = evaluator.Evaluate(
             sessionId: "session-1",
             usedTokens: 120_000,
             contextWindowTokens: 200_000,
             maxOutputTokens: 20_000);
 
-        Assert.AreEqual(ContextHealthState.Critical, health.State);
-        Assert.IsTrue(health.ShouldAutoCompact);
+        Assert.AreEqual(ContextHealthState.Warning, health.State);
+        Assert.IsFalse(health.ShouldAutoCompact);
         Assert.IsFalse(health.ShouldBlockSend);
     }
 
@@ -28,7 +28,7 @@ public sealed class ContextHealthEvaluatorTests
     {
         var evaluator = new ContextHealthEvaluator();
 
-        // ratio = 115000 / 180000 = 0.639, which is < 0.65 but >= 0.60 → Warning
+        // ratio = 115000 / 180000 = 0.639, which is < 0.80 but >= 0.60 → Warning
         var health = evaluator.Evaluate(
             sessionId: "session-1",
             usedTokens: 115_000,
@@ -81,7 +81,7 @@ public sealed class ContextHealthEvaluatorTests
     {
         var evaluator = new ContextHealthEvaluator();
 
-        // ratio = 120000 / 180000 = 0.667, threshold=0→fallback 0.65 → Critical
+        // ratio = 120000 / 180000 = 0.667, threshold=0→fallback 0.80 → Warning
         var health = evaluator.Evaluate(
             sessionId: "session-1",
             usedTokens: 120_000,
@@ -89,7 +89,7 @@ public sealed class ContextHealthEvaluatorTests
             maxOutputTokens: 20_000,
             compactionThreshold: 0);
 
-        Assert.AreEqual(ContextHealthState.Critical, health.State);
+        Assert.AreEqual(ContextHealthState.Warning, health.State);
     }
 
     [TestMethod]
@@ -97,7 +97,7 @@ public sealed class ContextHealthEvaluatorTests
     {
         var evaluator = new ContextHealthEvaluator();
 
-        // ratio = 120000 / 180000 = 0.667, threshold=-0.5→fallback 0.65 → Critical
+        // ratio = 120000 / 180000 = 0.667, threshold=-0.5→fallback 0.80 → Warning
         var health = evaluator.Evaluate(
             sessionId: "session-1",
             usedTokens: 120_000,
@@ -105,7 +105,7 @@ public sealed class ContextHealthEvaluatorTests
             maxOutputTokens: 20_000,
             compactionThreshold: -0.5);
 
-        Assert.AreEqual(ContextHealthState.Critical, health.State);
+        Assert.AreEqual(ContextHealthState.Warning, health.State);
     }
 
     [TestMethod]
@@ -113,7 +113,7 @@ public sealed class ContextHealthEvaluatorTests
     {
         var evaluator = new ContextHealthEvaluator();
 
-        // ratio = 120000 / 180000 = 0.667, threshold=1.5→fallback 0.65 → Critical
+        // ratio = 120000 / 180000 = 0.667, threshold=1.5→fallback 0.80 → Warning
         var health = evaluator.Evaluate(
             sessionId: "session-1",
             usedTokens: 120_000,
@@ -121,7 +121,7 @@ public sealed class ContextHealthEvaluatorTests
             maxOutputTokens: 20_000,
             compactionThreshold: 1.5);
 
-        Assert.AreEqual(ContextHealthState.Critical, health.State);
+        Assert.AreEqual(ContextHealthState.Warning, health.State);
     }
 
     [TestMethod]

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using PuddingCode.Models;
+using PuddingCode.Runtime;
 using PuddingCode.Platform;
 
 namespace PuddingRuntime.Services;
@@ -118,7 +119,7 @@ public static partial class LlmRequestBudgetGuard
         IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<LlmToolDefinition>? tools,
         LlmConfig? config,
-        double triggerRatio = 0.65,
+        double triggerRatio = ContextCompactionDefaults.TriggerRatio,
         double targetRatio = 0.5,
         int safetyBufferTokens = DefaultSafetyBufferTokens)
     {

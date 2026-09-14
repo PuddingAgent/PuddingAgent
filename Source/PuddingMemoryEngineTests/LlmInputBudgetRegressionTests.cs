@@ -213,6 +213,7 @@ public sealed class LlmInputBudgetRegressionTests
                 ProviderId = "provider-a",
                 ModelId = "test-model",
                 Name = "Test Model",
+                Protocol = "openai",
             },
         ];
 

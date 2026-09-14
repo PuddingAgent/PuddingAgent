@@ -70,7 +70,7 @@ public sealed class ContextCompactionServiceTests
     }
 
     [TestMethod]
-    public async Task GetHealthAsync_AbsoluteRawTokenCap_EscalatesBelowRatioThreshold()
+    public async Task GetHealthAsync_LargeWindow_DoesNotCompactAtOldAbsoluteCap()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -79,13 +79,12 @@ public sealed class ContextCompactionServiceTests
         await db.Database.EnsureCreatedAsync();
         await SeedMessagesAsync(db, "session-abscap", messageCount: 2);
 
-        // 大窗口（512K）下 0.65×比例 = 33 万 token 才触发；140K 用量按比例仍是 Healthy，
-        // 但超过 MaxActiveRawTokenBudget=131072 必须升级为 Critical 触发 proactive 压缩。
+        // Reproduce the 1M model incident: a 204942-token estimate must not hit a 128K cap.
         var usageStore = new ContextUsageSnapshotStore();
         usageStore.Set(new ContextUsageSnapshot
         {
             SessionId = "session-abscap",
-            UsedTokens = 140_000,
+            UsedTokens = 204_942,
             Confidence = "estimated",
             Source = "llm_request",
             RecordedAt = DateTimeOffset.UtcNow,
@@ -99,16 +98,16 @@ public sealed class ContextCompactionServiceTests
 
         var health = await service.GetHealthAsync(
             "session-abscap",
-            contextWindowTokens: 512_000,
-            maxOutputTokens: 8_000);
+            contextWindowTokens: 1_000_000,
+            maxOutputTokens: 384_000);
 
-        Assert.AreEqual(ContextHealthState.Critical, health.State,
-            "Absolute raw-token cap must escalate below the ratio threshold (large-window models).");
-        Assert.IsTrue(health.ShouldAutoCompact);
+        Assert.AreEqual(616_000, health.EffectiveWindowTokens);
+        Assert.AreEqual(ContextHealthState.Healthy, health.State);
+        Assert.IsFalse(health.ShouldAutoCompact);
     }
 
     [TestMethod]
-    public async Task GetHealthAsync_AbsoluteRawTokenCap_Disabled_WhenZero()
+    public async Task GetHealthAsync_LargeWindow_StillCompactsAtRealPressure()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -121,7 +120,7 @@ public sealed class ContextCompactionServiceTests
         usageStore.Set(new ContextUsageSnapshot
         {
             SessionId = "session-abscap-off",
-            UsedTokens = 140_000,
+            UsedTokens = 492_800,
             Confidence = "estimated",
             Source = "llm_request",
             RecordedAt = DateTimeOffset.UtcNow,
@@ -131,16 +130,15 @@ public sealed class ContextCompactionServiceTests
             new FixedSummaryGenerator("summary"),
             NullLogger<ContextCompactionService>.Instance,
             contextUsageSnapshotStore: usageStore,
-            options: new ContextCompactionOptions { MaxActiveRawTokenBudget = 0 });
+            options: new ContextCompactionOptions());
 
         var health = await service.GetHealthAsync(
             "session-abscap-off",
-            contextWindowTokens: 512_000,
-            maxOutputTokens: 8_000);
+            contextWindowTokens: 1_000_000,
+            maxOutputTokens: 384_000);
 
-        Assert.AreNotEqual(ContextHealthState.Critical, health.State,
-            "MaxActiveRawTokenBudget=0 must disable the absolute cap (ratio-only behavior).");
-        Assert.IsFalse(health.ShouldAutoCompact);
+        Assert.AreEqual(ContextHealthState.Critical, health.State);
+        Assert.IsTrue(health.ShouldAutoCompact);
     }
 
     [TestMethod]

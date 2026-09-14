@@ -87,7 +87,7 @@ public sealed class ContextCompactionService : IContextCompactionService
 
         var threshold = _options?.AutoCompactionThreshold is > 0 and <= 1
             ? _options.AutoCompactionThreshold
-            : 0.65;
+            : ContextCompactionDefaults.TriggerRatio;
         var snapshot = new ContextHealthEvaluator().Evaluate(
             sessionId,
             usage.UsedTokens,
@@ -95,24 +95,6 @@ public sealed class ContextCompactionService : IContextCompactionService
             maxOutputTokens: maxOutputTokens ?? 2_048,
             maxInputTokens: maxInputTokens,
             compactionThreshold: threshold);
-
-        // 绝对窗口上限：大窗口模型（256K+）下 0.65×比例意味着 16 万 token 才压缩，
-        // 重水合全量重传代价过高。活动 token 超过 MaxActiveRawTokenBudget 时
-        // 直接升级为 Critical（ShouldAutoCompact=true），与比例条件构成 OR。0/负数 = 禁用。
-        if (_options is { MaxActiveRawTokenBudget: > 0 }
-            && usage.UsedTokens > _options.MaxActiveRawTokenBudget
-            && snapshot.State < ContextHealthState.Critical)
-        {
-            snapshot = snapshot with
-            {
-                State = ContextHealthState.Critical,
-                ShouldSuggestCompact = true,
-                ShouldAutoCompact = true,
-            };
-            _logger.LogInformation(
-                "[ContextCompaction] Absolute raw-token cap exceeded session={SessionId} used={UsedTokens} cap={Cap}; escalating to Critical",
-                sessionId, usage.UsedTokens, _options.MaxActiveRawTokenBudget);
-        }
 
         return snapshot with
         {
@@ -140,18 +122,25 @@ public sealed class ContextCompactionService : IContextCompactionService
         if (_contextUsageSnapshotStore is not null)
             _contextUsageSnapshotStore.TryGet(sessionId, out snapshot);
 
-        if (snapshot?.UsedTokens > 0
-            && string.Equals(snapshot.Source, "provider_usage", StringComparison.OrdinalIgnoreCase))
-        {
-            return snapshot;
-        }
+        // A successful checkpoint changes the context generation. Usage measured before
+        // it cannot describe the retained history, including after a process restart.
+        // Reuse the durable coverage manifest rather than another in-memory cooldown.
+        var checkpointAt = await db.CompactionCoverageManifests.AsNoTracking()
+            .Where(m => m.SessionId == sessionId && m.FinalSummaryId != null)
+            .OrderByDescending(m => m.TargetGeneration)
+            .Select(m => (long?)m.CreatedAtUtc)
+            .FirstOrDefaultAsync(ct);
+        bool IsCurrent(ContextUsageSnapshot? candidate) => candidate is not null
+            && (checkpointAt is null || candidate.RecordedAt.ToUnixTimeMilliseconds() > checkpointAt);
+
+        // A freshly assembled request already reflects pruning/new input. Do not replace
+        // it with the previous request's database usage, even when that usage is larger.
+        if (IsCurrent(snapshot))
+            return snapshot!;
 
         var latestUsage = await TryGetLatestProviderUsageAsync(sessionId, ct);
-        if (latestUsage is not null)
-            return latestUsage;
-
-        if (snapshot?.UsedTokens > 0)
-            return snapshot;
+        if (IsCurrent(latestUsage))
+            return latestUsage!;
 
         var activeTokens = await EstimateActiveTokensAsync(db, sessionId, ct);
         if (activeTokens > 0)

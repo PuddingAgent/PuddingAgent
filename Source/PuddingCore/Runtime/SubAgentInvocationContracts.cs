@@ -203,7 +203,7 @@ public sealed record SubAgentExecutionOptions
     /// </summary>
     public const int DefaultBudgetGraceRounds = 20;
     public const int DefaultBudgetGraceTimeoutSeconds = 30 * 60;
-    public const double DefaultContextSoftCompactionTriggerRatio = 0.65;
+    public const double DefaultContextSoftCompactionTriggerRatio = ContextCompactionDefaults.TriggerRatio;
     public const double DefaultContextSoftCompactionTargetRatio = 0.5;
 
     public int MaxConcurrentPerTemplate { get; init; } = 3;

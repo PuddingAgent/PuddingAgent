@@ -1,3 +1,5 @@
+using PuddingCode.Runtime;
+
 namespace PuddingRuntime.Services;
 
 /// <summary>
@@ -24,8 +26,8 @@ public sealed class ContextCompactionOptions
     /// <summary>摘要后 tokens 不降反升时是否跳过压缩写入。默认 true。</summary>
     public bool SkipWhenSummaryIncreasesTokens { get; init; } = true;
 
-    /// <summary>自动压缩触发阈值比例（0 &lt; x ≤ 1），达到此使用率时触发自动压缩。默认 0.65。</summary>
-    public double AutoCompactionThreshold { get; init; } = 0.65;
+    /// <summary>自动压缩触发阈值比例（0 &lt; x ≤ 1），达到此使用率时触发自动压缩。默认 0.80。</summary>
+    public double AutoCompactionThreshold { get; init; } = ContextCompactionDefaults.TriggerRatio;
 
     /// <summary>
     /// 等待 Agent 生成工作总结的最大重试次数。
@@ -63,11 +65,4 @@ public sealed class ContextCompactionOptions
     /// </summary>
     public int MaxHydrationTokenBudget { get; init; } = 49152;
 
-    /// <summary>
-    /// 会话活动原文（未压缩消息）的绝对 token 上限；估算超过该值即触发自动压缩，
-    /// 与 <see cref="AutoCompactionThreshold"/>（相对窗口比例）构成 OR 条件。
-    /// 大窗口模型（256K+）下仅靠 0.65×比例意味着 16 万 token 才压缩，重水合重传代价过高。
-    /// 0 或负数表示禁用绝对上限。默认 131072。
-    /// </summary>
-    public int MaxActiveRawTokenBudget { get; init; } = 131072;
 }

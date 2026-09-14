@@ -11,9 +11,9 @@ public sealed class ContextHealthEvaluator
         int maxOutputTokens,
         int safetyBufferTokens = 0,
         int? maxInputTokens = null,
-        double compactionThreshold = 0.65)
+        double compactionThreshold = ContextCompactionDefaults.TriggerRatio)
     {
-        var effectiveThreshold = compactionThreshold is > 0 and <= 1 ? compactionThreshold : 0.65;
+        var effectiveThreshold = compactionThreshold is > 0 and <= 1 ? compactionThreshold : ContextCompactionDefaults.TriggerRatio;
         var modelWindow = Math.Max(1, contextWindowTokens);
         var reservedOutput = Math.Max(0, maxOutputTokens);
         var safetyBuffer = Math.Max(0, safetyBufferTokens);
@@ -79,7 +79,7 @@ public sealed class ContextHealthEvaluator
             ModelWindow: modelWindow,
             RemainingTokens: remaining,
             EstimatedMessagesUntilWarning: MsgsUntil(0.60),
-            EstimatedMessagesUntilCritical: MsgsUntil(0.80),
+            EstimatedMessagesUntilCritical: MsgsUntil(ContextCompactionDefaults.TriggerRatio),
             EstimatedMessagesUntilBlocking: MsgsUntil(0.92),
             AverageMessageTokens: avgMessageTokens);
     }
