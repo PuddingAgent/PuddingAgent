@@ -221,6 +221,8 @@ Task/Goal 保存状态、依赖、下一动作、等待对象和验收证据；M
 
 ### 5.2 压缩保留，但从生命周期事件改为上下文压力处理
 
+2026-09-15实施基线：572c394采用默认80%（下面85%是早期建议，已由本条替代），移除固定128K cap，保留输出预留和独立输入上限；循环内另有既有1024安全余量。Provider实报与本地估算分开，当前装配请求优先，checkpoint以前的usage失效。见[部署报告](../Reports/百万上下文频繁压缩修复-2026-09-15.md)。此子项已部署；有界Memory装配和无收益抑制等仍待实现。
+
 只切换前端 Session Tab 不触发压缩。新建独立任务 Session 不先压旧 Session；继续旧任务则读取 checkpoint + Memory。压力接近有效输入容量、显式 compact、模型容量变化等才进入 compaction 决策。
 
 统一计算 `effectiveInputLimit=min(providerMaxInputTokens, modelContextWindow-reservedOutput, configuredContextWindow-reservedOutput)-safetyMargin`，不存在的独立上限不参与min；若配置本身定义为“输入额度”，不能再扣一次输出。先统一字段语义，再按同一口径做 75% 预警、85% 候选压缩（初始建议）。替换目前 0.60/0.80、子代理0.65→0.50等互不解释的触发规则；这些不是必须照抄的新常量，先记录实际触发成本再校准。

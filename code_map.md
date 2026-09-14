@@ -4,6 +4,10 @@
 
 # PuddingAgent CodeMAP
 
+## 2026-09-15 百万上下文压力压缩（572c394，已部署）
+
+见[修复报告](Docs/Reports/百万上下文频繁压缩修复-2026-09-15.md)：ContextCompactionDefaults共享80%阈值；ContextCompactionService删除128K绝对cap、以CoverageManifest代际时间排除旧usage并优先当前请求；LlmOptions中的ContextUsageSnapshotStore区分实报与估算。141项定向回归通过，Core PID24908、只读context_health真实工具成功，UsedTokens与ProviderTotalTokens一致。按当前1M/384K配置约49.2万输入触发；A2无收益抑制、M01有界索引及长期/99%验收仍待完成。
+
 ## 2026-09-14 缓存99优化（部分修复，目标未达）
 
 见 [实测报告](Docs/Reports/缓存99优化与实测-2026-09-14.md)：4680cc5新增HistoryPrefixReconciler及ChatMessage本地SourceContentHash，在ContextWindowManager核对热历史后保留原消息/追加canonical尾部；c0641c1让TurnId和MessageId共同排除当前入站（含空TurnId）；8edab4f移除AgentContextEnvelopeRenderer的JSON缩进。92项Runtime+1项Core回归通过，PID34120已加载。最终冷恢复97.5490%、热续行98.9814%、合计98.2766%；现场仍走既有richer_in_memory_history分支，新增对齐分支的线上命中未验收。C99 v11仍InProgress/C01 v7仍NeedsReview，下一步C02最终请求变化诊断与冷恢复协议差异，不能宣称99%完成。
