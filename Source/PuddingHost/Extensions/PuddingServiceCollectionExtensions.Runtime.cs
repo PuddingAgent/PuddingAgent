@@ -143,7 +143,10 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<SkillPackageDownloadService>();
         builder.Services.AddPuddingAgentTool<HttpFetchSkill>();
         // TerminalSkill: registered via assembly scan (AddPuddingToolsFromAssembly) below
-        builder.Services.AddSingleton<FullTextIndexOptions>();
+        builder.Services.AddSingleton(sp => new FullTextIndexOptions
+        {
+            IndexRootDirectory = Path.Combine(sp.GetRequiredService<PuddingDataPaths>().DataRoot, "fulltext-index"),
+        });
         builder.Services.AddSingleton<IFullTextSearchEngine, LuceneSearchEngine>();
         // HOSTED-DISABLED: builder.Services.AddHostedService<IndexPrebuildService>();
         builder.Services.AddPuddingAgentTool<SearchGrepTool>();

@@ -205,6 +205,55 @@ public sealed class LuceneSearchEngineTests
     }
 
     [TestMethod]
+    public void IndexDirectory_Uses_Known_Persistent_Key()
+    {
+        using var engine = CreateEngine();
+        // 固定夹具可在独立 testhost 进程重跑，禁止用同一随机哈希再计算 expected。
+        var path = OperatingSystem.IsWindows() ? @"C:\Pudding\Logs" : "/Pudding/Logs";
+        var expected = OperatingSystem.IsWindows()
+            ? "e33f2ab6d227c6ee4e9172704e6f5df8ef682b7ca07fbb121f014f9545ef48f8"
+            : "73b9e55744b53512a270e38990536abbaf524bd66b6fa2d4d47b7dca6c506943";
+        Assert.AreEqual(Path.Combine(_tempDataDir, expected), engine.GetIndexDirectoryPath(path));
+    }
+
+    [TestMethod]
+    public void IndexDirectory_Normalizes_Aliases_And_Isolates_Different_Roots()
+    {
+        using var engine = CreateEngine();
+        var root = Path.Combine(_tempDataDir, "logs");
+        var key = engine.GetIndexDirectoryPath(root);
+        Assert.AreEqual(key, engine.GetIndexDirectoryPath(root.ToUpperInvariant() + Path.DirectorySeparatorChar));
+        Assert.AreEqual(key, engine.GetIndexDirectoryPath(Path.Combine(root, ".")));
+        Assert.AreNotEqual(key, engine.GetIndexDirectoryPath(root + "-other"));
+    }
+
+    [TestMethod]
+    public async Task Index_Reopens_And_Incrementally_Updates_After_Engine_Disposal()
+    {
+        var dir = CreateTestFiles();
+        string indexDirectory;
+        using (var first = CreateEngine())
+        {
+            var built = await first.BuildIndexAsync(dir);
+            Assert.IsTrue(built.Success, built.Error);
+            indexDirectory = first.GetIndexDirectoryPath(dir);
+        }
+
+        using var reopened = CreateEngine();
+        Assert.AreEqual(indexDirectory, reopened.GetIndexDirectoryPath(dir));
+        Assert.IsTrue(reopened.HasIndex(dir));
+        Assert.IsTrue((await reopened.SearchAsync("Needle", dir)).Matches.Count > 0);
+        var addedPath = Path.Combine(dir, "added.md");
+        await File.WriteAllTextAsync(addedPath, "freshlyaddedterm");
+        var refreshed = await reopened.BuildIndexAsync(dir);
+        Assert.IsTrue(refreshed.Success, refreshed.Error);
+        Assert.AreEqual(1, refreshed.IndexedFileCount, "Existing unchanged files must not be reindexed.");
+        var found = await reopened.SearchAsync("freshlyaddedterm", dir);
+        Assert.IsTrue(found.Success, found.Error);
+        Assert.IsTrue(found.Matches.Any(match => match.FilePath == addedPath));
+    }
+
+    [TestMethod]
     public async Task BuildIndex_And_HasIndex_Returns_True()
     {
         using var engine = CreateEngine();

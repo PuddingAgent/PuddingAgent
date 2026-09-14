@@ -78,12 +78,11 @@ public sealed class AgentLogRecallService
         if (!Directory.Exists(directory))
             return [];
 
-        if (!_searchEngine.HasIndex(directory))
-        {
-            var indexResult = await _searchEngine.BuildIndexAsync(directory, "*.md", ct);
-            if (!indexResult.Success)
-                return [];
-        }
+        // 稳定目录允许跨进程复用索引；每次先增量刷新，避免一直召回旧日志。
+        // BuildIndexAsync 自带目录锁、时间戳增量更新及删除文件清理。
+        var indexResult = await _searchEngine.BuildIndexAsync(directory, "*.md", ct);
+        if (!indexResult.Success)
+            return [];
 
         var searchResult = await _searchEngine.SearchAsync(query, directory, maxResults, null, null, ct);
         return searchResult.Success ? searchResult.Matches : [];

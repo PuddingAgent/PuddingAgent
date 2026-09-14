@@ -138,13 +138,28 @@ public sealed class AgentLogRecallServiceTests
         Assert.AreEqual(0, engine.SearchCalls.Count);
     }
 
+    [TestMethod]
+    public async Task RecallAsync_Refreshes_Existing_Index_Before_Each_Search()
+    {
+        using var temp = new TempDataRoot();
+        var engine = new FakeFullTextSearchEngine { IndexExists = true };
+        var service = new AgentLogRecallService(temp.Paths, engine);
+        var root = temp.Paths.AgentInstanceMessageLogsRoot("agent-1");
+        Directory.CreateDirectory(root);
+        await service.RecallAsync(new AgentLogRecallRequest("agent-1", "needle"));
+        await service.RecallAsync(new AgentLogRecallRequest("agent-1", "needle"));
+        CollectionAssert.AreEqual(new[] { "build", "search", "build", "search" }, engine.Operations);
+    }
+
     private sealed class FakeFullTextSearchEngine : IFullTextSearchEngine
     {
         public Dictionary<string, IReadOnlyList<FullTextSearchMatch>> Results { get; } = new(StringComparer.OrdinalIgnoreCase);
         public List<string> BuildDirectories { get; } = [];
         public List<(string Query, string Directory, int MaxResults)> SearchCalls { get; } = [];
 
-        public bool HasIndex(string directoryPath) => false;
+        public bool IndexExists { get; init; }
+        public List<string> Operations { get; } = [];
+        public bool HasIndex(string directoryPath) => IndexExists;
 
         public Task<FullTextSearchResult> SearchAsync(
             string query,
@@ -154,6 +169,7 @@ public sealed class AgentLogRecallServiceTests
             string? subDirectoryFilter = null,
             CancellationToken ct = default)
         {
+            Operations.Add("search");
             SearchCalls.Add((query, directoryPath, maxResults));
             var matches = Results.TryGetValue(directoryPath, out var value)
                 ? value.Take(maxResults).ToList()
@@ -166,6 +182,7 @@ public sealed class AgentLogRecallServiceTests
             string? filePatterns = null,
             CancellationToken ct = default)
         {
+            Operations.Add("build");
             BuildDirectories.Add(directoryPath);
             return Task.FromResult(new FullTextIndexResult(true, 1, 1, 1, null));
         }

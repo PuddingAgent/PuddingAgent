@@ -500,12 +500,14 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
         return _searcherCache[indexDir];
     }
 
-    private string GetIndexDirectoryPath(string directoryPath)
+    internal string GetIndexDirectoryPath(string directoryPath)
     {
         var normalized = Path.GetFullPath(directoryPath)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        // 使用目录路径的哈希作为索引子目录名
-        var hash = Math.Abs(normalized.GetHashCode(StringComparison.OrdinalIgnoreCase)).ToString("x8");
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .ToUpperInvariant();
+        // 持久化标识必须跨进程稳定；String.GetHashCode 会随 Core 重启变化。
+        // 保持此引擎现有的 Windows 路径大小写语义，缓存无需兼容旧随机目录。
+        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)));
         return Path.Combine(_options.IndexRootDirectory, hash);
     }
 
