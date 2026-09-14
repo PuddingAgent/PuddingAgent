@@ -1,5 +1,7 @@
 # PuddingAgent 下一阶段：缓存 >99%、Memory 主导的长程自治与架构收敛
 
+> **2026-09-14 Memory定位纠偏：** [Memory快照索引与历史溯源设计](Memory快照索引与历史溯源设计-2026-09-14.md)是§4–5的最新补充。Memory是Agent主动维护的当前知识快照、多级索引和外部正文引用；记忆图书馆复用Book/Page/Pointer；聊天与向量命中只提供候选证据，不能代表最终裁决。先M02最小写读，再M01移除默认日志召回/整摘要，C03完善按需溯源；此前性能报告的日志优先路线不再适用。设计已明确，运行时尚未按此修改。
+
 > **后续用户修订：子代理采用弹性预算。** [最新子代理设计](子代理弹性预算与双向交互设计-2026-09-12.md)及ADR-087规定600只是可选示例，不是全局默认/下限/上限；支持短轮次及任意合法正整数。生命周期系统托管，加入双向send_message、120秒ask_question、按Run停止和Web检查器。下文600验收数字按“一个必须支持的实例”理解，独立LLM grace已改为系统有界清理。
 
 
@@ -167,7 +169,7 @@ Task/Goal 保存状态、依赖、下一动作、等待对象和验收证据；M
 
 不要求每个工具调用后再写一份摘要。连续编辑、已存在且未变的事实不重复写。工作段可每约 20–50 轮检查一次“是否有未持久化的新事实”，这是可配置检查频率，**不是中止/重开 Session 的阈值**；优先使用事件触发。无新增则零写入、零额外模型调用。
 
-保留现有 `save_memory`、`manage_memory edit_page`、`grep_memory`/`search_memory`；保持 Wiki Book v1 的简单写入面。框架提供稳定业务 key、expectedVersion 和写入回执，写入层执行 upsert/replace 与索引更新。不要重新引入 F0–F10、多 intent merge/reuse/validate 链或让模型操作复杂维护状态机。
+保留现有 `save_memory`、`manage_memory` 的页/章节更新、`grep_memory`/`search_memory`；保持 Wiki Book v1 的简单写入面。`edit_page` 是拟收敛的目标语义，不是现有 `manage_memory` 已实现的 action。框架提供稳定业务 key、expectedVersion 和写入回执，写入层执行 upsert/replace 与索引更新。不要重新引入 F0–F10、多 intent merge/reuse/validate 链或让模型操作复杂维护状态机。
 
 对关键边界使用“记忆回执 + checkpoint 引用已持久化”作为完成依据。崩溃可能发生在任何一条工具返回前，不能保证未确认内容已经保存；恢复时从 canonical transcript 和工具 postcondition 补查这一小段，不重新总结全部历史。
 

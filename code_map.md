@@ -4,6 +4,10 @@
 
 # PuddingAgent CodeMAP
 
+## 2026-09-14 Memory快照与历史溯源定位纠偏
+
+权威补充 `Docs/Features/Memory快照索引与历史溯源设计-2026-09-14.md` 与ADR-085：Memory是Agent主动维护的当前结论及项目/概念/场景多级索引，正文唯一存放在外部文件/目录或Book/Page；聊天与向量命中只是候选证据，历史按需查看前后文及后续修订。当前源码仍有ContextPipeline自动日志召回、首轮整摘要和MemoryLibraryTool少量结果隐式探索，均为后续删除/收敛目标。本轮未改源码。M02升P0/v2先实现最小快照写读，M01/v4再取消默认自动历史注入，C03/v2完善受约束向量/溯源；归档卡bfe2286/v2不再作为默认Memory前置。设计与四张看板已同步，未宣称产品完成。
+
 ## 2026-09-14 首轮上下文准备性能修复
 
 `Docs/Reports/首轮上下文准备性能修复-2026-09-14.md`：AgentRunProjectionService 改用有界事件头查询（00bd0af）；ContextPipeline/ContextWindowManager 增加阶段计时（ddc25a2）；LuceneSearchEngine 使用稳定 SHA-256 目录，Host 从 PuddingDataPaths 注入索引路径，AgentLogRecall 每次增量刷新（8ddd0d3）。新 Core PID29400 跨进程复用索引，日志召回12.8秒→243毫秒、上下文13.7秒→683毫秒；相同两工具任务 canonical completed。用户同期恢复LM Studio，因此原87.6秒全量变化不能只归因代码。M01输入减负/99%/长程仍未验收；新增看板bfe2286047da49ec969c11717c46a81c修复归档身份与DataRoot。
