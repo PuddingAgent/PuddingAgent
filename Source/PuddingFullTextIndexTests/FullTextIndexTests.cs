@@ -205,6 +205,36 @@ public sealed class LuceneSearchEngineTests
     }
 
     [TestMethod]
+    public async Task Search_FileScope_IsAppliedBeforeTopK_AndCountsScopedHits()
+    {
+        using var engine = CreateEngine();
+        var dir = CreateTestFiles();
+        var selected = Path.Combine(dir, "selected.md");
+        await File.WriteAllTextAsync(selected, "scopedneedle lower rank\nscopedneedle other line");
+        await File.WriteAllTextAsync(Path.Combine(dir, "noise.md"), string.Join('\n', Enumerable.Repeat("scopedneedle", 50)));
+        Assert.IsTrue((await engine.BuildIndexAsync(dir)).Success);
+        var result = await engine.SearchAsync("scopedneedle", dir, 1,
+            scope: new FullTextSearchScope([selected], LiteralQuery: true));
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.AreEqual(1, result.Matches.Count);
+        Assert.AreEqual(selected, result.Matches[0].FilePath);
+        Assert.AreEqual(2, result.TotalMatches);
+        var empty = await engine.SearchAsync("scopedneedle", dir, scope: new FullTextSearchScope([]));
+        Assert.AreEqual(0, empty.Matches.Count);
+    }
+
+    [TestMethod]
+    public async Task Search_LiteralQuery_DoesNotExecuteLuceneFieldSyntax()
+    {
+        using var engine = CreateEngine();
+        var dir = CreateTestFiles();
+        Assert.IsTrue((await engine.BuildIndexAsync(dir)).Success);
+        var result = await engine.SearchAsync("Needle [unfinished", dir,
+            scope: new FullTextSearchScope(LiteralQuery: true));
+        Assert.IsTrue(result.Success, result.Error);
+    }
+
+    [TestMethod]
     public void IndexDirectory_Uses_Known_Persistent_Key()
     {
         using var engine = CreateEngine();

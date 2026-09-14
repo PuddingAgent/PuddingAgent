@@ -155,6 +155,25 @@ public sealed class QuerySessionLogsToolTests
         Assert.IsTrue(tool.Descriptor.Parameters.Properties.Any(p => p.Name == "query"));
     }
 
+    [TestMethod]
+    public async Task Fts_PreservesScopeFailureAndHistoricalEvidenceSemantics()
+    {
+        var service = new CapturingRawSessionLogService();
+        var tool = new QuerySessionLogsTool(service, NullLogger<QuerySessionLogsTool>.Instance);
+        var result = await ExecuteAsync(tool, new Dictionary<string, string>
+        {
+            ["action"] = "grep", ["fts"] = "true", ["query"] = "needle",
+            ["session_id"] = "narrow-session", ["day"] = "2026-09-14",
+        });
+        Assert.AreEqual("narrow-session", service.LastSearchRequest?.SessionId);
+        Assert.AreEqual("agent-1", service.LastSearchRequest?.AgentInstanceId);
+        using var json = JsonDocument.Parse(result.Output!);
+        Assert.AreEqual("unavailable", json.RootElement.GetProperty("status").GetString());
+        Assert.AreEqual("historical_discussion", json.RootElement.GetProperty("evidenceKind").GetString());
+        Assert.AreEqual("unverified", json.RootElement.GetProperty("decisionStatus").GetString());
+        Assert.AreEqual("index unavailable", json.RootElement.GetProperty("error").GetString());
+    }
+
     private static Task<ToolExecutionResult> ExecuteAsync(
         QuerySessionLogsTool tool,
         IReadOnlyDictionary<string, string> parameters) =>
@@ -324,6 +343,9 @@ public sealed class QuerySessionLogsToolTests
         public Task<RawSessionLogSearchResult> GrepFtsAsync(
             RawSessionLogSearchRequest request,
             CancellationToken ct = default)
-            => Task.FromResult(new RawSessionLogSearchResult([], false));
+        {
+            LastSearchRequest = request;
+            return Task.FromResult(new RawSessionLogSearchResult([], false, "unavailable", "index unavailable"));
+        }
     }
 }

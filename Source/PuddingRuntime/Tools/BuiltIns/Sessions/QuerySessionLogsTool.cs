@@ -135,20 +135,28 @@ public sealed class QuerySessionLogsTool : PuddingToolBase<QuerySessionLogsArgs>
                             Day = root.GetString("day", null),
                             FromDay = root.GetString("from_day", null),
                             ToDay = root.GetString("to_day", null),
+                            SessionId = root.GetString("session_id", null),
+                            Regex = IsTrue(root, "regex"),
                             Limit = limit <= 0 ? 20 : limit,
                         }, ct);
 
                         return ToolExecutionResult.Ok(JsonSerializer.Serialize(new
                         {
-                            status = "ok",
+                            status = ftsResult.Status,
                             action,
                             scope = "fts_md_logs",
                             engine = "lucene_jieba",
+                            evidenceKind = "historical_discussion",
+                            decisionStatus = "unverified",
+                            note = "历史命中不代表当前有效结论。SequenceNum是Markdown行号；按sessionId用messages读取前后文，并核对后续修订。覆盖仅限有效日期内已索引的Markdown日志。",
+                            ftsResult.Error,
+                            ftsResult.Coverage,
+                            ftsResult.FromDay,
+                            ftsResult.ToDay,
                             workspaceId,
                             count = ftsResult.Matches.Count,
                             ftsResult.HasMore,
                             matches = ftsResult.Matches,
-                            note = "使用 Lucene 全文检索（jieba 分词）搜索 .md 消息日志文件。",
                         }, JsonOptions));
                     }
 
@@ -280,6 +288,10 @@ public sealed class QuerySessionLogsTool : PuddingToolBase<QuerySessionLogsArgs>
                 default:
                     return ToolExecutionResult.Ok(SerializeError(action, $"Unknown action: {action}"));
             }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -481,7 +493,7 @@ public sealed record QuerySessionLogsArgs
     [ToolParam("Maximum rows to return.")]
     public int? Limit { get; init; }
 
-    [ToolParam("true to use Lucene full-text search for grep when available.")]
+    [ToolParam("true for explicit historical full-text grep. Plain text only; defaults to last 7 days, at most 31 days per call, 20 short hits. Use session_id to narrow scope. Hits are discussion evidence, not current decisions.")]
     public string? Fts { get; init; }
 
     [ToolParam("Mode hint: debug or diagnostic enables raw diagnostic actions.")]

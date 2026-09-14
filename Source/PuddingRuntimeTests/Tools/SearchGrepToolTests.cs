@@ -1750,7 +1750,8 @@ public sealed class SearchGrepToolTests
             int m = 30,
             string? fileExtensionFilter = null,
             string? subDirectoryFilter = null,
-            CancellationToken ct = default) => Task.FromResult(_searchResult);
+            CancellationToken ct = default,
+            FullTextSearchScope? scope = null) => Task.FromResult(_searchResult);
         public Task<FullTextIndexResult> BuildIndexAsync(string d, string? fp, CancellationToken ct) => Task.FromResult(new FullTextIndexResult(true, 0, 0, 0, null));
         public bool RemoveIndex(string d) => true;
     }

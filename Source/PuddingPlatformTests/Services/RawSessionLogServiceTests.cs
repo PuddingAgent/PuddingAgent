@@ -8,7 +8,7 @@ using PuddingPlatform.Services;
 namespace PuddingPlatformTests.Services;
 
 [TestClass]
-public sealed class RawSessionLogServiceTests
+public sealed partial class RawSessionLogServiceTests
 {
     [TestMethod]
     public async Task GrepAsync_ReturnsOnlyCurrentWorkspaceEvidence()

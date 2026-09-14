@@ -69,9 +69,15 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
         int maxResults = 30,
         string? fileExtensionFilter = null,
         string? subDirectoryFilter = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        FullTextSearchScope? scope = null)
     {
         var sw = Stopwatch.StartNew();
+        ct.ThrowIfCancellationRequested();
+        if (scope?.FilePaths is { Count: 0 })
+            return new FullTextSearchResult(true, [], null, 0, sw.ElapsedMilliseconds);
+        if (scope?.FilePaths is { Count: > 512 })
+            return new FullTextSearchResult(false, [], "Search scope exceeds 512 files; narrow the scope.", 0, sw.ElapsedMilliseconds);
         var indexDir = GetIndexDirectoryPath(directoryPath);
 
         if (!HasIndex(directoryPath))
@@ -106,7 +112,19 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
             var searcher = GetOrRefreshSearcher(indexDir);
             var parser = new MultiFieldQueryParser(MatchVersion,
                 new[] { "content", "file_name" }, _analyzer);
-            var luceneQuery = parser.Parse(query);
+            Query luceneQuery = parser.Parse(scope?.LiteralQuery == true ? QueryParserBase.Escape(query) : query);
+            if (scope?.FilePaths is { } paths)
+            {
+                var files = new BooleanQuery { MinimumNumberShouldMatch = 1 };
+                foreach (var path in paths.Distinct(StringComparer.Ordinal))
+                    files.Add(new TermQuery(new Term("path", path)), Occur.SHOULD);
+                luceneQuery = new BooleanQuery
+                {
+                    { luceneQuery, Occur.MUST },
+                    { files, Occur.MUST },
+                };
+            }
+            ct.ThrowIfCancellationRequested();
 
             var hits = searcher.Search(luceneQuery, fetchCount);
             var matches = new List<FullTextSearchMatch>();
@@ -144,7 +162,9 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
                 matches.Add(new FullTextSearchMatch(path, lineNumber, text ?? string.Empty));
             }
 
-            return new FullTextSearchResult(true, matches, null, filteredCount, sw.ElapsedMilliseconds);
+            return new FullTextSearchResult(true, matches, null,
+                scope is not null && extSet is null && subDirPrefix is null ? hits.TotalHits : filteredCount,
+                sw.ElapsedMilliseconds);
         }
         catch (ParseException ex)
         {

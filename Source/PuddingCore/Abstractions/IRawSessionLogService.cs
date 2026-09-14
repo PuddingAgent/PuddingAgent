@@ -106,7 +106,12 @@ public sealed record RawSessionLogSearchRequest
 /// <summary>原始日志搜索结果。</summary>
 public sealed record RawSessionLogSearchResult(
     IReadOnlyList<RawSessionLogMatch> Matches,
-    bool HasMore);
+    bool HasMore,
+    string Status = "ok",
+    string? Error = null,
+    string? Coverage = null,
+    string? FromDay = null,
+    string? ToDay = null);
 
 /// <summary>原始日志搜索命中。</summary>
 public sealed record RawSessionLogMatch(

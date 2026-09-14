@@ -498,7 +498,8 @@ public sealed class FileSearchToolTests
             int maxResults = 30,
             string? fileExtensionFilter = null,
             string? subDirectoryFilter = null,
-            CancellationToken ct = default) =>
+            CancellationToken ct = default,
+            FullTextSearchScope? scope = null) =>
             Task.FromResult(searchResult);
 
         public Task<FullTextIndexResult> BuildIndexAsync(

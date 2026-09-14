@@ -24,7 +24,8 @@ public interface IFullTextSearchEngine
         int maxResults = 30,
         string? fileExtensionFilter = null,
         string? subDirectoryFilter = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        FullTextSearchScope? scope = null);
 
     /// <summary>
     /// 构建或更新目录的全文索引。
@@ -54,6 +55,11 @@ public sealed record FullTextSearchMatch(
     string FilePath,
     int LineNumber,
     string LineText);
+
+/// <summary>Query-time scope, applied before ranking and limiting; null paths means unrestricted.</summary>
+public sealed record FullTextSearchScope(
+    IReadOnlyList<string>? FilePaths = null,
+    bool LiteralQuery = false);
 
 /// <summary>索引构建/更新结果。</summary>
 public sealed record FullTextIndexResult(

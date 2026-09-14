@@ -20,7 +20,7 @@ namespace PuddingPlatform.Services;
 /// 不再伪造旧的 delta/done/usage 传输帧。
 /// </para>
 /// </summary>
-public sealed class RawSessionLogService : IRawSessionLogService
+public sealed partial class RawSessionLogService : IRawSessionLogService
 {
     private const int MaxListLimit = 500;
     private const int MaxMessageLimit = 1_000;
@@ -692,70 +692,4 @@ public sealed class RawSessionLogService : IRawSessionLogService
     private static int Clamp(int value, int min, int max)
         => Math.Min(Math.Max(value, min), max);
 
-    // ── FTS 搜索（Lucene + jieba 分词）──
-
-    /// <summary>
-    /// 在 Agent 私有 .md 消息日志中通过 Lucene 全文检索。
-    /// 需要 agent_instance_id 定位日志目录。
-    /// </summary>
-    public async Task<RawSessionLogSearchResult> GrepFtsAsync(
-        RawSessionLogSearchRequest request,
-        CancellationToken ct = default)
-    {
-        if (_ftsEngine == null || _dataPaths == null)
-            return new RawSessionLogSearchResult([], false);
-
-        if (string.IsNullOrWhiteSpace(request.WorkspaceId)
-            || string.IsNullOrWhiteSpace(request.Query)
-            || string.IsNullOrWhiteSpace(request.AgentInstanceId))
-            return new RawSessionLogSearchResult([], false);
-
-        var limit = Clamp(request.Limit, 1, MaxSearchLimit);
-        var messageRoot = _dataPaths.AgentInstanceMessageLogsRoot(request.AgentInstanceId);
-
-        if (!Directory.Exists(messageRoot))
-            return new RawSessionLogSearchResult([], false);
-
-        // 按需建索引（首次调用 ~几百ms，后续命中缓存）
-        if (!_ftsEngine.HasIndex(messageRoot))
-        {
-            var indexResult = await _ftsEngine.BuildIndexAsync(messageRoot, "*.md", ct);
-            if (!indexResult.Success)
-                return new RawSessionLogSearchResult([], false);
-        }
-
-        // Lucene 全文搜索
-        var searchResult = await _ftsEngine.SearchAsync(request.Query, messageRoot, limit, null, null, ct);
-        if (!searchResult.Success)
-            return new RawSessionLogSearchResult([], false);
-
-        // 转换 Lucene 结果 → RawSessionLogMatch
-        var matches = searchResult.Matches
-            .Select(m => LuceneMatchToSessionLogMatch(m, request.WorkspaceId, request.AgentInstanceId!, messageRoot))
-            .Where(m => IsInDayRange(m.Day, request.Day ?? request.FromDay, request.Day ?? request.ToDay))
-            .Take(limit)
-            .ToList();
-
-        return new RawSessionLogSearchResult(matches, searchResult.TotalMatches > limit);
-    }
-
-    private static RawSessionLogMatch LuceneMatchToSessionLogMatch(
-        FullTextSearchMatch match, string workspaceId, string agentId, string root)
-    {
-        var relativePath = Path.GetRelativePath(root, match.FilePath);
-        // 路径结构: {date}/{session}.md  →  提取 date
-        var day = relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-            .FirstOrDefault() ?? string.Empty;
-        var sessionId = Path.GetFileNameWithoutExtension(match.FilePath);
-
-        return new RawSessionLogMatch(
-            sessionId,
-            workspaceId,
-            day,
-            match.LineNumber,    // SequenceNum 用行号代替（.md 文件无 DB sequence）
-            "message",           // EventType 固定为 message
-            day,                 // RecordedAt 用日期
-            match.LineText,      // Snippet 就是命中行原文
-            $"session-log-fts:{day}:{sessionId}:{match.LineNumber}");
-    }
 }
