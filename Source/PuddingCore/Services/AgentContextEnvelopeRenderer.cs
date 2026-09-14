@@ -9,7 +9,9 @@ public static class AgentContextEnvelopeRenderer
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        WriteIndented = true,
+        // This JSON is model input. Formatting whitespace is fresh input on every
+        // delivery; keep all metadata and payload values without pretty-printing.
+        WriteIndented = false,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
