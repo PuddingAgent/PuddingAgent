@@ -125,6 +125,43 @@ task.ActiveAssignmentId = null;   // 仅此处；binding.AssignmentId 未被改�
 **事实 C：`ReleaseAssignment` 的残留语义还会污染既有探针。**
 `tracker-legacy-blocked-*`（`TaskExecutionRepairCoordinator.cs:415`）与 `tgb-*` 的判定都读 binding/attempt；binding 上的陈旧 `AssignmentId` 可能让「已释放」被识别为「仍归属」。**实施 F1（保留 assignment）时必须同时给出这条残留的清理或对齐策略**，否则新旧语义叠加会产出第三类误判。
 
+### 2.7 静态定稿（本轮，推翻 §2.6 的「投递丢包」主假设）
+
+**事实 D：`ActiveTask` 在生产代码里只有一个构造点，且只有一条可达路径。**
+
+- 唯一构造点：`AgentInvocationDispatchFactory.BuildActiveTask`（`AgentInvocationDispatchFactory.cs:130-160`），要求 metadata **同时**含 `task_id` 与 `assignment_id`，任一缺失即返回 `null`。
+- 唯一生产调用点：`MessageDeliveryDispatcher.cs:665`（`grep CreateForWorkspaceAgentAsync` 在 `Source/PuddingRuntime` 仅命中 2 处，另一处是接口声明 `:28`）。
+
+⇒ 只有**消息投递路径**（MessageDeliveries → inbox claim → dispatcher）能把 metadata 变成 `ActiveTask`。
+
+**事实 E：canonical turn 通道结构上无法携带 `ActiveTask`。**
+
+- `TurnExecutorAdapter.ExecuteAsync`（`TurnExecutorAdapter.cs:27-56`）逐字段拷贝 `TurnExecutionContext` 到 `RuntimeDispatchRequest`，拷贝了 `TaskPlanId/TaskNodeId/ParentTaskNodeId`，**没有 `ActiveTask` 赋值**。
+- `TurnExecutionContext`（`Source/PuddingCore/Runtime/ITurnExecutor.cs:26-70`）**本身也没有 ActiveTask 字段**，只有 `TaskPlanId/TaskNodeId/ParentTaskNodeId`（init-only）。
+
+⇒ 凡走 `ITurnExecutor` 的执行——**Goal 续跑正是这条**（`GoalContinuationWorker` → `AcceptBatchAsync` 生成 `ChatExecutionCommand`，不发 envelope/delivery）——`ActiveTask` 恒为 `null`，与 metadata 是否完整**无关**。
+
+**事实 F：task 工具只从 dispatch request 取 ActiveTask。**
+
+- `ToolInvocationService.cs:125: ActiveTask = request.ActiveTask`。
+
+⇒ 事实 E 直接解释工具侧 `task.active_context_missing` + `context_rebuild{stage:"lookup", outcome:"not_visible"}`。
+
+**修正后的因果闭环（取代 §2.5/§2.6 的末端假设）**
+
+1. Task-bound Goal 迭代经 `AcceptBatchAsync` 落 **canonical turn**，命令行携带完整 task metadata（`ConversationAcceptanceStore.cs:144`）。
+2. 该 turn 由 `ITurnExecutor` 执行 → `RuntimeDispatchRequest.ActiveTask == null`（事实 E）→ 工具层无归属（事实 F）。
+3. 迭代无法 `task_update` 收口（`active_context_missing`）→ ~100 s 后非终态结束。
+4. `ConservativeGoalIterationVerifier` → Blocked（`tgb-*`）→ 结算 `ReleaseAssignment`（清 `task.ActiveAssignmentId`）。
+5. 通道关闭：`ApplyDispositionAsync` 归属校验无解 → 单向死胡同（§2.5）。
+
+**事实 G（次要但真实，独立缺陷）：消息投递路径存在「事件侧 metadata 被丢弃」缺陷。**
+
+- `MessageDeliveryDispatcher.cs:405-407`：`claimed.Metadata.Count > 0 ? claimed.Metadata : metadata ?? new()` —— claim 侧非空时**整体替换**而非合并。
+- `MessageDeliveryEntity` **没有 metadata 列**（`MessageFabricStore.cs:62-78` 落库字段清单）；claim 侧 metadata 来自 `RoomMessages.MetadataJson`（`MessageFabricStore.cs:455,494` ← envelope `MessageRouter.cs:56` / `MessageSystem.cs:97`）。
+
+⇒ envelope 与 room message 的 metadata 一旦不同步，事件侧补充键会被静默丢弃。登记为独立缺陷，**不作为本卡主因**。
+
 ---
 
 ## 3. 影响
@@ -154,12 +191,15 @@ task.ActiveAssignmentId = null;   // 仅此处；binding.AssignmentId 未被改�
 
 风险：fail-closed 语义（ADR 明确要求 authoritative 决策落库失败必须 fail closed）必须区分「策略拒绝」与「迭代未完成」——F2 只放宽后者。中高风险，必须与 ADR 对齐后再改。
 
-### F3（前置，运行时）：Goal 迭代派发必须端到端携带 task/assignment 元数据
+### F3（前置，运行时）：为 canonical turn 补 task 上下文传递位（§2.7 已修正定位）
 
-`GoalContinuationWorker.cs:137-160` → `MessageEnvelope.Metadata` → `MessageDeliveryDispatcher.effectiveMetadata`（`MessageDeliveryDispatcher.cs:405-407`）→ `AgentInvocationDispatchFactory.BuildActiveTask`。
-任一环丢失即 `ActiveTask=null`。F1/F2 都依赖此链路可用（否则归属者仍无上下文）。**先补单测**：以 Goal 续跑 envelope 为输入断言 `BuildActiveTask` 非空；再补投递层断言。
+§2.6 曾把 F3 定位为「补 metadata 断言」，§2.7 事实 E 证明**断言补不出通道**：`ITurnExecutor` 通道没有 `ActiveTask` 传递位，F1/F2 依赖的归属上下文在此路径上永不可得。修正为三步：
 
-风险：低（补测试 + 断言，不改语义）。
+- **F3a（必需，运行时）**：为 `TurnExecutionContext` 增加任务上下文传递位（`ActiveTaskRuntimeContext? ActiveTask`，或结构化的 `TaskId/AssignmentId/ExpectedVersion` 三键），由 canonical turn 构建方从 `ChatExecutionCommandEntity.MetadataJson` 填充——`ExecutionCommandReader` 已在解析同一份 metadata，是天然复用点；并在 `TurnExecutorAdapter.cs:27-56` 透传至 `RuntimeDispatchRequest.ActiveTask`。判据与 `BuildActiveTask` 同源（`task_id`+`assignment_id` 双键缺失即 `null`，保持 fail-safe）。
+- **F3b（可选）**：若要求 ActiveTask 随 turn 冻结，则同时进 journal anchor；`AgentExecutionService.cs:354` 的 wakeup 路径已支持 `anchor.ActiveTask` 透传，无需改动。
+- **F3c（独立缺陷）**：`MessageDeliveryDispatcher` 的 metadata 由「整体替换」改为「合并」（event 侧补齐 claim 侧缺失键），登记单独卡，不阻塞本卡。
+
+风险：F3a 涉及 `TurnExecutionContext` 这一 ABI 级共享契约，**新增字段前必须先统计构造点影响面**（FastPath / 子代理 / 测试夹具）；判据 fail-safe，低风险。F3c 需确认 envelope 与 room message metadata 是否设计上同源，避免掩盖真实丢失。
 
 ### 否决项
 
@@ -174,9 +214,11 @@ task.ActiveAssignmentId = null;   // 仅此处；binding.AssignmentId 未被改�
 2. 工具层 E2E：该状态下 `task_update(disposition=todo)` 成功（`NeedsReview → Ready`），`progress/completed` 仍 `state_conflict`（fail closed 不变）。
 3. 派发链单测：Goal 续跑 envelope → `ActiveTask` 非空且 `task_id/assignment_id/expected_version` 与 binding 一致。
 4. 生产复现验证：同一张 P0 卡连续 2 轮「派发→迭代→结算」后**不再**出现 `tgb-*` 的终态 Blocked，且 worker 每轮都能 `task_claim` 成功。
+5. canonical turn 通道单测（§2.7 事实 E 的回归锁）：给定含 `task_id/assignment_id` 的 command metadata → 生成的 `RuntimeDispatchRequest.ActiveTask` 非空且 `workspace/task/assignment/expected_version` 与 binding 一致；缺失任一键 → `null`。
 
 ## 6. 未闭合问题（下一轮）
 
-- §2.5 断点定位（只读探针：`task_goal_bindings.assignment_id` / `message_deliveries.metadata`）。
+- ~~§2.5 断点定位（只读探针：`task_goal_bindings.assignment_id` / `message_deliveries.metadata`）~~ → **本轮已由静态定稿取代**（§2.7 事实 D/E/F）。DB 只读探针的剩余用途**仅**于确认 iteration terminal kind，不再用于 ActiveTask 断点。
+- `TurnExecutionContext` 新增字段的构造点影响面统计（FastPath / 子代理 / 测试夹具 / journal anchor 兼容）。
 - Iteration 寿命 94–108 s 的真实 terminal kind（`evidence_incomplete` vs `iteration_aborted`）——决定 F2 的放宽边界。
 - `tgb-*` 与 `tracker-legacy-blocked-*` 两条闩锁的统一收口（卡 `e2c35d6e`）。
