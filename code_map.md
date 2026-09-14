@@ -4,6 +4,10 @@
 
 # PuddingAgent CodeMAP
 
+## 2026-09-15 自动审计后续设计（ADR-091，Proposed）
+
+见[代码级设计](Docs/Features/自动审计与执行准入闭环设计-2026-09-15.md)、[ADR-091](Docs/07架构/105ADR-091自动审计与执行准入闭环ADR.md)和[阶段卡记录](Docs/Reports/自动审计方案与派发记录-2026-09-15.md)。现状入口：AgentFirewall、Tools/Approval/LlmToolApprovalReviewer、InMemoryToolApprovalService/AuthorizationService、PuddingToolRegistry.cs 内 PuddingToolExecutionService，以及 Web autoReviewClassifier/useAutoReviewClassifier/ChatMain。方案统一执行准入、增量行为审计与外部验证的修复循环；本轮仅文档和任务派发，未修改/部署这些产品代码。
+
 ## 2026-09-15 历史压缩状态显示修复（46679d7，已发布静态资源）
 
 见[复查报告](Docs/Reports/压缩频繁复查与历史状态显示修复-2026-09-15.md)：新Core启动后的本轮观察无新compaction事件；useCompaction历史完成使用occurredAt绝对时间，未知不冒充刚刚，终态不被迟到started重新激活，reset清除旧toast。14项前端回归通过，隔离构建并发布148个静态文件；/admin/chat已返回umi.42511e7c.js且hash核对一致，Core PID24908未重启。A2后台无收益抑制仍执行中，不能将UI修复当作长期频次或99%验收。
