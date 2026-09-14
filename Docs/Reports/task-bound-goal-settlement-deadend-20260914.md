@@ -222,3 +222,95 @@ task.ActiveAssignmentId = null;   // 仅此处；binding.AssignmentId 未被改�
 - `TurnExecutionContext` 新增字段的构造点影响面统计（FastPath / 子代理 / 测试夹具 / journal anchor 兼容）。
 - Iteration 寿命 94–108 s 的真实 terminal kind（`evidence_incomplete` vs `iteration_aborted`）——决定 F2 的放宽边界。
 - `tgb-*` 与 `tracker-legacy-blocked-*` 两条闩锁的统一收口（卡 `e2c35d6e`）。
+
+---
+
+## 2.8 事实 H（2026-09-14 11:40 BJT 增补，本缺陷的关键收口证据）
+
+**命令型执行路径的 metadata 已完整生成；缺的不是数据，而是「载体」。**
+
+`GoalContinuationWorker.DispatchOneAsync`（`Source/PuddingPlatform/Services/Goals/GoalContinuationWorker.cs:137-158`）在构造 Goal 迭代命令时，
+**已经写入完整的 ADR-072 §9.1 ActiveTask 键集**：
+
+```csharp
+metadata["origin"] = "task.auto";
+metadata["task_id"] = task.TaskId;
+metadata["assignment_id"] = taskBinding.AssignmentId;
+metadata["expected_version"] = taskBinding.ExpectedTaskVersion?.ToString() ?? task.Version.ToString();
+metadata["priority"] = task.Priority.ToString().ToLowerInvariant();
+metadata["execution_window"] = task.ExecutionWindow switch { … };   // inherit|anytime|off_peak_only
+metadata["dispatch_idempotency_key"] = taskBinding.IdempotencyKey ?? taskBinding.BindingId;
+metadata["reservation_fencing_token"] = …;                          // 有值时
+metadata[TaskPlanId / TaskPlanFingerprint / TaskNodeId / ParentTaskNodeId] = …;
+```
+
+这与**投递路径消费端** `AgentInvocationDispatchFactory.BuildActiveTask`（`Source/PuddingRuntime/Services/AgentInvocationDispatchFactory.cs:140-167`）读取的键**完全一致**
+（`task_id` / `assignment_id` / `origin` / `priority` / `execution_window` / `expected_version` / `policy_version` / `dispatch_idempotency_key` / `reservation_fencing_token`，且 `task_id`+`assignment_id` 缺一即返回 null）。
+
+**断点因此被精确框定为「命令路径缺 3 个载体」，而非「metadata 未生成」：**
+
+| # | 位置 | 现状 | 缺口 |
+|---|---|---|---|
+| 1 | `ChatExecutionCommands.metadata_json` | 已含完整 ActiveTask 键 | — |
+| 2 | `ExecutionCommandReader.MapAsync`（`Source/PuddingPlatform/Services/ExecutionCommandReader.cs:68-179`） | `:81` 已 `ParseMetadata(entity.MetadataJson)`，但只消费 workunit 白名单键（plan/fingerprint/node/parent_node），`return result with { WorkUnit = … }` | **丢弃** ActiveTask 键 |
+| 3 | `ExecutionCommandRecord`（`Source/PuddingCore/Platform/IExecutionCommandReader.cs:4-20`） | 有 `WorkUnit`，**无** ActiveTask/Assignment 字段 | 无字段 |
+| 4 | `TurnExecutionContext`（`Source/PuddingCore/Runtime/ITurnExecutor.cs:26-70`） | 有 `TaskPlanId`/`TaskNodeId`/`ParentTaskNodeId`，**无** `ActiveTask` | 无成员 |
+| 5 | `TurnExecutorAdapter.cs:27-56` | 逐字段映射 `RuntimeDispatchRequest`，**未赋值 `ActiveTask`** | 未透传（而 `MessageContracts.cs:206` **已有** `RuntimeDispatchRequest.ActiveTask`） |
+| 6 | 下游 | **已就绪**：`AgentExecutionService.cs:354 ActiveTask = anchor.ActiveTask`；`AgentExecutionService.Buffered.cs:1051 / :1596 / :1751`、`AgentExecutionService.Streaming.cs:1402` 均 `ActiveTask = request.ActiveTask` → `ToolInvocationService.cs:125` | — |
+
+**结论（本缺陷可编码级收口）**：F3a 是**纯管道插入，不需要任何新语义**，共 5 个插入点（见 §7）。
+且**下游 4 处赋值证明「载体补上即通」**——`ToolInvocationRequest.ActiveTask` 的唯一生产者就是 `request.ActiveTask`。
+
+**可复现的三条断言**（供验收）
+1. `grep ActiveTask Source/PuddingCore/Runtime/ITurnExecutor.cs` → 0 命中（无成员）。
+2. `grep ActiveTask Source/PuddingRuntime/Services/TurnExecutorAdapter.cs` → 0 命中（未透传）。
+3. `grep ActiveTask Source/PuddingCore/Platform/MessageContracts.cs` → `:206` 命中（目标字段已存在，无需新增契约）。
+
+---
+
+## 7 附录 A：F3a 实施规格（可编码级，逐点锚点）
+
+> 目标：让 canonical 命令路径（Goal 迭代）携带 `ActiveTask`，使 `task_claim`/`task_update` 在**首次**执行期即可 canonical 收口，从源头阻断「~100 s 非终态 → `tgb-*` Blocked → 结算清 ActiveAssignmentId」。
+
+### P1 `Source/PuddingCore/Runtime/ITurnExecutor.cs`
+- 文件头 using 增加 `using PuddingCode.Tasks;`（`ActiveTaskRuntimeContext` 定义于 `Source/PuddingCore/Tasks/ActiveTaskRuntimeContext.cs:12`，同程序集，无循环依赖）。
+- `TurnExecutionContext` 的 `{ get; init; }` 区（`ParentTaskNodeId` 之后、`UsageBudget` 之前）新增：
+```csharp
+/// <summary>ADR-072 §9.1/§9.2：派发链注入的 Active Task 上下文（canonical 命令路径同样必须携带）。</summary>
+public ActiveTaskRuntimeContext? ActiveTask { get; init; }
+```
+
+### P2 `Source/PuddingCore/Platform/IExecutionCommandReader.cs` + 新增唯一映射器
+- `ExecutionCommandRecord` 增加 `public ActiveTaskRuntimeContext? ActiveTask { get; init; }`（补 `using PuddingCode.Tasks;`）。
+- 新增 `Source/PuddingCore/Tasks/ActiveTaskMetadata.cs`，提供**唯一**映射器
+  `public static ActiveTaskRuntimeContext? TryBuild(string workspaceId, string agentId, IReadOnlyDictionary<string,string> metadata)`，
+  语义与 `AgentInvocationDispatchFactory.BuildActiveTask:140-167` **逐键一致**：三别名（snake/camel/Pascal）、`task_id` 或 `assignment_id` 空 → `null`、`origin`/`priority`/`execution_window` 缺省 `string.Empty`、`DeliveryId` 不填。
+- 随后把 `AgentInvocationDispatchFactory.BuildActiveTask` 改为**委托**该映射器（等价重构，必须保留原行为；若担心回归可后置到 P2b，但不得留在两个实现各自演化）。
+
+### P3 `Source/PuddingPlatform/Services/ExecutionCommandReader.cs`
+- `MapAsync` 已在 `:81` 取到 `metadata`；在**通过 fence 校验之后**的 `return result with { WorkUnit = … }`（`:161-179`）中追加：
+```csharp
+ActiveTask = ActiveTaskMetadata.TryBuild(entity.WorkspaceId, entity.AgentInstanceId, metadata),
+```
+- 约束：必须在 fence 校验**之后**（校验失败仍抛 `task_execution_fence_changed`，语义不得变化）；不得改动 `WorkUnit` 组装。
+
+### P4 `Source/PuddingPlatform/Services/AgentChat/ExecutionRunCoordinator.cs:178`
+- `new TurnExecutionContext(...) { ExecutionDeadlineUtc = …, TaskPlanId = …, TaskNodeId = …, ParentTaskNodeId = …, … }` 的 init 块追加：
+```csharp
+ActiveTask = command.ActiveTask,
+```
+
+### P5 `Source/PuddingRuntime/Services/TurnExecutorAdapter.cs:27-56`
+- `new RuntimeDispatchRequest { … }` 追加 `ActiveTask = context.ActiveTask,`（字段已存在于 `MessageContracts.cs:206`，**不新增契约**）。
+
+### 验收（T1–T4）
+- **T1** Core 单测：`ActiveTaskMetadata.TryBuild` 三别名/缺键→null/空串缺省；`BuildActiveTask` 委托后行为不变。
+- **T2** Runtime 单测：stub `IRuntimeAgentDispatcher` 捕获 `RuntimeDispatchRequest`，断言 `TurnExecutionContext.ActiveTask` → `request.ActiveTask` 原样透传（含 null 场景）。
+- **T3** Platform 单测：binding/plan/task 全齐时 `ExecutionCommandRecord.ActiveTask` 字段与 metadata 一致；fence 失败仍抛 `task_execution_fence_changed`。
+- **T4** 构建：`dotnet build Source/PuddingRuntime/PuddingRuntime.csproj` 与 `Source/PuddingPlatform/PuddingPlatform.csproj` 零错误；`dotnet test Source/PuddingRuntimeTests` 相关过滤集通过。
+
+### 非目标 / 边界
+- 只补载体。**不改** `GoalSettlementStore` / `TaskExecutionRepairCoordinator`（F1/F2，属卡 `e2c35d6e`）。
+- **不改** `MessageDeliveryDispatcher.cs:405-407` 的 metadata「整体替换」语义（独立缺陷 G）。
+- 不新增 metadata 键、不改现有键语义、不动 LLM 路由/预算逻辑。
+- **遗留边界（已登记）**：`ExecutionCommandReader` 的 fence 会在 `binding.Status != "active"` 或 `task.ActiveAssignmentId != binding.AssignmentId`（即结算之后）抛 `task_execution_fence_changed` ⇒ F3a 只保证**首次迭代**可 canonical 收口；结算后的 stale-ActiveTask 仍由 F1 波形统一裁决。
