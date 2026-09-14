@@ -172,6 +172,7 @@ public sealed class ExecutionCommandReader(
                 MaxOutputTokens = workUnit.MaxOutputTokens.Value,
                 MaxCost = workUnit.MaxCost.Value,
             },
+            ActiveTask = ActiveTaskMetadata.TryBuild(entity.WorkspaceId, entity.AgentInstanceId, metadata),
         };
     }
 

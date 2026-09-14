@@ -136,36 +136,9 @@ public sealed class AgentInvocationDispatchFactory(
         };
     }
 
-    /// <summary>解析 task metadata → Active Task Runtime Context（复用 task_plan_id 同款模式）。</summary>
+    /// <summary>解析 task metadata → Active Task Runtime Context（唯一映射器 ActiveTaskMetadata.TryBuild，ADR-072 §9.1；三别名/缺键语义见映射器，不得两处各自演化）。</summary>
     private static ActiveTaskRuntimeContext? BuildActiveTask(WorkspaceAgentInvocation invocation)
-    {
-        var taskId = GetMetadataValue(invocation.Metadata, "task_id", "taskId", "TaskId");
-        if (string.IsNullOrWhiteSpace(taskId))
-        {
-            return null;
-        }
-
-        var assignmentId = GetMetadataValue(invocation.Metadata, "assignment_id", "assignmentId", "AssignmentId");
-        if (string.IsNullOrWhiteSpace(assignmentId))
-        {
-            return null;
-        }
-
-        return new ActiveTaskRuntimeContext
-        {
-            WorkspaceId = invocation.WorkspaceId,
-            TaskId = taskId!,
-            AssignmentId = assignmentId!,
-            AgentId = invocation.AgentId,
-            Origin = GetMetadataValue(invocation.Metadata, "origin", "Origin") ?? string.Empty,
-            Priority = GetMetadataValue(invocation.Metadata, "priority", "Priority") ?? string.Empty,
-            ExecutionWindow = GetMetadataValue(invocation.Metadata, "execution_window", "executionWindow", "ExecutionWindow") ?? string.Empty,
-            ExpectedVersion = GetMetadataInt(invocation.Metadata, "expected_version", "expectedVersion", "ExpectedVersion"),
-            PolicyVersion = GetMetadataValue(invocation.Metadata, "policy_version", "policyVersion", "PolicyVersion"),
-            DispatchIdempotencyKey = GetMetadataValue(invocation.Metadata, "dispatch_idempotency_key", "dispatchIdempotencyKey", "DispatchIdempotencyKey"),
-            ReservationFencingToken = GetMetadataValue(invocation.Metadata, "reservation_fencing_token", "reservationFencingToken", "ReservationFencingToken"),
-        };
-    }
+        => ActiveTaskMetadata.TryBuild(invocation.WorkspaceId, invocation.AgentId, invocation.Metadata);
 
     private static LlmInvocationProfile BuildLlmProfile(AgentRuntimeProfile profile)
     {

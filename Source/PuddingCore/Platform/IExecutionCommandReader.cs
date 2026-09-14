@@ -1,3 +1,5 @@
+using PuddingCode.Tasks;
+
 namespace PuddingCode.Platform;
 
 /// <summary>
@@ -36,6 +38,9 @@ public sealed record ExecutionCommandRecord
     public required CommandStatus Status { get; init; }
     public string? RunId { get; init; }
     public ExecutionWorkUnitContext? WorkUnit { get; init; }
+
+    /// <summary>ADR-072 §9.1/§9.2：由命令 metadata 解析的 Active Task 上下文（canonical 命令路径载体）。</summary>
+    public ActiveTaskRuntimeContext? ActiveTask { get; init; }
 }
 
 /// <summary>

@@ -216,6 +216,7 @@ public sealed class ExecutionRunCoordinator(
                 TaskPlanId = command.WorkUnit?.PlanId,
                 TaskNodeId = command.WorkUnit?.TaskNodeId,
                 ParentTaskNodeId = command.WorkUnit?.ParentTaskNodeId,
+                ActiveTask = command.ActiveTask,
                 UsageBudget = usageBudget,
                 InboundMessageId = command.UserMessageId,
                 Origin = messageOrigin,

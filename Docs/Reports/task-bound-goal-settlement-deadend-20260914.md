@@ -314,3 +314,42 @@ ActiveTask = command.ActiveTask,
 - **不改** `MessageDeliveryDispatcher.cs:405-407` 的 metadata「整体替换」语义（独立缺陷 G）。
 - 不新增 metadata 键、不改现有键语义、不动 LLM 路由/预算逻辑。
 - **遗留边界（已登记）**：`ExecutionCommandReader` 的 fence 会在 `binding.Status != "active"` 或 `task.ActiveAssignmentId != binding.AssignmentId`（即结算之后）抛 `task_execution_fence_changed` ⇒ F3a 只保证**首次迭代**可 canonical 收口；结算后的 stale-ActiveTask 仍由 F1 波形统一裁决。
+
+---
+
+## 8. F3a 实施收口证据（2026-09-14 12:35 BJT）
+
+**状态**：P1–P5 + 可选 P2b 全部落地，父级以 `git diff` 逐块复核锚点与语义一致；**T4 构建验证通过**；**T2 回归集 123/123 通过**。T1/T3（新增单测）尚未实施，列入下一步。此前阻塞子代理收口的执行类审批门禁（工单 `tap_6175e92cd3b744088312b20af826aa67`）已解除。
+
+### 8.1 变更清单（7 文件，纯增量，零新 metadata 键）
+
+| # | 文件 | 改动 |
+|---|---|---|
+| 1 | `Source/PuddingCore/Tasks/ActiveTaskMetadata.cs`（新增） | 唯一映射器 `TryBuild(workspaceId, agentId, metadata)` + 私有 `GetValue`/`GetInt`；语义与原 `BuildActiveTask` 逐键一致 |
+| 2 | `Source/PuddingCore/Runtime/ITurnExecutor.cs` | `:3` using；`:82` `TurnExecutionContext.ActiveTask`（init 增量属性） |
+| 3 | `Source/PuddingCore/Platform/IExecutionCommandReader.cs` | `:1` using；`:42` `ExecutionCommandRecord.ActiveTask`（init 增量属性） |
+| 4 | `Source/PuddingPlatform/Services/ExecutionCommandReader.cs` | `:175` `MapAsync` 的 `return result with { WorkUnit = … }` 内追加 `ActiveTask = ActiveTaskMetadata.TryBuild(entity.WorkspaceId, entity.AgentInstanceId, metadata)` |
+| 5 | `Source/PuddingPlatform/Services/AgentChat/ExecutionRunCoordinator.cs` | `:219` init 块追加 `ActiveTask = command.ActiveTask` |
+| 6 | `Source/PuddingRuntime/Services/TurnExecutorAdapter.cs` | `:57` `RuntimeDispatchRequest` 追加 `ActiveTask = context.ActiveTask`（字段已存在于 `MessageContracts.cs:206`） |
+| 7 | `Source/PuddingRuntime/Services/AgentInvocationDispatchFactory.cs` | `:139-142` `BuildActiveTask` 改为委托唯一映射器（等价重构，消除双实现漂移）；`GetMetadataValue/GetMetadataInt` 仍被其他键使用，无死代码 |
+
+**fence 顺序约束已满足**：`ExecutionCommandReader.MapAsync` 的 `task_execution_fence_changed` 抛出块位于 `return result with` **之前**，验证失败时仍不组装 ActiveTask，语义未变。
+
+### 8.2 验证证据（父级执行）
+
+```
+dotnet build Source/PuddingRuntime/PuddingRuntime.csproj --nologo -v m
+  → exit=0；84 warning / 0 error；耗时 1:10.82
+  → PuddingCore.dll 已产出（覆盖 #1/#2/#3），Platform/Runtime 编译通过（覆盖 #4/#5/#6/#7）
+
+dotnet test Source/PuddingRuntimeTests/PuddingRuntimeTests.csproj --nologo -v q \
+  --filter "FullyQualifiedName~ActiveTask|FullyQualifiedName~Task"
+  → exit=0；失败 0 / 通过 123 / 跳过 0；总 123；32 s
+  → 含 AgentExecutionWakeupActiveTaskPreservationTests（`Source/PuddingRuntimeTests/Services/`）——即 §附录 A T2 所指回归锁
+```
+
+### 8.3 遗留与下一步
+
+- **T1/T3 未实施**：`ActiveTaskMetadata` 的三别名/缺键→null/空串缺省缺少专用单测；`ExecutionCommandReader` 的「binding/plan/task 全齐 → `ActiveTask` 与 metadata 一致」Platform 侧断言亦缺。属**测试缺口**，非功能缺口。
+- **F3a 效能边界不变**（见附录 A 非目标）：只保证**首次迭代**可 canonical 收口；结算之后的 stale-ActiveTask 归 F1（卡 `e2c35d6e`）统一裁决；G（`MessageDeliveryDispatcher.cs:405-407` metadata 整体替换）未处理。
+- **运行时佐证待补**：需观察卡 `3bd2a4b0` 的 Goal 迭代 run 是否仍产生 `tgb-*` Blocked（若停止 ⇒ F3a 生效路径确认）。需要 desktop-build 重启使新二进制生效。

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingCode.Tasks;
 
 namespace PuddingCode.Runtime;
 
@@ -77,6 +78,9 @@ public sealed record TurnExecutionContext(
 
     /// <summary>Parent execution-plan node for hierarchical task context.</summary>
     public string? ParentTaskNodeId { get; init; }
+
+    /// <summary>ADR-072 §9.1/§9.2：派发链注入的 Active Task 上下文（canonical 命令路径同样必须携带）。</summary>
+    public ActiveTaskRuntimeContext? ActiveTask { get; init; }
 
     /// <summary>
     /// Execution Kernel 在 Run 启动时冻结的 WorkUnit Token/成本预算与模型价格。

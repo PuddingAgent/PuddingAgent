@@ -54,6 +54,7 @@ public sealed class TurnExecutorAdapter(
             TaskNodeId = context.TaskNodeId,
             ParentTaskNodeId = context.ParentTaskNodeId,
             UsageBudget = context.UsageBudget,
+            ActiveTask = context.ActiveTask,
         };
 
         var agentId = !string.IsNullOrWhiteSpace(context.AgentInstanceId)
