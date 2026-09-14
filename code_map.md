@@ -4,6 +4,10 @@
 
 # PuddingAgent CodeMAP
 
+## 2026-09-15 历史压缩状态显示修复（46679d7，已发布静态资源）
+
+见[复查报告](Docs/Reports/压缩频繁复查与历史状态显示修复-2026-09-15.md)：新Core启动后的本轮观察无新compaction事件；useCompaction历史完成使用occurredAt绝对时间，未知不冒充刚刚，终态不被迟到started重新激活，reset清除旧toast。14项前端回归通过，隔离构建并发布148个静态文件；/admin/chat已返回umi.42511e7c.js且hash核对一致，Core PID24908未重启。A2后台无收益抑制仍执行中，不能将UI修复当作长期频次或99%验收。
+
 ## 2026-09-15 百万上下文压力压缩（572c394，已部署）
 
 见[修复报告](Docs/Reports/百万上下文频繁压缩修复-2026-09-15.md)：ContextCompactionDefaults共享80%阈值；ContextCompactionService删除128K绝对cap、以CoverageManifest代际时间排除旧usage并优先当前请求；LlmOptions中的ContextUsageSnapshotStore区分实报与估算。141项定向回归通过，Core PID24908、只读context_health真实工具成功，UsedTokens与ProviderTotalTokens一致。按当前1M/384K配置约49.2万输入触发；A2无收益抑制、M01有界索引及长期/99%验收仍待完成。

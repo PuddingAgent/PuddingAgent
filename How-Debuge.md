@@ -3755,3 +3755,7 @@ Admin “访问令牌”页若把 Active/Revoked 显示成数字 `0/1`，同时 
 ### 2026-09-15：频繁压缩不要只看窗口百分比
 
 先核对模型MaxContext/MaxInput/MaxOutput：1M总窗口、384K输出预留意味着616K有效输入。旧128K cap会绕过比例阈值，572c394已删除。Provider实报不能取max(本地估算,Total)后仍标provider_reported；用agent_diagnostics action=context_health和GET /api/sessions/{id}/context-health复核UsedTokens/ProviderTotalTokens/UsageSource。新请求快照优先，CoverageManifest最新代际以前的用量失效（含重启），查询走SessionId/TargetGeneration索引。默认两条压缩路径共享80%，循环内仍有1024安全余量。统计compaction-log.jsonl完成数时同时记录活跃请求/新增原文，任务空闲不等于优化。报告：Docs/Reports/百万上下文频繁压缩修复-2026-09-15.md。
+
+### 2026-09-15：区分压缩事件与历史提示回放
+
+先按Core启动时间核对canonical context.compaction.*及系统warm-prefix日志，再看UI。useCompaction旧实现把历史completed的时间设为Date.now()并永久保存“刚刚”，46679d7改为事件occurredAt绝对时间；历史缺时间明确未知，终态不被迟到started复活，reset销毁compaction-status。conversation_events的sequence索引首列是conversation_id，不要跨会话仅用sequence筛选；跨会话诊断可用有界rowid尾部并校验覆盖时间。静态资源核对用/admin/chat，根/可能返回遗留入口；核对新hash资源HTTP与运行目录SHA-256，不能把编译成功当作页面加载成功。报告：Docs/Reports/压缩频繁复查与历史状态显示修复-2026-09-15.md。
