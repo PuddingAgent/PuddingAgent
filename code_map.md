@@ -4,9 +4,13 @@
 
 # PuddingAgent CodeMAP
 
+## 2026-09-14 日志全文召回按需化（已部署）
+
+见 [实施与产品验证](Docs/Reports/日志全文召回按需化与查询边界修复-2026-09-14.md)：fa309ba删除AgentLogRecallService、Runtime/Host注册和ContextPipeline私人日志回退层；95a0cd3由`RawSessionLogService.Fts.cs`负责显式日期/会话范围、短证据与诊断，`FullTextSearchScope`在Lucene TopK前过滤，`QuerySessionLogsTool`标记历史讨论未核实。Core PID26160真实两次调用通过，组装489ms；M01 v5/C03 v3记录部分完成，首轮摘要、通用Memory augmentation、分层快照和归档缺口仍待实施。历史记录与当前轮压缩保护保留。
+
 ## 2026-09-14 Memory快照与历史溯源定位纠偏
 
-权威补充 `Docs/Features/Memory快照索引与历史溯源设计-2026-09-14.md` 与ADR-085：Memory是Agent主动维护的当前结论及项目/概念/场景多级索引，正文唯一存放在外部文件/目录或Book/Page；聊天与向量命中只是候选证据，历史按需查看前后文及后续修订。当前源码仍有ContextPipeline自动日志召回、首轮整摘要和MemoryLibraryTool少量结果隐式探索，均为后续删除/收敛目标。本轮未改源码。M02升P0/v2先实现最小快照写读，M01/v4再取消默认自动历史注入，C03/v2完善受约束向量/溯源；归档卡bfe2286/v2不再作为默认Memory前置。设计与四张看板已同步，未宣称产品完成。
+权威补充 `Docs/Features/Memory快照索引与历史溯源设计-2026-09-14.md` 与ADR-085：Memory是Agent主动维护的当前结论及项目/概念/场景多级索引，正文唯一存放在外部文件/目录或Book/Page；聊天与向量命中只是候选证据，历史按需查看前后文及后续修订。本节记录22:51设计基线，当时仍有自动私人日志召回、首轮整摘要和MemoryLibraryTool少量结果隐式探索；23:12已完成私人日志召回删除及显式FTS收敛，以上方实施记录为准，其余仍待完成。M02升P0/v2先实现最小快照写读，M01/v4再取消默认自动历史注入，C03/v2完善受约束向量/溯源；归档卡bfe2286/v2不再作为默认Memory前置。设计与四张看板已同步，未宣称产品完成。
 
 ## 2026-09-14 首轮上下文准备性能修复
 

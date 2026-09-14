@@ -3743,3 +3743,7 @@ Admin “访问令牌”页若把 Active/Revoked 显示成数字 `0/1`，同时 
 2. cache hit 必须按显式北京时间自然日起止转换后聚合 UTC usage，七个完整日与当天分开；空日/无调用模型不填 100%。`lease_lost + completed_at=null` 不能算作持续工作至今。TokenUsageEvents 负责归因，不与 gateway 账本叠加。
 3. Chat `sse.error.reconnect httpStatus=401` 若约每 1.2 秒伴随 replay 401，应查 useSessionEventConnection 的鉴权终止分支。Core 空闲占用可先用短 CPU/Private/WS 采样与 dotnet-stack 检查 FileSubAgentRunStore；其 maxRuns 之后才限量、cursor 判断之前整读事件文件，不能认为调用参数 100 就保证扫描有界。
 4. 记录测试时同时记录 HEAD、dirty paths、输出目录、TRX 和已部署程序集 ProductVersion/SHA-256。HEAD fixture 与工作区 fixture 可能不同；AppContext.BaseDirectory 向上找源码的测试在系统 Temp 会失败。不要把“工作区用例通过”写成“干净提交全绿”或“运行产品已修复”。
+
+### 2026-09-14：显式日志全文召回的覆盖与失败
+
+`query_session_logs(action=grep, fts=true)` 默认最近7天、单次最多31天；先指定session/day缩小范围。读取JSON的status/error：contract_error、unavailable、timeout、scope_too_large不是no_match。coverage=indexed_markdown只覆盖可用私人Markdown分片，检查缺少Agent的归档警告与对应日期目录；不要拿它证明canonical聊天为空。eventType=markdown_line时sequenceNum是文件行号，不能当DB事件序号；historical_discussion/unverified命中须检查上下文及后续修订。普通装配应无独立agent_log_recall阶段，canonical历史恢复仍保留。10秒为协作取消，非同步I/O硬抢占；报告与真实回执定位见 Docs/Reports/日志全文召回按需化与查询边界修复-2026-09-14.md。
