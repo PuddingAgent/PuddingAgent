@@ -4,9 +4,13 @@
 
 # PuddingAgent CodeMAP
 
+## 2026-09-14 默认助手停滞与输入预算接管修复
+
+`Docs/Reports/默认助手停滞修复与预算接管-2026-09-14.md`：Codex 直接修复 FileSearchTool 内置扫描的时间/条目预算与取消（4ce9d6f）、MessageRouter 类型化目标拒绝与 ConversationReplyProjectionWorker 逐项结算（8d2ad3b）、ExecutionUsageBudgetTracker / SubAgentInvocationService / LlmRequestBudgetGuard 的单请求容量和父子累计账本（990673e，PlanVersion=2）、ExecutionRunCoordinator 恢复前检查 pending cancel 并由 SqliteExecutionJournal 原子终态（a18702b）。204 项定向测试通过；新 Core PID25584，旧指令直接取消，真实两次 file_search 后 canonical succeeded。根目录仍可能明确部分覆盖；A2–A4、首轮上下文性能、task-bound 长程与99%缓存仍待验收。
+
 ## 2026-09-14 Flash 自修复代码任务书
 
-`Docs/Reports/PuddingAgent自修复代码任务书-2026-09-14.md`：A1 优先分离 WorkUnit 单请求输入容量与累计输入账本，修正父子预算、委派 usage 汇总、零值轴和请求 guard，附 10 组反例及明确交付条件。后续 A2 压缩口径/无收益抑制、A3 无效等待、A4 新 fenced attempt 恢复；指出旧“失败后保留 assignment”建议与活跃执行槽不变量冲突。本条为施工方案，源码与新构建验收未完成。
+`Docs/Reports/PuddingAgent自修复代码任务书-2026-09-14.md`：A1 优先分离 WorkUnit 单请求输入容量与累计输入账本，修正父子预算、委派 usage 汇总、零值轴和请求 guard，附 10 组反例及明确交付条件。后续 A2 压缩口径/无收益抑制、A3 无效等待、A4 新 fenced attempt 恢复；指出旧“失败后保留 assignment”建议与活跃执行槽不变量冲突。A1 已由 Codex 接管完成源码与部署验证，其他批次及新计划长程验收仍未完成；不要重复派发旧 A1 指令。
 
 ## 2026-09-14 最近 24 小时效率评估
 

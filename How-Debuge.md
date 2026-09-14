@@ -4,6 +4,14 @@
 
 ## 1. 基本原则
 
+### 工具无结果、取消后恢复又重放（2026-09-14）
+
+- 用同一 turn 的 tool.call.requested/completed 定位最后进展；max_results 只限制命中条数，不保证递归扫描有界。FileSearchTool 内置 Provider 现默认10秒/50,000 entries，目录和未命中项都计数；timeout/truncated 必须带 partial 覆盖声明，不能据此宣布无匹配。时间预算是协作检查，不能打断内核单次阻塞 I/O。
+- 取消受理不等于取消终态：核对 execution_control_messages.status、execution_runs.attempt/fencing_token、命令状态与 canonical turn.cancelled。pending cancel 跨租约恢复保留；ExecutionRunCoordinator 在重建上下文前直接通过 Journal 提交取消，终态后才 ack。禁止直接 SQL 将运行记录改成成功/取消。
+- 回复投影每5秒报同一目标不存在时，检查最早未结算 command。MessageTargetUnavailableException 会持久化 reply_projection_status=failed/error_code；ReplyProjectedAt 表示扫描结算，不等于送达。暂时性异常仍可重试，失效接收者不能阻断同批其他消息。
+- Desktop core/start HTTP 等待超时后先读 status/diagnostics、当前新 PID、health与模块路径，不重复启动，也不能用旧 lastResult/hash 判定本轮部署。参考报告记录本轮204项回归、新进程、两次工具和唯一终态的完整证据。
+- 性能归因分开 context 准备、实际模型耗时与工具耗时；带 session 标签的后台 EmbeddingHook 不代表主调用在等待它。预算记录区分单请求峰值与累计输入，不能把一次成功消息作为600轮/全天稳定或99%缓存的证明。
+
 ### 日常工作效率与心跳审计（2026-09-14）
 
 - 固定本地 24 小时窗口，commands 的 epoch 毫秒、Gateway/TokenUsageEvents 的空格 UTC 文本、canonical/子 Run 的 ISO 文本分别转换。先核对唯一 Gateway source_id，不能把账本与归因投影累加。
