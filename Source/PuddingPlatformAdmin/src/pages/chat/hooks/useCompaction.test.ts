@@ -100,5 +100,51 @@ describe('useCompaction', () => {
 
     act(() => result.current.resetCompaction());
     expect(result.current.mergeCompactionLifecycleTurns([])).toEqual([]);
+    expect(messageApi.destroy).toHaveBeenCalledWith('compaction-status');
+  });
+
+  it('shows the original completion time when history is replayed', () => {
+    const { result } = renderHook(() => useCompactionHarness());
+    const occurredAt = '2026-09-14T03:43:33.553Z';
+    act(() => result.current.handleCompactionLifecycleEvent(
+      compactionEvent('context.compaction.completed', { occurredAt }),
+      { notify: false, allowSessionSwitch: false },
+    ));
+    expect(result.current.compactionStatus).toBe(
+      `上次压缩：${new Date(occurredAt).toLocaleString('zh-CN', { hour12: false })}`,
+    );
+    expect(messageApi.loading).not.toHaveBeenCalled();
+  });
+
+  it('does not invent a recent completion time for an undated history event', () => {
+    const { result } = renderHook(() => useCompactionHarness());
+    act(() => result.current.handleCompactionLifecycleEvent(
+      compactionEvent('context.compaction.completed'),
+      { notify: false, allowSessionSwitch: false },
+    ));
+    expect(result.current.compactionStatus).toBe('上次压缩：时间未知');
+  });
+
+  it.each(['completed', 'failed'])('does not revive a %s compaction on a late start', (terminal) => {
+    const { result } = renderHook(() => useCompactionHarness());
+    act(() => result.current.handleCompactionLifecycleEvent(
+      compactionEvent(`context.compaction.${terminal}`),
+      { notify: false, allowSessionSwitch: false },
+    ));
+    const status = result.current.compactionStatus;
+    act(() => result.current.handleCompactionLifecycleEvent(
+      compactionEvent('context.compaction.started'),
+    ));
+    expect(result.current.loading).toBe(false);
+    expect(result.current.turns).toHaveLength(1);
+    expect(result.current.turns[0].assistant.status).toBe(terminal === 'failed' ? 'error' : 'success');
+    expect(result.current.compactionStatus).toBe(status);
+    expect(messageApi.loading).not.toHaveBeenCalled();
+    // A genuinely new operation still starts normally.
+    act(() => result.current.handleCompactionLifecycleEvent(
+      compactionEvent('context.compaction.started', { compactionId: 'compact-2' }),
+    ));
+    expect(result.current.loading).toBe(true);
+    expect(result.current.turns).toHaveLength(2);
   });
 });

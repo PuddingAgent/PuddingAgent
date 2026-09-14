@@ -46,17 +46,11 @@ type CompactedSessionSwitch = (
   title?: string | null,
 ) => void;
 
-/** 相对时间文案，供 ComposerContextBar 的压缩状态展示 */
-const formatCompactionAgo = (timestamp: number): string => {
-  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-  if (seconds < 10) return '刚刚';
-  if (seconds < 60) return `${seconds} 秒前`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} 分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  return `${Math.floor(hours / 24)} 天前`;
-};
+// An absolute event time stays truthful during long unattended runs without a timer.
+const formatCompactionTime = (timestamp?: number): string =>
+  timestamp === undefined
+    ? '时间未知'
+    : new Date(timestamp).toLocaleString('zh-CN', { hour12: false });
 
 export const COMPACTION_RUNNING_LABEL = '正在压缩上下文…';
 
@@ -251,6 +245,16 @@ export function useCompaction({
         compactionTurnIdsRef.current.get(compactionId) ??
         activeCompactionTurnIdRef.current ??
         compactionTurnId(compactionId);
+      const previous = compactionLifecycleTurnsRef.current.get(compactTurnId);
+      if (
+        compactionTurnIdsRef.current.has(compactionId) &&
+        (previous?.assistant.status === 'success' ||
+          previous?.assistant.status === 'error')
+      ) {
+        // Bootstrap and SSE can overlap. A late/replayed start must not revive a
+        // terminal compaction or show its loading notification again.
+        return;
+      }
       const eventConversationId =
         typeof raw.conversationId === 'string' ? raw.conversationId : null;
       const sourceSessionId =
@@ -336,7 +340,12 @@ export function useCompaction({
         compacted,
         eventFacts,
       );
-      setCompactionStatus(`上次压缩：${formatCompactionAgo(Date.now())}`);
+      setCompactionStatus(
+        `上次压缩：${formatCompactionTime(
+          eventFacts.occurredAtMs ??
+            (options?.notify === false ? undefined : Date.now()),
+        )}`,
+      );
       activeCompactionTurnIdRef.current = null;
 
       const newSessionId =
@@ -419,7 +428,7 @@ export function useCompaction({
         '上下文压缩完成',
         response.compaction,
       );
-      setCompactionStatus(`上次压缩：${formatCompactionAgo(Date.now())}`);
+      setCompactionStatus(`上次压缩：${formatCompactionTime(Date.now())}`);
       activeCompactionTurnIdRef.current = null;
 
       if (
@@ -459,7 +468,8 @@ export function useCompaction({
     compactionLifecycleTurnsRef.current.clear();
     activeCompactionTurnIdRef.current = null;
     setCompactionStatus(null);
-  }, []);
+    messageApi.destroy('compaction-status');
+  }, [messageApi]);
 
   const mergeCompactionLifecycleTurns = useCallback(
     (baseTurns: ChatTurn[]) =>
