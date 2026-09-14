@@ -1938,13 +1938,141 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
-    public void ToolApprovalReviewParser_Returns_NeedHuman_For_Invalid_Json()
+    public void ToolApprovalReviewParser_Returns_DeferredDependency_For_Invalid_Json()
     {
+        // ADR-091 §4.1 步骤 5：非法 JSON 属于依赖/协议失败，不是人工决定，也不得伪造批准。
         var result = ToolApprovalReviewParser.Parse("not json");
 
-        Assert.AreEqual(ToolApprovalDecision.NeedHuman, result.Decision);
+        Assert.AreEqual(ToolApprovalDecision.DeferredDependency, result.Decision);
         StringAssert.Contains(result.DecisionReason, "Invalid approval reviewer JSON");
+        Assert.IsFalse(result.RequiresHumanAuthorization);
+        CollectionAssert.Contains(result.MissingRequirements.ToArray(), "valid reviewer JSON");
+    }
+
+    [TestMethod]
+    public void ToolApprovalReviewParser_Returns_DeferredDependency_For_Empty_Response()
+    {
+        var result = ToolApprovalReviewParser.Parse("   ");
+
+        Assert.AreEqual(ToolApprovalDecision.DeferredDependency, result.Decision);
+        Assert.IsFalse(result.RequiresHumanAuthorization);
+        Assert.AreNotEqual(ToolApprovalDecision.Approved, result.Decision);
+    }
+
+    [TestMethod]
+    public void ToolApprovalReviewParser_Returns_DeferredDependency_For_Unknown_Decision()
+    {
+        var result = ToolApprovalReviewParser.Parse("""{"decision":"maybe_later","reason":"x"}""");
+
+        Assert.AreEqual(ToolApprovalDecision.DeferredDependency, result.Decision);
+        Assert.IsFalse(result.RequiresHumanAuthorization);
+        Assert.AreNotEqual(ToolApprovalDecision.Approved, result.Decision);
+    }
+
+    [TestMethod]
+    public void ToolApprovalReviewParser_Parses_Explicit_Deferred_Dependency()
+    {
+        var result = ToolApprovalReviewParser.Parse("""
+        {
+          "decision": "deferred_dependency",
+          "reasonCode": "approval_review_call_failed",
+          "reason": "review model unavailable",
+          "requiresHumanAuthorization": false
+        }
+        """);
+
+        Assert.AreEqual(ToolApprovalDecision.DeferredDependency, result.Decision);
+        Assert.IsFalse(result.RequiresHumanAuthorization);
+        Assert.AreEqual("review model unavailable", result.DecisionReason);
+    }
+
+    [TestMethod]
+    public void ToolApprovalReviewParser_Keeps_NeedHuman_For_Explicit_Human_Decision()
+    {
+        // 真正需要人的业务决定仍必须是 human，不得被依赖分类吞掉。
+        var result = ToolApprovalReviewParser.Parse("""{"decision":"need_human","reason":"business impact needs a person"}""");
+
+        Assert.AreEqual(ToolApprovalDecision.NeedHuman, result.Decision);
         Assert.IsTrue(result.RequiresHumanAuthorization);
+    }
+
+    [TestMethod]
+    public async Task InvocationToolApprovalLlmClient_Returns_DeferredDependency_When_Call_Fails()
+    {
+        var resolver = new StaticToolApprovalLlmProfileResolver(new ToolApprovalLlmProfile
+        {
+            ProviderId = "approval-provider",
+            ProfileId = "approval.default",
+            ModelId = "approval-model",
+        });
+        var client = new InvocationToolApprovalLlmClient(
+            new FailingLlmInvocationService("provider timeout"),
+            resolver,
+            NullLogger<InvocationToolApprovalLlmClient>.Instance);
+
+        var prompt = ToolApprovalPromptBuilder.Build(
+            ValidApprovalRequest("{}"),
+            SampleApprovalIdentity(),
+            new SampleHighTool().Descriptor);
+
+        var raw = await client.ReviewAsync(
+            ValidApprovalRequest("{}"),
+            SampleApprovalIdentity(),
+            new SampleHighTool().Descriptor,
+            prompt);
+        var result = ToolApprovalReviewParser.Parse(raw);
+
+        Assert.AreEqual(ToolApprovalDecision.DeferredDependency, result.Decision);
+        Assert.IsFalse(result.RequiresHumanAuthorization);
+        StringAssert.Contains(result.DecisionReason, "provider timeout");
+    }
+
+    [TestMethod]
+    public async Task InvocationToolApprovalLlmClient_Returns_DeferredDependency_When_Response_Is_Empty()
+    {
+        var resolver = new StaticToolApprovalLlmProfileResolver(new ToolApprovalLlmProfile
+        {
+            ProviderId = "approval-provider",
+            ProfileId = "approval.default",
+            ModelId = "approval-model",
+        });
+        var client = new InvocationToolApprovalLlmClient(
+            new RecordingLlmInvocationService("   "),
+            resolver,
+            NullLogger<InvocationToolApprovalLlmClient>.Instance);
+
+        var prompt = ToolApprovalPromptBuilder.Build(
+            ValidApprovalRequest("{}"),
+            SampleApprovalIdentity(),
+            new SampleHighTool().Descriptor);
+
+        var raw = await client.ReviewAsync(
+            ValidApprovalRequest("{}"),
+            SampleApprovalIdentity(),
+            new SampleHighTool().Descriptor,
+            prompt);
+        var result = ToolApprovalReviewParser.Parse(raw);
+
+        Assert.AreEqual(ToolApprovalDecision.DeferredDependency, result.Decision);
+        Assert.IsFalse(result.RequiresHumanAuthorization);
+        Assert.AreNotEqual(ToolApprovalDecision.Approved, result.Decision);
+    }
+
+    [TestMethod]
+    public async Task ToolApprovalService_DeferredDependency_Stays_Non_Terminal_And_Not_Human()
+    {
+        var approval = new InMemoryToolApprovalService(new DeferredDependencyToolApprovalReviewer());
+
+        var result = await approval.SubmitAsync(
+            ValidApprovalRequest("{}"),
+            SampleApprovalIdentity(),
+            new SampleHighTool().Descriptor);
+
+        Assert.AreEqual(ToolApprovalDecision.DeferredDependency, result.Decision);
+        Assert.AreEqual(ToolApprovalTicketStatus.DeferredDependency, result.Status);
+        Assert.AreNotEqual(ToolApprovalTicketStatus.Denied, result.Status);
+        Assert.AreNotEqual(ToolApprovalTicketStatus.Approved, result.Status);
+        StringAssert.Contains(result.RecommendedNextStep, "not a human authorization request");
     }
 
     [TestMethod]
@@ -4183,6 +4311,40 @@ public sealed partial class PuddingToolInfrastructureTests
             string workspaceId,
             CancellationToken ct = default)
             => Task.FromResult(profile);
+    }
+
+    private sealed class FailingLlmInvocationService(string error) : ILlmInvocationService
+    {
+        public Task<LlmInvocationResult> InvokeAsync(LlmInvocationRequest request, CancellationToken ct = default)
+            => Task.FromResult(new LlmInvocationResult
+            {
+                Success = false,
+                Error = error,
+            });
+
+        public async IAsyncEnumerable<StreamDelta> InvokeStreamAsync(
+            LlmInvocationRequest request,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    /// <summary>返回 typed DeferredDependency 的审查器，用于验证票据不会被当成拒绝或批准。</summary>
+    private sealed class DeferredDependencyToolApprovalReviewer : IToolApprovalReviewer
+    {
+        public Task<ToolApprovalReviewResult> ReviewAsync(
+            ToolApprovalTicketRequest request,
+            ToolApprovalIdentity identity,
+            ToolDescriptor descriptor,
+            CancellationToken ct = default)
+            => Task.FromResult(new ToolApprovalReviewResult
+            {
+                Decision = ToolApprovalDecision.DeferredDependency,
+                DecisionReason = "approval review dependency is unavailable",
+                RequiresHumanAuthorization = false,
+            });
     }
 
     private sealed class RecordingLlmInvocationService(string response) : ILlmInvocationService
