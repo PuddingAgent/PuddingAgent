@@ -36,6 +36,22 @@ public enum ContextCompactionLevel
     Full,
 }
 
+/// <summary>
+/// 压缩终态语义（A2 无收益抑制）。Applied 是唯一算成功的终态；
+/// Skipped* 表示本次未实际写入摘要（无收益抑制 / 无候选 / 当前轮守卫 / 会话冷却）；
+/// Failed 表示异常失败（不永久屏蔽，可恢复，由调用方 catch 侧归类）。
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<ContextCompactionOutcome>))]
+public enum ContextCompactionOutcome
+{
+    Applied,
+    SkippedNoGain,
+    SkippedNoCandidate,
+    SkippedCurrentTurn,
+    SkippedCooldown,
+    Failed,
+}
+
 public sealed record ContextHealthSnapshot(
     string SessionId,
     int UsedTokens,
@@ -141,7 +157,8 @@ public sealed record ContextCompactionResult(
     IReadOnlyList<string>? MemoryNotes = null,
     ContextCompactionDiagnostics? Diagnostics = null,
     bool SkippedDueToTokenIncrease = false,
-    bool SkippedDueToCurrentTurnGuard = false);
+    bool SkippedDueToCurrentTurnGuard = false,
+    ContextCompactionOutcome Outcome = ContextCompactionOutcome.Applied);
 
 /// <summary>
 /// 压缩覆盖清单（方案 §6.3）。

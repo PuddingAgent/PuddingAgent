@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 
 namespace PuddingRuntime.Services;
 
@@ -25,6 +25,14 @@ public sealed class CompactionCoordinator
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastCompactionAt = new(StringComparer.Ordinal);
     private readonly TimeSpan _cooldown;
     private readonly Action<string>? _onHistoryInvalidated;
+
+    /// <summary>A2 无收益抑制：标记条目上限。超过后整体清空再写入——抑制标记只用于短期跳过、可安全重建，防止长驻进程会话数无界膨胀。</summary>
+    private const int MaxNoGainMarkEntries = 2048;
+
+    /// <summary>A2 无收益抑制：session → 最近一次「候选窗口未变但无收益」标记。</summary>
+    private readonly ConcurrentDictionary<string, NoGainMark> _noGainMarks = new(StringComparer.Ordinal);
+
+    private readonly record struct NoGainMark(string Fingerprint, int Generation, DateTimeOffset ObservedAtUtc);
 
     public CompactionCoordinator(
         Action<string>? onHistoryInvalidated = null,
@@ -66,10 +74,55 @@ public sealed class CompactionCoordinator
         return false;
     }
 
-    /// <summary>记录一次成功完成的压缩时间，用于冷却限流。</summary>
+    /// <summary>
+    /// A2 无收益抑制：命中同一候选窗口的无收益标记时返回 true，并给出可日志化的跳过原因。
+    /// 命中判定 = session 存在标记 且 <paramref name="fingerprint"/> 与标记相等；
+    /// Generation 已参与指纹计算（ContextCompactionService.ComputeCandidateFingerprint），不单独比较。
+    /// </summary>
+    public bool TryGetNoGainSkipReason(string sessionId, string fingerprint, out string? skipReason)
+    {
+        if (_noGainMarks.TryGetValue(sessionId, out var mark)
+            && string.Equals(mark.Fingerprint, fingerprint, StringComparison.Ordinal))
+        {
+            var ageSeconds = (long)(DateTimeOffset.UtcNow - mark.ObservedAtUtc).TotalSeconds;
+            skipReason =
+                $"Compaction skipped for session '{sessionId}': same candidate window (generation={mark.Generation}, observed {ageSeconds}s ago) produced no gain (no-op or non-shrinking summary); summarizer call suppressed.";
+            return true;
+        }
+
+        skipReason = null;
+        return false;
+    }
+
+    /// <summary>
+    /// A2 无收益抑制：记录一次「候选窗口未变但无收益」的事实（no-op 或摘要不缩小）。
+    /// 仅由 ContextCompactionService 在 no-gain 终态调用；异常失败路径不得调用（失败可恢复，不永久屏蔽）。
+    /// </summary>
+    public void RecordNoGain(string sessionId, string fingerprint, int generation)
+    {
+        // 有界内存：标记总数超上限时整体清空后再写入。
+        if (_noGainMarks.Count > MaxNoGainMarkEntries)
+        {
+            _noGainMarks.Clear();
+        }
+
+        _noGainMarks[sessionId] = new NoGainMark(fingerprint, generation, DateTimeOffset.UtcNow);
+    }
+
+    /// <summary>
+    /// A2 无收益抑制：清除抑制。实际写入成功（<see cref="RecordCompactionCompleted"/> 内部调用）、
+    /// 或显式手动重试（Manual）进入流程前调用；异常失败不调用。
+    /// </summary>
+    public void ClearNoGain(string sessionId)
+    {
+        _noGainMarks.TryRemove(sessionId, out _);
+    }
+
+    /// <summary>记录一次成功完成的压缩时间，用于冷却限流；同时清除该 session 的无收益抑制（实际写入成功后重新评估）。</summary>
     public void RecordCompactionCompleted(string sessionId)
     {
         _lastCompactionAt[sessionId] = DateTimeOffset.UtcNow;
+        ClearNoGain(sessionId);
     }
 
     /// <summary>

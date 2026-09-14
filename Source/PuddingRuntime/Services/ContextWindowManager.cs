@@ -1126,16 +1126,28 @@ public sealed class ContextWindowManager
                     !string.IsNullOrWhiteSpace(agentWorkSummary));
             }
 
+            // A2 无收益抑制：applied 才算真正压缩成功；跳过（no-gain/无候选/守卫/冷却）不再记成 Succeeded。
+            // return false 与原 CompactedMessageCount > 0 判定等价，调用方继续走既有 ShouldBlockSend / 出站硬限制路径，硬限制不放宽。
+            var applied = result.CompactedMessageCount > 0
+                && result.Outcome == ContextCompactionOutcome.Applied;
+
             await RecordAutoCompactionMetricAsync(
                 sessionId,
                 workspaceId,
                 agentId,
-                TelemetryMetricStatuses.Succeeded,
-                "context.auto_compaction",
+                applied ? TelemetryMetricStatuses.Succeeded : TelemetryMetricStatuses.Recorded,
+                applied ? "context.auto_compaction" : "context.auto_compaction.skipped",
                 countValue: result.CompactedMessageCount,
                 numericValue: compressionRatio,
                 durationMs: compressionWatch.ElapsedMilliseconds,
-                dimensions: BuildCompletionDimensions(health, result, compactMs, maxTokenBudget, agentWorkSummary),
+                dimensions: applied
+                    ? BuildCompletionDimensions(health, result, compactMs, maxTokenBudget, agentWorkSummary)
+                    : new Dictionary<string, string>
+                    {
+                        ["outcome"] = result.Outcome.ToString(),
+                        ["health_state"] = health.State.ToString(),
+                        ["usage_ratio"] = health.UsageRatio.ToString("F4", CultureInfo.InvariantCulture),
+                    },
                 ct: ct);
 
             await EmitCompactionLifecycleEventAsync(
@@ -1149,6 +1161,8 @@ public sealed class ContextWindowManager
                     mode = "Auto",
                                         level = "Full",
                     reason = ContextWindowConstants.AutoCompactionReason,
+                    applied,
+                    outcome = result.Outcome.ToString(),
                     compaction = result,
                     diagnostics = result.Diagnostics,
                     compactedCount = result.CompactedMessageCount,
@@ -1163,10 +1177,13 @@ public sealed class ContextWindowManager
                 traceId,
                 ct);
 
-                        // 清理重试状态
-            _strategy.ClearRetryState(sessionId);
+            if (applied)
+            {
+                // 清理重试状态（仅 applied；跳过路径保持「未真正压缩」语义）
+                _strategy.ClearRetryState(sessionId);
+            }
 
-            return result.CompactedMessageCount > 0;
+            return applied;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -1197,8 +1214,9 @@ public sealed class ContextWindowManager
                 {
                     sessionId,
                     mode = "Auto",
-                                        level = "Full",
+                    level = "Full",
                     reason = ContextWindowConstants.AutoCompactionReason,
+                    outcome = ContextCompactionOutcome.Failed.ToString(),
                     error = ex.Message,
                     errorType = ex.GetType().Name,
                 },

@@ -24,6 +24,8 @@ public sealed class ContextCompactionService : IContextCompactionService
     private const int MaxHealthEstimateSampleSize = 2000;
     private const int DefaultMaxVerbatimMessageBytes = 16 * 1024;
     private const string CompactionRequestedEventType = "context.compaction.requested";
+    // A2 无收益抑制：候选窗口指纹版本号（算法演进时递增，旧指纹自然失效）。
+    private const string CompactionCandidateFingerprintVersion = "v1";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IDbContextFactory<MemoryDbContext> _dbFactory;
@@ -289,7 +291,8 @@ public sealed class ContextCompactionService : IContextCompactionService
                 CompactedMessageCount: 0,
                 SummaryPreview: string.Empty,
                 SummaryMarkdown: string.Empty,
-                MemoryNotes: []);
+                MemoryNotes: [],
+                Outcome: ContextCompactionOutcome.SkippedCooldown);
         }
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -332,7 +335,8 @@ public sealed class ContextCompactionService : IContextCompactionService
 
         if (candidates.Count == 0)
         {
-            return await FinishNoOpAsync();
+            // 无可压缩候选：不存在有效窗口，不记录抑制（后续出现新原文仍正常压缩）。
+            return await FinishNoOpAsync(ContextCompactionOutcome.SkippedNoCandidate);
         }
 
         // ── P0-TXN Phase 1（事故1 不变量）：current turn 不落入压缩区间 ──
@@ -363,11 +367,34 @@ public sealed class ContextCompactionService : IContextCompactionService
         var rawBytesBefore = EstimateUtf8Bytes(activeMessages); // 截断前快照（UTF-8 字节）
         var verbatimEvictionClones = ApplyVerbatimSizeEviction(candidates, messagesToCompact);
 
+        // ── A2 无收益抑制 ──
+        // 窗口在尺寸驱逐后最终确定：此处计算候选窗口指纹（v1 = 代际 + MessageId + 正文 hash），
+        // 只用已加载内存实体，不额外扫描历史。指纹相同 ⇔ 同一会话同一候选窗口未变。
+        var compactionGeneration = await TryGetCompactionGenerationAsync(db, request.SessionId, ct);
+        var candidateFingerprint = ComputeCandidateFingerprint(compactionGeneration, messagesToCompact);
+
+        if (request.Mode == ContextCompactionMode.Manual)
+        {
+            // 手动压缩 = 显式重试：清除抑制并放行，不做抑制判定。
+            _coordinator.ClearNoGain(request.SessionId);
+        }
+        else if (_coordinator.TryGetNoGainSkipReason(request.SessionId, candidateFingerprint, out var noGainReason))
+        {
+            // 抑制闸门（必须位于摘要模型调用之前）：不调用生成器、不写库、不写 manifest；
+            // 复用 no-op 收尾路径（写 compaction-log）并返回显式 SkippedNoGain 终态。
+            _logger.LogInformation(
+                "[ContextCompaction:NoGainSuppression] skip auto compaction session={SessionId} generation={Generation} reason={Reason}",
+                request.SessionId, compactionGeneration, noGainReason);
+            return await FinishNoOpAsync(ContextCompactionOutcome.SkippedNoGain);
+        }
+
         // 滚动摘要链必须由新原文驱动：摘要侧输入只剩上一代 compact_summary（无新对话导入、
         // 无尺寸驱逐）时，再压缩只会产出"摘要的摘要"叠加范围提示，信息趋零体积逐代膨胀。
         if (!HasRawTextInput(messagesToCompact, verbatimEvictionClones))
         {
-            return await FinishNoOpAsync();
+            // summary-only 窗口 = 候选未变且必然无收益（A2 no-op）：记录抑制并显式返回 SkippedNoGain。
+            _coordinator.RecordNoGain(request.SessionId, candidateFingerprint, compactionGeneration);
+            return await FinishNoOpAsync(ContextCompactionOutcome.SkippedNoGain);
         }
 
         var expandStart = sw.ElapsedMilliseconds;
@@ -478,10 +505,13 @@ public sealed class ContextCompactionService : IContextCompactionService
         if (skipDueToTokenIncrease)
         {
             sw.Stop();
+            // 摘要不缩小 = 无收益（A2）：记录抑制，同窗口 Auto 下次直接跳过（手动压缩仍可显式重试）。
+            _coordinator.RecordNoGain(request.SessionId, candidateFingerprint, compactionGeneration);
             var skipResult = new ContextCompactionResult(
                 request.SessionId, string.Empty, request.Mode, request.Level,
                 EstimateMessages(activeMessages), EstimateMessages(activeMessages),
-                0, string.Empty, string.Empty, [], null, SkippedDueToTokenIncrease: true);
+                0, string.Empty, string.Empty, [], null, SkippedDueToTokenIncrease: true,
+                Outcome: ContextCompactionOutcome.SkippedNoGain);
             return skipResult;
         }
 
@@ -686,13 +716,14 @@ public sealed class ContextCompactionService : IContextCompactionService
             BuildPreview(summary),
             summary,
             memoryNotes,
-            diagnostics);
+            diagnostics,
+            Outcome: ContextCompactionOutcome.Applied);
 
         await PublishSessionCompressedHookAsync(request, result, ct);
         await WriteCompactionLogAsync(request, result, ct);
         return result;
 
-        async Task<ContextCompactionResult> FinishNoOpAsync()
+        async Task<ContextCompactionResult> FinishNoOpAsync(ContextCompactionOutcome outcome)
         {
             sw.Stop();
             var noOpBeforeTokens = EstimateMessages(activeMessages);
@@ -725,7 +756,8 @@ public sealed class ContextCompactionService : IContextCompactionService
                 SummaryPreview: string.Empty,
                 SummaryMarkdown: string.Empty,
                 MemoryNotes: [],
-                Diagnostics: noOpDiagnostics);
+                Diagnostics: noOpDiagnostics,
+                Outcome: outcome);
             await WriteCompactionLogAsync(request, noOpResult, ct);
             return noOpResult;
         }
@@ -769,7 +801,8 @@ public sealed class ContextCompactionService : IContextCompactionService
                 MemoryNotes: [],
                 Diagnostics: diagnostics,
                 SkippedDueToTokenIncrease: false,
-                SkippedDueToCurrentTurnGuard: true);
+                SkippedDueToCurrentTurnGuard: true,
+                Outcome: ContextCompactionOutcome.SkippedCurrentTurn);
 
             _logger.LogWarning(
                 "[ContextCompaction:Guard] Aborted compaction because current user turn is in scope compactionId={CompactionId} session={SessionId} guardedMessageCount={GuardedMessageCount}",
@@ -1124,6 +1157,42 @@ public sealed class ContextCompactionService : IContextCompactionService
 
     private static long Utf8ByteCount(string? text) =>
         string.IsNullOrEmpty(text) ? 0 : System.Text.Encoding.UTF8.GetByteCount(text);
+
+    /// <summary>
+    /// A2 无收益抑制：计算候选窗口指纹（v1，稳定、有序、内容敏感）。
+    /// 输入 = 实际选出的压缩窗口（messagesToCompact，尺寸驱逐后、送入摘要侧之前），
+    /// 组成 = 指纹版本 + 压缩代际 + 按 Sequence 升序（入参已有序，不重排）逐条
+    /// MessageId 与正文 SHA-256（复用 manifest sourceHashes 的同一原语）。
+    /// 只用已加载内存实体，不额外扫描历史；同一窗口同一代际 ⇔ 指纹相等。
+    /// </summary>
+    private static string ComputeCandidateFingerprint(
+        int generation,
+        IReadOnlyList<MessageEntity> candidateWindow)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(CompactionCandidateFingerprintVersion).Append('|').Append(generation);
+        foreach (var message in candidateWindow)
+        {
+            sb.Append('\n').Append(message.MessageId)
+                .Append('|').Append(CompositionSnapshot.Sha256Hex(message.Content ?? string.Empty));
+        }
+
+        return CompositionSnapshot.Sha256Hex(sb.ToString());
+    }
+
+    /// <summary>
+    /// A2 无收益抑制：轻量读取会话压缩代际（走 SessionId 索引，不扫描历史消息）。
+    /// 会话不存在时返回 0（与会话实体默认代际一致）。写库路径原有的 session 查询与
+    /// sourceGeneration 语义保持不变，本查询仅用于闸门前的指纹计算。
+    /// </summary>
+    private static async Task<int> TryGetCompactionGenerationAsync(
+        MemoryDbContext db,
+        string sessionId,
+        CancellationToken ct)
+        => await db.Sessions
+            .Where(s => s.SessionId == sessionId)
+            .Select(s => (int?)s.CompactionGeneration)
+            .FirstOrDefaultAsync(ct) ?? 0;
 
     /// <summary>
     /// 对"最近消息原样保留窗口"执行尺寸驱逐（见 <see cref="ContextCompactionOptions.MaxVerbatimMessageBytes"/>）。
