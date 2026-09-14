@@ -10,7 +10,7 @@
 
 ## 2026-09-14 结算单向死胡同（缺陷卡 dc0ac9a8）
 
-[调查报告](Reports/task-bound-goal-settlement-deadend-20260914.md)：`ConservativeGoalIterationVerifier`（非 completed / `evidence_incomplete` → Blocked）与 `GoalSettlementStore`（task-bound 时 Goal=Failed、release assignment 并置 `ActiveAssignmentId=null`）叠加后，与 `TaskAgentCommandService.ApplyDispositionAsync` 的归属校验（要求 `task.ActiveAssignmentId == assignment_id`）构成**硬矛盾**：状态机允许 `Blocked→Ready`，但结算后不存在任何存活路径满足归属校验，归属 Agent 无法 canonical 上报；同时 `TaskExecutionRepairCoordinator` 的 `tracker-legacy-blocked-*` 是第二个独立单向口。现场：卡 `3bd2a4b0` 两轮自动派发分别在 accepted 后 94 s / 108 s 被 `tgb-*`（Goal 结算）判 Blocked。修复顺序 F3（派发端到端携带 task/assignment 元数据，先补单测）→ F1（恢复性结局改 NeedsReview 且不释放 assignment）→ F2（有界 re-arm，需 ADR 对齐）。本轮为取证与方案定稿，未改代码。
+[调查报告](Reports/task-bound-goal-settlement-deadend-20260914.md)：`ConservativeGoalIterationVerifier`（非 completed / `evidence_incomplete` → Blocked）与 `GoalSettlementStore`（task-bound 时 Goal=Failed、release assignment 并置 `ActiveAssignmentId=null`）叠加后，与 `TaskAgentCommandService.ApplyDispositionAsync` 的归属校验（要求 `task.ActiveAssignmentId == assignment_id`）构成**硬矛盾**：状态机允许 `Blocked→Ready`，但结算后不存在任何存活路径满足归属校验，归属 Agent 无法 canonical 上报；同时 `TaskExecutionRepairCoordinator` 的 `tracker-legacy-blocked-*` 是第二个独立单向口。现场：卡 `3bd2a4b0` 两轮自动派发分别在 accepted 后 94 s / 108 s 被 `tgb-*`（Goal 结算）判 Blocked。修复顺序 F3（派发端到端携带 task/assignment 元数据，先补单测）→ F1（恢复性结局改 NeedsReview 且不释放 assignment）→ F2（有界 re-arm，需 ADR 对齐）。本轮为取证与方案定稿，未改代码。**增补 §2.6**：`ReleaseAssignment` 只清 `task.ActiveAssignmentId`、**不清** `binding.AssignmentId`（陈旧残留），故「ActiveTask=null」不能再用「门禁判空」解释，断点收窄到下游投递/投影环节；派发链末端已有测试覆盖（`AgentExecutionWakeupActiveTaskPreservationTests.cs:139`），F3 缺口只在 `GoalContinuationWorker → delivery → claimed.Metadata` 一段。
 
 ## 2026-09-13 ADR-089 U0 正确性返工（R1–R4）
 

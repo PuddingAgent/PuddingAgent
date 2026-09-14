@@ -103,6 +103,28 @@ Goal 迭代运行时的 `ActiveTask` 为 null，说明派发元数据没到位�
 全仓唯一对 Goal 迭代写这两个键的地方是 `GoalContinuationWorker.cs:137-160`，且被 `taskBinding != null && task != null && taskBinding.AssignmentId != null` 三重门禁。
 **待查（下一步只读探针）**：`task_goal_bindings.assignment_id` 是否为空 / `message_deliveries.metadata` 是否丢失。当前只能确认「链路末端为空」，不能确认断点在哪一环。
 
+### 2.6 本轮补充静态事实（修正 §2.5 的候选范围）
+
+**事实 A：结算只清 task，不清 binding ⇒ binding.AssignmentId 是陈旧残留。**
+`ReleaseAssignment`（`GoalSettlementStore.cs:990-1011`）的门禁是 `binding.AssignmentId` 非空，作用对象只有 `attempt` 与 `task.ActiveAssignmentId`：
+
+```csharp
+if (attempt is not null && attempt.ReleasedAtUtc is null) { attempt.Status = terminalStatus; attempt.ReleasedAtUtc = now; … }
+if (!string.Equals(task.ActiveAssignmentId, binding.AssignmentId, …)) return false;
+task.ActiveAssignmentId = null;   // 仅此处；binding.AssignmentId 未被改写
+```
+
+推论：结算之后 `binding.AssignmentId != null` 仍成立，故 `GoalContinuationWorker.cs:137` 的三重门禁**不会**因「assignment 被清空」而落空——它会继续把**已释放的 attempt id** 写进 metadata。
+⇒ 「ActiveTask=null」**不能**再用「门禁判空」解释，断点大概率在**下游投递/投影**环节，或落在 `MessageDeliveryDispatcher.cs:405-407` 的 `claimed.Metadata.Count > 0 ?` 短路分支上（该分支会**整体丢弃**事件侧 metadata）。这也解释了为何 §2.5 只能观察到链路末端为空。
+
+**事实 B：派发链末端已有测试覆盖，F3 缺口只在中间一段。**
+`Source/PuddingRuntimeTests/Services/AgentExecutionWakeupActiveTaskPreservationTests.cs:139`（`CreateForWorkspaceAgentAsync_MetadataTaskKeys_BuildActiveTask`，测试 5）已锁定 `WorkspaceAgentInvocation.Metadata → dispatch.Request.ActiveTask` 的字段级映射。因此 F3 缺的测试不是末端，而是：
+
+> `GoalContinuationWorker.DispatchOneAsync` 产出的 `SubmitTurnRequest.Metadata` → envelope/delivery 落库 → `MessageInboxItem.claimed.Metadata` → `effectiveMetadata` 这一段。
+
+**事实 C：`ReleaseAssignment` 的残留语义还会污染既有探针。**
+`tracker-legacy-blocked-*`（`TaskExecutionRepairCoordinator.cs:415`）与 `tgb-*` 的判定都读 binding/attempt；binding 上的陈旧 `AssignmentId` 可能让「已释放」被识别为「仍归属」。**实施 F1（保留 assignment）时必须同时给出这条残留的清理或对齐策略**，否则新旧语义叠加会产出第三类误判。
+
 ---
 
 ## 3. 影响
