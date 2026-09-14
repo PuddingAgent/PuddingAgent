@@ -294,7 +294,11 @@ public sealed class ContextWindowManager
                 $"Canonical ChatMessages source is required before hydrating session '{sessionId}' from the Runtime memory database.");
         }
 
+        var stageSw = System.Diagnostics.Stopwatch.StartNew();
         await using var lease = await _compactionCoordinator.AcquireAsync(sessionId, ct);
+        _logger.LogInformation("[HistoryHydration:Stage] session={Session} stage=compaction_lock durationMs={DurationMs}",
+            sessionId, stageSw.ElapsedMilliseconds);
+        stageSw.Restart();
         await using var db = await _memoryDbFactory.CreateDbContextAsync(ct);
         var sync = await CanonicalChatTranscriptSynchronizer.SynchronizeAsync(
             db,
@@ -304,11 +308,12 @@ public sealed class ContextWindowManager
             fallbackAgentId: null,
             ct);
         _logger.LogInformation(
-            "[AgentExec] Canonical transcript synchronized before DB hydration session={Session} rowsRead={RowsRead} imported={Imported} highWatermark={HighWatermark}",
+            "[AgentExec] Canonical transcript synchronized before DB hydration session={Session} rowsRead={RowsRead} imported={Imported} highWatermark={HighWatermark} durationMs={DurationMs}",
             sessionId,
             sync.RowsRead,
             sync.Imported,
-            sync.HighWatermark);
+            sync.HighWatermark, stageSw.ElapsedMilliseconds);
+        stageSw.Restart();
         var queryable = db.Messages
             .AsNoTracking()
             .Where(m => m.SessionId == sessionId && m.CompactedBy == null);
@@ -333,6 +338,8 @@ public sealed class ContextWindowManager
             .OrderByDescending(m => m.CreatedAt)
             .Take(ContextWindowConstants.MaxDbFetchMessages)
             .ToListAsync(ct);
+        _logger.LogInformation("[HistoryHydration:Stage] session={Session} stage=active_messages durationMs={DurationMs} rows={Rows}",
+            sessionId, stageSw.ElapsedMilliseconds, entities.Count);
 
         // 按 Sequence 升序得到稳定有序的消息列表（Sequence 是稳定顺序）。
         var ordered = entities.OrderBy(m => m.Sequence).ToList();
@@ -453,7 +460,10 @@ public sealed class ContextWindowManager
 
             // 有界冷启动重组：钳制重水合预算。预算从摘要链开始分摊——
             // 摘要链先保留（信息密度最高），剩余预算给原文 tier 填充。
+            var summarySw = System.Diagnostics.Stopwatch.StartNew();
             var summaries = await LoadActiveCompactSummariesAsync(sessionId, ct);
+            _logger.LogInformation("[HistoryHydration:Stage] session={Session} stage=active_summaries durationMs={DurationMs} rows={Rows}",
+                sessionId, summarySw.ElapsedMilliseconds, summaries.Count);
             var summaryTokens = summaries.Sum(m =>
                 Math.Max(1, (m.Content ?? string.Empty).Length / ContextWindowConstants.TokenEstimateCharDivisor));
             var hydrationBudget = maxTokenBudget;
@@ -483,7 +493,10 @@ public sealed class ContextWindowManager
 
             if (_jsonlReader is not null)
             {
+                var jsonlSw = System.Diagnostics.Stopwatch.StartNew();
                 var jsonlHistory = await BuildContextFromJsonlSnapshotAsync(sessionId, rawBudget, ct, query);
+                _logger.LogInformation("[HistoryHydration:Stage] session={Session} stage=jsonl durationMs={DurationMs} rows={Rows}",
+                    sessionId, jsonlSw.ElapsedMilliseconds, jsonlHistory.Messages.Count);
                 if (jsonlHistory.Messages.Count > 0
                     && (hydrated is null || jsonlHistory.LastCreatedAt > hydrated.LastCreatedAt))
                 {

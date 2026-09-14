@@ -32,6 +32,20 @@ public sealed partial class ContextPipeline
         var layerInfos = new List<ContextLayerInfo>();
         var assemblyStartedAt = DateTimeOffset.UtcNow;
         var assemblySw = System.Diagnostics.Stopwatch.StartNew();
+        var stageDurations = new Dictionary<string, long>(StringComparer.Ordinal);
+
+        async Task<T> MeasureAsync<T>(string stage, Func<Task<T>> build)
+        {
+            var elapsed = System.Diagnostics.Stopwatch.StartNew();
+            try { return await build(); }
+            finally
+            {
+                stageDurations[stage] = elapsed.ElapsedMilliseconds;
+                _logger.LogInformation(
+                    "[ContextPipeline:Stage] session={Session} stage={Stage} durationMs={DurationMs}",
+                    request.SessionId, stage, elapsed.ElapsedMilliseconds);
+            }
+        }
 
         var budget = new ContextBudgetAllocator(_logger);
         var ctx = new ContextBuildContext
@@ -43,7 +57,7 @@ public sealed partial class ContextPipeline
         try
         {
         // ── L0: 静态上下文（IDENTITY/SOUL/AGENTS）— Session 内不变，利用 KV-cache ──
-        var staticCtx = await GetOrBuildStaticLayerAsync(request, ct);
+        var staticCtx = await MeasureAsync("static", () => GetOrBuildStaticLayerAsync(request, ct));
         RecordLayer(sb, staticCtx, "静态上下文", "L0-STATIC", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L0-ENVIRONMENT: 运行环境不变量（OS/运行时/shell）— 低变化，独立于 workspace 路径 ──
@@ -52,13 +66,13 @@ public sealed partial class ContextPipeline
 
         // ── L0-AGENTS-ROSTER: 当前工作区可见 Agent 名册，用于 agent-to-agent 消息寻址 ──
         // session 冻结：子代理生成/结束会改写名册，若每轮实时重建将反复击穿稳定前缀。
-        var workspaceAgentsCtx = await GetOrBuildWorkspaceAgentsLayerAsync(request, ct);
+        var workspaceAgentsCtx = await MeasureAsync("agent_roster", () => GetOrBuildWorkspaceAgentsLayerAsync(request, ct));
         RecordLayer(sb, workspaceAgentsCtx, "工作区 Agents", "L0-AGENTS-ROSTER", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L0-TASK-PLANNING: 系统生成的任务树位置与委派约束 ──
         var taskPlanningCtx = _taskPlannerContextBuilder is null
             ? string.Empty
-            : await _taskPlannerContextBuilder.BuildAsync(request, ct);
+            : await MeasureAsync("task_planning", () => _taskPlannerContextBuilder.BuildAsync(request, ct));
         var taskPlanningTokens = EstimateTokens(taskPlanningCtx);
         usedBudget += taskPlanningTokens;
         if (!string.IsNullOrEmpty(taskPlanningCtx))
@@ -87,20 +101,20 @@ public sealed partial class ContextPipeline
         var compactionLevel = ctx.CompactionLevel;
 
         // ── L3: 用户偏好 ──
-        var userProfile = await GetOrBuildUserProfileAsync(request, ct);
+        var userProfile = await MeasureAsync("user_profile", () => GetOrBuildUserProfileAsync(request, ct));
         var userProfileTokens = EstimateTokens(userProfile);
         usedBudget += userProfileTokens;
         ctx.UsedBudget = usedBudget;
         budget.UpdateAvailable(ctx);
 
                 // ── L1: 动态工具（5%）──
-        var toolsCtx = await BuildToolsLayerAsync(request, ct);
+        var toolsCtx = await MeasureAsync("tools", () => BuildToolsLayerAsync(request, ct));
         var toolsBudget = budget.AllocatePercent(ctx, 0.05);
         var toolsTrimmed = TrimToTokenBudget(toolsCtx, toolsBudget);
         RecordLayer(sb, toolsTrimmed, "动态工具", "L1-TOOLS", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L2: 动态 Skills 与多模态渠道协议（8%）──
-        var skillsCtx = await BuildSkillsLayerAsync(request, ct);
+        var skillsCtx = await MeasureAsync("skills", () => BuildSkillsLayerAsync(request, ct));
         var skillsBudget = budget.AllocatePercent(ctx, 0.08);
         var skillsTrimmed = TrimToTokenBudget(skillsCtx, skillsBudget);
                 RecordLayer(sb, skillsTrimmed, "动态技能", "L2-SKILLS", ref usedBudget, totalBudget, layers, layerInfos);
@@ -120,8 +134,8 @@ public sealed partial class ContextPipeline
         // ── L2-MEMORY-SUMMARY ──
         var memorySummaryCtx = _agentMemorySummaryContextBuilder is null
             ? string.Empty
-            : await _agentMemorySummaryContextBuilder.BuildAsync(
-                request.SessionId, request.PersistentAgentInstanceId, request.IsFirstMessage, ct);
+            : await MeasureAsync("memory_summary", () => _agentMemorySummaryContextBuilder.BuildAsync(
+                request.SessionId, request.PersistentAgentInstanceId, request.IsFirstMessage, ct));
         var hasMemorySummary = !string.IsNullOrWhiteSpace(memorySummaryCtx);
         var memorySummaryTokens = hasMemorySummary ? EstimateTokens(memorySummaryCtx) : 0;
         usedBudget += memorySummaryTokens;
@@ -161,7 +175,7 @@ public sealed partial class ContextPipeline
         // ── L3-USER-PREFERENCES: 记忆库用户偏好预取（会话启动自动注入，Prefetch）──
         if (_userPreferenceService is not null)
         {
-            var prefsCtx = await GetOrBuildUserPreferencesAsync(request, ct);
+            var prefsCtx = await MeasureAsync("user_preferences", () => GetOrBuildUserPreferencesAsync(request, ct));
             if (!string.IsNullOrWhiteSpace(prefsCtx))
             {
                 var prefsTokens = EstimateTokens(prefsCtx);
@@ -183,7 +197,7 @@ public sealed partial class ContextPipeline
         // ── L4: 重要记忆（10%）──
         ctx.UsedBudget = usedBudget;
         budget.UpdateAvailable(ctx);
-        var pinnedCtx = await GetOrBuildPinnedMemoryAsync(request, ct);
+        var pinnedCtx = await MeasureAsync("pinned_memory", () => GetOrBuildPinnedMemoryAsync(request, ct));
         var pinnedPercent = compactionLevel >= ContextPipelineCompactionLevel.Aggressive ? 0.05 : 0.10;
         var pinnedBudget = budget.AllocatePercent(ctx, pinnedPercent);
         var pinnedTrimmed = TrimToTokenBudget(pinnedCtx, pinnedBudget);
@@ -208,12 +222,12 @@ public sealed partial class ContextPipeline
         {
             try
             {
-                contextAugmentStr = await _subconsciousRecallPipeline.RunAsync(
+                contextAugmentStr = await MeasureAsync("memory_recall", () => _subconsciousRecallPipeline.RunAsync(
                     request.UserMessage ?? "",
                     request.WorkspaceId,
                     request.PersistentAgentInstanceId,
                     request.IsFirstMessage,
-                    ct);
+                    ct));
                 if (!string.IsNullOrWhiteSpace(contextAugmentStr))
                 {
                     contextAugmentTokens = EstimateTokens(contextAugmentStr);
@@ -234,7 +248,7 @@ public sealed partial class ContextPipeline
         {
             try
             {
-                contextAugmentStr = await BuildLegacyAgentLogRecallLayerAsync(request, ct);
+                contextAugmentStr = await MeasureAsync("agent_log_recall", () => BuildLegacyAgentLogRecallLayerAsync(request, ct));
                 if (!string.IsNullOrWhiteSpace(contextAugmentStr))
                 {
                     contextAugmentLayerName = "L6-AGENT-LOG-RECALL";
@@ -294,7 +308,7 @@ public sealed partial class ContextPipeline
         List<MemorySnippet>? croppedSnippets = null;
         if (_croppedLayersProvider is not null && cropBundles.Count > 0)
         {
-            var pipelineResult = await _croppedLayersProvider.RunFullPipelineAsync(
+            var pipelineResult = await MeasureAsync("memory_crop", () => _croppedLayersProvider.RunFullPipelineAsync(
                 cropBundles,
                 request.UserMessage,
                 request.WorkspaceId,
@@ -302,7 +316,7 @@ public sealed partial class ContextPipeline
                 request.AgentTemplateId,
                 request.PersistentAgentInstanceId,
                 request.IsFirstMessage,
-                ct);
+                ct));
 
             croppedSnippets = pipelineResult.Snippets;
         }
@@ -413,6 +427,7 @@ public sealed partial class ContextPipeline
             layerInfos,
             result,
             error: null,
+            stageDurations,
             ct);
 
         _logger.LogDebug(
@@ -445,6 +460,7 @@ public sealed partial class ContextPipeline
                 layerInfos,
                 finalPrompt: null,
                 error: ex,
+                stageDurations,
                 ct: CancellationToken.None);
             throw;
         }
@@ -571,6 +587,7 @@ public sealed partial class ContextPipeline
         IReadOnlyList<ContextLayerInfo> layerInfos,
         string? finalPrompt,
         Exception? error,
+        IReadOnlyDictionary<string, long> stageDurations,
         CancellationToken ct)
     {
         if (_telemetrySink is null)
@@ -602,6 +619,9 @@ public sealed partial class ContextPipeline
                 dimensions[$"layer.{key}.tokens"] = layer.TokenCount.ToString();
                 dimensions[$"layer.{key}.preview_chars"] = layer.ContentPreview.Length.ToString();
             }
+
+            foreach (var (stage, elapsedMs) in stageDurations)
+                dimensions[$"stage.{stage}.duration_ms"] = elapsedMs.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
             await _telemetrySink.RecordAsync(new TelemetryMetric
             {
