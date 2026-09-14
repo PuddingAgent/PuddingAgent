@@ -4,6 +4,10 @@
 
 # PuddingAgent CodeMAP
 
+## 2026-09-14 最近 24 小时效率评估
+
+`Docs/Reports/PuddingAgent最近24小时工作效率评估-2026-09-14.md` 与 `PuddingAgent效率指标-2026-09-14.json`：窗口 9/13 19:55–9/14 19:55，627 次模型调用、95.1818% 加权命中；17 次确认心跳 10 成功/7 失败，7 个子 Run 仅 3 completed。通过 canonical 工具回执核对 7 个自有提交（2 源码/5 文档），无新增 task.completed。重点为视觉故障持续失败、累计输入预算截断、审批/探针停滞与交接摘要占轮；仅评估，未改产品或看板。
+
 ## 2026-09-13 统一检索与渐进展开设计
 
 U0 独立审阅：`Docs/Reports/ADR-089-U0审阅与返工意见-2026-09-13.md`。`bf6f91e/1f687d7/fe49137/ff79f3b` 落地 RetrievalContracts/RetrievalMatcher 与 SearchGrepTool 改造；Core 16、Runtime 32 项定向通过，补充复现暴露旧索引文本、正则超时丢失/整体预算、读取错误/取消误报 no_match、max_results 合并上限四项问题。U0 评价 needs_changes，S3 与 U1–U5 待交付；不能将已提交片段等同产品完成。

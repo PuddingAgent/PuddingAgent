@@ -4,6 +4,13 @@
 
 ## 1. 基本原则
 
+### 日常工作效率与心跳审计（2026-09-14）
+
+- 固定本地 24 小时窗口，commands 的 epoch 毫秒、Gateway/TokenUsageEvents 的空格 UTC 文本、canonical/子 Run 的 ISO 文本分别转换。先核对唯一 Gateway source_id，不能把账本与归因投影累加。
+- 按 command metadata.source 识别心跳，用 turn_id 查询 canonical 终态和 tool.call.completed；区分运行成功、交接维护、有工具动作和真实任务完成。parked_terminal 覆盖来源元数据时保留未分类，不根据回复标题猜测来源。
+- 主工具与子 Run tools.jsonl 分开统计；父级 spawn 失败可能只是子级同一故障的投影。长等待、审批拒绝、DB 探针超时需结合事件参数和目标进展，不能只看 argsHash 是否完全重复。默认转向按 turn 索引查询，避免大范围 runtime_activity 明细扫描。
+- Git 产出用工具回执 sha 与本地提交交叉核对，排除其他协作者；task.completed/evaluation 与代码提交单独报告。样例和验证口径见 `Docs/Reports/PuddingAgent最近24小时工作效率评估-2026-09-14.md`。
+
 ### 感觉上下文压缩频繁（2026-09-13）
 
 - 先按准确 sessionId 和当地时间窗口关联 `logs/diagnostics/compaction-log.jsonl` 与 `conversation_events` 的 compactionId；started/completed 行数、count>0 写入数、skipped 数分别统计。JSONL 也会记录摘要膨胀被拒绝的尝试，不能把每行都算成功；顶部 toast 和卡片可能是同一 started 事件。

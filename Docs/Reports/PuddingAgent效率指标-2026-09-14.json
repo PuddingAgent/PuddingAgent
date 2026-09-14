@@ -1,0 +1,607 @@
+{
+  "windowStart": "2026-09-13T11:55:00+00:00",
+  "windowEnd": "2026-09-14T11:55:00+00:00",
+  "timeZone": "Asia/Shanghai",
+  "sessionId": "206a9b48ec904ebb93e7541131fbb835",
+  "ledger": "llm_gateway_usage_events; attribution projections not added",
+  "gateway": {
+    "calls": 627,
+    "promptTokens": 52664776,
+    "completionTokens": 617065,
+    "cacheHitTokens": 50127296,
+    "cacheMissTokens": 2537480,
+    "weightedHitRate": 0.9518182703368946
+  },
+  "models": {
+    "bigmodel/glm-5.3-flash": {
+      "calls": 14,
+      "promptTokens": 905251,
+      "completionTokens": 27131,
+      "cacheHitTokens": 721344,
+      "cacheMissTokens": 183907,
+      "weightedHitRate": 0.7968441901748797
+    },
+    "deepseek/deepseek-flash": {
+      "calls": 613,
+      "promptTokens": 51759525,
+      "completionTokens": 589934,
+      "cacheHitTokens": 49405952,
+      "cacheMissTokens": 2353573,
+      "weightedHitRate": 0.9545286978580271
+    }
+  },
+  "roles": {
+    "main": {
+      "calls": 297,
+      "promptTokens": 30446804,
+      "completionTokens": 267570,
+      "cacheHitTokens": 29582208,
+      "cacheMissTokens": 864596,
+      "weightedHitRate": 0.9716030621801881
+    },
+    "children": {
+      "calls": 252,
+      "promptTokens": 21079613,
+      "completionTokens": 160414,
+      "cacheHitTokens": 20313664,
+      "cacheMissTokens": 765949,
+      "weightedHitRate": 0.9636639913645474
+    },
+    "background": {
+      "calls": 78,
+      "promptTokens": 1138359,
+      "completionTokens": 189081,
+      "cacheHitTokens": 231424,
+      "cacheMissTokens": 906935,
+      "weightedHitRate": 0.20329614822740455
+    }
+  },
+  "background": {
+    "memory-write:default.global_general-assistant.6a8": {
+      "calls": 8,
+      "promptTokens": 78906,
+      "completionTokens": 5568,
+      "cacheHitTokens": 0,
+      "cacheMissTokens": 78906,
+      "weightedHitRate": 0.0
+    },
+    "periodic:memory.auto_dream": {
+      "calls": 1,
+      "promptTokens": 62386,
+      "completionTokens": 1736,
+      "cacheHitTokens": 0,
+      "cacheMissTokens": 62386,
+      "weightedHitRate": 0.0
+    },
+    "periodic:skill.extract_patterns": {
+      "calls": 40,
+      "promptTokens": 783267,
+      "completionTokens": 53437,
+      "cacheHitTokens": 217728,
+      "cacheMissTokens": 565539,
+      "weightedHitRate": 0.2779741773877873
+    },
+    "periodic:skill.improve": {
+      "calls": 8,
+      "promptTokens": 20759,
+      "completionTokens": 61837,
+      "cacheHitTokens": 10112,
+      "cacheMissTokens": 10647,
+      "weightedHitRate": 0.48711402283346983
+    },
+    "subconscious:206a9b48ec904ebb93e7541131fbb835": {
+      "calls": 21,
+      "promptTokens": 193041,
+      "completionTokens": 66503,
+      "cacheHitTokens": 3584,
+      "cacheMissTokens": 189457,
+      "weightedHitRate": 0.018566004113115868
+    }
+  },
+  "commands": [
+    {
+      "id": 1980,
+      "turnId": "e39245d2decc439d9b54fb5f4f18d030",
+      "source": "heartbeat",
+      "status": "succeeded",
+      "createdAt": "2026-09-13T12:19:55.238000+00:00",
+      "durationMs": 132383,
+      "toolCalls": 23,
+      "toolFailures": 5,
+      "errorCode": null,
+      "errorMessage": null
+    },
+    {
+      "id": 1981,
+      "turnId": "7e503eb81c714a57bc3a72ac7b856a00",
+      "source": "goal_continuation",
+      "status": "failed",
+      "createdAt": "2026-09-13T12:28:09.302000+00:00",
+      "durationMs": 98327,
+      "toolCalls": 4,
+      "toolFailures": 0,
+      "errorCode": "work_unit_budget_exhausted",
+      "errorMessage": "WorkUnit input Token budget exhausted (1011283/1000000)."
+    },
+    {
+      "id": 1982,
+      "turnId": "3b76991232b84b7e956d5c871dd0547c",
+      "source": "heartbeat",
+      "status": "failed",
+      "createdAt": "2026-09-13T15:55:31.793000+00:00",
+      "durationMs": 356560,
+      "toolCalls": 38,
+      "toolFailures": 3,
+      "errorCode": "runtime_execution_failed",
+      "errorMessage": "LLM 调用失败: The response ended prematurely. (ResponseEnded)"
+    },
+    {
+      "id": 1983,
+      "turnId": "c6b8bd68734e4cd58adb00ee353d9a47",
+      "source": "heartbeat",
+      "status": "succeeded",
+      "createdAt": "2026-09-13T16:56:31.916000+00:00",
+      "durationMs": 351847,
+      "toolCalls": 56,
+      "toolFailures": 4,
+      "errorCode": null,
+      "errorMessage": null
+    },
+    {
+      "id": 1984,
+      "turnId": "ba7a7be58de947599972894f8aa18e5b",
+      "source": "heartbeat",
+      "status": "succeeded",
+      "createdAt": "2026-09-13T18:02:17.569000+00:00",
+      "durationMs": 36722,
+      "toolCalls": 0,
+      "toolFailures": 0,
+      "errorCode": null,
+      "errorMessage": null
+    },
+    {
+      "id": 1985,
+      "turnId": "8749d2f37e3e43a7b1567768d3ade74a",
+      "source": "heartbeat",
+      "status": "succeeded",
+      "createdAt": "2026-09-13T19:02:52.995000+00:00",
+      "durationMs": 760981,
+      "toolCalls": 41,
+      "toolFailures": 1,
+      "errorCode": null,
+      "errorMessage": null
+    },
+    {
+      "id": 1986,
+      "turnId": "340ce54a77c244c98e5ccfa646792932",
+      "source": "goal_continuation",
+      "status": "failed",
+      "createdAt": "2026-09-13T19:20:40.666000+00:00",
+      "durationMs": 128392,
+      "toolCalls": 2,
+      "toolFailures": 0,
+      "errorCode": "work_unit_budget_exhausted",
+      "errorMessage": "WorkUnit input Token budget exhausted (1020083/1000000)."
+    },
+    {
+      "id": 1987,
+      "turnId": "41ac7f6ad6dd41399c1f379280c81233",
+      "source": "heartbeat",
+      "status": "succeeded",
+      "createdAt": "2026-09-13T20:15:28.838000+00:00",
+      "durationMs": 467967,
+      "toolCalls": 11,
+      "toolFailures": 2,
+      "errorCode": null,
+      "errorMessage": null
+    },
+    {
+      "id": 1988,
+      "turnId": "c782487eb0fd4a33b11e9122a0a65c93",
+      "source": "heartbeat",
+      "status": "succeeded",
+      "createdAt": "2026-09-13T21:22:39.363000+00:00",
+      "durationMs": 495415,
+      "toolCalls": 61,
+      "toolFailures": 1,
+      "errorCode": null,
+      "errorMessage": null
+    },
+    {
+      "id": 1989,
+      "turnId": "9dbcff1b447843e8b045b0913975f798",
+      "source": "heartbeat",
+      "status": "succeeded",
+      "createdAt": "2026-09-13T22:30:49.961000+00:00",
+      "durationMs": 38500,
+      "toolCalls": 0,
+      "toolFailures": 0,
+      "errorCode": null,
+      "errorMessage": null
+    },
+    {
+      "id": 1990,
+      "turnId": "2b890d3785fa4fde817ec070db84fc99",
+      "source": "unclassified",
+      "status": "succeeded",
+      "createdAt": "2026-09-13T23:30:46.567000+00:00",
+      "durationMs": 5523761,
+      "toolCalls": 40,
+      "toolFailures": 1,
+      "errorCode": null,
+      "errorMessage": null
+    },
+    {
+      "id": 1991,
+      "turnId": "2f360154c8b740bab107deb5107b2935",
+      "source": "subagent",
+      "status": "succeeded",
+      "createdAt": "2026-09-14T01:02:50.622000+00:00",
+      "durationMs": 182393,
+      "toolCalls": 5,
+      "toolFailures": 1,
+      "errorCode": null,
+      "errorMessage": null
+    },
+    {
+      "id": 1992,
+      "turnId": "305ce89817154e66b3770e82b20a4ad0",
+      "source": "feishu",
+      "status": "succeeded",
+      "createdAt": "2026-09-14T01:20:22.584000+00:00",
+      "durationMs": 432279,
+      "toolCalls": 49,
+      "toolFailures": 1,
+      "errorCode": null,
+      "errorMessage": null
+    },
+    {
+      "id": 1993,
+      "turnId": "c96ca8d20a434035a3ccbf13913b2657",
+      "source": "heartbeat",
+      "status": "succeeded",
+      "createdAt": "2026-09-14T02:27:25.885000+00:00",
+      "durationMs": 45814,
+      "toolCalls": 0,
+      "toolFailures": 0,
+      "errorCode": null,
+      "errorMessage": null
+    },
+    {
+      "id": 1994,
+      "turnId": "f81fe3ef387a471e9f5109ff2c998679",
+      "source": "heartbeat",
+      "status": "succeeded",
+      "createdAt": "2026-09-14T03:28:03.383000+00:00",
+      "durationMs": 874662,
+      "toolCalls": 47,
+      "toolFailures": 1,
+      "errorCode": null,
+      "errorMessage": null
+    },
+    {
+      "id": 1995,
+      "turnId": "83705e7526b34d9a91849a084a44d861",
+      "source": "subagent",
+      "status": "succeeded",
+      "createdAt": "2026-09-14T03:42:39.185000+00:00",
+      "durationMs": 53272,
+      "toolCalls": 0,
+      "toolFailures": 0,
+      "errorCode": null,
+      "errorMessage": null
+    },
+    {
+      "id": 1996,
+      "turnId": "22327878434b43018d6a057a9cc4e43f",
+      "source": "heartbeat",
+      "status": "succeeded",
+      "createdAt": "2026-09-14T04:31:29.247000+00:00",
+      "durationMs": 1232268,
+      "toolCalls": 31,
+      "toolFailures": 2,
+      "errorCode": null,
+      "errorMessage": null
+    },
+    {
+      "id": 1997,
+      "turnId": "b54bd5447faf4048a2319e98be358a52",
+      "source": "unclassified",
+      "status": "failed",
+      "createdAt": "2026-09-14T04:42:07.244000+00:00",
+      "durationMs": 84720,
+      "toolCalls": 2,
+      "toolFailures": 0,
+      "errorCode": "runtime_execution_failed",
+      "errorMessage": "LLM 调用失败: Visual inputs require a workspace and a vision-capable route."
+    },
+    {
+      "id": 1998,
+      "turnId": "b86f712cdc0b4e8ea50c71e90e8e9031",
+      "source": "heartbeat",
+      "status": "failed",
+      "createdAt": "2026-09-14T05:51:30.464000+00:00",
+      "durationMs": 3739,
+      "toolCalls": 0,
+      "toolFailures": 0,
+      "errorCode": "runtime_execution_failed",
+      "errorMessage": "LLM 调用失败: Visual inputs require a workspace and a vision-capable route."
+    },
+    {
+      "id": 1999,
+      "turnId": "215bb5e18784475db77e12b3f00fb5c5",
+      "source": "heartbeat",
+      "status": "failed",
+      "createdAt": "2026-09-14T06:52:09.211000+00:00",
+      "durationMs": 2727,
+      "toolCalls": 0,
+      "toolFailures": 0,
+      "errorCode": "runtime_execution_failed",
+      "errorMessage": "LLM 调用失败: Visual inputs require a workspace and a vision-capable route."
+    },
+    {
+      "id": 2000,
+      "turnId": "d1057c841bae4985aaf8588a3a615f38",
+      "source": "heartbeat",
+      "status": "failed",
+      "createdAt": "2026-09-14T07:52:47.486000+00:00",
+      "durationMs": 2432,
+      "toolCalls": 0,
+      "toolFailures": 0,
+      "errorCode": "runtime_execution_failed",
+      "errorMessage": "LLM 调用失败: Visual inputs require a workspace and a vision-capable route."
+    },
+    {
+      "id": 2001,
+      "turnId": "0d82d31113df4d96b8226fa1bbb6cd90",
+      "source": "heartbeat",
+      "status": "failed",
+      "createdAt": "2026-09-14T08:53:25.622000+00:00",
+      "durationMs": 2061,
+      "toolCalls": 0,
+      "toolFailures": 0,
+      "errorCode": "runtime_execution_failed",
+      "errorMessage": "LLM 调用失败: Visual inputs require a workspace and a vision-capable route."
+    },
+    {
+      "id": 2002,
+      "turnId": "543f05ae512144e2b8dbf6a40d9601c0",
+      "source": "heartbeat",
+      "status": "failed",
+      "createdAt": "2026-09-14T09:54:02.929000+00:00",
+      "durationMs": 1924,
+      "toolCalls": 0,
+      "toolFailures": 0,
+      "errorCode": "runtime_execution_failed",
+      "errorMessage": "LLM 调用失败: Visual inputs require a workspace and a vision-capable route."
+    },
+    {
+      "id": 2003,
+      "turnId": "82fc93bd923b4f8292a26227a7776876",
+      "source": "feishu",
+      "status": "failed",
+      "createdAt": "2026-09-14T10:21:50.225000+00:00",
+      "durationMs": 3962,
+      "toolCalls": 0,
+      "toolFailures": 0,
+      "errorCode": "runtime_execution_failed",
+      "errorMessage": "LLM 调用失败: Visual inputs require a workspace and a vision-capable route."
+    },
+    {
+      "id": 2004,
+      "turnId": "53d52e2570a0408597cf63b28e305178",
+      "source": "heartbeat",
+      "status": "failed",
+      "createdAt": "2026-09-14T11:22:24.989000+00:00",
+      "durationMs": 2930,
+      "toolCalls": 0,
+      "toolFailures": 0,
+      "errorCode": "runtime_execution_failed",
+      "errorMessage": "LLM 调用失败: Visual inputs require a workspace and a vision-capable route."
+    }
+  ],
+  "subruns": [
+    {
+      "runId": "run_20260913_122826_0a91bfb43974",
+      "subSessionId": "206a9b48ec904ebb93e7541131fbb835-sub-9a16b89e",
+      "status": "budget_exhausted",
+      "rounds": 21,
+      "tools": 43,
+      "toolFailures": 0,
+      "durationMs": 79372,
+      "maxRounds": 600,
+      "timeoutSeconds": 1664,
+      "mode": "sync",
+      "gateway": {
+        "calls": 21,
+        "promptTokens": 909904,
+        "completionTokens": 5835,
+        "cacheHitTokens": 853760,
+        "cacheMissTokens": 56144,
+        "weightedHitRate": 0.9382967873533912
+      }
+    },
+    {
+      "runId": "run_20260913_190650_2d55c295d6ad",
+      "subSessionId": "206a9b48ec904ebb93e7541131fbb835-sub-adf37104",
+      "status": "completed",
+      "rounds": 18,
+      "tools": 41,
+      "toolFailures": 0,
+      "durationMs": 281805,
+      "maxRounds": 600,
+      "timeoutSeconds": 86044,
+      "mode": "sync",
+      "gateway": {
+        "calls": 18,
+        "promptTokens": 1079054,
+        "completionTokens": 12886,
+        "cacheHitTokens": 1002368,
+        "cacheMissTokens": 76686,
+        "weightedHitRate": 0.9289321943109428
+      }
+    },
+    {
+      "runId": "run_20260913_192106_846feb162768",
+      "subSessionId": "206a9b48ec904ebb93e7541131fbb835-sub-16771b7d",
+      "status": "budget_exhausted",
+      "rounds": 16,
+      "tools": 37,
+      "toolFailures": 0,
+      "durationMs": 103353,
+      "maxRounds": 600,
+      "timeoutSeconds": 1655,
+      "mode": "sync",
+      "gateway": {
+        "calls": 16,
+        "promptTokens": 879555,
+        "completionTokens": 7721,
+        "cacheHitTokens": 804480,
+        "cacheMissTokens": 75075,
+        "weightedHitRate": 0.9146443371932398
+      }
+    },
+    {
+      "runId": "run_20260913_201606_ae65534df321",
+      "subSessionId": "206a9b48ec904ebb93e7541131fbb835-sub-e3ccb762",
+      "status": "completed",
+      "rounds": 31,
+      "tools": 59,
+      "toolFailures": 1,
+      "durationMs": 285354,
+      "maxRounds": 600,
+      "timeoutSeconds": 86242,
+      "mode": "sync",
+      "gateway": {
+        "calls": 31,
+        "promptTokens": 2113726,
+        "completionTokens": 25817,
+        "cacheHitTokens": 2036352,
+        "cacheMissTokens": 77374,
+        "weightedHitRate": 0.9633944986247035
+      }
+    },
+    {
+      "runId": "run_20260913_233113_2c12ed4609a2",
+      "subSessionId": "206a9b48ec904ebb93e7541131fbb835-sub-450cb047",
+      "status": "failed",
+      "rounds": 118,
+      "tools": 165,
+      "toolFailures": 20,
+      "durationMs": 4900313,
+      "maxRounds": 600,
+      "timeoutSeconds": 86252,
+      "mode": "sync",
+      "gateway": {
+        "calls": 118,
+        "promptTokens": 13253899,
+        "completionTokens": 67034,
+        "cacheHitTokens": 13040768,
+        "cacheMissTokens": 213131,
+        "weightedHitRate": 0.983919373461349
+      }
+    },
+    {
+      "runId": "run_20260914_005448_8e5bd87194cf",
+      "subSessionId": "206a9b48ec904ebb93e7541131fbb835-sub-bda3d761",
+      "status": "failed",
+      "rounds": 35,
+      "tools": 65,
+      "toolFailures": 1,
+      "durationMs": 477839,
+      "maxRounds": 600,
+      "timeoutSeconds": 81358,
+      "mode": "async",
+      "gateway": {
+        "calls": 34,
+        "promptTokens": 1938224,
+        "completionTokens": 13990,
+        "cacheHitTokens": 1854592,
+        "cacheMissTokens": 83632,
+        "weightedHitRate": 0.9568512204987659
+      }
+    },
+    {
+      "runId": "run_20260914_033050_5514de18663d",
+      "subSessionId": "206a9b48ec904ebb93e7541131fbb835-sub-0231babc",
+      "status": "completed",
+      "rounds": 14,
+      "tools": 38,
+      "toolFailures": 2,
+      "durationMs": 705281,
+      "maxRounds": 600,
+      "timeoutSeconds": 86233,
+      "mode": "async",
+      "gateway": {
+        "calls": 14,
+        "promptTokens": 905251,
+        "completionTokens": 27131,
+        "cacheHitTokens": 721344,
+        "cacheMissTokens": 183907,
+        "weightedHitRate": 0.7968441901748797
+      }
+    }
+  ],
+  "commits": [
+    {
+      "commandId": 1983,
+      "sha": "5bf1792a8c5288dc72d5185e0a8929377cebe7c2",
+      "message": "fix(tasktools): Blocked 卡 canonical 恢复通道（卡 813ad427）"
+    },
+    {
+      "commandId": 1985,
+      "sha": "f525ed2019032bd7fd5cc675fb493d5f56eec99c",
+      "message": "docs(platform): Blocked 单向闩锁审计报告与索引（缺陷卡 e2c35d6e）"
+    },
+    {
+      "commandId": 1988,
+      "sha": "b9c966614ae198ca6218f430b7505726f45e8430",
+      "message": "Docs: 登记 Task-bound Goal 结算单向死胡同（canonical 通道被结算自身关闭）"
+    },
+    {
+      "commandId": 1990,
+      "sha": "e95dee82f8868dbf92a0eab053f7a3425b481c46",
+      "message": "docs: 结算死胡同报告增补 §2.6（binding 残留语义 + F3 缺口收窄）"
+    },
+    {
+      "commandId": 1992,
+      "sha": "3152ffc06b1b58c79560397be2fb2730cf481d6f",
+      "message": "Docs(报告): task-bound Goal 结算死胡同 §2.7 静态定稿 —— ActiveTask 唯一构造路径在消息投递链，canonical turn 通道无传递位"
+    },
+    {
+      "commandId": 1994,
+      "sha": "0dce6c8043178a521be380f3e42536676cf581da",
+      "message": "docs(goals): 定位 canonical 命令路径 ActiveTask 载体缺口（F3a 可编码级规格）"
+    },
+    {
+      "commandId": 1996,
+      "sha": "d7ec01fde1b6df7b5ceb25fe744cf6c687f3cf89",
+      "message": "F3a: canonical 命令路径补齐 ActiveTask 载体（P1–P5 + 唯一映射器 P2b）"
+    }
+  ],
+  "tools": {
+    "main": {
+      "calls": 410,
+      "failureStatusCount": 22
+    },
+    "children": {
+      "calls": 448,
+      "failureStatusCount": 24
+    },
+    "caveat": "Parent spawn failure can project child failure; counts are tool operations, not independent incidents."
+  },
+  "taskEvents": {
+    "0": 12,
+    "1": 10,
+    "2": 5,
+    "4": 2,
+    "5": 2,
+    "6": 2,
+    "8": 2
+  },
+  "taskCompletedEvents": 0,
+  "taskEvaluations": 0,
+  "compactionLogCount": 7,
+  "compactionCompactDurationMs": 106561,
+  "independentTestsExecutedByAudit": false
+}
