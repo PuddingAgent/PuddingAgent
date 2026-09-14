@@ -47,11 +47,14 @@ public static partial class LlmRequestBudgetGuard
 
     public static int ResolveEffectiveInputLimit(
         LlmConfig? config,
-        int safetyBufferTokens = DefaultSafetyBufferTokens)
+        int safetyBufferTokens = DefaultSafetyBufferTokens,
+        long? workUnitInputCapacity = null)
     {
-        var providerLimit = config.MaxInputTokens is > 0
+        var providerLimit = config?.MaxInputTokens is > 0
             ? config.MaxInputTokens.Value
             : int.MaxValue;
+        if (workUnitInputCapacity is > 0)
+            providerLimit = Math.Min(providerLimit, (int)Math.Min(int.MaxValue, workUnitInputCapacity.Value));
         if (config?.MaxContextTokens is not > 0)
             return providerLimit;
 
@@ -68,13 +71,14 @@ public static partial class LlmRequestBudgetGuard
         IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<LlmToolDefinition>? tools,
         LlmConfig? config,
-        int safetyBufferTokens = DefaultSafetyBufferTokens)
+        int safetyBufferTokens = DefaultSafetyBufferTokens,
+        long? workUnitInputCapacity = null)
     {
         ArgumentNullException.ThrowIfNull(usageStore);
 
         var working = messages.ToList();
         var initialCount = working.Count;
-        var effectiveInputLimit = ResolveEffectiveInputLimit(config, safetyBufferTokens);
+        var effectiveInputLimit = ResolveEffectiveInputLimit(config, safetyBufferTokens, workUnitInputCapacity);
         var snapshot = usageStore.CaptureLlmRequest(
             sessionId,
             working,
@@ -187,16 +191,22 @@ public static partial class LlmRequestBudgetGuard
         if (firstRemovable < 0)
             return false;
 
-        var protectedTailStart = Math.Max(firstRemovable + 1, messages.Count - ProtectedTailMessages);
+        var protectedTailStart = Math.Max(firstRemovable, messages.Count - ProtectedTailMessages);
+        var currentUser = messages.FindLastIndex(message => message.Role == ChatRole.User);
+        if (currentUser >= 0)
+            protectedTailStart = Math.Min(protectedTailStart, currentUser);
         if (firstRemovable >= protectedTailStart)
             return false;
 
         var removeEnd = firstRemovable + 1;
-        if (messages[firstRemovable].Role == ChatRole.User)
-        {
-            while (removeEnd < protectedTailStart && messages[removeEnd].Role != ChatRole.User)
-                removeEnd++;
-        }
+        while (removeEnd < messages.Count
+            && messages[removeEnd].Role is not (ChatRole.User or ChatRole.System))
+            removeEnd++;
+
+        // Remove whole conversation units only. A tail boundary inside a tool
+        // exchange cannot license deleting its call while retaining its result.
+        if (removeEnd > protectedTailStart)
+            return false;
 
         messages.RemoveRange(firstRemovable, Math.Max(1, removeEnd - firstRemovable));
         return true;

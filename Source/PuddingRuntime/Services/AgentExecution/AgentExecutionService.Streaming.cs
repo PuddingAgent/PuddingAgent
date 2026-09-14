@@ -770,7 +770,8 @@ public sealed partial class AgentExecutionService
                         request.SessionId,
                         injectedHistory,
                         llmTools,
-                        effectiveLlmConfig);
+                        effectiveLlmConfig,
+                        workUnitInputCapacity: request.UsageBudget?.MaxInputTokens);
                     injectedHistory = budgetedRequest.Messages.ToList();
                     contextUsageSnapshot = budgetedRequest.Snapshot;
                     if (budgetedRequest.RemovedMessageCount > 0)
@@ -1178,7 +1179,7 @@ public sealed partial class AgentExecutionService
                     yield return usageFrame;
                 }
 
-                var budgetAfterRound = usageBudgetTracker.Record(usage);
+                var budgetAfterRound = usageBudgetTracker.RecordInvocationUsage(usage);
                 if (budgetAfterRound.ShouldStop)
                 {
                     terminalStreamStatus = "budget_exhausted";
@@ -1575,7 +1576,7 @@ public sealed partial class AgentExecutionService
                         ContentParts: result.ContentParts));
                     if (delegatedUsage is not null)
                     {
-                        var delegatedBudget = usageBudgetTracker.Record(delegatedUsage);
+                        var delegatedBudget = usageBudgetTracker.RecordDelegatedUsage(delegatedUsage);
                         if (delegatedBudget.ShouldStop)
                         {
                             terminalStreamStatus = "budget_exhausted";

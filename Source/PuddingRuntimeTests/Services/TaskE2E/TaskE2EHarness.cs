@@ -40,7 +40,7 @@ public sealed class TaskE2EHarness : IDisposable
 
     public AgentExecutionService ExecutionService { get; }
 
-    public TaskE2EHarness()
+    public TaskE2EHarness(bool useContextBudgetGuard = false)
     {
         _testRoot = Path.Combine(
             Path.GetTempPath(),
@@ -59,7 +59,7 @@ public sealed class TaskE2EHarness : IDisposable
         Journal = new ExecutionJournal();
         Probe = new TaskDbProbe(DbFactory);
         Llm = new ScriptedLlmClient();
-        ExecutionService = CreateExecutionService(Llm);
+        ExecutionService = CreateExecutionService(Llm, useContextBudgetGuard);
     }
 
     /// <summary>[TestInitialize] 调用：确保 SQLite schema 建表完成。</summary>
@@ -212,7 +212,7 @@ public sealed class TaskE2EHarness : IDisposable
 
     // ── 组装（复用 B2 CreateService 骨架，toolInvocationService 传真实工具路径）──
 
-    private AgentExecutionService CreateExecutionService(ScriptedLlmClient llm)
+    private AgentExecutionService CreateExecutionService(ScriptedLlmClient llm, bool useContextBudgetGuard)
     {
         var sessionManager = new AgentSessionManager(NullLogger<AgentSessionManager>.Instance);
         var runtimeSessionStore = new InMemoryRuntimeSessionStore();
@@ -265,7 +265,8 @@ public sealed class TaskE2EHarness : IDisposable
             contextManager,
             NullLogger<AgentExecutionService>.Instance,
             sessionExecutionGate,
-            toolInvocationService: Tools);
+            toolInvocationService: Tools,
+            contextUsageSnapshotStore: useContextBudgetGuard ? new ContextUsageSnapshotStore() : null);
     }
 
     private static LlmConfig CreateLlmConfig() => new()
@@ -320,6 +321,8 @@ public sealed class TaskE2EHarness : IDisposable
 public sealed class ScriptedLlmClient : IRuntimeLlmClient
 {
     private readonly Queue<LlmResponse> _responses = new();
+    public int CallCount { get; private set; }
+    public void EnqueueResponse(LlmResponse response) => _responses.Enqueue(response);
 
     public ScriptedLlmClient()
     {
@@ -349,16 +352,33 @@ public sealed class ScriptedLlmClient : IRuntimeLlmClient
         if (_responses.Count == 0)
             throw new InvalidOperationException(
                 "ScriptedLlmClient exhausted: more LLM rounds than scripted responses.");
+        CallCount++;
         return Task.FromResult(_responses.Dequeue());
     }
 
-    public IAsyncEnumerable<StreamDelta> ChatStreamAsync(
+    public async IAsyncEnumerable<StreamDelta> ChatStreamAsync(
         string workspaceId,
         string sessionId,
         string agentTemplateId,
         IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<LlmToolDefinition>? tools = null,
         LlmConfig? llmConfig = null,
-        CancellationToken ct = default)
-        => throw new NotSupportedException("Buffered path only in these tests.");
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var response = await ChatAsync(workspaceId, sessionId, agentTemplateId, messages, tools, llmConfig, ct);
+        for (var i = 0; i < (response.ToolCalls?.Count ?? 0); i++)
+        {
+            var call = response.ToolCalls![i];
+            yield return new StreamDelta
+            {
+                ToolCallIndex = i, ToolCallId = call.Id, ToolCallNameDelta = call.Name,
+                ToolCallArgsDelta = call.ArgumentsJson,
+            };
+        }
+        yield return new StreamDelta
+        {
+            ContentDelta = response.Content, Usage = response.Usage,
+            FinishReason = response.ToolCalls?.Count > 0 ? "tool_calls" : "stop",
+        };
+    }
 }

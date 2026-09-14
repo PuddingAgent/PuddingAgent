@@ -61,6 +61,7 @@ public sealed record ExecutionWorkUnitContext
     public required int MaxRounds { get; init; }
     public required int MaxToolCallsTotal { get; init; }
     public required int MaxDurationSeconds { get; init; }
+    /// <summary>Frozen per-request input capacity, never decremented by cumulative prompt usage.</summary>
     public required long MaxInputTokens { get; init; }
     public required long MaxOutputTokens { get; init; }
     public required decimal MaxCost { get; init; }

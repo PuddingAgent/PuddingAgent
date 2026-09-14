@@ -291,19 +291,20 @@ public sealed class SubAgentInvocationService : ISubAgentInvocationService
         if (budget is null || divisor <= 1)
             return budget;
 
-        // 除法份额属于派生预算：0 值语义 = 除后耗尽/为零，必须打标并继承父级单轮峰值，
-        // 让批量守卫能据可执行下限拒绝不可行份额。
+        // 输入容量不分割；累计轴的份额保留启用状态，避免耗尽后零值变成无限额。
         return budget with
         {
-            MaxInputTokens = DividePositive(budget.MaxInputTokens, divisor),
+            MaxInputTokens = budget.MaxInputTokens,
             MaxOutputTokens = DividePositive(budget.MaxOutputTokens, divisor),
             MaxCost = budget.MaxCost > 0 ? budget.MaxCost / divisor : 0,
+            OutputLimitEnabled = budget.HasOutputLimit,
+            CostLimitEnabled = budget.HasCostLimit,
             IsDerivedRemainder = true,
             PeakRoundInputTokens = budget.PeakRoundInputTokens,
         };
     }
 
-    // 诚实除法：除后为 0 就返回 0，由 IsDerivedRemainder + 可执行性判据在边界拒绝。
+    // 累计输出诚实除法：除后为 0 就返回 0，由该轴启用状态 + 可执行性判据在边界拒绝。
     // 禁止回到 Math.Max(1, …) 夹出「出生即死」的最小值。
     internal static long DividePositive(long value, int divisor)
         => value > 0 ? value / divisor : 0;

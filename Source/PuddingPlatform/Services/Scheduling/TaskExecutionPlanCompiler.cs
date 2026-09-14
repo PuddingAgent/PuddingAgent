@@ -64,7 +64,7 @@ public static class TaskExecutionPlanCompiler
         var material = new
         {
             schemaVersion = TaskExecutionPlanSnapshot.CurrentSchemaVersion,
-            planVersion = 1,
+            planVersion = TaskExecutionPlanSnapshot.CurrentPlanVersion,
             workspaceId = task.WorkspaceId,
             taskId = task.TaskId,
             taskVersion = task.Version,
@@ -138,10 +138,9 @@ public static class TaskExecutionPlanCompiler
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
-    // ADR-087 §3.2：token 轴是计量轴，不是另一套独立小硬上限。重标定使 token 轴与成本轴
-    // 在同一消耗点触发：MaxInputTokens = MaxCost × 1,000,000（注册表输入单价 1/1M），
-    // MaxOutputTokens = MaxRounds × 4,000（每轮输出余量），避免小 token 轴先于
-    // rounds/cost 轴成为终止轴。六轴保持 > 0（栅栏校验要求，见 ExecutionCommandReader）。
+    // 输入为单请求容量（发送前还与模型窗口取 min），累计输入只记账。
+    // 输出与实际冻结价格计算的成本继续累计约束；不将输入重放量等同成本消耗。
+    // 六轴保持 > 0（栅栏校验要求，见 ExecutionCommandReader）。
     private static TaskWorkUnitBudget Budget(TaskWorkUnitKind kind) => kind switch
     {
         TaskWorkUnitKind.Explore => NewBudget(25, 60, 30, 1_000_000, 100_000, 1.00m),

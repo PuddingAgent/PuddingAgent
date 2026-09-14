@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PuddingCode.Goals;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingCode.Scheduling;
 using PuddingCode.Tasks;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
@@ -96,6 +97,9 @@ public sealed class ExecutionCommandReader(
                 .SingleOrDefaultAsync(item => item.ReservationId == binding.ReservationId, ct);
         var plan = await db.TaskPlanRuns.AsNoTracking()
             .SingleOrDefaultAsync(item => item.PlanId == binding.TaskPlanId, ct);
+        if (plan is not null && plan.PlanVersion != TaskExecutionPlanSnapshot.CurrentPlanVersion)
+            throw new InvalidOperationException(
+                $"task_execution_plan_version_unsupported: plan={plan.PlanId} version={plan.PlanVersion}; recompile the execution plan before starting a new attempt.");
         var workUnits = await db.TaskNodes.AsNoTracking()
             .Where(item => item.PlanId == binding.TaskPlanId && item.Depth == 1)
             .OrderBy(item => item.SequenceNo)

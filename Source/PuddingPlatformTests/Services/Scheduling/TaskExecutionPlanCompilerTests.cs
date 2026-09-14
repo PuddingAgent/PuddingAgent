@@ -22,7 +22,7 @@ public sealed class TaskExecutionPlanCompilerTests
 
         Assert.AreEqual("execution_plan_compiled", code);
         Assert.AreEqual(TaskExecutionPlanSnapshot.CurrentSchemaVersion, first!.SchemaVersion);
-        Assert.AreEqual(1, first.PlanVersion);
+        Assert.AreEqual(2, first.PlanVersion);
         Assert.AreEqual(first.Fingerprint, second!.Fingerprint);
         Assert.AreEqual(64, first.Fingerprint.Length);
         CollectionAssert.AreEqual(
@@ -55,23 +55,19 @@ public sealed class TaskExecutionPlanCompilerTests
     }
 
     [TestMethod]
-    public void WorkUnitBudgetTemplates_TokenAxesDoNotBindBeforeCostAxis()
+    public void WorkUnitBudgetTemplates_HaveIndependentInputCapacityAndCumulativeAllowances()
     {
-        // ADR-087 §3.2：token 轴是计量轴，不是另一套独立小硬上限。
-        // MaxInputTokens=MaxCost×1,000,000 与 MaxOutputTokens=MaxRounds×4,000，
-        // 确保小 token 轴不早于 rounds/cost 轴成为终止轴；六轴保持 > 0（栅栏约束）。
+        // 输入容量和累计成本不存在等价消耗点；各轴仍有独立的正值护栏。
         Assert.IsTrue(TaskExecutionPlanCompiler.TryCompile(Task("implementation"), null, out var plan, out _));
 
         foreach (var unit in plan!.WorkUnits)
         {
             Assert.IsTrue(
-                unit.Budget.MaxInputTokens >= (long)(unit.Budget.MaxCost * 1_000_000m),
-                $"{unit.Kind} MaxInputTokens={unit.Budget.MaxInputTokens} binds before cost axis MaxCost={unit.Budget.MaxCost}.");
-            Assert.IsTrue(
                 unit.Budget.MaxOutputTokens >= unit.Budget.MaxRounds * 4_000,
                 $"{unit.Kind} MaxOutputTokens={unit.Budget.MaxOutputTokens} binds before rounds axis MaxRounds={unit.Budget.MaxRounds}.");
             Assert.IsGreaterThan(0, unit.Budget.MaxInputTokens);
             Assert.IsGreaterThan(0, unit.Budget.MaxOutputTokens);
+            Assert.IsGreaterThan(0m, unit.Budget.MaxCost);
         }
     }
 

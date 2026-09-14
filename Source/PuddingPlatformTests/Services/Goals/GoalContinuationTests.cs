@@ -214,6 +214,13 @@ public sealed class GoalContinuationTests
             item => item.TaskNodeId == workUnit.TaskNodeId);
         Assert.AreEqual(PuddingCode.Models.TaskNodeStatuses.Running.ToString(), persistedNode.Status);
         Assert.IsNotNull(persistedNode.StartedAt);
+
+        // A frozen v1 plan must not silently acquire the new input-capacity semantics.
+        var oldPlan = await verify.TaskPlanRuns.SingleAsync();
+        oldPlan.PlanVersion = 1;
+        await verify.SaveChangesAsync();
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => reader.GetAsync(accepted.CommandIds.Single()));
+        StringAssert.Contains(error.Message, "task_execution_plan_version_unsupported");
     }
 
     [TestMethod]
@@ -966,7 +973,7 @@ public sealed class GoalContinuationTests
             WorkspaceId = goal.WorkspaceId,
             WorkspaceTaskId = taskId,
             WorkspaceTaskVersion = 3,
-            PlanVersion = 1,
+            PlanVersion = PuddingCode.Scheduling.TaskExecutionPlanSnapshot.CurrentPlanVersion,
             SchemaVersion = 1,
             PlanKind = "workspace-task-v1",
             PlanFingerprint = fingerprint,

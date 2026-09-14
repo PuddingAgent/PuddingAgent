@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Tasks;
@@ -84,7 +85,7 @@ public sealed record TurnExecutionContext(
 
     /// <summary>
     /// Execution Kernel 在 Run 启动时冻结的 WorkUnit Token/成本预算与模型价格。
-    /// Runtime 只能递减这份预算，禁止重新解析配置或放宽上限。
+    /// 输入容量保持冻结，累计输出/成本预算只能递减；禁止重新解析配置或放宽上限。
     /// </summary>
     public ExecutionUsageBudget? UsageBudget { get; init; }
 
@@ -98,26 +99,31 @@ public sealed record TurnExecutionContext(
 /// </summary>
 public sealed record ExecutionUsageBudget
 {
+    /// <summary>单次模型请求输入容量；0 表示不额外限制。累计输入另行记账，不扣减此容量。</summary>
     public long MaxInputTokens { get; init; }
+    /// <summary>累计输出剩余量。正值自动启用；派生归零后由 OutputLimitEnabled 保留启用状态。</summary>
     public long MaxOutputTokens { get; init; }
     public decimal MaxCost { get; init; }
+    public bool OutputLimitEnabled { get; init; }
+    public bool CostLimitEnabled { get; init; }
+    [JsonIgnore]
+    public bool HasOutputLimit => OutputLimitEnabled || MaxOutputTokens > 0;
+    [JsonIgnore]
+    public bool HasCostLimit => CostLimitEnabled || MaxCost > 0;
     public bool PricingKnown { get; init; }
     public decimal InputPricePer1MTokens { get; init; }
     public decimal OutputPricePer1MTokens { get; init; }
     public decimal CacheHitPricePer1MTokens { get; init; }
 
     /// <summary>
-    /// true 表示该预算由父级真实剩余递减派生（ExecutionUsageBudgetTracker.CreateRemainingBudget /
-    /// SubAgentInvocationService.DivideUsageBudget）。此时值为 0 的轴表示「父级该轴已耗尽」，
-    /// 而不是「未设置上限」——非派生预算里 0 一直被下游 EvaluateLimits 的 `>0` 判定解释为
-    /// 「该轴不启用」，两种语义必须靠本标记区分；否则诚实归零会让子代理变成无限额，
-    /// 历史上因此被迫把剩余值夹到 1 伪造非零，导致子代理「出生即死」（首轮即撞墙）。
+    /// 来源标记：预算由父执行派生。零值是否耗尽由各累计轴的启用状态判断，
+    /// 不能用此标记把原本未启用的轴解释为耗尽。
     /// </summary>
     public bool IsDerivedRemainder { get; init; }
 
     /// <summary>
-    /// 派生时父级观测到的单轮最大输入 Token（0 表示未知）。仅用于可诊断拒绝消息，
-    /// 让父级能对比「子代理首轮实际需要」与「父级剩余」，决定收敛轮次还是减少批量任务数。
+    /// 派生时父执行实际模型请求的输入峰值（0 表示未知）；仅用于诊断，
+    /// 不包含子执行的累计输入，也不消耗继承的单次输入容量。
     /// </summary>
     public long PeakRoundInputTokens { get; init; }
 }

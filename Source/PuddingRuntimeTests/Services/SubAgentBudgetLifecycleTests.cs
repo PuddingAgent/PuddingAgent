@@ -208,6 +208,7 @@ public sealed class SubAgentBudgetLifecycleTests
         {
             MaxInputTokens = 10_323,  // sub-feca2176 实测：父级剩余 10323 < 子代理首轮 24473
             MaxOutputTokens = 0,      // 已耗尽
+            OutputLimitEnabled = true,
             MaxCost = 0.001m,         // 低于 0.01 下限
             IsDerivedRemainder = true,
             PeakRoundInputTokens = 24_473,
@@ -217,7 +218,7 @@ public sealed class SubAgentBudgetLifecycleTests
 
         Assert.IsNotNull(error);
         StringAssert.Contains(error, "sub_agent_parent_budget_infeasible:");
-        StringAssert.Contains(error, "input 剩余 10323 < 最小可执行 20000");
+        StringAssert.Contains(error, "input 单次容量 10323 < 最小可执行 20000");
         StringAssert.Contains(error, "output 已耗尽（剩余 0）");
         StringAssert.Contains(error, "cost 剩余 0.001 < 最小可执行 0.01");
         StringAssert.Contains(error, "父级单轮峰值 24473");
@@ -272,7 +273,7 @@ public sealed class SubAgentBudgetLifecycleTests
         var divided = SubAgentInvocationService.DivideUsageBudget(budget, divisor: 3);
 
         Assert.IsNotNull(divided);
-        Assert.AreEqual(10_000L, divided.MaxInputTokens);
+        Assert.AreEqual(30_000L, divided.MaxInputTokens);
         Assert.AreEqual(0L, divided.MaxOutputTokens); // 诚实归零，旧实现会夹成 1
         Assert.AreEqual(0.003m, divided.MaxCost);
         Assert.IsTrue(divided.IsDerivedRemainder);

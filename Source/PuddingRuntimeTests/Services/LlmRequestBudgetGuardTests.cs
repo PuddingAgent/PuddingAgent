@@ -15,6 +15,53 @@ namespace PuddingRuntimeTests.Services;
 [TestClass]
 public sealed class LlmRequestBudgetGuardTests
 {
+    [TestMethod]
+    [DataRow(1_000L, 1_000)]
+    [DataRow(0L, 27_976)]
+    [DataRow(100_000L, 27_976)]
+    [DataRow(long.MaxValue, 27_976)]
+    public void EffectiveLimit_CombinesFrozenCapacityWithModelWindow(long capacity, int expected)
+    {
+        Assert.AreEqual(expected, LlmRequestBudgetGuard.ResolveEffectiveInputLimit(
+            BuildConfig(), workUnitInputCapacity: capacity));
+        Assert.AreEqual(123, LlmRequestBudgetGuard.ResolveEffectiveInputLimit(null, workUnitInputCapacity: 123));
+    }
+
+    [TestMethod]
+    public void Prepare_WorkUnitCapacityTrimsHistoryWithoutChangingProtectedTail()
+    {
+        var history = BuildHistory(30);
+        var expectedTail = history.TakeLast(8).Select(m => m.Content).ToArray();
+        var result = LlmRequestBudgetGuard.Prepare(new ContextUsageSnapshotStore(), "capacity-session",
+            history, null, BuildConfig(), workUnitInputCapacity: 15_000);
+        Assert.AreEqual(15_000, result.EffectiveInputLimit);
+        Assert.IsGreaterThan(0, result.RemovedMessageCount);
+        CollectionAssert.AreEqual(expectedTail, result.Messages.TakeLast(8).Select(m => m.Content).ToArray());
+        Assert.IsLessThanOrEqualTo(15_000, result.Snapshot.UsedTokens);
+    }
+
+    [TestMethod]
+    public void Prepare_ProtectedContentOverCapacityFailsBeforeProviderCall()
+    {
+        var history = BuildHistory(2);
+        Assert.ThrowsExactly<LlmInputBudgetExceededException>(() => LlmRequestBudgetGuard.Prepare(
+            new ContextUsageSnapshotStore(), "protected-session", history, null, BuildConfig(),
+            workUnitInputCapacity: 100));
+    }
+
+    [TestMethod]
+    public void SoftCompaction_NeverDeletesCurrentUserEvenWithManyToolMessages()
+    {
+        var messages = new List<ChatMessage> { new(ChatRole.System, "system"), new(ChatRole.User, Big) };
+        for (var i = 0; i < 12; i++)
+            messages.Add(new ChatMessage(ChatRole.Assistant, Big));
+        var result = LlmRequestBudgetGuard.PrepareSoftCompaction(new ContextUsageSnapshotStore(),
+            "protected-current-turn", messages, null, BuildConfig(), triggerRatio: 0.01, targetRatio: 0.005);
+        Assert.IsFalse(result.Compacted);
+        Assert.AreEqual(messages.Count, result.Messages.Count);
+        Assert.AreEqual(ChatRole.User, result.Messages[1].Role);
+    }
+
     private static readonly string Big = new('a', 4_000);
 
     private static LlmConfig BuildConfig() => new()

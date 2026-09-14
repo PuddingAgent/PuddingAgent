@@ -49,6 +49,7 @@ public sealed record TaskWorkUnitBudget
     public required int MaxRounds { get; init; }
     public required int MaxToolCalls { get; init; }
     public required int MaxDurationSeconds { get; init; }
+    /// <summary>Per-request input capacity; cumulative input is a usage metric, not a remaining allowance.</summary>
     public required long MaxInputTokens { get; init; }
     public required long MaxOutputTokens { get; init; }
     public required decimal MaxCost { get; init; }
@@ -75,6 +76,7 @@ public sealed record TaskWorkUnitSnapshot
 public sealed record TaskExecutionPlanSnapshot
 {
     public const int CurrentSchemaVersion = 1;
+    public const int CurrentPlanVersion = 2;
 
     public required int SchemaVersion { get; init; }
     public required int PlanVersion { get; init; }

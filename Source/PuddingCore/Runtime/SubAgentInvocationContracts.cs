@@ -269,34 +269,30 @@ public sealed record SubAgentExecutionOptions
     public SubAgentTransientDirectoryRetentionOptions TransientDirectoryRetention { get; init; } = new();
 
     /// <summary>
-    /// 派生预算可执行性统一判据：判定一份派生剩余预算（IsDerivedRemainder=true）
-    /// 是否足以支撑一次可执行子运行。返回 null 表示放行；返回文本为带数值的可诊断拒绝原因。
-    /// 轴语义：&lt;=0 = 父级该轴已耗尽；(0, 下限) = 不可执行；其余放行。
-    /// 只对派生预算生效：非派生预算（IsDerivedRemainder=false）的 0 表示「未设置上限」，直接放行。
+    /// 委派预算可执行性统一判据。输入是单请求容量；输出/成本按各自启用标志
+    /// 区分未限制与剩余耗尽。返回 null 表示放行，否则包含数值和不可执行原因。
     /// SubAgentTool 委派边界与 SubAgentInvocationService 批量除法共用本判据，禁止各自复制一套。
     /// </summary>
     public string? DescribeBudgetInfeasibility(
         ExecutionUsageBudget? budget,
         string errorPrefix = "sub_agent_parent_budget_infeasible:",
-        string advice = "请先收敛父级轮次或减少批量任务数后再委派。")
+        string advice = "请检查单次输入容量与累计输出/成本份额；减少批量任务数不会改变输入容量。")
     {
-        if (budget is null || !budget.IsDerivedRemainder)
+        if (budget is null)
             return null;
 
         var failures = new List<string>(3);
-        if (budget.MaxInputTokens <= 0)
-            failures.Add("input 已耗尽（剩余 0）");
-        else if (MinViableInputTokens > 0 && budget.MaxInputTokens < MinViableInputTokens)
-            failures.Add($"input 剩余 {budget.MaxInputTokens} < 最小可执行 {MinViableInputTokens}");
+        if (budget.MaxInputTokens > 0 && MinViableInputTokens > 0 && budget.MaxInputTokens < MinViableInputTokens)
+            failures.Add($"input 单次容量 {budget.MaxInputTokens} < 最小可执行 {MinViableInputTokens}");
 
-        if (budget.MaxOutputTokens <= 0)
+        if (budget.HasOutputLimit && budget.MaxOutputTokens <= 0)
             failures.Add("output 已耗尽（剩余 0）");
-        else if (MinViableOutputTokens > 0 && budget.MaxOutputTokens < MinViableOutputTokens)
+        else if (budget.HasOutputLimit && MinViableOutputTokens > 0 && budget.MaxOutputTokens < MinViableOutputTokens)
             failures.Add($"output 剩余 {budget.MaxOutputTokens} < 最小可执行 {MinViableOutputTokens}");
 
-        if (budget.MaxCost <= 0m)
+        if (budget.HasCostLimit && budget.MaxCost <= 0m)
             failures.Add("cost 已耗尽（剩余 0）");
-        else if (MinViableCost > 0m && budget.MaxCost < MinViableCost)
+        else if (budget.HasCostLimit && MinViableCost > 0m && budget.MaxCost < MinViableCost)
             failures.Add($"cost 剩余 {budget.MaxCost} < 最小可执行 {MinViableCost}");
 
         if (failures.Count == 0)

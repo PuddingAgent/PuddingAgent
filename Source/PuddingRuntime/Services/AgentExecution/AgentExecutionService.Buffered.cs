@@ -699,7 +699,8 @@ public sealed partial class AgentExecutionService
                         request.SessionId,
                         injectedHistory,
                         llmTools,
-                        effectiveLlmConfig);
+                        effectiveLlmConfig,
+                        workUnitInputCapacity: request.UsageBudget?.MaxInputTokens);
                     injectedHistory = budgetedRequest.Messages.ToList();
                     contextUsageSnapshot = budgetedRequest.Snapshot;
                     if (budgetedRequest.RemovedMessageCount > 0)
@@ -853,7 +854,7 @@ public sealed partial class AgentExecutionService
                     }
                 }
 
-                var budgetAfterRound = usageBudgetTracker.Record(usage);
+                var budgetAfterRound = usageBudgetTracker.RecordInvocationUsage(usage);
                 if (budgetAfterRound.ShouldStop)
                 {
                     stopReason = AgentLoopStopReason.BudgetExhausted;
@@ -1272,7 +1273,7 @@ public sealed partial class AgentExecutionService
 
                         if (delegatedUsage is not null)
                         {
-                            var delegatedBudget = usageBudgetTracker.Record(delegatedUsage);
+                            var delegatedBudget = usageBudgetTracker.RecordDelegatedUsage(delegatedUsage);
                             delegatedBudgetShouldStop = delegatedBudget.ShouldStop;
                             delegatedBudgetMessage = delegatedBudget.Message;
                         }
@@ -1981,7 +1982,7 @@ public sealed partial class AgentExecutionService
 
                     if (delegatedUsage is not null)
                     {
-                        var delegatedBudget = usageBudgetTracker.Record(delegatedUsage);
+                        var delegatedBudget = usageBudgetTracker.RecordDelegatedUsage(delegatedUsage);
                         if (delegatedBudget.ShouldStop)
                         {
                             executionError = delegatedBudget.Message
