@@ -3747,3 +3747,7 @@ Admin “访问令牌”页若把 Active/Revoked 显示成数字 `0/1`，同时 
 ### 2026-09-14：显式日志全文召回的覆盖与失败
 
 `query_session_logs(action=grep, fts=true)` 默认最近7天、单次最多31天；先指定session/day缩小范围。读取JSON的status/error：contract_error、unavailable、timeout、scope_too_large不是no_match。coverage=indexed_markdown只覆盖可用私人Markdown分片，检查缺少Agent的归档警告与对应日期目录；不要拿它证明canonical聊天为空。eventType=markdown_line时sequenceNum是文件行号，不能当DB事件序号；historical_discussion/unverified命中须检查上下文及后续修订。普通装配应无独立agent_log_recall阶段，canonical历史恢复仍保留。10秒为协作取消，非同步I/O硬抢占；报告与真实回执定位见 Docs/Reports/日志全文召回按需化与查询边界修复-2026-09-14.md。
+
+### 2026-09-14：缓存97.64%样本与热历史验证
+
+先按canonical turn取usage，再用该执行时间窗及Session核对gateway source_id；TokenUsageEvents只做归因，不叠加。大历史表查询要按OccurredAtUtc索引限定窗口，避免Session索引扫描全部历史。session_rehydrated只是装配来源，不能等同全量cache miss。热历史快速路径日志为[HistoryHydration:Prefix] retained/appended；若仍出现richer_in_memory_history，不宣称新增reconciler已在现场命中。Message Fabric用户行的Metadata可能为空TurnId加MessageId，必须同时按currentTurnId/currentMessageId排除当前请求。报告Docs/Reports/缓存99优化与实测-2026-09-14.md记录最终98.2766%，未达99%；冷/热不可择优或四舍五入验收。

@@ -4,6 +4,10 @@
 
 # PuddingAgent CodeMAP
 
+## 2026-09-14 缓存99优化（部分修复，目标未达）
+
+见 [实测报告](Docs/Reports/缓存99优化与实测-2026-09-14.md)：4680cc5新增HistoryPrefixReconciler及ChatMessage本地SourceContentHash，在ContextWindowManager核对热历史后保留原消息/追加canonical尾部；c0641c1让TurnId和MessageId共同排除当前入站（含空TurnId）；8edab4f移除AgentContextEnvelopeRenderer的JSON缩进。92项Runtime+1项Core回归通过，PID34120已加载。最终冷恢复97.5490%、热续行98.9814%、合计98.2766%；现场仍走既有richer_in_memory_history分支，新增对齐分支的线上命中未验收。C99 v11仍InProgress/C01 v7仍NeedsReview，下一步C02最终请求变化诊断与冷恢复协议差异，不能宣称99%完成。
+
 ## 2026-09-14 日志全文召回按需化（已部署）
 
 见 [实施与产品验证](Docs/Reports/日志全文召回按需化与查询边界修复-2026-09-14.md)：fa309ba删除AgentLogRecallService、Runtime/Host注册和ContextPipeline私人日志回退层；95a0cd3由`RawSessionLogService.Fts.cs`负责显式日期/会话范围、短证据与诊断，`FullTextSearchScope`在Lucene TopK前过滤，`QuerySessionLogsTool`标记历史讨论未核实。Core PID26160真实两次调用通过，组装489ms；M01 v5/C03 v3记录部分完成，首轮摘要、通用Memory augmentation、分层快照和归档缺口仍待实施。历史记录与当前轮压缩保护保留。

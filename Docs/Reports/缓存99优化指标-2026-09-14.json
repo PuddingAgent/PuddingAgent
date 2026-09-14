@@ -1,0 +1,283 @@
+{
+  "cases": [
+    {
+      "name": "reference",
+      "turnId": "171535ef6cc94516af93b091e919caac",
+      "commandId": "45a144de7de34e0f9eaa6438bb005caa",
+      "status": "succeeded",
+      "elapsedMs": 33296,
+      "contextReadyMs": 1551.329,
+      "ledger": [
+        {
+          "source_id": "runtime-activity:62b6f23c56aa4800bed0a175220270b9",
+          "provider_id": "deepseek",
+          "model_id": "deepseek-flash",
+          "occurred_at_utc": "2026-09-14 14:39:57.9896071+00:00",
+          "prompt_tokens": 60026,
+          "cache_hit_tokens": 57728,
+          "cache_miss_tokens": 2298,
+          "completion_tokens": 300,
+          "total_cost": 0.00405256
+        },
+        {
+          "source_id": "runtime-activity:d4a6ce25041f4f15b38c6ec54bfeb930",
+          "provider_id": "deepseek",
+          "model_id": "deepseek-flash",
+          "occurred_at_utc": "2026-09-14 14:40:07.0041762+00:00",
+          "prompt_tokens": 60837,
+          "cache_hit_tokens": 60288,
+          "cache_miss_tokens": 549,
+          "completion_tokens": 566,
+          "total_cost": 0.00288676
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 120863,
+        "cache_hit_tokens": 118016,
+        "cache_miss_tokens": 2847,
+        "completion_tokens": 866,
+        "total_cost": 0.0069393200000000006
+      },
+      "hitPercent": 97.64444039946055,
+      "tools": [
+        {
+          "name": "file_search",
+          "arguments": "{\"directory\": \"E:\\\\github\\\\AgentNetworkPlan\\\\PuddingAgent\", \"pattern\": \"*Budget*\", \"recursive\": true, \"max_results\": 30, \"provider\": \"BuiltInRecursiveFileSearch\", \"require_provider\": true}",
+          "toolCallId": "call_00_FzGhKq8O8N8A9YuFbjVi0203"
+        },
+        {
+          "name": "file_search",
+          "arguments": "{\"directory\": \"E:\\\\github\\\\AgentNetworkPlan\\\\PuddingAgent\\\\Source\\\\PuddingRuntime\\\\Services\", \"pattern\": \"*Budget*\", \"recursive\": true, \"max_results\": 30, \"provider\": \"BuiltInRecursiveFileSearch\", \"require_provider\": true}",
+          "toolCallId": "call_01_Dwd6LDgicdWyNveCzAZE6268"
+        }
+      ]
+    },
+    {
+      "name": "first_cold",
+      "turnId": "3227530f875843588a23e412164570bf",
+      "commandId": "7a2bb223a3d14baf9450433fb63aaa44",
+      "status": "succeeded",
+      "elapsedMs": 42455,
+      "contextReadyMs": 1385.349,
+      "ledger": [
+        {
+          "source_id": "runtime-activity:108afdc4aaf142e1a8ef1024bb7eb3d3",
+          "provider_id": "deepseek",
+          "model_id": "deepseek-flash",
+          "occurred_at_utc": "2026-09-14 15:29:35.9013216+00:00",
+          "prompt_tokens": 63003,
+          "cache_hit_tokens": 60800,
+          "cache_miss_tokens": 2203,
+          "completion_tokens": 291,
+          "total_cost": 0.004001
+        },
+        {
+          "source_id": "runtime-activity:51923e5af7ab48d68d8e610ad40cd69b",
+          "provider_id": "deepseek",
+          "model_id": "deepseek-flash",
+          "occurred_at_utc": "2026-09-14 15:30:04.6482108+00:00",
+          "prompt_tokens": 63805,
+          "cache_hit_tokens": 63232,
+          "cache_miss_tokens": 573,
+          "completion_tokens": 584,
+          "total_cost": 0.00300564
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 126808,
+        "cache_hit_tokens": 124032,
+        "cache_miss_tokens": 2776,
+        "completion_tokens": 875,
+        "total_cost": 0.00700664
+      },
+      "hitPercent": 97.81086366790738,
+      "tools": [
+        {
+          "name": "file_search",
+          "arguments": "{\"directory\": \"E:\\\\github\\\\AgentNetworkPlan\\\\PuddingAgent\", \"pattern\": \"*Budget*\", \"recursive\": true, \"max_results\": 30, \"provider\": \"BuiltInRecursiveFileSearch\", \"require_provider\": true}",
+          "toolCallId": "call_00_9aCYFocExjvFfd4PUrne6593"
+        },
+        {
+          "name": "file_search",
+          "arguments": "{\"directory\": \"E:\\\\github\\\\AgentNetworkPlan\\\\PuddingAgent\\\\Source\\\\PuddingRuntime\\\\Services\", \"pattern\": \"*Budget*\", \"recursive\": true, \"max_results\": 30, \"provider\": \"BuiltInRecursiveFileSearch\", \"require_provider\": true}",
+          "toolCallId": "call_01_2TRG9slODw1nKUVUz0tQ2310"
+        }
+      ]
+    },
+    {
+      "name": "first_warm",
+      "turnId": "b2f4efa6f62449c8a2be8892ba456a70",
+      "commandId": "d2817f3461da4e40bd896899182bc550",
+      "status": "succeeded",
+      "elapsedMs": 27934,
+      "contextReadyMs": 865.367,
+      "ledger": [
+        {
+          "source_id": "runtime-activity:98dec0aa23184b2d89f6ba4d873d491b",
+          "provider_id": "deepseek",
+          "model_id": "deepseek-flash",
+          "occurred_at_utc": "2026-09-14 15:33:27.7812464+00:00",
+          "prompt_tokens": 65283,
+          "cache_hit_tokens": 64384,
+          "cache_miss_tokens": 899,
+          "completion_tokens": 291,
+          "total_cost": 0.00276868
+        },
+        {
+          "source_id": "runtime-activity:02d67bc345fe432294f63381dac78dc9",
+          "provider_id": "deepseek",
+          "model_id": "deepseek-flash",
+          "occurred_at_utc": "2026-09-14 15:33:41.2382395+00:00",
+          "prompt_tokens": 66085,
+          "cache_hit_tokens": 65536,
+          "cache_miss_tokens": 549,
+          "completion_tokens": 442,
+          "total_cost": 0.00274372
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 131368,
+        "cache_hit_tokens": 129920,
+        "cache_miss_tokens": 1448,
+        "completion_tokens": 733,
+        "total_cost": 0.0055124
+      },
+      "hitPercent": 98.89775287741307,
+      "tools": [
+        {
+          "name": "file_search",
+          "arguments": "{\"directory\": \"E:\\\\github\\\\AgentNetworkPlan\\\\PuddingAgent\", \"max_results\": 30, \"pattern\": \"*Budget*\", \"provider\": \"BuiltInRecursiveFileSearch\", \"recursive\": true, \"require_provider\": true}",
+          "toolCallId": "call_00_7WIVollaFrj7DdTwjBRA2664"
+        },
+        {
+          "name": "file_search",
+          "arguments": "{\"directory\": \"E:\\\\github\\\\AgentNetworkPlan\\\\PuddingAgent\\\\Source\\\\PuddingRuntime\\\\Services\", \"max_results\": 30, \"pattern\": \"*Budget*\", \"provider\": \"BuiltInRecursiveFileSearch\", \"recursive\": true, \"require_provider\": true}",
+          "toolCallId": "call_01_w1JcvsiffXbx9AoBD0Ij7127"
+        }
+      ]
+    },
+    {
+      "name": "final_cold",
+      "turnId": "fac626b4287947d391f632e131598a5e",
+      "commandId": "0731dd870929435392306e7436e5da5b",
+      "status": "succeeded",
+      "elapsedMs": 32705,
+      "contextReadyMs": 1286.377,
+      "ledger": [
+        {
+          "source_id": "runtime-activity:ce1a06aba84f4d40a34edc39e928945c",
+          "provider_id": "deepseek",
+          "model_id": "deepseek-flash",
+          "occurred_at_utc": "2026-09-14 15:39:38.321765+00:00",
+          "prompt_tokens": 64546,
+          "cache_hit_tokens": 61952,
+          "cache_miss_tokens": 2594,
+          "completion_tokens": 301,
+          "total_cost": 0.00443504
+        },
+        {
+          "source_id": "runtime-activity:cd93b6cf02f2448fb3c3b107ae1ddc7d",
+          "provider_id": "deepseek",
+          "model_id": "deepseek-flash",
+          "occurred_at_utc": "2026-09-14 15:39:50.3126697+00:00",
+          "prompt_tokens": 65358,
+          "cache_hit_tokens": 64768,
+          "cache_miss_tokens": 590,
+          "completion_tokens": 582,
+          "total_cost": 0.00304936
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 129904,
+        "cache_hit_tokens": 126720,
+        "cache_miss_tokens": 3184,
+        "completion_tokens": 883,
+        "total_cost": 0.0074844
+      },
+      "hitPercent": 97.54895923143245,
+      "tools": [
+        {
+          "name": "file_search",
+          "arguments": "{\"directory\": \"E:\\\\github\\\\AgentNetworkPlan\\\\PuddingAgent\", \"pattern\": \"*Budget*\", \"recursive\": true, \"max_results\": 30, \"provider\": \"BuiltInRecursiveFileSearch\", \"require_provider\": true}",
+          "toolCallId": "call_00_oqUmoddurCTOldSJCZHF9755"
+        },
+        {
+          "name": "file_search",
+          "arguments": "{\"directory\": \"E:\\\\github\\\\AgentNetworkPlan\\\\PuddingAgent\\\\Source\\\\PuddingRuntime\\\\Services\", \"pattern\": \"*Budget*\", \"recursive\": true, \"max_results\": 30, \"provider\": \"BuiltInRecursiveFileSearch\", \"require_provider\": true}",
+          "toolCallId": "call_01_Dm58alHYcqlCYXq0feIC7036"
+        }
+      ]
+    },
+    {
+      "name": "final_warm",
+      "turnId": "0e9917595cdf40bea0606e8c9ca65740",
+      "commandId": "a82a99d70346400e81e62a5962014649",
+      "status": "succeeded",
+      "elapsedMs": 20892,
+      "contextReadyMs": 814.001,
+      "ledger": [
+        {
+          "source_id": "runtime-activity:1100a912febd41439288eb9def24c0ca",
+          "provider_id": "deepseek",
+          "model_id": "deepseek-flash",
+          "occurred_at_utc": "2026-09-14 15:40:42.6627828+00:00",
+          "prompt_tokens": 66656,
+          "cache_hit_tokens": 65920,
+          "cache_miss_tokens": 736,
+          "completion_tokens": 279,
+          "total_cost": 0.0026124
+        },
+        {
+          "source_id": "runtime-activity:ed9aad47eecf458595aad9e477d48f91",
+          "provider_id": "deepseek",
+          "model_id": "deepseek-flash",
+          "occurred_at_utc": "2026-09-14 15:40:52.5981563+00:00",
+          "prompt_tokens": 67446,
+          "cache_hit_tokens": 66816,
+          "cache_miss_tokens": 630,
+          "completion_tokens": 581,
+          "total_cost": 0.00312832
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 134102,
+        "cache_hit_tokens": 132736,
+        "cache_miss_tokens": 1366,
+        "completion_tokens": 860,
+        "total_cost": 0.0057407199999999995
+      },
+      "hitPercent": 98.98137238818212,
+      "tools": [
+        {
+          "name": "file_search",
+          "arguments": "{\"directory\": \"E:\\\\github\\\\AgentNetworkPlan\\\\PuddingAgent\", \"max_results\": 30, \"pattern\": \"*Budget*\", \"provider\": \"BuiltInRecursiveFileSearch\", \"recursive\": true, \"require_provider\": true}",
+          "toolCallId": "call_00_ET_Hiy3LuuQVyERlu2IHStv6823"
+        },
+        {
+          "name": "file_search",
+          "arguments": "{\"directory\": \"E:\\\\github\\\\AgentNetworkPlan\\\\PuddingAgent\\\\Source\\\\PuddingRuntime\\\\Services\", \"max_results\": 30, \"pattern\": \"*Budget*\", \"provider\": \"BuiltInRecursiveFileSearch\", \"recursive\": true, \"require_provider\": true}",
+          "toolCallId": "call_01_ET_Ym60tQz7TM88suVYaYU33753"
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "final_build": {
+      "prompt_tokens": 264006,
+      "cache_hit_tokens": 259456,
+      "cache_miss_tokens": 4550,
+      "completion_tokens": 1743,
+      "total_cost": 0.01322512,
+      "hitPercent": 98.27655432073513
+    },
+    "all_new_tests": {
+      "prompt_tokens": 522182,
+      "cache_hit_tokens": 513408,
+      "cache_miss_tokens": 8774,
+      "completion_tokens": 3351,
+      "total_cost": 0.02574416,
+      "hitPercent": 98.3197429248806
+    }
+  },
+  "scope": "same two file_search calls; gateway billing reconciled with canonical usage, not added together"
+}
