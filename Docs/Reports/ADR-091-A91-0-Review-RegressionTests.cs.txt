@@ -1,0 +1,92 @@
+// Audit-only regression fixture for commit 6c34a24.
+// Copy as PuddingToolInfrastructureTests.A91Review.cs into the isolated
+// Source/PuddingRuntimeTests/Tools directory. It reuses existing private test
+// helpers through the partial class. It is not part of the product build.
+using Microsoft.Extensions.DependencyInjection;
+using PuddingCode.Tools;
+using PuddingRuntime.Services.Tools;
+
+namespace PuddingRuntimeTests.Tools;
+
+public sealed partial class PuddingToolInfrastructureTests
+{
+    [TestMethod]
+    [DataRow("null")]
+    [DataRow("[]")]
+    [DataRow("1")]
+    [DataRow("\"text\"")]
+    public void A91Review_NonObjectJson_IsDeferredWithoutException(string raw)
+    {
+        var result = ToolApprovalReviewParser.Parse(raw);
+        Assert.AreEqual(ToolApprovalDecision.DeferredDependency, result.Decision);
+        Assert.IsFalse(result.RequiresHumanAuthorization);
+    }
+
+    [TestMethod]
+    [DataRow("{\"decision\":\"approved\"}")]
+    [DataRow("{\"decision\":\"approved\",\"reason\":\"ok\",\"requiresHumanAuthorization\":true}")]
+    [DataRow("{\"decision\":\"deferred_dependency\",\"reason\":\"unavailable\",\"requiresHumanAuthorization\":true}")]
+    public void A91Review_IncompleteOrContradictorySchema_IsDeferred(string raw)
+    {
+        var result = ToolApprovalReviewParser.Parse(raw);
+        Assert.AreEqual(ToolApprovalDecision.DeferredDependency, result.Decision);
+        Assert.IsFalse(result.RequiresHumanAuthorization);
+    }
+
+    [TestMethod]
+    public void A91Review_ReasonCode_IsPreservedInTypedResult()
+    {
+        var result = ToolApprovalReviewParser.Parse(
+            "{\"decision\":\"deferred_dependency\",\"reason\":\"unavailable\",\"reasonCode\":\"approval_review_profile_not_configured\"}");
+        // Reflection keeps this audit fixture compilable against the incomplete contract.
+        var property = result.GetType().GetProperty("ReasonCode");
+        Assert.IsNotNull(property, "ReasonCode must survive the JSON-to-typed boundary.");
+        Assert.AreEqual("approval_review_profile_not_configured", property.GetValue(result));
+    }
+
+    [TestMethod]
+    public void A91Review_ProductionRegistration_CannotEnableFakeThroughConfig()
+    {
+        var services = new ServiceCollection();
+        services.Configure<ToolApprovalRuntimeOptions>(options =>
+        {
+            options.Reviewer = "fake";
+            options.AllowFakeReviewer = true;
+        });
+        services.AddPuddingToolRegistry();
+        using var provider = services.BuildServiceProvider();
+        // The production registration must reject this configuration.
+        // A test double belongs in explicit test DI, not a production config flag.
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            provider.GetRequiredService<IToolApprovalReviewer>());
+    }
+
+    [TestMethod]
+    public async Task A91Review_ImplicitDependencyWait_DoesNotSuggestHumanOrRecordDenied()
+    {
+        var telemetry = new RecordingTelemetrySink();
+        var auditStore = new InMemoryToolApprovalAuditStore();
+        var approval = new InMemoryToolApprovalService(
+            new DeferredDependencyToolApprovalReviewer(),
+            new InMemoryToolApprovalTicketStore(),
+            new InMemoryToolApprovalAllowlistStore(),
+            auditStore, telemetryMetricSink: telemetry);
+        var identity = SampleApprovalIdentity();
+        var check = await approval.CheckAsync(new ToolApprovalExecutionRequest
+        {
+            WorkspaceId = identity.WorkspaceId,
+            SessionId = identity.SessionId,
+            AgentInstanceId = identity.AgentInstanceId,
+            UserId = identity.UserId,
+            ToolId = "shell",
+            ActualArgumentsJson = "{\"command\":\"python png2jpg.py --help\",\"shell\":\"powershell\",\"timeout_seconds\":10}"
+        }, new SampleHighTool().Descriptor with { ToolId = "shell" });
+
+        Assert.IsFalse(check.IsApproved);
+        Assert.IsFalse(check.Message.Contains("request_tool_approval", StringComparison.OrdinalIgnoreCase)
+                       || check.Message.Contains("/authorize", StringComparison.OrdinalIgnoreCase), check.Message);
+        var events = await auditStore.ListAsync();
+        Assert.IsFalse(events.Any(e => e.EventType == ToolApprovalAuditEventType.ImplicitDenied),
+            "Infrastructure waiting must not be recorded as an implicit rejection.");
+    }
+}

@@ -1,0 +1,190 @@
+{
+  "review": "ADR-091 / A91-0",
+  "date": "2026-09-15",
+  "isolatedCheckout": "C:\\Users\\huany\\AppData\\Local\\Temp\\Pudding-a91-review-6c34a24",
+  "filter": "FullyQualifiedName~PuddingToolInfrastructure|FullyQualifiedName~ToolApproval|FullyQualifiedName~AgentFirewallWorkingDirectory",
+  "probeFilter": "FullyQualifiedName~A91Review_",
+  "productSourceChangedByReviewer": false,
+  "deployedByReviewer": false,
+  "notes": "Probe fixture was added only to isolated test checkout. Candidate and parent existing-test runs had no source modifications. Full Runtime/Platform project references compiled; Host, deployment, full Platform tests and real-model smoke not certified.",
+  "results": [
+    {
+      "label": "parent",
+      "commit": "dd575cc",
+      "trxPath": "C:\\Users\\huany\\AppData\\Local\\Temp\\Pudding-a91-review-6c34a24\\.tmp-test-out\\parent\\a91-parent.trx",
+      "counts": {
+        "total": "131",
+        "executed": "131",
+        "passed": "131",
+        "failed": "0",
+        "error": "0",
+        "timeout": "0",
+        "aborted": "0",
+        "inconclusive": "0",
+        "passedButRunAborted": "0",
+        "notRunnable": "0",
+        "notExecuted": "0",
+        "disconnected": "0",
+        "warning": "0",
+        "completed": "0",
+        "inProgress": "0",
+        "pending": "0"
+      },
+      "failures": []
+    },
+    {
+      "label": "candidate",
+      "commit": "6c34a24",
+      "trxPath": "C:\\Users\\huany\\AppData\\Local\\Temp\\Pudding-a91-review-6c34a24\\.tmp-test-out\\baseline\\a91-baseline.trx",
+      "counts": {
+        "total": "139",
+        "executed": "139",
+        "passed": "123",
+        "failed": "16",
+        "error": "0",
+        "timeout": "0",
+        "aborted": "0",
+        "inconclusive": "0",
+        "passedButRunAborted": "0",
+        "notRunnable": "0",
+        "notExecuted": "0",
+        "disconnected": "0",
+        "warning": "0",
+        "completed": "0",
+        "inProgress": "0",
+        "pending": "0"
+      },
+      "failures": [
+        {
+          "test": "ServiceCollectionExtension_Registers_Migrated_Runtime_Tools_As_Native_Tools",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。ServiceCollectionExtension_Registers_Migrated_Runtime_Tools_As_Native_Tools 引发了异常: \r\nSystem.InvalidOperationException: Unable to resolve service for type 'PuddingCode.Runtime.ILlmInvocationService' while attempting to activate 'PuddingRuntime.Services.Tools.InvocationToolApprovalLlmClient'."
+        },
+        {
+          "test": "ServiceCollectionExtension_Registers_Fake_Tool_Approval_Reviewer",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。ServiceCollectionExtension_Registers_Fake_Tool_Approval_Reviewer 引发了异常: \r\nSystem.InvalidOperationException: Unable to resolve service for type 'PuddingCode.Runtime.ILlmInvocationService' while attempting to activate 'PuddingRuntime.Services.Tools.InvocationToolApprovalLlmClient'."
+        },
+        {
+          "test": "ServiceCollectionExtension_Registers_MemoryToolHandlers_For_ManageMemoryTool",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。ServiceCollectionExtension_Registers_MemoryToolHandlers_For_ManageMemoryTool 引发了异常: \r\nSystem.InvalidOperationException: Unable to resolve service for type 'PuddingCode.Runtime.ILlmInvocationService' while attempting to activate 'PuddingRuntime.Services.Tools.InvocationToolApprovalLlmClient'."
+        },
+        {
+          "test": "ServiceCollectionExtension_Does_Not_Duplicate_Explicit_Native_Tool_When_Assembly_Scanned",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。ServiceCollectionExtension_Does_Not_Duplicate_Explicit_Native_Tool_When_Assembly_Scanned 引发了异常: \r\nSystem.InvalidOperationException: Unable to resolve service for type 'PuddingCode.Runtime.ILlmInvocationService' while attempting to activate 'PuddingRuntime.Services.Tools.InvocationToolApprovalLlmClient'."
+        },
+        {
+          "test": "RequestToolApprovalTool_Returns_Actionable_Error_For_Invalid_Json_Arguments",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。RequestToolApprovalTool_Returns_Actionable_Error_For_Invalid_Json_Arguments 引发了异常: \r\nSystem.InvalidOperationException: Unable to resolve service for type 'PuddingCode.Runtime.ILlmInvocationService' while attempting to activate 'PuddingRuntime.Services.Tools.InvocationToolApprovalLlmClient'."
+        },
+        {
+          "test": "InvocationToolApprovalLlmClient_Returns_NeedHuman_Without_Approval_Profile",
+          "error": "Assert.AreEqual 失败。应为: <NeedHuman>，实际为: <DeferredDependency>。‘expected’表达式:‘ToolApprovalDecision.NeedHuman’,‘actual’表达式:‘result.Decision’。"
+        },
+        {
+          "test": "RequestToolApprovalTool_Is_Auto_Exposed_Without_Template_Grant",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。RequestToolApprovalTool_Is_Auto_Exposed_Without_Template_Grant 引发了异常: \r\nSystem.InvalidOperationException: Unable to resolve service for type 'PuddingCode.Runtime.ILlmInvocationService' while attempting to activate 'PuddingRuntime.Services.Tools.InvocationToolApprovalLlmClient'."
+        },
+        {
+          "test": "RequestToolApprovalTool_Rejects_Placeholder_Requested_Arguments",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。RequestToolApprovalTool_Rejects_Placeholder_Requested_Arguments 引发了异常: \r\nSystem.InvalidOperationException: Unable to resolve service for type 'PuddingCode.Runtime.ILlmInvocationService' while attempting to activate 'PuddingRuntime.Services.Tools.InvocationToolApprovalLlmClient'."
+        },
+        {
+          "test": "ServiceCollectionExtension_Discovers_Native_Tools_From_Assembly",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。ServiceCollectionExtension_Discovers_Native_Tools_From_Assembly 引发了异常: \r\nSystem.InvalidOperationException: Unable to resolve service for type 'PuddingCode.Runtime.ILlmInvocationService' while attempting to activate 'PuddingRuntime.Services.Tools.InvocationToolApprovalLlmClient'."
+        },
+        {
+          "test": "RequestToolApprovalTool_Accepts_String_Operation_Steps",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。RequestToolApprovalTool_Accepts_String_Operation_Steps 引发了异常: \r\nSystem.InvalidOperationException: Unable to resolve service for type 'PuddingCode.Runtime.ILlmInvocationService' while attempting to activate 'PuddingRuntime.Services.Tools.InvocationToolApprovalLlmClient'."
+        },
+        {
+          "test": "ServiceCollectionExtension_Registers_MessageTools_With_Unambiguous_Factories",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。ServiceCollectionExtension_Registers_MessageTools_With_Unambiguous_Factories 引发了异常: \r\nSystem.InvalidOperationException: Unable to resolve service for type 'PuddingCode.Runtime.ILlmInvocationService' while attempting to activate 'PuddingRuntime.Services.Tools.InvocationToolApprovalLlmClient'."
+        },
+        {
+          "test": "RequestToolApprovalTool_Accepts_Structured_Checklist_With_Snake_Case_Steps",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。RequestToolApprovalTool_Accepts_Structured_Checklist_With_Snake_Case_Steps 引发了异常: \r\nSystem.InvalidOperationException: Unable to resolve service for type 'PuddingCode.Runtime.ILlmInvocationService' while attempting to activate 'PuddingRuntime.Services.Tools.InvocationToolApprovalLlmClient'."
+        },
+        {
+          "test": "ServiceCollectionExtension_Registers_Explicit_AgentSkill_Adapter_In_Tool_Catalog",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。ServiceCollectionExtension_Registers_Explicit_AgentSkill_Adapter_In_Tool_Catalog 引发了异常: \r\nSystem.InvalidOperationException: Unable to resolve service for type 'PuddingCode.Runtime.ILlmInvocationService' while attempting to activate 'PuddingRuntime.Services.Tools.InvocationToolApprovalLlmClient'."
+        },
+        {
+          "test": "RequestToolApprovalTool_Uses_Configured_Review_Profile_And_Allows_Exact_High_Risk_Call",
+          "error": "Assert.IsNull 失败。‘value’表达式:‘invocation.LastRequest!.AgentInstanceId’。"
+        },
+        {
+          "test": "ServiceCollectionExtension_Does_Not_Implicitly_Register_IAgentSkill_As_Agent_Tool",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。ServiceCollectionExtension_Does_Not_Implicitly_Register_IAgentSkill_As_Agent_Tool 引发了异常: \r\nSystem.InvalidOperationException: Unable to resolve service for type 'PuddingCode.Runtime.ILlmInvocationService' while attempting to activate 'PuddingRuntime.Services.Tools.InvocationToolApprovalLlmClient'."
+        },
+        {
+          "test": "RequestToolApprovalTool_Returns_Clear_Error_For_Invalid_Operation_Step",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。RequestToolApprovalTool_Returns_Clear_Error_For_Invalid_Operation_Step 引发了异常: \r\nSystem.InvalidOperationException: Unable to resolve service for type 'PuddingCode.Runtime.ILlmInvocationService' while attempting to activate 'PuddingRuntime.Services.Tools.InvocationToolApprovalLlmClient'."
+        }
+      ]
+    },
+    {
+      "label": "audit_probes",
+      "commit": "6c34a24",
+      "trxPath": "C:\\Users\\huany\\AppData\\Local\\Temp\\Pudding-a91-review-6c34a24\\.tmp-test-out\\probes\\a91-probes.trx",
+      "counts": {
+        "total": "10",
+        "executed": "10",
+        "passed": "0",
+        "failed": "10",
+        "error": "0",
+        "timeout": "0",
+        "aborted": "0",
+        "inconclusive": "0",
+        "passedButRunAborted": "0",
+        "notRunnable": "0",
+        "notExecuted": "0",
+        "disconnected": "0",
+        "warning": "0",
+        "completed": "0",
+        "inProgress": "0",
+        "pending": "0"
+      },
+      "failures": [
+        {
+          "test": "A91Review_IncompleteOrContradictorySchema_IsDeferred (\"{\"decision\":\"approved\",\"reason\":\"ok\",\"requiresHumanAuthorization\":true}\")",
+          "error": "Assert.AreEqual 失败。应为: <DeferredDependency>，实际为: <Approved>。‘expected’表达式:‘ToolApprovalDecision.DeferredDependency’,‘actual’表达式:‘result.Decision’。"
+        },
+        {
+          "test": "A91Review_ImplicitDependencyWait_DoesNotSuggestHumanOrRecordDenied",
+          "error": "Assert.IsFalse 失败。‘condition’表达式:‘check.Message.Contains(\"request_tool_approval\", StringComparison.OrdinalIgnoreCase)\n                       || check.Message.Contains(\"/authorize\", StringComparison.OrdinalIgnoreCase)’。 High-risk tool runtime approval required. Implicit audit denied tool 'shell': approval review dependency is unavailable. Recommended next step: call request_tool_approval with tool_id='shell' and exact planned arguments. Manual fallback only: ask the user to send /authorize shell 10m."
+        },
+        {
+          "test": "A91Review_NonObjectJson_IsDeferredWithoutException (\"[]\")",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。A91Review_NonObjectJson_IsDeferredWithoutException 引发了异常: \r\nSystem.InvalidOperationException: The requested operation requires an element of type 'Object', but the target element has type 'Array'."
+        },
+        {
+          "test": "A91Review_NonObjectJson_IsDeferredWithoutException (\"1\")",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。A91Review_NonObjectJson_IsDeferredWithoutException 引发了异常: \r\nSystem.InvalidOperationException: The requested operation requires an element of type 'Object', but the target element has type 'Number'."
+        },
+        {
+          "test": "A91Review_IncompleteOrContradictorySchema_IsDeferred (\"{\"decision\":\"approved\"}\")",
+          "error": "Assert.AreEqual 失败。应为: <DeferredDependency>，实际为: <Approved>。‘expected’表达式:‘ToolApprovalDecision.DeferredDependency’,‘actual’表达式:‘result.Decision’。"
+        },
+        {
+          "test": "A91Review_IncompleteOrContradictorySchema_IsDeferred (\"{\"decision\":\"deferred_dependency\",\"reason\":\"unavailable\",\"requiresHumanAuthorization\":true}\")",
+          "error": "Assert.IsFalse 失败。‘condition’表达式:‘result.RequiresHumanAuthorization’。"
+        },
+        {
+          "test": "A91Review_ReasonCode_IsPreservedInTypedResult",
+          "error": "Assert.IsNotNull 失败。‘value’表达式:‘property’。 ReasonCode must survive the JSON-to-typed boundary."
+        },
+        {
+          "test": "A91Review_ProductionRegistration_CannotEnableFakeThroughConfig",
+          "error": "Assert.ThrowsExactly 失败。预期异常类型:<System.InvalidOperationException>，但未引发异常。‘action’表达式:‘() =>\n            provider.GetRequiredService<IToolApprovalReviewer>()’。"
+        },
+        {
+          "test": "A91Review_NonObjectJson_IsDeferredWithoutException (\"null\")",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。A91Review_NonObjectJson_IsDeferredWithoutException 引发了异常: \r\nSystem.InvalidOperationException: The requested operation requires an element of type 'Object', but the target element has type 'Null'."
+        },
+        {
+          "test": "A91Review_NonObjectJson_IsDeferredWithoutException (\"\"text\"\")",
+          "error": "测试方法 PuddingRuntimeTests.Tools.PuddingToolInfrastructureTests。A91Review_NonObjectJson_IsDeferredWithoutException 引发了异常: \r\nSystem.InvalidOperationException: The requested operation requires an element of type 'Object', but the target element has type 'String'."
+        }
+      ]
+    }
+  ]
+}

@@ -3763,3 +3763,7 @@ Admin “访问令牌”页若把 Active/Revoked 显示成数字 `0/1`，同时 
 ### 2026-09-15：自动审计阻断不能直接归因模型
 
 先核对确切 tool/session/argumentsHash 的持久票据、decisionReason、reviewerModel 和创建时间。tap_c7430ff355d3429b8073690d9f2adcc4（BJT 01:28:30）shell 构建请求因“当前工作空间不具有审计类型的agent”进入 Pending，reviewerModel 为空，说明还没有调用审查模型。StrictConfiguredToolApprovalLlmProfileResolver 只要注入 workspace provider 就优先查审计 Agent；InvocationToolApprovalLlmClient 又把配置故障转 NeedHuman。诊断区别权限拒绝、真正人工决定和基础设施等待；旧会话 approved 票据不能借用。检查 AgentFirewall 的顺序、OnceTicketAllowedUses=2、授权 CheckAsync 的消费及客户端 autoReviewClassifier 自动切 manual。tickets.json 按具体票据取脱敏字段，禁止回显秘密参数；源码风险不等同于已发生并发绕过。后续方案与准确入口见 Docs/Features/自动审计与执行准入闭环设计-2026-09-15.md / ADR-091，尚未运行验收。
+
+### 2026-09-15：自动审计修改必须检查隐式路径与真实组合
+
+A91-0复审不要只跑新增SubmitAsync用例或看code_outline：固定过滤器PuddingToolInfrastructure|ToolApproval|AgentFirewallWorkingDirectory，独立Temp checkout上dd575cc为131/131，6c34a24为123/139；14项缺ILlmInvocationService、1项遗留NeedHuman、1项错误期望AgentInstanceId为空。Implicit Check仍可能把DeferredDependency写ImplicitDenied并提示/authorize，AgentFirewall也会丢失原因。合法但非对象JSON需验证root类型；reasonCode必须检查parser/typed/store/DTO的贯通。记录TRX和真实基线，不能把“timeout”字符串fake当作deadline测试。报告及可复制回归夹具见Docs/Reports/ADR-091-A91-0-Review-2026-09-15.md。

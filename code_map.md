@@ -4,6 +4,10 @@
 
 # PuddingAgent CodeMAP
 
+## 2026-09-15 ADR-091 A91-0 独立复审（needs_changes）
+
+见[复审与下一轮指令](Docs/Reports/ADR-091-A91-0-Review-2026-09-15.md)：精确提交dd575cc定向131/131通过，943270d+6c34a24为123通过/16失败，另10项审计契约用例全部复现。已认可resolver解耦；待修隐式Check/Firewall的Dependency→Denied映射、生产fake开关、JSON语义、ReasonCode/wire传播、测试DI和真实deadline/cancel。A91-0已登记needs_changes并继续推进；未修改运行权限或部署Core，A91-1硬边界/原子许可仍待实施。
+
 ## 2026-09-15 自动审计后续设计（ADR-091，Proposed）
 
 见[代码级设计](Docs/Features/自动审计与执行准入闭环设计-2026-09-15.md)、[ADR-091](Docs/07架构/105ADR-091自动审计与执行准入闭环ADR.md)和[阶段卡记录](Docs/Reports/自动审计方案与派发记录-2026-09-15.md)。现状入口：AgentFirewall、Tools/Approval/LlmToolApprovalReviewer、InMemoryToolApprovalService/AuthorizationService、PuddingToolRegistry.cs 内 PuddingToolExecutionService，以及 Web autoReviewClassifier/useAutoReviewClassifier/ChatMain。方案统一执行准入、增量行为审计与外部验证的修复循环；本轮仅文档和任务派发，未修改/部署这些产品代码。
