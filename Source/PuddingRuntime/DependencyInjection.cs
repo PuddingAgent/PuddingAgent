@@ -139,7 +139,6 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<AgentCompactionNotifier>();
         services.AddSingleton<SubconsciousRecallPipeline>();
         services.AddSingleton<AgentMemorySummaryContextBuilder>();
-        services.AddSingleton<AgentLogRecallService>();
         services.AddSingleton<IExecutionEnvironmentProvider, DefaultExecutionEnvironmentProvider>();
         services.AddSingleton<WorkspaceAgentsContextBuilder>();
         services.AddSingleton<TaskPlannerContextBuilder>();

@@ -139,7 +139,6 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<SessionRedirectStore>();
         builder.Services.AddSingleton<SessionStateStore>();
         builder.Services.AddSingleton<AgentMemorySummaryContextBuilder>();
-        builder.Services.AddSingleton<AgentLogRecallService>();
         builder.Services.AddSingleton<SkillPackageDownloadService>();
         builder.Services.AddPuddingAgentTool<HttpFetchSkill>();
         // TerminalSkill: registered via assembly scan (AddPuddingToolsFromAssembly) below

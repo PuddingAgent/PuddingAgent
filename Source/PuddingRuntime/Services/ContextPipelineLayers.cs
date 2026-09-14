@@ -860,56 +860,6 @@ public sealed partial class ContextPipeline
         return result.Length > 0 ? result : null;
     }
 
-    private async Task<string> BuildLegacyAgentLogRecallLayerAsync(
-        ContextRequest request,
-        CancellationToken ct)
-    {
-        if (_agentLogRecallService is null
-            || string.IsNullOrWhiteSpace(request.PersistentAgentInstanceId)
-            || string.IsNullOrWhiteSpace(request.UserMessage))
-        {
-            return string.Empty;
-        }
-
-        var recall = await _agentLogRecallService.RecallAsync(
-            new AgentLogRecallRequest(request.PersistentAgentInstanceId, request.UserMessage),
-            ct);
-
-        if (recall.RecentFiveDaysMessages.Count == 0
-            && recall.RecentDailySummaries.Count == 0
-            && recall.RecentThirtyDaysMessages.Count == 0)
-        {
-            return string.Empty;
-        }
-
-        var sb = new StringBuilder();
-        sb.AppendLine("--- LAYER: RECALLED ---");
-        sb.AppendLine("[AGENT LOG RECALL]");
-
-        if (recall.RecentFiveDaysMessages.Count > 0)
-        {
-            sb.AppendLine("Recent 5 days message logs:");
-            foreach (var match in recall.RecentFiveDaysMessages)
-                sb.AppendLine($"- {match.Day} {match.RelativePath}:{match.LineNumber}: {match.Snippet}");
-        }
-
-        if (recall.RecentThirtyDaysMessages.Count > 0)
-        {
-            sb.AppendLine("Recent 30 days message logs:");
-            foreach (var match in recall.RecentThirtyDaysMessages)
-                sb.AppendLine($"- {match.Day} {match.RelativePath}:{match.LineNumber}: {match.Snippet}");
-        }
-
-        if (recall.RecentDailySummaries.Count > 0)
-        {
-            sb.AppendLine("Recent 180 days daily summaries:");
-            foreach (var match in recall.RecentDailySummaries)
-                sb.AppendLine($"- {match.Day} {match.RelativePath}:{match.LineNumber}: {match.Snippet}");
-        }
-
-        return sb.ToString();
-    }
-
     // ═══════════════════════════════════════════════════════════════
     // RUNTIME 层
     // ═══════════════════════════════════════════════════════════════

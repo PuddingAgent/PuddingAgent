@@ -242,28 +242,6 @@ public sealed partial class ContextPipeline
                 _logger.LogWarning(ex, "[ContextPipeline] SubconsciousRecallPipeline failed, skip context augment");
             }
         }
-        else if (_agentLogRecallService is not null
-                 && !string.IsNullOrWhiteSpace(request.PersistentAgentInstanceId)
-                 && !string.IsNullOrWhiteSpace(request.UserMessage))
-        {
-            try
-            {
-                contextAugmentStr = await MeasureAsync("agent_log_recall", () => BuildLegacyAgentLogRecallLayerAsync(request, ct));
-                if (!string.IsNullOrWhiteSpace(contextAugmentStr))
-                {
-                    contextAugmentLayerName = "L6-AGENT-LOG-RECALL";
-                    contextAugmentTokens = EstimateTokens(contextAugmentStr);
-                }
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "[ContextPipeline] AgentLogRecallService failed, skip recall layer");
-            }
-        }
 
         if (!string.IsNullOrWhiteSpace(contextAugmentStr))
         {

@@ -47,7 +47,6 @@ public sealed partial class ContextPipeline
     private readonly ILLMConfigResolver? _llmConfigResolver;
     private readonly AgentSkillFileService? _agentSkillFileService;
     private readonly AgentMemorySummaryContextBuilder? _agentMemorySummaryContextBuilder;
-    private readonly AgentLogRecallService? _agentLogRecallService;
     private readonly IImportantMemoryService? _importantMemory;
     private readonly IUserPreferenceService? _userPreferenceService;
     private readonly PuddingDataPaths _dataPaths;
@@ -97,7 +96,6 @@ public sealed partial class ContextPipeline
         ILLMConfigResolver? llmConfigResolver = null,
         AgentSkillFileService? agentSkillFileService = null,
         AgentMemorySummaryContextBuilder? agentMemorySummaryContextBuilder = null,
-        AgentLogRecallService? agentLogRecallService = null,
         IImportantMemoryService? importantMemory = null,
         PuddingDataPaths? dataPaths = null,
                 CroppedLayersProvider? croppedLayersProvider = null,
@@ -125,7 +123,6 @@ public sealed partial class ContextPipeline
         _llmConfigResolver = llmConfigResolver;
         _agentSkillFileService = agentSkillFileService;
         _agentMemorySummaryContextBuilder = agentMemorySummaryContextBuilder;
-        _agentLogRecallService = agentLogRecallService;
         _importantMemory = importantMemory;
         _userPreferenceService = userPreferenceService;
         _croppedLayersProvider = croppedLayersProvider;
