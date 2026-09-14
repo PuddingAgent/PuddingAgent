@@ -325,7 +325,10 @@ public sealed class ContextWindowManager
                 || m.Metadata == null
                 || !m.Metadata.StartsWith(turnPrefix));
         }
-        else if (!string.IsNullOrWhiteSpace(currentMessageId))
+        // Message Fabric can persist the accepted user row before a TurnId is attached.
+        // Always apply its stable MessageId fence as well; TurnId alone misses that row
+        // and duplicates the active instruction in hydrated history and the current tail.
+        if (!string.IsNullOrWhiteSpace(currentMessageId))
         {
             var messageSuffix = "\n" + currentMessageId;
             queryable = queryable.Where(m =>

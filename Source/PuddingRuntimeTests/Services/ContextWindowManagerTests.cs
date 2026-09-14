@@ -454,7 +454,9 @@ public sealed class ContextWindowManagerTests
     }
 
     [TestMethod]
-    public async Task BuildContextFromDbAsync_ImportsCanonicalTurnsBeforeColdHydration()
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task BuildContextFromDbAsync_ImportsCanonicalTurnsBeforeColdHydration(bool currentHasTurnId)
     {
         const string sessionId = "cold1234-session";
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -517,7 +519,7 @@ public sealed class ContextWindowManagerTests
             {
                 Id = 102,
                 MessageId = "user-current",
-                TurnId = "turn-current",
+                TurnId = currentHasTurnId ? "turn-current" : null,
                 SessionId = sessionId,
                 WorkspaceId = "workspace-1",
                 AgentInstanceId = "agent-1",
@@ -584,7 +586,7 @@ public sealed class ContextWindowManagerTests
             message.MessageId == "chat-cold1234-101"));
         Assert.AreEqual(1, await assertDb.Messages.CountAsync(message =>
             message.MessageId == "chat-cold1234-102"));
-        Assert.AreEqual("turn-current\nuser-current", await assertDb.Messages
+        Assert.AreEqual((currentHasTurnId ? "turn-current" : "") + "\nuser-current", await assertDb.Messages
             .Where(message => message.MessageId == "chat-cold1234-102")
             .Select(message => message.Metadata)
             .SingleAsync());
