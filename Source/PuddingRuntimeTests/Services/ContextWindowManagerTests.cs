@@ -17,6 +17,42 @@ namespace PuddingRuntimeTests.Services;
 public sealed class ContextWindowManagerTests
 {
     [TestMethod]
+    public async Task WarmHydration_PreservesRenderedUserAndAppendsNewCanonicalMessage()
+    {
+        const string sessionId = "warm-prefix";
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        await SeedMessagesAsync(db, sessionId, messageCount: 2, charsPerMessage: 0);
+        var manager = CreateManager(null, new TestMemoryDbContextFactory(options));
+        var persisted = await manager.BuildContextFromDbAsync(sessionId, 8000, CancellationToken.None);
+        var history = manager.GetOrCreateHistory(sessionId);
+        var user = persisted[0] with { Content = "rendered envelope and fence" };
+        Assert.IsNotNull(user.SourceContentHash);
+        history.Add(new(ChatRole.System, "system"));
+        history.Add(user);
+        history.Add(persisted[1] with { ReasoningContent = "model-only reasoning" });
+        db.Messages.Add(new MessageEntity
+        {
+            MessageId = "new-user", SessionId = sessionId, Sequence = 3,
+            Role = "user", ContentType = "text", Content = "new canonical correction", CreatedAt = 999999,
+        });
+        await db.SaveChangesAsync();
+
+        var outcome = await manager.TryHydrateStreamHistoryFromDbAsync(sessionId, history, 8000, CancellationToken.None);
+
+        Assert.IsTrue(outcome.Succeeded);
+        Assert.IsFalse(outcome.ReplacedHistory);
+        Assert.AreEqual("warm_prefix_extended", outcome.Source);
+        Assert.AreSame(user, history[1]);
+        Assert.AreEqual("model-only reasoning", history[2].ReasoningContent);
+        Assert.AreEqual("new canonical correction", history[^1].Content);
+        Assert.AreEqual(4, history.Count);
+    }
+
+    [TestMethod]
     public void TrimHistory_Removes_Orphan_Tool_Messages_From_Context()
     {
         var manager = CreateManager();

@@ -418,7 +418,13 @@ public sealed class ContextWindowManager
                 ToolName: null,
                 ReasoningContent: null,
                 // ADR-077 §7.1：DB 水合必须恢复图片 part，不能只构造纯文本消息。
-                ContentParts: ContentPartsEnvelope.Decode(entity.AttachmentsJson)))
+                ContentParts: ContentPartsEnvelope.Decode(entity.AttachmentsJson))
+            {
+                SourceContentHash = ParseChatRole(entity.Role) == ChatRole.User
+                    ? HistoryPrefixReconciler.ComputeSourceHash(
+                        entity.Content, ContentPartsEnvelope.Decode(entity.AttachmentsJson))
+                    : null,
+            })
             .ToList();
 
         return new(SanitizeForLlmContext(messages), lastCreatedAt);
@@ -534,6 +540,17 @@ public sealed class ContextWindowManager
                 _logger.LogInformation(
                     "[AgentExec] History pruning applied session={Session} original={OriginalCount} pruned={PrunedCount} maxMessages={MaxMessages}",
                     sessionId, originalCount, hydratedContext.Count, maxPruned);
+            }
+
+            // A transcript is a semantic projection, not an exact copy of provider messages.
+            // Keep the verified warm prefix (envelopes, reasoning and complete tool rounds)
+            // and append new canonical content instead of rewriting cached message bytes.
+            if (HistoryPrefixReconciler.TryAppendCanonicalTail(history, hydratedContext, out var appended))
+            {
+                _logger.LogInformation(
+                    "[HistoryHydration:Prefix] session={Session} retained={Retained} appended={Appended} source={Source}",
+                    sessionId, history.Count - appended, appended, hydratedFromJsonl ? "jsonl" : "memory_db");
+                return new(true, false, appended == 0 ? "warm_prefix_retained" : "warm_prefix_extended");
             }
 
             var existingContextCount = history.Count(m => m.Role != ChatRole.System);

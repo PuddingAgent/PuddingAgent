@@ -18,4 +18,13 @@ public sealed record ChatMessage(
     IReadOnlyList<string>? VisualArtifactIds = null,
     IReadOnlyList<string>? AudioArtifactIds = null,
     LlmContinuationState? ContinuationState = null,
-    IReadOnlyList<LlmContentPart>? ContentParts = null);
+    IReadOnlyList<LlmContentPart>? ContentParts = null)
+{
+    /// <summary>
+    /// Local identity of the original user content before Runtime envelope/fence rendering.
+    /// Used only to reconcile a warm model history with its canonical transcript. This is
+    /// not a provider field or an authority marker supplied by message text.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? SourceContentHash { get; init; }
+}

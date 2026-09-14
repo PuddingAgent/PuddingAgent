@@ -602,7 +602,14 @@ public sealed partial class AgentExecutionService
             BuildUserMessageForLlm(request, userContextPrefix),
             VisualArtifactIds: request.VisualArtifactIds,
             AudioArtifactIds: request.AudioArtifactIds,
-            ContentParts: BuildCurrentTurnContentParts(request, userContextPrefix));
+            ContentParts: BuildCurrentTurnContentParts(request, userContextPrefix))
+        {
+            // Legacy artifact-only input has no canonical typed-parts identity here.
+            SourceContentHash = request.VisualArtifactIds is { Count: > 0 }
+                || request.AudioArtifactIds is { Count: > 0 }
+                ? null
+                : HistoryPrefixReconciler.ComputeSourceHash(request.MessageText, request.ContentParts),
+        };
 
     private static string BuildUserTailContent(
         RuntimeDispatchRequest request,
