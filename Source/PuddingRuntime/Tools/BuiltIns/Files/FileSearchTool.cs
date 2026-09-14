@@ -160,6 +160,8 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
             return ToolExecutionResult.Ok(output, status: BuildResultStatus(coverage, results.Count));
         }
         catch (Exception ex) when (
+            ex is not OperationCanceledException
+            &&
             IsEverythingProvider(providerId)
             && !requireProvider
             && FindBuiltInProvider() is not null)
@@ -190,14 +192,14 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
 
                 return ToolExecutionResult.Ok(output, status: BuildResultStatus(fallbackResult.Coverage, results.Count));
             }
-            catch (Exception fallbackException)
+            catch (Exception fallbackException) when (fallbackException is not OperationCanceledException)
             {
                 return ToolExecutionResult.Fail(
                     $"File search failed using provider {providerId}: {ex.Message}. " +
                     $"Fallback provider {builtInFallback.ProviderId} also failed: {fallbackException.Message}");
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return ToolExecutionResult.Fail($"File search failed using provider {providerId}: {ex.Message}");
         }
@@ -272,7 +274,7 @@ public sealed class FileSearchTool : PuddingToolBase<FileSearchArgs>
         {
             baseline = await builtIn.SearchWithCoverageAsync(directory, pattern, recursive, maxResults, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // 差分失败不否定主结果：保留清单结果并声明无法补足（设计 L108：不得静默降级）。
             return (primary.Paths, RetrievalCoverage.Partial(
@@ -428,72 +430,104 @@ public sealed record FileSearchProviderResult(IReadOnlyList<string> Paths, Retri
 
 internal sealed class BuiltInRecursiveFileSearchProvider : IFileSearchProvider
 {
+    private readonly TimeProvider _timeProvider;
+    private readonly TimeSpan _timeout;
+    private readonly int _maxEntries;
+
+    public BuiltInRecursiveFileSearchProvider()
+        : this(TimeProvider.System, TimeSpan.FromSeconds(10), 50_000) { }
+
+    internal BuiltInRecursiveFileSearchProvider(TimeProvider timeProvider, TimeSpan timeout, int maxEntries)
+    {
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxEntries);
+        _timeProvider = timeProvider;
+        _timeout = timeout;
+        _maxEntries = maxEntries;
+    }
+
     public string ProviderId => "BuiltInRecursiveFileSearch";
     public string DisplayName => "Built-in recursive file search";
     public bool IsAvailable => true;
 
-    // ADR-089 U0-G3：legacy 非覆盖路径不再把 pattern 直接交给 Win32 searchPattern——
-    // Windows 前导匹配怪癖（*.txt 命中 a.txtx）与统一匹配合同冲突。改为 "*"
-    // 全量枚举 + FileSearchPatternMatcher 过滤（通配 = canonical glob 合同；非通配 =
-    // 大小写不敏感子串包含），先过滤再 Take，防止截断发生在过滤之前造成漏文件。
-    public Task<IReadOnlyList<string>> SearchAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct)
-    {
-        var searchOption = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-        var root = Path.GetFullPath(directory);
-        var results = Directory.EnumerateFiles(directory, "*", searchOption)
-            .Where(path => FileSearchPatternMatcher.Matches(path, root, pattern))
-            .Take(maxResults)
-            .Select(Path.GetFullPath)
-            .ToArray();
-        return Task.FromResult<IReadOnlyList<string>>(results);
-    }
+    public async Task<IReadOnlyList<string>> SearchAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct)
+        => (await SearchWithCoverageAsync(directory, pattern, recursive, maxResults, ct)).Paths;
 
     // ADR-089 U0-S3：基线枚举必须与 Everything 路径同一匹配合同（设计 L128）——
     // 全量枚举 "*" 后统一用 FileSearchPatternMatcher 复核，消除 Windows searchPattern
     // （3 字符扩展名怪癖等）与 glob 语义的口径分歧；覆盖状态诚实上报，供上层差分定案。
     public Task<FileSearchProviderResult> SearchWithCoverageAsync(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct)
+        => Task.Run(() => Search(directory, pattern, recursive, maxResults, ct), ct);
+
+    private FileSearchProviderResult Search(string directory, string pattern, bool recursive, int maxResults, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxResults);
         var root = Path.GetFullPath(directory);
         var options = new EnumerationOptions
         {
-            RecurseSubdirectories = recursive,
-            IgnoreInaccessible = true,
+            RecurseSubdirectories = false,
+            IgnoreInaccessible = false,
             // 仅跳过 reparse point 防 junction 循环；Hidden/System 必须枚举，否则基线漏文件。
             AttributesToSkip = FileAttributes.ReparsePoint,
         };
 
         var results = new List<string>();
-        var hitResultLimit = false;
-        try
-        {
-            foreach (var path in Directory.EnumerateFiles(root, "*", options))
-            {
-                if (!FileSearchPatternMatcher.Matches(path, root, pattern))
-                    continue;
-                if (results.Count >= maxResults)
-                {
-                    // 第 maxResults+1 个匹配出现才判截断：恰好等于上限且枚举自然结束时仍是全量。
-                    hitResultLimit = true;
-                    break;
-                }
+        var pending = new Queue<string>();
+        pending.Enqueue(root);
+        var errors = new List<string>();
+        var visited = 0;
+        var started = _timeProvider.GetTimestamp();
+        FileSearchProviderResult Finish(RetrievalCoverage coverage) => new(results.ToArray(), coverage);
 
-                results.Add(path);
+        // Breadth-first, one directory at a time: both directories and non-matches
+        // consume the scan budget. Recursive EnumerateFiles hides empty-directory
+        // traversal inside MoveNext, where neither cancellation nor budgets can run.
+        while (pending.TryDequeue(out var current))
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                using var entries = new DirectoryInfo(current).EnumerateFileSystemInfos("*", options).GetEnumerator();
+                while (true)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (_timeProvider.GetElapsedTime(started) >= _timeout)
+                        return Finish(RetrievalCoverage.Of(RetrievalCoverageStatus.Timeout,
+                            $"builtin enumeration exceeded {_timeout.TotalSeconds:g}s after {visited} entries; narrow directory scope"));
+                    if (visited >= _maxEntries)
+                        return Finish(RetrievalCoverage.Of(RetrievalCoverageStatus.Truncated,
+                            $"builtin enumeration reached {_maxEntries} entries; narrow directory scope"));
+                    if (!entries.MoveNext())
+                        break;
+                    ct.ThrowIfCancellationRequested();
+                    visited++;
+                    var entry = entries.Current;
+                    if ((entry.Attributes & FileAttributes.Directory) != 0)
+                    {
+                        if (recursive)
+                            pending.Enqueue(entry.FullName);
+                        continue;
+                    }
+                    if (!FileSearchPatternMatcher.Matches(entry.FullName, root, pattern))
+                        continue;
+                    if (results.Count >= maxResults)
+                        return Finish(RetrievalCoverage.Of(RetrievalCoverageStatus.Truncated,
+                            $"builtin enumeration found more than {maxResults} matches"));
+                    results.Add(entry.FullName);
+                }
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                // Preserve sibling results without calling inaccessible scope complete.
+                if (errors.Count < 5)
+                    errors.Add($"{current}: {ex.Message}");
             }
         }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
-        {
-            // 设计 L108：枚举中断不得伪装完整——保留部分结果并声明 Partial。
-            return Task.FromResult(new FileSearchProviderResult(
-                results.Select(Path.GetFullPath).ToArray(),
-                RetrievalCoverage.Partial($"builtin enumeration interrupted: {ex.Message}")));
-        }
-
-        var coverage = hitResultLimit
-            ? RetrievalCoverage.Of(RetrievalCoverageStatus.Truncated,
-                $"builtin enumeration found more than {maxResults} matches")
-            : RetrievalCoverage.Complete();
-        return Task.FromResult(new FileSearchProviderResult(
-            results.Select(Path.GetFullPath).ToArray(), coverage));
+        return Finish(errors.Count == 0
+            ? RetrievalCoverage.Complete()
+            : RetrievalCoverage.Partial("builtin enumeration could not cover every directory", errors));
     }
 }
 
