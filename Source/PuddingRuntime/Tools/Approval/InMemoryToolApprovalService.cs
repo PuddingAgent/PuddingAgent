@@ -232,12 +232,14 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
             ArgumentsHash = ToolAuthorizationDefaults.ComputeArgumentsHash(request.RequestedArgumentsJson),
             Scope = grantedScope,
             // Approved=自动批准；Denied=评审明确拒绝（终态）；
-            // NeedHuman=审批方无法裁定（如工作区缺少审计 agent / 审批 LLM 未配置）→ 保持 Pending
-            // 等待人工授权（/authorize）或配置修复，不得折叠成 Denied 终态阻断重试链路。
+            // NeedHuman=审批方无法裁定业务影响 → 保持 Pending 等待人工授权（/authorize）。
+            // DeferredDependency=依赖不可用（审查模型未配置/不可达/输出非法）→ 非终态等待依赖恢复，
+            // 既不折叠成 Denied 阻断重试，也不伪装成人工决定（ADR-091 §4.4）。
             Status = review.Decision switch
             {
                 ToolApprovalDecision.Approved => ToolApprovalTicketStatus.Approved,
                 ToolApprovalDecision.NeedHuman => ToolApprovalTicketStatus.Pending,
+                ToolApprovalDecision.DeferredDependency => ToolApprovalTicketStatus.DeferredDependency,
                 _ => ToolApprovalTicketStatus.Denied,
             },
             DecisionReason = review.DecisionReason,
@@ -265,6 +267,7 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
             {
                 ToolApprovalDecision.Approved => ToolApprovalAuditEventType.TicketApproved,
                 ToolApprovalDecision.Denied => ToolApprovalAuditEventType.TicketDenied,
+                ToolApprovalDecision.DeferredDependency => ToolApprovalAuditEventType.TicketDeferredDependency,
                 _ => ToolApprovalAuditEventType.TicketNeedHuman,
             },
             WorkspaceId = identity.WorkspaceId,
@@ -301,6 +304,7 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
             {
                 ToolApprovalDecision.Approved => TelemetryMetricStatuses.Succeeded,
                 ToolApprovalDecision.Denied => TelemetryMetricStatuses.Failed,
+                ToolApprovalDecision.DeferredDependency => TelemetryMetricStatuses.Deferred,
                 _ => TelemetryMetricStatuses.Recorded,
             },
             startedAt,
@@ -2041,7 +2045,9 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
                     ? "Continue with the exact approved tool call."
                     : $"Allowlist rule '{allowlistRuleId}' was created. Future matching calls can use fast approval.",
                 ToolApprovalDecision.NeedHuman =>
-                    "Ticket is pending human authorization. Ask the user to approve it with /authorize (or fix the approval configuration, e.g. configure a workspace audit agent), then retry the exact tool call.",
+                    "Ticket is pending human authorization. Ask the user to approve it with /authorize, then retry the exact tool call.",
+                ToolApprovalDecision.DeferredDependency =>
+                    "Waiting for the approval review dependency to recover (configure or fix the ToolApproval:Llm review profile/model). This is not a human authorization request; retry the same invocation once the dependency is healthy.",
                 _ =>
                     "Add facts, narrow scope, create a rollback plan, then retry request_tool_approval. Use /authorize only as a manual human fallback.",
             },

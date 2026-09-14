@@ -65,8 +65,10 @@ public sealed class WorkspaceBusinessService
     // ── 审计治理合规 ─────────────────────────────────────────
 
     /// <summary>
-    /// 返回 Workspace 的审计合规状态：
-    /// 合规 = 启用 + 未冻结 + 至少配置了 1 个审计 Agent 模板。
+    /// 返回 Workspace 的治理状态：
+    /// 合规 = 启用 + 未冻结。
+    /// ADR-091 决策 5：审计 Agent 实例不再决定普通开发工作是否可用，
+    /// 审查能力改由独立的审查 profile 提供（缺配置时进入依赖等待，而不是拒绝工作空间）。
     /// </summary>
     public async Task<WorkspaceGovernanceStatus> GetGovernanceStatusAsync(
         string workspaceId, CancellationToken ct = default)
@@ -75,16 +77,11 @@ public sealed class WorkspaceBusinessService
         if (ws is null)
             return new WorkspaceGovernanceStatus(workspaceId, false, false, false, "Workspace 不存在");
 
-        bool hasAuditAgent = ws.AuditAgentTemplateIds.Count > 0;
-
         if (ws.IsFrozen)
             return new WorkspaceGovernanceStatus(workspaceId, ws.IsEnabled, ws.IsFrozen, false, "Workspace 已冻结");
 
         if (!ws.IsEnabled)
             return new WorkspaceGovernanceStatus(workspaceId, ws.IsEnabled, ws.IsFrozen, false, "Workspace 已停用");
-
-        if (!hasAuditAgent)
-            return new WorkspaceGovernanceStatus(workspaceId, ws.IsEnabled, ws.IsFrozen, false, "缺少审计 Agent 模板（至少需要 1 个）");
 
         return new WorkspaceGovernanceStatus(workspaceId, ws.IsEnabled, ws.IsFrozen, true, null);
     }

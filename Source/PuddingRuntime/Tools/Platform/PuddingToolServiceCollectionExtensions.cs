@@ -102,20 +102,27 @@ public static class PuddingToolServiceCollectionExtensions
         services.TryAddSingleton<IToolApprovalReviewer>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ToolApprovalRuntimeOptions>>().Value;
-            if (options.RequireAuditAgent)
-                return ActivatorUtilities.CreateInstance<LlmToolApprovalReviewer>(sp);
-
             var reviewer = string.IsNullOrWhiteSpace(options.Reviewer)
-                ? ToolApprovalRuntimeOptions.FakeReviewer
+                ? ToolApprovalRuntimeOptions.LlmReviewer
                 : options.Reviewer.Trim();
 
-            if (string.Equals(reviewer, ToolApprovalRuntimeOptions.FakeReviewer, StringComparison.OrdinalIgnoreCase))
-                return new FakeToolApprovalReviewer();
             if (string.Equals(reviewer, ToolApprovalRuntimeOptions.LlmReviewer, StringComparison.OrdinalIgnoreCase))
                 return ActivatorUtilities.CreateInstance<LlmToolApprovalReviewer>(sp);
 
+            if (string.Equals(reviewer, ToolApprovalRuntimeOptions.FakeReviewer, StringComparison.OrdinalIgnoreCase))
+            {
+                // ADR-091 §5：生产不允许 fake 兜底；fake 仅测试组合显式开启。
+                if (!options.AllowFakeReviewer)
+                {
+                    throw new InvalidOperationException(
+                        "ToolApproval reviewer 'fake' is test-only. Set ToolApproval:AllowFakeReviewer=true only in test host composition; production must use 'llm'.");
+                }
+
+                return new FakeToolApprovalReviewer();
+            }
+
             throw new InvalidOperationException(
-                $"Unknown ToolApproval reviewer '{options.Reviewer}'. Valid values are 'fake' and 'llm'.");
+                $"Unknown ToolApproval reviewer '{options.Reviewer}'. Valid values are 'llm' and 'fake' (test-only).");
         });
         services.TryAddSingleton<IToolApprovalTicketStore>(sp =>
             sp.GetService<PuddingDataPaths>() is null

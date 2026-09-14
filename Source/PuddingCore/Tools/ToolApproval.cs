@@ -6,6 +6,12 @@ public enum ToolApprovalDecision
     Approved,
     Denied,
     NeedHuman,
+
+    /// <summary>
+    /// ADR-091 §4.4：依赖不可用（审查模型未配置、服务不可达、审查超时/空输出/非法 JSON）。
+    /// 既不是批准也不是人工决定：应持久等待依赖恢复，不得折叠成 NeedHuman 或 Denied。
+    /// </summary>
+    DeferredDependency,
 }
 
 /// <summary>Persisted lifecycle status for an automatic tool approval ticket.</summary>
@@ -16,6 +22,12 @@ public enum ToolApprovalTicketStatus
     Denied,
     Expired,
     Consumed,
+
+    /// <summary>
+    /// ADR-091 §4.4：票据因依赖不可用而未裁定（非终态，不阻断同一 invocation 重试）；
+    /// 与 Pending 的区别是它不是「等人工决定」，而是「等依赖恢复」。
+    /// </summary>
+    DeferredDependency,
 }
 
 /// <summary>Lifetime granted to an automatic tool approval ticket.</summary>
@@ -65,6 +77,9 @@ public enum ToolApprovalAuditEventType
     TicketApproved,
     TicketDenied,
     TicketNeedHuman,
+
+    /// <summary>ADR-091 §4.4：依赖不可用导致的等待（非人工决定）。</summary>
+    TicketDeferredDependency,
     TicketMatched,
     TicketConsumed,
     TicketMismatch,

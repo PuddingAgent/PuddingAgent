@@ -1293,17 +1293,38 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
-    public void ServiceCollectionExtension_Requires_Audit_Agent_When_Configured()
+    public void ServiceCollectionExtension_Rejects_Fake_Reviewer_Unless_Explicitly_Allowed()
     {
         var services = new ServiceCollection();
         services.Configure<ToolApprovalRuntimeOptions>(options =>
         {
             options.Reviewer = "fake";
-            options.RequireAuditAgent = true;
         });
+        services.AddPuddingToolRegistry();
+
+        using var provider = services.BuildServiceProvider();
+
+        var rejected = false;
+        try
+        {
+            provider.GetRequiredService<IToolApprovalReviewer>();
+        }
+        catch (InvalidOperationException ex)
+        {
+            rejected = true;
+            StringAssert.Contains(ex.Message, "test-only");
+        }
+
+        Assert.IsTrue(rejected, "fake reviewer must be rejected unless AllowFakeReviewer is enabled.");
+    }
+
+    [TestMethod]
+    public void ServiceCollectionExtension_Defaults_To_Llm_Reviewer_Without_Audit_Agent()
+    {
+        var services = new ServiceCollection();
         services.AddSingleton<IToolApprovalLlmClient>(new RecordingToolApprovalLlmClient("""
         {
-          "decision": "need_human",
+          "decision": "deferred_dependency",
           "reason": "test"
         }
         """));
@@ -1634,28 +1655,25 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
-    public async Task RequestToolApprovalTool_Uses_Audit_Agent_Llm_And_Allows_Exact_High_Risk_Call()
+    public async Task RequestToolApprovalTool_Uses_Configured_Review_Profile_And_Allows_Exact_High_Risk_Call()
     {
         var invocation = new RecordingLlmInvocationService("""
         {
           "decision": "approved",
-          "reason": "Audit agent approved the exact high-risk sample call.",
+          "reason": "Configured review profile approved the exact high-risk sample call.",
           "reviewerModel": "approval-model"
         }
         """);
         var services = new ServiceCollection();
         services.AddLogging();
         services.Configure<ToolApprovalRuntimeOptions>(options => options.Reviewer = "llm");
-        services.AddSingleton<ILlmInvocationService>(invocation);
-        services.AddSingleton<IWorkspaceAuditAgentProvider>(new StaticWorkspaceAuditAgentProvider(new WorkspaceAuditAgentProfile
+        services.Configure<ToolApprovalLlmOptions>(options =>
         {
-            WorkspaceId = "workspace-1",
-            AgentInstanceId = "audit-agent-1",
-            AgentTemplateId = "workspace-audit-agent",
-            ProviderId = "approval-provider",
-            ProfileId = "approval.default",
-            ModelId = "approval-model",
-        }));
+            options.ProviderId = "approval-provider";
+            options.ProfileId = "approval.default";
+            options.ModelId = "approval-model";
+        });
+        services.AddSingleton<ILlmInvocationService>(invocation);
         services.AddPuddingTool<SampleHighTool>();
         services.AddPuddingToolRegistry();
 
@@ -1714,8 +1732,8 @@ public sealed partial class PuddingToolInfrastructureTests
         Assert.IsTrue(approvalResult.Success, approvalResult.Error);
         StringAssert.Contains(approvalResult.Output, "\"decision\": \"approved\"");
         Assert.IsNotNull(invocation.LastRequest);
-        Assert.AreEqual("audit-agent-1", invocation.LastRequest!.AgentInstanceId);
-        Assert.AreEqual("workspace-audit-agent", invocation.LastRequest.AgentTemplateId);
+        Assert.IsNull(invocation.LastRequest!.AgentInstanceId);
+        Assert.IsNull(invocation.LastRequest.AgentTemplateId);
 
         var executor = new PuddingToolExecutionService(
             provider.GetRequiredService<IPuddingToolRegistry>(),
@@ -1988,12 +2006,11 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
-    public async Task InvocationToolApprovalLlmClient_Returns_NeedHuman_When_Workspace_Has_No_Audit_Agent()
+    public async Task InvocationToolApprovalLlmClient_Returns_DeferredDependency_When_Profile_Is_Not_Configured()
     {
         var invocation = new RecordingLlmInvocationService("should not be called");
         var resolver = new StrictConfiguredToolApprovalLlmProfileResolver(
-            Options.Create(new ToolApprovalLlmOptions()),
-            workspaceAuditAgentProvider: new StaticWorkspaceAuditAgentProvider(null));
+            Options.Create(new ToolApprovalLlmOptions()));
         var client = new InvocationToolApprovalLlmClient(
             invocation,
             resolver,
@@ -2011,9 +2028,9 @@ public sealed partial class PuddingToolInfrastructureTests
             prompt);
         var result = ToolApprovalReviewParser.Parse(raw);
 
-        Assert.AreEqual(ToolApprovalDecision.NeedHuman, result.Decision);
-        StringAssert.Contains(result.DecisionReason, "当前工作空间不具有审计类型的agent");
-        Assert.IsTrue(result.RequiresHumanAuthorization);
+        Assert.AreEqual(ToolApprovalDecision.DeferredDependency, result.Decision);
+        StringAssert.Contains(result.DecisionReason, "No approval review model profile is configured");
+        Assert.IsFalse(result.RequiresHumanAuthorization);
         Assert.IsNull(invocation.LastRequest);
     }
 
@@ -2151,41 +2168,11 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
-    public async Task WorkspaceAuditAgentProfileResolver_Throws_When_Workspace_Has_No_Audit_Agent()
+    public async Task StrictConfiguredToolApprovalLlmProfileResolver_Resolves_Profile_Without_Any_Audit_Agent()
     {
         var resolver = new StrictConfiguredToolApprovalLlmProfileResolver(
             Options.Create(new ToolApprovalLlmOptions
             {
-                ProviderId = "approval-provider",
-                ProfileId = "approval.default",
-                ModelId = "approval-model",
-            }),
-            workspaceAuditAgentProvider: new StaticWorkspaceAuditAgentProvider(null));
-
-        try
-        {
-            await resolver.ResolveAsync(
-                ValidApprovalRequest("{}"),
-                SampleApprovalIdentity(),
-                new SampleHighTool().Descriptor);
-            Assert.Fail("Expected ToolApprovalLlmProfileResolutionException.");
-        }
-        catch (ToolApprovalLlmProfileResolutionException ex)
-        {
-            StringAssert.Contains(ex.Message, "当前工作空间不具有审计类型的agent");
-        }
-    }
-
-    [TestMethod]
-    public async Task WorkspaceAuditAgentProfileResolver_Uses_First_Workspace_Audit_Agent()
-    {
-        var resolver = new StrictConfiguredToolApprovalLlmProfileResolver(
-            Options.Create(new ToolApprovalLlmOptions()),
-            workspaceAuditAgentProvider: new StaticWorkspaceAuditAgentProvider(new WorkspaceAuditAgentProfile
-            {
-                WorkspaceId = "workspace-1",
-                AgentInstanceId = "audit-agent-1",
-                AgentTemplateId = "audit-template",
                 ProviderId = "approval-provider",
                 ProfileId = "approval.default",
                 ModelId = "approval-model",
@@ -2200,8 +2187,23 @@ public sealed partial class PuddingToolInfrastructureTests
         Assert.AreEqual("approval-provider", profile!.ProviderId);
         Assert.AreEqual("approval.default", profile.ProfileId);
         Assert.AreEqual("approval-model", profile.ModelId);
-        Assert.AreEqual("audit-agent-1", profile.AgentInstanceId);
-        Assert.AreEqual("audit-template", profile.AgentTemplateId);
+        Assert.IsNull(profile.AgentInstanceId);
+    }
+
+    [TestMethod]
+    public async Task StrictConfiguredToolApprovalLlmProfileResolver_Does_Not_Derive_Profile_From_Audit_Agent()
+    {
+        // ADR-091 决策 5：审查模型路由不再读取工作空间审计 Agent 实例：
+        // 没有独立 ToolApproval:Llm 配置时返回 null（上层转成依赖等待），而不是生成 workspace-audit:* 档案。
+        var resolver = new StrictConfiguredToolApprovalLlmProfileResolver(
+            Options.Create(new ToolApprovalLlmOptions()));
+
+        var profile = await resolver.ResolveAsync(
+            ValidApprovalRequest("{}"),
+            SampleApprovalIdentity(),
+            new SampleHighTool().Descriptor);
+
+        Assert.IsNull(profile);
     }
 
     [TestMethod]

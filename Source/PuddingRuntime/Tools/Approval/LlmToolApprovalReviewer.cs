@@ -87,15 +87,17 @@ public sealed class ToolApprovalRuntimeOptions
     public const string LlmReviewer = "llm";
 
     /// <summary>
-    /// Reviewer implementation. Empty or "fake" keeps the construction-stage fake reviewer;
-    /// "llm" explicitly enables the isolated approval LLM reviewer.
+    /// Reviewer implementation. Default is "llm" (the isolated approval LLM reviewer).
+    /// "fake" is test-only and additionally requires <see cref="AllowFakeReviewer"/>;
+    /// production must never silently auto-approve (ADR-091 §5).
     /// </summary>
-    public string? Reviewer { get; set; } = FakeReviewer;
+    public string? Reviewer { get; set; } = LlmReviewer;
 
     /// <summary>
-    /// When enabled, automatic approval must use the workspace audit agent path even if Reviewer is left as "fake".
+    /// ADR-091 §5：仅测试组合可显式开启 fake reviewer（默认关闭）。
+    /// 关闭时配置 fake 会在解析 reviewer 时报错，避免生产在没有审查模型时静默放行。
     /// </summary>
-    public bool RequireAuditAgent { get; set; }
+    public bool AllowFakeReviewer { get; set; }
 }
 
 /// <summary>
@@ -106,51 +108,26 @@ public sealed class StrictConfiguredToolApprovalLlmProfileResolver : IToolApprov
 {
     private readonly IOptions<ToolApprovalLlmOptions> _options;
     private readonly ILlmConfigService? _llmConfigService;
-    private readonly IWorkspaceAuditAgentProvider? _workspaceAuditAgentProvider;
 
+    /// <summary>
+    /// ADR-091 决策 5：审查模型路由与工作空间审计 Agent 实例解耦。
+    /// 只依据独立的 ToolApproval:Llm 配置解析；缺配置返回 null，由调用方转成依赖等待，
+    /// 不再因「工作空间没有审计类型 agent」抛异常或要求人工授权。
+    /// </summary>
     public StrictConfiguredToolApprovalLlmProfileResolver(
         IOptions<ToolApprovalLlmOptions> options,
-        ILlmConfigService? llmConfigService = null,
-        IWorkspaceAuditAgentProvider? workspaceAuditAgentProvider = null)
+        ILlmConfigService? llmConfigService = null)
     {
         _options = options;
         _llmConfigService = llmConfigService;
-        _workspaceAuditAgentProvider = workspaceAuditAgentProvider;
     }
 
-    public async Task<ToolApprovalLlmProfile?> ResolveAsync(
+    public Task<ToolApprovalLlmProfile?> ResolveAsync(
         ToolApprovalTicketRequest request,
         ToolApprovalIdentity identity,
         ToolDescriptor descriptor,
         CancellationToken ct = default)
     {
-        if (_workspaceAuditAgentProvider is not null)
-        {
-            var auditAgent = await _workspaceAuditAgentProvider.FindFirstEnabledAuditAgentAsync(identity.WorkspaceId, ct);
-            if (auditAgent is null)
-                throw new ToolApprovalLlmProfileResolutionException("当前工作空间不具有审计类型的agent");
-
-            var providerId = auditAgent.ProviderId?.Trim() ?? "";
-            var modelId = auditAgent.ModelId?.Trim() ?? "";
-            var explicitProfileId = auditAgent.ProfileId?.Trim();
-            if (string.IsNullOrWhiteSpace(explicitProfileId)
-                && (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(modelId)))
-            {
-                throw new ToolApprovalLlmProfileResolutionException("当前工作空间的审计类型agent缺少审批模型配置");
-            }
-
-            return new ToolApprovalLlmProfile
-            {
-                ProviderId = providerId,
-                ProfileId = string.IsNullOrWhiteSpace(explicitProfileId)
-                    ? $"workspace-audit:{auditAgent.AgentInstanceId}"
-                    : explicitProfileId,
-                ModelId = modelId,
-                AgentInstanceId = auditAgent.AgentInstanceId,
-                AgentTemplateId = auditAgent.AgentTemplateId,
-            };
-        }
-
         var options = _options.Value;
         if (!string.IsNullOrWhiteSpace(options.ProfileId))
         {
@@ -161,16 +138,16 @@ public sealed class StrictConfiguredToolApprovalLlmProfileResolver : IToolApprov
                 if (!string.IsNullOrWhiteSpace(options.ProviderId)
                     && !string.Equals(options.ProviderId.Trim(), resolved.ProviderId, StringComparison.OrdinalIgnoreCase))
                 {
-                    return null;
+                    return Task.FromResult<ToolApprovalLlmProfile?>(null);
                 }
 
                 if (!string.IsNullOrWhiteSpace(options.ModelId)
                     && !string.Equals(options.ModelId.Trim(), resolved.ModelId, StringComparison.OrdinalIgnoreCase))
                 {
-                    return null;
+                    return Task.FromResult<ToolApprovalLlmProfile?>(null);
                 }
 
-                return new ToolApprovalLlmProfile
+                return Task.FromResult<ToolApprovalLlmProfile?>(new ToolApprovalLlmProfile
                 {
                     ProviderId = resolved.ProviderId,
                     ProfileId = resolved.ProfileId,
@@ -178,14 +155,14 @@ public sealed class StrictConfiguredToolApprovalLlmProfileResolver : IToolApprov
                     AgentTemplateId = string.IsNullOrWhiteSpace(options.AgentTemplateId)
                         ? null
                         : options.AgentTemplateId.Trim(),
-                };
+                });
             }
 
             if (_llmConfigService is not null
                 || string.IsNullOrWhiteSpace(options.ProviderId)
                 || string.IsNullOrWhiteSpace(options.ModelId))
             {
-                return null;
+                return Task.FromResult<ToolApprovalLlmProfile?>(null);
             }
         }
 
@@ -193,16 +170,16 @@ public sealed class StrictConfiguredToolApprovalLlmProfileResolver : IToolApprov
             || string.IsNullOrWhiteSpace(options.ProfileId)
             || string.IsNullOrWhiteSpace(options.ModelId))
         {
-            return null;
+            return Task.FromResult<ToolApprovalLlmProfile?>(null);
         }
 
         if (_llmConfigService is not null
             && _llmConfigService.Resolve(options.ProviderId.Trim(), options.ModelId.Trim()) is null)
         {
-            return null;
+            return Task.FromResult<ToolApprovalLlmProfile?>(null);
         }
 
-        return new ToolApprovalLlmProfile
+        return Task.FromResult<ToolApprovalLlmProfile?>(new ToolApprovalLlmProfile
         {
             ProviderId = options.ProviderId.Trim(),
             ProfileId = options.ProfileId.Trim(),
@@ -210,7 +187,7 @@ public sealed class StrictConfiguredToolApprovalLlmProfileResolver : IToolApprov
             AgentTemplateId = string.IsNullOrWhiteSpace(options.AgentTemplateId)
                 ? null
                 : options.AgentTemplateId.Trim(),
-        };
+        });
     }
 }
 
@@ -250,7 +227,7 @@ public sealed class InvocationToolApprovalLlmClient : IToolApprovalLlmClient
             _logger.LogWarning(
                 "[ToolApproval] approval LLM profile resolution failed workspace={WorkspaceId} agent={AgentInstanceId} tool={ToolId} reason={Reason}",
                 identity.WorkspaceId, identity.AgentInstanceId, descriptor.ToolId, ex.Message);
-            return NeedHumanJson(ex.Message);
+            return DeferredDependencyJson("approval_review_profile_resolution_failed", ex.Message);
         }
 
         if (profile is null)
@@ -258,7 +235,9 @@ public sealed class InvocationToolApprovalLlmClient : IToolApprovalLlmClient
             _logger.LogWarning(
                 "[ToolApproval] approval LLM profile is not configured workspace={WorkspaceId} agent={AgentInstanceId} tool={ToolId}",
                 identity.WorkspaceId, identity.AgentInstanceId, descriptor.ToolId);
-            return NeedHumanJson("approval LLM profile is not configured.");
+            return DeferredDependencyJson(
+                "approval_review_profile_not_configured",
+                "No approval review model profile is configured (ToolApproval:Llm).");
         }
 
         var startedAt = DateTimeOffset.UtcNow;
@@ -306,7 +285,9 @@ public sealed class InvocationToolApprovalLlmClient : IToolApprovalLlmClient
                 descriptor.ToolId,
                 DurationMs(startedAt),
                 result.Error);
-            return NeedHumanJson("approval LLM call failed: " + (result.Error ?? "unknown error"));
+            return DeferredDependencyJson(
+                "approval_review_call_failed",
+                "Approval review model call failed: " + (result.Error ?? "unknown error"));
         }
 
         if (string.IsNullOrWhiteSpace(result.ReplyText))
@@ -320,7 +301,9 @@ public sealed class InvocationToolApprovalLlmClient : IToolApprovalLlmClient
                 identity.SessionId,
                 descriptor.ToolId,
                 DurationMs(startedAt));
-            return NeedHumanJson("approval LLM returned an empty response.");
+            return DeferredDependencyJson(
+                "approval_review_empty_response",
+                "Approval review model returned an empty response.");
         }
 
         _logger.LogInformation(
@@ -339,13 +322,19 @@ public sealed class InvocationToolApprovalLlmClient : IToolApprovalLlmClient
     private static long DurationMs(DateTimeOffset startedAt)
         => Math.Max(0, (long)(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
 
-    private static string NeedHumanJson(string reason)
+    /// <summary>
+    /// ADR-091 §4.4：审查依赖不可用是**依赖等待**，不是人工决定。
+    /// 输出 typed reasonCode + requiresHumanAuthorization=false，避免把基础设施故障
+    /// 折叠成无期限人工票据，也避免诱导业务 Agent 反复调用 request_tool_approval / 索要授权。
+    /// </summary>
+    private static string DeferredDependencyJson(string reasonCode, string reason)
         => JsonSerializer.Serialize(new
         {
-            decision = "need_human",
+            decision = "deferred_dependency",
+            reasonCode,
             reason,
-            requiresHumanAuthorization = true,
-            missingRequirements = new[] { "explicit approval LLM review" },
-            recommendedFix = "Configure an approval LLM profile and retry request_tool_approval. Use /authorize only as a manual human fallback.",
+            requiresHumanAuthorization = false,
+            missingRequirements = new[] { "available isolated approval review model" },
+            recommendedFix = "Restore the approval review dependency (configure ToolApproval:Llm provider/profile/model or fix model availability), then retry the same invocation. Do not ask the user to authorize a dependency failure.",
         }, JsonOptions);
 }

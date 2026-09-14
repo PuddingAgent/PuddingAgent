@@ -47,14 +47,18 @@ public static class ToolApprovalReviewParser
         }
     }
 
+    /// <summary>
+    /// ADR-091 §4.1 步骤 5：空响应、非法 JSON、schema 不符属于依赖/协议失败，
+    /// 既不是人工决定，也不得伪造批准。归入 DeferredDependency，等待依赖恢复后重试同一 invocation。
+    /// </summary>
     private static ToolApprovalReviewResult Invalid(string reason)
         => new()
         {
-            Decision = ToolApprovalDecision.NeedHuman,
+            Decision = ToolApprovalDecision.DeferredDependency,
             DecisionReason = reason,
-            RequiresHumanAuthorization = true,
+            RequiresHumanAuthorization = false,
             MissingRequirements = ["valid reviewer JSON"],
-            RecommendedFix = "Retry request_tool_approval with valid approval facts. Use /authorize only as a manual human fallback.",
+            RecommendedFix = "The isolated review model did not return a schema-valid decision. Restore the review profile/model availability and retry the same invocation; this is a dependency wait, not a human authorization request.",
         };
 
     private static bool TryParseDecision(string? value, out ToolApprovalDecision decision)
@@ -70,6 +74,8 @@ public static class ToolApprovalReviewParser
             "denied" => Set(ToolApprovalDecision.Denied, out decision),
             "need_human" => Set(ToolApprovalDecision.NeedHuman, out decision),
             "needhuman" => Set(ToolApprovalDecision.NeedHuman, out decision),
+            "deferred_dependency" => Set(ToolApprovalDecision.DeferredDependency, out decision),
+            "deferreddependency" => Set(ToolApprovalDecision.DeferredDependency, out decision),
             _ => false,
         };
     }
