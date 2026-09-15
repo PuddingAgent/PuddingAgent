@@ -21,3 +21,11 @@
 - 正常 RuntimeTests 工程编译受其他文件现有 `PuddingToolInfrastructureTests.cs:4378` 的 `Assert.ThrowsExceptionAsync` 不存在阻挡。定向 harness 没有更改或屏蔽被测生产逻辑；不能把它表述为全套测试通过。
 - 平台附件提示与内容合同 11 项通过；合计 41 项定向测试通过。前端在隔离的已提交源码副本中叠加本次设置页变更，生产构建及 bundle budget 检查通过。
 - 源码/请求体回归通过不等于在线模型已加载新代码，也不等于真实视觉验收完成。部署结果另行记录。
+
+## 部署核验
+
+- 修复提交 `52c0aae`。从该提交和锁定的 GM 子模块提交独立构建 Core，0 errors。部署构建叠加工作树既有的 `AgentProjectionDtos.cs` 与 `AgentConversationProjectionService.cs` 心跳终态投影修复并重新编译，以保留已有运行行为；这两个文件没有纳入本次提交。构建源清单与文件 SHA-256 记录在 `temp/native-vision-build/build-source.json`。
+- 部署前只读确认没有 running/queued 的 chat command 或 execution run。通过 Desktop 的 `core/deploy-restart` 加载预构建产物。HTTP 等待 55 秒超时后没有重复派发；随后查询 canonical Desktop lastResult 得到 `success=true`、`coreRestarted=true`、`errors=[]`、Ready。Core PID 从 24908 变为 29572。
+- 部署前后 managed artifact manifest SHA-256 均为 `a88c86bfe1f3252acbb30f9782b5eb985f88ae14dc5e152045c728819e7cd112`；`/health/ready` 返回 200。在线 `/api/tools/image_reader?workspaceId=default` 已返回新描述，参数表没有 mode。
+- 前端同时更新开发态静态目录与 Core wwwroot；入口 `umi.240e92cc.js`、设置页 `216c4a45-async.33fdc6a0.js` 的 HTTP 字节哈希与构建产物一致，设置页 source map 确认不含 visionHelperModel。旧 HTML 备份位于 `temp/native-vision-previous-html`。
+- 当前完成源码回归、构建、进程外部署与在线工具合同核验；**未发送新的真实模型看图测试消息**，原会话的图片理解结果仍待真实重试验证。没有把工具合同可见或健康检查通过表述为模型视觉任务通过。
