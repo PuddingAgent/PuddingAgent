@@ -24,6 +24,15 @@ public sealed class GoalRunOptions
     public TimeSpan ContinuationScanInterval { get; set; } = TimeSpan.FromSeconds(5);
     public TimeSpan ContinuationLeaseDuration { get; set; } = TimeSpan.FromMinutes(2);
     public TimeSpan ConversationBusyRetryDelay { get; set; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// G92-1：受控检查（build/test/postcondition）的执行工作目录（通常是仓库根）。
+    /// 为空时受控检查一律 fail-closed（evidence_missing），不得在任意目录里构建/跑测试。
+    /// </summary>
+    public string? CheckWorkingDirectory { get; set; }
+
+    /// <summary>G92-1：单次受控检查的 deadline 秒数（默认 600）。</summary>
+    public int CheckTimeoutSeconds { get; set; } = 600;
     public int ContinuationBatchSize { get; set; } = 8;
     public int ContinuationMaxAttempts { get; set; } = 5;
 
@@ -52,6 +61,8 @@ public sealed class GoalRunOptions
             errors.Add("GoalRuns:ContinuationBatchSize must be between 1 and 64.");
         if (options.ContinuationMaxAttempts is < 1 or > 20)
             errors.Add("GoalRuns:ContinuationMaxAttempts must be between 1 and 20.");
+        if (options.CheckTimeoutSeconds is < 30 or > 3600)
+            errors.Add("GoalRuns:CheckTimeoutSeconds must be between 30 and 3600.");
 
         return errors;
     }

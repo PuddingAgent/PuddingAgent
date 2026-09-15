@@ -155,6 +155,9 @@ public static partial class PuddingServiceCollectionExtensions
             builder.Services.AddSingleton<GoalOutboxStore>();
             builder.Services.AddSingleton<GoalSettlementStore>();
             builder.Services.AddSingleton<IGoalIterationVerifier, ConservativeGoalIterationVerifier>();
+            builder.Services.AddSingleton<GoalAcceptanceContractStore>();
+            builder.Services.AddSingleton<GoalCheckRecordStore>();
+            builder.Services.AddSingleton<IGoalCheckRunner, GoalCheckRunner>();
             builder.Services.AddScoped<GoalRunStore>();
             builder.Services.AddScoped<IGoalCommandService, GoalCommandService>();
             builder.Services.AddScoped<IGoalQueryService, GoalQueryService>();

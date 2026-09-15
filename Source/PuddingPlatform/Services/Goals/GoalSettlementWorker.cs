@@ -9,6 +9,8 @@ namespace PuddingPlatform.Services.Goals;
 public sealed class GoalSettlementWorker(
     GoalSettlementStore store,
     IGoalIterationVerifier verifier,
+    IGoalCheckRunner checkRunner,
+    GoalCheckRecordStore checkRecordStore,
     IOptions<GoalRunOptions> options,
     ILogger<GoalSettlementWorker> logger) : BackgroundService
 {
@@ -49,7 +51,20 @@ public sealed class GoalSettlementWorker(
         var applied = 0;
         foreach (var candidate in candidates)
         {
-            var decision = await verifier.VerifyAsync(candidate.ToCapsule(), ct);
+            var capsule = candidate.ToCapsule();
+            if (capsule.Checks.Count > 0)
+            {
+                await RunChecksAsync(candidate, capsule, ct);
+
+                // 裁决依据必须是持久化的真实执行结果：用写回的 finished 报告刷新 capsule。
+                var records = await checkRecordStore.ReadForEpochAsync(
+                    candidate.GoalRunId,
+                    candidate.ActivationEpoch,
+                    ct);
+                capsule = capsule with { CheckReports = GoalVerificationPersistence.ReadReports(records) };
+            }
+
+            var decision = await verifier.VerifyAsync(capsule, ct);
             if (await store.ApplyAsync(candidate, decision, ct))
             {
                 applied++;
@@ -63,5 +78,49 @@ public sealed class GoalSettlementWorker(
             }
         }
         return applied;
+    }
+
+    /// <summary>
+    /// 结算前执行合同声明的受控检查（build/test/postcondition），把真实报告写回 goal_check_records。
+    /// 不持有 SQLite 写事务等待进程；同一去重键的检查不会重复执行。
+    /// </summary>
+    private async Task RunChecksAsync(
+        GoalSettlementCandidate candidate,
+        GoalEvidenceCapsule capsule,
+        CancellationToken ct)
+    {
+        var workingDirectory = string.IsNullOrWhiteSpace(_options.CheckWorkingDirectory)
+            ? null
+            : _options.CheckWorkingDirectory.Trim();
+
+        var context = new GoalCheckContext
+        {
+            GoalRunId = candidate.GoalRunId,
+            ActivationEpoch = candidate.ActivationEpoch,
+            WorkspaceId = candidate.WorkspaceId,
+            AgentInstanceId = candidate.AgentInstanceId,
+            IterationNo = candidate.IterationNo,
+            Scope = capsule.VerificationScope,
+            WorkingDirectory = workingDirectory,
+            TimeoutSeconds = _options.CheckTimeoutSeconds,
+        };
+
+        try
+        {
+            await checkRunner.RunAsync(capsule.Checks, context, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // 执行器故障不得伪装成通过：记录后照常裁决（无报告 => 未通过 => repair/等待）。
+            logger.LogError(
+                ex,
+                "[GoalSettlement] check execution failed goal={GoalRunId} epoch={Epoch}",
+                candidate.GoalRunId,
+                candidate.ActivationEpoch);
+        }
     }
 }
