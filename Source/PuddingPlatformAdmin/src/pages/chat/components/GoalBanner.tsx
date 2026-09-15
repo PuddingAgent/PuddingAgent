@@ -75,9 +75,9 @@ const PHASE_TONE: Record<
     borderColor: 'rgba(250, 140, 22, 0.40)',
   },
   budget_exhausted: {
-    color: '#cf1322',
-    background: 'rgba(255, 77, 79, 0.10)',
-    borderColor: 'rgba(255, 77, 79, 0.36)',
+    color: 'var(--pudding-chat-text-subtle)',
+    background: 'var(--pudding-chat-surface-muted)',
+    borderColor: 'var(--pudding-chat-border)',
   },
   completed: {
     color: '#389e0d',
@@ -90,9 +90,9 @@ const PHASE_TONE: Record<
     borderColor: 'var(--pudding-chat-border)',
   },
   failed: {
-    color: '#cf1322',
-    background: 'rgba(255, 77, 79, 0.10)',
-    borderColor: 'rgba(255, 77, 79, 0.36)',
+    color: 'var(--pudding-chat-text-subtle)',
+    background: 'var(--pudding-chat-surface-muted)',
+    borderColor: 'var(--pudding-chat-border)',
   },
 };
 
@@ -196,7 +196,7 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
   const tone = PHASE_TONE[goal.phase];
 
   const run = async (
-    action: 'pause' | 'resume' | 'cancel',
+    action: 'pause' | 'resume' | 'cancel' | 'clear',
     reason?: string,
   ) => {
     const text = await onCommand(action, reason ? { reason } : undefined);
@@ -312,15 +312,24 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
       {terminal && (
         <>
           <Divider style={{ margin: '12px 0 10px' }} />
-          <Button
-            size="small"
-            type="primary"
-            icon={<PlusOutlined />}
-            disabled={commandRunning}
-            onClick={() => setStartOpen(true)}
-          >
-            新建 Goal
-          </Button>
+          <Space size={8}>
+            <Button
+              size="small"
+              type="primary"
+              icon={<PlusOutlined />}
+              disabled={commandRunning}
+              onClick={() => setStartOpen(true)}
+            >
+              新建 Goal
+            </Button>
+            <Button
+              size="small"
+              disabled={commandRunning}
+              onClick={() => void run('clear')}
+            >
+              清除记录
+            </Button>
+          </Space>
         </>
       )}
     </div>
