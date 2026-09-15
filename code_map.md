@@ -1,3 +1,7 @@
+## 2026-09-16 Desktop/Core 同时退出与独立启动
+
+新增 `TestScripts/start-pudding-desktop-independent.ps1`，使用既有 Explorer 窗口代理启动，核对 Desktop 父进程并拒绝单实例转发。07:28 退出与 Codex 更新重合，缺少新崩溃栈；已恢复并改正开发工具进程归属。见[证据与边界](Docs/Reports/Desktop与Core退出恢复及独立启动-2026-09-16.md)。
+
 ## 2026-09-15 Goal 检查器启动依赖修复
 
 PuddingHost 将 DefaultTerminalCommandPolicy 同一 singleton 映射到 ITerminalCommandPolicy 与 ITerminalCommandAdmission，消除 GoalCheckRunner/GoalSettlementWorker 启动验证失败。产品组合根测试覆盖解析及准入拦截。见[运行中心熔断修复](Docs/Reports/Goal检查器依赖注册与Core启动修复-2026-09-15.md)。

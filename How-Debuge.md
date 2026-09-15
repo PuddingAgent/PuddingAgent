@@ -1,3 +1,7 @@
+### Desktop/Core 同时消失且无崩溃事件（2026-09-16）
+
+核对最新应用日志截止时间、WindowsUpdateClient、Desktop诊断日志和WER，区分异常崩溃与外部进程树回收。Windows Job 的 KILL_ON_JOB_CLOSE 可随启动工具退出清理两进程；Start-Process、新 Shell.Application 或单次 breakaway 不保证独立。开发恢复用 TestScripts/start-pudding-desktop-independent.ps1，通过真实 Explorer 的 Document.Application 启动并检查父PID；原进程退出后不能倒推其Job归属已获证明。见[现场记录](Docs/Reports/Desktop与Core退出恢复及独立启动-2026-09-16.md)。
+
 ### Core 退出码 -532462766 与自动恢复熔断（2026-09-15）
 
 先取 Desktop bootstrap status 与 Windows Application/.NET Runtime 1026 事件，以 XML Execution.ProcessID 对齐运行中心最近 PID。该退出码需靠异常栈定位；本次 PID38660 是 GoalCheckRunner 缺少 ITerminalCommandAdmission，发生在 Host.Build/ValidateOnBuild，应用错误日志可能没有新记录。核对产品 PuddingHost 组合根，不能只补 AddPuddingRuntime 或放宽熔断。见[修复记录](Docs/Reports/Goal检查器依赖注册与Core启动修复-2026-09-15.md)。
