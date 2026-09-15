@@ -24,7 +24,12 @@ public sealed class GoalQueryService(GoalRunStore store) : IGoalQueryService
         string workspaceId, string conversationId, CancellationToken ct = default)
     {
         var latest = await store.FindLatestAsync(workspaceId, conversationId, ct);
-        return latest?.ToSnapshot();
+        // ADR-074 §11：clear 只清除已结束 Goal 的展示，不删除事件/Iteration/Verification。
+        // 已清除的记录不得再作为"当前 Goal"回吐，否则 Banner 会永久挂着一枚用户已明确
+        // 关闭的历史终态徽标（clear 写入的 ClearedAtUtc 必须被读路径尊重，否则该命令是空操作）。
+        return latest is null || latest.ClearedAtUtc is not null
+            ? null
+            : latest.ToSnapshot();
     }
 
     public async Task<IReadOnlyList<GoalIterationSnapshot>> GetIterationsAsync(
