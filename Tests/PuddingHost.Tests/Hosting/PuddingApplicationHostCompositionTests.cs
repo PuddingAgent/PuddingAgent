@@ -32,6 +32,16 @@ public sealed class PuddingApplicationHostCompositionTests
             var builder = PuddingApplicationHost.CreateBuilder([], options);
             await using var app = PuddingApplicationHost.Build(builder);
 
+            var terminalPolicy = app.Services.GetRequiredService<ITerminalCommandPolicy>();
+            var terminalAdmission = app.Services.GetRequiredService<PuddingCode.Abstractions.ITerminalCommandAdmission>();
+            Assert.Same(terminalPolicy, terminalAdmission);
+            Assert.Same(terminalPolicy, app.Services.GetRequiredService<DefaultTerminalCommandPolicy>());
+            Assert.IsType<PuddingPlatform.Services.Goals.GoalCheckRunner>(
+                app.Services.GetRequiredService<PuddingCode.Goals.IGoalCheckRunner>());
+            terminalAdmission.EnsureAllowed("dotnet test --no-restore", isYoloMode: false);
+            Assert.Throws<UnauthorizedAccessException>(() =>
+                terminalAdmission.EnsureAllowed("taskkill /PID 1234", isYoloMode: false));
+
             var visionContext = app.Services.GetRequiredService<FrozenVisionContextAccessor>();
             Assert.Same(visionContext, app.Services.GetRequiredService<FrozenVisionContextAccessor>());
             // Optional constructor parameters can silently resolve to null even when

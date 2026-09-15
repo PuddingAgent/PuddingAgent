@@ -1,3 +1,7 @@
+### Core 退出码 -532462766 与自动恢复熔断（2026-09-15）
+
+先取 Desktop bootstrap status 与 Windows Application/.NET Runtime 1026 事件，以 XML Execution.ProcessID 对齐运行中心最近 PID。该退出码需靠异常栈定位；本次 PID38660 是 GoalCheckRunner 缺少 ITerminalCommandAdmission，发生在 Host.Build/ValidateOnBuild，应用错误日志可能没有新记录。核对产品 PuddingHost 组合根，不能只补 AddPuddingRuntime 或放宽熔断。见[修复记录](Docs/Reports/Goal检查器依赖注册与Core启动修复-2026-09-15.md)。
+
 ### 图片路由修复后仍失败：检查产品组合根（2026-09-15）
 
 PuddingHost 不调用 AddPuddingRuntime；仅在 Runtime.DependencyInjection 注册 FrozenVisionContextAccessor 不会作用于产品。可选构造依赖缺失仍能通过 ValidateOnBuild，必须断言 AgentExecutionService 与 DirectLlmClient 实际注入同一个 accessor。再按 Message ID → canonical turn → 错误日志对齐，不能把逐次 MoveNext 单测通过当作产品组合完成。见[本次证据](Docs/Reports/产品视觉上下文注册修复-2026-09-15.md)。

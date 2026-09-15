@@ -237,7 +237,13 @@ public static partial class PuddingServiceCollectionExtensions
 
         builder.Services.AddSingleton<SkillRuntime>();
         builder.Services.AddSingleton<ITerminalProcessManager, TerminalProcessManager>();
-        builder.Services.AddSingleton<ITerminalCommandPolicy, DefaultTerminalCommandPolicy>();
+        // Product composition does not call AddPuddingRuntime. Goal checks and
+        // terminal tools must resolve the same command admission policy instance.
+        builder.Services.AddSingleton<DefaultTerminalCommandPolicy>();
+        builder.Services.AddSingleton<ITerminalCommandPolicy>(
+            sp => sp.GetRequiredService<DefaultTerminalCommandPolicy>());
+        builder.Services.AddSingleton<PuddingCode.Abstractions.ITerminalCommandAdmission>(
+            sp => sp.GetRequiredService<DefaultTerminalCommandPolicy>());
         builder.Services.AddSingleton<IAgentLoopHook, LoggingAgentLoopHook>();
         builder.Services.AddSingleton<IAgentLoopHook, EmbeddingGenerationHook>();
         builder.Services.AddSingleton<ISessionChunkIndexer, SessionChunkIndexer>();

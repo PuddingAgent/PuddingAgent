@@ -1,3 +1,7 @@
+## 2026-09-15 Goal 检查器启动依赖修复
+
+PuddingHost 将 DefaultTerminalCommandPolicy 同一 singleton 映射到 ITerminalCommandPolicy 与 ITerminalCommandAdmission，消除 GoalCheckRunner/GoalSettlementWorker 启动验证失败。产品组合根测试覆盖解析及准入拦截。见[运行中心熔断修复](Docs/Reports/Goal检查器依赖注册与Core启动修复-2026-09-15.md)。
+
 ## 2026-09-15 产品视觉上下文注册修复
 
 PuddingHost 产品组合根显式注册共享 `FrozenVisionContextAccessor`，让 Agent Streaming 的逐次 MoveNext 快照绑定实际到达 DirectLlmClient；TurnExecutorAdapter 保留 Runtime 的 errorCode。见[故障与验证](Docs/Reports/产品视觉上下文注册修复-2026-09-15.md)。
