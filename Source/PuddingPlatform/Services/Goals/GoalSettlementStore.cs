@@ -672,21 +672,45 @@ public sealed class GoalSettlementStore(
             return decision;
         }
 
+        // ADR-092 §4/§6.1（G92-0）：Turn 结束、Task Completed 都不是验收证据。
+        // 只有当前单元的必需条件通过真实检查，才允许推进到下一单元或完成目标。
+        var verifiedAcceptance = GoalSettlementDecisionCalculator.HasVerifiedAcceptance(decision);
+
         if (plan.Next is not null)
         {
             return decision with
             {
                 Verdict = GoalVerificationVerdict.Continue,
                 Reason = decision.Verdict == GoalVerificationVerdict.Complete
-                    ? "Task completion was deferred because the bound execution plan still has WorkUnits to run."
+                    ? (verifiedAcceptance
+                        ? "Task completion was deferred because the bound execution plan still has WorkUnits to run."
+                        : "Task completion was deferred: the current WorkUnit has no verified acceptance for its required criteria, and the bound plan still has WorkUnits to run.")
                     : decision.Reason,
-                NextAction = plan.Next.Objective,
+                NextAction = verifiedAcceptance ? plan.Next.Objective : plan.Current.Objective,
                 EvidenceRefs = candidate.EvidenceRefs,
+                BlockerCode = verifiedAcceptance ? decision.BlockerCode : decision.BlockerCode ?? "acceptance_not_verified",
+                BlockerMessage = verifiedAcceptance
+                    ? decision.BlockerMessage
+                    : "The current WorkUnit's required criteria have no passing verification result.",
             };
         }
 
         if (task?.Status == WorkspaceTaskStatus.Completed)
         {
+            // ADR-092 §5.2：Task.Status==Completed 不能绕过整体 gate。
+            if (!GoalSettlementDecisionCalculator.AllRequiredCriteriaPassed(decision))
+            {
+                return decision with
+                {
+                    Verdict = GoalVerificationVerdict.Continue,
+                    Reason = "The bound Task is completed, but the goal's required criteria have no passing verification; the goal stays open.",
+                    NextAction = plan.Current.Objective,
+                    EvidenceRefs = candidate.EvidenceRefs,
+                    BlockerCode = decision.BlockerCode ?? "acceptance_not_verified",
+                    BlockerMessage = "Required criteria are not verified yet.",
+                };
+            }
+
             return decision with
             {
                 Verdict = GoalVerificationVerdict.Complete,
@@ -714,15 +738,14 @@ public sealed class GoalSettlementStore(
             return;
 
         var nowMs = now.ToUnixTimeMilliseconds();
-        var finalWorkUnitWithoutTaskFact = string.Equals(
-            decision.BlockerCode,
-            "task_completion_fact_missing",
-            StringComparison.Ordinal);
-        var successfulWorkUnit = string.Equals(iteration.StopReason, "completed", StringComparison.Ordinal)
-            && (decision.Verdict is GoalVerificationVerdict.Continue or GoalVerificationVerdict.Complete
-                || finalWorkUnitWithoutTaskFact);
 
-        if (successfulWorkUnit)
+        // ADR-092 §6.1（G92-0）：只有当前单元的必需条件通过真实检查，才允许把单元/计划置为完成。
+        // StopReason=completed、Turn 结束、Task Completed、"最后的 WorkUnit 缺 Task 事实" 都不是验收证据。
+        var verifiedWorkUnit = string.Equals(iteration.StopReason, "completed", StringComparison.Ordinal)
+            && GoalSettlementDecisionCalculator.HasVerifiedAcceptance(decision);
+        var disposition = GoalSettlementDecisionCalculator.ComputeDisposition(decision);
+
+        if (verifiedWorkUnit)
         {
             plan.Current.Status = TaskNodeStatuses.Completed.ToString();
             plan.Current.ResultSummary = decision.Reason;
@@ -733,7 +756,7 @@ public sealed class GoalSettlementStore(
             plan.Current.UpdatedAt = nowMs;
 
             if (decision.Verdict == GoalVerificationVerdict.Complete
-                || finalWorkUnitWithoutTaskFact)
+                && GoalSettlementDecisionCalculator.AllRequiredCriteriaPassed(decision))
             {
                 plan.Plan.Status = TaskPlanStatuses.Completed.ToString();
                 plan.Plan.ResultSummary = decision.Reason;
@@ -748,18 +771,27 @@ public sealed class GoalSettlementStore(
             return;
         }
 
-        plan.Current.Status = TaskNodeStatuses.Failed.ToString();
+        // 未验证完成：保留当前单元的执行身份与计划，不把 Plan/Root 置为 Failed。
         plan.Current.ErrorMessage = decision.BlockerMessage ?? decision.Reason;
-        plan.Current.CompletedAt ??= nowMs;
         plan.Current.UpdatedAt = nowMs;
-        plan.Plan.Status = TaskPlanStatuses.Failed.ToString();
-        plan.Plan.ErrorMessage = decision.BlockerMessage ?? decision.Reason;
-        plan.Plan.CompletedAt ??= nowMs;
+
+        // 只有不可恢复处置才终止计划；等待依赖/需要修复/需要人工决定都不得关闭整个 Goal。
+        if (string.Equals(disposition, GoalSettlementDispositions.Stop, StringComparison.Ordinal))
+        {
+            plan.Current.Status = TaskNodeStatuses.Failed.ToString();
+            plan.Current.CompletedAt ??= nowMs;
+            plan.Plan.Status = TaskPlanStatuses.Failed.ToString();
+            plan.Plan.ErrorMessage = decision.BlockerMessage ?? decision.Reason;
+            plan.Plan.CompletedAt ??= nowMs;
+            plan.Plan.UpdatedAt = nowMs;
+            plan.Root.Status = TaskNodeStatuses.Failed.ToString();
+            plan.Root.ErrorMessage = decision.BlockerMessage ?? decision.Reason;
+            plan.Root.CompletedAt ??= nowMs;
+            plan.Root.UpdatedAt = nowMs;
+            return;
+        }
+
         plan.Plan.UpdatedAt = nowMs;
-        plan.Root.Status = TaskNodeStatuses.Failed.ToString();
-        plan.Root.ErrorMessage = decision.BlockerMessage ?? decision.Reason;
-        plan.Root.CompletedAt ??= nowMs;
-        plan.Root.UpdatedAt = nowMs;
     }
 
     private void ApplyCurrentVerdict(
