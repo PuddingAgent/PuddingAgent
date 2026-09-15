@@ -17,6 +17,7 @@ public sealed class AgentSessionManager
     private readonly ConcurrentDictionary<string, TimeSpan> _sessionTimeouts = new();
     private readonly ConcurrentDictionary<string, byte> _waitingEventSessions = new();
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _loadedToolIds = new();
+    private readonly ConcurrentDictionary<string, string[]> _visibleToolOrder = new();
     private readonly ILogger<AgentSessionManager>? _logger;
 
     public AgentSessionManager(ILogger<AgentSessionManager>? logger = null)
@@ -197,8 +198,19 @@ public sealed class AgentSessionManager
     /// P0-5 步骤 5：从持久化 Composition 记录水合工具集合（跨 1h 超时 / Core 重启恢复）。
     /// append-only 语义：只追加持久化 toolIds，不覆盖/收缩进程内已有集合。
     /// </summary>
-    public void HydrateToolIds(string sessionId, IEnumerable<string> toolIds) =>
-        RememberLoadedToolIds(sessionId, toolIds);
+    public void HydrateToolIds(string sessionId, IEnumerable<string> toolIds)
+    {
+        var ordered = toolIds.ToArray();
+        RememberLoadedToolIds(sessionId, ordered);
+        _visibleToolOrder.TryAdd(sessionId, ordered);
+    }
+
+    /// <summary>Ordered projection of the latest visible surface; authority remains Composition.</summary>
+    public IReadOnlyList<string> GetVisibleToolOrder(string sessionId) =>
+        _visibleToolOrder.TryGetValue(sessionId, out var ordered) ? ordered.ToArray() : [];
+
+    public void RememberVisibleToolOrder(string sessionId, IEnumerable<string> toolIds) =>
+        _visibleToolOrder[sessionId] = toolIds.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
     /// <summary>
     /// Returns an immutable snapshot of the session's progressively discovered tool

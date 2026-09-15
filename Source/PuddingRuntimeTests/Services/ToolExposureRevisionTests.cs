@@ -151,6 +151,58 @@ public sealed class ToolExposureRevisionTests
         Assert.IsFalse(observed.ChangeReason.Contains(CompositionChangeReasons.ExposureChanged));
     }
 
+    [TestMethod]
+    public void DispatchBoundary_PreservesDiscoveredOrder_AndCurrentPermissions()
+    {
+        var catalog = Catalog(24);
+        var manager = new AgentSessionManager();
+        var first = AgentExecutionService.BuildFrozenToolManifestCore(catalog, null, null);
+        var loaded = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "deferred_20" };
+        var visible = first.VisibleTools.ToList();
+        AgentExecutionService.PromoteLoadedToolsForNextRound(first, loaded, visible);
+        manager.RememberLoadedToolIds("s", loaded);
+        manager.RememberVisibleToolOrder("s", visible.Select(t => t.Name));
+
+        var next = AgentExecutionService.BuildFrozenToolManifestCore(catalog, null,
+            manager.GetLoadedToolIds("s"), manager.GetVisibleToolOrder("s"));
+        CollectionAssert.AreEqual(visible.Select(t => t.Name).ToArray(), next.VisibleTools.Select(t => t.Name).ToArray());
+        Assert.AreEqual(CompositionSnapshot.ComputeToolSpecHash(visible), CompositionSnapshot.ComputeToolSpecHash(next.VisibleTools));
+
+        // Old order is not permission authority: removed definitions stay removed.
+        var revoked = AgentExecutionService.BuildFrozenToolManifestCore(
+            catalog.Where(t => t.Name != "deferred_20").ToArray(), null,
+            manager.GetLoadedToolIds("s"), manager.GetVisibleToolOrder("s"));
+        Assert.IsFalse(revoked.VisibleTools.Any(t => t.Name == "deferred_20"));
+    }
+
+    [TestMethod]
+    public async Task Restart_UsesPersistedCompositionOrder_ForFirstDispatch()
+    {
+        var order = new[] { "search_tools", "goal_read", "deferred_20" };
+        var manager = new AgentSessionManager();
+        var recovery = new CompositionRecoveryService(manager, new OrderedStore(order));
+        await recovery.RecoverAsync("s");
+        var manifest = AgentExecutionService.BuildFrozenToolManifestCore(Catalog(24), null,
+            manager.GetLoadedToolIds("s"), manager.GetVisibleToolOrder("s"));
+        CollectionAssert.AreEqual(order, manifest.VisibleTools.Select(t => t.Name).ToArray());
+        manager.Remove("s");
+        CollectionAssert.AreEqual(order, manager.GetVisibleToolOrder("s").ToArray());
+    }
+
+    private sealed class OrderedStore(string[] ids) : ICompositionStore
+    {
+        public Task<SessionCompositionRecord?> GetLatestAsync(string sessionId, CancellationToken ct = default) =>
+            Task.FromResult<SessionCompositionRecord?>(new SessionCompositionRecord
+            {
+                SessionId = sessionId, CompositionVersion = 1, SystemPromptHash = "sys",
+                ToolSpecHash = "tools", PrefixHash = "prefix", ToolIds = ids,
+            });
+        public Task<IReadOnlyList<SessionCompositionRecord>> LoadAsync(string sessionId, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<SessionCompositionRecord>>([]);
+        public Task<CompositionAppendResult> AppendAsync(SessionCompositionRecord record, long expectedRevision, CancellationToken ct = default) =>
+            Task.FromResult(CompositionAppendResult.Committed(record.CompositionVersion));
+    }
+
     private static List<LlmToolDefinition> Catalog(int extraDeferred)
     {
         var tools = new List<LlmToolDefinition>

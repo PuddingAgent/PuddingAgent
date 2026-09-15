@@ -1357,7 +1357,9 @@ public sealed partial class AgentExecutionService
         var manifest = BuildFrozenToolManifestCore(
             BuildRuntimeToolDefinitions(capability, template, request),
             request.ToolDefinitions,
-            committedToolIds);
+            committedToolIds,
+            _sessionManager.GetVisibleToolOrder(request.SessionId));
+        _sessionManager.RememberVisibleToolOrder(request.SessionId, manifest.VisibleTools.Select(tool => tool.Name));
         foreach (var merged in manifest.RuntimeMergedToolNames)
             _logger.LogDebug("[AgentExec] Merged runtime tool: {Tool}", merged);
         return manifest;
@@ -1372,7 +1374,8 @@ public sealed partial class AgentExecutionService
     internal static FrozenToolManifest BuildFrozenToolManifestCore(
         IReadOnlyList<LlmToolDefinition> runtimeTools,
         IReadOnlyList<LlmToolDefinition>? requestToolDefinitions,
-        IReadOnlySet<string>? committedToolIds)
+        IReadOnlySet<string>? committedToolIds,
+        IReadOnlyList<string>? previousVisibleToolIds = null)
     {
         var availableToolNames = runtimeTools
             .Select(t => t.Name)
@@ -1400,7 +1403,8 @@ public sealed partial class AgentExecutionService
 
         var committed = committedToolIds?.ToHashSet(StringComparer.OrdinalIgnoreCase)
             ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var exposurePlan = ToolExposurePlanner.CreatePlan(allLlmTools, committed, committed);
+        var exposurePlan = ToolExposurePlanner.CreatePlan(allLlmTools, committed, committed,
+            previousVisibleToolIds: previousVisibleToolIds);
         return new FrozenToolManifest(
             runtimeTools,
             allLlmTools,

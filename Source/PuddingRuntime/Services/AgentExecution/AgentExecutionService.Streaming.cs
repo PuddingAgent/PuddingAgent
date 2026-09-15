@@ -1505,6 +1505,7 @@ public sealed partial class AgentExecutionService
                             frozenTools,
                             loadedToolIds,
                             llmTools);
+                        _sessionManager.RememberVisibleToolOrder(request.SessionId, llmTools.Select(tool => tool.Name));
                         // C01-B AC6：轮边界提交 —— 曝光集合变化或一次性排序策略 epoch 都要求下一轮重建形状。
                         toolSpecChangedForNextRound |= promotion.IsExposureEpochChange;
                         _logger.LogInformation(
