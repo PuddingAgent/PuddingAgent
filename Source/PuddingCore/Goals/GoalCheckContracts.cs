@@ -113,6 +113,18 @@ public sealed record GoalCheckContext
     public int? TimeoutSeconds { get; init; }
 }
 
+/// <summary>ADR-092 §6.2：verification/check 持久工作项的生命周期状态。</summary>
+public static class GoalCheckRecordStatuses
+{
+    public const string Pending = "pending";
+
+    /// <summary>已被某个执行器持租；租约过期后可被重新认领。</summary>
+    public const string Leased = "leased";
+
+    /// <summary>已产生真实运行报告；只有带 ReportJson 的 finished 记录才是可信证据。</summary>
+    public const string Finished = "finished";
+}
+
 /// <summary>
 /// ADR-092 §5.3（G92-1）：实际执行受控检查的执行器。
 /// 约束：只执行传入的 <see cref="GoalCheckSpec"/>；经既有工具准入（ADR-091）执行；

@@ -38,6 +38,14 @@ public sealed record GoalSettlementCandidate
     public int? TaskVersion { get; init; }
     public string? TaskStatus { get; init; }
     public string? TaskAcceptanceCriteria { get; init; }
+    /// <summary>绑定执行计划的指纹（合同 matching 用；未绑定计划时为 null）。</summary>
+    public string? PlanFingerprint { get; init; }
+    /// <summary>持久验收合同的必需条件（空 = 尚未派生合同，必须走有界修复而非 vacuous pass）。</summary>
+    public IReadOnlyList<GoalCriterion> Criteria { get; init; } = [];
+    /// <summary>持久验收合同的版本化检查定义。</summary>
+    public IReadOnlyList<GoalCheckSpec> Checks { get; init; } = [];
+    /// <summary>持久检查记录中可信的 finished 报告（pending/leased/无报告一律不入）。</summary>
+    public IReadOnlyList<GoalCheckReport> CheckReports { get; init; } = [];
     public bool HasPendingExecutionFacts { get; init; }
     public bool EvidenceComplete { get; init; }
     public string? RunId { get; init; }
@@ -66,6 +74,9 @@ public sealed record GoalSettlementCandidate
         TaskAcceptanceCriteria = TaskAcceptanceCriteria,
         HasPendingExecutionFacts = HasPendingExecutionFacts,
         EvidenceComplete = EvidenceComplete,
+        Criteria = Criteria,
+        Checks = Checks,
+        CheckReports = CheckReports,
     };
 }
 
@@ -122,6 +133,19 @@ public sealed class GoalSettlementStore(
                         && item.TaskId == binding.TaskId,
                     ct);
             }
+
+            // ADR-092 §5.1/§6.2：验收条件与检查报告只能来自持久记录。
+            // 没有合同行就是"尚未派生合同"（空合同），没有 finished 报告就是"未运行"，
+            // 两者都绝不在生产代码里用假 passed 代替。
+            var contract = await db.GoalAcceptanceContracts.AsNoTracking().SingleOrDefaultAsync(
+                item => item.GoalRunId == goal.GoalRunId
+                    && item.ActivationEpoch == iteration.ActivationEpoch
+                    && item.ObjectiveVersion == goal.ObjectiveVersion,
+                ct);
+            var checkRecords = await db.GoalCheckRecords.AsNoTracking()
+                .Where(item => item.GoalRunId == goal.GoalRunId
+                    && item.ActivationEpoch == iteration.ActivationEpoch)
+                .ToListAsync(ct);
 
             var expectedTerminalType = turn.TerminalKind switch
             {
@@ -224,6 +248,10 @@ public sealed class GoalSettlementStore(
                 TaskVersion = task?.Version,
                 TaskStatus = task?.Status.ToString(),
                 TaskAcceptanceCriteria = task?.AcceptanceCriteria,
+                PlanFingerprint = binding?.PlanFingerprint,
+                Criteria = GoalVerificationPersistence.ReadCriteria(contract?.CriteriaJson),
+                Checks = GoalVerificationPersistence.ReadChecks(contract?.ChecksJson),
+                CheckReports = GoalVerificationPersistence.ReadReports(checkRecords),
                 HasPendingExecutionFacts = hasPending,
                 EvidenceComplete = evidenceComplete,
                 RunId = execution?.RunId,

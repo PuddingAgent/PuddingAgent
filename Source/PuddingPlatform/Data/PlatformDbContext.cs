@@ -137,6 +137,10 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<GoalVerificationEntity> GoalVerifications => Set<GoalVerificationEntity>();
     public DbSet<TaskGoalBindingEntity> TaskGoalBindings => Set<TaskGoalBindingEntity>();
 
+    // Goal 验收合同与真实检查记录（ADR-092 §5.1/§6.2；G92-2 起写入，G92-1 读取）
+    public DbSet<GoalAcceptanceContractEntity> GoalAcceptanceContracts => Set<GoalAcceptanceContractEntity>();
+    public DbSet<GoalCheckRecordEntity> GoalCheckRecords => Set<GoalCheckRecordEntity>();
+
     // Agent 状态感知与自动派发安全底座（ADR-072/074）
     public DbSet<AgentAvailabilityProjectionEntity> AgentAvailabilityProjections => Set<AgentAvailabilityProjectionEntity>();
     public DbSet<AgentExecutionReservationEntity> AgentExecutionReservations => Set<AgentExecutionReservationEntity>();

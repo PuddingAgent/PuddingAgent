@@ -158,6 +158,53 @@ public static class GoalSchemaBootstrapper
         "CREATE UNIQUE INDEX IF NOT EXISTS UX_goal_verifications_dedupe ON goal_verifications(goal_run_id, activation_epoch, source_turn_id, contract_version);",
         "CREATE INDEX IF NOT EXISTS IX_goal_verifications_goal_iteration ON goal_verifications(goal_run_id, iteration_no);",
 
+        // ── goal_acceptance_contracts（ADR-092 §5.1：版本化验收合同）──
+        """
+        CREATE TABLE IF NOT EXISTS goal_acceptance_contracts (
+            contract_id       TEXT    NOT NULL,
+            goal_run_id       TEXT    NOT NULL,
+            activation_epoch  INTEGER NOT NULL,
+            objective_version INTEGER NOT NULL,
+            contract_version  INTEGER NOT NULL DEFAULT 1,
+            plan_fingerprint  TEXT,
+            criteria_json     TEXT    NOT NULL DEFAULT '[]',
+            checks_json       TEXT    NOT NULL DEFAULT '[]',
+            source            TEXT    NOT NULL DEFAULT 'bounded_planning',
+            created_at_utc    TEXT    NOT NULL,
+            updated_at_utc    TEXT    NOT NULL,
+            PRIMARY KEY (contract_id)
+        );
+        """,
+        "CREATE UNIQUE INDEX IF NOT EXISTS UX_goal_acceptance_contracts_epoch ON goal_acceptance_contracts(goal_run_id, activation_epoch, objective_version);",
+
+        // ── goal_check_records（ADR-092 §6.2：verification/check 租约与真实报告）──
+        """
+        CREATE TABLE IF NOT EXISTS goal_check_records (
+            check_record_id    TEXT    NOT NULL,
+            dedup_key          TEXT    NOT NULL,
+            goal_run_id        TEXT    NOT NULL,
+            activation_epoch   INTEGER NOT NULL,
+            iteration_no       INTEGER NOT NULL,
+            check_id           TEXT    NOT NULL,
+            criterion_id       TEXT    NOT NULL,
+            criterion_revision INTEGER NOT NULL,
+            definition_hash    TEXT,
+            input_fingerprint  TEXT,
+            status             TEXT    NOT NULL DEFAULT 'pending',
+            lease_owner        TEXT,
+            lease_until_utc    TEXT,
+            attempt            INTEGER NOT NULL DEFAULT 0,
+            priority           INTEGER NOT NULL DEFAULT 0,
+            report_json        TEXT,
+            failure_code       TEXT,
+            created_at_utc     TEXT    NOT NULL,
+            updated_at_utc     TEXT    NOT NULL,
+            PRIMARY KEY (check_record_id)
+        );
+        """,
+        "CREATE UNIQUE INDEX IF NOT EXISTS UX_goal_check_records_dedup ON goal_check_records(dedup_key);",
+        "CREATE INDEX IF NOT EXISTS IX_goal_check_records_goal_epoch_status ON goal_check_records(goal_run_id, activation_epoch, status);",
+
         // ── task_goal_bindings（ADR-074 §22，Task-bound 批次写入）─
         """
         CREATE TABLE IF NOT EXISTS task_goal_bindings (
