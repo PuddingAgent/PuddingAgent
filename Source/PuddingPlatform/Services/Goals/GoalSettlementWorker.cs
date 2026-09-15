@@ -80,7 +80,8 @@ public sealed class GoalSettlementWorker(
     {
         var capsule = candidate.ToCapsule();
 
-        // 空合同的有界派生：只依据显式配置的受检目标生成条件；未配置则保持空合同（fail-closed）。
+        // 空合同的有界派生：目标级条件来自 objective 显式证据声明；回归门禁只依据
+        // 显式配置的受检目标生成；两者都为空则保持空合同（fail-closed）。
         if (capsule.Criteria.Count == 0)
         {
             var planned = await planner.EnsureContractAsync(
@@ -88,6 +89,7 @@ public sealed class GoalSettlementWorker(
                 candidate.ActivationEpoch,
                 capsule.ObjectiveVersion,
                 candidate.PlanFingerprint,
+                candidate.Objective,
                 ct);
 
             if (planned)

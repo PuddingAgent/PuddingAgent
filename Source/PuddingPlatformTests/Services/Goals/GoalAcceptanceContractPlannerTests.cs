@@ -174,4 +174,130 @@ public sealed class GoalAcceptanceContractPlannerTests
         foreach (var check in checks)
             Assert.AreEqual("epoch:4:objective:9", check.InputFingerprint);
     }
+
+    [TestMethod]
+    public async Task ObjectiveEvidence_GeneratesObjectiveCriteria_AlongsideGates()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+
+        var planner = NewPlanner(factory, Project);
+        var objective = "完成目标；证据: " + Project;
+
+        Assert.IsTrue(await planner.EnsureContractAsync("goal-obj", 1, 1, "fp-obj", objective));
+
+        var contract = await new GoalAcceptanceContractStore(factory).LoadAsync("goal-obj", 1, 1);
+        Assert.IsNotNull(contract);
+        Assert.AreEqual(GoalAcceptanceContractPlanner.SourceWithObjectiveEvidence, contract!.Source);
+
+        var criteria = GoalVerificationPersistence.ReadCriteria(contract.CriteriaJson);
+        var checks = GoalVerificationPersistence.ReadChecks(contract.ChecksJson);
+
+        // 目标级：build + test 各一条，id 与检查均带 objective 前缀。
+        Assert.IsTrue(criteria.Any(c => string.Equals(c.Id, "objective-build:" + Project, StringComparison.Ordinal)));
+        Assert.IsTrue(criteria.Any(c => string.Equals(c.Id, "objective-test:" + Project, StringComparison.Ordinal)));
+        Assert.IsTrue(checks.Any(c => string.Equals(c.CheckId, "objective:build:" + Project, StringComparison.Ordinal)));
+        Assert.IsTrue(checks.Any(c => string.Equals(c.CheckId, "objective:test:" + Project, StringComparison.Ordinal)));
+
+        // 门禁保留：既有 bounded id 仍存在，回归护栏不被目标级条件取代。
+        Assert.IsTrue(criteria.Any(c => string.Equals(c.Id, "build:" + Project, StringComparison.Ordinal)));
+        Assert.IsTrue(criteria.Any(c => string.Equals(c.Id, "test:" + Project, StringComparison.Ordinal)));
+        Assert.AreEqual(4, criteria.Count);
+        Assert.AreEqual(4, checks.Count);
+
+        // 两组要求文案可区分。
+        Assert.IsTrue(criteria.First(c => c.Id.StartsWith("objective-", StringComparison.Ordinal))
+            .Requirement.StartsWith("目标声明的证据", StringComparison.Ordinal));
+        Assert.IsTrue(criteria.First(c => !c.Id.StartsWith("objective-", StringComparison.Ordinal))
+            .Requirement.StartsWith("回归门禁", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task DifferentObjectives_ProduceDifferentCriteriaIds()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+
+        var store = new GoalAcceptanceContractStore(factory);
+        var planner = NewPlanner(factory, Project);
+
+        // 同一门禁配置下，两个不同 objective（声明不同项目）必须得到不同判据集合
+        // —— 这是把「合同 generic 化」缺口锁死的核心对照。
+        var objectiveA = "目标 A；证据: Source/A.csproj";
+        var objectiveB = "目标 B；证据: Source/B.csproj";
+
+        Assert.IsTrue(await planner.EnsureContractAsync("goal-cmp-a", 1, 1, "fp-a", objectiveA));
+        Assert.IsTrue(await planner.EnsureContractAsync("goal-cmp-b", 1, 1, "fp-b", objectiveB));
+
+        var contractA = await store.LoadAsync("goal-cmp-a", 1, 1);
+        var contractB = await store.LoadAsync("goal-cmp-b", 1, 1);
+        Assert.IsNotNull(contractA);
+        Assert.IsNotNull(contractB);
+
+        var idsA = GoalVerificationPersistence.ReadCriteria(contractA!.CriteriaJson).Select(c => c.Id).ToList();
+        var idsB = GoalVerificationPersistence.ReadCriteria(contractB!.CriteriaJson).Select(c => c.Id).ToList();
+
+        CollectionAssert.AreNotEquivalent(idsA, idsB);
+        Assert.IsTrue(idsA.Contains("objective-build:Source/A.csproj"));
+        Assert.IsFalse(idsB.Contains("objective-build:Source/A.csproj"));
+        Assert.IsTrue(idsB.Contains("objective-build:Source/B.csproj"));
+        Assert.IsFalse(idsA.Contains("objective-build:Source/B.csproj"));
+    }
+
+    [TestMethod]
+    public async Task ObjectiveWithoutEvidenceDeclaration_NoObjectiveCriteria()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+
+        var planner = NewPlanner(factory, Project);
+        var objective = "把所有失败测试修好（没有任何证据声明）";
+
+        Assert.IsTrue(await planner.EnsureContractAsync("goal-noev", 1, 1, "fp-noev", objective));
+
+        var contract = await new GoalAcceptanceContractStore(factory).LoadAsync("goal-noev", 1, 1);
+        Assert.IsNotNull(contract);
+        // 未声明证据：行为与纯门禁规划一致，合同级 Source 也保持不变。
+        Assert.AreEqual(GoalAcceptanceContractPlanner.Source, contract!.Source);
+
+        var criteria = GoalVerificationPersistence.ReadCriteria(contract.CriteriaJson);
+        Assert.AreEqual(2, criteria.Count);
+        Assert.IsFalse(criteria.Any(c => c.Id.StartsWith("objective-", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task UnsafeEvidenceDeclarations_StayOutOfContract()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+
+        // 无门禁配置：不安全的证据声明绝不能单独撑起合同（fail-closed 保持）。
+        var planner = NewPlanner(factory);
+        var objective = "证据: ..\\escape.csproj, C:/abs/abs.csproj, evidence：Source/not-a-project.txt";
+
+        Assert.IsFalse(await planner.EnsureContractAsync("goal-unsafev", 1, 1, "fp-unsafev", objective));
+        Assert.IsNull(await new GoalAcceptanceContractStore(factory).LoadAsync("goal-unsafev", 1, 1));
+    }
+
+    [TestMethod]
+    public async Task MixedEvidenceDeclarations_OnlySafeTargetsBecomeCriteria()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+
+        var planner = NewPlanner(factory, Project);
+        var objective = "证据: ../escape.csproj、C:/abs/x.csproj、" + Project;
+
+        Assert.IsTrue(await planner.EnsureContractAsync("goal-mixed", 1, 1, "fp-mixed", objective));
+
+        var contract = await new GoalAcceptanceContractStore(factory).LoadAsync("goal-mixed", 1, 1);
+        Assert.IsNotNull(contract);
+
+        var criteria = GoalVerificationPersistence.ReadCriteria(contract.CriteriaJson);
+        var objectiveCriteria = criteria.Where(c => c.Id.StartsWith("objective-", StringComparison.Ordinal)).ToList();
+
+        // 只有通过安全校验的声明才生成目标级条件。
+        Assert.AreEqual(2, objectiveCriteria.Count);
+        Assert.IsTrue(objectiveCriteria.All(c => c.InputRefs.Count == 1 && string.Equals(c.InputRefs[0], Project, StringComparison.Ordinal)));
+    }
 }
