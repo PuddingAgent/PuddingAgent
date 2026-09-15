@@ -394,6 +394,9 @@ public sealed class GoalSettlementAcceptanceRegressionTests
 
         Assert.IsTrue(applied);
 
+        // 播种用的 DbContext 仍跟踪播种时的实体，直接查询会读到旧值（stale change tracker）；
+        // 断言必须读服务端已提交的真实状态。（真实运行复现：写入已发生但断言读到播种值 Running）
+        db.ChangeTracker.Clear();
         var current = await db.TaskNodes.SingleAsync(node => node.TaskNodeId == CurrentNodeId);
         var plan = await db.TaskPlanRuns.SingleAsync(item => item.PlanId == PlanId);
         var root = await db.TaskNodes.SingleAsync(node => node.TaskNodeId == RootNodeId);
@@ -416,6 +419,8 @@ public sealed class GoalSettlementAcceptanceRegressionTests
 
         Assert.IsTrue(applied);
 
+        // 同上：清空变更跟踪后从存储重读，避免断言读到播种时的旧值。
+        db.ChangeTracker.Clear();
         var current = await db.TaskNodes.SingleAsync(node => node.TaskNodeId == CurrentNodeId);
         var next = await db.TaskNodes.SingleAsync(node => node.TaskNodeId == NextNodeId);
         var plan = await db.TaskPlanRuns.SingleAsync(item => item.PlanId == PlanId);

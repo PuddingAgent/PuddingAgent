@@ -66,6 +66,9 @@ public sealed class GoalCheckRunner(
             checks.Count,
             ct);
 
+        // 本轮实际产出的报告（含 waiting / 身份不一致等不会成为持久终态的报告）。
+        var produced = new List<GoalCheckReport>();
+
         foreach (var record in leased)
         {
             var spec = checks.FirstOrDefault(item =>
@@ -94,11 +97,26 @@ public sealed class GoalCheckRunner(
             }
 
             await recordStore.FinishAsync(record.CheckRecordId, leaseOwner, report, ct);
+            produced.Add(report);
         }
 
         // 以持久记录为准返回本 epoch 已完成的报告（含本轮复用既有结果的检查）。
         var finished = await recordStore.ReadForEpochAsync(context.GoalRunId, context.ActivationEpoch, ct);
-        return GoalVerificationPersistence.ReadReports(finished);
+        var persisted = GoalVerificationPersistence.ReadReports(finished);
+
+        // waiting（超时 / 留下未结束后台进程）不构成持久终态：存储层把它退回 pending 以便重新认领，
+        // 因此它不会出现在持久报告集里。若只返回持久集，调用方会把“依赖不可用的等待”
+        // 误读成“从未运行”（真实运行复现：超时检查的 reports 为空，上层取 reports[0] 越界）。
+        // 语义：持久报告优先（可复用旧结果），本轮新产生的报告按 CheckId 补齐。
+        var merged = new List<GoalCheckReport>(persisted);
+        var seen = new HashSet<string>(persisted.Select(item => item.CheckId), StringComparer.Ordinal);
+        foreach (var item in produced)
+        {
+            if (seen.Add(item.CheckId))
+                merged.Add(item);
+        }
+
+        return merged;
     }
 
     private async Task<GoalCheckReport> ExecuteOneAsync(

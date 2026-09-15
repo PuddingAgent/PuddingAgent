@@ -107,14 +107,25 @@ public sealed class GoalSettlementWorker(
 
         if (capsule.Checks.Count > 0)
         {
-            await RunChecksAsync(candidate, capsule, ct);
+            var reported = await RunChecksAsync(candidate, capsule, ct);
 
             // 裁决依据必须是持久化的真实执行结果：用写回的 finished 报告刷新 capsule。
             var records = await checkRecordStore.ReadForEpochAsync(
                 candidate.GoalRunId,
                 candidate.ActivationEpoch,
                 ct);
-            capsule = capsule with { CheckReports = GoalVerificationPersistence.ReadReports(records) };
+            var persisted = GoalVerificationPersistence.ReadReports(records);
+
+            // waiting（超时/未结束进程）不是持久终态（存储层退回 pending 以便重新认领），
+            // 因此不在持久集里。只喂持久集会让 typed wait 退化成“从未运行”（pending）。
+            // 合并本轮报告，持久报告优先（旧结果可复用，不得被本轮覆盖）。
+            var byCheckId = new Dictionary<string, GoalCheckReport>(StringComparer.Ordinal);
+            foreach (var report in persisted)
+                byCheckId[report.CheckId] = report;
+            foreach (var report in reported)
+                byCheckId.TryAdd(report.CheckId, report);
+
+            capsule = capsule with { CheckReports = byCheckId.Values.ToList() };
         }
 
         var decision = await verifier.VerifyAsync(capsule, ct);
@@ -135,7 +146,7 @@ public sealed class GoalSettlementWorker(
     /// 结算前执行合同声明的受控检查（build/test/postcondition），把真实报告写回 goal_check_records。
     /// 不持有 SQLite 写事务等待进程；同一去重键的检查不会重复执行。
     /// </summary>
-    private async Task RunChecksAsync(
+    private async Task<IReadOnlyList<GoalCheckReport>> RunChecksAsync(
         GoalSettlementCandidate candidate,
         GoalEvidenceCapsule capsule,
         CancellationToken ct)
@@ -158,7 +169,7 @@ public sealed class GoalSettlementWorker(
 
         try
         {
-            await checkRunner.RunAsync(capsule.Checks, context, ct);
+            return await checkRunner.RunAsync(capsule.Checks, context, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -172,6 +183,7 @@ public sealed class GoalSettlementWorker(
                 "[GoalSettlement] check execution failed goal={GoalRunId} epoch={Epoch}",
                 candidate.GoalRunId,
                 candidate.ActivationEpoch);
+            return [];
         }
     }
 }
