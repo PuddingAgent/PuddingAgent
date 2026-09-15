@@ -4,8 +4,9 @@ namespace PuddingPlatform.Services.Goals;
 
 /// <summary>
 /// G92-1 fail-closed verifier：只依赖 canonical Turn/Task facts 与受控检查报告。
-/// 普通 Agent 文本中的 DONE 不会变成 complete；Task 已 Completed 只算是“完成提议”，
-/// 真正的完成要求全部必需条件（GoalCriterion）都有同版本且 passed 的检查结果。
+/// 普通 Agent 文本中的 DONE 不会变成 complete；Task 状态只作为否决项参与（G92-1 P2：
+/// Blocked/NeedsReview/Failed/Cancelled 仍然阻断完成），真正的完成要求全部必需条件（GoalCriterion）
+/// 都有同版本且 passed 的检查结果，且本次裁决作用域已达 goal（无剩余 WorkUnit）。
 /// 空验收合同不得 vacuous pass，必须先经一个有界规划步骤产生合同；
 /// 本 verifier 只读且不执行任何工具（实际检查由 IGoalCheckRunner 负责）。
 /// </summary>
@@ -39,8 +40,9 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
             || string.Equals(capsule.VerificationScope, GoalVerificationScopes.Goal, StringComparison.OrdinalIgnoreCase)
             || capsule.RemainingWorkUnits == 0;
         var taskCompleted = string.Equals(capsule.TaskStatus, "Completed", StringComparison.OrdinalIgnoreCase);
-        // 步骤已通过但 Task 尚未 Completed 时不得宣布完成（Task 绑定 Goal 的完成以 Task 终态为前提）。
-        var taskSatisfied = !boundToTask || taskCompleted;
+        // G92-1 P2：完成不再以 Task 已 canonical Completed 为前提——该前提与"唯一合法的 Task
+        // 完成通道会释放本轮结算要重验的 reservation"互锁，使完成永不可达。Task 状态只在下方
+        // 否决分支（Blocked/NeedsReview/Failed/Cancelled）参与判定；完成权归结算事务。
 
         GoalVerificationDecision decision;
         if (!capsule.EvidenceComplete || capsule.HasPendingExecutionFacts)
@@ -115,13 +117,13 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 $"The bound Task is {capsule.TaskStatus}.",
                 capsule);
         }
-        else if (allRequiredPassed && goalScope && taskSatisfied)
+        else if (allRequiredPassed && goalScope)
         {
             decision = new GoalVerificationDecision
             {
                 Verdict = GoalVerificationVerdict.Complete,
                 Reason = boundToTask
-                    ? "All goal-scope required criteria passed and the bound Task has a canonical Completed fact."
+                    ? "All goal-scope required criteria passed and the bound plan has no remaining WorkUnit."
                     : "All goal-scope required criteria passed for this standalone Goal.",
                 EvidenceRefs = capsule.EvidenceRefs,
                 VerificationScope = GoalVerificationScopes.Goal,

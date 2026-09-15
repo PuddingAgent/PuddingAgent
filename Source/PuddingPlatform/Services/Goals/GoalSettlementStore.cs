@@ -40,6 +40,16 @@ public sealed record GoalSettlementCandidate
     public string? TaskAcceptanceCriteria { get; init; }
     /// <summary>绑定执行计划的指纹（合同 matching 用；未绑定计划时为 null）。</summary>
     public string? PlanFingerprint { get; init; }
+    /// <summary>
+    /// ADR-092 §6.2（G92-1 P1）：本次裁决的作用域，取值见 <see cref="GoalVerificationScopes"/>。
+    /// 由绑定执行计划推导（最后一个 WorkUnit = goal）；计划不可读时保守为 work_unit。
+    /// </summary>
+    public string VerificationScope { get; init; } = GoalVerificationScopes.WorkUnit;
+    /// <summary>
+    /// ADR-092 §6.2（G92-1 P1）：绑定计划中尚未完成的 WorkUnit 数；null 表示未知。
+    /// fail-closed：未知一律不得据此宣布整体完成；为 0 时完成路径才可达。
+    /// </summary>
+    public int? RemainingWorkUnits { get; init; }
     /// <summary>持久验收合同的必需条件（空 = 尚未派生合同，必须走有界修复而非 vacuous pass）。</summary>
     public IReadOnlyList<GoalCriterion> Criteria { get; init; } = [];
     /// <summary>持久验收合同的版本化检查定义。</summary>
@@ -72,6 +82,9 @@ public sealed record GoalSettlementCandidate
         TaskId = TaskId,
         TaskStatus = TaskStatus,
         TaskAcceptanceCriteria = TaskAcceptanceCriteria,
+        // G92-1 P1：作用域与剩余 WorkUnit 必须随 capsule 进入 verifier，否则 Task-bound Goal 的完成永远停在 work_unit。
+        VerificationScope = VerificationScope,
+        RemainingWorkUnits = RemainingWorkUnits,
         HasPendingExecutionFacts = HasPendingExecutionFacts,
         EvidenceComplete = EvidenceComplete,
         Criteria = Criteria,
@@ -224,6 +237,12 @@ public sealed class GoalSettlementStore(
                 (failureCode, failureMessage) = ExtractTurnFailure(terminalPayload);
             }
 
+            // ADR-092 §6.2（G92-1 P1）：verifier 需要知道本次裁决的作用域与剩余 WorkUnit 数，
+            // 否则 Task-bound Goal 的完成永远停在 work_unit。数据来源与 ApplyBoundPlanGates 完全同源
+            // （同一 LoadBoundPlanAsync 判定）；计划缺失/不可读时 fail-closed 为 work_unit + null。
+            var (verificationScope, remainingWorkUnits) = ResolveVerificationScope(
+                await LoadBoundPlanAsync(db, binding, ct));
+
             results.Add(new GoalSettlementCandidate
             {
                 GoalIterationId = iteration.GoalIterationId,
@@ -249,6 +268,8 @@ public sealed class GoalSettlementStore(
                 TaskStatus = task?.Status.ToString(),
                 TaskAcceptanceCriteria = task?.AcceptanceCriteria,
                 PlanFingerprint = binding?.PlanFingerprint,
+                VerificationScope = verificationScope,
+                RemainingWorkUnits = remainingWorkUnits,
                 Criteria = GoalVerificationPersistence.ReadCriteria(contract?.CriteriaJson),
                 Checks = GoalVerificationPersistence.ReadChecks(contract?.ChecksJson),
                 CheckReports = GoalVerificationPersistence.ReadReports(checkRecords),
@@ -445,7 +466,7 @@ public sealed class GoalSettlementStore(
 
             var decision = ApplyDeterministicGates(proposed, task, candidate);
             var boundPlan = await LoadBoundPlanAsync(db, binding, ct);
-            decision = ApplyBoundPlanGates(decision, task, candidate, boundPlan);
+            decision = ApplyBoundPlanGates(decision, candidate, boundPlan);
             if (!reservationValid)
             {
                 decision = BlockedDecision(
@@ -612,23 +633,30 @@ public sealed class GoalSettlementStore(
 
             return BlockedDecision(blockedCode, blockedMessage, candidate.EvidenceRefs);
         }
-        if (task is not null
-            && proposed.Verdict == GoalVerificationVerdict.Complete
-            && task.Status != WorkspaceTaskStatus.Completed)
+        // ADR-092 §6.2（G92-1 P3）：Task 终态不再是"完成"的前提，而是"不能完成"的否决项。
+        // 完成是否可达由 ApplyBoundPlanGates 依据"无剩余 WorkUnit + 必需条件全通过"独立判定；
+        // 这里只拦下绑定 Task 已进入必须外部处理才能继续的终态的情况——
+        // 在 Blocked/Failed/Cancelled/NeedsReview 之上宣告 Goal 完成会掩盖仍未处理的失败/阻塞事实。
+        if (proposed.Verdict == GoalVerificationVerdict.Complete
+            && IsTaskTerminalNonCompletable(task?.Status))
         {
-            return new GoalVerificationDecision
-            {
-                Verdict = GoalVerificationVerdict.Continue,
-                Reason = "Completion was rejected because the bound Task is not canonically Completed.",
-                EvidenceRefs = candidate.EvidenceRefs,
-                NextAction = "Use the task state tool to submit progress or evidence-backed completion.",
-                UnmetCriteria = string.IsNullOrWhiteSpace(task.AcceptanceCriteria)
-                    ? []
-                    : [task.AcceptanceCriteria],
-            };
+            return BlockedDecision(
+                "task_blocked",
+                $"The bound Task is {task?.Status} and still requires recovery; the Goal cannot be completed over it.",
+                candidate.EvidenceRefs);
         }
         return proposed with { EvidenceRefs = candidate.EvidenceRefs };
     }
+
+    /// <summary>
+    /// ADR-092 §6.2（G92-1 P3）：绑定 Task 处于必须由用户/复核者/修复通道处理的终态时，
+    /// 整体完成一律否决。未绑定 Task（null）或仍可继续推进的状态不构成完成障碍。
+    /// </summary>
+    private static bool IsTaskTerminalNonCompletable(WorkspaceTaskStatus? status) => status is
+        WorkspaceTaskStatus.Blocked
+        or WorkspaceTaskStatus.Failed
+        or WorkspaceTaskStatus.Cancelled
+        or WorkspaceTaskStatus.NeedsReview;
 
     private static async Task<BoundPlanState?> LoadBoundPlanAsync(
         PlatformDbContext db,
@@ -677,9 +705,24 @@ public sealed class GoalSettlementStore(
         return new BoundPlanState(plan, root, current, next, null);
     }
 
+    /// <summary>
+    /// ADR-092 §6.2（G92-1 P1）：把绑定执行计划折算成 verifier 需要的作用域与剩余 WorkUnit 数。
+    /// 只有"计划可读且 Root/Current 齐备"时才敢下结论：有后继单元 ⇒ work_unit/1；
+    /// 无后继单元（当前已是最后一个 WorkUnit）⇒ goal/0。其余一律 fail-closed 为 work_unit/null，
+    /// 因为把未知当成"没有剩余工作"会直接制造假的整体完成。
+    /// </summary>
+    private static (string Scope, int? RemainingWorkUnits) ResolveVerificationScope(BoundPlanState? plan)
+    {
+        if (plan is not { Error: null, Plan: not null, Root: not null, Current: not null })
+            return (GoalVerificationScopes.WorkUnit, null);
+
+        return plan.Next is null
+            ? (GoalVerificationScopes.Goal, 0)
+            : (GoalVerificationScopes.WorkUnit, 1);
+    }
+
     private static GoalVerificationDecision ApplyBoundPlanGates(
         GoalVerificationDecision decision,
-        WorkspaceTaskEntity? task,
         GoalSettlementCandidate candidate,
         BoundPlanState? plan)
     {
@@ -726,42 +769,34 @@ public sealed class GoalSettlementStore(
             };
         }
 
-        if (task?.Status == WorkspaceTaskStatus.Completed)
+        // ADR-092 §5.2/§6.2（G92-1 P3）：完成的唯一判据是"计划已收敛（无剩余 WorkUnit）
+        // 且 Goal 的全部必需条件都有同版本 passed 的检查结果"。Task.Status 不再是前置条件——
+        // canonical 完成由结算事务统一写入（G92-1 刀 B），此前"Task 必须先完成"的要求
+        // 与"唯一合法完成通道会释放本轮要重验的 reservation"互锁，使完成永不可达。
+        if (GoalSettlementDecisionCalculator.AllRequiredCriteriaPassed(decision))
         {
-            // ADR-092 §5.2：Task.Status==Completed 不能绕过整体 gate。
-            if (!GoalSettlementDecisionCalculator.AllRequiredCriteriaPassed(decision))
-            {
-                return decision with
-                {
-                    Verdict = GoalVerificationVerdict.Continue,
-                    Reason = "The bound Task is completed, but the goal's required criteria have no passing verification; the goal stays open.",
-                    NextAction = plan.Current.Objective,
-                    EvidenceRefs = candidate.EvidenceRefs,
-                    BlockerCode = decision.BlockerCode ?? "acceptance_not_verified",
-                    BlockerMessage = "Required criteria are not verified yet.",
-                };
-            }
-
             return decision with
             {
                 Verdict = GoalVerificationVerdict.Complete,
                 EvidenceRefs = candidate.EvidenceRefs,
-                // 无剩余 WorkUnit + Task canonical Completed + 全部必需条件通过：
-                // 唯一满足 goal 作用域完成的组合，也是唯一允许原子结束 Goal/Plan/Task 的路径。
+                // 无剩余 WorkUnit + 全部必需条件通过：唯一满足 goal 作用域完成的组合，
+                // 也是唯一允许原子结束 Goal/Plan/Task 的路径。
                 VerificationScope = GoalVerificationScopes.Goal,
                 RemainingWorkUnits = 0,
             };
         }
 
-        return BlockedDecision(
-            "task_completion_fact_missing",
-            "The final WorkUnit completed, but the bound Task has no canonical Completed fact.",
-            candidate.EvidenceRefs) with
+        // 最后一个 WorkUnit 已跑完，但必需条件尚无通过证据：保留 Goal 打开，回到当前单元继续取证。
+        // 必须用 `with` 保留 Criteria/CriterionResults——旧的 task_completion_fact_missing 分支
+        // 会换成只有 blocker 的新裁决，把本单元已验证的单元级证据一起丢掉。
+        return decision with
         {
-            NextAction = "Review the WorkUnit evidence and explicitly complete or resume the Task.",
-            // 剩余 WorkUnit 为 0，但缺少 canonical 完成请求：这只是一次可修复的完成提议缺失，
-            // 不得因此结束目标，也不得宣告整体完成。
-            RemainingWorkUnits = 0,
+            Verdict = GoalVerificationVerdict.Continue,
+            Reason = "The final WorkUnit has no remaining WorkUnit to run, but the goal's required criteria have no passing verification; the goal stays open.",
+            NextAction = plan.Current.Objective,
+            EvidenceRefs = candidate.EvidenceRefs,
+            BlockerCode = decision.BlockerCode ?? "acceptance_not_verified",
+            BlockerMessage = "Required criteria are not verified yet.",
         };
     }
 
