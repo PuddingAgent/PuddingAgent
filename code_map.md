@@ -4,6 +4,10 @@
 
 # PuddingAgent CodeMAP
 
+## 2026-09-15 G92-1 下一行动（源码接线未完成）
+
+见[定向检查与执行指令](Docs/Reports/Goal-G92-1运行链路下一步指令-2026-09-15.md)：4d5980f 已有 G92-0/1 合同与测试代码，尚未运行测试；下一步优先生产 capsule 事实填充、最终 Goal 结算消费 typed disposition、同条件多检查归并、真实 CheckRunner、完成提议与独立 Goal。六项源码提交不等于验收完成；外部指令与 canonical 回执单列。
+
 ## 2026-09-15 Goal 目标驱动与真实校验（ADR-092，Proposed）
 
 见[施工方案](Docs/Features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md)、[ADR-092](Docs/07架构/106ADR-092目标驱动执行与分层验证闭环ADR.md)与[任务修订记录](Docs/Reports/Goal持续执行方案与任务修订-2026-09-15.md)。现状入口：GoalVerificationContracts、ConservativeGoalIterationVerifier、GoalSettlementStore/Worker、GoalContinuationWorker、TaskAgentCommandService、WorkUnitAwaitHandleEntity、AgentSleepTool。复用既有 outbox，补真实检查与逐项条件，修正 Turn 正常结束即单元完成、Task 先完成的循环依赖及恢复性 Goal Failed。四张既有任务重写范围；仅设计/派发，未实施或部署。
