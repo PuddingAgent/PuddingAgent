@@ -571,6 +571,15 @@ public sealed class GoalSettlementStore(
                 && goal.ActivationEpoch == iteration.ActivationEpoch;
             if (currentEpoch)
             {
+                // 结算可能被重放（worker 重扫 / at-least-once 投递）：同一 (goal, epoch, iteration)
+                // 的 continuation outbox 行只允许存在一条，否则重复 Add 会撞
+                // UX_goal_outbox_idempotency_key，让整个结算事务失败（真实运行已复现）。
+                var queuedContinuations = await db.GoalOutbox
+                    .Where(item => item.GoalRunId == goal.GoalRunId
+                        && item.ActivationEpoch == goal.ActivationEpoch
+                        && item.Kind == GoalOutboxValues.Continuation)
+                    .Select(item => item.OutboxId)
+                    .ToListAsync(ct);
                 ApplyCurrentVerdict(
                     db,
                     goal,
@@ -581,6 +590,7 @@ public sealed class GoalSettlementStore(
                     boundPlan,
                     now,
                     events,
+                    queuedContinuations,
                     ref nextContinuation);
             }
 
@@ -1033,6 +1043,7 @@ public sealed class GoalSettlementStore(
         BoundPlanState? boundPlan,
         DateTimeOffset now,
         List<GoalEventDraft> events,
+        IReadOnlyCollection<string> queuedContinuations,
         ref bool nextContinuation)
     {
         ApplyBoundPlanVerdict(boundPlan, iteration, decision, now);
@@ -1096,6 +1107,9 @@ public sealed class GoalSettlementStore(
                 taskBoundAttempt ? GoalEventTypes.Failed : GoalEventTypes.Blocked,
                 GoalProducerComponents.Coordinator,
                 VerdictPayload(goal, iteration, decision)));
+            // 不可恢复的尝试终结：绑定计划必须随之失败，否则计划会留在 Running，
+            // 与"本次尝试已终结"的 Goal 事实自相矛盾（真实运行已复现 plan 仍为 Running）。
+            FailIncompleteBoundPlan(boundPlan, goal.BlockedCode ?? decision.Reason, now);
             if (binding is not null)
             {
                 var completionFactMissing = string.Equals(
@@ -1207,6 +1221,14 @@ public sealed class GoalSettlementStore(
 
         var nextIteration = goal.IterationsStarted + 1;
         var outboxId = $"gc-{goal.GoalRunId}-{goal.ActivationEpoch}-{nextIteration}";
+        if (queuedContinuations.Contains(outboxId))
+        {
+            // 该次 continuation 已登记（重复结算 / worker 重扫）：复用既有行，
+            // 不重复插入、不重复落事件，也不额外消耗迭代预算。
+            nextContinuation = true;
+            return;
+        }
+
         db.GoalOutbox.Add(new GoalOutboxEntity
         {
             OutboxId = outboxId,

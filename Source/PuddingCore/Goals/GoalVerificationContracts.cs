@@ -204,6 +204,11 @@ public static class GoalSettlementDecisionCalculator
         // 迭代被显式取消：ADR-092 把"明确取消"列为终态，不得降级为 repair 继续推进
         // （gates 实际发的是 iteration_cancelled，旧词汇表只有 cancelled，属错位）。
         "iteration_cancelled",
+        // 回合以 failed 结束 = 本次执行尝试失败：ADR-092 要求该尝试终结（Task-bound Goal 的
+        // Goal 置 Failed、Task 置 Blocked，供后续 resume/requeue 建立新的 fenced 尝试），
+        // 不得降级为 repair 让目标永远停在 Active。真实运行已复现：缺此项时
+        // iteration_failed 落到 Repair → Goal 保持 Active、plan 不失败。
+        "iteration_failed",
     ];
 
     // 注：gates 产生的 evidence_incomplete / reservation_fence_lost 以及透传的 errorCode 不在上述两集合时
