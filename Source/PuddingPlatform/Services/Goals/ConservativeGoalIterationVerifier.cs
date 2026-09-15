@@ -18,7 +18,8 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
         ArgumentNullException.ThrowIfNull(capsule);
 
         var criteria = capsule.Criteria;
-        var results = capsule.CheckReports.ToCriterionResults();
+        var evidence = GoalCheckEvidencePolicy.Evaluate(capsule.Checks, capsule.CheckReports);
+        var results = evidence.ToCriterionResults();
         var probe = new GoalVerificationDecision
         {
             Verdict = GoalVerificationVerdict.Continue,
@@ -53,7 +54,15 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 "No acceptance contract exists for this Goal; run one bounded planning step to derive required criteria before completion can be claimed.",
                 capsule);
         }
-        else if (capsule.CheckReports.HasPendingChecks())
+        else if (capsule.Checks.Count == 0)
+        {
+            // 有必需条件但没有版本化检查定义：先做有界规划把检查定义出来，不得靠 Task 状态完成。
+            decision = Blocked(
+                "check_contract_missing",
+                "Required criteria exist but no versioned check definition was planned; define the bounded checks before completion can be claimed.",
+                capsule);
+        }
+        else if (evidence.HasPendingChecks())
         {
             // ADR-092 §5.1 步骤 1：证据尚未齐全 → 登记等待，不生成修复轮、不关闭 Goal。
             decision = Blocked(
@@ -98,7 +107,7 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 NextAction = "Advance to the next ready WorkUnit, then verify the goal-level criteria.",
             };
         }
-        else if (capsule.CheckReports.HasFailedChecks())
+        else if (evidence.HasFailedChecks())
         {
             decision = Blocked(
                 "criterion_failed",

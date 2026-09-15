@@ -24,7 +24,7 @@ public sealed record GoalCheckSpec
     /// <summary>检查输入（文件/产物/提交），用于指纹与失效判断。</summary>
     public IReadOnlyList<string> InputRefs { get; init; } = [];
 
-    /// <summary>实际输入指纹（覆盖工作树内容，不能只用 HEAD）。</summary>
+    /// <summary>执行检查时的工作树/输入指纹（覆盖工作树内容，不能只用 HEAD）。</summary>
     public string InputFingerprint { get; init; } = string.Empty;
 
     /// <summary>执行者角色：core / external_controller / human。</summary>
@@ -32,6 +32,9 @@ public sealed record GoalCheckSpec
 
     /// <summary>该检查期望产生的最小证据说明（人类可读，用于裁决展示）。</summary>
     public string? ExpectedEvidence { get; init; }
+
+    /// <summary>仅 test 类检查使用：声明必须被真实执行的测试用例数（0 tests 不得通过）。</summary>
+    public int? ExpectedTestCount { get; init; }
 }
 
 /// <summary>ADR-092 §5（G92-1）：受控检查的实际报告。verifier 只读它，不重新执行检查。</summary>
@@ -48,7 +51,31 @@ public sealed record GoalCheckReport
 
     public IReadOnlyList<string> EvidenceRefs { get; init; } = [];
 
+    /// <summary>执行本次检查时的输入指纹；与 spec 不一致即视为旧绿灯。</summary>
     public string? InputFingerprint { get; init; }
+
+    /// <summary>执行本次检查时使用的定义 hash；与 spec 不一致即视为定义已变化。</summary>
+    public string? DefinitionHash { get; init; }
+
+    /// <summary>本次检查新生成的运行报告引用（build/test 必须非空，禁止复用旧报告）。</summary>
+    public string? ReportRef { get; init; }
+
+    /// <summary>进程退出码；build/test 期望 0。</summary>
+    public int? ExitCode { get; init; }
+
+    /// <summary>实际执行的测试用例数（由报告解析，不接受自我声明）。</summary>
+    public int? ExecutedTestCount { get; init; }
+
+    /// <summary>实际通过的测试用例数。</summary>
+    public int? PassedTestCount { get; init; }
+
+    /// <summary>实际失败的测试用例数。</summary>
+    public int? FailedTestCount { get; init; }
+
+    /// <summary>本次检查是否留下了未结束的后台进程。</summary>
+    public bool? HasUnfinishedBackgroundProcess { get; init; }
+
+    public DateTimeOffset? ReportedAtUtc { get; init; }
 
     public string? FailureCode { get; init; }
 

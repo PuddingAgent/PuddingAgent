@@ -34,6 +34,9 @@ public sealed record GoalEvidenceCapsule
 
     /// <summary>ADR-092 §5.3（G92-1）：受控检查的实际报告；verifier 只读它，不执行工具。</summary>
     public IReadOnlyList<GoalCheckReport> CheckReports { get; init; } = [];
+
+    /// <summary>ADR-092 §5.3（G92-1）：本次裁决依据的版本化检查定义；未声明的报告不得计入通过。</summary>
+    public IReadOnlyList<GoalCheckSpec> Checks { get; init; } = [];
 }
 
 public sealed record GoalVerificationDecision
