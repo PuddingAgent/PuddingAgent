@@ -39,6 +39,7 @@ public static class GoalSchemaBootstrapper
             iterations_settled        INTEGER NOT NULL DEFAULT 0,
             activation_epoch          INTEGER NOT NULL DEFAULT 1,
             activation_boot_id        TEXT,
+            resume_policy             TEXT    NOT NULL DEFAULT 'paused',
             aggregate_version         INTEGER NOT NULL DEFAULT 1,
             created_by_user_id        TEXT,
             source_channel            TEXT,
@@ -68,6 +69,8 @@ public static class GoalSchemaBootstrapper
         "CREATE UNIQUE INDEX IF NOT EXISTS UX_goal_runs_active ON goal_runs(current_conversation_id, agent_instance_id) WHERE status IN (1, 2, 3);",
         "CREATE UNIQUE INDEX IF NOT EXISTS UX_goal_runs_source_command ON goal_runs(source_command_id) WHERE source_command_id IS NOT NULL;",
         "CREATE INDEX IF NOT EXISTS IX_goal_runs_workspace_updated ON goal_runs(workspace_id, updated_at_utc);",
+        // ADR-092：resume_policy 加列迁移（针对已有库；新库 CREATE TABLE 已带列，此语句撞 duplicate column 被幂等跳过）。
+        "ALTER TABLE goal_runs ADD COLUMN resume_policy TEXT NOT NULL DEFAULT 'paused';",
 
         // ── goal_iterations（ADR-074 §12.2，G2 写入）────────────
         """

@@ -65,14 +65,19 @@ public static class PuddingApplicationInitializer
             await ExternalTaskApiSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await ProviderFileRefSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
 
-            // ── ADR-074 §12：Core 重启后 active Goal 默认 disarm 为 paused，显式 /goal resume 才恢复 ──
+            // ── ADR-074 §12 / ADR-092：Core 重启后按 resume_policy 分流：默认 disarm 为 paused，
+            //    auto_resume_on_restart 保持 Active 并换发 fence；显式 /goal resume 始终可用 ──
             try
             {
                 var goalReconciler = scope.ServiceProvider.GetRequiredService<GoalRestartReconciler>();
-                var disarmed = await goalReconciler.DisarmActiveGoalsAsync(
+                var reconcile = await goalReconciler.DisarmActiveGoalsAsync(
                     Guid.NewGuid().ToString("N"), cancellationToken);
-                if (disarmed > 0)
-                    Console.WriteLine($"[Startup] Goal restart disarm: {disarmed} active goal(s) -> paused");
+                if (reconcile.DisarmedCount > 0 || reconcile.AutoResumedCount > 0)
+                {
+                    Console.WriteLine(
+                        $"[Startup] Goal restart reconcile: {reconcile.DisarmedCount} disarmed -> paused," +
+                        $" {reconcile.AutoResumedCount} auto-resumed");
+                }
             }
             catch (Exception ex)
             {

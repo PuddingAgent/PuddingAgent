@@ -43,6 +43,16 @@ public sealed class GoalRunOptions
     public int ContinuationBatchSize { get; set; } = 8;
     public int ContinuationMaxAttempts { get; set; } = 5;
 
+    /// <summary>
+    /// ADR-092：Goal 未显式配置 resume_policy 时的默认重启策略。只允许
+    /// <see cref="GoalResumePolicies.Paused"/>（默认，等价历史 disarm 行为）或
+    /// <see cref="GoalResumePolicies.AutoResumeOnRestart"/>。
+    /// </summary>
+    public string DefaultResumePolicy { get; set; } = GoalResumePolicies.Paused;
+
+    /// <summary>ADR-092：单次 boot 自动恢复 Goal 数量上限（防恢复风暴），超出部分按 paused 处理。</summary>
+    public int MaxAutoResumesPerBoot { get; set; } = 8;
+
     /// <summary>启动校验：局部配置不得扩大系统硬边界。</summary>
     public static IReadOnlyList<string> Validate(GoalRunOptions options)
     {
@@ -72,7 +82,31 @@ public sealed class GoalRunOptions
             errors.Add("GoalRuns:CheckTimeoutSeconds must be between 30 and 3600.");
         if (options.CheckProjects is { Length: > 16 })
             errors.Add("GoalRuns:CheckProjects must contain at most 16 entries.");
+        if (options.DefaultResumePolicy is not (GoalResumePolicies.Paused
+            or GoalResumePolicies.AutoResumeOnRestart))
+        {
+            errors.Add(
+                $"GoalRuns:DefaultResumePolicy must be '{GoalResumePolicies.Paused}' or " +
+                $"'{GoalResumePolicies.AutoResumeOnRestart}'; got '{options.DefaultResumePolicy}'.");
+        }
+        if (options.MaxAutoResumesPerBoot is < 0 or > 64)
+        {
+            errors.Add(
+                $"GoalRuns:MaxAutoResumesPerBoot must be between 0 and 64; got {options.MaxAutoResumesPerBoot}.");
+        }
 
         return errors;
     }
+}
+
+/// <summary>
+/// ADR-092：goal_runs.resume_policy 列的合法取值。未知/空值由消费方 fail-safe 回落默认策略。
+/// </summary>
+public static class GoalResumePolicies
+{
+    /// <summary>重启后 disarm 为 paused（历史默认行为，ADR-074 §12）。</summary>
+    public const string Paused = "paused";
+
+    /// <summary>重启后保持 Active，换发 activation fence（epoch++ / bootId 更新）并落 goal.resumed 事件。</summary>
+    public const string AutoResumeOnRestart = "auto_resume_on_restart";
 }

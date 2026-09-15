@@ -59,6 +59,10 @@ public class GoalRunEntity
     [MaxLength(64), Column("activation_boot_id")]
     public string? ActivationBootId { get; set; }
 
+    /// <summary>ADR-092：重启恢复策略（paused / auto_resume_on_restart），默认 paused。</summary>
+    [Required, MaxLength(32), Column("resume_policy")]
+    public string ResumePolicy { get; set; } = GoalResumePolicies.Paused;
+
     [Required, Column("aggregate_version")]
     public int AggregateVersion { get; set; } = 1;
 
