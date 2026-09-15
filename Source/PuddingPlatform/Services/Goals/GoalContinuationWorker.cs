@@ -22,7 +22,8 @@ public sealed class GoalContinuationWorker(
     GoalOutboxSignal signal,
     IOptions<GoalRunOptions> options,
     TimeProvider timeProvider,
-    ILogger<GoalContinuationWorker> logger) : BackgroundService
+    ILogger<GoalContinuationWorker> logger,
+    SessionSteeringService steeringService) : BackgroundService
 {
     private static readonly JsonSerializerOptions PromptJsonOptions = new()
     {
@@ -32,6 +33,7 @@ public sealed class GoalContinuationWorker(
     };
 
     private readonly GoalRunOptions _options = options.Value;
+    private readonly SessionSteeringService _steeringService = steeringService;
     private readonly string _workerId = $"goal-continuation-{Environment.ProcessId}-{Guid.NewGuid():N}";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -214,6 +216,11 @@ public sealed class GoalContinuationWorker(
                 lease.OutboxId,
                 result.TurnIds.Single(),
                 result.CommandIds.Single());
+
+            // P0-4：受理成功后紧邻投递预算 wrap-up 预警 —— 这是唯一可用锚点：此刻新
+            // TurnId 已生成，而 steering 消费侧按 TargetTurnId 精确匹配本轮。投递失败
+            // 只记告警，绝不中断 continuation 主流程。
+            await TryDispatchBudgetWrapUpAsync(goal, lease, result.TurnIds.Single(), ct);
         }
         catch (GoalContinuationAcceptanceException ex) when (ex.Deferred)
         {
@@ -254,6 +261,69 @@ public sealed class GoalContinuationWorker(
                 lease.OutboxId,
                 lease.AttemptCount);
         }
+    }
+
+    /// <summary>
+    /// P0-4：迭代预算 wrap-up 预警。水位 = 受理前快照 IterationsStarted / MaxIterations
+    /// （与 GoalStateMachine 预算轴同源）；达到 <see cref="GoalRunOptions.BudgetWrapUpThreshold"/>
+    /// 时向刚受理的新 Turn 投一条收尾 steering。幂等键 budget-wrapup-{outboxId} 保证同一
+    /// outbox 至多一条（CreateAsync 按 (workspace, session, turn, sourceQueueItemId) 去重）。
+    /// </summary>
+    private async Task TryDispatchBudgetWrapUpAsync(
+        GoalRunEntity goal,
+        GoalOutboxEntity lease,
+        string targetTurnId,
+        CancellationToken ct)
+    {
+        try
+        {
+            if (goal.MaxIterations <= 0)
+                return; // fail-safe：无有效预算轴时不提示，不除零。
+            var threshold = _options.BudgetWrapUpThreshold;
+            var ratio = (double)goal.IterationsStarted / goal.MaxIterations;
+            if (ratio < threshold)
+                return;
+
+            var steering = await _steeringService.CreateAsync(
+                new CreateSessionSteeringMessage(
+                    WorkspaceId: goal.WorkspaceId,
+                    SessionId: goal.CurrentConversationId,
+                    TargetTurnId: targetTurnId,
+                    AgentId: goal.AgentInstanceId,
+                    MessageText: BuildBudgetWrapUpMessage(goal, ratio),
+                    SourceQueueItemId: $"budget-wrapup-{lease.OutboxId}",
+                    CreatedBy: "goal-continuation-worker"),
+                ct);
+            logger.LogInformation(
+                "[GoalContinuation] budget wrap-up steering ready goal={GoalRunId} outbox={OutboxId} turn={TurnId} iterations={Started}/{Max} steering={SteeringId}",
+                goal.GoalRunId,
+                lease.OutboxId,
+                targetTurnId,
+                goal.IterationsStarted,
+                goal.MaxIterations,
+                steering.SteeringId);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "[GoalContinuation] budget wrap-up steering dispatch failed goal={GoalRunId} outbox={OutboxId}",
+                goal.GoalRunId,
+                lease.OutboxId);
+        }
+    }
+
+    internal static string BuildBudgetWrapUpMessage(GoalRunEntity goal, double ratio)
+    {
+        var remaining = Math.Max(0, goal.MaxIterations - goal.IterationsStarted);
+        return "【预算预警·请收尾】本 Goal 的迭代预算即将用尽（已用 " +
+               $"{goal.IterationsStarted}/{goal.MaxIterations} 轮，水位 {ratio:P0}，约剩 {remaining} 轮）。" +
+               "请立即收束当前工作：以可验证证据收口（写文件 / 跑检查 / 落结论），" +
+               "明确最终结论与遗留事项清单；不要开启新的长任务或大范围新探索。";
     }
 
     private static string? ValidateLeaseAgainstGoal(

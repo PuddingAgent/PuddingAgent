@@ -1,6 +1,8 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using PuddingCode.Goals;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
@@ -1290,4 +1292,166 @@ public sealed class GoalContinuationTests
         Recipients = new RecipientRequest { Type = "agent", AgentIds = ["agent-1"] },
         Content = [new ContentPart { Type = "text", Text = "用户消息优先" }],
     };
+
+    // ── P0-4：迭代预算 wrap-up steering（受理成功锚点投递） ──
+
+    private static (GoalContinuationWorker Worker, SessionSteeringService Steering) NewWrapUpWorker(
+        GoalOutboxStore outboxStore,
+        PlatformDbContextFactory factory,
+        GoalRunOptions options)
+    {
+        var steering = new SessionSteeringService(factory, NullLogger<SessionSteeringService>.Instance);
+        var services = new ServiceCollection();
+        services.AddScoped<PlatformDbContext>(sp => factory.CreateDbContext());
+        services.AddScoped<GoalRunStore>(sp => new GoalRunStore(
+            sp.GetRequiredService<PlatformDbContext>(),
+            new NoopSignal(),
+            NullLogger<GoalRunStore>.Instance));
+        services.AddScoped<IConversationAcceptanceStore>(sp => new ConversationAcceptanceStore(
+            sp.GetRequiredService<PlatformDbContext>(),
+            new NoopSignal(),
+            NullLogger<ConversationAcceptanceStore>.Instance));
+        var provider = services.BuildServiceProvider();
+        var worker = new GoalContinuationWorker(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            outboxStore,
+            new GoalOutboxSignal(),
+            Options.Create(options),
+            TimeProvider.System,
+            NullLogger<GoalContinuationWorker>.Instance,
+            steering);
+        return (worker, steering);
+    }
+
+    private async Task SetBudgetProgressAsync(string goalRunId, int iterations, int? maxIterations = null)
+    {
+        await using var db = await _factory.CreateDbContextAsync();
+        var goal = await db.GoalRuns.SingleAsync(item => item.GoalRunId == goalRunId);
+        goal.IterationsStarted = iterations;
+        goal.IterationsSettled = iterations;
+        if (maxIterations is { } max)
+            goal.MaxIterations = max;
+        await db.SaveChangesAsync();
+    }
+
+    private async Task RequeueOutboxForReplayAsync()
+    {
+        await using var db = await _factory.CreateDbContextAsync();
+        var outbox = await db.GoalOutbox.SingleAsync();
+        var goal = await db.GoalRuns.SingleAsync();
+        outbox.Status = GoalOutboxValues.Pending;
+        outbox.LeaseOwner = null;
+        outbox.LeaseUntilUtc = null;
+        outbox.CompletedAtUtc = null;
+        outbox.AttemptCount = 0;
+        outbox.AggregateVersion = goal.AggregateVersion;
+        goal.IterationsSettled = goal.IterationsStarted; // 重放夹具：结算轴对齐，避免 IterationConflict
+        await db.SaveChangesAsync();
+    }
+
+    [TestMethod]
+    public async Task BudgetWrapUp_AtThreshold_DispatchesSteeringToNewTurn()
+    {
+        var goal = await CreateGoalWithContinuationAsync();
+        await SetBudgetProgressAsync(goal.GoalRunId, iterations: 7); // 快照 7/8 = 0.875 ≥ 0.8
+        var (worker, _) = NewWrapUpWorker(
+            _outboxStore,
+            _factory,
+            new GoalRunOptions { Enabled = true, ContinuationEnabled = true });
+
+        var processed = await worker.ProcessOnceAsync();
+
+        Assert.AreEqual(1, processed);
+        await using var db = await _factory.CreateDbContextAsync();
+        var steerings = await db.SessionSteeringMessages.ToListAsync();
+        Assert.AreEqual(1, steerings.Count);
+        var turn = await db.ConversationTurns.SingleAsync();
+        Assert.AreEqual(turn.TurnId, steerings[0].TargetTurnId);
+        Assert.AreEqual(goal.WorkspaceId, steerings[0].WorkspaceId);
+        Assert.AreEqual(goal.CurrentConversationId, steerings[0].SessionId);
+        Assert.AreEqual(goal.AgentInstanceId, steerings[0].AgentId);
+        Assert.AreEqual("goal-continuation-worker", steerings[0].CreatedBy);
+        var outbox = await db.GoalOutbox.SingleAsync();
+        Assert.AreEqual($"budget-wrapup-{outbox.OutboxId}", steerings[0].SourceQueueItemId);
+        StringAssert.Contains(steerings[0].MessageText, "迭代预算");
+        StringAssert.Contains(steerings[0].MessageText, "收尾");
+        Assert.AreEqual(GoalOutboxValues.Completed, outbox.Status);
+    }
+
+    [TestMethod]
+    public async Task BudgetWrapUp_SameOutboxReplay_DoesNotDuplicateSteering()
+    {
+        var goal = await CreateGoalWithContinuationAsync();
+        await SetBudgetProgressAsync(goal.GoalRunId, iterations: 13, maxIterations: 16); // 13/16 = 0.8125 ≥ 0.8
+        var (worker, _) = NewWrapUpWorker(
+            _outboxStore,
+            _factory,
+            new GoalRunOptions { Enabled = true, ContinuationEnabled = true });
+
+        Assert.AreEqual(1, await worker.ProcessOnceAsync());
+        await RequeueOutboxForReplayAsync();
+        Assert.AreEqual(1, await worker.ProcessOnceAsync());
+
+        await using var verify = await _factory.CreateDbContextAsync();
+        Assert.AreEqual(1, await verify.SessionSteeringMessages.CountAsync());
+        // acceptance 幂等重放不得重复消费预算或重复建轮
+        Assert.AreEqual(1, await verify.GoalIterations.CountAsync());
+        Assert.AreEqual(1, await verify.ConversationTurns.CountAsync());
+        Assert.AreEqual(14, (await verify.GoalRuns.SingleAsync()).IterationsStarted);
+    }
+
+    [TestMethod]
+    public async Task BudgetWrapUp_BelowThreshold_DoesNotDispatch()
+    {
+        var goal = await CreateGoalWithContinuationAsync();
+        await SetBudgetProgressAsync(goal.GoalRunId, iterations: 2); // 2/8 = 0.25 < 0.8
+        var (worker, _) = NewWrapUpWorker(
+            _outboxStore,
+            _factory,
+            new GoalRunOptions { Enabled = true, ContinuationEnabled = true });
+
+        Assert.AreEqual(1, await worker.ProcessOnceAsync());
+
+        await using var db = await _factory.CreateDbContextAsync();
+        Assert.AreEqual(0, await db.SessionSteeringMessages.CountAsync());
+        Assert.AreEqual(GoalOutboxValues.Completed, (await db.GoalOutbox.SingleAsync()).Status);
+    }
+
+    [TestMethod]
+    public async Task BudgetWrapUp_ThresholdConfiguration_IsHonored_AndValidated()
+    {
+        var goal = await CreateGoalWithContinuationAsync();
+        await SetBudgetProgressAsync(goal.GoalRunId, iterations: 7); // 7/8 = 0.875 < 0.95
+        var (worker, _) = NewWrapUpWorker(
+            _outboxStore,
+            _factory,
+            new GoalRunOptions { Enabled = true, ContinuationEnabled = true, BudgetWrapUpThreshold = 0.95 });
+
+        Assert.AreEqual(1, await worker.ProcessOnceAsync());
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            Assert.AreEqual(0, await db.SessionSteeringMessages.CountAsync());
+        }
+
+        // 同水位 + 更敏感阈值 → 投递（证明阈值配置真实传导到判定）
+        await RequeueOutboxForReplayAsync();
+        await SetBudgetProgressAsync(goal.GoalRunId, iterations: 7); // 拉回快照 7/8，避免重放被 BudgetExhausted 拦截
+        var (sensitive, _) = NewWrapUpWorker(
+            _outboxStore,
+            _factory,
+            new GoalRunOptions { Enabled = true, ContinuationEnabled = true, BudgetWrapUpThreshold = 0.5 });
+        Assert.AreEqual(1, await sensitive.ProcessOnceAsync());
+        await using var verify = await _factory.CreateDbContextAsync();
+        Assert.AreEqual(1, await verify.SessionSteeringMessages.CountAsync());
+
+        // Validate 边界：0.5..1.0 合法，越界报错
+        Assert.AreEqual(0, GoalRunOptions.Validate(new GoalRunOptions { BudgetWrapUpThreshold = 0.5 }).Count);
+        Assert.AreEqual(0, GoalRunOptions.Validate(new GoalRunOptions { BudgetWrapUpThreshold = 1.0 }).Count);
+        StringAssert.Contains(
+            GoalRunOptions.Validate(new GoalRunOptions { BudgetWrapUpThreshold = 0.4 }).Single(),
+            "BudgetWrapUpThreshold");
+        StringAssert.Contains(
+            GoalRunOptions.Validate(new GoalRunOptions { BudgetWrapUpThreshold = 1.1 }).Single(),
+            "BudgetWrapUpThreshold");
+    }
 }

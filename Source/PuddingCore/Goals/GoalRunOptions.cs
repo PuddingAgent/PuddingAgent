@@ -61,6 +61,14 @@ public sealed class GoalRunOptions
     /// </summary>
     public int NoProgressBreakerThreshold { get; set; } = 3;
 
+    /// <summary>
+    /// P0-4：迭代预算 wrap-up 预警水位 —— continuation 受理成功后以受理前快照
+    /// IterationsStarted / MaxIterations 判定；达到该比例即向新 Turn 投递一条收尾
+    /// steering（幂等键 budget-wrapup-{outboxId}，同一 outbox 至多一条）。默认 0.8；
+    /// 合法边界 0.5..1.0。
+    /// </summary>
+    public double BudgetWrapUpThreshold { get; set; } = 0.8;
+
     /// <summary>启动校验：局部配置不得扩大系统硬边界。</summary>
     public static IReadOnlyList<string> Validate(GoalRunOptions options)
     {
@@ -106,6 +114,11 @@ public sealed class GoalRunOptions
         {
             errors.Add(
                 $"GoalRuns:NoProgressBreakerThreshold must be between 1 and 16; got {options.NoProgressBreakerThreshold}.");
+        }
+        if (options.BudgetWrapUpThreshold is < 0.5 or > 1.0)
+        {
+            errors.Add(
+                $"GoalRuns:BudgetWrapUpThreshold must be between 0.5 and 1.0; got {options.BudgetWrapUpThreshold}.");
         }
 
         return errors;
