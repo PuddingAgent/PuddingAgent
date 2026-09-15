@@ -67,7 +67,7 @@ public sealed class ImageGenerationServiceTests
                 PuddingDataPaths.FromRoot(root),
                 NullLogger<VisionArtifactStorageService>.Instance);
             await using var referenceBytes = new MemoryStream(
-                VisionTestImages.PngHeader(64, 64));
+                VisionTestImages.PngImage(64, 64));
             var reference = await artifacts.SaveAsync(
                 "default",
                 referenceBytes,

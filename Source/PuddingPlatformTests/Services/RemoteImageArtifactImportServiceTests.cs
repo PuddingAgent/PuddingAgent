@@ -13,7 +13,7 @@ public sealed class RemoteImageArtifactImportServiceTests
     {
         var handler = new RecordingHandler(
             HttpStatusCode.OK,
-            VisionTestImages.PngHeader(32, 32),
+            VisionTestImages.PngImage(32, 32),
             "text/plain");
         var service = CreateService(handler);
 

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -568,7 +568,7 @@ public sealed class ConversationReplyProjectionWorkerTests
         const string artifactId =
             "vision-0123456789abcdef0123456789abcdef";
         await using (var image = new MemoryStream(
-                         Services.VisionTestImages.PngHeader(24, 24)))
+                         Services.VisionTestImages.PngImage(24, 24)))
         {
             await visionStorage.SaveIdempotentAsync(
                 "default",

@@ -6,6 +6,7 @@ using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
+using PuddingCode.Services;
 using PuddingCode.SubAgents;
 using PuddingPlatform.Services;
 
@@ -63,10 +64,12 @@ public sealed class SubAgentManagerMessageTests
         Assert.AreEqual("1", envelope.Metadata["pudding_message_version"]);
         Assert.AreEqual(result.SubSessionId, envelope.Metadata["sub_agent_id"]);
         Assert.AreEqual("completed", envelope.Metadata["subagent_status"], envelope.Content);
-        StringAssert.Contains(envelope.Content, "\"schema\": \"pudding-message\"");
-        StringAssert.Contains(envelope.Content, "\"message_type\": \"subagent_result\"");
-        StringAssert.Contains(envelope.Content, "\"format\": \"text/markdown\"");
-        StringAssert.Contains(envelope.Content, "child ok");
+        var rendered = AgentContextEnvelopeRenderer.TryParse(envelope.Content);
+        Assert.IsNotNull(rendered);
+        Assert.AreEqual(1, rendered!.Version);
+        Assert.AreEqual("subagent_result", rendered.MessageType);
+        Assert.AreEqual("text/markdown", rendered.Context.Format);
+        StringAssert.Contains(rendered.Context.Text, "child ok");
         Assert.IsNotNull(dispatcher.LastRequest);
         Assert.AreEqual("test-provider", dispatcher.LastRequest!.LlmProfile?.ProviderId);
         Assert.AreEqual("subagent.conscious", dispatcher.LastRequest.LlmProfile?.ProfileId);
@@ -280,9 +283,11 @@ public sealed class SubAgentManagerMessageTests
         Assert.AreEqual("1", envelope.Metadata["tool_output_truncated_count"]);
         Assert.AreEqual("100088", envelope.Metadata["tool_output_chars"]);
         Assert.AreEqual("shell: Command timed out after 30 seconds.", envelope.Metadata["tool_failure_summary"]);
-        StringAssert.Contains(envelope.Content, "\"subagent_status\": \"failed\"");
-        StringAssert.Contains(envelope.Content, "\"tool_failure_count\": \"1\"");
-        StringAssert.Contains(envelope.Content, "Command timed out after 30 seconds.");
+        var rendered = AgentContextEnvelopeRenderer.TryParse(envelope.Content);
+        Assert.IsNotNull(rendered);
+        Assert.AreEqual("failed", rendered!.Metadata["subagent_status"]);
+        Assert.AreEqual("1", rendered.Metadata["tool_failure_count"]);
+        StringAssert.Contains(rendered.Context.Text, "Command timed out after 30 seconds.");
     }
 
     [TestMethod]
