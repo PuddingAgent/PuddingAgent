@@ -17,6 +17,16 @@ public static partial class GoalCheckOutputParser
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex TestSummaryRegex();
 
+    /// <summary>
+    /// VSTest 的**本地化**汇总行（如 zh-CN："失败!  - 失败: 13，通过: 1031，已跳过: 0，总计: 1044"）。
+    /// 解析器只认汇总行事实、不依赖 UI 语言：英文与本地化两种形态都必须能识别，
+    /// 否则中文 locale 机器上的 Test 类检查永远解析不到摘要（⇒ 永远无法通过）。
+    /// </summary>
+    [GeneratedRegex(
+        @"失败:\s*(?<failed>\d+)\s*[，,]\s*通过:\s*(?<passed>\d+)(?:\s*[，,]\s*已跳过:\s*(?<skipped>\d+))?(?:\s*[，,]\s*总计:\s*(?<total>\d+))?",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex LocalizedTestSummaryRegex();
+
     public sealed record TestSummary(int ExecutedTestCount, int PassedTestCount, int FailedTestCount);
 
     /// <summary>取最后一条汇总行（前面的行可能是逐项目中间汇总）。</summary>
@@ -31,6 +41,8 @@ public static partial class GoalCheckOutputParser
             if (string.IsNullOrWhiteSpace(line))
                 continue;
             var match = TestSummaryRegex().Match(line);
+            if (!match.Success)
+                match = LocalizedTestSummaryRegex().Match(line);
             if (!match.Success)
                 continue;
 
@@ -59,7 +71,8 @@ public static partial class GoalCheckOutputParser
             if (string.IsNullOrWhiteSpace(line))
                 continue;
             if (line.Contains("Build succeeded", StringComparison.OrdinalIgnoreCase)
-                || line.Contains("Passed!", StringComparison.Ordinal))
+                || line.Contains("Passed!", StringComparison.Ordinal)
+                || line.Contains("已通过", StringComparison.Ordinal))
             {
                 return true;
             }
