@@ -105,6 +105,12 @@ public sealed record GoalCheckContext
 
     public required string AgentInstanceId { get; init; }
 
+    /// <summary>本次检查所属的 Goal Iteration 轮次（工作项键与去重的一部分）。</summary>
+    public int IterationNo { get; init; }
+
+    /// <summary>验证作用域：work_unit | goal（去重键的一部分）。</summary>
+    public string Scope { get; init; } = GoalVerificationScopes.WorkUnit;
+
     public string? SessionId { get; init; }
 
     public string? WorkingDirectory { get; init; }
