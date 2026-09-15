@@ -57,7 +57,9 @@ public sealed record GoalCheckReport
     /// <summary>执行本次检查时使用的定义 hash；与 spec 不一致即视为定义已变化。</summary>
     public string? DefinitionHash { get; init; }
 
-    /// <summary>本次检查新生成的运行报告引用（build/test 必须非空，禁止复用旧报告）。</summary>
+    /// <summary>本次检查新生成的运行报告引用（build/test 必须非空）。
+    /// 同一去重键复用既有结果时，引用必须保留原次执行的 InvocationId 并可经由去重键溯源到那次执行，
+    /// 不得伪造成本次新生成的报告。</summary>
     public string? ReportRef { get; init; }
 
     /// <summary>进程退出码；build/test 期望 0。</summary>

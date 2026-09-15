@@ -26,6 +26,10 @@ public sealed class GoalCheckRunner(
 {
     public const string RunnerId = "goal-check-runner";
 
+    // 租约围栏：同一台机器上可能同时存在多个 runner 实例，只靠 "RunnerId:MachineName" 无法区分，
+    // 过期租约被 B 重认领后 A 迟到的 Finish 仍会成功（真实结果被丢弃或提前落库）。实例级唯一后缀可挡住。
+    private readonly string leaseOwnerToken = Guid.NewGuid().ToString("N")[..8];
+
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan LeaseSlack = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
@@ -44,7 +48,7 @@ public sealed class GoalCheckRunner(
         var timeout = context.TimeoutSeconds is int seconds && seconds > 0
             ? TimeSpan.FromSeconds(seconds)
             : DefaultTimeout;
-        var leaseOwner = $"{RunnerId}:{Environment.MachineName}";
+        var leaseOwner = $"{RunnerId}:{Environment.MachineName}:{leaseOwnerToken}";
 
         await recordStore.EnqueueAsync(
             context.GoalRunId,
@@ -138,12 +142,14 @@ public sealed class GoalCheckRunner(
         var exit = await WaitForExitAsync(process.ProcessId, sessionId, timeout, ct);
         if (exit == ProcessWait.Timeout)
         {
-            await TryKillAsync(process.ProcessId);
+            // kill 失败时进程可能仍然存活：报告必须如实标注，不得声称"没有未结束的后台进程"。
+            var killed = await TryKillAsync(process.ProcessId);
             return WaitingReport(
                 spec,
                 GoalCheckFailureCodes.CheckTimeout,
                 $"Check exceeded its {timeout.TotalSeconds:0}s deadline; lease recovery will retry it.",
-                process.ProcessId);
+                process.ProcessId,
+                hasUnfinishedProcess: !killed);
         }
 
         var snapshot = await processManager.ReadOutputAsync(
@@ -280,15 +286,17 @@ public sealed class GoalCheckRunner(
         return ProcessWait.Timeout;
     }
 
-    private async Task TryKillAsync(string processId)
+    /// <summary>尽力终止检查进程；返回 false 表示进程可能仍然存活（调用方不得声称"没有未结束的后台进程"）。</summary>
+    private async Task<bool> TryKillAsync(string processId)
     {
         try
         {
-            await processManager.KillAsync(processId);
+            return await processManager.KillAsync(processId);
         }
         catch (Exception ex)
         {
             logger?.LogWarning(ex, "[GoalCheck] failed to kill check process {ProcessId}", processId);
+            return false;
         }
     }
 

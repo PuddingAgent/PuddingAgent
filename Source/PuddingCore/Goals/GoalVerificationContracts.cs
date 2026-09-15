@@ -201,7 +201,13 @@ public static class GoalSettlementDecisionCalculator
         "task_plan_state_invalid",
         "unsafe",
         "cancelled",
+        // 迭代被显式取消：ADR-092 把"明确取消"列为终态，不得降级为 repair 继续推进
+        // （gates 实际发的是 iteration_cancelled，旧词汇表只有 cancelled，属错位）。
+        "iteration_cancelled",
     ];
+
+    // 注：gates 产生的 evidence_incomplete / reservation_fence_lost 以及透传的 errorCode 不在上述两集合时
+    // 按 repair（本轮做有界修复/重扫）处理：它们可重试，但把它们归入 wait 会把目标卡在一个未必到来的事件上。
 
     /// <summary>
     /// ADR-092 §6.2：按条件聚合其全部关联检查结果（同一条件可有多个必需检查）。

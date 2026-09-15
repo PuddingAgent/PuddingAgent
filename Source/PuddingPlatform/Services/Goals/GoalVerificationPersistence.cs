@@ -26,13 +26,28 @@ public static class GoalVerificationPersistence
         string checkId)
         => $"gchk-{goalRunId}-{activationEpoch}-{iterationNo}-{checkId}";
 
-    /// <summary>去重键：同一 (scope, criterionRevision, definitionHash, inputFingerprint) 只执行一次。</summary>
+    /// <summary>去重键的内层身份：同一 (scope, criterionRevision, definitionHash, inputFingerprint) 只执行一次。
+    /// 注意：持久层不得直接使用它 —— 工作项去重必须再叠加 (goalRunId, activationEpoch) 作用域，见 BuildScopedDedupKey。</summary>
     public static string BuildDedupKey(
         string scope,
         int criterionRevision,
         string? definitionHash,
         string? inputFingerprint)
         => $"{scope}|{criterionRevision}|{definitionHash ?? "-"}|{inputFingerprint ?? "-"}";
+
+    /// <summary>
+    /// 检查工作项的持久去重键：在 <see cref="BuildDedupKey"/> 之上再叠加 (goalRunId, activationEpoch) 作用域。
+    /// ADR-092 §6.2：epoch 变更（Pause/Resume 等）之后必须重新真实执行 —— 旧 epoch 的报告是旧进程的证据，
+    /// 既不能当作当前 epoch 的证据，也不能因为"命中去重键"而让当前 epoch 连工作项都没有（fail-livelock）。
+    /// </summary>
+    public static string BuildScopedDedupKey(
+        string goalRunId,
+        int activationEpoch,
+        string scope,
+        int criterionRevision,
+        string? definitionHash,
+        string? inputFingerprint)
+        => $"{goalRunId}|{activationEpoch}|{BuildDedupKey(scope, criterionRevision, definitionHash, inputFingerprint)}";
 
     public static string SerializeCriteria(IEnumerable<GoalCriterion> criteria)
         => JsonSerializer.Serialize(criteria, JsonOptions);

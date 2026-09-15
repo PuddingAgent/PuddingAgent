@@ -35,10 +35,16 @@ public sealed class GoalCheckRecordStore(IDbContextFactory<PlatformDbContext> db
         var now = DateTimeOffset.UtcNow;
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var created = 0;
+        // 批内去重：AnyAsync 看不到本批尚未 SaveChanges 的 Added 实体，同批同键两行会撞
+        // UX_goal_check_records_dedup 直接抛异常（该迭代的检查证据永久缺失）。
+        var batchKeys = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var check in checks)
         {
-            var dedupKey = GoalVerificationPersistence.BuildDedupKey(
+            // 去重键按 (goalRunId, activationEpoch) 作用域：epoch 变更后必须重新真实执行。
+            var dedupKey = GoalVerificationPersistence.BuildScopedDedupKey(
+                goalRunId,
+                activationEpoch,
                 scope,
                 check.CriterionRevision,
                 check.DefinitionHash,
@@ -54,11 +60,17 @@ public sealed class GoalCheckRecordStore(IDbContextFactory<PlatformDbContext> db
                 ct);
             if (existing is null)
             {
+                if (!batchKeys.Add(dedupKey))
+                {
+                    // 同一批内已登记过同键检查：复用同一份执行结果，不重复登记。
+                    continue;
+                }
+
                 if (await db.GoalCheckRecords.AsNoTracking().AnyAsync(
                         item => item.DedupKey == dedupKey,
                         ct))
                 {
-                    // 同一去重键已在别处登记：复用既有执行结果，不重复执行。
+                    // 同一去重键已在本 epoch 的别处登记：复用既有执行结果，不重复执行。
                     continue;
                 }
 
@@ -183,6 +195,21 @@ public sealed class GoalCheckRecordStore(IDbContextFactory<PlatformDbContext> db
             record.LeaseOwner = null;
             record.LeaseUntilUtc = null;
             record.ReportJson = null;
+            record.UpdatedAtUtc = now;
+            await db.SaveChangesAsync(ct);
+            return false;
+        }
+
+        // waiting（超时 / 未结束后台进程）不是终态：若落成 finished，去重键会阻止重新登记、Lease 又只认
+        // pending，该检查在本 epoch 内就永远不会再执行 —— 等待将失去恢复来源。因此与 pending 一样回到
+        // 可认领状态，但保留 FailureCode 供 triage。
+        if (string.Equals(report.Status, GoalCriterionResultStatuses.Waiting, StringComparison.Ordinal))
+        {
+            record.Status = GoalCheckRecordStatuses.Pending;
+            record.LeaseOwner = null;
+            record.LeaseUntilUtc = null;
+            record.ReportJson = null;
+            record.FailureCode = report.FailureCode;
             record.UpdatedAtUtc = now;
             await db.SaveChangesAsync(ct);
             return false;
