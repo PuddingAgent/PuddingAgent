@@ -22,6 +22,7 @@ namespace PuddingPlatform.Services.Goals;
 public sealed class GoalCheckRunner(
     GoalCheckRecordStore recordStore,
     ITerminalProcessManager processManager,
+    ITerminalCommandAdmission admission,
     ILogger<GoalCheckRunner>? logger = null) : IGoalCheckRunner
 {
     public const string RunnerId = "goal-check-runner";
@@ -140,6 +141,25 @@ public sealed class GoalCheckRunner(
                 spec,
                 resolveFailure,
                 "The check definition is not registered; arbitrary commands are not allowed.");
+        }
+
+        // ADR-092 §13.4：与 terminal 工具共用同一命令准入面（白名单 / 危险模式 / 宿主机安全不变量）。
+        // 拒绝时如实记为 failed 且不启动任何进程——受控检查不得成为绕过准入的旁路。
+        try
+        {
+            admission.EnsureAllowed(command, isYoloMode: false);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            logger?.LogWarning(
+                "[GoalCheck] admission denied check={CheckId} command={Command}: {Reason}",
+                spec.CheckId,
+                command,
+                ex.Message);
+            return FailedReport(
+                spec,
+                GoalCheckFailureCodes.AdmissionDenied,
+                $"Check command was denied by terminal admission policy: {ex.Message}");
         }
 
         var sessionId = string.IsNullOrWhiteSpace(context.SessionId)

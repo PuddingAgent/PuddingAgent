@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using PuddingCode.Abstractions;
 
 namespace PuddingRuntime.Services;
 
@@ -39,7 +40,7 @@ public enum TerminalCommandDenyReason
 ///   4. Normal 模式下，危险模式拦截会拒绝已知高危命令片段。
 ///   5. YOLO 仅跳过权限检查，不跳过宿主安全不变量。
 /// </summary>
-public sealed class DefaultTerminalCommandPolicy : ITerminalCommandPolicy
+public sealed class DefaultTerminalCommandPolicy : ITerminalCommandPolicy, ITerminalCommandAdmission
 {
     public static readonly DefaultTerminalCommandPolicy Instance = new();
 

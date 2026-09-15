@@ -194,7 +194,13 @@ public static class RuntimeServiceExtensions
             sp.GetService<ICompositionStore>(),
             sp.GetService<ILogger<CompositionRecoveryService>>()));
 
-        services.TryAddSingleton<ITerminalCommandPolicy, DefaultTerminalCommandPolicy>();
+        // ADR-092 §13.4：Goal 受控检查与 terminal 工具共用同一准入实现（同一实例）。
+        // 先注册具体类型再映射两个接口：接口→接口的隐式转换编译期不允许，且具体类型可实现两个接口。
+        services.TryAddSingleton<DefaultTerminalCommandPolicy>();
+        services.TryAddSingleton<ITerminalCommandPolicy>(
+            sp => sp.GetRequiredService<DefaultTerminalCommandPolicy>());
+        services.TryAddSingleton<PuddingCode.Abstractions.ITerminalCommandAdmission>(
+            sp => sp.GetRequiredService<DefaultTerminalCommandPolicy>());
 
         services.AddSingleton<SessionArchiver>();
 

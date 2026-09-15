@@ -138,6 +138,9 @@ public static class GoalCheckFailureCodes
     public const string InputFingerprintMissing = "input_fingerprint_missing";
     public const string CheckTimeout = "check_timeout";
     public const string CheckIdentityMismatch = "check_identity_mismatch";
+
+    /// <summary>命令被终端准入拒绝（白名单 / 危险模式 / 宿主机安全不变量）——不得启动任何进程。</summary>
+    public const string AdmissionDenied = "check_admission_denied";
     public const string EvidenceMissing = "evidence_missing";
     public const string NoTestEvidence = "no_test_evidence";
 }

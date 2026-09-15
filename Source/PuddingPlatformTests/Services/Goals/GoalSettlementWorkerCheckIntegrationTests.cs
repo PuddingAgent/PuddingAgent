@@ -426,7 +426,7 @@ public sealed class GoalSettlementWorkerCheckIntegrationTests
         var checkRunner = new GoalCheckRunner(
             new GoalCheckRecordStore(factory),
             processManager,
-            NullLogger<GoalCheckRunner>.Instance);
+            new AllowAllAdmission(), NullLogger<GoalCheckRunner>.Instance);
         var verifier = new RecordingVerifier();
         var worker = NewWorker(factory, CheckOptions(Project), checkRunner, verifier);
 
@@ -523,7 +523,7 @@ public sealed class GoalSettlementWorkerCheckIntegrationTests
             new GoalCheckRunner(
                 new GoalCheckRecordStore(factory),
                 processManager,
-                NullLogger<GoalCheckRunner>.Instance),
+                new AllowAllAdmission(), NullLogger<GoalCheckRunner>.Instance),
             new RecordingVerifier());
 
         Assert.AreEqual(1, await worker.ProcessOnceAsync(CancellationToken.None));
@@ -568,7 +568,7 @@ public sealed class GoalSettlementWorkerCheckIntegrationTests
             new GoalCheckRunner(
                 new GoalCheckRecordStore(factory),
                 processManager,
-                NullLogger<GoalCheckRunner>.Instance),
+                new AllowAllAdmission(), NullLogger<GoalCheckRunner>.Instance),
             verifier);
 
         Assert.AreEqual(1, await worker.ProcessOnceAsync(CancellationToken.None));
@@ -641,5 +641,13 @@ public sealed class GoalSettlementWorkerCheckIntegrationTests
 
         var current = await db.TaskNodes.AsNoTracking().SingleAsync(item => item.TaskNodeId == CurrentNodeId);
         Assert.AreNotEqual(TaskNodeStatuses.Completed.ToString(), current.Status);
+    }
+
+    /// <summary>准入桩：本文件验证结算链路，不验证准入策略。</summary>
+    private sealed class AllowAllAdmission : ITerminalCommandAdmission
+    {
+        public void EnsureAllowed(string command, bool isYoloMode)
+        {
+        }
     }
 }

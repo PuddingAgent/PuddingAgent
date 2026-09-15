@@ -248,7 +248,7 @@ public sealed class GoalCheckRunnerTests
         await using var _ = connection;
         var store = new GoalCheckRecordStore(factory);
         var stub = new StubProcessManager { ExitCode = 0, Output = GreenSummary };
-        var runner = new GoalCheckRunner(store, stub);
+        var runner = new GoalCheckRunner(store, stub, new AllowAllAdmission());
 
         var reports = await runner.RunAsync([Spec()], Context());
 
@@ -276,7 +276,7 @@ public sealed class GoalCheckRunnerTests
         await using var _ = connection;
         var store = new GoalCheckRecordStore(factory);
         var stub = new StubProcessManager { ExitCode = 0, Output = ["Build succeeded.", "no summary"] };
-        var runner = new GoalCheckRunner(store, stub);
+        var runner = new GoalCheckRunner(store, stub, new AllowAllAdmission());
 
         var reports = await runner.RunAsync([Spec()], Context());
 
@@ -292,7 +292,7 @@ public sealed class GoalCheckRunnerTests
         await using var _ = connection;
         var store = new GoalCheckRecordStore(factory);
         var stub = new StubProcessManager { ExitCode = 1, Output = ["Failed: 2, Passed: 3, Skipped: 0, Total: 5"] };
-        var runner = new GoalCheckRunner(store, stub);
+        var runner = new GoalCheckRunner(store, stub, new AllowAllAdmission());
 
         var reports = await runner.RunAsync([Spec()], Context());
 
@@ -312,7 +312,7 @@ public sealed class GoalCheckRunnerTests
             ExitCode = 0,
             Output = ["Passed!  - Failed:     0, Passed:     3, Skipped:     0, Total:     3"],
         };
-        var runner = new GoalCheckRunner(store, stub);
+        var runner = new GoalCheckRunner(store, stub, new AllowAllAdmission());
 
         var reports = await runner.RunAsync([Spec(expectedTests: 5)], Context());
 
@@ -328,7 +328,7 @@ public sealed class GoalCheckRunnerTests
         await using var _ = connection;
         var store = new GoalCheckRecordStore(factory);
         var stub = new StubProcessManager { ExitCode = 0, Output = GreenSummary };
-        var runner = new GoalCheckRunner(store, stub);
+        var runner = new GoalCheckRunner(store, stub, new AllowAllAdmission());
 
         var reports = await runner.RunAsync([Spec(definitionRef: "checks/pretend.md#rm-rf")], Context());
 
@@ -344,12 +344,45 @@ public sealed class GoalCheckRunnerTests
         await using var _ = connection;
         var store = new GoalCheckRecordStore(factory);
         var stub = new StubProcessManager { NeverExits = true, Output = GreenSummary };
-        var runner = new GoalCheckRunner(store, stub);
+        var runner = new GoalCheckRunner(store, stub, new AllowAllAdmission());
 
         var reports = await runner.RunAsync([Spec()], Context(timeoutSeconds: 1));
 
         Assert.AreEqual(GoalCriterionResultStatuses.Waiting, reports[0].Status);
         Assert.AreEqual(GoalCheckFailureCodes.CheckTimeout, reports[0].FailureCode);
         CollectionAssert.Contains(stub.Killed, "job-1");
+    }
+
+    [TestMethod]
+    public async Task Run_WhenAdmissionDenies_ExecutesNoProcessAndRecordsAdmissionDenied()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+        var store = new GoalCheckRecordStore(factory);
+        var stub = new StubProcessManager { ExitCode = 0, Output = GreenSummary };
+        var runner = new GoalCheckRunner(store, stub, new DenyAllAdmission());
+
+        var reports = await runner.RunAsync([Spec()], Context());
+
+        // ADR-092 §13.4：受控检查必须与 terminal 工具共用同一准入面。
+        // 准入拒绝时 fail-closed：不启动任何进程、不记通过，如实记 failed + 准入拒绝码。
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, reports[0].Status);
+        Assert.AreEqual(GoalCheckFailureCodes.AdmissionDenied, reports[0].FailureCode);
+        Assert.AreEqual(0, stub.Commands.Count);
+    }
+
+    /// <summary>准入桩：本文件验证执行与解析语义，不验证准入策略（准入拒绝用例自带拒绝桩）。</summary>
+    private sealed class AllowAllAdmission : ITerminalCommandAdmission
+    {
+        public void EnsureAllowed(string command, bool isYoloMode)
+        {
+        }
+    }
+
+    /// <summary>拒绝一切命令的准入桩：验证准入拒绝时 fail-closed（不启动进程、不记通过）。</summary>
+    private sealed class DenyAllAdmission : ITerminalCommandAdmission
+    {
+        public void EnsureAllowed(string command, bool isYoloMode)
+            => throw new UnauthorizedAccessException("denied by test admission");
     }
 }
