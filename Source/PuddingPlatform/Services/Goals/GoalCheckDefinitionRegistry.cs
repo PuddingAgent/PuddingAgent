@@ -38,6 +38,28 @@ public static class GoalCheckDefinitionRegistry
 
     public static IReadOnlyCollection<string> RegisteredDefinitionRefs => Definitions.Keys;
 
+    /// <summary>
+    /// 版本化定义的内容 hash。定义内容（引用/kind/命令模板）变化 => hash 变化 => 旧报告失效。
+    /// </summary>
+    public static string ComputeDefinitionHash(GoalCheckDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        var payload = $"{definition.DefinitionRef}|{definition.Kind}|{definition.CommandTemplate}";
+        var bytes = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(payload));
+        return $"sha256:{Convert.ToHexStringLower(bytes)}";
+    }
+
+    /// <summary>取定义 hash；未登记返回 false。</summary>
+    public static bool TryGetDefinitionHash(string? definitionRef, out string definitionHash)
+    {
+        definitionHash = string.Empty;
+        if (!TryResolve(definitionRef, out var definition))
+            return false;
+        definitionHash = ComputeDefinitionHash(definition);
+        return true;
+    }
+
     public static bool TryResolve(
         string? definitionRef,
         out GoalCheckDefinition definition)
@@ -92,7 +114,7 @@ public static class GoalCheckDefinitionRegistry
         return true;
     }
 
-    private static bool IsSafeTarget(string target)
+    public static bool IsSafeTarget(string target)
     {
         if (target.Contains("..", StringComparison.Ordinal))
             return false;

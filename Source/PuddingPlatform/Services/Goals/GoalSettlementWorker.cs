@@ -9,6 +9,8 @@ namespace PuddingPlatform.Services.Goals;
 public sealed class GoalSettlementWorker(
     GoalSettlementStore store,
     IGoalIterationVerifier verifier,
+    GoalAcceptanceContractPlanner planner,
+    GoalAcceptanceContractStore contractStore,
     IGoalCheckRunner checkRunner,
     GoalCheckRecordStore checkRecordStore,
     IOptions<GoalRunOptions> options,
@@ -52,6 +54,32 @@ public sealed class GoalSettlementWorker(
         foreach (var candidate in candidates)
         {
             var capsule = candidate.ToCapsule();
+
+            // 空合同的有界派生：只依据显式配置的受检目标生成条件；未配置则保持空合同（fail-closed）。
+            if (capsule.Criteria.Count == 0)
+            {
+                var planned = await planner.EnsureContractAsync(
+                    candidate.GoalRunId,
+                    candidate.ActivationEpoch,
+                    capsule.ObjectiveVersion,
+                    candidate.PlanFingerprint,
+                    ct);
+
+                if (planned)
+                {
+                    var contract = await contractStore.LoadAsync(
+                        candidate.GoalRunId,
+                        candidate.ActivationEpoch,
+                        capsule.ObjectiveVersion,
+                        ct);
+                    capsule = capsule with
+                    {
+                        Criteria = GoalVerificationPersistence.ReadCriteria(contract?.CriteriaJson),
+                        Checks = GoalVerificationPersistence.ReadChecks(contract?.ChecksJson),
+                    };
+                }
+            }
+
             if (capsule.Checks.Count > 0)
             {
                 await RunChecksAsync(candidate, capsule, ct);

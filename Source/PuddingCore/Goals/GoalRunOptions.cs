@@ -33,6 +33,13 @@ public sealed class GoalRunOptions
 
     /// <summary>G92-1：单次受控检查的 deadline 秒数（默认 600）。</summary>
     public int CheckTimeoutSeconds { get; set; } = 600;
+
+    /// <summary>
+    /// G92-1：有界规划使用的受检目标（相对仓库根的项目文件，如
+    /// Source/PuddingPlatformTests/PuddingPlatformTests.csproj）。为空时合同派生不发生
+    /// （保持空合同 → 有界修复）；不接受目录通配、绝对路径或任意命令。
+    /// </summary>
+    public string[] CheckProjects { get; set; } = [];
     public int ContinuationBatchSize { get; set; } = 8;
     public int ContinuationMaxAttempts { get; set; } = 5;
 
@@ -63,6 +70,8 @@ public sealed class GoalRunOptions
             errors.Add("GoalRuns:ContinuationMaxAttempts must be between 1 and 20.");
         if (options.CheckTimeoutSeconds is < 30 or > 3600)
             errors.Add("GoalRuns:CheckTimeoutSeconds must be between 30 and 3600.");
+        if (options.CheckProjects is { Length: > 16 })
+            errors.Add("GoalRuns:CheckProjects must contain at most 16 entries.");
 
         return errors;
     }
