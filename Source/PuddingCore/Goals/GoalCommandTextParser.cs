@@ -5,7 +5,7 @@ namespace PuddingCode.Goals;
 /// <summary>
 /// ADR-074 §4: /goal 严格 grammar 解析器（纯函数，无 I/O）。
 /// <para>
-/// 子命令消歧规则：首 token 命中保留字（status/set/edit/replace/pause/resume/cancel/clear，
+/// 子命令消歧规则：首 token 命中保留字（status/set/edit/replace/pause/resume/policy/cancel/clear，
 /// 大小写不敏感）即按子命令处理并对其余部分做严格校验；否则整个剩余文本视为 objective
 /// （set 简写）。`/goal` 等价 `/goal status`，空参数绝不隐式创建目标。
 /// </para>
@@ -18,7 +18,7 @@ public static partial class GoalCommandTextParser
 {
     private static readonly string[] ReservedSubcommands =
     [
-        "status", "set", "edit", "replace", "pause", "resume", "cancel", "clear",
+        "status", "set", "edit", "replace", "pause", "resume", "policy", "cancel", "clear",
     ];
 
     public static bool TryParse(
@@ -104,6 +104,30 @@ public static partial class GoalCommandTextParser
                     Kind = ToKind(match),
                     Reason = remainder.Length == 0 ? null : remainder,
                 };
+                return true;
+
+            case "policy":
+                // ADR-092：/goal policy <paused|auto_resume_on_restart>；大小写不敏感，
+                // 归一化为规范常量后交由服务端二次校验（结构化入口可能绕过解析器）。
+                if (remainder.Length == 0)
+                {
+                    errorCode = GoalErrorCodes.InvalidResumePolicy;
+                    errorMessage =
+                        $"/goal policy requires a value: {GoalResumePolicies.Paused} or " +
+                        $"{GoalResumePolicies.AutoResumeOnRestart}.";
+                    return true;
+                }
+
+                if (!TryNormalizeResumePolicy(remainder, out var resumePolicy))
+                {
+                    errorCode = GoalErrorCodes.InvalidResumePolicy;
+                    errorMessage =
+                        $"Unknown resume policy '{remainder}'. Valid values: " +
+                        $"{GoalResumePolicies.Paused}, {GoalResumePolicies.AutoResumeOnRestart}.";
+                    return true;
+                }
+
+                command = new GoalCommand { Kind = GoalCommandKind.Policy, ResumePolicy = resumePolicy };
                 return true;
 
             case "set":
@@ -201,6 +225,25 @@ public static partial class GoalCommandTextParser
         return -1;
     }
 
+    /// <summary>大小写不敏感归一化 resume_policy；未知值 fail-closed 返回 false。</summary>
+    private static bool TryNormalizeResumePolicy(string value, out string normalized)
+    {
+        if (string.Equals(value, GoalResumePolicies.Paused, StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = GoalResumePolicies.Paused;
+            return true;
+        }
+
+        if (string.Equals(value, GoalResumePolicies.AutoResumeOnRestart, StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = GoalResumePolicies.AutoResumeOnRestart;
+            return true;
+        }
+
+        normalized = string.Empty;
+        return false;
+    }
+
     private static GoalCommandKind ToKind(string subcommand) => subcommand switch
     {
         "status" => GoalCommandKind.Status,
@@ -209,6 +252,7 @@ public static partial class GoalCommandTextParser
         "replace" => GoalCommandKind.Replace,
         "pause" => GoalCommandKind.Pause,
         "resume" => GoalCommandKind.Resume,
+        "policy" => GoalCommandKind.Policy,
         "cancel" => GoalCommandKind.Cancel,
         "clear" => GoalCommandKind.Clear,
         _ => throw new InvalidOperationException($"Unknown reserved goal subcommand '{subcommand}'."),

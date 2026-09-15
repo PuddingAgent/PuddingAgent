@@ -22,6 +22,13 @@ public static class GoalEventTypes
     public const string BudgetExhausted = "goal.budget_exhausted";
     public const string Failed = "goal.failed";
 
+    /// <summary>
+    /// ADR-092：重启恢复策略变更（/goal policy）。payload 记录 field/from/to 以供审计。
+    /// 目录冻结后新增：无既有 Policy/Updated 类事件可复用，复用 goal.edited 会污染
+    /// objective 编辑语义；消费方按 goal. 前缀或精确类型读取，不受影响。
+    /// </summary>
+    public const string PolicyChanged = "goal.policy_changed";
+
     // ── Iteration（G2）───────────────────────────────────────
     public const string IterationAccepted = "goal.iteration.accepted";
     public const string IterationStarted = "goal.iteration.started";

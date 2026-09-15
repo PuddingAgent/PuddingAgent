@@ -192,4 +192,47 @@ public sealed class GoalCommandTextParserTests
         Assert.AreEqual(4, request.Command.Rounds);
         Assert.AreEqual("web", request.SourceChannel);
     }
+
+    [TestMethod]
+    public void Policy_Parses_Both_Values_Case_Insensitively_And_Normalizes()
+    {
+        Assert.IsTrue(GoalCommandTextParser.TryParse(
+            "/goal policy auto_resume_on_restart", out var auto, out _, out _));
+        Assert.AreEqual(GoalCommandKind.Policy, auto.Kind);
+        Assert.AreEqual(GoalResumePolicies.AutoResumeOnRestart, auto.ResumePolicy);
+
+        Assert.IsTrue(GoalCommandTextParser.TryParse(
+            "/GOAL POLICY Paused", out var paused, out _, out _));
+        Assert.AreEqual(GoalCommandKind.Policy, paused.Kind);
+        Assert.AreEqual(GoalResumePolicies.Paused, paused.ResumePolicy);
+    }
+
+    [TestMethod]
+    public void Policy_Missing_Value_Is_Rejected_With_Usage()
+    {
+        Assert.IsFalse(GoalCommandTextParser.TryParse(
+            "/goal policy", out _, out var errorCode, out var errorMessage));
+        Assert.AreEqual(GoalErrorCodes.InvalidResumePolicy, errorCode);
+        StringAssert.Contains(errorMessage!, GoalResumePolicies.AutoResumeOnRestart);
+    }
+
+    [TestMethod]
+    public void Policy_Unknown_Value_Fails_Closed_Listing_Valid_Values()
+    {
+        Assert.IsFalse(GoalCommandTextParser.TryParse(
+            "/goal policy always_resume", out _, out var errorCode, out var errorMessage));
+        Assert.AreEqual(GoalErrorCodes.InvalidResumePolicy, errorCode);
+        StringAssert.Contains(errorMessage!, "always_resume");
+        StringAssert.Contains(errorMessage!, GoalResumePolicies.Paused);
+        StringAssert.Contains(errorMessage!, GoalResumePolicies.AutoResumeOnRestart);
+    }
+
+    [TestMethod]
+    public void Policy_Is_A_Reserved_Word_Not_Objective_Shorthand()
+    {
+        // 首 token 命中保留字即子命令："policy xxx" 不是 objective。
+        Assert.IsFalse(GoalCommandTextParser.TryParse(
+            "/goal policy", out _, out var errorCode, out _));
+        Assert.AreEqual(GoalErrorCodes.InvalidResumePolicy, errorCode);
+    }
 }

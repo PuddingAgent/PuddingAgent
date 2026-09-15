@@ -26,6 +26,9 @@ public enum GoalCommandKind
     Resume,
     Cancel,
     Clear,
+
+    /// <summary>ADR-092：设置重启恢复策略（resume_policy），仅对非终态 Goal 生效。</summary>
+    Policy,
 }
 
 /// <summary>ADR-074 §3: 外层 Goal Iteration 预算与 objective 边界的唯一硬限制来源。</summary>
@@ -59,6 +62,9 @@ public sealed record GoalCommand
 
     /// <summary>pause/cancel 的可选自由文本原因。</summary>
     public string? Reason { get; init; }
+
+    /// <summary>policy 子命令的重启恢复策略值（规范常量，见 <see cref="GoalResumePolicies"/>）。</summary>
+    public string? ResumePolicy { get; init; }
 }
 
 /// <summary>Goal 聚合只读快照。UI / SSE / 审计共用同一服务端投影，不从聊天文本反推。</summary>
@@ -159,6 +165,7 @@ public static class GoalErrorCodes
     public const string InvalidCommand = "invalid_goal_command";
     public const string InvalidObjective = "invalid_objective";
     public const string InvalidRounds = "invalid_rounds";
+    public const string InvalidResumePolicy = "invalid_resume_policy";
     public const string GoalNotFound = "goal_not_found";
     public const string GoalConflict = "goal_conflict";
     public const string InvalidState = "invalid_goal_state";

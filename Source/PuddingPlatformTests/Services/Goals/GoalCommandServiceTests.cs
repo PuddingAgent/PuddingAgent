@@ -338,4 +338,116 @@ public sealed class GoalCommandServiceTests
         StringAssert.Contains(result.Message, "999");
         Assert.AreEqual(0, await db.GoalRuns.CountAsync());
     }
+
+    // ── ADR-092：/goal policy（resume_policy 写入路径）────────────────
+
+    private static GoalCommandRequest PolicyRequest(
+        string resumePolicy,
+        string clientRequestId = "req-policy",
+        string conversationId = "conv-1")
+        => new("ws", conversationId, "agent-1", "admin", clientRequestId,
+            new GoalCommand { Kind = GoalCommandKind.Policy, ResumePolicy = resumePolicy });
+
+    [TestMethod]
+    public async Task Policy_AutoResumeOnRestart_Persists_Column_And_Appends_Audit_Event()
+    {
+        var (db, service) = await CreateAsync();
+        await using var _ = db;
+
+        await service.ExecuteAsync(SetRequest(), CancellationToken.None);
+        var result = await service.ExecuteAsync(
+            PolicyRequest(
+                GoalResumePolicies.AutoResumeOnRestart,
+                clientRequestId: "req-policy-auto"),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        var goal = await db.GoalRuns.SingleAsync();
+        Assert.AreEqual(GoalResumePolicies.AutoResumeOnRestart, goal.ResumePolicy);
+        Assert.AreEqual(1, await db.ConversationEvents.CountAsync(
+            e => e.Type == GoalEventTypes.PolicyChanged));
+
+        // 审计 payload 记录 from/to。
+        var evt = await db.ConversationEvents.SingleAsync(
+            e => e.Type == GoalEventTypes.PolicyChanged);
+        StringAssert.Contains(evt.Payload, "resume_policy");
+        StringAssert.Contains(evt.Payload, GoalResumePolicies.AutoResumeOnRestart);
+    }
+
+    [TestMethod]
+    public async Task Policy_Invalid_Value_Fails_Closed_Without_Mutation()
+    {
+        var (db, service) = await CreateAsync();
+        await using var _ = db;
+
+        await service.ExecuteAsync(SetRequest(), CancellationToken.None);
+        var before = await db.GoalRuns.SingleAsync();
+
+        var result = await service.ExecuteAsync(
+            PolicyRequest("always_resume"), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(GoalErrorCodes.InvalidResumePolicy, result.ErrorCode);
+        var after = await db.GoalRuns.SingleAsync();
+        Assert.AreEqual(before.ResumePolicy, after.ResumePolicy);
+        Assert.AreEqual(before.AggregateVersion, after.AggregateVersion);
+        Assert.AreEqual(0, await db.ConversationEvents.CountAsync(
+            e => e.Type == GoalEventTypes.PolicyChanged));
+    }
+
+    [TestMethod]
+    public async Task Policy_Rejects_Terminal_Goal_With_Explicit_Reason()
+    {
+        var (db, service) = await CreateAsync();
+        await using var _ = db;
+
+        await service.ExecuteAsync(SetRequest(), CancellationToken.None);
+        var cancel = await service.ExecuteAsync(
+            SimpleRequest(GoalCommandKind.Cancel), CancellationToken.None);
+        Assert.IsTrue(cancel.Success);
+
+        var result = await service.ExecuteAsync(
+            PolicyRequest(GoalResumePolicies.AutoResumeOnRestart), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(GoalErrorCodes.InvalidState, result.ErrorCode);
+        var goal = await db.GoalRuns.SingleAsync();
+        Assert.AreEqual(GoalPhase.Cancelled, goal.Status);
+        Assert.AreEqual(GoalResumePolicies.Paused, goal.ResumePolicy);
+    }
+
+    [TestMethod]
+    public async Task Policy_Default_Remains_Paused_When_Never_Set_And_Visible_In_Status()
+    {
+        var (db, service) = await CreateAsync();
+        await using var _ = db;
+
+        await service.ExecuteAsync(SetRequest(), CancellationToken.None);
+        var status = await service.ExecuteAsync(
+            SimpleRequest(GoalCommandKind.Status), CancellationToken.None);
+
+        Assert.IsTrue(status.Success);
+        var goal = await db.GoalRuns.SingleAsync();
+        Assert.AreEqual(GoalResumePolicies.Paused, goal.ResumePolicy);
+        StringAssert.Contains(status.Message, "Resume policy: paused");
+    }
+
+    [TestMethod]
+    public async Task Policy_Same_Value_Is_Idempotent_No_Event_No_Version_Bump()
+    {
+        var (db, service) = await CreateAsync();
+        await using var _ = db;
+
+        await service.ExecuteAsync(SetRequest(), CancellationToken.None);
+        var before = await db.GoalRuns.SingleAsync();
+
+        var result = await service.ExecuteAsync(
+            PolicyRequest(GoalResumePolicies.Paused), CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        var after = await db.GoalRuns.SingleAsync();
+        Assert.AreEqual(before.AggregateVersion, after.AggregateVersion);
+        Assert.AreEqual(0, await db.ConversationEvents.CountAsync(
+            e => e.Type == GoalEventTypes.PolicyChanged));
+    }
 }

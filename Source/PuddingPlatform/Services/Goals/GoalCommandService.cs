@@ -47,6 +47,7 @@ public sealed class GoalCommandService(
                 GoalCommandKind.Resume => await HandleResumeAsync(request, ct),
                 GoalCommandKind.Cancel => await HandleCancelAsync(request, ct),
                 GoalCommandKind.Clear => await HandleClearAsync(request, ct),
+                GoalCommandKind.Policy => await HandlePolicyAsync(request, ct),
                 _ => GoalCommandResult.Fail(
                     GoalErrorCodes.InvalidCommand,
                     $"未知的 Goal 命令 '{request.Command.Kind}'。"),
@@ -333,6 +334,76 @@ public sealed class GoalCommandService(
                 mutated.ToSnapshot());
     }
 
+    /// <summary>
+    /// ADR-092：/goal policy <paused|auto_resume_on_restart>。用户权能入口（slash 文本），
+    /// 不暴露为 agent 侧工具。仅对非终态 Goal 生效；写入 goal_runs.resume_policy 并落
+    /// goal.policy_changed 审计事件（payload 含 field/from/to）。非法值 fail-closed。
+    /// </summary>
+    private async Task<GoalCommandResult> HandlePolicyAsync(
+        GoalCommandRequest request, CancellationToken ct)
+    {
+        // 结构化入口（Control Plane API/测试）可能绕过文本解析器，服务端仍只接受
+        // 规范常量，绝不静默归一化未知值。
+        var policy = request.Command.ResumePolicy;
+        if (policy is not (GoalResumePolicies.Paused or GoalResumePolicies.AutoResumeOnRestart))
+        {
+            return GoalCommandResult.Fail(
+                GoalErrorCodes.InvalidResumePolicy,
+                $"未知的重启恢复策略 '{policy}'。合法取值：{GoalResumePolicies.Paused}、"
+                + $"{GoalResumePolicies.AutoResumeOnRestart}。");
+        }
+
+        var goal = await store.FindActiveAsync(request.ConversationId, request.AgentInstanceId, ct);
+        if (goal is null)
+        {
+            // 与 resume 同样的准确拒绝：终态 Goal 给出真实原因，而不是误导性的"没有 Goal"。
+            var latest = await store.FindLatestAsync(request.WorkspaceId, request.ConversationId, ct);
+            if (latest is not null && GoalStateMachine.IsTerminal(latest.Status))
+            {
+                return GoalCommandResult.Fail(
+                    GoalErrorCodes.InvalidState,
+                    $"Goal 已处于终态 {latest.Status}，不能修改重启恢复策略"
+                    + "（resume_policy 只对非终态 Goal 有意义）。",
+                    latest.ToSnapshot());
+            }
+
+            return GoalCommandResult.Fail(GoalErrorCodes.GoalNotFound, "当前会话没有 Goal。");
+        }
+
+        if (string.Equals(goal.ResumePolicy, policy, StringComparison.Ordinal))
+        {
+            return GoalCommandResult.Ok(
+                $"Goal 重启恢复策略已经是 {policy}。",
+                goal.ToSnapshot());
+        }
+
+        if (request.ExpectedVersion is > 0 && request.ExpectedVersion != goal.AggregateVersion)
+            return VersionConflict(goal);
+
+        var from = goal.ResumePolicy;
+        var (mutated, _) = await store.TryMutateAsync(
+            goal.GoalRunId,
+            request.ExpectedVersion ?? 0,
+            g =>
+            {
+                g.ResumePolicy = policy;
+                return true;
+            },
+            new GoalRunStore.GoalEventAppend(
+                GoalEventTypes.PolicyChanged,
+                new { field = "resume_policy", from, to = policy }),
+            request.ClientRequestId,
+            ct);
+
+        return mutated is null
+            ? VersionConflict(goal)
+            : GoalCommandResult.Ok(
+                policy == GoalResumePolicies.AutoResumeOnRestart
+                    ? "Goal 重启恢复策略已设置为 auto_resume_on_restart：宿主重启后将保持 active 并换发激活 fence。"
+                    : "Goal 重启恢复策略已设置为 paused：宿主重启后 Goal 将转为 paused（默认行为）。",
+                mutated.ToSnapshot());
+    }
+
     private async Task<GoalCommandResult> HandleCancelAsync(
         GoalCommandRequest request, CancellationToken ct)
     {
@@ -457,6 +528,7 @@ public sealed class GoalCommandService(
         {
             $"Goal {phase} · iteration {goal.IterationsStarted}/{goal.MaxIterations}",
             $"Objective: {goal.Objective}",
+            $"Resume policy: {goal.ResumePolicy}",
         };
 
         if (!string.IsNullOrWhiteSpace(goal.BlockedCode))
@@ -469,8 +541,8 @@ public sealed class GoalCommandService(
         var commands = GoalStateMachine.IsTerminal(goal.Status)
             ? "Commands: /goal <objective> 创建新 Goal"
             : goal.Status == GoalPhase.Active
-                ? "Commands: /goal pause · /goal cancel · /goal edit"
-                : "Commands: /goal resume · /goal cancel · /goal edit";
+                ? "Commands: /goal pause · /goal cancel · /goal edit · /goal policy"
+                : "Commands: /goal resume · /goal cancel · /goal edit · /goal policy";
         lines.Add(commands);
 
         return string.Join('\n', lines);
