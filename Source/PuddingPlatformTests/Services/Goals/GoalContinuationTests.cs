@@ -295,6 +295,12 @@ public sealed class GoalContinuationTests
         var settlement = NewSettlementStore();
         var candidate = (await settlement.GetCandidatesAsync(8)).Single();
         var decision = await new ConservativeGoalIterationVerifier().VerifyAsync(candidate.ToCapsule());
+        // ADR-092 §4 + §13.6：本夹具从不播种 GoalAcceptanceContracts，capsule.Criteria 恒为空，
+        // verifier 必须 fail-closed 落 acceptance_contract_missing（Repair），不得 vacuous pass。
+        Assert.AreEqual(GoalVerificationVerdict.Blocked, decision.Verdict);
+        Assert.AreEqual("acceptance_contract_missing", decision.BlockerCode);
+        Assert.AreEqual(GoalSettlementDispositions.Repair,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
         Assert.IsTrue(await settlement.ApplyAsync(candidate, decision));
 
         await using (var verify = await _factory.CreateDbContextAsync())
@@ -302,11 +308,22 @@ public sealed class GoalContinuationTests
             var nodes = await verify.TaskNodes.Where(item => item.Depth == 1)
                 .OrderBy(item => item.SequenceNo)
                 .ToListAsync();
-            Assert.AreEqual(PuddingCode.Models.TaskNodeStatuses.Completed.ToString(), nodes[0].Status);
+            // 当前（Running）单元没有验收证据 ⇒ 不得被结算完成，保持原状。
+            Assert.AreEqual(PuddingCode.Models.TaskNodeStatuses.Running.ToString(), nodes[0].Status);
+            // 下一单元不得被认领。
             Assert.AreEqual(PuddingCode.Models.TaskNodeStatuses.Planned.ToString(), nodes[1].Status);
             Assert.AreEqual(PuddingCode.Models.TaskPlanStatuses.Active.ToString(),
                 (await verify.TaskPlanRuns.SingleAsync()).Status);
+            // 结算冻结的是本次迭代后的实时 Task 版本（3 → 4）。
             Assert.AreEqual(4, (await verify.TaskGoalBindings.SingleAsync()).ExpectedTaskVersion);
+            var settledGoal = await verify.GoalRuns.SingleAsync();
+            Assert.AreEqual(GoalPhase.Active, settledGoal.Status);
+            Assert.IsNull(settledGoal.TerminalAtUtc);
+            Assert.AreEqual("acceptance_contract_missing", settledGoal.BlockedCode);
+            // Repair 恰好投递一轮续行。
+            Assert.AreEqual(1, await verify.GoalOutbox.CountAsync(
+                item => item.Status == GoalOutboxValues.Pending));
+            Assert.AreEqual(2, await verify.GoalOutbox.CountAsync());
         }
 
         var nextLease = await ClaimAsync();
@@ -319,14 +336,16 @@ public sealed class GoalContinuationTests
             nextDb,
             new NoopSignal(),
             NullLogger<ConversationAcceptanceStore>.Instance);
-        var nextAccepted = await nextStore.AcceptBatchAsync(
-            BuildContinuationRequest(currentGoal, nextLease, currentBinding, nextWorkUnit),
-            currentGoal.WorkspaceId,
-            currentGoal.CurrentConversationId,
-            userId: null,
-            CancellationToken.None);
-        var command = await new ExecutionCommandReader(_factory).GetAsync(nextAccepted.CommandIds.Single());
-        Assert.AreEqual(nextWorkUnit.TaskNodeId, command?.WorkUnit?.TaskNodeId);
+        // 当前单元仍未验证完成（保持 Running），下一单元因此在准入层就被拒绝认领。
+        var rejection = await Assert.ThrowsAsync<GoalContinuationAcceptanceException>(() =>
+            nextStore.AcceptBatchAsync(
+                BuildContinuationRequest(currentGoal, nextLease, currentBinding, nextWorkUnit),
+                currentGoal.WorkspaceId,
+                currentGoal.CurrentConversationId,
+                userId: null,
+                CancellationToken.None));
+        Assert.AreEqual(GoalContinuationAcceptanceErrorCodes.TaskPlanChanged, rejection.Code);
+        Assert.IsFalse(rejection.Deferred);
     }
 
     [TestMethod]
@@ -354,24 +373,41 @@ public sealed class GoalContinuationTests
         var settlement = NewSettlementStore();
         var candidate = (await settlement.GetCandidatesAsync(8)).Single();
         var proposed = await new ConservativeGoalIterationVerifier().VerifyAsync(candidate.ToCapsule());
-        Assert.AreEqual(GoalVerificationVerdict.Continue, proposed.Verdict);
+        // ADR-092 §4 + ADR-092「对旧设计的修订」：空验收合同不得 vacuous pass，
+        // 且“最后一个 WorkUnit 缺 Task 完成事实”不再终止 Goal，而是本单元内的有界修复（Repair）。
+        Assert.AreEqual(GoalVerificationVerdict.Blocked, proposed.Verdict);
+        Assert.AreEqual("acceptance_contract_missing", proposed.BlockerCode);
+        Assert.AreEqual(GoalSettlementDispositions.Repair,
+            GoalSettlementDecisionCalculator.ComputeDisposition(proposed));
         Assert.IsTrue(await settlement.ApplyAsync(candidate, proposed));
 
         await using var verify = await _factory.CreateDbContextAsync();
-        Assert.AreEqual(GoalPhase.Failed, (await verify.GoalRuns.SingleAsync()).Status);
-        Assert.IsNotNull((await verify.GoalRuns.SingleAsync()).TerminalAtUtc);
-        Assert.AreEqual("task_completion_fact_missing", (await verify.GoalRuns.SingleAsync()).BlockedCode);
-        Assert.AreEqual(PuddingCode.Tasks.WorkspaceTaskStatus.NeedsReview,
-            (await verify.WorkspaceTasks.SingleAsync()).Status);
-        Assert.IsNull((await verify.WorkspaceTasks.SingleAsync()).ActiveAssignmentId);
-        Assert.AreEqual("terminal", (await verify.TaskGoalBindings.SingleAsync()).Status);
-        Assert.IsNotNull((await verify.TaskAssignmentAttempts.SingleAsync()).ReleasedAtUtc);
-        Assert.AreEqual(PuddingCode.Models.TaskNodeStatuses.Completed.ToString(),
+        var settledGoal = await verify.GoalRuns.SingleAsync();
+        // Repair：Goal 保持非终态，仅归档阻塞事实（ADR-092 决策 6：保留 Goal 与逻辑绑定）。
+        Assert.AreEqual(GoalPhase.Active, settledGoal.Status);
+        Assert.IsNull(settledGoal.TerminalAtUtc);
+        Assert.AreEqual("acceptance_contract_missing", settledGoal.BlockedCode);
+        // 保留逻辑归属：Task / attempt / binding / reservation 均不得被释放。
+        var settledTask = await verify.WorkspaceTasks.SingleAsync();
+        Assert.AreEqual(PuddingCode.Tasks.WorkspaceTaskStatus.Assigned, settledTask.Status);
+        Assert.AreEqual("assignment-planned", settledTask.ActiveAssignmentId);
+        Assert.IsNull(settledTask.BlockerKind);
+        var settledBinding = await verify.TaskGoalBindings.SingleAsync();
+        Assert.AreEqual("active", settledBinding.Status);
+        Assert.IsNull(settledBinding.ReleasedAtUtc);
+        var settledAttempt = await verify.TaskAssignmentAttempts.SingleAsync();
+        Assert.AreEqual(AssignmentAttemptStatus.Assigned, settledAttempt.Status);
+        Assert.IsNull(settledAttempt.ReleasedAtUtc);
+        Assert.AreEqual("active", (await verify.AgentExecutionReservations.SingleAsync()).Status);
+        // 未验证完成：当前单元保持 Running，计划保持 Active。
+        Assert.AreEqual(PuddingCode.Models.TaskNodeStatuses.Running.ToString(),
             (await verify.TaskNodes.SingleAsync(item => item.Depth == 1)).Status);
-        Assert.AreEqual(PuddingCode.Models.TaskPlanStatuses.Completed.ToString(),
+        Assert.AreEqual(PuddingCode.Models.TaskPlanStatuses.Active.ToString(),
             (await verify.TaskPlanRuns.SingleAsync()).Status);
-        Assert.AreEqual(0, await verify.GoalOutbox.CountAsync(
+        // 恰好投递一轮 continuation（Repair 必须给出下一步，不得停在原地）。
+        Assert.AreEqual(1, await verify.GoalOutbox.CountAsync(
             item => item.Status == GoalOutboxValues.Pending));
+        Assert.AreEqual(2, await verify.GoalOutbox.CountAsync());
     }
 
     [TestMethod]
@@ -401,22 +437,39 @@ public sealed class GoalContinuationTests
         var decision = await new ConservativeGoalIterationVerifier().VerifyAsync(candidate.ToCapsule());
         Assert.AreEqual(GoalVerificationVerdict.Blocked, decision.Verdict);
         Assert.AreEqual("iteration_failed", decision.BlockerCode);
+        // ADR-092「对旧设计的修订」：非 completed Turn 不再终止整个目标（取舍表明确不采用
+        // “测试失败直接 Goal Failed，再新建 Goal 重试”）；iteration_failed 属可修复族 ⇒ Repair。
+        Assert.AreEqual(GoalSettlementDispositions.Repair,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
         Assert.IsTrue(await settlement.ApplyAsync(candidate, decision));
 
         await using var verify = await _factory.CreateDbContextAsync();
-        Assert.AreEqual(GoalPhase.Failed, (await verify.GoalRuns.SingleAsync()).Status);
-        Assert.IsNotNull((await verify.GoalRuns.SingleAsync()).TerminalAtUtc);
-        Assert.AreEqual(PuddingCode.Tasks.WorkspaceTaskStatus.Blocked,
-            (await verify.WorkspaceTasks.SingleAsync()).Status);
-        Assert.IsNull((await verify.WorkspaceTasks.SingleAsync()).ActiveAssignmentId);
-        Assert.AreEqual("terminal", (await verify.TaskGoalBindings.SingleAsync()).Status);
-        Assert.AreEqual(AssignmentAttemptStatus.Failed,
-            (await verify.TaskAssignmentAttempts.SingleAsync()).Status);
-        Assert.AreEqual("released", (await verify.AgentExecutionReservations.SingleAsync()).Status);
-        Assert.AreEqual(PuddingCode.Models.TaskPlanStatuses.Failed.ToString(),
+        var settledGoal = await verify.GoalRuns.SingleAsync();
+        // Goal 保持 Active（非终态），仅归档阻塞事实。
+        Assert.AreEqual(GoalPhase.Active, settledGoal.Status);
+        Assert.IsNull(settledGoal.TerminalAtUtc);
+        Assert.AreEqual("iteration_failed", settledGoal.BlockedCode);
+        // ADR-092 决策 6：保留逻辑归属（Goal / Task binding / assignment）；执行租约只续不释放，
+        // 恢复时由新的 admission/预约取得新 fence——因此如实断言“仍归属”而不是“已释放”。
+        var settledTask = await verify.WorkspaceTasks.SingleAsync();
+        Assert.AreEqual(PuddingCode.Tasks.WorkspaceTaskStatus.Assigned, settledTask.Status);
+        Assert.AreEqual("assignment-planned", settledTask.ActiveAssignmentId);
+        var settledBinding = await verify.TaskGoalBindings.SingleAsync();
+        Assert.AreEqual("active", settledBinding.Status);
+        Assert.IsNull(settledBinding.ReleasedAtUtc);
+        var settledAttempt = await verify.TaskAssignmentAttempts.SingleAsync();
+        Assert.AreEqual(AssignmentAttemptStatus.Assigned, settledAttempt.Status);
+        Assert.IsNull(settledAttempt.ReleasedAtUtc);
+        Assert.AreEqual("active", (await verify.AgentExecutionReservations.SingleAsync()).Status);
+        // 未验证完成：计划/单元保持非终态与执行身份。
+        Assert.AreEqual(PuddingCode.Models.TaskNodeStatuses.Running.ToString(),
+            (await verify.TaskNodes.SingleAsync(item => item.Depth == 1)).Status);
+        Assert.AreEqual(PuddingCode.Models.TaskPlanStatuses.Active.ToString(),
             (await verify.TaskPlanRuns.SingleAsync()).Status);
-        Assert.AreEqual(0, await verify.GoalOutbox.CountAsync(
+        // Repair 必须给出下一轮 continuation。
+        Assert.AreEqual(1, await verify.GoalOutbox.CountAsync(
             item => item.Status == GoalOutboxValues.Pending));
+        Assert.AreEqual(2, await verify.GoalOutbox.CountAsync());
     }
 
     [TestMethod]
@@ -458,21 +511,27 @@ public sealed class GoalContinuationTests
 
         await using var verify = await _factory.CreateDbContextAsync();
         var archivedGoal = await verify.GoalRuns.SingleAsync();
-        Assert.AreEqual(GoalPhase.Failed, archivedGoal.Status);
+        // ADR-092：回合失败是当前单元可修复的未通过，Goal 保持非终态，但必须归档真实 errorCode。
+        Assert.AreEqual(GoalPhase.Active, archivedGoal.Status);
+        Assert.IsNull(archivedGoal.TerminalAtUtc);
         Assert.AreEqual("work_unit_budget_exhausted", archivedGoal.BlockedCode);
         Assert.AreEqual(
             "WorkUnit input Token budget exhausted (input 150000 tokens).",
             archivedGoal.BlockedMessage);
+        // Repair 不释放逻辑归属：Task 保持可续行，真实 errorCode 不得被错误改写成 Task blocker。
         var archivedTask = await verify.WorkspaceTasks.SingleAsync();
-        Assert.AreEqual(PuddingCode.Tasks.WorkspaceTaskStatus.Blocked, archivedTask.Status);
-        Assert.AreEqual("work_unit_budget_exhausted", archivedTask.BlockerKind);
-        Assert.AreEqual(
-            "WorkUnit input Token budget exhausted (input 150000 tokens).",
-            archivedTask.BlockerReason);
+        Assert.AreEqual(PuddingCode.Tasks.WorkspaceTaskStatus.Assigned, archivedTask.Status);
+        Assert.AreEqual("assignment-planned", archivedTask.ActiveAssignmentId);
+        Assert.IsNull(archivedTask.BlockerKind);
+        Assert.IsNull(archivedTask.BlockerReason);
         // goal_iterations.error_id must archive the real errorCode from the
         // turn.failed payload, not stay null.
         var archivedIteration = await verify.GoalIterations.SingleAsync();
         Assert.AreEqual("work_unit_budget_exhausted", archivedIteration.ErrorId);
+        Assert.AreEqual("failed", archivedIteration.Status);
+        // 且下一轮 continuation 已投递。
+        Assert.AreEqual(1, await verify.GoalOutbox.CountAsync(
+            item => item.Status == GoalOutboxValues.Pending));
     }
 
     [TestMethod]
@@ -555,16 +614,23 @@ public sealed class GoalContinuationTests
         var candidate = (await settlement.GetCandidatesAsync(8)).Single();
         var verifier = new ConservativeGoalIterationVerifier();
         var decision = await verifier.VerifyAsync(candidate.ToCapsule());
-        Assert.AreEqual(GoalVerificationVerdict.Continue, decision.Verdict);
+        // ADR-092 §4：Turn 结束、Task Completed 都不是完成证明；空合同 ⇒ Blocked + Repair。
+        Assert.AreEqual(GoalVerificationVerdict.Blocked, decision.Verdict);
+        Assert.AreEqual("acceptance_contract_missing", decision.BlockerCode);
+        Assert.AreEqual(GoalSettlementDispositions.Repair,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
         Assert.IsTrue(await settlement.ApplyAsync(candidate, decision));
 
         await using var verify = await _factory.CreateDbContextAsync();
         var persistedGoal = await verify.GoalRuns.SingleAsync();
         Assert.AreEqual(GoalPhase.Active, persistedGoal.Status);
+        Assert.IsNull(persistedGoal.TerminalAtUtc);
+        Assert.AreEqual("acceptance_contract_missing", persistedGoal.BlockedCode);
         Assert.AreEqual(1, persistedGoal.IterationsStarted);
         Assert.AreEqual(1, persistedGoal.IterationsSettled);
         Assert.AreEqual("settled", (await verify.GoalIterations.SingleAsync()).Status);
-        Assert.AreEqual("continue", (await verify.GoalVerifications.SingleAsync()).Verdict);
+        Assert.AreEqual("blocked", (await verify.GoalVerifications.SingleAsync()).Verdict);
+        // 保留原续行断言：Repair 仍恰好投递一轮下一 iteration（目标保持续行）。
         Assert.AreEqual(1, await verify.GoalOutbox.CountAsync(
             item => item.Status == GoalOutboxValues.Pending));
         Assert.AreEqual(2, await verify.GoalOutbox.CountAsync());
@@ -651,12 +717,21 @@ public sealed class GoalContinuationTests
         Assert.AreEqual(1200L, candidate.InputTokens);
         Assert.AreEqual(300L, candidate.OutputTokens);
         var decision = await new ConservativeGoalIterationVerifier().VerifyAsync(candidate.ToCapsule());
-        Assert.AreEqual(GoalVerificationVerdict.Continue, decision.Verdict);
+        // 与 verdict 门禁解耦：本测试只关心“128 条以上流事件之后 Turn 终态证据仍完整”，
+        // 因此证据断言保持不变，verdict 按 ADR-092 空合同语义重定基线。
+        Assert.AreEqual(GoalVerificationVerdict.Blocked, decision.Verdict);
+        Assert.AreEqual("acceptance_contract_missing", decision.BlockerCode);
+        Assert.AreEqual(GoalSettlementDispositions.Repair,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
         Assert.IsTrue(await settlement.ApplyAsync(candidate, decision));
 
         await using var verify = await _factory.CreateDbContextAsync();
         var persistedGoal = await verify.GoalRuns.SingleAsync();
         var persistedIteration = await verify.GoalIterations.SingleAsync();
+        // 终态证据与目标终态解耦：证据完整不意味着 Goal 可以完成。
+        Assert.AreEqual(GoalPhase.Active, persistedGoal.Status);
+        Assert.IsNull(persistedGoal.TerminalAtUtc);
+        Assert.AreEqual("acceptance_contract_missing", persistedGoal.BlockedCode);
         Assert.AreEqual(1, persistedIteration.LlmRounds);
         Assert.AreEqual(1, persistedIteration.ToolCalls);
         Assert.AreEqual(1200L, persistedGoal.InputTokens);
@@ -763,8 +838,11 @@ public sealed class GoalContinuationTests
         Assert.AreEqual(60L, candidate.OutputTokens);
     }
 
+    // ADR-092「对旧设计的修订」逐字修订了旧 ADR-074 的“非 completed Turn 一律终止整个目标”，
+    // 取舍表也明确不采用“回合失败直接 Goal Failed、再新建 Goal 重试”（丢失目标身份、归属与累计预算）。
+    // 因此回合失败 = 本单元内可修复的未通过（Repair）：Goal 保持 Active，并投递下一轮 continuation。
     [TestMethod]
-    public async Task FailedTurn_FailClosedBlocksGoalAndCreatesNoContinuation()
+    public async Task FailedTurn_IsRepairableAndQueuesNextIteration()
     {
         var goal = await CreateGoalWithContinuationAsync();
         var lease = await ClaimAsync();
@@ -775,14 +853,21 @@ public sealed class GoalContinuationTests
         var candidate = (await settlement.GetCandidatesAsync(8)).Single();
         var decision = await new ConservativeGoalIterationVerifier().VerifyAsync(candidate.ToCapsule());
         Assert.AreEqual(GoalVerificationVerdict.Blocked, decision.Verdict);
+        Assert.AreEqual("iteration_failed", decision.BlockerCode);
+        Assert.AreEqual(GoalSettlementDispositions.Repair,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
         Assert.IsTrue(await settlement.ApplyAsync(candidate, decision));
 
         await using var verify = await _factory.CreateDbContextAsync();
         var persistedGoal = await verify.GoalRuns.SingleAsync();
-        Assert.AreEqual(GoalPhase.Blocked, persistedGoal.Status);
+        // 不再 fail-closed 终结：Goal 仍可续行，仅归档阻塞事实。
+        Assert.AreEqual(GoalPhase.Active, persistedGoal.Status);
+        Assert.IsNull(persistedGoal.TerminalAtUtc);
         Assert.AreEqual("iteration_failed", persistedGoal.BlockedCode);
-        Assert.AreEqual(0, await verify.GoalOutbox.CountAsync(
+        // 恰好投递一轮下一 iteration 的 continuation。
+        Assert.AreEqual(1, await verify.GoalOutbox.CountAsync(
             item => item.Status == GoalOutboxValues.Pending));
+        Assert.AreEqual(2, await verify.GoalOutbox.CountAsync());
     }
 
     [TestMethod]
@@ -866,16 +951,30 @@ public sealed class GoalContinuationTests
         var settlement = NewSettlementStore();
         var candidate = (await settlement.GetCandidatesAsync(8)).Single();
         var decision = await new ConservativeGoalIterationVerifier().VerifyAsync(candidate.ToCapsule());
-        Assert.AreEqual(GoalVerificationVerdict.Complete, decision.Verdict);
+        // ADR-092 §5/§13.3：Task Completed 只是 completion proposal，既不充分（没有验收合同/
+        // goal 级同版本 passed 证据就不得 Complete）也非必要；本夹具下只能落 Blocked + acceptance_contract_missing。
+        Assert.AreEqual(GoalVerificationVerdict.Blocked, decision.Verdict);
+        Assert.AreEqual("acceptance_contract_missing", decision.BlockerCode);
+        Assert.AreEqual(GoalSettlementDispositions.Repair,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
         Assert.IsTrue(await settlement.ApplyAsync(candidate, decision));
 
         await using var verify = await _factory.CreateDbContextAsync();
-        Assert.AreEqual(GoalPhase.Completed, (await verify.GoalRuns.SingleAsync()).Status);
-        Assert.AreEqual("terminal", (await verify.TaskGoalBindings.SingleAsync()).Status);
-        Assert.AreEqual(1, await verify.ConversationEvents.CountAsync(
+        var settledGoal = await verify.GoalRuns.SingleAsync();
+        Assert.AreEqual(GoalPhase.Active, settledGoal.Status);
+        Assert.IsNull(settledGoal.TerminalAtUtc);
+        Assert.AreEqual("acceptance_contract_missing", settledGoal.BlockedCode);
+        // Repair 不释放逻辑归属。
+        var settledBinding = await verify.TaskGoalBindings.SingleAsync();
+        Assert.AreEqual("active", settledBinding.Status);
+        Assert.IsNull(settledBinding.ReleasedAtUtc);
+        // 未完成 ⇒ 不得产生 canonical TaskGoalCompleted 事件。
+        Assert.AreEqual(0, await verify.ConversationEvents.CountAsync(
             item => item.Type == GoalEventTypes.TaskGoalCompleted));
-        Assert.AreEqual(0, await verify.GoalOutbox.CountAsync(
+        // Repair 投递下一轮 continuation。
+        Assert.AreEqual(1, await verify.GoalOutbox.CountAsync(
             item => item.Status == GoalOutboxValues.Pending));
+        Assert.AreEqual(2, await verify.GoalOutbox.CountAsync());
     }
 
     private async Task<GoalRunEntity> CreateGoalWithContinuationAsync()

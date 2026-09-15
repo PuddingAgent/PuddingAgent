@@ -123,7 +123,15 @@ public sealed class GoalSettlementWorker(
             foreach (var report in persisted)
                 byCheckId[report.CheckId] = report;
             foreach (var report in reported)
+            {
+                // 只并入 waiting：超时/未结束进程按设计不构成持久终态（存储层退回 pending
+                // 以便重新认领），若不一并喂给 verifier，typed wait 会退化成“从未运行”（pending）。
+                // 其余状态（passed/failed）一律只认持久证据：执行器的自我声明不得成为裁决
+                // 依据（负向对照测试锁死：自称 passed 但不落库 ⇒ 不得推进）。
+                if (!string.Equals(report.Status, GoalCriterionResultStatuses.Waiting, StringComparison.Ordinal))
+                    continue;
                 byCheckId.TryAdd(report.CheckId, report);
+            }
 
             capsule = capsule with { CheckReports = byCheckId.Values.ToList() };
         }
