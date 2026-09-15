@@ -646,8 +646,16 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
                 FirewallGate.Sandbox => "sandbox",
                 _ => "policy"
             };
-            var exitCode = fwDecision.DeniedAtGate == FirewallGate.Authorization ? 403 : 1;
-            var deniedResult = ToolExecutionResult.Fail(fwDecision.DenyReason!, exitCode);
+            // ADR-091 §4.4/F01：依赖等待必须与硬拒绝区分——使用独立状态与退出码，
+            // 调用端据此不计入 Agent 工具错误/熔断，也不会被改写为通用拒绝提示。
+            var dependencyWait = fwDecision.Disposition == ToolApprovalDecision.DeferredDependency;
+            var exitCode = fwDecision.DeniedAtGate == FirewallGate.Authorization
+                ? (dependencyWait ? 428 : 403)
+                : 1;
+            var deniedResult = ToolExecutionResult.Fail(
+                fwDecision.DenyReason!,
+                exitCode,
+                dependencyWait ? ToolResultStatuses.DependencyWait : null);
             await RecordTelemetryAsync(toolId, argumentsJson, context, startedAt, deniedResult, stage, ct);
             return deniedResult;
         }

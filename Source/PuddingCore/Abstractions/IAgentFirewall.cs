@@ -1,4 +1,4 @@
-﻿using PuddingCode.Platform;
+using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
 
@@ -87,12 +87,35 @@ public sealed record FirewallDecision
     public string? DenyReason { get; init; }
     public FirewallGate DeniedAtGate { get; init; }
 
+    /// <summary>
+    /// ADR-091 §4.1/F01：审批的 typed 终态（Allow/Denied/NeedHuman/DeferredDependency）。
+    /// 调用端必须依赖它区分依赖等待、人工决定与拒绝，不得只用 Allowed 二分。
+    /// </summary>
+    public PuddingCode.Tools.ToolApprovalDecision? Disposition { get; init; }
+
+    /// <summary>ADR-091 §4.4：稳定的协议原因码（如 approval_review_timeout）。</summary>
+    public string? ReasonCode { get; init; }
+
     public static FirewallDecision Allow() => new() { Allowed = true };
+
     public static FirewallDecision Deny(string reason, FirewallGate gate) => new()
     {
         Allowed = false,
         DenyReason = reason,
         DeniedAtGate = gate,
+    };
+
+    public static FirewallDecision Deny(
+        string reason,
+        FirewallGate gate,
+        PuddingCode.Tools.ToolApprovalDecision? disposition,
+        string? reasonCode) => new()
+    {
+        Allowed = false,
+        DenyReason = reason,
+        DeniedAtGate = gate,
+        Disposition = disposition,
+        ReasonCode = reasonCode,
     };
 }
 

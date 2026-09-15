@@ -138,7 +138,8 @@ public sealed class ToolInvocationService : IToolInvocationService
             {
                 _runtimeControl?.MarkProgress(request.SessionId);
             }
-            else
+            else if (!(result.ExitCode == 428
+                       || string.Equals(result.Status, ToolResultStatuses.DependencyWait, StringComparison.Ordinal)))
             {
                 var fuse = _runtimeControl?.RecordError(
                     request.SessionId,

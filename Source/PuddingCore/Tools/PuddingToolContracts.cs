@@ -268,6 +268,9 @@ public sealed record ToolExecutionResult
 /// <summary>Tool 执行结果的结构化状态约定（附加在 <see cref="ToolExecutionResult.Status"/>）。</summary>
 public static class ToolResultStatuses
 {
+    /// <summary>ADR-091 §4.4：依赖等待（非拒绝、非工具失败），不参与熔断。与普通失败严格区分。</summary>
+    public const string DependencyWait = "dependency_wait";
+
     /// <summary>普通成功（无特殊分类）。</summary>
     public const string Ok = "ok";
     /// <summary>成功，但未匹配到任何结果（与失败/timeout 严格区分）。</summary>

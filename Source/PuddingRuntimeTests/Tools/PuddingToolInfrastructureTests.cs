@@ -4318,6 +4318,122 @@ public sealed partial class PuddingToolInfrastructureTests
             => Task.FromResult(profile);
     }
 
+    [TestMethod]
+    public async Task InvocationToolApprovalLlmClient_Returns_TimeoutDependency_When_ReviewDeadlineExceeds()
+    {
+        var resolver = new StaticToolApprovalLlmProfileResolver(new ToolApprovalLlmProfile
+        {
+            ProviderId = "approval-provider",
+            ProfileId = "approval.default",
+            ModelId = "approval-model",
+        });
+        var client = new InvocationToolApprovalLlmClient(
+            new DelayedLlmInvocationService(TimeSpan.FromSeconds(30)),
+            resolver,
+            NullLogger<InvocationToolApprovalLlmClient>.Instance,
+            reviewTimeout: TimeSpan.FromMilliseconds(50));
+
+        var prompt = ToolApprovalPromptBuilder.Build(
+            ValidApprovalRequest("{}"),
+            SampleApprovalIdentity(),
+            new SampleHighTool().Descriptor);
+
+        var raw = await client.ReviewAsync(
+            ValidApprovalRequest("{}"),
+            SampleApprovalIdentity(),
+            new SampleHighTool().Descriptor,
+            prompt);
+        var result = ToolApprovalReviewParser.Parse(raw);
+
+        // F06：审查自身 deadline 到期 → typed 依赖等待，不是人工决定也不是批准。
+        Assert.AreEqual(ToolApprovalDecision.DeferredDependency, result.Decision);
+        Assert.AreEqual(ToolApprovalWire.CodeTimeout, result.ReasonCode);
+        Assert.IsFalse(result.RequiresHumanAuthorization);
+    }
+
+    [TestMethod]
+    public async Task InvocationToolApprovalLlmClient_PropagatesCallerCancellation()
+    {
+        var resolver = new StaticToolApprovalLlmProfileResolver(new ToolApprovalLlmProfile
+        {
+            ProviderId = "approval-provider",
+            ProfileId = "approval.default",
+            ModelId = "approval-model",
+        });
+        var client = new InvocationToolApprovalLlmClient(
+            new DelayedLlmInvocationService(TimeSpan.FromSeconds(30)),
+            resolver,
+            NullLogger<InvocationToolApprovalLlmClient>.Instance,
+            reviewTimeout: TimeSpan.FromMinutes(5));
+
+        var prompt = ToolApprovalPromptBuilder.Build(
+            ValidApprovalRequest("{}"),
+            SampleApprovalIdentity(),
+            new SampleHighTool().Descriptor);
+
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(TimeSpan.FromMilliseconds(50));
+
+        // F06：调用者取消必须继续向上抛，不能变成依赖等待或不建待恢复动作。
+        await Assert.ThrowsExceptionAsync<OperationCanceledException>(() =>
+            client.ReviewAsync(
+                ValidApprovalRequest("{}"),
+                SampleApprovalIdentity(),
+                new SampleHighTool().Descriptor,
+                prompt,
+                cts.Token));
+    }
+
+    [TestMethod]
+    public async Task InvocationToolApprovalLlmClient_Returns_ServiceUnavailable_When_InvocationServiceIsMissing()
+    {
+        var resolver = new StaticToolApprovalLlmProfileResolver(new ToolApprovalLlmProfile
+        {
+            ProviderId = "approval-provider",
+            ProfileId = "approval.default",
+            ModelId = "approval-model",
+        });
+        var client = new InvocationToolApprovalLlmClient(null, resolver);
+
+        var prompt = ToolApprovalPromptBuilder.Build(
+            ValidApprovalRequest("{}"),
+            SampleApprovalIdentity(),
+            new SampleHighTool().Descriptor);
+
+        var raw = await client.ReviewAsync(
+            ValidApprovalRequest("{}"),
+            SampleApprovalIdentity(),
+            new SampleHighTool().Descriptor,
+            prompt);
+        var result = ToolApprovalReviewParser.Parse(raw);
+
+        // F01：审查依赖缺席产生 typed 依赖等待，而不是 DI 崩溃或人工票据。
+        Assert.AreEqual(ToolApprovalDecision.DeferredDependency, result.Decision);
+        Assert.AreEqual(ToolApprovalWire.CodeServiceUnavailable, result.ReasonCode);
+        Assert.IsFalse(result.RequiresHumanAuthorization);
+    }
+
+    private sealed class DelayedLlmInvocationService(TimeSpan delay) : ILlmInvocationService
+    {
+        public async Task<LlmInvocationResult> InvokeAsync(LlmInvocationRequest request, CancellationToken ct = default)
+        {
+            await Task.Delay(delay, ct);
+            return new LlmInvocationResult
+            {
+                Success = true,
+                ReplyText = "{}",
+            };
+        }
+
+        public async IAsyncEnumerable<StreamDelta> InvokeStreamAsync(
+            LlmInvocationRequest request,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
     private sealed class FailingLlmInvocationService(string error) : ILlmInvocationService
     {
         public Task<LlmInvocationResult> InvokeAsync(LlmInvocationRequest request, CancellationToken ct = default)

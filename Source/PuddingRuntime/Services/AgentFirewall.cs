@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
@@ -216,6 +216,19 @@ public sealed class AgentFirewall : IAgentFirewall
                     "[AgentFirewall] Implicit approval granted tool={ToolId}",
                     ctx.ToolId);
                 return FirewallDecision.Allow();
+            }
+
+            // ADR-091 §4.1/F01：保留审批的 typed 结果与原因码，调用端据此区分
+            // 依赖等待 / 人工决定 / 拒绝，而不是把三者都折叠成「去申请审批」。
+            if (approval is not null
+                && approval.Disposition is { } disposition
+                && disposition != ToolApprovalDecision.Denied)
+            {
+                return FirewallDecision.Deny(
+                    approval.Message,
+                    FirewallGate.Authorization,
+                    disposition,
+                    approval.ReasonCode);
             }
         }
 
