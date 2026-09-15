@@ -1,0 +1,102 @@
+[
+  {
+    "taskId": "30eb371e7527424c83107dde5bf99d94",
+    "before": {
+      "taskId": "30eb371e7527424c83107dde5bf99d94",
+      "title": "GoalRun 核心实现 Phase 1：状态机+持久化+durable outbox 续行",
+      "description": "父任务 d85a107b「goal模式」（设计=Docs/Features/Goal持久目标自主续行与自动压缩完整设计方案.md + ADR-074，均 Proposed 待实施）的 Phase 1 实施卡：GoalRun 核心状态机与持久化——GoalRun/GoalIteration 数据表（单 Goal 默认及硬上限 256 accepted iterations，恢复不重置额度）、durable outbox 续行投递、重启后默认暂停须显式恢复语义、用户消息/暂停/取消/审批优先级抢占。完成后回填父任务进度。依赖：无（可独立开工）。",
+      "acceptanceCriteria": null,
+      "status": "Backlog",
+      "version": 1,
+      "priority": "p1",
+      "preferredAgentId": "default.global_general-assistant.6a8",
+      "autoDispatchEnabled": false
+    },
+    "after": {
+      "taskId": "30eb371e7527424c83107dde5bf99d94",
+      "title": "P0 G92-0 Goal结算修复：回合结束不等于步骤或目标完成",
+      "description": "现有 GoalRun/状态机/持久化/outbox 已存在，不再从零实现原 Phase 1。源码 d871ed9 的 GoalSettlementStore.ApplyBoundPlanGates/ApplyBoundPlanVerdict 会因 terminal=completed 推进单元；最后缺 Task 完成事实仍可把 Plan/Root 标完成。先增加复现回归，再引入最小 Criterion/分层 outcome 合同，提取纯结算决策，只有单元验收通过才推进。ContinueCurrent/Repair 保持当前 WorkUnit，可连续多轮；整个 Goal 的完成等待 G92-1 真正验证。保留原有 epoch、single-flight、outbox 受理幂等和预算归集。父任务 d85a107b89da4bdf8fabbb6ecb82237a。和 G92-1 按合同→回归→实现顺序交付，不能以去掉所有完成路径作为最终成果。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md\nADR：E:/github/AgentNetworkPlan/PuddingAgent/Docs/07架构/106ADR-092目标驱动执行与分层验证闭环ADR.md（Proposed，尚未实施验收）。2026-09-15 按用户完整目标驱动要求修订。在冲突处替代旧 ADR-074 的完成/等待/固定256语义；保留历史，不把设计交付当源码或产品验收。使用既有 Goal/outbox/CAS/AwaitHandle，遵守任务原权限和预算。",
+      "acceptanceCriteria": "1. 正常 completed Turn 但只交付部分代码/计划，不推进 WorkUnit；至少两轮在同一单元内工作。2. 仅已验证单元可前进，最后单元缺必要证据不标 Plan/Goal Completed。3. 重复/旧 epoch/取消后结算不能重复续行。4. 真实 Store/数据库回归通过，保留既有 GoalContinuation、GoalRunStore 测试；提交明确文件和测试报告。5. 与 G92-1 组合通过后才宣称功能完成，设计/源码/部署分开。",
+      "status": "Backlog",
+      "version": 2,
+      "priority": "p0",
+      "preferredAgentId": "default.global_general-assistant.6a8",
+      "autoDispatchEnabled": false
+    }
+  },
+  {
+    "taskId": "b849ef8d750143fdaaa2a70d7b024a6c",
+    "before": {
+      "taskId": "b849ef8d750143fdaaa2a70d7b024a6c",
+      "title": "GoalRun Phase 2：/goal 命令统一入口 + DONE 门禁 Verifier",
+      "description": "父任务 d85a107b「goal模式」的 Phase 2 实施卡：① 统一 /goal 命令入口——Web、PuddingDesktop/WebView、授权 Connector 三通道同语法；② DONE 只是完成提议：最终完成须经确定性门禁、证据 Capsule 和只读 Verifier 三关；③ 复用现有自动压缩体系，Goal 状态独立持久化，压缩覆盖不完整时不允许提交。前置依赖：Phase 1（GoalRun 核心）完成。",
+      "acceptanceCriteria": null,
+      "status": "Backlog",
+      "version": 1,
+      "priority": "p2",
+      "preferredAgentId": "default.global_general-assistant.6a8",
+      "autoDispatchEnabled": false
+    },
+    "after": {
+      "taskId": "b849ef8d750143fdaaa2a70d7b024a6c",
+      "title": "P0 G92-1 Goal真实验收：CheckRunner与步骤/整体两级Verifier",
+      "description": "修订原 Phase 2：统一 /goal 命令已有基础，本阶段主交付是验收合同、真实检查和完整目标终态。扩展 GoalVerificationContracts：版本化必需 Criterion、检查定义、证据 freshness、具体 NextAction。以只读 GoalIterationVerifier/GoalVerifier 替换 ConservativeGoalIterationVerifier 的 TaskCompleted 代理判断。新增受控 CheckRunner 经既有执行准入实际运行 build/test/postcondition；持久 verification/check 记录和租约，真实运行报告与后置证据。TaskAgentCommandService 及所有完成入口对绑定 Goal 只提交 completion proposal，唯一结算器在整体条件全部通过后同事务结束 Task/Plan/Goal，解除循环前提。独立 Goal 也能完成。共用 ADR-091 的证据、准入和 typed dependency，不新建审计 Agent 生命周期。依赖 G92-0 的合同和结算边界；A91-0 最小准入链与实际测试先收口，其他行为审计不是前置。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md\nADR：E:/github/AgentNetworkPlan/PuddingAgent/Docs/07架构/106ADR-092目标驱动执行与分层验证闭环ADR.md（Proposed，尚未实施验收）。2026-09-15 按用户完整目标驱动要求修订。在冲突处替代旧 ADR-074 的完成/等待/固定256语义；保留历史，不把设计交付当源码或产品验收。使用既有 Goal/outbox/CAS/AwaitHandle，遵守任务原权限和预算。",
+      "acceptanceCriteria": "1. 假 DONE/TaskCompleted/exit0/0 tests/未结束后台进程/旧报告不能通过。2. 失败测试→具体修复→新测试通过→所有必需条件通过，保持同一 Goal。3. 独立 Goal 与 Task-bound Goal 均有可达 Complete，目标条件空集不允许通过。4. 相关工作树/目标/检查定义变化使旧绿灯失效，无关变化有依据复用。5. Verifier 无工具写权限，CheckRunner 复用准入且有超时/取消/租约，依赖不可用进入等待。6. 所有 Task 完成写入口一致；CAS 下双终态原子且旧验证只留历史。7. 源码与真实新构建 smoke 分别有证据，不用旧进程验收新源码。",
+      "status": "Backlog",
+      "version": 2,
+      "priority": "p0",
+      "preferredAgentId": "default.global_general-assistant.6a8",
+      "autoDispatchEnabled": false
+    }
+  },
+  {
+    "taskId": "dc0ac9a8236d4994ad04f0d9f860779c",
+    "before": {
+      "taskId": "dc0ac9a8236d4994ad04f0d9f860779c",
+      "title": "P0 结算单向死胡同：恢复性迭代结局关闭 canonical 通道（Goal 结算 Blocked + 释放 assignment）",
+      "description": "来源：Docs/Reports/task-bound-goal-settlement-deadend-20260914.md（2026-09-14 取证，代码级可复现）\n\n## 已证事实（file:line）\n- ConservativeGoalIterationVerifier.cs:20-31 —— 迭代非 completed / evidence_incomplete 一律 Blocked 升级。\n- GoalSettlementStore.cs:809-895 —— task-bound 时 Goal=Failed、binding terminal、ReleaseReservation、ReleaseAssignment（:995-1011 置 attempt.ReleasedAtUtc + task.ActiveAssignmentId=null）；仅 task_completion_fact_missing 走 NeedsReview（:839-848）。\n- TaskAgentCommandService.cs:317-326 —— ApplyDispositionAsync 要求 task.ActiveAssignmentId == assignment_id，否则 assignment.stale。\n- ⇒ 硬矛盾：状态机允许 Blocked→Ready，但结算后没有任何存活路径能满足归属校验；卡 813ad427 上轮放开的 allowBlockedRecovery 在生产不可达（仅手工构造单测成立）。\n- 生产事件链（卡 3bd2a4b0）：seq42/43 12:28:08 reserved+assigned → 44 12:28:16 accepted → 45 12:29:50 blocked（+94 s）；seq47/48 19:20:39 → 49 19:21:06 accepted → 50 19:22:54 blocked（+108 s）；两次均为 tgb-* 签名（GoalSettlementStore.AppendTaskEvent:1070）。\n- 本轮 task_claim 实测：task.active_context_missing + context_rebuild{stage:lookup,outcome:not_visible}。\n\n## 范围（三选一，按优先级）\nF1（推荐）：GoalSettlementStore 恢复性结局（evidence_incomplete / iteration_* 且 kind≠completed）对 task-bound attempt 改为 Task→NeedsReview 且不释放 assignment（保留 canonical 归属校验通过），非恢复性 verdict 行为不变。\nF3（前置）：Goal 迭代派发端到端携带 task_id/assignment_id/expected_version —— 先补单测锁定（GoalContinuationWorker.cs:137-160 → MessageDeliveryDispatcher.cs:405 → AgentInvocationDispatchFactory.cs:134-160 BuildActiveTask）。\nF2（后续，需 ADR 对齐）：恢复性结局走有界 re-arm（retry penalty + nextEligibleAtUtc）而非终态，用于达成卡 3bd2a4b0 验收 #4。\n\n## 禁止\n- 不得放宽任务工具反查（AssignmentStale 只会后移失败点并扩大伪造面）。\n- 不得以人工 manage_tasks resume 作为收口手段（掩盖缺陷，下一轮复现）。\n- 动 F1 必须同时给出 tracker/repair coordinator 回归证据，避免新的 legacy_* 误判。",
+      "acceptanceCriteria": "1. 结算单测：恢复性 verdict + task-bound → Task NeedsReview、ActiveAssignmentId 保留、attempt.ReleasedAtUtc == null；非恢复性 verdict（task_blocked / task_terminal_without_completion / Unsafe）行为完全不变（同一用例集回归通过）。\n2. 工具层 E2E：上述状态下 task_update(disposition=todo) 成功且 NeedsReview→Ready；progress/completed 仍返回 state_conflict（fail closed 不放松）。\n3. 派发链单测：Goal 续跑 envelope → ActiveTask 非空，task_id/assignment_id/expected_version 与 task_goal_bindings 一致。\n4. 生产复现：同一 P0 卡连续 2 轮「派发→迭代→结算」后不再出现 tgb-* 终态 Blocked，且每轮 worker 可 task_claim 成功。\n5. 报告 Docs/Reports/task-bound-goal-settlement-deadend-20260914.md 的 §2.5 断点（task_goal_bindings.assignment_id / message_deliveries.metadata）与迭代 94–108 s 的真实 terminal kind 必须有只读探针结论。",
+      "status": "Ready",
+      "version": 2,
+      "priority": "p0",
+      "preferredAgentId": null,
+      "autoDispatchEnabled": false
+    },
+    "after": {
+      "taskId": "dc0ac9a8236d4994ad04f0d9f860779c",
+      "title": "P0 G92-2 Goal持久等待与恢复：保留目标归属、重建执行租约",
+      "description": "沿用 Docs/Reports/task-bound-goal-settlement-deadend-20260914.md 的断链证据，修订旧 F1：不再一律 NeedsReview 并长期保留 assignment。GoalSettlementStore 将 evidence_incomplete/non-completed 一概关闭 task-bound Goal 的路径必须拆分为 Repair、AwaitEvidence、AwaitDependency、NeedsUser、Stop。复用 WorkUnitAwaitHandleEntity，持久 Goal/epoch/dependency/event/deadline/resume；Goal 和逻辑 task binding 保留，等待释放执行资源，事件到达由统一 admission 重验并预约新 assignment/fence。端到端传递 Goal/task/assignment/version/plan 到 AgentInvocationDispatchFactory.BuildActiveTask，禁止放宽 assignment.stale。同步 Goal active唯一性、Tracker/repair、Availability、restart/取消逻辑；等待或预算暂停不是 Goal Failed。与8df6a4d6预算卡共享合同但不接管其源码所有权。依赖 G92-0/1 的 typed outcome；原F3上下文传播仍需落实。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md\nADR：E:/github/AgentNetworkPlan/PuddingAgent/Docs/07架构/106ADR-092目标驱动执行与分层验证闭环ADR.md（Proposed，尚未实施验收）。2026-09-15 按用户完整目标驱动要求修订。在冲突处替代旧 ADR-074 的完成/等待/固定256语义；保留历史，不把设计交付当源码或产品验收。使用既有 Goal/outbox/CAS/AwaitHandle，遵守任务原权限和预算。",
+      "acceptanceCriteria": "1. 证据延迟、子代理等待、模型依赖不可用不把整个 Goal/Plan 标 Failed，不误报人工审批。2. 等待逻辑绑定存活，执行资源释放；恢复原子获取新 assignment/fence，旧 writer 被拒绝且 worker ActiveTask 正确。3. 重复依赖事件只产生一个继续动作；有deadline/超时策略，无心跳或模型轮询。4. 真用户 Pause/Cancel/Unsafe 不被迟到验证或重启覆盖；授权 AfterRestart 可以重验后恢复。5. 围绕真实 settlement→await→resume→acceptance→task_update 的集成回归，不用手工构造归属替代。6. 同一 Goal 至少两次等待/恢复和重启故障注入有证据，源码与产品分层验收。",
+      "status": "Ready",
+      "version": 3,
+      "priority": "p0",
+      "preferredAgentId": null,
+      "autoDispatchEnabled": false
+    }
+  },
+  {
+    "taskId": "d85a107b89da4bdf8fabbb6ecb82237a",
+    "before": {
+      "taskId": "d85a107b89da4bdf8fabbb6ecb82237a",
+      "title": "goal模式",
+      "description": "已完成并写入仓库，状态均为 **Proposed**，不代表已经实现。\n\n- [完整设计方案](/E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/Goal持久目标自主续行与自动压缩完整设计方案.md)\n- [ADR-074](/E:/github/AgentNetworkPlan/PuddingAgent/Docs/07架构/89ADR-074Goal持久目标自主续行与自动压缩ADR.md)\n- [架构文档索引](/E:/github/AgentNetworkPlan/PuddingAgent/Docs/07架构/README.md)\n- [顶层 code_map](/E:/github/AgentNetworkPlan/PuddingAgent/code_map.md)\n\n方案已明确：\n\n- Goal 是持久化的外层 `GoalRun`，不是 Heartbeat，也不是把单次 Agent Loop 改成 256 轮。\n- 单个 Goal 默认及硬上限均为 256 个 accepted Goal Iteration；恢复不会重置额度。\n- Web、PuddingDesktop/WebView 和授权 Connector 均可发送统一 `/goal` 命令。\n- 每轮完成后通过 durable outbox 自动续行，无需等待心跳或用户发送“继续”。\n- Agent 的 `DONE` 只是完成提议；最终完成必须经过确定性门禁、证据 Capsule 和只读 Verifier。\n- 复用现有自动压缩体系；Goal 状态独立持久化，压缩覆盖不完整时不允许提交。\n- 用户消息、暂停、取消、审批和安全策略优先；重启后默认暂停，必须显式恢复。\n- 包含状态机、命令语法、数据表、事件、API、UI、预算、故障恢复、分阶段施工和验收矩阵。\n\n设计同时参考了 [Qoder Goal 命令合同](https://docs.qoder.cn/cli/goal-reference)、[ZCode 每轮验证与持续运行语义](https://zcode.z.ai/cn/docs/goal)以及作为二手产品语义参考的 [Codex Goals Guide](https://xaicontrol.com/blog/codex-goals-guide/)。\n\n校验已通过：本地文档链接、代码围栏、尾随空白和 `git diff --check` 均正常。没有修改任何产品代码，也未运行构建或测试；原有未跟踪的 `agents/` 内容未触碰。",
+      "acceptanceCriteria": "产生新的任务拆分\n使用deepseek v4 flash推进任务并完成",
+      "status": "Ready",
+      "version": 7,
+      "priority": "p3",
+      "preferredAgentId": "default.global_general-assistant.6a8",
+      "autoDispatchEnabled": false
+    },
+    "after": {
+      "taskId": "d85a107b89da4bdf8fabbb6ecb82237a",
+      "title": "P0 Goal模式：持续推进完整目标、逐轮验证与自动修复",
+      "description": "原“goal模式”总任务从仅设计拆分更新为端到端结果门禁。用户目标：Agent持续完成整个目标，每轮验证，失败自动修复、通过继续下一步骤，直到全部必需条件达成；不能小任务做完就sleep。现已有Goal内核，主要缺失是真验证、正确结算与恢复。实施顺序：G92-0 30eb371e7527424c83107dde5bf99d94；G92-1 b849ef8d750143fdaaa2a70d7b024a6c；G92-2 dc0ac9a8236d4994ad04f0d9f860779c；本卡G92-3收口Goal入口/UI、sleep隔离、预算配置和真实无人值守验收。GoalBanner展示整体条件、当前步骤、修复/验证/等待及证据；Core掌握续行权。普通消息不等于StartGoal；外部消息/WEB/Connector显式Goal指令统一受理。硬编码256改为配置授权正整数，外层与子代理600轮分开；跨会话预算不归零；原预算卡既有input peak修复不重复实现。暂停/取消/授权/执行窗口优先。\n\n权威设计：E:/github/AgentNetworkPlan/PuddingAgent/Docs/Features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md\nADR：E:/github/AgentNetworkPlan/PuddingAgent/Docs/07架构/106ADR-092目标驱动执行与分层验证闭环ADR.md（Proposed，尚未实施验收）。2026-09-15 按用户完整目标驱动要求修订。在冲突处替代旧 ADR-074 的完成/等待/固定256语义；保留历史，不把设计交付当源码或产品验收。使用既有 Goal/outbox/CAS/AwaitHandle，遵守任务原权限和预算。",
+      "acceptanceCriteria": "1. 新构建同一真实Goal至少3轮“失败→修复→再测试→整体达成”，全程无需用户说继续。2. 全部必需条件有版本匹配的实际证据，单轮结束/TaskCompleted/DONE不冒充完成。3. 关闭浏览器且sleep=3600s仍按outbox推进，只有真实依赖、窗口、预算或用户控制可暂停。4. 持久等待与重启恢复可追踪，旧epoch和重复事件不复活/重复执行。5. UI能区分步骤完成与完整目标达成，有检查结果、剩余条件、下一动作及等待触发条件。6. 预算支持合法配置如600/2000，Goal/内层/子代理额度分开，成本跨恢复累计。7. 24小时无人值守证据；7天长程观察另列，不以短smoke宣称数十天稳定。8. 有源码提交、定向回归、加载BuildId、canonical Goal/Turn/check IDs；外部控制器验收自身进程生命周期。",
+      "status": "Ready",
+      "version": 8,
+      "priority": "p0",
+      "preferredAgentId": "default.global_general-assistant.6a8",
+      "autoDispatchEnabled": false
+    }
+  }
+]

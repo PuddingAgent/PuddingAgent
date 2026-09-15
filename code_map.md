@@ -4,6 +4,10 @@
 
 # PuddingAgent CodeMAP
 
+## 2026-09-15 Goal 目标驱动与真实校验（ADR-092，Proposed）
+
+见[施工方案](Docs/Features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md)、[ADR-092](Docs/07架构/106ADR-092目标驱动执行与分层验证闭环ADR.md)与[任务修订记录](Docs/Reports/Goal持续执行方案与任务修订-2026-09-15.md)。现状入口：GoalVerificationContracts、ConservativeGoalIterationVerifier、GoalSettlementStore/Worker、GoalContinuationWorker、TaskAgentCommandService、WorkUnitAwaitHandleEntity、AgentSleepTool。复用既有 outbox，补真实检查与逐项条件，修正 Turn 正常结束即单元完成、Task 先完成的循环依赖及恢复性 Goal Failed。四张既有任务重写范围；仅设计/派发，未实施或部署。
+
 ## 2026-09-15 ADR-091 A91-0 独立复审（needs_changes）
 
 见[复审与下一轮指令](Docs/Reports/ADR-091-A91-0-Review-2026-09-15.md)：精确提交dd575cc定向131/131通过，943270d+6c34a24为123通过/16失败，另10项审计契约用例全部复现。已认可resolver解耦；待修隐式Check/Firewall的Dependency→Denied映射、生产fake开关、JSON语义、ReasonCode/wire传播、测试DI和真实deadline/cancel。A91-0已登记needs_changes并继续推进；未修改运行权限或部署Core，A91-1硬边界/原子许可仍待实施。

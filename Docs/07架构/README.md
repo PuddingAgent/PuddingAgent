@@ -1,5 +1,9 @@
 # 07架构
 
+## 2026-09-15 目标驱动执行与分层验证
+
+[ADR-092](106ADR-092目标驱动执行与分层验证闭环ADR.md)（Proposed）及[代码级方案](../Features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md)：复用持久 Goal/outbox，将正常回合与步骤达成分开，增加真实检查、整体条件门禁、失败修复与事件恢复；在冲突处修订 ADR-074。见[任务修订及派发记录](../Reports/Goal持续执行方案与任务修订-2026-09-15.md)。
+
 ## 2026-09-15 自动审计与执行准入闭环
 
 [ADR-091](105ADR-091自动审计与执行准入闭环ADR.md)（Proposed）与[代码级设计](../Features/自动审计与执行准入闭环设计-2026-09-15.md)：解除审计 Agent 实例耦合，统一硬边界、事实审查与一次授权原子消费；新增 canonical 事件驱动的行为审计、Finding 和外部验证的自修复闭环。旧三层原则保留，旧分支整体合并/默认工单机制被修订。[阶段卡与交付记录](../Reports/自动审计方案与派发记录-2026-09-15.md)；设计交付不等于实施或运行验收。
@@ -120,7 +124,7 @@
 - Agent、Tool、Graph、Gate、Transform 与 HumanInput 统一为可组合 Function；Agent 生成的可执行任务图使用 `pudding.agent-orchestration/v2` 声明式契约，经过编译、策略、预算、审批和不可变 Revision 冻结后运行，MOA 是模板实例。当前定义、修订、运行、事件边界和 replay-to-live 基础见 [ADR-070](81ADR-070通用Agent编排图基础架构ADR.md)，完整目标及逐层施工/验收见 [ADR-071 文档包](82ADR-071通用Agent编排平台完整设计方案ADR.md)。
 - 产品施工顺序、完整任务目标、优先级、工作量、难度和跨文档冲突裁决以 [ADR-073](87ADR-073任务看板优先的Agent工作台轨迹与实时指标施工ADR.md) 为准：先完成五列任务看板闭环，再做 Auto/Cron、完整轨迹和实时指标。
 - 工作区 TODO、手工/Auto 派发、受限 Cron 定时消息、Task 执行窗口偏好和 Agent Availability/Reservation 的任务领域合同以 [ADR-072](86ADR-072工作区TODO峰谷Auto派发与定时任务第一阶段ADR.md) 为准；不新增工作区 `work-policy.json`。第一阶段手工闭环仍排除 Goal 内核，但完整 Auto Dispatcher 的生产启用受 ADR-074 Task-bound Goal 前置门禁约束。
-   - Goal 命令、多入口控制、持久状态、事件驱动自主续行、256 个 Goal Iteration 硬上限、证据验证、压缩集成、Task-bound Goal、Agent 状态感知和低峰自动派发以 [ADR-074](89ADR-074Goal持久目标自主续行与自动压缩ADR.md)、[完整设计](../Features/Goal持久目标自主续行与自动压缩完整设计方案.md) 和 [代码级施工计划](../Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md) 为准；Goal 不依赖 Heartbeat，Task Auto 不使用普通提醒消息代替 GoalRun。
+   - Goal 命令、多入口控制、持久状态、事件驱动自主续行、Goal Iteration 预算、证据验证、压缩集成、Task-bound Goal、Agent 状态感知和低峰自动派发以 [ADR-074](89ADR-074Goal持久目标自主续行与自动压缩ADR.md)、[完整设计](../Features/Goal持久目标自主续行与自动压缩完整设计方案.md) 和 [代码级施工计划](../Features/TaskBoundGoal与Agent状态感知自动派发代码级施工计划.md) 为准；Goal 不依赖 Heartbeat，Task Auto 不使用普通提醒消息代替 GoalRun。
 - 上下文自动压缩的触发口径、token 来源标注与收益准入以 [ADR-090](104ADR-090上下文压缩触发口径来源标注与收益准入收敛ADR.md) 为准：raw cap 只约束它命名的可压缩历史原文，整请求安全上界与经济性触发双门禁并存；不得把本地保守估算与 Provider 实报的 max 合并值标为 `provider_reported`；前缀稳定性优先于压缩频次，且 `no_match` 式的“完成即回收”语义不成立。压缩的对外命令与 Goal 集成语义仍以 ADR-042 与 ADR-074 为准，本 ADR 不改其语义。
 - 第三方任务看板调用、opaque Access Token、ASP.NET Core 独立认证方案、scope/workspace Policy、外部 API v1、结构化任务评价和 Admin Token 管理器以 [ADR-075](90ADR-075第三方任务看板AccessToken与外部APIADR.md) 与 [详细设计](../Features/第三方任务看板AccessToken与外部API详细设计方案.md) 为准；实施进度：P1 Token 后端（hashed opaque `pdt_v1_` Token、`PuddingExternalAccessToken` scheme、scope/workspace Policy、last-used 合并写、审计）、P3 Admin 管理器（`/system-config/access-tokens` 页面 + `/api/admin/access-tokens`）与 P2 基本功能（External Task API v1：list/get/create/patch/comments/evaluations/commands、ETag/If-Match 428/412、追加式评价、简化幂等）已实现并通过 65 项测试；SSE Watch、RateLimiter、OpenAPI 快照与 P4 部署收口未实现，External API 默认关闭。
 - 遥测、上下文指标、运行活动与 Debug 数据的自动过期、缓存快照与后台增量估算、分类图表/趋势报表、用户按类型/时间清理、唯一在线维护 writer、Web `/storage` 和 Desktop 非目标边界以 [ADR-076](91ADR-076遥测与调试数据保留及Core存储管理ADR.md) 与 [详细设计](../Features/遥测调试数据自动过期与Web存储管理设计方案.md) 为准；当前仅设计完成，未实现或验收。
