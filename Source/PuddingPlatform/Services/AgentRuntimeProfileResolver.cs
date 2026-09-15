@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
@@ -67,7 +67,6 @@ public sealed class AgentRuntimeProfileResolver(
             ConsciousProfileId = llm.ProfileId,
             PreferredProviderId = llm.ProviderId,
             PreferredModelId = llm.ModelId,
-            VisionHelperModel = definition.Instance.VisionHelperModel,
             LlmConfig = llm.Config,
             CapabilityPolicy = capabilities.Policy,
             ToolDefinitions = capabilities.ToolDefinitions,

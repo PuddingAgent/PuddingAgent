@@ -25,7 +25,8 @@ public class ExecutionRunCoordinatorVisionTests
         Contains(text, "native image parts");
         NotContains(text, "Platform-provided visual observation");
         NotContains(text, @":\");
-        NotContains(text, "image_reader");
+        Contains(text, "image_reader action=metadata");
+        Contains(text, "ORIGINAL reference");
         Contains(text, "untrusted user-supplied media content");
     }
 

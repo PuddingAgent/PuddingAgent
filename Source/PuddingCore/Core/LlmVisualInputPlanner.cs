@@ -152,8 +152,10 @@ public static class LlmVisualInputPlanner
             VisualArtifactResolveResult? resolved;
             try
             {
-                resolved = await resolver.ResolveAsync(workspaceId, part.ArtifactId, ct);
+                resolved = await resolver.ResolveAsync(workspaceId, part.ArtifactId, ct, part.Detail);
             }
+            catch (VisionPipelineException) { throw; }
+            catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
                 throw new VisionPipelineException(

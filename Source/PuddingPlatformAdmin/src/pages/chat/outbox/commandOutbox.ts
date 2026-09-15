@@ -16,7 +16,7 @@ export interface OutboxRecord {
   agentIds: string[];
   metadata?: Record<string, string>;
   /** ADR-077：typed 图片内容部件；离线重放时不丢图片事实。 */
-  imageParts?: { type: 'image'; artifactId: string; detail?: 'original' | 'low' }[];
+  imageParts?: { type: 'image'; artifactId: string; detail?: 'original' | 'low' | 'high' | 'auto' }[];
   createdAt: number;
   attemptCount: number;
   lastAttemptAt?: number;
@@ -45,7 +45,7 @@ export async function enqueueCommand(params: {
   messageText: string;
   agentIds: string[];
   metadata?: Record<string, string>;
-  imageParts?: { type: 'image'; artifactId: string; detail?: 'original' | 'low' }[];
+  imageParts?: { type: 'image'; artifactId: string; detail?: 'original' | 'low' | 'high' | 'auto' }[];
 }): Promise<void> {
   const db = await openDb();
   const tx = db.transaction(STORE_NAME, 'readwrite');

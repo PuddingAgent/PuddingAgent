@@ -61,6 +61,8 @@ public sealed class VisualInputRequestBudget
     {
         ChargeCount(artifactId);
         ThrowIfExceeds("inline decoded bytes", InlineDecodedBytes, decodedBytes, _policy.InlineMaxTotalBytes, artifactId);
+        if (FileUploadBytes > 0)
+            ThrowIfExceeds("combined image bytes", InlineDecodedBytes + FileUploadBytes, decodedBytes, _policy.FilesMaxTotalBytes, artifactId);
         InlineDecodedBytes += decodedBytes;
         ThrowIfExceeds("inline wire bytes", InlineWireBytes, wireBytes, _policy.InlineMaxTotalWireBytes, artifactId);
         InlineWireBytes += wireBytes;
@@ -72,6 +74,7 @@ public sealed class VisualInputRequestBudget
     {
         ChargeCount(artifactId);
         ThrowIfExceeds("file uploaded bytes", FileUploadBytes, uploadBytes, _policy.FilesMaxTotalBytes, artifactId);
+        ThrowIfExceeds("combined image bytes", InlineDecodedBytes + FileUploadBytes, uploadBytes, _policy.FilesMaxTotalBytes, artifactId);
         FileUploadBytes += uploadBytes;
         ChargeTokens(artifactId);
     }

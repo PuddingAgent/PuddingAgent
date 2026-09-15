@@ -3,6 +3,8 @@ const PROVIDER_SAFE_IMAGE_TYPES = new Set([
   'image/jpg',
   'image/png',
   'image/webp',
+  'image/gif',
+  'image/bmp',
 ]);
 
 const replaceExtension = (fileName: string, extension: string): string => {
@@ -11,8 +13,8 @@ const replaceExtension = (fileName: string, extension: string): string => {
 };
 
 /**
- * Convert browser-decodable formats such as BMP/GIF/AVIF to PNG before upload.
- * The server intentionally stores only formats accepted by vision providers.
+ * Preserve server-supported original files; convert other browser-decodable formats to PNG.
+ * Server-side preprocessing creates model-ready copies without destroying the originals.
  */
 export async function normalizeVisionArtifactFile(file: File): Promise<File> {
   const mimeType = file.type.trim().toLowerCase();

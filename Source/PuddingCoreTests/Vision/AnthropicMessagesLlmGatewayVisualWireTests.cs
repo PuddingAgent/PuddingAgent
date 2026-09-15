@@ -27,7 +27,7 @@ public sealed class AnthropicMessagesLlmGatewayVisualWireTests
         public Task<VisualArtifactResolveResult?> ResolveAsync(
             string workspaceId,
             string artifactId,
-            CancellationToken ct = default)
+            CancellationToken ct = default, string detail = PuddingCode.Models.VisionContentPartDetails.Original)
             => Task.FromResult<VisualArtifactResolveResult?>(new(artifactId, PngDataUri, "image/png"));
     }
 

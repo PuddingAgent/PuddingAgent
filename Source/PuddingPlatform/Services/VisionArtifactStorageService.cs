@@ -17,7 +17,7 @@ public sealed record VisionArtifactUploadResult(
 public sealed class UnsupportedVisionArtifactMediaTypeException(string? mimeType)
     : InvalidOperationException(
         $"Unsupported vision artifact MIME type '{mimeType}'. " +
-        "Supported types are image/jpeg, image/png, and image/webp.")
+        "Supported sources are JPEG, PNG, GIF, WebP and BMP.")
 {
     public string? MimeType { get; } = mimeType;
 }
@@ -138,9 +138,6 @@ public sealed partial class VisionArtifactStorageService(
         var root = WorkspaceVisionRoot(workspaceId);
         Directory.CreateDirectory(root);
 
-        var prefixLength = VisionImageInspector.HeaderPrefixLength;
-        var prefix = new byte[prefixLength];
-        var prefixFilled = 0;
         long totalBytes = 0;
         using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 
@@ -170,12 +167,6 @@ public sealed partial class VisionArtifactStorageService(
                             $"Image exceeds the {VisionImageInspector.MaxCanonicalImageBytes} byte canonical artifact limit.");
 
                     sha.AppendData(buffer, 0, read);
-                    if (prefixFilled < prefixLength)
-                    {
-                        var copy = Math.Min(read, prefixLength - prefixFilled);
-                        Buffer.BlockCopy(buffer, 0, prefix, prefixFilled, copy);
-                        prefixFilled += copy;
-                    }
 
                     await file.WriteAsync(buffer.AsMemory(0, read), ct);
                 }
@@ -184,12 +175,7 @@ public sealed partial class VisionArtifactStorageService(
             }
 
             // ADR-077 §5.1/§8.2：以 magic bytes 与结构字段为准，不信任声明 MIME/尺寸。
-            var header = VisionImageInspector.InspectPrefix(prefix.AsSpan(0, prefixFilled));
-            if (header is null)
-                throw new VisionPipelineException(
-                    VisionErrorCodes.MediaInvalid,
-                    $"Image artifact {artifactId} has an unsupported signature, truncated data, or dimensions beyond " +
-                    $"{VisionImageInspector.MaxImageEdgePixels}px; declared MIME was '{declaredMime}'.");
+            var header = ImagePreprocessing.Inspect(tempBytesPath);
 
             var sha256Hex = Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
             var actualMime = header.MimeType;
@@ -320,8 +306,8 @@ public sealed partial class VisionArtifactStorageService(
         return normalized switch
         {
             "image/jpg" => "image/jpeg",
-            "image/jpeg" or "image/png" or "image/webp" => normalized,
-            _ => throw new UnsupportedVisionArtifactMediaTypeException(mimeType),
+            "image/jpeg" or "image/png" or "image/webp" or "image/gif" or "image/bmp" or "application/octet-stream" => normalized,
+            _ => normalized, // Actual bytes are authoritative; Inspect validates the format before persistence.
         };
     }
 
@@ -329,6 +315,8 @@ public sealed partial class VisionArtifactStorageService(
     {
         "image/png" => ".png",
         "image/webp" => ".webp",
+        "image/gif" => ".gif",
+        "image/bmp" => ".bmp",
         _ => ".jpg",
     };
 

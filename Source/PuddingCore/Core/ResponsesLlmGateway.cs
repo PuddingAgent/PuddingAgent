@@ -130,8 +130,13 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         }
     }
 
-        private HttpRequestMessage CreateRequest(string requestBody)
+    private HttpRequestMessage CreateRequest(string requestBody)
     {
+        if ((string.Equals(ProviderId, "deepseek", StringComparison.OrdinalIgnoreCase)
+                || new Uri(_responsesEndpoint).Host.Equals("api.deepseek.com", StringComparison.OrdinalIgnoreCase))
+            && Encoding.UTF8.GetByteCount(requestBody) > 48L * 1024 * 1024)
+            throw new VisionPipelineException(VisionErrorCodes.RequestLimitExceeded,
+                "DeepSeek request body exceeds 48 MiB. Preprocess images or use Files API references.");
         var request = new HttpRequestMessage(HttpMethod.Post, _responsesEndpoint)
         {
             Content = new StringContent(requestBody, Encoding.UTF8, "application/json"),

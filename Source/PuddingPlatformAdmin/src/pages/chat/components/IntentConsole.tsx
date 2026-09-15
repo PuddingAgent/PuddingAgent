@@ -146,7 +146,7 @@ interface IntentConsoleProps {
   onSendWithMetadata?: (
     content: string,
     metadata: Record<string, string>,
-    imageParts?: { type: 'image'; artifactId: string; detail?: 'original' | 'low' }[],
+    imageParts?: { type: 'image'; artifactId: string; detail?: 'original' | 'low' | 'high' | 'auto' }[],
   ) => Promise<void> | void;
   onStop: () => void;
   /**

@@ -607,7 +607,7 @@ const ChatPageContent: React.FC = () => {
     async (
       content: string,
       metadata?: Record<string, string>,
-      imageParts?: { type: 'image'; artifactId: string; detail?: 'original' | 'low' }[],
+      imageParts?: { type: 'image'; artifactId: string; detail?: 'original' | 'low' | 'high' | 'auto' }[],
     ) => {
       const text = content.trim();
       if (!text && !(imageParts && imageParts.length > 0)) return;

@@ -3,25 +3,16 @@
 namespace PuddingPlatform.Services;
 
 /// <summary>
-/// Bridges the Core-level <see cref="IVisualArtifactResolver"/> to the Platform-level
-/// <see cref="IVisualArtifactReferenceResolver"/>. Both resolvers are stateless singletons so the
-/// singleton runtime LLM client can resolve server-authorized artifacts without capturing a scope.
+/// Prepares every Core model input through workspace storage. The original Artifact remains immutable.
 /// </summary>
-public sealed class VisualArtifactResolverBridge : IVisualArtifactResolver
+public sealed class VisualArtifactResolverBridge(VisionArtifactStorageService storage) : IVisualArtifactResolver
 {
-    private readonly IVisualArtifactReferenceResolver _platformResolver;
-
-    public VisualArtifactResolverBridge(IVisualArtifactReferenceResolver platformResolver)
-    {
-        _platformResolver = platformResolver;
-    }
-
     public async Task<VisualArtifactResolveResult?> ResolveAsync(
         string workspaceId,
         string artifactId,
-        CancellationToken ct = default)
+        CancellationToken ct = default, string detail = PuddingCode.Models.VisionContentPartDetails.Original)
     {
-        var reference = await _platformResolver.ResolveAsync(workspaceId, artifactId, ct);
+        var reference = await storage.ResolveForModelAsync(workspaceId, artifactId, detail, ct);
         if (reference is null)
             return null;
 

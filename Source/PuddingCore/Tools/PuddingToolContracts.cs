@@ -199,8 +199,6 @@ public sealed record ToolExecutionContext
     /// 能力/协议的工具消费它决定 native/delegate；只读，不触发任何模型目录重读。
     /// </summary>
     public PuddingCode.Platform.LlmRouteSnapshot? CallerLlmSnapshot { get; init; }
-    /// <summary>Agent 显式配置的视觉辅助路由（ADR-077）；仅 image_reader delegate 模式使用。</summary>
-    public PuddingCode.Platform.VisionHelperRouteSnapshot? CallerVisionHelperRoute { get; init; }
 }
 
 /// <summary>平台传给 Tool 的执行请求。</summary>

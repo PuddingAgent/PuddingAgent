@@ -21,7 +21,7 @@ public sealed class LlmVisualInputPlannerTests
         public Task<PuddingCode.Abstractions.VisualArtifactResolveResult?> ResolveAsync(
             string workspaceId,
             string artifactId,
-            CancellationToken ct = default)
+            CancellationToken ct = default, string detail = PuddingCode.Models.VisionContentPartDetails.Original)
             => _missing.Contains(artifactId)
                 ? Task.FromResult<PuddingCode.Abstractions.VisualArtifactResolveResult?>(null)
                 : Task.FromResult<PuddingCode.Abstractions.VisualArtifactResolveResult?>(
@@ -408,7 +408,7 @@ public sealed class LlmVisualInputPlannerTests
         public Task<PuddingCode.Abstractions.VisualArtifactResolveResult?> ResolveAsync(
             string workspaceId,
             string artifactId,
-            CancellationToken ct = default)
+            CancellationToken ct = default, string detail = PuddingCode.Models.VisionContentPartDetails.Original)
             => Task.FromResult<PuddingCode.Abstractions.VisualArtifactResolveResult?>(
                 new PuddingCode.Abstractions.VisualArtifactResolveResult(artifactId, dataUri, mimeType));
     }

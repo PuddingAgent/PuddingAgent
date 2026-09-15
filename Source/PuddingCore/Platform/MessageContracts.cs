@@ -215,8 +215,6 @@ public sealed record RuntimeDispatchRequest
     public IReadOnlyList<PuddingCode.Models.LlmContentPart>? ContentParts { get; init; }
     /// <summary>调用方模型的冻结 LLM 路由快照；工具经 ToolExecutionContext.CallerLlmSnapshot 消费。</summary>
     public LlmRouteSnapshot? CallerLlmSnapshot { get; init; }
-    /// <summary>Agent 显式配置的视觉辅助路由（ADR-077）；仅 image_reader delegate 模式使用。</summary>
-    public VisionHelperRouteSnapshot? CallerVisionHelperRoute { get; init; }
     /// <summary>Agent Loop 最大轮数。子代理请求由 runtime.execution.json 冻结；0 或负数表示使用护栏默认值。</summary>
     public int MaxRounds { get; init; }
     /// <summary>Agent Loop 最大总耗时秒数。0 或负数表示使用平台护栏默认值。</summary>

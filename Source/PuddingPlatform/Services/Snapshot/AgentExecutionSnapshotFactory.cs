@@ -9,15 +9,14 @@ namespace PuddingPlatform.Services.Snapshot;
 /// ADR-059: Agent Execution Snapshot Factory — 组装 Agent/Template/LLM/Skill 配置为不可变快照。
 /// 快照只消费统一解析后的 AgentRuntimeProfile，不自行读取 Agent、模板、Provider 或 Skill 存储。
 /// 哈希输入显式排除 LLM 密钥与 Skill 下载地址。
-/// ADR-077 §4.3：冻结主模型 Protocol/CapabilityTags/VisionPolicy 与可选 VisionHelperRoute；
+/// ADR-077 §4.3：冻结主模型 Protocol/CapabilityTags/VisionPolicy；
 /// Coordinator 与 Image Reader 消费同一判定，不再各自读取可热变的模型目录。
 /// </summary>
 public sealed class AgentExecutionSnapshotFactory(
     ILogger<AgentExecutionSnapshotFactory> logger,
-    ILlmConfigService? llmConfigService = null,
-    ILlmResolver? llmResolver = null) : IAgentExecutionSnapshotFactory
+    ILlmConfigService? llmConfigService = null) : IAgentExecutionSnapshotFactory
 {
-    public async Task<AgentExecutionSnapshot> CreateAsync(
+    public Task<AgentExecutionSnapshot> CreateAsync(
         AgentRuntimeProfile profile,
         AgentExecutionSnapshot? previousSnapshot, CancellationToken ct)
     {
@@ -25,7 +24,7 @@ public sealed class AgentExecutionSnapshotFactory(
         {
             logger.LogDebug("[SnapshotFactory] Reusing previous snapshot {SnapshotId}",
                 previousSnapshot.SnapshotId);
-            return previousSnapshot;
+            return Task.FromResult(previousSnapshot);
         }
 
         var toolReferences = profile.ToolDefinitions?
@@ -40,26 +39,6 @@ public sealed class AgentExecutionSnapshotFactory(
             && string.Equals(model.ModelId, profile.PreferredModelId, StringComparison.OrdinalIgnoreCase));
         var capabilityTags = modelInfo?.CapabilityTags?.ToList();
         var protocol = modelInfo?.Protocol;
-
-        VisionHelperRouteSnapshot? visionHelperRoute = null;
-        if (llmResolver is not null && !string.IsNullOrWhiteSpace(profile.VisionHelperModel))
-        {
-            try
-            {
-                // requiredCapabilityTags 保证 helper 路由具备 vision；解析失败保持 null（delegate 时 fail closed）。
-                var route = await llmResolver.ResolveRouteAsync(profile.VisionHelperModel, ["vision"], ct);
-                visionHelperRoute = new VisionHelperRouteSnapshot(
-                    route.ProviderId,
-                    route.ModelId,
-                    ["vision"]);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(
-                    ex,
-                    "[SnapshotFactory] visionHelperModel route failed to resolve; image_reader delegate mode will fail closed");
-            }
-        }
 
         // V5-T2（ADR-088 决策 2/5）：视觉预算策略来源 = 配置合同 ∩ 模型类别，不再硬编码 Default。
         // 语义显式（无静默假定支持）：模型不在配置 / IsEmbedding / 含 image-generation 标签 /
@@ -88,9 +67,6 @@ public sealed class AgentExecutionSnapshotFactory(
                 .OrderBy(skill => skill.SkillPackageId),
             capabilityTags = capabilityTags is null ? null : capabilityTags.OrderBy(tag => tag),
             protocol,
-            visionHelperRoute = visionHelperRoute is null
-                ? null
-                : new { visionHelperRoute.ProviderId, visionHelperRoute.ModelId },
             // V5-T2：策略（含版本）进快照哈希 —— 配置热更新后新 Run 冻结新快照，哈希可区分。
             visionPolicy = visionPolicy is null
                 ? null
@@ -134,8 +110,7 @@ public sealed class AgentExecutionSnapshotFactory(
             CreatedAt: DateTimeOffset.UtcNow,
             CapabilityTags: capabilityTags,
             Protocol: protocol,
-            VisionPolicy: visionPolicy,
-            VisionHelperRoute: visionHelperRoute);
+            VisionPolicy: visionPolicy);
 
         // V5-T2：策略版本随快照创建日志可观测（版本 + 来源），便于区分「当前执行版本」。
         logger.LogInformation(
@@ -147,7 +122,7 @@ public sealed class AgentExecutionSnapshotFactory(
             visionPolicy?.ImageTokenEstimatorVersion ?? "none",
             visionPolicySource);
 
-        return snapshot;
+        return Task.FromResult(snapshot);
     }
 
     /// <summary>

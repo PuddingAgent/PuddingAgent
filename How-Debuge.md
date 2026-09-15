@@ -4,6 +4,10 @@
 
 ## 1. 基本原则
 
+### Image Reader 预处理与原图追踪（2026-09-15）
+
+日志 `[ImageReader] action/source/result/detail/bytes` 区分原图和派生结果。low 要检查实际请求中的图片像素，不能只看 detail 字段（Files 会忽略它）；区域坐标基于 EXIF 校正后的原图。WebP 的 SKCodec 可能提前关闭输入流，字节长度在创建 codec 前读取。操作参数、源上限和验证见[预处理合同](Docs/Features/ImageReader原生阅读与预处理-2026-09-15.md)。
+
 ### 原生工具图片成功后 LLM 报视觉路由缺失（2026-09-15）
 
 先用页面 Message ID 查 chat_execution_commands.message_id，取真实 turn_id/trace_id，再对齐 tool.completed 与 turn.failed。若 Image Reader 原生返回成功而 Responses PlanVisualInputsAsync 报 workspace/vision-capable route 缺失，检查 Streaming yield 后 FrozenVisionContextAccessor.Current；入口 Push 不保证下次 MoveNext 保留 AsyncLocal。应逐次绑定冻结快照，不能删除历史图片止错。详见 [诊断记录](Docs/Reports/原生视觉流式上下文与ImageReader修复-2026-09-15.md)。

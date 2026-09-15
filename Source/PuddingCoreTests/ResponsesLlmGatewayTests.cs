@@ -949,7 +949,7 @@ data:[DONE]
         public Task<VisualArtifactResolveResult?> ResolveAsync(
             string workspaceId,
             string artifactId,
-            CancellationToken ct = default)
+            CancellationToken ct = default, string detail = PuddingCode.Models.VisionContentPartDetails.Original)
             => Task.FromResult<VisualArtifactResolveResult?>(new(
                 artifactId,
                 "data:image/png;base64," + new string('A', 3_000_000),
@@ -984,7 +984,7 @@ data:[DONE]
         public Task<VisualArtifactResolveResult?> ResolveAsync(
             string workspaceId,
             string artifactId,
-            CancellationToken ct = default)
+            CancellationToken ct = default, string detail = PuddingCode.Models.VisionContentPartDetails.Original)
             => throw new InvalidOperationException("boom");
     }
 
@@ -993,7 +993,7 @@ data:[DONE]
         public Task<VisualArtifactResolveResult?> ResolveAsync(
             string workspaceId,
             string artifactId,
-            CancellationToken ct = default)
+            CancellationToken ct = default, string detail = PuddingCode.Models.VisionContentPartDetails.Original)
             => Task.FromResult<VisualArtifactResolveResult?>(new(
                 artifactId,
                 "data:image/png;base64,iVBORw0KGgo=",

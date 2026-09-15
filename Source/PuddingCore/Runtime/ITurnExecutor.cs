@@ -49,8 +49,7 @@ public sealed record TurnExecutionContext(
     IReadOnlyList<string>? VisualArtifactIds,
     IReadOnlyList<string>? AudioArtifactIds,
     IReadOnlyList<LlmContentPart>? ContentParts = null,
-    LlmRouteSnapshot? CallerLlmSnapshot = null,
-    VisionHelperRouteSnapshot? CallerVisionHelperRoute = null
+    LlmRouteSnapshot? CallerLlmSnapshot = null
 )
 {
     /// <summary>P0-4f-2: 稳定 trace_id — 从 command 显式透传至 journal（可空）。</summary>

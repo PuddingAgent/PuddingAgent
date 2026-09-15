@@ -27,7 +27,7 @@ public sealed class VisualInputRequestBudgetTests
         public Task<VisualArtifactResolveResult?> ResolveAsync(
             string workspaceId,
             string artifactId,
-            CancellationToken ct = default)
+            CancellationToken ct = default, string detail = PuddingCode.Models.VisionContentPartDetails.Original)
             => Task.FromResult<VisualArtifactResolveResult?>(
                 new VisualArtifactResolveResult(artifactId, DataUri(1_000), "image/png"));
     }

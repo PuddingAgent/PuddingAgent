@@ -1650,7 +1650,6 @@ export interface WorkspaceAgentDto {
   deployerModel?: string;
   testerModel?: string;
   /** ADR-077：可选视觉辅助模型（仅 image_reader delegate 模式），providerId/modelId */
-  visionHelperModel?: string;
   // Markdown 文件内容
   soulMdContent?: string;
   agentsMdContent?: string;
@@ -1701,7 +1700,6 @@ export interface CreateWorkspaceAgentRequest {
   deployerModel?: string;
   testerModel?: string;
   /** ADR-077：可选视觉辅助模型（仅 image_reader delegate 模式），providerId/modelId */
-  visionHelperModel?: string;
 }
 
 export interface UpdateWorkspaceAgentRequest {
@@ -1745,7 +1743,6 @@ export interface UpdateWorkspaceAgentRequest {
   deployerModel?: string;
   testerModel?: string;
   /** ADR-077：可选视觉辅助模型（仅 image_reader delegate 模式），providerId/modelId */
-  visionHelperModel?: string;
   soulMdContent?: string;
   agentsMdContent?: string;
   toolsMdContent?: string;
@@ -2630,7 +2627,7 @@ export interface ConversationRecipientRequest {
 
 export type ConversationContentPart =
   | { type: 'text'; text: string }
-  | { type: 'image'; artifactId: string; detail?: 'original' | 'low' };
+  | { type: 'image'; artifactId: string; detail?: 'original' | 'low' | 'high' | 'auto' };
 
 /** ADR-077：服务端 authoritative 内容部件安全摘要（回放用，不含字节/路径）。 */
 export interface ConversationContentPartView {

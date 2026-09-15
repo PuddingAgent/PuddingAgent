@@ -1,3 +1,7 @@
+## 2026-09-15 Image Reader 预处理
+
+Image Reader 支持 metadata/read/prepare、detail、缩略图、原图多区域裁剪、旋转、灰度、降噪和编码；统一模型边界准备聊天/历史图片，保留原图。VisionHelper 配置与路由合同已移除。见[能力合同](Docs/Features/ImageReader原生阅读与预处理-2026-09-15.md)及[验证记录](Docs/Reports/ImageReader预处理实施记录-2026-09-15.md)。
+
 ## 2026-09-15 原生视觉流式上下文与 Image Reader
 
 每次 LLM MoveNext 重新绑定冻结视觉快照，避免 SSE yield 后 AsyncLocal 丢失；Image Reader 只返回 typed 图片给调用模型，移除 helper 调用与设置入口。见[诊断与验证](Docs/Reports/原生视觉流式上下文与ImageReader修复-2026-09-15.md)。

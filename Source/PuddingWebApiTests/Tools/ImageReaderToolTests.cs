@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingAgent.Tools;
-using PuddingCode.Agents;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
@@ -91,6 +90,7 @@ public sealed class ImageReaderToolTests
         var (_, storage) = await CreateStorageAsync(root);
         var tool = CreateTool(storage);
         Assert.IsNull(typeof(ImageReaderArgs).GetProperty("Mode"));
+        CollectionAssert.AreEqual(new[] { "path" }, tool.Descriptor.Parameters.Required.ToArray());
         Assert.IsFalse(tool.Descriptor.Description.Contains("mode=delegate", StringComparison.Ordinal));
         var result = await tool.ExecuteAsync(Request(imagePath, context: Context()));
         Assert.IsFalse(result.Success);
@@ -267,7 +267,7 @@ public sealed class ImageReaderToolTests
     }
 
     [TestMethod]
-    public async Task Transform_WebPSource_FailsClosedAndNeverTouchesOriginal()
+    public async Task Transform_WebPSource_ProducesNativeDerivedImageAndPreservesOriginal()
     {
         var imagePath = CreateTestImage(20, 10, SKEncodedImageFormat.Webp, SKColors.Red, SKColors.Blue);
         var root = Path.GetDirectoryName(imagePath)!;
@@ -280,8 +280,8 @@ public sealed class ImageReaderToolTests
             context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses")),
             arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"transform":"zoom_in","scale":2.0}"""));
 
-        Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.Error, "vision_media_invalid");
+        Assert.IsTrue(result.Success, result.Error);
+        Assert.IsInstanceOfType<LlmImagePart>(result.ToolContentParts![0]);
         CollectionAssert.AreEqual(originalBytes, File.ReadAllBytes(imagePath));
         Assert.IsTrue(File.Exists(imagePath));
     }
@@ -402,12 +402,12 @@ public sealed class ImageReaderToolTests
     {
         var instanceRoot = paths.AgentInstanceRoot(agentId);
         Directory.CreateDirectory(instanceRoot);
-        var manifest = new AgentInstanceManifest
+        var manifest = new
         {
             AgentInstanceId = agentId,
             TemplateId = "template-1",
             WorkspaceId = "default",
-            VisionHelperModel = visionHelperModel,
+            visionHelperModel,
             PreferredProviderId = preferredProviderId,
             PreferredModelId = preferredModelId,
         };

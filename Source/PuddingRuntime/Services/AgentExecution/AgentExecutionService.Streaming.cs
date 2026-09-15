@@ -1406,7 +1406,6 @@ public sealed partial class AgentExecutionService
                             UsageBudget = usageBudgetTracker.CreateRemainingBudget(),
                             ActiveTask = request.ActiveTask,
                             CallerLlmSnapshot = request.CallerLlmSnapshot,
-                            CallerVisionHelperRoute = request.CallerVisionHelperRoute,
                         }, ct);
                         result = new SkillResult
                         {

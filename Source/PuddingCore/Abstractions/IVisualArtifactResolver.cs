@@ -10,7 +10,7 @@ public interface IVisualArtifactResolver
     Task<VisualArtifactResolveResult?> ResolveAsync(
         string workspaceId,
         string artifactId,
-        CancellationToken ct = default);
+        CancellationToken ct = default, string detail = PuddingCode.Models.VisionContentPartDetails.Original);
 }
 
 /// <summary>Resolved vision artifact ready for provider consumption.</summary>

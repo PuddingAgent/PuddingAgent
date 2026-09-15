@@ -11,7 +11,7 @@ public sealed record ImageHeaderInfo(string MimeType, int Width, int Height);
 public static class VisionImageInspector
 {
     /// <summary>canonical Artifact 与 Image Reader source 的产品上限（DeepSeek Files API 64 MiB 内收口）。</summary>
-    public const long MaxCanonicalImageBytes = 50L * 1024 * 1024;
+    public const long MaxCanonicalImageBytes = 64L * 1024 * 1024;
 
     /// <summary>DeepSeek 每图最大边长；产品按 8 张上限取 8192px 校验。</summary>
     public const int MaxImageEdgePixels = 8192;

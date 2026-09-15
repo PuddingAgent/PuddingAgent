@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;
+using PuddingCode.Core;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -18,7 +19,7 @@ public sealed class VisionArtifactApiController(
     ILogger<VisionArtifactApiController> logger) : ControllerBase
 {
     [HttpPost]
-    [RequestSizeLimit(2_000_000)]
+    [RequestSizeLimit(65L * 1024 * 1024)]
     public async Task<ActionResult<VisionArtifactUploadResponse>> Upload(
         string workspaceId,
         [FromForm] IFormFile file,
@@ -54,6 +55,11 @@ public sealed class VisionArtifactApiController(
                 result.Height,
                 result.CapturedAt));
         }
+        catch (VisionPipelineException ex)
+        {
+            return StatusCode(ex.Code == VisionErrorCodes.RequestLimitExceeded ? StatusCodes.Status413PayloadTooLarge : StatusCodes.Status415UnsupportedMediaType,
+                new { errorCode = ex.Code, message = ex.Message });
+        }
         catch (UnsupportedVisionArtifactMediaTypeException ex)
         {
             logger.LogWarning(ex, "[VisionArtifactApi] Unsupported media type workspace={WorkspaceId} mime={Mime}", workspaceId, ex.MimeType);
@@ -68,6 +74,8 @@ public sealed class VisionArtifactApiController(
                         "image/jpeg",
                         "image/png",
                         "image/webp",
+                        "image/gif",
+                        "image/bmp",
                     },
                 });
         }

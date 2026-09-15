@@ -34,8 +34,6 @@ public sealed record ToolInvocationRequest
     public ActiveTaskRuntimeContext? ActiveTask { get; init; }
     /// <summary>调用方模型的冻结 LLM 路由快照（ADR-077）；工具经 ToolExecutionContext.CallerLlmSnapshot 消费。</summary>
     public LlmRouteSnapshot? CallerLlmSnapshot { get; init; }
-    /// <summary>Agent 显式配置的视觉辅助路由（ADR-077）；随请求透传至 ToolExecutionContext。</summary>
-    public VisionHelperRouteSnapshot? CallerVisionHelperRoute { get; init; }
 }
 
 /// <summary>工具调用结果。</summary>

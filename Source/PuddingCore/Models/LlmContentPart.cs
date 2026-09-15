@@ -35,11 +35,15 @@ public static class VisionContentPartDetails
 {
     public const string Original = "original";
     public const string Low = "low";
+    public const string High = "high";
+    public const string Auto = "auto";
 
     public static bool IsValid(string? detail)
         => detail is null
            || string.Equals(detail, Original, StringComparison.Ordinal)
-           || string.Equals(detail, Low, StringComparison.Ordinal);
+           || string.Equals(detail, Low, StringComparison.Ordinal)
+           || string.Equals(detail, High, StringComparison.Ordinal)
+           || string.Equals(detail, Auto, StringComparison.Ordinal);
 }
 
 /// <summary>

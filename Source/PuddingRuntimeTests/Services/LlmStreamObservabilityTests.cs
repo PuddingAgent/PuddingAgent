@@ -550,7 +550,7 @@ public sealed class LlmStreamObservabilityTests
         public Task<VisualArtifactResolveResult?> ResolveAsync(
             string workspaceId,
             string artifactId,
-            CancellationToken ct = default)
+            CancellationToken ct = default, string detail = PuddingCode.Models.VisionContentPartDetails.Original)
         {
             ResolveCount++;
             return Task.FromResult<VisualArtifactResolveResult?>(new(

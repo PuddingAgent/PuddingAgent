@@ -116,7 +116,6 @@ public sealed class ToolInvocationService : IToolInvocationService
                 AllowSubDelegation = request.AllowSubDelegation,
                 RoleInPlan = request.RoleInPlan,
                 CallerLlmSnapshot = request.CallerLlmSnapshot,
-                CallerVisionHelperRoute = request.CallerVisionHelperRoute,
                 CapabilityPolicy = request.CapabilityPolicy,
                 ExecutionIdentity = request.ExecutionIdentity is null
                     ? null

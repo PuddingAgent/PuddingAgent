@@ -63,7 +63,7 @@ public sealed class VisionArtifactStorageServiceTests
     }
 
     [TestMethod]
-    public async Task SaveAsync_Rejects_Unsupported_Mime_Type()
+    public async Task SaveAsync_Rejects_Invalid_Image_Bytes()
     {
         var root = CreateTempRoot();
         var service = new VisionArtifactStorageService(
@@ -71,11 +71,10 @@ public sealed class VisionArtifactStorageServiceTests
             NullLogger<VisionArtifactStorageService>.Instance);
         await using var stream = new MemoryStream([1, 2, 3]);
 
-        var ex = await ThrowsUnsupportedMediaTypeAsync(() =>
+        var ex = await Assert.ThrowsExactlyAsync<PuddingCode.Core.VisionPipelineException>(() =>
             service.SaveAsync("default", stream, "text/plain"));
 
-        StringAssert.Contains(ex.Message, "Unsupported");
-        Assert.AreEqual("text/plain", ex.MimeType);
+        Assert.AreEqual(PuddingCode.Core.VisionErrorCodes.MediaInvalid, ex.Code);
     }
 
     [TestMethod]
@@ -118,19 +117,4 @@ public sealed class VisionArtifactStorageServiceTests
         return root;
     }
 
-    private static async Task<UnsupportedVisionArtifactMediaTypeException>
-        ThrowsUnsupportedMediaTypeAsync(Func<Task> action)
-    {
-        try
-        {
-            await action();
-        }
-        catch (UnsupportedVisionArtifactMediaTypeException ex)
-        {
-            return ex;
-        }
-
-        Assert.Fail("Expected UnsupportedVisionArtifactMediaTypeException.");
-        throw new InvalidOperationException("unreachable");
-    }
 }

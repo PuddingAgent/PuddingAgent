@@ -207,7 +207,7 @@
 | 文件 | 用途 |
 |------|------|
 | `Services/ImageGenerationService.cs` | 图片生成 |
-| `Services/VisionArtifactStorageService.cs` | 视觉存储；ADR-077：magic bytes/真实尺寸（PNG/JPEG/WebP 头部嗅探）、SHA-256 与字节数入 metadata、50MiB 上限、内容身份为准 |
+| `Services/VisionArtifactStorageService.cs` + `.Preprocessing.cs` + `ImagePreprocessing.cs` | Workspace原图与派生缓存；64MiB、实际格式/尺寸/EXIF；模型边界低分辨率副本与超尺寸概览；本地裁剪/旋转/灰度/降噪/缩放/编码。原图不覆盖，变换按源与版本化参数复用，解码串行限并发 |
 | `Services/VisualArtifactObservationService.cs` | 视觉观察 |
 | `Services/AudioArtifactStorageService.cs` | 音频存储 |
 | `Services/AudioTranscriptionService.cs` | 音频转录 |
