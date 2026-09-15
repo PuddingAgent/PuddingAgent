@@ -47,6 +47,23 @@ public static class TaskStateMachine
     public static bool IsClosed(WorkspaceTaskStatus status) => status is
         WorkspaceTaskStatus.Completed or WorkspaceTaskStatus.Failed;
 
+    /// <summary>
+    /// ADR-092 §6.2（G92-1 刀 B / P4）：结算完成权的显式声明——只有这些状态允许由 Goal 结算
+    /// 事务在同一 Serializable 事务内原子写成 Completed。Assigned/InProgress 是「绑定 + 持有
+    /// active assignment」的执行态：它们能走到结算的 Complete 分支，本身就意味着调用方已通过
+    /// 执行门禁（canonical Turn 正常结束）与验收门禁（全部必需条件同版本 passed）并持有 active
+    /// binding。
+    /// <para>
+    /// 已是 Completed 的重放由调用方在写入前直接跳过（幂等，不重写 CompletedAtUtc、不再 +1 版本、
+    /// 不再落第二条事件），因此不列入本谓词。本谓词只声明结算路径的合法起点，<b>不修改</b>通用迁移表
+    /// <see cref="Transitions"/> 与 <see cref="TryInterpretDisposition"/>：agent 的 task_update 路径依旧
+    /// 不允许 Assigned→Completed（G92-1 刀 B / P5 另有守卫），完成权只属于结算事务。
+    /// </para>
+    /// </summary>
+    public static bool CanSettleCompleted(WorkspaceTaskStatus current) => current is
+        WorkspaceTaskStatus.Assigned
+        or WorkspaceTaskStatus.InProgress;
+
     /// <summary>Command → 目标状态（含 Reopen/Resume/Requeue 特例），非法返回 false。</summary>
     public static bool TryApplyCommand(WorkspaceTaskStatus current, TaskCommand command, out WorkspaceTaskStatus next)
     {

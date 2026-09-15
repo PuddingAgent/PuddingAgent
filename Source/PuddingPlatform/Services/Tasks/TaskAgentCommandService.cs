@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using PuddingCode.Goals;
 using PuddingCode.Scheduling;
 using PuddingCode.Tasks;
 using PuddingPlatform.Data;
@@ -336,6 +337,25 @@ public sealed class TaskAgentCommandService(
                 task.Version);
         }
 
+        // ADR-092 §6.2（G92-1 刀 B / P5）：封闭 task_update 旁路——绑定中的 Task（存在 active 绑定
+        // 且其 GoalRun 仍非终态）的完成权属于 Goal 结算事务。agent 直接提交 Completed 会释放结算
+        // 即将重验的 active reservation，使 Complete 被 reservation_fence_lost 覆盖（互锁）。
+        // 此处 fail-closed：不写状态、不释放 reservation，只回一个可识别的冲突码
+        //（task.state_conflict + completion_owned_by_goal_settlement）。
+        if (disposition == TaskDisposition.Completed
+            && await IsCompletionOwnedByGoalSettlementAsync(db, task, ct))
+        {
+            throw new TaskStoreException(
+                TaskErrorCode.TaskStateConflict,
+                $"completion_owned_by_goal_settlement: task '{request.TaskId}' is bound to a non-terminal GoalRun; "
+                + "its canonical completion is written by the Goal settlement transaction. To signal completion, "
+                + "submit the current WorkUnit's acceptance evidence and let the iteration end normally — "
+                + "that evidence is the completion proposal the settlement consumes.",
+                request.TaskId,
+                request.ExpectedVersion,
+                task.Version);
+        }
+
         // 已知 disposition 但不适用于当前状态 → state_conflict（迟到调用拒绝）。
         if (!TaskStateMachine.TryInterpretDisposition(task.Status, disposition, out var next))
         {
@@ -470,6 +490,32 @@ public sealed class TaskAgentCommandService(
 
         return BuildMutationResult(task, request.AssignmentId, request.Disposition,
             TaskWireMaps.EventTypeToString(eventType), attempt?.Status.ToString() ?? string.Empty);
+    }
+
+    /// <summary>
+    /// ADR-092 §6.2（G92-1 刀 B / P5）：判断该 Task 的完成权是否属于 Goal 结算事务——存在
+    /// status=active 的 task_goal_bindings，且其 GoalRun 尚未进入终态。绑定终结（结算完成或
+    /// 结算失败）后该旁路自动重新开放：那时的 Task 不再被任何运行中的 Goal 持有。
+    /// </summary>
+    private static async Task<bool> IsCompletionOwnedByGoalSettlementAsync(
+        PlatformDbContext db,
+        WorkspaceTaskEntity task,
+        CancellationToken ct)
+    {
+        var boundGoalRunIds = await db.TaskGoalBindings
+            .Where(b => b.WorkspaceId == task.WorkspaceId
+                && b.TaskId == task.TaskId
+                && b.Status == "active")
+            .Select(b => b.GoalRunId)
+            .ToListAsync(ct);
+        if (boundGoalRunIds.Count == 0)
+            return false;
+
+        var goalStatuses = await db.GoalRuns
+            .Where(g => boundGoalRunIds.Contains(g.GoalRunId))
+            .Select(g => g.Status)
+            .ToListAsync(ct);
+        return goalStatuses.Any(status => !GoalStateMachine.IsTerminal(status));
     }
 
     // ── 映射与帮助 ──────────────────────────────────────────

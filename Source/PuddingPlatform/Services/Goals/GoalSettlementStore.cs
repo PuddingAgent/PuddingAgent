@@ -900,13 +900,11 @@ public sealed class GoalSettlementStore(
                     iterationNumber = iteration.IterationNo,
                 }));
                 ReleaseReservation(db, binding, now, "goal_completed");
-                if (task is not null
-                    && ReleaseAssignment(db, binding, task, now, AssignmentAttemptStatus.Completed))
-                {
-                    task.Version++;
-                    task.UpdatedAtUtc = now;
-                    AppendTaskEvent(db, task, binding, TaskEventType.TaskUpdated, now, goal.GoalRunId);
-                }
+                // ADR-092 §6.2（G92-1 刀 B / P4）：完成口统一——把绑定 Task 的 canonical 终态写在
+                // 本结算事务内（同一个 db + 单次 SaveChanges），随后沿用既有释放序列
+                // assignment → attempt → reservation → binding。Task 完成只此一处写入。
+                if (task is not null)
+                    CompleteBoundTask(db, binding, task, now, goal.GoalRunId);
             }
             return;
         }
@@ -1106,6 +1104,42 @@ public sealed class GoalSettlementStore(
         plan.Root.ErrorMessage = error;
         plan.Root.CompletedAt ??= nowMs;
         plan.Root.UpdatedAt = nowMs;
+    }
+
+    /// <summary>
+    /// ADR-092 §6.2（G92-1 刀 B / P4）：结算拥有完成权——Goal 结算事务在宣告 Complete 的同一
+    /// Serializable 事务内把绑定 Task 写成 canonical 终态（Completed + CompletedAtUtc，清空
+    /// blocker），完成不再依赖外部通道。合法起点由 <see cref="TaskStateMachine.CanSettleCompleted"/>
+    /// 显式声明，不修改通用迁移表；agent 侧 task_update 的完成旁路由 P5 守卫封死。
+    /// </summary>
+    /// <returns>true 表示确实写入了 Task 终态；状态不可结算时 fail-closed 跳过（不制造非法迁移）。</returns>
+    private static bool CompleteBoundTask(
+        PlatformDbContext db,
+        TaskGoalBindingEntity binding,
+        WorkspaceTaskEntity task,
+        DateTimeOffset now,
+        string goalRunId)
+    {
+        // 结算重放必须幂等：已经是 canonical Completed 时不得重写 CompletedAtUtc/清 blocker、
+        // 不得再 +1 版本，也不得再落一条 TaskCompleted 事件——否则事件键 tgb-{taskId}-{version}
+        // 会因再次 +1 而产生第二条，破坏"一次完成只释放一次、只有一个 canonical 事件"。
+        if (task.Status == WorkspaceTaskStatus.Completed)
+            return false;
+        if (!TaskStateMachine.CanSettleCompleted(task.Status))
+            return false;
+
+        // 顺序即语义：终态 → 释放 assignment（attempt → task.ActiveAssignmentId）→ Version++ →
+        // TaskCompleted 事件。事件键仍是 tgb-{taskId}-{version}：一次完成只 +1 版本、只落一条事件，
+        // 因此键唯一性与结算幂等（gv-{goalId}-{epoch}-{iterationNo}）都不受影响。
+        task.Status = WorkspaceTaskStatus.Completed;
+        task.CompletedAtUtc = now;
+        task.BlockerKind = null;
+        task.BlockerReason = null;
+        ReleaseAssignment(db, binding, task, now, AssignmentAttemptStatus.Completed);
+        task.Version++;
+        task.UpdatedAtUtc = now;
+        AppendTaskEvent(db, task, binding, TaskEventType.TaskCompleted, now, goalRunId);
+        return true;
     }
 
     private static bool ReleaseAssignment(
