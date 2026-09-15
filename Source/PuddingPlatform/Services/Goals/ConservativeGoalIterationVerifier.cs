@@ -29,6 +29,16 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
             CriterionResults = results,
         };
         var allRequiredPassed = GoalSettlementDecisionCalculator.AllRequiredCriteriaPassed(probe);
+
+        // ADR-092 §6.2：步骤与整体的验证作用域必须显式区分。
+        // 独立 Goal（无 Task）的作用域就是 goal，因此必须有可达的完成路径；
+        // Task-bound Goal 只有在已知没有剩余 WorkUnit（RemainingWorkUnits == 0）或显式声明 goal scope 时才能完成，
+        // 未知一律保守为 work_unit：一个单元通过只能推进。
+        var boundToTask = !string.IsNullOrEmpty(capsule.TaskId);
+        var goalScope = !boundToTask
+            || string.Equals(capsule.VerificationScope, GoalVerificationScopes.Goal, StringComparison.OrdinalIgnoreCase)
+            || capsule.RemainingWorkUnits == 0;
+        var taskSatisfied = !boundToTask || taskCompleted;
         var taskCompleted = string.Equals(capsule.TaskStatus, "Completed", StringComparison.OrdinalIgnoreCase);
 
         GoalVerificationDecision decision;
@@ -62,6 +72,18 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 "Required criteria exist but no versioned check definition was planned; define the bounded checks before completion can be claimed.",
                 capsule);
         }
+        else if (evidence.HasFailedChecks())
+        {
+            // 失败优先于等待：任一必需检查已失败时必须先修复，不得用其他检查的等待拖延，
+            // 也不能因为同一条件的另一个检查通过而前进。
+            decision = Blocked(
+                "criterion_failed",
+                "One or more required criteria failed their checks; repair the current WorkUnit with the failure evidence.",
+                capsule) with
+            {
+                NextAction = "Fix the failing check in the current WorkUnit and re-run the same checks.",
+            };
+        }
         else if (evidence.HasPendingChecks())
         {
             // ADR-092 §5.1 步骤 1：证据尚未齐全 → 登记等待，不生成修复轮、不关闭 Goal。
@@ -86,35 +108,29 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 $"The bound Task is {capsule.TaskStatus}.",
                 capsule);
         }
-        else if (allRequiredPassed && taskCompleted)
+        else if (allRequiredPassed && goalScope && taskSatisfied)
         {
             decision = new GoalVerificationDecision
             {
                 Verdict = GoalVerificationVerdict.Complete,
-                Reason =
-                    "All required criteria have passing verification results and the bound Task has a canonical Completed fact.",
+                Reason = boundToTask
+                    ? "All goal-scope required criteria passed and the bound Task has a canonical Completed fact."
+                    : "All goal-scope required criteria passed for this standalone Goal.",
                 EvidenceRefs = capsule.EvidenceRefs,
+                VerificationScope = GoalVerificationScopes.Goal,
             };
         }
         else if (allRequiredPassed)
         {
-            // 必需条件已全部通过：当前单元可前进；整体目标是否达成由 goal 级 gate 决定。
+            // 步骤（work_unit）全部通过只能推进：整体目标是否达成由 goal 级条件决定，
+            // 不能因为一个单元通过就宣布整个目标完成。
             decision = new GoalVerificationDecision
             {
                 Verdict = GoalVerificationVerdict.Continue,
                 Reason = "All required criteria for the current WorkUnit passed; advance to the next ready WorkUnit.",
                 EvidenceRefs = capsule.EvidenceRefs,
                 NextAction = "Advance to the next ready WorkUnit, then verify the goal-level criteria.",
-            };
-        }
-        else if (evidence.HasFailedChecks())
-        {
-            decision = Blocked(
-                "criterion_failed",
-                "One or more required criteria failed their checks; repair the current WorkUnit with the failure evidence.",
-                capsule) with
-            {
-                NextAction = "Fix the failing check in the current WorkUnit and re-run the same checks.",
+                VerificationScope = GoalVerificationScopes.WorkUnit,
             };
         }
         else

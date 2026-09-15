@@ -4,8 +4,9 @@ using PuddingCode.Goals;
 namespace PuddingCoreTests;
 
 /// <summary>
-/// G92-1 回归（验收标准 1/4）：假 DONE、exit0 但 0 tests、缺新运行报告、缺证据、
-/// 旧报告（输入指纹/定义 hash/条件 revision 变化）、未结束后台进程都不得通过。
+/// G92-1 回归（验收标准 1/4）：来源不可信、跨条件串号、自报 passed、exit0 但 0 tests、
+/// 缺 canonical 调用引用/新运行报告、缺证据、测试计数未知或矛盾、旧报告（输入指纹/定义 hash/revision 变化）、
+/// 未结束后台进程，都不得通过。
 /// </summary>
 [TestClass]
 public sealed class GoalCheckEvidencePolicyTests
@@ -18,7 +19,7 @@ public sealed class GoalCheckEvidencePolicyTests
         int revision = 1,
         int? expectedTests = 10,
         string? definitionHash = DefinitionHash,
-        string fingerprint = Fingerprint,
+        string? fingerprint = Fingerprint,
         string? expectedEvidence = "junit report with all required cases") => new()
     {
         CheckId = $"check-{kind}",
@@ -28,7 +29,7 @@ public sealed class GoalCheckEvidencePolicyTests
         DefinitionRef = "checks/regression.md#L12",
         DefinitionHash = definitionHash,
         InputRefs = ["Source/PuddingCore"],
-        InputFingerprint = fingerprint,
+        InputFingerprint = fingerprint ?? string.Empty,
         ExpectedEvidence = expectedEvidence,
         ExpectedTestCount = expectedTests,
     };
@@ -39,6 +40,8 @@ public sealed class GoalCheckEvidencePolicyTests
         int revision = 1,
         string? definitionHash = DefinitionHash,
         string? fingerprint = Fingerprint,
+        string? runnerId = "goal-check-runner",
+        string? invocationId = "inv-1",
         string? reportRef = "reports/test-20260915.txt",
         IReadOnlyList<string>? evidence = null,
         int? exitCode = 0,
@@ -53,6 +56,8 @@ public sealed class GoalCheckEvidencePolicyTests
         Status = status,
         DefinitionHash = definitionHash,
         InputFingerprint = fingerprint,
+        RunnerId = runnerId,
+        InvocationId = invocationId,
         ReportRef = reportRef,
         EvidenceRefs = evidence ?? ["report:reports/test-20260915.txt"],
         ExitCode = exitCode,
@@ -75,12 +80,41 @@ public sealed class GoalCheckEvidencePolicyTests
     }
 
     [TestMethod]
+    public void SelfReportedPassed_WithoutRunnerId_Fails()
+    {
+        var result = Evaluate(Spec(), Report(runnerId: null));
+
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, result.Status);
+        Assert.AreEqual(GoalCheckEvidencePolicy.UntrustedReportSource, result.FailureCode);
+    }
+
+    [TestMethod]
+    public void ReportForAnotherCriterion_Fails()
+    {
+        var result = GoalCheckEvidencePolicy.EvaluateOne(
+            Spec(),
+            Report() with { CriterionId = "other" });
+
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, result.Status);
+        Assert.AreEqual(GoalCheckEvidencePolicy.CheckIdentityMismatch, result.FailureCode);
+    }
+
+    [TestMethod]
     public void ExitZero_WithZeroTests_CannotPass()
     {
         var result = Evaluate(Spec(), Report(executed: 0, passed: 0, failed: 0));
 
         Assert.AreEqual(GoalCriterionResultStatuses.Failed, result.Status);
         Assert.AreEqual(GoalCheckEvidencePolicy.NoTestEvidence, result.FailureCode);
+    }
+
+    [TestMethod]
+    public void MissingInvocationReference_Fails()
+    {
+        var result = Evaluate(Spec(), Report(invocationId: null));
+
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, result.Status);
+        Assert.AreEqual(GoalCheckEvidencePolicy.InvocationReferenceMissing, result.FailureCode);
     }
 
     [TestMethod]
@@ -102,9 +136,20 @@ public sealed class GoalCheckEvidencePolicyTests
     }
 
     [TestMethod]
+    public void EmptyExpectedEvidence_StillRequiresEvidence()
+    {
+        var result = Evaluate(Spec(expectedEvidence: null), Report(evidence: []));
+
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, result.Status);
+        Assert.AreEqual(GoalCheckEvidencePolicy.EvidenceMissing, result.FailureCode);
+    }
+
+    [TestMethod]
     public void NonZeroExitCode_Fails()
     {
-        var result = Evaluate(Spec(GoalVerificationSpecKinds.Build, expectedTests: null), Report(GoalVerificationSpecKinds.Build, exitCode: 1));
+        var result = Evaluate(
+            Spec(GoalVerificationSpecKinds.Build, expectedTests: null),
+            Report(GoalVerificationSpecKinds.Build, exitCode: 1));
 
         Assert.AreEqual(GoalCriterionResultStatuses.Failed, result.Status);
         Assert.AreEqual(GoalCheckEvidencePolicy.NonZeroExitCode, result.FailureCode);
@@ -117,6 +162,24 @@ public sealed class GoalCheckEvidencePolicyTests
 
         Assert.AreEqual(GoalCriterionResultStatuses.Invalidated, result.Status);
         Assert.AreEqual(GoalCheckEvidencePolicy.StaleInputFingerprint, result.FailureCode);
+    }
+
+    [TestMethod]
+    public void MissingFingerprintOnSpec_DoesNotSkipFreshnessCheck()
+    {
+        var result = Evaluate(Spec(fingerprint: null), Report(fingerprint: null));
+
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, result.Status);
+        Assert.AreEqual(GoalCheckEvidencePolicy.InputFingerprintMissing, result.FailureCode);
+    }
+
+    [TestMethod]
+    public void MissingDefinitionHashOnSpec_DoesNotSkipFreshnessCheck()
+    {
+        var result = Evaluate(Spec(definitionHash: null), Report(definitionHash: null));
+
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, result.Status);
+        Assert.AreEqual(GoalCheckEvidencePolicy.DefinitionHashMissing, result.FailureCode);
     }
 
     [TestMethod]
@@ -144,6 +207,33 @@ public sealed class GoalCheckEvidencePolicyTests
 
         Assert.AreEqual(GoalCriterionResultStatuses.Failed, result.Status);
         Assert.AreEqual(GoalCheckEvidencePolicy.ExpectedTestsMissing, result.FailureCode);
+    }
+
+    [TestMethod]
+    public void ContradictoryTestCounts_Fail()
+    {
+        var result = Evaluate(Spec(), Report(executed: 12, passed: 11, failed: 0));
+
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, result.Status);
+        Assert.AreEqual(GoalCheckEvidencePolicy.TestCountConflict, result.FailureCode);
+    }
+
+    [TestMethod]
+    public void NegativeTestCounts_Fail()
+    {
+        var result = Evaluate(Spec(), Report(executed: 12, passed: 12, failed: -1));
+
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, result.Status);
+        Assert.AreEqual(GoalCheckEvidencePolicy.TestCountConflict, result.FailureCode);
+    }
+
+    [TestMethod]
+    public void UnknownFailedTestCount_Fails()
+    {
+        var result = Evaluate(Spec(), Report(failed: null));
+
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, result.Status);
+        Assert.AreEqual(GoalCheckEvidencePolicy.TestCountUnknown, result.FailureCode);
     }
 
     [TestMethod]
@@ -176,7 +266,9 @@ public sealed class GoalCheckEvidencePolicyTests
     [TestMethod]
     public void UnsupportedKind_Fails()
     {
-        var result = Evaluate(Spec(kind: "wishful_thinking", expectedTests: null), Report(kind: "wishful_thinking"));
+        var result = Evaluate(
+            Spec(kind: "wishful_thinking", expectedTests: null),
+            Report(kind: "wishful_thinking"));
 
         Assert.AreEqual(GoalCriterionResultStatuses.Failed, result.Status);
         Assert.AreEqual(GoalCheckEvidencePolicy.UnsupportedCheckKind, result.FailureCode);

@@ -37,6 +37,18 @@ public sealed record GoalEvidenceCapsule
 
     /// <summary>ADR-092 §5.3（G92-1）：本次裁决依据的版本化检查定义；未声明的报告不得计入通过。</summary>
     public IReadOnlyList<GoalCheckSpec> Checks { get; init; } = [];
+
+    /// <summary>
+    /// 本次裁决的作用域，取值见 <see cref="GoalVerificationScopes"/>。
+    /// 默认 work_unit：步骤全通过只能推进；只有整体条件通过（goal）才允许完成。
+    /// </summary>
+    public string VerificationScope { get; init; } = GoalVerificationScopes.WorkUnit;
+
+    /// <summary>
+    /// 绑定 Plan 中尚未完成的 WorkUnit 数；null 表示未知（保守：不得因此宣布整体完成）。
+    /// 为 0 时本次裁决可升级为 goal 作用域。由结算层从持久 Plan 读取后填入。
+    /// </summary>
+    public int? RemainingWorkUnits { get; init; }
 }
 
 public sealed record GoalVerificationDecision
@@ -123,6 +135,16 @@ public static class GoalCriterionResultStatuses
     public const string Invalidated = "invalidated";
 }
 
+/// <summary>
+/// ADR-092 §6.2：验证作用域。步骤（work_unit）全部通过只能推进，
+/// 只有整体（goal）条件全部通过才允许完成——避免“一个单元通过即整个目标完成”。
+/// </summary>
+public static class GoalVerificationScopes
+{
+    public const string WorkUnit = "work_unit";
+    public const string Goal = "goal";
+}
+
 public sealed record GoalCriterionResult
 {
     public required string CriterionId { get; init; }
@@ -180,8 +202,40 @@ public static class GoalSettlementDecisionCalculator
     ];
 
     /// <summary>
-    /// 全部必需条件都有一条同版本、状态为 passed 的结果才为真。
-    /// 空合同一律返回 false：采集完整、Turn 结束、Task Completed 都不是验收证据。
+    /// ADR-092 §6.2：按条件聚合其全部关联检查结果（同一条件可有多个必需检查）。
+    /// 严重度 failed &gt; invalidated &gt; waiting &gt; pending &gt; passed，与结果列表顺序无关；
+    /// 未知状态一律高于 passed（不得因无法解释的状态而通过）。
+    /// </summary>
+    public static IReadOnlyList<GoalCriterionResult> AggregateByCriterion(GoalVerificationDecision decision)
+    {
+        var aggregated = new List<GoalCriterionResult>();
+        foreach (var group in decision.CriterionResults.GroupBy(
+                     result => (result.CriterionId, result.CriterionRevision)))
+        {
+            var worst = group.First();
+            foreach (var candidate in group)
+            {
+                if (StatusSeverity(candidate.Status) > StatusSeverity(worst.Status))
+                    worst = candidate;
+            }
+            aggregated.Add(worst);
+        }
+
+        return aggregated;
+    }
+
+    private static int StatusSeverity(string? status) => status switch
+    {
+        GoalCriterionResultStatuses.Failed => 5,
+        GoalCriterionResultStatuses.Invalidated => 4,
+        GoalCriterionResultStatuses.Waiting => 3,
+        GoalCriterionResultStatuses.Passed => 1,
+        _ => 2,
+    };
+
+    /// <summary>
+    /// 全部必需条件的全部关联检查都必须是同版本且 passed 才为真。
+    /// 空合同一律返回 false；同一条件的任一检查 failed/waiting/pending/invalidated 或缺失都不得通过。
     /// </summary>
     public static bool AllRequiredCriteriaPassed(GoalVerificationDecision decision)
     {
@@ -189,9 +243,10 @@ public static class GoalSettlementDecisionCalculator
         if (required.Count == 0)
             return false;
 
+        var aggregated = AggregateByCriterion(decision);
         foreach (var criterion in required)
         {
-            var result = decision.CriterionResults.FirstOrDefault(
+            var result = aggregated.FirstOrDefault(
                 candidate => string.Equals(candidate.CriterionId, criterion.Id, StringComparison.Ordinal)
                              && candidate.CriterionRevision == criterion.Revision);
 
@@ -209,8 +264,9 @@ public static class GoalSettlementDecisionCalculator
     public static bool HasVerifiedAcceptance(GoalVerificationDecision decision)
         => AllRequiredCriteriaPassed(decision);
 
+    /// <summary>按条件聚合后的最差状态为 failed 即为真（与列表顺序无关）。</summary>
     public static bool HasFailedCriteria(GoalVerificationDecision decision)
-        => decision.CriterionResults.Any(
+        => AggregateByCriterion(decision).Any(
             result => string.Equals(result.Status, GoalCriterionResultStatuses.Failed, StringComparison.Ordinal));
 
     public static bool IsWaiting(GoalVerificationDecision decision)

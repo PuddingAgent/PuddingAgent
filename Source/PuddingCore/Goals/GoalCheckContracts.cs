@@ -75,6 +75,17 @@ public sealed record GoalCheckReport
     /// <summary>本次检查是否留下了未结束的后台进程。</summary>
     public bool? HasUnfinishedBackgroundProcess { get; init; }
 
+    /// <summary>
+    /// 产生该报告的受控执行器标识（如 goal-check-runner）。空值表示来源不可信，不得据此通过。
+    /// </summary>
+    public string? RunnerId { get; init; }
+
+    /// <summary>
+    /// 本次执行的 canonical 调用引用（InvocationId/RunId），用于回溯实际执行记录；
+    /// 仅一个非空 ReportRef 字符串不足以证明执行过。
+    /// </summary>
+    public string? InvocationId { get; init; }
+
     public DateTimeOffset? ReportedAtUtc { get; init; }
 
     public string? FailureCode { get; init; }

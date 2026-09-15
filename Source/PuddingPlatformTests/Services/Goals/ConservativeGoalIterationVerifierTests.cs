@@ -6,7 +6,7 @@ namespace PuddingPlatformTests.Services.Goals;
 
 /// <summary>
 /// G92-1 回归：Task.Status == Completed 只算完成提议；完成必须全部必需条件都有
-/// 同版本、同定义 hash、同输入指纹的受控检查结果，且证据防伪策略没有降级任何一项。
+/// 同版本、同定义 hash、同输入指纹的受控检查结果，且显式声明 goal 作用域（无绑定 Task，或已知无剩余 WorkUnit）。
 /// </summary>
 [TestClass]
 public sealed class ConservativeGoalIterationVerifierTests
@@ -48,6 +48,8 @@ public sealed class ConservativeGoalIterationVerifierTests
         int revision = 1,
         string fingerprint = Fingerprint,
         string definitionHash = DefinitionHash,
+        string? runnerId = "goal-check-runner",
+        string? invocationId = "inv-1",
         string? reportRef = "reports/run.txt",
         int? exitCode = 0,
         int? executed = 12,
@@ -62,6 +64,8 @@ public sealed class ConservativeGoalIterationVerifierTests
         Status = status,
         DefinitionHash = definitionHash,
         InputFingerprint = fingerprint,
+        RunnerId = runnerId,
+        InvocationId = invocationId,
         ReportRef = reportRef,
         EvidenceRefs = evidence ?? [$"report:reports/run-{criterionId}.txt"],
         ExitCode = exitCode,
@@ -74,8 +78,10 @@ public sealed class ConservativeGoalIterationVerifierTests
     private static GoalEvidenceCapsule Capsule(
         string terminalKind = "completed",
         string? taskStatus = "InProgress",
+        string? taskId = "task-1",
         bool evidenceComplete = true,
         bool pendingFacts = false,
+        int? remainingWorkUnits = null,
         IReadOnlyList<GoalCriterion>? criteria = null,
         IReadOnlyList<GoalCheckSpec>? checks = null,
         IReadOnlyList<GoalCheckReport>? reports = null) => new()
@@ -91,11 +97,12 @@ public sealed class ConservativeGoalIterationVerifierTests
         TerminalKind = terminalKind,
         TerminalSequence = 7,
         EvidenceRefs = ["turn:turn-1:terminal:7"],
-        TaskId = "task-1",
+        TaskId = taskId,
         TaskStatus = taskStatus,
         TaskAcceptanceCriteria = "全部失败测试通过",
         HasPendingExecutionFacts = pendingFacts,
         EvidenceComplete = evidenceComplete,
+        RemainingWorkUnits = remainingWorkUnits,
         Criteria = criteria ?? [],
         Checks = checks ?? [],
         CheckReports = reports ?? [],
@@ -152,6 +159,7 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
+            remainingWorkUnits: 0,
             criteria: RequiredCriteria,
             checks: RequiredChecks,
             reports: CleanReports));
@@ -164,12 +172,71 @@ public sealed class ConservativeGoalIterationVerifierTests
     }
 
     [TestMethod]
+    public async Task UnknownRemainingWorkUnits_OnlyAdvances()
+    {
+        var verifier = new ConservativeGoalIterationVerifier();
+
+        var decision = await verifier.VerifyAsync(Capsule(
+            taskStatus: "Completed",
+            criteria: RequiredCriteria,
+            checks: RequiredChecks,
+            reports: CleanReports));
+
+        Assert.AreNotEqual(GoalVerificationVerdict.Complete, decision.Verdict);
+        Assert.AreEqual(
+            GoalSettlementDispositions.Advance,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
+    }
+
+    [TestMethod]
+    public async Task StandaloneGoal_WithAllCriteriaPassed_Completes()
+    {
+        var verifier = new ConservativeGoalIterationVerifier();
+
+        var decision = await verifier.VerifyAsync(Capsule(
+            taskStatus: null,
+            taskId: null,
+            criteria: RequiredCriteria,
+            checks: RequiredChecks,
+            reports: CleanReports));
+
+        Assert.AreEqual(GoalVerificationVerdict.Complete, decision.Verdict);
+        Assert.AreEqual(
+            GoalSettlementDispositions.Complete,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
+    }
+
+    [TestMethod]
+    public async Task BuildPassed_TestFailed_DoesNotAdvance()
+    {
+        var verifier = new ConservativeGoalIterationVerifier();
+
+        var decision = await verifier.VerifyAsync(Capsule(
+            taskStatus: "Completed",
+            remainingWorkUnits: 0,
+            criteria: RequiredCriteria,
+            checks: RequiredChecks,
+            reports:
+            [
+                Report("build", GoalVerificationSpecKinds.Build, executed: null, passed: null, failed: null),
+                Report("test", executed: 12, passed: 11, failed: 1),
+            ]));
+
+        Assert.AreNotEqual(GoalVerificationVerdict.Complete, decision.Verdict);
+        Assert.AreEqual("criterion_failed", decision.BlockerCode);
+        Assert.AreEqual(
+            GoalSettlementDispositions.Repair,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
+    }
+
+    [TestMethod]
     public async Task TaskCompleted_WithUnrunChecks_IsOnlyAProposal()
     {
         var verifier = new ConservativeGoalIterationVerifier();
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
+            remainingWorkUnits: 0,
             criteria: RequiredCriteria,
             checks: RequiredChecks,
             reports: [Report("build", GoalVerificationSpecKinds.Build, executed: null, passed: null, failed: null)]));
@@ -232,6 +299,7 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
+            remainingWorkUnits: 0,
             criteria: RequiredCriteria,
             checks: RequiredChecks,
             reports:
@@ -254,6 +322,7 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
+            remainingWorkUnits: 0,
             criteria: RequiredCriteria,
             checks: RequiredChecks,
             reports:
@@ -276,6 +345,7 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
+            remainingWorkUnits: 0,
             criteria: RequiredCriteria,
             checks: RequiredChecks,
             reports:
@@ -298,6 +368,7 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
+            remainingWorkUnits: 0,
             criteria: [Criterion("build", revision: 2), Criterion("test", revision: 2)],
             checks: RequiredChecks,
             reports: CleanReports));
@@ -330,6 +401,7 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
+            remainingWorkUnits: 0,
             evidenceComplete: false,
             criteria: RequiredCriteria,
             checks: RequiredChecks,

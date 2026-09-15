@@ -838,9 +838,17 @@ public sealed class GoalSettlementStore(
             return;
         }
 
-        if (decision.Verdict is GoalVerificationVerdict.Blocked
-            or GoalVerificationVerdict.NeedsUser
-            or GoalVerificationVerdict.Unsafe)
+        // ADR-092 §6.1：Blocked/NeedsUser/Unsafe 的具体含义必须由 typed disposition 决定；
+        // Repair/ContinueCurrent/Wait 都是可恢复的，不得把 Goal 置为终态。
+        var typedDisposition = GoalSettlementDecisionCalculator.ComputeDisposition(decision);
+        var recoverableOutcome = typedDisposition is GoalSettlementDispositions.Repair
+            or GoalSettlementDispositions.ContinueCurrent
+            or GoalSettlementDispositions.Wait;
+
+        if (!recoverableOutcome
+            && (decision.Verdict is GoalVerificationVerdict.Blocked
+                or GoalVerificationVerdict.NeedsUser
+                or GoalVerificationVerdict.Unsafe))
         {
             // A standalone Goal remains resumable while blocked. A Task-bound Goal,
             // however, releases its binding, reservation and assignment below so a
@@ -926,6 +934,17 @@ public sealed class GoalSettlementStore(
             return;
         }
 
+        if (recoverableOutcome)
+        {
+            // 可恢复的未通过（repair / continue_current / wait）：不得置 Failed、不得释放
+            // binding/reservation/assignment，否则 Task-bound Goal 会在可恢复场景下结束目标并丢失执行租约。
+            // 逻辑 Goal 保持 Active（下一步续行必须能再次结算），同时记录本轮阻塞事实；
+            // 之后由下方 outbox 投递同一单元的下一次尝试。
+            goal.BlockedCode = decision.BlockerCode ?? ToWire(decision.Verdict);
+            goal.BlockedMessage = decision.BlockerMessage ?? decision.Reason;
+            goal.StatusReason = decision.Reason;
+        }
+
         if (GoalStateMachine.IsBudgetExhausted(goal.MaxIterations, goal.IterationsStarted))
         {
             FailIncompleteBoundPlan(boundPlan, "Goal accepted-iteration budget exhausted.", now);
@@ -979,7 +998,11 @@ public sealed class GoalSettlementStore(
                 reservationFencingToken = binding?.ReservationFencingToken,
             }, JsonOpts),
             Status = GoalOutboxValues.Pending,
-            DueAtUtc = now,
+            // Wait 必须留下真实的恢复来源：带未来 due time 的持久 outbox，而不是永不到来的事件。
+            DueAtUtc = recoverableOutcome
+                && string.Equals(typedDisposition, GoalSettlementDispositions.Wait, StringComparison.Ordinal)
+                    ? now.AddMinutes(1)
+                    : now,
             CreatedAtUtc = now,
         });
         events.Add(new(GoalEventTypes.ContinuationRequested, GoalProducerComponents.Continuation, new
