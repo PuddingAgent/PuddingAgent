@@ -10,4 +10,13 @@
 - 前端原图保留：5项通过（JPEG/PNG/GIF/WebP/BMP）。合计188项定向测试。
 - Runtime 全测试工程存在本轮之前的 `PuddingToolInfrastructureTests.cs:4378` / `Assert.ThrowsExceptionAsync` 编译阻挡，因此 Runtime/Host 使用隔离 harness 链接原测试文件；不声称全库测试通过。
 
-构建、部署与在线合同检查完成后在下节记录；真实模型图片识别任务验收须单独报告。
+## 构建与部署
+
+- 实现提交：`74ae4e0`。独立归档该提交构建，保留已在线的两处 heartbeat projection 源文件（未纳入本次提交）；来源与哈希记录于 `temp/reader-release-build/build-source.json`。
+- Core 构建通过：0错误、235警告；前端生产构建与 bundle budget 通过。
+- Desktop 的 prebuilt-artifact 部署成功，Core PID `29572 → 32480`，状态 Ready，busy=false，errors为空；`/health/ready` 返回200。
+- 准备包与加载包 manifest SHA256 一致：`b1cf0fb99fc55ddc09ab92489fd146e5adff8694571a24e6a84eca3f883b8b10`。
+- 在线 `image_reader` 合同确认 action/detail/transform/max_edge/crop/rotation/grayscale/denoise/format/quality 全部存在，mode不存在。工具描述明确由调用模型自己读图。
+- 两处前端静态目录均更新，线上入口与聊天、设置资源哈希匹配本次构建。
+- 部署证据：`temp/reader-release-deployment-result.json`、`temp/reader-release-deployment-verification.json`、`temp/reader-release-ui-publish.json`。
+- 本轮未发送真实 LLM 读图任务，不能把自动化与部署验证表述为真实模型识别验收。
