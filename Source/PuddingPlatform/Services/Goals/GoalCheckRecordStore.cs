@@ -134,18 +134,20 @@ public sealed class GoalCheckRecordStore(IDbContextFactory<PlatformDbContext> db
 
         var now = DateTimeOffset.UtcNow;
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        // SQLite 不支持 DateTimeOffset 排序，先按可比较列取候选再在内存排序。
+        // SQLite provider 既不翻译 DateTimeOffset 比较也不翻译其排序：状态过滤下沉到 SQL，
+        // 租约过期判定与时间排序一律在内存完成。否则整条查询在编译期抛
+        // InvalidOperationException，检查永远无法被认领（真实运行已复现）。
         var candidates = await db.GoalCheckRecords
             .Where(item => item.GoalRunId == goalRunId
                 && item.ActivationEpoch == activationEpoch
                 && (item.Status == GoalCheckRecordStatuses.Pending
-                    || (item.Status == GoalCheckRecordStatuses.Leased
-                        && (item.LeaseUntilUtc == null || item.LeaseUntilUtc <= now))))
+                    || item.Status == GoalCheckRecordStatuses.Leased))
             .OrderByDescending(item => item.Priority)
-            .Take(Math.Min(MaxLeaseScan, take * 4))
+            .Take(MaxLeaseScan)
             .ToListAsync(ct);
 
         var claimed = candidates
+            .Where(item => IsClaimable(item, now))
             .OrderBy(item => item.CreatedAtUtc)
             .ThenBy(item => item.CheckRecordId, StringComparer.Ordinal)
             .Take(take)
@@ -164,6 +166,14 @@ public sealed class GoalCheckRecordStore(IDbContextFactory<PlatformDbContext> db
             await db.SaveChangesAsync(ct);
         return claimed;
     }
+
+    /// <summary>
+    /// 可认领：pending 一律可认领；leased 仅在租约缺失或已过期时可回收重跑。
+    /// </summary>
+    private static bool IsClaimable(GoalCheckRecordEntity item, DateTimeOffset now)
+        => string.Equals(item.Status, GoalCheckRecordStatuses.Pending, StringComparison.Ordinal)
+            || (string.Equals(item.Status, GoalCheckRecordStatuses.Leased, StringComparison.Ordinal)
+                && (item.LeaseUntilUtc is null || item.LeaseUntilUtc <= now));
 
     /// <summary>
     /// 写回检查结果。只有持有租约的执行器可以完成；报告为 pending（未真正运行）时
