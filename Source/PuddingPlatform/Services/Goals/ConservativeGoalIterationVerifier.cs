@@ -3,9 +3,11 @@ using PuddingCode.Goals;
 namespace PuddingPlatform.Services.Goals;
 
 /// <summary>
-/// G3 首个 fail-closed verifier：只依赖 canonical Turn/Task facts。普通 Agent 文本中的
-/// DONE 不会变成 complete；Task-bound Goal 只有在任务工具已把 Task 提交为 Completed
-/// 后才能完成。后续模型 Verifier 可实现同一只读接口，但不能绕过这些确定性门禁。
+/// G92-1 fail-closed verifier：只依赖 canonical Turn/Task facts 与受控检查报告。
+/// 普通 Agent 文本中的 DONE 不会变成 complete；Task 已 Completed 只算是“完成提议”，
+/// 真正的完成要求全部必需条件（GoalCriterion）都有同版本且 passed 的检查结果。
+/// 空验收合同不得 vacuous pass，必须先经一个有界规划步骤产生合同；
+/// 本 verifier 只读且不执行任何工具（实际检查由 IGoalCheckRunner 负责）。
 /// </summary>
 public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
 {
@@ -14,6 +16,19 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(capsule);
+
+        var criteria = capsule.Criteria;
+        var results = capsule.CheckReports.ToCriterionResults();
+        var probe = new GoalVerificationDecision
+        {
+            Verdict = GoalVerificationVerdict.Continue,
+            Reason = "criteria probe",
+            EvidenceRefs = capsule.EvidenceRefs,
+            Criteria = criteria,
+            CriterionResults = results,
+        };
+        var allRequiredPassed = GoalSettlementDecisionCalculator.AllRequiredCriteriaPassed(probe);
+        var taskCompleted = string.Equals(capsule.TaskStatus, "Completed", StringComparison.OrdinalIgnoreCase);
 
         GoalVerificationDecision decision;
         if (!capsule.EvidenceComplete || capsule.HasPendingExecutionFacts)
@@ -30,14 +45,21 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 $"Goal Iteration ended as {capsule.TerminalKind}; explicit recovery is required.",
                 capsule);
         }
-        else if (string.Equals(capsule.TaskStatus, "Completed", StringComparison.OrdinalIgnoreCase))
+        else if (criteria.Count == 0)
         {
-            decision = new GoalVerificationDecision
-            {
-                Verdict = GoalVerificationVerdict.Complete,
-                Reason = "The bound Task has a canonical Completed fact submitted through the task state machine.",
-                EvidenceRefs = capsule.EvidenceRefs,
-            };
+            // ADR-092 §4：空合同不得 vacuous pass；处置映射为 repair（留在当前单元做有界规划），不关闭 Goal。
+            decision = Blocked(
+                "acceptance_contract_missing",
+                "No acceptance contract exists for this Goal; run one bounded planning step to derive required criteria before completion can be claimed.",
+                capsule);
+        }
+        else if (capsule.CheckReports.HasPendingChecks())
+        {
+            // ADR-092 §5.1 步骤 1：证据尚未齐全 → 登记等待，不生成修复轮、不关闭 Goal。
+            decision = Blocked(
+                "check_results_pending",
+                "Declared verification checks have not produced results yet; wait for the check facts instead of completing.",
+                capsule);
         }
         else if (string.Equals(capsule.TaskStatus, "Blocked", StringComparison.OrdinalIgnoreCase)
                  || string.Equals(capsule.TaskStatus, "NeedsReview", StringComparison.OrdinalIgnoreCase))
@@ -55,23 +77,57 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 $"The bound Task is {capsule.TaskStatus}.",
                 capsule);
         }
+        else if (allRequiredPassed && taskCompleted)
+        {
+            decision = new GoalVerificationDecision
+            {
+                Verdict = GoalVerificationVerdict.Complete,
+                Reason =
+                    "All required criteria have passing verification results and the bound Task has a canonical Completed fact.",
+                EvidenceRefs = capsule.EvidenceRefs,
+            };
+        }
+        else if (allRequiredPassed)
+        {
+            // 必需条件已全部通过：当前单元可前进；整体目标是否达成由 goal 级 gate 决定。
+            decision = new GoalVerificationDecision
+            {
+                Verdict = GoalVerificationVerdict.Continue,
+                Reason = "All required criteria for the current WorkUnit passed; advance to the next ready WorkUnit.",
+                EvidenceRefs = capsule.EvidenceRefs,
+                NextAction = "Advance to the next ready WorkUnit, then verify the goal-level criteria.",
+            };
+        }
+        else if (capsule.CheckReports.HasFailedChecks())
+        {
+            decision = Blocked(
+                "criterion_failed",
+                "One or more required criteria failed their checks; repair the current WorkUnit with the failure evidence.",
+                capsule) with
+            {
+                NextAction = "Fix the failing check in the current WorkUnit and re-run the same checks.",
+            };
+        }
         else
         {
             decision = new GoalVerificationDecision
             {
                 Verdict = GoalVerificationVerdict.Continue,
-                Reason = capsule.TaskId is null
-                    ? "No independently verified completion fact exists; continue within the remaining budget."
-                    : "The bound Task is not terminal; continue within the remaining budget.",
+                Reason = taskCompleted
+                    ? "The bound Task is completed, but the goal's required criteria have no passing verification; completion is only proposed."
+                    : "The required criteria are not yet verified; continue in the current WorkUnit.",
                 EvidenceRefs = capsule.EvidenceRefs,
-                NextAction = "Continue the next bounded Goal Iteration and produce canonical evidence.",
-                UnmetCriteria = capsule.TaskAcceptanceCriteria is null
-                    ? []
-                    : [capsule.TaskAcceptanceCriteria],
+                NextAction = "Produce the missing verification evidence for the required criteria in the current WorkUnit.",
+                BlockerCode = "acceptance_not_verified",
+                BlockerMessage = "Required criteria have no passing verification result yet.",
             };
         }
 
-        return Task.FromResult(decision);
+        return Task.FromResult(decision with
+        {
+            Criteria = criteria,
+            CriterionResults = results,
+        });
     }
 
     private static GoalVerificationDecision Blocked(

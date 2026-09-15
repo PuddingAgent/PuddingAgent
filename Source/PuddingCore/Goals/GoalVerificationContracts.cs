@@ -28,6 +28,12 @@ public sealed record GoalEvidenceCapsule
     public string? TaskAcceptanceCriteria { get; init; }
     public bool HasPendingExecutionFacts { get; init; }
     public bool EvidenceComplete { get; init; }
+
+    /// <summary>ADR-092 §4/§5（G92-1）：本次裁决依据的验收条件快照（空集合表示尚无验收合同）。</summary>
+    public IReadOnlyList<GoalCriterion> Criteria { get; init; } = [];
+
+    /// <summary>ADR-092 §5.3（G92-1）：受控检查的实际报告；verifier 只读它，不执行工具。</summary>
+    public IReadOnlyList<GoalCheckReport> CheckReports { get; init; } = [];
 }
 
 public sealed record GoalVerificationDecision
@@ -158,6 +164,8 @@ public static class GoalSettlementDecisionCalculator
         "approval_review_service_unavailable",
         "approval_review_timeout",
         "approval_review_call_failed",
+        "check_results_pending",
+        "acceptance_contract_missing",
     ];
 
     /// <summary>只有不可恢复的阻塞码允许终止 Goal。</summary>
