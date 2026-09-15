@@ -749,4 +749,152 @@ public sealed class GoalSettlementAcceptanceRegressionTests
         var valid = GoalRunOptions.Validate(new GoalRunOptions { NoProgressBreakerThreshold = 3 });
         Assert.IsFalse(valid.Any(message => message.Contains("NoProgressBreakerThreshold")));
     }
+
+    // ── P0-3（ADR-092 §7.6）：不可恢复处置的连续同因降级门槛 ─────────────────────
+
+    /// <summary>不可恢复阻塞轮：Blocked + 白名单不可恢复码（task_plan_state_invalid，参与降级门槛）。</summary>
+    private static GoalVerificationDecision UnrecoverableDecision(string code) => new()
+    {
+        Verdict = GoalVerificationVerdict.Blocked,
+        Reason = $"Unrecoverable blocker: {code}.",
+        EvidenceRefs = ["turn:turn-1:terminal:7"],
+        BlockerCode = code,
+        BlockerMessage = "Plan state is unrecoverable.",
+    };
+
+    /// <summary>Unsafe 裁决轮：安全例外，必须立即终止，不得降级。</summary>
+    private static GoalVerificationDecision UnsafeDecision() => new()
+    {
+        Verdict = GoalVerificationVerdict.Unsafe,
+        Reason = "Verifier flagged unsafe execution conditions.",
+        EvidenceRefs = ["turn:turn-1:terminal:7"],
+        BlockerCode = "unsafe",
+        BlockerMessage = "Unsafe execution blocked.",
+    };
+
+    [TestMethod]
+    public async Task Unrecoverable_SingleOccurrence_DoesNotTerminate()
+    {
+        var (db, store, connection) = await CreateAsync();
+        await using var _ = db;
+        await using var __ = connection;
+        await SeedBoundPlanAsync(db, withNextUnit: false);
+
+        await SettleRoundsAsync(store, db, 1, _ => UnrecoverableDecision("task_plan_state_invalid"));
+
+        db.ChangeTracker.Clear();
+        var goal = await db.GoalRuns.SingleAsync(item => item.GoalRunId == GoalId);
+        var task = await db.WorkspaceTasks.SingleAsync(item => item.TaskId == TaskId);
+        var binding = await db.TaskGoalBindings.SingleAsync(item => item.GoalRunId == GoalId);
+        var plan = await db.TaskPlanRuns.SingleAsync(item => item.PlanId == PlanId);
+
+        // 第 1 次不可恢复：不得终态化 —— Goal 保持 Active、Task 不 Blocked、binding 保持、计划不 Failed；
+        // 降级原因与计数（1/3）写入 StatusReason，ProgressRecorded 事件携带降级审计字段。
+        Assert.AreEqual(GoalPhase.Active, goal.Status);
+        Assert.AreNotEqual(WorkspaceTaskStatus.Blocked, task.Status);
+        Assert.AreEqual("active", binding.Status);
+        Assert.AreNotEqual(TaskPlanStatuses.Failed.ToString(), plan.Status);
+        Assert.AreEqual("task_plan_state_invalid", goal.BlockedCode);
+        Assert.IsTrue(goal.StatusReason!.Contains("1/3"));
+        Assert.IsTrue(await db.ConversationEvents.AnyAsync(item =>
+            item.ConversationId == ConversationId
+            && item.Type == GoalEventTypes.ProgressRecorded));
+    }
+
+    [TestMethod]
+    public async Task Unrecoverable_ThreeConsecutiveSameCode_Terminates()
+    {
+        var (db, store, connection) = await CreateAsync();
+        await using var _ = db;
+        await using var __ = connection;
+        await SeedBoundPlanAsync(db, withNextUnit: false);
+
+        await SettleRoundsAsync(store, db, 3, _ => UnrecoverableDecision("task_plan_state_invalid"));
+
+        db.ChangeTracker.Clear();
+        var goal = await db.GoalRuns.SingleAsync(item => item.GoalRunId == GoalId);
+        var task = await db.WorkspaceTasks.SingleAsync(item => item.TaskId == TaskId);
+        var binding = await db.TaskGoalBindings.SingleAsync(item => item.GoalRunId == GoalId);
+        var plan = await db.TaskPlanRuns.SingleAsync(item => item.PlanId == PlanId);
+
+        // 连续 3 次同一不可恢复原因 ⇒ 达阈值，走原终态化路径（task-bound ⇒ Goal Failed + Task Blocked）。
+        Assert.AreEqual(GoalPhase.Failed, goal.Status);
+        Assert.AreEqual(WorkspaceTaskStatus.Blocked, task.Status);
+        Assert.AreEqual("terminal", binding.Status);
+        Assert.AreEqual(TaskPlanStatuses.Failed.ToString(), plan.Status);
+        Assert.AreEqual("task_plan_state_invalid", goal.BlockedCode);
+        Assert.IsTrue(await db.ConversationEvents.AnyAsync(item =>
+            item.ConversationId == ConversationId
+            && item.Type == GoalEventTypes.Failed));
+    }
+
+    [TestMethod]
+    public async Task Unrecoverable_CodeChangeResetsStreak_NoFalseTermination()
+    {
+        var (db, store, connection) = await CreateAsync();
+        await using var _ = db;
+        await using var __ = connection;
+        await SeedBoundPlanAsync(db, withNextUnit: false);
+
+        // A、普通 repair、A、A：中途换因打断连续计数 —— 4 轮后不得终态化
+        //（若无归零语义，第 4 轮会被误判为“连续 3 次同 A”）。
+        await SettleRoundsAsync(store, db, 4, round => round switch
+        {
+            1 => UnrecoverableDecision("task_plan_state_invalid"),
+            2 => FailedDecision("fp-reset"),
+            3 => UnrecoverableDecision("task_plan_state_invalid"),
+            _ => UnrecoverableDecision("task_plan_state_invalid"),
+        });
+
+        db.ChangeTracker.Clear();
+        var goal = await db.GoalRuns.SingleAsync(item => item.GoalRunId == GoalId);
+        var task = await db.WorkspaceTasks.SingleAsync(item => item.TaskId == TaskId);
+
+        // 换因归零生效：第 4 轮只是“换因后连续第 2 次”，Goal 仍 Active。
+        Assert.AreEqual(GoalPhase.Active, goal.Status);
+        Assert.AreNotEqual(WorkspaceTaskStatus.Blocked, task.Status);
+        Assert.AreEqual(1, goal.ConsecutiveSameBlocker);
+    }
+
+    [TestMethod]
+    public async Task UnsafeVerdict_TerminatesImmediately_SafetyException()
+    {
+        var (db, store, connection) = await CreateAsync();
+        await using var _ = db;
+        await using var __ = connection;
+        await SeedBoundPlanAsync(db, withNextUnit: false);
+
+        await SettleRoundsAsync(store, db, 1, _ => UnsafeDecision());
+
+        db.ChangeTracker.Clear();
+        var goal = await db.GoalRuns.SingleAsync(item => item.GoalRunId == GoalId);
+        var task = await db.WorkspaceTasks.SingleAsync(item => item.TaskId == TaskId);
+        var binding = await db.TaskGoalBindings.SingleAsync(item => item.GoalRunId == GoalId);
+
+        // 安全例外：Unsafe 一次即终止（安全红线不可等 3 次）。
+        Assert.AreEqual(GoalPhase.Failed, goal.Status);
+        Assert.AreEqual(WorkspaceTaskStatus.Blocked, task.Status);
+        Assert.AreEqual("terminal", binding.Status);
+        Assert.AreEqual("unsafe", goal.BlockedCode);
+    }
+
+    [TestMethod]
+    public async Task CancelledBlocker_TerminatesImmediately_UserIntentException()
+    {
+        var (db, store, connection) = await CreateAsync();
+        await using var _ = db;
+        await using var __ = connection;
+        await SeedBoundPlanAsync(db, withNextUnit: false);
+
+        // 显式取消（iteration_cancelled）：ADR-092 终态契约，不得降级 —— 一次即终态化。
+        await SettleRoundsAsync(store, db, 1, _ => UnrecoverableDecision("iteration_cancelled"));
+
+        db.ChangeTracker.Clear();
+        var goal = await db.GoalRuns.SingleAsync(item => item.GoalRunId == GoalId);
+        var task = await db.WorkspaceTasks.SingleAsync(item => item.TaskId == TaskId);
+
+        Assert.AreEqual(GoalPhase.Failed, goal.Status);
+        Assert.AreEqual(WorkspaceTaskStatus.Blocked, task.Status);
+        Assert.AreEqual("iteration_cancelled", goal.BlockedCode);
+    }
 }

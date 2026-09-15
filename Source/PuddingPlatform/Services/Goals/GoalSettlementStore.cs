@@ -544,6 +544,24 @@ public sealed class GoalSettlementStore(
             // 等待族整轮跳过；指纹缺失视为证据不足（不奖不罚）。语义详见 ApplyProgressAccounting。
             var progressAccounting = ApplyProgressAccounting(goal, decision);
 
+            // ── P0-3（ADR-092 §7.6）：不可恢复处置的连续同因降级门槛 ──
+            // 单次不可恢复 verdict 不再直接终态化：仅当同一不可恢复原因连续达到
+            // NoProgressBreakerThreshold（默认 3）才走原终态化路径；未达阈值时本轮降级为
+            // 有界修复，并在 decision 与下方 ProgressRecorded 事件中记录“已连续 N 次 / 阈值 M”。
+            // 安全与用户意图例外（立即终止，绝不降级）：Unsafe verdict / unsafe 码；
+            // cancelled / iteration_cancelled（显式取消被 ADR-092 定为终态，GoalVerificationContracts
+            // 的 UnrecoverableBlockerCodes 注释明文禁止降级）。判定口径见 EvaluateUnrecoverableDemotion。
+            var unrecoverableDemotion = EvaluateUnrecoverableDemotion(goal, decision);
+            if (unrecoverableDemotion.Demoted)
+            {
+                decision = decision with
+                {
+                    Reason = $"Unrecoverable blocker '{unrecoverableDemotion.Code}' observed " +
+                             $"{unrecoverableDemotion.Consecutive}/{_noProgressBreakerThreshold} consecutive settlements; demoted to " +
+                             "bounded repair for this settlement (terminal escalation deferred until the threshold is reached).",
+                };
+            }
+
             var events = new List<GoalEventDraft>
             {
                 new(GoalEventTypes.IterationSettled, GoalProducerComponents.Coordinator, new
@@ -587,6 +605,11 @@ public sealed class GoalSettlementStore(
                     consecutiveSameBlocker = goal.ConsecutiveSameBlocker,
                     consecutiveInfraFailures = goal.ConsecutiveInfraFailures,
                     progressFingerprint = goal.LastProgressFingerprint,
+                    // P0-3：不可恢复降级审计（复用既有事件，载荷向后兼容追加字段）。
+                    unrecoverableDemoted = unrecoverableDemotion.Demoted,
+                    unrecoverableCode = unrecoverableDemotion.Code,
+                    unrecoverableConsecutive = unrecoverableDemotion.Consecutive,
+                    unrecoverableThreshold = _noProgressBreakerThreshold,
                 }),
             };
 
@@ -982,7 +1005,8 @@ public sealed class GoalSettlementStore(
         BoundPlanState? plan,
         GoalIterationEntity iteration,
         GoalVerificationDecision decision,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        string? dispositionOverride = null)
     {
         // ADR-092 §13.1（G92-1 刀 C）：只有结构错误不可写；无 Current 的合法收敛态
         // （0 Running 且必需单元全部已验证完成）同样必须被写入，否则 Plan/Root 永远无法随 Goal 收口。
@@ -995,7 +1019,10 @@ public sealed class GoalSettlementStore(
         // StopReason=completed、Turn 结束、Task Completed、"最后的 WorkUnit 缺 Task 事实" 都不是验收证据。
         var verifiedWorkUnit = string.Equals(iteration.StopReason, "completed", StringComparison.Ordinal)
             && GoalSettlementDecisionCalculator.HasVerifiedAcceptance(decision);
-        var disposition = GoalSettlementDecisionCalculator.ComputeDisposition(decision);
+        // P0-3：降级轮的原始不可恢复码仍会算出 Stop，由调用方显式降级为 repair ——
+        // 绑定计划不得随单次不可恢复 verdict 终结。
+        var disposition = dispositionOverride
+            ?? GoalSettlementDecisionCalculator.ComputeDisposition(decision);
 
         if (verifiedWorkUnit)
         {
@@ -1069,7 +1096,17 @@ public sealed class GoalSettlementStore(
         IReadOnlyCollection<string> queuedContinuations,
         ref bool nextContinuation)
     {
-        ApplyBoundPlanVerdict(boundPlan, iteration, decision, now);
+        // P0-3（ADR-092 §7.6）：与主流程同一确定性降级判定（基于同一份记账后状态，结果一致）。
+        // 降级轮：计划回写与终态化分支都按 repair 处理 —— 未达阈值时 Goal/Task/binding 与绑定计划
+        // 均不因单次不可恢复 verdict 终结；降级事实由主流程的 ProgressRecorded 事件与 decision 承载。
+        var unrecoverableDemotion = EvaluateUnrecoverableDemotion(goal, decision);
+
+        ApplyBoundPlanVerdict(
+            boundPlan,
+            iteration,
+            decision,
+            now,
+            unrecoverableDemotion.Demoted ? GoalSettlementDispositions.Repair : null);
 
         if (decision.Verdict == GoalVerificationVerdict.Complete)
         {
@@ -1101,7 +1138,10 @@ public sealed class GoalSettlementStore(
 
         // ADR-092 §6.1：Blocked/NeedsUser/Unsafe 的具体含义必须由 typed disposition 决定；
         // Repair/ContinueCurrent/Wait 都是可恢复的，不得把 Goal 置为终态。
-        var typedDisposition = GoalSettlementDecisionCalculator.ComputeDisposition(decision);
+        // P0-3：未达降级阈值时短路为 repair（ComputeDisposition 对原始码仍会返回 Stop）。
+        var typedDisposition = unrecoverableDemotion.Demoted
+            ? GoalSettlementDispositions.Repair
+            : GoalSettlementDecisionCalculator.ComputeDisposition(decision);
 
         // ── P0-2（ADR-092 §7，对齐 codex-rs ext/goal accounting）：无进展/同阻塞熔断接线 ──
         // 任一连续计数器达到阈值后，本结算不再返回 repair：先尝试一次 Replan（提升绑定计划
@@ -1359,8 +1399,8 @@ public sealed class GoalSettlementStore(
     ///    GoalSettlementDecisionCalculator.WaitBlockerCodes）整轮跳过：合法等待不是无进展；
     /// ② 指纹轴：新指纹缺失=证据不足（不动）；与上次相同 ⇒ ConsecutiveNoProgress++；
     ///    变化 ⇒ 归零并记录新指纹；
-    /// ③ 阻塞轴：repair 轮携带阻塞码 ⇒ 与上次相同 ++、不同归零（ADR-092 §7「变化则归零」
-    ///    字面语义）；无阻塞码 ⇒ 归零；
+    /// ③ 阻塞轴：repair / stop（不可恢复，P0-3 降级门槛依赖同因轴）轮携带阻塞码 ⇒
+    ///    与上次相同 ++、不同归零（ADR-092 §7「变化则归零」字面语义）；无阻塞码 ⇒ 归零；
     /// ④ 基础设施轴：repair 轮且阻塞码属 infra 族（租约/fence/存储证据）⇒
     ///    ConsecutiveInfraFailures++；成功（advance/complete）一次归零。
     /// </summary>
@@ -1401,7 +1441,10 @@ public sealed class GoalSettlementStore(
         if (success)
             goal.ConsecutiveInfraFailures = 0;
 
-        if (typedDisposition != GoalSettlementDispositions.Repair)
+        // P0-3（ADR-092 §7.6）：Stop（不可恢复）轮与 Repair 轮同样计入同因轴 ——
+        // “连续 N 次同一不可恢复原因”的降级门槛依赖这条连续计数；换成不同不可恢复码
+        // 仍按“变化则归零”处理；其余处置（wait/needs_user 等）照旧归零。
+        if (typedDisposition is not (GoalSettlementDispositions.Repair or GoalSettlementDispositions.Stop))
         {
             goal.ConsecutiveSameBlocker = 0;
             return new GoalProgressAccounting(
@@ -1437,6 +1480,52 @@ public sealed class GoalSettlementStore(
             SameBlockerCounted: true,
             InfraFailureCounted: infra,
             SuccessReset: success);
+    }
+
+    /// <summary>P0-3：不可恢复降级判定结果。</summary>
+    private sealed record UnrecoverableDemotion(bool Demoted, int Consecutive, string? Code);
+
+    /// <summary>
+    /// P0-3（ADR-092 §7.6）：“单次不可恢复 verdict ⇒ 终态化”的连续同因降级门槛。
+    /// 仅当同一不可恢复原因连续达到 <see cref="_noProgressBreakerThreshold"/>（默认 3）才保持
+    /// Stop（走原终态化路径）；未达阈值 ⇒ Demoted=true，本结算按 repair 收口。
+    /// 计数口径：本判定在结算事务的进度记账（ApplyProgressAccounting）之后执行 ——
+    /// goal.BlockedCode 是上一结算落库的阻塞码；ConsecutiveSameBlocker 是含本轮的记账后连续值
+    /// （Stop 轮已纳入同因轴），故含本轮的连续次数 = 同码 ? 计数+1 : 1。
+    /// 安全与用户意图例外（立即终止，绝不降级）：
+    /// ① Unsafe verdict 或 blocker=unsafe —— 安全红线不可等 3 次；
+    /// ② blocker=cancelled/iteration_cancelled —— 显式取消被 ADR-092 定为终态，
+    ///    GoalVerificationContracts.UnrecoverableBlockerCodes 注释明文“不得降级为 repair 继续推进”。
+    /// verdict=NeedsUser 是人工决定路径、不是不可恢复失败，同样不在降级范围（维持现状）。
+    /// </summary>
+    private UnrecoverableDemotion EvaluateUnrecoverableDemotion(
+        GoalRunEntity goal,
+        GoalVerificationDecision decision)
+    {
+        if (GoalSettlementDecisionCalculator.ComputeDisposition(decision)
+            != GoalSettlementDispositions.Stop)
+        {
+            return new UnrecoverableDemotion(false, 0, null);
+        }
+
+        if (decision.Verdict == GoalVerificationVerdict.Unsafe
+            || string.Equals(decision.BlockerCode, "unsafe", StringComparison.Ordinal))
+        {
+            return new UnrecoverableDemotion(false, 0, decision.BlockerCode);
+        }
+
+        if (decision.BlockerCode is "cancelled" or "iteration_cancelled")
+        {
+            return new UnrecoverableDemotion(false, 0, decision.BlockerCode);
+        }
+
+        var sameAsLast = string.Equals(goal.BlockedCode, decision.BlockerCode, StringComparison.Ordinal);
+        var consecutive = (sameAsLast ? goal.ConsecutiveSameBlocker : 0) + 1;
+
+        return new UnrecoverableDemotion(
+            Demoted: consecutive < _noProgressBreakerThreshold,
+            Consecutive: consecutive,
+            Code: decision.BlockerCode);
     }
 
     /// <summary>P0-2：任一连续计数器达到熔断阈值。</summary>
