@@ -18,13 +18,14 @@ import type { DelegationNode } from '../../projections/executionFlowProjector';
 import { useExecutionFlowStyles } from '../../styles/execution-flow.styles';
 import { formatDurationMs } from '../../utils/formatDuration';
 import StateDot from '../StateDot';
+import ExpandableMessageContent from '../ExpandableMessageContent';
 import { DelegationRow } from './DelegationRow';
 import { ExecutionDisclosureRow } from './ExecutionDisclosureRow';
 import { ReasoningDisclosureRow } from './ReasoningDisclosureRow';
 import type { DisclosureRegistry } from './useDisclosureRegistry';
 import { isPlaceholderVoid, ToolCallTreeBranch } from './ToolCallTree';
 
-const INITIAL_VISIBLE_ACTIVITY_NODES = 24;
+const INITIAL_VISIBLE_ACTIVITY_NODES = 6;
 const ACTIVITY_NODE_REVEAL_BATCH = 24;
 
 /** 折叠态摘要文案：「N 段思考 · M 次工具 · K 个子代理 · R 次重试」。 */
@@ -209,7 +210,9 @@ export const ActivityGroup: React.FC<ActivityGroupProps> = ({
                   （尚有 {hiddenNodeCount} 项）
                 </button>
               )}
-              {renderNodes(visibleNodes)}
+              <ExpandableMessageContent label="过程" previewHeight={240} disabled={isRunActive && isTailGroup}>
+                {renderNodes(visibleNodes)}
+              </ExpandableMessageContent>
             </div>
           ) : null
         }

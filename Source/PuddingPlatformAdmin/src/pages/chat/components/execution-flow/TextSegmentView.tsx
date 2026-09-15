@@ -9,6 +9,7 @@ import type { MessageNode } from '../../projections/executionFlowProjector';
 import { useTypewriterStreaming } from '../../hooks/useTypewriterStreaming';
 import { useAgentStyles } from '../../styles/agent.styles';
 import MessageItem from '../MessageItem';
+import ExpandableMessageContent from '../ExpandableMessageContent';
 
 interface StaticSegmentProps {
   text: string;
@@ -29,7 +30,9 @@ const StaticTextSegment: React.FC<StaticSegmentProps> = ({
       data-testid="turn-text-segment"
       onContextMenu={onContextMenu}
     >
-      <MessageItem markdownText={text} isStreaming={false} workspaceId={workspaceId} />
+      <ExpandableMessageContent>
+        <MessageItem markdownText={text} isStreaming={false} workspaceId={workspaceId} />
+      </ExpandableMessageContent>
     </div>
   );
 };

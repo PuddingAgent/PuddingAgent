@@ -292,6 +292,29 @@ export const useExecutionFlowStyles = createStyles(() => ({
     maxWidth: 'min(720px, 100%)',
     boxSizing: 'border-box' as const,
   },
+  readingDisclosure: {
+    minWidth: 0,
+    width: '100%',
+  },
+  readingPreview: {
+    overflow: 'hidden',
+    display: 'flow-root',
+    maskImage: 'linear-gradient(to bottom, black calc(100% - 32px), transparent)',
+  },
+  readingToggle: {
+    display: 'block',
+    border: 0,
+    borderRadius: 6,
+    padding: '6px 8px',
+    marginTop: 4,
+    background: 'transparent',
+    color: 'var(--pudding-chat-primary)',
+    fontSize: 12,
+    lineHeight: '20px',
+    cursor: 'pointer',
+    '&:hover': { background: 'var(--pudding-chat-code-bg)' },
+    '&:focus-visible': { outline: '2px solid currentColor', outlineOffset: 2 },
+  },
   /** 行为组容器：仅承载组头折叠行 + 展开体，不叠加容器级 margin */
   activityGroup: {
     width: '100%',

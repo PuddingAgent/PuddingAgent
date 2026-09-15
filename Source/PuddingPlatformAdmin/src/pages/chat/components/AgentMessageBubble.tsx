@@ -26,6 +26,7 @@ import {
 } from './execution-flow/TurnStatus';
 import MessageActions from './MessageActions';
 import MessageItem from './MessageItem';
+import ExpandableMessageContent from './ExpandableMessageContent';
 import ModelRetryRow from './ModelRetryRow';
 import {
   type CurrentRunActivity,
@@ -722,11 +723,13 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                     {quotedMessage && (
                       <QuotedMessageBlock quotedMessage={quotedMessage} />
                     )}
-                    <MessageItem
-                      markdownText={content}
-                      isStreaming={false}
-                      workspaceId={workspaceId}
-                    />
+                    <ExpandableMessageContent>
+                      <MessageItem
+                        markdownText={content}
+                        isStreaming={false}
+                        workspaceId={workspaceId}
+                      />
+                    </ExpandableMessageContent>
                     {showCompletionParticles && (
                       <div
                         className={styles.answerParticlesContainer}

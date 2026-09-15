@@ -267,9 +267,9 @@ describe('TurnContentStream（内容块流）', () => {
       />,
     );
 
-    expect(screen.getAllByTestId('toolcall-row')).toHaveLength(24);
+    expect(screen.getAllByTestId('toolcall-row')).toHaveLength(6);
     fireEvent.click(screen.getByTestId('activity-group-reveal-earlier'));
-    expect(screen.getAllByTestId('toolcall-row')).toHaveLength(48);
+    expect(screen.getAllByTestId('toolcall-row')).toHaveLength(30);
   });
 
   it('超长 Turn 默认只挂载最新内容块窗口', () => {
@@ -296,7 +296,35 @@ describe('TurnContentStream（内容块流）', () => {
       />,
     );
 
+    expect(screen.getAllByTestId('turn-text-segment')).toHaveLength(1);
+    expect(screen.queryByTestId('turn-content-reveal-earlier')).toBeNull();
+    fireEvent.click(screen.getByTestId('turn-earlier-toggle'));
     expect(screen.getAllByTestId('turn-text-segment')).toHaveLength(20);
     expect(screen.getByTestId('turn-content-reveal-earlier')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('turn-content-reveal-earlier'));
+    expect(screen.getAllByTestId('turn-text-segment')).toHaveLength(40);
+    fireEvent.click(screen.getByTestId('turn-earlier-toggle'));
+    expect(screen.getAllByTestId('turn-text-segment')).toHaveLength(1);
+  });
+
+  it('收拢较早交错过程，保留最新播报、行为和回复；展开后恢复原序且提示失败记录', () => {
+    const events = Array.from({ length: 5 }, (_, index) => [
+      ev('message.content.appended', index * 3 + 1, { delta: `播报${index}` }),
+      ev('tool.call.requested', index * 3 + 2, { toolCallId: `t${index}`, name: 'shell', arguments: '{}' }),
+      ev('tool.call.completed', index * 3 + 3, { toolCallId: `t${index}`, name: 'shell', exitCode: index === 0 ? 1 : 0, output: 'result' }),
+    ]).flat();
+    const { rerender } = render(<TurnContentStream projection={projectExecutionFlow([
+      ...events, ev('message.content.appended', 16, { delta: '最终回复' }),
+    ])} />);
+    expect(screen.getAllByTestId('message-item').map((el) => el.getAttribute('data-markdown'))).toEqual(['播报4', '最终回复']);
+    expect(screen.getByTestId('turn-earlier-toggle').textContent).toContain('含失败记录');
+    fireEvent.click(screen.getByTestId('turn-earlier-toggle'));
+    expect(screen.getAllByTestId('message-item').map((el) => el.getAttribute('data-markdown'))).toEqual(['播报0', '播报1', '播报2', '播报3', '播报4', '最终回复']);
+    rerender(<TurnContentStream projection={projectExecutionFlow([
+      ...events, ev('message.content.appended', 16, { delta: '最终回复' }),
+      ev('turn.completed', 17),
+    ])} />);
+    expect(screen.getByTestId('turn-earlier-toggle').getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getAllByTestId('message-item')).toHaveLength(6);
   });
 });

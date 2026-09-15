@@ -36,6 +36,11 @@ import { useDisclosureRegistry } from './useDisclosureRegistry';
 const INITIAL_VISIBLE_TURN_BLOCKS = 40;
 const TURN_BLOCK_REVEAL_BATCH = 40;
 
+const hasFailedActivity = (node: ActivityNode): boolean =>
+  node.kind === 'tool'
+    ? node.state === 'failed' || node.children.some(hasFailedActivity)
+    : node.kind === 'delegation' && node.state === 'failed';
+
 /** timestamp（毫秒）→ ISO；非法/缺失 → undefined（不伪造时间源）。 */
 const isoFromTimestamp = (timestamp?: number): string | undefined =>
   typeof timestamp === 'number' && Number.isFinite(timestamp) && timestamp > 0
@@ -170,6 +175,8 @@ export const TurnContentStream: React.FC<TurnContentStreamProps> = ({
 }) => {
   const { styles } = useExecutionFlowStyles();
   const registry = useDisclosureRegistry();
+  const [earlierExpanded, setEarlierExpanded] = React.useState(false);
+  const earlierId = React.useId();
   const [visibleBlockLimit, setVisibleBlockLimit] = React.useState(
     INITIAL_VISIBLE_TURN_BLOCKS,
   );
@@ -201,7 +208,26 @@ export const TurnContentStream: React.FC<TurnContentStreamProps> = ({
 
   if (blocks.length === 0) return null;
 
-  const hiddenBlockCount = Math.max(0, blocks.length - visibleBlockLimit);
+  // A contiguous prefix is disclosed in place; canonical order and the latest
+  // activity + its surrounding text remain intact. No inferred final answer.
+  const latestActivityIndex = blocks.findLastIndex((block) => block.kind === 'activity-group');
+  let compactPrefixCount = blocks.length >= 8
+    ? Math.max(0, latestActivityIndex < 0 ? blocks.length - 2 : latestActivityIndex - 1)
+    : 0;
+  for (let i = 0; i < compactPrefixCount; i++) {
+    const block = blocks[i];
+    if (block.kind === 'activity-group' &&
+      (registry.isExpanded(block.key, false) || (isRunActive && block.hasRunningNode))) {
+      compactPrefixCount = i;
+    }
+  }
+  const earlierHasFailures = blocks.slice(0, compactPrefixCount).some(
+    (block) => block.kind === 'activity-group' && block.nodes.some(hasFailedActivity),
+  );
+  const hiddenBlockCount = Math.max(
+    earlierExpanded ? 0 : compactPrefixCount,
+    blocks.length - visibleBlockLimit,
+  );
   const visibleBlocks =
     hiddenBlockCount > 0 ? blocks.slice(hiddenBlockCount) : blocks;
 
@@ -214,7 +240,20 @@ export const TurnContentStream: React.FC<TurnContentStreamProps> = ({
       className={styles.turnContentStream}
       data-testid="turn-content-stream"
     >
-      {hiddenBlockCount > 0 && (
+      {compactPrefixCount > 0 && (
+        <button
+          type="button"
+          className={styles.readingToggle}
+          aria-expanded={earlierExpanded}
+          aria-controls={earlierId}
+          data-testid="turn-earlier-toggle"
+          onClick={() => setEarlierExpanded((value) => !value)}
+        >
+          {earlierExpanded ? '收起较早过程' : '查看较早过程'} · {compactPrefixCount} 段
+          {earlierHasFailures && ' · 含失败记录'}
+        </button>
+      )}
+      {hiddenBlockCount > 0 && (earlierExpanded || compactPrefixCount === 0) && (
         <button
           type="button"
           className={styles.trajectoryWindowButton}
@@ -229,6 +268,7 @@ export const TurnContentStream: React.FC<TurnContentStreamProps> = ({
           （尚有 {hiddenBlockCount} 个）
         </button>
       )}
+      <div id={earlierId} className={styles.turnContentStream}>
       {visibleBlocks.map((block, index) =>
         block.kind === 'text' ? (
           <TextSegmentView
@@ -250,6 +290,7 @@ export const TurnContentStream: React.FC<TurnContentStreamProps> = ({
           />
         ),
       )}
+      </div>
     </div>
   );
 };
