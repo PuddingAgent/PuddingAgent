@@ -51,7 +51,7 @@
 | 文件 | 用途 |
 |------|------|
 | `Services/DirectLlmClient.cs` | 🔑 直接 LLM 客户端；只按选中模型 protocol 路由；Provider 成功后以共享 ActivityId 必达写入逐请求 usage 账本；operation 按 `chat[:approval|:compaction]` 区分任务数据面与控制面；流式路径分别记录 rate-limit wait 与 provider first-chunk wait；V5 视觉单源化：构造可选注入 `FrozenVisionContextAccessor`（:38/:56/:76），`supportsVision` 只读冻结快照 `frozenRoute?.SupportsVision ?? false`（:863-864，无冻结上下文 fail closed，删除原热目录 CapabilityTags 二次判定），三个 Gateway（Responses/OpenAI/Anthropic）注入快照 `VisionPolicy`（:879） |
-| `Services/FrozenVisionContextAccessor.cs` | 🆕 V5 视觉冻结上下文通道（AsyncLocal）；`Current` / `Push(LlmRouteSnapshot?)` 返回 IDisposable scope（:14/:29），Agent Loop 入口（Buffered/Streaming）写入、DirectLlmClient 读取；无上下文 = null = fail closed |
+| `Services/FrozenVisionContextAccessor.cs` | 🆕 V5 视觉冻结上下文通道（AsyncLocal）；`Current` / `Push(LlmRouteSnapshot?)` 返回 IDisposable scope（:14/:29），Buffered 入口写入；Streaming 每次 LLM MoveNext 通过 `MoveNextAsync` 重绑快照并恢复调用方上下文，避免 yield 后丢失；DirectLlmClient 读取；无上下文 = null = fail closed |
 | `Services/CompositionSnapshot.cs` | 前缀缓存归因：逐请求计算 systemPromptHash/toolSpecHash/prefixHash（SHA-256 小写 hex）与 compositionVersion（进程内按 session 递增） |
 | `Services/SqliteCompositionStore.cs` | 🆕 P0-5 `ICompositionStore` SQLite 实现：落 `CompositionSnapshots` 表（MemoryDbContext 同库），append-only（版本严格递增，重写/乱序抛 InvalidOperationException）、写穿、GetLatest 取最大版本 |
 | `Services/LlmInvocationService.cs` | LLM 调用编排；把模型配置解析出的 protocol 传给 Direct/Controller 路径，并以 invocation purpose scope 透传非模型可见计费归因 |

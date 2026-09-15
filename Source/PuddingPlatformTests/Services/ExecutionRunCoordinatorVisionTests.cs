@@ -7,7 +7,7 @@ namespace PuddingPlatformTests.Services;
 
 /// <summary>
 /// ADR-077 V0：附件提示合同 — 视觉模型原生看图（无第二次模型调用、无本地路径泄漏）；
-/// 文本模型只收 artifact:// 占位与 image_reader 显式调用引导（自动预观察旁路已删除）。
+/// 文本模型只收 artifact:// 引用与能力缺失说明，不引导 helper 代读。
 /// </summary>
 [TestClass]
 public class ExecutionRunCoordinatorVisionTests
@@ -30,7 +30,7 @@ public class ExecutionRunCoordinatorVisionTests
     }
 
     [TestMethod]
-    public void BuildMessageText_TextModel_UsesArtifactPlaceholderAndExplicitImageReaderGuidance()
+    public void BuildMessageText_TextModel_ExplainsMissingCapabilityWithoutDelegation()
     {
         var text = ExecutionRunCoordinator.BuildMessageText(
             "这两张图有什么区别",
@@ -39,7 +39,9 @@ public class ExecutionRunCoordinatorVisionTests
 
         Contains(text, $"artifact://{ArtifactId}");
         Contains(text, "cannot view images natively");
-        Contains(text, "image_reader");
+        Contains(text, "never calls a helper model");
+        Contains(text, "needs a vision-capable route");
+        NotContains(text, "mode defaults to auto");
         NotContains(text, "Platform-provided visual observation");
         NotContains(text, @":\");
     }

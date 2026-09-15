@@ -1,12 +1,9 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
 using PuddingAgent.Tools;
-using PuddingCode.Abstractions;
 using PuddingCode.Agents;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
-using PuddingCode.Runtime;
 using PuddingCode.Tools;
 using PuddingPlatform.Services;
 using SkiaSharp;
@@ -15,7 +12,7 @@ namespace PuddingWebApiTests.Tools;
 
 /// <summary>
 /// ADR-077 V2：image_reader 新合同 — path 唯一必填（URL/绝对路径/artifact://）；
-/// auto 优先 native（typed 图片工具结果，零辅助 invocation），文本调用模型才 delegate；
+/// 始终返回 native typed 图片工具结果，零辅助 invocation；不支持视觉时明确报错；
 /// 失败走稳定错误码，输出不含绝对路径。
 /// </summary>
 [TestClass]
@@ -51,12 +48,12 @@ public sealed class ImageReaderToolTests
     }
 
     [TestMethod]
-    public async Task Auto_VisionCaller_ReturnsNativeImageToolPartsWithoutSecondInvocation()
+    public async Task VisionCaller_ReturnsNativeImageToolParts()
     {
         var imagePath = CreateImageFile(out var root);
         var (_, storage) = await CreateStorageAsync(root);
 
-        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var tool = CreateTool(storage);
         var result = await tool.ExecuteAsync(Request(
             imagePath,
             context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses"))));
@@ -76,80 +73,28 @@ public sealed class ImageReaderToolTests
     }
 
     [TestMethod]
-    public async Task Auto_TextCaller_DelegatesToConfiguredHelper_WithProvenance()
+    public async Task TextCaller_WithHelperConfigured_StillFailsWithoutDelegation()
     {
         var imagePath = CreateImageFile(out var root);
         var (_, storage) = await CreateStorageAsync(root, visionHelperModel: "vision-provider/vision-model");
-
-        var route = new ResolvedLlmRoute
-        {
-            ProviderId = "vision-provider",
-            ModelId = "vision-model",
-            Config = new LlmConfig
-            {
-                Endpoint = "https://vision.example/v1",
-                ApiKey = "test-key",
-                ModelId = "vision-model",
-            },
-        };
-        var resolver = new Mock<ILlmResolver>();
-        resolver
-            .Setup(service => service.ResolveRouteAsync(
-                "vision-provider/vision-model",
-                It.Is<IReadOnlyCollection<string>>(tags => tags.Contains("vision")),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(route);
-
-        LlmInvocationRequest? captured = null;
-        var invocation = new Mock<ILlmInvocationService>();
-        invocation
-            .Setup(service => service.InvokeAsync(It.IsAny<LlmInvocationRequest>(), It.IsAny<CancellationToken>()))
-            .Callback<LlmInvocationRequest, CancellationToken>((request, _) => captured = request)
-            .ReturnsAsync(new LlmInvocationResult
-            {
-                Success = true,
-                ReplyText = "A purple pudding logo.",
-                ProviderId = "vision-provider",
-                ModelId = "vision-model",
-            });
-
-        var tool = CreateTool(storage, root, resolver, invocation);
-        var result = await tool.ExecuteAsync(Request(
-            imagePath,
-            context: Context(callerSnapshot: Snapshot(vision: false, protocol: "openai"))));
-
-        Assert.IsTrue(result.Success, result.Error);
-        // 精确一次可归因 helper invocation
-        invocation.Verify(service => service.InvokeAsync(
-            It.IsAny<LlmInvocationRequest>(),
-            It.IsAny<CancellationToken>()), Times.Once);
-        Assert.IsNotNull(captured);
-        Assert.AreEqual("vision-provider", captured.Profile.ProviderId);
-                // helper 收到的消息携带 canonical 图片部件（Messages[0] 为稳定 system 前缀，图片在用户消息）
-        Assert.AreEqual(1, captured.Messages[1].ContentParts!.OfType<LlmImagePart>().Count());
-        // provenance 可见
-        StringAssert.Contains(result.Output, "helper=vision-provider/vision-model");
-        StringAssert.Contains(result.Output, "artifact=vision-");
+        var tool = CreateTool(storage);
+        var result = await tool.ExecuteAsync(Request(imagePath,
+            context: Context(callerSnapshot: Snapshot(vision: false, protocol: "responses"))));
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "vision_model_capability_mismatch");
     }
 
     [TestMethod]
-    public async Task Delegate_WithoutHelper_ReturnsStableErrorAndNeverInvokes()
+    public async Task ToolSchema_DoesNotOfferModelDelegationModes()
     {
         var imagePath = CreateImageFile(out var root);
-        var (_, storage) = await CreateStorageAsync(root, visionHelperModel: null);
-
-        var invocation = new Mock<ILlmInvocationService>();
-        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), invocation);
-        var result = await tool.ExecuteAsync(Request(
-            imagePath,
-            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"mode":"delegate"}""",
-            context: Context(callerSnapshot: Snapshot(vision: false, protocol: "openai"))));
-
+        var (_, storage) = await CreateStorageAsync(root);
+        var tool = CreateTool(storage);
+        Assert.IsNull(typeof(ImageReaderArgs).GetProperty("Mode"));
+        Assert.IsFalse(tool.Descriptor.Description.Contains("mode=delegate", StringComparison.Ordinal));
+        var result = await tool.ExecuteAsync(Request(imagePath, context: Context()));
         Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.Error, "vision_helper_model_required");
-        invocation.Verify(service => service.InvokeAsync(
-            It.IsAny<LlmInvocationRequest>(),
-            It.IsAny<CancellationToken>()), Times.Never);
+        StringAssert.Contains(result.Error, "vision_model_capability_mismatch");
     }
 
     [TestMethod]
@@ -158,10 +103,10 @@ public sealed class ImageReaderToolTests
         var imagePath = CreateImageFile(out var root);
         var (_, storage) = await CreateStorageAsync(root);
 
-        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var tool = CreateTool(storage);
         var result = await tool.ExecuteAsync(Request(
             imagePath,
-            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"mode":"native"}""",
+            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}}}""",
             context: Context(callerSnapshot: Snapshot(vision: true, protocol: "openai"))));
 
         Assert.IsFalse(result.Success);
@@ -177,7 +122,7 @@ public sealed class ImageReaderToolTests
         await using var first = new MemoryStream(Png);
         var imported = await storage.SaveAsync("default", first, "image/png");
 
-        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var tool = CreateTool(storage);
         var result = await tool.ExecuteAsync(Request(
             $"artifact://{imported.ArtifactId}",
             context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses"))));
@@ -195,7 +140,7 @@ public sealed class ImageReaderToolTests
         Directory.CreateDirectory(root);
         var (_, storage) = await CreateStorageAsync(root);
 
-        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var tool = CreateTool(storage);
         var result = await tool.ExecuteAsync(Request(
             "relative/sample.png",
             context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses"))));
@@ -211,7 +156,7 @@ public sealed class ImageReaderToolTests
         Directory.CreateDirectory(root);
         var (_, storage) = await CreateStorageAsync(root);
 
-        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var tool = CreateTool(storage);
         var result = await tool.ExecuteAsync(Request(
             "http://127.0.0.1:9/img.png",
             context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses"))));
@@ -228,7 +173,7 @@ public sealed class ImageReaderToolTests
         var originalBytes = File.ReadAllBytes(imagePath);
         var (_, storage) = await CreateStorageAsync(root);
 
-        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var tool = CreateTool(storage);
         var native = Context(callerSnapshot: Snapshot(vision: true, protocol: "responses"));
 
         // 先导入一次，取得源 artifact 身份
@@ -239,7 +184,7 @@ public sealed class ImageReaderToolTests
         var result = await tool.ExecuteAsync(Request(
             imagePath,
             context: native,
-            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"mode":"native","transform":"zoom_in","scale":2.0}"""));
+            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"transform":"zoom_in","scale":2.0}"""));
 
         Assert.IsTrue(result.Success, result.Error);
         var derivedArtifactId = ExtractArtifactId(result.Output);
@@ -263,11 +208,11 @@ public sealed class ImageReaderToolTests
         var root = Path.GetDirectoryName(imagePath)!;
         var (_, storage) = await CreateStorageAsync(root);
 
-        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var tool = CreateTool(storage);
         var result = await tool.ExecuteAsync(Request(
             imagePath,
             context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses")),
-            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"mode":"native","transform":"zoom_out","scale":0.5}"""));
+            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"transform":"zoom_out","scale":0.5}"""));
 
         Assert.IsTrue(result.Success, result.Error);
         StringAssert.Contains(result.Output, "20x10");
@@ -281,11 +226,11 @@ public sealed class ImageReaderToolTests
         var root = Path.GetDirectoryName(imagePath)!;
         var (_, storage) = await CreateStorageAsync(root);
 
-        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var tool = CreateTool(storage);
         var result = await tool.ExecuteAsync(Request(
             imagePath,
             context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses")),
-            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"mode":"native","transform":"crop","cropX":20,"cropY":0,"cropWidth":20,"cropHeight":10}"""));
+            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"transform":"crop","cropX":20,"cropY":0,"cropWidth":20,"cropHeight":10}"""));
 
         Assert.IsTrue(result.Success, result.Error);
         StringAssert.Contains(result.Output, "20x10");
@@ -305,11 +250,11 @@ public sealed class ImageReaderToolTests
         var root = Path.GetDirectoryName(imagePath)!;
         var (_, storage) = await CreateStorageAsync(root);
 
-        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var tool = CreateTool(storage);
         var result = await tool.ExecuteAsync(Request(
             imagePath,
             context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses")),
-            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"mode":"native","transform":"rotate","rotation":90}"""));
+            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"transform":"rotate","rotation":90}"""));
 
         Assert.IsTrue(result.Success, result.Error);
         StringAssert.Contains(result.Output, "10x40");
@@ -329,18 +274,14 @@ public sealed class ImageReaderToolTests
         var originalBytes = File.ReadAllBytes(imagePath);
         var (_, storage) = await CreateStorageAsync(root);
 
-        var invocation = new Mock<ILlmInvocationService>();
-        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), invocation);
+        var tool = CreateTool(storage);
         var result = await tool.ExecuteAsync(Request(
             imagePath,
             context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses")),
-            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"mode":"native","transform":"zoom_in","scale":2.0}"""));
+            arguments: $$"""{"path":{{System.Text.Json.JsonSerializer.Serialize(imagePath)}},"transform":"zoom_in","scale":2.0}"""));
 
         Assert.IsFalse(result.Success);
         StringAssert.Contains(result.Error, "vision_media_invalid");
-        invocation.Verify(service => service.InvokeAsync(
-            It.IsAny<LlmInvocationRequest>(),
-            It.IsAny<CancellationToken>()), Times.Never);
         CollectionAssert.AreEqual(originalBytes, File.ReadAllBytes(imagePath));
         Assert.IsTrue(File.Exists(imagePath));
     }
@@ -352,16 +293,16 @@ public sealed class ImageReaderToolTests
         var root = Path.GetDirectoryName(imagePath)!;
         var (_, storage) = await CreateStorageAsync(root);
 
-        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var tool = CreateTool(storage);
         var context = Context(callerSnapshot: Snapshot(vision: true, protocol: "responses"));
         var pathJson = System.Text.Json.JsonSerializer.Serialize(imagePath);
         string[] payloads =
         [
-            $$"""{"path":{{pathJson}},"mode":"native","transform":"flip"}""",
-            $$"""{"path":{{pathJson}},"mode":"native","transform":"zoom_in"}""",
-            $$"""{"path":{{pathJson}},"mode":"native","transform":"rotate","rotation":45}""",
-            $$"""{"path":{{pathJson}},"mode":"native","transform":"zoom_in","scale":2.0,"rotation":90}""",
-            $$"""{"path":{{pathJson}},"mode":"native","transform":"crop","cropX":25,"cropY":0,"cropWidth":20,"cropHeight":10}""",
+            $$"""{"path":{{pathJson}},"transform":"flip"}""",
+            $$"""{"path":{{pathJson}},"transform":"zoom_in"}""",
+            $$"""{"path":{{pathJson}},"transform":"rotate","rotation":45}""",
+            $$"""{"path":{{pathJson}},"transform":"zoom_in","scale":2.0,"rotation":90}""",
+            $$"""{"path":{{pathJson}},"transform":"crop","cropX":25,"cropY":0,"cropWidth":20,"cropHeight":10}""",
         ];
 
         foreach (var payload in payloads)
@@ -410,12 +351,8 @@ public sealed class ImageReaderToolTests
     }
 
     private static ImageReaderTool CreateTool(
-        VisionArtifactStorageService storage,
-        string root,
-        Mock<ILlmResolver> resolver,
-        Mock<ILlmInvocationService> invocation)
+        VisionArtifactStorageService storage)
     {
-        var paths = PuddingDataPaths.FromRoot(root);
         var sourceResolver = new ImageReaderSourceResolver(
             storage,
             null,
@@ -423,9 +360,6 @@ public sealed class ImageReaderToolTests
         return new ImageReaderTool(
             sourceResolver,
             storage,
-            new AgentProfileProvider(paths),
-            resolver.Object,
-            invocation.Object,
             NullLogger<ImageReaderTool>.Instance);
     }
 
@@ -489,7 +423,7 @@ public sealed class ImageReaderToolTests
         var root = Path.Combine(Path.GetTempPath(), $"pudding-image-reader-perm-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
         var (_, storage) = CreateStorageAsync(root).GetAwaiter().GetResult();
-        var tool = CreateTool(storage, root, new Mock<ILlmResolver>(), new Mock<ILlmInvocationService>());
+        var tool = CreateTool(storage);
 
         var descriptor = tool.Descriptor;
         var decision = new PuddingRuntime.Services.Tools.ToolPermissionPolicyService().Classify(descriptor);

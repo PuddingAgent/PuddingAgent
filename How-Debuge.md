@@ -4,6 +4,10 @@
 
 ## 1. 基本原则
 
+### 原生工具图片成功后 LLM 报视觉路由缺失（2026-09-15）
+
+先用页面 Message ID 查 chat_execution_commands.message_id，取真实 turn_id/trace_id，再对齐 tool.completed 与 turn.failed。若 Image Reader 原生返回成功而 Responses PlanVisualInputsAsync 报 workspace/vision-capable route 缺失，检查 Streaming yield 后 FrozenVisionContextAccessor.Current；入口 Push 不保证下次 MoveNext 保留 AsyncLocal。应逐次绑定冻结快照，不能删除历史图片止错。详见 [诊断记录](Docs/Reports/原生视觉流式上下文与ImageReader修复-2026-09-15.md)。
+
 ### Core 重启后首轮上下文慢、全文索引反复重建（2026-09-14）
 
 - 先按同一turn的canonical turn.started→context计时，再用`[HistoryHydration:Stage]`及`[ContextPipeline:Stage]`分解；现有FIRST_TOKEN日志早于Provider请求，不能当模型TTFT。阶段耗时另附加在agent.context.assemble指标的`stage.<name>.duration_ms`。

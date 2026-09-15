@@ -1,3 +1,7 @@
+## 2026-09-15 原生视觉流式上下文与 Image Reader
+
+每次 LLM MoveNext 重新绑定冻结视觉快照，避免 SSE yield 后 AsyncLocal 丢失；Image Reader 只返回 typed 图片给调用模型，移除 helper 调用与设置入口。见[诊断与验证](Docs/Reports/原生视觉流式上下文与ImageReader修复-2026-09-15.md)。
+
 ## 2026-09-15 长消息卡片阅读优化
 
 `ExpandableMessageContent` 为正文/静态过程提供按高度展开预览；`TurnContentStream` 就地收拢较早交错前缀，`ActivityGroup` 初次展示最近6项。保留canonical顺序与完整复制/TTS，手动行为组展开优先。阈值见ADR-079对应实施方案§15，验证与发布见[优化记录](Docs/Reports/长消息卡片阅读优化-2026-09-15.md)。

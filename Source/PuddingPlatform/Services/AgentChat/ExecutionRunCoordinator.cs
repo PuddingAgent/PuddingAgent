@@ -989,7 +989,7 @@ public sealed class ExecutionRunCoordinator(
             The user attached {visualArtifactIds.Count} image(s); the current model cannot view images natively:
             {references}
 
-            Do not guess or fabricate image contents. When you actually need to inspect an image, call the `image_reader` tool with the `artifact://` reference above as `path` (mode defaults to auto and bills exactly one auxiliary vision invocation). The tool decides whether to return the image natively or delegate to the configured vision helper model.
+            Do not guess or fabricate image contents. Image Reader only retrieves images for the calling model; it cannot give this route visual capability and never calls a helper model. If image understanding is required, explain that this turn needs a vision-capable route.
             """;
     }
 

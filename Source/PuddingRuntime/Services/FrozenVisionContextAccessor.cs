@@ -26,6 +26,19 @@ public sealed class FrozenVisionContextAccessor
         return new Scope(this, previous);
     }
 
+    /// <summary>
+    /// Async iterator 的 yield 会把控制权交回调用者；入口 Push 的 AsyncLocal 值
+    /// 不会自动恢复到下一次 MoveNext。每次读取 LLM 流时显式绑定同一个冻结快照，
+    /// 并在成功、异常或取消后恢复调用者上下文，避免图片工具与 Gateway 能力分裂。
+    /// </summary>
+    public async ValueTask<bool> MoveNextAsync<T>(
+        IAsyncEnumerator<T> enumerator,
+        LlmRouteSnapshot? snapshot)
+    {
+        using var scope = Push(snapshot);
+        return await enumerator.MoveNextAsync();
+    }
+
     private sealed class Scope(FrozenVisionContextAccessor owner, LlmRouteSnapshot? previous) : IDisposable
     {
         private bool _disposed;

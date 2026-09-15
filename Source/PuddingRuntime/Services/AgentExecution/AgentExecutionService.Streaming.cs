@@ -895,7 +895,11 @@ public sealed partial class AgentExecutionService
                         StreamDelta delta;
                         try
                         {
-                            if (!await llmEnumerator.MoveNextAsync())
+                            var hasNext = _frozenVisionContext is null
+                                ? await llmEnumerator.MoveNextAsync()
+                                : await _frozenVisionContext.MoveNextAsync(
+                                    llmEnumerator, request.CallerLlmSnapshot);
+                            if (!hasNext)
                                 break;
                             delta = llmEnumerator.Current;
                         }

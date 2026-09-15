@@ -14,6 +14,62 @@ namespace PuddingRuntimeTests.Services;
 public sealed class LlmStreamObservabilityTests
 {
     [TestMethod]
+    public async Task ResponsesStream_AfterAgentYield_PreservesUserAndToolImagesAcrossRounds()
+    {
+        var context = new FrozenVisionContextAccessor();
+        var route = new LlmRouteSnapshot("provider-a", "test-model", "responses", ["vision"]);
+        var handler = new CapturingVisionStreamHandler();
+        var resolver = new FixedVisualArtifactResolver();
+        var client = new DirectLlmClient(
+            new FixedHttpClientFactory(new HttpClient(handler)),
+            new TestLlmConfigService(protocol: "responses"),
+            NullLogger<DirectLlmClient>.Instance,
+            visualArtifactResolver: resolver, frozenVisionContext: context);
+        var config = new LlmConfig { Endpoint = "https://provider.test/v1", ApiKey = "test-key", ModelId = "test-model" };
+
+        async IAsyncEnumerable<int> Agent()
+        {
+            using var entryScope = context.Push(route);
+            yield return 0;
+            for (var round = 0; round < 2; round++)
+            {
+                await using var stream = client.ChatStreamAsync("default", "session-vision", "template",
+                    [new ChatMessage(ChatRole.User, "inspect", VisualArtifactIds: ["artifact-user"]),
+                     new ChatMessage(ChatRole.Assistant, null, ToolCalls: [new ToolCall("call-image", "image_reader", "{}")]),
+                     new ChatMessage(ChatRole.Tool, "loaded", ToolCallId: "call-image", ContentParts: [new LlmImagePart("artifact-tool")])],
+                    llmConfig: config).GetAsyncEnumerator();
+                while (await context.MoveNextAsync(stream, route))
+                    yield return round + 1;
+            }
+        }
+        await foreach (var _ in Agent()) Assert.IsNull(context.Current);
+        Assert.AreEqual(2, handler.Bodies.Count);
+        foreach (var body in handler.Bodies)
+        {
+            using var json = JsonDocument.Parse(body);
+            var input = json.RootElement.GetProperty("input");
+            Assert.IsTrue(input[0].GetProperty("content").EnumerateArray().Any(p => p.GetProperty("type").GetString() == "input_image"));
+            var toolOutput = input.EnumerateArray().Single(p => p.TryGetProperty("type", out var type) && type.GetString() == "function_call_output");
+            Assert.AreEqual("call-image", toolOutput.GetProperty("call_id").GetString());
+            Assert.IsTrue(toolOutput.GetProperty("output").EnumerateArray().Any(p => p.GetProperty("type").GetString() == "input_image"));
+        }
+        Assert.AreEqual(4, resolver.ResolveCount);
+    }
+
+    private sealed class CapturingVisionStreamHandler : HttpMessageHandler
+    {
+        public List<string> Bodies { get; } = [];
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Bodies.Add(await request.Content!.ReadAsStringAsync(ct));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("data: {\"type\":\"response.output_text.delta\",\"delta\":\"seen\"}\n\ndata: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+            };
+        }
+    }
+
+    [TestMethod]
     public async Task ChatAsync_WhenModelProtocolIsResponses_RoutesToResponsesGateway()
     {
         var handler = new CapturingResponsesHandler();
