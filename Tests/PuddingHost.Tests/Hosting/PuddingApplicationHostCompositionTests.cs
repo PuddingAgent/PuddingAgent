@@ -32,6 +32,22 @@ public sealed class PuddingApplicationHostCompositionTests
             var builder = PuddingApplicationHost.CreateBuilder([], options);
             await using var app = PuddingApplicationHost.Build(builder);
 
+            var visionContext = app.Services.GetRequiredService<FrozenVisionContextAccessor>();
+            Assert.Same(visionContext, app.Services.GetRequiredService<FrozenVisionContextAccessor>());
+            // Optional constructor parameters can silently resolve to null even when
+            // ValidateOnBuild succeeds. Check the actual product consumers as well.
+            foreach (var consumer in new object[]
+            {
+                app.Services.GetRequiredService<AgentExecutionService>(),
+                app.Services.GetRequiredService<IRuntimeLlmClient>(),
+            })
+            {
+                var field = consumer.GetType().GetField("_frozenVisionContext",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                Assert.NotNull(field);
+                Assert.Same(visionContext, field.GetValue(consumer));
+            }
+
             Assert.IsType<UserPreferenceService>(
                 app.Services.GetRequiredService<IUserPreferenceService>());
 

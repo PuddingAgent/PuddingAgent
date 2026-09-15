@@ -1,3 +1,7 @@
+### 图片路由修复后仍失败：检查产品组合根（2026-09-15）
+
+PuddingHost 不调用 AddPuddingRuntime；仅在 Runtime.DependencyInjection 注册 FrozenVisionContextAccessor 不会作用于产品。可选构造依赖缺失仍能通过 ValidateOnBuild，必须断言 AgentExecutionService 与 DirectLlmClient 实际注入同一个 accessor。再按 Message ID → canonical turn → 错误日志对齐，不能把逐次 MoveNext 单测通过当作产品组合完成。见[本次证据](Docs/Reports/产品视觉上下文注册修复-2026-09-15.md)。
+
 # PuddingAgent 调试与诊断指南
 
 > 本文记录可重复使用的诊断路径、关键日志和验收方法。目标是找到故障发生在哪个架构边界，而不是根据前端现象直接打补丁。

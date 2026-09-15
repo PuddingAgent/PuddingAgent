@@ -162,7 +162,9 @@ public sealed class TurnExecutorAdapter(
                 ConversationEventTypes.TurnFailed,
                 true,
                 TurnTerminalInfo.Failure(
-                    TryGetString(payload, "code") ?? TerminalErrorCodes.RuntimeExecutionFailed,
+                    TryGetString(payload, "errorCode")
+                        ?? TryGetString(payload, "code")
+                        ?? TerminalErrorCodes.RuntimeExecutionFailed,
                     TryGetString(payload, "message") ?? "Execution failed.")),
             "cancelled" => (
                 ConversationEventTypes.TurnCancelled,

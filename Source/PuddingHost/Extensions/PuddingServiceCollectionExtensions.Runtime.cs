@@ -352,6 +352,9 @@ public static partial class PuddingServiceCollectionExtensions
             // P0-5 缺陷修复：传入持久化注册表单例，RecoverAsync 同时恢复已持久化版本
             //（写穿从 max+1 继续）；若被覆盖为非 Persistent 实现则转型失败 → 版本恢复 no-op，工具恢复不受影响。
             sp.GetService<ICompositionVersionRegistry>() as PersistentCompositionVersionRegistry));
+        // The product host does not call AddPuddingRuntime. Both execution and the
+        // LLM client must share this accessor to carry the frozen vision route.
+        builder.Services.TryAddSingleton<FrozenVisionContextAccessor>();
         builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
         builder.Services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
 

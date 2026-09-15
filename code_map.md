@@ -1,3 +1,7 @@
+## 2026-09-15 产品视觉上下文注册修复
+
+PuddingHost 产品组合根显式注册共享 `FrozenVisionContextAccessor`，让 Agent Streaming 的逐次 MoveNext 快照绑定实际到达 DirectLlmClient；TurnExecutorAdapter 保留 Runtime 的 errorCode。见[故障与验证](Docs/Reports/产品视觉上下文注册修复-2026-09-15.md)。
+
 ## 2026-09-15 主代理缓存前缀修复
 
 工具可见顺序在 SessionManager 中跨 dispatch 保留，并从既有 Composition 恢复；稳定规则留在 system，可变工具/技能目录在 User tail 按最新完整正文去重追加。保留权限、压缩及即时发现，65 项定向测试通过；线上 99% 待实际账本验收。见[诊断与修复](Docs/Reports/主代理缓存前缀修复-2026-09-15.md)。

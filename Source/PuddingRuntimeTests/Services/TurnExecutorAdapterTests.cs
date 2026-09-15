@@ -11,6 +11,36 @@ namespace PuddingRuntimeTests.Services;
 public sealed class TurnExecutorAdapterTests
 {
     [TestMethod]
+    [DataRow("{\"errorCode\":\"vision.route_missing\",\"message\":\"route missing\"}", "vision.route_missing")]
+    [DataRow("{\"code\":\"budget_exhausted\",\"message\":\"route missing\"}", "budget_exhausted")]
+    [DataRow("{\"message\":\"route missing\"}", "runtime_execution_failed")]
+    public async Task ExecuteAsync_PreservesRuntimeFailureCode(string payload, string expectedCode)
+    {
+        var adapter = new TurnExecutorAdapter(new ErrorRuntimeDispatcher(payload),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TurnExecutorAdapter>.Instance);
+        var events = new List<TurnExecutionEvent>();
+        await foreach (var evt in adapter.ExecuteAsync(CreateContext(), CancellationToken.None))
+            events.Add(evt);
+        Assert.HasCount(1, events);
+        Assert.AreEqual(ConversationEventTypes.TurnFailed, events[0].Type);
+        Assert.AreEqual(expectedCode, events[0].TerminalInfo?.ErrorCode);
+        Assert.AreEqual("route missing", events[0].TerminalInfo?.ErrorMessage);
+    }
+
+    private sealed class ErrorRuntimeDispatcher(string payload) : IRuntimeAgentDispatcher
+    {
+        public Task<RuntimeDispatchResult> DispatchAsync(RuntimeDispatchRequest request,
+            CancellationToken ct = default) => throw new NotSupportedException();
+
+        public async IAsyncEnumerable<ServerSentEventFrame> DispatchStreamAsync(
+            RuntimeDispatchRequest request, [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            yield return new ServerSentEventFrame("error", payload);
+        }
+    }
+
+    [TestMethod]
     public async Task ExecuteAsync_AcquiresForegroundAndPreemptsBackgroundDelivery()
     {
         var coordinator = new AgentExecutionAdmissionCoordinator();
