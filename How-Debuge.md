@@ -4,6 +4,10 @@
 
 ## 1. 基本原则
 
+### 主代理缓存：目录变更与工具重排（2026-09-15）
+
+先在 Gateway 按主代理直接调用、模型和时间窗口做 Token 加权，再用 usage attribution、Composition 有序 ToolIds 与 context layer hash 关联原因，不能重复累加计量。L1/L2 现在是稳定规则；目录内容变动记在 L9-TOOL-CATALOG / L9-SKILL-CATALOG，已在模型可见历史中则本轮不重复注入。核验重启恢复是否保留发现顺序，以及目录增删是否仅追加 User tail。见[证据与验收边界](Docs/Reports/主代理缓存前缀修复-2026-09-15.md)。
+
 ### Image Reader 预处理与原图追踪（2026-09-15）
 
 日志 `[ImageReader] action/source/result/detail/bytes` 区分原图和派生结果。low 要检查实际请求中的图片像素，不能只看 detail 字段（Files 会忽略它）；区域坐标基于 EXIF 校正后的原图。WebP 的 SKCodec 可能提前关闭输入流，字节长度在创建 codec 前读取。操作参数、源上限和验证见[预处理合同](Docs/Features/ImageReader原生阅读与预处理-2026-09-15.md)。

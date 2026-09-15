@@ -107,17 +107,17 @@ public sealed partial class ContextPipeline
         ctx.UsedBudget = usedBudget;
         budget.UpdateAvailable(ctx);
 
-                // ── L1: 动态工具（5%）──
+        // ── L1: 稳定工具规则；可变目录分配 5% 并追加到 User tail ──
         var toolsCtx = await MeasureAsync("tools", () => BuildToolsLayerAsync(request, ct));
         var toolsBudget = budget.AllocatePercent(ctx, 0.05);
         var toolsTrimmed = TrimToTokenBudget(toolsCtx, toolsBudget);
-        RecordLayer(sb, toolsTrimmed, "动态工具", "L1-TOOLS", ref usedBudget, totalBudget, layers, layerInfos);
+        RecordLayer(sb, BuildToolGuidance(request), "工具使用规则", "L1-TOOLS", ref usedBudget, totalBudget, layers, layerInfos);
 
-        // ── L2: 动态 Skills 与多模态渠道协议（8%）──
+        // ── L2: 稳定技能/多模态协议；可变目录分配 8% ──
         var skillsCtx = await MeasureAsync("skills", () => BuildSkillsLayerAsync(request, ct));
         var skillsBudget = budget.AllocatePercent(ctx, 0.08);
         var skillsTrimmed = TrimToTokenBudget(skillsCtx, skillsBudget);
-                RecordLayer(sb, skillsTrimmed, "动态技能", "L2-SKILLS", ref usedBudget, totalBudget, layers, layerInfos);
+        RecordLayer(sb, BuildSkillGuidance(), "技能使用规则", "L2-SKILLS", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ── L3-WORKSPACE-ENVIRONMENT ──
         var workspaceEnvironmentCtx = BuildWorkspaceEnvironmentLayer(request);
@@ -202,6 +202,11 @@ public sealed partial class ContextPipeline
         var pinnedBudget = budget.AllocatePercent(ctx, pinnedPercent);
         var pinnedTrimmed = TrimToTokenBudget(pinnedCtx, pinnedBudget);
         RecordLayer(sb, pinnedTrimmed, "重要记忆", "L4-PINNED", ref usedBudget, totalBudget, layers, layerInfos);
+
+        // Account for variable catalog updates after budgeting stable system layers.
+        // Otherwise deduplication would change the pinned-memory trim point next turn.
+        RecordCatalogUpdate(userContextBuilder, request.SessionHistory, toolsTrimmed, "L9-TOOL-CATALOG", ref usedBudget, totalBudget, layers, layerInfos);
+        RecordCatalogUpdate(userContextBuilder, request.SessionHistory, skillsTrimmed, "L9-SKILL-CATALOG", ref usedBudget, totalBudget, layers, layerInfos);
 
         // ═══════════════════════════════════════════════════════════════
         // 收集可变层原始内容，准备 Flash 裁剪
@@ -442,6 +447,33 @@ public sealed partial class ContextPipeline
                 ct: CancellationToken.None);
             throw;
         }
+    }
+
+    // Model-visible history is the deduplication authority. No process-local "sent" flag:
+    // after compaction/restart, an absent catalog must be supplied again. Compare only the
+    // latest catalog, so A -> B -> A and permission removals are never suppressed by old A.
+    internal static string? BuildCatalogUpdate(IReadOnlyList<ChatMessage> history, string content, string name)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant();
+        var marker = $"[RUNTIME-CATALOG {name} ";
+        var envelope = $"{marker}sha256={hash}]\n{content}\n[/RUNTIME-CATALOG {name}]";
+        for (var i = history.Count - 1; i >= 0; i--)
+        {
+            if (history[i].Role != ChatRole.User || history[i].Content is not { } text)
+                continue;
+            var start = text.LastIndexOf(marker, StringComparison.Ordinal);
+            if (start >= 0)
+                return text.AsSpan(start).StartsWith(envelope.AsSpan(), StringComparison.Ordinal) ? null : envelope;
+        }
+        return envelope;
+    }
+
+    private void RecordCatalogUpdate(StringBuilder tail, IReadOnlyList<ChatMessage> history, string content,
+        string name, ref int usedBudget, int totalBudget, List<ContextLayerSnapshot> layers, List<ContextLayerInfo> layerInfos)
+    {
+        var update = BuildCatalogUpdate(history, content, name);
+        if (update is not null)
+            RecordLayer(tail, update, "运行时目录更新", name, ref usedBudget, totalBudget, layers, layerInfos);
     }
 
     private static bool IsExactUserContextVisible(

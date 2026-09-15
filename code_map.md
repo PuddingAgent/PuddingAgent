@@ -1,3 +1,7 @@
+## 2026-09-15 主代理缓存前缀修复
+
+工具可见顺序在 SessionManager 中跨 dispatch 保留，并从既有 Composition 恢复；稳定规则留在 system，可变工具/技能目录在 User tail 按最新完整正文去重追加。保留权限、压缩及即时发现，65 项定向测试通过；线上 99% 待实际账本验收。见[诊断与修复](Docs/Reports/主代理缓存前缀修复-2026-09-15.md)。
+
 ## 2026-09-15 Image Reader 预处理
 
 Image Reader 支持 metadata/read/prepare、detail、缩略图、原图多区域裁剪、旋转、灰度、降噪和编码；统一模型边界准备聊天/历史图片，保留原图。VisionHelper 配置与路由合同已移除。见[能力合同](Docs/Features/ImageReader原生阅读与预处理-2026-09-15.md)及[验证记录](Docs/Reports/ImageReader预处理实施记录-2026-09-15.md)。

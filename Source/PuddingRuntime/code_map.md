@@ -33,6 +33,8 @@
 
 ## 上下文管线
 
+2026-09-15：`AgentSessionManager` 的可见工具有序投影贯穿 `BuildFrozenToolManifest`、Streaming/Buffered 发现边界和 Composition 恢复。`ContextPipelineLayers` 拆分稳定规则与可变目录，`ContextPipelineOrchestrator.BuildCatalogUpdate` 按模型可见历史的最新完整目录去重，更新仅追加 User tail，固定记忆裁剪不受目录去重影响。见[修复记录](../../Docs/Reports/主代理缓存前缀修复-2026-09-15.md)。
+
 | 文件 | 用途 |
 |------|------|
 | `Services/ContextPipeline.cs` | 🔑 上下文组装管线；区分执行 `AgentInstanceId` 与持久 `ConfigurationAgentInstanceId`，私有 Skill/人格/记忆/日志只读稳定身份；稳定 system prefix 与本轮 User tail 分离；已在模型可见历史中的完全相同 L6 recall 不再重复注入，召回变化或历史被压缩时仍正常追加；Tool 层强制 Direct/Delegated 判定与前三次调用委派合同；L1 TOOLS 层索引文本从 session 已加载工具集合（append-only）生成（Core ∪ Loaded 不收缩），消除每轮全量重建导致的 prefix 漂移；Skills 层只在 `search_tools` 实际可见时声明可用递延发现；已拆为 `ContextPipelineLayers.cs`（层装配）与 `ContextPipelineOrchestrator.cs`（编排执行）两个 partial |

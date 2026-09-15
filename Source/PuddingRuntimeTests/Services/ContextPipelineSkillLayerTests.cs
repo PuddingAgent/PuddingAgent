@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using PuddingCode.Abstractions;
 using PuddingCode.Agents;
 using PuddingCode.Configuration;
@@ -41,17 +42,17 @@ public sealed class ContextPipelineSkillLayerTests
         var result = await pipeline.AssembleAsync(CreateRequest("agent-1"), CancellationToken.None);
 
         StringAssert.Contains(result.SystemPrompt, "--- LAYER: SKILLS ---");
-        StringAssert.Contains(result.SystemPrompt, "Runtime-private SKILL index:");
-        StringAssert.Contains(result.SystemPrompt, "`daily_notes`");
+        StringAssert.Contains(result.UserContextPrefix, "Runtime-private SKILL index:");
+        StringAssert.Contains(result.UserContextPrefix, "`daily_notes`");
         // 2026-08-22 冗余治理：索引行压缩为 skillId + 首句摘要 + 有限 tags/keywords；
         // Name/版本/path 不再进入索引（完整内容由 agent_skill 渐进加载）。
-        StringAssert.Contains(result.SystemPrompt, "Use this when writing daily notes.");
-        StringAssert.Contains(result.SystemPrompt, "tags=notes, workflow");
-        Assert.IsFalse(result.SystemPrompt.Contains("v1.2.3", StringComparison.Ordinal));
-        Assert.IsFalse(result.SystemPrompt.Contains("path=skills/daily_notes", StringComparison.Ordinal));
-        Assert.IsFalse(result.SystemPrompt.Contains("FULL_SECRET_BODY_SHOULD_NOT_ENTER_CONTEXT", StringComparison.Ordinal));
-        Assert.IsFalse(result.SystemPrompt.Contains("other_agent_skill", StringComparison.Ordinal));
-        Assert.IsFalse(result.SystemPrompt.Contains("OTHER_AGENT_SECRET", StringComparison.Ordinal));
+        StringAssert.Contains(result.UserContextPrefix, "Use this when writing daily notes.");
+        StringAssert.Contains(result.UserContextPrefix, "tags=notes, workflow");
+        Assert.IsFalse((result.SystemPrompt + result.UserContextPrefix).Contains("v1.2.3", StringComparison.Ordinal));
+        Assert.IsFalse((result.SystemPrompt + result.UserContextPrefix).Contains("path=skills/daily_notes", StringComparison.Ordinal));
+        Assert.IsFalse((result.SystemPrompt + result.UserContextPrefix).Contains("FULL_SECRET_BODY_SHOULD_NOT_ENTER_CONTEXT", StringComparison.Ordinal));
+        Assert.IsFalse((result.SystemPrompt + result.UserContextPrefix).Contains("other_agent_skill", StringComparison.Ordinal));
+        Assert.IsFalse((result.SystemPrompt + result.UserContextPrefix).Contains("OTHER_AGENT_SECRET", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -98,8 +99,69 @@ public sealed class ContextPipelineSkillLayerTests
 
         var result = await pipeline.AssembleAsync(request, CancellationToken.None);
 
-        StringAssert.Contains(result.SystemPrompt, "`persistent_skill`");
+        StringAssert.Contains(result.UserContextPrefix, "`persistent_skill`");
         Assert.IsFalse(Directory.Exists(temp.Paths.AgentInstanceRoot(transientId)));
+    }
+
+    [TestMethod]
+    public async Task CatalogUpdate_PreservesSystemAndHistory_AcrossTurnsAndColdAssembly()
+    {
+        using var temp = new TempDataRoot();
+        var skills = new AgentSkillFileService(temp.Paths);
+        await skills.CreateAsync("agent-1", new AgentSkillCreateRequest
+        {
+            SkillId = "original_skill", Name = "Original", Summary = "Original summary.", SkillMarkdown = "body",
+        });
+        var pipeline = CreatePipeline(new ContextAssemblyStore(), skills);
+        var request = CreateRequest("agent-1");
+        var first = await pipeline.AssembleAsync(request, CancellationToken.None);
+        var originalUser = new ChatMessage(ChatRole.User, first.UserContextPrefix + "\n" + request.UserMessage);
+        var history = new List<ChatMessage> { new(ChatRole.System, first.SystemPrompt), originalUser };
+        var warm = await pipeline.AssembleAsync(request with { SessionHistory = history, IsFirstMessage = false }, CancellationToken.None);
+        Assert.IsFalse((warm.UserContextPrefix ?? "").Contains("RUNTIME-CATALOG"));
+        Assert.AreEqual(first.SystemPrompt, warm.SystemPrompt, "Catalog deduplication must not change the pinned-memory trim budget.");
+
+        await skills.CreateAsync("agent-1", new AgentSkillCreateRequest
+        {
+            SkillId = "new_skill", Name = "New", Summary = "New required capability.", SkillMarkdown = "new body",
+        });
+        var updated = await pipeline.AssembleAsync(request with { SessionHistory = history, IsFirstMessage = false }, CancellationToken.None);
+        Assert.AreEqual(first.SystemPrompt, updated.SystemPrompt, "Background updates must not invalidate the system prefix.");
+        StringAssert.Contains(updated.UserContextPrefix, "`new_skill`");
+        Assert.AreSame(originalUser, history[1], "Earlier model-visible messages must remain untouched.");
+        history.Add(new(ChatRole.User, updated.UserContextPrefix + "\nnext"));
+
+        // Recreate the assembler (restart), using recovered model-visible history.
+        var restarted = CreatePipeline(new ContextAssemblyStore(), new AgentSkillFileService(temp.Paths));
+        var recovered = await restarted.AssembleAsync(request with { SessionHistory = history, IsFirstMessage = false }, CancellationToken.None);
+        Assert.AreEqual(first.SystemPrompt, recovered.SystemPrompt);
+        Assert.IsFalse((recovered.UserContextPrefix ?? "").Contains("RUNTIME-CATALOG"));
+
+        // A -> B -> A must emit the removal, even though old A is still visible.
+        await skills.SetEnabledAsync("agent-1", "new_skill", false);
+        var removed = await pipeline.AssembleAsync(request with { SessionHistory = history, IsFirstMessage = false }, CancellationToken.None);
+        StringAssert.Contains(removed.UserContextPrefix, "RUNTIME-CATALOG L9-SKILL-CATALOG");
+        Assert.IsFalse(removed.UserContextPrefix!.Contains("`new_skill`"));
+        Assert.AreEqual(first.SystemPrompt, removed.SystemPrompt);
+
+        // After compaction drops the actual catalogs, re-emit current facts, not a stale 'sent' flag.
+        var compacted = await restarted.AssembleAsync(request with
+        {
+            SessionHistory = [new(ChatRole.System, first.SystemPrompt), new(ChatRole.User, "<compact_summary>work continues</compact_summary>")],
+            IsFirstMessage = false,
+        }, CancellationToken.None);
+        StringAssert.Contains(compacted.UserContextPrefix, "`original_skill`");
+        Assert.IsFalse(compacted.UserContextPrefix!.Contains("`new_skill`"));
+        Assert.AreEqual(first.SystemPrompt, compacted.SystemPrompt);
+    }
+
+    [TestMethod]
+    public void CatalogDedup_RequiresCompleteLatestBody_NotOnlyHashOrAssistantEcho()
+    {
+        var a = ContextPipeline.BuildCatalogUpdate([], "catalog A", "L9-TOOL-CATALOG")!;
+        Assert.IsNotNull(ContextPipeline.BuildCatalogUpdate([new(ChatRole.Assistant, a)], "catalog A", "L9-TOOL-CATALOG"));
+        Assert.IsNotNull(ContextPipeline.BuildCatalogUpdate([new(ChatRole.User, a.Replace("catalog A", "truncated"))], "catalog A", "L9-TOOL-CATALOG"));
+        Assert.IsNull(ContextPipeline.BuildCatalogUpdate([new(ChatRole.User, a)], "catalog A", "L9-TOOL-CATALOG"));
     }
 
     private static string ExtractLayer(string prompt, string startMarker, string endMarker)
@@ -133,6 +195,9 @@ public sealed class ContextPipelineSkillLayerTests
     private static ContextPipeline CreatePipeline(ContextAssemblyStore store, AgentSkillFileService skillService)
     {
         var memory = new FakeMemoryEngine();
+        var importantMemory = new Mock<IImportantMemoryService>();
+        importantMemory.Setup(x => x.ReadOrNull(It.IsAny<string>()))
+            .Returns(string.Concat(Enumerable.Repeat("Stable pinned fact. ", 1000)));
         var skillRegistry = new AgentSkillPackageRegistry();
         var sandbox = new SandboxExecutor(NullLogger<SandboxExecutor>.Instance);
         var skillRuntime = new SkillRuntime(Array.Empty<IAgentSkill>(), sandbox, NullLogger<SkillRuntime>.Instance);
@@ -155,7 +220,8 @@ public sealed class ContextPipelineSkillLayerTests
             NullLogger<ContextPipeline>.Instance,
             new FakeExecutionEnvironmentProvider(),
             workspaceProfileProvider: workspaceProfile,
-            agentSkillFileService: skillService);
+            agentSkillFileService: skillService,
+            importantMemory: importantMemory.Object);
     }
 
     private sealed class TempDataRoot : IDisposable
