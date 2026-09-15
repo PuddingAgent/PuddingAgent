@@ -38,8 +38,9 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
         var goalScope = !boundToTask
             || string.Equals(capsule.VerificationScope, GoalVerificationScopes.Goal, StringComparison.OrdinalIgnoreCase)
             || capsule.RemainingWorkUnits == 0;
-        var taskSatisfied = !boundToTask || taskCompleted;
         var taskCompleted = string.Equals(capsule.TaskStatus, "Completed", StringComparison.OrdinalIgnoreCase);
+        // 步骤已通过但 Task 尚未 Completed 时不得宣布完成（Task 绑定 Goal 的完成以 Task 终态为前提）。
+        var taskSatisfied = !boundToTask || taskCompleted;
 
         GoalVerificationDecision decision;
         if (!capsule.EvidenceComplete || capsule.HasPendingExecutionFacts)
