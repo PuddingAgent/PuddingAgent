@@ -77,9 +77,6 @@ public enum ToolApprovalAuditEventType
     TicketApproved,
     TicketDenied,
     TicketNeedHuman,
-
-    /// <summary>ADR-091 §4.4：依赖不可用导致的等待（非人工决定）。</summary>
-    TicketDeferredDependency,
     TicketMatched,
     TicketConsumed,
     TicketMismatch,
@@ -92,6 +89,12 @@ public enum ToolApprovalAuditEventType
 
     /// <summary>P0-6：授权时记录的工具定义规范哈希与当前定义不一致（v1 仅审计不阻断）。</summary>
     DefinitionDriftDetected,
+
+    /// <summary>
+    /// ADR-091 §4.4：依赖不可用导致的等待（非人工决定）。
+    /// N01：新成员必须追加在枚举末尾，避免改变既有成员的序列化数值。
+    /// </summary>
+    TicketDeferredDependency,
 }
 
 /// <summary>Identity boundary for submitting or checking an automatic tool approval ticket.</summary>
@@ -165,6 +168,9 @@ public sealed record ToolApprovalTicketResult
     public DateTimeOffset? ExpiresAtUtc { get; init; }
     public string? RecommendedNextStep { get; init; }
     public string? AllowlistRuleId { get; init; }
+
+    /// <summary>ADR-091 §4.4：稳定的协议原因码，供工具输出/API 统一映射。</summary>
+    public string? ReasonCode { get; init; }
 }
 
 /// <summary>Decision returned by the approval reviewer before a ticket is stored.</summary>
@@ -180,6 +186,9 @@ public sealed record ToolApprovalReviewResult
     public IReadOnlyList<ToolApprovalAllowlistProposal> AllowlistProposals { get; init; } = [];
     public string? RecommendedFix { get; init; }
     public string? ReviewerModel { get; init; }
+
+    /// <summary>ADR-091 §4.4：稳定的协议原因码（如 approval_review_timeout）；与模型自由文本分开。</summary>
+    public string? ReasonCode { get; init; }
 }
 
 /// <summary>Reusable command or argument shape proposed by the reviewer after approving a ticket.</summary>
@@ -216,6 +225,9 @@ public sealed record ToolApprovalTicketRecord
 
     /// <summary>P0-6：定义版本，同一工具每次授权捕获单调 +1；0 表示未记录（旧记录缺省）。</summary>
     public int DefinitionVersion { get; init; }
+
+    /// <summary>ADR-091 §4.4：本票据的协议原因码（引用/依赖/协议失败）；人工决定票据为 null。</summary>
+    public string? ReasonCode { get; init; }
 }
 
 /// <summary>Actual high-risk tool call checked against approved automatic tickets.</summary>
@@ -239,6 +251,16 @@ public sealed record ToolApprovalCheckResult
     public string? TicketId { get; init; }
     public string? AllowlistRuleId { get; init; }
     public string? ApprovalSource { get; init; }
+
+    /// <summary>
+    /// ADR-091 §4.1/F01：本次检查的 typed 终态。
+    /// 调用端（Firewall/执行服务）必须依赖它区分依赖等待、人工决定与拒绝，
+    /// 不得只用 IsApproved 二分，也不得把依赖等待计成 Agent 工具错误。
+    /// </summary>
+    public ToolApprovalDecision? Disposition { get; init; }
+
+    /// <summary>ADR-091 §4.4：稳定的协议原因码（如 approval_review_service_unavailable）。</summary>
+    public string? ReasonCode { get; init; }
 }
 
 /// <summary>Exact command or argument rule used to fast-approve low-risk tool calls.</summary>

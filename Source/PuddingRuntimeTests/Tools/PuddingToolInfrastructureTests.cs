@@ -1262,15 +1262,17 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
-    public void ServiceCollectionExtension_Registers_Fake_Tool_Approval_Reviewer()
+    public void ServiceCollectionExtension_Registers_Llm_Tool_Approval_Reviewer_By_Default()
     {
+        // ADR-091 §4.4/F01：默认组合（无 ILlmInvocationService、无日志）也必须能够解析 reviewer——
+        // 依赖缺席应产生 typed 依赖等待，而不是让 DI 在解析时崩溃。
         var services = new ServiceCollection();
         services.AddPuddingToolRegistry();
 
         using var provider = services.BuildServiceProvider();
         var reviewer = provider.GetRequiredService<IToolApprovalReviewer>();
 
-        Assert.IsInstanceOfType<FakeToolApprovalReviewer>(reviewer);
+        Assert.IsInstanceOfType<LlmToolApprovalReviewer>(reviewer);
     }
 
     [TestMethod]
@@ -1312,7 +1314,7 @@ public sealed partial class PuddingToolInfrastructureTests
         catch (InvalidOperationException ex)
         {
             rejected = true;
-            StringAssert.Contains(ex.Message, "test-only");
+            StringAssert.Contains(ex.Message, "not supported");
         }
 
         Assert.IsTrue(rejected, "fake reviewer must be rejected unless AllowFakeReviewer is enabled.");
@@ -1732,8 +1734,9 @@ public sealed partial class PuddingToolInfrastructureTests
         Assert.IsTrue(approvalResult.Success, approvalResult.Error);
         StringAssert.Contains(approvalResult.Output, "\"decision\": \"approved\"");
         Assert.IsNotNull(invocation.LastRequest);
-        Assert.IsNull(invocation.LastRequest!.AgentInstanceId);
-        Assert.IsNull(invocation.LastRequest.AgentTemplateId);
+        // F05：client 用调用者身份发起审查（profile 未指定审计实例时必须保留真实调用者归因）
+        Assert.AreEqual("agent-1", invocation.LastRequest!.AgentInstanceId);
+        Assert.AreEqual("approval-auditor", invocation.LastRequest.AgentTemplateId);
 
         var executor = new PuddingToolExecutionService(
             provider.GetRequiredService<IPuddingToolRegistry>(),
@@ -2127,9 +2130,11 @@ public sealed partial class PuddingToolInfrastructureTests
             prompt);
         var result = ToolApprovalReviewParser.Parse(raw);
 
-        Assert.AreEqual(ToolApprovalDecision.NeedHuman, result.Decision);
-        StringAssert.Contains(result.DecisionReason, "approval LLM profile is not configured");
-        Assert.IsTrue(result.RequiresHumanAuthorization);
+        Assert.AreEqual(ToolApprovalDecision.DeferredDependency, result.Decision);
+        Assert.IsFalse(result.RequiresHumanAuthorization);
+        Assert.AreEqual(ToolApprovalWire.CodeProfileNotConfigured, result.ReasonCode);
+        StringAssert.Contains(result.DecisionReason, "No approval review model profile is configured");
+        // F05：profile 不可解析时不得调用模型（零次调用），也不能要求人工授权。
         Assert.IsNull(invocation.LastRequest);
     }
 

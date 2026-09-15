@@ -9,85 +9,139 @@ public static class ToolApprovalReviewParser
     public static ToolApprovalReviewResult Parse(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
-            return Invalid("Reviewer returned an empty response.");
+            return ProtocolFailure(ToolApprovalWire.CodeEmptyResponse, "Reviewer returned an empty response.");
 
+        JsonDocument document;
         try
         {
-            using var doc = JsonDocument.Parse(raw);
-            var root = doc.RootElement;
-            var decisionRaw = GetString(root, "decision");
-            if (!TryParseDecision(decisionRaw, out var decision))
-                return Invalid($"Invalid approval reviewer decision '{decisionRaw}'.");
+            document = JsonDocument.Parse(raw);
+        }
+        catch (JsonException ex)
+        {
+            return ProtocolFailure(ToolApprovalWire.CodeInvalidJson, "Invalid approval reviewer JSON: " + ex.Message);
+        }
 
-            var reason = GetString(root, "reason")
-                         ?? GetString(root, "decisionReason")
-                         ?? "Approval reviewer did not provide a reason.";
-            var allowedScope = TryParseScope(GetString(root, "allowedScope"));
+        using (document)
+        {
+            var root = document.RootElement;
+
+            // F03：语法合法但根不是对象（null/[]/1/"text"）必须归入协议失败，不能抛异常也不能默认放行。
+            if (root.ValueKind != JsonValueKind.Object)
+                return ProtocolFailure(ToolApprovalWire.CodeNonObjectRoot, "Approval reviewer JSON root must be an object.");
+
+            var decisionRaw = GetString(root, "decision");
+            if (!ToolApprovalWire.TryParseDecision(decisionRaw, out var decision))
+                return ProtocolFailure(
+                    ToolApprovalWire.CodeUnknownDecision,
+                    $"Invalid or missing approval reviewer decision '{decisionRaw}'.");
+
+            if (HasWrongType(root, "decision", JsonValueKind.String)
+                || HasWrongType(root, "reason", JsonValueKind.String)
+                || HasWrongType(root, "decisionReason", JsonValueKind.String)
+                || HasWrongType(root, "requiresHumanAuthorization", JsonValueKind.True, JsonValueKind.False)
+                || HasWrongType(root, "allowedScope", JsonValueKind.String)
+                || HasWrongType(root, "allowedDurationMinutes", JsonValueKind.Number))
+            {
+                return ProtocolFailure(
+                    ToolApprovalWire.CodeInvalidFieldType,
+                    "Approval reviewer JSON contains a field with an unexpected type.");
+            }
+
+            var reason = FirstNonEmpty(GetString(root, "reason"), GetString(root, "decisionReason"));
+            if (string.IsNullOrWhiteSpace(reason))
+                return ProtocolFailure(
+                    ToolApprovalWire.CodeMissingReason,
+                    "Approval reviewer JSON is missing a non-empty reason.");
+
+            var requiresHuman = GetBool(root, "requiresHumanAuthorization")
+                                || decision == ToolApprovalDecision.NeedHuman;
+
+            // F03：跨字段一致性——批准不得同时要求人工授权；依赖等待不是人工决定。
+            if (decision == ToolApprovalDecision.Approved && requiresHuman)
+            {
+                return ProtocolFailure(
+                    ToolApprovalWire.CodeContradictory,
+                    "Approval reviewer JSON declares approved but also requires human authorization.");
+            }
+
+            if (decision == ToolApprovalDecision.DeferredDependency)
+                requiresHuman = false;
+
+            var allowedScopeRaw = GetString(root, "allowedScope");
+            ToolApprovalScope? allowedScope = null;
+            if (!string.IsNullOrWhiteSpace(allowedScopeRaw))
+            {
+                if (!Enum.TryParse<ToolApprovalScope>(allowedScopeRaw, ignoreCase: true, out var parsedScope))
+                {
+                    return ProtocolFailure(
+                        ToolApprovalWire.CodeInvalidFieldType,
+                        $"Approval reviewer JSON declares an unknown allowedScope '{allowedScopeRaw}'.");
+                }
+
+                allowedScope = parsedScope;
+            }
+
             var allowedDurationMinutes = GetInt(root, "allowedDurationMinutes");
+
+            // F03：拒绝/等待结果不得携带生效的批准 scope、时长或 allowlist 提案。
+            var approved = decision == ToolApprovalDecision.Approved;
 
             return new ToolApprovalReviewResult
             {
                 Decision = decision,
                 DecisionReason = reason,
-                AllowedScope = allowedScope,
-                AllowedDuration = allowedDurationMinutes is > 0
+                ReasonCode = GetString(root, "reasonCode"),
+                AllowedScope = approved ? allowedScope : null,
+                AllowedDuration = approved && allowedDurationMinutes is > 0
                     ? TimeSpan.FromMinutes(allowedDurationMinutes.Value)
                     : null,
-                RequiresHumanAuthorization = GetBool(root, "requiresHumanAuthorization") || decision == ToolApprovalDecision.NeedHuman,
+                RequiresHumanAuthorization = requiresHuman,
                 ChecklistFindings = GetStringArray(root, "checklistFindings"),
                 MissingRequirements = GetStringArray(root, "missingRequirements"),
-                AllowlistProposals = GetAllowlistProposals(root),
+                AllowlistProposals = approved ? GetAllowlistProposals(root) : [],
                 RecommendedFix = GetString(root, "recommendedFix"),
                 ReviewerModel = GetString(root, "reviewerModel"),
             };
         }
-        catch (JsonException ex)
-        {
-            return Invalid("Invalid approval reviewer JSON: " + ex.Message);
-        }
     }
 
     /// <summary>
-    /// ADR-091 §4.1 步骤 5：空响应、非法 JSON、schema 不符属于依赖/协议失败，
-    /// 既不是人工决定，也不得伪造批准。归入 DeferredDependency，等待依赖恢复后重试同一 invocation。
+    /// ADR-091 §4.1 步骤 5：空响应、非法 JSON、非对象根、schema 不符属于依赖/协议失败，
+    /// 既不是人工决定，也不得伪造批准。统一归入 DeferredDependency 并携带稳定 reasonCode。
     /// </summary>
-    private static ToolApprovalReviewResult Invalid(string reason)
+    private static ToolApprovalReviewResult ProtocolFailure(string reasonCode, string reason)
         => new()
         {
             Decision = ToolApprovalDecision.DeferredDependency,
             DecisionReason = reason,
+            ReasonCode = reasonCode,
             RequiresHumanAuthorization = false,
-            MissingRequirements = ["valid reviewer JSON"],
-            RecommendedFix = "The isolated review model did not return a schema-valid decision. Restore the review profile/model availability and retry the same invocation; this is a dependency wait, not a human authorization request.",
+            MissingRequirements = ["schema-valid review response"],
+            RecommendedFix = "Restore the isolated review dependency and retry the same invocation; this is a dependency wait, not a human authorization request.",
         };
 
-    private static bool TryParseDecision(string? value, out ToolApprovalDecision decision)
+    private static string? FirstNonEmpty(params string?[] values)
     {
-        decision = ToolApprovalDecision.NeedHuman;
-        if (string.IsNullOrWhiteSpace(value))
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
+        }
+
+        return null;
+    }
+
+    /// <summary>属性存在但类型不符时返回 true；属性缺失不算类型错误。</summary>
+    private static bool HasWrongType(JsonElement root, string name, params JsonValueKind[] allowed)
+    {
+        if (!root.TryGetProperty(name, out var value))
             return false;
 
-        var normalized = value.Trim().Replace("-", "_", StringComparison.Ordinal).ToLowerInvariant();
-        return normalized switch
-        {
-            "approved" => Set(ToolApprovalDecision.Approved, out decision),
-            "denied" => Set(ToolApprovalDecision.Denied, out decision),
-            "need_human" => Set(ToolApprovalDecision.NeedHuman, out decision),
-            "needhuman" => Set(ToolApprovalDecision.NeedHuman, out decision),
-            "deferred_dependency" => Set(ToolApprovalDecision.DeferredDependency, out decision),
-            "deferreddependency" => Set(ToolApprovalDecision.DeferredDependency, out decision),
-            _ => false,
-        };
-    }
+        if (value.ValueKind == JsonValueKind.Null)
+            return false;
 
-    private static bool Set(ToolApprovalDecision value, out ToolApprovalDecision decision)
-    {
-        decision = value;
-        return true;
+        return !allowed.Contains(value.ValueKind);
     }
-
-    private static ToolApprovalScope? TryParseScope(string? value)
-        => Enum.TryParse<ToolApprovalScope>(value, ignoreCase: true, out var scope) ? scope : null;
 
     private static string? GetString(JsonElement root, string name)
         => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String

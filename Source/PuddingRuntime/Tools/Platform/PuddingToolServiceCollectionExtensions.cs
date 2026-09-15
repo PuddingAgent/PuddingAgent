@@ -98,7 +98,12 @@ public static class PuddingToolServiceCollectionExtensions
         }
 
         services.TryAddSingleton<IToolApprovalLlmProfileResolver, StrictConfiguredToolApprovalLlmProfileResolver>();
-        services.TryAddSingleton<IToolApprovalLlmClient, InvocationToolApprovalLlmClient>();
+        // ADR-091 §4.4/F01：审查依赖缺席（含未注册 ILlmInvocationService / 日志）必须产生 typed
+        // 依赖等待，不能让 DI 在解析 reviewer 时直接崩溃。
+        services.TryAddSingleton<IToolApprovalLlmClient>(sp => new InvocationToolApprovalLlmClient(
+            sp.GetService<PuddingCode.Runtime.ILlmInvocationService>(),
+            sp.GetRequiredService<IToolApprovalLlmProfileResolver>(),
+            sp.GetService<ILogger<InvocationToolApprovalLlmClient>>()));
         services.TryAddSingleton<IToolApprovalReviewer>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ToolApprovalRuntimeOptions>>().Value;
@@ -109,20 +114,10 @@ public static class PuddingToolServiceCollectionExtensions
             if (string.Equals(reviewer, ToolApprovalRuntimeOptions.LlmReviewer, StringComparison.OrdinalIgnoreCase))
                 return ActivatorUtilities.CreateInstance<LlmToolApprovalReviewer>(sp);
 
-            if (string.Equals(reviewer, ToolApprovalRuntimeOptions.FakeReviewer, StringComparison.OrdinalIgnoreCase))
-            {
-                // ADR-091 §5：生产不允许 fake 兜底；fake 仅测试组合显式开启。
-                if (!options.AllowFakeReviewer)
-                {
-                    throw new InvalidOperationException(
-                        "ToolApproval reviewer 'fake' is test-only. Set ToolApproval:AllowFakeReviewer=true only in test host composition; production must use 'llm'.");
-                }
-
-                return new FakeToolApprovalReviewer();
-            }
-
+            // ADR-091 §5/F02：生产注册没有 fake 放行路径；即使旧配置传 Reviewer=fake 也必须拒绝。
+            // 假实现只能在测试组合里通过显式 DI 注册。
             throw new InvalidOperationException(
-                $"Unknown ToolApproval reviewer '{options.Reviewer}'. Valid values are 'llm' and 'fake' (test-only).");
+                $"ToolApproval reviewer '{options.Reviewer}' is not supported. The production registration only supports 'llm'; inject test doubles through test DI.");
         });
         services.TryAddSingleton<IToolApprovalTicketStore>(sp =>
             sp.GetService<PuddingDataPaths>() is null

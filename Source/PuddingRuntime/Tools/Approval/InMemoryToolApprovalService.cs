@@ -254,6 +254,7 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
             RemainingUses = isApproved && grantedScope == ToolApprovalScope.Once ? OnceTicketAllowedUses : null,
             DefinitionHash = definitionHash,
             DefinitionVersion = definitionVersion,
+            ReasonCode = review.ReasonCode,
         };
         await _ticketStore.SaveAsync(ticket, ct);
         var allowlistRuleIds = isApproved
@@ -800,13 +801,14 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
                 await RecordCheckMetricAsync(
                     request,
                     normalizedToolId,
-                    TelemetryMetricStatuses.Failed,
+                    TelemetryMetricStatuses.Deferred,
                     startedAt,
-                    "Tool approval implicit audit reviewer failed.",
+                    "Tool approval implicit audit reviewer is unavailable.",
                     new Dictionary<string, string>
                     {
                         ["approval_source"] = "implicit_audit",
-                        ["decision"] = "review_failed",
+                        ["decision"] = ToolApprovalWire.DeferredDependency,
+                        ["reason_code"] = ToolApprovalWire.CodeCallFailed,
                         ["failure_type"] = "approval_implicit_review_failed",
                         ["previous_failure_type"] = denialFacts.FailureType,
                         ["approved_ticket_id"] = denialFacts.ApprovedTicketId ?? "",
@@ -818,10 +820,12 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
                 return new ToolApprovalCheckResult
                 {
                     IsApproved = false,
+                    Disposition = ToolApprovalDecision.DeferredDependency,
+                    ReasonCode = ToolApprovalWire.CodeCallFailed,
                     Message =
-                        $"High-risk tool runtime approval required. Implicit audit failed for tool '{normalizedToolId}': {ex.Message}. " +
+                        $"High-risk tool '{normalizedToolId}' is waiting for the approval review dependency (reasonCode={ToolApprovalWire.CodeCallFailed}): {ex.Message}. " +
                         priorFailure +
-                        $"Recommended next step: call request_tool_approval with tool_id='{normalizedToolId}' and exact planned arguments.",
+                        "This is a dependency wait, not a human authorization request; retry the same invocation once the review model is available.",
                 };
             }
         }
@@ -830,9 +834,13 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
         await SaveAuditAsync(new ToolApprovalAuditEvent
         {
             EventId = NewAuditEventId(),
-            EventType = isApproved
-                ? ToolApprovalAuditEventType.ImplicitApproved
-                : ToolApprovalAuditEventType.ImplicitDenied,
+            EventType = review.Decision switch
+            {
+                ToolApprovalDecision.Approved => ToolApprovalAuditEventType.ImplicitApproved,
+                ToolApprovalDecision.DeferredDependency => ToolApprovalAuditEventType.TicketDeferredDependency,
+                ToolApprovalDecision.NeedHuman => ToolApprovalAuditEventType.TicketNeedHuman,
+                _ => ToolApprovalAuditEventType.ImplicitDenied,
+            },
             WorkspaceId = request.WorkspaceId,
             SessionId = request.SessionId,
             AgentInstanceId = request.AgentInstanceId,
@@ -879,8 +887,76 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
             return new ToolApprovalCheckResult
             {
                 IsApproved = true,
+                Disposition = ToolApprovalDecision.Approved,
                 ApprovalSource = "ImplicitAudit",
                 Message = $"Implicit audit approved tool '{normalizedToolId}' without a pre-existing ticket.",
+            };
+        }
+
+        var previousFailure = BuildPriorApprovalFailureSummary(denialFacts);
+
+        // F01：依赖不可用不是拒绝，也不是人工决定——必须单独分类、不写 ImplicitDenied/Failed，
+        // 不引导业务 Agent 反复申请审批或索要人工授权（ADR-091 §4.4）。
+        if (review.Decision == ToolApprovalDecision.DeferredDependency)
+        {
+            await RecordCheckMetricAsync(
+                request,
+                normalizedToolId,
+                TelemetryMetricStatuses.Deferred,
+                startedAt,
+                "Tool approval implicit audit is waiting for a review dependency.",
+                new Dictionary<string, string>
+                {
+                    ["approval_source"] = "implicit_audit",
+                    ["decision"] = ToolApprovalWire.DeferredDependency,
+                    ["reason_code"] = review.ReasonCode ?? "",
+                    ["previous_failure_type"] = denialFacts.FailureType,
+                    ["approved_ticket_id"] = denialFacts.ApprovedTicketId ?? "",
+                    ["approved_command"] = Truncate(denialFacts.ApprovedCommand, 220),
+                    ["actual_command"] = Truncate(denialFacts.ActualCommand, 220),
+                },
+                ct);
+            return new ToolApprovalCheckResult
+            {
+                IsApproved = false,
+                Disposition = ToolApprovalDecision.DeferredDependency,
+                ReasonCode = review.ReasonCode,
+                Message =
+                    $"High-risk tool '{normalizedToolId}' is waiting for the approval review dependency" +
+                    (string.IsNullOrWhiteSpace(review.ReasonCode) ? "" : $" (reasonCode={review.ReasonCode})") +
+                    $": {review.DecisionReason} This is a dependency wait, not a human authorization request; " +
+                    "retry the same invocation once the review model is available.",
+            };
+        }
+
+        // F01：真正需要人的业务决定保持人工路径，与拒绝彻底分开。
+        if (review.Decision == ToolApprovalDecision.NeedHuman)
+        {
+            await RecordCheckMetricAsync(
+                request,
+                normalizedToolId,
+                TelemetryMetricStatuses.Recorded,
+                startedAt,
+                "Tool approval implicit audit requires a human decision.",
+                new Dictionary<string, string>
+                {
+                    ["approval_source"] = "implicit_audit",
+                    ["decision"] = ToolApprovalWire.NeedHuman,
+                    ["reason_code"] = review.ReasonCode ?? "",
+                    ["previous_failure_type"] = denialFacts.FailureType,
+                    ["reviewer_model"] = review.ReviewerModel ?? "",
+                    ["actual_command"] = Truncate(denialFacts.ActualCommand, 220),
+                },
+                ct);
+            return new ToolApprovalCheckResult
+            {
+                IsApproved = false,
+                Disposition = ToolApprovalDecision.NeedHuman,
+                ReasonCode = review.ReasonCode,
+                Message =
+                    $"High-risk tool runtime approval required. Implicit audit needs a human decision for tool '{normalizedToolId}': {review.DecisionReason}. " +
+                    previousFailure +
+                    $"Manual fallback: ask the user to send {ToolAuthorizationDefaults.BuildAuthorizeCommand(normalizedToolId)}.",
             };
         }
 
@@ -902,10 +978,11 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
                 ["actual_command"] = Truncate(denialFacts.ActualCommand, 220),
             },
             ct);
-        var previousFailure = BuildPriorApprovalFailureSummary(denialFacts);
         return new ToolApprovalCheckResult
         {
             IsApproved = false,
+            Disposition = ToolApprovalDecision.Denied,
+            ReasonCode = review.ReasonCode,
             Message =
                 $"High-risk tool runtime approval required. Implicit audit denied tool '{normalizedToolId}': {review.DecisionReason}. " +
                 previousFailure +
@@ -2038,6 +2115,7 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
             Status = ticket.Status,
             DecisionReason = ticket.DecisionReason,
             AllowedScope = decision == ToolApprovalDecision.Approved ? ticket.Scope : null,
+            ReasonCode = ticket.ReasonCode,
                         ExpiresAtUtc = ticket.ExpiresAtUtc,
             RecommendedNextStep = decision switch
             {

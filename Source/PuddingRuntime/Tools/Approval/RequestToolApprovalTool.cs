@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Models;
@@ -119,8 +119,9 @@ public sealed class RequestToolApprovalTool : PuddingToolBase<RequestToolApprova
         return ToolExecutionResult.Ok(JsonSerializer.Serialize(new
         {
             ticketId = result.TicketId,
-            status = result.Status.ToString().ToLowerInvariant(),
-            decision = result.Decision.ToString().ToLowerInvariant(),
+        status = ToolApprovalWire.ToWire(result.Status),
+        decision = ToolApprovalWire.ToWire(result.Decision),
+        reasonCode = result.ReasonCode,
             decisionReason = result.DecisionReason,
             argumentsHash = ToolAuthorizationDefaults.ComputeArgumentsHash(args.RequestedArgumentsJson),
             allowedScope = result.AllowedScope?.ToString().ToLowerInvariant(),

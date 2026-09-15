@@ -58,7 +58,7 @@ public sealed class ListToolApprovalsTool : PuddingToolBase<ListToolApprovalsArg
             .Select(t => new
             {
                 ticketId = t.TicketId,
-                status = t.Status.ToString().ToLowerInvariant(),
+                status = ToolApprovalWire.ToWire(t.Status),
                 toolId = t.ToolId,
                 scope = t.Scope.ToString().ToLowerInvariant(),
                 argumentsHash = t.ArgumentsHash,

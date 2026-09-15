@@ -94,10 +94,10 @@ public sealed class ToolApprovalRuntimeOptions
     public string? Reviewer { get; set; } = LlmReviewer;
 
     /// <summary>
-    /// ADR-091 §5：仅测试组合可显式开启 fake reviewer（默认关闭）。
-    /// 关闭时配置 fake 会在解析 reviewer 时报错，避免生产在没有审查模型时静默放行。
+    /// ADR-091 §4.4/F06：隔离审查的自身 deadline（秒）。到期产生
+    /// approval_review_timeout 依赖等待；调用者取消不在此列，继续向上抛。
     /// </summary>
-    public bool AllowFakeReviewer { get; set; }
+    public int ReviewTimeoutSeconds { get; set; } = 30;
 }
 
 /// <summary>
@@ -196,18 +196,27 @@ public sealed class InvocationToolApprovalLlmClient : IToolApprovalLlmClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly ILlmInvocationService _invocationService;
+    private readonly ILlmInvocationService? _invocationService;
     private readonly IToolApprovalLlmProfileResolver _profileResolver;
-    private readonly ILogger<InvocationToolApprovalLlmClient> _logger;
+    private readonly ILogger<InvocationToolApprovalLlmClient>? _logger;
+    private readonly TimeSpan _reviewTimeout;
 
+    /// <summary>
+    /// ADR-091 §4.4/F01/F06：审查依赖（调用服务、日志）允许缺席——缺席必须产生 typed
+    /// 依赖等待，而不是让 DI 直接抛异常；审查另有自己的 deadline，与调用者取消分开。
+    /// </summary>
     public InvocationToolApprovalLlmClient(
-        ILlmInvocationService invocationService,
+        ILlmInvocationService? invocationService,
         IToolApprovalLlmProfileResolver profileResolver,
-        ILogger<InvocationToolApprovalLlmClient> logger)
+        ILogger<InvocationToolApprovalLlmClient>? logger = null,
+        TimeSpan? reviewTimeout = null)
     {
         _invocationService = invocationService;
         _profileResolver = profileResolver;
         _logger = logger;
+        _reviewTimeout = reviewTimeout is { TotalMilliseconds: > 0 }
+            ? reviewTimeout.Value
+            : TimeSpan.FromSeconds(30);
     }
 
     public async Task<string> ReviewAsync(
@@ -224,7 +233,7 @@ public sealed class InvocationToolApprovalLlmClient : IToolApprovalLlmClient
         }
         catch (ToolApprovalLlmProfileResolutionException ex)
         {
-            _logger.LogWarning(
+            _logger?.LogWarning(
                 "[ToolApproval] approval LLM profile resolution failed workspace={WorkspaceId} agent={AgentInstanceId} tool={ToolId} reason={Reason}",
                 identity.WorkspaceId, identity.AgentInstanceId, descriptor.ToolId, ex.Message);
             return DeferredDependencyJson("approval_review_profile_resolution_failed", ex.Message);
@@ -232,7 +241,7 @@ public sealed class InvocationToolApprovalLlmClient : IToolApprovalLlmClient
 
         if (profile is null)
         {
-            _logger.LogWarning(
+            _logger?.LogWarning(
                 "[ToolApproval] approval LLM profile is not configured workspace={WorkspaceId} agent={AgentInstanceId} tool={ToolId}",
                 identity.WorkspaceId, identity.AgentInstanceId, descriptor.ToolId);
             return DeferredDependencyJson(
@@ -241,7 +250,7 @@ public sealed class InvocationToolApprovalLlmClient : IToolApprovalLlmClient
         }
 
         var startedAt = DateTimeOffset.UtcNow;
-        _logger.LogInformation(
+        _logger?.LogInformation(
             "[ToolApproval] approval LLM call started provider={ProviderId} profile={ProfileId} model={ModelId} workspace={WorkspaceId} session={SessionId} agent={AgentInstanceId} auditAgent={AuditAgentInstanceId} tool={ToolId}",
             profile.ProviderId,
             profile.ProfileId,
@@ -252,30 +261,11 @@ public sealed class InvocationToolApprovalLlmClient : IToolApprovalLlmClient
             profile.AgentInstanceId,
             descriptor.ToolId);
 
-        var result = await _invocationService.InvokeAsync(new LlmInvocationRequest
-        {
-            WorkspaceId = identity.WorkspaceId,
-            SessionId = identity.SessionId,
-            AgentInstanceId = profile.AgentInstanceId ?? identity.AgentInstanceId,
-            AgentTemplateId = profile.AgentTemplateId ?? identity.AgentTemplateId ?? "approval-auditor",
-            Profile = new LlmInvocationProfile
-            {
-                ProviderId = profile.ProviderId,
-                ProfileId = profile.ProfileId,
-                ModelId = profile.ModelId,
-                Role = "approval",
-            },
-            Purpose = "approval",
-            Messages =
-            [
-                new ChatMessage(ChatRole.System, prompt.SystemPrompt),
-                new ChatMessage(ChatRole.User, prompt.UserPrompt),
-            ],
-        }, ct);
+        var result = await InvokeWithDeadlineAsync(profile, prompt, identity, descriptor, ct);
 
         if (!result.Success)
         {
-            _logger.LogWarning(
+            _logger?.LogWarning(
                 "[ToolApproval] approval LLM call failed provider={ProviderId} profile={ProfileId} model={ModelId} workspace={WorkspaceId} session={SessionId} tool={ToolId} durationMs={DurationMs} error={Error}",
                 profile.ProviderId,
                 profile.ProfileId,
@@ -286,13 +276,15 @@ public sealed class InvocationToolApprovalLlmClient : IToolApprovalLlmClient
                 DurationMs(startedAt),
                 result.Error);
             return DeferredDependencyJson(
-                "approval_review_call_failed",
-                "Approval review model call failed: " + (result.Error ?? "unknown error"));
+                result.Error ?? ToolApprovalWire.CodeCallFailed,
+                IsDependencyCode(result.Error)
+                    ? ReasonForDependencyCode(result.Error!)
+                    : "Approval review model call failed: " + (result.Error ?? "unknown error"));
         }
 
         if (string.IsNullOrWhiteSpace(result.ReplyText))
         {
-            _logger.LogWarning(
+            _logger?.LogWarning(
                 "[ToolApproval] approval LLM returned empty response provider={ProviderId} profile={ProfileId} model={ModelId} workspace={WorkspaceId} session={SessionId} tool={ToolId} durationMs={DurationMs}",
                 profile.ProviderId,
                 profile.ProfileId,
@@ -306,7 +298,7 @@ public sealed class InvocationToolApprovalLlmClient : IToolApprovalLlmClient
                 "Approval review model returned an empty response.");
         }
 
-        _logger.LogInformation(
+        _logger?.LogInformation(
             "[ToolApproval] approval LLM call succeeded provider={ProviderId} profile={ProfileId} model={ModelId} workspace={WorkspaceId} session={SessionId} tool={ToolId} durationMs={DurationMs}",
             profile.ProviderId,
             profile.ProfileId,
@@ -318,6 +310,83 @@ public sealed class InvocationToolApprovalLlmClient : IToolApprovalLlmClient
 
         return result.ReplyText;
     }
+
+    /// <summary>
+    /// F06：审查专属 deadline。自身到期 → typed 依赖等待（approval_review_timeout）；
+    /// 调用者取消继续向上抛（用户停止不是待恢复的依赖动作）；调用服务缺席 → service_unavailable。
+    /// </summary>
+    private async Task<LlmInvocationResult> InvokeWithDeadlineAsync(
+        ToolApprovalLlmProfile profile,
+        ToolApprovalPrompt prompt,
+        ToolApprovalIdentity identity,
+        ToolDescriptor descriptor,
+        CancellationToken ct)
+    {
+        if (_invocationService is null)
+        {
+            _logger?.LogWarning(
+                "[ToolApproval] approval LLM invocation service is unavailable workspace={WorkspaceId} session={SessionId} tool={ToolId}",
+                identity.WorkspaceId,
+                identity.SessionId,
+                descriptor.ToolId);
+            return MissingDependencyResult(ToolApprovalWire.CodeServiceUnavailable);
+        }
+
+        using var reviewCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        reviewCts.CancelAfter(_reviewTimeout);
+
+        try
+        {
+            return await _invocationService.InvokeAsync(new LlmInvocationRequest
+            {
+                WorkspaceId = identity.WorkspaceId,
+                SessionId = identity.SessionId,
+                AgentInstanceId = profile.AgentInstanceId ?? identity.AgentInstanceId,
+                AgentTemplateId = profile.AgentTemplateId ?? identity.AgentTemplateId ?? "approval-auditor",
+                Profile = new LlmInvocationProfile
+                {
+                    ProviderId = profile.ProviderId,
+                    ProfileId = profile.ProfileId,
+                    ModelId = profile.ModelId,
+                    Role = "approval",
+                },
+                Purpose = "approval",
+                Messages =
+                [
+                    new ChatMessage(ChatRole.System, prompt.SystemPrompt),
+                    new ChatMessage(ChatRole.User, prompt.UserPrompt),
+                ],
+            }, reviewCts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger?.LogWarning(
+                "[ToolApproval] approval LLM review deadline exceeded timeoutMs={TimeoutMs} workspace={WorkspaceId} session={SessionId} tool={ToolId}",
+                (long)_reviewTimeout.TotalMilliseconds,
+                identity.WorkspaceId,
+                identity.SessionId,
+                descriptor.ToolId);
+            return MissingDependencyResult(ToolApprovalWire.CodeTimeout);
+        }
+    }
+
+    private static bool IsDependencyCode(string? code)
+        => string.Equals(code, ToolApprovalWire.CodeServiceUnavailable, StringComparison.Ordinal)
+           || string.Equals(code, ToolApprovalWire.CodeTimeout, StringComparison.Ordinal);
+
+    private static string ReasonForDependencyCode(string code)
+        => code switch
+        {
+            ToolApprovalWire.CodeTimeout => "The isolated approval review exceeded its own deadline.",
+            _ => "The isolated approval review invocation service is unavailable.",
+        };
+
+    private static LlmInvocationResult MissingDependencyResult(string reasonCode)
+        => new()
+        {
+            Success = false,
+            Error = reasonCode,
+        };
 
     private static long DurationMs(DateTimeOffset startedAt)
         => Math.Max(0, (long)(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
