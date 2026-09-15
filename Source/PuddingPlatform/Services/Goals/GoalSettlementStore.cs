@@ -686,39 +686,125 @@ public sealed class GoalSettlementStore(
             .ThenBy(item => item.SequenceNo)
             .ThenBy(item => item.Id)
             .ToListAsync(ct);
-        var root = nodes.SingleOrDefault(item => item.Depth == 0);
-        var running = nodes.Where(item =>
-                item.Depth == 1
-                && item.Status == TaskNodeStatuses.Running.ToString())
+
+        // ADR-092 §13.1（G92-1 刀 C）：结构判定与状态判定必须分开——"0 个 Running"不是错误的充分条件。
+        // 只有 root 缺失/重复、多 Running 违反串行计划约束这类真正不可恢复的结构问题才 Invalid；
+        // 收敛态（0 Running 且必需单元全部已验证完成）与"0 Running 但仍有必需单元"都必须被接受。
+        var roots = nodes.Where(item => item.Depth == 0).ToList();
+        if (roots.Count != 1)
+            return BoundPlanState.Invalid($"The bound execution plan must have exactly one root; roots={roots.Count}.");
+
+        var units = nodes.Where(item => item.Depth == 1).ToList();
+        if (units.Count == 0)
+            return BoundPlanState.Invalid("The bound execution plan has no WorkUnit node to verify.");
+
+        var runningUnits = units
+            .Where(item => string.Equals(item.Status, TaskNodeStatuses.Running.ToString(), StringComparison.Ordinal))
             .ToList();
-        if (root is null || running.Count != 1)
+        if (runningUnits.Count > 1)
         {
             return BoundPlanState.Invalid(
-                $"The bound execution plan must have one root and exactly one running WorkUnit; running={running.Count}.");
+                $"The bound execution plan must run its WorkUnits serially; running={runningUnits.Count}.");
         }
 
-        var current = running[0];
-        var next = nodes.FirstOrDefault(item =>
-            item.Depth == 1
-            && item.SequenceNo > current.SequenceNo
-            && item.Status is not ("Completed" or "Cancelled" or "Superseded"));
-        return new BoundPlanState(plan, root, current, next, null);
+        var planNodeIds = nodes.Select(item => item.TaskNodeId).ToHashSet(StringComparer.Ordinal);
+        var requiredUnits = units
+            .Where(item => !IsExplicitlyReplaced(item, planNodeIds))
+            .ToList();
+        if (requiredUnits.Count == 0)
+        {
+            return BoundPlanState.Invalid(
+                "Every WorkUnit of the bound execution plan was replaced without a required successor.");
+        }
+
+        // 剩余必需工作数 = 本次裁决后仍未验证完成的必需单元数；当前 Running 单元也在其中，
+        // 它只有在真实验收通过后才从剩余数里扣除（§13.1），所以"有 Current"不等于"已完成"。
+        var openRequiredUnits = requiredUnits
+            .Where(item => !IsUnitVerifiedComplete(item, nodes, planNodeIds))
+            .ToList();
+        var current = runningUnits.Count == 1 ? runningUnits[0] : null;
+        // 推进/认领目标 = 第一个仍未完成的必需单元（不再只看 SequenceNo 更大的节点，
+        // 否则更早序号的未完成节点会被漏掉，制造假的整体完成）。
+        var next = openRequiredUnits
+            .Where(item => !ReferenceEquals(item, current))
+            .OrderBy(item => item.SequenceNo)
+            .ThenBy(item => item.Id)
+            .FirstOrDefault();
+
+        return new BoundPlanState(plan, roots[0], current, next, null)
+        {
+            RemainingRequiredUnits = openRequiredUnits.Count,
+            RunningUnitCount = runningUnits.Count,
+            // 0 Running 时区分"有 ready（Draft/Planned/Assigned）⇒ 认领推进"与"其余 ⇒ typed wait"。
+            ReadyUnitAvailable = next is not null
+                && (next.Status is "Draft" or "Planned" or "Assigned"),
+        };
     }
 
     /// <summary>
-    /// ADR-092 §6.2（G92-1 P1）：把绑定执行计划折算成 verifier 需要的作用域与剩余 WorkUnit 数。
-    /// 只有"计划可读且 Root/Current 齐备"时才敢下结论：有后继单元 ⇒ work_unit/1；
-    /// 无后继单元（当前已是最后一个 WorkUnit）⇒ goal/0。其余一律 fail-closed 为 work_unit/null，
-    /// 因为把未知当成"没有剩余工作"会直接制造假的整体完成。
+    /// ADR-092 §13.1（G92-1 刀 C）：合法计划修订的显式替代——只有 Superseded 且后继节点确实存在于
+    /// 同一计划内，该节点的义务才由后继承担；Cancelled 与"无后继的 Superseded"不自动等于义务消失，
+    /// 仍计入必需集合（宁可 fail-closed，也不冒充"没有剩余工作"）。
+    /// </summary>
+    private static bool IsExplicitlyReplaced(TaskNodeEntity node, HashSet<string> planNodeIds)
+        => string.Equals(node.Status, TaskNodeStatuses.Superseded.ToString(), StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(node.SupersededByTaskNodeId)
+            && planNodeIds.Contains(node.SupersededByTaskNodeId);
+
+    /// <summary>
+    /// ADR-092 §13.1（G92-1 刀 C）：一个必需单元只有"自身与必需后代全部 Completed"才算验证完成。
+    /// 后代按 ParentTaskNodeId 展开（迭代 + visited 防环）；同层 DependsOnJson 只是顺序约束，
+    /// 由节点状态（Blocked）与 typed wait 表达，不在剩余计数里重复计算义务。
+    /// </summary>
+    private static bool IsUnitVerifiedComplete(
+        TaskNodeEntity unit,
+        IReadOnlyList<TaskNodeEntity> nodes,
+        HashSet<string> planNodeIds)
+    {
+        if (!string.Equals(unit.Status, TaskNodeStatuses.Completed.ToString(), StringComparison.Ordinal))
+            return false;
+
+        var visited = new HashSet<string>(StringComparer.Ordinal) { unit.TaskNodeId };
+        var pending = new Queue<TaskNodeEntity>(
+            nodes.Where(item => string.Equals(item.ParentTaskNodeId, unit.TaskNodeId, StringComparison.Ordinal)));
+        while (pending.Count > 0)
+        {
+            var descendant = pending.Dequeue();
+            if (!visited.Add(descendant.TaskNodeId))
+                continue; // 防环：图损坏时也不得死循环（结构问题由 root/多 Running 判定，这里不臆断）
+            if (IsExplicitlyReplaced(descendant, planNodeIds))
+                continue;
+            if (!string.Equals(descendant.Status, TaskNodeStatuses.Completed.ToString(), StringComparison.Ordinal))
+                return false;
+            foreach (var child in nodes.Where(
+                item => string.Equals(item.ParentTaskNodeId, descendant.TaskNodeId, StringComparison.Ordinal)))
+            {
+                pending.Enqueue(child);
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// ADR-092 §13.1（G92-1 刀 C）：把绑定执行计划折算成 verifier 需要的作用域与剩余必需工作数。
+    /// 这里是真实计数（按同一版本的全部必需 depth1 节点及其完成所依赖的必需后代核验），
+    /// 不再是"有没有下一个节点 / Root、Current 是否齐备"的布尔近似：
+    /// 全部必需单元已验证完成 ⇒ (goal, 0)——合法收敛态，此时没有 Current；
+    /// 尚有必需单元未完成 ⇒ (work_unit, 剩余必需数)；计划缺失、指纹/归属不匹配、结构非法或
+    /// 必需性无法判定 ⇒ (work_unit, null)。未知绝不得冒充 0，否则直接制造假的整体完成。
     /// </summary>
     private static (string Scope, int? RemainingWorkUnits) ResolveVerificationScope(BoundPlanState? plan)
     {
-        if (plan is not { Error: null, Plan: not null, Root: not null, Current: not null })
+        if (plan is not { Error: null, Plan: not null, Root: not null }
+            || plan.RemainingRequiredUnits is not int remaining)
+        {
             return (GoalVerificationScopes.WorkUnit, null);
+        }
 
-        return plan.Next is null
+        return remaining == 0
             ? (GoalVerificationScopes.Goal, 0)
-            : (GoalVerificationScopes.WorkUnit, 1);
+            : (GoalVerificationScopes.WorkUnit, remaining);
     }
 
     private static GoalVerificationDecision ApplyBoundPlanGates(
@@ -747,6 +833,69 @@ public sealed class GoalSettlementStore(
         // 只有当前单元的必需条件通过真实检查，才允许推进到下一单元或完成目标。
         var verifiedAcceptance = GoalSettlementDecisionCalculator.HasVerifiedAcceptance(decision);
 
+        if (plan.Current is null)
+        {
+            // ADR-092 §13.1（G92-1 刀 C）四分流之②③：0 个 Running 不是错误的充分条件，
+            // 无 Current 的合法收敛态必须被接受，而不是当成结构错误或空指针。
+            if (plan.RemainingRequiredUnits == 0)
+            {
+                // ② 0 Running 且全部必需单元已验证完成：合法收敛态——进入/恢复 VerifyGoal（待整体验证）。
+                if (GoalSettlementDecisionCalculator.AllRequiredCriteriaPassed(decision))
+                {
+                    // 整体（goal 作用域）必需条件已有同版本 passed 证据：本次裁决即可完成；
+                    // 最后一个 Running 单元也正是在这类结算里被一次验证并完成，无需先用 task 工具置 Completed。
+                    return decision with
+                    {
+                        Verdict = GoalVerificationVerdict.Complete,
+                        EvidenceRefs = candidate.EvidenceRefs,
+                    };
+                }
+
+                // 整体验证证据尚未齐备：保持 Goal/Plan 非终态，调度尚缺的整体验证。
+                return decision with
+                {
+                    Verdict = GoalVerificationVerdict.Continue,
+                    Reason = $"The bound execution plan has converged (running={plan.RunningUnitCount}, remainingRequiredWorkUnits={plan.RemainingRequiredUnits}), but the goal-scope required criteria have no passing verification yet; the goal stays open pending overall verification.",
+                    NextAction = plan.Root?.Objective,
+                    EvidenceRefs = candidate.EvidenceRefs,
+                    BlockerCode = decision.BlockerCode ?? "acceptance_not_verified",
+                    BlockerMessage = "Goal-scope required criteria are not verified yet.",
+                };
+            }
+
+            // ③ 0 Running 但仍有必需单元：有 ready ⇒ 认领推进；等依赖 ⇒ typed wait。
+            // 既不得误 Complete，也不得单凭 running=0 判 Failed。
+            if (plan.Next is null)
+            {
+                // 计数说还有必需单元、却没有可认领目标：计划与计数不自洽，按结构问题 fail-closed。
+                return BlockedDecision(
+                    "task_plan_state_invalid",
+                    "The bound execution plan reports remaining required WorkUnits but exposes no claimable WorkUnit node.",
+                    candidate.EvidenceRefs);
+            }
+
+            if (plan.ReadyUnitAvailable)
+            {
+                return decision with
+                {
+                    Verdict = GoalVerificationVerdict.Continue,
+                    Reason = "No WorkUnit is running; the remaining required WorkUnits are ready to be claimed.",
+                    NextAction = plan.Next.Objective,
+                    EvidenceRefs = candidate.EvidenceRefs,
+                };
+            }
+
+            return new GoalVerificationDecision
+            {
+                Verdict = GoalVerificationVerdict.Blocked,
+                Reason = "No WorkUnit is running; the remaining required WorkUnits are waiting for their dependencies (or for a legal plan revision that removes/replaces them).",
+                EvidenceRefs = candidate.EvidenceRefs,
+                NextAction = plan.Next.Objective,
+                BlockerCode = "dependency_wait",
+                BlockerMessage = "The bound execution plan has no running WorkUnit and no claimable WorkUnit node.",
+            };
+        }
+
         if (plan.Next is not null)
         {
             return decision with
@@ -763,9 +912,7 @@ public sealed class GoalSettlementStore(
                 BlockerMessage = verifiedAcceptance
                     ? decision.BlockerMessage
                     : "The current WorkUnit's required criteria have no passing verification result.",
-                // 仍有未完成 WorkUnit（精确计数由 Plan 查询提供）：本次裁决只能是 work_unit 作用域。
-                VerificationScope = GoalVerificationScopes.WorkUnit,
-                RemainingWorkUnits = 1,
+                // 作用域与剩余必需数是绑定计划/capsule 的事实：裁决记录不重复携带，避免第二份真值（刀 C）。
             };
         }
 
@@ -779,10 +926,8 @@ public sealed class GoalSettlementStore(
             {
                 Verdict = GoalVerificationVerdict.Complete,
                 EvidenceRefs = candidate.EvidenceRefs,
-                // 无剩余 WorkUnit + 全部必需条件通过：唯一满足 goal 作用域完成的组合，
-                // 也是唯一允许原子结束 Goal/Plan/Task 的路径。
-                VerificationScope = GoalVerificationScopes.Goal,
-                RemainingWorkUnits = 0,
+                // 无剩余必需 WorkUnit + 全部必需条件通过：唯一满足 goal 作用域完成的组合，
+                // 也是唯一允许原子结束 Goal/Plan/Task 的路径（刀 C：最后一个 Running 单元在本次结算内一并验证并完成）。
             };
         }
 
@@ -806,8 +951,9 @@ public sealed class GoalSettlementStore(
         GoalVerificationDecision decision,
         DateTimeOffset now)
     {
-        if (plan is null || plan.Error is not null
-            || plan.Plan is null || plan.Root is null || plan.Current is null)
+        // ADR-092 §13.1（G92-1 刀 C）：只有结构错误不可写；无 Current 的合法收敛态
+        // （0 Running 且必需单元全部已验证完成）同样必须被写入，否则 Plan/Root 永远无法随 Goal 收口。
+        if (plan is null || plan.Error is not null || plan.Plan is null || plan.Root is null)
             return;
 
         var nowMs = now.ToUnixTimeMilliseconds();
@@ -820,13 +966,16 @@ public sealed class GoalSettlementStore(
 
         if (verifiedWorkUnit)
         {
-            plan.Current.Status = TaskNodeStatuses.Completed.ToString();
-            plan.Current.ResultSummary = decision.Reason;
-            plan.Current.ResultArtifactRef =
-                $"conversation-turn:{iteration.TurnId}:terminal:{iteration.TerminalSequence}";
-            plan.Current.ProgressFingerprint = decision.ProgressFingerprint;
-            plan.Current.CompletedAt ??= nowMs;
-            plan.Current.UpdatedAt = nowMs;
+            if (plan.Current is not null)
+            {
+                plan.Current.Status = TaskNodeStatuses.Completed.ToString();
+                plan.Current.ResultSummary = decision.Reason;
+                plan.Current.ResultArtifactRef =
+                    $"conversation-turn:{iteration.TurnId}:terminal:{iteration.TerminalSequence}";
+                plan.Current.ProgressFingerprint = decision.ProgressFingerprint;
+                plan.Current.CompletedAt ??= nowMs;
+                plan.Current.UpdatedAt = nowMs;
+            }
 
             if (decision.Verdict == GoalVerificationVerdict.Complete
                 && GoalSettlementDecisionCalculator.AllRequiredCriteriaPassed(decision))
@@ -845,14 +994,21 @@ public sealed class GoalSettlementStore(
         }
 
         // 未验证完成：保留当前单元的执行身份与计划，不把 Plan/Root 置为 Failed。
-        plan.Current.ErrorMessage = decision.BlockerMessage ?? decision.Reason;
-        plan.Current.UpdatedAt = nowMs;
+        // 收敛态（无 Current）下没有可回写的单元，只保留 Goal/Plan 非终态与阻塞事实。
+        if (plan.Current is not null)
+        {
+            plan.Current.ErrorMessage = decision.BlockerMessage ?? decision.Reason;
+            plan.Current.UpdatedAt = nowMs;
+        }
 
         // 只有不可恢复处置才终止计划；等待依赖/需要修复/需要人工决定都不得关闭整个 Goal。
         if (string.Equals(disposition, GoalSettlementDispositions.Stop, StringComparison.Ordinal))
         {
-            plan.Current.Status = TaskNodeStatuses.Failed.ToString();
-            plan.Current.CompletedAt ??= nowMs;
+            if (plan.Current is not null)
+            {
+                plan.Current.Status = TaskNodeStatuses.Failed.ToString();
+                plan.Current.CompletedAt ??= nowMs;
+            }
             plan.Plan.Status = TaskPlanStatuses.Failed.ToString();
             plan.Plan.ErrorMessage = decision.BlockerMessage ?? decision.Reason;
             plan.Plan.CompletedAt ??= nowMs;
@@ -1326,12 +1482,23 @@ public sealed class GoalSettlementStore(
 
     private sealed record GoalEventDraft(string EventType, string ProducerComponent, object Payload);
 
+    /// <summary>
+    /// 绑定执行计划的结算视图。ADR-092 §13.1（G92-1 刀 C）：<see cref="Current"/> 允许为 null——
+    /// "0 个 Running 且必需单元全部已验证完成"（合法收敛态）与"0 个 Running 但仍有必需单元"都是合法状态，
+    /// 调用方必须接受无 Current，而不是当成结构错误或空指针。
+    /// <see cref="RemainingRequiredUnits"/> = 本次裁决后仍未验证完成的必需单元数（null = 未知，不得冒充 0）；
+    /// 只有它为 0 时才允许 goal 作用域的完成。<see cref="ReadyUnitAvailable"/> 用于区分
+    /// "0 Running 但可认领"（认领推进）与"等依赖"（typed wait）。
+    /// </summary>
     private sealed record BoundPlanState(
         TaskPlanRunEntity? Plan,
         TaskNodeEntity? Root,
         TaskNodeEntity? Current,
         TaskNodeEntity? Next,
-        string? Error)
+        string? Error,
+        int? RemainingRequiredUnits = null,
+        int RunningUnitCount = 0,
+        bool ReadyUnitAvailable = false)
     {
         public static BoundPlanState Invalid(string error) => new(null, null, null, null, error);
     }

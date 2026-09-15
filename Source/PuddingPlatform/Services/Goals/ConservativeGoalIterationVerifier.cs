@@ -125,8 +125,23 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 Reason = boundToTask
                     ? "All goal-scope required criteria passed and the bound plan has no remaining WorkUnit."
                     : "All goal-scope required criteria passed for this standalone Goal.",
+                // 作用域/剩余数的唯一事实来源是 capsule 与绑定计划的真实计数：裁决记录不重复携带，避免第二份真值。
                 EvidenceRefs = capsule.EvidenceRefs,
-                VerificationScope = GoalVerificationScopes.Goal,
+            };
+        }
+        else if (goalScope && capsule.RemainingWorkUnits == 0)
+        {
+            // ADR-092 §13.1 / D2 第 2 条（G92-1 刀 C）：绑定计划已收敛（0 个 Running 且全部必需单元已验证完成），
+            // 但整体（goal）必需条件尚无同版本 passed 证据——这是"待整体验证"的合法中间态：Goal/Plan 保持非终态，
+            // 由结算生成 goal 作用域的续行补齐整体验证，绝不在此误判完成。
+            decision = new GoalVerificationDecision
+            {
+                Verdict = GoalVerificationVerdict.Continue,
+                Reason = "The bound execution plan has converged, but the goal-scope required criteria have no passing verification yet; the goal stays open pending overall verification.",
+                EvidenceRefs = capsule.EvidenceRefs,
+                NextAction = "Run the goal-scope verification for the required criteria (same contract version), then re-settle so the goal can complete atomically.",
+                BlockerCode = "acceptance_not_verified",
+                BlockerMessage = "Goal-scope required criteria have no passing verification result yet.",
             };
         }
         else if (allRequiredPassed)
@@ -139,7 +154,6 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 Reason = "All required criteria for the current WorkUnit passed; advance to the next ready WorkUnit.",
                 EvidenceRefs = capsule.EvidenceRefs,
                 NextAction = "Advance to the next ready WorkUnit, then verify the goal-level criteria.",
-                VerificationScope = GoalVerificationScopes.WorkUnit,
             };
         }
         else
