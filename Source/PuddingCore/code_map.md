@@ -6,14 +6,14 @@
 
 | 文件 | 用途 |
 |------|------|
-| `Goals/GoalContracts.cs` | GoalPhase/GoalCommandKind 枚举、GoalSnapshot、GoalCommand、GoalCommandRequest/Result、GoalLimits（256 硬上限、objective 1-4000）与 GoalErrorCodes |
+| `Goals/GoalContracts.cs` | GoalPhase/GoalCommandKind 枚举（含 Policy）、GoalSnapshot、GoalCommand（含 ResumePolicy）、GoalCommandRequest/Result、GoalLimits（256 硬上限、objective 1-4000）与 GoalErrorCodes（含 InvalidResumePolicy） |
 | `Goals/GoalStateMachine.cs` | 纯状态机：转换矩阵、终态判定、resume/edit 卫兵、计数不变量、CanAcceptNewIteration 预算裁决 |
-| `Goals/GoalEventTypes.cs` | goal.* canonical 事件目录 + ProducerComponent 常量（G1 冻结全部命名） |
-| `Goals/GoalCommandTextParser.cs` | /goal 严格 grammar（中文/多行 objective、--rounds 1..256、子命令消歧） |
+| `Goals/GoalEventTypes.cs` | goal.* canonical 事件目录 + ProducerComponent 常量（G1 冻结命名；目录冻结后新增 `goal.policy_changed`，消费方按 goal. 前缀或精确类型读取，无类型穷举 switch） |
+| `Goals/GoalCommandTextParser.cs` | /goal 严格 grammar（中文/多行 objective、--rounds 1..256、子命令消歧）；含保留子命令 `policy`（缺值/未知值 fail-closed 并列出合法取值，取值归一化为规范常量、大小写不敏感） |
 | `Goals/IGoalCommandService.cs` + `IGoalQueryService.cs` | 命令/查询应用服务契约（slash 与结构化 API 共用） |
-| `Goals/GoalRunOptions.cs` | GoalRuns 配置节（Enabled 默认 false；局部配置不得扩大硬边界） |
+| `Goals/GoalRunOptions.cs` | GoalRuns 配置节（Enabled 默认 false；局部配置不得扩大硬边界）；含 `NoProgressBreakerThreshold`（熔断阈值，默认 3，边界 1..16）、`DefaultResumePolicy`、`MaxAutoResumesPerBoot`（单 boot 自动恢复配额，默认 8，边界 0..64）与 `GoalResumePolicies` 常量 |
 | `Goals/GoalContinuationContracts.cs` | durable continuation outbox wire 值、受信 Acceptance fence、Task plan/node/fingerprint metadata 与稳定失败码 |
-| `Goals/GoalVerificationContracts.cs` | 有界 Evidence Capsule、Verifier verdict/decision 与只读接口 |
+| `Goals/GoalVerificationContracts.cs` | 有界 Evidence Capsule、Verifier verdict/decision 与只读接口；含阻塞码分类白名单（WaitBlockerCodes / InfraFailureBlockerCodes / UnrecoverableBlockerCodes）与判定方法（IsWaitBlockerCode / IsInfraFailureBlockerCode），供熔断计数排除合法等待 |
 | `Goals/TaskBoundGoalContracts.cs` | `StartGoalFromTaskCommand`（含 Agent 路由 SHA-256）、原子启动结果/稳定码与跨域事务 Store 契约 |
 | `Scheduling/TaskAutoDispatchContracts.cs` | evaluate-only 候选结果；携带 taskType、Agent 选择原因与路由指纹，不代表已派发 |
 | `Scheduling/TaskBacklogRefinementContracts.cs` | 已 opt-in Backlog 的只读 ReadyCandidate/NeedsRefinement 合同；不代表状态已迁移 |
