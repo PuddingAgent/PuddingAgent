@@ -140,20 +140,20 @@
 | `Services/Goals/GoalRunStore.cs` | 聚合写入原语：Create/TryMutate（CAS + Func 卫兵）与 goal.* ConversationEvent 同事务直写；提供按 sequence 选择当前非终态 WorkUnit 的只读查询 |
 | `Services/Goals/GoalOutboxStore.cs` + `GoalOutboxSignal.cs` | continuation due/claim/lease/fencing/recovery/defer/suppress/dead-letter；signal 只降延迟 |
 | `Services/Goals/GoalContinuationWorker.cs` | durable intent → 受信 synthetic Acceptance；用户 Turn 优先；从 Binding 解析当前 WorkUnit，将 plan/node/fingerprint/预算放入受信 Acceptance 与 prompt；payload JSON 保留可读 Unicode，同时继续转义 HTML 敏感字符以保护 envelope 边界 |
-| `Services/Goals/GoalSettlementStore.cs` + `GoalSettlementWorker.cs` | canonical Turn 全窗口终态判定 → 最新 128 条有界 Evidence Capsule → version/epoch/Task/Reservation gates → 下一 outbox 或终态；主 Turn canonical usage 加当前 Turn 时间窗内递归子会话 TokenUsageEvents，连同 Run/耗时/工具聚合到 Iteration/Goal；普通 Goal 阻塞仍可恢复，Task-bound 阻塞尝试以 Failed 保留审计并释放 Binding/Assignment/Reservation |
+| `Services/Goals/GoalSettlementStore.cs` + `GoalSettlementWorker.cs` | canonical Turn 全窗口终态判定 → 最新 128 条有界 Evidence Capsule → version/epoch/Task/Reservation gates → 下一 outbox 或终态；主 Turn canonical usage 加当前 Turn 时间窗内递归子会话 TokenUsageEvents，连同 Run/耗时/工具聚合到 Iteration/Goal。**熔断接线（P0-2）**：结算事务为唯一 writer，按指纹/同阻塞码/infra 三轴独立计数（`ApplyProgressAccounting`，**Wait 族整轮排除**），达 `NoProgressBreakerThreshold`（默认 3）后不再返回 repair —— 先一次性 Replan（PlanVersion++ 并退回卡死 WorkUnit），Replan 不可行或已消耗则转 needs_user，并落 `goal.circuit_opened` 与 `goal.progress.recorded` 事件（非静默）。**终态化降级（P0-3）**：不可恢复 verdict 需同一原因连续达到阈值才 Failed/Blocked；`Unsafe` 与取消类（cancelled/iteration_cancelled）豁免、立即终止 |
 | `Services/Goals/ConservativeGoalIterationVerifier.cs` | fail-closed 只读 Verifier；自然语言完成无权写终态，Task canonical Completed 才允许 bound Goal 完成 |
 | `Services/Goals/TaskGoalDispatchTransactionStore.cs` | Task/ExecutionPlan/WorkUnits/Assignment/Reservation/Binding/Goal/首个 Outbox/事件/Availability 单 Serializable 事务与幂等 replay；事务前重读 Agent/类型规则并重算 route/plan 双 SHA-256，任一漂移 fail closed；派发时原子退役同 Workspace/Agent/会话且 terminal Task binding 的遗留 Blocked Goal（可来自前一 Task），释放 active-Goal 唯一索引，并将 SQLite 约束详情写入诊断日志 |
 | `Services/TaskPlanning/TaskPlanningSchemaBootstrapper.cs` + `Data/Entities/TaskPlanRunEntity.cs` / `TaskNodeEntity.cs` / `WorkUnitAwaitHandleEntity.cs` | 复用规划表冻结 WorkspaceTask version 对应的执行快照、WorkUnit budgets/scopes/dependencies/checkpoint 与 durable AwaitHandle；启动初始化器显式幂等升级旧 SQLite |
 | `Services/ConversationAcceptanceStore.cs` | Chat/Goal synthetic Turn 原子受理；重验 Goal/outbox/Task/Assignment/Reservation/Plan/当前 WorkUnit 全围栏并原子置 Running；lease 校验/续租统一使用注入 `TimeProvider` |
 | `Services/ExecutionCommandReader.cs` | 执行前沿 Command→GoalIteration→Binding→Task/Reservation→Plan/Node 重读 canonical WorkUnit 身份与预算；metadata 只选择、不授权，漂移 fail closed |
-| `Services/Goals/GoalCommandService.cs` | /goal 全命令合同：set/edit/replace/pause/resume/cancel/clear/status；conflict、幂等重放（source_command_id 唯一）、expectedVersion、budget_exhausted 不可 resume、feature flag 下保留 status/pause/cancel |
+| `Services/Goals/GoalCommandService.cs` | /goal 全命令合同：set/edit/replace/pause/resume/cancel/clear/status/**policy**（值取 paused 或 auto_resume_on_restart，仅非终态可设、非法值 fail-closed、同值幂等不写事件、CAS + 同事务写 resume_policy 列与 `goal.policy_changed` 事件，status 输出含 Resume policy 行；属**用户权能**，不暴露为 agent 工具）；conflict、幂等重放（source_command_id 唯一）、expectedVersion、budget_exhausted 不可 resume、feature flag 下保留 status/pause/cancel |
 | `Services/Goals/GoalQueryService.cs` | 只读投影（active/latest/iterations） |
-| `Services/Goals/GoalRestartReconciler.cs` | 启动 disarm：active→paused（bootId 锚点 + goal.paused 事件），幂等 |
+| `Services/Goals/GoalRestartReconciler.cs` | 启动按 `goal_runs.resume_policy` 分流：`paused`（默认）active→paused（bootId 锚点 + goal.paused 事件）；`auto_resume_on_restart` 保持 Active 但换发 activation fence（epoch++/bootId）并落 goal.resumed，旧 writer 失效。同 bootId 重放幂等、非 Active 不动、单 boot 恢复配额（`MaxAutoResumesPerBoot`）超出则降级 paused；返回 `GoalRestartReconcileResult(DisarmedCount, AutoResumedCount)` |
 | `Controllers/Api/GoalCommandsController.cs` | POST /api/v1/conversations/{id}/goals/commands（结构化命令） |
 | `Controllers/Api/GoalQueriesController.cs` | GET /goal、/api/v1/goals/{id}、/goals/{id}/iterations |
 | `Data/Entities/Goal*Entity.cs` + `TaskGoalBindingEntity.cs` | 五张表实体（枚举 int、snake_case、version CAS） |
 
-关联修改：`SystemCommandHandler`（/goal 分支委托 GoalCommandService，不创建 Turn）；`PlatformDbContext`（5 个 DbSet + partial unique 索引）；`PuddingApplicationInitializer`（GoalSchemaBootstrapper + 启动 disarm）。
+关联修改：`SystemCommandHandler`（/goal 分支委托 GoalCommandService，不创建 Turn）；`PlatformDbContext`（5 个 DbSet + partial unique 索引）；`PuddingApplicationInitializer`（GoalSchemaBootstrapper + 启动 reconcile：按 resume_policy 分流 disarm / auto-resume，日志区分 disarmed 与 auto-resumed）。相关配置见 `PuddingCore/Goals/GoalRunOptions.cs`：`NoProgressBreakerThreshold`（默认 3，边界 1..16）、`DefaultResumePolicy`、`MaxAutoResumesPerBoot`（默认 8，边界 0..64）。
 
 ## 外部访问令牌与 Agent 消息 API（ADR-075 / ADR-082）
 
