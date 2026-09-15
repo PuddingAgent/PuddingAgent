@@ -1,3 +1,7 @@
+## 2026-09-16 Goal 状态格式与聊天页崩溃
+
+`GoalCommandsController.ToDto` 统一 snake_case 状态；`GoalBanner` 对未知状态安全显示并限制动作。补齐七种 API 状态与额度耗尽/未知值 UI 回归。见[修复与运行验证](Docs/Reports/Goal状态格式与聊天页崩溃修复-2026-09-16.md)。
+
 ## 2026-09-16 Desktop/Core 同时退出与独立启动
 
 新增 `TestScripts/start-pudding-desktop-independent.ps1`，使用既有 Explorer 窗口代理启动，核对 Desktop 父进程并拒绝单实例转发。07:28 退出与 Codex 更新重合，缺少新崩溃栈；已恢复并改正开发工具进程归属。见[证据与边界](Docs/Reports/Desktop与Core退出恢复及独立启动-2026-09-16.md)。

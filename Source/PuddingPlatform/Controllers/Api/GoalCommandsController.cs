@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Goals;
@@ -107,7 +108,7 @@ public sealed class GoalCommandsController(IGoalCommandService goalCommandServic
             snapshot.AgentInstanceId,
             snapshot.Objective,
             snapshot.ObjectiveVersion,
-            snapshot.Phase.ToString().ToLowerInvariant(),
+            JsonNamingPolicy.SnakeCaseLower.ConvertName(snapshot.Phase.ToString()),
             snapshot.BlockedCode,
             snapshot.StatusReason,
             snapshot.MaxIterations,

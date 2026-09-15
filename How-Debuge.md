@@ -1,3 +1,7 @@
+### GoalBanner 读取 color 报错（2026-09-16）
+
+先核对实际 Goal API 的 phase；BudgetExhausted 必须输出 budget_exhausted，不能仅用 ToLowerInvariant。追查共享 ToDto，前端 lookup 应验证自有属性并为未知状态提供中性色和只读详情。不要清理 Goal 数据规避渲染异常。见[证据与测试](Docs/Reports/Goal状态格式与聊天页崩溃修复-2026-09-16.md)。
+
 ### Desktop/Core 同时消失且无崩溃事件（2026-09-16）
 
 核对最新应用日志截止时间、WindowsUpdateClient、Desktop诊断日志和WER，区分异常崩溃与外部进程树回收。Windows Job 的 KILL_ON_JOB_CLOSE 可随启动工具退出清理两进程；Start-Process、新 Shell.Application 或单次 breakaway 不保证独立。开发恢复用 TestScripts/start-pudding-desktop-independent.ps1，通过真实 Explorer 的 Document.Application 启动并检查父PID；原进程退出后不能倒推其Job归属已获证明。见[现场记录](Docs/Reports/Desktop与Core退出恢复及独立启动-2026-09-16.md)。

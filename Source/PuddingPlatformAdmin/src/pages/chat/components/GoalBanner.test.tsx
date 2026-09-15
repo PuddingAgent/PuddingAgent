@@ -142,6 +142,39 @@ describe('GoalBanner', () => {
     expect(screen.getByRole('button', { name: /新建 Goal/ })).toBeTruthy();
   });
 
+  it('renders exhausted budget as terminal with new and clear actions', async () => {
+    render(
+      <GoalBanner
+        goal={makeGoal({ phase: 'budget_exhausted', iterationsStarted: 3, maxIterations: 3 })}
+        commandRunning={false}
+        onCommand={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /Goal 额度耗尽.*3\/3.*查看详情/ })).toBeTruthy();
+    openDetails();
+    await screen.findByRole('dialog', { name: 'Goal 详情' });
+    expect(screen.queryByRole('button', { name: /暂停|恢复|停止/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /新建 Goal/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /清除记录/ })).toBeTruthy();
+  });
+
+  it.each(['budgetexhausted', 'future_phase', 'constructor', '__proto__'])(
+    'keeps unknown phase %s readable without offering state transitions',
+    async (phase) => {
+      render(
+        <GoalBanner
+          goal={makeGoal({ phase: phase as GoalSnapshot['phase'] })}
+          commandRunning={false}
+          onCommand={jest.fn()}
+        />,
+      );
+      expect(screen.getByRole('button', { name: `Goal 未知状态（${phase}），Iteration 18/256，查看详情` })).toBeTruthy();
+      openDetails();
+      expect(await screen.findByLabelText('Goal 目标详情')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /暂停|恢复|停止|新建 Goal|清除记录/ })).toBeNull();
+    },
+  );
+
   it('disables controls while a command is running', async () => {
     render(
       <GoalBanner goal={makeGoal()} commandRunning onCommand={jest.fn()} />,

@@ -189,11 +189,12 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
     );
   }
 
+  const knownPhase = Object.prototype.hasOwnProperty.call(PHASE_TONE, goal.phase);
   const terminal = isTerminalGoalPhase(goal.phase);
   const progress = `${goal.iterationsStarted}/${goal.maxIterations}`;
-  const phaseText = PHASE_TEXT[goal.phase] ?? goal.phase;
+  const phaseText = knownPhase ? PHASE_TEXT[goal.phase] : `未知状态（${goal.phase}）`;
   const objectiveSummary = firstObjectiveLine(goal.objective);
-  const tone = PHASE_TONE[goal.phase];
+  const tone = knownPhase ? PHASE_TONE[goal.phase] : PHASE_TONE.failed;
 
   const run = async (
     action: 'pause' | 'resume' | 'cancel' | 'clear',
@@ -260,7 +261,7 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
         </div>
       )}
 
-      {!terminal && (
+      {knownPhase && !terminal && (
         <>
           <Divider style={{ margin: '12px 0 10px' }} />
           <Space size={8} wrap>
