@@ -692,6 +692,9 @@ public sealed class GoalSettlementStore(
                 BlockerMessage = verifiedAcceptance
                     ? decision.BlockerMessage
                     : "The current WorkUnit's required criteria have no passing verification result.",
+                // 仍有未完成 WorkUnit（精确计数由 Plan 查询提供）：本次裁决只能是 work_unit 作用域。
+                VerificationScope = GoalVerificationScopes.WorkUnit,
+                RemainingWorkUnits = 1,
             };
         }
 
@@ -715,6 +718,10 @@ public sealed class GoalSettlementStore(
             {
                 Verdict = GoalVerificationVerdict.Complete,
                 EvidenceRefs = candidate.EvidenceRefs,
+                // 无剩余 WorkUnit + Task canonical Completed + 全部必需条件通过：
+                // 唯一满足 goal 作用域完成的组合，也是唯一允许原子结束 Goal/Plan/Task 的路径。
+                VerificationScope = GoalVerificationScopes.Goal,
+                RemainingWorkUnits = 0,
             };
         }
 
@@ -724,6 +731,9 @@ public sealed class GoalSettlementStore(
             candidate.EvidenceRefs) with
         {
             NextAction = "Review the WorkUnit evidence and explicitly complete or resume the Task.",
+            // 剩余 WorkUnit 为 0，但缺少 canonical 完成请求：这只是一次可修复的完成提议缺失，
+            // 不得因此结束目标，也不得宣告整体完成。
+            RemainingWorkUnits = 0,
         };
     }
 

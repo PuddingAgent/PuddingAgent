@@ -190,7 +190,9 @@ public static class GoalSettlementDecisionCalculator
         "approval_review_timeout",
         "approval_review_call_failed",
         "check_results_pending",
-        "acceptance_contract_missing",
+        // acceptance_contract_missing 不在此列：空合同是系统能执行的有界规划工作
+        // （在本轮生成版本化条件与检查定义），必须有可执行的修复步骤，
+        // 而不是等待一个永远不会到来的事件。
     ];
 
     /// <summary>只有不可恢复的阻塞码允许终止 Goal。</summary>

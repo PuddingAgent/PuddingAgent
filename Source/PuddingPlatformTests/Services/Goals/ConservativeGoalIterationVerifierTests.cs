@@ -137,6 +137,23 @@ public sealed class ConservativeGoalIterationVerifierTests
     }
 
     [TestMethod]
+    public async Task AcceptanceContractMissing_IsARepairStep_NotAnEternalWait()
+    {
+        var verifier = new ConservativeGoalIterationVerifier();
+
+        var decision = await verifier.VerifyAsync(Capsule(taskStatus: "Completed"));
+
+        Assert.AreEqual("acceptance_contract_missing", decision.BlockerCode);
+        Assert.AreEqual(
+            GoalSettlementDispositions.Repair,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
+        Assert.AreNotEqual(
+            GoalSettlementDispositions.Wait,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
+        Assert.IsFalse(string.IsNullOrWhiteSpace(decision.NextAction));
+    }
+
+    [TestMethod]
     public async Task Criteria_WithoutVersionedChecks_DoNotComplete()
     {
         var verifier = new ConservativeGoalIterationVerifier();

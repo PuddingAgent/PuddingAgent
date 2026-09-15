@@ -62,7 +62,10 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
             decision = Blocked(
                 "acceptance_contract_missing",
                 "No acceptance contract exists for this Goal; run one bounded planning step to derive required criteria before completion can be claimed.",
-                capsule);
+                capsule) with
+            {
+                NextAction = "In this WorkUnit, derive the versioned acceptance contract (required criteria + their check definitions) for the goal objective, then re-run verification.",
+            };
         }
         else if (capsule.Checks.Count == 0)
         {
@@ -70,7 +73,10 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
             decision = Blocked(
                 "check_contract_missing",
                 "Required criteria exist but no versioned check definition was planned; define the bounded checks before completion can be claimed.",
-                capsule);
+                capsule) with
+            {
+                NextAction = "Declare the versioned check definitions (kind, definition hash, input refs/fingerprint, expected test count) for the existing required criteria.",
+            };
         }
         else if (evidence.HasFailedChecks())
         {

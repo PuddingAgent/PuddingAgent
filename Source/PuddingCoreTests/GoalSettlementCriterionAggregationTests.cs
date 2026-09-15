@@ -191,4 +191,54 @@ public sealed class GoalSettlementCriterionAggregationTests
         Assert.AreEqual(GoalCriterionResultStatuses.Failed, test.Status);
         Assert.AreEqual("check:regression-tests", test.EvidenceRefs[0]);
     }
+
+    [TestMethod]
+    public void AcceptanceContractMissing_IsARepairStep_NotAnEternalWait()
+    {
+        var decision = new GoalVerificationDecision
+        {
+            Verdict = GoalVerificationVerdict.Blocked,
+            Reason = "no acceptance contract",
+            EvidenceRefs = ["turn:turn-1:terminal:7"],
+            BlockerCode = "acceptance_contract_missing",
+        };
+
+        Assert.AreEqual(
+            GoalSettlementDispositions.Repair,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
+        Assert.IsFalse(GoalSettlementDecisionCalculator.IsWaiting(decision));
+    }
+
+    [TestMethod]
+    public void PendingCheckResults_StillWait()
+    {
+        var decision = new GoalVerificationDecision
+        {
+            Verdict = GoalVerificationVerdict.Blocked,
+            Reason = "checks have not produced results yet",
+            EvidenceRefs = ["turn:turn-1:terminal:7"],
+            BlockerCode = "check_results_pending",
+        };
+
+        Assert.AreEqual(
+            GoalSettlementDispositions.Wait,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
+        Assert.IsTrue(GoalSettlementDecisionCalculator.IsWaiting(decision));
+    }
+
+    [TestMethod]
+    public void UnrecoverableBlocker_StopsInsteadOfRepairing()
+    {
+        var decision = new GoalVerificationDecision
+        {
+            Verdict = GoalVerificationVerdict.Blocked,
+            Reason = "the bound plan state is invalid",
+            EvidenceRefs = ["turn:turn-1:terminal:7"],
+            BlockerCode = "task_plan_state_invalid",
+        };
+
+        Assert.AreEqual(
+            GoalSettlementDispositions.Stop,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
+    }
 }
