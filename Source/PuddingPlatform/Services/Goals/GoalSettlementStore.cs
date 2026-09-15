@@ -101,11 +101,18 @@ public sealed class GoalSettlementStore(
     IDbContextFactory<PlatformDbContext> dbFactory,
     ICommittedEventSignal committedSignal,
     GoalOutboxSignal outboxSignal,
-    IOptions<TaskBoundGoalOptions>? taskBoundOptions = null)
+    IOptions<TaskBoundGoalOptions>? taskBoundOptions = null,
+    IOptions<GoalRunOptions>? goalOptions = null)
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
     private readonly TimeSpan _reservationLease =
         taskBoundOptions?.Value.ReservationLease ?? TimeSpan.FromHours(2);
+
+    // P0-2（ADR-092 §7）：无进展/同阻塞熔断阈值；未配置或配置非法时 fail-safe 回落默认 3。
+    private readonly int _noProgressBreakerThreshold =
+        goalOptions?.Value.NoProgressBreakerThreshold is int breakerThreshold and > 0
+            ? Math.Clamp(breakerThreshold, 1, 16)
+            : 3;
 
     public async Task<IReadOnlyList<GoalSettlementCandidate>> GetCandidatesAsync(
         int limit,
@@ -533,7 +540,9 @@ public sealed class GoalSettlementStore(
             });
             goal.LastVerificationId = verificationId;
             goal.LastNextAction = decision.NextAction;
-            goal.LastProgressFingerprint = decision.ProgressFingerprint;
+            // P0-2（ADR-092 §7）：进度记账 —— 三个连续计数器与进度指纹的唯一写入点（结算事务内）。
+            // 等待族整轮跳过；指纹缺失视为证据不足（不奖不罚）。语义详见 ApplyProgressAccounting。
+            var progressAccounting = ApplyProgressAccounting(goal, decision);
 
             var events = new List<GoalEventDraft>
             {
@@ -564,6 +573,20 @@ public sealed class GoalSettlementStore(
                     verificationId,
                     verdict = ToWire(decision.Verdict),
                     evidenceRefs = decision.EvidenceRefs,
+                }),
+                // P0-2：进度记账审计事件（事件目录 §12.5 预留的 goal.progress.recorded，首次接线启用）。
+                new(GoalEventTypes.ProgressRecorded, GoalProducerComponents.Coordinator, new
+                {
+                    goalRunId = goal.GoalRunId,
+                    activationEpoch = iteration.ActivationEpoch,
+                    aggregateVersion = goal.AggregateVersion,
+                    iterationNumber = iteration.IterationNo,
+                    waitExcluded = progressAccounting.WaitExcluded,
+                    fingerprintChanged = progressAccounting.FingerprintChanged,
+                    consecutiveNoProgress = goal.ConsecutiveNoProgress,
+                    consecutiveSameBlocker = goal.ConsecutiveSameBlocker,
+                    consecutiveInfraFailures = goal.ConsecutiveInfraFailures,
+                    progressFingerprint = goal.LastProgressFingerprint,
                 }),
             };
 
@@ -1079,6 +1102,59 @@ public sealed class GoalSettlementStore(
         // ADR-092 §6.1：Blocked/NeedsUser/Unsafe 的具体含义必须由 typed disposition 决定；
         // Repair/ContinueCurrent/Wait 都是可恢复的，不得把 Goal 置为终态。
         var typedDisposition = GoalSettlementDecisionCalculator.ComputeDisposition(decision);
+
+        // ── P0-2（ADR-092 §7，对齐 codex-rs ext/goal accounting）：无进展/同阻塞熔断接线 ──
+        // 任一连续计数器达到阈值后，本结算不再返回 repair：先尝试一次 Replan（提升绑定计划
+        // PlanVersion、退回卡死单元、改选另一 ready WorkUnit），Replan 后按 typed wait 收口；
+        // Replan 不可行或本 episode 的一次性 Replan 已消耗（任一计数器已越过阈值）⇒ 转 needs_user。
+        // 熔断绝不静默：原因与连续计数落 goal 字段（BlockedCode/StatusReason）与
+        // goal.circuit_opened 事件（含连续计数、指纹、阻塞码），始终落在可人工处理的状态。
+        if (typedDisposition == GoalSettlementDispositions.Repair
+            && NoProgressBreakerTripped(goal))
+        {
+            var replanApplied = !NoProgressBreakerExceeded(goal)
+                && TryReplanBoundPlan(boundPlan, goal, decision, now, events);
+            if (replanApplied)
+            {
+                // 一次性改道：给 Replan 后的新路径一个有界冷却窗口（typed wait，续行 due +1min）。
+                typedDisposition = GoalSettlementDispositions.Wait;
+                decision = decision with
+                {
+                    Reason = "No-progress circuit breaker opened; a one-shot replan demoted the stuck WorkUnit and selected the next ready WorkUnit.",
+                    BlockerCode = NoProgressCircuitOpenBlockerCode,
+                    BlockerMessage = $"Circuit breaker opened after {goal.ConsecutiveNoProgress} settlements without progress " +
+                                     $"(sameBlocker={goal.ConsecutiveSameBlocker}, infraFailures={goal.ConsecutiveInfraFailures}); one replan applied.",
+                };
+            }
+            else
+            {
+                typedDisposition = GoalSettlementDispositions.NeedsUser;
+                decision = decision with
+                {
+                    Verdict = GoalVerificationVerdict.NeedsUser,
+                    Reason = "No-progress circuit breaker opened; replan is unavailable or already spent for this episode.",
+                    BlockerCode = NoProgressCircuitOpenBlockerCode,
+                    BlockerMessage = $"Circuit breaker opened after {goal.ConsecutiveNoProgress} settlements without progress " +
+                                     $"(sameBlocker={goal.ConsecutiveSameBlocker}, infraFailures={goal.ConsecutiveInfraFailures}, " +
+                                     $"threshold={_noProgressBreakerThreshold}); human decision required.",
+                };
+                events.Add(new(GoalEventTypes.CircuitOpened, GoalProducerComponents.Coordinator, new
+                {
+                    kind = "needs_user",
+                    goalRunId = goal.GoalRunId,
+                    activationEpoch = iteration.ActivationEpoch,
+                    aggregateVersion = goal.AggregateVersion,
+                    iterationNumber = iteration.IterationNo,
+                    threshold = _noProgressBreakerThreshold,
+                    consecutiveNoProgress = goal.ConsecutiveNoProgress,
+                    consecutiveSameBlocker = goal.ConsecutiveSameBlocker,
+                    consecutiveInfraFailures = goal.ConsecutiveInfraFailures,
+                    progressFingerprint = goal.LastProgressFingerprint,
+                    blockerCode = decision.BlockerCode,
+                }));
+            }
+        }
+
         var recoverableOutcome = typedDisposition is GoalSettlementDispositions.Repair
             or GoalSettlementDispositions.ContinueCurrent
             or GoalSettlementDispositions.Wait;
@@ -1263,6 +1339,163 @@ public sealed class GoalSettlementStore(
             remainingIterations = goal.MaxIterations - goal.IterationsStarted,
         }));
         nextContinuation = true;
+    }
+
+    /// <summary>P0-2：熔断落库的 blocker code（非终态、可人工处理；刻意不加入任何白名单）。</summary>
+    private const string NoProgressCircuitOpenBlockerCode = "no_progress_circuit_open";
+
+    /// <summary>P0-2：进度记账结果（goal.progress.recorded 审计事件载荷）。</summary>
+    private sealed record GoalProgressAccounting(
+        bool WaitExcluded,
+        bool FingerprintChanged,
+        bool SameBlockerCounted,
+        bool InfraFailureCounted,
+        bool SuccessReset);
+
+    /// <summary>
+    /// P0-2（ADR-092 §7）：结算事务内的进度记账 —— GoalRunEntity 三个连续计数器与
+    /// last_progress_fingerprint 的唯一写入点。语义（逐条对应任务书 A）：
+    /// ① 等待族（ComputeDisposition=wait，dependency_wait 等白名单，见
+    ///    GoalSettlementDecisionCalculator.WaitBlockerCodes）整轮跳过：合法等待不是无进展；
+    /// ② 指纹轴：新指纹缺失=证据不足（不动）；与上次相同 ⇒ ConsecutiveNoProgress++；
+    ///    变化 ⇒ 归零并记录新指纹；
+    /// ③ 阻塞轴：repair 轮携带阻塞码 ⇒ 与上次相同 ++、不同归零（ADR-092 §7「变化则归零」
+    ///    字面语义）；无阻塞码 ⇒ 归零；
+    /// ④ 基础设施轴：repair 轮且阻塞码属 infra 族（租约/fence/存储证据）⇒
+    ///    ConsecutiveInfraFailures++；成功（advance/complete）一次归零。
+    /// </summary>
+    private static GoalProgressAccounting ApplyProgressAccounting(
+        GoalRunEntity goal,
+        GoalVerificationDecision decision)
+    {
+        var typedDisposition = GoalSettlementDecisionCalculator.ComputeDisposition(decision);
+        if (typedDisposition == GoalSettlementDispositions.Wait)
+        {
+            return new GoalProgressAccounting(
+                WaitExcluded: true,
+                FingerprintChanged: false,
+                SameBlockerCounted: false,
+                InfraFailureCounted: false,
+                SuccessReset: false);
+        }
+
+        var fingerprintChanged = false;
+        var nextFingerprint = decision.ProgressFingerprint;
+        if (!string.IsNullOrWhiteSpace(nextFingerprint))
+        {
+            fingerprintChanged = !string.Equals(
+                goal.LastProgressFingerprint, nextFingerprint, StringComparison.Ordinal);
+            if (fingerprintChanged)
+            {
+                goal.ConsecutiveNoProgress = 0;
+                goal.LastProgressFingerprint = nextFingerprint;
+            }
+            else
+            {
+                goal.ConsecutiveNoProgress++;
+            }
+        }
+
+        var success = typedDisposition is GoalSettlementDispositions.Complete
+            or GoalSettlementDispositions.Advance;
+        if (success)
+            goal.ConsecutiveInfraFailures = 0;
+
+        if (typedDisposition != GoalSettlementDispositions.Repair)
+        {
+            goal.ConsecutiveSameBlocker = 0;
+            return new GoalProgressAccounting(
+                WaitExcluded: false,
+                FingerprintChanged: fingerprintChanged,
+                SameBlockerCounted: false,
+                InfraFailureCounted: false,
+                SuccessReset: success);
+        }
+
+        var blocker = decision.BlockerCode;
+        if (string.IsNullOrWhiteSpace(blocker))
+        {
+            goal.ConsecutiveSameBlocker = 0;
+            return new GoalProgressAccounting(
+                WaitExcluded: false,
+                FingerprintChanged: fingerprintChanged,
+                SameBlockerCounted: false,
+                InfraFailureCounted: false,
+                SuccessReset: success);
+        }
+
+        var sameAsLast = string.Equals(goal.BlockedCode, blocker, StringComparison.Ordinal);
+        goal.ConsecutiveSameBlocker = sameAsLast ? goal.ConsecutiveSameBlocker + 1 : 0;
+
+        var infra = GoalSettlementDecisionCalculator.IsInfraFailureBlockerCode(blocker);
+        if (infra)
+            goal.ConsecutiveInfraFailures++;
+
+        return new GoalProgressAccounting(
+            WaitExcluded: false,
+            FingerprintChanged: fingerprintChanged,
+            SameBlockerCounted: true,
+            InfraFailureCounted: infra,
+            SuccessReset: success);
+    }
+
+    /// <summary>P0-2：任一连续计数器达到熔断阈值。</summary>
+    private bool NoProgressBreakerTripped(GoalRunEntity goal)
+        => goal.ConsecutiveNoProgress >= _noProgressBreakerThreshold
+           || goal.ConsecutiveSameBlocker >= _noProgressBreakerThreshold
+           || goal.ConsecutiveInfraFailures >= _noProgressBreakerThreshold;
+
+    /// <summary>P0-2：任一连续计数器已越过阈值 ⇒ 本 episode 的一次性 Replan 已消耗。</summary>
+    private bool NoProgressBreakerExceeded(GoalRunEntity goal)
+        => goal.ConsecutiveNoProgress > _noProgressBreakerThreshold
+           || goal.ConsecutiveSameBlocker > _noProgressBreakerThreshold
+           || goal.ConsecutiveInfraFailures > _noProgressBreakerThreshold;
+
+    /// <summary>
+    /// P0-2：熔断后的一次性 Replan —— 提升绑定计划 PlanVersion（以新版本身份重新调度），
+    /// 把卡死的 Running WorkUnit 退回 Planned（保留 ErrorMessage 审计），由后续调度改选
+    /// 另一 ready WorkUnit（boundPlan.Next）。没有绑定计划、计划结构非法、无卡死单元或
+    /// 无另一 ready WorkUnit ⇒ Replan 不可行，返回 false（由调用方转 needs_user）。
+    /// </summary>
+    private bool TryReplanBoundPlan(
+        BoundPlanState? boundPlan,
+        GoalRunEntity goal,
+        GoalVerificationDecision decision,
+        DateTimeOffset now,
+        List<GoalEventDraft> events)
+    {
+        if (boundPlan is not { Error: null, Plan: not null, Root: not null }
+            || boundPlan.Current is null
+            || !boundPlan.ReadyUnitAvailable
+            || boundPlan.Next is null)
+        {
+            return false;
+        }
+
+        var nowMs = now.ToUnixTimeMilliseconds();
+        boundPlan.Plan.PlanVersion++;
+        boundPlan.Plan.UpdatedAt = nowMs;
+        boundPlan.Current.Status = TaskNodeStatuses.Planned.ToString();
+        boundPlan.Current.UpdatedAt = nowMs;
+
+        events.Add(new(GoalEventTypes.CircuitOpened, GoalProducerComponents.Coordinator, new
+        {
+            kind = "replan",
+            goalRunId = goal.GoalRunId,
+            aggregateVersion = goal.AggregateVersion,
+            iterationNumber = goal.IterationsStarted,
+            planId = boundPlan.Plan.PlanId,
+            planVersion = boundPlan.Plan.PlanVersion,
+            demotedNodeId = boundPlan.Current.TaskNodeId,
+            nextNodeId = boundPlan.Next.TaskNodeId,
+            threshold = _noProgressBreakerThreshold,
+            consecutiveNoProgress = goal.ConsecutiveNoProgress,
+            consecutiveSameBlocker = goal.ConsecutiveSameBlocker,
+            consecutiveInfraFailures = goal.ConsecutiveInfraFailures,
+            progressFingerprint = goal.LastProgressFingerprint,
+            blockerCode = decision.BlockerCode,
+        }));
+        return true;
     }
 
     private static void FailIncompleteBoundPlan(

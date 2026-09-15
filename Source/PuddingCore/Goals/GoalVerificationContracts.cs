@@ -195,6 +195,17 @@ public static class GoalSettlementDecisionCalculator
         // 而不是等待一个永远不会到来的事件。
     ];
 
+    /// <summary>
+    /// P0-2（ADR-092 §7）：基础设施类失败阻塞码 —— 租约/fence/存储证据等非业务失败。
+    /// 这些码连续出现计入 ConsecutiveInfraFailures；成功一次归零。业务类失败
+    /// （criterion 未通过、iteration_failed 透传的 errorCode 等）不在此列。
+    /// </summary>
+    private static readonly string[] InfraFailureBlockerCodes =
+    [
+        "evidence_incomplete",
+        "reservation_fence_lost",
+    ];
+
     /// <summary>只有不可恢复的阻塞码允许终止 Goal。</summary>
     private static readonly string[] UnrecoverableBlockerCodes =
     [
@@ -214,6 +225,16 @@ public static class GoalSettlementDecisionCalculator
 
     // 注：gates 产生的 evidence_incomplete / reservation_fence_lost 以及透传的 errorCode 不在上述两集合时
     // 按 repair（本轮做有界修复/重扫）处理：它们可重试，但把它们归入 wait 会把目标卡在一个未必到来的事件上。
+
+    /// <summary>P0-2：等待族阻塞码白名单判断（合法等待不参与熔断计数）。</summary>
+    public static bool IsWaitBlockerCode(string? blockerCode)
+        => !string.IsNullOrWhiteSpace(blockerCode)
+           && WaitBlockerCodes.Contains(blockerCode, StringComparer.Ordinal);
+
+    /// <summary>P0-2：基础设施类失败阻塞码判断（租约/fence/存储等非业务失败）。</summary>
+    public static bool IsInfraFailureBlockerCode(string? blockerCode)
+        => !string.IsNullOrWhiteSpace(blockerCode)
+           && InfraFailureBlockerCodes.Contains(blockerCode, StringComparer.Ordinal);
 
     /// <summary>
     /// ADR-092 §6.2：按条件聚合其全部关联检查结果（同一条件可有多个必需检查）。

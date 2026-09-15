@@ -55,7 +55,8 @@ public sealed class GoalSettlementAcceptanceRegressionTests
         }
     }
 
-    private static async Task<(PlatformDbContext Db, GoalSettlementStore Store, SqliteConnection Connection)> CreateAsync()
+    private static async Task<(PlatformDbContext Db, GoalSettlementStore Store, SqliteConnection Connection)> CreateAsync(
+        GoalRunOptions? goalOptions = null)
     {
         var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -64,10 +65,17 @@ public sealed class GoalSettlementAcceptanceRegressionTests
             .Options;
         var db = new PlatformDbContext(options);
         await db.Database.EnsureCreatedAsync();
-        var store = new GoalSettlementStore(
-            new SharedConnectionFactory(connection),
-            new NoopSignal(),
-            new GoalOutboxSignal());
+        var store = goalOptions is null
+            ? new GoalSettlementStore(
+                new SharedConnectionFactory(connection),
+                new NoopSignal(),
+                new GoalOutboxSignal())
+            : new GoalSettlementStore(
+                new SharedConnectionFactory(connection),
+                new NoopSignal(),
+                new GoalOutboxSignal(),
+                taskBoundOptions: null,
+                goalOptions: Microsoft.Extensions.Options.Options.Create(goalOptions));
         return (db, store, connection);
     }
 
@@ -489,5 +497,256 @@ public sealed class GoalSettlementAcceptanceRegressionTests
         Assert.AreEqual(1, runningUnits.Count);
         Assert.AreEqual(CurrentNodeId, runningUnits[0].TaskNodeId);
         Assert.AreNotEqual(TaskNodeStatuses.Running.ToString(), next.Status);
+    }
+
+    // ── P0-2（ADR-092 §7）：无进展/同阻塞熔断接线 ─────────────────────────────────
+
+    private static GoalCriterionResult Failed(string id) => new()
+    {
+        CriterionId = id,
+        CriterionRevision = 1,
+        Status = GoalCriterionResultStatuses.Failed,
+        EvidenceRefs = ["artifact:test-report"],
+    };
+
+    /// <summary>criterion_failed 轮：completed Turn 但必需条件失败（repair），携带进度指纹。</summary>
+    private static GoalVerificationDecision FailedDecision(string? progressFingerprint) => new()
+    {
+        Verdict = GoalVerificationVerdict.Continue,
+        Reason = "Turn completed but required criteria failed.",
+        EvidenceRefs = ["turn:turn-1:terminal:7"],
+        Criteria = [Criterion("build"), Criterion("test")],
+        CriterionResults = [Failed("build")],
+        ProgressFingerprint = progressFingerprint,
+    };
+
+    /// <summary>合法等待轮：dependency_wait（等待族白名单），不得参与熔断计数。</summary>
+    private static GoalVerificationDecision WaitDecision(string? progressFingerprint) => new()
+    {
+        Verdict = GoalVerificationVerdict.Blocked,
+        Reason = "Waiting for dependency.",
+        EvidenceRefs = ["turn:turn-1:terminal:7"],
+        BlockerCode = "dependency_wait",
+        BlockerMessage = "Dependency not ready yet.",
+        ProgressFingerprint = progressFingerprint,
+    };
+
+    private static async Task SeedRoundAsync(PlatformDbContext db, int round)
+    {
+        var terminalSequence = TerminalSequence + round - 1;
+        db.ConversationTurns.Add(new ConversationTurnEntity
+        {
+            ConversationId = ConversationId,
+            TurnId = $"turn-{round}",
+            WorkspaceId = WorkspaceId,
+            Status = "completed",
+            AcceptedSequence = terminalSequence - 1,
+            TerminalSequence = terminalSequence,
+            TerminalKind = "completed",
+            CreatedAt = round * 2,
+            CompletedAt = round * 2 + 1,
+        });
+        db.GoalIterations.Add(new GoalIterationEntity
+        {
+            GoalIterationId = $"gi-{round}",
+            GoalRunId = GoalId,
+            ActivationEpoch = 1,
+            IterationNo = round,
+            Status = "accepted",
+            TurnId = $"turn-{round}",
+            RunId = $"run-{round}",
+            AcceptedSequence = terminalSequence - 1,
+            StartedAtUtc = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>连续结算 1..rounds 轮（每轮播种新的 iteration 与 canonical Turn）。</summary>
+    private static async Task SettleRoundsAsync(
+        GoalSettlementStore store,
+        PlatformDbContext db,
+        int rounds,
+        Func<int, GoalVerificationDecision> decisionForRound)
+    {
+        for (var round = 1; round <= rounds; round++)
+        {
+            if (round > 1)
+                await SeedRoundAsync(db, round);
+            var terminalSequence = TerminalSequence + round - 1;
+            Assert.IsTrue(await store.ApplyAsync(
+                Candidate($"gi-{round}", $"turn-{round}", terminalSequence, round),
+                decisionForRound(round),
+                CancellationToken.None));
+        }
+    }
+
+    [TestMethod]
+    public async Task SameFingerprint_FourRounds_FourthSettlementIsNotRepair()
+    {
+        var (db, store, connection) = await CreateAsync();
+        await using var _ = db;
+        await using var __ = connection;
+        await SeedBoundPlanAsync(db, withNextUnit: false);
+
+        await SettleRoundsAsync(store, db, 4, _ => FailedDecision("fp-stuck"));
+
+        db.ChangeTracker.Clear();
+        var goal = await db.GoalRuns.SingleAsync(item => item.GoalRunId == GoalId);
+        var task = await db.WorkspaceTasks.SingleAsync(item => item.TaskId == TaskId);
+
+        // 第 4 轮：指纹未变化连续 3 次 → 熔断，不再返回 repair；无可改选 ready 单元 ⇒
+        // 转 needs_user：task-bound 尝试终结为 Failed（可审计），Task 落 Blocked 可人工恢复。
+        Assert.AreEqual(3, goal.ConsecutiveNoProgress);
+        Assert.AreEqual(3, goal.ConsecutiveSameBlocker);
+        Assert.AreEqual("no_progress_circuit_open", goal.BlockedCode);
+        Assert.AreEqual(GoalPhase.Failed, goal.Status);
+        Assert.AreEqual(WorkspaceTaskStatus.Blocked, task.Status);
+        Assert.AreEqual("no_progress_circuit_open", task.BlockerKind);
+        Assert.IsTrue(await db.ConversationEvents.AnyAsync(item =>
+            item.ConversationId == ConversationId
+            && item.Type == GoalEventTypes.CircuitOpened));
+        Assert.IsTrue(await db.ConversationEvents.AnyAsync(item =>
+            item.ConversationId == ConversationId
+            && item.Type == GoalEventTypes.ProgressRecorded));
+    }
+
+    [TestMethod]
+    public async Task SameFingerprint_WithReadyAlternativeUnit_ReplansOnceAndStaysActive()
+    {
+        var (db, store, connection) = await CreateAsync();
+        await using var _ = db;
+        await using var __ = connection;
+        await SeedBoundPlanAsync(db, withNextUnit: true);
+
+        await SettleRoundsAsync(store, db, 4, _ => FailedDecision("fp-stuck"));
+
+        db.ChangeTracker.Clear();
+        var goal = await db.GoalRuns.SingleAsync(item => item.GoalRunId == GoalId);
+        var plan = await db.TaskPlanRuns.SingleAsync(item => item.PlanId == PlanId);
+        var current = await db.TaskNodes.SingleAsync(node => node.TaskNodeId == CurrentNodeId);
+        var binding = await db.TaskGoalBindings.SingleAsync(item => item.GoalRunId == GoalId);
+
+        // 一次性 Replan：提升 PlanVersion、退回卡死单元（Running→Planned），
+        // 本结算按 typed wait 收口（不是 repair，也不是静默终态），Goal 保持 Active 可续行。
+        Assert.AreEqual(3, goal.ConsecutiveNoProgress);
+        Assert.AreEqual(GoalPhase.Active, goal.Status);
+        Assert.AreEqual(2, plan.PlanVersion);
+        Assert.AreEqual(TaskNodeStatuses.Planned.ToString(), current.Status);
+        Assert.AreEqual("no_progress_circuit_open", goal.BlockedCode);
+        Assert.IsTrue(goal.BlockedMessage!.Contains("replan"));
+        Assert.AreEqual("active", binding.Status);
+        Assert.IsTrue(await db.ConversationEvents.AnyAsync(item =>
+            item.Type == GoalEventTypes.CircuitOpened));
+    }
+
+    [TestMethod]
+    public async Task WaitBlocker_TenRounds_NeverTripsBreaker()
+    {
+        var (db, store, connection) = await CreateAsync();
+        await using var _ = db;
+        await using var __ = connection;
+        await SeedBoundPlanAsync(db, withNextUnit: false);
+
+        await SettleRoundsAsync(store, db, 10, _ => WaitDecision("fp-wait"));
+
+        db.ChangeTracker.Clear();
+        var goal = await db.GoalRuns.SingleAsync(item => item.GoalRunId == GoalId);
+        var current = await db.TaskNodes.SingleAsync(node => node.TaskNodeId == CurrentNodeId);
+
+        // 合法等待（等待族白名单）整轮跳过计数：三个连续计数器保持 0，不触发熔断。
+        Assert.AreEqual(0, goal.ConsecutiveNoProgress);
+        Assert.AreEqual(0, goal.ConsecutiveSameBlocker);
+        Assert.AreEqual(0, goal.ConsecutiveInfraFailures);
+        Assert.AreEqual(GoalPhase.Active, goal.Status);
+        Assert.AreEqual("dependency_wait", goal.BlockedCode);
+        Assert.AreEqual(TaskNodeStatuses.Running.ToString(), current.Status);
+        Assert.IsNull(goal.LastProgressFingerprint);
+        Assert.IsFalse(await db.ConversationEvents.AnyAsync(item =>
+            item.Type == GoalEventTypes.CircuitOpened));
+    }
+
+    [TestMethod]
+    public async Task FingerprintChange_ResetsNoProgressCounter()
+    {
+        var (db, store, connection) = await CreateAsync();
+        await using var _ = db;
+        await using var __ = connection;
+        await SeedBoundPlanAsync(db, withNextUnit: false);
+
+        await SettleRoundsAsync(store, db, 3, round => FailedDecision(
+            round <= 2 ? "fp-a" : "fp-b"));
+
+        db.ChangeTracker.Clear();
+        var goal = await db.GoalRuns.SingleAsync(item => item.GoalRunId == GoalId);
+
+        // 第 3 轮指纹变化 ⇒ ConsecutiveNoProgress 归零并记录新指纹。
+        Assert.AreEqual(0, goal.ConsecutiveNoProgress);
+        Assert.AreEqual("fp-b", goal.LastProgressFingerprint);
+        Assert.AreEqual(GoalPhase.Active, goal.Status);
+    }
+
+    [TestMethod]
+    public async Task InfraFailures_ConsecutiveThree_TripsBreakerToNeedsUser()
+    {
+        var (db, store, connection) = await CreateAsync();
+        await using var _ = db;
+        await using var __ = connection;
+        await SeedBoundPlanAsync(db, withNextUnit: false);
+
+        // 预先释放 reservation ⇒ 每轮结算被 reservation_fence_lost 门禁拦下（基础设施类失败）。
+        var reservation = await db.AgentExecutionReservations.SingleAsync(
+            item => item.ReservationId == ReservationId);
+        reservation.Status = "released";
+        await db.SaveChangesAsync();
+
+        await SettleRoundsAsync(store, db, 3, _ => FailedDecision("fp-infra"));
+
+        db.ChangeTracker.Clear();
+        var goal = await db.GoalRuns.SingleAsync(item => item.GoalRunId == GoalId);
+
+        // 基础设施失败连续 3 次 → 熔断转 needs_user；BlockedDecision 无指纹 ⇒ 指纹轴不受影响。
+        Assert.AreEqual(3, goal.ConsecutiveInfraFailures);
+        Assert.AreEqual(0, goal.ConsecutiveNoProgress);
+        Assert.AreEqual("no_progress_circuit_open", goal.BlockedCode);
+        Assert.AreEqual(GoalPhase.Failed, goal.Status);
+    }
+
+    [TestMethod]
+    public async Task BreakerThreshold_IsConfigurableAndValidated()
+    {
+        // ① 阈值=2：第 3 轮即熔断（默认阈值 3 时第 3 轮仍是 repair）。
+        var (dbFast, storeFast, connectionFast) = await CreateAsync(
+            new GoalRunOptions { NoProgressBreakerThreshold = 2 });
+        await using var _1 = dbFast;
+        await using var _2 = connectionFast;
+        await SeedBoundPlanAsync(dbFast, withNextUnit: false);
+        await SettleRoundsAsync(storeFast, dbFast, 3, _ => FailedDecision("fp-fast"));
+
+        dbFast.ChangeTracker.Clear();
+        var fastGoal = await dbFast.GoalRuns.SingleAsync(item => item.GoalRunId == GoalId);
+        Assert.AreEqual(2, fastGoal.ConsecutiveNoProgress);
+        Assert.AreEqual("no_progress_circuit_open", fastGoal.BlockedCode);
+        Assert.AreEqual(GoalPhase.Failed, fastGoal.Status);
+
+        // ② 对照组：默认阈值 3，同样 3 轮不熔断。
+        var (dbSlow, storeSlow, connectionSlow) = await CreateAsync();
+        await using var _3 = dbSlow;
+        await using var _4 = connectionSlow;
+        await SeedBoundPlanAsync(dbSlow, withNextUnit: false);
+        await SettleRoundsAsync(storeSlow, dbSlow, 3, _ => FailedDecision("fp-slow"));
+
+        dbSlow.ChangeTracker.Clear();
+        var slowGoal = await dbSlow.GoalRuns.SingleAsync(item => item.GoalRunId == GoalId);
+        Assert.AreEqual(2, slowGoal.ConsecutiveNoProgress);
+        Assert.AreEqual(GoalPhase.Active, slowGoal.Status);
+        Assert.AreNotEqual("no_progress_circuit_open", slowGoal.BlockedCode);
+
+        // ③ Validate 边界（1..16）。
+        var zero = GoalRunOptions.Validate(new GoalRunOptions { NoProgressBreakerThreshold = 0 });
+        Assert.IsTrue(zero.Any(message => message.Contains("NoProgressBreakerThreshold")));
+        var over = GoalRunOptions.Validate(new GoalRunOptions { NoProgressBreakerThreshold = 17 });
+        Assert.IsTrue(over.Any(message => message.Contains("NoProgressBreakerThreshold")));
+        var valid = GoalRunOptions.Validate(new GoalRunOptions { NoProgressBreakerThreshold = 3 });
+        Assert.IsFalse(valid.Any(message => message.Contains("NoProgressBreakerThreshold")));
     }
 }

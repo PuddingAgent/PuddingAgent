@@ -53,6 +53,14 @@ public sealed class GoalRunOptions
     /// <summary>ADR-092：单次 boot 自动恢复 Goal 数量上限（防恢复风暴），超出部分按 paused 处理。</summary>
     public int MaxAutoResumesPerBoot { get; set; } = 8;
 
+    /// <summary>
+    /// P0-2（ADR-092 §7）：无进展/同阻塞熔断阈值 —— 同一进度指纹未变化、或同一阻塞码连续、
+    /// 或基础设施类失败连续达到该次数后，结算不再返回 repair（先尝试一次 Replan 改选另一 ready
+    /// WorkUnit；仍无进展则转 needs_user / typed wait）。默认 3，对齐 codex-rs ext/goal
+    /// accounting 的 consecutive failure 阈值；合法边界 1..16。
+    /// </summary>
+    public int NoProgressBreakerThreshold { get; set; } = 3;
+
     /// <summary>启动校验：局部配置不得扩大系统硬边界。</summary>
     public static IReadOnlyList<string> Validate(GoalRunOptions options)
     {
@@ -93,6 +101,11 @@ public sealed class GoalRunOptions
         {
             errors.Add(
                 $"GoalRuns:MaxAutoResumesPerBoot must be between 0 and 64; got {options.MaxAutoResumesPerBoot}.");
+        }
+        if (options.NoProgressBreakerThreshold is < 1 or > 16)
+        {
+            errors.Add(
+                $"GoalRuns:NoProgressBreakerThreshold must be between 1 and 16; got {options.NoProgressBreakerThreshold}.");
         }
 
         return errors;
