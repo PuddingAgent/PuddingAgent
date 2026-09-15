@@ -425,4 +425,64 @@ public sealed class GoalSettlementAcceptanceRegressionTests
         Assert.AreNotEqual(TaskNodeStatuses.Completed.ToString(), next.Status);
         Assert.AreNotEqual(TaskPlanStatuses.Completed.ToString(), plan.Status);
     }
+
+    [TestMethod]
+    public async Task TwoCompletedRounds_StayInTheSameWorkUnit()
+    {
+        var (db, store, connection) = await CreateAsync();
+        await using var _ = db;
+        await using var __ = connection;
+        await SeedBoundPlanAsync(db, withNextUnit: true);
+
+        Assert.IsTrue(await store.ApplyAsync(
+            Candidate(),
+            PlannedOnlyDecision(GoalVerificationVerdict.Continue),
+            CancellationToken.None));
+
+        // 第二轮：新的 iteration 与 canonical Turn，仍是同一个 WorkUnit。
+        db.ConversationTurns.Add(new ConversationTurnEntity
+        {
+            ConversationId = ConversationId,
+            TurnId = "turn-2",
+            WorkspaceId = WorkspaceId,
+            Status = "completed",
+            AcceptedSequence = 8,
+            TerminalSequence = 9,
+            TerminalKind = "completed",
+            CreatedAt = 2,
+            CompletedAt = 3,
+        });
+        db.GoalIterations.Add(new GoalIterationEntity
+        {
+            GoalIterationId = "gi-2",
+            GoalRunId = GoalId,
+            ActivationEpoch = 1,
+            IterationNo = 2,
+            Status = "accepted",
+            TurnId = "turn-2",
+            RunId = "run-2",
+            AcceptedSequence = 8,
+            StartedAtUtc = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        Assert.IsTrue(await store.ApplyAsync(
+            Candidate("gi-2", "turn-2", 9, 2),
+            PlannedOnlyDecision(GoalVerificationVerdict.Continue),
+            CancellationToken.None));
+
+        var current = await db.TaskNodes.SingleAsync(node => node.TaskNodeId == CurrentNodeId);
+        var next = await db.TaskNodes.SingleAsync(node => node.TaskNodeId == NextNodeId);
+        var runningUnits = await db.TaskNodes
+            .Where(node => node.PlanId == PlanId
+                           && node.Depth == 1
+                           && node.Status == TaskNodeStatuses.Running.ToString())
+            .ToListAsync();
+
+        // 验收标准 1：两轮 completed 都留在同一单元内工作，没有推进到下一单元。
+        Assert.AreNotEqual(TaskNodeStatuses.Completed.ToString(), current.Status);
+        Assert.AreEqual(1, runningUnits.Count);
+        Assert.AreEqual(CurrentNodeId, runningUnits[0].TaskNodeId);
+        Assert.AreNotEqual(TaskNodeStatuses.Running.ToString(), next.Status);
+    }
 }
