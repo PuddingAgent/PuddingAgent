@@ -116,4 +116,21 @@ public sealed class GoalStateMachineTests
         Assert.IsTrue(GoalLimits.IsValidIterationBudget(1));
         Assert.IsTrue(GoalLimits.IsValidIterationBudget(256));
     }
+
+    [TestMethod]
+    public void Extend_Is_Allowed_Only_From_BudgetExhausted()
+    {
+        Assert.IsTrue(GoalStateMachine.CanExtend(GoalPhase.BudgetExhausted));
+
+        foreach (var phase in Enum.GetValues<GoalPhase>())
+        {
+            if (phase == GoalPhase.BudgetExhausted)
+                continue;
+            Assert.IsFalse(GoalStateMachine.CanExtend(phase), $"{phase}");
+        }
+
+        // extend 是预算修订而非普通状态转换：终态无出边的不变量保持不变。
+        Assert.AreEqual(0, GoalStateMachine.AllowedTransitions(GoalPhase.BudgetExhausted).Count);
+        Assert.IsFalse(GoalStateMachine.CanTransition(GoalPhase.BudgetExhausted, GoalPhase.Active));
+    }
 }

@@ -29,6 +29,13 @@ public enum GoalCommandKind
 
     /// <summary>ADR-092：设置重启恢复策略（resume_policy），仅对非终态 Goal 生效。</summary>
     Policy,
+
+    /// <summary>
+    /// W3：/goal extend &lt;rounds&gt; —— 额度耗尽的人工出口。仅对 budget_exhausted 终态
+    /// 生效，把 max_iterations 提升为「已结算迭代数 + rounds」并恢复 active。
+    /// 仅用户 slash / HTTP 入口（与 /goal policy 同级人类权能），不暴露为 agent 侧工具。
+    /// </summary>
+    Extend,
 }
 
 /// <summary>ADR-074 §3: 外层 Goal Iteration 预算与 objective 边界的唯一硬限制来源。</summary>
@@ -170,4 +177,11 @@ public static class GoalErrorCodes
     public const string GoalConflict = "goal_conflict";
     public const string InvalidState = "invalid_goal_state";
     public const string VersionConflict = "goal_version_conflict";
+
+    /// <summary>
+    /// W3：extend 的 fail-closed 拒绝 —— Goal 绑定的 Task 已被释放/回退（结算在预算耗尽时
+    /// 会把 binding 置 terminal 并释放 assignment/reservation，见 GoalSettlementStore），
+    /// 续行链路已无法推进；保持原状态不变，绝不静默成功。
+    /// </summary>
+    public const string GoalBindingReleased = "goal_binding_released";
 }

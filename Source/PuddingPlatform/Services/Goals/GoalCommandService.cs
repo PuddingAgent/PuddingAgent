@@ -48,6 +48,7 @@ public sealed class GoalCommandService(
                 GoalCommandKind.Cancel => await HandleCancelAsync(request, ct),
                 GoalCommandKind.Clear => await HandleClearAsync(request, ct),
                 GoalCommandKind.Policy => await HandlePolicyAsync(request, ct),
+                GoalCommandKind.Extend => await HandleExtendAsync(request, ct),
                 _ => GoalCommandResult.Fail(
                     GoalErrorCodes.InvalidCommand,
                     $"未知的 Goal 命令 '{request.Command.Kind}'。"),
@@ -335,6 +336,118 @@ public sealed class GoalCommandService(
     }
 
     /// <summary>
+    /// W3：/goal extend &lt;rounds&gt; —— 额度耗尽的人工出口。仅对 phase=BudgetExhausted 生效：
+    /// max_iterations = 已结算迭代数 + rounds（不超过 GoalLimits.MaxIterationsHardLimit），
+    /// phase → Active，同事务落 goal.budget_extended 审计事件（payload 含 field/from/to 与
+    /// 触发者），并触发下一轮 continuation。Task 绑定已释放/任务已回退时 fail-closed
+    /// 返回 goal_binding_released，保持原状态不变。用户权能入口（slash / HTTP），
+    /// 不暴露为 agent 侧工具。
+    /// </summary>
+    private async Task<GoalCommandResult> HandleExtendAsync(
+        GoalCommandRequest request, CancellationToken ct)
+    {
+        // 结构化入口可能绕过文本解析器：rounds 缺失一律 fail-closed，绝不默认取值。
+        if (request.Command.Rounds is not int rounds)
+        {
+            return GoalCommandResult.Fail(
+                GoalErrorCodes.InvalidRounds,
+                $"/goal extend 需要追加轮数：{GoalLimits.MinIterations}..{GoalLimits.MaxIterationsHardLimit} 的整数（例如 /goal extend 8）。" );
+        }
+
+        // budget_exhausted 是终态，不在 FindActive 集合内 —— 必须 FindLatest。
+        var goal = await store.FindLatestAsync(request.WorkspaceId, request.ConversationId, ct);
+        if (goal is null)
+            return GoalCommandResult.Fail(GoalErrorCodes.GoalNotFound, "当前会话没有 Goal。");
+
+        if (!GoalStateMachine.CanExtend(goal.Status))
+        {
+            return GoalCommandResult.Fail(
+                GoalErrorCodes.InvalidState,
+                $"Goal 当前处于 {goal.Status}，只有 budget_exhausted 才能 extend。",
+                goal.ToSnapshot());
+        }
+
+        // fail-closed：结算在预算耗尽时会把 binding 置 terminal 并释放 assignment/reservation
+        // （GoalSettlementStore），绑定的任务也已回退为终态 —— 续行链路无法推进，
+        // 必须拒绝且保持原状态，绝不静默成功。
+        var binding = await store.FindTaskBindingAsync(goal.GoalRunId, ct);
+        if (binding is not null)
+        {
+            var bindingActive = string.Equals(binding.Status, "active", StringComparison.Ordinal)
+                && binding.ReleasedAtUtc is null;
+            var taskUsable = false;
+            if (bindingActive)
+            {
+                var boundTask = await store.FindTaskAsync(binding.WorkspaceId, binding.TaskId, ct);
+                taskUsable = boundTask is not null
+                    && boundTask.Status
+                        is not (PuddingCode.Tasks.WorkspaceTaskStatus.Completed
+                            or PuddingCode.Tasks.WorkspaceTaskStatus.Failed
+                            or PuddingCode.Tasks.WorkspaceTaskStatus.Cancelled
+                            or PuddingCode.Tasks.WorkspaceTaskStatus.Archived);
+            }
+
+            if (!bindingActive || !taskUsable)
+            {
+                return GoalCommandResult.Fail(
+                    GoalErrorCodes.GoalBindingReleased,
+                    "该 Goal 绑定的 Task 已被释放或已回退（binding 状态："
+                    + $"{binding.Status}），extend 无法恢复推进；"
+                    + "请先处理任务本身（如 re-open）再考虑新建 Goal。",
+                    goal.ToSnapshot());
+            }
+        }
+
+        // settled + rounds 必须严格落在硬上限内，且确实能开出新迭代；越界/无效一律
+        // fail-closed 并给出当前状态下的合法区间，绝不静默钳制。
+        var settled = goal.IterationsSettled;
+        var headroom = GoalLimits.MaxIterationsHardLimit - settled;
+        var newMax = settled + rounds;
+        if (rounds > headroom || newMax <= goal.IterationsStarted)
+        {
+            var allowedHint = headroom <= 0
+                ? $"已结算 {settled} 轮已达硬上限 {GoalLimits.MaxIterationsHardLimit}，无法追加。"
+                : $"当前已结算 {settled} 轮，合法追加范围 {GoalLimits.MinIterations}..{headroom}。";
+            return GoalCommandResult.Fail(
+                GoalErrorCodes.InvalidRounds,
+                $"追加 {rounds} 轮会得到无效预算（max_iterations={newMax}，已开始 "
+                + $"{goal.IterationsStarted} 轮）。{allowedHint}",
+                goal.ToSnapshot());
+        }
+
+        if (request.ExpectedVersion is > 0 && request.ExpectedVersion != goal.AggregateVersion)
+            return VersionConflict(goal);
+
+        var from = goal.MaxIterations;
+        var (mutated, _) = await store.TryMutateAsync(
+            goal.GoalRunId,
+            request.ExpectedVersion ?? 0,
+            g =>
+            {
+                g.MaxIterations = newMax;
+                g.Status = GoalPhase.Active;
+                g.StatusReason = null;
+                g.BlockedCode = null;
+                g.BlockedMessage = null;
+                g.TerminalAtUtc = null;
+                g.ActivationEpoch++;
+                return true;
+            },
+            new GoalRunStore.GoalEventAppend(
+                GoalEventTypes.BudgetExtended,
+                new { field = "max_iterations", from, to = newMax, rounds, by = request.UserId }),
+            request.ClientRequestId,
+            ct,
+            enqueueContinuation: options.Value.ContinuationEnabled);
+
+        return mutated is null
+            ? VersionConflict(goal)
+            : GoalCommandResult.Ok(
+                $"Goal 额度已追加 {rounds} 轮（max_iterations {from} → {newMax}），已恢复 active。",
+                mutated.ToSnapshot());
+    }
+
+    /// <summary>
     /// ADR-092：/goal policy <paused|auto_resume_on_restart>。用户权能入口（slash 文本），
     /// 不暴露为 agent 侧工具。仅对非终态 Goal 生效；写入 goal_runs.resume_policy 并落
     /// goal.policy_changed 审计事件（payload 含 field/from/to）。非法值 fail-closed。
@@ -538,11 +651,13 @@ public sealed class GoalCommandService(
         if (!string.IsNullOrWhiteSpace(goal.LastNextAction))
             lines.Add($"Next: {goal.LastNextAction}");
 
-        var commands = GoalStateMachine.IsTerminal(goal.Status)
-            ? "Commands: /goal <objective> 创建新 Goal"
-            : goal.Status == GoalPhase.Active
-                ? "Commands: /goal pause · /goal cancel · /goal edit · /goal policy"
-                : "Commands: /goal resume · /goal cancel · /goal edit · /goal policy";
+        var commands = goal.Status == GoalPhase.BudgetExhausted
+            ? "Commands: /goal extend <rounds> 追加额度 · /goal <objective> 创建新 Goal"
+            : GoalStateMachine.IsTerminal(goal.Status)
+                ? "Commands: /goal <objective> 创建新 Goal"
+                : goal.Status == GoalPhase.Active
+                    ? "Commands: /goal pause · /goal cancel · /goal edit · /goal policy"
+                    : "Commands: /goal resume · /goal cancel · /goal edit · /goal policy";
         lines.Add(commands);
 
         return string.Join('\n', lines);

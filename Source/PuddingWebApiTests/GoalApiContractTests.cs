@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using PuddingCode.Goals;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 
@@ -243,6 +244,67 @@ public sealed class GoalApiContractTests
         var response = await _client.GetAsync(
             $"/api/v1/conversations/goal-conv-none/goal");
         Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task GoalCommands_Extend_Is_Reachable_And_Not_Silently_Degraded()
+    {
+        var conversationId = $"goal-conv-{Guid.NewGuid():N}";
+
+        var created = await PostGoalCommandAsync(conversationId, new
+        {
+            agentId = AgentId,
+            clientRequestId = NewId("req"),
+            action = "set",
+            objective = "额度耗尽后人工追加",
+            rounds = 3,
+        });
+        Assert.AreEqual(HttpStatusCode.OK, created.StatusCode);
+        var createdBody = await ReadJsonAsync(created);
+        Assert.IsTrue(createdBody.Success);
+
+        // 按结算口径直接把 Goal 置为 budget_exhausted（3/3）。
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+            var goal = await db.GoalRuns.SingleAsync(g => g.CurrentConversationId == conversationId);
+            goal.Status = GoalPhase.BudgetExhausted;
+            goal.StatusReason = "accepted_iteration_budget_exhausted";
+            goal.TerminalAtUtc = DateTimeOffset.UtcNow;
+            goal.IterationsStarted = 3;
+            goal.IterationsSettled = 3;
+            goal.ActivationEpoch++;
+            await db.SaveChangesAsync();
+        }
+
+        // 对照：未知 action 仍被静默降级为 status（既有缺陷本刀不修）——
+        // 返回 200 且仅投影当前 budget_exhausted/3，绝不能被当成 extend 成功。
+        var degraded = await PostGoalCommandAsync(conversationId, new
+        {
+            agentId = AgentId,
+            clientRequestId = NewId("req"),
+            action = "extend_now_please",
+            rounds = 8,
+        });
+        Assert.AreEqual(HttpStatusCode.OK, degraded.StatusCode);
+        var degradedBody = await ReadJsonAsync(degraded);
+        Assert.IsTrue(degradedBody.Success);
+        Assert.AreEqual("budget_exhausted", degradedBody.Goal.Phase);
+        Assert.AreEqual(3, degradedBody.Goal.MaxIterations);
+
+        // extend 必须走真实 extend 分支：phase 回 active、预算 3 → 11。
+        var extended = await PostGoalCommandAsync(conversationId, new
+        {
+            agentId = AgentId,
+            clientRequestId = NewId("req"),
+            action = "extend",
+            rounds = 8,
+        });
+        Assert.AreEqual(HttpStatusCode.OK, extended.StatusCode);
+        var extendedBody = await ReadJsonAsync(extended);
+        Assert.IsTrue(extendedBody.Success, extendedBody.ErrorCode);
+        Assert.AreEqual("active", extendedBody.Goal.Phase);
+        Assert.AreEqual(11, extendedBody.Goal.MaxIterations);
     }
 
     private async Task<HttpResponseMessage> PostGoalCommandAsync(

@@ -29,6 +29,13 @@ public static class GoalEventTypes
     /// </summary>
     public const string PolicyChanged = "goal.policy_changed";
 
+    /// <summary>
+    /// W3：/goal extend 额度追加（当前唯一允许离开 budget_exhausted 的用户出口）。
+    /// payload 记录 field/from/to/rounds/by（触发者）。与 goal.policy_changed 同为目录冻结后
+    /// 新增；消费方按 goal. 前缀或精确类型读取，不受影响。
+    /// </summary>
+    public const string BudgetExtended = "goal.budget_extended";
+
     // ── Iteration（G2）───────────────────────────────────────
     public const string IterationAccepted = "goal.iteration.accepted";
     public const string IterationStarted = "goal.iteration.started";

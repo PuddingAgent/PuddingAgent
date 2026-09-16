@@ -235,4 +235,57 @@ public sealed class GoalCommandTextParserTests
             "/goal policy", out _, out var errorCode, out _));
         Assert.AreEqual(GoalErrorCodes.InvalidResumePolicy, errorCode);
     }
+
+    [TestMethod]
+    public void Extend_Parses_Strict_Integer_Rounds()
+    {
+        Assert.IsTrue(GoalCommandTextParser.TryParse("/goal extend 8", out var extend, out _, out _));
+        Assert.AreEqual(GoalCommandKind.Extend, extend.Kind);
+        Assert.AreEqual(8, extend.Rounds);
+
+        Assert.IsTrue(GoalCommandTextParser.TryParse("/GOAL EXTEND 1", out var lowerBound, out _, out _));
+        Assert.AreEqual(GoalCommandKind.Extend, lowerBound.Kind);
+        Assert.AreEqual(1, lowerBound.Rounds);
+
+        Assert.IsTrue(GoalCommandTextParser.TryParse("/goal Extend 256", out var upperBound, out _, out _));
+        Assert.AreEqual(GoalCommandKind.Extend, upperBound.Kind);
+        Assert.AreEqual(256, upperBound.Rounds);
+    }
+
+    [TestMethod]
+    public void Extend_Missing_Value_Fails_Closed_With_Usage()
+    {
+        Assert.IsFalse(GoalCommandTextParser.TryParse(
+            "/goal extend", out _, out var errorCode, out var errorMessage));
+        Assert.AreEqual(GoalErrorCodes.InvalidRounds, errorCode);
+        StringAssert.Contains(errorMessage!, "extend");
+        StringAssert.Contains(errorMessage!, "256");
+
+        // 尾随空白 trim 后仍等价缺值。
+        Assert.IsFalse(GoalCommandTextParser.TryParse(
+            "/goal extend   ", out _, out errorCode, out _));
+        Assert.AreEqual(GoalErrorCodes.InvalidRounds, errorCode);
+    }
+
+    [TestMethod]
+    public void Extend_Invalid_Values_Fail_Closed_Listing_Range()
+    {
+        foreach (var bad in new[] { "abc", "0", "257", "-3", "8.5", "+8", "８" })
+        {
+            Assert.IsFalse(
+                GoalCommandTextParser.TryParse($"/goal extend {bad}", out _, out var errorCode, out var errorMessage),
+                $"rounds '{bad}' should be rejected");
+            Assert.AreEqual(GoalErrorCodes.InvalidRounds, errorCode, $"rounds '{bad}'");
+            StringAssert.Contains(errorMessage!, "256", $"rounds '{bad}' should list the valid range");
+        }
+    }
+
+    [TestMethod]
+    public void Extend_Is_Reserved_Word_Not_Objective_Shorthand()
+    {
+        // "extend 修复xx" 不得回落为 set objective —— 保留字已消费，非法值直接 fail-closed。
+        Assert.IsFalse(GoalCommandTextParser.TryParse(
+            "/goal extend 修复全部失败测试", out _, out var errorCode, out _));
+        Assert.AreEqual(GoalErrorCodes.InvalidRounds, errorCode);
+    }
 }

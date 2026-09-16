@@ -35,7 +35,7 @@ public sealed class GoalCommandsController(IGoalCommandService goalCommandServic
             return Problem(
                 statusCode: 422,
                 title: "invalid_goal_action",
-                detail: "Action must be one of: status, set, edit, replace, pause, resume, cancel, clear.");
+                detail: "Action must be one of: status, set, edit, replace, pause, resume, cancel, clear, extend.");
         }
 
         if (kind is GoalCommandKind.Set or GoalCommandKind.Edit or GoalCommandKind.Replace)
@@ -96,6 +96,10 @@ public sealed class GoalCommandsController(IGoalCommandService goalCommandServic
             "resume" => GoalCommandKind.Resume,
             "cancel" => GoalCommandKind.Cancel,
             "clear" => GoalCommandKind.Clear,
+
+            // W3：extend 必须显式入表 —— 否则会像 policy 一样被 `_ =>` 静默降级为 Status
+            // 且返回 200（既有降级缺陷本刀不修，但不能吞掉 extend）。
+            "extend" => GoalCommandKind.Extend,
             _ => GoalCommandKind.Status,
         };
         return !string.IsNullOrWhiteSpace(action);

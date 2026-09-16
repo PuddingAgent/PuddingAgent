@@ -51,6 +51,14 @@ public static class GoalStateMachine
     public static bool CanEdit(GoalPhase phase)
         => !IsTerminal(phase);
 
+    /// <summary>
+    /// W3：extend 只允许 budget_exhausted —— 额度追加是预算修订而非普通状态转换，
+    /// 不进入 CanTransition 矩阵（终态无出边的不变量与 AllowedTransitions 投影保持不变）。
+    /// 恢复 active 由 extend 的事务性 mutation 显式完成。
+    /// </summary>
+    public static bool CanExtend(GoalPhase phase)
+        => phase == GoalPhase.BudgetExhausted;
+
     /// <summary>计数不变量：预算 ∈ [1,256]，started/settled 非负且不越界。</summary>
     public static bool AreCountersValid(int maxIterations, int iterationsStarted, int iterationsSettled)
         => GoalLimits.IsValidIterationBudget(maxIterations)

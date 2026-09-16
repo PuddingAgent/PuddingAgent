@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace PuddingCode.Goals;
@@ -5,7 +6,7 @@ namespace PuddingCode.Goals;
 /// <summary>
 /// ADR-074 §4: /goal 严格 grammar 解析器（纯函数，无 I/O）。
 /// <para>
-/// 子命令消歧规则：首 token 命中保留字（status/set/edit/replace/pause/resume/policy/cancel/clear，
+/// 子命令消歧规则：首 token 命中保留字（status/set/edit/replace/pause/resume/extend/policy/cancel/clear，
 /// 大小写不敏感）即按子命令处理并对其余部分做严格校验；否则整个剩余文本视为 objective
 /// （set 简写）。`/goal` 等价 `/goal status`，空参数绝不隐式创建目标。
 /// </para>
@@ -18,7 +19,7 @@ public static partial class GoalCommandTextParser
 {
     private static readonly string[] ReservedSubcommands =
     [
-        "status", "set", "edit", "replace", "pause", "resume", "policy", "cancel", "clear",
+        "status", "set", "edit", "replace", "pause", "resume", "extend", "policy", "cancel", "clear",
     ];
 
     public static bool TryParse(
@@ -89,6 +90,15 @@ public static partial class GoalCommandTextParser
                     return true;
                 }
                 command = new GoalCommand { Kind = ToKind(match) };
+                return true;
+
+            case "extend":
+                // W3：/goal extend <rounds>。rounds 必填、严格十进制整数 1..256；
+                // 缺值/非法值 fail-closed 并提示合法取值，绝不静默归一化。
+                if (!TryParseExtendRounds(remainder, out var extendRounds, out errorCode, out errorMessage))
+                    return true; // command 保持 null → TryParse 返回 false。
+
+                command = new GoalCommand { Kind = GoalCommandKind.Extend, Rounds = extendRounds };
                 return true;
 
             case "pause":
@@ -225,7 +235,9 @@ public static partial class GoalCommandTextParser
         return -1;
     }
 
-    /// <summary>大小写不敏感归一化 resume_policy；未知值 fail-closed 返回 false。</summary>
+    /// <summary>
+    /// 大小写不敏感归一化 resume_policy；未知值 fail-closed 返回 false。
+    /// </summary>
     private static bool TryNormalizeResumePolicy(string value, out string normalized)
     {
         if (string.Equals(value, GoalResumePolicies.Paused, StringComparison.OrdinalIgnoreCase))
@@ -244,6 +256,43 @@ public static partial class GoalCommandTextParser
         return false;
     }
 
+    /// <summary>
+    /// W3：extend rounds 严格解析 —— 仅接受 ASCII 十进制整数字面量且必须落在
+    /// 1..256（<see cref="GoalLimits.IsValidIterationBudget"/>）；'+8'、'8.0'、全角数字、
+    /// 越界值一律 invalid_rounds，不做任何静默归一化。
+    /// </summary>
+    private static bool TryParseExtendRounds(
+        string remainder,
+        out int rounds,
+        out string? errorCode,
+        out string? errorMessage)
+    {
+        rounds = 0;
+        if (remainder.Length == 0)
+        {
+            errorCode = GoalErrorCodes.InvalidRounds;
+            errorMessage =
+                $"/goal extend requires a rounds value: an integer {GoalLimits.MinIterations}.." +
+                $"{GoalLimits.MaxIterationsHardLimit} (e.g. '/goal extend 8').";
+            return false;
+        }
+
+        if (!remainder.All(static c => c is >= '0' and <= '9')
+            || !int.TryParse(remainder, NumberStyles.None, CultureInfo.InvariantCulture, out rounds)
+            || !GoalLimits.IsValidIterationBudget(rounds))
+        {
+            errorCode = GoalErrorCodes.InvalidRounds;
+            errorMessage =
+                $"/goal extend rounds '{remainder}' is invalid; rounds must be an integer between " +
+                $"{GoalLimits.MinIterations} and {GoalLimits.MaxIterationsHardLimit}.";
+            return false;
+        }
+
+        errorCode = null;
+        errorMessage = null;
+        return true;
+    }
+
     private static GoalCommandKind ToKind(string subcommand) => subcommand switch
     {
         "status" => GoalCommandKind.Status,
@@ -252,6 +301,7 @@ public static partial class GoalCommandTextParser
         "replace" => GoalCommandKind.Replace,
         "pause" => GoalCommandKind.Pause,
         "resume" => GoalCommandKind.Resume,
+        "extend" => GoalCommandKind.Extend,
         "policy" => GoalCommandKind.Policy,
         "cancel" => GoalCommandKind.Cancel,
         "clear" => GoalCommandKind.Clear,
