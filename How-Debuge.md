@@ -1,3 +1,7 @@
+## 2026-09-16：模型输出被 Agent 4096 限额截断
+
+遇到 `llm_output_truncated`，按 session/turn 查询 gateway 的实际输出和 finish reason；思考 token 也消耗输出额度。Agent `maxReplyTokens` 已废弃，单次上限统一由 LLM 资源池模型 `maxOutputTokens` 决定。DeepSeek API 文档 384K 的精确值是 393216。检查实际进程加载的 DLL/资源池 API，不能仅检查源码或表单。详见 [诊断与验收](Docs/Reports/模型输出上限归一与资源池核对-2026-09-16.md)。
+
 ### 缓存下降要区分工具新增与重排（2026-09-16）
 
 Gateway总量与归因不能相加；先以共享requestId关联，缺失时七元组唯一内容关联必须标明局限。对tool_spec_changed比较相邻Composition有序ToolIds，新增工具不等于排序缺陷；无变化标签不等于最终请求稳定。压缩摘要和checkpoint后首轮分开计量，查system变化对应层hash。本次L3-USER-PREFERENCES更新造成09:34主会话前缀失效。见[数据、案例与方案](Docs/Reports/缓存命中诊断与修复方案-2026-09-16.md)。

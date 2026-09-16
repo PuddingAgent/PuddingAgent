@@ -14,7 +14,6 @@ describe('buildGlobalAgentTemplateRequest', () => {
       systemPrompt: 'system',
       userPromptTemplate: '{{input}}',
       maxContextTokens: undefined as unknown as number,
-      maxReplyTokens: undefined as unknown as number,
       selectedCapabilityIds: [],
       selectedSkillPackageIds: [],
       isEnabled: undefined as unknown as boolean,
@@ -34,7 +33,6 @@ describe('buildGlobalAgentTemplateRequest', () => {
       grantTargetKeys: ['cap-python', 'cap-python'],
       skillTargetKeys: ['skill-a'],
       legacyMaxContextTokens: 131_072,
-      legacyMaxReplyTokens: 4096,
     };
 
     const normalized = buildGlobalAgentTemplateRequest(values, defaults);
@@ -46,7 +44,6 @@ describe('buildGlobalAgentTemplateRequest', () => {
     expect(normalized.maxElapsedSeconds).toBe(2400);
     expect(normalized.maxToolCallsTotal).toBe(100);
     expect(normalized.maxContextTokens).toBe(131_072);
-    expect(normalized.maxReplyTokens).toBe(4096);
     expect(normalized.isEnabled).toBe(true);
     expect(normalized.sortOrder).toBe(100);
     expect(normalized.agentsPrompt).toBe('agents');

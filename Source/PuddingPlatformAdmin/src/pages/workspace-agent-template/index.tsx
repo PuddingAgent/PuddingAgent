@@ -148,7 +148,6 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
       preferredProviderId: tpl.preferredProviderId,
       preferredModelId: tpl.preferredModelId,
       maxContextTokens: tpl.maxContextTokens,
-      maxReplyTokens: tpl.maxReplyTokens,
       containerImage: tpl.containerImage,
       selectedCapabilityIds: tpl.selectedCapabilityIds,
       reasoningEffort: tpl.reasoningEffort,
@@ -168,7 +167,6 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
       isEnabled: true,
       sortOrder: 100,
       maxContextTokens: 8192,
-      maxReplyTokens: 2048,
       workspaceId: filterWorkspaceId,
       selectedCapabilityIds: [],
     });
@@ -547,7 +545,6 @@ const WorkspaceAgentTemplatePage: React.FC = () => {
 
           <Space size="large">
             <ProFormDigit name="maxContextTokens" label="上下文 tokens" min={1024} />
-            <ProFormDigit name="maxReplyTokens" label="最大回复 tokens" min={128} />
             <ProFormDigit name="sortOrder" label="排序权重" min={0} />
           </Space>
 

@@ -85,7 +85,6 @@ public sealed class AgentProfileProvider
             UserPromptTemplate = instance.UserPromptTemplate,
             MemorySearchMode = instance.MemorySearchMode ?? "deep",
             ReasoningEffort = instance.ReasoningEffort,
-            MaxReplyTokens = instance.MaxReplyTokens,
             MaxRounds = instance.MaxRounds,
             MaxElapsedSeconds = instance.MaxElapsedSeconds,
             MaxToolCallsTotal = instance.MaxToolCallsTotal,

@@ -80,8 +80,7 @@ public static class LlmProfileResolver
                 ?? model.MaxContextTokens
                 ?? 0,
             MaxInputTokens = model.MaxInputTokens,
-            MaxReplyTokens = profile.MaxReplyTokens
-                ?? model.MaxOutputTokens
+            MaxOutputTokens = model.MaxOutputTokens
                 ?? 0,
         };
     }
@@ -109,5 +108,5 @@ public sealed record ResolvedLlmProfile
     public string? ThinkingMode { get; init; }
     public int MaxContextTokens { get; init; }
     public int? MaxInputTokens { get; init; }
-    public int MaxReplyTokens { get; init; }
+    public int MaxOutputTokens { get; init; }
 }

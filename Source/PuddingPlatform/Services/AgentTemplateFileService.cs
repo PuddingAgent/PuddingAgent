@@ -140,7 +140,6 @@ public sealed class AgentTemplateFileService
                 SystemPrompt = normalized.SystemPrompt,
                 UserPromptTemplate = normalized.UserPromptTemplate,
                 MaxContextTokens = normalized.MaxContextTokens,
-                MaxReplyTokens = normalized.MaxReplyTokens,
                 MaxRounds = normalized.MaxRounds,
                 MaxElapsedSeconds = normalized.MaxElapsedSeconds,
                 MaxToolCallsTotal = normalized.MaxToolCallsTotal,
@@ -217,7 +216,6 @@ public sealed class AgentTemplateFileService
                 SystemPrompt = req.SystemPrompt,
                 UserPromptTemplate = req.UserPromptTemplate,
                 MaxContextTokens = req.MaxContextTokens,
-                MaxReplyTokens = req.MaxReplyTokens,
                 MaxRounds = req.MaxRounds ?? 200,
                 MaxElapsedSeconds = req.MaxElapsedSeconds ?? 86400,
                 MaxToolCallsTotal = req.MaxToolCallsTotal ?? 400,
@@ -287,7 +285,6 @@ public sealed class AgentTemplateFileService
                 SystemPrompt = req.SystemPrompt,
                 UserPromptTemplate = req.UserPromptTemplate,
                 MaxContextTokens = req.MaxContextTokens,
-                MaxReplyTokens = req.MaxReplyTokens,
                 MaxRounds = req.MaxRounds ?? manifest.MaxRounds,
                 MaxElapsedSeconds = req.MaxElapsedSeconds ?? manifest.MaxElapsedSeconds,
                 MaxToolCallsTotal = req.MaxToolCallsTotal ?? manifest.MaxToolCallsTotal,
@@ -420,7 +417,6 @@ public sealed class AgentTemplateFileService
             PreferredProviderId: preset.PreferredProviderId,
             PreferredModelId: preset.PreferredModelId,
             MaxContextTokens: preset.MaxContextTokens,
-            MaxReplyTokens: preset.MaxReplyTokens,
             ContainerImage: preset.ContainerImage,
             SelectedCapabilityIds: preset.SelectedCapabilityIds,
             SelectedSkillPackageIds: preset.SelectedSkillPackageIds,
@@ -462,7 +458,6 @@ public sealed class AgentTemplateFileService
             Role = string.IsNullOrWhiteSpace(preset.Role) ? "Service" : preset.Role,
             MemorySearchMode = string.IsNullOrWhiteSpace(preset.MemorySearchMode) ? "deep" : preset.MemorySearchMode,
             MaxContextTokens = preset.MaxContextTokens <= 0 ? 8192 : preset.MaxContextTokens,
-            MaxReplyTokens = preset.MaxReplyTokens <= 0 ? 2048 : preset.MaxReplyTokens,
             MaxRounds = preset.MaxRounds <= 0 ? 200 : preset.MaxRounds,
             MaxElapsedSeconds = preset.MaxElapsedSeconds <= 0 ? 86400 : preset.MaxElapsedSeconds,
             MaxToolCallsTotal = preset.MaxToolCallsTotal <= 0 ? 400 : preset.MaxToolCallsTotal,
@@ -517,7 +512,6 @@ public sealed class AgentTemplateFileService
             PreferredProviderId: m.PreferredProviderId,
             PreferredModelId: m.PreferredModelId,
             MaxContextTokens: m.MaxContextTokens,
-            MaxReplyTokens: m.MaxReplyTokens,
             ContainerImage: m.ContainerImage,
             SelectedCapabilityIds: m.Capabilities.AllowedToolIds,
             SelectedSkillPackageIds: m.SkillPackageIds,
@@ -578,7 +572,6 @@ public sealed class AgentTemplateFileService
         public int MaxElapsedSeconds { get; init; } = 86400;
         public int MaxToolCallsTotal { get; init; } = 400;
         public int MaxContextTokens { get; init; } = 8192;
-        public int MaxReplyTokens { get; init; } = 2048;
         public string? ContainerImage { get; init; }
         public List<string> SelectedCapabilityIds { get; init; } = [];
         public List<string> SelectedSkillPackageIds { get; init; } = [];

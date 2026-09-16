@@ -352,7 +352,6 @@ public sealed record PuddingLlmProfileConfig
     public string? ReasoningEffort { get; init; }
     public string? ThinkingMode { get; init; }
     public int? MaxContextTokens { get; init; }
-    public int? MaxReplyTokens { get; init; }
     public string? SystemPrompt { get; init; }
     public float? Temperature { get; init; }
 }
@@ -437,7 +436,6 @@ public sealed record AgentTemplateManifest
     public string? SystemPrompt { get; init; }
     public string? UserPromptTemplate { get; init; }
     public int MaxContextTokens { get; init; } = 65536;
-    public int MaxReplyTokens { get; init; } = 4096;
     public int MaxRounds { get; init; } = 200;
     public int MaxElapsedSeconds { get; init; } = 86400;
     public int MaxToolCallsTotal { get; init; } = 400;
@@ -512,7 +510,6 @@ public sealed record AgentInstanceManifest
     public string? UserPromptTemplate { get; init; }
     public string? MemorySearchMode { get; init; }
     public string? ReasoningEffort { get; init; }
-    public int MaxReplyTokens { get; init; } = 4096;
     public int MaxRounds { get; init; } = 200;
     public int MaxElapsedSeconds { get; init; } = 86400;
     public int MaxToolCallsTotal { get; init; } = 400;
@@ -595,7 +592,6 @@ public sealed record AgentLlmBinding
     public string? ModelId { get; init; }
     public string? ReasoningEffort { get; init; }
     public string? ThinkingMode { get; init; }
-    public int? MaxReplyTokens { get; init; }
 }
 
 public sealed record WorkspaceAgentRef

@@ -138,6 +138,20 @@ public sealed class LlmProfileResolverTests
         Assert.AreEqual("medium", resolved.Conscious.ReasoningEffort);
     }
 
+    [TestMethod]
+    public void Resolve_OutputLimitComesFromModel_NotLegacyProfile()
+    {
+        var config = CreateLlmConfig();
+        config.Profiles["default-conscious"] = System.Text.Json.JsonSerializer.Deserialize<PuddingLlmProfileConfig>("""
+            {"providerId":"mimo","modelId":"mimo-v2.5-pro","maxReplyTokens":4096}
+            """, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
+        var resolved = LlmProfileResolver.Resolve(config, new AgentTemplateManifest
+        {
+            DefaultLlmProfiles = new AgentDefaultLlmProfiles { Conscious = "default-conscious" },
+        }, null);
+        Assert.AreEqual(131072, resolved.Conscious!.MaxOutputTokens);
+    }
+
     private static PuddingLlmProvidersConfig CreateLlmConfig()
     {
         return new PuddingLlmProvidersConfig

@@ -107,28 +107,30 @@ describe('LlmResourcePoolPage provider templates', () => {
     const modelValues = getProviderTemplateModelValues(template!);
     expect(modelValues).toHaveLength(2);
     expect(modelValues[0]).toMatchObject({
-      modelId: 'deepseek-v4-flash',
-      name: 'DeepSeek-V4-Flash',
+      modelId: 'deepseek-flash',
+      name: 'DeepSeek-V4.1-Flash',
       protocol: 'openai',
       maxContextTokens: 1000000,
-      maxOutputTokens: 384000,
-      inputPricePer1MTokens: 1,
-      outputPricePer1MTokens: 2,
-      cacheHitPricePer1MTokens: 0.02,
+      maxOutputTokens: 393216,
+      inputPricePer1MTokens: 2,
+      outputPricePer1MTokens: 8,
+      cacheHitPricePer1MTokens: 0.04,
       isDefault: true,
-      capabilityTags: ['text', 'function-calling', 'json-mode', 'streaming', 'long-context', 'code', 'reasoning'],
+      capabilityTags: ['text', 'function-calling', 'json-mode', 'streaming', 'long-context', 'code', 'reasoning', 'vision'],
+      maxConcurrentRequests: 2500,
     });
     expect(modelValues[1]).toMatchObject({
       modelId: 'deepseek-v4-pro',
-      name: 'DeepSeek-V4-Pro',
+      name: 'DeepSeek-V4-Pro-0813',
       protocol: 'openai',
       maxContextTokens: 1000000,
-      maxOutputTokens: 384000,
-      inputPricePer1MTokens: 3,
-      outputPricePer1MTokens: 6,
-      cacheHitPricePer1MTokens: 0.025,
+      maxOutputTokens: 393216,
+      inputPricePer1MTokens: 9,
+      outputPricePer1MTokens: 27,
+      cacheHitPricePer1MTokens: 0.30,
       isDefault: false,
       capabilityTags: ['text', 'function-calling', 'json-mode', 'streaming', 'long-context', 'code', 'reasoning'],
+      maxConcurrentRequests: 500,
     });
   });
 

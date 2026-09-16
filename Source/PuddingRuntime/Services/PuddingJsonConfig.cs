@@ -154,8 +154,6 @@ public sealed class JsonAgentTemplate
     [JsonPropertyName("maxContextTokens")]
     public int MaxContextTokens { get; set; } = 1048576;
 
-    [JsonPropertyName("maxReplyTokens")]
-    public int MaxReplyTokens { get; set; } = 16384;
 
     [JsonPropertyName("isBuiltIn")]
     public bool IsBuiltIn { get; set; }

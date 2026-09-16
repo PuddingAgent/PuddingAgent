@@ -178,17 +178,6 @@ public sealed class AgentRuntimeProfileResolver(
             config = config with { ReasoningEffort = manifest.ReasoningEffort.Trim() };
         }
 
-        if (manifest.MaxReplyTokens > 0)
-        {
-            var modelOutputLimit = config.MaxOutputTokens is > 0
-                ? config.MaxOutputTokens.Value
-                : manifest.MaxReplyTokens;
-            config = config with
-            {
-                MaxOutputTokens = Math.Min(modelOutputLimit, manifest.MaxReplyTokens),
-            };
-        }
-
         return new ResolvedLlmRouting(null, providerId, modelId, config);
     }
 

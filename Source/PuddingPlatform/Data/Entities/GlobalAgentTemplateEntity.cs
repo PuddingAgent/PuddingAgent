@@ -104,8 +104,6 @@ public class GlobalAgentTemplateEntity
     /// <summary>最大上下文 token 数</summary>
     public int MaxContextTokens { get; set; } = 8192;
 
-    /// <summary>每轮最大回复 token 数</summary>
-    public int MaxReplyTokens { get; set; } = 2048;
 
     /// <summary>历史运行环境镜像字段，宿主模式下不参与执行。</summary>
     [MaxLength(512)]

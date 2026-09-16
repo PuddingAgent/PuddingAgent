@@ -659,7 +659,6 @@ export interface GlobalAgentTemplateDto {
   maxElapsedSeconds?: number;
   maxToolCallsTotal?: number;
   maxContextTokens: number;
-  maxReplyTokens: number;
   containerImage?: string;
   selectedCapabilityIds: string[];
   selectedSkillPackageIds: string[];
@@ -698,7 +697,6 @@ export interface UpsertGlobalAgentTemplateRequest {
   maxElapsedSeconds?: number;
   maxToolCallsTotal?: number;
   maxContextTokens: number;
-  maxReplyTokens: number;
   containerImage?: string;
   selectedCapabilityIds?: string[];
   selectedSkillPackageIds?: string[];
@@ -735,7 +733,6 @@ export interface WorkspaceAgentTemplateDto {
   memorySearchMode?: string;
   reasoningEffort?: string;
   maxContextTokens: number;
-  maxReplyTokens: number;
   containerImage?: string;
   baseGlobalTemplateId?: string;
   selectedCapabilityIds: string[];
@@ -767,7 +764,6 @@ export interface UpsertWorkspaceAgentTemplateRequest {
   memorySearchMode?: string;
   reasoningEffort?: string;
   maxContextTokens: number;
-  maxReplyTokens: number;
   containerImage?: string;
   baseGlobalTemplateId?: string;
   selectedCapabilityIds?: string[];
@@ -1626,7 +1622,6 @@ export interface WorkspaceAgentDto {
   role?: string;
   memorySearchMode?: string;
   reasoningEffort?: string;
-  maxReplyTokens?: number;
   maxRounds?: number;
   maxElapsedSeconds?: number;
   maxToolCallsTotal?: number;
@@ -1676,7 +1671,6 @@ export interface CreateWorkspaceAgentRequest {
   userPromptTemplate?: string;
   memorySearchMode?: string;
   reasoningEffort?: string;
-  maxReplyTokens?: number;
   maxRounds?: number;
   maxElapsedSeconds?: number;
   maxToolCallsTotal?: number;
@@ -1720,7 +1714,6 @@ export interface UpdateWorkspaceAgentRequest {
   userPromptTemplate?: string;
   memorySearchMode?: string;
   reasoningEffort?: string;
-  maxReplyTokens?: number;
   maxRounds?: number;
   maxElapsedSeconds?: number;
   maxToolCallsTotal?: number;

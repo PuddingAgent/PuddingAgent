@@ -42,7 +42,6 @@ public sealed class AgentTemplateFileServiceTests
         Assert.AreEqual("deep", saved.MemorySearchMode);
         Assert.AreEqual("high", saved.ReasoningEffort);
         Assert.AreEqual(8192, saved.MaxContextTokens);
-        Assert.AreEqual(2048, saved.MaxReplyTokens);
         Assert.AreEqual(321, saved.MaxRounds);
         Assert.AreEqual(654, saved.MaxElapsedSeconds);
         Assert.AreEqual(42, saved.MaxToolCallsTotal);
@@ -112,7 +111,6 @@ public sealed class AgentTemplateFileServiceTests
               "name": "Legacy",
               "role": "Service",
               "maxContextTokens": 8192,
-              "maxReplyTokens": 2048,
               "isEnabled": true
             }
             """);
@@ -188,11 +186,12 @@ public sealed class AgentTemplateFileServiceTests
     [TestMethod]
     public void RepoGeneralAssistantPreset_AgentsPrompt_Contains_RepoHygieneClause()
     {
-        var repoPresetPath = Path.Combine(
-            AppContext.BaseDirectory,
-            "..", "..", "..", "..", "..",
-            "Source", "PuddingHost", "default-data", "agent-template-presets", "general-assistant.json");
-        var fullPath = Path.GetFullPath(repoPresetPath);
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "Agents.md")))
+            root = root.Parent;
+        Assert.IsNotNull(root, "Repository root not found");
+        var fullPath = Path.Combine(root.FullName, "Source", "PuddingHost", "default-data",
+            "agent-template-presets", "general-assistant.json");
         Assert.IsTrue(File.Exists(fullPath), $"preset not found: {fullPath}");
 
         var json = File.ReadAllText(fullPath);
@@ -237,7 +236,6 @@ public sealed class AgentTemplateFileServiceTests
             PreferredProviderId: preferredProviderId,
             PreferredModelId: preferredModelId,
             MaxContextTokens: 8192,
-            MaxReplyTokens: 2048,
             ContainerImage: "docker.xuanyuan.run/library/ubuntu:latest",
             SelectedCapabilityIds: ["cap-http-fetch", "cap-shell"],
             SelectedSkillPackageIds: ["skill-a", "skill-b"],
@@ -282,7 +280,6 @@ public sealed class AgentTemplateFileServiceTests
               "selectedSkillPackageIds": [],
               "memorySearchMode": "deep",
               "maxContextTokens": 8192,
-              "maxReplyTokens": 2048,
               "maxRounds": 200,
               "maxElapsedSeconds": 1200,
               "maxToolCallsTotal": 100,

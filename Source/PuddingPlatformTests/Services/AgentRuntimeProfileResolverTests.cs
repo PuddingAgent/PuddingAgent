@@ -1,3 +1,4 @@
+using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Agents;
 using PuddingCode.Configuration;
@@ -52,7 +53,7 @@ public sealed class AgentRuntimeProfileResolverTests
         Assert.AreEqual("qwen", developer.ProviderId);
         Assert.AreEqual("qwen3.8-max-preview", developer.ModelId);
         Assert.AreEqual(983_616, developer.Config.MaxInputTokens);
-        Assert.AreEqual(4_096, developer.Config.MaxOutputTokens);
+        Assert.AreEqual(65_000, developer.Config.MaxOutputTokens);
     }
 
     [TestMethod]
@@ -88,14 +89,11 @@ public sealed class AgentRuntimeProfileResolverTests
     [TestMethod]
     public void ResolveConsciousLlm_Uses_Manifest_Provider_Model_Pair()
     {
-        var manifest = new AgentInstanceManifest
-        {
-            AgentInstanceId = "agent-1",
-            PreferredProviderId = "qwen",
-            PreferredModelId = "qwen-max",
-            ReasoningEffort = "high",
-            MaxReplyTokens = 4096,
-        };
+        // Old on-disk agent caps must no longer override the resource pool model.
+        var manifest = JsonSerializer.Deserialize<AgentInstanceManifest>("""
+            {"agentInstanceId":"agent-1","preferredProviderId":"qwen",
+             "preferredModelId":"qwen-max","reasoningEffort":"high","maxReplyTokens":4096}
+            """, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
 
         var route = AgentRuntimeProfileResolver.ResolveConsciousLlm(
             manifest,
@@ -108,7 +106,7 @@ public sealed class AgentRuntimeProfileResolverTests
         Assert.AreEqual("qwen-max", route.Config.ModelId);
         Assert.AreEqual("high", route.Config.ReasoningEffort);
         Assert.AreEqual(983_616, route.Config.MaxInputTokens);
-        Assert.AreEqual(4_096, route.Config.MaxOutputTokens);
+        Assert.AreEqual(65_000, route.Config.MaxOutputTokens);
         Assert.IsNull(route.ProfileId);
     }
 
@@ -168,6 +166,18 @@ public sealed class AgentRuntimeProfileResolverTests
         Assert.AreEqual(TerminalErrorCodes.AgentConfigurationInvalid, error.ErrorCode);
         StringAssert.Contains(error.Message, "missing-model");
         StringAssert.Contains(error.Message, "No fallback model was selected");
+    }
+
+    [TestMethod]
+    public async Task ResolveAsync_UsesResourcePoolLimit_IgnoringOldRoleBindingLimit()
+    {
+        var binding = JsonSerializer.Deserialize<AgentLlmBinding>("""
+            {"providerId":"qwen","modelId":"qwen-max","maxReplyTokens":128}
+            """, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        var resolver = new AgentLLMConfigResolver(null!, null!, CreateConfigService(),
+            NullLogger<AgentLLMConfigResolver>.Instance);
+        var route = await resolver.ResolveAsync(binding);
+        Assert.AreEqual(65_000, route!.Config!.MaxOutputTokens);
     }
 
     private static ILlmConfigService CreateConfigService()

@@ -1,3 +1,7 @@
+## 2026-09-16 模型输出上限权威来源
+
+`PuddingFileLlmConfigService` 从资源池模型读取 `MaxOutputTokens`；`AgentRuntimeProfileResolver`、`AgentLLMConfigResolver` 不再按 Agent/角色收紧。Agent 编辑、模板 DTO/manifest/profile 已移除 `maxReplyTokens`。DeepSeek 模板参数及本机验收见 [报告](Docs/Reports/模型输出上限归一与资源池核对-2026-09-16.md)。
+
 ## 2026-09-16 缓存命中诊断与修复方案
 
 只读核对Gateway、归因、Composition及分层hash：47次工具变化为稳定追加，用户偏好重写system，四次摘要复用异常尚缺最终请求差异。修复顺序为任务能力包、偏好版本快照、C02最终请求证据、冷启动/后台输入治理。见[完整诊断与验收边界](Docs/Reports/缓存命中诊断与修复方案-2026-09-16.md)，ADR-084及长程自治设计已同步待实施项。

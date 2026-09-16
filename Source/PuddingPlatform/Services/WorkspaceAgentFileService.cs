@@ -438,7 +438,6 @@ public sealed class WorkspaceAgentFileService :
                     UserPromptTemplate: instanceManifest.UserPromptTemplate,
                     MemorySearchMode: instanceManifest.MemorySearchMode,
                     ReasoningEffort: instanceManifest.ReasoningEffort,
-                    MaxReplyTokens: instanceManifest.MaxReplyTokens,
                     MaxRounds: instanceManifest.MaxRounds,
                     MaxElapsedSeconds: instanceManifest.MaxElapsedSeconds,
                     MaxToolCallsTotal: instanceManifest.MaxToolCallsTotal,
@@ -511,7 +510,6 @@ public sealed class WorkspaceAgentFileService :
                     UserPromptTemplate: instanceManifest.UserPromptTemplate,
                     MemorySearchMode: instanceManifest.MemorySearchMode,
                     ReasoningEffort: instanceManifest.ReasoningEffort,
-                    MaxReplyTokens: instanceManifest.MaxReplyTokens,
                     MaxRounds: instanceManifest.MaxRounds,
                     MaxElapsedSeconds: instanceManifest.MaxElapsedSeconds,
                     MaxToolCallsTotal: instanceManifest.MaxToolCallsTotal,
@@ -597,7 +595,6 @@ public sealed class WorkspaceAgentFileService :
                 UserPromptTemplate = req.UserPromptTemplate ?? template?.UserPromptTemplate,
                 MemorySearchMode = req.MemorySearchMode ?? template?.MemorySearchMode ?? "deep",
                 ReasoningEffort = req.ReasoningEffort ?? template?.ReasoningEffort,
-                MaxReplyTokens = req.MaxReplyTokens ?? template?.MaxReplyTokens ?? 4096,
                 MaxRounds = req.MaxRounds ?? template?.MaxRounds ?? 200,
                 MaxElapsedSeconds = req.MaxElapsedSeconds ?? template?.MaxElapsedSeconds ?? 86400,
                 MaxToolCallsTotal = req.MaxToolCallsTotal ?? template?.MaxToolCallsTotal ?? 400,
@@ -653,7 +650,6 @@ public sealed class WorkspaceAgentFileService :
                     ProviderId = instanceManifest.PreferredProviderId,
                     ModelId = instanceManifest.PreferredModelId,
                     ReasoningEffort = instanceManifest.ReasoningEffort,
-                    MaxReplyTokens = instanceManifest.MaxReplyTokens,
                 },
                 Subconscious = new AgentLlmBinding
                 {
@@ -708,7 +704,6 @@ public sealed class WorkspaceAgentFileService :
                 UserPromptTemplate: instanceManifest.UserPromptTemplate,
                 MemorySearchMode: instanceManifest.MemorySearchMode,
                 ReasoningEffort: instanceManifest.ReasoningEffort,
-                MaxReplyTokens: instanceManifest.MaxReplyTokens,
                 MaxRounds: instanceManifest.MaxRounds,
                 MaxElapsedSeconds: instanceManifest.MaxElapsedSeconds,
                 MaxToolCallsTotal: instanceManifest.MaxToolCallsTotal,
@@ -774,7 +769,6 @@ public sealed class WorkspaceAgentFileService :
                 UserPromptTemplate = req.UserPromptTemplate ?? instanceManifest.UserPromptTemplate,
                 MemorySearchMode = req.MemorySearchMode ?? instanceManifest.MemorySearchMode,
                 ReasoningEffort = req.ReasoningEffort ?? instanceManifest.ReasoningEffort,
-                MaxReplyTokens = req.MaxReplyTokens ?? instanceManifest.MaxReplyTokens,
                 MaxRounds = req.MaxRounds ?? instanceManifest.MaxRounds,
                 MaxElapsedSeconds = req.MaxElapsedSeconds ?? instanceManifest.MaxElapsedSeconds,
                 MaxToolCallsTotal = req.MaxToolCallsTotal ?? instanceManifest.MaxToolCallsTotal,
@@ -820,7 +814,6 @@ public sealed class WorkspaceAgentFileService :
                     ModelId = updated.PreferredModelId,
                     ReasoningEffort = updated.ReasoningEffort,
                     ThinkingMode = existingLlm?.Conscious?.ThinkingMode,
-                    MaxReplyTokens = updated.MaxReplyTokens,
                 },
                 Subconscious = new AgentLlmBinding
                 {
@@ -830,7 +823,6 @@ public sealed class WorkspaceAgentFileService :
                     ModelId = updated.MemoryLlmModelId,
                     ReasoningEffort = existingLlm?.Subconscious?.ReasoningEffort,
                     ThinkingMode = existingLlm?.Subconscious?.ThinkingMode,
-                    MaxReplyTokens = existingLlm?.Subconscious?.MaxReplyTokens,
                 },
             };
 
@@ -884,7 +876,6 @@ public sealed class WorkspaceAgentFileService :
                 UserPromptTemplate: updated.UserPromptTemplate,
                 MemorySearchMode: updated.MemorySearchMode,
                 ReasoningEffort: updated.ReasoningEffort,
-                MaxReplyTokens: updated.MaxReplyTokens,
                 MaxRounds: updated.MaxRounds,
                 MaxElapsedSeconds: updated.MaxElapsedSeconds,
                 MaxToolCallsTotal: updated.MaxToolCallsTotal,

@@ -43,7 +43,7 @@ const WORKSPACE_AGENT_SECTIONS: SettingsSectionMeta[] = [
   { key: 'prompts', label: '角色与 Prompt', fieldNames: ['systemPrompt', 'heartbeatPrompt', 'soulMdContent', 'agentsMdContent', 'toolsMdContent', 'bootstrapMdContent', 'memoryMdContent', 'userPromptTemplate'] },
   { key: 'models', label: '模型与记忆', fieldNames: ['preferredProviderId', 'preferredModelId', 'memoryLlmProviderId', 'memoryLlmModelId', 'embeddingProviderId', 'embeddingModelId', 'memorySearchMode', 'reasoningEffort'] },
   { key: 'smartModels', label: 'Smart 子代理', fieldNames: ['explorerModel', 'researcherModel', 'plannerModel', 'reviewerModel', 'developerModel', 'deployerModel', 'testerModel'] },
-  { key: 'guardrails', label: '执行护栏', fieldNames: ['maxReplyTokens', 'maxRounds', 'maxElapsedSeconds', 'maxToolCallsTotal', 'containerImage'] },
+  { key: 'guardrails', label: '执行护栏', fieldNames: ['maxRounds', 'maxElapsedSeconds', 'maxToolCallsTotal', 'containerImage'] },
 ];
 
 const SECTION_FIELDS: Record<AgentTemplateSectionKey, string[]> = {
@@ -70,7 +70,7 @@ const SECTION_FIELDS: Record<AgentTemplateSectionKey, string[]> = {
     'reasoningEffort',
   ],
   smartModels: ['explorerModel', 'researcherModel', 'plannerModel', 'reviewerModel', 'developerModel', 'deployerModel', 'testerModel'],
-  guardrails: ['maxReplyTokens', 'maxRounds', 'maxElapsedSeconds', 'maxToolCallsTotal', 'containerImage'],
+  guardrails: ['maxRounds', 'maxElapsedSeconds', 'maxToolCallsTotal', 'containerImage'],
 };
 
 export type WorkspaceAgentFormValues =
@@ -423,16 +423,6 @@ const WorkspaceAgentSettingsDrawer: React.FC<WorkspaceAgentSettingsDrawerProps> 
             <section hidden={activeSection !== 'guardrails'} data-section-id="guardrails" className={styles.section}>
               <div className={styles.sectionTitle}>执行护栏</div>
               <Row gutter={16}>
-                <Col xs={24} sm={12}>
-                  <ProFormDigit
-                    name="maxReplyTokens"
-                    label="最大回复 Token"
-                    min={256}
-                    max={131072}
-                    fieldProps={{ addonAfter: 'tokens' }}
-                    extra="单次回复的输出上限，不包含输入上下文。"
-                  />
-                </Col>
                 <Col xs={24} sm={12}>
                   <ProFormDigit
                     name="maxRounds"

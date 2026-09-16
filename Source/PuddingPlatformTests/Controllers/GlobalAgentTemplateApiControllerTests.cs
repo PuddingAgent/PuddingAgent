@@ -141,7 +141,6 @@ public sealed class GlobalAgentTemplateApiControllerTests
             PreferredProviderId: "mimo",
             PreferredModelId: "mimo-v2.5-pro",
             MaxContextTokens: 8192,
-            MaxReplyTokens: 2048,
             ContainerImage: "docker.xuanyuan.run/library/ubuntu:latest",
             SelectedCapabilityIds: selectedCapabilityIds,
             SelectedSkillPackageIds: selectedSkillPackageIds,

@@ -106,7 +106,6 @@ export interface GlobalAgentTemplateRequestDefaults {
    * 模板页不再让用户编辑上下文/回复 token，真实窗口应来自 LLM 服务商与模型配置。
    */
   legacyMaxContextTokens?: number;
-  legacyMaxReplyTokens?: number;
 }
 
 function uniqueStrings(values: (string | undefined | null)[]): string[] {
@@ -131,7 +130,6 @@ export function buildGlobalAgentTemplateRequest(
     maxElapsedSeconds: values.maxElapsedSeconds ?? 2400,
     maxToolCallsTotal: values.maxToolCallsTotal ?? 100,
     maxContextTokens: values.maxContextTokens ?? defaults.legacyMaxContextTokens ?? 8192,
-    maxReplyTokens: values.maxReplyTokens ?? defaults.legacyMaxReplyTokens ?? 2048,
     isEnabled: values.isEnabled ?? true,
     sortOrder: values.sortOrder ?? 100,
   };
@@ -324,7 +322,6 @@ const GlobalAgentTemplatePage: React.FC = () => {
       grantTargetKeys,
       skillTargetKeys,
       legacyMaxContextTokens: editItem?.maxContextTokens,
-      legacyMaxReplyTokens: editItem?.maxReplyTokens,
     });
     if (editItem) {
       await updateGlobalAgentTemplate(editItem.templateId, request);

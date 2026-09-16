@@ -95,8 +95,6 @@ public class WorkspaceAgentTemplateEntity
     /// <summary>最大上下文 token 数</summary>
     public int MaxContextTokens { get; set; } = 8192;
 
-    /// <summary>每轮最大回复 token 数</summary>
-    public int MaxReplyTokens { get; set; } = 2048;
 
     /// <summary>
     /// 继承自某个全局模板（可选）。继承后覆盖字段优先于全局模板。
