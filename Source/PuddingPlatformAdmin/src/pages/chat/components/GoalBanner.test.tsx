@@ -24,6 +24,7 @@ const makeGoal = (
   overrides: Partial<{
     phase: GoalPhase;
     objective: string;
+    blockedCode: string | null;
     statusReason: string | null;
     terminalAtUtc: string | null;
     iterationsStarted: number;
@@ -311,5 +312,92 @@ describe('GoalBanner', () => {
       method: 'GET',
       skipErrorHandler: true,
     });
+  });
+
+  it('renders the objective text exactly once and shows snapshot meta fields', async () => {
+    render(
+      <GoalBanner
+        goal={makeGoal({
+          objective:
+            '修复全部失败测试并保持公开 API 不变\n补充约束：不得改动公共契约',
+        })}
+        commandRunning={false}
+        onCommand={jest.fn()}
+      />,
+    );
+    openDetails();
+    await screen.findByRole('dialog', { name: 'Goal 详情' });
+
+    expect(
+      screen.getAllByText(/修复全部失败测试并保持公开 API 不变/).length,
+    ).toBe(1);
+    expect(screen.getByText(/补充约束：不得改动公共契约/)).toBeTruthy();
+    expect(screen.getByText(/目标版本：v1/)).toBeTruthy();
+    expect(screen.getByText(/已结算 Iteration：17/)).toBeTruthy();
+    expect(screen.getByText(/激活纪元：#1/)).toBeTruthy();
+  });
+
+  it('keeps the objective detail box for single-line goals without duplicating text', async () => {
+    render(
+      <GoalBanner
+        goal={makeGoal()}
+        commandRunning={false}
+        onCommand={jest.fn()}
+      />,
+    );
+    openDetails();
+    const dialog = await screen.findByRole('dialog', { name: 'Goal 详情' });
+
+    expect(screen.getByLabelText('Goal 目标详情')).toBeTruthy();
+    expect(
+      screen.getAllByText(/修复全部失败测试并保持公开 API 不变/).length,
+    ).toBe(1);
+    expect(screen.getByText(/目标仅一行，完整内容即上方标题/)).toBeTruthy();
+    expect(dialog.textContent).not.toContain('目标仅一行，完整内容即上方标题。\n修复');
+  });
+
+  it('renders a structured Chinese blocker card for a known blocked code', async () => {
+    render(
+      <GoalBanner
+        goal={makeGoal({
+          phase: 'blocked',
+          blockedCode: 'no_progress_circuit_open',
+          statusReason: 'No verifiable progress; circuit opened this round.',
+        })}
+        commandRunning={false}
+        onCommand={jest.fn()}
+      />,
+    );
+    openDetails();
+    const dialog = await screen.findByRole('dialog', { name: 'Goal 详情' });
+
+    expect(screen.getByText(/【受阻原因】无进展熔断/)).toBeTruthy();
+    expect(
+      screen.getByText(/建议动作：重启宿主或人工介入后恢复/),
+    ).toBeTruthy();
+    expect(screen.getByText(/受阻码：no_progress_circuit_open/)).toBeTruthy();
+    expect(dialog.textContent).toContain('是否需要你决策：需要');
+    expect(dialog.textContent).not.toContain('No verifiable progress');
+  });
+
+  it('shows the raw code for an unknown blocked code instead of a blank reason', async () => {
+    render(
+      <GoalBanner
+        goal={makeGoal({
+          phase: 'blocked',
+          blockedCode: 'mystery_blocker_42',
+          statusReason: 'Internal english blocker sentence.',
+        })}
+        commandRunning={false}
+        onCommand={jest.fn()}
+      />,
+    );
+    openDetails();
+    const dialog = await screen.findByRole('dialog', { name: 'Goal 详情' });
+
+    expect(screen.getByText(/未知受阻码：mystery_blocker_42/)).toBeTruthy();
+    expect(screen.getByText(/目标受阻/)).toBeTruthy();
+    expect(dialog.textContent).toContain('是否需要你决策：需要');
+    expect(dialog.textContent).not.toContain('Internal english blocker');
   });
 });

@@ -172,4 +172,42 @@ describe('GoalStepsPanel', () => {
     await screen.findByText('运行修复');
     expect(screen.queryByRole('alert')).toBeNull();
   });
+
+  it('renders plan version, step timestamps and compact evidence refs', async () => {
+    const snapshot = makeSnapshot();
+    snapshot.steps = [
+      ...snapshot.steps,
+      {
+        nodeId: 'node-4',
+        sequenceNo: 4,
+        kind: 'verify',
+        title: '归档证据',
+        status: 'completed',
+        startedAtUtc: '2026-09-16T00:06:00Z',
+        completedAtUtc: '2026-09-16T00:07:30Z',
+        blockerCode: null,
+        evidenceRefs: [
+          'logs/run-42/very/long/path/evidence-0001-long-name.json',
+        ],
+      },
+    ];
+    mockRequest.mockResolvedValueOnce(snapshot);
+    const { container } = render(<GoalStepsPanel goal={makeGoal()} />);
+
+    expect(await screen.findByText('归档证据')).toBeTruthy();
+    expect(screen.getByText(/计划版本 v2/)).toBeTruthy();
+
+    const row = container.querySelector('[data-goal-step-id="node-4"]');
+    expect(row?.getAttribute('data-step-started')).toBe(
+      '2026-09-16T00:06:00Z',
+    );
+    expect(row?.getAttribute('data-step-completed')).toBe(
+      '2026-09-16T00:07:30Z',
+    );
+    expect(row?.textContent).toContain('开始 ');
+    expect(row?.textContent).toContain('完成 ');
+    expect(row?.textContent).toContain('证据：');
+    expect(row?.textContent).toContain('evidence-0001');
+    expect(row?.textContent).not.toContain('.json');
+  });
 });

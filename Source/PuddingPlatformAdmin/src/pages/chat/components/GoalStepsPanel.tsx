@@ -83,6 +83,24 @@ const STATUS_TONE: Record<string, StepTone> = {
 const normalizeStatus = (status: string | undefined | null) =>
   typeof status === 'string' ? status.trim().toLowerCase() : '';
 
+/** 紧凑时间显示（MM/DD HH:mm，本地时区）；缺失或无效返回 null。 */
+const formatStepTime = (iso: string | null | undefined) => {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+};
+
+/** 证据引用紧凑显示：单条超过 48 字符时截断，避免超长路径撑爆行宽。 */
+const compactEvidenceRef = (ref: string) =>
+  ref.length > 48 ? `${ref.slice(0, 45)}…` : ref;
+
 const StatusPill: React.FC<{ status: string | undefined | null }> = ({
   status,
 }) => {
@@ -204,15 +222,19 @@ const GoalStepsPanel: React.FC<GoalStepsPanelProps> = ({ goal }) => {
       currentStepId !== null &&
       currentStepId !== undefined &&
       step.nodeId === currentStepId;
+    const startedText = formatStepTime(step.startedAtUtc);
+    const completedText = formatStepTime(step.completedAtUtc);
+    const evidenceRefs = step.evidenceRefs ?? [];
     return (
       <div
         key={step.nodeId}
         data-goal-step-id={step.nodeId}
+        data-step-started={step.startedAtUtc ?? undefined}
+        data-step-completed={step.completedAtUtc ?? undefined}
         style={{
           display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: '4px 8px',
+          flexDirection: 'column',
+          gap: 2,
           padding: '6px 8px',
           borderRadius: 8,
           border: isCurrent
@@ -226,6 +248,14 @@ const GoalStepsPanel: React.FC<GoalStepsPanelProps> = ({ goal }) => {
           lineHeight: 1.5,
         }}
       >
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: '4px 8px',
+          }}
+        >
         <span
           style={{
             color: 'var(--pudding-chat-text-subtle)',
@@ -270,6 +300,36 @@ const GoalStepsPanel: React.FC<GoalStepsPanelProps> = ({ goal }) => {
           <span style={{ color: TONE_ORANGE.color }}>
             阻塞码：{step.blockerCode}
           </span>
+        ) : null}
+        </div>
+        {startedText || completedText || evidenceRefs.length > 0 ? (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '2px 10px',
+              fontSize: 11,
+              color: 'var(--pudding-chat-text-subtle)',
+            }}
+          >
+            {startedText ? <span>开始 {startedText}</span> : null}
+            {completedText ? <span>完成 {completedText}</span> : null}
+            {evidenceRefs.length > 0 ? (
+              <span
+                title={evidenceRefs.join('\n')}
+                style={{
+                  maxWidth: 340,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                证据：
+                {evidenceRefs.slice(0, 3).map(compactEvidenceRef).join(' · ')}
+                {evidenceRefs.length > 3 ? ` 等 ${evidenceRefs.length} 项` : ''}
+              </span>
+            ) : null}
+          </div>
         ) : null}
       </div>
     );
@@ -322,6 +382,17 @@ const GoalStepsPanel: React.FC<GoalStepsPanelProps> = ({ goal }) => {
       >
         <span style={sectionLabelStyle}>
           步骤
+          {typeof snapshot?.planVersion === 'number' ? (
+            <span
+              style={{
+                marginLeft: 8,
+                fontWeight: 400,
+                color: 'var(--pudding-chat-text-subtle)',
+              }}
+            >
+              计划版本 v{snapshot.planVersion}
+            </span>
+          ) : null}
           {progress ? (
             <span
               style={{

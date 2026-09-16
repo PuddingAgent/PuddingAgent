@@ -27,6 +27,10 @@ import React, { useState } from 'react';
 import type { GoalAction, GoalSnapshot } from '@/services/platform/api';
 import { isTerminalGoalPhase } from '../hooks/useGoal';
 import GoalStepsPanel from './GoalStepsPanel';
+import {
+  describeGoalBlocker,
+  isKnownGoalBlockerCode,
+} from './goalBlockerCodes';
 
 interface GoalBannerProps {
   goal: GoalSnapshot | null;
@@ -250,6 +254,15 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
   const progress = `${goal.iterationsStarted}/${goal.maxIterations}`;
   const phaseText = knownPhase ? PHASE_TEXT[goal.phase] : `未知状态（${goal.phase}）`;
   const objectiveSummary = firstObjectiveLine(goal.objective);
+  // 详情区只展示 objective 的非首行；首行已作为上方标题，避免同屏重复。
+  const objectiveRest = goal.objective
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(1)
+    .join('\n');
+  const blockedCode = (goal.blockedCode ?? '').trim();
+  const blocker = describeGoalBlocker(blockedCode);
   const tone = knownPhase ? PHASE_TONE[goal.phase] : PHASE_TONE.failed;
 
   const run = async (
@@ -296,12 +309,32 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
           lineHeight: 1.55,
         }}
       >
-        {goal.objective}
+        {objectiveRest || '目标仅一行，完整内容即上方标题。'}
       </section>
+
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '4px 12px',
+          marginTop: 8,
+          color: 'var(--pudding-chat-text-subtle)',
+          fontSize: 12,
+          lineHeight: 1.5,
+        }}
+      >
+        <span>目标版本：v{goal.objectiveVersion}</span>
+        <span>已结算 Iteration：{goal.iterationsSettled}</span>
+        <span>激活纪元：#{goal.activationEpoch}</span>
+        {goal.lastNextAction ? (
+          <span>下一步动作：{goal.lastNextAction}</span>
+        ) : null}
+      </div>
 
       <GoalStepsPanel goal={goal} />
 
-      {(goal.statusReason || (terminal && goal.terminalAtUtc)) && (
+      {((goal.statusReason && !blocker) ||
+        (terminal && goal.terminalAtUtc)) && (
         <div
           style={{
             display: 'flex',
@@ -312,10 +345,44 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
             fontSize: 12,
           }}
         >
-          {goal.statusReason && <span>原因：{goal.statusReason}</span>}
+          {goal.statusReason && !blocker && (
+            <span>原因：{goal.statusReason}</span>
+          )}
           {terminal && goal.terminalAtUtc && (
             <span>终止于 {new Date(goal.terminalAtUtc).toLocaleString()}</span>
           )}
+        </div>
+      )}
+      {blocker && (
+        <div
+          role="alert"
+          data-goal-blocker-code={blockedCode}
+          style={{
+            marginTop: 10,
+            padding: '8px 10px',
+            borderRadius: 8,
+            border: '1px solid rgba(250, 140, 22, 0.40)',
+            background: 'rgba(250, 140, 22, 0.12)',
+            color: '#d46b08',
+            fontSize: 12,
+            lineHeight: 1.6,
+          }}
+        >
+          <div style={{ fontWeight: 650 }}>【受阻原因】{blocker.title}</div>
+          <div>建议动作：{blocker.action}</div>
+          <div>
+            是否需要你决策：
+            {blocker.needsUser || goal.phase === 'blocked' ? (
+              <span style={{ fontWeight: 700 }}>需要</span>
+            ) : (
+              '否'
+            )}
+          </div>
+          <div style={{ color: 'var(--pudding-chat-text-subtle)' }}>
+            {isKnownGoalBlockerCode(blockedCode)
+              ? `受阻码：${blockedCode}`
+              : `未知受阻码：${blockedCode}`}
+          </div>
         </div>
       )}
 
