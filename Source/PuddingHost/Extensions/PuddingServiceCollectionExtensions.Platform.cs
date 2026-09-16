@@ -280,6 +280,11 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IWorkspaceTaskAdminService>(sp => sp.GetRequiredService<WorkspaceTaskAdminService>());
         builder.Services.AddSingleton<TaskGoalLaunchService>();
         builder.Services.AddSingleton<ITaskGoalLaunchService>(sp => sp.GetRequiredService<TaskGoalLaunchService>());
+        // 「Agent 自主恢复 Goal」（goal_resume 工具；归属/熔断证据/epoch 配额三道 fail-closed 闸门
+        // 见 GoalResumeService）。goal_resume 工具由统一 Tool Registry 按 Singleton 托管，
+        // 因此这里同样必须是 Singleton（与 TaskGoalLaunchService 同模式）。
+        builder.Services.AddSingleton<GoalResumeService>();
+        builder.Services.AddSingleton<IGoalResumeService>(sp => sp.GetRequiredService<GoalResumeService>());
         builder.Services.Configure<WorkspaceTaskFeatureOptions>(_ => { });
         // Task Dispatch Outbox + Dispatcher（TB-05：手工派发闭环）
         builder.Services.AddScoped<TaskDispatchOutboxStore>();
