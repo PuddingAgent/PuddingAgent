@@ -119,8 +119,12 @@ public sealed class FileSwarmTransportTests : IDisposable
         await File.WriteAllTextAsync(inboxPath, JsonSerializer.Serialize(new[] { message }));
 
         // Act
+        // ReceiveAsync 是「长期流」契约（FileSwarmTransport.cs:84 带 [EnumeratorCancellation]）：
+        // 产品会先投递收件箱中现有消息、清空收件箱，然后进入轮询循环直到 ct 被取消。
+        // 不传 Token 时 await foreach 永不结束（曾导致整个 PuddingCoreTests 套件挂起）。
         var receivedMessages = new List<SwarmMessage>();
-        await foreach (var msg in _transport.ReceiveAsync())
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await foreach (var msg in _transport.ReceiveAsync(cts.Token))
         {
             receivedMessages.Add(msg);
         }
@@ -141,7 +145,10 @@ public sealed class FileSwarmTransportTests : IDisposable
         await File.WriteAllTextAsync(inboxPath, JsonSerializer.Serialize(new[] { message }));
 
         // Act - Consume all messages
-        await foreach (var _ in _transport.ReceiveAsync())
+        // 必须传入 Token：产品在投递完现有消息后进入轮询循环，仅当 ct 取消才结束
+        //（正确用法见 SwarmMessageHub.cs:80 的 ReceiveAsync(_cts.Token)）。
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await foreach (var _ in _transport.ReceiveAsync(cts.Token))
         {
             // Process all messages until cancelled
         }
