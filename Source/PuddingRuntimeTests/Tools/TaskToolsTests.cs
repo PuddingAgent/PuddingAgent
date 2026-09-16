@@ -190,7 +190,7 @@ public sealed class TaskToolsTests
                 boardColumn: "InProgress"));
         }
 
-        private static TaskAgentMutationResult Mutation(
+        internal static TaskAgentMutationResult Mutation(
             string taskId,
             string disposition,
             string status,
@@ -569,7 +569,7 @@ public sealed class TaskToolsTests
         // 执行者侧 Args 仍无任何修改父子关系的参数。
         var service = new FakeTaskAgentCommandService
         {
-            Claim = (request, _) => Task.FromResult(Mutation(
+            Claim = (request, _) => Task.FromResult(FakeTaskAgentCommandService.Mutation(
                 taskId: request.TaskId,
                 disposition: "accept",
                 status: "InProgress",

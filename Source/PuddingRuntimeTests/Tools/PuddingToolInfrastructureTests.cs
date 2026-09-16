@@ -4375,7 +4375,7 @@ public sealed partial class PuddingToolInfrastructureTests
         cts.CancelAfter(TimeSpan.FromMilliseconds(50));
 
         // F06：调用者取消必须继续向上抛，不能变成依赖等待或不建待恢复动作。
-        await Assert.ThrowsExceptionAsync<OperationCanceledException>(() =>
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
             client.ReviewAsync(
                 ValidApprovalRequest("{}"),
                 SampleApprovalIdentity(),
