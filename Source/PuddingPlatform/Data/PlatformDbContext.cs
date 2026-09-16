@@ -772,13 +772,15 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(v => new { v.GoalRunId, v.IterationNo });
         });
 
-        // ── Todo 拆解表（设计 2026-09-16 §3，TD-1）────────────────
+        // ── Todo 拆解表（设计 2026-09-16 §3，TD-1；TD-1b 对齐用户裁决）────────────────
         modelBuilder.Entity<TodoListEntity>(e =>
         {
             e.ToTable("todo_lists");
             e.HasKey(l => l.ListId);
-            // (scope_kind, scope_id) 唯一定位一个列表（todo_write 全量替换的目标）。
-            e.HasIndex(l => new { l.ScopeKind, l.ScopeId }).IsUnique();
+            // (agent_id, scope_kind, scope_id) 唯一定位一个列表（TD-1b：跨 Agent 隔离，同名 scope 各 Agent 独立）。
+            e.HasIndex(l => new { l.AgentId, l.ScopeKind, l.ScopeId })
+                .IsUnique()
+                .HasDatabaseName("UX_todo_lists_agent_scope");
         });
 
         modelBuilder.Entity<TodoItemEntity>(e =>

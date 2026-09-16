@@ -5,10 +5,12 @@ using PuddingPlatform.Data;
 namespace PuddingPlatform.Services.Todo;
 
 /// <summary>
-/// 设计 2026-09-16 §3（TD-1）：todo_lists / todo_items 两表的幂等 SQLite schema bootstrap。
+/// 设计 2026-09-16 §3（TD-1；TD-1b 对齐用户裁决）：todo_lists / todo_items 两表的幂等 SQLite schema bootstrap。
 /// <para>
 /// 与 <see cref="Goals.GoalSchemaBootstrapper"/> 同风格：EF EnsureCreated 覆盖全新库，
-/// 本 bootstrap 覆盖已有库（CREATE TABLE IF NOT EXISTS + 幂等索引）。列名与
+/// 本 bootstrap 覆盖已有库（CREATE TABLE IF NOT EXISTS + ALTER TABLE ADD COLUMN 幂等迁移 + 索引）。
+/// TD-1b：todo_lists 增加 agent_id 列（新库 CREATE TABLE 已带列，ALTER 撞 duplicate column 被幂等跳过）；
+/// 唯一索引从 (scope_kind, scope_id) 换为 (agent_id, scope_kind, scope_id)（跨 Agent 隔离）。列名与
 /// <see cref="Data.Entities.TodoListEntity"/> / <see cref="Data.Entities.TodoItemEntity"/>
 /// 的 [Column] 严格一致。状态存 wire 字符串、时间存 DateTimeOffset（TEXT）、列名 snake_case。
 /// </para>
@@ -17,10 +19,11 @@ public static class TodoSchemaBootstrapper
 {
     private static readonly string[] Ddl =
     [
-        // ── todo_lists（设计 2026-09-16 §3）─────────────────────
+        // ── todo_lists（设计 2026-09-16 §3；TD-1b 加 agent_id）────────────
         """
         CREATE TABLE IF NOT EXISTS todo_lists (
             list_id         TEXT    NOT NULL,
+            agent_id        TEXT    NOT NULL DEFAULT '',
             scope_kind      TEXT    NOT NULL,
             scope_id        TEXT    NOT NULL,
             title           TEXT,
@@ -31,8 +34,12 @@ public static class TodoSchemaBootstrapper
             PRIMARY KEY (list_id)
         );
         """,
-        // (scope_kind, scope_id) 唯一定位一个列表；todo_write 全量替换的目标。
-        "CREATE UNIQUE INDEX IF NOT EXISTS UX_todo_lists_scope ON todo_lists(scope_kind, scope_id);",
+        // TD-1b 列迁移（针对已有库；新库 CREATE TABLE 已带列，duplicate column 被幂等跳过）。
+        "ALTER TABLE todo_lists ADD COLUMN agent_id TEXT NOT NULL DEFAULT '';",
+        // TD-1b：跨 Agent 隔离 —— 换唯一键。删除旧的 (scope_kind, scope_id) 全局唯一索引，
+        // 新唯一索引按 (agent_id, scope_kind, scope_id) 定位列表；存量行 agent_id='' 互不冲突。
+        "DROP INDEX IF EXISTS UX_todo_lists_scope;",
+        "CREATE UNIQUE INDEX IF NOT EXISTS UX_todo_lists_agent_scope ON todo_lists(agent_id, scope_kind, scope_id);",
 
         // ── todo_items（设计 2026-09-16 §3）─────────────────────
         """
@@ -74,6 +81,13 @@ public static class TodoSchemaBootstrapper
             }
             catch (Exception ex)
             {
+                // 与 GoalSchemaBootstrapper 同模式：ADD COLUMN 幂等迁移对已有列的重复报错直接跳过。
+                if (ddl.StartsWith("ALTER TABLE", StringComparison.OrdinalIgnoreCase)
+                    && ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 logger?.LogWarning(
                     ex,
                     "[TodoSchema] SQLite schema bootstrap failed: {Ddl}",

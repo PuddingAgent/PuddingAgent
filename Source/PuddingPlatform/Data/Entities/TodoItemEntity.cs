@@ -4,10 +4,11 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace PuddingPlatform.Data.Entities;
 
 /// <summary>
-/// 设计 2026-09-16 §3（TD-1）：todo_items — 拆解 TODO 的单项。
+/// 设计 2026-09-16 §3（TD-1；TD-1b 对齐用户裁决）：todo_items — 拆解 TODO 的单项。
 /// <para>
 /// slug 由写方提供、列表内唯一（全量替换时用于 diff：新增/完成/受阻/移除）；
-/// 服务端约束：单列表 ≤20 项、同时最多 1 个 in_progress、blocked 必填 blocked_reason。
+/// 硬拒绝：slug 空/重复、title 空/超长、status 非法；软警告（接受写入 + warnings，TD-1b）：
+/// 单列表 &gt;20 项、同时 &gt;1 个 in_progress、blocked 无 blocked_reason。
 /// 列名与 TodoSchemaBootstrapper 的 DDL 严格一致。
 /// </para>
 /// </summary>

@@ -10,7 +10,7 @@ namespace PuddingRuntime.Services.TodoTools;
 [Tool(
     id: "todo_check",
     name: "勾选拆解 TODO",
-    description: "勾选拆解 TODO 单项状态（completed / in_progress / blocked+reason），单项更新比全量替换更适合收尾动作。【何时用】完成一项（建议带 evidence_ref）；开始下一项；报告某项受阻（必填 blocked_reason）。【怎么用】scope_kind=goal|task|session + scope_id + slug 定位单项；status=completed|in_progress|blocked|pending；服务端约束：同一时刻最多 1 项 in_progress（冲突返回 todo.multiple_in_progress）、blocked 必填 blocked_reason；expected_revision 传 todo_read/todo_write 返回的最新 revision（CAS 校验，不符返回 todo.version_conflict）；返回新 revision、更新后的单项与汇总。【坑】勾选完成只更新自述拆解表，不推进 Task 状态、不触发验收——任务收口仍要走 task_update。Check off a single TODO item (completed/in_progress/blocked+reason) with server-side CAS and constraint enforcement; does NOT advance the Task board or trigger acceptance.",
+    description: "勾选拆解 TODO 单项状态（completed / in_progress / blocked+reason），单项更新比全量替换更适合收尾动作。列表按当前 Agent 身份隔离，只能勾选你自己拆解表中的项。【何时用】完成一项（建议带 evidence_ref）；开始下一项；报告某项受阻（建议给 blocked_reason）。【怎么用】scope_kind=goal|task|session + scope_id + slug 定位单项；status=completed|in_progress|blocked|pending；软约束：同时多于 1 项 in_progress、blocked 无 blocked_reason 均接受写入但返回 warnings；expected_revision 传 todo_read/todo_write 返回的最新 revision（CAS 校验，不符返回 todo.version_conflict，硬拒绝）；返回新 revision、更新后的单项、汇总与可选 warnings。【坑】勾选完成只更新自述拆解表，不推进 Task 状态、不触发验收——任务收口仍要走 task_update。Check off a single TODO item (completed/in_progress/blocked+reason) with server-side CAS; soft constraints (multiple in_progress, blocked without reason) are accepted with warnings; isolated per calling agent identity.",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low)]
     // 2026-08-28 裁定同款：轻量元数据工具（用户原则：仅直接损坏/泄露用户数据需门禁）
@@ -26,6 +26,7 @@ public sealed class TodoCheckTool(ITodoStore store)
         {
             var result = await store.CheckAsync(new TodoCheckRequest
             {
+                AgentId = context.AgentInstanceId,
                 ScopeKind = args.ScopeKind,
                 ScopeId = args.ScopeId,
                 Slug = args.Slug,

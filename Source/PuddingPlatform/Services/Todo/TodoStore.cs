@@ -6,14 +6,16 @@ using PuddingPlatform.Data.Entities;
 namespace PuddingPlatform.Services.Todo;
 
 /// <summary>
-/// 设计 2026-09-16 §3/§4（TD-1）：Todo 拆解表的存储服务（<see cref="ITodoStore"/> 的 Platform 实现）。
+/// 设计 2026-09-16 §3/§4（TD-1；TD-1b 对齐用户裁决）：Todo 拆解表的存储服务（<see cref="ITodoStore"/> 的 Platform 实现）。
 /// <para>
 /// 与 <see cref="Tasks.TaskAgentCommandService"/> 同模式：Singleton 托管（工具注册表按 Singleton 消费），
 /// 每次调用创建并释放独立 DbContext；单次 SaveChanges 原子提交（不变量同 TB-03 #6）。
-/// 服务端强制约束（设计 §3 约束行 / §8 验收 1-3）：
-/// ① 单列表 ≤20 项；② 同时最多 1 个 in_progress；③ blocked 必填 blocked_reason；
-/// ④ 列表内 slug 唯一；⑤ expected_revision CAS 不符 ⇒ 明确报错（不静默覆盖）；
-/// ⑥ 全量替换按 slug 对齐 ⇒ 同内容重复写入不产生重复项（幂等）。
+/// TD-1b 约束分级（设计 §3 约束行 / §8 验收 3/7/8）：
+/// 硬拒绝——① 列表内 slug 唯一；② scope_kind/scope_id 必填且合法；③ expected_revision CAS 不符 ⇒ 明确报错
+/// （不静默覆盖）；④ 读写均按 agent_id 过滤（跨 Agent 即使 scope_id 完全相同也互不可见、互不可写）。
+/// 软警告（接受写入，返回 <c>Warnings</c>）——&gt;20 项 / &gt;1 in_progress / blocked 无 reason。
+/// 幂等：全量替换按 slug 对齐 ⇒ 同内容重复写入不产生重复项。
+/// 归档语义已移除（TD-1b）：无归档入口，不写 archived_at_utc。
 /// </para>
 /// </summary>
 public sealed class TodoStore(
@@ -25,14 +27,19 @@ public sealed class TodoStore(
     public async Task<TodoWriteResult> WriteAsync(TodoWriteRequest request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ValidateAgent(request.AgentId);
         ValidateScope(request.ScopeKind, request.ScopeId);
-        ValidateItems(request.Items);
+        var warnings = ValidateItems(request.Items);
 
         var now = DateTimeOffset.UtcNow;
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var list = await db.TodoLists
-            .SingleOrDefaultAsync(l => l.ScopeKind == request.ScopeKind && l.ScopeId == request.ScopeId, ct);
+            .SingleOrDefaultAsync(
+                l => l.AgentId == request.AgentId
+                     && l.ScopeKind == request.ScopeKind
+                     && l.ScopeId == request.ScopeId,
+                ct);
 
         // CAS：0 = 首写（列表必须不存在）；否则必须等于当前 revision，不符即明确报错（不静默覆盖）。
         if (list is null)
@@ -50,6 +57,7 @@ public sealed class TodoStore(
             list = new TodoListEntity
             {
                 ListId = NewId("tdl"),
+                AgentId = request.AgentId,
                 ScopeKind = request.ScopeKind,
                 ScopeId = request.ScopeId,
                 Title = request.Title,
@@ -69,8 +77,6 @@ public sealed class TodoStore(
                 list.Revision);
         }
 
-        // 归档列表被再次写入 ⇒ 重新激活（临时性语义：归档只是收尾标记，不阻断新一轮拆解）。
-        list.ArchivedAtUtc = null;
         if (request.Title is not null)
         {
             list.Title = request.Title;
@@ -162,6 +168,7 @@ public sealed class TodoStore(
             Revision = list.Revision,
             Diff = diff.Build(),
             Summary = BuildSummary(items),
+            Warnings = warnings.Count > 0 ? warnings : null,
         };
     }
 
@@ -169,12 +176,17 @@ public sealed class TodoStore(
     public async Task<TodoReadResult?> ReadAsync(TodoReadQuery query, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(query);
+        ValidateAgent(query.AgentId);
         ValidateScope(query.ScopeKind, query.ScopeId);
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var list = await db.TodoLists
             .AsNoTracking()
-            .SingleOrDefaultAsync(l => l.ScopeKind == query.ScopeKind && l.ScopeId == query.ScopeId, ct);
+            .SingleOrDefaultAsync(
+                l => l.AgentId == query.AgentId
+                     && l.ScopeKind == query.ScopeKind
+                     && l.ScopeId == query.ScopeId,
+                ct);
         if (list is null)
         {
             return null;
@@ -194,7 +206,6 @@ public sealed class TodoStore(
             ScopeId = list.ScopeId,
             Title = list.Title,
             Revision = list.Revision,
-            ArchivedAtUtc = list.ArchivedAtUtc,
             Items = items.Select(ToView).ToList(),
             Summary = BuildSummary(items),
         };
@@ -204,6 +215,7 @@ public sealed class TodoStore(
     public async Task<TodoCheckResult> CheckAsync(TodoCheckRequest request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ValidateAgent(request.AgentId);
         ValidateScope(request.ScopeKind, request.ScopeId);
         if (!TodoWireMaps.IsValidStatus(request.Status))
         {
@@ -214,21 +226,18 @@ public sealed class TodoStore(
                 request.ScopeId);
         }
 
-        if (request.Status == TodoWireMaps.StatusBlocked
-            && string.IsNullOrWhiteSpace(request.BlockedReason))
-        {
-            throw new TodoStoreException(
-                TodoErrorCode.TodoBlockedReasonRequired,
-                "status 'blocked' requires a non-empty blocked_reason.",
-                request.ScopeKind,
-                request.ScopeId);
-        }
+        // 软约束（TD-1b）收集器：>1 in_progress / blocked 无 reason ⇒ 接受写入 + warning（不再硬拒）。
+        var warnings = new List<string>();
 
         var now = DateTimeOffset.UtcNow;
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var list = await db.TodoLists
-            .SingleOrDefaultAsync(l => l.ScopeKind == request.ScopeKind && l.ScopeId == request.ScopeId, ct);
+            .SingleOrDefaultAsync(
+                l => l.AgentId == request.AgentId
+                     && l.ScopeKind == request.ScopeKind
+                     && l.ScopeId == request.ScopeId,
+                ct);
         if (list is null)
         {
             throw new TodoStoreException(
@@ -260,7 +269,7 @@ public sealed class TodoStore(
                 list.Revision);
         }
 
-        // 服务端约束：同时最多 1 个 in_progress。
+        // 软约束（TD-1b）：另一个 in_progress 已存在 ⇒ 接受勾选 + warning（不再硬拒）。
         if (request.Status == TodoWireMaps.StatusInProgress
             && item.Status != TodoWireMaps.StatusInProgress)
         {
@@ -273,20 +282,26 @@ public sealed class TodoStore(
                     ct);
             if (current is not null)
             {
-                throw new TodoStoreException(
-                    TodoErrorCode.TodoMultipleInProgress,
-                    $"Item '{current.Slug}' is already in_progress; at most 1 in_progress item is allowed per list. Complete or re-status it first.",
-                    request.ScopeKind,
-                    request.ScopeId,
-                    list.Revision);
+                warnings.Add(
+                    $"{TodoWireMaps.WarnMultipleInProgress}: item '{current.Slug}' is already in_progress; " +
+                    $"'{request.Slug}' is now in_progress too (recommended max 1 per list).");
             }
         }
 
         var wasCompleted = item.Status == TodoWireMaps.StatusCompleted;
+        // 生效 reason = 请求提供值 ?? 项上已有值；blocked 且两者皆空 ⇒ 软警告（接受写入）。
+        var effectiveBlockedReason = request.BlockedReason ?? item.BlockedReason;
         item.Status = request.Status;
         if (request.BlockedReason is not null)
         {
             item.BlockedReason = request.BlockedReason;
+        }
+
+        if (request.Status == TodoWireMaps.StatusBlocked
+            && string.IsNullOrWhiteSpace(effectiveBlockedReason))
+        {
+            warnings.Add(
+                $"{TodoWireMaps.WarnBlockedReasonRequired}: item '{request.Slug}' is blocked without a blocked_reason (soft constraint, write accepted).");
         }
 
         if (request.EvidenceRef is not null)
@@ -323,44 +338,23 @@ public sealed class TodoStore(
             Revision = list.Revision,
             Item = ToView(item),
             Summary = BuildSummary(items),
-        };
-    }
-
-    /// <inheritdoc />
-    public async Task<TodoArchiveResult> ArchiveAsync(TodoArchiveRequest request, CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ValidateScope(request.ScopeKind, request.ScopeId);
-
-        var now = DateTimeOffset.UtcNow;
-
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var list = await db.TodoLists
-            .SingleOrDefaultAsync(l => l.ScopeKind == request.ScopeKind && l.ScopeId == request.ScopeId, ct);
-        if (list is null)
-        {
-            throw new TodoStoreException(
-                TodoErrorCode.TodoListNotFound,
-                $"Todo list for scope '{request.ScopeKind}/{request.ScopeId}' does not exist.",
-                request.ScopeKind,
-                request.ScopeId);
-        }
-
-        list.ArchivedAtUtc ??= now;
-        list.Revision += 1;
-        list.UpdatedAtUtc = now;
-
-        await db.SaveChangesAsync(ct);
-
-        return new TodoArchiveResult
-        {
-            ListId = list.ListId,
-            Revision = list.Revision,
-            ArchivedAtUtc = list.ArchivedAtUtc.Value,
+            Warnings = warnings.Count > 0 ? warnings : null,
         };
     }
 
     // ── 校验与映射 ──────────────────────────────────────────
+
+    private static void ValidateAgent(string agentId)
+    {
+        if (string.IsNullOrWhiteSpace(agentId))
+        {
+            throw new TodoStoreException(
+                TodoErrorCode.TodoInvalidAgent,
+                "agent_id is required: the calling agent identity must be provided by the tool context (never synthesized).",
+                scopeKind: null,
+                scopeId: null);
+        }
+    }
 
     private static void ValidateScope(string scopeKind, string scopeId)
     {
@@ -379,14 +373,19 @@ public sealed class TodoStore(
         }
     }
 
-    private static void ValidateItems(IReadOnlyList<TodoItemInput> items)
+    /// <summary>
+    /// 校验写入项：硬拒绝（slug 空/重复、title 空/超长、status 非法）抛 <see cref="TodoStoreException"/>；
+    /// 软约束（TD-1b：&gt;20 项、&gt;1 in_progress、blocked 无 reason）收集为 warnings 返回（接受写入）。
+    /// </summary>
+    private static List<string> ValidateItems(IReadOnlyList<TodoItemInput> items)
     {
         ArgumentNullException.ThrowIfNull(items);
+        var warnings = new List<string>();
         if (items.Count > TodoWireMaps.MaxItemsPerList)
         {
-            throw new TodoStoreException(
-                TodoErrorCode.TodoTooManyItems,
-                $"A todo list may contain at most {TodoWireMaps.MaxItemsPerList} items (got {items.Count}). Split the breakdown or remove finished items.");
+            warnings.Add(
+                $"{TodoWireMaps.WarnTooManyItems}: a todo list should contain at most {TodoWireMaps.MaxItemsPerList} items " +
+                $"(got {items.Count}); consider splitting the breakdown or removing finished items.");
         }
 
         var inProgressCount = 0;
@@ -432,9 +431,8 @@ public sealed class TodoStore(
             if (item.Status == TodoWireMaps.StatusBlocked
                 && string.IsNullOrWhiteSpace(item.BlockedReason))
             {
-                throw new TodoStoreException(
-                    TodoErrorCode.TodoBlockedReasonRequired,
-                    $"Item '{item.Slug}' is blocked but blocked_reason is empty.");
+                warnings.Add(
+                    $"{TodoWireMaps.WarnBlockedReasonRequired}: item '{item.Slug}' is blocked without a blocked_reason (soft constraint, write accepted).");
             }
 
             if (item.Status == TodoWireMaps.StatusInProgress)
@@ -445,10 +443,12 @@ public sealed class TodoStore(
 
         if (inProgressCount > 1)
         {
-            throw new TodoStoreException(
-                TodoErrorCode.TodoMultipleInProgress,
-                $"At most 1 in_progress item is allowed per list (got {inProgressCount}).");
+            warnings.Add(
+                $"{TodoWireMaps.WarnMultipleInProgress}: at most 1 in_progress item is recommended per list " +
+                $"(payload has {inProgressCount}).");
         }
+
+        return warnings;
     }
 
     private static void ApplyStatusTimestamps(

@@ -73,7 +73,7 @@ public sealed record TodoWriteArgs
     [ToolParam("CAS 期望版本：首写传 0；否则传 todo_read/todo_write 返回的最新 revision，不符返回 todo.version_conflict（不静默覆盖）。")]
     public required int ExpectedRevision { get; init; }
 
-    [ToolParam("全量目标状态（≤20 项；同 slug 覆盖、缺席即移除）。")]
+    [ToolParam("全量目标状态（建议 ≤20 项；同 slug 覆盖、缺席即移除；超限返回 warning 不拒绝）。")]
     public required TodoItemArgs[] Items { get; init; }
 }
 
@@ -85,7 +85,7 @@ public sealed record TodoItemArgs
     [ToolParam("≤120 字。")]
     public required string Title { get; init; }
 
-    [ToolParam("pending | in_progress | completed | blocked；同一时刻最多 1 项 in_progress。")]
+    [ToolParam("pending | in_progress | completed | blocked；建议同时仅 1 项 in_progress（多开返回 warning 不拒绝）。")]
     public required string Status { get; init; }
 
     [ToolParam("可选说明。")]
@@ -94,7 +94,7 @@ public sealed record TodoItemArgs
     [ToolParam("可选证据引用：commit sha / 文件路径 / 报告 id。")]
     public string? EvidenceRef { get; init; }
 
-    [ToolParam("status=blocked 时必填。")]
+    [ToolParam("status=blocked 时建议提供（缺失返回 warning 不拒绝）。")]
     public string? BlockedReason { get; init; }
 
     [ToolParam("展示顺序；缺省按数组位置。")]
@@ -125,10 +125,10 @@ public sealed record TodoCheckArgs
     [ToolParam("目标单项的 slug。")]
     public required string Slug { get; init; }
 
-    [ToolParam("目标状态：completed | in_progress | blocked | pending；blocked 必填 blocked_reason。")]
+    [ToolParam("目标状态：completed | in_progress | blocked | pending；blocked 建议给 blocked_reason（缺失返回 warning 不拒绝）。")]
     public required string Status { get; init; }
 
-    [ToolParam("status=blocked 时必填的结构化受阻原因。")]
+    [ToolParam("status=blocked 时建议提供的结构化受阻原因（缺失返回 warning 不拒绝）。")]
     public string? BlockedReason { get; init; }
 
     [ToolParam("completed 建议携带的证据引用（commit sha / 文件路径 / 报告 id）。")]
