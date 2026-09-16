@@ -189,7 +189,10 @@ public sealed class FileSwarmTransportTests : IDisposable
         // Arrange
         var senderNode = "sender-node";
         var senderTransport = new FileSwarmTransport(_testSwarmDir, senderNode);
-        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        // 该超时预算需覆盖「发送消息 + 写入收件箱 → 经 FileSystemWatcher 送达」全过程。
+        // 原为 2 秒：8 workers 并行、且收件箱文件被 Watcher 占用时，会在初始读取阶段就到期，
+        // 使 ReceiveAsync 抛 TaskCanceledException 而失败（本会话 Core 全量中复现过）。放宽到 10 秒。
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         try
         {
@@ -202,10 +205,17 @@ public sealed class FileSwarmTransportTests : IDisposable
 
             // Now receive messages
             var receivedMessages = new List<SwarmMessage>();
-            await foreach (var msg in _transport.ReceiveAsync(cts.Token))
+            try
             {
-                receivedMessages.Add(msg);
-                break; // Get first message then stop
+                await foreach (var msg in _transport.ReceiveAsync(cts.Token))
+                {
+                    receivedMessages.Add(msg);
+                    break; // Get first message then stop
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // 超时未送达时，让下方断言给出清晰失败信息，而不是抛出 OCE 掩盖真正原因
             }
 
             // Assert
