@@ -177,6 +177,10 @@ public static class TaskWireMaps
         TaskErrorCode.PolicyVersionConflict => "policy.version_conflict",
         TaskErrorCode.TaskActiveContextMissing => "task.active_context_missing",
         TaskErrorCode.TaskInvalidCursor => "task.invalid_cursor",
+        // Stage 1 父层级错误码（D1/D4）
+        TaskErrorCode.TaskParentNotFound => "task.parent_not_found",
+        TaskErrorCode.TaskHierarchyInvalid => "task.hierarchy_invalid",
+        TaskErrorCode.TaskHasNonTerminalChildren => "task.has_non_terminal_children",
         _ => code.ToString(),
     };
 
@@ -227,17 +231,20 @@ public static class TaskWireMaps
     /// <summary>TaskErrorCode → HTTP 状态（契约 §五）。</summary>
     public static int ErrorCodeToHttpStatus(TaskErrorCode code) => code switch
     {
-        TaskErrorCode.TaskNotFound or TaskErrorCode.AssignmentNotFound or TaskErrorCode.AgentNotFound
+        TaskErrorCode.TaskNotFound or TaskErrorCode.AssignmentNotFound or TaskErrorCode.AgentNotFound or
+        TaskErrorCode.TaskParentNotFound
             => StatusCodes.Status404NotFound,
         TaskErrorCode.TaskVersionConflict or TaskErrorCode.TaskStateConflict or
         TaskErrorCode.AssignmentAlreadyActive or TaskErrorCode.AssignmentStale or
-        TaskErrorCode.AgentUnavailable or TaskErrorCode.PolicyVersionConflict
+        TaskErrorCode.AgentUnavailable or TaskErrorCode.PolicyVersionConflict or
+        TaskErrorCode.TaskHasNonTerminalChildren
             => StatusCodes.Status409Conflict,
         TaskErrorCode.TaskInvalidTransition or TaskErrorCode.TaskInvalidDisposition or
         TaskErrorCode.TaskReasonRequired or TaskErrorCode.TaskResultRequired or
         TaskErrorCode.TaskArtifactRequired or TaskErrorCode.TaskNotReopenable or
         TaskErrorCode.TaskCannotHardDelete or TaskErrorCode.PolicyInvalid or
-        TaskErrorCode.TaskActiveContextMissing or TaskErrorCode.TaskInvalidCursor
+        TaskErrorCode.TaskActiveContextMissing or TaskErrorCode.TaskInvalidCursor or
+        TaskErrorCode.TaskHierarchyInvalid
             => StatusCodes.Status422UnprocessableEntity,
         TaskErrorCode.CapabilityMissing => StatusCodes.Status403Forbidden,
         _ => StatusCodes.Status500InternalServerError,

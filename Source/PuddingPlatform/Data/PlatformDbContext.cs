@@ -613,6 +613,8 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasIndex(t => new { t.WorkspaceId, t.TaskId }).IsUnique();
             e.HasIndex(t => new { t.WorkspaceId, t.Status });
             e.HasIndex(t => new { t.WorkspaceId, t.SortOrder });
+            // Stage 1 母/子层级（D1）：按工作区 + 母任务 ID 查子卡；既有行 parent_task_id 为 NULL。
+            e.HasIndex(t => new { t.WorkspaceId, t.ParentTaskId });
         });
 
         modelBuilder.Entity<TaskDependencyEntity>(e =>

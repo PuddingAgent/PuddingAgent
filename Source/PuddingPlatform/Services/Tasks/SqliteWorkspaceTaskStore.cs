@@ -24,6 +24,11 @@ public sealed class SqliteWorkspaceTaskStore(
     private const IsolationLevel TxLevel = IsolationLevel.Serializable;
     private const int TaskCreated = (int)TaskEventType.TaskCreated;
 
+    /// <summary>
+    /// SELECT/MapTask 共享的列清单（<b>位置序契约</b>）：<see cref="MapTask"/> 按序号读列，
+    /// 任何新列只能<b>追加到本清单末尾</b>，严禁在中间插入，否则其后所有字段静默错位。
+    /// 本清单末尾的 parent_task_id 是 Stage 1（D1）新增的第 36 列（序号 35）。
+    /// </summary>
     private const string TaskColumns = """
         task_id, workspace_id, title, description, acceptance_criteria, status, priority,
         execution_window, preferred_agent_id, task_type, required_capabilities_json,
@@ -31,7 +36,8 @@ public sealed class SqliteWorkspaceTaskStore(
         active_assignment_id, not_before_utc, due_at_utc,
         next_eligible_at_utc, sort_order, progress_percent, progress_summary, blocker_kind,
         blocker_reason, failure_code, failure_reason, version, created_by, updated_by,
-        created_at_utc, updated_at_utc, completed_at_utc, failed_at_utc, archived_at_utc, origin
+        created_at_utc, updated_at_utc, completed_at_utc, failed_at_utc, archived_at_utc, origin,
+        parent_task_id
         """;
 
     /// <inheritdoc />
@@ -240,6 +246,99 @@ public sealed class SqliteWorkspaceTaskStore(
         }
     }
 
+    /// <summary>
+    /// Stage 1（D5）：写父子关系的唯一持久化原语——只更新 workspace_tasks.parent_task_id。
+    /// <para>
+    /// 本方法<b>不做层级校验</b>：校验见 <see cref="TaskHierarchyRules.ValidateParentAssignment"/>，
+    /// 由 Stage 2 的 manage_tasks 在调用前执行并负责把错误码返回给调用方（D5：仅管理者可写，
+    /// 执行者侧只读）。CAS 语义与 <see cref="UpdateTaskAsync"/> 一致（version 匹配、version + 1、
+    /// updated_at_utc 刷新），并落一条 <see cref="TaskEventType.TaskUpdated"/> 事件。
+    /// <b>不</b>触碰 status（D3：母卡状态不因子卡派生）。
+    /// </para>
+    /// </summary>
+    /// <param name="taskId">子卡任务 ID。</param>
+    /// <param name="parentTaskId">母任务 ID；null 或空字符串表示脱挂为顶层任务。</param>
+    /// <param name="expectedVersion">CAS 期望版本。</param>
+    /// <param name="updatedBy">最后更新者；null 时保留原值。</param>
+    /// <param name="ct">取消令牌。</param>
+    public async Task<WorkspaceTask> SetParentTaskIdAsync(
+        string taskId,
+        string? parentTaskId,
+        int expectedVersion,
+        string? updatedBy = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(taskId);
+        var now = DateTimeOffset.UtcNow;
+
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var conn = (SqliteConnection)db.Database.GetDbConnection();
+        await conn.OpenAsync(ct);
+        await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(TxLevel, ct);
+        try
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                UPDATE workspace_tasks
+                SET parent_task_id = @parentTaskId,
+                    updated_by = COALESCE(@updatedBy, updated_by),
+                    version = version + 1,
+                    updated_at_utc = @now
+                WHERE task_id = @taskId AND version = @expectedVersion
+                """;
+            AddParam(cmd, "@parentTaskId", string.IsNullOrEmpty(parentTaskId) ? null : parentTaskId);
+            AddParam(cmd, "@updatedBy", updatedBy);
+            AddParam(cmd, "@now", now.ToString("O"));
+            AddParam(cmd, "@taskId", taskId);
+            AddParam(cmd, "@expectedVersion", expectedVersion);
+
+            var affected = await cmd.ExecuteNonQueryAsync(ct);
+            if (affected == 0)
+            {
+                var currentVersion = await ReadVersionAsync(conn, tx, taskId, ct);
+                if (currentVersion is null)
+                {
+                    throw new TaskStoreException(
+                        TaskErrorCode.TaskNotFound,
+                        $"Task '{taskId}' not found.",
+                        taskId,
+                        expectedVersion,
+                        null);
+                }
+
+                throw new TaskStoreException(
+                    TaskErrorCode.TaskVersionConflict,
+                    $"Task '{taskId}' version conflict: expected {expectedVersion}, actual {currentVersion}.",
+                    taskId,
+                    expectedVersion,
+                    currentVersion);
+            }
+
+            var updated = await ReadTaskAsync(conn, tx, null, taskId, ct);
+            var sequence = await NextSequenceAsync(conn, tx, taskId, ct);
+
+            var evt = new TaskEvent
+            {
+                EventId = Guid.NewGuid().ToString("N"),
+                TaskId = taskId,
+                WorkspaceId = updated!.WorkspaceId,
+                Sequence = sequence,
+                EventType = TaskEventType.TaskUpdated,
+                CreatedAtUtc = now,
+            };
+            await InsertEventAsync(conn, tx, evt, ct);
+            await tx.CommitAsync(ct);
+
+            return updated;
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+    }
+
     /// <inheritdoc />
     public async Task<bool> HardDeleteTaskAsync(string workspaceId, string taskId, CancellationToken ct = default)
     {
@@ -418,7 +517,8 @@ public sealed class SqliteWorkspaceTaskStore(
                active_assignment_id, not_before_utc, due_at_utc,
                next_eligible_at_utc, sort_order, progress_percent, progress_summary, blocker_kind,
                blocker_reason, failure_code, failure_reason, version, created_by, updated_by,
-               created_at_utc, updated_at_utc, completed_at_utc, failed_at_utc, archived_at_utc, origin)
+               created_at_utc, updated_at_utc, completed_at_utc, failed_at_utc, archived_at_utc, origin,
+               parent_task_id)
             VALUES
               (@taskId, @workspaceId, @title, @description, @acceptanceCriteria, @status, @priority,
                @executionWindow, @preferredAgentId, @taskType, @requiredCapabilitiesJson,
@@ -426,7 +526,8 @@ public sealed class SqliteWorkspaceTaskStore(
                @activeAssignmentId, @notBeforeUtc, @dueAtUtc,
                @nextEligibleAtUtc, @sortOrder, @progressPercent, @progressSummary, @blockerKind,
                @blockerReason, @failureCode, @failureReason, @version, @createdBy, @updatedBy,
-               @createdAtUtc, @updatedAtUtc, @completedAtUtc, @failedAtUtc, @archivedAtUtc, @origin)
+               @createdAtUtc, @updatedAtUtc, @completedAtUtc, @failedAtUtc, @archivedAtUtc, @origin,
+               @parentTaskId)
             """;
         AddParam(cmd, "@taskId", t.TaskId);
         AddParam(cmd, "@workspaceId", t.WorkspaceId);
@@ -463,6 +564,7 @@ public sealed class SqliteWorkspaceTaskStore(
         AddParam(cmd, "@failedAtUtc", t.FailedAtUtc?.ToString("O"));
         AddParam(cmd, "@archivedAtUtc", t.ArchivedAtUtc?.ToString("O"));
         AddParam(cmd, "@origin", t.Origin.HasValue ? (int)t.Origin.Value : null);
+        AddParam(cmd, "@parentTaskId", t.ParentTaskId);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -685,6 +787,8 @@ public sealed class SqliteWorkspaceTaskStore(
         sets.Add("version = version + 1");
         sets.Add("updated_at_utc = @now");
 
+        // 刻意不含 parent_task_id：本路径由 UpdateTaskRequest 驱动，而该请求 DTO 不携带父子关系；
+        // 父子关系仅管理者可写（D5），走专用原语 SetParentTaskIdAsync（带 TaskHierarchyRules 校验，Stage 2 接入）。
         var sql = $"""
             UPDATE workspace_tasks
             SET {string.Join(", ", sets)}
@@ -770,6 +874,8 @@ public sealed class SqliteWorkspaceTaskStore(
             FailedAtUtc = ReadUtcNullable(reader, 32),
             ArchivedAtUtc = ReadUtcNullable(reader, 33),
             Origin = ReadOriginNullable(reader, 34),
+            // Stage 1（D1）：parent_task_id 是 TaskColumns 末尾第 36 列（序号 35），只能读 35。
+            ParentTaskId = ReadStringNullable(reader, 35),
         };
     }
 

@@ -115,4 +115,11 @@ public class WorkspaceTaskEntity
 
     [Column("archived_at_utc")]
     public DateTimeOffset? ArchivedAtUtc { get; set; }
+
+    /// <summary>
+    /// 母任务 ID（Stage 1 单层母/子层级，D1）；null = 顶层任务。
+    /// 既有行保持 NULL（不做回填）；物理列追加在表末尾，EF 属性顺序不影响列序。
+    /// </summary>
+    [MaxLength(64), Column("parent_task_id")]
+    public string? ParentTaskId { get; set; }
 }

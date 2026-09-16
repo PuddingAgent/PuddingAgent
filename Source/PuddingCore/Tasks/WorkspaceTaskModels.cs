@@ -273,7 +273,16 @@ public enum TaskErrorCode
     TaskActiveContextMissing,
 
     /// <summary>task.invalid_cursor 422（task_list 游标非法）</summary>
-    TaskInvalidCursor
+    TaskInvalidCursor,
+
+    /// <summary>task.parent_not_found 404（挂父时父任务不存在）</summary>
+    TaskParentNotFound,
+
+    /// <summary>task.hierarchy_invalid 422（违反单层约束：自引用、成环或多级挂载，D1）</summary>
+    TaskHierarchyInvalid,
+
+    /// <summary>task.has_non_terminal_children 409（母卡仍有未终态子卡，归档/取消被 fail-closed 拒绝，D4）</summary>
+    TaskHasNonTerminalChildren
 }
 
 /// <summary>task.* 事件类型（不含 automation.* / work_policy.*，那是 P1）。</summary>
@@ -501,6 +510,20 @@ public sealed record WorkspaceTask
 
     /// <summary>归档时间（UTC）。</summary>
     public DateTimeOffset? ArchivedAtUtc { get; init; }
+
+    /// <summary>
+    /// 母任务 ID；null = 顶层/独立任务（既有数据全部为 null，不做回填）。
+    /// <para>
+    /// 层级为<b>单层</b>（母 → 子，D1）：母卡自身不得再有父，本字段只表达一层归属，
+    /// 多级遍历不在 Stage 1 范围内。判定规则集中在 <see cref="TaskHierarchyRules"/>
+    /// （纯函数、无 IO），本 Stage 只提供契约与规则，不落拦截：
+    /// D2 母卡一旦有子卡即为「容器」，不可 claim / 不可自动派发；
+    /// D3 母卡 <see cref="Status"/> 不因子卡派生，只允许独立只读聚合投影；
+    /// D4 归档/取消母卡时若存在未终态子卡，默认 fail-closed 拒绝，须显式 force 才级联；
+    /// D5 父子关系仅管理者（manage_tasks）可写，执行者侧只读。
+    /// </para>
+    /// </summary>
+    public string? ParentTaskId { get; init; }
 }
 
 /// <summary>一次 Assignment Attempt（task_assignment_attempts）。</summary>

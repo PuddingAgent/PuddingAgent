@@ -398,7 +398,9 @@ public sealed class WorkspaceTaskCoreTests
         Assert.AreEqual(3, Enum.GetValues<TaskExecutionWindow>().Length);
         Assert.AreEqual(15, Enum.GetValues<DecisionCode>().Length);
         Assert.AreEqual(10, Enum.GetValues<TaskCommand>().Length);
-        Assert.AreEqual(20, Enum.GetValues<TaskErrorCode>().Length);
+        // Stage 1（D1/D4）新增 3 个父层级错误码：TaskParentNotFound / TaskHierarchyInvalid /
+        // TaskHasNonTerminalChildren；既有 20 个成员未删除、未改名、未改序，总数 20 → 23。
+        Assert.AreEqual(23, Enum.GetValues<TaskErrorCode>().Length);
         Assert.AreEqual(17, Enum.GetValues<TaskEventType>().Length);
         Assert.AreEqual(4, Enum.GetValues<AssignmentStatus>().Length);
     }
@@ -434,6 +436,24 @@ public sealed class WorkspaceTaskCoreTests
         Assert.AreNotEqual(default, task.CreatedAtUtc);
         Assert.AreNotEqual(default, task.UpdatedAtUtc);
         Assert.IsNull(task.CompletedAtUtc);
+        // Stage 1（D1）：新字段默认无父（既有数据与新建任务一律为 null，不回填）。
+        Assert.IsNull(task.ParentTaskId);
+    }
+
+    [TestMethod]
+    public void WorkspaceTask_ParentTaskId_DefaultsToNull_AndIsSingleLevelPointer()
+    {
+        var parent = new WorkspaceTask { TaskId = "p", WorkspaceId = "ws", Title = "p" };
+        var child = new WorkspaceTask { TaskId = "c", WorkspaceId = "ws", Title = "c", ParentTaskId = parent.TaskId };
+
+        Assert.IsNull(parent.ParentTaskId);
+        Assert.AreEqual("p", child.ParentTaskId);
+        // D1：单层——父自身无父；容器判定与派发禁令为纯函数，不改写 status（D2/D3）。
+        Assert.IsNull(TaskHierarchyRules.ValidateParentAssignment(child.TaskId, parent.TaskId, [parent, child]));
+        Assert.IsTrue(TaskHierarchyRules.IsContainer(parent.TaskId, [parent, child]));
+        Assert.IsFalse(TaskHierarchyRules.CanBeDispatched(parent.TaskId, [parent, child]));
+        Assert.IsFalse(TaskHierarchyRules.IsAutoDispatchEffective(parent.TaskId, true, [parent, child]));
+        Assert.AreEqual(WorkspaceTaskStatus.Backlog, parent.Status);
     }
 
     private static void AssertSet(IReadOnlySet<WorkspaceTaskStatus> actual, params WorkspaceTaskStatus[] expected)
