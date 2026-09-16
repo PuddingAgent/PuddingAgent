@@ -297,7 +297,7 @@ public class WorkerManagerTests
             // Assert
             Assert.IsNotNull(worker.Name);
             Assert.StartsWith("Builder-", worker.Name);
-            Assert.IsGreaterThan(worker.Name.Length, 8); // "Builder-" + at least some chars
+            Assert.IsGreaterThan(8, worker.Name.Length); // "Builder-" + at least some chars
         }
         finally
         {
