@@ -218,7 +218,8 @@ public sealed class TaskCommandService(
         string? windowDecision = null,
         string? reason = null,
         string? updatedBy = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool force = false)
     {
         var current = await _store.GetTaskAsync(workspaceId, taskId, ct);
         if (current is null)
@@ -229,6 +230,28 @@ public sealed class TaskCommandService(
                 taskId,
                 expectedVersion,
                 null);
+        }
+
+        // Stage 2（D2/D4）：容器母卡语义。归档/取消母卡时若存在未终态子卡，
+        // 默认 fail-closed 拒绝（task.has_non_terminal_children）；显式 force 才级联。
+        // 只读快照：本判定不写库、不改任何 Status（D3 禁止母卡状态从子卡派生）。
+        List<WorkspaceTaskEntity> children = force
+            ? []
+            : await ListChildrenAsync(workspaceId, taskId, ct);
+        if (command is TaskCommand.Cancel or TaskCommand.Archive)
+        {
+            var rejection = TaskHierarchyRules.ValidateArchiveOrCancel(taskId, ToHierarchyViews(children), force);
+            if (rejection is not null)
+            {
+                var counts = TaskHierarchyRules.CountChildren(taskId, ToHierarchyViews(children));
+                throw new TaskStoreException(
+                    rejection.Value,
+                    $"Task '{taskId}' still has {counts.NonTerminal} non-terminal child task(s); pass force=true to cascade cancel them before "
+                    + $"{(command == TaskCommand.Archive ? "archive" : "cancel")}.",
+                    taskId,
+                    expectedVersion,
+                    current.Version);
+            }
         }
 
         if (!TaskStateMachine.TryApplyCommand(current.Status, command, out var next))
@@ -284,6 +307,13 @@ public sealed class TaskCommandService(
         if (!string.IsNullOrWhiteSpace(updatedBy))
         {
             entity.UpdatedBy = updatedBy;
+        }
+
+        // Stage 2（D4）级联：先把母卡的未终态子卡走 cancel（单层：子卡即叶子），再归档/取消母卡。
+        // 级联与母卡转换在同一 SaveChanges 内原子提交；级联只做状态迁移 + 事件，绝不做硬删。
+        if (force && command is TaskCommand.Cancel or TaskCommand.Archive)
+        {
+            await CascadeCancelNonTerminalChildrenAsync(db, workspaceId, taskId, now, updatedBy, ct);
         }
 
         switch (command)
@@ -428,7 +458,8 @@ public sealed class TaskCommandService(
         string workspaceId,
         string taskId,
         string? updatedBy = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool force = false)
     {
         var current = await _store.GetTaskAsync(workspaceId, taskId, ct);
         if (current is null)
@@ -439,8 +470,26 @@ public sealed class TaskCommandService(
                 taskId);
         }
 
-        // 无历史 Backlog → 硬删（保留既有审计语义与 HardDeleteTaskAsync 判定）。
-        if (await _store.HardDeleteTaskAsync(workspaceId, taskId, ct))
+        // Stage 2（D4）：有子卡的母卡——fail-closed 拒绝或显式 force 级联；
+        // 两条路都<b>禁止硬删</b>（硬删会让子卡 parent_task_id 悬空，破坏层级事实）。
+        List<WorkspaceTaskEntity> children = force
+            ? []
+            : await ListChildrenAsync(workspaceId, taskId, ct);
+        if (children.Count > 0)
+        {
+            var rejection = TaskHierarchyRules.ValidateArchiveOrCancel(taskId, ToHierarchyViews(children), force);
+            if (rejection is not null)
+            {
+                var counts = TaskHierarchyRules.CountChildren(taskId, ToHierarchyViews(children));
+                throw new TaskStoreException(
+                    rejection.Value,
+                    $"Task '{taskId}' still has {counts.NonTerminal} non-terminal child task(s); pass force=true to cascade cancel them before delete.",
+                    taskId);
+            }
+        }
+
+        // 无历史 Backlog 且无子卡 → 硬删（保留既有审计语义与 HardDeleteTaskAsync 判定）。
+        if (children.Count == 0 && await _store.HardDeleteTaskAsync(workspaceId, taskId, ct))
         {
             return null;
         }
@@ -460,6 +509,13 @@ public sealed class TaskCommandService(
                 TaskErrorCode.TaskNotFound,
                 $"Task '{taskId}' not found.",
                 taskId);
+
+        // Stage 2（D4）级联：force 时先把未终态子卡走 cancel（与母卡归档同一提交单元），
+        // 然后母卡走归档（绝不硬删有子卡的任务）。
+        if (force)
+        {
+            await CascadeCancelNonTerminalChildrenAsync(db, workspaceId, taskId, now, updatedBy, ct);
+        }
 
         // 释放活跃 Assignment（与 Cancel 命令一致）。
         if (entity.ActiveAssignmentId is not null)
@@ -562,6 +618,104 @@ public sealed class TaskCommandService(
         if (notBeforeUtc.HasValue) entity.NotBeforeUtc = notBeforeUtc.Value;
         if (dueAtUtc.HasValue) entity.DueAtUtc = dueAtUtc.Value;
         if (sortOrder.HasValue) entity.SortOrder = sortOrder.Value;
+    }
+
+    // ── Stage 2：母/子层级（D2/D3/D4）────────────────────────
+
+    /// <summary>
+    /// Stage 2：把 EF 实体投影成 Core 层级视图——<see cref="TaskHierarchyRules"/> 的唯一输入面。
+    /// 只映射规则真正读取的字段（TaskId/Status/ParentTaskId），不写库、不派生状态（D3）。
+    /// </summary>
+    private static IReadOnlyList<WorkspaceTask> ToHierarchyViews(IReadOnlyList<WorkspaceTaskEntity> entities)
+        => entities
+            .Select(entity => new WorkspaceTask
+            {
+                TaskId = entity.TaskId,
+                WorkspaceId = entity.WorkspaceId,
+                Title = entity.Title,
+                Status = entity.Status,
+                ParentTaskId = entity.ParentTaskId,
+            })
+            .ToList();
+
+    /// <summary>
+    /// 只读读取母卡的直接子卡（容器判定与 fail-closed 门禁的输入）。
+    /// 不做任何写入，也不触碰 <see cref="WorkspaceTaskStatus"/>（D3）。
+    /// </summary>
+    private async Task<List<WorkspaceTaskEntity>> ListChildrenAsync(
+        string workspaceId,
+        string taskId,
+        CancellationToken ct)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.WorkspaceTasks
+            .AsNoTracking()
+            .Where(t => t.WorkspaceId == workspaceId && t.ParentTaskId == taskId)
+            .OrderBy(t => t.TaskId)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// D4 显式级联：把母卡的未终态子卡逐张走 cancel（状态迁移 + task.cancelled 事件 +
+    /// 释放活跃 assignment），与母卡的归档/取消在<b>同一 SaveChanges</b> 内原子提交。
+    /// 单层级（D1）⇒ 子卡即叶子；级联只做状态迁移，<b>绝不硬删</b>。
+    /// </summary>
+    private static async Task CascadeCancelNonTerminalChildrenAsync(
+        PlatformDbContext db,
+        string workspaceId,
+        string parentTaskId,
+        DateTimeOffset now,
+        string? updatedBy,
+        CancellationToken ct)
+    {
+        var children = await db.WorkspaceTasks
+            .Where(t => t.WorkspaceId == workspaceId && t.ParentTaskId == parentTaskId)
+            .OrderBy(t => t.TaskId)
+            .ToListAsync(ct);
+
+        foreach (var child in children)
+        {
+            if (TaskStateMachine.IsTerminal(child.Status))
+            {
+                continue;
+            }
+
+            child.Status = WorkspaceTaskStatus.Cancelled;
+            child.Version += 1;
+            child.UpdatedAtUtc = now;
+            if (!string.IsNullOrWhiteSpace(updatedBy))
+            {
+                child.UpdatedBy = updatedBy;
+            }
+
+            if (child.ActiveAssignmentId is not null)
+            {
+                var active = await db.TaskAssignmentAttempts
+                    .SingleOrDefaultAsync(a => a.AttemptId == child.ActiveAssignmentId, ct);
+                if (active is not null)
+                {
+                    active.ReleasedAtUtc = now;
+                    active.UpdatedAtUtc = now;
+                }
+
+                child.ActiveAssignmentId = null;
+            }
+
+            var sequence = await db.TaskEvents
+                .Where(e => e.TaskId == child.TaskId)
+                .MaxAsync(e => (long?)e.Sequence, ct) ?? 0;
+
+            db.TaskEvents.Add(new TaskEventEntity
+            {
+                EventId = Guid.NewGuid().ToString("N"),
+                TaskId = child.TaskId,
+                WorkspaceId = workspaceId,
+                Sequence = sequence + 1,
+                EventType = TaskEventType.TaskCancelled,
+                DecisionCode = "parent_cascade_cancel",
+                CreatedAtUtc = now,
+            });
+        }
     }
 
 }

@@ -203,6 +203,21 @@ public sealed class TaskAgentCommandService(
                 request.ExpectedVersion,
                 null);
 
+        // Stage 2（D2）：容器母卡不可被 claim——母卡是容器，不是可执行的工位。
+        // 本拦截放在最前（含幂等 no-op 之前），避免历史脏数据把母卡幂等放行。
+        var isContainer = await db.WorkspaceTasks
+            .AsNoTracking()
+            .AnyAsync(t => t.WorkspaceId == task.WorkspaceId && t.ParentTaskId == task.TaskId, ct);
+        if (isContainer)
+        {
+            throw new TaskStoreException(
+                TaskErrorCode.TaskHierarchyInvalid,
+                $"Task '{request.TaskId}' is a container (it has child tasks) and cannot be claimed.",
+                request.TaskId,
+                request.ExpectedVersion,
+                task.Version);
+        }
+
         // 幂等 no-op：已 InProgress 且 active assignment 相同（claim 与 accept 重复调用）。
         if (task.Status == WorkspaceTaskStatus.InProgress && task.ActiveAssignmentId == request.AssignmentId)
         {

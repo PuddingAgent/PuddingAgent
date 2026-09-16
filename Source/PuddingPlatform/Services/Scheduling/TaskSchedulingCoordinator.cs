@@ -183,6 +183,14 @@ public sealed class TaskSchedulingCoordinator(
                 .AsNoTracking()
                 .Where(entity => entity.WorkspaceId == workspaceId && taskIds.Contains(entity.TaskId))
                 .ToListAsync(ct);
+            // Stage 2（D2）：容器母卡（存在子卡）不得进入自动派发评估。
+            var containerIds = (await db.WorkspaceTasks
+                    .AsNoTracking()
+                    .Where(entity => entity.WorkspaceId == workspaceId && entity.ParentTaskId != null)
+                    .Select(entity => entity.ParentTaskId!)
+                    .Distinct()
+                    .ToListAsync(ct))
+                .ToHashSet(StringComparer.Ordinal);
             var tasksById = tasks.ToDictionary(entity => entity.TaskId, StringComparer.Ordinal);
             foreach (var group in taskGroups)
             {
@@ -202,6 +210,8 @@ public sealed class TaskSchedulingCoordinator(
                         => (TaskSchedulerIntentOutcomes.Terminal, statusLower),
                     _ when !task.AutoDispatchEnabled
                         => (TaskSchedulerIntentOutcomes.Ineligible, "not_opted_in"),
+                    _ when containerIds.Contains(task.TaskId)
+                        => (TaskSchedulerIntentOutcomes.Ineligible, "is_container"),
                     _ when task.Status is not (WorkspaceTaskStatus.Ready or WorkspaceTaskStatus.Deferred)
                         => (TaskSchedulerIntentOutcomes.Ineligible, $"status_{statusLower}"),
                     _ => (string.Empty, string.Empty),

@@ -393,7 +393,10 @@ public sealed class WorkspaceTaskCoreTests
         Assert.AreEqual(12, Enum.GetValues<WorkspaceTaskStatus>().Length);
         Assert.AreEqual(5, Enum.GetValues<BoardColumn>().Length);
         Assert.AreEqual(7, Enum.GetValues<TaskDisposition>().Length);
-        Assert.AreEqual(3, Enum.GetValues<TaskOrigin>().Length);
+        // Stage 2 顺带修复（pre-existing 缺陷，与本特性无关）：TaskOrigin 有 4 个成员
+        // （Manual / Auto / AutomationSchedule / ExternalApi），ExternalApi 是早前新增的成员，
+        // 但本冻结断言当时漏更新，导致本测试类在 HEAD 上就有 1 条失败。
+        Assert.AreEqual(4, Enum.GetValues<TaskOrigin>().Length);
         Assert.AreEqual(4, Enum.GetValues<TaskPriority>().Length);
         Assert.AreEqual(3, Enum.GetValues<TaskExecutionWindow>().Length);
         Assert.AreEqual(15, Enum.GetValues<DecisionCode>().Length);

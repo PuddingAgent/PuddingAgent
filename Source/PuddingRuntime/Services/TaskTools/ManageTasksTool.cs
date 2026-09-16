@@ -64,6 +64,9 @@ public sealed class ManageTasksTool : PuddingToolBase<ManageTasksArgs>
                         Priority = args.Priority,
                         Limit = args.Limit ?? 50,
                         Cursor = args.Cursor,
+                        // Stage 2（D2/D5）：children_of 按母卡过滤；include_child_summary 附带只读子卡计数（D3）。
+                        ParentTaskId = args.ChildrenOf,
+                        IncludeChildSummary = args.IncludeChildSummary ?? false,
                     }, ct);
                     return ToolExecutionResult.Ok(TaskToolJson.Serialize(result));
                 }
@@ -81,6 +84,7 @@ public sealed class ManageTasksTool : PuddingToolBase<ManageTasksArgs>
                         NotBeforeUtc = ParseUtc(args.NotBeforeUtc, "not_before_utc"),
                         DueAtUtc = ParseUtc(args.DueAtUtc, "due_at_utc"),
                         SortOrder = args.SortOrder,
+                        ParentTaskId = args.ParentTaskId,
                         ActorId = actorId,
                     }, ct);
                     return ToolExecutionResult.Ok(TaskToolJson.Serialize(result));
@@ -115,6 +119,8 @@ public sealed class ManageTasksTool : PuddingToolBase<ManageTasksArgs>
                         NotBeforeUtc = ParseUtc(args.NotBeforeUtc, "not_before_utc"),
                         DueAtUtc = ParseUtc(args.DueAtUtc, "due_at_utc"),
                         SortOrder = args.SortOrder,
+                        ParentTaskId = args.ParentTaskId,
+                        ClearParent = args.ClearParent ?? false,
                         ActorId = actorId,
                     }, ct);
                     return ToolExecutionResult.Ok(TaskToolJson.Serialize(result));
@@ -150,6 +156,7 @@ public sealed class ManageTasksTool : PuddingToolBase<ManageTasksArgs>
                         AgentId = args.AgentId,
                         WindowDecision = args.WindowDecision,
                         Reason = args.Reason,
+                        Force = args.Force ?? false,
                         ActorId = actorId,
                     }, ct);
                     return ToolExecutionResult.Ok(TaskToolJson.Serialize(result));
@@ -213,6 +220,13 @@ public sealed record ManageTasksArgs
     [ToolParam("keyset 游标 {sortOrder}|{taskId}")]
     public string? Cursor { get; init; }
 
+    // —— Stage 2：母/子层级（D1/D2/D3/D4/D5）——
+    [ToolParam("母卡任务 ID（list 时等价于 children_of：只列该母卡的子卡）")]
+    public string? ChildrenOf { get; init; }
+
+    [ToolParam("list 时是否附带只读子卡摘要（child_count / completed_child_count / is_container）；默认 false")]
+    public bool? IncludeChildSummary { get; init; }
+
     // —— create/get/update/delete ——
     [ToolParam("任务 ID（get/update/delete/命令操作必填）")]
     public string? TaskId { get; init; }
@@ -244,6 +258,12 @@ public sealed record ManageTasksArgs
     [ToolParam("期望版本（update/命令操作 CAS，缺省用当前版本）")]
     public int? ExpectedVersion { get; init; }
 
+    [ToolParam("父任务 ID（create/update 设置或改挂母卡；单层，仅管理者可写）")]
+    public string? ParentTaskId { get; init; }
+
+    [ToolParam("update 时显式清除父关系（脱挂为顶层；与 parent_task_id 互斥；不传 = 不变更）")]
+    public bool? ClearParent { get; init; }
+
     // —— 命令操作 ——
     [ToolParam("命令：assign/run_now/cancel/reopen/archive/mark_failed/resume/requeue（等价于 action，二选一）")]
     public string? Command { get; init; }
@@ -253,4 +273,7 @@ public sealed record ManageTasksArgs
 
     [ToolParam("cancel/reopen/archive/mark_failed/resume/requeue 的原因")]
     public string? Reason { get; init; }
+
+    [ToolParam("archive/cancel 时显式级联：先取消未终态子卡再归档/取消母卡（默认 false 则 fail-closed 拒结）")]
+    public bool? Force { get; init; }
 }

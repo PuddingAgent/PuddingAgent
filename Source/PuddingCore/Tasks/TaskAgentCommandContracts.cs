@@ -70,6 +70,15 @@ public sealed record TaskAgentListItem
     public DateTimeOffset? DueAtUtc { get; init; }
     public required DateTimeOffset UpdatedAtUtc { get; init; }
     public required int Version { get; init; }
+
+    /// <summary>
+    /// Stage 2（D5）：父任务 ID，<b>只读</b>。执行者侧（task_list/task_get）没有任何修改父子关系的参数，
+    /// 父子关系仅管理者（manage_tasks）可写。
+    /// </summary>
+    public string? ParentTaskId { get; init; }
+
+    /// <summary>Stage 2（D2，只读）：是否为容器（存在直接子卡）——容器不可被 claim。</summary>
+    public bool IsContainer { get; init; }
 }
 
 public sealed record TaskAgentListResult
@@ -137,6 +146,23 @@ public sealed record TaskAgentTaskDetail
     public DateTimeOffset? CompletedAtUtc { get; init; }
     public DateTimeOffset? FailedAtUtc { get; init; }
     public DateTimeOffset? ArchivedAtUtc { get; init; }
+
+    /// <summary>
+    /// Stage 2（D5）：父任务 ID，<b>只读</b>暴露；执行者侧无任何父子关系写参数（D5）。
+    /// </summary>
+    public string? ParentTaskId { get; init; }
+
+    /// <summary>
+    /// Stage 2（D2）：是否为容器（存在直接子卡）。容器不可 claim / 不可自动派发 / 不可 goal_start；
+    /// 但母卡 Status 不因子卡派生（D3）。
+    /// </summary>
+    public bool IsContainer { get; init; }
+
+    /// <summary>Stage 2（D3 只读聚合投影）：直接子卡总数。</summary>
+    public int ChildTaskCount { get; init; }
+
+    /// <summary>Stage 2（D3 只读聚合投影）：终态子卡数；<b>纯展示</b>，不参与任何状态派生。</summary>
+    public int CompletedChildCount { get; init; }
 }
 
 public sealed record TaskAgentAssignmentSummary

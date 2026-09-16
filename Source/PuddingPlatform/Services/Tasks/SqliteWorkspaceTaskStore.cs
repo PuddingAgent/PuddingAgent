@@ -339,6 +339,124 @@ public sealed class SqliteWorkspaceTaskStore(
         }
     }
 
+    /// <summary>
+    /// Stage 2（D2/D3 只读聚合）：按母卡读取直接子卡。
+    /// <para>
+    /// 只读原语：不写库、不触碰任何 Status / BoardColumn（D3 禁止母卡状态从子卡派生）。
+    /// 母卡 ID 为空或空白工作区返回空集合；排序与列表口径一致（sort_order → task_id）。
+    /// 本方法为<b>新增</b>，不改变既有方法签名。
+    /// </para>
+    /// </summary>
+    public async Task<IReadOnlyList<WorkspaceTask>> ListChildrenAsync(
+        string workspaceId,
+        string? parentTaskId,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceId) || string.IsNullOrEmpty(parentTaskId))
+        {
+            return [];
+        }
+
+        return await QueryChildrenCoreAsync(workspaceId, [parentTaskId], ct);
+    }
+
+    /// <summary>
+    /// Stage 2：批量读取多张母卡的子卡（列表页一次性聚合，避免 N+1 查询）。
+    /// 返回的行按母卡混排；调用方按 <see cref="WorkspaceTask.ParentTaskId"/> 自行分组。
+    /// </summary>
+    public async Task<IReadOnlyList<WorkspaceTask>> ListChildrenAsync(
+        string workspaceId,
+        IReadOnlyCollection<string> parentTaskIds,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
+        if (parentTaskIds is null || parentTaskIds.Count == 0)
+        {
+            return [];
+        }
+
+        var distinctParentIds = parentTaskIds
+            .Where(id => !string.IsNullOrEmpty(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return await QueryChildrenCoreAsync(workspaceId, distinctParentIds, ct);
+    }
+
+    /// <summary>
+    /// Stage 2（D3 只读聚合投影）：按母卡统计子卡总数 / 终态数 / 未终态数。
+    /// 统计口径复用 <see cref="TaskHierarchyRules.CountChildren"/>，<b>不</b>写回也不派生母卡 Status。
+    /// </summary>
+    public async Task<TaskHierarchyCounts> CountChildrenAsync(
+        string workspaceId,
+        string? parentTaskId,
+        CancellationToken ct = default)
+    {
+        var children = await ListChildrenAsync(workspaceId, parentTaskId, ct);
+        return TaskHierarchyRules.CountChildren(parentTaskId, children);
+    }
+
+    private async Task<IReadOnlyList<WorkspaceTask>> QueryChildrenCoreAsync(
+        string workspaceId,
+        IReadOnlyCollection<string> parentTaskIds,
+        CancellationToken ct)
+    {
+        if (parentTaskIds.Count == 0)
+        {
+            return [];
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var conn = (SqliteConnection)db.Database.GetDbConnection();
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        var placeholders = new List<string>(parentTaskIds.Count);
+        var index = 0;
+        AddParam(cmd, "@workspaceId", workspaceId);
+        foreach (var parentTaskId in parentTaskIds)
+        {
+            var name = "@parent" + index++.ToString(CultureInfo.InvariantCulture);
+            placeholders.Add(name);
+            AddParam(cmd, name, parentTaskId);
+        }
+
+        cmd.CommandText = $"""
+            SELECT {TaskColumns}
+            FROM workspace_tasks
+            WHERE workspace_id = @workspaceId
+              AND parent_task_id IN ({string.Join(", ", placeholders)})
+            ORDER BY sort_order ASC, task_id ASC
+            """;
+
+        var results = new List<WorkspaceTask>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(MapTask(reader));
+        }
+
+        return results.AsReadOnly();
+    }
+
+    private static async Task<bool> ExistsChildAsync(
+        SqliteConnection conn,
+        SqliteTransaction tx,
+        string workspaceId,
+        string taskId,
+        CancellationToken ct)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = """
+            SELECT 1 FROM workspace_tasks
+            WHERE workspace_id = @workspaceId AND parent_task_id = @taskId
+            LIMIT 1
+            """;
+        AddParam(cmd, "@workspaceId", workspaceId);
+        AddParam(cmd, "@taskId", taskId);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is not null && result is not DBNull;
+    }
+
     /// <inheritdoc />
     public async Task<bool> HardDeleteTaskAsync(string workspaceId, string taskId, CancellationToken ct = default)
     {
@@ -350,6 +468,14 @@ public sealed class SqliteWorkspaceTaskStore(
         {
             var task = await ReadTaskAsync(conn, tx, workspaceId, taskId, ct);
             if (task is null || task.Status != WorkspaceTaskStatus.Backlog)
+            {
+                await tx.CommitAsync(ct);
+                return false;
+            }
+
+            // Stage 2（D4）：禁止硬删除有子卡的任务。硬删母卡会让子卡的 parent_task_id 悬空，
+            // 破坏「母子层级」这一持久化事实；force 语义只到 cancel/archive 级联，绝不到硬删。
+            if (await ExistsChildAsync(conn, tx, workspaceId, taskId, ct))
             {
                 await tx.CommitAsync(ct);
                 return false;

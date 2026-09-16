@@ -126,10 +126,19 @@ public class ExternalTaskController(
             }
         }
 
+        // Stage 2（D1/D5）：挂父校验先于创建（失败不留孤儿卡）；错误码走既有 wire 映射（404/422）。
+        var parentRejection = await ValidateParentAssignmentAsync(workspaceId, request.ParentTaskId, ct);
+        if (parentRejection is not null)
+        {
+            await ReleaseIdempotencyAsync(gate.Key);
+            return ToError(parentRejection);
+        }
+
         try
         {
             var created = await store.CreateTaskAsync(new CreateTaskRequest
             {
+
                 WorkspaceId = workspaceId,
                 Title = request.Title,
                 Description = request.Description,
@@ -150,6 +159,13 @@ public class ExternalTaskController(
                 CreatedBy = ActorId,
                 UpdatedBy = ActorId,
             }, ct);
+
+            // Stage 2：父关系走专用原语（只改 parent_task_id，version+1，D3：不碰 Status）。
+            if (!string.IsNullOrWhiteSpace(request.ParentTaskId))
+            {
+                created = await store.SetParentTaskIdAsync(
+                    created.TaskId, request.ParentTaskId, created.Version, ActorId, ct);
+            }
 
             await idempotency.CompleteAsync(TokenId, "POST", CanonicalRoute, gate.Key!, 201, created.TaskId, ct);
             Response.Headers.ETag = ETag(created.Version);
@@ -180,6 +196,17 @@ public class ExternalTaskController(
         if (!TryParseIfMatch(out var expectedVersion, out var parseError))
             return parseError!;
 
+        // Stage 2（D1/D5）：父关系写入前先校验（父存在 + 单层），并保证 clear/set 互斥。
+        if (request.ClearParent && !string.IsNullOrWhiteSpace(request.ParentTaskId))
+            return InvalidRequest("clear_parent 与 parent_task_id 互斥。");
+
+        if (!request.ClearParent)
+        {
+            var parentRejection = await ValidateParentAssignmentAsync(workspaceId, request.ParentTaskId, ct);
+            if (parentRejection is not null)
+                return ToError(parentRejection);
+        }
+
         try
         {
             var updated = await commands.PatchAsync(
@@ -208,6 +235,17 @@ public class ExternalTaskController(
                 requiredModelId: request.RequiredModelId,
                 allowAgentFallback: request.AllowAgentFallback,
                 autoDispatchEnabled: request.AutoDispatchEnabled);
+
+            // Stage 2：父关系是独立写路径——只改 parent_task_id（D3：绝不派生/改母卡 Status）。
+            if (request.ClearParent)
+            {
+                updated = await store.SetParentTaskIdAsync(taskId, null, updated.Version, ActorId, ct);
+            }
+            else if (!string.IsNullOrWhiteSpace(request.ParentTaskId))
+            {
+                updated = await store.SetParentTaskIdAsync(
+                    taskId, request.ParentTaskId, updated.Version, ActorId, ct);
+            }
 
             Response.Headers.ETag = ETag(updated.Version);
             return Ok(ToDto(updated));
@@ -514,6 +552,38 @@ public class ExternalTaskController(
             ? null
             : TaskWireMaps.BoardColumnToStatuses(TaskWireMaps.BoardColumnFromString(boardColumn));
 
+    /// <summary>
+    /// Stage 2（D1/D5）：外部写入前的挂父校验（父存在 + 单层），返回 null = 合法。
+    /// 与 <see cref="TaskHierarchyRules.ValidateParentAssignment"/> 同口径，不另造规则；
+    /// 失败以 <see cref="TaskStoreException"/> 经 ToError 统一映射为既有 wire 错误码。
+    /// </summary>
+    private async Task<TaskStoreException?> ValidateParentAssignmentAsync(
+        string workspaceId,
+        string? parentTaskId,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(parentTaskId))
+        {
+            return null;
+        }
+
+        var parent = await store.GetTaskAsync(workspaceId, parentTaskId, ct);
+        if (parent is null)
+        {
+            return new TaskStoreException(
+                TaskErrorCode.TaskParentNotFound,
+                $"Parent task '{parentTaskId}' not found.",
+                parentTaskId);
+        }
+
+        return string.IsNullOrEmpty(parent.ParentTaskId)
+            ? null
+            : new TaskStoreException(
+                TaskErrorCode.TaskHierarchyInvalid,
+                $"Parent '{parentTaskId}' already has a parent (single-level hierarchy only).",
+                parentTaskId);
+    }
+
     private static ExternalTaskDto ToDto(WorkspaceTask t) => new()
     {
         TaskId = t.TaskId,
@@ -550,6 +620,8 @@ public class ExternalTaskController(
         FailureCode = t.FailureCode,
         FailureReason = t.FailureReason,
         Origin = t.Origin.HasValue ? TaskWireMaps.OriginToString(t.Origin.Value) : null,
+        // Stage 2（D5）：父任务 ID 只读暴露（新增可空字段，向后兼容）。
+        ParentTaskId = t.ParentTaskId,
         Version = t.Version,
         CreatedBy = t.CreatedBy,
         UpdatedBy = t.UpdatedBy,

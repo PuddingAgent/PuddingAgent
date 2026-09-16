@@ -248,6 +248,39 @@ public sealed class AgentAvailabilityProjectionStoreTests
     }
 
     [TestMethod]
+    public async Task ContainerTask_WithActiveBinding_DoesNotOccupyAgentCapacity()
+    {
+        // Stage 2（D2）：容器母卡不是可执行工位，不得虚占 Agent 并发容量。
+        await SeedTaskWithActiveBindingAsync("task-parent", WorkspaceTaskStatus.InProgress);
+        await using (var db = await _factory.CreateDbContextAsync())
+        {
+            db.WorkspaceTasks.Add(new WorkspaceTaskEntity
+            {
+                TaskId = "task-child",
+                WorkspaceId = "ws",
+                Title = "child",
+                Status = WorkspaceTaskStatus.Backlog,
+                Priority = TaskPriority.P3,
+                ExecutionWindow = TaskExecutionWindow.Anytime,
+                SortOrder = 0,
+                Version = 1,
+                ParentTaskId = "task-parent",
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var now = DateTimeOffset.Parse("2026-08-26T00:00:00Z");
+        var snapshot = await CreateStore([Agent("agent-1", "conv-1")], now)
+            .RebuildAsync("ws", "agent-1");
+
+        Assert.AreEqual(AgentAvailabilityState.Idle, snapshot.State);
+        Assert.AreEqual("idle_confirmed", snapshot.ReasonCode);
+        Assert.IsNull(snapshot.ActiveTaskId);
+    }
+
+    [TestMethod]
     public async Task PendingUserTurn_TakesPriorityOverAutomaticWork()
     {
         await using (var db = await _factory.CreateDbContextAsync())

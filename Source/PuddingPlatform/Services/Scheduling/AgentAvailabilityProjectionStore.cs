@@ -171,6 +171,9 @@ public sealed class AgentAvailabilityProjectionStore(
                     && task.Status != WorkspaceTaskStatus.Failed
                     && task.Status != WorkspaceTaskStatus.Cancelled
                     && task.Status != WorkspaceTaskStatus.Archived
+                    // Stage 2（D2）：容器母卡不是可执行工位，不得虚占 Agent 并发容量额度。
+                    && !db.WorkspaceTasks.Any(child => child.WorkspaceId == task.WorkspaceId
+                        && child.ParentTaskId == task.TaskId)
                 orderby tie.BindingId
                 select tie)
             .FirstOrDefaultAsync(ct);
@@ -193,6 +196,9 @@ public sealed class AgentAvailabilityProjectionStore(
                     && task.Status != WorkspaceTaskStatus.Failed
                     && task.Status != WorkspaceTaskStatus.Cancelled
                     && task.Status != WorkspaceTaskStatus.Archived
+                    // Stage 2（D2）：同上，容器母卡不占并发容量。
+                    && !db.WorkspaceTasks.Any(child => child.WorkspaceId == task.WorkspaceId
+                        && child.ParentTaskId == task.TaskId)
                 orderby attempt.AttemptNumber, attempt.AttemptId
                 select attempt)
             .FirstOrDefaultAsync(ct);

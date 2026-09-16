@@ -195,6 +195,11 @@ public sealed class TaskAutoDispatchEvaluator(
                 WHERE workspace_id = {workspaceId}
                   AND status IN ({(int)WorkspaceTaskStatus.Ready}, {(int)WorkspaceTaskStatus.Deferred})
                   AND auto_dispatch_enabled = 1
+                  -- Stage 2（D2）：容器母卡不得进入派发候选（即使 opt-in 也不派发）。
+                  AND NOT EXISTS (SELECT 1 FROM workspace_tasks child
+                                  WHERE child.workspace_id = workspace_tasks.workspace_id
+                                    AND child.parent_task_id = workspace_tasks.task_id)
+
                 ORDER BY priority ASC,
                          CASE WHEN due_at_utc IS NULL THEN 1 ELSE 0 END ASC,
                          julianday(due_at_utc) ASC,
@@ -236,7 +241,10 @@ public sealed class TaskAutoDispatchEvaluator(
                              && distinctIds.Contains(entity.TaskId)
                              && (entity.Status == WorkspaceTaskStatus.Ready
                                  || entity.Status == WorkspaceTaskStatus.Deferred)
-                             && entity.AutoDispatchEnabled)
+                             && entity.AutoDispatchEnabled
+                             // Stage 2（D2）：容器母卡不得进入派发候选（与工作区扫描 SQL 同口径）。
+                             && !db.WorkspaceTasks.Any(child => child.WorkspaceId == entity.WorkspaceId
+                                 && child.ParentTaskId == entity.TaskId))
             .ToListAsync(ct);
         // 与工作区扫描 SQL 的排序保持一致（priority ASC → due 空值靠后 → not_before 空值靠后
         // → created → sort_order → task_id），保证 candidateLimit 截断的确定性。

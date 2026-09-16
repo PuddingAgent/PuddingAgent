@@ -30,7 +30,10 @@ public sealed class TaskBacklogRefinementEvaluator(
         var tasks = await db.WorkspaceTasks
             .Where(task => task.WorkspaceId == workspaceId
                 && task.Status == WorkspaceTaskStatus.Backlog
-                && task.AutoDispatchEnabled)
+                && task.AutoDispatchEnabled
+                // Stage 2（D2）：容器母卡不得进入精炼派发候选。
+                && !db.WorkspaceTasks.Any(child => child.WorkspaceId == task.WorkspaceId
+                    && child.ParentTaskId == task.TaskId))
             .OrderBy(task => task.Priority)
             .ThenBy(task => task.SortOrder)
             .ThenBy(task => task.TaskId)

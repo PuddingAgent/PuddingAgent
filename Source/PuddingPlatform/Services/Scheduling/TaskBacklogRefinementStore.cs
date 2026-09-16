@@ -47,6 +47,15 @@ public sealed class TaskBacklogRefinementStore(
             || string.Equals(task.TaskType, "general", StringComparison.OrdinalIgnoreCase))
             return await RejectAsync(tx, TaskBacklogPromotionCodes.NotReady, task.Version, ct);
 
+        // Stage 2（D2）：容器母卡不得被精炼晋升——晋升后会被自动派发，而母卡是容器。
+        // fail-closed 拒绝（NotReady），不写入、不报错。
+        var isContainer = await db.WorkspaceTasks
+            .AsNoTracking()
+            .AnyAsync(child => child.WorkspaceId == command.WorkspaceId
+                && child.ParentTaskId == task.TaskId, ct);
+        if (isContainer)
+            return await RejectAsync(tx, TaskBacklogPromotionCodes.NotReady, task.Version, ct);
+
         _options.TaskTypeRoutes.TryGetValue(task.TaskType, out var typeRoute);
         var route = TaskAgentRouteMatcher.Evaluate(task, agent, typeRoute);
         if (!route.Compatible

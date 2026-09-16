@@ -60,6 +60,14 @@ public sealed record TaskAdminCreateRequest
     /// <summary>wire 任务来源（task.manual/task.auto/automation.schedule），默认 task.manual。</summary>
     public string? Origin { get; init; }
 
+    /// <summary>
+    /// Stage 2（D1/D5）：可选父任务 ID（母卡）。
+    /// 仅管理者（manage_tasks）可写；服务层用 <see cref="TaskHierarchyRules.ValidateParentAssignment"/>
+    /// 校验（父存在、非自身、单层），失败返回 task.parent_not_found / task.hierarchy_invalid，不抛异常。
+    /// 挂父<b>不会</b>改动任何 Status / BoardColumn（D3）。
+    /// </summary>
+    public string? ParentTaskId { get; init; }
+
     /// <summary>操作者（写入 CreatedBy/UpdatedBy）。</summary>
     public string? ActorId { get; init; }
 }
@@ -86,6 +94,18 @@ public sealed record TaskAdminListQuery
 
     /// <summary>keyset 游标（<c>{sortOrder}|{taskId}</c>）。</summary>
     public string? Cursor { get; init; }
+
+    /// <summary>
+    /// Stage 2（D2/D5）：children_of —— 只列出 <paramref name="ParentTaskId"/>（母卡）的直接子卡。
+    /// 非 null 时按父过滤；仍受 status / board_column / priority 过滤与 keyset 分页约束。
+    /// </summary>
+    public string? ParentTaskId { get; init; }
+
+    /// <summary>
+    /// Stage 2（D3）：是否附带<b>只读</b>子卡聚合摘要（IsContainer / ChildCount / CompletedChildCount）。
+    /// 默认 false（保持既有 wire 向后兼容）；附带时只是读投影，绝<strong>不</strong>回写母卡 Status。
+    /// </summary>
+    public bool IncludeChildSummary { get; init; }
 }
 
 public sealed record TaskAdminListItem
@@ -111,6 +131,21 @@ public sealed record TaskAdminListItem
     public DateTimeOffset? DueAtUtc { get; init; }
     public required DateTimeOffset UpdatedAtUtc { get; init; }
     public required int Version { get; init; }
+
+    /// <summary>Stage 2（D5）：父任务 ID（只读）；顶层任务为 null。</summary>
+    public string? ParentTaskId { get; init; }
+
+    /// <summary>
+    /// Stage 2（D2）：是否为容器（存在直接子卡）。只读投影：容器不可 claim / 不可自动派发 /
+    /// 不可 goal_start，但母卡 Status <b>不</b>因子卡派生（D3）。
+    /// </summary>
+    public bool IsContainer { get; init; }
+
+    /// <summary>Stage 2（D3 只读聚合）：直接子卡总数；未请求摘要时为 null。</summary>
+    public int? ChildCount { get; init; }
+
+    /// <summary>Stage 2（D3 只读聚合）：终态子卡数（Completed/Failed/Cancelled/Archived）；未请求摘要时为 null。</summary>
+    public int? CompletedChildCount { get; init; }
 }
 
 public sealed record TaskAdminListResult
@@ -161,6 +196,18 @@ public sealed record TaskAdminUpdateRequest
     public DateTimeOffset? DueAtUtc { get; init; }
     public long? SortOrder { get; init; }
 
+    /// <summary>
+    /// Stage 2（D1/D5）：设置父任务 ID。
+    /// 与 <see cref="ClearParent"/> 互斥；两者都不传 == 不变更父关系（与「传空串」语义区分开）。
+    /// </summary>
+    public string? ParentTaskId { get; init; }
+
+    /// <summary>
+    /// Stage 2：显式清除父关系（置 null，脱挂为顶层任务）。
+    /// 「不传参数 = 不变更」 vs 「clear_parent = true = 显式清空」必须泾渭分明。
+    /// </summary>
+    public bool ClearParent { get; init; }
+
     /// <summary>操作者（写入 UpdatedBy）。</summary>
     public string? ActorId { get; init; }
 }
@@ -185,6 +232,13 @@ public sealed record TaskAdminCommandRequest
 
     /// <summary>cancel/reopen/archive/mark_failed/resume/requeue 可选原因。</summary>
     public string? Reason { get; init; }
+
+    /// <summary>
+    /// Stage 2（D4）：archive/cancel 在存在未终态子卡时默认 fail-closed 拒绝
+    /// （task.has_non_terminal_children）；<see cref="Force"/> = true 时显式级联——
+    /// 先把未终态子卡走 cancel，再归档/取消母卡。级联<b>禁止硬删除</b>。
+    /// </summary>
+    public bool Force { get; init; }
 
     /// <summary>操作者（写入 UpdatedBy）。</summary>
     public string? ActorId { get; init; }

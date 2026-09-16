@@ -80,6 +80,18 @@ public sealed class TaskGoalLaunchService(
                     $"任务当前状态 {task.Status} 不可发起 Goal（仅 Backlog/Ready 可发起）。", task.Version);
             }
 
+            // §5-3b（Stage 2 / D2）：容器母卡拒绝——有子卡的任务是容器，不可进入 Goal 执行。
+            // 复用 task_not_dispatchable 稳定 wire code（同一语义：不可派发），失败路径不产生任何写入。
+            var hasChildren = await db.WorkspaceTasks
+                .AsNoTracking()
+                .AnyAsync(item => item.WorkspaceId == request.WorkspaceId
+                    && item.ParentTaskId == request.TaskId, ct);
+            if (hasChildren)
+            {
+                return Refuse(TaskGoalLaunchCodes.TaskNotDispatchable,
+                    $"任务 '{request.TaskId}' 是容器（已有子卡），不可在母卡上发起 Goal。", task.Version);
+            }
+
             // §5-4：授权——ActiveAssignmentId 为空，或该 assignment 属于自己。
             // attempt 缺失/已释放 ⇒ 无法确认归属，fail-closed 拒绝（同码）。
             if (task.ActiveAssignmentId is not null)

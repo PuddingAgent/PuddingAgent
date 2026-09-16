@@ -38,6 +38,13 @@ public sealed class ExternalTaskDto
     public string? FailureCode { get; set; }
     public string? FailureReason { get; set; }
     public string? Origin { get; set; }
+
+    /// <summary>
+    /// Stage 2（D1/D5，新增可空字段）：父任务 ID。既有客户端不读该字段不受影响（向后兼容）；
+    /// 父子关系只读，写入仅经 create / PATCH 的 parent_task_id。
+    /// </summary>
+    public string? ParentTaskId { get; set; }
+
     public int Version { get; set; }
     public string? CreatedBy { get; set; }
     public string? UpdatedBy { get; set; }
@@ -71,6 +78,9 @@ public sealed class ExternalCreateTaskRequest
     public DateTimeOffset? NotBeforeUtc { get; set; }
     public DateTimeOffset? DueAtUtc { get; set; }
     public long? SortOrder { get; set; }
+
+    /// <summary>Stage 2（D1，向后兼容新增）：可选父任务 ID（母卡）；不传 = 顶层任务。</summary>
+    public string? ParentTaskId { get; set; }
 }
 
 /// <summary>PATCH 只允许元数据；状态迁移必须走 commands 端点；版本走 If-Match（不收 body expectedVersion）。</summary>
@@ -91,6 +101,12 @@ public sealed class ExternalPatchTaskRequest
     public DateTimeOffset? NotBeforeUtc { get; set; }
     public DateTimeOffset? DueAtUtc { get; set; }
     public long? SortOrder { get; set; }
+
+    /// <summary>Stage 2（向后兼容新增）：设置/改挂父任务 ID（单层）。</summary>
+    public string? ParentTaskId { get; set; }
+
+    /// <summary>Stage 2：显式清除父关系（脱挂为顶层）；与 parent_task_id 互斥。</summary>
+    public bool ClearParent { get; set; }
 }
 
 public sealed class ExternalTaskCommentDto

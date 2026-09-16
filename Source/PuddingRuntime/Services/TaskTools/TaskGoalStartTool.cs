@@ -10,13 +10,14 @@ namespace PuddingRuntime.Services.TaskTools;
 /// <para>
 /// 薄适配器：身份（workspace/agent/session）一律取自运行时上下文，绝不作为工具参数暴露；
 /// 拒绝路径透传 <see cref="TaskGoalLaunchCodes"/> 稳定 wire code（结构化失败、不抛异常）；
+/// 容器母卡（已有子卡）由服务层 fail-closed 拒结（task_not_dispatchable，Stage 2 / D2）。
 /// 启动路径 reservation_id / task_plan_id 上游不透出，诚实留空、不伪造（契约 §4）。
 /// </para>
 /// </summary>
 [Tool(
     id: "task_goal_start",
     name: "以 Goal 模式启动任务",
-    description: "以 Goal 模式启动指定看板卡（单卡派发，复用 canonical 调度链）。【何时用】Agent 自主把一张 Backlog/Ready 卡转入 Goal 迭代执行时使用。【怎么用】task_id 必填；expected_version 可选 CAS（不符返回 task.version_conflict）；iteration_budget 可选请求迭代预算（服务端取 min(请求, 配置上限)，不得抬高，提供时必须 ≥ 1）；reason 可选，写入结果与审计。【坑】workspace/agent/session 身份由运行时上下文注入、不作为参数；同一卡已有活跃 Goal 绑定时幂等返回 already_running 与既有 goal_run_id；拒绝（task.not_found / task_held_by_other_agent / scheduler_disabled / task_not_dispatchable 等）返回结构化失败 code 而非异常；启动路径 reservation_id/task_plan_id 不可得（诚实留空）。",
+    description: "以 Goal 模式启动指定看板卡（单卡派发，复用 canonical 调度链）。【何时用】Agent 自主把一张 Backlog/Ready 卡转入 Goal 迭代执行时使用。【怎么用】task_id 必填；expected_version 可选 CAS（不符返回 task.version_conflict）；iteration_budget 可选请求迭代预算（服务端取 min(请求, 配置上限)，不得抬高，提供时必须 ≥ 1）；reason 可选，写入结果与审计。【坑】workspace/agent/session 身份由运行时上下文注入、不作为参数；同一卡已有活跃 Goal 绑定时幂等返回 already_running 与既有 goal_run_id；容器母卡（已有子卡）一律拒结并返回 task_not_dispatchable（Stage 2 / D2：母卡是容器，不可在母卡上启动 Goal）；拒绝（task.not_found / task_held_by_other_agent / scheduler_disabled / task_not_dispatchable 等）返回结构化失败 code 而非异常；启动路径 reservation_id/task_plan_id 不可得（诚实留空）。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low)]
     // 2026-08-28 裁定：task 看板元数据（用户原则：仅直接损坏/泄露用户数据需门禁）
