@@ -946,6 +946,8 @@ public sealed class GoalSettlementStore(
                 Verdict = GoalVerificationVerdict.Blocked,
                 Reason = "No WorkUnit is running; the remaining required WorkUnits are waiting for their dependencies (or for a legal plan revision that removes/replaces them).",
                 EvidenceRefs = candidate.EvidenceRefs,
+                // T5：保留 verifier 从真实检查报告得出的未满足清单——gate 换裁决不得丢弃真实证据。
+                UnmetCriteria = decision.UnmetCriteria,
                 NextAction = plan.Next.Objective,
                 BlockerCode = "dependency_wait",
                 BlockerMessage = "The bound execution plan has no running WorkUnit and no claimable WorkUnit node.",

@@ -21,6 +21,11 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
         var criteria = capsule.Criteria;
         var evidence = GoalCheckEvidencePolicy.Evaluate(capsule.Checks, capsule.CheckReports);
         var results = evidence.ToCriterionResults();
+
+        // T5：未满足清单只从真实证据收集（归一后的受控检查报告 + 合同必需条件差集）；
+        // 只填充数据，不参与任何判定分支（verdict 的选择保持原样）。
+        var unmetCriteria = BuildUnmetCriteria(criteria, evidence);
+
         var probe = new GoalVerificationDecision
         {
             Verdict = GoalVerificationVerdict.Continue,
@@ -79,6 +84,7 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 capsule) with
             {
                 NextAction = "Declare the versioned check definitions (kind, definition hash, input refs/fingerprint, expected test count) for the existing required criteria.",
+                UnmetCriteria = unmetCriteria,
             };
         }
         else if (evidence.HasFailedChecks())
@@ -91,6 +97,7 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 capsule) with
             {
                 NextAction = "Fix the failing check in the current WorkUnit and re-run the same checks.",
+                UnmetCriteria = unmetCriteria,
             };
         }
         else if (evidence.HasPendingChecks())
@@ -99,7 +106,10 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
             decision = Blocked(
                 "check_results_pending",
                 "Declared verification checks have not produced results yet; wait for the check facts instead of completing.",
-                capsule);
+                capsule) with
+            {
+                UnmetCriteria = unmetCriteria,
+            };
         }
         else if (string.Equals(capsule.TaskStatus, "Blocked", StringComparison.OrdinalIgnoreCase)
                  || string.Equals(capsule.TaskStatus, "NeedsReview", StringComparison.OrdinalIgnoreCase))
@@ -142,6 +152,7 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 NextAction = "Run the goal-scope verification for the required criteria (same contract version), then re-settle so the goal can complete atomically.",
                 BlockerCode = "acceptance_not_verified",
                 BlockerMessage = "Goal-scope required criteria have no passing verification result yet.",
+                UnmetCriteria = unmetCriteria,
             };
         }
         else if (allRequiredPassed)
@@ -168,6 +179,7 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 NextAction = "Produce the missing verification evidence for the required criteria in the current WorkUnit.",
                 BlockerCode = "acceptance_not_verified",
                 BlockerMessage = "Required criteria have no passing verification result yet.",
+                UnmetCriteria = unmetCriteria,
             };
         }
 
@@ -176,6 +188,41 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
             Criteria = criteria,
             CriterionResults = results,
         });
+    }
+
+    /// <summary>
+    /// 从真实证据收集未满足清单（只读、纯函数、不参与判定）：
+    /// ① 优先取本轮归一后的受控检查报告中一切非 passed 的结果（含 failed/waiting/pending/invalidated），
+    ///    每项形如 "&lt;criterionId&gt;: &lt;failureCode&gt; - &lt;message&gt;"，可追溯到具体检查报告；
+    /// ② 其次取合同必需条件与已覆盖集合之差——声明了必需条件却没有版本化检查定义覆盖。
+    /// 顺序跟随声明过的检查定义与合同条件顺序，稳定可复现；无未满足项时保持空列表（不是 null）。
+    /// </summary>
+    private static IReadOnlyList<string> BuildUnmetCriteria(
+        IReadOnlyList<GoalCriterion> criteria,
+        IReadOnlyList<GoalCheckReport> evidence)
+    {
+        List<string> unmet = [];
+        var covered = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var report in evidence)
+        {
+            covered.Add(report.CriterionId);
+            if (string.Equals(report.Status, GoalCriterionResultStatuses.Passed, StringComparison.Ordinal))
+                continue;
+
+            var code = string.IsNullOrWhiteSpace(report.FailureCode) ? report.Status : report.FailureCode!;
+            var message = string.IsNullOrWhiteSpace(report.Message) ? report.Status : report.Message!;
+            unmet.Add($"{report.CriterionId}: {code} - {message}");
+        }
+
+        foreach (var criterion in criteria)
+        {
+            // covered.Add 返回 false 说明该必需条件已有检查报告覆盖（其结果已在上面逐报告列出）。
+            if (criterion.Required && covered.Add(criterion.Id))
+                unmet.Add($"{criterion.Id}: check_not_declared - Required criterion has no versioned check declared.");
+        }
+
+        return unmet;
     }
 
     private static GoalVerificationDecision Blocked(

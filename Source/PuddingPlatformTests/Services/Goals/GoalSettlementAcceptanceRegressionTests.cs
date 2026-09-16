@@ -280,6 +280,40 @@ public sealed class GoalSettlementAcceptanceRegressionTests
         EvidenceRefs = ["artifact:test-report"],
     };
 
+    private static GoalCheckSpec TestSpec(string criterionId) => new()
+    {
+        CheckId = $"check-{criterionId}",
+        CriterionId = criterionId,
+        CriterionRevision = 1,
+        Kind = GoalVerificationSpecKinds.Test,
+        DefinitionRef = "checks/regression.md",
+        DefinitionHash = "hash-1",
+        InputRefs = ["Source"],
+        InputFingerprint = "fp-check",
+        ExpectedTestCount = 2,
+    };
+
+    private static GoalCheckReport FailedCheckReport(string criterionId, string failureCode, string message) => new()
+    {
+        CheckId = $"check-{criterionId}",
+        CriterionId = criterionId,
+        CriterionRevision = 1,
+        Status = GoalCriterionResultStatuses.Failed,
+        EvidenceRefs = ["check:goal-check:report:artifact-7"],
+        InputFingerprint = "fp-check",
+        DefinitionHash = "hash-1",
+        RunnerId = "goal-check-runner",
+        InvocationId = "invocation-7",
+        ReportRef = "artifact://goal-check-report-7",
+        ExitCode = 1,
+        ExecutedTestCount = 2,
+        PassedTestCount = 0,
+        FailedTestCount = 2,
+        HasUnfinishedBackgroundProcess = false,
+        FailureCode = failureCode,
+        Message = message,
+    };
+
     /// <summary>一轮 completed 但只交付计划/部分代码：没有任何条件结果。</summary>
     private static GoalVerificationDecision PlannedOnlyDecision(GoalVerificationVerdict verdict)
         => new()
@@ -300,6 +334,59 @@ public sealed class GoalSettlementAcceptanceRegressionTests
             Criteria = [Criterion("build"), Criterion("test")],
             CriterionResults = [Passed("build"), Passed("test")],
         };
+
+    /// <summary>
+    /// T5 端到端：生产 verifier 从真实失败报告导出 UnmetCriteria（不再是恒 [] 的死字段），
+    /// 生产结算事务把它原样落库到 goal_verifications.unmet_criteria_json；gate 与序列化不得丢弃/改写。
+    /// </summary>
+    [TestMethod]
+    public async Task Settlement_PersistsVerifierUnmetCriteriaJson_NotEmptyAndTraceable()
+    {
+        var (db, store, connection) = await CreateAsync();
+        await using var _ = db;
+        await using var __ = connection;
+        await SeedBoundPlanAsync(db, withNextUnit: false);
+
+        var verifier = new ConservativeGoalIterationVerifier();
+        var proposed = await verifier.VerifyAsync(new GoalEvidenceCapsule
+        {
+            GoalRunId = GoalId,
+            ActivationEpoch = 1,
+            AggregateVersion = 0,
+            IterationNo = 1,
+            Objective = "修复全部失败测试并证明普通开发任务可继续执行",
+            ObjectiveVersion = 1,
+            RemainingIterations = 10,
+            TurnId = TurnId,
+            TerminalKind = "completed",
+            TerminalSequence = TerminalSequence,
+            EvidenceRefs = ["turn:turn-1:terminal:7"],
+            TaskId = TaskId,
+            TaskStatus = WorkspaceTaskStatus.InProgress.ToString(),
+            HasPendingExecutionFacts = false,
+            EvidenceComplete = true,
+            Criteria = [Criterion("build"), Criterion("test")],
+            Checks = [TestSpec("build"), TestSpec("test")],
+            CheckReports =
+            [
+                FailedCheckReport("build", "non_zero_exit_code", "dotnet build exited with code 1."),
+            ],
+        });
+
+        Assert.AreEqual("criterion_failed", proposed.BlockerCode);
+        // 两条都来自真实证据：① build 的失败报告；② 归一化后 test 检查无报告（check_not_run）。
+        Assert.AreEqual(2, proposed.UnmetCriteria.Count);
+
+        var applied = await store.ApplyAsync(Candidate(), proposed, CancellationToken.None);
+
+        Assert.IsTrue(applied);
+        var verification = await db.GoalVerifications.AsNoTracking().SingleAsync(
+            item => item.VerificationId == $"gv-{GoalId}-1-1");
+        Assert.AreNotEqual("[]", verification.UnmetCriteriaJson);
+        StringAssert.Contains(verification.UnmetCriteriaJson, "build: non_zero_exit_code");
+        StringAssert.Contains(verification.UnmetCriteriaJson, "dotnet build exited with code 1.");
+        StringAssert.Contains(verification.UnmetCriteriaJson, "test: check_not_run");
+    }
 
     [TestMethod]
     public async Task CompletedTurn_WithoutVerifiedCriteria_DoesNotAdvanceWorkUnit()

@@ -56,7 +56,9 @@ public sealed class ConservativeGoalIterationVerifierTests
         int? passed = 12,
         int? failed = 0,
         bool? unfinishedBackgroundProcess = false,
-        IReadOnlyList<string>? evidence = null) => new()
+        IReadOnlyList<string>? evidence = null,
+        string? failureCode = null,
+        string? message = null) => new()
     {
         CheckId = $"check-{criterionId}",
         CriterionId = criterionId,
@@ -73,6 +75,8 @@ public sealed class ConservativeGoalIterationVerifierTests
         PassedTestCount = passed,
         FailedTestCount = failed,
         HasUnfinishedBackgroundProcess = unfinishedBackgroundProcess,
+        FailureCode = failureCode,
+        Message = message,
     };
 
     private static GoalEvidenceCapsule Capsule(
@@ -427,5 +431,129 @@ public sealed class ConservativeGoalIterationVerifierTests
         Assert.AreEqual(GoalVerificationVerdict.Blocked, decision.Verdict);
         Assert.AreEqual("evidence_incomplete", decision.BlockerCode);
         Assert.AreNotEqual(GoalVerificationVerdict.Complete, decision.Verdict);
+    }
+
+    // ── T5：UnmetCriteria 必须从真实证据填充（此前是恒 [] 的死字段，裁决说不出哪条条件没满足）──
+
+    [TestMethod]
+    public async Task FailedCheck_FillsUnmetCriteria_TraceableToReport()
+    {
+        var verifier = new ConservativeGoalIterationVerifier();
+
+        var decision = await verifier.VerifyAsync(Capsule(
+            criteria: RequiredCriteria,
+            checks: RequiredChecks,
+            reports:
+            [
+                Report(
+                    "build", GoalVerificationSpecKinds.Build,
+                    status: GoalCriterionResultStatuses.Failed,
+                    exitCode: 1,
+                    executed: null, passed: null, failed: null,
+                    failureCode: "non_zero_exit_code",
+                    message: "dotnet build exited with code 1."),
+                Report("test"),
+            ]));
+
+        Assert.AreEqual("criterion_failed", decision.BlockerCode);
+        Assert.AreEqual(1, decision.UnmetCriteria.Count);
+        StringAssert.Contains(decision.UnmetCriteria[0], "build: non_zero_exit_code");
+        StringAssert.Contains(decision.UnmetCriteria[0], "dotnet build exited with code 1.");
+    }
+
+    [TestMethod]
+    public async Task WaitingCheck_FillsUnmetCriteria_WaitFamily()
+    {
+        var verifier = new ConservativeGoalIterationVerifier();
+
+        var decision = await verifier.VerifyAsync(Capsule(
+            criteria: RequiredCriteria,
+            checks: RequiredChecks,
+            reports:
+            [
+                Report("build", GoalVerificationSpecKinds.Build, executed: null, passed: null, failed: null),
+                Report(
+                    "test",
+                    status: GoalCriterionResultStatuses.Waiting,
+                    failureCode: "check_timeout",
+                    message: "The check did not finish before its deadline."),
+            ]));
+
+        // 检查超时/等待也是「未通过」：清单必须来自真实报告，且处置保持等待族而非失败族。
+        Assert.AreEqual("check_results_pending", decision.BlockerCode);
+        Assert.AreEqual(1, decision.UnmetCriteria.Count);
+        StringAssert.Contains(decision.UnmetCriteria[0], "test: check_timeout");
+        StringAssert.Contains(decision.UnmetCriteria[0], "The check did not finish before its deadline.");
+        Assert.AreEqual(
+            GoalSettlementDispositions.Wait,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
+    }
+
+    [TestMethod]
+    public async Task AllChecksPassed_UnmetCriteriaStaysEmptyList()
+    {
+        var verifier = new ConservativeGoalIterationVerifier();
+
+        var decision = await verifier.VerifyAsync(Capsule(
+            taskStatus: "Completed",
+            remainingWorkUnits: 0,
+            criteria: RequiredCriteria,
+            checks: RequiredChecks,
+            reports: CleanReports));
+
+        Assert.AreEqual(GoalVerificationVerdict.Complete, decision.Verdict);
+        Assert.IsNotNull(decision.UnmetCriteria);
+        Assert.IsTrue(decision.UnmetCriteria.Count == 0, "unmet criteria must stay an empty list, never null or placeholder");
+    }
+
+    [TestMethod]
+    public async Task MultipleFailedChecks_EveryFailureListedInStableCheckOrder()
+    {
+        var verifier = new ConservativeGoalIterationVerifier();
+
+        // 报告故意按 test→build 顺序给出：清单顺序必须跟随声明的检查定义（build→test），稳定可复现。
+        var decision = await verifier.VerifyAsync(Capsule(
+            criteria: RequiredCriteria,
+            checks: RequiredChecks,
+            reports:
+            [
+                Report(
+                    "test",
+                    status: GoalCriterionResultStatuses.Failed,
+                    exitCode: 1,
+                    failureCode: "tests_failed",
+                    message: "2 of 12 test cases failed."),
+                Report(
+                    "build", GoalVerificationSpecKinds.Build,
+                    status: GoalCriterionResultStatuses.Failed,
+                    exitCode: 1,
+                    executed: null, passed: null, failed: null,
+                    failureCode: "non_zero_exit_code",
+                    message: "build exited with code 1."),
+            ]));
+
+        Assert.AreEqual("criterion_failed", decision.BlockerCode);
+        Assert.AreEqual(2, decision.UnmetCriteria.Count);
+        StringAssert.StartsWith(decision.UnmetCriteria[0], "build: non_zero_exit_code");
+        StringAssert.StartsWith(decision.UnmetCriteria[1], "test: tests_failed");
+    }
+
+    [TestMethod]
+    public async Task RequiredCriterionWithoutDeclaredCheck_AppearsInUnmetCriteria()
+    {
+        var verifier = new ConservativeGoalIterationVerifier();
+        var criteria = new[] { Criterion("build"), Criterion("test"), Criterion("artifact-present") };
+        var checks = new[] { RequiredChecks[0], RequiredChecks[1] };
+
+        var decision = await verifier.VerifyAsync(Capsule(
+            criteria: criteria,
+            checks: checks,
+            reports: CleanReports));
+
+        // build/test 通过，但第三个必需条件没有任何版本化检查：不得 vacuous pass，且要能说出差集。
+        Assert.AreEqual(GoalVerificationVerdict.Continue, decision.Verdict);
+        Assert.AreEqual("acceptance_not_verified", decision.BlockerCode);
+        Assert.AreEqual(1, decision.UnmetCriteria.Count);
+        StringAssert.Contains(decision.UnmetCriteria[0], "artifact-present: check_not_declared");
     }
 }
