@@ -21,6 +21,9 @@ public static class GoalCheckDefinitionRegistry
     private const string BuildRef = "checks/build.md#dotnet-build";
     private const string TestRef = "checks/test.md#dotnet-test";
 
+    /// <summary>目标级文件证据定义：只读核验（存在且非空），不对应任何 shell 命令。</summary>
+    public const string FileEvidenceRef = "checks/file-evidence.md#file-exists-nonempty";
+
     private static readonly Dictionary<string, GoalCheckDefinition> Definitions =
         new(StringComparer.Ordinal)
         {
@@ -34,6 +37,11 @@ public static class GoalCheckDefinitionRegistry
                 GoalVerificationSpecKinds.Test,
                 "dotnet test {0} --no-restore --nologo",
                 RequiresTestEvidence: true),
+            [FileEvidenceRef] = new(
+                FileEvidenceRef,
+                GoalVerificationSpecKinds.FileEvidence,
+                "只读核验：文件存在且非空（File.Exists + 长度；不启动任何进程）",
+                RequiresTestEvidence: false),
         };
 
     public static IReadOnlyCollection<string> RegisteredDefinitionRefs => Definitions.Keys;
@@ -94,6 +102,14 @@ public static class GoalCheckDefinitionRegistry
             return false;
         }
 
+        // 不变量：file-evidence 是只读文件判定，永远不能被解析成 shell 命令；
+        // 它的评估必须走 GoalCheckRunner 的只读分支。
+        if (string.Equals(definition.Kind, GoalVerificationSpecKinds.FileEvidence, StringComparison.Ordinal))
+        {
+            failureCode = GoalCheckFailureCodes.UnsupportedCheckKind;
+            return false;
+        }
+
         if (spec.InputRefs.Count != 1 || string.IsNullOrWhiteSpace(spec.InputRefs[0]))
         {
             failureCode = GoalCheckFailureCodes.InputFingerprintMissing;
@@ -114,7 +130,24 @@ public static class GoalCheckDefinitionRegistry
         return true;
     }
 
+    /// <summary>命令目标安全校验：相对、无元字符、无逃逸，且必须是项目文件（行为与历史版本一致）。</summary>
     public static bool IsSafeTarget(string target)
+        => IsSafeRelativeTarget(target)
+           && Path.GetExtension(target) is ".csproj" or ".sln" or ".slnx";
+
+    /// <summary>
+    /// 文件证据目标安全校验：与 <see cref="IsSafeTarget"/> 共享同一套相对性/元字符核心检查，
+    /// 但不限制扩展名（文件证据可以是任意文档），并显式拒绝通配符与以目录分隔符结尾的目标。
+    /// 绝对路径、盘符、UNC、<c>..</c> 逃逸与 shell 元字符一律拒绝。
+    /// </summary>
+    public static bool IsSafeEvidenceFilePath(string target)
+        => IsSafeRelativeTarget(target)
+           && target.IndexOfAny(['*', '?']) < 0
+           && !target.EndsWith('/')
+           && !target.EndsWith('\\');
+
+    /// <summary>共享核心：拒绝 <c>..</c> 逃逸、绝对/盘符/UNC 路径与 shell 元字符（含空白）。</summary>
+    private static bool IsSafeRelativeTarget(string target)
     {
         if (target.Contains("..", StringComparison.Ordinal))
             return false;
@@ -122,8 +155,7 @@ public static class GoalCheckDefinitionRegistry
             return false;
         if (target.IndexOfAny([' ', '\t', '"', '\'', '&', '|', ';', '<', '>', '`', '$', '\n', '\r']) >= 0)
             return false;
-        var extension = Path.GetExtension(target);
-        return extension is ".csproj" or ".sln" or ".slnx";
+        return true;
     }
 }
 
@@ -143,4 +175,10 @@ public static class GoalCheckFailureCodes
     public const string AdmissionDenied = "check_admission_denied";
     public const string EvidenceMissing = "evidence_missing";
     public const string NoTestEvidence = "no_test_evidence";
+
+    /// <summary>文件证据缺失或为空（只读判定：File.Exists 失败，或长度为 0）——终态 failed，不是 pending。</summary>
+    public const string FileEvidenceMissing = "file_evidence_missing";
+
+    /// <summary>文件证据存在但无法读取（IO/权限错误）——终态 failed 且携带可读原因。</summary>
+    public const string FileEvidenceUnreadable = "file_evidence_unreadable";
 }

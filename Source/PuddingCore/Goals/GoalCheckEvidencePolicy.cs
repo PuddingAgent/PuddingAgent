@@ -112,7 +112,16 @@ public static class GoalCheckEvidencePolicy
         var isArtifact = string.Equals(kind, GoalVerificationSpecKinds.Artifact, StringComparison.Ordinal);
         var isSemantic = string.Equals(kind, GoalVerificationSpecKinds.Semantic, StringComparison.Ordinal);
         var isExternal = string.Equals(kind, GoalVerificationSpecKinds.External, StringComparison.Ordinal);
+        var isFileEvidence = string.Equals(kind, GoalVerificationSpecKinds.FileEvidence, StringComparison.Ordinal);
         var isExecutedKind = isBuildLike || isTest || isPostcondition || isArtifact;
+
+        // 3.5) file-evidence：证据引用必须指向文件证据（file: 前缀），而非进程/报告引用。
+        if (isFileEvidence
+            && !report.EvidenceRefs.Any(item => item.StartsWith("file:", StringComparison.Ordinal)))
+        {
+            return Downgrade(report, GoalCriterionResultStatuses.Failed, EvidenceMissing,
+                "File evidence report carries no file: evidence reference.");
+        }
 
         // 4) 必须能回溯到本次真实执行：canonical 调用引用 + 本次新生成的运行报告。
         if (isExecutedKind && string.IsNullOrWhiteSpace(report.InvocationId))
@@ -190,6 +199,11 @@ public static class GoalCheckEvidencePolicy
 
         // 8) semantic/external 由模型或外部主体裁决：只要求证据非空（已在 3 强制）。
         if (isSemantic || isExternal || isExecutedKind)
+            return report;
+
+        // 9) file-evidence：只读核验无进程调用，不需要 InvocationId/ReportRef/ExitCode；
+        // 身份/版本/新鲜度/证据引用校验已在上方完成，不落入未知 kind 拒绝。
+        if (isFileEvidence)
             return report;
 
         return Downgrade(report, GoalCriterionResultStatuses.Failed, UnsupportedCheckKind,

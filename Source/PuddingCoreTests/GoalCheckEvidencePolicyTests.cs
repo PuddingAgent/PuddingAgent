@@ -285,6 +285,46 @@ public sealed class GoalCheckEvidencePolicyTests
     }
 
     [TestMethod]
+    public void FileEvidenceReport_WithFileRef_PassesWithoutInvocationReference()
+    {
+        // file-evidence 是只读核验：无进程调用，不需要 InvocationId/ExitCode/测试计数；
+        // 但身份/版本/新鲜度校验照旧，且不落入未知 kind 兑底拒绝。
+        var result = Evaluate(
+            Spec(GoalVerificationSpecKinds.FileEvidence, expectedTests: null),
+            Report(
+                GoalVerificationSpecKinds.FileEvidence,
+                reportRef: "file:Docs/report.md",
+                invocationId: null,
+                exitCode: null,
+                executed: null,
+                passed: null,
+                failed: null,
+                evidence: ["file:Docs/report.md"]));
+
+        Assert.AreEqual(GoalCriterionResultStatuses.Passed, result.Status);
+        Assert.IsNull(result.FailureCode);
+    }
+
+    [TestMethod]
+    public void FileEvidenceReport_WithoutFileRef_Fails()
+    {
+        var result = Evaluate(
+            Spec(GoalVerificationSpecKinds.FileEvidence, expectedTests: null),
+            Report(
+                GoalVerificationSpecKinds.FileEvidence,
+                reportRef: null,
+                invocationId: null,
+                exitCode: null,
+                executed: null,
+                passed: null,
+                failed: null,
+                evidence: ["terminal-job:job-1"]));
+
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, result.Status);
+        Assert.AreEqual(GoalCheckEvidencePolicy.EvidenceMissing, result.FailureCode);
+    }
+
+    [TestMethod]
     public void UndeclaredReport_DoesNotProduceAnyResult()
     {
         var results = GoalCheckEvidencePolicy.Evaluate([], [Report()]);

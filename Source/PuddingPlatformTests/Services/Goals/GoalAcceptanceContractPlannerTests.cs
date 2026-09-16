@@ -271,9 +271,9 @@ public sealed class GoalAcceptanceContractPlannerTests
         var (connection, factory) = await GoalWritePathHarness.CreateAsync();
         await using var _ = connection;
 
-        // 无门禁配置：不安全的证据声明绝不能单独撑起合同（fail-closed 保持）。
+        // 无门禁配置：不安全的证据声明（..逃逸/绝对路径）绝不能单独撑起合同（fail-closed 保持）。
         var planner = NewPlanner(factory);
-        var objective = "证据: ..\\escape.csproj, C:/abs/abs.csproj, evidence：Source/not-a-project.txt";
+        var objective = "证据: ..\\escape.csproj, C:/abs/abs.csproj";
 
         Assert.IsFalse(await planner.EnsureContractAsync("goal-unsafev", 1, 1, "fp-unsafev", objective));
         Assert.IsNull(await new GoalAcceptanceContractStore(factory).LoadAsync("goal-unsafev", 1, 1));
@@ -299,5 +299,85 @@ public sealed class GoalAcceptanceContractPlannerTests
         // 只有通过安全校验的声明才生成目标级条件。
         Assert.AreEqual(2, objectiveCriteria.Count);
         Assert.IsTrue(objectiveCriteria.All(c => c.InputRefs.Count == 1 && string.Equals(c.InputRefs[0], Project, StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task FileEvidenceDeclaration_GeneratesReadOnlyFileEvidenceCriterion()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+
+        // 文件证据（非项目扩展名）派生只读核验的 file-evidence 条件，不产生 build/test。
+        var planner = NewPlanner(factory);
+        var objective = "输出报告；证据: Docs/report.md";
+
+        Assert.IsTrue(await planner.EnsureContractAsync("goal-filev", 1, 1, "fp-filev", objective));
+
+        var contract = await new GoalAcceptanceContractStore(factory).LoadAsync("goal-filev", 1, 1);
+        Assert.IsNotNull(contract);
+        Assert.AreEqual(GoalAcceptanceContractPlanner.SourceWithObjectiveEvidence, contract!.Source);
+
+        var criteria = GoalVerificationPersistence.ReadCriteria(contract.CriteriaJson);
+        var checks = GoalVerificationPersistence.ReadChecks(contract.ChecksJson);
+
+        Assert.AreEqual(1, criteria.Count);
+        Assert.AreEqual(1, checks.Count);
+
+        var criterion = criteria[0];
+        Assert.AreEqual($"objective-{GoalVerificationSpecKinds.FileEvidence}:Docs/report.md", criterion.Id);
+        Assert.AreEqual(GoalVerificationSpecKinds.FileEvidence, criterion.Kind);
+        Assert.AreEqual(GoalCheckDefinitionRegistry.FileEvidenceRef, criterion.DefinitionRef);
+        Assert.IsTrue(GoalCheckDefinitionRegistry.TryGetDefinitionHash(criterion.DefinitionRef, out var expectedHash));
+        Assert.AreEqual(expectedHash, criterion.DefinitionHash);
+        Assert.IsTrue(criterion.Required);
+        Assert.AreEqual(1, criterion.InputRefs.Count);
+        Assert.AreEqual("Docs/report.md", criterion.InputRefs[0]);
+
+        var check = checks[0];
+        Assert.AreEqual($"objective:{GoalVerificationSpecKinds.FileEvidence}:Docs/report.md", check.CheckId);
+        Assert.AreEqual(criterion.Id, check.CriterionId);
+        Assert.AreEqual(GoalVerificationSpecKinds.FileEvidence, check.Kind);
+        Assert.AreEqual(expectedHash, check.DefinitionHash);
+        Assert.IsNull(check.ExpectedTestCount);
+    }
+
+    [TestMethod]
+    public async Task UnsafeFileEvidenceDeclarations_StayOutOfContract()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+
+        // 绝对路径 / ..逃逸 / 盘符 / 通配符 / 尾目录分隔符：全部拒绝，合同保持空（fail-closed）。
+        var planner = NewPlanner(factory);
+        var objective = "证据: ../escape.md, C:/abs/abs.md, a*b.md, dir/, note?.txt";
+
+        Assert.IsFalse(await planner.EnsureContractAsync("goal-unsafef", 1, 1, "fp-unsafef", objective));
+        Assert.IsNull(await new GoalAcceptanceContractStore(factory).LoadAsync("goal-unsafef", 1, 1));
+    }
+
+    [TestMethod]
+    public async Task MixedProjectAndFileEvidence_ProduceBothCriterionKinds()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+
+        var planner = NewPlanner(factory, Project);
+        var objective = "证据: Source/A.csproj、Docs/summary.md";
+
+        Assert.IsTrue(await planner.EnsureContractAsync("goal-mixv", 1, 1, "fp-mixv", objective));
+
+        var contract = await new GoalAcceptanceContractStore(factory).LoadAsync("goal-mixv", 1, 1);
+        Assert.IsNotNull(contract);
+
+        var criteria = GoalVerificationPersistence.ReadCriteria(contract.CriteriaJson);
+
+        // 项目证据 → objective-build/objective-test；文件证据 → objective-file-evidence；门禁 → build/test。
+        Assert.IsTrue(criteria.Any(c => string.Equals(c.Id, "objective-build:Source/A.csproj", StringComparison.Ordinal)));
+        Assert.IsTrue(criteria.Any(c => string.Equals(c.Id, "objective-test:Source/A.csproj", StringComparison.Ordinal)));
+        Assert.IsTrue(criteria.Any(c => string.Equals(c.Id, "objective-file-evidence:Docs/summary.md", StringComparison.Ordinal)
+            && string.Equals(c.Kind, GoalVerificationSpecKinds.FileEvidence, StringComparison.Ordinal)));
+        Assert.IsTrue(criteria.Any(c => string.Equals(c.Id, "build:" + Project, StringComparison.Ordinal)));
+        Assert.IsTrue(criteria.Any(c => string.Equals(c.Id, "test:" + Project, StringComparison.Ordinal)));
+        Assert.AreEqual(5, criteria.Count);
     }
 }

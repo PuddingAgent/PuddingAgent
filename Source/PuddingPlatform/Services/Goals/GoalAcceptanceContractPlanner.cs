@@ -27,6 +27,7 @@ public sealed class GoalAcceptanceContractPlanner(
 
     private const string BuildDefinitionRef = "checks/build.md#dotnet-build";
     private const string TestDefinitionRef = "checks/test.md#dotnet-test";
+    private const string FileEvidenceDefinitionRef = GoalCheckDefinitionRegistry.FileEvidenceRef;
 
     private readonly GoalRunOptions _options = options.Value;
 
@@ -52,8 +53,8 @@ public sealed class GoalAcceptanceContractPlanner(
         }
 
         var projects = ResolveProjects();
-        var evidenceTargets = GoalObjectiveEvidenceParser.ExtractEvidenceTargets(objective, logger);
-        if (projects.Count == 0 && evidenceTargets.Count == 0)
+        var evidence = GoalObjectiveEvidenceParser.Extract(objective, logger);
+        if (projects.Count == 0 && !evidence.HasAny)
         {
             logger?.LogInformation(
                 "[GoalContract] no bounded check targets configured; contract stays empty (repair path) goal={GoalRunId} epoch={Epoch}",
@@ -67,9 +68,15 @@ public sealed class GoalAcceptanceContractPlanner(
         var checks = new List<GoalCheckSpec>();
 
         // 目标级条件在前：objective 显式声明的证据目标是「目标达成」的验收对象。
-        foreach (var project in evidenceTargets)
+        // 项目证据派生 build/test 条件；文件证据派生只读核验的 file-evidence 条件。
+        foreach (var project in evidence.ProjectTargets)
         {
             AddEvidencePair(criteria, checks, project, fingerprint);
+        }
+
+        foreach (var path in evidence.FilePathTargets)
+        {
+            AddFileEvidenceCheck(criteria, checks, path, fingerprint);
         }
 
         // 回归门禁在后：配置级工程检查保持既有 id 与行为，始终作为回归护栏。
@@ -81,14 +88,14 @@ public sealed class GoalAcceptanceContractPlanner(
         if (criteria.Count == 0)
             return false;
 
-        if (evidenceTargets.Count == 0)
+        if (!evidence.HasAny)
         {
             logger?.LogWarning(
                 "[GoalContract] objective declares no evidence; contract covers engineering gates only goal={GoalRunId}",
                 goalRunId);
         }
 
-        var source = evidenceTargets.Count > 0 ? SourceWithObjectiveEvidence : Source;
+        var source = evidence.HasAny ? SourceWithObjectiveEvidence : Source;
         await contractStore.SaveAsync(
             goalRunId,
             activationEpoch,
@@ -99,13 +106,14 @@ public sealed class GoalAcceptanceContractPlanner(
             source,
             ct);
 
-        logger?.LogInformation(
-            "[GoalContract] bounded contract written goal={GoalRunId} epoch={Epoch} criteria={Criteria} checks={Checks} objectiveEvidence={ObjectiveEvidence}",
-            goalRunId,
-            activationEpoch,
-            criteria.Count,
-            checks.Count,
-            evidenceTargets.Count);
+            logger?.LogInformation(
+                "[GoalContract] bounded contract written goal={GoalRunId} epoch={Epoch} criteria={Criteria} checks={Checks} objectiveEvidence={ObjectiveEvidence} objectiveFileEvidence={ObjectiveFileEvidence}",
+                goalRunId,
+                activationEpoch,
+                criteria.Count,
+                checks.Count,
+                evidence.ProjectTargets.Count,
+                evidence.FilePathTargets.Count);
         return true;
     }
 
@@ -212,6 +220,53 @@ public sealed class GoalAcceptanceContractPlanner(
     {
         AddEvidenceCheck(criteria, checks, project, BuildDefinitionRef, inputFingerprint);
         AddEvidenceCheck(criteria, checks, project, TestDefinitionRef, inputFingerprint);
+    }
+
+    /// <summary>
+    /// 目标声明的文件证据条件：只读核验（存在且非空），不启动任何进程。
+    /// 路径安全性在派生时已由 GoalObjectiveEvidenceParser.Extract 过滤。
+    /// </summary>
+    private static void AddFileEvidenceCheck(
+        List<GoalCriterion> criteria,
+        List<GoalCheckSpec> checks,
+        string path,
+        string inputFingerprint)
+    {
+        if (!GoalCheckDefinitionRegistry.TryResolve(FileEvidenceDefinitionRef, out var definition))
+            return;
+
+        var criterionId = $"objective-{definition.Kind}:{path}";
+        var definitionHash = GoalCheckDefinitionRegistry.ComputeDefinitionHash(definition);
+
+        criteria.Add(new GoalCriterion
+        {
+            Id = criterionId,
+            Revision = 1,
+            Requirement = $"目标声明的证据文件：{path} 必须存在于受检工作区内且非空（只读核验，不执行任何命令）",
+            Required = true,
+            Kind = definition.Kind,
+            DefinitionRef = definition.DefinitionRef,
+            DefinitionHash = definitionHash,
+            InputRefs = [path],
+            ExecutorRole = "core",
+            FreshnessPolicy = "input-fingerprint",
+            DependencyIds = [],
+        });
+
+        checks.Add(new GoalCheckSpec
+        {
+            CheckId = $"objective:{definition.Kind}:{path}",
+            CriterionId = criterionId,
+            CriterionRevision = 1,
+            Kind = definition.Kind,
+            DefinitionRef = definition.DefinitionRef,
+            DefinitionHash = definitionHash,
+            InputRefs = [path],
+            InputFingerprint = inputFingerprint,
+            ExecutorRole = "core",
+            ExpectedEvidence = "受控执行器只读核验文件存在且非空（File.Exists + 长度），不启动任何进程",
+            ExpectedTestCount = null,
+        });
     }
 
     private static void AddEvidenceCheck(

@@ -385,4 +385,139 @@ public sealed class GoalCheckRunnerTests
         public void EnsureAllowed(string command, bool isYoloMode)
             => throw new UnauthorizedAccessException("denied by test admission");
     }
+
+    [TestMethod]
+    public async Task FileEvidence_ExistingNonEmptyFile_PassesWithoutStartingAnyProcess()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+        var store = new GoalCheckRecordStore(factory);
+        var stub = new StubProcessManager { ExitCode = 0, Output = GreenSummary };
+        var runner = new GoalCheckRunner(store, stub, new AllowAllAdmission());
+
+        var root = Directory.CreateTempSubdirectory("goal-file-evidence").FullName;
+        try
+        {
+            var evidencePath = Path.Combine(root, "evidence");
+            Directory.CreateDirectory(evidencePath);
+            await File.WriteAllTextAsync(Path.Combine(evidencePath, "report.md"), "# done\n");
+
+            var reports = await runner.RunAsync(
+                [FileSpec("evidence/report.md")],
+                Context() with { WorkingDirectory = root });
+
+            // 目标级验收（T3）：目标级 criterion 能被真实评估 —— passed 两态之一，且零进程启动。
+            Assert.AreEqual(1, reports.Count);
+            Assert.AreEqual(GoalCriterionResultStatuses.Passed, reports[0].Status);
+            Assert.IsNull(reports[0].FailureCode);
+            Assert.AreEqual(GoalCheckRunner.RunnerId, reports[0].RunnerId);
+            Assert.AreEqual("file:evidence/report.md", reports[0].EvidenceRefs[0]);
+            Assert.AreEqual(0, stub.Commands.Count, "file-evidence must never start a process");
+
+            // 报告已持久化，下游 capsule 读取链能读到同一份证据。
+            var persisted = GoalVerificationPersistence.ReadReports(await store.ReadForEpochAsync("goal-1", 1));
+            Assert.AreEqual(1, persisted.Count);
+            Assert.AreEqual(GoalCriterionResultStatuses.Passed, persisted[0].Status);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task FileEvidence_MissingFile_FailsInsteadOfPending()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+        var store = new GoalCheckRecordStore(factory);
+        var stub = new StubProcessManager { ExitCode = 0, Output = GreenSummary };
+        var runner = new GoalCheckRunner(store, stub, new AllowAllAdmission());
+
+        var root = Directory.CreateTempSubdirectory("goal-file-evidence").FullName;
+        try
+        {
+            var reports = await runner.RunAsync(
+                [FileSpec("evidence/absent.md")],
+                Context() with { WorkingDirectory = root });
+
+            Assert.AreEqual(GoalCriterionResultStatuses.Failed, reports[0].Status);
+            Assert.AreNotEqual(GoalCriterionResultStatuses.Pending, reports[0].Status);
+            Assert.AreEqual(GoalCheckFailureCodes.FileEvidenceMissing, reports[0].FailureCode);
+            Assert.AreEqual(0, stub.Commands.Count);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task FileEvidence_EmptyFile_Fails()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+        var store = new GoalCheckRecordStore(factory);
+        var stub = new StubProcessManager { ExitCode = 0, Output = GreenSummary };
+        var runner = new GoalCheckRunner(store, stub, new AllowAllAdmission());
+
+        var root = Directory.CreateTempSubdirectory("goal-file-evidence").FullName;
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "evidence"));
+            await File.WriteAllTextAsync(Path.Combine(root, "evidence", "empty.md"), string.Empty);
+
+            var reports = await runner.RunAsync(
+                [FileSpec("evidence/empty.md")],
+                Context() with { WorkingDirectory = root });
+
+            Assert.AreEqual(GoalCriterionResultStatuses.Failed, reports[0].Status);
+            Assert.AreEqual(GoalCheckFailureCodes.FileEvidenceMissing, reports[0].FailureCode);
+            Assert.AreEqual(0, stub.Commands.Count);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task FileEvidence_UnsafePath_FailsWithReadableReason()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+        var store = new GoalCheckRecordStore(factory);
+        var stub = new StubProcessManager { ExitCode = 0, Output = GreenSummary };
+        var runner = new GoalCheckRunner(store, stub, new AllowAllAdmission());
+
+        string[] unsafePaths = ["../escape.md", "C:/abs/abs.md", "wild*card.md", "question?.md"];
+        foreach (var unsafePath in unsafePaths)
+        {
+            var reports = await runner.RunAsync(
+                [FileSpec(unsafePath)],
+                Context() with { WorkingDirectory = Path.GetTempPath() });
+
+            Assert.AreEqual(GoalCriterionResultStatuses.Failed, reports[0].Status, unsafePath);
+            Assert.AreEqual(GoalCheckFailureCodes.UnsupportedCheckKind, reports[0].FailureCode, unsafePath);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(reports[0].Message), unsafePath);
+            Assert.AreEqual(0, stub.Commands.Count, unsafePath);
+        }
+    }
+
+    /// <summary>file-evidence 检查规格：定义与 hash 都来自注册表真实值（非自造）。</summary>
+    private static GoalCheckSpec FileSpec(string relativePath) => new()
+    {
+        CheckId = $"objective:file-evidence:{relativePath}",
+        CriterionId = $"objective-file-evidence:{relativePath}",
+        CriterionRevision = 1,
+        Kind = GoalVerificationSpecKinds.FileEvidence,
+        DefinitionRef = GoalCheckDefinitionRegistry.FileEvidenceRef,
+        DefinitionHash = GoalCheckDefinitionRegistry.TryGetDefinitionHash(
+            GoalCheckDefinitionRegistry.FileEvidenceRef, out var hash) ? hash : string.Empty,
+        InputRefs = [relativePath],
+        InputFingerprint = "fp-1",
+        ExecutorRole = "core",
+        ExpectedEvidence = "只读核验：文件存在且非空",
+        ExpectedTestCount = null,
+    };
 }

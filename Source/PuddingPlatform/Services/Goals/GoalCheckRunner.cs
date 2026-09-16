@@ -135,6 +135,14 @@ public sealed class GoalCheckRunner(
                 "No working directory was supplied for the bounded check; refusing to execute.");
         }
 
+        // file-evidence：只读核验（存在且非空）。与 build/test 同根（WorkingDirectory）、
+        // 同租约/取消/超时生命周期（复用 Enqueue/Lease/Finish），但绝不构建命令、不经准入、
+        // 不启动任何进程；不安全路径与不可读文件一律记为 failed（不是 pending）。
+        if (string.Equals(spec.Kind, GoalVerificationSpecKinds.FileEvidence, StringComparison.Ordinal))
+        {
+            return EvaluateFileEvidence(spec, context);
+        }
+
         if (!GoalCheckDefinitionRegistry.TryBuildCommand(spec, out var command, out var resolveFailure))
         {
             return FailedReport(
@@ -359,6 +367,83 @@ public sealed class GoalCheckRunner(
         FailureCode = GoalCheckFailureCodes.CheckIdentityMismatch,
         Message = "No matching check spec/definition for this work item; refusing to execute or to record a pass.",
     };
+
+    /// <summary>
+    /// 只读核验 file-evidence：路径复用注册表安全校验（一票否决），解析必须落在受检工作区内；
+    /// 文件存在且非空 → passed；不存在或为空 → failed（file_evidence_missing，不是 pending）；
+    /// 无法读取 → failed（file_evidence_unreadable）并携带可读原因。只允许 File.Exists/读长度，
+    /// 禁止执行任何 shell/进程/脚本。
+    /// </summary>
+    private static GoalCheckReport EvaluateFileEvidence(GoalCheckSpec spec, GoalCheckContext context)
+    {
+        if (spec.InputRefs.Count != 1 || string.IsNullOrWhiteSpace(spec.InputRefs[0]))
+        {
+            return FailedReport(
+                spec,
+                GoalCheckFailureCodes.InputFingerprintMissing,
+                "File evidence check requires exactly one relative input path.");
+        }
+
+        var target = spec.InputRefs[0].Trim();
+        if (!GoalCheckDefinitionRegistry.IsSafeEvidenceFilePath(target))
+        {
+            return FailedReport(
+                spec,
+                GoalCheckFailureCodes.UnsupportedCheckKind,
+                $"Unsafe file evidence path refused (absolute/escape/wildcard/metachar): {target}");
+        }
+
+        // 与 build/test 同一执行根；二次解析验证防止规范化差异导致的逃逸。
+        var root = Path.GetFullPath(context.WorkingDirectory!);
+        var fullPath = Path.GetFullPath(Path.Combine(root, target));
+        var relative = Path.GetRelativePath(root, fullPath);
+        if (Path.IsPathRooted(relative) || relative.StartsWith("..", StringComparison.Ordinal))
+        {
+            return FailedReport(
+                spec,
+                GoalCheckFailureCodes.UnsupportedCheckKind,
+                $"Resolved evidence path escapes the check working directory: {target}");
+        }
+
+        try
+        {
+            if (!File.Exists(fullPath))
+            {
+                return FailedReport(
+                    spec,
+                    GoalCheckFailureCodes.FileEvidenceMissing,
+                    $"Evidence file does not exist: {target}");
+            }
+
+            var length = new FileInfo(fullPath).Length;
+            if (length <= 0)
+            {
+                return FailedReport(
+                    spec,
+                    GoalCheckFailureCodes.FileEvidenceMissing,
+                    $"Evidence file exists but is empty: {target}");
+            }
+
+            return BuildReport(
+                spec,
+                GoalCriterionResultStatuses.Passed,
+                [$"file:{target}"],
+                $"file:{target}",
+                null,
+                null,
+                null,
+                null,
+                $"Evidence file present and non-empty ({length} bytes): {target}");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 不吞异常冒充通过：读取失败如实记为 failed 并携带原因。
+            return FailedReport(
+                spec,
+                GoalCheckFailureCodes.FileEvidenceUnreadable,
+                $"Evidence file could not be read: {target} ({ex.Message})");
+        }
+    }
 
     private static GoalCheckReport PendingReport(
         GoalCheckSpec spec,

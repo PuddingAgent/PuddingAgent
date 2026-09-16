@@ -123,6 +123,12 @@ public static class GoalVerificationSpecKinds
     public const string Artifact = "artifact";
     public const string Semantic = "semantic";
     public const string External = "external";
+
+    /// <summary>
+    /// 目标级文件证据（ADR-092 §5.1 迭代扩展）：objective 显式声明的工作区内相对文件，
+    /// 由受控检查器只读核验（存在且非空）；绝不构建命令、绝不启动进程。
+    /// </summary>
+    public const string FileEvidence = "file-evidence";
 }
 
 /// <summary>ADR-092 §4：逐项条件结果状态。</summary>
