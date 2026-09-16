@@ -108,6 +108,19 @@ public sealed class GoalRunStore(
             .ToListAsync(ct);
 
     /// <summary>
+    /// 卡 f0cf2e1e：返回同一 goalRunId 的最新结算裁决行（epoch 最高、其次 iteration
+    /// 最新）。只读投影，用于把上一轮裁决摘要回灌进续行 payload 的 lastVerdict。
+    /// 尚无任何结算轮次（含第 1 轮）时返回 null。
+    /// </summary>
+    public async Task<GoalVerificationEntity?> FindLatestVerificationAsync(
+        string goalRunId, CancellationToken ct = default)
+        => await db.GoalVerifications.AsNoTracking()
+            .Where(item => item.GoalRunId == goalRunId)
+            .OrderByDescending(item => item.ActivationEpoch)
+            .ThenByDescending(item => item.IterationNo)
+            .FirstOrDefaultAsync(ct);
+
+    /// <summary>
     /// 创建 Goal（提交即 active）并同事务写 goal.created + goal.activated。
     /// source_command_id 唯一索引保证创建幂等；冲突抛 GoalVersionConflictException。
     /// </summary>

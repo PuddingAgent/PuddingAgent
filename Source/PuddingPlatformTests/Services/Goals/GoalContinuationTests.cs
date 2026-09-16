@@ -198,6 +198,181 @@ public sealed class GoalContinuationTests
         Assert.AreEqual(0, root.GetProperty("progress").GetProperty("stepsTotal").GetInt32());
     }
 
+    [TestMethod]
+    public void BuildPrompt_FirstIteration_LastVerdictIsNull()
+    {
+        var prompt = GoalContinuationWorker.BuildPrompt(
+            new GoalRunEntity
+            {
+                GoalRunId = "goal-first",
+                Objective = "first iteration",
+                ObjectiveVersion = 1,
+                MaxIterations = 8,
+                IterationsStarted = 0,
+            },
+            binding: null,
+            task: null,
+            workUnit: null,
+            iterationNo: 1);
+
+        using var doc = ParseGoalPayload(prompt);
+        var root = doc.RootElement;
+        // 纯增量：既有字段不变，lastVerdict 是最后一个字段且为 null（不伪造空对象）。
+        Assert.AreEqual("goal-first", root.GetProperty("goalRunId").GetString());
+        Assert.AreEqual("lastVerdict", root.EnumerateObject().Last().Name);
+        Assert.AreEqual(JsonValueKind.Null, root.GetProperty("lastVerdict").ValueKind);
+    }
+
+    [TestMethod]
+    public void BuildPrompt_WithLatestVerdict_MapsRecord_WithSummaryTruncation()
+    {
+        var criteria = new List<string>();
+        for (var i = 0; i < 12; i++)
+            criteria.Add($"unmet-{i}-" + new string('x', 250));
+        var completedAt = new DateTimeOffset(2026, 9, 16, 3, 30, 0, TimeSpan.Zero);
+        var verification = new GoalVerificationEntity
+        {
+            VerificationId = "gv-goal-verdict-1-2",
+            GoalRunId = "goal-verdict",
+            ActivationEpoch = 1,
+            IterationNo = 2,
+            Status = "succeeded",
+            Verdict = "blocked",
+            BlockerCode = "acceptance_not_verified",
+            UnmetCriteriaJson = JsonSerializer.Serialize(
+                criteria, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            CompletedAtUtc = completedAt,
+        };
+
+        var prompt = GoalContinuationWorker.BuildPrompt(
+            new GoalRunEntity
+            {
+                GoalRunId = "goal-verdict",
+                Objective = "verdict echo",
+                ObjectiveVersion = 1,
+                MaxIterations = 8,
+                IterationsStarted = 2,
+            },
+            binding: null,
+            task: null,
+            workUnit: null,
+            iterationNo: 3,
+            lastVerification: verification);
+
+        using var doc = ParseGoalPayload(prompt);
+        var root = doc.RootElement;
+        var lastVerdict = root.GetProperty("lastVerdict");
+        Assert.AreEqual("blocked", lastVerdict.GetProperty("outcome").GetString());
+        Assert.AreEqual("acceptance_not_verified", lastVerdict.GetProperty("blockerCode").GetString());
+        var unmet = lastVerdict.GetProperty("unmetCriteria");
+        Assert.AreEqual(10, unmet.GetArrayLength());
+        foreach (var item in unmet.EnumerateArray())
+        {
+            Assert.IsTrue(item.GetString()!.Length <= 200, "each unmetCriteria item must be <=200 chars");
+            Assert.IsTrue(item.GetString()!.StartsWith("unmet-", StringComparison.Ordinal));
+        }
+        var roundTripped = DateTimeOffset.Parse(
+            lastVerdict.GetProperty("completedAtUtc").GetString()!,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind);
+        Assert.AreEqual(completedAt, roundTripped);
+        // 既有字段不受影响。
+        Assert.AreEqual(3, root.GetProperty("iteration").GetInt32());
+        StringAssert.Contains(prompt, "lastVerdict is present");
+    }
+
+    [TestMethod]
+    public void BuildPrompt_WithCorruptVerdictRecord_FailsSoftWithoutThrowing()
+    {
+        var verification = new GoalVerificationEntity
+        {
+            VerificationId = "gv-goal-corrupt-1-1",
+            GoalRunId = "goal-corrupt",
+            ActivationEpoch = 1,
+            IterationNo = 1,
+            Status = "succeeded",
+            Verdict = "continue",
+            BlockerCode = null,
+            UnmetCriteriaJson = "{not-valid-json",
+        };
+
+        var prompt = GoalContinuationWorker.BuildPrompt(
+            new GoalRunEntity
+            {
+                GoalRunId = "goal-corrupt",
+                Objective = "corrupt verdict",
+                ObjectiveVersion = 1,
+                MaxIterations = 8,
+                IterationsStarted = 1,
+            },
+            binding: null,
+            task: null,
+            workUnit: null,
+            iterationNo: 2,
+            lastVerification: verification);
+
+        using var doc = ParseGoalPayload(prompt);
+        var lastVerdict = doc.RootElement.GetProperty("lastVerdict");
+        // fail-soft：不抛异常；真实列保留，损坏列表降级为空。
+        Assert.AreEqual("continue", lastVerdict.GetProperty("outcome").GetString());
+        Assert.AreEqual(JsonValueKind.Null, lastVerdict.GetProperty("blockerCode").ValueKind);
+        Assert.AreEqual(0, lastVerdict.GetProperty("unmetCriteria").GetArrayLength());
+    }
+
+    [TestMethod]
+    public async Task FindLatestVerificationAsync_NoSettledIteration_ReturnsNull()
+    {
+        await using var db = await _factory.CreateDbContextAsync();
+        var store = NewGoalStore(db);
+
+        Assert.IsNull(await store.FindLatestVerificationAsync("goal-no-verdict", CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task FindLatestVerificationAsync_PicksHighestEpochThenIteration()
+    {
+        await using var db = await _factory.CreateDbContextAsync();
+        db.GoalVerifications.AddRange(
+            new GoalVerificationEntity
+            {
+                VerificationId = "gv-goal-order-1-1",
+                GoalRunId = "goal-order",
+                ActivationEpoch = 1,
+                IterationNo = 1,
+                Status = "succeeded",
+                Verdict = "blocked",
+                BlockerCode = "one",
+            },
+            new GoalVerificationEntity
+            {
+                VerificationId = "gv-goal-order-1-2",
+                GoalRunId = "goal-order",
+                ActivationEpoch = 1,
+                IterationNo = 2,
+                Status = "succeeded",
+                Verdict = "continue",
+            },
+            new GoalVerificationEntity
+            {
+                VerificationId = "gv-goal-order-2-1",
+                GoalRunId = "goal-order",
+                ActivationEpoch = 2,
+                IterationNo = 1,
+                Status = "succeeded",
+                Verdict = "needs_user",
+                BlockerCode = "awaiting_user",
+            });
+        await db.SaveChangesAsync();
+        var store = NewGoalStore(db);
+
+        var latest = await store.FindLatestVerificationAsync("goal-order", CancellationToken.None);
+
+        Assert.IsNotNull(latest);
+        Assert.AreEqual(2, latest.ActivationEpoch);
+        Assert.AreEqual(1, latest.IterationNo);
+        Assert.AreEqual("needs_user", latest.Verdict);
+    }
+
     private static JsonDocument ParseGoalPayload(string prompt)
     {
         const string open = "<goal_payload>";
