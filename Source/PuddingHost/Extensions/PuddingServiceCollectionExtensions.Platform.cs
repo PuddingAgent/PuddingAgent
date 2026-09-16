@@ -278,6 +278,8 @@ public static partial class PuddingServiceCollectionExtensions
         // 与 TaskAgentCommandService 同为 Singleton 工具消费；构造仅依赖 Singleton DbContextFactory。
         builder.Services.AddSingleton<WorkspaceTaskAdminService>();
         builder.Services.AddSingleton<IWorkspaceTaskAdminService>(sp => sp.GetRequiredService<WorkspaceTaskAdminService>());
+        builder.Services.AddSingleton<TaskGoalLaunchService>();
+        builder.Services.AddSingleton<ITaskGoalLaunchService>(sp => sp.GetRequiredService<TaskGoalLaunchService>());
         builder.Services.Configure<WorkspaceTaskFeatureOptions>(_ => { });
         // Task Dispatch Outbox + Dispatcher（TB-05：手工派发闭环）
         builder.Services.AddScoped<TaskDispatchOutboxStore>();
