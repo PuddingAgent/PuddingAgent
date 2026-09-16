@@ -109,6 +109,8 @@ Native tools 是 Provider 请求的独立字段，不能仅靠把它叫“尾部
 
 ### 3.4 在最终 Provider 调用边界生成 Manifest
 
+2026-09-16 实施优先级补充：见[当日证据与修复方案](../Reports/缓存命中诊断与修复方案-2026-09-16.md)。现网工具追加序已在47个变化样本中保持；新增工具过晚仍造成大量miss，应在3.3规定的授权能力包上前移必要曝光。用户偏好层仍直接重写system，需工作段版本快照与尾部更新。摘要请求存在4个低复用实例，以下C02请求身份与最终差异清单是定位其原因的前置证据，不以PrefixHash相同推断Provider命中。当前仅完成诊断，实施与验收待完成。
+
 实施 C02：在 `DirectLlmClient`/真正 adapter 序列化边界，而非早期 ContextPipeline 中产生 `RequestShapeManifest`。至少包含 schemaVersion、provider/model、requestId、attemptId、Task/Run/Session、compositionRevision、permissionEpoch、prefixEpoch、按最终序列的 segment hash/bytes/估算tokens、tools有序定义hash，以及 memory/skill 版本引用。
 
 每次比较同一工作段的上一份 manifest：`firstChangedSegment`、firstChangedByte、可估算的 tokenOffset、changeReason。reason 使用有限枚举：new_session、permission_changed、tool_added、tool_definition_changed、template_changed、memory_snapshot_changed、compaction、history_rewrite、provider_route_changed、incremental_tail、unknown。不得把没有 reason 直接解释成 stable。

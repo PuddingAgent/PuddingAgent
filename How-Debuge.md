@@ -1,3 +1,7 @@
+### 缓存下降要区分工具新增与重排（2026-09-16）
+
+Gateway总量与归因不能相加；先以共享requestId关联，缺失时七元组唯一内容关联必须标明局限。对tool_spec_changed比较相邻Composition有序ToolIds，新增工具不等于排序缺陷；无变化标签不等于最终请求稳定。压缩摘要和checkpoint后首轮分开计量，查system变化对应层hash。本次L3-USER-PREFERENCES更新造成09:34主会话前缀失效。见[数据、案例与方案](Docs/Reports/缓存命中诊断与修复方案-2026-09-16.md)。
+
 ### GoalBanner 读取 color 报错（2026-09-16）
 
 先核对实际 Goal API 的 phase；BudgetExhausted 必须输出 budget_exhausted，不能仅用 ToLowerInvariant。追查共享 ToDto，前端 lookup 应验证自有属性并为未知状态提供中性色和只读详情。不要清理 Goal 数据规避渲染异常。见[证据与测试](Docs/Reports/Goal状态格式与聊天页崩溃修复-2026-09-16.md)。
