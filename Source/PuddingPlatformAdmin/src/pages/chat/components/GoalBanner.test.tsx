@@ -1,16 +1,41 @@
 // ── ADR-074 Goal 顶部状态入口组件测试 ────────────────────────────────
+// 注意：本文件含 jest.mock 工厂；当前 umi jest 转换链不允许「jest.mock +
+// 导入类型用于类型注解」组合，故这里使用本地结构类型而非 import type。
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
-import type { GoalSnapshot } from '@/services/platform/api';
 import GoalBanner from './GoalBanner';
 
-const makeGoal = (overrides: Partial<GoalSnapshot> = {}): GoalSnapshot => ({
+const mockRequest = jest.fn();
+
+jest.mock('@umijs/max', () => ({
+  request: (...args: unknown[]) => mockRequest(...args),
+}));
+
+type GoalPhase =
+  | 'active'
+  | 'paused'
+  | 'blocked'
+  | 'budget_exhausted'
+  | 'completed'
+  | 'cancelled'
+  | 'failed';
+
+const makeGoal = (
+  overrides: Partial<{
+    phase: GoalPhase;
+    objective: string;
+    statusReason: string | null;
+    terminalAtUtc: string | null;
+    iterationsStarted: number;
+    maxIterations: number;
+  }> = {},
+) => ({
   goalRunId: 'goal-1',
   conversationId: 'conv-1',
   agentInstanceId: 'agent-1',
   objective: '修复全部失败测试并保持公开 API 不变',
   objectiveVersion: 1,
-  phase: 'active',
+  phase: 'active' as const,
   blockedCode: null,
   statusReason: null,
   maxIterations: 256,
@@ -29,6 +54,12 @@ const openDetails = () =>
   fireEvent.click(screen.getByRole('button', { name: /Goal .*查看详情/ }));
 
 describe('GoalBanner', () => {
+  beforeEach(() => {
+    mockRequest.mockReset();
+    // GoalStepsPanel 会在详情 Popover 打开时拉取步骤；默认拒绝以免测试触网。
+    mockRequest.mockRejectedValue(new Error('steps endpoint not deployed'));
+  });
+
   it('offers a start control when the conversation has no goal', async () => {
     const onCommand = jest.fn().mockResolvedValue('Goal 已创建');
     render(
@@ -163,7 +194,7 @@ describe('GoalBanner', () => {
     async (phase) => {
       render(
         <GoalBanner
-          goal={makeGoal({ phase: phase as GoalSnapshot['phase'] })}
+          goal={makeGoal({ phase: phase as GoalPhase })}
           commandRunning={false}
           onCommand={jest.fn()}
         />,
@@ -188,5 +219,97 @@ describe('GoalBanner', () => {
         })) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
+  });
+
+  it('offers extend for budget_exhausted goal and sends the extend command with rounds', async () => {
+    const onCommand = jest.fn().mockResolvedValue('额度已延长');
+    render(
+      <GoalBanner
+        goal={makeGoal({
+          phase: 'budget_exhausted',
+          iterationsStarted: 3,
+          maxIterations: 3,
+        })}
+        commandRunning={false}
+        onCommand={onCommand}
+      />,
+    );
+    openDetails();
+
+    fireEvent.click(await screen.findByRole('button', { name: /延长额度/ }));
+    // antd Modal 打开期间会对兄弟节点标记 aria-hidden，role 查询不可靠，
+    // 改用 DOM 查询主按钮。
+    const modalOk = await waitFor(() => {
+      const btn = document.querySelector(
+        '.ant-modal .ant-btn-primary',
+      ) as HTMLButtonElement | null;
+      expect(btn).toBeTruthy();
+      return btn as HTMLButtonElement;
+    });
+    fireEvent.click(modalOk);
+
+    await waitFor(() =>
+      expect(onCommand).toHaveBeenCalledWith('extend', { rounds: 3 }),
+    );
+    await screen.findByText(/额度已延长/);
+  });
+
+  it('does not offer extend for non budget_exhausted goals', async () => {
+    render(
+      <GoalBanner
+        goal={makeGoal({ phase: 'completed' })}
+        commandRunning={false}
+        onCommand={jest.fn()}
+      />,
+    );
+    openDetails();
+    await screen.findByRole('dialog', { name: 'Goal 详情' });
+
+    expect(screen.queryByRole('button', { name: /延长额度/ })).toBeNull();
+  });
+
+  it('renders the steps panel inside the goal popover', async () => {
+    mockRequest.mockResolvedValue({
+      goalRunId: 'goal-1',
+      phase: 'active',
+      planVersion: 1,
+      hasPlan: true,
+      progress: {
+        stepsTotal: 1,
+        stepsPassed: 0,
+        stepsFailed: 0,
+        stepsInProgress: 1,
+        currentStepId: 'node-1',
+      },
+      steps: [
+        {
+          nodeId: 'node-1',
+          sequenceNo: 1,
+          kind: 'plan',
+          title: '制定计划',
+          status: 'in_progress',
+          startedAtUtc: null,
+          completedAtUtc: null,
+          blockerCode: null,
+          evidenceRefs: [],
+        },
+      ],
+      checks: [],
+    });
+    render(
+      <GoalBanner
+        goal={makeGoal()}
+        commandRunning={false}
+        onCommand={jest.fn()}
+      />,
+    );
+    openDetails();
+
+    expect(await screen.findByLabelText('Goal 步骤')).toBeTruthy();
+    expect(await screen.findByText('制定计划')).toBeTruthy();
+    expect(mockRequest).toHaveBeenCalledWith('/api/v1/goals/goal-1/steps', {
+      method: 'GET',
+      skipErrorHandler: true,
+    });
   });
 });

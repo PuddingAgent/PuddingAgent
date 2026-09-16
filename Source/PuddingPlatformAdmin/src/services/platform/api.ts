@@ -2853,7 +2853,51 @@ export type GoalAction =
   | 'pause'
   | 'resume'
   | 'cancel'
-  | 'clear';
+  | 'clear'
+  | 'extend';
+
+/** Goal 步骤进度汇总（W2 冻结契约，只读消费）。 */
+export interface GoalStepProgress {
+  stepsTotal: number;
+  stepsPassed: number;
+  stepsFailed: number;
+  stepsInProgress: number;
+  currentStepId?: string | null;
+}
+
+/** Goal 计划中的单个步骤。 */
+export interface GoalStepItem {
+  nodeId: string;
+  sequenceNo: number;
+  kind: string;
+  title: string;
+  status: string;
+  startedAtUtc?: string | null;
+  completedAtUtc?: string | null;
+  blockerCode?: string | null;
+  evidenceRefs: string[];
+}
+
+/** 目标级校验结果（非逐步校验）。 */
+export interface GoalCheckItem {
+  checkId: string;
+  criterionId: string;
+  status: string;
+  exitCode?: number | null;
+  summary?: string | null;
+  evidenceRefs: string[];
+}
+
+/** GET /api/v1/goals/{goalId}/steps 的响应快照。 */
+export interface GoalStepsSnapshot {
+  goalRunId: string;
+  phase: string;
+  planVersion: number;
+  hasPlan: boolean;
+  progress: GoalStepProgress;
+  steps: GoalStepItem[];
+  checks: GoalCheckItem[];
+}
 
 /** 读取会话当前 Goal（优先活动 Goal，无则返回最近终态 Goal 供回执展示）。 */
 export async function getConversationGoal(
@@ -2891,6 +2935,14 @@ export async function executeGoalCommand(
       headers: { 'X-Workspace-Id': workspaceId },
     },
   );
+}
+
+/** 读取 Goal 计划步骤（只读端点，不需要 X-Workspace-Id；404 = goal_not_found 或端点未部署）。 */
+export async function getGoalSteps(goalId: string): Promise<GoalStepsSnapshot> {
+  return request(`/api/v1/goals/${encodeURIComponent(goalId)}/steps`, {
+    method: 'GET',
+    skipErrorHandler: true,
+  });
 }
 
 export async function awaitConversationTurn(

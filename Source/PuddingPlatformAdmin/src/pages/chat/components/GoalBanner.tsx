@@ -6,6 +6,7 @@ import {
   CaretRightOutlined,
   PauseOutlined,
   PlusOutlined,
+  RiseOutlined,
   StopOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
@@ -25,6 +26,7 @@ import {
 import React, { useState } from 'react';
 import type { GoalAction, GoalSnapshot } from '@/services/platform/api';
 import { isTerminalGoalPhase } from '../hooks/useGoal';
+import GoalStepsPanel from './GoalStepsPanel';
 
 interface GoalBannerProps {
   goal: GoalSnapshot | null;
@@ -42,6 +44,10 @@ interface GoalBannerProps {
 
 interface GoalStartValues {
   objective: string;
+  rounds: number;
+}
+
+interface GoalExtendValues {
   rounds: number;
 }
 
@@ -110,6 +116,8 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
   const [messageApi, contextHolder] = message.useMessage();
   const [startOpen, setStartOpen] = useState(false);
   const [startForm] = Form.useForm<GoalStartValues>();
+  const [extendOpen, setExtendOpen] = useState(false);
+  const [extendForm] = Form.useForm<GoalExtendValues>();
 
   const startGoal = async () => {
     let values: GoalStartValues;
@@ -125,6 +133,18 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
     void messageApi.info(text);
     setStartOpen(false);
     startForm.resetFields();
+  };
+
+  const extendGoal = async () => {
+    let values: GoalExtendValues;
+    try {
+      values = await extendForm.validateFields();
+    } catch {
+      return;
+    }
+    const text = await onCommand('extend', { rounds: values.rounds });
+    void messageApi.info(text);
+    setExtendOpen(false);
   };
 
   const startModal = (
@@ -170,6 +190,41 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
     </Modal>
   );
 
+  const extendModal = (
+    <Modal
+      title="延长额度"
+      open={extendOpen}
+      okText="延长"
+      cancelText="取消"
+      confirmLoading={commandRunning}
+      onOk={() => void extendGoal()}
+      onCancel={() => setExtendOpen(false)}
+      destroyOnHidden
+    >
+      <Form
+        form={extendForm}
+        layout="vertical"
+        initialValues={{ rounds: 3 }}
+        preserve={false}
+      >
+        <Form.Item
+          name="rounds"
+          label="追加 Iteration 数"
+          rules={[{ required: true, message: '请输入追加的 Iteration 数' }]}
+          extra="仅额度耗尽的 Goal 可延长；已消费额度不会重置。若服务端尚未支持该动作，会明确提示失败。"
+        >
+          <InputNumber
+            min={1}
+            max={256}
+            precision={0}
+            autoFocus
+            style={{ width: 160 }}
+          />
+        </Form.Item>
+      </Form>
+    </Modal>
+  );
+
   if (!goal) {
     return (
       <>
@@ -185,6 +240,7 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
           Goal
         </Button>
         {startModal}
+        {extendModal}
       </>
     );
   }
@@ -242,6 +298,8 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
       >
         {goal.objective}
       </section>
+
+      <GoalStepsPanel goal={goal} />
 
       {(goal.statusReason || (terminal && goal.terminalAtUtc)) && (
         <div
@@ -313,7 +371,19 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
       {terminal && (
         <>
           <Divider style={{ margin: '12px 0 10px' }} />
-          <Space size={8}>
+          <Space size={8} wrap>
+            {goal.phase === 'budget_exhausted' && (
+              <Tooltip title="追加 Iteration 上限，使 Goal 可继续推进（仅额度耗尽时有效）">
+                <Button
+                  size="small"
+                  icon={<RiseOutlined />}
+                  disabled={commandRunning}
+                  onClick={() => setExtendOpen(true)}
+                >
+                  延长额度
+                </Button>
+              </Tooltip>
+            )}
             <Button
               size="small"
               type="primary"
@@ -367,6 +437,7 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
         </Button>
       </Popover>
       {startModal}
+      {extendModal}
     </>
   );
 };
