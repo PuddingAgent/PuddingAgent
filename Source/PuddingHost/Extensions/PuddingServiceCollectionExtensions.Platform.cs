@@ -39,6 +39,7 @@ using PuddingPlatform.Services.Security;
 using PuddingPlatform.Services.Scheduling;
 using PuddingPlatform.Services.TaskPlanning;
 using PuddingPlatform.Services.Tasks;
+using PuddingPlatform.Services.Todo;
 using PuddingPlatform.Services.Files;
 using PuddingController;
 using PuddingController.Data;
@@ -269,6 +270,10 @@ public static partial class PuddingServiceCollectionExtensions
         // 服务自身无请求态，只持有 Singleton DbContextFactory/Fence；每次调用都会创建并释放独立 DbContext。
         builder.Services.AddSingleton<TaskAgentCommandService>();
         builder.Services.AddSingleton<ITaskAgentCommandService>(sp => sp.GetRequiredService<TaskAgentCommandService>());
+        // Todo 拆解存储（设计 2026-09-16 §3/§4，TD-1）。todo_* 工具由统一 Tool Registry 按 Singleton
+        // 托管，因此这里也必须是 Singleton；服务无请求态，每次调用独立创建 DbContext。
+        builder.Services.AddSingleton<TodoStore>();
+        builder.Services.AddSingleton<ITodoStore>(sp => sp.GetRequiredService<TodoStore>());
         // Task Admin 命令服务（TB-09：管理者视角跨 Agent CRUD + 命令）。
         // 与 TaskAgentCommandService 同为 Singleton 工具消费；构造仅依赖 Singleton DbContextFactory。
         builder.Services.AddSingleton<WorkspaceTaskAdminService>();

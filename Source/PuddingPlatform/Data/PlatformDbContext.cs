@@ -135,6 +135,8 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<GoalIterationEntity> GoalIterations => Set<GoalIterationEntity>();
     public DbSet<GoalOutboxEntity> GoalOutbox => Set<GoalOutboxEntity>();
     public DbSet<GoalVerificationEntity> GoalVerifications => Set<GoalVerificationEntity>();
+    public DbSet<TodoListEntity> TodoLists => Set<TodoListEntity>();
+    public DbSet<TodoItemEntity> TodoItems => Set<TodoItemEntity>();
     public DbSet<TaskGoalBindingEntity> TaskGoalBindings => Set<TaskGoalBindingEntity>();
 
     // Goal 验收合同与真实检查记录（ADR-092 §5.1/§6.2；G92-2 起写入，G92-1 读取）
@@ -768,6 +770,28 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
             e.HasKey(v => v.VerificationId);
             e.HasIndex(v => new { v.GoalRunId, v.ActivationEpoch, v.SourceTurnId, v.ContractVersion }).IsUnique();
             e.HasIndex(v => new { v.GoalRunId, v.IterationNo });
+        });
+
+        // ── Todo 拆解表（设计 2026-09-16 §3，TD-1）────────────────
+        modelBuilder.Entity<TodoListEntity>(e =>
+        {
+            e.ToTable("todo_lists");
+            e.HasKey(l => l.ListId);
+            // (scope_kind, scope_id) 唯一定位一个列表（todo_write 全量替换的目标）。
+            e.HasIndex(l => new { l.ScopeKind, l.ScopeId }).IsUnique();
+        });
+
+        modelBuilder.Entity<TodoItemEntity>(e =>
+        {
+            e.ToTable("todo_items");
+            e.HasKey(i => i.ItemId);
+            e.HasOne(i => i.List)
+             .WithMany()
+             .HasForeignKey(i => i.ListId)
+             .OnDelete(DeleteBehavior.Cascade);
+            // slug 由写方提供、列表内唯一（全量替换 diff 的键）。
+            e.HasIndex(i => new { i.ListId, i.Slug }).IsUnique();
+            e.HasIndex(i => new { i.ListId, i.OrderIndex });
         });
 
         modelBuilder.Entity<TaskGoalBindingEntity>(e =>

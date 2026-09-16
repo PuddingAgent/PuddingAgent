@@ -20,6 +20,7 @@ using PuddingPlatform.Services.Security;
 using PuddingPlatform.Services.Scheduling;
 using PuddingPlatform.Services.Tasks;
 using PuddingPlatform.Services.TaskPlanning;
+using PuddingPlatform.Services.Todo;
 
 namespace PuddingHost.Hosting;
 
@@ -56,6 +57,7 @@ public static class PuddingApplicationInitializer
             await WorkspaceTaskSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await TaskPlanningSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await GoalSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            await TodoSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await TaskSchedulingSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await TaskSchedulerIntentSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await TaskSchedulerIntentOutcomeSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);

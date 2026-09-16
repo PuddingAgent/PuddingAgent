@@ -43,6 +43,7 @@ using PuddingRuntime.Services.SubAgents;
 using PuddingRuntime.Services.Tools;
 using PuddingRuntime.Services.TaskPlanning;
 using PuddingRuntime.Services.TaskTools;
+using PuddingRuntime.Services.TodoTools;
 using PuddingMemoryEngine;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Services;
@@ -167,6 +168,11 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddPuddingAgentTool<TaskGetTool>();
         builder.Services.AddPuddingAgentTool<TaskClaimTool>();
         builder.Services.AddPuddingAgentTool<TaskUpdateTool>();
+
+        // ── Todo 拆解三工具（todo_write/todo_read/todo_check，设计 2026-09-16 TD-1）──
+        builder.Services.AddPuddingAgentTool<TodoWriteTool>();
+        builder.Services.AddPuddingAgentTool<TodoReadTool>();
+        builder.Services.AddPuddingAgentTool<TodoCheckTool>();
 
         builder.Services.AddPuddingTool<SubAgentTool>();
         builder.Services.AddSingleton<SubAgentPool>();
