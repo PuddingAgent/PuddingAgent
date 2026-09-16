@@ -8,9 +8,14 @@ namespace PuddingPlatformTests.Services.Tasks;
 /// <summary>
 /// Stage 1（母/子层级，D1）的<b>旧库补列</b>测试。
 /// <para>
-/// 覆盖缺口：<see cref="WorkspaceTaskSchemaBootstrapper"/> 是仓库里唯一没有配对测试的 bootstrapper
-/// （其余 AgentOrchestration / AppUser / ConnectorStreamProjection / ConversationCommand / ExecutionRun /
-/// ExternalAccessToken / MessageFabric / TaskPlanning / TokenUsage 均有 *SchemaBootstrapperTests）。
+/// 覆盖缺口：<see cref="WorkspaceTaskSchemaBootstrapper"/> 在本类加入前没有配对测试。
+/// 经全量枚举（原首次核对时列表被截断在 40 条，曾据此错认为“唯一缺失”，现更正）：
+/// 仓库里共 23 个 *SchemaBootstrapper，本类加入前仅 11 个配有 *SchemaBootstrapperTests，故该约定是
+/// “多数但非普遍”，<b>不是</b>“唯一例外”。
+/// 有配对测试：AgentOrchestration / AppUser / ConnectorStreamProjection / ConversationCommand / ExecutionRun /
+/// ExternalAccessToken / MessageFabric / SessionSteering / SubAgentRun / TaskPlanning / TokenUsage（+ 本类）。
+/// 同样缺失：ChatMessage / ExternalTaskApi / Goal / ProviderFileRef / TaskDispatch / TaskSchedulerDecision /
+/// TaskSchedulerIntent / TaskSchedulerIntentOutcome / TaskSchedulerScanRun / TaskScheduling / Todo。
 /// 既有测试 <see cref="WorkspaceTaskHierarchyPersistenceTests"/> 覆盖的是<b>列位置序</b>风险，
 /// 且用 EF <c>EnsureCreated</c> 建<b>全新库</b>——不会走到旧库 <c>ALTER TABLE ADD COLUMN</c> 分支。
 /// 而生产库是既有的：<c>CREATE TABLE IF NOT EXISTS</c> 对已存在表是 no-op，补列只能靠
