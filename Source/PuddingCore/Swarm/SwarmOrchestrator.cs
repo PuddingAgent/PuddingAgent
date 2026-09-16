@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using PuddingCode.Abstractions;
@@ -35,7 +35,10 @@ public sealed class SwarmOrchestrator : ISwarmOrchestrator
         string userInput,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var continueMode = userInput.Equals("continue", StringComparison.OrdinalIgnoreCase);
+        // userInput 可为 null（见 SwarmOrchestratorTests.ProcessSwarmAsync_WithNullInput_DoesNotCrash：
+        // "Method should handle null input without crashing"）；改用 string.Equals 静态重载做空安全比较，
+        // null 视为「非续跑」模式，与已通过的 ProcessSwarmAsync_WithEmptyInput_HandlesGracefully 行为一致。
+        var continueMode = string.Equals(userInput, "continue", StringComparison.OrdinalIgnoreCase);
 
         yield return new ThinkingEvent("Initializing swarm directory...");
         await _contractManager.InitializeSwarmDirectoryAsync(ct);
