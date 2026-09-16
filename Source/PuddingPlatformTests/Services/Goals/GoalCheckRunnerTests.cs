@@ -189,14 +189,22 @@ public sealed class GoalCheckRunnerTests
             int? maxLines = null,
             int? maxChars = null,
             CancellationToken ct = default)
-            => Task.FromResult<TerminalOutputSnapshot?>(new TerminalOutputSnapshot
+        {
+            // 与生产 TerminalProcessManager 一致：offset 是 0-based 行号、maxLines 限制行数。
+            // 必须真实切片，否则「runner 只读输出头部」这类缺陷会被恒返全量的桩掩盖。
+            var start = Math.Clamp(offset, 0, Output.Count);
+            var take = Math.Min(maxLines ?? Output.Count, Output.Count - start);
+            var lines = Output.Skip(start).Take(take).ToList();
+            return Task.FromResult<TerminalOutputSnapshot?>(new TerminalOutputSnapshot
             {
                 Process = Info(),
-                Offset = 0,
-                NextOffset = Output.Count,
+                Offset = start,
+                NextOffset = start + lines.Count,
                 TotalLines = Output.Count,
-                Lines = Output,
+                Truncated = start + lines.Count < Output.Count,
+                Lines = lines,
             });
+        }
 
         public Task<bool> WriteInputAsync(string processId, string input, CancellationToken ct = default)
             => Task.FromResult(false);
@@ -334,6 +342,29 @@ public sealed class GoalCheckRunnerTests
         Assert.AreEqual(GoalCriterionResultStatuses.Failed, reports[0].Status);
         Assert.AreEqual(GoalCheckFailureCodes.TestCountUnknown, reports[0].FailureCode);
         Assert.AreEqual(3, reports[0].ExecutedTestCount);
+    }
+
+    [TestMethod]
+    public async Task Run_LongOutputWithTailSummary_StillParsesSummaryAndPasses()
+    {
+        // 回归锁：全量 dotnet test 的汇总行在输出末尾，行数远超 MaxCapturedLines(400)。
+        // runner 只读输出头部时汇总行被截断 ⇒ exitCode=0 也恒报 test_count_unknown
+        //（真实事故：GoalRun 7ef90f2c iteration 1/2 全部 blocked）。
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+        var store = new GoalCheckRecordStore(factory);
+        var output = new List<string>(GreenSummary.Length + 500);
+        for (var i = 0; i < 500; i++)
+            output.Add($"warning NU1903: package vulnerability detail line {i}");
+        output.AddRange(GreenSummary);
+        var stub = new StubProcessManager { ExitCode = 0, Output = output };
+        var runner = new GoalCheckRunner(store, stub, new AllowAllAdmission());
+
+        var reports = await runner.RunAsync([Spec()], Context());
+
+        Assert.AreEqual(GoalCriterionResultStatuses.Passed, reports[0].Status);
+        Assert.AreEqual(5, reports[0].ExecutedTestCount);
+        Assert.IsNull(reports[0].FailureCode);
     }
 
     [TestMethod]

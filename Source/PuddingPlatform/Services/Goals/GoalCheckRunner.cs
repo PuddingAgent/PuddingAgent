@@ -198,9 +198,13 @@ public sealed class GoalCheckRunner(
                 hasUnfinishedProcess: !killed);
         }
 
+        // 必须读尾部：dotnet test/build 的汇总行在输出末尾，全量输出远超 MaxCapturedLines；
+        // 只读头部会把汇总行截掉，exitCode=0 也会恒报 test_count_unknown。
+        var probe = await processManager.ReadOutputAsync(process.ProcessId, 0, 1, null, ct);
+        var readOffset = Math.Max(0, (probe?.TotalLines ?? 0) - MaxCapturedLines);
         var snapshot = await processManager.ReadOutputAsync(
             process.ProcessId,
-            0,
+            readOffset,
             MaxCapturedLines,
             null,
             ct);
