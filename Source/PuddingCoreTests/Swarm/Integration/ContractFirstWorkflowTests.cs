@@ -115,8 +115,8 @@ public sealed class ContractFirstWorkflowTests : IDisposable
         var contract = await contractManager.DefineContractAsync(specification);
 
         // Assert: Contract should identify multiple files
-        Assert.IsGreaterThanOrEqualTo(contract.Files.Count, 1, "Should identify at least one file");
-        Assert.IsGreaterThanOrEqualTo(contract.Symbols.Count, 3, "Should identify multiple symbols");
+        Assert.IsGreaterThanOrEqualTo(1, contract.Files.Count, "Should identify at least one file");
+        Assert.IsGreaterThanOrEqualTo(3, contract.Symbols.Count, "Should identify multiple symbols");
 
         // Act: Spawn multiple workers for different files
         var workers = new List<WorkerInfo>();

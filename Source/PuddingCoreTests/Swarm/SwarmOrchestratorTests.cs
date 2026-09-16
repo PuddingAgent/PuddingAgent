@@ -268,18 +268,23 @@ public sealed class SwarmOrchestratorTests : IDisposable
         var validationIndex = events.FindIndex(e => e is ContractValidatedEvent);
         var completedIndex = events.FindIndex(e => e is SwarmCompletedEvent);
 
-        Assert.IsGreaterThanOrEqualTo(thinkingEventIndex, 0, "Should have thinking event");
-        Assert.IsGreaterThanOrEqualTo(contractDefinedIndex, 0, "Should have contract defined event");
-        Assert.IsGreaterThanOrEqualTo(workerSpawnedIndex, 0, "Should have worker spawned event");
-        Assert.IsGreaterThanOrEqualTo(validationIndex, 0, "Should have validation event");
-        Assert.IsGreaterThanOrEqualTo(completedIndex, 0, "Should have completed event");
+        // FindIndex 找不到时返回 -1，故「索引 ≥ 0」即「事件存在」（不是恒真断言）；
+        // 真正的先后顺序校验由下方 IsLessThan 独立承担。
+        // MSTest 签名为 IsGreaterThanOrEqualTo(lowerBound, value)，原写法把索引当成了 lowerBound，断言方向反转。
+        Assert.IsGreaterThanOrEqualTo(0, thinkingEventIndex, "Should have thinking event");
+        Assert.IsGreaterThanOrEqualTo(0, contractDefinedIndex, "Should have contract defined event");
+        Assert.IsGreaterThanOrEqualTo(0, workerSpawnedIndex, "Should have worker spawned event");
+        Assert.IsGreaterThanOrEqualTo(0, validationIndex, "Should have validation event");
+        Assert.IsGreaterThanOrEqualTo(0, completedIndex, "Should have completed event");
 
         // Verify order: thinking -> (Leader spawn OR contract defined) -> validation -> completed
         // Note: Leader is spawned before contract definition in Phase 1/2
-        Assert.IsLessThan(thinkingEventIndex, contractDefinedIndex, "Thinking should come before contract defined");
+        // 注意 MSTest 签名为 IsLessThan(upperBound, value)，断言 value < upperBound；
+        // 原文把「本应在前」的索引当成了 upperBound，与消息文字相反，导致断言方向反转。
+        Assert.IsLessThan(contractDefinedIndex, thinkingEventIndex, "Thinking should come before contract defined");
         // Worker spawned can come before OR after contract defined (Leader spawns first, then contract, then workers)
         // So we just verify both events exist, not their relative order
-        Assert.IsLessThan(validationIndex, completedIndex, "Validation should come before completed");
+        Assert.IsLessThan(completedIndex, validationIndex, "Validation should come before completed");
     }
 
     #endregion
