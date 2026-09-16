@@ -12,6 +12,7 @@ public sealed class DependencyInjectionTests
     {
         using var fixture = CodeIntelligenceFixture.Create();
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSingleton<ICodeIndexStore>(fixture.Store);
 
         services.AddPuddingCodeIntelligence();
@@ -28,6 +29,7 @@ public sealed class DependencyInjectionTests
     {
         using var fixture = CodeIntelligenceFixture.Create();
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSingleton<ICodeIndexStore>(fixture.Store);
 
         services.AddPuddingCodeIntelligence();
