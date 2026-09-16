@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Goals;
@@ -65,4 +66,91 @@ public sealed class GoalQueriesController(IGoalQueryService goalQueryService) : 
             }),
         });
     }
+
+    /// <summary>
+    /// W2：目标 → 步骤（冻结计划 depth1 叶子）+ 校验状态的只读投影。
+    /// 与 GET /goals/{goalId} 一致，不要求 X-Workspace-Id；goal 不存在 → 404 goal_not_found；
+    /// 有 goal 但无冻结计划 → 200 + hasPlan=false + 空步骤/全 0 计数。
+    /// </summary>
+    [HttpGet("goals/{goalId}/steps")]
+    public async Task<IActionResult> GetGoalSteps(
+        [FromRoute] string goalId,
+        CancellationToken ct)
+    {
+        var snapshot = await goalQueryService.GetStepsAsync(goalId, ct);
+        if (snapshot is null)
+            return Problem(statusCode: 404, title: "goal_not_found", detail: $"Goal '{goalId}' does not exist.");
+
+        return Ok(new GoalStepsResponseDto(
+            snapshot.GoalRunId,
+            JsonNamingPolicy.SnakeCaseLower.ConvertName(snapshot.Phase.ToString()),
+            snapshot.PlanVersion,
+            snapshot.HasPlan,
+            new GoalStepProgressDto(
+                snapshot.Progress.StepsTotal,
+                snapshot.Progress.StepsPassed,
+                snapshot.Progress.StepsFailed,
+                snapshot.Progress.StepsInProgress,
+                snapshot.Progress.CurrentStepId),
+            snapshot.Steps.Select(step => new GoalStepDto(
+                step.NodeId,
+                step.SequenceNo,
+                step.Kind,
+                step.Title,
+                step.Status,
+                step.StartedAtUtc,
+                step.CompletedAtUtc,
+                step.BlockerCode,
+                step.EvidenceRefs)).ToList(),
+            snapshot.Checks.Select(check => new GoalCheckDto(
+                check.CheckId,
+                check.CriterionId,
+                check.Status,
+                check.ExitCode,
+                check.Summary,
+                check.EvidenceRefs)).ToList()));
+    }
+
+    /// <summary>步骤进度计数。stepsInProgress 为非终态步骤数（与结算侧当前步骤选定同口径）。</summary>
+    public sealed record GoalStepProgressDto(
+        int StepsTotal,
+        int StepsPassed,
+        int StepsFailed,
+        int StepsInProgress,
+        string? CurrentStepId);
+
+    /// <summary>单个步骤（task_nodes depth1 叶子）。blockerCode：task_nodes 无该列，当前恒为 null。</summary>
+    public sealed record GoalStepDto(
+        string NodeId,
+        int SequenceNo,
+        string? Kind,
+        string? Title,
+        string Status,
+        DateTimeOffset? StartedAtUtc,
+        DateTimeOffset? CompletedAtUtc,
+        string? BlockerCode,
+        IReadOnlyList<string> EvidenceRefs);
+
+    /// <summary>
+    /// <b>目标级</b>校验状态投影（goal_check_records，仅当前 activation epoch）。
+    /// 检查与步骤之间没有任何外键关联 —— 不得把本列表当作 per-step 校验展示。
+    /// </summary>
+    public sealed record GoalCheckDto(
+        string CheckId,
+        string CriterionId,
+        string Status,
+        int? ExitCode,
+        string? Summary,
+        IReadOnlyList<string> EvidenceRefs);
+
+    public sealed record GoalStepsResponseDto(
+        string GoalRunId,
+        string Phase,
+        int? PlanVersion,
+        bool HasPlan,
+        GoalStepProgressDto Progress,
+
+        /// <summary>按 sequence_no 升序。</summary>
+        IReadOnlyList<GoalStepDto> Steps,
+        IReadOnlyList<GoalCheckDto> Checks);
 }
