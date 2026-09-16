@@ -25,7 +25,10 @@ public sealed class DesktopBootstrapHttpRequestParserTests
             out var yolo,
             out var deploymentMode,
             out var artifactDirectory,
-            out var artifactAssemblySha256);
+            out var artifactAssemblySha256,
+            out var frontendMode,
+            out var frontendArtifactDirectory,
+            out var frontendArtifactIndexSha256);
 
         Assert.True(parsed);
         Assert.Equal("tok", token);
@@ -34,6 +37,39 @@ public sealed class DesktopBootstrapHttpRequestParserTests
         Assert.Equal("prebuilt-artifact", deploymentMode);
         Assert.Equal(@"E:\repo\.tmp-build\core", artifactDirectory);
         Assert.Equal("abc123", artifactAssemblySha256);
+        Assert.Null(frontendMode);
+        Assert.Null(frontendArtifactDirectory);
+        Assert.Null(frontendArtifactIndexSha256);
+    }
+
+    [Fact]
+    public void TryParseStartBody_FrontendFields_ArePreserved()
+    {
+        const string json = """
+            {
+              "token": "tok",
+              "frontendMode": "load",
+              "frontendArtifactDirectory": "E:\\repo\\Source\\PuddingPlatformAdmin\\dist",
+              "frontendArtifactIndexSha256": "cafe01"
+            }
+            """;
+
+        var parsed = DesktopBootstrapHttpRequestParser.TryParseStartBody(
+            json,
+            out _,
+            out _,
+            out _,
+            out _,
+            out _,
+            out _,
+            out var frontendMode,
+            out var frontendArtifactDirectory,
+            out var frontendArtifactIndexSha256);
+
+        Assert.True(parsed);
+        Assert.Equal("load", frontendMode);
+        Assert.Equal(@"E:\repo\Source\PuddingPlatformAdmin\dist", frontendArtifactDirectory);
+        Assert.Equal("cafe01", frontendArtifactIndexSha256);
     }
 
     [Fact]

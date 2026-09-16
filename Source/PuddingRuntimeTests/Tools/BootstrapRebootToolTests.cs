@@ -1,4 +1,4 @@
-﻿using PuddingRuntime.Services.Tools;
+using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntimeTests.Tools;
 
@@ -123,6 +123,36 @@ public sealed class BootstrapRebootToolTests
         StringAssert.Contains(body, "\"artifactAssemblySha256\":\"abc\"");
     }
 
+    [TestMethod]
+    public void BuildStartRequestJson_OmitsFrontendFields_ByDefault()
+    {
+        var body = BootstrapRebootTool.BuildStartRequestJson("tok", "agent:x", yolo: false);
+
+        StringAssert.Contains(body, "\"frontendMode\":null");
+        StringAssert.Contains(body, "\"frontendArtifactDirectory\":null");
+        StringAssert.Contains(body, "\"frontendArtifactIndexSha256\":null");
+    }
+
+    [TestMethod]
+    public void BuildStartRequestJson_FrontendLoad_SerializesFrontendEvidence()
+    {
+        var body = BootstrapRebootTool.BuildStartRequestJson(
+            "tok",
+            "agent:x",
+            yolo: false,
+            frontendMode: "load",
+            frontendArtifactDirectory: @"E:\repo\Source\PuddingPlatformAdmin\dist",
+            frontendArtifactIndexSha256: "cafe01");
+
+        StringAssert.Contains(body, "\"frontendMode\":\"load\"");
+        StringAssert.Contains(
+            body,
+            "\"frontendArtifactDirectory\":\"E:\\\\repo\\\\Source\\\\PuddingPlatformAdmin\\\\dist\"");
+        StringAssert.Contains(body, "\"frontendArtifactIndexSha256\":\"cafe01\"");
+    }
+
+    // ── Mode normalization ─────────────────────────────────────
+
     [DataTestMethod]
     [DataRow(null, "desktop-build")]
     [DataRow("build", "desktop-build")]
@@ -134,4 +164,17 @@ public sealed class BootstrapRebootToolTests
     [TestMethod]
     public void NormalizeDeploymentMode_Unknown_ReturnsNull()
         => Assert.IsNull(BootstrapRebootTool.NormalizeDeploymentMode("hot-swap"));
+
+    [DataTestMethod]
+    [DataRow(null, "skip")]
+    [DataRow("", "skip")]
+    [DataRow("SKIP", "skip")]
+    [DataRow("build", "build")]
+    [DataRow("load", "load")]
+    public void NormalizeFrontendMode_SupportedAliases_ReturnCanonical(string? value, string expected)
+        => Assert.AreEqual(expected, BootstrapRebootTool.NormalizeFrontendMode(value));
+
+    [TestMethod]
+    public void NormalizeFrontendMode_Unknown_ReturnsNull()
+        => Assert.IsNull(BootstrapRebootTool.NormalizeFrontendMode("hot-swap"));
 }

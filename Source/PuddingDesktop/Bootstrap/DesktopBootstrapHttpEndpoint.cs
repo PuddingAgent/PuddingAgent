@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using PuddingDesktop.Configuration;
@@ -199,7 +199,10 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
             out var yolo,
             out var deploymentMode,
             out var artifactDirectory,
-            out var artifactAssemblySha256);
+            out var artifactAssemblySha256,
+            out var frontendMode,
+            out var frontendArtifactDirectory,
+            out var frontendArtifactIndexSha256);
 
         if (!await CheckTokenAsync(context, body, cancellationToken))
         {
@@ -221,12 +224,33 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
             return;
         }
 
+        // Fail fast on an unusable frontend request instead of accepting a
+        // signal that is guaranteed to abort later.
+        if (DesktopBootstrapSignalParser.NormalizeFrontendMode(frontendMode) is null)
+        {
+            await WriteJsonAsync(context, 400, """{"error":"unsupported_frontend_mode"}""");
+            return;
+        }
+
+        if (string.Equals(
+                DesktopBootstrapSignalParser.NormalizeFrontendMode(frontendMode),
+                DesktopBootstrapSignalParser.FrontendLoadMode,
+                StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(frontendArtifactDirectory))
+        {
+            await WriteJsonAsync(context, 400, """{"error":"frontend_artifact_directory_required"}""");
+            return;
+        }
+
         _ = RunInBackgroundAsync(
             requestedBy,
             yolo,
             deploymentMode,
             artifactDirectory,
-            artifactAssemblySha256);
+            artifactAssemblySha256,
+            frontendMode,
+            frontendArtifactDirectory,
+            frontendArtifactIndexSha256);
         await WriteJsonAsync(
             context,
             202,
@@ -242,7 +266,7 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
         HttpListenerContext context, string body, CancellationToken cancellationToken)
     {
         DesktopBootstrapHttpRequestParser.TryParseStartBody(
-            body, out var bodyToken, out _, out _, out _, out _, out _);
+            body, out var bodyToken, out _, out _, out _, out _, out _, out _, out _, out _);
 
         var headerToken = context.Request.Headers["X-Control-Token"];
         var expectedToken = await _tokenService.GetOrCreateAsync(_dataRoot, cancellationToken);
@@ -395,7 +419,10 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
             out var yolo,
             out _,
             out var artifactDirectory,
-            out var artifactAssemblySha256);
+            out var artifactAssemblySha256,
+            out _,
+            out _,
+            out _);
 
         if (_signalService.IsBusy)
         {
@@ -521,7 +548,10 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
         bool yolo,
         string? deploymentMode,
         string? artifactDirectory,
-        string? artifactAssemblySha256)
+        string? artifactAssemblySha256,
+        string? frontendMode,
+        string? frontendArtifactDirectory,
+        string? frontendArtifactIndexSha256)
     {
         try
         {
@@ -531,6 +561,9 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
                 deploymentMode,
                 artifactDirectory,
                 artifactAssemblySha256,
+                frontendMode,
+                frontendArtifactDirectory,
+                frontendArtifactIndexSha256,
                 CancellationToken.None);
         }
         catch (OperationCanceledException)
@@ -552,7 +585,7 @@ public sealed class DesktopBootstrapHttpEndpoint : IAsyncDisposable
             coreState = _coreStateProvider(),
             lastResult = ReadLastResult(),
         };
-        await WriteJsonAsync(context, 200, JsonSerializer.Serialize(payload), cancellationToken);
+        await WriteJsonAsync(context, 200, JsonSerializer.Serialize(payload, ResponseJsonOptions), cancellationToken);
     }
 
     private async Task HandleDiagnosticsAsync(
@@ -683,7 +716,8 @@ internal static class DesktopBootstrapHttpRequestParser
     /// Parses the POST /desktop/bootstrap/start JSON body
     /// {"token":"...","requestedBy":"...","yolo":true,
     ///  "deploymentMode":"desktop-build","artifactDirectory":"...",
-    ///  "artifactAssemblySha256":"..."}.
+    ///  "artifactAssemblySha256":"...","frontendMode":"skip",
+    ///  "frontendArtifactDirectory":"...","frontendArtifactIndexSha256":"..."}.
     /// Returns false when the body is empty or not valid JSON.
     /// </summary>
     public static bool TryParseStartBody(
@@ -693,7 +727,10 @@ internal static class DesktopBootstrapHttpRequestParser
         out bool yolo,
         out string? deploymentMode,
         out string? artifactDirectory,
-        out string? artifactAssemblySha256)
+        out string? artifactAssemblySha256,
+        out string? frontendMode,
+        out string? frontendArtifactDirectory,
+        out string? frontendArtifactIndexSha256)
     {
         token = null;
         requestedBy = null;
@@ -701,6 +738,9 @@ internal static class DesktopBootstrapHttpRequestParser
         deploymentMode = null;
         artifactDirectory = null;
         artifactAssemblySha256 = null;
+        frontendMode = null;
+        frontendArtifactDirectory = null;
+        frontendArtifactIndexSha256 = null;
 
         if (string.IsNullOrWhiteSpace(body))
             return false;
@@ -717,6 +757,9 @@ internal static class DesktopBootstrapHttpRequestParser
             deploymentMode = payload.DeploymentMode;
             artifactDirectory = payload.ArtifactDirectory;
             artifactAssemblySha256 = payload.ArtifactAssemblySha256;
+            frontendMode = payload.FrontendMode;
+            frontendArtifactDirectory = payload.FrontendArtifactDirectory;
+            frontendArtifactIndexSha256 = payload.FrontendArtifactIndexSha256;
             return true;
         }
         catch (JsonException)
@@ -767,6 +810,9 @@ internal static class DesktopBootstrapHttpRequestParser
         public string? DeploymentMode { get; init; }
         public string? ArtifactDirectory { get; init; }
         public string? ArtifactAssemblySha256 { get; init; }
+        public string? FrontendMode { get; init; }
+        public string? FrontendArtifactDirectory { get; init; }
+        public string? FrontendArtifactIndexSha256 { get; init; }
     }
 
     private sealed record FrontendRequestBody

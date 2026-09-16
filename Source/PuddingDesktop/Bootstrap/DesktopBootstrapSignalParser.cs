@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -27,6 +27,9 @@ internal static class DesktopBootstrapSignalParser
     public const string DefaultSignalFileName = "rebuild.signal";
     public const string DefaultBuildProjectRelativePath = "Source/PuddingAgent/PuddingAgent.csproj";
     public const int DefaultBuildTimeoutSeconds = 300;
+    public const string FrontendSkipMode = "skip";
+    public const string FrontendBuildMode = "build";
+    public const string FrontendLoadMode = "load";
     private const int MaxRepositoryWalkDepth = 8;
 
     /// <summary>
@@ -75,6 +78,25 @@ internal static class DesktopBootstrapSignalParser
             "desktop-build" or "build" => DesktopBuildMode,
             "prebuilt-artifact" or "prebuilt" => PrebuiltArtifactMode,
             "restart-only" or "restart" => RestartOnlyMode,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// Normalizes the frontend step mode of a rebuild-restart. "skip" (the
+    /// default) preserves the legacy behavior of never rebuilding the Admin
+    /// frontend during a bootstrap; "build" rebuilds it from source before the
+    /// dotnet build; "load" deploys an already-built dist directory. Null means
+    /// unsupported.
+    /// </summary>
+    public static string? NormalizeFrontendMode(string? mode, string? defaultMode = FrontendSkipMode)
+    {
+        var value = string.IsNullOrWhiteSpace(mode) ? defaultMode : mode;
+        return value?.Trim().ToLowerInvariant() switch
+        {
+            FrontendSkipMode or "" => FrontendSkipMode,
+            FrontendBuildMode => FrontendBuildMode,
+            FrontendLoadMode => FrontendLoadMode,
             _ => null,
         };
     }

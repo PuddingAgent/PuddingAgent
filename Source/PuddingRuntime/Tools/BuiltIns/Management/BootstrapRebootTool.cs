@@ -16,12 +16,15 @@ namespace PuddingRuntime.Services.Tools;
 /// POST /desktop/bootstrap/start（X-Control-Token 头 + JSON body）。
 /// Desktop 接受后：停 Core → 构建/接收预构建产物 → 事务部署到实际 Core
 /// 启动目录 → SHA-256 校验 → 重启 Core。
+/// frontendMode=build/load 时，Desktop 会在 dotnet build 之前先重建/投放
+/// Admin 前端（复用 FrontendBuildDeployService）；该步骤失败将 fail-closed
+/// 中止本次重启并在结果 JSON 的 frontend 字段中给出原因。
 /// 成功触发后本进程将在数秒内被停止，会话于重启后自动恢复（心跳/消息唤醒）。
 /// </summary>
 [Tool(
     id: "bootstrap_reboot",
     name: "Bootstrap reboot",
-    description: "触发 Desktop 引导的 Core 程序集部署与重启（自举点火）。默认 desktop-build：Desktop 停止 Core、编译、把产物事务部署到实际 Core 启动目录、校验 PuddingAgent.dll SHA-256 后重启；prebuilt-artifact 可接收 Agent 已编译产物；restart-only 才只重启。触发后本进程会终止并在新 Core 中恢复。警告：重启会终止所有运行中的子代理。",
+    description: "触发 Desktop 引导的 Core 程序集部署与重启（自举点火）。默认 desktop-build：Desktop 停止 Core、编译、把产物事务部署到实际 Core 启动目录、校验 PuddingAgent.dll SHA-256 后重启；prebuilt-artifact 可接收 Agent 已编译产物；restart-only 才只重启。frontendMode 可选 build/load：在 dotnet build 之前先重建/投放 Admin 前端，步骤失败则中止本次重启（结果 JSON 的 frontend 字段给出 mode/ran/copiedFileCount/indexSha256 等事实）。触发后本进程会终止并在新 Core 中恢复。警告：重启会终止所有运行中的子代理。",
     category: ToolCategory.General,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.None)]
@@ -76,6 +79,12 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
         if (deploymentMode == "prebuilt-artifact" && string.IsNullOrWhiteSpace(args.ArtifactDirectory))
             return Fail("prebuilt-artifact mode requires artifactDirectory.");
 
+        var frontendMode = NormalizeFrontendMode(args.FrontendMode);
+        if (frontendMode is null)
+            return Fail("frontendMode must be skip, build, or load.");
+        if (frontendMode == "load" && string.IsNullOrWhiteSpace(args.FrontendArtifactDirectory))
+            return Fail("frontendMode=load requires frontendArtifactDirectory.");
+
         var requestedBy = $"agent:{context.AgentInstanceId}";
         var url = $"http://127.0.0.1:{port}/desktop/bootstrap/start";
         var body = BuildStartRequestJson(
@@ -84,11 +93,14 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
             yolo,
             deploymentMode,
             args.ArtifactDirectory,
-            args.ArtifactAssemblySha256);
+            args.ArtifactAssemblySha256,
+            frontendMode,
+            args.FrontendArtifactDirectory,
+            args.FrontendArtifactIndexSha256);
 
         _logger.LogWarning(
-            "[BootstrapReboot] Agent {Agent} triggered deployment restart. endpoint={Endpoint} mode={Mode} yolo={Yolo} reason={Reason}",
-            context.AgentInstanceId, url, deploymentMode, yolo, args.Reason ?? "(none)");
+            "[BootstrapReboot] Agent {Agent} triggered deployment restart. endpoint={Endpoint} mode={Mode} yolo={Yolo} frontend={Frontend} reason={Reason}",
+            context.AgentInstanceId, url, deploymentMode, yolo, frontendMode, args.Reason ?? "(none)");
 
         try
         {
@@ -124,6 +136,7 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
                 http_status = statusCode,
                 yolo_signal_requested = yolo,
                 deployment_mode = deploymentMode,
+                frontend_mode = frontendMode,
                 desktop_response = responseBody,
                 notice,
             }, OutputJsonOptions));
@@ -178,7 +191,10 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
         bool yolo,
         string deploymentMode = "desktop-build",
         string? artifactDirectory = null,
-        string? artifactAssemblySha256 = null)
+        string? artifactAssemblySha256 = null,
+        string? frontendMode = null,
+        string? frontendArtifactDirectory = null,
+        string? frontendArtifactIndexSha256 = null)
         => JsonSerializer.Serialize(
             new
             {
@@ -188,6 +204,9 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
                 deploymentMode,
                 artifactDirectory,
                 artifactAssemblySha256,
+                frontendMode,
+                frontendArtifactDirectory,
+                frontendArtifactIndexSha256,
             },
             OutputJsonOptions);
 
@@ -199,6 +218,19 @@ public sealed class BootstrapRebootTool : PuddingToolBase<BootstrapRebootArgs>
             "desktop-build" or "build" => "desktop-build",
             "prebuilt-artifact" or "prebuilt" => "prebuilt-artifact",
             "restart-only" or "restart" => "restart-only",
+            _ => null,
+        };
+    }
+
+    /// <summary>Normalizes frontendMode aliases; null means unsupported. Empty/omitted means "skip".</summary>
+    public static string? NormalizeFrontendMode(string? mode)
+    {
+        var value = string.IsNullOrWhiteSpace(mode) ? "skip" : mode;
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "skip" => "skip",
+            "build" => "build",
+            "load" => "load",
             _ => null,
         };
     }
@@ -238,4 +270,13 @@ public sealed record BootstrapRebootArgs
 
     [ToolParam("Optional expected SHA-256 of artifactDirectory/PuddingAgent.dll. Desktop rejects deployment on mismatch.")]
     public string? ArtifactAssemblySha256 { get; init; }
+
+    [ToolParam("Frontend step: skip (default; never touch the Admin frontend), build (pnpm run build + deploy to wwwroot/admin BEFORE the dotnet build), or load (deploy an already-built dist). A failing frontend step aborts the whole restart (fail-closed).")]
+    public string? FrontendMode { get; init; }
+
+    [ToolParam("Absolute prebuilt frontend dist directory. Required only for frontendMode=load; it must be inside the configured repository root.")]
+    public string? FrontendArtifactDirectory { get; init; }
+
+    [ToolParam("Optional expected SHA-256 of the dist index.html. Only used with frontendMode=load; Desktop rejects the deployment on mismatch.")]
+    public string? FrontendArtifactIndexSha256 { get; init; }
 }

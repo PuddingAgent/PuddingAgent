@@ -1,10 +1,10 @@
-﻿namespace PuddingDesktop.Bootstrap;
+namespace PuddingDesktop.Bootstrap;
 
 /// <summary>
 /// Parsed contents of a bootstrap signal file (JSON, UTF-8).
 /// Protocol: { "token": "&lt;controlToken&gt;", "action": "rebuild-restart",
 ///             "deploymentMode": "desktop-build", "yolo": true,
-///             "requestedBy": "...", "message": "..." }
+///             "frontendMode": "skip", "requestedBy": "...", "message": "..." }
 /// </summary>
 public sealed record DesktopBootstrapSignal
 {
@@ -25,6 +25,15 @@ public sealed record DesktopBootstrapSignal
 
     /// <summary>Optional expected SHA-256 for ArtifactDirectory/PuddingAgent.dll.</summary>
     public string? ArtifactAssemblySha256 { get; init; }
+
+    /// <summary>Frontend step mode: skip (default), build, or load. Null/empty means skip.</summary>
+    public string? FrontendMode { get; init; }
+
+    /// <summary>Absolute prebuilt frontend dist directory, required by frontend_mode=load.</summary>
+    public string? FrontendArtifactDirectory { get; init; }
+
+    /// <summary>Optional expected SHA-256 of the dist index.html (frontend_mode=load only).</summary>
+    public string? FrontendArtifactIndexSha256 { get; init; }
 
     /// <summary>Optional free-form requester identity, echoed into yolo.signal and the result file.</summary>
     public string? RequestedBy { get; init; }
@@ -91,6 +100,38 @@ public sealed record DesktopBootstrapResult
     /// <summary>True when yolo.signal was written after a successful build.</summary>
     public bool YoloSignalWritten { get; init; }
 
+    /// <summary>
+    /// Frontend step outcome. Always present (mode=skip when the frontend was
+    /// not requested) so that "did this restart rebuild the frontend?" is a
+    /// checkable fact in every result file.
+    /// </summary>
+    public FrontendStepResult Frontend { get; init; } = new() { Mode = "skip" };
+
     /// <summary>Human-readable error list. Empty on a fully successful loop.</summary>
     public List<string> Errors { get; init; } = [];
+
+    /// <summary>Outcome of the optional frontend rebuild/deploy step of one bootstrap.</summary>
+    public sealed record FrontendStepResult
+    {
+        /// <summary>Requested mode: "skip", "build", or "load".</summary>
+        public string Mode { get; init; } = "skip";
+
+        /// <summary>True when the frontend step actually ran (never for skip / restart-only).</summary>
+        public bool Ran { get; init; }
+
+        public bool RanInstall { get; init; }
+
+        public bool BuiltFromSource { get; init; }
+
+        public int CopiedFileCount { get; init; }
+
+        public string? TargetAdminDirectory { get; init; }
+
+        public string? IndexSha256 { get; init; }
+
+        /// <summary>True when the step failed; the bootstrap was then aborted fail-closed.</summary>
+        public bool Failed { get; init; }
+
+        public string? Error { get; init; }
+    }
 }

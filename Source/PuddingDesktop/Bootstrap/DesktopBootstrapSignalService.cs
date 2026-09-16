@@ -1,7 +1,9 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text;
 using PuddingCode.Configuration;
 using PuddingDesktop.Configuration;
+using PuddingDesktop.Core;
+using PuddingDesktop.Debug;
 using PuddingDesktop.Diagnostics;
 using PuddingDesktop.Hosting;
 using PuddingDesktop.Runtime;
@@ -14,8 +16,9 @@ namespace PuddingDesktop.Bootstrap;
 /// and exposes the manual API trigger used by the loopback HTTP endpoint
 /// (DesktopBootstrapHttpEndpoint) and the UI. On a valid "rebuild-restart"
 /// trigger it runs the closed loop:
-///   stop Core → build or accept a prebuilt artifact → transactional deployment
-///   → hash verification → write yolo.signal (optional) → restart Core.
+///   [optional frontend step] → stop Core → build or accept a prebuilt artifact
+///   → transactional deployment → hash verification → write yolo.signal (optional)
+///   → restart Core.
 /// Every attempt (success or failure) writes a result file; malformed signals are
 /// deleted to prevent a retry loop. No behavior change when the signal never appears.
 /// </summary>
@@ -29,7 +32,7 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
     private static readonly TimeSpan CoreFullyStoppedPollInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan CoreFullyStoppedTimeout = TimeSpan.FromSeconds(30);
 
-    private readonly DesktopApplicationCoordinator _coordinator;
+    private readonly DesktopApplicationCoordinator? _coordinator;
     private readonly IDesktopControlTokenService _tokenService;
     private readonly string _dataRoot;
     private readonly string _signalPath;
@@ -45,6 +48,8 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
     private readonly string _projectName;
     private readonly TimeSpan _buildTimeout;
 
+    private readonly DesktopBootstrapTestHooks? _hooks;
+
     private readonly CancellationTokenSource _cts = new();
     private Task? _loopTask;
     private int _busyFlag;
@@ -54,13 +59,39 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
         string dataRoot,
         PuddingDesktopBootstrapConfig config,
         IDesktopControlTokenService tokenService)
+        : this(coordinator, null, dataRoot, config, tokenService)
     {
-        ArgumentNullException.ThrowIfNull(coordinator);
+    }
+
+    /// <summary>
+    /// Test-only constructor: every external effect (Core stop/start, runtime
+    /// state, executable path, dotnet build, frontend deploy) must be supplied
+    /// through hooks so tests never launch real processes or restarts.
+    /// </summary>
+    internal DesktopBootstrapSignalService(
+        DesktopBootstrapTestHooks hooks,
+        string dataRoot,
+        PuddingDesktopBootstrapConfig config,
+        IDesktopControlTokenService tokenService)
+        : this(null, hooks, dataRoot, config, tokenService)
+    {
+    }
+
+    private DesktopBootstrapSignalService(
+        DesktopApplicationCoordinator? coordinator,
+        DesktopBootstrapTestHooks? hooks,
+        string dataRoot,
+        PuddingDesktopBootstrapConfig config,
+        IDesktopControlTokenService tokenService)
+    {
+        if (coordinator is null && hooks is null)
+            throw new ArgumentNullException(nameof(coordinator));
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(tokenService);
         ArgumentException.ThrowIfNullOrWhiteSpace(dataRoot);
 
         _coordinator = coordinator;
+        _hooks = hooks;
         _tokenService = tokenService;
         _dataRoot = dataRoot;
 
@@ -114,20 +145,48 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
     /// <param name="yolo">When true (and AutoYolo is enabled), write yolo.signal after a successful build.</param>
     /// <param name="ct">Cancellation token. The signal-file path cancels on shutdown; the API path passes CancellationToken.None.</param>
     /// <exception cref="InvalidOperationException">Thrown when another rebuild-restart attempt is already running.</exception>
-    public async Task<DesktopBootstrapResult> TriggerRebuildRestartAsync(
+    public Task<DesktopBootstrapResult> TriggerRebuildRestartAsync(
         string? requestedBy, bool yolo, CancellationToken ct)
-        => await TriggerRebuildRestartAsync(
+        => TriggerRebuildRestartAsync(
             requestedBy,
             yolo,
             deploymentMode: null,
             artifactDirectory: null,
             artifactAssemblySha256: null,
+            frontendMode: null,
+            frontendArtifactDirectory: null,
+            frontendArtifactIndexSha256: null,
             ct);
 
     /// <summary>
-    /// Runs a deployment-aware rebuild-restart cycle. desktop-build delegates
-    /// compilation to Desktop; prebuilt-artifact accepts an Agent-produced build;
-    /// restart-only is an explicit no-deployment escape hatch.
+    /// Legacy 5-parameter entry (HTTP start / UI / signal-file paths). The
+    /// frontend step defaults to skip, which preserves the legacy behavior.
+    /// </summary>
+    public Task<DesktopBootstrapResult> TriggerRebuildRestartAsync(
+        string? requestedBy,
+        bool yolo,
+        string? deploymentMode,
+        string? artifactDirectory,
+        string? artifactAssemblySha256,
+        CancellationToken ct)
+        => TriggerRebuildRestartAsync(
+            requestedBy,
+            yolo,
+            deploymentMode,
+            artifactDirectory,
+            artifactAssemblySha256,
+            frontendMode: null,
+            frontendArtifactDirectory: null,
+            frontendArtifactIndexSha256: null,
+            ct);
+
+    /// <summary>
+    /// Runs a deployment-aware rebuild-restart cycle with an optional frontend
+    /// step. desktop-build delegates compilation to Desktop; prebuilt-artifact
+    /// accepts an Agent-produced build; restart-only is an explicit
+    /// no-deployment escape hatch. frontend_mode=build/load runs the frontend
+    /// rebuild/deploy BEFORE Core is stopped and BEFORE the dotnet build; a
+    /// failing frontend step aborts the restart fail-closed.
     /// </summary>
     public async Task<DesktopBootstrapResult> TriggerRebuildRestartAsync(
         string? requestedBy,
@@ -135,6 +194,9 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
         string? deploymentMode,
         string? artifactDirectory,
         string? artifactAssemblySha256,
+        string? frontendMode,
+        string? frontendArtifactDirectory,
+        string? frontendArtifactIndexSha256,
         CancellationToken ct)
     {
         if (Interlocked.CompareExchange(ref _busyFlag, 1, 0) != 0)
@@ -148,6 +210,9 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
                 deploymentMode,
                 artifactDirectory,
                 artifactAssemblySha256,
+                frontendMode,
+                frontendArtifactDirectory,
+                frontendArtifactIndexSha256,
                 ct);
             await WriteResultAndDeleteSignalAsync(result);
             return result;
@@ -176,7 +241,7 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
 
             try
             {
-                await _coordinator.StopCoreAsync(cancellationToken);
+                await StopCoreForBootstrapAsync(cancellationToken);
             }
             catch (Exception ex)
             {
@@ -186,7 +251,7 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
             var fullyStopped = false;
             try
             {
-                fullyStopped = await WaitForCoreFullyStoppedAsync(cancellationToken);
+                fullyStopped = await RunWaitCoreFullyStoppedAsync(cancellationToken);
             }
             catch (Exception ex)
             {
@@ -224,7 +289,7 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
 
         try
         {
-            if (!IsCoreFullyStopped(_coordinator.RuntimeSnapshot.State))
+            if (!IsCoreFullyStopped(CurrentRuntimeState()))
                 throw new InvalidOperationException("Core 正在运行，请先调用 core/stop");
 
             var startedAt = DateTimeOffset.UtcNow;
@@ -233,7 +298,7 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
 
             try
             {
-                build = await RunBuildAsync(cancellationToken);
+                build = await RunBuildStepAsync(cancellationToken);
                 if (build.ExitCode != 0)
                     errors.Add($"dotnet build 失败，退出码: {build.ExitCode}");
             }
@@ -278,8 +343,8 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
 
             try
             {
-                await _coordinator.StartCoreAsync(cancellationToken);
-                coreRestarted = _coordinator.RuntimeSnapshot.State == DesktopRuntimeState.Ready;
+                await StartCoreForBootstrapAsync(cancellationToken);
+                coreRestarted = CurrentRuntimeState() == DesktopRuntimeState.Ready;
             }
             catch (Exception ex)
             {
@@ -312,7 +377,7 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
         var deadline = DateTimeOffset.UtcNow + CoreFullyStoppedTimeout;
         while (true)
         {
-            if (IsCoreFullyStopped(_coordinator.RuntimeSnapshot.State))
+            if (IsCoreFullyStopped(CurrentRuntimeState()))
                 return true;
 
             if (DateTimeOffset.UtcNow >= deadline)
@@ -409,6 +474,9 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
                     signal.DeploymentMode,
                     signal.ArtifactDirectory,
                     signal.ArtifactAssemblySha256,
+                    signal.FrontendMode,
+                    signal.FrontendArtifactDirectory,
+                    signal.FrontendArtifactIndexSha256,
                     cancellationToken);
             }
             catch (InvalidOperationException) when (IsBusy)
@@ -460,10 +528,12 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
     }
 
     /// <summary>
-    /// The shared rebuild-restart orchestration: stop Core → prepare artifact →
-    /// transactional deployment → hash verification → optional yolo.signal →
-    /// restart Core. Preparation/deployment failures are recorded and the old
-    /// Core is restarted as the fallback.
+    /// The shared rebuild-restart orchestration: optional frontend step →
+    /// stop Core → prepare artifact → transactional deployment → hash
+    /// verification → optional yolo.signal → restart Core. Preparation and
+    /// deployment failures are recorded; the old Core is restarted as the
+    /// fallback. A failing frontend step aborts BEFORE Core is stopped, so
+    /// the running system stays untouched (fail-closed).
     /// </summary>
     private async Task<DesktopBootstrapResult> RunRebuildRestartCoreAsync(
         string? requestedBy,
@@ -471,6 +541,9 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
         string? requestedDeploymentMode,
         string? artifactDirectory,
         string? artifactAssemblySha256,
+        string? requestedFrontendMode,
+        string? frontendArtifactDirectory,
+        string? frontendArtifactIndexSha256,
         CancellationToken cancellationToken)
     {
         var startedAt = DateTimeOffset.UtcNow;
@@ -480,6 +553,11 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
         var deploymentMode = DesktopBootstrapSignalParser.NormalizeDeploymentMode(
             requestedDeploymentMode,
             _defaultDeploymentMode);
+        var frontendMode = DesktopBootstrapSignalParser.NormalizeFrontendMode(requestedFrontendMode);
+        var frontend = new DesktopBootstrapResult.FrontendStepResult
+        {
+            Mode = frontendMode ?? (requestedFrontendMode ?? "skip"),
+        };
         var buildOutputDirectory = default(string);
         var deploymentDirectory = default(string);
         var preparedAssemblySha256 = default(string);
@@ -503,6 +581,21 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
                 Action = DesktopBootstrapSignalParser.RebuildRestartAction,
                 StartedAt = startedAt,
                 FinishedAt = DateTimeOffset.UtcNow,
+                Errors = errors,
+            };
+        }
+
+        if (frontendMode is null)
+        {
+            errors.Add($"不支持的 frontendMode: {requestedFrontendMode ?? "(null)"}");
+            return new DesktopBootstrapResult
+            {
+                Success = false,
+                Action = DesktopBootstrapSignalParser.RebuildRestartAction,
+                DeploymentMode = deploymentMode,
+                StartedAt = startedAt,
+                FinishedAt = DateTimeOffset.UtcNow,
+                Frontend = frontend with { Failed = true, Error = "unsupported frontendMode" },
                 Errors = errors,
             };
         }
@@ -537,10 +630,77 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
             }
         }
 
+        // a0) Optional frontend step (frontend_mode=build/load): rebuild and
+        //     deploy the Admin frontend BEFORE Core is stopped and BEFORE the
+        //     dotnet build, so (1) MSBuild's Exists(dist/index.html) content
+        //     copy carries the fresh artifacts and (2) a frontend failure can
+        //     abort the whole restart fail-closed while the running system is
+        //     untouched (Core keeps running; nothing was stopped or replaced).
+        var frontendStepRequested = frontendMode
+            is DesktopBootstrapSignalParser.FrontendBuildMode
+            or DesktopBootstrapSignalParser.FrontendLoadMode;
+        if (frontendStepRequested && deploymentMode != DesktopBootstrapSignalParser.RestartOnlyMode)
+        {
+            if (frontendMode == DesktopBootstrapSignalParser.FrontendLoadMode
+                && string.IsNullOrWhiteSpace(frontendArtifactDirectory))
+            {
+                frontend = frontend with
+                {
+                    Failed = true,
+                    Error = "frontend_mode=load 要求 frontendArtifactDirectory。",
+                };
+                errors.Add($"前端步骤失败，已中止本次重启（Core 未受影响）: {frontend.Error}");
+                return new DesktopBootstrapResult
+                {
+                    Success = false,
+                    Action = DesktopBootstrapSignalParser.RebuildRestartAction,
+                    DeploymentMode = deploymentMode,
+                    StartedAt = startedAt,
+                    FinishedAt = DateTimeOffset.UtcNow,
+                    Frontend = frontend,
+                    Errors = errors,
+                };
+            }
+
+            try
+            {
+                var deployed = await RunFrontendStepAsync(
+                    frontendMode,
+                    frontendArtifactDirectory,
+                    frontendArtifactIndexSha256,
+                    cancellationToken);
+                frontend = frontend with
+                {
+                    Ran = true,
+                    RanInstall = deployed.RanInstall,
+                    BuiltFromSource = deployed.BuiltFromSource,
+                    CopiedFileCount = deployed.CopiedFileCount,
+                    TargetAdminDirectory = deployed.TargetAdminDirectory,
+                    IndexSha256 = deployed.IndexSha256,
+                };
+            }
+            catch (Exception ex)
+            {
+                frontend = frontend with { Ran = true, Failed = true, Error = ex.Message };
+                DesktopDiagnosticLog.Write("BootstrapFrontendStep", ex);
+                errors.Add($"前端步骤失败，已中止本次重启（Core 未受影响）: {ex.Message}");
+                return new DesktopBootstrapResult
+                {
+                    Success = false,
+                    Action = DesktopBootstrapSignalParser.RebuildRestartAction,
+                    DeploymentMode = deploymentMode,
+                    StartedAt = startedAt,
+                    FinishedAt = DateTimeOffset.UtcNow,
+                    Frontend = frontend,
+                    Errors = errors,
+                };
+            }
+        }
+
         // a) Stop Core. No-op when Core is already stopped.
         try
         {
-            await _coordinator.StopCoreAsync(cancellationToken);
+            await StopCoreForBootstrapAsync(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -555,7 +715,7 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
         var skipBuild = false;
         try
         {
-            var fullyStopped = await WaitForCoreFullyStoppedAsync(cancellationToken);
+            var fullyStopped = await RunWaitCoreFullyStoppedAsync(cancellationToken);
             if (!fullyStopped)
             {
                 errors.Add("Core 进程未完全退出，为避免文件锁跳过构建");
@@ -575,7 +735,7 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
         {
             try
             {
-                build = await RunBuildAsync(cancellationToken);
+                build = await RunBuildStepAsync(cancellationToken);
                 buildExitCode = build.ExitCode;
                 buildLogTail = build.LogTail;
                 if (build.ExitCode != 0)
@@ -604,7 +764,7 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
             && buildOutputDirectory is not null)
         {
             var preparedAssemblyPath = Path.Combine(buildOutputDirectory, "PuddingAgent.dll");
-            var coreExecutablePath = _coordinator.CoreExecutablePath;
+            var coreExecutablePath = CurrentCoreExecutablePath();
             deploymentDirectory = string.IsNullOrWhiteSpace(coreExecutablePath)
                 ? null
                 : Path.GetDirectoryName(Path.GetFullPath(coreExecutablePath));
@@ -682,6 +842,21 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
             preparationSucceeded = deploymentVerified && errors.Count == 0;
         }
 
+        // c0) Post-deployment gate: the /admin/{*path:nonfile} SPA fallback is
+        //     only registered at startup when wwwroot\admin\index.html exists.
+        //     For frontend mode=build/load a missing entry file aborts the
+        //     deployment restart; Core is restored from the previous state and
+        //     the failure is reported instead of a misleading success.
+        if (frontend.Ran
+            && preparationSucceeded
+            && !string.IsNullOrWhiteSpace(deploymentDirectory)
+            && !File.Exists(Path.Combine(deploymentDirectory!, "wwwroot", "admin", "index.html")))
+        {
+            preparationSucceeded = false;
+            errors.Add(
+                "部署目录缺少 wwwroot\\admin\\index.html（SPA fallback 仅在启动时该文件存在才注册），已中止本次部署重启。");
+        }
+
         // c) yolo.signal (only after the requested preparation succeeded).
         if (preparationSucceeded && _autoYolo && yolo)
         {
@@ -700,8 +875,8 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
         //    preparation failure this restores Core with the previous binary.
         try
         {
-            await _coordinator.StartCoreAsync(cancellationToken);
-            coreRestarted = _coordinator.RuntimeSnapshot.State == DesktopRuntimeState.Ready;
+            await StartCoreForBootstrapAsync(cancellationToken);
+            coreRestarted = CurrentRuntimeState() == DesktopRuntimeState.Ready;
         }
         catch (Exception ex)
         {
@@ -709,7 +884,7 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
         }
 
         var assembliesReloaded = false;
-        var launchedCoreExecutablePath = _coordinator.CoreExecutablePath;
+        var launchedCoreExecutablePath = CurrentCoreExecutablePath();
         if (coreRestarted
             && deploymentMode != DesktopBootstrapSignalParser.RestartOnlyMode
             && preparationSucceeded
@@ -779,8 +954,98 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
             AssembliesReloaded = assembliesReloaded,
             CoreRestarted = coreRestarted,
             YoloSignalWritten = yoloSignalWritten,
+            Frontend = frontend,
             Errors = errors,
         };
+    }
+
+    private Task<bool> RunWaitCoreFullyStoppedAsync(CancellationToken cancellationToken)
+        => _hooks is not null
+            ? _hooks.WaitForCoreFullyStoppedAsync(cancellationToken)
+            : WaitForCoreFullyStoppedAsync(cancellationToken);
+
+    private Task StopCoreForBootstrapAsync(CancellationToken cancellationToken)
+        => _hooks is not null
+            ? _hooks.StopCoreAsync(cancellationToken)
+            : _coordinator!.StopCoreAsync(cancellationToken);
+
+    private Task StartCoreForBootstrapAsync(CancellationToken cancellationToken)
+        => _hooks is not null
+            ? _hooks.StartCoreAsync(cancellationToken)
+            : _coordinator!.StartCoreAsync(cancellationToken);
+
+    private DesktopRuntimeState CurrentRuntimeState()
+        => _hooks is not null ? _hooks.RuntimeState() : _coordinator!.RuntimeSnapshot.State;
+
+    private string? CurrentCoreExecutablePath()
+        => _hooks is not null ? _hooks.CoreExecutablePath() : _coordinator!.CoreExecutablePath;
+
+    private Task<BuildRunResult> RunBuildStepAsync(CancellationToken cancellationToken)
+        => _hooks is not null
+            ? _hooks.BuildAsync(cancellationToken)
+            : RunBuildAsync(cancellationToken);
+
+    /// <summary>
+    /// Runs the optional frontend step. The default implementation reuses
+    /// FrontendBuildDeployService (clear-then-copy into the Core executable
+    /// directory's wwwroot\admin subtree); tests inject hooks instead.
+    /// </summary>
+    private Task<FrontendDeployResult> RunFrontendStepAsync(
+        string frontendMode,
+        string? frontendArtifactDirectory,
+        string? frontendArtifactIndexSha256,
+        CancellationToken cancellationToken)
+        => _hooks is not null
+            ? _hooks.FrontendDeployAsync(frontendMode, frontendArtifactDirectory, frontendArtifactIndexSha256, cancellationToken)
+            : RunFrontendDeployAsync(frontendMode, frontendArtifactDirectory, frontendArtifactIndexSha256, cancellationToken);
+
+    private async Task<FrontendDeployResult> RunFrontendDeployAsync(
+        string frontendMode,
+        string? frontendArtifactDirectory,
+        string? frontendArtifactIndexSha256,
+        CancellationToken cancellationToken)
+    {
+        var coreExecutablePath = CurrentCoreExecutablePath();
+        if (string.IsNullOrWhiteSpace(coreExecutablePath))
+            throw new InvalidOperationException(
+                "Desktop 尚未解析 CoreExecutablePath，无法定位前端投放目录（wwwroot\\admin）。");
+
+        var targetAdminDirectory = Path.Combine(
+            Path.GetDirectoryName(Path.GetFullPath(coreExecutablePath))!,
+            "wwwroot",
+            "admin");
+        var service = new FrontendBuildDeployService();
+
+        if (frontendMode == DesktopBootstrapSignalParser.FrontendLoadMode)
+        {
+            if (string.IsNullOrWhiteSpace(frontendArtifactDirectory))
+                throw new InvalidOperationException("frontend_mode=load 要求 frontendArtifactDirectory。");
+
+            var fullArtifactDirectory = Path.GetFullPath(frontendArtifactDirectory);
+            if (!PuddingBuildOutputSync.IsPathWithin(fullArtifactDirectory, _repositoryRoot))
+                throw new InvalidOperationException(
+                    $"前端预构建产物目录必须位于仓库根目录内: {_repositoryRoot}");
+
+            return service.DeployPrebuiltArtifacts(
+                fullArtifactDirectory,
+                targetAdminDirectory,
+                frontendArtifactIndexSha256,
+                new CoreProcessLogBuffer());
+        }
+
+        var frontendWorkingDirectory = Path.Combine(_repositoryRoot, "Source", "PuddingPlatformAdmin");
+        if (!File.Exists(Path.Combine(frontendWorkingDirectory, "package.json")))
+            throw new DirectoryNotFoundException(
+                $"前端工程 package.json 不存在: {frontendWorkingDirectory}");
+
+        return await service.DeployAsync(
+            new FrontendDeployOptions
+            {
+                FrontendWorkingDirectory = frontendWorkingDirectory,
+                TargetAdminDirectory = targetAdminDirectory,
+            },
+            new CoreProcessLogBuffer(),
+            cancellationToken);
     }
 
     private async Task<BuildRunResult> RunBuildAsync(
@@ -945,5 +1210,29 @@ public sealed class DesktopBootstrapSignalService : IAsyncDisposable
     }
 
     /// <summary>Result of one dotnet build invocation: exit code, log tail and the full log.</summary>
-    private sealed record BuildRunResult(int ExitCode, List<string> LogTail, string FullLog);
+    internal sealed record BuildRunResult(int ExitCode, List<string> LogTail, string FullLog);
+}
+
+/// <summary>
+/// Internal test seams for DesktopBootstrapSignalService. Every external
+/// effect (Core stop/start, runtime state, executable path, dotnet build,
+/// frontend deploy) is replaceable so tests exercise the orchestration without
+/// real processes or restarts. Only the internal hooks constructor accepts
+/// hooks; the public constructor keeps using the DesktopApplicationCoordinator.
+/// </summary>
+internal sealed record DesktopBootstrapTestHooks
+{
+    public required Func<CancellationToken, Task> StopCoreAsync { get; init; }
+
+    public required Func<CancellationToken, Task<bool>> WaitForCoreFullyStoppedAsync { get; init; }
+
+    public required Func<CancellationToken, Task<DesktopBootstrapSignalService.BuildRunResult>> BuildAsync { get; init; }
+
+    public required Func<CancellationToken, Task> StartCoreAsync { get; init; }
+
+    public required Func<DesktopRuntimeState> RuntimeState { get; init; }
+
+    public required Func<string?> CoreExecutablePath { get; init; }
+
+    public required Func<string, string?, string?, CancellationToken, Task<FrontendDeployResult>> FrontendDeployAsync { get; init; }
 }
