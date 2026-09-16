@@ -68,7 +68,7 @@ public sealed class GitSnapshotServiceTests
 
         // Assert
         Assert.IsNotNull(hash);
-        Assert.IsGreaterThan(hash.Length, 0);
+        Assert.IsGreaterThan(0, hash.Length);
     }
 
     [TestMethod]
