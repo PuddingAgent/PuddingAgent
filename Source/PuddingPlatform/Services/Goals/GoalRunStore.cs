@@ -88,6 +88,18 @@ public sealed class GoalRunStore(
             .OrderBy(item => item.SequenceNo)
             .FirstOrDefaultAsync(ct);
 
+    /// <summary>
+    /// Returns all depth-1 leaves of the frozen Task execution plan in canonical
+    /// sequence order. Read-only projection used to report loop progress
+    /// (stepsPassed/stepsTotal) in the Goal continuation payload.
+    /// </summary>
+    public async Task<IReadOnlyList<TaskNodeEntity>> FindPlanStepsAsync(
+        string taskPlanId, CancellationToken ct = default)
+        => await db.TaskNodes.AsNoTracking()
+            .Where(item => item.PlanId == taskPlanId && item.Depth == 1)
+            .OrderBy(item => item.SequenceNo)
+            .ToListAsync(ct);
+
     public async Task<IReadOnlyList<GoalIterationEntity>> GetIterationsAsync(
         string goalRunId, CancellationToken ct = default)
         => await db.GoalIterations.AsNoTracking()

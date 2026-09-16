@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -78,6 +79,132 @@ public sealed class GoalContinuationTests
             1,
             prompt.Split("</goal_payload>", StringSplitOptions.None).Length - 1,
             "Only the trusted outer delimiter may remain literal.");
+    }
+
+    [TestMethod]
+    public void BuildPrompt_InjectsFourPhaseLoopEnvelope_WithPlanProgress()
+    {
+        var steps = new List<TaskNodeEntity>
+        {
+            new()
+            {
+                TaskNodeId = "node-1",
+                PlanId = "plan-1",
+                Depth = 1,
+                SequenceNo = 10,
+                WorkUnitKind = "Explore",
+                Title = "Step one",
+                Status = "Completed",
+            },
+            new()
+            {
+                TaskNodeId = "node-2",
+                PlanId = "plan-1",
+                Depth = 1,
+                SequenceNo = 20,
+                WorkUnitKind = "Change",
+                Title = "Step two",
+                Status = "InProgress",
+            },
+            new()
+            {
+                TaskNodeId = "node-3",
+                PlanId = "plan-1",
+                Depth = 1,
+                SequenceNo = 30,
+                WorkUnitKind = "Test",
+                Title = "Step three",
+                Status = "Draft",
+            },
+        };
+
+        var prompt = GoalContinuationWorker.BuildPrompt(
+            new GoalRunEntity
+            {
+                GoalRunId = "goal-loop",
+                Objective = "loop envelope",
+                ObjectiveVersion = 1,
+                MaxIterations = 8,
+                IterationsStarted = 0,
+            },
+            binding: new TaskGoalBindingEntity { TaskId = "task-1", TaskPlanId = "plan-1" },
+            task: new WorkspaceTaskEntity
+            {
+                TaskId = "task-1",
+                Status = PuddingCode.Tasks.WorkspaceTaskStatus.InProgress,
+            },
+            workUnit: steps[1],
+            iterationNo: 2,
+            planSteps: steps);
+
+        StringAssert.Contains(prompt, "four phases");
+        StringAssert.Contains(prompt, "Observe:");
+        StringAssert.Contains(prompt, "Plan:");
+        StringAssert.Contains(prompt, "Act:");
+        StringAssert.Contains(prompt, "Verify:");
+
+        using var doc = ParseGoalPayload(prompt);
+        var root = doc.RootElement;
+        var loop = root.GetProperty("loop");
+        Assert.AreEqual(4, loop.GetProperty("phases").GetArrayLength());
+        Assert.AreEqual("observe", loop.GetProperty("phases")[0].GetString());
+        Assert.AreEqual("plan", loop.GetProperty("phases")[1].GetString());
+        Assert.AreEqual("act", loop.GetProperty("phases")[2].GetString());
+        Assert.AreEqual("verify", loop.GetProperty("phases")[3].GetString());
+        Assert.AreEqual("observe", loop.GetProperty("current").GetString());
+        Assert.AreEqual(2, loop.GetProperty("stepIndex").GetInt32());
+        Assert.AreEqual(3, loop.GetProperty("stepTotal").GetInt32());
+
+        var currentStep = root.GetProperty("currentStep");
+        Assert.AreEqual("node-2", currentStep.GetProperty("nodeId").GetString());
+        Assert.AreEqual("Change", currentStep.GetProperty("kind").GetString());
+        Assert.AreEqual("Step two", currentStep.GetProperty("title").GetString());
+        Assert.AreEqual(20, currentStep.GetProperty("sequenceNo").GetInt32());
+        Assert.AreEqual("InProgress", currentStep.GetProperty("status").GetString());
+
+        var progress = root.GetProperty("progress");
+        Assert.AreEqual(1, progress.GetProperty("stepsPassed").GetInt32());
+        Assert.AreEqual(3, progress.GetProperty("stepsTotal").GetInt32());
+    }
+
+    [TestMethod]
+    public void BuildPrompt_WithoutFrozenPlan_CurrentStepIsNull_AndProgressZeroed()
+    {
+        var prompt = GoalContinuationWorker.BuildPrompt(
+            new GoalRunEntity
+            {
+                GoalRunId = "goal-loop-empty",
+                Objective = "loop envelope empty",
+                ObjectiveVersion = 1,
+                MaxIterations = 8,
+                IterationsStarted = 0,
+            },
+            binding: null,
+            task: null,
+            workUnit: null,
+            iterationNo: 1);
+
+        StringAssert.Contains(prompt, "four phases");
+
+        using var doc = ParseGoalPayload(prompt);
+        var root = doc.RootElement;
+        var loop = root.GetProperty("loop");
+        Assert.AreEqual(4, loop.GetProperty("phases").GetArrayLength());
+        Assert.AreEqual("observe", loop.GetProperty("current").GetString());
+        Assert.AreEqual(0, loop.GetProperty("stepIndex").GetInt32());
+        Assert.AreEqual(0, loop.GetProperty("stepTotal").GetInt32());
+        Assert.AreEqual(JsonValueKind.Null, root.GetProperty("currentStep").ValueKind);
+        Assert.AreEqual(0, root.GetProperty("progress").GetProperty("stepsPassed").GetInt32());
+        Assert.AreEqual(0, root.GetProperty("progress").GetProperty("stepsTotal").GetInt32());
+    }
+
+    private static JsonDocument ParseGoalPayload(string prompt)
+    {
+        const string open = "<goal_payload>";
+        const string close = "</goal_payload>";
+        var start = prompt.IndexOf(open, StringComparison.Ordinal) + open.Length;
+        var end = prompt.LastIndexOf(close, StringComparison.Ordinal);
+        return JsonDocument.Parse(prompt[start..end]);
     }
 
     [TestMethod]
