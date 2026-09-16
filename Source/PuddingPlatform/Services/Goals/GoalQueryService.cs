@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Goals;
 using PuddingCode.Models;
+using PuddingCode.Tasks;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Entities;
 
@@ -11,7 +12,8 @@ namespace PuddingPlatform.Services.Goals;
 public sealed class GoalQueryService(
     GoalRunStore store,
     PlatformDbContext db,
-    GoalCheckRecordStore checkRecords) : IGoalQueryService
+    GoalCheckRecordStore checkRecords,
+    ITodoStore todoStore) : IGoalQueryService
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
@@ -48,6 +50,40 @@ public sealed class GoalQueryService(
         return latest is null || latest.ClearedAtUtc is not null
             ? null
             : latest.ToSnapshot();
+    }
+
+    /// <summary>
+    /// TD-2：目标 → 归属 Agent 拆解 TODO（todo_lists/todo_items）只读投影。
+    /// agent_id 隔离硬约束（TodoContracts TD-1b）：todo_lists 无 workspace 维度，
+    /// 归属 Agent 必须服务端从 goal 行解析，绝不接受客户端传入，否则可跨工作区越权读。
+    /// </summary>
+    public async Task<GoalTodoSnapshot?> GetTodoAsync(string goalRunId, CancellationToken ct = default)
+    {
+        var goal = await store.FindAsync(goalRunId, ct);
+        if (goal is null)
+            return null;
+
+        var list = await todoStore.ReadAsync(
+            new TodoReadQuery
+            {
+                AgentId = goal.AgentInstanceId,
+                ScopeKind = TodoWireMaps.ScopeGoal,
+                ScopeId = goal.GoalRunId,
+            },
+            ct);
+
+        // 列表不存在 ⇒ Found=false（与 todo_read 工具同语义，不是错误）；仅 goal 不存在才由控制器映射 404。
+        return new GoalTodoSnapshot
+        {
+            GoalRunId = goal.GoalRunId,
+            AgentInstanceId = goal.AgentInstanceId,
+            Found = list is not null,
+            ListId = list?.ListId,
+            Title = list?.Title,
+            Revision = list?.Revision ?? 0,
+            Items = list?.Items ?? [],
+            Summary = list?.Summary,
+        };
     }
 
     public async Task<IReadOnlyList<GoalIterationSnapshot>> GetIterationsAsync(

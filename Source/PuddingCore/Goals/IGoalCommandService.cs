@@ -1,3 +1,5 @@
+using PuddingCode.Tasks;
+
 namespace PuddingCode.Goals;
 
 /// <summary>
@@ -36,6 +38,14 @@ public interface IGoalQueryService
     /// 与具体步骤没有外键关联），不得当作 per-step 校验展示。
     /// </summary>
     Task<GoalStepsSnapshot?> GetStepsAsync(string goalRunId, CancellationToken ct = default);
+
+    /// <summary>
+    /// TD-2：目标 → 归属 Agent 拆解 TODO 的只读投影；goal 不存在返回 null，
+    /// goal 存在但未写拆解返回 <see cref="GoalTodoSnapshot"/> 且 Found=false（与 todo_read 工具同语义）。
+    /// 归属 Agent 由服务端从 goal 快照解析（agent_id 隔离硬约束，见 <see cref="TodoReadQuery"/>），
+    /// 客户端没有任何途径影响读取范围。
+    /// </summary>
+    Task<GoalTodoSnapshot?> GetTodoAsync(string goalRunId, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -125,4 +135,32 @@ public sealed record GoalCheckSnapshot
 
     /// <summary>来自 GoalCheckReport.EvidenceRefs 的原始证据引用；无报告为空。</summary>
     public required IReadOnlyList<string> EvidenceRefs { get; init; }
+}
+
+/// <summary>
+/// TD-2：目标归属 Agent 拆解 TODO 的只读投影（Items/Summary 直接复用 <see cref="TodoItemView"/>
+/// 与 <see cref="TodoSummary"/>：面板与 todo_read 工具「同一视图」是设计 §4 的硬要求，不做二次映射）。
+/// </summary>
+public sealed record GoalTodoSnapshot
+{
+    public required string GoalRunId { get; init; }
+
+    /// <summary>跑这个 Goal 迭代的 Agent（服务端从 goal 行解析，作为 todo_lists.agent_id 过滤键）。</summary>
+    public required string AgentInstanceId { get; init; }
+
+    /// <summary>false = goal 存在但该 Agent 尚未写拆解（非错误；此时 Items 为空、Summary 为 null）。</summary>
+    public required bool Found { get; init; }
+
+    public string? ListId { get; init; }
+
+    public string? Title { get; init; }
+
+    /// <summary>列表 revision（CAS 版本）；未写拆解时为 0。</summary>
+    public int Revision { get; init; }
+
+    /// <summary>拆解项（按 order_index 升序）；未写拆解时为空。</summary>
+    public required IReadOnlyList<TodoItemView> Items { get; init; }
+
+    /// <summary>拆解进度汇总（total/pending/in_progress/completed/blocked/currentSlug/blockedSlugs）。</summary>
+    public TodoSummary? Summary { get; init; }
 }

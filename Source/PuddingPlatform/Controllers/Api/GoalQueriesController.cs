@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Goals;
+using PuddingCode.Tasks;
 
 namespace PuddingPlatform.Controllers.Api;
 
@@ -111,6 +112,31 @@ public sealed class GoalQueriesController(IGoalQueryService goalQueryService) : 
                 check.EvidenceRefs)).ToList()));
     }
 
+    /// <summary>
+    /// TD-2：目标 → 归属 Agent 的拆解 TODO（只读，面板「拆解区」数据源）。
+    /// 与 GET /goals/{goalId}/steps 一致不要求 X-Workspace-Id；goal 不存在 → 404 goal_not_found；
+    /// 有 goal 但 Agent 尚未写拆解 → 200 + found=false（与 todo_read 工具同语义，不是错误）。
+    /// 归属 Agent 由服务端从 goal 解析（todo_lists 无 workspace 维度，agent_id 隔离硬约束），
+    /// 绝不接受客户端传入；本端点只读，面板手改不在本刀范围。
+    /// </summary>
+    [HttpGet("goals/{goalId}/todo")]
+    public async Task<IActionResult> GetGoalTodo(
+        [FromRoute] string goalId,
+        CancellationToken ct)
+    {
+        var snapshot = await goalQueryService.GetTodoAsync(goalId, ct);
+        return snapshot is null
+            ? Problem(statusCode: 404, title: "goal_not_found", detail: $"Goal '{goalId}' does not exist.")
+            : Ok(new GoalTodoResponseDto(
+                snapshot.GoalRunId,
+                snapshot.Found,
+                snapshot.ListId,
+                snapshot.Title,
+                snapshot.Revision,
+                snapshot.Items,
+                snapshot.Summary));
+    }
+
     /// <summary>步骤进度计数。stepsInProgress 为非终态步骤数（与结算侧当前步骤选定同口径）。</summary>
     public sealed record GoalStepProgressDto(
         int StepsTotal,
@@ -153,4 +179,19 @@ public sealed class GoalQueriesController(IGoalQueryService goalQueryService) : 
         /// <summary>按 sequence_no 升序。</summary>
         IReadOnlyList<GoalStepDto> Steps,
         IReadOnlyList<GoalCheckDto> Checks);
+
+    /// <summary>
+    /// TD-2：GET /goals/{goalId}/todo 的响应。Items/Summary 直接复用 <see cref="TodoItemView"/>
+    /// 与 <see cref="TodoSummary"/>（camelCase wire：slug/title/status/note/evidenceRef/blockedReason/
+    /// orderIndex/startedAtUtc/completedAtUtc、total/pending/inProgress/completed/blocked/currentSlug/
+    /// blockedSlugs）—— 面板与 todo_read 工具同一视图（设计 §4），不做二次映射。
+    /// </summary>
+    public sealed record GoalTodoResponseDto(
+        string GoalRunId,
+        bool Found,
+        string? ListId,
+        string? Title,
+        int Revision,
+        IReadOnlyList<TodoItemView> Items,
+        TodoSummary? Summary);
 }

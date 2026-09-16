@@ -12,8 +12,10 @@ import type {
   GoalSnapshot,
   GoalStepItem,
   GoalStepsSnapshot,
+  GoalTodoItem,
+  GoalTodoSnapshot,
 } from '@/services/platform/api';
-import { getGoalSteps } from '@/services/platform/api';
+import { getGoalSteps, getGoalTodo } from '@/services/platform/api';
 
 interface GoalStepsPanelProps {
   goal: GoalSnapshot;
@@ -82,6 +84,14 @@ const STATUS_TONE: Record<string, StepTone> = {
 
 const normalizeStatus = (status: string | undefined | null) =>
   typeof status === 'string' ? status.trim().toLowerCase() : '';
+
+/** 拆解项状态图标（已知状态映射；未知中性降级；文案见 STATUS_TEXT）。 */
+const TODO_STATUS_ICON: Record<string, string> = {
+  pending: '○',
+  in_progress: '◐',
+  completed: '✓',
+  blocked: '!',
+};
 
 /** 紧凑时间显示（MM/DD HH:mm，本地时区）；缺失或无效返回 null。 */
 const formatStepTime = (iso: string | null | undefined) => {
@@ -186,6 +196,12 @@ const GoalStepsPanel: React.FC<GoalStepsPanelProps> = ({ goal }) => {
   const [reloadToken, setReloadToken] = useState(0);
   const requestSeqRef = useRef(0);
 
+  // TD-2：拆解 TODO（Agent 自述）独立拉取/独立失败态 —— 一个失败不影响另一区展示。
+  const [todoSnapshot, setTodoSnapshot] = useState<GoalTodoSnapshot | null>(null);
+  const [todoFailure, setTodoFailure] = useState<RequestFailure | null>(null);
+  const [todoLoading, setTodoLoading] = useState(false);
+  const todoSeqRef = useRef(0);
+
   const fetchSteps = useCallback(async () => {
     const seq = ++requestSeqRef.current;
     setLoading(true);
@@ -203,9 +219,27 @@ const GoalStepsPanel: React.FC<GoalStepsPanelProps> = ({ goal }) => {
     }
   }, [goal.goalRunId]);
 
+  const fetchTodo = useCallback(async () => {
+    const seq = ++todoSeqRef.current;
+    setTodoLoading(true);
+    try {
+      const data = await getGoalTodo(goal.goalRunId);
+      if (seq !== todoSeqRef.current) return; // 过期响应（目标已切换/刷新）
+      setTodoSnapshot(data);
+      setTodoFailure(null);
+    } catch (err) {
+      if (seq !== todoSeqRef.current) return;
+      setTodoSnapshot(null);
+      setTodoFailure(describeFailure(err));
+    } finally {
+      if (seq === todoSeqRef.current) setTodoLoading(false);
+    }
+  }, [goal.goalRunId]);
+
   useEffect(() => {
     void fetchSteps();
-  }, [fetchSteps, reloadToken, goal.aggregateVersion, goal.updatedAtUtc]);
+    void fetchTodo();
+  }, [fetchSteps, fetchTodo, reloadToken, goal.aggregateVersion, goal.updatedAtUtc]);
 
   const steps = useMemo(() => {
     const raw = snapshot?.steps ?? [];
@@ -360,6 +394,94 @@ const GoalStepsPanel: React.FC<GoalStepsPanelProps> = ({ goal }) => {
     </div>
   );
 
+  // 受阻项置顶（设计 §6.2），其余保持后端 orderIndex 升序。
+  const todoItems = useMemo(() => {
+    const raw = todoSnapshot?.items ?? [];
+    return [...raw].sort(
+      (a, b) =>
+        Number(a.status === 'blocked' ? 0 : 1) -
+        Number(b.status === 'blocked' ? 0 : 1),
+    );
+  }, [todoSnapshot]);
+
+  const renderTodoRow = (item: GoalTodoItem) => {
+    const key = normalizeStatus(item.status);
+    const icon = Object.hasOwn(TODO_STATUS_ICON, key) ? TODO_STATUS_ICON[key] : '·';
+    const completedText = formatStepTime(item.completedAtUtc);
+    return (
+      <div
+        key={item.slug}
+        data-todo-slug={item.slug}
+        data-todo-status={key || 'unknown'}
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: '4px 8px',
+          padding: '4px 8px',
+          borderRadius: 6,
+          border:
+            key === 'blocked'
+              ? `1px solid ${TONE_ORANGE.borderColor}`
+              : key === 'in_progress'
+                ? '1px solid rgba(22, 119, 255, 0.45)'
+                : '1px solid transparent',
+          background:
+            key === 'in_progress' ? 'rgba(22, 119, 255, 0.06)' : 'transparent',
+          fontSize: 12,
+          color: 'var(--pudding-chat-text-secondary)',
+          lineHeight: 1.5,
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            fontWeight: 700,
+            color:
+              key === 'blocked'
+                ? TONE_ORANGE.color
+                : key === 'completed'
+                  ? TONE_GREEN.color
+                  : key === 'in_progress'
+                    ? TONE_BLUE.color
+                    : 'var(--pudding-chat-text-subtle)',
+          }}
+        >
+          {icon}
+        </span>
+        <span style={{ color: 'var(--pudding-chat-text)', fontWeight: 550 }}>
+          {item.title}
+        </span>
+        <StatusPill status={item.status} />
+        {item.blockedReason ? (
+          <span style={{ color: TONE_ORANGE.color }}>
+            受阻：{item.blockedReason}
+          </span>
+        ) : null}
+        {item.note ? <span>{item.note}</span> : null}
+        {item.evidenceRef ? (
+          <span
+            title={item.evidenceRef}
+            style={{
+              maxWidth: 260,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              color: 'var(--pudding-chat-text-subtle)',
+            }}
+          >
+            证据：{compactEvidenceRef(item.evidenceRef)}
+          </span>
+        ) : null}
+        {completedText ? (
+          <span style={{ color: 'var(--pudding-chat-text-subtle)' }}>
+            完成 {completedText}
+          </span>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <section
       aria-label="Goal 步骤"
@@ -402,7 +524,7 @@ const GoalStepsPanel: React.FC<GoalStepsPanelProps> = ({ goal }) => {
               }}
             >
               共 {progress.stepsTotal} 步 · 通过 {progress.stepsPassed} · 失败{' '}
-              {progress.stepsFailed} · 进行中 {progress.stepsInProgress}
+              {progress.stepsFailed} · 进行中 {progress.stepsInProgress} · 平台裁决
             </span>
           ) : null}
         </span>
@@ -411,9 +533,86 @@ const GoalStepsPanel: React.FC<GoalStepsPanelProps> = ({ goal }) => {
           type="text"
           icon={<ReloadOutlined />}
           aria-label="刷新 Goal 步骤"
-          disabled={loading}
+          disabled={loading || todoLoading}
           onClick={() => setReloadToken((token) => token + 1)}
         />
+      </div>
+
+      {/* ── 拆解区（TODO，Agent 自述）：与下方执行计划/验收分列展示（设计 §6.2/§6.3），本刀只读 ── */}
+      <div data-testid="todo-section" style={{ marginBottom: 8 }}>
+        <div style={{ ...sectionLabelStyle, marginBottom: 4 }}>
+          拆解
+          {todoSnapshot?.summary ? (
+            <span
+              style={{
+                marginLeft: 8,
+                fontWeight: 400,
+                color: 'var(--pudding-chat-text-subtle)',
+              }}
+            >
+              自述进度 {todoSnapshot.summary.completed}/{todoSnapshot.summary.total}
+              （不代表目标达成）
+            </span>
+          ) : null}
+        </div>
+        {todoLoading && !todoSnapshot && !todoFailure ? (
+          <div style={{ padding: '6px 0', textAlign: 'center' }}>
+            <Spin size="small" />
+          </div>
+        ) : null}
+        {todoFailure ? (
+          <div
+            data-testid="todo-failure"
+            style={{
+              fontSize: 12,
+              color: TONE_ORANGE.color,
+              lineHeight: 1.55,
+              padding: '2px 2px',
+            }}
+          >
+            拆解读取失败（
+            {todoFailure.status ? `HTTP ${todoFailure.status}` : '网络或服务器错误'}）
+            ：{todoFailure.message}
+          </div>
+        ) : null}
+        {!todoFailure && todoSnapshot && !todoSnapshot.found ? (
+          <div
+            data-testid="todo-empty"
+            style={{
+              fontSize: 12,
+              color: 'var(--pudding-chat-text-subtle)',
+              padding: '2px 2px',
+            }}
+          >
+            尚未写拆解。
+          </div>
+        ) : null}
+        {!todoFailure && todoSnapshot && todoSnapshot.found ? (
+          <div
+            style={{
+              maxHeight: 200,
+              overflow: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}
+          >
+            {todoItems.length === 0 ? (
+              <div
+                data-testid="todo-empty"
+                style={{
+                  fontSize: 12,
+                  color: 'var(--pudding-chat-text-subtle)',
+                  padding: '2px 2px',
+                }}
+              >
+                尚未写拆解。
+              </div>
+            ) : (
+              todoItems.map(renderTodoRow)
+            )}
+          </div>
+        ) : null}
       </div>
 
       {loading && steps.length === 0 && !failure ? (

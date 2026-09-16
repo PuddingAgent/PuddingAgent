@@ -10,7 +10,7 @@
 | `Goals/GoalStateMachine.cs` | 纯状态机：转换矩阵、终态判定、resume/edit 卫兵、计数不变量、CanAcceptNewIteration 预算裁决 |
 | `Goals/GoalEventTypes.cs` | goal.* canonical 事件目录 + ProducerComponent 常量（G1 冻结命名；目录冻结后新增 `goal.policy_changed`，消费方按 goal. 前缀或精确类型读取，无类型穷举 switch） |
 | `Goals/GoalCommandTextParser.cs` | /goal 严格 grammar（中文/多行 objective、--rounds 1..256、子命令消歧）；含保留子命令 `policy`（缺值/未知值 fail-closed 并列出合法取值，取值归一化为规范常量、大小写不敏感） |
-| `Goals/IGoalCommandService.cs` + `IGoalQueryService.cs` | 命令/查询应用服务契约（slash 与结构化 API 共用） |
+| `Goals/IGoalCommandService.cs` + `IGoalQueryService.cs` | 命令/查询应用服务契约（slash 与结构化 API 共用；查询含 steps 与 GetTodoAsync 拆解投影，复用 TodoItemView/TodoSummary） |
 | `Goals/GoalRunOptions.cs` | GoalRuns 配置节（Enabled 默认 false；局部配置不得扩大硬边界）；含 `NoProgressBreakerThreshold`（熔断阈值，默认 3，边界 1..16）、`DefaultResumePolicy`、`MaxAutoResumesPerBoot`（单 boot 自动恢复配额，默认 8，边界 0..64）与 `GoalResumePolicies` 常量 |
 | `Goals/GoalContinuationContracts.cs` | durable continuation outbox wire 值、受信 Acceptance fence、Task plan/node/fingerprint metadata 与稳定失败码 |
 | `Goals/GoalVerificationContracts.cs` | 有界 Evidence Capsule、Verifier verdict/decision 与只读接口；含阻塞码分类白名单（WaitBlockerCodes / InfraFailureBlockerCodes / UnrecoverableBlockerCodes）与判定方法（IsWaitBlockerCode / IsInfraFailureBlockerCode），供熔断计数排除合法等待 |

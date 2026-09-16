@@ -2899,6 +2899,42 @@ export interface GoalStepsSnapshot {
   checks: GoalCheckItem[];
 }
 
+/** Goal 拆解 TODO 单项（与 todo_read 工具同一视图，只读消费；TD-2）。 */
+export interface GoalTodoItem {
+  slug: string;
+  title: string;
+  /** pending | in_progress | completed | blocked（未知值中性降级）。 */
+  status: string;
+  note?: string | null;
+  evidenceRef?: string | null;
+  blockedReason?: string | null;
+  orderIndex: number;
+  startedAtUtc?: string | null;
+  completedAtUtc?: string | null;
+}
+
+/** 拆解进度汇总（Agent 自述，不代表目标达成；与验收进度分列，设计 §6.3）。 */
+export interface GoalTodoSummary {
+  total: number;
+  pending: number;
+  inProgress: number;
+  completed: number;
+  blocked: number;
+  currentSlug?: string | null;
+  blockedSlugs: string[];
+}
+
+/** GET /api/v1/goals/{goalId}/todo 的响应快照。found=false = Agent 尚未写拆解（非错误）。 */
+export interface GoalTodoSnapshot {
+  goalRunId: string;
+  found: boolean;
+  listId?: string | null;
+  title?: string | null;
+  revision: number;
+  items: GoalTodoItem[];
+  summary?: GoalTodoSummary | null;
+}
+
 /** 读取会话当前 Goal（优先活动 Goal，无则返回最近终态 Goal 供回执展示）。 */
 export async function getConversationGoal(
   workspaceId: string,
@@ -2940,6 +2976,14 @@ export async function executeGoalCommand(
 /** 读取 Goal 计划步骤（只读端点，不需要 X-Workspace-Id；404 = goal_not_found 或端点未部署）。 */
 export async function getGoalSteps(goalId: string): Promise<GoalStepsSnapshot> {
   return request(`/api/v1/goals/${encodeURIComponent(goalId)}/steps`, {
+    method: 'GET',
+    skipErrorHandler: true,
+  });
+}
+
+/** 读取 Goal 归属 Agent 的拆解 TODO（只读；归属 Agent 由服务端从 goal 解析，不传 agent）。 */
+export async function getGoalTodo(goalId: string): Promise<GoalTodoSnapshot> {
+  return request(`/api/v1/goals/${encodeURIComponent(goalId)}/todo`, {
     method: 'GET',
     skipErrorHandler: true,
   });
