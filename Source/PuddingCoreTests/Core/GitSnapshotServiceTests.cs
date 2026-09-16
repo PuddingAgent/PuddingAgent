@@ -206,7 +206,10 @@ public sealed class GitSnapshotServiceTests
         File.WriteAllText(Path.Combine(_tempPath, "file1.txt"), "content1");
         await _service.CreateSnapshotAsync("first");
         
-        await Task.Delay(10); // Ensure different timestamps
+        // git 提交时间戳精度为秒（产品用 git log 的自定义格式读 timestamp，见 GitSnapshotService.cs:84），
+        // 原写法 Task.Delay(10) 无法保证两次快照落在不同秒，同秒时下方严格大于断言会失败（flaky）。
+        // 延迟超过 1 秒可确定性保证秒级时间戳不同，无需放宽断言。
+        await Task.Delay(1100);
         
         File.WriteAllText(Path.Combine(_tempPath, "file2.txt"), "content2");
         await _service.CreateSnapshotAsync("second");
