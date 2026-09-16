@@ -74,7 +74,8 @@ public sealed class GoalSettlementWorkerCheckIntegrationTests
     // 全部走生产 GoalCheckRunner 与生产 GoalCheckRecordStore。
 
     private sealed class ScriptedTerminalProcessManager(
-        Func<string, (int ExitCode, IReadOnlyList<string> Lines)> script) : ITerminalProcessManager
+        Func<string, (int ExitCode, IReadOnlyList<string> Lines)> script,
+        Func<string, bool>? neverExit = null) : ITerminalProcessManager
     {
         private readonly Dictionary<string, TerminalOutputSnapshot> _snapshots = new(StringComparer.Ordinal);
 
@@ -86,7 +87,14 @@ public sealed class GoalSettlementWorkerCheckIntegrationTests
             string workingDir,
             CancellationToken ct = default)
         {
-            var (exitCode, lines) = script(command);
+            // neverExit：模拟「真超时」——进程一直 Running、无退出码；其余按退出码派生终态（与生产一致）。
+            var neverExits = neverExit?.Invoke(command) == true;
+            (int ExitCode, IReadOnlyList<string> Lines) scripted;
+            if (neverExits)
+                scripted = (0, Array.Empty<string>()); // 占位值：Running 状态下退出码以 null 表达。
+            else
+                scripted = script(command);
+
             Commands.Add(command);
             var processId = $"term-{Commands.Count}";
             var info = new TerminalProcessInfo
@@ -97,18 +105,21 @@ public sealed class GoalSettlementWorkerCheckIntegrationTests
                 Command = command,
                 WorkingDir = workingDir,
                 StartedAt = DateTimeOffset.UtcNow,
-                ExitCode = exitCode,
-                // 立即终态：受控检查的等待循环因此不需要轮询延迟。
-                Status = TerminalProcessStatus.Exited,
+                ExitCode = neverExits ? null : scripted.ExitCode,
+                // 按退出码派生终态：0 ⇒ Exited，非 0 ⇒ Failed（生产 TerminalProcessManager 的状态机）。
+                // 此前写死 Exited 会让集成测试对「执行完毕且失败被误分类为等待」失明。
+                Status = neverExits
+                    ? TerminalProcessStatus.Running
+                    : scripted.ExitCode == 0 ? TerminalProcessStatus.Exited : TerminalProcessStatus.Failed,
             };
             _snapshots[processId] = new TerminalOutputSnapshot
             {
                 Process = info,
                 Offset = 0,
-                NextOffset = lines.Count,
-                TotalLines = lines.Count,
+                NextOffset = scripted.Lines.Count,
+                TotalLines = scripted.Lines.Count,
                 Truncated = false,
-                Lines = lines,
+                Lines = scripted.Lines,
             };
             return Task.FromResult(info);
         }
@@ -547,6 +558,60 @@ public sealed class GoalSettlementWorkerCheckIntegrationTests
 
         var goal = await db.GoalRuns.AsNoTracking().SingleAsync(item => item.GoalRunId == GoalId);
         Assert.AreEqual(GoalPhase.Active, goal.Status, "可修复的失败不得把 Task-bound Goal 终态化。");
+    }
+
+    /// <summary>
+    /// R6 区分性：真超时（进程一直未结束）仍必须落在 check_results_pending（等待），
+    /// 与「执行完毕且失败 ⇒ criterion_failed」形成对照 —— 两条通路不得混同。
+    /// </summary>
+    [TestMethod]
+    public async Task Worker_WhenCheckTrulyTimesOut_StillWaitsForPendingResults()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+        await SeedTerminalIterationAsync(factory, withNextUnit: true);
+
+        // 测试直接构造 options（不走 30s 下限校验），把超时压到 1s 以免拖慢套件。
+        var options = CheckOptions(Project);
+        options.CheckTimeoutSeconds = 1;
+
+        var processManager = new ScriptedTerminalProcessManager(
+            command => command.StartsWith("dotnet build", StringComparison.Ordinal)
+                ? (0, new[] { "Build succeeded." })
+                : (0, new[] { "Passed! - Failed: 0, Passed: 12, Skipped: 0, Total: 12, Duration: 1 s" }),
+            command => command.StartsWith("dotnet test", StringComparison.Ordinal));
+
+        var worker = NewWorker(
+            factory,
+            options,
+            new GoalCheckRunner(
+                new GoalCheckRecordStore(factory),
+                processManager,
+                new AllowAllAdmission(), NullLogger<GoalCheckRunner>.Instance),
+            new RecordingVerifier());
+
+        Assert.AreEqual(1, await worker.ProcessOnceAsync(CancellationToken.None));
+
+        await using var db = await factory.CreateDbContextAsync();
+
+        // build 正常 finished；test 真超时 ⇒ 退回 pending、无报告、保留 check_timeout 失败码。
+        var records = await db.GoalCheckRecords.AsNoTracking().ToListAsync();
+        Assert.AreEqual(2, records.Count);
+        Assert.IsTrue(
+            records.Any(item => item.Status == GoalCheckRecordStatuses.Pending
+                && item.ReportJson is null
+                && item.FailureCode == GoalCheckFailureCodes.CheckTimeout),
+            "真超时的检查必须退回 pending（等待），不得落成终态。");
+        Assert.AreEqual(
+            1,
+            records.Count(item => item.Status == GoalCheckRecordStatuses.Finished),
+            "未超时的检查仍应正常落 finished。");
+
+        var verification = await db.GoalVerifications.AsNoTracking().SingleAsync();
+        Assert.AreEqual("check_results_pending", verification.BlockerCode);
+
+        var current = await db.TaskNodes.AsNoTracking().SingleAsync(item => item.TaskNodeId == CurrentNodeId);
+        Assert.AreNotEqual(TaskNodeStatuses.Completed.ToString(), current.Status);
     }
 
     /// <summary>

@@ -171,6 +171,9 @@ public static class GoalCheckFailureCodes
     public const string CheckTimeout = "check_timeout";
     public const string CheckIdentityMismatch = "check_identity_mismatch";
 
+    /// <summary>进程已终态但退出码不可得（快照缺失 / kill 失败仍存活）：fail-closed 记失败。</summary>
+    public const string ExitCodeUnknown = "exit_code_unknown";
+
     /// <summary>命令被终端准入拒绝（白名单 / 危险模式 / 宿主机安全不变量）——不得启动任何进程。</summary>
     public const string AdmissionDenied = "check_admission_denied";
     public const string EvidenceMissing = "evidence_missing";

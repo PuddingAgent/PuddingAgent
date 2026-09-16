@@ -223,6 +223,22 @@ public sealed class GoalCheckRunner(
         var reportRef = $"terminal-job:{process.ProcessId}";
         var evidenceRefs = new List<string> { reportRef };
 
+        // fail-closed：进程已终态但退出码不可得（输出快照缺失 / 宿主信息丢失 / kill 失败进程仍存活）。
+        // 宁可记 failed，绝不记 passed；也不得混同为等待 —— 明确失败码便于 triage。
+        if (exitCode is null)
+        {
+            return BuildReport(
+                spec,
+                GoalCriterionResultStatuses.Failed,
+                evidenceRefs,
+                reportRef,
+                process.ProcessId,
+                null,
+                summary,
+                GoalCheckFailureCodes.ExitCodeUnknown,
+                "The process finished but its exit code was unavailable; recording failure (fail-closed).");
+        }
+
         if (exitCode != 0)
         {
             return BuildReport(
@@ -324,7 +340,12 @@ public sealed class GoalCheckRunner(
                 return ProcessWait.Timeout;
             if (info.Status == TerminalProcessStatus.Exited)
                 return ProcessWait.Exited;
-            if (info.Status is TerminalProcessStatus.Killed or TerminalProcessStatus.Failed)
+            // Failed（进程自行以非零退出码结束，TerminalProcessManager 在 Exited 事件里判定、ExitCode 已定）
+            // 是「已结束且失败」，必须走 non_zero_exit_code 终态路径；只有 Killed（被终止，证据不完整）才落等待。
+            // 两者混同会让跑完且失败的检查被误报成等待 → 持久层退回 pending → repair 分支永不可达。
+            if (info.Status == TerminalProcessStatus.Failed)
+                return ProcessWait.Failed;
+            if (info.Status == TerminalProcessStatus.Killed)
                 return ProcessWait.Killed;
             await Task.Delay(PollInterval, ct);
         }
@@ -525,7 +546,12 @@ public sealed class GoalCheckRunner(
     private enum ProcessWait
     {
         Exited,
+
+        /// <summary>被外部终止（如 KillAsync）：证据不完整 ⇒ 等待语义不变。</summary>
         Killed,
+
+        /// <summary>进程自行以非零退出码结束 ⇒ 已结束且失败，走 non_zero_exit_code 终态。</summary>
+        Failed,
         Timeout,
     }
 }

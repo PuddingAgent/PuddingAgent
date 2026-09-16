@@ -152,6 +152,7 @@ public sealed class GoalCheckRunnerTests
         public IReadOnlyList<string> Output { get; set; } = [];
         public int? ExitCode { get; set; }
         public bool NeverExits { get; set; }
+        public TerminalProcessStatus? StatusOverride { get; set; }
         public string ProcessId { get; set; } = "job-1";
 
         private TerminalProcessInfo Info() => new()
@@ -162,7 +163,11 @@ public sealed class GoalCheckRunnerTests
             WorkingDir = ".",
             StartedAt = DateTimeOffset.UtcNow,
             ExitCode = NeverExits ? null : ExitCode,
-            Status = NeverExits ? TerminalProcessStatus.Running : TerminalProcessStatus.Exited,
+            // 与生产 TerminalProcessManager 一致：按退出码派生终态（0 ⇒ Exited，非 0/未知 ⇒ Failed）。
+            // 此前写死 Exited 会绕过生产的 Failed 状态机，让 CI 对「失败被误分类为等待」失明。
+            Status = NeverExits
+                ? TerminalProcessStatus.Running
+                : StatusOverride ?? (ExitCode == 0 ? TerminalProcessStatus.Exited : TerminalProcessStatus.Failed),
         };
 
         public Task<TerminalProcessInfo> StartAsync(
@@ -299,6 +304,16 @@ public sealed class GoalCheckRunnerTests
         Assert.AreEqual(GoalCriterionResultStatuses.Failed, reports[0].Status);
         Assert.AreEqual(GoalCheckFailureCodes.NonZeroExitCode, reports[0].FailureCode);
         Assert.AreEqual(1, reports[0].ExitCode);
+
+        // R1 回归锁：非零退出（生产侧 Status=Failed）⇒ 必须落 finished(failed) 终态记录，
+        // 不得被误分类成等待而退回 pending。
+        var records = await store.ReadForEpochAsync("goal-1", 1);
+        Assert.AreEqual(1, records.Count);
+        Assert.AreEqual(GoalCheckRecordStatuses.Finished, records[0].Status);
+        Assert.AreEqual(GoalCheckFailureCodes.NonZeroExitCode, records[0].FailureCode);
+        var persisted = GoalVerificationPersistence.ReadReports(records);
+        Assert.AreEqual(1, persisted.Count);
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, persisted[0].Status);
     }
 
     [TestMethod]
@@ -351,6 +366,67 @@ public sealed class GoalCheckRunnerTests
         Assert.AreEqual(GoalCriterionResultStatuses.Waiting, reports[0].Status);
         Assert.AreEqual(GoalCheckFailureCodes.CheckTimeout, reports[0].FailureCode);
         CollectionAssert.Contains(stub.Killed, "job-1");
+
+        // R6 回归锁（存储侧区分性）：真超时 ⇒ 记录退回 pending、不落报告 —— 与 failed 终态可区分。
+        var records = await store.ReadForEpochAsync("goal-1", 1);
+        Assert.AreEqual(1, records.Count);
+        Assert.AreEqual(GoalCheckRecordStatuses.Pending, records[0].Status);
+        Assert.IsNull(records[0].ReportJson);
+    }
+
+    [TestMethod]
+    public async Task Run_TrulyKilledProcess_StillWaitsInsteadOfJudging()
+    {
+        // R2 回归锁：真被杀（Status=Killed，即使携带退出码）= 证据不完整 ⇒ 仍走等待语义，
+        // 不得被「Failed 终态化」改动带跑成 failed/passed。
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+        var store = new GoalCheckRecordStore(factory);
+        var stub = new StubProcessManager
+        {
+            StatusOverride = TerminalProcessStatus.Killed,
+            ExitCode = 1,
+            Output = GreenSummary,
+        };
+        var runner = new GoalCheckRunner(store, stub, new AllowAllAdmission());
+
+        var reports = await runner.RunAsync([Spec()], Context());
+
+        Assert.AreEqual(GoalCriterionResultStatuses.Waiting, reports[0].Status);
+        Assert.AreEqual(GoalCheckFailureCodes.CheckTimeout, reports[0].FailureCode);
+        Assert.IsTrue(reports[0].HasUnfinishedBackgroundProcess);
+
+        var records = await store.ReadForEpochAsync("goal-1", 1);
+        Assert.AreEqual(1, records.Count);
+        Assert.AreEqual(GoalCheckRecordStatuses.Pending, records[0].Status);
+        Assert.IsNull(records[0].ReportJson);
+    }
+
+    [TestMethod]
+    public async Task Run_MissingExitCode_FailsClosedWithExplicitReason()
+    {
+        // R4 回归锁：进程已终态但退出码不可得 ⇒ fail-closed 记 failed（绝不记 passed，也不当等待）。
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+        var store = new GoalCheckRecordStore(factory);
+        var stub = new StubProcessManager
+        {
+            StatusOverride = TerminalProcessStatus.Exited,
+            ExitCode = null,
+            Output = GreenSummary,
+        };
+        var runner = new GoalCheckRunner(store, stub, new AllowAllAdmission());
+
+        var reports = await runner.RunAsync([Spec()], Context());
+
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, reports[0].Status);
+        Assert.AreEqual(GoalCheckFailureCodes.ExitCodeUnknown, reports[0].FailureCode);
+        Assert.IsNull(reports[0].ExitCode);
+
+        var records = await store.ReadForEpochAsync("goal-1", 1);
+        Assert.AreEqual(1, records.Count);
+        Assert.AreEqual(GoalCheckRecordStatuses.Finished, records[0].Status);
+        Assert.AreEqual(GoalCheckFailureCodes.ExitCodeUnknown, records[0].FailureCode);
     }
 
     [TestMethod]
