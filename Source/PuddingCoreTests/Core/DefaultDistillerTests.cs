@@ -86,7 +86,9 @@ public sealed class DefaultDistillerTests
         // Assert
         Assert.IsTrue(result.IsTruncated);
         Assert.AreEqual(50, result.OriginalLines);
-        Assert.IsLessThan(result.RetainedLines, 50);
+        // MSTest 签名为 IsLessThan(upperBound, value)，断言 value < upperBound；
+        // 原文把被测值当成了 upperBound，断言变成「RetainedLines > 50」，与测试名/上下文相反。
+        Assert.IsLessThan(50, result.RetainedLines);
         StringAssert.Contains(result.Summary, "Line 1");
         StringAssert.Contains(result.Summary, "Line 50");
         StringAssert.Contains(result.Summary, "truncated");
@@ -409,7 +411,9 @@ public sealed class DefaultDistillerTests
 
         // Assert
         Assert.IsTrue(result.IsTruncated);
-        Assert.IsLessThanOrEqualTo(result.Summary.Length, 4500); // MaxLlmChars + truncation marker
+        // 同类修正：IsLessThanOrEqualTo(upperBound, value) 断言 value <= upperBound，
+        // 原文把 Summary.Length 当成 upperBound，变成要求「4500 <= Summary.Length」。
+        Assert.IsLessThanOrEqualTo(4500, result.Summary.Length); // MaxLlmChars + truncation marker
     }
 
     // ──── Custom Config Tests ────
