@@ -240,7 +240,8 @@ public sealed class GoalCheckRunner(
                 null,
                 summary,
                 GoalCheckFailureCodes.ExitCodeUnknown,
-                "The process finished but its exit code was unavailable; recording failure (fail-closed).");
+                "The process finished but its exit code was unavailable; recording failure (fail-closed).",
+                evidenceUnavailable: true);
         }
 
         if (exitCode != 0)
@@ -254,7 +255,10 @@ public sealed class GoalCheckRunner(
                 exitCode,
                 summary,
                 GoalCheckFailureCodes.NonZeroExitCode,
-                $"Check exited with code {exitCode}.");
+                $"Check exited with code {exitCode}.",
+                // 既有 FailureCode 取值不变（下游依赖）；仅在 test 检查没有可用证据时补标记，
+                // 让存储层把它视为可恢复失败回 pending，而不是终态（与 waiting 特判同构）。
+                evidenceUnavailable: LacksTestEvidence(spec.Kind, summary));
         }
 
         if (string.Equals(spec.Kind, GoalVerificationSpecKinds.Test, StringComparison.Ordinal))
@@ -270,7 +274,8 @@ public sealed class GoalCheckRunner(
                     exitCode,
                     null,
                     GoalCheckFailureCodes.TestCountUnknown,
-                    "No parseable test summary was produced; test evidence is not trustworthy.");
+                    "No parseable test summary was produced; test evidence is not trustworthy.",
+                    evidenceUnavailable: true);
             }
 
             if (summary.ExecutedTestCount <= 0)
@@ -284,7 +289,8 @@ public sealed class GoalCheckRunner(
                     exitCode,
                     summary,
                     GoalCheckFailureCodes.NoTestEvidence,
-                    "The test run executed zero test cases.");
+                    "The test run executed zero test cases.",
+                    evidenceUnavailable: true);
             }
 
             if (spec.ExpectedTestCount is int expected && summary.ExecutedTestCount < expected)
@@ -525,7 +531,8 @@ public sealed class GoalCheckRunner(
         GoalCheckOutputParser.TestSummary? summary,
         string? failureCode,
         string? message,
-        bool hasUnfinishedProcess = false) => new()
+        bool hasUnfinishedProcess = false,
+        bool evidenceUnavailable = false) => new()
     {
         CheckId = spec.CheckId,
         CriterionId = spec.CriterionId,
@@ -545,7 +552,20 @@ public sealed class GoalCheckRunner(
         ReportedAtUtc = DateTimeOffset.UtcNow,
         FailureCode = failureCode,
         Message = message,
+        EvidenceUnavailable = evidenceUnavailable,
     };
+
+    /// <summary>
+    /// test 检查是否未产出可用于判定的证据（无可解析汇总或执行数为零）。
+    /// 这类失败多源于外部环境（构建/宿主抖动），属于可恢复失败：报告标记 EvidenceUnavailable 后，
+    /// 存储层（GoalCheckRecordStore.FinishAsync）不落 finished、回 pending 重跑，
+    /// 避免去重键在本 epoch 内永久固化无效证据。构建失败 / 有真实汇总的失败不在此列（真实判定，必须缓存）。
+    /// </summary>
+    private static bool LacksTestEvidence(
+        string kind,
+        GoalCheckOutputParser.TestSummary? summary)
+        => string.Equals(kind, GoalVerificationSpecKinds.Test, StringComparison.Ordinal)
+            && (summary is null || summary.ExecutedTestCount <= 0);
 
     private enum ProcessWait
     {

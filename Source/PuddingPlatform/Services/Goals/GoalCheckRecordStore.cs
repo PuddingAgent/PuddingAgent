@@ -225,6 +225,23 @@ public sealed class GoalCheckRecordStore(IDbContextFactory<PlatformDbContext> db
             return false;
         }
 
+        // evidence_unavailable（退出码不可得 / test 无汇总 / 零执行）不是可用判定：这类失败多源于
+        // 外部环境（构建/宿主抖动），是可恢复的。若落成 finished，去重键会在本 epoch 内永久固化这份
+        // 无效证据，检查永远不会再执行，外部可恢复的失败将无法自愈（真实事故：GoalRun 7ef90f2c 因
+        // 一次外部并发冲突 exit 1 且无测试汇总，iter5–iter8 连续四轮复用同一失败结果空转）。
+        // 与上方 waiting 特判同理：回到可认领状态重跑，但保留 FailureCode 供 triage。
+        if (report.EvidenceUnavailable)
+        {
+            record.Status = GoalCheckRecordStatuses.Pending;
+            record.LeaseOwner = null;
+            record.LeaseUntilUtc = null;
+            record.ReportJson = null;
+            record.FailureCode = report.FailureCode;
+            record.UpdatedAtUtc = now;
+            await db.SaveChangesAsync(ct);
+            return false;
+        }
+
         record.ReportJson = GoalVerificationPersistence.SerializeReport(report);
         record.Status = GoalCheckRecordStatuses.Finished;
         record.FailureCode = report.FailureCode;

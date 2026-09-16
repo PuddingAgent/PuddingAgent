@@ -92,6 +92,11 @@ public sealed record GoalCheckReport
 
     public string? FailureCode { get; init; }
 
+    /// <summary>本次执行未产出可用于判定的证据（退出码不可得 / test 无可解析汇总 / 零执行）。
+    /// 这类失败多源于外部环境（构建/宿主抖动），属于可恢复失败：存储层据此不落 finished、
+    /// 回 pending 重跑，避免无效证据被去重键在本 epoch 内永久固化（见 GoalCheckRecordStore.FinishAsync）。</summary>
+    public bool EvidenceUnavailable { get; init; }
+
     /// <summary>人类可读的失败/等待说明；不参与判定。</summary>
     public string? Message { get; init; }
 }
