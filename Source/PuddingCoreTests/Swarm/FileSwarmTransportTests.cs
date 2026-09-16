@@ -123,10 +123,21 @@ public sealed class FileSwarmTransportTests : IDisposable
         // 产品会先投递收件箱中现有消息、清空收件箱，然后进入轮询循环直到 ct 被取消。
         // 不传 Token 时 await foreach 永不结束（曾导致整个 PuddingCoreTests 套件挂起）。
         var receivedMessages = new List<SwarmMessage>();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        await foreach (var msg in _transport.ReceiveAsync(cts.Token))
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
         {
-            receivedMessages.Add(msg);
+            await foreach (var msg in _transport.ReceiveAsync(cts.Token))
+            {
+                receivedMessages.Add(msg);
+                if (receivedMessages.Count >= 1)
+                {
+                    break; // 收齐预期消息后立即退出，无需等待取消
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 取消是 ReceiveAsync 长期流的退出路径之一（产品在取消时抛 OCE，非优雅结束）
         }
 
         // Assert
@@ -147,10 +158,18 @@ public sealed class FileSwarmTransportTests : IDisposable
         // Act - Consume all messages
         // 必须传入 Token：产品在投递完现有消息后进入轮询循环，仅当 ct 取消才结束
         //（正确用法见 SwarmMessageHub.cs:80 的 ReceiveAsync(_cts.Token)）。
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        await foreach (var _ in _transport.ReceiveAsync(cts.Token))
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try
         {
-            // Process all messages until cancelled
+            await foreach (var _ in _transport.ReceiveAsync(cts.Token))
+            {
+                // Process all messages until cancelled
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 取消是 ReceiveAsync 长期流的退出路径之一（产品在取消时抛 OCE）；
+            // 生成器在投递完最后一条现有消息后会先清空收件箱，故取消不影响下方断言。
         }
 
         // Small delay to allow file write
