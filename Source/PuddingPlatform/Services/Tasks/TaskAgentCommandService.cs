@@ -119,12 +119,45 @@ public sealed class TaskAgentCommandService(
             nextCursor = $"{last.SortOrder.ToString(CultureInfo.InvariantCulture)}|{last.TaskId}";
         }
 
+        // Stage 2（D2/D5）：执行者侧只读父层级投影——父 ID 直接取列值，容器标记由「存在直接子卡」
+        // 的<b>单次批量查询</b>得出（避免 N+1，与管理者侧 LoadChildrenByParentAsync 同语义）；
+        // 纯只读，不写库、不派生任何状态（D3）。
+        var containerIds = await LoadContainerTaskIdsAsync(db, query.WorkspaceId, page, ct);
+
         return new TaskAgentListResult
         {
             Total = total,
             NextCursor = nextCursor,
-            Items = page.Select(ToListItem).ToList(),
+            Items = page.Select(t => ToListItem(t, containerIds.Contains(t.TaskId))).ToList(),
         };
+    }
+
+    /// <summary>
+    /// Stage 2（D2/D5）：批量判定列表页中哪些任务是容器（存在直接子卡）。
+    /// 只读查询、一次覆盖整页；容器不可被 claim，故执行者需要该标记来避免无效认领。
+    /// </summary>
+    private static async Task<IReadOnlySet<string>> LoadContainerTaskIdsAsync(
+        PlatformDbContext db,
+        string workspaceId,
+        IReadOnlyList<WorkspaceTaskEntity> page,
+        CancellationToken ct)
+    {
+        if (page.Count == 0)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        var pageTaskIds = page.Select(t => t.TaskId).ToList();
+        var parentIds = await db.WorkspaceTasks
+            .AsNoTracking()
+            .Where(t => t.WorkspaceId == workspaceId
+                        && t.ParentTaskId != null
+                        && pageTaskIds.Contains(t.ParentTaskId))
+            .Select(t => t.ParentTaskId!)
+            .Distinct()
+            .ToListAsync(ct);
+
+        return parentIds.ToHashSet(StringComparer.Ordinal);
     }
 
     /// <inheritdoc />
@@ -157,6 +190,24 @@ public sealed class TaskAgentCommandService(
             return null;
         }
 
+        // Stage 2（D2/D3/D5）：执行者侧只读父层级投影（父 ID + 容器标记 + 只读子卡计数）。
+        // 复用 TaskHierarchyRules.CountChildren 判定终态（不另造规则），不写库、不派生母卡状态。
+        var childRows = await db.WorkspaceTasks
+            .AsNoTracking()
+            .Where(t => t.WorkspaceId == task.WorkspaceId && t.ParentTaskId == task.TaskId)
+            .Select(t => new { t.TaskId, t.Status, t.ParentTaskId })
+            .ToListAsync(ct);
+        var childCounts = TaskHierarchyRules.CountChildren(
+            task.TaskId,
+            childRows.Select(c => new WorkspaceTask
+            {
+                TaskId = c.TaskId,
+                WorkspaceId = task.WorkspaceId,
+                Title = string.Empty,
+                Status = c.Status,
+                ParentTaskId = c.ParentTaskId,
+            }).ToList());
+
         var allowedTransitions = TaskStateMachine.GetAllowedTransitions(task.Status)
             .Select(TaskWireMaps.StatusToString)
             .ToList();
@@ -178,7 +229,7 @@ public sealed class TaskAgentCommandService(
 
         return new TaskAgentGetResult
         {
-            Task = ToTaskDetail(task),
+            Task = ToTaskDetail(task, childCounts),
             AllowedTransitions = allowedTransitions,
             AllowedDispositions = allowedDispositions,
             ActiveAssignment = assignment,
@@ -221,7 +272,7 @@ public sealed class TaskAgentCommandService(
         // 幂等 no-op：已 InProgress 且 active assignment 相同（claim 与 accept 重复调用）。
         if (task.Status == WorkspaceTaskStatus.InProgress && task.ActiveAssignmentId == request.AssignmentId)
         {
-            return BuildMutationResult(task, request.AssignmentId, "accept", "task.accepted", "InProgress");
+            return BuildMutationResult(task, request.AssignmentId, "accept", "task.accepted", "InProgress", isContainer);
         }
 
         // 迟到调用三守卫：stale assignment / version / state。
@@ -297,7 +348,7 @@ public sealed class TaskAgentCommandService(
         await db.SaveChangesAsync(ct);
 
         return BuildMutationResult(task, request.AssignmentId, "accept", "task.accepted",
-            attempt?.Status.ToString() ?? AssignmentAttemptStatus.InProgress.ToString());
+            attempt?.Status.ToString() ?? AssignmentAttemptStatus.InProgress.ToString(), isContainer);
     }
 
     /// <inheritdoc />
@@ -503,8 +554,12 @@ public sealed class TaskAgentCommandService(
             }
         }
 
+        var isContainer = await db.WorkspaceTasks
+            .AsNoTracking()
+            .AnyAsync(t => t.WorkspaceId == task.WorkspaceId && t.ParentTaskId == task.TaskId, ct);
+
         return BuildMutationResult(task, request.AssignmentId, request.Disposition,
-            TaskWireMaps.EventTypeToString(eventType), attempt?.Status.ToString() ?? string.Empty);
+            TaskWireMaps.EventTypeToString(eventType), attempt?.Status.ToString() ?? string.Empty, isContainer);
     }
 
     /// <summary>
@@ -640,7 +695,8 @@ public sealed class TaskAgentCommandService(
         string assignmentId,
         string disposition,
         string eventWire,
-        string assignmentStatus)
+        string assignmentStatus,
+        bool isContainer)
         => new()
         {
             TaskId = task.TaskId,
@@ -655,9 +711,13 @@ public sealed class TaskAgentCommandService(
             BlockerReason = task.BlockerReason,
             ProgressPercent = task.ProgressPercent,
             ProgressSummary = task.ProgressSummary,
+            // Stage 3（D5/D2 收口）：执行者侧（task_claim / task_update）只读父层级投影；
+            // 写入口仍仅在管理者侧 ManageTasksTool（D5）。
+            ParentTaskId = task.ParentTaskId,
+            IsContainer = isContainer,
         };
 
-    private static TaskAgentListItem ToListItem(WorkspaceTaskEntity t)
+    private static TaskAgentListItem ToListItem(WorkspaceTaskEntity t, bool isContainer)
         => new()
         {
             TaskId = t.TaskId,
@@ -671,9 +731,12 @@ public sealed class TaskAgentCommandService(
             DueAtUtc = t.DueAtUtc,
             UpdatedAtUtc = t.UpdatedAtUtc,
             Version = t.Version,
+            // Stage 2（D5/D2）：执行者侧只读暴露——父 ID 与容器标记；执行者侧无任何父子关系写参数。
+            ParentTaskId = t.ParentTaskId,
+            IsContainer = isContainer,
         };
 
-    private static TaskAgentTaskDetail ToTaskDetail(WorkspaceTaskEntity t)
+    private static TaskAgentTaskDetail ToTaskDetail(WorkspaceTaskEntity t, TaskHierarchyCounts childCounts)
         => new()
         {
             TaskId = t.TaskId,
@@ -713,6 +776,11 @@ public sealed class TaskAgentCommandService(
             CompletedAtUtc = t.CompletedAtUtc,
             FailedAtUtc = t.FailedAtUtc,
             ArchivedAtUtc = t.ArchivedAtUtc,
+            // Stage 2（D5/D2/D3）：执行者侧只读父层级投影；计数仅展示，不参与任何状态派生。
+            ParentTaskId = t.ParentTaskId,
+            IsContainer = childCounts.Total > 0,
+            ChildTaskCount = childCounts.Total,
+            CompletedChildCount = childCounts.Terminal,
         };
 
     private static TaskAgentEventSummary ToEventSummary(TaskEventEntity e)

@@ -404,7 +404,10 @@ public sealed class WorkspaceTaskCoreTests
         // Stage 1（D1/D4）新增 3 个父层级错误码：TaskParentNotFound / TaskHierarchyInvalid /
         // TaskHasNonTerminalChildren；既有 20 个成员未删除、未改名、未改序，总数 20 → 23。
         Assert.AreEqual(23, Enum.GetValues<TaskErrorCode>().Length);
-        Assert.AreEqual(17, Enum.GetValues<TaskEventType>().Length);
+        // Stage 3（本轮收口）：TaskEventType 的既有漂移——TaskEvaluated（ADR-075 评价追加）
+        // 是早前新增的成员，但本冻结断言当时漏更新（与上方 TaskOrigin 同一类漂移），
+        // 导致本测试类在 HEAD 上有 1 条失败；本次按现网契约同步 17 → 18（不改枚举本身）。
+        Assert.AreEqual(18, Enum.GetValues<TaskEventType>().Length);
         Assert.AreEqual(4, Enum.GetValues<AssignmentStatus>().Length);
     }
 

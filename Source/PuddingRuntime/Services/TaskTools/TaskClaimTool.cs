@@ -74,6 +74,9 @@ public sealed class TaskClaimTool : PuddingToolBase<TaskClaimArgs>
                 AssignmentStatus = result.AssignmentStatus,
                 Event = result.Event,
                 BoardColumn = result.BoardColumn,
+                // Stage 3（D5/D2 收口）：只读父层级投影，从服务端 mutation 结果透传（无写入口）。
+                ParentTaskId = result.ParentTaskId,
+                IsContainer = result.IsContainer,
             }));
         }
         catch (TaskStoreException ex)

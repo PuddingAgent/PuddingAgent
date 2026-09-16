@@ -233,6 +233,18 @@ public sealed record TaskAgentMutationResult
     public string? BlockerReason { get; init; }
     public int? ProgressPercent { get; init; }
     public string? ProgressSummary { get; init; }
+
+    /// <summary>
+    /// Stage 3（D5 收口）：父任务 ID，<b>只读</b>投影。执行者侧（task_claim / task_update）
+    /// 没有任何修改父子关系的写参数，父子关系仅管理者（manage_tasks）可写。
+    /// </summary>
+    public string? ParentTaskId { get; init; }
+
+    /// <summary>
+    /// Stage 3（D2 收口，只读）：是否为容器（存在直接子卡）。容器不可 claim，
+    /// 故 claim / update 路径对容器恒被拒；该标记仅作只读展示，不参与任何状态派生（D3）。
+    /// </summary>
+    public bool IsContainer { get; init; }
 }
 
 /// <summary>
@@ -254,6 +266,13 @@ public static class TaskToolErrors
         TaskErrorCode.TaskArtifactRequired => "task.artifact_required",
         TaskErrorCode.TaskNotReopenable => "task.not_reopenable",
         TaskErrorCode.TaskCannotHardDelete => "task.cannot_hard_delete",
+        // Stage 1/2（D1/D4）：父层级 3 个错误码的 wire 映射。此前只登记了枚举成员与 Platform 侧
+        // TaskWireMaps，Runtime 工具侧（本表）漏登记，会落到 `_ => code.ToString()` 输出 PascalCase
+        // 枚举名（如 "TaskParentNotFound"），与合同冻结的 task.parent_not_found / task.hierarchy_invalid /
+        // task.has_non_terminal_children 不一致——工具层补齐闭环。
+        TaskErrorCode.TaskParentNotFound => "task.parent_not_found",
+        TaskErrorCode.TaskHierarchyInvalid => "task.hierarchy_invalid",
+        TaskErrorCode.TaskHasNonTerminalChildren => "task.has_non_terminal_children",
         TaskErrorCode.AssignmentNotFound => "assignment.not_found",
         TaskErrorCode.AssignmentAlreadyActive => "assignment.already_active",
         TaskErrorCode.AssignmentStale => "assignment.stale",

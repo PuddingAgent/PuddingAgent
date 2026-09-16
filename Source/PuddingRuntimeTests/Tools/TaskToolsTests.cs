@@ -198,7 +198,9 @@ public sealed class TaskToolsTests
             string assignmentId,
             string assignmentStatus,
             string @event,
-            string boardColumn) => new()
+            string boardColumn,
+            string? parentTaskId = null,
+            bool isContainer = false) => new()
         {
             TaskId = taskId,
             Disposition = disposition,
@@ -208,6 +210,8 @@ public sealed class TaskToolsTests
             AssignmentStatus = assignmentStatus,
             Event = @event,
             BoardColumn = boardColumn,
+            ParentTaskId = parentTaskId,
+            IsContainer = isContainer,
         };
     }
 
@@ -555,6 +559,45 @@ public sealed class TaskToolsTests
         Assert.AreEqual("InProgress", root.GetProperty("assignment_status").GetString());
         Assert.AreEqual("task.accepted", root.GetProperty("event").GetString());
         Assert.AreEqual("InProgress", root.GetProperty("board_column").GetString());
+    }
+
+    [TestMethod]
+    public async Task Claim_Result_ExposesReadOnlyParentAndContainerFlags()
+    {
+        // Stage 3（D5/D2 收口，缺口 A）：执行者侧 task_claim 的结果模型只读暴露父任务标识与容器标记；
+        // 父标识由服务端 mutation 结果填充（本用例注入非空值以证字段确实被映射），
+        // 执行者侧 Args 仍无任何修改父子关系的参数。
+        var service = new FakeTaskAgentCommandService
+        {
+            Claim = (request, _) => Task.FromResult(Mutation(
+                taskId: request.TaskId,
+                disposition: "accept",
+                status: "InProgress",
+                version: request.ExpectedVersion + 1,
+                assignmentId: request.AssignmentId,
+                assignmentStatus: "InProgress",
+                @event: "task.accepted",
+                boardColumn: "InProgress",
+                parentTaskId: "task-parent",
+                isContainer: false)),
+        };
+
+        var root = ParseOutput(await RunAsync(
+            ClaimTool(service),
+            "{\"task_id\":\"task-child\",\"assignment_id\":\"assign-1\",\"expected_version\":1}",
+            Context(activeTask: ActiveTask(taskId: "task-child"))));
+
+        Assert.AreEqual("task-child", root.GetProperty("task_id").GetString());
+        Assert.AreEqual("task-parent", root.GetProperty("parent_task_id").GetString());
+        Assert.IsFalse(root.GetProperty("is_container").GetBoolean());
+
+        // 无父的卡：parent_task_id 为 null（被忽略序列化）；is_container 仍为 false。
+        var standalone = ParseOutput(await RunAsync(
+            ClaimTool(new FakeTaskAgentCommandService()),
+            "{\"task_id\":\"task-1\",\"assignment_id\":\"assign-1\",\"expected_version\":1}",
+            Context(activeTask: ActiveTask())));
+        Assert.IsFalse(standalone.TryGetProperty("parent_task_id", out _));
+        Assert.IsFalse(standalone.GetProperty("is_container").GetBoolean());
     }
 
     [TestMethod]
