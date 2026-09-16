@@ -60,6 +60,16 @@ internal static class TaskToolJson
 
 // ── task_list ──────────────────────────────────────────────
 
+// Stage 2（D5）只读边界（本文件即执行者侧工具的参数/结果面）：
+//   ① 执行者侧四个工具（task_list / task_get / task_claim / task_update）的参数模型
+//      <b>一律不提供父层级写参数</b>（无 parent_task_id、无 clear_parent）；父子关系仅管理者
+//      （ManageTasksTool 的 ManageTasksArgs.parent_task_id / clear_parent）可写。
+//   ② 执行者侧只能从「结果」侧只读看到父层级标记：TaskListArgs / TaskGetArgs 无入参，
+//      返回物为 Core 契约 DTO（TaskAgentListItem.parent_task_id / is_container、
+//      TaskAgentTaskDetail.parent_task_id / is_container / child_task_count / completed_child_count），
+//      由本目录工具直接序列化，无本地包装 record；这些字段由
+//      PuddingPlatform.Services.Tasks.TaskAgentCommandService 的 ToListItem / ToTaskDetail 填充。
+
 public sealed record TaskListArgs
 {
     [ToolParam("wire Status 过滤（Backlog/Ready/Deferred/Reserved/Assigned/NeedsReview/InProgress/Blocked/Completed/Failed/Cancelled/Archived）。")]
@@ -116,6 +126,19 @@ public sealed record TaskClaimResult
     public required string AssignmentStatus { get; init; }
     public required string Event { get; init; }
     public required string BoardColumn { get; init; }
+
+    /// <summary>
+    /// Stage 3（D5 收口）：父任务 ID，<b>只读</b>暴露——执行者侧无任何父子关系写参数
+    /// （本目录四个工具的 Args 均无 parent_task_id / clear_parent）。
+    /// 由 <c>TaskAgentCommandService.BuildMutationResult</c> 从任务实体填充。
+    /// </summary>
+    public string? ParentTaskId { get; init; }
+
+    /// <summary>
+    /// Stage 3（D2 收口，只读）：是否为容器（存在直接子卡）。容器不可 claim，
+    /// 故 claim 成功路径恒为 false；字段仅作只读展示，不参与任何状态派生（D3）。
+    /// </summary>
+    public bool IsContainer { get; init; }
 }
 
 // ── task_update ────────────────────────────────────────────
