@@ -123,7 +123,8 @@ public sealed class GoalCommandsController(IGoalCommandService goalCommandServic
             snapshot.LastNextAction,
             snapshot.CreatedAtUtc,
             snapshot.UpdatedAtUtc,
-            snapshot.TerminalAtUtc);
+            snapshot.TerminalAtUtc,
+            snapshot.BlockedMessage);
 
     public sealed record GoalCommandHttpRequest(
         string AgentId,
@@ -157,5 +158,9 @@ public sealed class GoalCommandsController(IGoalCommandService goalCommandServic
         string? LastNextAction,
         DateTimeOffset CreatedAtUtc,
         DateTimeOffset UpdatedAtUtc,
-        DateTimeOffset? TerminalAtUtc);
+        DateTimeOffset? TerminalAtUtc,
+        // 结算已持久化的结构化受阻说明（goal_runs.blocked_message；GoalSettlementStore 写入
+        // decision.BlockerMessage ?? decision.Reason）。可选 + 尾置默认 null：仅做
+        // "已有值 → 查询输出"的暴露，不改判定；老数据/既有调用方不受影响。
+        string? BlockedMessage = null);
 }
