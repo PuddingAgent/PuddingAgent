@@ -437,6 +437,10 @@ public sealed class TaskControllerTests
             [TaskErrorCode.TaskActiveContextMissing] = 422,
             [TaskErrorCode.TaskInvalidCursor] = 422,
             [TaskErrorCode.CapabilityMissing] = 403,
+            // Stage 1（D1/D4）父层级错误码：HTTP 状态须与 TaskWireMaps.ErrorCodeToHttpStatus 契约一致。
+            [TaskErrorCode.TaskParentNotFound] = 404,
+            [TaskErrorCode.TaskHasNonTerminalChildren] = 409,
+            [TaskErrorCode.TaskHierarchyInvalid] = 422,
         };
 
         var codeMap = new Dictionary<TaskErrorCode, string>
@@ -461,6 +465,10 @@ public sealed class TaskControllerTests
             [TaskErrorCode.PolicyVersionConflict] = "policy.version_conflict",
             [TaskErrorCode.TaskActiveContextMissing] = "task.active_context_missing",
             [TaskErrorCode.TaskInvalidCursor] = "task.invalid_cursor",
+            // Stage 1（D1/D4）父层级错误码的稳定 wire 串。
+            [TaskErrorCode.TaskParentNotFound] = "task.parent_not_found",
+            [TaskErrorCode.TaskHierarchyInvalid] = "task.hierarchy_invalid",
+            [TaskErrorCode.TaskHasNonTerminalChildren] = "task.has_non_terminal_children",
         };
 
         foreach (TaskErrorCode code in Enum.GetValues<TaskErrorCode>())
