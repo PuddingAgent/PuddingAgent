@@ -229,6 +229,12 @@ public sealed class GoalCheckRunner(
 
         // fail-closed：进程已终态但退出码不可得（输出快照缺失 / 宿主信息丢失 / kill 失败进程仍存活）。
         // 宁可记 failed，绝不记 passed；也不得混同为等待 —— 明确失败码便于 triage。
+        //
+        // 边界（刻意不标记 EvidenceUnavailable）：退出码不可得是「平台没能给出结论」的宿主异常，
+        // 平台有意让它成为终态以便 triage —— R4 回归锁
+        // GoalCheckRunnerTests.Run_MissingExitCode_FailsClosedWithExplicitReason 明确要求
+        // reports[0] = failed + exit_code_unknown，且 records[0].Status == finished（「也不当等待」）。
+        // 可恢复回 pending 的语义只适用于「test 检查已执行但未产出工作单元证据」，见 LacksTestEvidence。
         if (exitCode is null)
         {
             return BuildReport(
@@ -240,8 +246,7 @@ public sealed class GoalCheckRunner(
                 null,
                 summary,
                 GoalCheckFailureCodes.ExitCodeUnknown,
-                "The process finished but its exit code was unavailable; recording failure (fail-closed).",
-                evidenceUnavailable: true);
+                "The process finished but its exit code was unavailable; recording failure (fail-closed).");
         }
 
         if (exitCode != 0)
@@ -560,6 +565,8 @@ public sealed class GoalCheckRunner(
     /// 这类失败多源于外部环境（构建/宿主抖动），属于可恢复失败：报告标记 EvidenceUnavailable 后，
     /// 存储层（GoalCheckRecordStore.FinishAsync）不落 finished、回 pending 重跑，
     /// 避免去重键在本 epoch 内永久固化无效证据。构建失败 / 有真实汇总的失败不在此列（真实判定，必须缓存）。
+    /// 边界：本判定只作用于 test 检查的「无工作单元证据」。exit_code_unknown（宿主拿不到退出码）
+    /// 属平台异常，仍落 finished 终态（R4 锁），刻意不在此列。
     /// </summary>
     private static bool LacksTestEvidence(
         string kind,

@@ -5,11 +5,17 @@ using PuddingPlatform.Services.Goals;
 namespace PuddingPlatformTests.Services.Goals;
 
 /// <summary>
-/// 证据不可用（EvidenceUnavailable）回归锁：受控检查在"外部可恢复失败"——退出码不可得、
-/// test 无可解析汇总、零执行——时不得落成 finished。否则去重键在本 epoch 内永久固化无效证据，
+/// 证据不可用（EvidenceUnavailable）回归锁：受控检查在 test 检查「无工作单元证据」——
+/// 无可解析汇总、零执行——时不得落成 finished。否则去重键在本 epoch 内永久固化无效证据，
 /// 检查永远无法重跑（真实事故：GoalRun 7ef90f2c 因外部并发冲突 exit 1 且无测试汇总，
 /// iter5–iter8 连续四轮复用同一失败结果空转，只能 resume 递增 epoch 才能重跑）。
 /// 真实测试失败与构建失败是有效判定，仍必须缓存为 finished，不得无限重跑。
+/// <para>
+/// 边界（刻意不覆盖）：exit_code_unknown（进程终态但退出码不可得）是「平台没能给出结论」的宿主异常，
+/// 平台有意让其成为终态以便 triage —— 由 GoalCheckRunnerTests
+/// .Run_MissingExitCode_FailsClosedWithExplicitReason 的 R4 锁保证
+/// （failed + exit_code_unknown + 记录 finished + 不当等待）。本文件不改变该契约。
+/// </para>
 /// </summary>
 [TestClass]
 public sealed class GoalCheckEvidenceUnavailableTests
