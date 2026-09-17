@@ -22,6 +22,12 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
     private readonly ILogger<TerminalProcessManager> _logger;
     private readonly string _logDir;
 
+    /// <summary>
+    /// 进程退出后等待 stdout/stderr 异步投递完成的上限（见 Exited 处理器注释）。
+    /// 需覆盖正常排空（实测 <c>dotnet test</c> 约百余行、毫秒级），同时避免被持有管道的残留孙进程（testhost）永久拖住。
+    /// </summary>
+    private const int OutputDrainTimeoutMs = 5_000;
+
     public TerminalProcessManager(ILogger<TerminalProcessManager> logger, PuddingDataPaths dataPaths)
     {
         _logger = logger;
@@ -112,6 +118,34 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
                         ? TerminalProcessStatus.Exited
                         : TerminalProcessStatus.Failed;
                     channel.Writer.TryComplete();
+
+                    // ★ 必须等异步输出排空后，才能关闭日志/释放进程。
+                    // .NET 明确：启用输出重定向时，Exited 可能在全部 stdout/stderr 处理完成**之前**触发；
+                    // 此时立即 Dispose 会关闭底层流并丢弃尚未投递的末尾行。对 `dotnet test` 而言，
+                    // 末尾行正是 VSTest 汇总行（"Passed! - Failed: N, Passed: N"）—— 丢失后受控检查
+                    // 即使 exitCode=0 也解析不出测试数量（GoalCheckFailureCodes.TestCountUnknown），
+                    // Goal 目标因此被无限阻塞（实测 epoch 1/3/5/7 全部复现，且与读取窗口/字符预算无关）。
+                    // 无参 WaitForExit() 的语义正是「等待重定向输出的异步事件全部处理完毕」；
+                    // 放到线程池执行以免阻塞触发 Exited 的线程（channel 为无界，handler 的 WriteAsync
+                    // 不背压，故不会死锁）。超时仅记录警告、不阻塞后续清理（残留孙进程可能长期持有管道）。
+                    var drain = Task.Run(() =>
+                    {
+                        try
+                        {
+                            process.WaitForExit();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogDebug(ex, "[Terminal] pid={Pid} output drain wait failed", processId);
+                        }
+                    });
+                    if (await Task.WhenAny(drain, Task.Delay(OutputDrainTimeoutMs)) != drain)
+                    {
+                        _logger.LogWarning(
+                            "[Terminal] pid={Pid} output drain did not finish within {Ms}ms; trailing output may be incomplete.",
+                            processId, OutputDrainTimeoutMs);
+                    }
+
                     await logWriter.DisposeAsync();
                     await logStream.DisposeAsync();
                     process.Dispose();
