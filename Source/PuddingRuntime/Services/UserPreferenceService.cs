@@ -18,9 +18,9 @@ public sealed record PreferenceWriteResult(
 /// 存储：记忆图书馆中的「用户偏好」Book（EnsureDefaultBooksAsync 已内置该默认书）。
 /// 每条偏好一个 Chapter，Content 格式为 "key: value"，按 key 幂等 upsert（同一 key 重复写入更新原章节）。
 /// 检索：按 Book Title 精确读取（不依赖 FTS 或 Embedding，冷启动零外部依赖），
-/// 无「用户偏好」Book 时回退到 SmartSearchAsync（复用 FTS5 + TagTree 检索）。
+/// 专用 Book 是权威来源；不存在或为空即无存储偏好，不使用跨工作区的模糊搜索回填。
 ///
-/// 设计原则：复用 IMemoryLibrary / IMemoryLibraryConvenience，不重复建设存储或检索设施；
+/// 设计原则：复用 IMemoryLibrary，不重复建设存储或检索设施；
 /// 向量化由既有 EmbeddingGenerationHook 异步回填，Prefetch 本身不阻塞等待 Embedding。
 /// </summary>
 public interface IUserPreferenceService
@@ -30,7 +30,7 @@ public interface IUserPreferenceService
 
     /// <summary>
     /// 从记忆库加载用户偏好，返回格式化文本块（含 "--- LAYER: USER-PREFERENCES ---" 标记）；
-    /// 无偏好或 workspace 缺失时返回 null。
+    /// 无偏好或 workspace 缺失时返回 null；读取失败抛出异常，不能伪装成偏好被清空。
     /// </summary>
     Task<string?> LoadPreferencesAsync(
         string? workspaceId,
@@ -59,16 +59,13 @@ public interface IUserPreferenceService
 public sealed class UserPreferenceService : IUserPreferenceService
 {
     private readonly IMemoryLibrary _memoryLibrary;
-    private readonly IMemoryLibraryConvenience _libraryConvenience;
     private readonly ILogger<UserPreferenceService> _logger;
 
     public UserPreferenceService(
         IMemoryLibrary memoryLibrary,
-        IMemoryLibraryConvenience libraryConvenience,
         ILogger<UserPreferenceService> logger)
     {
         _memoryLibrary = memoryLibrary;
-        _libraryConvenience = libraryConvenience;
         _logger = logger;
     }
 
@@ -109,26 +106,8 @@ public sealed class UserPreferenceService : IUserPreferenceService
                 }
             }
 
-            // ── 回退路径：FTS5 + TagTree 检索（覆盖 save_memory type=preference 等历史条目）──
-            var fallback = await _libraryConvenience.SmartSearchAsync(
-                $"{IUserPreferenceService.PreferenceBookTitle} preference 偏好",
-                topK: Math.Max(1, maxItems),
-                ct);
-            if (fallback.Count > 0)
-            {
-                var sb = new StringBuilder();
-                sb.AppendLine("--- LAYER: USER-PREFERENCES ---");
-                sb.AppendLine("[USER PREFERENCES]");
-                foreach (var r in fallback.Take(maxItems))
-                {
-                    var snippet = r.Snippet?.Trim();
-                    if (string.IsNullOrWhiteSpace(snippet))
-                        snippet = r.ChapterTitle ?? r.BookTitle;
-                    sb.AppendLine($"- **{r.BookTitle}**: {snippet}");
-                }
-                return sb.ToString();
-            }
-
+            // An empty authoritative book is a deletion, not an invitation to restore
+            // older/other-workspace preference-like text from unscoped full-text search.
             return null;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -140,7 +119,7 @@ public sealed class UserPreferenceService : IUserPreferenceService
             _logger.LogWarning(ex,
                 "[UserPreference] Load failed workspace={Workspace}",
                 workspaceId);
-            return null;
+            throw;
         }
     }
 

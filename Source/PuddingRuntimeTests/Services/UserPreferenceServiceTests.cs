@@ -18,7 +18,7 @@ public sealed class UserPreferenceServiceTests
     {
         await using var scope = await CreateScopeAsync();
         var service = new UserPreferenceService(
-            scope.Library, scope.Convenience, NullLogger<UserPreferenceService>.Instance);
+            scope.Library, NullLogger<UserPreferenceService>.Instance);
 
         var result = await service.SavePreferenceAsync("ws-1", "language", "中文");
 
@@ -39,7 +39,7 @@ public sealed class UserPreferenceServiceTests
     {
         await using var scope = await CreateScopeAsync();
         var service = new UserPreferenceService(
-            scope.Library, scope.Convenience, NullLogger<UserPreferenceService>.Instance);
+            scope.Library, NullLogger<UserPreferenceService>.Instance);
 
         var first = await service.SavePreferenceAsync("ws-1", "language", "中文");
         var second = await service.SavePreferenceAsync("ws-1", "language", "English");
@@ -59,7 +59,7 @@ public sealed class UserPreferenceServiceTests
     {
         await using var scope = await CreateScopeAsync();
         var service = new UserPreferenceService(
-            scope.Library, scope.Convenience, NullLogger<UserPreferenceService>.Instance);
+            scope.Library, NullLogger<UserPreferenceService>.Instance);
 
         await service.SavePreferenceAsync("ws-1", "language", "中文");
         await service.SavePreferenceAsync("ws-1", "tone", "简洁");
@@ -77,7 +77,7 @@ public sealed class UserPreferenceServiceTests
     {
         await using var scope = await CreateScopeAsync();
         var service = new UserPreferenceService(
-            scope.Library, scope.Convenience, NullLogger<UserPreferenceService>.Instance);
+            scope.Library, NullLogger<UserPreferenceService>.Instance);
 
         await service.SavePreferenceAsync("ws-1", "language", "中文");
         await service.SavePreferenceAsync("ws-1", "tone", "简洁");
@@ -96,7 +96,7 @@ public sealed class UserPreferenceServiceTests
     {
         await using var scope = await CreateScopeAsync();
         var service = new UserPreferenceService(
-            scope.Library, scope.Convenience, NullLogger<UserPreferenceService>.Instance);
+            scope.Library, NullLogger<UserPreferenceService>.Instance);
 
         var block = await service.LoadPreferencesAsync("ws-empty");
         Assert.IsNull(block);
@@ -107,7 +107,7 @@ public sealed class UserPreferenceServiceTests
     {
         await using var scope = await CreateScopeAsync();
         var service = new UserPreferenceService(
-            scope.Library, scope.Convenience, NullLogger<UserPreferenceService>.Instance);
+            scope.Library, NullLogger<UserPreferenceService>.Instance);
 
         Assert.IsNull(await service.LoadPreferencesAsync(null));
     }
@@ -117,7 +117,7 @@ public sealed class UserPreferenceServiceTests
     {
         await using var scope = await CreateScopeAsync();
         var service = new UserPreferenceService(
-            scope.Library, scope.Convenience, NullLogger<UserPreferenceService>.Instance);
+            scope.Library, NullLogger<UserPreferenceService>.Instance);
 
         await service.SavePreferenceAsync("ws-1", "language", "中文");
         await service.SavePreferenceAsync("ws-1", "tone", "简洁");
@@ -138,7 +138,7 @@ public sealed class UserPreferenceServiceTests
     {
         await using var scope = await CreateScopeAsync();
         var service = new UserPreferenceService(
-            scope.Library, scope.Convenience, NullLogger<UserPreferenceService>.Instance);
+            scope.Library, NullLogger<UserPreferenceService>.Instance);
 
         // 写入 → 读取 → 覆盖 → 读取 → 删除 → 读取为空
         await service.SavePreferenceAsync("ws-1", "reply_style", "Markdown 表格");

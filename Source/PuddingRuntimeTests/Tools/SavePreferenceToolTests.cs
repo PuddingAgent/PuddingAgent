@@ -58,7 +58,7 @@ public sealed class SavePreferenceToolTests
     {
         await using var scope = await CreateScopeAsync();
         var tool = new SavePreferenceTool(
-            new UserPreferenceService(scope.Library, scope.Convenience, NullLogger<UserPreferenceService>.Instance),
+            new UserPreferenceService(scope.Library, NullLogger<UserPreferenceService>.Instance),
             NullLogger<SavePreferenceTool>.Instance);
 
         var json = await ExecuteAsync(tool, """
@@ -95,7 +95,7 @@ public sealed class SavePreferenceToolTests
     {
         await using var scope = await CreateScopeAsync();
         var service = new UserPreferenceService(
-            scope.Library, scope.Convenience, NullLogger<UserPreferenceService>.Instance);
+            scope.Library, NullLogger<UserPreferenceService>.Instance);
         var tool = new SavePreferenceTool(service, NullLogger<SavePreferenceTool>.Instance);
 
         await ExecuteAsync(tool, """{ "key": "tone", "value": "简洁" }""", workspaceId: "ws-tool");
@@ -118,7 +118,7 @@ public sealed class SavePreferenceToolTests
     {
         await using var scope = await CreateScopeAsync();
         var tool = new SavePreferenceTool(
-            new UserPreferenceService(scope.Library, scope.Convenience, NullLogger<UserPreferenceService>.Instance),
+            new UserPreferenceService(scope.Library, NullLogger<UserPreferenceService>.Instance),
             NullLogger<SavePreferenceTool>.Instance);
 
         var result = await tool.ExecuteAsync(new ToolExecutionRequest
@@ -142,7 +142,7 @@ public sealed class SavePreferenceToolTests
     {
         await using var scope = await CreateScopeAsync();
         var tool = new SavePreferenceTool(
-            new UserPreferenceService(scope.Library, scope.Convenience, NullLogger<UserPreferenceService>.Instance),
+            new UserPreferenceService(scope.Library, NullLogger<UserPreferenceService>.Instance),
             NullLogger<SavePreferenceTool>.Instance);
 
         var result = await tool.ExecuteAsync(new ToolExecutionRequest

@@ -612,17 +612,17 @@ public sealed partial class ContextPipeline
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// 从记忆图书馆预取用户偏好并注入 System Prompt。
-    /// 按 workspace 缓存 30s；任何失败都降级为 null（不阻塞上下文组装）。
+    /// 从记忆图书馆预取用户偏好供尾部快照使用。
+    /// 按 workspace 缓存 30s；读取失败与成功读取空集必须分开，失败不能撤销旧偏好。
     /// </summary>
-    private async Task<string?> GetOrBuildUserPreferencesAsync(ContextRequest request, CancellationToken ct)
+    private async Task<(bool Loaded, string? Content)> GetOrBuildUserPreferencesAsync(ContextRequest request, CancellationToken ct)
     {
         if (_userPreferenceService is null || string.IsNullOrWhiteSpace(request.WorkspaceId))
-            return null;
+            return (false, null);
 
         var cacheKey = $"user_prefs:{request.WorkspaceId}";
         if (_memCache.TryGetValue<string>(cacheKey, out var cached) && cached is not null)
-            return cached;
+            return (true, cached);
 
         try
         {
@@ -632,7 +632,7 @@ public sealed partial class ContextPipeline
                 ct);
             if (!string.IsNullOrWhiteSpace(prefs))
                 _memCache.Set(cacheKey, prefs, MemCacheExpiration);
-            return prefs;
+            return (true, prefs);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -643,7 +643,7 @@ public sealed partial class ContextPipeline
             _logger.LogWarning(ex,
                 "[ContextPipeline] User preference prefetch failed workspace={Workspace}",
                 request.WorkspaceId);
-            return null;
+            return (false, null);
         }
     }
 

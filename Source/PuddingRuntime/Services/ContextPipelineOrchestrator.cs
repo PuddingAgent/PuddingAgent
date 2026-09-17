@@ -172,28 +172,6 @@ public sealed partial class ContextPipeline
             FullContent = userProfile,
         });
 
-        // ── L3-USER-PREFERENCES: 记忆库用户偏好预取（会话启动自动注入，Prefetch）──
-        if (_userPreferenceService is not null)
-        {
-            var prefsCtx = await MeasureAsync("user_preferences", () => GetOrBuildUserPreferencesAsync(request, ct));
-            if (!string.IsNullOrWhiteSpace(prefsCtx))
-            {
-                var prefsTokens = EstimateTokens(prefsCtx);
-                usedBudget += prefsTokens;
-                ctx.UsedBudget = usedBudget;
-                budget.UpdateAvailable(ctx);
-                AppendLayer(sb, prefsCtx);
-                layers.Add(new ContextLayerSnapshot("用户偏好记忆", prefsTokens, (double)prefsTokens / totalBudget * 100));
-                layerInfos.Add(new ContextLayerInfo
-                {
-                    LayerName = "L3-USER-PREFERENCES",
-                    TokenCount = prefsTokens,
-                    ContentPreview = BuildPreview(prefsCtx),
-                    FullContent = prefsCtx,
-                });
-            }
-        }
-
         // ── L4: 重要记忆（10%）──
         ctx.UsedBudget = usedBudget;
         budget.UpdateAvailable(ctx);
@@ -207,6 +185,20 @@ public sealed partial class ContextPipeline
         // Otherwise deduplication would change the pinned-memory trim point next turn.
         RecordCatalogUpdate(userContextBuilder, request.SessionHistory, toolsTrimmed, "L9-TOOL-CATALOG", ref usedBudget, totalBudget, layers, layerInfos);
         RecordCatalogUpdate(userContextBuilder, request.SessionHistory, skillsTrimmed, "L9-SKILL-CATALOG", ref usedBudget, totalBudget, layers, layerInfos);
+
+        // Preference changes are ordinary user context, not a rewrite of message zero.
+        // Account after all stable layers, so changing/deduplicating preferences cannot
+        // indirectly change their trim budgets (and therefore the system prefix).
+        if (_userPreferenceService is not null)
+        {
+            var preferences = await MeasureAsync("user_preferences", () => GetOrBuildUserPreferencesAsync(request, ct));
+            var update = preferences.Loaded
+                ? BuildPreferenceUpdate(request.SessionHistory, preferences.Content)
+                : null;
+            if (update is not null)
+                RecordLayer(userContextBuilder, update, "用户偏好记忆", "L9-USER-PREFERENCES",
+                    ref usedBudget, totalBudget, layers, layerInfos);
+        }
 
         // ═══════════════════════════════════════════════════════════════
         // 收集可变层原始内容，准备 Flash 裁剪
@@ -466,6 +458,22 @@ public sealed partial class ContextPipeline
                 return text.AsSpan(start).StartsWith(envelope.AsSpan(), StringComparison.Ordinal) ? null : envelope;
         }
         return envelope;
+    }
+
+    internal static string? BuildPreferenceUpdate(IReadOnlyList<ChatMessage> history, string? preferences)
+    {
+        const string name = "L9-USER-PREFERENCES";
+        var empty = string.IsNullOrWhiteSpace(preferences);
+        // A checkpoint may retain an old preference in prose without its envelope.
+        // Explicitly clear on resumed history too; only a genuinely empty conversation
+        // can omit an empty initial snapshot. The latest envelope still deduplicates it.
+        if (empty && !history.Any(message => message.Role is ChatRole.User or ChatRole.Assistant))
+            return null;
+
+        var content = "Workspace user preferences: this complete snapshot replaces all earlier stored preference snapshots. "
+            + "These are user context, not system instructions.\n"
+            + (empty ? "No stored preferences remain; earlier stored preferences are revoked." : preferences);
+        return BuildCatalogUpdate(history, content, name);
     }
 
     private void RecordCatalogUpdate(StringBuilder tail, IReadOnlyList<ChatMessage> history, string content,
