@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Goals;
 using PuddingPlatform.Data.Entities;
@@ -28,8 +29,7 @@ namespace PuddingPlatform.Services.Goals;
 /// </para>
 /// </summary>
 public sealed class GoalResumeService(
-    GoalRunStore store,
-    IGoalCommandService goalCommands,
+    IServiceScopeFactory scopeFactory,
     ILogger<GoalResumeService> logger) : IGoalResumeService
 {
     /// <summary>
@@ -53,6 +53,12 @@ public sealed class GoalResumeService(
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WorkspaceId);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.ConversationId);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.AgentInstanceId);
+
+        // The tool and epoch ledger are singleton, while the canonical Goal stores
+        // use a scoped DbContext. Keep one independent scope alive for this call.
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<GoalRunStore>();
+        var goalCommands = scope.ServiceProvider.GetRequiredService<IGoalCommandService>();
 
         // ── 定位（只读）─────────────────────────────────────────────────────
         GoalRunEntity? goal;

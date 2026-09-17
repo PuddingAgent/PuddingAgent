@@ -38,6 +38,18 @@ public sealed class PuddingApplicationHostCompositionTests
             Assert.Same(terminalPolicy, app.Services.GetRequiredService<DefaultTerminalCommandPolicy>());
             Assert.IsType<PuddingPlatform.Services.Goals.GoalCheckRunner>(
                 app.Services.GetRequiredService<PuddingCode.Goals.IGoalCheckRunner>());
+            var goalResume = app.Services.GetRequiredService<PuddingCode.Goals.IGoalResumeService>();
+            Assert.Same(goalResume,
+                app.Services.GetRequiredService<PuddingPlatform.Services.Goals.GoalResumeService>());
+            Assert.Same(app.Services.GetRequiredService<GoalResumeTool>(),
+                app.Services.GetRequiredService<GoalResumeTool>());
+            using (var scope = app.Services.CreateScope())
+            {
+                Assert.Same(goalResume,
+                    scope.ServiceProvider.GetRequiredService<PuddingCode.Goals.IGoalResumeService>());
+                Assert.IsType<PuddingPlatform.Services.Goals.GoalRunStore>(
+                    scope.ServiceProvider.GetRequiredService<PuddingPlatform.Services.Goals.GoalRunStore>());
+            }
             terminalAdmission.EnsureAllowed("dotnet test --no-restore", isYoloMode: false);
             Assert.Throws<UnauthorizedAccessException>(() =>
                 terminalAdmission.EnsureAllowed("taskkill /PID 1234", isYoloMode: false));

@@ -282,7 +282,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ITaskGoalLaunchService>(sp => sp.GetRequiredService<TaskGoalLaunchService>());
         // 「Agent 自主恢复 Goal」（goal_resume 工具；归属/熔断证据/epoch 配额三道 fail-closed 闸门
         // 见 GoalResumeService）。goal_resume 工具由统一 Tool Registry 按 Singleton 托管，
-        // 因此这里同样必须是 Singleton（与 TaskGoalLaunchService 同模式）。
+        // Singleton 保留 epoch 台账；GoalResumeService 每次调用创建 scope 解析 scoped Goal 服务。
         builder.Services.AddSingleton<GoalResumeService>();
         builder.Services.AddSingleton<IGoalResumeService>(sp => sp.GetRequiredService<GoalResumeService>());
         builder.Services.Configure<WorkspaceTaskFeatureOptions>(_ => { });

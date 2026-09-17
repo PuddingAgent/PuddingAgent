@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PuddingCode.Goals;
@@ -20,6 +21,15 @@ namespace PuddingPlatformTests.Services.Goals;
 [TestClass]
 public sealed class GoalResumeServiceTests
 {
+    private readonly List<IAsyncDisposable> _resources = [];
+
+    [TestCleanup]
+    public async Task CleanupAsync()
+    {
+        foreach (var resource in _resources.AsEnumerable().Reverse())
+            await resource.DisposeAsync();
+    }
+
     private sealed class NoopSignal : ICommittedEventSignal
     {
         public ValueTask WaitForChangeAsync(string conversationId, long knownHead, CancellationToken ct)
@@ -30,11 +40,12 @@ public sealed class GoalResumeServiceTests
         }
     }
 
-    private static async Task<(PlatformDbContext Db, GoalResumeService Service, GoalCommandService Commands)>
+    private async Task<(PlatformDbContext Db, GoalResumeService Service, GoalCommandService Commands)>
         CreateAsync()
     {
         var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
+        _resources.Add(connection);
         var options = new DbContextOptionsBuilder<PlatformDbContext>()
             .UseSqlite(connection)
             .Options;
@@ -46,7 +57,23 @@ public sealed class GoalResumeServiceTests
             Options.Create(new GoalRunOptions { Enabled = true, ContinuationEnabled = false }),
             TimeProvider.System,
             NullLogger<GoalCommandService>.Instance);
-        var service = new GoalResumeService(store, commands, NullLogger<GoalResumeService>.Instance);
+        // Exercise the product lifetimes, including strict scope validation.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<ICommittedEventSignal, NoopSignal>();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(Options.Create(new GoalRunOptions { Enabled = true, ContinuationEnabled = false }));
+        services.AddScoped(_ => new PlatformDbContext(options));
+        services.AddScoped<GoalRunStore>();
+        services.AddScoped<IGoalCommandService, GoalCommandService>();
+        services.AddSingleton<GoalResumeService>();
+        var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true,
+        });
+        _resources.Add(provider);
+        var service = provider.GetRequiredService<GoalResumeService>();
         return (db, service, commands);
     }
 

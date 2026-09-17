@@ -1,3 +1,7 @@
+## 2026-09-17 GoalResume 宿主生命周期修复
+
+`GoalResumeService`：单例 epoch 台账 + 每次调用 async scope 的 GoalRunStore/IGoalCommandService；产品 Runtime 组合根注册 GoalResumeTool。`GoalResumeServiceTests` 使用严格 DI 生命周期验证，`PuddingApplicationHostCompositionTests` 验证真实 DesktopChild 注册。见 [报告](Docs/Reports/GoalResume依赖生命周期导致Core崩溃修复-2026-09-17.md)。
+
 ## 2026-09-16 模型输出上限权威来源
 
 `PuddingFileLlmConfigService` 从资源池模型读取 `MaxOutputTokens`；`AgentRuntimeProfileResolver`、`AgentLLMConfigResolver` 不再按 Agent/角色收紧。Agent 编辑、模板 DTO/manifest/profile 已移除 `maxReplyTokens`。DeepSeek 模板参数及本机验收见 [报告](Docs/Reports/模型输出上限归一与资源池核对-2026-09-16.md)。

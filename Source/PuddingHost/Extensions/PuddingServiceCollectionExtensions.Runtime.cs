@@ -168,6 +168,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddPuddingAgentTool<TaskGetTool>();
         builder.Services.AddPuddingAgentTool<TaskClaimTool>();
         builder.Services.AddPuddingAgentTool<TaskUpdateTool>();
+        builder.Services.AddPuddingAgentTool<GoalResumeTool>();
 
         // ── Todo 拆解三工具（todo_write/todo_read/todo_check，设计 2026-09-16 TD-1）──
         builder.Services.AddPuddingAgentTool<TodoWriteTool>();

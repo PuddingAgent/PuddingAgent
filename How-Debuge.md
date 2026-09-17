@@ -1,3 +1,7 @@
+## 2026-09-17：GoalResume Singleton 捕获 Scoped 导致 Core 启动崩溃
+
+Core 退出码 `-532462766` 且业务日志未写启动异常时，查询 Windows Application / `.NET Runtime` 事件；本次为 `GoalResumeService` 单例依赖 `GoalRunStore` 作用域服务，Build 阶段即退出。单例工具服务应每次调用创建/释放 scope，保留严格 DI 校验；真实 DesktopChild composition 测试必须解析产品工具。详见 [修复与验收](Docs/Reports/GoalResume依赖生命周期导致Core崩溃修复-2026-09-17.md)。
+
 ## 2026-09-16：模型输出被 Agent 4096 限额截断
 
 遇到 `llm_output_truncated`，按 session/turn 查询 gateway 的实际输出和 finish reason；思考 token 也消耗输出额度。Agent `maxReplyTokens` 已废弃，单次上限统一由 LLM 资源池模型 `maxOutputTokens` 决定。DeepSeek API 文档 384K 的精确值是 393216。检查实际进程加载的 DLL/资源池 API，不能仅检查源码或表单。详见 [诊断与验收](Docs/Reports/模型输出上限归一与资源池核对-2026-09-16.md)。
