@@ -1,5 +1,9 @@
 # Pudding Agent Network 文档索引
 
+## 2026-09-17 Goal模式重新规划
+
+[简化设计](Features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md) · [ADR-092第二版](07架构/106ADR-092目标驱动执行与分层验证闭环ADR.md)：Goal专属存储、单一状态机与决策入口、Agent回合/证据检查两类工作；移除Goal步骤树与两级Verifier，Task可选适配。Agent自身goal.md独立。设计已更新，产品实现及新构建验收待完成。
+
 ## 2026-09-14 Blocked 卡 canonical 恢复通道（卡 813ad427）
 
 [设计裁定](Reports/blocked-recovery-channel-decision-20260914.md)：`task_update` 的上下文重建门槛放宽为 `InProgress｜Blocked`（仍需 active assignment 归属调用方 + 版本 CAS），Blocked 下合法 disposition 仍由服务端状态机 fail closed 裁决（仅 `todo` → Ready 并释放 active assignment）；`task_claim` 门槛不变。回归 `TaskActiveTaskFourChainE2ETests` T12–T15，`FullyQualifiedName~Task` 123/123 通过。
