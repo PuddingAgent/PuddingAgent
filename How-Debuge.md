@@ -1,3 +1,7 @@
+### DeepSeek缓存首批优化：能力包与偏好快照（2026-09-17）
+
+工具发现现在成组曝光，先看已授权catalog和既有可见顺序，勿把一次性工具包扩展误记成排序回归。偏好遥测从system的L3-USER-PREFERENCES迁至尾部L9-USER-PREFERENCES；同内容仍可见则无新层，压缩后需补发。读取错误不表示删除；成功空集发清空快照，专用Book无内容不再模糊搜索回填。部署检查prepared/loaded artifact manifest、程序集hash、PID、Ready及持续运行时间；没有模型usage时不报告命中提升。见[本批验收](Docs/Reports/DeepSeek缓存首批优化与部署-2026-09-17.md)。
+
 ### 隔夜缓存：摘要复用、checkpoint冷首轮及台账差异（2026-09-17）
 
 缓存率按token加权，账单日汇总不能截取18时窗口，CSV导出时间不等于入账水位。按compaction_replay与compaction_checkpoint分别统计；warm-prefix摘要路径不一定出现在ContextCompactionService旧JSONL中。system标签变化但已记录layer hash不变时，应补最终有序消息manifest，不能把昨日偏好问题套用到今日。工具变化要比较相邻有序ToolIds；稳定追加也可能导致冷缓存。见[数据和复现口径](Docs/Reports/隔夜缓存命中评估与Harness-Reasonix优化方案-2026-09-17.md)。

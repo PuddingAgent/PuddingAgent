@@ -1,3 +1,7 @@
+## 2026-09-17 DeepSeek缓存首批优化已部署
+
+`ToolExposurePlanner`按首次发现的文件/编辑/代码/终端/Git只读能力稳定成组曝光；`ContextPipeline`偏好使用L9尾部完整快照，支持去重、清空及冷恢复。`UserPreferenceService`只读工作区专用偏好Book，读取失败不伪装空集。92项Runtime+1项宿主回归通过，Core已部署重启。见[实施与验收](Docs/Reports/DeepSeek缓存首批优化与部署-2026-09-17.md)；正式缓存99%验收未完成。
+
 ## 2026-09-17 隔夜缓存与参考实现诊断
 
 2550次Gateway usage与归因唯一内容关联：54次工具稳定追加；后16次摘要复用99.29%，checkpoint后首轮18.40%。比较Harness动态快照/摘要重放与Reasonix稳定工具入口/版本上下文，给出Composition、网关、ToolExposurePlanner、压缩和后台的文件级方案。见[完整报告](Docs/Reports/隔夜缓存命中评估与Harness-Reasonix优化方案-2026-09-17.md)及ADR-084；当前仅诊断设计。
