@@ -60,6 +60,16 @@ public static partial class GoalCheckInputIdentity
     /// <param name="projectRelativePath">目标项目目录相对仓库根的路径（如 <c>Source/PuddingPlatform</c>）。</param>
     /// <param name="checkDefinitionRefs">检查定义引用（如 <c>checks/build.md#dotnet-build</c>）；可为空。</param>
     /// <param name="provenanceHead">git HEAD 提交标识，仅作来源信息记录，不参与 Identity 计算；可为空。</param>
+    /// <param name="declaredRelevantPaths">
+    /// 【设计 §6】**检查声明的相关文件**，相对仓库根。
+    /// 存在的文件按其**原始字节**直接哈希；声明的路径不存在时写入一条「缺席」条目——
+    /// 使其随后出现也会改变 Identity（范围不确定 ⇒ 保守处理，不静默忽略）。
+    /// 绝对路径、<c>..</c> 逃逸与越出仓库根的声明一律忽略。可为空。
+    /// </param>
+    /// <param name="buildId">
+    /// 【设计 §6】适用环境 / BuildId。仅以 <c>build-id</c> 虚拟条目记录其 **SHA-256**，
+    /// 不把原始值写入清单（避免将环境值当明文落盘）。可为空。
+    /// </param>
     /// <returns>输入清单与身份（格式 <c>sha256:&lt;lowerhex&gt;</c>）。</returns>
     /// <exception cref="ArgumentNullException">必填参数为 null。</exception>
     /// <exception cref="ArgumentException">
@@ -70,7 +80,9 @@ public static partial class GoalCheckInputIdentity
         string repositoryRoot,
         string projectRelativePath,
         IReadOnlyCollection<string>? checkDefinitionRefs = null,
-        string? provenanceHead = null)
+        string? provenanceHead = null,
+        IReadOnlyCollection<string>? declaredRelevantPaths = null,
+        string? buildId = null)
     {
         ArgumentNullException.ThrowIfNull(repositoryRoot);
         ArgumentNullException.ThrowIfNull(projectRelativePath);
@@ -87,6 +99,8 @@ public static partial class GoalCheckInputIdentity
         AddConfigEntries(entries, rootFullPath, projectDir);
         AddDependencyLockEntries(entries, rootFullPath, projectDir);
         AddCheckDefinitionEntries(entries, checkDefinitionRefs);
+        AddDeclaredRelevantEntries(entries, rootFullPath, declaredRelevantPaths);
+        AddBuildIdEntry(entries, buildId);
 
         var ordered = entries
             .Select(pair => new GoalCheckInputEntry(pair.Key, pair.Value))
@@ -216,6 +230,65 @@ public static partial class GoalCheckInputIdentity
                     ? definitionHash
                     : ToSha256Hex(Encoding.UTF8.GetBytes(definitionRef));
         }
+    }
+
+    /// <summary>
+    /// 检查声明的相关文件（设计 §6）：存在的按原始字节哈希；缺席的写一条
+    /// <c>declared-absent:&lt;relPath&gt;</c> 条目，使其随后出现也能改变 Identity。
+    /// 绝对路径、<c>..</c> 逃逸、越出仓库根与非法路径一律忽略。
+    /// </summary>
+    private static void AddDeclaredRelevantEntries(
+        Dictionary<string, string> entries,
+        string rootFullPath,
+        IReadOnlyCollection<string>? declaredRelevantPaths)
+    {
+        if (declaredRelevantPaths is null)
+            return;
+
+        foreach (var declared in declaredRelevantPaths)
+        {
+            if (string.IsNullOrWhiteSpace(declared))
+                continue;
+
+            var normalized = declared.Trim().Replace('\\', '/');
+            if (Path.IsPathRooted(declared))
+                continue;
+            if (normalized.Split('/', StringSplitOptions.RemoveEmptyEntries)
+                .Contains("..", StringComparer.Ordinal))
+                continue;
+
+            string candidate;
+            try
+            {
+                candidate = Path.GetFullPath(Path.Combine(rootFullPath, declared));
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                continue;
+            }
+
+            if (!IsInsideRoot(rootFullPath, candidate))
+                continue;
+
+            if (File.Exists(candidate))
+            {
+                AddFileEntry(entries, rootFullPath, candidate);
+                continue;
+            }
+
+            // 声明但不存在：记为「缺席」，使该文件随后出现也能改变身份（保守而不错过变化）。
+            entries["declared-absent:" + normalized] = ToSha256Hex(Encoding.UTF8.GetBytes("absent"));
+        }
+    }
+
+    /// <summary>
+    /// 适用环境 / BuildId：只记录其 SHA-256，不落盘原始值（设计 §6「不得记录秘密明文」）。
+    /// </summary>
+    private static void AddBuildIdEntry(Dictionary<string, string> entries, string? buildId)
+    {
+        if (string.IsNullOrWhiteSpace(buildId))
+            return;
+        entries["build-id"] = ToSha256Hex(Encoding.UTF8.GetBytes(buildId.Trim()));
     }
 
     /// <summary>解析本 csproj 的<b>直接</b> ProjectReference 连线（传递闭合由调用方负责）；越出仓库根或文件不存在的引用忽略。</summary>

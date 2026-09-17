@@ -172,6 +172,67 @@ public sealed class GoalCheckInputIdentityTests
         Assert.IsTrue(first.Entries.Any(e => e.RelativePath == "B/B.cs"), "环中另一项目仍须被展开一次。");
     }
 
+    [TestMethod]
+    public void T12_Collect_DeclaredRelevantFileChange_ChangesIdentity()
+    {
+        CreateMinimalProject("App");
+        Directory.CreateDirectory(Path.Combine(_root, "spec"));
+        File.WriteAllText(Path.Combine(_root, "spec", "acceptance.md"), "v1\n");
+
+        var before = GoalCheckInputIdentity.Collect(_root, "App", declaredRelevantPaths: ["spec/acceptance.md"]);
+        File.WriteAllText(Path.Combine(_root, "spec", "acceptance.md"), "v2\n");
+        var after = GoalCheckInputIdentity.Collect(_root, "App", declaredRelevantPaths: ["spec/acceptance.md"]);
+
+        Assert.AreNotEqual(before.Identity, after.Identity, "检查声明的相关文件变化必须使旧结论失效。");
+        Assert.IsTrue(before.Entries.Any(e => e.RelativePath == "spec/acceptance.md"), "声明的相关文件必须进入清单。");
+    }
+
+    [TestMethod]
+    public void T13_Collect_DeclaredButAbsentPath_BecomingPresent_ChangesIdentity()
+    {
+        CreateMinimalProject("App");
+
+        var before = GoalCheckInputIdentity.Collect(_root, "App", declaredRelevantPaths: ["spec/missing.md"]);
+        Assert.IsTrue(
+            before.Entries.Any(e => e.RelativePath == "declared-absent:spec/missing.md"),
+            "声明但缺席的路径必须留下可追踪的「缺席」条目。");
+
+        Directory.CreateDirectory(Path.Combine(_root, "spec"));
+        File.WriteAllText(Path.Combine(_root, "spec", "missing.md"), "now here\n");
+        var after = GoalCheckInputIdentity.Collect(_root, "App", declaredRelevantPaths: ["spec/missing.md"]);
+
+        Assert.AreNotEqual(before.Identity, after.Identity, "声明但缺席的路径随后出现必须改变身份（保守而不静默忽略）。");
+    }
+
+    [TestMethod]
+    public void T14_Collect_BuildIdChange_ChangesIdentity_WithoutLeakingValue()
+    {
+        CreateMinimalProject("App");
+
+        var a = GoalCheckInputIdentity.Collect(_root, "App", buildId: "build-aaa");
+        var b = GoalCheckInputIdentity.Collect(_root, "App", buildId: "build-bbb");
+
+        Assert.AreNotEqual(a.Identity, b.Identity, "适用环境 / BuildId 变化必须使旧结论失效。");
+        Assert.IsTrue(a.Entries.Any(e => e.RelativePath == "build-id"), "BuildId 必须以虚拟条目计入清单。");
+        Assert.IsFalse(
+            a.Entries.Any(e => e.RelativePath.Contains("build-aaa", StringComparison.Ordinal)),
+            "不得把 BuildId 原始值写进清单（只记 SHA-256）。");
+    }
+
+    [TestMethod]
+    public void T15_Collect_DeclaredPathEscapesRoot_IsIgnored()
+    {
+        CreateMinimalProject("App");
+
+        var plain = GoalCheckInputIdentity.Collect(_root, "App");
+        var withEscape = GoalCheckInputIdentity.Collect(
+            _root,
+            "App",
+            declaredRelevantPaths: ["../outside.md", "\\absolute.md"]);
+
+        Assert.AreEqual(plain.Identity, withEscape.Identity, "越界或绝对的声明必须被忽略，不得进入身份。");
+    }
+
     /// <summary>在临时仓库根下创建最小项目树：App.csproj、A.cs、Sub/B.cs，可选带一层对 Lib 的 ProjectReference。</summary>
     private string CreateMinimalProject(string projectName, bool withProjectReference = false)
     {
