@@ -4375,8 +4375,8 @@ public sealed partial class PuddingToolInfrastructureTests
         cts.CancelAfter(TimeSpan.FromMilliseconds(50));
 
         // F06：调用者取消必须继续向上抛，不能变成依赖等待或不建待恢复动作。
-        // F06：调用者取消必须继续向上抛。TaskCanceledException 派生自 OperationCanceledException
-        // （取消路径上 Task.Delay/HttpClient 抛出的就是它），故此处断言 OCE 家族而非精确类型。
+        // TaskCanceledException 派生自 OperationCanceledException（取消路径上 Task.Delay/HttpClient
+        // 抛出的就是它），故此处断言 OCE 家族而非精确类型。
         await Assert.ThrowsAsync<OperationCanceledException>(() =>
             client.ReviewAsync(
                 ValidApprovalRequest("{}"),
