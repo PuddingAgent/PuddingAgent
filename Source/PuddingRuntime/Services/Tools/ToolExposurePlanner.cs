@@ -82,6 +82,16 @@ internal static class ToolExposurePlanner
         IReadOnlySet<string> committed = committedToolIds
             ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        // A discovered capability is exposed as one bounded bundle at the round boundary.
+        // Only the already-authorized catalog may supply definitions. This does not grant
+        // permission or execute a tool. In particular, read discovery never activates writes.
+        var activated = new HashSet<string>(loaded, StringComparer.OrdinalIgnoreCase);
+        activated.UnionWith(committed);
+        if (previousVisibleToolIds is not null)
+            activated.UnionWith(previousVisibleToolIds);
+        activated.IntersectWith(availableIds);
+        ExpandCapabilityBundles(activated, availableIds);
+
         List<LlmToolDefinition> visible;
         bool deferredLoadingEnabled;
         if (canonicalTools.Count <= Math.Max(1, activationThreshold)
@@ -96,8 +106,7 @@ internal static class ToolExposurePlanner
             // 跨会话清理/重启水合后保持），避免任一来源缩回时可见集收缩导致 provider prefix 漂移。
             var filtered = canonicalTools
                 .Where(tool => CoreToolIds.Contains(tool.Name)
-                    || loaded.Contains(tool.Name)
-                    || committed.Contains(tool.Name))
+                    || activated.Contains(tool.Name))
                 .ToList();
 
             // search_tools is the recovery path. If it disappears because of a registration or
@@ -122,6 +131,36 @@ internal static class ToolExposurePlanner
             previousVisibleToolIds,
             epoch,
             availableIds);
+    }
+
+    private static void ExpandCapabilityBundles(HashSet<string> activated, IReadOnlySet<string> available)
+    {
+        // Evaluate triggers before adding dependencies: adding read helpers must never
+        // cascade into editing, code exploration, shell access, or Git mutations.
+        var edit = activated.Overlaps(["file_write", "file_patch"]);
+        var code = activated.Overlaps(["code_explore", "code_symbol_search"]);
+        var read = edit || code || activated.Overlaps(["file_read", "file_search", "search_grep"]);
+        var terminal = activated.Overlaps([
+            "shell", "terminal_start", "terminal_read", "terminal_wait", "terminal_input", "terminal_cancel"]);
+        var gitRead = activated.Overlaps(["git_status", "git_diff", "git_log"]);
+
+        if (read)
+            AddAvailable("file_read", "file_search", "search_grep");
+        if (edit)
+            AddAvailable("file_write", "file_patch");
+        if (code)
+            AddAvailable("code_explore", "code_symbol_search");
+        if (terminal)
+            AddAvailable("shell", "terminal_start", "terminal_read", "terminal_wait", "terminal_input", "terminal_cancel");
+        if (gitRead)
+            AddAvailable("git_status", "git_diff", "git_log");
+
+        void AddAvailable(params string[] ids)
+        {
+            foreach (var id in ids)
+                if (available.Contains(id))
+                    activated.Add(id);
+        }
     }
 
     /// <summary>
