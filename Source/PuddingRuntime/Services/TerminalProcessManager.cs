@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using PuddingCode.Abstractions;
@@ -59,6 +60,20 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
             RedirectStandardInput = true,
             UseShellExecute = false,
             CreateNoWindow = true,
+
+            // ★ 必须显式指定重定向输出的解码编码（实测依据，勿删）：
+            //   · `dotnet`（CLI / 构建 / 测试）在 stdout 被重定向时输出 **UTF-8**
+            //     —— 实测 `dotnet --help` 原始字节 E4 BD BF E7 94 A8…＝「使用」，UTF-8 可解、GBK 不可解；
+            //   · `cmd.exe` 内建命令按活动代码页 **GBK(936)** 输出（实测 `chcp` = 936）。
+            // 不显式设置时 ProcessStartInfo 回退到 Console.OutputEncoding，在无控制台/服务宿主下
+            // 该值与子进程实际编码不一致 —— dotnet 的 UTF-8 字节被按 GBK 解码成乱码，直接后果是
+            // VSTest 汇总行「失败: 0，通过: 1188，…」变乱码，GoalCheckOutputParser 的中文本地化
+            // 正则永远匹配不到，受控 test 检查即使 exitCode=0 也恒报 test_count_unknown，Goal 被
+            // 无限阻塞（实测 epoch 1/3/5/7/9 全部复现，与读取窗口/字符预算/输出排空三层修复无关）。
+            // 取 UTF-8：dotnet 是受控检查的唯一执行者（build/test），git/python/node 亦以 UTF-8 为主；
+            // cmd 内建命令的中文不在本项目关键路径上。
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
         };
 
         if (OperatingSystem.IsWindows())
