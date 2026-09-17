@@ -53,6 +53,11 @@ def connect_ro(path: str) -> sqlite3.Connection:
     return sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"), uri=True)
 
 
+def table_columns(con: sqlite3.Connection, table: str) -> list[str]:
+    """表列名（架构漂移容忍：绝不在列名上硬编码崩溃）。"""
+    return [row[1] for row in con.execute("PRAGMA table_info(%s)" % table).fetchall()]
+
+
 def fetch(con: sqlite3.Connection, sql: str, params=()) -> list[dict]:
     cur = con.execute(sql, params)
     cols = [d[0] for d in cur.description]
@@ -64,6 +69,53 @@ def safe_json(text):
         return json.loads(text or "[]")
     except Exception:
         return text
+
+
+def find_task_table(con: sqlite3.Connection):
+    """在库内找带 `task_id` 列的表（任务库与 Goal 库可能不同文件）。"""
+    try:
+        names = [r[0] for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+    except Exception:
+        return None, []
+    for name in names:
+        cols = table_columns(con, name)
+        if "task_id" in cols and "board_column" in cols:
+            return name, cols
+    return None, []
+
+
+def locate_task_source(db: str, con: sqlite3.Connection):
+    """先看主库，再扫同目录/上级目录的兄弟 sqlite 文件。"""
+    table, _ = find_task_table(con)
+    if table:
+        return db, table
+    roots = [os.path.dirname(os.path.abspath(db)),
+             os.path.dirname(os.path.dirname(os.path.abspath(db)))]
+    seen = set()
+    for root in roots:
+        if not os.path.isdir(root):
+            continue
+        for fn in sorted(os.listdir(root)):
+            if not fn.lower().endswith((".db", ".sqlite", ".sqlite3")):
+                continue
+            path = os.path.join(root, fn)
+            if path in seen:
+                continue
+            seen.add(path)
+            try:
+                probe = connect_ro(path)
+            except Exception:
+                continue
+            try:
+                t, _ = find_task_table(probe)
+            except Exception:
+                t = None
+            finally:
+                probe.close()
+            if t:
+                return path, t
+    return None, None
 
 
 def collect(db: str, goal_run_id: str, task_ids: list[str]) -> dict:
@@ -98,21 +150,39 @@ def collect(db: str, goal_run_id: str, task_ids: list[str]) -> dict:
     ]
     report["contract_epochs"] = [c["activation_epoch"] for c in report["contracts"]]
 
+    wanted_checks = (
+        "activation_epoch", "iteration_no", "check_id", "definition_ref", "status",
+        "failure_code", "attempt_count", "lease_until_utc", "input_fingerprint",
+        "report_json", "updated_at_utc",
+    )
+    have = table_columns(con, "goal_check_records")
+    present = [c for c in wanted_checks if c in have]
+    report["check_record_missing_columns"] = [c for c in wanted_checks if c not in present]
+    order_col = "activation_epoch" if "activation_epoch" in present else "rowid"
     checks = fetch(
         con,
-        "SELECT activation_epoch, iteration_no, check_id, definition_ref, status, failure_code, "
-        "attempt_count, lease_until_utc, input_fingerprint, report_json, updated_at_utc "
-        "FROM goal_check_records WHERE goal_run_id = ? ORDER BY activation_epoch, check_id",
+        "SELECT %s FROM goal_check_records WHERE goal_run_id = ? ORDER BY %s"
+        % (", ".join(present), order_col),
         (goal_run_id,),
     )
     for c in checks:
-        c["report"] = safe_json(c.pop("report_json", None))
+        if "report_json" in c:
+            c["report"] = safe_json(c.pop("report_json"))
     report["check_records"] = checks
     report["check_record_count"] = len(checks)
     report["distinct_input_fingerprints"] = sorted(
         {str(c.get("input_fingerprint")) for c in checks})
     report["distinct_failure_codes"] = sorted({str(c.get("failure_code")) for c in checks})
-    report["leased_check_count"] = sum(1 for c in checks if c.get("status") == "leased")
+    leased = [c for c in checks if c.get("status") == "leased"]
+    report["leased_check_count"] = len(leased)
+    report["leased_check_epochs"] = sorted(
+        {c.get("activation_epoch") for c in leased}, key=lambda v: (v is None, v))
+    current_epoch = raw.get("activation_epoch")
+    report["current_epoch"] = current_epoch
+    report["leased_current_epoch_count"] = sum(
+        1 for c in leased if c.get("activation_epoch") == current_epoch)
+    # 只有「当前 epoch 的悬挂租约」才代表存在活跃检查者；旧 epoch 残留不再被扫描（LeaseAsync 按 epoch 过滤）。
+    report["build_safe"] = report["leased_current_epoch_count"] == 0
 
     iterations = fetch(
         con,
@@ -123,17 +193,25 @@ def collect(db: str, goal_run_id: str, task_ids: list[str]) -> dict:
     report["iterations"] = iterations
     report["iteration_count"] = len(iterations)
 
+    task_db, task_table = locate_task_source(db, con)
+    report["tasks_db"] = task_db
+    report["tasks_table"] = task_table
     report["tasks"] = []
-    for tid in task_ids:
-        rows = fetch(con, "SELECT * FROM tasks WHERE task_id = ?", (tid,))
-        if not rows:
-            report["tasks"].append({"task_id": tid, "error": "not_found"})
-            continue
-        t = rows[0]
-        keep = ("task_id", "status", "board_column", "version", "progress_percent",
-                "active_assignment_id", "preferred_agent_id", "auto_dispatch_enabled",
-                "parent_task_id", "updated_at_utc")
-        report["tasks"].append({k: t.get(k) for k in keep if k in t})
+    if task_table:
+        tcon = connect_ro(task_db)
+        for tid in task_ids:
+            rows = fetch(tcon, "SELECT * FROM %s WHERE task_id = ?" % task_table, (tid,))
+            if not rows:
+                report["tasks"].append({"task_id": tid, "error": "not_found"})
+                continue
+            t = rows[0]
+            keep = ("task_id", "status", "board_column", "version", "progress_percent",
+                    "active_assignment_id", "preferred_agent_id", "auto_dispatch_enabled",
+                    "parent_task_id", "updated_at_utc")
+            report["tasks"].append({k: t.get(k) for k in keep if k in t})
+        tcon.close()
+    else:
+        report["tasks_note"] = "no table with a task_id column found in main or sibling sqlite files"
 
     con.close()
     return report
@@ -164,12 +242,16 @@ def main() -> int:
 
     g = report["goal"]
     print("OUT=%s BYTES=%d" % (out_path, os.path.getsize(out_path)))
-    print("GOAL status=%s(%s) phase=%s" % (g.get("status"), g.get("status_name", ""), g["phase_name"]))
+    print("GOAL status=%s phase=%s" % (g.get("status"), g["phase_name"]))
     print("GOAL epoch=%s iterations=%s/%s same_blocker=%s blocked=%s" % (
         g.get("activation_epoch"), g.get("iterations_settled"), g.get("iterations_started"),
         g.get("consecutive_same_blocker"), g.get("blocked_code")))
     print("CONTRACTS epochs=%s" % report["contract_epochs"])
-    print("CHECKS total=%d leased=%d" % (report["check_record_count"], report["leased_check_count"]))
+    print("CHECKS total=%d current_epoch_leased=%d stale_leased=%d build_safe=%s" % (
+        report["check_record_count"],
+        report["leased_current_epoch_count"],
+        report["leased_check_count"] - report["leased_current_epoch_count"],
+        report.get("build_safe")))
     print("FAILCODES=%s" % report["distinct_failure_codes"])
     print("FINGERPRINTS=%s" % report["distinct_input_fingerprints"])
     for t in report["tasks"]:

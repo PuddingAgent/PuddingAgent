@@ -54,10 +54,14 @@ python Tools/Diagnostics/goal-ledger/goal_ledger_probe.py \
 | `check_records[].status` | `pending` / `leased` / `finished` |
 | `check_records[].report` | 检查真实报告（`executed_test_count` / `passed_test_count` / `failure_code` 等） |
 | `check_records[].input_fingerprint` | 决定"旧结论能否复用"的输入身份（见 ADR-092 §10） |
-| `leased_check_count` | >0 说明存在悬挂租约 ⇒ **禁止部署重启与并发构建** |
+| `leased_current_epoch_count` | **当前 epoch 的**悬挂租约数（>0 表示存在活跃检查者） |
+| `leased_check_epochs` | 存在 `leased` 记录的全部 epoch（旧 epoch 残留属预期） |
+| `build_safe` | `true` = 无当前 epoch 悬挂租约，可执行构建/测试 |
 
 ## 安全边界
 
 * 严格只读（`file:...?mode=ro`），不做任何写入/迁移/修复。
 * 不修改任务或 Goal 终态——终态只能由 canonical 命令与结算器写。
-* `leased_check_count > 0` 时禁止触发构建/测试或重启。
+* **构建/测试/重提前置条件**：`build_safe == true`（即 `leased_current_epoch_count == 0`）。
+* 仅存在**旧 epoch** 的 `leased` 残留时不禁构建：`LeaseAsync` 按 epoch 过滤，旧 epoch 残留不再被扫描。
+* 但**严禁在检查运行期部署重启**（会造成新的悬挂租约），也严禁与活跃检查者并发操作同一 csproj。
