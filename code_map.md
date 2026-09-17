@@ -1,3 +1,7 @@
+## 2026-09-17 Goal多轮效率与缓存评估
+
+只读账本核实G92-0 Goal仅以build/test合同完成，Task仍NeedsReview、G92-1 Blocked；15轮270次主调用52.43M输入，缓存98.8814%，业务目标未达成。当天DeepSeek96.7819%、GLM96.0982%；优先补目标合同、事件等待及认领恢复。见[评估报告](Docs/Reports/Goal多轮效率与缓存命中评估-2026-09-17.md)。
+
 ## 2026-09-17 DeepSeek缓存首批优化已部署
 
 `ToolExposurePlanner`按首次发现的文件/编辑/代码/终端/Git只读能力稳定成组曝光；`ContextPipeline`偏好使用L9尾部完整快照，支持去重、清空及冷恢复。`UserPreferenceService`只读工作区专用偏好Book，读取失败不伪装空集。92项Runtime+1项宿主回归通过，Core已部署重启。见[实施与验收](Docs/Reports/DeepSeek缓存首批优化与部署-2026-09-17.md)；正式缓存99%验收未完成。
