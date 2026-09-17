@@ -1,0 +1,547 @@
+{
+  "total": {
+    "n": 2550,
+    "input": 322571790,
+    "hit": 309784640,
+    "miss": 12787150,
+    "output": 3109948,
+    "rate": 96.03587
+  },
+  "coverage": {
+    "1": 2550
+  },
+  "models": [
+    {
+      "key": "deepseek-flash",
+      "n": 1917,
+      "input": 264653258,
+      "hit": 255526016,
+      "miss": 9127242,
+      "output": 2591517,
+      "rate": 96.55125
+    },
+    {
+      "key": "glm-5.3-flash",
+      "n": 633,
+      "input": 57918532,
+      "hit": 54258624,
+      "miss": 3659908,
+      "output": 518431,
+      "rate": 93.68094
+    }
+  ],
+  "roles": [
+    {
+      "key": [
+        "deepseek-flash",
+        "main"
+      ],
+      "n": 1023,
+      "input": 185242786,
+      "hit": 178717952,
+      "miss": 6524834,
+      "output": 1474699,
+      "rate": 96.47769
+    },
+    {
+      "key": [
+        "glm-5.3-flash",
+        "subagent"
+      ],
+      "n": 633,
+      "input": 57918532,
+      "hit": 54258624,
+      "miss": 3659908,
+      "output": 518431,
+      "rate": 93.68094
+    },
+    {
+      "key": [
+        "deepseek-flash",
+        "subagent"
+      ],
+      "n": 790,
+      "input": 78470368,
+      "hit": 76795520,
+      "miss": 1674848,
+      "output": 943650,
+      "rate": 97.86563
+    },
+    {
+      "key": [
+        "deepseek-flash",
+        "background"
+      ],
+      "n": 104,
+      "input": 940104,
+      "hit": 12544,
+      "miss": 927560,
+      "output": 173168,
+      "rate": 1.33432
+    }
+  ],
+  "reasons": [
+    {
+      "key": [
+        "deepseek-flash",
+        "(none)"
+      ],
+      "n": 1842,
+      "input": 253884352,
+      "hit": 250094976,
+      "miss": 3789376,
+      "output": 2398790,
+      "rate": 98.50744
+    },
+    {
+      "key": [
+        "deepseek-flash",
+        "compaction_checkpoint"
+      ],
+      "n": 20,
+      "input": 2926060,
+      "hit": 538496,
+      "miss": 2387564,
+      "output": 23254,
+      "rate": 18.40345
+    },
+    {
+      "key": [
+        "glm-5.3-flash",
+        "tool_spec_changed"
+      ],
+      "n": 31,
+      "input": 2330914,
+      "hit": 72128,
+      "miss": 2258786,
+      "output": 16102,
+      "rate": 3.09441
+    },
+    {
+      "key": [
+        "glm-5.3-flash",
+        "(none)"
+      ],
+      "n": 602,
+      "input": 55587618,
+      "hit": 54186496,
+      "miss": 1401122,
+      "output": 502329,
+      "rate": 97.47944
+    },
+    {
+      "key": [
+        "deepseek-flash",
+        "tool_spec_changed"
+      ],
+      "n": 23,
+      "input": 1635298,
+      "hit": 402816,
+      "miss": 1232482,
+      "output": 53927,
+      "rate": 24.63257
+    },
+    {
+      "key": [
+        "deepseek-flash",
+        "compaction_replay"
+      ],
+      "n": 20,
+      "input": 5069251,
+      "hit": 4384768,
+      "miss": 684483,
+      "output": 98431,
+      "rate": 86.49735
+    },
+    {
+      "key": [
+        "deepseek-flash",
+        "system_prompt_changed"
+      ],
+      "n": 3,
+      "input": 584292,
+      "hit": 12032,
+      "miss": 572260,
+      "output": 3246,
+      "rate": 2.05924
+    },
+    {
+      "key": [
+        "deepseek-flash",
+        "session_rehydrated"
+      ],
+      "n": 9,
+      "input": 554005,
+      "hit": 92928,
+      "miss": 461077,
+      "output": 13869,
+      "rate": 16.77386
+    }
+  ],
+  "hours": [
+    {
+      "key": [
+        "2026-09-16T23",
+        "deepseek-flash"
+      ],
+      "n": 534,
+      "input": 57298229,
+      "hit": 55621120,
+      "miss": 1677109,
+      "output": 566295,
+      "rate": 97.07302
+    },
+    {
+      "key": [
+        "2026-09-16T20",
+        "glm-5.3-flash"
+      ],
+      "n": 137,
+      "input": 14854528,
+      "hit": 13720768,
+      "miss": 1133760,
+      "output": 91497,
+      "rate": 92.36758
+    },
+    {
+      "key": [
+        "2026-09-16T20",
+        "deepseek-flash"
+      ],
+      "n": 89,
+      "input": 11590902,
+      "hit": 10486400,
+      "miss": 1104502,
+      "output": 209184,
+      "rate": 90.47096
+    },
+    {
+      "key": [
+        "2026-09-16T18",
+        "glm-5.3-flash"
+      ],
+      "n": 206,
+      "input": 18800675,
+      "hit": 17917440,
+      "miss": 883235,
+      "output": 165916,
+      "rate": 95.30211
+    },
+    {
+      "key": [
+        "2026-09-17T05",
+        "deepseek-flash"
+      ],
+      "n": 110,
+      "input": 18261367,
+      "hit": 17400320,
+      "miss": 861047,
+      "output": 186285,
+      "rate": 95.28487
+    },
+    {
+      "key": [
+        "2026-09-16T19",
+        "glm-5.3-flash"
+      ],
+      "n": 166,
+      "input": 15675104,
+      "hit": 14847680,
+      "miss": 827424,
+      "output": 112445,
+      "rate": 94.72141
+    },
+    {
+      "key": [
+        "2026-09-16T18",
+        "deepseek-flash"
+      ],
+      "n": 120,
+      "input": 18403232,
+      "hit": 17624192,
+      "miss": 779040,
+      "output": 141754,
+      "rate": 95.76683
+    },
+    {
+      "key": [
+        "2026-09-16T19",
+        "deepseek-flash"
+      ],
+      "n": 190,
+      "input": 21767899,
+      "hit": 21005440,
+      "miss": 762459,
+      "output": 197714,
+      "rate": 96.49732
+    },
+    {
+      "key": [
+        "2026-09-17T00",
+        "deepseek-flash"
+      ],
+      "n": 66,
+      "input": 14683086,
+      "hit": 14127744,
+      "miss": 555342,
+      "output": 81429,
+      "rate": 96.21781
+    },
+    {
+      "key": [
+        "2026-09-16T21",
+        "deepseek-flash"
+      ],
+      "n": 182,
+      "input": 28433941,
+      "hit": 27879296,
+      "miss": 554645,
+      "output": 374239,
+      "rate": 98.04936
+    },
+    {
+      "key": [
+        "2026-09-17T04",
+        "deepseek-flash"
+      ],
+      "n": 94,
+      "input": 16658364,
+      "hit": 16178304,
+      "miss": 480060,
+      "output": 142811,
+      "rate": 97.1182
+    },
+    {
+      "key": [
+        "2026-09-17T01",
+        "deepseek-flash"
+      ],
+      "n": 78,
+      "input": 13644847,
+      "hit": 13171968,
+      "miss": 472879,
+      "output": 73998,
+      "rate": 96.53438
+    },
+    {
+      "key": [
+        "2026-09-17T08",
+        "deepseek-flash"
+      ],
+      "n": 98,
+      "input": 10193262,
+      "hit": 9732992,
+      "miss": 460270,
+      "output": 127521,
+      "rate": 95.48457
+    },
+    {
+      "key": [
+        "2026-09-16T22",
+        "deepseek-flash"
+      ],
+      "n": 145,
+      "input": 15853853,
+      "hit": 15394176,
+      "miss": 459677,
+      "output": 204848,
+      "rate": 97.10053
+    },
+    {
+      "key": [
+        "2026-09-17T02",
+        "deepseek-flash"
+      ],
+      "n": 74,
+      "input": 14916980,
+      "hit": 14495872,
+      "miss": 421108,
+      "output": 88874,
+      "rate": 97.17699
+    },
+    {
+      "key": [
+        "2026-09-16T23",
+        "glm-5.3-flash"
+      ],
+      "n": 64,
+      "input": 4875859,
+      "hit": 4463040,
+      "miss": 412819,
+      "output": 99847,
+      "rate": 91.53341
+    },
+    {
+      "key": [
+        "2026-09-16T22",
+        "glm-5.3-flash"
+      ],
+      "n": 32,
+      "input": 2134902,
+      "hit": 1836992,
+      "miss": 297910,
+      "output": 23474,
+      "rate": 86.04573
+    },
+    {
+      "key": [
+        "2026-09-17T03",
+        "deepseek-flash"
+      ],
+      "n": 82,
+      "input": 15263061,
+      "hit": 14998656,
+      "miss": 264405,
+      "output": 114868,
+      "rate": 98.26768
+    },
+    {
+      "key": [
+        "2026-09-17T07",
+        "deepseek-flash"
+      ],
+      "n": 35,
+      "input": 4175486,
+      "hit": 3923840,
+      "miss": 251646,
+      "output": 49151,
+      "rate": 93.97325
+    },
+    {
+      "key": [
+        "2026-09-17T00",
+        "glm-5.3-flash"
+      ],
+      "n": 28,
+      "input": 1577464,
+      "hit": 1472704,
+      "miss": 104760,
+      "output": 25252,
+      "rate": 93.35896
+    },
+    {
+      "key": [
+        "2026-09-17T06",
+        "deepseek-flash"
+      ],
+      "n": 20,
+      "input": 3508749,
+      "hit": 3485696,
+      "miss": 23053,
+      "output": 32546,
+      "rate": 99.34299
+    }
+  ],
+  "sources": [
+    {
+      "key": [
+        "deepseek-flash",
+        "agent_llm"
+      ],
+      "n": 1793,
+      "input": 258643903,
+      "hit": 251128704,
+      "miss": 7515199,
+      "output": 2319918,
+      "rate": 97.09438
+    },
+    {
+      "key": [
+        "glm-5.3-flash",
+        "agent_llm"
+      ],
+      "n": 633,
+      "input": 57918532,
+      "hit": 54258624,
+      "miss": 3659908,
+      "output": 518431,
+      "rate": 93.68094
+    },
+    {
+      "key": [
+        "deepseek-flash",
+        "subconscious_memory"
+      ],
+      "n": 104,
+      "input": 940104,
+      "hit": 12544,
+      "miss": 927560,
+      "output": 173168,
+      "rate": 1.33432
+    },
+    {
+      "key": [
+        "deepseek-flash",
+        "agent_compaction_llm"
+      ],
+      "n": 20,
+      "input": 5069251,
+      "hit": 4384768,
+      "miss": 684483,
+      "output": 98431,
+      "rate": 86.49735
+    }
+  ],
+  "window": {
+    "start": "2026-09-16T18:00:00+08:00",
+    "endExclusive": "2026-09-17T08:29:19+08:00"
+  },
+  "officialDaily": [
+    {
+      "day": "2026-09-11",
+      "model": "deepseek-flash",
+      "output_tokens": 374184.0,
+      "input_cache_hit_tokens": 27767424.0,
+      "request_count": 292.0,
+      "input_cache_miss_tokens": 1396172.0
+    },
+    {
+      "day": "2026-09-12",
+      "model": "deepseek-flash",
+      "output_tokens": 3696734.0,
+      "request_count": 2908.0,
+      "input_cache_hit_tokens": 235534336.0,
+      "input_cache_miss_tokens": 10950286.0
+    },
+    {
+      "day": "2026-09-13",
+      "model": "deepseek-flash",
+      "input_cache_miss_tokens": 6032578.0,
+      "request_count": 1181.0,
+      "input_cache_hit_tokens": 80394112.0,
+      "output_tokens": 1736497.0
+    },
+    {
+      "day": "2026-09-14",
+      "model": "deepseek-flash",
+      "input_cache_miss_tokens": 1871210.0,
+      "output_tokens": 520515.0,
+      "input_cache_hit_tokens": 45313408.0,
+      "request_count": 545.0
+    },
+    {
+      "day": "2026-09-15",
+      "model": "deepseek-flash",
+      "request_count": 1651.0,
+      "output_tokens": 2231170.0,
+      "input_cache_hit_tokens": 198220160.0,
+      "input_cache_miss_tokens": 8687181.0
+    },
+    {
+      "day": "2026-09-16",
+      "model": "deepseek-flash",
+      "input_cache_hit_tokens": 212122368.0,
+      "output_tokens": 2602447.0,
+      "request_count": 1813.0,
+      "input_cache_miss_tokens": 9232435.0
+    },
+    {
+      "day": "2026-09-17",
+      "model": "deepseek-flash",
+      "input_cache_miss_tokens": 3561350.0,
+      "request_count": 595.0,
+      "input_cache_hit_tokens": 101787520.0,
+      "output_tokens": 815893.0
+    }
+  ]
+}

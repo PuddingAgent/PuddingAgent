@@ -1,3 +1,7 @@
+## 2026-09-17 隔夜缓存与参考实现诊断
+
+2550次Gateway usage与归因唯一内容关联：54次工具稳定追加；后16次摘要复用99.29%，checkpoint后首轮18.40%。比较Harness动态快照/摘要重放与Reasonix稳定工具入口/版本上下文，给出Composition、网关、ToolExposurePlanner、压缩和后台的文件级方案。见[完整报告](Docs/Reports/隔夜缓存命中评估与Harness-Reasonix优化方案-2026-09-17.md)及ADR-084；当前仅诊断设计。
+
 ## 2026-09-17 GoalResume 宿主生命周期修复
 
 `GoalResumeService`：单例 epoch 台账 + 每次调用 async scope 的 GoalRunStore/IGoalCommandService；产品 Runtime 组合根注册 GoalResumeTool。`GoalResumeServiceTests` 使用严格 DI 生命周期验证，`PuddingApplicationHostCompositionTests` 验证真实 DesktopChild 注册。见 [报告](Docs/Reports/GoalResume依赖生命周期导致Core崩溃修复-2026-09-17.md)。

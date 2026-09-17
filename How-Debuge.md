@@ -1,3 +1,7 @@
+### 隔夜缓存：摘要复用、checkpoint冷首轮及台账差异（2026-09-17）
+
+缓存率按token加权，账单日汇总不能截取18时窗口，CSV导出时间不等于入账水位。按compaction_replay与compaction_checkpoint分别统计；warm-prefix摘要路径不一定出现在ContextCompactionService旧JSONL中。system标签变化但已记录layer hash不变时，应补最终有序消息manifest，不能把昨日偏好问题套用到今日。工具变化要比较相邻有序ToolIds；稳定追加也可能导致冷缓存。见[数据和复现口径](Docs/Reports/隔夜缓存命中评估与Harness-Reasonix优化方案-2026-09-17.md)。
+
 ## 2026-09-17：GoalResume Singleton 捕获 Scoped 导致 Core 启动崩溃
 
 Core 退出码 `-532462766` 且业务日志未写启动异常时，查询 Windows Application / `.NET Runtime` 事件；本次为 `GoalResumeService` 单例依赖 `GoalRunStore` 作用域服务，Build 阶段即退出。单例工具服务应每次调用创建/释放 scope，保留严格 DI 校验；真实 DesktopChild composition 测试必须解析产品工具。详见 [修复与验收](Docs/Reports/GoalResume依赖生命周期导致Core崩溃修复-2026-09-17.md)。
