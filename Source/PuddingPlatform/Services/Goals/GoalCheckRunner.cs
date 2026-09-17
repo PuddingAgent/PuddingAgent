@@ -36,6 +36,13 @@ public sealed class GoalCheckRunner(
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
     private const int MaxCapturedLines = 400;
 
+    /// <summary>
+    /// 受控检查输出读取的字符预算。取 <c>TerminalProcess.ReadOutput</c> 的 maxChars 上限（200_000），
+    /// 避开其默认值 20_000 —— 默认预算会在窗口<b>头部</b>截断（超出即 break），
+    /// 导致末尾汇总行（dotnet test 的 summary / build 的收尾行）永远读不到。
+    /// </summary>
+    private const int MaxCapturedChars = 200_000;
+
     public async Task<IReadOnlyList<GoalCheckReport>> RunAsync(
         IReadOnlyList<GoalCheckSpec> checks,
         GoalCheckContext context,
@@ -200,14 +207,34 @@ public sealed class GoalCheckRunner(
 
         // 必须读尾部：dotnet test/build 的汇总行在输出末尾，全量输出远超 MaxCapturedLines；
         // 只读头部会把汇总行截掉，exitCode=0 也会恒报 test_count_unknown。
+        //
+        // 且必须给足字符预算并确认「窗口真的抵达末尾」：TerminalProcess.ReadOutput 的 maxChars 默认
+        // 仅 20_000，且截断发生在窗口**头部**（超出预算即 break）。实测平台全量 dotnet test 输出 451 行，
+        // 其中大量 NU1903 警告行约 10 万字符 ⇒ 只修正 offset 仍会返回窗口开头的一小段，永远到不了
+        // 末尾汇总行。这正是 epoch1（未修）与 epoch5（含 46b9aa76 尾部 offset 修复后）同样复现
+        // 「exitCode=0 却 test_count_unknown」的原因。
+        // 故：显式给足 maxChars，并在实现报告 Truncated（窗口未抵达末尾）时按半窗口重试，
+        // 直到抵达末尾或窗口缩到 1 行。未设置 Truncated 的桩不受影响（零行为变化）。
         var probe = await processManager.ReadOutputAsync(process.ProcessId, 0, 1, null, ct);
-        var readOffset = Math.Max(0, (probe?.TotalLines ?? 0) - MaxCapturedLines);
+        var totalLines = probe?.TotalLines ?? 0;
+        var window = MaxCapturedLines;
         var snapshot = await processManager.ReadOutputAsync(
             process.ProcessId,
-            readOffset,
-            MaxCapturedLines,
-            null,
+            Math.Max(0, totalLines - window),
+            window,
+            MaxCapturedChars,
             ct);
+        while (snapshot is { Truncated: true } && window > 1)
+        {
+            window = Math.Max(1, window / 2);
+            snapshot = await processManager.ReadOutputAsync(
+                process.ProcessId,
+                Math.Max(0, totalLines - window),
+                window,
+                MaxCapturedChars,
+                ct);
+        }
+
         var lines = snapshot?.Lines ?? [];
         var exitCode = snapshot?.Process.ExitCode ?? process.ExitCode;
         var unfinished = exit == ProcessWait.Killed
