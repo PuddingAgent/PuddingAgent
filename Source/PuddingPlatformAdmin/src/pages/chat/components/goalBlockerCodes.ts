@@ -19,6 +19,46 @@ export const GOAL_BLOCKER_CODES: Record<string, GoalBlockerDescriptor> = {
     action: '重启宿主或人工介入后恢复；若目标已达成可直接停止',
     needsUser: true,
   },
+  check_results_pending: {
+    title: '检查结果尚未产出：已声明的验收检查还没返回事实，暂时不能判定完成',
+    action: '等待检查跑完；若长时间无结果，检查是否有被中断的检查租约（宿主重启会致其悬挂），必要时恢复目标',
+    needsUser: true,
+  },
+  criterion_failed: {
+    title: '必需条件未通过：有一条或多条必需验收检查失败',
+    action: '按失败证据在当前工作单元内修复，然后重跑同一批检查',
+    needsUser: false,
+  },
+  acceptance_not_verified: {
+    title: '验收尚未通过：必需条件还没有同版本的通过证据',
+    action: '在当前工作单元产出缺失的验收证据后重新结算',
+    needsUser: false,
+  },
+  acceptance_contract_missing: {
+    title: '缺少验收合同：该目标尚无版本化验收条件，不能凭任务状态宣告完成',
+    action: '在本轮内派生版本化验收合同（必需条件 + 检查定义），然后重跑验证',
+    needsUser: true,
+  },
+  check_contract_missing: {
+    title: '缺少检查定义：已有必需条件但没有版本化检查定义，无法判定完成',
+    action: '为既有必需条件声明版本化检查定义（类型、定义哈希、输入指纹）',
+    needsUser: true,
+  },
+  task_blocked: {
+    title: '绑定任务受阻：关联任务需要用户或评审者介入',
+    action: '处理绑定任务上的阻塞或评审请求后恢复目标',
+    needsUser: true,
+  },
+  task_terminal_without_completion: {
+    title: '绑定任务已终止但目标未完成：任务被标记失败或取消',
+    action: '确认任务终止原因，必要时重开任务或调整目标范围',
+    needsUser: true,
+  },
+  dependency_wait: {
+    title: '等待依赖：当前工作单元在等前置依赖完成',
+    action: '等待依赖满足后继续；若依赖已失效需人工处理',
+    needsUser: false,
+  },
 };
 
 /** 未知受阻码的通用兜底（展示时必须连同原始码一起显示）。 */
