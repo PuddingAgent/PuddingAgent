@@ -6,7 +6,8 @@ namespace PuddingPlatform.Services.Goals;
 /// G92-1 fail-closed verifier：只依赖 canonical Turn/Task facts 与受控检查报告。
 /// 普通 Agent 文本中的 DONE 不会变成 complete；Task 状态只作为否决项参与（G92-1 P2：
 /// Blocked/NeedsReview/Failed/Cancelled 仍然阻断完成），真正的完成要求全部必需条件（GoalCriterion）
-/// 都有同版本且 passed 的检查结果，且本次裁决作用域已达 goal（无剩余 WorkUnit）。
+/// 都有同版本且 passed 的检查结果（S1-b：不再区分验证作用域、不数剩余 WorkUnit，
+/// 完成权归验收合同；计划收敛度由结算层 ApplyBoundPlanGates 单独裁决）。
 /// 空验收合同不得 vacuous pass，必须先经一个有界规划步骤产生合同；
 /// 本 verifier 只读且不执行任何工具（实际检查由 IGoalCheckRunner 负责）。
 /// </summary>
@@ -36,15 +37,6 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
         };
         var allRequiredPassed = GoalSettlementDecisionCalculator.AllRequiredCriteriaPassed(probe);
 
-        // ADR-092 §6.2：步骤与整体的验证作用域必须显式区分。
-        // 独立 Goal（无 Task）的作用域就是 goal，因此必须有可达的完成路径；
-        // Task-bound Goal 只有在已知没有剩余 WorkUnit（RemainingWorkUnits == 0）或显式声明 goal scope 时才能完成，
-        // 未知一律保守为 work_unit：一个单元通过只能推进。
-        var boundToTask = !string.IsNullOrEmpty(capsule.TaskId);
-        var goalScope = !boundToTask
-            || string.Equals(capsule.VerificationScope, GoalVerificationScopes.Goal, StringComparison.OrdinalIgnoreCase)
-            || capsule.RemainingWorkUnits == 0;
-        var taskCompleted = string.Equals(capsule.TaskStatus, "Completed", StringComparison.OrdinalIgnoreCase);
         // G92-1 P2：完成不再以 Task 已 canonical Completed 为前提——该前提与"唯一合法的 Task
         // 完成通道会释放本轮结算要重验的 reservation"互锁，使完成永不可达。Task 状态只在下方
         // 否决分支（Blocked/NeedsReview/Failed/Cancelled）参与判定；完成权归结算事务。
@@ -127,7 +119,7 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 $"The bound Task is {capsule.TaskStatus}.",
                 capsule);
         }
-        else if (allRequiredPassed && goalScope && capsule.IsEngineeringGatesOnly)
+        else if (allRequiredPassed && capsule.IsEngineeringGatesOnly)
         {
             // G92-1 S1-a（ADR-092 决策 4/6）：合同覆盖门。纯工程门禁合同（bounded_planning，
             // objective 未声明任何目标级证据）即使全部必需条件通过也不得完成：build/test 绿
@@ -142,44 +134,16 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 UnmetCriteria = unmetCriteria,
             };
         }
-        else if (allRequiredPassed && goalScope)
+        else if (allRequiredPassed)
         {
+            // S1-b：唯一完成判据——全部必需条件同版本 passed。验证作用域与剩余 WorkUnit
+            // 轴已删除；绑定计划未收敛时，ApplyBoundPlanGates 仍会把本裁决降级为 Continue
+            // 并产出 Advance（计划闸与 Advance 记账不在本刀范围）。
             decision = new GoalVerificationDecision
             {
                 Verdict = GoalVerificationVerdict.Complete,
-                Reason = boundToTask
-                    ? "All goal-scope required criteria passed and the bound plan has no remaining WorkUnit."
-                    : "All goal-scope required criteria passed for this standalone Goal.",
-                // 作用域/剩余数的唯一事实来源是 capsule 与绑定计划的真实计数：裁决记录不重复携带，避免第二份真值。
+                Reason = "All required criteria passed for this Goal.",
                 EvidenceRefs = capsule.EvidenceRefs,
-            };
-        }
-        else if (goalScope && capsule.RemainingWorkUnits == 0)
-        {
-            // ADR-092 §13.1 / D2 第 2 条（G92-1 刀 C）：绑定计划已收敛（0 个 Running 且全部必需单元已验证完成），
-            // 但整体（goal）必需条件尚无同版本 passed 证据——这是"待整体验证"的合法中间态：Goal/Plan 保持非终态，
-            // 由结算生成 goal 作用域的续行补齐整体验证，绝不在此误判完成。
-            decision = new GoalVerificationDecision
-            {
-                Verdict = GoalVerificationVerdict.Continue,
-                Reason = "The bound execution plan has converged, but the goal-scope required criteria have no passing verification yet; the goal stays open pending overall verification.",
-                EvidenceRefs = capsule.EvidenceRefs,
-                NextAction = "Run the goal-scope verification for the required criteria (same contract version), then re-settle so the goal can complete atomically.",
-                BlockerCode = "acceptance_not_verified",
-                BlockerMessage = "Goal-scope required criteria have no passing verification result yet.",
-                UnmetCriteria = unmetCriteria,
-            };
-        }
-        else if (allRequiredPassed)
-        {
-            // 步骤（work_unit）全部通过只能推进：整体目标是否达成由 goal 级条件决定，
-            // 不能因为一个单元通过就宣布整个目标完成。
-            decision = new GoalVerificationDecision
-            {
-                Verdict = GoalVerificationVerdict.Continue,
-                Reason = "All required criteria for the current WorkUnit passed; advance to the next ready WorkUnit.",
-                EvidenceRefs = capsule.EvidenceRefs,
-                NextAction = "Advance to the next ready WorkUnit, then verify the goal-level criteria.",
             };
         }
         else
@@ -187,9 +151,7 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
             decision = new GoalVerificationDecision
             {
                 Verdict = GoalVerificationVerdict.Continue,
-                Reason = taskCompleted
-                    ? "The bound Task is completed, but the goal's required criteria have no passing verification; completion is only proposed."
-                    : "The required criteria are not yet verified; continue in the current WorkUnit.",
+                Reason = "The required criteria are not yet verified; continue in the current WorkUnit.",
                 EvidenceRefs = capsule.EvidenceRefs,
                 NextAction = "Produce the missing verification evidence for the required criteria in the current WorkUnit.",
                 BlockerCode = "acceptance_not_verified",

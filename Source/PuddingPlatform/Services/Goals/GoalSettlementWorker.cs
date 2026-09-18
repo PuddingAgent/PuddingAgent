@@ -172,7 +172,10 @@ public sealed class GoalSettlementWorker(
             WorkspaceId = candidate.WorkspaceId,
             AgentInstanceId = candidate.AgentInstanceId,
             IterationNo = candidate.IterationNo,
-            Scope = capsule.VerificationScope,
+            // S1-b：完成门的验证作用域轴已删除。检查身份（GoalCheckContext.Scope 参与
+            // dedup key）保留：GoalCheckSpec 本身没有 scope 字段，本处是唯一生产赋值点，
+            // 固定为词表常量即可——同 epoch 内恒定，不引起重复执行或去重键漂移。
+            Scope = GoalVerificationScopes.WorkUnit,
             WorkingDirectory = workingDirectory,
             TimeoutSeconds = _options.CheckTimeoutSeconds,
         };

@@ -10,7 +10,7 @@ namespace PuddingPlatformTests.Services.Goals;
 /// B 含 objective 证据合同（source=bounded_planning:objective_evidence）+ 全部 passed ⇒ Complete（不变）；
 /// C/D 纯门禁合同 + failed/pending ⇒ 既有分支优先，不被覆盖门改写；
 /// E 空合同/无检查定义 ⇒ 既有 acceptance_contract_missing / check_contract_missing 不变；
-/// F Task-bound 且未达 goal scope ⇒ 既有行为不变（work_unit 全绿只推进）。
+/// F Task-bound + work_unit 全绿 ⇒ S1-b 后 scope 轴已删，纯门禁合同一律进覆盖门。
 /// 另含 S1-a-2 胶囊透传断言（GoalSettlementCandidate.ToCapsule 携带合同来源）。
 /// </summary>
 [TestClass]
@@ -85,7 +85,6 @@ public sealed class GoalContractCoverageGateTests
     private static GoalEvidenceCapsule Capsule(
         string? acceptanceContractSource,
         string taskStatus = "Completed",
-        int? remainingWorkUnits = 0,
         IReadOnlyList<GoalCriterion>? criteria = null,
         IReadOnlyList<GoalCheckSpec>? checks = null,
         IReadOnlyList<GoalCheckReport>? reports = null) => new()
@@ -106,7 +105,6 @@ public sealed class GoalContractCoverageGateTests
         TaskAcceptanceCriteria = "业务条件满足",
         HasPendingExecutionFacts = false,
         EvidenceComplete = true,
-        RemainingWorkUnits = remainingWorkUnits,
         AcceptanceContractSource = acceptanceContractSource,
         Criteria = criteria ?? [],
         Checks = checks ?? [],
@@ -237,23 +235,23 @@ public sealed class GoalContractCoverageGateTests
         Assert.AreEqual("check_contract_missing", decision.BlockerCode);
     }
 
-    // ── 判定表 F：Task-bound 且未达 goal scope ⇒ work_unit 全绿只推进，覆盖门不参与 ──
+    // ── 判定表 F：S1-b 后 scope 轴已删除——Task-bound + work_unit 全绿 + 纯门禁合同
+    // 同样命中覆盖门，不再存在「未达 goal scope 只推进」的旁路。
 
     [TestMethod]
-    public async Task EngineeringGatesContract_WorkUnitPassed_StillAdvances()
+    public async Task EngineeringGatesContract_WorkUnitPassed_BlockedByCoverageGate()
     {
         var decision = await Verifier.VerifyAsync(Capsule(
             PureEngineeringSource,
             taskStatus: "InProgress",
-            remainingWorkUnits: null,
             criteria: RequiredCriteria,
             checks: RequiredChecks,
             reports: CleanReports));
 
-        Assert.AreEqual(GoalVerificationVerdict.Continue, decision.Verdict);
-        Assert.IsNull(decision.BlockerCode);
+        Assert.AreEqual(GoalVerificationVerdict.Blocked, decision.Verdict);
+        Assert.AreEqual("contract_coverage_insufficient", decision.BlockerCode);
         Assert.AreEqual(
-            GoalSettlementDispositions.Advance,
+            GoalSettlementDispositions.Repair,
             GoalSettlementDecisionCalculator.ComputeDisposition(decision));
     }
 

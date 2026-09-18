@@ -39,18 +39,6 @@ public sealed record GoalEvidenceCapsule
     public IReadOnlyList<GoalCheckSpec> Checks { get; init; } = [];
 
     /// <summary>
-    /// 本次裁决的作用域，取值见 <see cref="GoalVerificationScopes"/>。
-    /// 默认 work_unit：步骤全通过只能推进；只有整体条件通过（goal）才允许完成。
-    /// </summary>
-    public string VerificationScope { get; init; } = GoalVerificationScopes.WorkUnit;
-
-    /// <summary>
-    /// 绑定 Plan 中尚未完成的 WorkUnit 数；null 表示未知（保守：不得因此宣布整体完成）。
-    /// 为 0 时本次裁决可升级为 goal 作用域。由结算层从持久 Plan 读取后填入。
-    /// </summary>
-    public int? RemainingWorkUnits { get; init; }
-
-    /// <summary>
     /// G92-1 S1-a：本次裁决依据的验收合同来源（goal_acceptance_contracts.source）。
     /// 取值见 <see cref="GoalAcceptanceContractSources"/>；null 表示合同行缺失或来源未知
     /// （此时 Criteria/Checks 亦为空，裁决会先走 acceptance_contract_missing / check_contract_missing）。

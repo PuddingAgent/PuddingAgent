@@ -40,16 +40,6 @@ public sealed record GoalSettlementCandidate
     public string? TaskAcceptanceCriteria { get; init; }
     /// <summary>绑定执行计划的指纹（合同 matching 用；未绑定计划时为 null）。</summary>
     public string? PlanFingerprint { get; init; }
-    /// <summary>
-    /// ADR-092 §6.2（G92-1 P1）：本次裁决的作用域，取值见 <see cref="GoalVerificationScopes"/>。
-    /// 由绑定执行计划推导（最后一个 WorkUnit = goal）；计划不可读时保守为 work_unit。
-    /// </summary>
-    public string VerificationScope { get; init; } = GoalVerificationScopes.WorkUnit;
-    /// <summary>
-    /// ADR-092 §6.2（G92-1 P1）：绑定计划中尚未完成的 WorkUnit 数；null 表示未知。
-    /// fail-closed：未知一律不得据此宣布整体完成；为 0 时完成路径才可达。
-    /// </summary>
-    public int? RemainingWorkUnits { get; init; }
     /// <summary>持久验收合同的必需条件（空 = 尚未派生合同，必须走有界修复而非 vacuous pass）。</summary>
     public IReadOnlyList<GoalCriterion> Criteria { get; init; } = [];
     /// <summary>持久验收合同的版本化检查定义。</summary>
@@ -86,9 +76,6 @@ public sealed record GoalSettlementCandidate
         TaskId = TaskId,
         TaskStatus = TaskStatus,
         TaskAcceptanceCriteria = TaskAcceptanceCriteria,
-        // G92-1 P1：作用域与剩余 WorkUnit 必须随 capsule 进入 verifier，否则 Task-bound Goal 的完成永远停在 work_unit。
-        VerificationScope = VerificationScope,
-        RemainingWorkUnits = RemainingWorkUnits,
         HasPendingExecutionFacts = HasPendingExecutionFacts,
         EvidenceComplete = EvidenceComplete,
         Criteria = Criteria,
@@ -250,12 +237,6 @@ public sealed class GoalSettlementStore(
                 (failureCode, failureMessage) = ExtractTurnFailure(terminalPayload);
             }
 
-            // ADR-092 §6.2（G92-1 P1）：verifier 需要知道本次裁决的作用域与剩余 WorkUnit 数，
-            // 否则 Task-bound Goal 的完成永远停在 work_unit。数据来源与 ApplyBoundPlanGates 完全同源
-            // （同一 LoadBoundPlanAsync 判定）；计划缺失/不可读时 fail-closed 为 work_unit + null。
-            var (verificationScope, remainingWorkUnits) = ResolveVerificationScope(
-                await LoadBoundPlanAsync(db, binding, ct));
-
             results.Add(new GoalSettlementCandidate
             {
                 GoalIterationId = iteration.GoalIterationId,
@@ -281,8 +262,6 @@ public sealed class GoalSettlementStore(
                 TaskStatus = task?.Status.ToString(),
                 TaskAcceptanceCriteria = task?.AcceptanceCriteria,
                 PlanFingerprint = binding?.PlanFingerprint,
-                VerificationScope = verificationScope,
-                RemainingWorkUnits = remainingWorkUnits,
                 Criteria = GoalVerificationPersistence.ReadCriteria(contract?.CriteriaJson),
                 Checks = GoalVerificationPersistence.ReadChecks(contract?.ChecksJson),
                 CheckReports = GoalVerificationPersistence.ReadReports(checkRecords),
@@ -698,7 +677,8 @@ public sealed class GoalSettlementStore(
             return BlockedDecision(blockedCode, blockedMessage, candidate.EvidenceRefs);
         }
         // ADR-092 §6.2（G92-1 P3）：Task 终态不再是"完成"的前提，而是"不能完成"的否决项。
-        // 完成是否可达由 ApplyBoundPlanGates 依据"无剩余 WorkUnit + 必需条件全通过"独立判定；
+        // S1-b 后完成提议只看"必需条件全通过（且合同非纯工程门禁）"，不数剩余 WorkUnit；
+        // ApplyBoundPlanGates 仍负责计划状态守卫与未收敛计划的 Continue/Advance 降级。
         // 这里只拦下绑定 Task 已进入必须外部处理才能继续的终态的情况——
         // 在 Blocked/Failed/Cancelled/NeedsReview 之上宣告 Goal 完成会掩盖仍未处理的失败/阻塞事实。
         if (proposed.Verdict == GoalVerificationVerdict.Complete
@@ -848,27 +828,6 @@ public sealed class GoalSettlementStore(
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// ADR-092 §13.1（G92-1 刀 C）：把绑定执行计划折算成 verifier 需要的作用域与剩余必需工作数。
-    /// 这里是真实计数（按同一版本的全部必需 depth1 节点及其完成所依赖的必需后代核验），
-    /// 不再是"有没有下一个节点 / Root、Current 是否齐备"的布尔近似：
-    /// 全部必需单元已验证完成 ⇒ (goal, 0)——合法收敛态，此时没有 Current；
-    /// 尚有必需单元未完成 ⇒ (work_unit, 剩余必需数)；计划缺失、指纹/归属不匹配、结构非法或
-    /// 必需性无法判定 ⇒ (work_unit, null)。未知绝不得冒充 0，否则直接制造假的整体完成。
-    /// </summary>
-    private static (string Scope, int? RemainingWorkUnits) ResolveVerificationScope(BoundPlanState? plan)
-    {
-        if (plan is not { Error: null, Plan: not null, Root: not null }
-            || plan.RemainingRequiredUnits is not int remaining)
-        {
-            return (GoalVerificationScopes.WorkUnit, null);
-        }
-
-        return remaining == 0
-            ? (GoalVerificationScopes.Goal, 0)
-            : (GoalVerificationScopes.WorkUnit, remaining);
     }
 
     private static GoalVerificationDecision ApplyBoundPlanGates(

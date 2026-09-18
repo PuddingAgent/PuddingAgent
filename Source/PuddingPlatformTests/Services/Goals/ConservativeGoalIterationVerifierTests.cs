@@ -6,7 +6,7 @@ namespace PuddingPlatformTests.Services.Goals;
 
 /// <summary>
 /// G92-1 回归：Task.Status == Completed 只算完成提议；完成必须全部必需条件都有
-/// 同版本、同定义 hash、同输入指纹的受控检查结果，且显式声明 goal 作用域（无绑定 Task，或已知无剩余 WorkUnit）。
+/// 同版本、同定义 hash、同输入指纹的受控检查结果（S1-b：不再区分验证作用域、不数剩余 WorkUnit）。
 /// </summary>
 [TestClass]
 public sealed class ConservativeGoalIterationVerifierTests
@@ -85,7 +85,6 @@ public sealed class ConservativeGoalIterationVerifierTests
         string? taskId = "task-1",
         bool evidenceComplete = true,
         bool pendingFacts = false,
-        int? remainingWorkUnits = null,
         IReadOnlyList<GoalCriterion>? criteria = null,
         IReadOnlyList<GoalCheckSpec>? checks = null,
         IReadOnlyList<GoalCheckReport>? reports = null) => new()
@@ -106,7 +105,6 @@ public sealed class ConservativeGoalIterationVerifierTests
         TaskAcceptanceCriteria = "全部失败测试通过",
         HasPendingExecutionFacts = pendingFacts,
         EvidenceComplete = evidenceComplete,
-        RemainingWorkUnits = remainingWorkUnits,
         Criteria = criteria ?? [],
         Checks = checks ?? [],
         CheckReports = reports ?? [],
@@ -180,7 +178,6 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
-            remainingWorkUnits: 0,
             criteria: RequiredCriteria,
             checks: RequiredChecks,
             reports: CleanReports));
@@ -189,23 +186,6 @@ public sealed class ConservativeGoalIterationVerifierTests
         Assert.AreEqual(2, decision.CriterionResults.Count);
         Assert.AreEqual(
             GoalSettlementDispositions.Complete,
-            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
-    }
-
-    [TestMethod]
-    public async Task UnknownRemainingWorkUnits_OnlyAdvances()
-    {
-        var verifier = new ConservativeGoalIterationVerifier();
-
-        var decision = await verifier.VerifyAsync(Capsule(
-            taskStatus: "Completed",
-            criteria: RequiredCriteria,
-            checks: RequiredChecks,
-            reports: CleanReports));
-
-        Assert.AreNotEqual(GoalVerificationVerdict.Complete, decision.Verdict);
-        Assert.AreEqual(
-            GoalSettlementDispositions.Advance,
             GoalSettlementDecisionCalculator.ComputeDisposition(decision));
     }
 
@@ -234,7 +214,6 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
-            remainingWorkUnits: 0,
             criteria: RequiredCriteria,
             checks: RequiredChecks,
             reports:
@@ -257,7 +236,6 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
-            remainingWorkUnits: 0,
             criteria: RequiredCriteria,
             checks: RequiredChecks,
             reports: [Report("build", GoalVerificationSpecKinds.Build, executed: null, passed: null, failed: null)]));
@@ -320,7 +298,6 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
-            remainingWorkUnits: 0,
             criteria: RequiredCriteria,
             checks: RequiredChecks,
             reports:
@@ -343,7 +320,6 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
-            remainingWorkUnits: 0,
             criteria: RequiredCriteria,
             checks: RequiredChecks,
             reports:
@@ -366,7 +342,6 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
-            remainingWorkUnits: 0,
             criteria: RequiredCriteria,
             checks: RequiredChecks,
             reports:
@@ -389,7 +364,6 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
-            remainingWorkUnits: 0,
             criteria: [Criterion("build", revision: 2), Criterion("test", revision: 2)],
             checks: RequiredChecks,
             reports: CleanReports));
@@ -399,8 +373,10 @@ public sealed class ConservativeGoalIterationVerifierTests
     }
 
     [TestMethod]
-    public async Task VerifiedCriteria_WithoutTaskCompletion_Advances()
+    public async Task VerifiedCriteria_WithoutTaskCompletion_Completes()
     {
+        // S1-b：全必需条件同版本 passed ⇒ Complete；Task 未终态不再是「只推进」的理由
+        // （G92-1 P2 否决族 Blocked/Failed/Cancelled/NeedsReview 分支仍未变）。
         var verifier = new ConservativeGoalIterationVerifier();
 
         var decision = await verifier.VerifyAsync(Capsule(
@@ -409,9 +385,9 @@ public sealed class ConservativeGoalIterationVerifierTests
             checks: RequiredChecks,
             reports: CleanReports));
 
-        Assert.AreEqual(GoalVerificationVerdict.Continue, decision.Verdict);
+        Assert.AreEqual(GoalVerificationVerdict.Complete, decision.Verdict);
         Assert.AreEqual(
-            GoalSettlementDispositions.Advance,
+            GoalSettlementDispositions.Complete,
             GoalSettlementDecisionCalculator.ComputeDisposition(decision));
     }
 
@@ -422,7 +398,6 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
-            remainingWorkUnits: 0,
             evidenceComplete: false,
             criteria: RequiredCriteria,
             checks: RequiredChecks,
@@ -496,7 +471,6 @@ public sealed class ConservativeGoalIterationVerifierTests
 
         var decision = await verifier.VerifyAsync(Capsule(
             taskStatus: "Completed",
-            remainingWorkUnits: 0,
             criteria: RequiredCriteria,
             checks: RequiredChecks,
             reports: CleanReports));
