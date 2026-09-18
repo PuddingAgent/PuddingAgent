@@ -13,19 +13,19 @@ using PuddingCode.Tools;
 namespace PuddingRuntime.Services.Skills;
 
 /// <summary>
-/// SubAgentTool �� �� Agent �����Ӵ���ִ������� Skill��
+/// SubAgentTool — 主 Agent 派生子代理执行任务的 Skill。
 /// 
-/// ���ԭ��
-///   �� ���� AgentExecutionService �� �Ӵ�����������ʹ��ͬһִ�����棬������¯��
-///   �� Ȩ�޼̳� �� �Ӵ��̳и��������������ԣ����������µ�������������
-///   �� ���߼̳� �� Ĭ�ϼ̳и������Ĺ��߼�����ָ���Ӽ�
-///   �� ģ��·�� �� ͨ�� ILlmResolver �� llm.providers.json Ψһ����Դ�������������ÿ���
-///   �� ͬ��ģʽ �� �������ȴ��Ӵ�����ɣ����ע�븸����������
-///   �� �첽ģʽ �� ����������ִ�У��Ӵ�����ɺ�ͨ���¼�ϵͳ�ص�֪ͨ
-///   �� ����У�� �� ��Чģ�������ؿ����б������� LLM ä��
-///   �� �ӳٽ��� �� ʹ�� IServiceProvider ���� AgentExecutionService �� DI ����
+/// 设计原则：
+///   · 复用 AgentExecutionService — 子代理与主代理使用同一执行引擎，不另起炉灶
+///   · 权限继承 — 子代继承父代理的能力策略，父代理可下调（不可升级）
+///   · 工具继承 — 默认继承父代理的工具集，可指定子集
+///   · 模型路由 — 通过 ILlmResolver 从 llm.providers.json 唯一配置源解析身份与配置快照
+///   · 同步模式 — 父代理等待子代理完成，结果注入父代理上下文
+///   · 异步模式 — 父代理继续执行，子代理完成后通过事件系统回调通知
+///   · 参数校验 — 无效模板名返回可用列表，不让 LLM 盲猜
+///   · 延迟解析 — 使用 IServiceProvider 避免 AgentExecutionService 的 DI 死锁
 /// 
-/// ԭ�� Pudding Tool����Ӧ Claude Code AgentTool / SendMessageTool ���Ӵ���ģʽ��
+/// 原生 Pudding Tool，对应 Claude Code AgentTool / SendMessageTool 的子代理模式。
 /// </summary>
 [Tool(
     id: "spawn_sub_agent",
@@ -113,9 +113,9 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         if (!string.IsNullOrWhiteSpace(resumeSubAgentId) && hasBatchTasksArgument)
             return Fail("resume_sub_agent_id can only be used with a single task, not tasks batch mode.");
         if (!string.IsNullOrWhiteSpace(task) && batchTasksResult.Tasks is not null)
-            return Fail("���� 'task' �� 'tasks' �����ѡһ������ͬʱ���롣");
+            return Fail("参数 'task' 和 'tasks' 必须二选一，不能同时传入。");
         if (string.IsNullOrWhiteSpace(task) && batchTasksResult.Tasks is null)
-            return Fail("���� 'task' �� 'tasks' �Ǳ���ġ�����ģʽ���봫�� JSON array��");
+            return Fail("参数 'task' 或 'tasks' 是必需的。批量模式必须传入 JSON array。");
         if (batchTasksResult.Error is not null)
             return Fail(batchTasksResult.Error);
         if (!string.IsNullOrWhiteSpace(resumeSubAgentId) && !string.IsNullOrWhiteSpace(args.PoolName))
@@ -130,7 +130,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                   ?? (request.Parameters.TryGetValue("sync", out var syncVal)
                         && bool.TryParse(syncVal, out var syncBool) && syncBool);
 
-        // û����ʽָ�� sync �� Ĭ��ͬ��
+        // 没有显式指定 sync → 默认同步
         if (!HasProp(json, "sync") && !request.Parameters.ContainsKey("sync"))
             isSync = true;
 
@@ -154,7 +154,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                                  ?? GetStringProp(json, "capabilityRequirements")
                                  ?? request.Parameters.GetValueOrDefault("capability_requirements");
 
-        // ���� Session Fork: ���ø����������� ����
+        // ── Session Fork: 复用父代理上下文 ──
         var reuseParentCtx = GetBoolProp(json, "reuse_parent_context")
             ?? GetBoolProp(json, "reuseParentContext")
             ?? args.ReuseParentContext;
@@ -171,19 +171,19 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             }
         }
 
-        // ȷ���Ӵ���ģ��
+        // 确定子代理模板
         var template = ResolveTemplate(templateId);
         if (template == null)
         {
             var available = string.Join(", ", BuiltInAgentTemplates.GetAll().Select(t => t.TemplateId));
-            return Fail($"δ֪�� Agent ģ�� '{templateId}'������ģ�壺{available}");
+            return Fail($"未知的 Agent 模板 '{templateId}'。可用模板：{available}");
         }
 
-        // �����Ӵ����� Capability���̳и����������µ�����������
+        // 构造子代理的 Capability（继承父代理，可下调不可升级）
         var childCapability = BuildChildCapability(json, request, template, permissionMode);
 
-        // �ڵ������һ���Խ������ɱ�·�����ݺ͵������á�
-        // ���� InvocationService / Manager ֻ��͸������ֹ�� Endpoint����Կ�� model �ַ������� Provider��
+        // 在调用入口一次性解析不可变路由身份和调用配置。
+        // 后续 InvocationService / Manager 只能透传，禁止从 Endpoint、密钥或 model 字符串反推 Provider。
                 ResolvedChildLlmRoute childLlmRoute;
         try
         {
@@ -240,18 +240,18 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             childLlmRoute.Profile.ModelId,
             request.SessionId);
 
-        // === �ػ��Ӵ���·�� ===
-        // �� pool_name �ǿ�ʱ���߳ػ�����·����������ԭ��һ�����Ӵ����߼���
+        // === 池化子代理路由 ===
+        // 当 pool_name 非空时，走池化复用路径；否则走原有一次性子代理逻辑。
         if (!string.IsNullOrWhiteSpace(args.PoolName))
         {
             var pool = _services.GetService<ISubAgentPool>();
             if (pool == null)
                 return ToolExecutionResult.Fail(
-                    "? SubAgentPool ����δע�ᡣ���� DI ���á�");
+                    "? SubAgentPool 服务未注册。请检查 DI 配置。");
 
-            // ����ģʽ��֧�ֳػ��������ͻ��
+            // 批量模式不支持池化（语义冲突）
             if (batchTasksResult.Tasks is not null)
-                return Fail("��������ģʽ (tasks) ��֧�ֳػ��Ӵ�������ʹ�õ����� (task) + pool_name��");
+                return Fail("批量任务模式 (tasks) 不支持池化子代理。请使用单任务 (task) + pool_name。");
 
             var action = args.PoolAction?.ToLowerInvariant() ?? "execute";
 
@@ -261,7 +261,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                 {
                     case "create":
                     {
-                        // �������ػ��Ӵ�������ִ������
+                        // 仅创建池化子代理，不执行任务
                         var spawnRequest = BuildSpawnRequest(
                             args, request, context, json, task!,
                             template, childLlmRoute, childCapability,
@@ -275,13 +275,13 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         var createResult = await pool.CreateAsync(
                             args.PoolName, spawnRequest, ct);
                         return Success(
-                            $"? �ػ��Ӵ��� '{args.PoolName}' �Ѵ�����",
+                            $"? 池化子代理 '{args.PoolName}' 已创建。",
                             new
                             {
                                 status = createResult.Status.ToString(),
                                 subSessionId = createResult.SubSessionId,
-                                role = args.PoolRole ?? "(δָ��)",
-                                hint = $"ʹ�� pool_name=\"{args.PoolName}\" (���� pool_action) ��ִ������",
+                                role = args.PoolRole ?? "(未指定)",
+                                hint = $"使用 pool_name=\"{args.PoolName}\" (不带 pool_action) 来执行任务。",
                             });
                     }
 
@@ -289,26 +289,26 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                     {
                         var destroyed = await pool.DestroyAsync(args.PoolName, ct);
                         return destroyed
-                            ? Success($"? �ػ��Ӵ��� '{args.PoolName}' �����١�")
-                            : Fail($"? �Ӵ��� '{args.PoolName}' �����ڻ������١�");
+                            ? Success($"? 池化子代理 '{args.PoolName}' 已销毁。")
+                            : Fail($"? 子代理 '{args.PoolName}' 不存在或已销毁。");
                     }
 
                     case "sleep":
                     {
                         var slept = await pool.SleepAsync(args.PoolName, ct);
                         return slept
-                            ? Success($"? �ػ��Ӵ��� '{args.PoolName}' �����ߡ�")
-                            : Fail($"? �Ӵ��� '{args.PoolName}' �����ڻ������١�");
+                            ? Success($"? 池化子代理 '{args.PoolName}' 已休眠。")
+                            : Fail($"? 子代理 '{args.PoolName}' 不存在或已销毁。");
                     }
 
                     case "list":
                     {
                         var agents = pool.List();
                         if (agents.Count == 0)
-                            return Success("��Ϊ�ա�ʹ�� pool_name=\"<name>\" pool_action=\"create\" �����µĳػ��Ӵ�����");
+                            return Success("池为空。使用 pool_name=\"<name>\" pool_action=\"create\" 创建新的池化子代理。");
                         var sb = new StringBuilder();
-                        sb.AppendLine($"## �Ӵ�����״̬ ({agents.Count} ��)\n");
-                        sb.AppendLine("| ���� | ״̬ | ��ɫ | ������ | ���ʹ�� | SubSessionId |");
+                        sb.AppendLine($"## 子代理池状态 ({agents.Count} 个)\n");
+                        sb.AppendLine("| 名称 | 状态 | 角色 | 任务数 | 最后使用 | SubSessionId |");
                         sb.AppendLine("|------|------|------|--------|----------|-------------|");
                         foreach (var a in agents)
                             sb.AppendLine($"| {a.Name} | {a.Status} | {a.Role ?? "-"} | {a.TaskCount} | {a.LastUsedAt:HH:mm:ss} | {a.SubSessionId?.Substring(0, Math.Min(8, a.SubSessionId.Length))}... |");
@@ -317,18 +317,18 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
                     case "cleanup":
                     {
-                        // ���������ػ��Ӵ������ӳ������� + �����־û���¼
+                        // 清理单个池化子代理：从池中销毁 + 清理持久化记录
                         var subAgentManager = _services.GetService<ISubAgentManager>();
                         if (subAgentManager == null)
-                            return Fail("? ISubAgentManager ����δע�ᡣ");
+                            return Fail("? ISubAgentManager 服务未注册。");
 
-                        // �Ȼ�ȡ�Ӵ�����Ϣ���������־û���¼
+                        // 先获取子代理信息用于清理持久化记录
                         var poolAgent = await pool.GetAsync(args.PoolName, ct);
 
-                        // �ӳ�������
+                        // 从池中销毁
                         var destroyed = await pool.DestroyAsync(args.PoolName, ct);
 
-                        // �����־û���¼
+                        // 清理持久化记录
                         int dbCleaned = 0;
                         if (poolAgent != null)
                         {
@@ -344,17 +344,17 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         }
 
                         return Success(
-                            $"? �Ӵ��� '{args.PoolName}' ��������" +
-                            (destroyed ? " ����Ŀ�����١�" : " ����Ŀ�����ڻ������١�") +
-                            $" �־û���¼������ {dbCleaned} ����");
+                            $"? 子代理 '{args.PoolName}' 已清理。" +
+                            (destroyed ? " 池条目已销毁。" : " 池条目不存在或已销毁。") +
+                            $" 持久化记录已清理 {dbCleaned} 条。");
                     }
 
                     case "cleanup-bulk":
                     {
-                        // ���������������ڳػ��Ӵ����������������Ự�µ��Ӵ�����¼
+                        // 批量清理：不限于池化子代理，清理整个父会话下的子代理记录
                         var subAgentManager = _services.GetService<ISubAgentManager>();
                         if (subAgentManager == null)
-                            return Fail("? ISubAgentManager ����δע�ᡣ");
+                            return Fail("? ISubAgentManager 服务未注册。");
 
                         var cleaned = await subAgentManager.CleanupAsync(
                             request.SessionId,
@@ -370,13 +370,13 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         if (args.CleanupOlderThanDays.HasValue)
                             filterDesc += $", older than {args.CleanupOlderThanDays} days";
 
-                        return Success($"? �����������: {cleaned} ���Ӵ�����������ɸѡ: {filterDesc}����");
+                        return Success($"? 批量清理完成: {cleaned} 个子代理已清理（筛选: {filterDesc}）。");
                     }
 
                     case "execute":
                     default:
                     {
-                        // ִ�������Զ��������ã�
+                        // 执行任务（自动创建或复用）
                         var execSpawnRequest = BuildSpawnRequest(
                             args, request, context, json, task!,
                             template, childLlmRoute, childCapability,
@@ -390,7 +390,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
                         var result = await pool.ExecuteAsync(
                             args.PoolName, execSpawnRequest, ct);
 
-                        // ��װΪ�ṹ�� JSON��ȷ���� SmartWorkflowToolBase.ExtractRawReport ����
+                        // 包装为结构化 JSON，确保与 SmartWorkflowToolBase.ExtractRawReport 兼容
                         var wrapped = JsonSerializer.Serialize(new
                         {
                             schema = "pudding-subagent-result",
@@ -414,13 +414,13 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             }
             catch (InvalidOperationException ex)
             {
-                // ����/æ/�����ڵ�ҵ���쳣
+                // 池满/忙/不存在等业务异常
                 return Fail(
-                    $"? �ز���ʧ��: {ex.Message}\n\n��ʾ: ʹ�� pool_name=\"{args.PoolName}\" pool_action=\"list\" �鿴��ǰ��״̬��");
+                    $"? 池操作失败: {ex.Message}\n\n提示: 使用 pool_name=\"{args.PoolName}\" pool_action=\"list\" 查看当前池状态。");
             }
         }
 
-        // === ԭ��һ�����Ӵ����߼���pool_name Ϊ��ʱ�� ===
+        // === 原有一次性子代理逻辑（pool_name 为空时） ===
 
         if (batchTasksResult.Tasks is not null)
         {
@@ -563,7 +563,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         }
     }
 
-    // ���� ˽�и��� ������������������������������������������������������������������������������������������������������������
+    // ── 私有辅助 ──────────────────────────────────────────────────────
 
     private static JsonObject? TryParseJson(string? input)
     {
@@ -837,26 +837,26 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         var policy = _services.GetService<ITaskDelegationPolicy>();
         if (taskStore is null || policy is null)
         {
-            return Fail("����滮ί�ɲ���δע�ᣬ�޷������� task planning �����ĵ��Ӵ�����");
+            return Fail("任务规划委派策略未注册，无法创建带 task planning 上下文的子代理。");
         }
 
         var plan = await taskStore.GetPlanAsync(planning.TaskPlanId!, ct);
         if (plan is null)
-            return Fail($"����滮�ƻ������ڣ�{planning.TaskPlanId}");
+            return Fail($"任务规划计划不存在：{planning.TaskPlanId}");
 
         var node = await taskStore.GetNodeAsync(planning.TaskNodeId!, ct);
         if (node is null)
-            return Fail($"����ڵ㲻���ڣ�{planning.TaskNodeId}");
+            return Fail($"任务节点不存在：{planning.TaskNodeId}");
 
         if (!string.Equals(node.PlanId, plan.PlanId, StringComparison.Ordinal))
-            return Fail($"����ڵ� {node.TaskNodeId} �����ڼƻ� {plan.PlanId}��");
+            return Fail($"任务节点 {node.TaskNodeId} 不属于计划 {plan.PlanId}。");
 
         var decision = await policy.CanAssignAsync(node, plan, TaskAssignmentKinds.SubAgent, ct);
         if (decision.Allowed)
             return null;
 
         return Fail(
-            $"����滮���Ծܾ������Ӵ�����{decision.Reason} " +
+            $"任务规划策略拒绝创建子代理：{decision.Reason} " +
             $"(depth={decision.CurrentDepth}, max_depth={decision.MaxDepth})");
     }
 
@@ -928,15 +928,15 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
         return null;
     }
 
-        /// <summary>����ģ�� ID��֧�־�ȷƥ�� + ģ�����ˡ�</summary>
+        /// <summary>解析模板 ID，支持精确匹配 + 模糊回退。</summary>
     private static AgentTemplateDefinition? ResolveTemplate(string templateId)
     {
         return BuiltInAgentTemplates.ResolveBest(templateId);
     }
 
     /// <summary>
-    /// ���� SubAgentSpawnRequest�����ػ�·����Create/Execute��ʹ�á�
-    /// ������һ����·����ͬ�Ľ��������ģ�塢LLM ·�ɡ��������Եȣ���
+    /// 构造 SubAgentSpawnRequest，供池化路径（Create/Execute）使用。
+    /// 复用与一次性路径相同的解析结果（模板、LLM 路由、能力策略等）。
     /// </summary>
     private static SubAgentSpawnRequest BuildSpawnRequest(
         SubAgentToolArgs args,
@@ -1022,8 +1022,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
 
     /// <summary>
-    /// �Ӵ����������̳и��������ԣ����µ�����������
-    /// ��������ͨ������ָ�� AllowedToolNames �Ӽ���
+    /// 子代理能力：继承父代理策略，可下调不可升级。
+    /// 父代理可通过参数指定 AllowedToolNames 子集。
     /// </summary>
     private CapabilityPolicy BuildChildCapability(
         JsonObject? json,
@@ -1033,7 +1033,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
     {
         var basePolicy = template.Capability ?? new CapabilityPolicy();
 
-        // �������õĹ����Ӽ�
+        // 解析允许的工具子集
         var toolsJson = GetStringProp(json, "tools");
         var toolsParam = request.Parameters.GetValueOrDefault("tools");
         var toolsStr = toolsJson ?? toolsParam;
@@ -1048,7 +1048,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             basePolicy = basePolicy with { AllowedToolNames = allowedTools };
         }
 
-                // ���� none mode: zero tools, pure reasoning ����
+                // ── none mode: zero tools, pure reasoning ──
         if (string.Equals(permissionMode, SubAgentPermissionModes.None, StringComparison.OrdinalIgnoreCase))
         {
             return basePolicy with
@@ -1100,8 +1100,8 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
     }
 
     /// <summary>
-    /// ��ͳһ LLM Resolver ��ȡΨһ����Դ�Ѿ������õ� Provider/Model �����ÿ��գ�
-    /// ����ֻ�����Ӵ����������壨ProfileId/Role����
+    /// 从统一 LLM Resolver 获取唯一配置源已经解析好的 Provider/Model 与配置快照，
+    /// 本层只补充子代理调用语义（ProfileId/Role）。
     /// </summary>
     private async Task<ResolvedChildLlmRoute> ResolveChildLlmRouteAsync(
         string? modelId,
@@ -1301,31 +1301,31 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
 
         private sealed record BatchTaskParseResult(IReadOnlyList<SubAgentBatchTask>? Tasks, string? Error);
 
-    /// <summary>�Ӹ����������Ŀ��չ����Ӵ����̳е��������ַ�����</summary>
+    /// <summary>从父代理上下文快照构建子代理继承的上下文字符串。</summary>
     /// <remarks>
-    /// v2: ��̬�㣨L0-L2����� FullContent ԭ�ģ����֦����֤ KV-cache ǰ׺һ�£���
-    /// ��̬������ժҪԪ���ݡ�
+    /// v2: 静态层（L0-L2）输出 FullContent 原文（零剪枝，保证 KV-cache 前缀一致）；
+    /// 动态层仅输出摘要元数据。
     /// </remarks>
     private static string BuildParentContextSnapshot(ContextAssemblySnapshot snapshot)
     {
         var sb = new StringBuilder();
         sb.AppendLine("--- LAYER: INHERITED-CONTEXT ---");
-        sb.AppendLine("[���������ĴӸ������Ự Fork���Ѽ�֦���Ƴ����ߵ��á�˼ά��������]");
-        sb.AppendLine($"���Ự: {snapshot.SessionId}");
-        sb.AppendLine($"��װʱ��: {snapshot.AssembledAt:O}");
-        sb.AppendLine($"�� Token ��: {snapshot.TotalTokens}");
-        sb.AppendLine($"��̬��ָ��(SHA-256): {snapshot.StaticLayersFingerprint ?? "��"}");
+        sb.AppendLine("[以下上下文从父代理会话 Fork，已剪枝：移除工具调用、思维链、心跳]");
+        sb.AppendLine($"父会话: {snapshot.SessionId}");
+        sb.AppendLine($"组装时间: {snapshot.AssembledAt:O}");
+        sb.AppendLine($"总 Token 数: {snapshot.TotalTokens}");
+        sb.AppendLine($"静态层指纹(SHA-256): {snapshot.StaticLayersFingerprint ?? "无"}");
         if (!string.IsNullOrEmpty(snapshot.StaticLayersFingerprint))
-            sb.AppendLine("�Ӵ����ɶԱ�������̬��ָ��ȷ�� KV-cache �Ƿ�����С�");
+            sb.AppendLine("子代理可对比自身静态层指纹确认 KV-cache 是否可命中。");
         sb.AppendLine();
 
-        // ��̬�㣺ԭ����� FullContent
+        // 静态层：原样输出 FullContent
         var staticLayers = snapshot.Layers
             .Where(l => l.IsStatic && !string.IsNullOrWhiteSpace(l.FullContent))
             .ToList();
         if (staticLayers.Count > 0)
         {
-            sb.AppendLine("## �̳о�̬�㣨���ֽ�һ�£���֤ KV-cache ���У�");
+            sb.AppendLine("## 继承静态层（逐字节一致，保证 KV-cache 命中）");
             sb.AppendLine();
             foreach (var layer in staticLayers)
             {
@@ -1335,24 +1335,24 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             }
         }
 
-        // ��̬�㣺�����ժҪ
+        // 动态层：仅输出摘要
         var dynamicLayers = snapshot.Layers
             .Where(l => !l.IsStatic && !string.IsNullOrWhiteSpace(l.ContentPreview))
             .ToList();
         if (dynamicLayers.Count > 0)
         {
-            sb.AppendLine("## ��������̬��ժҪ");
+            sb.AppendLine("## 父代理动态层摘要");
             foreach (var layer in dynamicLayers)
             {
                 sb.AppendLine($"- [{layer.LayerName}] ({layer.TokenCount} tokens): {TruncatePreview(layer.ContentPreview, 500)}");
             }
         }
 
-        // P1: ��������� N �ֶԻ����������ݣ������Ϣȫ�� + ����ժҪ��
+        // P1: 父代理最近 N 轮对话（两级传递：最近消息全文 + 更早摘要）
         if (snapshot.RecentMessages is { Count: > 0 })
         {
             sb.AppendLine();
-            sb.AppendLine("## �������Ի���ʷ����֦��");
+            sb.AppendLine("## 父代理对话历史（剪枝后）");
             var recentCount = Math.Min(snapshot.RecentMessages.Count, 6);
             for (int i = 0; i < recentCount; i++)
             {
@@ -1361,7 +1361,7 @@ public sealed class SubAgentTool : PuddingToolBase<SubAgentToolArgs>
             }
             if (snapshot.RecentMessages.Count > 6)
             {
-                sb.AppendLine($"... (�� {snapshot.RecentMessages.Count} ����֦��Ϣ������Ϊ��� {recentCount} ��)");
+                sb.AppendLine($"... (共 {snapshot.RecentMessages.Count} 条剪枝消息，以上为最近 {recentCount} 条)");
             }
         }
         return sb.ToString();
