@@ -637,3 +637,7 @@ Task scheduler effective-dispatch closure (2026-09-01 proposed)
 ## 2026-09-18 FastRouter 本机资源池配置
 
 `D:\data\config\llm.providers.json` 新增 `fastrouter` 下的 `gpt-6` / `gpt-6-astra`，Responses 协议，1050000 上下文 / 128000 输出。仅运行时配置变更，待 Core 重启加载；映射和验证边界见 [配置记录](Docs/Reports/FastRouter资源池配置-2026-09-18.md)。
+
+## 2026-09-18 FastRouter 兼容性实测
+
+当前 Key 分组的 GPT-6 两个 ID 返回 model_not_found；gpt-5.6-sol 的 Responses 流式工具调用与工具回传成功，Chat Completions 亦成功。入口为 ResponsesLlmGateway 及其内嵌 ResponsesStreamParser；详见[诊断证据与调用路径](Docs/Reports/FastRouter资源池配置-2026-09-18.md)。未修改产品或替换运行时模型。

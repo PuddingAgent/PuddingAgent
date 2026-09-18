@@ -3815,3 +3815,7 @@ Admin “访问令牌”页若把 Active/Revoked 显示成数字 `0/1`，同时 
 ### 2026-09-15：自动审计修改必须检查隐式路径与真实组合
 
 A91-0复审不要只跑新增SubmitAsync用例或看code_outline：固定过滤器PuddingToolInfrastructure|ToolApproval|AgentFirewallWorkingDirectory，独立Temp checkout上dd575cc为131/131，6c34a24为123/139；14项缺ILlmInvocationService、1项遗留NeedHuman、1项错误期望AgentInstanceId为空。Implicit Check仍可能把DeferredDependency写ImplicitDenied并提示/authorize，AgentFirewall也会丢失原因。合法但非对象JSON需验证root类型；reasonCode必须检查parser/typed/store/DTO的贯通。记录TRX和真实基线，不能把“timeout”字符串fake当作deadline测试。报告及可复制回归夹具见Docs/Reports/ADR-091-A91-0-Review-2026-09-15.md。
+
+### FastRouter 503 与模型分组不可用（2026-09-18）
+
+先按 DirectLlm REQUEST 核对实际 provider/model/protocol，再用同一 Key GET /v1/models，并以最简合成输入分别核对 /responses 和 /chat/completions。503 可能掩盖更明确的 model_not_found；当前 gpt-6/gpt-6-astra 分组无可用账户，而 gpt-5.6-sol 已通过流式工具闭环。记录上游 X-Request-Id，凭据不进日志；不把同名 fastrouter.ai 文档套用到 fastrouter.cloud。见[完整诊断与验证边界](Docs/Reports/FastRouter资源池配置-2026-09-18.md)。
