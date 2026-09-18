@@ -16,13 +16,20 @@ public static class GoalCheckDefinitionRegistry
         string DefinitionRef,
         string Kind,
         string CommandTemplate,
-        bool RequiresTestEvidence);
+        bool RequiresTestEvidence,
+        string? ExpectedText = null);
 
     private const string BuildRef = "checks/build.md#dotnet-build";
     private const string TestRef = "checks/test.md#dotnet-test";
 
     /// <summary>目标级文件证据定义：只读核验（存在且非空），不对应任何 shell 命令。</summary>
     public const string FileEvidenceRef = "checks/file-evidence.md#file-exists-nonempty";
+
+    /// <summary>
+    /// G92-1 S1-c（片 2）：纯文本断言定义。只读判定，不对应任何 shell 命令；
+    /// 期望文本经 <see cref="GoalCheckSpec.ExpectedText"/> 供给并按方案 A 进入 hash 载荷。
+    /// </summary>
+    public const string TextAssertionRef = "checks/text-assertion.md#equals";
 
     private static readonly Dictionary<string, GoalCheckDefinition> Definitions =
         new(StringComparer.Ordinal)
@@ -42,6 +49,11 @@ public static class GoalCheckDefinitionRegistry
                 GoalVerificationSpecKinds.FileEvidence,
                 "只读核验：文件存在且非空（File.Exists + 长度；不启动任何进程）",
                 RequiresTestEvidence: false),
+            [TextAssertionRef] = new(
+                TextAssertionRef,
+                GoalVerificationSpecKinds.TextAssertion,
+                string.Empty,
+                RequiresTestEvidence: false),
         };
 
     public static IReadOnlyCollection<string> RegisteredDefinitionRefs => Definitions.Keys;
@@ -53,6 +65,13 @@ public static class GoalCheckDefinitionRegistry
     {
         ArgumentNullException.ThrowIfNull(definition);
         var payload = $"{definition.DefinitionRef}|{definition.Kind}|{definition.CommandTemplate}";
+
+        // G92-1 S1-c 方案 A：期望文本参与载荷，但仅当非空（IsNullOrEmpty）时追加。
+        // 禁改用 IsNullOrWhiteSpace：决策 D1 默认不 Trim，纯空白期望文本是合法载荷，
+        // WhiteSpace 判断会把它当空丢弃（hash 不可复现）。null/空串不追加，旧条目 payload 字节不变。
+        if (!string.IsNullOrEmpty(definition.ExpectedText))
+            payload += $"|{definition.ExpectedText}";
+
         var bytes = System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(payload));
         return $"sha256:{Convert.ToHexStringLower(bytes)}";
@@ -102,9 +121,10 @@ public static class GoalCheckDefinitionRegistry
             return false;
         }
 
-        // 不变量：file-evidence 是只读文件判定，永远不能被解析成 shell 命令；
-        // 它的评估必须走 GoalCheckRunner 的只读分支。
-        if (string.Equals(definition.Kind, GoalVerificationSpecKinds.FileEvidence, StringComparison.Ordinal))
+        // 不变量：file-evidence / text-assertion 是只读/纯文本判定，永远不能被解析成 shell 命令；
+        // 它们的评估必须走 GoalCheckRunner 的只读分支（G92-1 S1-c 片 2 并入 text-assertion）。
+        if (string.Equals(definition.Kind, GoalVerificationSpecKinds.FileEvidence, StringComparison.Ordinal)
+            || string.Equals(definition.Kind, GoalVerificationSpecKinds.TextAssertion, StringComparison.Ordinal))
         {
             failureCode = GoalCheckFailureCodes.UnsupportedCheckKind;
             return false;

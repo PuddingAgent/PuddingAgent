@@ -148,6 +148,13 @@ public static class GoalVerificationSpecKinds
     /// 由受控检查器只读核验（存在且非空）；绝不构建命令、绝不启动进程。
     /// </summary>
     public const string FileEvidence = "file-evidence";
+
+    /// <summary>
+    /// G92-1 S1-c（片 1）：纯文本断言。判据为本 Goal 绑定 canonical Turn 的最终 assistant
+    /// 输出与 spec.ExpectedText 的 ordinal 精确匹配；拒绝 contains、不 Trim、不做 Unicode 归一
+    /// （决策 D1）。绝不构建命令、绝不启动进程。
+    /// </summary>
+    public const string TextAssertion = "text-assertion";
 }
 
 /// <summary>ADR-092 §4：逐项条件结果状态。</summary>

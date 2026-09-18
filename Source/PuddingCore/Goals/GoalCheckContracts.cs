@@ -21,6 +21,13 @@ public sealed record GoalCheckSpec
 
     public string? DefinitionHash { get; init; }
 
+    /// <summary>
+    /// G92-1 S1-c（片 1）：仅 text-assertion 检查使用——期望的最终 assistant 输出原文。
+    /// null 表示非文本断言。比较为 ordinal 精确匹配：拒绝 contains、不 Trim、不做 Unicode 归一（D1）。
+    /// 随 ChecksJson 序列化往返，并按方案 A 进入 text-assertion 的 DefinitionHash 载荷。
+    /// </summary>
+    public string? ExpectedText { get; init; }
+
     /// <summary>检查输入（文件/产物/提交），用于指纹与失效判断。</summary>
     public IReadOnlyList<string> InputRefs { get; init; } = [];
 
