@@ -54,6 +54,13 @@ public sealed record GoalEvidenceCapsule
     public string? AcceptanceContractSource { get; init; }
 
     /// <summary>
+    /// G92-1 S1-c 片6-3b：本次裁决依据的验收合同版本（goal_acceptance_contracts.contract_version）。
+    /// null 表示合同行缺失或版本未知；A1 合同整理成功后随 Criteria/Checks/Source 一起完整重载
+    /// （规格 WHY §5：Worker 必须完整重载四项，不能只回填前两项）。
+    /// </summary>
+    public int? AcceptanceContractVersion { get; init; }
+
+    /// <summary>
     /// G92-1 S1-a：合同是否为纯工程门禁（objective 未声明任何目标级证据）。
     /// 仅当来源精确等于 bounded_planning 时为真；未知来源（null/其他受控值）不视为纯门禁、
     /// 由既有判定分支裁决——覆盖门只拦「明确声明自己只覆盖工程门禁」的合同。

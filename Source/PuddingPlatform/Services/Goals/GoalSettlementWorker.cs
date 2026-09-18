@@ -11,6 +11,7 @@ public sealed class GoalSettlementWorker(
     IGoalIterationVerifier verifier,
     GoalAcceptanceContractPlanner planner,
     GoalAcceptanceContractStore contractStore,
+    GoalContractRefinementStore refinementStore,
     IGoalCheckRunner checkRunner,
     GoalCheckRecordStore checkRecordStore,
     IOptions<GoalRunOptions> options,
@@ -79,6 +80,52 @@ public sealed class GoalSettlementWorker(
     private async Task<bool> SettleCandidateAsync(GoalSettlementCandidate candidate, CancellationToken ct)
     {
         var capsule = candidate.ToCapsule();
+
+        // G92-1 S1-c 片6-3b（A1）：候选携带 proposal 时先走合同整理通道——验证、幂等探针、
+        // source/版本预检、CAS 提交与同事务审计全部在 refinement store 单事务内完成，
+        // Worker 不信任任何模型自报字段。Applied 后必须完整重载 Criteria/Checks/Source/
+        // ContractVersion 四项（规格 WHY §5：只回填前两项会让 IsEngineeringGatesOnly 仍为真，
+        // 覆盖门永不解锁）；其余结局（含历史候选无 proposal）保持既有路径不变。
+        if (!string.IsNullOrWhiteSpace(candidate.GoalContractProposalJson))
+        {
+            var refinement = await refinementStore.TryApplyAsync(
+                new GoalContractProposalFacts
+                {
+                    GoalRunId = candidate.GoalRunId,
+                    ActivationEpoch = candidate.ActivationEpoch,
+                    ObjectiveVersion = candidate.ObjectiveVersion,
+                    TurnId = candidate.TurnId,
+                    AggregateVersion = candidate.AggregateVersion,
+                    Objective = candidate.Objective,
+                    TerminalKind = candidate.TerminalKind,
+                    EvidenceComplete = candidate.EvidenceComplete,
+                    ProposalJson = candidate.GoalContractProposalJson,
+                },
+                ct);
+            if (refinement.Status == GoalContractRefinementStatus.Applied)
+            {
+                var refined = await contractStore.LoadAsync(
+                    candidate.GoalRunId,
+                    candidate.ActivationEpoch,
+                    candidate.ObjectiveVersion,
+                    ct);
+                capsule = capsule with
+                {
+                    Criteria = GoalVerificationPersistence.ReadCriteria(refined?.CriteriaJson),
+                    Checks = GoalVerificationPersistence.ReadChecks(refined?.ChecksJson),
+                    AcceptanceContractSource = refined?.Source,
+                    AcceptanceContractVersion = refined?.ContractVersion,
+                };
+            }
+            logger.LogInformation(
+                "[GoalSettlement] contract refinement goal={GoalRunId} epoch={Epoch} turn={TurnId} status={Status} version={Version} reason={Reason}",
+                candidate.GoalRunId,
+                candidate.ActivationEpoch,
+                candidate.TurnId,
+                refinement.Status,
+                refinement.ContractVersion,
+                refinement.Reason);
+        }
 
         // 空合同的有界派生：目标级条件来自 objective 显式证据声明；回归门禁只依据
         // 显式配置的受检目标生成；两者都为空则保持空合同（fail-closed）。

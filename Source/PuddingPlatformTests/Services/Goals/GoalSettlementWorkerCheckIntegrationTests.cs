@@ -406,6 +406,7 @@ public sealed class GoalSettlementWorkerCheckIntegrationTests
                 Options.Create(options),
                 NullLogger<GoalAcceptanceContractPlanner>.Instance),
             contractStore,
+            new GoalContractRefinementStore(factory),
             checkRunner,
             new GoalCheckRecordStore(factory),
             Options.Create(options),

@@ -50,6 +50,15 @@ public sealed record GoalSettlementCandidate
     /// <summary>G92-1 S1-a：验收合同来源（goal_acceptance_contracts.source）；合同行缺失时为 null。</summary>
     public string? AcceptanceContractSource { get; init; }
 
+    /// <summary>G92-1 S1-c 片6-3b：验收合同行版本；合同行缺失时为 null。</summary>
+    public int? AcceptanceContractVersion { get; init; }
+
+    /// <summary>
+    /// G92-1 S1-c 片6-3b：turn.completed payload 独立键 goal_contract_proposal 的原始 JSON
+    /// （原样携带，含非对象形状，由验证器 fail-closed）；历史行无该键（或显式 null）⇒ null。
+    /// </summary>
+    public string? GoalContractProposalJson { get; init; }
+
     /// <summary>
     /// G92-1 S1-c（片 3）：canonical Turn 终态的最终 assistant 输出（turn.completed 的 payload.reply）。
     /// 事件缺失 / 非法 JSON / 缺 reply 字段 ⇒ null（不可得），由结算侧按 evidence_missing 终态失败。
@@ -255,6 +264,15 @@ public sealed class GoalSettlementStore(
                 turn.TerminalSequence.Value,
                 ct);
 
+            // G92-1 S1-c 片6-3b（A1）：终态 payload 独立键 goal_contract_proposal 随候选携带。
+            // 历史行无该键（或显式 null）⇒ null；读取全程 TryGetProperty + 容错，绝不抛异常。
+            var contractProposalJson = await LoadContractProposalJsonAsync(
+                db,
+                goal.CurrentConversationId,
+                iteration.TurnId,
+                turn.TerminalSequence.Value,
+                ct);
+
             results.Add(new GoalSettlementCandidate
             {
                 GoalIterationId = iteration.GoalIterationId,
@@ -285,6 +303,9 @@ public sealed class GoalSettlementStore(
                 CheckReports = GoalVerificationPersistence.ReadReports(checkRecords),
                 // G92-1 S1-a：合同行已随本候选一次性读取，来源随行携带，不新增第二次真值查询。
                 AcceptanceContractSource = contract?.Source,
+                // G92-1 S1-c 片6-3b：合同版本随行携带 + proposal 原始 JSON 独立读取（TryGetProperty，不抛异常）。
+                AcceptanceContractVersion = contract?.ContractVersion,
+                GoalContractProposalJson = contractProposalJson,
                 // G92-1 S1-c（片 3）：canonical Turn 终态 reply 随候选携带。
                 FinalAssistantReply = finalAssistantReply,
                 HasPendingExecutionFacts = hasPending,
@@ -354,6 +375,57 @@ public sealed class GoalSettlementStore(
             if (!root.TryGetProperty("reply", out var reply) || reply.ValueKind != JsonValueKind.String)
                 return null;
             return reply.GetString();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// G92-1 S1-c 片6-3b（A1）：按 (conversationId, turnId) 读取 canonical Turn 终态（turn.completed）
+    /// payload 独立键 goal_contract_proposal 的原始 JSON（原样携带，含非对象形状，由验证器
+    /// fail-closed）。取 Sequence <= terminalSequence 的最后一条；事件缺失 / payload 非法 /
+    /// 键缺失（历史行常态）或显式 null ⇒ null。只读、容错（TryGetProperty，绝不异常控制流），
+    /// 任何数据异常都不允许中断结算扫描。
+    /// </summary>
+    private static async Task<string?> LoadContractProposalJsonAsync(
+        PlatformDbContext db,
+        string? conversationId,
+        string turnId,
+        long terminalSequence,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(conversationId) || string.IsNullOrWhiteSpace(turnId))
+            return null;
+
+        var terminalEvent = await db.ConversationEvents.AsNoTracking()
+            .Where(item => item.ConversationId == conversationId
+                && item.TurnId == turnId
+                && item.Type == ConversationEventTypes.TurnCompleted
+                && item.Sequence <= terminalSequence)
+            .OrderByDescending(item => item.Sequence)
+            .FirstOrDefaultAsync(ct);
+        if (terminalEvent is null)
+            return null;
+
+        return TryReadProposalJson(terminalEvent.Payload);
+    }
+
+    /// <summary>turn.completed payload 的 goal_contract_proposal 提取；非法 JSON / 非对象 / 缺键 / null ⇒ null。</summary>
+    private static string? TryReadProposalJson(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+            return null;
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                return null;
+            if (!root.TryGetProperty("goal_contract_proposal", out var element))
+                return null;
+            return element.ValueKind == JsonValueKind.Null ? null : element.GetRawText();
         }
         catch (JsonException)
         {
