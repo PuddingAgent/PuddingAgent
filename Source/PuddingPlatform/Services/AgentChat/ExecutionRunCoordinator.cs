@@ -680,7 +680,9 @@ public sealed class ExecutionRunCoordinator(
             return TurnTerminal.ProtocolError("No terminal info from Runtime.");
         return info.Kind switch
         {
-            TurnTerminalKind.Completed => TurnTerminal.Success(info.Reply, info.Usage),
+            // A1（G92-1 S1-c 片6）：Completed 终态透传 envelope 提取的 typed proposal；非 Completed 一律丢弃。
+            TurnTerminalKind.Completed => TurnTerminal.Success(
+                info.Reply, info.Usage, info.GoalContractProposal),
             TurnTerminalKind.Failed => TurnTerminal.Failure(
                 info.ErrorCode ?? TerminalErrorCodes.RuntimeExecutionFailed,
                 info.ErrorMessage ?? "Unknown failure."),

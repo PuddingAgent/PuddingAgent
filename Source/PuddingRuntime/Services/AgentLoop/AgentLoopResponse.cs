@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using PuddingCode.Goals;
 
 namespace PuddingRuntime.Services.AgentLoop;
 
@@ -66,7 +67,7 @@ public sealed class AgentLoopResponse
                     Status = result.Status,
                     Message = result.Message,
                     Tool = result.Tool,
-                    Meta = result.Meta,
+                    Meta = ParseProposalMeta(result.Meta),
                     IsStructured = true,
                 };
             }
@@ -80,6 +81,44 @@ public sealed class AgentLoopResponse
             RegexOptions.IgnoreCase);
         return new AgentLoopResponse { Status = isDone ? "DONE" : "CONTINUE", Message = text };
     }
+
+    /// <summary>
+    /// A1（G92-1 S1-c 片6）：解析 envelope hidden meta.goal_contract_proposal → typed proposal。
+    /// fail-closed：解析失败（未知/额外字段、Agent 自报身份、缺必需字段、形态错误）不抛异常、
+    /// 不影响 Turn 终态，仅记录拒绝原因并把 proposal 置 null；envelope 未携带时原样透传。
+    /// </summary>
+    private static AgentLoopMeta? ParseProposalMeta(AgentLoopMeta? meta)
+    {
+        if (meta is null)
+            return null;
+
+        if (meta.GoalContractProposalRaw is not { } element
+            || element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            return meta;
+
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return WithProposalOutcome(
+                meta,
+                null,
+                $"goal_contract_proposal must be a json object, got {element.ValueKind}");
+        }
+
+        var parseResult = GoalContractProposalParser.Parse(element.GetRawText());
+        return WithProposalOutcome(meta, parseResult.Proposal, parseResult.RejectionReason);
+    }
+
+    private static AgentLoopMeta WithProposalOutcome(
+        AgentLoopMeta meta,
+        GoalContractProposal? proposal,
+        string? rejectionReason)
+        => new()
+        {
+            Reason = meta.Reason,
+            Confidence = meta.Confidence,
+            GoalContractProposal = proposal,
+            GoalContractProposalRejectionReason = rejectionReason,
+        };
 
     private static string StripCodeFence(string s)
     {
@@ -122,6 +161,25 @@ public sealed class AgentLoopMeta
 
     [JsonPropertyName("confidence")]
     public double? Confidence { get; init; }
+
+    /// <summary>
+    /// A1（G92-1 S1-c 片6）：Runtime 结构化 envelope 的 hidden 合同提议原文
+    /// （meta.goal_contract_proposal）。仅作解析输入；消费方请读
+    /// <see cref="GoalContractProposal"/>（fail-closed 解析后的 typed 值）。
+    /// </summary>
+    [JsonPropertyName("goal_contract_proposal")]
+    public JsonElement? GoalContractProposalRaw { get; init; }
+
+    /// <summary>
+    /// fail-closed 解析后的 typed proposal；envelope 未携带或解析被拒时为 null
+    /// （拒绝原因见 <see cref="GoalContractProposalRejectionReason"/>）。
+    /// </summary>
+    [JsonIgnore]
+    public GoalContractProposal? GoalContractProposal { get; init; }
+
+    /// <summary>proposal 解析拒绝原因；null 表示未提交或解析成功（诊断用途，绝不参与合同生成）。</summary>
+    [JsonIgnore]
+    public string? GoalContractProposalRejectionReason { get; init; }
 }
 
 /// <summary>Agent 在响应 JSON 中声明的工具调用信息。</summary>

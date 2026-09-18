@@ -952,10 +952,23 @@ public sealed class SqliteExecutionJournal(
         return new AppendResult(firstSeq, currentHead, events.Count);
     }
 
+    /// <summary>
+    /// A1（G92-1 S1-c 片6）：proposal 以独立键 goal_contract_proposal 写入 turn.completed payload
+    /// （对象内 camelCase，与段1 parser 输入形状一致，round-trip 可再解析）；无 proposal 时写 null。
+    /// 既有键（kind/errorCode/errorMessage/reply）保持不变，reply 原文不被污染。
+    /// </summary>
+    private static readonly System.Text.Json.JsonSerializerOptions GoalContractProposalPayloadOptions =
+        new() { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
+
     private static System.Text.Json.JsonElement BuildTerminalPayload(TurnTerminal terminal)
     {
+        var proposalJson = terminal.GoalContractProposal is null
+            ? "null"
+            : System.Text.Json.JsonSerializer.Serialize(
+                terminal.GoalContractProposal,
+                GoalContractProposalPayloadOptions);
         using var doc = System.Text.Json.JsonDocument.Parse(
-            $$"""{"kind":"{{terminal.Kind}}","errorCode":{{JsonOrNull(terminal.ErrorCode)}},"errorMessage":{{JsonOrNull(terminal.ErrorMessage)}},"reply":{{JsonOrNull(terminal.Reply)}}}""");
+            $$"""{"kind":"{{terminal.Kind}}","errorCode":{{JsonOrNull(terminal.ErrorCode)}},"errorMessage":{{JsonOrNull(terminal.ErrorMessage)}},"reply":{{JsonOrNull(terminal.Reply)}},"goal_contract_proposal":{{proposalJson}}}""");
         return doc.RootElement.Clone();
     }
 

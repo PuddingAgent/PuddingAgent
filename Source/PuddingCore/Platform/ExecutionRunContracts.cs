@@ -58,8 +58,21 @@ public sealed record TurnTerminal(
     string? Reply,
     JsonElement? Usage)
 {
-    public static TurnTerminal Success(string? reply, JsonElement? usage) =>
-        new(TurnTerminalKind.Completed, null, null, reply, usage);
+    /// <summary>
+    /// A1（G92-1 S1-c 片6）：从 Runtime terminal 透传的结构化合同提议
+    /// （仅 canonical Goal Turn 的 Completed 终态携带；其余为 null）。
+    /// 落盘时由 SqliteExecutionJournal.BuildTerminalPayload 作为独立键持久化，不混入 reply 原文。
+    /// </summary>
+    public PuddingCode.Goals.GoalContractProposal? GoalContractProposal { get; init; }
+
+    public static TurnTerminal Success(
+        string? reply,
+        JsonElement? usage,
+        PuddingCode.Goals.GoalContractProposal? goalContractProposal = null) =>
+        new(TurnTerminalKind.Completed, null, null, reply, usage)
+        {
+            GoalContractProposal = goalContractProposal,
+        };
 
     public static TurnTerminal Failure(string errorCode, string errorMessage) =>
         new(TurnTerminalKind.Failed, errorCode, errorMessage, null, null);

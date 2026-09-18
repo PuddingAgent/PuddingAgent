@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using PuddingCode.Goals;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Tasks;
@@ -157,8 +158,21 @@ public sealed record TurnTerminalInfo(
     JsonElement? Usage
 )
 {
-    public static TurnTerminalInfo Success(string? reply, JsonElement? usage)
-        => new(TurnTerminalKind.Completed, null, null, reply, usage);
+    /// <summary>
+    /// A1（G92-1 S1-c 片6）：canonical Goal Turn envelope 携带的结构化合同提议
+    /// （fail-closed 解析后的 typed 值）；
+    /// 普通 Turn / envelope 未携带 / 解析被拒时为 null。禁止从普通 reply 文本二次猜测。
+    /// </summary>
+    public GoalContractProposal? GoalContractProposal { get; init; }
+
+    public static TurnTerminalInfo Success(
+        string? reply,
+        JsonElement? usage,
+        GoalContractProposal? goalContractProposal = null)
+        => new(TurnTerminalKind.Completed, null, null, reply, usage)
+        {
+            GoalContractProposal = goalContractProposal,
+        };
 
     public static TurnTerminalInfo Failure(string errorCode, string errorMessage)
         => new(TurnTerminalKind.Failed, errorCode, errorMessage, null, null);

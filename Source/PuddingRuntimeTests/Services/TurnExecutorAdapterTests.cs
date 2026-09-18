@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
@@ -120,6 +121,97 @@ public sealed class TurnExecutorAdapterTests
         Assert.AreEqual("root-1", runtime.LastRequest.ParentTaskNodeId);
         Assert.AreEqual(1000L, runtime.LastRequest.UsageBudget?.MaxInputTokens);
         Assert.AreEqual(0.5m, runtime.LastRequest.UsageBudget?.MaxCost);
+    }
+
+    // ── A1（G92-1 S1-c 片6 段2）：done frame envelope reply → TurnTerminalInfo proposal 传播 ──
+
+    [TestMethod]
+    public async Task ExecuteAsync_DoneFrameWithEnvelopeReply_PropagatesTypedProposalAndPreservesReply()
+    {
+        const string proposalJson = """
+            {"schemaVersion":1,"kind":"refine_acceptance_contract","expectedContractVersion":2,
+             "criteria":[{"requirement":"只输出 READY","requirementRefs":["objective:line-1"],
+               "verification":{"kind":"text-assertion","definitionRef":"checks/text-assertion.md#equals",
+                 "inputRefs":["reply"],"expectedText":"READY"}}]}
+            """;
+        var envelope = JsonSerializer.Serialize(new
+        {
+            status = "DONE",
+            message = "READY",
+            meta = new { goal_contract_proposal = JsonDocument.Parse(proposalJson).RootElement.Clone() },
+        });
+        var runtime = new StaticFramesRuntimeDispatcher(
+            ServerSentEventFrame.Json("done", new { reply = envelope }));
+        var adapter = new TurnExecutorAdapter(
+            runtime,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TurnExecutorAdapter>.Instance);
+
+        var events = new List<TurnExecutionEvent>();
+        await foreach (var evt in adapter.ExecuteAsync(CreateContext(), CancellationToken.None))
+            events.Add(evt);
+
+        var terminal = events.Single(e => e.IsTerminal).TerminalInfo;
+        Assert.AreEqual(TurnTerminalKind.Completed, terminal!.Kind);
+        Assert.AreEqual(envelope, terminal.Reply);
+        Assert.IsNotNull(terminal.GoalContractProposal);
+        Assert.AreEqual(2, terminal.GoalContractProposal.ExpectedContractVersion);
+        Assert.AreEqual("READY", terminal.GoalContractProposal.Criteria[0].Verification.ExpectedText);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_DoneFrameWithPlainReply_LeavesProposalNull()
+    {
+        var runtime = new StaticFramesRuntimeDispatcher(
+            ServerSentEventFrame.Json("done", new { reply = "plain answer" }));
+        var adapter = new TurnExecutorAdapter(
+            runtime,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TurnExecutorAdapter>.Instance);
+
+        var events = new List<TurnExecutionEvent>();
+        await foreach (var evt in adapter.ExecuteAsync(CreateContext(), CancellationToken.None))
+            events.Add(evt);
+
+        var terminal = events.Single(e => e.IsTerminal).TerminalInfo;
+        Assert.AreEqual(TurnTerminalKind.Completed, terminal!.Kind);
+        Assert.AreEqual("plain answer", terminal.Reply);
+        Assert.IsNull(terminal.GoalContractProposal);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_DoneFrameWithMalformedEnvelope_FailsClosedWithoutBreakingTurn()
+    {
+        const string malformed = """{"status":"DONE","message":"m","meta":{"goal_contract_proposal":{"schemaVersion":1,"rogue":true}}}""";
+        var runtime = new StaticFramesRuntimeDispatcher(
+            ServerSentEventFrame.Json("done", new { reply = malformed }));
+        var adapter = new TurnExecutorAdapter(
+            runtime,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TurnExecutorAdapter>.Instance);
+
+        var events = new List<TurnExecutionEvent>();
+        await foreach (var evt in adapter.ExecuteAsync(CreateContext(), CancellationToken.None))
+            events.Add(evt);
+
+        var terminal = events.Single(e => e.IsTerminal).TerminalInfo;
+        Assert.AreEqual(TurnTerminalKind.Completed, terminal!.Kind);
+        Assert.AreEqual(malformed, terminal.Reply);
+        Assert.IsNull(terminal.GoalContractProposal);
+    }
+
+    private sealed class StaticFramesRuntimeDispatcher(params ServerSentEventFrame[] frames)
+        : IRuntimeAgentDispatcher
+    {
+        public Task<RuntimeDispatchResult> DispatchAsync(
+            RuntimeDispatchRequest request,
+            CancellationToken ct = default) => throw new NotSupportedException();
+
+        public async IAsyncEnumerable<ServerSentEventFrame> DispatchStreamAsync(
+            RuntimeDispatchRequest request,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            foreach (var frame in frames)
+                yield return frame;
+        }
     }
 
     private static TurnExecutionContext CreateContext() => new(

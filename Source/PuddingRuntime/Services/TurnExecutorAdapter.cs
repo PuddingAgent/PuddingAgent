@@ -1,8 +1,10 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using PuddingCode.Abstractions;
+using PuddingCode.Goals;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
+using PuddingRuntime.Services.AgentLoop;
 using PuddingRuntime.Services.Messaging;
 
 namespace PuddingRuntime.Services;
@@ -155,9 +157,7 @@ public sealed class TurnExecutorAdapter(
             "done" => (
                 ConversationEventTypes.TurnCompleted,
                 true,
-                TurnTerminalInfo.Success(
-                    TryGetString(payload, "reply"),
-                    TryGetProperty(payload, "usage"))),
+                BuildCompletedTerminalInfo(payload)),
             "error" => (
                 ConversationEventTypes.TurnFailed,
                 true,
@@ -172,6 +172,41 @@ public sealed class TurnExecutorAdapter(
                 TurnTerminalInfo.Cancelled()),
             _ => (eventType, false, null),
         };
+    }
+
+    /// <summary>
+    /// A1（G92-1 S1-c 片6）：从 terminal done payload 构造 Completed 终态信息。
+    /// 流式 Runtime 把模型结构化 envelope 原文作为 reply 传播；若 reply 是 envelope JSON，
+    /// 提取其中 hidden meta.goal_contract_proposal 的 typed proposal（由
+    /// <see cref="AgentLoopResponse"/> fail-closed 解析）；普通 reply 不产生 proposal，
+    /// 提取失败也绝不影响 Turn 终态（fail-safe）。
+    /// </summary>
+    private static TurnTerminalInfo BuildCompletedTerminalInfo(JsonElement payload)
+    {
+        var reply = TryGetString(payload, "reply");
+        return TurnTerminalInfo.Success(
+            reply,
+            TryGetProperty(payload, "usage"),
+            TryExtractGoalContractProposal(reply));
+    }
+
+    private static GoalContractProposal? TryExtractGoalContractProposal(string? reply)
+    {
+        if (string.IsNullOrWhiteSpace(reply))
+            return null;
+
+        var trimmed = reply.TrimStart();
+        if (!trimmed.StartsWith('{'))
+            return null;
+
+        try
+        {
+            return AgentLoopResponse.Parse(trimmed).Meta?.GoalContractProposal;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static bool IsBusyFrame(string eventType, JsonElement payload)
