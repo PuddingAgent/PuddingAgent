@@ -6,6 +6,21 @@
 
 ---
 
+## 【2026-09-18 21:25 父级自我更正 —— 本诊断的 F1 结论错误，勿据此实施】
+
+经子代理 plan 反查 + 父级亲自复核，本诊断除末尾「待验证 V1–V4」外，**核心根因推断不成立**：
+
+- **遗漏点**：`FilePatchOperation` 记录上已有**类级** `[JsonConverter(typeof(FilePatchOperationJsonConverter))]`（`Source/PuddingRuntime/Tools/BuiltIns/Files/FilePatchTool.cs:1296`；converter 定义见 `:1346`，核心归一化 `NormalizeKey` 见 `:1425`，`switch (NormalizeKey(name))` 见 `:1383`）。
+- **该 converter 的行为**：「**大小写 + 下划线无关**」的键名归一匹配 ⇒ `old_text` 与 `oldText` **均可正确绑定**；对**未知键 fail-closed 拒绝**。
+- **提交状态（父级亲自核实）**：`git diff` 该文件 vs HEAD **为空** ⇒ 上述代码**已在 HEAD（已提交）**，非未提交 WIP。
+- **推论修正**：既然键名归一化已存在，卡面「两次调用均失败」的**真实根因更可能是审批依赖阻塞**（B1：`ToolApproval:Llm` 未配置，已由 commit `c604caf` 修复），而非反序列化。父级在 2026-09-18 片3 上观察到的 `file_patch` **被拒 20 次**亦与该判断一致（错误报文正是审批依赖等待，而非反序列化错误）。
+- **对本卡的影响**：`f1d45a15` 的键名修复本体 **已由现有代码解决**；残余有效工作仅为 **3 个 converter 单测固化**（camelCase 绑定 / snake_case 防回归锁 / 未知键拒绝）+ 部署确认。
+- **本诊断仍有效的部分**：误导文案（约 `:122-128` / `:300-303` 宣称 `or 'oldText'`）在 converter 生效后已由「误导」变为「准确」；顶层 `patchText` 驼峰漂移仍会静默 null（诊断建议 C 范畴，未修）。
+
+**方法论教训（已固化）**：审查反序列化行为时，**必须同时检查类级特性**（`[JsonConverter]` / 命名策略 / `JsonSerializerOptions` 注册），**不能只看属性级 `[JsonPropertyName]`** —— 本次误报即源于此。
+
+---
+
 ## 1. 卡面原始现象（来自卡片描述，非本次复现）
 > 「【父代理实测】`file_patch` 的 operations 数组参数**两次调用均反序列化失败**（错误提示要求 `old_text`），最终用 `apply_patch` unified diff 绕过；疑似 operations 元素的字段名映射（`oldText`/`newText` vs `old_text`/`new_text`）存在序列化 bug。」
 
