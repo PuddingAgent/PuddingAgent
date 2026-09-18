@@ -488,6 +488,39 @@ public sealed class GoalContinuationTests
         var (binding, workUnit) = await CreateBoundExecutionPlanAsync(goal);
         var lease = await ClaimAsync();
 
+        // 卡 2b60040d：镜像 GoalContinuationWorker 的 ADR-072 §9.1 ActiveTask metadata 注入，
+        // 验证 ExecutionCommandReader → ActiveTaskMetadata.TryBuild 的全键映射。
+        var baseRequest = BuildContinuationRequest(goal, lease, binding, workUnit);
+        var activeTaskMetadata = new Dictionary<string, string>(baseRequest.Metadata!)
+        {
+            ["origin"] = "task.auto",
+            ["task_id"] = binding.TaskId,
+            ["assignment_id"] = binding.AssignmentId,
+            ["dispatch_idempotency_key"] = binding.IdempotencyKey ?? binding.BindingId,
+        };
+        if (binding.ReservationFencingToken.HasValue)
+        {
+            activeTaskMetadata["reservation_fencing_token"] =
+                binding.ReservationFencingToken.Value.ToString();
+        }
+
+        await using (var taskDb = await _factory.CreateDbContextAsync())
+        {
+            var task = await taskDb.WorkspaceTasks.AsNoTracking().SingleAsync(
+                item => item.TaskId == binding.TaskId);
+            activeTaskMetadata["expected_version"] =
+                binding.ExpectedTaskVersion?.ToString() ?? task.Version.ToString();
+            activeTaskMetadata["priority"] = task.Priority.ToString().ToLowerInvariant();
+            activeTaskMetadata["execution_window"] = task.ExecutionWindow switch
+            {
+                PuddingCode.Tasks.TaskExecutionWindow.Anytime => "anytime",
+                PuddingCode.Tasks.TaskExecutionWindow.OffPeakOnly => "off_peak_only",
+                _ => "inherit",
+            };
+        }
+
+        var request = baseRequest with { Metadata = activeTaskMetadata };
+
         AcceptanceResult accepted;
         await using (var db = await _factory.CreateDbContextAsync())
         {
@@ -496,7 +529,7 @@ public sealed class GoalContinuationTests
                 new NoopSignal(),
                 NullLogger<ConversationAcceptanceStore>.Instance);
             accepted = await store.AcceptBatchAsync(
-                BuildContinuationRequest(goal, lease, binding, workUnit),
+                request,
                 goal.WorkspaceId,
                 goal.CurrentConversationId,
                 userId: null,
@@ -512,6 +545,21 @@ public sealed class GoalContinuationTests
         Assert.AreEqual(60, command.WorkUnit.MaxToolCallsTotal);
         Assert.AreEqual(1800, command.WorkUnit.MaxDurationSeconds);
         Assert.AreEqual(150_000, command.WorkUnit.MaxInputTokens);
+
+        // 卡 2b60040d：canonical 命令路径必须把 metadata 键集解析为 ActiveTask（与投递路径共用唯一映射器）。
+        Assert.IsNotNull(command.ActiveTask);
+        Assert.AreEqual(goal.WorkspaceId, command.ActiveTask.WorkspaceId);
+        Assert.AreEqual("task-planned", command.ActiveTask.TaskId);
+        Assert.AreEqual("assignment-planned", command.ActiveTask.AssignmentId);
+        Assert.AreEqual(goal.AgentInstanceId, command.ActiveTask.AgentId);
+        Assert.AreEqual("task.auto", command.ActiveTask.Origin);
+        Assert.AreEqual("p0", command.ActiveTask.Priority);
+        Assert.AreEqual("anytime", command.ActiveTask.ExecutionWindow);
+        Assert.AreEqual(3, command.ActiveTask.ExpectedVersion);
+        Assert.AreEqual("binding-planned", command.ActiveTask.DispatchIdempotencyKey);
+        Assert.AreEqual(binding.ReservationFencingToken.Value.ToString(), command.ActiveTask.ReservationFencingToken);
+        Assert.IsNull(command.ActiveTask.PolicyVersion);
+        Assert.IsNull(command.ActiveTask.DeliveryId);
 
         await using var verify = await _factory.CreateDbContextAsync();
         var persistedNode = await verify.TaskNodes.SingleAsync(
