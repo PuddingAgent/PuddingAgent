@@ -202,6 +202,45 @@ public sealed class FilePatchToolTests
             "CRLF breaks inside new_text must be converted to the file's LF endings");
     }
 
+    // ── Converter regression lock: key normalization & fail-closed contract (task f1d45a15) ──
+
+    [TestMethod]
+    public void Deserialize_Operation_PureCamelCaseOldAndNewText_BindToProperties()
+    {
+        const string json = """{"type":"replace","oldText":"A","newText":"B"}""";
+        var op = JsonSerializer.Deserialize<FilePatchOperation>(json);
+
+        Assert.IsNotNull(op);
+        Assert.AreEqual("A", op.OldText, "camelCase oldText must bind to OldText");
+        Assert.AreEqual("B", op.NewText, "camelCase newText must bind to NewText");
+    }
+
+    [TestMethod]
+    public void Deserialize_Operation_PureSnakeCaseOldAndNewText_BindToProperties()
+    {
+        const string json = """{"type":"replace","old_text":"A","new_text":"B"}""";
+        var op = JsonSerializer.Deserialize<FilePatchOperation>(json);
+
+        Assert.IsNotNull(op);
+        Assert.AreEqual("A", op.OldText, "snake_case old_text must bind to OldText");
+        Assert.AreEqual("B", op.NewText, "snake_case new_text must bind to NewText");
+    }
+
+    [TestMethod]
+    public void Deserialize_Operation_NearMissUnknownKey_IsFailClosedRejected()
+    {
+        // "oldTextt" normalizes to "oldtextt" which matches no supported key —
+        // the converter must throw instead of silently dropping the value.
+        var nearMiss = Assert.ThrowsExactly<JsonException>(() =>
+            JsonSerializer.Deserialize<FilePatchOperation>("""{"type":"replace","oldTextt":"A"}"""));
+        Assert.IsTrue(
+            nearMiss.Message.Contains("oldTextt", StringComparison.Ordinal),
+            $"rejection must name the offending key, got: {nearMiss.Message}");
+
+        Assert.ThrowsExactly<JsonException>(() =>
+            JsonSerializer.Deserialize<FilePatchOperation>("""{"type":"replace","foo":1}"""));
+    }
+
     // ── Helpers ──
 
     // Parameterless constructors resolve data paths from HostFileToolPaths.WorkspaceRoot,
