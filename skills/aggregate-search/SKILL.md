@@ -1,8 +1,8 @@
-﻿# 多引擎迭代聚合搜索 (aggregate-search)
+# 多引擎迭代聚合搜索 (aggregate-search)
 
 ## 概述
 
-本 SKILL 定义了**多引擎迭代聚合搜索**工作流：当用户发起搜索/调研指令时，使用 `deepseek-v4-flash` 子代理并行查询全部可用搜索引擎，聚合并去重结果，评估质量。若质量达标则返回综合报告；若不达标则根据上一轮结果优化检索策略，进入下一轮，**最多5轮迭代**。
+本 SKILL 定义了**多引擎迭代聚合搜索**工作流：当用户发起搜索/调研指令时，使用 `deepseek/deepseek-flash` 子代理并行查询全部可用搜索引擎，聚合并去重结果，评估质量。若质量达标则返回综合报告；若不达标则根据上一轮结果优化检索策略，进入下一轮，**最多5轮迭代**。
 
 **设计目标**：在成本可控的前提下，最大化搜索覆盖度和结果质量。
 
@@ -61,11 +61,11 @@
 
 ### Phase 2: 并行搜索
 
-为每个引擎 `spawn_sub_agent` 一个 `deepseek-v4-flash` 子代理，**同时派发**：
+为每个引擎 `spawn_sub_agent` 一个 `deepseek/deepseek-flash` 子代理，**同时派发**：
 
 ```json
 {
-  "model": "deepseek-v4-flash",
+  "model": "deepseek/deepseek-flash",
   "question": "使用 {工具名} 搜索以下查询，返回结果：{查询文本}。提取每条结果的标题、URL、摘要、发布时间。",
   "effort": "quick",
   "stop_condition": "搜索完成，返回结构化结果",
@@ -206,7 +206,7 @@ OPTIMIZATION (Round N → N+1):
 
 ```json
 {
-  "model": "deepseek-v4-flash",
+  "model": "deepseek/deepseek-flash",
   "question": "你是搜索子代理。使用 doubao_search 工具执行以下查询：\n查询: \"{query}\"\n\n要求：\n1. 调用 doubao_search 搜索\n2. 提取每条结果的：标题、URL、摘要（≤200字）、发布时间（如有）\n3. 如结果不足5条，尝试用同义词重搜\n4. 不修改任何文件，不执行任何命令\n\n返回格式：\nFINDINGS:\n- [{title}, {url}, {snippet}, {date}]\n- ...",
   "effort": "quick",
   "stop_condition": "搜索完成并返回结构化结果",
@@ -219,7 +219,7 @@ OPTIMIZATION (Round N → N+1):
 
 ```json
 {
-  "model": "deepseek-v4-flash",
+  "model": "deepseek/deepseek-flash",
   "question": "你是搜索子代理。使用 anysearch_search 工具执行以下查询：\n查询: \"{query}\"\n参数: domain={domain}, tag={tag}, content_types={content_types}\n\n要求：\n1. 调用 anysearch_search 搜索\n2. 提取每条结果的：标题、URL、摘要（≤200字）\n3. 不修改任何文件，不执行任何命令\n\n返回格式：\nFINDINGS:\n- [{title}, {url}, {snippet}]\n- ...",
   "effort": "quick",
   "stop_condition": "搜索完成并返回结构化结果",
@@ -232,7 +232,7 @@ OPTIMIZATION (Round N → N+1):
 
 ```json
 {
-  "model": "deepseek-v4-flash",
+  "model": "deepseek/deepseek-flash",
   "question": "你是搜索子代理。使用 zhihu_search 工具执行以下查询：\n查询: \"{query}\"\n\n要求：\n1. 调用 zhihu_search 搜索\n2. 提取每条结果的：标题、URL、摘要（≤200字）、作者、点赞数（如有）\n3. 不修改任何文件，不执行任何命令\n\n返回格式：\nFINDINGS:\n- [{title}, {url}, {snippet}, {author}, {upvotes}]\n- ...",
   "effort": "quick",
   "stop_condition": "搜索完成并返回结构化结果",
@@ -245,7 +245,7 @@ OPTIMIZATION (Round N → N+1):
 
 ```json
 {
-  "model": "deepseek-v4-flash",
+  "model": "deepseek/deepseek-flash",
   "question": "你是搜索子代理。使用 zhihu_global_search 工具执行以下查询：\n查询: \"{query}\"\n参数: sort={sort}, time_filter={time_filter}\n\n要求：\n1. 调用 zhihu_global_search 搜索\n2. 提取每条结果的：标题、URL、摘要（≤200字）、发布时间\n3. 不修改任何文件，不执行任何命令\n\n返回格式：\nFINDINGS:\n- [{title}, {url}, {snippet}, {date}]\n- ...",
   "effort": "quick",
   "stop_condition": "搜索完成并返回结构化结果",
@@ -258,7 +258,7 @@ OPTIMIZATION (Round N → N+1):
 
 ```json
 {
-  "model": "deepseek-v4-flash",
+  "model": "deepseek/deepseek-flash",
   "question": "你是搜索子代理。使用 github_search 工具执行以下查询：\n查询: \"{query}\"\n\n要求：\n1. 调用 github_search 搜索\n2. 提取每条结果的：仓库名/标题、URL、描述（≤200字）、star数（如有）\n3. 不修改任何文件，不执行任何命令\n\n返回格式：\nFINDINGS:\n- [{repo_or_title}, {url}, {description}, {stars}]\n- ...",
   "effort": "quick",
   "stop_condition": "搜索完成并返回结构化结果",
@@ -283,7 +283,7 @@ OPTIMIZATION (Round N → N+1):
 
 ## 关键约束
 
-1. **子代理模型**：只用 `deepseek-v4-flash`（快速、低成本）
+1. **子代理模型**：只用 `deepseek/deepseek-flash`（快速、低成本）
 2. **并行搜索**：每轮5个子代理同时派发，不串行等待
 3. **最大轮次**：5轮迭代。达到5轮后无论质量如何都返回当前最佳结果
 4. **子代理只读**：子代理不写文件、不执行命令、不修改任何状态，只调用搜索工具
@@ -295,7 +295,7 @@ OPTIMIZATION (Round N → N+1):
 ## 质量门禁
 
 - [ ] Phase 1: 查询计划覆盖全部5个引擎，每个引擎有针对性查询
-- [ ] Phase 2: 子代理同时派发（非串行），使用 deepseek-v4-flash
+- [ ] Phase 2: 子代理同时派发（非串行），使用 deepseek/deepseek-flash
 - [ ] Phase 3: 去重+排序+4维度评分均执行
 - [ ] Phase 4: 质量判断逻辑正确（≥7.0且覆盖度≥6.0达标）
 - [ ] Phase 5: 优化策略有针对性，不是简单重复
@@ -313,7 +313,7 @@ OPTIMIZATION (Round N → N+1):
 | 3轮达标 | 15 | ~150K-300K | 0.30-0.60 |
 | 5轮未达标 | 25 | ~250K-500K | 0.50-1.00 |
 
-> deepseek-v4-flash 定价：¥1/百万入 + ¥2/百万出。单次子代理约10K-20K tokens。
+> deepseek/deepseek-flash 定价：¥2/百万入 + ¥8/百万出（缓存命中 ¥0.04/百万）。单次子代理约10K-20K tokens。
 
 ---
 

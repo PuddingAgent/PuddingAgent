@@ -144,7 +144,7 @@ Prefix cache 命中率：
 ```powershell
 .\.venv\Scripts\python.exe Tools\Diagnostics\query_metrics.py context-layers --days 30
 .\.venv\Scripts\python.exe Tools\Diagnostics\query_metrics.py context-layers --session-id <sessionId> --format json
-.\.venv\Scripts\python.exe Tools\Diagnostics\query_metrics.py context-layers --provider-id deepseek --model-id deepseek-v4-flash
+.\.venv\Scripts\python.exe Tools\Diagnostics\query_metrics.py context-layers --provider-id deepseek --model-id deepseek-flash
 ```
 
 该命令用于分析缓存命中率改进空间，重点看：

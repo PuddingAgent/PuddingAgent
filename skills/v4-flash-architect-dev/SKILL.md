@@ -1,4 +1,4 @@
-﻿# V4 Flash 架构师-开发者工作流
+# V4 Flash 架构师-开发者工作流
 
 ## 概述
 
@@ -50,7 +50,7 @@
 
 ```json
 {
-  "model": "deepseek-v4-flash",
+  "model": "deepseek/deepseek-flash",
   "question": "执行以下原子任务：...",
   "scope": "文件路径范围",
   "already_known": "已有上下文（来自 ADR）",
@@ -115,7 +115,7 @@
 - [ ] ADR 包含背景、决策、替代方案、影响分析
 - [ ] 原子任务列表完整覆盖 ADR 所有需求
 - [ ] 每个任务有明确的成功标准
-- [ ] 子代理只委派给 `deepseek-v4-flash`
+- [ ] 子代理只委派给 `deepseek/deepseek-flash`
 - [ ] 每次只派一个原子任务
 - [ ] 所有任务完成后 `dotnet build` 通过
 - [ ] 交付摘要记录所有变更和决策

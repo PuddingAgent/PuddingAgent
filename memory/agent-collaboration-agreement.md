@@ -45,7 +45,7 @@
 1. **委派后必须实测验证**：query_sub_agents 确认 running，委派返回 ≠ 启动成功
 2. **failed 先查产物**：平台 reasoning_text 错误高发，产物落盘即有效，不盲目重跑
 3. **状态声明以实测为准**：「已委派/运行中」必须有查询证据
-4. **模型路由用完整 providerId/modelId**（查 `memory/llm-providers-cheatsheet.md`）：审查深审=opencode/qwen3.8-max 或 bigmodel/glm-5.3（安全）；快速任务=deepseek/deepseek-v4-flash
+4. **模型路由用完整 providerId/modelId**（查 `memory/llm-providers-cheatsheet.md`）：审查深审=opencode/qwen3.8-max 或 bigmodel/glm-5.3-flash（安全）；快速任务=deepseek/deepseek-flash
 5. 只读任务显式声明（mode=ro/query_only），DB 访问走 terminal/sqlite3/python（file 工具不能访问 D:\data\databases）
 6. code_map.md 在**仓库根**（不是 Source\code_map.md）
 
