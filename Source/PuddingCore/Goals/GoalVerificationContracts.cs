@@ -76,6 +76,15 @@ public static class GoalAcceptanceContractSources
 
     /// <summary>携带 objective 显式声明证据的合同：具备目标级覆盖，完成路径保持不变。</summary>
     public const string BoundedPlanningWithObjectiveEvidence = "bounded_planning:objective_evidence";
+
+    /// <summary>
+    /// G92-1 S1-c 片6（A1）：Agent 经 canonical Goal Turn 的合同整理通道成功提交（CAS）后的
+    /// 合同来源。一次性闸：同一 (goalRunId, activationEpoch, objectiveVersion) 已为该来源时，
+    /// 再次整理只能返回 already-applied/needs_user，绝不二次覆盖。
+    /// 值长度 13 &lt; 实体 MaxLength(32)（goal_acceptance_contracts.source，见
+    /// GoalAcceptanceContractEntity）。
+    /// </summary>
+    public const string AgentRefined = "agent_refined";
 }
 
 public sealed record GoalVerificationDecision

@@ -46,6 +46,14 @@ public static class GoalEventTypes
     public const string VerificationCompleted = "goal.verification.completed";
     public const string VerificationFailed = "goal.verification.failed";
 
+    // ── Contract refinement（G92-1 S1-c A1）──────────────
+    /// <summary>
+    /// 合法合同整理 CAS 提交成功后的审计事实。payload 只存 operation key、old/new
+    /// ContractVersion、criterion IDs、hash 摘要，不存自然语言原文（规格 §6）。
+    /// 目录冻结后新增；消费方按 goal. 前缀或精确类型读取，不受影响。
+    /// </summary>
+    public const string ContractRefined = "goal.contract_refined";
+
     // ── Continuation（G2）────────────────────────────────────
     public const string ContinuationRequested = "goal.continuation.requested";
     public const string ContinuationDispatched = "goal.continuation.dispatched";
