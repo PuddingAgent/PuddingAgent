@@ -1,4 +1,4 @@
-﻿using PuddingCode.Configuration;
+using PuddingCode.Configuration;
 
 namespace PuddingHost.Hosting;
 
@@ -143,7 +143,7 @@ public static class PuddingDataRootBootstrapper
           "displayName": "布丁",
           "workspaceId": "default",
           "preferredProviderId": "deepseek",
-          "preferredModelId": "deepseek-v4-pro",
+          "preferredModelId": "deepseek-flash",
           "isEnabled": true
         }
         """;
@@ -155,11 +155,11 @@ public static class PuddingDataRootBootstrapper
         {
           "conscious": {
             "providerId": "deepseek",
-            "modelId": "deepseek-v4-pro"
+            "modelId": "deepseek-flash"
           },
           "subconscious": {
             "providerId": "deepseek",
-            "modelId": "deepseek-v4-flash"
+            "modelId": "deepseek-flash"
           }
         }
         """;

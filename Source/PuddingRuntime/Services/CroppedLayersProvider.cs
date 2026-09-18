@@ -111,7 +111,7 @@ public sealed class CroppedLayersProvider
                 {
                     ProviderId = "deepseek",
                     ProfileId = "default-subconscious",
-                    ModelId = "deepseek-v4-flash",
+                    ModelId = "deepseek-flash",
                     Role = "subconscious",
                 },
                 Messages =

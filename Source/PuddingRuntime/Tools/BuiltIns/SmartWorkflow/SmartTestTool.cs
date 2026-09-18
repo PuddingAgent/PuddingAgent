@@ -29,7 +29,7 @@ public sealed class SmartTestTool : SmartWorkflowToolBase<SmartTestArgs>
 
     protected override string RoleName => "tester";
     protected override IReadOnlyList<string>? FallbackModelIds =>
-        new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };
+        new[] { "deepseek/deepseek-flash" };
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartTestArgs args, ToolExecutionContext context, CancellationToken ct)

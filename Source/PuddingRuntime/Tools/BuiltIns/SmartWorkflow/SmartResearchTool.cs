@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -30,7 +30,7 @@ public sealed class SmartResearchTool : SmartWorkflowToolBase<SmartResearchArgs>
         protected override string RoleName => "researcher";
     protected override bool RequiresLocationContext => false; // research is domain-based
     protected override IReadOnlyList<string>? FallbackModelIds =>
-        new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };
+        new[] { "deepseek/deepseek-flash" };
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartResearchArgs args, ToolExecutionContext context, CancellationToken ct)

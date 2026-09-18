@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Abstractions;
@@ -140,7 +140,7 @@ public sealed class LlmResourcePoolArgs
     public string? ProviderId { get; set; }
 
     /// <summary>筛选特定模型（可选）。支持模糊匹配模型 ID。</summary>
-    [ToolParam("筛选特定模型（可选），如 'deepseek-v4-flash'。支持模糊匹配。")]
+    [ToolParam("筛选特定模型（可选），如 'deepseek/deepseek-flash'。支持模糊匹配。")]
     public string? ModelId { get; set; }
 
     /// <summary>是否包含已废弃的模型（可选，默认 false）。</summary>

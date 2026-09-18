@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -28,7 +28,7 @@ public sealed class SmartDevelopTool : SmartWorkflowToolBase<SmartDevelopArgs>
 
     protected override string RoleName => "developer";
     protected override IReadOnlyList<string>? FallbackModelIds =>
-        new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };
+        new[] { "deepseek/deepseek-flash" };
     protected override string AllowedTools => "file_read,file_search,list_dir,search_grep,code_outline,code_symbol_search,code_callers,code_callees,project_map,file_patch,file_write,terminal_start,terminal_wait,terminal_read,terminal_status,terminal_cancel";
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(

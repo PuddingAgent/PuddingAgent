@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -31,7 +31,7 @@ public sealed class SmartPlanTool : SmartWorkflowToolBase<SmartPlanArgs>
     protected override string RoleName => "planner";
     protected override bool RequiresLocationContext => false; // planning is conceptual
     protected override IReadOnlyList<string>? FallbackModelIds =>
-        new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };
+        new[] { "deepseek/deepseek-flash" };
 
     /// <summary>Planner is read-only. The descriptor and runtime capability set must agree.</summary>
     protected override string? AllowedTools =>

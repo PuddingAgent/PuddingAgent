@@ -246,7 +246,7 @@ public sealed class SmartWorkflowContractTests
         Assert.AreEqual(3, recorder.CallCount);
         using var fallbackArguments = JsonDocument.Parse(recorder.ArgumentsJson!);
         Assert.AreEqual(
-            "deepseek/deepseek-v4-pro",
+            "deepseek/deepseek-flash",
             fallbackArguments.RootElement.GetProperty("model").GetString());
     }
 

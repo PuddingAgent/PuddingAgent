@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -34,7 +34,7 @@ public sealed class SmartExploreTool : SmartWorkflowToolBase<SmartExploreArgs>
 
     protected override string RoleName => "explorer";
     protected override IReadOnlyList<string>? FallbackModelIds =>
-        new[] { "deepseek/deepseek-v4-flash" };
+        new[] { "deepseek/deepseek-flash" };
     protected override string? AllowedTools =>
         "file_read,file_search,code_outline,search_grep,list_dir,project_map," +
         "code_explore,code_summary,code_symbol_search,code_callers,code_callees," +

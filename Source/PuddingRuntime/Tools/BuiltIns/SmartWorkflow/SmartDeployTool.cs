@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -28,7 +28,7 @@ public sealed class SmartDeployTool : SmartWorkflowToolBase<SmartDeployArgs>
 
     protected override string RoleName => "deployer";
     protected override IReadOnlyList<string>? FallbackModelIds =>
-        new[] { "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash" };
+        new[] { "deepseek/deepseek-flash" };
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
         SmartDeployArgs args, ToolExecutionContext context, CancellationToken ct)
