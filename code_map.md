@@ -633,3 +633,7 @@ Task scheduler effective-dispatch closure (2026-09-01 proposed)
 首轮实现与验证：`Docs/Reports/PuddingAgent首轮修复与验证-2026-09-05.md`。新增 `Source/PuddingPlatform/Services/Scheduling/LegacyTaskExecutionProbe.cs`，由 Tracker/Repair 与完成结算共用精确 Command→latest Run 解析；`ExecutionRunCoordinatorMonitorTests.cs` 覆盖监视异常取消；`TestScripts/test_deepseek_cache_hitrate.py` 覆盖完整北京时间日→UTC 边界。产品部署与性能对照仍待验收。
 
 `Docs/Reports/PuddingAgent效率与代码审计-2026-09-05.md`：TaskExecutionTracker legacy claim → canonical terminal、FilePatchTool schema/缺字段语义、useSessionEventConnection 鉴权重试、SubAgentConversationProjectionWorker/FileSubAgentRunStore 增量回放边界，以及 ExecutionRunCoordinator monitor fault。报告附七日指标与验证结果；这些是诊断发现，尚未标记为修复或产品验收完成。
+
+## 2026-09-18 FastRouter 本机资源池配置
+
+`D:\data\config\llm.providers.json` 新增 `fastrouter` 下的 `gpt-6` / `gpt-6-astra`，Responses 协议，1050000 上下文 / 128000 输出。仅运行时配置变更，待 Core 重启加载；映射和验证边界见 [配置记录](Docs/Reports/FastRouter资源池配置-2026-09-18.md)。
