@@ -62,3 +62,7 @@ Responses 工具闭环采用与当前 Gateway 相同的核心字段：`stream=tr
 当前调用配置：服务商 fastrouter，模型 gpt-6-astra，协议 responses，Base URL保持 https://fastrouter.cloud/v1。原资源池已经包含该配置，无须改协议或重启来应用服务商端权限变更。本次未编辑运行时配置、替换模型绑定或重启Core。
 
 模型列表请求ID：12f9ea8d-aef2-43d4-8af9-54389bb82e53；astra工具调用：1aa06d35-a256-445e-b77a-b5dbcb91f0c6；astra工具回传：046ca2eb-855f-43a2-9c0f-32462bb08ea8；gpt-6失败：854de406-49ac-4505-9456-222b8d51be04。脱敏证据：忽略目录 temp/fastrouter-gpt6-retest-20260918.json。
+
+## 最终模型清理（2026-09-18 17:22）
+
+按用户要求，从本机 llm.providers.json 的 fastrouter.models 删除唯一 gpt-6 条目，仅保留 gpt-6-astra。修改前备份至忽略目录temp；JSON回读及结构比较确认仅删除该模型，其余字段完全不变。未修改Agent绑定或重启Core；运行时内存模型目录需下次Core重启或资源池保存触发Reload后同步。

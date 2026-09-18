@@ -645,3 +645,7 @@ Task scheduler effective-dispatch closure (2026-09-01 proposed)
 ## 2026-09-18 FastRouter GPT-6 Astra 复测通过
 
 服务商更新配置后，`gpt-6-astra` 已通过 Responses SSE 工具调用及结果回传，`gpt-6` 仍404；当前应选择完整ID gpt-6-astra。原有资源池协议不变，未重启或执行产品内会话验收。见[复测记录](Docs/Reports/FastRouter资源池配置-2026-09-18.md)。
+
+## 2026-09-18 FastRouter 最终模型清单
+
+按用户要求，本机 fastrouter 资源池仅保留已实测成功的 gpt-6-astra，删除不可用的 gpt-6。备份与校验见[配置记录](Docs/Reports/FastRouter资源池配置-2026-09-18.md)。
