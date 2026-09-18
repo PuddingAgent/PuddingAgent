@@ -178,6 +178,9 @@ public sealed class GoalSettlementWorker(
             Scope = GoalVerificationScopes.WorkUnit,
             WorkingDirectory = workingDirectory,
             TimeoutSeconds = _options.CheckTimeoutSeconds,
+            // G92-1 S1-c（片 3）：text-assertion 的判据随候选携带（canonical Turn 终态 reply）；
+            // null 表示不可得 ⇒ runner 产出终态 failed（evidence_missing），不回 pending。
+            FinalAssistantReply = candidate.FinalAssistantReply,
         };
 
         try

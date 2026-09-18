@@ -50,6 +50,12 @@ public sealed record GoalSettlementCandidate
     /// <summary>G92-1 S1-a：验收合同来源（goal_acceptance_contracts.source）；合同行缺失时为 null。</summary>
     public string? AcceptanceContractSource { get; init; }
 
+    /// <summary>
+    /// G92-1 S1-c（片 3）：canonical Turn 终态的最终 assistant 输出（turn.completed 的 payload.reply）。
+    /// 事件缺失 / 非法 JSON / 缺 reply 字段 ⇒ null（不可得），由结算侧按 evidence_missing 终态失败。
+    /// </summary>
+    public GoalFinalAssistantReply? FinalAssistantReply { get; init; }
+
     public bool HasPendingExecutionFacts { get; init; }
     public bool EvidenceComplete { get; init; }
     public string? RunId { get; init; }
@@ -237,6 +243,15 @@ public sealed class GoalSettlementStore(
                 (failureCode, failureMessage) = ExtractTurnFailure(terminalPayload);
             }
 
+            // G92-1 S1-c（片 3）：canonical Turn 终态 reply 随候选一次性携带（只读查询；
+            // 解析容错：非法 JSON / 缺 reply ⇒ null，绝不抛异常中断结算扫描）。
+            var finalAssistantReply = await LoadFinalAssistantReplyAsync(
+                db,
+                goal.CurrentConversationId,
+                iteration.TurnId,
+                turn.TerminalSequence.Value,
+                ct);
+
             results.Add(new GoalSettlementCandidate
             {
                 GoalIterationId = iteration.GoalIterationId,
@@ -267,6 +282,8 @@ public sealed class GoalSettlementStore(
                 CheckReports = GoalVerificationPersistence.ReadReports(checkRecords),
                 // G92-1 S1-a：合同行已随本候选一次性读取，来源随行携带，不新增第二次真值查询。
                 AcceptanceContractSource = contract?.Source,
+                // G92-1 S1-c（片 3）：canonical Turn 终态 reply 随候选携带。
+                FinalAssistantReply = finalAssistantReply,
                 HasPendingExecutionFacts = hasPending,
                 EvidenceComplete = evidenceComplete,
                 RunId = execution?.RunId,
@@ -280,6 +297,65 @@ public sealed class GoalSettlementStore(
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// G92-1 S1-c（片 3）：按 (conversationId, turnId) 读取 canonical Turn 终态（turn.completed）
+    /// 的最终 assistant 输出。取 Sequence <= terminalSequence 的最后一条；事件缺失或 payload
+    /// 解析失败（非法 JSON / 缺 reply / 非 string）⇒ null（不可得）。只读、容错，
+    /// 任何数据异常都不允许中断结算扫描。
+    /// </summary>
+    private static async Task<GoalFinalAssistantReply?> LoadFinalAssistantReplyAsync(
+        PlatformDbContext db,
+        string? conversationId,
+        string turnId,
+        long terminalSequence,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(conversationId) || string.IsNullOrWhiteSpace(turnId))
+            return null;
+
+        var terminalEvent = await db.ConversationEvents.AsNoTracking()
+            .Where(item => item.ConversationId == conversationId
+                && item.TurnId == turnId
+                && item.Type == ConversationEventTypes.TurnCompleted
+                && item.Sequence <= terminalSequence)
+            .OrderByDescending(item => item.Sequence)
+            .FirstOrDefaultAsync(ct);
+        if (terminalEvent is null)
+            return null;
+
+        var reply = TryReadReplyText(terminalEvent.Payload);
+        if (reply is null)
+            return null;
+
+        return new GoalFinalAssistantReply
+        {
+            TurnId = terminalEvent.TurnId,
+            Sequence = terminalEvent.Sequence,
+            Text = reply,
+        };
+    }
+
+    /// <summary>turn.completed payload 的 reply 提取；非法 JSON / 非对象 / 缺 reply / 非 string ⇒ null。</summary>
+    private static string? TryReadReplyText(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+            return null;
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                return null;
+            if (!root.TryGetProperty("reply", out var reply) || reply.ValueKind != JsonValueKind.String)
+                return null;
+            return reply.GetString();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static (string? Code, string? Message) ExtractTurnFailure(string? payload)

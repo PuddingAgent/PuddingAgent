@@ -131,6 +131,27 @@ public sealed record GoalCheckContext
 
     /// <summary>单次检查的 deadline；到期应产生 waiting 报告而不是失败。</summary>
     public int? TimeoutSeconds { get; init; }
+
+    /// <summary>
+    /// G92-1 S1-c（片 3）：canonical Turn 终态的最终 assistant 输出；null 表示不可得。
+    /// 仅 text-assertion 检查消费：不可得时必须产出终态 failed（evidence_missing），不得回 pending。
+    /// </summary>
+    public GoalFinalAssistantReply? FinalAssistantReply { get; init; }
+}
+
+/// <summary>
+/// G92-1 S1-c（片 3）：canonical Turn 终态的最终 assistant 输出（text-assertion 的证据载体）。
+/// <see cref="Text"/> 为原文：不 Trim、不做 Unicode 归一，与 <see cref="GoalCheckSpec.ExpectedText"/>
+/// 做 ordinal 精确比较（D1）。来源为 turn.completed 事件的 payload.reply（写入点 TurnExecutorAdapter）。
+/// </summary>
+public sealed record GoalFinalAssistantReply
+{
+    public required string TurnId { get; init; }
+
+    public required long Sequence { get; init; }
+
+    /// <summary>最终 assistant 输出原文。</summary>
+    public required string Text { get; init; }
 }
 
 /// <summary>ADR-092 §6.2：verification/check 持久工作项的生命周期状态。</summary>

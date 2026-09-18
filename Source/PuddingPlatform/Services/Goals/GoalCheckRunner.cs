@@ -134,6 +134,13 @@ public sealed class GoalCheckRunner(
         TimeSpan timeout,
         CancellationToken ct)
     {
+        // G92-1 S1-c（片 3）：纯文本断言分支，必须在 WorkingDirectory 门禁之前分派——
+        // 它不建命令、不经准入、不启进程、不需要工作目录；无 Workdir 环境也必须产出终态报告。
+        if (string.Equals(spec.Kind, GoalVerificationSpecKinds.TextAssertion, StringComparison.Ordinal))
+        {
+            return EvaluateTextAssertion(spec, context);
+        }
+
         if (string.IsNullOrWhiteSpace(context.WorkingDirectory))
         {
             return FailedReport(
@@ -364,6 +371,38 @@ public sealed class GoalCheckRunner(
             summary,
             null,
             null);
+    }
+
+    /// <summary>
+    /// G92-1 S1-c（片 3）：text-assertion 只读判定——canonical Turn 终态的最终 assistant 输出
+    /// 与 spec.ExpectedText 做 ordinal 精确比较；拒绝 contains、不 Trim、不做 Unicode 归一（D1）。
+    /// 终态回复不可得 ⇒ 终态 failed（evidence_missing），绝不回 pending/waiting（否则检查永不收敛）。
+    /// </summary>
+    private static GoalCheckReport EvaluateTextAssertion(GoalCheckSpec spec, GoalCheckContext context)
+    {
+        var reply = context.FinalAssistantReply;
+        if (reply is null)
+        {
+            return FailedReport(
+                spec,
+                GoalCheckFailureCodes.EvidenceMissing,
+                "The canonical turn's final assistant output was unavailable; the text assertion cannot be evaluated (terminal failure, no retry).");
+        }
+
+        var evidenceRef = $"assistant-output:{reply.TurnId}@{reply.Sequence}";
+        var matched = string.Equals(spec.ExpectedText, reply.Text, StringComparison.Ordinal);
+        return BuildReport(
+            spec,
+            matched ? GoalCriterionResultStatuses.Passed : GoalCriterionResultStatuses.Failed,
+            [evidenceRef],
+            null,
+            null,
+            null,
+            null,
+            null,
+            matched
+                ? null
+                : "The final assistant output does not exactly equal the expected text (ordinal; no trim, no contains).");
     }
 
     private async Task<ProcessWait> WaitForExitAsync(
