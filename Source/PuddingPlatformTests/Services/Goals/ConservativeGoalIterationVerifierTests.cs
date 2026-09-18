@@ -87,7 +87,8 @@ public sealed class ConservativeGoalIterationVerifierTests
         bool pendingFacts = false,
         IReadOnlyList<GoalCriterion>? criteria = null,
         IReadOnlyList<GoalCheckSpec>? checks = null,
-        IReadOnlyList<GoalCheckReport>? reports = null) => new()
+        IReadOnlyList<GoalCheckReport>? reports = null,
+        string? assistantOutputTurnId = null) => new()
     {
         GoalRunId = "goal-1",
         ActivationEpoch = 1,
@@ -108,6 +109,7 @@ public sealed class ConservativeGoalIterationVerifierTests
         Criteria = criteria ?? [],
         Checks = checks ?? [],
         CheckReports = reports ?? [],
+        AssistantOutputTurnId = assistantOutputTurnId,
     };
 
     private static readonly GoalCriterion[] RequiredCriteria = [Criterion("build"), Criterion("test")];
@@ -530,4 +532,197 @@ public sealed class ConservativeGoalIterationVerifierTests
         Assert.AreEqual(1, decision.UnmetCriteria.Count);
         StringAssert.Contains(decision.UnmetCriteria[0], "artifact-present: check_not_declared");
     }
+
+    // ---------------- G92-1 S1-c（片 5 接线）端到端回归 ----------------
+    // 片 5 缺口：verifier 调用 GoalCheckEvidencePolicy.Evaluate 时未传 assistantOutputTurnId
+    // ⇒ text-assertion 永远 fail-closed。修复链：GoalSettlementCandidate.FinalAssistantReply
+    // → ToCapsule().AssistantOutputTurnId → verifier 调用点 → policy 的 assistant-output 证据
+    // 绑定校验。以下测试锁全链接线。policy 单元行为（前缀/turnId 匹配矩阵）由
+    // GoalCheckEvidencePolicyTextAssertionTests 覆盖，runner 的 D1 文本精确比较由
+    // GoalCheckTextAssertionRunnerTests 覆盖——此处不重复，只锁「接线不断」。
+
+    [TestMethod]
+    public async Task TextAssertion_WithBoundAssistantOutputTurnId_CompletesThroughVerifier()
+    {
+        var verifier = new ConservativeGoalIterationVerifier();
+
+        var decision = await verifier.VerifyAsync(Capsule(
+            taskStatus: "Completed",
+            assistantOutputTurnId: "turn-1",
+            criteria: [Criterion("reply-ok")],
+            checks: [Spec("reply-ok", GoalVerificationSpecKinds.TextAssertion, expectedTests: null)],
+            reports:
+            [
+                Report(
+                    "reply-ok",
+                    GoalVerificationSpecKinds.TextAssertion,
+                    evidence: ["assistant-output:turn-1@7"],
+                    executed: null, passed: null, failed: null),
+            ]));
+
+        Assert.AreEqual(GoalVerificationVerdict.Complete, decision.Verdict);
+        Assert.AreEqual(
+            GoalSettlementDispositions.Complete,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
+    }
+
+    [TestMethod]
+    public async Task TextAssertion_WithoutAssistantOutputTurnId_FailsClosedWithEvidenceMissing()
+    {
+        var verifier = new ConservativeGoalIterationVerifier();
+
+        // capsule.AssistantOutputTurnId == null（终态 reply 不可得）⇒ fail-closed：
+        // 终态 failed(evidence_missing)，不回 pending、不静默放行、不是 wait。
+        var decision = await verifier.VerifyAsync(Capsule(
+            taskStatus: "Completed",
+            assistantOutputTurnId: null,
+            criteria: [Criterion("reply-ok")],
+            checks: [Spec("reply-ok", GoalVerificationSpecKinds.TextAssertion, expectedTests: null)],
+            reports:
+            [
+                Report(
+                    "reply-ok",
+                    GoalVerificationSpecKinds.TextAssertion,
+                    evidence: ["assistant-output:turn-1@7"],
+                    executed: null, passed: null, failed: null),
+            ]));
+
+        Assert.AreEqual(GoalVerificationVerdict.Blocked, decision.Verdict);
+        Assert.AreEqual("criterion_failed", decision.BlockerCode);
+        Assert.AreEqual(1, decision.CriterionResults.Count);
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, decision.CriterionResults[0].Status);
+        Assert.AreEqual(GoalCheckEvidencePolicy.EvidenceMissing, decision.CriterionResults[0].FailureCode);
+        Assert.AreEqual(1, decision.UnmetCriteria.Count);
+        StringAssert.StartsWith(decision.UnmetCriteria[0], "reply-ok: evidence_missing");
+        Assert.AreEqual(
+            GoalSettlementDispositions.Repair,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
+    }
+
+    [TestMethod]
+    public async Task TextAssertion_TurnIdOrdinalExact_RejectsContainsLikeMatches()
+    {
+        var verifier = new ConservativeGoalIterationVerifier();
+
+        // 反例 1（contains）：期望 turnId "OK" 不得被 "NOT OK" 以包含语义匹配。
+        var contains = await verifier.VerifyAsync(Capsule(
+            taskStatus: "Completed",
+            assistantOutputTurnId: "OK",
+            criteria: [Criterion("reply-ok")],
+            checks: [Spec("reply-ok", GoalVerificationSpecKinds.TextAssertion, expectedTests: null)],
+            reports:
+            [
+                Report(
+                    "reply-ok",
+                    GoalVerificationSpecKinds.TextAssertion,
+                    evidence: ["assistant-output:NOT OK@7"],
+                    executed: null, passed: null, failed: null),
+            ]));
+
+        // 反例 2（超串前缀混淆）：turn-1 不得被 turn-10 匹配。
+        var superstring = await verifier.VerifyAsync(Capsule(
+            taskStatus: "Completed",
+            assistantOutputTurnId: "turn-1",
+            criteria: [Criterion("reply-ok")],
+            checks: [Spec("reply-ok", GoalVerificationSpecKinds.TextAssertion, expectedTests: null)],
+            reports:
+            [
+                Report(
+                    "reply-ok",
+                    GoalVerificationSpecKinds.TextAssertion,
+                    evidence: ["assistant-output:turn-10@7"],
+                    executed: null, passed: null, failed: null),
+            ]));
+
+        foreach (var decision in new[] { contains, superstring })
+        {
+            Assert.AreEqual(GoalVerificationVerdict.Blocked, decision.Verdict);
+            Assert.AreEqual("criterion_failed", decision.BlockerCode);
+            Assert.AreEqual(GoalCheckEvidencePolicy.EvidenceMissing, decision.CriterionResults[0].FailureCode);
+            Assert.AreEqual(
+                GoalSettlementDispositions.Repair,
+                GoalSettlementDecisionCalculator.ComputeDisposition(decision));
+        }
+    }
+
+    [TestMethod]
+    public async Task SettlementCandidate_ToCapsule_FillsAssistantOutputTurnId_AndCompletesThroughVerifier()
+    {
+        var candidate = TextAssertionCandidate(Reply("turn-1", sequence: 7, text: "OK"));
+
+        var capsule = candidate.ToCapsule();
+        var decision = await new ConservativeGoalIterationVerifier().VerifyAsync(capsule);
+
+        // 接线锁：候选的 FinalAssistantReply.TurnId 必须原样进入胶囊（ToCapsule 填充）。
+        Assert.AreEqual("turn-1", capsule.AssistantOutputTurnId);
+        // 全链：胶囊 → verifier → policy，合规 assistant-output 证据 ⇒ Complete。
+        Assert.AreEqual(GoalVerificationVerdict.Complete, decision.Verdict);
+        Assert.AreEqual(
+            GoalSettlementDispositions.Complete,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
+    }
+
+    [TestMethod]
+    public async Task SettlementCandidate_WithoutFinalReply_FailsClosedAtVerifier()
+    {
+        // FinalAssistantReply 不可得（turn.completed 事件缺失 / payload 不可解析）⇒
+        // ToCapsule 产出 AssistantOutputTurnId=null ⇒ verifier 全链 fail-closed，绝不 Complete。
+        var candidate = TextAssertionCandidate(finalReply: null);
+
+        var capsule = candidate.ToCapsule();
+        var decision = await new ConservativeGoalIterationVerifier().VerifyAsync(capsule);
+
+        Assert.IsNull(capsule.AssistantOutputTurnId);
+        Assert.AreEqual(GoalVerificationVerdict.Blocked, decision.Verdict);
+        Assert.AreEqual("criterion_failed", decision.BlockerCode);
+        Assert.AreEqual(1, decision.CriterionResults.Count);
+        Assert.AreEqual(GoalCriterionResultStatuses.Failed, decision.CriterionResults[0].Status);
+        Assert.AreEqual(GoalCheckEvidencePolicy.EvidenceMissing, decision.CriterionResults[0].FailureCode);
+        Assert.AreEqual(
+            GoalSettlementDispositions.Repair,
+            GoalSettlementDecisionCalculator.ComputeDisposition(decision));
+    }
+
+    /// <summary>片 3：canonical Turn 终态最终 assistant 输出（turn.completed 的 payload.reply 形状）。</summary>
+    private static GoalFinalAssistantReply Reply(string turnId, long sequence, string text) => new()
+    {
+        TurnId = turnId,
+        Sequence = sequence,
+        Text = text,
+    };
+
+    /// <summary>text-assertion 单条件候选：合同/检查/报告身份一致，仅 FinalAssistantReply 可变。</summary>
+    private static GoalSettlementCandidate TextAssertionCandidate(GoalFinalAssistantReply? finalReply) => new()
+    {
+        GoalIterationId = "iter-1",
+        GoalRunId = "goal-1",
+        WorkspaceId = "ws-1",
+        ConversationId = "conv-1",
+        AgentInstanceId = "agent-1",
+        ActivationEpoch = 1,
+        AggregateVersion = 0,
+        IterationNo = 1,
+        MaxIterations = 10,
+        IterationsStarted = 1,
+        Objective = "修复全部失败测试并证明普通开发任务可继续执行",
+        ObjectiveVersion = 1,
+        TurnId = "turn-1",
+        TerminalKind = "completed",
+        TerminalSequence = 7,
+        EvidenceRefs = ["turn:turn-1:terminal:7"],
+        TaskId = "task-1",
+        TaskStatus = "Completed",
+        Criteria = [Criterion("reply-ok")],
+        Checks = [Spec("reply-ok", GoalVerificationSpecKinds.TextAssertion, expectedTests: null)],
+        CheckReports =
+        [
+            Report(
+                "reply-ok",
+                GoalVerificationSpecKinds.TextAssertion,
+                evidence: ["assistant-output:turn-1@7"],
+                executed: null, passed: null, failed: null),
+        ],
+        FinalAssistantReply = finalReply,
+        EvidenceComplete = true,
+    };
 }
