@@ -649,3 +649,7 @@ Task scheduler effective-dispatch closure (2026-09-01 proposed)
 ## 2026-09-18 FastRouter 最终模型清单
 
 按用户要求，本机 fastrouter 资源池仅保留已实测成功的 gpt-6-astra，删除不可用的 gpt-6。备份与校验见[配置记录](Docs/Reports/FastRouter资源池配置-2026-09-18.md)。
+
+## 2026-09-18 FastRouter 新增 GPT-5.6 Sol
+
+本机 fastrouter 资源池现含 gpt-6-astra、gpt-5.6-sol，均使用responses；Sol按官方文档登记1050000上下文/128000输出。备份、参数来源和加载边界见[配置记录](Docs/Reports/FastRouter资源池配置-2026-09-18.md)。

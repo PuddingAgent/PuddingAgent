@@ -66,3 +66,9 @@ Responses 工具闭环采用与当前 Gateway 相同的核心字段：`stream=tr
 ## 最终模型清理（2026-09-18 17:22）
 
 按用户要求，从本机 llm.providers.json 的 fastrouter.models 删除唯一 gpt-6 条目，仅保留 gpt-6-astra。修改前备份至忽略目录temp；JSON回读及结构比较确认仅删除该模型，其余字段完全不变。未修改Agent绑定或重启Core；运行时内存模型目录需下次Core重启或资源池保存触发Reload后同步。
+
+## 新增 GPT-5.6 Sol（2026-09-18 17:25）
+
+按用户要求，在本机 fastrouter.models 新增 gpt-5.6-sol（GPT-5.6 Sol），保留 gpt-6-astra，不恢复 gpt-6。协议responses，上下文1050000、最大输出128000；容量依据[OpenAI模型文档](https://developers.openai.com/api/docs/models/gpt-5.6-sol)。未强制默认思考档位或改变默认路由；仅登记此前已实测的文本、流式和工具能力以及推理/长上下文标签，不推断FastRouter视觉透传与价格。此前本任务中Sol的Responses工具闭环已通过；本轮仅配置写入与回读，未重复远端调用或宣称服务商容量压测。
+
+原文件已备份至忽略目录temp，结构比较确认只增加该条目。直接文件编辑需Core重启或资源池保存触发Reload后同步运行时快照；本轮未重启。
