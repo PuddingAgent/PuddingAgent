@@ -127,6 +127,21 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
                 $"The bound Task is {capsule.TaskStatus}.",
                 capsule);
         }
+        else if (allRequiredPassed && goalScope && capsule.IsEngineeringGatesOnly)
+        {
+            // G92-1 S1-a（ADR-092 决策 4/6）：合同覆盖门。纯工程门禁合同（bounded_planning，
+            // objective 未声明任何目标级证据）即使全部必需条件通过也不得完成：build/test 绿
+            // 不能兜底业务条件，必须先做一次有界合同整理，把 objective 的必要条件映射进合同。
+            // 插入位置纪律：位于全部失败/等待/阻塞分支之后、Complete 分支之前，不得上移。
+            decision = Blocked(
+                "contract_coverage_insufficient",
+                "The acceptance contract covers engineering gates only and does not map the objective's goal-level conditions; completion cannot be claimed from build/test evidence alone.",
+                capsule) with
+            {
+                NextAction = "In this iteration, run one bounded contract refinement: derive the versioned goal-level criteria and their check definitions from the objective, then re-run verification.",
+                UnmetCriteria = unmetCriteria,
+            };
+        }
         else if (allRequiredPassed && goalScope)
         {
             decision = new GoalVerificationDecision

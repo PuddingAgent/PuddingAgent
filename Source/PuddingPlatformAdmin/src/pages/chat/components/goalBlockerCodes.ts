@@ -59,6 +59,11 @@ export const GOAL_BLOCKER_CODES: Record<string, GoalBlockerDescriptor> = {
     action: '等待依赖满足后继续；若依赖已失效需人工处理',
     needsUser: false,
   },
+  contract_coverage_insufficient: {
+    title: '合同覆盖不足：验收合同只覆盖工程门禁，未映射目标级必要条件',
+    action: '在本迭代做一次有界合同整理：补齐版本化目标级条件与检查定义后重跑验证',
+    needsUser: false,
+  },
 };
 
 /** 未知受阻码的通用兜底（展示时必须连同原始码一起显示）。 */

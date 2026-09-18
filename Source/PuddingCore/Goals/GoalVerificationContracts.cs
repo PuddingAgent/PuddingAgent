@@ -49,6 +49,37 @@ public sealed record GoalEvidenceCapsule
     /// 为 0 时本次裁决可升级为 goal 作用域。由结算层从持久 Plan 读取后填入。
     /// </summary>
     public int? RemainingWorkUnits { get; init; }
+
+    /// <summary>
+    /// G92-1 S1-a：本次裁决依据的验收合同来源（goal_acceptance_contracts.source）。
+    /// 取值见 <see cref="GoalAcceptanceContractSources"/>；null 表示合同行缺失或来源未知
+    /// （此时 Criteria/Checks 亦为空，裁决会先走 acceptance_contract_missing / check_contract_missing）。
+    /// </summary>
+    public string? AcceptanceContractSource { get; init; }
+
+    /// <summary>
+    /// G92-1 S1-a：合同是否为纯工程门禁（objective 未声明任何目标级证据）。
+    /// 仅当来源精确等于 bounded_planning 时为真；未知来源（null/其他受控值）不视为纯门禁、
+    /// 由既有判定分支裁决——覆盖门只拦「明确声明自己只覆盖工程门禁」的合同。
+    /// </summary>
+    public bool IsEngineeringGatesOnly => string.Equals(
+        AcceptanceContractSource,
+        GoalAcceptanceContractSources.BoundedPlanning,
+        StringComparison.Ordinal);
+}
+
+/// <summary>
+/// G92-1 S1-a：goal_acceptance_contracts.source 的受控词表。
+/// 与 GoalAcceptanceContractPlanner 的合同级常量（Source / SourceWithObjectiveEvidence）同值；
+/// 在 Core 侧独立声明以保持依赖方向（Core 不引用 Platform）。
+/// </summary>
+public static class GoalAcceptanceContractSources
+{
+    /// <summary>纯工程门禁合同：objective 未声明任何目标级证据（G92-1 S1-a 覆盖门的拦截对象）。</summary>
+    public const string BoundedPlanning = "bounded_planning";
+
+    /// <summary>携带 objective 显式声明证据的合同：具备目标级覆盖，完成路径保持不变。</summary>
+    public const string BoundedPlanningWithObjectiveEvidence = "bounded_planning:objective_evidence";
 }
 
 public sealed record GoalVerificationDecision

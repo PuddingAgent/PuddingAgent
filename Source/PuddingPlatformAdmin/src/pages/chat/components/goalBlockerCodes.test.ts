@@ -6,10 +6,10 @@ import {
 } from './goalBlockerCodes';
 
 /**
- * 后端可静态写入 `GoalSnapshot.BlockedCode` 的取值集合（2026-09-17 核对源码）：
+ * 后端可静态写入 `GoalSnapshot.BlockedCode` 的取值集合（2026-09-18 核对源码）：
  * - `ConservativeGoalIterationVerifier`：check_results_pending / criterion_failed /
  *   acceptance_not_verified / acceptance_contract_missing / check_contract_missing /
- *   task_blocked / task_terminal_without_completion
+ *   task_blocked / task_terminal_without_completion / contract_coverage_insufficient（G92-1 S1-a）
  *   （另有动态码 `iteration_{TerminalKind}`，无法静态登记，故不列入）
  * - `GoalSettlementStore`：no_progress_circuit_open / dependency_wait
  * - 另有 `decision.ErrorCode` 透传，属运行期动态码，同样不列入。
@@ -28,6 +28,7 @@ const BACKEND_STATIC_BLOCKER_CODES = [
   'check_contract_missing',
   'task_blocked',
   'task_terminal_without_completion',
+  'contract_coverage_insufficient',
 ];
 
 describe('goalBlockerCodes', () => {
@@ -42,6 +43,15 @@ describe('goalBlockerCodes', () => {
     expect(d).not.toEqual(UNKNOWN_GOAL_BLOCKER);
     expect(d!.title).toContain('检查');
     expect(d!.title).not.toContain('未被前端识别');
+  });
+
+  it('contract_coverage_insufficient 有专门说明，指向有界合同整理', () => {
+    const d = describeGoalBlocker('contract_coverage_insufficient');
+    expect(d).not.toBeNull();
+    expect(d).not.toEqual(UNKNOWN_GOAL_BLOCKER);
+    expect(d!.title).toContain('覆盖不足');
+    expect(d!.action).toContain('合同整理');
+    expect(d!.needsUser).toBe(false);
   });
 
   it('每个登记项都满足文案长度与语义约束', () => {

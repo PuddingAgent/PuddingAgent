@@ -56,6 +56,10 @@ public sealed record GoalSettlementCandidate
     public IReadOnlyList<GoalCheckSpec> Checks { get; init; } = [];
     /// <summary>持久检查记录中可信的 finished 报告（pending/leased/无报告一律不入）。</summary>
     public IReadOnlyList<GoalCheckReport> CheckReports { get; init; } = [];
+
+    /// <summary>G92-1 S1-a：验收合同来源（goal_acceptance_contracts.source）；合同行缺失时为 null。</summary>
+    public string? AcceptanceContractSource { get; init; }
+
     public bool HasPendingExecutionFacts { get; init; }
     public bool EvidenceComplete { get; init; }
     public string? RunId { get; init; }
@@ -90,6 +94,8 @@ public sealed record GoalSettlementCandidate
         Criteria = Criteria,
         Checks = Checks,
         CheckReports = CheckReports,
+        // G92-1 S1-a：合同来源随胶囊进入 verifier，覆盖门据它拒绝无目标级覆盖的完成。
+        AcceptanceContractSource = AcceptanceContractSource,
     };
 }
 
@@ -280,6 +286,8 @@ public sealed class GoalSettlementStore(
                 Criteria = GoalVerificationPersistence.ReadCriteria(contract?.CriteriaJson),
                 Checks = GoalVerificationPersistence.ReadChecks(contract?.ChecksJson),
                 CheckReports = GoalVerificationPersistence.ReadReports(checkRecords),
+                // G92-1 S1-a：合同行已随本候选一次性读取，来源随行携带，不新增第二次真值查询。
+                AcceptanceContractSource = contract?.Source,
                 HasPendingExecutionFacts = hasPending,
                 EvidenceComplete = evidenceComplete,
                 RunId = execution?.RunId,
