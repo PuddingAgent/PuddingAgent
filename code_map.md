@@ -641,3 +641,7 @@ Task scheduler effective-dispatch closure (2026-09-01 proposed)
 ## 2026-09-18 FastRouter 兼容性实测
 
 当前 Key 分组的 GPT-6 两个 ID 返回 model_not_found；gpt-5.6-sol 的 Responses 流式工具调用与工具回传成功，Chat Completions 亦成功。入口为 ResponsesLlmGateway 及其内嵌 ResponsesStreamParser；详见[诊断证据与调用路径](Docs/Reports/FastRouter资源池配置-2026-09-18.md)。未修改产品或替换运行时模型。
+
+## 2026-09-18 FastRouter GPT-6 Astra 复测通过
+
+服务商更新配置后，`gpt-6-astra` 已通过 Responses SSE 工具调用及结果回传，`gpt-6` 仍404；当前应选择完整ID gpt-6-astra。原有资源池协议不变，未重启或执行产品内会话验收。见[复测记录](Docs/Reports/FastRouter资源池配置-2026-09-18.md)。

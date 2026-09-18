@@ -3819,3 +3819,5 @@ A91-0复审不要只跑新增SubmitAsync用例或看code_outline：固定过滤�
 ### FastRouter 503 与模型分组不可用（2026-09-18）
 
 先按 DirectLlm REQUEST 核对实际 provider/model/protocol，再用同一 Key GET /v1/models，并以最简合成输入分别核对 /responses 和 /chat/completions。503 可能掩盖更明确的 model_not_found；当前 gpt-6/gpt-6-astra 分组无可用账户，而 gpt-5.6-sol 已通过流式工具闭环。记录上游 X-Request-Id，凭据不进日志；不把同名 fastrouter.ai 文档套用到 fastrouter.cloud。见[完整诊断与验证边界](Docs/Reports/FastRouter资源池配置-2026-09-18.md)。
+
+FastRouter后续复测（2026-09-18）：服务商更新分组后，gpt-6-astra已列入/models并通过Responses流式工具闭环；gpt-6仍model_not_found。按准确模型ID判断，勿把别名等同；服务商端权限变更无需重启Core，原配置已有astra即可选用。证据见上述配置记录的最新复测节。

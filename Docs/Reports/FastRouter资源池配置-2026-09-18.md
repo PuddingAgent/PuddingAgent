@@ -47,3 +47,18 @@ Responses 工具闭环采用与当前 Gateway 相同的核心字段：`stream=tr
 额外观察：极短合成请求的上游响应报告约4.4K输入tokens，并在 response.instructions 中附带额外默认编码助手指令。因此该服务存在请求改写，不能假定它是完全透明的转发；长期缓存与Agent行为验收需计入这部分。未采用上游返回指令作为本次执行指令。
 
 公开来源核查：[fastrouter.cloud 首页](https://fastrouter.cloud/) 链接到[其接入教程](https://my.feishu.cn/wiki/R8tvwVkgAiNzGzkyAvJcM1iWn4g)。搜索结果中的 fastrouter.ai 使用不同主机及接口路径，未确认同一服务，未据其文档推断此 Key 的模型权限；结论以 .cloud 当前接口响应为准。原始合成探针保存在忽略目录 temp/fastrouter-*-probes-20260918.json。
+
+## 服务商配置更新后的复测（2026-09-18T17:20:23.937665+08:00）
+
+此节更新此前两个GPT-6均不可用的结论：同一个Key的 `/v1/models` 现已列出 `gpt-6-astra`，仍未列出 `gpt-6`。
+
+| 模型 | 流式工具调用 | 工具结果回传 | 结论 |
+| --- | --- | --- | --- |
+| gpt-6-astra | HTTP 200，6.01秒，正确返回 compatibility_echo、call_id 和 value=OK | HTTP 200，2.88秒，最终正文 OK | 两轮均 response.completed；响应模型字段为 gpt-6-astra |
+| gpt-6 | HTTP 404 / model_not_found | 未继续 | 当前分组仍没有支持该ID的账户 |
+
+请求使用 Pudding Responses 网关格式：input_text、扁平function schema、function_call_output、stream=true、store=false、include=reasoning.encrypted_content、max_output_tokens=128000；首轮未指定思考档位，续轮使用 low 和 temperature=0.7。验证的是小规模合成工具闭环与参数接受，不代表完整Pudding会话、实际128K输出、百万上下文、全部思考档位或视觉验收。
+
+当前调用配置：服务商 fastrouter，模型 gpt-6-astra，协议 responses，Base URL保持 https://fastrouter.cloud/v1。原资源池已经包含该配置，无须改协议或重启来应用服务商端权限变更。本次未编辑运行时配置、替换模型绑定或重启Core。
+
+模型列表请求ID：12f9ea8d-aef2-43d4-8af9-54389bb82e53；astra工具调用：1aa06d35-a256-445e-b77a-b5dbcb91f0c6；astra工具回传：046ca2eb-855f-43a2-9c0f-32462bb08ea8；gpt-6失败：854de406-49ac-4505-9456-222b8d51be04。脱敏证据：忽略目录 temp/fastrouter-gpt6-retest-20260918.json。
