@@ -20,7 +20,12 @@ public sealed class ConservativeGoalIterationVerifier : IGoalIterationVerifier
         ArgumentNullException.ThrowIfNull(capsule);
 
         var criteria = capsule.Criteria;
-        var evidence = GoalCheckEvidencePolicy.Evaluate(capsule.Checks, capsule.CheckReports);
+        // G92-1 S1-c（片5）：text-assertion 的证据必须绑定本 canonical Turn 的终态 assistant 输出；
+        // capsule.AssistantOutputTurnId 为 null（reply 不可得）时，policy 对该 kind fail-closed。
+        var evidence = GoalCheckEvidencePolicy.Evaluate(
+            capsule.Checks,
+            capsule.CheckReports,
+            capsule.AssistantOutputTurnId);
         var results = evidence.ToCriterionResults();
 
         // T5：未满足清单只从真实证据收集（归一后的受控检查报告 + 合同必需条件差集）；

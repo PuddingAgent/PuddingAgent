@@ -31,18 +31,24 @@ public static class GoalCheckEvidencePolicy
     /// <summary>按检查定义归一报告集合：结果只由“声明过的检查”产生，未声明的报告不计入通过。</summary>
     public static IReadOnlyList<GoalCheckReport> Evaluate(
         IReadOnlyList<GoalCheckSpec> checks,
-        IReadOnlyList<GoalCheckReport>? reports)
+        IReadOnlyList<GoalCheckReport>? reports,
+        string? assistantOutputTurnId = null)
     {
         if (checks is null || checks.Count == 0)
             return [];
 
         return checks
-            .Select(check => EvaluateOne(check, FindReport(check.CheckId, reports)))
+            .Select(check => EvaluateOne(check, FindReport(check.CheckId, reports), assistantOutputTurnId))
             .ToList();
     }
 
     /// <summary>归一单个检查：只可能把 passed 降级为 invalidated/failed/waiting，绝不把失败升级为通过。</summary>
-    public static GoalCheckReport EvaluateOne(GoalCheckSpec check, GoalCheckReport? report)
+    /// <param name="assistantOutputTurnId">text-assertion 的参考 turnId（取自 context.FinalAssistantReply.TurnId）；
+    /// null/空表示上下文不可得，任何 assistant-output 证据都不得放行。</param>
+    public static GoalCheckReport EvaluateOne(
+        GoalCheckSpec check,
+        GoalCheckReport? report,
+        string? assistantOutputTurnId = null)
     {
         ArgumentNullException.ThrowIfNull(check);
 
@@ -113,6 +119,7 @@ public static class GoalCheckEvidencePolicy
         var isSemantic = string.Equals(kind, GoalVerificationSpecKinds.Semantic, StringComparison.Ordinal);
         var isExternal = string.Equals(kind, GoalVerificationSpecKinds.External, StringComparison.Ordinal);
         var isFileEvidence = string.Equals(kind, GoalVerificationSpecKinds.FileEvidence, StringComparison.Ordinal);
+        var isTextAssertion = string.Equals(kind, GoalVerificationSpecKinds.TextAssertion, StringComparison.Ordinal);
         var isExecutedKind = isBuildLike || isTest || isPostcondition || isArtifact;
 
         // 3.5) file-evidence：证据引用必须指向文件证据（file: 前缀），而非进程/报告引用。
@@ -121,6 +128,17 @@ public static class GoalCheckEvidencePolicy
         {
             return Downgrade(report, GoalCriterionResultStatuses.Failed, EvidenceMissing,
                 "File evidence report carries no file: evidence reference.");
+        }
+
+        // 3.6) text-assertion：证据必须引用本 canonical turn 的最终 assistant 输出
+        //      （assistant-output:{turnId}@{sequence}）；调用方未提供参考 turnId（FinalAssistantReply
+        //      不可得）时不放行任何 assistant-output 证据（fail closed）。
+        if (isTextAssertion
+            && (string.IsNullOrEmpty(assistantOutputTurnId)
+                || !report.EvidenceRefs.Any(item => IsAssistantOutputEvidenceBoundToTurn(item, assistantOutputTurnId!))))
+        {
+            return Downgrade(report, GoalCriterionResultStatuses.Failed, EvidenceMissing,
+                "Text assertion report carries no assistant-output evidence bound to this turn.");
         }
 
         // 4) 必须能回溯到本次真实执行：canonical 调用引用 + 本次新生成的运行报告。
@@ -206,8 +224,28 @@ public static class GoalCheckEvidencePolicy
         if (isFileEvidence)
             return report;
 
+        // 10) text-assertion：纯文本核验无进程调用，不需要 InvocationId/ReportRef/ExitCode；
+        // 证据引用已在 3.6 校验绑定本 canonical turn 的 assistant 输出，不落入未知 kind 拒绝。
+        if (isTextAssertion)
+            return report;
+
         return Downgrade(report, GoalCriterionResultStatuses.Failed, UnsupportedCheckKind,
             $"Check kind '{check.Kind}' is not a supported verification kind.");
+    }
+
+    /// <summary>assistant-output:{turnId}@{sequence} 形态且 turnId 与参考来源一致（ordinal）。</summary>
+    private static bool IsAssistantOutputEvidenceBoundToTurn(string evidenceRef, string expectedTurnId)
+    {
+        const string prefix = "assistant-output:";
+        if (!evidenceRef.StartsWith(prefix, StringComparison.Ordinal))
+            return false;
+
+        var remainder = evidenceRef[prefix.Length..];
+        var separator = remainder.IndexOf('@');
+        if (separator <= 0)
+            return false;
+
+        return string.Equals(remainder[..separator], expectedTurnId, StringComparison.Ordinal);
     }
 
     private static GoalCheckReport? FindReport(string checkId, IReadOnlyList<GoalCheckReport>? reports)

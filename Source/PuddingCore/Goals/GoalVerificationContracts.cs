@@ -39,6 +39,14 @@ public sealed record GoalEvidenceCapsule
     public IReadOnlyList<GoalCheckSpec> Checks { get; init; } = [];
 
     /// <summary>
+    /// G92-1 S1-c（片5）：text-assertion 的证据锚 —— 本 canonical Turn 终态最终 assistant 输出的 TurnId。
+    /// null 表示该上下文不可得（终态 turn.completed 事件缺失 / payload 不可解析），
+    /// 此时任何 assistant-output 证据都不得放行（policy 对该 kind fail-closed）。
+    /// 注意：不可直接复用 <see cref="TurnId"/> —— 后者恒非空，无法表达「reply 不可得」。
+    /// </summary>
+    public string? AssistantOutputTurnId { get; init; }
+
+    /// <summary>
     /// G92-1 S1-a：本次裁决依据的验收合同来源（goal_acceptance_contracts.source）。
     /// 取值见 <see cref="GoalAcceptanceContractSources"/>；null 表示合同行缺失或来源未知
     /// （此时 Criteria/Checks 亦为空，裁决会先走 acceptance_contract_missing / check_contract_missing）。

@@ -89,6 +89,9 @@ public sealed record GoalSettlementCandidate
         CheckReports = CheckReports,
         // G92-1 S1-a：合同来源随胶囊进入 verifier，覆盖门据它拒绝无目标级覆盖的完成。
         AcceptanceContractSource = AcceptanceContractSource,
+        // G92-1 S1-c（片5）：text-assertion 证据锚（终态 reply 的 turnId）；
+        // reply 不可得时为 null ⇒ policy 对该 kind fail-closed，不放行任何 assistant-output 证据。
+        AssistantOutputTurnId = FinalAssistantReply?.TurnId,
     };
 }
 
