@@ -39,9 +39,11 @@ public sealed class TerminalProcessManagerOutputDrainTests
             PuddingDataPaths.FromRoot(root));
         try
         {
-            // The command travels through `cmd /d /s /c` via ProcessStartInfo.ArgumentList, where
-            // embedded quotes get mangled (verified: `call "path"` degenerated into a cmd error).
-            // Therefore use a quote-free inline cmd command: parenthesised for-loop plus `&` chaining.
+            // NOTE (2026-09-19): the historical reason for avoiding quotes here — ArgumentList mangling
+            // embedded quotes into \" — has been fixed at the root in TerminalProcessManager (the command
+            // now travels verbatim through ProcessStartInfo.Arguments with /d /s /c). The quote-free for-loop
+            // form is kept because it is still the cheapest way to emit thousands of lines in one shot;
+            // see QuotedPipeCommand_SurvivesCmdWrapper below for the quote-handling regression lock.
             var command = OperatingSystem.IsWindows()
                 ? $"(for /L %i in (1,1,{FillerLines}) do @echo filler-%i) & echo {Marker}"
                 : $"seq 1 {FillerLines}; echo {Marker}";
@@ -83,6 +85,68 @@ public sealed class TerminalProcessManagerOutputDrainTests
                 tail.Contains(Marker, StringComparison.Ordinal),
                 $"The last stdout line is not readable from the tail window (totalLines={totalLines}, "
                 + $"tailChars={tail.Length}).");
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Regression lock (2026-09-19; card f1d45a15 item 2 — “管道表达式内嵌引号时报拒绝访问”).
+    ///
+    /// Background: the Windows launch path passed the whole command as a single
+    /// <see cref="ProcessStartInfo.ArgumentList"/> entry. .NET escapes such arguments with CRT/MSVCRT
+    /// rules, so an inner <c>"</c> became <c>\"</c> — but cmd.exe only understands <c>""</c> / <c>^"</c>
+    /// escaping, never <c>\"</c>. Result: every quoted command was silently destroyed — non-zero exit
+    /// with completely empty stdout/stderr (verified: `echo "a b" | findstr "a"` → exit=1 and a 0-byte
+    /// redirection file, so even the diagnostic message was lost). Bisecting showed the trigger is the
+    /// quote, not the pipe: the same command without quotes worked on both launch paths.
+    ///
+    /// The sibling test worked around it by avoiding quotes. This test pins the root fix: the command is
+    /// now passed verbatim through <see cref="ProcessStartInfo.Arguments"/> with <c>/d /s /c</c>, where
+    /// <c>/s</c> strips the outer quote pair and leaves inner quotes untouched.
+    /// </summary>
+    [TestMethod]
+    public async Task QuotedPipeCommand_SurvivesCmdWrapper()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pudding-terminal-quote", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        using var manager = new TerminalProcessManager(
+            NullLogger<TerminalProcessManager>.Instance,
+            PuddingDataPaths.FromRoot(root));
+        try
+        {
+            var command = OperatingSystem.IsWindows()
+                ? "echo \"alpha beta\" | findstr \"alpha\""
+                : "echo \"alpha beta\" | grep \"alpha\"";
+
+            var info = await manager.StartAsync("session-quote", command, root);
+
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            int? exitCode = null;
+            var text = string.Empty;
+            var totalLines = 0;
+            while (DateTime.UtcNow < deadline)
+            {
+                var snapshot = await manager.ReadOutputAsync(info.ProcessId, 0, 200, null, CancellationToken.None);
+                if (snapshot is null) break;
+                totalLines = snapshot.TotalLines;
+                text = string.Join("\n", snapshot.Lines);
+                if (snapshot.Process.ExitCode.HasValue)
+                {
+                    exitCode = snapshot.Process.ExitCode;
+                    break;
+                }
+                await Task.Delay(150);
+            }
+
+            Assert.IsTrue(exitCode.HasValue, $"The command never terminated. Output='{text}'.");
+            Assert.AreEqual(0, exitCode,
+                $"A quoted, piped command must survive the cmd wrapper. Output='{text}'.");
+            Assert.IsTrue(totalLines > 0, "The quoted command produced no output at all.");
+            Assert.IsTrue(text.Contains("alpha", StringComparison.Ordinal),
+                $"Expected the echoed payload in stdout; got '{text}'.");
         }
         finally
         {

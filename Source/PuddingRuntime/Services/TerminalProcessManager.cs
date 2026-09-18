@@ -78,10 +78,17 @@ public sealed class TerminalProcessManager : ITerminalProcessManager, IDisposabl
 
         if (OperatingSystem.IsWindows())
         {
-            psi.ArgumentList.Add("/d");
-            psi.ArgumentList.Add("/s");
-            psi.ArgumentList.Add("/c");
-            psi.ArgumentList.Add(command);
+            // ★ 必须用 Arguments 原样传递，不得改回 ArgumentList（实测依据，勿删）：
+            //   .NET 的 ArgumentList 在 Windows 上按 CRT/MSVCRT 规则拼接命令行，会把命令行内部的
+            //   `"` 转义成 `\"`；但 cmd.exe 的引号语法只认 `""` 与 `^"`，**不认 `\"`**
+            //   ⇒ 任何含引号的命令都会被静默破坏：退出码非 0 且 stdout/stderr 全空。
+            //   实测（2026-09-19，卡 f1d45a15 第 2 项）：`echo "a b" | findstr "a"` 经 ArgumentList
+            //   传递后 exit_code=1 且重定向文件 0 字节（诊断信息完全丢失）；同一命令经 shell(pwsh)
+            //   执行成功（exit=0）。二分实验证实是**引号**而非管道触发：无引号版本在两种路径下均成功。
+            //   改用 Arguments 原样传递（.NET 不再做 CRT 转义），配合 /s（剥离最外层引号后按原样执行，
+            //   不额外处理内部引号）⇒ 含引号命令可正常执行（实测 exit=0 且输出正确）。
+            //   /d 跳过 AutoRun 脚本。
+            psi.Arguments = "/d /s /c \"" + command + "\"";
         }
         else
         {
