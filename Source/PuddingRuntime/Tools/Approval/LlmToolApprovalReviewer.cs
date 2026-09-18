@@ -45,6 +45,12 @@ public interface IToolApprovalLlmClient
 public sealed record ToolApprovalLlmProfile
 {
     public required string ProviderId { get; init; }
+
+    /// <summary>
+    /// 审查档案标识：配置显式提供 ProfileId 时为该值；仅配置 ProviderId+ModelId 时
+    /// 由解析器确定性合成为 "{providerId}/{modelId}"。仅作日志/追踪标识，
+    /// 不代表 llm.providers.json 的 profiles 中存在同名条目。
+    /// </summary>
     public required string ProfileId { get; init; }
     public required string ModelId { get; init; }
     public string? AgentInstanceId { get; init; }
@@ -101,8 +107,9 @@ public sealed class ToolApprovalRuntimeOptions
 }
 
 /// <summary>
-/// Strict option-backed resolver. Missing provider/profile/model means no approval LLM;
-/// it deliberately does not fall back to conscious, subconscious, or platform defaults.
+/// Strict option-backed resolver. Missing provider or model means no approval LLM;
+/// ProfileId is optional and synthesized as "provider/model" when absent (B1).
+/// It deliberately does not fall back to conscious, subconscious, or platform defaults.
 /// </summary>
 public sealed class StrictConfiguredToolApprovalLlmProfileResolver : IToolApprovalLlmProfileResolver
 {
@@ -166,8 +173,10 @@ public sealed class StrictConfiguredToolApprovalLlmProfileResolver : IToolApprov
             }
         }
 
+        // B1：ProviderId+ModelId 齐备即可解析，ProfileId 不再是硬性前置
+        // （生产 profiles 为空时本路径曾永不可达）。语义仍 fail-closed：
+        // 服务存在但路由未注册 → null（依赖等待），绝不回退平台默认模型。
         if (string.IsNullOrWhiteSpace(options.ProviderId)
-            || string.IsNullOrWhiteSpace(options.ProfileId)
             || string.IsNullOrWhiteSpace(options.ModelId))
         {
             return Task.FromResult<ToolApprovalLlmProfile?>(null);
@@ -179,11 +188,15 @@ public sealed class StrictConfiguredToolApprovalLlmProfileResolver : IToolApprov
             return Task.FromResult<ToolApprovalLlmProfile?>(null);
         }
 
+        var providerId = options.ProviderId.Trim();
+        var modelId = options.ModelId.Trim();
         return Task.FromResult<ToolApprovalLlmProfile?>(new ToolApprovalLlmProfile
         {
-            ProviderId = options.ProviderId.Trim(),
-            ProfileId = options.ProfileId.Trim(),
-            ModelId = options.ModelId.Trim(),
+            ProviderId = providerId,
+            ProfileId = string.IsNullOrWhiteSpace(options.ProfileId)
+                ? $"{providerId}/{modelId}"
+                : options.ProfileId.Trim(),
+            ModelId = modelId,
             AgentTemplateId = string.IsNullOrWhiteSpace(options.AgentTemplateId)
                 ? null
                 : options.AgentTemplateId.Trim(),
