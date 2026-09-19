@@ -208,16 +208,18 @@ export const useExecutionFlowStyles = createStyles(() => ({
     textOverflow: 'ellipsis',
     minWidth: 0,
   },
-  /** 完成态计量 chip：「思考 · 12s」（caption 底 pill，对齐 harness "Thought for Ns"） */
+  /** 完成态计量 chip：「思考 · 12s」（tertiary 底 pill，对齐 harness "Thought for Ns"） */
   reasoningChip: {
     flexShrink: 0,
     fontSize: 11,
     lineHeight: '18px',
     padding: '0 8px',
     borderRadius: 999,
-    color: 'var(--pudding-chat-text-caption)',
+    // 用户反馈（2026-09-19）「颜色和对比度」：caption(#ab9c8e) 在浅底上对比度偏低，
+    // 升为 tertiary 档，与过程正文摘要同一档。
+    color: 'var(--pudding-chat-text-tertiary)',
     background:
-      'color-mix(in srgb, var(--pudding-chat-text-caption) 10%, transparent)',
+      'color-mix(in srgb, var(--pudding-chat-text-tertiary) 12%, transparent)',
     fontVariantNumeric: 'tabular-nums' as const,
     whiteSpace: 'nowrap' as const,
   },
@@ -244,18 +246,24 @@ export const useExecutionFlowStyles = createStyles(() => ({
     maxHeight: CHAT_BLOCK_MAX_HEIGHT,
     overflow: 'auto',
     borderRadius: 8,
-    background: 'var(--pudding-chat-code-bg)',
+    // 用户反馈（2026-09-19）「颜色和对比度」：推理正文是散文而非代码，而
+    // --pudding-chat-text(#1a1a2e) 落在 --pudding-chat-code-bg(#1e2430) 上
+    // 对比度约 1.03:1（几乎不可读）。改用工具卡灰阶浅底 + 对应前景色，
+    // 与 toolcall IN/OUT 参数面板同一族 token（浅/深主题均已定义）。
+    background: 'var(--pudding-toolcard-bg)',
+    border: '1px solid var(--pudding-toolcard-border)',
     padding: '8px 10px',
     boxSizing: 'border-box' as const,
     ...thinScrollbarStyle,
     ...scrollFocusRingStyle,
   },
-  /** pre 保留换行（可审计原文），等宽字体 */
+  /** pre 保留换行；字体继承 UI 字体（推理是散文，等宽小字号可读性差） */
   reasoningText: {
     margin: 0,
-    fontSize: 12.5,
-    lineHeight: 1.6,
-    color: 'var(--pudding-chat-text)',
+    fontSize: 13,
+    lineHeight: 1.65,
+    fontFamily: 'inherit',
+    color: 'var(--pudding-toolcard-fg)',
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
   },
@@ -279,29 +287,30 @@ export const useExecutionFlowStyles = createStyles(() => ({
     flexDirection: 'column' as const,
     gap: 2,
   },
-  /** 「思考 · 12s」meta：caption 档小字（无 nowrap，随内容列纵排） */
+  /** 「思考 · 12s」meta：secondary 档（caption #ab9c8e 在浅底上对比度仅 ~2.1:1，过弱） */
   reasoningFullMeta: {
-    fontSize: 11,
+    fontSize: 11.5,
     lineHeight: '18px',
-    color: 'var(--pudding-chat-text-caption)',
+    color: 'var(--pudding-chat-text-tertiary)',
     fontVariantNumeric: 'tabular-nums' as const,
   },
   /** 完整推理正文：自然换行（禁止复用 reasoningSummary 的 nowrap/ellipsis 类名）；块级限高内滚（看板卡 73c87ea8，与 reasoningBody 同源 token） */
   reasoningFullText: {
     margin: 0,
-    fontSize: 12.5,
-    lineHeight: 1.6,
-    color: 'var(--pudding-chat-text)',
+    fontSize: 13,
+    lineHeight: 1.65,
+    color: 'var(--pudding-toolcard-fg)',
     whiteSpace: 'pre-wrap' as const,
     overflowWrap: 'anywhere' as const,
     wordBreak: 'break-word' as const,
     minWidth: 0,
     maxHeight: CHAT_BLOCK_MAX_HEIGHT,
     overflow: 'auto',
-    // 用户批注（2026-09-19）：「推理正文没有容器，与回答无法区分」——沿用
-    // reasoningBody（折叠展开体）的浅色块 + 圆角 + 内距，把推理文本收进容器，
-    // 与正文回答（agentBubbleNew）视觉分层。padding 计入 maxHeight（border-box）。
-    background: 'var(--pudding-chat-code-bg)',
+    // 用户反馈（2026-09-19）「颜色和对比度」：原用 --pudding-chat-code-bg 深底
+    // 配 --pudding-chat-text 深字，对比度约 1.03:1 —— 几乎不可读。改用工具卡
+    // 灰阶底/前景（与折叠展开体 reasoningBody 同源）。
+    background: 'var(--pudding-toolcard-bg)',
+    border: '1px solid var(--pudding-toolcard-border)',
     borderRadius: 8,
     padding: '8px 10px',
     boxSizing: 'border-box' as const,
