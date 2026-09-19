@@ -316,6 +316,10 @@ const createProjectedTurn = (
   const turnId = message.turnId || message.runId || message.messageId;
   const isUser = message.role === 'user';
   const isHeartbeat = isHeartbeatMessage(message);
+  const outcome = message.turnOutcome;
+  const executionError = outcome?.status === 'failed'
+    ? outcome.errorMessage || '执行失败，未产生回复。'
+    : outcome?.status === 'cancelled' ? '执行已取消。' : undefined;
   const quotedMessage = parseAgentQuotedMessage(message, timestamp);
   const isInboundAgentMessage = Boolean(quotedMessage);
   inboundDebug.log(
@@ -360,7 +364,9 @@ const createProjectedTurn = (
     assistant: {
       id: isUser ? `${turnId}:placeholder-assistant` : message.messageId,
       status:
-        isUser || isInboundAgentMessage || isHeartbeat
+        executionError
+          ? outcome?.status === 'cancelled' ? 'cancelled' : 'error'
+          : isUser || isInboundAgentMessage || isHeartbeat
           ? 'success'
           : toAssistantStatus(message.status),
       timelineItems:
@@ -377,8 +383,9 @@ const createProjectedTurn = (
           : message.messageId,
       answerMarkdown:
         (isUser || isInboundAgentMessage) && !isHeartbeat
-          ? ''
+          ? executionError || ''
           : message.content,
+      executionError,
       isStreaming:
         !isUser &&
         !isInboundAgentMessage &&

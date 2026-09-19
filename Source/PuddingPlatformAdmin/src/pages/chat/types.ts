@@ -86,6 +86,7 @@ export interface ChatTurn {
     /** 用于按需加载历史过程事件的持久化消息 ID。 */
     processMessageId?: string;
     answerMarkdown: string;
+    executionError?: string;
     isStreaming: boolean;
     usage?: TokenUsageDto;
     renderMode: 'legacy' | 'structured' | 'inbound' | 'heartbeat';
@@ -116,6 +117,7 @@ export interface ChatQuotedMessage {
  * 每个块对应一条独立的消息气泡。
  */
 export interface ChatMessageBlock {
+  executionError?: string;
   id: string;
   turnId: string;
   role: 'user' | 'agent' | 'system' | 'heartbeat';
@@ -240,7 +242,8 @@ export function buildMessageBlocks(
         turnId: turn.turnId,
         role: 'heartbeat',
         content: turn.assistant.answerMarkdown,
-        status: 'success',
+        status: toChatMessageStatus(turn.assistant.status),
+        executionError: turn.assistant.executionError,
         createdAt: turn.userMessage.timestamp,
       });
       continue;

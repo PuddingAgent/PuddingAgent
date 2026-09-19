@@ -111,6 +111,8 @@ public sealed record ConversationMessageView(
     string Status,
     IReadOnlyList<ProcessSummaryItem> ProcessItems)
 {
+    /// <summary>Canonical turn outcome, independent of whether an Agent reply was produced.</summary>
+    public ConversationTurnOutcomeView? TurnOutcome { get; init; }
     /// <summary>Canonical conversation Turn identity shared by the user message and Agent reply.</summary>
     public string? TurnId { get; init; }
 
@@ -138,6 +140,8 @@ public sealed record ConversationMessageView(
     /// </summary>
     public ConversationProcessSummary? ProcessSummary { get; init; }
 }
+
+public sealed record ConversationTurnOutcomeView(string Status, string? ErrorCode, string? ErrorMessage);
 
 /// <summary>投影用内容部件安全摘要（ADR-077）。</summary>
 public sealed record ConversationContentPartView(

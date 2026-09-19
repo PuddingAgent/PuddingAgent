@@ -205,6 +205,21 @@ public sealed class AgentConversationProjectionService(
                 completedProcessByMessageId))
             .ToList();
 
+        // Failed turns may have no ChatMessages reply. Project their outcome onto
+        // the visible input, without inventing an assistant transcript message.
+        var visibleTurnIds = messages.Select(m => m.TurnId).OfType<string>().Distinct().ToList();
+        var terminalEvents = await db.ConversationEvents.AsNoTracking()
+            .Where(e => e.ConversationId == main.SessionId && visibleTurnIds.Contains(e.TurnId))
+            .Where(e => TerminalEventTypes.Contains(e.Type))
+            .OrderBy(e => e.Sequence)
+            .ToListAsync(ct);
+        var outcomes = terminalEvents.GroupBy(e => e.TurnId)
+            .ToDictionary(g => g.Key, g => ProjectTurnOutcome(g.Last()), StringComparer.Ordinal);
+        messages = messages.Select(m => m with
+        {
+            TurnOutcome = m.TurnId is not null ? outcomes.GetValueOrDefault(m.TurnId) : null,
+        }).ToList();
+
         // 根 run 选择（2026-08-25 修复子代理抢占 active 快照）：不再取「最新任意
         // runId 事件」——子代理生命周期事件挂父 message_id 但携带子 run_id，会
         // 整体抢占快照。根 run = 最新 turn.started 的 RunId；快照按其 TurnId
@@ -309,6 +324,27 @@ public sealed class AgentConversationProjectionService(
             activeRun,
             eventCursor,
             updatedAt);
+    }
+
+    internal static ConversationTurnOutcomeView ProjectTurnOutcome(ConversationEventEntity evt)
+    {
+        var status = evt.Type == ConversationEventTypes.TurnFailed ? "failed"
+            : evt.Type == ConversationEventTypes.TurnCancelled ? "cancelled" : "succeeded";
+        string? errorCode = null;
+        string? errorMessage = null;
+        try
+        {
+            using var payload = JsonDocument.Parse(evt.Payload);
+            if (payload.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                if (payload.RootElement.TryGetProperty("errorCode", out var code) && code.ValueKind == JsonValueKind.String)
+                    errorCode = code.GetString();
+                if (payload.RootElement.TryGetProperty("errorMessage", out var message) && message.ValueKind == JsonValueKind.String)
+                    errorMessage = message.GetString();
+            }
+        }
+        catch (JsonException) { /* The canonical terminal status remains visible. */ }
+        return new(status, errorCode, errorMessage);
     }
 
     public async Task<MessageProcessDetailsView?> GetMessageProcessItemsAsync(

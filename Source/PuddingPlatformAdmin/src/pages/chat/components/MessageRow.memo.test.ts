@@ -42,6 +42,12 @@ const props = {
 };
 
 describe('MessageRow memo boundary', () => {
+  it('rerenders when a heartbeat receives a different failure reason', () => {
+    expect(areMessageRowPropsEqual(
+      { ...props, block: { ...block, role: 'heartbeat', status: 'error', executionError: 'old' } },
+      { ...props, block: { ...block, role: 'heartbeat', status: 'error', executionError: 'new' } },
+    )).toBe(false);
+  });
   it('keeps a historical row stable when projection recreates equivalent data', () => {
     expect(
       areMessageRowPropsEqual(props, {

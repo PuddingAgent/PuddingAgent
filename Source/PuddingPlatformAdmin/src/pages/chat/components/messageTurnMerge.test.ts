@@ -4,7 +4,7 @@
 //  2. mergeProjectedMessageIntoTurns：同一 agent 消息（messageId 稳定）经投影
 //     刷新重复到达时原地更新，不得追加为第二张卡片（轨迹卡/正文卡分裂）。
 import type { ConversationMessageView } from '../client/types';
-import { extractVisionArtifactIds, type ChatTurn } from '../types';
+import { buildMessageBlocks, extractVisionArtifactIds, type ChatTurn } from '../types';
 import {
   mergeActiveRunAssistant,
   mergeProjectedMessageIntoTurns,
@@ -70,6 +70,25 @@ const createUserMessage = (
   status: 'succeeded',
   processItems: [],
   ...overrides,
+});
+
+describe('canonical failed input without assistant reply', () => {
+  it('keeps heartbeat prompt and exposes the failed outcome after reload', () => {
+    const turns: ChatTurn[] = [];
+    mergeProjectedMessageIntoTurns(turns, createUserMessage({
+      role: 'system', sourceKind: 'system', sourceId: 'heartbeat', content: 'heartbeat prompt',
+      turnOutcome: { status: 'failed', errorMessage: 'Visual inputs require a workspace and a vision-capable route.' },
+    }), 'Pudding');
+    const blocks = buildMessageBlocks(turns);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ role: 'heartbeat', status: 'error', content: 'heartbeat prompt', executionError: 'Visual inputs require a workspace and a vision-capable route.' });
+  });
+
+  it('shows a failed text turn even when there is no assistant message', () => {
+    const turns: ChatTurn[] = [];
+    mergeProjectedMessageIntoTurns(turns, createUserMessage({ turnOutcome: { status: 'failed', errorMessage: 'Provider failed' } }), 'Pudding');
+    expect(buildMessageBlocks(turns)[1]).toMatchObject({ role: 'agent', status: 'error', content: 'Provider failed' });
+  });
 });
 
 describe('mergeActiveRunAssistant 终态守卫', () => {

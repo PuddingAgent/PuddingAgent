@@ -214,6 +214,29 @@ public sealed class ResponsesLlmGatewayTests
     }
 
     [TestMethod]
+    public async Task ChatStreamAsync_TextHeartbeatAfterHistoricalImage_StillExecutes()
+    {
+        string? requestBody = null;
+        var gateway = CreateGateway(request =>
+        {
+            requestBody = ReadBody(request);
+            return SseResponse("data: {\"type\":\"response.output_text.delta\",\"delta\":\"awake\"}\n\ndata: [DONE]\n\n");
+        });
+        gateway.WorkspaceId = "workspace-1";
+        var output = new StringBuilder();
+        await foreach (var delta in gateway.ChatStreamAsync(
+            [new ChatMessage(ChatRole.User, "historical artifact://vision-1", ContentParts: [new PuddingCode.Models.LlmImagePart("vision-1")]),
+             new ChatMessage(ChatRole.User, "heartbeat")], []))
+            output.Append(delta.ContentDelta);
+
+        Assert.AreEqual("awake", output.ToString());
+        var input = JsonNode.Parse(requestBody!)!["input"]!.AsArray();
+        Assert.AreEqual(2, input.Count);
+        Assert.AreEqual("historical artifact://vision-1", input[0]!["content"]!.GetValue<string>());
+        Assert.AreEqual("heartbeat", input[1]!["content"]!.GetValue<string>());
+    }
+
+    [TestMethod]
     public async Task ChatAsync_ResolverFailure_FailsClosedInsteadOfSilentText()
     {
         var gateway = CreateGateway(_ => OkResponsesResponse());

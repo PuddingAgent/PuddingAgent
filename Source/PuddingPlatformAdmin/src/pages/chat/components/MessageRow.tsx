@@ -105,6 +105,7 @@ const messageBlockEquals = (
     previous.turnId === next.turnId &&
     previous.role === next.role &&
     previous.content === next.content &&
+    previous.executionError === next.executionError &&
     previous.status === next.status &&
     previous.createdAt === next.createdAt &&
     previous.modality === next.modality &&
@@ -425,9 +426,10 @@ const MessageRow: React.FC<MessageRowProps> = ({
         <div className={styles.heartbeatContainer}>
           <div className={styles.heartbeatHeader}>
             <HeartOutlined className={styles.heartbeatIcon} />
-            <span className={styles.heartbeatLabel}>系统心跳</span>
+            <span className={styles.heartbeatLabel}>系统心跳{block.status === 'error' ? ' · 执行失败' : block.status === 'cancelled' ? ' · 已取消' : ''}</span>
           </div>
           <div className={styles.heartbeatBody}>
+            {block.executionError && <div role="alert">{block.executionError}</div>}
             <MessageItem markdownText={block.content} />
           </div>
         </div>
