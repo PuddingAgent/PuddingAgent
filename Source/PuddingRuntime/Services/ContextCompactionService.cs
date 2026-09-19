@@ -148,20 +148,26 @@ public sealed class ContextCompactionService : IContextCompactionService
         if (IsCurrent(snapshot))
             return snapshot!;
 
-        var latestUsage = await TryGetLatestProviderUsageAsync(sessionId, ct);
+        // MessageCount 必须如实回填：前端据它判定「会话尚未开始」（messageCount==0）。
+        // 回退源此前不填该字段（默认 0），会把「有历史但走了回退」误报成「未开始」。
+        var latestUsage = await TryGetLatestProviderUsageAsync(
+            sessionId,
+            await CountActiveMessagesAsync(db, sessionId, ct),
+            ct);
         if (IsCurrent(latestUsage))
             return latestUsage!;
 
-        var activeTokens = await EstimateActiveTokensAsync(db, sessionId, ct);
-        if (activeTokens > 0)
+        var active = await EstimateActiveTokensAsync(db, sessionId, ct);
+        if (active.Tokens > 0)
         {
             return new ContextUsageSnapshot
             {
                 SessionId = sessionId,
                 RecordedAt = DateTimeOffset.UtcNow,
-                UsedTokens = activeTokens,
-                MessageTokens = activeTokens,
-                HistoryMessageTokens = activeTokens,
+                UsedTokens = active.Tokens,
+                MessageTokens = active.Tokens,
+                HistoryMessageTokens = active.Tokens,
+                MessageCount = active.MessageCount,
                 Source = "active_session_messages",
                 Confidence = "estimated",
             };
@@ -228,7 +234,10 @@ public sealed class ContextCompactionService : IContextCompactionService
         }
     }
 
-    private async Task<ContextUsageSnapshot?> TryGetLatestProviderUsageAsync(string sessionId, CancellationToken ct)
+    private async Task<ContextUsageSnapshot?> TryGetLatestProviderUsageAsync(
+        string sessionId,
+        int messageCount,
+        CancellationToken ct)
     {
         if (_tokenUsageRepo is null)
             return null;
@@ -240,14 +249,17 @@ public sealed class ContextCompactionService : IContextCompactionService
             if (latest is null)
                 return null;
 
-            var usedTokens = latest.TotalTokens > 0
-                ? latest.TotalTokens
-                : latest.PromptTokens;
+            // 上下文占用按 prompt 计：TotalTokens 含 completion（输出），拿它当「已使用」
+            // 等于把输出算进输入窗口，百分比会明显虚高（实测可差数倍）。
+            var usedTokens = latest.PromptTokens > 0
+                ? latest.PromptTokens
+                : latest.TotalTokens;
             return new ContextUsageSnapshot
             {
                 SessionId = sessionId,
                 RecordedAt = latest.OccurredAtUtc,
                 UsedTokens = usedTokens > int.MaxValue ? int.MaxValue : (int)Math.Max(0, usedTokens),
+                MessageCount = messageCount,
                 Source = "provider_usage_db",
                 Confidence = "provider_reported",
                 ProviderPromptTokens = latest.PromptTokens > int.MaxValue ? int.MaxValue : (int?)latest.PromptTokens,
@@ -1120,17 +1132,28 @@ public sealed class ContextCompactionService : IContextCompactionService
     /// 用 SQL 聚合估算活跃消息的 token 数，避免对大 session 做全量加载导致 OOM/超时。
     /// 先取 COUNT 和内容总长度做快速估算；如果消息数超过采样阈值则按采样比例外推。
     /// </summary>
-        private async Task<int> EstimateActiveTokensAsync(
+        private static Task<int> CountActiveMessagesAsync(
+        MemoryDbContext db,
+        string sessionId,
+        CancellationToken ct)
+        => db.Messages
+            .Where(m => m.SessionId == sessionId && m.CompactedBy == null)
+            .CountAsync(ct);
+
+    /// <summary>
+    /// 估算活跃（未被压缩覆盖）消息的 token 占用，并**同时返回消息条数**。
+    /// 条数必须回传：上下文面板用它区分「会话尚未开始」与「已开始但走了回退估算」，
+    /// 早前只回 token 数，导致回退路径的 MessageCount 恒为 0。
+    /// </summary>
+        private async Task<(int Tokens, int MessageCount)> EstimateActiveTokensAsync(
         MemoryDbContext db,
         string sessionId,
         CancellationToken ct)
     {
-        var messageCount = await db.Messages
-            .Where(m => m.SessionId == sessionId && m.CompactedBy == null)
-            .CountAsync(ct);
+        var messageCount = await CountActiveMessagesAsync(db, sessionId, ct);
 
         if (messageCount == 0)
-            return 0;
+            return (0, 0);
 
         var sampleSize = Math.Min(messageCount, MaxHealthEstimateSampleSize);
         var sampleContents = await db.Messages
@@ -1154,7 +1177,7 @@ public sealed class ContextCompactionService : IContextCompactionService
                 sessionId, messageCount, sampleSize, result);
         }
 
-        return result;
+        return (result, messageCount);
     }
 
         private static int EstimateMessages(IReadOnlyList<MessageEntity> messages) =>
