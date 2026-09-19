@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using PuddingCode.Goals;
 using PuddingCode.Platform;
 using PuddingPlatform.Data;
+using PuddingPlatform.Data.Entities;
 using PuddingPlatform.Services.Goals;
 
 namespace PuddingPlatformTests.Services.Goals;
@@ -449,5 +450,205 @@ public sealed class GoalCommandServiceTests
         Assert.AreEqual(before.AggregateVersion, after.AggregateVersion);
         Assert.AreEqual(0, await db.ConversationEvents.CountAsync(
             e => e.Type == GoalEventTypes.PolicyChanged));
+    }
+
+    // ── W3：/goal extend 额度耗尽人工出口 ──────────────────────
+
+    private static GoalCommandRequest ExtendRequest(
+        int? rounds = 8,
+        string clientRequestId = "req-extend",
+        string conversationId = "conv-1")
+        => new("ws", conversationId, "agent-1", "admin", clientRequestId,
+            new GoalCommand { Kind = GoalCommandKind.Extend, Rounds = rounds });
+
+    /// <summary>按 GoalSettlementStore 预算耗尽分支的字段口径，直接把 Goal 置为 budget_exhausted。</summary>
+    private static async Task<GoalRunEntity> SettleToBudgetExhaustedAsync(
+        PlatformDbContext db, int maxIterations)
+    {
+        var goal = await db.GoalRuns.SingleAsync();
+        goal.Status = GoalPhase.BudgetExhausted;
+        goal.StatusReason = "accepted_iteration_budget_exhausted";
+        goal.TerminalAtUtc = DateTimeOffset.UtcNow;
+        goal.MaxIterations = maxIterations;
+        goal.IterationsStarted = maxIterations;
+        goal.IterationsSettled = maxIterations;
+        goal.ActivationEpoch++;
+        await db.SaveChangesAsync();
+        return goal;
+    }
+
+    [TestMethod]
+    public async Task Extend_Reactivates_BudgetExhausted_Goal_Raises_Budget_And_Enqueues_Continuation()
+    {
+        var (db, service) = await CreateAsync(continuationEnabled: true);
+        await using var _ = db;
+
+        await service.ExecuteAsync(SetRequest(rounds: 3), CancellationToken.None);
+        var exhausted = await SettleToBudgetExhaustedAsync(db, maxIterations: 3);
+        // TryMutateAsync 在同一 DbContext 内重载同一 tracked 实体：extend 后 exhausted 与
+        // goal 是同一对象，提前捕获基准值，避免别名污染断言。
+        var exhaustedEpoch = exhausted.ActivationEpoch;
+
+        var result = await service.ExecuteAsync(ExtendRequest(rounds: 8), CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual(GoalPhase.Active, result.Snapshot!.Phase);
+        Assert.AreEqual(11, result.Snapshot.MaxIterations);
+        Assert.AreEqual(3, result.Snapshot.IterationsStarted);
+
+        var goal = await db.GoalRuns.SingleAsync();
+        Assert.AreEqual(GoalPhase.Active, goal.Status);
+        Assert.AreEqual(11, goal.MaxIterations);
+        Assert.IsNull(goal.TerminalAtUtc);
+        Assert.IsNull(goal.BlockedCode);
+        Assert.AreEqual(exhaustedEpoch + 1, goal.ActivationEpoch);
+
+        // 审计事件：payload 记录 field/from/to/rounds/by（触发者）。
+        var evt = await db.ConversationEvents.SingleAsync(
+            e => e.Type == GoalEventTypes.BudgetExtended);
+        StringAssert.Contains(evt.Payload, "max_iterations");
+        StringAssert.Contains(evt.Payload, "\"from\":3");
+        StringAssert.Contains(evt.Payload, "\"to\":11");
+        StringAssert.Contains(evt.Payload, "\"by\":\"admin\"");
+
+        // 同事务续行意图：新 epoch、下一迭代号。
+        var outbox = await db.GoalOutbox.SingleAsync(o => o.ActivationEpoch == goal.ActivationEpoch);
+        Assert.AreEqual(GoalOutboxValues.Pending, outbox.Status);
+        Assert.AreEqual(goal.GoalRunId, outbox.GoalRunId);
+    }
+
+    [TestMethod]
+    public async Task Extend_Without_Rounds_Fails_Closed_Without_Mutation()
+    {
+        var (db, service) = await CreateAsync();
+        await using var _ = db;
+
+        await service.ExecuteAsync(SetRequest(rounds: 3), CancellationToken.None);
+        await SettleToBudgetExhaustedAsync(db, 3);
+        var before = await db.GoalRuns.SingleAsync();
+
+        var result = await service.ExecuteAsync(
+            ExtendRequest(rounds: null, clientRequestId: "req-extend-norounds"),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(GoalErrorCodes.InvalidRounds, result.ErrorCode);
+        var after = await db.GoalRuns.SingleAsync();
+        Assert.AreEqual(GoalPhase.BudgetExhausted, after.Status);
+        Assert.AreEqual(before.MaxIterations, after.MaxIterations);
+        Assert.AreEqual(before.AggregateVersion, after.AggregateVersion);
+        Assert.AreEqual(0, await db.ConversationEvents.CountAsync(
+            e => e.Type == GoalEventTypes.BudgetExtended));
+    }
+
+    [TestMethod]
+    public async Task Extend_Rejects_Non_BudgetExhausted_Phases_With_Accurate_State()
+    {
+        var (db, service) = await CreateAsync();
+        await using var _ = db;
+
+        // active
+        await service.ExecuteAsync(SetRequest(rounds: 8, clientRequestId: "req-a"), CancellationToken.None);
+        var active = await service.ExecuteAsync(
+            ExtendRequest(clientRequestId: "req-ea"), CancellationToken.None);
+        Assert.IsFalse(active.Success);
+        Assert.AreEqual(GoalErrorCodes.InvalidState, active.ErrorCode);
+        StringAssert.Contains(active.Message, "Active");
+
+        // paused
+        await service.ExecuteAsync(SimpleRequest(GoalCommandKind.Pause), CancellationToken.None);
+        var paused = await service.ExecuteAsync(
+            ExtendRequest(clientRequestId: "req-ep"), CancellationToken.None);
+        Assert.IsFalse(paused.Success);
+        Assert.AreEqual(GoalErrorCodes.InvalidState, paused.ErrorCode);
+        StringAssert.Contains(paused.Message, "Paused");
+
+        // cancelled（终态但非额度耗尽）
+        await service.ExecuteAsync(SimpleRequest(GoalCommandKind.Cancel), CancellationToken.None);
+        var cancelled = await service.ExecuteAsync(
+            ExtendRequest(clientRequestId: "req-ec"), CancellationToken.None);
+        Assert.IsFalse(cancelled.Success);
+        Assert.AreEqual(GoalErrorCodes.InvalidState, cancelled.ErrorCode);
+        StringAssert.Contains(cancelled.Message, "Cancelled");
+
+        Assert.AreEqual(0, await db.ConversationEvents.CountAsync(
+            e => e.Type == GoalEventTypes.BudgetExtended));
+    }
+
+    [TestMethod]
+    public async Task Extend_FailClosed_When_Task_Binding_Already_Terminal()
+    {
+        var (db, service) = await CreateAsync(continuationEnabled: true);
+        await using var _ = db;
+
+        await service.ExecuteAsync(SetRequest(rounds: 3), CancellationToken.None);
+        var exhausted = await SettleToBudgetExhaustedAsync(db, 3);
+
+        // 结算口径：binding 置 terminal 并写 ReleasedAtUtc（GoalSettlementStore 预算耗尽分支）。
+        db.TaskGoalBindings.Add(new TaskGoalBindingEntity
+        {
+            BindingId = "binding-1",
+            WorkspaceId = "ws",
+            TaskId = "task-1",
+            GoalRunId = exhausted.GoalRunId,
+            AgentInstanceId = "agent-1",
+            Status = "terminal",
+            ReleasedAtUtc = DateTimeOffset.UtcNow,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await service.ExecuteAsync(ExtendRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(GoalErrorCodes.GoalBindingReleased, result.ErrorCode);
+        var goal = await db.GoalRuns.SingleAsync();
+        Assert.AreEqual(GoalPhase.BudgetExhausted, goal.Status);
+        Assert.AreEqual(3, goal.MaxIterations);
+        Assert.AreEqual(0, await db.ConversationEvents.CountAsync(
+            e => e.Type == GoalEventTypes.BudgetExtended));
+        Assert.AreEqual(0, await db.GoalOutbox.CountAsync(
+            o => o.ActivationEpoch == goal.ActivationEpoch));
+    }
+
+    [TestMethod]
+    public async Task Extend_FailClosed_When_Bound_Task_Missing()
+    {
+        var (db, service) = await CreateAsync();
+        await using var _ = db;
+
+        await service.ExecuteAsync(SetRequest(rounds: 3), CancellationToken.None);
+        var exhausted = await SettleToBudgetExhaustedAsync(db, 3);
+
+        // binding 仍 active 但任务行已消失（回退/清理）—— 同样无法推进。
+        db.TaskGoalBindings.Add(new TaskGoalBindingEntity
+        {
+            BindingId = "binding-2",
+            WorkspaceId = "ws",
+            TaskId = "task-gone",
+            GoalRunId = exhausted.GoalRunId,
+            AgentInstanceId = "agent-1",
+            Status = "active",
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await service.ExecuteAsync(ExtendRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(GoalErrorCodes.GoalBindingReleased, result.ErrorCode);
+        Assert.AreEqual(GoalPhase.BudgetExhausted, (await db.GoalRuns.SingleAsync()).Status);
+    }
+
+    [TestMethod]
+    public async Task Extend_Without_Any_Goal_Returns_GoalNotFound()
+    {
+        var (db, service) = await CreateAsync();
+        await using var _ = db;
+
+        var result = await service.ExecuteAsync(ExtendRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(GoalErrorCodes.GoalNotFound, result.ErrorCode);
     }
 }
