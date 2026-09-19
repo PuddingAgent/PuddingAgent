@@ -120,4 +120,90 @@ public sealed class RuntimeControlServiceTests
         Assert.IsFalse(service.CanAcceptUserMessage("session_3").Allowed);
         Assert.IsFalse(service.CanInvokeTool("session_3", "shell").Allowed);
     }
+
+    [TestMethod]
+    public void SetMode_Yolo_Persists_ModeStateFile_With_Yolo_Value()
+    {
+        var path = NewTempModeStatePath();
+        try
+        {
+            var service = new RuntimeControlService(modeStateFilePath: path);
+
+            var result = service.SetMode(RuntimeExecutionMode.Yolo, "test");
+
+            Assert.IsTrue(result.Success);
+            Assert.IsTrue(File.Exists(path));
+            var json = File.ReadAllText(path);
+            StringAssert.Contains(json, "\"mode\":\"Yolo\"");
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [TestMethod]
+    public void Constructor_Restores_Mode_From_State_File_Across_Restart()
+    {
+        var path = NewTempModeStatePath();
+        try
+        {
+            var first = new RuntimeControlService(modeStateFilePath: path);
+            first.SetMode(RuntimeExecutionMode.Yolo, "test");
+
+            var restarted = new RuntimeControlService(modeStateFilePath: path);
+
+            Assert.AreEqual(RuntimeExecutionMode.Yolo, restarted.Mode);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [TestMethod]
+    public void Constructor_Corrupt_State_File_Falls_Back_To_Normal_Without_Throwing()
+    {
+        var path = NewTempModeStatePath();
+        try
+        {
+            File.WriteAllText(path, "{ not json");
+
+            var service = new RuntimeControlService(modeStateFilePath: path);
+
+            Assert.AreEqual(RuntimeExecutionMode.Normal, service.Mode);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    [TestMethod]
+    public void SetMode_Safe_Keeps_Last_Persisted_Steady_State()
+    {
+        var path = NewTempModeStatePath();
+        try
+        {
+            var service = new RuntimeControlService(modeStateFilePath: path);
+            service.SetMode(RuntimeExecutionMode.Yolo, "steady");
+            var persisted = File.ReadAllText(path);
+
+            service.SetMode(RuntimeExecutionMode.Safe, "temporary");
+
+            Assert.AreEqual(RuntimeExecutionMode.Safe, service.Mode);
+            Assert.AreEqual(persisted, File.ReadAllText(path));
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+
+    private static string NewTempModeStatePath()
+        => Path.Combine(Path.GetTempPath(), $"pudding-runtime-mode-{Guid.NewGuid():N}.json");
 }

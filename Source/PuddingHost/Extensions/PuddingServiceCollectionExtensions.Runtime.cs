@@ -124,7 +124,8 @@ public static partial class PuddingServiceCollectionExtensions
                 sp.GetService<ILogger<RuntimeControlService>>(),
                 maxErrorsInWindow: fuseConfig?.MaxErrorsInWindow,
                 warningThreshold: fuseConfig?.WarningThreshold,
-                windowSeconds: fuseConfig?.WindowSeconds);
+                windowSeconds: fuseConfig?.WindowSeconds,
+                modeStateFilePath: config.SystemConfigFile("runtime-mode.json"));
         });
         builder.Services.AddHostedService<YoloSignalService>();
         builder.Services.AddSingleton<ExecutionJournal>();

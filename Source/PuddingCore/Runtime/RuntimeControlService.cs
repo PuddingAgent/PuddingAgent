@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -16,7 +18,7 @@ public enum RuntimeExecutionMode
     Safe,
     /// <summary>Emergency stopping — backend is shutting down.</summary>
     EmergencyStopping,
-    /// <summary>YOLO mode — runtime approvals are bypassed inside the configured tool exposure boundary. Memory-only, lost on restart.</summary>
+    /// <summary>YOLO mode — runtime approvals are bypassed inside the configured tool exposure boundary. Persisted to DataRoot/config/runtime-mode.json and restored automatically on restart.</summary>
     Yolo,
 }
 
@@ -137,6 +139,7 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
     private readonly ConcurrentDictionary<string, SessionControlState> _sessions = new(StringComparer.Ordinal);
     private readonly ILogger<RuntimeControlService> _logger;
     private volatile RuntimeExecutionMode _mode = RuntimeExecutionMode.Normal;
+    private readonly string? _modeStateFilePath;
 
     // ── 可配置滑动窗口熔断参数 ──
     private readonly int _maxErrorsInWindow;
@@ -148,11 +151,13 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
     /// <param name="maxErrorsInWindow">Max errors in sliding window before fuse triggers.</param>
     /// <param name="warningThreshold">Error count at which warnings begin.</param>
     /// <param name="windowSeconds">Sliding window duration in seconds.</param>
+    /// <param name="modeStateFilePath">Optional path of the runtime-mode state file used to persist the execution mode and restore it across restarts.</param>
     public RuntimeControlService(
         ILogger<RuntimeControlService>? logger = null,
         int? maxErrorsInWindow = null,
         int? warningThreshold = null,
-        int? windowSeconds = null)
+        int? windowSeconds = null,
+        string? modeStateFilePath = null)
     {
         _logger = logger ?? NullLogger<RuntimeControlService>.Instance;
         _maxErrorsInWindow = Math.Max(1, maxErrorsInWindow ?? DefaultMaxErrorsInWindow);
@@ -164,6 +169,8 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
         // The queue must retain enough evidence for every configured trigger. A fixed cap below
         // MaxErrorsInWindow makes the aggregate fuse mathematically unreachable.
         _recentErrorCapacity = Math.Max(_maxErrorsInWindow, SameFingerprintFuseThreshold);
+        _modeStateFilePath = modeStateFilePath;
+        RestoreModeFromStateFile();
     }
 
     public RuntimeExecutionMode Mode => _mode;
@@ -427,6 +434,11 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
     public RuntimeControlActionResult SetMode(RuntimeExecutionMode mode, string reason)
     {
         _mode = mode;
+
+        // 仅持久化稳态（Yolo/Normal）；Safe/EmergencyStopping 是临时态，不写盘，保留上次的稳态记录。
+        if (mode is RuntimeExecutionMode.Yolo or RuntimeExecutionMode.Normal)
+            PersistModeToStateFile(mode, reason);
+
         if (mode is RuntimeExecutionMode.Safe or RuntimeExecutionMode.EmergencyStopping)
         {
             foreach (var pair in _sessions)
@@ -438,14 +450,10 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
 
         _logger.LogWarning("[RuntimeControl] Mode changed mode={Mode} reason={Reason}", mode, reason);
 
-        var note = mode == RuntimeExecutionMode.Yolo
-            ? " (memory-only, lost on restart)"
-            : string.Empty;
-
         return new RuntimeControlActionResult
         {
             Success = true,
-            Message = $"Runtime mode is now {mode}{note}. Reason: {reason}",
+            Message = $"Runtime mode is now {mode}. Reason: {reason}",
         };
     }
 
@@ -459,6 +467,76 @@ public sealed partial class RuntimeControlService : IRuntimeControlService
                 ? null
                 : Snapshot(GetState(sessionId)),
         };
+
+    private void RestoreModeFromStateFile()
+    {
+        if (string.IsNullOrWhiteSpace(_modeStateFilePath))
+            return;
+
+        try
+        {
+            if (!File.Exists(_modeStateFilePath))
+                return;
+
+            using var doc = JsonDocument.Parse(File.ReadAllText(_modeStateFilePath));
+            var rawMode = doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("mode", out var modeProp)
+                    ? modeProp.GetString()
+                    : null;
+
+            if (Enum.TryParse<RuntimeExecutionMode>(rawMode, ignoreCase: true, out var parsed))
+            {
+                _mode = parsed;
+                _logger.LogInformation(
+                    "[RuntimeControl] Runtime mode restored from state file mode={Mode} path={Path}",
+                    parsed, _modeStateFilePath);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "[RuntimeControl] Runtime mode state file unreadable — falling back to Normal path={Path} reason=invalid mode value {Value}",
+                    _modeStateFilePath, rawMode);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                "[RuntimeControl] Runtime mode state file unreadable — falling back to Normal path={Path} reason={Reason}",
+                _modeStateFilePath, ex.Message);
+        }
+    }
+
+    private void PersistModeToStateFile(RuntimeExecutionMode mode, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(_modeStateFilePath))
+            return;
+
+        try
+        {
+            var directory = Path.GetDirectoryName(_modeStateFilePath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            var json = JsonSerializer.Serialize(
+                new RuntimeModeState(mode.ToString(), reason, DateTimeOffset.UtcNow));
+
+            // 原子写入：先写 .tmp 再整体替换，避免读到半截文件。
+            var tmpPath = _modeStateFilePath + ".tmp";
+            File.WriteAllText(tmpPath, json);
+            File.Move(tmpPath, _modeStateFilePath, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                "[RuntimeControl] Failed to persist runtime mode state path={Path} reason={Reason}",
+                _modeStateFilePath, ex.Message);
+        }
+    }
+
+    private sealed record RuntimeModeState(
+        [property: JsonPropertyName("mode")] string Mode,
+        [property: JsonPropertyName("reason")] string? Reason,
+        [property: JsonPropertyName("updatedAtUtc")] DateTimeOffset UpdatedAtUtc);
 
     private SessionControlState GetState(string sessionId)
         => _sessions.GetOrAdd(sessionId, static id => new SessionControlState(id));
