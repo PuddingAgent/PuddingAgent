@@ -162,3 +162,43 @@ prompt / completion / total / contextWindow / cacheHit / cacheMiss **token 数**
 **切片执行顺序（父级决定）**：**串行**，不同时并行。
 原因：S1/S2/S4 共享 `styles/execution-flow.styles.ts`，S2/S3 共享 `AgentMessageBubble.tsx`，
 并行编辑会互相覆盖并使差距分析的落点失效。
+
+---
+
+## 九、交互模型修正（用户 2026-09-19 补充，覆盖 §二 的简化理解）
+
+### 用户原话（权威）
+> 「实际上 workbuddy 的做法是给可以展开的元素使用不同的样式，当鼠标悬停的时候，显示 `>`，点击的时候，展开下一级的元素，**这个过程是可以多级的**。」
+
+配 2 张对照图：同一行 `运行校验、修改：collect_pkg_info.py` —— 图 1（非悬停）**无箭头**，图 2（悬停）出现 **`›`**。
+
+### 修正前的错误理解
+我在 §二 §4 把「折叠/展开」简化成了**单级的显隐切换**（折叠显示摘要 ⇄ 展开显示详情）。**这是错的**。真实模型是：
+
+**渐进披露（progressive disclosure）三要素**
+1. **可展开元素用不同样式**（与不可展开元素视觉可区分）
+2. **悬停才显现折叠箭头**（`›` 折叠 / `⌄` 展开），非悬停时保持占位不跳动
+3. **点击展开下一级，且可多级嵌套**（层级递归，不是单级切换）
+
+### 我方现状核实（逐条对照，证据已实读）
+
+| # | 用户要求 | 现状 | 证据 |
+|---|---|---|---|
+1 | 可展开元素用**不同样式** | ✅ **已有** | `styles/execution-flow.styles.ts:26` `rowClickable`（`cursor` + `&:hover` + `:focus-visible` 焦点环 + 最小可点区 32px）vs `:12` 注释「**非可展开行无 hover/焦点反馈**」 |
+2 | **多级**展开 | ✅ **已有** | `components/execution-flow/ToolCallTree.tsx` 头注释：「工具调用**递归树**（CU-07）；基于 `ToolNode.children`（父子嵌套调用，投影器 `buildToolTree` 已按 `parentToolCallId` 建树）：**父行 + 缩进子列表递归渲染**」；`ToolCallTreeBranch` 为递归分支 |
+3 | **悬停才**显示箭头 | ❌ **差距** | `execution-flow.styles.ts:107` `chevron` 仅定义 `flexShrink / width 16 / height 28 / fontSize 10 / color var(--pudding-chat-text-caption) / transition transform 150ms` —— **无 opacity / visibility 的 hover 门控**；`:119` `chevronPlaceholder { visibility: hidden }` 仅用于**不可展开行**的占位对齐。⇒ 可展开行**常驻显示**箭头 |
+
+**结论：三点里两点已具备，唯一真实差距是「悬停显现箭头」。**
+
+### 新增切片 S1c（严格串行，排在 S1b 之后）
+
+**S1c — 箭头渐进披露**
+- 可展开行：**非悬停/未聚焦时箭头不可见**（`opacity: 0`，**保留占位尺寸**以免行首跳动）；**悬停或键盘聚焦时显现**（`opacity: 1`）
+- 折叠态箭头 `›`（右向）→ 展开态旋转为 `⌄`（下向）；`transition` 沿用既有 150ms
+- **可访问性硬要求**：不得只靠 hover —— 必须同时响应 `:focus-visible`，否则键盘用户无法发现可展开性；箭头需保留可被辅助技术识别的语义（如既有 `aria-expanded`）
+- **不得**改动 `ToolCallTree` 的递归结构与 `ActivityGroup`「默认只展示最近 6 项」语义
+- 测试：覆盖「非悬停不可见」「hover 可见」「focus-visible 可见」「展开态箭头方向翻转」四分支
+
+### 附带发现：turn 级可折叠头（新增，建议并入 S3）
+图 1 顶部为 `已完成 8m52s ⌄` ⇒ **整个 turn 也是可折叠的**，折叠态显示「终态 + 总时长」+ 箭头。
+这与 §七 S3「消息头元信息」相关但**不等价**：S3 原计划是"补齐实时耗时"，本项是"**turn 容器本身可折叠**，且折叠态以时长作为标题"。建议在 S3 一并评估，或单列 S3b。
