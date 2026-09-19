@@ -16,6 +16,8 @@ export interface ContextUsageRingProps {
   cacheHitRate?: number;
   /** 来自 useCompaction 的压缩状态文案（如「上次压缩：2分钟前」）。 */
   compactionStatus?: string | null;
+  /** context-health 拉取失败原因；有值时圆环区分「未配置」与「获取失败」。 */
+  error?: string | null;
 }
 
 const SIZE = 22;
@@ -39,6 +41,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   tPct,
   cacheHitRate,
   compactionStatus,
+  error,
 }) => {
   const { styles } = useChatStyles();
   const [open, setOpen] = useState(false);
@@ -49,7 +52,9 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
 
   const hoverSummary = configured
     ? `${pct.toFixed(1)}% · ${formatTokens(tUsed)} / ${formatTokens(tLimit)} 上下文已使用`
-    : '上下文窗口未配置';
+    : error
+      ? `上下文用量获取失败：${error}`
+      : '上下文窗口未配置';
 
   const panel = useMemo(
     () => (
@@ -67,7 +72,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
         </div>
         {!configured ? (
           <div className={styles.contextUsagePanelEmpty}>
-            发送第一条消息后显示上下文用量
+            {error ?? '发送第一条消息后显示上下文用量'}
           </div>
         ) : (
           <>
@@ -124,6 +129,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
       color,
       compactionStatus,
       configured,
+      error,
       pct,
       styles,
       tLimit,

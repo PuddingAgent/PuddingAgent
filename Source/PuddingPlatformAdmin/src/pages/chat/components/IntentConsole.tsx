@@ -11,7 +11,7 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import { Dropdown, message, Popover, Tooltip } from 'antd';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   type CacheDiagnosticsReport,
   type ContextHealthSnapshot,
@@ -352,6 +352,19 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     },
     [refreshContextHealth],
   );
+
+  // 用户反馈（2026-09-19）：圆环始终显示「未配置」—— 原实现只在「运行状态详情」
+  // 弹层打开时才拉 context-health，普通使用路径下 contextHealth 恒为 null，
+  // 圆环因此拿不到任何数值。改为：会话切换即拉取；一轮结束后再刷新。
+  useEffect(() => {
+    if (!sessionId) return;
+    void refreshContextHealth();
+  }, [sessionId, refreshContextHealth]);
+
+  useEffect(() => {
+    if (status !== 'completed') return;
+    void refreshContextHealth();
+  }, [status, refreshContextHealth]);
   const voiceAdapterRef = useRef(createDashScopeVoiceInputAdapter());
   const composerActive =
     composerFocused ||
@@ -1004,6 +1017,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               tPct={effectiveContextUsagePercentage ?? 0}
               cacheHitRate={cacheHitRate}
               compactionStatus={compactionStatus}
+              error={contextHealthError}
             />
             {/* CU-11 §6.2：低频选项（Sandbox 边界 / Auto-review）收敛进设置 Popover，
                 需要盯防的活动态通过角标浮出；高频的执行偏好/权限/语音/发送保持直达。 */}
