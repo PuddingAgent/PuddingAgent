@@ -342,4 +342,60 @@ expect(row.getAttribute('aria-label')).toBe('shell 工具调用（成功）');
     expect(screen.getByTestId('toolcall-lang').textContent).toBe('bash');
     expect(screen.queryByTestId('toolcall-result')).toBeNull();
   });
+
+  // ── S1b：折叠行尾部 diff 摘要（编辑 <path> +N −N）─────────────────────────
+  // 判定：kind = node.presentation?.kind === 'diff'；文本通路 meta.patch/diff/content
+  // ?? payloadText(output ?? arguments)；计数来自 parseDiffLines（+→add / −→del，
+  // +++/--- 计为 file 行不计数）；路径 extractFilePath 优先 meta.path/file/filePath。
+
+  it('S1b diff 节点：折叠行显示「编辑 <path> +N −N」（U+2212 减号，折叠态即可见）', () => {
+    render(
+      <ToolCallRow
+        node={makeNode({
+          name: 'file_patch',
+          presentation: { kind: 'diff', meta: { path: 'src/app.ts' } },
+          output: [
+            '--- a/src/app.ts',
+            '+++ b/src/app.ts',
+            '@@ -1,2 +1,3 @@',
+            ' const x = 1;',
+            '+const y = 2;',
+            '-const z = 3;',
+          ].join('\n'),
+        })}
+      />,
+    );
+    const summary = screen.getByTestId('toolcall-diff-summary');
+    expect(summary.textContent).toContain('编辑');
+    expect(summary.textContent).toContain('src/app.ts');
+    expect(summary.getAttribute('title')).toBe('src/app.ts');
+    expect(screen.getByTestId('toolcall-diff-adds').textContent).toBe('+1');
+    expect(screen.getByTestId('toolcall-diff-dels').textContent).toBe('−1');
+  });
+
+  it('S1b 非 diff 节点：折叠行不渲染 diff 摘要', () => {
+    render(
+      <ToolCallRow
+        node={makeNode({
+          presentation: { kind: 'terminal', meta: { command: 'git status' } },
+        })}
+      />,
+    );
+    expect(screen.queryByTestId('toolcall-diff-summary')).toBeNull();
+  });
+
+  it('S1b diff 节点但文本无 diff 标记：parseDiffLines 回落 null，不渲染摘要', () => {
+    render(
+      <ToolCallRow
+        node={makeNode({
+          name: 'file_patch',
+          presentation: {
+            kind: 'diff',
+            meta: { patch: 'apply ok, nothing to show' },
+          },
+        })}
+      />,
+    );
+    expect(screen.queryByTestId('toolcall-diff-summary')).toBeNull();
+  });
 });
