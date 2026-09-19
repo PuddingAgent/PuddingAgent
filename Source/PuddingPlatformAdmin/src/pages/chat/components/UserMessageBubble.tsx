@@ -293,6 +293,25 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
           <span className={styles.messageModalityBadge}>Image</span>
         ) : null}
         <span className={styles.userNameText}>{displayName}</span>
+        {/* 头像上移（2026-09-19 与 agent 侧镜像）：头像原在 userBubbleRow 内
+            气泡右侧，现移入头部行最右。这样「头部行右边界 == 头像右边缘 ==
+            气泡右边界」落在同一条右轴上（与 agent 侧的左轴对齐对称），
+            气泡本身也不再被头像挤走 40px 宽度。 */}
+        <div className={styles.userAvatarShell}>
+          {userAvatarUrl ? (
+            <Avatar
+              size={32}
+              src={userAvatarUrl}
+              className={styles.userAvatarImg}
+            />
+          ) : (
+            <Avatar
+              size={32}
+              icon={<UserOutlined />}
+              className={styles.userAvatarFallback}
+            />
+          )}
+        </div>
       </div>
       <div className={styles.userBubbleRow}>
         <div
@@ -370,21 +389,6 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
                 </button>
               </Tooltip>
             </div>
-          )}
-        </div>
-        <div className={styles.userAvatarShell}>
-          {userAvatarUrl ? (
-            <Avatar
-              size={32}
-              src={userAvatarUrl}
-              className={styles.userAvatarImg}
-            />
-          ) : (
-            <Avatar
-              size={32}
-              icon={<UserOutlined />}
-              className={styles.userAvatarFallback}
-            />
           )}
         </div>
       </div>

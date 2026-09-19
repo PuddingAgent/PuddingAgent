@@ -18,9 +18,9 @@ export const useUserStyles = createStyles(() => ({
     gap: 8,
     // 与 agent 侧 agentHeaderRow 的 marginBottom 4 对称（2026-09-19 头部对齐改造）。
     marginBottom: 4,
-    // 右轴对齐机制：paddingRight 40 == 右侧头像 32 + userBubbleRow gap 8，
-    // 使「时间/徽章/用户名」头部行的右边界与气泡右边界严格同轴。
-    paddingRight: 40,
+    // 右轴对齐机制（2026-09-19 头像上移，与 agent 侧对称）：头像由 userBubbleRow
+    // 迁入本行最右，本行右边界即头像右边缘；气泡行不再含头像，气泡右边界同样
+    // 落在该右轴上——故原 paddingRight 40（为头像让位）已失效并移除。
     minHeight: 20,
   },
   userNameText: {
@@ -38,7 +38,7 @@ export const useUserStyles = createStyles(() => ({
   userBubbleRow: {
     display: 'flex',
     alignItems: 'flex-end',
-    gap: 8,
+    // 原 gap 8 只用于分隔「气泡 / 头像」两列，头像上移后已无第二列。
     maxWidth: '100%',
   },
   userBubbleArea: {
