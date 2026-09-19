@@ -128,6 +128,30 @@ public sealed class SystemCommandParserTests
     }
 
     [TestMethod]
+    public void TryParse_Yolo_Accepts_Duration_And_Revoke_Arguments()
+    {
+        // 用户 2026-09-19：/yolo 归并到 Agent 级访问级别后支持三种形态。
+        // 此前语法校验把 yolo 归入「不接受参数」组，`/yolo 5m` 与 `/yolo off`
+        // 被判非法并落到 "Unknown Pudding command"，功能实际不可用。此用例锁定修复。
+        Assert.IsTrue(SystemCommandParser.TryParse("/yolo", out var persistent));
+        Assert.AreEqual(SystemCommandKind.Yolo, persistent.CommandKind);
+        Assert.AreEqual(SystemCommandAction.Run, persistent.Action);
+
+        Assert.IsTrue(SystemCommandParser.TryParse("/yolo 5m", out var temporary));
+        Assert.AreEqual(SystemCommandKind.Yolo, temporary.CommandKind);
+        Assert.AreEqual(SystemCommandAction.Run, temporary.Action);
+
+        Assert.IsTrue(SystemCommandParser.TryParse("/yolo 30s", out var seconds));
+        Assert.AreEqual(SystemCommandKind.Yolo, seconds.CommandKind);
+
+        Assert.IsTrue(SystemCommandParser.TryParse("/yolo off", out var revoke));
+        Assert.AreEqual(SystemCommandKind.Yolo, revoke.CommandKind);
+
+        // 非法参数仍须在语法层被拒，不能放行到 handler 之后才发现。
+        Assert.IsFalse(SystemCommandParser.TryParse("/yolo 5x", out _));
+    }
+
+    [TestMethod]
     public void RequiresPrivilege_LeavesOnlyHelpAndStatusReadOnly()
     {
         Assert.IsTrue(SystemCommandParser.TryParse("/help", out var help));

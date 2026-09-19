@@ -26,7 +26,8 @@ public sealed class SystemCommandHandlerTests
         await db.Database.EnsureCreatedAsync();
 
         var runtime = new RuntimeControlService();
-        var handler = CreateHandler(db, runtime);
+        var accessLevels = new StubAgentAccessLevelService();
+        var handler = CreateHandler(db, runtime, accessLevels: accessLevels);
 
         var result = await handler.HandleAsync(
             new SystemCommandRequest(
@@ -39,8 +40,13 @@ public sealed class SystemCommandHandlerTests
                 ResponseMessageId: "system-message-1",
                 CommandText: "/yolo"));
 
-        Assert.AreEqual("Yolo", result.RuntimeMode);
-        Assert.AreEqual(RuntimeExecutionMode.Yolo, runtime.Mode);
+        // 用户 2026-09-19：/yolo 已归并到 Agent 级权限控制体系，不再切进程态运行时模式。
+        Assert.AreEqual("Normal", result.RuntimeMode);
+        Assert.AreEqual(RuntimeExecutionMode.Normal, runtime.Mode);
+        Assert.AreEqual(1, accessLevels.SetCalls.Count);
+        Assert.AreEqual("agent-1", accessLevels.SetCalls[0].AgentId);
+        Assert.AreEqual(AgentAccessLevel.Full, accessLevels.SetCalls[0].Level);
+        Assert.IsNull(accessLevels.SetCalls[0].Ttl);
         Assert.AreEqual(2, await db.ChatMessages.CountAsync());
         Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
         Assert.AreEqual(0, await db.ConversationTurns.CountAsync());
@@ -63,7 +69,8 @@ public sealed class SystemCommandHandlerTests
         await db.Database.EnsureCreatedAsync();
 
         var runtime = new RuntimeControlService();
-        var handler = CreateHandler(db, runtime);
+        var accessLevels = new StubAgentAccessLevelService();
+        var handler = CreateHandler(db, runtime, accessLevels: accessLevels);
         var request = new SystemCommandRequest(
             "conversation-1",
             "default",
@@ -75,12 +82,80 @@ public sealed class SystemCommandHandlerTests
             "/yolo");
 
         await handler.HandleAsync(request);
+        Assert.AreEqual(1, accessLevels.SetCalls.Count);
+
         runtime.SetMode(RuntimeExecutionMode.Normal, "simulate process-local state reset");
         await handler.HandleAsync(request);
 
+        // 重放不再重新授予：状态已落盘持久，重写会把已到期的临时授权续期，反而放大权限。
+        Assert.AreEqual(1, accessLevels.SetCalls.Count);
         Assert.AreEqual(2, await db.ChatMessages.CountAsync());
         Assert.AreEqual(0, await db.ChatExecutionCommands.CountAsync());
-        Assert.AreEqual(RuntimeExecutionMode.Yolo, runtime.Mode);
+    }
+
+    [TestMethod]
+    public async Task Yolo_WithDuration_GrantsTemporaryAgentLevelFullAccess()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var runtime = new RuntimeControlService();
+        var accessLevels = new StubAgentAccessLevelService();
+        var handler = CreateHandler(db, runtime, accessLevels: accessLevels);
+
+        var result = await handler.HandleAsync(
+            new SystemCommandRequest(
+                ConversationId: "conversation-1",
+                WorkspaceId: "default",
+                AgentId: "agent-1",
+                UserId: "admin",
+                ClientRequestId: "request-1",
+                ClientMessageId: "user-message-1",
+                ResponseMessageId: "system-message-1",
+                CommandText: "/yolo 5m"));
+
+        Assert.AreEqual(1, accessLevels.SetCalls.Count);
+        Assert.AreEqual(AgentAccessLevel.Full, accessLevels.SetCalls[0].Level);
+        Assert.AreEqual(TimeSpan.FromMinutes(5), accessLevels.SetCalls[0].Ttl);
+        Assert.AreEqual(RuntimeExecutionMode.Normal, runtime.Mode);
+        StringAssert.Contains(result.Message, "临时授权");
+    }
+
+    [TestMethod]
+    public async Task YoloOff_RevokesAgentLevelFullAccess()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var runtime = new RuntimeControlService();
+        var accessLevels = new StubAgentAccessLevelService();
+        var handler = CreateHandler(db, runtime, accessLevels: accessLevels);
+
+        var result = await handler.HandleAsync(
+            new SystemCommandRequest(
+                ConversationId: "conversation-1",
+                WorkspaceId: "default",
+                AgentId: "agent-1",
+                UserId: "admin",
+                ClientRequestId: "request-1",
+                ClientMessageId: "user-message-1",
+                ResponseMessageId: "system-message-1",
+                CommandText: "/yolo off"));
+
+        Assert.AreEqual(1, accessLevels.SetCalls.Count);
+        Assert.AreEqual(AgentAccessLevel.Auto, accessLevels.SetCalls[0].Level);
+        Assert.IsNull(accessLevels.SetCalls[0].Ttl);
+        StringAssert.Contains(result.Message, "已撤销");
     }
 
     [TestMethod]
@@ -388,16 +463,48 @@ public sealed class SystemCommandHandlerTests
         IRuntimeControlService runtime,
         IRequestCompactionHandler? compaction = null,
         ISystemStatusSnapshotProvider? statusSnapshotProvider = null,
-                IGoalCommandService? goalCommandService = null,
-        IToolAuthorizationService? toolAuthorizationService = null) =>
+        IGoalCommandService? goalCommandService = null,
+        IToolAuthorizationService? toolAuthorizationService = null,
+        IAgentAccessLevelService? accessLevels = null) =>
         new(
             db,
             runtime,
+            accessLevels ?? new StubAgentAccessLevelService(),
             compaction ?? new UnexpectedRequestCompactionHandler(),
             statusSnapshotProvider ?? new UnexpectedSystemStatusSnapshotProvider(),
             goalCommandService ?? new UnexpectedGoalCommandService(),
             toolAuthorizationService ?? new UnexpectedToolAuthorizationService(),
             NullLogger<SystemCommandHandler>.Instance);
+
+    /// <summary>
+    /// 记录型桩：/yolo 现在写的是 Agent 级访问级别（不再是进程态运行时模式），
+    /// 用例需要断言「写了什么」，因此记录调用而不是直接失败。
+    /// </summary>
+    private sealed class StubAgentAccessLevelService : IAgentAccessLevelService
+    {
+        public List<(string AgentId, AgentAccessLevel Level, TimeSpan? Ttl)> SetCalls { get; } = [];
+
+        public AgentAccessLevelState Get(string? agentInstanceId) => AgentAccessLevelState.Default;
+
+        public AgentAccessLevelState Set(
+            string agentInstanceId,
+            AgentAccessLevel level,
+            TimeSpan? ttl = null,
+            string? actor = null)
+        {
+            SetCalls.Add((agentInstanceId, level, ttl));
+            var now = DateTimeOffset.UtcNow;
+            return new AgentAccessLevelState(
+                level,
+                level == AgentAccessLevel.Full && ttl is { } duration ? now.Add(duration) : null,
+                now,
+                actor);
+        }
+
+        public RuntimeExecutionMode ResolveEffectiveMode(
+            string? agentInstanceId,
+            RuntimeExecutionMode globalMode) => globalMode;
+    }
 
     private sealed class UnexpectedGoalCommandService : IGoalCommandService
     {

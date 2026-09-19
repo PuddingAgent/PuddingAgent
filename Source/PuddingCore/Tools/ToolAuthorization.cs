@@ -477,8 +477,17 @@ public static partial class SystemCommandParser
     private static bool IsValidSystemCommandArgument(string commandName, string argument)
         => commandName switch
         {
-            "compact" or "memory" or "status" or "estop" or "resume" or "yolo" or "whoami" => string.IsNullOrWhiteSpace(argument),
+            "compact" or "memory" or "status" or "estop" or "resume" or "whoami" => string.IsNullOrWhiteSpace(argument),
             "stop" => string.IsNullOrWhiteSpace(argument) || string.Equals(argument, "all", StringComparison.Ordinal),
+            // 用户 2026-09-19：/yolo 三种形态 —— 无参数（持久完全访问）、
+            // <n>s|<n>m|<n>h（临时授权）、off|auto|revoke（撤销）。
+            // 此前 yolo 被归入「不接受参数」组，导致 `/yolo 5m`、`/yolo off`
+            // 被判非法并落到 "Unknown Pudding command" —— 功能实际不可用。
+            "yolo" => string.IsNullOrWhiteSpace(argument)
+                      || string.Equals(argument, "off", StringComparison.OrdinalIgnoreCase)
+                      || string.Equals(argument, "auto", StringComparison.OrdinalIgnoreCase)
+                      || string.Equals(argument, "revoke", StringComparison.OrdinalIgnoreCase)
+                      || YoloDurationRegex().IsMatch(argument),
             "mode" => string.IsNullOrWhiteSpace(argument)
                       || argument is "safe" or "normal" or "list",
             _ => false,
@@ -486,6 +495,14 @@ public static partial class SystemCommandParser
 
     [GeneratedRegex(@"^/(?<command>compact|memory|status|stop|mode|estop|resume|yolo|whoami)(?:\s+(?<argument>[a-zA-Z0-9_]+))?$", RegexOptions.IgnoreCase)]
     private static partial Regex SystemCommandRegex();
+
+    /// <summary>
+    /// `/yolo &lt;n&gt;s|&lt;n&gt;m|&lt;n&gt;h` 的时长语法。
+    /// 与 SystemCommandHandler.ParseYoloDuration 保持同一口径（分钟/小时之外的秒也支持）；
+    /// 上面那个 DurationRegex 只认 m/h，不可复用。
+    /// </summary>
+    [GeneratedRegex(@"^[0-9]+[smh]$", RegexOptions.IgnoreCase)]
+    private static partial Regex YoloDurationRegex();
 
     [GeneratedRegex(@"^/goal(?:\s[\s\S]*)?$", RegexOptions.IgnoreCase)]
     private static partial Regex GoalCommandRegex();

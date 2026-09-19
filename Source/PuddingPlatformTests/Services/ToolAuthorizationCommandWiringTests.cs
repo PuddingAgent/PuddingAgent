@@ -277,11 +277,28 @@ public sealed class ToolAuthorizationCommandWiringTests
         new(
             db,
             runtime,
+            new UnexpectedAgentAccessLevelService(),
             new UnexpectedRequestCompactionHandler(),
             new UnexpectedSystemStatusSnapshotProvider(),
             new UnexpectedGoalCommandService(),
             toolAuthorizationService,
             NullLogger<SystemCommandHandler>.Instance);
+
+    private sealed class UnexpectedAgentAccessLevelService : IAgentAccessLevelService
+    {
+        public AgentAccessLevelState Get(string? agentInstanceId) => AgentAccessLevelState.Default;
+
+        public AgentAccessLevelState Set(
+            string agentInstanceId,
+            AgentAccessLevel level,
+            TimeSpan? ttl = null,
+            string? actor = null) =>
+            throw new AssertFailedException("This test must not change the agent access level.");
+
+        public RuntimeExecutionMode ResolveEffectiveMode(
+            string? agentInstanceId,
+            RuntimeExecutionMode globalMode) => globalMode;
+    }
 
     private sealed class NeedHumanToolApprovalReviewer : IToolApprovalReviewer
     {
