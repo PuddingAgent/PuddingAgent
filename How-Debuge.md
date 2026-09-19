@@ -1,3 +1,7 @@
+### 子代理耗时但检查器仍显示启动中与零指标（2026-09-19）
+
+用截图 Run ID 对齐 run.json、events.jsonl、conversation-projection.cursor 和父会话 conversation_events；分别检查实际执行耗时和页面投影，不能把本地时钟增长解释为启动卡死。本次 26 分 31 秒的布局 Run 已完成 83 次模型调用、97 次工具调用，531 条事件全部入库；零指标卡片可能由状态快照创建后没有补齐事件。统计重复测试启动、terminal_wait 往返、命令解析异常和委派基线口径，避免仅归因模型慢。见[现场证据与修复方向](Docs/Reports/小型布局子代理耗时与进度失真诊断-2026-09-19.md)。
+
 ### 图片超限与续聊（2026-09-19）
 
 部署补充：隔离 OutDir 构建完成后，必须实际检查 `wwwroot/admin/index.html` 和前端文件哈希；本次准备包需要显式放入已验证的前端产物。经 Desktop `core/deploy-restart` 重启后，对齐新 PID、进程模块路径、prepared/loaded manifest 和 `/health/ready`，不能把旧 diagnostics.lastResult 当成本次状态。
