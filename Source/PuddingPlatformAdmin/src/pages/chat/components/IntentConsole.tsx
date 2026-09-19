@@ -926,7 +926,6 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               tLimit={contextHealth?.contextWindowTokens ?? tLimit}
               tUsed={contextHealth?.usedTokens ?? tUsed}
               tPct={effectiveContextUsagePercentage ?? 0}
-              cacheHitRate={cacheHitRate}
               compactionStatus={compactionStatus}
               error={contextHealthError}
               subAgentsRunning={subAgentsRunning}

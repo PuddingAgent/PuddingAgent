@@ -16,7 +16,7 @@ export interface ContextUsageRingProps {
   tUsed: number;
   /** 已使用百分比（0-100）。 */
   tPct: number;
-  cacheHitRate?: number;
+  /** 注意：缓存命中率不在此展示 —— 同面板运行状态块已有一行，避免同值两处。 */
   /** 来自 useCompaction 的压缩状态文案（如「上次压缩：2分钟前」）。 */
   compactionStatus?: string | null;
   /** context-health 拉取失败原因；有值时圆环区分「未配置」与「获取失败」。 */
@@ -52,7 +52,6 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   tLimit,
   tUsed,
   tPct,
-  cacheHitRate,
   compactionStatus,
   error,
   subAgentsRunning,
@@ -112,22 +111,10 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
               />
             </div>
             <div className={styles.contextUsagePanelBody}>
-              {/* 不再重复「模型上下文 / 已使用」—— 标题行已给「已使用 X/Y」，
-                  同一对数字再列一逃是面板显乱的主因（用户反馈 2026-09-19）。 */}
-              <div className={styles.contextUsagePanelRow}>
-                <span className={styles.contextUsagePanelLabel}>剩余</span>
-                <span className={styles.contextUsagePanelValue}>
-                  {formatTokens(Math.max(tLimit - tUsed, 0))}
-                </span>
-              </div>
-              {cacheHitRate !== undefined && (
-                <div className={styles.contextUsagePanelRow}>
-                  <span className={styles.contextUsagePanelLabel}>缓存命中率</span>
-                  <span className={styles.contextUsagePanelValue}>
-                    {Math.round(cacheHitRate)}%
-                  </span>
-                </div>
-              )}
+              {/* 本区只保留「运行状态块没覆盖」的信息：已使用/总量已在标题行，
+                  剩余与缓存命中在同面板下方运行状态块里（且剩余是服务端口径：
+                  已扣掉输出预算 reserve，与 tLimit-tUsed 并不相等 —— 这里不能
+                  自己算一个与之打架的数字）。 */}
               {compactionStatus && (
                 <div className={styles.contextUsagePanelRow}>
                   <span className={styles.contextUsagePanelLabel}>压缩</span>
@@ -171,7 +158,6 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
       </div>
     ),
     [
-      cacheHitRate,
       color,
       compactionStatus,
       configured,
