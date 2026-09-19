@@ -83,11 +83,63 @@ public sealed class TaskExecutionPlanCompilerTests
     }
 
     [TestMethod]
-    public void GeneralTaskType_FailsClosed()
+    public void GeneralTaskType_UsesConservativeKindSet()
     {
-        Assert.IsFalse(TaskExecutionPlanCompiler.TryCompile(Task("general"), null, out var plan, out var code));
+        // ADR-092 S1：general 是未分类默认值，必须能启动 Task-bound Goal，
+        // 但不默认授予 Change/Test 能力。
+        Assert.IsTrue(TaskExecutionPlanCompiler.TryCompile(
+            Task("general"), null, out var plan, out var code));
+        Assert.AreEqual("execution_plan_compiled", code);
+        CollectionAssert.AreEqual(
+            new[] { TaskWorkUnitKind.Explore, TaskWorkUnitKind.Plan, TaskWorkUnitKind.Review },
+            plan!.WorkUnits.Select(unit => unit.Kind).ToArray());
+    }
+
+    [TestMethod]
+    public void EmptyOrNullTaskType_IsNormalizedToGeneral()
+    {
+        foreach (var taskType in new string?[] { "", "   ", null })
+        {
+            var label = taskType ?? "<null>";
+            Assert.IsTrue(TaskExecutionPlanCompiler.TryCompile(
+                Task(taskType!), null, out var plan, out _),
+                $"taskType='{label}' should compile with the general kind set.");
+            CollectionAssert.AreEqual(
+                new[] { TaskWorkUnitKind.Explore, TaskWorkUnitKind.Plan, TaskWorkUnitKind.Review },
+                plan!.WorkUnits.Select(unit => unit.Kind).ToArray());
+            Assert.AreEqual("general", plan.TaskType);
+        }
+    }
+
+    [TestMethod]
+    public void CaseVariantTaskType_NormalizesLikeCanonical()
+    {
+        Assert.IsTrue(TaskExecutionPlanCompiler.TryCompile(
+            Task("  General "), null, out var plan, out _));
+        CollectionAssert.AreEqual(
+            new[] { TaskWorkUnitKind.Explore, TaskWorkUnitKind.Plan, TaskWorkUnitKind.Review },
+            plan!.WorkUnits.Select(unit => unit.Kind).ToArray());
+    }
+
+    [TestMethod]
+    public void UnknownTaskType_FailsWithDedicatedCodeAndDiagnostics()
+    {
+        Assert.IsFalse(TaskExecutionPlanCompiler.TryCompile(
+            Task("nonsense"), null, out var plan, out var code, out var failureDetail));
         Assert.IsNull(plan);
-        Assert.AreEqual("execution_plan_unavailable", code);
+        Assert.AreEqual("execution_plan_task_type_unsupported", code);
+        Assert.IsNotNull(failureDetail);
+        StringAssert.Contains(failureDetail!, "task_type='nonsense'");
+        foreach (var supported in new[]
+        {
+            "implementation", "operations", "deployment", "test",
+            "research", "review", "documentation", "general",
+        })
+        {
+            StringAssert.Contains(failureDetail!, supported);
+        }
+
+        StringAssert.Contains(failureDetail!, "suggestion=");
     }
 
     private static WorkspaceTaskEntity Task(string taskType, int withVersion = 1) => new()

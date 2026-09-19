@@ -14,19 +14,39 @@ public static class TaskExecutionPlanCompiler
 {
     private const string PlanKind = "workspace-task-v1";
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
+    private const string SupportedTaskTypes =
+        "implementation, operations, deployment, test, research, review, documentation, general";
 
     public static bool TryCompile(
         WorkspaceTaskEntity task,
         TaskTypeRouteOptions? typeRoute,
         out TaskExecutionPlanSnapshot? plan,
-        out string code)
+        out string code) => TryCompile(task, typeRoute, out plan, out code, out _);
+
+    public static bool TryCompile(
+        WorkspaceTaskEntity task,
+        TaskTypeRouteOptions? typeRoute,
+        out TaskExecutionPlanSnapshot? plan,
+        out string code,
+        out string? failureDetail)
     {
         ArgumentNullException.ThrowIfNull(task);
         plan = null;
+        failureDetail = null;
         code = "execution_plan_unavailable";
 
+        // ADR-092 S1：空/空白类型已在 TryResolveKinds 归一为 general，因此走到这里的
+        // false 必然是「未知非空类型」——用专用拒绝码并携带可诊断上下文，
+        // 不再落入笼统的 execution_plan_unavailable（该码保留为其他失败原因的默认值）。
         if (!TryResolveKinds(task.TaskType, out var kinds))
+        {
+            code = "execution_plan_task_type_unsupported";
+            failureDetail =
+                $"task_type='{task.TaskType ?? "<null>"}'; supported_types=[{SupportedTaskTypes}]; " +
+                "suggestion=re-submit with task_type=implementation if change capability is " +
+                "required, or pick one of the supported task types.";
             return false;
+        }
         if (!TryReadCapabilities(task.RequiredCapabilitiesJson, out var taskCapabilities))
         {
             code = "execution_plan_capabilities_invalid";
@@ -68,7 +88,9 @@ public static class TaskExecutionPlanCompiler
             workspaceId = task.WorkspaceId,
             taskId = task.TaskId,
             taskVersion = task.Version,
-            taskType = task.TaskType.Trim().ToLowerInvariant(),
+            // 归一值：非空输入与既有 Trim+ToLower 行为逐字符一致（既有指纹不变）；
+            // 空/空白此前编译失败，不存在存量指纹。
+            taskType = NormalizeTaskType(task.TaskType),
             planKind = PlanKind,
             workUnits = units,
         };
@@ -93,7 +115,9 @@ public static class TaskExecutionPlanCompiler
 
     private static bool TryResolveKinds(string? taskType, out TaskWorkUnitKind[] kinds)
     {
-        kinds = (taskType ?? string.Empty).Trim().ToLowerInvariant() switch
+        // ADR-092：general 是未分类默认值，走保守集合（不含 Change/Test），
+        // 不默认授予变更能力；空/空白类型归一为 general。
+        kinds = NormalizeTaskType(taskType) switch
         {
             "implementation" or "operations" or "deployment" =>
                 [TaskWorkUnitKind.Explore, TaskWorkUnitKind.Plan, TaskWorkUnitKind.Change,
@@ -101,7 +125,7 @@ public static class TaskExecutionPlanCompiler
             "test" =>
                 [TaskWorkUnitKind.Explore, TaskWorkUnitKind.Plan, TaskWorkUnitKind.Test,
                     TaskWorkUnitKind.Review],
-            "research" =>
+            "research" or "general" =>
                 [TaskWorkUnitKind.Explore, TaskWorkUnitKind.Plan, TaskWorkUnitKind.Review],
             "review" => [TaskWorkUnitKind.Explore, TaskWorkUnitKind.Review],
             "documentation" =>
@@ -111,6 +135,9 @@ public static class TaskExecutionPlanCompiler
         };
         return kinds.Length > 0;
     }
+
+    private static string NormalizeTaskType(string? taskType) =>
+        string.IsNullOrWhiteSpace(taskType) ? "general" : taskType.Trim().ToLowerInvariant();
 
     private static bool TryReadCapabilities(string? json, out string[] capabilities)
     {
