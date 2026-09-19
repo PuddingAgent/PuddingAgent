@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -21,6 +21,7 @@
     <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
     <PackageReference Include="NAudio.Core" Version="2.3.0" />
     <PackageReference Include="NPOI" Version="2.8.0" />
+    <PackageReference Include="Microsoft.Build.Tasks.Git" Version="10.0.401" PrivateAssets="all" />
     <PackageReference Include="PdfPig" Version="0.1.9" />
         <PackageReference Include="LibGit2Sharp" Version="0.31.0" />
     <PackageReference Include="ReverseMarkdown" Version="5.3.0" />
