@@ -1,4 +1,4 @@
-﻿using PuddingCode.Runtime;
+using PuddingCode.Runtime;
 
 namespace PuddingRuntime.Services;
 
@@ -24,19 +24,24 @@ public sealed class ContextHealthEvaluator
         var effectiveWindow = Math.Max(1, Math.Min(contextDerivedInputLimit, providerInputLimit));
         var normalizedUsedTokens = Math.Max(0, usedTokens);
         var remaining = Math.Max(0, effectiveWindow - normalizedUsedTokens);
-        var ratio = normalizedUsedTokens / (double)effectiveWindow;
-        var state = ratio switch
+        // 口径（用户 2026-09-19 决策）：对外报告的占用率以**模型配置的上下文窗口**为分母，
+        // 与 UI 面板/用户认知一致，不再被「预留输出」静默缩小分母。
+        var usageRatio = normalizedUsedTokens / (double)modelWindow;
+        // 门禁仍按**有效输入窗口**判定：0.60/0.75/TriggerRatio/0.92 这组阈值的语义是
+        // 「输入还剩多少」，若改用模型窗口作分母，触发点会被推后到超出 provider 输入上限。
+        var gateRatio = normalizedUsedTokens / (double)effectiveWindow;
+        var state = gateRatio switch
         {
             >= 0.92 => ContextHealthState.Blocking,
             _ => ContextHealthState.Healthy,
         };
         if (state == ContextHealthState.Healthy)
         {
-            if (ratio >= effectiveThreshold)
+            if (gateRatio >= effectiveThreshold)
                 state = ContextHealthState.Critical;
-            else if (ratio >= 0.75)
+            else if (gateRatio >= 0.75)
                 state = ContextHealthState.Unhealthy;
-            else if (ratio >= 0.60)
+            else if (gateRatio >= 0.60)
                 state = ContextHealthState.Warning;
         }
 
@@ -46,7 +51,7 @@ public sealed class ContextHealthEvaluator
             modelWindow,
             effectiveWindow,
             remaining,
-            ratio,
+            usageRatio,
             state,
             state >= ContextHealthState.Warning,
             state is ContextHealthState.Critical or ContextHealthState.Blocking,
