@@ -217,9 +217,9 @@ public sealed class GoalContinuationTests
 
         using var doc = ParseGoalPayload(prompt);
         var root = doc.RootElement;
-        // 纯增量：既有字段不变，lastVerdict 是最后一个字段且为 null（不伪造空对象）。
+        // 纯增量：既有字段不变，acceptanceContract 是最后一个字段（合同缺位时为 null，不伪造空对象）。
         Assert.AreEqual("goal-first", root.GetProperty("goalRunId").GetString());
-        Assert.AreEqual("lastVerdict", root.EnumerateObject().Last().Name);
+        Assert.AreEqual("acceptanceContract", root.EnumerateObject().Last().Name);
         Assert.AreEqual(JsonValueKind.Null, root.GetProperty("lastVerdict").ValueKind);
     }
 
@@ -317,6 +317,66 @@ public sealed class GoalContinuationTests
         Assert.AreEqual("continue", lastVerdict.GetProperty("outcome").GetString());
         Assert.AreEqual(JsonValueKind.Null, lastVerdict.GetProperty("blockerCode").ValueKind);
         Assert.AreEqual(0, lastVerdict.GetProperty("unmetCriteria").GetArrayLength());
+    }
+
+    [TestMethod]
+    public void BuildPrompt_WithAcceptanceContract_ProjectsSummary_AndProposalHint()
+    {
+        var prompt = GoalContinuationWorker.BuildPrompt(
+            new GoalRunEntity
+            {
+                GoalRunId = "goal-contract",
+                Objective = "wire contract",
+                ObjectiveVersion = 2,
+                MaxIterations = 8,
+                IterationsStarted = 0,
+            },
+            binding: null,
+            task: null,
+            workUnit: null,
+            iterationNo: 1,
+            acceptanceContract: new GoalAcceptanceContractEntity
+            {
+                ContractId = "gc-goal-contract-1-2",
+                GoalRunId = "goal-contract",
+                ActivationEpoch = 1,
+                ObjectiveVersion = 2,
+                ContractVersion = 3,
+                CriteriaJson = "[{\"id\":\"c1\",\"requirement\":\"build passes\"},{\"id\":\"c2\",\"requirement\":\"tests green\"}]",
+                Source = "bounded_planning",
+            });
+
+        StringAssert.Contains(prompt, "meta.goal_contract_proposal");
+        StringAssert.Contains(prompt, "refine_acceptance_contract");
+
+        using var doc = ParseGoalPayload(prompt);
+        var contract = doc.RootElement.GetProperty("acceptanceContract");
+        Assert.AreEqual("bounded_planning", contract.GetProperty("source").GetString());
+        Assert.AreEqual(3, contract.GetProperty("contractVersion").GetInt32());
+        Assert.AreEqual(2, contract.GetProperty("criteriaCount").GetInt32());
+    }
+
+    [TestMethod]
+    public void BuildPrompt_WithoutAcceptanceContract_PayloadSummaryIsNull()
+    {
+        var prompt = GoalContinuationWorker.BuildPrompt(
+            new GoalRunEntity
+            {
+                GoalRunId = "goal-no-contract",
+                Objective = "no contract yet",
+                ObjectiveVersion = 1,
+                MaxIterations = 8,
+                IterationsStarted = 0,
+            },
+            binding: null,
+            task: null,
+            workUnit: null,
+            iterationNo: 1);
+
+        using var doc = ParseGoalPayload(prompt);
+        Assert.AreEqual(
+            JsonValueKind.Null,
+            doc.RootElement.GetProperty("acceptanceContract").ValueKind);
     }
 
     [TestMethod]
@@ -1661,6 +1721,9 @@ public sealed class GoalContinuationTests
             sp.GetRequiredService<PlatformDbContext>(),
             new NoopSignal(),
             NullLogger<ConversationAcceptanceStore>.Instance));
+        // 卡 353ece3b：DispatchOneAsync 经 DI 解析验收合同仓库，测试容器同步补注册。
+        services.AddSingleton<IDbContextFactory<PlatformDbContext>>(factory);
+        services.AddScoped<GoalAcceptanceContractStore>();
         var provider = services.BuildServiceProvider();
         var worker = new GoalContinuationWorker(
             provider.GetRequiredService<IServiceScopeFactory>(),
