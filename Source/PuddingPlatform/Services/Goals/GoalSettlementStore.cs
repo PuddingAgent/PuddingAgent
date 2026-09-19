@@ -1191,6 +1191,8 @@ public sealed class GoalSettlementStore(
             }
             plan.Plan.Status = TaskPlanStatuses.Failed.ToString();
             plan.Plan.ErrorMessage = decision.BlockerMessage ?? decision.Reason;
+            plan.Plan.FailureCode ??= decision.BlockerCode ?? ToWire(decision.Verdict);
+            plan.Plan.FailedStage ??= "verdict";
             plan.Plan.CompletedAt ??= nowMs;
             plan.Plan.UpdatedAt = nowMs;
             plan.Root.Status = TaskNodeStatuses.Failed.ToString();
@@ -1345,7 +1347,12 @@ public sealed class GoalSettlementStore(
                 VerdictPayload(goal, iteration, decision)));
             // 不可恢复的尝试终结：绑定计划必须随之失败，否则计划会留在 Running，
             // 与"本次尝试已终结"的 Goal 事实自相矛盾（真实运行已复现 plan 仍为 Running）。
-            FailIncompleteBoundPlan(boundPlan, goal.BlockedCode ?? decision.Reason, now);
+            FailIncompleteBoundPlan(
+                boundPlan,
+                goal.BlockedCode ?? decision.Reason,
+                now,
+                failureCode: goal.BlockedCode,
+                failedStage: "settlement");
             if (binding is not null)
             {
                 var completionFactMissing = string.Equals(
@@ -1424,7 +1431,12 @@ public sealed class GoalSettlementStore(
 
         if (GoalStateMachine.IsBudgetExhausted(goal.MaxIterations, goal.IterationsStarted))
         {
-            FailIncompleteBoundPlan(boundPlan, "Goal accepted-iteration budget exhausted.", now);
+            FailIncompleteBoundPlan(
+                boundPlan,
+                "Goal accepted-iteration budget exhausted.",
+                now,
+                failureCode: "accepted_iteration_budget_exhausted",
+                failedStage: "settlement");
             goal.Status = GoalPhase.BudgetExhausted;
             goal.StatusReason = "accepted_iteration_budget_exhausted";
             goal.TerminalAtUtc = now;
@@ -1710,7 +1722,9 @@ public sealed class GoalSettlementStore(
     private static void FailIncompleteBoundPlan(
         BoundPlanState? plan,
         string error,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        string? failureCode = null,
+        string? failedStage = null)
     {
         if (plan?.Plan is null || plan.Root is null
             || plan.Plan.Status == TaskPlanStatuses.Completed.ToString())
@@ -1718,6 +1732,9 @@ public sealed class GoalSettlementStore(
         var nowMs = now.ToUnixTimeMilliseconds();
         plan.Plan.Status = TaskPlanStatuses.Failed.ToString();
         plan.Plan.ErrorMessage = error;
+        // 结算重放必须幂等：保留首个失败码/阶段，不因重放覆盖审计事实。
+        plan.Plan.FailureCode ??= failureCode;
+        plan.Plan.FailedStage ??= failedStage;
         plan.Plan.CompletedAt ??= nowMs;
         plan.Plan.UpdatedAt = nowMs;
         plan.Root.Status = TaskNodeStatuses.Failed.ToString();

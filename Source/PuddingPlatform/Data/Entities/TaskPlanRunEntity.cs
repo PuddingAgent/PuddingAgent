@@ -3,7 +3,22 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PuddingPlatform.Data.Entities;
 
-/// <summary>持久化的任务规划执行。</summary>
+/// <summary>
+/// 持久化的任务规划执行（task_plan_runs）。
+/// <para>
+/// <see cref="Status"/> 不是执行期状态机，而是 Goal 结算的派生投影：
+/// <c>Active</c> 仅在 TaskGoalDispatchTransactionStore.AddExecutionPlan 创建时写入；
+/// <c>Failed</c> 仅由 GoalSettlementStore 在结算终局写入，语义 =「该计划未被完成」，
+/// 不是「计划有缺陷」——有意设计（见 GoalSettlementStore.ApplyBoundPlanVerdict 注释）。
+/// </para>
+/// <para>
+/// <see cref="FailureCode"/>：结构化失败原因码，由 Goal 结算写入，取自结算 BlockerCode
+/// 或内置码（如 acceptance_contract_missing、no_progress_circuit_open、
+/// accepted_iteration_budget_exhausted）；
+/// <see cref="FailedStage"/>：失败发生阶段，verdict = ApplyBoundPlanVerdict 的 Stop 分支，
+/// settlement = 结算主流程（不可恢复终态 / 迭代预算耗尽）。二者仅 Failed 计划非空。
+/// </para>
+/// </summary>
 [Table("task_plan_runs")]
 public sealed class TaskPlanRunEntity
 {
@@ -72,6 +87,14 @@ public sealed class TaskPlanRunEntity
 
     [Column("error_message")]
     public string? ErrorMessage { get; set; }
+
+    /// <summary>结构化失败原因码（Goal 结算写入；仅 Failed 计划非空，取值见类注释）。</summary>
+    [MaxLength(128), Column("failure_code")]
+    public string? FailureCode { get; set; }
+
+    /// <summary>失败发生阶段（verdict / settlement；仅 Failed 计划非空，取值见类注释）。</summary>
+    [MaxLength(128), Column("failed_stage")]
+    public string? FailedStage { get; set; }
 
     [MaxLength(64), Column("trace_id")]
     public string? TraceId { get; set; }

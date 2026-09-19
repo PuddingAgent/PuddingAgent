@@ -40,6 +40,8 @@ public static class TaskPlanningSchemaBootstrapper
             completed_at               INTEGER,
             result_summary             TEXT,
             error_message              TEXT,
+            failure_code               TEXT,
+            failed_stage               TEXT,
             trace_id                   TEXT,
             correlation_id             TEXT
         );
@@ -52,6 +54,8 @@ public static class TaskPlanningSchemaBootstrapper
         "ALTER TABLE task_plan_runs ADD COLUMN schema_version INTEGER NOT NULL DEFAULT 1;",
         "ALTER TABLE task_plan_runs ADD COLUMN plan_kind TEXT NOT NULL DEFAULT 'delegation';",
         "ALTER TABLE task_plan_runs ADD COLUMN plan_fingerprint TEXT;",
+        "ALTER TABLE task_plan_runs ADD COLUMN failure_code TEXT;",
+        "ALTER TABLE task_plan_runs ADD COLUMN failed_stage TEXT;",
         "CREATE UNIQUE INDEX IF NOT EXISTS UX_task_plan_runs_workspace_task_version ON task_plan_runs(workspace_id, workspace_task_id, workspace_task_version, plan_version) WHERE workspace_task_id IS NOT NULL;",
         "CREATE INDEX IF NOT EXISTS IX_task_plan_runs_plan_fingerprint ON task_plan_runs(plan_fingerprint) WHERE plan_fingerprint IS NOT NULL;",
 

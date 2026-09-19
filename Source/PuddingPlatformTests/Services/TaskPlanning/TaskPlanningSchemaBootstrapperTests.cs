@@ -53,6 +53,8 @@ public sealed class TaskPlanningSchemaBootstrapperTests
             AssertColumn(taskPlanRunColumns, "task_plan_runs", "updated_at", "INTEGER", checkNotNull: true);
             AssertColumn(taskPlanRunColumns, "task_plan_runs", "result_summary", "TEXT", checkNotNull: false);
             AssertColumn(taskPlanRunColumns, "task_plan_runs", "error_message", "TEXT", checkNotNull: false);
+            AssertColumn(taskPlanRunColumns, "task_plan_runs", "failure_code", "TEXT", checkNotNull: false);
+            AssertColumn(taskPlanRunColumns, "task_plan_runs", "failed_stage", "TEXT", checkNotNull: false);
 
             var taskNodeColumns = await GetColumnsAsync(db, "task_nodes");
             AssertColumn(taskNodeColumns, "task_nodes", "task_node_id", "TEXT", checkNotNull: true);
