@@ -156,54 +156,13 @@ public static class WorkspaceTaskSchemaBootstrapper
             }
         }
 
-        await EnsureColumnAsync(db, "workspace_tasks", "task_type", "TEXT NOT NULL DEFAULT 'general'", logger, ct);
-        await EnsureColumnAsync(db, "workspace_tasks", "required_capabilities_json", "TEXT NOT NULL DEFAULT '[]'", logger, ct);
-        await EnsureColumnAsync(db, "workspace_tasks", "required_provider_id", "TEXT", logger, ct);
-        await EnsureColumnAsync(db, "workspace_tasks", "required_model_id", "TEXT", logger, ct);
-        await EnsureColumnAsync(db, "workspace_tasks", "allow_agent_fallback", "INTEGER NOT NULL DEFAULT 0", logger, ct);
-        await EnsureColumnAsync(db, "workspace_tasks", "auto_dispatch_enabled", "INTEGER NOT NULL DEFAULT 0", logger, ct);
-        await EnsureColumnAsync(db, "workspace_tasks", "sort_order", "INTEGER NOT NULL DEFAULT 0", logger, ct);
-        // Stage 1 母/子层级（D1）：旧库补列，既有行一律保持 NULL（不做任何回填）。
-        await EnsureColumnAsync(db, "workspace_tasks", "parent_task_id", "TEXT", logger, ct);
-
-        // IX_workspace_tasks_workspace_sort 引用 sort_order：旧库 ALTER 补列必须发生在索引创建之前，
-        // 故该索引从上方 Ddl 数组移至此（全新库路径 EnsureColumnAsync 为 no-op，行为等价）。
+        // sort_order / parent_task_id 已含于上方 CREATE TABLE（2026-09-19 压缩：旧库一次性
+        // ALTER 补列已删除，产品未发布不存在需升级的旧库），索引可安全创建；IF NOT EXISTS 保证幂等。
         await db.Database.ExecuteSqlRawAsync(
             "CREATE INDEX IF NOT EXISTS IX_workspace_tasks_workspace_sort ON workspace_tasks(workspace_id, sort_order);",
             ct);
-
-        // IX_workspace_tasks_workspace_parent 引用 parent_task_id：与 sort_order 同理，
-        // 旧库必须先 ALTER 补列再建索引（全新库路径 EnsureColumnAsync 为 no-op，行为等价）。
         await db.Database.ExecuteSqlRawAsync(
             "CREATE INDEX IF NOT EXISTS IX_workspace_tasks_workspace_parent ON workspace_tasks(workspace_id, parent_task_id);",
             ct);
-    }
-
-    private static async Task EnsureColumnAsync(
-        PlatformDbContext db,
-        string tableName,
-        string columnName,
-        string definition,
-        ILogger? logger,
-        CancellationToken ct)
-    {
-        var connection = db.Database.GetDbConnection();
-        if (connection.State != System.Data.ConnectionState.Open)
-            await connection.OpenAsync(ct);
-
-        await using var check = connection.CreateCommand();
-        check.CommandText = $"PRAGMA table_info({tableName})";
-        await using var reader = await check.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
-        {
-            if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
-                return;
-        }
-
-        await reader.DisposeAsync();
-        await using var alter = connection.CreateCommand();
-        alter.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {definition}";
-        logger?.LogInformation("[WorkspaceTaskSchema] adding column {Table}.{Column}", tableName, columnName);
-        await alter.ExecuteNonQueryAsync(ct);
     }
 }

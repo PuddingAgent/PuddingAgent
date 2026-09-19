@@ -468,63 +468,8 @@ public sealed class ConversationEventStore(
         await db.Database.ExecuteSqlRawAsync(
             "CREATE INDEX IF NOT EXISTS IX_conversation_catalog_status ON conversation_catalog(status)", ct);
 
-        // 列迁移：已有 SQLite 库不会因 CREATE TABLE IF NOT EXISTS 自动加列，
-        // 通过 PRAGMA table_info 检查 + ALTER TABLE ADD COLUMN 补齐 agent_id / source_kind。
-        await EnsureColumnAsync(db, "conversation_events", "agent_id", "TEXT", ct);
-        await EnsureColumnAsync(db, "conversation_events", "source_kind", "TEXT", ct);
-        await EnsureColumnAsync(db, "conversation_events", "trace_id", "TEXT", ct);
-        await EnsureColumnAsync(db, "conversation_events", "producer_component", "TEXT", ct);
-
         _tableEnsured = true;
         logger.LogInformation("[ConversationEventStore] Tables ensured");
-    }
-
-    /// <summary>
-    /// 若指定列不存在则 ALTER TABLE ADD COLUMN（幂等）。
-    /// </summary>
-    private async ValueTask EnsureColumnAsync(
-        PlatformDbContext db,
-        string tableName,
-        string columnName,
-        string columnType,
-        CancellationToken ct)
-    {
-        var conn = db.Database.GetDbConnection();
-        var openedHere = conn.State != System.Data.ConnectionState.Open;
-        if (openedHere)
-            await conn.OpenAsync(ct);
-        try
-        {
-            var exists = false;
-            using (var checkCmd = conn.CreateCommand())
-            {
-                checkCmd.CommandText = $"PRAGMA table_info({tableName})";
-                using var reader = await checkCmd.ExecuteReaderAsync(ct);
-                while (await reader.ReadAsync(ct))
-                {
-                    if (!reader.IsDBNull(1)
-                        && string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        exists = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!exists)
-            {
-                using var alterCmd = conn.CreateCommand();
-                alterCmd.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnType}";
-                await alterCmd.ExecuteNonQueryAsync(ct);
-                logger.LogInformation(
-                    "[ConversationEventStore] Added column {Column} to {Table}", columnName, tableName);
-            }
-        }
-        finally
-        {
-            if (openedHere)
-                await conn.CloseAsync();
-        }
     }
 
     // ── Schema validation ──────────────────────────────────

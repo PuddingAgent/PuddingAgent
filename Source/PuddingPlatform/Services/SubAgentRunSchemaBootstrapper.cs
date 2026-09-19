@@ -6,10 +6,10 @@ using PuddingPlatform.Data;
 namespace PuddingPlatform.Services;
 
 /// <summary>
-/// Idempotently upgrades the sub_agent_runs schema for existing SQLite databases.
+/// Ensures the sub_agent_runs composite index that is not declared in the EF model (idempotent).
 /// <para>
-/// EF EnsureCreated creates clean databases (with the parent execution identity columns once the
-/// entity declares them), but does not add columns to tables created by older builds.
+/// 全新库的列由 EF EnsureCreated 依 PuddingPlatform.Data.Entities.SubAgentRunEntity 声明创建；
+/// 一次性列迁移（旧库 ALTER 补列）已按 2026-09-19 压缩决策删除（产品未发布，不存在需升级的旧库）。
 /// </para>
 /// <para>
 /// 父执行身份（parent_turn_id / parent_command_id / parent_run_id）是 slice-4
@@ -23,12 +23,6 @@ public static class SubAgentRunSchemaBootstrapper
 
     /// <summary>父 Turn ID 列（RuntimeExecutionIdentity.TurnId）。</summary>
     public const string ParentTurnIdColumn = "parent_turn_id";
-
-    /// <summary>父命令 ID 列（RuntimeExecutionIdentity.CommandId）。</summary>
-    public const string ParentCommandIdColumn = "parent_command_id";
-
-    /// <summary>父 Run ID 列（RuntimeExecutionIdentity.RunId）。</summary>
-    public const string ParentRunIdColumn = "parent_run_id";
 
     /// <summary>「父 Turn + 状态」复合索引，服务「按父 Turn 统计运行中子代理」查询。</summary>
     public const string ParentTurnStatusIndex = "IX_sub_agent_runs_parent_turn_id_status";
@@ -51,36 +45,14 @@ public static class SubAgentRunSchemaBootstrapper
             return;
         }
 
-        await EnsureColumnAsync(db, ParentTurnIdColumn, logger, ct);
-        await EnsureColumnAsync(db, ParentCommandIdColumn, logger, ct);
-        await EnsureColumnAsync(db, ParentRunIdColumn, logger, ct);
-
         // 该索引未在 EF 模型（PlatformDbContext）中声明，因此新库与旧库都靠这里补；
         // CREATE INDEX IF NOT EXISTS 保证重复调用幂等。
+        // parent_turn_id 已由 EF EnsureCreated 依实体声明建列，索引可安全创建。
         await db.Database.ExecuteSqlRawAsync(
             $"CREATE INDEX IF NOT EXISTS \"{ParentTurnStatusIndex}\" ON \"{TableName}\" (\"{ParentTurnIdColumn}\", \"status\");",
             ct);
 
         logger?.LogDebug("[SubAgentRunSchema] Ensured index {Index}", ParentTurnStatusIndex);
-    }
-
-    private static async Task EnsureColumnAsync(
-        PlatformDbContext db,
-        string columnName,
-        ILogger? logger,
-        CancellationToken ct)
-    {
-        if (await ColumnExistsAsync(db, columnName, ct))
-            return;
-
-        await db.Database.ExecuteSqlRawAsync(
-            $"ALTER TABLE \"{TableName}\" ADD COLUMN \"{columnName}\" TEXT NULL;",
-            ct);
-
-        logger?.LogInformation(
-            "[SubAgentRunSchema] Added {Table}.{Column}",
-            TableName,
-            columnName);
     }
 
     private static async Task<bool> TableExistsAsync(PlatformDbContext db, CancellationToken ct)
@@ -101,39 +73,6 @@ public static class SubAgentRunSchemaBootstrapper
             command.Parameters.Add(parameter);
 
             return await command.ExecuteScalarAsync(ct) is not null;
-        }
-        finally
-        {
-            if (shouldClose)
-                await connection.CloseAsync();
-        }
-    }
-
-    private static async Task<bool> ColumnExistsAsync(
-        PlatformDbContext db,
-        string columnName,
-        CancellationToken ct)
-    {
-        var connection = db.Database.GetDbConnection();
-        var shouldClose = connection.State != ConnectionState.Open;
-        if (shouldClose)
-            await connection.OpenAsync(ct);
-
-        try
-        {
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"PRAGMA table_info(\"{TableName}\");";
-            await using var reader = await command.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct))
-            {
-                if (reader.FieldCount > 1
-                    && string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
         finally
         {

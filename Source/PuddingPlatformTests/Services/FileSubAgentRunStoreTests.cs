@@ -32,6 +32,9 @@ public sealed class FileSubAgentRunStoreTests
                     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
                     run_id              TEXT    NOT NULL UNIQUE,
                     parent_session_id   TEXT    NOT NULL,
+                    parent_turn_id      TEXT,
+                    parent_command_id   TEXT,
+                    parent_run_id       TEXT,
                     sub_session_id      TEXT    NOT NULL,
                     workspace_id        TEXT    NOT NULL,
                     agent_instance_id   TEXT    NOT NULL,
@@ -60,8 +63,9 @@ public sealed class FileSubAgentRunStoreTests
                     4, 2, 350
                 );
                 """);
-                    // slice-4：实体新增了父执行身份列（parent_turn_id/parent_command_id/parent_run_id），
-            // 旧库必须先跑幂等 schema 升级，EF 才能读到新列。
+                    // slice-4：实体含父执行身份列（parent_turn_id/parent_command_id/parent_run_id）。
+                    // 2026-09-19 压缩后 bootstrapper 不再补列，fixture DDL 直接声明三列；
+                    // bootstrapper 仅负责补建 EF 模型未声明的复合索引。
             await SubAgentRunSchemaBootstrapper.EnsureCreatedAsync(db);
         }
 

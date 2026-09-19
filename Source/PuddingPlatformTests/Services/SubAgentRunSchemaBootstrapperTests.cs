@@ -5,14 +5,24 @@ using PuddingPlatform.Services;
 
 namespace PuddingPlatformTests.Services;
 
+/// <summary>
+/// sub_agent_runs schema bootstrap 的「全新库」路径测试。
+/// <para>
+/// 2026-09-19 压缩决策：旧库一次性 ALTER 补列（parent_* 执行身份列）已删除——产品未发布，
+/// 不存在需要升级的旧库；三列由 EF EnsureCreated 依 <see cref="SubAgentRunEntity"/> 声明建列。
+/// 本类锁定：① 全新库上 bootstrap 后 EF 列真实存在、EF 未声明的复合索引被补建；
+/// ② 重复调用幂等；③ 无表时静默跳过不失败。
+/// </para>
+/// </summary>
 [TestClass]
 public sealed class SubAgentRunSchemaBootstrapperTests
 {
     [TestMethod]
-    public async Task EnsureCreatedAsync_AddsParentExecutionIdentityColumnsAndIndexToLegacyRunTable()
+    public async Task EnsureCreatedAsync_OnFreshDatabase_ParentIdentityColumnsAndIndexExist()
     {
-        await using var scope = await CreateLegacyDatabaseAsync();
+        await using var scope = await CreateFreshDatabaseAsync();
 
+        await scope.Db.Database.EnsureCreatedAsync();
         await SubAgentRunSchemaBootstrapper.EnsureCreatedAsync(scope.Db);
 
         Assert.IsTrue(await ColumnExistsAsync(
@@ -22,11 +32,11 @@ public sealed class SubAgentRunSchemaBootstrapperTests
         Assert.IsTrue(await ColumnExistsAsync(
             scope.Db,
             "sub_agent_runs",
-            SubAgentRunSchemaBootstrapper.ParentCommandIdColumn));
+            "parent_command_id"));
         Assert.IsTrue(await ColumnExistsAsync(
             scope.Db,
             "sub_agent_runs",
-            SubAgentRunSchemaBootstrapper.ParentRunIdColumn));
+            "parent_run_id"));
         Assert.IsTrue(await IndexExistsAsync(
             scope.Db,
             SubAgentRunSchemaBootstrapper.ParentTurnStatusIndex));
@@ -35,8 +45,9 @@ public sealed class SubAgentRunSchemaBootstrapperTests
     [TestMethod]
     public async Task EnsureCreatedAsync_IsIdempotent()
     {
-        await using var scope = await CreateLegacyDatabaseAsync();
+        await using var scope = await CreateFreshDatabaseAsync();
 
+        await scope.Db.Database.EnsureCreatedAsync();
         await SubAgentRunSchemaBootstrapper.EnsureCreatedAsync(scope.Db);
         await SubAgentRunSchemaBootstrapper.EnsureCreatedAsync(scope.Db);
 
@@ -54,26 +65,14 @@ public sealed class SubAgentRunSchemaBootstrapperTests
     {
         await using var scope = await CreateEmptyDatabaseAsync();
 
-        // 旧库没有子代理索引表时，schema 升级不得让启动失败。
+        // 库里没有子代理索引表时，bootstrap 不得让启动失败。
         await SubAgentRunSchemaBootstrapper.EnsureCreatedAsync(scope.Db);
 
         Assert.IsFalse(await TableExistsAsync(scope.Db, "sub_agent_runs"));
     }
 
-    private static async Task<TestDatabaseScope> CreateLegacyDatabaseAsync()
-    {
-        var scope = await CreateEmptyDatabaseAsync();
-        await scope.Db.Database.ExecuteSqlRawAsync(
-            """
-            CREATE TABLE "sub_agent_runs" (
-                "Id"                INTEGER NOT NULL CONSTRAINT "PK_sub_agent_runs" PRIMARY KEY AUTOINCREMENT,
-                "run_id"            TEXT    NOT NULL,
-                "parent_session_id" TEXT    NOT NULL,
-                "status"            TEXT    NOT NULL DEFAULT 'running'
-            );
-            """);
-        return scope;
-    }
+    private static async Task<TestDatabaseScope> CreateFreshDatabaseAsync()
+        => await CreateEmptyDatabaseAsync();
 
     private static async Task<TestDatabaseScope> CreateEmptyDatabaseAsync()
     {

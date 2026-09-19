@@ -167,47 +167,5 @@ public static class AgentOrchestrationSchemaBootstrapper
                 throw;
             }
         }
-
-        // CREATE TABLE IF NOT EXISTS does not evolve an existing development database. Keep the
-        // bootstrap idempotent while adding the first durable, port-addressable node output fact.
-        await EnsureColumnAsync(
-            db,
-            "orchestration_node_runs",
-            "outputs_json",
-            "ALTER TABLE orchestration_node_runs ADD COLUMN outputs_json TEXT NOT NULL DEFAULT '{{}}'",
-            ct);
-    }
-
-    private static async Task EnsureColumnAsync(
-        PlatformDbContext db,
-        string tableName,
-        string columnName,
-        string alterSql,
-        CancellationToken ct)
-    {
-        var connection = db.Database.GetDbConnection();
-        var closeAfter = connection.State != ConnectionState.Open;
-        if (closeAfter)
-            await connection.OpenAsync(ct);
-
-        try
-        {
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"PRAGMA table_info({tableName})";
-            await using var reader = await command.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct))
-            {
-                if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
-                    return;
-            }
-
-            await reader.DisposeAsync();
-            await db.Database.ExecuteSqlRawAsync(alterSql, ct);
-        }
-        finally
-        {
-            if (closeAfter)
-                await connection.CloseAsync();
-        }
     }
 }

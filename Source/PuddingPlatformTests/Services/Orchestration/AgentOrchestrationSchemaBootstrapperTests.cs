@@ -51,33 +51,6 @@ public sealed class AgentOrchestrationSchemaBootstrapperTests
         Assert.IsTrue(await ColumnExistsAsync(db, "orchestration_node_runs", "outputs_json"));
     }
 
-    [TestMethod]
-    public async Task EnsureCreatedAsync_AddsPortOutputsColumnToExistingNodeRunTable()
-    {
-        await using var connection = new SqliteConnection("Data Source=:memory:");
-        await connection.OpenAsync();
-        var options = new DbContextOptionsBuilder<PlatformDbContext>()
-            .UseSqlite(connection)
-            .Options;
-        await using var db = new PlatformDbContext(options);
-        await db.Database.ExecuteSqlRawAsync(
-            """
-            CREATE TABLE orchestration_node_runs (
-                run_id TEXT NOT NULL, node_id TEXT NOT NULL, node_kind TEXT NOT NULL,
-                status TEXT NOT NULL, attempt INTEGER NOT NULL, max_attempts INTEGER NOT NULL,
-                claim_id TEXT, lease_owner TEXT, lease_until INTEGER, fencing_token INTEGER NOT NULL,
-                execution_run_id TEXT, sub_session_id TEXT, output_summary TEXT,
-                artifact_reference TEXT, error_message TEXT, started_at INTEGER,
-                completed_at INTEGER, updated_at INTEGER NOT NULL,
-                PRIMARY KEY(run_id, node_id)
-            );
-            """);
-
-        await AgentOrchestrationSchemaBootstrapper.EnsureCreatedAsync(db);
-
-        Assert.IsTrue(await ColumnExistsAsync(db, "orchestration_node_runs", "outputs_json"));
-    }
-
     private static async Task<bool> ObjectExistsAsync(DbContext db, string type, string name)
     {
         var connection = db.Database.GetDbConnection();
