@@ -531,6 +531,19 @@ const latestByTimestamp = (items: TimelineItem[]) =>
  * 当前活动区只呈现运行时真实事件，不从前端编造“理解任务/规划路径”一类心智阶段。
  * 完整累计过程仍由 MessageProcessSummary 展开区承载；这里仅用于回答“现在实际在和什么交互”。
  */
+/** subconscious_step 的 status 是内部枚举 → 人类可读标题（禁止把枚举当文案渲染）。 */
+const SUBCONSCIOUS_STATUS_LABEL: Record<string, string> = {
+  compacting: '正在压缩上下文',
+  thinking: '后台整理中',
+  loading: '处理运行事件',
+  running: '处理运行事件',
+  queued: '等待处理运行事件',
+  success: '运行事件完成',
+  completed: '运行事件完成',
+  error: '运行事件失败',
+  failed: '运行事件失败',
+};
+
 export const getCurrentRunActivity = (
   items?: TimelineItem[],
   status?: string,
@@ -694,17 +707,23 @@ export const getCurrentRunActivity = (
     };
   }
 
+  // 此前直接把 status 枚举当标题渲染，界面出现字面量 `compacting`
+  // （用户反馈 2026-09-19：压缩卡片显示效果乱）。这里统一映射为文案。
+  const subconsciousTitle =
+    SUBCONSCIOUS_STATUS_LABEL[String(current.item.status ?? '')] ??
+    '处理运行事件';
+  const previewText = sanitizeProcessText(
+    current.item.message || current.item.text,
+    { compact: false, maxLength: 360 },
+  );
   return {
     kind: 'system',
-    title:
-      sanitizeProcessText(current.item.status, { maxLength: 80 }) ||
-      '正在处理运行事件',
+    title: subconsciousTitle,
     status: getToolStatusTone(current.item) === 'error' ? 'failed' : 'running',
     startedAt: current.item.timestamp,
     updatedAt: current.item.timestamp,
-    outputPreview: sanitizeProcessText(
-      current.item.message || current.item.text,
-      { compact: false, maxLength: 360 },
-    ),
+    // 压缩中的 message 恒为「正在压缩上下文…」，与标题同义 → 不重复作预览。
+    outputPreview:
+      current.item.status === 'compacting' ? undefined : previewText,
   };
 };

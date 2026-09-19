@@ -692,6 +692,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       ? {
           used: contextHealth.usedTokens,
           limit: contextHealth.contextWindowTokens,
+          effectiveLimit: contextHealth.effectiveWindowTokens,
           percentage: refreshedContextPct ?? 0,
           remaining: contextHealth.remainingTokens,
         }

@@ -11,6 +11,8 @@ export interface ComposerRuntimeSummary {
   token?: {
     used: number;
     limit: number;
+    /** 有效输入窗口（模型窗口 − 预留输出）；剩余与百分比的口径依据。 */
+    effectiveLimit?: number;
     percentage: number;
     remaining?: number;
   };
@@ -100,6 +102,14 @@ const ComposerStatusDetails: React.FC<ComposerStatusDetailsProps> = ({
     ? (summary.token.remaining ??
       Math.max(summary.token.limit - summary.token.used, 0))
     : undefined;
+  // 剩余是按服务端 effectiveWindowTokens 算出来的，分母必须同口径，否则会出现
+  // 「占用 9.7% / 剩余只剩一半」并存（用户反馈 2026-09-19）。
+  const windowLimit = summary.token?.limit ?? 0;
+  const effectiveLimit =
+    summary.token?.effectiveLimit && summary.token.effectiveLimit > 0
+      ? summary.token.effectiveLimit
+      : windowLimit;
+  const reservedOutput = Math.max(windowLimit - effectiveLimit, 0);
 
   return (
     <div className={styles.composerStatusDetails}>
@@ -127,13 +137,23 @@ const ComposerStatusDetails: React.FC<ComposerStatusDetailsProps> = ({
       <div className={styles.composerStatusDetailsGroup}>
         <div className={styles.composerStatusDetailsGroupTitle}>本轮摘要</div>
         {summary.token && summary.token.limit > 0 && (
-          <div className={styles.composerStatusDetailRow}>
-            <span className={styles.composerStatusDetailLabel}>有效上下文</span>
-            <span className={styles.composerStatusDetailValue}>
-              剩余 {fmtTokens(Math.max(remainingTokens ?? 0, 0))} /{' '}
-              {fmtTokens(summary.token.limit)}
-            </span>
-          </div>
+          <>
+            <div className={styles.composerStatusDetailRow}>
+              <span className={styles.composerStatusDetailLabel}>有效上下文</span>
+              <span className={styles.composerStatusDetailValue}>
+                剩余 {fmtTokens(Math.max(remainingTokens ?? 0, 0))} /{' '}
+                {fmtTokens(effectiveLimit)}
+              </span>
+            </div>
+            {reservedOutput > 0 && (
+              <div className={styles.composerStatusDetailRow}>
+                <span className={styles.composerStatusDetailLabel}>预留输出</span>
+                <span className={styles.composerStatusDetailValue}>
+                  {fmtTokens(reservedOutput)}
+                </span>
+              </div>
+            )}
+          </>
         )}
         {(!summary.token || summary.token.limit <= 0) && (
           <div className={styles.composerStatusDetailRow}>
