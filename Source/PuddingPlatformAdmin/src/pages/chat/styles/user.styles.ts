@@ -4,20 +4,6 @@ import { createStyles } from 'antd-style';
 export const useUserStyles = createStyles(() => ({
   userContent: { alignItems: 'flex-end' },
   userRow: { justifyContent: 'flex-end' },
-  userBubble: {
-    maxWidth: 'min(68%, 680px)',
-    background:
-      'color-mix(in srgb, var(--accent-purple) 10%, var(--soft-white))',
-    color: 'var(--text-primary)',
-    borderBottomRightRadius: 4,
-    borderBottomLeftRadius: 8,
-    border: '1px solid',
-    borderColor: 'color-mix(in srgb, var(--accent-purple) 18%, transparent)',
-    '&:hover': {
-      background:
-        'color-mix(in srgb, var(--accent-purple) 14%, var(--soft-white))',
-    },
-  },
   sendingText: { color: 'var(--earth-brown)', opacity: 0.7, fontSize: 12 },
   userAvatarGroup: {
     display: 'flex',
