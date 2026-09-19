@@ -28,22 +28,6 @@ const useResidualStyles = createStyles(({ token }) => ({
     justifyContent: 'center',
     padding: '8px 0',
   },
-  bubble: {
-    width: 'fit-content' as const,
-    maxWidth: 'min(76%, 820px)',
-    padding: '12px 16px',
-    borderRadius: 8,
-    lineHeight: 1.6,
-    wordBreak: 'break-word' as const,
-    whiteSpace: 'pre-wrap' as const,
-    border: '1px solid transparent',
-    background: 'transparent',
-    transition: 'background 200ms ease-in-out, box-shadow 200ms ease-in-out',
-    '&:hover': {
-      background: 'color-mix(in srgb, var(--soft-white) 50%, transparent)',
-      boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
-    },
-  },
   stepCardList: {
     display: 'flex',
     flexDirection: 'column' as const,
@@ -146,7 +130,6 @@ const useResidualStyles = createStyles(({ token }) => ({
     userSelect: 'none' as const,
     background: token.colorFillQuaternary,
   },
-  errorBubble: { borderColor: token.colorError },
   inputPanel: {
     padding: '8px 0 0',
     display: 'flex',
