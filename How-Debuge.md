@@ -205,7 +205,7 @@ PowerShell 包装命令等价为 `.\dev-up.ps1 -Clear`。`--clear` 只删除仓�
 1. 用 `git check-ignore -v Source/<Project>/temp` 和 `git ls-files -- Source/<Project>/temp/**`
    确认目标确实是忽略的生成目录且没有跟踪文件；
 2. 删除精确的项目内 `temp/` 生成目录，并在 Visual Studio 中重新加载项目；
-3. 后续构建输出只放仓库根 `.tmp-build/`，测试结果只放仓库根 `.tmp-test-out/`
+3. 后续构建输出只放仓库根 `temp/build/`，测试结果只放仓库根 `temp/test-out/`
    或系统 Temp，不要从项目目录使用相对 `temp/...` 作为 `OutDir`、`OutputPath` 或测试输出；
 4. 根 `Directory.Build.props` 通过 `DefaultItemExcludes` 排除所有项目内 `temp/**` 和
    `tmp/**`，防止误放的输出再次进入 SDK 默认项枚举。

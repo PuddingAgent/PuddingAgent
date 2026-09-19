@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $smokeRoot = Join-Path $env:TEMP ('PuddingAgent\phase2a3-webview2-' + [guid]::NewGuid().ToString('N'))
-$evidenceRoot = Join-Path $repositoryRoot '.tmp-test-out\phase2a3-webview2-smoke'
+$evidenceRoot = Join-Path $repositoryRoot 'temp\test-out\phase2a3-webview2-smoke'
 New-Item -ItemType Directory -Path $smokeRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
 

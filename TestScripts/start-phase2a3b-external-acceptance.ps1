@@ -1,4 +1,4 @@
-﻿# Phase 2A-3B External Acceptance Controller
+# Phase 2A-3B External Acceptance Controller
 # ============================================
 # Purpose: Prepare and observe a standalone PuddingDesktop instance with
 # TestSite, verify process lifecycle, write sanitized shutdown evidence.
@@ -7,7 +7,7 @@
 # Default: full external acceptance cycle
 #
 # Usage:
-#   -PrepareOnly $true -PublishRoot .tmp-build\phase2a3b-external-preview -DataRoot D:\data
+#   -PrepareOnly $true -PublishRoot temp\build\phase2a3b-external-preview -DataRoot D:\data
 #   -PublishRoot .\publish -DataRoot D:\data
 
 param(
@@ -30,7 +30,7 @@ $RepoRoot = Resolve-Path "$ScriptDir\.."
 
 # Timestamp-based evidence directory
 $timestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
-$EvidenceRoot = Join-Path $RepoRoot ".tmp-test-out\phase2a3b-deepseek-smoke\$timestamp"
+$EvidenceRoot = Join-Path $RepoRoot "temp\test-out\phase2a3b-deepseek-smoke\$timestamp"
 $TempHome = Join-Path $env:TEMP "PuddingAgent\phase2a3b-external-$(New-Guid | Select-Object -ExpandProperty Guid | ForEach-Object { $_.Substring(0, 8) })\desktop-home"
 
 # ─── Functions ───────────────────────────────────────────────────────────────

@@ -87,7 +87,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=int, default=3600, help="Per-run terminal wait seconds")
     parser.add_argument("--poll", type=float, default=5.0)
     parser.add_argument("--label", default="local-baseline")
-    parser.add_argument("--output", type=Path, default=Path(".tmp-test-out/benchmark-p2"))
+    parser.add_argument("--output", type=Path, default=Path("temp/test-out/benchmark-p2"))
     parser.add_argument("--dry-run", action="store_true", help="List selected cases without invoking a model")
     parser.add_argument("--evaluate-run", help="Evaluate an existing brun_* run only")
     parser.add_argument("--session-id", help="Session override for --evaluate-run")

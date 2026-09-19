@@ -88,9 +88,9 @@ python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --down
 - 编译命令: `dotnet build PuddingRuntime --no-restore`
 - Desktop 定向构建: `dotnet build Source\PuddingDesktop\PuddingDesktop.csproj --no-restore --nologo`
 - Desktop 定向测试: `dotnet test Tests\PuddingDesktop.Tests\PuddingDesktop.Tests.csproj --no-restore --nologo`
-- Desktop Release 预览发布: `dotnet publish Source\PuddingDesktop\PuddingDesktop.csproj -c Release --no-restore -o .tmp-build\desktop-preview --nologo`
+- Desktop Release 预览发布: `dotnet publish Source\PuddingDesktop\PuddingDesktop.csproj -c Release --no-restore -o temp\build\desktop-preview --nologo`
 - Desktop build/test/publish 必须串行执行；并行构建同一 WPF 项目会共享 `obj`，可能产生重复 `mainwindow.baml` 的 `RG1000`。
-- 构建、测试和发布输出只允许放在仓库 `.tmp-build`、`.tmp-test-out` 或系统 Temp，不得放到 `D:\data`。
+- 构建、测试和发布输出只允许放在仓库 `temp\build`、`temp\test-out` 或系统 Temp，不得放到 `D:\data`。
 
 
 ## 长效学习管道（已建成）
@@ -111,8 +111,10 @@ python e:\github\AgentNetworkPlan\PuddingAgent\dev-up.py --down
 
 1. **任务完成即提交**：每个原子任务完成并通过验证后立刻 `git commit`，禁止把多个任务的改动攒在一起；中断/转交前先提交已验证部分。**工作树不允许长期处于脏状态。**
 2. **精确暂存**：使用 `git add <明确文件路径列表>`，禁止裸 `git add -A` / `git add .`（工作树常混有他方并行 WIP）。
-3. **临时产物一律进 `temp/`**（已 ignore）：编译输出、测试输出、临时脚本、commit message 草稿、报告草稿；禁止散落在仓库根或源码目录。
-4. **提交前自检**：`git status` 只含本次预期文件 → `git diff --cached --stat` 无 `bin/`、`obj/`、`pub/`、`.tmp-build/` → 无 `??` 临时/密钥/大文件 → 一个 commit 只做一件事。
+3. **临时产物一律进 `temp/`**（已 ignore），且必须落在这三个子目录之一：编译/发布输出 → `temp\build\`，测试输出与结果 → `temp\test-out\`，临时脚本/草稿/报告 → `temp\` 根；禁止散落在仓库根或源码目录。
+   - 一次性清理：`Remove-Item temp\build\*, temp\test-out\* -Recurse -Force -ErrorAction SilentlyContinue`（每次构建/测试跑完立即执行）。
+   - `dev-up.py --clear` 已把这些路径纳入白名单；`temp\` 根下的人类可读笔记（`.md`/`.patch`）不受清理影响。
+4. **提交前自检**：`git status` 只含本次预期文件 → `git diff --cached --stat` 无 `bin/`、`obj/`、`pub/`、`temp/build/` → 无 `??` 临时/密钥/大文件 → 一个 commit 只做一件事。
 5. **只推自己的 commit**：不代推他方未完成的改动；推送前确认没有夹带。
 
 > 对照断言：`Source/PuddingPlatformTests/Services/AgentTemplateFileServiceTests.cs` 的 `RepoGeneralAssistantPreset_AgentsPrompt_Contains_RepoHygieneClause` 会校验产品预设 `general-assistant.json` 的 `agentsPrompt` 含上述条款，两处需同步维护。

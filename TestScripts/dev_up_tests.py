@@ -472,6 +472,8 @@ class DevUpSupervisorTests(unittest.TestCase):
             clear_targets = (
                 root / "tmp",
                 root / ".tmp",
+                root / "temp" / "build",
+                root / "temp" / "test-out",
                 root / ".tmp-build",
                 root / ".tmp-test-out",
                 root / ".codex-out",
@@ -482,6 +484,7 @@ class DevUpSupervisorTests(unittest.TestCase):
                 (target / "generated.bin").write_bytes(b"generated")
 
             preserved = (
+                root / "temp" / "notes" / "handoff.md",
                 root / "data" / "agents" / "manifest.json",
                 root / "Source" / "PuddingAgent" / "bin" / "PuddingAgent.dll",
                 root / "publish" / "app" / "PuddingAgent.dll",

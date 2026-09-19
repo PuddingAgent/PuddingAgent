@@ -140,6 +140,10 @@ def repository_clear_targets(root: Path | None = None) -> tuple[Path, ...]:
     return (
         repository_root / "tmp",
         repository_root / ".tmp",
+        repository_root / "temp" / "build",
+        repository_root / "temp" / "test-out",
+        # Legacy redirect roots: no longer used for new output, kept in the
+        # allowlist so stale junk from older runs is still purged by --clear.
         repository_root / ".tmp-build",
         repository_root / ".tmp-test-out",
         repository_root / ".codex-out",

@@ -10,7 +10,7 @@
 
 | 类别 | 典型示例 | 处理方式 |
 |---|---|---|
-| 编译/构建产物 | `bin/`、`obj/`、`pub/`、`.tmp-build/`、`*.dll`、`*.exe`、`*.pdb` | 不跟踪；由构建过程重新生成 |
+| 编译/构建产物 | `bin/`、`obj/`、`pub/`、`temp/build/`、`*.dll`、`*.exe`、`*.pdb` | 不跟踪；由构建过程重新生成 |
 | 包管理器产物 | `node_modules/`、NuGet 缓存、`*.nupkg` 之外的下载缓存 | 不跟踪；通过清单文件恢复 |
 | 临时/草稿文件 | `.tmp-*`、`*.tmp`、`*_output.txt`、`*_result.txt`、编辑器备份 | 一律输出到 `temp/` 或系统临时目录 |
 | 运行时数据 | 日志、数据库文件、会话缓存、`checkpoint.json`、进程残留 | 不跟踪；必要时用 ignore 规则兜底 |
@@ -19,7 +19,9 @@
 
 ## 二、临时输出纪律
 
-- 需要产生临时文件的场景，**一律写入 `temp/` 目录**（仓库已对该目录配置 ignore）。
+- 需要产生临时文件的场景，**一律写入 `temp/` 目录**（仓库已对该目录配置 ignore），并按用途分子目录：编译/发布输出 → `temp/build/`，测试输出与结果 → `temp/test-out/`，临时脚本/草稿/报告 → `temp/` 根。
+- 重定向输出（`>`、`--results-directory`、`-o`、`-p:OutDir` 等）**必须显式指向上述 `temp/` 子目录**，禁止写仓库根或源码目录。
+- 一次性清理：`Remove-Item temp/build/*, temp/test-out/* -Recurse -Force -ErrorAction SilentlyContinue`。
 - 禁止在仓库根目录或源码目录散落 `*.tmp-*`、`msg.txt`、`commit_msg*.txt` 之类的草稿文件。
 - 临时文件用完即清理；不清理由生成方负责在收尾时删除。
 - 任何「临时输出物」不得通过 `git add .` 这类通配方式进入暂存区。
@@ -30,7 +32,7 @@
 
 1. `git status` 是否只包含本次任务的预期文件？
 2. 是否存在 `??` 未跟踪的临时文件、密钥文件、大文件？如有，确认它们已被 ignore 或删除。
-3. `git diff --cached --stat` 是否出现不应出现的目录（如 `bin/`、`pub/`、`.tmp-build/`）？
+3. `git diff --cached --stat` 是否出现不应出现的目录（如 `bin/`、`pub/`、`temp/build/`）？
 4. 改动内容是否与 commit message 描述一致？（一个 commit 只做一件事）
 5. 是否包含密钥/口令/Token？可用 `git grep -i -E "(api[_-]?key|secret|password|token=|sk-...)"` 快速筛查。
 6. 大文件是否误入？可用 `git diff --cached --numstat` 检查单文件增量。

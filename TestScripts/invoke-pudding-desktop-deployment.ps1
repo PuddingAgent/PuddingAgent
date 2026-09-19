@@ -4,7 +4,7 @@ param(
     [Parameter(Mandatory)][ValidateSet('StopAndBackup','Deploy','Verify')][string]$Action,
     [string]$BackupManifestPath,
     [string]$ManifestPath = 'Docs/Reports/pudding-agent-round2-build-2026-09-05.json',
-    [string]$OutputPath = '.tmp-test-out/efficiency-results/round3-deployment.json'
+    [string]$OutputPath = 'temp/test-out/efficiency-results/round3-deployment.json'
 )
 function Test-CoreQuiescent {
     param([object]$Snapshot, [bool]$ProcessExists)
@@ -104,7 +104,7 @@ if ($Action -eq 'StopAndBackup') {
     })
     $ready = Invoke-RestMethod ($diagnostics.coreAddress.TrimEnd('/') + '/health/ready') -TimeoutSec 15
     $verification = [pscustomobject]@{VerifiedAtUtc=[DateTimeOffset]::UtcNow;CoreProcessId=$diagnostics.coreProcessId;CoreState=$diagnostics.coreState;DesktopState=$diagnostics.desktopState;CoreReadyAt=$diagnostics.coreReadyAt;Health=$ready.status;Hashes=$checks;FrontendFiles=$frontendChecks.Count;FrontendMismatches=@($frontendChecks | Where-Object { !$_.Matches })}
-    if (!$PSBoundParameters.ContainsKey('OutputPath')) { $OutputPath = '.tmp-test-out/efficiency-results/round3-verification.json' }
+    if (!$PSBoundParameters.ContainsKey('OutputPath')) { $OutputPath = 'temp/test-out/efficiency-results/round3-verification.json' }
     $verification | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $repositoryRoot $OutputPath) -Encoding utf8
     $verification | ConvertTo-Json -Depth 5
     if (@($checks | Where-Object { !$_.Matches }).Count -or !$frontendChecks.Count -or $verification.FrontendMismatches.Count -or $ready.status -ne 'ready') { throw 'Deployed artifact or readiness mismatch' }
