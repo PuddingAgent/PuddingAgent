@@ -225,4 +225,175 @@ export const usePanelStyles = createStyles(() => ({
     wordBreak: 'break-word' as const,
     whiteSpace: 'pre-wrap' as const,
   },
+  // ── 压缩卡（CompactionCard）──
+  // 为什么单独一套形态：压缩既不是工具调用也不是模型思考，通用活动卡只给一行标题，
+  // 用户既看不出它在做什么，也无法分辨「是不是真的在跑」（用户反馈 2026-09-19：
+  // 压缩卡片显示效果乱）。这里只表达运行/完成/未完成三种有事实支撑的状态，
+  // 用不定量扫描条表示「还在跑」，不伪造百分比进度，也不编造阶段名。
+  compactionCard: {
+    position: 'relative' as const,
+    width: '100%',
+    minWidth: 0,
+    boxSizing: 'border-box' as const,
+    border: '1px solid',
+    borderColor:
+      'color-mix(in srgb, var(--accent-purple) 12%, var(--earth-brown) 6%)',
+    borderLeft:
+      '2px solid color-mix(in srgb, var(--accent-purple) 34%, var(--earth-brown) 8%)',
+    borderRadius: 10,
+    borderTopLeftRadius: 5,
+    background:
+      'linear-gradient(135deg, color-mix(in srgb, var(--accent-purple) 3%, var(--soft-white)), var(--soft-white) 58%)',
+    boxShadow: '0 3px 12px rgba(63, 38, 95, 0.045), 0 1px 3px rgba(0,0,0,0.035)',
+    padding: '11px 14px 10px',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 8,
+    overflow: 'hidden' as const,
+  },
+  compactionCardSuccess: {
+    borderLeftColor: 'color-mix(in srgb, #6f8f72 58%, var(--earth-brown))',
+  },
+  compactionCardInterrupted: {
+    borderLeftColor: 'color-mix(in srgb, #c15f45 62%, var(--earth-brown))',
+  },
+  compactionCardSettle: {
+    animation: 'compactionCardSettle 320ms ease-out both',
+    '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+  },
+  compactionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 0,
+  },
+  /** 「收敛」字形：三根逐根塌缩的竖条，替代通用转圈，语义是「内容被压紧」。 */
+  compactionGlyph: {
+    display: 'inline-flex',
+    alignItems: 'flex-end',
+    gap: 2,
+    height: 14,
+    flexShrink: 0,
+  },
+  compactionGlyphBar: {
+    width: 3,
+    borderRadius: 1,
+    background:
+      'color-mix(in srgb, var(--accent-purple) 55%, var(--earth-brown))',
+    transformOrigin: 'bottom' as const,
+    animation: 'compactionGlyph 1.5s ease-in-out infinite',
+    '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+  },
+  compactionGlyphBarStatic: { animation: 'none' },
+  compactionTitle: {
+    minWidth: 0,
+    flex: 1,
+    color: 'var(--pudding-chat-text)',
+    fontSize: 13,
+    fontWeight: 600,
+    lineHeight: '18px',
+    wordBreak: 'break-word' as const,
+  },
+  compactionElapsed: {
+    flexShrink: 0,
+    color: 'var(--pudding-chat-text-muted)',
+    opacity: 0.75,
+    fontSize: 11,
+    lineHeight: '18px',
+    fontVariantNumeric: 'tabular-nums' as const,
+    whiteSpace: 'nowrap' as const,
+  },
+  compactionRail: {
+    position: 'relative' as const,
+    height: 3,
+    borderRadius: 2,
+    overflow: 'hidden' as const,
+    background: 'color-mix(in srgb, var(--earth-brown) 9%, transparent)',
+  },
+  compactionRailFill: {
+    position: 'absolute' as const,
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderRadius: 2,
+    background: 'color-mix(in srgb, #6f8f72 42%, transparent)',
+    animation: 'compactionSettle 420ms ease-out both',
+    '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+  },
+  compactionRailSweep: {
+    position: 'absolute' as const,
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: '38%',
+    borderRadius: 2,
+    background:
+      'linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent-purple) 46%, transparent) 45%, color-mix(in srgb, var(--accent-purple) 62%, transparent) 60%, transparent)',
+    animation: 'compactionSweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+    '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+  },
+  compactionHint: {
+    color: 'var(--pudding-chat-text-muted)',
+    fontSize: 12,
+    lineHeight: 1.55,
+    wordBreak: 'break-word' as const,
+  },
+  compactionReason: {
+    margin: 0,
+    padding: '6px 9px',
+    maxHeight: '6.4em',
+    overflow: 'hidden' as const,
+    borderRadius: 6,
+    border:
+      '1px solid color-mix(in srgb, #c15f45 18%, transparent)',
+    background: 'color-mix(in srgb, #c15f45 6%, transparent)',
+    color: 'var(--pudding-chat-text-muted)',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontSize: 11,
+    lineHeight: 1.55,
+    whiteSpace: 'pre-wrap' as const,
+    wordBreak: 'break-word' as const,
+  },
+  /** 上下文面板「压缩」行的运行态呼吸点。 */
+  compactionStatusDot: {
+    display: 'inline-block',
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    marginRight: 5,
+    verticalAlign: 'middle',
+    background: 'color-mix(in srgb, var(--accent-purple) 60%, transparent)',
+    animation: 'compactionBreathe 1.8s ease-in-out infinite',
+    '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+  },
+  compactionStatusDotStatic: {
+    display: 'inline-block',
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    marginRight: 5,
+    verticalAlign: 'middle',
+    background: 'color-mix(in srgb, #6f8f72 55%, transparent)',
+  },
+  '@keyframes compactionSweep': {
+    '0%': { transform: 'translateX(-100%)' },
+    '100%': { transform: 'translateX(263%)' },
+  },
+  '@keyframes compactionGlyph': {
+    '0%, 100%': { transform: 'scaleY(0.42)' },
+    '50%': { transform: 'scaleY(1)' },
+  },
+  '@keyframes compactionBreathe': {
+    '0%, 100%': { opacity: 0.45, transform: 'scale(0.9)' },
+    '50%': { opacity: 1, transform: 'scale(1.15)' },
+  },
+  '@keyframes compactionSettle': {
+    '0%': { opacity: 0, transform: 'scaleX(0.2)' },
+    '100%': { opacity: 1, transform: 'scaleX(1)' },
+  },
+  '@keyframes compactionCardSettle': {
+    '0%': { opacity: 0.4, transform: 'translateY(2px)' },
+    '100%': { opacity: 1, transform: 'translateY(0)' },
+  },
 }));

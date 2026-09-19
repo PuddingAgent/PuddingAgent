@@ -44,7 +44,8 @@ const STATUS_LABEL: Record<ComposerRuntimeSummary['status'], string> = {
   idle: '就绪',
   initializing: '正在初始化…',
   composing: '输入中…',
-  thinking: '正在整理上下文…',
+  // 「整理上下文」会与压缩共用同一批词，用户无法分辨 → 统一改成思考。
+  thinking: '正在思考…',
   tool_executing: '正在调用工具…',
   streaming: '正在生成回复…',
   completed: '已完成',

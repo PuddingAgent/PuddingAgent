@@ -18,6 +18,7 @@ import type {
 } from '../types';
 import { summarizeError } from '../utils/summarizeError';
 import AgentAvatar from './AgentAvatar';
+import CompactionCard from './CompactionCard';
 import {
   deriveTurnStatusFromFacts,
   deriveTurnStatusFromProjection,
@@ -817,7 +818,11 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                 data-testid="agent-run-monitor"
               >
                 {/* CU-05：唯一 L0 状态行（单 aria-live）；WaitingBubble 已退出生产路径。 */}
-                {turnStatus && (
+                {/* 压缩事实由 CompactionCard 独立承载完整状态，这里不再叠一行
+                    turn 级状态：否则同卡同时出现「正在压缩上下文」与
+                    「正在生成回答 · 已运行 Nm」两条互斥叙述，用户会读成
+                    「压缩完了又在生成」（用户反馈 2026-09-19）。 */}
+                {turnStatus && processActivity?.variant !== 'compaction' && (
                   <TurnStatus
                     status={turnStatus}
                     turnStartedAt={createdAt}
@@ -827,9 +832,12 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
 
                 {/* 当前活动区仅保留尚无专属轨迹行的 system 阶段事实
                     （委派等待态由 TurnStatus delegating + DelegationRow 承载，不再渲染大卡）。 */}
-                {shouldShowProcessActivity && processActivity && (
-                  <CurrentActivityPanel activity={processActivity} />
-                )}
+                {shouldShowProcessActivity && processActivity &&
+                  (processActivity.variant === 'compaction' ? (
+                    <CompactionCard activity={processActivity} />
+                  ) : (
+                    <CurrentActivityPanel activity={processActivity} />
+                  ))}
               </div>
             )}
 

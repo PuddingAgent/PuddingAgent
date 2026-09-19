@@ -47,6 +47,11 @@ export interface CurrentRunActivity {
   outputPreview?: string;
   outputFull?: string;
   outputTruncated?: boolean;
+  /**
+   * 活动语义标记。`compaction` 表示这是上下文压缩事实（既不是工具调用也不是
+   * 模型思考），由 CompactionCard 专用形态呈现；缺省走通用活动卡。
+   */
+  variant?: 'compaction';
 }
 
 export interface ProcessFailureBreakdown {
@@ -214,7 +219,7 @@ const isMeaningfulThinkingText = (text: string): boolean => {
 
 export const summarizeThinkingText = (text?: string): string => {
   const safe = sanitizeProcessText(text);
-  if (!safe) return '正在整理上下文';
+  if (!safe) return '正在思考';
 
   const steps: string[] = [];
   const add = (label: string) => {
@@ -719,6 +724,10 @@ export const getCurrentRunActivity = (
   return {
     kind: 'system',
     title: subconsciousTitle,
+    variant:
+      current.item.status === 'compacting'
+        ? ('compaction' as const)
+        : undefined,
     status: getToolStatusTone(current.item) === 'error' ? 'failed' : 'running',
     startedAt: current.item.timestamp,
     updatedAt: current.item.timestamp,

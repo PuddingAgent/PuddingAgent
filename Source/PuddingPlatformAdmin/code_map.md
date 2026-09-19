@@ -226,3 +226,14 @@
 编排 Layout/Revision/Typed Edge/Graph Input/HTTP Hook/Manual Run/组件 UI 定向 Jest：`src/pages/orchestration` 10 suites / 57 tests；生产构建必须生成 `/orchestration/index.html`。仓库全量 `tsc --noEmit` 有既有非编排基线错误时，必须另行确认输出中 `src/pages/orchestration` 命中为 0，不能把全量失败描述为通过。
 
 余额徽标定向 Jest：`providerBilling.test.ts` / `useProviderBalance.test.ts` / `ProviderBalanceIndicator.test.tsx` 共 3 suites / 12 tests（注册表匹配矩阵、拉取/降级/手动刷新、'—'/¥xx.xx/detail Tooltip）。
+
+## 上下文压缩界面（2026-09-19）
+
+| 文件 | 职责与边界 |
+|------|------------|
+| `src/pages/chat/components/CompactionCard.tsx` | 压缩事实的专用卡（运行/完成/未完成三态）。只表达有事实支撑的内容：运行中用不定量扫描条 + 「已运行 Xs/Xm」+ 收敛字形，**不伪造百分比进度、不编造前端无从证实的阶段名**；未完成态必须原样露出原因；动画在 `prefers-reduced-motion` 下全部降级 |
+| `src/pages/chat/components/processPreview.ts` | `CurrentRunActivity.variant='compaction'` 标记压缩事实（来源：`subconscious_step.status==='compacting'`）；`AgentMessageBubble` 按该标记分流到 `CompactionCard`，通用活动卡只承载其余 system 阶段事实 |
+| `src/pages/chat/components/AgentMessageBubble.tsx` | 压缩态下不再叠加 turn 级 `TurnStatus` 行：否则同一张卡同时出现「正在压缩上下文」与「正在生成回答 · 已运行 Nm」两条互斥叙述，被读成“压缩完了又在生成” |
+| `src/pages/chat/components/IntentConsole.tsx` / `ComposerStatusDetails.tsx` | `status=thinking` 文案统一为「正在思考…」；**不得再用「整理上下文」**，该词与压缩共用同一批词，用户会读成正在压缩 |
+| `src/pages/chat/components/ContextUsageRing.tsx` | 上下文面板「压缩」行只有文案等于 `COMPACTION_RUNNING_LABEL` 时才带呼吸点；「上次压缩 / 压缩失败」是终态事实，不加动效 |
+| `src/pages/chat/styles/panel.styles.ts` | 压缩卡形态与 `compactionSweep / compactionGlyph / compactionBreathe / compactionSettle` 关键帧；复用 `--accent-purple` / `--earth-brown` 暖色 token，不引入新色板 |

@@ -75,7 +75,9 @@ const STATUS_LABEL: Record<ChatStatus, string> = {
   idle: '',
   initializing: '· 正在连接…',
   composing: '',
-  thinking: '· 正在整理上下文…',
+  // 措辞不得与「压缩上下文」撞车：用户会把「整理上下文」读成压缩，
+  // 从而以为系统在压缩（用户反馈 2026-09-19）。
+  thinking: '· 正在思考…',
   tool_executing: '· 正在调用工具…',
   streaming: '· 正在生成回复…',
   completed: '· 已完成',
