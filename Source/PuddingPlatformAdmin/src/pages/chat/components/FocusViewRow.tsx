@@ -1,4 +1,4 @@
-﻿// ── FocusViewRow：Focus view 单行折叠行（P2#8）──────────────
+// ── FocusViewRow：Focus view 单行折叠行（P2#8）──────────────
 // 每个 turn 折叠为一行：头像 + 名称 + 单行摘要（运行中显示当前工具）+ 时间 + 展开箭头。
 // 点击展开后渲染完整消息内容（children = 常规气泡渲染）。
 import { DownOutlined, UpOutlined } from '@ant-design/icons';
@@ -64,7 +64,6 @@ const FocusViewRow: React.FC<FocusViewRowProps> = ({
             emoji={avatarEmoji}
             color={avatarColor}
             imageUrl={avatarUrl}
-            grouped={false}
           />
         )}
         <span className={styles.focusViewRowName}>{name}</span>

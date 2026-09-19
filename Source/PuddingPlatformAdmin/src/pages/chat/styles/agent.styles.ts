@@ -1,4 +1,4 @@
-﻿// ── agent styles ─────────────────────────────────
+// ── agent styles ─────────────────────────────────
 import { createStyles } from 'antd-style';
 
 export const useAgentStyles = createStyles(({ token }) => ({
@@ -72,8 +72,11 @@ export const useAgentStyles = createStyles(({ token }) => ({
     fontSize: 16,
     userSelect: 'none' as const,
     overflow: 'hidden',
-    marginTop: 18,
-    marginRight: 10,
+    // 2026-09-19 头像上移至卡外头部行（WorkBuddy 式）：不再需要光学下移；
+    // 头部行用 gap 统一间距，这里保留 8px 右距兼容 FocusViewRow / 引用块等
+    // 自行横排的场景。
+    marginTop: 0,
+    marginRight: 8,
   },
   agentAvatarImg: {
     width: 32,
@@ -81,18 +84,21 @@ export const useAgentStyles = createStyles(({ token }) => ({
     borderRadius: '50%',
     objectFit: 'cover' as const,
   },
+  // 已随头像上移废弃（2026-09-19）：连续消息改为不渲染头部行与头像，
+  // 隐形占位不再有消费方；键位暂时保留，避免外部样式引用断裂。
   agentAvatarGrouped: {
     visibility: 'hidden' as const,
     marginRight: 10,
     width: 32,
     flexShrink: 0,
   },
-  agentNameRow: {
+  // 头部行（原卡内 agentNameRow 上移而来，键随结构更名）：置于 agentTurnCard
+  // 之前，使头像左边界 == 头部行左边界 == 正文卡片左边界，同一条竖直左轴。
+  agentHeaderRow: {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 2,
-    paddingLeft: 4,
+    marginBottom: 4,
     minHeight: 20,
   },
   agentNameText: {

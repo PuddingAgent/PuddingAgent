@@ -260,7 +260,6 @@ const QuotedMessageBlock: React.FC<{ quotedMessage: ChatQuotedMessage }> = ({
           name={quotedMessage.sourceName}
           emoji="🤖"
           color={avatarColor}
-          grouped={false}
         />
         <div className={styles.agentMessageContainer}>
           <div className={styles.inboundAgentCard}>
@@ -584,7 +583,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
 
   return (
     <div
-      style={{ display: 'flex', alignItems: 'flex-start', width: '100%' }}
+      style={{ display: 'flex', flexDirection: 'column', width: '100%' }}
       onMouseEnter={revealActions}
       onMouseLeave={hideActions}
     >
@@ -593,51 +592,53 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
         <QuotedMessageBlock quotedMessage={quotedMessage} />
       ) : (
         <>
-          <AgentAvatar
-            name={agentName}
-            emoji={agentAvatarEmoji}
-            color={agentAvatarColor}
-            imageUrl={agentAvatarUrl}
-            grouped={groupedWithPrevious}
-          />
+          {/* WorkBuddy 式头部行（2026-09-19）：头像移到内容上方，与名字/时间/
+              状态 chip 同行，置于 agentTurnCard 之前；连续消息（grouped）整行
+              不渲染——头像不再横向占位，正文卡片左边界自然与其它消息的
+              头部行/头像左边界共轴对齐。 */}
+          {!groupedWithPrevious && (
+            <div className={styles.agentHeaderRow}>
+              <AgentAvatar
+                name={agentName}
+                emoji={agentAvatarEmoji}
+                color={agentAvatarColor}
+                imageUrl={agentAvatarUrl}
+              />
+              <span className={styles.agentNameText}>{agentName}</span>
+              {/* S3（看板卡 55435eb4）：运行态头部实时「已处理 <时长>」——
+                  叶子组件自持 tick，时间基准 = createdAt（reload 不归零）；
+                  终态回落创建时刻。流式最小态：运行尚无内容时头部即有
+                  活跃指示，配合卡底 TurnStatus 行，卡片不空白。 */}
+              {isRunActive ? (
+                <TurnElapsedLabel
+                  startedAt={createdAt}
+                  className={styles.agentTimeText}
+                />
+              ) : (
+                <span
+                  className={styles.agentTimeText}
+                  title={dayjs(createdAt).format('YYYY-MM-DD HH:mm:ss')}
+                >
+                  {formatTime(createdAt)}
+                </span>
+              )}
+              {/* 无障碍（验收 6）：终态卡保留可达状态标记（成功/失败/取消），
+                  不只依赖颜色与计量行。运行态由 TurnStatus 行承载。 */}
+              {/* 失败/取消语义由既有错误摘要行承载（StateDot+标题），此处
+                  只补成功终态标记，避免同卡重复状态行。 */}
+              {!isRunActive && status === 'success' && (
+                <span
+                  className={styles.agentTurnStateChip}
+                  aria-label="回合已完成"
+                >
+                  <StateDot state="done" size={8} />
+                  已完成
+                </span>
+              )}
+            </div>
+          )}
           <div className={styles.agentMessageContainer}>
             <div className={styles.agentTurnCard}>
-            {/* 名称 + 时间 */}
-            {!groupedWithPrevious && (
-              <div className={styles.agentNameRow}>
-                <span className={styles.agentNameText}>{agentName}</span>
-                {/* S3（看板卡 55435eb4）：运行态头部实时「已处理 <时长>」——
-                    叶子组件自持 tick，时间基准 = createdAt（reload 不归零）；
-                    终态回落创建时刻。流式最小态：运行尚无内容时头部即有
-                    活跃指示，配合卡底 TurnStatus 行，卡片不空白。 */}
-                {isRunActive ? (
-                  <TurnElapsedLabel
-                    startedAt={createdAt}
-                    className={styles.agentTimeText}
-                  />
-                ) : (
-                  <span
-                    className={styles.agentTimeText}
-                    title={dayjs(createdAt).format('YYYY-MM-DD HH:mm:ss')}
-                  >
-                    {formatTime(createdAt)}
-                  </span>
-                )}
-                {/* 无障碍（验收 6）：终态卡保留可达状态标记（成功/失败/取消），
-                    不只依赖颜色与计量行。运行态由 TurnStatus 行承载。 */}
-                {/* 失败/取消语义由既有错误摘要行承载（StateDot+标题），此处
-                    只补成功终态标记，避免同卡重复状态行。 */}
-                {!isRunActive && status === 'success' && (
-                  <span
-                    className={styles.agentTurnStateChip}
-                    aria-label="回合已完成"
-                  >
-                    <StateDot state="done" size={8} />
-                    已完成
-                  </span>
-                )}
-              </div>
-            )}
 
             {/* AgentTurnCard 重构：正文段 ⇄ 行为组内容块流 —— 按 canonical
                 sequence 交错；正文段（TextBlock）永久可见且只渲染一次，行为

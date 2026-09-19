@@ -7,7 +7,6 @@ interface AgentAvatarProps {
   emoji?: string;
   color?: string;
   imageUrl?: string;
-  grouped?: boolean;
 }
 
 const AgentAvatar: React.FC<AgentAvatarProps> = ({
@@ -15,14 +14,9 @@ const AgentAvatar: React.FC<AgentAvatarProps> = ({
   emoji,
   color,
   imageUrl,
-  grouped,
 }) => {
   const { styles } = useChatMessageStyles();
   const [imgFailed, setImgFailed] = useState(false);
-
-  if (grouped) {
-    return <div className={styles.agentAvatarGrouped} />;
-  }
 
   // 图片加载失败时回退到 emoji / 色块首字母，避免显示裂图
   if (imageUrl && !imgFailed) {
