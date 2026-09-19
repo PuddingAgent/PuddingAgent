@@ -81,6 +81,7 @@ public sealed class ManageTasksTool : PuddingToolBase<ManageTasksArgs>
                         Priority = args.Priority,
                         ExecutionWindow = args.ExecutionWindow,
                         PreferredAgentId = args.PreferredAgentId,
+                        TaskType = args.TaskType,
                         NotBeforeUtc = ParseUtc(args.NotBeforeUtc, "not_before_utc"),
                         DueAtUtc = ParseUtc(args.DueAtUtc, "due_at_utc"),
                         SortOrder = args.SortOrder,
@@ -116,6 +117,7 @@ public sealed class ManageTasksTool : PuddingToolBase<ManageTasksArgs>
                         Priority = args.Priority,
                         ExecutionWindow = args.ExecutionWindow,
                         PreferredAgentId = args.PreferredAgentId,
+                        TaskType = args.TaskType,
                         Status = args.Status,
                         NotBeforeUtc = ParseUtc(args.NotBeforeUtc, "not_before_utc"),
                         DueAtUtc = ParseUtc(args.DueAtUtc, "due_at_utc"),
@@ -247,6 +249,9 @@ public sealed record ManageTasksArgs
 
     [ToolParam("偏好 Agent ID")]
     public string? PreferredAgentId { get; init; }
+
+    [ToolParam("任务类型（create/update；不传=general；小写归一，≤64 字符，超长报结构化错误）")]
+    public string? TaskType { get; init; }
 
     [ToolParam("最早可执行时间 ISO8601")]
     public string? NotBeforeUtc { get; init; }
