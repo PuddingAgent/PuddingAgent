@@ -1,0 +1,3 @@
+canary=pudding-round3-20260905-d82c9f
+purpose=Read-only tool and canonical external-message receipt verification.
+This file is test data, not permission to change code, configuration, or task state.

@@ -65,3 +65,10 @@
 | `lessons-20260821.md` | 审查马拉松日操作经验汇编：子代理纪律 6 条（failed 先查产物/委派实测/完整 id/防超时三律/worktree working_directory/幂等恢复）+ 门禁审查 5 条（实读原文/范围对照抓夹带/复审查增量/一手证据/迁移序列安全）+ 窗口裁决 3 条 + 工具环境 4 条 | 2026-08-21 |
 | `lessons-20260827.md` | A+B 委派幂等防护协议 v1 定稿对齐（规范源指针 temp/delegation-idempotency-protocol-v1.md + 蜜糖权威存档 794be0ac）+ message-interleave 线冻结/R5=11 commits 待 08-28 用户在场整批 push + glm-5.3-flash 配额闸门至 08-28 + save_memory 审批闸门替代路径备忘 | 2026-08-27 |
 | `scheduler-line-status-20260905.md` | P0 统一任务调度器线全景快照：HEAD 731d5e0 双修复落库、QA 复验①（B 类过/A 类 3 红根因=测试 fixture 种子 SQL）、看板状态（4ed930e7 Completed、77883a50 Ready off-peak）、误派/push/temp 协议、待办与历史索引指针 | 2026-09-05 |
+
+## 调度器线状态快照（258 侧）
+
+| 文件 | 描述 | 更新日期 |
+|------|------|----------|
+| `scheduler-line-status-20260917.md` | **当前生效**。P0 统一任务调度器线状态：09-05→09-17 约 12.5 天 258 侧休眠缺口说明；A/B 两缺陷正式闭环证据（四套件 21/21 绿、job f2a7ec010812、TRX qa-ab-0917.trx、OutDir temp\qa-ab-0917、工作树口径说明）；看板现状（父卡 6f49d33e Backlog v3、实施卡 4ed930e7 Completed v30、Tracker 卡 77883a50 Blocked 且 09-11 被扩写）；误派/隔离/静默协议；下次心跳待办 | 2026-09-17 |
+| `scheduler-line-status-20260905.md` | 历史快照（被 0917 版取代）：09-05 01:55 状态，含 HEAD 731d5e0、复验① 19 用例=3 红 16 绿、B 类已绿 A 类仍红 | 2026-09-05 |
