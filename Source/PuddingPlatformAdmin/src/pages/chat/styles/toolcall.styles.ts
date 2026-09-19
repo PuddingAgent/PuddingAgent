@@ -303,6 +303,37 @@ export const useToolCallStyles = createStyles(() => ({
   resultRowError: {
     color: 'var(--pudding-status-error)',
   },
+  /** 折叠行尾部 diff 摘要（S1b 批注 1）：`编辑 <path> +N −N`，沿用 duration 槽字号族 */
+  diffSummary: {
+    flexShrink: 0,
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    maxWidth: '40%',
+    fontSize: 11,
+    lineHeight: '20px',
+    fontVariantNumeric: 'tabular-nums' as const,
+    whiteSpace: 'nowrap' as const,
+  },
+  /** 弱化动作前缀「编辑」（caption 档） */
+  diffAction: {
+    color: 'var(--pudding-chat-text-caption)',
+  },
+  /** 目标文件路径（tertiary 档；超长省略，完整路径走 title 悬停） */
+  diffPath: {
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    color: 'var(--pudding-chat-text-tertiary)',
+  },
+  /** +N：成功色 token */
+  diffAdds: {
+    color: 'var(--pudding-status-success)',
+  },
+  /** −N：错误色 token */
+  diffDels: {
+    color: 'var(--pudding-status-error)',
+  },
 
   // ── ToolCallTree（CU-07 递归调用树）──
   /** 单分支容器：子列表缩进在其下方 */

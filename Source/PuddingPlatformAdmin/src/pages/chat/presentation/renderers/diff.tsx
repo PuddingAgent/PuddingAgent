@@ -42,8 +42,8 @@ export const parseDiffLines = (text: string): DiffLine[] | null => {
   return hasDiffMarker ? parsed : null;
 };
 
-/** 从 +++ / meta 提取展示路径（去 a/ b/ 前缀与时戳）。 */
-const extractFilePath = (
+/** 从 +++ / meta 提取展示路径（去 a/ b/ 前缀与时戳）；折叠行摘要（S1b）复用。 */
+export const extractFilePath = (
   lines: DiffLine[],
   meta: Record<string, unknown> | null | undefined,
 ): string | null => {

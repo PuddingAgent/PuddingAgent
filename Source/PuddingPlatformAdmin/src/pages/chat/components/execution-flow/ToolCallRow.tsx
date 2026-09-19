@@ -23,6 +23,14 @@ import {
   getPresentationKind,
   resolveRenderer,
 } from '../../presentation/PresentationRegistry';
+import {
+  extractFilePath,
+  parseDiffLines,
+} from '../../presentation/renderers/diff';
+import {
+  payloadText,
+  readMetaString,
+} from '../../presentation/renderers/rendererKit';
 import StateDot from '../StateDot';
 import { ExecutionDisclosureRow } from './ExecutionDisclosureRow';
 
@@ -325,6 +333,23 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({
     sanitizeProcessText(node.name, { maxLength: 40 }) ||
     '工具调用';
   const { summary, summaryFull } = buildSummary(node, status);
+  // S1b（批注 1）：折叠行尾部 diff 摘要（编辑 <path> +N −N）。数据通路与展开体
+  // DiffRenderer 完全同源：meta.patch/diff/content ?? payloadText(output ?? arguments)；
+  // 解析复用 parseDiffLines/extractFilePath，折叠/展开共享同一 node 数据，不新增请求。
+  const diffSummary = (() => {
+    if (kind !== 'diff' || !node.presentation) return null;
+    const text =
+      readMetaString(node.presentation.meta, ['patch', 'diff', 'content']) ??
+      payloadText(node.output ?? node.arguments);
+    if (!text.trim()) return null;
+    const lines = parseDiffLines(text);
+    if (!lines) return null;
+    return {
+      path: extractFilePath(lines, node.presentation.meta),
+      adds: lines.filter((line) => line.kind === 'add').length,
+      dels: lines.filter((line) => line.kind === 'del').length,
+    };
+  })();
   const inText = sanitizeProcessText(node.arguments, { compact: false });
   const outBody = buildOutBody(node, status);
   const showOut = outBody.full.length > 0;
@@ -470,6 +495,24 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({
       >
         {summary}
       </span>
+      {diffSummary && (
+        <span
+          className={styles.diffSummary}
+          data-testid="toolcall-diff-summary"
+          title={diffSummary.path || undefined}
+        >
+          <span className={styles.diffAction}>编辑</span>
+          {diffSummary.path ? (
+            <span className={styles.diffPath}>{diffSummary.path}</span>
+          ) : null}
+          <span className={styles.diffAdds} data-testid="toolcall-diff-adds">
+            +{diffSummary.adds}
+          </span>
+          <span className={styles.diffDels} data-testid="toolcall-diff-dels">
+            −{diffSummary.dels}
+          </span>
+        </span>
+      )}
       {(durationText || exitCodeText) && (
         <span
           className={flowCx(
