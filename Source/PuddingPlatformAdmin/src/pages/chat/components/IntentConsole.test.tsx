@@ -32,13 +32,6 @@ jest.mock('./CommandPalette', () => ({
 
 jest.mock('./ComposerActionMenu', () => () => null);
 jest.mock(
-  './ComposerFeedbackStrip',
-  () =>
-    ({ state }: { state: { subAgentsRunning: number } }) => (
-      <div data-testid="feedback-strip">子任务 {state.subAgentsRunning}</div>
-    ),
-);
-jest.mock(
   './ComposerStatusDetails',
   () =>
     ({ summary }: { summary: { subAgentsRunning: number } }) => (

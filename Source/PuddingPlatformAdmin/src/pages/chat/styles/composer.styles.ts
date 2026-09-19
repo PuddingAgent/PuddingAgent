@@ -416,22 +416,27 @@ export const useComposerStyles = createStyles(() => ({
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 30,
-    height: 30,
+    // 用户反馈（2026-09-19）：对齐 composerToolbarButton 的 34×34 槽位，
+    // 避免圆环比齿轮/麦克风尺寸更大而显得突兀；hover/focus 反馈同源。
+    width: 34,
+    minWidth: 34,
+    height: 34,
+    minHeight: 34,
     padding: 0,
     border: 'none',
     borderRadius: '50%',
     background: 'transparent',
     cursor: 'pointer' as const,
     color: 'var(--pudding-chat-text-muted)',
-    transition: 'background 140ms ease',
+    transition: 'background 140ms ease, color 140ms ease',
     '&:hover': {
-      background: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
+      color: 'var(--pudding-chat-text)',
+      background: 'color-mix(in srgb, var(--earth-brown) 7%, transparent)',
     },
     '&:focus-visible': {
       outline:
-        '2px solid color-mix(in srgb, var(--pudding-chat-accent) 45%, transparent)',
-      outlineOffset: 1,
+        '2px solid color-mix(in srgb, var(--pudding-chat-accent) 50%, transparent)',
+      outlineOffset: 2,
     },
   },
   /** 上下文用量面板（点击圆环展开）。 */
@@ -518,6 +523,30 @@ export const useComposerStyles = createStyles(() => ({
     opacity: 0.6,
     padding: '8px 0',
     textAlign: 'center' as const,
+  },
+  /** 面板内可点击行（子代理入口，原轻反馈带胶囊的入口并入此处）。 */
+  contextUsagePanelRowButton: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+    marginTop: 10,
+    padding: '8px 0 0',
+    border: 'none',
+    borderTop:
+      '1px solid color-mix(in srgb, var(--earth-brown) 10%, transparent)',
+    background: 'transparent',
+    font: 'inherit',
+    cursor: 'pointer' as const,
+    textAlign: 'left' as const,
+  },
+  /** 运行状态详情区（原 ComposerStatusDetails 弹层内容）。 */
+  contextUsagePanelRuntime: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTop:
+      '1px solid color-mix(in srgb, var(--earth-brown) 10%, transparent)',
   },
   composerRecording: {
     borderColor: '#8b5cf6 !important' as any,

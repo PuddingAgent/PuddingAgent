@@ -1,6 +1,9 @@
-// ── ContextUsageRing：上下文用量环形指示器 ────────────────────
-// 用户诉求（2026-09-19）：移除输入框上方的旧上下文指示条（ComposerContextBar），
-// 改为工具栏内的圆环控件 —— 悬浮显示基本信息，点击展开上下文明细面板。
+// ── ContextUsageRing：上下文用量环形指示器（唯一的 composer 状态入口）────
+// 用户诉求（2026-09-19）：
+//  1. 悬浮显示基本信息、点击展开明细面板；
+//  2. 左侧旧胶囊（ComposerFeedbackStrip 轻反馈带 + 状态胶囊）与圆环职责重复，
+//     整条移除，其面板（ComposerStatusDetails 运行摘要）并入本弹层；
+//  3. 尺寸与工具栏其它按钮（composerToolbarButton 34×34）对齐。
 // 数据源：ContextHealthSnapshot（usedTokens / contextWindowTokens / usageRatio）
 // 经 IntentConsole 归一为 tLimit / tUsed / tPct。
 import { Popover, Tooltip } from 'antd';
@@ -18,11 +21,18 @@ export interface ContextUsageRingProps {
   compactionStatus?: string | null;
   /** context-health 拉取失败原因；有值时圆环区分「未配置」与「获取失败」。 */
   error?: string | null;
+  /** 运行中的子代理数（原轻反馈带「子代理 N」胶囊的信息）。 */
+  subAgentsRunning?: number;
+  /** 打开子代理管理器（原轻反馈带的 onClick 入口，避免移除胶囊后丢失入口）。 */
+  onOpenSubAgents?: () => void;
+  /** 运行状态详情（原 ComposerStatusDetails 弹层内容，并入本面板）。 */
+  runtimeDetails?: React.ReactNode;
 }
 
-const SIZE = 22;
+const SIZE = 34;
+const RING = 22;
 const STROKE = 2.5;
-const RADIUS = (SIZE - STROKE) / 2;
+const RADIUS = (RING - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 const clampPct = (value: number): number =>
@@ -42,6 +52,9 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   cacheHitRate,
   compactionStatus,
   error,
+  subAgentsRunning,
+  onOpenSubAgents,
+  runtimeDetails,
 }) => {
   const { styles } = useChatStyles();
   const [open, setOpen] = useState(false);
@@ -55,6 +68,11 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
     : error
       ? `上下文用量获取失败：${error}`
       : '上下文窗口未配置';
+
+  const handleOpenSubAgents = useCallback(() => {
+    setOpen(false);
+    onOpenSubAgents?.();
+  }, [onOpenSubAgents]);
 
   const panel = useMemo(
     () => (
@@ -122,6 +140,34 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
             </div>
           </>
         )}
+
+        {/* 原轻反馈带「子代理 N」入口：胶囊移除后在此保留可达性。 */}
+        {onOpenSubAgents && (
+          <button
+            type="button"
+            className={styles.contextUsagePanelRowButton}
+            data-testid="context-usage-subagents"
+            onClick={handleOpenSubAgents}
+          >
+            <span className={styles.contextUsagePanelLabel}>子代理</span>
+            <span className={styles.contextUsagePanelValue}>
+              {(subAgentsRunning ?? 0) > 0
+                ? `${subAgentsRunning} 个运行中`
+                : '无运行中'}
+              　打开管理器 →
+            </span>
+          </button>
+        )}
+
+        {/* 原 ComposerStatusDetails 弹层内容（运行摘要），整体并入。 */}
+        {runtimeDetails && (
+          <div
+            className={styles.contextUsagePanelRuntime}
+            data-testid="context-usage-runtime"
+          >
+            {runtimeDetails}
+          </div>
+        )}
       </div>
     ),
     [
@@ -130,8 +176,12 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
       compactionStatus,
       configured,
       error,
+      handleOpenSubAgents,
+      onOpenSubAgents,
       pct,
+      runtimeDetails,
       styles,
+      subAgentsRunning,
       tLimit,
       tUsed,
     ],
@@ -155,25 +205,30 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
           data-testid="context-usage-ring"
           aria-label={hoverSummary}
         >
-          <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true">
+          <svg
+            width={RING}
+            height={RING}
+            viewBox={`0 0 ${RING} ${RING}`}
+            aria-hidden="true"
+          >
             <circle
-              cx={SIZE / 2}
-              cy={SIZE / 2}
+              cx={RING / 2}
+              cy={RING / 2}
               r={RADIUS}
               fill="none"
               stroke="color-mix(in srgb, var(--pudding-chat-text-muted) 22%, transparent)"
               strokeWidth={STROKE}
             />
             <circle
-              cx={SIZE / 2}
-              cy={SIZE / 2}
+              cx={RING / 2}
+              cy={RING / 2}
               r={RADIUS}
               fill="none"
               stroke={color}
               strokeWidth={STROKE}
               strokeLinecap="round"
               strokeDasharray={`${dash} ${CIRCUMFERENCE}`}
-              transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
+              transform={`rotate(-90 ${RING / 2} ${RING / 2})`}
             />
           </svg>
         </button>
@@ -183,3 +238,5 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
 };
 
 export default React.memo(ContextUsageRing);
+
+export { SIZE as CONTEXT_USAGE_RING_SIZE };

@@ -44,9 +44,7 @@ import ComposerTextInput, {
 } from './ComposerTextInput';
 import ComposerActionMenu from './ComposerActionMenu';
 import ContextUsageRing from './ContextUsageRing';
-import ComposerFeedbackStrip, {
-  type FeedbackState,
-} from './ComposerFeedbackStrip';
+
 import ComposerStatusDetails, {
   type ComposerRuntimeSummary,
 } from './ComposerStatusDetails';
@@ -269,7 +267,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   /** `+` 动作菜单 Popover */
   const [showComposerMenu, setShowComposerMenu] = useState(false);
   /** 运行状态详情 Popover */
-  const [showStatusDetails, setShowStatusDetails] = useState(false);
+
   const [contextHealth, setContextHealth] =
     useState<ContextHealthSnapshot | null>(null);
   const [contextHealthLoading, setContextHealthLoading] = useState(false);
@@ -345,13 +343,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     }
   }, [sessionId]);
 
-  const handleStatusDetailsOpenChange = useCallback(
-    (open: boolean) => {
-      setShowStatusDetails(open);
-      if (open) void refreshContextHealth();
-    },
-    [refreshContextHealth],
-  );
+
 
   // 用户反馈（2026-09-19）：圆环始终显示「未配置」—— 原实现只在「运行状态详情」
   // 弹层打开时才拉 context-health，普通使用路径下 contextHealth 恒为 null，
@@ -686,40 +678,9 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const effectiveContextUsagePercentage =
     refreshedContextPct ?? (tLimit > 0 ? tPct : undefined);
 
-  const feedbackState: FeedbackState = React.useMemo(
-    () => ({
-      context:
-        status === 'thinking' ||
-        status === 'tool_executing' ||
-        status === 'streaming',
-      contextUsagePercentage: effectiveContextUsagePercentage,
-      contextLimitTokens:
-        contextHealth?.contextWindowTokens ?? (tLimit > 0 ? tLimit : undefined),
-      contextRemainingTokens:
-        contextHealth?.remainingTokens ??
-        (tLimit > 0 ? Math.max(tLimit - tUsed, 0) : undefined),
-      memoryCount: 0,
-      indexAvailable: false,
-      subAgentsRunning,
-      backgroundMemoryRunning: false,
-    }),
-    [
-      status,
-      subAgentsRunning,
-      effectiveContextUsagePercentage,
-      tLimit,
-      tUsed,
-      contextHealth,
-    ],
-  );
 
-  /** 是否显示状态行 */
-  const shouldShowStatus =
-    status === 'thinking' ||
-    status === 'tool_executing' ||
-    status === 'streaming' ||
-    status === 'error' ||
-    (status === 'completed' && completedVisible);
+
+
 
   const displayStatusText =
     status === 'completed' && completedVisible
@@ -788,16 +749,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   /** 补充入口仅在有可注入的文本草稿且当前有运行中 Turn 时出现（图片无法插嘴）。 */
   const steerEntryAvailable =
     loading && composerHasText && Boolean(onSteerCurrent);
-  /** 状态胶囊是 role=button 的 span：补键盘激活（Enter/Space），不改变视觉。 */
-  const handleStatusPillKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLSpanElement>) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        handleStatusDetailsOpenChange(true);
-      }
-    },
-    [handleStatusDetailsOpenChange],
-  );
+
 
   return (
     <div className={styles.composerAligner}>
@@ -914,58 +866,17 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 <PlusOutlined />
               </button>
             </Popover>
-            <Popover
-              content={
-                <ComposerStatusDetails
-                  summary={runtimeSummary}
-                  onOpenDevDetails={onOpenDevDetails}
-                />
-              }
-              trigger="click"
-              open={showStatusDetails}
-              onOpenChange={handleStatusDetailsOpenChange}
-              placement="topLeft"
-            >
-              <div className={styles.composerToolbarStatus}>
-                <ComposerFeedbackStrip
-                  state={feedbackState}
-                  onClick={() => handleStatusDetailsOpenChange(true)}
-                  onSubAgentsClick={onOpenSubAgentInspector}
-                />
-                {shouldShowStatus && (
-                  <span
-                    className={styles.composerStatusPill}
-                    role="button"
-                    tabIndex={0}
-                    aria-label="查看运行状态详情"
-                    onClick={() => handleStatusDetailsOpenChange(true)}
-                    onKeyDown={handleStatusPillKeyDown}
-                  >
-                    <span
-                      className={styles.composerStatusDot}
-                      style={{
-                        background:
-                          status === 'error'
-                            ? 'var(--pudding-warning, #c4944c)'
-                            : '#6f8f72',
-                      }}
-                    />
-                    <span>{displayStatusText}</span>
-                  </span>
-                )}
-                {uiTestMode && (
-                  <button
-                    type="button"
-                    className={styles.composerUiTestButton}
-                    onClick={handleFillUiTestGreeting}
-                    aria-label="填入测试问候"
-                    data-testid="composer-ui-test-greeting"
-                  >
-                    测试问候
-                  </button>
-                )}
-              </div>
-            </Popover>
+            {uiTestMode && (
+              <button
+                type="button"
+                className={styles.composerUiTestButton}
+                onClick={handleFillUiTestGreeting}
+                aria-label="填入测试问候"
+                data-testid="composer-ui-test-greeting"
+              >
+                测试问候
+              </button>
+            )}
           </div>
 
           <div
@@ -1018,6 +929,14 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               cacheHitRate={cacheHitRate}
               compactionStatus={compactionStatus}
               error={contextHealthError}
+              subAgentsRunning={subAgentsRunning}
+              onOpenSubAgents={onOpenSubAgentInspector}
+              runtimeDetails={
+                <ComposerStatusDetails
+                  summary={runtimeSummary}
+                  onOpenDevDetails={onOpenDevDetails}
+                />
+              }
             />
             {/* CU-11 §6.2：低频选项（Sandbox 边界 / Auto-review）收敛进设置 Popover，
                 需要盯防的活动态通过角标浮出；高频的执行偏好/权限/语音/发送保持直达。 */}

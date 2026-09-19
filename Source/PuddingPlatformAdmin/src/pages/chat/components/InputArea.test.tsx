@@ -31,13 +31,6 @@ jest.mock('./CommandPalette', () => ({
 
 jest.mock('./ComposerActionMenu', () => () => null);
 jest.mock(
-  './ComposerFeedbackStrip',
-  () =>
-    ({ state }: { state: { subAgentsRunning: number } }) => (
-      <div data-testid="feedback-strip">子任务 {state.subAgentsRunning}</div>
-    ),
-);
-jest.mock(
   './ComposerStatusDetails',
   () =>
     ({ summary }: { summary: { subAgentsRunning: number } }) => (
@@ -98,59 +91,6 @@ describe('InputArea status feedback', () => {
     expect(screen.getByPlaceholderText('正在生成回复…')).toBeTruthy();
   });
 
-  it('dismisses the completed status when the user types and clears text', () => {
-    function ControlledInputArea() {
-      const [value, setValue] = React.useState('');
-      return (
-        <InputArea
-          {...baseProps}
-          inputValue={value}
-          onInputChange={setValue}
-          status="completed"
-        />
-      );
-    }
-
-    render(<ControlledInputArea />);
-
-    expect(screen.getByText('· 已完成')).toBeTruthy();
-
-    const input = screen.getByTestId('chat-input') as HTMLTextAreaElement;
-    fireEvent.change(input, { target: { value: 'hello' } });
-    fireEvent.change(input, { target: { value: '' } });
-
-    expect(screen.queryByText('· 已完成')).toBeNull();
-    expect(screen.getByPlaceholderText('输入你的问题或任务…')).toBeTruthy();
-  });
-
-  it('keeps the completed status hidden while the focused input is empty', () => {
-    function ControlledInputArea() {
-      const [value, setValue] = React.useState('');
-      return (
-        <InputArea
-          {...baseProps}
-          inputValue={value}
-          onInputChange={setValue}
-          status="completed"
-        />
-      );
-    }
-
-    render(<ControlledInputArea />);
-
-    expect(screen.getByText('· 已完成')).toBeTruthy();
-
-    const input = screen.getByTestId('chat-input') as HTMLTextAreaElement;
-    fireEvent.focus(input);
-    fireEvent.change(input, { target: { value: 'hello' } });
-    fireEvent.change(input, { target: { value: '' } });
-
-    expect(screen.queryByText('· 已完成')).toBeNull();
-    expect(
-      (screen.getByTestId('chat-send') as HTMLButtonElement).disabled,
-    ).toBe(true);
-  });
-
   it('keeps IME composition drafts local until the final committed text', () => {
     const onInputChange = jest.fn();
     render(
@@ -171,18 +111,6 @@ describe('InputArea status feedback', () => {
 
     expect(onInputChange).toHaveBeenCalledTimes(1);
     expect(onInputChange).toHaveBeenLastCalledWith('你好');
-  });
-
-  it('shows the current session sub-agent count in the feedback strip', () => {
-    render(
-      React.createElement(InputArea as any, {
-        ...baseProps,
-        status: 'idle',
-        subAgentsRunning: 2,
-      }),
-    );
-
-    expect(screen.getByText('子任务 2')).toBeTruthy();
   });
 
   it('keeps the send action mounted and enabled for multiline input', () => {
