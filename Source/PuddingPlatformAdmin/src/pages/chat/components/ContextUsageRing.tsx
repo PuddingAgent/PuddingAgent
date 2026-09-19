@@ -57,8 +57,16 @@ const CONTEXT_SEGMENT_DEFS: ReadonlyArray<{
   { key: 'toolResults', label: '工具结果', color: '#c26b7a' },
 ];
 
-/** 系统预留（输出预留）：条里除「已使用」外的非空闲区。 */
-const CONTEXT_RESERVED_COLOR = '#b9a99b';
+/**
+ * 系统预留（输出预留）：窗口里**不可用于输入**的部分。
+ * 用户诉求（2026-09-19）：置于进度条**最右端**，用斜纹 /// + 灰色表示「不可使用」，
+ * 从而让中间那段真正可用的空间一眼可辨 —— 此前它夹在「已使用」与「可用余量」之间，
+ * 无法从条上读出哪一段能用。
+ */
+const CONTEXT_RESERVED_HATCH =
+  'repeating-linear-gradient(45deg, rgba(185,169,155,0.95) 0 2px, rgba(185,169,155,0.28) 2px 5px)';
+/** 可用余量标记：非填充，用虚线框表示「空的可填充区」，与预留的斜纹区分。 */
+const CONTEXT_AVAILABLE_OUTLINE = '1px dashed rgba(140,122,106,0.65)';
 
 const SIZE = 34;
 const RING = 22;
@@ -124,6 +132,9 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
       ? tLimit - tEffective
       : 0;
   const reservedPercent = tLimit > 0 ? (reservedTokens / tLimit) * 100 : 0;
+  // 可用余量 = 窗口里既未被使用、也不属于预留的部分（条上表现为底色）。
+  const availablePercent =
+    tLimit > 0 ? Math.max(0, 100 - pct - reservedPercent) : 0;
 
   const hoverSummary = configured
     ? `${pct.toFixed(1)}% · ${formatTokens(tUsed)} / ${formatTokens(tLimit)} 上下文已使用`
@@ -178,14 +189,17 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
                       title={`${segment.label} ${formatTokens(segment.tokens)}`}
                     />
                   ))}
+                  {/* 系统预留固定贴条最右端（marginLeft:auto 吃掉中间的可用余量），
+                      使「可用」与「不可用」在空间上一分为二。 */}
                   {reservedPercent > 0 && (
                     <span
                       className={styles.contextUsagePanelSegment}
                       style={{
                         width: `${reservedPercent}%`,
-                        background: CONTEXT_RESERVED_COLOR,
+                        marginLeft: 'auto',
+                        backgroundImage: CONTEXT_RESERVED_HATCH,
                       }}
-                      title={`系统预留 ${formatTokens(reservedTokens)}`}
+                      title={`系统预留（不可用） ${formatTokens(reservedTokens)}`}
                     />
                   )}
                 </div>
@@ -211,18 +225,35 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
                     </div>
                   ))}
                   {reservedPercent > 0 && (
-                    <div className={styles.contextUsagePanelLegendRow}>
-                      <span
-                        className={styles.contextUsagePanelLegendDot}
-                        style={{ background: CONTEXT_RESERVED_COLOR }}
-                      />
-                      <span className={styles.contextUsagePanelLegendLabel}>
-                        系统预留
-                      </span>
-                      <span className={styles.contextUsagePanelLegendValue}>
-                        {reservedPercent.toFixed(1)}%
-                      </span>
-                    </div>
+                    <>
+                      <div className={styles.contextUsagePanelLegendRow}>
+                        <span
+                          className={styles.contextUsagePanelLegendDot}
+                          style={{
+                            background: 'transparent',
+                            border: CONTEXT_AVAILABLE_OUTLINE,
+                          }}
+                        />
+                        <span className={styles.contextUsagePanelLegendLabel}>
+                          可用余量
+                        </span>
+                        <span className={styles.contextUsagePanelLegendValue}>
+                          {availablePercent.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className={styles.contextUsagePanelLegendRow}>
+                        <span
+                          className={styles.contextUsagePanelLegendDot}
+                          style={{ backgroundImage: CONTEXT_RESERVED_HATCH }}
+                        />
+                        <span className={styles.contextUsagePanelLegendLabel}>
+                          系统预留（不可用）
+                        </span>
+                        <span className={styles.contextUsagePanelLegendValue}>
+                          {reservedPercent.toFixed(1)}%
+                        </span>
+                      </div>
+                    </>
                   )}
                 </div>
               </>
