@@ -411,25 +411,22 @@ export const useComposerStyles = createStyles(() => ({
     gap: 8,
     minHeight: 58,
   },
-  composerContextBar: {
+  /** 圆环控件（ContextUsageRing）：工具栏槽位，悬浮出摘要、点击出面板。 */
+  contextUsageRing: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 6,
-    minHeight: 22,
-    padding: '1px 8px',
-    borderRadius: 11,
-    border: '1px solid color-mix(in srgb, var(--earth-brown) 7%, transparent)',
-    background: 'color-mix(in srgb, var(--soft-white) 68%, transparent)',
+    justifyContent: 'center',
+    width: 30,
+    height: 30,
+    padding: 0,
+    border: 'none',
+    borderRadius: '50%',
+    background: 'transparent',
     cursor: 'pointer' as const,
-    userSelect: 'none' as const,
-    color: 'var(--earth-brown)',
-    opacity: 0.62,
-    fontSize: 11,
-    lineHeight: '20px',
-    transition: 'opacity 140ms ease, background 140ms ease',
+    color: 'var(--pudding-chat-text-muted)',
+    transition: 'background 140ms ease',
     '&:hover': {
-      opacity: 0.9,
-      background: 'color-mix(in srgb, var(--earth-brown) 5%, transparent)',
+      background: 'color-mix(in srgb, var(--earth-brown) 6%, transparent)',
     },
     '&:focus-visible': {
       outline:
@@ -437,108 +434,86 @@ export const useComposerStyles = createStyles(() => ({
       outlineOffset: 1,
     },
   },
-  composerContextBarProgress: {
-    width: 56,
-    height: 3,
-    borderRadius: 2,
-    background: 'color-mix(in srgb, var(--earth-brown) 12%, transparent)',
-    overflow: 'hidden' as const,
-    flexShrink: 0,
-  },
-  composerContextBarProgressFill: {
-    display: 'block',
-    height: '100%',
-    borderRadius: 2,
-    transition: 'width 0.45s ease, background 0.2s ease',
-  },
-  composerContextBarText: {
-    whiteSpace: 'nowrap' as const,
-    fontVariantNumeric: 'tabular-nums' as const,
-  },
-  composerContextBarCompaction: {
-    whiteSpace: 'nowrap' as const,
-    opacity: 0.72,
-    maxWidth: 180,
-    overflow: 'hidden' as const,
-    textOverflow: 'ellipsis' as const,
-  },
-  composerContextBarPopup: {
-    width: 280,
-    padding: '2px 0',
+  /** 上下文用量面板（点击圆环展开）。 */
+  contextUsagePanel: {
+    width: 300,
     fontSize: 12,
   },
-  composerContextBarPopupHeader: {
+  contextUsagePanelHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
-    paddingBottom: 8,
-    borderBottom:
-      '1px solid color-mix(in srgb, var(--earth-brown) 10%, transparent)',
+    marginBottom: 10,
   },
-  composerContextBarPopupTitle: {
+  contextUsagePanelTitle: {
+    fontSize: 13,
     fontWeight: 600,
-    fontSize: 12,
     color: 'var(--pudding-chat-text)',
   },
-  composerContextBarPopupStatus: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    opacity: 0.8,
-    fontSize: 11,
+  contextUsagePanelClose: {
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer' as const,
+    padding: 2,
+    fontSize: 13,
+    lineHeight: 1,
     color: 'var(--pudding-chat-text-muted)',
   },
-  composerContextBarPopupDot: {
-    width: 6,
-    height: 6,
-    borderRadius: '50%',
+  contextUsagePanelHeadline: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: 8,
+    marginBottom: 8,
   },
-  composerContextBarPopupBody: {
+  contextUsagePanelPct: {
+    fontSize: 26,
+    fontWeight: 700,
+    lineHeight: 1.1,
+    fontVariantNumeric: 'tabular-nums' as const,
+    color: 'var(--pudding-chat-text)',
+  },
+  contextUsagePanelUsed: {
+    fontSize: 12,
+    color: 'var(--pudding-chat-text-muted)',
+    fontVariantNumeric: 'tabular-nums' as const,
+  },
+  contextUsagePanelProgress: {
+    height: 6,
+    borderRadius: 3,
+    marginBottom: 12,
+    overflow: 'hidden' as const,
+    background:
+      'color-mix(in srgb, var(--pudding-chat-text-muted) 14%, transparent)',
+  },
+  contextUsagePanelProgressBar: {
+    display: 'block',
+    height: '100%',
+    borderRadius: 3,
+    transition: 'width 0.5s ease',
+  },
+  contextUsagePanelBody: {
     display: 'flex',
     flexDirection: 'column' as const,
     gap: 6,
   },
-  composerContextBarPopupRow: {
+  contextUsagePanelRow: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     minHeight: 20,
   },
-  composerContextBarPopupLabel: {
-    fontSize: 11,
+  contextUsagePanelLabel: {
+    fontSize: 12,
     color: 'var(--pudding-chat-text-muted)',
-    opacity: 0.75,
   },
-  composerContextBarPopupValue: {
-    fontSize: 11,
+  contextUsagePanelValue: {
+    fontSize: 12,
     fontVariantNumeric: 'tabular-nums' as const,
     color: 'var(--pudding-chat-text)',
     textAlign: 'right' as const,
   },
-  composerContextBarPopupProgress: {
-    height: 3,
-    borderRadius: 2,
-    background:
-      'color-mix(in srgb, var(--pudding-chat-text-muted) 14%, transparent)',
-    margin: '4px 0',
-  },
-  composerContextBarPopupProgressBar: {
-    display: 'block',
-    height: '100%',
-    borderRadius: 2,
-    transition: 'width 0.5s ease',
-  },
-  composerContextBarPopupWarning: {
-    color: '#c4944c',
-    fontSize: 11,
-    marginTop: 4,
-    padding: '6px 8px',
-    background: 'color-mix(in srgb, #c4944c 10%, transparent)',
-    borderRadius: 6,
-  },
-  composerContextBarPopupEmpty: {
-    fontSize: 11,
+  contextUsagePanelEmpty: {
+    fontSize: 12,
     color: 'var(--pudding-chat-text-muted)',
     opacity: 0.6,
     padding: '8px 0',

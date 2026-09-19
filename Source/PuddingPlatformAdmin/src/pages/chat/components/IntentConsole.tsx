@@ -43,7 +43,7 @@ import ComposerTextInput, {
   type ComposerTextInputHandle,
 } from './ComposerTextInput';
 import ComposerActionMenu from './ComposerActionMenu';
-import ComposerContextBar from './ComposerContextBar';
+import ContextUsageRing from './ContextUsageRing';
 import ComposerFeedbackStrip, {
   type FeedbackState,
 } from './ComposerFeedbackStrip';
@@ -854,15 +854,6 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       )}
 
       <div className={styles.composerCapsuleBody}>
-        <ComposerContextBar
-          tLimit={contextHealth?.contextWindowTokens ?? tLimit}
-          tUsed={contextHealth?.usedTokens ?? tUsed}
-          tPct={effectiveContextUsagePercentage ?? 0}
-          cacheHitTokens={cacheHitTokens}
-          cacheMissTokens={cacheMissTokens}
-          cacheHitRate={cacheHitRate}
-          compactionStatus={compactionStatus}
-        />
         <ComposerTextInput
           ref={textInputRef}
           inputValue={inputValue}
@@ -1000,10 +991,19 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 <DownOutlined />
               </button>
             </Popover>
-                        <PermissionModeSelector
+            <PermissionModeSelector
               value={permissionMode}
               onChange={onPermissionModeChange}
               disabled={disabled || loading}
+            />
+            {/* 用户诉求（2026-09-19）：旧上下文指示条（ComposerContextBar）已移除，
+                改为工具栏内的圆环控件 —— 悬浮出「已使用 X/Y」摘要，点击出上下文明细面板。 */}
+            <ContextUsageRing
+              tLimit={contextHealth?.contextWindowTokens ?? tLimit}
+              tUsed={contextHealth?.usedTokens ?? tUsed}
+              tPct={effectiveContextUsagePercentage ?? 0}
+              cacheHitRate={cacheHitRate}
+              compactionStatus={compactionStatus}
             />
             {/* CU-11 §6.2：低频选项（Sandbox 边界 / Auto-review）收敛进设置 Popover，
                 需要盯防的活动态通过角标浮出；高频的执行偏好/权限/语音/发送保持直达。 */}
