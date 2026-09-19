@@ -30,6 +30,9 @@ export interface ContextUsageRingProps {
   tEffective?: number;
   /** 请求组装时的分层归因；缺失或全 0 时回落单色条。 */
   tBreakdown?: ContextUsageBreakdown | null;
+  /** 用量数据来源/置信度：面板据此显示「数据来源」，让百分比可判断可信度。 */
+  usageSource?: string | null;
+  usageConfidence?: string | null;
   /** 运行状态详情（原 ComposerStatusDetails 弹层内容，并入本面板）。 */
   runtimeDetails?: React.ReactNode;
 }
@@ -82,6 +85,16 @@ const clampPct = (value: number): number =>
 export const contextUsageColor = (pct: number): string =>
   pct >= 70 ? '#d84a3a' : pct >= 50 ? '#d98b28' : '#6f8f72';
 
+/** 用量来源文案：Provider 报数可直接采信；本地估算/DB 回退可能明显偏高。 */
+const usageProvenanceLabel = (
+  confidence?: string | null,
+  source?: string | null,
+): string => {
+  if (confidence === 'provider_reported') return 'Provider 报数';
+  if (confidence === 'estimated') return '本地估算（可能偏高）';
+  return source ?? '未知';
+};
+
 // 与 ComposerStatusDetails / 上下文胶囊同一口径（÷1000）。原实现用 ÷1024，
 // 导致同一容量在本面板里出现「976.6K」与下游「1000.0k」两种写法
 // （用户反馈 2026-09-19「内容和顺序有点乱」）。
@@ -94,6 +107,8 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   tPct,
   tEffective,
   tBreakdown,
+  usageSource,
+  usageConfidence,
   compactionStatus,
   error,
   subAgentsRunning,
@@ -271,6 +286,28 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
                   剩余与缓存命中在同面板下方运行状态块里（且剩余是服务端口径：
                   已扣掉输出预算 reserve，与 tLimit-tUsed 并不相等 —— 这里不能
                   自己算一个与之打架的数字）。 */}
+              {/* 数据来源：同一面板的百分比在不同回退源之间口径并不一致（DB 回退按
+                  TotalTokens 含 completion，本地估算走字典），不标来源则「86% 但
+                  剩余 0」这类组合无法判断。 */}
+              {(usageConfidence || usageSource) && (
+                <div className={styles.contextUsagePanelRow}>
+                  <span className={styles.contextUsagePanelLabel}>数据来源</span>
+                  <span className={styles.contextUsagePanelValue}>
+                    {usageProvenanceLabel(usageConfidence, usageSource)}
+                  </span>
+                </div>
+              )}
+              {/* 分层明细只存在于「本进程内该会话发出过请求」时：内存快照按会话写入，
+                  重启后或未发请求的会话六桶全 0，图例整块消失。这里明说原因，避免
+                  被读成「功能丢失」（用户反馈 2026-09-19）。 */}
+              {configured && segments.length === 0 && (
+                <div className={styles.contextUsagePanelRow}>
+                  <span className={styles.contextUsagePanelLabel}>分层明细</span>
+                  <span className={styles.contextUsagePanelValue}>
+                    暂不可用（本会话在当前进程内尚无请求记录）
+                  </span>
+                </div>
+              )}
               {compactionStatus && (
                 <div className={styles.contextUsagePanelRow}>
                   <span className={styles.contextUsagePanelLabel}>压缩</span>
@@ -323,6 +360,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
       </div>
     ),
     [
+      availablePercent,
       color,
       compactionStatus,
       configured,
@@ -330,11 +368,15 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
       handleOpenSubAgents,
       onOpenSubAgents,
       pct,
+      reservedPercent,
       runtimeDetails,
+      segments,
       styles,
       subAgentsRunning,
       tLimit,
       tUsed,
+      usageConfidence,
+      usageSource,
     ],
   );
 

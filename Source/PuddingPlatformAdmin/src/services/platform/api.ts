@@ -2565,6 +2565,12 @@ export interface ContextHealthSnapshot {
   providerPromptTokens?: number;
   providerCompletionTokens?: number;
   providerTotalTokens?: number;
+  /** 用量来源（provider_usage / provider_usage_db / active_session_messages …）。
+   *  与 usageConfidence 一起决定这个百分比可不可信：DB 回退用 TotalTokens（含
+   *  completion），本地估算走字典，都可能明显偏离 Provider 报数。 */
+  usageSource?: string;
+  /** provider_reported = 可直接采信；estimated = 估算值。 */
+  usageConfidence?: string;
 }
 
 export interface CompactSessionRequest {
