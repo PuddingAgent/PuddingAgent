@@ -787,6 +787,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   );
 
   return (
+    <div className={styles.composerAligner}>
     <div
       className={`${styles.composerSurface} ${recording ? styles.composerRecording : ''}`}
       data-active={composerActive && !loading ? 'true' : undefined}
@@ -1174,6 +1175,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
           />
         </React.Suspense>
       )}
+    </div>
     </div>
   );
 };

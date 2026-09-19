@@ -159,7 +159,10 @@ export const useMessageStyles = createStyles(({ token }) => ({
     display: 'flex',
     flexDirection: 'column' as const,
     alignItems: 'flex-end',
-    maxWidth: '82%',
+    // 82% 让位语义已失效（2026-09-19）：头像已上移至头部行（同 c41af70 把
+    // agentMessageContainer 92%→100% 的方向），容器随内容列（messageList
+    // 子选择器 1280 + clamp）满宽，右对齐由 alignItems:flex-end 保证。
+    maxWidth: '100%',
     minWidth: 0,
   },
   messageModalityBadge: {

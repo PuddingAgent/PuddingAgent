@@ -1,7 +1,18 @@
-﻿// ── composer styles ─────────────────────────────────
+// ── composer styles ─────────────────────────────────
 import { createStyles } from 'antd-style';
 
 export const useComposerStyles = createStyles(() => ({
+  /** IntentConsole 对齐外壳（2026-09-19）：与消息内容层（messageList 子选择
+   * 器规则）同用 1280 上限 + clamp 留白，使输入框左右边界与消息内容严格
+   * 对齐。独立 wrapper 键而不改 composerSurface：后者自带 padding:'10px
+   * 12px'（胶囊内部留白）与 margin:'0 8px 8px'（悬浮间距），若在同元素
+   * 上叠加对齐类，margin/padding 互相覆盖且依赖样式表插入顺序，脆弱。 */
+  composerAligner: {
+    width: '100%',
+    maxWidth: 1280,
+    margin: '0 auto',
+    padding: '0 clamp(20px, 3vw, 48px)',
+  },
   composerSurface: {
     position: 'sticky' as const,
     bottom: 0,
