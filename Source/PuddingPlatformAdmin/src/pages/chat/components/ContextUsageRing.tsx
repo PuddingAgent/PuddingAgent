@@ -275,22 +275,15 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
                 <div className={styles.contextUsagePanelRow}>
                   <span className={styles.contextUsagePanelLabel}>压缩</span>
                   <span className={styles.contextUsagePanelValue}>
-                    {/* 只有真在压缩时才呼吸；「上次压缩 / 压缩失败」是终态事实，
-                        不加动效，避免被读成「正在进行」（用户反馈 2026-09-19）。 */}
-                    <span
-                      className={
-                        compactionStatus === COMPACTION_RUNNING_LABEL
-                          ? styles.compactionStatusDot
-                          : styles.compactionStatusDotStatic
-                      }
-                      data-testid="compaction-status-dot"
-                      data-state={
-                        compactionStatus === COMPACTION_RUNNING_LABEL
-                          ? 'running'
-                          : 'idle'
-                      }
-                      aria-hidden="true"
-                    />
+                    {/* 只有真在压缩时才渲染呼吸点；「上次压缩 / 压缩失败」是终态事实，
+                        不加任何动效，避免被读成「正在进行」（用户反馈 2026-09-19）。 */}
+                    {compactionStatus === COMPACTION_RUNNING_LABEL && (
+                      <span
+                        className={styles.compactionStatusDot}
+                        data-testid="compaction-status-dot"
+                        aria-hidden="true"
+                      />
+                    )}
                     {compactionStatus}
                   </span>
                 </div>

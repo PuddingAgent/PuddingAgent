@@ -245,6 +245,7 @@ export const usePanelStyles = createStyles(() => ({
     background:
       'linear-gradient(135deg, color-mix(in srgb, var(--accent-purple) 3%, var(--soft-white)), var(--soft-white) 58%)',
     boxShadow: '0 3px 12px rgba(63, 38, 95, 0.045), 0 1px 3px rgba(0,0,0,0.035)',
+
     padding: '11px 14px 10px',
     display: 'flex',
     flexDirection: 'column' as const,
@@ -257,34 +258,35 @@ export const usePanelStyles = createStyles(() => ({
   compactionCardInterrupted: {
     borderLeftColor: 'color-mix(in srgb, #c15f45 62%, var(--earth-brown))',
   },
-  compactionCardSettle: {
-    animation: 'compactionCardSettle 320ms ease-out both',
-    '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
-  },
   compactionHeader: {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
     minWidth: 0,
   },
-  /** 「收敛」字形：三根逐根塌缩的竖条，替代通用转圈，语义是「内容被压紧」。 */
+  /** 「收敛」字形：三根逐根塌缩的竖条（子元素由后代选择器上色/上动画，不额外占 JS 体积）。 */
   compactionGlyph: {
     display: 'inline-flex',
     alignItems: 'flex-end',
     gap: 2,
     height: 14,
     flexShrink: 0,
+    '& span': {
+      width: 3,
+      height: 14,
+      borderRadius: 1,
+      background:
+        'color-mix(in srgb, var(--accent-purple) 55%, var(--earth-brown))',
+      transformOrigin: 'bottom',
+      animation: 'compactionGlyph 1.5s ease-in-out infinite',
+    },
+    '& span:nth-child(2)': { height: 10, animationDelay: '180ms' },
+    '& span:nth-child(3)': { height: 6, animationDelay: '360ms' },
+    "&[data-running='false'] span": { animation: 'none' },
+    '@media (prefers-reduced-motion: reduce)': {
+      '& span': { animation: 'none' },
+    },
   },
-  compactionGlyphBar: {
-    width: 3,
-    borderRadius: 1,
-    background:
-      'color-mix(in srgb, var(--accent-purple) 55%, var(--earth-brown))',
-    transformOrigin: 'bottom' as const,
-    animation: 'compactionGlyph 1.5s ease-in-out infinite',
-    '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
-  },
-  compactionGlyphBarStatic: { animation: 'none' },
   compactionTitle: {
     minWidth: 0,
     flex: 1,
@@ -309,17 +311,9 @@ export const usePanelStyles = createStyles(() => ({
     borderRadius: 2,
     overflow: 'hidden' as const,
     background: 'color-mix(in srgb, var(--earth-brown) 9%, transparent)',
-  },
-  compactionRailFill: {
-    position: 'absolute' as const,
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderRadius: 2,
-    background: 'color-mix(in srgb, #6f8f72 42%, transparent)',
-    animation: 'compactionSettle 420ms ease-out both',
-    '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+    "&[data-running='false']": {
+      background: 'color-mix(in srgb, #6f8f72 36%, transparent)',
+    },
   },
   compactionRailSweep: {
     position: 'absolute' as const,
@@ -367,15 +361,6 @@ export const usePanelStyles = createStyles(() => ({
     animation: 'compactionBreathe 1.8s ease-in-out infinite',
     '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
   },
-  compactionStatusDotStatic: {
-    display: 'inline-block',
-    width: 6,
-    height: 6,
-    borderRadius: '50%',
-    marginRight: 5,
-    verticalAlign: 'middle',
-    background: 'color-mix(in srgb, #6f8f72 55%, transparent)',
-  },
   '@keyframes compactionSweep': {
     '0%': { transform: 'translateX(-100%)' },
     '100%': { transform: 'translateX(263%)' },
@@ -387,13 +372,5 @@ export const usePanelStyles = createStyles(() => ({
   '@keyframes compactionBreathe': {
     '0%, 100%': { opacity: 0.45, transform: 'scale(0.9)' },
     '50%': { opacity: 1, transform: 'scale(1.15)' },
-  },
-  '@keyframes compactionSettle': {
-    '0%': { opacity: 0, transform: 'scaleX(0.2)' },
-    '100%': { opacity: 1, transform: 'scaleX(1)' },
-  },
-  '@keyframes compactionCardSettle': {
-    '0%': { opacity: 0.4, transform: 'translateY(2px)' },
-    '100%': { opacity: 1, transform: 'translateY(0)' },
   },
 }));
