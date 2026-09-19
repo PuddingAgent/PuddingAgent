@@ -73,6 +73,9 @@ public static class PuddingToolServiceCollectionExtensions
         });
 
         services.TryAddSingleton<IToolPermissionPolicyService, ToolPermissionPolicyService>();
+        // Agent 级访问级别（用户 2026-09-19）：权限跟随 Agent 主体。
+        // 作为可选依赖注入 PuddingToolExecutionService，未注册的主机退化为纯全局模式。
+        services.TryAddSingleton<IAgentAccessLevelService, AgentAccessLevelService>();
         services.TryAddSingleton<IAgentFirewall>(sp => new AgentFirewall(
             runtime: sp.GetService<IRuntimeControlService>(),
             policySvc: sp.GetService<IToolPermissionPolicyService>(),

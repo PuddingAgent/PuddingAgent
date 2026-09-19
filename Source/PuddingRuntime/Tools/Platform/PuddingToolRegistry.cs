@@ -570,6 +570,7 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
     private readonly IToolAuthorizationService? _authorizationService;
     private readonly IToolApprovalService? _approvalService;
     private readonly IRuntimeControlService? _runtimeControl;
+    private readonly IAgentAccessLevelService? _accessLevels;
     private readonly IAgentFirewall _firewall;
 
     public PuddingToolExecutionService(
@@ -581,7 +582,8 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
         IToolAuthorizationService? authorizationService = null,
         IToolApprovalService? approvalService = null,
         IRuntimeControlService? runtimeControl = null,
-        IAgentFirewall? firewall = null)
+        IAgentFirewall? firewall = null,
+        IAgentAccessLevelService? accessLevels = null)
     {
         _registry = registry;
         _sandbox = sandbox;
@@ -591,6 +593,7 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
         _authorizationService = authorizationService;
         _approvalService = approvalService;
         _runtimeControl = runtimeControl;
+        _accessLevels = accessLevels;
         _firewall = firewall ?? new AgentFirewall(
             runtimeControl,
             _permissionPolicy,
@@ -624,8 +627,15 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
             return result;
         }
 
+        // 生效模式 = 全局运行时模式（运维级总开关）叠加 Agent 级访问级别（用户 2026-09-19 决策）。
+        // Agent 级「完全访问」与旧的进程级 YOLO 同一语义，但作用域限定在该 Agent，
+        // 不再因为给某个 Agent 授权而把其余 Agent（含其子代理）一起放开。
+        var globalRuntimeMode = _runtimeControl?.Mode ?? RuntimeExecutionMode.Normal;
+        var effectiveRuntimeMode = _accessLevels?.ResolveEffectiveMode(context.AgentInstanceId, globalRuntimeMode)
+            ?? globalRuntimeMode;
+
         // Set YOLO mode on context (backward compat for tools that read context.IsYoloMode)
-        if (_runtimeControl?.Mode == RuntimeExecutionMode.Yolo)
+        if (effectiveRuntimeMode == RuntimeExecutionMode.Yolo)
             context = context with { IsYoloMode = true };
 
         // ── Unified Agent Firewall (Phase 2) ──
@@ -633,7 +643,7 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
         var firewallCtx = FirewallContext.FromExecutionContext(
             context,
             policy: policy,
-            mode: _runtimeControl?.Mode ?? RuntimeExecutionMode.Normal,
+            mode: effectiveRuntimeMode,
             argumentsJson: argumentsJson,
             toolId: toolId);
         var fwDecision = await _firewall.EvaluateAsync(firewallCtx, ct);

@@ -49,6 +49,15 @@ public sealed record PuddingDataPaths
     public string AgentInstanceRoot(string agentInstanceId) =>
         Path.Combine(AgentInstancesRoot, agentInstanceId);
 
+    /// <summary>
+    /// Agent 级访问级别（自动审批 / 完全访问）配置文件。
+    /// 路径：agents/{agentInstanceId}/access-level.json
+    /// 与 heartbeat.json / goal.md 同为实例级状态文件；不含 workspace 维度，
+    /// 因为访问级别跟随 Agent 主体，而不是某个工作区。
+    /// </summary>
+    public string AgentInstanceAccessLevelFile(string agentInstanceId) =>
+        Path.Combine(AgentInstanceRoot(agentInstanceId), "access-level.json");
+
     public string ChannelRoot(string channelId) =>
         Path.Combine(ChannelsRoot, channelId);
 
