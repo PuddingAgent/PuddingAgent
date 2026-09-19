@@ -1,4 +1,4 @@
-﻿// ── user styles ─────────────────────────────────
+// ── user styles ─────────────────────────────────
 import { createStyles } from 'antd-style';
 
 export const useUserStyles = createStyles(() => ({
@@ -16,8 +16,11 @@ export const useUserStyles = createStyles(() => ({
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 2,
-    paddingRight: 40, // 为右侧头像留位，保持名称/时间与气泡对齐
+    // 与 agent 侧 agentHeaderRow 的 marginBottom 4 对称（2026-09-19 头部对齐改造）。
+    marginBottom: 4,
+    // 右轴对齐机制：paddingRight 40 == 右侧头像 32 + userBubbleRow gap 8，
+    // 使「时间/徽章/用户名」头部行的右边界与气泡右边界严格同轴。
+    paddingRight: 40,
     minHeight: 20,
   },
   userNameText: {
