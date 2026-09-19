@@ -1057,3 +1057,43 @@ describe('AgentMessageBubble model retry row hook (P1-2)', () => {
     expect(screen.queryByTestId('agent-error-summary-row')).toBeNull();
   });
 });
+
+describe('AgentMessageBubble run monitor placement (用户批注 4：状态行下移卡底)', () => {
+  it('运行态：agent-run-monitor 在 DOM 顺序上位于内容流之后（卡底）', () => {
+    const { container } = render(
+      <AgentMessageBubble {...baseProps} content="正在生成回答正文" />,
+    );
+
+    const monitor = screen.getByTestId('agent-run-monitor');
+    // 正文内容流承载：无 canonical 投影时走回退气泡 → StreamingAnswer → MessageItem
+    const content = screen.getByTestId('message-item');
+
+    // compareDocumentPosition：content.compareDocumentPosition(monitor) 含
+    // DOCUMENT_POSITION_FOLLOWING ⇔ monitor 位于 content 之后（即内容流之后）。
+    expect(
+      content.compareDocumentPosition(monitor) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // 反向核对：monitor 相对 content 不应处于「之前」位置。
+    expect(
+      monitor.compareDocumentPosition(content) &
+        Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy();
+    // 运行态不渲染终态计量行（monitor 与 TurnStatsLine 相邻、位于卡底）。
+    expect(container.querySelector('[class*="turnStatsLine"]')).toBeNull();
+  });
+
+  it('终态：不渲染 agent-run-monitor，布局与文案不变', () => {
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        content="已完成"
+        isStreaming={false}
+        status="success"
+      />,
+    );
+
+    expect(screen.queryByTestId('agent-run-monitor')).toBeNull();
+    expect(screen.getByTestId('message-item')).toBeTruthy();
+  });
+});

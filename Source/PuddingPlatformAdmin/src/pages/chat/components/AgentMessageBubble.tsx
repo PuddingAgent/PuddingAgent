@@ -627,28 +627,6 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
               </div>
             )}
 
-            {shouldShowRunMonitor && (
-              <div
-                className={styles.agentRunMonitor}
-                data-testid="agent-run-monitor"
-              >
-                {/* CU-05：唯一 L0 状态行（单 aria-live）；WaitingBubble 已退出生产路径。 */}
-                {turnStatus && (
-                  <TurnStatus
-                    status={turnStatus}
-                    turnStartedAt={createdAt}
-                    agentName={agentName}
-                  />
-                )}
-
-                {/* 当前活动区仅保留尚无专属轨迹行的 system 阶段事实
-                    （委派等待态由 TurnStatus delegating + DelegationRow 承载，不再渲染大卡）。 */}
-                {shouldShowProcessActivity && processActivity && (
-                  <CurrentActivityPanel activity={processActivity} />
-                )}
-              </div>
-            )}
-
             {/* AgentTurnCard 重构：正文段 ⇄ 行为组内容块流 —— 按 canonical
                 sequence 交错；正文段（TextBlock）永久可见且只渲染一次，行为
                 轨迹收进可折叠 ActivityGroup（历史组默认折叠并卸载成员 DOM，
@@ -814,6 +792,31 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                 ttsPlaying={tts.playing}
                 ttsLoading={tts.loading}
               />
+            )}
+
+            {/* 运行态「最新状态行」下移至卡底（用户批注 4）：位于正文内容流
+                （TurnContentStream 及其后续兄弟节点）之后、与终态计量行
+                TurnStatsLine 相邻。组件/props/门控/aria-live/文案均不变。 */}
+            {shouldShowRunMonitor && (
+              <div
+                className={styles.agentRunMonitor}
+                data-testid="agent-run-monitor"
+              >
+                {/* CU-05：唯一 L0 状态行（单 aria-live）；WaitingBubble 已退出生产路径。 */}
+                {turnStatus && (
+                  <TurnStatus
+                    status={turnStatus}
+                    turnStartedAt={createdAt}
+                    agentName={agentName}
+                  />
+                )}
+
+                {/* 当前活动区仅保留尚无专属轨迹行的 system 阶段事实
+                    （委派等待态由 TurnStatus delegating + DelegationRow 承载，不再渲染大卡）。 */}
+                {shouldShowProcessActivity && processActivity && (
+                  <CurrentActivityPanel activity={processActivity} />
+                )}
+              </div>
             )}
 
             {/* 行为链 §3.3：turn 终态计量行（段数/工具数/总时长/tokens；升级自
