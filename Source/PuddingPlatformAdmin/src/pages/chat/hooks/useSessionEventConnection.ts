@@ -1,4 +1,4 @@
-﻿import type { MutableRefObject } from 'react';
+import type { MutableRefObject } from 'react';
 import { useCallback, useRef, useState } from 'react';
 import { message } from 'antd';
 import {
@@ -12,7 +12,10 @@ import { resolveSessionReplayPollInterval } from '../utils/chatStateUtils';
 import { isSessionNotFoundError } from './sessionRuntimeCleanup';
 
 interface SessionEventConnectionPorts {
-  applySessionEvent: (event: AdminChatStreamEvent) => void;
+  applySessionEvent: (
+    event: AdminChatStreamEvent,
+    options?: { replay?: boolean },
+  ) => void;
   handleSessionNotFound: (sessionId: string, reason: string) => void;
   pruneTrackedActiveMessages: (reason: string) => boolean;
   replayMissedSessionEvents: (
@@ -347,7 +350,11 @@ export function useSessionEventConnection() {
                 sequenceNum: (event as { sequenceNum?: number }).sequenceNum,
               });
             }
-            currentPorts.applySessionEvent(event);
+            // 帧上的 replay 标记（后端 Phase 1 历史追赶）是权威的「非实时」信号：
+            // 交给投影层按 replay 语义处理，不再靠时间/序号启发式猜测。
+            currentPorts.applySessionEvent(event, {
+              replay: (event as { replay?: boolean }).replay === true,
+            });
           },
           controller.signal,
           {

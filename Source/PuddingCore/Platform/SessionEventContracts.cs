@@ -25,7 +25,12 @@ public sealed record SessionEventEnvelope(
     DateTimeOffset OccurredAt,// 事件发生时间
     JsonElement Payload,      // 领域 Payload（JSON）
     RuntimeTraceContext? Trace,// 可选 trace 上下文
-    string? ToolCallId = null // 关联的工具调用 id（T00 最小子集；canonical 类型为 Runtime.ToolCallId）
+    string? ToolCallId = null,// 关联的工具调用 id（T00 最小子集；canonical 类型为 Runtime.ToolCallId）
+    // true = 该帧来自连接建立时的历史追赶（replay），不是此刻实时发生的事件。
+    // 为什么把它放在协议层：SSE 无游标时 FollowAsync 会从 sequence 0 无界回放整份历史，
+    // 而 live 与 replay 原本在帧上不可区分，消费端只能靠启发式（时间/序号）猜测，
+    // 对时效敏感的事件（压缩运行态）就必然误报。
+    bool IsReplay = false
 );
 
 /// <summary>

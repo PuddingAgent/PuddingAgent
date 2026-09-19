@@ -215,6 +215,21 @@ export function isStaleCompactionStarted(
   return now - occurredAt > COMPACTION_STARTED_MAX_AGE_MS;
 }
 
+/**
+ * 「确定新鲜」判定：有时间戳且未超过可信窗口。
+ * 与 isStaleCompactionStarted 的差别在于对「无时间戳」的处理——
+ * replay 帧上无法证实新鲜的事件必须当作可疑（fail-safe 不点亮），
+ * 而 live 帧上无法证实陈旧的事件应当照常点亮（不误杀）。
+ */
+export function isFreshCompactionStarted(
+  raw: Record<string, unknown> | null | undefined,
+  now: number = Date.now(),
+): boolean {
+  const occurredAt = resolveEventOccurredAtMs(raw);
+  if (occurredAt === undefined) return false;
+  return now - occurredAt <= COMPACTION_STARTED_MAX_AGE_MS;
+}
+
 export const createAssistant = (
   id: string,
   renderMode: 'legacy' | 'structured',

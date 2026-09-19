@@ -207,6 +207,30 @@ describe('useCompaction', () => {
     );
   });
 
+  it('replay 帧上的新鲜 started 仍然点亮（短暂断线期间真的在压缩）', () => {
+    // 按 id 的旧门控会在「无权限来源」时误杀真在运行的压缩，直到终态才可见；
+    // 现在 replay 帧逐「确定新鲜」后点亮。
+    const now = Date.parse('2026-09-19T22:00:00.000Z');
+    const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const { result } = renderHook(() => useCompactionHarness());
+      act(() =>
+        result.current.handleCompactionLifecycleEvent(
+          compactionEvent('context.compaction.started', {
+            occurredAt: '2026-09-19T21:59:40.000Z',
+            replay: true,
+          }),
+          { replay: true, notify: false, allowSessionSwitch: false },
+        ),
+      );
+      expect(result.current.turns).toHaveLength(1);
+      expect(result.current.turns[0].assistant.status).toBe('executing');
+      expect(result.current.loading).toBe(true);
+    } finally {
+      dateSpy.mockRestore();
+    }
+  });
+
   it('ignores a stale started arriving on the live channel (no zombie card)', () => {
     // SSE 无游标时会从 sequence 0 全量重放历史，且 live 通道不带 replay 标记：
     // 8 天前的孤儿 started 必须被年龄门控拦下，不得点亮运行态。

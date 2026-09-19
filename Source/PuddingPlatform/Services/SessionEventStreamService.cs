@@ -72,7 +72,9 @@ public sealed class SessionEventStreamService : ISessionEventStream
             {
                 if (ct.IsCancellationRequested) yield break;
                 if (evt.Sequence <= nextAfter) { _metrics.RecordDuplicateEvent(); continue; }
-                yield return ToEnvelope(evt);
+                // Phase 1 = 连接建立时的历史追赶：帧上显式标记 replay，消费端据此区分
+                // 「历史事件」与「此刻发生的事件」（两者原本在帧上不可区分）。
+                yield return ToEnvelope(evt) with { IsReplay = true };
                 nextAfter = evt.Sequence;
                 replayCount++;
             }

@@ -238,7 +238,10 @@ public class SessionEventsController : ControllerBase
         ConfigureSseResponse(Response);
 
         _logger.LogInformation(
-            "[SessionEvents] SSE subscribed session={Session}", sessionId);
+            "[SessionEvents] SSE subscribed session={Session} cursor={Cursor} phase={Phase}",
+            sessionId,
+            afterSequence ?? 0L,
+            afterSequence.HasValue ? "replay-after" : "replay-from-zero");
         await RecordSseTimelineAsync(
             _timelineRecorder,
             sessionId,
@@ -578,6 +581,7 @@ public class SessionEventsController : ControllerBase
             messageId = envelope.MessageId,
             occurredAt = envelope.OccurredAt,
             payload = envelope.Payload,
+            replay = envelope.IsReplay,
         });
 
         var sb = new System.Text.StringBuilder(64 + envelopeJson.Length);

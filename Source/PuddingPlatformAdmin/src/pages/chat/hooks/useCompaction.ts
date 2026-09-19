@@ -13,6 +13,7 @@ import {
   createId,
   formatCompactSuccessMessage,
   isStaleCompactionStarted,
+  isFreshCompactionStarted,
   mergeHistoryWithLifecycleTurns,
   resolveEventOccurredAtMs,
 } from '../utils/chatStateUtils';
@@ -345,10 +346,22 @@ export function useCompaction({
       // 复活成「正在压缩上下文」。历史完成/失败由紧随其后的终态事件按事实渲染。
       if (
         options?.replay === true &&
-        event.type === 'context.compaction.started' &&
-        compactionId !== (options.runningCompactionId ?? null)
+        event.type === 'context.compaction.started'
       ) {
-        return;
+        // 有权限来源（bootstrap 带 compactionRunning）：按 id 精确判活；
+        // 无来源（缺口重放 / 帧标记为 replay 的历史追赶）：要求「确定新鲜」才点亮——
+        // 否则短暂断线期间真的启动了压缩会被误杀，直到终态才可见。
+        const hasAuthority = options.runningCompactionId !== undefined;
+        const drop = hasAuthority
+          ? compactionId !== (options.runningCompactionId ?? null)
+          : !isFreshCompactionStarted(raw);
+        if (drop) {
+          logChatDiag('compaction.startedIgnoredReplay', {
+            compactionId,
+            hasAuthority,
+          });
+          return;
+        }
       }
       // 路径无关的陈旧 started 门控（2026-09-19）：live 通道不带 replay 标记，
       // SSE 无游标全量重放历史时会把多天前的孤儿 started 当实时事件送来，

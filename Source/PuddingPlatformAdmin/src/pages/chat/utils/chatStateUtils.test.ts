@@ -2,6 +2,7 @@ import type { ChatTurn } from '../types';
 import {
   confirmOptimisticTurn,
   getChatRouteSelectionFromSearch,
+  isFreshCompactionStarted,
   isStaleCompactionStarted,
   resolveRunningCompactionId,
   resolveTerminalAssistantMarkdown,
@@ -181,5 +182,18 @@ describe('isStaleCompactionStarted', () => {
     expect(
       isStaleCompactionStarted({ occurredAtUtc: '2026-09-01T00:00:00Z' }, now),
     ).toBe(true);
+  });
+
+  it('isFreshCompactionStarted 要求「确定新鲜」（无时间戳一律不可信）', () => {
+    // replay 帧的 fail-safe 口彄：证不了新鲜就不点亮（而 live 帧相反）。
+    expect(
+      isFreshCompactionStarted({ occurredAt: '2026-09-19T21:59:30.000Z' }, now),
+    ).toBe(true);
+    expect(
+      isFreshCompactionStarted({ occurredAt: '2026-09-11T14:16:16.000Z' }, now),
+    ).toBe(false);
+    expect(isFreshCompactionStarted({ compactionId: 'x' }, now)).toBe(false);
+    expect(isFreshCompactionStarted(null, now)).toBe(false);
+    expect(isFreshCompactionStarted({ occurredAt: 'oops' }, now)).toBe(false);
   });
 });
