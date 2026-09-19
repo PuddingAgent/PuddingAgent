@@ -103,6 +103,73 @@ public sealed class SessionEventsControllerTests
         Assert.AreNotEqual(HttpStatusCode.InternalServerError, response.StatusCode);
     }
 
+    // ── ADR-057 S1+S4: SSE 时效语义（replay 帧标记 / 无游标 live-only）──
+
+    /// <summary>
+    /// 显式游标 0＝有意全量回放：历史帧必须带 replay=true，消费端才能把「历史」
+    /// 与「此刻发生」区分开——此前帧上无法区分，孤儿 started 因此被当实时事件点亮。
+    /// </summary>
+    [TestMethod]
+    public async Task EventsStream_WithExplicitZeroCursor_ReplaysHistoryAndMarksFramesAsReplay()
+    {
+        var sessionId = await CreateSessionAsync();
+        await AppendEventsAsync(sessionId, count: 3);
+
+        using var response = await _client.GetAsync(
+            $"/api/sessions/{sessionId}/events/stream?afterSequence=0",
+            HttpCompletionOption.ResponseHeadersRead);
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.AreEqual("text/event-stream", response.Content.Headers.ContentType?.MediaType);
+
+        var frames = await ReadSseFramesAsync(
+            response, maxFrames: 3, budget: TimeSpan.FromSeconds(20));
+
+        Assert.HasCount(3, frames, "显式 0 必须回放已存在的全部历史事件。");
+        Assert.AreEqual(1L, frames[0].Sequence, "回放必须从日志起点（sequence=1）开始。");
+        Assert.IsTrue(
+            frames.All(f => f.Replay),
+            "历史回放帧必须带 replay=true；否则消费端会把几天前的 started 当成实时事件点亮。");
+        Assert.IsTrue(
+            frames[0].Sequence < frames[1].Sequence && frames[1].Sequence < frames[2].Sequence,
+            "回放帧必须按 sequence 递增。");
+    }
+
+    /// <summary>
+    /// 无游标＝客户端没有权威位置 → 只推实时帧（live-only），历史由快照负责。
+    /// 因此连接后收到的第一帧必须是订阅之后产生的事件，且 replay=false。
+    /// </summary>
+    [TestMethod]
+    public async Task EventsStream_WithoutCursor_DoesNotReplayHistory()
+    {
+        var sessionId = await CreateSessionAsync();
+        var historicalHead = await AppendEventsAsync(sessionId, count: 3);
+
+        var responseTask = _client.GetAsync(
+            $"/api/sessions/{sessionId}/events/stream",
+            HttpCompletionOption.ResponseHeadersRead);
+
+        // seq<=historicalHead 的历史事件已经存在，无游标连接不得回放它们。
+        // 持续追加新事件以驱动第一帧（追加会 signal 事件通知器，实时帧随即可达）。
+        for (var i = 0; i < 20 && !responseTask.IsCompleted; i++)
+        {
+            await Task.Delay(250);
+            await AppendEventsAsync(sessionId, count: 1);
+        }
+
+        using var response = await responseTask.WaitAsync(TimeSpan.FromSeconds(30));
+        var frames = await ReadSseFramesAsync(
+            response, maxFrames: 1, budget: TimeSpan.FromSeconds(20));
+
+        Assert.HasCount(1, frames, "应收到实时帧——负结果不得由连接故障伪造。");
+        Assert.IsFalse(frames[0].Replay, "无游标连接的首帧是实时帧，不得是 replay 历史帧。");
+        Assert.IsGreaterThan(
+            historicalHead,
+            frames[0].Sequence,
+            $"首帧必须是订阅之后产生的事件（sequence > {historicalHead}），实际 {frames[0].Sequence}；"
+            + "若等于历史序号，说明无游标连接仍在全量回放历史。");
+    }
+
     [TestMethod]
     public async Task Compact_Passes_Runtime_Profile_To_Compaction_Service()
     {
@@ -319,6 +386,100 @@ public sealed class SessionEventsControllerTests
                 SummaryPreview: "summary",
                 SummaryMarkdown: "summary"));
         }
+    }
+
+    // ── 测试工具（SSE 时效语义）──────────────────────────
+
+    private async Task<string> CreateSessionAsync()
+    {
+        var createResp = await _client.PostAsJsonAsync("/api/sessions", new
+        {
+            workspaceId = "default",
+            agentTemplateId = "global:general-assistant"
+        });
+        createResp.EnsureSuccessStatusCode();
+        var created = await createResp.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
+        Assert.IsNotNull(created, "创建会话失败，无法继续 SSE 语义断言。");
+        return created!.SessionId;
+    }
+
+    /// <summary>直接经 Event Store 写入历史事件（含 sequence 分配与 head 推进）。</summary>
+    private async Task<long> AppendEventsAsync(string conversationId, int count)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IConversationEventStore>();
+
+        var drafts = new List<NewConversationEvent>(count);
+        for (var i = 0; i < count; i++)
+        {
+            drafts.Add(new NewConversationEvent(
+                $"evt-{Guid.NewGuid():N}",
+                ConversationEventTypes.MessageCreated,
+                1,
+                "default",
+                $"turn-{Guid.NewGuid():N}",
+                null,
+                null,
+                $"msg-{Guid.NewGuid():N}",
+                null,
+                null,
+                null,
+                JsonSerializer.SerializeToElement(new { text = $"history-{i}" }),
+                "default.global_general-assistant.6a8",
+                ConversationEventSourceKind.Agent));
+        }
+
+        var result = await store.AppendAsync(
+            conversationId,
+            expectedVersion: -1,
+            drafts,
+            EventWriteCondition.ForRun("sse-semantics-test", 0),
+            CancellationToken.None);
+        return result.LastSequence;
+    }
+
+    private sealed record SseFrame(long Sequence, bool Replay);
+
+    /// <summary>
+    /// 读取至多 maxFrames 个 data 帧；heartbeat 注释行与空行忽略。
+    /// SSE 是无限流，不能用「读到流结束」——预算耗尽即返回已读到的部分。
+    /// </summary>
+    private static async Task<List<SseFrame>> ReadSseFramesAsync(
+        HttpResponseMessage response,
+        int maxFrames,
+        TimeSpan budget)
+    {
+        var frames = new List<SseFrame>();
+        using var cts = new CancellationTokenSource(budget);
+
+        try
+        {
+            await using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream);
+
+            while (frames.Count < maxFrames)
+            {
+                var line = await reader.ReadLineAsync(cts.Token);
+                if (line is null) break;
+
+                // 空行＝帧分隔；以 ':' 开头＝SSE 注释（本服务的 heartbeat）
+                if (line.Length == 0 || line[0] == ':') continue;
+                if (!line.StartsWith("data: ", StringComparison.Ordinal)) continue;
+
+                using var doc = JsonDocument.Parse(line["data: ".Length..]);
+                var root = doc.RootElement;
+                frames.Add(new SseFrame(
+                    root.GetProperty("sequence").GetInt64(),
+                    root.TryGetProperty("replay", out var replay)
+                        && replay.ValueKind == JsonValueKind.True));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 预算耗尽：返回已读到的帧
+        }
+
+        return frames;
     }
 
     private sealed class ThrowingCompactionService : IContextCompactionService
