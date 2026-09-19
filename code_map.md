@@ -227,6 +227,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Docs/07架构/92ADR-077*.md` | 原生视觉基础：typed parts、Workspace Artifact、Files API、多轮恢复；V0–V3 已有实现，V4 真实新构建验收待做。后续 ADR-088 收敛 Reader/能力/图片预算/流式传输并补齐 Web/Desktop 截图，自动 helper 移除及显式通用子代理第二意见仍待实施 |
 | `Docs/Features/Chat图片消息回放与前端旧Bundle缓存修复方案.md` | 2026-08-26 Chat 图片占位事故的可施工修复方案；冻结 Agent-first `contentParts` 透传、typed parts 优先兼容、localhost 旧 Service Worker 清理、入口/哈希资源缓存合同、build identity 和两段式产品验收；关联 P1 Task `ceba781342aa4353901654d1897092cb`，尚未实施 |
 | `Docs/Features/子代理活动轨迹实时回放与运行检查器修复方案.md` | 2026-08-26 子代理检查器空时间线事故的证据化施工方案；活动 Run 继续零 archive 轮询，改由 Conversation SSE + active-subagent gap replay + 可对账状态水位恢复；修正有界工具详情导致的聚合少计、增加轨迹同步降级与 build identity 门禁；关联 P1 Task `791d062fa6ea44f18bfe5027a37696d0`，尚未实施 |
+| `Docs/Reports/Core与DesktopCPU占用现场采样-2026-09-19.md` | CPU 只读采样：Core 均值 0.169%，Desktop 均值 2.727%；Desktop 热点线程映射 WPF 图形模块，Core 截图峰值未复现，待高占用窗口原生/托管联合采样 |
 | `Docs/Reports/小型布局子代理耗时与进度失真诊断-2026-09-19.md` | 26 分 31 秒布局 Run 的只读诊断：83 次模型调用、6 次 Jest 启动、宽松委派预算；531 条 canonical 事件已落库但截图仍为启动/零指标；区分执行低效与活动投影缺失，未修改产品代码 |
 | `Docs/07架构/tool-infrastructure-layering.md` | Tool 分层、强制委派合同、Smart 参数与结果合同 |
 | `Docs/deepseek-harness-message-card-alignment-2026-08-14.md` | 对照 deepseek-harness 的消息、推理和工具调用 UI 目标架构；定义 TurnStatus、Reasoning/Tool/Delegation 行、toolCallId 投影、分期与验收矩阵 |

@@ -1,3 +1,7 @@
+### CPU 占用：Core、Desktop 与 WebView2 分开采样（2026-09-19）
+
+先取 5 秒 CPU 时间增量并除以逻辑处理器数，持续至少一分钟，再映射热点线程；截图瞬时值不能直接与进程生命周期 CPU 秒比较。Desktop 的原生 WPF 图形线程可能不出现在 dotnet-stack 托管栈中，应按线程起始地址映射模块、必要时补原生采样。核对 WebView2 所属进程树，避免把其他应用的浏览器进程算入 Pudding。本次 Core 峰值未复现，Desktop 热点为 wpfgfx_cor3.dll；证据与局限见[CPU 现场采样](Docs/Reports/Core与DesktopCPU占用现场采样-2026-09-19.md)。
+
 ### 子代理耗时但检查器仍显示启动中与零指标（2026-09-19）
 
 用截图 Run ID 对齐 run.json、events.jsonl、conversation-projection.cursor 和父会话 conversation_events；分别检查实际执行耗时和页面投影，不能把本地时钟增长解释为启动卡死。本次 26 分 31 秒的布局 Run 已完成 83 次模型调用、97 次工具调用，531 条事件全部入库；零指标卡片可能由状态快照创建后没有补齐事件。统计重复测试启动、terminal_wait 往返、命令解析异常和委派基线口径，避免仅归因模型慢。见[现场证据与修复方向](Docs/Reports/小型布局子代理耗时与进度失真诊断-2026-09-19.md)。
