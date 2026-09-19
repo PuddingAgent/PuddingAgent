@@ -255,11 +255,21 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
                    || normalized.Contains("stale", StringComparison.Ordinal));
     }
 
-        private async Task<(string Body, IReadOnlyList<PlannedVisualInput> FileImages)> BuildResponsesRequestBodyAsync(
+    private async Task<(string Body, IReadOnlyList<PlannedVisualInput> FileImages)> BuildResponsesRequestBodyAsync(
+        IReadOnlyList<ChatMessage> messages, IReadOnlyList<ITool> tools, bool stream, CancellationToken ct)
+    {
+        var result = await VisualRequestBodyBudget.BuildAsync(
+            allocation => BuildResponsesRequestOnceAsync(messages, tools, stream, ct, allocation),
+            VisualArtifactResolver, string.Equals(ProviderId, "deepseek", StringComparison.OrdinalIgnoreCase)
+                || new Uri(_responsesEndpoint).Host.Equals("api.deepseek.com", StringComparison.OrdinalIgnoreCase), ct);
+        return (result.Body, result.State);
+    }
+
+    private async Task<PreparedVisualRequest<IReadOnlyList<PlannedVisualInput>>> BuildResponsesRequestOnceAsync(
         IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<ITool> tools,
         bool stream,
-        CancellationToken ct)
+        CancellationToken ct, long? preparationMaxBytes)
     {
         var root = new JsonObject
         {
@@ -282,8 +292,8 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         var fileImages = new List<PlannedVisualInput>();
         // V5 切片二：一次 payload 构造一个请求级预算账本，贯穿本请求全部图片规划——
         // 工具 function_call_output 与用户 input_image 共用同一实例（显式参数传递，无 AsyncLocal）。
-        var visionBudget = new VisualInputRequestBudget(VisionPolicy);
         var protocolSafeMessages = LlmMessageSequenceNormalizer.Normalize(messages).Messages;
+        var visionBudget = VisualInputRequestBudget.ForMessages(VisionPolicy, protocolSafeMessages, preparationMaxBytes);
         for (var messageOrdinal = 0; messageOrdinal < protocolSafeMessages.Count; messageOrdinal++)
             await AddInputItemsAsync(input, protocolSafeMessages[messageOrdinal], fileImages, visionBudget, messageOrdinal + 1, ct);
         root["input"] = input;
@@ -316,7 +326,7 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
             };
         }
 
-                return (root.ToJsonString(), fileImages);
+        return new(root.ToJsonString(), visionBudget, fileImages);
     }
 
     private async Task AddInputItemsAsync(

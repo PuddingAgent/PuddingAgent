@@ -127,21 +127,23 @@ flowchart LR
 
 ### 3.2 图片输入、token 与请求限制
 
+2026-09-19：按用户要求取消旧的 8 图/2 MB/40 MiB 产品门槛；以下为现行 DeepSeek 官方基线，其他模型仍可通过合同收紧。实现与验收见[修复记录](../Reports/图片请求官方限制与预处理恢复修复-2026-09-19.md)。
+
 根据 [DeepSeek 图像理解](https://api-docs.deepseek.com/zh-cn/guides/vision/)：
 
 | 限制项 | 官方值 | Pudding 决策 |
 |---|---:|---|
 | 格式 | JPEG、PNG、GIF、WebP，按文件实际内容识别 | P0 保持 JPEG/PNG/WebP；GIF 继续由 Web 转 PNG，Connector 暂不开放动画 GIF |
-| 请求体 | 48 MiB | 内联规划使用 40 MiB 软上限预留 JSON/header 余量 |
-| 单图，Base64/URL | 32 MiB | 超过 Pudding 小图阈值直接走 Files API，不向模型发 URL |
-| 单图，Files API | 64 MiB | Pudding canonical Artifact 与 Image Reader source 保持 50 MiB 上限 |
-| 每请求最大图片数 | 600 | Pudding 产品上限保持 8，避免 UI、成本和上下文失控 |
-| 非 file_id 图片总大小 | 64 MiB | 仍受 40 MiB 内联请求体软上限约束 |
+| 请求体 | 48 MiB | 按最终 UTF-8 JSON（含文本、工具定义、Base64 和转义）校验；自动缩图后有界重建 |
+| 单图，Base64/URL | 32 MiB | 超限先本地压缩；只发送受控制品副本，不向模型发外部 URL |
+| 单图，Files API | 64 MiB | 保留 Files 通道与单文件预检，原图留在 Workspace |
+| 每请求最大图片数 | 600 | 默认 600，附件、历史与工具输出合计；超限明确拒绝当前请求 |
+| 非 file_id 图片总大小 | 64 MiB | 同时受 48 MiB 完整请求体约束，Base64 膨胀单独计算 |
 | 含 file_id 图片总大小 | 200 MiB | Provider preflight 按 200 MiB fail closed |
-| 最大边长 | 8192 px；15 张以上为 4096 px | Pudding 最多 8 张，因此按 8192 px 校验 |
-| 图片 token | 自动缩放后每张最多 384 tokens | 预算只记录 `384 × count` 上界；实际计费以 usage 为准 |
+| 最大边长 | 8192 px；15 张及以上为 4096 px | 构建请求前统计全部图片，再统一缩放 |
+| 图片 token | 当前文档每张最多 1024 tokens | 版本化估计，实际计费以 usage 为准 |
 
-`detail=low` 会先缩放到 512×512；`high` 等价于 `original`，`auto` 当前也等价于 `original`。Pudding 默认 `original`，不为了省 token 静默降为 `low`。只有用户或明确策略选择 `low` 时才创建受控副本，原 Artifact 永不覆盖。
+`detail=low` 会先缩放到 512×512；`high` 等价于 `original`，`auto` 当前也等价于 `original`。Pudding 默认 `original`，不为了省 token 静默降为 `low`。选择 `low` 或为满足数量相关的尺寸/字节预算时创建受控副本，原 Artifact 永不覆盖。
 
 DeepSeek Chat Completions 只允许图片出现在 `user` 消息中；Responses API 的图片以 `input_image` 承载，并允许出现在 `function_call_output` / `custom_tool_call_output.output`。Pudding canonical 合同因此区分 user image part 与 tool image part；Gateway 只能按目标协议明确支持的角色序列化，不能跨角色伪装。
 

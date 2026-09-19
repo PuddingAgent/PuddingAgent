@@ -37,10 +37,11 @@ public sealed class TaskE2EHarness : IDisposable
     public TaskDbProbe Probe { get; }
 
     public ScriptedLlmClient Llm { get; }
+    public RuntimeControlService RuntimeControl { get; } = new(maxErrorsInWindow: 1);
 
     public AgentExecutionService ExecutionService { get; }
 
-    public TaskE2EHarness(bool useContextBudgetGuard = false)
+    public TaskE2EHarness(bool useContextBudgetGuard = false, bool useRuntimeControl = false)
     {
         _testRoot = Path.Combine(
             Path.GetTempPath(),
@@ -59,7 +60,7 @@ public sealed class TaskE2EHarness : IDisposable
         Journal = new ExecutionJournal();
         Probe = new TaskDbProbe(DbFactory);
         Llm = new ScriptedLlmClient();
-        ExecutionService = CreateExecutionService(Llm, useContextBudgetGuard);
+        ExecutionService = CreateExecutionService(Llm, useContextBudgetGuard, useRuntimeControl);
     }
 
     /// <summary>[TestInitialize] 调用：确保 SQLite schema 建表完成。</summary>
@@ -212,7 +213,7 @@ public sealed class TaskE2EHarness : IDisposable
 
     // ── 组装（复用 B2 CreateService 骨架，toolInvocationService 传真实工具路径）──
 
-    private AgentExecutionService CreateExecutionService(ScriptedLlmClient llm, bool useContextBudgetGuard)
+    private AgentExecutionService CreateExecutionService(ScriptedLlmClient llm, bool useContextBudgetGuard, bool useRuntimeControl)
     {
         var sessionManager = new AgentSessionManager(NullLogger<AgentSessionManager>.Instance);
         var runtimeSessionStore = new InMemoryRuntimeSessionStore();
@@ -266,6 +267,7 @@ public sealed class TaskE2EHarness : IDisposable
             NullLogger<AgentExecutionService>.Instance,
             sessionExecutionGate,
             toolInvocationService: Tools,
+            runtimeControl: useRuntimeControl ? RuntimeControl : null,
             contextUsageSnapshotStore: useContextBudgetGuard ? new ContextUsageSnapshotStore() : null);
     }
 
@@ -322,6 +324,7 @@ public sealed class ScriptedLlmClient : IRuntimeLlmClient
 {
     private readonly Queue<LlmResponse> _responses = new();
     public int CallCount { get; private set; }
+    public Action<IReadOnlyList<ChatMessage>>? ValidateRequest { get; set; }
     public void EnqueueResponse(LlmResponse response) => _responses.Enqueue(response);
 
     public ScriptedLlmClient()
@@ -349,6 +352,7 @@ public sealed class ScriptedLlmClient : IRuntimeLlmClient
         LlmConfig? llmConfig = null,
         CancellationToken ct = default)
     {
+        ValidateRequest?.Invoke(messages);
         if (_responses.Count == 0)
             throw new InvalidOperationException(
                 "ScriptedLlmClient exhausted: more LLM rounds than scripted responses.");

@@ -1,3 +1,4 @@
+using PuddingCode.Core;
 using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
@@ -488,6 +489,9 @@ public sealed partial class AgentExecutionService
             SummarizeToolNames(frozenTools.RuntimeMergedToolNames),
             SummarizeToolDefinitions(llmTools));
         var providerInputRecoveryAttempted = false;
+        var visionContinuation = new VisionTextContinuation(
+            BuildCurrentUserChatMessage(request, null).SourceContentHash,
+            request.CallerLlmSnapshot?.VisionPolicy?.MaxImagesPerRequest ?? VisionRequestPolicy.Default.MaxImagesPerRequest);
         var warmPrefixCompactionAttempted = false;
         var toolSpecChangedForNextRound = false;
 
@@ -731,6 +735,8 @@ public sealed partial class AgentExecutionService
                 recoveryCt),
             _logger,
             ct);
+                injectedHistory = visionContinuation.Prepare(injectedHistory);
+
                 var prefixSnapshot = PrefixCacheSnapshotBuilder.Build(
                     injectedHistory,
                     llmTools,
@@ -773,6 +779,12 @@ public sealed partial class AgentExecutionService
 
                 if (!llmResult.Success)
                 {
+                    if (llmResult.IsVisionError && visionContinuation.TryActivate(injectedHistory))
+                    {
+                        _logger.LogWarning("[VisionTextContinuation] Retrying text turn with historical image references session={Session}", request.SessionId);
+                        round--;
+                        continue;
+                    }
                     executionError = llmResult.ExecutionError!;
                     finalMessage = llmResult.FinalMessage!;
                     stopReason = AgentLoopStopReason.Failed;

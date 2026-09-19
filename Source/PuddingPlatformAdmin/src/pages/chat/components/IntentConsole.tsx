@@ -1,4 +1,4 @@
-﻿// ── InputArea：安静胶囊 Composer + 轻反馈带 ────────
+// ── InputArea：安静胶囊 Composer + 轻反馈带 ────────
 import {
   AudioOutlined,
   DeleteOutlined,
@@ -126,7 +126,7 @@ interface PendingComposerImage {
   previewUrl: string;
 }
 
-const MAX_PENDING_IMAGES = 8;
+const MAX_PENDING_IMAGES = 600;
 
 interface IntentConsoleProps {
   inputValue: string;
@@ -452,11 +452,15 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
 
     setPendingImages((current) => {
       const available = Math.max(0, MAX_PENDING_IMAGES - current.length);
-      if (images.length > available)
-        message.warning(`每轮最多发送 ${MAX_PENDING_IMAGES} 张图片`);
+      if (images.length > available) {
+        message.warning(
+          `每轮最多发送 ${MAX_PENDING_IMAGES} 张图片，还可添加 ${available} 张。本批图片未添加，请分批选择；仍可发送文字消息。`,
+        );
+        return current;
+      }
       return [
         ...current,
-        ...images.slice(0, available).map((file) => ({
+        ...images.map((file) => ({
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
           file,
           previewUrl: URL.createObjectURL(file),

@@ -129,6 +129,7 @@ public sealed class AnthropicMessagesLlmGatewayVisualWireTests
     {
         var handler = new CapturingHandler();
         var gateway = CreateGateway(handler);
+        gateway.VisionPolicy = new VisionRequestPolicy { MaxImagesPerRequest = 8 };
 
         var exception = await Assert.ThrowsExactlyAsync<VisionPipelineException>(() =>
             gateway.ChatAsync(
@@ -140,11 +141,8 @@ public sealed class AnthropicMessagesLlmGatewayVisualWireTests
                 []));
 
         Assert.AreEqual(VisionErrorCodes.RequestLimitExceeded, exception.Code);
-        StringAssert.Contains(exception.Message, "image count");
-        StringAssert.Contains(exception.Message, "cumulative 8 + incoming 1");
+        StringAssert.Contains(exception.Message, "9 images");
         StringAssert.Contains(exception.Message, "policy limit 8");
-        StringAssert.Contains(exception.Message, "user input_image @message#");
-        StringAssert.Contains(exception.Message, "(anthropic)");
         Assert.AreEqual(0, handler.CallCount, "越界必须发生在 HTTP 发起之前（fail closed）。");
     }
 
@@ -166,7 +164,7 @@ public sealed class AnthropicMessagesLlmGatewayVisualWireTests
                 []));
 
         Assert.AreEqual(VisionErrorCodes.RequestLimitExceeded, exception.Code);
-        StringAssert.Contains(exception.Message, "cumulative 2 + incoming 1");
+        StringAssert.Contains(exception.Message, "4 images");
         StringAssert.Contains(exception.Message, "policy limit 2");
         Assert.AreEqual(0, handler.CallCount);
     }

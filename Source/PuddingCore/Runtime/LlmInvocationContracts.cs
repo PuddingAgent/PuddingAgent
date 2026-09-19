@@ -66,6 +66,8 @@ public sealed record LlmInvocationResult
     public string? ModelId { get; init; }
     public PromptPrefixSnapshot? PrefixSnapshot { get; init; }
     public string? Error { get; init; }
+    public string? ErrorCode { get; init; }
+    public bool IsVisionError { get; init; }
 }
 
 /// <summary>LLM 调用服务，隔离执行引擎与 provider 协议细节。</summary>

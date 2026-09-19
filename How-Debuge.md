@@ -1,3 +1,7 @@
+### 图片超限与续聊（2026-09-19）
+
+区分 `vision_request_limit_exceeded` 的当前请求拒绝与 Session Faulted；视觉预检不再计入 API 熔断。流式诊断位置为 `agent.stream.vision_preflight`，保留内部异常和 session/message/trace；UI 显示可读消息。`[VisionPreprocess]` 日志记录 source/derived、压缩前后字节及目标边长/预算，不记录像素或密钥。`[VisionTextContinuation]` 表示历史图片失败后以明确引用重试纯文本一次；canonical/原图未删。超过 600 的历史图片会在出站投影中直接转引用，当前轮图片不会丢弃。先确认运行进程加载了新构建，再按 600/601、14/15、32 MiB、48 MiB 复核；相关测试与限制说明见[修复记录](Docs/Reports/图片请求官方限制与预处理恢复修复-2026-09-19.md)。
+
 ### DeepSeek缓存首批优化：能力包与偏好快照（2026-09-17）
 
 工具发现现在成组曝光，先看已授权catalog和既有可见顺序，勿把一次性工具包扩展误记成排序回归。偏好遥测从system的L3-USER-PREFERENCES迁至尾部L9-USER-PREFERENCES；同内容仍可见则无新层，压缩后需补发。读取错误不表示删除；成功空集发清空快照，专用Book无内容不再模糊搜索回填。部署检查prepared/loaded artifact manifest、程序集hash、PID、Ready及持续运行时间；没有模型usage时不报告命中提升。见[本批验收](Docs/Reports/DeepSeek缓存首批优化与部署-2026-09-17.md)。

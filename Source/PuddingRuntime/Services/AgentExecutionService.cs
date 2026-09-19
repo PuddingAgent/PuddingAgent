@@ -1,3 +1,4 @@
+using PuddingCode.Core;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text;
@@ -1608,7 +1609,7 @@ public sealed partial class AgentExecutionService
             : (int?)null;
         var errorCode = httpStatusCode is not null
             ? $"HTTP_{httpStatusCode.Value}"
-            : exception.GetType().Name;
+            : exception is VisionPipelineException vision ? vision.Code : exception.GetType().Name;
 
         return new StreamErrorDiagnostic
         {
@@ -1620,7 +1621,7 @@ public sealed partial class AgentExecutionService
             TurnId = request.MessageId,
             TraceId = traceId,
             TimestampUtc = timestampUtc,
-            Location = "agent.stream.llm_provider",
+            Location = exception is VisionPipelineException ? "agent.stream.vision_preflight" : "agent.stream.llm_provider",
             ErrorCode = errorCode,
             ExceptionType = exception.GetType().FullName ?? exception.GetType().Name,
             HttpStatusCode = httpStatusCode,

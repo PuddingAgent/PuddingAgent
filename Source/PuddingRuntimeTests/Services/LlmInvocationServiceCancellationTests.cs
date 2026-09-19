@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Models;
+using PuddingCode.Core;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingRuntime.Services;
@@ -10,6 +11,19 @@ namespace PuddingRuntimeTests.Services;
 [TestClass]
 public sealed class LlmInvocationServiceCancellationTests
 {
+    [TestMethod]
+    public async Task InvokeAsync_PreservesRecoverableVisionErrorAndFriendlyMessage()
+    {
+        var error = new VisionPipelineException(VisionErrorCodes.RequestLimitExceeded, "internal diagnostic",
+            userMessage: "图片超限，仍可继续发送文字消息。");
+        var service = new LlmInvocationService(new ThrowingRuntimeLlmClient(error), NullLogger<LlmInvocationService>.Instance);
+        var result = await service.InvokeAsync(CreateRequest());
+        Assert.IsFalse(result.Success);
+        Assert.IsTrue(result.IsVisionError);
+        Assert.AreEqual(error.Code, result.ErrorCode);
+        Assert.AreEqual(error.UserMessage, result.Error);
+    }
+
     [TestMethod]
     public async Task InvokeAsync_PropagatesCallerCancellation()
     {

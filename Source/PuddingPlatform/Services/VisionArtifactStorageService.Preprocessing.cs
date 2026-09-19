@@ -53,4 +53,55 @@ public sealed partial class VisionArtifactStorageService
         }
         return await ResolveAsync(workspaceId, artifactId, ct);
     }
+
+    /// <summary>Fit an immutable source to a per-request pixel and encoded-byte allowance.</summary>
+    public async Task<VisualArtifactReference?> ResolveForRequestAsync(string workspaceId, string artifactId,
+        string detail, PuddingCode.Abstractions.VisualArtifactPreparationOptions limits, CancellationToken ct = default)
+    {
+        if (!VisionContentPartDetails.IsValid(detail) || limits.MaxEdge <= 0 || limits.MaxBytes <= 0)
+            throw new VisionPipelineException(VisionErrorCodes.SourceInvalid, "Invalid image preparation options.");
+        var source = await ResolveLocalFileAsync(workspaceId, artifactId, ct);
+        if (source is null) return null;
+        var info = ImagePreprocessing.Inspect(source.Path);
+        var maxEdge = Math.Min(ImagePreprocessing.MaxOutputEdge, detail == VisionContentPartDetails.Low
+            ? Math.Min(512, limits.MaxEdge) : limits.MaxEdge);
+        if (info.Width <= maxEdge && info.Height <= maxEdge && info.Bytes <= limits.MaxBytes
+            && info.MimeType is not ("image/bmp" or "image/gif") && info.Orientation == "TopLeft")
+            return await ResolveAsync(workspaceId, artifactId, ct);
+
+        var key = Encoding.UTF8.GetBytes($"image-request-v1:{artifactId}:{detail}:{maxEdge}:{limits.MaxBytes}");
+        var derivedId = "vision-" + Convert.ToHexString(SHA256.HashData(key)).ToLowerInvariant()[..32];
+        var cached = await ResolveAsync(workspaceId, derivedId, ct);
+        if (cached is not null) return cached with { ArtifactId = artifactId };
+        await ProcessingSlot.WaitAsync(ct);
+        try
+        {
+            cached = await ResolveAsync(workspaceId, derivedId, ct);
+            if (cached is not null) return cached with { ArtifactId = artifactId };
+            var edge = Math.Min(maxEdge, Math.Max(info.Width, info.Height));
+            var pixelRatio = Math.Sqrt((double)ImagePreprocessing.MaxOutputPixels / ((long)info.Width * info.Height));
+            edge = Math.Min(edge, (int)(Math.Max(info.Width, info.Height) * Math.Min(1, pixelRatio)));
+            // Only the final candidate is persisted. All attempts start from the original pixels.
+            for (var attempt = 0; attempt < 12; attempt++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var format = attempt == 0 && info.Bytes <= limits.MaxBytes ? "png" : "jpeg";
+                var quality = attempt <= 1 ? 85 : attempt == 2 ? 70 : 55;
+                if (attempt >= 3) edge = Math.Max(16, (int)(edge * 0.7));
+                var bytes = ImagePreprocessing.Process(source.Path,
+                    new ImageProcessingOptions(MaxEdge: edge, Format: format, Quality: quality), ct);
+                if (bytes.LongLength > limits.MaxBytes) continue;
+                await using var stream = new MemoryStream(bytes, writable: false);
+                await SaveIdempotentAsync(workspaceId, derivedId, stream, "application/octet-stream", ct: ct);
+                logger.LogInformation("[VisionPreprocess] source={Source} derived={Derived} sourceBytes={SourceBytes} preparedBytes={Bytes} maxEdge={Edge} byteBudget={Budget}",
+                    artifactId, derivedId, info.Bytes, bytes.Length, edge, limits.MaxBytes);
+                var result = await ResolveAsync(workspaceId, derivedId, ct);
+                return result is null ? null : result with { ArtifactId = artifactId };
+            }
+        }
+        finally { ProcessingSlot.Release(); }
+        throw new VisionPipelineException(VisionErrorCodes.RequestLimitExceeded,
+            $"Image {artifactId} could not fit {limits.MaxBytes} bytes and {maxEdge}px after preprocessing.",
+            userMessage: $"图片经过自动缩放和压缩，仍无法满足本次请求分配的 {limits.MaxBytes:N0} 字节、最长边 {maxEdge} 像素限制。请减少图片或分批处理；原图已保留，仍可继续发送文字消息。");
+    }
 }

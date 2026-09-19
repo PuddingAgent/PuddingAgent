@@ -4,32 +4,27 @@ using System.Security.Cryptography;
 
 namespace PuddingCode.Core;
 
-/// <summary>
-/// 单次 LLM invocation 的图片请求预算（ADR-077 §3.2/§6.1）。
-/// 当前为 inline-only 阶段：单图 2,000,000 bytes 解码后上限、inline 累计 40 MiB 解码后软上限；
-/// 累计上限按单次 invocation（单条消息的图片集）逐消息校验，尚非跨消息整请求聚合。
-/// 超限即 fail closed（Files API 落地后由 Planner 升级为 file_id 规划）。
-/// Files 相关常量已按官方约束预留（64 MiB 单文件、lifetime 3600–2592000s），供 V3-S2 Planner 使用。
-/// </summary>
+/// <summary>DeepSeek documented request limits. Model contracts may select stricter values.
+/// Image preparation is separate from validation; the final serialized request remains authoritative.</summary>
 public sealed record VisionRequestPolicy
 {
-    /// <summary>产品上限：单次 invocation（per-invocation）最多图片数（DeepSeek 官方允许 600，产品收口为 8）。</summary>
-    public int MaxImagesPerRequest { get; init; } = 8;
+    /// <summary>整次模型请求最多600份图片，包含历史、附件和工具输出。</summary>
+    public int MaxImagesPerRequest { get; init; } = 600;
 
-    /// <summary>inline 单图解码后字节上限（原始字节，非 base64 编码/wire 体积）；超过必须走 Files API（未实现前 fail closed）。
-    /// 2 MB 是产品门槛（inline/file 模式分界），非协议限制；协议限制是 Files API 单文件 64 MiB（官方）。</summary>
-    public long InlineMaxBytesPerImage { get; init; } = 2_000_000;
+    /// <summary>inline 单图编码文件字节上限（非 base64/wire 体积）。
+    /// DeepSeek inline 单图32 MiB；超出时先预处理，Files API单文件最多64 MiB。</summary>
+    public long InlineMaxBytesPerImage { get; init; } = 32L * 1024 * 1024;
 
-    /// <summary>inline 累计解码后字节软上限（单图之和，预留 JSON/header 余量）。当前实现为逐消息（per-invocation）累计校验而非跨消息整请求聚合；整请求统一预算为后续切片。
-    /// 40 MiB 是产品门槛，非协议限制；协议限制是 Files API 单文件 64 MiB（官方）、累计 200 MiB（官方）。</summary>
-    public long InlineMaxTotalBytes { get; init; } = 40L * 1024 * 1024;
+    /// <summary>整次请求 inline 编码文件字节累计上限。
+    /// DeepSeek非file_id图片累计64 MiB；含file_id累计200 MiB。</summary>
+    public long InlineMaxTotalBytes { get; init; } = 64L * 1024 * 1024;
 
     /// <summary>
     /// inline wire 字节请求级上限（仅传入 <see cref="VisualInputRequestBudget"/> 时生效）。
     /// 口径 = data URI 字符串 UTF-8 字节（"data:" 前缀 + mime + ";base64," + base64 4×ceil(decoded/3)）。
-    /// 默认 64 MiB：40 MiB 解码后对应约 53.3 MiB base64 wire，余量留给 JSON envelope。产品门槛，非协议限制。
+    /// 默认48 MiB，与最终JSON请求体上限一致；Gateway另行计算包含文本和工具定义的完整请求体。
     /// </summary>
-    public long InlineMaxTotalWireBytes { get; init; } = 64L * 1024 * 1024;
+    public long InlineMaxTotalWireBytes { get; init; } = 48L * 1024 * 1024;
 
     /// <summary>Files API 单文件字节上限（官方 64 MiB；任务书以官方为准，非 ADR §3.2 的 32 MiB）。</summary>
     public const long FilesMaxBytesPerImageLimit = 64L * 1024 * 1024;
@@ -52,7 +47,7 @@ public sealed record VisionRequestPolicy
     /// <summary>file lifetime 上限（官方 30 天）。</summary>
     public long FilesLifetimeMaxSeconds { get; init; } = FilesLifetimeMaxLimit;
 
-    /// <summary>含 file_id 图片的累计 wire 体积上限（官方 200 MiB；Planner preflight 用）。当前实现为逐消息（per-invocation）累计校验而非跨消息整请求聚合；整请求统一预算为后续切片。</summary>
+    /// <summary>含 file_id 图片的整请求累计文件字节上限（官方 200 MiB；包含 inline 图片）。</summary>
     public long FilesMaxTotalBytes { get; init; } = 200L * 1024 * 1024;
 
     /// <summary>
@@ -130,8 +125,9 @@ public static class LlmVisualInputPlanner
                 $"This request references {imageParts.Count} images; the product limit is {policy.MaxImagesPerRequest}.");
 
         // V5 切片二：请求级账本批次开始（一次 PlanAsync = 一条消息的图片集，由 Gateway 传入 budgetSource
-        // 标注来源与消息序号）。budget == null 时保持旧行为：仅下方 per-invocation 校验，账本不参与。
-        budget?.BeginBatch(budgetSource);
+        // 标注来源与消息序号）；单独调用 Planner 时为当前图片集建立本地账本。
+        var aggregate = budget ?? new VisualInputRequestBudget(policy, imageParts.Count);
+        aggregate.BeginBatch(budgetSource);
 
         var planned = new List<PlannedVisualInput>(imageParts.Count);
         var resolveCache = new Dictionary<(string ArtifactId, string Detail), PlannedVisualInput>(
@@ -144,7 +140,7 @@ public static class LlmVisualInputPlanner
             if (resolveCache.TryGetValue((part.ArtifactId, part.Detail), out var cached))
             {
                 // 解析缓存只影响 resolver 调用次数；预算按实际序列化份数计，缓存命中份同样计费。
-                ChargeBudget(budget, cached, part.ArtifactId);
+                ChargeBudget(aggregate, cached, part.ArtifactId);
                 planned.Add(cached);
                 continue;
             }
@@ -152,7 +148,10 @@ public static class LlmVisualInputPlanner
             VisualArtifactResolveResult? resolved;
             try
             {
-                resolved = await resolver.ResolveAsync(workspaceId, part.ArtifactId, ct, part.Detail);
+                resolved = resolver is IVisualArtifactPreprocessor preprocessor
+                    ? await preprocessor.PrepareForRequestAsync(workspaceId, part.ArtifactId,
+                        new VisualArtifactPreparationOptions(aggregate.PreparationMaxEdge, aggregate.PreparationMaxBytes), ct, part.Detail)
+                    : await resolver.ResolveAsync(workspaceId, part.ArtifactId, ct, part.Detail);
             }
             catch (VisionPipelineException) { throw; }
             catch (OperationCanceledException) { throw; }
@@ -169,10 +168,15 @@ public static class LlmVisualInputPlanner
                     VisionErrorCodes.ArtifactMissing,
                     $"Image artifact {part.ArtifactId} does not exist in workspace {workspaceId}.");
 
+            aggregate.ValidateDimensions(part.ArtifactId, resolved.Width, resolved.Height);
             var sourceBytes = EstimateDecodedBytes(resolved.DataUri);
             PlannedVisualInput entry;
             if (sourceBytes > policy.InlineMaxBytesPerImage)
             {
+                if (sourceBytes > policy.FilesMaxBytesPerImage)
+                    throw new VisionPipelineException(VisionErrorCodes.RequestLimitExceeded,
+                        $"Image {part.ArtifactId} exceeds the {policy.FilesMaxBytesPerImage} byte file limit.");
+
                 // ADR-077 V3-S2a：大图走 Files API「上传即用」得到 file_id；无 uploader 时保持 fail closed。
                 if (fileUploader is null)
                     throw new VisionPipelineException(
@@ -319,7 +323,7 @@ public static class LlmVisualInputPlanner
             }
             // file 与 inline 两个分支的公共出口：先把这一份 charge 进请求级账本（越界即整请求失败），
             // 再落入解析缓存与规划结果。不存在超限丢弃部分图片仍返回 plan 的路径。
-            ChargeBudget(budget, entry, part.ArtifactId);
+            ChargeBudget(aggregate, entry, part.ArtifactId);
             resolveCache[(part.ArtifactId, part.Detail)] = entry;
             planned.Add(entry);
         }
@@ -334,14 +338,17 @@ public static class LlmVisualInputPlanner
     /// <summary>
     /// V5 切片二：把一份实际序列化的图片 charge 进请求级账本（budget 为 null 时不参与，保持旧行为）。
     /// inline 模式计解码后字节 + wire 字节（data URI UTF-8 字节）；file 模式计上传原始编码字节——
-    /// 此处用规划期估算的 SourceBytes（与精确解码差 &lt; 3 字节，估算口径对 cache 命中份与新建份保持一致）。
+    /// SourceBytes 扣除 Base64 padding，缓存命中份与新建份保持一致。
     /// </summary>
     private static void ChargeBudget(VisualInputRequestBudget? budget, PlannedVisualInput entry, string artifactId)
     {
         if (budget is null)
             return;
         if (entry.FileId is null)
+        {
             budget.ChargeInline(artifactId, entry.SourceBytes, System.Text.Encoding.UTF8.GetByteCount(entry.DataUri!));
+            budget.RecordSerializedImage(entry.DataUri!);
+        }
         else
             budget.ChargeFile(artifactId, entry.SourceBytes);
     }
@@ -352,7 +359,9 @@ public static class LlmVisualInputPlanner
         var base64Length = dataUri.Contains(',', StringComparison.Ordinal)
             ? dataUri.Length - dataUri.IndexOf(',', StringComparison.Ordinal) - 1
             : dataUri.Length;
-        return (long)Math.Ceiling(base64Length / 4.0) * 3;
+        var padding = dataUri.EndsWith("==", StringComparison.Ordinal) ? 2
+            : dataUri.EndsWith("=", StringComparison.Ordinal) ? 1 : 0;
+        return (long)Math.Ceiling(base64Length / 4.0) * 3 - padding;
     }
 
     /// <summary>把 resolver 返回的 data URI 反解码为原始字节（Files 上传用；与 <see cref="EstimateDecodedBytes"/> 对偶）。</summary>

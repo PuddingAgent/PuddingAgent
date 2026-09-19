@@ -26,7 +26,11 @@ public static class VisionErrorCodes
 public sealed class VisionPipelineException(
     string code,
     string message,
-    Exception? innerException = null) : Exception(message, innerException)
+    Exception? innerException = null,
+    string? userMessage = null) : Exception(message, innerException)
 {
     public string Code { get; } = code;
+    public string UserMessage { get; } = userMessage ?? (code == VisionErrorCodes.RequestLimitExceeded
+        ? "图片请求超过可处理的数量、尺寸或体积限制。请缩小图片、减少数量或分批读取；仍可继续发送文字消息。"
+        : "本次图片无法读取或发送，请检查图片或重新上传。原有文字对话仍可继续。");
 }

@@ -1,3 +1,4 @@
+using PuddingCode.Core;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Text;
@@ -584,6 +585,9 @@ public sealed partial class AgentExecutionService
             string? terminalStreamStatus = null;
             var streamRoundsStarted = 0;
             var providerInputRecoveryAttempted = false;
+            var visionContinuation = new VisionTextContinuation(
+                BuildCurrentUserChatMessage(request, null).SourceContentHash,
+                request.CallerLlmSnapshot?.VisionPolicy?.MaxImagesPerRequest ?? VisionRequestPolicy.Default.MaxImagesPerRequest);
             var warmPrefixCompactionAttempted = false;
             var toolSpecChangedForNextRound = false;
             var outputTruncationRecoveryAttempts = 0;
@@ -803,6 +807,7 @@ public sealed partial class AgentExecutionService
                 recoveryCt),
             _logger,
             ct);
+                injectedHistory = visionContinuation.Prepare(injectedHistory);
 
                 var prefixStartedAt = DateTimeOffset.UtcNow;
                 var prefixSw = System.Diagnostics.Stopwatch.StartNew();
@@ -1016,6 +1021,12 @@ public sealed partial class AgentExecutionService
                 // LLM API 出错 → 发送结构化 error，并将本 turn 标记为终止错误。
                 if (llmException != null)
                 {
+                    if (llmException is VisionPipelineException && visionContinuation.TryActivate(injectedHistory))
+                    {
+                        _logger.LogWarning(llmException, "[VisionTextContinuation] Retrying text turn with explicit historical image references session={Session}", request.SessionId);
+                        round--;
+                        continue;
+                    }
                     if (!providerInputRecoveryAttempted
                         && LlmRequestBudgetGuard.TryGetProviderMaxInputTokens(llmException, out var providerMaxInputTokens))
                     {
@@ -1040,7 +1051,7 @@ public sealed partial class AgentExecutionService
                         round, consecutiveLlmFailures);
                     // 同一外部 API 瞬时故障导致的多次重试只计 1 次 fuse 错误
                     RuntimeFuseResult? fuse = null;
-                    if (consecutiveLlmFailures == 1)
+                    if (llmException is not VisionPipelineException && consecutiveLlmFailures == 1)
                     {
                         fuse = _runtimeControl?.RecordError(
                             request.SessionId,
@@ -1066,7 +1077,11 @@ public sealed partial class AgentExecutionService
                         }
                     }
                     string errMessage;
-                    if (fuse is { Triggered: true })
+                    if (llmException is VisionPipelineException visionError)
+                    {
+                        errMessage = visionError.UserMessage;
+                    }
+                    else if (fuse is { Triggered: true })
                     {
                         errMessage = fuse.Summary;
                     }

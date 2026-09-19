@@ -10,7 +10,7 @@ namespace PuddingCode.Platform;
 public static partial class ConversationContentValidator
 {
     /// <summary>产品上限：每轮最多图片数。</summary>
-    public const int MaxImagesPerTurn = 8;
+    public const int MaxImagesPerTurn = 600;
 
     /// <summary>每条 text part 的最大字符数（与旧 MessageText 投影一致量级）。</summary>
     public const int MaxTextPartLength = 100_000;
@@ -56,7 +56,7 @@ public static partial class ConversationContentValidator
             return "At least one non-empty text or image content part is required.";
 
         if (imageCount > MaxImagesPerTurn)
-            return $"A turn accepts at most {MaxImagesPerTurn} image content parts.";
+            return $"本次消息最多可包含 {MaxImagesPerTurn} 张图片，请分批发送。你仍可继续发送文字消息。";
 
         return null;
     }

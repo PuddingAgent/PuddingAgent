@@ -74,9 +74,9 @@ public sealed class LlmVisualInputPlannerTests
     }
 
     [TestMethod]
-    public async Task PlanAsync_MoreThanEightImages_Rejected()
+    public async Task PlanAsync_MoreThanSixHundredImages_Rejected()
     {
-        var parts = Enumerable.Range(0, 9)
+        var parts = Enumerable.Range(0, 601)
             .Select(i => new LlmImagePart("vision-" + new string('0', 31) + i.ToString()[0]))
             .ToList();
 
@@ -94,7 +94,7 @@ public sealed class LlmVisualInputPlannerTests
             LlmVisualInputPlanner.PlanAsync(
                 Workspace,
                 [new LlmImagePart("vision-0123456789abcdef0123456789abcdef")],
-                resolver));
+                resolver, policy: new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 }));
         Assert.AreEqual(VisionErrorCodes.RequestLimitExceeded, ex.Code);
     }
 
@@ -109,6 +109,7 @@ public sealed class LlmVisualInputPlannerTests
             Workspace,
             [new LlmImagePart("vision-0123456789abcdef0123456789abcdef")],
             resolver,
+            policy: new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 },
             fileUploader: uploader);
 
         Assert.AreEqual(1, plan.Images.Count);
@@ -137,6 +138,7 @@ public sealed class LlmVisualInputPlannerTests
                 Workspace,
                 [new LlmImagePart("vision-0123456789abcdef0123456789abcdef")],
                 resolver,
+            policy: new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 },
                 fileUploader: uploader));
 
         Assert.AreEqual(VisionErrorCodes.MediaInvalid, ex.Code);
@@ -185,6 +187,7 @@ public sealed class LlmVisualInputPlannerTests
             Workspace,
             [new LlmImagePart("vision-0123456789abcdef0123456789abcdef")],
             resolver,
+            policy: new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 },
             fileUploader: uploader,
             fileRefStore: store,
             providerId: "deepseek",
@@ -212,6 +215,7 @@ public sealed class LlmVisualInputPlannerTests
             Workspace,
             [new LlmImagePart("vision-0123456789abcdef0123456789abcdef")],
             resolver,
+            policy: new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 },
             fileUploader: uploader,
             fileRefStore: store,
             providerId: "deepseek",
@@ -242,6 +246,7 @@ public sealed class LlmVisualInputPlannerTests
             Workspace,
             [new LlmImagePart("vision-0123456789abcdef0123456789abcdef")],
             resolver,
+            policy: new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 },
             fileUploader: uploader);
 
         Assert.AreEqual(1, plan.Images.Count);
@@ -274,6 +279,7 @@ public sealed class LlmVisualInputPlannerTests
             Workspace,
             [new LlmImagePart("vision-0123456789abcdef0123456789abcdef")],
             resolver,
+            policy: new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 },
             fileUploader: uploader,
             fileRefStore: store,
             providerId: "deepseek",

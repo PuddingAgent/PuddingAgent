@@ -50,7 +50,7 @@ public sealed class VisualInputRequestBudgetTests
     [TestMethod]
     public async Task RequestScope_CrossMessageImageCount_ThirdBatchRejected()
     {
-        var budget = new VisualInputRequestBudget();
+        var budget = new VisualInputRequestBudget(new VisionRequestPolicy { MaxImagesPerRequest = 8 });
         Assert.AreEqual(3, (await PlanOneBatchAsync(0, 3, budget: budget, budgetSource: "user input_image @message#1")).Images.Count);
         Assert.AreEqual(3, (await PlanOneBatchAsync(10, 3, budget: budget, budgetSource: "user input_image @message#2")).Images.Count);
 
@@ -159,7 +159,7 @@ public sealed class VisualInputRequestBudgetTests
     [TestMethod]
     public async Task RequestScope_OverLimit_FailsClosedWithoutTrimmedPlan()
     {
-        var budget = new VisualInputRequestBudget();
+        var budget = new VisualInputRequestBudget(new VisionRequestPolicy { MaxImagesPerRequest = 8 });
         var plan1 = await PlanOneBatchAsync(0, 3, budget: budget);
         var plan2 = await PlanOneBatchAsync(10, 3, budget: budget);
         Assert.AreEqual(3, plan1.Images.Count, "成功批次必须返回完整份数（不删减）");
@@ -173,7 +173,7 @@ public sealed class VisualInputRequestBudgetTests
     [TestMethod]
     public async Task RequestScope_UserAndToolImages_ShareSameBudgetLedger()
     {
-        var budget = new VisualInputRequestBudget();
+        var budget = new VisualInputRequestBudget(new VisionRequestPolicy { MaxImagesPerRequest = 8 });
         Assert.AreEqual(3, (await PlanOneBatchAsync(0, 3, budget: budget, budgetSource: "user input_image @message#1")).Images.Count);
         Assert.AreEqual(3, (await PlanOneBatchAsync(10, 3, budget: budget, budgetSource: "tool function_call_output @message#2")).Images.Count);
 

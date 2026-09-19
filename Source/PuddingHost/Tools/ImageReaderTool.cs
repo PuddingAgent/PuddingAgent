@@ -60,7 +60,7 @@ public sealed class ImageReaderTool(ImageReaderSourceResolver sourceResolver,
             logger.LogInformation("[ImageReader] action={Action} source={Source} result={Result} detail={Detail} bytes={Bytes}", action, sourceId, artifactId, detail, outputInfo.Bytes);
             return action == "read" ? ToolExecutionResult.OkWithParts(summary, [new LlmImagePart(artifactId, detail)]) : ToolExecutionResult.Ok(summary);
         }
-        catch (VisionPipelineException ex) { return ToolExecutionResult.Fail($"{ex.Code}: {ex.Message}"); }
+        catch (VisionPipelineException ex) { return ToolExecutionResult.Fail($"{ex.Code}: {ex.UserMessage} ({ex.Message})", status: ex.Code); }
     }
 
     private async Task<string> ImportAsync(string workspace, Stream source, CancellationToken ct)

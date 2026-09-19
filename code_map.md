@@ -1,3 +1,7 @@
+## 2026-09-19 图片预处理与错误恢复
+
+`VisionRequestPolicy`/`VisualInputRequestBudget`：默认 600 图，统一统计历史/附件/工具输出并分配尺寸和字节预算。`VisualRequestBodyBudget`：DeepSeek 最终 JSON 48 MiB 检查与有界重建。`IVisualArtifactPreprocessor`→`VisualArtifactResolverBridge`→`VisionArtifactStorageService.ResolveForRequestAsync`：保留原图的压缩/缩放缓存。`VisionTextContinuation`：纯文本续聊仅投影历史图片引用；Streaming/Buffered 共享恢复语义，视觉错误不触发 API 熔断。见[实施记录](Docs/Reports/图片请求官方限制与预处理恢复修复-2026-09-19.md)与 ADR-077 §3.2、ADR-088 补充。
+
 ## 2026-09-17 Goal模式简化设计（待实现）
 
 [权威方案](Docs/Features/Goal目标驱动执行与分层验证闭环设计-2026-09-15.md)与[ADR-092第二版](Docs/07架构/106ADR-092目标驱动执行与分层验证闭环ADR.md)：Goal自有持久表、单一状态机/决策入口、回合与检查分离；删除Goal步骤推进/两级Verifier，Task可选适配并统一终态入口。Agent自身goal.md独立，不作Goal运行依赖。本轮仅设计，S1–S4代码落点、迁移和验收见方案。

@@ -93,19 +93,19 @@ public class ExecutionRunCoordinatorVisionTests
     }
 
     [TestMethod]
-    public void ContentValidator_RejectsEmptyTextPart_AndNineImages()
+    public void ContentValidator_RejectsEmptyTextPart_And601Images()
     {
         Assert.IsNotNull(ConversationContentValidator.Validate(
             [new ContentPart { Type = "text", Text = "  " }]));
 
-        var nine = Enumerable.Range(0, 9)
+        var oversized = Enumerable.Range(0, 601)
             .Select(i => new ContentPart
             {
                 Type = "image",
                 ArtifactId = "vision-" + new string('0', 31) + i.ToString()[0],
             })
             .ToList();
-        Assert.IsNotNull(ConversationContentValidator.Validate(nine));
+        Assert.IsNotNull(ConversationContentValidator.Validate(oversized));
     }
 
     [TestMethod]

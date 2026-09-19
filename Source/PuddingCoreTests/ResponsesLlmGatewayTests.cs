@@ -330,6 +330,7 @@ public sealed class ResponsesLlmGatewayTests
         });
         gateway.WorkspaceId = "workspace-1";
         gateway.VisualArtifactResolver = new OversizeVisualResolver();
+        gateway.VisionPolicy = new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 };
         gateway.DeepSeekFilesUploader = new RecordingFilesUploader();
 
         await gateway.ChatAsync(
@@ -387,6 +388,7 @@ public sealed class ResponsesLlmGatewayTests
         });
         gateway.WorkspaceId = "workspace-1";
         gateway.VisualArtifactResolver = new OversizeVisualResolver();
+        gateway.VisionPolicy = new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 };
         gateway.DeepSeekFilesUploader = new RecordingFilesUploader();
         gateway.FileRefStore = store;
         gateway.ProviderId = "deepseek";
@@ -446,6 +448,7 @@ public sealed class ResponsesLlmGatewayTests
         });
         gateway.WorkspaceId = "workspace-1";
         gateway.VisualArtifactResolver = new OversizeVisualResolver();
+        gateway.VisionPolicy = new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 };
         gateway.DeepSeekFilesUploader = new RecordingFilesUploader();
         gateway.FileRefStore = store;
         gateway.ProviderId = "deepseek";
@@ -496,6 +499,7 @@ public sealed class ResponsesLlmGatewayTests
         });
         gateway.WorkspaceId = "workspace-1";
         gateway.VisualArtifactResolver = new OversizeVisualResolver();
+        gateway.VisionPolicy = new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 };
         gateway.DeepSeekFilesUploader = new RecordingFilesUploader();
         gateway.FileRefStore = store;
         gateway.ProviderId = "deepseek";
@@ -556,6 +560,7 @@ data:[DONE]
         });
         gateway.WorkspaceId = "workspace-1";
         gateway.VisualArtifactResolver = new OversizeVisualResolver();
+        gateway.VisionPolicy = new VisionRequestPolicy { InlineMaxBytesPerImage = 2_000_000 };
         gateway.DeepSeekFilesUploader = new RecordingFilesUploader();
         gateway.FileRefStore = store;
         gateway.ProviderId = "deepseek";

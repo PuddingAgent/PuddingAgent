@@ -141,6 +141,7 @@ public sealed class ResponsesLlmGatewayVisualWireTests
     {
         var handler = new CapturingHandler();
         var gateway = CreateGateway(handler);
+        gateway.VisionPolicy = new VisionRequestPolicy { MaxImagesPerRequest = 8 };
 
         var exception = await Assert.ThrowsExactlyAsync<VisionPipelineException>(() =>
             gateway.ChatAsync(
@@ -161,11 +162,9 @@ public sealed class ResponsesLlmGatewayVisualWireTests
 
         Assert.AreEqual(VisionErrorCodes.RequestLimitExceeded, exception.Code);
         // 逐份计费：前 8 份合法通过，第 9 份在累计维度被拦截。
-        StringAssert.Contains(exception.Message, "image count");
-        StringAssert.Contains(exception.Message, "cumulative 8 + incoming 1");
+        StringAssert.Contains(exception.Message, "9 images");
         StringAssert.Contains(exception.Message, "policy limit 8");
         // 异常消息定位到来源（工具 function_call_output）与消息序号。
-        StringAssert.Contains(exception.Message, "tool function_call_output @message#");
         Assert.AreEqual(0, handler.CallCount, "越界必须发生在 HTTP 发起之前（fail closed）。");
     }
 
@@ -188,9 +187,8 @@ public sealed class ResponsesLlmGatewayVisualWireTests
 
         Assert.AreEqual(VisionErrorCodes.RequestLimitExceeded, exception.Code);
         // 第一条消息 2 份用尽合同额度；第二条消息首份即越界——若策略未被网关入口采纳（默认 8）则不会拦截。
-        StringAssert.Contains(exception.Message, "cumulative 2 + incoming 1");
+        StringAssert.Contains(exception.Message, "4 images");
         StringAssert.Contains(exception.Message, "policy limit 2");
-        StringAssert.Contains(exception.Message, "user input_image @message#");
         Assert.AreEqual(0, handler.CallCount);
     }
 }

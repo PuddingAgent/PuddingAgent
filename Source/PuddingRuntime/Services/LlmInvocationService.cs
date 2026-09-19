@@ -1,3 +1,4 @@
+using PuddingCode.Core;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Models;
@@ -94,7 +95,9 @@ public sealed class LlmInvocationService : ILlmInvocationService
             return new LlmInvocationResult
             {
                 Success = false,
-                Error = ex.Message,
+                Error = ex is VisionPipelineException vision ? vision.UserMessage : ex.Message,
+                ErrorCode = (ex as VisionPipelineException)?.Code,
+                IsVisionError = ex is VisionPipelineException,
             };
         }
     }

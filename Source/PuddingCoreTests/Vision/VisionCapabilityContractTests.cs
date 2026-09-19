@@ -50,10 +50,10 @@ public sealed class VisionCapabilityContractTests
         var contract = new VisionCapabilityContract
         {
             Version = ContractVersion,
-            MaxImagesPerRequest = 600,                    // 官方允许 600，产品收口 8
-            InlineMaxBytesPerImage = 3_000_000L,          // 解码后字节，产品门槛 2,000,000
-            InlineMaxTotalBytes = 80L * 1024 * 1024,      // 解码后字节，产品门槛 40 MiB
-            InlineMaxTotalWireBytes = 128L * 1024 * 1024, // wire 字节，产品门槛 64 MiB
+            MaxImagesPerRequest = 601,                    // 高于官方 600
+            InlineMaxBytesPerImage = 64L * 1024 * 1024,          // 解码后字节，官方上限 32 MiB
+            InlineMaxTotalBytes = 80L * 1024 * 1024,      // 解码后字节，官方上限 64 MiB
+            InlineMaxTotalWireBytes = 128L * 1024 * 1024, // wire 字节，官方请求体上限 48 MiB
             FilesMaxBytesPerImage = 128L * 1024 * 1024,   // 上传原始编码字节，官方硬限 64 MiB
             FilesMaxTotalBytes = 256L * 1024 * 1024,      // wire 字节，官方硬限 200 MiB
             EstimatedTokensPerImageUpperBound = 2048,
@@ -129,7 +129,7 @@ public sealed class VisionCapabilityContractTests
         {
             Version = ContractVersion,
             MaxImagesPerRequest = 4,                      // 更紧 → 保留
-            InlineMaxBytesPerImage = 3_000_000L,          // 更松 → 钳制回产品门槛（解码后字节）
+            InlineMaxBytesPerImage = 64L * 1024 * 1024,          // 更松 → 钳制回产品门槛（解码后字节）
             InlineMaxTotalBytes = null,                   // 缺失 → 产品默认
             InlineMaxTotalWireBytes = 32L * 1024 * 1024,  // 更紧 → 保留（wire 字节）
             FilesMaxBytesPerImage = 128L * 1024 * 1024,   // 更松 → 钳制回官方硬限（上传原始编码字节）

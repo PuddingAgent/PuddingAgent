@@ -58,7 +58,7 @@ public sealed class VisionArtifactApiController(
         catch (VisionPipelineException ex)
         {
             return StatusCode(ex.Code == VisionErrorCodes.RequestLimitExceeded ? StatusCodes.Status413PayloadTooLarge : StatusCodes.Status415UnsupportedMediaType,
-                new { errorCode = ex.Code, message = ex.Message });
+                new { errorCode = ex.Code, message = ex.UserMessage });
         }
         catch (UnsupportedVisionArtifactMediaTypeException ex)
         {

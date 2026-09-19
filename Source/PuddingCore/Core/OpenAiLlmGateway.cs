@@ -285,17 +285,26 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
         return url + "/chat/completions";
     }
 
-    private async Task<string> BuildRequestBody(
+    private async Task<string> BuildRequestBody(IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ITool> tools, bool stream, CancellationToken ct)
+    {
+        var result = await VisualRequestBodyBudget.BuildAsync(
+            allocation => BuildRequestOnceAsync(messages, tools, stream, ct, allocation),
+            VisualArtifactResolver, new Uri(_chatEndpoint).Host.Equals("api.deepseek.com", StringComparison.OrdinalIgnoreCase), ct);
+        return result.Body;
+    }
+
+    private async Task<PreparedVisualRequest<bool>> BuildRequestOnceAsync(
         IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<ITool> tools,
         bool stream,
-        CancellationToken ct = default)
+        CancellationToken ct, long? preparationMaxBytes)
     {
         var messagesArray = new JsonArray();
         // V5 切片二：一次 payload 构造一个请求级预算账本（Chat Completions 无图片型工具结果，
         // 仅用户 input_image 路径计费；显式参数传递）。
-        var visionBudget = new VisualInputRequestBudget(VisionPolicy);
         var protocolSafeMessages = LlmMessageSequenceNormalizer.Normalize(messages).Messages;
+        var visionBudget = VisualInputRequestBudget.ForMessages(VisionPolicy, protocolSafeMessages, preparationMaxBytes);
         // K3 compat: read compat config once before message loop
         var compat = Compat;
 
@@ -478,7 +487,7 @@ public sealed class OpenAiLlmGateway(HttpClient httpClient, LlmOptions options) 
             requestObj["tools"] = toolsArray;
         }
 
-        return requestObj.ToJsonString();
+        return new(requestObj.ToJsonString(), visionBudget, true);
     }
 
     /// <summary>

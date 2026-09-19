@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Agents;
+using PuddingCode.Core;
 using PuddingCode.Observability;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
@@ -138,6 +139,7 @@ public sealed class ToolInvocationService : IToolInvocationService
                 _runtimeControl?.MarkProgress(request.SessionId);
             }
             else if (!(result.ExitCode == 428
+                       || string.Equals(result.Status, VisionErrorCodes.RequestLimitExceeded, StringComparison.Ordinal)
                        || string.Equals(result.Status, ToolResultStatuses.DependencyWait, StringComparison.Ordinal)))
             {
                 var fuse = _runtimeControl?.RecordError(

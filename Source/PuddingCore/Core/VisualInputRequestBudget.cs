@@ -6,8 +6,8 @@ namespace PuddingCode.Core;
 /// <see cref="LlmVisualInputPlanner.PlanAsync"/> 调用（user <c>input_image</c> 与工具
 /// <c>function_call_output</c> 图片共用同一账本），按整个最终请求校验五个维度：
 /// 图片份数、inline 解码后字节、inline wire（data URI）字节、token 估计、file 上传字节。
-/// 单条消息自身已通过 per-invocation 校验（8 张 / 2 MB / 40 MiB / 200 MiB）后，
-/// 分散在多条历史消息里的图片合计超限（如 3+3+3=9 张 &gt; 8）在此被拦截——这是
+/// 单条消息自身已通过 per-invocation 校验（模型图片数 / 32 MiB / 64 MiB / 200 MiB）后，
+/// 分散在多条历史消息里的图片合计超限（如300+300+1=601张 &gt; 600）在此被拦截——这是
 /// per-invocation 校验覆盖不到的缺陷面。
 /// 账本用显式参数传递（禁止 AsyncLocal / 全局静态可变状态，避免与执行快照冻结语义冲突）；
 /// 累计值只增不减；任一维度越界即抛 <see cref="VisionPipelineException"/>（Code=
@@ -19,8 +19,39 @@ public sealed class VisualInputRequestBudget
     private int _batchOrdinal;
     private string _currentSource = "unspecified";
 
-    public VisualInputRequestBudget(VisionRequestPolicy? policy = null)
-        => _policy = policy ?? VisionRequestPolicy.Default;
+    public VisualInputRequestBudget(VisionRequestPolicy? policy = null, int? totalImageCount = null, long? preparationMaxBytes = null)
+    {
+        _policy = policy ?? VisionRequestPolicy.Default;
+        TotalImageCount = totalImageCount;
+        if (totalImageCount > _policy.MaxImagesPerRequest)
+            throw new VisionPipelineException(VisionErrorCodes.RequestLimitExceeded,
+                $"Request has {totalImageCount} images; policy limit {_policy.MaxImagesPerRequest}.",
+                userMessage: $"本次请求包含 {totalImageCount} 份图片，超过上限 {_policy.MaxImagesPerRequest}。请减少图片或分批处理；你仍可继续发送文字消息。");
+        var count = Math.Max(1, totalImageCount ?? 1);
+        PreparationMaxBytes = Math.Min(_policy.InlineMaxBytesPerImage,
+            Math.Min(_policy.InlineMaxTotalBytes / count,
+                preparationMaxBytes ?? Math.Max(1, _policy.InlineMaxTotalWireBytes / count * 3 / 4 * 9 / 10)));
+    }
+
+    public int? TotalImageCount { get; }
+    public int PreparationMaxEdge => (TotalImageCount ?? ImageCount + 1) >= 15 ? 4096 : 8192;
+    public long PreparationMaxBytes { get; }
+    public long SerializedImageBytes { get; private set; }
+
+    public static VisualInputRequestBudget ForMessages(VisionRequestPolicy? policy,
+        IReadOnlyList<PuddingCode.Models.ChatMessage> messages, long? preparationMaxBytes = null)
+        => new(policy, messages.Sum(m => PuddingCode.Models.ChatMessageMultimodalNormalizer.GetImageParts(m).Count), preparationMaxBytes);
+
+    internal void ValidateDimensions(string artifactId, int? width, int? height)
+    {
+        if (width > PreparationMaxEdge || height > PreparationMaxEdge)
+            throw new VisionPipelineException(VisionErrorCodes.RequestLimitExceeded,
+                $"Image {artifactId} is {width}x{height}; this request permits an edge of {PreparationMaxEdge} pixels after preprocessing.",
+                userMessage: $"图片尺寸为 {width}×{height}，本次请求允许的最长边为 {PreparationMaxEdge} 像素。自动缩放未能满足要求，请缩小图片后重试；仍可继续发送文字消息。");
+    }
+
+    internal void RecordSerializedImage(string dataUri)
+        => SerializedImageBytes += System.Text.Encoding.UTF8.GetByteCount(System.Text.Json.JsonSerializer.Serialize(dataUri));
 
     /// <summary>已计入的图片份数（实际序列化份数；同 artifactId/detail 重复引用按份数重复计费——解析缓存只影响解析，不影响计费）。</summary>
     public int ImageCount { get; private set; }

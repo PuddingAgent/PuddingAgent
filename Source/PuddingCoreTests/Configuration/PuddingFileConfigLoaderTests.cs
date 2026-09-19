@@ -492,7 +492,7 @@ public sealed class PuddingFileConfigLoaderTests
     [TestMethod]
     public async Task LoadLlmProvidersAsync_VisionContract_LooseningValue_Is_Rejected_With_Dimension_Value_And_Ceiling()
     {
-        // V5-T4（更松）：maxImagesPerRequest=600 超过产品天花板 8 → 加载期显式拒绝；
+        // V5-T4（更松）：maxImagesPerRequest=601 超过官方天花板 600 → 加载期显式拒绝；
         // 错误信息必须同时点名 provider/model、维度名、配置值与天花板，并注明只许收紧。
         using var temp = new TempDirectory();
         var paths = PuddingDataPaths.FromRoot(temp.Path);
@@ -514,7 +514,7 @@ public sealed class PuddingFileConfigLoaderTests
                       "capabilityTags": ["vision"],
                       "isDefault": true,
                       "sortOrder": 1,
-                      "vision": { "version": "v1", "maxImagesPerRequest": 600 }
+                      "vision": { "version": "v1", "maxImagesPerRequest": 601 }
                     }
                   ]
                 }
@@ -530,8 +530,8 @@ public sealed class PuddingFileConfigLoaderTests
         var error = result.Errors.FirstOrDefault(e =>
             e.Contains("provider 'deepseek'", StringComparison.Ordinal)
             && e.Contains("model 'deepseek-flash'", StringComparison.Ordinal)
-            && e.Contains("maxImagesPerRequest=600", StringComparison.Ordinal)
-            && e.Contains("exceeds the product limit 8", StringComparison.Ordinal));
+            && e.Contains("maxImagesPerRequest=601", StringComparison.Ordinal)
+            && e.Contains("exceeds the product limit 600", StringComparison.Ordinal));
         Assert.IsNotNull(error);
         Assert.IsTrue(error.Contains("may only tighten", StringComparison.Ordinal));
     }
@@ -564,8 +564,8 @@ public sealed class PuddingFileConfigLoaderTests
                       "sortOrder": 1,
                       "vision": {
                         "version": "v1",
-                        "maxImagesPerRequest": 600,
-                        "inlineMaxBytesPerImage": 4000000,
+                        "maxImagesPerRequest": 601,
+                        "inlineMaxBytesPerImage": 67108864,
                         "inlineMaxTotalBytes": 83886080,
                         "inlineMaxTotalWireBytes": 134217728,
                         "filesMaxBytesPerImage": 134217728,
@@ -587,10 +587,10 @@ public sealed class PuddingFileConfigLoaderTests
         Assert.HasCount(7, result.Errors);
         var loosened = new (string Dimension, string Value, string Ceiling)[]
         {
-            ("maxImagesPerRequest", "600", "8"),
-            ("inlineMaxBytesPerImage", "4000000", "2000000"),
-            ("inlineMaxTotalBytes", "83886080", "41943040"),
-            ("inlineMaxTotalWireBytes", "134217728", "67108864"),
+            ("maxImagesPerRequest", "601", "600"),
+            ("inlineMaxBytesPerImage", "67108864", "33554432"),
+            ("inlineMaxTotalBytes", "83886080", "67108864"),
+            ("inlineMaxTotalWireBytes", "134217728", "50331648"),
             ("filesMaxBytesPerImage", "134217728", "67108864"),
             ("filesMaxTotalBytes", "268435456", "209715200"),
             ("estimatedTokensPerImageUpperBound", "2048", "1024"),

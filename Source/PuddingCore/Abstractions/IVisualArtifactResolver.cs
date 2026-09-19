@@ -1,4 +1,4 @@
-﻿namespace PuddingCode.Abstractions;
+namespace PuddingCode.Abstractions;
 
 /// <summary>Core-level vision artifact resolver — resolves artifact IDs to data URIs for LLM consumption.</summary>
 public interface IVisualArtifactResolver
@@ -17,4 +17,15 @@ public interface IVisualArtifactResolver
 public sealed record VisualArtifactResolveResult(
     string ArtifactId,
     string DataUri,
-    string MimeType);
+    string MimeType,
+    int? Width = null,
+    int? Height = null);
+
+/// <summary>Request-scoped preparation of immutable source images; implemented by workspace storage.</summary>
+public interface IVisualArtifactPreprocessor : IVisualArtifactResolver
+{
+    Task<VisualArtifactResolveResult?> PrepareForRequestAsync(string workspaceId, string artifactId,
+        VisualArtifactPreparationOptions options, CancellationToken ct = default, string detail = "original");
+}
+
+public sealed record VisualArtifactPreparationOptions(int MaxEdge, long MaxBytes);

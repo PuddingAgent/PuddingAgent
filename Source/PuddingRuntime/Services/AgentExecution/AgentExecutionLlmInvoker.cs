@@ -1,4 +1,5 @@
-﻿using PuddingCode.Abstractions;
+using PuddingCode.Core;
+using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
@@ -89,7 +90,7 @@ internal sealed class AgentExecutionLlmInvoker
                         "[AgentExec] LLM facade error round={Round} session={Session} error={Error}",
                         round + 1, request.SessionId, facadeResult.Error);
                     return AgentExecutionLlmInvocationResult.CreateFatal(
-                        $"LLM API call failed: {facadeResult.Error}");
+                        facadeResult.IsVisionError ? facadeResult.Error! : $"LLM API call failed: {facadeResult.Error}", facadeResult.IsVisionError);
                 }
 
                 llmResp = new LlmResponse(
@@ -129,7 +130,7 @@ internal sealed class AgentExecutionLlmInvoker
 
             _logger.LogError(ex, "[AgentExec] LLM API error round={Round} session={Session}", round + 1, request.SessionId);
             return AgentExecutionLlmInvocationResult.CreateFatal(
-                $"LLM API call failed: {ex.Message}");
+                ex is VisionPipelineException vision ? vision.UserMessage : $"LLM API call failed: {ex.Message}", ex is VisionPipelineException);
         }
 
         TokenUsageDto? usage = null;
@@ -158,6 +159,7 @@ internal sealed class AgentExecutionLlmInvoker
 internal sealed class AgentExecutionLlmInvocationResult
 {
     public bool Success { get; private init; }
+    public bool IsVisionError { get; private init; }
     public LlmResponse? Response { get; private init; }
     public bool ShouldRetryRound { get; private init; }
     public string? ExecutionError { get; private init; }
@@ -170,6 +172,6 @@ internal sealed class AgentExecutionLlmInvocationResult
     public static AgentExecutionLlmInvocationResult CreateRetryRound()
         => new() { ShouldRetryRound = true };
 
-    public static AgentExecutionLlmInvocationResult CreateFatal(string executionError)
-        => new() { ExecutionError = executionError, FinalMessage = executionError };
+    public static AgentExecutionLlmInvocationResult CreateFatal(string executionError, bool isVisionError = false)
+        => new() { ExecutionError = executionError, FinalMessage = executionError, IsVisionError = isVisionError };
 }

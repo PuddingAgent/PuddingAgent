@@ -1,4 +1,5 @@
 using PuddingCode.Models;
+using PuddingCode.Core;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
@@ -4096,7 +4097,29 @@ public sealed partial class PuddingToolInfrastructureTests
         }
     }
 
-    private sealed class FailingToolExecutionService(string error) : IPuddingToolExecutionService
+    [TestMethod]
+    public async Task ToolInvocationService_ImageLimitFailuresRemainRecoverable()
+    {
+        var runtime = new RuntimeControlService(maxErrorsInWindow: 1);
+        var service = new ToolInvocationService(
+            new FailingToolExecutionService("图片超限，请缩小或分批读取。", VisionErrorCodes.RequestLimitExceeded),
+            runtimeControl: runtime);
+        for (var i = 0; i < 6; i++)
+        {
+            var result = await service.InvokeAsync(new ToolInvocationRequest
+            {
+                WorkspaceId = "workspace-1", SessionId = "vision-limit", AgentInstanceId = "agent-1",
+                ToolCallId = $"call-{i}", ToolName = "image_reader", ArgumentsJson = "{}",
+            });
+            Assert.IsFalse(result.Success);
+            StringAssert.Contains(result.Error!, "图片超限");
+        }
+        Assert.AreNotEqual(SessionState.Faulted, runtime.GetStatus("vision-limit").Session?.State);
+        Assert.AreEqual(0, runtime.GetStatus("vision-limit").Session?.WindowErrorCount ?? 0);
+        Assert.IsTrue(runtime.CanInvokeTool("vision-limit", "file_read").Allowed);
+    }
+
+    private sealed class FailingToolExecutionService(string error, string? status = null) : IPuddingToolExecutionService
     {
         public Task<ToolExecutionResult> ExecuteAsync(
             string toolId,
@@ -4104,7 +4127,7 @@ public sealed partial class PuddingToolInfrastructureTests
             ToolExecutionContext context,
             CapabilityPolicy? policy,
             CancellationToken ct = default)
-            => Task.FromResult(ToolExecutionResult.Fail(error));
+            => Task.FromResult(ToolExecutionResult.Fail(error, status: status));
     }
 
     private sealed class RecordingTelemetrySink : ITelemetryMetricSink

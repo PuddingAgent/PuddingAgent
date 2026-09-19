@@ -138,11 +138,20 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
         return request;
     }
 
-    private async Task<string> BuildRequestBodyAsync(
+    private async Task<string> BuildRequestBodyAsync(IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ITool> tools, bool stream, CancellationToken ct)
+    {
+        var result = await VisualRequestBodyBudget.BuildAsync(
+            allocation => BuildRequestOnceAsync(messages, tools, stream, ct, allocation),
+            VisualArtifactResolver, new Uri(_messagesEndpoint).Host.Equals("api.deepseek.com", StringComparison.OrdinalIgnoreCase), ct);
+        return result.Body;
+    }
+
+    private async Task<PreparedVisualRequest<bool>> BuildRequestOnceAsync(
         IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<ITool> tools,
         bool stream,
-        CancellationToken ct)
+        CancellationToken ct, long? preparationMaxBytes)
     {
         var normalized = LlmMessageSequenceNormalizer.Normalize(messages).Messages;
         var root = new JsonObject
@@ -164,7 +173,7 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
         var messageNodes = new JsonArray();
         // V5 切片二：一次 payload 构造一个请求级预算账本（Anthropic 无图片型工具结果，
         // 仅用户 image block 路径计费；显式参数传递）。
-        var visionBudget = new VisualInputRequestBudget(VisionPolicy);
+        var visionBudget = VisualInputRequestBudget.ForMessages(VisionPolicy, normalized, preparationMaxBytes);
         for (var messageOrdinal = 0; messageOrdinal < normalized.Count; messageOrdinal++)
         {
             var message = normalized[messageOrdinal];
@@ -208,7 +217,7 @@ public sealed class AnthropicMessagesLlmGateway(HttpClient httpClient, LlmOption
         if (options.Temperature.HasValue)
             root["temperature"] = options.Temperature.Value;
 
-        return root.ToJsonString();
+        return new(root.ToJsonString(), visionBudget, true);
     }
 
     private async Task<JsonNode> BuildUserContentAsync(
