@@ -37,6 +37,8 @@ export interface ContextUsageRingProps {
   tMessageCount?: number;
   /** 运行状态详情（原 ComposerStatusDetails 弹层内容，并入本面板）。 */
   runtimeDetails?: React.ReactNode;
+  /** 面板开合回调：打开时应由父组件拉一次最新数据（否则展示的是上次快照）。 */
+  onOpenChange?: (open: boolean) => void;
 }
 
 /** 上下文来源分层（与后端 ContextUsageSnapshot 同一口径，各桶互斥且穷尽）。 */
@@ -117,6 +119,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   subAgentsRunning,
   onOpenSubAgents,
   runtimeDetails,
+  onOpenChange,
 }) => {
   const { styles } = useChatStyles();
   const [open, setOpen] = useState(false);
@@ -126,7 +129,9 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   //  - 会话还没任何消息 → 视为「未开始」，不展示用量；
   //  - confidence 不是 provider_reported（本地估算 / DB 回退）→ 只能标为估算值，
   //    不得当作「已使用」的事实（实测估算可达 Provider 报数的数倍）。
-  const notStarted = tMessageCount === 0;
+  // 「未开始」需要两个条件同时成立：消息数为 0 **且** 用量为 0。
+  // 只看 messageCount 会把「后端回退源未回填该字段」误报为未开始（用户反馈 2026-09-19）。
+  const notStarted = tMessageCount === 0 && tUsed === 0;
   const authoritative =
     usageConfidence === undefined ||
     usageConfidence === null ||
@@ -402,7 +407,14 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
     ],
   );
 
-  const handleOpenChange = useCallback((next: boolean) => setOpen(next), []);
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      setOpen(next);
+      // 打开即拉一次：否则面板展示的是「上次会话切换/一轮结束」时的快照。
+      onOpenChange?.(next);
+    },
+    [onOpenChange],
+  );
 
   return (
     <Popover

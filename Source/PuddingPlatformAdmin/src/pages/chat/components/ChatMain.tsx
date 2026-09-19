@@ -287,8 +287,10 @@ const ChatMain: React.FC<ChatMainProps> = ({
   const autoReview = useAutoReviewClassifier({
     enabled: permissionMode === 'auto',
     onFallbackToManual: () => {
-      // 连续 block 3 次或累计 20 次 → 自动切回手动审批
-      onPermissionModeChange('manual');
+      // 连续 block 3 次或累计 20 次 → 回退到最安全的可用档。
+      // 两档权限模型（auto / full）已无「人工审批」档，原 'manual' 被移除；
+      // 因此回退语义 = 撤销完全访问、回到自动审批。
+      onPermissionModeChange('auto');
     },
   });
   // 权限模式变化时同步 classifier 启用状态（setEnabled 为稳定引用）

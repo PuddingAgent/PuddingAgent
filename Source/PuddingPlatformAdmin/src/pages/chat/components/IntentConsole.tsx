@@ -946,6 +946,11 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               usageSource={contextHealth?.usageSource}
               usageConfidence={contextHealth?.usageConfidence}
               tMessageCount={contextHealth?.messageCount}
+              onOpenChange={(next) => {
+                // 打开即刷新：此前只在会话切换 / 一轮结束时拉取，
+                // 用户点开面板看到的是过期快照（用户反馈 2026-09-19）。
+                if (next) void refreshContextHealth();
+              }}
               compactionStatus={compactionStatus}
               error={contextHealthError}
               subAgentsRunning={subAgentsRunning}
