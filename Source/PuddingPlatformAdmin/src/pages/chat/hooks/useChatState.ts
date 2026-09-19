@@ -10,7 +10,11 @@
 import { App } from 'antd';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { loadPermissionMode, savePermissionMode } from '../client/agentChatApi';
+import {
+  loadAgentAccessLevel,
+  saveAgentAccessLevel,
+  type AgentAccessLevelState,
+} from '../client/agentChatApi';
 import {
   createSession,
   ensureMainSession,
@@ -47,7 +51,6 @@ import type {
 import {
   PERMISSION_MODE_LABELS,
   PERMISSION_MODES,
-  PERMISSION_MODE_STORAGE_KEY,
   STEERING_INJECTED_QUEUE_RETENTION_MS,
 } from '../types/chatStateTypes';
 import {
@@ -138,7 +141,6 @@ export type {
 export {
   PERMISSION_MODES,
   PERMISSION_MODE_LABELS,
-  PERMISSION_MODE_STORAGE_KEY,
 };
 export {
   applyBufferedDeltaToTurn,
@@ -268,51 +270,81 @@ export function useChatState(
     clearChatInteractionRuntimeEvents,
   } = useChatRuntimeEvents();
     const [loading, setLoading] = useState(false);
-  /** P1#4：权限模式 — 全局持有，经 ChatLayout → ChatMain → Composer 下传 */
-  const [permissionMode, setPermissionModeRaw] = useState<PermissionMode>(() => {
-    if (typeof window === 'undefined') return 'auto';
-    try {
-      const saved = window.localStorage.getItem(PERMISSION_MODE_STORAGE_KEY);
-      return PERMISSION_MODES.includes(saved as PermissionMode)
-        ? (saved as PermissionMode)
-        : 'auto';
-    } catch {
-      return 'auto';
+  /**
+   * 权限模式（用户 2026-09-19）：配置属于 **Agent**，不是工作区、也不是全局。
+   * 因此不再读 localStorage / workspace 用户偏好 —— 唯一可信源是后端 Agent 级访问级别：
+   * 切 Agent 时拉取（需求 4），用户切换时写回（需求 1/2），临时授权到期自动回落（需求 3/5）。
+   */
+  const [permissionMode, setPermissionModeRaw] =
+    useState<PermissionMode>('auto');
+  const permissionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  const clearPermissionRefreshTimer = useCallback(() => {
+    if (permissionRefreshTimerRef.current !== null) {
+      clearTimeout(permissionRefreshTimerRef.current);
+      permissionRefreshTimerRef.current = null;
     }
-  });
-  /** 用户主动切换过模式（区别于 workspace 恢复/初始值），避免 REST 回写覆盖新 workspace 的已存值 */
-  const permissionModeDirtyRef = useRef(false);
-  /** P1#4：权限模式变更回调 — 更新 chatState + 标记 dirty 以触发 REST 写回 */
-  const setPermissionMode = useCallback((mode: PermissionMode) => {
-    permissionModeDirtyRef.current = true;
-    setPermissionModeRaw(mode);
   }, []);
+
+  /** 应用后端返回的访问级别；临时授权按到期时刻安排一次自动回落刷新。 */
+  const applyAgentAccessLevel = useCallback(
+    (next: AgentAccessLevelState | null) => {
+      clearPermissionRefreshTimer();
+      if (!next) return;
+      setPermissionModeRaw(next.mode);
+      if (next.mode !== 'fullTemporary' || !next.expiresAtUtc) return;
+      const delay = new Date(next.expiresAtUtc).getTime() - Date.now();
+      // 只接受合理区间：负值/异常值不排定时器，超 24h 交给下次切 Agent 时的拉取兜底。
+      if (!Number.isFinite(delay) || delay <= 0 || delay > 24 * 60 * 60 * 1000)
+        return;
+      permissionRefreshTimerRef.current = setTimeout(() => {
+        permissionRefreshTimerRef.current = null;
+        if (!workspaceId || !agentId) return;
+        void loadAgentAccessLevel(workspaceId, agentId).then(
+          applyAgentAccessLevel,
+        );
+      }, delay + 250);
+    },
+    [agentId, clearPermissionRefreshTimer, workspaceId],
+  );
+
+  // 需求 4：切换工作空间/Agent 时同步该 Agent 的访问级别（后端为唯一可信源）。
   useEffect(() => {
-    try {
-      window.localStorage.setItem(PERMISSION_MODE_STORAGE_KEY, permissionMode);
-    } catch {
-      // 忽略持久化失败（隐私模式等）
+    if (!workspaceId || !agentId) {
+      setPermissionModeRaw('auto');
+      return;
     }
-    // REST 写回：仅用户主动切换时（dirty）写回当前工作空间；幂等且失败静默
-    if (permissionModeDirtyRef.current && workspaceId) {
-      permissionModeDirtyRef.current = false;
-      void savePermissionMode(workspaceId, permissionMode);
-    }
-  }, [permissionMode, workspaceId]);
-  // P1#4：切换工作空间时从后端恢复该 workspace 保存的权限模式（用户本地未覆盖时生效）
-  useEffect(() => {
-    if (!workspaceId) return;
-    permissionModeDirtyRef.current = false;
     let alive = true;
-    void loadPermissionMode(workspaceId).then((saved) => {
-      if (alive && saved && !permissionModeDirtyRef.current) {
-        setPermissionModeRaw(saved);
-      }
+    void loadAgentAccessLevel(workspaceId, agentId).then((next) => {
+      if (alive) applyAgentAccessLevel(next);
     });
     return () => {
       alive = false;
+      clearPermissionRefreshTimer();
     };
-  }, [workspaceId]);
+  }, [workspaceId, agentId, applyAgentAccessLevel, clearPermissionRefreshTimer]);
+
+  /** 用户切换：乐观更新 + 写回该 Agent；写回失败则回读后端，避免 UI 说谎。 */
+  const setPermissionMode = useCallback(
+    (mode: PermissionMode) => {
+      setPermissionModeRaw(mode);
+      if (!workspaceId || !agentId) return;
+      void saveAgentAccessLevel(workspaceId, agentId, mode).then((saved) => {
+        if (saved) return;
+        void loadAgentAccessLevel(workspaceId, agentId).then(
+          applyAgentAccessLevel,
+        );
+      });
+    },
+    [agentId, applyAgentAccessLevel, workspaceId],
+  );
+
+
+
+
+
   const messageListRef = useRef<HTMLDivElement>(null);
   const listEndRef = useRef<HTMLDivElement>(null);
   const completedTurnsRef = useRef<Set<string>>(new Set());

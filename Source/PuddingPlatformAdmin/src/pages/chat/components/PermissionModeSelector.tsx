@@ -1,11 +1,9 @@
-﻿// ── PermissionModeSelector：权限模式选择器（P1#4）────────────
-// 四档：Manual（每步需批）/ acceptEdits（只批编辑）/ plan（先计划后执行）/ auto（自动执行）
-// 状态由 useChatState 全局持有，经 ChatLayout → ChatMain → Composer 下传。
+// ── PermissionModeSelector：权限模式选择器（用户 2026-09-19 简化为两档 + 5 分钟临时）──
+// auto（自动审批，默认）/ full（完全访问）/ fullTemporary（完全访问 5 分钟）。
+// 状态由 useChatState 持有（唯一可信源是后端 Agent 级访问级别），经 ChatLayout → ChatMain → Composer 下传。
 import {
+  ClockCircleOutlined,
   DownOutlined,
-  EditOutlined,
-  LockOutlined,
-  ProfileOutlined,
   SafetyOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
@@ -13,6 +11,7 @@ import { Popover } from 'antd';
 import React from 'react';
 import { useChatStyles } from '../styles';
 import {
+  PERMISSION_MODE_DESCRIPTIONS,
   PERMISSION_MODE_LABELS,
   PERMISSION_MODES,
   type PermissionMode,
@@ -28,17 +27,9 @@ interface PermissionModeSelectorProps {
 }
 
 const PERMISSION_MODE_ICONS: Record<PermissionMode, React.ReactNode> = {
-  manual: <LockOutlined />,
-  acceptEdits: <EditOutlined />,
-  plan: <ProfileOutlined />,
-  auto: <ThunderboltOutlined />,
-};
-
-const PERMISSION_MODE_DESCRIPTIONS: Record<PermissionMode, string> = {
-  manual: '每步工具调用都需确认',
-  acceptEdits: '仅文件编辑需确认',
-  plan: '先展示计划，确认后执行',
-  auto: '全程自动，不打断',
+  auto: <SafetyOutlined />,
+  full: <ThunderboltOutlined />,
+  fullTemporary: <ClockCircleOutlined />,
 };
 
 const PermissionModeSelector: React.FC<PermissionModeSelectorProps> = ({

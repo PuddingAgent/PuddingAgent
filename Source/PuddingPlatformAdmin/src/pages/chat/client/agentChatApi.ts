@@ -78,47 +78,83 @@ export async function getAgentMessageProcessItems(
   }
 }
 
-// ─── P1#4 权限模式 REST 持久化 ─────────────────────────────
-// 契约（对齐后端 workspace 级用户偏好）：
-//   PUT /api/workspaces/{workspaceId}/user-preferences/permission-mode
-//     body: { mode: "manual" | "acceptEdits" | "plan" | "auto" }
-//   GET /api/workspaces/{workspaceId}/user-preferences/permission-mode
-//     response: { mode: "manual" | ... }；未设置时 404/204 → null
-// 后端端点缺失/离线时静默降级：权限模式仅保留在 localStorage，不打断主聊天流程。
+// ─── Agent 级访问级别 REST（用户 2026-09-19）─────────────
+// 权限配置跟随 **Agent** 主体（不是工作区、不是全局），契约对齐后端
+// WorkspaceAgentApiController：
+//   GET /api/workspaces/{workspaceId}/agents/{agentId}/access-level
+//     → { agentId, level: "auto"|"full", fullAccessActive, expiresAtUtc, temporary }
+//   PUT 同路径 body { level, durationSeconds? }（留空=持久、非空=临时）[需 admin]
+// 读失败返回 null（不伪造状态，调用方保持现值）；写失败返回 false 由调用方回读后端。
 
-/** P1#4：将权限模式写回当前工作空间（幂等 PUT，失败静默）。 */
-export async function savePermissionMode(
+/** 后端访问级别读结果（已做过期回落：level 不会返回陈旧的 full）。 */
+export interface AgentAccessLevelState {
+  mode: PermissionMode;
+  /** 仅 fullTemporary 有值；用于安排到期后的自动刷新。 */
+  expiresAtUtc: string | null;
+}
+
+/** 「完全访问（5 分钟）」的时长，与后端一致。 */
+const TEMPORARY_DURATION_SECONDS = 300;
+
+function toAgentAccessLevelState(data: unknown): AgentAccessLevelState | null {
+  if (!data || typeof data !== 'object') return null;
+  const raw = data as {
+    level?: unknown;
+    fullAccessActive?: unknown;
+    expiresAtUtc?: unknown;
+    temporary?: unknown;
+  };
+  const level = typeof raw.level === 'string' ? raw.level.toLowerCase() : null;
+  if (level !== 'auto' && level !== 'full') return null;
+  if (raw.fullAccessActive === false || level === 'auto') {
+    return { mode: 'auto', expiresAtUtc: null };
+  }
+  const expiresAtUtc =
+    typeof raw.expiresAtUtc === 'string' && raw.expiresAtUtc.length > 0
+      ? raw.expiresAtUtc
+      : null;
+  const mode: PermissionMode =
+    raw.temporary === true || expiresAtUtc ? 'fullTemporary' : 'full';
+  return PERMISSION_MODES.includes(mode) ? { mode, expiresAtUtc } : null;
+}
+
+/** 读取指定 Agent 的访问级别；端点不可用/网络失败时返回 null。 */
+export async function loadAgentAccessLevel(
   workspaceId: string,
-  mode: PermissionMode,
-): Promise<void> {
+  agentId: string,
+): Promise<AgentAccessLevelState | null> {
   try {
-    await request(
-      `/api/workspaces/${encodeURIComponent(workspaceId)}/user-preferences/permission-mode`,
-      {
-        method: 'PUT',
-        data: { mode },
-        skipErrorHandler: true,
-      },
+    const data = await request<unknown>(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/access-level`,
+      { method: 'GET', skipErrorHandler: true },
     );
+    return toAgentAccessLevelState(data);
   } catch {
-    // 忽略：端点未实现/网络失败时由 localStorage 兜底，不打断聊天。
+    return null;
   }
 }
 
-/** P1#4：读取当前工作空间保存的权限模式；未设置或不可用时返回 null。 */
-export async function loadPermissionMode(
+/** 写回指定 Agent 的访问级别（幂等 PUT）；成功返回 true。 */
+export async function saveAgentAccessLevel(
   workspaceId: string,
-): Promise<PermissionMode | null> {
+  agentId: string,
+  mode: PermissionMode,
+): Promise<boolean> {
   try {
-    const data = await request<{ mode?: unknown }>(
-      `/api/workspaces/${encodeURIComponent(workspaceId)}/user-preferences/permission-mode`,
-      { method: 'GET', skipErrorHandler: true },
+    await request(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/access-level`,
+      {
+        method: 'PUT',
+        data: {
+          level: mode === 'auto' ? 'auto' : 'full',
+          durationSeconds:
+            mode === 'fullTemporary' ? TEMPORARY_DURATION_SECONDS : undefined,
+        },
+        skipErrorHandler: true,
+      },
     );
-    const mode = data?.mode;
-    return PERMISSION_MODES.includes(mode as PermissionMode)
-      ? (mode as PermissionMode)
-      : null;
+    return true;
   } catch {
-    return null;
+    return false;
   }
 }

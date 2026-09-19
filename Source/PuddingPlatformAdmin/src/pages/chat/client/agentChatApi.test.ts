@@ -1,9 +1,9 @@
-﻿import {
+import {
   getAgentConversation,
   getAgentMessageProcessItems,
   listAgentStatuses,
-  loadPermissionMode,
-  savePermissionMode,
+  loadAgentAccessLevel,
+  saveAgentAccessLevel,
 } from './agentChatApi';
 
 const mockRequest = jest.fn();
@@ -63,44 +63,92 @@ describe('agentChatApi', () => {
     );
   });
 
-  it('persists the permission mode via REST (P1#4)', async () => {
+  it('persists the Agent access level via REST', async () => {
     mockRequest.mockResolvedValueOnce(undefined);
 
-    await savePermissionMode('ws/default', 'acceptEdits');
+    await expect(
+      saveAgentAccessLevel('ws/default', 'agent/a', 'full'),
+    ).resolves.toBe(true);
 
     expect(mockRequest).toHaveBeenCalledWith(
-      '/api/workspaces/ws%2Fdefault/user-preferences/permission-mode',
+      '/api/workspaces/ws%2Fdefault/agents/agent%2Fa/access-level',
       {
         method: 'PUT',
-        data: { mode: 'acceptEdits' },
+        data: { level: 'full', durationSeconds: undefined },
         skipErrorHandler: true,
       },
     );
   });
 
-  it('swallows REST persistence failures so chat flow is never interrupted', async () => {
-    mockRequest.mockRejectedValueOnce(new Error('network down'));
+  it('requests a temporary grant with the 5-minute duration', async () => {
+    mockRequest.mockResolvedValueOnce(undefined);
 
-    await expect(
-      savePermissionMode('ws/default', 'plan'),
-    ).resolves.toBeUndefined();
+    await saveAgentAccessLevel('ws/default', 'agent/a', 'fullTemporary');
+
+    expect(mockRequest).toHaveBeenCalledWith(
+      '/api/workspaces/ws%2Fdefault/agents/agent%2Fa/access-level',
+      {
+        method: 'PUT',
+        data: { level: 'full', durationSeconds: 300 },
+        skipErrorHandler: true,
+      },
+    );
   });
 
-  it('restores a valid permission mode from the backend', async () => {
-    mockRequest.mockResolvedValueOnce({ mode: 'manual' });
+  it('returns false instead of throwing when the write fails', async () => {
+    mockRequest.mockRejectedValueOnce(new Error('403'));
 
-    await expect(loadPermissionMode('ws/default')).resolves.toBe('manual');
+    await expect(
+      saveAgentAccessLevel('ws/default', 'agent/a', 'full'),
+    ).resolves.toBe(false);
+  });
+
+  it('reads auto / full / temporary access levels from the backend', async () => {
+    mockRequest.mockResolvedValueOnce({
+      level: 'auto',
+      fullAccessActive: false,
+    });
+    await expect(
+      loadAgentAccessLevel('ws/default', 'agent/a'),
+    ).resolves.toEqual({ mode: 'auto', expiresAtUtc: null });
+
+    mockRequest.mockResolvedValueOnce({
+      level: 'full',
+      fullAccessActive: true,
+      temporary: false,
+    });
+    await expect(
+      loadAgentAccessLevel('ws/default', 'agent/a'),
+    ).resolves.toEqual({ mode: 'full', expiresAtUtc: null });
+
+    mockRequest.mockResolvedValueOnce({
+      level: 'full',
+      fullAccessActive: true,
+      temporary: true,
+      expiresAtUtc: '2026-09-19T10:20:00.000Z',
+    });
+    await expect(
+      loadAgentAccessLevel('ws/default', 'agent/a'),
+    ).resolves.toEqual({
+      mode: 'fullTemporary',
+      expiresAtUtc: '2026-09-19T10:20:00.000Z',
+    });
+
     expect(mockRequest).toHaveBeenCalledWith(
-      '/api/workspaces/ws%2Fdefault/user-preferences/permission-mode',
+      '/api/workspaces/ws%2Fdefault/agents/agent%2Fa/access-level',
       { method: 'GET', skipErrorHandler: true },
     );
   });
 
-  it('rejects unknown permission modes and backend errors on restore', async () => {
-    mockRequest.mockResolvedValueOnce({ mode: 'rogue-mode' });
-    await expect(loadPermissionMode('ws/default')).resolves.toBeNull();
+  it('returns null for unknown payloads and network errors', async () => {
+    mockRequest.mockResolvedValueOnce({ level: 'rogue' });
+    await expect(
+      loadAgentAccessLevel('ws/default', 'agent/a'),
+    ).resolves.toBeNull();
 
     mockRequest.mockRejectedValueOnce(new Error('404'));
-    await expect(loadPermissionMode('ws/default')).resolves.toBeNull();
+    await expect(
+      loadAgentAccessLevel('ws/default', 'agent/a'),
+    ).resolves.toBeNull();
   });
 });

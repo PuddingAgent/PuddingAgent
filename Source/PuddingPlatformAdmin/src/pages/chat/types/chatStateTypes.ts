@@ -37,29 +37,32 @@ export const STEERING_INJECTED_QUEUE_RETENTION_MS = 8000;
 export const CHAT_DIAG_STORAGE_KEY = 'pudding_chat_diag_events';
 export const CHAT_DIAG_MAX_EVENTS = 200;
 
-/** P1#4：权限模式 — 控制 Agent 执行工具/编辑/计划时的审批粒度 */
-export type PermissionMode =
-  | 'manual' // 每步需批：所有工具调用都需人工确认
-  | 'acceptEdits' // 只批编辑：仅文件编辑类操作需确认
-  | 'plan' // 先计划后执行：先展示执行计划，确认后执行
-  | 'auto'; // 自动执行：不打断，自动执行
+/**
+ * 权限模式（用户 2026-09-19 决策）：简化为两档 + 一个临时项，配置跟随 **Agent** 主体
+ * （不是工作区、也不是全局）。唯一可信源是后端 Agent 级访问级别。
+ *  - auto：自动审批（默认），由 PuddingAgent 自动审批系统逐次裁决；
+ *  - full：完全访问，审批直接放行（等价于原 YOLO），持续生效直至撤销；
+ *  - fullTemporary：完全访问（5 分钟），到期自动回落为 auto。
+ */
+export type PermissionMode = 'auto' | 'full' | 'fullTemporary';
 
 export const PERMISSION_MODES: PermissionMode[] = [
-  'manual',
-  'acceptEdits',
-  'plan',
   'auto',
+  'full',
+  'fullTemporary',
 ];
 
 export const PERMISSION_MODE_LABELS: Record<PermissionMode, string> = {
-  manual: '每步需批',
-  acceptEdits: '只批编辑',
-  plan: '先计划后执行',
-  auto: '自动执行',
+  auto: '自动审批',
+  full: '完全访问',
+  fullTemporary: '完全访问（5 分钟）',
 };
 
-/** 权限模式的 localStorage 持久化键 */
-export const PERMISSION_MODE_STORAGE_KEY = 'pudding-chat-permission-mode';
+export const PERMISSION_MODE_DESCRIPTIONS: Record<PermissionMode, string> = {
+  auto: '由自动审批系统逐次裁决（默认）',
+  full: '审批直接放行，持续生效直至撤销',
+  fullTemporary: '5 分钟后自动回到自动审批',
+};
 
 export interface SessionEventPageResponse {
   events?: unknown[];
