@@ -141,7 +141,10 @@ export function useCompaction({
               collapsed: false,
             },
           ],
-          answerMarkdown: result ? formatCompactAnswer(result) : text,
+          // 运行中不把「正在压缩上下文…」塞进 answerMarkdown：正文区是给用户看的答案，
+          // 压缩进度应由状态行/进度项表达，否则会在卡片里多出一行带流式光标的花答。
+          // （用户反馈 2026-09-19：压缩卡片显示效果乱。）
+          answerMarkdown: result ? formatCompactAnswer(result) : '',
           isStreaming:
             assistantStatus === 'executing' || assistantStatus === 'thinking',
           renderMode: 'structured',
