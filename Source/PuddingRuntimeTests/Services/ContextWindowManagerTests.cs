@@ -200,6 +200,60 @@ public sealed class ContextWindowManagerTests
     }
 
     [TestMethod]
+    public async Task TrimHistoryAsync_FailedCompaction_EmitsFailedEventWithCompactionId()
+    {
+        // 失败事件必须携带与 started 相同的 compactionId：
+        // 否则前端无法把 failed 关联到已点亮的压缩 turn，孤儿 started 会永久冒充“运行中”。
+        var compaction = new FakeContextCompactionService(shouldAutoCompact: true)
+        {
+            ThrowOnCompact = new InvalidOperationException("compact exploded"),
+        };
+        var emitter = new RecordingCompactionEventEmitter();
+        var manager = CreateManager(compaction, compactionEventEmitter: emitter);
+        var history = new List<ChatMessage>
+        {
+            new(ChatRole.System, "system"),
+            new(ChatRole.User, "user"),
+            new(ChatRole.Assistant, "assistant"),
+        };
+
+        await manager.TrimHistoryAsync(
+            "session-1",
+            history,
+            maxTokenBudget: 8000,
+            preferDbContextWindow: false,
+            workspaceId: "workspace-1",
+            agentId: "agent-1",
+            CancellationToken.None);
+
+        // TryAutoCompactAsync 内部吞掉异常并发出 failed 终态，TrimHistoryAsync 本身不抛。
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                SseEventTypes.ContextCompactionStarted,
+                SseEventTypes.ContextCompactionFailed,
+            },
+            emitter.Events.Select(e => e.EventType).ToArray());
+
+        var startedPayload = System.Text.Json.JsonSerializer.SerializeToElement(
+            emitter.Events.Single(e => e.EventType == SseEventTypes.ContextCompactionStarted).Payload);
+        var failedPayload = System.Text.Json.JsonSerializer.SerializeToElement(
+            emitter.Events.Single(e => e.EventType == SseEventTypes.ContextCompactionFailed).Payload);
+
+        var startedId = startedPayload.GetProperty("compactionId").GetString();
+        Assert.IsFalse(string.IsNullOrWhiteSpace(startedId), "started event must carry a compactionId.");
+
+        Assert.IsTrue(
+            failedPayload.TryGetProperty("compactionId", out var failedIdElement),
+            "failed event payload must contain compactionId so the frontend can close the running compaction turn.");
+        StringAssert.Contains(failedPayload.GetRawText(), "compact exploded");
+        Assert.AreEqual(
+            startedId,
+            failedIdElement.GetString(),
+            "started/failed 必须携带同一 compactionId，前端才能按 id 清除运行态。");
+    }
+
+    [TestMethod]
     public async Task TrimHistoryAsync_RecordsAutoCompactionTelemetry()
     {
         var telemetry = new RecordingTelemetrySink();
@@ -1953,6 +2007,7 @@ public sealed class ContextWindowManagerTests
         public List<ContextCompactionRequest> CompactCalls { get; } = [];
         public int? LastContextWindowTokens { get; private set; }
         public Func<int>? OnCompact { get; init; }
+        public Exception? ThrowOnCompact { get; init; }
         public int? EventCountAtCompact { get; private set; }
 
                 public Task<ContextHealthSnapshot> GetHealthAsync(
@@ -1990,6 +2045,9 @@ public sealed class ContextWindowManagerTests
             ContextCompactionRequest request,
             CancellationToken ct = default)
         {
+            if (ThrowOnCompact is not null)
+                throw ThrowOnCompact;
+
             EventCountAtCompact = OnCompact?.Invoke();
             CompactCalls.Add(request);
             return Task.FromResult(new ContextCompactionResult(
@@ -2098,7 +2156,7 @@ public sealed class ContextWindowManagerTests
 
         private sealed class RecordingCompactionEventEmitter(bool yieldBeforeRecord = false) : ISessionCompactionEventEmitter
     {
-        public List<(string SessionId, string WorkspaceId, string EventType, string? TraceId)> Events { get; } = [];
+        public List<(string SessionId, string WorkspaceId, string EventType, object Payload, string? TraceId)> Events { get; } = [];
 
         public async Task EmitAsync(
             string sessionId,
@@ -2111,7 +2169,7 @@ public sealed class ContextWindowManagerTests
             if (yieldBeforeRecord)
                 await Task.Yield();
 
-            Events.Add((sessionId, workspaceId, eventType, traceId));
+            Events.Add((sessionId, workspaceId, eventType, payload, traceId));
         }
     }
 

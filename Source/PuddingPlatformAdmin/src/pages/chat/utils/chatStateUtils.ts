@@ -103,6 +103,53 @@ export function compactionTurnId(compactionId: string): string {
   return `${COMPACTION_TURN_PREFIX}${compactionId}`;
 }
 
+/** 压缩生命周期三类 canonical 事件（started/completed/failed）。 */
+const COMPACTION_LIFECYCLE_EVENT_TYPES = new Set([
+  'context.compaction.started',
+  'context.compaction.completed',
+  'context.compaction.failed',
+]);
+
+/**
+ * 判定历史重放后「确实仍在运行」的压缩 id。
+ * 为什么：bootstrap 的 lifecycleEvents 不区分压缩是否仍在运行（后端只回最近 500 条事件），
+ * 前端必须自己判活——只有最后一个 compaction 事件是带非空 id 的 started 时才允许复活运行态；
+ * 否则刷新页面会把「早已结束/丢失终态」的孤儿 started 冒充成“正在压缩上下文”。
+ * payload 可能是对象或 JSON 字符串，解析必须健壮：任何异常一律返回 null（宁可不点亮，不误报运行中）。
+ */
+export function resolveRunningCompactionId(
+  events: readonly unknown[] | null | undefined,
+): string | null {
+  if (!Array.isArray(events)) return null;
+  let lastType: string | null = null;
+  let lastPayload: Record<string, unknown> | null = null;
+  for (const raw of events) {
+    if (!raw || typeof raw !== 'object') continue;
+    const event = raw as Record<string, unknown>;
+    const type = String(event.type ?? event.Type ?? '').trim();
+    if (!COMPACTION_LIFECYCLE_EVENT_TYPES.has(type)) continue;
+    lastType = type;
+    lastPayload = resolveLifecyclePayload(event);
+  }
+  if (lastType !== 'context.compaction.started' || !lastPayload) return null;
+  const id = lastPayload.compactionId;
+  return typeof id === 'string' && id.trim() ? id.trim() : null;
+}
+
+function resolveLifecyclePayload(
+  event: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const rawPayload = event.payload ?? event.Payload;
+  if (rawPayload && typeof rawPayload === 'object') {
+    return rawPayload as Record<string, unknown>;
+  }
+  if (typeof rawPayload === 'string' && rawPayload.trim()) {
+    return parseObjectJson(rawPayload);
+  }
+  // 已被展平的事件（normalizeSessionEvent 之后）：compactionId 直接挂在事件顶层。
+  return typeof event.compactionId === 'string' ? event : null;
+}
+
 export const createAssistant = (
   id: string,
   renderMode: 'legacy' | 'structured',

@@ -1,6 +1,6 @@
 import type { MessageInstance } from 'antd/es/message/interface';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   type AdminChatStreamEvent,
   type ContextCompactionResult,
@@ -14,6 +14,7 @@ import {
   formatCompactSuccessMessage,
   mergeHistoryWithLifecycleTurns,
 } from '../utils/chatStateUtils';
+import { logChatDiag } from '../utils/chatDiagnostics';
 
 interface CompactionIdentityPort {
   workspaceId?: string;
@@ -54,9 +55,20 @@ const formatCompactionTime = (timestamp?: number): string =>
 
 export const COMPACTION_RUNNING_LABEL = '正在压缩上下文…';
 
+/**
+ * 压缩活性 TTL：点亮运行态后若终态事件迟迟不来，超时即收敛为「未完成」终态。
+ * 为什么需要：started 事件没有任何活性保证（重放孤儿/终态丢失都会留下僵尸），
+ * 禁止「duration:0 弹了就不管」。
+ */
+export const COMPACTION_LIVENESS_TIMEOUT_MS = 10 * 60 * 1000;
+
 export interface CompactionLifecycleOptions {
   allowSessionSwitch?: boolean;
   notify?: boolean;
+  /** true = 事件来自历史/缺口重放而非实时 SSE：孤儿 started 不再冒充运行中。 */
+  replay?: boolean;
+  /** 重放判活：仅当 started 的 compactionId 与它一致时才点亮运行态。 */
+  runningCompactionId?: string | null;
 }
 
 /**
@@ -78,6 +90,10 @@ export function useCompaction({
   const compactionTurnIdsRef = useRef<Map<string, string>>(new Map());
   const compactionLifecycleTurnsRef = useRef<Map<string, ChatTurn>>(new Map());
   const activeCompactionTurnIdRef = useRef<string | null>(null);
+  /** 已点亮压缩的活性 TTL 定时器（见 COMPACTION_LIVENESS_TIMEOUT_MS）。 */
+  const compactionLivenessTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const compactedSessionSwitchRef = useRef<CompactedSessionSwitch>(() => {});
   const lastManualSwitchAtRef = useRef<number>(0);
   /** P0#3：供 ComposerContextBar 展示的压缩状态文案 */
@@ -237,6 +253,69 @@ export function useCompaction({
     [formatCompactAnswer, setTurns, turnsRef],
   );
 
+  const clearCompactionLivenessTimer = useCallback(() => {
+    if (compactionLivenessTimerRef.current !== null) {
+      clearTimeout(compactionLivenessTimerRef.current);
+      compactionLivenessTimerRef.current = null;
+    }
+  }, []);
+
+  /**
+   * 活性兜底：把仍在 'executing' 的压缩 turn 收敛为「未完成」终态。
+   * 为什么需要：started 没有活性保证——重放孤儿 started 或终态事件丢失都会留下
+   * 「永远在压缩」的僵尸 turn 和永不消失的 loading toast，这里是唯一能保证
+   * UI 最终一致性的收口（TTL 超时触发）。
+   */
+  const convergeStaleCompactions = useCallback(
+    (reason: string) => {
+      clearCompactionLivenessTimer();
+      const staleTurnIds = Array.from(
+        compactionLifecycleTurnsRef.current.entries(),
+      )
+        .filter(([, turn]) => turn.assistant.status === 'executing')
+        .map(([turnId]) => turnId);
+      if (staleTurnIds.length === 0) return;
+      for (const turnId of staleTurnIds) {
+        updateCompactTurn(turnId, 'error', '压缩未完成（无终态记录）');
+        // updateCompactTurn 只修 turnsRef 里的 turn；lifecycle map 副本也必须同步收敛，
+        // 否则 mergeCompactionLifecycleTurns 下次合并时僵尸状态会复活。
+        const mapped = compactionLifecycleTurnsRef.current.get(turnId);
+        if (mapped && mapped.assistant.status === 'executing') {
+          compactionLifecycleTurnsRef.current.set(turnId, {
+            ...mapped,
+            assistant: {
+              ...mapped.assistant,
+              status: 'error',
+              isStreaming: false,
+              answerMarkdown: '压缩未完成（无终态记录）',
+            },
+          });
+        }
+      }
+      activeCompactionTurnIdRef.current = null;
+      setLoading(false);
+      setCompactionStatus('上次压缩：未完成');
+      messageApi.destroy('compaction-status');
+      logChatDiag('compaction.staleConverged', {
+        reason,
+        count: staleTurnIds.length,
+      });
+    },
+    [clearCompactionLivenessTimer, messageApi, setLoading, updateCompactTurn],
+  );
+
+  /** 只有真正点亮的压缩才挂活性 TTL；终态/重置/卸载时必须清除。 */
+  const armCompactionLivenessTimer = useCallback(() => {
+    clearCompactionLivenessTimer();
+    compactionLivenessTimerRef.current = setTimeout(() => {
+      compactionLivenessTimerRef.current = null;
+      convergeStaleCompactions('compaction-liveness-timeout');
+    }, COMPACTION_LIVENESS_TIMEOUT_MS);
+  }, [clearCompactionLivenessTimer, convergeStaleCompactions]);
+
+  // 组件卸载时清除活性定时器，防止卸载后 converge 触碰已卸载的状态。
+  useEffect(() => clearCompactionLivenessTimer, [clearCompactionLivenessTimer]);
+
   const handleCompactionLifecycleEvent = useCallback(
     (event: AdminChatStreamEvent, options?: CompactionLifecycleOptions) => {
       const raw = event as Record<string, unknown>;
@@ -256,6 +335,17 @@ export function useCompaction({
       ) {
         // Bootstrap and SSE can overlap. A late/replayed start must not revive a
         // terminal compaction or show its loading notification again.
+        return;
+      }
+      // 重放路径判活门控：只有 started 的 compactionId 与 runningCompactionId 一致
+      // （确实是最后一个未终态的 started）才允许点亮运行态；孤儿 started 必须整条忽略
+      // ——不建 turn、不 setLoading、不弹 toast，否则刷新页面会把历史压缩
+      // 复活成「正在压缩上下文」。历史完成/失败由紧随其后的终态事件按事实渲染。
+      if (
+        options?.replay === true &&
+        event.type === 'context.compaction.started' &&
+        compactionId !== (options.runningCompactionId ?? null)
+      ) {
         return;
       }
       const eventConversationId =
@@ -296,6 +386,9 @@ export function useCompaction({
       activeCompactionTurnIdRef.current = compactTurnId;
 
       if (event.type === 'context.compaction.started') {
+        // 真在跑的压缩（实时 SSE 或重放判活放行）：点亮运行态并挂活性 TTL，
+        // 终态缺失时由 TTL 收敛，不允许「duration:0 弹了就不管」。
+        armCompactionLivenessTimer();
         setLoading(true);
         setCompactionStatus(COMPACTION_RUNNING_LABEL);
         updateCompactTurn(
@@ -305,7 +398,9 @@ export function useCompaction({
           undefined,
           eventFacts,
         );
-        if (options?.notify !== false) {
+        if (options?.notify !== false && options?.replay !== true) {
+          // 重放路径永不弹 toast：刷新点亮真在跑的压缩是对的，
+          // 但历史 loading toast 不该复活；只有实时 SSE 的 started 才弹。
           messageApi.loading({
             content: '正在压缩上下文…',
             key: 'compaction-status',
@@ -315,6 +410,7 @@ export function useCompaction({
         return;
       }
 
+      clearCompactionLivenessTimer();
       setLoading(false);
       if (options?.notify !== false) messageApi.destroy('compaction-status');
       if (event.type === 'context.compaction.failed') {
@@ -381,6 +477,8 @@ export function useCompaction({
     },
     [
       appendCompactTurn,
+      armCompactionLivenessTimer,
+      clearCompactionLivenessTimer,
       messageApi,
       sessionIdRef,
       setLoading,
@@ -470,9 +568,10 @@ export function useCompaction({
     compactionTurnIdsRef.current.clear();
     compactionLifecycleTurnsRef.current.clear();
     activeCompactionTurnIdRef.current = null;
+    clearCompactionLivenessTimer();
     setCompactionStatus(null);
     messageApi.destroy('compaction-status');
-  }, [messageApi]);
+  }, [clearCompactionLivenessTimer, messageApi]);
 
   const mergeCompactionLifecycleTurns = useCallback(
     (baseTurns: ChatTurn[]) =>

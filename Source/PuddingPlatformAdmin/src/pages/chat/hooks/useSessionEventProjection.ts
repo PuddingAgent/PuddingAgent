@@ -1058,7 +1058,7 @@ export function useSessionEventProjection({
   );
 
   const applySessionEvent = useCallback(
-    (ev: AdminChatStreamEvent) => {
+    (ev: AdminChatStreamEvent, options?: { replay?: boolean }) => {
       const applyStart = performance.now();
       const eventType = String(ev.type);
       const anyEv = ev as Record<string, unknown>;
@@ -1140,7 +1140,8 @@ export function useSessionEventProjection({
         eventType === 'context.compaction.completed' ||
         eventType === 'context.compaction.failed'
       ) {
-        handleCompactionLifecycleEvent(ev);
+        // 透传 replay 语义：历史/缺口重放中的孤儿 started 不得点亮运行态。
+        handleCompactionLifecycleEvent(ev, { replay: options?.replay });
         updateLastSequence(ev);
         return;
       }

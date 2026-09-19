@@ -968,6 +968,9 @@ public sealed class ContextWindowManager
             return false;
         }
 
+        // compactionId 提升到 try 外声明：started/completed/failed 三态必须携带同一 id，
+        // 否则前端无法把失败的终态事件关联到已点亮的压缩 turn，孤儿 started 会永久冒充「运行中」。
+        string? compactionId = null;
         try
         {
             var compressionWatch = System.Diagnostics.Stopwatch.StartNew();
@@ -1037,7 +1040,7 @@ public sealed class ContextWindowManager
                 return false;
             }
 
-            var compactionId = Guid.NewGuid().ToString("N");
+            compactionId = Guid.NewGuid().ToString("N");
 
             await EmitCompactionLifecycleEventAsync(
                 sessionId,
@@ -1212,6 +1215,7 @@ public sealed class ContextWindowManager
                 SseEventTypes.ContextCompactionFailed,
                 new
                 {
+                    compactionId,
                     sessionId,
                     mode = "Auto",
                     level = "Full",

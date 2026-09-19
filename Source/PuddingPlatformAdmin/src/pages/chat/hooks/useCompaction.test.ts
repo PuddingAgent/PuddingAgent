@@ -147,4 +147,90 @@ describe('useCompaction', () => {
     expect(result.current.loading).toBe(true);
     expect(result.current.turns).toHaveLength(2);
   });
+
+  it('replay: ignores an orphan started entirely (no turn, no loading, no toast)', () => {
+    const { result } = renderHook(() => useCompactionHarness());
+
+    act(() =>
+      result.current.handleCompactionLifecycleEvent(
+        compactionEvent('context.compaction.started'),
+        { replay: true, runningCompactionId: null },
+      ),
+    );
+
+    // 没有终态的孤儿 started 不再冒充“正在压缩”：不建 turn、不 setLoading、不弹 toast。
+    expect(result.current.turns).toHaveLength(0);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.compactionStatus).toBeNull();
+    expect(messageApi.loading).not.toHaveBeenCalled();
+  });
+
+  it('replay: a started matching runningCompactionId lights up silently and closes on its terminal', () => {
+    const { result } = renderHook(() => useCompactionHarness());
+
+    act(() =>
+      result.current.handleCompactionLifecycleEvent(
+        compactionEvent('context.compaction.started'),
+        { replay: true, runningCompactionId: 'compact-1' },
+      ),
+    );
+    // 真在跑的压缩：复活运行态是对的，但重放不弹 toast。
+    expect(result.current.turns).toHaveLength(1);
+    expect(result.current.turns[0].assistant.status).toBe('executing');
+    expect(result.current.loading).toBe(true);
+    expect(messageApi.loading).not.toHaveBeenCalled();
+
+    act(() =>
+      result.current.handleCompactionLifecycleEvent(
+        compactionEvent('context.compaction.completed'),
+        { replay: true, notify: false, allowSessionSwitch: false },
+      ),
+    );
+    expect(result.current.turns[0].assistant.status).toBe('success');
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('live started still lights up and shows the loading toast', () => {
+    const { result } = renderHook(() => useCompactionHarness());
+
+    act(() =>
+      result.current.handleCompactionLifecycleEvent(
+        compactionEvent('context.compaction.started'),
+      ),
+    );
+
+    expect(result.current.turns).toHaveLength(1);
+    expect(result.current.turns[0].assistant.status).toBe('executing');
+    expect(result.current.loading).toBe(true);
+    expect(messageApi.loading).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'compaction-status', duration: 0 }),
+    );
+  });
+
+  it('converges a running compaction to a terminal state after the liveness TTL', () => {
+    jest.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useCompactionHarness());
+
+      act(() =>
+        result.current.handleCompactionLifecycleEvent(
+          compactionEvent('context.compaction.started'),
+        ),
+      );
+      expect(result.current.loading).toBe(true);
+
+      // 终态事件丢失：TTL 超时后必须收敛，禁止 duration:0 的 toast 永久悬挂。
+      act(() => {
+        jest.advanceTimersByTime(10 * 60 * 1000);
+      });
+
+      expect(result.current.turns).toHaveLength(1);
+      expect(result.current.turns[0].assistant.status).toBe('error');
+      expect(result.current.loading).toBe(false);
+      expect(result.current.compactionStatus).toBe('上次压缩：未完成');
+      expect(messageApi.destroy).toHaveBeenCalledWith('compaction-status');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

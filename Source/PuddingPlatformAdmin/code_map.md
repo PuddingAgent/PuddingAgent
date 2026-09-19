@@ -237,3 +237,13 @@
 | `src/pages/chat/components/IntentConsole.tsx` / `ComposerStatusDetails.tsx` | `status=thinking` 文案统一为「正在思考…」；**不得再用「整理上下文」**，该词与压缩共用同一批词，用户会读成正在压缩 |
 | `src/pages/chat/components/ContextUsageRing.tsx` | 上下文面板「压缩」行只有文案等于 `COMPACTION_RUNNING_LABEL` 时才带呼吸点；「上次压缩 / 压缩失败」是终态事实，不加动效 |
 | `src/pages/chat/styles/panel.styles.ts` | 压缩卡形态与 `compactionSweep / compactionGlyph / compactionBreathe / compactionSettle` 关键帧；复用 `--accent-purple` / `--earth-brown` 暖色 token，不引入新色板 |
+
+### 压缩生命周期事件的活性契约（2026-09-19，承接「压缩卡重设计」）
+
+| 文件 | 职责与边界 |
+|------|------------|
+| `src/pages/chat/utils/chatStateUtils.ts` | `resolveRunningCompactionId(events)`：只有「最后一个压缩生命周期事件是带非空 id 的 `started`」才判定为仍在运行；payload 支持对象 / JSON 字符串 / 已展平事件，解析异常返回 null |
+| `src/pages/chat/hooks/useCompaction.ts` | 重放判活门控：`replay===true` 且 id ≠ `runningCompactionId` 的 started **整条忽略**；重放命中的压缩点亮运行态但**永不弹 toast**。新增 `COMPACTION_LIVENESS_TIMEOUT_MS`(10min) 活性 TTL 与 `convergeStaleCompactions`：超时把 executing 压缩 turn 收敛为「压缩未完成（无终态记录）」并同步收敛 lifecycle map 副本、清 loading/文案、destroy toast |
+| `src/pages/chat/hooks/useSessionEventReplay.ts` | bootstrap 重放带 `{replay:true, runningCompactionId}`；缺口/历史尾部重放一律 `applySessionEvent(event,{replay:true})`，历史 started 不再冒充运行中 |
+| `src/pages/chat/hooks/useSessionEventProjection.ts` | `applySessionEvent(ev, {replay?})` 只把 replay 语义透传给压缩事件分发 |
+| `PuddingRuntime/Services/ContextWindowManager.cs` | Auto 压缩三态携带同一 compactionId（failed 此前漏发）；见 `PuddingRuntime/code_map.md` 同主题章节 |

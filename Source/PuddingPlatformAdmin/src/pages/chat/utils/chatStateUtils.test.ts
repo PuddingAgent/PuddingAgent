@@ -2,6 +2,7 @@ import type { ChatTurn } from '../types';
 import {
   confirmOptimisticTurn,
   getChatRouteSelectionFromSearch,
+  resolveRunningCompactionId,
   resolveTerminalAssistantMarkdown,
 } from './chatStateUtils';
 
@@ -69,5 +70,71 @@ describe('chatStateUtils module boundary', () => {
     expect(
       resolveTerminalAssistantMarkdown('前文流式', '服务端终稿全文'),
     ).toBe('服务端终稿全文');
+  });
+});
+
+describe('resolveRunningCompactionId', () => {
+  it('returns the id when the last lifecycle event is a started with an object payload', () => {
+    expect(
+      resolveRunningCompactionId([
+        {
+          type: 'context.compaction.started',
+          payload: { compactionId: 'a-1' },
+        },
+        {
+          type: 'context.compaction.completed',
+          payload: { compactionId: 'a-1' },
+        },
+        {
+          type: 'context.compaction.started',
+          payload: { compactionId: 'b-2' },
+        },
+      ]),
+    ).toBe('b-2');
+  });
+
+  it('parses a JSON-string payload and ignores non-lifecycle events', () => {
+    expect(
+      resolveRunningCompactionId([
+        { type: 'turn.completed', payload: '{}' },
+        {
+          type: 'context.compaction.started',
+          payload: JSON.stringify({ compactionId: 'c-3' }),
+        },
+      ]),
+    ).toBe('c-3');
+  });
+
+  it('returns null when the last lifecycle event is terminal', () => {
+    expect(
+      resolveRunningCompactionId([
+        {
+          type: 'context.compaction.started',
+          payload: { compactionId: 'a-1' },
+        },
+        {
+          type: 'context.compaction.failed',
+          payload: { compactionId: 'a-1' },
+        },
+      ]),
+    ).toBeNull();
+  });
+
+  it.each([
+    ['malformed json payload', [{ type: 'context.compaction.started', payload: '{oops' }]],
+    ['missing compactionId', [{ type: 'context.compaction.started', payload: {} }]],
+    ['blank compactionId', [{ type: 'context.compaction.started', payload: { compactionId: '  ' } }]],
+    ['empty event list', []],
+    ['null input', null],
+  ])('returns null for %s', (_name, events) => {
+    expect(resolveRunningCompactionId(events as never)).toBeNull();
+  });
+
+  it('reads a flattened payload after normalization', () => {
+    expect(
+      resolveRunningCompactionId([
+        { type: 'context.compaction.started', compactionId: 'd-4' },
+      ]),
+    ).toBe('d-4');
   });
 });

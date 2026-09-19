@@ -20,6 +20,7 @@ import {
   getSessionEventSequenceNum,
   HISTORICAL_REPLAY_TERMINAL_EVENTS,
   resolveActiveSessionReplayFromSequence,
+  resolveRunningCompactionId,
   shouldHydrateSessionEventReplay,
   shouldRunSessionReplayCompensation,
 } from '../utils/chatStateUtils';
@@ -42,7 +43,11 @@ interface SessionReplayIdentityPort {
 }
 
 interface SessionReplayProjectionPort {
-  applySessionEvent: (event: AdminChatStreamEvent) => void;
+  /** replay=true 表示事件来自历史/缺口重放：压缩孤儿 started 不得冒充运行中。 */
+  applySessionEvent: (
+    event: AdminChatStreamEvent,
+    options?: { replay?: boolean },
+  ) => void;
   handleCompactionLifecycleEvent: (
     event: AdminChatStreamEvent,
     options?: CompactionLifecycleOptions,
@@ -142,12 +147,19 @@ export function useSessionEventReplay({
           getSessionSubAgents(sessionId).catch(() => []),
         ]);
         if (signal?.aborted) return [];
+        // 重放判活：只有「最后一个未终态的 started」才是真在跑的压缩；
+        // 其余历史 started 不得在刷新后复活成「正在压缩上下文」。
+        const runningCompactionId = resolveRunningCompactionId(
+          bootstrap.lifecycleEvents ?? [],
+        );
         for (const rawEvent of bootstrap.lifecycleEvents ?? []) {
           const event = normalizeSessionEvent(rawEvent);
           if (!event) continue;
           handleCompactionLifecycleEvent(event, {
             allowSessionSwitch: false,
             notify: false,
+            replay: true,
+            runningCompactionId,
           });
         }
         let snapshotRuns: SubAgentRunMap = {};
@@ -289,7 +301,9 @@ export function useSessionEventReplay({
             ) {
               continue;
             }
-            applySessionEvent(event);
+            // 缺口重放一律按历史语义投影：started 会被忽略，
+            // 真正仍在跑的压缩由 live SSE 补发 started 点亮。
+            applySessionEvent(event, { replay: true });
             appliedCount += 1;
           }
 
@@ -477,7 +491,8 @@ export function useSessionEventReplay({
           ) {
             continue;
           }
-          applySessionEvent(event);
+          // 历史尾部重放同样按 replay 语义：孤儿 started 不冒充运行中。
+          applySessionEvent(event, { replay: true });
         }
       } finally {
         hydrateSessionReplayRef.current = previousHydrateMode;

@@ -167,3 +167,18 @@
 ## 测试
 
 对应测试项目：`../PuddingRuntimeTests/` — Agent Loop、上下文管线、语音/图片 Provider；SubAgent/输入 resolver/图片生成/图片展示编排定向测试 4/4 ✅；list_llm_providers 工具合同测试（歧义/过滤/敏感字段/路由可解析）7/7 ✅
+
+## 上下文压缩生命周期事件的活性契约（2026-09-19）
+
+**症状**：未触发压缩却出现压缩 UI——会话内卡片显示「正在压缩上下文」、顶部 toast 不消失、状态文案长期停在压缩中，turn 显示「已运行 60m+」，而上下文用量远低于自动压缩阈值。
+
+**根因**：压缩 UI 只由一个前端状态驱动（一个 `compaction:<id>` 生命周期 turn，assistant.status='executing' 且时间线含 `status='compacting'`），它只在 `context.compaction.started` 创建、只被携带同一 `compactionId` 的终态事件清除，中间没有任何活性保证。
+
+| 文件 | 职责与边界 |
+|------|------------|
+| `src/pages/chat/utils/chatStateUtils.ts` | `resolveRunningCompactionId(events)`：按顺序取最后一个压缩生命周期事件，**仅当它是带非空 id 的 `started`** 才返回该 id。bootstrap 的 `lifecycleEvents` 不区分压缩是否仍在运行，判活必须由前端自查；payload 可能是对象/JSON 字符串/已展平事件，解析异常一律返回 null（宁可不点亮，不误报运行中） |
+| `src/pages/chat/hooks/useCompaction.ts` | ① `replay===true` 且 started 的 id ≠ `runningCompactionId` → **整条忽略**（不建 turn、不 `setLoading`、不 `setCompactionStatus`、不弹 toast）；重放的 started 即使命中判活也**永不弹 toast**，只有实时 SSE 才弹。② `COMPACTION_LIVENESS_TIMEOUT_MS`（10min）活性 TTL：点亮运行态即挂表，超时由 `convergeStaleCompactions` 把仍为 executing 的压缩 turn 收敛为「压缩未完成（无终态记录）」并同步收敛 lifecycle map 副本（防 merge 复活）、清 loading/状态文案、destroy toast；终态事件/`resetCompaction`/卸载时清表。禁止「`duration: 0` 弹了就不管」 |
+| `src/pages/chat/hooks/useSessionEventReplay.ts` | bootstrap 重放：先算 `runningCompactionId`，再以 `{allowSessionSwitch:false, notify:false, replay:true, runningCompactionId}` 逐事件下发；缺口重放与历史尾部重放一律 `applySessionEvent(event, {replay:true})`——历史 started 一律不点亮，真在跑的压缩由 live SSE 补亮（已知取舍：SSE 断档期间恰逢压缩启动时会出现漏亮，不再出现假运行态） |
+| `src/pages/chat/hooks/useSessionEventProjection.ts` | `applySessionEvent(ev, options?)` 仅把 `replay` 语义透传给压缩三个事件的分发，其余投影行为不变 |
+| `PuddingRuntime/Services/ContextWindowManager.cs` | Auto 压缩三态（started/completed/failed）必须携带**同一 compactionId**：`compactionId` 提升到 try 之外声明，catch 的 `context.compaction.failed` payload 此前漏发 id（异常发生在 id 赋值前时为 null） |
+| `PuddingRuntimeTests/Services/ContextWindowManagerTests.cs` | `TrimHistoryAsync_FailedCompaction_EmitsFailedEventWithCompactionId`：断言 started→failed 顺序且 failed payload 携带与 started 相同的 compactionId |
