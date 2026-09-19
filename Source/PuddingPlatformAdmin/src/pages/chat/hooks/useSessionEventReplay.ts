@@ -149,8 +149,11 @@ export function useSessionEventReplay({
         if (signal?.aborted) return [];
         // 重放判活：只有「最后一个未终态的 started」才是真在跑的压缩；
         // 其余历史 started 不得在刷新后复活成「正在压缩上下文」。
+        // 重放判活：服务端 compactionRunning 为权威；为 false 时任何历史 started 都是孤儿
+        //（终态丢失 / 进程已重启），不得在刷新后复活成「正在压缩上下文」。
         const runningCompactionId = resolveRunningCompactionId(
           bootstrap.lifecycleEvents ?? [],
+          bootstrap.compactionRunning,
         );
         for (const rawEvent of bootstrap.lifecycleEvents ?? []) {
           const event = normalizeSessionEvent(rawEvent);

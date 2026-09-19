@@ -116,10 +116,17 @@ const COMPACTION_LIFECYCLE_EVENT_TYPES = new Set([
  * 前端必须自己判活——只有最后一个 compaction 事件是带非空 id 的 started 时才允许复活运行态；
  * 否则刷新页面会把「早已结束/丢失终态」的孤儿 started 冒充成“正在压缩上下文”。
  * payload 可能是对象或 JSON 字符串，解析必须健壮：任何异常一律返回 null（宁可不点亮，不误报运行中）。
+ * @param serverRunning 服务端权威的压缩运行态（bootstrap.compactionRunning）。为 false 时，
+ *   事件序列里任何 started 都是孤儿，直接返回 null。
  */
 export function resolveRunningCompactionId(
   events: readonly unknown[] | null | undefined,
+  serverRunning?: boolean | null,
 ): string | null {
+  // 服务端权威优先（方案 1，2026-09-19）：它按 per-session 单飞锁的持有状态回答「现在
+  // 是否有在途压缩」，且随进程重启归零。仅靠事件推断做不到——终态丢失的孤儿 started
+  // 永远是「最后一个压缩事件」，每次刷新都会被重新点亮（用户：不定时弹出压缩 UI）。
+  if (serverRunning === false) return null;
   if (!Array.isArray(events)) return null;
   let lastType: string | null = null;
   let lastPayload: Record<string, unknown> | null = null;

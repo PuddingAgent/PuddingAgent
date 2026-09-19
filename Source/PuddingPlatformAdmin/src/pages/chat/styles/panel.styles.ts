@@ -264,37 +264,37 @@ export const usePanelStyles = createStyles(() => ({
     gap: 8,
     minWidth: 0,
   },
-  /** 「收敛」字形：三根逐根塌缩的竖条（子元素由后代选择器上色/上动画，不额外占 JS 体积）。 */
-  compactionGlyph: {
-    display: 'inline-flex',
-    alignItems: 'flex-end',
-    gap: 2,
-    height: 14,
-    flexShrink: 0,
-    '& span': {
-      width: 3,
-      height: 14,
-      borderRadius: 1,
-      background:
-        'color-mix(in srgb, var(--accent-purple) 55%, var(--earth-brown))',
-      transformOrigin: 'bottom',
-      animation: 'compactionGlyph 1.5s ease-in-out infinite',
-    },
-    '& span:nth-child(2)': { height: 10, animationDelay: '180ms' },
-    '& span:nth-child(3)': { height: 6, animationDelay: '360ms' },
-    "&[data-running='false'] span": { animation: 'none' },
-    '@media (prefers-reduced-motion: reduce)': {
-      '& span': { animation: 'none' },
-    },
-  },
-  compactionTitle: {
+  /** 运行态流光文本（用户 2026-09-19：只要一个简约 loading + 流光效果）。
+   *  文字本身做渐变位移；不支持 background-clip:text 或降级动效时回落为静态弱色文本。 */
+  compactionShimmer: {
     minWidth: 0,
     flex: 1,
-    color: 'var(--pudding-chat-text)',
     fontSize: 13,
     fontWeight: 600,
     lineHeight: '18px',
-    wordBreak: 'break-word' as const,
+    backgroundImage:
+      'linear-gradient(90deg, color-mix(in srgb, var(--pudding-chat-text-muted) 68%, transparent) 0%, color-mix(in srgb, var(--accent-purple) 82%, var(--earth-brown)) 48%, color-mix(in srgb, var(--pudding-chat-text-muted) 68%, transparent) 92%)',
+    backgroundSize: '220% 100%' as const,
+    backgroundClip: 'text' as const,
+    WebkitBackgroundClip: 'text' as const,
+    color: 'transparent' as const,
+    animation: 'compactionShimmer 1.9s linear infinite',
+    '@media (prefers-reduced-motion: reduce)': {
+      animation: 'none',
+      backgroundImage: 'none',
+      color: 'var(--pudding-chat-text-muted)',
+    },
+  },
+  /** 终态标记行：一条居中的分隔标记（「—— 已完成压缩 ✓ ——」）。 */
+  compactionMarker: {
+    minWidth: 0,
+    flex: 1,
+    textAlign: 'center' as const,
+    color: 'var(--pudding-chat-text-muted)',
+    fontSize: 12.5,
+    fontWeight: 500,
+    lineHeight: '18px',
+    letterSpacing: '0.02em',
   },
   compactionElapsed: {
     flexShrink: 0,
@@ -304,28 +304,6 @@ export const usePanelStyles = createStyles(() => ({
     lineHeight: '18px',
     fontVariantNumeric: 'tabular-nums' as const,
     whiteSpace: 'nowrap' as const,
-  },
-  compactionRail: {
-    position: 'relative' as const,
-    height: 3,
-    borderRadius: 2,
-    overflow: 'hidden' as const,
-    background: 'color-mix(in srgb, var(--earth-brown) 9%, transparent)',
-    "&[data-running='false']": {
-      background: 'color-mix(in srgb, #6f8f72 36%, transparent)',
-    },
-  },
-  compactionRailSweep: {
-    position: 'absolute' as const,
-    top: 0,
-    bottom: 0,
-    left: 0,
-    width: '38%',
-    borderRadius: 2,
-    background:
-      'linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent-purple) 46%, transparent) 45%, color-mix(in srgb, var(--accent-purple) 62%, transparent) 60%, transparent)',
-    animation: 'compactionSweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite',
-    '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
   },
   compactionHint: {
     color: 'var(--pudding-chat-text-muted)',
@@ -361,13 +339,9 @@ export const usePanelStyles = createStyles(() => ({
     animation: 'compactionBreathe 1.8s ease-in-out infinite',
     '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
   },
-  '@keyframes compactionSweep': {
-    '0%': { transform: 'translateX(-100%)' },
-    '100%': { transform: 'translateX(263%)' },
-  },
-  '@keyframes compactionGlyph': {
-    '0%, 100%': { transform: 'scaleY(0.42)' },
-    '50%': { transform: 'scaleY(1)' },
+  '@keyframes compactionShimmer': {
+    '0%': { backgroundPosition: '120% 0' },
+    '100%': { backgroundPosition: '-120% 0' },
   },
   '@keyframes compactionBreathe': {
     '0%, 100%': { opacity: 0.45, transform: 'scale(0.9)' },

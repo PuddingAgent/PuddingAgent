@@ -220,6 +220,18 @@ public sealed record ContextCompactionMessage(
 
 public interface IContextCompactionService
 {
+    /// <summary>
+    /// 该会话当前是否有在途压缩（进程内权威事实，随重启归零）。
+    /// 客户端不得用「事件序列里最后一个压缩事件是 started」推断运行态：终态事件丢失
+    /// 或进程重启都会留下孤儿 started，会被误报成「正在压缩」，并在每次刷新后复活。
+    /// </summary>
+    /// <remarks>
+    /// 默认实现返回 false：既有实现者（测试替身）无需同步修改，且对它们而言“无在途压缩”
+    /// 本就是正确语义。真实实现在 <c>ContextCompactionService</c>。若将来新增包装/装饰器，
+    /// 必须显式转发，不得依赖默认值（否则刷新后会漏棒真在跑的压缩）。
+    /// </remarks>
+    bool IsCompactionRunning(string sessionId) => false;
+
         Task<ContextHealthSnapshot> GetHealthAsync(
         string sessionId,
         CancellationToken ct = default,

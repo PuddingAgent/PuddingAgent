@@ -54,6 +54,17 @@ public sealed class CompactionCoordinator
     }
 
     /// <summary>
+    /// 该会话当前是否有在途压缩。
+    /// 依据是 per-session 单飞锁的**持有状态**——这是进程内的权威事实，且天然随重启
+    /// 归零：上一个进程遗留的 started 事件不可能还在跑。因此“是否在跑”不能由事件
+    /// 序列推断（终态事件丢失 / 进程重启都会留下孤儿 started）。
+    /// </summary>
+    public bool IsRunning(string sessionId)
+        => !string.IsNullOrWhiteSpace(sessionId)
+            && _sessionLocks.TryGetValue(sessionId, out var semaphore)
+            && semaphore.CurrentCount == 0;
+
+    /// <summary>
     /// 冷却检查：若 session 处于上次压缩后的冷却窗口内，返回 true 并给出可读的跳过原因。
     /// 调用方应跳过本次压缩（日志记录 skipReason 并返回空结果），避免同 session 高频重复压缩。
     /// </summary>

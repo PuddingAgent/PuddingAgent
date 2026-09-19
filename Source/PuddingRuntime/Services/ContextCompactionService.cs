@@ -72,6 +72,9 @@ public sealed class ContextCompactionService : IContextCompactionService
         _compactionEventEmitter = compactionEventEmitter;
     }
 
+    /// <summary>压缩运行态：直接来自协调器的单飞锁持有状态（见 IContextCompactionService）。</summary>
+    public bool IsCompactionRunning(string sessionId) => _coordinator.IsRunning(sessionId);
+
     public async Task<ContextHealthSnapshot> GetHealthAsync(
         string sessionId,
         CancellationToken ct = default,

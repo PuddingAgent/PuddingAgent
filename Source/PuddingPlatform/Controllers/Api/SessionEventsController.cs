@@ -509,6 +509,10 @@ public class SessionEventsController : ControllerBase
             snapshotCursor,
             hasMoreHistory,
             historyCursor = (long?)null,
+            // 会话预初始化（用户 2026-09-19，方案 1）：压缩运行态由服务端权威给出。
+            // 之前客户端靠「最后一个压缩事件是 started」推断，只会把 09-11 那类
+            // 孤儿 started（无终态、进程已重启）在每次刷新后复活成「正在压缩」。
+            compactionRunning = _compactionService.IsCompactionRunning(conversationId),
         });
     }
 

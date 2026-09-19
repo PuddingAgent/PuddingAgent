@@ -2120,6 +2120,8 @@ export interface ConversationBootstrapResponse {
     createdAt: number;
   }>;
   lifecycleEvents: unknown[];
+  /** 服务端权威的压缩运行态（会话预初始化）。缺失 = 旧后端，客户端退回事件推断。 */
+  compactionRunning?: boolean;
   subAgentEvents: unknown[];
   snapshotCursor: number;
   hasMoreHistory: boolean;

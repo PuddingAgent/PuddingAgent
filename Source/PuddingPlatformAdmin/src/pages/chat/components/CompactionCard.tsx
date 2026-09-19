@@ -1,8 +1,10 @@
-// ── CompactionCard：上下文压缩专用卡（运行 / 完成 / 未完成三态）──
-// 用户反馈（2026-09-19）：压缩卡片显示效果乱，未触发压缩也会亮起运行态。本卡只呈现
-// 有事实支撑的内容——运行中 = 不定量扫描条 + 「已运行 Xs/Xm」+ 收敛字形（三根逐根
-// 塌缩的竖条），不伪造百分比进度、不编造前端无从证实的阶段名；未完成必须原样露出
-// 原因。动画在 prefers-reduced-motion 下全部降级。
+// ── CompactionCard：上下文压缩专用卡（运行 / 完成 / 未完成）──
+// 设计（用户 2026-09-19 第二次反馈：旧形态「并不好看」）：收敛到一行表达 ——
+//   · 运行中：一行流光文本「正在压缩上下文…」+ 右侧「已运行 Xs」；
+//   · 完成：一行居中标记「—— 已完成压缩 ✓ ——」+ 右侧「耗时 Xs」；
+//   · 未完成：居中标记「—— 压缩未完成 ——」+ 原样露出原因 + 一句可操作提示。
+// 不伪造百分比进度、不编造前端无从证实的阶段名；终态耗时取自事件时间，刷新不归零
+// 也不继续走；流光动画在 prefers-reduced-motion 下回落为静态弱色文本。
 import React from 'react';
 import { useChatMessageStyles } from '../styles/messageStyleContext';
 import type { CurrentRunActivity } from './processPreview';
@@ -14,8 +16,9 @@ const RUNNING_STATUSES = new Set([
   'processing_result',
 ]);
 
-const RUNNING_HINT = '整理早期对话腾出上下文窗口；压缩期间新消息进入队列';
-const SUCCESS_HINT = '摘要已写回上下文，后续按压缩后的记录继续';
+const RUNNING_TEXT = '正在压缩上下文…';
+const SUCCESS_MARKER = '—— 已完成压缩 ✓ ——';
+const INTERRUPTED_MARKER = '—— 压缩未完成 ——';
 const INTERRUPTED_HINT = '没有收到终态记录，本轮压缩已结束；需要时可手动重新压缩';
 
 const formatElapsed = (ms: number): string => {
@@ -65,22 +68,21 @@ const CompactionCard: React.FC<{ activity: CurrentRunActivity }> = ({
       aria-live="polite"
     >
       <div className={styles.compactionHeader}>
-        <span
-          className={styles.compactionGlyph}
-          data-running={running}
-          aria-hidden="true"
-        >
-          <span />
-          <span />
-          <span />
-        </span>
-        <span className={styles.compactionTitle}>
-          {interrupted
-            ? '上下文压缩未完成'
-            : running
-              ? activity.title
-              : '上下文压缩完成'}
-        </span>
+        {running ? (
+          <span
+            className={styles.compactionShimmer}
+            data-testid="compaction-shimmer"
+          >
+            {RUNNING_TEXT}
+          </span>
+        ) : (
+          <span
+            className={styles.compactionMarker}
+            data-testid="compaction-marker"
+          >
+            {interrupted ? INTERRUPTED_MARKER : SUCCESS_MARKER}
+          </span>
+        )}
         {elapsedMs !== null && (
           <span
             className={styles.compactionElapsed}
@@ -90,19 +92,13 @@ const CompactionCard: React.FC<{ activity: CurrentRunActivity }> = ({
           </span>
         )}
       </div>
-      <div className={styles.compactionRail} data-running={running} aria-hidden="true">
-        {running && (
-          <span
-            className={styles.compactionRailSweep}
-            data-testid="compaction-sweep"
-          />
-        )}
-      </div>
-      <div className={styles.compactionHint}>
-        {running ? RUNNING_HINT : interrupted ? INTERRUPTED_HINT : SUCCESS_HINT}
-      </div>
-      {interrupted && activity.outputPreview && (
-        <div className={styles.compactionReason}>{activity.outputPreview}</div>
+      {interrupted && (
+        <>
+          {activity.outputPreview && (
+            <div className={styles.compactionReason}>{activity.outputPreview}</div>
+          )}
+          <div className={styles.compactionHint}>{INTERRUPTED_HINT}</div>
+        </>
       )}
     </div>
   );

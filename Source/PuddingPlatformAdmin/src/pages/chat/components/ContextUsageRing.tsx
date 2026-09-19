@@ -33,6 +33,8 @@ export interface ContextUsageRingProps {
   /** 用量数据来源/置信度：面板据此显示「数据来源」，让百分比可判断可信度。 */
   usageSource?: string | null;
   usageConfidence?: string | null;
+  /** 会话消息数：0 = 会话尚未开始，不展示任何用量（方案 2）。 */
+  tMessageCount?: number;
   /** 运行状态详情（原 ComposerStatusDetails 弹层内容，并入本面板）。 */
   runtimeDetails?: React.ReactNode;
 }
@@ -109,6 +111,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   tBreakdown,
   usageSource,
   usageConfidence,
+  tMessageCount,
   compactionStatus,
   error,
   subAgentsRunning,
@@ -119,6 +122,15 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   const [open, setOpen] = useState(false);
   const configured = tLimit > 0;
   const pct = clampPct(tPct);
+  // 方案 2（用户 2026-09-19）：无有效数据时不给错的信息。
+  //  - 会话还没任何消息 → 视为「未开始」，不展示用量；
+  //  - confidence 不是 provider_reported（本地估算 / DB 回退）→ 只能标为估算值，
+  //    不得当作「已使用」的事实（实测估算可达 Provider 报数的数倍）。
+  const notStarted = tMessageCount === 0;
+  const authoritative =
+    usageConfidence === undefined ||
+    usageConfidence === null ||
+    usageConfidence === 'provider_reported';
   const color = contextUsageColor(pct);
   const dash = configured ? (pct / 100) * CIRCUMFERENCE : 0;
 
@@ -152,11 +164,14 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   const availablePercent =
     tLimit > 0 ? Math.max(0, 100 - pct - reservedPercent) : 0;
 
-  const hoverSummary = configured
-    ? `${pct.toFixed(1)}% · ${formatTokens(tUsed)} / ${formatTokens(tLimit)} 上下文已使用`
-    : error
-      ? `上下文用量获取失败：${error}`
-      : '上下文窗口未配置';
+  const hoverSummary =
+    configured && !notStarted
+      ? `${authoritative ? '' : '≈'}${pct.toFixed(1)}% · ${formatTokens(tUsed)} / ${formatTokens(tLimit)} 上下文已使用${authoritative ? '' : '（估算）'}`
+      : error
+        ? `上下文用量获取失败：${error}`
+        : notStarted
+          ? '会话尚未开始，暂无上下文用量'
+          : '上下文窗口未配置';
 
   const handleOpenSubAgents = useCallback(() => {
     setOpen(false);
@@ -177,18 +192,23 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
             ✕
           </button>
         </div>
-        {!configured ? (
+        {!configured || notStarted ? (
           <div className={styles.contextUsagePanelEmpty}>
-            {error ?? '发送第一条消息后显示上下文用量'}
+            {error ??
+              (notStarted
+                ? '会话尚未开始，暂无上下文用量'
+                : '发送第一条消息后显示上下文用量')}
           </div>
         ) : (
           <>
             <div className={styles.contextUsagePanelHeadline}>
               <span className={styles.contextUsagePanelPct}>
+                {authoritative ? '' : '≈'}
                 {pct.toFixed(1)}%
               </span>
               <span className={styles.contextUsagePanelUsed}>
                 已使用 {formatTokens(tUsed)}/{formatTokens(tLimit)}
+                {authoritative ? '' : '（估算）'}
               </span>
             </div>
             {segments.length > 0 ? (
@@ -360,12 +380,14 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
       </div>
     ),
     [
+      authoritative,
       availablePercent,
       color,
       compactionStatus,
       configured,
       error,
       handleOpenSubAgents,
+      notStarted,
       onOpenSubAgents,
       pct,
       reservedPercent,

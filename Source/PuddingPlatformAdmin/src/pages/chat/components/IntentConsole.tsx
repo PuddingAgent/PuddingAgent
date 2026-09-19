@@ -945,6 +945,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               }
               usageSource={contextHealth?.usageSource}
               usageConfidence={contextHealth?.usageConfidence}
+              tMessageCount={contextHealth?.messageCount}
               compactionStatus={compactionStatus}
               error={contextHealthError}
               subAgentsRunning={subAgentsRunning}
