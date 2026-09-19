@@ -202,3 +202,65 @@ prompt / completion / total / contextWindow / cacheHit / cacheMiss **token 数**
 ### 附带发现：turn 级可折叠头（新增，建议并入 S3）
 图 1 顶部为 `已完成 8m52s ⌄` ⇒ **整个 turn 也是可折叠的**，折叠态显示「终态 + 总时长」+ 箭头。
 这与 §七 S3「消息头元信息」相关但**不等价**：S3 原计划是"补齐实时耗时"，本项是"**turn 容器本身可折叠**，且折叠态以时长作为标题"。建议在 S3 一并评估，或单列 S3b。
+
+---
+
+## 十、S3 精确定位与范围锁定（父级只读侦察 + 用户决策 2026-09-19）
+
+### 10.1 用户决策（新增硬约束，覆盖 §七 S3 原文）
+
+用户 2026-09-19 明确指示：
+
+> 「**先不做成本预估，我们先完成前端的优化设计和施工。**」
+
+⇒ `预计消耗 ◇min ~ max` 及一切成本展示**整体暂缓**，已另立独立卡（`48b53f02`，P3，Backlog）。
+⇒ **S3 不得**以硬编码、伪造或估算数据实现该项；S3 的范围因此收窄为「头部实时耗时」。
+
+### 10.2 S3 唯一目标
+
+**消息头新增「实时 `已处理 <时长>`」，仅在运行态显示。** 不做其他。
+
+### 10.3 已核验落点（全部实读，非推断）
+
+| 项 | 事实 | 证据 |
+|---|---|---|
+头部渲染点 | `agentNameRow`（`AgentMessageBubble.tsx` 约 :605-625）：`agentNameText`（Agent 名）+ `agentTimeText`（内容 = `formatTime(createdAt)`，即**创建时刻**，非耗时）+ 终态 chip | 实读 |
+时间基准 | `createdAt` 已作为 `turnStartedAt` 传入 `TurnStatus` ⇒ reload / 重挂载**不归零** | 实读 |
+**可复用的 tick 模式** | `TurnStatus.tsx` 约 :131-143：`useState(() => nowProp ?? Date.now())` + `useEffect`（**仅当 `nowProp === undefined`** 时才 `window.setInterval(…, 1000)`）；`formatElapsed`：`<60s → Xs`、`≥60s → Xm` | 实读 |
+终态已有总时长 | `TurnStatsLine`（`formatDurationMs(totalDurationMs)`，仅 `!isRunActive` 渲染）⇒ S3 **只在运行态**加头部计时，避免与终态重复 | 差距分析 |
+`生成中` 文案 | `assistantStatusLabel.streaming = '生成中'`（`types.ts:371`）**存在但未用于消息卡**；全局无 `+N −M` 增量数据源 | 实读 + 差距分析 |
+
+### 10.4 硬约束（源自 gap analysis 风险项，实现时逐条遵守）
+
+1. **tick 必须封装在叶子组件内**（建议新增 `TurnElapsedLabel` 之类的叶子组件）。若把 `useState`/`useEffect` 放在 `AgentMessageBubble` 本体，会**每秒 reconcile 整卡**（含 `TurnContentStream` 大 DOM）。
+2. **必须支持注入 `now` prop** 供测试（照抄 `TurnStatus` 的 `nowProp` 约定）；测试**禁止快照**，用确定性注入时间断言。
+3. **只在 `isRunActive` 时渲染**。
+4. 计时**不得**在 render 内直接调用 `Date.now()` —— 一律经 `now` prop 或叶子组件 state，否则测试不可控。
+5. 文案格式与既有 `TurnStatus` **保持一致**（`已处理 <Xs|Xm>`），**不新增第二套时长格式**。
+6. `AgentMessageBubble.test.tsx` 对头部有断言 ⇒ 新增展示项**不得破坏既有断言**。
+
+### 10.5 明确排除（不得实施，防范围膨胀）
+
+| 排除项 | 原因 |
+|---|---|
+`预计消耗` / 任何成本展示 | 用户已决策暂缓（见 10.1）；且 `TokenUsageDto` 无价格字段，**无数据源** |
+`生成中 +N -M` | 全局无 diff 增量事件流，**无数据源** |
+`正在写入文件` | 无文件写入态；工具行运行态仅靠 `rowSweep` 扫光 + `StateDot ongoing` |
+把 `pending` 文案改为 `准备中` | `TurnStatus.test.tsx` 对 `pending → '{agentName} 正在运行'` 有逐条断言，**收益低、破坏面大** |
+复活 `WaitingBubble` / `waiting.styles.ts` | 已退出生产路径（`AgentMessageBubble.tsx` 注释明载）；`ParticleDots.tsx` 零引用 = 死代码 |
+
+### 10.6 待定（S3 之后单列，勿混入 S3）
+
+图 1 顶部 `已完成 8m52s ⌄` ⇒ **turn 级容器本身可折叠**，折叠态以「终态 + 总时长」作标题。
+与 S3 的「头部实时耗时」**不等价**（一个是计时器，一个是可折叠容器），建议 S4 之后单列一刀。
+
+### 10.7 切片状态
+
+| 切片 | 内容 | 状态 |
+|---|---|---|
+S1 | 步骤行展开体：语言标签 + 结果态 | ✅ 已交付（`458176f`） |
+S1b | 折叠行尾部 diff 摘要 `编辑 <path> +N −N` | ✅ 已交付（`1b84946`，测试 `fc193bc`） |
+S1c | 箭头渐进披露（悬停/聚焦显现） | ✅ 已交付（`4ee5af8`） |
+S2 | 底部实时状态行（状态行由卡头下移卡底） | 🔄 实施中 |
+S3 | 头部实时耗时 | ⏸ 待 S2 收口（共享 `AgentMessageBubble.tsx`，**必须串行**） |
+S4 | 观感对齐（推理块左侧竖线 + 标签配色收敛） | ⏸ 待 S3 |
