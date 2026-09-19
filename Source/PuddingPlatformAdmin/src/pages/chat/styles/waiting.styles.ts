@@ -9,7 +9,7 @@ export const useWaitingStyles = createStyles(() => ({
     display: 'flex',
     alignItems: 'center',
     width: '100%',
-    maxWidth: 'min(720px, 100%)',
+    maxWidth: '100%',
   },
   /** Tooltip 触发器行（hover 展示阶段文案） */
   line: {

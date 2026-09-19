@@ -11,7 +11,7 @@ export const useToolCallStyles = createStyles(() => ({
     flexDirection: 'column',
     gap: 4,
     width: '100%',
-    maxWidth: 'min(720px, 100%)',
+    maxWidth: '100%',
     marginTop: 6,
     boxSizing: 'border-box' as const,
   },

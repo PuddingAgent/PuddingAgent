@@ -15,7 +15,7 @@ export const useHeartbeatStyles = createStyles(() => ({
     fontStyle: 'italic',
   },
   heartbeatContainer: {
-    maxWidth: 'min(720px, 100%)',
+    maxWidth: '100%',
     width: '100%',
     background: 'var(--soft-white)',
     border: '1px solid',

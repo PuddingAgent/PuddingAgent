@@ -20,7 +20,7 @@ export const useExecutionFlowStyles = createStyles(() => ({
     boxSizing: 'border-box' as const,
     borderRadius: 6,
     width: '100%',
-    maxWidth: 'min(720px, 100%)',
+    maxWidth: '100%',
     transition: 'background 150ms ease',
   },
   /** 可展开行：整行可点（cursor + hover + :focus-visible 焦点环）；可点击区最小 32px（§6 规范） */
@@ -123,13 +123,13 @@ export const useExecutionFlowStyles = createStyles(() => ({
   expanded: {
     padding: '2px 8px 6px 22px',
     boxSizing: 'border-box' as const,
-    maxWidth: 'min(720px, 100%)',
+    maxWidth: '100%',
   },
 
   // ── TurnStatus（CU-05 §5.1）──
   /** 单行运行态：与执行流行共享同一内容列与左边界（§6.1），不套气泡壳 */
   turnStatusRow: {
-    maxWidth: 'min(720px, 100%)',
+    maxWidth: '100%',
   },
   /** 墨球宿主槽：20px inline 档，-2px 光学居中于 16px leading 槽（两侧各溢 2px 吃进行 padding） */
   orbHost: {
@@ -251,7 +251,7 @@ export const useExecutionFlowStyles = createStyles(() => ({
     alignItems: 'flex-start' as const,
     gap: 6,
     width: '100%',
-    maxWidth: 'min(720px, 100%)',
+    maxWidth: '100%',
     padding: '2px 4px',
     boxSizing: 'border-box' as const,
   },
@@ -283,13 +283,13 @@ export const useExecutionFlowStyles = createStyles(() => ({
   },
 
   // ── TurnContentStream（AgentTurnCard 重构：正文段 ⇄ 行为组内容块流）──
-  /** 内容块流容器：与时间线同规格（gap 4 / 720px 上限） */
+  /** 内容块流容器：与时间线同规格（gap 4 / 随卡宽 100% 铺满，无固定 px 上限） */
   turnContentStream: {
     display: 'flex',
     flexDirection: 'column' as const,
     gap: 4,
     width: '100%',
-    maxWidth: 'min(720px, 100%)',
+    maxWidth: '100%',
     boxSizing: 'border-box' as const,
   },
   readingDisclosure: {
@@ -318,7 +318,7 @@ export const useExecutionFlowStyles = createStyles(() => ({
   /** 行为组容器：仅承载组头折叠行 + 展开体，不叠加容器级 margin */
   activityGroup: {
     width: '100%',
-    maxWidth: 'min(720px, 100%)',
+    maxWidth: '100%',
   },
   /** 组展开体：成员行纵向排布 */
   activityGroupBody: {
@@ -343,7 +343,7 @@ export const useExecutionFlowStyles = createStyles(() => ({
   /** 交错文本段：与正文同款排版（15/1.75 全宽），区别于过程行的 tertiary 灰阶 */
   timelineMessageSegment: {
     width: '100%',
-    maxWidth: 'min(720px, 100%)',
+    maxWidth: '100%',
     fontSize: 15,
     lineHeight: 1.75,
     color: 'var(--pudding-chat-text)',
@@ -362,7 +362,7 @@ export const useExecutionFlowStyles = createStyles(() => ({
     lineHeight: '20px',
     color: 'var(--pudding-chat-text-caption)',
     fontVariantNumeric: 'tabular-nums' as const,
-    maxWidth: 'min(720px, 100%)',
+    maxWidth: '100%',
   },
   /** 统计项之间的分隔点 */
   statsDot: {

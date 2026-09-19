@@ -174,7 +174,8 @@ const CurrentActivityPanel: React.FC<{
     (!activity.subject ? activity.inputPreview : undefined);
   const previewFull = activity.outputFull || activity.inputFull || preview;
   const subjectFull = activity.subjectFull || activity.subject;
-  const tooltipOverlayStyle = { maxWidth: 'min(720px, calc(100vw - 64px))' };
+  // Tooltip 浮层：仅保留视口约束（随窗口宽度伸缩），不设固定 px 阅读上限
+  const tooltipOverlayStyle = { maxWidth: 'calc(100vw - 64px)' };
   const tooltipOverlayInnerStyle = {
     maxHeight: 'min(52vh, 420px)',
     overflowY: 'auto' as const,

@@ -80,7 +80,7 @@ export const usePanelStyles = createStyles(() => ({
   },
   agentRunMonitor: {
     width: '100%',
-    maxWidth: 'min(720px, 100%)',
+    maxWidth: '100%',
     display: 'flex',
     flexDirection: 'column' as const,
     gap: 4,
@@ -90,7 +90,7 @@ export const usePanelStyles = createStyles(() => ({
     isolation: 'isolate' as const,
     width: '100%',
     minWidth: 0,
-    maxWidth: 'min(720px, 100%)',
+    maxWidth: '100%',
     boxSizing: 'border-box' as const,
     border: '1px solid',
     borderColor:

@@ -171,7 +171,7 @@ export const useAgentStyles = createStyles(({ token }) => ({
     alignItems: 'stretch',
     gap: 7,
     width: '100%',
-    maxWidth: 'min(720px, 100%)',
+    maxWidth: '100%',
     minHeight: 96,
     padding: '12px 16px',
     contain: 'layout style',

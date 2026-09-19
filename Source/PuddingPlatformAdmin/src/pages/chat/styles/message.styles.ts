@@ -116,10 +116,11 @@ export const useMessageStyles = createStyles(({ token }) => ({
     display: 'flex',
     flexDirection: 'column' as const,
     alignItems: 'flex-start',
-    // 内容列统一以 720px 为阅读上限；卡片额外预留 28px 横向 padding + 2px
-    // border，避免外壳扩到 82% 而内部只占 720px，形成大块卡内空白。
+    // 宽度改为响应式百分比：不再设固定 px 阅读上限（2026-09-19 卡片响应式改造）。
+    // 内层内容块（执行流行/工具行/等待态/统计行等）同步放开为 100%，随外壳
+    // 铺满卡宽；百分比随容器宽度自然伸缩，窄屏无需 px 断点兜底。
     width: '100%',
-    maxWidth: 'min(750px, 82%)',
+    maxWidth: '92%',
     minWidth: 0,
     // P0-2: 为气泡外绝对定位的操作按钮预留落点，长气泡/贴底场景防裁切
     paddingBottom: 8,
@@ -156,7 +157,7 @@ export const useMessageStyles = createStyles(({ token }) => ({
     display: 'flex',
     flexDirection: 'column' as const,
     alignItems: 'flex-end',
-    maxWidth: '70%',
+    maxWidth: '82%',
     minWidth: 0,
   },
   messageModalityBadge: {
