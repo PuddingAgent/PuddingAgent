@@ -441,7 +441,7 @@ export const useComposerStyles = createStyles(() => ({
   },
   /** 上下文用量面板（点击圆环展开）。 */
   contextUsagePanel: {
-    width: 300,
+    width: 330,
     fontSize: 12,
   },
   contextUsagePanelHeader: {

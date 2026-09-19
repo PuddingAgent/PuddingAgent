@@ -42,8 +42,11 @@ const clampPct = (value: number): number =>
 export const contextUsageColor = (pct: number): string =>
   pct >= 70 ? '#d84a3a' : pct >= 50 ? '#d98b28' : '#6f8f72';
 
+// 与 ComposerStatusDetails / 上下文胶囊同一口径（÷1000）。原实现用 ÷1024，
+// 导致同一容量在本面板里出现「976.6K」与下游「1000.0k」两种写法
+// （用户反馈 2026-09-19「内容和顺序有点乱」）。
 const formatTokens = (value: number): string =>
-  value >= 1024 ? `${(value / 1024).toFixed(1)}K` : String(Math.round(value));
+  value >= 1000 ? `${(value / 1000).toFixed(1)}K` : String(Math.round(value));
 
 const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   tLimit,
@@ -109,16 +112,12 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
               />
             </div>
             <div className={styles.contextUsagePanelBody}>
+              {/* 不再重复「模型上下文 / 已使用」—— 标题行已给「已使用 X/Y」，
+                  同一对数字再列一逃是面板显乱的主因（用户反馈 2026-09-19）。 */}
               <div className={styles.contextUsagePanelRow}>
-                <span className={styles.contextUsagePanelLabel}>模型上下文</span>
+                <span className={styles.contextUsagePanelLabel}>剩余</span>
                 <span className={styles.contextUsagePanelValue}>
-                  {formatTokens(tLimit)}
-                </span>
-              </div>
-              <div className={styles.contextUsagePanelRow}>
-                <span className={styles.contextUsagePanelLabel}>已使用</span>
-                <span className={styles.contextUsagePanelValue}>
-                  {formatTokens(tUsed)}
+                  {formatTokens(Math.max(tLimit - tUsed, 0))}
                 </span>
               </div>
               {cacheHitRate !== undefined && (
@@ -141,7 +140,18 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
           </>
         )}
 
-        {/* 原轻反馈带「子代理 N」入口：胶囊移除后在此保留可达性。 */}
+        {/* 原 ComposerStatusDetails 弹层内容（运行摘要），整体并入；排在子代理入口
+            之前，使面板按「上下文用量 → 运行状态 → 动作入口」的层级排列。 */}
+        {runtimeDetails && (
+          <div
+            className={styles.contextUsagePanelRuntime}
+            data-testid="context-usage-runtime"
+          >
+            {runtimeDetails}
+          </div>
+        )}
+
+        {/* 原轻反馈带「子代理 N」入口：胶囊移除后在此保留可达性（动作类，置末）。 */}
         {onOpenSubAgents && (
           <button
             type="button"
@@ -154,19 +164,9 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
               {(subAgentsRunning ?? 0) > 0
                 ? `${subAgentsRunning} 个运行中`
                 : '无运行中'}
-              　打开管理器 →
+              {' · '}打开管理器
             </span>
           </button>
-        )}
-
-        {/* 原 ComposerStatusDetails 弹层内容（运行摘要），整体并入。 */}
-        {runtimeDetails && (
-          <div
-            className={styles.contextUsagePanelRuntime}
-            data-testid="context-usage-runtime"
-          >
-            {runtimeDetails}
-          </div>
         )}
       </div>
     ),
