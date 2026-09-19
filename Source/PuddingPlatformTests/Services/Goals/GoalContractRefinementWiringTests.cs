@@ -413,8 +413,17 @@ public sealed class GoalContractRefinementWiringTests
         var contractStore = new GoalAcceptanceContractStore(factory);
         await contractStore.SaveAsync(GoalId, 1, 1, null, [BuildCriterion()], [BuildCheck()]);
 
-        var (worker, verifier, _) = NewWorker(factory, CheckOptions());
+        var (worker, verifier, processManager) = NewWorker(factory, CheckOptions());
         Assert.AreEqual(1, await worker.ProcessOnceAsync(CancellationToken.None));
+
+        // 【标准 2 / 设计 §11 场景】「只输出指定文本 ⇒ 一轮完成、零工具调用、零 build/test、无需 Task/Plan」。
+        // 一轮：ProcessOnceAsync 恰好处理 1 个候选（上一行断言）；零 build/test：A1 文本断言路径
+        // 不得派生或执行任何工程门禁命令；无需 Task/Plan：本用例为无绑定 Goal（SeedUnboundGoalAsync），
+        // objective 由用户创作、迭代内不可改。
+        Assert.AreEqual(
+            0,
+            processManager.Commands.Count,
+            "A1 文本断言路径不得执行任何 build/test 命令（零工具调用）。");
 
         await using var db = await factory.CreateDbContextAsync();
 
