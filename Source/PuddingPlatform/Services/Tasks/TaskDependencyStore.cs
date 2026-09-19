@@ -99,9 +99,13 @@ public sealed class TaskDependencyStore(
         var entities = await db.TaskDependencies.AsNoTracking()
             .Where(item => item.WorkspaceId == workspaceId
                 && (item.PredecessorTaskId == taskId || item.SuccessorTaskId == taskId))
-            .OrderBy(item => item.CreatedAtUtc)
             .ToListAsync(ct);
-        return entities.Select(ToContract).ToArray();
+        // SQLite/EF Core 不支持 DateTimeOffset 的 ORDER BY 翻译（运行时 NotSupportedException），
+        // 确定性排序移到客户端完成（排序语义不变：按 CreatedAtUtc 升序）。
+        return entities
+            .OrderBy(item => item.CreatedAtUtc)
+            .Select(ToContract)
+            .ToArray();
     }
 
     public async Task<TaskDependencyEvaluation> EvaluateAsync(

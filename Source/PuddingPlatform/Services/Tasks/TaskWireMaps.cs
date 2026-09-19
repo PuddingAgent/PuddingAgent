@@ -181,6 +181,9 @@ public static class TaskWireMaps
         TaskErrorCode.TaskParentNotFound => "task.parent_not_found",
         TaskErrorCode.TaskHierarchyInvalid => "task.hierarchy_invalid",
         TaskErrorCode.TaskHasNonTerminalChildren => "task.has_non_terminal_children",
+        // 看板卡依赖错误码（与 TaskToolErrors 保持一致，避免落 PascalCase 兜底）
+        TaskErrorCode.TaskDependencyTaskNotFound => "task.dependency_task_not_found",
+        TaskErrorCode.TaskDependencyInvalid => "task.dependency_invalid",
         _ => code.ToString(),
     };
 

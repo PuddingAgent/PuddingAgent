@@ -273,6 +273,8 @@ public static class TaskToolErrors
         TaskErrorCode.TaskParentNotFound => "task.parent_not_found",
         TaskErrorCode.TaskHierarchyInvalid => "task.hierarchy_invalid",
         TaskErrorCode.TaskHasNonTerminalChildren => "task.has_non_terminal_children",
+        TaskErrorCode.TaskDependencyTaskNotFound => "task.dependency_task_not_found",
+        TaskErrorCode.TaskDependencyInvalid => "task.dependency_invalid",
         TaskErrorCode.AssignmentNotFound => "assignment.not_found",
         TaskErrorCode.AssignmentAlreadyActive => "assignment.already_active",
         TaskErrorCode.AssignmentStale => "assignment.stale",

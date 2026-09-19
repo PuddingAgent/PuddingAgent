@@ -152,6 +152,8 @@
 | `Tasks/TaskStoreException.cs` | Store 契约异常（ErrorCode/TaskId/ExpectedVersion/ActualVersion）|
 | `Tasks/TaskDispatchModels.cs` | 任务派发模型（RuntimeDispatchRequest.ActiveTask 注入）|
 | `Tasks/TaskAgentCommandContracts.cs` | task_* 工具命令契约（List/Get/Claim/Update + `ITaskAgentCommandService`）+ `TaskToolErrors`（§7 统一错误体 code/message/task_id/current_version/current_status/**context_rebuild**）+ `TaskContextRebuildDiagnostics`（卡 3133b149：反查重建失败的非泄露诊断 attempted/stage/outcome）|
+| `Tasks/TaskAdminContracts.cs` | 管理者视角看板契约（`IWorkspaceTaskAdminService` + List/Create/Update/Command 请求与结果）：`TaskAdminGetResult` 携带 `dependencies`（前置/后继边 + satisfied/waiting/broken 评估）、`dependency_tree`（服务端多行缩进文本；无依赖 → `(no dependencies)`，遇环 → `(cycle detected)`）与 `children`（include_children=true 时内联直接子卡）；create/update 可选 `depends_on_task_ids`（追加语义、幂等；自引用/成环/前置缺失 fail-closed → task.dependency_invalid / task.dependency_task_not_found）|
+| `Tasks/TaskDependencyContracts.cs` | finish-to-start 看板卡依赖契约（`ITaskDependencyStore`：Add/Remove/List/Evaluate + Satisfied/Waiting/Broken 评估）|
 | `Tasks/ActiveTaskRuntimeContext.cs` | ActiveTask 运行时上下文（派发链注入 ToolExecutionContext，含 ExpectedVersion）|
 
 ## 自动调度契约（Scheduling/）

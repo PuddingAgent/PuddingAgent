@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using PuddingCode.Tasks;
 using PuddingPlatform.Data;
@@ -24,15 +25,22 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
 {
     private const int DefaultEventsLimit = 20;
 
+    /// <summary>依赖树文本前置链展开的最大深度（防御上限；环由渲染期 onPath 检测截断，超深节点按叶行呈现）。</summary>
+    private const int DependencyTreeMaxDepth = 8;
+
     private readonly SqliteWorkspaceTaskStore _store;
     private readonly TaskCommandService _commands;
     private readonly IDbContextFactory<PlatformDbContext> _dbFactory;
+    private readonly ITaskDependencyStore _dependencies;
 
-    public WorkspaceTaskAdminService(IDbContextFactory<PlatformDbContext> dbFactory)
+    public WorkspaceTaskAdminService(IDbContextFactory<PlatformDbContext> dbFactory, TimeProvider? timeProvider = null)
     {
         _dbFactory = dbFactory;
         _store = new SqliteWorkspaceTaskStore(dbFactory);
         _commands = new TaskCommandService(_store, dbFactory);
+        // 沿用本类「构造仅依赖 IDbContextFactory、内部自建无状态实例」的既有惯例（避免加宽 DI 变更面；
+        // TaskDependencyStore 无状态、每次调用自建 DbContext）。
+        _dependencies = new TaskDependencyStore(dbFactory, timeProvider ?? TimeProvider.System);
     }
 
     // ── 创建 ────────────────────────────────────────────────
@@ -51,6 +59,13 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
         // Stage 2（D1/D5）：挂父校验先于创建——失败不留孤儿卡；
         // 错误码由 TaskHierarchyRules 决定（task.parent_not_found / task.hierarchy_invalid），不抛裸异常。
         await ValidateParentOrThrowAsync(request.WorkspaceId, taskId: null, request.ParentTaskId, ct);
+
+        // 看板卡依赖：与挂父同序 fail-closed——先校验全部前置存在（缺前置 → task.dependency_task_not_found），
+        // 校验先于建卡，不留孤儿卡；自引用在建卡场景不可能（taskId 尚未生成），成环亦不可能（新卡无出边）。
+        if (request.DependsOnTaskIds is { Count: > 0 })
+        {
+            await ValidateDependencyPredecessorsAsync(request.WorkspaceId, request.DependsOnTaskIds, ct);
+        }
 
         var task = await _store.CreateTaskAsync(new CreateTaskRequest
         {
@@ -87,8 +102,13 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
                 ct);
         }
 
+        if (request.DependsOnTaskIds is { Count: > 0 })
+        {
+            await AddDependenciesOrThrowAsync(request.WorkspaceId, task.TaskId, request.DependsOnTaskIds, ct);
+        }
+
         var created = await _store.GetTaskAsync(request.WorkspaceId, task.TaskId, ct) ?? task;
-        return await BuildGetResultAsync(created, DefaultEventsLimit, ct);
+        return await BuildGetResultAsync(created, DefaultEventsLimit, ct, includeDependencies: true);
     }
 
     // ── 列表 ────────────────────────────────────────────────
@@ -221,7 +241,7 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
     // ── 详情 ────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<TaskAdminGetResult?> GetTaskAsync(string workspaceId, string taskId, CancellationToken ct = default)
+    public async Task<TaskAdminGetResult?> GetTaskAsync(string workspaceId, string taskId, bool includeChildren = false, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
         ArgumentException.ThrowIfNullOrWhiteSpace(taskId);
@@ -232,7 +252,7 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
             return null;
         }
 
-        return await BuildGetResultAsync(task, DefaultEventsLimit, ct);
+        return await BuildGetResultAsync(task, DefaultEventsLimit, ct, includeChildren: includeChildren, includeDependencies: true);
     }
 
     // ── 更新 ────────────────────────────────────────────────
@@ -312,8 +332,15 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
 
         await BackfillActorAsync(request.WorkspaceId, request.TaskId, request.ActorId, setCreatedBy: false, ct);
 
+        if (request.DependsOnTaskIds is { Count: > 0 })
+        {
+            // 看板卡依赖（追加语义，幂等）：自引用/成环/前置缺失由 store 与 AddDependenciesOrThrowAsync
+            // fail-closed 转 task.dependency_invalid / task.dependency_task_not_found，不静默忽略。
+            await AddDependenciesOrThrowAsync(request.WorkspaceId, request.TaskId, request.DependsOnTaskIds, ct);
+        }
+
         var updated = await _store.GetTaskAsync(request.WorkspaceId, request.TaskId, ct) ?? current;
-        return await BuildGetResultAsync(updated, DefaultEventsLimit, ct);
+        return await BuildGetResultAsync(updated, DefaultEventsLimit, ct, includeDependencies: true);
     }
 
     // ── 删除 ────────────────────────────────────────────────
@@ -385,7 +412,7 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
         await BackfillActorAsync(request.WorkspaceId, request.TaskId, request.ActorId, setCreatedBy: false, ct);
 
         var updated = await _store.GetTaskAsync(request.WorkspaceId, request.TaskId, ct) ?? current;
-        return await BuildGetResultAsync(updated, DefaultEventsLimit, ct);
+        return await BuildGetResultAsync(updated, DefaultEventsLimit, ct, includeDependencies: true);
     }
 
     // ── 映射与帮助 ──────────────────────────────────────────
@@ -434,7 +461,12 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
         await db.SaveChangesAsync(ct);
     }
 
-    private async Task<TaskAdminGetResult> BuildGetResultAsync(WorkspaceTask task, int eventsLimit, CancellationToken ct)
+    private async Task<TaskAdminGetResult> BuildGetResultAsync(
+        WorkspaceTask task,
+        int eventsLimit,
+        CancellationToken ct,
+        bool includeChildren = false,
+        bool includeDependencies = false)
     {
         var allowedTransitions = TaskStateMachine.GetAllowedTransitions(task.Status)
             .Select(TaskWireMaps.StatusToString)
@@ -459,6 +491,14 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
             .OrderBy(e => e.Sequence)
             .ToListAsync(ct);
 
+        // 看板卡依赖读投影（与父子层级正交：只读，不派生 Status）。
+        TaskAdminDependencyInfo? dependencies = null;
+        string? dependencyTree = null;
+        if (includeDependencies)
+        {
+            (dependencies, dependencyTree) = await BuildDependencyProjectionAsync(task.WorkspaceId, task.TaskId, ct);
+        }
+
         return new TaskAdminGetResult
         {
             Task = ToTaskDetail(task, children),
@@ -466,6 +506,9 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
             AllowedDispositions = allowedDispositions,
             ActiveAssignment = assignment,
             RecentEvents = events.Select(ToEventSummary).ToList(),
+            Dependencies = dependencies,
+            DependencyTree = dependencyTree,
+            Children = includeChildren ? children.Select(ToChildCard).ToList() : null,
         };
     }
 
@@ -588,6 +631,304 @@ public sealed class WorkspaceTaskAdminService : IWorkspaceTaskAdminService
             CompletedChildCount = counts.Terminal,
         };
     }
+
+    private static TaskAdminChildCard ToChildCard(WorkspaceTask child) => new()
+    {
+        TaskId = child.TaskId,
+        Title = child.Title,
+        Status = TaskWireMaps.StatusToString(child.Status),
+        BoardColumn = SafeProjectBoardColumn(child.Status),
+        Priority = TaskWireMaps.PriorityToString(child.Priority),
+        Version = child.Version,
+        UpdatedAtUtc = child.UpdatedAtUtc,
+    };
+
+    // ── 看板卡依赖（depends_on 读写投影；与父子层级语义正交，不派生 Status）─────
+
+    /// <summary>
+    /// create 路径的前置存在性预校验（先校验后建卡，不留孤儿卡）：任一前置不存在 →
+    /// <see cref="TaskErrorCode.TaskDependencyTaskNotFound"/>（task.dependency_task_not_found）。
+    /// </summary>
+    private async Task ValidateDependencyPredecessorsAsync(
+        string workspaceId,
+        IReadOnlyList<string> predecessorIds,
+        CancellationToken ct)
+    {
+        var distinct = predecessorIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (distinct.Count == 0)
+        {
+            throw new TaskStoreException(
+                TaskErrorCode.TaskDependencyInvalid,
+                "depends_on_task_ids must contain at least one non-empty task id.");
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var found = await db.WorkspaceTasks.AsNoTracking()
+            .Where(t => t.WorkspaceId == workspaceId && distinct.Contains(t.TaskId))
+            .Select(t => t.TaskId)
+            .ToListAsync(ct);
+        var missing = distinct.Except(found, StringComparer.Ordinal).ToList();
+        if (missing.Count > 0)
+        {
+            throw new TaskStoreException(
+                TaskErrorCode.TaskDependencyTaskNotFound,
+                $"Dependency predecessor task '{missing[0]}' not found in workspace '{workspaceId}'.",
+                missing[0]);
+        }
+    }
+
+    /// <summary>
+    /// 逐条建立依赖（本卡 = 后继）：复用 <see cref="ITaskDependencyStore.AddAsync"/> 的幂等与环检测；
+    /// store 的 InvalidOperationException（消息为 task_dependency_* 码）统一转结构化
+    /// <see cref="TaskStoreException"/>，fail-closed，绝不静默忽略。
+    /// </summary>
+    private async Task AddDependenciesOrThrowAsync(
+        string workspaceId,
+        string successorTaskId,
+        IReadOnlyList<string> predecessorIds,
+        CancellationToken ct)
+    {
+        foreach (var predecessorId in predecessorIds.Where(id => !string.IsNullOrWhiteSpace(id))
+                     .Distinct(StringComparer.Ordinal))
+        {
+            try
+            {
+                await _dependencies.AddAsync(workspaceId, predecessorId, successorTaskId, ct);
+            }
+            catch (InvalidOperationException ex) when (ex.Message.StartsWith("task_dependency_", StringComparison.Ordinal))
+            {
+                throw ex.Message switch
+                {
+                    "task_dependency_task_not_found" => new TaskStoreException(
+                        TaskErrorCode.TaskDependencyTaskNotFound,
+                        $"Dependency predecessor task '{predecessorId}' not found.",
+                        predecessorId),
+                    "task_dependency_self_reference" => new TaskStoreException(
+                        TaskErrorCode.TaskDependencyInvalid,
+                        $"Task '{successorTaskId}' cannot depend on itself.",
+                        successorTaskId),
+                    "task_dependency_cycle" => new TaskStoreException(
+                        TaskErrorCode.TaskDependencyInvalid,
+                        $"Adding dependency '{predecessorId}' -> '{successorTaskId}' would create a cycle.",
+                        successorTaskId),
+                    _ => new TaskStoreException(TaskErrorCode.TaskDependencyInvalid, ex.Message, successorTaskId),
+                };
+            }
+        }
+    }
+
+    /// <summary>
+    /// 单卡依赖读投影：边 = <see cref="ITaskDependencyStore.ListAsync"/>（双向）；
+    /// 整体评估 = <see cref="ITaskDependencyStore.EvaluateAsync"/>（本卡）；后继每项的贡献状态
+    /// 也取自 EvaluateAsync(后继)（本卡是否在其 broken/waiting 集合中），单一事实源，不复制围栏逻辑。
+    /// </summary>
+    private async Task<(TaskAdminDependencyInfo Info, string Tree)> BuildDependencyProjectionAsync(
+        string workspaceId,
+        string taskId,
+        CancellationToken ct)
+    {
+        var edges = await _dependencies.ListAsync(workspaceId, taskId, ct);
+        var predecessorIds = edges.Where(e => e.SuccessorTaskId == taskId)
+            .Select(e => e.PredecessorTaskId).Distinct(StringComparer.Ordinal).ToList();
+        var successorIds = edges.Where(e => e.PredecessorTaskId == taskId)
+            .Select(e => e.SuccessorTaskId).Distinct(StringComparer.Ordinal).ToList();
+
+        var evaluation = await _dependencies.EvaluateAsync(workspaceId, taskId, ct);
+
+        // 前置链展开（BFS，深度上限 + 全局去重；环在渲染期由 onPath 标注，此处不抛异常）。
+        var adjacency = new Dictionary<string, List<TaskDependency>>(StringComparer.Ordinal)
+        {
+            [taskId] = edges.ToList(),
+        };
+        var knownIds = new HashSet<string>(StringComparer.Ordinal) { taskId };
+        var queue = new Queue<(string Id, int Depth)>();
+        foreach (var id in predecessorIds)
+        {
+            if (knownIds.Add(id))
+            {
+                queue.Enqueue((id, 1));
+            }
+        }
+
+        while (queue.Count > 0)
+        {
+            var (current, depth) = queue.Dequeue();
+            if (depth >= DependencyTreeMaxDepth || adjacency.ContainsKey(current))
+            {
+                continue;
+            }
+
+            var currentEdges = await _dependencies.ListAsync(workspaceId, current, ct);
+            adjacency[current] = currentEdges.ToList();
+            foreach (var parentId in currentEdges.Where(e => e.SuccessorTaskId == current)
+                         .Select(e => e.PredecessorTaskId).Distinct(StringComparer.Ordinal))
+            {
+                if (knownIds.Add(parentId))
+                {
+                    queue.Enqueue((parentId, depth + 1));
+                }
+            }
+        }
+
+        // 涉及任务（链上全部 + 直接后继）的 title/status 一次批量查询。
+        var allIds = adjacency.Keys.Concat(successorIds).ToList();
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var cards = await db.WorkspaceTasks.AsNoTracking()
+            .Where(t => t.WorkspaceId == workspaceId && allIds.Contains(t.TaskId))
+            .Select(t => new { t.TaskId, t.Title, t.Status })
+            .ToDictionaryAsync(
+                t => t.TaskId,
+                t => (Title: (string?)t.Title, t.Status),
+                StringComparer.Ordinal);
+
+        var brokenSet = evaluation.BrokenByTaskIds.ToHashSet(StringComparer.Ordinal);
+        var waitingSet = evaluation.WaitingOnTaskIds.ToHashSet(StringComparer.Ordinal);
+
+        var predecessors = predecessorIds
+            .Select(id => ToDependencyEdge(
+                id,
+                cards,
+                brokenSet.Contains(id) ? "broken" : waitingSet.Contains(id) ? "waiting" : "satisfied"))
+            .ToList();
+
+        var successors = new List<TaskAdminDependencyEdge>();
+        foreach (var successorId in successorIds)
+        {
+            string state;
+            if (!cards.ContainsKey(successorId))
+            {
+                // 后继卡已被硬删（防御；正常数据下依赖边随卡硬删不可达）：按 broken 呈现，不抛异常。
+                state = "broken";
+            }
+            else
+            {
+                var successorEvaluation = await _dependencies.EvaluateAsync(workspaceId, successorId, ct);
+                state = successorEvaluation.BrokenByTaskIds.Contains(taskId) ? "broken"
+                    : successorEvaluation.WaitingOnTaskIds.Contains(taskId) ? "waiting"
+                    : "satisfied";
+            }
+
+            successors.Add(ToDependencyEdge(successorId, cards, state));
+        }
+
+        var info = new TaskAdminDependencyInfo
+        {
+            State = evaluation.State.ToString().ToLowerInvariant(),
+            ReasonCode = evaluation.ReasonCode,
+            Predecessors = predecessors,
+            Successors = successors,
+        };
+        var tree = BuildDependencyTreeText(taskId, cards, adjacency, predecessors, successors);
+        return (info, tree);
+    }
+
+    private static TaskAdminDependencyEdge ToDependencyEdge(
+        string taskId,
+        Dictionary<string, (string? Title, WorkspaceTaskStatus Status)> cards,
+        string evaluationState)
+    {
+        if (!cards.TryGetValue(taskId, out var card))
+        {
+            return new TaskAdminDependencyEdge
+            {
+                TaskId = taskId,
+                Title = null,
+                Status = null,
+                EvaluationState = evaluationState,
+            };
+        }
+
+        return new TaskAdminDependencyEdge
+        {
+            TaskId = taskId,
+            Title = card.Title,
+            Status = TaskWireMaps.StatusToString(card.Status),
+            EvaluationState = evaluationState,
+        };
+    }
+
+    /// <summary>
+    /// 服务端生成的多行缩进依赖树文本（确定性）：无依赖 → "(no dependencies)"；
+    /// 前置链递展开（深度上限内），行尾标注卡状态与评估状态；遇环 → "(cycle detected)"，不抛异常。
+    /// </summary>
+    private static string BuildDependencyTreeText(
+        string rootId,
+        Dictionary<string, (string? Title, WorkspaceTaskStatus Status)> cards,
+        Dictionary<string, List<TaskDependency>> adjacency,
+        IReadOnlyList<TaskAdminDependencyEdge> predecessors,
+        IReadOnlyList<TaskAdminDependencyEdge> successors)
+    {
+        if (predecessors.Count == 0 && successors.Count == 0)
+        {
+            return "(no dependencies)";
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"self: {rootId} | {TitleOf(cards, rootId)} | {StatusOf(cards, rootId)}");
+        sb.AppendLine("predecessors:");
+        var onPath = new HashSet<string>(StringComparer.Ordinal) { rootId };
+        foreach (var edge in predecessors)
+        {
+            AppendEdgeLine(sb, edge, "<-", "  ");
+            RenderAncestors(sb, edge.TaskId, adjacency, cards, onPath, depth: 2);
+        }
+
+        sb.AppendLine("successors:");
+        foreach (var edge in successors)
+        {
+            AppendEdgeLine(sb, edge, "->", "  ");
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private static void RenderAncestors(
+        StringBuilder sb,
+        string id,
+        Dictionary<string, List<TaskDependency>> adjacency,
+        Dictionary<string, (string? Title, WorkspaceTaskStatus Status)> cards,
+        HashSet<string> onPath,
+        int depth)
+    {
+        var parents = adjacency.TryGetValue(id, out var edges)
+            ? edges.Where(e => e.SuccessorTaskId == id)
+                .Select(e => e.PredecessorTaskId)
+                .Distinct(StringComparer.Ordinal)
+                .ToList()
+            : [];
+        var indent = new string(' ', depth * 2);
+        foreach (var parentId in parents)
+        {
+            sb.AppendLine($"{indent}<- {parentId} | {TitleOf(cards, parentId)} | {StatusOf(cards, parentId)}");
+            if (onPath.Contains(parentId))
+            {
+                sb.AppendLine($"{indent}  (cycle detected)");
+                continue;
+            }
+
+            onPath.Add(parentId);
+            RenderAncestors(sb, parentId, adjacency, cards, onPath, depth + 1);
+            onPath.Remove(parentId);
+        }
+    }
+
+    private static void AppendEdgeLine(
+        StringBuilder sb,
+        TaskAdminDependencyEdge edge,
+        string arrow,
+        string indent) => sb.AppendLine(
+        $"{indent}{arrow} {edge.TaskId} | {edge.Title ?? "-"} | {edge.Status ?? "-"} | {edge.EvaluationState}");
+
+    private static string TitleOf(
+        Dictionary<string, (string? Title, WorkspaceTaskStatus Status)> cards,
+        string taskId) => cards.TryGetValue(taskId, out var card) ? card.Title ?? "-" : "-";
+
+    private static string StatusOf(
+        Dictionary<string, (string? Title, WorkspaceTaskStatus Status)> cards,
+        string taskId) => cards.TryGetValue(taskId, out var card) ? TaskWireMaps.StatusToString(card.Status) : "-";
 
     // ── Stage 2：父子层级校验与只读聚合（D1/D3/D5）────────────
 

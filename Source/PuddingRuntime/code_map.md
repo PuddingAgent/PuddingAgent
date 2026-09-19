@@ -112,6 +112,7 @@
 | `Services/TaskTools/TaskGetTool.cs` | `task_get` 工具（单任务查询）|
 | `Services/TaskTools/TaskClaimTool.cs` | `task_claim` 工具（领取任务；ActiveTask 丢失时经服务端反查归属安全重建上下文，缺陷 3f8df399）|
 | `Services/TaskTools/TaskUpdateTool.cs` | `task_update` 工具（状态迁移/disposition；ActiveTask 丢失时同上重建，须 InProgress 或 Blocked（卡 813ad427）；Blocked 下仅 `todo`→Ready 合法，其余由服务端 fail closed）|
+| `Services/TaskTools/ManageTasksTool.cs` | `manage_tasks` 工具（管理者视角跨 Agent 看板 CRUD + 命令；list 支持 children_of/include_child_summary；create/update 支持 parent_task_id、depends_on_task_ids（看板卡依赖，fail-closed 错误码 task.dependency_invalid / task.dependency_task_not_found）；get 返回 dependencies/dependency_tree，include_children=true 时内联子卡）|
 | `Services/TaskTools/TaskToolModels.cs` | 工具参数/结果模型 + `TaskToolErrors` + `TaskToolGuard`（`ValidateActiveTaskOrRebuildAsync`：ActiveTask==null 时按 mine 归属+assignment 匹配+状态门槛+版本 CAS 重建等效上下文；注入路径不做 expected_version 快照比对（缺陷 2d5a2ebe，服务端活版本 CAS 唯一裁决）；重建失败时在 `task.active_context_missing` 上附加非泄露诊断 `context_rebuild{attempted,stage,outcome}`——inputs/incomplete_inputs、lookup/not_visible、ownership/agent_mismatch（卡 3133b149）；卡 813ad427（2026-09-14 裁定）：update 路径状态门槛放宽为 `InProgress｜Blocked`（仍需 active assignment 归属调用方 + 版本 CAS），disposition 合法性仍由服务端状态机 fail closed 裁决，裁定与测试见 `Docs/Reports/blocked-recovery-channel-decision-20260914.md`）|
 
 ## 记忆 & 知识

@@ -92,7 +92,8 @@
 | `Services/Tasks/TaskDispatchOutboxStore.cs` | 派发 outbox 持久化 |
 | `Services/Tasks/TaskDispatchSchemaBootstrapper.cs` | 派发 schema 幂等建表 |
 | `Services/Tasks/TaskDispatchSerialization.cs` | 派发序列化 |
-| `Services/Tasks/TaskDependencyStore.cs` | finish-to-start Task 依赖图；同 Workspace 校验、幂等增删、环检测与 Satisfied/Waiting/Broken 评估 |
+| `Services/Tasks/TaskDependencyStore.cs` | finish-to-start Task 依赖图；同 Workspace 校验、幂等增删、环检测与 Satisfied/Waiting/Broken 评估；ListAsync 排序在客户端完成（SQLite/EF 不支持 DateTimeOffset ORDER BY 翻译，语义不变）|
+| `Services/Tasks/WorkspaceTaskAdminService.cs` | `IWorkspaceTaskAdminService` 实现（manage_tasks 服务面）：复用 Store/CommandService/WireMaps，详情构造含依赖读投影（前置链 BFS 展开 + 后继 EvaluateAsync，单一事实源）与依赖树文本生成；写侧依赖建立复用 TaskDependencyStore.AddAsync（幂等 + 环检测，fail-closed 转结构化错误码）；include_children 复用单次 ListChildrenAsync 结果内联子卡 |
 | `Services/Files/SqliteProviderFileRefStore.cs` | ADR-077 V3-S2b-1 `IFileRefStore` SQLite 实现（llm_provider_file_refs）：原始 SQL + 参数化、`ON CONFLICT DO UPDATE` 幂等 upsert、BEGIN IMMEDIATE + status CAS 并发防重复、近过期（<300s）不分配；RemoteFileId 只存不打印 |
 | `Services/Files/ProviderFileRefSchemaBootstrapper.cs` | ADR-077 V3-S2b-1 `llm_provider_file_refs` 幂等建表（唯一主键 + status/expires_at 索引）|
 | `Services/Tasks/TaskWireMaps.cs` | 枚举↔wire 双向映射 + ErrorCode→wire/HTTP |

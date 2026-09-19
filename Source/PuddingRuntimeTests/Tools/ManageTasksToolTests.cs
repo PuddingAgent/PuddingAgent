@@ -129,7 +129,7 @@ public sealed class ManageTasksToolTests
             return OnList is not null ? OnList(query, ct) : Task.FromResult(ListResult());
         }
 
-        public Task<TaskAdminGetResult?> GetTaskAsync(string workspaceId, string taskId, CancellationToken ct = default)
+        public Task<TaskAdminGetResult?> GetTaskAsync(string workspaceId, string taskId, bool includeChildren = false, CancellationToken ct = default)
         {
             LastAction = "get";
             LastGet = (workspaceId, taskId);

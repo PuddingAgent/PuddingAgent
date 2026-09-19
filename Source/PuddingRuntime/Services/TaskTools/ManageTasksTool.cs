@@ -85,13 +85,14 @@ public sealed class ManageTasksTool : PuddingToolBase<ManageTasksArgs>
                         DueAtUtc = ParseUtc(args.DueAtUtc, "due_at_utc"),
                         SortOrder = args.SortOrder,
                         ParentTaskId = args.ParentTaskId,
+                        DependsOnTaskIds = args.DependsOnTaskIds,
                         ActorId = actorId,
                     }, ct);
                     return ToolExecutionResult.Ok(TaskToolJson.Serialize(result));
                 }
                 case "get":
                 {
-                    var result = await _service.GetTaskAsync(workspaceId, args.TaskId!, ct);
+                    var result = await _service.GetTaskAsync(workspaceId, args.TaskId!, args.IncludeChildren ?? false, ct);
                     if (result is null)
                     {
                         return ToolExecutionResult.Fail(TaskToolErrors.BuildErrorJson(
@@ -121,6 +122,7 @@ public sealed class ManageTasksTool : PuddingToolBase<ManageTasksArgs>
                         SortOrder = args.SortOrder,
                         ParentTaskId = args.ParentTaskId,
                         ClearParent = args.ClearParent ?? false,
+                        DependsOnTaskIds = args.DependsOnTaskIds,
                         ActorId = actorId,
                     }, ct);
                     return ToolExecutionResult.Ok(TaskToolJson.Serialize(result));
@@ -263,6 +265,12 @@ public sealed record ManageTasksArgs
 
     [ToolParam("update 时显式清除父关系（脱挂为顶层；与 parent_task_id 互斥；不传 = 不变更）")]
     public bool? ClearParent { get; init; }
+
+    [ToolParam("create/update 时建立看板卡依赖（本卡为后继，数组为前置任务 ID；幂等；自依赖/成环/前置缺失 fail-closed 报错）")]
+    public IReadOnlyList<string>? DependsOnTaskIds { get; init; }
+
+    [ToolParam("get 时是否内联直接子卡列表（children）；默认 false")]
+    public bool? IncludeChildren { get; init; }
 
     // —— 命令操作 ——
     [ToolParam("命令：assign/run_now/cancel/reopen/archive/mark_failed/resume/requeue（等价于 action，二选一）")]

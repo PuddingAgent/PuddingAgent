@@ -18,8 +18,9 @@ public interface IWorkspaceTaskAdminService
     /// <summary>跨 Agent 的看板任务列表（五列/状态/优先级/指定 agent 过滤，keyset 分页）。</summary>
     Task<TaskAdminListResult> ListTasksAsync(TaskAdminListQuery query, CancellationToken ct = default);
 
-    /// <summary>读取任意任务详情（无 mine 限制）。不存在返回 null（工具层转 task.not_found）。</summary>
-    Task<TaskAdminGetResult?> GetTaskAsync(string workspaceId, string taskId, CancellationToken ct = default);
+    /// <summary>读取任意任务详情（无 mine 限制）。不存在返回 null（工具层转 task.not_found）。
+    /// includeChildren=true 时结果内联直接子卡列表（children，复用详情路径已查出的查询），默认省略。</summary>
+    Task<TaskAdminGetResult?> GetTaskAsync(string workspaceId, string taskId, bool includeChildren = false, CancellationToken ct = default);
 
     /// <summary>更新任务元数据 + 显式状态迁移（Status 走 CanTransition 校验）。</summary>
     Task<TaskAdminGetResult> UpdateTaskAsync(TaskAdminUpdateRequest request, CancellationToken ct = default);
@@ -67,6 +68,14 @@ public sealed record TaskAdminCreateRequest
     /// 挂父<b>不会</b>改动任何 Status / BoardColumn（D3）。
     /// </summary>
     public string? ParentTaskId { get; init; }
+
+    /// <summary>
+    /// 看板卡依赖（finish_to_start）：本卡为后继，数组元素为前置任务 ID。
+    /// 落库复用 <see cref="ITaskDependencyStore.AddAsync"/>（幂等 + 环检测）；前置不存在/自引用/成环
+    /// fail-closed 抛 <see cref="TaskStoreException"/>（task.dependency_task_not_found /
+    /// task.dependency_invalid），不静默忽略。与任务内部 WorkUnit 的 DependsOn（TaskExecutionPlanContracts）无关。
+    /// </summary>
+    public IReadOnlyList<string>? DependsOnTaskIds { get; init; }
 
     /// <summary>操作者（写入 CreatedBy/UpdatedBy）。</summary>
     public string? ActorId { get; init; }
@@ -164,6 +173,53 @@ public sealed record TaskAdminGetResult
     public required IReadOnlyList<string> AllowedDispositions { get; init; }
     public TaskAgentAssignmentSummary? ActiveAssignment { get; init; }
     public required IReadOnlyList<TaskAgentEventSummary> RecentEvents { get; init; }
+
+    /// <summary>看板卡依赖投影（前置 + 后继 + 整体评估状态）；未请求依赖读投影时为 null（wire 省略）。</summary>
+    public TaskAdminDependencyInfo? Dependencies { get; init; }
+
+    /// <summary>服务端生成的多行缩进依赖树文本（含状态标注；无依赖 → "(no dependencies)"；遇环 → "(cycle detected)"，不抛异常）。</summary>
+    public string? DependencyTree { get; init; }
+
+    /// <summary>includeChildren=true 时内联的直接子卡列表（只读，复用单次 ListChildrenAsync 查询）；默认 null（wire 省略）。</summary>
+    public IReadOnlyList<TaskAdminChildCard>? Children { get; init; }
+}
+
+// ── dependencies（看板卡依赖投影；与 TaskExecutionPlanContracts.DependsOn 的 WorkUnit 依赖无关）──
+
+/// <summary>单条依赖边的对端任务投影（title/status 为对端卡当前 wire 值；对端已被硬删时为 null）。</summary>
+public sealed record TaskAdminDependencyEdge
+{
+    public required string TaskId { get; init; }
+    public string? Title { get; init; }
+    public string? Status { get; init; }
+
+    /// <summary>satisfied / waiting / broken（与 <see cref="TaskDependencyEvaluationState"/> 同源小写 wire 值）。</summary>
+    public required string EvaluationState { get; init; }
+}
+
+/// <summary>看板卡依赖投影：前置依赖整体评估状态 + 前置/后继列表。</summary>
+public sealed record TaskAdminDependencyInfo
+{
+    /// <summary>satisfied / waiting / broken（取自 <see cref="ITaskDependencyStore.EvaluateAsync"/>）。</summary>
+    public required string State { get; init; }
+
+    /// <summary>与 State 同源的稳定原因码（dependencies_satisfied / waiting_dependency / dependency_terminal_without_completion）。</summary>
+    public required string ReasonCode { get; init; }
+
+    public IReadOnlyList<TaskAdminDependencyEdge> Predecessors { get; init; } = [];
+    public IReadOnlyList<TaskAdminDependencyEdge> Successors { get; init; } = [];
+}
+
+/// <summary>get 内联的直接子卡只读摘要（复用详情路径已查出的 ListChildrenAsync 结果，不新增查询）。</summary>
+public sealed record TaskAdminChildCard
+{
+    public required string TaskId { get; init; }
+    public required string Title { get; init; }
+    public required string Status { get; init; }
+    public string? BoardColumn { get; init; }
+    public required string Priority { get; init; }
+    public required int Version { get; init; }
+    public required DateTimeOffset UpdatedAtUtc { get; init; }
 }
 
 // ── update ────────────────────────────────────────────────
@@ -207,6 +263,14 @@ public sealed record TaskAdminUpdateRequest
     /// 「不传参数 = 不变更」 vs 「clear_parent = true = 显式清空」必须泾渭分明。
     /// </summary>
     public bool ClearParent { get; init; }
+
+    /// <summary>
+    /// 看板卡依赖（finish_to_start）：本卡为后继，数组元素为前置任务 ID。
+    /// 语义为「追加」：逐条复用 <see cref="ITaskDependencyStore.AddAsync"/>（幂等，重复传同边不报错）；
+    /// 自引用/成环/前置不存在 fail-closed 抛 <see cref="TaskStoreException"/>，不静默忽略。
+    /// 不提供移除语义（移除依赖走 TaskSchedulingController 的 DELETE 端点）。
+    /// </summary>
+    public IReadOnlyList<string>? DependsOnTaskIds { get; init; }
 
     /// <summary>操作者（写入 UpdatedBy）。</summary>
     public string? ActorId { get; init; }

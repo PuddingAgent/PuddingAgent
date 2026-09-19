@@ -282,7 +282,13 @@ public enum TaskErrorCode
     TaskHierarchyInvalid,
 
     /// <summary>task.has_non_terminal_children 409（母卡仍有未终态子卡，归档/取消被 fail-closed 拒绝，D4）</summary>
-    TaskHasNonTerminalChildren
+    TaskHasNonTerminalChildren,
+
+    /// <summary>task.dependency_task_not_found 404（建立看板卡依赖时前置任务不存在）</summary>
+    TaskDependencyTaskNotFound,
+
+    /// <summary>task.dependency_invalid 422（看板卡依赖自引用或成环，fail-closed 拒绝）</summary>
+    TaskDependencyInvalid
 }
 
 /// <summary>task.* 事件类型（不含 automation.* / work_policy.*，那是 P1）。</summary>
