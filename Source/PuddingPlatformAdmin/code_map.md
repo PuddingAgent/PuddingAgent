@@ -63,7 +63,7 @@
 | `src/pages/chat/utils/providerBilling.ts` | 展示适配器注册表 `{id,match,displayName,fallbackCurrencySymbol}` + `resolveBillingAdapter`/`currencySymbolFor`（CNY→¥/USD→$）；providerId 未命中不渲染徽标；新服务商在此加一项即可 |
 | `src/pages/chat/hooks/useProviderBalance.ts` | 余额拉取：providerId 变化即取 + 5min 低频轮询（`usePollingLoader` 页面隐藏自动暂停）+ 手动 `refresh`；任何失败静默降级为 `balance=undefined` + `errorText`，不抛错 |
 | `src/pages/chat/components/ProviderBalanceIndicator.tsx` | 品牌图标（DeepSeek/Mimo 内联 SVG）+ `¥xx.xx` 徽标；`detail` prop 进 Tooltip 第二行（错误原因/刷新提示） |
-| `src/pages/chat/components/GoalBanner.tsx` + `hooks/useGoal.ts` | ADR-074 Goal 状态控件：无 Goal 可开始，Active 可暂停/停止，Paused/Blocked 可恢复/停止，终态可新建；顶栏紧凑按钮显示 phase/iteration，Popover 承载完整 objective、原因与终态时间 |
+| `src/pages/chat/components/GoalBanner.tsx` + `hooks/useGoal.ts` | ADR-074 Goal 状态控件：无 Goal 可开始，Active 可暂停/停止，Paused/Blocked 可恢复/停止，终态可新建；顶栏紧凑按钮显示 phase/iteration，Popover 承载完整 objective、原因与终态时间。`GoalStepsPanel` 惰性化（仅 Popover 内需要）：生产走 `React.lazy(loadGoalStepsPanel)` + `React.Suspense` 轻量 fallback，测试环境同步 `require` 避免 Suspense 抖动；实测该项使 Chat 路由首屏 chunk 507842 → 496132 B（见 `Docs/Reports/Chat-Bundle-Budget-Plan-2026-09-19.md`） |
 | `src/pages/chat/utils/goalContinuationMessage.ts` + `types.ts` + `projections/messageProjection.ts` | 仅对服务端 `goal_managed + goal_continuation` 消息解析 `<goal_payload>`；历史 `\\uXXXX` 由 JSON parser 还原为可读 Goal/Task/工作单元文本，普通用户消息与损坏 payload 均原样保留 |
 | `src/pages/workspace-tasks/SchedulerDrawer.tsx` | Task 看板“调度中心”：权威状态、候选决策码、Pause/Resume/Scan/Repair、revision CAS 策略表单与 Authoritative 前置门禁 |
 | `src/pages/workspace-tasks/TaskEditorDrawer.tsx` + `TaskCard.tsx` + `TaskDetailsDrawer.tsx` | 暴露 Task 自动调度 opt-in、taskType/capability/provider/model/fallback/window；卡片显示“自动”标记并提供纳入/退出、Blocked Resume/Requeue 等用户干预 |

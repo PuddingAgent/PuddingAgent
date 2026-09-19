@@ -26,7 +26,16 @@ import {
 import React, { useState } from 'react';
 import type { GoalAction, GoalSnapshot } from '@/services/platform/api';
 import { isTerminalGoalPhase } from '../hooks/useGoal';
-import GoalStepsPanel from './GoalStepsPanel';
+// GoalStepsPanel 只在详情 Popover 内出现（不在首屏必经链），故惰性化：把它的体积
+// 移出 Chat 路由首屏 chunk（实测回收 11,710 B，见 Docs/Reports/Chat-Bundle-Budget-Plan-2026-09-19.md）。
+// 测试环境必须同步 require：否则 Jest 会因 Suspense 异步挂载而出现断言抖动
+// （沿用 components/ChatMain.tsx 既有写法）。
+const loadGoalStepsPanel = () => import('./GoalStepsPanel');
+const GoalStepsPanel =
+  process.env.NODE_ENV === 'test'
+    ? (require('./GoalStepsPanel')
+        .default as typeof import('./GoalStepsPanel').default)
+    : React.lazy(loadGoalStepsPanel);
 import {
   describeGoalBlocker,
   isKnownGoalBlockerCode,
@@ -331,7 +340,21 @@ const GoalBanner: React.FC<GoalBannerProps> = ({
         ) : null}
       </div>
 
-      <GoalStepsPanel goal={goal} />
+      <React.Suspense
+        fallback={
+          <div
+            style={{
+              marginTop: 10,
+              color: 'var(--pudding-chat-text-subtle)',
+              fontSize: 12,
+            }}
+          >
+            正在加载步骤…
+          </div>
+        }
+      >
+        <GoalStepsPanel goal={goal} />
+      </React.Suspense>
 
       {((goal.statusReason && !blocker) ||
         (terminal && goal.terminalAtUtc)) && (
