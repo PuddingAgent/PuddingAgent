@@ -109,7 +109,11 @@ export const ActivityGroup: React.FC<ActivityGroupProps> = ({
           rows.push(
             <ReasoningDisclosureRow
               key={node.key}
-              mode="inline-full"
+              // 用户批注（2026-09-19）：推理过程在运行中展开、消息输出完毕后折叠。
+              // isCurrent=尾部组内末尾连续 reasoning 段且 run 活跃——只有它保持 inline-full
+              // （全文铺开）；其余（含已完成 turn 的全部推理段）回落 disclosure 折叠行，
+              // 保留「思考 · Ns + 首行摘要 + chevron」，需要时再展开。
+              mode={isCurrent ? 'inline-full' : 'disclosure'}
               lines={
                 node.blocks.length > 0
                   ? node.blocks.map((blk) => ({ id: blk.id, text: blk.text }))

@@ -22,7 +22,10 @@ export const useComposerStyles = createStyles(() => ({
     padding: '10px 12px',
     boxShadow: '0 12px 34px rgba(92, 74, 58, 0.08)',
     zIndex: 10,
-    margin: '0 8px 8px',
+    // 2026-09-19：去掉左右 8px 内缩。composerAligner 已与消息内容同取
+    // 1280 + clamp 留白，再叠加水平 margin 会让输入框比消息卡片窄 16px、
+    // 左右边界错开 8px。仅保留底部间距。
+    margin: '0 0 8px',
     overflow: 'visible' as const,
     transition:
       'background 180ms ease, border-color 180ms ease, box-shadow 180ms ease',
