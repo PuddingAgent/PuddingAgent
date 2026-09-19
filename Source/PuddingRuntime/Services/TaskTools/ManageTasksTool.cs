@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.TaskTools;
 [Tool(
     id: "manage_tasks",
     name: "管理工作区任务",
-    description: "管理者视角的任务看板交互（跨 Agent 的完整 CRUD + 命令）。【何时用】需要创建任务、查看整个看板、分配任务给 Agent、或执行状态命令（assign/run_now/cancel/reopen/archive/mark_failed/resume/requeue）时使用。【怎么用】action 指定操作：list/create/get/update/delete/assign/run_now/cancel/reopen/archive/mark_failed/resume/requeue；workspace_id 由运行时注入。【坑】与 task_list/task_get/task_claim/task_update 区分：那些是执行者视角（处理自己被派发的任务），本工具是管理者视角（跨 Agent 管理整个看板）。",
+    description: "管理者视角的任务看板交互（跨 Agent 的完整 CRUD + 命令）。【何时用】需要创建任务、查看整个看板、分配任务给 Agent、或执行状态命令（assign/run_now/cancel/reopen/archive/mark_failed/resume/requeue）时使用；需要批量收敛（如清理长期滞留的已交付/作废卡）时用 bulk_cancel+status。<【怎么用】action 指定操作：list/create/get/update/delete/assign/run_now/cancel/reopen/archive/mark_failed/resume/requeue/bulk_cancel；workspace_id 由运行时注入。bulk_cancel 的 status 接受逗号分隔的 wire 状态名，逐张走状态机校验，返回计数而非整卡。【坑】与 task_list/task_get/task_claim/task_update 区分：那些是执行者视角（处理自己被派发的任务），本工具是管理者视角（跨 Agent 管理整个看板）。bulk_cancel 不可逆覆盖全部匹配卡，必预写 reason。",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.Low)]
     // 2026-08-28 裁定：task 看板元数据（delete 受 TaskCannotHardDelete 保护仅删无历史 Backlog 任务）（用户原则：仅直接损坏/泄露用户数据需门禁）
@@ -142,6 +142,82 @@ public sealed class ManageTasksTool : PuddingToolBase<ManageTasksArgs>
 
                     return ToolExecutionResult.Ok(TaskToolJson.Serialize(deleted));
                 }
+                // 看板卡 2a92b3ed / 用户 2026-09-19 指令：批量收敛。
+                // 实现要点：① 每张卡仍走 ApplyCommandAsync，状态机逐卡校验，不绕过不变量；
+                // ② 不用游标分页 —— 取消会改变过滤集，keyset 游标会跳过未处理项，因此反复取
+                //    「该状态的首页」直到集合为空；③ 返回紧凑计数而非整卡 JSON（否则一次批量
+                //    会向上下文灌入数百 KB 无价值数据）。
+                case "bulk_cancel":
+                {
+                    var statusWires = (args.Status ?? string.Empty)
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (statusWires.Length == 0)
+                    {
+                        return ToolExecutionResult.Fail(TaskToolErrors.BuildErrorJson(
+                            TaskErrorCode.TaskInvalidTransition,
+                            "bulk_cancel requires status=<wire status list>, e.g. status=Backlog,Ready,NeedsReview."));
+                    }
+
+                    var cancelledIds = new List<string>();
+                    var failures = new List<string>();
+
+                    foreach (var statusWire in statusWires)
+                    {
+                        // 安全阀：单状态最多 200 轮，每轮最多 100 张。
+                        for (var round = 0; round < 200; round++)
+                        {
+                            var page = await _service.ListTasksAsync(new TaskAdminListQuery
+                            {
+                                WorkspaceId = workspaceId,
+                                Status = statusWire,
+                                Limit = 100,
+                            }, ct);
+
+                            if (page.Items.Count == 0)
+                            {
+                                break;
+                            }
+
+                            var progressed = false;
+                            foreach (var item in page.Items)
+                            {
+                                try
+                                {
+                                    await _service.ApplyCommandAsync(new TaskAdminCommandRequest
+                                    {
+                                        WorkspaceId = workspaceId,
+                                        TaskId = item.TaskId,
+                                        Command = "cancel",
+                                        ExpectedVersion = item.Version,
+                                        Reason = args.Reason,
+                                        Force = args.Force ?? false,
+                                        ActorId = actorId,
+                                    }, ct);
+                                    cancelledIds.Add(item.TaskId);
+                                    progressed = true;
+                                }
+                                catch (TaskStoreException ex)
+                                {
+                                    failures.Add(TaskToolErrors.BuildErrorJson(ex));
+                                }
+                            }
+
+                            // 整轮零进展即退出，避免不可取消项造成死循环。
+                            if (!progressed)
+                            {
+                                break;
+                            }
+                        }
+                    }
+
+                    return ToolExecutionResult.Ok(TaskToolJson.Serialize(new
+                    {
+                        cancelled_count = cancelledIds.Count,
+                        cancelled_task_ids = cancelledIds,
+                        failed_count = failures.Count,
+                        failures,
+                    }));
+                }
                 case "assign":
                 case "run_now":
                 case "cancel":
@@ -202,7 +278,7 @@ public sealed class ManageTasksTool : PuddingToolBase<ManageTasksArgs>
 /// <summary>manage_tasks 参数。</summary>
 public sealed record ManageTasksArgs
 {
-    [ToolParam("操作：list/create/get/update/delete/assign/run_now/cancel/reopen/archive/mark_failed/resume/requeue")]
+    [ToolParam("操作：list/create/get/update/delete/assign/run_now/cancel/reopen/archive/mark_failed/resume/requeue/bulk_cancel")]
     public string? Action { get; init; }
 
     // —— list ——
