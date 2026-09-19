@@ -57,7 +57,7 @@ public sealed record FirewallContext
     public static FirewallContext FromExecutionContext(
         ToolExecutionContext context,
         CapabilityPolicy? policy = null,
-        RuntimeExecutionMode mode = RuntimeExecutionMode.Normal,
+        RuntimeExecutionMode? mode = null,
         string? argumentsJson = null,
         string? toolId = null,
         bool isHeartbeat = false,
@@ -71,7 +71,7 @@ public sealed record FirewallContext
         ArgumentsJson = argumentsJson,
         ToolId = toolId ?? string.Empty,
         Policy = policy,
-        RuntimeMode = mode,
+        RuntimeMode = mode ?? RuntimeExecutionMode.Normal,
         WorkingDirectory = context.WorkingDirectory,
         IsHeartbeat = isHeartbeat,
         IsAgentToAgent = isAgentToAgent,

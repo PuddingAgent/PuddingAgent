@@ -54,8 +54,13 @@ public sealed class AgentFirewall : IAgentFirewall
 
     public async Task<FirewallDecision> EvaluateAsync(FirewallContext ctx, CancellationToken ct)
     {
+        // Use _runtime.Mode as the authoritative source — ctx.RuntimeMode is a hint
+        // and might be stale if set before a /yolo command took effect. Resolved once
+        // here so every mode-sensitive gate consumes the same value.
+        var mode = _runtime?.Mode ?? ctx.RuntimeMode;
+
         // ── Gate 1: ModeGate ──
-        var modeResult = EvaluateModeGate(ctx);
+        var modeResult = EvaluateModeGate(ctx, mode);
         if (!modeResult.Allowed) return modeResult;
 
         // ── Gate 2: SessionGate ──
@@ -67,7 +72,7 @@ public sealed class AgentFirewall : IAgentFirewall
         if (!capResult.Allowed) return capResult;
 
         // ── Gate 4: AuthorizationGate ──
-        var authzResult = await EvaluateAuthorizationGateAsync(ctx, ct);
+        var authzResult = await EvaluateAuthorizationGateAsync(ctx, mode, ct);
         if (!authzResult.Allowed) return authzResult;
 
         // ── Gate 5: SandboxGate ──
@@ -75,11 +80,11 @@ public sealed class AgentFirewall : IAgentFirewall
         if (!sandboxResult.Allowed) return sandboxResult;
 
         // ── Gate 6: WorkspaceGate ──
-        var wsResult = EvaluateWorkspaceGate(ctx);
+        var wsResult = EvaluateWorkspaceGate(ctx, mode);
         if (!wsResult.Allowed) return wsResult;
 
         // ── Gate 7: ResourceGate ──
-        var resResult = EvaluateResourceGate(ctx);
+        var resResult = EvaluateResourceGate(ctx, mode);
         if (!resResult.Allowed) return resResult;
 
         // ── Gate 8: StateGate ──
@@ -92,11 +97,8 @@ public sealed class AgentFirewall : IAgentFirewall
     // ────────────────────────────────────────────
     //  Gate 1: ModeGate
     // ────────────────────────────────────────────
-    private FirewallDecision EvaluateModeGate(FirewallContext ctx)
+    private FirewallDecision EvaluateModeGate(FirewallContext ctx, RuntimeExecutionMode mode)
     {
-        // Use _runtime.Mode as the authoritative source — ctx.RuntimeMode is a hint
-        // and might be stale if set before a /yolo command took effect.
-        var mode = _runtime?.Mode ?? ctx.RuntimeMode;
         return mode switch
         {
             RuntimeExecutionMode.Yolo =>
@@ -165,10 +167,10 @@ public sealed class AgentFirewall : IAgentFirewall
     //  Gate 4: AuthorizationGate
     // ────────────────────────────────────────────
     private async Task<FirewallDecision> EvaluateAuthorizationGateAsync(
-        FirewallContext ctx, CancellationToken ct)
+        FirewallContext ctx, RuntimeExecutionMode mode, CancellationToken ct)
     {
         // YOLO mode skips authorization checks
-        if (ctx.RuntimeMode == RuntimeExecutionMode.Yolo)
+        if (mode == RuntimeExecutionMode.Yolo)
             return FirewallDecision.Allow();
 
         if (_authzSvc is null || _toolRegistry is null) return FirewallDecision.Allow();
@@ -255,7 +257,7 @@ public sealed class AgentFirewall : IAgentFirewall
     // ────────────────────────────────────────────
     //  Gate 6: WorkspaceGate
     // ────────────────────────────────────────────
-    private FirewallDecision EvaluateWorkspaceGate(FirewallContext ctx)
+    private FirewallDecision EvaluateWorkspaceGate(FirewallContext ctx, RuntimeExecutionMode mode)
     {
         // Only file-write and file-patch tools are subject to workspace checks.
         // file_read uses skipWorkspaceCheck=true by design.
@@ -263,7 +265,7 @@ public sealed class AgentFirewall : IAgentFirewall
             return FirewallDecision.Allow();
 
         // YOLO mode skips workspace boundary
-        if (ctx.RuntimeMode == RuntimeExecutionMode.Yolo)
+        if (mode == RuntimeExecutionMode.Yolo)
             return FirewallDecision.Allow();
 
         // Check that the file path(s) in arguments are inside the workspace.
@@ -287,10 +289,10 @@ public sealed class AgentFirewall : IAgentFirewall
     // ────────────────────────────────────────────
     //  Gate 7: ResourceGate
     // ────────────────────────────────────────────
-    private FirewallDecision EvaluateResourceGate(FirewallContext ctx)
+    private FirewallDecision EvaluateResourceGate(FirewallContext ctx, RuntimeExecutionMode mode)
     {
         // YOLO 模式跳过所有资源限制
-        if (ctx.RuntimeMode == RuntimeExecutionMode.Yolo)
+        if (mode == RuntimeExecutionMode.Yolo)
             return FirewallDecision.Allow();
 
         if (ctx.Policy is null)
