@@ -8,6 +8,7 @@ using PuddingCode.Configuration;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.SubAgents;
+using PuddingRuntime.Services.Diagnostics;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -15,7 +16,7 @@ namespace PuddingRuntime.Services.Tools;
 /// Agent 自我诊断工具 — 让 Agent 读取自身的运行时指标，
 /// 实现自我观察 → 自我优化的反馈闭环。
 ///
-/// 支持九种诊断模式：
+/// 支持十种诊断模式：
 ///   - tool_stats: 查询指定工具的调用统计（成功率、耗时、常见错误）
 ///   - slowest_tools: 列出最慢的 N 个工具
 ///   - cache_health: 查询缓存命中率和 prefix churn 来源
@@ -25,6 +26,9 @@ namespace PuddingRuntime.Services.Tools;
 ///   - token_breakdown: 返回当前（或指定 session_id）最近一次请求的分层 token 分解（MessageTokens/ToolDefinitionTokens/SystemMessageTokens/HistoryMessageTokens）
 ///   - entropy_probe: 返回当前（或指定 session_id）最近一次请求各层的 gzip 压缩比（SystemMessage/HistoryMessage/ToolDefinition）
 ///   - context_health: 返回当前会话的上下文健康状态（用量比例、状态、剩余 token 等，对齐 ContextHealthSnapshot）
+///   - diagnose: 汇总工具/缓存/上下文/子代理四个维度并运行确定性诊断引擎，
+///     返回带证据的判定（healthy/degraded/critical/unknown）与 findings；
+///     证据不足时一律给 unknown，并把「跳过了哪些检查、为什么」一并返回
 /// </summary>
 [Tool(
     id: "agent_diagnostics",
@@ -71,7 +75,8 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             "token_breakdown" => await GetTokenBreakdownAsync(args, context, ct),
             "entropy_probe" => await GetEntropyProbeAsync(args, context, ct),
             "context_health" => await GetContextHealthAsync(args, context, ct),
-            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, context_health." })
+            "diagnose" => await GetDiagnosisAsync(args, context, ct),
+            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, context_health, diagnose." })
         };
 
         return ToolExecutionResult.Ok(result);
@@ -582,6 +587,206 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
         {
             return JsonSerializer.Serialize(new { error = "Failed to compute context health.", detail = ex.Message });
         }
+    }
+
+    // ── Diagnoser ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// 先采集四个维度的聚合量，再交给纯函数诊断引擎。
+    /// 任一维度不可用时通过 *Error 字段显式传入，引擎会记为 source.unavailable 发现，
+    /// 绝不把「查不到」当成「没问题」。
+    /// </summary>
+    private async Task<string> GetDiagnosisAsync(
+        AgentDiagnosticsArgs args, ToolExecutionContext context, CancellationToken ct)
+    {
+        var input = await CollectDiagnosisInputAsync(args, context, ct);
+        var report = RuntimeDiagnosisEngine.Diagnose(input);
+        return JsonSerializer.Serialize(report, new JsonSerializerOptions
+        {
+            WriteIndented = false,
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        });
+    }
+
+    private async Task<DiagnosisInput> CollectDiagnosisInputAsync(
+        AgentDiagnosticsArgs args, ToolExecutionContext context, CancellationToken ct)
+    {
+        var sessionId = args.SessionId ?? context.SessionId;
+        var workspaceId = args.WorkspaceId ?? context.WorkspaceId;
+        var agentInstanceId = args.AgentInstanceId ?? context.AgentInstanceId;
+        var hoursBack = Math.Clamp(args.HoursBack ?? 24, 1, 720);
+        var maxRuns = Math.Clamp(args.MaxRuns ?? 50, 1, 1000);
+
+        // 1) 工具维度：只查一次活动流，在内存里分组，避免逐工具重复查询。
+        var tools = new List<DiagnosisToolMetric>();
+        var totalActivities = 0;
+        DateTimeOffset? windowStart = null;
+        DateTimeOffset? windowEnd = null;
+
+        if (_activitySink is not null)
+        {
+            var activities = await _activitySink.QueryAsync(new RuntimeActivityQuery { Limit = 2000 }, ct);
+            totalActivities = activities.Count;
+
+            var toolActivities = activities
+                .Where(a => a.Metadata is not null
+                            && a.Metadata.TryGetValue("tool_name", out var name)
+                            && !string.IsNullOrWhiteSpace(name))
+                .ToList();
+
+            if (toolActivities.Count > 0)
+            {
+                var stamps = toolActivities.Select(a => a.StartedAtUtc).ToList();
+                windowStart = stamps.Min();
+                windowEnd = stamps.Max();
+            }
+
+            tools = toolActivities
+                .GroupBy(a => a.Metadata!["tool_name"], StringComparer.Ordinal)
+                .Select(g => new DiagnosisToolMetric(
+                    g.Key,
+                    g.Count(),
+                    g.Count(a => string.Equals(
+                        a.Status, RuntimeActivityStatuses.Failed, StringComparison.OrdinalIgnoreCase)),
+                    g.Average(a => a.DurationMs ?? 0),
+                    g.Max(a => a.DurationMs ?? 0),
+                    g.Where(a => !string.IsNullOrWhiteSpace(a.ErrorMessage))
+                        .GroupBy(a => TruncateError(a.ErrorMessage!))
+                        .OrderByDescending(x => x.Count())
+                        .Take(5)
+                        .Select(x => new DiagnosisErrorBucket(x.Key, x.Count()))
+                        .ToList()))
+                .ToList();
+        }
+
+        // 2) 缓存：会话级，必须带 session_id。
+        double? cacheHitRate = null;
+        int? cacheAnalyzed = null;
+        string? cacheError = null;
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var cacheSvc = scope.ServiceProvider.GetService<ICacheDiagnosticsService>();
+            if (cacheSvc is null)
+            {
+                cacheError = "Cache diagnostics service is not available in this environment.";
+            }
+            else if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                cacheError = "session_id is required to query cache health.";
+            }
+            else
+            {
+                try
+                {
+                    var cacheReport = await cacheSvc.GetSessionReportAsync(sessionId, limit: 50, ct);
+                    cacheHitRate = cacheReport.AverageCacheHitRate;
+                    cacheAnalyzed = cacheReport.AnalyzedEventCount;
+                }
+                catch (Exception ex)
+                {
+                    cacheError = ex.Message;
+                }
+            }
+        }
+
+        // 3) 上下文健康。
+        double? contextUsage = null;
+        string? contextState = null;
+        string? contextError = null;
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var capacityResolver = scope.ServiceProvider.GetService<IContextCapacityResolver>();
+            var compactionService = scope.ServiceProvider.GetService<IContextCompactionService>();
+
+            if (capacityResolver is null || compactionService is null)
+            {
+                contextError = "Context capacity/compaction services are not available in this environment.";
+            }
+            else if (string.IsNullOrWhiteSpace(sessionId)
+                     || string.IsNullOrWhiteSpace(workspaceId)
+                     || string.IsNullOrWhiteSpace(agentInstanceId))
+            {
+                contextError = "session_id, workspace_id, and agent_instance_id are required.";
+            }
+            else
+            {
+                try
+                {
+                    var capacity = await capacityResolver.ResolveAsync(workspaceId, agentInstanceId, ct);
+                    if (capacity is null)
+                    {
+                        contextError = "Unable to resolve the context window capacity for this agent.";
+                    }
+                    else
+                    {
+                        var health = await compactionService.GetHealthAsync(
+                            sessionId,
+                            ct,
+                            contextWindowTokens: capacity.ContextWindowTokens,
+                            maxOutputTokens: capacity.MaxOutputTokens,
+                            maxInputTokens: capacity.MaxInputTokens);
+                        contextUsage = health.UsageRatio;
+                        contextState = health.State.ToString();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    contextError = ex.Message;
+                }
+            }
+        }
+
+        // 4) 子代理：唯一自带真实时间窗的数据源。
+        var subAgentTotalRuns = 0;
+        var subAgentSuccessRuns = 0;
+        string? subAgentError = null;
+        if (_subAgentDiagnostics is null)
+        {
+            subAgentError = "Sub-agent diagnostics service is not available in this environment.";
+        }
+        else if (string.IsNullOrWhiteSpace(workspaceId) || string.IsNullOrWhiteSpace(agentInstanceId))
+        {
+            subAgentError = "workspace_id and agent_instance_id are required.";
+        }
+        else
+        {
+            try
+            {
+                var subReport = await _subAgentDiagnostics.GetDiagnosticsAsync(new SubAgentDiagnosticsRequest
+                {
+                    WorkspaceId = workspaceId,
+                    AgentInstanceId = agentInstanceId,
+                    HoursBack = hoursBack,
+                    MaxRuns = maxRuns,
+                }, ct);
+                subAgentTotalRuns = subReport.Overall.TotalRuns;
+                subAgentSuccessRuns = subReport.Overall.SuccessCount;
+            }
+            catch (Exception ex)
+            {
+                subAgentError = ex.Message;
+            }
+        }
+
+        return new DiagnosisInput
+        {
+            TotalActivities = totalActivities,
+            WindowStartUtc = windowStart,
+            WindowEndUtc = windowEnd,
+            Tools = tools,
+            CacheHitRate = cacheHitRate,
+            CacheAnalyzedEvents = cacheAnalyzed,
+            CacheError = cacheError,
+            ContextUsageRatio = contextUsage,
+            ContextState = contextState,
+            ContextError = contextError,
+            SubAgentTotalRuns = subAgentTotalRuns,
+            SubAgentSuccessRuns = subAgentSuccessRuns,
+            // SubAgentDiagnosticsReport 目前不暴露预算耗尽计数，因此传 null 表示未知。
+            SubAgentBudgetExhausted = null,
+            SubAgentHoursBack = hoursBack,
+            SubAgentError = subAgentError,
+        };
     }
 
     private static string TruncateError(string message)

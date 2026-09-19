@@ -122,6 +122,74 @@ public sealed class AgentDiagnosticsToolTests
             "services are not available");
     }
 
+    [TestMethod]
+    public async Task Diagnose_PartialDataSources_ReportsUnknownWithCoverageAndSkipReasons()
+    {
+        // 只有上下文维度可解析：活动流、缓存、子代理全都不可用。
+        // 契约：不得因此声称健康，且必须把「覆盖不完整」与「跳过了哪些检查」如实报出来。
+        var resolver = new FakeContextCapacityResolver
+        {
+            Capacity = new ResolvedContextCapacity(200_000, 8_192, 128_000),
+        };
+        var compaction = new FakeContextCompactionService
+        {
+            Health = new ContextHealthSnapshot(
+                "session-1", 50_000, 200_000, 180_000, 130_000, 0.277,
+                ContextHealthState.Healthy, false, false, false),
+        };
+        var tool = CreateTool(resolver, compaction, out var provider);
+        using (provider)
+        {
+            var result = await ExecuteAsync(tool, """{"action":"diagnose"}""");
+
+            Assert.IsTrue(result.Success, result.Error);
+
+            using var doc = JsonDocument.Parse(result.Output);
+            var root = doc.RootElement;
+
+            Assert.AreEqual("unknown", root.GetProperty("verdict").GetString());
+
+            var coverage = root.GetProperty("coverage");
+            Assert.AreEqual("partial", coverage.GetProperty("scope").GetString());
+            Assert.AreEqual("available", coverage.GetProperty("context").GetString());
+            Assert.AreEqual("unavailable", coverage.GetProperty("cache").GetString());
+            Assert.AreEqual("unavailable", coverage.GetProperty("activity").GetString());
+            Assert.AreEqual("unavailable", coverage.GetProperty("subagent").GetString());
+
+            var codes = root.GetProperty("findings").EnumerateArray()
+                .Select(f => f.GetProperty("code").GetString())
+                .ToList();
+            CollectionAssert.Contains(codes, "source.unavailable");
+            CollectionAssert.Contains(codes, "coverage.partial");
+
+            Assert.IsTrue(
+                root.GetProperty("checks_skipped").GetArrayLength() > 0,
+                "跳过的检查必须带原因，不能静默省略");
+
+            // 观测窗口必须如实回报 unknown，而不是编造一个时间范围。
+            Assert.AreEqual(
+                "unknown",
+                root.GetProperty("observation_window").GetProperty("window_start_utc").GetString());
+        }
+    }
+
+    [TestMethod]
+    public async Task Diagnose_UnknownActionMessageListsDiagnose()
+    {
+        var resolver = new FakeContextCapacityResolver();
+        var compaction = new FakeContextCompactionService();
+        var tool = CreateTool(resolver, compaction, out var provider);
+        using (provider)
+        {
+            var result = await ExecuteAsync(tool, """{"action":"nope"}""");
+
+            using var doc = JsonDocument.Parse(result.Output);
+            StringAssert.Contains(
+                doc.RootElement.GetProperty("error").GetString()!,
+                "diagnose");
+        }
+    }
+
     private static AgentDiagnosticsTool CreateTool(
         IContextCapacityResolver resolver,
         IContextCompactionService compaction,

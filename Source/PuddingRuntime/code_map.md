@@ -62,6 +62,7 @@
 | `Services/LlmRequestBudgetGuard.cs` | 预算守卫 |
 | `Services/WarmPrefixCompaction.cs` | 长循环压缩计划与 checkpoint 合同；复用当前 warm prefix，固定尾部摘要指令，只接受真实缩小结果 |
 | `Services/ProviderRateLimiter.cs` | Provider/model 并发速率限制；租约携带等待时长与 acquire 前后可用槽位的只读诊断 |
+| `Services/Diagnostics/RuntimeDiagnosisEngine.cs` | 🆕 确定性诊断引擎（服务 `agent_diagnostics action=diagnose`）：纯函数、无 I/O、无时钟，把工具/缓存/上下文/子代理四维聚合量转成带证据的 findings（code/severity/category/observation/evidence/suggested_action）。三条诚实性硬规则：①无证据（或所有检查因样本不足跳过）判 `unknown`，绝不判 `healthy`；②`checks_skipped` 逐条记录被跳过的检查及原因；③四个数据源未全通时 `coverage.scope=partial` 且不得声称整体健康。阈值：失败率 0.20/0.50、错误集中度 0.60、耗时离群 3× 中位数、缓存命中 0.50/0.20、上下文占用 0.80/0.92、子代理失败率 0.25、最小样本 5 次 |
 
 ## 工具系统
 
@@ -73,7 +74,7 @@
 | `Tools/BuiltIns/Files/FileSearchTool.cs` | 文件名搜索工具（ADR-089 U0-S3 + **G3 glob 统一**）；Everything 清单不可自证时差分补足内置枚举——`no_match` 仅在覆盖 Complete 时输出，非 Complete 附恰好一次覆盖声明；auto 模式降级显式声明 fallbackFrom/fallbackReason。**G3**：文件级过滤统一由 `FileSearchPatternMatcher` 承担并二分——含通配符走共享 `PuddingCode.Tools.Retrieval.RetrievalGlobMatcher`（`ignoreCase: true`，`*`/`?` 不跨 `/`），**不含通配符保留大小写不敏感子串包含（not-glob 契约，U1 拆参迁移点）**；本地 `GlobLikeMatch`（`*` 跨 `/` 旧语义）与 `**/` 剥离正则已删；legacy `BuiltInRecursiveFileSearchProvider.SearchAsync` 改为 `"*"` 全量枚举 → matcher 过滤 → `Take`（**先过滤再截断**，消除 Win32 前导匹配怪癖 `*.txt` 命中 `a.txtx` 与截断漏文件）；零调用方的 provider 级 `ToDirectorySearchPattern` 及专属 `using System.Text.RegularExpressions` 已删除 |
 | `Tools/BuiltIns/Git/GitCommitTool.cs` | git_commit 提交工具；files 数组反序列化兼容 `string` 与 `string[]`（`StringOrStringArrayConverter`） |
 | `Tools/BuiltIns/Files/FileChunkService.cs` | Runtime 文件工具的大文件分块/流式读取服务；不再反向依赖 Platform |
-| `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | Agent 上下文/Token 诊断；通过 Core 仓储契约读取持久化诊断 |
+| `Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs` | Agent 自我诊断工具，十种 action：tool_stats / slowest_tools / cache_health / sub_agent_stats / compaction_stats / latency_breakdown / token_breakdown / entropy_probe / context_health / **diagnose**；`diagnose` 先采集四维聚合量（活动流一次查询后内存分组、缓存按会话、上下带走 capacity+health、子代理带 HoursBack）再交给 `Services/Diagnostics/RuntimeDiagnosisEngine` 做确定性判定，任一数据源不可用时以 `source.unavailable` + `checks_skipped` 显式报出，而非当作无问题 |
 | `Tools/BuiltIns/Management/BootstrapRebootTool.cs` | `bootstrap_reboot` 点火遥控；默认请求 Desktop `desktop-build` 构建+事务部署+哈希校验，也支持 `prebuilt-artifact` 交付 Agent 已编译产物与显式 `restart-only` |
 | `Tools/BuiltIns/SmartWorkflow/` | 七个角色化 Smart 入口；统一 `task` schema、历史参数归一化、子代理报告校验；`SmartWorkflowToolBase.cs` 校验失败时 partial-salvage：附验证说明后原样返回子代理实际产出，父 Agent 仍可用 |
 | `Tools/Platform/` | 平台工具实现 |
