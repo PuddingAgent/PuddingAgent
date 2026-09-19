@@ -169,6 +169,13 @@ export const useLayoutStyles = createStyles(({ token }) => ({
     flex: 1,
     minWidth: 0,
     minHeight: 0,
+    // 阅读宽度上限（2026-09-19 用户诉求第 1/2 项：消息区继续收窄 + 输入框同宽对齐）：
+    // 消息列表（timelineRegion）与 IntentConsole 是本列的两个兄弟节点，
+    // 故此处设上限即可让两者自动同宽、左右边界严格对齐，无需分别调 padding。
+    // 用 maxWidth 而非继续加大 chatBody 的 padding：padding 方案在超宽屏仍会让
+    // 正文无限拉宽（一行过长不利阅读），maxWidth 才能给出稳定的阅读宽度。
+    maxWidth: 1040,
+    margin: '0 auto',
   },
   messageList: {
     flex: 1,
