@@ -129,6 +129,41 @@ describe('subscribeSessionEvents error handling', () => {
     );
   });
 
+  // S3（时效语义）：游标必须显式下发（含 0）。
+  // 服务端对「无游标」只推实时帧（fail-safe），因此「显式 0 ＝ 有意全量回放」
+  // 与「无游标 ＝ 客户端没有权威位置」必须在协议上可区分。
+  it('sends an explicit Last-Event-ID when the cursor is 0', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      body: null,
+      headers: { get: () => null },
+    });
+
+    subscribeSessionEvents('session-1', jest.fn(), undefined, {
+      afterSequence: 0,
+    });
+    await flushPromises();
+
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(init.headers['Last-Event-ID']).toBe('0');
+  });
+
+  it('omits Last-Event-ID when no cursor is provided', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      body: null,
+      headers: { get: () => null },
+    });
+
+    subscribeSessionEvents('session-1', jest.fn(), undefined, {});
+    await flushPromises();
+
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(init.headers['Last-Event-ID']).toBeUndefined();
+  });
+
   it('surfaces turn.failed errorMessage as message without legacy rename', () => {
     expect(
       projectConversationEventEnvelope(

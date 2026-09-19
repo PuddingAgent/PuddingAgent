@@ -219,7 +219,7 @@ section("5. SSE 实时流 — id 字段 + 新事件名映射")
 
 try:
     h = {"Authorization": f"Bearer {token}"}
-    sse_url = f"{BASE}/api/sessions/{session_id}/events/stream"
+    sse_url = f"{BASE}/api/sessions/{session_id}/events/stream?afterSequence=0"
     r = requests.get(sse_url, headers=h, stream=True, timeout=15)
 
     if r.status_code == 200:

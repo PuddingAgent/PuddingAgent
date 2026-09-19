@@ -11,6 +11,19 @@ import { logChatDiag } from '../utils/chatDiagnostics';
 import { resolveSessionReplayPollInterval } from '../utils/chatStateUtils';
 import { isSessionNotFoundError } from './sessionRuntimeCleanup';
 
+/**
+ * startSessionEventStream 的可选覆盖项（S3：游标必须显式）。
+ */
+export interface StartSessionEventStreamOptions {
+  /**
+   * 显式订阅起点。省略时使用 lastSequenceNumRef（由 bootstrap/history 写入的权威位置）。
+   * 显式 0 表示**有意全量回放**，仅用于刚创建的新会话（事件日志短且有界）。
+   */
+  cursor?: number;
+  /** 诊断用：为何以该游标开流。 */
+  reason?: string;
+}
+
 interface SessionEventConnectionPorts {
   applySessionEvent: (
     event: AdminChatStreamEvent,
@@ -110,7 +123,7 @@ export function useSessionEventConnection() {
   }, [clearSessionEventTimers]);
 
   const startSessionEventStream = useCallback(
-    (sessionId: string) => {
+    (sessionId: string, options?: StartSessionEventStreamOptions) => {
       if (!sessionId) return;
       const ports = portsRef.current;
       const previousStreamSessionId = sseSessionIdRef.current;
@@ -131,7 +144,13 @@ export function useSessionEventConnection() {
       }
       sseSessionIdRef.current = sessionId;
       ports.syncSessionIdentity();
-      const afterSequence = Math.max(0, ports.lastSequenceNumRef.current);
+      // S3：游标必须显式。显式 0 ＝调用方有意全量回放（仅限刚创建的新会话）；
+      // 省略＝沿用 lastSequenceNumRef（bootstrap/history 写入的权威位置）。
+      const explicitCursor = options?.cursor;
+      const afterSequence =
+        typeof explicitCursor === 'number'
+          ? Math.max(0, explicitCursor)
+          : Math.max(0, ports.lastSequenceNumRef.current);
       recordPerfEvent('chat.sse.start', { sessionId });
       logChatDiag('sse.start', {
         sessionId,
@@ -139,6 +158,9 @@ export function useSessionEventConnection() {
         selectedSessionId: ports.selectedSessionIdRef.current,
         sessionIdRef: ports.sessionIdRef.current,
         lastSequenceNum: afterSequence,
+        cursorSource:
+          typeof explicitCursor === 'number' ? 'explicit' : 'authoritative-ref',
+        cursorReason: options?.reason,
         activeMessageCount: ports.activeMessageIdsRef.current.size,
         turnCount: ports.turnsRef.current.length,
       });

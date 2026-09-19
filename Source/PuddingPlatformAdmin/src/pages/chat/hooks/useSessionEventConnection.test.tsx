@@ -55,6 +55,44 @@ describe('useSessionEventConnection', () => {
     act(() => result.current.stopSessionEventStream());
     unmount();
   });
+
+  it('honours an explicit cursor over the authoritative ref', () => {
+    const { result, unmount } = renderHook(() => useSessionEventConnection());
+
+    act(() => {
+      result.current.bindSessionEventConnection({
+        applySessionEvent: jest.fn(),
+        handleSessionNotFound: jest.fn(),
+        pruneTrackedActiveMessages: jest.fn(() => false),
+        replayMissedSessionEvents: jest.fn(async () => {}),
+        replayMissedSessionEventsIfNeeded: jest.fn(async () => false),
+        resetStreamCursorForSessionChange: jest.fn(),
+        flushPendingDeltas: jest.fn(),
+        syncSessionIdentity: jest.fn(),
+        activeMessageIdsRef: { current: new Set() },
+        lastSequenceNumRef: { current: 9865 },
+        streamStartAtRef: { current: new Map() },
+        selectedSessionIdRef: { current: 'session-new' },
+        sessionIdRef: { current: 'session-new' },
+        turnsRef: { current: [] },
+      });
+      // S3：显式 0 ＝「有意全量回放」（刚创建的新会话），必须压过 ref 里的旧游标。
+      result.current.startSessionEventStream('session-new', {
+        cursor: 0,
+        reason: 'compaction-successor',
+      });
+    });
+
+    expect(subscribeSessionEvents).toHaveBeenCalledWith(
+      'session-new',
+      expect.any(Function),
+      expect.any(AbortSignal),
+      expect.objectContaining({ afterSequence: 0 }),
+    );
+
+    act(() => result.current.stopSessionEventStream());
+    unmount();
+  });
 });
 
 jest.mock('antd', () => ({ message: { error: jest.fn() } }));

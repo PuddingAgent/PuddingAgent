@@ -220,3 +220,35 @@ public sealed record SnapshotRequiredInfo(
     long MinimumAvailableSequence,
     string SnapshotUrl
 );
+
+/// <summary>
+/// SSE 订阅起点解析结果。
+///
+/// 背景（结构性缺陷「实时通道失去时效语义」S4）：
+/// 无游标连接此前被当作 <c>after = 0</c>，于是把**多天前**的事件当实时帧下发，
+/// 消费端无法区分「历史」与「此刻发生」（帧虽已带 replay 标记，但回放量本身无界）。
+///
+/// 现在的语义：
+/// <list type="bullet">
+/// <item>显式游标（含 0）＝客户端声明了自己的权威位置，按该位置回放。
+/// 显式 0 表示**有意全量回放**，仅由「刚创建的新会话」使用。</item>
+/// <item>无游标＝客户端没有权威位置，fail-safe 只推实时帧（从 head 起），
+/// 历史由 <c>/bootstrap</c> 快照负责。未知调用方再也不会拿到伪实时历史。</item>
+/// </list>
+/// </summary>
+public readonly record struct SessionEventStreamStart(long After, string Phase)
+{
+    public const string LiveOnlyPhase = "live-only";
+    public const string ReplayFromZeroPhase = "replay-from-zero";
+    public const string ReplayAfterPhase = "replay-after";
+
+    /// <summary>
+    /// 解析订阅起点。纯函数，便于在不起 SSE 连接的前提下锁定语义。
+    /// </summary>
+    public static SessionEventStreamStart Resolve(long? explicitCursor, long head) =>
+        explicitCursor is null
+            ? new SessionEventStreamStart(head, LiveOnlyPhase)
+            : new SessionEventStreamStart(
+                Math.Max(0, explicitCursor.Value),
+                explicitCursor.Value > 0 ? ReplayAfterPhase : ReplayFromZeroPhase);
+}

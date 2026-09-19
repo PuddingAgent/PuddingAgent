@@ -212,10 +212,12 @@ public class SessionEventsController : ControllerBase
         }
 
         // ADR-057: snapshot_required — cursor below minimum available sequence.
+        // 只对「显式游标」做下界校验：无游标表示客户端没有权威位置，
+        // 它不回放历史（见下方 SessionEventStreamStart.Resolve），因此无需快照校验。
         var cursor = afterSequence ?? 0L;
+        var bounds = await _conversationEventStore.GetBoundsAsync(sessionId, ct);
         if (cursor > 0)
         {
-            var bounds = await _conversationEventStore.GetBoundsAsync(sessionId, ct);
             if (bounds.MinSequence.HasValue && cursor < bounds.MinSequence.Value)
             {
                 _logger.LogWarning(
@@ -235,13 +237,20 @@ public class SessionEventsController : ControllerBase
             }
         }
 
+        // S4：显式游标（含 0）＝按该位置回放；无游标＝从 head 起只推实时帧（fail-safe）。
+        // 这消除了「未知调用方把整份事件日志当实时帧收下」的默认行为。
+        var start = SessionEventStreamStart.Resolve(
+            afterSequence,
+            bounds.MaxSequence ?? 0L);
+
         ConfigureSseResponse(Response);
 
         _logger.LogInformation(
-            "[SessionEvents] SSE subscribed session={Session} cursor={Cursor} phase={Phase}",
+            "[SessionEvents] SSE subscribed session={Session} cursor={Cursor} phase={Phase} head={Head}",
             sessionId,
-            afterSequence ?? 0L,
-            afterSequence.HasValue ? "replay-after" : "replay-from-zero");
+            start.After,
+            start.Phase,
+            bounds.MaxSequence ?? 0L);
         await RecordSseTimelineAsync(
             _timelineRecorder,
             sessionId,
@@ -255,7 +264,7 @@ public class SessionEventsController : ControllerBase
         // ADR-056: ISessionEventStream.FollowAsync handles replay + live + dedup automatically.
         try
         {
-            var after = afterSequence ?? 0L;
+            var after = start.After;
             await foreach (var envelope in _eventStream.FollowAsync(sessionId, after, ct))
             {
                 // Heartbeat: send as SSE comment, don't set id.

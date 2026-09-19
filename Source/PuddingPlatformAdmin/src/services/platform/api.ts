@@ -2257,9 +2257,11 @@ export function subscribeSessionEvents(
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  // P0: Send Last-Event-ID on first connect and reconnects
-  if (options?.afterSequence != null && options.afterSequence > 0) {
-    headers['Last-Event-ID'] = String(options.afterSequence);
+  // S3（时效语义）：游标是「客户端已应用到哪」的唯一权威表述，必须显式下发（含 0）。
+  // 此前只在 >0 时发送，导致「显式 0（有意全量回放）」与「无游标（客户端没有权威位置）」
+  // 在协议上不可区分；而服务端现在对无游标只推实时帧（fail-safe）。
+  if (options?.afterSequence != null) {
+    headers['Last-Event-ID'] = String(Math.max(0, options.afterSequence));
   }
 
   const startedAt = performance.now();

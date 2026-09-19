@@ -70,7 +70,10 @@ interface MessageSendSessionPort {
 }
 
 interface MessageSendStreamPort {
-  startSessionEventStream: (sessionId: string) => void;
+  startSessionEventStream: (
+    sessionId: string,
+    options?: { cursor?: number; reason?: string },
+  ) => void;
   resetStreamCursorForSessionChange: (
     previousSessionId?: string | null,
     nextSessionId?: string | null,

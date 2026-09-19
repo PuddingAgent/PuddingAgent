@@ -903,7 +903,13 @@ export function useChatState(
           ...prev,
         ];
       });
-      startSessionEventStream(sessionId);
+      // S3：新后继会话的 sequence 从低位开始，且此处需要它的全部早段事件
+      // （压缩来源事件与承接中的 turn），因此显式声明「有意全量回放 0」——
+      // 而不是让「游标恰好为 0」隐式表达这个意图。新会话日志短，回放有界。
+      startSessionEventStream(sessionId, {
+        cursor: 0,
+        reason: 'compaction-successor',
+      });
       refreshSessions({ preserveSessionId: sessionId });
     },
     [refreshSessions, startSessionEventStream],
@@ -1270,7 +1276,11 @@ export function useChatState(
           toSessionListItem(session, title),
           ...prev,
         ]);
-        startSessionEventStream(forkedSessionId);
+        // S3：分支会话是新建的，事件日志从低位开始；显式声明全量回放意图（有界）。
+        startSessionEventStream(forkedSessionId, {
+          cursor: 0,
+          reason: 'checkpoint-fork',
+        });
         refreshSessions({ preserveSessionId: forkedSessionId });
         logChatDiag('checkpoint.fork.created', {
           checkpointId: checkpoint.checkpointId,
