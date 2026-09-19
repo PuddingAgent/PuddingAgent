@@ -2237,6 +2237,29 @@ export function projectConversationEventEnvelope(
   } as AdminChatStreamEvent;
 }
 
+/**
+ * 从错误响应体里取出结构化 `code`。
+ *
+ * 这是区分「可恢复」与「终态」的唯一依据：SSE 的 410 既可能是
+ * `snapshot_required`（服务端要求重取快照，可恢复），也可能是
+ * `conversation_frozen`（会话终态）。只看状态码会让两者不可区分，
+ * 于是可恢复的情况会被误当成「会话消失」。
+ *
+ * 读失败（非 JSON、body 已消费、测试替身无 json()）一律返回 undefined，
+ * 由调用方按原有状态码逻辑处理——不得因解析失败而改变错误分类。
+ */
+async function readStreamErrorCode(
+  resp: { json?: () => Promise<unknown> },
+): Promise<string | undefined> {
+  try {
+    if (typeof resp.json !== 'function') return undefined;
+    const body = (await resp.json()) as { code?: unknown } | null;
+    return typeof body?.code === 'string' ? body.code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** SSE 订阅会话事件流（含 subagent.spawned / subagent.completed）。
  * P0 v3: 支持 Last-Event-ID 重连、generation token、cursor 校验。
  */
@@ -2245,7 +2268,7 @@ export function subscribeSessionEvents(
   onEvent: (ev: AdminChatStreamEvent) => void,
   signal?: AbortSignal,
   options?: {
-    onError?: (error: Error, httpStatus?: number) => void;
+    onError?: (error: Error, httpStatus?: number, code?: string) => void;
     afterSequence?: number;
     generation?: number;
   },
@@ -2279,8 +2302,10 @@ export function subscribeSessionEvents(
       });
       if (!resp.ok || !resp.body) {
         const httpStatus = resp.status;
+        const code = await readStreamErrorCode(resp);
+        recordPerfEvent('chat.sse.error', { sessionId, status: httpStatus, code });
         const msg = `SSE stream failed: HTTP ${httpStatus} for session ${sessionId}`;
-        onError?.(new Error(msg), httpStatus);
+        onError?.(new Error(msg), httpStatus, code);
         return;
       }
 

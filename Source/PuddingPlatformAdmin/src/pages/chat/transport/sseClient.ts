@@ -11,7 +11,7 @@ export interface SseClientOptions {
   afterSequence?: number;
   generation?: number;
   onEvent: (event: AdminChatStreamEvent, sequenceNum?: number) => void;
-  onError?: (error: Error, httpStatus?: number) => void;
+  onError?: (error: Error, httpStatus?: number, code?: string) => void;
   signal?: AbortSignal;
 }
 
@@ -48,14 +48,15 @@ export function createSseClient(options: SseClientOptions): SseClientHandle {
   };
 
   subscribeSessionEvents(options.sessionId, wrappedOnEvent, controller.signal, {
-    onError: (error, httpStatus) => {
+    onError: (error, httpStatus, code) => {
       recordPerfEvent('chat.sseClient.error', {
         sessionId: options.sessionId,
         generation: options.generation,
         error: error.message,
         httpStatus,
+        code,
       });
-      options.onError?.(error, httpStatus);
+      options.onError?.(error, httpStatus, code);
     },
     afterSequence: options.afterSequence,
     generation: options.generation,

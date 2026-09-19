@@ -105,6 +105,55 @@ describe('subscribeSessionEvents error handling', () => {
     expect(onEvent).not.toHaveBeenCalled();
   });
 
+  it('surfaces the structured error code so callers can tell recoverable 410 from terminal 410', async () => {
+    const onEvent = jest.fn();
+    const onError = jest.fn();
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 410,
+      body: null,
+      headers: { get: () => null },
+      json: async () => ({
+        code: 'snapshot_required',
+        minimumAvailableSequence: 51,
+        snapshotUrl: '/api/conversations/session-1/bootstrap',
+      }),
+    });
+
+    subscribeSessionEvents('session-1', onEvent, undefined, { onError });
+
+    await flushPromises();
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][1]).toBe(410);
+    expect(onError.mock.calls[0][2]).toBe('snapshot_required');
+  });
+
+  it('leaves the code undefined when the error body is not JSON', async () => {
+    const onEvent = jest.fn();
+    const onError = jest.fn();
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      body: null,
+      headers: { get: () => null },
+      json: async () => {
+        throw new Error('Unexpected token < in JSON');
+      },
+    });
+
+    subscribeSessionEvents('session-1', onEvent, undefined, { onError });
+
+    await flushPromises();
+
+    // 解析失败不得改变错误分类：仍按状态码上报。
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][1]).toBe(500);
+    expect(onError.mock.calls[0][2]).toBeUndefined();
+  });
+
     it('projects a canonical SSE envelope into the chat event shape', () => {
     expect(
       projectConversationEventEnvelope(

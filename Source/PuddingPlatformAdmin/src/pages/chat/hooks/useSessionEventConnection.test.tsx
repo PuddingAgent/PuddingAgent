@@ -32,6 +32,7 @@ describe('useSessionEventConnection', () => {
         replayMissedSessionEvents: jest.fn(async () => {}),
         replayMissedSessionEventsIfNeeded: jest.fn(async () => false),
         resetStreamCursorForSessionChange,
+        syncCompletedHistoryEventCursor: jest.fn(async () => undefined),
         flushPendingDeltas: jest.fn(),
         syncSessionIdentity: jest.fn(),
         activeMessageIdsRef: { current: new Set() },
@@ -67,6 +68,7 @@ describe('useSessionEventConnection', () => {
         replayMissedSessionEvents: jest.fn(async () => {}),
         replayMissedSessionEventsIfNeeded: jest.fn(async () => false),
         resetStreamCursorForSessionChange: jest.fn(),
+        syncCompletedHistoryEventCursor: jest.fn(async () => undefined),
         flushPendingDeltas: jest.fn(),
         syncSessionIdentity: jest.fn(),
         activeMessageIdsRef: { current: new Set() },
@@ -124,6 +126,105 @@ describe('session event connection recovery', () => {
       await jest.advanceTimersByTimeAsync(120_000);
     });
     expect(subscribeSessionEvents).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers from 410 snapshot_required by resyncing the snapshot instead of treating the session as gone', async () => {
+    const { result } = renderHook(() => useSessionEventConnection());
+    const handleSessionNotFound = jest.fn();
+    const syncCompletedHistoryEventCursor = jest.fn(async () => undefined);
+
+    act(() => {
+      result.current.bindSessionEventConnection({
+        applySessionEvent: jest.fn(),
+        handleSessionNotFound,
+        pruneTrackedActiveMessages: jest.fn(() => false),
+        replayMissedSessionEvents: jest.fn(async () => {}),
+        replayMissedSessionEventsIfNeeded: jest.fn(async () => false),
+        resetStreamCursorForSessionChange: jest.fn(),
+        syncCompletedHistoryEventCursor,
+        flushPendingDeltas: jest.fn(),
+        syncSessionIdentity: jest.fn(),
+        activeMessageIdsRef: { current: new Set() },
+        lastSequenceNumRef: { current: 0 },
+        streamStartAtRef: { current: new Map() },
+        selectedSessionIdRef: { current: 'session-1' },
+        sessionIdRef: { current: 'session-1' },
+        turnsRef: { current: [] },
+      });
+      result.current.startSessionEventStream('session-1', {
+        cursor: 120,
+        reason: 'test',
+      });
+    });
+
+    const call = (subscribeSessionEvents as jest.Mock).mock.calls[0];
+    act(() =>
+      call[3].onError(
+        new Error('SSE stream failed: HTTP 410'),
+        410,
+        'snapshot_required',
+      ),
+    );
+
+    // 关键区分：可恢复的服务端指示不得被当成「会话消失」。
+    expect(handleSessionNotFound).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(syncCompletedHistoryEventCursor).toHaveBeenCalledWith(
+      'session-1',
+      expect.anything(),
+      { resetCursor: true },
+    );
+
+    // 快照同步完成后仍应安排重连（新游标）。
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1200);
+    });
+    expect((subscribeSessionEvents as jest.Mock).mock.calls.length).toBeGreaterThan(1);
+
+    act(() => result.current.stopSessionEventStream());
+  });
+
+  it('treats a terminal 410 without a code as session-gone', async () => {
+    const { result } = renderHook(() => useSessionEventConnection());
+    const handleSessionNotFound = jest.fn();
+
+    act(() => {
+      result.current.bindSessionEventConnection({
+        applySessionEvent: jest.fn(),
+        handleSessionNotFound,
+        pruneTrackedActiveMessages: jest.fn(() => false),
+        replayMissedSessionEvents: jest.fn(async () => {}),
+        replayMissedSessionEventsIfNeeded: jest.fn(async () => false),
+        resetStreamCursorForSessionChange: jest.fn(),
+        syncCompletedHistoryEventCursor: jest.fn(async () => undefined),
+        flushPendingDeltas: jest.fn(),
+        syncSessionIdentity: jest.fn(),
+        activeMessageIdsRef: { current: new Set() },
+        lastSequenceNumRef: { current: 0 },
+        streamStartAtRef: { current: new Map() },
+        selectedSessionIdRef: { current: 'session-1' },
+        sessionIdRef: { current: 'session-1' },
+        turnsRef: { current: [] },
+      });
+      result.current.startSessionEventStream('session-1', {
+        cursor: 120,
+        reason: 'test',
+      });
+    });
+
+    const call = (subscribeSessionEvents as jest.Mock).mock.calls[0];
+    act(() =>
+      call[3].onError(
+        new Error('SSE stream failed: HTTP 410'),
+        410,
+        'conversation_frozen',
+      ),
+    );
+
+    expect(handleSessionNotFound).toHaveBeenCalledWith('session-1', 'sse-410');
   });
 
   it('backs off consecutive transient errors and resets only after an event', async () => {

@@ -140,6 +140,7 @@ export function useSessionEventReplay({
     async (
       sessionId: string,
       signal?: AbortSignal,
+      options?: { resetCursor?: boolean },
     ): Promise<ConversationBootstrapResponse['turns']> => {
       try {
         const [bootstrap, statuses] = await Promise.all([
@@ -188,10 +189,13 @@ export function useSessionEventReplay({
         const cursor = Number(bootstrap.snapshotCursor);
         if (!Number.isFinite(cursor) || cursor < 0)
           return bootstrap.turns ?? [];
-        lastSequenceNumRef.current = Math.max(
-          lastSequenceNumRef.current,
-          cursor,
-        );
+        // 默认取较大值（游标只能前进）；`resetCursor` 用于 410 snapshot_required：
+        // 此时本地游标之后的事件已不可读，快照才是新的权威起点——
+        // 用 Math.max 保留陈旧游标只会让重连再次 410。
+        lastSequenceNumRef.current =
+          options?.resetCursor === true
+            ? Math.max(0, cursor)
+            : Math.max(lastSequenceNumRef.current, cursor);
         recordPerfEvent('chat.replay.cursorSynced', {
           sessionId,
           lastSequenceNum: lastSequenceNumRef.current,

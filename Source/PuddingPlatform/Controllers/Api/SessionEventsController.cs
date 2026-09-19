@@ -211,30 +211,29 @@ public class SessionEventsController : ControllerBase
             return;
         }
 
-        // ADR-057: snapshot_required — cursor below minimum available sequence.
-        // 只对「显式游标」做下界校验：无游标表示客户端没有权威位置，
-        // 它不回放历史（见下方 SessionEventStreamStart.Resolve），因此无需快照校验。
+        // ADR-057: snapshot_required — 客户端游标之后存在**确实缺失**的事件。
+        // 判据是「缺口」而非「低于最小可用序号」（见 SnapshotRequiredCheck）：
+        // 因此显式游标 0（有意全量回放，仅用于刚创建的新会话）与 min=1 之间并无缺失，
+        // 不会被误判为需要快照；无游标表示客户端没有权威位置，下游 Resolve 已把起点
+        // 设为 head（不回放历史），同样无需快照校验。
         var cursor = afterSequence ?? 0L;
         var bounds = await _conversationEventStore.GetBoundsAsync(sessionId, ct);
-        if (cursor > 0)
+        if (SnapshotRequiredCheck.HasMissingEvents(cursor, bounds.MinSequence))
         {
-            if (bounds.MinSequence.HasValue && cursor < bounds.MinSequence.Value)
-            {
-                _logger.LogWarning(
-                    "[SessionEvents] SSE snapshot_required session={Session} cursor={Cursor} min={Min}",
-                    sessionId, cursor, bounds.MinSequence.Value);
-                Response.StatusCode = StatusCodes.Status410Gone;
-                Response.ContentType = "application/json";
-                await Response.WriteAsync(
-                    System.Text.Json.JsonSerializer.Serialize(new
-                    {
-                        code = "snapshot_required",
-                        minimumAvailableSequence = bounds.MinSequence.Value,
-                        snapshotUrl = $"/api/conversations/{sessionId}/bootstrap",
-                    }),
-                    ct);
-                return;
-            }
+            _logger.LogWarning(
+                "[SessionEvents] SSE snapshot_required session={Session} cursor={Cursor} min={Min}",
+                sessionId, cursor, bounds.MinSequence.Value);
+            Response.StatusCode = StatusCodes.Status410Gone;
+            Response.ContentType = "application/json";
+            await Response.WriteAsync(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    code = "snapshot_required",
+                    minimumAvailableSequence = bounds.MinSequence.Value,
+                    snapshotUrl = $"/api/conversations/{sessionId}/bootstrap",
+                }),
+                ct);
+            return;
         }
 
         // S4：显式游标（含 0）＝按该位置回放；无游标＝从 head 起只推实时帧（fail-safe）。

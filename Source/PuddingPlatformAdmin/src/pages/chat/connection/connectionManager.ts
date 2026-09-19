@@ -19,6 +19,14 @@ export interface ConnectionState {
 export interface ConnectionCallbacks {
   onEvent: (event: AdminChatStreamEvent, sequenceNum?: number) => void;
   onStateChange: (state: ConnectionState) => void;
+  /**
+   * 服务端要求重取快照（410 `snapshot_required`）：游标之后的事件已不可读。
+   * 与 frozen / not-found 不同，这是**可恢复**的：实现方应重取 `/bootstrap`、
+   * 把游标推进到快照位置后重新 `connect()`。
+   * 未提供时不做自动重试（同游标重连必然再次 410，会变成无界重试循环），
+   * 但会留下 `chat.connection.snapshotRequired` 性能事件以便定位。
+   */
+  onSnapshotRequired?: (sessionId: string) => void;
 }
 
 const MAX_RECONNECT_DELAY_MS = 30_000;
@@ -131,7 +139,7 @@ export function createConnectionManager(
         // Caller (useConversation) will update cursor via applyEvent → store → connection cursor.
         callbacks.onEvent(event, sequenceNum);
       },
-      onError: (error, httpStatus) => {
+      onError: (error, httpStatus, code) => {
         if (state.generation !== gen) return;
 
         updateState({
@@ -145,8 +153,20 @@ export function createConnectionManager(
           generation: gen,
           error: error.message,
           httpStatus,
+          code,
           reconnectCount: state.reconnectCount,
         });
+
+        // snapshot_required 也是 410，但语义是「重取快照即可继续」，
+        // 不是「会话消失」。必须优先判定，否则可恢复情况会被静默判死。
+        if (code === 'snapshot_required') {
+          recordPerfEvent('chat.connection.snapshotRequired', {
+            sessionId,
+            generation: gen,
+          });
+          callbacks.onSnapshotRequired?.(sessionId);
+          return;
+        }
 
         // P0: Don't reconnect on 404 (session deleted) or 410 (frozen)
         if (httpStatus === 404 || httpStatus === 410) return;

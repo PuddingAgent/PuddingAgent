@@ -766,6 +766,7 @@ export function useChatState(
     replayMissedSessionEvents,
     replayMissedSessionEventsIfNeeded,
     resetStreamCursorForSessionChange,
+    syncCompletedHistoryEventCursor,
     flushPendingDeltas,
     syncSessionIdentity,
     activeMessageIdsRef,

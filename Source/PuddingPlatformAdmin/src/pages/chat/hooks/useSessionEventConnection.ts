@@ -47,6 +47,18 @@ interface SessionEventConnectionPorts {
     previousSessionId?: string | null,
     nextSessionId?: string | null,
   ) => void;
+  /**
+   * 重取 `/bootstrap` 快照并把 lastSequenceNumRef 同步到快照游标。
+   *
+   * `resetCursor: true` 表示**强制**把游标置为快照位置——用于 410
+   * `snapshot_required`：本地游标之后的事件已不可读，只能以快照为新起点；
+   * 默认的 Math.max 语义会保留陈旧游标，导致重连后再次 410。
+   */
+  syncCompletedHistoryEventCursor: (
+    sessionId: string,
+    signal?: AbortSignal,
+    options?: { resetCursor?: boolean },
+  ) => Promise<unknown>;
   flushPendingDeltas: () => void;
   syncSessionIdentity: () => void;
   activeMessageIdsRef: MutableRefObject<Set<string>>;
@@ -65,6 +77,7 @@ const defaultPorts = {
   replayMissedSessionEvents: async () => {},
   replayMissedSessionEventsIfNeeded: async () => false,
   resetStreamCursorForSessionChange: noop,
+  syncCompletedHistoryEventCursor: async () => undefined,
   flushPendingDeltas: noop,
   syncSessionIdentity: noop,
   activeMessageIdsRef: { current: new Set<string>() },
@@ -380,7 +393,7 @@ export function useSessionEventConnection() {
           },
           controller.signal,
           {
-            onError: (_error, httpStatus) => {
+            onError: (_error, httpStatus, code) => {
               if (
                 controller.signal.aborted ||
                 sseSessionIdRef.current !== sessionId
@@ -389,6 +402,36 @@ export function useSessionEventConnection() {
               }
               const currentPorts = portsRef.current;
               if (stopForAuthError(httpStatus)) return;
+              // snapshot_required 同样是 410，但语义是「游标之后的事件已不可读，
+              // 重取快照即可继续」——**可恢复**，不是「会话消失」。
+              // 必须优先判定，否则会被下面的终态分支误判为 not-found。
+              if (code === 'snapshot_required') {
+                logChatDiag('sse.snapshotRequired', { sessionId, httpStatus });
+                recordPerfEvent('chat.sse.snapshotRequired', { sessionId });
+                void (async () => {
+                  try {
+                    // 重取快照并**强制**重置游标（快照是新的权威起点）。
+                    await currentPorts.syncCompletedHistoryEventCursor(
+                      sessionId,
+                      controller.signal,
+                      { resetCursor: true },
+                    );
+                  } catch (error) {
+                    recordPerfEvent('chat.sse.snapshotResyncFailed', {
+                      sessionId,
+                      error:
+                        error instanceof Error ? error.message : String(error),
+                    });
+                  }
+                  if (
+                    !controller.signal.aborted &&
+                    sseSessionIdRef.current === sessionId
+                  ) {
+                    scheduleReconnect();
+                  }
+                })();
+                return;
+              }
               if (httpStatus === 404 || httpStatus === 410) {
                 logChatDiag('sse.sessionTerminal', { sessionId, httpStatus });
                 currentPorts.handleSessionNotFound(

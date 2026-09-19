@@ -29,14 +29,14 @@ public sealed class SessionEventStreamService : ISessionEventStream
     }
 
     /// <summary>
-    /// 检查 cursor 是否低于最小可恢复 sequence。
+    /// 检查客户端游标之后是否有确实缺失的事件（判据见 <see cref="SnapshotRequiredCheck"/>）。
     /// 如果是，返回 { minSeq, snapshotUrl }，调用方应返回 410。
     /// </summary>
     public async Task<SnapshotRequiredInfo?> CheckSnapshotRequiredAsync(
         string sessionId, long cursor, CancellationToken ct)
     {
         var bounds = await _eventStore.GetBoundsAsync(sessionId, ct);
-        if (bounds.MinSequence.HasValue && cursor < bounds.MinSequence.Value)
+        if (SnapshotRequiredCheck.HasMissingEvents(cursor, bounds.MinSequence))
         {
             return new SnapshotRequiredInfo(
                 bounds.MinSequence.Value,
