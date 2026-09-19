@@ -19,6 +19,7 @@ namespace PuddingPlatform.Services.Conversation;
 public sealed class SystemCommandHandler(
     PlatformDbContext db,
     IRuntimeControlService runtimeControl,
+    IAgentAccessLevelService accessLevels,
     IRequestCompactionHandler requestCompactionHandler,
     ISystemStatusSnapshotProvider statusSnapshotProvider,
     IGoalCommandService goalCommandService,
@@ -46,19 +47,9 @@ public sealed class SystemCommandHandler(
                 ct);
         if (existing is not null)
         {
-            // The authenticated Web endpoint historically reapplies process-local
-            // YOLO state after a reset. External gateway replays must preserve the
-            // originally recorded authorization result instead of gaining a new
-            // privilege after whitelist changes.
-            if (request.SourceChannel is null
-                && request.IsPrivilegedUser
-                && isParsed
-                && IsYolo(command))
-            {
-                runtimeControl.SetMode(
-                    RuntimeExecutionMode.Yolo,
-                    $"idempotent replay of /yolo; user={request.UserId}; conversation={request.ConversationId}");
-            }
+            // 用户 2026-09-19：/yolo 已从「进程态 YOLO」归并到 Agent 级访问级别并落盘持久，
+            // 命令重放不再需要「重新授予」——重放若照旧写入，会把已到期的临时授权续期，
+            // 反而放大权限。因此这里刻意不再改写任何状态。
             // A state-changing command such as /compact can move the Agent's
             // main conversation before Feishu retries the same message. Stable
             // gateway IDs remain authoritative across that conversation switch.
@@ -119,10 +110,9 @@ public sealed class SystemCommandHandler(
         }
         else if (IsYolo(command))
         {
-            var action = runtimeControl.SetMode(
-                RuntimeExecutionMode.Yolo,
-                $"user command /yolo; user={request.UserId}; conversation={request.ConversationId}");
-            responseMessage = action.Message;
+            // 用户 2026-09-19：/yolo 不再切进程态运行时模式，统一走权限控制体系
+            // （Agent 级访问级别），避免「命令一套、下拉一套」两头并行。
+            responseMessage = HandleYoloCommand(request, command, accessLevels);
         }
         else
         {
@@ -217,6 +207,67 @@ public sealed class SystemCommandHandler(
             request.CommandText.Trim(),
             message,
             mode.ToString());
+
+    /// <summary>
+    /// /yolo 的三种形态：`/yolo` 持久完全访问；`/yolo 5m`（或任意 &lt;n&gt;s/&lt;n&gt;m/&lt;n&gt;h）临时授权，
+    /// 到期由 <see cref="AgentAccessLevelState.IsFullAt"/> 自动回落；`/yolo off`（等价 auto）撤销。
+    /// 作用域是该 Agent，不是进程，也不是工作区。
+    /// </summary>
+    private static string HandleYoloCommand(
+        SystemCommandRequest request,
+        SystemCommand command,
+        IAgentAccessLevelService accessLevels)
+    {
+        var argument = ExtractYoloArgument(command.RawText);
+        var actor = $"user:{request.UserId}";
+
+        if (argument is "off" or "auto" or "revoke")
+        {
+            accessLevels.Set(request.AgentId, AgentAccessLevel.Auto, actor: actor);
+            return $"Agent '{request.AgentId}' 的访问级别已撤销：「完全访问」已关闭，回到自动审批。";
+        }
+
+        var ttl = ParseYoloDuration(argument);
+        if (argument is not null && ttl is null)
+        {
+            return $"无法识别的 /yolo 参数 '{argument}'。用法："
+                + "/yolo（持久完全访问）、/yolo 5m（5 分钟临时授权）、/yolo off（撤销）。";
+        }
+
+        var state = accessLevels.Set(request.AgentId, AgentAccessLevel.Full, ttl, actor);
+        var scope = state.ExpiresAtUtc is { } expires
+            ? $"临时授权，至 {expires.ToLocalTime():yyyy-MM-dd HH:mm:ss} 自动回落为自动审批"
+            : "持续生效，直至用 /yolo off 撤销";
+        return $"Agent '{request.AgentId}' 的访问级别已设为「完全访问」（{scope}）。";
+    }
+
+    /// <summary>`/yolo` 后的第一个参数；无参数返回 null（= 持久完全访问）。</summary>
+    private static string? ExtractYoloArgument(string rawText)
+    {
+        var parts = rawText.Trim().Split(
+            ' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length > 1 ? parts[1].ToLowerInvariant() : null;
+    }
+
+    /// <summary>解析 &lt;n&gt;s / &lt;n&gt;m / &lt;n&gt;h；无参数返回 null（= 持久）。</summary>
+    private static TimeSpan? ParseYoloDuration(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+            return null;
+
+        var span = token.AsSpan().Trim();
+        if (span.Length < 2 || !int.TryParse(span[..^1], out var value) || value <= 0)
+            return null;
+
+        return span[^1] switch
+        {
+            's' => TimeSpan.FromSeconds(value),
+            'm' => TimeSpan.FromMinutes(value),
+            'h' => TimeSpan.FromHours(value),
+            _ => null,
+        };
+    }
 
     private static bool IsYolo(SystemCommand command)
         => command.CommandKind == SystemCommandKind.Yolo

@@ -1,5 +1,6 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PuddingCode.Runtime;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;
 using Microsoft.Extensions.Logging;
@@ -14,6 +15,7 @@ namespace PuddingPlatform.Controllers.Api;
 [Route("api/workspaces/{workspaceId}/agents")]
 public class WorkspaceAgentApiController(
     WorkspaceAgentFileService fileService,
+    IAgentAccessLevelService accessLevels,
     ILogger<WorkspaceAgentApiController> logger) : ControllerBase
 {
     // GET /api/workspaces/{workspaceId}/agents
@@ -113,4 +115,67 @@ public class WorkspaceAgentApiController(
             return NotFound();
         }
     }
+
+    // GET /api/workspaces/{workspaceId}/agents/{agentId}/access-level
+    // 读：前端下拉在切换到不同 Agent 时靠它同步状态（用户 2026-09-19 需求 4）。
+    [HttpGet("{agentId}/access-level")]
+    public ActionResult<AgentAccessLevelDto> GetAccessLevel(string workspaceId, string agentId)
+        => Ok(ToAccessLevelDto(agentId, accessLevels.Get(agentId)));
+
+    // PUT /api/workspaces/{workspaceId}/agents/{agentId}/access-level
+    // 写：设为 auto（撤销）或 full（durationSeconds 为空=持久；非空=临时授权）。
+    // 授予「完全访问」是高权限动作，与 /yolo 命令同级，故限 admin。
+    [HttpPut("{agentId}/access-level")]
+    [Authorize(Roles = "admin")]
+    public ActionResult<AgentAccessLevelDto> SetAccessLevel(
+        string workspaceId,
+        string agentId,
+        [FromBody] SetAgentAccessLevelRequest request)
+    {
+        if (!Enum.TryParse<AgentAccessLevel>(request.Level, ignoreCase: true, out var level))
+            return BadRequest(new { message = "level 必须是 auto 或 full。" });
+
+        if (request.DurationSeconds is <= 0)
+            return BadRequest(new { message = "durationSeconds 必须为正整数，或留空表示持久授权。" });
+
+        try
+        {
+            var ttl = request.DurationSeconds is { } seconds
+                ? TimeSpan.FromSeconds(seconds)
+                : (TimeSpan?)null;
+            var state = accessLevels.Set(agentId, level, ttl, User?.Identity?.Name ?? "admin");
+            return Ok(ToAccessLevelDto(agentId, state));
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "[WorkspaceAgentApi] Access level store unavailable agent={AgentId}", agentId);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                message = "Agent 访问级别存储不可用（宿主未配置数据目录）。",
+            });
+        }
+    }
+
+    private static AgentAccessLevelDto ToAccessLevelDto(string agentId, AgentAccessLevelState state)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var active = state.IsFullAt(now);
+        return new AgentAccessLevelDto(
+            agentId,
+            active ? "full" : "auto",
+            active,
+            active && state.ExpiresAtUtc is { } expires ? expires.ToUniversalTime().ToString("O") : null,
+            active && state.IsTemporary);
+    }
 }
+
+/// <summary>Agent 访问级别读结果。过期后 Level 会如实回落为 auto（不返回陈旧值）。</summary>
+public sealed record AgentAccessLevelDto(
+    string AgentId,
+    string Level,
+    bool FullAccessActive,
+    string? ExpiresAtUtc,
+    bool Temporary);
+
+/// <summary>Agent 访问级别写请求。DurationSeconds 留空 = 持久授权；非空 = 临时授权。</summary>
+public sealed record SetAgentAccessLevelRequest(string Level, int? DurationSeconds = null);
