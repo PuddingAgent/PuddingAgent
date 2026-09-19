@@ -19,11 +19,15 @@ public sealed class TokenUsageEventRepository : ITokenUsageEventRepository
     public async Task<SessionTokenStats?> GetLatestStatsAsync(string sessionId, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        // SQLite 不支持对 DateTimeOffset 列做 ORDER BY：翻译期即抛
+        // NotSupportedException（"SQLite does not support expressions of type
+        // 'DateTimeOffset' in ORDER BY clauses"）。此异常此前被调用方的 catch 吞掉，
+        // 使 DB 回退源（provider_usage_db / 分层诊断）静默失效。
+        // Id 是自增主键，插入顺序即记录顺序，与 OccurredAtUtc 在正常写入路径下一致。
         var latest = await db.TokenUsageEvents
             .AsNoTracking()
             .Where(ev => ev.SessionId == sessionId && ev.PromptTokens > 0)
-            .OrderByDescending(ev => ev.OccurredAtUtc)
-            .ThenByDescending(ev => ev.Id)
+            .OrderByDescending(ev => ev.Id)
             .FirstOrDefaultAsync(ct);
 
         if (latest is null) return null;
@@ -50,8 +54,8 @@ public sealed class TokenUsageEventRepository : ITokenUsageEventRepository
                     || e.ToolDefinitionTokens != null
                     || e.SystemMessageTokens != null
                     || e.HistoryMessageTokens != null))
-            .OrderByDescending(e => e.OccurredAtUtc)
-            .ThenByDescending(e => e.Id)
+            // SQLite 不支持 ORDER BY DateTimeOffset，改按自增主键（同 GetLatestStatsAsync 说明）。
+            .OrderByDescending(e => e.Id)
             .Select(e => new SessionTokenDiagnostics
             {
                 SessionId = e.SessionId,
@@ -60,6 +64,11 @@ public sealed class TokenUsageEventRepository : ITokenUsageEventRepository
                 ToolDefinitionTokens = e.ToolDefinitionTokens,
                 SystemMessageTokens = e.SystemMessageTokens,
                 HistoryMessageTokens = e.HistoryMessageTokens,
+                SystemPromptTokens = e.SystemPromptTokens,
+                CompactionSummaryTokens = e.CompactionSummaryTokens,
+                ConversationTokens = e.ConversationTokens,
+                ToolResultTokens = e.ToolResultTokens,
+                ReasoningTokens = e.ReasoningTokens,
                 PromptTokens = e.PromptTokens,
                 CompletionTokens = e.CompletionTokens,
             })
@@ -77,8 +86,8 @@ public sealed class TokenUsageEventRepository : ITokenUsageEventRepository
                 && (e.SystemMessageEntropy != null
                     || e.HistoryMessageEntropy != null
                     || e.ToolDefinitionEntropy != null))
-            .OrderByDescending(e => e.OccurredAtUtc)
-            .ThenByDescending(e => e.Id)
+            // SQLite 不支持 ORDER BY DateTimeOffset，改按自增主键（同 GetLatestStatsAsync 说明）。
+            .OrderByDescending(e => e.Id)
             .Select(e => new SessionTokenDiagnostics
             {
                 SessionId = e.SessionId,
@@ -110,12 +119,16 @@ public sealed class TokenUsageEventRepository : ITokenUsageEventRepository
         if (!string.IsNullOrWhiteSpace(sessionId)) query = query.Where(e => e.SessionId == sessionId);
         if (!string.IsNullOrWhiteSpace(providerId)) query = query.Where(e => e.ProviderId == providerId);
         if (!string.IsNullOrWhiteSpace(modelId)) query = query.Where(e => e.ModelId == modelId);
+        // 已知限制（实测）：SQLite 同样无法翻译 DateTimeOffset 的**比较**（不只是 ORDER BY），
+        // 所以 from/to 一旦传入即抛 InvalidOperationException。本方法当前无任何调用方，
+        // 属死路径；接线前必须先改成可翻译的谓词（例如落一个数值型时间列再比较）。
         if (from.HasValue) query = query.Where(e => e.OccurredAtUtc >= from.Value);
         if (to.HasValue) query = query.Where(e => e.OccurredAtUtc <= to.Value);
 
         var total = await query.CountAsync(ct);
         var events = await query
-            .OrderByDescending(e => e.OccurredAtUtc)
+            // SQLite 不支持 ORDER BY DateTimeOffset，改按自增主键（同 GetLatestStatsAsync 说明）。
+            .OrderByDescending(e => e.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(e => new TokenUsageEventRow

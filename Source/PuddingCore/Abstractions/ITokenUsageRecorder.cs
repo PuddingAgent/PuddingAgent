@@ -137,6 +137,16 @@ public sealed record RequestContextAttribution
     public int? ToolDefinitionTokens { get; init; }
     public int? SystemMessageTokens { get; init; }
     public int? HistoryMessageTokens { get; init; }
+    /// <summary>系统提示词层（Role=System 且非压缩摘要）。</summary>
+    public int? SystemPromptTokens { get; init; }
+    /// <summary>压缩摘要层（正文含 compact_summary 标记）。</summary>
+    public int? CompactionSummaryTokens { get; init; }
+    /// <summary>对话消息层（Role=User/Assistant 且非摘要）。</summary>
+    public int? ConversationTokens { get; init; }
+    /// <summary>工具结果层（Role=Tool 且非摘要）。</summary>
+    public int? ToolResultTokens { get; init; }
+    /// <summary>思维链层（已从角色桶中扣除）。</summary>
+    public int? ReasoningTokens { get; init; }
     public int ToolCount { get; init; }
     public string? ToolDefinitionHash { get; init; }
     public long ToolDefinitionUtf8Bytes { get; init; }
@@ -187,6 +197,13 @@ public sealed record RequestContextAttribution
             ToolDefinitionTokens = usage?.ToolDefinitionTokens,
             SystemMessageTokens = usage?.SystemMessageTokens,
             HistoryMessageTokens = usage?.HistoryMessageTokens,
+            // 分层六桶随请求冻结一并携带：它们是内存态快照的一部分，若不落账，
+            // 进程重启后 DB 回退源就拿不到分层，面板会退化成单色条。
+            SystemPromptTokens = usage?.SystemPromptTokens,
+            CompactionSummaryTokens = usage?.CompactionSummaryTokens,
+            ConversationTokens = usage?.ConversationTokens,
+            ToolResultTokens = usage?.ToolResultTokens,
+            ReasoningTokens = usage?.ReasoningTokens,
             ToolCount = usage?.ToolCount ?? 0,
             ToolDefinitionHash = usage?.ToolDefinitionHash,
             ToolDefinitionUtf8Bytes = usage?.ToolDefinitionUtf8Bytes ?? 0,

@@ -154,6 +154,117 @@ public sealed class UsageRequestAttributionTests
                 new TokenUsageAttribution { InvocationId = "inv-1", AttemptId = "att-2" }));
     }
 
+    [TestMethod]
+    public async Task LayerBreakdown_IsPersistedWithUsage_AndReadBackForFallback()
+    {
+        var assemblyStore = new ContextAssemblyStore();
+        var usageStore = new ContextUsageSnapshotStore();
+        await using var harness = await Harness.CreateAsync(assemblyStore, usageStore);
+
+        // 请求组装点算出的分层六桶（只存在于内存态快照，重启即失）。
+        usageStore.Set(new ContextUsageSnapshot
+        {
+            SessionId = "session-layers",
+            MessageTokens = 1_000,
+            ToolDefinitionTokens = 200,
+            SystemMessageTokens = 300,
+            HistoryMessageTokens = 700,
+            SystemPromptTokens = 300,
+            CompactionSummaryTokens = 400,
+            ConversationTokens = 150,
+            ToolResultTokens = 120,
+            ReasoningTokens = 30,
+        });
+
+        await harness.Recorder.RecordAttributedRequiredAsync(
+            Usage(5_000, 500),
+            sourceType: "agent_llm",
+            sourceId: "session-layers:run-1:1",
+            workspaceId: "w1",
+            sessionId: "session-layers",
+            providerId: "deepseek",
+            modelId: "m1",
+            attribution: new TokenUsageAttribution { InvocationId = "inv-layers", AttemptId = "att-1" });
+
+        // 账本行必须携带分层六桶；否则进程重启后 DB 回退源拿不到分层，
+        // 上下文面板会退化成单色条（用户 2026-09-19 反馈）。
+        await using (var db = await harness.Factory.CreateDbContextAsync())
+        {
+            var row = await db.TokenUsageEvents.SingleAsync(e => e.SourceId == "session-layers:run-1:1");
+            Assert.AreEqual(300, row.SystemPromptTokens);
+            Assert.AreEqual(400, row.CompactionSummaryTokens);
+            Assert.AreEqual(150, row.ConversationTokens);
+            Assert.AreEqual(120, row.ToolResultTokens);
+            Assert.AreEqual(30, row.ReasoningTokens);
+        }
+
+        // 读取契约：回退源（ContextCompactionService）据此回填六桶。
+        var repository = new TokenUsageEventRepository(harness.Factory);
+        var diagnostics = await repository.GetLatestLayerDiagnosticsAsync("session-layers");
+        Assert.IsNotNull(diagnostics);
+        Assert.AreEqual(300, diagnostics!.SystemPromptTokens);
+        Assert.AreEqual(400, diagnostics.CompactionSummaryTokens);
+        Assert.AreEqual(150, diagnostics.ConversationTokens);
+        Assert.AreEqual(120, diagnostics.ToolResultTokens);
+        Assert.AreEqual(30, diagnostics.ReasoningTokens);
+    }
+
+    [TestMethod]
+    public async Task TokenUsageRepository_AllReadPaths_AreTranslatableOnSqlite()
+    {
+        // 回归守衡：四个读取路径都曾对 DateTimeOffset 列做 ORDER BY，SQLite 在翻译期
+        // 抛 NotSupportedException，而调用方的 catch(Exception) 只写 Debug 日志，
+        // 于是 DB 回退源（provider_usage_db / 分层诊断 / 熵诊断）静默失效。
+        var assemblyStore = new ContextAssemblyStore();
+        var usageStore = new ContextUsageSnapshotStore();
+        await using var harness = await Harness.CreateAsync(assemblyStore, usageStore);
+        usageStore.Set(new ContextUsageSnapshot
+        {
+            SessionId = "session-repo",
+            MessageTokens = 10,
+            ToolDefinitionTokens = 2,
+            SystemMessageTokens = 5,
+            HistoryMessageTokens = 5,
+            SystemPromptTokens = 5,
+            CompactionSummaryTokens = 1,
+            ConversationTokens = 2,
+            ToolResultTokens = 1,
+            ReasoningTokens = 1,
+        });
+        var occurredAt = new DateTimeOffset(2026, 6, 2, 5, 0, 0, TimeSpan.Zero);
+        await harness.Recorder.RecordAttributedRequiredAsync(
+            Usage(1_000, 100),
+            sourceType: "agent_llm",
+            sourceId: "session-repo:run-1:1",
+            workspaceId: "w1",
+            sessionId: "session-repo",
+            providerId: "deepseek",
+            modelId: "m1",
+            attribution: new TokenUsageAttribution { InvocationId = "inv-repo", AttemptId = "att-1" },
+            occurredAtUtc: occurredAt);
+
+        var repository = new TokenUsageEventRepository(harness.Factory);
+
+        var stats = await repository.GetLatestStatsAsync("session-repo");
+        Assert.IsNotNull(stats, "GetLatestStatsAsync 必须在 SQLite 上可翻译。");
+        Assert.AreEqual(1_000, stats!.PromptTokens);
+
+        var layers = await repository.GetLatestLayerDiagnosticsAsync("session-repo");
+        Assert.IsNotNull(layers, "GetLatestLayerDiagnosticsAsync 必须在 SQLite 上可翻译。");
+        Assert.AreEqual(5, layers!.SystemPromptTokens);
+
+        // 熵未记录：允许返回 null，但不得抛异常（WHERE 过滤在无命中时不得触发翻译失败）。
+        var entropy = await repository.GetLatestEntropyDiagnosticsAsync("session-repo");
+        Assert.IsNull(entropy);
+
+        // 分页查询（无时间过滤）：排序已改按主键，故可用。
+        // 已知限制：from/to 走 DateTimeOffset 比较，SQLite 同样不可翻译（不只是 ORDER BY），
+        // 该方法当前无调用方，缺陷单独登记，不在本回归断言范围内。
+        var page = await repository.GetFilteredAsync(sessionId: "session-repo");
+        Assert.AreEqual(1, page.TotalCount);
+        Assert.HasCount(1, page.Events);
+    }
+
     private static TokenUsageDto Usage(int prompt, int completion) => new()
     {
         PromptTokens = prompt,

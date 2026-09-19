@@ -254,13 +254,28 @@ public sealed class ContextCompactionService : IContextCompactionService
             var usedTokens = latest.PromptTokens > 0
                 ? latest.PromptTokens
                 : latest.TotalTokens;
+
+            // 分层明细回退：分层六桶只在请求组装点算得出（内存态快照），进程重启即失。
+            // 它们随 usage 一并落账，这里读回，使面板在重启后仍能画出分段彩色条。
+            var layers = await TryGetFullLayerBreakdownAsync(sessionId, ct);
             return new ContextUsageSnapshot
             {
                 SessionId = sessionId,
                 RecordedAt = latest.OccurredAtUtc,
                 UsedTokens = usedTokens > int.MaxValue ? int.MaxValue : (int)Math.Max(0, usedTokens),
                 MessageCount = messageCount,
-                Source = "provider_usage_db",
+                MessageTokens = layers?.MessageTokens ?? 0,
+                ToolDefinitionTokens = layers?.ToolDefinitionTokens ?? 0,
+                SystemMessageTokens = layers?.SystemMessageTokens ?? 0,
+                HistoryMessageTokens = layers?.HistoryMessageTokens ?? 0,
+                SystemPromptTokens = layers?.SystemPromptTokens ?? 0,
+                CompactionSummaryTokens = layers?.CompactionSummaryTokens ?? 0,
+                ConversationTokens = layers?.ConversationTokens ?? 0,
+                ToolResultTokens = layers?.ToolResultTokens ?? 0,
+                ReasoningTokens = layers?.ReasoningTokens ?? 0,
+                // 总量仍是 provider 报数（可直接采信）；分层比例来自落账的测量值，
+                // 前端据此在面板上注明分层的口径。
+                Source = layers is null ? "provider_usage_db" : "provider_usage_db_layers",
                 Confidence = "provider_reported",
                 ProviderPromptTokens = latest.PromptTokens > int.MaxValue ? int.MaxValue : (int?)latest.PromptTokens,
                 ProviderCompletionTokens = latest.CompletionTokens > int.MaxValue ? int.MaxValue : (int?)latest.CompletionTokens,
@@ -272,6 +287,43 @@ public sealed class ContextCompactionService : IContextCompactionService
             _logger.LogDebug(
                 ex,
                 "[ContextCompaction] Failed to load latest prompt tokens session={SessionId}; falling back to local estimate",
+                sessionId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 仅当账本行携带**完整**的新五桶时才返回分层明细。
+    ///
+    /// 旧行（本改动前的写入路径）只持久化了旧四字段，用它渲染会漏桶：
+    /// 例如「对话消息 0%」而会话显然有消息 —— 这正是用户投诉过的「显示错误的信息」。
+    /// 因此按 fail-safe 返回 null，由前端回落单色条并给出不可用说明。
+    /// </summary>
+    private async Task<SessionTokenDiagnostics?> TryGetFullLayerBreakdownAsync(
+        string sessionId,
+        CancellationToken ct)
+    {
+        if (_tokenUsageRepo is null)
+            return null;
+
+        try
+        {
+            var diagnostics = await _tokenUsageRepo.GetLatestLayerDiagnosticsAsync(sessionId, ct);
+            if (diagnostics is null)
+                return null;
+
+            var complete = diagnostics.SystemPromptTokens is not null
+                && diagnostics.CompactionSummaryTokens is not null
+                && diagnostics.ConversationTokens is not null
+                && diagnostics.ToolResultTokens is not null
+                && diagnostics.ReasoningTokens is not null;
+            return complete ? diagnostics : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(
+                ex,
+                "[ContextCompaction] Failed to load layer diagnostics session={SessionId}",
                 sessionId);
             return null;
         }

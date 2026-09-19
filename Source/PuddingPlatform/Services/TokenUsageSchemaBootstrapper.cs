@@ -28,6 +28,12 @@ public static class TokenUsageSchemaBootstrapper
         ("ToolDefinitionTokens", "INTEGER NULL"),
         ("SystemMessageTokens", "INTEGER NULL"),
         ("HistoryMessageTokens", "INTEGER NULL"),
+        // 上下文用量进度条分层簇（系统提示词 / 压缩后记忆 / 对话消息 / 工具结果 / 思维链）
+        ("SystemPromptTokens", "INTEGER NULL"),
+        ("CompactionSummaryTokens", "INTEGER NULL"),
+        ("ConversationTokens", "INTEGER NULL"),
+        ("ToolResultTokens", "INTEGER NULL"),
+        ("ReasoningTokens", "INTEGER NULL"),
         // 熵探针簇
         ("HistoryMessageEntropy", "REAL NULL"),
         ("SystemMessageEntropy", "REAL NULL"),

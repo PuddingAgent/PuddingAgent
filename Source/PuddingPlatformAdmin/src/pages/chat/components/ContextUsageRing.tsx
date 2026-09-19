@@ -99,6 +99,12 @@ const usageProvenanceLabel = (
   return source ?? '未知';
 };
 
+/**
+ * 后端 Source 取值：总量仍为 Provider 报数，但分层六桶取自账本行（请求组装点的
+ * 测量值）。重启后内存快照丢失时走该路径，面板必须标明分层口径。
+ */
+const USAGE_SOURCE_PROVIDER_DB_LAYERS = 'provider_usage_db_layers';
+
 // 与 ComposerStatusDetails / 上下文胶囊同一口径（÷1000）。原实现用 ÷1024，
 // 导致同一容量在本面板里出现「976.6K」与下游「1000.0k」两种写法
 // （用户反馈 2026-09-19「内容和顺序有点乱」）。
@@ -322,14 +328,24 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
                   </span>
                 </div>
               )}
-              {/* 分层明细只存在于「本进程内该会话发出过请求」时：内存快照按会话写入，
-                  重启后或未发请求的会话六桶全 0，图例整块消失。这里明说原因，避免
-                  被读成「功能丢失」（用户反馈 2026-09-19）。 */}
+              {/* 分层明细在两种情况下都不可用：本会话既没内存快照、也没账本分层行
+                  （即从未记录过用量）。后端已能从账本行回退分层，所以这里的含义
+                  是「还没有任何用量记录」，而非「重启后必然丢失」。 */}
               {configured && segments.length === 0 && (
                 <div className={styles.contextUsagePanelRow}>
                   <span className={styles.contextUsagePanelLabel}>分层明细</span>
                   <span className={styles.contextUsagePanelValue}>
-                    暂不可用（本会话在当前进程内尚无请求记录）
+                    暂不可用（本会话尚无用量记录）
+                  </span>
+                </div>
+              )}
+              {/* 重启后分层来自账本行：段内比例是请求组装点的测量值、按 Provider 总量
+                  折算（否则段和会与标题百分比打架），必须标明口径。 */}
+              {usageSource === USAGE_SOURCE_PROVIDER_DB_LAYERS && (
+                <div className={styles.contextUsagePanelRow}>
+                  <span className={styles.contextUsagePanelLabel}>分层口径</span>
+                  <span className={styles.contextUsagePanelValue}>
+                    最近一次请求的落账值（比例按 Provider 总量折算）
                   </span>
                 </div>
               )}

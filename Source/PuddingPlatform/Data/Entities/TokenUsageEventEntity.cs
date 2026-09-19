@@ -67,6 +67,21 @@ public class TokenUsageEventEntity
     /// <summary>历史消息（非 system）的 token 估算值（分层分解）。</summary>
     public int? HistoryMessageTokens { get; set; }
 
+    /// <summary>系统提示词层（不含压缩摘要）的 token 估算值。</summary>
+    public int? SystemPromptTokens { get; set; }
+
+    /// <summary>压缩摘要层（压缩后记忆占用）的 token 估算值。</summary>
+    public int? CompactionSummaryTokens { get; set; }
+
+    /// <summary>对话消息层（user/assistant 且非摘要）的 token 估算值。</summary>
+    public int? ConversationTokens { get; set; }
+
+    /// <summary>工具结果层（tool 且非摘要）的 token 估算值。</summary>
+    public int? ToolResultTokens { get; set; }
+
+    /// <summary>思维链层（已从角色桶中扣除）的 token 估算值。</summary>
+    public int? ReasoningTokens { get; set; }
+
     /// <summary>System 消息层 gzip 压缩比（熵探针）。</summary>
     public double? SystemMessageEntropy { get; set; }
 
