@@ -483,6 +483,7 @@ export const useComposerStyles = createStyles(() => ({
     fontVariantNumeric: 'tabular-nums' as const,
   },
   contextUsagePanelProgress: {
+    display: 'flex',
     height: 6,
     borderRadius: 3,
     marginBottom: 12,
@@ -492,9 +493,46 @@ export const useComposerStyles = createStyles(() => ({
   },
   contextUsagePanelProgressBar: {
     display: 'block',
+    flex: 'none' as const,
     height: '100%',
     borderRadius: 3,
     transition: 'width 0.5s ease',
+  },
+  /** 分段进度条的单个色段（已使用各来源 / 系统预留）。 */
+  contextUsagePanelSegment: {
+    display: 'block',
+    flex: 'none' as const,
+    height: '100%',
+    transition: 'width 0.5s ease',
+  },
+  /** 色段图例：色点 + 名称 + 占窗口百分比。 */
+  contextUsagePanelLegend: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 6,
+    marginBottom: 10,
+  },
+  contextUsagePanelLegendRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 18,
+  },
+  contextUsagePanelLegendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 2,
+    flex: 'none' as const,
+  },
+  contextUsagePanelLegendLabel: {
+    flex: '1 1 auto',
+    fontSize: 12,
+    color: 'var(--pudding-chat-text)',
+  },
+  contextUsagePanelLegendValue: {
+    fontSize: 12,
+    fontVariantNumeric: 'tabular-nums' as const,
+    color: 'var(--pudding-chat-text-muted)',
   },
   contextUsagePanelBody: {
     display: 'flex',

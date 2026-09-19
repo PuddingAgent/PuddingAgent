@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -97,6 +97,16 @@ namespace PuddingCode.Platform
         public int ToolDefinitionTokens { get; set; }
         public int SystemMessageTokens { get; set; }
         public int HistoryMessageTokens { get; set; }
+        /// <summary>系统提示词层（Role=System 且非压缩摘要）token 估算。</summary>
+        public int SystemPromptTokens { get; set; }
+        /// <summary>压缩摘要层（正文含 &lt;compact_summary&gt; 标记的消息）token 估算。</summary>
+        public int CompactionSummaryTokens { get; set; }
+        /// <summary>对话消息层（Role=User/Assistant 且非压缩摘要）token 估算。</summary>
+        public int ConversationTokens { get; set; }
+        /// <summary>工具结果层（Role=Tool 且非压缩摘要）token 估算。</summary>
+        public int ToolResultTokens { get; set; }
+        /// <summary>思维链层：各消息 ReasoningContent 部分的 token 估算（已从角色桶中扣除）。</summary>
+        public int ReasoningTokens { get; set; }
         public int MessageCount { get; set; }
         public int ToolCount { get; set; }
         /// <summary>规范化工具名称、描述和参数 schema 的稳定哈希。</summary>
@@ -127,6 +137,8 @@ namespace PuddingCode.Platform
     public sealed class ContextUsageSnapshotStore
     {
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+        /// <summary>压缩摘要内容标记：请求侧不携带 ContentType，只能按标记识别。</summary>
+        private const string CompactSummaryMarker = "<compact_summary>";
         private static readonly ConcurrentDictionary<string, Tokenizer> Tokenizers = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, ContextUsageSnapshot> _snapshots = new();
         private readonly ConcurrentDictionary<string, double> _promptCalibrationRatios = new(StringComparer.OrdinalIgnoreCase);
@@ -157,6 +169,11 @@ namespace PuddingCode.Platform
             var historyTokens = 0;
             var systemText = new StringBuilder();
             var historyText = new StringBuilder();
+            var systemPromptTokens = 0;
+            var compactionSummaryTokens = 0;
+            var conversationTokens = 0;
+            var toolResultTokens = 0;
+
             foreach (var message in messages)
             {
                 var content = message.Content ?? string.Empty;
@@ -174,7 +191,44 @@ namespace PuddingCode.Platform
                     if (content.Length > 0)
                         historyText.AppendLine(content);
                 }
+
+                // 分层归因（上下文用量进度条）：各桶互斥且穷尽 —— ChatRole 只有
+                // System/User/Assistant/Tool，压缩摘要按内容标记识别（不依赖角色，
+                // 注入路径可能落在 System 或 User 上）。
+                if (content.Contains(CompactSummaryMarker, StringComparison.OrdinalIgnoreCase))
+                {
+                    compactionSummaryTokens += tokenCount;
+                }
+                else if (message.Role == ChatRole.System)
+                {
+                    systemPromptTokens += tokenCount;
+                }
+                else if (message.Role == ChatRole.Tool)
+                {
+                    toolResultTokens += tokenCount;
+                }
+                else
+                {
+                    conversationTokens += tokenCount;
+                }
             }
+
+            // 思维链层（第五桶）：Assistant/User 消息的 ReasoningContent 部分单独计量，
+            // 再从对话消息桶里扣除，保证五个桶互斥且合计 = MessageTokens。
+            var reasoningTokens = 0;
+            foreach (var message in messages)
+            {
+                if (message.ContinuationState is { OutputItemsJson.Count: > 0 })
+                    continue;
+                if (message.Role is not (ChatRole.Assistant or ChatRole.User))
+                    continue;
+                if ((message.Content ?? string.Empty).Contains(
+                        CompactSummaryMarker,
+                        StringComparison.OrdinalIgnoreCase))
+                    continue;
+                reasoningTokens += CountTokens(message.ReasoningContent, modelId);
+            }
+            conversationTokens = Math.Max(0, conversationTokens - reasoningTokens);
 
             var toolTokens = CountToolDefinitionTokens(tools, modelId);
             var toolText = tools is { Count: > 0 }
@@ -199,6 +253,11 @@ namespace PuddingCode.Platform
                 ToolDefinitionTokens = toolTokens,
                 SystemMessageTokens = systemTokens,
                 HistoryMessageTokens = historyTokens,
+                SystemPromptTokens = systemPromptTokens,
+                CompactionSummaryTokens = compactionSummaryTokens,
+                ConversationTokens = conversationTokens,
+                ToolResultTokens = toolResultTokens,
+                ReasoningTokens = reasoningTokens,
                 MessageCount = messages.Count,
                 ToolCount = tools?.Count ?? 0,
                 ToolDefinitionHash = toolDefinitionHash,
@@ -270,6 +329,11 @@ namespace PuddingCode.Platform
                 ToolDefinitionTokens = existing?.ToolDefinitionTokens ?? 0,
                 SystemMessageTokens = existing?.SystemMessageTokens ?? 0,
                 HistoryMessageTokens = existing?.HistoryMessageTokens ?? 0,
+                SystemPromptTokens = existing?.SystemPromptTokens ?? 0,
+                CompactionSummaryTokens = existing?.CompactionSummaryTokens ?? 0,
+                ConversationTokens = existing?.ConversationTokens ?? 0,
+                ToolResultTokens = existing?.ToolResultTokens ?? 0,
+                ReasoningTokens = existing?.ReasoningTokens ?? 0,
                 MessageCount = existing?.MessageCount ?? 0,
                 ToolCount = existing?.ToolCount ?? 0,
                 ToolDefinitionHash = existing?.ToolDefinitionHash,

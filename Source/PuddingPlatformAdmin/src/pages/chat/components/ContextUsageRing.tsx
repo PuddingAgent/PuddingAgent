@@ -25,9 +25,40 @@ export interface ContextUsageRingProps {
   subAgentsRunning?: number;
   /** 打开子代理管理器（原轻反馈带的 onClick 入口，避免移除胶囊后丢失入口）。 */
   onOpenSubAgents?: () => void;
+  /** 有效输入窗口（模型窗口 − 预留输出）；用于把「系统预留」段画出来。 */
+  tEffective?: number;
+  /** 请求组装时的分层归因；缺失或全 0 时回落单色条。 */
+  tBreakdown?: ContextUsageBreakdown | null;
   /** 运行状态详情（原 ComposerStatusDetails 弹层内容，并入本面板）。 */
   runtimeDetails?: React.ReactNode;
 }
+
+/** 上下文来源分层（与后端 ContextUsageSnapshot 同一口径，各桶互斥且穷尽）。 */
+export interface ContextUsageBreakdown {
+  systemPrompt: number;
+  toolDefinitions: number;
+  compactionSummary: number;
+  conversation: number;
+  reasoning: number;
+  toolResults: number;
+}
+
+/** 色段顺序 = 图例顺序；色序对齐参考设计图（蓝/绿/紫/橙/青/玫瑰）。 */
+const CONTEXT_SEGMENT_DEFS: ReadonlyArray<{
+  key: keyof ContextUsageBreakdown;
+  label: string;
+  color: string;
+}> = [
+  { key: 'systemPrompt', label: '系统提示词', color: '#5b7fd4' },
+  { key: 'toolDefinitions', label: '工具定义', color: '#6f8f72' },
+  { key: 'compactionSummary', label: '压缩后记忆', color: '#8a6fd4' },
+  { key: 'conversation', label: '对话消息', color: '#d98b28' },
+  { key: 'reasoning', label: '思维链', color: '#3f9a9a' },
+  { key: 'toolResults', label: '工具结果', color: '#c26b7a' },
+];
+
+/** 系统预留（输出预留）：条里除「已使用」外的非空闲区。 */
+const CONTEXT_RESERVED_COLOR = '#b9a99b';
 
 const SIZE = 34;
 const RING = 22;
@@ -52,6 +83,8 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   tLimit,
   tUsed,
   tPct,
+  tEffective,
+  tBreakdown,
   compactionStatus,
   error,
   subAgentsRunning,
@@ -64,6 +97,33 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   const pct = clampPct(tPct);
   const color = contextUsageColor(pct);
   const dash = configured ? (pct / 100) * CIRCUMFERENCE : 0;
+
+  // 分层色段：本地字典估算与 Provider 报数不同源，直接按估算值画到窗口刻度上
+  // 会与标题百分比打架。故按 usedTokens / Σ(各来源) 缩放后再算段宽 ——
+  // 色段之和恒等于「已使用」，与标题同口径。缺失/全 0 时回落单色条。
+  const breakdownTotal = tBreakdown
+    ? CONTEXT_SEGMENT_DEFS.reduce(
+        (sum, def) => sum + Math.max(0, tBreakdown[def.key] ?? 0),
+        0,
+      )
+    : 0;
+  const scale = breakdownTotal > 0 && tUsed > 0 ? tUsed / breakdownTotal : 0;
+  const segments =
+    scale > 0 && tLimit > 0
+      ? CONTEXT_SEGMENT_DEFS.map((def) => {
+          const tokens = Math.max(0, (tBreakdown?.[def.key] ?? 0) * scale);
+          return {
+            ...def,
+            tokens,
+            percent: (tokens / tLimit) * 100,
+          };
+        }).filter((segment) => segment.tokens > 0)
+      : [];
+  const reservedTokens =
+    tEffective && tEffective > 0 && tEffective < tLimit
+      ? tLimit - tEffective
+      : 0;
+  const reservedPercent = tLimit > 0 ? (reservedTokens / tLimit) * 100 : 0;
 
   const hoverSummary = configured
     ? `${pct.toFixed(1)}% · ${formatTokens(tUsed)} / ${formatTokens(tLimit)} 上下文已使用`
@@ -104,12 +164,76 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
                 已使用 {formatTokens(tUsed)}/{formatTokens(tLimit)}
               </span>
             </div>
-            <div className={styles.contextUsagePanelProgress}>
-              <span
-                className={styles.contextUsagePanelProgressBar}
-                style={{ width: `${pct}%`, background: color }}
-              />
-            </div>
+            {segments.length > 0 ? (
+              <>
+                <div className={styles.contextUsagePanelProgress}>
+                  {segments.map((segment) => (
+                    <span
+                      key={segment.key}
+                      className={styles.contextUsagePanelSegment}
+                      style={{
+                        width: `${segment.percent}%`,
+                        background: segment.color,
+                      }}
+                      title={`${segment.label} ${formatTokens(segment.tokens)}`}
+                    />
+                  ))}
+                  {reservedPercent > 0 && (
+                    <span
+                      className={styles.contextUsagePanelSegment}
+                      style={{
+                        width: `${reservedPercent}%`,
+                        background: CONTEXT_RESERVED_COLOR,
+                      }}
+                      title={`系统预留 ${formatTokens(reservedTokens)}`}
+                    />
+                  )}
+                </div>
+                <div
+                  className={styles.contextUsagePanelLegend}
+                  data-testid="context-usage-legend"
+                >
+                  {segments.map((segment) => (
+                    <div
+                      key={segment.key}
+                      className={styles.contextUsagePanelLegendRow}
+                    >
+                      <span
+                        className={styles.contextUsagePanelLegendDot}
+                        style={{ background: segment.color }}
+                      />
+                      <span className={styles.contextUsagePanelLegendLabel}>
+                        {segment.label}
+                      </span>
+                      <span className={styles.contextUsagePanelLegendValue}>
+                        {segment.percent.toFixed(1)}%
+                      </span>
+                    </div>
+                  ))}
+                  {reservedPercent > 0 && (
+                    <div className={styles.contextUsagePanelLegendRow}>
+                      <span
+                        className={styles.contextUsagePanelLegendDot}
+                        style={{ background: CONTEXT_RESERVED_COLOR }}
+                      />
+                      <span className={styles.contextUsagePanelLegendLabel}>
+                        系统预留
+                      </span>
+                      <span className={styles.contextUsagePanelLegendValue}>
+                        {reservedPercent.toFixed(1)}%
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className={styles.contextUsagePanelProgress}>
+                <span
+                  className={styles.contextUsagePanelProgressBar}
+                  style={{ width: `${pct}%`, background: color }}
+                />
+              </div>
+            )}
             <div className={styles.contextUsagePanelBody}>
               {/* 本区只保留「运行状态块没覆盖」的信息：已使用/总量已在标题行，
                   剩余与缓存命中在同面板下方运行状态块里（且剩余是服务端口径：

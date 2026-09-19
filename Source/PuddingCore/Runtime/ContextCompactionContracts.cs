@@ -71,6 +71,16 @@ public sealed record ContextHealthSnapshot(
     public int? ToolDefinitionTokens { get; init; }
     public int? SystemMessageTokens { get; init; }
     public int? HistoryMessageTokens { get; init; }
+    /// <summary>系统提示词层（不含压缩摘要）。</summary>
+    public int? SystemPromptTokens { get; init; }
+    /// <summary>压缩摘要层（压缩后记忆占用）。</summary>
+    public int? CompactionSummaryTokens { get; init; }
+    /// <summary>对话消息层。</summary>
+    public int? ConversationTokens { get; init; }
+    /// <summary>工具结果层。</summary>
+    public int? ToolResultTokens { get; init; }
+    /// <summary>思维链层（已从角色桶中扣除）。</summary>
+    public int? ReasoningTokens { get; init; }
     public int? MessageCount { get; init; }
     public int? ToolCount { get; init; }
     public int? ProviderPromptTokens { get; init; }

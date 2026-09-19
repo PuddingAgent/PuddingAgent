@@ -2549,6 +2549,22 @@ export interface ContextHealthSnapshot {
   shouldSuggestCompact: boolean;
   shouldAutoCompact: boolean;
   shouldBlockSend: boolean;
+  /** 请求组装时的分层归因（上下文用量进度条分色段用）。
+   *  五个桶互斥且穷尽，合计 = messageTokens；旧后端不返回时为 undefined。 */
+  messageTokens?: number;
+  toolDefinitionTokens?: number;
+  systemMessageTokens?: number;
+  historyMessageTokens?: number;
+  systemPromptTokens?: number;
+  compactionSummaryTokens?: number;
+  conversationTokens?: number;
+  toolResultTokens?: number;
+  reasoningTokens?: number;
+  messageCount?: number;
+  toolCount?: number;
+  providerPromptTokens?: number;
+  providerCompletionTokens?: number;
+  providerTotalTokens?: number;
 }
 
 export interface CompactSessionRequest {

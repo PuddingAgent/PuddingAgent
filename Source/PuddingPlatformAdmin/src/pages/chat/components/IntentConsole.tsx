@@ -927,6 +927,20 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               tLimit={contextHealth?.contextWindowTokens ?? tLimit}
               tUsed={contextHealth?.usedTokens ?? tUsed}
               tPct={effectiveContextUsagePercentage ?? 0}
+              tEffective={contextHealth?.effectiveWindowTokens}
+              tBreakdown={
+                contextHealth
+                  ? {
+                      systemPrompt: contextHealth.systemPromptTokens ?? 0,
+                      toolDefinitions: contextHealth.toolDefinitionTokens ?? 0,
+                      compactionSummary:
+                        contextHealth.compactionSummaryTokens ?? 0,
+                      conversation: contextHealth.conversationTokens ?? 0,
+                      reasoning: contextHealth.reasoningTokens ?? 0,
+                      toolResults: contextHealth.toolResultTokens ?? 0,
+                    }
+                  : undefined
+              }
               compactionStatus={compactionStatus}
               error={contextHealthError}
               subAgentsRunning={subAgentsRunning}
