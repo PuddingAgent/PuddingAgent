@@ -133,6 +133,32 @@ const PRESENTATION_LABELS: Partial<Record<ToolPresentationKind, string>> = {
 };
 
 /**
+ * presentation.kind → 展开体代码块语言标签（WorkBuddy 规格 S1 / 批注 2）。
+ * 由前端 kind 词表静态映射，不依赖后端 meta.language；无匹配回落 text。
+ */
+export const presentationLanguage = (
+  kind: ToolPresentationKind | undefined | null,
+): string => {
+  switch (kind) {
+    case 'terminal':
+    case 'job':
+      return 'bash';
+    case 'diff':
+      return 'diff';
+    case 'search':
+      return 'json';
+    default:
+      return 'text';
+  }
+};
+
+/** 展开体底部结果态文案（WorkBuddy 规格 S1 / 批注 2：成功 ✓ / 失败 ✕）。 */
+const RESULT_COPY: Record<Exclude<ToolCallRowStatus, 'running'>, string> = {
+  done: '✓ 运行成功',
+  error: '✕ 运行失败',
+};
+
+/**
  * 参数摘要（简化 presenter，对齐 D5 5.3；与 processPreview.formatActivityInput 同规则但省略前缀标签）：
  * 按 presentation.kind 优先取对应字段原文；无法结构化时安全截断原文。
  * 摘要绝不把原始 JSON 字段名带进默认面板。
@@ -336,6 +362,12 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({
                 className={styles.card}
                 data-testid="toolcall-presentation-card"
               >
+                {/* S1（批注 2）：代码块顶部语言标签条，sticky 吸附卡顶 */}
+                <div className={styles.langBar} data-testid="toolcall-lang">
+                  <span className={styles.langTag}>
+                    {presentationLanguage(kind)}
+                  </span>
+                </div>
                 <PresentationCard
                   meta={node.presentation.meta}
                   payload={node.output ?? node.arguments}
@@ -396,6 +428,18 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({
                     查看完整输出
                   </button>
                 )}
+              </div>
+            )}
+            {/* S1（批注 2）：展开体底部结果态行；running 尚无结果不渲染 */}
+            {status !== 'running' && (
+              <div
+                className={cx(
+                  styles.resultRow,
+                  status === 'error' && styles.resultRowError,
+                )}
+                data-testid="toolcall-result"
+              >
+                {RESULT_COPY[status]}
               </div>
             )}
           </div>

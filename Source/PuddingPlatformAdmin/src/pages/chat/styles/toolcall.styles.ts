@@ -241,6 +241,26 @@ export const useToolCallStyles = createStyles(() => ({
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
   },
+  /** 代码块语言标签条（S1 批注 2）：sticky 吸附卡顶，对齐 cardLabel 视觉族 */
+  langBar: {
+    position: 'sticky',
+    top: 0,
+    zIndex: 2,
+    padding: '4px 10px',
+    background: 'var(--pudding-chat-code-bg)',
+    borderBottom: '1px solid color-mix(in srgb, #e6edf3 14%, transparent)',
+    userSelect: 'none' as const,
+  },
+  /** 语言标签本体：mono 小字（与 cardLabel 同族，弱化透明度） */
+  langTag: {
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+    lineHeight: '16px',
+    fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
+    color: '#e6edf3',
+    opacity: 0.75,
+  },
   /** error 时 OUT 首行红 */
   errorText: {
     color: 'var(--pudding-status-error)',
@@ -268,6 +288,20 @@ export const useToolCallStyles = createStyles(() => ({
       outline: '2px solid var(--pudding-status-running)',
       outlineOffset: -2,
     },
+  },
+  /** 展开体底部结果态行（S1 批注 2）：✓ 运行成功（success 色） */
+  resultRow: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 11,
+    lineHeight: '16px',
+    color: 'var(--pudding-status-success)',
+    userSelect: 'none' as const,
+  },
+  /** 失败态：✕ 运行失败（error 色） */
+  resultRowError: {
+    color: 'var(--pudding-status-error)',
   },
 
   // ── ToolCallTree（CU-07 递归调用树）──

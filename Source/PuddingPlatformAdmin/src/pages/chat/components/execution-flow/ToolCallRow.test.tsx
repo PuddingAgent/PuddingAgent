@@ -10,7 +10,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 import type { ToolNode } from '../../projections/executionFlowProjector';
-import { ToolCallRow, mapToolStateToRowStatus } from './ToolCallRow';
+import { ToolCallRow, mapToolStateToRowStatus, presentationLanguage } from './ToolCallRow';
 
 const makeNode = (extra: Partial<ToolNode> = {}): ToolNode => ({
   kind: 'tool',
@@ -262,5 +262,84 @@ expect(row.getAttribute('aria-label')).toBe('shell 工具调用（成功）');
     );
     const duration = screen.getByTestId('toolcall-duration');
     expect(duration.textContent).toBe('1m03s · exit 1');
+  });
+
+  // ── S1（看板卡 8c8f9f84 / WorkBuddy 批注 1、2）：折叠/展开两态 + 语言标签 + 结果态 ──
+  it('S1 presentationLanguage：kind → 语言标签映射（终端/脚本 bash、diff、search json、其余 text）', () => {
+    expect(presentationLanguage('terminal')).toBe('bash');
+    expect(presentationLanguage('job')).toBe('bash');
+    expect(presentationLanguage('diff')).toBe('diff');
+    expect(presentationLanguage('search')).toBe('json');
+    expect(presentationLanguage('read')).toBe('text');
+    expect(presentationLanguage('web')).toBe('text');
+    expect(presentationLanguage('delegation')).toBe('text');
+    expect(presentationLanguage('generic')).toBe('text');
+    expect(presentationLanguage(undefined)).toBe('text');
+    expect(presentationLanguage(null)).toBe('text');
+  });
+
+  it('S1 折叠态（批注 1）：默认折叠只显示人类可读摘要，完整命令/语言标签/结果态均不渲染', () => {
+    render(
+      <ToolCallRow
+        node={makeNode({
+          presentation: { kind: 'terminal', meta: { command: 'git status' } },
+        })}
+      />,
+    );
+    const row = screen.getByTestId('toolcall-row');
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+    // 摘要是人类可读摘要（单行输出首行契约），非 JSON 原文
+    const summary = screen.getByTestId('toolcall-summary');
+    expect(summary.textContent).toBe('On branch master');
+    expect(summary.textContent).not.toContain('"command"');
+    // 折叠态：IN 卡（完整命令原文）、语言标签、结果态均不挂载
+    expect(screen.queryByTestId('toolcall-in')).toBeNull();
+    expect(screen.queryByTestId('toolcall-lang')).toBeNull();
+    expect(screen.queryByTestId('toolcall-result')).toBeNull();
+  });
+
+  it('S1 展开态（批注 2）：presentation 卡顶部语言标签 bash + 底部结果态 ✓ 运行成功', () => {
+    render(
+      <ToolCallRow
+        node={makeNode({
+          presentation: { kind: 'terminal', meta: { command: 'git status' } },
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('toolcall-row'));
+    expect(screen.getByTestId('toolcall-lang').textContent).toBe('bash');
+    expect(screen.getByTestId('toolcall-result').textContent).toBe(
+      '✓ 运行成功',
+    );
+  });
+
+  it('S1 失败态：展开后结果态为 ✕ 运行失败', () => {
+    render(
+      <ToolCallRow
+        node={makeNode({
+          state: 'failed',
+          error: 'boom',
+          output: undefined,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('toolcall-row'));
+    expect(screen.getByTestId('toolcall-result').textContent).toBe(
+      '✕ 运行失败',
+    );
+  });
+
+  it('S1 running：展开体挂语言标签但不渲染结果态行（尚无结果）', () => {
+    render(
+      <ToolCallRow
+        node={makeNode({
+          state: 'running',
+          presentation: { kind: 'terminal', meta: { command: 'npm test' } },
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('toolcall-row'));
+    expect(screen.getByTestId('toolcall-lang').textContent).toBe('bash');
+    expect(screen.queryByTestId('toolcall-result')).toBeNull();
   });
 });
