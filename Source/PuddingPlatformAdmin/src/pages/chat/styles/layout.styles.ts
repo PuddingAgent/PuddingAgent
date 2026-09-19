@@ -1,4 +1,4 @@
-﻿// ── layout styles ─────────────────────────────────
+// ── layout styles ─────────────────────────────────
 import { createStyles } from 'antd-style';
 
 export const useLayoutStyles = createStyles(({ token }) => ({
@@ -131,7 +131,11 @@ export const useLayoutStyles = createStyles(({ token }) => ({
     flex: 1,
     minHeight: 0,
     overflow: 'hidden',
-    padding: '0 20px',
+    // 布局留白（2026-09-19 用户诉求：消息区过宽、两侧需呼吸感）：
+    // 消息列表与 IntentConsole 共用本容器，改此一处即可整体收窄并保持左右对齐。
+    // 用 clamp 而非固定 px 阅读上限：窄屏保持 20px 基础内距不被挤压，
+    // 宽屏按视口渐进放宽（4vw）至上限 64px，避免大屏内容贴边。
+    padding: '0 clamp(20px, 4vw, 64px)',
     background: 'var(--pudding-chat-bg)',
   },
   chatBodyWithDev: {
