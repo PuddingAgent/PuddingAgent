@@ -395,8 +395,11 @@ describe('AgentMessageBubble projection dual-path equivalence (CU-11 Phase 2)', 
         processItems={turn1ProcessItems as never}
       />,
     );
-    // 单一尾部组默认展开；无投影时正文仍由整块气泡兜底。
+    // 用户批注（2026-09-19）：完成态行为组折叠，成员 DOM 不挂载；
+    // 点击标题行手动展开后才可见。
     expect(screen.getAllByTestId('activity-group-header')).toHaveLength(1);
+    expect(screen.queryAllByTestId('toolcall-row')).toHaveLength(0);
+    fireEvent.click(screen.getByTestId('activity-group-header'));
     expect(screen.getAllByTestId('toolcall-row')).toHaveLength(2);
     expect(screen.getByTestId('delegation-list')).toBeTruthy();
     expect(screen.getByTestId('delegation-item-sa-1')).toBeTruthy();
@@ -412,19 +415,13 @@ describe('AgentMessageBubble projection dual-path equivalence (CU-11 Phase 2)', 
     );
     expect(screen.getAllByTestId('turn-text-segment')).toHaveLength(1);
     expect(screen.getAllByTestId('activity-group-header')).toHaveLength(1);
-    // I-09 权威语义：唯一行为组 = 最新组，默认展开（成员 DOM 挂载），与 path A 等价。
-    // （旧断言按 CU-11 语义「组后还有正文即历史组默认折叠」点击 header，实际会把
-    // 已展开的组折叠，与「折叠历史组卸载成员 DOM」的 I-09 设计直接冲突。）
-    expect(screen.getAllByTestId('toolcall-row')).toHaveLength(2);
-    expect(screen.getByTestId('delegation-list')).toBeTruthy();
-    expect(screen.getByTestId('delegation-item-sa-1')).toBeTruthy();
-    // 折叠态：成员 DOM 完全卸载（不是 CSS 隐藏），即 CollapsibleUnmountRegion 关闭语义。
-    fireEvent.click(screen.getByTestId('activity-group-header'));
+    // 完成态默认折叠（用户批注 2026-09-19）：成员 DOM 完全卸载。
     expect(screen.queryByTestId('toolcall-row')).toBeNull();
     expect(screen.queryByTestId('delegation-list')).toBeNull();
-    // 再次展开：成员 DOM 重新挂载。
+    // 手动展开：成员 DOM 重新挂载，与 path A 展开后结构等价。
     fireEvent.click(screen.getByTestId('activity-group-header'));
     expect(screen.getAllByTestId('toolcall-row')).toHaveLength(2);
+    expect(screen.getByTestId('delegation-list')).toBeTruthy();
     expect(screen.getByTestId('delegation-item-sa-1')).toBeTruthy();
   });
 
@@ -436,9 +433,11 @@ describe('AgentMessageBubble projection dual-path equivalence (CU-11 Phase 2)', 
         processItems={turn1ProcessItems as never}
       />,
     );
+    // 完成态默认折叠（用户批注 2026-09-19）：先手动展开再取结构。
+    fireEvent.click(screen.getByTestId('activity-group-header'));
     const pathAToolRows = screen.getAllByTestId('toolcall-row').length;
     const pathADelegation = Boolean(screen.queryByTestId('delegation-list'));
-    // 路径 A 折叠态：成员 DOM 完全卸载（I-09 语义）。
+    // 再点击回折叠态：成员 DOM 完全卸载（I-09 语义）。
     fireEvent.click(screen.getByTestId('activity-group-header'));
     const pathACollapsedToolRows = screen.queryAllByTestId('toolcall-row').length;
     const pathACollapsedDelegation = Boolean(
@@ -453,7 +452,8 @@ describe('AgentMessageBubble projection dual-path equivalence (CU-11 Phase 2)', 
         executionFlowProjection={turn1Projection}
       />,
     );
-    // I-09 语义：唯一行为组 = 最新组，默认展开——与 path A 相同，无需点击。
+    // 与 path A 同源：完成态默认折叠，先展开再取结构（双路径等价）。
+    fireEvent.click(screen.getByTestId('activity-group-header'));
     const pathBToolRows = screen.getAllByTestId('toolcall-row').length;
     const pathBDelegation = Boolean(screen.queryByTestId('delegation-list'));
     fireEvent.click(screen.getByTestId('activity-group-header'));

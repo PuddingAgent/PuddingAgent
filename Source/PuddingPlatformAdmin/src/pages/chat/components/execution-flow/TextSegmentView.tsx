@@ -30,7 +30,8 @@ const StaticTextSegment: React.FC<StaticSegmentProps> = ({
       data-testid="turn-text-segment"
       onContextMenu={onContextMenu}
     >
-      <ExpandableMessageContent>
+      {/* 用户批注（2026-09-19）：正文是给用户看的，不提供折叠入口。 */}
+      <ExpandableMessageContent collapsible={false}>
         <MessageItem markdownText={text} isStreaming={false} workspaceId={workspaceId} />
       </ExpandableMessageContent>
     </div>

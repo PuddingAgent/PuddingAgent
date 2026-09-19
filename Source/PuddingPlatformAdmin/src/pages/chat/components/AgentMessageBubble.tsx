@@ -715,7 +715,8 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
                     {quotedMessage && (
                       <QuotedMessageBlock quotedMessage={quotedMessage} />
                     )}
-                    <ExpandableMessageContent>
+                    {/* 用户批注（2026-09-19）：正文是给用户看的，不提供折叠入口。 */}
+                    <ExpandableMessageContent collapsible={false}>
                       <MessageItem
                         markdownText={content}
                         isStreaming={false}

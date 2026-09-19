@@ -73,10 +73,15 @@ export const ActivityGroup: React.FC<ActivityGroupProps> = ({
   const [visibleNodeLimit, setVisibleNodeLimit] = React.useState(
     INITIAL_VISIBLE_ACTIVITY_NODES,
   );
-  // 默认值：最新行为组始终展开（运行中和完成态一致）；尾部新正文不会把
-  // 刚完成的行为轨迹藏掉。只有新行为组出现时，原组才转为历史组。
+  // 默认值：最新行为组且仍在运行时才展开。用户批注（2026-09-19）：「输出消息
+  // 完成之后，应该折叠，用户可以手动点击展开」——turn 完成后所有行为组回落单行
+  // 摘要，点标题行 chevron 可再展开。原语义「最新组始终展开（运行中与完成态
+  // 一致）」会让完成态把整段轨迹铺在主视图上。
   // 用户 override 优先且粘性。
-  const groupExpanded = registry.isExpanded(block.key, isLatestGroup);
+  const groupExpanded = registry.isExpanded(
+    block.key,
+    isLatestGroup && isRunActive,
+  );
   const label = buildActivityGroupLabel(block.summary);
   const durationText =
     block.summary.durationMs !== null
@@ -214,7 +219,10 @@ export const ActivityGroup: React.FC<ActivityGroupProps> = ({
                   （尚有 {hiddenNodeCount} 项）
                 </button>
               )}
-              <ExpandableMessageContent label="过程" previewHeight={240} disabled={isRunActive && isTailGroup}>
+              {/* 过程内容不再做二级折叠：行为组标题行已是「完成后折叠 / 点击展开」的
+                  唯一入口，再叠一层 240px 预览会多出「展开完整过程 / 收起过程」按钮，
+                  语义重复（用户批注 2026-09-19）。展开组即渲染全部成员。 */}
+              <ExpandableMessageContent label="过程" collapsible={false}>
                 {renderNodes(visibleNodes)}
               </ExpandableMessageContent>
             </div>

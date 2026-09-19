@@ -69,14 +69,17 @@ describe('TurnContentStream（内容块流）', () => {
       screen.getAllByTestId('message-item').map((el) => el.getAttribute('data-markdown')),
     ).toEqual(['文本A', '文本B', '文本C']);
     expect(groupHeaders()).toHaveLength(3);
-    // 历史组默认折叠；最新组即使 turn 已完成也保持展开。
+    // 用户批注（2026-09-19）：消息输出完成后行为组折叠，用户手动点击展开。
+    // 故 isRunActive=false 时三个组全部折叠，成员 DOM 不挂载。
     const groups = screen.getAllByTestId('activity-group');
     expect(groups.map((g) => g.getAttribute('data-expanded'))).toEqual([
       'false',
       'false',
-      'true',
+      'false',
     ]);
-    // 最新组成员行可见，但工具详情仍默认折叠。
+    expect(screen.queryAllByTestId('toolcall-row')).toHaveLength(0);
+    // 手动展开最新组后成员行挂载，但工具详情仍默认折叠。
+    fireEvent.click(screen.getAllByTestId('activity-group-header')[2]);
     expect(screen.getAllByTestId('toolcall-row')).toHaveLength(1);
     expect(screen.queryByTestId('toolcall-expanded')).toBeNull();
   });
@@ -267,6 +270,8 @@ describe('TurnContentStream（内容块流）', () => {
       />,
     );
 
+    // 完成态行为组默认折叠（用户批注 2026-09-19），先手动展开再断言窗口。
+    fireEvent.click(screen.getByTestId('activity-group-header'));
     expect(screen.getAllByTestId('toolcall-row')).toHaveLength(6);
     fireEvent.click(screen.getByTestId('activity-group-reveal-earlier'));
     expect(screen.getAllByTestId('toolcall-row')).toHaveLength(30);

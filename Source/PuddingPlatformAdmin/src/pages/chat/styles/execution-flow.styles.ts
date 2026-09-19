@@ -298,6 +298,13 @@ export const useExecutionFlowStyles = createStyles(() => ({
     minWidth: 0,
     maxHeight: CHAT_BLOCK_MAX_HEIGHT,
     overflow: 'auto',
+    // 用户批注（2026-09-19）：「推理正文没有容器，与回答无法区分」——沿用
+    // reasoningBody（折叠展开体）的浅色块 + 圆角 + 内距，把推理文本收进容器，
+    // 与正文回答（agentBubbleNew）视觉分层。padding 计入 maxHeight（border-box）。
+    background: 'var(--pudding-chat-code-bg)',
+    borderRadius: 8,
+    padding: '8px 10px',
+    boxSizing: 'border-box' as const,
     ...thinScrollbarStyle,
     ...scrollFocusRingStyle,
   },
