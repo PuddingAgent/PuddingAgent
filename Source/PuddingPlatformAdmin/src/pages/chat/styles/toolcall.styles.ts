@@ -3,6 +3,11 @@
 // token 全部走 --pudding-* / --accent-* 变量，组件内零字面量主色；
 // 不触碰 message.styles.ts / process.styles.ts / global.style.ts。
 import { createStyles } from 'antd-style';
+import {
+  CHAT_TOOLCARD_MAX_HEIGHT,
+  scrollFocusRingStyle,
+  thinScrollbarStyle,
+} from './scrollTokens';
 
 export const useToolCallStyles = createStyles(() => ({
   /** 列表容器：仅在有 tool_call 行时渲染 */
@@ -156,14 +161,16 @@ export const useToolCallStyles = createStyles(() => ({
     padding: '0 8px 6px 32px',
     boxSizing: 'border-box' as const,
   },
-  /** IN/OUT 卡：深底 + 等宽 + 260px 内滚（presentation 卡沿用） */
+  /** IN/OUT 卡：深底 + 等宽 + 块级限高内滚（token CHAT_TOOLCARD_MAX_HEIGHT=260；presentation 卡沿用）；键盘可聚焦滚动（看板卡 73c87ea8） */
   card: {
     position: 'relative',
-    maxHeight: 260,
+    maxHeight: CHAT_TOOLCARD_MAX_HEIGHT,
     overflow: 'auto',
     borderRadius: 6,
     background: 'var(--pudding-chat-code-bg)',
     border: '1px solid color-mix(in srgb, #e6edf3 12%, transparent)',
+    ...thinScrollbarStyle,
+    ...scrollFocusRingStyle,
   },
   /**
    * IN/OUT 参数面板：走主题感知变量（浅色=灰阶浅底，深色=终端深底）。
@@ -172,11 +179,13 @@ export const useToolCallStyles = createStyles(() => ({
    */
   docCard: {
     position: 'relative',
-    maxHeight: 260,
+    maxHeight: CHAT_TOOLCARD_MAX_HEIGHT,
     overflow: 'auto',
     borderRadius: 6,
     background: 'var(--pudding-toolcard-bg)',
     border: '1px solid var(--pudding-toolcard-border)',
+    ...thinScrollbarStyle,
+    ...scrollFocusRingStyle,
   },
   /** sticky 标签：随卡滚动吸附顶部（doc 版，主题感知） */
   docLabel: {

@@ -70,7 +70,7 @@ export const ReasoningDisclosureRow: React.FC<ReasoningDisclosureRowProps> = ({
   if (visibleLines.length === 0) return null;
 
   // I-10 §7.8：行为组内联完整推理 —— 无二级 chevron/disclosure，
-  // 全文自然换行（reasoningFullText 禁止复用 reasoningSummary 的 nowrap/ellipsis 类名）；
+  // 全文自然换行、块级限高内滚（看板卡 73c87ea8；reasoningFullText 禁止复用 reasoningSummary 的 nowrap/ellipsis 类名）；
   // meta：有段时长显示「思考 · Ns」，否则仅「思考」（running 不伪造数值）。
   if (mode === 'inline-full') {
     return (
@@ -89,6 +89,7 @@ export const ReasoningDisclosureRow: React.FC<ReasoningDisclosureRowProps> = ({
           <div
             className={styles.reasoningFullText}
             data-testid="reasoning-full-text"
+            tabIndex={0}
           >
             {fullText}
           </div>
@@ -118,6 +119,7 @@ export const ReasoningDisclosureRow: React.FC<ReasoningDisclosureRowProps> = ({
           <div
             className={styles.reasoningBody}
             data-testid="reasoning-disclosure-body"
+            tabIndex={0}
           >
             <pre className={styles.reasoningText}>{fullText}</pre>
           </div>

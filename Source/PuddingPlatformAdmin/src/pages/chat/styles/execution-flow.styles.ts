@@ -7,6 +7,11 @@
 // token 全部走 --pudding-* / --accent-* 变量，组件内零字面量主色；
 // 不触碰 message.styles.ts / process.styles.ts / global.style.ts。
 import { createStyles } from 'antd-style';
+import {
+  CHAT_BLOCK_MAX_HEIGHT,
+  scrollFocusRingStyle,
+  thinScrollbarStyle,
+} from './scrollTokens';
 
 export const useExecutionFlowStyles = createStyles(() => ({
   /** 行容器：非可展开行无 hover/焦点反馈；chevron 占位保持对齐（harness 24px 行，规范下限 28px） */
@@ -234,14 +239,16 @@ export const useExecutionFlowStyles = createStyles(() => ({
     cursor: 'pointer',
     textDecoration: 'underline',
   },
-  /** 展开体：完整可审计文本，最大高度 320px 内部滚动（测试断言 max-height:320px / overflow:auto） */
+  /** 展开体：完整可审计文本，块级限高内滚（token CHAT_BLOCK_MAX_HEIGHT=320；测试断言 max-height:320px / overflow:auto）；键盘可聚焦滚动 */
   reasoningBody: {
-    maxHeight: 320,
+    maxHeight: CHAT_BLOCK_MAX_HEIGHT,
     overflow: 'auto',
     borderRadius: 8,
     background: 'var(--pudding-chat-code-bg)',
     padding: '8px 10px',
     boxSizing: 'border-box' as const,
+    ...thinScrollbarStyle,
+    ...scrollFocusRingStyle,
   },
   /** pre 保留换行（可审计原文），等宽字体 */
   reasoningText: {
@@ -279,7 +286,7 @@ export const useExecutionFlowStyles = createStyles(() => ({
     color: 'var(--pudding-chat-text-caption)',
     fontVariantNumeric: 'tabular-nums' as const,
   },
-  /** 完整推理正文：自然换行（禁止复用 reasoningSummary 的 nowrap/ellipsis 类名） */
+  /** 完整推理正文：自然换行（禁止复用 reasoningSummary 的 nowrap/ellipsis 类名）；块级限高内滚（看板卡 73c87ea8，与 reasoningBody 同源 token） */
   reasoningFullText: {
     margin: 0,
     fontSize: 12.5,
@@ -289,6 +296,10 @@ export const useExecutionFlowStyles = createStyles(() => ({
     overflowWrap: 'anywhere' as const,
     wordBreak: 'break-word' as const,
     minWidth: 0,
+    maxHeight: CHAT_BLOCK_MAX_HEIGHT,
+    overflow: 'auto',
+    ...thinScrollbarStyle,
+    ...scrollFocusRingStyle,
   },
 
   // ── TurnContentStream（AgentTurnCard 重构：正文段 ⇄ 行为组内容块流）──

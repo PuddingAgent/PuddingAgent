@@ -386,6 +386,7 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({
               <div
                 className={styles.card}
                 data-testid="toolcall-presentation-card"
+                tabIndex={0}
               >
                 {/* S1（批注 2）：代码块顶部语言标签条，sticky 吸附卡顶 */}
                 <div className={styles.langBar} data-testid="toolcall-lang">
@@ -400,7 +401,11 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({
               </div>
             )}
             {inText && (
-              <div className={styles.docCard} data-testid="toolcall-in">
+              <div
+                className={styles.docCard}
+                data-testid="toolcall-in"
+                tabIndex={0}
+              >
                 <div
                   className={styles.docLabel}
                   data-testid="toolcall-in-label"
@@ -411,7 +416,11 @@ export const ToolCallRow: React.FC<ToolCallRowProps> = ({
               </div>
             )}
             {showOut && (
-              <div className={styles.docCard} data-testid="toolcall-out">
+              <div
+                className={styles.docCard}
+                data-testid="toolcall-out"
+                tabIndex={0}
+              >
                 <div
                   className={cx(
                     styles.docLabel,

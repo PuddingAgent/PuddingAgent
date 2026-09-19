@@ -156,4 +156,24 @@ describe('ReasoningDisclosureRow', () => {
     expect(css).toContain('executionFlowRowSweep');
     expect(css).toContain('prefers-reduced-motion');
   });
+
+  // ── 看板卡 73c87ea8：内容块高度超出 → 限制高度转内部滚动（块级，非卡级）──
+  it('块级限高内滚（73c87ea8）：展开体/inline-full 滚动容器可键盘聚焦，同源限高 token + 细滚动条生效', () => {
+    render(<ReasoningDisclosureRow lines={lines} />);
+    fireEvent.click(screen.getByTestId('reasoning-disclosure-row'));
+    // 滚动容器可被键盘聚焦并滚动（a11y：tabIndex=0 + 样式层焦点环）
+    expect(
+      screen.getByTestId('reasoning-disclosure-body').getAttribute('tabindex'),
+    ).toBe('0');
+    // inline-full（行为组内联完整推理）：同一套限高 token，块级内滚
+    render(<ReasoningDisclosureRow lines={lines} mode="inline-full" />);
+    expect(
+      screen.getByTestId('reasoning-full-text').getAttribute('tabindex'),
+    ).toBe('0');
+    const css = injectedCssText();
+    expect(css).toContain('max-height:320px'); // CHAT_BLOCK_MAX_HEIGHT
+    expect(css).toContain('overflow:auto');
+    expect(css).toContain('scrollbar-width:thin');
+    expect(css).toContain('::-webkit-scrollbar');
+  });
 });

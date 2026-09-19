@@ -236,6 +236,34 @@ expect(row.getAttribute('aria-label')).toBe('shell 工具调用（成功）');
     expect(screen.getByTestId('presentation-terminal')).toBeTruthy();
   });
 
+  // ── 看板卡 73c87ea8：内容块高度超出 → 限制高度转内部滚动（块级，非卡级）──
+  it('块级限高内滚（73c87ea8）：presentation 卡与 IN/OUT 卡限高滚动、可键盘聚焦、细滚动条', () => {
+    render(
+      <ToolCallRow
+        node={makeNode({
+          output: 'line\n'.repeat(80),
+          presentation: { kind: 'terminal', meta: { command: 'git status' } },
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('toolcall-row'));
+    // 三个滚动容器均可键盘聚焦（a11y：tabIndex=0）
+    expect(
+      screen.getByTestId('toolcall-presentation-card').getAttribute('tabindex'),
+    ).toBe('0');
+    expect(screen.getByTestId('toolcall-in').getAttribute('tabindex')).toBe(
+      '0',
+    );
+    expect(screen.getByTestId('toolcall-out').getAttribute('tabindex')).toBe(
+      '0',
+    );
+    const css = injectedCssText();
+    expect(css).toContain('max-height:260px'); // CHAT_TOOLCARD_MAX_HEIGHT
+    expect(css).toContain('overflow:auto');
+    expect(css).toContain('scrollbar-width:thin');
+    expect(css).toContain('::-webkit-scrollbar');
+  });
+
   // ── 行为链升级 §3.3：耗时 / exit code 上折叠行尾部 ──
   it('completed + durationMs：折叠行尾部渲染耗时（tabular 计量），running 不渲染', () => {
     const { rerender } = render(

@@ -6,6 +6,10 @@
 //  - 复制按钮（复制成功 1.5s 反馈，对齐 CodeBlock/reasoningCopy 交互）。
 import { createStyles } from 'antd-style';
 import React, { useCallback, useState } from 'react';
+import {
+  CHAT_RENDERER_BODY_MAX_HEIGHT,
+  thinScrollbarStyle,
+} from '../../styles/scrollTokens';
 
 const MONO_FONT =
   "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace";
@@ -68,11 +72,11 @@ export const useRendererStyles = createStyles(() => ({
     background:
       'color-mix(in srgb, var(--pudding-chat-text-caption) 12%, transparent)',
   },
-  /** 内容窗口：mono + 224px 内滚（§3.5） */
+  /** 内容窗口：mono + 块级限高内滚（token CHAT_RENDERER_BODY_MAX_HEIGHT=224，§3.5；细滚动条皮肤统一，看板卡 73c87ea8） */
   body: {
     margin: 0,
     padding: '8px 10px',
-    maxHeight: 224,
+    maxHeight: CHAT_RENDERER_BODY_MAX_HEIGHT,
     overflow: 'auto',
     fontSize: 12,
     lineHeight: 1.55,
@@ -80,6 +84,7 @@ export const useRendererStyles = createStyles(() => ({
     color: 'var(--pudding-chat-text)',
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
+    ...thinScrollbarStyle,
   },
   /** 复制按钮 */
   copy: {
