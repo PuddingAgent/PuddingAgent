@@ -666,7 +666,8 @@ public sealed class TaskControllerTests
 
         var backlog = await CreateTaskAsync("backlog");
         var backlogDto = AssertOkDto(await controller.Get(WorkspaceId, backlog.TaskId, CancellationToken.None));
-        CollectionAssert.AreEqual(new[] { "Ready" }, backlogDto.AllowedTransitions.ToArray());
+        // 集合序不确定（GetAllowedTransitions 返回 HashSet），故用 AreEquivalent 而非 AreEqual。
+        CollectionAssert.AreEquivalent(new[] { "Ready", "Cancelled" }, backlogDto.AllowedTransitions.ToArray());
 
         var failed = await CreateTaskAsync("failed");
         await SetStatusAsync(failed.TaskId, WorkspaceTaskStatus.Failed);

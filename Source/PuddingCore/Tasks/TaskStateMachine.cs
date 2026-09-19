@@ -94,14 +94,19 @@ public static class TaskStateMachine
                     out next);
 
             case TaskCommand.Cancel:
+                // 与 BuildTransitions 表保持同源：凡表中含 Cancelled 出边的状态，都必须能经 Cancel 命令到达。
                 return TryNext(
                     current,
                     new[]
                     {
+                        WorkspaceTaskStatus.Backlog,
                         WorkspaceTaskStatus.Ready,
+                        WorkspaceTaskStatus.Deferred,
+                        WorkspaceTaskStatus.Reserved,
                         WorkspaceTaskStatus.Assigned,
                         WorkspaceTaskStatus.InProgress,
-                        WorkspaceTaskStatus.Blocked
+                        WorkspaceTaskStatus.Blocked,
+                        WorkspaceTaskStatus.NeedsReview
                     },
                     WorkspaceTaskStatus.Cancelled,
                     out next);
@@ -206,14 +211,20 @@ public static class TaskStateMachine
     {
         return new Dictionary<WorkspaceTaskStatus, IReadOnlySet<WorkspaceTaskStatus>>
         {
-            [WorkspaceTaskStatus.Backlog] = Set(WorkspaceTaskStatus.Ready),
+            // 看板卡 2a92b3ed：Backlog/Deferred/Reserved/NeedsReview 原先只有 {Ready} 单元素出边，
+            // 已交付或已作废的卡没有任何终态通道，只能长期滞留（V6-T4 实例：143 张卡堆积在 Backlog）。
+            // 这里只补「关闭」这一条出边，不放宽到 Ready 之外的非终态迁移，保持其它语义不变。
+            [WorkspaceTaskStatus.Backlog] = Set(WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Cancelled),
             [WorkspaceTaskStatus.Ready] = Set(
                 WorkspaceTaskStatus.Deferred,
                 WorkspaceTaskStatus.Reserved,
                 WorkspaceTaskStatus.NeedsReview,
                 WorkspaceTaskStatus.Cancelled),
-            [WorkspaceTaskStatus.Deferred] = Set(WorkspaceTaskStatus.Ready),
-            [WorkspaceTaskStatus.Reserved] = Set(WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Assigned),
+            [WorkspaceTaskStatus.Deferred] = Set(WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Cancelled),
+            [WorkspaceTaskStatus.Reserved] = Set(
+                WorkspaceTaskStatus.Ready,
+                WorkspaceTaskStatus.Assigned,
+                WorkspaceTaskStatus.Cancelled),
             [WorkspaceTaskStatus.Assigned] = Set(
                 WorkspaceTaskStatus.InProgress,
                 WorkspaceTaskStatus.Blocked,
@@ -222,7 +233,7 @@ public static class TaskStateMachine
                 WorkspaceTaskStatus.Ready,
                 WorkspaceTaskStatus.NeedsReview,
                 WorkspaceTaskStatus.Cancelled),
-            [WorkspaceTaskStatus.NeedsReview] = Set(WorkspaceTaskStatus.Ready),
+            [WorkspaceTaskStatus.NeedsReview] = Set(WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Cancelled),
             [WorkspaceTaskStatus.InProgress] = Set(
                 WorkspaceTaskStatus.Blocked,
                 WorkspaceTaskStatus.Ready,
