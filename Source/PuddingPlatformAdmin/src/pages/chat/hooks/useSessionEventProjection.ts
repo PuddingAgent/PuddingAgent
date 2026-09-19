@@ -39,6 +39,7 @@ import {
   isSubAgentConversationEvent,
   isActiveAssistantTurn,
   isReasoningStep,
+  isStaleCompactionStarted,
   normalizeUsage,
   removeTrackedActiveMessageIdsForTurn,
   resolveTerminalAssistantMarkdown,
@@ -734,7 +735,12 @@ export function useSessionEventProjection({
               },
             };
           }
-          if (ev.type === 'context.compaction.started') {
+          // 陈旧 started 不得把普通 turn 翻成「正在压缩上下文」运行态：
+          // SSE 无游标全量重放历史时，多天前的孤儿 started 也会走到这里。
+          if (
+            ev.type === 'context.compaction.started' &&
+            !isStaleCompactionStarted(ev as unknown as Record<string, unknown>)
+          ) {
             const items = turn.assistant.timelineItems ?? [];
             const last = items.length > 0 ? items[items.length - 1] : null;
             if (

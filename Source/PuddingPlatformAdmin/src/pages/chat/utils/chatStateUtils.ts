@@ -157,6 +157,64 @@ function resolveLifecyclePayload(
   return typeof event.compactionId === 'string' ? event : null;
 }
 
+/**
+ * 压缩 started 的最大可信年龄。
+ * 为什么取 30 分钟而不是活性 TTL 的 10 分钟：这是「事件自报时间 vs 浏览器当前时间」的
+ * 跨机比较，必须留出时钟偏差余量；任何真实压缩都不可能跑这么久，而线上出现的
+ * 误报是「8 天前」（11466m），30 分钟足以区分两者。
+ */
+export const COMPACTION_STARTED_MAX_AGE_MS = 30 * 60 * 1000;
+
+/**
+ * 取事件发生时刻（毫秒）。兼容 raw/Pascal/UTC 变体与字符串/数值，取不到返回 undefined。
+ * 不做「取不到就当现在」的兜底——那会把未知冒充成新鲜，正是本次误报的成因。
+ */
+export function resolveEventOccurredAtMs(
+  raw: Record<string, unknown> | null | undefined,
+): number | undefined {
+  if (!raw) return undefined;
+  const keys = [
+    'occurredAt',
+    'OccurredAt',
+    'occurredAtUtc',
+    'OccurredAtUtc',
+    'recordedAt',
+    'RecordedAt',
+  ];
+  for (const key of keys) {
+    const value = raw[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Date.parse(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 路径无关的陈旧 started 判定：只有「刚发生」的 started 才可能是运行中的压缩。
+ *
+ * 为什么必需（2026-09-19 线上复现「未触发压缩却显示正在压缩上下文… 已运行 11466m」）：
+ * SSE 端点在无游标时从 sequence 0 全量重放历史
+ * （`SessionEventsController.EventsStream` → `after = afterSequence ?? 0` →
+ * `SessionEventStreamService.FollowAsync` 无界回放），而 live 通道不带 replay 标记，
+ * 按 compactionId 的判活门控只作用于 replay 路径，对它无效——于是多天前那次压缩的
+ * 孤儿 started 被当成实时事件点亮，耗时按事件时间计算，就显示成「已运行 11466m」。
+ *
+ * 规则：started 的事件时间距今超过 COMPACTION_STARTED_MAX_AGE_MS 即判定为陈旧，
+ * 一律不点亮运行态。取不到时间戳时返回 false（宁可不误杀），由服务端权威
+ * （bootstrap.compactionRunning）与活性 TTL 兜底。
+ */
+export function isStaleCompactionStarted(
+  raw: Record<string, unknown> | null | undefined,
+  now: number = Date.now(),
+): boolean {
+  const occurredAt = resolveEventOccurredAtMs(raw);
+  if (occurredAt === undefined) return false;
+  return now - occurredAt > COMPACTION_STARTED_MAX_AGE_MS;
+}
+
 export const createAssistant = (
   id: string,
   renderMode: 'legacy' | 'structured',

@@ -12,7 +12,9 @@ import {
   compactionTurnId,
   createId,
   formatCompactSuccessMessage,
+  isStaleCompactionStarted,
   mergeHistoryWithLifecycleTurns,
+  resolveEventOccurredAtMs,
 } from '../utils/chatStateUtils';
 import { logChatDiag } from '../utils/chatDiagnostics';
 
@@ -348,6 +350,19 @@ export function useCompaction({
       ) {
         return;
       }
+      // 路径无关的陈旧 started 门控（2026-09-19）：live 通道不带 replay 标记，
+      // SSE 无游标全量重放历史时会把多天前的孤儿 started 当实时事件送来，
+      // 按 id 的判活门控拦不住——见 chatStateUtils.isStaleCompactionStarted。
+      if (
+        event.type === 'context.compaction.started' &&
+        isStaleCompactionStarted(raw)
+      ) {
+        logChatDiag('compaction.startedIgnoredStale', {
+          compactionId,
+          replay: options?.replay === true,
+        });
+        return;
+      }
       const eventConversationId =
         typeof raw.conversationId === 'string' ? raw.conversationId : null;
       const sourceSessionId =
@@ -363,11 +378,7 @@ export function useCompaction({
           typeof raw.eventId === 'string' && raw.eventId
             ? raw.eventId
             : undefined,
-        occurredAtMs:
-          typeof raw.occurredAt === 'string' &&
-          Number.isFinite(Date.parse(raw.occurredAt))
-            ? Date.parse(raw.occurredAt)
-            : undefined,
+        occurredAtMs: resolveEventOccurredAtMs(raw),
       };
 
       if (!turnsRef.current.some((turn) => turn.turnId === compactTurnId)) {

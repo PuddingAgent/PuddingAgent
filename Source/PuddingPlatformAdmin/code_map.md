@@ -242,8 +242,8 @@
 
 | 文件 | 职责与边界 |
 |------|------------|
-| `src/pages/chat/utils/chatStateUtils.ts` | `resolveRunningCompactionId(events)`：只有「最后一个压缩生命周期事件是带非空 id 的 `started`」才判定为仍在运行；payload 支持对象 / JSON 字符串 / 已展平事件，解析异常返回 null |
-| `src/pages/chat/hooks/useCompaction.ts` | 重放判活门控：`replay===true` 且 id ≠ `runningCompactionId` 的 started **整条忽略**；重放命中的压缩点亮运行态但**永不弹 toast**。新增 `COMPACTION_LIVENESS_TIMEOUT_MS`(10min) 活性 TTL 与 `convergeStaleCompactions`：超时把 executing 压缩 turn 收敛为「压缩未完成（无终态记录）」并同步收敛 lifecycle map 副本、清 loading/文案、destroy toast |
+| `src/pages/chat/utils/chatStateUtils.ts` | `resolveRunningCompactionId(events)`：只有「最后一个压缩生命周期事件是带非空 id 的 `started`」才判定为仍在运行；payload 支持对象 / JSON 字符串 / 已展平事件，解析异常返回 null。另有 `isStaleCompactionStarted` / `resolveEventOccurredAtMs`（2026-09-19）：**路径无关**的陈旧 started 判定，事件时间距今 > `COMPACTION_STARTED_MAX_AGE_MS`(30min) 即不点亮；取不到时间戳返回 false（不误杀），由服务端权威与活性 TTL 兜底 |
+| `src/pages/chat/hooks/useCompaction.ts` | 重放判活门控：`replay===true` 且 id ≠ `runningCompactionId` 的 started **整条忽略**；重放命中的压缩点亮运行态但**永不弹 toast**。新增 `COMPACTION_LIVENESS_TIMEOUT_MS`(10min) 活性 TTL 与 `convergeStaleCompactions`：超时把 executing 压缩 turn 收敛为「压缩未完成（无终态记录）」并同步收敛 lifecycle map 副本、清 loading/文案、destroy toast。叠加**路径无关陈旧门控**（2026-09-19）：`isStaleCompactionStarted` 为真的 started 直接 return（不建 turn / 不 setLoading / 不弹 toast）——live 通道不带 replay 标记，`SessionEventsController` 无游标时从 sequence 0 无界重放历史，按 id 的判活门控拦不住（误报「正在压缩上下文… 已运行 11466m」）；同一规则在 `useSessionEventProjection.mapEventToTurn` 的 `context.compaction.started` 分支同步生效，防止陈旧 started 把普通 turn 翻成运行态 |
 | `src/pages/chat/hooks/useSessionEventReplay.ts` | bootstrap 重放带 `{replay:true, runningCompactionId}`；缺口/历史尾部重放一律 `applySessionEvent(event,{replay:true})`，历史 started 不再冒充运行中 |
 | `src/pages/chat/hooks/useSessionEventProjection.ts` | `applySessionEvent(ev, {replay?})` 只把 replay 语义透传给压缩事件分发 |
 | `PuddingRuntime/Services/ContextWindowManager.cs` | Auto 压缩三态携带同一 compactionId（failed 此前漏发）；见 `PuddingRuntime/code_map.md` 同主题章节 |

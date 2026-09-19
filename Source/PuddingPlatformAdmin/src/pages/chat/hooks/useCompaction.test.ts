@@ -207,6 +207,39 @@ describe('useCompaction', () => {
     );
   });
 
+  it('ignores a stale started arriving on the live channel (no zombie card)', () => {
+    // SSE 无游标时会从 sequence 0 全量重放历史，且 live 通道不带 replay 标记：
+    // 8 天前的孤儿 started 必须被年龄门控拦下，不得点亮运行态。
+    const now = Date.parse('2026-09-19T22:00:00.000Z');
+    const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const { result } = renderHook(() => useCompactionHarness());
+      act(() =>
+        result.current.handleCompactionLifecycleEvent(
+          compactionEvent('context.compaction.started', {
+            occurredAt: '2026-09-11T14:16:16.000Z',
+          }),
+        ),
+      );
+      expect(result.current.turns).toHaveLength(0);
+      expect(result.current.loading).toBe(false);
+      expect(messageApi.loading).not.toHaveBeenCalled();
+      // 后续终态事件仍按事实渲染，不回退成「假运行态」。
+      act(() =>
+        result.current.handleCompactionLifecycleEvent(
+          compactionEvent('context.compaction.completed', {
+            occurredAt: '2026-09-11T14:18:16.000Z',
+          }),
+          { notify: false, allowSessionSwitch: false },
+        ),
+      );
+      expect(result.current.turns).toHaveLength(1);
+      expect(result.current.turns[0].assistant.status).toBe('success');
+    } finally {
+      dateSpy.mockRestore();
+    }
+  });
+
   it('converges a running compaction to a terminal state after the liveness TTL', () => {
     jest.useFakeTimers();
     try {

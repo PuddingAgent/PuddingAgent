@@ -2,6 +2,7 @@ import type { ChatTurn } from '../types';
 import {
   confirmOptimisticTurn,
   getChatRouteSelectionFromSearch,
+  isStaleCompactionStarted,
   resolveRunningCompactionId,
   resolveTerminalAssistantMarkdown,
 } from './chatStateUtils';
@@ -136,5 +137,49 @@ describe('resolveRunningCompactionId', () => {
         { type: 'context.compaction.started', compactionId: 'd-4' },
       ]),
     ).toBe('d-4');
+  });
+});
+
+describe('isStaleCompactionStarted', () => {
+  const now = Date.parse('2026-09-19T22:00:00.000Z');
+
+  it('flags a started replayed days later (live channel full-log replay)', () => {
+    // 线上现场：09-11 的 started 在 09-19 被当成实时事件点亮，显示「已运行 11466m」。
+    expect(
+      isStaleCompactionStarted({ occurredAt: '2026-09-11T14:16:16.000Z' }, now),
+    ).toBe(true);
+  });
+
+  it('keeps a freshly started compaction', () => {
+    expect(
+      isStaleCompactionStarted({ occurredAt: '2026-09-19T21:59:30.000Z' }, now),
+    ).toBe(false);
+  });
+
+  it('tolerates clock skew without losing a long-running start', () => {
+    // 30 分钟窗口：真实压缩远不会跑这么久，同时给跨机时钟偏差留余量。
+    expect(
+      isStaleCompactionStarted({ occurredAt: '2026-09-19T21:45:00.000Z' }, now),
+    ).toBe(false);
+  });
+
+  it('never guesses freshness when the event carries no timestamp', () => {
+    expect(isStaleCompactionStarted({ compactionId: 'x' }, now)).toBe(false);
+    expect(isStaleCompactionStarted(null, now)).toBe(false);
+    expect(isStaleCompactionStarted({ occurredAt: '   ' }, now)).toBe(false);
+    expect(isStaleCompactionStarted({ occurredAt: 'not-a-date' }, now)).toBe(
+      false,
+    );
+  });
+
+  it('reads numeric and PascalCase/UTC variants', () => {
+    const staleMs = Date.parse('2026-09-01T00:00:00.000Z');
+    expect(isStaleCompactionStarted({ occurredAt: staleMs }, now)).toBe(true);
+    expect(
+      isStaleCompactionStarted({ OccurredAt: '2026-09-01T00:00:00Z' }, now),
+    ).toBe(true);
+    expect(
+      isStaleCompactionStarted({ occurredAtUtc: '2026-09-01T00:00:00Z' }, now),
+    ).toBe(true);
   });
 });
