@@ -23,7 +23,8 @@ export const useExecutionFlowStyles = createStyles(() => ({
     maxWidth: '100%',
     transition: 'background 150ms ease',
   },
-  /** 可展开行：整行可点（cursor + hover + :focus-visible 焦点环）；可点击区最小 32px（§6 规范） */
+  /** 可展开行：整行可点（cursor + hover + :focus-visible 焦点环）；可点击区最小 32px（§6 规范）。
+   *  S1c 渐进披露：悬停/键盘聚焦时行内 chevron 显现（a11y 硬要求：不得只靠 hover）。 */
   rowClickable: {
     cursor: 'pointer',
     minHeight: 32,
@@ -34,6 +35,12 @@ export const useExecutionFlowStyles = createStyles(() => ({
     '&:focus-visible': {
       outline: '2px solid var(--pudding-status-running)',
       outlineOffset: -2,
+    },
+    '&:hover .execution-flow-chevron': {
+      opacity: 1,
+    },
+    '&:focus-visible .execution-flow-chevron': {
+      opacity: 1,
     },
   },
   /** leading 16px 固定槽（状态点 10px / 图标 14–16px） */
@@ -103,7 +110,8 @@ export const useExecutionFlowStyles = createStyles(() => ({
     '0%': { transform: 'translateX(-130%)' },
     '55%, 100%': { transform: 'translateX(360%)' },
   },
-  /** chevron 16px 固定槽；不可展开时占位隐藏（行首对齐不跳动） */
+  /** chevron 16px 固定槽；S1c 渐进披露：非悬停/未聚焦时 opacity:0 不可见，占位尺寸保留（行首不跳动）；
+   *  悬停/:focus-visible 显现由 rowClickable 后代规则点亮；展开方向翻转由字符 ▸/▾ 表达 */
   chevron: {
     flexShrink: 0,
     display: 'inline-flex',
@@ -114,7 +122,8 @@ export const useExecutionFlowStyles = createStyles(() => ({
     fontSize: 10,
     lineHeight: 1,
     color: 'var(--pudding-chat-text-caption)',
-    transition: 'transform 150ms ease',
+    transition: 'transform 150ms ease, opacity 150ms ease',
+    opacity: 0,
   },
   chevronPlaceholder: {
     visibility: 'hidden',

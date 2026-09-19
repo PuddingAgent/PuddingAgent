@@ -147,4 +147,52 @@ describe('ExecutionDisclosureRow', () => {
       'polite',
     );
   });
+
+  it('S1c progressive disclosure: chevron hidden by default, shown on hover/focus-visible, direction flips', () => {
+    render(
+      <ExecutionDisclosureRow
+        testId="chevron-row"
+        expandedContent={<div>详情</div>}
+      >
+        <span>行</span>
+      </ExecutionDisclosureRow>,
+    );
+    const row = screen.getByTestId('chevron-row');
+    const chevron = row.querySelector('.execution-flow-chevron');
+    expect(chevron).toBeTruthy();
+    // ④ 折叠态右向箭头
+    expect(chevron?.textContent).toBe('▸');
+
+    // ① 非悬停/未聚焦：箭头不可见（默认 opacity:0，占位尺寸保留，行首不跳动）
+    const chevronStyle = window.getComputedStyle(chevron as Element);
+    expect(chevronStyle.opacity).toBe('0');
+
+    // ② 悬停显现 ③ :focus-visible 键盘聚焦显现（a11y 硬要求：不得只靠 hover）
+    const css = injectedCssText();
+    expect(css).toContain(':hover .execution-flow-chevron');
+    expect(css).toContain(':focus-visible .execution-flow-chevron');
+    // 150ms 过渡纳入 opacity
+    expect(css).toMatch(/transition:[^;]*opacity/);
+
+    // ④ 展开态箭头方向翻转为下向
+    fireEvent.click(row);
+    expect(row.getAttribute('aria-expanded')).toBe('true');
+    expect(chevron?.textContent).toBe('▾');
+    fireEvent.click(row);
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+    expect(chevron?.textContent).toBe('▸');
+  });
+
+  it('S1c: non-expandable row keeps visibility-hidden placeholder (behavior unchanged)', () => {
+    render(
+      <ExecutionDisclosureRow testId="plain-chevron-row">
+        <span>仅状态行</span>
+      </ExecutionDisclosureRow>,
+    );
+    const row = screen.getByTestId('plain-chevron-row');
+    // 稳定语义类仍挂在占位 chevron 上，但不可展开行继续走 visibility:hidden 占位隐藏
+    expect(row.querySelector('.execution-flow-chevron')).toBeTruthy();
+    const css = injectedCssText();
+    expect(css).toContain('visibility:hidden');
+  });
 });

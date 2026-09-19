@@ -82,6 +82,7 @@ export const ExecutionDisclosureRow: React.FC<ExecutionDisclosureRowProps> = ({
         <div className={styles.body}>{children}</div>
         <span
           className={cx(
+            'execution-flow-chevron',
             styles.chevron,
             !expandable && styles.chevronPlaceholder,
           )}
