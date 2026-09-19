@@ -657,3 +657,7 @@ Task scheduler effective-dispatch closure (2026-09-01 proposed)
 ## 2026-09-18 FastRouter 新增 GPT-5.6 Sol
 
 本机 fastrouter 资源池现含 gpt-6-astra、gpt-5.6-sol，均使用responses；Sol按官方文档登记1050000上下文/128000输出。备份、参数来源和加载边界见[配置记录](Docs/Reports/FastRouter资源池配置-2026-09-18.md)。
+
+## 2026-09-19 历史图片8张上限诊断
+
+VisionRequestPolicy默认8、VisionCapabilityContract上限钳制、PuddingFileConfigLoader加载拒绝及VisualInputRequestBudget跨消息累计共同导致第9份图片失败。13项现有合同测试通过，未修复/部署；历史理由、精确Turn及纠偏方向见[诊断](Docs/Reports/历史图片累计触发8图上限诊断-2026-09-19.md)。

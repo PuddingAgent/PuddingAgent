@@ -3825,3 +3825,7 @@ A91-0复审不要只跑新增SubmitAsync用例或看code_outline：固定过滤�
 先按 DirectLlm REQUEST 核对实际 provider/model/protocol，再用同一 Key GET /v1/models，并以最简合成输入分别核对 /responses 和 /chat/completions。503 可能掩盖更明确的 model_not_found；当前 gpt-6/gpt-6-astra 分组无可用账户，而 gpt-5.6-sol 已通过流式工具闭环。记录上游 X-Request-Id，凭据不进日志；不把同名 fastrouter.ai 文档套用到 fastrouter.cloud。见[完整诊断与验证边界](Docs/Reports/FastRouter资源池配置-2026-09-18.md)。
 
 FastRouter后续复测（2026-09-18）：服务商更新分组后，gpt-6-astra已列入/models并通过Responses流式工具闭环；gpt-6仍model_not_found。按准确模型ID判断，勿把别名等同；服务商端权限变更无需重启Core，原配置已有astra即可选用。证据见上述配置记录的最新复测节。
+
+### 历史图片累计触发8张上限（2026-09-19）
+
+VisionPipelineException包含source=tool function_call_output、message#、planning-batch时，先查DirectLlm实际路由与同Turn canonical终态。累计8+1是最终请求图片份数，可能含历史及重复引用，不等于单次上传9张；请求可能在本地构造阶段就失败。当前8来自ADR-077产品策略，配置也被ToPolicy和Loader限制。多个栈不等于多次HTTP调用。详见[现场证据与限制来源](Docs/Reports/历史图片累计触发8图上限诊断-2026-09-19.md)。
