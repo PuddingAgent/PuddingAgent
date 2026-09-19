@@ -187,4 +187,46 @@ export const TurnStatus: React.FC<TurnStatusProps> = ({
   );
 };
 
+// ── TurnElapsedLabel：消息头实时「已处理 <时长>」叶子组件 ──────────────────
+// 仅运行态由 AgentMessageBubble 头部渲染（S3，看板卡 55435eb4）：
+//  - tick 封装在叶子内（照抄 TurnStatus 的 nowProp 约定）：注入 now（测试/
+//    确定性场景）时不启动 interval；未注入时内部每秒自 tick，
+//    避免整卡（含 TurnContentStream 大 DOM）每秒 reconcile。
+//  - 文案复用 formatElapsed（<60s → Xs / ≥60s → Xm），不新增第二套时长格式。
+//  - 时间基准 = 持久化 turn 起点（reload/重挂载不归零）。
+export interface TurnElapsedLabelProps {
+  /** 持久化 turn 起点（毫秒时间戳）。 */
+  startedAt: number;
+  /** 样式类（复用头部 agentTimeText）。 */
+  className?: string;
+  /** 测试注入当前时间；未传时内部每秒 tick。 */
+  now?: number;
+}
+
+export const TurnElapsedLabel: React.FC<TurnElapsedLabelProps> = ({
+  startedAt,
+  className,
+  now: nowProp,
+}) => {
+  const [now, setNow] = useState(() => nowProp ?? Date.now());
+
+  useEffect(() => {
+    if (nowProp !== undefined) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [nowProp]);
+
+  const current = nowProp ?? now;
+  const elapsedSeconds =
+    Number.isFinite(startedAt) && startedAt > 0
+      ? Math.max(0, Math.floor((current - startedAt) / 1000))
+      : 0;
+
+  return (
+    <span className={className} data-testid="turn-elapsed-label">
+      已处理 {formatElapsed(elapsedSeconds)}
+    </span>
+  );
+};
+
 export default React.memo(TurnStatus);

@@ -22,6 +22,7 @@ import {
   deriveTurnStatusFromFacts,
   deriveTurnStatusFromProjection,
   type TurnPhase,
+  TurnElapsedLabel,
   TurnStatus,
 } from './execution-flow/TurnStatus';
 import MessageActions from './MessageActions';
@@ -605,12 +606,23 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
             {!groupedWithPrevious && (
               <div className={styles.agentNameRow}>
                 <span className={styles.agentNameText}>{agentName}</span>
-                <span
-                  className={styles.agentTimeText}
-                  title={dayjs(createdAt).format('YYYY-MM-DD HH:mm:ss')}
-                >
-                  {formatTime(createdAt)}
-                </span>
+                {/* S3（看板卡 55435eb4）：运行态头部实时「已处理 <时长>」——
+                    叶子组件自持 tick，时间基准 = createdAt（reload 不归零）；
+                    终态回落创建时刻。流式最小态：运行尚无内容时头部即有
+                    活跃指示，配合卡底 TurnStatus 行，卡片不空白。 */}
+                {isRunActive ? (
+                  <TurnElapsedLabel
+                    startedAt={createdAt}
+                    className={styles.agentTimeText}
+                  />
+                ) : (
+                  <span
+                    className={styles.agentTimeText}
+                    title={dayjs(createdAt).format('YYYY-MM-DD HH:mm:ss')}
+                  >
+                    {formatTime(createdAt)}
+                  </span>
+                )}
                 {/* 无障碍（验收 6）：终态卡保留可达状态标记（成功/失败/取消），
                     不只依赖颜色与计量行。运行态由 TurnStatus 行承载。 */}
                 {/* 失败/取消语义由既有错误摘要行承载（StateDot+标题），此处
