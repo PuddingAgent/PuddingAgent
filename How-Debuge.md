@@ -1,5 +1,7 @@
 ### 图片超限与续聊（2026-09-19）
 
+部署补充：隔离 OutDir 构建完成后，必须实际检查 `wwwroot/admin/index.html` 和前端文件哈希；本次准备包需要显式放入已验证的前端产物。经 Desktop `core/deploy-restart` 重启后，对齐新 PID、进程模块路径、prepared/loaded manifest 和 `/health/ready`，不能把旧 diagnostics.lastResult 当成本次状态。
+
 区分 `vision_request_limit_exceeded` 的当前请求拒绝与 Session Faulted；视觉预检不再计入 API 熔断。流式诊断位置为 `agent.stream.vision_preflight`，保留内部异常和 session/message/trace；UI 显示可读消息。`[VisionPreprocess]` 日志记录 source/derived、压缩前后字节及目标边长/预算，不记录像素或密钥。`[VisionTextContinuation]` 表示历史图片失败后以明确引用重试纯文本一次；canonical/原图未删。超过 600 的历史图片会在出站投影中直接转引用，当前轮图片不会丢弃。先确认运行进程加载了新构建，再按 600/601、14/15、32 MiB、48 MiB 复核；相关测试与限制说明见[修复记录](Docs/Reports/图片请求官方限制与预处理恢复修复-2026-09-19.md)。
 
 ### DeepSeek缓存首批优化：能力包与偏好快照（2026-09-17）

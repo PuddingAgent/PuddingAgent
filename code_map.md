@@ -1,6 +1,6 @@
 ## 2026-09-19 图片预处理与错误恢复
 
-`VisionRequestPolicy`/`VisualInputRequestBudget`：默认 600 图，统一统计历史/附件/工具输出并分配尺寸和字节预算。`VisualRequestBodyBudget`：DeepSeek 最终 JSON 48 MiB 检查与有界重建。`IVisualArtifactPreprocessor`→`VisualArtifactResolverBridge`→`VisionArtifactStorageService.ResolveForRequestAsync`：保留原图的压缩/缩放缓存。`VisionTextContinuation`：纯文本续聊仅投影历史图片引用；Streaming/Buffered 共享恢复语义，视觉错误不触发 API 熔断。见[实施记录](Docs/Reports/图片请求官方限制与预处理恢复修复-2026-09-19.md)与 ADR-077 §3.2、ADR-088 补充。
+`VisionRequestPolicy`/`VisualInputRequestBudget`：默认 600 图，统一统计历史/附件/工具输出并分配尺寸和字节预算。`VisualRequestBodyBudget`：DeepSeek 最终 JSON 48 MiB 检查与有界重建。`IVisualArtifactPreprocessor`→`VisualArtifactResolverBridge`→`VisionArtifactStorageService.ResolveForRequestAsync`：保留原图的压缩/缩放缓存。`VisionTextContinuation`：纯文本续聊仅投影历史图片引用；Streaming/Buffered 共享恢复语义，视觉错误不触发 API 熔断。见[实施记录](Docs/Reports/图片请求官方限制与预处理恢复修复-2026-09-19.md)与 ADR-077 §3.2、ADR-088 补充。源码 `adc09ff` 已于 15:08 经 Desktop 受控部署重启，Core PID1608/Ready，托管产物哈希一致；真实模型图片 smoke 待验收。
 
 ## 2026-09-17 Goal模式简化设计（待实现）
 
