@@ -22,4 +22,3 @@ describe('context occupancy, not compaction progress', () => {
     expect(screen.getByText('用量采样时间')).toBeTruthy();
   });
 });
-

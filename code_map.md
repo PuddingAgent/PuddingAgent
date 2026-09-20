@@ -676,3 +676,4 @@ VisionRequestPolicy默认8、VisionCapabilityContract上限钳制、PuddingFileC
 - 权威设计：`Docs/Features/上下文压缩运行状态与界面设计.md`。
 - `ContextCompactionService.GetActiveCompaction` / `SessionEventsController.GetCompactionStatus`：精确 ID + 开始时间的轻量活性快照；started 移到摘要输入准入后；取消补写终态。
 - `useCompaction`：按 ID 投影，10 秒确认、30 秒动画许可、重放不切会话；`CompactionCard` 独立状态区；`ContextUsageRing` 总窗口占比、来源和采样时间；`IntentConsole` 压缩结束刷新并防旧响应覆盖。
+- 部署验收：实现 `aab7f5c`，2026-09-20 17:25 Core PID 23280 Ready，264 文件 manifest 匹配；`umi.83c11143.js` HTTP 哈希匹配。111 项定向回归通过，真实默认助手页面无伪压缩动画；自然压缩执行未被人工触发。
