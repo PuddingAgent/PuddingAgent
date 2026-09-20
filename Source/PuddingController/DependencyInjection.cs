@@ -40,6 +40,11 @@ public static class ControllerServiceExtensions
         // Session 路由（核心）
         services.AddSingleton<SessionRouter>();
 
+        // 审批（进程内实现）。此前从未在这里注册，而 InMemoryApprovalService 又硬依赖
+        // 同样未注册的 IConnectionMultiplexer ⇒ /api/approval/* 四个端点在已认证请求下
+        // 恒 500（死接口）。现在实现已改为名副其实的进程内存储，注册即生效。
+        services.AddSingleton<InMemoryApprovalService>();
+
         return services;
     }
 }

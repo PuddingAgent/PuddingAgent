@@ -30,7 +30,7 @@
 | `RuntimeRegistryService.cs` | 运行时注册服务 |
 | `InMemorySessionRepository.cs` | 会话内存存储 |
 | `InMemoryWorkspaceCatalog.cs` | 工作区目录 |
-| `InMemoryApprovalService.cs` | 审批服务（名字误导：实际基于 Redis `IConnectionMultiplexer`）。⚠ **组合根未注册** ⇒ 已认证调用当前落 500（死接口），已记卡。确认码的生成与校验已抽到 `PuddingCode.Platform.ApprovalCode`（`Generate`/`Matches`），本文件只负责 Redis 读写与状态机 |
+| `InMemoryApprovalService.cs` | 审批服务——**进程内 `ConcurrentDictionary`** 实现（2026-09-20 起名副其实）。此前硬依赖**从未注册**的 `IConnectionMultiplexer`，使四个 `/api/approval/*` 端点在已认证请求下恒 500（死接口），现已改为进程内存储并在组合根注册。状态迁移经 `TryUpdate` 比较交换 ⇒ 并发确认只有一次成功；确认码生成/校验委托 `PuddingCode.Platform.ApprovalCode`。代价：状态不跨进程共享（当前单进程部署可接受） |
 | `InMemoryAuditEventStore.cs` | 审计存储 |
 | `InMemoryRouteDecisionStore.cs` | 路由决策存储 |
 | `AuthorizationService.cs` | 授权服务 |
