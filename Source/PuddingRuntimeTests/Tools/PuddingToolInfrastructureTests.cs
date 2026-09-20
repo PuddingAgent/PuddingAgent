@@ -2539,6 +2539,54 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
+    public async Task ToolApprovalService_Does_Not_Reuse_Ticket_Across_Identity()
+    {
+        // 审计 P0 指纹第 4 项（信任根签章缺失）的独立复核延伸：
+        // 审批票据链确实没有 HMAC/数字签章，但票据不是「客户端出示的凭据」——
+        // CheckAsync 从服务端 ticket store 列出 Approved 票，并先用 MatchesBaseIdentity
+        // （WorkspaceId + AgentInstanceId + UserId + ToolId）过滤，再由 MatchesApprovedOperation
+        // 比对操作；ticketId 本身是 GUID v4（不可枚举）。
+        // 因此「票不可冒用」由身份绑定保证，而不是由签章保证。本测试固化这条不变量：
+        // 为身份 A 批准的票，不得被身份 B 用完全相同的操作消费。
+        var store = new InMemoryToolApprovalTicketStore();
+        var submitter = new InMemoryToolApprovalService(new FakeToolApprovalReviewer(), store);
+        // 校验阶段一律拒绝 ⇒ 身份 B 若被放行，只可能来自错误复用了身份 A 的票。
+        var checker = new InMemoryToolApprovalService(new DenyingToolApprovalReviewer(), store);
+        var descriptor = new SampleHighTool().Descriptor;
+        var owner = SampleApprovalIdentity();
+        var intruder = new ToolApprovalIdentity
+        {
+            WorkspaceId = owner.WorkspaceId,
+            SessionId = owner.SessionId,
+            AgentInstanceId = owner.AgentInstanceId,
+            UserId = "user-intruder",
+        };
+
+        const string Arguments = """{"command":"custom-write","shell":"auto","timeout_seconds":10}""";
+        await submitter.SubmitAsync(ValidApprovalRequest(Arguments), owner, descriptor);
+
+        ToolApprovalExecutionRequest Request(ToolApprovalIdentity identity) => new()
+        {
+            WorkspaceId = identity.WorkspaceId,
+            SessionId = identity.SessionId,
+            AgentInstanceId = identity.AgentInstanceId,
+            UserId = identity.UserId,
+            ToolId = descriptor.ToolId,
+            ActualArgumentsJson = Arguments,
+        };
+
+        // 票的所有者：同一操作照常放行。
+        var byOwner = await checker.CheckAsync(Request(owner), descriptor);
+        Assert.IsTrue(byOwner.IsApproved, byOwner.Message);
+
+        // 另一个 User：操作完全相同，也不得复用不属于自己的票。
+        var byIntruder = await checker.CheckAsync(Request(intruder), descriptor);
+        Assert.IsFalse(
+            byIntruder.IsApproved,
+            "为其他 User 批准的票据不得被本 User 复用。");
+    }
+
+    [TestMethod]
     public async Task ToolApprovalService_Allows_Approved_Job_Step_Arguments()
     {
         var store = new InMemoryToolApprovalTicketStore();
