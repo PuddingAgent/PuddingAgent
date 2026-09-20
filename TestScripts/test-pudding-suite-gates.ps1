@@ -78,12 +78,13 @@ $Suites = [ordered]@{
     'AdminJest' = @{
         Kind = 'jest'
         Dir = 'Source/PuddingPlatformAdmin'
-        # 2026-09-21 实测：**4 failed / 1348 passed / 1352 total**（3 个红套件）。
+        # 2026-09-21 实测：**3 failed / 1349 passed / 1352 total**（2 个红套件）。
         # 收窄轨迹：17 → 16 → 14 → 13（menuIcons 缺 hdd/key 映射 = **真实缺陷**）→ 10 → 7（治好并行超时 flaky）
-        # → 5（文案迁移用例、时间炸弹 fixture）→ 4（completed 提示用例：替身过期 + UI 整合 + 占位文案改版）。
+        # → 5 → 4 → 3（压缩结果用例：承载载体由 answerMarkdown 迁到 timelineItems[].message）。
         # 已定性为 A 类测试滞后（**与安全分类器改动无关**）；逐例台账见 TestScripts/known-red-dispositions.md。
-        # 剩余 4 例 = 语音族 3（等“接线 vs 移除孤儿组件”决策）+ useChatState 竞态 1。
-        AllowedFailures = 4
+        # 剩余 3 例**全是语音族**且已查清：孤儿组件 VoiceConversationPanel.tsx 无人引用，
+        # 等用户定“接线 vs 移除”后再动测试（无决策不动测试、不删组件）。
+        AllowedFailures = 3
         KnownRed = $null
         Note = '既有红：A 类测试滞后为主（生产变更后测试未同步）。名单未登记 ⇒ 目前只按预算判。'
     }
