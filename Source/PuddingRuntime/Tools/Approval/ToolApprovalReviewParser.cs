@@ -90,7 +90,13 @@ public static class ToolApprovalReviewParser
             {
                 Decision = decision,
                 DecisionReason = reason,
-                ReasonCode = GetString(root, "reasonCode"),
+                // ADR-091 §4.4：依赖等待必须是 typed——评审器已声明 deferred_dependency 但未给
+                // reasonCode 时，合成稳定码，避免调用方只能解析自由文本 reason。
+                // 其余决策（approved / denied / need_human）保持原行为：缺失即为 null（语义不变）。
+                ReasonCode = GetString(root, "reasonCode")
+                             ?? (decision == ToolApprovalDecision.DeferredDependency
+                                 ? ToolApprovalWire.CodeDeferredReasonCodeMissing
+                                 : null),
                 AllowedScope = approved ? allowedScope : null,
                 AllowedDuration = approved && allowedDurationMinutes is > 0
                     ? TimeSpan.FromMinutes(allowedDurationMinutes.Value)

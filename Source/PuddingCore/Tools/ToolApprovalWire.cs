@@ -48,6 +48,13 @@ public static class ToolApprovalWire
     /// <summary>字段类型不符合 schema。</summary>
     public const string CodeInvalidFieldType = "approval_review_invalid_field_type";
 
+    /// <summary>
+    /// 评审器声明了 <c>deferred_dependency</c> 但未给出 reasonCode（schema 不完整）。
+    /// 由 <c>ToolApprovalReviewParser</c> 合成，用于保证「依赖等待必带稳定码」的不变量：
+    /// 调用方应能仅凭 reasonCode 分支，而不必解析自由文本 reason。
+    /// </summary>
+    public const string CodeDeferredReasonCodeMissing = "approval_review_deferred_reason_code_missing";
+
     /// <summary>决策的 wire 名称。</summary>
     public static string ToWire(ToolApprovalDecision decision) => decision switch
     {
