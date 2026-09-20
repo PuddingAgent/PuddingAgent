@@ -13,11 +13,11 @@
 | **D** | **测试自身问题**：本身不成立/自相矛盾/依赖环境 | 重写或移除，须留指针 |
 
 ## 当前基线（2026-09-21 实测）
-- `npx jest` 全量 ⇒ **`Tests: 5 failed, 1347 passed, 1352 total`（3 个红套件）**
-- 门禁：`AdminJest.AllowedFailures = 5`、`KnownRed = $null`
+- `npx jest` 全量 ⇒ **`Tests: 4 failed, 1348 passed, 1352 total`（3 个红套件）**
+- 门禁：`AdminJest.AllowedFailures = 4`、`KnownRed = $null`
 - ✅ **稳定性**：此前 1 例 flaky（access-token 套件并行下超时）**已治好**，见下方「flaky 已修」一节。
 
-## 逐例台账（5 例待查；已修的都移到下方「已修完的例」）
+## 逐例台账（4 例待查；已修的都移到下方「已修完的例」）
 
 | # | 套件 | 用例 | 类 | 证据/状态 |
 |---|---|---|---|---|
@@ -25,7 +25,7 @@
 | 2 | `src/pages/chat/client/agentChatApi.test.ts` | `agentChatApi › loads historical process items only for the selected message` | **A（已修）** | 见「已修完的例」表 |
 | 3 | `src/pages/agent-template-settings/agentTemplateOwnership.test.ts` | `Agent template and instance field ownership copy › frames workspace Agent settings as instance identity without model overrides` | **A（已修）** | 见「已修完的例」表 |
 | 4 | `src/pages/storage/index.test.tsx` | `StorageTrendChart › 渲染堆叠面积路径与图例标签` | **A（已修）** | 见「已修完的例」表 |
-| 5 | `src/pages/chat/components/InputArea.test.tsx` | `InputArea status feedback › does not let the previous completed toast mask a new streaming state` | 待查 | 与语音无关，独立原因 |
+| 5 | `src/pages/chat/components/InputArea.test.tsx` | `InputArea status feedback › does not let the previous completed toast mask a new streaming state` | **A（已修）** | 见「已修完的例」表（三处漂移叠加） |
 | 6 | `src/pages/chat/components/InputArea.test.tsx` | `InputArea status feedback › switches into voice mode and sends a transcript with voice metadata` | **A（部分已证）** | 失败点：`Unable to find [data-testid="voice-conversation-panel"]`；见下方「语音归属」一节 |
 | 7 | `src/pages/chat/components/InputArea.test.tsx` | `InputArea status feedback › shows the voice mode unavailable state when browser microphone capture is unavailable` | **A（同族）** | 同族语音用例，预期形态与现组件不一致；细节待补 |
 | 8 | `src/pages/chat/hooks/useChatState.selection.test.tsx` | `useChatState session selection races › preserves the visible compact result when switching to the new compacted session` | 待查 | 与压缩会话切换竞态有关，未复核 |
@@ -49,6 +49,8 @@
 | `src/pages/agent-template-settings/agentTemplateOwnership.test.ts` | `Agent template and instance field ownership copy › frames workspace Agent settings as instance identity without model overrides` | **A（文案迁移）** | 该用例用 `fs.readFileSync` 断言**源码文本**。旧读目标 `workspace/[id]/index.tsx` 已不是文案的家：`实例职责` 现住在 `workspace/[id]/WorkspaceAgentSettingsDrawer.tsx:263`；而 `模板默认值预览 / 个性化覆盖 / 覆盖头像 / 实例只保存工作区内身份、头像和启停状态` **生产内已完全消失**（全库检索只命中本测试文件，`git log -S` 最后触碰于 `6e2fd05`、`4b6a3d7` 两次 UX 改版）⇒ 是**有意改写**而非回归。处置：改读新归属文件，断言改为现存文案（`实例职责`、`模板只在创建时提供初始快照；Agent 创建后独立演进。`、`来源模板`）并**保留反向断言**（不含 `模型覆盖` / `高级 Prompt 覆盖`）⇒ 保住用例原意：工作区侧编辑的是实例身份、不提供模型覆盖。 |
 | `src/pages/storage/index.test.tsx` | `StorageTrendChart › 渲染堆叠面积路径与图例标签` | **A（时间炸弹）** | 组件按 `Date.now() - days*24h` **过滤最近 days 天**、且不足 2 天即渲染空态（文案「历史快照不足…」）；用例 fixture 却把日期**写死** `2026-08-20/21/22`，到 2026-09-21 已滑出 `days=30` 窗口 ⇒ 只剩 ≤1 点 ⇒ 空态 ⇒ 无端变红。**生产逻辑正确。** 处置：fixture 改为按 `daysAgoIso(n)` **相对当前时间**生成并附注原因。同 describe 的「历史点不足时显示提示」一例本就取 1 点，保持不动。 |
 
+| `src/pages/chat/components/InputArea.test.tsx` | `InputArea status feedback › does not let the previous completed toast mask a new streaming state` | **A（三处漂移叠加）** | 该例被三处**有意变更**同时打断，逐层查实：① **测试替身过期**——`./ComposerStatusDetails` 替身只渲染「运行中 N」却丢掉 `summary.statusLabel`，而生产的状态文案正是靠它渲染（`IntentConsole.tsx:736` `statusLabel: displayStatusText`、`ComposerStatusDetails.tsx:10`）⇒ 替身补齐该字段；② **UI 整合**——状态文案随 `runtimeDetails` **只在工具栏圆环气泡打开时**渲染（生产注释：用户诉求 2026-09-19，旧上下文指示条已移除、改为圆环 + 点击出明细面板；`IntentConsole.tsx:969` 把 `<ComposerStatusDetails>` 作为 `runtimeDetails` 传给 `ContextUsageRing`）⇒ 测试里用替身直渲 `runtimeDetails`（考察的是**状态文案状态机**，与圆环外壳无关）；③ **占位文案改版**——运行中 placeholder 已改为「继续输入：Enter 排队，Ctrl/Cmd+Enter 插嘴当前 Agent…」（`IntentConsole.tsx:843`）⇒ 同步期望。 |
+
 > 本次修复后，`IntentConsole.test.tsx` 由 2 红降为 1 红（仅剩语音族）。
 
 ## flaky 已修（D 类：并行资源竞争击穿 30s 默认超时）
@@ -64,6 +66,8 @@
 1. **fixture 写死日期 = 时间炸弹**：凡断言依赖“最近 N 天/时间窗口”的用例，fixture 必须**相对 `Date.now()` 生成**，否则会“到某一天自己变红”。
 2. **断言源码文本的用例最容易腐化**：文件职责迁移、文案改写都会打断它；判“测试滞后 vs 回归”用三件套：**全库检索现址 + `git log -S` 溯源 + 生产侧注释/语义**。
 3. **超时型失败先分清**：`Exceeded timeout` ⇒ 计时/资源；断言不符 ⇒ 逻辑/契约。
+4. **一层套一层的漂移要逐层查**：同一个用例可能同时被“替身过期 + UI 整合 + 文案改版”打断；**每修一层就跑一次**，看失败断言是否**往后移**（失败点后移 = 前面的层已修对）。
+5. **`jest.mock` 工厂会被提升到 `import` 之前** ⇒ 工厂内**不能**引用外层 import 的 `React`，必须在工厂内 `require('react')`（否则整套件报 “Test suite failed to run”）。
 
 ## 语音归属一节（#6/#7/#9 的共同背景，已核查的三条事实）
 1. `src/pages/chat/components/InputArea.tsx` 现在**只是别名转出**：`export default IntentConsole;`
