@@ -1524,7 +1524,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                     CreatedAt: claimed.CreatedAt > 0
                         ? claimed.CreatedAt
                         : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                    UserId: StableMessageFabricUserId(claimed.From),
+                    UserId: MessagePrincipalIdentity.FromSender(claimed.From.Kind, claimed.From.Id),
                     Metadata: claimed.Metadata,
                     CorrelationId: claimed.CorrelationId,
                     CausationId: claimed.CausationId),
@@ -1707,7 +1707,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                 new SubmitTurnCommand(
                     ConversationId: conversationId,
                     WorkspaceId: claimed.WorkspaceId,
-                    UserId: StableMessageFabricUserId(claimed.From),
+                    UserId: MessagePrincipalIdentity.FromSender(claimed.From.Kind, claimed.From.Id),
                     ClientRequestId: clientRequestId,
                     ClientMessageId: clientMessageId,
                     Recipients: new RecipientRequest
@@ -1903,14 +1903,6 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         return $"{prefix}:{hash[..32]}";
     }
 
-    private static string StableMessageFabricUserId(MessageAddress from)
-    {
-        var hash = Convert.ToHexString(
-                SHA256.HashData(Encoding.UTF8.GetBytes($"{from.Kind}\n{from.Id}")))
-            .ToLowerInvariant();
-        return $"fabric:{hash[..32]}";
-    }
-
     private async Task AcceptGatewayConversationTurnAsync(
         IServiceProvider serviceProvider,
         IMessageInbox inbox,
@@ -1935,7 +1927,7 @@ public sealed class MessageDeliveryDispatcher : IHostedService
                 new SubmitTurnCommand(
                     ConversationId: claimed.ConversationId,
                     WorkspaceId: claimed.WorkspaceId,
-                    UserId: StableGatewayUserId(claimed.From.Id),
+                    UserId: MessagePrincipalIdentity.FromSender(claimed.From.Kind, claimed.From.Id),
                     ClientRequestId: clientRequestId,
                     ClientMessageId: claimed.MessageId,
                     Recipients: new RecipientRequest
@@ -2017,14 +2009,6 @@ public sealed class MessageDeliveryDispatcher : IHostedService
         return string.Equals(source, "subagent", StringComparison.OrdinalIgnoreCase)
                || string.Equals(intent, "subagent_result", StringComparison.OrdinalIgnoreCase)
                || string.Equals(messageType, "subagent_result", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string StableGatewayUserId(string externalUserId)
-    {
-        var hash = Convert.ToHexString(
-                SHA256.HashData(Encoding.UTF8.GetBytes(externalUserId)))
-            .ToLowerInvariant();
-        return $"gateway:{hash[..32]}";
     }
 
     private Task OnMessageDeliverAsync(InternalEvent evt) =>

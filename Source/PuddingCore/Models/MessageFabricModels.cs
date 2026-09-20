@@ -10,6 +10,31 @@ public static class MessageEndpointKinds
     public const string System = "system";
 }
 
+/// <summary>
+/// 消息驱动工作的**规范授权主体身份**（single source）。
+/// 为什么必须唯一：一个 Turn 的授权主体由「消息发送者端点」派生，而人工授权命令
+/// （/authorize）写入的也是同一个主体。历史上两条路径各自派生（命令侧
+/// gateway:H(channelType,externalUserId)，执行侧 fabric:H(kind,id)），派生输入与
+/// 前缀均不同，永不可能匹配 —— Feishu 通道的人工兜底因此永久无效（发现 W，控制反转）。
+/// 任何新增通道都必须调用本函数，不得自行派生通道专属前缀。
+/// </summary>
+public static class MessagePrincipalIdentity
+{
+    /// <summary>由发送者端点（kind + id）派生稳定主体标识。</summary>
+    public static string FromSender(string senderKind, string senderId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(senderKind);
+        ArgumentException.ThrowIfNullOrWhiteSpace(senderId);
+
+        var hash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes($"{senderKind}\n{senderId}")))
+            .ToLowerInvariant();
+        return $"fabric:{hash[..32]}";
+    }
+}
+
+
 /// <summary>Message audience modes.</summary>
 public static class MessageAudiences
 {

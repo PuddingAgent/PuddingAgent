@@ -170,7 +170,7 @@ public sealed class MessageGatewayIngress(
                 ConversationId: conversationId,
                 WorkspaceId: manifest.WorkspaceId,
                 AgentId: manifest.AgentInstanceId,
-                UserId: $"gateway:{StableId("gateway-user", envelope.ChannelType, envelope.UserExternalId)}",
+                UserId: MessagePrincipalIdentity.FromSender(MessageEndpointKinds.User, envelope.UserExternalId),
                 ClientRequestId: clientRequestId,
                 ClientMessageId: ingressMessageId,
                 ResponseMessageId: responseMessageId,
