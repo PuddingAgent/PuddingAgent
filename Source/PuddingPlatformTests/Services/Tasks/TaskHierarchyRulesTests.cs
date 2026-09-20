@@ -236,10 +236,10 @@ public sealed class TaskHierarchyRulesTests
 public sealed class TaskHierarchyErrorCodeWireContractTests
 {
     [TestMethod]
-    public void NewHierarchyErrorCodes_CountIs23_AndWireAndHttpMappingsAreStable()
+    public void NewHierarchyErrorCodes_CountIs25_AndWireAndHttpMappingsAreStable()
     {
-        // 既有 20 个成员未删除、未改名、未改序，Stage 1 追加 3 个父层级错误码。
-        Assert.AreEqual(23, Enum.GetValues<TaskErrorCode>().Length);
+        // 既有 20 个成员未删除、未改名、未改序；Stage 1 追加 3 个父层级错误码，Stage 2 追加 2 个依赖错误码。
+        Assert.AreEqual(25, Enum.GetValues<TaskErrorCode>().Length);
 
         Assert.AreEqual("task.parent_not_found", TaskWireMaps.ErrorCodeToString(TaskErrorCode.TaskParentNotFound));
         Assert.AreEqual("task.hierarchy_invalid", TaskWireMaps.ErrorCodeToString(TaskErrorCode.TaskHierarchyInvalid));

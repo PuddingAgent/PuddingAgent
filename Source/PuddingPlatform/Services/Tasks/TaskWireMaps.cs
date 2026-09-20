@@ -235,7 +235,7 @@ public static class TaskWireMaps
     public static int ErrorCodeToHttpStatus(TaskErrorCode code) => code switch
     {
         TaskErrorCode.TaskNotFound or TaskErrorCode.AssignmentNotFound or TaskErrorCode.AgentNotFound or
-        TaskErrorCode.TaskParentNotFound
+        TaskErrorCode.TaskParentNotFound or TaskErrorCode.TaskDependencyTaskNotFound
             => StatusCodes.Status404NotFound,
         TaskErrorCode.TaskVersionConflict or TaskErrorCode.TaskStateConflict or
         TaskErrorCode.AssignmentAlreadyActive or TaskErrorCode.AssignmentStale or
@@ -247,7 +247,7 @@ public static class TaskWireMaps
         TaskErrorCode.TaskArtifactRequired or TaskErrorCode.TaskNotReopenable or
         TaskErrorCode.TaskCannotHardDelete or TaskErrorCode.PolicyInvalid or
         TaskErrorCode.TaskActiveContextMissing or TaskErrorCode.TaskInvalidCursor or
-        TaskErrorCode.TaskHierarchyInvalid
+        TaskErrorCode.TaskHierarchyInvalid or TaskErrorCode.TaskDependencyInvalid
             => StatusCodes.Status422UnprocessableEntity,
         TaskErrorCode.CapabilityMissing => StatusCodes.Status403Forbidden,
         _ => StatusCodes.Status500InternalServerError,

@@ -156,13 +156,39 @@ public static class WorkspaceTaskSchemaBootstrapper
             }
         }
 
-        // sort_order / parent_task_id 已含于上方 CREATE TABLE（2026-09-19 压缩：旧库一次性
-        // ALTER 补列已删除，产品未发布不存在需升级的旧库），索引可安全创建；IF NOT EXISTS 保证幂等。
+        // CREATE TABLE IF NOT EXISTS 不会为已存在的旧表补列；下方索引引用 sort_order / parent_task_id，
+        // 旧库缺列时建索引会报 "no such column"。升级路径：先探测列，缺则幂等 ALTER 补列
+        // （物理追加在表末尾，不回填数据），再建索引（IF NOT EXISTS 保证幂等）。
+        await EnsureColumnAsync(db, "sort_order", "INTEGER NOT NULL DEFAULT 0", ct);
+        await EnsureColumnAsync(db, "parent_task_id", "TEXT", ct);
         await db.Database.ExecuteSqlRawAsync(
             "CREATE INDEX IF NOT EXISTS IX_workspace_tasks_workspace_sort ON workspace_tasks(workspace_id, sort_order);",
             ct);
         await db.Database.ExecuteSqlRawAsync(
             "CREATE INDEX IF NOT EXISTS IX_workspace_tasks_workspace_parent ON workspace_tasks(workspace_id, parent_task_id);",
+            ct);
+    }
+
+    /// <summary>
+    /// 幂等补列：workspace_tasks 缺 <paramref name="column"/> 时按 <paramref name="declaredType"/>
+    /// ALTER TABLE ADD COLUMN（物理追加在表末尾）。列名与类型均为编译期常量，无注入面。
+    /// </summary>
+    private static async Task EnsureColumnAsync(
+        PlatformDbContext db,
+        string column,
+        string declaredType,
+        CancellationToken ct)
+    {
+        var rows = await db.Database.SqlQueryRaw<int>(
+            $"SELECT COUNT(*) AS Value FROM pragma_table_info('workspace_tasks') WHERE name = '{column}'")
+            .ToListAsync(ct);
+        if (rows.Single() > 0)
+        {
+            return;
+        }
+
+        await db.Database.ExecuteSqlRawAsync(
+            $"ALTER TABLE workspace_tasks ADD COLUMN {column} {declaredType};",
             ct);
     }
 }

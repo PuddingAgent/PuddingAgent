@@ -441,6 +441,9 @@ public sealed class TaskControllerTests
             [TaskErrorCode.TaskParentNotFound] = 404,
             [TaskErrorCode.TaskHasNonTerminalChildren] = 409,
             [TaskErrorCode.TaskHierarchyInvalid] = 422,
+            // Stage 2 依赖错误码：HTTP 状态须与 TaskWireMaps.ErrorCodeToHttpStatus 契约一致。
+            [TaskErrorCode.TaskDependencyTaskNotFound] = 404,
+            [TaskErrorCode.TaskDependencyInvalid] = 422,
         };
 
         var codeMap = new Dictionary<TaskErrorCode, string>
@@ -469,6 +472,9 @@ public sealed class TaskControllerTests
             [TaskErrorCode.TaskParentNotFound] = "task.parent_not_found",
             [TaskErrorCode.TaskHierarchyInvalid] = "task.hierarchy_invalid",
             [TaskErrorCode.TaskHasNonTerminalChildren] = "task.has_non_terminal_children",
+            // Stage 2 依赖错误码的稳定 wire 串。
+            [TaskErrorCode.TaskDependencyTaskNotFound] = "task.dependency_task_not_found",
+            [TaskErrorCode.TaskDependencyInvalid] = "task.dependency_invalid",
         };
 
         foreach (TaskErrorCode code in Enum.GetValues<TaskErrorCode>())
