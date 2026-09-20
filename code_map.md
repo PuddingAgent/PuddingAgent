@@ -1,6 +1,6 @@
 ## 2026-09-20 计划语义版本与重规划修订分离
 
-`TaskPlanRunEntity.PlanVersion` 是固定编译语义；新增 `PlanRevision` 调度计数，`GoalSettlementStore.TryReplanBoundPlan` 仅增修订号，`GoalQueriesController`/熔断事件分别输出两者。`TaskPlanningSchemaBootstrapper` 幂等补列，`ExecutionCommandReader` 继续严格拒绝旧版/未知语义。`TestScripts/repair-task-plan-semantic-version.py` 是有编译绑定与连续事件证明的停机恢复工具，保留状态/成本/历史。见[修复与验收记录](Docs/Reports/计划语义版本与重规划修订分离修复-2026-09-20.md)；完整 Task 侧合同重规划仍待实现。
+`TaskPlanRunEntity.PlanVersion` 是固定编译语义；新增 `PlanRevision` 调度计数，`GoalSettlementStore.TryReplanBoundPlan` 仅增修订号，`GoalQueriesController`/熔断事件分别输出两者。`TaskPlanningSchemaBootstrapper` 幂等补列，`ExecutionCommandReader` 继续严格拒绝旧版/未知语义。`TestScripts/repair-task-plan-semantic-version.py` 是有编译绑定与连续事件证明的停机恢复工具，保留状态/成本/历史。源码 `08b3cbb` 已于21:21经Desktop部署，Core PID36380/Ready；原受影响任务第26轮真实工具调用通过。见[修复与验收记录](Docs/Reports/计划语义版本与重规划修订分离修复-2026-09-20.md)；完整 Task 侧合同重规划仍待实现。
 
 ## 2026-09-20 全量任务看板整理与规划实施分工（设计登记）
 
