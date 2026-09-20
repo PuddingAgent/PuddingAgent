@@ -71,3 +71,56 @@ N=5 → it 14,15,16,17  N=8 → it 26,27,28,29
 ## 4. 诚实限定
 - 全部只读快照；未运行构建/测试；未修改任何产品代码；未重启。
 - §2 的「疑为修订号/版本号混淆」是基于值域单调性的**推断**，非代码级断言。
+
+---
+
+## 5. 根因坐实（代码 + DB + 行为，三点交叉）
+
+### 5.1 校验侧（`Source/PuddingPlatform/Services/ExecutionCommandReader.cs:98-102`）
+```csharp
+var plan = await db.TaskPlanRuns.AsNoTracking()
+    .SingleOrDefaultAsync(item => item.PlanId == binding.TaskPlanId, ct);
+if (plan is not null && plan.PlanVersion != TaskExecutionPlanSnapshot.CurrentPlanVersion)
+    throw new InvalidOperationException(
+        $"task_execution_plan_version_unsupported: plan={plan.PlanId} version={plan.PlanVersion}; recompile the execution plan before starting a new attempt.");
+```
+⇒ 比较的是 **`task_plan_runs.plan_version` 列**与**语义常量** `CurrentPlanVersion`。
+
+### 5.2 写入侧（`Source/PuddingPlatform/Services/Scheduling/TaskExecutionPlanCompiler.cs`）
+```csharp
+:87   planVersion = TaskExecutionPlanSnapshot.CurrentPlanVersion,   // 写的是常量（=2）
+:103  PlanVersion = material.planVersion,
+```
+
+### 5.3 表结构：两个独立列
+`task_plan_runs` 列含 **`plan_version`** 与 **`schema_version`**（`tp-0c58dc16…` 行：`plan_version=9`、`schema_version=1`）。
+该行其余事实：`status=Failed`、`failure_code=accepted_iteration_budget_exhausted`、`failed_stage=settlement`、
+`error_message="Goal accepted-iteration budget exhausted."`、`workspace_task_version=53`。
+
+### 5.4 全库分布（18 个 plan）
+| plan | plan_version | 数量 |
+|---|---|---|
+16 个旧 plan | **1** | 16 |
+`tp-a2cd4086ee2ae1ac6846cc1e8128a1f5`（**本卡**） | **2** | 1 |
+`tp-0c58dc16df38cd734e3e241a51c7ce89`（Scheduler） | **9** | 1 |
+
+### 5.5 行为三点交叉验证（决定性）
+| plan_version | 观测到的运行行为 |
+|---|---|
+**2**（本卡） | 与常量相等 ⇒ Goal **能正常迭代**（verdict 为 `criterion_failed` / 成本轴耗尽，**无** `protocol_error`） |
+**9**（Scheduler） | 恒不等 ⇒ iteration **6–32 全部** `execution_protocol_error` |
+**1**（16 个旧 plan） | 被拒 —— 恰好符合 A1「旧冻结计划显式拒绝并要求新计划」的本意 |
+
+⇒ **`plan_version` 的实际语义是「该任务计划的修订号」**：首次编译 = 1，每次重编译 +1。
+校验侧把它当作**语义版本**去比常量 2 ⇒ 结果只取决于修订号**恰好是否等于 2**：
+恰好为 2 则通过（本卡），≥3 则永久拒绝，且**每次 recompile 使其更大**。
+
+### 5.6 结论
+`recompile the execution plan` 这条指引**在数学上不可能收敛**：目标值 2 只能靠「恰好重编译过一次」达成，
+而该指令要求的修复动作每次 **+1**。已吃掉 Scheduler Goal 的 27/32 迭代预算。
+
+## 6. 修复建议（对应卡 `5413ce1b`）
+1. **概念分离**：新增 `plan_semantic_version`（写 `CurrentPlanVersion`）与 `plan_revision`（每次重编译 +1）；校验侧只比较前者。
+2. **或最小改动**：校验侧改读语义来源（计划快照内的 `PlanVersion` / `schema_version`），不再读修订号列。
+3. **拒绝原因区分**：`..._outdated`（旧语义版本）与 `..._unsupported`（不可识别值）分开；并同时输出 semanticVersion 与 revision。
+4. **迁移路径**：对既有 `plan_version ≥ 3` 的计划提供重编译到语义版本的通道，否则这些任务**永久不可执行**。
