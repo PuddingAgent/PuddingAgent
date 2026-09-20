@@ -5,6 +5,15 @@ import { useState } from 'react';
 import AccessTokenManagementPage from './index';
 import { SecretOnceModal } from './components/SecretOnceModal';
 
+// 本文件是全量并行里最重的套件之一（antd 表格 + 多个 Modal/表单 渲染）。**实测标定**：
+//   单独跑 ⇒ 8/8 通过、整套 49.092s；
+//   全量并行 ⇒ 整套 209s（约 4 倍），且「创建抽屉/撤销弹窗/撤销 Modal」三例会间歇性
+//   命中 jest 默认 30s 超时（**同一提交下时有时无 = flaky**，失败原因是
+//   `Exceeded timeout of 30000 ms`，不是断言不符，也不是生产行为问题）。
+// ⇒ 按 jest 官方建议把本文件预算显式放宽到 90s，消除并行资源竞争带来的不稳定；
+//   真卡死仍会超时失败，不会掩盖缺陷。
+jest.setTimeout(90_000);
+
 const mockGetExternalApiStatus = jest.fn();
 const mockListAccessTokens = jest.fn();
 const mockCreateAccessToken = jest.fn();
