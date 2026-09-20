@@ -150,3 +150,40 @@ GuardFall 实测：11 个开源 Agent 中 10 个可被 5 类 shell 重写绕过�
 - 模式精确性：exact > prefix > wildcard；前缀匹配在本 shell 语义下必然有洞
   （`git push *` 匹配不到 `git -C <dir> push`）。
 - fail-closed：决策依赖不可用/超时时业界取拒绝而非放行。
+
+## 7. 实测延迟与设计含义（2026-09-20 本机实测）
+
+### 7.1 测量方法
+两个独立探针：`temp/jev-latency-probe.ps1`（真实调用）与 `temp/jev-latency-control.ps1`（对照）。
+脚本**刻意写成纯 ASCII** —— Windows PowerShell 5.1 会把无 BOM 的 .ps1 按 ANSI/GBK 解码，
+含中文会破坏引号配对导致 `ParserError: UnexpectedToken`（本机已踩过）。
+
+- 探针 A：`POST https://jevtypesafeai.com/api/v1/decide`，1 个 `noul` 提问、state 极短，6 次。
+- 探针 B（对照，**同主机同 TLS 但不触发推理**）：
+  (a) `GET /docs` 静态页；(b) `POST /api/v1/decide` 带非法/缺失鉴权 → 401。
+
+### 7.2 结果
+| 测量 | min | median | max |
+|---|---|---|---|
+| 真实决策调用（1 问，286 input tokens） | 1068 ms | **1095 ms** | 1695 ms |
+| 对照 a：`GET /docs`（无推理） | 364 ms | 421 ms | 1359 ms（首次含 TLS 冷启动） |
+| 对照 b：`POST /decide` → 401（无推理） | 501 ms | **511 ms** | 547 ms |
+
+6/6 成功，`model=jev-1.13.0`，每次 `input_tokens=286`、`cost_usd=0.000121`。
+
+### 7.3 结论（严格区分证据与推断）
+- **证据**：从本机到该托管端点，**端到端中位数 ≈ 1.10 s**，**不是毫秒级**。
+  注：探针每次调用都新建连接，未复用连接池。
+- **推断（未单独测量）**：模型推理增量 ≈ 1095 − 511 ≈ **580 ms**；其余约 0.5 s 是同主机 HTTP/TLS 开销。
+- **推断（未单独测量）**：生产路径 `JevDecisionService` 经 `IHttpClientFactory` 复用连接、TLS 握手被摊薄，
+  故单次出厂延迟**预计 ≈ 600–800 ms**。**此为推断**，须在部署后用「连接复用版」探针复测确认。
+
+### 7.4 对设计的强制含义
+1. **白名单缓存（I6）由「优化」升级为「必需」**：若审批路径每次调用 Jev，
+   将给**每个被放行的工具调用**增加约 0.6–1.1 s 延迟；连续工具链（10 次调用）即 +6–11 s，不可接受。
+   用户「用白名单避免每次调用」的判断因此**更加成立**，尽管其「毫秒级」前提与实测不符。
+2. **审批调用必须设短超时**：建议 `ToolApproval:Jev:TimeoutMs = 3000`；超时 ⇒ `DeferredDependency`（fail-closed），
+   **不得**沿用现有 LLM 通道的 30 s 上限。
+3. **成本可计数但需归因**：单问 286 input tokens ≈ $0.000121；四问 + 完整 state（工具参数 + 背景）
+   预计 1.5–3 K tokens ≈ **$0.0006–0.0013 / 次决策** ⇒ 应把 `JevUsage` 与 `ReviewerModel`
+   写入审批审计事件，便于按 workspace / 工具维度归因。
