@@ -240,10 +240,23 @@ public sealed class ClassificationRuleCurator
     /// 落规则；单次类与 <see cref="ClassificationOutcome.Unknown"/> 不沉淀（<see cref="CuratedRuleOutcome.Degraded"/>=false）。
     /// 尽窄命中 ⇒ 降级且绝不落规则；store 异常 ⇒ fail-closed 不冒泡。
     /// </summary>
+    /// <param name="source">
+    /// 规则来源——它决定的是**权威等级**（§14.12.2 权威矩阵），不是记账字段：
+    /// <list type="bullet">
+    /// <item><see cref="ToolApprovalAllowlistRuleSource.Classifier"/>（默认）：分类器自身产出的永久裁决 ⇒ **终局**，
+    /// 命中后管线复用该裁决、不再回调仲裁分类器（§14.13.5 防循环）。</item>
+    /// <item><see cref="ToolApprovalAllowlistRuleSource.Human"/> / <see cref="ToolApprovalAllowlistRuleSource.BuiltIn"/>：
+    /// 人工/内置写入的规则 ⇒ **候选**——命中 deny 时管线**仍须给分类器一次覆盖机会**（§11.3：分类器拥有最终
+    /// 否决/放行权，包括覆盖 deny）。若在这里误标为 Classifier，就把一条人工黑名单升级成了"连分类器也无权
+    /// 覆盖的终局封锁"，与既定优先级相反。</item>
+    /// </list>
+    /// 同时 <c>SourceClassifierId</c> 仅对分类器来源非空（人工规则不得冒充分类器产物）。
+    /// </param>
     public async Task<CuratedRuleOutcome> CurateAsync(
         ClassificationVerdict verdict,
         ToolCallClassificationContext ctx,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        ToolApprovalAllowlistRuleSource source = ToolApprovalAllowlistRuleSource.Classifier)
     {
         ArgumentNullException.ThrowIfNull(verdict);
         ArgumentNullException.ThrowIfNull(ctx);
@@ -293,7 +306,7 @@ public sealed class ClassificationRuleCurator
                 saved = sameEffect! with
                 {
                     Reason = verdict.Reason,
-                    SourceClassifierId = verdict.ClassifierId,
+                    SourceClassifierId = source == ToolApprovalAllowlistRuleSource.Classifier ? verdict.ClassifierId : null,
                     ClassifierModel = verdict.ClassifierModel,
                     OutcomeConfidence = ResolveConfidence(verdict),
                     LastSeenAtUtc = now,
@@ -310,17 +323,17 @@ public sealed class ClassificationRuleCurator
                     ToolId = key.ToolId,
                     Command = isCommandTool ? key.Subject : null,
                     ArgumentsJson = isCommandTool ? null : ctx.ArgumentsJson,
-                    // 分类器产出的规则用 Classifier 标识（§14.12.2：分类器来源=终局权威）。
-            // 不再沿用 AuditAgent：审计角色正在下线，沿用会让持久化数据长期误示来源。
-                    // 「分类器永久权威」由 SourceClassifierId 非空表达（§14.12.2）。
-                    Source = ToolApprovalAllowlistRuleSource.Classifier,
+                    // 来源由调用方显式给出（§14.12.2 权威矩阵）：分类器永久裁决 ⇒ 终局；
+                    // 人工/内置写入 ⇒ 候选（命中 deny 仍须给分类器一次覆盖机会）。
+                    // 「分类器永久权威」由 SourceClassifierId 非空表达；审计角色（AuditAgent）正在下线，不再使用。
+                    Source = source,
                     Status = ToolApprovalAllowlistRuleStatus.Enabled,
                     Effect = effect,
                     Reason = verdict.Reason,
                     ApprovedByAgentInstanceId = ctx.AgentInstanceId,
                     ApprovedByUserId = ctx.UserId,
                     CreatedBySessionId = ctx.SessionId,
-                    SourceClassifierId = verdict.ClassifierId,
+                    SourceClassifierId = source == ToolApprovalAllowlistRuleSource.Classifier ? verdict.ClassifierId : null,
                     ClassifierModel = verdict.ClassifierModel,
                     OutcomeConfidence = ResolveConfidence(verdict),
                     FirstSeenAtUtc = now,

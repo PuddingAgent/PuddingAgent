@@ -14,7 +14,8 @@ namespace PuddingRuntimeTests.Tools;
 /// 1 零厂商依赖 ⇒ 全文件只引用抽象（IToolCallClassifier / IAgentFullAccessGrantService）；
 /// 2 完全访问时长 ⇒ <c>FullAccessRequest_600Seconds…</c> / <c>FullAccess_Expires…</c>；
 /// 3 分类器不可用 ⇒ <c>Classify_ClassifierMissing…</c> / <c>Classify_UnknownOutcome…</c> / <c>FullAccessRequest_ClassifierMissing…</c>；
-/// 4 缓存/快路径 ⇒ <c>Classify_AfterDenyRuleAdded_ArbiterNotConsultedAgain…</c>（仲裁调用计数不变）；
+    /// 4 缓存/快路径 ⇒ <c>Classify_ClassifierDenyRuleReused_ArbiterNotConsultedAgain…</c>（分类器自身永久 deny 规则命中后计数不变）；
+    ///   对照：<c>Classify_AfterManualDenyRule_ArbiterConsultedOnce_OverrideAllowed…</c>（人工规则是候选 ⇒ 仍给一次覆盖机会）；
 /// 5 冲突策略 ⇒ <c>RulesUpdate_SameKeyAllowThenDeny_DenyWins…</c>；
 /// 6 向后兼容 ⇒ <c>ExecuteAsync_WithoutAction_BehavesLikeSubmit…</c>（工具级）；
 /// 7 范围隔离 ⇒ <c>FullAccess_ScopeIsolation…</c>。
@@ -122,8 +123,9 @@ public sealed class ToolApprovalPortalTests
     // ---------- 快路径 / 缓存（§14.11-4） ----------
 
     [TestMethod]
-    public async Task Classify_AfterDenyRuleAdded_ArbiterNotConsultedAgain_CallCountUnchanged()
+    public async Task Classify_AfterManualDenyRule_ArbiterConsultedOnce_OverrideAllowed()
     {
+        // 门户人工写入的规则是**候选**权威（§14.12.2）：命中 deny 时分类器仍须有一次覆盖机会（§11.3）。
         var allowlist = new InMemoryToolApprovalAllowlistStore();
         var audit = new InMemoryToolApprovalAuditStore();
         var clock = new FakeClock();
@@ -140,15 +142,54 @@ public sealed class ToolApprovalPortalTests
         Assert.AreEqual("allow_once", first.RootElement.GetProperty("outcome").GetString());
         Assert.AreEqual(1, arbiter.CallCount);
 
-        // ② rules_update 加 deny 规则（同键；Source=Classifier 终局权威）。
+        // ② 门户加 deny 规则 ⇒ 必须落为 Source=Human（人工/候选权威），且不得携带分类器身份。
         var added = Json(await portal.RulesUpdateAsync(Request(commandName: "dotnet test", ruleOp: "add", ruleEffect: "deny")));
         Assert.IsTrue(added.RootElement.GetProperty("applied").GetBoolean());
-        Assert.IsFalse(string.IsNullOrEmpty(added.RootElement.GetProperty("rule_id").GetString()));
+        var manualRule = (await allowlist.ListAsync())
+            .Single(r => r.RuleId == added.RootElement.GetProperty("rule_id").GetString());
+        Assert.AreEqual(
+            ToolApprovalAllowlistRuleSource.Human,
+            manualRule.Source,
+            "门户人工规则必须是候选权威，不得标为分类器终局（否则人工黑名单会变成分类器也无权覆盖的封锁）。");
+        Assert.IsNull(manualRule.SourceClassifierId, "人工规则不得冒充分类器产物。");
 
-        // ③ 同一调用再 classify ⇒ deny 规则命中 ⇒ 防循环复用，仲裁调用计数不变。
+        // ③ 同一调用再 classify ⇒ deny 候选命中 ⇒ **必须**给分类器一次覆盖机会（计数 +1）⇒ 分类器放行 ⇒ 覆盖生效。
+        var second = Json(await portal.ClassifyAsync(Request(commandName: "dotnet test")));
+        Assert.AreEqual("allow_once", second.RootElement.GetProperty("outcome").GetString(), "分类器应能覆盖人工 deny（§11.3 覆盖权）。");
+        Assert.AreEqual(2, arbiter.CallCount, "人工 deny 规则是候选 ⇒ 必须请求仲裁一次（绝不因人工规则而跳过）。");
+    }
+
+    [TestMethod]
+    public async Task Classify_ClassifierDenyRuleReused_ArbiterNotConsultedAgain_CallCountUnchanged()
+    {
+        // 只有分类器**自身产出**的永久 deny 规则才是终局：命中后复用裁决、不再回调仲裁（§14.13.5 防循环 / §14.11-4 缓存）。
+        var allowlist = new InMemoryToolApprovalAllowlistStore();
+        var audit = new InMemoryToolApprovalAuditStore();
+        var clock = new FakeClock();
+        // 经管线 ⇒ 必须给足逐分类可信度（≥0.90），否则永久类会被门槛降级为 deny_once、根本不会沉淀规则。
+        var arbiter = new CountingClassifier(Verdict(
+            ClassificationOutcome.DenyPermanent,
+            classifierId: "fake-arbiter",
+            permanentConfidenceKey: "deny_permanent"));
+        var pipeline = new ToolCallClassifierPipeline(
+            [new SystemRuleClassifier(allowlist, clock)],
+            arbiter,
+            audit,
+            clock);
+        var portal = new ToolApprovalPortalService(allowlist, audit, pipeline, timeProvider: clock);
+
+        // ① 首次 classify ⇒ DenyPermanent ⇒ 沉淀规则（Source=Classifier，带分类器身份）。
+        var first = Json(await portal.ClassifyAsync(Request(commandName: "dotnet test")));
+        Assert.AreEqual("deny_permanent", first.RootElement.GetProperty("outcome").GetString());
+        Assert.AreEqual(1, arbiter.CallCount);
+        var classifierRule = (await allowlist.ListAsync()).Single(r => r.Effect == ToolApprovalRuleEffect.Deny);
+        Assert.AreEqual(ToolApprovalAllowlistRuleSource.Classifier, classifierRule.Source);
+        Assert.IsNotNull(classifierRule.SourceClassifierId, "分类器产物必须带分类器身份。");
+
+        // ② 同一调用再 classify ⇒ 命中分类器自身永久规则 ⇒ 防循环复用，仲裁调用计数不变。
         var second = Json(await portal.ClassifyAsync(Request(commandName: "dotnet test")));
         Assert.AreEqual("deny_once", second.RootElement.GetProperty("outcome").GetString());
-        Assert.AreEqual(1, arbiter.CallCount, "deny 规则生效后同一调用绝不允许再请求仲裁分类器（调用计数不变）。");
+        Assert.AreEqual(1, arbiter.CallCount, "分类器自身永久规则命中后绝不重问仲裁（调用计数不变）。");
     }
 
     // ---------- rules_list / rules_update（§14.1/§14.5） ----------
@@ -167,9 +208,11 @@ public sealed class ToolApprovalPortalTests
         var rules = list.RootElement.GetProperty("rules");
         var deny = rules.EnumerateArray().Single(r => r.GetProperty("rule_id").GetString() == ruleId);
         Assert.AreEqual("deny", deny.GetProperty("effect").GetString());
-        Assert.AreEqual("classifier", deny.GetProperty("source").GetString());
+        Assert.AreEqual("human", deny.GetProperty("source").GetString(), "人工规则必须是候选权威（§14.12.2），不得冒充分类器终局裁决。");
         Assert.AreEqual("enabled", deny.GetProperty("status").GetString());
-        Assert.AreEqual("portal", deny.GetProperty("source_classifier_id").GetString(), "人工规则操作必须可溯源到门户。");
+        Assert.IsTrue(
+            !deny.TryGetProperty("source_classifier_id", out var scid) || scid.ValueKind == JsonValueKind.Null,
+            "人工规则不得携带分类器身份（SourceClassifierId 必须为空）。");
         Assert.IsTrue(deny.GetProperty("hit_count").GetInt64() >= 1);
 
         // 黑名单与白名单都要可见：内置 allow 规则（全局）也在列表中。
@@ -591,7 +634,9 @@ public sealed class ToolApprovalPortalTests
     private static ClassificationVerdict Verdict(
         ClassificationOutcome outcome,
         string classifierId,
-        string? reasonCode = null)
+        string? reasonCode = null,
+        string? permanentConfidenceKey = null,
+        double permanentConfidence = 0.95)
         => new()
         {
             Outcome = outcome,
@@ -599,6 +644,11 @@ public sealed class ToolApprovalPortalTests
             ClassifierId = classifierId,
             ClassifierModel = null,
             ReasonCode = reasonCode,
+            // 经管线时必须提供逐分类可信度，否则永久类会被 §14.13.3 门槛降级为单次类；
+            // 键名与 ToolCallClassifierPipeline 内部常量一致（allow_permanent / deny_permanent）。
+            PerOutcomeConfidence = permanentConfidenceKey is null
+                ? null
+                : new Dictionary<string, double> { [permanentConfidenceKey] = permanentConfidence },
         };
 
     private static (ToolApprovalPortalService Portal, InMemoryToolApprovalAllowlistStore Allowlist, InMemoryToolApprovalAuditStore Audit, FakeClock Clock, CountingClassifier Classifier)

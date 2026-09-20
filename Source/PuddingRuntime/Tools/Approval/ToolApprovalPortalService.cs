@@ -253,7 +253,10 @@ public sealed class ToolApprovalPortalService
 
         // 规则操作本身就是一次显式裁决输入：以「永久类」合成结论驱动策展器，
         // 幂等 / 同键冲突 deny 胜 / 尽窄 6 条 / 溯源 / 审计（含 RuleConflictDetected）全部由策展器统一保证。
-        // 产出规则 Source=Classifier（§14.12.2 终局权威）：命中即走规则快路径，不再重复咨询仲裁分类器。
+        // 产出规则 Source=**Human**（§14.12.2：人工/内置写入 ⇒ 候选权威）：命中 deny 时管线仍会给分类器
+        // 一次覆盖机会——按既定优先级「分类器拥有最终否决/放行权，包括覆盖 deny」，人工黑名单不得被升级为
+        // "连分类器也无权覆盖的终局封锁"；只有分类器自身永久裁决（Source=Classifier）才是终局、命中后不再
+        // 回调仲裁（§14.13.5 防循环）。
         var verdict = new ClassificationVerdict
         {
             Outcome = effect == ToolApprovalRuleEffect.Allow
@@ -264,7 +267,9 @@ public sealed class ToolApprovalPortalService
             ClassifierModel = null,
         };
 
-        var curated = await _curator.CurateAsync(verdict, context, ct).ConfigureAwait(false);
+        var curated = await _curator
+            .CurateAsync(verdict, context, ct, ToolApprovalAllowlistRuleSource.Human)
+            .ConfigureAwait(false);
 
         var payload = new Dictionary<string, object?>
         {
