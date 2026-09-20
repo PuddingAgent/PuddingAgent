@@ -260,6 +260,14 @@ public sealed record ToolApprovalAllowlistProposal
     public string? Command { get; init; }
     public string? ArgumentsJson { get; init; }
     public string? Reason { get; init; }
+
+    /// <summary>
+    /// 供上层策展器判定落规则的 Effect（S3c-1）：allow（白名单）或 deny（黑名单）。
+    /// 可空且 append-only：既有构造调用不赋值时保持 <c>null</c>，完全向后兼容；
+    /// <c>null</c> 表示「未声明」，策展器不得猜测为 allow。结构化承载后，
+    /// <see cref="Reason"/> 不再需要（也不得）用 <c>effect=…</c> 文本约定传递效果。
+    /// </summary>
+    public ToolApprovalRuleEffect? Effect { get; init; }
 }
 
 /// <summary>Stored approval ticket state used by runtime checks and future persistence.</summary>

@@ -53,8 +53,12 @@ public sealed class ClassifierToolApprovalReviewerTests
         Assert.AreEqual(request.ToolId, proposal.ToolId);
         Assert.AreEqual("dotnet", proposal.Command);
         Assert.AreEqual(DefaultShellArgs, proposal.ArgumentsJson);
-        Assert.IsTrue(proposal.Reason!.Contains("effect=allow", StringComparison.Ordinal), "提案必须携带 effect=allow 供上层策展器落规则。");
-        Assert.IsTrue(proposal.Reason.Contains("outcome=AllowPermanent", StringComparison.Ordinal));
+        Assert.AreEqual(
+            ToolApprovalRuleEffect.Allow,
+            proposal.Effect,
+            "S3c-1：效果必须结构化承载在提案 Effect 属性，供上层策展器落规则。");
+        Assert.IsTrue(proposal.Reason!.Contains("outcome=AllowPermanent", StringComparison.Ordinal));
+        Assert.IsFalse(proposal.Reason.Contains("effect=", StringComparison.Ordinal), "Reason 不得再用 effect= 文本约定传递效果。");
     }
 
     // ---------- ③ DenyOnce ⇒ Denied + 无提案 ----------
@@ -91,8 +95,12 @@ public sealed class ClassifierToolApprovalReviewerTests
 
         var proposal = result.AllowlistProposals.Single();
         Assert.AreEqual(request.ToolId, proposal.ToolId);
-        Assert.IsTrue(proposal.Reason!.Contains("effect=deny", StringComparison.Ordinal), "提案必须携带 effect=deny 供上层策展器落规则。");
-        Assert.IsTrue(proposal.Reason.Contains("outcome=DenyPermanent", StringComparison.Ordinal));
+        Assert.AreEqual(
+            ToolApprovalRuleEffect.Deny,
+            proposal.Effect,
+            "S3c-1：效果必须结构化承载在提案 Effect 属性，供上层策展器落规则。");
+        Assert.IsTrue(proposal.Reason!.Contains("outcome=DenyPermanent", StringComparison.Ordinal));
+        Assert.IsFalse(proposal.Reason.Contains("effect=", StringComparison.Ordinal), "Reason 不得再用 effect= 文本约定传递效果。");
     }
 
     // ---------- ⑤ Unknown ⇒ DeferredDependency（绝不折叠） ----------

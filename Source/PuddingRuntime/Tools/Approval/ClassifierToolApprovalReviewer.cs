@@ -194,8 +194,10 @@ public sealed class ClassifierToolApprovalReviewer : IToolApprovalReviewer
     }
 
     /// <summary>
-    /// 永久类提案（供上层策展器落规则；本评审器不落库）。提案记录本身没有 Effect 字段
-    ///（稳定契约不可改），效果按代码库 key=value 惯例编码进 Reason 首段，allow / deny 双向可解析。
+    /// 永久类提案（供上层策展器落规则；本评审器不落库）。效果由 S3c-1 补齐的
+    /// <see cref="ToolApprovalAllowlistProposal.Effect"/> 属性结构化承载（allow / deny 双向可读）；
+    /// <see cref="ToolApprovalAllowlistProposal.Reason"/> 只保留人类可读的裁决溯源说明，
+    /// 不再（也不得）用 <c>effect=…</c> 文本约定传递效果。
     /// </summary>
     private static ToolApprovalAllowlistProposal BuildProposal(
         ToolApprovalTicketRequest request,
@@ -207,7 +209,8 @@ public sealed class ClassifierToolApprovalReviewer : IToolApprovalReviewer
             Command = request.CommandName,
             ArgumentsJson = request.RequestedArgumentsJson,
             Reason = FormattableString.Invariant(
-                $"effect={(effect == ToolApprovalRuleEffect.Allow ? "allow" : "deny")} outcome={verdict.Outcome} confidence={FormatConfidence(verdict)} classifierId={verdict.ClassifierId} model={verdict.ClassifierModel ?? "n/a"}"),
+                $"outcome={verdict.Outcome} confidence={FormatConfidence(verdict)} classifierId={verdict.ClassifierId} model={verdict.ClassifierModel ?? "n/a"}"),
+            Effect = effect,
         };
 
     private static string? FirstWorkingDirectory(ToolApprovalTicketRequest request)

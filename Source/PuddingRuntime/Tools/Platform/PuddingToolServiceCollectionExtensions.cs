@@ -3,9 +3,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Flurl.Http.Configuration;
 using PuddingCode.Abstractions;
+using PuddingCode.Classification;
 using PuddingCode.Configuration;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
+using PuddingRuntime.Classification;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.Plugins;
 using PuddingRuntime.Services.Search;
@@ -107,6 +109,10 @@ public static class PuddingToolServiceCollectionExtensions
             sp.GetService<PuddingCode.Runtime.ILlmInvocationService>(),
             sp.GetRequiredService<IToolApprovalLlmProfileResolver>(),
             sp.GetService<ILogger<InvocationToolApprovalLlmClient>>()));
+        // S3c-1（安全分类器方案 v2 §14.13）：组装分类器管线并注册为 IToolCallClassifier 单例。
+        // 仲裁位：Jev 决策端口已注册 ⇒ JevToolCallClassifier；未注册 ⇒ fail-closed 占位（返回 Unknown）。
+        // 两种形态都不会让 DI 解析或启动抛异常；管线自带仲裁独立 3000ms 超时。
+        services.TryAddSingleton<IToolCallClassifier>(sp => BuildToolCallClassifierPipeline(sp, configuration));
         services.TryAddSingleton<IToolApprovalReviewer>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ToolApprovalRuntimeOptions>>().Value;
@@ -124,10 +130,17 @@ public static class PuddingToolServiceCollectionExtensions
             if (string.Equals(reviewer, ToolApprovalRuntimeOptions.JevReviewer, StringComparison.OrdinalIgnoreCase))
                 return ActivatorUtilities.CreateInstance<JevToolApprovalReviewer>(sp);
 
+            if (string.Equals(reviewer, ToolApprovalRuntimeOptions.ClassifierReviewer, StringComparison.OrdinalIgnoreCase))
+            {
+                // S3c-1：分类器链路（IToolCallClassifier 管线 + 审计存储）已在上方注册，
+                // 仅当显式配置 Reviewer=classifier 时选中；默认路径仍是 llm，不在此翻转。
+                return ActivatorUtilities.CreateInstance<ClassifierToolApprovalReviewer>(sp);
+            }
+
             // ADR-091 §5/F02：生产注册没有 fake 放行路径；即使旧配置传 Reviewer=fake 也必须拒绝。
             // 假实现只能在测试组合里通过显式 DI 注册。
             throw new InvalidOperationException(
-                $"ToolApproval reviewer '{options.Reviewer}' is not supported. The production registration only supports 'llm' or 'jev'; inject test doubles through test DI.");
+                $"ToolApproval reviewer '{options.Reviewer}' is not supported. The production registration only supports 'llm', 'jev', or 'classifier'; inject test doubles through test DI.");
         });
         services.TryAddSingleton<IToolApprovalTicketStore>(sp =>
             sp.GetService<PuddingDataPaths>() is null
@@ -263,6 +276,68 @@ public static class PuddingToolServiceCollectionExtensions
     private sealed class EmptyPuddingToolSource(string sourceId) : IPuddingToolSource
     {
         public string SourceId { get; } = sourceId;
+
         public IReadOnlyList<IPuddingTool> ListTools() => [];
+    }
+
+    /// <summary>
+    /// 组装分类器管线（S3c-1，方案 v2 §14.13）：<see cref="SystemRuleClassifier"/>（规则快路径）
+    /// + 仲裁位（Jev 端口已注册 ⇒ <see cref="JevToolCallClassifier"/>，否则 fail-closed 占位）
+    /// + 审计存储 ⇒ <see cref="ToolCallClassifierPipeline"/>。
+    /// 仲裁调用有独立 3000ms 超时（管线默认 <see cref="ToolCallClassifierPipelineOptions.DefaultArbiterTimeoutMs"/>）。
+    /// Jev 端口未注册时不抛异常：仲裁退化为返回 Unknown 的占位（fail-closed，由管线转 deferred 语义）。
+    /// </summary>
+    private static IToolCallClassifier BuildToolCallClassifierPipeline(
+        IServiceProvider serviceProvider,
+        IConfiguration? configuration)
+    {
+        var ruleClassifier = new SystemRuleClassifier(
+            serviceProvider.GetRequiredService<IToolApprovalAllowlistStore>(),
+            serviceProvider.GetService<TimeProvider>());
+
+        var jevDecisionService = serviceProvider.GetService<IJevDecisionService>();
+        IToolCallClassifier arbiter = jevDecisionService is null
+            ? UnregisteredJevArbiterClassifier.Instance
+            : new JevToolCallClassifier(
+                jevDecisionService,
+                configuration?.GetSection(ToolApprovalJevOptions.SectionName).Get<ToolApprovalJevOptions>()
+                    ?? new ToolApprovalJevOptions(),
+                serviceProvider.GetService<TimeProvider>());
+
+        return new ToolCallClassifierPipeline(
+            [ruleClassifier],
+            arbiter,
+            serviceProvider.GetRequiredService<IToolApprovalAuditStore>(),
+            serviceProvider.GetService<TimeProvider>());
+    }
+
+    /// <summary>
+    /// Jev 决策端口未注册时的仲裁占位（S3c-1）：fail-closed 返回 <see cref="ClassificationOutcome.Unknown"/>，
+    /// 由管线按 §14.13.2 场景③④转 <c>classifier.pipeline.arbiter_unavailable</c>（上层再按 §14.7 转 deferred）；
+    /// 绝不放行、绝不折叠为 Deny。
+    /// </summary>
+    internal sealed class UnregisteredJevArbiterClassifier : IToolCallClassifier
+    {
+        public static readonly UnregisteredJevArbiterClassifier Instance = new();
+
+        private UnregisteredJevArbiterClassifier()
+        {
+        }
+
+        /// <summary>分类器稳定标识（审计溯源）。</summary>
+        public string ClassifierId => "arbiter.not-registered";
+
+        public Task<ClassificationVerdict> ClassifyAsync(
+            ToolCallClassificationContext context,
+            CancellationToken ct = default)
+            => Task.FromResult(new ClassificationVerdict
+            {
+                Outcome = ClassificationOutcome.Unknown,
+                Reason = "IJevDecisionService is not registered in this container; the classification arbiter is unavailable (fail-closed).",
+                ReasonCode = "classifier.arbiter.not_registered",
+                ClassifierId = ClassifierId,
+                ClassifierModel = null,
+                AppliedRuleId = null,
+            });
     }
 }

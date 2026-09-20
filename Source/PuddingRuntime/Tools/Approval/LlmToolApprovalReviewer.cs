@@ -96,9 +96,15 @@ public sealed class ToolApprovalRuntimeOptions
     public const string JevReviewer = "jev";
 
     /// <summary>
+    /// 安全分类器驱动的评审器（方案 v2 §14.13，切片 S3b/S3c-1）：经 <c>IToolCallClassifier</c> 管线裁决，
+    /// 仅显式配置 <c>Reviewer=classifier</c> 时选中；默认值不受影响。
+    /// </summary>
+    public const string ClassifierReviewer = "classifier";
+
+    /// <summary>
     /// Reviewer implementation. Unset (null/empty) auto-selects at composition time:
     /// "jev" when an <c>IJevDecisionService</c> is registered in the container, otherwise
-    /// "llm" (the isolated approval LLM reviewer). Explicit values: "llm" | "jev".
+    /// "llm" (the isolated approval LLM reviewer). Explicit values: "llm" | "jev" | "classifier".
     /// "fake" is test-only; production must never silently auto-approve (ADR-091 §5).
     /// </summary>
     /// <remarks>
