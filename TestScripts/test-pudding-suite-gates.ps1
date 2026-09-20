@@ -82,6 +82,8 @@ $Suites = [ordered]@{
         # 收窄轨迹：17 → 16 → 14 → 13（menuIcons 缺 hdd/key 映射 = **真实缺陷**）→ 10（A 类：agentChatApi 补取消信号断言、DevPanel 补 excludeFromLearning）。
         # 已定性数例为测试/配置滞后（A 类），**与安全分类器改动无关**；逐例台账见 TestScripts/known-red-dispositions.md。
         # ⚠️ 名单未逐例登记 ⇒ `KnownRed = $null`（**仅按预算判**）；逐例登记后应改为具体名单。
+        # ⚠️ **预算故意不按 9 收紧**：剩 10 例中有一例 flaky（access-token 套件的「撤销 Modal 填写原因后提交
+        # expectedVersion」在未改动该套件时跨次结果不一致）⇒ 收紧到 9 会被它的抖动随时误报。
         AllowedFailures = 10
         KnownRed = $null
         Note = '既有红：A 类测试滞后为主（生产变更后测试未同步）。名单未登记 ⇒ 目前只按预算判。'

@@ -15,8 +15,10 @@
 ## 当前基线（2026-09-21 实测）
 - `npx jest` 全量 ⇒ **`Tests: 10 failed, 1342 passed, 1352 total`（6 个红套件）**
 - 门禁：`AdminJest.AllowedFailures = 10`、`KnownRed = $null`
+- ⚠️ **稳定性**：其中 1 例**疑似 flaky**（见下方「疑似不稳定」一节）⇒ **预算保持 10、不按 9 收紧**，
+  否则该 flaky 一抖动就会误报。
 
-## 逐例台账（10 例待查；已修的都移到下方「已修完的例」）
+## 逐例台账（9 例待查 + 1 例 flaky；已修的都移到下方「已修完的例」）
 
 | # | 套件 | 用例 | 类 | 证据/状态 |
 |---|---|---|---|---|
@@ -29,7 +31,7 @@
 | 7 | `src/pages/chat/components/InputArea.test.tsx` | `InputArea status feedback › shows the voice mode unavailable state when browser microphone capture is unavailable` | **A（同族）** | 同族语音用例，预期形态与现组件不一致；细节待补 |
 | 8 | `src/pages/chat/hooks/useChatState.selection.test.tsx` | `useChatState session selection races › preserves the visible compact result when switching to the new compacted session` | 待查 | 与压缩会话切换竞态有关，未复核 |
 | 9 | `src/pages/chat/components/IntentConsole.test.tsx` | `IntentConsole › sends voice transcript with voice metadata from the console boundary` | **A（同族）** | 同族语音用例（与 #6 同一归属问题） |
-| 10 | `src/pages/chat/components/IntentConsole.test.tsx` | `IntentConsole › converts BMP images to PNG before uploading` | 待查 | 与上传前图像转码有关，未复核 |
+| 10 | `src/pages/chat/components/IntentConsole.test.tsx` | `IntentConsole › converts BMP images to PNG before uploading` | **A（已修）** | 见「已修完的例」表 |
 | 11 | `src/pages/chat/components/DevPanel.test.tsx` | `DevPanel performance diagnostics › loads benchmark cases from the server and sends only the case prompt` | **A（已修）** | 见「已修完的例」表 |
 | 12 | `src/pages/access-token-management/index.test.tsx` | `Access Token 管理页（ADR-075 §15.3） › 创建抽屉默认最小 scope，workspace 为空不能提交` | 待查 | 该套件耗时 209s，未复核 |
 | 13 | `src/pages/access-token-management/index.test.tsx` | `Access Token 管理页（ADR-075 §15.3） › 撤销弹窗显示强确认警示，未确认不调用后端` | 待查 | 同上 |
@@ -43,7 +45,14 @@
 | `AgentMessageBubble.test.tsx` | `shows a sanitized reasoning summary ...` | **A** | 错归属断言 ⇒ 改「职责边界」断言（`queryByTestId('reasoning-disclosure-row') === null`） |
 | `AgentMessageBubble.test.tsx` | `shows the latest reasoning line and expands ...` | **A** | 职责已迁至 `ReasoningDisclosureRow`（其测试已覆盖）⇒ 删除 49 行用例 + 原地留指针 |
 | `src/pages/chat/client/agentChatApi.test.ts` | `agentChatApi › loads historical process items only for the selected message` | **A** | 生产已为历史过程项请求接入**取消信号**（切消息时中止在途请求）⇒ 期望由 `{ method: 'GET' }` 改为 `objectContaining({ method: 'GET', signal: expect.any(AbortSignal) })`（既不放松 method 检查，也不耦合信号内部形态）。该套件现全绿。 |
-| `src/pages/chat/components/DevPanel.test.tsx` | `DevPanel performance diagnostics › loads benchmark cases from the server and sends only the case prompt` | **A** | 生产在基准启动请求体里**硬编码** `excludeFromLearning: 'true'`（`DevPanel/BenchmarkTab.tsx:95`，语义：基准跑不能污染学习数据）⇒ 期望补上该字段。该套件现全绿。 |
+| `src/pages/chat/components/IntentConsole.test.tsx` | `IntentConsole › converts BMP images to PNG before uploading` | **A（契约变更滞后）** | **契约已变**：本地不再转换 BMP 而是**保留原文件**、由**服务端预处理**生成模型可用副本。三重依据：① `visionArtifactImage.ts` 文档注释明写该策略；② 同一模块的单测 `visionArtifactImage.test.ts` 断言 `image/bmp` **原样返回**（“uploads %s unchanged for server preprocessing”，当前为绿）；③ `git log -S "image/bmp"` 表明该条随模块引入（`74ae4e0`）就是有意为之。⇒ 用例重写为“**上传原文件不变**（name=clipboard.bmp、type=image/bmp）+ **未走 canvas 转换**（`drawImage` 未被调用）”并附依据注释。 |
+
+> 本次修复后，`IntentConsole.test.tsx` 由 2 红降为 1 红（仅剩语音族）。
+
+### 疑似不稳定（flaky，需单独查）
+| 套件 | 用例 | 证据 |
+|---|---|---|
+| `src/pages/access-token-management/index.test.tsx` | `Access Token 管理页（ADR-075 §15.3） › 撤销 Modal 填写原因后提交 expectedVersion` | **该套件本轮未被改动**，但在两次全量之间失败了：上一轮失败名单**不含**它（该盘 failed=10），本轮**含**它（仍然 failed=10）⇒ 同一代码下结果不一致 = 不稳定的强证据。该套件单次耗时 ≈ 209s。**待查方向**：是测试自身时序/清理问题，还是生产侧竞态（如果是竞态那就是真缺陷）。 |
 
 > 本次两个套件**整体转绿**（2 suites / 12 tests 全过），全量 failed 由 13 降到 **10** ⇒ 这两处原本共 **3 例**在失败（含台账命名列表未单独列出的一例）。
 
