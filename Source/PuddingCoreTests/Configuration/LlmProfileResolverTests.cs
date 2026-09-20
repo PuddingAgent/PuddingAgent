@@ -71,7 +71,7 @@ public sealed class LlmProfileResolverTests
     }
 
     [TestMethod]
-    public void Resolve_Ignores_Invalid_Instance_Model_And_Falls_Back_To_Global_Role_Default()
+    public void Resolve_Ignores_Instance_Binding_And_Returns_Null_When_Template_Missing()
     {
         var llm = CreateLlmConfig();
         var instance = new AgentInstanceLlmConfig
@@ -84,11 +84,13 @@ public sealed class LlmProfileResolverTests
             },
         };
 
+        // 71f187f（refactor(llm): remove default-conscious/subconscious profiles and
+        // DefaultProviderId/DefaultModelId）起：instance 绑定不再参与解析，全局 roles 回退已删除；
+        // Resolve 只认模板 DefaultLlmProfiles ⇒ 无 template 时该角色为 null。
         var resolved = LlmProfileResolver.Resolve(llm, template: null, instance);
 
-        Assert.IsNotNull(resolved.Conscious);
-        Assert.AreEqual("mimo", resolved.Conscious.ProviderId);
-        Assert.AreEqual("mimo-v2.5-pro", resolved.Conscious.ModelId);
+        Assert.IsNull(resolved.Conscious);
+        Assert.IsNull(resolved.Subconscious);
     }
 
     [TestMethod]
@@ -105,21 +107,21 @@ public sealed class LlmProfileResolverTests
     }
 
     [TestMethod]
-    public void Resolve_Falls_Back_To_Global_Role_Defaults()
+    public void Resolve_Returns_Null_When_Template_Missing_Even_If_Global_Roles_Configured()
     {
         var llm = CreateLlmConfig();
 
-        // 无 template，无 instance → 使用全局 roles 默认值
+        // 71f187f 起：全局 roles（roles.conscious/subconscious）不再作为回退
+        // （LlmProfileResolver.cs 类注释 [Obsolete] 段 + ResolveRole 注释「不再回退到全局 roles」；
+        // PuddingLlmRoleConfig 已标 [Obsolete]）。无 template ⇒ 两个角色均为 null。
         var resolved = LlmProfileResolver.Resolve(llm, template: null, instance: null);
 
-        Assert.IsNotNull(resolved.Conscious);
-        Assert.AreEqual("mimo-v2.5-pro", resolved.Conscious.ModelId);
-        Assert.IsNotNull(resolved.Subconscious);
-        Assert.AreEqual("mimo-v2.5", resolved.Subconscious.ModelId);
+        Assert.IsNull(resolved.Conscious);
+        Assert.IsNull(resolved.Subconscious);
     }
 
     [TestMethod]
-    public void Resolve_Ignores_Instance_Profile_And_Falls_Back_To_Role_Defaults()
+    public void Resolve_Ignores_Instance_Profile_And_ReasoningEffort_When_Template_Missing()
     {
         var llm = CreateLlmConfig();
         var instance = new AgentInstanceLlmConfig
@@ -131,11 +133,11 @@ public sealed class LlmProfileResolverTests
             },
         };
 
+        // 71f187f 起：Resolve 的 instance 参数被完全忽略（解析链仅 template.DefaultLlmProfiles），
+        // 不存在「回退到 roles 默认值并带出 medium ReasoningEffort」的路径；无 template ⇒ null。
         var resolved = LlmProfileResolver.Resolve(llm, template: null, instance);
 
-        Assert.IsNotNull(resolved.Conscious);
-        Assert.AreEqual("mimo-v2.5-pro", resolved.Conscious.ModelId);
-        Assert.AreEqual("medium", resolved.Conscious.ReasoningEffort);
+        Assert.IsNull(resolved.Conscious);
     }
 
     [TestMethod]

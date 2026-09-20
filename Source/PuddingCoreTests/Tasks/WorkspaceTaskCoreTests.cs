@@ -43,16 +43,24 @@ public sealed class WorkspaceTaskCoreTests
         var legal = new (WorkspaceTaskStatus From, WorkspaceTaskStatus To)[]
         {
             (WorkspaceTaskStatus.Backlog, WorkspaceTaskStatus.Ready),
+            // 278042d（fix(board): 卡状态机补终态关闭通道，看板卡 2a92b3ed）：Backlog/Deferred/
+            // Reserved/NeedsReview 各补 Cancelled 终态出边（TaskStateMachine.cs BuildTransitions）。
+            (WorkspaceTaskStatus.Backlog, WorkspaceTaskStatus.Cancelled),
 
             (WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Deferred),
             (WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Reserved),
             (WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.NeedsReview),
+            // 40c3065（fix(board): 交付发生在 claim 通道之外时也能关闭卡片）：
+            // Ready/NeedsReview 补 Completed「验收即关闭」出边（卡 cce95d6b）。
+            (WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Completed),
             (WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Cancelled),
 
             (WorkspaceTaskStatus.Deferred, WorkspaceTaskStatus.Ready),
+            (WorkspaceTaskStatus.Deferred, WorkspaceTaskStatus.Cancelled), // 278042d
 
             (WorkspaceTaskStatus.Reserved, WorkspaceTaskStatus.Ready),
             (WorkspaceTaskStatus.Reserved, WorkspaceTaskStatus.Assigned),
+            (WorkspaceTaskStatus.Reserved, WorkspaceTaskStatus.Cancelled), // 278042d
 
             (WorkspaceTaskStatus.Assigned, WorkspaceTaskStatus.InProgress),
             (WorkspaceTaskStatus.Assigned, WorkspaceTaskStatus.Blocked),
@@ -63,6 +71,8 @@ public sealed class WorkspaceTaskCoreTests
             (WorkspaceTaskStatus.Assigned, WorkspaceTaskStatus.Cancelled),
 
             (WorkspaceTaskStatus.NeedsReview, WorkspaceTaskStatus.Ready),
+            (WorkspaceTaskStatus.NeedsReview, WorkspaceTaskStatus.Completed), // 40c3065
+            (WorkspaceTaskStatus.NeedsReview, WorkspaceTaskStatus.Cancelled), // 278042d
 
             (WorkspaceTaskStatus.InProgress, WorkspaceTaskStatus.Blocked),
             (WorkspaceTaskStatus.InProgress, WorkspaceTaskStatus.Ready),
@@ -94,8 +104,11 @@ public sealed class WorkspaceTaskCoreTests
         var illegal = new (WorkspaceTaskStatus From, WorkspaceTaskStatus To)[]
         {
             (WorkspaceTaskStatus.Backlog, WorkspaceTaskStatus.Assigned),
+            (WorkspaceTaskStatus.Backlog, WorkspaceTaskStatus.Failed),
             (WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.InProgress),
-            (WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Completed),
+            // 40c3065 后 Ready→Completed 已是合法边（移入 Allows 测试）；改用 Ready→Assigned
+            // 守卫「claim/领取通道不可绕过」的未放宽承诺（40c3065 提交说明）。
+            (WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Assigned),
             (WorkspaceTaskStatus.Deferred, WorkspaceTaskStatus.Assigned),
             (WorkspaceTaskStatus.Reserved, WorkspaceTaskStatus.InProgress),
             (WorkspaceTaskStatus.NeedsReview, WorkspaceTaskStatus.InProgress),
@@ -116,12 +129,51 @@ public sealed class WorkspaceTaskCoreTests
     [TestMethod]
     public void GetAllowedTransitions_Returns_Expected_Sets()
     {
+        // 按现行 BuildTransitions 全表逐态钉死（防再漂移）。
+        // 契约变更证据：278042d 给 Backlog/Deferred/Reserved/NeedsReview 补 Cancelled 出边；
+        // 40c3065 给 Ready/NeedsReview 补 Completed「验收即关闭」出边。
         AssertSet(TaskStateMachine.GetAllowedTransitions(WorkspaceTaskStatus.Backlog),
-            WorkspaceTaskStatus.Ready);
+            WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Cancelled);
 
         AssertSet(TaskStateMachine.GetAllowedTransitions(WorkspaceTaskStatus.Ready),
             WorkspaceTaskStatus.Deferred, WorkspaceTaskStatus.Reserved,
+            WorkspaceTaskStatus.NeedsReview, WorkspaceTaskStatus.Completed,
+            WorkspaceTaskStatus.Cancelled);
+
+        AssertSet(TaskStateMachine.GetAllowedTransitions(WorkspaceTaskStatus.Deferred),
+            WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Cancelled);
+
+        AssertSet(TaskStateMachine.GetAllowedTransitions(WorkspaceTaskStatus.Reserved),
+            WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Assigned,
+            WorkspaceTaskStatus.Cancelled);
+
+        AssertSet(TaskStateMachine.GetAllowedTransitions(WorkspaceTaskStatus.Assigned),
+            WorkspaceTaskStatus.InProgress, WorkspaceTaskStatus.Blocked,
+            WorkspaceTaskStatus.Completed, WorkspaceTaskStatus.Failed,
+            WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.NeedsReview,
+            WorkspaceTaskStatus.Cancelled);
+
+        AssertSet(TaskStateMachine.GetAllowedTransitions(WorkspaceTaskStatus.NeedsReview),
+            WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Completed,
+            WorkspaceTaskStatus.Cancelled);
+
+        AssertSet(TaskStateMachine.GetAllowedTransitions(WorkspaceTaskStatus.InProgress),
+            WorkspaceTaskStatus.Blocked, WorkspaceTaskStatus.Ready,
+            WorkspaceTaskStatus.Failed, WorkspaceTaskStatus.Completed,
             WorkspaceTaskStatus.NeedsReview, WorkspaceTaskStatus.Cancelled);
+
+        AssertSet(TaskStateMachine.GetAllowedTransitions(WorkspaceTaskStatus.Blocked),
+            WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Failed,
+            WorkspaceTaskStatus.Cancelled);
+
+        AssertSet(TaskStateMachine.GetAllowedTransitions(WorkspaceTaskStatus.Completed),
+            WorkspaceTaskStatus.Archived);
+
+        AssertSet(TaskStateMachine.GetAllowedTransitions(WorkspaceTaskStatus.Failed),
+            WorkspaceTaskStatus.Archived);
+
+        AssertSet(TaskStateMachine.GetAllowedTransitions(WorkspaceTaskStatus.Cancelled),
+            WorkspaceTaskStatus.Archived);
 
         AssertSet(TaskStateMachine.GetAllowedTransitions(WorkspaceTaskStatus.Archived));
     }
@@ -186,14 +238,20 @@ public sealed class WorkspaceTaskCoreTests
     }
 
     [TestMethod]
-    public void TryApplyCommand_Cancel_Allows_Ready_Assigned_InProgress_Blocked()
+    public void TryApplyCommand_Cancel_Allows_All_NonTerminal_Statuses()
     {
+        // 278042d：Cancel 合法来源由 {Ready, Assigned, InProgress, Blocked} 扩为全部 8 个非终态
+        // （+Backlog/Deferred/Reserved/NeedsReview），与 BuildTransitions 的 Cancelled 出边同源。
         var allowed = new[]
         {
+            WorkspaceTaskStatus.Backlog,
             WorkspaceTaskStatus.Ready,
+            WorkspaceTaskStatus.Deferred,
+            WorkspaceTaskStatus.Reserved,
             WorkspaceTaskStatus.Assigned,
             WorkspaceTaskStatus.InProgress,
-            WorkspaceTaskStatus.Blocked
+            WorkspaceTaskStatus.Blocked,
+            WorkspaceTaskStatus.NeedsReview
         };
 
         foreach (var from in allowed)
@@ -202,10 +260,15 @@ public sealed class WorkspaceTaskCoreTests
             Assert.AreEqual(WorkspaceTaskStatus.Cancelled, next);
         }
 
+        // 终态一律不可再取消。
         Assert.IsFalse(TaskStateMachine.TryApplyCommand(
             WorkspaceTaskStatus.Completed, TaskCommand.Cancel, out _));
         Assert.IsFalse(TaskStateMachine.TryApplyCommand(
-            WorkspaceTaskStatus.Backlog, TaskCommand.Cancel, out _));
+            WorkspaceTaskStatus.Failed, TaskCommand.Cancel, out _));
+        Assert.IsFalse(TaskStateMachine.TryApplyCommand(
+            WorkspaceTaskStatus.Cancelled, TaskCommand.Cancel, out _));
+        Assert.IsFalse(TaskStateMachine.TryApplyCommand(
+            WorkspaceTaskStatus.Archived, TaskCommand.Cancel, out _));
     }
 
     [TestMethod]
@@ -403,7 +466,40 @@ public sealed class WorkspaceTaskCoreTests
         Assert.AreEqual(10, Enum.GetValues<TaskCommand>().Length);
         // Stage 1（D1/D4）新增 3 个父层级错误码：TaskParentNotFound / TaskHierarchyInvalid /
         // TaskHasNonTerminalChildren；既有 20 个成员未删除、未改名、未改序，总数 20 → 23。
-        Assert.AreEqual(23, Enum.GetValues<TaskErrorCode>().Length);
+        // 3df8c7c（feat(tasks): expose board-card dependencies in manage_tasks）在 enum TaskErrorCode
+        // 末尾纯追加 TaskDependencyTaskNotFound / TaskDependencyInvalid，总数 23 → 25。
+        // 下方同时钉住成员名集合，防成员增删/改名再漂移。
+        Assert.AreEqual(25, Enum.GetValues<TaskErrorCode>().Length);
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                nameof(TaskErrorCode.TaskNotFound),
+                nameof(TaskErrorCode.TaskVersionConflict),
+                nameof(TaskErrorCode.TaskStateConflict),
+                nameof(TaskErrorCode.TaskInvalidTransition),
+                nameof(TaskErrorCode.TaskInvalidDisposition),
+                nameof(TaskErrorCode.TaskReasonRequired),
+                nameof(TaskErrorCode.TaskResultRequired),
+                nameof(TaskErrorCode.TaskArtifactRequired),
+                nameof(TaskErrorCode.TaskNotReopenable),
+                nameof(TaskErrorCode.TaskCannotHardDelete),
+                nameof(TaskErrorCode.AssignmentNotFound),
+                nameof(TaskErrorCode.AssignmentAlreadyActive),
+                nameof(TaskErrorCode.AssignmentStale),
+                nameof(TaskErrorCode.AgentNotFound),
+                nameof(TaskErrorCode.AgentUnavailable),
+                nameof(TaskErrorCode.CapabilityMissing),
+                nameof(TaskErrorCode.PolicyInvalid),
+                nameof(TaskErrorCode.PolicyVersionConflict),
+                nameof(TaskErrorCode.TaskActiveContextMissing),
+                nameof(TaskErrorCode.TaskInvalidCursor),
+                nameof(TaskErrorCode.TaskParentNotFound),
+                nameof(TaskErrorCode.TaskHierarchyInvalid),
+                nameof(TaskErrorCode.TaskHasNonTerminalChildren),
+                nameof(TaskErrorCode.TaskDependencyTaskNotFound),
+                nameof(TaskErrorCode.TaskDependencyInvalid)
+            },
+            Enum.GetNames<TaskErrorCode>());
         // Stage 3（本轮收口）：TaskEventType 的既有漂移——TaskEvaluated（ADR-075 评价追加）
         // 是早前新增的成员，但本冻结断言当时漏更新（与上方 TaskOrigin 同一类漂移），
         // 导致本测试类在 HEAD 上有 1 条失败；本次按现网契约同步 17 → 18（不改枚举本身）。
