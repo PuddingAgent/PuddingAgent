@@ -33,17 +33,36 @@ public sealed class InMemoryApprovalService : IApprovalService
 
     private readonly ConcurrentDictionary<string, ApprovalRecord> _records = new(StringComparer.Ordinal);
 
+    private readonly TimeSpan _approvalExpiry;
+
+    /// <summary>组合根使用的默认构造：审批单 24h 过期。</summary>
+    public InMemoryApprovalService() : this(DefaultExpiry)
+    {
+    }
+
+    /// <summary>
+    /// 可指定有效期——仅供测试构造短生命周期审批单以验证回收。
+    /// （<see cref="TimeSpan"/> 无法被 DI 解析，故组合根仍会选中上面的无参构造。）
+    /// </summary>
+    public InMemoryApprovalService(TimeSpan approvalExpiry)
+    {
+        _approvalExpiry = approvalExpiry;
+    }
+
     public Task<ApprovalRecord> RequestApprovalAsync(
         string sessionId, string workspaceId, string actionDescription,
         CancellationToken ct = default)
     {
+        var now = DateTimeOffset.UtcNow;
+        PruneExpired(now);
+
         var record = new ApprovalRecord
         {
             SessionId = sessionId,
             WorkspaceId = workspaceId,
             ActionDescription = actionDescription,
             ConfirmationCode = ApprovalCode.Generate(),
-            ExpiresAt = DateTimeOffset.UtcNow.Add(DefaultExpiry),
+            ExpiresAt = now.Add(_approvalExpiry),
         };
 
         _records[record.ApprovalId] = record;
@@ -60,6 +79,8 @@ public sealed class InMemoryApprovalService : IApprovalService
     public Task<IReadOnlyList<ApprovalRecord>> QueryPendingAsync(CancellationToken ct = default)
     {
         var now = DateTimeOffset.UtcNow;
+        PruneExpired(now);
+
         IReadOnlyList<ApprovalRecord> pending = _records.Values
             .Where(r => r.Status == ApprovalStatus.Pending && !IsExpired(r, now))
             .OrderByDescending(r => r.CreatedAt)
@@ -129,4 +150,26 @@ public sealed class InMemoryApprovalService : IApprovalService
 
     private static bool IsExpired(ApprovalRecord record, DateTimeOffset now)
         => record.ExpiresAt is not null && record.ExpiresAt <= now;
+
+    /// <summary>
+    /// 回收已过期记录（惰性：在写入与查询路径顺带触发，不引入后台定时器）。
+    /// </summary>
+    /// <remarks>
+    /// 过期记录已无任何用途——不能被确认（<see cref="ConfirmAsync"/> 会先因
+    /// <see cref="IsExpired"/> 拒绝）、不出现在待审列表、也不再有任何可执行的
+    /// 后续动作——故过期即可回收。这里不存在「为审计而误删」的风险：本实现
+    /// 本来就是进程内易失存储，进程重启即全部丢失。不回收的话，字典会随运行
+    /// 时长单调增长（每张审批单永久驻留）。
+    /// </remarks>
+    private int PruneExpired(DateTimeOffset now)
+    {
+        var removed = 0;
+        foreach (var kv in _records)
+        {
+            if (IsExpired(kv.Value, now) && _records.TryRemove(kv.Key, out _))
+                removed++;
+        }
+
+        return removed;
+    }
 }
