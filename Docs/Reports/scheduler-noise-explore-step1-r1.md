@@ -94,3 +94,38 @@ public async Task RecordSchedulingSkipAsync(
 - 探针脚本 v1/v2 各有**我自己的缺陷**：v1 `stamps` 未初始化（NameError）；v1 列名候选用 PascalCase 而实际为 snake_case（`occurred_at_utc`/`name`/`operation`/`dimensions_json`）导致解析全空；v2 的 `totals`/`skip_rows` 字段因我的 `scalar()` 解析条件写错返回 **null** —— 相应数值改由 `GROUP BY` 结果给出（**数值等价**，非缺失证据）。
 - 原因分布、workspace/session 维度为**最近 5,000 条样本**，非全量；写入速率为 2.858 小时窗口外推。
 - `COUNT(*)` 全表扫描在 2.1M 行上耗时较长（本探针单次运行 ≈10 分钟），未做多轮重复测量 ⇒ 不以单次快照宣称稳定速率。
+
+---
+
+## 6. 引用溯源（迭代 3，对应 `lastVerdict=objective-file-evidence`）
+
+卡片引用的设计/证据文档**已核实存在**（独立第二来源，与 §1 实测互证）：
+- `Docs/Reports/PuddingAgent-Autonomy-Audit-2026-09-12/01-自主工作轨迹与自改进审计.md:250`
+  逐字标题：`### A07 / P1：后台空轮询写放大，沿现有卡收口`
+- 该节逐字归属：`归属 06898d5dfe004c69ab6d5baf18b2674a`（**即本卡**）
+- 该节逐字源码所有权：`Source/PuddingRuntime/Services/Background/SubconsciousWorkerService.cs:18 的2秒idle loop` 与 `Source/PuddingMemoryEngine/Services/SubconsciousJobQueue.cs:202,416,449 的双投影`
+  ⇒ 与本文件 §1 的代码证据（`IdlePollDelay = TimeSpan.FromSeconds(2)`、`:202/:400/:432`）**逐字一致**，且同样指出：*"二者是同一数据库的两套表，不能写成两台数据库"*。
+
+### 6.1 A07 节对 step2 的权威约束（逐字摘录，不得改写）
+- 「no_eligible/cooldown/unchanged使用原因计数与5分钟汇总；只有状态变化、派发、错误写明细。」
+- 「消费采用coalesced事件唤醒+低频durable reconciliation，**不取消必要的恢复扫描**。」
+- 「**不另建一套Scheduler状态机**；复用现有scan-run/rollup合同，并覆盖潜意识Job这条旧卡易遗漏的具体写入源。」
+- 「摘要必须有 **first/last/count 和上次flush水位**；崩溃容许丢少量监控计数的上限需明确。」
+- 验收逐字：「同12小时空闲场景写入量降≥95%，任务到达唤醒不变慢，主循环DB busy/写延迟不恶化。」
+- 边界逐字：「**减少日志不是删除业务事件或清空D:/data**。」（与「历史 273.6 万行不得删除」一致）
+- 同文件「文件与职责分配」表另列边界，step2 裁定 owner 时必须遵守：`Source/PuddingPlatform/Services/Scheduling/TaskExecutionTracker.cs`（真实 progress/wait-stall 对账，「不创建另一套Task/Goal状态机」）、`Source/PuddingHost/Services/HeartbeatService.cs` 的 HeartbeatOrchestrator（emitted/skip 原因与事件唤醒，「不以自然语言结算Task」）。
+
+### 6.2 判据缺陷（诚实登记，**不伪造以满足**）
+本轮 `lastVerdict` 逐字：
+```
+objective-file-evidence:§9.A07）。: file_evidence_missing - Evidence file does not exist: §9.A07）。
+```
+判据把目标描述中的**中文散文片段**（`（A07 / §9.A07）。`）切成了**文件路径** `§9.A07）。`，再检查该「文件」是否存在。
+- **我不会创建**任何名为 `§9.A07）。` 的文件 —— 那是「为通过坏检查而命名」，属证据语义污染（与我在路由卡 Review 中拒绝自证式契约同一立场）。
+- 该判据的**真实意图**（卡片引用的证据文档必须存在且可溯源）已由本节 §6/§6.1 满足，并可由 grep 行号独立核查。
+- 该提取缺陷属平台侧 `objective-file-evidence` 判据提取器，与已登记的 `709bbf5e`（contract proposal 恒真）同源家族。
+
+### 6.3 本轮增量与限定
+- 本迭代（iter 3）**未修改任何生产代码**，只追加本节溯源与逐字约束摘录。
+- 上一迭代（iter 2）补齐了 iter 1 遗漏的 `git_push`（`e49f8b9e` 已同步 origin/master）。
+- 平台仍报 `work_unit_budget_exhausted`/`criterion_failed`：前者为平台侧 WorkUnit input 预算（**我不抬高**），后者为 §6.2 提取缺陷，两者都不改变本步已产出的事实与可核查性。
