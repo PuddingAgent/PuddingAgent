@@ -248,6 +248,95 @@ public sealed class ModelRoutePolicyEvaluatorTests
         Assert.AreEqual(0.75m, unknown.MinimumQualityScore);
     }
 
+    [TestMethod]
+    public void Evaluate_AllCandidatePermutations_ProduceIdenticalDecisionAndFingerprint()
+    {
+        var policy = RoutePolicyCatalog.For("task-a", "change");
+        var context = new WorkUnitRouteContext("task-a", "change", "medium", 5_000);
+        var candidates = new[]
+        {
+            Profile("alpha", "m1", quality: 0.80m, cost: 1m),
+            Profile("beta", "m2", quality: 0.92m, cost: 3m),
+            Profile("gamma", "m3", quality: 0.95m, cost: 7m),
+            Profile("delta", "m4", quality: 0.76m, cost: 0.5m),
+        };
+
+        var baseline = ModelRoutePolicyEvaluator.Evaluate(policy, context, candidates);
+        Assert.IsTrue(baseline.Selected);
+
+        var permutations = 0;
+        foreach (var permutation in Permutations(candidates))
+        {
+            Assert.AreEqual(baseline, ModelRoutePolicyEvaluator.Evaluate(policy, context, permutation));
+            permutations++;
+        }
+
+        Assert.AreEqual(24, permutations);
+    }
+
+    [TestMethod]
+    public void Evaluate_RejectionCodeIsAlsoStableUnderCandidateOrderPermutation()
+    {
+        var policy = RoutePolicyCatalog.For("task-a", "explore") with
+        {
+            RequiredCapabilityTags = ["code"],
+        };
+        var context = new WorkUnitRouteContext("task-a", "explore", null, 1_000);
+        var alpha = Profile("alpha", "m1", tags: "chat");
+        var beta = Profile("beta", "m2", tags: "chat");
+
+        var forward = ModelRoutePolicyEvaluator.Evaluate(policy, context, [alpha, beta]);
+        var reversed = ModelRoutePolicyEvaluator.Evaluate(policy, context, [beta, alpha]);
+
+        Assert.IsFalse(forward.Selected);
+        Assert.AreEqual("capability_missing:code", forward.Code);
+        Assert.AreEqual(forward, reversed);
+    }
+
+    [TestMethod]
+    public void Fingerprint_ChangesWhenAnyStructuredFieldChanges()
+    {
+        var policy = RoutePolicyCatalog.For("task-a", "change");
+        var context = new WorkUnitRouteContext("task-a", "change", "medium", 5_000);
+        var baseline = Profile("alpha", "m1", quality: 0.90m, cost: 1m);
+
+        var fingerprints = new SortedSet<string>(StringComparer.Ordinal)
+        {
+            ModelRoutePolicyEvaluator.Fingerprint(policy, context, [baseline]),
+            ModelRoutePolicyEvaluator.Fingerprint(policy, context, [baseline with { ModelId = "m2" }]),
+            ModelRoutePolicyEvaluator.Fingerprint(policy, context, [baseline with { QualityScore = 0.91m }]),
+            ModelRoutePolicyEvaluator.Fingerprint(policy, context, [baseline with { ContextWindowTokens = 200_000 }]),
+            ModelRoutePolicyEvaluator.Fingerprint(policy, context, [baseline with { SupportsToolProtocol = false }]),
+            ModelRoutePolicyEvaluator.Fingerprint(policy, context, [baseline with { CapabilityTags = ["code"] }]),
+            ModelRoutePolicyEvaluator.Fingerprint(policy, context, [baseline with { SecurityTier = RoutePolicyCatalog.IsolatedReadOnlySecurityTier }]),
+            ModelRoutePolicyEvaluator.Fingerprint(policy, context, [baseline with { OutputCostPerMillionTokens = 2m }]),
+            ModelRoutePolicyEvaluator.Fingerprint(policy, context, [baseline with { Protocol = "other" }]),
+        };
+
+        Assert.AreEqual(9, fingerprints.Count);
+    }
+
+    private static IEnumerable<IReadOnlyList<ModelCapabilityProfile>> Permutations(
+        IReadOnlyList<ModelCapabilityProfile> source)
+    {
+        if (source.Count <= 1)
+        {
+            yield return source;
+            yield break;
+        }
+
+        for (var index = 0; index < source.Count; index++)
+        {
+            var rest = source.Where((_, position) => position != index).ToList();
+            foreach (var tail in Permutations(rest))
+            {
+                var head = new List<ModelCapabilityProfile> { source[index] };
+                head.AddRange(tail);
+                yield return head;
+            }
+        }
+    }
+
     private static ModelCapabilityProfile Profile(
         string providerId,
         string modelId,
