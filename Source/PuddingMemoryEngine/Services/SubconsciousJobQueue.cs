@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -19,20 +20,37 @@ public sealed class SubconsciousJobQueue : ISubconsciousJobQueue
 
     private readonly IDbContextFactory<MemoryDbContext> _dbFactory;
     private readonly ILogger<SubconsciousJobQueue> _logger;
+    private const string NoWorkspaceKey = "(none)";
+
+    /// <summary>
+    /// 高频 schedule skip（no eligible job / cooldown / dry run / disabled / 限额）的聚合窗口宽度。
+    /// 窗口内的结果只累积在内存，窗口滚动时写一条 workspace 级 summary，
+    /// 以消除约每 2 秒一对的 SQLite 双写放大。
+    /// </summary>
+    private static readonly TimeSpan SchedulingSkipWindow = TimeSpan.FromMinutes(5);
+
+    private const int SchedulingSkipReasonDistributionMaxLength = 400;
+
     private readonly IRuntimeActivitySink? _activitySink;
     private readonly ITelemetryMetricSink? _telemetrySink;
+    private readonly TimeProvider _timeProvider;
     private readonly SemaphoreSlim _leaseLock = new(1, 1);
+    private readonly object _skipAccumulatorLock = new();
+    private readonly Dictionary<string, SchedulingSkipAccumulator> _skipAccumulators =
+        new(StringComparer.Ordinal);
 
     public SubconsciousJobQueue(
         IDbContextFactory<MemoryDbContext> dbFactory,
         ILogger<SubconsciousJobQueue> logger,
         IRuntimeActivitySink? activitySink = null,
-        ITelemetryMetricSink? telemetrySink = null)
+        ITelemetryMetricSink? telemetrySink = null,
+        TimeProvider? timeProvider = null)
     {
         _dbFactory = dbFactory;
         _logger = logger;
         _activitySink = activitySink;
         _telemetrySink = telemetrySink;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<SubconsciousJobQueueItem> EnqueueAsync(
@@ -199,6 +217,13 @@ public sealed class SubconsciousJobQueue : ISubconsciousJobQueue
         return rows.ToDictionary(row => row.WorkspaceId, row => row.Count, StringComparer.Ordinal);
     }
 
+    /// <summary>
+    /// 记录一次调度 skip。<para>
+    /// 高频 no-op（no eligible job / cooldown / dry run / disabled / 限额）<b>不再</b>逐事件双写
+    /// runtime_activity + telemetry_metric，只按 5 分钟窗口累积并落一条 workspace 级 summary；
+    /// telemetry metric 是该 fact 的唯一 authoritative owner。
+    /// 派发、拒绝状态变化、错误仍由各自路径写明细。</para>
+    /// </summary>
     public async Task RecordSchedulingSkipAsync(
         SubconsciousSchedulingSkipRequest request,
         CancellationToken ct = default)
@@ -206,8 +231,172 @@ public sealed class SubconsciousJobQueue : ISubconsciousJobQueue
         if (string.IsNullOrWhiteSpace(request.Reason))
             throw new ArgumentException("Scheduling skip reason is required.", nameof(request));
 
-        await RecordSchedulingSkipActivityAsync(request, ct);
-        await RecordSchedulingSkipMetricAsync(request, ct);
+        var now = _timeProvider.GetUtcNow();
+        var windowStartMs = ResolveSchedulingSkipWindowStartMs(now);
+        var workspaceKey = request.WorkspaceId ?? NoWorkspaceKey;
+        SchedulingSkipAccumulator? closedWindow = null;
+
+        lock (_skipAccumulatorLock)
+        {
+            if (_skipAccumulators.TryGetValue(workspaceKey, out var accumulator)
+                && accumulator.WindowStartMs != windowStartMs)
+            {
+                closedWindow = accumulator;
+                _skipAccumulators.Remove(workspaceKey);
+                accumulator = null;
+            }
+
+            if (accumulator is null)
+            {
+                accumulator = new SchedulingSkipAccumulator(windowStartMs);
+                _skipAccumulators[workspaceKey] = accumulator;
+            }
+
+            accumulator.Add(request, now);
+        }
+
+        if (closedWindow is not null)
+            await FlushSchedulingSkipSummaryAsync(workspaceKey, closedWindow, ct);
+    }
+
+    private static long ResolveSchedulingSkipWindowStartMs(DateTimeOffset now)
+    {
+        var windowMs = (long)SchedulingSkipWindow.TotalMilliseconds;
+        var unixMs = now.ToUnixTimeMilliseconds();
+        return unixMs - (unixMs % windowMs);
+    }
+
+    /// <summary>
+    /// 写出一个已闭合窗口的 workspace 级 summary。
+    /// runtime_activity 侧的同事实逐事件写入已移除（聚合后只保留单 owner + 抽样 trace 锚点）。
+    /// </summary>
+    private async Task FlushSchedulingSkipSummaryAsync(
+        string workspaceKey,
+        SchedulingSkipAccumulator accumulator,
+        CancellationToken ct)
+    {
+        if (_telemetrySink is null)
+            return;
+
+        var total = accumulator.Total;
+        var windowEndMs = accumulator.WindowStartMs + (long)SchedulingSkipWindow.TotalMilliseconds;
+        var (reasonDistribution, reasonKinds, truncated) =
+            accumulator.BuildReasonDistribution(SchedulingSkipReasonDistributionMaxLength);
+
+        var dimensions = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["workspace_id"] = workspaceKey,
+            ["window_start_utc"] = FormatUnixMs(accumulator.WindowStartMs),
+            ["window_end_utc"] = FormatUnixMs(windowEndMs),
+            ["window_minutes"] = SchedulingSkipWindow.TotalMinutes.ToString("0.##", CultureInfo.InvariantCulture),
+            ["skip_total"] = total.ToString(CultureInfo.InvariantCulture),
+            ["coalesced_events"] = Math.Max(0, total - 1).ToString(CultureInfo.InvariantCulture),
+            ["first_utc"] = FormatUnixMs(accumulator.FirstMs),
+            ["last_utc"] = FormatUnixMs(accumulator.LastMs),
+            ["reason_kinds"] = reasonKinds.ToString(CultureInfo.InvariantCulture),
+            ["reason_distribution"] = reasonDistribution,
+        };
+
+        if (truncated)
+            dimensions["reason_distribution_truncated"] = "true";
+
+        AddIfPresent(dimensions, "sample_source_event_id", accumulator.SampleSourceEventId);
+        AddIfPresent(dimensions, "sample_session_id", accumulator.SampleSessionId);
+
+        try
+        {
+            await _telemetrySink.RecordAsync(new TelemetryMetric
+            {
+                Trace = RuntimeTraceContext.CreateNew(
+                    sessionId: accumulator.SampleSessionId,
+                    workspaceId: workspaceKey == NoWorkspaceKey ? null : workspaceKey,
+                    eventId: accumulator.SampleSourceEventId),
+                Source = "pudding.memory.subconscious_job_queue",
+                Category = TelemetryMetricCategories.Memory,
+                Name = "subconscious_job.schedule_skip.summary",
+                Status = TelemetryMetricStatuses.Deferred,
+                CountValue = total,
+                Unit = "job",
+                Severity = "info",
+                Summary =
+                    $"Subconscious job scheduling skipped {total} time(s) in {SchedulingSkipWindow.TotalMinutes:0.##}m window across {reasonKinds} reason(s)",
+                Dimensions = dimensions,
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "[SubconsciousJobQueue] Failed to record scheduling skip summary workspace={WorkspaceId} windowStart={WindowStart}",
+                workspaceKey,
+                accumulator.WindowStartMs);
+        }
+    }
+
+    private static string FormatUnixMs(long unixMs) =>
+        DateTimeOffset.FromUnixTimeMilliseconds(unixMs).UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// 单个 (workspace, 5 分钟窗口) 的 skip 计数。窗口内的 skip 事件在此折叠为计数与原因分布，
+    /// 并保留抽样 trace 锚点用于 drill-down。
+    /// </summary>
+    private sealed class SchedulingSkipAccumulator(long windowStartMs)
+    {
+        private readonly Dictionary<string, long> _reasonCounts = new(StringComparer.Ordinal);
+
+        public long WindowStartMs { get; } = windowStartMs;
+
+        public long FirstMs { get; private set; }
+
+        public long LastMs { get; private set; }
+
+        public long Total { get; private set; }
+
+        public string? SampleSourceEventId { get; private set; }
+
+        public string? SampleSessionId { get; private set; }
+
+        public void Add(SubconsciousSchedulingSkipRequest request, DateTimeOffset now)
+        {
+            var nowMs = now.ToUnixTimeMilliseconds();
+            if (Total == 0)
+                FirstMs = nowMs;
+
+            LastMs = nowMs;
+            Total++;
+            _reasonCounts[request.Reason] =
+                _reasonCounts.TryGetValue(request.Reason, out var count) ? count + 1 : 1;
+            SampleSourceEventId ??= request.SourceEventId;
+            SampleSessionId ??= request.SessionId;
+        }
+
+        public (string Distribution, int ReasonKinds, bool Truncated) BuildReasonDistribution(int maxLength)
+        {
+            var ordered = _reasonCounts
+                .OrderByDescending(pair => pair.Value)
+                .ThenBy(pair => pair.Key, StringComparer.Ordinal)
+                .Select(pair => $"{pair.Key}={pair.Value}")
+                .ToList();
+
+            var distribution = string.Join(",", ordered);
+            if (distribution.Length <= maxLength)
+                return (distribution, ordered.Count, false);
+
+            // 截断时仍返回完整原因种类计数，只省略超限明细，避免丢失「总数/原因分布」事实。
+            var kept = new List<string>();
+            var length = 0;
+            foreach (var entry in ordered)
+            {
+                var added = length == 0 ? entry.Length : entry.Length + 1;
+                if (length + added > maxLength)
+                    break;
+
+                kept.Add(entry);
+                length += added;
+            }
+
+            return (string.Join(",", kept), ordered.Count, true);
+        }
     }
 
     public async Task RecordResultAsync(
@@ -395,98 +584,6 @@ public sealed class SubconsciousJobQueue : ISubconsciousJobQueue
         await RecordActivityAsync("subconscious_job.lease", RuntimeActivityStatuses.Started, item, ct: ct);
         await RecordMetricAsync("subconscious_job.lease", TelemetryMetricStatuses.Started, item, ct: ct);
         return item;
-    }
-
-    private async Task RecordSchedulingSkipActivityAsync(
-        SubconsciousSchedulingSkipRequest request,
-        CancellationToken ct)
-    {
-        if (_activitySink is null)
-            return;
-
-        try
-        {
-            await _activitySink.RecordAsync(new RuntimeActivity
-            {
-                Trace = RuntimeTraceContext.CreateNew(
-                    sessionId: request.SessionId,
-                    workspaceId: request.WorkspaceId,
-                    eventId: request.SourceEventId),
-                Component = RuntimeActivityComponents.Memory,
-                Operation = "subconscious_job.schedule_skip",
-                Status = RuntimeActivityStatuses.Deferred,
-                Summary = $"Subconscious job scheduling skipped: {request.Reason}",
-                Metadata = BuildSchedulingSkipFields(request),
-            }, ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex,
-                "[SubconsciousJobQueue] Failed to record scheduling skip activity reason={Reason} jobId={JobId}",
-                request.Reason,
-                request.JobId);
-        }
-    }
-
-    private async Task RecordSchedulingSkipMetricAsync(
-        SubconsciousSchedulingSkipRequest request,
-        CancellationToken ct)
-    {
-        if (_telemetrySink is null)
-            return;
-
-        try
-        {
-            await _telemetrySink.RecordAsync(new TelemetryMetric
-            {
-                Trace = RuntimeTraceContext.CreateNew(
-                    sessionId: request.SessionId,
-                    workspaceId: request.WorkspaceId,
-                    eventId: request.SourceEventId),
-                Source = "pudding.memory.subconscious_job_queue",
-                Category = TelemetryMetricCategories.Memory,
-                Name = "subconscious_job.schedule_skip",
-                Status = TelemetryMetricStatuses.Deferred,
-                CountValue = 1,
-                Unit = "job",
-                Severity = "info",
-                Summary = $"Subconscious job scheduling skipped: {request.Reason}",
-                Dimensions = BuildSchedulingSkipFields(request),
-            }, ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex,
-                "[SubconsciousJobQueue] Failed to record scheduling skip metric reason={Reason} jobId={JobId}",
-                request.Reason,
-                request.JobId);
-        }
-    }
-
-    private static IReadOnlyDictionary<string, string> BuildSchedulingSkipFields(
-        SubconsciousSchedulingSkipRequest request)
-    {
-        var fields = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["skip_reason"] = request.Reason,
-        };
-
-        AddIfPresent(fields, "job_id", request.JobId);
-        AddIfPresent(fields, "job_type", request.JobType);
-        AddIfPresent(fields, "workspace_id", request.WorkspaceId);
-        AddIfPresent(fields, "session_id", request.SessionId);
-        AddIfPresent(fields, "agent_id", request.AgentId);
-        AddIfPresent(fields, "agent_template_id", request.AgentTemplateId);
-        AddIfPresent(fields, "source_hook_name", request.SourceHookName);
-        AddIfPresent(fields, "source_event_id", request.SourceEventId);
-        AddIfPresent(fields, "source_compaction_id", request.SourceCompactionId);
-
-        foreach (var pair in request.Details)
-            AddIfPresent(fields, pair.Key, pair.Value);
-
-        return fields;
     }
 
     private async Task RecordActivityAsync(

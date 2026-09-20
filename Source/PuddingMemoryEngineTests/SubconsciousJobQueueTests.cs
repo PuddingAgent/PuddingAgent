@@ -280,31 +280,122 @@ public sealed class SubconsciousJobQueueTests
     }
 
     [TestMethod]
-    public async Task RecordSchedulingSkipAsync_ShouldRecordTelemetryMetric()
+    public async Task RecordSchedulingSkipAsync_ShouldEmitSingleWorkspaceSummaryAfterWindowRollover()
     {
         await using var scope = await TestScope.CreateAsync();
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 9, 20, 12, 0, 0, TimeSpan.Zero));
+        var telemetry = new RecordingTelemetryMetricSink();
+        var activity = new RecordingRuntimeActivitySink();
+        var queue = new SubconsciousJobQueue(
+            scope.Factory,
+            NullLogger<SubconsciousJobQueue>.Instance,
+            activitySink: activity,
+            telemetrySink: telemetry,
+            timeProvider: clock);
+
+        await queue.RecordSchedulingSkipAsync(CreateSkip("workspace-1", SubconsciousSchedulingSkipReasons.Cooldown, "evt-1"));
+        await queue.RecordSchedulingSkipAsync(CreateSkip("workspace-1", SubconsciousSchedulingSkipReasons.Cooldown, "evt-2"));
+        await queue.RecordSchedulingSkipAsync(CreateSkip("workspace-1", SubconsciousSchedulingSkipReasons.NoEligibleJob, "evt-3"));
+
+        Assert.AreEqual(0, telemetry.Metrics.Count, "窗口内 skip 不得逐事件写 telemetry");
+        Assert.AreEqual(0, activity.Activities.Count, "聚合后 runtime_activity 不再是 schedule_skip 的 owner");
+
+        clock.Advance(TimeSpan.FromMinutes(5));
+        await queue.RecordSchedulingSkipAsync(CreateSkip("workspace-1", SubconsciousSchedulingSkipReasons.Cooldown, "evt-4"));
+
+        Assert.AreEqual(1, telemetry.Metrics.Count, "跳窗只应产生一条 workspace 级 summary");
+        var metric = telemetry.Metrics[0];
+        Assert.AreEqual("subconscious_job.schedule_skip.summary", metric.Name);
+        Assert.AreEqual(TelemetryMetricCategories.Memory, metric.Category);
+        Assert.AreEqual(TelemetryMetricStatuses.Deferred, metric.Status);
+        Assert.AreEqual(3, metric.CountValue);
+        Assert.AreEqual("workspace-1", metric.Dimensions!["workspace_id"]);
+        Assert.AreEqual("3", metric.Dimensions!["skip_total"]);
+        Assert.AreEqual("2", metric.Dimensions!["coalesced_events"]);
+        Assert.AreEqual("2", metric.Dimensions!["reason_kinds"]);
+        Assert.AreEqual("5", metric.Dimensions!["window_minutes"]);
+        Assert.AreEqual("2026-09-20T12:00:00.0000000Z", metric.Dimensions!["window_start_utc"]);
+        Assert.AreEqual("2026-09-20T12:05:00.0000000Z", metric.Dimensions!["window_end_utc"]);
+        Assert.AreEqual("2026-09-20T12:00:00.0000000Z", metric.Dimensions!["first_utc"]);
+        Assert.AreEqual("2026-09-20T12:00:00.0000000Z", metric.Dimensions!["last_utc"]);
+        Assert.AreEqual("skip_cooldown=2,skip_no_eligible_job=1", metric.Dimensions!["reason_distribution"]);
+        Assert.AreEqual("evt-1", metric.Dimensions!["sample_source_event_id"]);
+        Assert.AreEqual("session-1", metric.Dimensions!["sample_session_id"]);
+        Assert.IsFalse(activity.Activities.Any(), "summary 只允许单一 owner（telemetry）");
+    }
+
+    [TestMethod]
+    public async Task RecordSchedulingSkipAsync_ShouldAggregateIndependentlyPerWorkspace()
+    {
+        await using var scope = await TestScope.CreateAsync();
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 9, 20, 12, 0, 0, TimeSpan.Zero));
         var telemetry = new RecordingTelemetryMetricSink();
         var queue = new SubconsciousJobQueue(
             scope.Factory,
             NullLogger<SubconsciousJobQueue>.Instance,
-            telemetrySink: telemetry);
+            telemetrySink: telemetry,
+            timeProvider: clock);
+
+        await queue.RecordSchedulingSkipAsync(CreateSkip("workspace-1", SubconsciousSchedulingSkipReasons.Cooldown, "evt-1"));
+        await queue.RecordSchedulingSkipAsync(CreateSkip("workspace-2", SubconsciousSchedulingSkipReasons.Cooldown, "evt-2"));
+
+        clock.Advance(TimeSpan.FromMinutes(5));
+        await queue.RecordSchedulingSkipAsync(CreateSkip("workspace-2", SubconsciousSchedulingSkipReasons.Cooldown, "evt-3"));
+
+        Assert.AreEqual(1, telemetry.Metrics.Count, "只有再次触达的 workspace 才 flush 自己的已闭合窗口");
+        Assert.AreEqual("workspace-2", telemetry.Metrics[0].Dimensions!["workspace_id"]);
+        Assert.AreEqual(1, telemetry.Metrics[0].CountValue);
+
+        await queue.RecordSchedulingSkipAsync(CreateSkip("workspace-1", SubconsciousSchedulingSkipReasons.Cooldown, "evt-4"));
+
+        Assert.AreEqual(2, telemetry.Metrics.Count);
+        Assert.AreEqual("workspace-1", telemetry.Metrics[1].Dimensions!["workspace_id"]);
+        Assert.AreEqual(1, telemetry.Metrics[1].CountValue);
+    }
+
+    [TestMethod]
+    public async Task RecordSchedulingSkipAsync_ShouldCollapseIdleSkipsWithoutWorkspaceIntoNoneBucket()
+    {
+        await using var scope = await TestScope.CreateAsync();
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 9, 20, 12, 0, 0, TimeSpan.Zero));
+        var telemetry = new RecordingTelemetryMetricSink();
+        var queue = new SubconsciousJobQueue(
+            scope.Factory,
+            NullLogger<SubconsciousJobQueue>.Instance,
+            telemetrySink: telemetry,
+            timeProvider: clock);
 
         await queue.RecordSchedulingSkipAsync(new SubconsciousSchedulingSkipRequest
         {
-            Reason = SubconsciousSchedulingSkipReasons.Cooldown,
-            WorkspaceId = "workspace-1",
-            SessionId = "session-1",
-            AgentId = "agent-1",
-            AgentTemplateId = "template-1",
-            JobType = SubconsciousJobTypes.MemoryConsolidateSession,
+            Reason = SubconsciousSchedulingSkipReasons.NoEligibleJob,
+            SourceEventId = "evt-1",
+        });
+        await queue.RecordSchedulingSkipAsync(new SubconsciousSchedulingSkipRequest
+        {
+            Reason = SubconsciousSchedulingSkipReasons.NoEligibleJob,
+            SourceEventId = "evt-2",
         });
 
-        var metric = telemetry.Metrics.Single(m => m.Name == "subconscious_job.schedule_skip");
-        Assert.AreEqual(TelemetryMetricCategories.Memory, metric.Category);
-        Assert.AreEqual(TelemetryMetricStatuses.Deferred, metric.Status);
-        Assert.AreEqual("skip_cooldown", metric.Dimensions!["skip_reason"]);
-        Assert.AreEqual("workspace-1", metric.Dimensions!["workspace_id"]);
+        clock.Advance(TimeSpan.FromMinutes(5));
+        await queue.RecordSchedulingSkipAsync(new SubconsciousSchedulingSkipRequest
+        {
+            Reason = SubconsciousSchedulingSkipReasons.NoEligibleJob,
+            SourceEventId = "evt-3",
+        });
+
+        Assert.AreEqual(1, telemetry.Metrics.Count);
+        Assert.AreEqual("(none)", telemetry.Metrics[0].Dimensions!["workspace_id"]);
+        Assert.AreEqual(2, telemetry.Metrics[0].CountValue);
     }
+
+    private static SubconsciousSchedulingSkipRequest CreateSkip(string workspaceId, string reason, string sourceEventId) =>
+        new()
+        {
+            Reason = reason,
+            WorkspaceId = workspaceId,
+            SessionId = "session-1",
+            SourceEventId = sourceEventId,
+        };
 
     [TestMethod]
     public async Task RecordResultAsync_ShouldPersistDryRunPlanEnvelope()
@@ -420,6 +511,18 @@ public sealed class SubconsciousJobQueueTests
 
         public Task<MemoryDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(CreateDbContext());
+    }
+
+    /// <summary>
+    /// 可控时钟：聚合窗口行为必须能在不真实等待 5 分钟的前提下被验证。
+    /// </summary>
+    private sealed class MutableTimeProvider(DateTimeOffset start) : TimeProvider
+    {
+        private DateTimeOffset _now = start;
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan delta) => _now = _now.Add(delta);
     }
 
     private sealed class RecordingRuntimeActivitySink : IRuntimeActivitySink

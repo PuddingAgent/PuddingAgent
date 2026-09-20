@@ -30,7 +30,7 @@
 | `Services/MemoryLibrarian.cs` | 记忆图书馆员 |
 | `Services/SkillEvolutionDeduplicationService.cs` | 🔑 Skill 进化去重（26KB） |
 | `Services/SubconsciousOrchestrator.cs` | 潜意识编排（75KB，核心） |
-| `Services/SubconsciousJobQueue.cs` | 潜意识任务队列（27KB） |
+| `Services/SubconsciousJobQueue.cs` | 潜意识任务队列（~29KB）；schedule_skip 按 (workspace, 5 分钟窗口) 内存聚合，窗口滚动时只写一条 `subconscious_job.schedule_skip.summary`（telemetry 为唯一 authoritative owner，不再逐事件双写 activity+metric）；明细仅保留派发/错误/状态变化。可控时钟 TimeProvider 可注入 |
 
 目标演进：保留持久 Job 的 lease/retry/dead-letter，把 Pre-Compaction Flush、后台提取、Auto-Dream、经验转 Skill、Skill Self-Improvement 拆为事件驱动 learning stage plugins；统一经过 signal → candidate → immutable proposal → evaluation → approval/canary → activation → monitoring/rollback，详见 `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`。
 
