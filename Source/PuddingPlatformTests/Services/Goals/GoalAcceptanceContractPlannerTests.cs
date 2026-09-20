@@ -380,4 +380,41 @@ public sealed class GoalAcceptanceContractPlannerTests
         Assert.IsTrue(criteria.Any(c => string.Equals(c.Id, "test:" + Project, StringComparison.Ordinal)));
         Assert.AreEqual(5, criteria.Count);
     }
+
+    [TestMethod]
+    public async Task ProseAnchorInObjective_NeverBecomesFileEvidenceTarget()
+    {
+        var (connection, factory) = await GoalWritePathHarness.CreateAsync();
+        await using var _ = connection;
+
+        var planner = NewPlanner(factory, Project);
+
+        // 缺陷复现（2026-09-20）：objective 引用文档锚点写成「.（A07 / §9.A07）。」时，
+        // 旧的 IsSafeEvidenceFilePath 会把散文片段 §9.A07）。 当成文件路径，派生
+        // objective-file-evidence:§9.A07）。 —— 该文件永不存在 ⇒ 目标轮轮 fail-closed 判负。
+        const string objective =
+            "设计/证据：E:/github/AgentNetworkPlan/PuddingAgent/Docs/report.md（A07 / §9.A07）。、Docs/summary.md";
+
+        Assert.IsTrue(await planner.EnsureContractAsync("goal-prosean", 1, 1, "fp-prosean", objective));
+
+        var contract = await new GoalAcceptanceContractStore(factory).LoadAsync("goal-prosean", 1, 1);
+        Assert.IsNotNull(contract);
+        var criteria = GoalVerificationPersistence.ReadCriteria(contract.CriteriaJson);
+
+        // 回归锁一：散文锚点绝不成为证据目标（不得出现任何含 §9.A07 的条件）。
+        Assert.IsFalse(
+            criteria.Any(c => c.Id.Contains("§9.A07", StringComparison.Ordinal)),
+            "objective 的散文锚点不得被当成文件路径派生 file-evidence 条件");
+
+        // 回归锁二：绝对路径同样不得成为证据目标。
+        Assert.IsFalse(
+            criteria.Any(c => c.Id.StartsWith("objective-file-evidence:E:", StringComparison.Ordinal)),
+            "绝对路径不得成为证据目标");
+
+        // 反向锁：相对路径证据必须照旧派生（收紧不得把真路径一起挡掉）。
+        Assert.IsTrue(
+            criteria.Any(c => string.Equals(c.Id, "objective-file-evidence:Docs/summary.md", StringComparison.Ordinal)
+                && string.Equals(c.Kind, GoalVerificationSpecKinds.FileEvidence, StringComparison.Ordinal)),
+            "合法相对路径证据仍必须派生 file-evidence 条件");
+    }
 }

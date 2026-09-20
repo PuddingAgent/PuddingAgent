@@ -159,12 +159,60 @@ public static class GoalCheckDefinitionRegistry
     /// 文件证据目标安全校验：与 <see cref="IsSafeTarget"/> 共享同一套相对性/元字符核心检查，
     /// 但不限制扩展名（文件证据可以是任意文档），并显式拒绝通配符与以目录分隔符结尾的目标。
     /// 绝对路径、盘符、UNC、<c>..</c> 逃逸与 shell 元字符一律拒绝。
+    /// <para>
+    /// 另加「必须像文件名」的收紧（2026-09-20，缺陷修复）：目标末段必须以 <c>.扩展名</c>（1..16 位 ASCII
+    /// 字母数字）结尾，且不得包含 CJK/中文标点。否则 objective 里引用的散文锚点（例如 <c>§9.A07）。</c>）会被
+    /// 误判为文件路径，派生出永远无法满足的 <c>objective-file-evidence</c> 条件，使目标轮轮 fail-closed 判负。
+    /// </para>
     /// </summary>
     public static bool IsSafeEvidenceFilePath(string target)
         => IsSafeRelativeTarget(target)
            && target.IndexOfAny(['*', '?']) < 0
            && !target.EndsWith('/')
-           && !target.EndsWith('\\');
+           && !target.EndsWith('\\')
+           && LooksLikeFileName(target);
+
+    /// <summary>
+    /// 散文标点：出现在候选证据目标里即说明该 token 来自叙述文本（引用锚点/括号说明），不是文件路径。
+    /// 只列全角/中文标点与节符号，不列 ASCII 括号等合法文件名字符（避免误伤真实路径）。
+    /// </summary>
+    private static readonly char[] ProsePunctuation =
+    [
+        '（', '）', '【', '】', '「', '」', '『', '』', '《', '》', '〈', '〉',
+        '。', '．', '，', '、', '；', '：', '！', '？', '…', '—', '§', '·',
+    ];
+
+    /// <summary>
+    /// 目标是否「像文件名」：不含散文标点，且末段（最后一个分隔符之后）存在非首位 <c>.</c>，
+    /// 其后的扩展名为 1..16 位 ASCII 字母数字。既放行 <c>Docs/summary.md</c>、<c>notes.txt</c>，
+    /// 也拒绝 <c>§9.A07）。</c>、<c>dir/</c> 这类非路径 token。
+    /// </summary>
+    private static bool LooksLikeFileName(string target)
+    {
+        if (target.IndexOfAny(ProsePunctuation) >= 0)
+            return false;
+
+        var lastSeparator = target.LastIndexOfAny(['/', '\\']);
+        var lastSegment = lastSeparator >= 0 ? target[(lastSeparator + 1)..] : target;
+        var lastDot = lastSegment.LastIndexOf('.');
+        if (lastDot <= 0 || lastDot == lastSegment.Length - 1)
+            return false;
+
+        var extension = lastSegment[(lastDot + 1)..];
+        if (extension.Length is < 1 or > 16)
+            return false;
+
+        foreach (var ch in extension)
+        {
+            var isAsciiAlphanumeric = (ch >= '0' && ch <= '9')
+                || (ch >= 'a' && ch <= 'z')
+                || (ch >= 'A' && ch <= 'Z');
+            if (!isAsciiAlphanumeric)
+                return false;
+        }
+
+        return true;
+    }
 
     /// <summary>共享核心：拒绝 <c>..</c> 逃逸、绝对/盘符/UNC 路径与 shell 元字符（含空白）。</summary>
     private static bool IsSafeRelativeTarget(string target)
