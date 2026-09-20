@@ -181,13 +181,18 @@
 | `Tools/Approval/JevToolCallClassifier.cs` | Jev 仲裁分类器（`IToolCallClassifier` 模型实现，S3d）：一次 round trip 五问（outcome + 四个逐分类校准概率，共享 state）；C1 解析失败 ⇒ Unknown（fail-closed 绝不默认 allow/deny）；C2 永久类缺可信度 ⇒ 防御性降级单次；C3 异常/自身超时 ⇒ Unknown 不冒泡（外层 OCE 照常传播）；C4 每次 `ClassifyAsync` 至多请求一次；C5 Reason/ReasonCode/ClassifierId 必非空；`ToolApproval:Jev:Enabled=false` ⇒ Unknown（`classifier.jev.disabled`） |
 | `Tools/Approval/ToolApprovalPortalService.cs` | 分类门户（S4）：`classify`（调管线分类 + 策展落规则）、`rules_list`/`rules_update`（人工规则=候选权威 `Source=Human`，绝不冒充分类器终局）；分类器缺失 ⇒ deferred（`classifier.not_configured`）；命中缓存复用 + `ClassifierInvoked`/`ClassifierUnavailable` 审计；离线测试 `PuddingRuntimeTests/Tools/ToolApprovalPortalTests.cs` |
 
-> **接线状态（S3c-1 后）**：DI 已注册 `IToolCallClassifier` 单例——`SystemRuleClassifier`（规则快路径）+ 仲裁位（Jev 端口已注册 ⇒ `JevToolCallClassifier`，未注册 ⇒ fail-closed 占位返回 Unknown）+ 审计存储 ⇒ `ToolCallClassifierPipeline`（注册点 `Tools/Platform/PuddingToolServiceCollectionExtensions.cs`，`TryAddSingleton` 可覆盖）；`ToolApproval:Reviewer=classifier` 已可显式选中 `ClassifierToolApprovalReviewer`。**默认值仍未翻转（`Reviewer` 仍为 `llm`）**；`IAgentAccessLevelService` 接线（Yolo 生效路径）仍为后续独立切片（S5b）——凡改变生产行为者一律独立提交。
+> **接线与生效状态（2026-09-21 翻转后）**：DI 已注册 `IToolCallClassifier` 单例——`SystemRuleClassifier`（规则快路径）+ 仲裁位（Jev 端口已注册 ⇒ `JevToolCallClassifier`，未注册 ⇒ fail-closed 占位返回 Unknown）+ 审计存储 ⇒ `ToolCallClassifierPipeline`（注册点 `Tools/Platform/PuddingToolServiceCollectionExtensions.cs`，`TryAddSingleton` 可覆盖）。
+>
+> **`ToolApproval:Reviewer` 默认值已翻转为 `classifier`**（提交 `3b92fdf4`，原为 `llm`）⇒ 提交审批闸门现在走分类器管线（规则快路径 + Jev 仲裁），实现与测试齐备。
+> **回退（无需重新构建）**：配置 `ToolApproval:Reviewer=llm`（或 `jev`）；`LlmToolApprovalReviewer` 按方案 v2 §14.13.7 保留不删。
+> **部署状态：待重启才生效**（选项/DI 在启动时读取）——翻转已入 master，但进程仍是旧语义，除非已重启/部署。
+> `IAgentAccessLevelService` 接线（完全访问授予的生效路径，S5b）仍为后续独立切片——凡改变生产行为者一律独立提交。
 > **PuddingCore 侧**：`Tools/ToolApproval.cs` 的 `ToolApprovalAllowlistRule` 追加 9 个可空溯源/键分量属性；`ToolApprovalAuditEvent` 追加 `ClassifierId?`/`ClassifierConfidence?`；`ToolApprovalAllowlistRuleSource` 末尾追加 `Classifier`（均为 append-only）。稳定原因码单一来源 = `Tools/ToolApprovalWire.cs`。
 > 派发与验收详见任务书 `temp/s4-portal-task.md`（门户切片 S4）；切分与状态见方案 v2 §14.10。
 
 ## 测试
 
-对应测试项目：`../PuddingRuntimeTests/` — Agent Loop、上下文管线、语音/图片 Provider；SubAgent/输入 resolver/图片生成/图片展示编排定向测试 4/4 ✅；list_llm_providers 工具合同测试（歧义/过滤/敏感字段/路由可解析）7/7 ✅；安全分类器域：契约 7/7 ✅、策展器 22/22 ✅、零网络分类器 10/10 ✅、管线 15/15 ✅、完全访问授予 12/12 ✅（`~Classification` 合计 64/64）
+对应测试项目：`../PuddingRuntimeTests/` — Agent Loop、上下文管线、语音/图片 Provider；SubAgent/输入 resolver/图片生成/图片展示编排定向测试 4/4 ✅；list_llm_providers 工具合同测试（歧义/过滤/敏感字段/路由可解析）7/7 ✅；安全分类器域：契约 7/7 ✅、策展器 22/22 ✅、零网络分类器 10/10 ✅、管线 15/15 ✅、完全访问授予 12/12 ✅（`~Classification` 合计 64/64）；审批链路适配器 `~ClassifierToolApprovalReviewer` 12/12 ✅、Jev 仲裁分类器 `~JevToolCallClassifier` 16/16 ✅（含 1 例 `[TestCategory("Live")]` 真链路探针，无密钥时 Inconclusive 跳过）、激活接线 `~ClassifierActivationWiringTests` 11/11 ✅、分类门户 `~ToolApprovalPortal` 25/25 ✅；翻转守护网 `~ToolApproval` 155/155 ✅、`~JevToolApprovalReviewer` 36/36 ✅、`~Reviewer` 65/65 ✅、`~PuddingToolInfrastructureTests` 148/148 ✅（2026-09-21 翻转后实测）
 
 ## 上下文压缩生命周期事件的活性契约（2026-09-19）
 
