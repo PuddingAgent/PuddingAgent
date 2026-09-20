@@ -92,11 +92,21 @@ public sealed class ToolApprovalRuntimeOptions
     public const string FakeReviewer = "fake";
     public const string LlmReviewer = "llm";
 
+    /// <summary>Jev 决策模型评审器（Jev自动审批与白名单自学习改造方案 §3.2）。</summary>
+    public const string JevReviewer = "jev";
+
     /// <summary>
-    /// Reviewer implementation. Default is "llm" (the isolated approval LLM reviewer).
-    /// "fake" is test-only and additionally requires <see cref="AllowFakeReviewer"/>;
-    /// production must never silently auto-approve (ADR-091 §5).
+    /// Reviewer implementation. Unset (null/empty) auto-selects at composition time:
+    /// "jev" when an <c>IJevDecisionService</c> is registered in the container, otherwise
+    /// "llm" (the isolated approval LLM reviewer). Explicit values: "llm" | "jev".
+    /// "fake" is test-only; production must never silently auto-approve (ADR-091 §5).
     /// </summary>
+    /// <remarks>
+    /// 默认值暂为 <c>llm</c>：v2 规格（安全分类器与工具调用准入方案-v2 §8\.4/§9）要求四选一、
+    /// 逐分类可信度、健康面与 ClassificationRuleCurator，这些尚未落地；在此之前不默认切到 jev。
+    /// 需要 Jev 评审时显式设置 <c>ToolApproval:Reviewer=jev</c>。
+    /// 待 v2 落地且确认 428/DependencyWait 运行时行为后，再评估是否翻转默认值。
+    /// </remarks>
     public string? Reviewer { get; set; } = LlmReviewer;
 
     /// <summary>

@@ -87,6 +87,7 @@
 | `Services/TerminalProcessManager.cs` | 终端进程管理 |
 | `Services/TerminalSecurity.cs` | 终端安全 |
 | `Tools/BuiltIns/Terminal/TerminalTools.cs` | terminal_start/wait/read/status/cancel/input 六件套；`terminal_wait` 阻塞语义（2026-08-22 能耗修复）：等到任务退出或输出超过预览上限才返回，wait_seconds 0-600 默认 60，禁止短等待轮询（旧轮询语义曾占全库 16% token） |
+| `Tools/Approval/JevToolApprovalReviewer.cs` | 🔑 Jev 决策模型驱动的审批评审器（`IToolApprovalReviewer` 可切换实现，取代 LLM 审批评审器；开关 `ToolApproval:Reviewer=jev`，未配置时容器已注册 `IJevDecisionService` 即自动选 jev，否则旧行为 llm）：一次 round trip 四问（decision/risk/scope/allowlist）共享 state（argumentsJson 截断默认 8KiB）；I1 确定性 deny 前置——命中 `ToolApprovalCommandFirewall` 危险模式绝不调 Jev（`jev_skipped_deny_rule`）；I2 不可用/超时/坏答案一律 `DeferredDependency`（fail-closed，`jev_unavailable`/`jev_invalid_response`）；I3 白名单提案仅精确匹配（含 `; & \| > < $ `` ( ) { } * ? ~`、反斜杠、换行即拒绝提案）；I4 校准概率低于阈值（默认 0.90）不提案；I5 提案 Reason 携带模型/概率/风险 provenance。配套 `Tools/Approval/JevToolApprovalOptions.cs`（节 `ToolApproval:Jev`：Enabled/AllowlistProbabilityThreshold/StateTruncateBytes=8192/ReviewTimeoutSeconds=30/MaxQuestions）；注册点 `Tools/Platform/PuddingToolServiceCollectionExtensions.cs` 工厂；离线测试 `PuddingRuntimeTests/Tools/JevToolApprovalReviewerTests.cs` |
 
 ## 子代理 & 计划
 

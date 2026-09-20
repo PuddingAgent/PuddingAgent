@@ -110,17 +110,24 @@ public static class PuddingToolServiceCollectionExtensions
         services.TryAddSingleton<IToolApprovalReviewer>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ToolApprovalRuntimeOptions>>().Value;
+            // 未配置时的默认选择（Jev自动审批方案 §3.2）：Jev 决策端口已注册 ⇒ jev；
+            // 否则保留旧行为 llm。这是组合期的一次性确定选择，不是运行期跨模型静默回退。
             var reviewer = string.IsNullOrWhiteSpace(options.Reviewer)
-                ? ToolApprovalRuntimeOptions.LlmReviewer
+                ? sp.GetService<IJevDecisionService>() is not null
+                    ? ToolApprovalRuntimeOptions.JevReviewer
+                    : ToolApprovalRuntimeOptions.LlmReviewer
                 : options.Reviewer.Trim();
 
             if (string.Equals(reviewer, ToolApprovalRuntimeOptions.LlmReviewer, StringComparison.OrdinalIgnoreCase))
                 return ActivatorUtilities.CreateInstance<LlmToolApprovalReviewer>(sp);
 
+            if (string.Equals(reviewer, ToolApprovalRuntimeOptions.JevReviewer, StringComparison.OrdinalIgnoreCase))
+                return ActivatorUtilities.CreateInstance<JevToolApprovalReviewer>(sp);
+
             // ADR-091 §5/F02：生产注册没有 fake 放行路径；即使旧配置传 Reviewer=fake 也必须拒绝。
             // 假实现只能在测试组合里通过显式 DI 注册。
             throw new InvalidOperationException(
-                $"ToolApproval reviewer '{options.Reviewer}' is not supported. The production registration only supports 'llm'; inject test doubles through test DI.");
+                $"ToolApproval reviewer '{options.Reviewer}' is not supported. The production registration only supports 'llm' or 'jev'; inject test doubles through test DI.");
         });
         services.TryAddSingleton<IToolApprovalTicketStore>(sp =>
             sp.GetService<PuddingDataPaths>() is null
