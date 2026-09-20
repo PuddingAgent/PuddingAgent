@@ -7,7 +7,7 @@
 | 文件 | 用途 |
 |------|------|
 | `AgentTemplateController.cs` | Agent 模板管理 |
-| `ApprovalController.cs` | 工具审批；**类级 `[Authorize]`**（2026-09-20 发现 X 补）；读接口返回脱敏投影 `ApprovalView`，**不下发 `ConfirmationCode`** |
+| `ApprovalController.cs` | 工具审批；**类级 `[Authorize]`**（2026-09-20 发现 X 补）；读接口返回脱敏投影 `ApprovalView`，**不下发 `ConfirmationCode`**；`confirm` 的确认码校验委托 `PuddingCode.Platform.ApprovalCode.Matches`（恒时比较） |
 | `AuditController.cs` | 审计记录 |
 | `DebugController.cs` | 调试端点（9KB） |
 | `GatewayController.cs` | 网关入口 |
@@ -30,7 +30,7 @@
 | `RuntimeRegistryService.cs` | 运行时注册服务 |
 | `InMemorySessionRepository.cs` | 会话内存存储 |
 | `InMemoryWorkspaceCatalog.cs` | 工作区目录 |
-| `InMemoryApprovalService.cs` | 审批服务（名字误导：实际基于 Redis `IConnectionMultiplexer`）。⚠ **组合根未注册** ⇒ 已认证调用当前落 500（死接口），已记卡 |
+| `InMemoryApprovalService.cs` | 审批服务（名字误导：实际基于 Redis `IConnectionMultiplexer`）。⚠ **组合根未注册** ⇒ 已认证调用当前落 500（死接口），已记卡。确认码的生成与校验已抽到 `PuddingCode.Platform.ApprovalCode`（`Generate`/`Matches`），本文件只负责 Redis 读写与状态机 |
 | `InMemoryAuditEventStore.cs` | 审计存储 |
 | `InMemoryRouteDecisionStore.cs` | 路由决策存储 |
 | `AuthorizationService.cs` | 授权服务 |

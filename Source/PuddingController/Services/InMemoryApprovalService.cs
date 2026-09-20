@@ -32,7 +32,7 @@ public sealed class InMemoryApprovalService : IApprovalService
             SessionId = sessionId,
             WorkspaceId = workspaceId,
             ActionDescription = actionDescription,
-            ConfirmationCode = Guid.NewGuid().ToString("N")[..8],
+            ConfirmationCode = ApprovalCode.Generate(),
             ExpiresAt = DateTimeOffset.UtcNow.Add(DefaultExpiry),
         };
         var json = JsonSerializer.Serialize(record, JsonOpts);
@@ -88,7 +88,7 @@ public sealed class InMemoryApprovalService : IApprovalService
             await _redis.SetRemoveAsync(PendingSetKey, approvalId);
             return false;
         }
-        if (record.ConfirmationCode != confirmationCode) return false;
+        if (!ApprovalCode.Matches(record.ConfirmationCode, confirmationCode)) return false;
 
         var confirmed = record with
         {

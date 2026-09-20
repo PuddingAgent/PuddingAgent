@@ -34,6 +34,7 @@
 | `Platform/IExecutionCommandReader.cs` | ExecutionCommand 只读边界；返回从 canonical Goal/Task/Plan 解析的 `ExecutionWorkUnitContext` 及 rounds/tools/duration/token/cost 冻结预算 |
 | `Platform/AgentProjectionDtos.cs` | Agent 会话读模型；`ProcessSummaryItem.Sequence` 为 canonical 必填，active/detail 输出携带 `TurnEventWindow`（through/min/max/hasMoreBefore）供前端识别截断 |
 | `Platform/ExecutionRunContracts.cs` | ExecutionRun 冻结快照合同；V5：`LlmRouteSnapshot`（:110-118）与 `CallerLlmSnapshot`（:165）新增可选 `VisionRequestPolicy? VisionPolicy`；`CallerLlmSnapshot.SupportsVision` 为唯一 vision 能力投影（CapabilityTags 含 vision，OrdinalIgnoreCase） |
+| `Platform/ApprovalCode.cs` | 待审单确认码的生成与校验——PuddingController 审批流程的**唯一凭据**（`GET /api/approval/*` 只下发脱敏投影）。`Generate()` 用 CSPRNG 取 8 位十六进制（**32 bit**，对照 `ApprovalId` 的 128 bit）；`Matches()` 用 `CryptographicOperations.FixedTimeEquals` 恒时比较。2026-09-20 从 `InMemoryApprovalService` 抽出（原为 `Guid…[..8]` + 逐字节短路比较），使其可独立单测；失败尝试限制尚未实现（Redis 交互在测试环境不可构造） |
 
 ## 外部 API 安全合同（ADR-075 / ADR-082）
 
