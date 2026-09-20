@@ -100,11 +100,15 @@ public static class PuddingToolServiceCollectionExtensions
                 configuration.GetSection(ToolApprovalRuntimeOptions.SectionName));
             services.Configure<ToolApprovalLlmOptions>(
                 configuration.GetSection($"{ToolApprovalRuntimeOptions.SectionName}:Llm"));
+            // S6a（§14.9）：分类器降级配置（只新增键，不改既有默认值）。
+            services.Configure<ToolApprovalClassifierOptions>(
+                configuration.GetSection(ToolApprovalClassifierOptions.SectionName));
         }
         else
         {
             services.AddOptions<ToolApprovalRuntimeOptions>();
             services.AddOptions<ToolApprovalLlmOptions>();
+            services.AddOptions<ToolApprovalClassifierOptions>();
         }
 
         services.TryAddSingleton<IToolApprovalLlmProfileResolver, StrictConfiguredToolApprovalLlmProfileResolver>();
@@ -118,6 +122,16 @@ public static class PuddingToolServiceCollectionExtensions
         // 仲裁位：Jev 决策端口已注册 ⇒ JevToolCallClassifier；未注册 ⇒ fail-closed 占位（返回 Unknown）。
         // 两种形态都不会让 DI 解析或启动抛异常；管线自带仲裁独立 3000ms 超时。
         services.TryAddSingleton<IToolCallClassifier>(sp => BuildToolCallClassifierPipeline(sp, configuration));
+        // S6a（§8.2 / §14.9.2）：分类器健康面（服务端权威、进程内）。具体类型供 classifier_status
+        // 工具与评审器上报；接口供跨层消费方（PuddingCore 健康端口）。退避基数从配置读取（默认 2000）。
+        services.TryAddSingleton<ClassifierHealthReporter>(sp => new ClassifierHealthReporter(
+            sp.GetRequiredService<IOptions<ToolApprovalClassifierOptions>>().Value.UnavailableBackoffBaseMs,
+            sp.GetService<TimeProvider>()));
+        services.TryAddSingleton<IClassifierHealthReporter>(sp => sp.GetRequiredService<ClassifierHealthReporter>());
+        // S6a：仲裁位注册状态（组装管线时写入，供 classifier_status 展示 fail-closed 占位）。
+        services.TryAddSingleton<ClassifierArbiterRegistrationState>();
+        // S6a：管线可调参数注册为单一事实源（组装管线与 classifier_status 输出阈值共用同一实例）。
+        services.TryAddSingleton<ToolCallClassifierPipelineOptions>();
         services.TryAddSingleton<IToolApprovalReviewer>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ToolApprovalRuntimeOptions>>().Value;
@@ -162,6 +176,7 @@ public static class PuddingToolServiceCollectionExtensions
         services.TryAddSingleton<IToolApprovalService, InMemoryToolApprovalService>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IPuddingTool, RequestToolApprovalTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IPuddingTool, ListToolApprovalsTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IPuddingTool, ClassifierStatusTool>());
         services.TryAddSingleton<IPuddingToolExecutionService, PuddingToolExecutionService>();
 
         return services;
@@ -309,11 +324,28 @@ public static class PuddingToolServiceCollectionExtensions
                     ?? new ToolApprovalJevOptions(),
                 serviceProvider.GetService<TimeProvider>());
 
-        return new ToolCallClassifierPipeline(
+        // S6a：管线可调参数用 DI 注册的单一实例（classifier_status 输出阈值与管线生效值同源）。
+        var pipelineOptions = serviceProvider.GetService<ToolCallClassifierPipelineOptions>()
+                               ?? new ToolCallClassifierPipelineOptions();
+
+        var pipeline = new ToolCallClassifierPipeline(
             [ruleClassifier],
             arbiter,
             serviceProvider.GetRequiredService<IToolApprovalAuditStore>(),
-            serviceProvider.GetService<TimeProvider>());
+            serviceProvider.GetService<TimeProvider>(),
+            pipelineOptions);
+
+        // S6a：健康面登记（幂等，含从未上报者 ⇒ Snapshot 默认 Unknown）+ 仲裁位注册状态
+        // （未注册 ⇒ classifier_status 可见 fail-closed 占位）。ClassifierId 全部动态取自实现，
+        // 不写死任何厂商名（§8.2 厂商中立）。
+        var healthReporter = serviceProvider.GetService<ClassifierHealthReporter>();
+        healthReporter?.EnsureRegistered(pipeline.ClassifierId);
+        healthReporter?.EnsureRegistered(ruleClassifier.ClassifierId);
+        healthReporter?.EnsureRegistered(arbiter.ClassifierId);
+        serviceProvider.GetService<ClassifierArbiterRegistrationState>()
+            ?.Report(jevDecisionService is not null, arbiter.ClassifierId);
+
+        return pipeline;
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 using PuddingCode.Classification;
 using PuddingCode.Tools;
+using PuddingRuntime.Classification;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -50,14 +51,21 @@ public sealed class ClassifierToolApprovalReviewer : IToolApprovalReviewer
 
     private readonly IToolCallClassifier _classifier;
     private readonly TimeProvider _timeProvider;
+    private readonly ClassifierHealthReporter? _healthReporter;
 
     /// <summary>构造分类器审批评审器。</summary>
     /// <param name="classifier">分类器抽象端口；生产接线传管线实例，测试传 stub。</param>
     /// <param name="timeProvider">时间源（用于评审耗时入审计 Reason）；缺省系统时钟。</param>
-    public ClassifierToolApprovalReviewer(IToolCallClassifier classifier, TimeProvider? timeProvider = null)
+    /// <param name="healthReporter">可选：分类器健康面（S6a，§14.9.2）；注入后在本侧上报
+    /// deferred 计数与成功重置——只记健康数据，绝不改变降级决策与原因码。</param>
+    public ClassifierToolApprovalReviewer(
+        IToolCallClassifier classifier,
+        TimeProvider? timeProvider = null,
+        ClassifierHealthReporter? healthReporter = null)
     {
         _classifier = classifier ?? throw new ArgumentNullException(nameof(classifier));
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _healthReporter = healthReporter;
     }
 
     /// <inheritdoc />
@@ -85,6 +93,13 @@ public sealed class ClassifierToolApprovalReviewer : IToolApprovalReviewer
         }
         catch (Exception exception)
         {
+            // S6a（§14.9.2）：管线级异常也计入健康面（端口级 ClassifierId）；只记数，不改降级决策。
+            _healthReporter?.RecordDeferred(
+                _classifier.ClassifierId,
+                request.ToolId,
+                request.RequestedArgumentsJson,
+                ToolApprovalWire.CodeServiceUnavailable);
+
             // 分类器异常/自身超时/不可用：降级为依赖等待（§14.7），不折叠为批准/拒绝/人工，不冒泡。
             return Deferred(
                 $"Tool call classifier is unavailable (exception: {exception.GetType().Name}); waiting for the dependency to recover.",
@@ -93,12 +108,35 @@ public sealed class ClassifierToolApprovalReviewer : IToolApprovalReviewer
 
         if (verdict is null)
         {
+            _healthReporter?.RecordDeferred(
+                _classifier.ClassifierId,
+                request.ToolId,
+                request.RequestedArgumentsJson,
+                ToolApprovalWire.CodeServiceUnavailable);
+
             return Deferred(
                 "Tool call classifier returned no verdict; waiting for the dependency to recover.",
                 ToolApprovalWire.CodeServiceUnavailable);
         }
 
         var latencyMs = _timeProvider.GetElapsedTime(startTimestamp).TotalMilliseconds;
+
+        // S6a（§14.9.2）：分类器侧健康上报——deferred 计数 / 成功清零；只记健康数据，
+        // 绝不改变 ToReviewResult 已定的决策与原因码（ADR-091 §4.4：不折叠）。
+        if (verdict.Outcome == ClassificationOutcome.Unknown)
+        {
+            _healthReporter?.RecordDeferred(
+                verdict.ClassifierId,
+                request.ToolId,
+                request.RequestedArgumentsJson,
+                ToolApprovalWire.CodeClassifierUnknown,
+                latencyMs);
+        }
+        else
+        {
+            _healthReporter?.RecordSuccess(verdict.ClassifierId, latencyMs);
+        }
+
         return ToReviewResult(request, verdict, latencyMs);
     }
 

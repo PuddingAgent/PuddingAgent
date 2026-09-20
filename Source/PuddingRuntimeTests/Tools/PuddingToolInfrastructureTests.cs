@@ -1021,7 +1021,7 @@ public sealed partial class PuddingToolInfrastructureTests
         var descriptors = catalog.ListTools();
 
         CollectionAssert.AreEquivalent(
-            new[] { "legacy_echo", "list_tool_approvals", "request_tool_approval", "sample_search" },
+            new[] { "classifier_status", "legacy_echo", "list_tool_approvals", "request_tool_approval", "sample_search" },
             descriptors.Select(d => d.ToolId).ToArray());
     }
 
