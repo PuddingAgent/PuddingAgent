@@ -1,4 +1,4 @@
-﻿# PuddingController CodeMAP
+# PuddingController CodeMAP
 
 > 代理控制层 | REST API · 会话路由 · 审批 · 审计 · 工作区
 
@@ -7,7 +7,7 @@
 | 文件 | 用途 |
 |------|------|
 | `AgentTemplateController.cs` | Agent 模板管理 |
-| `ApprovalController.cs` | 工具审批 |
+| `ApprovalController.cs` | 工具审批；**类级 `[Authorize]`**（2026-09-20 发现 X 补）；读接口返回脱敏投影 `ApprovalView`，**不下发 `ConfirmationCode`** |
 | `AuditController.cs` | 审计记录 |
 | `DebugController.cs` | 调试端点（9KB） |
 | `GatewayController.cs` | 网关入口 |
@@ -30,7 +30,7 @@
 | `RuntimeRegistryService.cs` | 运行时注册服务 |
 | `InMemorySessionRepository.cs` | 会话内存存储 |
 | `InMemoryWorkspaceCatalog.cs` | 工作区目录 |
-| `InMemoryApprovalService.cs` | 审批服务 |
+| `InMemoryApprovalService.cs` | 审批服务（名字误导：实际基于 Redis `IConnectionMultiplexer`）。⚠ **组合根未注册** ⇒ 已认证调用当前落 500（死接口），已记卡 |
 | `InMemoryAuditEventStore.cs` | 审计存储 |
 | `InMemoryRouteDecisionStore.cs` | 路由决策存储 |
 | `AuthorizationService.cs` | 授权服务 |
@@ -51,3 +51,5 @@
 ## 测试
 
 —（无独立测试项目，集成在 Platform/WebApi 测试中）
+
+- 授权边界：`PuddingWebApiTests/ApprovalControllerAuthTests.cs`（匿名 3 端点必须 401）
