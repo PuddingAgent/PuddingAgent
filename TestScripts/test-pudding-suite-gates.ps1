@@ -68,10 +68,12 @@ $Suites = [ordered]@{
         Kind = 'dotnet'
         Project = 'Source/PuddingWebApiTests/PuddingWebApiTests.csproj'
         Filter = ''
-        # 尚未实测基线 ⇒ 只报告、不判定（不得用未知当通过）。
+        # 实测（2026-09-21）：该套件构建依赖 `PuddingAgent` 的输出目录，而**运行中的 Core 会锁住**
+        # `Source/PuddingAgent/bin/Debug/net10.0/*.dll` ⇒ 得到 MSB3027/MSB3021，**此刻无法测量**。
+        # 需在 Core 停止后测（例如部署窗口），或改用独立输出路径构建。
         AllowedFailures = $null
         KnownRed = @()
-        Note = '基线未实测：先跑一次并把计数回填到此处，再把 AllowedFailures 收紧为具体数字。'
+        Note = '基线未实测：在 Core 运行时**无法测量**（构建需写 PuddingAgent 输出目录，被运行进程锁定）。'
     }
     'AdminJest' = @{
         Kind = 'jest'
@@ -151,8 +153,13 @@ foreach ($name in $selected) {
     $known = @($spec.KnownRed)
     $unexpected = @($failedNames | Where-Object { $known -notcontains $_ })
 
+    # 构建期文件锁（典型：Core 运行中锁定 Source/PuddingAgent/bin/Debug/net10.0/*.dll）
+    # ⇒ 该套件**此刻无法测量**：既不算通过、也不算失败，单独报 SKIPPED_LOCKED，避免把"锁"误读成"红"。
+    $lockEvidence = ($null -eq $counts) -and ($text -match 'MSB3027|MSB3021|being used by another process|正由另一进程使用|文件被')
+
     $status = 'UNMEASURED'
-    if ($null -ne $counts) {
+    if ($lockEvidence) { $status = 'SKIPPED_LOCKED' }
+    elseif ($null -ne $counts) {
         if ($null -eq $spec.AllowedFailures) { $status = 'UNMEASURED' }
         elseif ($counts.Failed -le $spec.AllowedFailures -and $unexpected.Count -eq 0) { $status = 'PASS' }
         else { $status = 'FAIL' }
@@ -181,6 +188,7 @@ $payload = [pscustomobject]@{
     Passed    = @($results | Where-Object { $_.Status -eq 'PASS' }).Count
     Failed    = $gateFailures.Count
     Unmeasured = @($results | Where-Object { $_.Status -eq 'UNMEASURED' }).Count
+    SkippedLocked = @($results | Where-Object { $_.Status -eq 'SKIPPED_LOCKED' }).Count
     Suites    = $results
 }
 $payload | ConvertTo-Json -Depth 5

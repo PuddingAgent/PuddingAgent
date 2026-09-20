@@ -83,4 +83,10 @@ Contract:
   date plus evidence in the commit message (the baseline is a contract, not a convenience).
 
 Current baselines (2026-09-21): `Core` 910 passed / 1 known-red,
-`Runtime` 1658 / 0, `Platform` 1363 / 0, `AdminJest` 1336 / 17 known-red, `WebApi` unmeasured.
+`Runtime` 1658 / 0, `Platform` 1363 / 0, `AdminJest` 1336 / 17 known-red.
+
+`WebApi` is **not measurable while the Core process is running**: its build needs to write
+`Source/PuddingAgent/bin/Debug/net10.0/*.dll`, which the live process locks (`MSB3027`/`MSB3021`).
+The script reports that case as `SKIPPED_LOCKED` - a third honest state that is neither a pass nor a
+failure, so a build lock is never misread as a red suite. Measure it with the Core stopped
+(for example during a deployment window) and then tighten `AllowedFailures` to a real number.
