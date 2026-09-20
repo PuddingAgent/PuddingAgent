@@ -60,6 +60,9 @@ public static class RuntimeServiceExtensions
 
         // ── 多 Agent 心跳唤醒队列 ──
         services.AddSingleton<AgentWakeQueue>();
+        // 心跳编排器：把 IdleDetector 的空闲信号与 AgentWakeQueue 接到实际消息投递上。
+        // 此前该执行体缺失，导致队列无人排空、空闲事件无人订阅、心跳从未触发。
+        services.AddHostedService<HeartbeatOrchestrator>();
 
         // ── Goal 模式：连续自主任务循环（pi follow-up 注入模式，默认关闭）──
         if (configuration is not null)
