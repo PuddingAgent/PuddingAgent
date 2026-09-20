@@ -306,23 +306,9 @@ public sealed class ToolApprovalAdminApiController(
         => status == ToolApprovalAllowlistRuleStatus.Disabled ? "disabled" : "enabled";
 
     private static string FormatEventType(ToolApprovalAuditEventType eventType)
-        => eventType switch
-        {
-            ToolApprovalAuditEventType.TicketSubmitted => "ticket_submitted",
-            ToolApprovalAuditEventType.TicketApproved => "ticket_approved",
-            ToolApprovalAuditEventType.TicketDenied => "ticket_denied",
-            ToolApprovalAuditEventType.TicketNeedHuman => "ticket_need_human",
-            ToolApprovalAuditEventType.TicketMatched => "ticket_matched",
-            ToolApprovalAuditEventType.TicketConsumed => "ticket_consumed",
-            ToolApprovalAuditEventType.TicketMismatch => "ticket_mismatch",
-            ToolApprovalAuditEventType.ImplicitApproved => "implicit_approved",
-            ToolApprovalAuditEventType.ImplicitDenied => "implicit_denied",
-            ToolApprovalAuditEventType.AllowlistHit => "allowlist_hit",
-            ToolApprovalAuditEventType.AllowlistRuleCreated => "allowlist_rule_created",
-            ToolApprovalAuditEventType.AllowlistRuleUpdated => "allowlist_rule_updated",
-            ToolApprovalAuditEventType.AllowlistRuleDisabled => "allowlist_rule_disabled",
-            _ => eventType.ToString().ToLowerInvariant(),
-        };
+        // 单一来源：事件名 wire 映射在 ToolApprovalWire（本控制器原本自带一份只有 13 条分支的私有映射，
+        // 导致其余事件落到丢下划线的兜底名，并使 eventType 过滤对它们失效——2026-09-21 修正）。
+        => ToolApprovalWire.ToWire(eventType);
 
     public sealed record AllowlistRuleMutationDto
     {

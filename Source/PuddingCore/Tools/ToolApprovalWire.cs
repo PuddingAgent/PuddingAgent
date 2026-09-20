@@ -85,6 +85,54 @@ public static class ToolApprovalWire
     };
 
     /// <summary>
+    /// 审计事件类型的 wire 名称（<b>稳定契约</b>）。
+    /// <para>
+    /// 为何放在这里：本文件的存在宗旨就是“避免同一概念在不同出口漂移”（见类注释）。
+    /// 历史缺陷（2026-09-21 发现）：管理 API 曾自带一份**只有 13 条分支**的私有映射，
+    /// 而枚举有 **26 个成员** ⇒ 其余 13 个事件落到 <c>ToString().ToLowerInvariant()</c> 兜底，
+    /// 产生 <c>classifierinvoked</c> / <c>fullaccessgatebypass</c> 这类**丢下划线**的名字，
+    /// 与 <c>ticket_submitted</c> 形成两套命名混在同一字段；且管理 API 的
+    /// <c>eventType</c> 过滤正是拿本名字比对 ⇒ 那些事件**筛选不出来**。
+    /// 本映射在功能**尚未部署**时修正，因此无历史消费者需要兼容。
+    /// </para>
+    /// <para>
+    /// 新增枚举成员时（N01：只允许追加在末尾）**必须在此补一条显式映射**；
+    /// 兜底只保证“不静默说错”（如实回显枚举名），不保证命名风格，因此不得依赖它。
+    /// </para>
+    /// </summary>
+    public static string ToWire(ToolApprovalAuditEventType eventType) => eventType switch
+    {
+        ToolApprovalAuditEventType.TicketSubmitted => "ticket_submitted",
+        ToolApprovalAuditEventType.TicketApproved => "ticket_approved",
+        ToolApprovalAuditEventType.TicketDenied => "ticket_denied",
+        ToolApprovalAuditEventType.TicketNeedHuman => "ticket_need_human",
+        ToolApprovalAuditEventType.TicketMatched => "ticket_matched",
+        ToolApprovalAuditEventType.TicketConsumed => "ticket_consumed",
+        ToolApprovalAuditEventType.TicketMismatch => "ticket_mismatch",
+        ToolApprovalAuditEventType.ImplicitApproved => "implicit_approved",
+        ToolApprovalAuditEventType.ImplicitDenied => "implicit_denied",
+        ToolApprovalAuditEventType.AllowlistHit => "allowlist_hit",
+        ToolApprovalAuditEventType.AllowlistRuleCreated => "allowlist_rule_created",
+        ToolApprovalAuditEventType.AllowlistRuleUpdated => "allowlist_rule_updated",
+        ToolApprovalAuditEventType.AllowlistRuleDisabled => "allowlist_rule_disabled",
+        ToolApprovalAuditEventType.DefinitionDriftDetected => "definition_drift_detected",
+        ToolApprovalAuditEventType.TicketDeferredDependency => "ticket_deferred_dependency",
+        ToolApprovalAuditEventType.ClassifierInvoked => "classifier_invoked",
+        ToolApprovalAuditEventType.ClassifierUnavailable => "classifier_unavailable",
+        ToolApprovalAuditEventType.DenylistRuleCreated => "denylist_rule_created",
+        ToolApprovalAuditEventType.DenylistRuleDisabled => "denylist_rule_disabled",
+        ToolApprovalAuditEventType.FullAccessRequested => "full_access_requested",
+        ToolApprovalAuditEventType.FullAccessGranted => "full_access_granted",
+        ToolApprovalAuditEventType.FullAccessDenied => "full_access_denied",
+        ToolApprovalAuditEventType.FullAccessExpired => "full_access_expired",
+        ToolApprovalAuditEventType.FullAccessRevoked => "full_access_revoked",
+        ToolApprovalAuditEventType.RuleConflictDetected => "rule_conflict_detected",
+        ToolApprovalAuditEventType.FullAccessGateBypass => "full_access_gate_bypass",
+        // 兜底只保证不静默说错（如实回显枚举名）；命名风格由上方显式映射负责。
+        _ => eventType.ToString().ToLowerInvariant(),
+    };
+
+    /// <summary>
     /// 解析模型返回的 decision。接受 <c>-</c>/<c>_</c> 与大小写差异，以及历史 camel 写法，
     /// 但未知值一律失败（由调用方转成协议失败，不得默认放行或默认人工）。
     /// </summary>

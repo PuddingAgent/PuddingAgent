@@ -23,6 +23,12 @@ public sealed class ToolApprovalAdminApiControllerTests
     private static ToolApprovalAdminApiController CreateController()
         => new(new InMemoryToolApprovalAllowlistStore(), new InMemoryToolApprovalAuditStore());
 
+    private static (ToolApprovalAdminApiController Controller, InMemoryToolApprovalAuditStore Audit) CreateControllerWithAudit()
+    {
+        var audit = new InMemoryToolApprovalAuditStore();
+        return (new ToolApprovalAdminApiController(new InMemoryToolApprovalAllowlistStore(), audit), audit);
+    }
+
     private static ToolApprovalAdminApiController.AllowlistRuleMutationDto Mutation(
         string? source,
         string status = "enabled")
@@ -120,6 +126,38 @@ public sealed class ToolApprovalAdminApiControllerTests
         Assert.IsInstanceOfType<BadRequestObjectResult>(
             result,
             "不认识的来源必须 fail-closed，而不是被静默归到某个来源。");
+    }
+
+    [TestMethod]
+    public async Task ListAuditEvents_FiltersByStableWireName_ForFullAccessEvents()
+    {
+        // 钉住事件名 wire 契约：完全访问类事件必须能被稳定的 snake_case 名字筛出。
+        // 曾因管理 API 私有映射只有 13 条分支 ⇒ 兜底名丢下划线（fullaccessgranted）
+        // ⇒ 前端传 full_access_granted **永远匹配不上**，审计筛选对该类事件失效。
+        var (controller, audit) = CreateControllerWithAudit();
+        await audit.SaveAsync(
+            new ToolApprovalAuditEvent
+            {
+                EventId = "taa_test_full_access",
+                EventType = ToolApprovalAuditEventType.FullAccessGranted,
+                Reason = "full access granted (test)",
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+            },
+            CancellationToken.None);
+
+        var result = await controller.ListAuditEvents(
+            eventType: "full_access_granted",
+            ct: CancellationToken.None);
+
+        var ok = result as OkObjectResult;
+        Assert.IsNotNull(ok);
+        var itemsProperty = ok.Value!.GetType().GetProperty("items");
+        Assert.IsNotNull(itemsProperty, "审计列表必须返回 items。");
+        var items = ((System.Collections.IEnumerable)itemsProperty.GetValue(ok.Value)!).Cast<object>().ToArray();
+        Assert.HasCount(
+            1,
+            items,
+            "按稳定 wire 名 full_access_granted 必须能筛出该事件（否则管理端无法审查完全访问行为）。");
     }
 
     [TestMethod]
