@@ -55,6 +55,13 @@ public static class ToolApprovalWire
     /// </summary>
     public const string CodeDeferredReasonCodeMissing = "approval_review_deferred_reason_code_missing";
 
+    /// <summary>
+    /// 安全分类器无法给出四选一结论（ClassificationOutcome.Unknown：输入不足、规则类实现未命中、
+    /// 仲裁不可用）时的依赖等待原因码（方案 v2 §14.5/§14.7）：按降级契约转 DeferredDependency，
+    /// 绝不得折叠为批准、拒绝或人工。本文件是稳定原因码的单一来源：新增原因码一律在此追加。
+    /// </summary>
+    public const string CodeClassifierUnknown = "approval_review_classifier_unknown";
+
     /// <summary>决策的 wire 名称。</summary>
     public static string ToWire(ToolApprovalDecision decision) => decision switch
     {
