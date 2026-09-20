@@ -78,3 +78,35 @@ dispatch latency | **无基线**（需先定采集点，step3/C0 探查） | 未
 - 平台 `objective-file-evidence` 判据把目标散文片段 `（A07 / §9.A07）。` 当作路径 `§9.A07）。` 检查存在性（见 Explore 文档 §6.2）；**不伪造该名字的文件**。
 - dispatch latency 基线缺失 ⇒ 相关结论在取得基线前**保持 unknown**。
 - 本步未改任何代码；所有改动集中在 step3 的 C0–C5。
+
+---
+
+## 9. Step 3 / C0 探查结论（迭代 5，**只读**；C2/C3/C4 的 fail-closed 前置）
+
+### 9.1 `runtime_activity` 的消费面（实测：查询点只有诊断工具 3 处）
+`RuntimeActivityQuery` 构造处全仓仅 3 处，均在 `Source/PuddingRuntime/Tools/BuiltIns/Diagnostics/AgentDiagnosticsTool.cs`：
+- `:98` `tool_stats`（按 `tool_name` 元数据过滤）
+- `:181` `slowest_tools`
+- `:690` `diagnose`：`QueryAsync(new RuntimeActivityQuery { Limit = 2000 })` 取**最近 2000 条**，并**只保留** `Metadata["tool_name"]` 非空的条目做工具维度（`:692-700` 逐字）
+
+其余命中全部是**写入方**（`_activitySink` 注入的 emit 侧）：`AgentExecutionService`、`DirectLlmClient`、`MemoryWriteCoordinator`、`SubconsciousPlanGenerationService`、`HookPublisher`、`EventDispatcher`、`InternalEventBus`。
+
+**结论**：
+1. 移除 skip 的 activity 写入**不破坏任何业务读取路径**（消费面只有诊断工具）。
+2. **可核查的连带收益**：当前 77.2% 的噪声**正在挤占 `diagnose` 的"最近 2000 条"窗口** —— 降噪后工具维度诊断的可见性提升（这是"删噪声"之外的正当理由，不是为达标而达标）。
+3. C3 需同步核查测试面对这两个动作的断言（`PuddingRuntimeTests` / `PuddingWebApiTests`）——属**测试面**，非产品路径。
+
+### 9.2 `SubconsciousJobQueue.cs` 的 activity 写入点是**两处**，必须区别对待
+- `:409`（在 `RecordSchedulingSkipActivityAsync` 内）→ **skip 噪声，C3 的移除对象**
+- `:504`（`RecordActivityAsync` 路径）→ **必须保留**（A07 逐字「状态变化、派发、错误才写明细」）
+⇒ C3 必须**精确到 `:409` 一处**，不得整体删除 activity 能力。
+
+### 9.3 唤醒路径（C4 的关键事实，直接影响 Plan 裁定三）
+- 既有 **coalesced signal 机制存在，但只服务 legacy 路径**：`SubconsciousConsolidationHook.cs:43-56` 构造 `ConsolidationJob` 后 `_channel.Writer.TryWrite(job)`（内存 `Channel`）。
+- **durable 入队 `SubconsciousJobQueue.EnqueueAsync`（`:38-63`）是纯 DB 写入**（`SubconsciousJobs` 表 + 幂等键查询/插入），**不写 Channel、不发任何信号**。
+
+**结论**：当前新任务的"唤醒"**实际依赖 2 秒轮询**。因此把轮询周期改为 5 分钟会使新任务唤醒最多延迟 5 分钟 ⇒ **违反** A07 逐字「任务到达唤醒不变慢」。⇒ **维持 Plan 裁定三**（保留 2 秒循环，只把"写入"改为"计数"）。若将来要实现真正的 coalesced 唤醒，C4 需**新增轻量 signal**（候选：worker 暴露 wake handle；或 durable 入队后向既有 `_channel` 写入轻量信号）—— **本步不定型、不改动**。
+
+### 9.4 C0 限定
+- 消费面结论覆盖范围：`Source/PuddingRuntime` 全目录（文件名过滤 `*.cs`）；`Source` 全量 grep 曾撞 2000 文件枚举上限并返回零命中，**该次结果不可作为否定证据**（已收窄目录后重查）。
+- 本轮**未改任何生产代码**。
