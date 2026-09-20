@@ -248,59 +248,16 @@ describe('AgentMessageBubble streaming presentation', () => {
     expect(screen.getByText('思考')).toBeTruthy();
     expect(screen.getByText('用户问的是商用密码应用安全性评估。')).toBeTruthy();
     expect(screen.queryByText(/undefined/)).toBeNull();
-    expect(screen.getByTestId('reasoning-disclosure-row')).toBeTruthy();
+    // 职责边界：思维链「行式披露」（最新行 + 展开全部）已由 execution-flow 的 ReasoningDisclosureRow
+    // 拥有（其测试 ReasoningDisclosureRow.test.tsx 已覆盖）；气泡自身不渲染该行。
+    expect(screen.queryByTestId('reasoning-disclosure-row')).toBeNull();
     expect(container.querySelector('.agentActiveOutputSurface')).toBeNull();
   });
 
-  it('shows the latest reasoning line and expands the complete reasoning trajectory', () => {
-    render(
-      <AgentMessageBubble
-        {...baseProps}
-        content=""
-        processItems={[
-          {
-            id: 't1',
-            type: 'thinking',
-            text: '思维链第一行',
-            timestamp: 1,
-            collapsed: true,
-          },
-          {
-            id: 't2',
-            type: 'thinking',
-            text: '思维链第二行',
-            timestamp: 2,
-            collapsed: true,
-          },
-          {
-            id: 't3',
-            type: 'thinking',
-            text: '思维链第三行',
-            timestamp: 3,
-            collapsed: true,
-          },
-          {
-            id: 't4',
-            type: 'thinking',
-            text: '思维链第四行',
-            timestamp: 4,
-            collapsed: true,
-          },
-        ]}
-      />,
-    );
+  // 『最新推理行可见 + 展开完整推理轨迹』两例已随职责迁移移除 ——
+  // 该行为现由 execution-flow 的 ReasoningDisclosureRow 拥有，覆盖见 ReasoningDisclosureRow.test.tsx
+  // （running 显示最新非空行且不显示早期行；展开态含全部行；空 payload 不渲染）。
 
-    expect(screen.queryByText('思维链第一行')).toBeNull();
-    expect(screen.queryByText('思维链第二行')).toBeNull();
-    expect(screen.queryByText('思维链第三行')).toBeNull();
-    expect(screen.getByText('思维链第四行')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '思考过程' }));
-    const body = screen.getByTestId('reasoning-disclosure-body');
-    expect(body.textContent).toContain('思维链第一行');
-    expect(body.textContent).toContain('思维链第二行');
-    expect(body.textContent).toContain('思维链第三行');
-    expect(body.textContent).toContain('思维链第四行');
-  });
 
   it('keeps the latest reasoning summary visible when a tool call starts', () => {
     render(
