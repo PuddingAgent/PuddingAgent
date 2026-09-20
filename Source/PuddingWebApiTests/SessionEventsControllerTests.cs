@@ -499,6 +499,35 @@ public sealed class SessionEventsControllerTests
             => throw new InvalidOperationException("synthetic compact failure");
     }
 
+    // ── 安全（发现 Y+Z）：bootstrap 不再匿名可读 ─────────────
+
+    /// <summary>
+    /// bootstrap 返回消息正文与图片 artifactId。此前带 [AllowAnonymous]，
+    /// 任意网络可达者只要拿到 conversationId 即可免认证读出会话内容与图片 ID。
+    /// 前端 umi-request 全局请求拦截器（requestErrorConfig.ts）已附带 Bearer，
+    /// 因此对已登录 Web 无影响——本用例同时守住这两侧。
+    /// </summary>
+    [TestMethod]
+    public async Task ConversationBootstrap_RequiresAuthentication()
+    {
+        var sessionId = await CreateSessionAsync();
+
+        using (var anonymous = _factory.CreateClient())
+        {
+            var unauthorized = await anonymous.GetAsync($"/api/conversations/{sessionId}/bootstrap");
+            Assert.AreEqual(
+                HttpStatusCode.Unauthorized,
+                unauthorized.StatusCode,
+                "匿名请求 bootstrap 必须 401：它返回消息正文，不能免认证可读。");
+        }
+
+        var authorized = await _client.GetAsync($"/api/conversations/{sessionId}/bootstrap");
+        Assert.AreEqual(
+            HttpStatusCode.OK,
+            authorized.StatusCode,
+            "已认证请求必须仍可用（前端 api.ts 的 getConversationBootstrap 依赖此端点）。");
+    }
+
     private sealed class FixedAgentRuntimeProfileResolver : IAgentRuntimeProfileResolver
     {
         public Task<AgentRuntimeProfile> ResolveAsync(

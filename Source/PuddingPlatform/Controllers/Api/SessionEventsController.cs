@@ -307,7 +307,6 @@ public class SessionEventsController : ControllerBase
     /// P1: 增加投影追平等待——投影落后时等待 projectTimeoutMs 后返回可用 checkpoint。
     /// </para>
     /// </summary>
-    [AllowAnonymous]
     [HttpGet("/api/conversations/{conversationId}/bootstrap")]
     public async Task<ActionResult> GetConversationBootstrap(
         string conversationId,
