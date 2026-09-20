@@ -372,6 +372,16 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IRuntimeLlmClient, DirectLlmClient>();
         builder.Services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
 
+        // ── Jev 决策模型（POST {baseUrl}/api/v1/decide，返回结构化决策数据）────
+        // 连接参数（端点/密钥/模型）由 JevDecisionOptionsProvider 从配置 Jev 节 +
+        // JEV_* 环境变量 + 可选 KeyVault 解析；密钥只在内存使用，不落日志。
+        builder.Services.AddHttpClient(JevDecisionService.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(60);
+        });
+        builder.Services.AddSingleton<IJevDecisionOptionsProvider, JevDecisionOptionsProvider>();
+        builder.Services.AddSingleton<IJevDecisionService, JevDecisionService>();
+
         // ── 统一 LLM 配置服务（data/config/llm.providers.json，唯一来源）──────────
         // 启动时加载一次，不热重载。DB 不再存储 LLM 配置（简化架构）。
         var fileConfigLoader = new PuddingFileConfigLoader(dataPaths);

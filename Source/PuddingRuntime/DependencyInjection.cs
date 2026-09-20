@@ -135,6 +135,14 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<ISubconsciousTextProcessingService, SubconsciousTextProcessingService>();
                 services.AddSingleton<IEmbeddingService, OpenAiEmbeddingService>();
         services.AddSingleton<ProviderRateLimiter>();
+        // Jev 决策模型：契约在 PuddingCore，实现在 Services；端点/密钥/模型经
+        // IJevDecisionOptionsProvider 注入（默认读 IConfiguration 的 Jev 节）。
+        services.AddHttpClient(JevDecisionService.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(60);
+        });
+        services.AddSingleton<IJevDecisionOptionsProvider, JevDecisionOptionsProvider>();
+        services.AddSingleton<IJevDecisionService, JevDecisionService>();
 
         services.AddSingleton<IUserPreferenceService, UserPreferenceService>();
 
