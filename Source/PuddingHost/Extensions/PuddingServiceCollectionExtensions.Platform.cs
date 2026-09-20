@@ -286,6 +286,12 @@ public static partial class PuddingServiceCollectionExtensions
         // Singleton 保留 epoch 台账；GoalResumeService 每次调用创建 scope 解析 scoped Goal 服务。
         builder.Services.AddSingleton<GoalResumeService>();
         builder.Services.AddSingleton<IGoalResumeService>(sp => sp.GetRequiredService<GoalResumeService>());
+        // 「Agent 自主开始/停止/取消 Goal」（goal_start / goal_pause / goal_cancel 工具）。
+        // 与 GoalResumeService 同构：Singleton 工具持有桥，每次调用创建 scope 解析 scoped 的
+        // IGoalCommandService（避免 captive dependency）；只复用 canonical /goal 命令路径。
+        // 权能边界：Extend（延长额度）/Policy/Clear 属人工入口，刻意不注册为 Agent 工具。
+        builder.Services.AddSingleton<GoalLifecycleService>();
+        builder.Services.AddSingleton<IGoalLifecycleService>(sp => sp.GetRequiredService<GoalLifecycleService>());
         builder.Services.Configure<WorkspaceTaskFeatureOptions>(_ => { });
         // Task Dispatch Outbox + Dispatcher（TB-05：手工派发闭环）
         builder.Services.AddScoped<TaskDispatchOutboxStore>();
