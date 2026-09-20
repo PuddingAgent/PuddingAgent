@@ -99,9 +99,14 @@ describe('deriveTurnStatusFromProjection（canonical 派生）', () => {
   });
 
   it('retry 节点 → connecting（等待/重连模型）', () => {
+    // 消息必须用 canonical 形态：`LLM call retry N/M.`
+    // - 生产发射点：PuddingRuntime/Services/DirectLlmClient.cs:273
+    // - 解析正则：src/pages/chat/utils/modelRetry.ts（**故意严格**：模型思考/工具输出/用户正文
+    //   都可能合法包含 `retry` 一词，不能据此推断 LLM 网关状态）
+    // 本用例原先手写的 `LLM call retry（attempt 1/3）` 从来不是 canonical 形态，故不投影为节点。
     const projection = projectExecutionFlow([
       ev('subconscious_step', 1, {
-        message: 'LLM call retry（attempt 1/3）',
+        message: 'LLM call retry 2/3. upstream timeout',
       }),
     ]);
     expect(deriveTurnStatusFromProjection(projection)).toEqual({

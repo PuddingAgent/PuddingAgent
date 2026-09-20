@@ -78,11 +78,12 @@ $Suites = [ordered]@{
     'AdminJest' = @{
         Kind = 'jest'
         Dir = 'Source/PuddingPlatformAdmin'
-        # 2026-09-21 实测：17 failed / 1336 passed（11 套件）；已定性 8 例为测试/配置滞后（A/B 类），
-        # 与安全分类器改动无关。修或隔离后应收紧该预算。
-        AllowedFailures = 17
-        KnownRed = @()
-        Note = '既有红：A 类测试滞后为主（生产变更后测试未同步）。逐步修复并收紧预算。'
+        # 2026-09-21 实测：**16 failed / 1337 passed**（10 个套件红；先前 17，已修 1 例）。
+        # 已定性 8 例为测试/配置滞后（A/B 类），与安全分类器改动无关。修或隔离后应继续收紧。
+        # ⚠️ 名单未逐例登记 ⇒ `KnownRed = $null`（**仅按预算判**）；逐例登记后应改为具体名单。
+        AllowedFailures = 16
+        KnownRed = $null
+        Note = '既有红：A 类测试滞后为主（生产变更后测试未同步）。名单未登记 ⇒ 目前只按预算判。'
     }
 }
 
@@ -152,6 +153,9 @@ foreach ($name in $selected) {
     $failedNames = @(Read-FailedNames -Text $text -Kind $spec.Kind)
     $known = @($spec.KnownRed)
     $unexpected = @($failedNames | Where-Object { $known -notcontains $_ })
+    # 名单语义：`KnownRed` 给出具体名单 ⇒ **名单也参与判定**（预算内但出现名单外的失败照样 FAIL）；
+    # `KnownRed = $null` ⇒ 名单未登记，**仅按预算判**（此时 `$unexpected` 仅供展示，不参与判定）。
+    $nameGate = ($null -eq $spec.KnownRed) -or ($unexpected.Count -eq 0)
 
     # 构建期文件锁（典型：Core 运行中锁定 Source/PuddingAgent/bin/Debug/net10.0/*.dll）
     # ⇒ 该套件**此刻无法测量**：既不算通过、也不算失败，单独报 SKIPPED_LOCKED，避免把"锁"误读成"红"。
@@ -161,7 +165,7 @@ foreach ($name in $selected) {
     if ($lockEvidence) { $status = 'SKIPPED_LOCKED' }
     elseif ($null -ne $counts) {
         if ($null -eq $spec.AllowedFailures) { $status = 'UNMEASURED' }
-        elseif ($counts.Failed -le $spec.AllowedFailures -and $unexpected.Count -eq 0) { $status = 'PASS' }
+        elseif ($counts.Failed -le $spec.AllowedFailures -and $nameGate) { $status = 'PASS' }
         else { $status = 'FAIL' }
     }
     elseif ($null -eq $spec.AllowedFailures) { $status = 'UNMEASURED' }

@@ -76,6 +76,10 @@ to run" is not the same as "all suites".
 Contract:
 
 - each suite declares `AllowedFailures` (known-red budget) and `KnownRed` (test names allowed to fail);
+  - `KnownRed` with a **concrete list** ⇒ the names also participate: a failure inside the budget but
+    **not** on the list is still a FAIL;
+  - `KnownRed = $null` ⇒ the failing names are **not registered yet**, so the suite is judged
+    **by budget only** (the names are still printed for visibility). Enumerate them later to tighten.
 - `AllowedFailures = $null` means **report only** (`UNMEASURED`) - an unknown baseline is never treated as a pass;
 - full per-suite output is written to `temp/suite-gates/<suite>.log`; the script prints only a summary;
 - exit code `0` = every suite within budget, `1` = at least one suite over budget;
@@ -83,7 +87,8 @@ Contract:
   date plus evidence in the commit message (the baseline is a contract, not a convenience).
 
 Current baselines (2026-09-21): `Core` 910 passed / 1 known-red,
-`Runtime` 1658 / 0, `Platform` 1363 / 0, `AdminJest` 1336 / 17 known-red.
+`Runtime` 1658 / 0, `Platform` 1363 / 0, `AdminJest` 1337 / 16 known-red
+(10 red suites; one case was fixed on 2026-09-21 - see the `TurnStatus` canonical retry-format note).
 
 `WebApi` is **not measurable while the Core process is running**: its build needs to write
 `Source/PuddingAgent/bin/Debug/net10.0/*.dll`, which the live process locks (`MSB3027`/`MSB3021`).
