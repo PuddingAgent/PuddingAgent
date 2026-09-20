@@ -67,16 +67,6 @@ public sealed class SessionCompactTool : PuddingToolBase<SessionCompactArgs>
             ? "agent_manual_compaction"
             : $"agent_manual_compaction: {args.Reason}";
 
-        await EmitAsync(sessionId, workspaceId, SseEventTypes.ContextCompactionStarted, new
-        {
-            compactionId,
-            sessionId,
-            mode = "Manual",
-            level = "Full",
-            reason,
-            agentId = context.AgentInstanceId,
-        }, traceId, ct);
-
         try
         {
             // ── 压缩前冲洗：提取关键事实，防止信息丢失（失败不阻塞压缩）──
@@ -146,6 +136,7 @@ public sealed class SessionCompactTool : PuddingToolBase<SessionCompactArgs>
                 beforeTokens = result.BeforeTokens,
                 afterTokens = result.AfterTokens,
                 compactedMessageCount = result.CompactedMessageCount,
+                outcome = result.Outcome.ToString(),
             }, traceId, ct);
 
             _logger.LogInformation(
@@ -181,7 +172,7 @@ public sealed class SessionCompactTool : PuddingToolBase<SessionCompactArgs>
                 compactionId,
                 sessionId,
                 error = ex.Message,
-            }, traceId, ct);
+            }, traceId, CancellationToken.None);
 
             _logger.LogError(ex, "[SessionCompact] failed session={Session}", sessionId);
 

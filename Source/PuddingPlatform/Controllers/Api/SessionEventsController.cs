@@ -523,6 +523,7 @@ public class SessionEventsController : ControllerBase
             // 之前客户端靠「最后一个压缩事件是 started」推断，只会把 09-11 那类
             // 孤儿 started（无终态、进程已重启）在每次刷新后复活成「正在压缩」。
             compactionRunning = _compactionService.IsCompactionRunning(conversationId),
+            activeCompaction = _compactionService.GetActiveCompaction(conversationId),
         });
     }
 
@@ -636,6 +637,10 @@ public class SessionEventsController : ControllerBase
     /// 获取当前会话上下文健康状态。
     /// GET /api/sessions/{sessionId}/context-health
     /// </summary>
+    [HttpGet("{sessionId}/compaction-status")]
+    public IActionResult GetCompactionStatus(string sessionId)
+        => Ok(new { activeCompaction = _compactionService.GetActiveCompaction(sessionId) });
+
     [HttpGet("{sessionId}/context-health")]
     public async Task<ActionResult<ContextHealthSnapshot>> GetContextHealth(
         string sessionId,

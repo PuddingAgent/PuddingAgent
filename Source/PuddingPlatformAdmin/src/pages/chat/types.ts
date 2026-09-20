@@ -27,7 +27,16 @@ export type ChatMessageStatus =
   | 'cancelled';
 
 /** 统一时间线条目：思考 / 工具调用 / 工具结果 / 潜意识步骤 / 子代理 */
+export interface CompactionPresentation {
+  id: string;
+  state: 'checking' | 'running' | 'completed' | 'failed' | 'unknown' | 'skipped';
+  startedAt?: number;
+  verifiedAt?: number;
+  endedAt?: number;
+}
+
 export interface TimelineItem {
+  compaction?: CompactionPresentation;
   id: string;
   /** canonical 事件 ID（服务端事实；重放幂等与深链用）。 */
   eventId?: string;

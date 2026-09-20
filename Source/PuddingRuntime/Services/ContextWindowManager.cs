@@ -1042,28 +1042,6 @@ public sealed class ContextWindowManager
 
             compactionId = Guid.NewGuid().ToString("N");
 
-            await EmitCompactionLifecycleEventAsync(
-                sessionId,
-                workspaceId,
-                SseEventTypes.ContextCompactionStarted,
-                new
-                {
-                    compactionId,
-                    sessionId,
-                    mode = "Auto",
-                    level = "Full",
-                                        reason = ContextWindowConstants.AutoCompactionReason,
-                    state = health.State.ToString(),
-                    usageRatio = health.UsageRatio,
-                    usedTokens = health.UsedTokens,
-                    effectiveWindowTokens = health.EffectiveWindowTokens,
-                    remainingTokens = health.RemainingTokens,
-                    budget = maxTokenBudget,
-                    agentId,
-                },
-                traceId,
-                ct);
-
             await RecordAutoCompactionMetricAsync(
                 sessionId,
                 workspaceId,
@@ -1188,10 +1166,6 @@ public sealed class ContextWindowManager
 
             return applied;
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
         catch (Exception ex)
         {
             _logger.LogWarning(
@@ -1226,6 +1200,7 @@ public sealed class ContextWindowManager
                 },
                 traceId,
                 CancellationToken.None);
+            if (ex is OperationCanceledException && ct.IsCancellationRequested) throw;
             return false;
         }
     }

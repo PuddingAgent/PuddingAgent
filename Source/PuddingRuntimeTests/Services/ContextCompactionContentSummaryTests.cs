@@ -19,6 +19,44 @@ namespace PuddingRuntimeTests.Services;
 public sealed class ContextCompactionContentSummaryTests
 {
     [TestMethod]
+    public async Task RunningSnapshot_OnlyAdmittedWork_AndCancellationClearsIdentity()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = CreateOptions(connection);
+        await using var db = new MemoryDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var events = new List<string>();
+        var emitter = new Moq.Mock<ISessionCompactionEventEmitter>();
+        emitter.Setup(e => e.EmitAsync(Moq.It.IsAny<string>(), Moq.It.IsAny<string>(),
+            Moq.It.IsAny<string>(), Moq.It.IsAny<object>(), Moq.It.IsAny<string?>(), Moq.It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, object, string?, CancellationToken>((_, _, type, _, _, _) => events.Add(type))
+            .Returns(Task.CompletedTask);
+        ContextCompactionService? service = null;
+        var generator = new Moq.Mock<IContextCompactionSummaryGenerator>();
+        generator.Setup(g => g.GenerateSummaryAsync(Moq.It.IsAny<ContextCompactionSummaryRequest>(), Moq.It.IsAny<CancellationToken>()))
+            .Returns((ContextCompactionSummaryRequest _, CancellationToken _) =>
+            {
+                Assert.AreEqual("admitted-1", service!.GetActiveCompaction("session-1")!.CompactionId);
+                Assert.IsTrue(service.IsCompactionRunning("session-1"));
+                Assert.AreEqual(1, events.Count(e => e == "context.compaction.started"));
+                throw new OperationCanceledException("synthetic cancellation");
+            });
+        service = new ContextCompactionService(new TestMemoryDbContextFactory(options),
+            generator.Object, NullLogger<ContextCompactionService>.Instance, compactionEventEmitter: emitter.Object);
+        var request = new ContextCompactionRequest("workspace-1", "session-1", "agent-1",
+            ContextCompactionMode.Manual, ContextCompactionLevel.Full, "test", CompactionId: "admitted-1");
+        var skipped = await service.CompactAsync(request);
+        Assert.AreEqual(ContextCompactionOutcome.SkippedNoCandidate, skipped.Outcome);
+        Assert.IsNull(service.GetActiveCompaction("session-1"));
+        Assert.IsFalse(events.Contains("context.compaction.started"));
+        await SeedMessagesAsync(db, "session-1", messageCount: 10);
+        await Assert.ThrowsAsync<OperationCanceledException>(() => service.CompactAsync(request));
+        Assert.IsNull(service.GetActiveCompaction("session-1"));
+        Assert.IsFalse(service.IsCompactionRunning("session-1"));
+    }
+
+    [TestMethod]
     public async Task FullCompactAsync_WritesAgentContentSummary_WhenAgentIdIsPresent()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

@@ -3847,3 +3847,9 @@ FastRouter后续复测（2026-09-18）：服务商更新分组后，gpt-6-astra�
 ### 历史图片累计触发8张上限（2026-09-19）
 
 VisionPipelineException包含source=tool function_call_output、message#、planning-batch时，先查DirectLlm实际路由与同Turn canonical终态。累计8+1是最终请求图片份数，可能含历史及重复引用，不等于单次上传9张；请求可能在本地构造阶段就失败。当前8来自ADR-077产品策略，配置也被ToPolicy和Loader限制。多个栈不等于多次HTTP调用。详见[现场证据与限制来源](Docs/Reports/历史图片累计触发8图上限诊断-2026-09-19.md)。
+
+## 2026-09-20：压缩历史动画与当前执行判别
+
+先按 conversation_id 索引查 canonical 的 context.compaction.started/completed/failed，按 payload.compactionId 配对；requested 只是意图，旧 started 或缺失终态不代表当前仍执行。`GET /api/sessions/{id}/compaction-status`（正常认证）给出进程内 activeCompaction，重启后为 null。核对 loaded bundle hash，避免源码修复已存在但页面仍加载旧 bundle。UI 的状态待确认不是后端失败；超时不得制造持久化 failed 事件。
+
+环形用量应检查分母：总窗口占用 used/contextWindow 与压缩压力 used/effectiveWindow 不同；并核对 usageRecordedAtUtc 和 usageConfidence。后端故障诊断保留原始事件，不补造成功记录。详细证据与验收见 `Docs/Features/上下文压缩运行状态与界面设计.md`。

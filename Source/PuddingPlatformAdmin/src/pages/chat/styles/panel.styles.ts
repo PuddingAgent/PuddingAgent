@@ -225,77 +225,25 @@ export const usePanelStyles = createStyles(() => ({
     wordBreak: 'break-word' as const,
     whiteSpace: 'pre-wrap' as const,
   },
-  // ── 压缩卡（CompactionCard）──
-  // 为什么单独一套形态：压缩既不是工具调用也不是模型思考，通用活动卡只给一行标题，
-  // 用户既看不出它在做什么，也无法分辨「是不是真的在跑」（用户反馈 2026-09-19：
-  // 压缩卡片显示效果乱）。这里只表达运行/完成/未完成三种有事实支撑的状态，
-  // 用不定量扫描条表示「还在跑」，不伪造百分比进度，也不编造阶段名。
+  // One factual status strip; no animated text, fake percentage or loading toast.
   compactionCard: {
-    position: 'relative' as const,
-    width: '100%',
-    minWidth: 0,
-    boxSizing: 'border-box' as const,
-    border: '1px solid',
-    borderColor:
-      'color-mix(in srgb, var(--accent-purple) 12%, var(--earth-brown) 6%)',
-    borderLeft:
-      '2px solid color-mix(in srgb, var(--accent-purple) 34%, var(--earth-brown) 8%)',
-    borderRadius: 10,
-    borderTopLeftRadius: 5,
-    background:
-      'linear-gradient(135deg, color-mix(in srgb, var(--accent-purple) 3%, var(--soft-white)), var(--soft-white) 58%)',
-    boxShadow: '0 3px 12px rgba(63, 38, 95, 0.045), 0 1px 3px rgba(0,0,0,0.035)',
-
-    padding: '11px 14px 10px',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 8,
-    overflow: 'hidden' as const,
+    padding: '14px 16px', borderRadius: 12,
+    border: '1px solid color-mix(in srgb, var(--accent-purple) 18%, transparent)',
+    background: 'color-mix(in srgb, var(--accent-purple) 4%, var(--soft-white))',
+    display: 'flex', flexDirection: 'column' as const, gap: 8, minWidth: 0,
   },
-  compactionCardSuccess: {
-    borderLeftColor: 'color-mix(in srgb, #6f8f72 58%, var(--earth-brown))',
+  compactionHeader: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const },
+  compactionTitle: { flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--pudding-chat-text)' },
+  compactionBadge: { fontSize: 11, color: 'var(--pudding-chat-text-muted)', padding: '2px 7px', borderRadius: 5, background: 'color-mix(in srgb, var(--accent-purple) 8%, transparent)' },
+  compactionStaticIcon: { color: 'var(--pudding-chat-text-muted)', fontSize: 18 },
+  compactionActivityIcon: { color: 'var(--accent-purple)', fontSize: 18 },
+  compactionTrack: {
+    height: 2, overflow: 'hidden', borderRadius: 2,
+    background: 'color-mix(in srgb, var(--accent-purple) 10%, transparent)',
+    '& > span': { display: 'block', width: '28%', height: '100%', background: 'var(--accent-purple)', animation: 'compactionSweep 2s ease-in-out infinite' },
+    '@media (prefers-reduced-motion: reduce)': { '& > span': { animation: 'none', width: '100%', opacity: 0.4 } },
   },
-  compactionCardInterrupted: {
-    borderLeftColor: 'color-mix(in srgb, #c15f45 62%, var(--earth-brown))',
-  },
-  compactionHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    minWidth: 0,
-  },
-  /** 运行态流光文本（用户 2026-09-19：只要一个简约 loading + 流光效果）。
-   *  文字本身做渐变位移；不支持 background-clip:text 或降级动效时回落为静态弱色文本。 */
-  compactionShimmer: {
-    minWidth: 0,
-    flex: 1,
-    fontSize: 13,
-    fontWeight: 600,
-    lineHeight: '18px',
-    backgroundImage:
-      'linear-gradient(90deg, color-mix(in srgb, var(--pudding-chat-text-muted) 68%, transparent) 0%, color-mix(in srgb, var(--accent-purple) 82%, var(--earth-brown)) 48%, color-mix(in srgb, var(--pudding-chat-text-muted) 68%, transparent) 92%)',
-    backgroundSize: '220% 100%' as const,
-    backgroundClip: 'text' as const,
-    WebkitBackgroundClip: 'text' as const,
-    color: 'transparent' as const,
-    animation: 'compactionShimmer 1.9s linear infinite',
-    '@media (prefers-reduced-motion: reduce)': {
-      animation: 'none',
-      backgroundImage: 'none',
-      color: 'var(--pudding-chat-text-muted)',
-    },
-  },
-  /** 终态标记行：一条居中的分隔标记（「—— 已完成压缩 ✓ ——」）。 */
-  compactionMarker: {
-    minWidth: 0,
-    flex: 1,
-    textAlign: 'center' as const,
-    color: 'var(--pudding-chat-text-muted)',
-    fontSize: 12.5,
-    fontWeight: 500,
-    lineHeight: '18px',
-    letterSpacing: '0.02em',
-  },
+  '@keyframes compactionSweep': { '0%': { transform: 'translateX(-100%)' }, '100%': { transform: 'translateX(460%)' } },
   compactionElapsed: {
     flexShrink: 0,
     color: 'var(--pudding-chat-text-muted)',

@@ -188,12 +188,11 @@ public sealed class ContextWindowManagerTests
             agentId: "agent-1",
             CancellationToken.None);
 
-        Assert.AreEqual(1, compaction.EventCountAtCompact,
-            "context.compaction.started must be persisted before CompactAsync begins.");
+        Assert.AreEqual(0, compaction.EventCountAtCompact,
+            "Only the compaction service may announce admitted work, not its caller.");
         CollectionAssert.AreEqual(
             new[]
             {
-                SseEventTypes.ContextCompactionStarted,
                 SseEventTypes.ContextCompactionCompleted,
             },
             emitter.Events.Select(e => e.EventType).ToArray());
@@ -230,17 +229,14 @@ public sealed class ContextWindowManagerTests
         CollectionAssert.AreEqual(
             new[]
             {
-                SseEventTypes.ContextCompactionStarted,
                 SseEventTypes.ContextCompactionFailed,
             },
             emitter.Events.Select(e => e.EventType).ToArray());
 
-        var startedPayload = System.Text.Json.JsonSerializer.SerializeToElement(
-            emitter.Events.Single(e => e.EventType == SseEventTypes.ContextCompactionStarted).Payload);
         var failedPayload = System.Text.Json.JsonSerializer.SerializeToElement(
             emitter.Events.Single(e => e.EventType == SseEventTypes.ContextCompactionFailed).Payload);
 
-        var startedId = startedPayload.GetProperty("compactionId").GetString();
+        var startedId = compaction.CompactCalls.Single().CompactionId;
         Assert.IsFalse(string.IsNullOrWhiteSpace(startedId), "started event must carry a compactionId.");
 
         Assert.IsTrue(
@@ -2045,11 +2041,11 @@ public sealed class ContextWindowManagerTests
             ContextCompactionRequest request,
             CancellationToken ct = default)
         {
+            CompactCalls.Add(request);
             if (ThrowOnCompact is not null)
                 throw ThrowOnCompact;
 
             EventCountAtCompact = OnCompact?.Invoke();
-            CompactCalls.Add(request);
             return Task.FromResult(new ContextCompactionResult(
                 request.SessionId,
                 SummaryMessageId: "summary-1",

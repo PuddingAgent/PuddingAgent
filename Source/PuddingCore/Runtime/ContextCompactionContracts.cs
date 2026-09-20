@@ -218,6 +218,8 @@ public sealed record ContextCompactionMessage(
     string Role,
     string Content);
 
+public sealed record ActiveCompactionSnapshot(string CompactionId, DateTimeOffset StartedAt);
+
 public interface IContextCompactionService
 {
     /// <summary>
@@ -231,6 +233,8 @@ public interface IContextCompactionService
     /// 必须显式转发，不得依赖默认值（否则刷新后会漏棒真在跑的压缩）。
     /// </remarks>
     bool IsCompactionRunning(string sessionId) => false;
+
+    ActiveCompactionSnapshot? GetActiveCompaction(string sessionId) => null;
 
         Task<ContextHealthSnapshot> GetHealthAsync(
         string sessionId,

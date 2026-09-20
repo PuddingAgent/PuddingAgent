@@ -1,9 +1,11 @@
 import { act, renderHook } from '@testing-library/react';
 import { useRef, useState } from 'react';
+import { getCompactionStatus } from '@/services/platform/api';
 import { useCompaction } from './useCompaction';
 
 jest.mock('@/services/platform/api', () => ({
   compactSession: jest.fn(),
+  getCompactionStatus: jest.fn(() => new Promise(() => {})),
 }));
 
 const messageApi = {
@@ -49,8 +51,41 @@ function useCompactionHarness() {
 }
 
 describe('useCompaction', () => {
+  it('does not merge a different compaction into the active identity', () => {
+    const { result } = renderHook(() => useCompactionHarness());
+    act(() => result.current.handleCompactionLifecycleEvent(compactionEvent('context.compaction.started')));
+    act(() => result.current.handleCompactionLifecycleEvent(compactionEvent('context.compaction.completed', { compactionId: 'older' }), { replay: true, notify: false }));
+    expect(result.current.turns).toHaveLength(2);
+    expect(result.current.turns[0].assistant.status).toBe('executing');
+  });
+  it('server confirms exact identity, then stops animation when no work is running', async () => {
+    jest.useFakeTimers();
+    jest.mocked(getCompactionStatus).mockResolvedValueOnce({ activeCompaction: { compactionId: 'live', startedAt: new Date().toISOString() } }).mockResolvedValue({ activeCompaction: null });
+    const { result, unmount } = renderHook(() => useCompactionHarness());
+    await act(async () => {});
+    expect((result.current.turns[0] as any).assistant.timelineItems[0].compaction.state).toBe('running');
+    await act(async () => { jest.advanceTimersByTime(10_000); });
+    expect((result.current.turns[0] as any).assistant.timelineItems[0].compaction.state).toBe('unknown');
+    expect(result.current.loading).toBe(false);
+    unmount(); jest.useRealTimers();
+  });
+  it('late terminal repairs an unknown state after the server stopped', async () => {
+    jest.mocked(getCompactionStatus).mockResolvedValue({ activeCompaction: { compactionId: 'live', startedAt: new Date().toISOString() } });
+    const { result } = renderHook(() => useCompactionHarness());
+    await act(async () => {});
+    act(() => result.current.handleCompactionLifecycleEvent(compactionEvent('context.compaction.completed', { compactionId: 'live', occurredAt: new Date().toISOString() })));
+    expect((result.current.turns[0] as any).assistant.timelineItems[0].compaction.state).toBe('completed');
+  });
+  it('history replay cannot switch the current conversation', () => {
+    const { result } = renderHook(() => useCompactionHarness());
+    const switchSession = jest.fn();
+    act(() => result.current.bindCompactedSessionSwitch(switchSession));
+    act(() => result.current.handleCompactionLifecycleEvent(compactionEvent('context.compaction.completed', { newSessionId: 'old-successor' }), { replay: true }));
+    expect(switchSession).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(getCompactionStatus).mockImplementation(() => new Promise(() => {}));
   });
 
     it('projects compaction lifecycle events into one stable turn', () => {
@@ -70,7 +105,7 @@ describe('useCompaction', () => {
     );
     expect(result.current.turns).toHaveLength(1);
     expect(result.current.turns[0].assistant.status).toBe('executing');
-    expect(result.current.loading).toBe(true);
+    expect(result.current.loading).toBe(false);
 
     act(() =>
       result.current.handleCompactionLifecycleEvent(
@@ -144,7 +179,7 @@ describe('useCompaction', () => {
     act(() => result.current.handleCompactionLifecycleEvent(
       compactionEvent('context.compaction.started', { compactionId: 'compact-2' }),
     ));
-    expect(result.current.loading).toBe(true);
+    expect(result.current.loading).toBe(false);
     expect(result.current.turns).toHaveLength(2);
   });
 
@@ -177,7 +212,7 @@ describe('useCompaction', () => {
     // 真在跑的压缩：复活运行态是对的，但重放不弹 toast。
     expect(result.current.turns).toHaveLength(1);
     expect(result.current.turns[0].assistant.status).toBe('executing');
-    expect(result.current.loading).toBe(true);
+    expect(result.current.loading).toBe(false);
     expect(messageApi.loading).not.toHaveBeenCalled();
 
     act(() =>
@@ -190,7 +225,7 @@ describe('useCompaction', () => {
     expect(result.current.loading).toBe(false);
   });
 
-  it('live started still lights up and shows the loading toast', () => {
+  it('live start awaits authority without changing chat loading or showing a toast', () => {
     const { result } = renderHook(() => useCompactionHarness());
 
     act(() =>
@@ -201,10 +236,8 @@ describe('useCompaction', () => {
 
     expect(result.current.turns).toHaveLength(1);
     expect(result.current.turns[0].assistant.status).toBe('executing');
-    expect(result.current.loading).toBe(true);
-    expect(messageApi.loading).toHaveBeenCalledWith(
-      expect.objectContaining({ key: 'compaction-status', duration: 0 }),
-    );
+    expect(result.current.loading).toBe(false);
+    expect(messageApi.loading).not.toHaveBeenCalled();
   });
 
   it('replay 帧上的新鲜 started 仍然点亮（短暂断线期间真的在压缩）', () => {
@@ -225,7 +258,7 @@ describe('useCompaction', () => {
       );
       expect(result.current.turns).toHaveLength(1);
       expect(result.current.turns[0].assistant.status).toBe('executing');
-      expect(result.current.loading).toBe(true);
+      expect(result.current.loading).toBe(false);
     } finally {
       dateSpy.mockRestore();
     }
@@ -274,7 +307,7 @@ describe('useCompaction', () => {
           compactionEvent('context.compaction.started'),
         ),
       );
-      expect(result.current.loading).toBe(true);
+      expect(result.current.loading).toBe(false);
 
       // 终态事件丢失：TTL 超时后必须收敛，禁止 duration:0 的 toast 永久悬挂。
       act(() => {
@@ -282,9 +315,9 @@ describe('useCompaction', () => {
       });
 
       expect(result.current.turns).toHaveLength(1);
-      expect(result.current.turns[0].assistant.status).toBe('error');
+      expect(result.current.turns[0].assistant.status).toBe('cancelled');
       expect(result.current.loading).toBe(false);
-      expect(result.current.compactionStatus).toBe('上次压缩：未完成');
+      expect(result.current.compactionStatus).toBe('压缩状态待确认');
       expect(messageApi.destroy).toHaveBeenCalledWith('compaction-status');
     } finally {
       jest.useRealTimers();

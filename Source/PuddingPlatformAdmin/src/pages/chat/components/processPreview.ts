@@ -30,6 +30,7 @@ export interface ProcessMetrics {
 }
 
 export interface CurrentRunActivity {
+  compaction?: import('../types').CompactionPresentation;
   kind: 'thinking' | 'tool' | 'subagent' | 'system';
   title: string;
   subject?: string;
@@ -712,6 +713,13 @@ export const getCurrentRunActivity = (
     };
   }
 
+  if (current.item.compaction || current.item.status === 'compacting') {
+    const compact = current.item.compaction ?? { id: current.item.id, state: 'unknown' as const };
+    return { kind: 'system', variant: 'compaction', compaction: compact,
+      title: '上下文整理', status: compact.state === 'completed' || compact.state === 'skipped' ? 'completed' : compact.state === 'failed' ? 'failed' : 'running',
+      startedAt: compact.startedAt, updatedAt: compact.endedAt,
+      outputPreview: current.item.message };
+  }
   // 此前直接把 status 枚举当标题渲染，界面出现字面量 `compacting`
   // （用户反馈 2026-09-19：压缩卡片显示效果乱）。这里统一映射为文案。
   const subconsciousTitle =

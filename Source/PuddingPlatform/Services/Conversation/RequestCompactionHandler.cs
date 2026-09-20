@@ -48,24 +48,6 @@ public sealed class RequestCompactionHandler(
                 command.AgentId,
                 ct);
 
-            await AppendLifecycleEventAsync(
-                command.ConversationId,
-                command.WorkspaceId,
-                command.CompactionId,
-                ConversationEventTypes.ContextCompactionStarted,
-                new
-                {
-                    compactionId = command.CompactionId,
-                    sessionId = command.ConversationId,
-                    mode = ContextCompactionMode.Manual.ToString(),
-                    level = command.Level.ToString(),
-                    reason = command.Reason,
-                    agentId = command.AgentId,
-                },
-                "started",
-                command.TraceId,
-                ct);
-
             var compactRequest = new ContextCompactionRequest(
                 command.WorkspaceId,
                 command.ConversationId,
@@ -156,10 +138,6 @@ public sealed class RequestCompactionHandler(
                 completedCompaction,
                 next.ConversationId,
                 next.Title);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
         }
         catch (Exception ex)
         {

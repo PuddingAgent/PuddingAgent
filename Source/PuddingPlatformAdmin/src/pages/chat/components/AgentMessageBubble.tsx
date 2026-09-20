@@ -473,7 +473,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   // thinking/tool/delegation have canonical compact rows below (timeline). The
   // activity card remains only for system-stage facts without a dedicated row.
   const shouldShowProcessActivity = Boolean(
-    isRunActive && processActivity && processActivity.kind === 'system',
+    processActivity && processActivity.kind === 'system' && (isRunActive || processActivity.variant === 'compaction'),
   );
   // 思维链数据已在时间线 memo 中提取（reasoningLines）；这里只保留 TurnStatus 派生。
   // CU-05 + 行为链 P2: TurnStatus —— 有 canonical 投影时直接消费投影派生（路径 B），
@@ -581,6 +581,10 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
   const hideActions = React.useCallback(() => {
     setShowActions(false);
   }, []);
+
+  if (turnId?.startsWith('compaction:') && processActivity?.variant === 'compaction') {
+    return <CompactionCard activity={processActivity} />;
+  }
 
   return (
     <div

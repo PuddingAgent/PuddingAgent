@@ -78,6 +78,7 @@ describe('useSessionEventReplay', () => {
     jest.mocked(getConversationBootstrap).mockResolvedValue({
       turns: [],
       snapshotCursor: 10,
+      activeCompaction: { compactionId: 'compact-2', startedAt: new Date().toISOString() },
       lifecycleEvents: [
         {
           type: 'context.compaction.started',

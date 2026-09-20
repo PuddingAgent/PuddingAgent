@@ -20,7 +20,6 @@ import {
   getSessionEventSequenceNum,
   HISTORICAL_REPLAY_TERMINAL_EVENTS,
   resolveActiveSessionReplayFromSequence,
-  resolveRunningCompactionId,
   shouldHydrateSessionEventReplay,
   shouldRunSessionReplayCompensation,
 } from '../utils/chatStateUtils';
@@ -152,10 +151,7 @@ export function useSessionEventReplay({
         // 其余历史 started 不得在刷新后复活成「正在压缩上下文」。
         // 重放判活：服务端 compactionRunning 为权威；为 false 时任何历史 started 都是孤儿
         //（终态丢失 / 进程已重启），不得在刷新后复活成「正在压缩上下文」。
-        const runningCompactionId = resolveRunningCompactionId(
-          bootstrap.lifecycleEvents ?? [],
-          bootstrap.compactionRunning,
-        );
+        const runningCompactionId = bootstrap.activeCompaction?.compactionId ?? null;
         for (const rawEvent of bootstrap.lifecycleEvents ?? []) {
           const event = normalizeSessionEvent(rawEvent);
           if (!event) continue;
@@ -164,6 +160,7 @@ export function useSessionEventReplay({
             notify: false,
             replay: true,
             runningCompactionId,
+            verifiedAt: runningCompactionId ? Date.now() : undefined,
           });
         }
         let snapshotRuns: SubAgentRunMap = {};

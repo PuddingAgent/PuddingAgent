@@ -2122,6 +2122,7 @@ export interface ConversationBootstrapResponse {
   lifecycleEvents: unknown[];
   /** 服务端权威的压缩运行态（会话预初始化）。缺失 = 旧后端，客户端退回事件推断。 */
   compactionRunning?: boolean;
+  activeCompaction?: ActiveCompactionSnapshot | null;
   subAgentEvents: unknown[];
   snapshotCursor: number;
   hasMoreHistory: boolean;
@@ -2600,6 +2601,7 @@ export interface ContextHealthSnapshot {
   usageSource?: string;
   /** provider_reported = 可直接采信；estimated = 估算值。 */
   usageConfidence?: string;
+  usageRecordedAtUtc?: string | null;
 }
 
 export interface CompactSessionRequest {
@@ -2611,6 +2613,7 @@ export interface CompactSessionRequest {
 }
 
 export interface ContextCompactionResult {
+  outcome?: string;
   sessionId: string;
   summaryMessageId: string;
   mode: ContextCompactionMode;
@@ -4329,4 +4332,12 @@ export async function revokeAccessToken(
     `/api/admin/access-tokens/${encodeURIComponent(tokenId)}/revoke`,
     { method: 'POST', data: req },
   );
+}
+
+export interface ActiveCompactionSnapshot {
+  compactionId: string;
+  startedAt: string;
+}
+export async function getCompactionStatus(sessionId: string): Promise<{ activeCompaction: ActiveCompactionSnapshot | null }> {
+  return request(`/api/sessions/${encodeURIComponent(sessionId)}/compaction-status`, { method: 'GET' });
 }

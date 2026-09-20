@@ -313,8 +313,12 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const [imageDragActive, setImageDragActive] = useState(false);
   const dragDepthRef = useRef(0);
 
+  const contextRequestRef = useRef(0);
+  const contextSessionRef = useRef(sessionId);
+  contextSessionRef.current = sessionId;
   const refreshContextHealth = useCallback(async () => {
     if (!sessionId) return;
+    const requestId = ++contextRequestRef.current;
     setContextHealthLoading(true);
     setContextHealthError(null);
     try {
@@ -323,6 +327,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
         getCacheDiagnostics(sessionId),
       ]);
 
+      if (requestId !== contextRequestRef.current || contextSessionRef.current !== sessionId) return;
       if (contextResult.status === 'fulfilled') {
         setContextHealth(contextResult.value);
       } else {
@@ -341,7 +346,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
         getRequestErrorMessage(error, '上下文窗口刷新失败'),
       );
     } finally {
-      setContextHealthLoading(false);
+      if (requestId === contextRequestRef.current && contextSessionRef.current === sessionId) setContextHealthLoading(false);
     }
   }, [sessionId]);
 
@@ -359,6 +364,10 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     if (status !== 'completed') return;
     void refreshContextHealth();
   }, [status, refreshContextHealth]);
+  useEffect(() => {
+    if (!compactionStatus?.startsWith('上次压缩：')) return;
+    void refreshContextHealth();
+  }, [compactionStatus, refreshContextHealth]);
   const voiceAdapterRef = useRef(createDashScopeVoiceInputAdapter());
   const composerActive =
     composerFocused ||
@@ -943,6 +952,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                     }
                   : undefined
               }
+              usageRecordedAt={contextHealth?.usageRecordedAtUtc}
               usageSource={contextHealth?.usageSource}
               usageConfidence={contextHealth?.usageConfidence}
               tMessageCount={contextHealth?.messageCount}

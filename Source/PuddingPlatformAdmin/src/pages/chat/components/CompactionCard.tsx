@@ -1,107 +1,48 @@
-// ── CompactionCard：上下文压缩专用卡（运行 / 完成 / 未完成）──
-// 设计（用户 2026-09-19 第二次反馈：旧形态「并不好看」）：收敛到一行表达 ——
-//   · 运行中：一行流光文本「正在压缩上下文…」+ 右侧「已运行 Xs」；
-//   · 完成：一行居中标记「—— 已完成压缩 ✓ ——」+ 右侧「耗时 Xs」；
-//   · 未完成：居中标记「—— 压缩未完成 ——」+ 原样露出原因 + 一句可操作提示。
-// 不伪造百分比进度、不编造前端无从证实的阶段名；终态耗时取自事件时间，刷新不归零
-// 也不继续走；流光动画在 prefers-reduced-motion 下回落为静态弱色文本。
 import React from 'react';
 import { useChatMessageStyles } from '../styles/messageStyleContext';
 import type { CurrentRunActivity } from './processPreview';
 
-/** 仍算「在跑」的活动状态；其余一律视为终态。 */
-const RUNNING_STATUSES = new Set([
-  'running',
-  'waiting_output',
-  'processing_result',
-]);
-
-const RUNNING_TEXT = '正在压缩上下文…';
-const SUCCESS_MARKER = '—— 已完成压缩 ✓ ——';
-const INTERRUPTED_MARKER = '—— 压缩未完成 ——';
-const INTERRUPTED_HINT = '没有收到终态记录，本轮压缩已结束；需要时可手动重新压缩';
-
-const formatElapsed = (ms: number): string => {
+export const COMPACTION_VERIFICATION_LEASE_MS = 30_000;
+const elapsed = (ms: number) => {
   const seconds = Math.max(0, Math.floor(ms / 1000));
-  return seconds < 60
-    ? `${seconds}s`
-    : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
 };
 
-const CompactionCard: React.FC<{ activity: CurrentRunActivity }> = ({
-  activity,
-}) => {
+/** Animation requires a recent server confirmation, never a historical start. */
+const CompactionCard: React.FC<{ activity: CurrentRunActivity }> = ({ activity }) => {
   const { styles } = useChatMessageStyles();
-  const running = RUNNING_STATUSES.has(activity.status);
-  const interrupted = activity.status === 'failed';
-  const [now, setNow] = React.useState(() => Date.now());
-
-  // 只有运行中才 tick：终态耗时取自事件时间，刷新不归零也不继续走。
+  const compact = activity.compaction;
+  const [now, setNow] = React.useState(Date.now);
+  const running = compact?.state === 'running' && compact.verifiedAt !== undefined &&
+    now - compact.verifiedAt < COMPACTION_VERIFICATION_LEASE_MS;
+  const state = compact?.state === 'running' && !running ? 'unknown' : compact?.state ?? 'unknown';
   React.useEffect(() => {
-    if (!running) return undefined;
+    if (!running) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [running]);
-
-  const startedAt = activity.startedAt;
-  const elapsedMs = startedAt
-    ? Math.max(
-        0,
-        (running ? now : (activity.updatedAt ?? startedAt)) - startedAt,
-      )
-    : null;
-
+  const labels = { running: '正在整理上下文', checking: '压缩请求已提交',
+    completed: '上下文已整理', skipped: '本次未执行压缩', failed: '上下文整理失败', unknown: '压缩状态待确认' };
+  const hint = running ? '正在保留关键信息并整理历史内容，请稍候。'
+    : state === 'checking' ? '正在检查是否需要整理上下文。'
+    : state === 'unknown' ? '目前无法确认执行状态，连接恢复后会自动更新，无需重复提交。'
+    : state === 'failed' ? activity.outputPreview
+    : state === 'skipped' ? '候选内容、冷却或收益检查未通过，上下文保持原状。'
+    : state === 'completed' ? activity.outputPreview : undefined;
+  const duration = compact?.startedAt !== undefined && (running || compact.endedAt !== undefined)
+    ? (running ? now : compact.endedAt!) - compact.startedAt : undefined;
   return (
-    <div
-      className={`${styles.compactionCard} ${
-        running
-          ? ''
-          : interrupted
-            ? styles.compactionCardInterrupted
-            : styles.compactionCardSuccess
-      }`}
-      data-testid="compaction-card"
-      data-state={
-        running ? 'running' : interrupted ? 'interrupted' : 'completed'
-      }
-      role="status"
-      aria-live="polite"
-    >
+    <section className={styles.compactionCard} data-testid="compaction-card" data-state={state} role="status" aria-live="polite" aria-busy={running}>
       <div className={styles.compactionHeader}>
-        {running ? (
-          <span
-            className={styles.compactionShimmer}
-            data-testid="compaction-shimmer"
-          >
-            {RUNNING_TEXT}
-          </span>
-        ) : (
-          <span
-            className={styles.compactionMarker}
-            data-testid="compaction-marker"
-          >
-            {interrupted ? INTERRUPTED_MARKER : SUCCESS_MARKER}
-          </span>
-        )}
-        {elapsedMs !== null && (
-          <span
-            className={styles.compactionElapsed}
-            data-testid="compaction-elapsed"
-          >
-            {running ? '已运行' : '耗时'} {formatElapsed(elapsedMs)}
-          </span>
-        )}
+        <span className={running ? styles.compactionActivityIcon : styles.compactionStaticIcon} aria-hidden="true">{state === 'completed' ? '✓' : '▤'}</span>
+        <span className={styles.compactionTitle}>{labels[state]}</span>
+        {duration !== undefined && <span className={styles.compactionElapsed} data-testid="compaction-elapsed">{running ? '已用时' : '耗时'} {elapsed(duration)}</span>}
+        <span className={styles.compactionBadge}>{running ? '执行中' : state === 'checking' ? '等待确认' : '记录'}</span>
       </div>
-      {interrupted && (
-        <>
-          {activity.outputPreview && (
-            <div className={styles.compactionReason}>{activity.outputPreview}</div>
-          )}
-          <div className={styles.compactionHint}>{INTERRUPTED_HINT}</div>
-        </>
-      )}
-    </div>
+      {hint && <div className={styles.compactionHint}>{hint}</div>}
+      {running && <div className={styles.compactionTrack} data-testid="compaction-animation"><span /></div>}
+      {!running && compact?.endedAt !== undefined && <time className={styles.compactionElapsed}>{new Date(compact.endedAt).toLocaleString('zh-CN', { hour12: false })}</time>}
+    </section>
   );
 };
-
 export default CompactionCard;

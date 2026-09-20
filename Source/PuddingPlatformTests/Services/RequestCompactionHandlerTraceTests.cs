@@ -16,6 +16,21 @@ namespace PuddingPlatformTests.Services;
 public sealed class RequestCompactionHandlerTraceTests
 {
     [TestMethod]
+    public async Task Cancellation_PersistsTerminalBeforeRethrowing()
+    {
+        var store = new RecordingConversationEventStore();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var handler = CreateHandler(store, new StubCompactionService
+        {
+            ThrowOnCompact = new OperationCanceledException(cts.Token),
+        });
+        await Assert.ThrowsAsync<OperationCanceledException>(() => handler.HandleAsync(
+            new RequestCompactionCommand("conversation-1", "default", "agent-1",
+                ContextCompactionLevel.Full, "manual", "cancelled-1", "admin"), cts.Token));
+        Assert.AreEqual(1, store.Appended.Count(e => e.Event.Type == ConversationEventTypes.ContextCompactionFailed));
+    }
+    [TestMethod]
     public async Task HandleAsync_PreservesTraceId_AcrossStartedCompletedAndSuccessorEvents()
     {
         var store = new RecordingConversationEventStore();
@@ -39,8 +54,7 @@ public sealed class RequestCompactionHandlerTraceTests
         Assert.AreEqual("successor-conversation-1", result.NewConversationId);
         Assert.AreEqual("trace-abc-123", compaction.LastRequest!.TraceId);
 
-        var started = store.Appended.Single(
-            item => item.Event.Type == ConversationEventTypes.ContextCompactionStarted);
+        Assert.IsFalse(store.Appended.Any(item => item.Event.Type == ConversationEventTypes.ContextCompactionStarted));
         var completedSource = store.Appended.Single(
             item => item.Event.Type == ConversationEventTypes.ContextCompactionCompleted
                     && item.ConversationId == "conversation-1");
@@ -48,7 +62,6 @@ public sealed class RequestCompactionHandlerTraceTests
             item => item.Event.Type == ConversationEventTypes.ContextCompactionCompleted
                     && item.ConversationId == "successor-conversation-1");
 
-        Assert.AreEqual("trace-abc-123", started.Event.TraceId);
         Assert.AreEqual("trace-abc-123", completedSource.Event.TraceId);
         Assert.AreEqual("trace-abc-123", completedSuccessor.Event.TraceId);
 
@@ -83,14 +96,12 @@ public sealed class RequestCompactionHandlerTraceTests
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => handler.HandleAsync(command, CancellationToken.None));
 
-        var started = store.Appended.Single(
-            item => item.Event.Type == ConversationEventTypes.ContextCompactionStarted);
+        Assert.IsFalse(store.Appended.Any(item => item.Event.Type == ConversationEventTypes.ContextCompactionStarted));
         var failed = store.Appended.Single(
             item => item.Event.Type == ConversationEventTypes.ContextCompactionFailed);
 
-        Assert.AreEqual("trace-fail-1", started.Event.TraceId);
         Assert.AreEqual("trace-fail-1", failed.Event.TraceId);
-        Assert.AreEqual(2, store.Appended.Count);
+        Assert.AreEqual(1, store.Appended.Count);
     }
 
     [TestMethod]
@@ -140,7 +151,7 @@ public sealed class RequestCompactionHandlerTraceTests
         await handler.HandleAsync(command, CancellationToken.None);
         await handler.HandleAsync(command, CancellationToken.None);
 
-        Assert.AreEqual(6, store.Appended.Count);
+        Assert.AreEqual(4, store.Appended.Count);
         Assert.IsTrue(
             store.Appended.All(item => item.Event.TraceId == "trace-stable-1"),
             "TraceId 必须原样透传，Handler 不得在重复调用时重生成。");

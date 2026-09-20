@@ -73,7 +73,11 @@ public sealed class ContextCompactionService : IContextCompactionService
     }
 
     /// <summary>压缩运行态：直接来自协调器的单飞锁持有状态（见 IContextCompactionService）。</summary>
-    public bool IsCompactionRunning(string sessionId) => _coordinator.IsRunning(sessionId);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ActiveCompactionSnapshot> _activeCompactions = new();
+
+    public bool IsCompactionRunning(string sessionId) => _activeCompactions.ContainsKey(sessionId);
+    public ActiveCompactionSnapshot? GetActiveCompaction(string sessionId)
+        => _activeCompactions.TryGetValue(sessionId, out var active) ? active : null;
 
     public async Task<ContextHealthSnapshot> GetHealthAsync(
         string sessionId,
@@ -367,6 +371,8 @@ public sealed class ContextCompactionService : IContextCompactionService
                 Outcome: ContextCompactionOutcome.SkippedCooldown);
         }
 
+        try
+        {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var startedAtUtc = DateTimeOffset.UtcNow;
 
@@ -501,6 +507,17 @@ public sealed class ContextCompactionService : IContextCompactionService
             "[ContextCompaction:Phase] selectWindow session={SessionId} windowCount={WindowCount} firstSeq={FirstSeq} lastSeq={LastSeq} omitted={Omitted}",
             request.SessionId, summaryInput.Messages.Count, summaryInput.FirstIncludedSequence, summaryInput.LastIncludedSequence, summaryInput.OmittedBeforeCount);
 
+        // Only admitted work may advertise a running compaction. Cooldown, empty
+        // candidates and no-gain suppression above never start an animation.
+        var active = new ActiveCompactionSnapshot(compactionId, DateTimeOffset.UtcNow);
+        _activeCompactions[request.SessionId] = active;
+        if (_compactionEventEmitter is not null)
+            await _compactionEventEmitter.EmitAsync(request.SessionId, request.WorkspaceId,
+                "context.compaction.started", new
+                {
+                    compactionId, sessionId = request.SessionId, mode = request.Mode.ToString(),
+                    reason = request.Reason, startedAt = active.StartedAt,
+                }, request.TraceId, ct);
         var summaryStart = sw.ElapsedMilliseconds;
         
         // 如果有 Agent 工作总结，记录日志
@@ -892,6 +909,11 @@ public sealed class ContextCompactionService : IContextCompactionService
                .Concat(verbatimEvictionClones)
                .Any(m =>
                    !string.Equals(m.ContentType, ContextWindowConstants.CompactSummaryContentType, StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            _activeCompactions.TryRemove(request.SessionId, out _);
+        }
     }
 
     /// <summary>

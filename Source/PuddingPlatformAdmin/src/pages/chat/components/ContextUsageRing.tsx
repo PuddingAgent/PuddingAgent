@@ -9,7 +9,6 @@
 import { Popover, Tooltip } from 'antd';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useChatStyles } from '../styles';
-import { COMPACTION_RUNNING_LABEL } from '../hooks/useCompaction';
 
 export interface ContextUsageRingProps {
   /** 模型上下文窗口总量；0/缺失 = 未配置（不伪造数值）。 */
@@ -31,6 +30,7 @@ export interface ContextUsageRingProps {
   /** 请求组装时的分层归因；缺失或全 0 时回落单色条。 */
   tBreakdown?: ContextUsageBreakdown | null;
   /** 用量数据来源/置信度：面板据此显示「数据来源」，让百分比可判断可信度。 */
+  usageRecordedAt?: string | null;
   usageSource?: string | null;
   usageConfidence?: string | null;
   /** 会话消息数：0 = 会话尚未开始，不展示任何用量（方案 2）。 */
@@ -117,6 +117,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   tPct,
   tEffective,
   tBreakdown,
+  usageRecordedAt,
   usageSource,
   usageConfidence,
   tMessageCount,
@@ -130,7 +131,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   const { styles } = useChatStyles();
   const [open, setOpen] = useState(false);
   const configured = tLimit > 0;
-  const pct = clampPct(tPct);
+  const pct = clampPct(tLimit > 0 ? (tUsed / tLimit) * 100 : tPct);
   // 方案 2（用户 2026-09-19）：无有效数据时不给错的信息。
   //  - 会话还没任何消息 → 视为「未开始」，不展示用量；
   //  - confidence 不是 provider_reported（本地估算 / DB 回退）→ 只能标为估算值，
@@ -139,8 +140,6 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
   // 只看 messageCount 会把「后端回退源未回填该字段」误报为未开始（用户反馈 2026-09-19）。
   const notStarted = tMessageCount === 0 && tUsed === 0;
   const authoritative =
-    usageConfidence === undefined ||
-    usageConfidence === null ||
     usageConfidence === 'provider_reported';
   const color = contextUsageColor(pct);
   const dash = configured ? (pct / 100) * CIRCUMFERENCE : 0;
@@ -177,7 +176,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
 
   const hoverSummary =
     configured && !notStarted
-      ? `${authoritative ? '' : '≈'}${pct.toFixed(1)}% · ${formatTokens(tUsed)} / ${formatTokens(tLimit)} 上下文已使用${authoritative ? '' : '（估算）'}`
+      ? `${authoritative ? '' : '≈'}${pct.toFixed(1)}% · ${formatTokens(tUsed)} / ${formatTokens(tLimit)} 上下文已使用（非压缩进度）${authoritative ? '' : '（估算）'}`
       : error
         ? `上下文用量获取失败：${error}`
         : notStarted
@@ -193,7 +192,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
     () => (
       <div className={styles.contextUsagePanel} data-testid="context-usage-panel">
         <div className={styles.contextUsagePanelHeader}>
-          <span className={styles.contextUsagePanelTitle}>上下文用量</span>
+          <span className={styles.contextUsagePanelTitle}>上下文用量 · 非压缩进度</span>
           <button
             type="button"
             className={styles.contextUsagePanelClose}
@@ -320,6 +319,10 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
               {/* 数据来源：同一面板的百分比在不同回退源之间口径并不一致（DB 回退按
                   TotalTokens 含 completion，本地估算走字典），不标来源则「86% 但
                   剩余 0」这类组合无法判断。 */}
+              {usageRecordedAt && <div className={styles.contextUsagePanelRow}>
+                <span className={styles.contextUsagePanelLabel}>用量采样时间</span>
+                <span className={styles.contextUsagePanelValue}>{new Date(usageRecordedAt).toLocaleString('zh-CN', { hour12: false })}</span>
+              </div>}
               {(usageConfidence || usageSource) && (
                 <div className={styles.contextUsagePanelRow}>
                   <span className={styles.contextUsagePanelLabel}>数据来源</span>
@@ -355,13 +358,6 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
                   <span className={styles.contextUsagePanelValue}>
                     {/* 只有真在压缩时才渲染呼吸点；「上次压缩 / 压缩失败」是终态事实，
                         不加任何动效，避免被读成「正在进行」（用户反馈 2026-09-19）。 */}
-                    {compactionStatus === COMPACTION_RUNNING_LABEL && (
-                      <span
-                        className={styles.compactionStatusDot}
-                        data-testid="compaction-status-dot"
-                        aria-hidden="true"
-                      />
-                    )}
                     {compactionStatus}
                   </span>
                 </div>
@@ -419,6 +415,7 @@ const ContextUsageRing: React.FC<ContextUsageRingProps> = ({
       tLimit,
       tUsed,
       usageConfidence,
+      usageRecordedAt,
       usageSource,
     ],
   );

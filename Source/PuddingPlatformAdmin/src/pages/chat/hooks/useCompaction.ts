@@ -5,6 +5,7 @@ import {
   type AdminChatStreamEvent,
   type ContextCompactionResult,
   compactSession,
+  getCompactionStatus,
 } from '@/services/platform/api';
 import type { AssistantStatus, ChatTurn } from '../types';
 import {
@@ -59,7 +60,7 @@ const formatCompactionTime = (timestamp?: number): string =>
 export const COMPACTION_RUNNING_LABEL = '正在压缩上下文…';
 
 /**
- * 压缩活性 TTL：点亮运行态后若终态事件迟迟不来，超时即收敛为「未完成」终态。
+ * 压缩请求兜底 TTL：长期没有状态确认时，收敛为「状态待确认」，不推断后端失败。
  * 为什么需要：started 事件没有任何活性保证（重放孤儿/终态丢失都会留下僵尸），
  * 禁止「duration:0 弹了就不管」。
  */
@@ -72,6 +73,7 @@ export interface CompactionLifecycleOptions {
   replay?: boolean;
   /** 重放判活：仅当 started 的 compactionId 与它一致时才点亮运行态。 */
   runningCompactionId?: string | null;
+  verifiedAt?: number;
 }
 
 /**
@@ -98,6 +100,8 @@ export function useCompaction({
     typeof setTimeout
   > | null>(null);
   const compactedSessionSwitchRef = useRef<CompactedSessionSwitch>(() => {});
+  const lifecycleEpochRef = useRef(0);
+  const [checkVersion, setCheckVersion] = useState(0);
   const lastManualSwitchAtRef = useRef<number>(0);
   /** P0#3：供 ComposerContextBar 展示的压缩状态文案 */
   const [compactionStatus, setCompactionStatus] = useState<string | null>(null);
@@ -119,7 +123,7 @@ export function useCompaction({
       result?: ContextCompactionResult,
       stableTurnId?: string,
       placeAtStart = false,
-      facts?: { eventId?: string; occurredAtMs?: number },
+      facts?: { eventId?: string; occurredAtMs?: number; verifiedAt?: number },
     ) => {
       // 事件驱动路径使用 canonical 事实；手动压缩命令为客户端乐观身份（无服务端事实）。
       const now = facts?.occurredAtMs ?? Date.now();
@@ -148,6 +152,7 @@ export function useCompaction({
             {
               id: eventId ? `item:${eventId}` : createId(),
               eventId,
+              compaction: { id: turnId, state: assistantStatus === 'executing' ? 'checking' : assistantStatus === 'error' ? 'failed' : 'completed', startedAt: undefined },
               type: 'subconscious_step',
               status:
                 assistantStatus === 'error'
@@ -191,7 +196,7 @@ export function useCompaction({
       assistantStatus: AssistantStatus,
       message: string,
       result?: ContextCompactionResult,
-      facts?: { eventId?: string; occurredAtMs?: number },
+      facts?: { eventId?: string; occurredAtMs?: number; verifiedAt?: number },
     ) => {
       const nextTurns = turnsRef.current.map((turn) => {
         if (turn.turnId !== turnId) return turn;
@@ -217,6 +222,13 @@ export function useCompaction({
             (compactItemIndex >= 0
               ? items[compactItemIndex].eventId
               : undefined),
+          compaction: {
+            id: turnId,
+            state: (assistantStatus === 'cancelled' ? 'unknown' : assistantStatus === 'error' ? 'failed' : assistantStatus === 'success' ? (result?.outcome && result.outcome !== 'Applied' ? 'skipped' : 'completed') : facts?.verifiedAt ? 'running' : 'checking') as import('../types').CompactionPresentation['state'],
+            startedAt: assistantStatus === 'executing' ? (items[compactItemIndex]?.compaction?.startedAt ?? facts?.occurredAtMs) : items[compactItemIndex]?.compaction?.startedAt,
+            verifiedAt: facts?.verifiedAt,
+            endedAt: assistantStatus === 'success' || assistantStatus === 'error' ? facts?.occurredAtMs : undefined,
+          },
           type: 'subconscious_step' as const,
           status: itemStatus,
           message,
@@ -237,7 +249,7 @@ export function useCompaction({
             isStreaming:
               assistantStatus === 'executing' || assistantStatus === 'thinking',
             renderMode: 'structured' as const,
-            answerMarkdown: result ? formatCompactAnswer(result) : message,
+            answerMarkdown: '',
             timelineItems: nextItems,
           },
         };
@@ -264,7 +276,7 @@ export function useCompaction({
   }, []);
 
   /**
-   * 活性兜底：把仍在 'executing' 的压缩 turn 收敛为「未完成」终态。
+   * 活性兜底：把未经确认的执行投影收敛为 unknown，不制造后端终态。
    * 为什么需要：started 没有活性保证——重放孤儿 started 或终态事件丢失都会留下
    * 「永远在压缩」的僵尸 turn 和永不消失的 loading toast，这里是唯一能保证
    * UI 最终一致性的收口（TTL 超时触发）。
@@ -279,7 +291,7 @@ export function useCompaction({
         .map(([turnId]) => turnId);
       if (staleTurnIds.length === 0) return;
       for (const turnId of staleTurnIds) {
-        updateCompactTurn(turnId, 'error', '压缩未完成（无终态记录）');
+        updateCompactTurn(turnId, 'cancelled', '未收到结束记录，当前状态待确认');
         // updateCompactTurn 只修 turnsRef 里的 turn；lifecycle map 副本也必须同步收敛，
         // 否则 mergeCompactionLifecycleTurns 下次合并时僵尸状态会复活。
         const mapped = compactionLifecycleTurnsRef.current.get(turnId);
@@ -288,16 +300,15 @@ export function useCompaction({
             ...mapped,
             assistant: {
               ...mapped.assistant,
-              status: 'error',
+              status: 'cancelled',
               isStreaming: false,
-              answerMarkdown: '压缩未完成（无终态记录）',
+              answerMarkdown: '',
             },
           });
         }
       }
       activeCompactionTurnIdRef.current = null;
-      setLoading(false);
-      setCompactionStatus('上次压缩：未完成');
+      setCompactionStatus('压缩状态待确认');
       messageApi.destroy('compaction-status');
       logChatDiag('compaction.staleConverged', {
         reason,
@@ -328,10 +339,10 @@ export function useCompaction({
           : 'unidentified-compaction';
       let compactTurnId =
         compactionTurnIdsRef.current.get(compactionId) ??
-        activeCompactionTurnIdRef.current ??
         compactionTurnId(compactionId);
       const previous = compactionLifecycleTurnsRef.current.get(compactTurnId);
       if (
+        event.type === 'context.compaction.started' &&
         compactionTurnIdsRef.current.has(compactionId) &&
         (previous?.assistant.status === 'success' ||
           previous?.assistant.status === 'error')
@@ -368,6 +379,7 @@ export function useCompaction({
       // 按 id 的判活门控拦不住——见 chatStateUtils.isStaleCompactionStarted。
       if (
         event.type === 'context.compaction.started' &&
+        options?.verifiedAt === undefined &&
         isStaleCompactionStarted(raw)
       ) {
         logChatDiag('compaction.startedIgnoredStale', {
@@ -392,6 +404,7 @@ export function useCompaction({
             ? raw.eventId
             : undefined,
         occurredAtMs: resolveEventOccurredAtMs(raw),
+        verifiedAt: options?.verifiedAt,
       };
 
       if (!turnsRef.current.some((turn) => turn.turnId === compactTurnId)) {
@@ -407,14 +420,13 @@ export function useCompaction({
         );
       }
       compactionTurnIdsRef.current.set(compactionId, compactTurnId);
-      activeCompactionTurnIdRef.current = compactTurnId;
-
       if (event.type === 'context.compaction.started') {
+        if (options?.verifiedAt === undefined) setCheckVersion(value => value + 1);
         // 真在跑的压缩（实时 SSE 或重放判活放行）：点亮运行态并挂活性 TTL，
         // 终态缺失时由 TTL 收敛，不允许「duration:0 弹了就不管」。
+        activeCompactionTurnIdRef.current = compactTurnId;
         armCompactionLivenessTimer();
-        setLoading(true);
-        setCompactionStatus(COMPACTION_RUNNING_LABEL);
+        setCompactionStatus(options?.verifiedAt ? COMPACTION_RUNNING_LABEL : '正在确认压缩状态');
         updateCompactTurn(
           compactTurnId,
           'executing',
@@ -422,20 +434,11 @@ export function useCompaction({
           undefined,
           eventFacts,
         );
-        if (options?.notify !== false && options?.replay !== true) {
-          // 重放路径永不弹 toast：刷新点亮真在跑的压缩是对的，
-          // 但历史 loading toast 不该复活；只有实时 SSE 的 started 才弹。
-          messageApi.loading({
-            content: '正在压缩上下文…',
-            key: 'compaction-status',
-            duration: 0,
-          });
-        }
         return;
       }
 
-      clearCompactionLivenessTimer();
-      setLoading(false);
+      const closesActive = activeCompactionTurnIdRef.current === compactTurnId;
+      if (closesActive) clearCompactionLivenessTimer();
       if (options?.notify !== false) messageApi.destroy('compaction-status');
       if (event.type === 'context.compaction.failed') {
         const errorMessage = String(raw.error || '上下文压缩失败');
@@ -446,30 +449,32 @@ export function useCompaction({
           undefined,
           eventFacts,
         );
-        setCompactionStatus(`压缩失败：${errorMessage}`);
-        activeCompactionTurnIdRef.current = null;
-        if (options?.notify !== false) messageApi.error(errorMessage, 4);
+        if (closesActive) {
+          setCompactionStatus(`压缩失败：${errorMessage}`);
+          activeCompactionTurnIdRef.current = null;
+        }
+        if (options?.notify !== false && options?.replay !== true) messageApi.error(errorMessage, 4);
         return;
       }
 
       const compacted =
         raw.compaction && typeof raw.compaction === 'object'
           ? (raw.compaction as ContextCompactionResult)
-          : undefined;
+          : typeof raw.outcome === 'string' ? ({ outcome: raw.outcome } as ContextCompactionResult) : undefined;
       updateCompactTurn(
         compactTurnId,
         'success',
-        '上下文压缩完成',
+        compacted?.compactedMessageCount ? `已整理 ${compacted.compactedMessageCount} 条历史消息` : '上下文整理完成',
         compacted,
         eventFacts,
       );
-      setCompactionStatus(
+      if (!activeCompactionTurnIdRef.current || closesActive) setCompactionStatus(
         `上次压缩：${formatCompactionTime(
           eventFacts.occurredAtMs ??
             (options?.notify === false ? undefined : Date.now()),
         )}`,
       );
-      activeCompactionTurnIdRef.current = null;
+      if (closesActive) activeCompactionTurnIdRef.current = null;
 
       const newSessionId =
         typeof raw.newSessionId === 'string' ? raw.newSessionId : null;
@@ -478,6 +483,7 @@ export function useCompaction({
           ? raw.newSessionTitle
           : '新会话';
       if (
+        options?.replay !== true &&
         options?.allowSessionSwitch !== false &&
         newSessionId &&
         sessionIdRef.current !== newSessionId
@@ -511,6 +517,38 @@ export function useCompaction({
     ],
   );
 
+  useEffect(() => {
+    const session = selectedSessionId ?? sessionIdRef.current;
+    if (!session) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const reconcile = async () => {
+      try {
+        const epoch = lifecycleEpochRef.current;
+        const activeAtRequest = activeCompactionTurnIdRef.current;
+        const snapshot = await getCompactionStatus(session);
+        if (disposed || epoch !== lifecycleEpochRef.current || activeAtRequest !== activeCompactionTurnIdRef.current) return;
+        const active = snapshot.activeCompaction;
+        if (active) {
+          handleCompactionLifecycleEvent({
+            type: 'context.compaction.started', compactionId: active.compactionId,
+            occurredAt: active.startedAt,
+          }, { notify: false, verifiedAt: Date.now() });
+        } else if (activeAtRequest === activeCompactionTurnIdRef.current) {
+          convergeStaleCompactions('server-not-running');
+        }
+      } catch {
+        if (!disposed) convergeStaleCompactions('status-unavailable');
+        // Connectivity failure is not a failed compaction. The presentation's
+        // short verification lease expires to "status unknown" without a spinner.
+      } finally {
+        if (!disposed) timer = setTimeout(reconcile, 10_000);
+      }
+    };
+    void reconcile();
+    return () => { disposed = true; clearTimeout(timer); };
+  }, [selectedSessionId, sessionIdRef, handleCompactionLifecycleEvent, convergeStaleCompactions, checkVersion]);
+
   const handleCompactCommand = useCallback(async () => {
     const currentSessionId = sessionIdRef.current ?? selectedSessionId;
     if (!currentSessionId || !workspaceId) {
@@ -522,9 +560,10 @@ export function useCompaction({
       return;
     }
 
+    const epoch = lifecycleEpochRef.current;
     setError(null);
     setLoading(true);
-    setCompactionStatus(COMPACTION_RUNNING_LABEL);
+    setCompactionStatus('已请求压缩，等待执行');
     const compactionId = createId();
     const compactTurnId = appendCompactTurn(
       '正在压缩上下文…',
@@ -534,7 +573,7 @@ export function useCompaction({
     );
     compactionTurnIdsRef.current.set(compactionId, compactTurnId);
     activeCompactionTurnIdRef.current = compactTurnId;
-    latestTurnIdRef.current = compactTurnId;
+    armCompactionLivenessTimer();
     try {
       const response = await compactSession(currentSessionId, {
         workspaceId,
@@ -543,6 +582,8 @@ export function useCompaction({
         reason: 'manual slash command',
         compactionId,
       });
+      if (epoch !== lifecycleEpochRef.current) return;
+      clearCompactionLivenessTimer();
       setLoading(false);
       const responseTurnId =
         compactionTurnIdsRef.current.get(response.compactionId) ??
@@ -566,6 +607,8 @@ export function useCompaction({
         );
       }
     } catch (error: unknown) {
+      if (epoch !== lifecycleEpochRef.current) return;
+      clearCompactionLivenessTimer();
       setLoading(false);
       const message = error instanceof Error ? error.message : '上下文压缩失败';
       setError(message);
@@ -576,6 +619,8 @@ export function useCompaction({
     }
   }, [
     agentId,
+    armCompactionLivenessTimer,
+    clearCompactionLivenessTimer,
     appendCompactTurn,
     latestTurnIdRef,
     loading,
@@ -589,6 +634,7 @@ export function useCompaction({
   ]);
 
   const resetCompaction = useCallback(() => {
+    lifecycleEpochRef.current += 1;
     compactionTurnIdsRef.current.clear();
     compactionLifecycleTurnsRef.current.clear();
     activeCompactionTurnIdRef.current = null;

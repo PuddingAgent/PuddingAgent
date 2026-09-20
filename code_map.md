@@ -671,3 +671,8 @@ Task scheduler effective-dispatch closure (2026-09-01 proposed)
 ## 2026-09-19 历史图片8张上限诊断
 
 VisionRequestPolicy默认8、VisionCapabilityContract上限钳制、PuddingFileConfigLoader加载拒绝及VisualInputRequestBudget跨消息累计共同导致第9份图片失败。13项现有合同测试通过，未修复/部署；历史理由、精确Turn及纠偏方向见[诊断](Docs/Reports/历史图片累计触发8图上限诊断-2026-09-19.md)。
+
+### 2026-09-20 压缩活性与界面重设计
+- 权威设计：`Docs/Features/上下文压缩运行状态与界面设计.md`。
+- `ContextCompactionService.GetActiveCompaction` / `SessionEventsController.GetCompactionStatus`：精确 ID + 开始时间的轻量活性快照；started 移到摘要输入准入后；取消补写终态。
+- `useCompaction`：按 ID 投影，10 秒确认、30 秒动画许可、重放不切会话；`CompactionCard` 独立状态区；`ContextUsageRing` 总窗口占比、来源和采样时间；`IntentConsole` 压缩结束刷新并防旧响应覆盖。
