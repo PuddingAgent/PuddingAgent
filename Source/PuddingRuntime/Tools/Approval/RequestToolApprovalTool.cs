@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
+using PuddingCode.Classification;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 
@@ -30,6 +31,10 @@ public sealed class RequestToolApprovalTool : PuddingToolBase<RequestToolApprova
     private readonly IToolApprovalService _approvalService;
     private readonly IServiceProvider _serviceProvider;
 
+    /// <summary>审批门户服务（惰性组装：本切片不新增任何 DI 注册，只能从容器已有服务装配）。</summary>
+    private ToolApprovalPortalService? _portal;
+    private readonly object _portalGate = new();
+
     public RequestToolApprovalTool(
         IToolApprovalService approvalService,
         IServiceProvider serviceProvider)
@@ -45,6 +50,18 @@ public sealed class RequestToolApprovalTool : PuddingToolBase<RequestToolApprova
     {
         if (string.IsNullOrWhiteSpace(args.ToolId))
             return ToolExecutionResult.Fail("tool_id is required.");
+
+        // —— 审批门户（方案 v2 §14，S4）：非 submit 动作只做参数校验 + 委派，不动既有 submit 路径。——
+        var portalAction = ParsePortalAction(args.Action, out var actionError);
+        if (portalAction is null)
+            return ToolExecutionResult.Fail(actionError);
+        if (portalAction.Value != PortalAction.Submit)
+        {
+            if (!TryValidatePortalAction(portalAction.Value, args, out var portalArgsError))
+                return ToolExecutionResult.Fail(portalArgsError);
+            return ToolExecutionResult.Ok(
+                await ExecutePortalActionAsync(portalAction.Value, args, context, ct).ConfigureAwait(false));
+        }
 
         var catalog = _serviceProvider.GetService<IPuddingToolCatalogService>();
         var descriptor = catalog?.ListTools(context.WorkspaceId)
@@ -130,6 +147,166 @@ public sealed class RequestToolApprovalTool : PuddingToolBase<RequestToolApprova
             recommendedNextStep = result.RecommendedNextStep,
         }, JsonOptions));
     }
+
+    // —— 审批门户（方案 v2 §14，S4）：非 submit 动作的解析 / 校验 / 委派 ——
+
+    private enum PortalAction
+    {
+        Submit,
+        Classify,
+        RulesList,
+        RulesUpdate,
+        FullAccessRequest,
+        FullAccessStatus,
+        FullAccessRevoke,
+    }
+
+    private static PortalAction? ParsePortalAction(string? value, out string error)
+    {
+        error = string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+            return PortalAction.Submit; // 向后兼容：不传 action ⇒ 与既有 submit 完全等价（§14.4）。
+
+        var normalized = value.Trim().Replace("-", "_", StringComparison.Ordinal).ToLowerInvariant();
+        if (TryMapPortalAction(normalized, out var action))
+            return action;
+
+        error = "action must be one of: submit (default), classify, rules_list, rules_update, "
+                + "full_access_request, full_access_status, full_access_revoke.";
+        return null;
+    }
+
+    private static bool TryMapPortalAction(string normalized, out PortalAction action)
+    {
+        switch (normalized)
+        {
+            case "submit": action = PortalAction.Submit; return true;
+            case "classify": action = PortalAction.Classify; return true;
+            case "rules_list": action = PortalAction.RulesList; return true;
+            case "rules_update": action = PortalAction.RulesUpdate; return true;
+            case "full_access_request": action = PortalAction.FullAccessRequest; return true;
+            case "full_access_status": action = PortalAction.FullAccessStatus; return true;
+            case "full_access_revoke": action = PortalAction.FullAccessRevoke; return true;
+            default: action = PortalAction.Submit; return false;
+        }
+    }
+
+    private static bool TryValidatePortalAction(PortalAction action, RequestToolApprovalArgs args, out string error)
+    {
+        error = string.Empty;
+        if (action != PortalAction.RulesUpdate)
+            return true;
+
+        var op = (args.RuleOp ?? string.Empty).Trim();
+        var isAdd = op.Equals("add", StringComparison.OrdinalIgnoreCase);
+        if (!isAdd && !op.Equals("disable", StringComparison.OrdinalIgnoreCase))
+        {
+            error = "rule_op must be 'add' or 'disable' when action=rules_update.";
+            return false;
+        }
+
+        if (isAdd)
+        {
+            var effect = (args.RuleEffect ?? string.Empty).Trim();
+            if (!effect.Equals("allow", StringComparison.OrdinalIgnoreCase)
+                && !effect.Equals("deny", StringComparison.OrdinalIgnoreCase))
+            {
+                error = "rule_effect must be 'allow' or 'deny' when rule_op=add.";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(args.CommandName)
+                && string.IsNullOrWhiteSpace(args.RequestedArgumentsJson))
+            {
+                error = "Provide command_name or requested_arguments_json as the exact rule subject when rule_op=add.";
+                return false;
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(args.RuleId))
+        {
+            error = "rule_id is required when rule_op=disable.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task<string> ExecutePortalActionAsync(
+        PortalAction action,
+        RequestToolApprovalArgs args,
+        ToolExecutionContext context,
+        CancellationToken ct)
+    {
+        var portal = GetPortal();
+        var request = ToPortalRequest(args, context);
+        return action switch
+        {
+            PortalAction.Classify => await portal.ClassifyAsync(request, ct).ConfigureAwait(false),
+            PortalAction.RulesList => await portal.RulesListAsync(request, ct).ConfigureAwait(false),
+            PortalAction.RulesUpdate => await portal.RulesUpdateAsync(request, ct).ConfigureAwait(false),
+            PortalAction.FullAccessRequest => await portal.FullAccessRequestAsync(request, ct).ConfigureAwait(false),
+            PortalAction.FullAccessStatus => await portal.FullAccessStatusAsync(request, ct).ConfigureAwait(false),
+            PortalAction.FullAccessRevoke => await portal.FullAccessRevokeAsync(request, ct).ConfigureAwait(false),
+            _ => throw new InvalidOperationException($"Portal action '{action}' is not dispatchable."),
+        };
+    }
+
+    /// <summary>
+    /// 惰性装配门户：既有已注册的审批三件套 store + 可选分类器 / 完全访问授予服务。
+    /// 本切片不新增任何 DI 注册（硬约束），只能从容器已有服务装配；
+    /// 分类器未注册时由门户按 §14.7 自然降级（classify ⇒ deferred，full_access ⇒ fail-closed），
+    /// 授予服务未注册时由门户惰性构造实例级服务（进程内存活，重启即失效）。
+    /// 工具自身为 DI 单例，门户实例与完全访问状态随之进程级存活。
+    /// </summary>
+    private ToolApprovalPortalService GetPortal()
+    {
+        lock (_portalGate)
+        {
+            if (_portal is not null)
+                return _portal;
+
+            var allowlistStore = _serviceProvider.GetService<IToolApprovalAllowlistStore>()
+                                 ?? new InMemoryToolApprovalAllowlistStore();
+            var auditStore = _serviceProvider.GetService<IToolApprovalAuditStore>()
+                             ?? new InMemoryToolApprovalAuditStore();
+            _portal = new ToolApprovalPortalService(
+                allowlistStore,
+                auditStore,
+                classifier: _serviceProvider.GetService<IToolCallClassifier>(),
+                fullAccessGrantService: _serviceProvider.GetService<IAgentFullAccessGrantService>(),
+                timeProvider: _serviceProvider.GetService<TimeProvider>());
+            return _portal;
+        }
+    }
+
+    private ToolApprovalPortalRequest ToPortalRequest(RequestToolApprovalArgs args, ToolExecutionContext context)
+        => new()
+        {
+            Identity = new ToolApprovalIdentity
+            {
+                WorkspaceId = context.WorkspaceId,
+                SessionId = context.SessionId,
+                AgentInstanceId = context.AgentInstanceId,
+                AgentTemplateId = context.AgentTemplateId,
+                UserId = context.Trace?.UserId ?? "admin",
+            },
+            ToolId = args.ToolId.Trim(),
+            CommandName = args.CommandName,
+            Purpose = args.Purpose,
+            Necessity = args.Necessity,
+            FactBasis = args.FactBasis ?? [],
+            RequestedArgumentsJson = args.RequestedArgumentsJson,
+            TargetResources = args.TargetResources ?? [],
+            IsIrreversibleOperation = args.IsIrreversibleOperation,
+            MayDamageOrDeleteData = args.MayDamageOrDeleteData,
+            OperationContext = args.OperationContext,
+            WorkingDirectory = context.WorkingDirectory,
+            RuleOp = args.RuleOp,
+            RuleEffect = args.RuleEffect,
+            RuleId = args.RuleId,
+            AllowlistReason = args.AllowlistReason,
+            FullAccessDurationSeconds = args.FullAccessDurationSeconds,
+        };
 
     private static bool TryParseScope(string? value, out ToolApprovalScope scope, out string error)
     {
@@ -463,6 +640,23 @@ public sealed record RequestToolApprovalArgs
 
     [ToolParam("Reason for creating a reusable allowlist rule after approval.")]
     public string? AllowlistReason { get; init; }
+
+    // —— 审批门户参数（方案 v2 §14.4，S4）：只允许追加，缺省保持 submit 语义 ——
+
+    [ToolParam("Portal action: submit (default), classify, rules_list, rules_update, full_access_request, full_access_status, or full_access_revoke. Omit for the legacy submit behavior.")]
+    public string? Action { get; init; }
+
+    [ToolParam("Rule operation for action=rules_update: add or disable.")]
+    public string? RuleOp { get; init; }
+
+    [ToolParam("Rule effect for action=rules_update with rule_op=add: allow or deny.")]
+    public string? RuleEffect { get; init; }
+
+    [ToolParam("Rule id for action=rules_update with rule_op=disable.")]
+    public string? RuleId { get; init; }
+
+    [ToolParam("Requested full-access TTL in seconds for action=full_access_request. Default 300; requests above 300 are rejected instead of truncated.")]
+    public int? FullAccessDurationSeconds { get; init; }
 }
 
 public sealed record RequestToolApprovalStepArgs
