@@ -237,6 +237,8 @@ describe('DevPanel performance diagnostics', () => {
         benchmarkRunId: 'brun_default',
         benchmarkSeedId: '',
         benchmarkSeedFiles: '0',
+        // 生产硬编码该字段（DevPanel/BenchmarkTab.tsx:95）：基准跑不能污染学习数据。
+        excludeFromLearning: 'true',
       });
     });
   });

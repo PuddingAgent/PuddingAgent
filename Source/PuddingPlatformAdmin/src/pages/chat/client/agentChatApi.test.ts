@@ -59,7 +59,10 @@ describe('agentChatApi', () => {
 
     expect(mockRequest).toHaveBeenCalledWith(
       '/api/workspaces/workspace%2Fa/agents/agent%2Fa/conversation/messages/message%2Fa/process-items',
-      { method: 'GET' },
+      // 生产已为历史过程项请求接入取消信号（切消息时中止在途请求）⇒ 断言里必须包含 signal，
+      // 否则本用例会在生产正确时反而变红；用 objectContaining + expect.any(AbortSignal) 既不放松
+      // 对 method 的检查，也不与信号的内部形态耦合。
+      expect.objectContaining({ method: 'GET', signal: expect.any(AbortSignal) }),
     );
   });
 
