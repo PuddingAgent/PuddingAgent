@@ -30,11 +30,31 @@ jest.mock('./CommandPalette', () => ({
 }));
 
 jest.mock('./ComposerActionMenu', () => () => null);
+// ContextUsageRing 是工具栏内的圆环控件（生产注释：用户诉求 2026-09-19，旧上下文指示条已移除、
+// 改为圆环 + 点击出上下文明细面板）。**状态文案随 runtimeDetails 一起只在气泡打开时渲染**
+// （生产：IntentConsole.tsx:969 把 <ComposerStatusDetails> 作为 runtimeDetails 传给圆环）
+// ⇒ 默认 DOM 中永远看不到「· 已完成」。本用例考察的是「状态文案状态机」
+//（completed 提示不得残留到 streaming），与圆环外壳无关 ⇒ 替身直接渲染 runtimeDetails。
+jest.mock('./ContextUsageRing', () => {
+  // 注意：jest.mock 工厂会被提升到 import 之前 ⇒ 不能直接引用外层 import 进来的 React，
+  // 必须在工厂内部 require。
+  const ReactLib = require('react');
+  const Stub = ({ runtimeDetails }: { runtimeDetails?: unknown }) =>
+    ReactLib.createElement('div', { 'data-testid': 'context-usage-ring' }, runtimeDetails);
+  return { __esModule: true, default: Stub, ContextUsageRing: Stub };
+});
 jest.mock(
   './ComposerStatusDetails',
   () =>
-    ({ summary }: { summary: { subAgentsRunning: number } }) => (
-      <div data-testid="status-details">运行中 {summary.subAgentsRunning}</div>
+    // 替身必须镜像生产契约：状态文案是通过 `summary.statusLabel` 渲染的
+    //（生产：IntentConsole.tsx:736 `statusLabel: displayStatusText`；组件声明：ComposerStatusDetails.tsx:10）。
+    // 本替身先前只渲染「运行中 N」而丢掉 statusLabel ⇒ 「· 已完成」永远不可能出现，
+    // 使本文件的「completed toast」用例无端变红（属测试替身过期，不是生产缺陷）。
+    ({ summary }: { summary: { subAgentsRunning: number; statusLabel: string } }) => (
+      <div data-testid="status-details">
+        <span>{summary.statusLabel}</span>
+        <span>运行中 {summary.subAgentsRunning}</span>
+      </div>
     ),
 );
 const baseProps = {
@@ -88,7 +108,12 @@ describe('InputArea status feedback', () => {
 
     expect(screen.queryByText('· 已完成')).toBeNull();
     expect(screen.getByText('· 正在生成回复…')).toBeTruthy();
-    expect(screen.getByPlaceholderText('正在生成回复…')).toBeTruthy();
+    // 运行中的占位文案已被改成「排队/插嘴」引导（生产：IntentConsole.tsx:843，
+    // loading ? '继续输入：Enter 排队，Ctrl/Cmd+Enter 插嘴当前 Agent…' : '输入你的问题或任务…'）
+    // ⇒ 旧期望「正在生成回复…」已不存在，按现状断言。
+    expect(
+      screen.getByPlaceholderText('继续输入：Enter 排队，Ctrl/Cmd+Enter 插嘴当前 Agent…'),
+    ).toBeTruthy();
   });
 
   it('keeps IME composition drafts local until the final committed text', () => {
