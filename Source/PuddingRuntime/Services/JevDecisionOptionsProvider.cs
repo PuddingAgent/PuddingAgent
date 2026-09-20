@@ -4,32 +4,38 @@ using PuddingCode.Abstractions;
 namespace PuddingRuntime.Services;
 
 /// <summary>
-/// <see cref="IJevDecisionOptionsProvider"/> 的默认实现：从 IConfiguration 的 <c>Jev</c> 节解析
-/// 端点 / 密钥 / 模型，环境变量作为回退，密钥可经 KeyVault 引用（ApiKeyRef）解析。
+/// <see cref="IJevDecisionOptionsProvider"/> 的默认实现：<b>资源池优先</b>，配置节/环境变量为回退。
 /// <para>
-/// 解析优先级（逐项独立）：
+/// 解析优先级：
 /// <list type="number">
-/// <item><c>Jev:BaseUrl</c>（或 <c>Jev:Endpoint</c>）→ <c>JEV_BASE_URL</c>；</item>
-/// <item><c>Jev:ApiKey</c> → <c>JEV_API_KEY</c>（支持 <c>${ENV_NAME}</c> 占位展开）
-///       → 若为空则用 <c>Jev:ApiKeyRef</c> / <c>JEV_API_KEY_REF</c> 经 <see cref="IKeyVaultService"/> 取明文；</item>
-/// <item><c>Jev:ModelId</c> → <c>JEV_MODEL_ID</c> → <see cref="JevDecisionOptions.DefaultModelId"/>。</item>
+/// <item><b>资源池</b>（<c>data/config/llm.providers.json</c>）—— 端点为 provider <c>jev</c> 的 baseUrl，
+///       模型为该 provider 下首个未废弃模型（可按 sortOrder 选），可通过 <c>Jev:ProviderId</c> 改 providerId；</item>
+/// <item>回退：<c>Jev:BaseUrl</c>（或 <c>Jev:Endpoint</c>）→ <c>JEV_BASE_URL</c>；
+///       <c>Jev:ModelId</c> → <c>JEV_MODEL_ID</c> → <c>jev-latest</c>。</item>
 /// </list>
-/// 端点或密钥缺失时 fail-closed 抛 <see cref="JevDecisionException"/>（<see cref="JevDecisionCodes.NotConfigured"/>），
-/// 不返回空端点；密钥明文绝不写日志。
+/// 密钥解析链：<b>资源池 provider 的 apiKeyRef（→ LlmConfig.KeyVaultId，经 <see cref="IKeyVaultService"/>）</b>
+/// → <c>Jev:ApiKey</c> / <c>JEV_API_KEY</c>（支持 <c>${ENV_NAME}</c> 占位展开）
+/// → <c>Jev:ApiKeyRef</c> / <c>JEV_API_KEY_REF</c> 经 KeyVault。
 /// </para>
 /// <para>
-/// 若后续要把 Jev 纳入资源池（llm.providers.json），只需注册另一个本接口的实现，
-/// 无需改动 <see cref="JevDecisionService"/>。
+/// 端点或密钥缺失时 fail-closed 抛 <see cref="JevDecisionException"/>（<see cref="JevDecisionCodes.NotConfigured"/>），
+/// 不返回空端点；密钥明文绝不写日志。刻意只读 <see cref="LlmConfig.KeyVaultId"/>，
+/// 不引用已标 [Obsolete] 的明文 <see cref="LlmConfig.ApiKey"/>。
 /// </para>
 /// </summary>
 public sealed class JevDecisionOptionsProvider(
     IConfiguration configuration,
+    ILlmConfigService? llmConfigService = null,
     ILogger<JevDecisionOptionsProvider>? logger = null,
     IKeyVaultService? keyVaultService = null) : IJevDecisionOptionsProvider
 {
     /// <summary>配置节名。</summary>
     public const string SectionName = "Jev";
 
+    /// <summary>资源池（llm.providers.json）中 Jev 的 providerId。</summary>
+    public const string ProviderId = "jev";
+
+    private const string ProviderIdKey = SectionName + ":ProviderId";
     private const string BaseUrlKey = SectionName + ":BaseUrl";
     private const string EndpointKey = SectionName + ":Endpoint";
     private const string ApiKeyKey = SectionName + ":ApiKey";
@@ -45,20 +51,32 @@ public sealed class JevDecisionOptionsProvider(
 
     public async Task<JevDecisionOptions> GetOptionsAsync(CancellationToken ct = default)
     {
-        var baseUrl = (
-            configuration[BaseUrlKey]
+        // ── 资源池（llm.providers.json）—— 端点/模型的权威来源 ──
+        var pool = ResolveFromResourcePool();
+
+        var baseUrl = (pool.BaseUrl
+            ?? configuration[BaseUrlKey]
             ?? configuration[EndpointKey]
             ?? Environment.GetEnvironmentVariable(BaseUrlEnvironmentVariable)
             ?? string.Empty).Trim();
 
-        var modelId = configuration[ModelIdKey]
+        var modelId = pool.ModelId
+            ?? configuration[ModelIdKey]
             ?? Environment.GetEnvironmentVariable(ModelIdEnvironmentVariable)
             ?? JevDecisionOptions.DefaultModelId;
 
-        var apiKey = ExpandEnvironmentPlaceholders(
-            configuration[ApiKeyKey]
-            ?? Environment.GetEnvironmentVariable(ApiKeyEnvironmentVariable)
-            ?? string.Empty);
+        // ── 密钥：池 KeyVaultId → 显式配置/${ENV} → 配置 ApiKeyRef 经 KeyVault ──
+        var apiKey = string.Empty;
+        if (!string.IsNullOrWhiteSpace(pool.KeyVaultId))
+            apiKey = await ResolveSecretAsync(pool.KeyVaultId!, ct).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            apiKey = ExpandEnvironmentPlaceholders(
+                configuration[ApiKeyKey]
+                ?? Environment.GetEnvironmentVariable(ApiKeyEnvironmentVariable)
+                ?? string.Empty);
+        }
 
         if (string.IsNullOrWhiteSpace(apiKey))
             apiKey = await ResolveApiKeyFromVaultAsync(ct).ConfigureAwait(false);
@@ -67,7 +85,8 @@ public sealed class JevDecisionOptionsProvider(
         {
             throw new JevDecisionException(
                 JevDecisionCodes.NotConfigured,
-                $"Jev 未配置：需要 {BaseUrlKey}（或 {BaseUrlEnvironmentVariable}）与 "
+                $"Jev 未配置：请在资源池 llm.providers.json 添加 providerId=\"{ProviderId}\" 的 provider"
+                + $"（baseUrl + apiKey/apiKeyRef），或提供 {BaseUrlKey}（或 {BaseUrlEnvironmentVariable}）与 "
                 + $"{ApiKeyKey}（或 {ApiKeyEnvironmentVariable}），密钥亦可经 "
                 + $"{ApiKeyRefKey} 走 KeyVault。");
         }
@@ -85,6 +104,65 @@ public sealed class JevDecisionOptionsProvider(
             MaxRetries = configuration.GetValue<int?>(MaxRetriesKey) ?? 2,
             RetryDelayMilliseconds = configuration.GetValue<int?>(RetryDelayKey) ?? 500,
         };
+    }
+
+    /// <summary>
+    /// 从资源池解析 Jev 的 baseUrl / 缺省模型 / KeyVaultId。
+    /// 池中无（或未启用）jev provider 时三项均为 null，调用方回退到配置节与环境变量。
+    /// 注意：刻意只读 <see cref="LlmConfig.KeyVaultId"/> 而不碰已标 [Obsolete] 的明文 ApiKey。
+    /// </summary>
+    private (string? BaseUrl, string? ModelId, string? KeyVaultId) ResolveFromResourcePool()
+    {
+        if (llmConfigService is null)
+            return (null, null, null);
+
+        var providerId = configuration[ProviderIdKey]?.Trim();
+        if (string.IsNullOrWhiteSpace(providerId))
+            providerId = ProviderId;
+
+        var provider = llmConfigService.GetEnabledProviders()
+            .FirstOrDefault(candidate => string.Equals(
+                candidate.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
+        if (provider is null)
+            return (null, null, null);
+
+        var modelId = llmConfigService.GetAllModels()
+            .Where(model => string.Equals(
+                model.ProviderId, provider.ProviderId, StringComparison.OrdinalIgnoreCase))
+            .Where(model => !model.IsDeprecated)
+            .OrderBy(model => model.SortOrder)
+            .ThenBy(model => model.ModelId, StringComparer.OrdinalIgnoreCase)
+            .Select(model => model.ModelId)
+            .FirstOrDefault();
+
+        var keyVaultId = string.IsNullOrWhiteSpace(modelId)
+            ? null
+            : llmConfigService.Resolve(provider.ProviderId, modelId)?.KeyVaultId;
+
+        return (
+            string.IsNullOrWhiteSpace(provider.BaseUrl) ? null : provider.BaseUrl,
+            string.IsNullOrWhiteSpace(modelId) ? null : modelId,
+            string.IsNullOrWhiteSpace(keyVaultId) ? null : keyVaultId);
+    }
+
+    private async Task<string> ResolveSecretAsync(string keyVaultId, CancellationToken ct)
+    {
+        if (keyVaultService is null)
+            return string.Empty;
+
+        try
+        {
+            var secret = await keyVaultService
+                .GetSecretAsync(keyVaultId, includePlainText: true, ct)
+                .ConfigureAwait(false);
+            return secret?.Value ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(
+                ex, "[Jev] 资源池 KeyVaultId {KeyVaultId} 解析失败，回退到配置/环境变量。", keyVaultId);
+            return string.Empty;
+        }
     }
 
     private async Task<string> ResolveApiKeyFromVaultAsync(CancellationToken ct)
