@@ -435,6 +435,15 @@ public sealed record ToolApprovalAuditEvent
     public string? ReviewerModel { get; init; }
     public string? Reason { get; init; }
     public required DateTimeOffset CreatedAtUtc { get; init; }
+
+    // —— S3a（方案 v2 §14.13.4 覆盖审计溯源）：以下成员只允许追加（append-only），严禁改动或重排上方既有属性；
+    // 旧 JSON 缺失时反序列化为 null，完全向后兼容。——
+
+    /// <summary>产出覆盖裁决的分类器稳定标识（§14.13.4）；非分类器类事件为 null。</summary>
+    public string? ClassifierId { get; init; }
+
+    /// <summary>覆盖裁决所依据的逐分类可信度（§14.13.3 门槛校验用的那个值）；缺失为 null。</summary>
+    public double? ClassifierConfidence { get; init; }
 }
 
 /// <summary>Stores automatic approval tickets.</summary>
