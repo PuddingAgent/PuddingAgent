@@ -551,6 +551,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ISessionSteeringService>(sp => sp.GetRequiredService<SessionSteeringService>());
         builder.Services.AddScoped<CacheDiagnosticsService>();
         builder.Services.AddScoped<ICacheDiagnosticsService>(sp => sp.GetRequiredService<CacheDiagnosticsService>());
+builder.Services.AddScoped<GoodputAttributionService>();
+builder.Services.AddScoped<IGoodputAttributionService>(sp => sp.GetRequiredService<GoodputAttributionService>());
 
         builder.Services.AddDbContextFactory<ControllerDbContext>(opt =>
         {

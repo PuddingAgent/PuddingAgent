@@ -20,6 +20,8 @@ namespace PuddingRuntime.Services.Tools;
 ///   - tool_stats: 查询指定工具的调用统计（成功率、耗时、常见错误）
 ///   - slowest_tools: 列出最慢的 N 个工具
 ///   - cache_health: 查询缓存命中率和 prefix churn 来源
+///   - goodput_attribution: 按 GoalRunId 只读归因用量账本（SourceId 中段 TraceId → goal_iterations/execution_runs），
+///     给出每迭代 prompt/completion/cache-hit/miss/成本，并判定「零成本却非零 token 不得当节省」
 ///   - sub_agent_stats: 查询子代理调用统计
 ///   - compaction_stats: 查询压缩统计
 ///   - latency_breakdown: 查询延迟分解
@@ -69,6 +71,7 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             "tool_stats" => await GetToolStatsAsync(toolName ?? "", limit, ct),
             "slowest_tools" => await GetSlowestToolsAsync(limit, ct),
             "cache_health" => await GetCacheHealthAsync(sessionId, ct),
+            "goodput_attribution" => await GetGoodputAttributionAsync(args.GoalRunId, ct),
             "sub_agent_stats" => await GetSubAgentStatsAsync(args, context, ct),
             "compaction_stats" => await GetCompactionStatsAsync(args, limit, ct),
                         "latency_breakdown" => await GetLatencyBreakdownAsync(args, ct),
@@ -76,7 +79,7 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             "entropy_probe" => await GetEntropyProbeAsync(args, context, ct),
             "context_health" => await GetContextHealthAsync(args, context, ct),
             "diagnose" => await GetDiagnosisAsync(args, context, ct),
-            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, context_health, diagnose." })
+            _ => JsonSerializer.Serialize(new { error = $"Unknown action '{action}'. Valid: tool_stats, slowest_tools, cache_health, goodput_attribution, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, context_health, diagnose." })
         };
 
         return ToolExecutionResult.Ok(result);
@@ -205,6 +208,65 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
             });
 
         return JsonSerializer.Serialize(new { slowest_tools = slowestTools });
+    }
+
+    private async Task<string> GetGoodputAttributionAsync(string? goalRunId, CancellationToken ct)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var goodputSvc = scope.ServiceProvider.GetService<IGoodputAttributionService>();
+
+        if (goodputSvc is null)
+            return JsonSerializer.Serialize(new { error = "Goodput attribution service is not available." });
+
+        if (string.IsNullOrWhiteSpace(goalRunId))
+            return JsonSerializer.Serialize(new
+            {
+                error = "goal_run_id is required for goodput_attribution action.",
+                hint = "Use the current goal run id from the GOAL layer."
+            });
+
+        try
+        {
+            var report = await goodputSvc.GetGoalReportAsync(goalRunId, maxScanRows: 20000, ct);
+
+            return JsonSerializer.Serialize(new
+            {
+                goal_run_id = report.GoalRunId,
+                iteration_count = report.IterationCount,
+                iterations_without_usage = report.IterationsWithoutUsage,
+                trace_count = report.TraceCount,
+                scanned_usage_rows = report.ScannedUsageRows,
+                unattributed_scanned_rows = report.UnattributedScannedRows,
+                savings_claimable = report.SavingsClaimable,
+                totals = new
+                {
+                    usage_rows = report.Totals.UsageRows,
+                    prompt_tokens = report.Totals.PromptTokens,
+                    completion_tokens = report.Totals.CompletionTokens,
+                    cache_hit_tokens = report.Totals.CacheHitTokens,
+                    cache_miss_tokens = report.Totals.CacheMissTokens,
+                    priced_cost = report.Totals.PricedCost,
+                    zero_cost_with_tokens_rows = report.Totals.ZeroCostWithTokensRows,
+                },
+                traces = report.Traces.Select(t => new
+                {
+                    trace_id = t.TraceId,
+                    rounds = t.Rounds,
+                    iteration_count = t.IterationCount,
+                    pending_iterations = t.PendingIterations,
+                    ledger_consistency = t.LedgerConsistency,
+                    usage_rows = t.Totals.UsageRows,
+                    prompt_tokens = t.Totals.PromptTokens,
+                    cache_miss_tokens = t.Totals.CacheMissTokens,
+                    priced_cost = t.Totals.PricedCost,
+                    provider_model_ids = t.ProviderModelIds,
+                }),
+            });
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new { error = $"goodput_attribution failed: {ex.Message}" });
+        }
     }
 
     private async Task<string> GetCacheHealthAsync(string? sessionId, CancellationToken ct)
@@ -798,7 +860,7 @@ public sealed class AgentDiagnosticsTool : PuddingToolBase<AgentDiagnosticsArgs>
 
 public sealed record AgentDiagnosticsArgs
 {
-    [ToolParam("diagnostics mode: tool_stats, slowest_tools, cache_health, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, or context_health")]
+    [ToolParam("diagnostics mode: tool_stats, slowest_tools, cache_health, goodput_attribution, sub_agent_stats, compaction_stats, latency_breakdown, token_breakdown, entropy_probe, or context_health")]
     public string? Action { get; init; }
 
     [ToolParam("tool name to query (for tool_stats action)")]
@@ -824,4 +886,7 @@ public sealed record AgentDiagnosticsArgs
 
     [ToolParam("run id (for latency_breakdown action; required)")]
     public string? RunId { get; init; }
+
+    [ToolParam("goal run id (for goodput_attribution action; required) —— 例如 tg-xxxxxxxx")]
+    public string? GoalRunId { get; init; }
 }
