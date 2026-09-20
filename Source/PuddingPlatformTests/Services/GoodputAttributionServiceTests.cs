@@ -160,6 +160,109 @@ public sealed class GoodputAttributionServiceTests
         Assert.AreEqual(0, report.UnattributedScannedRows);
     }
 
+    [TestMethod]
+    public async Task GetGoalReportAsync_NoUsageRowsInWindow_DoesNotClaimSavings()
+    {
+        await using var scope = await CreateScopeAsync();
+        scope.Db.GoalIterations.Add(new GoalIterationEntity
+        {
+            GoalIterationId = "gi-3",
+            GoalRunId = "tg-3",
+            ActivationEpoch = 1,
+            IterationNo = 1,
+            Status = "settled",
+            TraceId = "0123456789abcdef0123456789abcdef",
+            CreatedAtUtc = OccurredAt,
+        });
+        await scope.Db.SaveChangesAsync();
+
+        var report = await new GoodputAttributionService(scope.Db).GetGoalReportAsync("tg-3");
+
+        Assert.AreEqual(0, report.Totals.UsageRows);
+        Assert.IsFalse(
+            report.SavingsClaimable,
+            "无任何可归因用量行时不得宣称节省（避免空洞真值把缺数据当成节省）");
+        Assert.AreEqual(1, report.IterationsWithoutUsage, "无窗口内用量行的迭代数必须显式暴露");
+    }
+
+    [TestMethod]
+    public async Task GetGoalReportAsync_TraceAcrossMultipleIterations_ExposesRecordedLedgerMismatch()
+    {
+        await using var scope = await CreateScopeAsync();
+        scope.Db.GoalIterations.Add(new GoalIterationEntity
+        {
+            GoalIterationId = "gi-4",
+            GoalRunId = "tg-4",
+            ActivationEpoch = 1,
+            IterationNo = 1,
+            Status = "settled",
+            TraceId = TraceId,
+            InputTokens = 100,
+            OutputTokens = 10,
+            CreatedAtUtc = OccurredAt,
+        });
+        scope.Db.TokenUsageEvents.Add(CreateEvent($"sess-4:{TraceId}:1", cost: 1m, prompt: 250, completion: 25));
+        await scope.Db.SaveChangesAsync();
+
+        var report = await new GoodputAttributionService(scope.Db).GetGoalReportAsync("tg-4");
+
+        var trace = report.Traces.Single();
+        Assert.AreEqual(250, trace.Totals.PromptTokens);
+        Assert.AreEqual(100, trace.RecordedPromptTokens);
+        Assert.AreEqual(
+            "mismatch",
+            trace.LedgerConsistency,
+            "归因与结算记账不一致时必须可见（trace 可能跨多个迭代）");
+        Assert.AreEqual(0, report.IterationsWithoutUsage);
+    }
+
+    [TestMethod]
+    public void Parse_SingleSegmentSourceId_IsUnparsed()
+    {
+        var key = UsageAttribution.Parse("context_compaction");
+
+        Assert.IsFalse(key.Parsed);
+        Assert.AreEqual(UsageAttribution.UnparsedReasonCode, key.ReasonCode);
+    }
+
+    [TestMethod]
+    public void Parse_ZeroRound_IsAccepted()
+    {
+        var key = UsageAttribution.Parse($"sess-1:{TraceId}:0");
+
+        Assert.IsTrue(key.Parsed);
+        Assert.AreEqual(0, key.Round);
+    }
+
+
+
+    [TestMethod]
+    public async Task GetGoalReportAsync_UnsettledIteration_IsNotComparableWithRecordedLedger()
+    {
+        await using var scope = await CreateScopeAsync();
+        scope.Db.GoalIterations.Add(new GoalIterationEntity
+        {
+            GoalIterationId = "gi-5",
+            GoalRunId = "tg-5",
+            ActivationEpoch = 1,
+            IterationNo = 1,
+            Status = "accepted",
+            TraceId = TraceId,
+            CreatedAtUtc = OccurredAt,
+        });
+        scope.Db.TokenUsageEvents.Add(CreateEvent($"sess-5:{TraceId}:1", cost: 1m, prompt: 10, completion: 5));
+        await scope.Db.SaveChangesAsync();
+
+        var report = await new GoodputAttributionService(scope.Db).GetGoalReportAsync("tg-5");
+
+        var trace = report.Traces.Single();
+        Assert.AreEqual(1, trace.PendingIterations);
+        Assert.AreEqual(
+            "not_comparable",
+            trace.LedgerConsistency,
+            "未结算迭代的记账列为 0，不得据此报不一致");
+    }
+
     private static DateTimeOffset OccurredAt => DateTimeOffset.Parse("2026-09-20T00:00:00Z");
 
     private static TokenUsageEventEntity CreateEvent(string sourceId, decimal cost, long prompt, long completion)
