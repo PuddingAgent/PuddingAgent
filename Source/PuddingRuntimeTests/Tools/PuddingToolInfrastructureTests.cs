@@ -2671,6 +2671,53 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
+    public async Task ToolApprovalService_OnceTicket_Remaining_Use_Does_Not_Authorize_Different_Operation()
+    {
+        // 审计 P0 指纹第 1 项（OnceTicketAllowedUses = 2）的独立复核结论：
+        // 该常量的语义是「1 次真实使用 + 1 次同一操作的幂等重放」，而不是「一张 once 票授权两个不同操作」。
+        // 守门点是 InMemoryToolApprovalService 中「先 MatchesApprovedOperation、再消耗次数」的顺序
+        // —— 不匹配即 continue，既不消耗剩余次数也不放行。
+        // 既有测试 ToolApprovalService_Explains_Consumed_Once_Ticket 只覆盖「同一操作重放被允许」，
+        // 未覆盖「不同操作必须被拒」，本测试把这条不变量固化为回归契约。
+        var store = new InMemoryToolApprovalTicketStore();
+        // 提交阶段用「批准」型评审器取得 once 票；校验阶段换用「一律拒绝」型评审器并共享同一 store，
+        // 因此后续 CheckAsync 的放行只可能来自票匹配，排除 LLM 批准造成的假阳性。
+        var submitter = new InMemoryToolApprovalService(new FakeToolApprovalReviewer(), store);
+        var approval = new InMemoryToolApprovalService(new DenyingToolApprovalReviewer(), store);
+        var descriptor = new SampleHighTool().Descriptor;
+        var identity = SampleApprovalIdentity();
+
+        await submitter.SubmitAsync(
+            ValidApprovalRequest("""{"command":"custom-write","shell":"auto","timeout_seconds":10}"""),
+            identity,
+            descriptor);
+
+        ToolApprovalExecutionRequest Request(string command) => new()
+        {
+            WorkspaceId = identity.WorkspaceId,
+            SessionId = identity.SessionId,
+            AgentInstanceId = identity.AgentInstanceId,
+            UserId = identity.UserId,
+            ToolId = descriptor.ToolId,
+            ActualArgumentsJson = $"{{\"command\":\"{command}\",\"shell\":\"auto\",\"timeout_seconds\":10}}",
+        };
+
+        var first = await approval.CheckAsync(Request("custom-write"), descriptor);
+        Assert.IsTrue(first.IsApproved, first.Message);
+
+        // 换一个操作：不得借用 once 票的剩余次数。
+        var different = await approval.CheckAsync(Request("custom-delete"), descriptor);
+        Assert.IsFalse(
+            different.IsApproved,
+            "once 票的剩余次数不得授权与已批准操作不同的调用。");
+
+        // 原操作仍可重放：证明「不同操作」既未被放行，也未被误消耗剩余额度。
+        var replay = await approval.CheckAsync(Request("custom-write"), descriptor);
+        Assert.IsTrue(replay.IsApproved, replay.Message);
+        Assert.AreEqual(first.TicketId, replay.TicketId);
+    }
+
+    [TestMethod]
     public async Task ToolApprovalService_Allows_BuiltIn_ReadOnly_Shell_Command()
     {
         var ticketStore = new InMemoryToolApprovalTicketStore();
