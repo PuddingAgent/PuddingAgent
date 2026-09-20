@@ -215,10 +215,15 @@ public static class TaskStateMachine
             // 已交付或已作废的卡没有任何终态通道，只能长期滞留（V6-T4 实例：143 张卡堆积在 Backlog）。
             // 这里只补「关闭」这一条出边，不放宽到 Ready 之外的非终态迁移，保持其它语义不变。
             [WorkspaceTaskStatus.Backlog] = Set(WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Cancelled),
+            // 卡 cce95d6b（2026-09-20）：交付可能发生在 claim 通道之外（本 Agent 无 Active Task
+            // Context，无法 claim/complete），此类卡停在 Ready 却没有任何终态出边。
+            // 这里只补「验收即关闭」两条出边；Assigned/InProgress 的完成仍只能走 disposition
+            // 与完成结算（TaskCommandService 的「完成事实唯一路径防护」未放宽）。
             [WorkspaceTaskStatus.Ready] = Set(
                 WorkspaceTaskStatus.Deferred,
                 WorkspaceTaskStatus.Reserved,
                 WorkspaceTaskStatus.NeedsReview,
+                WorkspaceTaskStatus.Completed,
                 WorkspaceTaskStatus.Cancelled),
             [WorkspaceTaskStatus.Deferred] = Set(WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Cancelled),
             [WorkspaceTaskStatus.Reserved] = Set(
@@ -233,7 +238,10 @@ public static class TaskStateMachine
                 WorkspaceTaskStatus.Ready,
                 WorkspaceTaskStatus.NeedsReview,
                 WorkspaceTaskStatus.Cancelled),
-            [WorkspaceTaskStatus.NeedsReview] = Set(WorkspaceTaskStatus.Ready, WorkspaceTaskStatus.Cancelled),
+            [WorkspaceTaskStatus.NeedsReview] = Set(
+                WorkspaceTaskStatus.Ready,
+                WorkspaceTaskStatus.Completed,
+                WorkspaceTaskStatus.Cancelled),
             [WorkspaceTaskStatus.InProgress] = Set(
                 WorkspaceTaskStatus.Blocked,
                 WorkspaceTaskStatus.Ready,
