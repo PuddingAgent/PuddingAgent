@@ -191,3 +191,62 @@ blocker_reason = "WorkUnit input Token budget exhausted (187495/150000)."
   ③它是否构成真实阻断（本轮 turn 仍正常完成，故至少不是硬阻断，或阻断发生在会计/汇报侧）。
 - **方法论教训**：「全仓字面检索零命中」只能证明**HEAD 没有该字面量**，**不能**证明「没有活代码产生该消息」——
   运行中的产物可能比 HEAD 旧。判断消息是否活体，要看**它是否携带会变化的数据**（本例分母变了）。
+
+---
+
+## 10. step2 取证（Tracker 卡）：nextAction 缺口 + objective_evidence 第二例 + 活体 blocker 语义
+
+### 10.1 验收标准 1 的 **nextAction 面确认缺失**
+`TaskExecutionTrackingDecision`（`Source/PuddingCore/Scheduling/TaskExecutionTrackingContracts.cs:19`）字段（逐字）：
+`WorkspaceId/TaskId/AgentId/AssignmentId/GoalRunId/ReservationId/TaskPlanId/ExecutionPlanFingerprint/ExecutionPlanStatus/`
+`WorkUnitKind/WorkUnitStatus/TaskStatus/GoalPhase/IterationStatus/CommandStatus/RunStatus/ExecutionRunId/`
+`ExecutionFencingToken/ExecutionBindingId/TaskVersion/OutboxStatus/OutboxId/**Verdict**/**Code**/ObservedAtUtc/LastProgressAtUtc`
+⇒ **`Verdict`(state) 与 `Code`(reason) 齐备，但没有 `NextAction`**。
+verdict 枚举 5 项：`Healthy / Waiting / Stalled / Inconsistent / CleanupRequired`。
+（另有 `TaskExecutionRepairSummary{Examined, Repaired, RepairedByCode}` —— 只有计数，无逐项动作。）
+
+### 10.2 objective_evidence 缺陷 **第二例（独立复现）**
+本卡 verdict 的 2 条 unmet：
+```
+objective-file-evidence:§3          → file_evidence_missing - Evidence file does not exist: §3
+objective-file-evidence:§9.A02）。    → check_not_run
+```
+来源 objective 行：`设计/证据：E:/github/…/01-自主工作轨迹与自改进审计.md（A02 / §3、§9.A02）。`
+⇒ **第三个层面**：真正的证据是**绝对路径**，被 `IsSafeEvidenceFilePath`（只收「安全相对路径」）**拒掉**；
+而括号里的**章节号**（`§3`、`§9.A02）。`）反而通过并被登记为「证据文件」。**意图被完全反转**，且该缺陷在
+**两个互不相关的 objective 上独立复现**（另一例见卡 `14c02e8b`）。
+
+### 10.3 运行中 blocker（§9 待查项）的真实语义
+`GoalContinuationTests.TaskPlanSettlement_FailedTurn_ArchivesRealErrorCodeAndBlockerReason`（逐字）用**合成 turn.failed 载荷**：
+`{"kind":"failed","errorCode":"work_unit_budget_exhausted","errorMessage":"WorkUnit input Token budget exhausted (input 150000 tokens)."}`
+并断言：
+- 真实 errorCode/errorMessage 归档到 Goal 与 Task；
+- **ADR-092：回合失败是「当前单元可修复的未通过」，Goal 保持 `Active` 且 `TerminalAtUtc == null`**；
+- **「Repair 不释放逻辑归属」**：Task 保持 `Assigned`、`ActiveAssignmentId` 不变，且 **`BlockerKind` / `BlockerReason` 必须为 `null`**；
+- `goal_iterations.error_id` 归档真实 errorCode、status=failed；下一轮 continuation 已投递。
+
+**`150000` 的线索**：`GoalContinuationTests.cs:607 Assert.AreEqual(150_000, command.WorkUnit.MaxInputTokens)`、
+`:1523 MaxInputTokens = 150_000` ⇒ `150000` 是该路径下 WorkUnit 的**真实取值**（非虚构数字）。
+但本轮实测**两个 plan 的 `task_nodes.max_input_tokens` 为 1000000/750000/2500000/1750000/1000000，不含 150000**
+⇒ **分母来源仍未完全定位**（可能是另一 plan／另一任务的 work unit）。
+
+**与 §9 的关系**：HEAD 中**未命中**该字面量（PuddingRuntime／PuddingPlatform／PuddingCore 三处），
+但**本轮未检索 `PuddingAgent` / Desktop 等其它工程** ⇒ 只能说「**不是这三个工程的 HEAD 字面量**」，
+**不能**说「不是 HEAD」。§9 的「发出者不是 HEAD 实现」因此**降级为待定**。
+
+### 10.4 work unit 预算实测（本卡 plan `tp-6455158554163827b2d1899d06c3148f`，`task_nodes`）
+| seq | status | rounds | toolCalls | duration | maxInput | maxOutput | maxCost |
+|---|---|---|---|---|---|---|---|
+1（Explore）| **Running** | 25 | 60 | 1800 | 1000000 | 100000 | **1.0** |
+2 | Draft | 25 | 30 | 1200 | 750000 | 100000 | 0.75 |
+3 | Draft | 40 | 120 | 3600 | 2500000 | 160000 | 2.5 |
+4 | Draft | 30 | 100 | 3600 | 1750000 | 120000 | 1.75 |
+5 | Draft | 25 | 60 | 1800 | 1000000 | 100000 | 1.0 |
+
+⇒ **预算按工作单元差异化、非统一** ✓（符合卡片「不统一 600 / 不强制 25–40 轮切片」的设计合同）；
+且 `max_cost = 1.0` 与观测到的 `cost budget exhausted (1.005420/1.000000)` **同源**
+⇒ 成本轴确实在执行**冻结的 work unit 预算**（而非运行时拍脑袋）。
+
+### 10.5 疑似未填充
+`task_nodes.progress_fingerprint` 在两个 plan 的全部 6 行**均为 NULL** ⇒「按 fingerprint 推进」的落库面**疑未填充**
+（`goal_iterations.progress_fingerprint` 与 `goal_runs.last_progress_fingerprint` 本轮未查，不得据此结论）。
