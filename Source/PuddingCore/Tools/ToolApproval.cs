@@ -344,6 +344,36 @@ public sealed record ToolApprovalAllowlistRule
 
     /// <summary>P0-6：定义版本，同一工具每次授权捕获单调 +1；0 表示未记录（旧记录缺省）。</summary>
     public int DefinitionVersion { get; init; }
+
+    // —— S2（方案 v2 §14.12.6 规则溯源 / §14.12.1 键分量 / §14.12.7 有效期）：
+    // 以下成员只允许追加在记录末尾，严禁改动或重排上方既有属性；旧 JSON 缺失时反序列化为 null/0，完全向后兼容。——
+
+    /// <summary>产出（或最近刷新）本规则的分类器稳定标识（§14.12.6）；非分类器产出的规则为 null。</summary>
+    public string? SourceClassifierId { get; init; }
+
+    /// <summary>产出本规则时分类器使用的模型标识；纯规则类分类器为 null。</summary>
+    public string? ClassifierModel { get; init; }
+
+    /// <summary>裁决结论的逐分类可信度（0..1）；缺失为 null（视为低于阈值，按 §14.12.7 建议有效期）。</summary>
+    public double? OutcomeConfidence { get; init; }
+
+    /// <summary>创建本规则时的会话 id（§14.12.6 CreatedBySessionId；Agent/用户/出题单复用上方既有三个 ApprovedBy*/ApprovalTicketId 字段）。</summary>
+    public string? CreatedBySessionId { get; init; }
+
+    /// <summary>首次沉淀时间（UTC，§14.12.6）；幂等更新时保持不变。</summary>
+    public DateTimeOffset? FirstSeenAtUtc { get; init; }
+
+    /// <summary>最近一次策展刷新时间（UTC，§14.12.3/§14.12.6）；与 LastHitAtUtc（快路径命中）语义不同。</summary>
+    public DateTimeOffset? LastSeenAtUtc { get; init; }
+
+    /// <summary>§14.12.7 可选有效期：置信度 &lt; 0.95 时策展器建议 30 天；到期由消费方仅标记 Disabled，启动不自动清理、不硬删除。</summary>
+    public DateTimeOffset? ExpiresAtUtc { get; init; }
+
+    /// <summary>规则键 working_directory 分量（§14.12.1，分隔符统一、去尾分隔符后的规范化值）；null 表示无工作目录约束。</summary>
+    public string? WorkingDirectory { get; init; }
+
+    /// <summary>规则键 shell 分量（§14.12.1，trim 后原样保留大小写）；非 shell 类工具为 null。</summary>
+    public string? Shell { get; init; }
 }
 
 /// <summary>Mutation request for a tool approval allowlist rule.</summary>
