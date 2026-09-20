@@ -31,6 +31,7 @@ internal static class ToolApprovalCommandFirewall
     {
         "shell",
         "terminal_start",
+        "terminal_execute",
     };
 
     /// <summary>危险子串（对引号外内容做小写比较）。</summary>

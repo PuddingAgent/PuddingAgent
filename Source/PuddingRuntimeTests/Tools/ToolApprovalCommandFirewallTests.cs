@@ -238,6 +238,29 @@ public sealed class ToolApprovalCommandFirewallTests
         Assert.AreEqual(0, reviewer.Calls);
     }
 
+    [TestMethod]
+    public async Task Terminal_Execute_Gets_Same_Deterministic_Verdict_As_Shell()
+    {
+        // terminal_execute 与 shell / terminal_start 同为命令执行入口：同为 ToolCategory.Shell、
+        // permission=High，且 PuddingToolRegistry 显式将其标为 requiresShellExecution。
+        // 三者必须共用同一套确定性判定；否则同一条危险命令走 shell 被秒级拒绝、
+        // 走 terminal_execute 却落回 14-39 秒的 LLM 隐式审计且可能被批准 —— 覆盖不一致即绕过面。
+        foreach (var command in new[] { "rm -rf /tmp/x", "git status" })
+        {
+            var shellReviewer = new CountingReviewer();
+            var viaShell = await CheckAsync(shellReviewer, "shell", command);
+
+            var executeReviewer = new CountingReviewer();
+            var viaExecute = await CheckAsync(executeReviewer, "terminal_execute", command);
+
+            Assert.AreEqual(
+                viaShell.IsApproved,
+                viaExecute.IsApproved,
+                $"同一命令 \"{command}\" 在 shell 与 terminal_execute 上的判定必须一致。");
+            Assert.AreEqual(0, shellReviewer.Calls, "shell 判定不得落到 LLM 隐式审计。");
+            Assert.AreEqual(0, executeReviewer.Calls, "terminal_execute 判定不得落到 LLM 隐式审计。");
+        }
+    }
     [Tool(
         id: "test_shell",
         name: "Test shell",
