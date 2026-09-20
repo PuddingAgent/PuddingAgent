@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingCode.Platform;
 using PuddingController.Services;
+using System.Security.Claims;
 
 namespace PuddingController.Controllers;
 
@@ -26,6 +27,13 @@ namespace PuddingController.Controllers;
 /// 该 record 同时被 <c>InMemoryApprovalService</c> 用于 Redis 持久化，
 /// 加注解会连持久化一起抹掉，使 <c>ConfirmAsync</c> 的确认码校验恒失败。
 /// 脱敏必须发生在 HTTP 投影层，而不是 DTO 层。
+/// </remarks>
+/// <remarks>
+/// 审计主体（2026-09-20，发现 Y）：<c>ResolvedBy</c> 是审计字段，因此取值改为
+/// **优先来自认证上下文**（<c>ClaimTypes.NameIdentifier</c> → <c>User.Identity.Name</c>），
+/// 请求体里的 <c>confirmedBy</c> / <c>rejectedBy</c> 仅在无法解析认证主体时作为回退。
+/// 此前这两个字段完全由调用者自填，等于允许**伪造审计记录**。
+/// 这与 <c>PuddingPlatform.Controllers.Api.ApprovalController.Decide</c> 的既有做法一致。
 /// </remarks>
 [ApiController]
 [Authorize]
@@ -93,7 +101,8 @@ public class ApprovalController : ControllerBase
     [HttpPost("{approvalId}/confirm")]
     public async Task<ActionResult> Confirm(string approvalId, [FromBody] ConfirmRequest request, CancellationToken ct)
     {
-        var success = await _approvalService.ConfirmAsync(approvalId, request.ConfirmationCode, request.ConfirmedBy, ct);
+        var success = await _approvalService.ConfirmAsync(
+            approvalId, request.ConfirmationCode, AuthenticatedActor(request.ConfirmedBy), ct);
         return success ? Ok(new { approvalId, status = "confirmed" }) : BadRequest("Confirmation failed: invalid code, wrong status, or expired.");
     }
 
@@ -106,7 +115,21 @@ public class ApprovalController : ControllerBase
     [HttpPost("{approvalId}/reject")]
     public async Task<ActionResult> Reject(string approvalId, [FromBody] RejectRequest request, CancellationToken ct)
     {
-        var success = await _approvalService.RejectAsync(approvalId, request.RejectedBy, ct);
+        var success = await _approvalService.RejectAsync(approvalId, AuthenticatedActor(request.RejectedBy), ct);
         return success ? Ok(new { approvalId, status = "rejected" }) : BadRequest("Rejection failed: approval not found or already resolved.");
     }
+
+    /// <summary>
+    /// 解析本次操作的**审计主体**——优先取认证上下文，而不是调用者自填的姓名。
+    /// </summary>
+    /// <param name="claimed">请求体里自填的姓名，仅在无法解析认证主体时作为回退。</param>
+    /// <remarks>
+    /// 类级 <c>[Authorize]</c> 保证了正常路径下必然存在认证主体，因此回退分支
+    /// 只用于认证方案未给出主体标识的边界情况；保留它可避免把 <c>ResolvedBy</c>
+    /// 写成 null（那会让审计记录丢失操作者）。
+    /// </remarks>
+    private string AuthenticatedActor(string claimed)
+        => User.FindFirstValue(ClaimTypes.NameIdentifier)
+           ?? User.Identity?.Name
+           ?? claimed;
 }

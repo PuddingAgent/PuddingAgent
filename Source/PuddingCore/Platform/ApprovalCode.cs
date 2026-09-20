@@ -29,8 +29,11 @@ namespace PuddingCode.Platform;
 ///   属产品决策。
 ///   </description></item>
 ///   <item><description>
-///   <c>ConfirmRequest.ConfirmedBy</c> 由请求体提供并原样写入 <c>ResolvedBy</c>，
-///   未与认证主体绑定，确认人身份可被任意填写。
+///   ~~<c>ConfirmRequest.ConfirmedBy</c> 由请求体提供并原样写入 <c>ResolvedBy</c>，
+///   未与认证主体绑定，确认人身份可被任意填写。~~ <b>已在 2026-09-20（发现 Y）加固</b>：
+///   <c>PuddingController.ApprovalController</c> 的 <c>confirm</c>/<c>reject</c> 改为
+///   **优先取认证上下文**（<c>ClaimTypes.NameIdentifier</c> → <c>User.Identity.Name</c>），
+///   请求体自填姓名仅在无法解析认证主体时作为回退。
 ///   </description></item>
 /// </list>
 ///

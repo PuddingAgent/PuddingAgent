@@ -7,7 +7,7 @@
 | 文件 | 用途 |
 |------|------|
 | `AgentTemplateController.cs` | Agent 模板管理 |
-| `ApprovalController.cs` | 工具审批；**类级 `[Authorize]`**（2026-09-20 发现 X 补）；读接口返回脱敏投影 `ApprovalView`，**不下发 `ConfirmationCode`**；`confirm` 的确认码校验委托 `PuddingCode.Platform.ApprovalCode.Matches`（恒时比较） |
+| `ApprovalController.cs` | 工具审批；**类级 `[Authorize]`**（2026-09-20 发现 X 补）；读接口返回脱敏投影 `ApprovalView`，**不下发 `ConfirmationCode`**；`confirm` 的确认码校验委托 `PuddingCode.Platform.ApprovalCode.Matches`（恒时比较）；`confirm`/`reject` 的审计主体 `ResolvedBy` **优先取认证上下文**（`ClaimTypes.NameIdentifier` → `User.Identity.Name`，2026-09-20 发现 Y 加固），请求体自填姓名仅作回退 |
 | `AuditController.cs` | 审计记录 |
 | `DebugController.cs` | 调试端点（9KB） |
 | `GatewayController.cs` | 网关入口 |

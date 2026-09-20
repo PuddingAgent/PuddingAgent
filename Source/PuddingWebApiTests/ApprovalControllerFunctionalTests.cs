@@ -80,7 +80,10 @@ public sealed class ApprovalControllerFunctionalTests
         var fetched = await Service.GetAsync(record.ApprovalId);
         Assert.IsNotNull(fetched, "已确认的审批单必须仍可读取。");
         Assert.AreEqual(ApprovalStatus.Confirmed, fetched!.Status);
-        Assert.AreEqual("tester", fetched.ResolvedBy);
+        Assert.AreEqual(
+            "admin",
+            fetched.ResolvedBy,
+            "审计主体必须来自认证上下文（JwtHelper 默认主体 admin），而不是请求体自填的 confirmedBy。");
         Assert.IsNotNull(fetched.ResolvedAt);
     }
 
@@ -128,7 +131,10 @@ public sealed class ApprovalControllerFunctionalTests
 
         var fetched = await Service.GetAsync(record.ApprovalId);
         Assert.AreEqual(ApprovalStatus.Rejected, fetched!.Status);
-        Assert.AreEqual("tester", fetched.ResolvedBy);
+        Assert.AreEqual(
+            "admin",
+            fetched.ResolvedBy,
+            "审计主体必须来自认证上下文，而不是请求体自填的 rejectedBy。");
 
         var pending = await Service.QueryPendingAsync();
         Assert.IsFalse(
@@ -199,5 +205,47 @@ public sealed class ApprovalControllerFunctionalTests
             HttpStatusCode.BadRequest,
             second.StatusCode,
             "已解析的审批单不得被二次确认。");
+    }
+
+    [TestMethod]
+    public async Task Confirm_Does_Not_Trust_Caller_Supplied_ConfirmedBy()
+    {
+        // 请求体蓄意填一个假名：审计字段必须仍然记录**认证主体**，
+        // 否则任何调用者都能伪造「是谁批准的」。
+        var record = await Service.RequestApprovalAsync("session-forged-by", "workspace-1", "delete file");
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/approval/{record.ApprovalId}/confirm",
+            new { confirmationCode = record.ConfirmationCode!, confirmedBy = "somebody-else" });
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+
+        var fetched = await Service.GetAsync(record.ApprovalId);
+        Assert.IsNotNull(fetched);
+        Assert.AreEqual(
+            "admin",
+            fetched!.ResolvedBy,
+            "ResolvedBy 必须是认证主体（JWT 的 NameIdentifier），绝不能是请求体自填值。");
+        Assert.AreNotEqual("somebody-else", fetched.ResolvedBy, "自填姓名一律不得进入审计字段。");
+    }
+
+    [TestMethod]
+    public async Task Reject_Does_Not_Trust_Caller_Supplied_RejectedBy()
+    {
+        var record = await Service.RequestApprovalAsync("session-forged-reject", "workspace-1", "delete file");
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/approval/{record.ApprovalId}/reject",
+            new { rejectedBy = "somebody-else" });
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+
+        var fetched = await Service.GetAsync(record.ApprovalId);
+        Assert.IsNotNull(fetched);
+        Assert.AreEqual(
+            "admin",
+            fetched!.ResolvedBy,
+            "ResolvedBy 必须是认证主体，绝不能是请求体自填值。");
+        Assert.AreNotEqual("somebody-else", fetched.ResolvedBy);
     }
 }
