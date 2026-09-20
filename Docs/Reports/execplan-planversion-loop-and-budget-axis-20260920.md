@@ -124,3 +124,47 @@ if (plan is not null && plan.PlanVersion != TaskExecutionPlanSnapshot.CurrentPla
 2. **或最小改动**：校验侧改读语义来源（计划快照内的 `PlanVersion` / `schema_version`），不再读修订号列。
 3. **拒绝原因区分**：`..._outdated`（旧语义版本）与 `..._unsupported`（不可识别值）分开；并同时输出 semanticVersion 与 revision。
 4. **迁移路径**：对既有 `plan_version ≥ 3` 的计划提供重编译到语义版本的通道，否则这些任务**永久不可执行**。
+
+---
+
+## 7. 门禁 #2「输出/成本有限零值**不可绕过**」证据（2026-09-20 补）
+
+### 7.1 代码语义（`Source/PuddingRuntime/Services/AgentExecution/ExecutionUsageBudgetTracker.cs`，逐字）
+- 类注释：provider call 是**最小可执行边界**；**一旦触限，不再启动任何工具或后续 LLM 轮**。
+- 判定用 `>=`（剩余恰为 0 即停止）：
+  - 输出：`budget.HasOutputLimit && OutputTokens >= budget.MaxOutputTokens`
+  - 成本：`budget.HasCostLimit && Cost >= budget.MaxCost`
+- **「未设置」与「有限零值」由独立的 `HasOutputLimit` / `HasCostLimit` 表达**，不用 `> 0` 判断。
+- 失败关闭：供应商无 usage payload ⇒ `WorkUnitUsageUnavailable`；设了成本限额但无冻结定价 ⇒ `WorkUnitPricingUnavailable`。
+- 输入轴：按 `PeakRoundInputTokens`（**单轮峰值**）比较，消息中**另列** `cumulative input=` ⇒ 与 A1 声明一致。
+
+### 7.2 行为级断言（**已存在**，测试名逐字）
+| 测试 | 断言要点 |
+|---|---|
+`CreateRemainingBudget_ExhaustedOutputRemainsLimitedAtZero` | `MaxOutputTokens=0` 且 `HasOutputLimit=true`，且 `new ExecutionUsageBudgetTracker(remaining).EvaluateBeforeRound().ShouldStop == true` ⇒ **0 剩余仍受限、立即停止** |
+`CostExhaustedAtZeroRemainsLimitedThroughDelegationAndSerialization` | 成本 0 剩余经**委派与序列化**后仍保持受限 |
+`UnsetCumulativeAxesRemainUnsetThroughDelegationAndSerialization` | 未设置轴保持未设置（区分「有限零值」的另一半） |
+`InputCapacity_IncludesExactBoundary_AndAccountsRejectedRequest` | 精确边界 + 被拒请求记账 |
+`EvaluateBeforeRound_CostBudgetWithoutPricingFailsClosed`、`Record_MissingProviderUsageFailsClosedWhenBudgetIsActive` | 两条**失败关闭** |
+`SixHundredRequests_KeepCumulativeLedgerWithoutExhaustingInputCapacity` | 600 次请求的累计账本**不**触发输入容量 |
+`Record_AccumulatesInputWithoutConsumingPerRequestCapacity` | 输入累计不消耗单请求容量（A1 核心声明） |
+
+### 7.3 运行时证据（真实发生过的一次阻断）
+观测到的 `WorkUnit cost budget exhausted (1.005420/1.000000)` 与成本分支格式串
+`$"WorkUnit cost budget exhausted ({Cost:F6}/{budget.MaxCost:F6})."` **逐字一致**
+⇒ 该路径在**已部署运行时**中确实生效并真实阻断过一次迭代（不只是单测成立）。
+
+### 7.4 未覆盖（诚实）
+- **输出轴的运行时观测缺失**（目前仅有单测）。
+- 卡片要求的「**600 轮产品验收**」需长程真实运行，本轮未执行；不得以只读证据替代。
+- 本轮未运行测试套件（纯只读）。
+
+## 8. Q1 遗留项收口：粘滞串来源已查明
+- HEAD 中输入轴消息为 `WorkUnit per-request input Token capacity exceeded ({peak}/{capacity}); cumulative input={...}`，判据是**单轮峰值**。
+- 全仓检索 `input Token budget exhausted`，**唯一命中是文档注释**：
+  `Source/PuddingPlatform/Services/Goals/GoalSettlementStore.cs:35`
+  `/// <summary>Error message from the terminal turn.failed payload (e.g. WorkUnit input Token budget exhausted).</summary>`
+  ⇒ 该串是**存储型字段（terminal `turn.failed` 的 error message）里的历史数据**，
+  **不表示仍有活代码把输入累计当作剩余额度**。
+- 结论：`task_update` 三次回显的同一数值 `1020083/1000000` 属**陈旧存储值**，与 §1 的结论（预算阻断均由成本轴触发，输入轴 0 次）**不冲突**。
+- 限定：未读该字段的写入/刷新策略，故仅断定为「非 HEAD 活代码产生」。
