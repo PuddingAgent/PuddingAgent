@@ -25,11 +25,23 @@ import {
   type ToolApprovalAllowlistStatus,
 } from '@/services/platform/api';
 
-const SOURCE_OPTIONS: { label: string; value: ToolApprovalAllowlistSource }[] = [
-  { label: '内置', value: 'built_in' },
-  { label: '审计 Agent', value: 'audit_agent' },
-  { label: '人工', value: 'human' },
-];
+// 来源文案单一事实源：`Record<ToolApprovalAllowlistSource, string>` 由**编译器强制完备**——
+// 联合类型新增成员（后端新增来源）而这里没补 ⇒ `tsc` 直接报错，不会静默漏同步。
+// （历史事故：后端 34e41dfb 新增 classifier 来源后，本页的筛选下拉/标签配色/列文案三处都没同步。）
+const SOURCE_LABELS: Record<ToolApprovalAllowlistSource, string> = {
+  built_in: '内置',
+  audit_agent: '审计 Agent',
+  human: '人工',
+  classifier: '分类器',
+};
+
+const SOURCE_OPTIONS: { label: string; value: ToolApprovalAllowlistSource }[] = (
+  Object.entries(SOURCE_LABELS) as [ToolApprovalAllowlistSource, string][]
+).map(([value, label]) => ({ value, label }));
+
+const SOURCE_VALUE_ENUM: Record<string, { text: string }> = Object.fromEntries(
+  (Object.entries(SOURCE_LABELS) as [string, string][]).map(([value, text]) => [value, { text }]),
+);
 
 const STATUS_OPTIONS: { label: string; value: ToolApprovalAllowlistStatus }[] = [
   { label: '启用', value: 'enabled' },
@@ -40,6 +52,7 @@ const sourceColor: Record<ToolApprovalAllowlistSource, string> = {
   built_in: 'blue',
   audit_agent: 'purple',
   human: 'green',
+  classifier: 'gold',
 };
 
 const statusColor: Record<ToolApprovalAllowlistStatus, string> = {
@@ -176,11 +189,7 @@ const ToolApprovalAllowlistPage: React.FC = () => {
       title: '来源',
       dataIndex: 'source',
       width: 110,
-      valueEnum: {
-        built_in: { text: '内置' },
-        audit_agent: { text: '审计 Agent' },
-        human: { text: '人工' },
-      },
+      valueEnum: SOURCE_VALUE_ENUM,
       render: (_, record) => <Tag color={sourceColor[record.source]}>{record.source}</Tag>,
     },
     {

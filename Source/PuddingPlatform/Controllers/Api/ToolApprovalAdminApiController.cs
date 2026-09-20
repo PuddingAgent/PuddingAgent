@@ -44,7 +44,7 @@ public sealed class ToolApprovalAdminApiController(
         if (string.IsNullOrWhiteSpace(request.Command) && string.IsNullOrWhiteSpace(request.ArgumentsJson))
             return BadRequest(new { message = "command or argumentsJson is required." });
         if (!TryParseSource(request.Source, out var source))
-            return BadRequest(new { message = "source must be one of: built_in, audit_agent, human." });
+            return BadRequest(new { message = "source must be one of: built_in, audit_agent, human, classifier." });
         if (!TryParseStatus(request.Status, out var status))
             return BadRequest(new { message = "status must be one of: enabled, disabled." });
 
@@ -92,7 +92,7 @@ public sealed class ToolApprovalAdminApiController(
         if (string.IsNullOrWhiteSpace(request.Command) && string.IsNullOrWhiteSpace(request.ArgumentsJson))
             return BadRequest(new { message = "command or argumentsJson is required." });
         if (!TryParseSource(request.Source, out var source))
-            return BadRequest(new { message = "source must be one of: built_in, audit_agent, human." });
+            return BadRequest(new { message = "source must be one of: built_in, audit_agent, human, classifier." });
         if (!TryParseStatus(request.Status, out var status))
             return BadRequest(new { message = "status must be one of: enabled, disabled." });
 
@@ -266,6 +266,8 @@ public sealed class ToolApprovalAdminApiController(
             "built_in" or "builtin" => Set(ToolApprovalAllowlistRuleSource.BuiltIn, out source),
             "audit_agent" or "auditagent" => Set(ToolApprovalAllowlistRuleSource.AuditAgent, out source),
             "human" => Set(ToolApprovalAllowlistRuleSource.Human, out source),
+            // 分类器落的规则必须在管理端可创建/可修改：漏掉这一支会让前端编辑分类器规则时收到 400。
+            "classifier" => Set(ToolApprovalAllowlistRuleSource.Classifier, out source),
             _ => false,
         };
     }
@@ -292,7 +294,12 @@ public sealed class ToolApprovalAdminApiController(
         {
             ToolApprovalAllowlistRuleSource.BuiltIn => "built_in",
             ToolApprovalAllowlistRuleSource.AuditAgent => "audit_agent",
-            _ => "human",
+            ToolApprovalAllowlistRuleSource.Human => "human",
+            // Classifier 必须显式映射：曾因落到 `_ => "human"` 而导致分类器落的规则
+            // 被当作 human 上报（审计溯源字段报错），且前端无法区分来源。
+            ToolApprovalAllowlistRuleSource.Classifier => "classifier",
+            // 兜底不再默认 human：未来新增来源时宁可如实回显枚举名，也不要把来源说错。
+            _ => source.ToString().ToLowerInvariant(),
         };
 
     private static string FormatStatus(ToolApprovalAllowlistRuleStatus status)

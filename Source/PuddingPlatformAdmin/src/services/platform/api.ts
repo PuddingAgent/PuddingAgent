@@ -3658,7 +3658,10 @@ export async function listAgentMemoryPointers(
 
 // ─── Tool Approval Governance ───────────────────────────────────
 
-export type ToolApprovalAllowlistSource = 'built_in' | 'audit_agent' | 'human';
+// 来源枚举必须与后端 ToolApprovalAllowlistRuleSource 保持同步：
+// BuiltIn=0 / AuditAgent=1 / Human=2 / **Classifier=3**（后端 34e41dfb 追加）。
+// 漏掉 classifier 会让「分类器落的规则」在管理端丢失来源标识（无标签文案/无配色/无法筛选）。
+export type ToolApprovalAllowlistSource = 'built_in' | 'audit_agent' | 'human' | 'classifier';
 export type ToolApprovalAllowlistStatus = 'enabled' | 'disabled';
 
 export interface ToolApprovalAllowlistRuleDto {
