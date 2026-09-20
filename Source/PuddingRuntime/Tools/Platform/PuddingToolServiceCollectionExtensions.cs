@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Flurl.Http.Configuration;
 using PuddingCode.Abstractions;
@@ -333,7 +334,9 @@ public static class PuddingToolServiceCollectionExtensions
             arbiter,
             serviceProvider.GetRequiredService<IToolApprovalAuditStore>(),
             serviceProvider.GetService<TimeProvider>(),
-            pipelineOptions);
+            pipelineOptions,
+            // 覆盖审计写入失败必须可探查（不得静默吞）：宿主未注册日志时此参数为 null，管线仍可用。
+            serviceProvider.GetService<ILogger<ToolCallClassifierPipeline>>());
 
         // S6a：健康面登记（幂等，含从未上报者 ⇒ Snapshot 默认 Unknown）+ 仲裁位注册状态
         // （未注册 ⇒ classifier_status 可见 fail-closed 占位）。ClassifierId 全部动态取自实现，

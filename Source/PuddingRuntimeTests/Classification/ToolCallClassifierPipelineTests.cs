@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using PuddingCode.Classification;
 using PuddingCode.Tools;
 using PuddingRuntime.Classification;
@@ -98,6 +99,44 @@ public sealed class ToolCallClassifierPipelineTests
         Assert.AreEqual("arbiter-stub", auditEvent.ClassifierId, "新增 append-only 属性记录仲裁分类器 id。");
         AssertClose(0.77, auditEvent.ClassifierConfidence, "记录门槛校验所用可信度。");
         Assert.IsTrue(auditEvent.Reason!.Contains("candidate_reason=命中 deny 规则 rule-deny-1（候选）"), "审计保留原始候选理由。");
+    }
+
+    // —— 02b 覆盖审计写入失败 ⇒ 裁决不变且**不静默**（记 Warning；用户要求④：故障可提示、可探查） ——
+
+    [TestMethod]
+    public async Task ClassifyAsync_OverrideAuditWriteFails_KeepsVerdict_AndLogsWarning()
+    {
+        var rules = new IToolCallClassifier[]
+        {
+            new StubClassifier("system-rules", ClassificationOutcome.DenyOnce)
+            {
+                AppliedRuleId = "rule-deny-1",
+                Reason = "命中 deny 规则 rule-deny-1（候选）",
+            },
+        };
+        var arbiter = new StubClassifier("arbiter-stub", ClassificationOutcome.AllowOnce)
+        {
+            Reason = "该调用无风险",
+            PerOutcomeConfidence = Confidences(allowPermanent: 0.95, allowOnce: 0.77),
+        };
+        var audit = new RecordingAuditStore { ThrowOnSave = true };
+        var logger = new RecordingLogger<ToolCallClassifierPipeline>();
+        var pipeline = new ToolCallClassifierPipeline(rules, arbiter, audit, null, null, logger);
+
+        var verdict = await pipeline.ClassifyAsync(ToolContext());
+
+        Assert.AreEqual(
+            ClassificationOutcome.AllowOnce,
+            verdict.Outcome,
+            "审计失败**不得**改变已定裁决（裁决先于留痕成立）。");
+        Assert.AreEqual(0, audit.Events.Count, "本用例的审计写入必然失败（假件抛异常）⇒ 不留痕迹。");
+        Assert.IsTrue(
+            logger.Warnings.Count > 0,
+            "溯源缺失**不得静默**：必须记 Warning 以便运维探查（用户要求④）。");
+        Assert.IsTrue(
+            logger.Warnings[0].Contains("覆盖审计写入失败"),
+            $"Warning 文本应指明失败环节（实际：{logger.Warnings[0]}）。");
+        Assert.AreEqual(1, arbiter.CallCount, "候选 deny 照常给出一次覆盖机会。");
     }
 
     // —— 03 规则 deny + 仲裁 deny ⇒ 最终 deny（保留候选信息） ——
@@ -596,10 +635,18 @@ public sealed class ToolCallClassifierPipelineTests
 
         public bool ThrowOnList { get; init; }
 
+        /// <summary>模拟保存故障（用于验证覆盖审计写入失败“不静默”）。</summary>
+        public bool ThrowOnSave { get; init; }
+
         public void Seed(ToolApprovalAuditEvent auditEvent) => Events.Add(auditEvent);
 
         public Task SaveAsync(ToolApprovalAuditEvent auditEvent, CancellationToken ct = default)
         {
+            if (ThrowOnSave)
+            {
+                throw new InvalidOperationException("audit-save-boom");
+            }
+
             Events.Add(auditEvent);
             return Task.CompletedTask;
         }
@@ -613,6 +660,29 @@ public sealed class ToolCallClassifierPipelineTests
 
             IReadOnlyList<ToolApprovalAuditEvent> snapshot = Events.ToList();
             return Task.FromResult(snapshot);
+        }
+    }
+
+    /// <summary>记录型日志假件：只收集 Warning 及以上消息文本（用于验证“失败不静默”）。</summary>
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<string> Warnings { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= LogLevel.Warning)
+            {
+                Warnings.Add(formatter(state, exception));
+            }
         }
     }
 }

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using PuddingCode.Classification;
 using PuddingCode.Tools;
 
@@ -92,6 +93,7 @@ public sealed class ToolCallClassifierPipeline : IToolCallClassifier
     private readonly IToolApprovalAuditStore _auditStore;
     private readonly TimeProvider _timeProvider;
     private readonly ToolCallClassifierPipelineOptions _options;
+    private readonly ILogger<ToolCallClassifierPipeline>? _logger;
 
     /// <summary>构造分类器管线。</summary>
     /// <param name="ruleClassifiers">确定性规则类分类器（零网络），按给定顺序求值；允许为空列表。</param>
@@ -99,18 +101,21 @@ public sealed class ToolCallClassifierPipeline : IToolCallClassifier
     /// <param name="auditStore">审计存储：用于覆盖审计（§14.13.4）与防循环的规则来源回查（§11.3）。</param>
     /// <param name="timeProvider">时间源；缺省系统时钟（测试注入假钟）。</param>
     /// <param name="options">管线可调参数；缺省超时 3000 ms、永久类门槛 0.90。</param>
+    /// <param name="logger">可选日志：仅用于把「覆盖审计写入失败」变为**可探查**（不得静默吞）。</param>
     public ToolCallClassifierPipeline(
         IReadOnlyList<IToolCallClassifier> ruleClassifiers,
         IToolCallClassifier arbiter,
         IToolApprovalAuditStore auditStore,
         TimeProvider? timeProvider = null,
-        ToolCallClassifierPipelineOptions? options = null)
+        ToolCallClassifierPipelineOptions? options = null,
+        ILogger<ToolCallClassifierPipeline>? logger = null)
     {
         _ruleClassifiers = ruleClassifiers ?? throw new ArgumentNullException(nameof(ruleClassifiers));
         _arbiter = arbiter ?? throw new ArgumentNullException(nameof(arbiter));
         _auditStore = auditStore ?? throw new ArgumentNullException(nameof(auditStore));
         _timeProvider = timeProvider ?? TimeProvider.System;
         _options = options ?? new ToolCallClassifierPipelineOptions();
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -364,7 +369,8 @@ public sealed class ToolCallClassifierPipeline : IToolCallClassifier
     /// <summary>
     /// 覆盖审计（§14.13.4）：至少含原候选结论、覆盖后结论、分类器 id/型号、逐分类可信度、
     /// 理由、时间、身份四元组、工具 id 与参数；Reason 以 key=value 形式承载结构化字段并保留原始候选理由。
-    /// 审计失败不改变已定裁决（裁决先于留痕成立）。
+    /// 审计失败**不改变已定裁决**（裁决先于留痕成立），但**不静默**：失败会记 Warning（带 tool/候选/终局/分类器 id），
+    /// 使“覆盖了 deny 却有没痕迹”可被运维探查。
     /// </summary>
     private async Task WriteOverrideAuditAsync(
         ToolCallClassificationContext context,
@@ -405,9 +411,17 @@ public sealed class ToolCallClassifierPipeline : IToolCallClassifier
         {
             throw;
         }
-        catch
+        catch (Exception ex)
         {
-            // 审计写入失败不得改变已定裁决；溯源缺失风险在健康面/运维侧另行暴露（本切片不引入日志依赖）。
+            // 审计写入失败不得改变已定裁决（裁决先于留痕成立）；但**不得静默**：
+            // 无日志则“覆盖 deny”这件事会既无痕迹也不可见，违反用户要求④（故障要可提示、可探查）。
+            _logger?.LogWarning(
+                ex,
+                "分类器覆盖审计写入失败：tool={ToolId} candidate={Candidate} final={Final} classifier={ClassifierId}（裁决不变，但溯源缺失）",
+                context.ToolId,
+                candidate.Outcome,
+                final.Outcome,
+                arbiterVerdict.ClassifierId);
         }
     }
 
