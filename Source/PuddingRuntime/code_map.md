@@ -167,9 +167,24 @@
 | `Services/Background/SubconsciousJobScheduler.cs` | 空闲、并发和预算约束下的 Job lease 决策 |
 | `Services/Hooks/SessionCompressedMemoryMaintenanceHook.cs` | 当前 `session.compressed` 事件到持久 Job 桥；目标作为 durable event consumer 重命名，不再称 Hook |
 
+## 安全分类器与准入（Classification，2026-09-21）
+
+依据方案 v2 §14（`Docs/Features/安全分类器与工具调用准入方案-v2.md`）。**抽象在 PuddingCore，实现全在 PuddingRuntime**；消费方只依赖 `IToolCallClassifier` 抽象，不得直接依赖任何厂商实现。
+
+| 文件 | 用途 |
+|------|------|
+| `Classification/ClassificationRuleCurator.cs` | 规则策展器：五元组规则键（workspace/tool/subject/working_directory/shell，**禁通配**）；尽窄校验 6 条（命中即**拒绝落永久规则**、退化为单次）；幂等读改写（HitCount++ / FirstSeen 不变 / LastSeen 刷新）；同键相反 Effect ⇒ **deny 胜** + `RuleConflictDetected`；溯源字段；禁用不硬删除（保审计链）；store 异常不冒泡（fail-closed），`OperationCanceledException` 照常传播 |
+| `Classification/SystemRuleClassifier.cs` | 零网络规则分类器（`ClassifierId="system-rules"`）：复用策展器 `BuildKey`；allow 命中 ⇒ `AllowOnce`；**deny 命中 ⇒ 候选 `DenyOnce`**（不执行覆盖、**绝不返回永久类**）；未命中 ⇒ **`Unknown`**（绝不默认放行）；store 异常 ⇒ `Unknown`/`store_error` |
+| `Classification/ToolCallClassifierPipeline.cs` | 分类器管线（`ClassifierId="pipeline"`，**本身即实现 `IToolCallClassifier`**）：§14.13.2 求值序 ①规则 allow 命中 ⇒ 终局且**零仲裁调用** ②deny 候选 ⇒ 必须给仲裁一次覆盖机会 ③全 `Unknown` ⇒ 仲裁 ④仲裁不可用 ⇒ `Unknown` + `arbiter_unavailable`/`override_unavailable`（**不折叠为 Deny、不放行**）；永久类须逐分类可信度 ≥0.90，否则降级单次；**覆盖必落 `ClassifierInvoked` 审计**；防循环（`Source=Classifier` 的候选 deny 复用自身裁决）；独立链接 CTS 3000ms |
+| `Classification/AgentFullAccessGrantService.cs` | 临时「完全访问」授予服务：TTL 默认=上限=300s（**>300 拒绝，绝不截断**）；服务端 `TimeProvider` 计时（读取时判定失效、不信客户端时刻）；进程重启即失效；作用域=workspace+agent 精确匹配；**仅 `AllowOnce`/`AllowPermanent` 可授予**；审计五类（Requested / Granted / Denied / Expired **at-most-once** / Revoked 幂等）；拒绝抛 `AgentFullAccessGrantRejectedException`（因契约 `GrantAsync` 返回非可空所致） |
+
+> **未接线**：DI 注册、`ToolApproval:Reviewer` 默认值翻转（仍为 `llm`）、`IAgentAccessLevelService` 接线（Yolo 生效路径）均为后续独立切片（S3b/S3c/S5b）——凡改变生产行为者一律独立提交。
+> **PuddingCore 侧**：`Tools/ToolApproval.cs` 的 `ToolApprovalAllowlistRule` 追加 9 个可空溯源/键分量属性；`ToolApprovalAuditEvent` 追加 `ClassifierId?`/`ClassifierConfidence?`；`ToolApprovalAllowlistRuleSource` 末尾追加 `Classifier`（均为 append-only）。稳定原因码单一来源 = `Tools/ToolApprovalWire.cs`。
+> 派发与验收详见任务书 `temp/s4-portal-task.md`（门户切片 S4）；切分与状态见方案 v2 §14.10。
+
 ## 测试
 
-对应测试项目：`../PuddingRuntimeTests/` — Agent Loop、上下文管线、语音/图片 Provider；SubAgent/输入 resolver/图片生成/图片展示编排定向测试 4/4 ✅；list_llm_providers 工具合同测试（歧义/过滤/敏感字段/路由可解析）7/7 ✅
+对应测试项目：`../PuddingRuntimeTests/` — Agent Loop、上下文管线、语音/图片 Provider；SubAgent/输入 resolver/图片生成/图片展示编排定向测试 4/4 ✅；list_llm_providers 工具合同测试（歧义/过滤/敏感字段/路由可解析）7/7 ✅；安全分类器域：契约 7/7 ✅、策展器 22/22 ✅、零网络分类器 10/10 ✅、管线 15/15 ✅、完全访问授予 12/12 ✅（`~Classification` 合计 64/64）
 
 ## 上下文压缩生命周期事件的活性契约（2026-09-19）
 
