@@ -1,0 +1,61 @@
+# 前端既有红：逐例定性台账（AdminJest）
+
+> **用途**：门禁 `TestScripts/test-pudding-suite-gates.ps1` 的 `AdminJest` 目前是 `KnownRed = $null`
+> （名单未登记 ⇒ **仅按预算判**）。**唯一**能把它收紧为"具体名单"的办法，是把每一例定性清楚并登记在此。
+> **纪律**：本台账只写**有证据的判断**；没查清的写「待查」，**不得**用猜测填格。
+
+## 定性分类（本台账口径）
+| 类 | 含义 | 处置 |
+|---|---|---|
+| **A** | **测试滞后**：生产按设计改了（含职责迁移/重命名/格式收紧），测试未同步 | 改测试（并把证据写进测试注释） |
+| **B** | **配置/文案滞后**：i18n/路由/常量等外部配置与测试期望不一致 | 改配置或改测试，视哪侧是真相 |
+| **C** | **真实缺陷**：生产行为不符合契约 | **修生产**（不得改测试迁就） |
+| **D** | **测试自身问题**：本身不成立/自相矛盾/依赖环境 | 重写或移除，须留指针 |
+
+## 当前基线（2026-09-21 实测）
+- `npx jest` 全量 ⇒ **`Tests: 14 failed, 1338 passed, 1352 total`（9 个红套件）**
+- 门禁：`AdminJest.AllowedFailures = 14`、`KnownRed = $null`
+
+## 逐例台账（14 例）
+
+| # | 套件 | 用例 | 类 | 证据/状态 |
+|---|---|---|---|---|
+| 1 | `src/utils/adminRoutes.test.ts` | `admin workspace menu routing › resolves every configured admin icon name to a React element` | 待查 | 仅日志行；未读取用例 |
+| 2 | `src/pages/chat/client/agentChatApi.test.ts` | `agentChatApi › loads historical process items only for the selected message` | 待查（疑似 B） | 早前按"安全分类器改动"排查时列入"测试/配置滞后"，**本轮未复核具体断言** |
+| 3 | `src/pages/agent-template-settings/agentTemplateOwnership.test.ts` | `Agent template and instance field ownership copy › frames workspace Agent settings as instance identity without model overrides` | 待查 | 疑似文案（i18n）期望不一致，未复核 |
+| 4 | `src/pages/storage/index.test.tsx` | `StorageTrendChart › 渲染堆叠面积路径与图例标签` | 待查（疑似 B） | 早前列入"测试/配置滞后"，未复核 |
+| 5 | `src/pages/chat/components/InputArea.test.tsx` | `InputArea status feedback › does not let the previous completed toast mask a new streaming state` | 待查 | 与语音无关，独立原因 |
+| 6 | `src/pages/chat/components/InputArea.test.tsx` | `InputArea status feedback › switches into voice mode and sends a transcript with voice metadata` | **A（部分已证）** | 失败点：`Unable to find [data-testid="voice-conversation-panel"]`；见下方「语音归属」一节 |
+| 7 | `src/pages/chat/components/InputArea.test.tsx` | `InputArea status feedback › shows the voice mode unavailable state when browser microphone capture is unavailable` | **A（同族）** | 同族语音用例，预期形态与现组件不一致；细节待补 |
+| 8 | `src/pages/chat/hooks/useChatState.selection.test.tsx` | `useChatState session selection races › preserves the visible compact result when switching to the new compacted session` | 待查 | 与压缩会话切换竞态有关，未复核 |
+| 9 | `src/pages/chat/components/IntentConsole.test.tsx` | `IntentConsole › sends voice transcript with voice metadata from the console boundary` | **A（同族）** | 同族语音用例（与 #6 同一归属问题） |
+| 10 | `src/pages/chat/components/IntentConsole.test.tsx` | `IntentConsole › converts BMP images to PNG before uploading` | 待查 | 与上传前图像转码有关，未复核 |
+| 11 | `src/pages/chat/components/DevPanel.test.tsx` | `DevPanel performance diagnostics › loads benchmark cases from the server and sends only the case prompt` | 待查（疑似 i18n） | 早前观察到缺 i18n key（`executionFlow.detail.*` 一族），未复核本用例 |
+| 12 | `src/pages/access-token-management/index.test.tsx` | `Access Token 管理页（ADR-075 §15.3） › 创建抽屉默认最小 scope，workspace 为空不能提交` | 待查 | 该套件耗时 209s，未复核 |
+| 13 | `src/pages/access-token-management/index.test.tsx` | `Access Token 管理页（ADR-075 §15.3） › 撤销弹窗显示强确认警示，未确认不调用后端` | 待查 | 同上 |
+| 14 | `src/pages/access-token-management/index.test.tsx` | `Access Token 管理页（ADR-075 §15.3） › 撤销 Modal 填写原因后提交 expectedVersion` | 待查 | 同上 |
+
+## 已修完的例（不在上面的 14 例内，留档以免重复调查）
+| 套件 | 用例 | 类 | 处置 |
+|---|---|---|---|
+| `execution-flow/TurnStatus.test.tsx` | `retry 节点 → connecting（等待/重连模型）` | **A** | 手写 message 非 canonical 形态 ⇒ 改为生产实际格式 `LLM call retry 2/3. ...`（证据：`PuddingRuntime/Services/DirectLlmClient.cs:273` + `src/pages/chat/utils/modelRetry.ts` 刻意严格的正则） |
+| `AgentMessageBubble.test.tsx` | `shows a sanitized reasoning summary ...` | **A** | 错归属断言 ⇒ 改「职责边界」断言（`queryByTestId('reasoning-disclosure-row') === null`） |
+| `AgentMessageBubble.test.tsx` | `shows the latest reasoning line and expands ...` | **A** | 职责已迁至 `ReasoningDisclosureRow`（其测试已覆盖）⇒ 删除 49 行用例 + 原地留指针 |
+
+## 语音归属一节（#6/#7/#9 的共同背景，已核查的三条事实）
+1. `src/pages/chat/components/InputArea.tsx` 现在**只是别名转出**：`export default IntentConsole;`
+   ⇒ `InputArea.test.tsx` 实际测的就是 `IntentConsole`。
+2. **`VoiceConversationPanel.tsx`（529 行、自带测试）在生产代码中无人引用** ——
+   全库检索 `VoiceConversationPanel` 只命中它自己与其测试；`git log -S "VoiceConversationPanel"`
+   在 `InputArea.tsx` / `ChatMain.tsx` 上**零命中**（该文件只有一个初始导入提交）。
+   ⇒ 它是**孤儿组件**：要么**接线**（谁渲染它、何时渲染，需产品决策），要么**删除**。
+3. `ChatMain.test.tsx` 里出现的 `voice-conversation-panel` 是 **mock 掉的 `./IntentConsole` 桩**里手写的 div，
+   **不能**当作"生产已渲染该面板"的证据。
+
+**⚠️ 处置决定（本轮不做）**：#6/#7/#9 涉及"面板该不该由控制台渲染"的**契约选择**（接线 vs 移除孤儿组件），
+无明确决策前**不动测试、不删组件**（避免"改断言迁就实现"与误删）。先把事实登记在此。
+
+## 下一步
+1. 逐例补齐 #1/#2/#3/#4/#5/#8/#10/#11/#12/#13/#14 的定性（先读用例断言 + 生产侧对应行为/文案）。
+2. 语音归属（#6/#7/#9）等"接线 vs 移除"决策后再动。
+3. 每修完一例：跑该文件 → 跑全量 → **收紧 `AllowedFailures`** → 更新本台账与 `README.md` 基线。

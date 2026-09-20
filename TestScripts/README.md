@@ -80,6 +80,10 @@ Contract:
     **not** on the list is still a FAIL;
   - `KnownRed = $null` ⇒ the failing names are **not registered yet**, so the suite is judged
     **by budget only** (the names are still printed for visibility). Enumerate them later to tighten.
+- the per-case disposition ledger for frontend known-red lives in
+  `TestScripts/known-red-dispositions.md` (class A = test lag / B = config-copy lag / C = real defect /
+  D = broken test, each with evidence). Only cases registered there may be tightened into `KnownRed`;
+  never guess a disposition - write `待查` instead;
 - `AllowedFailures = $null` means **report only** (`UNMEASURED`) - an unknown baseline is never treated as a pass;
 - full per-suite output is written to `temp/suite-gates/<suite>.log`; the script prints only a summary;
 - exit code `0` = every suite within budget, `1` = at least one suite over budget;
