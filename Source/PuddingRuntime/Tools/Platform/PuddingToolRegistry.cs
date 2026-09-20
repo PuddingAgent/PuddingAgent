@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PuddingCode.Abstractions;
+using PuddingCode.Classification;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Platform;
@@ -571,6 +572,8 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
     private readonly IToolApprovalService? _approvalService;
     private readonly IRuntimeControlService? _runtimeControl;
     private readonly IAgentAccessLevelService? _accessLevels;
+    private readonly IAgentFullAccessGrantService? _fullAccessGrants;
+    private readonly IToolApprovalAuditStore? _approvalAuditStore;
     private readonly IAgentFirewall _firewall;
 
     public PuddingToolExecutionService(
@@ -583,7 +586,9 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
         IToolApprovalService? approvalService = null,
         IRuntimeControlService? runtimeControl = null,
         IAgentFirewall? firewall = null,
-        IAgentAccessLevelService? accessLevels = null)
+        IAgentAccessLevelService? accessLevels = null,
+        IAgentFullAccessGrantService? fullAccessGrants = null,
+        IToolApprovalAuditStore? approvalAuditStore = null)
     {
         _registry = registry;
         _sandbox = sandbox;
@@ -594,13 +599,17 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
         _approvalService = approvalService;
         _runtimeControl = runtimeControl;
         _accessLevels = accessLevels;
+        _fullAccessGrants = fullAccessGrants;
+        _approvalAuditStore = approvalAuditStore;
         _firewall = firewall ?? new AgentFirewall(
             runtimeControl,
             _permissionPolicy,
             registry,
             authorizationService,
             approvalService,
-            sandbox);
+            sandbox,
+            fullAccessGrants: fullAccessGrants,
+            approvalAuditStore: approvalAuditStore);
     }
 
     public async Task<ToolExecutionResult> ExecuteAsync(

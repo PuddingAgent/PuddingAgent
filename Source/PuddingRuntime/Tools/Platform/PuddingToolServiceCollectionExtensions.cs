@@ -78,6 +78,9 @@ public static class PuddingToolServiceCollectionExtensions
         // Agent 级访问级别（用户 2026-09-19）：权限跟随 Agent 主体。
         // 作为可选依赖注入 PuddingToolExecutionService，未注册的主机退化为纯全局模式。
         services.TryAddSingleton<IAgentAccessLevelService, AgentAccessLevelService>();
+        // S5b：完全访问授予服务（S5a 实现）注册为单例，授予管理方（RequestToolApprovalTool →
+        // ToolApprovalPortalService）与消费方（AgentFirewall Gate 4）共享同一份进程内存状态。
+        services.TryAddSingleton<IAgentFullAccessGrantService, AgentFullAccessGrantService>();
         services.TryAddSingleton<IAgentFirewall>(sp => new AgentFirewall(
             runtime: sp.GetService<IRuntimeControlService>(),
             policySvc: sp.GetService<IToolPermissionPolicyService>(),
@@ -85,7 +88,9 @@ public static class PuddingToolServiceCollectionExtensions
             authzSvc: sp.GetService<IToolAuthorizationService>(),
             approvalSvc: sp.GetService<IToolApprovalService>(),
             availabilityProvider: sp.GetService<IAgentExecutionAvailabilityProvider>(),
-            logger: sp.GetService<ILogger<AgentFirewall>>()));
+            logger: sp.GetService<ILogger<AgentFirewall>>(),
+            fullAccessGrants: sp.GetService<IAgentFullAccessGrantService>(),
+            approvalAuditStore: sp.GetService<IToolApprovalAuditStore>()));
         services.TryAddSingleton<IPuddingToolCatalogService, PuddingToolCatalogService>();
         services.TryAddSingleton<PuddingToolSchemaService>();
         services.TryAddSingleton<IToolAuthorizationService, InMemoryToolAuthorizationService>();

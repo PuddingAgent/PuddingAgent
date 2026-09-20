@@ -157,6 +157,15 @@ public enum ToolApprovalAuditEventType
 
     /// <summary>同一键同时命中 allow 与 deny 规则（按冲突策略裁决并告警）。</summary>
     RuleConflictDetected,
+
+    // —— S5b（完全访问授予接线，方案 v2 §14.6）：以下成员只允许追加在枚举末尾（N01），不得插入或重排。——
+
+    /// <summary>
+    /// 完全访问授予生效期内，审批闸门直接放行一次工具调用（S5b）。
+    /// 与 <see cref="ClassifierInvoked"/> / 隐式审批事件互斥：本事件表示放行依据是「活跃授予」，
+    /// 事后审计据此区分授予放行与分类器裁定（TicketId 携带 GrantId，ReviewerModel=full-access-grant）。
+    /// </summary>
+    FullAccessGateBypass,
 }
 
 /// <summary>Identity boundary for submitting or checking an automatic tool approval ticket.</summary>

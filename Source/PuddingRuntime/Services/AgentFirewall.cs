@@ -1,6 +1,8 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Abstractions;
+using PuddingCode.Classification;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
@@ -15,7 +17,7 @@ namespace PuddingRuntime.Services;
 ///   1. ModeGate         — runtime execution mode (YOLO / EStop / Safe)
 ///   2. SessionGate      — session lifecycle state (Faulted / Stopped)
 ///   3. CapabilityGate   — tool must be in the agent's capability policy
-///   4. AuthorizationGate — explicit / implicit runtime authorization
+///   4. AuthorizationGate — explicit / implicit runtime authorization（S5b：活跃完全访问授予 ⇒ 闸门直接放行）
 ///   5. SandboxGate      — sandbox policy pass-through
 ///   6. WorkspaceGate    — host file workspace boundary
 ///   7. ResourceGate     — resource permissions (shell / file-write / network)
@@ -30,6 +32,8 @@ public sealed class AgentFirewall : IAgentFirewall
     private readonly IToolApprovalService? _approvalSvc;
     private readonly SandboxExecutor _sandbox;
     private readonly IAgentExecutionAvailabilityProvider? _availabilityProvider;
+    private readonly IAgentFullAccessGrantService? _fullAccessGrants;
+    private readonly IToolApprovalAuditStore? _approvalAuditStore;
     private readonly ILogger<AgentFirewall> _logger;
 
     public AgentFirewall(
@@ -40,7 +44,9 @@ public sealed class AgentFirewall : IAgentFirewall
         IToolApprovalService? approvalSvc = null,
         SandboxExecutor? sandbox = null,
         IAgentExecutionAvailabilityProvider? availabilityProvider = null,
-        ILogger<AgentFirewall>? logger = null)
+        ILogger<AgentFirewall>? logger = null,
+        IAgentFullAccessGrantService? fullAccessGrants = null,
+        IToolApprovalAuditStore? approvalAuditStore = null)
     {
         _runtime = runtime!;
         _policySvc = policySvc;
@@ -49,6 +55,8 @@ public sealed class AgentFirewall : IAgentFirewall
         _approvalSvc = approvalSvc;
         _sandbox = sandbox ?? new SandboxExecutor(NullLoggerFactory.Instance.CreateLogger<SandboxExecutor>());
         _availabilityProvider = availabilityProvider;
+        _fullAccessGrants = fullAccessGrants;
+        _approvalAuditStore = approvalAuditStore;
         _logger = logger ?? NullLoggerFactory.Instance.CreateLogger<AgentFirewall>();
     }
 
@@ -180,6 +188,41 @@ public sealed class AgentFirewall : IAgentFirewall
 
         if (_policySvc is null || !_policySvc.RequiresRuntimeAuthorization(descriptor))
             return FirewallDecision.Allow();
+
+        // —— S5b：完全访问授予生效 ⇒ 审批/授权闸门视为已放行（方案 v2 §14.6）。
+        // 语义边界：只放宽授权/审批闸门；Gate 1（Yolo）/5（沙箱）/6（工作区）/7（资源）不受授予影响。
+        // 授予缺席/过期/撤销 ⇒ GetActiveAsync 返回 null ⇒ 走下方原有路径，行为与没有本段时完全一致。
+        // 审计依赖缺席时 fail-closed：不消费授予（与授予服务「无审计不授予」同源原则）。
+        // 放行落独立审计事件 FullAccessGateBypass，绝不记成分类器裁定。
+        if (_fullAccessGrants is not null && _approvalAuditStore is not null)
+        {
+            var grant = await _fullAccessGrants.GetActiveAsync(ctx.WorkspaceId, ctx.AgentInstanceId, ct);
+            if (grant is not null)
+            {
+                await _approvalAuditStore.SaveAsync(new ToolApprovalAuditEvent
+                {
+                    EventId = $"faab-{Guid.NewGuid():N}",
+                    EventType = ToolApprovalAuditEventType.FullAccessGateBypass,
+                    WorkspaceId = ctx.WorkspaceId,
+                    SessionId = ctx.SessionId,
+                    AgentInstanceId = ctx.AgentInstanceId,
+                    UserId = ctx.UserId ?? "admin",
+                    ToolId = ctx.ToolId,
+                    ArgumentsJson = ctx.ArgumentsJson,
+                    TicketId = grant.GrantId,
+                    Decision = ToolApprovalDecision.Approved,
+                    ReviewerModel = "full-access-grant",
+                    Reason = $"full_access_grant grantId={grant.GrantId}; expires_at_utc={grant.ExpiresAtUtc.ToString("O", CultureInfo.InvariantCulture)}; classifier_id={grant.GrantedByClassifierId}; outcome={grant.Outcome}",
+                    CreatedAtUtc = DateTimeOffset.UtcNow,
+                }, ct);
+                _logger.LogInformation(
+                    "[AgentFirewall] Full access grant bypassed authorization gate tool={ToolId} agent={AgentInstanceId} grantId={GrantId}",
+                    ctx.ToolId,
+                    ctx.AgentInstanceId,
+                    grant.GrantId);
+                return FirewallDecision.Allow();
+            }
+        }
 
         var authzCtx = new ToolAuthorizationContext
         {
