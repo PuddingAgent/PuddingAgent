@@ -28,6 +28,13 @@ public sealed class DurableAgentWakeQueueTests
     }
 
     [TestMethod]
+    public async Task RemoveUnknownAgent_DoesNotRequireExistingStateDirectory()
+    {
+        using var host = CreateHost();
+        await host.GetRequiredService<AgentWakeQueue>().RemoveAsync("never-scheduled");
+    }
+
+    [TestMethod]
     public async Task Restart_PreservesDefaultDeadline()
     {
         using var first = CreateHost();

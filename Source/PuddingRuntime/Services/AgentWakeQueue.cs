@@ -392,7 +392,7 @@ public sealed class AgentWakeQueue
     private void DeleteScheduleLocked(string agentId)
     {
         var path = SchedulePath(agentId);
-        if (path is not null) File.Delete(path);
+        if (path is not null && File.Exists(path)) File.Delete(path);
     }
 
 }
