@@ -1996,7 +1996,10 @@ public sealed partial class PuddingToolInfrastructureTests
         Assert.AreEqual(ToolApprovalDecision.DeferredDependency, result.Decision);
         StringAssert.Contains(result.DecisionReason, "Invalid approval reviewer JSON");
         Assert.IsFalse(result.RequiresHumanAuthorization);
-        CollectionAssert.Contains(result.MissingRequirements.ToArray(), "valid reviewer JSON");
+        // 断言稳定契约（ToolApprovalWire 常量）而非展示文案：MissingRequirements 的自然语言
+        // 随实现演进（现为 "schema-valid review response"），reasonCode 才是被共同依赖的契约。
+        Assert.AreEqual(ToolApprovalWire.CodeInvalidJson, result.ReasonCode);
+        Assert.IsTrue(result.MissingRequirements.Count > 0, "协议失败必须给出可展示的缺失项。");
     }
 
     [TestMethod]
@@ -3487,9 +3490,14 @@ public sealed partial class PuddingToolInfrastructureTests
             """,
         });
 
+        // 本测试守护「该输入形态被 request_tool_approval 接受」，即步骤未被形态校验拒绝：
+        // Assert.IsTrue(result.Success) 已经证明这一点（形态被接受而非被拒）。
+        // 决策为依赖等待而非批准，是因为测试环境未配置 ToolApproval:Llm 审批 profile ——
+        // 按 ADR-091 §4.1，无可用评审依赖时归入 deferred_dependency，既不是人工决定、也不得伪造批准。
+        // 同一契约由 PuddingToolInfrastructureTests.A91Review.cs 与 InvocationToolApprovalLlmClient_* 守护。
         Assert.IsTrue(result.Success, result.Error);
-        StringAssert.Contains(result.Output, "\"decision\": \"approved\"");
-        StringAssert.Contains(result.Output, "\"status\": \"approved\"");
+        StringAssert.Contains(result.Output, "\"decision\": \"deferred_dependency\"");
+        StringAssert.Contains(result.Output, "\"reasonCode\": \"" + ToolApprovalWire.CodeProfileNotConfigured + "\"");
         StringAssert.Contains(result.Output, "\"argumentsHash\":");
     }
 
@@ -3537,9 +3545,12 @@ public sealed partial class PuddingToolInfrastructureTests
             """,
         });
 
+        // 本测试守护「字符串 shorthand 步骤形态被接受」，即未被形态校验拒绝。
+        // 决策为依赖等待而非批准，是因为测试环境未配置 ToolApproval:Llm 审批 profile ——
+        // 按 ADR-091 §4.1，无可用评审依赖时归入 deferred_dependency，既不是人工决定、也不得伪造批准。
         Assert.IsTrue(result.Success, result.Error);
-        StringAssert.Contains(result.Output, "\"decision\": \"approved\"");
-        StringAssert.Contains(result.Output, "\"status\": \"approved\"");
+        StringAssert.Contains(result.Output, "\"decision\": \"deferred_dependency\"");
+        StringAssert.Contains(result.Output, "\"reasonCode\": \"" + ToolApprovalWire.CodeProfileNotConfigured + "\"");
     }
 
     [TestMethod]
