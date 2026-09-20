@@ -13,15 +13,15 @@
 | **D** | **测试自身问题**：本身不成立/自相矛盾/依赖环境 | 重写或移除，须留指针 |
 
 ## 当前基线（2026-09-21 实测）
-- `npx jest` 全量 ⇒ **`Tests: 13 failed, 1339 passed, 1352 total`（8 个红套件）**
-- 门禁：`AdminJest.AllowedFailures = 13`、`KnownRed = $null`
+- `npx jest` 全量 ⇒ **`Tests: 10 failed, 1342 passed, 1352 total`（6 个红套件）**
+- 门禁：`AdminJest.AllowedFailures = 10`、`KnownRed = $null`
 
-## 逐例台账（13 例待查；已修的都移到下方「已修完的例」）
+## 逐例台账（10 例待查；已修的都移到下方「已修完的例」）
 
 | # | 套件 | 用例 | 类 | 证据/状态 |
 |---|---|---|---|---|
 | 1 | `src/utils/adminRoutes.test.ts` | `admin workspace menu routing › resolves every configured admin icon name to a React element` | **C（已修）** | 见「已修完的例」表 |
-| 2 | `src/pages/chat/client/agentChatApi.test.ts` | `agentChatApi › loads historical process items only for the selected message` | 待查（疑似 B） | 早前按"安全分类器改动"排查时列入"测试/配置滞后"，**本轮未复核具体断言** |
+| 2 | `src/pages/chat/client/agentChatApi.test.ts` | `agentChatApi › loads historical process items only for the selected message` | **A（已修）** | 见「已修完的例」表 |
 | 3 | `src/pages/agent-template-settings/agentTemplateOwnership.test.ts` | `Agent template and instance field ownership copy › frames workspace Agent settings as instance identity without model overrides` | 待查 | 疑似文案（i18n）期望不一致，未复核 |
 | 4 | `src/pages/storage/index.test.tsx` | `StorageTrendChart › 渲染堆叠面积路径与图例标签` | 待查（疑似 B） | 早前列入"测试/配置滞后"，未复核 |
 | 5 | `src/pages/chat/components/InputArea.test.tsx` | `InputArea status feedback › does not let the previous completed toast mask a new streaming state` | 待查 | 与语音无关，独立原因 |
@@ -30,7 +30,7 @@
 | 8 | `src/pages/chat/hooks/useChatState.selection.test.tsx` | `useChatState session selection races › preserves the visible compact result when switching to the new compacted session` | 待查 | 与压缩会话切换竞态有关，未复核 |
 | 9 | `src/pages/chat/components/IntentConsole.test.tsx` | `IntentConsole › sends voice transcript with voice metadata from the console boundary` | **A（同族）** | 同族语音用例（与 #6 同一归属问题） |
 | 10 | `src/pages/chat/components/IntentConsole.test.tsx` | `IntentConsole › converts BMP images to PNG before uploading` | 待查 | 与上传前图像转码有关，未复核 |
-| 11 | `src/pages/chat/components/DevPanel.test.tsx` | `DevPanel performance diagnostics › loads benchmark cases from the server and sends only the case prompt` | 待查（疑似 i18n） | 早前观察到缺 i18n key（`executionFlow.detail.*` 一族），未复核本用例 |
+| 11 | `src/pages/chat/components/DevPanel.test.tsx` | `DevPanel performance diagnostics › loads benchmark cases from the server and sends only the case prompt` | **A（已修）** | 见「已修完的例」表 |
 | 12 | `src/pages/access-token-management/index.test.tsx` | `Access Token 管理页（ADR-075 §15.3） › 创建抽屉默认最小 scope，workspace 为空不能提交` | 待查 | 该套件耗时 209s，未复核 |
 | 13 | `src/pages/access-token-management/index.test.tsx` | `Access Token 管理页（ADR-075 §15.3） › 撤销弹窗显示强确认警示，未确认不调用后端` | 待查 | 同上 |
 | 14 | `src/pages/access-token-management/index.test.tsx` | `Access Token 管理页（ADR-075 §15.3） › 撤销 Modal 填写原因后提交 expectedVersion` | 待查 | 同上 |
@@ -42,6 +42,10 @@
 | `execution-flow/TurnStatus.test.tsx` | `retry 节点 → connecting（等待/重连模型）` | **A** | 手写 message 非 canonical 形态 ⇒ 改为生产实际格式 `LLM call retry 2/3. ...`（证据：`PuddingRuntime/Services/DirectLlmClient.cs:273` + `src/pages/chat/utils/modelRetry.ts` 刻意严格的正则） |
 | `AgentMessageBubble.test.tsx` | `shows a sanitized reasoning summary ...` | **A** | 错归属断言 ⇒ 改「职责边界」断言（`queryByTestId('reasoning-disclosure-row') === null`） |
 | `AgentMessageBubble.test.tsx` | `shows the latest reasoning line and expands ...` | **A** | 职责已迁至 `ReasoningDisclosureRow`（其测试已覆盖）⇒ 删除 49 行用例 + 原地留指针 |
+| `src/pages/chat/client/agentChatApi.test.ts` | `agentChatApi › loads historical process items only for the selected message` | **A** | 生产已为历史过程项请求接入**取消信号**（切消息时中止在途请求）⇒ 期望由 `{ method: 'GET' }` 改为 `objectContaining({ method: 'GET', signal: expect.any(AbortSignal) })`（既不放松 method 检查，也不耦合信号内部形态）。该套件现全绿。 |
+| `src/pages/chat/components/DevPanel.test.tsx` | `DevPanel performance diagnostics › loads benchmark cases from the server and sends only the case prompt` | **A** | 生产在基准启动请求体里**硬编码** `excludeFromLearning: 'true'`（`DevPanel/BenchmarkTab.tsx:95`，语义：基准跑不能污染学习数据）⇒ 期望补上该字段。该套件现全绿。 |
+
+> 本次两个套件**整体转绿**（2 suites / 12 tests 全过），全量 failed 由 13 降到 **10** ⇒ 这两处原本共 **3 例**在失败（含台账命名列表未单独列出的一例）。
 
 ## 语音归属一节（#6/#7/#9 的共同背景，已核查的三条事实）
 1. `src/pages/chat/components/InputArea.tsx` 现在**只是别名转出**：`export default IntentConsole;`
