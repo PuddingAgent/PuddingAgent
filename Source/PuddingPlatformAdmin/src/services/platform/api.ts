@@ -3780,6 +3780,32 @@ export async function getToolApprovalStats(): Promise<ToolApprovalStatsDto> {
   return request('/api/tool-approval/stats', { method: 'GET' });
 }
 
+// ─── Classifier Health API（安全分类器方案 v2 §8.2 / §10 D6，切片 S6b-2 消费）──
+
+// 健康档位：后端 ClassifierHealth 枚举的稳定小写字符串（wire 不暴露数值）。
+// 服务端权威（§8.2 硬性要求）：前端只透传该档位，不得由本地状态推断或伪造；
+// 未知（unknown / configured=false / 请求失败）一律不得当作健康。
+export type ClassifierHealthState = 'unknown' | 'healthy' | 'degraded' | 'unavailable';
+
+export interface ClassifierHealthItemDto {
+  classifierId: string;
+  health: ClassifierHealthState;
+  detail?: string;
+  consecutiveFailures: number;
+  lastCheckedAtUtc?: string;
+  lastLatencyMs?: number;
+}
+
+export interface ClassifierHealthSnapshotDto {
+  configured: boolean;
+  classifiers: ClassifierHealthItemDto[];
+}
+
+/** 读取分类器健康只读快照（端点 [Authorize]，令牌由全局请求拦截器注入）。 */
+export async function getClassifierHealth(): Promise<ClassifierHealthSnapshotDto> {
+  return request('/api/classifier-health', { method: 'GET' });
+}
+
 // ─── Session Tool Approval Decision API (P0#1 审批卡片) ──────────
 
 export type SessionApprovalDecision = 'allow_once' | 'always_allow' | 'deny';

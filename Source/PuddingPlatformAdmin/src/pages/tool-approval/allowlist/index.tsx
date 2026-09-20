@@ -24,6 +24,7 @@ import {
   type ToolApprovalAllowlistSource,
   type ToolApprovalAllowlistStatus,
 } from '@/services/platform/api';
+import ClassifierHealthBanner from '../components/ClassifierHealthBanner';
 
 // 来源文案单一事实源：`Record<ToolApprovalAllowlistSource, string>` 由**编译器强制完备**——
 // 联合类型新增成员（后端新增来源）而这里没补 ⇒ `tsc` 直接报错，不会静默漏同步。
@@ -264,6 +265,7 @@ const ToolApprovalAllowlistPage: React.FC = () => {
         </Button>,
       ]}
     >
+      <ClassifierHealthBanner />
       <ProTable<ToolApprovalAllowlistRuleDto>
         rowKey="ruleId"
         search={false}
