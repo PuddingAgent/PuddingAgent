@@ -70,6 +70,23 @@ public enum ToolApprovalAllowlistRuleStatus
     Disabled,
 }
 
+/// <summary>
+/// 规则效果：allow（白名单语义）或 deny（黑名单语义）。
+/// <para>
+/// 冲突时 deny 永远优先于 allow（安全侧优先）。
+/// <see cref="Allow"/> 必须保持数值 0：不含 <c>effect</c> 字段的旧 JSON 反序列化后即为 Allow，
+/// 保证既有「白名单语义」记录向后兼容。
+/// </para>
+/// </summary>
+public enum ToolApprovalRuleEffect
+{
+    /// <summary>放行规则（白名单语义）；缺省值，与既有行为完全兼容。</summary>
+    Allow = 0,
+
+    /// <summary>拒绝规则（黑名单语义）；与 allow 规则同键冲突时优先生效。</summary>
+    Deny = 1,
+}
+
 /// <summary>Audit event category for automatic approval decisions and allowlist activity.</summary>
 public enum ToolApprovalAuditEventType
 {
@@ -95,6 +112,38 @@ public enum ToolApprovalAuditEventType
     /// N01：新成员必须追加在枚举末尾，避免改变既有成员的序列化数值。
     /// </summary>
     TicketDeferredDependency,
+
+    // —— S1（安全分类器抽象层，方案 v2 §14.8）：以下成员只允许追加在枚举末尾（N01），不得插入或重排。——
+
+    /// <summary>安全分类器被调用一次（含对规则候选结论的覆盖裁决）。</summary>
+    ClassifierInvoked,
+
+    /// <summary>安全分类器不可用（超时 / 故障 / 未配置），已按降级契约处理。</summary>
+    ClassifierUnavailable,
+
+    /// <summary>黑名单（deny）规则被创建。</summary>
+    DenylistRuleCreated,
+
+    /// <summary>黑名单（deny）规则被禁用（不硬删除，保留审计链）。</summary>
+    DenylistRuleDisabled,
+
+    /// <summary>Agent 请求临时完全访问模式。</summary>
+    FullAccessRequested,
+
+    /// <summary>临时完全访问被授予（TTL 由服务端计时，到期自动失效）。</summary>
+    FullAccessGranted,
+
+    /// <summary>临时完全访问请求被拒绝。</summary>
+    FullAccessDenied,
+
+    /// <summary>临时完全访问因到期自动失效。</summary>
+    FullAccessExpired,
+
+    /// <summary>临时完全访问被显式撤销。</summary>
+    FullAccessRevoked,
+
+    /// <summary>同一键同时命中 allow 与 deny 规则（按冲突策略裁决并告警）。</summary>
+    RuleConflictDetected,
 }
 
 /// <summary>Identity boundary for submitting or checking an automatic tool approval ticket.</summary>
@@ -273,6 +322,10 @@ public sealed record ToolApprovalAllowlistRule
     public string? ArgumentsJson { get; init; }
     public ToolApprovalAllowlistRuleSource Source { get; init; } = ToolApprovalAllowlistRuleSource.Human;
     public ToolApprovalAllowlistRuleStatus Status { get; init; } = ToolApprovalAllowlistRuleStatus.Enabled;
+
+    /// <summary>规则效果（allow / deny）；不含 effect 字段的旧记录反序列化为 Allow（向后兼容）。</summary>
+    public ToolApprovalRuleEffect Effect { get; init; } = ToolApprovalRuleEffect.Allow;
+
     public string? ApprovedByAgentInstanceId { get; init; }
     public string? ApprovedByUserId { get; init; }
     public string? ApprovalTicketId { get; init; }
@@ -306,6 +359,9 @@ public sealed record ToolApprovalAllowlistRuleMutation
     public string? ApprovalTicketId { get; init; }
     public string? Reason { get; init; }
     public ToolApprovalAllowlistRuleStatus Status { get; init; } = ToolApprovalAllowlistRuleStatus.Enabled;
+
+    /// <summary>规则效果（allow / deny）；缺省 Allow，与既有变更请求兼容。</summary>
+    public ToolApprovalRuleEffect Effect { get; init; } = ToolApprovalRuleEffect.Allow;
 }
 
 /// <summary>Recorded audit event for approval reviewer decisions and allowlist usage.</summary>
@@ -329,6 +385,10 @@ public sealed record ToolApprovalAuditEvent
     public long? AllowlistRuleHitCount { get; init; }
     public ToolApprovalDecision? Decision { get; init; }
     public ToolApprovalAllowlistRuleSource? Source { get; init; }
+
+    /// <summary>涉及的规则效果（allow / deny）；非规则类事件保持缺省 Allow。</summary>
+    public ToolApprovalRuleEffect Effect { get; init; } = ToolApprovalRuleEffect.Allow;
+
     public string? ReviewerModel { get; init; }
     public string? Reason { get; init; }
     public required DateTimeOffset CreatedAtUtc { get; init; }
