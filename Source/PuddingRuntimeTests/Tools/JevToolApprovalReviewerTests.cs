@@ -367,17 +367,45 @@ public sealed class JevToolApprovalReviewerTests
 
     // ---------- §3.2 组合根开关 ----------
 
+    /// <summary>
+    /// 组合根「未显式配置」时的自动选择分支：Jev 端口已注册 ⇒ jev。
+    /// 注意：<b>必须显式把 <see cref="ToolApprovalRuntimeOptions.Reviewer"/> 置空</b>才会进入该分支——
+    /// 选项类当前默认值是 "llm"，见下一个测试。
+    /// </summary>
     [TestMethod]
-    public void ProductionRegistry_AutoSelectsJevReviewer_WhenJevPortIsRegistered()
+    public void ProductionRegistry_AutoSelectsJevReviewer_WhenJevPortIsRegisteredAndReviewerUnset()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IJevDecisionService>(new FakeJevDecisionService(JevResult()));
+        services.Configure<ToolApprovalRuntimeOptions>(options => options.Reviewer = null);
         services.AddPuddingToolRegistry();
 
         using var provider = services.BuildServiceProvider();
         var reviewer = provider.GetRequiredService<IToolApprovalReviewer>();
 
         Assert.IsInstanceOfType<JevToolApprovalReviewer>(reviewer);
+    }
+
+    /// <summary>
+    /// 钉住当前 <b>刻意保留</b> 的默认值：未配置时仍走 llm 评审器。
+    /// <para>
+    /// 2026-09-20 父级决定：v1 形态的 Jev 评审器缺「四选一 + 逐分类可信度 + 健康面」，
+    /// 因此生产默认值保持在 llm；待分类器管线（方案 v2 §14.10 S3）落地后 <b>显式</b> 翻转默认值，并同步修改本测试。
+    /// 本测试的作用是让「翻转默认值」这件事必须是有意识的改动：改的人会看到这条注释。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public void ProductionRegistry_DefaultReviewerOption_IsLlm_UntilClassifierPipelineLands()
+    {
+        Assert.AreEqual("llm", new ToolApprovalRuntimeOptions().Reviewer);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IJevDecisionService>(new FakeJevDecisionService(JevResult()));
+        services.AddPuddingToolRegistry();
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.IsInstanceOfType<LlmToolApprovalReviewer>(provider.GetRequiredService<IToolApprovalReviewer>());
     }
 
     [TestMethod]
