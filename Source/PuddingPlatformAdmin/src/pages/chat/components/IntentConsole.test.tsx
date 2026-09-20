@@ -325,7 +325,7 @@ describe('IntentConsole', () => {
     expect(screen.queryByTestId('image-preview-list')).toBeNull();
   });
 
-  it('converts BMP images to PNG before uploading', async () => {
+  it('uploads BMP originals unchanged and lets server preprocessing convert (74ae4e0)', async () => {
     const sendWithMetadata = jest.fn(async () => {});
     const upload = uploadVisionArtifact as jest.Mock;
     upload.mockResolvedValue({
@@ -368,9 +368,13 @@ describe('IntentConsole', () => {
 
       await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
       const uploadedFile = upload.mock.calls[0][1] as File;
-      expect(uploadedFile.name).toBe('clipboard.png');
-      expect(uploadedFile.type).toBe('image/png');
-      expect(drawImage).toHaveBeenCalledTimes(1);
+      // 契约（随模块 74ae4e0 引入）：**保留原文件**，BMP 属 provider 安全类型 ⇒ 本地**不得**改写
+      // 文件名/类型，也**不得**走 canvas 转换路径；模型可用副本由**服务端预处理**生成。
+      // 依据：visionArtifactImage.ts 的文档注释 + 其单测 visionArtifactImage.test.ts
+      //（it.each 'uploads %s unchanged for server preprocessing'，含 image/bmp，当前为绿）。
+      expect(uploadedFile.name).toBe('clipboard.bmp');
+      expect(uploadedFile.type).toBe('image/bmp');
+      expect(drawImage).not.toHaveBeenCalled();
       expect(sendWithMetadata).toHaveBeenCalledTimes(1);
     } finally {
       createElement.mockRestore();
