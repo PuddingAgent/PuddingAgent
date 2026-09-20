@@ -259,7 +259,7 @@ public sealed class ClassificationRuleCuratorTests
         Assert.IsNull(rule.ArgumentsJson, "命令类规则不携带 ArgumentsJson。");
         Assert.AreEqual(ToolApprovalRuleEffect.Allow, rule.Effect);
         Assert.AreEqual(ToolApprovalAllowlistRuleStatus.Enabled, rule.Status);
-        Assert.AreEqual(ToolApprovalAllowlistRuleSource.AuditAgent, rule.Source);
+        Assert.AreEqual(ToolApprovalAllowlistRuleSource.Classifier, rule.Source);
         Assert.AreEqual(ClassifierId, rule.SourceClassifierId, "§14.12.6：SourceClassifierId 必写。");
         Assert.AreEqual("test-model", rule.ClassifierModel, "§14.12.6：ClassifierModel 必写。");
         Assert.AreEqual(0.97, rule.OutcomeConfidence, "§14.12.6：OutcomeConfidence 必写。");
@@ -425,7 +425,7 @@ public sealed class ClassificationRuleCuratorTests
         Assert.AreEqual(allowOutcome.RuleId, conflict.AllowlistRuleId, "事件主体为既有（先落）规则。");
         StringAssert.Contains(conflict.Reason!, allowOutcome.RuleId, "审计须含既有规则 id。");
         StringAssert.Contains(conflict.Reason!, denyOutcome.RuleId, "审计须含新落规则 id。");
-        StringAssert.Contains(conflict.Reason, "AuditAgent", "审计须含来源。");
+        StringAssert.Contains(conflict.Reason, "Classifier", "审计须含来源。");
         Assert.AreEqual(ToolApprovalRuleEffect.Deny, conflict.Effect, "冲突生效侧为 deny（§14.12.4）。");
     }
 

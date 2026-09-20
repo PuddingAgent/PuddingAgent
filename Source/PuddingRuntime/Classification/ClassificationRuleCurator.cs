@@ -310,9 +310,10 @@ public sealed class ClassificationRuleCurator
                     ToolId = key.ToolId,
                     Command = isCommandTool ? key.Subject : null,
                     ArgumentsJson = isCommandTool ? null : ctx.ArgumentsJson,
-                    // 枚举无 Classifier 成员（不得新增）：分类器宿主即审计 Agent，用 AuditAgent；
+                    // 分类器产出的规则用 Classifier 标识（§14.12.2：分类器来源=终局权威）。
+            // 不再沿用 AuditAgent：审计角色正在下线，沿用会让持久化数据长期误示来源。
                     // 「分类器永久权威」由 SourceClassifierId 非空表达（§14.12.2）。
-                    Source = ToolApprovalAllowlistRuleSource.AuditAgent,
+                    Source = ToolApprovalAllowlistRuleSource.Classifier,
                     Status = ToolApprovalAllowlistRuleStatus.Enabled,
                     Effect = effect,
                     Reason = verdict.Reason,

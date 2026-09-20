@@ -59,8 +59,21 @@ public enum ToolApprovalUserConsentStatus
 public enum ToolApprovalAllowlistRuleSource
 {
     BuiltIn,
+
+    /// <summary>
+    /// 旧「工作空间审计 Agent」写规则的时代产物。审计角色正在下线（方案 v2 §9），
+    /// 新规则不得再使用本成员；既有记录保留原值以保证可追溯。
+    /// </summary>
     AuditAgent,
+
     Human,
+
+    /// <summary>
+    /// 安全分类器（抽象层 <c>IToolCallClassifier</c>）产出的永久类规则，§14.12.2 定为**终局**权威：
+    /// 命中即复用分类器自身裁决，不再重复调用分类器。
+    /// N01：新成员只允许追加在枚举末尾，既有成员数值不变（BuiltIn=0 / AuditAgent=1 / Human=2）。
+    /// </summary>
+    Classifier,
 }
 
 /// <summary>Lifecycle state for an automatic approval allowlist rule.</summary>
