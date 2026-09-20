@@ -717,11 +717,23 @@ describe('useChatState session selection races', () => {
     });
 
     expect(result.current.selectedSessionId).toBe('session-compact');
-    expect(
-      result.current.turns.some((turn) =>
-        turn.assistant.answerMarkdown.includes('覆盖 8 条历史消息'),
-      ),
-    ).toBe(true);
+    // 压缩结果的承载**载体已迁移**（用户反馈 2026-09-19：压缩卡片显示效果乱）：
+    // 文案写在 assistant.timelineItems[].message 里（useCompaction.ts:140-167），而 answerMarkdown
+    // 被**有意留空**——“运行中不把「正在压缩上下文…」塞进 answerMarkdown：正文区是给用户看的答案，
+    // 压缩进度应由状态行/进度项表达”。
+    // 手动 /compact 路径的收敛文案为「上下文压缩完成」（useCompaction.ts:585 updateCompactTurn）；
+    // 「已整理 N 条历史消息」属**事件驱动路径**（useCompaction.ts:467）；
+    // 「上下文已压缩，覆盖 N 条…」属另一条 recovery 路径（chatStateUtils.ts:389，仍为绿）。
+    // 实测取证：该场景 answerMarkdown 为空串（DEBUG_TURNS=["A answer",""]）。
+    const compactText = result.current.turns
+      .flatMap((turn) => [
+        turn.assistant?.answerMarkdown ?? '',
+        ...((turn.assistant?.timelineItems ?? []) as Array<{ message?: string }>).map(
+          (item) => item?.message ?? '',
+        ),
+      ])
+      .join('\n');
+    expect(compactText).toContain('上下文压缩完成');
     expect(listSessionMessages).not.toHaveBeenCalledWith(
       'session-compact',
       undefined,
