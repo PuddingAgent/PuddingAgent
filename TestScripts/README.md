@@ -91,7 +91,7 @@ Contract:
   date plus evidence in the commit message (the baseline is a contract, not a convenience).
 
 Current baselines (2026-09-21): `Core` 910 passed / 1 known-red,
-`Runtime` 1658 / 0, `Platform` 1363 / 0, `AdminJest` 1349 / 3 known-red
+`Runtime` 1659 / 0, `Platform` 1363 / 0, `AdminJest` 1349 / 3 known-red
 (2 red suites, **all three are the voice family**; thirteen cases were fixed on 2026-09-21 - one
 **real defect** (missing admin menu icon mappings for `hdd`/`key`), one flaky suite calibrated
 (`jest.setTimeout`), one time-bomb fixture (relative dates), three copy/UI/carrier-migration cases,
