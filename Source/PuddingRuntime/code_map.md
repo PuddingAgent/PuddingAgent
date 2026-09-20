@@ -136,7 +136,7 @@
 | `Services/DashScopeTtsProvider.cs` | 语音合成 |
 | `Services/VolcengineArkImageGenerationProvider.cs` | 图片生成 |
 | `Services/JevDecisionService.cs` | 🔑 Jev 决策模型适配器（POST `{baseUrl}/api/v1/decide`，Bearer 鉴权）：返回**结构化决策数据**（choice/score/noul + probabilities + confidence + usage），不做自然语言解析；非 2xx fail-closed 抛 `JevDecisionException`（错误体截断 ≤4096 字符），502/503/504 按 `MaxRetries` 指数退避重试；端点/密钥/模型经 `IJevDecisionOptionsProvider` 每次调用前解析，密钥不入日志 |
-| `Services/JevDecisionOptionsProvider.cs` | Jev 连接参数解析默认实现（`Jev` 配置节 + `JEV_*` 环境变量 + 可选 KeyVault）；未配置时抛 `jev.not_configured`，绝不返回空端点。基础设施若要改为资源池驱动，只需注册另一个 `IJevDecisionOptionsProvider` 实现 |
+| `Services/JevDecisionOptionsProvider.cs` | Jev 连接参数解析默认实现——**资源池优先**：端点取 `llm.providers.json` 的 provider `jev`.baseUrl，模型取该 provider 下首个未废弃模型（按 sortOrder），密钥链为 池 `apiKeyRef`→KeyVaultId 经 KeyVault → **池 `apiKey`（支持 `${ENV}` 占位）** → `Jev:ApiKey`/`JEV_API_KEY` → `Jev:ApiKeyRef`；逐项回退 `Jev` 配置节与环境变量；未配置时抛 `jev.not_configured`，绝不返回空端点。换解析来源只需注册另一个 `IJevDecisionOptionsProvider` |
 | `Services/ManagedOggOpusTranscoder.cs` | 音频转码 |
 
 ## 会话 & 事件

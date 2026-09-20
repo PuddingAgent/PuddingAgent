@@ -14,13 +14,14 @@ namespace PuddingRuntime.Services;
 ///       <c>Jev:ModelId</c> → <c>JEV_MODEL_ID</c> → <c>jev-latest</c>。</item>
 /// </list>
 /// 密钥解析链：<b>资源池 provider 的 apiKeyRef（→ LlmConfig.KeyVaultId，经 <see cref="IKeyVaultService"/>）</b>
+/// → <b>资源池 provider 的 <c>apiKey</c>（支持 <c>${ENV_NAME}</c> 占位展开）</b>
 /// → <c>Jev:ApiKey</c> / <c>JEV_API_KEY</c>（支持 <c>${ENV_NAME}</c> 占位展开）
 /// → <c>Jev:ApiKeyRef</c> / <c>JEV_API_KEY_REF</c> 经 KeyVault。
 /// </para>
 /// <para>
 /// 端点或密钥缺失时 fail-closed 抛 <see cref="JevDecisionException"/>（<see cref="JevDecisionCodes.NotConfigured"/>），
-/// 不返回空端点；密钥明文绝不写日志。刻意只读 <see cref="LlmConfig.KeyVaultId"/>，
-/// 不引用已标 [Obsolete] 的明文 <see cref="LlmConfig.ApiKey"/>。
+/// 不返回空端点；密钥明文绝不写日志。<see cref="LlmConfig.ApiKey"/> 与平台其它客户端
+/// （DirectLlmClient / OpenAiEmbeddingService）用法一致，并未被标记 [Obsolete]。
 /// </para>
 /// </summary>
 public sealed class JevDecisionOptionsProvider(
@@ -65,10 +66,13 @@ public sealed class JevDecisionOptionsProvider(
             ?? Environment.GetEnvironmentVariable(ModelIdEnvironmentVariable)
             ?? JevDecisionOptions.DefaultModelId;
 
-        // ── 密钥：池 KeyVaultId → 显式配置/${ENV} → 配置 ApiKeyRef 经 KeyVault ──
+        // ── 密钥：池 KeyVaultId → 池 apiKey（支持 ${ENV}）→ 显式配置/${ENV} → 配置 ApiKeyRef 经 KeyVault ──
         var apiKey = string.Empty;
         if (!string.IsNullOrWhiteSpace(pool.KeyVaultId))
             apiKey = await ResolveSecretAsync(pool.KeyVaultId!, ct).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+            apiKey = ExpandEnvironmentPlaceholders(pool.ApiKey ?? string.Empty);
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
@@ -107,14 +111,13 @@ public sealed class JevDecisionOptionsProvider(
     }
 
     /// <summary>
-    /// 从资源池解析 Jev 的 baseUrl / 缺省模型 / KeyVaultId。
-    /// 池中无（或未启用）jev provider 时三项均为 null，调用方回退到配置节与环境变量。
-    /// 注意：刻意只读 <see cref="LlmConfig.KeyVaultId"/> 而不碰已标 [Obsolete] 的明文 ApiKey。
+    /// 从资源池解析 Jev 的 baseUrl / 缺省模型 / 密钥（KeyVaultId 与明文 apiKey 两路）。
+    /// 池中无（或未启用）jev provider 时各项均为 null，调用方回退到配置节与环境变量。
     /// </summary>
-    private (string? BaseUrl, string? ModelId, string? KeyVaultId) ResolveFromResourcePool()
+    private (string? BaseUrl, string? ModelId, string? KeyVaultId, string? ApiKey) ResolveFromResourcePool()
     {
         if (llmConfigService is null)
-            return (null, null, null);
+            return (null, null, null, null);
 
         var providerId = configuration[ProviderIdKey]?.Trim();
         if (string.IsNullOrWhiteSpace(providerId))
@@ -124,7 +127,7 @@ public sealed class JevDecisionOptionsProvider(
             .FirstOrDefault(candidate => string.Equals(
                 candidate.ProviderId, providerId, StringComparison.OrdinalIgnoreCase));
         if (provider is null)
-            return (null, null, null);
+            return (null, null, null, null);
 
         var modelId = llmConfigService.GetAllModels()
             .Where(model => string.Equals(
@@ -135,14 +138,18 @@ public sealed class JevDecisionOptionsProvider(
             .Select(model => model.ModelId)
             .FirstOrDefault();
 
-        var keyVaultId = string.IsNullOrWhiteSpace(modelId)
+        var resolved = string.IsNullOrWhiteSpace(modelId)
             ? null
-            : llmConfigService.Resolve(provider.ProviderId, modelId)?.KeyVaultId;
+            : llmConfigService.Resolve(provider.ProviderId, modelId);
+
+        var keyVaultId = resolved?.KeyVaultId;
+        var apiKey = resolved?.ApiKey;
 
         return (
             string.IsNullOrWhiteSpace(provider.BaseUrl) ? null : provider.BaseUrl,
             string.IsNullOrWhiteSpace(modelId) ? null : modelId,
-            string.IsNullOrWhiteSpace(keyVaultId) ? null : keyVaultId);
+            string.IsNullOrWhiteSpace(keyVaultId) ? null : keyVaultId,
+            string.IsNullOrWhiteSpace(apiKey) ? null : apiKey);
     }
 
     private async Task<string> ResolveSecretAsync(string keyVaultId, CancellationToken ct)
