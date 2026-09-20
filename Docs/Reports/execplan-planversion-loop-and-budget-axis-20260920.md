@@ -276,3 +276,27 @@ objective-file-evidence:§9.A02）。    → check_not_run
 - 跨对象比较**不能**用于证明「随时间的实时性」；必须在**同一对象**上做**重复观测**。
 - 我在同一文件里连续两轮得出相反结论，根因是**证据选取面**变动（跨任务 vs 同任务），
   而不是事实变动。**发布结论前必须写明证据的取样面**（哪些对象、几次观测）。
+
+---
+
+## 12. 活体 blocker 发出者：**6 个工程全为负**（收敛为「存储值」读法）
+
+逐工程定向检索 `Token budget exhausted|budget exhausted`：
+
+| 工程 | 结果 |
+|---|---|
+`PuddingRuntime` | 仅命中 `ExecutionUsageBudgetTracker.cs:134` 的**输出**分支（输入分支已是 `capacity exceeded`） |
+`PuddingPlatform` | 仅 `GoalCommandService.cs:633`（相位标签）、`GoalSettlementStore.cs:35`（**文档注释**）、`:1436`（另一句） |
+`PuddingCore` | 无 |
+`PuddingAgent` | 无 |
+`PuddingController` | 无 |
+`PuddingHost` | 无 |
+
+`input Token budget exhausted` 仅出现在 **`PuddingPlatformTests/Services/Goals/GoalContinuationTests.cs` 的合成载荷 fixture**
+与 **`GoalSettlementStore.cs:35` 的文档注释**。
+
+⇒ **当前源码中不存在产生该串的活代码** ⇒ §11 的「**按任务存储的历史值**」读法**得到支持**；
+§9 的「活代码实时产生」**不被支持**（§9 已由 §11 修正）。
+
+**限定**：已验证 6 个**可能执行 work-unit 预算**的工程；**未穷举其余 26 个工程**（Desktop / Gateway /
+CodexService / Browser.* …）。另：仓库根目录全量扫描撞 2000 文件上限（仅扫 82/2000），**其无命中结论不可采信**。
