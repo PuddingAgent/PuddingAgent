@@ -9,6 +9,30 @@ namespace PuddingPlatformTests.Services.TaskPlanning;
 public sealed class TaskPlanningSchemaBootstrapperTests
 {
     [TestMethod]
+    public async Task EnsureCreatedAsync_AddsRevisionToExistingPlan_WithoutRewritingSemanticVersion()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlatformDbContext>().UseSqlite(connection).Options;
+        await using var db = new PlatformDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        db.TaskPlanRuns.Add(new PuddingPlatform.Data.Entities.TaskPlanRunEntity
+        {
+            PlanId = "historic-plan", WorkspaceId = "default", PlanVersion = 7,
+            RootSessionId = "session", LeaderAgentId = "agent", Status = "Failed",
+        });
+        await db.SaveChangesAsync();
+        await db.Database.ExecuteSqlRawAsync("ALTER TABLE task_plan_runs DROP COLUMN plan_revision;");
+        await TaskPlanningSchemaBootstrapper.EnsureCreatedAsync(db);
+        await TaskPlanningSchemaBootstrapper.EnsureCreatedAsync(db);
+        db.ChangeTracker.Clear();
+        var plan = await db.TaskPlanRuns.SingleAsync();
+        Assert.AreEqual(1, plan.PlanRevision);
+        Assert.AreEqual(7, plan.PlanVersion); // Unknown history needs evidence-based offline repair.
+        Assert.AreEqual("Failed", plan.Status);
+    }
+
+    [TestMethod]
     public async Task EnsureCreatedAsync_Creates_TaskPlanningTables_ForExistingSqliteDatabase()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -45,6 +69,7 @@ public sealed class TaskPlanningSchemaBootstrapperTests
             AssertColumn(taskPlanRunColumns, "task_plan_runs", "workspace_task_id", "TEXT", checkNotNull: false);
             AssertColumn(taskPlanRunColumns, "task_plan_runs", "workspace_task_version", "INTEGER", checkNotNull: false);
             AssertColumn(taskPlanRunColumns, "task_plan_runs", "plan_version", "INTEGER", checkNotNull: true, expectedDefault: "1");
+            AssertColumn(taskPlanRunColumns, "task_plan_runs", "plan_revision", "INTEGER", checkNotNull: true, expectedDefault: "1");
             AssertColumn(taskPlanRunColumns, "task_plan_runs", "schema_version", "INTEGER", checkNotNull: true, expectedDefault: "1");
             AssertColumn(taskPlanRunColumns, "task_plan_runs", "plan_kind", "TEXT", checkNotNull: true, expectedDefault: "delegation");
             AssertColumn(taskPlanRunColumns, "task_plan_runs", "plan_fingerprint", "TEXT", checkNotNull: false);

@@ -456,6 +456,7 @@ public sealed class TaskGoalDispatchTransactionStore(
             WorkspaceTaskId = task.TaskId,
             WorkspaceTaskVersion = plan.TaskVersion,
             PlanVersion = plan.PlanVersion,
+            PlanRevision = 1,
             SchemaVersion = plan.SchemaVersion,
             PlanKind = plan.PlanKind,
             PlanFingerprint = plan.Fingerprint,

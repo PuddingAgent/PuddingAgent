@@ -89,6 +89,8 @@ public sealed class TaskGoalDispatchTransactionStoreTests
         Assert.AreEqual(result.TaskPlanId, plan.PlanId);
         Assert.AreEqual(result.ExecutionPlanFingerprint, plan.PlanFingerprint);
         Assert.AreEqual(1, plan.WorkspaceTaskVersion);
+        Assert.AreEqual(TaskExecutionPlanSnapshot.CurrentPlanVersion, plan.PlanVersion);
+        Assert.AreEqual(1, plan.PlanRevision);
         Assert.AreEqual(6, nodes.Count);
         Assert.AreEqual("Running", nodes[0].Status);
         CollectionAssert.AreEqual(

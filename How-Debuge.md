@@ -1,5 +1,7 @@
 ### 看板恢复后的去重与计划版本循环（2026-09-20）
 
+同日修复补充：语义版本与修订号已在源码分离，`/api/v1/goals/{id}/steps` 和 `goal.circuit_opened` 可分别读 `planVersion`/`planRevision`。历史错误的版本 3..N 不能直接全表改成 2。先经 Goal control API 暂停精确目标，读取 binding 的 `executionPlanVersion`/fingerprint 与逐次 replan 事件，核对预算；停止 Core 后用 `TestScripts/repair-task-plan-semantic-version.py --database <db> --plan-id <id> --backup <new-json>` 修复。`--dry-run` 只读预检；脚本默认实际应用，缺证据/身份冲突/在途命令/运行中 Core 均拒绝。恢复不重置轮数、不复活终态 Goal、不重跑已完成节点。见[实施和部署记录](Docs/Reports/计划语义版本与重规划修订分离修复-2026-09-20.md)。下文保留最初取证过程。
+
 先全量读取任务元数据，再对具体ID读取描述、评论和评估。`updatedBy=task-restore:db-recovery-2026-09-20` 只表示恢复操作，Backlog不代表源码未交付。合并必须先保全保留卡的独立要求、检查依赖边，再以If-Match与幂等命令取消/归档来源卡；不直接改SQLite状态。正在运行或开启自动调度的任务用评论补充指导，避免Task version变化击穿在途binding。遇到并发版本变化先读差异，不自动换ETag覆盖。
 
 `task_execution_plan_version_unsupported` 需要同时查编译器写入、启动事务、后续重规划写入和Reader：本次 `TaskExecutionPlanCompiler` 写语义2，`TaskGoalDispatchTransactionStore.AddExecutionPlan` 保存2，`GoalSettlementStore.TryReplanBoundPlan` 却执行 `PlanVersion++`，`ExecutionCommandReader.MapAsync` 仍只接受2。修复方案分离语义版本与修订号，不允许直接改成 `>=2`、重置成本或重放旧认领。详见[施工方案](Docs/Features/任务规划与实施分工及存量看板施工方案-2026-09-20.md)和[逐卡台账](Docs/Reports/任务看板全量整理台账-2026-09-20.md)。这是已定位、待实现的缺陷，不能把登记当成已修复。

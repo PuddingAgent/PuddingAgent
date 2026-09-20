@@ -37,8 +37,13 @@ public sealed class TaskPlanRunEntity
     [Column("workspace_task_version")]
     public int? WorkspaceTaskVersion { get; set; }
 
+    /// <summary>Immutable compiler semantics version; never incremented by a replan.</summary>
     [Column("plan_version")]
     public int PlanVersion { get; set; } = 1;
+
+    /// <summary>Scheduling revision, starting at 1; distinct from compiler/schema versions.</summary>
+    [Column("plan_revision")]
+    public int PlanRevision { get; set; } = 1;
 
     [Column("schema_version")]
     public int SchemaVersion { get; set; } = 1;

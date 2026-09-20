@@ -1267,7 +1267,7 @@ public sealed class GoalSettlementStore(
 
         // ── P0-2（ADR-092 §7，对齐 codex-rs ext/goal accounting）：无进展/同阻塞熔断接线 ──
         // 任一连续计数器达到阈值后，本结算不再返回 repair：先尝试一次 Replan（提升绑定计划
-        // PlanVersion、退回卡死单元、改选另一 ready WorkUnit），Replan 后按 typed wait 收口；
+        // PlanRevision、退回卡死单元、改选另一 ready WorkUnit），Replan 后按 typed wait 收口；
         // Replan 不可行或本 episode 的一次性 Replan 已消耗（任一计数器已越过阈值）⇒ 转 needs_user。
         // 熔断绝不静默：原因与连续计数落 goal 字段（BlockedCode/StatusReason）与
         // goal.circuit_opened 事件（含连续计数、指纹、阻塞码），始终落在可人工处理的状态。
@@ -1673,7 +1673,7 @@ public sealed class GoalSettlementStore(
            || goal.ConsecutiveInfraFailures > _noProgressBreakerThreshold;
 
     /// <summary>
-    /// P0-2：熔断后的一次性 Replan —— 提升绑定计划 PlanVersion（以新版本身份重新调度），
+    /// P0-2：熔断后的一次性 Replan —— 提升调度修订 PlanRevision，保留编译语义 PlanVersion，
     /// 把卡死的 Running WorkUnit 退回 Planned（保留 ErrorMessage 审计），由后续调度改选
     /// 另一 ready WorkUnit（boundPlan.Next）。没有绑定计划、计划结构非法、无卡死单元或
     /// 无另一 ready WorkUnit ⇒ Replan 不可行，返回 false（由调用方转 needs_user）。
@@ -1694,7 +1694,9 @@ public sealed class GoalSettlementStore(
         }
 
         var nowMs = now.ToUnixTimeMilliseconds();
-        boundPlan.Plan.PlanVersion++;
+        // Only scheduling state changes here. The frozen work-unit contract and its
+        // fingerprint stay unchanged; this counter is not an execution fence.
+        boundPlan.Plan.PlanRevision = checked(boundPlan.Plan.PlanRevision + 1);
         boundPlan.Plan.UpdatedAt = nowMs;
         boundPlan.Current.Status = TaskNodeStatuses.Planned.ToString();
         boundPlan.Current.UpdatedAt = nowMs;
@@ -1707,6 +1709,7 @@ public sealed class GoalSettlementStore(
             iterationNumber = goal.IterationsStarted,
             planId = boundPlan.Plan.PlanId,
             planVersion = boundPlan.Plan.PlanVersion,
+            planRevision = boundPlan.Plan.PlanRevision,
             demotedNodeId = boundPlan.Current.TaskNodeId,
             nextNodeId = boundPlan.Next.TaskNodeId,
             threshold = _noProgressBreakerThreshold,

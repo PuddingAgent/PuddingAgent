@@ -698,12 +698,18 @@ public sealed class GoalSettlementAcceptanceRegressionTests
     }
 
     [TestMethod]
-    public async Task SameFingerprint_WithReadyAlternativeUnit_ReplansOnceAndStaysActive()
+    [DataRow(1)]
+    [DataRow(8)]
+    public async Task SameFingerprint_WithReadyAlternativeUnit_ReplansOnceAndStaysActive(int initialRevision)
     {
         var (db, store, connection) = await CreateAsync();
         await using var _ = db;
         await using var __ = connection;
         await SeedBoundPlanAsync(db, withNextUnit: true);
+        var compiledPlan = await db.TaskPlanRuns.SingleAsync();
+        compiledPlan.PlanVersion = 2;
+        compiledPlan.PlanRevision = initialRevision;
+        await db.SaveChangesAsync();
 
         await SettleRoundsAsync(store, db, 4, _ => FailedDecision("fp-stuck"));
 
@@ -713,17 +719,75 @@ public sealed class GoalSettlementAcceptanceRegressionTests
         var current = await db.TaskNodes.SingleAsync(node => node.TaskNodeId == CurrentNodeId);
         var binding = await db.TaskGoalBindings.SingleAsync(item => item.GoalRunId == GoalId);
 
-        // 一次性 Replan：提升 PlanVersion、退回卡死单元（Running→Planned），
+        // Replan 不得修改执行语义版本，否则下一次启动会被 Reader 拒绝。
+        // 退回卡死单元（Running→Planned），
         // 本结算按 typed wait 收口（不是 repair，也不是静默终态），Goal 保持 Active 可续行。
         Assert.AreEqual(3, goal.ConsecutiveNoProgress);
         Assert.AreEqual(GoalPhase.Active, goal.Status);
         Assert.AreEqual(2, plan.PlanVersion);
+        Assert.AreEqual(initialRevision + 1, plan.PlanRevision);
+        Assert.AreEqual("fp-1", plan.PlanFingerprint);
+        Assert.AreEqual(plan.PlanFingerprint, binding.PlanFingerprint);
         Assert.AreEqual(TaskNodeStatuses.Planned.ToString(), current.Status);
         Assert.AreEqual("no_progress_circuit_open", goal.BlockedCode);
         Assert.IsTrue(goal.BlockedMessage!.Contains("replan"));
         Assert.AreEqual("active", binding.Status);
         Assert.IsTrue(await db.ConversationEvents.AnyAsync(item =>
             item.Type == GoalEventTypes.CircuitOpened));
+
+        // Replaying the same terminal fact must not replan or bill it twice.
+        var settled = goal.IterationsSettled;
+        var inputTokens = goal.InputTokens;
+        Assert.IsFalse(await store.ApplyAsync(
+            Candidate("gi-4", "turn-4", TerminalSequence + 3, 4),
+            FailedDecision("fp-stuck"), CancellationToken.None));
+        db.ChangeTracker.Clear();
+        Assert.AreEqual(initialRevision + 1, (await db.TaskPlanRuns.SingleAsync()).PlanRevision);
+        var replayedGoal = await db.GoalRuns.SingleAsync();
+        Assert.AreEqual(settled, replayedGoal.IterationsSettled);
+        Assert.AreEqual(inputTokens, replayedGoal.InputTokens);
+
+        // Feed the replanned plan into the real command reader with valid execution
+        // fences. A scheduling revision > 2 must not trip its semantic version gate.
+        await SeedRoundAsync(db, 5);
+        var nextIteration = await db.GoalIterations.SingleAsync(x => x.GoalIterationId == "gi-5");
+        nextIteration.CommandId = "command-after-replan";
+        var task = await db.WorkspaceTasks.SingleAsync();
+        task.ActiveAssignmentId = "assignment-1";
+        var liveBinding = await db.TaskGoalBindings.SingleAsync();
+        liveBinding.AssignmentId = task.ActiveAssignmentId;
+        liveBinding.ExpectedTaskVersion = task.Version;
+        (await db.AgentExecutionReservations.SingleAsync()).FencingToken = 1;
+        var unit = await db.TaskNodes.SingleAsync(x => x.TaskNodeId == CurrentNodeId);
+        unit.AssignedToId = AgentId;
+        unit.WorkUnitKind = "change";
+        unit.MaxRounds = 25;
+        unit.MaxToolCalls = 60;
+        unit.MaxDurationSeconds = 1800;
+        unit.MaxInputTokens = 150_000;
+        unit.MaxOutputTokens = 16_000;
+        unit.MaxCost = 1m;
+        db.ChatExecutionCommands.Add(new ChatExecutionCommandEntity
+        {
+            CommandId = nextIteration.CommandId,
+            BatchId = "batch-after-replan",
+            WorkspaceId = WorkspaceId,
+            SessionId = ConversationId,
+            TurnId = "turn-5",
+            AgentInstanceId = AgentId,
+            MetadataJson = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, string>
+            {
+                [GoalContinuationMetadata.TaskPlanId] = PlanId,
+                [GoalContinuationMetadata.TaskPlanFingerprint] = "fp-1",
+                [GoalContinuationMetadata.TaskNodeId] = CurrentNodeId,
+                [GoalContinuationMetadata.ParentTaskNodeId] = RootNodeId,
+            }),
+        });
+        await db.SaveChangesAsync();
+        var reader = new PuddingPlatform.Services.ExecutionCommandReader(new SharedConnectionFactory(connection));
+        var command = await reader.GetAsync(nextIteration.CommandId);
+        Assert.IsNotNull(command?.WorkUnit);
+        Assert.AreEqual(150_000, command.WorkUnit.MaxInputTokens);
     }
 
     [TestMethod]

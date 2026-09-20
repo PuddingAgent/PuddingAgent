@@ -132,6 +132,32 @@ public sealed class GoalTodoQueryTests
         });
 
     [TestMethod]
+    public async Task GetSteps_SeparatesCompilerVersionFromSchedulingRevision()
+    {
+        var goal = await CreateGoalAsync("version-goal", "agent-a");
+        _db.TaskPlanRuns.Add(new TaskPlanRunEntity
+        {
+            PlanId = "version-plan", WorkspaceId = "ws", PlanVersion = 2, PlanRevision = 9,
+            RootSessionId = goal.CurrentConversationId, LeaderAgentId = goal.AgentInstanceId,
+        });
+        _db.TaskGoalBindings.Add(new TaskGoalBindingEntity
+        {
+            BindingId = "version-binding", WorkspaceId = "ws", TaskId = "task",
+            GoalRunId = goal.GoalRunId, AgentInstanceId = goal.AgentInstanceId, TaskPlanId = "version-plan",
+        });
+        _db.TaskNodes.Add(new TaskNodeEntity
+        {
+            TaskNodeId = "version-node", PlanId = "version-plan", Depth = 1, Status = "Planned",
+        });
+        await _db.SaveChangesAsync();
+        var response = Assert.IsInstanceOfType<OkObjectResult>(
+            await _controller.GetGoalSteps(goal.GoalRunId, CancellationToken.None));
+        var dto = Assert.IsInstanceOfType<GoalQueriesController.GoalStepsResponseDto>(response.Value);
+        Assert.AreEqual(2, dto.PlanVersion);
+        Assert.AreEqual(9, dto.PlanRevision);
+    }
+
+    [TestMethod]
     public async Task GetTodo_WithList_ReturnsItemsSummaryRevisionAndFoundTrue()
     {
         var goal = await CreateGoalAsync("goal-1", "agent-a");

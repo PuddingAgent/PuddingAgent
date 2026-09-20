@@ -627,12 +627,19 @@ public sealed class GoalContinuationTests
         Assert.AreEqual(PuddingCode.Models.TaskNodeStatuses.Running.ToString(), persistedNode.Status);
         Assert.IsNotNull(persistedNode.StartedAt);
 
-        // A frozen v1 plan must not silently acquire the new input-capacity semantics.
+        // Revision is independent; neither v1 nor unknown semantic versions may
+        // silently acquire the current input-capacity semantics.
         var oldPlan = await verify.TaskPlanRuns.SingleAsync();
-        oldPlan.PlanVersion = 1;
+        oldPlan.PlanRevision = 9;
         await verify.SaveChangesAsync();
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => reader.GetAsync(accepted.CommandIds.Single()));
-        StringAssert.Contains(error.Message, "task_execution_plan_version_unsupported");
+        Assert.IsNotNull((await reader.GetAsync(accepted.CommandIds.Single()))?.WorkUnit);
+        foreach (var unsupportedVersion in new[] { 1, 3, 99 })
+        {
+            oldPlan.PlanVersion = unsupportedVersion;
+            await verify.SaveChangesAsync();
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() => reader.GetAsync(accepted.CommandIds.Single()));
+            StringAssert.Contains(error.Message, "task_execution_plan_version_unsupported");
+        }
     }
 
     [TestMethod]

@@ -60,8 +60,11 @@ public sealed record GoalStepsSnapshot
     /// <summary>绑定是否存在冻结计划（plan run 行存在且含 depth1 叶子）。false 时 Steps 为空、计数全 0。</summary>
     public required bool HasPlan { get; init; }
 
-    /// <summary>冻结计划的 plan_version（取该 plan_id 的最高版本）；无计划时为 null。</summary>
+    /// <summary>冻结计划的编译语义版本；无计划时为 null。</summary>
     public int? PlanVersion { get; init; }
+
+    /// <summary>调度修订号；不改变冻结合同或编译语义。</summary>
+    public int? PlanRevision { get; init; }
 
     public required GoalStepProgressSnapshot Progress { get; init; }
 

@@ -120,9 +120,7 @@ public sealed class GoalQueryService(
         if (!string.IsNullOrWhiteSpace(planId))
         {
             plan = await db.TaskPlanRuns.AsNoTracking()
-                .Where(item => item.PlanId == planId)
-                .OrderByDescending(item => item.PlanVersion)
-                .FirstOrDefaultAsync(ct);
+                .SingleOrDefaultAsync(item => item.PlanId == planId, ct);
 
             if (plan is not null)
             {
@@ -190,6 +188,7 @@ public sealed class GoalQueryService(
             Phase = goal.Status,
             HasPlan = hasPlan,
             PlanVersion = hasPlan ? plan!.PlanVersion : null,
+            PlanRevision = hasPlan ? plan!.PlanRevision : null,
             Progress = progress,
             Steps = steps,
             Checks = checks,

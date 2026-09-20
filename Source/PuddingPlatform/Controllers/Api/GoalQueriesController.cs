@@ -86,6 +86,7 @@ public sealed class GoalQueriesController(IGoalQueryService goalQueryService) : 
             snapshot.GoalRunId,
             JsonNamingPolicy.SnakeCaseLower.ConvertName(snapshot.Phase.ToString()),
             snapshot.PlanVersion,
+            snapshot.PlanRevision,
             snapshot.HasPlan,
             new GoalStepProgressDto(
                 snapshot.Progress.StepsTotal,
@@ -173,6 +174,7 @@ public sealed class GoalQueriesController(IGoalQueryService goalQueryService) : 
         string GoalRunId,
         string Phase,
         int? PlanVersion,
+        int? PlanRevision,
         bool HasPlan,
         GoalStepProgressDto Progress,
 
