@@ -556,7 +556,6 @@ public class SessionEventsController : ControllerBase
     /// ChatMessages 是 ConversationEvent 的物化投影，不是独立事实源。
     /// </para>
     /// </summary>
-    [AllowAnonymous]
     [HttpGet("{sessionId}/projected-cursor")]
     public async Task<ActionResult> GetProjectedCursor(string sessionId, CancellationToken ct)
     {
@@ -607,7 +606,6 @@ public class SessionEventsController : ControllerBase
     /// 获取会话中子代理状态列表。
     /// GET /api/sessions/{sessionId}/sub-agents
     /// </summary>
-    [AllowAnonymous]
     [HttpGet("{sessionId}/sub-agents")]
     public async Task<ActionResult<IReadOnlyList<SubAgentStatus>>> GetSubAgents(
         string sessionId, CancellationToken ct)
@@ -1102,7 +1100,6 @@ public class SessionEventsController : ControllerBase
     /// ADR-057 Phase 7: 手动触发投影。
     /// POST /api/sessions/{sessionId}/project
     /// </summary>
-    [AllowAnonymous]
     [HttpPost("{sessionId}/project")]
     public async Task<ActionResult<ProjectionResult>> TriggerProjection(
         string sessionId, CancellationToken ct)

@@ -528,6 +528,74 @@ public sealed class SessionEventsControllerTests
             "已认证请求必须仍可用（前端 api.ts 的 getConversationBootstrap 依赖此端点）。");
     }
 
+    // ── 安全（发现 Y）：另外三个匿名端点去匿名 ─────────────
+
+    /// <summary>
+    /// 匿名不得读取子代理状态。前端 services/platform/api.ts:2018 经全局
+    /// 请求拦截器附带 Bearer，已认证调用不受影响。
+    /// </summary>
+    [TestMethod]
+    public async Task SubAgentsEndpoint_RequiresAuthentication()
+    {
+        var sessionId = await CreateSessionAsync();
+
+        using (var anonymous = _factory.CreateClient())
+        {
+            var unauthorized = await anonymous.GetAsync($"/api/sessions/{sessionId}/sub-agents");
+            Assert.AreEqual(
+                HttpStatusCode.Unauthorized,
+                unauthorized.StatusCode,
+                "匿名请求 sub-agents 必须 401：它返回该会话的子代理状态。");
+        }
+
+        var authorized = await _client.GetAsync($"/api/sessions/{sessionId}/sub-agents");
+        Assert.AreEqual(
+            HttpStatusCode.OK,
+            authorized.StatusCode,
+            "已认证请求必须仍可用（前端 api.ts:2018 依赖此端点）。");
+    }
+
+    /// <summary>
+    /// 匿名不得读取投影游标。前端 api.ts:2097 为已认证调用，不受影响。
+    /// </summary>
+    [TestMethod]
+    public async Task ProjectedCursorEndpoint_RequiresAuthentication()
+    {
+        var sessionId = await CreateSessionAsync();
+
+        using (var anonymous = _factory.CreateClient())
+        {
+            var unauthorized = await anonymous.GetAsync($"/api/sessions/{sessionId}/projected-cursor");
+            Assert.AreEqual(
+                HttpStatusCode.Unauthorized,
+                unauthorized.StatusCode,
+                "匿名请求 projected-cursor 必须 401。");
+        }
+
+        var authorized = await _client.GetAsync($"/api/sessions/{sessionId}/projected-cursor");
+        Assert.AreEqual(HttpStatusCode.OK, authorized.StatusCode, "已认证请求必须仍可用。");
+    }
+
+    /// <summary>
+    /// 匿名不得触发投影：这是匿名状态变更，风险高于匿名读取。
+    /// 仓内无任何匿名消费方（前端未调用该端点）。
+    /// </summary>
+    [TestMethod]
+    public async Task TriggerProjection_RequiresAuthentication()
+    {
+        var sessionId = await CreateSessionAsync();
+
+        using (var anonymous = _factory.CreateClient())
+        {
+            using var body = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+            var unauthorized = await anonymous.PostAsync($"/api/sessions/{sessionId}/project", body);
+            Assert.AreEqual(
+                HttpStatusCode.Unauthorized,
+                unauthorized.StatusCode,
+                "匿名不得触发投影：授权在模型绑定之前判定，故必须是 401 而非 400/415。");
+        }
+    }
+
     private sealed class FixedAgentRuntimeProfileResolver : IAgentRuntimeProfileResolver
     {
         public Task<AgentRuntimeProfile> ResolveAsync(
