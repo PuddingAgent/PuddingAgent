@@ -64,7 +64,7 @@ Image Reader 支持 metadata/read/prepare、detail、缩略图、原图多区域
 
 ## 2026-09-20 心跳持久调度与低频登记
 
-`AgentWakeQueue` 原子保存每实例 `state/heartbeat-wake.json`，重启恢复绝对到期时间；`HeartbeatOrchestrator` 全量登记/每分钟目录核对/发送前准入复核，忙碌短延期、成功后接续周期。`HeartbeatPreference.Enabled` 只控制心跳，sleep/agent_status 同步尊重。见[实施与验收](Docs/Reports/心跳持久调度与登记开销修复-2026-09-20.md)。
+`AgentWakeQueue` 原子保存每实例 `state/heartbeat-wake.json`，重启恢复绝对到期时间；`HeartbeatOrchestrator` 全量登记/每分钟目录核对/发送前准入复核，忙碌短延期、成功后接续周期。`HeartbeatPreference.Enabled` 只控制心跳，sleep/agent_status 同步尊重。见[实施与验收](Docs/Reports/心跳持久调度与登记开销修复-2026-09-20.md)。52 项定向测试通过；已部署 Core PID32060/Ready，实机重启后绝对到期时间保持不变，自然心跳执行待到期验收。
 
 ## 2026-09-14 心跳失败状态与部署修复
 
