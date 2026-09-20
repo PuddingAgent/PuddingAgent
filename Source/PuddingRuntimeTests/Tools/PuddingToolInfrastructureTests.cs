@@ -1263,17 +1263,19 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
-    public void ServiceCollectionExtension_Registers_Llm_Tool_Approval_Reviewer_By_Default()
+    public void ServiceCollectionExtension_Registers_Classifier_Tool_Approval_Reviewer_By_Default()
     {
-        // ADR-091 §4.4/F01：默认组合（无 ILlmInvocationService、无日志）也必须能够解析 reviewer——
-        // 依赖缺席应产生 typed 依赖等待，而不是让 DI 在解析时崩溃。
+        // ADR-091 §4.4/F01：默认组合（无 ILlmInvocationService、无日志、无 Jev 端口）也必须能够解析
+        // reviewer——依赖缺席应产生 typed 依赖等待，而不是让 DI 在解析时崩溃。
+        // 2026-09-21 默认值翻转为 classifier 后这条要求更强：分类器链路（管线 + 仲裁位）在最简容器里
+        // 也必须可构造——仲裁位缺席时由 fail-closed 占位实现兜底（返回 Unknown ⇒ deferred），不抛异常。
         var services = new ServiceCollection();
         services.AddPuddingToolRegistry();
 
         using var provider = services.BuildServiceProvider();
         var reviewer = provider.GetRequiredService<IToolApprovalReviewer>();
 
-        Assert.IsInstanceOfType<LlmToolApprovalReviewer>(reviewer);
+        Assert.IsInstanceOfType<ClassifierToolApprovalReviewer>(reviewer);
     }
 
     [TestMethod]
@@ -1322,8 +1324,11 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
-    public void ServiceCollectionExtension_Defaults_To_Llm_Reviewer_Without_Audit_Agent()
+    public void ServiceCollectionExtension_Defaults_To_Classifier_Reviewer_Without_Audit_Agent()
     {
+        // 审计角色（AuditAgent）已下线；默认审阅器不再依赖它。
+        // 2026-09-21 默认值翻转为 classifier：此处故意注册一个 RecordingToolApprovalLlmClient，
+        // 用来证明**默认路径不会静默回退到 LLM 审阅器**（该 client 必须永远不被使用）。
         var services = new ServiceCollection();
         services.AddSingleton<IToolApprovalLlmClient>(new RecordingToolApprovalLlmClient("""
         {
@@ -1336,7 +1341,7 @@ public sealed partial class PuddingToolInfrastructureTests
         using var provider = services.BuildServiceProvider();
         var reviewer = provider.GetRequiredService<IToolApprovalReviewer>();
 
-        Assert.IsInstanceOfType<LlmToolApprovalReviewer>(reviewer);
+        Assert.IsInstanceOfType<ClassifierToolApprovalReviewer>(reviewer);
     }
 
     [TestMethod]
@@ -3587,12 +3592,13 @@ public sealed partial class PuddingToolInfrastructureTests
 
         // 本测试守护「该输入形态被 request_tool_approval 接受」，即步骤未被形态校验拒绝：
         // Assert.IsTrue(result.Success) 已经证明这一点（形态被接受而非被拒）。
-        // 决策为依赖等待而非批准，是因为测试环境未配置 ToolApproval:Llm 审批 profile ——
-        // 按 ADR-091 §4.1，无可用评审依赖时归入 deferred_dependency，既不是人工决定、也不得伪造批准。
+        // 决策为依赖等待而非批准，是因为本容器**没有任何可用的裁决依赖**：默认审阅器（2026-09-21 起为
+        // 分类器）的仲裁位在未注册 IJevDecisionService 时由 fail-closed 占位实现兜底 ⇒ 返回 Unknown ⇒
+        // 按 ADR-091 §4.1/§4.4 归入 deferred_dependency，既不是人工决定、也**不得伪造批准**。
         // 同一契约由 PuddingToolInfrastructureTests.A91Review.cs 与 InvocationToolApprovalLlmClient_* 守护。
         Assert.IsTrue(result.Success, result.Error);
         StringAssert.Contains(result.Output, "\"decision\": \"deferred_dependency\"");
-        StringAssert.Contains(result.Output, "\"reasonCode\": \"" + ToolApprovalWire.CodeProfileNotConfigured + "\"");
+        StringAssert.Contains(result.Output, "\"reasonCode\": \"" + ToolApprovalWire.CodeClassifierUnknown + "\"");
         StringAssert.Contains(result.Output, "\"argumentsHash\":");
     }
 
@@ -3641,11 +3647,12 @@ public sealed partial class PuddingToolInfrastructureTests
         });
 
         // 本测试守护「字符串 shorthand 步骤形态被接受」，即未被形态校验拒绝。
-        // 决策为依赖等待而非批准，是因为测试环境未配置 ToolApproval:Llm 审批 profile ——
-        // 按 ADR-091 §4.1，无可用评审依赖时归入 deferred_dependency，既不是人工决定、也不得伪造批准。
+        // 决策为依赖等待而非批准，是因为本容器**没有任何可用的裁决依赖**：默认审阅器（2026-09-21 起为
+        // 分类器）的仲裁位在未注册 IJevDecisionService 时由 fail-closed 占位实现兜底 ⇒ 返回 Unknown ⇒
+        // 按 ADR-091 §4.1/§4.4 归入 deferred_dependency，既不是人工决定、也**不得伪造批准**。
         Assert.IsTrue(result.Success, result.Error);
         StringAssert.Contains(result.Output, "\"decision\": \"deferred_dependency\"");
-        StringAssert.Contains(result.Output, "\"reasonCode\": \"" + ToolApprovalWire.CodeProfileNotConfigured + "\"");
+        StringAssert.Contains(result.Output, "\"reasonCode\": \"" + ToolApprovalWire.CodeClassifierUnknown + "\"");
     }
 
     [TestMethod]

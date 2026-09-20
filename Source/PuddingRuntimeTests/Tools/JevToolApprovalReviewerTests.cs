@@ -387,17 +387,22 @@ public sealed class JevToolApprovalReviewerTests
     }
 
     /// <summary>
-    /// 钉住当前 <b>刻意保留</b> 的默认值：未配置时仍走 llm 评审器。
+    /// 钉住**已翻转**的默认值：未配置时走分类器审阅器（<c>classifier</c>）。
     /// <para>
-    /// 2026-09-20 父级决定：v1 形态的 Jev 评审器缺「四选一 + 逐分类可信度 + 健康面」，
-    /// 因此生产默认值保持在 llm；待分类器管线（方案 v2 §14.10 S3）落地后 <b>显式</b> 翻转默认值，并同步修改本测试。
-    /// 本测试的作用是让「翻转默认值」这件事必须是有意识的改动：改的人会看到这条注释。
+    /// 保留 llm 的原始理由（v1 形态 Jev 评审器缺「四选一 + 逐分类可信度 + 健康面」）已消除：
+    /// v2 分类器管线 + 审批门户 + 规则策展已落地（方案 v2 §14.14），且翻转前的三道前置均已实证
+    /// （生产实现清单盘点 / Jev 真实联网可用 / **真链路解析一致性**）。
+    /// 2026-09-21 父级在**独立提交**中翻转默认值（原 llm → classifier），本测试同步改写。
+    /// 本测试的作用依旧是让「再改默认值」必须是有意识的改动：改的人会看到这条注释。
+    /// </para>
+    /// <para>
+    /// 回退方式（无需重新构建）：配置 <c>ToolApproval:Reviewer=llm</c>（或 <c>jev</c>）。
     /// </para>
     /// </summary>
     [TestMethod]
-    public void ProductionRegistry_DefaultReviewerOption_IsLlm_UntilClassifierPipelineLands()
+    public void ProductionRegistry_DefaultReviewerOption_IsClassifier_AfterActivation()
     {
-        Assert.AreEqual("llm", new ToolApprovalRuntimeOptions().Reviewer);
+        Assert.AreEqual("classifier", new ToolApprovalRuntimeOptions().Reviewer);
 
         var services = new ServiceCollection();
         services.AddSingleton<IJevDecisionService>(new FakeJevDecisionService(JevResult()));
@@ -405,7 +410,7 @@ public sealed class JevToolApprovalReviewerTests
 
         using var provider = services.BuildServiceProvider();
 
-        Assert.IsInstanceOfType<LlmToolApprovalReviewer>(provider.GetRequiredService<IToolApprovalReviewer>());
+        Assert.IsInstanceOfType<ClassifierToolApprovalReviewer>(provider.GetRequiredService<IToolApprovalReviewer>());
     }
 
     [TestMethod]

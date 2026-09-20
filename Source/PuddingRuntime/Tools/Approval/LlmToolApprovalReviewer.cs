@@ -108,12 +108,20 @@ public sealed class ToolApprovalRuntimeOptions
     /// "fake" is test-only; production must never silently auto-approve (ADR-091 §5).
     /// </summary>
     /// <remarks>
-    /// 默认值暂为 <c>llm</c>：v2 规格（安全分类器与工具调用准入方案-v2 §8\.4/§9）要求四选一、
-    /// 逐分类可信度、健康面与 ClassificationRuleCurator，这些尚未落地；在此之前不默认切到 jev。
-    /// 需要 Jev 评审时显式设置 <c>ToolApproval:Reviewer=jev</c>。
-    /// 待 v2 落地且确认 428/DependencyWait 运行时行为后，再评估是否翻转默认值。
+    /// **2026-09-21 默认值已翻转为 <c>classifier</c>**（原为 <c>llm</c>）：v2 形态已落地——
+    /// 四选一 + 逐分类可信度（§14.13.3 门槛 0.90）、健康面契约、<c>ClassificationRuleCurator</c> 规则策展、
+    /// 审批门户（<c>classify</c>/<c>rules_*</c>/<c>full_access_*</c>）齐备，且翻转前的三道前置均已**实证**：
+    /// ① 生产实现清单盘点（<c>JevToolCallClassifier</c> 充当管线仲裁位）；
+    /// ② Jev 生产可用性（<c>JevDecisionLiveTests</c> 真实联网 1/1 通过）；
+    /// ③ **真链路解析一致性**（用真实 Jev 驱动分类器 ⇒ <c>Outcome≠Unknown</c>、<c>ReasonCode≠…unparsed</c>，
+    ///    且真实返回的 choice 字面量与 <c>confidence.*</c> 键与解析器期望一致）。
+    /// <para>
+    /// **回退方式（无需重新构建）**：把配置 <c>ToolApproval:Reviewer</c> 显式设为 <c>llm</c>（或 <c>jev</c>）即可；
+    /// <c>LlmToolApprovalReviewer</c> 按 §14.13.7 保留不删，作为回滚路径。
+    /// 分类器不可用时按 §14.7 产生**依赖等待（deferred）**，不会静默放行也不会静默拒绝。
+    /// </para>
     /// </remarks>
-    public string? Reviewer { get; set; } = LlmReviewer;
+    public string? Reviewer { get; set; } = ClassifierReviewer;
 
     /// <summary>
     /// ADR-091 §4.4/F06：隔离审查的自身 deadline（秒）。到期产生

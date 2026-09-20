@@ -71,13 +71,14 @@ public sealed class ClassifierActivationWiringTests
         Assert.IsInstanceOfType<ClassifierToolApprovalReviewer>(reviewer);
     }
 
-    // ---------- W3 ③ 默认 Reviewer 未被翻转（本切片硬约束） ----------
+    // ---------- W3 ③ 默认 Reviewer 已翻转（S3c 激活切片，父级独立提交） ----------
 
     [TestMethod]
-    public void W3_DefaultReviewerOption_StaysLlm_ClassifierOnlyOptIn()
+    public void W3_DefaultReviewerOption_IsClassifier_AfterActivation()
     {
-        // S3c-1 硬约束：本切片禁止翻转默认值；ToolApproval:Reviewer 默认仍 llm，翻转由父级独立提交完成。
-        Assert.AreEqual("llm", new ToolApprovalRuntimeOptions().Reviewer);
+        // 2026-09-21 父级独立提交完成翻转：默认值 = classifier（原 llm）。
+        // 回退方式是配置 ToolApproval:Reviewer=llm，无需重新构建。
+        Assert.AreEqual("classifier", new ToolApprovalRuntimeOptions().Reviewer);
 
         var services = new ServiceCollection();
         services.AddSingleton<IJevDecisionService>(new FakeJevDecisionService());
@@ -85,7 +86,7 @@ public sealed class ClassifierActivationWiringTests
 
         using var provider = services.BuildServiceProvider();
 
-        Assert.IsInstanceOfType<LlmToolApprovalReviewer>(provider.GetRequiredService<IToolApprovalReviewer>());
+        Assert.IsInstanceOfType<ClassifierToolApprovalReviewer>(provider.GetRequiredService<IToolApprovalReviewer>());
     }
 
     // ---------- W4 ④ llm / jev 显式选择行为不变 ----------
