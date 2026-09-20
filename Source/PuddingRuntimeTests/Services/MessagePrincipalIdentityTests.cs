@@ -1,4 +1,6 @@
 using PuddingCode.Models;
+using PuddingCode.Tools;
+using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntimeTests.Services;
 
@@ -43,6 +45,49 @@ public sealed class MessagePrincipalIdentityTests
         Assert.ThrowsExactly<ArgumentException>(() => MessagePrincipalIdentity.FromSender(" ", "x"));
         Assert.ThrowsExactly<ArgumentException>(() => MessagePrincipalIdentity.FromSender("user", " "));
     }
+
+    /// <summary>
+    /// 硬要求：身份归一化不得过头。授权按主体标识精确 Ordinal 匹配，
+    /// 因此另一个用户写入的 grant 绝不得命中（发现 W 修复不得引入越权）。
+    /// </summary>
+    [TestMethod]
+    public async Task Grant_WrittenForOneUser_DoesNotAuthorizeAnotherUser()
+    {
+        var svc = new InMemoryToolAuthorizationService();
+        var userA = ContextFor(MessagePrincipalIdentity.FromSender(MessageEndpointKinds.User, "ou_a"));
+        var userB = ContextFor(MessagePrincipalIdentity.FromSender(MessageEndpointKinds.User, "ou_b"));
+
+        await svc.ApplyCommandAsync(
+            new ToolAuthorizationCommand
+            {
+                RawText = "/authorize sample_high session",
+                Action = ToolAuthorizationAction.Authorize,
+                ToolId = "sample_high",
+                Scope = ToolAuthorizationScope.Session,
+            },
+            userA);
+
+        Assert.IsTrue((await svc.CheckAsync(userA, Descriptor)).IsAuthorized, "写入者本人必须命中");
+        Assert.IsFalse((await svc.CheckAsync(userB, Descriptor)).IsAuthorized,
+            "另一个用户写入的授权不得命中（越权负例）");
+
+        static ToolAuthorizationContext ContextFor(string userId) => new()
+        {
+            WorkspaceId = "workspace-1",
+            SessionId = "session-1",
+            AgentInstanceId = "agent-1",
+            UserId = userId,
+            ToolId = "sample_high",
+        };
+    }
+
+    private static readonly ToolDescriptor Descriptor = new()
+    {
+        ToolId = "sample_high",
+        Name = "Sample high",
+        Description = "High-risk descriptor used by principal identity authorization tests.",
+        PermissionLevel = ToolPermissionLevel.High,
+    };
 }
 
 /// <summary>
