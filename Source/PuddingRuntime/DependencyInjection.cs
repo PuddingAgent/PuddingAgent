@@ -60,9 +60,11 @@ public static class RuntimeServiceExtensions
 
         // ── 多 Agent 心跳唤醒队列 ──
         services.AddSingleton<AgentWakeQueue>();
-        // 心跳编排器：把 IdleDetector 的空闲信号与 AgentWakeQueue 接到实际消息投递上。
-        // 此前该执行体缺失，导致队列无人排空、空闲事件无人订阅、心跳从未触发。
-        services.AddHostedService<HeartbeatOrchestrator>();
+        // 注意：心跳编排器（HeartbeatOrchestrator）由产品组合根 PuddingHost 注册并运行
+        // （PuddingHost/Services/HeartbeatService.cs + PuddingServiceCollectionExtensions.Runtime.cs），
+        // 而产品组合根**不调用** AddPuddingRuntime（见 PuddingServiceCollectionExtensions.Runtime.cs）。
+        // 此处不得再注册一份，否则一旦组合方式变化会出现两个编排器争抢同一唤醒队列
+        // （重复心跳、重复投递）。
 
         // ── Goal 模式：连续自主任务循环（pi follow-up 注入模式，默认关闭）──
         if (configuration is not null)

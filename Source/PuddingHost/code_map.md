@@ -52,7 +52,7 @@ HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 St
 
 | 文件 | 用途 |
 |------|------|
-| `Services/HeartbeatService.cs` | 当前 Agent 心跳编排；实例提示词后追加自主执行契约；2026-08-26 增加持久 Availability gate，等待 SubAgent/Task/Goal、消息排队、Reservation、Unknown 或重建失败均跳过并重新排队，避免把 runtime 暂停误判为空闲 |
+| `Services/HeartbeatService.cs` | 当前 Agent 心跳编排（类名 `HeartbeatOrchestrator`，与文件名不一致；日志分类字符串亦为 `[HeartbeatOrchestrator]`）。启动时 + 每次空闲 tick 对**全部**「启用 + 未冻结 + 已绑定主会话」的 Agent 幂等补全登记（2026-09-20；此前只登记单个“默认 Agent”，且“队列为空才补全”不可达，导致其余 Agent 永远没有心跳）；实例提示词后追加自主执行契约；2026-08-26 增加持久 Availability gate，等待 SubAgent/Task/Goal、消息排队、Reservation、Unknown 或重建失败均跳过并重新排队，避免把 runtime 暂停误判为空闲 |
 | `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 组合 Goal outbox/settlement workers、Task-bound 原子 Store、Availability/Reservation/Dependency/Window/Auto Worker；authoritative flag 前置条件 ValidateOnStart |
 | `Services/CronSchedulerService.cs` | Cron 调度 |
 | `Services/ConfigHotReloadService.cs` | 配置热重载 |

@@ -82,11 +82,10 @@ public sealed class HeartbeatOrchestrator : IHostedService
                 "[HeartbeatOrchestrator] No enabled workspace agent found for workspace={WorkspaceId}; will retry resolution on each idle tick",
                 _workspaceId);
         }
-        else
-        {
-            // 等待从磁盘恢复上次 Agent 设置的心跳频率，避免与 EnsureDefaultAsync 竞态
-            await RestoreHeartbeatPreferenceAsync(cancellationToken);
-        }
+        // 启动时恢复「全部」合格 Agent，而不是只恢复上面解析出的单个"默认 Agent"：
+        // 唤醒队列是内存态、重启即空，只恢复一个会让其余 Agent 永远没有心跳。
+        // 详见 EnsureAllAgentsRegisteredAsync 的注释。
+        await EnsureAllAgentsRegisteredAsync(cancellationToken);
 
         _idleDetector.OnIdleThresholdReached += OnIdleTickAsync;
         _logger.LogInformation("[HeartbeatOrchestrator] Registered on IdleDetector");
@@ -107,46 +106,10 @@ public sealed class HeartbeatOrchestrator : IHostedService
     /// </summary>
     private async Task OnIdleTickAsync(TimeSpan idleDuration, CancellationToken ct)
     {
-                // ── 队列空时自动为所有启用 Agent 填充默认心跳 ──
-        var currentAgentId = _currentAgentId;
-
-        // R1 fix: Retry agent resolution on each tick if none was found at startup.
-        // This allows dynamic recovery when agents are added after the service starts.
-        if (string.IsNullOrWhiteSpace(currentAgentId))
-        {
-            currentAgentId = await ResolveDefaultAgentIdAsync(ct);
-            if (string.IsNullOrWhiteSpace(currentAgentId))
-                return;
-            _currentAgentId = currentAgentId;
-        }
-
-        var count = await _wakeQueue.CountAsync(ct);
-        if (count == 0)
-        {
-            using var fillScope = _scopeFactory.CreateScope();
-            var catalog = fillScope.ServiceProvider.GetService<IWorkspaceAgentCatalog>();
-            if (catalog is not null)
-            {
-                var allAgents = await catalog.ListAgentsAsync(_workspaceId, ct);
-                var enabledAgents = allAgents
-                    .Where(a => a.IsEnabled && !a.IsFrozen)
-                    .ToList();
-                foreach (var agent in enabledAgents)
-                {
-                    await _wakeQueue.EnsureDefaultAsync(agent.AgentId, ct);
-                }
-                _logger.LogDebug(
-                    "[HeartbeatOrchestrator] Queue was empty, default-enqueued {Count} agent(s)",
-                    enabledAgents.Count);
-            }
-            else
-            {
-                await _wakeQueue.EnsureDefaultAsync(currentAgentId, ct);
-                _logger.LogDebug(
-                    "[HeartbeatOrchestrator] Queue was empty, default-enqueued agent={Agent} (catalog unavailable)",
-                    currentAgentId);
-            }
-        }
+        // 每次空闲 tick 幂等补全全部合格 Agent。
+        // 旧实现只在「队列为空」时补全，而心跳发送成功后的自我重入队让队列几乎
+        // 不会为空 ⇒ 除单个"默认 Agent"外的 Agent 永远拿不到心跳。
+        await EnsureAllAgentsRegisteredAsync(ct);
 
         // ── 尝试出队 ──
         var request = await _wakeQueue.TryDequeueAsync(ct);
@@ -467,50 +430,117 @@ public sealed class HeartbeatOrchestrator : IHostedService
     }
 
     /// <summary>
-    /// 从 {AgentInstanceRoot}/heartbeat.json 恢复 Agent 上次设置的心跳频率。
-    /// 文件不存在或损坏时静默跳过，使用默认心跳。
+    /// 幂等补全：确保每个「启用 + 未冻结 + 已绑定主会话」的 Agent 都在唤醒队列中。
+    ///
+    /// 为什么按这三个条件筛选：canonical Turn 受理要求 Agent 绑定主会话
+    /// （MessageDeliveryDispatcher.ResolveCanonicalTurnIdentityAsync 在 MainSessionId 为空时
+    /// 直接抛异常，重试 3 次后 dead_letter），所以没有主会话的 Agent 不能登记心跳，
+    /// 否则只会制造注定失败的投递。
+    ///
+    /// 为什么每次空闲 tick 都要调用：用户消息（foreground ingress）会经
+    /// AgentWakeQueue.NotifyUserActivityAsync 清除该 Agent 的登记；而心跳发送成功后的
+    /// 自我重入队又让队列几乎不会为空 —— 若只在「队列为空」时补全，被清除的 Agent
+    /// 将永远不再获得心跳。EnqueueAsync / EnsureDefaultAsync 对已在队列中的 Agent 是幂等的。
     /// </summary>
-    private async Task RestoreHeartbeatPreferenceAsync(CancellationToken ct)
+    private async Task EnsureAllAgentsRegisteredAsync(CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(_currentAgentId))
-            return;
-
-        var filePath = Path.Combine(
-            _paths.AgentInstanceRoot(_currentAgentId), "heartbeat.json");
-
-        if (!File.Exists(filePath))
+        try
         {
-            _logger.LogInformation(
-                "[Heartbeat] No persisted config for {Agent}, using default", _currentAgentId);
-            return;
+            using var scope = _scopeFactory.CreateScope();
+            var catalog = scope.ServiceProvider.GetService<IWorkspaceAgentCatalog>();
+            if (catalog is null)
+            {
+                _logger.LogDebug(
+                    "[HeartbeatOrchestrator] Heartbeat top-up skipped: agent catalog unavailable");
+                return;
+            }
+
+            var agents = await catalog.ListAgentsAsync(_workspaceId, ct);
+            var registered = 0;
+
+            foreach (var agent in agents)
+            {
+                if (!agent.IsEnabled || agent.IsFrozen)
+                    continue;
+
+                if (string.IsNullOrWhiteSpace(agent.MainSessionId))
+                    continue;
+
+                // 已在队列中（来自 sleep、默认心跳或上一次补全）→ 不重复登记，
+                // 否则会把 EarliestWakeAt 一直往后推，导致永不触发。
+                if (await _wakeQueue.IsInQueueAsync(agent.AgentId, ct))
+                    continue;
+
+                var preference = await TryReadHeartbeatPreferenceAsync(agent.AgentId, ct);
+                if (preference is { } pref)
+                {
+                    await _wakeQueue.EnqueueAsync(agent.AgentId, pref.Min, pref.Max, ct);
+                    _logger.LogInformation(
+                        "[Heartbeat] Restored config for {Agent}: min={Min}s max={Max}s",
+                        agent.AgentId,
+                        (int)pref.Min.TotalSeconds,
+                        (int)pref.Max.TotalSeconds);
+                }
+                else
+                {
+                    await _wakeQueue.EnsureDefaultAsync(agent.AgentId, ct);
+                }
+
+                registered++;
+            }
+
+            if (registered > 0)
+            {
+                _logger.LogInformation(
+                    "[HeartbeatOrchestrator] Heartbeat top-up registered {Count} agent(s)",
+                    registered);
+            }
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "[HeartbeatOrchestrator] Heartbeat top-up failed workspace={WorkspaceId}",
+                _workspaceId);
+        }
+    }
+
+    /// <summary>
+    /// 读取 {AgentInstanceRoot}/heartbeat.json（由 sleep 工具写入）。
+    /// 文件不存在或损坏时返回 null，交由默认心跳（1 小时）接管；
+    /// 区间钳制与 sleep 工具保持一致。
+    /// </summary>
+    private async Task<(TimeSpan Min, TimeSpan Max)?> TryReadHeartbeatPreferenceAsync(
+        string agentId,
+        CancellationToken ct)
+    {
+        var filePath = Path.Combine(_paths.AgentInstanceRoot(agentId), "heartbeat.json");
+        if (!File.Exists(filePath))
+            return null;
 
         try
         {
             var json = await File.ReadAllTextAsync(filePath, ct);
             var pref = JsonSerializer.Deserialize<HeartbeatPreference>(json);
-
             if (pref is null || pref.MinIdleSeconds <= 0 || pref.MaxIdleSeconds <= 0)
-                return;
+                return null;
 
             // 安全护栏
             var min = Math.Clamp(pref.MinIdleSeconds, 60, 86400);
             var max = Math.Clamp(pref.MaxIdleSeconds, min, 86400);
-
-            await _wakeQueue.EnqueueAsync(
-                _currentAgentId,
-                TimeSpan.FromSeconds(min),
-                TimeSpan.FromSeconds(max),
-                ct);
-
-            _logger.LogInformation(
-                "[Heartbeat] Restored config for {Agent}: min={Min}s max={Max}s",
-                _currentAgentId, min, max);
+            return (TimeSpan.FromSeconds(min), TimeSpan.FromSeconds(max));
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex,
-                "[Heartbeat] Failed to restore config for {Agent}, using default", _currentAgentId);
+            _logger.LogWarning(
+                ex,
+                "[Heartbeat] Failed to read config for {Agent}, using default",
+                agentId);
+            return null;
         }
     }
 }

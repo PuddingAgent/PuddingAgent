@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 
 namespace PuddingRuntime.Services;
@@ -105,28 +105,58 @@ public sealed class AgentWakeQueue
         {
             if (_queue.Count == 0) return null;
 
-            if (!_queue.TryPeek(out var request, out _))
-                return null;
-
             var now = DateTime.UtcNow;
-            if (now < request.EarliestWakeAt)
+
+            // 队列按 LatestWakeAt 排序（最晚可唤醒时间早者优先），而「是否到期」由
+            // EarliestWakeAt 判定 —— 两个键不同，只检查队首会让「优先级最高但尚未
+            // 到期」的条目阻塞其后所有已到期条目（head-of-line blocking）。
+            // 这里整体扫描，取「已到期且 EarliestWakeAt 最早」的一条；
+            // 未被选中的条目按原优先级回填，队列内容与顺序不变。
+            var remaining = new List<(WakeRequest Request, DateTime Priority)>();
+            WakeRequest? ready = null;
+            var readyPriority = default(DateTime);
+
+            while (_queue.TryDequeue(out var candidate, out var priority))
             {
-                // Not idle long enough yet — respect the agent's min_idle
+                var isBetter = candidate.EarliestWakeAt <= now
+                    && (ready is null
+                        || candidate.EarliestWakeAt < ready.EarliestWakeAt
+                        || (candidate.EarliestWakeAt == ready.EarliestWakeAt
+                            && priority < readyPriority));
+
+                if (isBetter)
+                {
+                    if (ready is not null)
+                        remaining.Add((ready, readyPriority));
+                    ready = candidate;
+                    readyPriority = priority;
+                }
+                else
+                {
+                    remaining.Add((candidate, priority));
+                }
+            }
+
+            foreach (var (pending, priority) in remaining)
+                _queue.Enqueue(pending, priority);
+
+            if (ready is null)
+            {
+                // 没有任何条目到期 — 尊重各自的 min_idle
                 return null;
             }
 
-            _queue.Dequeue();
             // 清理自定义标记 — 该条目的自定义周期已结束，后续心跳由默认机制接管
-            _customSleepAgents.TryRemove(request.AgentId, out _);
+            _customSleepAgents.TryRemove(ready.AgentId, out _);
             _logger.LogInformation(
                 "[AgentWakeQueue] Dequeued agent={Agent} idle={Idle}s min={Min}s max={Max}s depth={Depth}",
-                request.AgentId,
-                ((int)(now - request.EnqueuedAt).TotalSeconds).ToString(),
-                request.MinIdle.TotalSeconds.ToString("F0"),
-                request.MaxIdle.TotalSeconds.ToString("F0"),
+                ready.AgentId,
+                ((int)(now - ready.EnqueuedAt).TotalSeconds).ToString(),
+                ready.MinIdle.TotalSeconds.ToString("F0"),
+                ready.MaxIdle.TotalSeconds.ToString("F0"),
                 _queue.Count);
 
-            return request;
+            return ready;
         }
         finally
         {

@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
 using PuddingRuntime.Services;
 
 namespace PuddingRuntimeTests.Services;
@@ -67,6 +67,45 @@ public sealed class AgentWakeQueueTests
         await queue.EnsureDefaultAsync("agent-1", ct);
 
         Assert.AreEqual(1, await queue.CountAsync(ct));
+    }
+
+    /// <summary>
+    /// 回归：队列按 LatestWakeAt 排序，而到期由 EarliestWakeAt 判定。
+    /// 只检查队首会让「优先级最高但尚未到期」的条目阻塞其后已到期的条目。
+    /// </summary>
+    [TestMethod]
+    public async Task TryDequeueAsync_NotYetDueHead_DoesNotBlockReadyEntryBehindIt()
+    {
+        var queue = CreateQueue();
+        var ct = CancellationToken.None;
+
+        // 队首：EarliestWakeAt 与 LatestWakeAt 都是 1 小时后 → 优先级最高（排在队首），但远未到期
+        await queue.EnqueueAsync(
+            "agent-head-not-due",
+            TimeSpan.FromHours(1),
+            TimeSpan.FromHours(1),
+            ct);
+
+        // 其后：1.2 秒后即可唤醒，但 LatestWakeAt（2 小时）远大于队首 → 排序在后
+        await queue.EnqueueAsync(
+            "agent-ready-behind",
+            TimeSpan.FromMilliseconds(1200),
+            TimeSpan.FromHours(2),
+            ct);
+
+        Assert.AreEqual(2, await queue.CountAsync(ct));
+
+        // t≈0：两条都未到期
+        Assert.IsNull(await queue.TryDequeueAsync(ct));
+
+        await Task.Delay(1800);
+
+        var picked = await queue.TryDequeueAsync(ct);
+
+        Assert.IsNotNull(picked, "队首未到期不应阻塞其后已到期的条目");
+        Assert.AreEqual("agent-ready-behind", picked!.AgentId);
+        Assert.AreEqual(1, await queue.CountAsync(ct));
+        Assert.IsTrue(await queue.IsInQueueAsync("agent-head-not-due", ct));
     }
 
     [TestMethod]

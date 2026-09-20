@@ -145,10 +145,10 @@
 | `Services/CompositionRecoveryService.cs` | P0-5 步骤 5：跨 1h 超时/Core 重启从持久化 Composition 水合工具集合（append-only） |
 | `Services/SessionExecutionGate.cs` | 执行门控 |
 | `Services/SessionArchiver.cs` | 会话归档 |
-| `Services/HeartbeatService.cs` | 会话超时资源清理（不是 Agent 自主心跳编排） |
+| `Services/HeartbeatService.cs` | 会话超时资源清理（**不是** Agent 自主心跳编排） |
 | `Tools/BuiltIns/Agents/AgentStatusTool.cs` | Agent 状态只读诊断；优先返回持久 Availability version/reason/active Task/Goal/SubAgent，投影缺失或过期报告 unknown，不从 wake queue 缺席推导 idle |
 | `Services/AgentInvocationDispatchFactory.cs` | 服务端 message metadata → Runtime dispatch；`WorkspaceAgentInvocation.ParentConversationId` 与 `ResolvePersistedParentConversationId` 固化父身份键优先级 `parent_conversation_id→parent_session_id→parent_session→conversation_id`，stream dispatch 按 显式父身份→元数据→事件 session→主会话 解析并输出 `sessionSource`，缺失时抛错而非伪造 `msg-*` 会话；Task-bound Goal 透传 task/assignment/version 与 reservation fencing token 到 ActiveTask |
-| `Services/AgentWakeQueue.cs` | 唤醒队列 |
+| `Services/AgentWakeQueue.cs` | 唤醒队列（内存态，重启即空）。优先级键 = `LatestWakeAt`，而“是否到期”由 `EarliestWakeAt` 判定；`TryDequeueAsync` 整体扫描取已到期且最早者，**不得只判队首**（否则队首未到期会阻塞其后已到期条目）。自定义 `sleep` 标记在出队时清除 |
 | `Services/StreamWatchdog.cs` | 流看门狗 |
 | `Services/Events/InternalEventBus.cs` | 当前进程内 fire-and-forget pub/sub；目标只保留 non-critical live notification 或作为 durable publisher adapter |
 | `Services/Events/EventDispatcher.cs` | 当前 SQLite 队列 dispatcher；目标按 consumer group 独立 checkpoint/retry/dead-letter |

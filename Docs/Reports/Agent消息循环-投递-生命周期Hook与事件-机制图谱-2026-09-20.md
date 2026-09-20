@@ -244,7 +244,44 @@ Turn:      accepted → running → completed | failed | cancelled
 
 | 项 | 状态 |
 |---|---|
-head-of-line blocking（§7.5） | **静态可证，未实测触发** |
+head-of-line blocking（§7.5） | **已修复并验证**（见 §10）：新用例在复原旧行为时失败，修复版下通过 |
 心跳在会话中如何渲染 | `ChatMessages` 存的是 `role='user'` + 原始 `pudding-message` JSON；前端 `isHeartbeatMessage` 判 `role==='system' && sourceKind==='system' && sourceId==='heartbeat'`，**两者对不上**，需有心跳后实看 |
 `GoalMode.Enabled=true`（上一轮基于错误前提所改） | 待重新裁决保留或回退 |
 `260fe2a1…` / `8fd0f96f…` 两个 mainSession 归属的 Agent | 对应已禁用 Agent，未逐一确认 |
+
+---
+
+## 10. 修复记录（2026-09-20）
+
+### 10.1 修了什么
+
+| 文件 | 变更 |
+|---|---|
+`PuddingHost/Services/HeartbeatService.cs` | ① `StartAsync` 启动时对**全部**合格 Agent 幂等登记（新方法 `EnsureAllAgentsRegisteredAsync`），不再只登记单个“默认 Agent”；② `OnIdleTickAsync` 每 tick 幂等补全（取代“仅队列为空时补全”）；③ 原 `RestoreHeartbeatPreferenceAsync` 替换为 `TryReadHeartbeatPreferenceAsync`（返回 `(Min, Max)?`，与 `sleep` 同口径钳制） |
+`PuddingRuntime/Services/AgentWakeQueue.cs` | `TryDequeueAsync` 改为整体扫描：取「已到期且 `EarliestWakeAt` 最早」的条目，消除队首阻塞；未选中条目按原优先级回填 |
+`PuddingRuntime/Services/HeartbeatOrchestrator.cs` | **删除**（死代码：产品组合根不调用 `AddPuddingRuntime`，其注册永不执行；保留会造成潜在的双手编排器） |
+`PuddingRuntime/DependencyInjection.cs` | 移除上述死注册，并加注释说明编排器由 PuddingHost 所有 |
+`PuddingRuntimeTests/Services/AgentWakeQueueTests.cs` | 新增回归用例 `TryDequeueAsync_NotYetDueHead_DoesNotBlockReadyEntryBehindIt` |
+`code_map.md` × 2 | 标注类名/文件名不一致（曾导致误判）+ 唤醒队列到期判定契约 |
+
+### 10.2 登记条件与依据
+
+- 只登记「`IsEnabled` + `!IsFrozen` + `MainSessionId` 非空」的 Agent。
+  依据：`MessageDeliveryDispatcher.ResolveCanonicalTurnIdentityAsync` 在 `MainSessionId` 为空时直接抛异常 → 重试 3 次 → `dead_letter`（§5.2 不变量 6）。
+- 补全前先 `IsInQueueAsync` 判存在；对已在队列者**不重复入队**，避免把 `EarliestWakeAt` 一直往后推。
+- 为什么必须每 tick 调：用户消息会经 `NotifyUserActivityAsync` 清掉该 Agent 的登记（§5.2 不变量 5），而心跳发送成功后的自我重入队使队列几乎不为空 ⇒ 仅靠“队列为空才补全”永不触发。
+
+### 10.3 验证证据
+
+| 项 | 结果 |
+|---|---|
+编译 | `dotnet build Source/PuddingAgent/PuddingAgent.csproj --artifacts-path temp/build` → **exit 0** |
+单测 | `PuddingRuntimeTests` 过滤 `AgentWakeQueueTests` → **通过 23 / 失败 0** |
+**变异验证** | 把 `TryDequeueAsync` 临时改回“只判队首”（仅允许 `remaining.Count == 0 && ready is null` 的候选被选中）→ 新用例 **失败 1 / 通过 0**；随后已从副本还原，SHA256 与修复版一致 |
+未回归 | 未改动 `HeartbeatPromptComposer`，`PuddingHost.Tests` 同名测试无需变动 |
+
+### 10.4 仍未做
+
+- 未引入 `agent.run.settled`（§2.3）。当前仍是“发送成功即自我重入队”，因此**心跳完成与否不影响下一次调度时机**。目标语义要求先有 settled 安全点。
+- 启动时全量登记意味着多个 Agent 会各自进入自主循环（并发仍由队列的“每次空闲周期只唤醒一个”扼制）。若观测到活动量或成本异常，调 `MaxWakeupsPerCycle` 或各 Agent 的 `heartbeat.json` 间隔。
+- 心跳在会话中的渲染（`role='user'` + 原始 JSON vs 前端 `isHeartbeatMessage` 的 `role==='system'` 判定）仍未实看。
