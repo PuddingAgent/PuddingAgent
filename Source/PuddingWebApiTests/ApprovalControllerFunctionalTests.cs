@@ -137,6 +137,55 @@ public sealed class ApprovalControllerFunctionalTests
     }
 
     [TestMethod]
+    public async Task Failed_Attempts_Exhaust_And_Void_The_Approval()
+    {
+        var record = await Service.RequestApprovalAsync("session-exhaust", "workspace-1", "delete file");
+        var wrong = record.ConfirmationCode == "00000000" ? "11111111" : "00000000";
+
+        // 前 MaxFailedAttempts - 1 次错误只计数，不作废。
+        for (var i = 0; i < ApprovalCode.MaxFailedAttempts - 1; i++)
+        {
+            var attempt = await _client.PostAsJsonAsync(
+                $"/api/approval/{record.ApprovalId}/confirm",
+                new { confirmationCode = wrong, confirmedBy = "attacker" });
+            Assert.AreEqual(
+                HttpStatusCode.BadRequest,
+                attempt.StatusCode,
+                $"第 {i + 1} 次错误提交应返回 400。");
+        }
+
+        var midway = await Service.GetAsync(record.ApprovalId);
+        Assert.IsNotNull(midway);
+        Assert.AreEqual(ApprovalStatus.Pending, midway!.Status, "未达上限前不得作废。");
+        Assert.AreEqual(ApprovalCode.MaxFailedAttempts - 1, midway.FailedAttempts);
+
+        // 第 MaxFailedAttempts 次错误本身即触发作废。
+        var last = await _client.PostAsJsonAsync(
+            $"/api/approval/{record.ApprovalId}/confirm",
+            new { confirmationCode = wrong, confirmedBy = "attacker" });
+        Assert.AreEqual(HttpStatusCode.BadRequest, last.StatusCode);
+
+        var exhausted = await Service.GetAsync(record.ApprovalId);
+        Assert.IsNotNull(exhausted);
+        Assert.AreEqual(
+            ApprovalStatus.Expired,
+            exhausted!.Status,
+            "达到失败上限后审批单必须作废，而不是继续接受尝试。");
+        Assert.IsFalse(
+            (await Service.QueryPendingAsync()).Any(p => p.ApprovalId == record.ApprovalId),
+            "已作废的审批单不得再出现在待审列表中。");
+
+        // 关键：作废后即使提交正确确认码也不得放行，否则阈值形同虚设。
+        var correctAfterExhaustion = await _client.PostAsJsonAsync(
+            $"/api/approval/{record.ApprovalId}/confirm",
+            new { confirmationCode = record.ConfirmationCode!, confirmedBy = "attacker" });
+        Assert.AreEqual(
+            HttpStatusCode.BadRequest,
+            correctAfterExhaustion.StatusCode,
+            "作废后即使确认码正确也必须被拒——否则攻击者只需继续爆破。");
+    }
+
+    [TestMethod]
     public async Task Confirm_Twice_Is_Rejected_The_Second_Time()
     {
         var record = await Service.RequestApprovalAsync("session-twice", "workspace-1", "delete file");

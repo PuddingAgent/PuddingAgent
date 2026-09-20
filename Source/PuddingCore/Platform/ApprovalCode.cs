@@ -17,11 +17,12 @@ namespace PuddingCode.Platform;
 /// <para><b>已知未决项（未在本类内单方面处理）</b>：</para>
 /// <list type="number">
 ///   <item><description>
-///   <c>InMemoryApprovalService.ConfirmAsync</c> 目前**没有失败尝试计数/锁定**（Redis 中无
-///   attempts 键）。在 <c>DefaultExpiry</c> = 24h 的有效期内，理论上可对已知
-///   <c>ApprovalId</c> 暴力枚举 32 bit 空间；折算需要约 2.4 万 req/s 持续 24h，
-///   单机不现实，但属纵深防御缺口。补齐需要 Redis 交互，而当前测试环境未注册
-///   <c>IConnectionMultiplexer</c>，无法集成验证——故不在无验证的情况下改动。
+///   <b>失败尝试限制：已实现（2026-09-20 迭代 #16）</b>。此前
+///   <c>ConfirmAsync</c> 无失败计数，在 24h 有效期内理论上可对已知 <c>ApprovalId</c>
+///   暴力枚举 32 bit 空间（折算约需 2.4 万 req/s 持续 24h，单机不现实，
+///   但属纵深防御缺口）。现在服务会累计失败次数，达到 <see cref="MaxFailedAttempts"/>
+///   即作废该审批单。之所以能落地，是因为审批服务已从 Redis 依赖改为进程内实现
+///   （迭代 #15），使其首次可被端到端单元测试。
 ///   </description></item>
 ///   <item><description>
 ///   提高 <see cref="Length"/> 会直接改变用户手输确认码的体验（8 位 → 更长），
@@ -73,6 +74,20 @@ public static class ApprovalCode
 
         return new string(chars);
     }
+
+    /// <summary>
+    /// 单个审批单允许的最大确认码失败尝试次数。达到该值后审批单作废
+    /// （见 <see cref="IsExhausted"/>），持码人需重新发起审批。
+    /// </summary>
+    /// <remarks>
+    /// 10 次而不是更少：<see cref="Length"/> 只有 32 bit，而合法用户复制/手输出错是常态，
+    /// 阈值过低会把正常用户锁死。另一方面，10 次失败后猜中的概率上界约为
+    /// 10 / 2^32 ≈ 2.3e-9，已经远低于任何实用攻击面。
+    /// </remarks>
+    public const int MaxFailedAttempts = 10;
+
+    /// <summary>失败尝试是否已达上限（含等于）。</summary>
+    public static bool IsExhausted(int failedAttempts) => failedAttempts >= MaxFailedAttempts;
 
     /// <summary>
     /// 恒时比较存储值与提交值；任一为 null/空、长度不等或内容不同均返回 <c>false</c>。

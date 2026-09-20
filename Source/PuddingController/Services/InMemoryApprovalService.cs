@@ -83,8 +83,24 @@ public sealed class InMemoryApprovalService : IApprovalService
             return Task.FromResult(false);
         }
 
+        // 失败尝试累计：达到上限即作废（Expired），持码人需重新发起审批。
+        // 注意顺序——先把本次失败计入，再判上限：第 MaxFailedAttempts 次错误本身
+        // 就是触发作废的那一次，而不是要等到第 MaxFailedAttempts + 1 次。
         if (!ApprovalCode.Matches(record.ConfirmationCode, confirmationCode))
+        {
+            var attempts = record.FailedAttempts + 1;
+            var failed = ApprovalCode.IsExhausted(attempts)
+                ? record with
+                {
+                    FailedAttempts = attempts,
+                    Status = ApprovalStatus.Expired,
+                    ResolvedAt = DateTimeOffset.UtcNow,
+                }
+                : record with { FailedAttempts = attempts };
+
+            _records.TryUpdate(approvalId, failed, record);
             return Task.FromResult(false);
+        }
 
         var confirmed = record with
         {

@@ -101,6 +101,23 @@ public sealed class ApprovalCodeTests
     }
 
     [TestMethod]
+    public void IsExhausted_Triggers_At_Exactly_The_Configured_Threshold()
+    {
+        Assert.AreEqual(
+            10,
+            ApprovalCode.MaxFailedAttempts,
+            "失败尝试上限是对外安全契约，调整需重新评估 32 bit 熵下的可猜中概率。");
+
+        Assert.IsFalse(ApprovalCode.IsExhausted(0));
+        Assert.IsFalse(ApprovalCode.IsExhausted(ApprovalCode.MaxFailedAttempts - 1));
+        Assert.IsTrue(
+            ApprovalCode.IsExhausted(ApprovalCode.MaxFailedAttempts),
+            "达到上限即视为耗尽（含等于）——否则阈值会多吃一次尝试。");
+        Assert.IsTrue(ApprovalCode.IsExhausted(ApprovalCode.MaxFailedAttempts + 1));
+        Assert.IsFalse(ApprovalCode.IsExhausted(-1), "负数计数不应被视为耗尽。");
+    }
+
+    [TestMethod]
     public void Matches_Agrees_With_Ordinal_Equality_On_Result()
     {
         // 恒时比较不改变可观察结果。这里固定住「结果语义与序数相等一致」，

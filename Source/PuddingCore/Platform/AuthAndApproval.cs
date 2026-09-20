@@ -54,4 +54,10 @@ public sealed record ApprovalRecord
     public DateTimeOffset? ExpiresAt { get; init; }
     public DateTimeOffset? ResolvedAt { get; init; }
     public string? ResolvedBy { get; init; }
+
+    /// <summary>
+    /// 确认码失败尝试累计次数。达到 <c>ApprovalCode.MaxFailedAttempts</c> 时
+    /// 审批单作废（<see cref="Status"/> 转为 <see cref="ApprovalStatus.Expired"/>）。
+    /// </summary>
+    public int FailedAttempts { get; init; }
 }
