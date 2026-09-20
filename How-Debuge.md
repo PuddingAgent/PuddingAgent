@@ -1,3 +1,9 @@
+### 看板恢复后的去重与计划版本循环（2026-09-20）
+
+先全量读取任务元数据，再对具体ID读取描述、评论和评估。`updatedBy=task-restore:db-recovery-2026-09-20` 只表示恢复操作，Backlog不代表源码未交付。合并必须先保全保留卡的独立要求、检查依赖边，再以If-Match与幂等命令取消/归档来源卡；不直接改SQLite状态。正在运行或开启自动调度的任务用评论补充指导，避免Task version变化击穿在途binding。遇到并发版本变化先读差异，不自动换ETag覆盖。
+
+`task_execution_plan_version_unsupported` 需要同时查编译器写入、启动事务、后续重规划写入和Reader：本次 `TaskExecutionPlanCompiler` 写语义2，`TaskGoalDispatchTransactionStore.AddExecutionPlan` 保存2，`GoalSettlementStore.TryReplanBoundPlan` 却执行 `PlanVersion++`，`ExecutionCommandReader.MapAsync` 仍只接受2。修复方案分离语义版本与修订号，不允许直接改成 `>=2`、重置成本或重放旧认领。详见[施工方案](Docs/Features/任务规划与实施分工及存量看板施工方案-2026-09-20.md)和[逐卡台账](Docs/Reports/任务看板全量整理台账-2026-09-20.md)。这是已定位、待实现的缺陷，不能把登记当成已修复。
+
 ### 心跳重启与登记（2026-09-20）
 
 检查 `agents/<id>/heartbeat.json.enabled`、manifest 启用/冻结/主会话与 `state/heartbeat-wake.json` 的 EarliestWakeAt；重启后的 Scheduled 日志应保持原到期时间。首次升级无持久文件才初始化周期。目录最多每分钟核对，5 秒 tick 不再读全量目录。提示词“不参与心跳”不能替代 enabled=false；sleep 不能重新启用明确关闭的实例。登记成功、消息投递、canonical Turn 完成分别验收，不改 3600 秒配置来伪装自然触发成功。见[修复与验收](Docs/Reports/心跳持久调度与登记开销修复-2026-09-20.md)。

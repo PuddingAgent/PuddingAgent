@@ -1,3 +1,7 @@
+## 2026-09-20 全量任务看板整理与规划实施分工（设计登记）
+
+[施工方案](Docs/Features/任务规划与实施分工及存量看板施工方案-2026-09-20.md)与[逐卡台账](Docs/Reports/任务看板全量整理台账-2026-09-20.md)：全量盘点271条历史/活动记录，合并重复、归档测试卡、保留已完成历史，为有效卡补充代码入口和分层验收。Task侧拟新增ImplementationBrief校验与阶段路由，规划sol/困难决策astra/实施低成本路由均受授权和实际调用门禁。`GoalSettlementStore.TryReplanBoundPlan` 的 `PlanVersion++` 是版本循环直接落点；PlanVersion语义与PlanRevision修订必须分离。这里只登记方案，不代表新增机制已实现或部署。
+
 ## 2026-09-19 图片预处理与错误恢复
 
 `VisionRequestPolicy`/`VisualInputRequestBudget`：默认 600 图，统一统计历史/附件/工具输出并分配尺寸和字节预算。`VisualRequestBodyBudget`：DeepSeek 最终 JSON 48 MiB 检查与有界重建。`IVisualArtifactPreprocessor`→`VisualArtifactResolverBridge`→`VisionArtifactStorageService.ResolveForRequestAsync`：保留原图的压缩/缩放缓存。`VisionTextContinuation`：纯文本续聊仅投影历史图片引用；Streaming/Buffered 共享恢复语义，视觉错误不触发 API 熔断。见[实施记录](Docs/Reports/图片请求官方限制与预处理恢复修复-2026-09-19.md)与 ADR-077 §3.2、ADR-088 补充。源码 `adc09ff` 已于 15:08 经 Desktop 受控部署重启，Core PID1608/Ready，托管产物哈希一致；真实模型图片 smoke 待验收。
