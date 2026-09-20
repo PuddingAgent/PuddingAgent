@@ -298,6 +298,10 @@ public sealed class JevToolApprovalReviewer : IToolApprovalReviewer
             {
                 Name = DecisionQuestion,
                 Type = JevQuestionType.Choice,
+                // Instructions 必须设置：官方 API 对缺 instructions 的 choice 问题直接拒绝
+                // （真链路原文：Question "outcome" needs instructions.，2026-09-21 实测于 S3c-2 探针）。
+                // 只给 ChoiceCriteria 而不说明“要判断什么”，真链路会 400 ⇒ 回退路径 Reviewer=jev 实际不可用。
+                Instructions = "对本次工具调用给出三选一裁决：approve / deny / need_human，必须取 criteria 中的键名之一。",
                 ChoiceCriteria = new Dictionary<string, string?>
                 {
                     ["approve"] = "Safe enough to run automatically right now.",
@@ -321,6 +325,7 @@ public sealed class JevToolApprovalReviewer : IToolApprovalReviewer
             {
                 Name = ScopeQuestion,
                 Type = JevQuestionType.Choice,
+                Instructions = "给出批准的作用域：once / session / timed，必须取 criteria 中的键名之一。",
                 ChoiceCriteria = new Dictionary<string, string?>
                 {
                     ["once"] = "Approve this single invocation only.",

@@ -365,6 +365,41 @@ public sealed class JevToolApprovalReviewerTests
         Assert.AreEqual(JevQuestionType.Noul, questions[3].Type);
     }
 
+    /// <summary>
+    /// 守卫：**每个 `choice` 问题都必须带非空 `Instructions`**。
+    /// 判据来源：真链路 400 原文 <c>Question "outcome" needs instructions.</c>（2026-09-21 实测，见 S3c-2 探针）
+    /// —— 缺它会让 <c>Reviewer=jev</c> 回退路径对真实端点**不可用**（表现为 <c>jev_invalid_response</c> ⇒ 审批全部 deferred）。
+    /// <para>
+    /// **为何只断言 choice 而不断言全部问题**：400 实证只出现在 choice 问题上；
+    /// <c>Score</c>/<c>Noul</c> 是否也强制要求 instructions **无实证**，故不断言；
+    /// 也不给 Score 问题补 instructions——那会改动回退路径的**提示词语义**（行为变更），超出“修 400”的范围。
+    /// </para>
+    /// <para>
+    /// 本文件此前对 <c>Instructions</c> **零断言**，正是该缺陷能长期潜伏的原因。
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task BuildDecisionRequest_EveryChoiceQuestion_CarriesNonEmptyInstructions()
+    {
+        var jev = new FakeJevDecisionService(JevResult());
+        await new JevToolApprovalReviewer(jev).ReviewAsync(TicketRequest(), Identity(), Descriptor());
+
+        var choiceQuestions = jev.LastRequest!.Questions
+            .Where(static question => question.Type == JevQuestionType.Choice)
+            .ToArray();
+
+        Assert.IsTrue(
+            choiceQuestions.Length > 0,
+            "本审批评审器应至少发出一个 choice 问题（decision / scope）。");
+        foreach (var question in choiceQuestions)
+        {
+            Assert.IsFalse(
+                string.IsNullOrWhiteSpace(question.Instructions),
+                $"choice 问题 '{question.Name}' 缺 Instructions；官方 API 会以 400 拒绝该请求"
+                + "（回退路径 Reviewer=jev 将不可用）。");
+        }
+    }
+
     // ---------- §3.2 组合根开关 ----------
 
     /// <summary>
