@@ -9,6 +9,9 @@ namespace PuddingRuntime.Models;
 /// </summary>
 public sealed class HeartbeatPreference
 {
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; init; } = true;
+
     [JsonPropertyName("agent_id")]
     public string AgentId { get; init; } = "";
 

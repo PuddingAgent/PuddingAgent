@@ -1,4 +1,5 @@
-using System.Collections.Concurrent;
+using System.Text.Json;
+using PuddingCode.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace PuddingRuntime.Services;
@@ -40,12 +41,14 @@ public sealed class AgentWakeQueue
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly ILogger<AgentWakeQueue> _logger;
 
-    // 追踪调用过 sleep 的 agent，确保不被默认参数覆盖
-    private readonly ConcurrentDictionary<string, bool> _customSleepAgents = new(StringComparer.OrdinalIgnoreCase);
+    private readonly PuddingDataPaths? _paths;
+    private readonly TimeProvider _clock;
 
-    public AgentWakeQueue(ILogger<AgentWakeQueue> logger)
+    public AgentWakeQueue(ILogger<AgentWakeQueue> logger, PuddingDataPaths? paths = null, TimeProvider? clock = null)
     {
         _logger = logger;
+        _paths = paths;
+        _clock = clock ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -61,13 +64,7 @@ public sealed class AgentWakeQueue
         await _gate.WaitAsync(ct);
         try
         {
-            // Remove existing entry for this agent (if any)
-            RemoveLocked(agentId);
-
-            // 标记为自定义 sleep，后续 EnsureDefaultAsync 不会覆盖
-            _customSleepAgents[agentId] = true;
-
-            var now = DateTime.UtcNow;
+            var now = _clock.GetUtcNow().UtcDateTime;
             var request = new WakeRequest
             {
                 AgentId = agentId,
@@ -78,6 +75,8 @@ public sealed class AgentWakeQueue
                 LatestWakeAt = now.Add(maxIdle),
             };
 
+            await PersistLockedAsync(request, ct);
+            RemoveLocked(agentId);
             // Order by LatestWakeAt — soonest-deadline first
             _queue.Enqueue(request, request.LatestWakeAt);
 
@@ -105,7 +104,7 @@ public sealed class AgentWakeQueue
         {
             if (_queue.Count == 0) return null;
 
-            var now = DateTime.UtcNow;
+            var now = _clock.GetUtcNow().UtcDateTime;
 
             // 队列按 LatestWakeAt 排序（最晚可唤醒时间早者优先），而「是否到期」由
             // EarliestWakeAt 判定 —— 两个键不同，只检查队首会让「优先级最高但尚未
@@ -146,8 +145,7 @@ public sealed class AgentWakeQueue
                 return null;
             }
 
-            // 清理自定义标记 — 该条目的自定义周期已结束，后续心跳由默认机制接管
-            _customSleepAgents.TryRemove(ready.AgentId, out _);
+            // Keep the durable due entry until delivery/deferral schedules the next cycle.
             _logger.LogInformation(
                 "[AgentWakeQueue] Dequeued agent={Agent} idle={Idle}s min={Min}s max={Max}s depth={Depth}",
                 ready.AgentId,
@@ -172,6 +170,7 @@ public sealed class AgentWakeQueue
         await _gate.WaitAsync(ct);
         try
         {
+            DeleteScheduleLocked(agentId);
             RemoveLocked(agentId);
         }
         finally
@@ -197,6 +196,7 @@ public sealed class AgentWakeQueue
         await _gate.WaitAsync(ct);
         try
         {
+            DeleteScheduleLocked(agentId);
             RemoveLocked(agentId);
             _logger.LogDebug("[AgentWakeQueue] Cleared sleep for agent={Agent} due to user activity", agentId);
         }
@@ -208,50 +208,52 @@ public sealed class AgentWakeQueue
 
     /// <summary>
     /// 确保 agent 在队列中。若尚未注册则使用系统默认参数（1 小时）。
-    /// 若自定义 sleep 条目仍在队列中则不覆盖；若已被消费则允许默认心跳接续。
+    /// 若已在内存队列中则不覆盖；重启后优先恢复持久化到期时间。
     /// </summary>
-    public async Task EnsureDefaultAsync(string agentId, CancellationToken ct = default)
+    public Task EnsureDefaultAsync(string agentId, CancellationToken ct = default)
+        => EnsureScheduledAsync(agentId, DefaultMinIdle, DefaultMaxIdle, ct);
+
+    /// <summary>Restore an existing durable deadline, or establish a first schedule.</summary>
+    public Task EnsureScheduledAsync(string agentId, TimeSpan minIdle, TimeSpan maxIdle, CancellationToken ct = default)
+        => EnsureScheduledCoreAsync(agentId, minIdle, maxIdle, restore: true, ct);
+
+    /// <summary>After delivery, start the next cycle unless sleep already scheduled it.</summary>
+    public Task ScheduleNextAsync(string agentId, TimeSpan minIdle, TimeSpan maxIdle, CancellationToken ct = default)
+        => EnsureScheduledCoreAsync(agentId, minIdle, maxIdle, restore: false, ct);
+
+    private async Task EnsureScheduledCoreAsync(string agentId, TimeSpan minIdle, TimeSpan maxIdle, bool restore, CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
         try
         {
-            // 已在队列中（由自定义 sleep 或默认入队）→ 不重复入队
-            if (IsInQueueLocked(agentId))
-                return;
-
-            // 自定义标记存在但队列已空 → 清除过期标记，允许默认心跳
-            _customSleepAgents.TryRemove(agentId, out _);
-
-            var now = DateTime.UtcNow;
-            var request = new WakeRequest
+            if (IsInQueueLocked(agentId)) return;
+            var request = restore ? await ReadScheduleLockedAsync(agentId, ct) : null;
+            if (request is null)
             {
-                AgentId = agentId,
-                EnqueuedAt = now,
-                MinIdle = DefaultMinIdle,
-                MaxIdle = DefaultMaxIdle,
-                EarliestWakeAt = now.Add(DefaultMinIdle),
-                LatestWakeAt = now.Add(DefaultMaxIdle),
-            };
+                var now = _clock.GetUtcNow().UtcDateTime;
+                request = new WakeRequest
+                {
+                    AgentId = agentId, EnqueuedAt = now, MinIdle = minIdle, MaxIdle = maxIdle,
+                    EarliestWakeAt = now.Add(minIdle), LatestWakeAt = now.Add(maxIdle),
+                };
+                await PersistLockedAsync(request, ct);
+            }
             _queue.Enqueue(request, request.LatestWakeAt);
-
-            _logger.LogDebug(
-                "[AgentWakeQueue] Default-enqueued agent={Agent} min={Min}s max={Max}s depth={Depth}",
-                agentId,
-                DefaultMinIdle.TotalSeconds.ToString("F0"),
-                DefaultMaxIdle.TotalSeconds.ToString("F0"),
-                _queue.Count);
+            _logger.LogInformation("[AgentWakeQueue] Scheduled agent={Agent} earliest={Earliest:o} latest={Latest:o}",
+                agentId, request.EarliestWakeAt, request.LatestWakeAt);
         }
         finally { _gate.Release(); }
     }
 
     /// <summary>
-    /// 清理队列中该 Agent 的条目（Agent 下线时调用，保留自定义标记以便重启后恢复）。
+    /// 清理该 Agent 的内存和持久化调度（显式下线/停用）。
     /// </summary>
     public async Task ClearAsync(string agentId, CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
         try
         {
+            DeleteScheduleLocked(agentId);
             RemoveLocked(agentId);
             _logger.LogDebug("[AgentWakeQueue] Cleared queue for agent={Agent}", agentId);
         }
@@ -277,19 +279,7 @@ public sealed class AgentWakeQueue
 
     /// <summary>Must be called inside _gate.</summary>
     private bool IsInQueueLocked(string agentId)
-    {
-        var entries = new List<(WakeRequest, DateTime)>();
-        bool found = false;
-        while (_queue.TryDequeue(out var req, out var pri))
-        {
-            if (string.Equals(req.AgentId, agentId, StringComparison.OrdinalIgnoreCase))
-                found = true;
-            entries.Add((req, pri));
-        }
-        foreach (var (req, pri) in entries)
-            _queue.Enqueue(req, pri);
-        return found;
-    }
+        => _queue.UnorderedItems.Any(item => string.Equals(item.Element.AgentId, agentId, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// 检查指定 agent 当前是否在唤醒队列中（线程安全）。
@@ -309,17 +299,8 @@ public sealed class AgentWakeQueue
         await _gate.WaitAsync(ct);
         try
         {
-            var entries = new List<(WakeRequest, DateTime)>();
-            WakeRequest? found = null;
-            while (_queue.TryDequeue(out var req, out var pri))
-            {
-                if (string.Equals(req.AgentId, agentId, StringComparison.OrdinalIgnoreCase))
-                    found = req;
-                entries.Add((req, pri));
-            }
-            foreach (var (req, pri) in entries)
-                _queue.Enqueue(req, pri);
-            return found;
+            return _queue.UnorderedItems.Select(item => item.Element)
+                .FirstOrDefault(item => string.Equals(item.AgentId, agentId, StringComparison.OrdinalIgnoreCase));
         }
                 finally { _gate.Release(); }
     }
@@ -348,10 +329,7 @@ public sealed class AgentWakeQueue
         await _gate.WaitAsync(ct);
         try
         {
-            // R3: Clean up stale custom sleep entry to avoid blocking EnsureDefaultAsync
-            _customSleepAgents.TryRemove(agentId, out _);
-
-            var now = DateTime.UtcNow;
+            var now = _clock.GetUtcNow().UtcDateTime;
             var request = new WakeRequest
             {
                 AgentId = agentId,
@@ -361,6 +339,8 @@ public sealed class AgentWakeQueue
                 EarliestWakeAt = now.Add(retryDelay),
                 LatestWakeAt = now.Add(retryDelay),
             };
+            await PersistLockedAsync(request, ct);
+            RemoveLocked(agentId);
             _queue.Enqueue(request, request.LatestWakeAt);
 
             _logger.LogInformation(
@@ -370,4 +350,49 @@ public sealed class AgentWakeQueue
         }
         finally { _gate.Release(); }
     }
+    private string? SchedulePath(string agentId)
+        => _paths is null ? null : Path.Combine(_paths.AgentInstanceRoot(agentId), "state", "heartbeat-wake.json");
+
+    private async Task<WakeRequest?> ReadScheduleLockedAsync(string agentId, CancellationToken ct)
+    {
+        var path = SchedulePath(agentId);
+        if (path is null || !File.Exists(path)) return null;
+        try
+        {
+            var request = JsonSerializer.Deserialize<WakeRequest>(await File.ReadAllTextAsync(path, ct));
+            if (request is null || !string.Equals(request.AgentId, agentId, StringComparison.OrdinalIgnoreCase)
+                || request.EarliestWakeAt == default || request.LatestWakeAt < request.EarliestWakeAt)
+                throw new JsonException("Invalid heartbeat wake schedule");
+            return request;
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "[AgentWakeQueue] Invalid schedule for agent={Agent}; starting a fresh interval", agentId);
+            return null;
+        }
+    }
+
+    private async Task PersistLockedAsync(WakeRequest request, CancellationToken ct)
+    {
+        var path = SchedulePath(request.AgentId);
+        if (path is null) return;
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var temporary = path + ".tmp";
+        try
+        {
+            await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(request), ct);
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+        }
+    }
+
+    private void DeleteScheduleLocked(string agentId)
+    {
+        var path = SchedulePath(agentId);
+        if (path is not null) File.Delete(path);
+    }
+
 }

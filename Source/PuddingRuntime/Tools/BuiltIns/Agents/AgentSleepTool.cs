@@ -61,6 +61,14 @@ public sealed class AgentSleepTool : PuddingToolBase<AgentSleepArgs>
     private async Task<string> ExecuteCoreInternalAsync(
         string agentId, AgentSleepArgs args, CancellationToken ct)
     {
+        var preferencePath = Path.Combine(_paths.AgentInstanceRoot(agentId), "heartbeat.json");
+        if (File.Exists(preferencePath))
+        {
+            var preference = JsonSerializer.Deserialize<HeartbeatPreference>(await File.ReadAllTextAsync(preferencePath, ct));
+            if (preference?.Enabled == false)
+                throw new InvalidOperationException("此 Agent 的心跳已在 heartbeat.json 中关闭；sleep 不会重新启用心跳，正常消息与任务不受影响。");
+        }
+
         // ── Pudding 强制护栏：clamp 到安全区间 ──
         var minSeconds = Math.Clamp(args.MinIdleSeconds ?? 60, 60, 86400);
         var maxSeconds = Math.Clamp(args.MaxIdleSeconds ?? minSeconds, minSeconds, 86400);

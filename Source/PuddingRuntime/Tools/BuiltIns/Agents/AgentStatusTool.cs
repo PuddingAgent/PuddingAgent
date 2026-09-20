@@ -111,7 +111,8 @@ public sealed class AgentStatusTool : PuddingToolBase<AgentStatusArgs>
                 active_sub_agent_run_id = availabilityIsFresh ? availability!.ActiveSubAgentRunId : null,
                 heartbeat = new
                 {
-                    active = heartbeat is not null,
+                    active = agent.IsEnabled
+                        && heartbeat?.Enabled != false,
                     min_idle_seconds = heartbeat?.MinIdleSeconds ?? DefaultHeartbeatSeconds,
                     max_idle_seconds = heartbeat?.MaxIdleSeconds ?? DefaultHeartbeatSeconds,
                 },

@@ -1,3 +1,7 @@
+### 心跳重启与登记（2026-09-20）
+
+检查 `agents/<id>/heartbeat.json.enabled`、manifest 启用/冻结/主会话与 `state/heartbeat-wake.json` 的 EarliestWakeAt；重启后的 Scheduled 日志应保持原到期时间。首次升级无持久文件才初始化周期。目录最多每分钟核对，5 秒 tick 不再读全量目录。提示词“不参与心跳”不能替代 enabled=false；sleep 不能重新启用明确关闭的实例。登记成功、消息投递、canonical Turn 完成分别验收，不改 3600 秒配置来伪装自然触发成功。见[修复与验收](Docs/Reports/心跳持久调度与登记开销修复-2026-09-20.md)。
+
 ### CPU 占用：Core、Desktop 与 WebView2 分开采样（2026-09-19）
 
 先取 5 秒 CPU 时间增量并除以逻辑处理器数，持续至少一分钟，再映射热点线程；截图瞬时值不能直接与进程生命周期 CPU 秒比较。Desktop 的原生 WPF 图形线程可能不出现在 dotnet-stack 托管栈中，应按线程起始地址映射模块、必要时补原生采样。核对 WebView2 所属进程树，避免把其他应用的浏览器进程算入 Pudding。本次 Core 峰值未复现，Desktop 热点为 wpfgfx_cor3.dll；证据与局限见[CPU 现场采样](Docs/Reports/Core与DesktopCPU占用现场采样-2026-09-19.md)。

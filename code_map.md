@@ -62,6 +62,10 @@ Image Reader 支持 metadata/read/prepare、detail、缩略图、原图多区域
 
 `ExpandableMessageContent` 为正文/静态过程提供按高度展开预览；`TurnContentStream` 就地收拢较早交错前缀，`ActivityGroup` 初次展示最近6项。保留canonical顺序与完整复制/TTS，手动行为组展开优先。阈值见ADR-079对应实施方案§15，验证与发布见[优化记录](Docs/Reports/长消息卡片阅读优化-2026-09-15.md)。
 
+## 2026-09-20 心跳持久调度与低频登记
+
+`AgentWakeQueue` 原子保存每实例 `state/heartbeat-wake.json`，重启恢复绝对到期时间；`HeartbeatOrchestrator` 全量登记/每分钟目录核对/发送前准入复核，忙碌短延期、成功后接续周期。`HeartbeatPreference.Enabled` 只控制心跳，sleep/agent_status 同步尊重。见[实施与验收](Docs/Reports/心跳持久调度与登记开销修复-2026-09-20.md)。
+
 ## 2026-09-14 心跳失败状态与部署修复
 
 见 [诊断与验证](Docs/Reports/心跳连续失败与状态投影修复-2026-09-14.md)：历史图片进入旧 Responses 文本路由导致 6 轮心跳连续失败；部署当前图片路由处理，ConversationMessageView.TurnOutcome 从 canonical 终态恢复无回复状态，MessageList/MessageRow 显示心跳失败原因；不改持久化结构。
