@@ -1724,9 +1724,48 @@ public sealed class InMemoryToolApprovalService : IToolApprovalService
            && !string.IsNullOrWhiteSpace(actual)
            && string.Equals(expected.Trim(), actual.Trim(), StringComparison.Ordinal);
 
+    // P0-2 子串放大修复：只有「完整且成界」地出现在被批准步骤文本中的命令，才可继承该次批准。
+    // 裸子串（例如 "echo report" 之于 "echo report-ready"）不得命中，否则一次批准会把执行权
+    // 放大到审批人从未审阅过的命令上。保留官方引导形态 "Execute command: <cmd>" 的匹配能力。
     private static bool CommandContains(string? approvedCommand, string actualCommand)
-        => !string.IsNullOrWhiteSpace(approvedCommand)
-           && approvedCommand.Contains(actualCommand.Trim(), StringComparison.Ordinal);
+    {
+        if (string.IsNullOrWhiteSpace(approvedCommand))
+            return false;
+
+        var actual = actualCommand.Trim();
+        if (actual.Length == 0 || actual.Length > approvedCommand.Length)
+            return false;
+
+        var searchFrom = 0;
+        while (searchFrom <= approvedCommand.Length - actual.Length)
+        {
+            var index = approvedCommand.IndexOf(actual, searchFrom, StringComparison.Ordinal);
+            if (index < 0)
+                return false;
+
+            var endIndex = index + actual.Length;
+            var leftBounded = index == 0 || IsCommandBoundary(approvedCommand[index - 1]);
+            var rightBounded = endIndex == approvedCommand.Length || IsCommandBoundary(approvedCommand[endIndex]);
+            if (leftBounded && rightBounded)
+                return true;
+
+            searchFrom = index + 1;
+        }
+
+        return false;
+    }
+
+    // 界字符 = 任何不属于命令 token 的字符。命令 token 由 ASCII 字母/数字与命令内常见符号
+    // 组成（. - _ / \\ : = ~ $）。非 ASCII 一律视为界，使中文叙述紧邻命令时仍能正确切分。
+    private static bool IsCommandBoundary(char value)
+    {
+        if (value >= 128)
+            return true;
+
+        return !char.IsLetterOrDigit(value)
+               && value is not '.' and not '-' and not '_' and not '/' and not '\\'
+               and not ':' and not '=' and not '~' and not '$';
+    }
 
     private static bool CommandsAppearRelated(string? approvedCommand, string? actualCommand)
     {

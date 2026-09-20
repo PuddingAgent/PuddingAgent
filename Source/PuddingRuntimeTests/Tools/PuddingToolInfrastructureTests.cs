@@ -3850,6 +3850,72 @@ public sealed partial class PuddingToolInfrastructureTests
         Assert.AreEqual(5, status.SameFingerprintCount);
     }
 
+    [TestMethod]
+    public async Task ToolApprovalService_Does_Not_Inherit_Approval_From_Bare_Command_Substring()
+    {
+        var store = new InMemoryToolApprovalTicketStore();
+        var approval = new InMemoryToolApprovalService(new FakeToolApprovalReviewer(), store);
+        var descriptor = new SampleHighTool().Descriptor with { ToolId = "shell" };
+        var identity = SampleApprovalIdentity();
+
+        // 工单步骤文本里出现的完整命令是 "echo report-ready"；顶层 requested_arguments_json 置空，
+        // 使本次匹配只能走 operation_steps[].command 这一条路径（精确 JSON 与精确命令相等均不成立）。
+        var submit = await approval.SubmitAsync(
+            ValidApprovalRequest(null!) with
+            {
+                ToolId = "shell",
+                CommandName = "workspace_report job",
+                RequestedScope = ToolApprovalScope.Timed,
+                RequestedDuration = TimeSpan.FromMinutes(10),
+                OperationSteps =
+                [
+                    ValidOperationSteps()[0] with
+                    {
+                        StepNumber = 1,
+                        ToolId = "shell",
+                        Command = "verify: echo report-ready",
+                        RequestedArgumentsJson = null,
+                    },
+                ],
+            },
+            identity,
+            descriptor);
+
+        Assert.AreEqual(ToolApprovalDecision.Approved, submit.Decision, submit.DecisionReason);
+
+        // 正例：成界的完整命令仍继承该次批准（保护官方引导形态）。
+        var bounded = await approval.CheckAsync(
+            new ToolApprovalExecutionRequest
+            {
+                WorkspaceId = identity.WorkspaceId,
+                SessionId = identity.SessionId,
+                AgentInstanceId = identity.AgentInstanceId,
+                UserId = identity.UserId,
+                ToolId = "shell",
+                ActualArgumentsJson = """{"command":"echo report-ready","shell":"auto"}""",
+            },
+            descriptor);
+
+        Assert.AreEqual(submit.TicketId, bounded.TicketId, "成界的完整命令必须继承已批准票。");
+        Assert.IsTrue(bounded.IsApproved, bounded.Message);
+
+        // 负例：裸子串 "echo report" 是 "echo report-ready" 的非成界前缀片段，不得继承批准。
+        // 修复前 approved.Contains(actual) 会返回 true，使一次批准放大到审批人未审阅的命令上。
+        var substring = await approval.CheckAsync(
+            new ToolApprovalExecutionRequest
+            {
+                WorkspaceId = identity.WorkspaceId,
+                SessionId = identity.SessionId,
+                AgentInstanceId = identity.AgentInstanceId,
+                UserId = identity.UserId,
+                ToolId = "shell",
+                ActualArgumentsJson = """{"command":"echo report","shell":"auto"}""",
+            },
+            descriptor);
+
+        Assert.IsNull(substring.TicketId, "裸子串不得命中已批准票（子串放大）。");
+        Assert.AreNotEqual("Ticket", substring.ApprovalSource, "裸子串不得以票据来源获得批准。");
+    }
     private static ToolApprovalIdentity SampleApprovalIdentity() => new()
     {
         WorkspaceId = "workspace-1",
