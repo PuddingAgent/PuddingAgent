@@ -464,3 +464,51 @@ git diff --check
 4. repair 发现不一致就 fail closed 为 `manual_review`，不猜测完成状态；
 5. UI 批量操作发现 412 后刷新该 Task 并要求用户重新确认；
 6. 产品 smoke 失败保留 Task/Goal/Run 证据，创建新的验收尝试，不修改旧尝试伪造成功。
+
+## 15. 实施核查附录（2026-09-20，P2 Scheduler 降噪任务实测）
+
+> 本节由实施方在动手前核查后追加，**只登记实测事实与文档纠偏**，不改变 §7/§11.4/§12 的设计意图。核查基准 commit：`bb4c5969`。
+
+### 15.1 已实测确认的代码锚点（与本文设计一致）
+
+| 事实 | 锚点 |
+|---|---|
+| 2 秒空闲轮询驱动 | `Source/PuddingRuntime/Services/Background/SubconsciousWorkerService.cs:18`（使用点 `:107/:133/:145`） |
+| skip 唯一生产者 | `Source/PuddingRuntime/Services/Background/SubconsciousJobScheduler.cs:157`（8 个 reason：`:39/49/64/103/108/131/171/173`） |
+| **同一 fact 双库写入** | `Source/PuddingMemoryEngine/Services/SubconsciousJobQueue.cs:202 → :209`（`runtime_activity`，`:416` Operation=`subconscious_job.schedule_skip`）+ `:210`（`telemetry_metric_events`，`:449` Name 同名）；维度字典共用 `:468` |
+| 必须保留的状态变化明细 | `SubconsciousJobQueue.cs:91/92`、`:262/263`、`:395/396`、**`:504`（不得随降噪误删）** |
+| 契约影响面 | `RecordSchedulingSkipAsync` 的 fake 实现 **≥7 处**（下界，见下注） |
+
+> 注：全仓 grep 会触及 2000 文件枚举上限（`scanned 890/2000`），故"唯一性/计数"均为下界结论；收窄目录后的结论不带上限告警。
+
+### 15.2 「既有 rollup」的真实归属（§12/§14 复用前提）
+
+本核查发现 **scan-run/rollup 合同不在潜意识调度链上**：
+
+- `Source/PuddingRuntime/Services`、`Source/PuddingMemoryEngine`：`scan_run｜ScanRun｜run.summary｜Rollup` 均 **no matches**；
+- 合同实际位于平台侧 Task Scheduler：`Source/PuddingPlatform/Services/Scheduling/TaskSchedulerScanRunSchemaBootstrapper.cs:8/13/16/21`（表 `task_scheduler_scan_runs`，`:48` 索引 `workspace_id, started_at_utc DESC`）、`TaskAutoDispatchScanRunner.cs:48-50`（每轮先落 running 行，`scanId` 贯穿 decisions；开始失败 fail-closed）、`:63-78`（完成落 summary，含 `DecisionCodesJson`/`RepairCodesJson`）、`:87 FailAsync`；`Source/PuddingCore/Storage/StorageAdministrationContracts.cs:15`（`diagnostics.rollups`）。
+
+⇒ 实施时必须显式择一，**不得新建表**：
+- **(a)** 跨层复用 scan-run store 合同（最贴合"复用既有 rollup / 不建平行调度器"，代价是跨层依赖需评审）；
+- **(b)** 在既有 `telemetry_metric_events` 落 `subconscious.schedule_skip.summary`，并说明为何不等于平行汇总表；字段须含 `first/last/window/count/reason 分布/last_flush_watermark/dropped/coalesced/sample_trace_id`。
+
+### 15.3 改造前基线（决定验收口径）
+
+只读探针 `temp/sched-baseline-probe.py`（`mode=ro`，63.367 s，exit=0）：
+
+- `runtime_activity.schedule_skip` 1,368,885 → 1,368,915（**+30**）；`telemetry_metric_events.schedule_skip` 1,368,893 → 1,368,923（**+30**）⇒ 双写 1:1 在生产**实测**成立；
+- 速率 **0.4734 行/s/表 = 1,704.4 行/h/表**；间隔 **2.11 s/对**；库 **8.29 GB**；
+- 外推 10 h = **34,088 行**（双表）⇒ 验收 1 的 ≤120 需削减 **≥99.65%**；12 h = **40,906 行**。
+
+**口径限制（不得越界）**：WAL 尺寸本窗恒为 23,459,312 B（SQLite 段复用）⇒ **不可**用文件尺寸判定 WAL 增长，须改用帧数/checkpoint 差；`dispatch latency` 基线尚未采集 ⇒ 在补齐前**不得**宣称"不退化"。
+
+### 15.4 证据档索引（均可复核）
+
+- `Docs/Reports/scheduler-noise-checkpoint-explore-v1.md`（commit `94c972db`，证据 refs + SHA-256 指纹 + 终审结论）
+- `Docs/Reports/scheduler-noise-plan-step2-r1.md`（commit `f36ac743`，5 项裁定与切片序列；§落点以本附录 15.2 为准）
+- `Docs/Reports/scheduler-noise-baseline-r1.md`（commit `441764ad`，改造前基线）
+- `Docs/Reports/scheduler-noise-closeout-r1.md`（commit `7ce690ad`）、`…-closeout-r2.md`（commit `bb4c5969`，遗留清单 R1–R9）
+
+### 15.5 尚未完成的实施项
+
+C1 内存计数器 → C2 累积 → C3 移除 `:409` → C4 5 分钟接线（落点见 15.2）→ C5 同步 ≥7 处 fake → C6 同法复测；另 WAL 帧数口径与 dispatch latency 基线待补。生产代码当前**零改动**。
