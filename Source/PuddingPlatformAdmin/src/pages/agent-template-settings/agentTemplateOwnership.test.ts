@@ -20,13 +20,16 @@ describe('Agent template and instance field ownership copy', () => {
   });
 
   it('frames workspace Agent settings as instance identity without model overrides', () => {
-    const workspaceDetail = read('..', 'workspace', '[id]', 'index.tsx');
+    // 文案已随「工作区 Agent 设置」UX 改版迁移：该部分说明文案原住在 workspace/[id]/index.tsx，
+    // 现已收进独立抽屉组件 WorkspaceAgentSettingsDrawer.tsx（实例职责 / 来源模板 / 模板快照…）。
+    // 旧的「模板默认值预览 / 个性化覆盖 / 覆盖头像 / 实例只保存工作区内身份…」已生产内消失——
+    // 全库检索只命中本测试文件，git log -S 显示最后触碰于 6e2fd05、4b6a3d7 两次改版 ⇒ 是有意改写。
+    // ⇒ 读新归属文件，保留本用例原意：**工作区侧编辑的是「实例身份」，不提供模型覆盖**。
+    const workspaceDetail = read('..', 'workspace', '[id]', 'WorkspaceAgentSettingsDrawer.tsx');
 
     expect(workspaceDetail).toContain('实例职责');
-    expect(workspaceDetail).toContain('模板默认值预览');
-    expect(workspaceDetail).toContain('个性化覆盖');
-    expect(workspaceDetail).toContain('覆盖头像');
-    expect(workspaceDetail).toContain('实例只保存工作区内身份、头像和启停状态');
+    expect(workspaceDetail).toContain('模板只在创建时提供初始快照；Agent 创建后独立演进。');
+    expect(workspaceDetail).toContain('来源模板');
     expect(workspaceDetail).not.toContain('模型覆盖');
     expect(workspaceDetail).not.toContain('高级 Prompt 覆盖');
   });

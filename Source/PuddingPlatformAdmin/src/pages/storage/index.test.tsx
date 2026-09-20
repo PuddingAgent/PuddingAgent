@@ -68,19 +68,26 @@ describe('StorageClassDonut', () => {
 });
 
 describe('StorageTrendChart', () => {
+  // ⚠️ 组件会按 `Date.now() - days * 24h` 过滤「最近 days 天」，且不足 2 天即渲染空态
+  //   （文案「历史快照不足…」）。因此 fixture 日期**必须相对当前时间生成**：
+  //   原先写死 2026-08-20/21/22，到 2026-09-21 已全部滑出 days=30 的窗口 ⇒ 用例无端变红。
+  //   生产逻辑是对的（窗口过滤 + 空态提示），是测试自己会随时间腐化 ⇒ 改为相对日期。
+  const daysAgoIso = (daysAgo: number) =>
+    new Date(Date.now() - daysAgo * 24 * 3600 * 1000).toISOString();
+
   const points: StorageInventoryTrendPoint[] = [
     {
-      capturedAtUtc: '2026-08-20T10:00:00Z',
+      capturedAtUtc: daysAgoIso(2),
       classBytes: { 'diagnostics.telemetry-raw': 100 },
       databaseTotalBytes: 100,
     },
     {
-      capturedAtUtc: '2026-08-21T10:00:00Z',
+      capturedAtUtc: daysAgoIso(1),
       classBytes: { 'diagnostics.telemetry-raw': 200 },
       databaseTotalBytes: 200,
     },
     {
-      capturedAtUtc: '2026-08-22T10:00:00Z',
+      capturedAtUtc: daysAgoIso(0),
       classBytes: { 'diagnostics.telemetry-raw': 300 },
       databaseTotalBytes: 300,
     },
