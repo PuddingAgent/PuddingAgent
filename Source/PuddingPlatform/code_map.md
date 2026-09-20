@@ -116,6 +116,8 @@
 | `Services/Scheduling/ProviderModelExecutionWindowResolver.cs` | 生产 Resolver；按 Agent 实际 provider/model 和 `llm.providers.json` 版本化价格窗口解析时区/跨午夜/边界；`inherit/off_peak_only` 未知即 fail closed |
 | `Services/Scheduling/TaskAutoDispatchEvaluator.cs` | 无副作用确定性候选评估；每轮每 Agent 只重建一次 Availability 并让全部候选共享同一 version fence；结构化 TaskTypeRoute/能力/provider/model、首选亲和、显式 fallback、依赖、5 分钟 idle grace、窗口与同轮单 Agent 单任务 |
 | `Services/Scheduling/TaskAgentRouteMatcher.cs` | 不读任务标题的确定性 Agent 路由；类型规则与任务显式约束取交集，输出 provider/model/capability 解释和 SHA-256 快照；投影 CreatedAt/UpdatedAt 不进入原子路由指纹 |
+| `Services/Scheduling/ModelRoutePolicyContracts.cs` | 阶段感知模型路由的声明式契约：`RoutePolicy`/`ModelCapabilityProfile`/`WorkUnitRouteContext`/`ModelRouteDecision` 与按 (taskType, phase) 的默认策略目录（Explore/triage 低成本、Plan/review 高质量、Change/Test/deploy 要求工具协议、Verify 固定 isolated-readonly 隔离只读）；只承载结构化字段，模型身份不由自由文本决定 |
+| `Services/Scheduling/ModelRoutePolicyEvaluator.cs` | 纯函数确定性模型路由求值：硬门顺序 capability→context→tool protocol→quality floor→security，失败返回机器可读码（`capability_missing:{tag}`/`context_window_too_small`/`tool_protocol_unsupported`/`quality_floor_not_met`/`security_tier_mismatch`），选中时 Reason 由枚举化 token 拼接；Fingerprint 为 SHA-256 且**与候选顺序无关**；无候选通过硬门时不静默回退（`no_compatible_route` + 拒绝码 + 理由 + 指纹） |
 | `Services/Scheduling/TaskExecutionPlanCompiler.cs` | 不读任务正文的纯 WorkUnit 计划编译器；按 taskType 生成有界 DAG，将依赖/能力/冲突范围/预算冻结为 SHA-256；未知类型 fail closed |
 | `Services/Scheduling/TaskBacklogRefinementEvaluator.cs` | 每五分钟只读检查已 opt-in Backlog 的描述、验收标准、任务类型与兼容 Agent；Shadow 输出 ReadyCandidate/NeedsRefinement，不改状态 |
 | `Services/Scheduling/TaskBacklogRefinementStore.cs` | future authoritative 的 Backlog→Ready 唯一 CAS 写入者；重验任务、Agent、TaskTypeRoute 与路由 SHA-256，原子写 canonical `TaskReady/backlog_refined` |
