@@ -183,6 +183,13 @@
 | `Data/Entities/TaskEvaluationEntity.cs` / `Data/Entities/ExternalApiIdempotencyEntity.cs` | 评价 + 幂等实体 |
 | 测试 | `PuddingPlatformTests/Security/ExternalAccessToken*Tests.cs` + `Controllers/ExternalTaskApiV1Tests.cs` + `Controllers/ExternalWorkspaceAgentApiV1Tests.cs` + 评价/幂等 Store 测试；ADR-082 新增 5 项，External API 相关聚焦回归 45/45 |
 
+## 安全审批管理 API 与分类器健康（2026-09-21）
+
+| 文件 | 说明 |
+| --- | --- |
+| `Controllers/Api/ToolApprovalAdminApiController.cs` | 安全审批白名单/审计管理 API（`[Authorize]`，`/api/tool-approval`）：allowlist 的 list/create/get/update + audit 查询；来源 `built_in` / `audit_agent` / `human` / **`classifier`** 双向映射。**2026-09-21 修两处缺陷**：① `FormatSource` 曾以 `_ => "human"` 兜底 ⇒ **分类器落的规则被当作 human 上报**（审计溯源失真），现改为如实回显枚举名，未来新增来源**宁可暴露未知也不谎报来源**；② `TryParseSource` 补 `classifier` 分支，否则前端编辑/禁用分类器规则会被 **400** 拒绝 |
+| `Controllers/Api/ClassifierHealthApiController.cs` | 分类器健康**只读** API（切片 S6b-1，规格 §8.2 / §10 D6）：`GET /api/classifier-health`，`[Authorize]`，**服务端权威**——直接透传 `IClassifierHealthReporter.Snapshot()`，不由前端推断、不缓存改写；健康面未接线 ⇒ **`200` + `configured=false` 的明确未知态**（绝不 500、绝不假装健康）；wire 仅白名单字段（`classifierId` / `health` 小写字符串 / `detail` / `consecutiveFailures` / `lastCheckedAtUtc` / `lastLatencyMs`）；**只依赖 PuddingCore 抽象**（不引用 Runtime 具体类）；per-key 连续 deferred 计数与退避档属 **Agent 侧诊断**（`classifier_status` 工具），**不进本 API**（§8.2 裁定）；离线契约测试 `PuddingPlatformTests/Controllers/ClassifierHealthApiControllerTests.cs`（7 例） |
+
 ## 持久化
 
 | 文件 | 用途 |
