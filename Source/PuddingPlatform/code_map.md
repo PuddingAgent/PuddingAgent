@@ -236,6 +236,7 @@
 |------|------|
 | `Services/TokenUsageRecorder.cs` | Token 用量记录；持久化 RuntimeExecutionIdentity 提供的 parent/sub-agent、零基 round、本轮 canonical 工具及 context layer Token/UTF-8/GZIP/hash/cache 诊断；prefix-v2 在 system/tool 不变而 PrefixHash 变化时归因为 `history_anchor_changed`，版本切换归因为 `serialization_version_changed`；不复制 prompt 正文 |
 | `Services/CacheDiagnosticsService.cs` | 会话级 Cache Miss Inspector 后端；汇总 token-weighted hit/miss、prefix churn、首次变化原因与逐轮事实 |
+| `Services/GoodputAttributionService.cs` | Goodput 归因聚合（只读）：SourceId 中段(TraceId)→goal_iterations/execution_runs 归因，汇总每迭代 prompt/completion/cache-hit/miss/成本；并判定「零成本却非零 token 不得当节省」（SavingsClaimable）。含 `UsageAttribution.Parse` 与 `PricingClassifier`（priced/free/unpriced/unknown_provider） |
 | `Services/ConversationProjector.cs` | Conversation Event 增量投影；usage 仅在 direct `session:trace:round` 行缺失时补记，SQLite 查询先按稳定 route/token 指纹取最近 32 行、再在内存应用 DateTimeOffset 窗口，避免查询翻译失败后双记账；父子身份来自持久关系、零基 round 来自 invocation index，未知工具数保持 NULL |
 | `Services/TokenUsageEventRepository.cs` | Token 事件持久化与最近层级/熵诊断查询；向 Runtime 返回 Core 诊断 DTO |
 | `Services/LlmGatewayUsageRecorder.cs` | Provider 成功边界逐请求计费账本；与会话归因投影解耦 |
