@@ -91,9 +91,9 @@ Contract:
   date plus evidence in the commit message (the baseline is a contract, not a convenience).
 
 Current baselines (2026-09-21): `Core` 910 passed / 1 known-red,
-`Runtime` 1658 / 0, `Platform` 1363 / 0, `AdminJest` 1338 / 14 known-red
-(9 red suites; three cases were fixed or relocated on 2026-09-21 - see the `TurnStatus` canonical
-retry-format note and the `AgentMessageBubble` responsibility-boundary note).
+`Runtime` 1658 / 0, `Platform` 1363 / 0, `AdminJest` 1339 / 13 known-red
+(8 red suites; four cases were fixed on 2026-09-21 - one **real defect** (missing admin menu icon
+mappings for `hdd`/`key`) plus three test-lag cases; see `known-red-dispositions.md`).
 
 `WebApi` is **not measurable while the Core process is running**: its build needs to write
 `Source/PuddingAgent/bin/Debug/net10.0/*.dll`, which the live process locks (`MSB3027`/`MSB3021`).

@@ -78,12 +78,12 @@ $Suites = [ordered]@{
     'AdminJest' = @{
         Kind = 'jest'
         Dir = 'Source/PuddingPlatformAdmin'
-        # 2026-09-21 实测：**14 failed / 1338 passed / 1352 total**（9 个红套件）。
-        # 收窄轨迹：17 → 16（修 TurnStatus 的 canonical retry 用例）→ 14（修 AgentMessageBubble 两例：
-        # 一例改为「职责边界」断言、一例随职责迁移移除并在原地留下指向 ReasoningDisclosureRow.test.tsx 的注释）。
-        # 已定性数例为测试/配置滞后（A 类），**与安全分类器改动无关**；继续修/隔离后应继续收紧。
+        # 2026-09-21 实测：**13 failed / 1339 passed / 1352 total**（8 个红套件）。
+        # 收窄轨迹：17 → 16（修 TurnStatus 的 canonical retry 用例）→ 14（修 AgentMessageBubble 两例）
+        # → 13（修**真实缺陷**：menuIcons 缺 hdd/key 映射导致存储/访问令牌菜单无图标）。
+        # 已定性数例为测试/配置滞后（A 类），**与安全分类器改动无关**；逐例台账见 TestScripts/known-red-dispositions.md。
         # ⚠️ 名单未逐例登记 ⇒ `KnownRed = $null`（**仅按预算判**）；逐例登记后应改为具体名单。
-        AllowedFailures = 14
+        AllowedFailures = 13
         KnownRed = $null
         Note = '既有红：A 类测试滞后为主（生产变更后测试未同步）。名单未登记 ⇒ 目前只按预算判。'
     }

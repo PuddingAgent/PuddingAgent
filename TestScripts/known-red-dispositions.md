@@ -13,14 +13,14 @@
 | **D** | **测试自身问题**：本身不成立/自相矛盾/依赖环境 | 重写或移除，须留指针 |
 
 ## 当前基线（2026-09-21 实测）
-- `npx jest` 全量 ⇒ **`Tests: 14 failed, 1338 passed, 1352 total`（9 个红套件）**
-- 门禁：`AdminJest.AllowedFailures = 14`、`KnownRed = $null`
+- `npx jest` 全量 ⇒ **`Tests: 13 failed, 1339 passed, 1352 total`（8 个红套件）**
+- 门禁：`AdminJest.AllowedFailures = 13`、`KnownRed = $null`
 
-## 逐例台账（14 例）
+## 逐例台账（13 例待查；已修的都移到下方「已修完的例」）
 
 | # | 套件 | 用例 | 类 | 证据/状态 |
 |---|---|---|---|---|
-| 1 | `src/utils/adminRoutes.test.ts` | `admin workspace menu routing › resolves every configured admin icon name to a React element` | 待查 | 仅日志行；未读取用例 |
+| 1 | `src/utils/adminRoutes.test.ts` | `admin workspace menu routing › resolves every configured admin icon name to a React element` | **C（已修）** | 见「已修完的例」表 |
 | 2 | `src/pages/chat/client/agentChatApi.test.ts` | `agentChatApi › loads historical process items only for the selected message` | 待查（疑似 B） | 早前按"安全分类器改动"排查时列入"测试/配置滞后"，**本轮未复核具体断言** |
 | 3 | `src/pages/agent-template-settings/agentTemplateOwnership.test.ts` | `Agent template and instance field ownership copy › frames workspace Agent settings as instance identity without model overrides` | 待查 | 疑似文案（i18n）期望不一致，未复核 |
 | 4 | `src/pages/storage/index.test.tsx` | `StorageTrendChart › 渲染堆叠面积路径与图例标签` | 待查（疑似 B） | 早前列入"测试/配置滞后"，未复核 |
@@ -35,9 +35,10 @@
 | 13 | `src/pages/access-token-management/index.test.tsx` | `Access Token 管理页（ADR-075 §15.3） › 撤销弹窗显示强确认警示，未确认不调用后端` | 待查 | 同上 |
 | 14 | `src/pages/access-token-management/index.test.tsx` | `Access Token 管理页（ADR-075 §15.3） › 撤销 Modal 填写原因后提交 expectedVersion` | 待查 | 同上 |
 
-## 已修完的例（不在上面的 14 例内，留档以免重复调查）
+## 已修完的例（不在上面的待查列表内，留档以免重复调查）
 | 套件 | 用例 | 类 | 处置 |
 |---|---|---|---|
+| `src/utils/adminRoutes.test.ts` | `admin workspace menu routing › resolves every configured admin icon name to a React element` | **C（真实缺陷）** | 路由配置用了 `hdd`（storage）与 `key`（system-config/access-tokens）两个图标名，但 `src/layouts/AdminLayout/menuIcons.ts` 的映射表缺这两项 ⇒ `resolveAdminMenuRoutes` 只能原样透传字符串 ⇒ **这两个菜单项在生产里渲染不出图标**（该映射的注释明写：Umi 全局 layout 插件关闭后，它是唯一把名字换成组件的地方）。**补映射**（`HddOutlined` / `KeyOutlined`）后该套件 **8/8 全绿**。 |
 | `execution-flow/TurnStatus.test.tsx` | `retry 节点 → connecting（等待/重连模型）` | **A** | 手写 message 非 canonical 形态 ⇒ 改为生产实际格式 `LLM call retry 2/3. ...`（证据：`PuddingRuntime/Services/DirectLlmClient.cs:273` + `src/pages/chat/utils/modelRetry.ts` 刻意严格的正则） |
 | `AgentMessageBubble.test.tsx` | `shows a sanitized reasoning summary ...` | **A** | 错归属断言 ⇒ 改「职责边界」断言（`queryByTestId('reasoning-disclosure-row') === null`） |
 | `AgentMessageBubble.test.tsx` | `shows the latest reasoning line and expands ...` | **A** | 职责已迁至 `ReasoningDisclosureRow`（其测试已覆盖）⇒ 删除 49 行用例 + 原地留指针 |
