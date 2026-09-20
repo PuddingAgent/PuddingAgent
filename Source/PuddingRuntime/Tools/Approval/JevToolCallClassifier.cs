@@ -277,6 +277,13 @@ public sealed class JevToolCallClassifier : IToolCallClassifier
             {
                 Name = OutcomeQuestion,
                 Type = JevQuestionType.Choice,
+                // Instructions 必须设置：真链路口径（JevDecisionLiveTests 是唯一被联网验证过的形状）里
+                // **每个**问题都带 Instructions。只给 ChoiceCriteria 而不说明“要判断什么”，
+                // 真实端点无法推进该问；而离线桩不校验该字段 ⇒ 14 例离线测试结构上漏检
+                // （这正是 S3c-2 真链路探针存在的意义）。
+                Instructions =
+                    "对本次工具调用给出四选一裁决：仅放行本次 / 放行且可沉淀为长期 allow 规则 / " +
+                    "仅拒绝本次 / 拒绝且可沉淀为长期 deny 规则；choice 必须取 criteria 中的键名之一。",
                 ChoiceCriteria = new Dictionary<string, string?>
                 {
                     [ConfidenceKeyAllowOnce] = "仅放行本次调用；不沉淀任何长期规则。",

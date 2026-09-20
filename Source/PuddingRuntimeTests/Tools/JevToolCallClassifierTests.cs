@@ -308,6 +308,32 @@ public sealed class JevToolCallClassifierTests
         Assert.AreEqual(100d, verdict.LatencyMs!.Value, 1.0, "LatencyMs 应基于注入时钟计量。");
     }
 
+    // —— 15 每个问题都必须带非空 Instructions（离线可发现的真链路契约，由 S3c-2 探针暴露） ——
+
+    [TestMethod]
+    public async Task BuildDecisionRequest_EveryQuestion_CarriesNonEmptyInstructions()
+    {
+        // 真链路口径（JevDecisionLiveTests 是唯一被联网验证过的形状）：**每个**问题都带 Instructions。
+        // 缺 Instructions 的 Choice 问题在真实端点上无法推进，而离线桩不校验该字段
+        // —— 本断言是唯一能在离线发现该类缺陷的护栏（此前本文件对 Instructions 零引用）。
+        var jev = new FakeJevDecisionService(JevResult());
+        var classifier = CreateClassifier(jev);
+
+        await classifier.ClassifyAsync(ToolContext());
+
+        var request = jev.LastRequest;
+        Assert.IsNotNull(request, "必须发出决策请求。");
+        Assert.IsTrue(
+            request!.Questions.Count >= 5,
+            $"五问（1 四选一 + 4 逐分类可信度）必须全部发出，实际 {request.Questions.Count}。");
+        foreach (var question in request.Questions)
+        {
+            Assert.IsFalse(
+                string.IsNullOrWhiteSpace(question.Instructions),
+                $"问题 '{question.Name}'（{question.Type}）必须带非空 Instructions：真实 Jev 端点靠 instructions 理解问题意图。");
+        }
+    }
+
     // —— 测试辅助 ——
 
     private static JevToolCallClassifier CreateClassifier(
