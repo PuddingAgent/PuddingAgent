@@ -158,6 +158,12 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
     public DbSet<TaskEvaluationEntity> TaskEvaluations => Set<TaskEvaluationEntity>();
     public DbSet<ExternalApiIdempotencyEntity> ExternalApiIdempotency => Set<ExternalApiIdempotencyEntity>();
 
+    // SKILL Hub 中央技能库（SKILL-Hub 技能中心设计契约 §4.5）
+    public DbSet<HubSkillEntity> HubSkills => Set<HubSkillEntity>();
+    public DbSet<HubSkillVersionEntity> HubSkillVersions => Set<HubSkillVersionEntity>();
+    public DbSet<HubSkillInstallEntity> HubSkillInstalls => Set<HubSkillInstallEntity>();
+    public DbSet<HubSkillEventEntity> HubSkillEvents => Set<HubSkillEventEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -887,6 +893,21 @@ public class PlatformDbContext(DbContextOptions<PlatformDbContext> options) : Db
         // 不再通过 DB seed 维护。旧 SQLite 配置数据可直接丢弃。
         // 此处保留 AppRole seed（属于运行态/业务态数据）。
         SeedBuiltInRoles(modelBuilder);
+
+        // ── SKILL Hub 中央技能库（SKILL-Hub 设计契约 §4.5）──────────
+        modelBuilder.Entity<HubSkillEntity>(e => e.HasIndex(s => s.SkillId).IsUnique());
+        modelBuilder.Entity<HubSkillVersionEntity>(e =>
+        {
+            e.HasIndex(v => new { v.SkillId, v.Version }).IsUnique();
+            e.HasIndex(v => v.SkillId);
+            e.HasIndex(v => v.ParentVersion);
+        });
+        modelBuilder.Entity<HubSkillInstallEntity>(e =>
+        {
+            e.HasIndex(i => new { i.SkillId, i.AgentInstanceId }).IsUnique();
+            e.HasIndex(i => i.AgentInstanceId);
+        });
+        modelBuilder.Entity<HubSkillEventEntity>(e => e.HasIndex(ev => new { ev.SkillId, ev.CreatedAt }));
     }
 
     private static void SeedBuiltInRoles(ModelBuilder modelBuilder)
