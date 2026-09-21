@@ -86,19 +86,69 @@ Contract:
   never guess a disposition - write `待查` instead;
 - `AllowedFailures = $null` means **report only** (`UNMEASURED`) - an unknown baseline is never treated as a pass;
 - full per-suite output is written to `temp/suite-gates/<suite>.log`; the script prints only a summary;
-- exit code `0` = every suite within budget, `1` = at least one suite over budget;
+- exit code `0` = every suite within budget **and** the operator architecture gate green;
+  `1` = at least one suite over budget **or** a non-zero operator architecture gate
+  (see "Operator architecture gate" below);
 - when counts change, update the baseline **inside the script** and state the measurement
   date plus evidence in the commit message (the baseline is a contract, not a convenience).
 
-Current baselines (2026-09-21): `Core` 910 passed / 1 known-red,
-`Runtime` 1659 / 0, `Platform` 1363 / 0, `AdminJest` 1349 / 3 known-red
+Current baselines (2026-09-21, 实测 via this script): `Core` 910 passed / 1 known-red,
+`Runtime` **1710** / 0, `Platform` 1363 / 0, `AdminJest` 1349 / 3 known-red
 (2 red suites, **all three are the voice family**; thirteen cases were fixed on 2026-09-21 - one
 **real defect** (missing admin menu icon mappings for `hdd`/`key`), one flaky suite calibrated
 (`jest.setTimeout`), one time-bomb fixture (relative dates), three copy/UI/carrier-migration cases,
 and seven other test-lag cases; see `known-red-dispositions.md`).
+
+The `Runtime` baseline moved 1659 → 1710 without any behaviour change, and the delta is **accounted for**:
+1710 − 22 = **1688**, where the 22 are the new operator-port cases added by the S1b slice
+(`Source/PuddingRuntimeTests/Operators/`: 3 wiring + 9 registry + 10 adapter-equivalence), matching the
+parent-declared 1688 pre-S1b baseline exactly. The older 1659 figure predates commits made in parallel with
+this work (1688 − 1659 = +29 cases from other commits). Two systematic reasons the number moves between
+measurement points: (a) parallel collaborators keep adding cases to the same suite, and (b) this gate
+**always** filters `TestCategory!=Live`, so Live cases (real-model tests - 3 attributes in 2 files in this
+suite) never enter the count. A baseline is a contract: when the number moves, state the measurement date and
+the raw evidence in the commit message.
 
 `WebApi` is **not measurable while the Core process is running**: its build needs to write
 `Source/PuddingAgent/bin/Debug/net10.0/*.dll`, which the live process locks (`MSB3027`/`MSB3021`).
 The script reports that case as `SKIPPED_LOCKED` - a third honest state that is neither a pass nor a
 failure, so a build lock is never misread as a red suite. Measure it with the Core stopped
 (for example during a deployment window) and then tighten `AllowedFailures` to a real number.
+
+## Operator architecture gate
+
+`test-operators-architecture-gates.ps1` is **not** an optional standalone script. The suite gate runs it
+after the declared suites, prints its raw output, and **its non-zero exit propagates to the main gate's exit
+code** (fail-closed). A *missing* gate script is also treated as non-zero, so deleting the guard cannot
+silently re-open the boundary.
+
+Checks (recursive over `Source/PuddingCore/Operators/**` and `Source/PuddingRuntime/Operators/**`):
+
+| check | pattern | expected |
+|---|---|---|
+| vendor isolation | `(?i)jev\|openai\|anthropic\|typesafe` | `hits=0` |
+| reverse dependency | `(?i)\bRsi\|GoalService\|ToolApproval\b` | `hits=0` |
+
+Why it must be a gate: a contract layer that quietly starts depending on a concrete implementation or on one
+vendor still compiles, and no unit test turns red. Only an architecture gate holds that line.
+
+How the propagation works: the operator gate is launched as an **independent `pwsh` process** and its native
+process exit code is read. Measured 2026-09-21: reading `$LASTEXITCODE` after calling a `.ps1` with `&` is
+**unreliable when the caller is itself a script** - a nested `exit 1` did *not* update the caller's
+`$LASTEXITCODE` (observed `0`), i.e. the guard would have failed **open**. Native process exit codes were
+reliable in all three contexts (direct call / inside a pipeline / nested script).
+
+Verification recipe (used on 2026-09-21; restores the tree afterwards):
+
+```powershell
+# 1. plant a deliberate violation under a scanned directory (e.g. a .cs comment containing a vendor name)
+# 2. plant ⇒ the guard must fail and the main gate must turn non-zero
+pwsh -File TestScripts\test-pudding-suite-gates.ps1 -Only Core   # expect OperatorsGateExit: 1 and exit 1
+# 3. remove the planted file ⇒ the guard must pass again
+pwsh -File TestScripts\test-operators-architecture-gates.ps1     # expect "GATES: PASS" and exit 0
+```
+
+Known limitation of the patterns: `\bToolApproval\b` is a **word-boundary** match, so prefixed identifiers
+(`ToolApprovalPortalService`) and the snake-case scene key `tool_approval` do **not** match. The check
+catches bare-word mentions, not every dependency on the approval domain - widen it deliberately if that
+matters (the adapter slice relies on this: it wraps the approval classifier on purpose).

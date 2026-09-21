@@ -123,6 +123,21 @@ public static class PuddingToolServiceCollectionExtensions
         // 仲裁位：Jev 决策端口已注册 ⇒ JevToolCallClassifier；未注册 ⇒ fail-closed 占位（返回 Unknown）。
         // 两种形态都不会让 DI 解析或启动抛异常；管线自带仲裁独立 3000ms 超时。
         services.TryAddSingleton<IToolCallClassifier>(sp => BuildToolCallClassifierPipeline(sp, configuration));
+        // S1b（算子抽象接入）：把上面的既有分类器经**适配器**暴露为新算子端口，并登记进场景注册表。
+        // 只新增注册、不改既有行；被包装者一行不改、行为逐位不变（适配器只做纯映射）。
+        // 注册表按场景键索引，供后续切片按场景解析算子；缺失场景解析会 fail-closed 抛错（不静默放行）。
+        services.TryAddSingleton<PuddingRuntime.Operators.Adapters.ToolApprovalOperatorAdapter>(sp =>
+            new PuddingRuntime.Operators.Adapters.ToolApprovalOperatorAdapter(
+                sp.GetRequiredService<IToolCallClassifier>(),
+                sp.GetService<TimeProvider>()));
+        services.TryAddSingleton<PuddingCode.Operators.IOperatorRegistry>(sp =>
+        {
+            var registry = new PuddingRuntime.Operators.OperatorRegistry();
+            registry.Register<PuddingCode.Operators.IClassifier>(
+                PuddingRuntime.Operators.Adapters.ToolApprovalOperatorAdapter.SceneKeyValue,
+                sp.GetRequiredService<PuddingRuntime.Operators.Adapters.ToolApprovalOperatorAdapter>());
+            return registry;
+        });
         // S6a（§8.2 / §14.9.2）：分类器健康面（服务端权威、进程内）。具体类型供 classifier_status
         // 工具与评审器上报；接口供跨层消费方（PuddingCore 健康端口）。退避基数从配置读取（默认 2000）。
         services.TryAddSingleton<ClassifierHealthReporter>(sp => new ClassifierHealthReporter(

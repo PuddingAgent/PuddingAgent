@@ -54,7 +54,7 @@ $Suites = [ordered]@{
         Filter = 'TestCategory!=Live'
         AllowedFailures = 0
         KnownRed = @()
-        Note = '2026-09-21 实测 1658 通过 / 0 失败。'
+        Note = '2026-09-21 实测 1710 通过 / 0 失败（含 S1b 新增 22 个算子端口用例；基线的差异说明见 README）。'
     }
     'Platform' = @{
         Kind = 'dotnet'
@@ -190,14 +190,37 @@ foreach ($name in $selected) {
 }
 
 $gateFailures = @($results | Where-Object { $_.Status -eq 'FAIL' })
+
+# ── 算子架构门禁（S1b §5）：与套件判定并列的第二道门
+# 为什么并入：算子抽象层的价值全在「契约层不依赖具体实现 / 不依赖具体供应商」这条边界上，
+# 而这类破口在编译期完全合法、既有单元测试也不会红——只有架构门禁能拦住。
+# 因此它不能是「一个可选脚本」：**非零退出必须传导为主门禁非零**（fail-closed），
+# 否则守卫会退化成「没人跑就等于没有」。
+$operatorsGateExit = 1
+$operatorsGatePath = Join-Path $PSScriptRoot 'test-operators-architecture-gates.ps1'
+if (Test-Path -LiteralPath $operatorsGatePath) {
+    Write-Host '==> 运行算子架构门禁 test-operators-architecture-gates.ps1 ...'
+    # 以**独立进程**运行：2026-09-21 实测——在「脚本调脚本」的嵌套场景下，
+    # `& script.ps1` 内部的 `exit N` **不会**更新调用方的 $LASTEXITCODE，退出码会静默变成 0（守卫 fail-open）。
+    # 原生进程退出码在「直接调用 / 嵌入管道 / 嵌套脚本」三种场景下均可靠（同一实测）。
+    $pwshExe = Join-Path $PSHOME $(if ($IsWindows) { 'pwsh.exe' } else { 'pwsh' })
+    & $pwshExe -NoProfile -File $operatorsGatePath -RepoRoot $repoRoot
+    $operatorsGateExit = $LASTEXITCODE
+    Write-Host "    算子架构门禁退出码 = $operatorsGateExit（非零 ⇒ 主门禁非零）"
+}
+else {
+    Write-Host "==> 算子架构门禁脚本缺失：$operatorsGatePath（fail-closed：按非零处理，避免守卫文件丢失后静默放行）"
+}
+
 $payload = [pscustomobject]@{
     CheckedAt = (Get-Date).ToString('s')
     Passed    = @($results | Where-Object { $_.Status -eq 'PASS' }).Count
     Failed    = $gateFailures.Count
     Unmeasured = @($results | Where-Object { $_.Status -eq 'UNMEASURED' }).Count
     SkippedLocked = @($results | Where-Object { $_.Status -eq 'SKIPPED_LOCKED' }).Count
+    OperatorsGateExit = $operatorsGateExit
     Suites    = $results
 }
 $payload | ConvertTo-Json -Depth 5
-if ($gateFailures.Count) { exit 1 }
+if ($gateFailures.Count -or $operatorsGateExit -ne 0) { exit 1 }
 exit 0
