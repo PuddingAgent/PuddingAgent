@@ -1,29 +1,26 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using PuddingPlatform.Data;
-using PuddingPlatform.Data.Dtos;
+using PuddingCode.Skills;
 using PuddingPlatform.Security;
-using PuddingPlatform.Services;
 
 namespace PuddingPlatform.Controllers.Api;
 
 /// <summary>
 /// SKILL Hub 中央技能库 API（设计契约 §5.2 冻结的 15 个端点）。
 /// 与 /api/skill-packages（Agent 模板选包用的二进制附件）是两条独立链路。
+/// 进程内直连：直接注入 ISkillHubService（Scoped，与 scoped PlatformDbContext 生命周期一致），
+/// 不再按请求手工 new 服务实例。
 /// </summary>
 [Authorize(Policy = SkillHubApiPolicyNames.SkillHubClient)]
 [ApiController]
 [Route("api/skill-hub")]
-public class SkillHubController(PlatformDbContext db) : ControllerBase
+public class SkillHubController(ISkillHubService hubService) : ControllerBase
 {
-    private SkillHubService CreateService() => new(db);
-
     // GET /api/skill-hub/stats — 概览指标
     [HttpGet("stats")]
     public async Task<ActionResult<HubSkillStatsDto>> Stats(CancellationToken ct)
     {
-        var service = CreateService();
-        return Ok(await service.GetStatsAsync(ct));
+        return Ok(await hubService.GetStatsAsync(ct));
     }
 
     // GET /api/skill-hub/skills?query=&tag=&status=&page=&pageSize= — 列表/搜索
@@ -36,16 +33,14 @@ public class SkillHubController(PlatformDbContext db) : ControllerBase
         [FromQuery] int pageSize = 50,
         CancellationToken ct = default)
     {
-        var service = CreateService();
-        return Ok(await service.ListSkillsAsync(query, tag, status, page, pageSize, ct));
+        return Ok(await hubService.ListSkillsAsync(query, tag, status, page, pageSize, ct));
     }
 
     // GET /api/skill-hub/skills/{skillId} — 详情（版本列表 + 最近安装）
     [HttpGet("skills/{skillId}")]
     public async Task<ActionResult<HubSkillDetailDto>> GetSkill(string skillId, CancellationToken ct)
     {
-        var service = CreateService();
-        var detail = await service.GetSkillAsync(skillId, ct);
+        var detail = await hubService.GetSkillAsync(skillId, ct);
         return detail is null ? NotFound() : Ok(detail);
     }
 
@@ -53,8 +48,7 @@ public class SkillHubController(PlatformDbContext db) : ControllerBase
     [HttpGet("skills/{skillId}/versions")]
     public async Task<ActionResult<List<HubSkillVersionDto>>> ListVersions(string skillId, CancellationToken ct)
     {
-        var service = CreateService();
-        var versions = await service.ListVersionsAsync(skillId, ct);
+        var versions = await hubService.ListVersionsAsync(skillId, ct);
         return versions is null ? NotFound() : Ok(versions);
     }
 
@@ -63,8 +57,7 @@ public class SkillHubController(PlatformDbContext db) : ControllerBase
     public async Task<ActionResult<HubSkillVersionContentDto>> GetVersion(
         string skillId, string version, CancellationToken ct)
     {
-        var service = CreateService();
-        var content = await service.GetVersionAsync(skillId, version, ct);
+        var content = await hubService.GetVersionAsync(skillId, version, ct);
         return content is null ? NotFound() : Ok(content);
     }
 
@@ -72,8 +65,7 @@ public class SkillHubController(PlatformDbContext db) : ControllerBase
     [HttpGet("skills/{skillId}/lineage")]
     public async Task<ActionResult<EvoMapDto>> GetSkillLineage(string skillId, CancellationToken ct)
     {
-        var service = CreateService();
-        var lineage = await service.GetSkillLineageAsync(skillId, ct);
+        var lineage = await hubService.GetSkillLineageAsync(skillId, ct);
         return lineage is null ? NotFound() : Ok(lineage);
     }
 
@@ -84,11 +76,10 @@ public class SkillHubController(PlatformDbContext db) : ControllerBase
         [FromQuery] int limit = 200,
         CancellationToken ct = default)
     {
-        var service = CreateService();
         var idList = string.IsNullOrWhiteSpace(skillIds)
             ? null
             : skillIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        return Ok(await service.GetLineageAsync(idList, limit, ct));
+        return Ok(await hubService.GetLineageAsync(idList, limit, ct));
     }
 
     // POST /api/skill-hub/skills — 发布新技能
@@ -96,8 +87,7 @@ public class SkillHubController(PlatformDbContext db) : ControllerBase
     public async Task<ActionResult<HubSkillSummaryDto>> Publish(
         [FromBody] PublishHubSkillRequest req, CancellationToken ct)
     {
-        var service = CreateService();
-        var result = await service.PublishAsync(req, ct);
+        var result = await hubService.PublishAsync(req, ct);
         if (result.IsOk) return CreatedAtAction(nameof(GetSkill), new { skillId = req.SkillId }, result.Value);
         return MapError(result.Status, result.Error);
     }
@@ -107,8 +97,7 @@ public class SkillHubController(PlatformDbContext db) : ControllerBase
     public async Task<ActionResult<HubSkillVersionDto>> PublishVersion(
         string skillId, [FromBody] PublishHubSkillRequest req, CancellationToken ct)
     {
-        var service = CreateService();
-        var result = await service.PublishVersionAsync(skillId, req, ct);
+        var result = await hubService.PublishVersionAsync(skillId, req, ct);
         if (result.IsOk) return CreatedAtAction(nameof(GetVersion), new { skillId, version = result.Value!.Version }, result.Value);
         return MapError(result.Status, result.Error);
     }
@@ -118,8 +107,7 @@ public class SkillHubController(PlatformDbContext db) : ControllerBase
     public async Task<ActionResult<HubSkillSummaryDto>> UpdateMeta(
         string skillId, [FromBody] UpdateHubSkillMetaRequest req, CancellationToken ct)
     {
-        var service = CreateService();
-        var result = await service.UpdateMetaAsync(skillId, req, ct);
+        var result = await hubService.UpdateMetaAsync(skillId, req, ct);
         return result.IsOk ? Ok(result.Value) : MapError(result.Status, result.Error);
     }
 
@@ -127,8 +115,7 @@ public class SkillHubController(PlatformDbContext db) : ControllerBase
     [HttpDelete("skills/{skillId}")]
     public async Task<IActionResult> Retire(string skillId, CancellationToken ct)
     {
-        var service = CreateService();
-        var result = await service.RetireAsync(skillId, ct);
+        var result = await hubService.RetireAsync(skillId, ct);
         return result.IsOk ? NoContent() : MapError(result.Status, result.Error);
     }
 
@@ -137,8 +124,7 @@ public class SkillHubController(PlatformDbContext db) : ControllerBase
     public async Task<ActionResult<HubSkillInstallDto>> RegisterInstall(
         [FromBody] RegisterInstallRequest req, CancellationToken ct)
     {
-        var service = CreateService();
-        var result = await service.RegisterInstallAsync(req, ct);
+        var result = await hubService.RegisterInstallAsync(req, ct);
         return result.IsOk ? Ok(result.Value) : MapError(result.Status, result.Error);
     }
 
@@ -151,8 +137,7 @@ public class SkillHubController(PlatformDbContext db) : ControllerBase
         [FromQuery] int pageSize = 50,
         CancellationToken ct = default)
     {
-        var service = CreateService();
-        return Ok(await service.ListInstallsAsync(agentInstanceId, skillId, page, pageSize, ct));
+        return Ok(await hubService.ListInstallsAsync(agentInstanceId, skillId, page, pageSize, ct));
     }
 
     // GET /api/skill-hub/events?skillId=&limit= — 审计事件
@@ -162,8 +147,7 @@ public class SkillHubController(PlatformDbContext db) : ControllerBase
         [FromQuery] int limit = 100,
         CancellationToken ct = default)
     {
-        var service = CreateService();
-        return Ok(await service.ListEventsAsync(skillId, limit, ct));
+        return Ok(await hubService.ListEventsAsync(skillId, limit, ct));
     }
 
     // GET /api/skill-hub/updates?agentInstanceId= — 待更新清单
@@ -171,8 +155,7 @@ public class SkillHubController(PlatformDbContext db) : ControllerBase
     public async Task<ActionResult<List<HubSkillUpdateDto>>> ListUpdates(
         [FromQuery] string agentInstanceId, CancellationToken ct)
     {
-        var service = CreateService();
-        return Ok(await service.ListUpdatesAsync(agentInstanceId, ct));
+        return Ok(await hubService.ListUpdatesAsync(agentInstanceId, ct));
     }
 
     // ── 辅助 ────────────────────────────────────────────────────────

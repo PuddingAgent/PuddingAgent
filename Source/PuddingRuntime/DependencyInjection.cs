@@ -221,13 +221,6 @@ public static class RuntimeServiceExtensions
         services.AddSingleton<IRuntimeAgentDispatcher, RuntimeAgentDispatcher>();
         services.AddSingleton<IAgentExecutionAvailabilityProvider, DefaultAgentExecutionAvailabilityProvider>();
         services.AddSingleton<AuditLogger>();
-        // SKILL Hub（skill_hub 工具）专用命名 HttpClient：UA 遵循 PuddingUserAgent 单一事实来源
-        // （SKILL Hub 设计方案 §6.1 冻结约定）。工具本体由 AddPuddingToolsFromAssembly 按 [Tool] 特性自动扫描注册。
-        services.AddHttpClient(SkillHubTool.HttpClientName, client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(60);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd(PuddingUserAgent.Value);
-        });
 
         services.AddPuddingToolsFromAssembly(typeof(RuntimeServiceExtensions).Assembly);
 

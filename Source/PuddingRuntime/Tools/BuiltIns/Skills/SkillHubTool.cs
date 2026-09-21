@@ -1,9 +1,9 @@
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.Extensions.Configuration;
-using PuddingCode.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using PuddingCode.Models;
+using PuddingCode.Skills;
 using PuddingCode.Tools;
 using PuddingRuntime.Services.Skills;
 
@@ -17,20 +17,29 @@ namespace PuddingRuntime.Services.Tools;
     permission: ToolPermissionLevel.Medium,
     safety: ToolSafetyFlags.None,
     SortOrder = 46)]
+/// <summary>
+/// SKILL Hub 工具（进程内直连平台契约版）。
+/// 只依赖 <see cref="PuddingCode.Skills.ISkillHubService"/>，拓扑、凭据、联机全部归平台；
+/// 工具对"本地/远程"无感。工具注册为 Singleton、契约实现为 Scoped（内含 scoped PlatformDbContext），
+/// 因此注入 <see cref="IServiceScopeFactory"/> 并在每次调用内建 scope 解析，避免 captive dependency。
+/// </summary>
 public sealed class SkillHubTool(
-    IHttpClientFactory httpClientFactory,
-    IConfiguration configuration,
+    IServiceScopeFactory scopeFactory,
+    IOptions<SkillHubFeatureOptions> options,
     AgentSkillFileService skillService) : PuddingToolBase<SkillHubArgs>
 {
-    /// <summary>命名 HttpClient（DI 组合根注册，UA = PuddingUserAgent.Value，设计方案 §6.1）。</summary>
-    public const string HttpClientName = "SkillHubClient";
-
     private const int LineageNodeCap = 200;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
+
+    /// <summary>
+    /// 契约 DTO 出参序列化选项：与平台控制器出参相同的 Web 默认（camelCase、保留 null 字段），
+    /// 保证工具结果的 JSON 形状与原链路逐字段一致。
+    /// </summary>
+    private static readonly JsonSerializerOptions HubDtoOptions = new(JsonSerializerDefaults.Web);
 
     /// <summary>进化动作白名单（契约 §5.3 冻结，不得改名）。</summary>
     private static readonly HashSet<string> EvolutionActions = new(StringComparer.Ordinal)
@@ -47,19 +56,32 @@ public sealed class SkillHubTool(
         var action = NormalizeAction(args.Action);
         try
         {
+            // 特性开关：关闭时不执行任何操作，返回结构化失败（能力缺失语义）。
+            if (!options.Value.Enabled)
+            {
+                return Fail(ToJson(Error(action,
+                    "SKILL Hub 功能未启用（配置节 SkillHub:Enabled=false）。请联系平台管理员开启后再试。",
+                    statusCode: 503)));
+            }
+
+            // 进程内直连：工具是 Singleton、契约实现是 Scoped（内含 scoped PlatformDbContext），
+            // 每次调用建独立 scope 解析，杜绝跨请求复用 DbContext 的隐蔽故障。
+            using var scope = scopeFactory.CreateScope();
+            var hub = scope.ServiceProvider.GetRequiredService<ISkillHubService>();
+
             return action switch
             {
-                "search" => Ok(await SearchAsync(args, ct)),
-                "browse" => Ok(await BrowseAsync(args, ct)),
-                "get" => Ok(await GetAsync(args, ct)),
-                "install" => Ok(await InstallAsync(agentInstanceId, context.WorkspaceId, args, ct)),
-                "publish" => Ok(await PublishAsync(agentInstanceId, context.WorkspaceId, args, ct)),
-                "update" => Ok(await PublishVersionAsync(agentInstanceId, context.WorkspaceId, args, ct, isEvolve: false)),
-                "evolve" => Ok(await PublishVersionAsync(agentInstanceId, context.WorkspaceId, args, ct, isEvolve: true)),
-                "check_updates" => Ok(await CheckUpdatesAsync(agentInstanceId, ct)),
-                "lineage" => Ok(await LineageAsync(args, ct)),
-                "stats" => Ok(await StatsAsync(ct)),
-                "unpublish" => Ok(await UnpublishAsync(args, ct)),
+                "search" => Ok(await SearchAsync(hub, args, ct)),
+                "browse" => Ok(await BrowseAsync(hub, args, ct)),
+                "get" => Ok(await GetAsync(hub, args, ct)),
+                "install" => Ok(await InstallAsync(hub, agentInstanceId, context.WorkspaceId, args, ct)),
+                "publish" => Ok(await PublishAsync(hub, agentInstanceId, context.WorkspaceId, args, ct)),
+                "update" => Ok(await PublishVersionAsync(hub, agentInstanceId, context.WorkspaceId, args, ct, isEvolve: false)),
+                "evolve" => Ok(await PublishVersionAsync(hub, agentInstanceId, context.WorkspaceId, args, ct, isEvolve: true)),
+                "check_updates" => Ok(await CheckUpdatesAsync(hub, agentInstanceId, ct)),
+                "lineage" => Ok(await LineageAsync(hub, args, ct)),
+                "stats" => Ok(await StatsAsync(hub, ct)),
+                "unpublish" => Ok(await UnpublishAsync(hub, args, ct)),
                 _ => Fail($"Unknown skill_hub action '{args.Action}'. Valid actions: search, browse, get, install, publish, update, evolve, check_updates, lineage, stats, unpublish."),
             };
         }
@@ -74,18 +96,20 @@ public sealed class SkillHubTool(
     }
 
     // ────────────────────────────────────────────────────────────
-    // action=search：GET /skills?query=&tag=&status= —— 精简列表
+    // action=search：ListSkillsAsync —— 精简列表
     // ────────────────────────────────────────────────────────────
-    private async Task<object> SearchAsync(SkillHubArgs args, CancellationToken ct)
+    private async Task<object> SearchAsync(ISkillHubService hub, SkillHubArgs args, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(args.Query) && (args.Tags is null || args.Tags.Count == 0))
             return Error("search", "query 或 tags 至少提供一个；仅浏览请用 action=browse。");
 
-        var path = BuildSkillsListPath(args.Query, args.Tags, args.Status, args.Page, args.PageSize);
-        var (ok, body, error) = await GetJsonAsync(path, "search", ct);
-        if (!ok) return error!;
-
-        var skills = SummarizeSkills(body);
+        var skills = SummarizeSkills(ToHubElement(await hub.ListSkillsAsync(
+            args.Query,
+            JoinTags(args.Tags),
+            args.Status,
+            args.Page ?? 1,
+            Math.Clamp(args.PageSize ?? 50, 1, 200),
+            ct)));
 
         return new
         {
@@ -99,15 +123,17 @@ public sealed class SkillHubTool(
     }
 
     // ────────────────────────────────────────────────────────────
-    // action=browse：GET /skills（不带 query）—— 分页浏览
+    // action=browse：ListSkillsAsync（不带 query）—— 分页浏览
     // ────────────────────────────────────────────────────────────
-    private async Task<object> BrowseAsync(SkillHubArgs args, CancellationToken ct)
+    private async Task<object> BrowseAsync(ISkillHubService hub, SkillHubArgs args, CancellationToken ct)
     {
-        var path = BuildSkillsListPath(null, null, args.Status, args.Page, args.PageSize);
-        var (ok, body, error) = await GetJsonAsync(path, "browse", ct);
-        if (!ok) return error!;
-
-        var skills = SummarizeSkills(body);
+        var skills = SummarizeSkills(ToHubElement(await hub.ListSkillsAsync(
+            query: null,
+            tag: null,
+            args.Status,
+            args.Page ?? 1,
+            Math.Clamp(args.PageSize ?? 50, 1, 200),
+            ct)));
 
         return new
         {
@@ -121,49 +147,54 @@ public sealed class SkillHubTool(
     }
 
     // ────────────────────────────────────────────────────────────
-    // action=get：GET /skills/{id}（include_content=true 附最新版全文）
+    // action=get：GetSkillAsync（include_content=true 附最新版全文）
     // ────────────────────────────────────────────────────────────
-    private async Task<object> GetAsync(SkillHubArgs args, CancellationToken ct)
+    private async Task<object> GetAsync(ISkillHubService hub, SkillHubArgs args, CancellationToken ct)
     {
         var skillId = RequireSkillId(args, "get");
-        var (ok, detail, error) = await GetJsonAsync($"/api/skill-hub/skills/{Uri.EscapeDataString(skillId)}", "get", ct);
-        if (!ok) return error!;
+        var detail = await hub.GetSkillAsync(skillId, ct);
+        if (detail is null)
+            return MapStatusError("get", SkillHubStatus.NotFound, $"技能 '{skillId}' 不存在");
 
+        var detailElement = ToHubElement(detail);
         if (!args.IncludeContent)
-            return new { status = "ok", action = "get", skill = DetailSkill(detail) };
+            return new { status = "ok", action = "get", skill = DetailSkill(detailElement) };
 
-        var latestVersion = DetailSkill(detail).TryGetProperty("latestVersion", out var lv)
+        var latestVersion = DetailSkill(detailElement).TryGetProperty("latestVersion", out var lv)
             ? lv.GetString()
             : null;
         if (string.IsNullOrWhiteSpace(latestVersion))
             return Error("get", "无法从详情中解析 latestVersion，无法取全文。");
 
-        var (okV, versionBody, errorV) = await GetJsonAsync(
-            $"/api/skill-hub/skills/{Uri.EscapeDataString(skillId)}/versions/{Uri.EscapeDataString(latestVersion)}", "get", ct);
-        if (!okV) return errorV!;
+        var version = await hub.GetVersionAsync(skillId, latestVersion, ct);
+        if (version is null)
+            return MapStatusError("get", SkillHubStatus.NotFound, $"技能 '{skillId}' 的版本 {latestVersion} 不存在");
 
+        var versionElement = ToHubElement(version);
         return new
         {
             status = "ok",
             action = "get",
-            skill = DetailSkill(detail),
+            skill = DetailSkill(detailElement),
             contentVersion = latestVersion,
-            contentHash = versionBody.TryGetString("contentHash"),
-            skillMarkdown = versionBody.TryGetString("skillMarkdown"),
+            contentHash = versionElement.TryGetString("contentHash"),
+            skillMarkdown = versionElement.TryGetString("skillMarkdown"),
         };
     }
 
     // ────────────────────────────────────────────────────────────
-    // action=install：取版本全文 → 落本地 → POST /installs 登记
+    // action=install：GetSkillAsync + GetVersionAsync → 落本地 → RegisterInstallAsync 登记
     // ────────────────────────────────────────────────────────────
-    private async Task<object> InstallAsync(string agentInstanceId, string workspaceId, SkillHubArgs args, CancellationToken ct)
+    private async Task<object> InstallAsync(
+        ISkillHubService hub, string agentInstanceId, string workspaceId, SkillHubArgs args, CancellationToken ct)
     {
         var skillId = RequireSkillId(args, "install");
 
         // 1. 详情：拿 name / latestVersion / tags / keywords 等（同时校验技能存在）。
-        var (ok, detail, error) = await GetJsonAsync($"/api/skill-hub/skills/{Uri.EscapeDataString(skillId)}", "install", ct);
-        if (!ok) return error!;
-        var hubSkill = DetailSkill(detail);
+        var detail = await hub.GetSkillAsync(skillId, ct);
+        if (detail is null)
+            return MapStatusError("install", SkillHubStatus.NotFound, $"技能 '{skillId}' 不存在");
+        var hubSkill = DetailSkill(ToHubElement(detail));
         var displayName = hubSkill.TryGetString("name") ?? skillId;
 
         // 2. 版本：显式指定或取最新。
@@ -172,12 +203,13 @@ public sealed class SkillHubTool(
             return Error("install", "无法确定要安装的版本（详情缺少 latestVersion）。");
 
         // 3. 取该版本全文。
-        var (okV, versionBody, errorV) = await GetJsonAsync(
-            $"/api/skill-hub/skills/{Uri.EscapeDataString(skillId)}/versions/{Uri.EscapeDataString(version)}", "install", ct);
-        if (!okV) return errorV!;
-        var markdown = versionBody.TryGetString("skillMarkdown");
+        var versionContent = await hub.GetVersionAsync(skillId, version, ct);
+        if (versionContent is null)
+            return MapStatusError("install", SkillHubStatus.NotFound, $"技能 '{skillId}' 的版本 {version} 不存在，终止安装");
+        var versionElement = ToHubElement(versionContent);
+        var markdown = versionElement.TryGetString("skillMarkdown");
         if (string.IsNullOrEmpty(markdown))
-            return Error("install", $"版本 {version} 响应缺少 skillMarkdown，终止安装。");
+            return Error("install", $"版本 {version} 内容缺少 skillMarkdown，终止安装。");
 
         // 4. overwrite 检查 + 落本地（Create 或 Update）。
         var localExists = await LocalSkillExistsAsync(agentInstanceId, skillId, ct);
@@ -222,24 +254,24 @@ public sealed class SkillHubTool(
             return Error("install", $"写入本地技能失败：{ex.Message}");
         }
 
-        // 5. POST /installs 登记安装台账（upsert）。登记失败不回滚本地安装，但显式上报。
+        // 5. 登记安装台账（upsert）。登记失败不回滚本地安装，但显式上报。
         object? installRecord = null;
         var registerError = (string?)null;
-        var (okI, installBody, errorI) = await SendJsonAsync(
-            HttpMethod.Post,
-            "/api/skill-hub/installs",
-            new
-            {
-                skillId,
-                agentInstanceId,
-                workspaceId,
-                installedVersion = version,
-                contentHash = versionBody.TryGetString("contentHash"),
-                installedBy = $"agent:{agentInstanceId}",
-            },
-            "install", ct);
-        if (okI) installRecord = installBody;
-        else registerError = Truncate(errorI, 500);
+        var registerResult = await hub.RegisterInstallAsync(new RegisterInstallRequest(
+            SkillId: skillId,
+            AgentInstanceId: agentInstanceId,
+            WorkspaceId: workspaceId,
+            InstalledVersion: version,
+            ContentHash: versionElement.TryGetString("contentHash"),
+            InstalledBy: $"agent:{agentInstanceId}"), ct);
+        if (registerResult.IsOk)
+        {
+            installRecord = ToHubElement(registerResult.Value!);
+        }
+        else
+        {
+            registerError = Truncate(MapStatusError("install", registerResult.Status, registerResult.Error), 500);
+        }
 
         return new
         {
@@ -250,16 +282,17 @@ public sealed class SkillHubTool(
             installedVersion = version,
             localPath,
             overwroteLocal = localExists,
-            installRegistered = okI,
+            installRegistered = registerResult.IsOk,
             installRecord,
             registerError,
         };
     }
 
     // ────────────────────────────────────────────────────────────
-    // action=publish：POST /skills（409=已存在 → 提示改用 update/evolve）
+    // action=publish：PublishAsync（冲突 → 提示改用 update/evolve）
     // ────────────────────────────────────────────────────────────
-    private async Task<object> PublishAsync(string agentInstanceId, string workspaceId, SkillHubArgs args, CancellationToken ct)
+    private async Task<object> PublishAsync(
+        ISkillHubService hub, string agentInstanceId, string workspaceId, SkillHubArgs args, CancellationToken ct)
     {
         var skillId = RequireSkillId(args, "publish");
 
@@ -288,43 +321,44 @@ public sealed class SkillHubTool(
         if (args.EvolutionAction is not null && !EvolutionActions.Contains(args.EvolutionAction))
             return Error("publish", $"evolution_action '{args.EvolutionAction}' 非法。白名单：{string.Join('|', EvolutionActions)}。");
 
-        var body = new
-        {
-            skillId,
-            name,
-            summary = Coalesce(args.Summary, localManifest?.Summary is { Length: > 0 } s ? s : null),
-            description = Coalesce(args.Description, localManifest?.Description),
-            tags = (IReadOnlyList<string>?)Coalesce(args.Tags, localManifest?.Tags),
-            keywords = (IReadOnlyList<string>?)Coalesce(args.Keywords, localManifest?.Keywords),
-            version,
-            skillMarkdown = markdown,
-            evolutionAction = args.EvolutionAction,
-            parentVersion = args.ParentVersion,
-            publishedByAgentId = agentInstanceId,
-            publishedByWorkspaceId = workspaceId,
-            publishNote = args.PublishNote,
-            evidenceJson = BuildEvidenceJson(args.Evidence),
-            visibility = string.IsNullOrWhiteSpace(args.Visibility) ? "global" : args.Visibility,
-        };
-
-        var (ok, responseBody, error) = await SendJsonAsync(HttpMethod.Post, "/api/skill-hub/skills", body, "publish", ct);
-        if (!ok) return MaybeConflictHint(error!, "该 skill_id 已存在于中央库；请改用 action=update/evolve 发布新版本。");
+        var result = await hub.PublishAsync(new PublishHubSkillRequest(
+            SkillId: skillId,
+            Name: name,
+            Summary: Coalesce(args.Summary, localManifest?.Summary is { Length: > 0 } s ? s : null),
+            Description: Coalesce(args.Description, localManifest?.Description),
+            Tags: (IReadOnlyList<string>?)Coalesce(args.Tags, localManifest?.Tags),
+            Keywords: (IReadOnlyList<string>?)Coalesce(args.Keywords, localManifest?.Keywords),
+            Version: version,
+            SkillMarkdown: markdown,
+            ManifestJson: null,
+            EvolutionAction: args.EvolutionAction,
+            ParentVersion: args.ParentVersion,
+            RelatedSkillIds: args.RelatedSkillIds,
+            PublishedByAgentId: agentInstanceId,
+            PublishedByWorkspaceId: workspaceId,
+            PublishNote: args.PublishNote,
+            EvidenceJson: BuildEvidenceJson(args.Evidence),
+            Visibility: string.IsNullOrWhiteSpace(args.Visibility) ? "global" : args.Visibility), ct);
+        if (!result.IsOk)
+            return MaybeConflictHint(
+                MapStatusError("publish", result.Status, result.Error),
+                "该 skill_id 已存在于中央库；请改用 action=update/evolve 发布新版本。");
 
         return new
         {
             status = "ok",
             action = "publish",
-            skill = responseBody,
+            skill = ToHubElement(result.Value!),
             hint = "发布成功。后续版本请用 action=update / evolve，避免 409 冲突。",
         };
     }
 
     // ────────────────────────────────────────────────────────────
-    // action=update / evolve：POST /skills/{id}/versions
+    // action=update / evolve：PublishVersionAsync
     // update = evolve 的便捷形态（evolution_action 默认 patch）
     // ────────────────────────────────────────────────────────────
     private async Task<object> PublishVersionAsync(
-        string agentInstanceId, string workspaceId, SkillHubArgs args, CancellationToken ct, bool isEvolve)
+        ISkillHubService hub, string agentInstanceId, string workspaceId, SkillHubArgs args, CancellationToken ct, bool isEvolve)
     {
         var action = isEvolve ? "evolve" : "update";
         var skillId = RequireSkillId(args, action);
@@ -353,45 +387,43 @@ public sealed class SkillHubTool(
             markdown = file.Content;
         }
 
-        var body = new
-        {
-            skillId,
-            version = args.Version,
-            skillMarkdown = markdown,
-            evolutionAction,
-            parentVersion = args.ParentVersion,
-            relatedSkillIds = args.RelatedSkillIds,
-            publishedByAgentId = agentInstanceId,
-            publishedByWorkspaceId = workspaceId,
-            publishNote = args.PublishNote,
-            evidenceJson = BuildEvidenceJson(args.Evidence),
-        };
-
-        var (ok, responseBody, error) = await SendJsonAsync(
-            HttpMethod.Post,
-            $"/api/skill-hub/skills/{Uri.EscapeDataString(skillId)}/versions",
-            body, action, ct);
-        if (!ok) return MaybeConflictHint(error!, "该版本号已存在（409）；请换一个 version。");
+        var result = await hub.PublishVersionAsync(skillId, new PublishHubSkillRequest(
+            SkillId: skillId,
+            Name: string.Empty, // 版本发布路径不读取 Name（与原链路请求体不含 name 等价）
+            Summary: null,
+            Description: null,
+            Tags: null,
+            Keywords: null,
+            Version: args.Version,
+            SkillMarkdown: markdown,
+            ManifestJson: null,
+            EvolutionAction: evolutionAction,
+            ParentVersion: args.ParentVersion,
+            RelatedSkillIds: args.RelatedSkillIds,
+            PublishedByAgentId: agentInstanceId,
+            PublishedByWorkspaceId: workspaceId,
+            PublishNote: args.PublishNote,
+            EvidenceJson: BuildEvidenceJson(args.Evidence)), ct);
+        if (!result.IsOk)
+            return MaybeConflictHint(
+                MapStatusError(action, result.Status, result.Error),
+                "该版本号已存在（409）；请换一个 version。");
 
         return new
         {
             status = "ok",
             action,
             skillId,
-            version = responseBody,
+            version = ToHubElement(result.Value!),
         };
     }
 
     // ────────────────────────────────────────────────────────────
-    // action=check_updates：GET /updates?agentInstanceId=
+    // action=check_updates：ListUpdatesAsync(agentInstanceId)
     // ────────────────────────────────────────────────────────────
-    private async Task<object> CheckUpdatesAsync(string agentInstanceId, CancellationToken ct)
+    private async Task<object> CheckUpdatesAsync(ISkillHubService hub, string agentInstanceId, CancellationToken ct)
     {
-        var (ok, body, error) = await GetJsonAsync(
-            $"/api/skill-hub/updates?agentInstanceId={Uri.EscapeDataString(agentInstanceId)}", "check_updates", ct);
-        if (!ok) return error!;
-
-        var updates = ResponseArray(body);
+        var updates = ResponseArray(ToHubElement(await hub.ListUpdatesAsync(agentInstanceId, ct)));
 
         return new
         {
@@ -404,16 +436,26 @@ public sealed class SkillHubTool(
     }
 
     // ────────────────────────────────────────────────────────────
-    // action=lineage：单技能 GET /skills/{id}/lineage 或全局 GET /lineage
+    // action=lineage：单技能 GetSkillLineageAsync 或全局 GetLineageAsync
     // ────────────────────────────────────────────────────────────
-    private async Task<object> LineageAsync(SkillHubArgs args, CancellationToken ct)
+    private async Task<object> LineageAsync(ISkillHubService hub, SkillHubArgs args, CancellationToken ct)
     {
         var limit = args.Limit is > 0 ? Math.Min(args.Limit.Value, LineageNodeCap) : LineageNodeCap;
 
-        var (ok, body, error) = string.IsNullOrWhiteSpace(args.SkillId)
-            ? await GetJsonAsync($"/api/skill-hub/lineage?limit={limit}", "lineage", ct)
-            : await GetJsonAsync($"/api/skill-hub/skills/{Uri.EscapeDataString(args.SkillId.Trim())}/lineage", "lineage", ct);
-        if (!ok) return error!;
+        JsonElement body;
+        if (string.IsNullOrWhiteSpace(args.SkillId))
+        {
+            body = ToHubElement(await hub.GetLineageAsync(skillIds: null, limit, ct));
+        }
+        else
+        {
+            var single = await hub.GetSkillLineageAsync(args.SkillId.Trim(), ct);
+            if (single is null)
+                return MapStatusError("lineage", SkillHubStatus.NotFound, $"技能 '{args.SkillId.Trim()}' 不存在，无法构建血缘图");
+            body = ToHubElement(single);
+        }
+        if (body.ValueKind is not JsonValueKind.Object and not JsonValueKind.Array)
+            return MapStatusError("lineage", SkillHubStatus.NotFound, $"技能 '{args.SkillId?.Trim()}' 不存在，无法构建血缘图");
 
         var nodes = body.TryGetArray("nodes") ?? (body.ValueKind == JsonValueKind.Array
             ? body.EnumerateArray().ToArray()
@@ -442,27 +484,22 @@ public sealed class SkillHubTool(
     }
 
     // ────────────────────────────────────────────────────────────
-    // action=stats：GET /stats
+    // action=stats：GetStatsAsync
     // ────────────────────────────────────────────────────────────
-    private async Task<object> StatsAsync(CancellationToken ct)
+    private async Task<object> StatsAsync(ISkillHubService hub, CancellationToken ct)
     {
-        var (ok, body, error) = await GetJsonAsync("/api/skill-hub/stats", "stats", ct);
-        if (!ok) return error!;
-
-        return new { status = "ok", action = "stats", stats = body };
+        return new { status = "ok", action = "stats", stats = ToHubElement(await hub.GetStatsAsync(ct)) };
     }
 
     // ────────────────────────────────────────────────────────────
-    // action=unpublish：DELETE /skills/{id}（软删 → retired + 事件）
+    // action=unpublish：RetireAsync（软删 → retired + 事件）
     // ────────────────────────────────────────────────────────────
-    private async Task<object> UnpublishAsync(SkillHubArgs args, CancellationToken ct)
+    private async Task<object> UnpublishAsync(ISkillHubService hub, SkillHubArgs args, CancellationToken ct)
     {
         var skillId = RequireSkillId(args, "unpublish");
-        var (ok, body, error) = await SendJsonAsync(
-            HttpMethod.Delete,
-            $"/api/skill-hub/skills/{Uri.EscapeDataString(skillId)}",
-            null, "unpublish", ct);
-        if (!ok) return error!;
+        var result = await hub.RetireAsync(skillId, ct);
+        if (!result.IsOk)
+            return MapStatusError("unpublish", result.Status, result.Error);
 
         return new
         {
@@ -470,134 +507,41 @@ public sealed class SkillHubTool(
             action = "unpublish",
             skillId,
             message = "技能已在中央库软删（status=retired，保留全部版本与审计事件）。本地副本不受影响。",
-            serverResponse = body,
+            serverResponse = NullElement(),
         };
     }
 
     // ════════════════════════════════════════════════════════════
-    // HTTP 基础设施
+    // 契约结果整形 / 状态映射辅助
     // ════════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// 解析 SKILL Hub 端点与机器凭据。SkillHub:BaseUrl 未配置时不再静默回退到
-    /// http://localhost:5000（宿主实际监听端口未必是 5000），而是返回结构化配置错误并
-    /// 明确指出缺失的配置键；SkillHub:ApiKey（及回退 AdminApiKey）缺失时也在错误中提示，
-    /// 但绝不回显密钥值。
-    /// </summary>
-    private (string? BaseUrl, string? ApiKey, string? ConfigError) ResolveEndpoint()
+    /// <summary>把契约 DTO 序列化为 JSON 元素（camelCase、保留 null 字段，与平台控制器出参一致）。</summary>
+    private static JsonElement ToHubElement<T>(T dto) where T : class =>
+        JsonSerializer.SerializeToElement(dto, HubDtoOptions);
+
+    /// <summary>语义结果状态 → 工具错误 JSON 文本（沿用 status=error + statusCode/message 的既有风格）。</summary>
+    private static string MapStatusError(string action, SkillHubStatus status, string? error) => ToJson(status switch
     {
-        var rawBaseUrl = configuration["SkillHub:BaseUrl"];
-        if (string.IsNullOrWhiteSpace(rawBaseUrl))
-        {
-            var message =
-                "SKILL Hub 未配置：缺少配置键 SkillHub:BaseUrl（已停用 http://localhost:5000 静默回退）。" +
-                "请在该 Agent 的 DataRoot system.json（或环境变量 / 命令行）中设置 SkillHub:BaseUrl，" +
-                "指向 PuddingHost 实际监听地址（见启动日志 Server bound addresses / local control address）。";
-            var skillHubKeyConfigured = !string.IsNullOrWhiteSpace(configuration["SkillHub:ApiKey"]);
-            var adminKeyConfigured = !string.IsNullOrWhiteSpace(configuration["AdminApiKey"]);
-            if (!skillHubKeyConfigured && !adminKeyConfigured)
-            {
-                message += " 同时缺少配置键 SkillHub:ApiKey（AdminApiKey 亦未配置）：宿主端 skill-hub 端点要求 X-Admin-Api-Key 机器凭据，缺失将被 401 拒绝。";
-            }
-            else if (!skillHubKeyConfigured)
-            {
-                message += " 提示：SkillHub:ApiKey 未配置，当前将回退使用 AdminApiKey 作为 X-Admin-Api-Key 机器凭据。";
-            }
+        SkillHubStatus.NotFound => Error(action, error ?? "中央库中不存在目标资源。", statusCode: 404, responseSnippet: ""),
+        SkillHubStatus.Conflict => Error(action, error ?? "中央库中已存在冲突的目标。", statusCode: 409, responseSnippet: ""),
+        SkillHubStatus.BadRequest => Error(action, error ?? "请求参数不合法。", statusCode: 400, responseSnippet: ""),
+        _ => Error(action, error ?? "SKILL Hub 操作失败。"),
+    });
 
-            return (null, null, message);
-        }
+    /// <summary>tags 多值 → 单字符串（与原链路"逗号连接后交给服务端 tag 过滤"的语义一致）。</summary>
+    private static string? JoinTags(IReadOnlyList<string>? tags) =>
+        tags is { Count: > 0 } ? string.Join(',', tags) : null;
 
-        return (rawBaseUrl.TrimEnd('/'), configuration["SkillHub:ApiKey"] ?? configuration["AdminApiKey"], null);
-    }
-
-    private async Task<(bool Ok, JsonElement Body, string? Error)> GetJsonAsync(string path, string action, CancellationToken ct) =>
-        await SendJsonAsync(HttpMethod.Get, path, body: null, action, ct);
-
-    /// <summary>
-    /// 发送请求并解析 JSON。任何失败都不抛异常：返回 Ok=false + 结构化 Error 对象
-    /// （含 statusCode 与响应体前 500 字符，契约 §6.1 返回约定）。
-    /// </summary>
-    private async Task<(bool Ok, JsonElement Body, string? Error)> SendJsonAsync(
-        HttpMethod method, string path, object? body, string action, CancellationToken ct)
+    /// <summary>JSON null 元素（可安全序列化为 null，Undefined 不行）。</summary>
+    private static JsonElement NullElement()
     {
-        var (baseUrl, apiKey, configError) = ResolveEndpoint();
-        if (baseUrl is null || configError is not null)
-            return (false, default, ToJson(Error(action, configError ?? "SKILL Hub 端点配置无效：缺少配置键 SkillHub:BaseUrl。")));
-        var client = httpClientFactory.CreateClient(HttpClientName);
-
-        using var request = new HttpRequestMessage(method, baseUrl + path);
-        if (body is not null)
-            request.Content = new StringContent(JsonSerializer.Serialize(body, JsonOptions), Encoding.UTF8, "application/json");
-        if (!string.IsNullOrWhiteSpace(apiKey))
-            request.Headers.Add("X-Admin-Api-Key", apiKey);
-
-        HttpResponseMessage response;
-        string responseText;
-        try
-        {
-            response = await client.SendAsync(request, ct);
-            responseText = await response.Content.ReadAsStringAsync(ct);
-        }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        {
-            return (false, default, ToJson(Error(action, $"SKILL Hub 请求超时：{baseUrl}{path}")));
-        }
-        catch (Exception ex)
-        {
-            return (false, default, ToJson(Error(action, $"SKILL Hub 不可达（{baseUrl}{path}）：{ex.Message}")));
-        }
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return (false, default, ToJson(Error(
-                action,
-                $"SKILL Hub 返回 HTTP {(int)response.StatusCode} {response.ReasonPhrase}：{baseUrl}{path}",
-                statusCode: (int)response.StatusCode,
-                responseSnippet: Truncate(responseText, 500))));
-        }
-
-        if (string.IsNullOrWhiteSpace(responseText))
-        {
-            // 204/空响应体：返回 null 元素（ValueKind.Null 可安全序列化；default 是 Undefined，不可序列化）。
-            using var nullDoc = JsonDocument.Parse("null");
-            return (true, nullDoc.RootElement.Clone(), null);
-        }
-
-        try
-        {
-            var element = JsonSerializer.Deserialize<JsonElement>(responseText, JsonOptions);
-            return (true, element, null);
-        }
-        catch (JsonException ex)
-        {
-            return (false, default, ToJson(Error(action, $"SKILL Hub 响应不是合法 JSON：{ex.Message}（{Truncate(responseText, 200)}）")));
-        }
-    }
-
-    // ════════════════════════════════════════════════════════════
-    // 响应整形 / 参数辅助
-    // ════════════════════════════════════════════════════════════
-
-    private static string BuildSkillsListPath(string? query, IReadOnlyList<string>? tags, string? status, int? page, int? pageSize)
-    {
-        var sb = new StringBuilder("/api/skill-hub/skills?");
-        void Append(string key, string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value)) return;
-            if (sb[^1] != '?') sb.Append('&');
-            sb.Append(key).Append('=').Append(Uri.EscapeDataString(value));
-        }
-        Append("query", query);
-        Append("tag", tags is { Count: > 0 } ? string.Join(',', tags) : null);
-        Append("status", status);
-        Append("page", (page ?? 1).ToString());
-        Append("pageSize", Math.Clamp(pageSize ?? 50, 1, 200).ToString());
-        return sb.ToString();
+        using var doc = JsonDocument.Parse("null");
+        return doc.RootElement.Clone();
     }
 
     private static object[]? SummarizeSkills(JsonElement body)
     {
-        // 服务端 GET /skills 返回裸数组（List<HubSkillSummaryDto>）；防御性兼容包装对象。
+        // 契约 ListSkillsAsync 返回 List<HubSkillSummaryDto>；防御性兼容包装对象形态。
         var array = body.ValueKind == JsonValueKind.Array
             ? body.EnumerateArray().ToArray()
             : body.TryGetArray("skills");
@@ -622,7 +566,7 @@ public sealed class SkillHubTool(
             ? skill
             : detail;
 
-    /// <summary>GET /updates 等端点返回裸数组；防御性兼容包装对象形态。</summary>
+    /// <summary>ListUpdatesAsync 等返回裸数组；防御性兼容包装对象形态。</summary>
     private static JsonElement[]? ResponseArray(JsonElement body) =>
         body.ValueKind == JsonValueKind.Array
             ? body.EnumerateArray().ToArray()
@@ -720,7 +664,7 @@ public sealed class SkillHubTool(
 }
 
 // ────────────────────────────────────────────────────────────────
-// JsonElement 扩展（容错读取后端 DTO 字段）
+// JsonElement 扩展（容错读取契约 DTO 的 JSON 形态字段）
 // ────────────────────────────────────────────────────────────────
 internal static class SkillHubJsonElementExtensions
 {
