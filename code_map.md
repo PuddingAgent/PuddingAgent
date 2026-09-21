@@ -1,3 +1,9 @@
+﻿## 2026-09-21 Desktop 空闲 CPU 与日志呈现
+
+`IdleDetector` 将 ReArm 的调度续行与空闲状态日志标志分离，同一活动窗口只打印一次；IdleDetector/Heartbeat 18项回归通过，保留周期回调。
+
+`WebView2PresentationGate` 在隐藏/最小化/卸载时解绑 SDK `PART_image.Source`，恢复同一图像，覆盖 Workbench/Agent Browser，不暂停浏览器执行。`RuntimeCenterView` 可见性门控 timer；`RuntimeCenterViewModel.RefreshTransient` 仅通知变化字段；`CoreProcessLogBuffer.GetTail` 缓存未变化文本；Shell/托盘忽略瞬时通知与重复提示。247 项测试通过，真实运行中心 CPU 2.014%→0.098%，设置页1.709%→采样0%；可见工作台仍有绘制成本。见[证据与部署记录](Docs/Reports/Desktop空闲CPU与日志展示修复-2026-09-21.md)。
+
 ## 2026-09-21 工具重复参数键故障隔离
 
 `HarnessToolCompatibilityAdapter.GetArgumentValidationError` 按JSON对象递归检查重复属性，规范化保留歧义原文；`ToolInvocationService`/`PuddingToolExecutionService` 拒绝执行并返回 `tool_arguments_duplicate_key`，避免延迟JsonObject物化异常击穿Turn。`HarnessToolCompatibilityAdapterTests` 覆盖5种重复键、合法对象及失败后续行；连同分类器接线/健康/Jev单元回归60项通过。源码验证与Core重新加载分别记录。

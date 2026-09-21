@@ -1,3 +1,13 @@
+﻿### Desktop 空闲高 CPU：日志刷新与隐藏 WebView 图像（2026-09-21）
+
+每5秒重复出现 `Global idle threshold reached` 时，检查调度器 ReArm 是否把“继续检查”误记为“再次进入空闲”。日志去重必须与回调门控分离，回归需证明多个检查仍回调、同一空闲窗口只记一次、实际活动后再次空闲重新记一次。本次18项相关回归通过。
+
+先区分 Desktop/Core/WebView 子进程，按8逻辑核整机口径计算 CPU，再看线程增量；不要把等待态指令快照、缺符号的大偏移或进程累计 CPU 当作热点函数百分比。WPR 被策略拒绝时记录错误，结合窗口可见性、SDK 本地代码和最小复现，不伪称获得 ETW 栈。
+
+真实复现：仅修每秒日志全量通知无法消除 WPF 图形线程消耗。SDK CompositionControl 隐藏后仍持有 PART_image 的 D3DImage，解绑 Source 才切断持续呈现成本；必须保留会话并测试恢复画面。Source PropertyDescriptor 回调内同步改写 Freezable 会触发 inheritance-context 异常，应在 Dispatcher Render 阶段合并处理。浏览器自动化执行与呈现门控分开，不能用 TrySuspend 整个 Agent Browser 掩盖 CPU。
+
+Desktop 改动需通过托盘退出并确认旧 Desktop/Core 都结束，再启动明确的新产物；只重启 Core 不加载 WPF 修复。对照运行中心/设置/工作台可见/最小化，报告各自成本；247 项测试和真实 PID/hash/Ready 证据见[本次修复记录](Docs/Reports/Desktop空闲CPU与日志展示修复-2026-09-21.md)。截图中的 periodic:skill.improve 代表后台学习，应核对 job 完成事件，不以用户没有聊天推断 Core 完全空闲。
+
 ### 工具参数重复键导致整个回合失败（2026-09-21）
 
 重启验收先区分依赖故障：5100拒绝连接对应独立PuddingCodexService，恢复前检查其持久任务是否会续跑；服务health、Core的MCP runtime-status及工具数分别验证。飞书agentCount=0先核对全局`<DataRoot>/agents/*/manifest.json`与channels的启用/绑定，不去workspace Agent的runs归档全文检索，也不擅自复活禁用Agent。具体部署与边界见[重启记录](Docs/Reports/Core重启与夜间代码部署诊断-2026-09-21.md)。

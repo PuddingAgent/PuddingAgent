@@ -181,6 +181,10 @@ V1 不增加域名白名单、逐操作确认或脚本能力限制。用户控�
 
 Agent Browser 与 Workbench 一样使用 `WebView2CompositionControl`。现有 `IBrowserSurface.Control` 必须从标准 `WebView2` 改为 `WebView2CompositionControl`，使自定义 WindowChrome、圆角、Activity Pane 和动作高亮不受 WPF airspace 限制。
 
+**2026-09-21 呈现生命周期补充（已实施）：** 浏览器执行生命周期与 WPF 图像呈现必须分离。`WebView2PresentationGate` 在页面隐藏、卸载或所属窗口最小化时解绑 SDK 模板 `PART_image.Source`，恢复时接回暂存的同一 ImageSource；保留浏览器页面及自动化执行，不用销毁或暂停页面来模拟“空闲”。SDK 延迟设置 Source 时在 Dispatcher Render 阶段合并解绑，不能在 Freezable 属性回调中重入改写。Dispose 解除订阅，页面转移窗口后重新绑定窗口状态。模板合同与真实恢复显示必须随 SDK 升级回归。
+
+运行中心的日志/时长 timer 同样只在页面实际可见且窗口未最小化时启用。Core 输出环形缓冲继续收集；未变化文本复用缓存，页面恢复立即获取最新内容，瞬时字段变化不触发全量 Shell 属性通知或重复托盘更新。实现、控制变量采样与验收边界见[空闲 CPU 修复记录](../Reports/Desktop空闲CPU与日志展示修复-2026-09-21.md)。
+
 ## 4. Core 与 Desktop Browser Bridge
 
 ### 4.1 通信方向
