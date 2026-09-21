@@ -361,3 +361,76 @@ dotnet test Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --filter "Full
 
 > 设计取舍已记录：把**永久机制**（hash 自愈）放进平台，把**一次性知识**（旧缺陷形态判定）留在迁移工具里，
 > 避免在生产代码中长期保留 `LegacyDeriveSummary` 之类的兼容逻辑。
+
+---
+
+## 9. 一次性数据迁移：修复存量 141 个垃圾 `Summary`（2026-09-21）
+
+§8.4 的第 2 条路径（存量垃圾摘要）本轮执行完毕。**含一次我自己造成的生产事故与回滚，如实记录。**
+
+### 9.1 工具与判定谓词
+
+新增 `TestScripts/skill-spec/repair-skill-summaries.py`（独立于 SKILL.md 格式修复器）：
+
+- **默认 dry-run**，只有 `--apply` 才写盘；
+- **判定谓词（安全核心）**：只有当 `manifest.summary` **恰好等于旧缺陷代码会对同一 markdown 产生的值**
+  （`legacy_derive_summary`，逐字复刻修复前的 `DeriveSummary`）时才替换；否则 SKIP 并打印原因
+  ⇒ **绝不会无差别覆盖作者写的摘要**；
+- **外科式写入**：只替换 `manifest.json` 里 `"summary": "..."` 那一行的值（正则 + JSON 转义），
+  不重新序列化整个文件 ⇒ 其余字段、顺序、缩进**逐字节不变**；
+- 不碰 `contentHash`（由 §8 的平台自愈机制在下次 `rebuild_index` 时修正）；
+- 兼容 UTF-8 BOM manifest（解析剥 BOM、写回原样保留）与 BOM 的 SKILL.md。
+
+### 9.2 ⚠️ 事故：第一版脚本把 JSON 外层引号也转义了（141 个 manifest 变非法 JSON）
+
+第一版 `_HTML_ESCAPES` 里我顺手把 `'"' → '\u0022'` 也加进了"对齐 System.Text.Json 风格"的转义表。
+但 `json.dumps` **已经把内层引号输出成 `\"`**，而且**外层定界引号也必须保持字面量** ——
+我的后处理把它们一并替换，产出：
+
+```json
+"summary": \u0022Quickly obtain an overview ...\u0022,
+```
+
+⇒ **非法 JSON**，直接破坏 141 个 manifest。**平台会因此读不到这些技能。**
+
+**回滚**：因为有"改盘前先打包"的习惯，我打了一个只相差 18 秒的备份
+（`temp/skills-backup-20260921-1935.zip`，19:35:15 打包、19:35:33 写盘），
+用 `Expand-Archive` + 逐目录回写 `manifest.json` ⇒ `restored=144`，并核实样例回到 `"summary": "name: agent-repo-health-check"`。
+
+**修正**（本次一并提交）：
+1. **从转义表里删掉 `'"'`**（并写死注释说明为什么不能加）；
+2. **新增写盘前自检**：改写后的文本必须 `json.loads` 成功，且 `summary` 落在预期值上，否则拒绝写盘；
+3. **两阶段提交**：所有候选都通过自检后才统一落盘（不再边算边写）。
+
+### 9.3 迁移结果与独立验证
+
+```cmd
+set "PYTHONUTF8=1" && python TestScripts\skill-spec\repair-skill-summaries.py --apply
+```
+
+```
+--- APPLIED ---
+  repaired              141
+  skip-no-better-value    1
+  skip-not-legacy-shape   2
+```
+
+**独立验证（用平台自己的解析器，而不是再信一遍我的脚本）**：
+调用 `agent_skill action=rebuild_index` ⇒ **`count: 144`** —— 141 个被改写的 manifest
+全部可被平台的 `AtomicFileWriter.ReadJsonAsync` 读回，索引也已带上真实摘要（抽样：`agent-repo-health-check`
+的 `summary` 已是其 `description` 全文）。若仍有非法 JSON，该调用会失败或计数不足。
+
+剩余 3 个未修且**故意不修**：2 个摘要不是旧缺陷形态（疑似作者手写）、1 个没有更好的可派生值。
+
+### 9.4 教训（已固化为习惯）
+
+1. **文本级外科替换必须回验"能否解析"** —— 人眼看 diff 看不出 `\u0022` 与 `"` 的区别，解析器一秒就能。
+2. **备份要紧贴改动**：这次能 30 秒内无损回滚，唯一原因是备份就在写盘前 18 秒打的。
+3. **不要在"对齐序列化器风格"的转义表里放引号** —— 序列化器负责定界，后处理只该管内容字符。
+4. `141` 与 dry-run 的 `139` 差 2：BOM 修好后多修了 2 个（1 个 manifest 带 BOM、1 个 SKILL.md 带 BOM）
+   ⇒ 说明**迁移工具的输入解码方式本身也会影响判定谓词命中数**，必须在报告里对账而不是含糊过去。
+
+### 9.5 遗留
+
+- 141 个 manifest 的 `contentHash` 仍是旧值：重启加载新二进制后调一次 `rebuild_index` 即由 §8 自愈机制修正；
+- 若将来出现同类迁移，**先跑 dry-run 并抽样人工核对 new 值语义**（本轮 dry-run 已做，且正是它暴露了 139→141 的差异）。
