@@ -39,4 +39,12 @@ public interface IRsiTrajectoryDataAccess
     /// </summary>
     Task<IReadOnlyList<RsiEventRowWithTurn>> GetEventsByTurnIdsAsync(
         string[] turnIds, string[] eventTypes, CancellationToken ct);
+
+    /// <summary>
+    /// RSI S3 B3（规格 §2.12.2）：取某会话最近 <paramref name="limit"/> 个 turn 的 Id。
+    /// 形状落在已索引键 (conversation_id, created_at) 上（conversation_turns 无 agent 维度，§2.9）。
+    /// 确定性规则（冻结）：SQL 侧按 created_at DESC、turn_id DESC 取最近 N（created_at 是 long 毫秒，
+    /// turn_id 是并列时的 tiebreaker），返回前在内存反转为时间升序。
+    /// </summary>
+    Task<IReadOnlyList<string>> GetRecentTurnIdsAsync(string conversationId, int limit, CancellationToken ct);
 }
