@@ -26,7 +26,9 @@
 param(
     [string]$SkillsRoot = 'D:\data\agents\default.global_general-assistant.6a8\skills',
     [string]$OutFile,
-    [int]$TopOffenders = 15
+    [int]$TopOffenders = 15,
+    [ValidateSet('portfolio', 'denoise-impact')]
+    [string]$Mode = 'portfolio'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -413,8 +415,179 @@ function New-PortfolioReport {
 }
 
 # ── 主流程 ────────────────────────────────────────────────────────────────
+function Get-ScenarioMetrics {
+    <#
+      某个「来源白名单 + 类别排除」口径下的组合指标。
+      ⭐ 决定性指标是 ZeroKeywordSkills：该口径下**再也无法被任何关键词命中**的技能数
+      —— 去噪不能把技能变成死数据。
+    #>
+    param([object[]]$Rows, [object[]]$Enabled, [string[]]$OriginWhitelist, [string[]]$ExcludedCategories)
+
+    $kept = New-Object System.Collections.Generic.List[object]
+    foreach ($row in $Rows) {
+        if (-not $row.Enabled) { continue }
+        if ($OriginWhitelist -notcontains $row.Origin) { continue }
+        if ($ExcludedCategories -contains $row.Category) { continue }
+        $kept.Add($row)
+    }
+    $keptRows = $kept.ToArray()
+
+    $distinctKeys = @($keptRows | ForEach-Object { $_.Keyword.ToLowerInvariant() } | Sort-Object -Unique)
+    $shared = @($keptRows | Group-Object { $_.Keyword.ToLowerInvariant() } | Where-Object { $_.Count -ge 2 })
+    $lost = 0
+    foreach ($group in $shared) { $lost += ($group.Count - 1) }
+
+    $reachable = @{}
+    foreach ($row in $keptRows) { $reachable[$row.SkillId] = $true }
+    $zero = 0
+    foreach ($entry in $Enabled) {
+        if (-not $reachable.ContainsKey($entry.SkillId)) { $zero++ }
+    }
+
+    $avg = 0
+    if ($Enabled.Count -gt 0) { $avg = [Math]::Round($keptRows.Count / $Enabled.Count, 2) }
+
+    return [pscustomobject]@{
+        Slots             = $keptRows.Count
+        Distinct          = $distinctKeys.Count
+        Shared            = $shared.Count
+        LostOpportunities = $lost
+        ZeroKeywordSkills = $zero
+        AvgPerSkill       = $avg
+    }
+}
+
+function New-DenoiseImpactReport {
+    <#
+      G5-a：去噪口径**预演**（只读）。逐场景给出组合指标，重点回答两件事：
+        ① 能恢复多少次被挤掉的注入机会（收益）；
+        ② 会让多少技能变成「零关键词」死数据（唯一会伤到能力的风险）。
+      本函数**不改任何行为**：不写技能文件、不改 CollectKeywords、不动 enabled。
+    #>
+    param([object[]]$Entries)
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    $enabled = @($Entries | Where-Object { $_.Enabled })
+    $rows = Get-KeywordRows -Entries $Entries
+
+    $allOrigins = @('explicit', 'tag', 'id', 'name', 'name-token')
+    $scenarios = @(
+        @{ Id = 'S0'; Label = '现状（全部来源，无过滤）'; Origins = $allOrigins; Excluded = @() },
+        @{ Id = 'S1'; Label = '去 D1：丢掉 Tags 来源'; Origins = @('explicit', 'id', 'name', 'name-token'); Excluded = @() },
+        @{ Id = 'S2'; Label = '去 D1+D2：再去掉工具名'; Origins = @('explicit', 'id', 'name', 'name-token'); Excluded = @('D2') },
+        @{ Id = 'S3'; Label = '去 D1+D2+D3：只留语义'; Origins = @('explicit', 'id', 'name'); Excluded = @('D2') },
+        @{ Id = 'S4'; Label = '仅显式 keywords 且去噪'; Origins = @('explicit'); Excluded = @('D2') },
+        @{ Id = 'S5'; Label = '仅显式 keywords（原样）'; Origins = @('explicit'); Excluded = @() }
+    )
+
+    $results = New-Object System.Collections.Generic.List[object]
+    $baselineLost = 0
+    foreach ($scenario in $scenarios) {
+        $metrics = Get-ScenarioMetrics -Rows $rows -Enabled $enabled -OriginWhitelist $scenario.Origins -ExcludedCategories $scenario.Excluded
+        if ($scenario.Id -eq 'S0') { $baselineLost = $metrics.LostOpportunities }
+        $results.Add([pscustomobject]@{ Id = $scenario.Id; Label = $scenario.Label; Metrics = $metrics })
+    }
+
+    $lines.Add('# G5-a 去噪影响评估（只读预演）')
+    $lines.Add('')
+    $lines.Add("生成时间：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')")
+    $lines.Add("技能根目录：$SkillsRoot")
+    $lines.Add('')
+    $lines.Add('> **只读预演**：本报告不改 `CollectKeywords`、不写任何技能文件、不动 enabled 状态。')
+    $lines.Add('> 目的：在动生产行为之前，先量出每个候选口径的**收益（恢复的机会）**与**风险（变成零关键词死数据的技能）**。')
+    $lines.Add('')
+    $lines.Add("基准 S0 = 现状口径，$($enabled.Count) 个启用技能。来源白名单指 `CollectKeywords` 的四类来源（显式 Keywords / Tags / SkillId / Name 与 Name 分词）。")
+    $lines.Add('')
+    $lines.Add('| 场景 | 口径 | 槽位 | 去重 | 共享关键词 | 被挤掉机会 | 恢复 | 零关键词技能 | 平均每技能 |')
+    $lines.Add('|------|------|------|------|------------|------------|------|--------------|------------|')
+    foreach ($result in $results) {
+        $m = $result.Metrics
+        $recovered = $baselineLost - $m.LostOpportunities
+        $lines.Add("| $($result.Id) | $($result.Label) | $($m.Slots) | $($m.Distinct) | $($m.Shared) | $($m.LostOpportunities) | $recovered | $($m.ZeroKeywordSkills) | $($m.AvgPerSkill) |")
+    }
+    $lines.Add('')
+
+    $lines.Add('## 怎么读这张表')
+    $lines.Add('')
+    $lines.Add('- **恢复** = S0 被挤掉机会 − 本口径被挤掉机会：去噪真正的收益（噪声不再抢占映射位）。')
+    $lines.Add('- **零关键词技能** = 该口径下没有任何关键词能把它拉进上下文的技能数。**这是唯一会伤到能力的指标**：')
+    $lines.Add('  它意味着「技能还在、但永远不会被触发」。任何口径若让该数显著大于 0，就必须先为这些技能补写**语义**关键词，')
+    $lines.Add('  否则等同于**静默停用**一批技能——这正是本评估要拦住的事故。')
+    $lines.Add('')
+
+    $safe = @($results | Where-Object { $_.Id -ne 'S0' -and $_.Metrics.ZeroKeywordSkills -eq 0 })
+    if ($safe.Count -eq 0) {
+        $lines.Add('### ⚠️ 结论：没有「零风险」的候选口径')
+        $lines.Add('')
+        $lines.Add('**没有任何候选口径能在不产生死数据的前提下完成去噪。**')
+        $lines.Add('因此 G5 的实施不能只做「过滤关键词来源」，必须配套：')
+        $lines.Add('')
+        $lines.Add('1. 先为「零关键词技能」补写语义关键词（人工或由整理作业提炼）；')
+        $lines.Add('2. 再切换口径，并以**注入行为对比**作为回归证据（同一条输入下，注入的技能集合变化必须逐条可解释）；')
+        $lines.Add('3. 保留一键回滚（口径开关走配置，不改结构、可即时退回现状）。')
+    }
+    else {
+        $lines.Add('### 无「零关键词」风险的候选口径')
+        $lines.Add('')
+        $lines.Add('| 场景 | 口径 | 恢复 | 被挤掉机会 | 平均每技能 |')
+        $lines.Add('|------|------|------|------------|------------|')
+        foreach ($result in $safe) {
+            $m = $result.Metrics
+            $lines.Add("| $($result.Id) | $($result.Label) | $($baselineLost - $m.LostOpportunities) | $($m.LostOpportunities) | $($m.AvgPerSkill) |")
+        }
+        $lines.Add('')
+        $lines.Add('选择仍须由人/判据决定：本报告只提供事实，不给建议值。')
+    }
+    $lines.Add('')
+
+    $lines.Add('### ⚠️ 重要：上面的「零关键词技能 = 0」很可能是**假安全**')
+    $lines.Add('')
+    $lines.Add('该指标只检查「是否还剩至少一个关键词」，**不检查剩下的关键词是否可能出现在真实输入里**。')
+    $lines.Add('S2/S3 剩余的关键词主要是 `Name` 全句与 `SkillId` 这类 slug（例如 `agent-repo-health-check`），')
+    $lines.Add('它们几乎不会出现在用户文本中 ⇒ 技能「有键但永不命中」，等价于静默停用。')
+    $lines.Add('')
+    $lines.Add('**这说明单靠关键词形态过滤无法证明去噪安全。** 要回答真正的问题——')
+    $lines.Add('「现在到底是哪些关键词在真实触发注入？」——必须有**使用遥测（G2）**，本报告回答不了。')
+    $lines.Add('')
+    $lines.Add('### 由此得到的重述：去噪不是「删关键词」，而是「给关键词定主」')
+    $lines.Add('')
+    $lines.Add('1735 次被挤掉的机会，本质是**共享关键词的归属未裁决**（`map[kw]` 先到先得），')
+    $lines.Add('而不是「关键词太多」。因此正确动作可能是：')
+    $lines.Add('')
+    $lines.Add('1. **保留**有真实命中的关键词（哪怕它是工具名），但让它**有主**——同一关键词只归属一个技能；')
+    $lines.Add('2. 被挤掉的技能改用**各自的语义关键词**（而非共享的工具名）来触发；')
+    $lines.Add('3. 只有确认「无命中、且无主」的关键词才删。')
+    $lines.Add('')
+    $lines.Add('⚠️ 走哪条路**取决于 G2 遥测**：若真实注入主要靠 D2 工具名命中，则 S2/S3 会**直接切断现有注入路径**，')
+    $lines.Add('那是比噪声更严重的能力回退。⇒ **G5 的实施前置条件是 G2 遥测**：先有命中事实，再谈删或定主。')
+    $lines.Add('')
+
+    $lines.Add('## 方法与边界')
+    $lines.Add('')
+    $lines.Add('- **只读**：全程不写技能文件、不改 manifest、不动 enabled。')
+    $lines.Add('- **口径复用**：与 G1 报告共用同一份 `CollectKeywords` 复现逻辑（同一脚本的 `-Mode portfolio`），避免两处真相各自漂移。')
+    $lines.Add('- **确定值**：槽位、去重、共享数、被挤掉机会、零关键词技能数、平均每技能数。')
+    $lines.Add('- **未覆盖**：本报告不模拟「用户输入命中哪几个关键词」，因此**不能**回答「某个具体输入下注入集合如何变化」；')
+    $lines.Add('  那是 G5-b 实施时必须补的注入行为对比（需要运行时链路）。')
+    $lines.Add('- **不改判据**：本报告不设定任何阈值，不宣布哪个口径「正确」。')
+    $lines.Add('')
+
+    foreach ($result in $results) {
+        $m = $result.Metrics
+        Write-Host ("SCENARIO {0} slots={1} distinct={2} shared={3} lost={4} recovered={5} zeroKeyword={6}" -f `
+                $result.Id, $m.Slots, $m.Distinct, $m.Shared, $m.LostOpportunities, ($baselineLost - $m.LostOpportunities), $m.ZeroKeywordSkills)
+    }
+
+    return ($lines -join "`n")
+}
+
 $entries = Get-SkillPortfolio -Root $SkillsRoot
-$report = New-PortfolioReport -Entries $entries -TopOffenders $TopOffenders
+if ($Mode -eq 'denoise-impact') {
+    $report = New-DenoiseImpactReport -Entries $entries
+}
+else {
+    $report = New-PortfolioReport -Entries $entries -TopOffenders $TopOffenders
+}
 
 if ($OutFile) {
     $parent = Split-Path -Parent $OutFile
@@ -436,7 +609,7 @@ foreach ($group in $conflicts) { $lost += ($group.Count - 1) }
 $semanticFamilies = Get-Families -KeywordRecords @($rows | Where-Object { $_.Category -eq '语义' }) -Entries $entries
 $famSizes = @($semanticFamilies | ForEach-Object { $_.Members.Count } | Sort-Object -Descending)
 
-Write-Host "SKILLS total=$($entries.Count) enabled=$enabledCount disabled=$($entries.Count - $enabledCount)"
+Write-Host "SKILLS total=$($entries.Count) enabled=$enabledCount disabled=$($entries.Count - $enabledCount) mode=$Mode"
 Write-Host "KEYWORDS slots=$($enabledRows.Count) distinct=$distinct conflicts=$($conflicts.Count) lostOpportunities=$lost"
 foreach ($code in @('D1', 'D2', 'D3', '语义')) {
     $count = @($rows | Where-Object { $_.Category -eq $code }).Count
