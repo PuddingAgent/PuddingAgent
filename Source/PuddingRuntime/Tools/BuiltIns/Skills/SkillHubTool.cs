@@ -25,7 +25,6 @@ public sealed class SkillHubTool(
     /// <summary>命名 HttpClient（DI 组合根注册，UA = PuddingUserAgent.Value，设计方案 §6.1）。</summary>
     public const string HttpClientName = "SkillHubClient";
 
-    private const string DefaultBaseUrl = "http://localhost:5000";
     private const int LineageNodeCap = 200;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -479,11 +478,37 @@ public sealed class SkillHubTool(
     // HTTP 基础设施
     // ════════════════════════════════════════════════════════════
 
-    private (string BaseUrl, string? ApiKey) ResolveEndpoint() =>
-        (
-            (configuration["SkillHub:BaseUrl"] ?? configuration["AdminBaseUrl"] ?? DefaultBaseUrl).TrimEnd('/'),
-            configuration["SkillHub:ApiKey"] ?? configuration["AdminApiKey"]
-        );
+    /// <summary>
+    /// 解析 SKILL Hub 端点与机器凭据。SkillHub:BaseUrl 未配置时不再静默回退到
+    /// http://localhost:5000（宿主实际监听端口未必是 5000），而是返回结构化配置错误并
+    /// 明确指出缺失的配置键；SkillHub:ApiKey（及回退 AdminApiKey）缺失时也在错误中提示，
+    /// 但绝不回显密钥值。
+    /// </summary>
+    private (string? BaseUrl, string? ApiKey, string? ConfigError) ResolveEndpoint()
+    {
+        var rawBaseUrl = configuration["SkillHub:BaseUrl"];
+        if (string.IsNullOrWhiteSpace(rawBaseUrl))
+        {
+            var message =
+                "SKILL Hub 未配置：缺少配置键 SkillHub:BaseUrl（已停用 http://localhost:5000 静默回退）。" +
+                "请在该 Agent 的 DataRoot system.json（或环境变量 / 命令行）中设置 SkillHub:BaseUrl，" +
+                "指向 PuddingHost 实际监听地址（见启动日志 Server bound addresses / local control address）。";
+            var skillHubKeyConfigured = !string.IsNullOrWhiteSpace(configuration["SkillHub:ApiKey"]);
+            var adminKeyConfigured = !string.IsNullOrWhiteSpace(configuration["AdminApiKey"]);
+            if (!skillHubKeyConfigured && !adminKeyConfigured)
+            {
+                message += " 同时缺少配置键 SkillHub:ApiKey（AdminApiKey 亦未配置）：宿主端 skill-hub 端点要求 X-Admin-Api-Key 机器凭据，缺失将被 401 拒绝。";
+            }
+            else if (!skillHubKeyConfigured)
+            {
+                message += " 提示：SkillHub:ApiKey 未配置，当前将回退使用 AdminApiKey 作为 X-Admin-Api-Key 机器凭据。";
+            }
+
+            return (null, null, message);
+        }
+
+        return (rawBaseUrl.TrimEnd('/'), configuration["SkillHub:ApiKey"] ?? configuration["AdminApiKey"], null);
+    }
 
     private async Task<(bool Ok, JsonElement Body, string? Error)> GetJsonAsync(string path, string action, CancellationToken ct) =>
         await SendJsonAsync(HttpMethod.Get, path, body: null, action, ct);
@@ -495,7 +520,9 @@ public sealed class SkillHubTool(
     private async Task<(bool Ok, JsonElement Body, string? Error)> SendJsonAsync(
         HttpMethod method, string path, object? body, string action, CancellationToken ct)
     {
-        var (baseUrl, apiKey) = ResolveEndpoint();
+        var (baseUrl, apiKey, configError) = ResolveEndpoint();
+        if (baseUrl is null || configError is not null)
+            return (false, default, ToJson(Error(action, configError ?? "SKILL Hub 端点配置无效：缺少配置键 SkillHub:BaseUrl。")));
         var client = httpClientFactory.CreateClient(HttpClientName);
 
         using var request = new HttpRequestMessage(method, baseUrl + path);

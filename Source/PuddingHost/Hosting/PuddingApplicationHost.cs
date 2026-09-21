@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.ResponseCompression;
@@ -8,6 +8,7 @@ using PuddingAgent.Services;
 using PuddingCode.Configuration;
 using PuddingCode.Security;
 using PuddingPlatform.Controllers.Api;
+using PuddingPlatform.Security;
 using PuddingPlatform.Services;
 using PuddingPlatform.Services.Security;
 using Serilog;
@@ -148,6 +149,11 @@ public static class PuddingApplicationHost
             // JWT 保持全局默认 scheme；External scheme 只由 /api/external/v1 Policy 显式选择。
             .AddScheme<ExternalAccessTokenOptions, ExternalAccessTokenHandler>(
                 ExternalAccessTokenAuthentication.Scheme,
+                _ => { })
+            // SKILL Hub 机器凭据 scheme（skill_hub 工具 X-Admin-Api-Key 通路）：
+            // 仅由 SkillHubClient 策略显式选择，全局默认认证 scheme 保持 JWT 不变。
+            .AddScheme<SkillHubApiKeyOptions, SkillHubApiKeyAuthenticationHandler>(
+                SkillHubApiKeyAuthentication.Scheme,
                 _ => { });
         builder.Services.AddAuthorization(authorization =>
         {
@@ -214,6 +220,11 @@ public static class PuddingApplicationHost
                 ExternalAccessTokenPolicyNames.ExternalMessagesSend,
                 ExternalTaskApiScopes.MessagesSend,
                 requireWorkspace: true);
+
+            // ── SKILL Hub 机器凭据策略（api/skill-hub 专用）──────
+            // JwtBearer（现有管理界面，行为零变化）+ SkillHubApiKey（机器凭据）双通道；
+            // 不授 admin 角色，不改默认授权策略，不影响其它端点。
+            AddSkillHubClientPolicy(authorization);
         });
         builder.Services.AddSingleton<IAuthorizationHandler, ExternalAccessTokenAuthorizationHandler>();
 
@@ -258,6 +269,22 @@ public static class PuddingApplicationHost
                 policy.AddRequirements(new ExternalScopeRequirement(scope));
             if (requireWorkspace)
                 policy.AddRequirements(new ExternalWorkspaceRequirement());
+        });
+    }
+
+    /// <summary>
+    /// SKILL Hub 端点策略：显式 JwtBearer + SkillHubApiKey 双 scheme + RequireAuthenticatedUser。
+    /// JWT 保证现有管理界面行为零变化；SkillHubApiKey 供进程内 skill_hub 工具无 JWT 发布技能，
+    /// 认证成功只建立机器身份（不含任何角色）。
+    /// </summary>
+    private static void AddSkillHubClientPolicy(AuthorizationOptions options)
+    {
+        options.AddPolicy(SkillHubApiPolicyNames.SkillHubClient, policy =>
+        {
+            policy.AddAuthenticationSchemes(
+                JwtBearerDefaults.AuthenticationScheme,
+                SkillHubApiKeyAuthentication.Scheme);
+            policy.RequireAuthenticatedUser();
         });
     }
 

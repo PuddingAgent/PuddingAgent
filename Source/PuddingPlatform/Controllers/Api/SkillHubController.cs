@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
+using PuddingPlatform.Security;
 using PuddingPlatform.Services;
 
 namespace PuddingPlatform.Controllers.Api;
@@ -10,7 +11,7 @@ namespace PuddingPlatform.Controllers.Api;
 /// SKILL Hub 中央技能库 API（设计契约 §5.2 冻结的 15 个端点）。
 /// 与 /api/skill-packages（Agent 模板选包用的二进制附件）是两条独立链路。
 /// </summary>
-[Authorize]
+[Authorize(Policy = SkillHubApiPolicyNames.SkillHubClient)]
 [ApiController]
 [Route("api/skill-hub")]
 public class SkillHubController(PlatformDbContext db) : ControllerBase
