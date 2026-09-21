@@ -14,7 +14,8 @@ namespace PuddingRuntimeTests.Tools;
 /// 逐条锁定交付契约：
 /// W1 DI 能解析 <see cref="IToolCallClassifier"/> 且为管线形态（规则命中 ⇒ 零仲裁调用）；
 /// W2 <c>Reviewer=classifier</c> 时选中 <see cref="ClassifierToolApprovalReviewer"/>；
-/// W3 默认 <see cref="ToolApprovalRuntimeOptions.Reviewer"/> 未被翻转（仍 llm）；
+/// W3 默认 <see cref="ToolApprovalRuntimeOptions.Reviewer"/> **已翻转**（= <c>classifier</c>，原 llm；
+///   回退方式：配置 <c>ToolApproval:Reviewer=llm</c>，无需重新构建）；
 /// W4 <c>llm</c>/<c>jev</c> 显式选择行为不变；
 /// W5 未知 Reviewer 取值仍 fail-closed；
 /// W6 提案 <see cref="ToolApprovalAllowlistProposal.Effect"/> 结构化承载（AllowPermanent⇒Allow / DenyPermanent⇒Deny）；
