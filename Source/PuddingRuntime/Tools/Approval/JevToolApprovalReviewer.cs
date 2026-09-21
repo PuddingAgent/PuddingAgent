@@ -5,7 +5,9 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
+using PuddingCode.Operators;
 using PuddingCode.Tools;
+using PuddingRuntime.Thresholds;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -53,18 +55,31 @@ public sealed class JevToolApprovalReviewer : IToolApprovalReviewer
     private readonly ToolApprovalJevOptions _options;
 
     /// <summary>
+    /// 生效的白名单提案校准概率门槛：构造期经判据端口解析一次（未注入端口 ⇒ 退回
+    /// <see cref="ToolApprovalJevOptions.AllowlistProbabilityThreshold"/> 的既有取值）。
+    /// 低于 / 缺失门槛不提案的保守语义不变，只改取值来源。
+    /// </summary>
+    private readonly double _allowlistProbabilityThreshold;
+
+    /// <summary>
     /// 所有依赖均为可选：DI 未注册 Jev 时仍可构造，评审退化为
     /// <see cref="ToolApprovalDecision.DeferredDependency"/>（fail-closed，不抛异常）。
     /// </summary>
     public JevToolApprovalReviewer(
         IJevDecisionService? jevDecisionService = null,
         ILogger<JevToolApprovalReviewer>? logger = null,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        IAcceptanceThresholdPolicyProvider? thresholdPolicyProvider = null)
     {
         _jevDecisionService = jevDecisionService;
         _logger = logger;
         _options = configuration?.GetSection(ToolApprovalJevOptions.SectionName).Get<ToolApprovalJevOptions>()
                    ?? new ToolApprovalJevOptions();
+        // S2a：门槛「取值来源」改为经判据端口解析；端口未注入 ⇒ 退回既有 options 取值（行为逐位不变）。
+        _allowlistProbabilityThreshold = thresholdPolicyProvider
+            ?.Resolve(AcceptanceThresholdPolicyIds.AllowlistProbability)
+            .RequiredConfidence
+            ?? _options.AllowlistProbabilityThreshold;
     }
 
     /// <inheritdoc />
@@ -209,7 +224,7 @@ public sealed class JevToolApprovalReviewer : IToolApprovalReviewer
 
         // decision == Approved。无人工确认包络（方案 §3.1 映射表第 1 行）：
         // risk<=1 且 scope!=once 且白名单概率达阈值 —— 四者缺一则 RequiresHumanAuthorization=true。
-        var allowlistHit = allowlistProbability is { } probability && probability >= _options.AllowlistProbabilityThreshold;
+        var allowlistHit = allowlistProbability is { } probability && probability >= _allowlistProbabilityThreshold;
         var lowRiskEnvelope = (risk ?? double.MaxValue) <= 1d
                               && scope is { } grantedScope
                               && grantedScope != ToolApprovalScope.Once
@@ -256,7 +271,7 @@ public sealed class JevToolApprovalReviewer : IToolApprovalReviewer
             ArgumentsJson = NormalizeArgumentsJson(request.RequestedArgumentsJson),
             Reason = string.Create(
                 CultureInfo.InvariantCulture,
-                $"jev allowlist proposal: model={result.Model}; allowlistProbability={probability:F3}; threshold={_options.AllowlistProbabilityThreshold:F2}; risk={FormatNumber(risk)}; proposedBy={nameof(JevToolApprovalReviewer)}"),
+                $"jev allowlist proposal: model={result.Model}; allowlistProbability={probability:F3}; threshold={_allowlistProbabilityThreshold:F2}; risk={FormatNumber(risk)}; proposedBy={nameof(JevToolApprovalReviewer)}"),
         };
         return true;
     }

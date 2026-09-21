@@ -105,14 +105,16 @@ public sealed class ToolApprovalPortalService
         IToolApprovalAuditStore auditStore,
         IToolCallClassifier? classifier = null,
         IAgentFullAccessGrantService? fullAccessGrantService = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        PuddingCode.Operators.IAcceptanceThresholdPolicyProvider? thresholdPolicyProvider = null)
     {
         _allowlistStore = allowlistStore ?? throw new ArgumentNullException(nameof(allowlistStore));
         _auditStore = auditStore ?? throw new ArgumentNullException(nameof(auditStore));
         _classifier = classifier;
         _fullAccessService = fullAccessGrantService;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _curator = new ClassificationRuleCurator(allowlistStore, auditStore, timeProvider);
+        // S2a：策展器的沉淀置信度门槛经判据端口取值；未注入 ⇒ 退回既有常量（行为逐位不变）。
+        _curator = new ClassificationRuleCurator(allowlistStore, auditStore, timeProvider, thresholdPolicyProvider);
     }
 
     /// <summary>授予服务：优先注入实现；未注入时惰性构造实例级服务（进程内共享状态，重启即失效）。</summary>

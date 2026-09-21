@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging;
 using PuddingCode.Classification;
+using PuddingCode.Operators;
 using PuddingCode.Tools;
+using PuddingRuntime.Thresholds;
 
 namespace PuddingRuntime.Classification;
 
@@ -95,6 +97,13 @@ public sealed class ToolCallClassifierPipeline : IToolCallClassifier
     private readonly ToolCallClassifierPipelineOptions _options;
     private readonly ILogger<ToolCallClassifierPipeline>? _logger;
 
+    /// <summary>
+    /// 生效的永久类逐分类可信度门槛：构造期经判据端口解析一次（未注入端口 ⇒ 退回
+    /// <see cref="ToolCallClassifierPipelineOptions.PermanentConfidenceThreshold"/>）。
+    /// 比较语义与降级动作不变，只改取值来源。
+    /// </summary>
+    private readonly double _permanentConfidenceThreshold;
+
     /// <summary>构造分类器管线。</summary>
     /// <param name="ruleClassifiers">确定性规则类分类器（零网络），按给定顺序求值；允许为空列表。</param>
     /// <param name="arbiter">仲裁分类器（如模型实现）；单次求值至多调用一次。</param>
@@ -102,13 +111,17 @@ public sealed class ToolCallClassifierPipeline : IToolCallClassifier
     /// <param name="timeProvider">时间源；缺省系统时钟（测试注入假钟）。</param>
     /// <param name="options">管线可调参数；缺省超时 3000 ms、永久类门槛 0.90。</param>
     /// <param name="logger">可选日志：仅用于把「覆盖审计写入失败」变为**可探查**（不得静默吞）。</param>
+    /// <param name="thresholdPolicyProvider">
+    /// 可选判据端口：永久类可信度门槛的取值来源；未注入 ⇒ 退回 options 既有值（默认行为逐位不变）。
+    /// </param>
     public ToolCallClassifierPipeline(
         IReadOnlyList<IToolCallClassifier> ruleClassifiers,
         IToolCallClassifier arbiter,
         IToolApprovalAuditStore auditStore,
         TimeProvider? timeProvider = null,
         ToolCallClassifierPipelineOptions? options = null,
-        ILogger<ToolCallClassifierPipeline>? logger = null)
+        ILogger<ToolCallClassifierPipeline>? logger = null,
+        IAcceptanceThresholdPolicyProvider? thresholdPolicyProvider = null)
     {
         _ruleClassifiers = ruleClassifiers ?? throw new ArgumentNullException(nameof(ruleClassifiers));
         _arbiter = arbiter ?? throw new ArgumentNullException(nameof(arbiter));
@@ -116,6 +129,12 @@ public sealed class ToolCallClassifierPipeline : IToolCallClassifier
         _timeProvider = timeProvider ?? TimeProvider.System;
         _options = options ?? new ToolCallClassifierPipelineOptions();
         _logger = logger;
+        // S2a：门槛「取值来源」改为经判据端口解析（比较语义 / 降级动作 / 求值序 / 原因码一律不动）；
+        // 端口未注入 ⇒ 退回 options 既有值，使「不配置 = 行为逐位不变」可验证。
+        _permanentConfidenceThreshold = thresholdPolicyProvider
+            ?.Resolve(AcceptanceThresholdPolicyIds.PermanentConfidence)
+            .RequiredConfidence
+            ?? _options.PermanentConfidenceThreshold;
     }
 
     /// <inheritdoc />
@@ -303,7 +322,7 @@ public sealed class ToolCallClassifierPipeline : IToolCallClassifier
         }
         gatedConfidence = confidence;
 
-        if (confidence.HasValue && confidence.Value >= _options.PermanentConfidenceThreshold)
+        if (confidence.HasValue && confidence.Value >= _permanentConfidenceThreshold)
         {
             return Adopt(arbiterVerdict, candidate, arbiterVerdict.Reason);
         }
@@ -319,7 +338,7 @@ public sealed class ToolCallClassifierPipeline : IToolCallClassifier
         {
             Outcome = onceOutcome,
             Reason = $"永久类结论的逐分类可信度（{permanentKey}={confidenceText}）低于门槛 "
-                     + $"{_options.PermanentConfidenceThreshold.ToString("0.###")}，按 §14.13.3 降级为单次类。"
+                     + $"{_permanentConfidenceThreshold.ToString("0.###")}，按 §14.13.3 降级为单次类。"
                      + $"原仲裁理由：{arbiterVerdict.Reason}",
             ReasonCode = ReasonPermanentDowngraded,
             ClassifierId = WellKnownClassifierId,
@@ -436,7 +455,7 @@ public sealed class ToolCallClassifierPipeline : IToolCallClassifier
         var confidenceText = gatedConfidence.HasValue ? gatedConfidence.Value.ToString("0.###") : "missing";
         return $"candidate={candidate.Outcome}; final={final.Outcome}; classifier={arbiterVerdict.ClassifierId}; "
                + $"model={arbiterVerdict.ClassifierModel ?? "na"}; confidence={confidenceText}; "
-               + $"threshold={_options.PermanentConfidenceThreshold.ToString("0.###")}; "
+               + $"threshold={_permanentConfidenceThreshold.ToString("0.###")}; "
                + $"downgraded={(downgraded ? "true" : "false")}; "
                + $"candidate_rule={candidate.AppliedRuleId ?? "na"}; "
                + $"arbiter_reason={arbiterVerdict.Reason}; candidate_reason={candidate.Reason}";

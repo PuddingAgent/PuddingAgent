@@ -4,7 +4,9 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using PuddingCode.Classification;
+using PuddingCode.Operators;
 using PuddingCode.Tools;
+using PuddingRuntime.Thresholds;
 
 namespace PuddingRuntime.Classification;
 
@@ -132,14 +134,27 @@ public sealed class ClassificationRuleCurator
     private readonly IToolApprovalAuditStore _auditStore;
     private readonly TimeProvider _timeProvider;
 
+    /// <summary>
+    /// 生效的规则沉淀置信度门槛：构造期经判据端口解析一次（未注入端口 ⇒ 退回既有常量
+    /// <see cref="SuggestedExpiryConfidenceThreshold"/>）。缺失 / 低于门槛 ⇒ 建议 30 天有效期的
+    /// 保守语义不变，只改取值来源。
+    /// </summary>
+    private readonly double _suggestedExpiryConfidenceThreshold;
+
     public ClassificationRuleCurator(
         IToolApprovalAllowlistStore allowlistStore,
         IToolApprovalAuditStore auditStore,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IAcceptanceThresholdPolicyProvider? thresholdPolicyProvider = null)
     {
         _allowlistStore = allowlistStore ?? throw new ArgumentNullException(nameof(allowlistStore));
         _auditStore = auditStore ?? throw new ArgumentNullException(nameof(auditStore));
         _timeProvider = timeProvider ?? TimeProvider.System;
+        // S2a：门槛「取值来源」改为经判据端口解析；端口未注入 ⇒ 退回既有常量（行为逐位不变）。
+        _suggestedExpiryConfidenceThreshold = thresholdPolicyProvider
+            ?.Resolve(AcceptanceThresholdPolicyIds.SuggestedExpiryConfidence)
+            .RequiredConfidence
+            ?? SuggestedExpiryConfidenceThreshold;
     }
 
     /// <summary>
@@ -836,11 +851,12 @@ public sealed class ClassificationRuleCurator
         return verdict.PerOutcomeConfidence.TryGetValue(outcomeKey, out var confidence) ? confidence : null;
     }
 
-    /// <summary>§14.12.7：置信度 &lt; 0.95（含缺失，保守处理）⇒ 建议 30 天有效期；启动清理不在本切片。</summary>
-    private static DateTimeOffset? SuggestExpiryAtUtc(ClassificationVerdict verdict, DateTimeOffset now)
+    /// <summary>§14.12.7：置信度 &lt; 门槛（含缺失，保守处理）⇒ 建议 30 天有效期；启动清理不在本切片。
+    /// 门槛经判据端口解析（<see cref="IAcceptanceThresholdPolicyProvider"/>），未注入时等于既有常量。</summary>
+    private DateTimeOffset? SuggestExpiryAtUtc(ClassificationVerdict verdict, DateTimeOffset now)
     {
         var confidence = ResolveConfidence(verdict);
-        return confidence is double value && value >= SuggestedExpiryConfidenceThreshold
+        return confidence is double value && value >= _suggestedExpiryConfidenceThreshold
             ? null
             : now + SuggestedExpiry;
     }

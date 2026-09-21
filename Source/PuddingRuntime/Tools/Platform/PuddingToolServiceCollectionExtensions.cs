@@ -148,6 +148,15 @@ public static class PuddingToolServiceCollectionExtensions
         services.TryAddSingleton<ClassifierArbiterRegistrationState>();
         // S6a：管线可调参数注册为单一事实源（组装管线与 classifier_status 输出阈值共用同一实例）。
         services.TryAddSingleton<ToolCallClassifierPipelineOptions>();
+
+        // S2a：判据解析端口（阈值/门槛的**单一取值来源**）。注册后，已带可选 provider 参数的消费点
+        // （管线 / 规则策展器 / Jev 评审器）会自动经端口取值；未配置 ⇒ 端口返回内置默认（等于既有常量）
+        // ⇒ 「不配置 = 行为逐位不变」是可验证事实。纯追加注册，未改动任何既有注册行。
+        // 若本行不注册，消费点会退回各自的既有常量：功能不变，但门槛无法被集中审计与版本化。
+        services.TryAddSingleton<PuddingCode.Operators.IAcceptanceThresholdPolicyProvider>(sp =>
+            new PuddingRuntime.Thresholds.DefaultAcceptanceThresholdPolicyProvider(
+                sp.GetService<IConfiguration>(),
+                sp.GetService<ToolCallClassifierPipelineOptions>()));
         services.TryAddSingleton<IToolApprovalReviewer>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ToolApprovalRuntimeOptions>>().Value;
@@ -351,7 +360,10 @@ public static class PuddingToolServiceCollectionExtensions
             serviceProvider.GetService<TimeProvider>(),
             pipelineOptions,
             // 覆盖审计写入失败必须可探查（不得静默吞）：宿主未注册日志时此参数为 null，管线仍可用。
-            serviceProvider.GetService<ILogger<ToolCallClassifierPipeline>>());
+            serviceProvider.GetService<ILogger<ToolCallClassifierPipeline>>(),
+            // S2a：门槛取值来源（判据端口）。未注册 ⇒ 退回 pipelineOptions 既有值（默认 0.90），
+            // 比较语义 / 降级动作 / 求值序 / 原因码一律不变。
+            serviceProvider.GetService<PuddingCode.Operators.IAcceptanceThresholdPolicyProvider>());
 
         // S6a：健康面登记（幂等，含从未上报者 ⇒ Snapshot 默认 Unknown）+ 仲裁位注册状态
         // （未注册 ⇒ classifier_status 可见 fail-closed 占位）。ClassifierId 全部动态取自实现，

@@ -1,13 +1,19 @@
 namespace PuddingCode.Operators;
 
 /// <summary>
-/// 判断阈值策略（一等对象）。
+/// 判断阈值策略（一等对象）：<b>三区间</b>——「单一命题的一个分数 ⇒ Yes / No / Abstain」。
 /// <para>
 /// <b>阈值必须外置</b>：打分器不得自行决定通过与否，否则事后无法回答「为什么放行」，
 /// 且自我改进候选可悄悄移动判据。
 /// </para>
+/// <para>
+/// 实现 <see cref="IVersionedCriterion"/> 属<b>纯增量</b>：本类型本就携带
+/// <see cref="PolicyId"/> / <see cref="Version"/>，只是把「可版本化」抬成类型事实，
+/// 三区间判定语义<b>未</b>改动。逐标签单侧验收门是另一种形状，见 <see cref="AcceptanceThresholdPolicy"/>，
+/// 不得与本类型互相塞入（会造出语义上并不存在的区间）。
+/// </para>
 /// </summary>
-public sealed record ThresholdPolicy
+public sealed record ThresholdPolicy : IVersionedCriterion
 {
     /// <summary>策略 id（连同版本落库，供事后解释）。</summary>
     public required string PolicyId { get; init; }
