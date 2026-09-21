@@ -28,9 +28,11 @@ public enum SkillMergeCondition
 /// <summary>
 /// 一个技能的**可归并证据**：由调用方从真实技能文档投影而来，本判据只读数、不做 IO、不解析存储。
 /// <para>
-/// ⚠️ 字段都是**调用方已归一并校验过的**：<see cref="Keywords"/> 必须已是小写形态（D4 的归一化契约），
+/// ⚠️ 字段都是**调用方从既有事实投影并校验过的**（判据只校验非空/非空白，⛔ 不重新发明第二套归一化）：
+/// <see cref="Keywords"/> 应当是既有归一化（D4 的 <c>SkillKeywordNormalization</c>）的产出 ——
+/// 该口径**保留原始大小写**（靠 <c>KeywordComparer</c> 做大小写不敏感比较），因此两侧的重叠比较一律走同一个比较器，
+/// ⛔ 不得要求调用方先自行折叠大小写（那会变成第二套口径，且实测会让真实数据整体被拒）。
 /// <see cref="EvidenceIds"/> 必须是"来源标识"（<c>source-turn:</c> / <c>source-session:</c> 的取值）。
-/// 判据不重新发明第二套归一化 —— 否则同一份口径会在两处各自演化。
 /// </para>
 /// </summary>
 public sealed record SkillMergeEvidence
@@ -41,7 +43,7 @@ public sealed record SkillMergeEvidence
     /// <summary>该技能所属家族的键（D1 家族划分的产物；单成员簇的键即技能自身）。</summary>
     public required string FamilyKey { get; init; }
 
-    /// <summary>已归一（小写）去重的关键词集合。</summary>
+    /// <summary>已归一去重的关键词集合（大小写不敏感比较，见本类型说明）。</summary>
     public required IReadOnlyList<string> Keywords { get; init; }
 
     /// <summary>程序性文本（技能正文/步骤）。允许为空串 —— 空正文意味着与任何技能都不相似（判据不触发）。</summary>
@@ -182,7 +184,11 @@ public sealed class SkillMergeEligibilityJudge
             }
 
             var sameFamily = string.Equals(left.FamilyKey, right.FamilyKey, StringComparison.Ordinal);
-            var keywordsOverlap = left.Keywords.Intersect(right.Keywords, StringComparer.Ordinal).Any();
+            // C2 关键词重叠：必须与 D4 的归一口径用**同一个**比较器（大小写不敏感）——
+            // 否则"已归一"的定义会在两处各自演化，且真实 manifest 里存在名形式大小写关键词。
+            var keywordsOverlap = left.Keywords
+                .Intersect(right.Keywords, PuddingCode.Skills.Retrieval.SkillKeywordNormalization.KeywordComparer)
+                .Any();
             var similarity = _proceduralTextSimilarity(left.ProceduralText, right.ProceduralText);
             if (!double.IsFinite(similarity))
             {
@@ -248,13 +254,10 @@ public sealed class SkillMergeEligibilityJudge
             throw new InvalidOperationException($"合并判据拒绝缺字段的证据（{side}，技能 `{evidence.SkillId}`）：Keywords 为 null。");
         }
 
-        var nonNormalized = evidence.Keywords
-            .FirstOrDefault(keyword => keyword != keyword.ToLowerInvariant());
-        if (nonNormalized is not null)
+        if (evidence.Keywords.Any(string.IsNullOrWhiteSpace))
         {
             throw new InvalidOperationException(
-                $"合并判据拒绝未归一的关键词（{side}，技能 `{evidence.SkillId}`）：`{nonNormalized}`。"
-                + "关键词必须先经既有归一化产出小写形态。");
+                $"合并判据拒绝空白关键词（{side}，技能 `{evidence.SkillId}`）：空白关键词不携带可比较信息，却会参与重叠判定。");
         }
 
         if (evidence.ProceduralText is null)

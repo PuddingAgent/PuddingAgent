@@ -138,18 +138,16 @@ public sealed class SkillMergeEligibilityRealIndexProbeTests
             rawKeywordsNotNormalized += document.Keywords.Count(keyword => keyword != keyword.ToLowerInvariant());
             var normalized = SkillKeywordNormalization
                 .Collect(document.Keywords, document.Tags, document.SkillId, document.Name)
-                .Select(keyword => keyword.ToLowerInvariant())
                 .ToList();
             Assert.IsGreaterThan(0, normalized.Count, $"技能 {document.SkillId} 归一口径产出空关键词集 ⇒ C2 退化为恒假。");
             Assert.IsTrue(
-                normalized.All(keyword => keyword == keyword.ToLowerInvariant()),
-                $"技能 {document.SkillId} 的折叠产出出现大写项 ⇒ 折叠步骤被破坏。");
+                normalized.All(keyword => !string.IsNullOrWhiteSpace(keyword)),
+                $"技能 {document.SkillId} 的归一化产出含空白关键词 ⇒ 归一口径被破坏。");
         }
 
         Console.WriteLine(
             $"  rawKeywordsNotNormalized={rawKeywordsNotNormalized}" +
-            "（口径缺口已登记：D4 归一口径保留原始大小写、而 D6 判据契约要求字面小写 ⇒ 边界上需要一次显式折叠；" +
-            "本片只在本探针里折叠以满足契约，⛔ 不在本片里悄悄改判据契约）");
+            "（数据事实：D4 归一口径保留原始大小写；D6c 已在判据侧改用同一 KeywordComparer ⇒ 调用方无需折叠）");
 
         // ② 家族划分必须确定性（同一输入 ⇒ 同一家族键序列）。家族键是不稳定输入的产物时，
         //    "同族对数"这个分母就不可复现，后面的数字也就没有意义。
@@ -366,14 +364,11 @@ public sealed class SkillMergeEligibilityRealIndexProbeTests
     {
         SkillId = document.SkillId,
         FamilyKey = familyKey,
-        // 关键词必须过 D4 的**唯一**归一口径（真实 manifest 里存在未归一大写项，例如技能名本身），
-        // 再在**边界上**做一次显式大小写折叠以满足判据的输入契约。
-        // ⚠️ 实测缺口：D4 的归一口径保留原始大小写（靠 KeywordComparer 做大小写不敏感比较），
-        //    而 D6 判据契约要求字面小写 ⇒ 这里必须折叠，否则判据 fail-closed 拒绝真实数据。
-        //    ⛔ 本片不得把该缺口藏起来：它作为发现登记（推荐后续由判据侧改用 KeywordComparer 解决）。
+        // 关键词必须过 D4 的**唯一**归一口径（真实 manifest 里存在未归一大写项，例如技能名本身）。
+        // ✅ D6c 已在**判据侧**改用同一个 KeywordComparer（大小写不敏感）⇒ 这里**不再折叠**：
+        //    调用方只负责把既有归一化的产出原样传入，大小写由判据的比较器负责。
         Keywords = SkillKeywordNormalization
             .Collect(document.Keywords, document.Tags, document.SkillId, document.Name)
-            .Select(keyword => keyword.ToLowerInvariant())
             .ToList(),
         ProceduralText = document.Markdown,
         // C4 的证据面复用 D7 既有的抽取口径（source-session），⛔ 不在探针里另写一套前缀解析。

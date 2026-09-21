@@ -248,6 +248,29 @@ public sealed class SkillMergeEligibilityJudgeTests
             "绕过工厂构造的非法策略必须在判定入口被拒绝（判据不信任调用方）。");
     }
 
+    /// <summary>
+    /// D6c：重叠判定必须与 D4 的归一口径用**同一个**比较器 —— D4 的产出保留原始大小写，
+    /// 因此判据不得要求调用方先折叠（那是第二套口径，且实测会让真实数据整体被拒）。
+    /// </summary>
+    [TestMethod]
+    public void Apply_ShouldMatchKeywordsCaseInsensitively_UsingTheCanonicalComparer()
+    {
+        var judge = new SkillMergeEligibilityJudge(MarkerSimilarity);
+        var report = judge.Apply(
+            [
+                Pair(
+                    Evidence("skill-a", keywords: ["Shared-Keyword"]),
+                    Evidence("skill-b", keywords: ["shared-keyword"])),
+            ],
+            Policy());
+
+        Assert.AreEqual(
+            1,
+            report.EligiblePairCount,
+            "大小写不同但同一关键词必须视为重叠（KeywordComparer 口径）；判为不重叠就是口径分裂。");
+        Assert.AreEqual(0, report.Verdicts[0].FailedConditions.Count);
+    }
+
     [TestMethod]
     public void Apply_ShouldRejectMalformedFacts_InsteadOfSilentlySkipping()
     {
@@ -271,8 +294,8 @@ public sealed class SkillMergeEligibilityJudgeTests
             () => judge.Apply([Pair(Evidence("skill-a", familyKey: " "), Evidence("skill-b"))], policy),
             "未参与家族划分（FamilyKey 为空）的技能不得进入合并判定。");
         Assert.ThrowsExactly<InvalidOperationException>(
-            () => judge.Apply([Pair(Evidence("skill-a", keywords: ["Shared-Keyword"]), Evidence("skill-b"))], policy),
-            "未归一（含大写）的关键词必须拒绝：否则会旁路既有归一化。");
+            () => judge.Apply([Pair(Evidence("skill-a", keywords: [" "]), Evidence("skill-b"))], policy),
+            "空白关键词必须拒绝：它不携带任何可比较信息，却会参与重叠判定。");
         Assert.ThrowsExactly<InvalidOperationException>(
             () => judge.Apply([Pair(Evidence("skill-a", evidenceIds: [" "]), Evidence("skill-b"))], policy));
     }
