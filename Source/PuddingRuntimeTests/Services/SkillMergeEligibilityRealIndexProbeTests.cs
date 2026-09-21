@@ -84,18 +84,25 @@ public sealed class SkillMergeEligibilityRealIndexProbeTests
     private const int EraBaselineIntraFamilyPairCount = 75;
 
     /// <summary>
-    /// 可行性基线（D6b 实测后钉入；<c>-1</c> 表示尚未钉入 ⇒ 只打印、不断言）。
+    /// 可行性基线（D6b 实测、D6c 口径修复后复核，2026-09-22 钉入）。
     /// <para>
-    /// ⛔ 钉入后不得为了让断言变绿而改这些数字：它们是与基线**日期**绑定的实测事实，
-    /// 变化时按类注释的分诊纪律处理（先判口径漂移，再判数据变化）。
+    /// 取值（时代子集：144 技能 / 139 启用 / 10 家族 / 75 同族对）：
+    /// 过四条件 <b>17 / 4 / 0</b>（程序性文本阈值 0.20 / 0.35 / 0.50）；
+    /// 再叠加既有确定性闸门 <b>0 / 0 / 0</b> ⇒ 本片判据在真实数据上不是已生效的合并能力。
+    /// </para>
+    /// <para>
+    /// ⛔ 钉入后不得为了让断言变绿而改这些数字：它们是与基线**日期**绑定的实测事实。
+    /// 变红时按类注释的分诊纪律处理：① 先判口径漂移（判据/归一化/相似度实现是否被改）；
+    /// ② 再判数据变化（技能仓新增/改写技能）—— 若是后者，**必须显式复算并说明新事实**，
+    /// 因为“叠加面 = 0”这个裁决结论必须以当时的真实语料为据。
     /// </para>
     /// </summary>
-    private const int FourConditionBaseline020 = -1;
-    private const int FourConditionBaseline035 = -1;
-    private const int FourConditionBaseline050 = -1;
-    private const int GateOverlayBaseline020 = -1;
-    private const int GateOverlayBaseline035 = -1;
-    private const int GateOverlayBaseline050 = -1;
+    private const int FourConditionBaseline020 = 17;
+    private const int FourConditionBaseline035 = 4;
+    private const int FourConditionBaseline050 = 0;
+    private const int GateOverlayBaseline020 = 0;
+    private const int GateOverlayBaseline035 = 0;
+    private const int GateOverlayBaseline050 = 0;
 
     private static readonly JsonSerializerOptions ManifestJsonOptions = new()
     {
