@@ -43,6 +43,7 @@
 | `Services/Conversation/CreateSteeringHandler.cs` | Steering 单一受理边界；只接受 canonical Running Turn，校验 Workspace/Agent 后写 Runtime 消费队列 |
 | `Controllers/Api/ConversationTurnsController.cs` | canonical Turn HTTP API；Steering 为 `POST /api/v1/conversations/{conversationId}/turns/{turnId}/steering`，202/409 fail closed |
 | `Services/ConversationEventStore.cs` | 对话事件存储（18KB） |
+| `Services/RsiTrajectoryDataAccess.cs` | RSI-S3 轨迹数据访问 EF 实现（照抄 `SkillEvolutionDataAccess` 模式：`IDbContextFactory` + `AsNoTracking` + **双数组**空判早退 + 类型过滤**在 SQL 侧** + `OrderBy(TurnId).ThenBy(Sequence)` + 投影 row record 不泄实体）。执行级证据：`PuddingPlatformTests/Services/RsiTrajectoryDataAccessTests.cs`（`EXPLAIN QUERY PLAN` 断言 `SEARCH ... USING INDEX IX_conversation_events_turn_id_type (turn_id=? AND type=?)`，不加 `.Where` 即退化为全表扫描 ⇒ 该断言**可红**）。⚠️ `(turn_id,type)` 索引给不了 `(TurnId,Sequence)` 完全有序 ⇒ 第二排序键走 `USE TEMP B-TREE FOR LAST TERM OF ORDER BY`，代价受返回行数上界约束；**limit 放大到千行级必须重评** |
 | `Services/ConversationProjectionWorker.cs` | 对话投影 Worker；活跃流小积压短 coalescing，批量 checkpoint/catalog，避免每个 raw source event 触发 SQLite/日志紧循环 |
 | `Services/Execution/SqliteExecutionJournal.cs` | canonical execution journal；开事务前处理 SQLite pooled-handle 激活异常，且只在尚未写入事件时清池并有限重试，避免瞬时连接故障直接终止 Agent turn |
 | `Services/MessageTopicService.cs` | 消息主题 |
