@@ -156,4 +156,31 @@ public sealed class RsiToolOutcomeDeriverTests
         Assert.AreEqual("hello world", result.Output);
         Assert.AreEqual("call-42", result.ToolCallId);
     }
+
+    // ---------------------------------------------------------------- S 系：规格 §1.2.1 追加的两条硬用例
+    // 存在理由：真实 payload 的形状由运行时帧写入方决定（TurnExecutorAdapter 原样透传），
+    // 字符串型 exitCode 若不被识别，会静默降级成 Unknown —— 必须有用例钉住。
+
+    /// <summary>S11：exitCode 为字符串 "0" ⇒ Completed（字符串型成功不得被当成"读不懂"而降级为 Unknown）。</summary>
+    [TestMethod]
+    public void S11_NumericStringZeroExitCode_DerivesCompleted()
+    {
+        var result = RsiToolOutcomeDeriver.Derive("""{"exitCode":"0"}""");
+
+        Assert.AreEqual(RsiToolOutcome.Completed, result.Outcome, "字符串型 0 与数字型 0 语义相同。");
+        Assert.AreEqual(0, result.ExitCode, "字符串型 0 必须被解成 0，而不是丢弃成 null。");
+    }
+
+    /// <summary>S12：exit_code（下划线）为字符串 "0" ⇒ Completed、"1" ⇒ Failed（键名与类型两种宽容必须同时成立）。</summary>
+    [TestMethod]
+    public void S12_StringSnakeCaseExitCode_IsParsedForBothOutcomes()
+    {
+        var completed = RsiToolOutcomeDeriver.Derive("""{"exit_code":"0"}""");
+        var failed = RsiToolOutcomeDeriver.Derive("""{"exit_code":"1"}""");
+
+        Assert.AreEqual(RsiToolOutcome.Completed, completed.Outcome, "下划线 + 字符串型 0 ⇒ Completed。");
+        Assert.AreEqual(0, completed.ExitCode);
+        Assert.AreEqual(RsiToolOutcome.Failed, failed.Outcome, "下划线 + 字符串型 1 ⇒ Failed。");
+        Assert.AreEqual(1, failed.ExitCode);
+    }
 }
