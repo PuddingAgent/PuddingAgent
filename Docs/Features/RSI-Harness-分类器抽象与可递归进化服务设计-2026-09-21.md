@@ -489,6 +489,9 @@ R6 | 评测门禁**当前有洞**（Admin 数量判据、必测未测 exit 0） 
 | **G6–G8** | **潜意识 LLM 的 SKILL 整理作业**（提炼，而非记笔记式积累，见 §14） | 见 §14.7 |
 
 > ⚠️ **次序修订（2026-09-21，用户指令驱动）**：**G 轨道应排在 S3/S4 之前** —— 理由见 §13.9（RSI 是产能放大器；G 是更便宜的首个真实消费者；G 有即时回报）。S0/S1a/S1b/S2a/S2b 均已完成，**下一个切片应为 G1**。
+> ✅ **该修订已满足（2026-09-22 复核）**：G1 已于 2026-09-21 完成（只读报告 `Docs/Reports/skill-portfolio-G1-2026-09-21.md`）⇒
+> 按 §15.6 合并序列，**下一个切片 = 第 6 项 `G6 skill.curate` 报告先行**（零技能变更；成本窗口 = 非工作时段）。
+> ⛔ 不得再据本行重做 G1。
 
 ---
 
@@ -1017,7 +1020,7 @@ decision ∈ { Apply | ApplyShadow | Reject | Defer }
 2 | S1a/S1b/S2a/S2b 判定算子基础设施 | 算子 | ✅ **已交付** | — |
 3 | **L3-a 提案模型最小契约**（`ArtifactRef` / `ImprovementProposal` / `ChangeVerdict`；纯类型 + 守卫测试，**零行为**） | 落点 | ✅ **已完成**（2026-09-21，测试 29/29） | — |
 4 | **G1 组合盘点**（只读；含家族分布 + 索引 token 实测） | 治理 | ✅ **已完成**（2026-09-21，报告 `Docs/Reports/skill-portfolio-G1-2026-09-21.md`；结论见下方 blockquote） | — |
-5 | **G2 使用遥测 + 价值打分**（打分器首个真实消费者，**无 LLM**） | 治理 | 未做 | 任意（写热路径需谨慎） |
+5 | **G2 使用遥测 + 价值打分**（打分器首个真实消费者，**无 LLM**） | 治理 | ✅ **已完成**（2026-09-22 复核：遥测 `Runtime/Services/Skills/Telemetry/*.cs` 3 文件 + 打分器 `Runtime/Services/Improvement/SkillValue/*.cs` 3 文件，`list_dir` 实测）⚠️ 遥测需一次**重启窗口**才插桩激活 | — |
 6 | **G6 `skill.curate` 报告先行**（**用 L3-a 模型出报告**，零技能变更） | 整理 | 未做 | 非工作时段 |
 7 | **G3 组合预算**（判断器） | 治理 | 未做 | 任意 |
 8 | **G7 提炼契约 + C1–C5 门禁** | 整理 | 未做 | 非工作时段 |
@@ -1025,10 +1028,25 @@ decision ∈ { Apply | ApplyShadow | Reject | Defer }
 10 | **G8 触发与节奏**（定时 + 条件触发 + 非工作时段优先） | 整理 | 未做 | 任意 |
 11 | **G5 D1/D2 修复**（**必须在 G2 之后**：无度量不调参） | 治理 | 未做 | 非工作时段 |
 12 | **L3-b 落点适配**（技能 → `IAgentSkillEvolutionStore`；记忆 → `IMemoryLibrary`） | 落点 | 未做 | 非工作时段 |
-13 | **S3 RSI 轨迹源**（失败→纠偏→验证；**不改** `GetRecentSuccessfulAsync`） | RSI | 未做 | 任意 |
+13 | **S3 RSI 轨迹源**（失败→纠偏→验证；**不改** `GetRecentSuccessfulAsync`） | RSI | ✅ **已交付 B1–B4**（2026-09-22，见 `Docs/Features/S3-轨迹源-实施规格-2026-09-21.md`）⛔ 本行原标“未做”系**本表过期**，不得据此重做 | — |
 14 | **S4 `RsiClassifier` + 信号存储** | RSI | 未做 | 非工作时段 |
 15 | **S5 Analyze → Plan → Implement**（默认 shadow） | RSI | 未做 | 非工作时段 |
 16 | **S6 评测 + 灰度晋升 + 回退** | RSI | 未做 | 非工作时段 |
+> ⚠️ **本表过期已修（2026-09-22 复核，父代理自跑取证；“表里写未做”是同一类缺陷）**：
+> 上面第 5 行（G2）与第 13 行（S3）原标“未做”，与**磁盘事实相反**。这与本会话反复遇到的静默逃逸同族：
+> **文档落后于现实 ⇒ 下一个人照表重做或漏做**。逐条证据：
+>
+> - **G2 = 已完成**：遥测 `Runtime/Services/Skills/Telemetry/*.cs`（3）+ 打分器 `Runtime/Services/Improvement/SkillValue/*.cs`（3）
+>   均已落盘（`list_dir` 实测）。⚠️ 唯一未激活项：遥测需一次**重启窗口**才插桩生效
+>   —— 未激活时 `D:\data\skill-usage` 不存在是**合法状态**，不得读成“技能从未被使用”。
+> - **S3 = 已交付 B1–B4**：`Runtime/Services/Improvement/Rsi/*.cs`（6 文件：`IRsiTrajectorySource`/`RsiToolOutcome`/
+>   `RsiToolOutcomeDeriver`/`RsiTrajectoryAssembler`/`RsiTrajectorySource`/`RsiTypes`）+ B2 数据访问接缝（Platform 侧，
+>   由 `RsiTrajectoryDataAccessTests` 覆盖）；`~Rsi` **147/147** 且冻结项均有**变异取红**证据；S5/S6 裁决已回写规格附录 B.6。
+> - **S3 的两个边界义务（属 T1 采集层，不在 S3 本片）**：①`excludeFromLearning` 排除义务（S5 裁决 (a2)）
+>   ⇒ 已建卡 `405677ab36ca4595b79f0e91977294b2`；②水位幂等（键 = `sessionId + 已处理事件水位 + classifierVersion`）
+>   ⇒ S3 规格 `:552` 已登记为 **S3/T1 边界未决项**（本轮复核确认该登记仍在，**不是漏项**）。
+> - ⇒ **合并序列的下一个切片 = 第 6 项 `G6 skill.curate` 报告先行**（零技能变更；成本窗口 = 非工作时段）。
+
 > **L3-a 实测（2026-09-21）**：实现 `Source/PuddingCore/Improvement/{ImprovementEnums,ArtifactRef,ImprovementProposal,ChangeVerdict}.cs`
 > （命名空间 `PuddingCode.Improvement`，与 `PuddingCode.Operators` / `PuddingCode.Classification` 同惯例）；
 > 契约测试 `Source/PuddingCoreTests/Improvement/ImprovementContractTests.cs` **29/29 通过**
