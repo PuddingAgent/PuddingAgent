@@ -4370,3 +4370,225 @@ export interface ActiveCompactionSnapshot {
 export async function getCompactionStatus(sessionId: string): Promise<{ activeCompaction: ActiveCompactionSnapshot | null }> {
   return request(`/api/sessions/${encodeURIComponent(sessionId)}/compaction-status`, { method: 'GET' });
 }
+
+// ─── Skill Hub API ─────────────────────────────────────────────
+// 契约来源：Docs/Features/SKILL-Hub技能中心与EVO-MAP设计方案-2026-09-21.md §5（冻结，不得改名）
+// 函数签名：同文档 §7.2（冻结）；调用惯例与本文件既有段落完全一致。
+
+export interface HubSkillSummaryDto {
+  skillId: string;
+  name: string;
+  summary?: string | null;
+  description?: string | null;
+  tags: string[];
+  keywords: string[];
+  latestVersion: string;
+  status: string;
+  visibility: string;
+  ownerWorkspaceId?: string | null;
+  sourceAgentId?: string | null;
+  originKind: string;
+  versionCount: number;
+  installCount: number;
+  publishCount: number;
+  latestContentHash?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HubSkillVersionDto {
+  skillId: string;
+  version: string;
+  contentHash: string;
+  evolutionAction: string;
+  parentVersion?: string | null;
+  relatedSkillIds: string[];
+  publishedByAgentId?: string | null;
+  publishedByWorkspaceId?: string | null;
+  publishNote?: string | null;
+  contentBytes: number;
+  createdAt: string;
+}
+
+/** 单版本全文（GET /skills/{skillId}/versions/{version} 额外返回 SkillMarkdown） */
+export interface HubSkillVersionFullDto extends HubSkillVersionDto {
+  skillMarkdown: string;
+}
+
+export interface HubSkillDetailDto {
+  skill: HubSkillSummaryDto;
+  versions: HubSkillVersionDto[];
+  recentInstalls: HubSkillInstallDto[];
+}
+
+export interface HubSkillInstallDto {
+  skillId: string;
+  agentInstanceId: string;
+  workspaceId?: string | null;
+  installedVersion: string;
+  contentHash?: string | null;
+  installedBy: string;
+  installedAt: string;
+  updatedAt: string;
+}
+
+export interface HubSkillEventDto {
+  id: number;
+  skillId: string;
+  version?: string | null;
+  eventType: string;
+  actorKind: string;
+  actorId?: string | null;
+  workspaceId?: string | null;
+  payloadJson?: string | null;
+  createdAt: string;
+}
+
+export interface HubSkillActionCountDto {
+  action: string;
+  count: number;
+}
+
+export interface HubSkillStatsDto {
+  totalSkills: number;
+  activeSkills: number;
+  retiredSkills: number;
+  totalVersions: number;
+  totalInstalls: number;
+  distinctAgents: number;
+  evolvedSkills: number;
+  evolutionActionCounts: HubSkillActionCountDto[];
+  topInstalled: HubSkillSummaryDto[];
+  generatedAt: string;
+}
+
+// ── EVO MAP ────────────────────────────────────────────────────
+
+export interface EvoMapNodeDto {
+  nodeId: string; // "{SkillId}@{Version}"
+  skillId: string;
+  version: string;
+  evolutionAction: string;
+  parentNodeId?: string | null; // null = 根节点
+  name: string;
+  status: string;
+  publishedByAgentId?: string | null;
+  createdAt: string;
+  contentBytes: number;
+  installCount: number;
+}
+
+export interface EvoMapEdgeDto {
+  fromNodeId: string;
+  toNodeId: string;
+  action: string;
+}
+
+export interface EvoMapDto {
+  nodes: EvoMapNodeDto[];
+  edges: EvoMapEdgeDto[];
+  generatedAt: string;
+}
+
+export interface HubSkillUpdateDto {
+  skillId: string;
+  name: string;
+  installedVersion: string;
+  latestVersion: string;
+  latestEvolutionAction: string;
+  latestPublishedAt: string;
+  publishNote?: string | null;
+}
+
+// ── 请求体 / 查询参数 ──────────────────────────────────────────
+
+export interface UpdateHubSkillMetaRequest {
+  name?: string;
+  summary?: string;
+  description?: string;
+  tags?: string[];
+  keywords?: string[];
+  status?: string;
+  visibility?: string;
+}
+
+export interface ListHubSkillsParams {
+  query?: string;
+  tag?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface ListHubInstallsParams {
+  agentInstanceId?: string;
+  skillId?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface ListHubEventsParams {
+  skillId?: string;
+  limit?: number;
+}
+
+// ── 函数（§7.2 冻结签名）─────────────────────────────────────
+
+export async function getSkillHubStats(): Promise<HubSkillStatsDto> {
+  return request('/api/skill-hub/stats', { method: 'GET' });
+}
+
+export async function listHubSkills(params?: ListHubSkillsParams): Promise<HubSkillSummaryDto[]> {
+  return request('/api/skill-hub/skills', { method: 'GET', params });
+}
+
+export async function getHubSkill(skillId: string): Promise<HubSkillDetailDto> {
+  return request(`/api/skill-hub/skills/${encodeURIComponent(skillId)}`, { method: 'GET' });
+}
+
+export async function getHubSkillVersion(
+  skillId: string,
+  version: string,
+): Promise<HubSkillVersionFullDto> {
+  return request(
+    `/api/skill-hub/skills/${encodeURIComponent(skillId)}/versions/${encodeURIComponent(version)}`,
+    { method: 'GET' },
+  );
+}
+
+export async function getHubSkillLineage(skillId: string): Promise<EvoMapDto> {
+  return request(`/api/skill-hub/skills/${encodeURIComponent(skillId)}/lineage`, {
+    method: 'GET',
+  });
+}
+
+export async function getHubLineage(skillIds?: string[]): Promise<EvoMapDto> {
+  return request('/api/skill-hub/lineage', {
+    method: 'GET',
+    params: skillIds && skillIds.length > 0 ? { skillIds: skillIds.join(',') } : undefined,
+  });
+}
+
+export async function updateHubSkillMeta(
+  skillId: string,
+  req: UpdateHubSkillMetaRequest,
+): Promise<HubSkillSummaryDto> {
+  return request(`/api/skill-hub/skills/${encodeURIComponent(skillId)}`, {
+    method: 'PATCH',
+    data: req,
+  });
+}
+
+export async function retireHubSkill(skillId: string): Promise<void> {
+  return request(`/api/skill-hub/skills/${encodeURIComponent(skillId)}`, { method: 'DELETE' });
+}
+
+export async function listHubInstalls(
+  params?: ListHubInstallsParams,
+): Promise<HubSkillInstallDto[]> {
+  return request('/api/skill-hub/installs', { method: 'GET', params });
+}
+
+export async function listHubEvents(params?: ListHubEventsParams): Promise<HubSkillEventDto[]> {
+  return request('/api/skill-hub/events', { method: 'GET', params });
+}
