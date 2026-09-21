@@ -434,3 +434,82 @@ set "PYTHONUTF8=1" && python TestScripts\skill-spec\repair-skill-summaries.py --
 
 - 141 个 manifest 的 `contentHash` 仍是旧值：重启加载新二进制后调一次 `rebuild_index` 即由 §8 自愈机制修正；
 - 若将来出现同类迁移，**先跑 dry-run 并抽样人工核对 new 值语义**（本轮 dry-run 已做，且正是它暴露了 139→141 的差异）。
+
+---
+
+## 10. schema 层修复：`tags`/`version` → 规范字段 `metadata`（2026-09-21）
+
+### 10.1 变换 4（新增）
+
+`TestScripts/skill-spec/fix-skill-frontmatter.py` 增加第 4 类机械修复：
+
+```yaml
+# before（顶层 tags/version 不是规范字段，官方校验器判 "Unexpected fields in frontmatter"）
+name: agent-repo-health-check
+version: 1.0.3
+description: Quickly obtain an overview ...
+tags:
+  - auto-generated
+  - skill-candidate
+---
+# after（规范只允许 name/description/license/compatibility/metadata/allowed-tools）
+name: agent-repo-health-check
+description: Quickly obtain an overview ...
+metadata:
+  version: "1.0.3"
+  tags: "auto-generated, skill-candidate"
+```
+
+- `metadata` 是 string→string 映射 ⇒ tags 用逗号连接、version 加引号；
+- **键序固定**（version, tags）保证输出确定性；已有 `metadata:` 块则插入（`metadata-merged`），否则追加（`metadata-appended`）；
+- **幂等**：搬完后顶层不再有 tags/version，二次运行自然零改动；
+- **写盘前自检**（吸收 §9.2 事故的教训）：新增 `spec_field_violations()`，变换后若仍残留任何非规范顶层字段则 **SKIP 拒绝写盘**。
+
+### 10.2 安全核查（动手前）
+
+`search_grep` 收窄到 `Source/**/*Skill*.cs`（15 个文件，全覆盖）确认：
+
+- **平台无任何代码读取 frontmatter 的 `tags` / `version`**；
+- 唯一读 frontmatter 的是 §7 新增的 `DeriveSummary`，且**只读 `description`**（该字段未被动到）。
+
+⇒ 把 tags/version 搬进 `metadata` 对平台**零影响**，纯粹是规范面收敛。
+
+### 10.3 实测（官方校验器逐技能校验，非自评）
+
+```powershell
+# temp/validate-skills.ps1：遍历 144 个技能目录，逐个 skills-ref validate
+TOTAL=144 PASS=133 FAIL=11
+```
+
+**对照修复前**：`TOTAL=144 PASS=0 FAIL=144`（111 条 YAML 语法错 + 139 条 Unexpected fields）⇒ **PASS 0 → 133**。
+
+### 10.4 剩余 11 条失败的精确对账
+
+| 类别 | 数量 | 技能 |
+|------|------|------|
+| `SKILL.md must start with YAML frontmatter` | 5 | `atomic-delegation-discipline`、`code-map-incremental-update`、`image-prompt-builder`、`multi-engine-topic-research`、`smart-committee-workflow` |
+| `Skill name exceeds 64 character limit` | 6 | `parallel-full-stack-…`(73)、`milestone-handoff-…`(71)、`persist-runtime-…`(70)、`goal-driven-heartbeat-…`(69)、`recover-from-file-patch-…`(69)、`prove-existing-semantics-…`(68) |
+
+**11 = 5 + 6 完全对账**，不存在"未知类别"的残留失败。
+
+### 10.5 裁定 A：`name` 超 64 字符 —— grandfather 既有 6 个，门禁只约束新增
+
+**决定：不重命名这 6 个技能。**理由：
+
+1. `name` 必须与父目录同名 ⇒ 改名 = 改 `skillId` + 改目录名 + 连带 `keywords`/索引/记忆引用/其他 Agent 的既有引用；
+2. 收益为零：这些是**私有技能**，64 字符上限是**可移植性**约束（跨平台分发时的路径与提示预算），不是功能约束；
+3. 改名会制造"同名不同物"的历史断层，反而降低可追溯性。
+
+**门禁规则**：新增技能 `name` 必须 ≤64；既有 6 个进入**显式豁免名单**（写入报告本表，门禁白名单以本表为准）。
+
+### 10.6 待办：5 个无 frontmatter 的技能
+
+这 5 个的 `SKILL.md` 完全无 frontmatter。可在**不臆造**的前提下从平台 manifest 派生：
+`name` = `skillId`（5 个均 <64 ✓）、`description` = `manifest.description`。
+其中 `image-prompt-builder` 的 `manifest.description` 为 **null**（且 `summary` 为空）⇒ 需从正文派生或人工补写，
+标注为"需作者确认"，不在自动迁移范围内。
+
+### 10.7 运行时确认
+
+本心跳的 SKILL 索引投影已显示修复后的**真实摘要**（迁移前是 `name: <skillId>`）：
+`agent-repo-health-check | Quickly obtain an overview of agent runtime status…` ⇒ 元数据层修复在运行时可见。

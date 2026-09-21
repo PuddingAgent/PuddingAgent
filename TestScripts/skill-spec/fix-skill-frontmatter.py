@@ -1,11 +1,16 @@
 """规范化私有 SKILL.md 的 YAML frontmatter，使其通过官方 skills-ref 校验。
 
-只做三类**机械**修复，不改任何字段语义（平台侧不解析 SKILL.md frontmatter：
-Source/ 下无任何 C# 代码读取 frontmatter，见 Docs/Reports/skill-spec-conformance-2026-09-21.md）：
+只做四类**机械**修复，不改任何字段语义（平台侧不解析 SKILL.md frontmatter：
+Source/ 下无任何 C# 代码读取 frontmatter 的 tags/version，只有 DeriveSummary 读 description，
+见 Docs/Reports/skill-spec-conformance-2026-09-21.md §10）：
 
   1. ``tags: [a, b]`` 流式数组  → 块序列（每行 ``- item``）
   2. 外层 ```` ```markdown ```` 代码围栏 → 删除（frontmatter 被关在代码块里，同时模型读到的也是代码块）
   3. ``description:`` 未加引号且含 ":" → 加双引号（内部引号转义）
+  4. 顶层 ``tags`` / ``version`` → 搬进规范字段 ``metadata``（string→string；tags 逗号连接）
+     —— Agent Skills 规范的 frontmatter 只允许 name/description/license/compatibility/metadata/allowed-tools，
+     多出的顶层字段会被官方校验器判为 “Unexpected fields in frontmatter”。
+     本变换**幂等**：搬完后顶层不再有 tags/version，二次运行自然无改动。
 
 安全设计：
   * **默认 dry-run**，只有显式 ``--apply`` 才写盘。
@@ -30,6 +35,83 @@ def quote_description(value: str) -> str:
     """把含 ':' 的裸标量包成双引号（YAML 里 ': ' 会被解析成嵌套映射）。"""
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
+
+
+# 规范允许的 frontmatter 顶层字段（Agent Skills spec）。
+SPEC_FIELDS = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
+
+
+def _is_top_level(line: str) -> bool:
+    return bool(line.strip()) and not line.startswith((" ", "\t"))
+
+
+def spec_field_violations(fm_lines: list[str]) -> list[str]:
+    """返回违反规范字段约束的项（空列表 = 通过）。
+
+    这是**写盘前自检**：文本级重写必须回验结果（上次 manifest 迁移就是靠这条才发现引号被转义）。
+    """
+    violations: list[str] = []
+    for line in fm_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or not _is_top_level(line):
+            continue
+        if ":" not in stripped:
+            violations.append(f"顶层行不是 key: value -> {stripped[:40]}")
+            continue
+        key = stripped.split(":", 1)[0].strip()
+        if key not in SPEC_FIELDS:
+            violations.append(f"非规范顶层字段 -> {key}")
+    return violations
+
+
+def extract_spec_extra_fields(fm_lines: list[str]) -> tuple[list[str], dict[str, str], list[str]]:
+    """把顶层 tags/version 抽出来，返回 (剩余行, metadata 条目, 改动类型)。"""
+    out: list[str] = []
+    meta: dict[str, str] = {}
+    changes: list[str] = []
+    index = 0
+    while index < len(fm_lines):
+        line = fm_lines[index]
+        stripped = line.strip()
+
+        if _is_top_level(line) and stripped.startswith("version:"):
+            meta["version"] = stripped[len("version:"):].strip().strip("\"'")
+            changes.append("version->metadata")
+            index += 1
+            continue
+
+        if _is_top_level(line) and stripped == "tags:":
+            index += 1
+            items: list[str] = []
+            while index < len(fm_lines) and fm_lines[index].strip().startswith("-"):
+                items.append(fm_lines[index].strip()[1:].strip().strip("\"'"))
+                index += 1
+            meta["tags"] = ", ".join(items)
+            changes.append(f"tags->metadata({len(items)})")
+            continue
+
+        out.append(line)
+        index += 1
+
+    return out, meta, changes
+
+
+def apply_metadata_block(fm_lines: list[str], meta: dict[str, str]) -> tuple[list[str], list[str]]:
+    """把抽出的字段写进 metadata 块（已有块则插入，否则追加）。"""
+    if not meta:
+        return fm_lines, []
+
+    entries = [
+        f"  {key}: {quote_description(meta[key])}"
+        for key in ("version", "tags")  # 固定顺序，保证输出确定性
+        if key in meta
+    ]
+
+    for index, line in enumerate(fm_lines):
+        if line.strip() == "metadata:" and _is_top_level(line):
+            return fm_lines[:index + 1] + entries + fm_lines[index + 1:], ["metadata-merged"]
+
+    return fm_lines + ["metadata:"] + entries, ["metadata-appended"]
 
 
 def normalize_frontmatter(fm_lines: list[str]) -> tuple[list[str], list[str]]:
@@ -78,6 +160,13 @@ def normalize_frontmatter(fm_lines: list[str]) -> tuple[list[str], list[str]]:
         out.append(line)
         index += 1
 
+    # --- 修复 4：顶层 tags/version -> 规范字段 metadata ---
+    out, meta, meta_changes = extract_spec_extra_fields(out)
+    if meta:
+        out, block_changes = apply_metadata_block(out, meta)
+        changes.extend(meta_changes)
+        changes.extend(block_changes)
+
     return out, changes
 
 
@@ -112,6 +201,12 @@ def fix_skill_md(path: Path) -> tuple[bool, list[str], str]:
     fm_lines = lines[start + 1:end]
     new_fm, fm_changes = normalize_frontmatter(fm_lines)
     changes.extend(fm_changes)
+
+    # 写盘前自检（教训：文本级外科替换必须回验）：变换后不得残留任何非规范顶层字段。
+    violations = spec_field_violations(new_fm)
+    if violations:
+        return False, changes, "SKIP: 变换后仍不合规，已拒绝写盘 -> " + "; ".join(violations[:3])
+
     new_lines = lines[:start + 1] + new_fm + lines[end:]
 
     if new_lines == lines:
