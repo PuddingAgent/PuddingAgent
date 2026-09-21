@@ -296,3 +296,68 @@ dotnet test Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --filter "Full
 `L207` 会一并重算 hash）。这需要 139 次调用或一个走**真实服务代码**的批量入口（不要复刻哈希算法）。
 倾向后者：写一个调用 `AgentSkillFileService` 本体的维护脚本/测试宿主，
 以受支持入口批量刷新，避免手工复刻 `ComputeContentHash` 造成漂移。
+
+---
+
+## 8. 机制性修复：索引重建自愈派生字段（2026-09-21，同日）
+
+§6.1（`contentHash` 失效）与 §7.4（存量摘要无法刷新）的共同根因是**机制问题**，不是一次性事故：
+
+> manifest 里的 `ContentHash` 是 `(manifest, SKILL.md 内容)` 的**派生值**，
+> 但只有走 `CreateAsync` / `UpdateAsync` / `SetEnabledAsync` 才会重算。
+> 而 **SKILL.md 被直接改盘是常态**（Agent 用 `file_write` 改技能正文、批量修复工具直接写盘），
+> `RebuildIndexCoreAsync` 又**只读 manifest、根本不读 SKILL.md** ⇒ 派生字段可以无限期漂移，
+> 而**索引层会照抄这些陈旧值** ⇒ 索引开始"说谎"。
+
+### 8.1 改动：`RebuildIndexCoreAsync` 增加 `HealDerivedMetadataAsync`
+
+`Source/PuddingRuntime/Services/Skills/AgentSkillFileService.cs`
+
+- 索引重建时读取 `SKILL.md`，重算 `ContentHash`；
+- **只在重算结果与现值不同时才回写 manifest**（原子写）⇒ 正常情况下**零写入**（幂等）；
+- 不动 `UpdatedAt`（技能内容本身并没有被"更新"）。
+
+### 8.2 ⚠️ 设计被测试当场纠正（重要教训）
+
+**第一版设计错了**：我顺手也重算了 `Summary`。跑测试立刻出现 **2 条既有契约测试失败**：
+
+```
+失败 CreateAsync_Writes_Manifest_SkillMarkdown_And_Index
+  预期 "Follow local coding standards before editing."（调用方显式给的 Summary）
+  实际 "Coding Rules"（从 markdown 首行派生的）
+失败 UpdateAsync_Updates_Manifest_Markdown_And_ContentHash
+  预期 "Updated summary"  实际 "Updated"
+```
+
+根因：**`Summary` 不一定是派生值** —— `CreateAsync` 取 `request.Summary ?? DeriveSummary(markdown)`，
+`UpdateAsync` 也允许调用方显式提供，而 **manifest 没有记录"来源"**。
+盲目重算会**覆盖作者写的摘要**。
+
+⇒ 修正后的设计边界：
+
+| 字段 | 是否自愈 | 理由 |
+|------|----------|------|
+| `ContentHash` | ✅ 自愈 | 定义上就是 `(manifest, SKILL.md)` 的纯派生值，重算恒正确，不承载作者意图 |
+| `Summary` | ❌ 不自愈 | 可能是调用方显式提供；manifest 无来源标记 ⇒ 重算会覆盖作者意图 |
+
+**这正是"只写不跑是自欺"的现场验证**：一个看起来顺手的"顺手也修一下"，
+如果没有测试，就会静默地把所有显式摘要改写成派生值。
+
+### 8.3 契约测试（`AgentSkillFileServiceTests.cs`，该类现 16 条）
+
+| 测试 | 断言 |
+|------|------|
+| `RebuildIndexAsync_HealsContentHash_ButPreservesAuthoredSummary` | 改盘后重建：hash 变化 ✅、**显式 Summary 保持不变** ✅、再重建一次不再写盘（**自愈收敛为不动点**）✅ |
+| `RebuildIndexAsync_LeavesManifestUntouched_WhenDerivedFieldsAreConsistent` | 派生字段一致时 manifest **逐字节不变**（幂等，不得变成无意义写入源） |
+
+实测：`失败 0，通过 16，总计 16，457 ms`（含 2 条既有测试的回归保护）。
+
+### 8.4 存量数据的两条修复路径（明确区分）
+
+| 目标 | 路径 | 前置 |
+|------|------|------|
+| 139 个过期 `contentHash` | **自动**：重启加载新二进制后调一次 `agent_skill rebuild_index` 即全部自愈 | 需要一次重启（批次由 6a8 决定） |
+| 139 个垃圾 `Summary`（`name: <skillId>`） | **需一次性数据迁移**：平台侧故意不自动重算（见 §8.2）⇒ 走受支持入口 `UpdateAsync(Summary="")` 逐个刷新，或写一次性迁移脚本（须带"当前值等于旧缺陷形态"的判定谓词，不得无差别覆盖） | 无（脚本方式不需要重启） |
+
+> 设计取舍已记录：把**永久机制**（hash 自愈）放进平台，把**一次性知识**（旧缺陷形态判定）留在迁移工具里，
+> 避免在生产代码中长期保留 `LegacyDeriveSummary` 之类的兼容逻辑。

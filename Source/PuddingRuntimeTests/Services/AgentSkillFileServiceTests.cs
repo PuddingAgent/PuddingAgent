@@ -298,6 +298,64 @@ public sealed class AgentSkillFileServiceTests
         Assert.AreEqual(240, created.Manifest.Summary?.Length);
     }
 
+    [TestMethod]
+    public async Task RebuildIndexAsync_HealsContentHash_ButPreservesAuthoredSummary()
+    {
+        using var temp = new TempDataRoot();
+        var service = new AgentSkillFileService(temp.Paths);
+        var created = await service.CreateAsync("agent-1", new AgentSkillCreateRequest
+        {
+            SkillId = "drifted-skill",
+            Name = "Drifted Skill",
+            Summary = "Authored summary.",
+            SkillMarkdown = "# Original Title\n\nOriginal body.",
+        });
+
+        var hashBefore = created.Manifest.ContentHash;
+        var manifestPath = Path.Combine(created.PhysicalPath, "manifest.json");
+
+        // 绕过服务直接改盘（Agent 用 file_write 改技能正文、批量修复工具直接写盘都是这种情形）。
+        await File.WriteAllTextAsync(
+            Path.Combine(created.PhysicalPath, "SKILL.md"),
+            "# Original Title\n\nChanged body.\n");
+
+        var index = await service.RebuildIndexAsync("agent-1");
+
+        // Summary 可能是作者显式给的，自愈不得覆盖它。
+        Assert.AreEqual("Authored summary.", index.Skills.Single().Summary);
+
+        var reloaded = await service.GetAsync("agent-1", "drifted-skill");
+        Assert.AreEqual("Authored summary.", reloaded.Manifest.Summary);
+        Assert.AreNotEqual(hashBefore, reloaded.Manifest.ContentHash);
+
+        // 自愈应收敛为不动点：再重建一次不得再写盘。
+        var healed = await File.ReadAllTextAsync(manifestPath);
+        await service.RebuildIndexAsync("agent-1");
+        Assert.AreEqual(healed, await File.ReadAllTextAsync(manifestPath));
+    }
+
+    [TestMethod]
+    public async Task RebuildIndexAsync_LeavesManifestUntouched_WhenDerivedFieldsAreConsistent()
+    {
+        using var temp = new TempDataRoot();
+        var service = new AgentSkillFileService(temp.Paths);
+        var created = await service.CreateAsync("agent-1", new AgentSkillCreateRequest
+        {
+            SkillId = "stable-skill",
+            Name = "Stable Skill",
+            SkillMarkdown = "# Stable Title\n\nStable body.",
+        });
+
+        var manifestPath = Path.Combine(created.PhysicalPath, "manifest.json");
+        var before = await File.ReadAllTextAsync(manifestPath);
+
+        await service.RebuildIndexAsync("agent-1");
+        await service.RebuildIndexAsync("agent-1");
+
+        // 幂等：派生字段一致时不得回写（否则索引重建会变成无意义的写入源）。
+        Assert.AreEqual(before, await File.ReadAllTextAsync(manifestPath));
+    }
+
     private static async Task<AgentSkillIndex> ReadIndexAsync(string indexPath)
     {
         await using var stream = File.OpenRead(indexPath);

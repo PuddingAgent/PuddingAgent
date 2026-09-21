@@ -368,6 +368,8 @@ public sealed partial class AgentSkillFileService
             if (manifest is null || string.IsNullOrWhiteSpace(manifest.SkillId))
                 continue;
 
+            manifest = await HealDerivedMetadataAsync(manifestPath, dir, manifest, ct);
+
             var relativePath = Path.GetRelativePath(_paths.AgentInstanceRoot(agentInstanceId), dir);
             entries.Add(new AgentSkillIndexEntry
             {
@@ -415,6 +417,39 @@ public sealed partial class AgentSkillFileService
 
     private static Task WriteIndexAsync(string indexPath, AgentSkillIndex index, CancellationToken ct) =>
         AtomicFileWriter.WriteJsonAsync(indexPath, index, JsonOptions, ct);
+
+    /// <summary>
+    /// 自愈派生字段：<c>ContentHash</c> 在定义上就是 <c>(manifest, SKILL.md 内容)</c> 的纯派生值，
+    /// 只要 SKILL.md 绕过本服务被直接改动（Agent 用 file_write 改技能正文是常态，
+    /// 批量修复工具也会直接写盘），manifest 里的 hash 就会与磁盘长期不一致 ——
+    /// 变更检测/发布比对于是开始误判。索引重建是天然的收敛点，
+    /// 且**只在重算结果与现值不同时才回写** ⇒ 正常情况零写入（幂等）。
+    /// <para>
+    /// **不重算 Summary**：它可能是调用方显式给出的（request.Summary），
+    /// 也可能来自派生，而 manifest 没有记录来源 —— 盲目重算会覆盖作者写的摘要
+    /// （这个错误已被既有契约测试当场拓住，见 AgentSkillFileServiceTests）。
+    /// </para>
+    /// 只改派生字段，**不动 UpdatedAt**（技能内容本身并没有被“更新”）。
+    /// </summary>
+    private static async Task<AgentSkillManifest> HealDerivedMetadataAsync(
+        string manifestPath,
+        string skillRoot,
+        AgentSkillManifest manifest,
+        CancellationToken ct)
+    {
+        var markdownPath = GetSkillMarkdownPath(skillRoot);
+        if (!File.Exists(markdownPath))
+            return manifest;
+
+        var markdown = await File.ReadAllTextAsync(markdownPath, ct);
+        var contentHash = ComputeContentHash(manifest, markdown);
+        if (string.Equals(manifest.ContentHash, contentHash, StringComparison.Ordinal))
+            return manifest;
+
+        var healed = manifest with { ContentHash = contentHash };
+        await AtomicFileWriter.WriteJsonAsync(manifestPath, healed, JsonOptions, ct);
+        return healed;
+    }
 
     private string GetSkillsRoot(string agentInstanceId)
     {
