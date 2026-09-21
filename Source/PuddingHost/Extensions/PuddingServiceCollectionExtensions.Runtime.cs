@@ -39,6 +39,8 @@ using PuddingRuntime.Services.Hooks;
 using PuddingRuntime.Services.Messaging;
 using PuddingRuntime.Services.Observability;
 using PuddingRuntime.Services.Skills;
+using PuddingRuntime.Services.Skills.Telemetry;
+
 using PuddingRuntime.Services.SubAgents;
 using PuddingRuntime.Services.Tools;
 using PuddingRuntime.Services.TaskPlanning;
@@ -137,6 +139,13 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<IAgentSkillEvolutionStore, AgentSkillEvolutionStore>();
         builder.Services.AddSingleton<SkillEvolutionDeduplicationService>();
         builder.Services.AddSingleton<SkillEnforcerService>();
+        // RSI-G2：技能使用遥测落点。SkillEnforcerService 的第三个构造参数是
+        // 「带默认值的可选参数」，注册本接口后 DI 即注入；不注册则保持 null（既有测试形状不变）。
+        // 为什么无条件注册：遥测实现 fail-open（任何 IO/序列化故障只 LogWarning），
+        // 且是打分器唯一事实输入 —— 缺它则「有用/从未命中/有负价值」三者不可区分。
+        builder.Services.AddSingleton<ISkillUsageTelemetrySink>(sp => new JsonlSkillUsageTelemetrySink(
+            sp.GetRequiredService<PuddingDataPaths>().SkillUsageTelemetryRoot,
+            sp.GetRequiredService<ILogger<JsonlSkillUsageTelemetrySink>>()));
         builder.Services.AddSingleton<SessionSummaryStore>();
         builder.Services.AddSingleton<SessionRedirectStore>();
         builder.Services.AddSingleton<SessionStateStore>();

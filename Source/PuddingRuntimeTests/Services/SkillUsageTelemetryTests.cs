@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Configuration;
 using PuddingRuntime.Services.Skills;
@@ -239,6 +241,56 @@ public sealed class SkillUsageTelemetryTests
 
         using var doc = JsonDocument.Parse(File.ReadAllText(path, Encoding.UTF8).TrimEnd('\n'));
         Assert.AreEqual("中文关键词", doc.RootElement.GetProperty("matchedKeywords")[0].GetString());
+    }
+
+    /// <summary>
+    /// RSI-G2 切片2：宿主 DI 形状验证（与 PuddingServiceCollectionExtensions.Runtime.cs:139+ 同形）。
+    /// 核心断言：SkillEnforcerService 的第三个构造参数是【带默认值的可选参数】——
+    /// 若 DI 不注入可选参数，本用例必然失败（遥测文件不会出现）。
+    /// 这是「生产端真的会采集」的可机械验证证据；只断言「注册了一行」不算证据。
+    /// </summary>
+    [TestMethod]
+    public async Task HostDiShape_ResolvesEnforcerWithSinkInjected_AndRecordsRealInjection()
+    {
+        using var temp = new TempDataRoot();
+        var services = new ServiceCollection();
+        services.AddSingleton(temp.Paths);
+        services.AddSingleton<ILogger<JsonlSkillUsageTelemetrySink>>(NullLogger<JsonlSkillUsageTelemetrySink>.Instance);
+        services.AddSingleton<ILogger<SkillEnforcerService>>(NullLogger<SkillEnforcerService>.Instance);
+        services.AddSingleton<AgentSkillFileService>();
+        services.AddSingleton<ISkillUsageTelemetrySink>(sp => new JsonlSkillUsageTelemetrySink(
+            sp.GetRequiredService<PuddingDataPaths>().SkillUsageTelemetryRoot,
+            sp.GetRequiredService<ILogger<JsonlSkillUsageTelemetrySink>>()));
+        services.AddSingleton<SkillEnforcerService>();
+
+        using var provider = services.BuildServiceProvider();
+
+        // 经容器解析的技能文件服务写盘：证明路径确实来自 PuddingDataPaths.SkillUsageTelemetryRoot
+        var files = provider.GetRequiredService<AgentSkillFileService>();
+        await files.CreateAsync("agent-1", new AgentSkillCreateRequest
+        {
+            SkillId = "skill-a",
+            Name = "Alpha Helper",
+            Keywords = ["alpha"],
+            SkillMarkdown = "# Test Skill\n\ncontent-body",
+        });
+
+        var enforcer = provider.GetRequiredService<SkillEnforcerService>();
+        var results = await enforcer.EnforceAsync("agent-1", "please use alpha now");
+
+        Assert.IsNotNull(results, "DI 解析出的 enforcer 必须仍能正常返回注入结果");
+        Assert.AreEqual(1, results.Count);
+        Assert.AreEqual("skill-a", results[0].SkillId);
+
+        var telemetryDir = temp.Paths.SkillUsageTelemetryRoot;
+        Assert.IsTrue(Directory.Exists(telemetryDir), $"遥测目录未创建，说明 sink 未被注入：{telemetryDir}");
+        var shards = Directory.GetFiles(telemetryDir, "skill-usage-*.jsonl");
+        Assert.AreEqual(1, shards.Length);
+
+        using var doc = JsonDocument.Parse(File.ReadAllLines(shards[0]).Single());
+        Assert.AreEqual("skill-a", doc.RootElement.GetProperty("skillId").GetString());
+        Assert.AreEqual("agent-1", doc.RootElement.GetProperty("agentInstanceId").GetString());
+        Assert.AreEqual("injected", doc.RootElement.GetProperty("outcome").GetString());
     }
 
     private static JsonlSkillUsageTelemetrySink CreateSink(string directory) =>

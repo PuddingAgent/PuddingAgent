@@ -25,6 +25,15 @@ public sealed record PuddingDataPaths
     public string TempRoot => Path.Combine(DataRoot, "tmp");
     public string PluginsRoot => Path.Combine(DataRoot, "plugins");
 
+    /// <summary>
+    /// 技能使用遥测落点（RSI-G2）。
+    /// 路径：skill-usage/skill-usage-{yyyyMMdd}.jsonl（按 UTC 日期分片，追加写）。
+    /// 为什么独立成顶层目录：它是打分器（IScorer）唯一的事实输入，
+    /// 必须与技能定义目录（agents/{agentInstanceId}/skills）分离 ——
+    /// 放进去会被技能扫描当成技能文件，也会随技能目录一起被清理。
+    /// </summary>
+    public string SkillUsageTelemetryRoot => Path.Combine(DataRoot, "skill-usage");
+
     public static PuddingDataPaths FromRoot(string root)
     {
         if (string.IsNullOrWhiteSpace(root))
