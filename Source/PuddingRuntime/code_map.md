@@ -198,6 +198,27 @@
 >
 > **S6a 已落地（2026-09-21，已入 master；**未部署**）**：健康面（`ClassifierHealthReporter`，服务端权威、进程内计数、§14.9.2 3/5 档映射）+ `classifier_status` 只读探查工具 + `ToolApproval:Classifier:UnavailableBackoffBaseMs`（默认 2000，新增键不改既有默认）；仲裁位未注册时工具输出可见 fail-closed 占位。S6b（前端提示 UI + Platform 只读健康 API）未做。
 
+## 判定算子基础设施（Operators，2026-09-21）
+
+S1a/S1b 已落地（`f577add` / `7cfc198`，**已推送；需重启才生效**）。契约在 `PuddingCore/Operators`（见 PuddingCore code_map），实现全在本目录。
+
+**分层规则**：基础设施内 ≤2 层（`OperatorBase` 横切 + 投影基类），**场景层恰好 1 层**；场景算子唯一可变点为 `ClassifyCoreAsync`，其余 6 项（场景键 / 问句+版本 / 输出形状 / 阈值 / 输入投影 / 结果映射）为 `abstract`，**缺一不编译**——**不得给默认值**，否则基类会变成上帝类、把场景差异压成开关。
+
+**接线**：`Tools/Platform/PuddingToolServiceCollectionExtensions.cs` 追加注册（适配器 + 注册表）；既有注册行**未改动**。
+
+**测试**：`../PuddingRuntimeTests/Operators/` —— 契约 / 基类与横切 / 注册表守卫 / 适配器**等价性**合计 **44/44 ✅**（2026-09-21 父级独立复跑）。
+
+| 文件 | 用途 |
+|------|------|
+| `Operators/OperatorBase.cs` | 横切基类（**全部非虚**）：独立超时与取消、异常兜底（**禁止向调用方冒泡**，转降级结论 + 稳定 `ReasonCode`）、模型调用封装、健康上报、**审计旁挂**、判定缓存指纹。⭐ **不可回退的既有契约**：审计**不得**成为同步必经环节——写入失败**不改变已定裁决**，只记 Warning（「裁决先于留痕」） |
+| `Operators/ProjectionBases.cs` | `ScorerBase` / `JudgeBase` / `ClassifierBase`：各自固定一个投影契约，不引入新抽象成员，**非虚** |
+| `Operators/OperatorEnvironment.cs` | 算子运行环境依赖 + `InMemoryOperatorJudgementCache`（当前仅内存实现） |
+| `Operators/OperatorRegistry.cs` | 场景注册表实现。三条 **fail-closed 注册守卫**：① 同 `sceneKey` 重复注册拒绝；② **同一算子类型实现多于一个原语端口拒绝**（把「不得同时是 `IJudge` 与 `IScorer`」从文档约定变成注册期强制）；③ `sceneKey` 空/空白拒绝 |
+| `Operators/Adapters/ToolApprovalOperatorAdapter.cs` | 工具审批适配器（S1b）：**包装**既有 `IToolCallClassifier` 为 `IClassifier`——**被包装者一行不改、行为逐位不变**（依赖倒置的正确用法是适配器，而不是重构安全关键路径）。`PrimaryLabel` 复用既有**文档化规范键**（`allow_once`/`allow_permanent`/`deny_once`/`deny_permanent`/`unknown`，不另造命名）；`NormalizeLabel` 为**纯函数**，未知枚举值 fail-safe 归 `unknown` **不抛异常**；**`Score`/`ScoreScale`/`Threshold`/`Outcome` 一律留空**（审批裁决无单一分数、其阈值尚未以 `ThresholdPolicy` 暴露；伪造分数会让下游把「无分数」误读成「低分」）；`ConfidenceKind` **恒为 `ModelSelfReported`**；`SourceEventIds`/`SourceSha` 留空（**无来源，不编造**）；`OperatorId` 取被包装者 `ClassifierId`（不自造身份，否则审计溯源与既有记录断开）；上下文类型不匹配 / 被包装者抛异常 / 取消 ⇒ 一律转降级 |
+| `Operators/Adapters/ToolApprovalOperatorContext.cs` | 审批输入的算子上下文包装 + **`InputDigest` 的单一计算入口**（固定字段顺序 SHA-256，仅含稳定字段；若各调用方自行拼装，缓存键与去重会失效） |
+
+> **已知缺口**：审批路径的阈值尚未以 `ThresholdPolicy` 暴露（S2 处理）；适配器不参与 S1a 判定缓存（既有审批链路自带缓存/审计），故 `Cached` 恒为 false。
+
 ## 测试
 
 对应测试项目：`../PuddingRuntimeTests/` — Agent Loop、上下文管线、语音/图片 Provider；SubAgent/输入 resolver/图片生成/图片展示编排定向测试 4/4 ✅；list_llm_providers 工具合同测试（歧义/过滤/敏感字段/路由可解析）7/7 ✅；安全分类器域：契约 7/7 ✅、策展器 22/22 ✅、零网络分类器 10/10 ✅、管线 15/15 ✅、完全访问授予 12/12 ✅（`~Classification` 合计 64/64）；审批链路适配器 `~ClassifierToolApprovalReviewer` 12/12 ✅、Jev 仲裁分类器 `~JevToolCallClassifier` 16/16 ✅（含 1 例 `[TestCategory("Live")]` 真链路探针，无密钥时 Inconclusive 跳过）、激活接线 `~ClassifierActivationWiringTests` 11/11 ✅、分类门户 `~ToolApprovalPortal` 25/25 ✅；翻转守护网 `~ToolApproval` 155/155 ✅、`~JevToolApprovalReviewer` 36/36 ✅、`~Reviewer` 67/67 ✅、`~PuddingToolInfrastructureTests` 148/148 ✅（2026-09-21 S6a 实测，注册清单守护已含 `classifier_status`）；S5b 接线网 `~AgentFirewallFullAccessGrantTests` 10/10 ✅（基线一致性/放行+审计/不记分类器裁定/到期/撤销/双作用域隔离/资源边界不放宽/端到端 IsYoloMode 不变/无授予 403）；S6a 健康面 `~ClassifierHealthReporter` 9/9 ✅ + `~ClassifierStatusTool` 6/6 ✅（默认值/3⇒Degraded/5⇒Unavailable/成功重置/键隔离/退避档/配置覆盖/deferred 不折叠/字段齐全无厂商名/fail-closed 占位/脱敏/Reviewer 取值）

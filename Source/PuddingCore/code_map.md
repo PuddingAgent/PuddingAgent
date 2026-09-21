@@ -188,6 +188,27 @@
 
 目标新增 `Plugins/`、`Hooks/`、`Lifecycle/` 与 `Events/DomainEventContracts.cs`，分别承载 PluginActivation/Scope、Guard/Transform/Around、各 aggregate 状态机，以及 durable event envelope；详见 `Docs/deepseek-harness-pi-plugin-hook-event-architecture-2026-08-14.md`。
 
+## 判定算子与分类契约（Operators/ · Classification/，2026-09-21）
+
+S1a/S1b 已落地（`f577add` / `7cfc198`）。抽象在 PuddingCore，实现全在 PuddingRuntime（与 Classification 域同构），**需重启才生效**。
+
+⚠️ **两条可执行边界**（不是口头约定）：① 契约层不得依赖任何具体供应商；② 契约层不得出现 `Rsi`/`Goal`/`ToolApproval` 等领域标识。二者由 `TestScripts/test-operators-architecture-gates.ps1` 强制，**已并入主门禁，违规即便主门禁非零**。
+
+> 注：本次同步补登了此前一直缺失的 `PuddingCode.Classification` 契约（Note 该命名空间与目录名 `PuddingCore` 不一致，是真实命名而非笔误）。
+
+| 文件 | 用途 |
+|------|------|
+| `Classification/ToolCallClassification.cs` | 既有工具审批分类契约（命名空间 `PuddingCode.Classification`）：`ClassificationOutcome`（`Unknown=0`，**仅允许末尾追加**）、`ClassificationVerdict`（`PerOutcomeConfidence` 用字典而非四个具名字段，注释明确理由「抽象层同时服务于非准入类决策」）、`ToolCallClassificationContext`（承载审批出题单；**契约层不裁剪不校验长度，有界截断由调用方负责**）、`IToolCallClassifier`（**禁止向调用方冒泡异常**，不可用/取消均需按降级契约返回确定结论）、`ClassifierHealth`/`ClassifierStatus`/`IClassifierHealthReporter` |
+| `Operators/OperatorEnums.cs` | `ConfidenceKind`（`ModelSelfReported` vs `Calibrated`：**未校准时禁止下游把它当概率做统计推断**）、`JudgementTier`、`JudgeOutcome`（**三值** `Yes/No/Abstain`；`Abstain` 为一等结果，**禁止折叠为 Yes/No**——折叠成 No 退化为「不敢判就拒绝」，折叠成 Yes 退化为「沉默放行」） |
+| `Operators/OperatorContextContracts.cs` | `IOperatorContext`（`SceneKey` + `InputDigest`）、`OperatorIdentity`（自审批上下文提升的四元组，不改变其既有定义）、`JudgementEvidence` |
+| `Operators/ThresholdPolicy.cs` | **阈值外置**为一等对象（S1a 判据核心）：`Apply` 为确定性三区间——`>= YesAtOrAbove ⇒ Yes`、`<= NoAtOrBelow ⇒ No`（**边界含等**）、中间开区间 ⇒ `Abstain`；`IsValid` 要求**严格大于**以保证 Abstain 带非空；非法配置**构造期即拒**（不静默产生全 Yes/全 No/全 Abstain）、NaN 显式拒绝。外置理由：使「为什么放行」可事后解释，且**自我改进候选无法悄悄移动判据** |
+| `Operators/JudgementEnvelope.cs` | 统一信封（收敛既有多个 verdict record 的公共核）：身份与可复现性（`JudgementId`/`InputDigest`/`OperatorId`/`ModelId`/`InstructionVersion`/`AppliedThreshold`/`SchemaVersion`）+ 结果（`Score`/`Outcome`/`PrimaryLabel`/`LabelDistribution`）+ 置信（**必带 `ConfidenceKind`**）+ 证据与成本 + 溯源 |
+| `Operators/OperatorResultProjections.cs` | 三投影结果 `ScoreResult` / `JudgeResult` / `ClassificationResult`——**同一信封的不同视图，不是三套实现** |
+| `Operators/OperatorPorts.cs` | 三原语端口 `IScorer` / `IJudge` / `IClassifier` + `IClassifierModel`（**供应商隔离的唯一端口**）+ `IThresholdPolicyProvider`。**禁止一个类型实现多于一个原语端口** |
+| `Operators/ModelJudgementContracts.cs` | `JudgementQuestion`/`ModelJudgementRequest`/`ModelAnswer`/`ModelJudgement`（支持**一次往返多问**，含 choice 与全选项概率） |
+| `Operators/OperatorRuntimeSeams.cs` | 运行时接缝：`OperatorInstruction`/`OperatorOutputShape`/`OperatorReasonCodes`/`OperatorDegradation`、健康观察者、**审计旁挂**、判定缓存、`OperatorScope`（含确定性 `BuildJudgementId`） |
+| `Operators/OperatorRegistry.cs` | 场景注册表契约 `IOperatorRegistry`（**键控**解析，取代此前的非键控单例缺口；缺失 ⇒ fail-closed 抛错，不静默放行） |
+
 ## 运行时抽象
 
 - `Runtime/ITurnExecutor.cs`：`TurnExecutionContext` 除 Agent 预算外携带 canonical TaskPlan/TaskNode/ParentNode identity，供 Platform→Runtime 交接。
