@@ -1021,7 +1021,7 @@ decision ∈ { Apply | ApplyShadow | Reject | Defer }
 3 | **L3-a 提案模型最小契约**（`ArtifactRef` / `ImprovementProposal` / `ChangeVerdict`；纯类型 + 守卫测试，**零行为**） | 落点 | ✅ **已完成**（2026-09-21，测试 29/29） | — |
 4 | **G1 组合盘点**（只读；含家族分布 + 索引 token 实测） | 治理 | ✅ **已完成**（2026-09-21，报告 `Docs/Reports/skill-portfolio-G1-2026-09-21.md`；结论见下方 blockquote） | — |
 5 | **G2 使用遥测 + 价值打分**（打分器首个真实消费者，**无 LLM**） | 治理 | ✅ **已完成**（2026-09-22 复核：遥测 `Runtime/Services/Skills/Telemetry/*.cs` 3 文件 + 打分器 `Runtime/Services/Improvement/SkillValue/*.cs` 3 文件，`list_dir` 实测）⚠️ 遥测需一次**重启窗口**才插桩激活 | — |
-6 | **G6 `skill.curate` 报告先行**（**用 L3-a 模型出报告**，零技能变更） | 整理 | 未做 | 非工作时段 |
+6 | **G6 `skill.curate` 报告先行**（**用 L3-a 模型出报告**，零技能变更） | 整理 | ✅ **已完成**（2026-09-22，commit `ffdaa048`；验收记录 `Docs/Features/RSI-G6-验收记录-2026-09-22.md`；窄 filter Runtime **42/0** + Platform exit=0；父代理补修 I1「有牙化」与 BOM） | — |
 7 | **G3 组合预算**（判断器） | 治理 | 未做 | 任意 |
 8 | **G7 提炼契约 + C1–C5 门禁** | 整理 | 未做 | 非工作时段 |
 9 | **G4 家族归类 + 家族内上限** | 治理 | 未做 | 非工作时段 |
