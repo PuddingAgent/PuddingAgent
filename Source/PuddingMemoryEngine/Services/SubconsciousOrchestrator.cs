@@ -33,6 +33,7 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
     private readonly ISkillEvolutionTrajectorySource _skillTrajectorySource;
     private readonly IAgentSkillEvolutionStore _skillStore;
     private readonly SkillEvolutionDeduplicationService _skillDeduplication;
+    private readonly SkillPortfolioAdmissionExecutor _skillPortfolioExecutor;
 
     private SubconsciousSkillEvaluator? _skillEvaluator;
     private SubconsciousSkillEvaluator SkillEvaluator => _skillEvaluator ??= new SubconsciousSkillEvaluator(_memoryLlmClient);
@@ -63,6 +64,7 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         _eventBus = eventBus;
         _skillTrajectorySource = skillTrajectorySource;
         _skillStore = skillStore;
+        _skillPortfolioExecutor = new SkillPortfolioAdmissionExecutor(skillStore);
         _skillDeduplication = skillDeduplication;
     }
 
@@ -1193,10 +1195,14 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
 
                     if (string.Equals(admission.Action, SkillAdmissionActions.Create, StringComparison.Ordinal))
                     {
-                        var skillId = await MaterializeSkillAsync(candidate, evaluation, ct);
-                        if (skillId is not null)
+                        var execution = await _skillPortfolioExecutor.ExecuteAsync(
+                            agentInstanceId,
+                            admission,
+                            () => MaterializeSkillAsync(candidate, evaluation, ct),
+                            ct);
+                        if (execution.SkillId is not null)
                         {
-                            createdSkillIds.Add(skillId);
+                            createdSkillIds.Add(execution.SkillId);
                             promoted++;
                             enabledSkillCount++;
                         }
@@ -1205,35 +1211,35 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                             skipped++;
                         }
                     }
-                    else if (string.Equals(admission.Action, SkillAdmissionActions.Displace, StringComparison.Ordinal)
-                             && !string.IsNullOrWhiteSpace(admission.TargetSkillId))
+                    else if (string.Equals(admission.Action, SkillAdmissionActions.Displace, StringComparison.Ordinal))
                     {
-                        // 置换 = 先禁用“价值最低者”（禁用而非删除 ⇒ 可回滚）再建候选，两步必须一起成立：
-                        // 候选物化失败则回滚置换，绝不留下“净减一个技能”的后果。
-                        var displacedSkillId = admission.TargetSkillId;
-                        await _skillStore.SetEnabledAsync(agentInstanceId, displacedSkillId, false, ct);
-                        var replacementSkillId = await MaterializeSkillAsync(candidate, evaluation, ct);
-                        if (replacementSkillId is not null)
+                        // 置换的副作用（先禁用价值最低者 ⇒ 建不出来就回滚）已收进执行器；本处只管计数与日志。
+                        var execution = await _skillPortfolioExecutor.ExecuteAsync(
+                            agentInstanceId,
+                            admission,
+                            () => MaterializeSkillAsync(candidate, evaluation, ct),
+                            ct);
+                        if (execution.SkillId is not null)
                         {
-                            createdSkillIds.Add(replacementSkillId);
+                            createdSkillIds.Add(execution.SkillId);
                             promoted++;
                             _logger.LogWarning(
                                 "[PatternExtraction] Phase2-Budget: displaced skill={Displaced} replacement={Replacement} enabled={Enabled} policy={Policy} reason={Reason} 回滚方式=SetEnabledAsync(true)",
-                                displacedSkillId,
-                                replacementSkillId,
+                                execution.DisplacedSkillId,
+                                execution.SkillId,
                                 enabledSkillCount,
                                 portfolioJudge.Policy.PolicyId,
                                 admission.Reason);
                         }
                         else
                         {
-                            await _skillStore.SetEnabledAsync(agentInstanceId, displacedSkillId, true, ct);
+                            deferred++;
                             _logger.LogWarning(
-                                "[PatternExtraction] Phase2-Budget: 置换已回滚（候选物化失败）displaced={Displaced} policy={Policy} reason={Reason}",
-                                displacedSkillId,
+                                "[PatternExtraction] Phase2-Budget: 置换已回滚（候选物化失败）displaced={Displaced} rolledBack={RolledBack} policy={Policy} reason={Reason}",
+                                execution.DisplacedSkillId,
+                                execution.DisplacementRolledBack,
                                 portfolioJudge.Policy.PolicyId,
                                 admission.Reason);
-                            deferred++;
                         }
                     }
                     else if (string.Equals(admission.Action, SkillAdmissionActions.Merge, StringComparison.Ordinal)
