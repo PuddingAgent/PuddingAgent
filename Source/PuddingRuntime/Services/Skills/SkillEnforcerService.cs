@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+using System.Text;
+using Microsoft.Extensions.Logging;
+using PuddingRuntime.Services.Skills.Telemetry;
 
 namespace PuddingRuntime.Services.Skills;
 
@@ -14,6 +16,7 @@ public sealed class SkillEnforcerService
 {
     private readonly AgentSkillFileService _skillFileService;
     private readonly ILogger<SkillEnforcerService> _logger;
+    private readonly ISkillUsageTelemetrySink? _telemetrySink;
 
     // 缓存：避免每次请求都读磁盘
     private string? _agentInstanceId;
@@ -21,10 +24,12 @@ public sealed class SkillEnforcerService
 
     public SkillEnforcerService(
         AgentSkillFileService skillFileService,
-        ILogger<SkillEnforcerService> logger)
+        ILogger<SkillEnforcerService> logger,
+        ISkillUsageTelemetrySink? telemetrySink = null)
     {
         _skillFileService = skillFileService;
         _logger = logger;
+        _telemetrySink = telemetrySink;
     }
 
     /// <summary>
@@ -46,6 +51,8 @@ public sealed class SkillEnforcerService
 
         // 2. 匹配关键词（不区分大小写）
         var matchedSkillIds = new HashSet<string>();
+        // RSI-G2 切片1：旁路收集「skill → 命中关键词」，仅供遥测，不参与匹配决策
+        var matchedKeywordsBySkill = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         var messageLower = userMessage.ToLowerInvariant();
 
         foreach (var (keyword, skillId) in map)
@@ -53,6 +60,13 @@ public sealed class SkillEnforcerService
             if (messageLower.Contains(keyword.ToLowerInvariant()))
             {
                 matchedSkillIds.Add(skillId);
+                if (!matchedKeywordsBySkill.TryGetValue(skillId, out var kws))
+                {
+                    kws = [];
+                    matchedKeywordsBySkill[skillId] = kws;
+                }
+
+                kws.Add(keyword);
             }
         }
 
@@ -63,6 +77,7 @@ public sealed class SkillEnforcerService
         var results = new List<SkillEnforcementResult>();
         foreach (var skillId in matchedSkillIds)
         {
+            matchedKeywordsBySkill.TryGetValue(skillId, out var matchedKeywords);
             try
             {
                 var file = await _skillFileService.ReadFileAsync(agentInstanceId, skillId, relativePath: null, ct);
@@ -70,11 +85,31 @@ public sealed class SkillEnforcerService
                 {
                     results.Add(new SkillEnforcementResult(skillId, file.Content));
                     _logger.LogDebug("[SkillEnforcer] Injected skill={SkillId}", skillId);
+                    // 记录点①「注入成功」：每个命中技能恰好一条终态记录，避免同一命中双计数
+                    await RecordUsageSafeAsync(BuildUsageRecord(
+                        agentInstanceId, skillId, matchedKeywords,
+                        injected: true,
+                        contentBytes: Encoding.UTF8.GetByteCount(file.Content),
+                        failureReason: null), ct);
+                }
+                else
+                {
+                    // 记录点②「匹配成功但正文为空」：当前 ReadFileAsync 正常路径不会返回 null，
+                    // 此分支是防御性兜底，同样按读失败留痕，保证命中必有迹可循
+                    await RecordUsageSafeAsync(BuildUsageRecord(
+                        agentInstanceId, skillId, matchedKeywords,
+                        injected: false, contentBytes: 0,
+                        failureReason: "SKILL.md content is null or empty."), ct);
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[SkillEnforcer] Failed to read skill={SkillId}", skillId);
+                // 记录点③「读正文失败」：坏技能信号，FailureReason 供后续打分器归因
+                await RecordUsageSafeAsync(BuildUsageRecord(
+                    agentInstanceId, skillId, matchedKeywords,
+                    injected: false, contentBytes: 0,
+                    failureReason: ex.Message), ct);
             }
         }
 
@@ -150,6 +185,50 @@ public sealed class SkillEnforcerService
         }
 
         return keywords;
+    }
+
+    /// <summary>
+    /// 组装一条终态遥测记录。Outcome 由注入结果显式给出，不用 bool 冒充两态。
+    /// </summary>
+    private static SkillUsageRecord BuildUsageRecord(
+        string agentInstanceId,
+        string skillId,
+        IReadOnlyList<string>? matchedKeywords,
+        bool injected,
+        int contentBytes,
+        string? failureReason)
+    {
+        return new SkillUsageRecord
+        {
+            SkillId = skillId,
+            AgentInstanceId = agentInstanceId,
+            MatchedKeywords = matchedKeywords ?? [],
+            Injected = injected,
+            ContentBytes = contentBytes,
+            FailureReason = failureReason,
+            OccurredAtUtc = DateTimeOffset.UtcNow,
+            Outcome = injected ? SkillUsageOutcome.Injected : SkillUsageOutcome.ReadFailed,
+        };
+    }
+
+    /// <summary>
+    /// 双保险写遥测：契约要求 sink 自身 fail-open，但即便实现违约，
+    /// 这里也再兜一层 —— 遥测绝不影响注入主链路与返回结果。
+    /// </summary>
+    private async Task RecordUsageSafeAsync(SkillUsageRecord record, CancellationToken ct)
+    {
+        if (_telemetrySink is null)
+            return;
+
+        try
+        {
+            await _telemetrySink.RecordAsync(record, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[SkillEnforcer] Skill usage telemetry failed skill={SkillId}", record.SkillId);
+        }
     }
 }
 
