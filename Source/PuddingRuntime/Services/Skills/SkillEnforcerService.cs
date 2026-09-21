@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
+using PuddingCode.Skills.Retrieval;
 using PuddingRuntime.Services.Skills.Telemetry;
 
 namespace PuddingRuntime.Services.Skills;
@@ -140,7 +141,7 @@ public sealed class SkillEnforcerService
             var keywords = CollectKeywords(entry);
             foreach (var kw in keywords)
             {
-                if (!string.IsNullOrWhiteSpace(kw) && !map.ContainsKey(kw))
+                if (SkillKeywordNormalization.IsUsableKeyword(kw) && !map.ContainsKey(kw))
                 {
                     map[kw] = entry.SkillId;
                 }
@@ -156,36 +157,19 @@ public sealed class SkillEnforcerService
     }
 
     /// <summary>
-    /// 从技能元数据中提取关键词：Keywords > Tags > SkillId
+    /// 从技能元数据中提取关键词：Keywords → Tags → SkillId → Name → Name 分词。
+    /// <para>
+    /// 实现已抽到 <see cref="SkillKeywordNormalization"/>：只读盘点报告（G1）里 165（被共享的关键词数）
+    /// 与 1735（被先到先得挤掉的注入机会数）用的就是这个口径，G4 的归属探针/裁决判据必须与它逐字一致
+    /// （任务书 §2.4：⛔ 不得各写一份）。
+    /// </para>
+    /// <para>
+    /// ⛔ 本方法的行为不得改动：它决定实际注入结果（改它 = 改生产行为，需灰度与遥测）。
+    /// 本片只做「把唯一一份逻辑搬到共享类型」，不做任何顺手改进。
+    /// </para>
     /// </summary>
     private static HashSet<string> CollectKeywords(AgentSkillIndexEntry entry)
-    {
-        var keywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        // 1. 显式 Keywords（最高优先级）
-        if (entry.Keywords is { Count: > 0 })
-            foreach (var kw in entry.Keywords) keywords.Add(kw);
-
-        // 2. Tags（次级）
-        if (entry.Tags is { Count: > 0 })
-            foreach (var tag in entry.Tags) keywords.Add(tag);
-
-        // 3. SkillId + Name 作为兜底关键词
-        keywords.Add(entry.SkillId);
-        if (!string.IsNullOrWhiteSpace(entry.Name))
-        {
-            keywords.Add(entry.Name);
-            // 也加入单个词（如 "开发工作流" → "开发", "工作流"）
-            foreach (var word in entry.Name.Split(' ', '|', ',', '/', '：', '、'))
-            {
-                var trimmed = word.Trim();
-                if (trimmed.Length > 1)
-                    keywords.Add(trimmed);
-            }
-        }
-
-        return keywords;
-    }
+        => SkillKeywordNormalization.Collect(entry.Keywords, entry.Tags, entry.SkillId, entry.Name);
 
     /// <summary>
     /// 组装一条终态遥测记录。Outcome 由注入结果显式给出，不用 bool 冒充两态。
