@@ -44,3 +44,33 @@ public sealed record RsiTrajectory
     /// <summary>含 Unknown / Failed 步时为 true（供上层显式判断，不得静默丢弃失败步）。</summary>
     public required bool HasOutcomeAnomaly { get; init; }
 }
+
+/// <summary>RSI 轨迹装配的事件行输入形状（规格 §2.4：按 (TurnId, Type) 索引查询返回的原始事件投影）。</summary>
+public sealed record RsiEventRow
+{
+    /// <summary>事件类型（tool.call.completed / tool.call.failed / tool.call.requested 等）。</summary>
+    public required string Type { get; init; }
+
+    /// <summary>稳定排序键（不得依赖 DB 返回顺序）。</summary>
+    public required long Sequence { get; init; }
+
+    /// <summary>payload JSON（原样透传给结局推导器解析）。</summary>
+    public string? Payload { get; init; }
+
+    /// <summary>事件发生时间（UTC）。</summary>
+    public required DateTimeOffset OccurredAtUtc { get; init; }
+}
+
+/// <summary>单个回合的事件切片输入形状（规格 §2.5 推荐路径：按 turn 取事件）。</summary>
+public sealed record RsiTurnSlice
+{
+    public required string WorkspaceId { get; init; }
+
+    public required string AgentInstanceId { get; init; }
+
+    public required string SessionId { get; init; }
+
+    public required string TurnId { get; init; }
+
+    public required IReadOnlyList<RsiEventRow> Events { get; init; }
+}
