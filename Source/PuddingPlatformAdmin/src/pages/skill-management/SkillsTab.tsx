@@ -1,5 +1,5 @@
 import { Button, Card, Col, Drawer, Input, List, message, Modal, Radio, Row, Select, Space, Spin, Table, Tag, Tree, Typography } from 'antd';
-import { AppstoreOutlined, EyeOutlined, TableOutlined, ApartmentOutlined, NodeIndexOutlined, ReloadOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, EyeOutlined, ForkOutlined, PlusOutlined, TableOutlined, ApartmentOutlined, NodeIndexOutlined, ReloadOutlined } from '@ant-design/icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ColumnsType } from 'antd/es/table';
 import type {
@@ -27,6 +27,7 @@ import {
   HubEmpty,
   renderSkillStatusTag,
 } from './skillHubShared';
+import { PublishHubSkillModal, PublishHubSkillVersionModal } from './SkillWriteModals';
 
 const { Text, Paragraph } = Typography;
 
@@ -65,6 +66,14 @@ const SkillsTab: React.FC = () => {
   const [lineageLoading, setLineageLoading] = useState(false);
   const [lineage, setLineage] = useState<EvoMapDto | null>(null);
   const [lineageTitle, setLineageTitle] = useState('');
+
+  // 写路径入口（2026-09-21）：发布新技能 / 为指定技能发布新版本
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [versionTarget, setVersionTarget] = useState<{
+    skillId: string;
+    name: string;
+    latestVersion: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -270,6 +279,14 @@ const SkillsTab: React.FC = () => {
       <Button size="small" icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
         刷新
       </Button>
+      <Button
+        size="small"
+        type="primary"
+        icon={<PlusOutlined />}
+        onClick={() => setPublishOpen(true)}
+      >
+        发布技能
+      </Button>
     </Space>
   );
 
@@ -393,6 +410,24 @@ const SkillsTab: React.FC = () => {
         open={detailOpen}
         width={560}
         onClose={() => setDetailOpen(false)}
+        extra={
+          detail ? (
+            <Button
+              size="small"
+              type="primary"
+              icon={<ForkOutlined />}
+              onClick={() =>
+                setVersionTarget({
+                  skillId: detail.skill.skillId,
+                  name: detail.skill.name,
+                  latestVersion: detail.skill.latestVersion,
+                })
+              }
+            >
+              发布新版本
+            </Button>
+          ) : null
+        }
       >
         {detailLoading ? (
           <Spin />
@@ -575,6 +610,21 @@ const SkillsTab: React.FC = () => {
           <HubEmpty description="暂无血缘：该技能为根技能或尚无版本进化记录" />
         )}
       </Drawer>
+
+      {/* 写路径：发布新技能 / 发布新版本（不新增依赖，仅 antd 组件） */}
+      <PublishHubSkillModal
+        open={publishOpen}
+        onClose={() => setPublishOpen(false)}
+        onPublished={() => void load()}
+      />
+      <PublishHubSkillVersionModal
+        open={versionTarget !== null}
+        skillId={versionTarget?.skillId ?? ''}
+        skillName={versionTarget?.name ?? ''}
+        latestVersion={versionTarget?.latestVersion ?? ''}
+        onClose={() => setVersionTarget(null)}
+        onPublished={() => void load()}
+      />
     </div>
   );
 };

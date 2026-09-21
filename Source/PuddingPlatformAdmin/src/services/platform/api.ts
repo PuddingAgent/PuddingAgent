@@ -4683,3 +4683,108 @@ export async function listHubEvents(params?: ListHubEventsParams): Promise<HubSk
     params,
   });
 }
+
+// ── 写路径（2026-09-21 追加）────────────────────────────────────
+// 契约来源：SkillHubController.cs 实际路由（类级 [Route("api/skill-hub")]）
+//   POST /api/skill-hub/skills                      → PublishHubSkillRequest
+//   POST /api/skill-hub/skills/{skillId}/versions   → PublishHubSkillRequest（服务端以路由 skillId 为准）
+//   POST /api/skill-hub/installs                    → RegisterInstallRequest
+//   GET  /api/skill-hub/updates?agentInstanceId=    → ListUpdatesAsync(agentInstanceId)
+// 既有 hubRequest 的 method 联合类型只覆盖 'GET' | 'PATCH' | 'DELETE'（冻结签名，不做改动），
+// 因此这里追加 hubWriteRequest：POST 端点复用同一套「路径 + HTTP 状态码 + 形状断言」错误文案，
+// 保证写失败时也能直接读出是哪个端点在报错。
+
+/** 发布新技能请求体（对齐 C# PuddingCode.Skills.PublishHubSkillRequest）。 */
+export interface PublishHubSkillRequest {
+  skillId: string;
+  name: string;
+  summary?: string | null;
+  description?: string | null;
+  tags?: string[] | null;
+  keywords?: string[] | null;
+  version: string;
+  skillMarkdown: string;
+  manifestJson?: string | null;
+  evolutionAction?: string | null;
+  parentVersion?: string | null;
+  relatedSkillIds?: string[] | null;
+  publishedByAgentId?: string | null;
+  publishedByWorkspaceId?: string | null;
+  publishNote?: string | null;
+  evidenceJson?: string | null;
+  visibility?: string;
+}
+
+/**
+ * 发布新版本请求体：后端复用 PublishHubSkillRequest（SkillId 取路由，Name 不参与校验），
+ * 前端只声明该端点实际读取的字段，避免调用方被迫填写服务端忽略的 name。
+ */
+export interface PublishHubSkillVersionRequest {
+  version: string;
+  skillMarkdown: string;
+  evolutionAction?: string | null;
+  parentVersion?: string | null;
+  relatedSkillIds?: string[] | null;
+  publishedByAgentId?: string | null;
+  publishedByWorkspaceId?: string | null;
+  publishNote?: string | null;
+  evidenceJson?: string | null;
+}
+
+/** 登记安装请求体（对齐 C# PuddingCode.Skills.RegisterInstallRequest；按 skillId + agentInstanceId upsert）。 */
+export interface RegisterHubInstallRequest {
+  skillId: string;
+  agentInstanceId: string;
+  workspaceId?: string | null;
+  installedVersion: string;
+  contentHash?: string | null;
+  installedBy?: string | null;
+}
+
+/** 写端点统一入口：文案风格与 hubRequest 完全一致，额外允许 POST。 */
+async function hubWriteRequest<T>(path: string, label: string, data: unknown): Promise<T> {
+  let payload: unknown;
+  try {
+    payload = await request(path, { method: 'POST', data });
+  } catch (err) {
+    throw new Error(`${label}（${path}）：请求失败 —— ${describeHttpError(err)}。${SHAPE_HINT}`);
+  }
+
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error(
+      `${label}（${path}）：服务端返回的不是对象，实际为 ${describeShape(payload)}。${SHAPE_HINT}`,
+    );
+  }
+  return payload as T;
+}
+
+/** POST /api/skill-hub/skills — 发布新技能（SkillId 已存在 → 409）。 */
+export async function publishHubSkill(req: PublishHubSkillRequest): Promise<HubSkillSummaryDto> {
+  return hubWriteRequest<HubSkillSummaryDto>('/api/skill-hub/skills', '发布技能', req);
+}
+
+/** POST /api/skill-hub/skills/{skillId}/versions — 发布新版本 / 进化（版本号已存在 → 409）。 */
+export async function publishHubSkillVersion(
+  skillId: string,
+  req: PublishHubSkillVersionRequest,
+): Promise<HubSkillVersionDto> {
+  return hubWriteRequest<HubSkillVersionDto>(
+    `/api/skill-hub/skills/${encodeURIComponent(skillId)}/versions`,
+    '发布技能新版本',
+    req,
+  );
+}
+
+/** POST /api/skill-hub/installs — 登记安装台账。 */
+export async function registerHubInstall(
+  req: RegisterHubInstallRequest,
+): Promise<HubSkillInstallDto> {
+  return hubWriteRequest<HubSkillInstallDto>('/api/skill-hub/installs', '登记安装', req);
+}
+
+/** GET /api/skill-hub/updates?agentInstanceId= — 指定 Agent 实例的待更新清单（本地版本落后于最新版本）。 */
+export async function listHubUpdates(agentInstanceId: string): Promise<HubSkillUpdateDto[]> {
+  return hubRequest<HubSkillUpdateDto[]>('/api/skill-hub/updates', '加载待更新清单', 'array', {
+    params: { agentInstanceId },
+  });
+}

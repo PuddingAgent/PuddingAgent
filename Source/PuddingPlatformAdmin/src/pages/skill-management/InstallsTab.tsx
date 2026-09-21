@@ -1,11 +1,12 @@
 import { Button, Input, message, Space, Tag, Typography } from 'antd';
-import { ThunderboltOutlined } from '@ant-design/icons';
+import { PlusOutlined, SearchOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import React, { useCallback, useRef, useState } from 'react';
 import { ProTable } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import type { HubSkillInstallDto, HubSkillSummaryDto } from '@/services/platform/api';
 import { listHubInstalls, listHubSkills } from '@/services/platform/api';
 import { compareVersions, errText, formatDateTime, HubEmpty } from './skillHubShared';
+import { CheckHubUpdatesModal, RegisterHubInstallModal } from './SkillWriteModals';
 
 const { Text } = Typography;
 
@@ -17,6 +18,10 @@ const InstallsTab: React.FC = () => {
   const tableRef = useRef<ActionType | undefined>(undefined);
   const latestVersionRef = useRef<Map<string, string>>(new Map());
   const [agentFilter, setAgentFilter] = useState('');
+
+  // 写路径入口（2026-09-21）：登记安装 / 检查更新
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [updatesOpen, setUpdatesOpen] = useState(false);
 
   const handleUpdateAllHint = useCallback((): void => {
     message.info(
@@ -121,6 +126,17 @@ const InstallsTab: React.FC = () => {
           </Space>
         }
         toolBarRender={() => [
+          <Button
+            key="register"
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setRegisterOpen(true)}
+          >
+            登记安装
+          </Button>,
+          <Button key="checkUpdates" icon={<SearchOutlined />} onClick={() => setUpdatesOpen(true)}>
+            检查更新
+          </Button>,
           <Button key="updateAll" icon={<ThunderboltOutlined />} onClick={handleUpdateAllHint}>
             全部更新（提示）
           </Button>,
@@ -129,6 +145,14 @@ const InstallsTab: React.FC = () => {
           </Button>,
         ]}
       />
+
+      {/* 写路径：登记安装台账 / 检查待更新清单（不新增依赖，仅 antd 组件） */}
+      <RegisterHubInstallModal
+        open={registerOpen}
+        onClose={() => setRegisterOpen(false)}
+        onRegistered={() => tableRef.current?.reload()}
+      />
+      <CheckHubUpdatesModal open={updatesOpen} onClose={() => setUpdatesOpen(false)} />
     </div>
   );
 };

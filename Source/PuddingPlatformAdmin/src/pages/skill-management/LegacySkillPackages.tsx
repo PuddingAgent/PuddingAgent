@@ -12,6 +12,7 @@ import {
   Card,
   Col,
   Drawer,
+  Empty,
   Form,
   Popconfirm,
   Radio,
@@ -46,6 +47,23 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
+
+/**
+ * 列表兜底（2026-09-21 空态修复）：
+ * 非数组响应（端点未命中被静态回退成 HTML、或服务端异常）直接返回空数组，
+ * 避免后续 .map() 抛 `x.map is not a function` 把整个 Tab 弄成白屏。
+ */
+function asPackageArray(value: unknown): SkillPackageDto[] {
+  return Array.isArray(value) ? (value as SkillPackageDto[]) : [];
+}
+
+const legacyEmptyText = (
+  <Empty
+    image={Empty.PRESENTED_IMAGE_SIMPLE}
+    description="暂无 SKILL 包（旧链路）：上传 .zip / .tar.gz 后在此管理"
+    style={{ padding: '32px 0' }}
+  />
+);
 
 const LegacySkillPackages: React.FC = () => {
   const { token } = theme.useToken();
@@ -243,8 +261,14 @@ const LegacySkillPackages: React.FC = () => {
           rowKey="id"
           columns={[]}
           request={async () => {
-            const data = await listSkillPackages();
-            return { data, success: true };
+            try {
+              return { data: asPackageArray(await listSkillPackages()), success: true };
+            } catch (err) {
+              message.error(
+                `加载 SKILL 包列表失败（GET /api/skill-packages）：${err instanceof Error ? err.message : String(err)}`,
+              );
+              return { data: [], success: false };
+            }
           }}
           search={false}
           toolBarRender={() => [
@@ -265,7 +289,10 @@ const LegacySkillPackages: React.FC = () => {
             </Button>,
           ]}
           tableRender={(_, tableProps) => {
-            const items = (tableProps?.dataSource ?? []) as SkillPackageDto[];
+            const items = asPackageArray(tableProps?.dataSource);
+            if (items.length === 0) {
+              return <div style={{ padding: '32px 0', textAlign: 'center' }}>{legacyEmptyText}</div>;
+            }
             return (
               <Row gutter={[16, 16]} style={{ padding: '0 0 16px' }}>
                 {items.map((item) => (
@@ -328,10 +355,17 @@ const LegacySkillPackages: React.FC = () => {
           rowKey="id"
           columns={columns}
           request={async () => {
-            const data = await listSkillPackages();
-            return { data, success: true };
+            try {
+              return { data: asPackageArray(await listSkillPackages()), success: true };
+            } catch (err) {
+              message.error(
+                `加载 SKILL 包列表失败（GET /api/skill-packages）：${err instanceof Error ? err.message : String(err)}`,
+              );
+              return { data: [], success: false };
+            }
           }}
           search={false}
+          locale={{ emptyText: legacyEmptyText }}
           toolBarRender={() => [
             <Radio.Group
               key="viewToggle"
