@@ -144,6 +144,21 @@ public static class PuddingToolServiceCollectionExtensions
             sp.GetRequiredService<IOptions<ToolApprovalClassifierOptions>>().Value.UnavailableBackoffBaseMs,
             sp.GetService<TimeProvider>()));
         services.TryAddSingleton<IClassifierHealthReporter>(sp => sp.GetRequiredService<ClassifierHealthReporter>());
+        // S2b（旁挂按场景键泛化）：把 S1a 的两个旁挂接缝（IOperatorHealthObserver / IOperatorAuditSink）接到
+        // **既有**旁挂实现上——此前这两个端口在生产中**没有任何实现**（抽象已定义但无人实现 ⇒ 永远不会被调用）。
+        // 纯追加注册：不改动任何既有注册行；具体类型也一并注册，便于诊断面与测试直接解析。
+        services.TryAddSingleton<PuddingRuntime.Operators.Adapters.OperatorHealthObserverAdapter>(sp =>
+            new PuddingRuntime.Operators.Adapters.OperatorHealthObserverAdapter(
+                sp.GetRequiredService<ClassifierHealthReporter>(),
+                sp.GetService<ILogger<PuddingRuntime.Operators.Adapters.OperatorHealthObserverAdapter>>()));
+        services.TryAddSingleton<PuddingCode.Operators.IOperatorHealthObserver>(sp =>
+            sp.GetRequiredService<PuddingRuntime.Operators.Adapters.OperatorHealthObserverAdapter>());
+        services.TryAddSingleton<PuddingRuntime.Operators.Adapters.OperatorAuditSinkAdapter>(sp =>
+            new PuddingRuntime.Operators.Adapters.OperatorAuditSinkAdapter(
+                sp.GetService<IToolApprovalAuditStore>(),
+                sp.GetService<ILogger<PuddingRuntime.Operators.Adapters.OperatorAuditSinkAdapter>>()));
+        services.TryAddSingleton<PuddingCode.Operators.IOperatorAuditSink>(sp =>
+            sp.GetRequiredService<PuddingRuntime.Operators.Adapters.OperatorAuditSinkAdapter>());
         // S6a：仲裁位注册状态（组装管线时写入，供 classifier_status 展示 fail-closed 占位）。
         services.TryAddSingleton<ClassifierArbiterRegistrationState>();
         // S6a：管线可调参数注册为单一事实源（组装管线与 classifier_status 输出阈值共用同一实例）。

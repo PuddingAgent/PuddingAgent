@@ -184,6 +184,9 @@
 | `Tools/Approval/ToolApprovalPortalService.cs` | 分类门户（S4）：`classify`（调管线分类 + 策展落规则）、`rules_list`/`rules_update`（人工规则=候选权威 `Source=Human`，绝不冒充分类器终局）；分类器缺失 ⇒ deferred（`classifier.not_configured`）；命中缓存复用 + `ClassifierInvoked`/`ClassifierUnavailable` 审计；离线测试 `PuddingRuntimeTests/Tools/ToolApprovalPortalTests.cs` |
 | `Tools/Approval/ClassifierStatusTool.cs` | 只读探查工具（S6a，§8.2/§14.10 D5）：`classifier_status` 输出各分类器 `ClassifierId`+健康、最近失败原因码、per-key 连续 deferred 计数与退避档、仲裁位注册状态（未注册 ⇒ fail-closed 占位可见）、生效阈值（永久类门槛 0.90 / 仲裁超时 3000ms / 退避基数与 3/5 档位）与当前 `Reviewer` 取值；**只读：不授予权限、不落规则、不触发分类器网络调用**（探查健康 ≠ 触发判断）；输出脱敏（参数仅 64 位 hex 哈希，无任何密钥字段）；`ToolSafetyFlags.ReadOnly\|ConcurrencySafe`，`TryAddEnumerable` 注册 |
 | `Tools/Approval/ToolApprovalClassifierOptions.cs` | 分类器降级配置（S6a，§14.9）：节 `ToolApproval:Classifier`；`UnavailableBackoffBaseMs`（默认 2000）驱动健康面退避档；`OnClassifierUnavailable` 仅承载配置形状（默认 `deferred`，判定路径不变）；只新增键，不改任何既有默认 |
+| `Classification/OperatorSceneKeys.cs` | 场景键的**稳定取值与归一**（S2b 新增）：默认场景键 `operator.default`（具名常量，**永不为空串**——空键会让不同来源重新混进同一桶，正是本切片要消灭的计数污染）+ 纯函数 `Normalize`（`null`/空/空白 ⇒ 默认键；其余原样返回，不裁剪不改写调用方身份）。与 S2a 的 `AcceptanceThresholdPolicyIds` 同一「常量只定义一处」风格 |
+
+> **S2b（2026-09-21，未提交）**：健康计数按**场景键**分区（`Classification/ClassifierHealthReporter.cs`：`DeferredKey` 加 `SceneKey`，`DeferredKeyCounterSnapshot` / `DeferredReport` 追加 `SceneKey`；`SnapshotDeferredCounters()` 每键计数现在按场景隔离）；新增**场景内**只读视图 `HealthForScene(classifierId, sceneKey)`（跨场景聚合语义仍由 `Snapshot()` 承担，**未动**）。**`classifier_status` 工具未改**：它的输出是逐字段显式映射，故既有 JSON 形状不变——代价是它目前不展示 `sceneKey`（已登记为后续缺口）。
 
 > **接线与生效状态（2026-09-21 翻转后）**：DI 已注册 `IToolCallClassifier` 单例——`SystemRuleClassifier`（规则快路径）+ 仲裁位（Jev 端口已注册 ⇒ `JevToolCallClassifier`，未注册 ⇒ fail-closed 占位返回 Unknown）+ 审计存储 ⇒ `ToolCallClassifierPipeline`（注册点 `Tools/Platform/PuddingToolServiceCollectionExtensions.cs`，`TryAddSingleton` 可覆盖）。
 >
@@ -216,12 +219,25 @@ S1a/S1b 已落地（`f577add` / `7cfc198`，**已推送；需重启才生效**�
 | `Operators/OperatorRegistry.cs` | 场景注册表实现。三条 **fail-closed 注册守卫**：① 同 `sceneKey` 重复注册拒绝；② **同一算子类型实现多于一个原语端口拒绝**（把「不得同时是 `IJudge` 与 `IScorer`」从文档约定变成注册期强制）；③ `sceneKey` 空/空白拒绝 |
 | `Operators/Adapters/ToolApprovalOperatorAdapter.cs` | 工具审批适配器（S1b）：**包装**既有 `IToolCallClassifier` 为 `IClassifier`——**被包装者一行不改、行为逐位不变**（依赖倒置的正确用法是适配器，而不是重构安全关键路径）。`PrimaryLabel` 复用既有**文档化规范键**（`allow_once`/`allow_permanent`/`deny_once`/`deny_permanent`/`unknown`，不另造命名）；`NormalizeLabel` 为**纯函数**，未知枚举值 fail-safe 归 `unknown` **不抛异常**；**`Score`/`ScoreScale`/`Threshold`/`Outcome` 一律留空**（审批裁决无单一分数、其阈值尚未以 `ThresholdPolicy` 暴露；伪造分数会让下游把「无分数」误读成「低分」）；`ConfidenceKind` **恒为 `ModelSelfReported`**；`SourceEventIds`/`SourceSha` 留空（**无来源，不编造**）；`OperatorId` 取被包装者 `ClassifierId`（不自造身份，否则审计溯源与既有记录断开）；上下文类型不匹配 / 被包装者抛异常 / 取消 ⇒ 一律转降级 |
 | `Operators/Adapters/ToolApprovalOperatorContext.cs` | 审批输入的算子上下文包装 + **`InputDigest` 的单一计算入口**（固定字段顺序 SHA-256，仅含稳定字段；若各调用方自行拼装，缓存键与去重会失效） |
+| `Operators/Adapters/OperatorHealthObserverAdapter.cs` | 健康旁挂的**生产实现**（S2b）：把 S1a 接缝 `IOperatorHealthObserver` 接到**既有**健康面 `ClassifierHealthReporter`，按 `(SceneKey, OperatorId)` 分区；成功 ⇒ `RecordSuccess`（既有语义：分类器维度重置）、失败 ⇒ `RecordDeferred`（工具位用具名常量 `operator` 占位、参数位 `null`——算子采样**无**工具/参数维度，不伪造）。**吞掉自身异常但绝不静默**：记 Warning + 暴露 `SwallowedFailureCount` / `LastSwallowedFailure`。**两层兜底的分工**：权威兜底在 `OperatorBase`（包住任意实现，是契约被违反时的唯一防线），本适配器是纵深防御第二层且是**唯一记日志层**（自己吞掉后基类看不到 ⇒ 不会两层各记一条） |
+| `Operators/Adapters/OperatorAuditSinkAdapter.cs` | 审计旁挂的**生产实现**（S2b）：把 S1a 接缝 `IOperatorAuditSink` 接到既有审计存储（`IToolApprovalAuditStore`）；**「裁决先于留痕」不回退**——写入失败只记 Warning、不上抛、不改裁决；`EventId` 取判定的确定性 id（重复写入不产生语义不同的两条记录）、`ClassifierId` 承载算子标识、场景键以 `key=value` 前缀落在 `Reason`（既有事件无场景字段）；同步端口 ↔ 异步存储用线程池 + 同步等待桥接（必须等待才能观测失败；必须离开调用方上下文以免带同步上下文的宿主自锁）；存储未接线 ⇒ 丢弃但**只记一次 Warning** + 可探查 |
+
+> **S2b 已落地（2026-09-21，未提交）**：S1a 的两个旁挂接缝（`IOperatorHealthObserver` / `IOperatorAuditSink`）此前在生产中**没有任何实现**（定义了端口但没人实现 ⇒ 永远是死代码），现已由上面两个适配器接上（DI 追加注册，不改任何既有注册行）；同时健康计数键加入**场景维度**：由 `(ClassifierId, ToolId, ArgumentsHash)` 变为 `(ClassifierId, SceneKey, ToolId, ArgumentsHash)`，缺失场景键归一到具名常量 `OperatorSceneKeys.Default`（不是空串键）——见 `Classification/ClassifierHealthReporter.cs` 与 `Classification/OperatorSceneKeys.cs`。`Snapshot()` / `ClassifierStatus` 的既有字段、条目基数与语义（跨场景聚合）**一律未动**。
 
 > **已知缺口**：审批路径的阈值尚未以 `ThresholdPolicy` 暴露（S2 处理）；适配器不参与 S1a 判定缓存（既有审批链路自带缓存/审计），故 `Cached` 恒为 false。
 
+## 阈值判据（Thresholds，2026-09-21）
+
+S2a 已落地（`578c3c0`，**已推送；需重启才生效**）：把三处硬编码判据收敛为**可版本化的判据对象**，未配置时逐位等于既有常量。
+
+| 文件 | 用途 |
+|------|------|
+| `Thresholds/AcceptanceThresholdPolicyCatalog.cs` | 三个逐标签验收门槛的**稳定 id + 版本 + 默认值**的唯一定义处（`AcceptanceThresholdPolicyIds` / `AcceptanceThresholdPolicies`）：永久类结论逐分类可信度（既有默认 0.90）、规则沉淀置信度（0.95）、白名单提案校准概率（0.90）；`BuiltInVersion = 1`（判据被移动过必须递增，否则历史结果无法自证用的是哪一版）。id 放**运行时层**而非契约层：其中一项天然携带供应商段，而 `PuddingCore/Operators` 受架构门禁约束、不得出现供应商名词 |
+| `Thresholds/DefaultAcceptanceThresholdPolicyProvider.cs` | 默认判据解析端口（`IAcceptanceThresholdPolicyProvider`，S2a）：从配置 / 既有 options 取值；**未配置 ⇒ 返回内置默认（等于既有常量）** ⇒ 「不配置 = 行为逐位不变」是可验证事实；未知 id 抛 `KeyNotFound`（不静默返回默认，避免把「写错 id」静默当成「用默认值」） |
+
 ## 测试
 
-对应测试项目：`../PuddingRuntimeTests/` — Agent Loop、上下文管线、语音/图片 Provider；SubAgent/输入 resolver/图片生成/图片展示编排定向测试 4/4 ✅；list_llm_providers 工具合同测试（歧义/过滤/敏感字段/路由可解析）7/7 ✅；安全分类器域：契约 7/7 ✅、策展器 22/22 ✅、零网络分类器 10/10 ✅、管线 15/15 ✅、完全访问授予 12/12 ✅（`~Classification` 合计 64/64）；审批链路适配器 `~ClassifierToolApprovalReviewer` 12/12 ✅、Jev 仲裁分类器 `~JevToolCallClassifier` 16/16 ✅（含 1 例 `[TestCategory("Live")]` 真链路探针，无密钥时 Inconclusive 跳过）、激活接线 `~ClassifierActivationWiringTests` 11/11 ✅、分类门户 `~ToolApprovalPortal` 25/25 ✅；翻转守护网 `~ToolApproval` 155/155 ✅、`~JevToolApprovalReviewer` 36/36 ✅、`~Reviewer` 67/67 ✅、`~PuddingToolInfrastructureTests` 148/148 ✅（2026-09-21 S6a 实测，注册清单守护已含 `classifier_status`）；S5b 接线网 `~AgentFirewallFullAccessGrantTests` 10/10 ✅（基线一致性/放行+审计/不记分类器裁定/到期/撤销/双作用域隔离/资源边界不放宽/端到端 IsYoloMode 不变/无授予 403）；S6a 健康面 `~ClassifierHealthReporter` 9/9 ✅ + `~ClassifierStatusTool` 6/6 ✅（默认值/3⇒Degraded/5⇒Unavailable/成功重置/键隔离/退避档/配置覆盖/deferred 不折叠/字段齐全无厂商名/fail-closed 占位/脱敏/Reviewer 取值）
+对应测试项目：`../PuddingRuntimeTests/` — Agent Loop、上下文管线、语音/图片 Provider；SubAgent/输入 resolver/图片生成/图片展示编排定向测试 4/4 ✅；list_llm_providers 工具合同测试（歧义/过滤/敏感字段/路由可解析）7/7 ✅；安全分类器域：契约 7/7 ✅、策展器 22/22 ✅、零网络分类器 10/10 ✅、管线 15/15 ✅、完全访问授予 12/12 ✅（`~Classification` 合计 64/64）；审批链路适配器 `~ClassifierToolApprovalReviewer` 12/12 ✅、Jev 仲裁分类器 `~JevToolCallClassifier` 16/16 ✅（含 1 例 `[TestCategory("Live")]` 真链路探针，无密钥时 Inconclusive 跳过）、激活接线 `~ClassifierActivationWiringTests` 11/11 ✅、分类门户 `~ToolApprovalPortal` 25/25 ✅；翻转守护网 `~ToolApproval` 155/155 ✅、`~JevToolApprovalReviewer` 36/36 ✅、`~Reviewer` 67/67 ✅、`~PuddingToolInfrastructureTests` 148/148 ✅（2026-09-21 S6a 实测，注册清单守护已含 `classifier_status`）；S5b 接线网 `~AgentFirewallFullAccessGrantTests` 10/10 ✅（基线一致性/放行+审计/不记分类器裁定/到期/撤销/双作用域隔离/资源边界不放宽/端到端 IsYoloMode 不变/无授予 403）；S6a 健康面 `~ClassifierHealthReporter` 9/9 ✅ + `~ClassifierStatusTool` 6/6 ✅（默认值/3⇒Degraded/5⇒Unavailable/成功重置/键隔离/退避档/配置覆盖/deferred 不折叠/字段齐全无厂商名/fail-closed 占位/脱敏/Reviewer 取值）；**S2b 旁挂泛化（2026-09-21 实测）**：`~ClassifierHealthReporterSceneKey` 3/3 ✅（场景隔离 / 单场景回归 / 场景键归一）+ `~OperatorSidecarAdapter` 7/7 ✅（审计写失败裁决不变+Warning / 正常留痕映射 / 抛异常观测器不影响裁决 / 健康适配器场景分区映射 / 适配器内部失败吞掉可探查 / 未接线可见 / DI 端口解析）；全量实测 Runtime **1741/1741**（0 失败）、Platform **1363/1363**（0 失败）
 
 ## 上下文压缩生命周期事件的活性契约（2026-09-19）
 

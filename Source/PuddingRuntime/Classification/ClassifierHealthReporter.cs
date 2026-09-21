@@ -29,6 +29,12 @@ public sealed record DeferredKeyCounterSnapshot
 
     /// <summary>最近一次 deferred 时间（UTC）。</summary>
     public DateTimeOffset? LastDeferredAtUtc { get; init; }
+
+    /// <summary>
+    /// 该计数所属场景键（S2b 追加）。
+    /// <para>取值<b>永不为空串</b>：缺失/空白一律归一到 <see cref="OperatorSceneKeys.Default"/>。</para>
+    /// </summary>
+    public required string SceneKey { get; init; }
 }
 
 /// <summary>一次 <see cref="ClassifierHealthReporter.RecordDeferred"/> 上报后的读数（便于调用方与测试断言）。</summary>
@@ -42,6 +48,15 @@ public sealed record DeferredReport
 
     /// <summary>上报后该分类器的健康状态。</summary>
     public required ClassifierHealth Health { get; init; }
+
+    /// <summary>
+    /// 本次上报归属的场景键（S2b 追加；已归一，<b>永不为空串</b>）。
+    /// <para>
+    /// 注意：<see cref="Health"/> 仍是<b>分类器维度</b>（跨场景聚合，与 <see cref="ClassifierHealthReporter.Snapshot"/> 同源）；
+    /// 场景内视图请用 <see cref="ClassifierHealthReporter.HealthForScene"/>。
+    /// </para>
+    /// </summary>
+    public required string SceneKey { get; init; }
 }
 
 /// <summary>
@@ -62,6 +77,11 @@ public sealed record DeferredReport
 /// <para>
 /// 本类不发起任何网络调用；<see cref="Snapshot"/> 实现的是 PuddingCore 健康面只读端口
 /// <see cref="IClassifierHealthReporter"/>，扩展读数（per-key 计数与退避档）由本类自有方法提供。
+/// </para>
+/// <para>
+/// <b>S2b（2026-09-21）：计数按场景键分区。</b>per-key 计数键加入场景维度（见 <c>DeferredKey</c>），
+/// 场景内视图见 <see cref="HealthForScene"/>；<see cref="Snapshot"/> 与 <c>ClassifierStatus</c> 的既有字段、
+/// 条目基数与语义（跨场景聚合）<b>一律未动</b>——单场景下读数与改动前逐位相同。
 /// </para>
 /// </summary>
 public sealed class ClassifierHealthReporter : IClassifierHealthReporter
@@ -87,7 +107,16 @@ public sealed class ClassifierHealthReporter : IClassifierHealthReporter
     private readonly int _unavailableBackoffBaseMs;
     private readonly TimeProvider _timeProvider;
 
-    private sealed record DeferredKey(string ClassifierId, string ToolId, string ArgumentsHash);
+    /// <summary>
+    /// per-key 计数的键。<b>S2b：追加场景键维度</b>（原先只有 <c>(ClassifierId, ToolId, ArgumentsHash)</c>）。
+    /// <para>
+    /// <b>为什么现在加</b>：多场景共存后，两个场景共用同一分类器与同一 <c>(tool_id, args_hash)</c> 时，
+    /// 原先的键会把不同场景的失败次数<b>混进同一个桶</b>——这是真实正确性缺陷：一个场景的累积失败会把
+    /// 另一个场景推到 Degraded/Unavailable。而<b>现在只有一个场景，是加入场景维度成本最低的时刻</b>
+    /// （单场景下行为必然可保持不变，可逐位回归）；等有 5 个场景再加，就是同时改 5 处。
+    /// </para>
+    /// </summary>
+    private sealed record DeferredKey(string ClassifierId, string SceneKey, string ToolId, string ArgumentsHash);
 
     private sealed class ClassifierEntry
     {
@@ -137,16 +166,29 @@ public sealed class ClassifierHealthReporter : IClassifierHealthReporter
     /// <summary>
     /// 分类器侧上报：一次 deferred（未产生有效裁决）。返回上报后的计数与退避档。
     /// 只记录健康数据，<b>不改变</b>调用方已定的 deferred 决策与原因码（ADR-091 §4.4 不折叠）。
+    /// <para>
+    /// S2b：键增加<b>场景维度</b>，场景键由 <paramref name="sceneKey"/> 传入，经
+    /// <see cref="OperatorSceneKeys.Normalize"/> 归一（<c>null</c>/空/空白 ⇒ 具名默认键，<b>不落空串键</b>）。
+    /// 该参数作为<b>最后一个可选参数</b>追加：既有调用点少传一个实参时，编译与行为都不变（单场景行为逐位不变）。
+    /// </para>
     /// </summary>
+    /// <param name="classifierId">分类器稳定标识。</param>
+    /// <param name="toolId">工具 id（键的粒度分量之一）。</param>
+    /// <param name="argumentsJson">入参 JSON（仅参与哈希，不落原文）。</param>
+    /// <param name="reasonCode">稳定原因码。</param>
+    /// <param name="latencyMs">耗时（毫秒）。</param>
+    /// <param name="sceneKey">场景键；<c>null</c>/空/空白归一为 <see cref="OperatorSceneKeys.Default"/>。</param>
     public DeferredReport RecordDeferred(
         string classifierId,
         string toolId,
         string? argumentsJson,
         string? reasonCode,
-        double? latencyMs = null)
+        double? latencyMs = null,
+        string? sceneKey = null)
     {
         var now = _timeProvider.GetUtcNow();
         var argumentsHash = ToolAuthorizationDefaults.ComputeArgumentsHash(argumentsJson);
+        var scene = OperatorSceneKeys.Normalize(sceneKey);
 
         lock (_gate)
         {
@@ -155,7 +197,7 @@ public sealed class ClassifierHealthReporter : IClassifierHealthReporter
             entry.LastLatencyMs = latencyMs;
             entry.LastReasonCode = string.IsNullOrWhiteSpace(reasonCode) ? null : reasonCode;
 
-            var key = new DeferredKey(classifierId, toolId, argumentsHash);
+            var key = new DeferredKey(classifierId, scene, toolId, argumentsHash);
             if (!_counters.TryGetValue(key, out var counter))
             {
                 counter = new DeferredCounterState();
@@ -170,7 +212,11 @@ public sealed class ClassifierHealthReporter : IClassifierHealthReporter
             {
                 ConsecutiveDeferred = counter.Count,
                 RetryAfterMs = ComputeRetryAfterMs(_unavailableBackoffBaseMs, counter.Count),
+                // 健康档仍取「该分类器名下全部键」的最大计数（跨场景聚合，与 Snapshot() 同源；
+                // 场景内视图见 HealthForScene）。此处不改为按场景取最大——那会让既有单场景语义与
+                // Snapshot() 的读数分岔。
                 Health = ComputeHealth(MaxConsecutiveDeferredLocked(classifierId), entry.EverSucceeded),
+                SceneKey = scene,
             };
         }
     }
@@ -231,6 +277,7 @@ public sealed class ClassifierHealthReporter : IClassifierHealthReporter
         {
             return _counters
                 .OrderBy(pair => pair.Key.ClassifierId, StringComparer.Ordinal)
+                .ThenBy(pair => pair.Key.SceneKey, StringComparer.Ordinal)
                 .ThenBy(pair => pair.Key.ToolId, StringComparer.Ordinal)
                 .ThenBy(pair => pair.Key.ArgumentsHash, StringComparer.Ordinal)
                 .Select(pair => new DeferredKeyCounterSnapshot
@@ -242,8 +289,39 @@ public sealed class ClassifierHealthReporter : IClassifierHealthReporter
                     RetryAfterMs = ComputeRetryAfterMs(_unavailableBackoffBaseMs, pair.Value.Count),
                     LastReasonCode = pair.Value.LastReasonCode,
                     LastDeferredAtUtc = pair.Value.LastDeferredAtUtc,
+                    SceneKey = pair.Key.SceneKey,
                 })
                 .ToArray();
+        }
+    }
+
+    /// <summary>
+    /// 指定 <c>(分类器, 场景)</c> 的健康档：<b>只</b>统计该场景内的键（S2b 追加的<b>场景内</b>视图）。
+    /// <para>
+    /// 与 <see cref="Snapshot"/> 的关系：<see cref="Snapshot"/> 仍是<b>跨场景聚合</b>（既有字段、条目基数、
+    /// 语义一律不动）；本方法只<b>追加</b>一个读法，用于回答「某个场景是否已被<b>本场景</b>的累积失败推到
+    /// Degraded/Unavailable」——即多场景共存时，一个场景的连续 deferred <b>不得</b>让另一个场景看起来降级。
+    /// </para>
+    /// <para>
+    /// <c>EverSucceeded</c> 仍按分类器维度读取（成功重置本身就是分类器维度，见 <see cref="RecordSuccess"/>），
+    /// 只有<b>计数</b>按场景隔离。
+    /// </para>
+    /// </summary>
+    /// <param name="classifierId">分类器稳定标识；缺失/空白 ⇒ <see cref="ClassifierHealth.Unknown"/>。</param>
+    /// <param name="sceneKey">场景键；<c>null</c>/空/空白归一为 <see cref="OperatorSceneKeys.Default"/>。</param>
+    public ClassifierHealth HealthForScene(string classifierId, string? sceneKey)
+    {
+        if (string.IsNullOrWhiteSpace(classifierId))
+        {
+            return ClassifierHealth.Unknown;
+        }
+
+        var scene = OperatorSceneKeys.Normalize(sceneKey);
+
+        lock (_gate)
+        {
+            var everSucceeded = _classifiers.TryGetValue(classifierId, out var entry) && entry.EverSucceeded;
+            return ComputeHealth(MaxConsecutiveDeferredForSceneLocked(classifierId, scene), everSucceeded);
         }
     }
 
@@ -279,6 +357,23 @@ public sealed class ClassifierHealthReporter : IClassifierHealthReporter
         foreach (var pair in _counters)
         {
             if (string.Equals(pair.Key.ClassifierId, classifierId, StringComparison.Ordinal)
+                && pair.Value.Count > max)
+            {
+                max = pair.Value.Count;
+            }
+        }
+
+        return max;
+    }
+
+    /// <summary>场景内的最大连续 deferred 计数（S2b：只统计该 <c>(分类器, 场景)</c> 的键）。</summary>
+    private int MaxConsecutiveDeferredForSceneLocked(string classifierId, string sceneKey)
+    {
+        var max = 0;
+        foreach (var pair in _counters)
+        {
+            if (string.Equals(pair.Key.ClassifierId, classifierId, StringComparison.Ordinal)
+                && string.Equals(pair.Key.SceneKey, sceneKey, StringComparison.Ordinal)
                 && pair.Value.Count > max)
             {
                 max = pair.Value.Count;

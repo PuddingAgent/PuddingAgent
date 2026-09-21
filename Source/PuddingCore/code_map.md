@@ -209,6 +209,8 @@ S1a/S1b 已落地（`f577add` / `7cfc198`）。抽象在 PuddingCore，实现全
 | `Operators/OperatorRuntimeSeams.cs` | 运行时接缝：`OperatorInstruction`/`OperatorOutputShape`/`OperatorReasonCodes`/`OperatorDegradation`、健康观察者、**审计旁挂**、判定缓存、`OperatorScope`（含确定性 `BuildJudgementId`） |
 | `Operators/OperatorRegistry.cs` | 场景注册表契约 `IOperatorRegistry`（**键控**解析，取代此前的非键控单例缺口；缺失 ⇒ fail-closed 抛错，不静默放行） |
 
+> **S2b 已接线（2026-09-21，实现落在 PuddingRuntime）**：本文件的两个旁挂端口 `IOperatorHealthObserver` / `IOperatorAuditSink` 此前**没有任何生产实现**（惰性抽象），现由 `PuddingRuntime/Operators/Adapters/` 下的两个适配器接上——健康 ⇒ 既有 `ClassifierHealthReporter`（计数键含**场景维度**），审计 ⇒ 既有审计存储（严守「**裁决先于留痕**」）。**本契约层未改动一行**（append-only 纪律：只允许追加，不得改既有字段），因此上述两行的字段清单保持有效。
+
 ## 运行时抽象
 
 - `Runtime/ITurnExecutor.cs`：`TurnExecutionContext` 除 Agent 预算外携带 canonical TaskPlan/TaskNode/ParentNode identity，供 Platform→Runtime 交接。
