@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -73,10 +73,17 @@ public static class PuddingWebApplicationExtensions
         {
             var fileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(outputWwwRoot);
             app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
-            app.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                FileProvider = fileProvider,
+                OnPrepareResponse = ctx => SetNoStoreForSpaShell(ctx.Context, ctx.File.Name),
+            });
         }
         app.UseDefaultFiles();
-        app.UseStaticFiles();
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            OnPrepareResponse = ctx => SetNoStoreForSpaShell(ctx.Context, ctx.File.Name),
+        });
 
         // ── API 路由（必须在 Fallback 前）────────────────────
         app.MapControllers();
@@ -246,7 +253,21 @@ public static class PuddingWebApplicationExtensions
         {
             app.MapFallback(
                 "/admin/{*path:nonfile}",
-                () => Results.File(adminIndexPath, "text/html; charset=utf-8"));
+                (HttpContext context) =>
+                {
+                    // /admin/api/* 与 /api/* 同源风险：未命中的「API 形状」请求绝不能回退成
+                    // 200 text/html，否则客户端会把 HTML 当业务数据解析（2026-09-21 SKILL Hub 事故同因）。
+                    if (LooksLikeApiRequest(context.Request.Path))
+                    {
+                        return (IResult)Results.Problem(
+                            statusCode: StatusCodes.Status404NotFound,
+                            title: "API endpoint not found",
+                            detail: $"No endpoint matches {context.Request.Method} {context.Request.Path}.");
+                    }
+
+                    SetNoStore(context);
+                    return (IResult)Results.File(adminIndexPath, "text/html; charset=utf-8");
+                });
         }
 
         // ── Chat SPA fallback ──────
@@ -254,14 +275,14 @@ public static class PuddingWebApplicationExtensions
         // 若把未命中的 API 请求回退成 index.html，客户端将拿到 200 + text/html，
         // 从而把 HTML 当成业务数据解析（2026-09-21 SKILL Hub 白屏事故的直接放大器：
         // /api/skill-hub/skills 返回 index.html，前端 items.map 抛 TypeError）。
-        // 因此 /api/* 未命中必须显式 404（JSON），不得进入 SPA 回退。
+        // 因此「API 形状」路径（/api/* 与 /admin/api/*）未命中必须显式 404（JSON），不得进入 SPA 回退。
+        // 同时 SPA 外壳响应一律 no-store，避免浏览器缓存旧 HTML 与内容寻址新 chunk 形成混合部署。
         var chatIndexPath = Path.Combine(outputWwwRoot, "index.html");
         if (File.Exists(chatIndexPath))
         {
             app.MapFallback((HttpContext context) =>
             {
-                if (context.Request.Path.StartsWithSegments(
-                        "/api", StringComparison.OrdinalIgnoreCase))
+                if (LooksLikeApiRequest(context.Request.Path))
                 {
                     return (IResult)Results.Problem(
                         statusCode: StatusCodes.Status404NotFound,
@@ -269,11 +290,53 @@ public static class PuddingWebApplicationExtensions
                         detail: $"No endpoint matches {context.Request.Method} {context.Request.Path}.");
                 }
 
+                SetNoStore(context);
                 return (IResult)Results.File(chatIndexPath, "text/html; charset=utf-8");
             });
         }
 
         return app;
+    }
+
+    /// <summary>
+    /// 「API 形状」路径判定：首段或次段为 api（覆盖 /api/... 与 /admin/api/...）。
+    /// 用于阻止 SPA 回退把未命中的 API 请求伪装成 200 text/html ——
+    /// 那会让客户端把 HTML 当业务数据解析（2026-09-21 SKILL Hub 事故的直接放大器）。
+    /// </summary>
+    private static bool LooksLikeApiRequest(PathString path)
+    {
+        var segments = path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments is null || segments.Length == 0)
+        {
+            return false;
+        }
+
+        if (string.Equals(segments[0], "api", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return segments.Length > 1
+            && string.Equals(segments[1], "api", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// SPA 外壳（HTML）禁止缓存：外壳被浏览器缓存会与内容寻址的新 chunk 形成混合部署，
+    /// 表现为白屏或旧界面（2026-09-21 事故类）。内容寻址的 js/css 不受影响。
+    /// </summary>
+    private static void SetNoStoreForSpaShell(HttpContext context, string fileName)
+    {
+        if (fileName.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+        {
+            SetNoStore(context);
+        }
+    }
+
+    private static void SetNoStore(HttpContext context)
+    {
+        context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+        context.Response.Headers.Pragma = "no-cache";
+        context.Response.Headers.Expires = "0";
     }
 
 }
