@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
+using PuddingCode.Skills.Portfolio;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Entities;
 using System.Diagnostics;
@@ -1165,6 +1166,10 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         if (candidatesFound == 0)
             return new PatternExtractionReport { DurationMs = sw.ElapsedMilliseconds, Summary = "No candidates found", Timestamp = DateTime.UtcNow };
 
+        // G3 组合预算接线：闸门策略由实测启用数推导，过渡期余量把软目标/硬上限都放在现状之上
+        // ⇒ 本阶段行为与接线前一致（零回归）；收紧余量＝人工裁决动作。
+        var (portfolioJudge, enabledSkillCount) = await CreateSkillPortfolioBudgetAsync(agentInstanceId, ct);
+
         _logger.LogInformation("[PatternExtraction] Phase2-Filter: evaluating {Count} candidates", candidatesFound);
         foreach (var candidate in candidates)
         {
@@ -1177,6 +1182,15 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                         candidate,
                         memoryLlmConfig,
                         ct);
+
+                    // G3 组合预算：预算层看不到 LLM 输出，且只能收紧既有结论（no-upgrade）⇒
+                    // “预算被 LLM 越过”在结构上不可能发生。
+                    admission = portfolioJudge.Apply(new SkillPortfolioInput
+                    {
+                        EnabledCount = enabledSkillCount,
+                        DedupResult = admission,
+                    });
+
                     if (string.Equals(admission.Action, SkillAdmissionActions.Create, StringComparison.Ordinal))
                     {
                         var skillId = await MaterializeSkillAsync(candidate, evaluation, ct);
@@ -1184,10 +1198,42 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                         {
                             createdSkillIds.Add(skillId);
                             promoted++;
+                            enabledSkillCount++;
                         }
                         else
                         {
                             skipped++;
+                        }
+                    }
+                    else if (string.Equals(admission.Action, SkillAdmissionActions.Displace, StringComparison.Ordinal)
+                             && !string.IsNullOrWhiteSpace(admission.TargetSkillId))
+                    {
+                        // 置换 = 先禁用“价值最低者”（禁用而非删除 ⇒ 可回滚）再建候选，两步必须一起成立：
+                        // 候选物化失败则回滚置换，绝不留下“净减一个技能”的后果。
+                        var displacedSkillId = admission.TargetSkillId;
+                        await _skillStore.SetEnabledAsync(agentInstanceId, displacedSkillId, false, ct);
+                        var replacementSkillId = await MaterializeSkillAsync(candidate, evaluation, ct);
+                        if (replacementSkillId is not null)
+                        {
+                            createdSkillIds.Add(replacementSkillId);
+                            promoted++;
+                            _logger.LogWarning(
+                                "[PatternExtraction] Phase2-Budget: displaced skill={Displaced} replacement={Replacement} enabled={Enabled} policy={Policy} reason={Reason} 回滚方式=SetEnabledAsync(true)",
+                                displacedSkillId,
+                                replacementSkillId,
+                                enabledSkillCount,
+                                portfolioJudge.Policy.PolicyId,
+                                admission.Reason);
+                        }
+                        else
+                        {
+                            await _skillStore.SetEnabledAsync(agentInstanceId, displacedSkillId, true, ct);
+                            _logger.LogWarning(
+                                "[PatternExtraction] Phase2-Budget: 置换已回滚（候选物化失败）displaced={Displaced} policy={Policy} reason={Reason}",
+                                displacedSkillId,
+                                portfolioJudge.Policy.PolicyId,
+                                admission.Reason);
+                            deferred++;
                         }
                     }
                     else if (string.Equals(admission.Action, SkillAdmissionActions.Merge, StringComparison.Ordinal)
@@ -1359,6 +1405,36 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
             };
         }
         catch { return new CandidateEvaluation { Decision = "skip", Reason = "Parse error" }; }
+    }
+
+    /// <summary>
+    /// 组合预算的过渡余量：软目标设在“当前实测启用数 + 本值”之上，硬上限再往上一个本值。
+    /// <para>
+    /// 收窄本值即收紧闸门 —— 那是<b>需人工裁决</b>的动作，必须同时具备两件事：
+    /// ① G2 技能价值遥测已激活（否则判定器只拿到 <c>Unavailable</c> 分数，会一路 Defer）；
+    /// ② 有实测分数分布支撑阀值取值。默认值刻意宽松 ⇒ 本阶段行为与接线前一致。
+    /// </para>
+    /// </summary>
+    private const int SkillPortfolioHeadroom = 20;
+
+    /// <summary>
+    /// 用<b>实测启用数</b>构造本次运行的预算判定器（策略由现状推导，不把“现状”写死成常量）。
+    /// </summary>
+    private async Task<(SkillPortfolioAdmissionJudge Judge, int EnabledCount)> CreateSkillPortfolioBudgetAsync(
+        string agentInstanceId,
+        CancellationToken ct)
+    {
+        var enabledCount = (await _skillStore.ListAutoGeneratedAsync(agentInstanceId, ct))
+            .Count(skill => skill.Enabled);
+        var policy = SkillPortfolioPolicy.ZeroRegressionDefault(enabledCount, SkillPortfolioHeadroom);
+        _logger.LogInformation(
+            "[PatternExtraction] Phase2-Budget: enabled={Enabled} softTarget={SoftTarget} hardCap={HardCap} policy={Policy}@{Version}",
+            enabledCount,
+            policy.SoftTarget,
+            policy.HardCap,
+            policy.PolicyId,
+            policy.Version);
+        return (new SkillPortfolioAdmissionJudge(policy), enabledCount);
     }
 
     private async Task<string?> MaterializeSkillAsync(
