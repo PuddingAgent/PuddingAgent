@@ -312,6 +312,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ITokenUsageEventRepository, TokenUsageEventRepository>();
         builder.Services.AddSingleton<IChatMessageBackfillSource, BackfillChatMessageSource>();
         builder.Services.AddSingleton<ISkillEvolutionDataAccess, SkillEvolutionDataAccess>();
+        builder.Services.AddSingleton<IRsiTrajectoryDataAccess, RsiTrajectoryDataAccess>();
 
         // ── User/Team/Workspace member repositories ──
         builder.Services.AddScoped<IAppUserRepository, AppUserRepository>();
