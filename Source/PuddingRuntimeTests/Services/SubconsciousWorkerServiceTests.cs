@@ -7,6 +7,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingCode.Skills.Curation;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Services;
 using PuddingRuntime.Services;
@@ -311,6 +312,264 @@ public sealed class SubconsciousWorkerServiceTests
         Assert.AreEqual("1", queue.RecordedResult.Metadata["retire_suggestion_count"]);
         Assert.AreEqual("v1", queue.RecordedResult.Metadata["report_version"]);
         Assert.AreEqual(0, probe.WriteCallCount);
+    }
+
+    // ───────────── G7 交付物 8：接线级 I7（零写盘）/ I8（零回归）探针 ─────────────
+    // 与门禁用例的分工：门禁用例（PuddingMemoryEngineTests）证明**判据本身**可红；
+    // 这里证明**接线**：产物进来后被裁决、裁决被记录，且整轮真的一次技能写盘都没有。
+
+    [TestMethod]
+    public async Task SkillCurate_WithPolicyAndEmptyProducer_ShouldKeepCurationCountersAtZero()
+    {
+        var probe = new CurationProbeSkillStore();
+        var source = new FakeSkillDistillationSource([]);
+
+        var queue = await RunSkillCurateJobAsync(probe, source, CurationPolicy());
+
+        Assert.AreEqual(1, source.CallCount, "接线必须真的向产物来源取数，否则'空生产者'证明不了任何东西");
+        Assert.IsNotNull(queue.RecordedResult);
+        Assert.AreEqual(SubconsciousJobResultKinds.SkillCuration, queue.RecordedResult!.Kind);
+        Assert.AreEqual(SubconsciousJobResultStatuses.Completed, queue.RecordedResult.Status);
+        Assert.AreEqual(0, queue.RecordedResult.OperationCount, "I7：本片零写盘，作业结果不得报告任何技能操作");
+        Assert.AreEqual("0", queue.RecordedResult.Metadata["curated_products"]);
+        Assert.AreEqual("0", queue.RecordedResult.Metadata["curated_shadow"]);
+        Assert.AreEqual("0", queue.RecordedResult.Metadata["curated_rejected"]);
+
+        // I8 零回归：既有字段逐字段不变（store 形状与 G6 用例同构 ⇒ 报告应逐字段相同）。
+        Assert.AreEqual("3", queue.RecordedResult.Metadata["n_before"]);
+        Assert.AreEqual("3", queue.RecordedResult.Metadata["n_after"]);
+        Assert.AreEqual("3", queue.RecordedResult.Metadata["candidate_count"]);
+        Assert.AreEqual("1", queue.RecordedResult.Metadata["retire_suggestion_count"]);
+        Assert.AreEqual("v1", queue.RecordedResult.Metadata["report_version"]);
+
+        var reason = queue.RecordedResult.Metadata["not_reduced_reason"];
+        Assert.IsTrue(!string.IsNullOrWhiteSpace(reason));
+        Assert.IsFalse(
+            reason.Contains("until G7 gates land", StringComparison.Ordinal),
+            "G6 的过期文案必须已被替换：门禁已就位，未落点是因为写盘职权在 L3-b");
+        StringAssert.Contains(reason, "L3-b");
+        Assert.AreEqual(0, probe.WriteCallCount, "I7：空生产者路径同样不得有任何技能写调用");
+    }
+
+    [TestMethod]
+    public async Task SkillCurate_WithViolatingProduct_ShouldRecordRejectionAndNeverWrite()
+    {
+        var probe = new CurationProbeSkillStore();
+        // 产物关键词与**第三方启用技能**（skill-c）相撞 ⇒ C3 必须拒绝。
+        var source = new FakeSkillDistillationSource([CurationProduct(keywords: ["登录流程"])]);
+
+        var queue = await RunSkillCurateJobAsync(probe, source, CurationPolicy());
+
+        Assert.IsNotNull(queue.RecordedResult);
+        Assert.AreEqual("1", queue.RecordedResult!.Metadata["curated_products"]);
+        Assert.AreEqual("0", queue.RecordedResult.Metadata["curated_shadow"]);
+        Assert.AreEqual(
+            "1",
+            queue.RecordedResult.Metadata["curated_rejected"],
+            "违规产物必须被记为拒绝，而不是被静默放过（fail-closed）");
+        Assert.AreEqual(0, queue.RecordedResult.OperationCount);
+        Assert.AreEqual("3", queue.RecordedResult.Metadata["n_before"]);
+        Assert.AreEqual("3", queue.RecordedResult.Metadata["n_after"], "拒绝路径同样一次技能写盘都不能有");
+        Assert.AreEqual(0, probe.WriteCallCount);
+    }
+
+    [TestMethod]
+    public async Task SkillCurate_WithCleanProduct_ShouldRecordShadowAndNeverWrite()
+    {
+        var probe = new CurationProbeSkillStore();
+        var source = new FakeSkillDistillationSource([CurationProduct(keywords: ["会话治理"])]);
+
+        var queue = await RunSkillCurateJobAsync(probe, source, CurationPolicy());
+
+        Assert.IsNotNull(queue.RecordedResult);
+        Assert.AreEqual("1", queue.RecordedResult!.Metadata["curated_products"]);
+        Assert.AreEqual(
+            "1",
+            queue.RecordedResult.Metadata["curated_shadow"],
+            "干净产物 ⇒ 唯一允许的落点是 shadow（本片无写盘职权）");
+        Assert.AreEqual("0", queue.RecordedResult.Metadata["curated_rejected"]);
+        Assert.AreEqual(0, queue.RecordedResult.OperationCount);
+        Assert.AreEqual("3", queue.RecordedResult.Metadata["n_before"]);
+        Assert.AreEqual("3", queue.RecordedResult.Metadata["n_after"]);
+        Assert.AreEqual(0, probe.WriteCallCount);
+    }
+
+    /// <summary>
+    /// 跑一次真实的 skill.curate 作业（走 Worker → 编排器 → 门禁），返回录到结果的队列。
+    /// </summary>
+    private static async Task<RecordingSubconsciousJobQueue> RunSkillCurateJobAsync(
+        IAgentSkillEvolutionStore store,
+        ISkillDistillationSource source,
+        SkillCurationPolicy policy)
+    {
+        await using var memory = await CreateMemoryScopeAsync();
+        var llmClient = new StaticMemoryLlmClient("unused: curation must not call the llm");
+        var orchestrator = new SubconsciousOrchestrator(
+            memory.Library,
+            new ThrowingMemoryEngine(),
+            llmClient,
+            new ThrowingMemoryLibrarian(),
+            NullLogger<SubconsciousOrchestrator>.Instance,
+            new ThrowingMemoryDbContextFactory(),
+            new ThrowingSkillTrajectorySource(),
+            store,
+            new SkillEvolutionDeduplicationService(
+                store,
+                llmClient,
+                NullLogger<SkillEvolutionDeduplicationService>.Instance),
+            skillDistillationSource: source,
+            skillCurationPolicy: policy);
+
+        var queue = new RecordingSubconsciousJobQueue
+        {
+            JobType = SubconsciousJobTypes.SkillCurate,
+            Job = new ConsolidationJob
+            {
+                SessionId = "debug:evolution:skill.curate:request-1",
+                WorkspaceId = "workspace-evolution",
+                AgentId = "agent-evolution",
+                AgentTemplateId = "agent-evolution",
+            },
+        };
+        var worker = new SubconsciousWorkerService(
+            Channel.CreateUnbounded<ConsolidationJob>(),
+            orchestrator,
+            NullLogger<SubconsciousWorkerService>.Instance,
+            jobQueue: queue);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await worker.StartAsync(cts.Token);
+        await queue.JobCompleted.Task.WaitAsync(cts.Token);
+        await worker.StopAsync(CancellationToken.None);
+        return queue;
+    }
+
+    /// <summary>门禁策略（阈值必须显式：产品内不得有默认策略工厂）。</summary>
+    private static SkillCurationPolicy CurationPolicy() => SkillCurationPolicy.Create(
+        policyId: "skill-curation/probe",
+        version: 1,
+        minRetainedValueRatio: 0.5,
+        applicabilityHeadings: ["何时适用"],
+        pitfallHeadings: ["陷阱与反例"],
+        minMarkdownLength: 60);
+
+    private static DistilledSkillProduct CurationProduct(
+        string[]? keywords = null,
+        string[]? turns = null,
+        string[]? sessions = null)
+        => new()
+        {
+            Name = "把同族经验收敛为可迁移程序",
+            Description = "G7 接线探针产物",
+            Markdown = CurationCleanMarkdown(),
+            Keywords = keywords ?? ["会话治理"],
+            EvidenceTags = CurationTags(turns ?? ["turn-1"], sessions ?? ["session-1"]),
+            ReplacedSkillIds = ["skill-a"],
+        };
+
+    /// <summary>正文**不得**出现 provenance 里的 turn/session id（P3）；标题命中靠去掉 # 后的前缀匹配。</summary>
+    private static string CurationCleanMarkdown()
+        => "# 何时适用\n\n"
+            + "当需要把多条同族经验收敛为一条可迁移程序时使用；单条具体操作不要使用本技能。\n\n"
+            + "## 陷阱与反例\n\n"
+            + "把会话标识或工具名写进正文会让产物退化成笔记，因此一律只放审计 tags。";
+
+    private static List<string> CurationTags(string[] turns, string[] sessions)
+    {
+        var tags = new List<string> { "auto-generated" };
+        foreach (var turn in turns)
+        {
+            tags.Add("source-turn:" + turn);
+        }
+
+        foreach (var session in sessions)
+        {
+            tags.Add("source-session:" + session);
+        }
+
+        return tags;
+    }
+
+    /// <summary>可注入产物的来源替身（默认实现是空生产者，这里用于模拟"有真实提炼器"）。</summary>
+    private sealed class FakeSkillDistillationSource : ISkillDistillationSource
+    {
+        private readonly IReadOnlyList<DistilledSkillProduct> _products;
+
+        public FakeSkillDistillationSource(IReadOnlyList<DistilledSkillProduct> products)
+            => _products = products;
+
+        public int CallCount { get; private set; }
+
+        public Task<IReadOnlyList<DistilledSkillProduct>> GetProductsAsync(
+            string workspaceId,
+            string agentInstanceId,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(_products);
+        }
+    }
+
+    /// <summary>
+    /// 带 tags / keywords 的技能仓探针：三个写方法一律**计数并抛异常** —— 这样"零写盘"是被
+    /// 证明的（写盘尝试 = 异常 + 计数非零），而不是靠读代码看着没有。
+    /// </summary>
+    private sealed class CurationProbeSkillStore : IAgentSkillEvolutionStore
+    {
+        private int _writeCallCount;
+        public int WriteCallCount => _writeCallCount;
+
+        private static AgentSkillEvolutionDocument Skill(
+            string id,
+            string name,
+            string version,
+            IReadOnlyList<string>? tags = null,
+            IReadOnlyList<string>? keywords = null) => new()
+            {
+                SkillId = id,
+                Name = name,
+                Version = version,
+                Enabled = true,
+                Tags = tags ?? [],
+                Keywords = keywords ?? [],
+                Markdown = $"---\nname: {name}\nversion: {version}\n---\nbody",
+            };
+
+        public Task<IReadOnlyList<AgentSkillEvolutionDocument>> ListAutoGeneratedAsync(
+            string agentInstanceId, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<AgentSkillEvolutionDocument>>(
+            [
+                // 同名冗余（保留 retire 建议语义）：skill-a / skill-b
+                Skill("skill-a", "Same Name", "1.0.0", tags: ["source-turn:turn-1", "source-session:session-1"]),
+                Skill("skill-b", "Same Name", "1.0.1"),
+                // 第三方启用技能：其关键词是 C3 的判定域（产物不得与之相交）
+                Skill("skill-c", "Other Name", "1.0.0", keywords: ["登录流程"]),
+            ]);
+
+        public Task<AgentSkillEvolutionDocument?> GetAsync(
+            string agentInstanceId, string skillId, CancellationToken ct = default)
+            => Task.FromResult<AgentSkillEvolutionDocument?>(null);
+
+        public Task<AgentSkillEvolutionDocument> CreateAsync(
+            string agentInstanceId, AgentSkillEvolutionWriteRequest request, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref _writeCallCount);
+            throw new InvalidOperationException("G7 curation must not write skills (CreateAsync).");
+        }
+
+        public Task<AgentSkillEvolutionDocument> UpdateAsync(
+            string agentInstanceId, string skillId, AgentSkillEvolutionWriteRequest request, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref _writeCallCount);
+            throw new InvalidOperationException("G7 curation must not write skills (UpdateAsync).");
+        }
+
+        public Task<AgentSkillEvolutionDocument> SetEnabledAsync(
+            string agentInstanceId, string skillId, bool enabled, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref _writeCallCount);
+            throw new InvalidOperationException("G7 curation must not write skills (SetEnabledAsync).");
+        }
     }
 
     private sealed class ProbeSkillStore : IAgentSkillEvolutionStore

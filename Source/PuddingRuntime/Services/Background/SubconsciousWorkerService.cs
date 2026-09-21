@@ -344,6 +344,11 @@ public sealed class SubconsciousWorkerService : BackgroundService
         metadata["candidate_count"] = report.CandidateCount.ToString();
         metadata["retire_suggestion_count"] = report.RetireSuggestionCount.ToString();
         metadata["report_version"] = "v1";
+        // G7：门禁裁决计数必须能从**作业结果**观测到 —— 只写日志不算"被记录"
+        // （接线级探针用例据此断言"被拒"确实被记录，而不是静默放过）。
+        metadata["curated_products"] = report.CuratedProductCount.ToString();
+        metadata["curated_shadow"] = report.CuratedShadowCount.ToString();
+        metadata["curated_rejected"] = report.CuratedRejectedCount.ToString();
 
         // 零写盘（G6 I3）：本作业 OperationCount 恒为 0，不产生任何技能写操作。
         return CreateCompletedPeriodicResult(
