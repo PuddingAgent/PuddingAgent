@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Platform;
+using PuddingCode.Skills.Curation;
 
 namespace PuddingMemoryEngine.Services;
 
@@ -471,6 +472,25 @@ public sealed partial class SkillEvolutionDeduplicationService(
             .Where(value => value.Length > 0)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+    }
+
+    /// <summary>
+    /// 抽取技能承载的**会话证据**（<c>source-session:</c> 前缀 tag，去空白、去重）。
+    /// <para>
+    /// 与 <see cref="ExtractSourceTurns"/> 的分工（两者**刻意**不同形，勿“统一”掉）：
+    /// <list type="bullet">
+    /// <item><see cref="ExtractSourceTurns"/> 服务**既有**去重/合并逻辑：除 tag 外还兼容历史「<c>- Turn: &lt;id&gt;</c>」正文行
+    ///   （实测正则 <c>SourceTurnRegex()</c> 匹配的是该正文行，**不是**字面量 <c>source-turn:</c>），属既有行为，本片不动；</item>
+    /// <item>本方法服务 G7 的 C2 判定（一般性不降）：**只认 tag**，且实现单一来源 =
+    ///   <see cref="SkillDistillationContract.SourceSessionsOf"/>，避免“门禁与服务各算一份口径”。</item>
+    /// </list>
+    /// </para>
+    /// <para>⚠️ 无 legacy 分支：全仓未发现“会话 id 出现在正文”的历史形态（父代理实测 2026-09-22）。</para>
+    /// </summary>
+    public static IReadOnlyList<string> ExtractSourceSessions(AgentSkillEvolutionDocument skill)
+    {
+        ArgumentNullException.ThrowIfNull(skill);
+        return SkillDistillationContract.SourceSessionsOf(skill.Tags);
     }
 
     private static double CalculateTextSimilarity(
