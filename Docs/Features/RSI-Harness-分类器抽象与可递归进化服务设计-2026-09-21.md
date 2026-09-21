@@ -1022,7 +1022,7 @@ decision ∈ { Apply | ApplyShadow | Reject | Defer }
 4 | **G1 组合盘点**（只读；含家族分布 + 索引 token 实测） | 治理 | ✅ **已完成**（2026-09-21，报告 `Docs/Reports/skill-portfolio-G1-2026-09-21.md`；结论见下方 blockquote） | — |
 5 | **G2 使用遥测 + 价值打分**（打分器首个真实消费者，**无 LLM**） | 治理 | ✅ **已完成**（2026-09-22 复核：遥测 `Runtime/Services/Skills/Telemetry/*.cs` 3 文件 + 打分器 `Runtime/Services/Improvement/SkillValue/*.cs` 3 文件，`list_dir` 实测）⚠️ 遥测需一次**重启窗口**才插桩激活 | — |
 6 | **G6 `skill.curate` 报告先行**（**用 L3-a 模型出报告**，零技能变更） | 整理 | ✅ **已完成**（2026-09-22，commit `ffdaa048`；验收记录 `Docs/Features/RSI-G6-验收记录-2026-09-22.md`；窄 filter Runtime **42/0** + Platform exit=0；父代理补修 I1「有牙化」与 BOM） | — |
-7 | **G3 组合预算**（判断器） | 治理 | 未做（**任务书已立**：`Docs/Features/RSI-G3-任务书-2026-09-22.md`，含实测锚点 + 冻结契约 + 变异取红清单） | 任意 |
+7 | **G3 组合预算**（判断器） | 治理 | ✅ **代码侧已完成**（2026-09-22：策略+判定器 `25c88f9c`；E1 接线 `99faf033`；置换执行器 + 副作用层契约用例 `200fbe6a`。判定器 19/19、执行器 10/10、MemoryEngine `~Skill` 36/36、Runtime `~Subconscious` 42/42）⚠️ 过渡默认**零回归**（软目标 = 实测启用数 + 20 ⇒ 闸门当前**不会触发**，激活需 G2 遥测给出分数分布，属人工裁决）；orchestrator 级 I8 用例未做 | 任意 |
 8 | **G7 提炼契约 + C1–C5 门禁** | 整理 | 未做 | 非工作时段 |
 9 | **G4 家族归类 + 家族内上限** | 治理 | 未做 | 非工作时段 |
 10 | **G8 触发与节奏**（定时 + 条件触发 + 非工作时段优先） | 整理 | 未做 | 任意 |
