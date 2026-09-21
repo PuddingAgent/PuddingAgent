@@ -1,4 +1,16 @@
-﻿### Desktop 空闲高 CPU：日志刷新与隐藏 WebView 图像（2026-09-21）
+### 全仓检索别用 search_grep 硬扫：2000 文件枚举上限与正确工具链（2026-09-21）
+
+`search_grep` 在大型仓库有**硬上限**：单次最多枚举 2000 个文件、最多扫描 2000 文件/64MB、单次调用封顶 10s。撞到上限时结果会带 partial 覆盖提示，但在缩小范围前很容易把偏短的 `no matches` 读成“真的没有”，从而得到**假阴性结论**。本次实测：定位“所有出站 HTTP 的 UA 设置点”时反复换窄模式仍覆盖不全，白跑一趟 Explorer 子代理做全仓清单式排查；反复扫的另一个代价是吃掉大量上下文。
+
+正确顺序（**先索引、后文本、最后全仓**）：
+
+1. **先索引工具**（毫秒级、不受文件枚举上限影响）：`code_symbol_search` 定位符号 → `code_explore` 下钻成员 → `code_callers`/`code_callees` 追调用链；文件定位用 `file_search`（Everything provider 需绝对目录）。前置：项目需已 `code_index_register_project` 且 `code_index_status` 为 Completed。
+2. **再在窄目录内 `search_grep`**：给出 `directory` + `file_ext`/`pattern`，把它当“局部精确匹配”用，而不是全仓扫描器。
+3. **需要全仓文本检索时用 `git grep -n`**（`shell` 执行，本仓库无可用的 `rg`）：不受 2000 文件枚举上限约束，且只搜纳管文件。这是本仓库文本检索的**事实标准**。
+
+⚠️ 本节**修正了本文件下文第 5 条**“Windows 下代码搜索优先 `search_grep`”的说法：该说法作为**全仓检索的默认手段**在本仓库不成立（会撞枚举上限并诱发假阴性）。`search_grep` 仍是**窄范围精确匹配**的首选，但**不是**全仓检索的首选。
+
+### Desktop 空闲高 CPU：日志刷新与隐藏 WebView 图像（2026-09-21）
 
 每5秒重复出现 `Global idle threshold reached` 时，检查调度器 ReArm 是否把“继续检查”误记为“再次进入空闲”。日志去重必须与回调门控分离，回归需证明多个检查仍回调、同一空闲窗口只记一次、实际活动后再次空闲重新记一次。本次18项相关回归通过。
 
@@ -3440,7 +3452,10 @@ ContextBudget/历史投影；围栏与 hash 均正确而模型仍答旧任务 �
 4. LLM 慢先比较 `llm.rate_limit.wait` 与 `llm.stream.provider_first_chunk_wait`：前者高是本地 provider/model
    并发排队，后者高而前者低才是 Provider 建连/首块慢。`chat_stream` metadata 同时带
    `rate_limit_wait_ms/stream_first_chunk_wait_ms/first_chunk_received/stream_no_chunks`。
-5. Windows 下代码搜索优先 `search_grep`；需要真实 Bash/管道时显式 `shell=wsl`。当前 WSL 不保证安装 `rg`，
+5. Windows 下**窄范围精确匹配**优先 `search_grep`；**全仓检索先走索引工具**
+   （`code_symbol_search` / `code_explore` / `file_search`），需要全仓**文本**检索时用 `git grep -n`
+   ——`search_grep` 有 **2000 文件枚举上限**，硬扫会得到 partial 覆盖或**假阴性**
+   （详见本文件顶部「全仓检索别用 search_grep 硬扫」一条）。需要真实 Bash/管道时显式 `shell=wsl`。当前 WSL 不保证安装 `rg`，
    每个 run 最多探测一次 `command -v`，不得让 Agent 自动 `apt install`。
 6. 相同 canonical 工具、相同参数且失败结果未变化时，第二次结果应带
    `runtime_status=execution_stalled`；之后原样调用应在 Agent Loop 内阻断，不再出现新的底层
