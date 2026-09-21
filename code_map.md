@@ -1,3 +1,7 @@
+## 2026-09-21 code_map 索引补齐（PuddingTaskRecall.Cli）
+
+按 `code-map-incremental-update` 技能做索引完整性审计：`Source/` 下 19 个生产项目均已有 L2 索引，唯一缺口是生产 CLI `Source/PuddingTaskRecall.Cli/`（有 `.csproj`、无 `code_map.md`，且未登记进顶层目录表）。已按模板补 `Source/PuddingTaskRecall.Cli/code_map.md`（入口 & 配置 / 核心功能 / 结果模型 / 测试）并在 L1 顶层目录表补链接。8 个 `*Tests`/Benchmarks 项目仍无索引（L1 无测试项目区，未擅自新增）。
+
 ## 2026-09-21 出站 HTTP User-Agent 统一标识
 
 新增 `PuddingCode.Configuration.PuddingUserAgent`（`PuddingAgent/1.0`）作为出口 UA 单一事实来源：组合根 13 个命名 HttpClient 在各自 `AddHttpClient` 配置中逐点写入 UA（Connectors 6／Platform 6／Runtime 1）；`FlurlWebClient` 为全部搜索/抓取工具出站请求兜底（调用方显式 UA 优先）；`ControllerLlmProxyService` 三处裸 `new HttpClient()` 改经 `CreateHttpClient()`；`GitHubSearchTool` 硬编码改为引用常量。全局兜底方案（`ConfigureHttpClientDefaults` + `DelegatingHandler`）经 A/B 对照实测会使 `PuddingWebApiTests` 产生 48 项回归（失败 6→54，孤立运行亦失败），已回退为逐点注册并在组合根留注释警示。验证：`PuddingHost` 构建 0 error；`PuddingWebApiTests` 172 项 6 失败（均为既有已定性项）／166 通过；`PuddingRuntimeTests` 定向 31/31。提交 `a452eb76`。
@@ -306,6 +310,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 | `Source/PuddingFullTextIndex/` | 全文索引引擎 | [code_map](Source/PuddingFullTextIndex/code_map.md) |
 | `Source/PuddingGit.Tools/` | Git 20 工具（实现在 Runtime） | [code_map](Source/PuddingGit.Tools/code_map.md) |
 | `Source/PuddingPlatformAdmin/` | React 管理前端 · Chat 虚拟视口/渐进消息/状态缓存 · Agent 编排布局编辑器 · 管理壳异步隔离 · 主代理服务商余额徽标（DeepSeek 首个，多服务商计费展示适配器） · 已移除 Phaser/2D Studio · 生产 dist 经 PuddingHostContent.props 部署到 Core `wwwroot/admin`（dev 输出分流 dist-dev，防 MSBuild 增量清理破坏部署，见 How-Debuge §6.12） | [code_map](Source/PuddingPlatformAdmin/code_map.md) |
+| `Source/PuddingTaskRecall.Cli/` | 历史脏数据一次性诊断/修复 CLI（默认 dry-run；`--apply` 才写库，写前备份 + 单事务回滚） | [code_map](Source/PuddingTaskRecall.Cli/code_map.md) |
 
 ## 调用链路
 
