@@ -250,10 +250,27 @@ public static class PuddingWebApplicationExtensions
         }
 
         // ── Chat SPA fallback ──────
+        // 注意：无约束的 MapFallback 会兜住「所有未命中路由」，其中包括 /api/*。
+        // 若把未命中的 API 请求回退成 index.html，客户端将拿到 200 + text/html，
+        // 从而把 HTML 当成业务数据解析（2026-09-21 SKILL Hub 白屏事故的直接放大器：
+        // /api/skill-hub/skills 返回 index.html，前端 items.map 抛 TypeError）。
+        // 因此 /api/* 未命中必须显式 404（JSON），不得进入 SPA 回退。
         var chatIndexPath = Path.Combine(outputWwwRoot, "index.html");
         if (File.Exists(chatIndexPath))
         {
-            app.MapFallback(() => Results.File(chatIndexPath, "text/html; charset=utf-8"));
+            app.MapFallback((HttpContext context) =>
+            {
+                if (context.Request.Path.StartsWithSegments(
+                        "/api", StringComparison.OrdinalIgnoreCase))
+                {
+                    return (IResult)Results.Problem(
+                        statusCode: StatusCodes.Status404NotFound,
+                        title: "API endpoint not found",
+                        detail: $"No endpoint matches {context.Request.Method} {context.Request.Path}.");
+                }
+
+                return (IResult)Results.File(chatIndexPath, "text/html; charset=utf-8");
+            });
         }
 
         return app;

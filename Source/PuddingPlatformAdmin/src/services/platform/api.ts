@@ -4534,49 +4534,109 @@ export interface ListHubEventsParams {
 
 // ── 函数（§7.2 冻结签名）─────────────────────────────────────
 
+// ── 响应形状守卫（2026-09-21 白屏事故加固）────────────────────
+// 背景：宿主 SPA 静态回退会把「未命中的 /api/* 路由」以 200 + text/html 返回。
+// 前端若把该 HTML 字符串直接塞进数组状态，组件的 `.map()` 会抛
+// `x.map is not a function` 并整页白屏，且错误信息完全不可读。
+// 冻结签名不变，仅在 API 边界做一次形状断言，把「静默错值」升级为「可读异常」。
+
+function describeShape(value: unknown): string {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (Array.isArray(value)) return 'array';
+  if (typeof value === 'string') {
+    const body = value.trim();
+    if (body.startsWith('<')) {
+      return `HTML 文本（${value.length} 字符，疑似 SPA 静态回退页）`;
+    }
+    return `字符串（${value.length} 字符）`;
+  }
+  return typeof value;
+}
+
+const SHAPE_HINT =
+  '请确认该 API 端点已在当前宿主进程中生效；端点不存在时，请求可能被静态路由回退成 HTML。';
+
+async function requireArray<T>(pending: Promise<unknown>, label: string): Promise<T[]> {
+  const data = await pending;
+  if (!Array.isArray(data)) {
+    throw new Error(`${label}：服务端返回的不是数组，实际为 ${describeShape(data)}。${SHAPE_HINT}`);
+  }
+  return data as T[];
+}
+
+async function requireObject<T>(pending: Promise<unknown>, label: string): Promise<T> {
+  const data = await pending;
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error(`${label}：服务端返回的不是对象，实际为 ${describeShape(data)}。${SHAPE_HINT}`);
+  }
+  return data as T;
+}
+
 export async function getSkillHubStats(): Promise<HubSkillStatsDto> {
-  return request('/api/skill-hub/stats', { method: 'GET' });
+  return requireObject<HubSkillStatsDto>(
+    request('/api/skill-hub/stats', { method: 'GET' }),
+    '加载概览指标',
+  );
 }
 
 export async function listHubSkills(params?: ListHubSkillsParams): Promise<HubSkillSummaryDto[]> {
-  return request('/api/skill-hub/skills', { method: 'GET', params });
+  return requireArray<HubSkillSummaryDto>(
+    request('/api/skill-hub/skills', { method: 'GET', params }),
+    '加载技能库',
+  );
 }
 
 export async function getHubSkill(skillId: string): Promise<HubSkillDetailDto> {
-  return request(`/api/skill-hub/skills/${encodeURIComponent(skillId)}`, { method: 'GET' });
+  return requireObject<HubSkillDetailDto>(
+    request(`/api/skill-hub/skills/${encodeURIComponent(skillId)}`, { method: 'GET' }),
+    '加载技能详情',
+  );
 }
 
 export async function getHubSkillVersion(
   skillId: string,
   version: string,
 ): Promise<HubSkillVersionFullDto> {
-  return request(
-    `/api/skill-hub/skills/${encodeURIComponent(skillId)}/versions/${encodeURIComponent(version)}`,
-    { method: 'GET' },
+  return requireObject<HubSkillVersionFullDto>(
+    request(
+      `/api/skill-hub/skills/${encodeURIComponent(skillId)}/versions/${encodeURIComponent(version)}`,
+      { method: 'GET' },
+    ),
+    '加载版本全文',
   );
 }
 
 export async function getHubSkillLineage(skillId: string): Promise<EvoMapDto> {
-  return request(`/api/skill-hub/skills/${encodeURIComponent(skillId)}/lineage`, {
-    method: 'GET',
-  });
+  return requireObject<EvoMapDto>(
+    request(`/api/skill-hub/skills/${encodeURIComponent(skillId)}/lineage`, {
+      method: 'GET',
+    }),
+    '加载进化血缘',
+  );
 }
 
 export async function getHubLineage(skillIds?: string[]): Promise<EvoMapDto> {
-  return request('/api/skill-hub/lineage', {
-    method: 'GET',
-    params: skillIds && skillIds.length > 0 ? { skillIds: skillIds.join(',') } : undefined,
-  });
+  return requireObject<EvoMapDto>(
+    request('/api/skill-hub/lineage', {
+      method: 'GET',
+      params: skillIds && skillIds.length > 0 ? { skillIds: skillIds.join(',') } : undefined,
+    }),
+    '加载 EVO MAP',
+  );
 }
 
 export async function updateHubSkillMeta(
   skillId: string,
   req: UpdateHubSkillMetaRequest,
 ): Promise<HubSkillSummaryDto> {
-  return request(`/api/skill-hub/skills/${encodeURIComponent(skillId)}`, {
-    method: 'PATCH',
-    data: req,
-  });
+  return requireObject<HubSkillSummaryDto>(
+    request(`/api/skill-hub/skills/${encodeURIComponent(skillId)}`, {
+      method: 'PATCH',
+      data: req,
+    }),
+    '更新技能元数据',
+  );
 }
 
 export async function retireHubSkill(skillId: string): Promise<void> {
@@ -4586,9 +4646,15 @@ export async function retireHubSkill(skillId: string): Promise<void> {
 export async function listHubInstalls(
   params?: ListHubInstallsParams,
 ): Promise<HubSkillInstallDto[]> {
-  return request('/api/skill-hub/installs', { method: 'GET', params });
+  return requireArray<HubSkillInstallDto>(
+    request('/api/skill-hub/installs', { method: 'GET', params }),
+    '加载安装台账',
+  );
 }
 
 export async function listHubEvents(params?: ListHubEventsParams): Promise<HubSkillEventDto[]> {
-  return request('/api/skill-hub/events', { method: 'GET', params });
+  return requireArray<HubSkillEventDto>(
+    request('/api/skill-hub/events', { method: 'GET', params }),
+    '加载审计事件',
+  );
 }
