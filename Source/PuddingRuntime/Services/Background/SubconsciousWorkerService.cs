@@ -10,7 +10,7 @@ namespace PuddingRuntime.Services.Background;
 
 /// <summary>
 /// 潜意识后台消费服务：串行消费 ConsolidationJob 队列并调用编排器。
-/// 同时运行三个定时循环：经验提取(12h)、记忆整理(6h)、Skill 改进(4h)。
+/// 同时运行四个定时循环：经验提取(12h)、记忆整理(6h)、Skill 改进(4h)、Skill 治理报告(4h)。
 /// </summary>
 public sealed class SubconsciousWorkerService : BackgroundService
 {
@@ -79,6 +79,7 @@ public sealed class SubconsciousWorkerService : BackgroundService
             loops.Add(PatternExtractionLoopAsync(stoppingToken));
             loops.Add(AutoDreamLoopAsync(stoppingToken));
             loops.Add(SkillImprovementLoopAsync(stoppingToken));
+            loops.Add(SkillCurationLoopAsync(stoppingToken));
         }
         else
         {
@@ -206,7 +207,8 @@ public sealed class SubconsciousWorkerService : BackgroundService
         if (queueItem.JobType is not (
                 SubconsciousJobTypes.AutoDream
                 or SubconsciousJobTypes.ExtractPatterns
-                or SubconsciousJobTypes.ImproveSkills))
+                or SubconsciousJobTypes.ImproveSkills
+                or SubconsciousJobTypes.SkillCurate))
         {
             return false;
         }
@@ -252,6 +254,14 @@ public sealed class SubconsciousWorkerService : BackgroundService
                     memoryLlmConfig,
                     ct);
                 result = CreateSkillImprovementResultEnvelope(queueItem, improvementReport);
+                break;
+            case SubconsciousJobTypes.SkillCurate:
+                var curationReport = await _orchestrator.SkillCurateAsync(
+                    queueItem.Job.WorkspaceId,
+                    queueItem.Job.AgentId,
+                    memoryLlmConfig,
+                    ct);
+                result = CreateSkillCurationResultEnvelope(queueItem, curationReport);
                 break;
             default:
                 return false;
@@ -319,6 +329,26 @@ public sealed class SubconsciousWorkerService : BackgroundService
         return CreateCompletedPeriodicResult(
             SubconsciousJobResultKinds.SkillImprovement,
             report.Patched + report.Consolidated,
+            report.Summary,
+            metadata);
+    }
+
+    private static SubconsciousJobResultEnvelope CreateSkillCurationResultEnvelope(
+        SubconsciousJobQueueItem queueItem,
+        SkillCurationReport report)
+    {
+        var metadata = CreatePeriodicResultMetadata(queueItem, report.DurationMs, report.Timestamp);
+        metadata["n_before"] = report.NBefore.ToString();
+        metadata["n_after"] = report.NAfter.ToString();
+        metadata["not_reduced_reason"] = report.NotReducedReason;
+        metadata["candidate_count"] = report.CandidateCount.ToString();
+        metadata["retire_suggestion_count"] = report.RetireSuggestionCount.ToString();
+        metadata["report_version"] = "v1";
+
+        // 零写盘（G6 I3）：本作业 OperationCount 恒为 0，不产生任何技能写操作。
+        return CreateCompletedPeriodicResult(
+            SubconsciousJobResultKinds.SkillCuration,
+            0,
             report.Summary,
             metadata);
     }
@@ -725,6 +755,16 @@ public sealed class SubconsciousWorkerService : BackgroundService
             SubconsciousJobTypes.ImproveSkills,
             TimeSpan.FromSeconds(Math.Max(0, _scheduling.SkillImprovementInitialDelaySeconds)),
             TimeSpan.FromSeconds(Math.Max(1, _scheduling.SkillImprovementIntervalSeconds)),
+            ct);
+    }
+
+    // ── Skill Curation 定时循环 ──
+    private async Task SkillCurationLoopAsync(CancellationToken ct)
+    {
+        await RunPeriodicEnqueueLoopAsync(
+            SubconsciousJobTypes.SkillCurate,
+            TimeSpan.FromSeconds(Math.Max(0, _scheduling.SkillCurationInitialDelaySeconds)),
+            TimeSpan.FromSeconds(Math.Max(1, _scheduling.SkillCurationIntervalSeconds)),
             ct);
     }
 

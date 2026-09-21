@@ -8,6 +8,7 @@ using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingMemoryEngine.Data;
+using PuddingMemoryEngine.Services;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.Background;
 
@@ -117,7 +118,7 @@ public sealed class SubconsciousWorkerServiceTests
     }
 
     [TestMethod]
-    public async Task PeriodicLoops_ShouldEnqueueThreeDurableScopedJobs()
+    public async Task PeriodicLoops_ShouldEnqueueFourDurableScopedJobs()
     {
         var queue = new RecordingSubconsciousJobQueue { DisableLeasing = true };
         var worker = new SubconsciousWorkerService(
@@ -135,15 +136,17 @@ public sealed class SubconsciousWorkerServiceTests
                     AutoDreamInitialDelaySeconds = 0,
                     PatternExtractionInitialDelaySeconds = 0,
                     SkillImprovementInitialDelaySeconds = 0,
+                    SkillCurationInitialDelaySeconds = 0,
                     AutoDreamIntervalSeconds = 3600,
                     PatternExtractionIntervalSeconds = 3600,
                     SkillImprovementIntervalSeconds = 3600,
+                    SkillCurationIntervalSeconds = 3600,
                 },
             }));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await worker.StartAsync(cts.Token);
-        await queue.ThreeJobsEnqueued.Task.WaitAsync(cts.Token);
+        await queue.AllPeriodicJobsEnqueued.Task.WaitAsync(cts.Token);
         await worker.StopAsync(CancellationToken.None);
 
         var requests = queue.EnqueuedRequests;
@@ -153,6 +156,7 @@ public sealed class SubconsciousWorkerServiceTests
                 SubconsciousJobTypes.AutoDream,
                 SubconsciousJobTypes.ExtractPatterns,
                 SubconsciousJobTypes.ImproveSkills,
+                SubconsciousJobTypes.SkillCurate,
             },
             requests.Select(request => request.JobType).ToArray());
         Assert.IsTrue(requests.All(request => request.Job.WorkspaceId == "workspace-evolution"));
@@ -210,9 +214,257 @@ public sealed class SubconsciousWorkerServiceTests
     }
 
     [TestMethod]
+    public async Task PeriodicLoops_SkillCuration_ShouldNotReopenSameTimeBucketAcrossRestarts()
+    {
+        var queue = new KeyTrackingJobQueue();
+        SubconsciousSchedulingOptions NewScheduling() => new()
+        {
+            PeriodicJobsEnabled = true,
+            DefaultWorkspaceId = "workspace-evolution",
+            DefaultAgentInstanceId = "agent-evolution",
+            AutoDreamInitialDelaySeconds = 0,
+            PatternExtractionInitialDelaySeconds = 0,
+            SkillImprovementInitialDelaySeconds = 0,
+            SkillCurationInitialDelaySeconds = 0,
+            AutoDreamIntervalSeconds = 100_000,
+            PatternExtractionIntervalSeconds = 100_000,
+            SkillImprovementIntervalSeconds = 100_000,
+            SkillCurationIntervalSeconds = 100_000,
+        };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var worker1 = new SubconsciousWorkerService(
+            Channel.CreateUnbounded<ConsolidationJob>(),
+            new RecordingSubconsciousOrchestrator(),
+            NullLogger<SubconsciousWorkerService>.Instance,
+            jobQueue: queue,
+            options: Options.Create(new SubconsciousOptions { Scheduling = NewScheduling() }));
+        await worker1.StartAsync(cts.Token);
+        await Task.Delay(TimeSpan.FromMilliseconds(250), cts.Token);
+        await worker1.StopAsync(CancellationToken.None);
+
+        var worker2 = new SubconsciousWorkerService(
+            Channel.CreateUnbounded<ConsolidationJob>(),
+            new RecordingSubconsciousOrchestrator(),
+            NullLogger<SubconsciousWorkerService>.Instance,
+            jobQueue: queue,
+            options: Options.Create(new SubconsciousOptions { Scheduling = NewScheduling() }));
+        await worker2.StartAsync(cts.Token);
+        await Task.Delay(TimeSpan.FromMilliseconds(250), cts.Token);
+        await worker2.StopAsync(CancellationToken.None);
+
+        var skillCurateEnqueues = queue.Requests.Count(request =>
+            request.JobType == SubconsciousJobTypes.SkillCurate);
+        Assert.AreEqual(1, skillCurateEnqueues);
+    }
+
+    [TestMethod]
+    public async Task DurableWorker_SkillCurate_ShouldReportWithoutWritingSkills()
+    {
+        await using var memory = await CreateMemoryScopeAsync();
+        var probe = new ProbeSkillStore();
+        var llmClient = new StaticMemoryLlmClient("unused: curation must not call the llm");
+        var orchestrator = new SubconsciousOrchestrator(
+            memory.Library,
+            new ThrowingMemoryEngine(),
+            llmClient,
+            new ThrowingMemoryLibrarian(),
+            NullLogger<SubconsciousOrchestrator>.Instance,
+            new ThrowingMemoryDbContextFactory(),
+            new ThrowingSkillTrajectorySource(),
+            probe,
+            new SkillEvolutionDeduplicationService(
+                probe,
+                llmClient,
+                NullLogger<SkillEvolutionDeduplicationService>.Instance));
+
+        var queue = new RecordingSubconsciousJobQueue
+        {
+            JobType = SubconsciousJobTypes.SkillCurate,
+            Job = new ConsolidationJob
+            {
+                SessionId = "debug:evolution:skill.curate:request-1",
+                WorkspaceId = "workspace-evolution",
+                AgentId = "agent-evolution",
+                AgentTemplateId = "agent-evolution",
+            },
+        };
+        var worker = new SubconsciousWorkerService(
+            Channel.CreateUnbounded<ConsolidationJob>(),
+            orchestrator,
+            NullLogger<SubconsciousWorkerService>.Instance,
+            jobQueue: queue);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await worker.StartAsync(cts.Token);
+        await queue.JobCompleted.Task.WaitAsync(cts.Token);
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.IsNotNull(queue.RecordedResult);
+        Assert.AreEqual(SubconsciousJobResultKinds.SkillCuration, queue.RecordedResult!.Kind);
+        Assert.AreEqual(SubconsciousJobResultStatuses.Completed, queue.RecordedResult.Status);
+        Assert.AreEqual(0, queue.RecordedResult.OperationCount);
+        Assert.AreEqual("3", queue.RecordedResult.Metadata["n_before"]);
+        Assert.AreEqual("3", queue.RecordedResult.Metadata["n_after"]);
+        Assert.IsTrue(!string.IsNullOrWhiteSpace(queue.RecordedResult.Metadata["not_reduced_reason"]));
+        Assert.AreEqual("3", queue.RecordedResult.Metadata["candidate_count"]);
+        Assert.AreEqual("1", queue.RecordedResult.Metadata["retire_suggestion_count"]);
+        Assert.AreEqual("v1", queue.RecordedResult.Metadata["report_version"]);
+        Assert.AreEqual(0, probe.WriteCallCount);
+    }
+
+    private sealed class ProbeSkillStore : IAgentSkillEvolutionStore
+    {
+        private int _writeCallCount;
+        public int WriteCallCount => _writeCallCount;
+
+        private static AgentSkillEvolutionDocument Skill(string id, string name, string version) => new()
+        {
+            SkillId = id,
+            Name = name,
+            Version = version,
+            Enabled = true,
+            Markdown = $"---\nname: {name}\nversion: {version}\n---\nbody",
+        };
+
+        public Task<IReadOnlyList<AgentSkillEvolutionDocument>> ListAutoGeneratedAsync(
+            string agentInstanceId, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<AgentSkillEvolutionDocument>>(
+            [
+                Skill("skill-a", "Same Name", "1.0.0"),
+                Skill("skill-b", "Same Name", "1.0.1"),
+                Skill("skill-c", "Other Name", "1.0.0"),
+            ]);
+
+        public Task<AgentSkillEvolutionDocument?> GetAsync(
+            string agentInstanceId, string skillId, CancellationToken ct = default)
+            => Task.FromResult<AgentSkillEvolutionDocument?>(null);
+
+        public Task<AgentSkillEvolutionDocument> CreateAsync(
+            string agentInstanceId, AgentSkillEvolutionWriteRequest request, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref _writeCallCount);
+            throw new InvalidOperationException("G6 curation must not write skills (CreateAsync).");
+        }
+
+        public Task<AgentSkillEvolutionDocument> UpdateAsync(
+            string agentInstanceId, string skillId, AgentSkillEvolutionWriteRequest request, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref _writeCallCount);
+            throw new InvalidOperationException("G6 curation must not write skills (UpdateAsync).");
+        }
+
+        public Task<AgentSkillEvolutionDocument> SetEnabledAsync(
+            string agentInstanceId, string skillId, bool enabled, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref _writeCallCount);
+            throw new InvalidOperationException("G6 curation must not write skills (SetEnabledAsync).");
+        }
+    }
+
+    private sealed class ThrowingMemoryEngine : IMemoryEngine
+    {
+        public string? BuildMemoryContext(
+            string sessionId, string? workspaceId, string? agentId,
+            string? parentSessionId = null) => throw new NotSupportedException();
+        public Task<string?> RecallWithIntentAsync(
+            string userMessage, string workspaceId, string agentId,
+            string? sessionId = null, int maxTokens = 2000, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public void WriteBack(
+            string llmReply, string sessionId, string? workspaceId, string source,
+            string? agentId = null, string? parentSessionId = null) => throw new NotSupportedException();
+        public void ClearSession(string sessionId) => throw new NotSupportedException();
+    }
+
+    private sealed class ThrowingMemoryLibrarian : IMemoryLibrarian
+    {
+        public Task<ExperienceWriteResult> IngestExperienceAsync(
+            MemoryIngestionRequest request, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<IReadOnlyList<MemoryTreeOperation>> PlanTreeMaintenanceAsync(
+            string workspaceId, string libraryId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task ApplyTreeOperationAsync(MemoryTreeOperation operation, CancellationToken ct = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class ThrowingMemoryDbContextFactory : IDbContextFactory<MemoryDbContext>
+    {
+        public MemoryDbContext CreateDbContext() => throw new NotSupportedException();
+        public Task<MemoryDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class ThrowingSkillTrajectorySource : ISkillEvolutionTrajectorySource
+    {
+        public Task<IReadOnlyList<SkillEvolutionTrajectory>> GetRecentSuccessfulAsync(
+            string workspaceId, string agentInstanceId, int limit, CancellationToken ct = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class KeyTrackingJobQueue : ISubconsciousJobQueue
+    {
+        private readonly Dictionary<string, SubconsciousJobQueueItem> _items = new(StringComparer.Ordinal);
+        public List<SubconsciousJobEnqueueRequest> Requests { get; } = [];
+
+        public Task<SubconsciousJobQueueItem> EnqueueAsync(
+            SubconsciousJobEnqueueRequest request, CancellationToken ct = default)
+        {
+            Requests.Add(request);
+            var item = new SubconsciousJobQueueItem
+            {
+                JobId = $"job-{Requests.Count}",
+                JobType = request.JobType,
+                IdempotencyKey = request.IdempotencyKey,
+                Status = "pending",
+                Job = request.Job,
+            };
+            _items[request.IdempotencyKey] = item;
+            return Task.FromResult(item);
+        }
+
+        public Task<SubconsciousJobQueueItem?> FindLatestAsync(
+            SubconsciousJobLookupQuery query, CancellationToken ct = default)
+            => Task.FromResult(
+                query.IdempotencyKey is not null
+                && _items.TryGetValue(query.IdempotencyKey, out var item)
+                    ? item
+                    : null);
+
+        public Task<SubconsciousJobQueueItem?> LeaseNextAsync(
+            string leaseOwner, TimeSpan leaseDuration,
+            SubconsciousJobLeaseQuery? query = null, CancellationToken ct = default)
+            => Task.FromResult<SubconsciousJobQueueItem?>(null);
+        public Task<SubconsciousJobQueueStats> GetStatsAsync(CancellationToken ct = default)
+            => Task.FromResult(new SubconsciousJobQueueStats());
+        public Task<IReadOnlyDictionary<string, int>> GetWorkspaceLeaseCountsAsync(
+            DateTimeOffset since, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyDictionary<string, int>>(new Dictionary<string, int>());
+        public Task RecordSchedulingSkipAsync(
+            SubconsciousSchedulingSkipRequest request, CancellationToken ct = default)
+            => Task.CompletedTask;
+        public Task RecordResultAsync(
+            string jobId, string leaseOwner, SubconsciousJobResultEnvelope result, CancellationToken ct = default)
+            => Task.CompletedTask;
+        public Task<SubconsciousJobResultEnvelope?> GetResultAsync(
+            string jobId, CancellationToken ct = default)
+            => Task.FromResult<SubconsciousJobResultEnvelope?>(null);
+        public Task CompleteAsync(string jobId, string leaseOwner, CancellationToken ct = default)
+            => Task.CompletedTask;
+        public Task<string> RetryAsync(
+            string jobId, string leaseOwner, string error, TimeSpan? retryDelay = null, CancellationToken ct = default)
+            => Task.FromResult("retrying");
+        public Task DeadLetterAsync(
+            string jobId, string leaseOwner, string error, CancellationToken ct = default)
+            => Task.CompletedTask;
+    }
+
+    [TestMethod]
     [DataRow(SubconsciousJobTypes.AutoDream, SubconsciousJobResultKinds.MemoryAutoDream, 2)]
     [DataRow(SubconsciousJobTypes.ExtractPatterns, SubconsciousJobResultKinds.SkillPatternExtraction, 3)]
     [DataRow(SubconsciousJobTypes.ImproveSkills, SubconsciousJobResultKinds.SkillImprovement, 2)]
+    [DataRow(SubconsciousJobTypes.SkillCurate, SubconsciousJobResultKinds.SkillCuration, 0)]
     public async Task DurableWorker_PeriodicEvolutionJob_ShouldPersistReportBeforeCompleting(
         string jobType,
         string expectedResultKind,
@@ -278,6 +530,14 @@ public sealed class SubconsciousWorkerServiceTests
                 Assert.AreEqual("skill-create-pr", queue.RecordedResult.Metadata["improved_skill_ids"]);
                 Assert.AreEqual("skill-create-pr-old", queue.RecordedResult.Metadata["disabled_duplicate_skill_ids"]);
                 break;
+            case SubconsciousJobTypes.SkillCurate:
+                Assert.AreEqual("6", queue.RecordedResult.Metadata["n_before"]);
+                Assert.AreEqual("6", queue.RecordedResult.Metadata["n_after"]);
+                Assert.IsTrue(!string.IsNullOrWhiteSpace(queue.RecordedResult.Metadata["not_reduced_reason"]));
+                Assert.AreEqual("2", queue.RecordedResult.Metadata["candidate_count"]);
+                Assert.AreEqual("1", queue.RecordedResult.Metadata["retire_suggestion_count"]);
+                Assert.AreEqual("v1", queue.RecordedResult.Metadata["report_version"]);
+                break;
         }
     }
 
@@ -326,7 +586,7 @@ public sealed class SubconsciousWorkerServiceTests
 
         public TaskCompletionSource ResultRecorded { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource ThreeJobsEnqueued { get; } =
+        public TaskCompletionSource AllPeriodicJobsEnqueued { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource JobCompleted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -357,8 +617,8 @@ public sealed class SubconsciousWorkerServiceTests
             lock (_enqueuedRequests)
             {
                 _enqueuedRequests.Add(request);
-                if (_enqueuedRequests.Count >= 3)
-                    ThreeJobsEnqueued.TrySetResult();
+                if (_enqueuedRequests.Count >= 4)
+                    AllPeriodicJobsEnqueued.TrySetResult();
             }
 
             return Task.FromResult(new SubconsciousJobQueueItem
@@ -564,6 +824,26 @@ public sealed class SubconsciousWorkerServiceTests
                 DisabledDuplicateSkillIds = ["skill-create-pr-old"],
                 Summary = "Improved 1 skill",
                 Timestamp = new DateTime(2026, 7, 30, 4, 2, 0, DateTimeKind.Utc),
+            });
+        }
+
+        public Task<SkillCurationReport> SkillCurateAsync(
+            string workspaceId,
+            string agentInstanceId,
+            MemoryLlmConfig? memoryLlmConfig = null,
+            CancellationToken ct = default)
+        {
+            CallCount++;
+            return Task.FromResult(new SkillCurationReport
+            {
+                DurationMs = 45,
+                NBefore = 6,
+                NAfter = 6,
+                NotReducedReason = "G6 is report-only: identified 1 duplicate-name retire suggestion(s), but curation has no disable authority until G7 gates land.",
+                CandidateCount = 2,
+                RetireSuggestionCount = 1,
+                Summary = "n_before=6, n_after=6, refine candidates=2, retire suggestions=1; report-only, no skills modified",
+                Timestamp = new DateTime(2026, 7, 30, 4, 3, 0, DateTimeKind.Utc),
             });
         }
     }

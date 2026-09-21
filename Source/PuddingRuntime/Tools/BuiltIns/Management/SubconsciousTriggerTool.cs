@@ -14,7 +14,7 @@ namespace PuddingRuntime.Services.Tools;
 [Tool(
     id: "subconscious_trigger",
     name: "Subconscious pipeline trigger",
-    description: "手动触发潜意识管线（Auto-Dream、Pattern Extraction、Skill Self-Improvement），绕过定时器延迟，用于调试与验证。Manually trigger subconscious pipelines",
+    description: "手动触发潜意识管线（Auto-Dream、Pattern Extraction、Skill Self-Improvement、Skill Curation），绕过定时器延迟，用于调试与验证。Manually trigger subconscious pipelines",
     category: ToolCategory.Orchestration,
     permission: ToolPermissionLevel.High,
     safety: ToolSafetyFlags.Destructive)]
@@ -54,9 +54,10 @@ public sealed class SubconsciousTriggerTool : PuddingToolBase<SubconsciousTrigge
                 "auto_dream" => await RunAutoDreamAsync(workspaceId, agentInstanceId, memoryLlmConfig!, ct),
                 "extract_patterns" => await RunExtractPatternsAsync(workspaceId, agentInstanceId, memoryLlmConfig!, ct),
                 "improve_skills" => await RunImproveSkillsAsync(workspaceId, agentInstanceId, memoryLlmConfig!, ct),
+                "skill_curate" => await RunSkillCurateAsync(workspaceId, agentInstanceId, memoryLlmConfig!, ct),
                 "consolidate" => SkipConsolidate(),
                 "all" => await RunAllAsync(workspaceId, agentInstanceId, memoryLlmConfig!, ct),
-                _ => new { error = $"Unknown action '{action}'. Valid: auto_dream, extract_patterns, improve_skills, consolidate, all." }
+                _ => new { error = $"Unknown action '{action}'. Valid: auto_dream, extract_patterns, improve_skills, skill_curate, consolidate, all." }
             };
 
             return ToolExecutionResult.Ok(JsonSerializer.Serialize(result));
@@ -141,6 +142,27 @@ public sealed class SubconsciousTriggerTool : PuddingToolBase<SubconsciousTrigge
         };
     }
 
+    private async Task<object> RunSkillCurateAsync(
+        string workspaceId,
+        string agentInstanceId,
+        MemoryLlmConfig memoryLlmConfig,
+        CancellationToken ct)
+    {
+        var sw = Stopwatch.StartNew();
+        var report = await _orchestrator.SkillCurateAsync(workspaceId, agentInstanceId, memoryLlmConfig, ct);
+        return new
+        {
+            action = "skill_curate",
+            duration_ms = sw.ElapsedMilliseconds,
+            n_before = report.NBefore,
+            n_after = report.NAfter,
+            not_reduced_reason = report.NotReducedReason,
+            candidate_count = report.CandidateCount,
+            retire_suggestion_count = report.RetireSuggestionCount,
+            summary = report.Summary
+        };
+    }
+
     private static object SkipConsolidate()
     {
         return new
@@ -162,12 +184,13 @@ public sealed class SubconsciousTriggerTool : PuddingToolBase<SubconsciousTrigge
         var results = new List<object>();
         var totalSw = Stopwatch.StartNew();
 
-        // 安全顺序：清理 → 提取 → 改进
+        // 安全顺序：清理 → 提取 → 改进 → 治理报告
         var steps = new (string name, Func<string, string, MemoryLlmConfig, CancellationToken, Task<object>> runner)[]
         {
             ("auto_dream", RunAutoDreamAsync),
             ("extract_patterns", RunExtractPatternsAsync),
             ("improve_skills", RunImproveSkillsAsync),
+            ("skill_curate", RunSkillCurateAsync),
         };
 
         foreach (var (name, runner) in steps)
@@ -222,7 +245,7 @@ public sealed class SubconsciousTriggerTool : PuddingToolBase<SubconsciousTrigge
 
 public sealed record SubconsciousTriggerArgs
 {
-    [ToolParam("Pipeline name: auto_dream, extract_patterns, improve_skills, consolidate, or all. Default: all.")]
+    [ToolParam("Pipeline name: auto_dream, extract_patterns, improve_skills, skill_curate, consolidate, or all. Default: all.")]
     public string? Action { get; init; }
 
     [ToolParam("Workspace ID. Default: 'default'.")]

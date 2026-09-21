@@ -35,6 +35,7 @@ public static class SubconsciousJobTypes
     public const string AutoDream = "memory.auto_dream";
     public const string ExtractPatterns = "skill.extract_patterns";
     public const string ImproveSkills = "skill.improve";
+    public const string SkillCurate = "skill.curate";
 }
 
 public sealed record SubconsciousJobEnqueueRequest
@@ -69,6 +70,7 @@ public static class SubconsciousJobResultKinds
     public const string MemoryAutoDream = "memory.auto_dream.v1";
     public const string SkillPatternExtraction = "skill.pattern_extraction.v1";
     public const string SkillImprovement = "skill.improvement.v1";
+    public const string SkillCuration = "skill.curation_report.v1";
 }
 
 public static class SubconsciousJobResultStatuses
@@ -487,6 +489,22 @@ public sealed record SkillImprovementReport
     public int Skipped { get; init; }
     public string[] ImprovedSkillIds { get; init; } = [];
     public string[] DisabledDuplicateSkillIds { get; init; } = [];
+    public string? Summary { get; init; }
+    public DateTime Timestamp { get; init; }
+}
+
+/// <summary>
+/// Skill 组合治理（curate）报告。G6 切片为只报告、零写盘：
+/// n_after 必须等于 n_before；not_reduced_reason 必填且不得为空。
+/// </summary>
+public sealed record SkillCurationReport
+{
+    public long DurationMs { get; init; }
+    public int NBefore { get; init; }
+    public int NAfter { get; init; }
+    public string NotReducedReason { get; init; } = "";
+    public int CandidateCount { get; init; }
+    public int RetireSuggestionCount { get; init; }
     public string? Summary { get; init; }
     public DateTime Timestamp { get; init; }
 }

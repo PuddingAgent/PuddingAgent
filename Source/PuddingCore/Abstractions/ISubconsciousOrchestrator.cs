@@ -80,6 +80,17 @@ public interface ISubconsciousOrchestrator
         string agentInstanceId,
         MemoryLlmConfig? memoryLlmConfig = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Skill 组合治理：只读扫描启用技能 → 产出组合变化报告（N_before → N_after + 未降原因）。
+    /// G6 只报告，不修改/不禁用/不删除任何技能（I3 零写盘）。
+    /// 由 SubconsciousWorkerService 定时触发（skill.curate）。
+    /// </summary>
+    Task<SkillCurationReport> SkillCurateAsync(
+        string workspaceId,
+        string agentInstanceId,
+        MemoryLlmConfig? memoryLlmConfig = null,
+        CancellationToken ct = default);
 }
 
 public interface ISubconsciousJobQueue

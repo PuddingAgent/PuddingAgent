@@ -57,4 +57,6 @@ public sealed class SubconsciousSchedulingOptions
     public int PatternExtractionIntervalSeconds { get; init; } = 43_200;
     public int SkillImprovementInitialDelaySeconds { get; init; } = 900;
     public int SkillImprovementIntervalSeconds { get; init; } = 14_400;
+    public int SkillCurationInitialDelaySeconds { get; init; } = 1_200;
+    public int SkillCurationIntervalSeconds { get; init; } = 14_400;
 }
