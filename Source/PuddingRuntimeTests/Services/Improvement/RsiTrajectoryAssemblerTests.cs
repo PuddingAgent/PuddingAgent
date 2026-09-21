@@ -508,4 +508,25 @@ public sealed class RsiTrajectoryAssemblerB4Tests
         Assert.IsNull(steps[0].ArgsHash, "completed#1 配的是无参数 requested ⇒ null（占位纪律）。");
         Assert.AreEqual(Args3Hash, steps[1].ArgsHash, "completed#2 配带参数的 requested ⇒ 其哈希；跳过占位会让两者互换。");
     }
+
+    // ── A7（父代理验收补：§4.4 冻结① 的守护）──
+
+    /// <summary>
+    /// A7：配对必须按 <b>Sequence 升序</b>进行，而不是按事件数组的<b>下标顺序</b> ——
+    /// 数组里把 completed(Sequence=2) 排在它的 requested(Sequence=1) <b>之前</b>，completed 仍须配到那个哈希。
+    /// 变异：删掉配对前的 OrderBy（直接吃输入顺序）⇒ completed 先到、桶为空 ⇒ ArgsHash=null ⇒ 本用例必红。
+    /// <para>为什么必须单独补：B1-A2 断言的是<b>输出</b>顺序，而装配器末尾还有一次 <c>steps.Sort</c> ——
+    /// 父代理实测：删掉配对前排序后整个装配器套件 21/21 <b>全绿</b>，即该冻结规则在补本条之前
+    /// <b>无任何断言保护</b>（尾部排序把上游那道防线掩盖了）。</para>
+    /// </summary>
+    [TestMethod]
+    public void A7_CompletedListedBeforeItsRequest_StillPairsBySequence()
+    {
+        // 数组顺序故意「倒着放」：completed 在前、它的 requested 在后（与 Sequence 相反）。
+        var step = SingleStep(
+            Done(2, """{"name":"t","exitCode":0}"""),
+            Req(1, "{\"name\":\"t\",\"arguments\":" + JsonQuote(Args3) + "}"));
+
+        Assert.AreEqual(Args3Hash, step.ArgsHash, "配对前必须按 Sequence 升序排序：requested 虽在数组里靠后，completed 仍须配到它。");
+    }
 }
