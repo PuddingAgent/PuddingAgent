@@ -1,4 +1,8 @@
-﻿## 2026-09-21 Desktop 空闲 CPU 与日志呈现
+## 2026-09-21 出站 HTTP User-Agent 统一标识
+
+新增 `PuddingCode.Configuration.PuddingUserAgent`（`PuddingAgent/1.0`）作为出口 UA 单一事实来源：组合根 13 个命名 HttpClient 在各自 `AddHttpClient` 配置中逐点写入 UA（Connectors 6／Platform 6／Runtime 1）；`FlurlWebClient` 为全部搜索/抓取工具出站请求兜底（调用方显式 UA 优先）；`ControllerLlmProxyService` 三处裸 `new HttpClient()` 改经 `CreateHttpClient()`；`GitHubSearchTool` 硬编码改为引用常量。全局兜底方案（`ConfigureHttpClientDefaults` + `DelegatingHandler`）经 A/B 对照实测会使 `PuddingWebApiTests` 产生 48 项回归（失败 6→54，孤立运行亦失败），已回退为逐点注册并在组合根留注释警示。验证：`PuddingHost` 构建 0 error；`PuddingWebApiTests` 172 项 6 失败（均为既有已定性项）／166 通过；`PuddingRuntimeTests` 定向 31/31。提交 `a452eb76`。
+
+## 2026-09-21 Desktop 空闲 CPU 与日志呈现
 
 `IdleDetector` 将 ReArm 的调度续行与空闲状态日志标志分离，同一活动窗口只打印一次；IdleDetector/Heartbeat 18项回归通过，保留周期回调。
 
