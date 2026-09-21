@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -70,6 +70,10 @@ public static partial class PuddingServiceCollectionExtensions
         string aspnetcoreEnvironment,
         PuddingHostOptions hostOptions)
     {
+        // 出站 HTTP 统一 UA 采用「逐点注册」（见 Connectors/Platform/Runtime 各 AddHttpClient）。
+        // 注意：不要改回 ConfigureHttpClientDefaults 全局 AddHttpMessageHandler —— 实测会让
+        // PuddingWebApiTests 引入 48 项回归（失败 6 → 54），疑似波及测试宿主基础设施的 HttpClient。
+
         AddPlatformServices(builder, dataPaths, aspnetcoreEnvironment);
         AddRuntimeServices(builder, dataPaths, bootstrapConfiguration);
         AddConnectorServices(builder);

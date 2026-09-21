@@ -72,7 +72,7 @@ public sealed class GitHubSearchTool : PuddingToolBase<GitHubSearchArgs>
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["Accept"] = "application/vnd.github.v3+json",
-            ["User-Agent"] = "PuddingAgent/1.0",
+            ["User-Agent"] = PuddingUserAgent.Value,
         };
 
         if (!string.IsNullOrWhiteSpace(config.Token))

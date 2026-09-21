@@ -85,6 +85,7 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services
             .AddHttpClient<PlatformApiClient>(client =>
             {
+                client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PuddingUserAgent.Value);
                 var endpoint = builder.Configuration["Pudding:ControllerEndpoint"] ?? "http://localhost:5000";
                 client.BaseAddress = new Uri(endpoint);
                 client.Timeout = TimeSpan.FromSeconds(30);
@@ -347,6 +348,7 @@ public static partial class PuddingServiceCollectionExtensions
         // ADR-077：image_reader 按需取图（URL/绝对路径/artifact 引用 → Workspace Artifact）。
         builder.Services.AddHttpClient("image_reader", client =>
         {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PuddingUserAgent.Value);
             client.Timeout = TimeSpan.FromSeconds(60);
         });
         builder.Services.AddSingleton<PuddingAgent.Tools.ImageReaderSourceResolver>();
@@ -367,12 +369,17 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<UserAvatarStorageService>();
         builder.Services.AddHttpClient(
                 RemoteImageArtifactImportService.HttpClientName,
-                client => client.Timeout = TimeSpan.FromSeconds(60))
+                client =>
+                {
+                    client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PuddingUserAgent.Value);
+                    client.Timeout = TimeSpan.FromSeconds(60);
+                })
             .ConfigurePrimaryHttpMessageHandler(
                 RemoteImageArtifactImportService.CreatePublicNetworkHandler);
         builder.Services.AddSingleton<RemoteImageArtifactImportService>();
         builder.Services.AddHttpClient("ImageGeneration", client =>
         {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PuddingUserAgent.Value);
             client.Timeout = TimeSpan.FromMinutes(3);
         });
         builder.Services.AddSingleton<IImageGenerationProvider, VolcengineArkImageGenerationProvider>();
@@ -386,13 +393,20 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddScoped<SessionTitleService>();
         builder.Services.AddScoped<TokenCostService>();
         builder.Services.AddScoped<IVisualReasoningService, DefaultVisualReasoningService>();
-        builder.Services.AddHttpClient("DashScopeVisualReasoning");
+        builder.Services.AddHttpClient("DashScopeVisualReasoning", client =>
+        {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PuddingUserAgent.Value);
+        });
 
         // ── LLM Provider 余额查询（多服务商计费适配器注册表）──
         // DeepSeek 适配器：GET {baseUrl}/user/balance；新服务商实现 ILlmBalanceProvider 后在此注册。
         builder.Services.AddHttpClient(
             DeepSeekLlmBalanceProvider.BalanceHttpClientName,
-            client => client.Timeout = TimeSpan.FromSeconds(30));
+            client =>
+            {
+                client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PuddingUserAgent.Value);
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
         builder.Services.AddSingleton<ILlmBalanceProvider, DeepSeekLlmBalanceProvider>();
         builder.Services.AddScoped<IVisualReasoningProvider>(sp =>
         {

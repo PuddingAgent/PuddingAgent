@@ -377,6 +377,7 @@ public static partial class PuddingServiceCollectionExtensions
         // JEV_* 环境变量 + 可选 KeyVault 解析；密钥只在内存使用，不落日志。
         builder.Services.AddHttpClient(JevDecisionService.HttpClientName, client =>
         {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PuddingUserAgent.Value);
             client.Timeout = TimeSpan.FromSeconds(60);
         });
         builder.Services.AddSingleton<IJevDecisionOptionsProvider, JevDecisionOptionsProvider>();

@@ -1,6 +1,7 @@
 using Flurl.Http;
 using Flurl.Http.Configuration;
 using System.Collections.Concurrent;
+using PuddingCode.Configuration;
 
 namespace PuddingRuntime.Services.Skills;
 
@@ -20,6 +21,11 @@ public sealed class FlurlWebClient : IWebClient
         var client = _clientCache.GetOrAdd("HttpFetchSkill");
         var flurlRequest = client.Request(request.Url)
             .AllowAnyHttpStatus();
+
+        // 统一出站标识：Flurl 通道不经过 IHttpClientFactory，故在此兜底；
+        // 调用方显式提供的 User-Agent 优先。
+        if (!request.Headers.Any(h => string.Equals(h.Key, "User-Agent", StringComparison.OrdinalIgnoreCase)))
+            flurlRequest = flurlRequest.WithHeader("User-Agent", PuddingUserAgent.Value);
 
         foreach (var (name, value) in request.Headers)
         {

@@ -219,30 +219,36 @@ public static partial class PuddingServiceCollectionExtensions
 
         builder.Services.AddHttpClient("DirectLlm", client =>
         {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PuddingUserAgent.Value);
             client.Timeout = TimeSpan.FromHours(2);
         });
 
         builder.Services.AddHttpClient("HttpFetchSkill", client =>
         {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PuddingUserAgent.Value);
             client.Timeout = TimeSpan.FromSeconds(30);
         });
 
         builder.Services.AddHttpClient("SkillPackageDL", client =>
         {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PuddingUserAgent.Value);
             client.Timeout = TimeSpan.FromMinutes(2);
         });
 
         // ── TTS/ASR 语音 Provider ──
         builder.Services.AddHttpClient("DashScopeTts", client =>
         {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PuddingUserAgent.Value);
             client.Timeout = TimeSpan.FromSeconds(30);
         });
         builder.Services.AddHttpClient("DashScopeAsr", client =>
         {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PuddingUserAgent.Value);
             client.Timeout = TimeSpan.FromSeconds(60);
         });
         builder.Services.AddHttpClient("VoiceAudioDownload", client =>
         {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PuddingUserAgent.Value);
             client.Timeout = TimeSpan.FromSeconds(30);
         });
         builder.Services.AddSingleton<PuddingCode.Abstractions.IVoiceProviderFactory, PuddingRuntime.Services.VoiceProviderFactory>();

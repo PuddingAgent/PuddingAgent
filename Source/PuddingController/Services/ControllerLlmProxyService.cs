@@ -1,5 +1,6 @@
 using PuddingCode.Core;
 using PuddingCode.Abstractions;
+using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using System.Runtime.CompilerServices;
@@ -124,13 +125,20 @@ public sealed class ControllerLlmProxyService(IConfiguration configuration, ILog
             MaxTokens: config?.MaxOutputTokens,
             ReasoningEffort: config?.ReasoningEffort);
         if (string.Equals(protocol, "responses", StringComparison.OrdinalIgnoreCase))
-            return new ResponsesLlmGateway(new HttpClient(), options);
+            return new ResponsesLlmGateway(CreateHttpClient(), options);
         if (string.Equals(protocol, "anthropic", StringComparison.OrdinalIgnoreCase))
-            return new AnthropicMessagesLlmGateway(new HttpClient(), options);
+            return new AnthropicMessagesLlmGateway(CreateHttpClient(), options);
         if (string.Equals(protocol, "openai", StringComparison.OrdinalIgnoreCase))
-            return new OpenAiLlmGateway(new HttpClient(), options);
+            return new OpenAiLlmGateway(CreateHttpClient(), options);
 
         throw new InvalidOperationException($"Unsupported model protocol '{protocol}'.");
+    }
+
+    private static HttpClient CreateHttpClient()
+    {
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PuddingUserAgent.Value);
+        return client;
     }
 
     private static string ResolveProtocol(LlmConfig? config)
