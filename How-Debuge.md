@@ -1,5 +1,7 @@
 ### 工具参数重复键导致整个回合失败（2026-09-21）
 
+重启验收先区分依赖故障：5100拒绝连接对应独立PuddingCodexService，恢复前检查其持久任务是否会续跑；服务health、Core的MCP runtime-status及工具数分别验证。飞书agentCount=0先核对全局`<DataRoot>/agents/*/manifest.json`与channels的启用/绑定，不去workspace Agent的runs归档全文检索，也不擅自复活禁用Agent。具体部署与边界见[重启记录](Docs/Reports/Core重启与夜间代码部署诊断-2026-09-21.md)。
+
 `HarnessToolCompatibilityAdapter.TryFind` 抛 `ArgumentException: same key ... pattern` 时，不能只在 `JsonNode.Parse` 外捕获 `JsonException`：JsonObject 的字典在首次枚举时才物化，重复属性延迟抛错。先用 JsonDocument 逐对象检测解码后的属性名（数组内对象分别计算），含重复键的原文不做别名改写；ToolInvocation 与统一 ToolExecution 边界返回 `tool_arguments_duplicate_key`，不选首值/末值、不执行工具、不熔断整个会话。回归需覆盖顶层/嵌套/数组/Unicode转义重复键、独立对象同名合法以及拒绝后继续正常调用。2026-09-21 实测旧版5反例失败，修复及分类器相关60项通过；产品加载另核对部署回执。
 
 ### 夜间效率与自改进不能只看缓存/提交数（2026-09-21）

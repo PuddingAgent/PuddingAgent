@@ -2,6 +2,8 @@
 
 `HarnessToolCompatibilityAdapter.GetArgumentValidationError` 按JSON对象递归检查重复属性，规范化保留歧义原文；`ToolInvocationService`/`PuddingToolExecutionService` 拒绝执行并返回 `tool_arguments_duplicate_key`，避免延迟JsonObject物化异常击穿Turn。`HarnessToolCompatibilityAdapterTests` 覆盖5种重复键、合法对象及失败后续行；连同分类器接线/健康/Jev单元回归60项通过。源码验证与Core重新加载分别记录。
 
+部署补充：`1941a2e` 已通过 Desktop 第二次部署，Core PID42796/08:53:26 Ready，托管清单与实际前端匹配；Codex MCP恢复Available/7工具，蜜糖飞书通道因原Agent禁用保持告警，分类器未裁决时unknown。见[部署诊断与验收边界](Docs/Reports/Core重启与夜间代码部署诊断-2026-09-21.md)。
+
 ## 2026-09-21 夜间效率问题登记与优化合同
 
 [第一性原理与代码级方案](Docs/Features/夜间效率问题登记与第一性原理优化方案-2026-09-21.md)：N01–N14覆盖测试门禁、RSI评测、执行身份、失败止损、价格对账、记忆/压缩、恢复片段、降噪余项、部署证据、信号来源、Goodput、最终请求与终端等待。优先补充现有任务，保留历史和执行状态；具体TaskId及写后核对见方案末尾登记表。登记不是实施或产品验收。
