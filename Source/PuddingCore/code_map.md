@@ -211,7 +211,29 @@ S1a/S1b 已落地（`f577add` / `7cfc198`）。抽象在 PuddingCore，实现全
 
 > **S2b 已接线（2026-09-21，实现落在 PuddingRuntime）**：本文件的两个旁挂端口 `IOperatorHealthObserver` / `IOperatorAuditSink` 此前**没有任何生产实现**（惰性抽象），现由 `PuddingRuntime/Operators/Adapters/` 下的两个适配器接上——健康 ⇒ 既有 `ClassifierHealthReporter`（计数键含**场景维度**），审计 ⇒ 既有审计存储（严守「**裁决先于留痕**」）。**本契约层未改动一行**（append-only 纪律：只允许追加，不得改既有字段），因此上述两行的字段清单保持有效。
 
+## 改进落点契约（Improvement/ · L3-a，2026-09-21）
+
+L3-a 已落地（纯类型 + 守卫测试，**零行为**：不写技能、不写记忆、不调任何服务）。设计依据见
+`Docs/Features/RSI-Harness-分类器抽象与可递归进化服务设计-2026-09-21.md` §15.4 / §15.6。
+
+**立场**：改进的输出货币是**变更**，不是新增物——于是「更新 / 合并 / 取代 / 淘汰既有资产」与「新增」
+在同一份契约里并列，且**新增必须自证为什么不能更新或合并**。
+
+⚠️ **已知缺口**：本目录**不在** `TestScripts/test-operators-architecture-gates.ps1` 的扫描范围内
+（该门禁只扫 `Operators/**`）。两条边界（不得依赖具体供应商 / 不得出现领域标识）在 L3 同样成立，
+但目前**没有机械守卫**——待 L3-b 一并补上。
+
+| 文件 | 用途 |
+|------|------|
+| `Improvement/ImprovementEnums.cs` | `ArtifactKind`（资产种类 `Skill`/`MemoryChapter`/`Rule`/`Doc`/`CodeFile`；`Unknown=0` 为非法哨兵，**不得当作「默认落到某通道」**）、`ImprovementOperation`（`Create`/`Update`/`Merge`/`Replace`/`Retire`；`Unknown=0`）、`ChangeDecision`（`ApplyShadow`/`Apply`/`Reject`/`Defer`；`Unknown=0` **不得当作放行**；`ApplyShadow` 为默认）。三者均**只允许末尾追加**（序列化兼容） |
+| `Improvement/ArtifactRef.cs` | 资产句柄（统一寻址）：`Kind`+`Id`+`Version?`+`EvidenceRefs`；`Handle` 产出规范化串 `kind:id@version` 供幂等键与对账。守卫：`Kind=Unknown` 拒、空 id 拒、**空白版本归一为 null**（防 `kind:id@` 假句柄）；`Equals` **显式按内容比较证据列表**（record 自动相等对集合成员用引用相等，会让去重与幂等键静默失效） |
+| `Improvement/ImprovementProposal.cs` | 改进提案（统一货币）：`Operation`+`Target?`+`ProposedBy`+`IdempotencyKey`+`EvidenceRefs`+`WhyNotUpdateOrMerge`+`Payload`+`ExpectedGain`+`Rationale`。⭐ **`Create` 必带 `WhyNotUpdateOrMerge`**（把「add 不是默认」做成**字段级强制**）；非 Create 必带 `Target` 且**禁**带该字段；`Update`/`Merge`/`Replace` 必带 `Payload`；`Retire` 必**无** `Payload`；证据非空（无证据的变更不进裁决）；`ExpectedGain` 标注为**未标定刻度**，不得当阈值输入，且**无数据 ≠ 低价值**（缺省 null，不用 0 填充） |
+| `Improvement/ChangeVerdict.cs` | 变更裁决（**唯一**可驱动落点动作的凭据）：`Decision`+`PolicyId`+`PolicyVersion`+`ReasonCode`+`RollbackHandle?`。守卫：`Apply` **必带** `RollbackHandle`（不可回滚的自动变更不允许存在，对应 C4）；**非 `Apply` 禁带**（防「看起来能回滚、实际无动作」的假象）；`Unknown` 决策拒；`PolicyVersion >= 1` |
+
+**契约测试**：`../PuddingCoreTests/Improvement/ImprovementContractTests.cs` —— **29/29 ✅**（2026-09-21）。
+
 ## 运行时抽象
+
 
 - `Runtime/ITurnExecutor.cs`：`TurnExecutionContext` 除 Agent 预算外携带 canonical TaskPlan/TaskNode/ParentNode identity，供 Platform→Runtime 交接。
 

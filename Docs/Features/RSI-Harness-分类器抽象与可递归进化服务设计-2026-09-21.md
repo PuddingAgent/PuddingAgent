@@ -1015,7 +1015,7 @@ decision ∈ { Apply | ApplyShadow | Reject | Defer }
 |---|---|---|---|---|
 1 | **S0 评测门禁可信化** | 评测 | ✅ **已完成**（2026-09-21：判据=结构化证据+用例身份；`AllowedFailures` 旋钮已删除；必测未测⇒非零） | — |
 2 | S1a/S1b/S2a/S2b 判定算子基础设施 | 算子 | ✅ **已交付** | — |
-3 | **L3-a 提案模型最小契约**（`ArtifactRef` / `ImprovementProposal` / `ChangeVerdict`；纯类型 + 守卫测试，**零行为**） | 落点 | 未做 | 任意 |
+3 | **L3-a 提案模型最小契约**（`ArtifactRef` / `ImprovementProposal` / `ChangeVerdict`；纯类型 + 守卫测试，**零行为**） | 落点 | ✅ **已完成**（2026-09-21，测试 29/29） | — |
 4 | **G1 组合盘点**（只读；含家族分布 + 索引 token 实测） | 治理 | 部分已做（存量 + 关键词空间） | 任意 |
 5 | **G2 使用遥测 + 价值打分**（打分器首个真实消费者，**无 LLM**） | 治理 | 未做 | 任意（写热路径需谨慎） |
 6 | **G6 `skill.curate` 报告先行**（**用 L3-a 模型出报告**，零技能变更） | 整理 | 未做 | 非工作时段 |
@@ -1029,6 +1029,18 @@ decision ∈ { Apply | ApplyShadow | Reject | Defer }
 14 | **S4 `RsiClassifier` + 信号存储** | RSI | 未做 | 非工作时段 |
 15 | **S5 Analyze → Plan → Implement**（默认 shadow） | RSI | 未做 | 非工作时段 |
 16 | **S6 评测 + 灰度晋升 + 回退** | RSI | 未做 | 非工作时段 |
+> **L3-a 实测（2026-09-21）**：实现 `Source/PuddingCore/Improvement/{ImprovementEnums,ArtifactRef,ImprovementProposal,ChangeVerdict}.cs`
+> （命名空间 `PuddingCode.Improvement`，与 `PuddingCode.Operators` / `PuddingCode.Classification` 同惯例）；
+> 契约测试 `Source/PuddingCoreTests/Improvement/ImprovementContractTests.cs` **29/29 通过**
+> （`dotnet test --filter FullyQualifiedName~PuddingCoreTests.Improvement`）。
+>
+> **构造期强制清单（不靠调用方自觉）**：枚举 `Unknown=0` 与数值冻结；`ArtifactRef` 禁 `Unknown` 种类与空 id、
+> 空白版本归一为 null、证据按**内容**比较（否则 record 自动相等对集合用引用相等会静默误判）；
+> `ImprovementProposal` 的 `Create` 必带 `whyNotUpdateOrMerge`、非 Create 必带 target 且**禁**带该字段、
+> `Update/Merge/Replace` 必带 payload、`Retire` 禁带 payload、证据非空、幂等键非空、`ExpectedGain` 禁 NaN/无穷；
+> `ChangeVerdict` 的 `Apply` 必带 `rollbackHandle`、非 Apply **禁**带、`Unknown` 决策拒绝。
+>
+> **零行为**：不写技能、不写记忆、不调任何服务——所以本切片不触碰任何既有消费通道。
 
 **四条次序理由（为什么不能随便调）**：
 
