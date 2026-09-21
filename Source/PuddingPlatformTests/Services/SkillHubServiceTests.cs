@@ -357,6 +357,49 @@ public sealed class SkillHubServiceTests
         Assert.AreEqual(1, await db.HubSkills.CountAsync(s => s.SkillId == "boot-test"));
     }
 
+    // ── CJK 检索：中文 keywords / 中文 tags 必须可命中 ────────────────
+    // 回归：TagsJson/KeywordsJson 列存的是 JSON 文本，System.Text.Json 默认把非 ASCII 转义成
+    // \uXXXX；若对列做 LIKE，中文关键词/标签会系统性漏检（ASCII 因不受转义影响而正常）。
+    // 既有用例的 keywords 全为 ASCII，故该缺陷长期未被发现——本用例专盯这种组合。
+
+    [TestMethod]
+    public async Task ListSkills_CjkKeywordsAndTags_AreSearchable()
+    {
+        await using var scope = await CreateScopeAsync();
+        var service = scope.CreateService();
+
+        var published = await service.PublishAsync(
+            PublishRequest("zh-skill") with
+            {
+                Keywords = new[] { "演示文稿", "powerpoint" },
+                Tags = new[] { "办公", "office" },
+            },
+            CancellationToken.None);
+        Assert.IsTrue(published.IsOk, published.Error);
+
+        // 中文关键词（缺陷期：0 命中）
+        Assert.AreEqual(1, (await SearchAsync(service, "演示文稿")).Count, "中文 keywords 应命中");
+        // 中文关键词子串（缺陷期：0 命中）
+        Assert.AreEqual(1, (await SearchAsync(service, "文稿")).Count, "中文 keywords 子串应命中");
+        // ASCII 关键词不得回归
+        Assert.AreEqual(1, (await SearchAsync(service, "powerpoint")).Count, "ASCII keywords 仍应命中");
+        // 中文 tags 过滤（同一根因的姐妹缺陷）
+        Assert.AreEqual(
+            1,
+            (await service.ListSkillsAsync(null, "办公", null, 1, 50, CancellationToken.None)).Count,
+            "中文 tag 过滤应命中");
+        // ASCII tags 不得回归
+        Assert.AreEqual(
+            1,
+            (await service.ListSkillsAsync(null, "office", null, 1, 50, CancellationToken.None)).Count,
+            "ASCII tag 过滤仍应命中");
+        // 无关关键词仍应为 0 命中（防止改造后变成全量返回）
+        Assert.AreEqual(0, (await SearchAsync(service, "zzz-不存在-9999")).Count, "无关关键词应为 0 命中");
+    }
+
+    private static Task<List<HubSkillSummaryDto>> SearchAsync(SkillHubService service, string query) =>
+        service.ListSkillsAsync(query, null, null, 1, 50, CancellationToken.None);
+
     // ── 测试夹具：SQLite in-memory + EnsureCreated ────────────────────
 
     private static PublishHubSkillRequest PublishRequest(

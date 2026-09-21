@@ -404,24 +404,31 @@ public partial class SkillHubService(PlatformDbContext db) : ISkillHubService
         var skills = db.HubSkills.AsNoTracking().AsQueryable();
         if (!string.IsNullOrWhiteSpace(status))
             skills = skills.Where(s => s.Status == status);
-        if (!string.IsNullOrWhiteSpace(tag))
-            skills = skills.Where(s => s.TagsJson.Contains(tag));
-        if (!string.IsNullOrWhiteSpace(query))
-        {
-            var like = $"%{query.Trim()}%";
-            skills = skills.Where(s =>
-                EF.Functions.Like(s.Name, like) ||
-                EF.Functions.Like(s.Summary, like) ||
-                EF.Functions.Like(s.Description, like) ||
-                EF.Functions.Like(s.TagsJson, like) ||
-                EF.Functions.Like(s.KeywordsJson, like));
-        }
 
-        var list = await skills
+        // 关键词/标签必须按「解码后的值」匹配，不能对 JSON 列做 LIKE：
+        // TagsJson / KeywordsJson 存的是 JSON 文本，System.Text.Json 默认把非 ASCII 转义成
+        // \uXXXX，直接对列做 LIKE 会让中文关键词/中文标签永远匹配不到（CJK 检索系统性失效，
+        // ASCII 因不受转义影响而正常）。HubSkills 是小型配置表（GetStatsAsync 亦全量物化），
+        // 故此处物化后按解码值过滤；过滤后再翻页，顺序仍为 Id 降序，语义与改造前一致。
+        var materialized = await skills
             .OrderByDescending(s => s.Id) // 自增 Id 序 ≈ 时间序；SQLite 不支持 DateTimeOffset ORDER BY
+            .ToListAsync(ct);
+
+        var tagFilter = string.IsNullOrWhiteSpace(tag) ? null : tag.Trim();
+        if (tagFilter is not null)
+            materialized = materialized
+                .Where(s => DeserializeStringList(s.TagsJson)
+                    .Any(t => t.Contains(tagFilter, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+        var queryFilter = string.IsNullOrWhiteSpace(query) ? null : query.Trim();
+        if (queryFilter is not null)
+            materialized = materialized.Where(s => MatchesQuery(s, queryFilter)).ToList();
+
+        var list = materialized
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync(ct);
+            .ToList();
         return list.Select(ToSummaryDto).ToList();
     }
 
@@ -689,6 +696,25 @@ public partial class SkillHubService(PlatformDbContext db) : ISkillHubService
 
     private static string BuildPayload(object payload) =>
         JsonSerializer.Serialize(payload, JsonOpts);
+
+    /// <summary>
+    /// 模糊匹配（契约 §5.2）：name/summary/description/tags/keywords 子串、忽略大小写。
+    /// 一律基于<b>解码后的字段值</b>匹配，避免 JSON 转义（\uXXXX）导致非 ASCII 检索失效。
+    /// </summary>
+    private static bool MatchesQuery(HubSkillEntity s, string query)
+    {
+        static bool Text(string? value, string q) =>
+            !string.IsNullOrEmpty(value) && value.Contains(q, StringComparison.OrdinalIgnoreCase);
+
+        static bool InList(string? json, string q) =>
+            DeserializeStringList(json).Any(v => v.Contains(q, StringComparison.OrdinalIgnoreCase));
+
+        return Text(s.Name, query)
+            || Text(s.Summary, query)
+            || Text(s.Description, query)
+            || InList(s.TagsJson, query)
+            || InList(s.KeywordsJson, query);
+    }
 
     private static List<string> DeserializeStringList(string? json)
     {
