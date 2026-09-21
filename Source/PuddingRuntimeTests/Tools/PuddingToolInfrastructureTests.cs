@@ -1629,6 +1629,81 @@ public sealed partial class PuddingToolInfrastructureTests
     }
 
     [TestMethod]
+    public async Task ToolAuthorization_Once_Grant_Is_Consumed_Exactly_Once()
+    {
+        var authorization = new InMemoryToolAuthorizationService();
+        var descriptor = new SampleHighTool().Descriptor;
+        var context = OnceGrantContext("session-once-sequential");
+
+        await GrantOnceAsync(authorization, context);
+
+        var first = await authorization.CheckAsync(context, descriptor);
+        var second = await authorization.CheckAsync(context, descriptor);
+
+        Assert.IsTrue(first.IsAuthorized, first.Message);
+        Assert.IsFalse(second.IsAuthorized, "Once 授权只允许消费一次。");
+    }
+
+    [TestMethod]
+    public async Task ToolAuthorization_Once_Grant_Is_Not_DoubleConsumed_Under_Concurrency()
+    {
+        const int attemptsPerRound = 32;
+        const int rounds = 20;
+
+        var authorization = new InMemoryToolAuthorizationService();
+        var descriptor = new SampleHighTool().Descriptor;
+
+        for (var round = 0; round < rounds; round++)
+        {
+            var context = OnceGrantContext($"session-once-{round}");
+            await GrantOnceAsync(authorization, context);
+
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var attempts = Enumerable.Range(0, attemptsPerRound)
+                .Select(_ => Task.Run(async () =>
+                {
+                    await gate.Task.ConfigureAwait(false);
+                    return await authorization.CheckAsync(context, descriptor).ConfigureAwait(false);
+                }))
+                .ToArray();
+
+            await Task.Delay(25);
+            gate.SetResult();
+
+            var results = await Task.WhenAll(attempts);
+            var authorized = results.Count(r => r.IsAuthorized);
+
+            Assert.AreEqual(
+                1,
+                authorized,
+                $"第 {round} 轮：Once 授权在 {attemptsPerRound} 次并发检查中只应放行 1 次，实际 {authorized} 次（TOCTOU 双消费）。");
+        }
+    }
+
+    private static ToolAuthorizationContext OnceGrantContext(string sessionId)
+        => new()
+        {
+            WorkspaceId = "workspace-1",
+            SessionId = sessionId,
+            AgentInstanceId = "agent-1",
+            UserId = "user-1",
+            ToolId = "sample_high",
+        };
+
+    private static Task<ToolAuthorizationCommandResult> GrantOnceAsync(
+        InMemoryToolAuthorizationService authorization,
+        ToolAuthorizationContext context)
+        => authorization.ApplyCommandAsync(
+            new ToolAuthorizationCommand
+            {
+                RawText = "/authorize sample_high once",
+                Action = ToolAuthorizationAction.Authorize,
+                ToolId = "sample_high",
+                Scope = ToolAuthorizationScope.Once,
+            },
+            context);
+
+    [TestMethod]
     public async Task PuddingToolExecutionService_Allows_High_Tool_With_Auto_Approval()
     {
         var approval = new InMemoryToolApprovalService();

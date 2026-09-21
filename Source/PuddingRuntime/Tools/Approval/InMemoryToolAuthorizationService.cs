@@ -174,7 +174,22 @@ public sealed class InMemoryToolAuthorizationService : IToolAuthorizationService
                     continue;
                 }
 
-                _grants.TryRemove(key, out _);
+                // P0-4 · D 步（信任根加固）：Once 授权必须「原子消费」。
+                // ConcurrentDictionary.TryRemove 在同一 key 上是 CAS：并发情况下只有一个调用返回 true。
+                // 原实现丢弃返回值后无条件返回 IsAuthorized=true ⇒ 并发双消费（TOCTOU）。
+                // 消费失败的一侧一律视为未授权，继续检查下一候选 grant（fail-closed）。
+                if (!_grants.TryRemove(key, out var consumed) || consumed is null)
+                {
+                    _logger.LogWarning(
+                        "[ToolAuth] OnceGrantAlreadyConsumed tool={ToolId} workspace={WorkspaceId} session={SessionId} agent={AgentInstanceId} user={UserId}",
+                        normalizedContext.ToolId,
+                        normalizedContext.WorkspaceId,
+                        normalizedContext.SessionId,
+                        normalizedContext.AgentInstanceId,
+                        normalizedContext.UserId);
+                    continue;
+                }
+
                 _logger.LogInformation(
                     "[ToolAuth] AuthorizedOnce tool={ToolId} workspace={WorkspaceId} session={SessionId} agent={AgentInstanceId} user={UserId}",
                     normalizedContext.ToolId,
