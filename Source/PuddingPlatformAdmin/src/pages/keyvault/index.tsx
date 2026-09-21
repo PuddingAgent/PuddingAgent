@@ -1,4 +1,11 @@
-import { PageContainer, ProForm, ProFormText, ProFormTextArea, ProTable } from '@ant-design/pro-components';
+import {
+  PageContainer,
+  ProForm,
+  ProFormSelect,
+  ProFormText,
+  ProFormTextArea,
+  ProTable,
+} from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import {
   Button,
@@ -15,8 +22,6 @@ import {
   CopyOutlined,
   DeleteOutlined,
   EditOutlined,
-  EyeInvisibleOutlined,
-  EyeOutlined,
   PlusOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
@@ -48,23 +53,26 @@ const parseTags = (raw?: string): string[] => {
     .filter((x) => x.length > 0);
 };
 
+/**
+ * 分类单一事实来源：表格 Tag 与表单下拉共用同一份定义，
+ * 避免此前「展示端按枚举上色、录入端却是自由文本」导致拼写漂移、颜色退化。
+ */
+const CATEGORY_META: Record<string, { label: string; color: string }> = {
+  general: { label: '通用', color: 'blue' },
+  api: { label: 'API Key', color: 'red' },
+  token: { label: 'Token', color: 'orange' },
+};
+
+const CATEGORY_OPTIONS = Object.entries(CATEGORY_META).map(([value, meta]) => ({
+  value,
+  label: meta.label,
+}));
+
 const KeyVaultPage: React.FC = () => {
   const tableRef = useRef<ActionType | undefined>(undefined);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<KeyVaultSecretDto | null>(null);
   const [form] = Form.useForm<KeyVaultFormValues>();
-  /** 当前已显示的密钥项 ID 集合（点击后揭示） */
-  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
-
-  const toggleReveal = (keyVaultId: string) => {
-    setRevealedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(keyVaultId)) next.delete(keyVaultId);
-      else next.add(keyVaultId);
-      return next;
-    });
-  };
-
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
@@ -179,28 +187,25 @@ const KeyVaultPage: React.FC = () => {
     {
       title: '分类',
       dataIndex: 'category',
-      width: 100,
-      render: (_, record) => <Tag color={record.category === 'api' ? 'red' : record.category === 'token' ? 'orange' : 'blue'}>{record.category || 'general'}</Tag>,
+      width: 110,
+      render: (_, record) => {
+        const meta = CATEGORY_META[record.category ?? 'general'] ?? CATEGORY_META.general;
+        return <Tag color={meta.color}>{meta.label}</Tag>;
+      },
     },
     {
       title: '密钥值',
-      width: 200,
-      render: (_, record) => {
-        const isRevealed = revealedIds.has(record.keyVaultId);
-        return (
-          <Tooltip title={isRevealed ? '点击隐藏' : '点击显示'}>
-            <Button
-              type="text"
-              size="small"
-              icon={isRevealed ? <EyeOutlined /> : <EyeInvisibleOutlined />}
-              onClick={() => toggleReveal(record.keyVaultId)}
-              style={{ fontFamily: 'monospace', fontSize: 13, color: isRevealed ? '#a78bfa' : '#6b7280' }}
-            >
-              {isRevealed ? '•••• 已揭示' : '••••••••'}
-            </Button>
-          </Tooltip>
-        );
-      },
+      width: 120,
+      // 列表接口不返回明文（安全设计）。此前此处提供「眼睛」按钮声称可揭示，
+      // 实际只把文案从 '••••••••' 换成 '•••• 已揭示'，是**假功能**——已移除，
+      // 改为静态遮蔽 + 说明；真正的明文查看需后端 includePlainText + 审计（见重设计文档 S3）。
+      render: () => (
+        <Tooltip title="安全设计：列表不返回明文。如需更换密钥值，请使用「轮换」（旧值将被替换）">
+          <Typography.Text type="secondary" style={{ fontFamily: 'monospace', letterSpacing: 1 }}>
+            ••••••••
+          </Typography.Text>
+        </Tooltip>
+      ),
     },
     {
       title: '占位符',
@@ -266,9 +271,11 @@ const KeyVaultPage: React.FC = () => {
 
   return (
     <PageContainer
-      title="KeyVault 密钥保管箱"
-      subTitle="安全存储 API Key / Token；列表不展示明文，使用 {{vault:name}} 占位符引用"
-      style={{ background: '#1a1a1e', minHeight: '100%' }}
+      title="密钥保管箱"
+      subTitle="安全存储 API Key / Token；列表不展示明文，配置中以 {{vault:name}} 占位符引用"
+      // ⚠️ 此前此处硬编码 style={{ background: '#1a1a1e' }}（深色底），
+      // 而应用为浅色主题 ⇒ 页头呈「深灰标题压深色底」，标题几乎不可读，
+      // 且迫使 ProTable 用 transparent 打补丁。已移除硬编码色，交回主题令牌。
     >
       <ProTable<KeyVaultSecretDto>
         actionRef={tableRef}
@@ -285,8 +292,6 @@ const KeyVaultPage: React.FC = () => {
           </Button>,
         ]}
         cardBordered
-        style={{ background: 'transparent' }}
-        tableStyle={{ background: 'transparent' }}
       />
 
       <Drawer
@@ -322,12 +327,12 @@ const KeyVaultPage: React.FC = () => {
             placeholder="可选，简要描述该密钥用途"
           />
 
-          <ProFormText
+          <ProFormSelect
             name="category"
             label="分类"
             initialValue="general"
-            rules={[{ required: true, message: '请输入分类' }]}
-            placeholder="例如 general / api / token"
+            rules={[{ required: true, message: '请选择分类' }]}
+            options={CATEGORY_OPTIONS}
           />
 
           <ProFormText
