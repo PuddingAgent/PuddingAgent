@@ -3,32 +3,12 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using PuddingCode.Skills;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Data.Entities;
 
 namespace PuddingPlatform.Services;
-
-/// <summary>SKILL Hub 写/读操作的语义结果状态。</summary>
-public enum SkillHubStatus
-{
-    Ok,
-    NotFound,
-    Conflict,
-    BadRequest,
-}
-
-/// <summary>SKILL Hub 语义结果——控制器据此映射 HTTP 状态码（404/409/400）。</summary>
-public sealed record SkillHubResult<T>(SkillHubStatus Status, T? Value = default, string? Error = null)
-    where T : class
-{
-    public bool IsOk => Status == SkillHubStatus.Ok;
-
-    public static SkillHubResult<T> Ok(T value) => new(SkillHubStatus.Ok, value);
-    public static SkillHubResult<T> NotFound(string error) => new(SkillHubStatus.NotFound, default, error);
-    public static SkillHubResult<T> Conflict(string error) => new(SkillHubStatus.Conflict, default, error);
-    public static SkillHubResult<T> BadRequest(string error) => new(SkillHubStatus.BadRequest, default, error);
-}
 
 /// <summary>
 /// SKILL Hub 中央技能库服务——实现设计契约 §5.3 的全部语义规则（冻结）：
@@ -36,7 +16,7 @@ public sealed record SkillHubResult<T>(SkillHubStatus Status, T? Value = default
 /// 血缘节点/边生成、InstallCount 去重重算、全写操作审计事件。
 /// 无状态；由控制器按请求构造（与 SkillPackageApiController 直接持 DbContext 的风格一致）。
 /// </summary>
-public partial class SkillHubService(PlatformDbContext db)
+public partial class SkillHubService(PlatformDbContext db) : ISkillHubService
 {
     /// <summary>SkillId 格式（契约 §5.3.1）。</summary>
     public static readonly Regex SkillIdPattern = new(@"^[a-z0-9][a-z0-9\-]{1,127}$", RegexOptions.Compiled);

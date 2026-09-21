@@ -32,6 +32,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- SKILL Hub 契约命名空间全局可见（DTO / SkillHubResult / SkillHubStatus 已迁至 PuddingCode.Skills）：
+         为无法显式补 using 的冻结引用点（如 SkillHubController.cs）补救命名空间变更。 -->
+    <Using Include="PuddingCode.Skills" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="SkiaSharp" Version="3.119.2" />
     <!-- 全局默认心跳提示词（heartbeatPrompt.md 唯一权威默认来源）。
          运行时通过 WorkspaceAgentFileService.TryReadDefaultHeartbeatPrompt 读取；

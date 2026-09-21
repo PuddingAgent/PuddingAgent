@@ -1,4 +1,4 @@
-namespace PuddingPlatform.Data.Dtos;
+namespace PuddingCode.Skills;
 
 // ════════════════════════════════════════════════════════════════
 // SKILL Hub（中央技能库）DTO —— 设计契约 §5.1/§5.2，字段冻结。

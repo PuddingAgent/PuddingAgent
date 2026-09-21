@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using PuddingCode.Skills;
 using PuddingPlatform.Data;
 using PuddingPlatform.Data.Dtos;
 using PuddingPlatform.Services;

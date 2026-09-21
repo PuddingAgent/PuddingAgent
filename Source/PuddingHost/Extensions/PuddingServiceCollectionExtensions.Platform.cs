@@ -94,6 +94,10 @@ public static partial class PuddingServiceCollectionExtensions
 
         // ── Workspace 业务层 ──────────────────────────────────
         builder.Services.AddScoped<WorkspaceBusinessService>();
+
+        // ── SKILL Hub 契约（进程内直连地基）：Scoped 与 PlatformDbContext 生命周期一致，
+        //    避免 Singleton 捕获 scoped DbContext（captive dependency）；控制器仍按请求 new，行为零变化。
+        builder.Services.AddScoped<PuddingCode.Skills.ISkillHubService, PuddingPlatform.Services.SkillHubService>();
         builder.Services.AddSingleton<MinioStorageService>();
         builder.Services.AddSingleton<SessionEventHub>();
         builder.Services.AddSingleton<SessionStateManager>();
