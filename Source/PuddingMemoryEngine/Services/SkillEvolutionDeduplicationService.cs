@@ -431,7 +431,19 @@ public sealed partial class SkillEvolutionDeduplicationService(
         sourceTurnIds = ExtractSourceTurns(skill),
     };
 
-    private static bool IsDeterministicallyEligible(
+    /// <summary>
+    /// G7 的既有确定性**闸门**：工具集合完全相等（且非空）+ 元数据文本 ≥ 下界常量 +
+    /// （共享来源轮次 或 文本 ≥ 上界常量）。
+    /// <para>
+    /// 为什么把既有实现提为公有：RSI-G4 的只读可行性探针（D6b）必须把**这条既有闸门原样叠加**在四条件判据之上统计
+    /// （任务书 §2.5-2），⛔ 不得另写一份“等效”实现 —— 否则统计到的就不是这条闸门了。
+    /// </para>
+    /// <para>
+    /// ⚠️ 本方法只是把原来的私有实现**原样提为公有**，<b>行为逐字不变</b>（I8：既有 <c>~Skill</c> 全绿）；
+    /// 它仍然只被 <c>ConsolidateExistingAsync</c> 与只读探针消费，⛔ 不改变任何既有路径的裁决。
+    /// </para>
+    /// </summary>
+    public static bool IsDeterministicallyEligible(
         AgentSkillEvolutionDocument canonical,
         AgentSkillEvolutionDocument duplicate)
     {
@@ -507,9 +519,27 @@ public sealed partial class SkillEvolutionDeduplicationService(
     private static double CalculateTextSimilarity(
         AgentSkillEvolutionDocument left,
         AgentSkillEvolutionDocument right)
+        => CalculateTextSimilarity($"{left.Name} {left.Description}", $"{right.Name} {right.Description}");
+
+    /// <summary>
+    /// 任意两段文本的相似度（**同一份** token-Jaccard 实现：分词 = <see cref="Tokenize"/>，判别式 = |交集| / |并集|）。
+    /// <para>
+    /// 为什么把既有实现提为公有：RSI-G4 的合并判据（<c>SkillMergeEligibilityJudge</c>）需要一个
+    /// **程序性文本**（技能正文）相似度，而纪律要求「判定逻辑只有一份」——它必须复用这里的实现，
+    /// ⛔ 不得另写一套，否则两处口径会各自演化。
+    /// </para>
+    /// <para>
+    /// ⚠️ 本方法只是把原来的私有实现**原样提为公有**，<b>行为逐字不变</b>：
+    /// 元数据文本（名称+描述）相似度仍由上面的重载调用它（I8：既有闸门行为零变化）。
+    /// </para>
+    /// </summary>
+    public static double CalculateTextSimilarity(string leftText, string rightText)
     {
-        var leftTokens = Tokenize($"{left.Name} {left.Description}");
-        var rightTokens = Tokenize($"{right.Name} {right.Description}");
+        ArgumentNullException.ThrowIfNull(leftText);
+        ArgumentNullException.ThrowIfNull(rightText);
+
+        var leftTokens = Tokenize(leftText);
+        var rightTokens = Tokenize(rightText);
         if (leftTokens.Count == 0 || rightTokens.Count == 0)
             return 0;
         var intersection = leftTokens.Intersect(rightTokens, StringComparer.OrdinalIgnoreCase).Count();
