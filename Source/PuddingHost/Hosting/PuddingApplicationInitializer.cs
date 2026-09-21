@@ -66,6 +66,8 @@ public static class PuddingApplicationInitializer
             await ExternalAccessTokenSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await ExternalTaskApiSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
             await ProviderFileRefSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
+            // SKILL Hub 中央技能库（4 张 Hub* 表 + 索引）；EF 迁移快照漂移，故走同一幂等模式
+            await SkillHubSchemaBootstrapper.EnsureCreatedAsync(platformDb, schemaLogger, cancellationToken);
 
             // ── ADR-074 §12 / ADR-092：Core 重启后按 resume_policy 分流：默认 disarm 为 paused，
             //    auto_resume_on_restart 保持 Active 并换发 fence；显式 /goal resume 始终可用 ──
