@@ -10,6 +10,7 @@ using PuddingCode.Models;
 using PuddingCode.Orchestration;
 using PuddingCode.Platform;
 using PuddingCode.Runtime;
+using PuddingCode.Skills.Curation;
 using PuddingMemoryEngine;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Services;
@@ -106,6 +107,9 @@ public static class RuntimeServiceExtensions
         services.TryAddSingleton<ISkillEvolutionTrajectorySource, ConversationSkillEvolutionTrajectorySource>();
         services.TryAddSingleton<IAgentSkillEvolutionStore, AgentSkillEvolutionStore>();
         services.TryAddSingleton<SkillEvolutionDeduplicationService>();
+        // G7 薄接线：默认**空**生产者（返回空列表）⇒ 技能整理报告逐字段零回归；真提炼器由后续切片替换本注册。
+        // ⚠️ 刻意**不**在此注册 SkillCurationPolicy：阈值必须经论证后由版本化策略对象提供，不得由组合根凭空编造。
+        services.TryAddSingleton<ISkillDistillationSource, NullSkillDistillationSource>();
         services.AddSingleton<ISubconsciousOrchestrator, SubconsciousOrchestrator>();
         services.TryAddSingleton<ISubconsciousJobQueue, SubconsciousJobQueue>();
         services.AddOptions<SubconsciousDiagnosticLogOptions>();

@@ -505,6 +505,16 @@ public sealed record SkillCurationReport
     public string NotReducedReason { get; init; } = "";
     public int CandidateCount { get; init; }
     public int RetireSuggestionCount { get; init; }
+
+    /// <summary>G7：本轮过 <c>SkillCurationGate</c> 评估的提炼产物条数（默认 0 ⇒ 空生产者路径逐字段零回归）。</summary>
+    public int CuratedProductCount { get; init; }
+
+    /// <summary>G7：其中裁决为 shadow（<c>ApplyShadow</c>，即未被拒绝）的条数。</summary>
+    public int CuratedShadowCount { get; init; }
+
+    /// <summary>G7：其中被拒绝的条数（含“评估期抛异常”的 fail-closed 计数：未评估 ≠ 已批准）。</summary>
+    public int CuratedRejectedCount { get; init; }
+
     public string? Summary { get; init; }
     public DateTime Timestamp { get; init; }
 }

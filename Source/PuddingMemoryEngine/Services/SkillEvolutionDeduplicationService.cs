@@ -450,6 +450,17 @@ public sealed partial class SkillEvolutionDeduplicationService(
         return sharedTurn || textSimilarity >= MinimumTextSimilarity;
     }
 
+    /// <summary>
+    /// P4 的**唯一来源**谓词：关键词是否形如工具名。
+    /// <para>
+    /// 为什么存在：G7 的契约层（<c>PuddingCore</c>）不得反向依赖本程序集，故工具名判定必须由调用方**注入**；
+    /// 而“检测逻辑只有一份”要求这个注入的谓词就是这里的正则本体（<see cref="ToolKeywordRegex"/>）。
+    /// 本方法仅把既有正则暴露为谓词，**不新增第二份判定逻辑**。
+    /// </para>
+    /// </summary>
+    public static bool IsToolLikeKeyword(string keyword)
+        => !string.IsNullOrWhiteSpace(keyword) && ToolKeywordRegex().IsMatch(keyword);
+
     private static HashSet<string> ExtractToolKeywords(AgentSkillEvolutionDocument skill)
     {
         return skill.Keywords

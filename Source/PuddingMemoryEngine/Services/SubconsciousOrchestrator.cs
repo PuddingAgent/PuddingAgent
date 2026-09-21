@@ -1,7 +1,9 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
+using PuddingCode.Improvement;
 using PuddingCode.Platform;
+using PuddingCode.Skills.Curation;
 using PuddingCode.Skills.Portfolio;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Entities;
@@ -34,6 +36,9 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
     private readonly IAgentSkillEvolutionStore _skillStore;
     private readonly SkillEvolutionDeduplicationService _skillDeduplication;
     private readonly SkillPortfolioAdmissionExecutor _skillPortfolioExecutor;
+    private readonly ISkillDistillationSource? _skillDistillationSource;
+    private readonly SkillCurationPolicy? _skillCurationPolicy;
+
 
     private SubconsciousSkillEvaluator? _skillEvaluator;
     private SubconsciousSkillEvaluator SkillEvaluator => _skillEvaluator ??= new SubconsciousSkillEvaluator(_memoryLlmClient);
@@ -51,6 +56,8 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         ISkillEvolutionTrajectorySource skillTrajectorySource,
         IAgentSkillEvolutionStore skillStore,
         SkillEvolutionDeduplicationService skillDeduplication,
+        ISkillDistillationSource? skillDistillationSource = null,
+        SkillCurationPolicy? skillCurationPolicy = null,
         IEmbeddingService? embeddingService = null,
         IStreamingEventBus? eventBus = null)
     {
@@ -66,6 +73,8 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         _skillStore = skillStore;
         _skillPortfolioExecutor = new SkillPortfolioAdmissionExecutor(skillStore);
         _skillDeduplication = skillDeduplication;
+        _skillDistillationSource = skillDistillationSource;
+        _skillCurationPolicy = skillCurationPolicy;
     }
 
     /// <summary>
@@ -1679,6 +1688,118 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         };
     }
 
+    // ── Skill Curation 门禁接线（G7：只裁决，零写盘）──
+
+    /// <summary>G7：价值分**无观测数据**（G2 遥测尚未在重启窗口激活）⇒ 只能记录、不得当 0。</summary>
+    private static readonly SkillScoreSnapshot CurationScoreUnavailable =
+        new SkillScoreSnapshot.Unavailable("curation_score_source_unavailable");
+
+    /// <summary>
+    /// G7 薄接线：把提炼产物逐条过 <see cref="SkillCurationGate"/>（C1–C5），**只产出计数**。
+    /// </summary>
+    /// <remarks>
+    /// 三条边界（勿越界）：
+    /// <list type="number">
+    /// <item>无 <see cref="SkillCurationPolicy"/> ⇒ **不裁决**：阈值必须来自版本化策略对象，产品内不得写裸阈值，
+    ///   也不得由本类替它编一个（那正是宪法 C1 禁止的“未论证数字进产品”）；计数保持 0。</item>
+    /// <item>门禁只产裁决：本片**零写盘**（<c>Create/Update/SetEnabled/Delete</c> 一律不调用），落点权力在 L3-b。</item>
+    /// <item>单条产物裁决失败 ⇒ 计入“被拒”（fail-closed：**未评估 ≠ 已批准**）且不影响整轮扫描
+    ///   （后台任务容错约束：不向 Worker 外抛）。</item>
+    /// </list>
+    /// </remarks>
+    private async Task<(int Products, int Shadow, int Rejected)> EvaluateDistillationProductsAsync(
+        string workspaceId,
+        string agentInstanceId,
+        IReadOnlyList<AgentSkillEvolutionDocument> allSkills,
+        IReadOnlyList<AgentSkillEvolutionDocument> enabledSkills,
+        CancellationToken ct)
+    {
+        var source = _skillDistillationSource;
+        var policy = _skillCurationPolicy;
+        if (source is null || policy is null)
+        {
+            return (0, 0, 0);
+        }
+
+        var gate = new SkillCurationGate(policy);
+        var products = await source.GetProductsAsync(workspaceId, agentInstanceId, ct);
+        var shadow = 0;
+        var rejected = 0;
+
+        foreach (var product in products)
+        {
+            try
+            {
+                var outcome = gate.Evaluate(BuildCurationRequest(product, allSkills, enabledSkills));
+                if (outcome.Verdict.Decision == ChangeDecision.Reject)
+                {
+                    rejected++;
+                    _logger.LogInformation(
+                        "[SkillCuration] Gate rejected product {Product} code={ReasonCode}",
+                        product.Name,
+                        outcome.Verdict.ReasonCode);
+                }
+                else
+                {
+                    shadow++;
+                }
+            }
+            catch (Exception ex)
+            {
+                rejected++;
+                _logger.LogWarning(
+                    ex,
+                    "[SkillCuration] Gate evaluation failed for product {Product}; counted as rejected (fail-closed).",
+                    product.Name);
+            }
+        }
+
+        return (products.Count, shadow, rejected);
+    }
+
+    /// <summary>
+    /// 组装门禁输入：被取代者取自技能仓全量、判定域取自**仍启用**技能；价值分统一按“无观测数据”传入。
+    /// </summary>
+    private static SkillCurationRequest BuildCurationRequest(
+        DistilledSkillProduct product,
+        IReadOnlyList<AgentSkillEvolutionDocument> allSkills,
+        IReadOnlyList<AgentSkillEvolutionDocument> enabledSkills)
+    {
+        var replacedIds = new HashSet<string>(
+            product.ReplacedSkillIds ?? [],
+            StringComparer.OrdinalIgnoreCase);
+
+        return new SkillCurationRequest
+        {
+            Product = product,
+            ReplacedSkills = allSkills
+                .Where(skill => replacedIds.Contains(skill.SkillId))
+                .Select(ToCurationSnapshot)
+                .ToList(),
+            RetainedSkills = enabledSkills
+                .Where(skill => !replacedIds.Contains(skill.SkillId))
+                .Select(ToCurationSnapshot)
+                .ToList(),
+            ProductScore = CurationScoreUnavailable,
+            // 产物语义是“合并/取代既有技能”：有被取代者即 Replace，否则 Merge。
+            // Create 不是默认（门禁一律拒），Retire 由淘汰建议走别处，不在此路径。
+            RequestedOperation = replacedIds.Count > 0
+                ? ImprovementOperation.Replace
+                : ImprovementOperation.Merge,
+            // L3-a 纪律：新作业首次一律 shadow；本片无落点动作，因此也不携带任何回滚句柄。
+            RequestedDecision = ChangeDecision.ApplyShadow,
+            IsToolLikeKeyword = SkillEvolutionDeduplicationService.IsToolLikeKeyword,
+        };
+    }
+
+    private static SkillCurationSkillSnapshot ToCurationSnapshot(AgentSkillEvolutionDocument skill) => new()
+    {
+        SkillId = skill.SkillId,
+        Tags = skill.Tags,
+        Keywords = skill.Keywords,
+        Score = CurationScoreUnavailable,
+    };
+
     // ── Skill Curation（G6：只报告，零写盘）──
 
     public async Task<SkillCurationReport> SkillCurateAsync(
@@ -1724,9 +1845,19 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                     agentInstanceId);
             }
 
+            // G7 薄接线：提炼产物逐条过 C1–C5 门禁（只裁决，零写盘）。
+            var (curatedProducts, curatedShadow, curatedRejected) = await EvaluateDistillationProductsAsync(
+                workspaceId,
+                agentInstanceId,
+                allSkills,
+                enabledSkills,
+                ct);
+
             var notReducedReason = retireSuggestionCount > 0
-                ? $"G6 is report-only: identified {retireSuggestionCount} duplicate-name retire suggestion(s), " +
-                  "but curation has no disable authority until G7 gates land."
+                ? $"Report-only: identified {retireSuggestionCount} duplicate-name retire suggestion(s), " +
+                  $"and evaluated {curatedProducts} distillation product(s) against the G7 C1-C5 gates " +
+                  $"(shadow={curatedShadow}, rejected={curatedRejected}); " +
+                  "the write authority for disable/replace belongs to L3-b, so no skill was modified."
                 : "No redundancy detected among enabled skills; nothing to retire this round.";
 
             _logger.LogInformation(
@@ -1744,6 +1875,9 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                 NotReducedReason = notReducedReason,
                 CandidateCount = candidateCount,
                 RetireSuggestionCount = retireSuggestionCount,
+                CuratedProductCount = curatedProducts,
+                CuratedShadowCount = curatedShadow,
+                CuratedRejectedCount = curatedRejected,
                 Summary = $"n_before={nBefore}, n_after={nAfter}, refine candidates={candidateCount}, " +
                           $"retire suggestions={retireSuggestionCount}; report-only, no skills modified",
                 Timestamp = DateTime.UtcNow
