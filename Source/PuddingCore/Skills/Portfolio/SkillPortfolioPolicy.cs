@@ -41,12 +41,19 @@ public sealed record SkillPortfolioPolicy : IVersionedCriterion
     public required int SoftTarget { get; init; }
 
     /// <summary>
-    /// 同家族启用数上限。
+    /// 同家族启用数上限；<c>null</c> 表示<b>不设限</b>。
     /// <para>
-    /// ⚠️ <b>本切片只承载字段、不消费</b>（家族归类属 G4）：写进结果里的"生效值"也不得声称它已生效。
+    /// ⚠️ <b>本切片（G4-D2）只定义语义、不消费</b>：家族归类与上限强制由后续交付物落地。
+    /// 在它被真正消费之前，<see cref="ToApplied"/> 不含本字段，任何结果也<b>不得</b>声称它已生效 ——
+    /// 否则就是幻影区间：配置里有值、读者以为已生效。
+    /// </para>
+    /// <para>
+    /// ⛔ <c>0</c> 与负值非法，在构造期即被拒绝：<c>0</c> 会让上限对任何非空家族恒超限
+    /// （退化成"任何技能都不得进入任何家族"，而外表看起来像"关闭了该判据"）；负值无意义。
+    /// "不设限"必须用 <c>null</c> 明确表达，不得用哨兵值。
     /// </para>
     /// </summary>
-    public required int PerFamilyCap { get; init; }
+    public required int? PerFamilyCap { get; init; }
 
     /// <summary>最小边际收益：候选分必须比"已启用最低分"高出至少本值，才配得上一次准入或一次置换。</summary>
     public required double MinMarginalGain { get; init; }
@@ -64,7 +71,7 @@ public sealed record SkillPortfolioPolicy : IVersionedCriterion
     public bool IsValid =>
         HardCap >= SoftTarget
         && SoftTarget >= 0
-        && PerFamilyCap >= 0
+        && (PerFamilyCap is null || PerFamilyCap > 0)
         && MinMarginalGain >= 0
         && !double.IsNaN(MinMarginalGain)
         && StalenessDays >= 0;
@@ -80,7 +87,7 @@ public sealed record SkillPortfolioPolicy : IVersionedCriterion
         {
             throw new InvalidOperationException(
                 $"技能组合预算策略配置非法（{PolicyId} v{Version}）："
-                + $"HardCap({HardCap}) 必须 >= SoftTarget({SoftTarget})，且 PerFamilyCap({PerFamilyCap}) / "
+                + $"HardCap({HardCap}) 必须 >= SoftTarget({SoftTarget})，且 PerFamilyCap({PerFamilyCap?.ToString() ?? "null"}) / "
                 + $"MinMarginalGain({MinMarginalGain}) / StalenessDays({StalenessDays}) 必须非负。");
         }
     }
@@ -88,7 +95,7 @@ public sealed record SkillPortfolioPolicy : IVersionedCriterion
     /// <summary>
     /// 物化为可落库的已应用策略快照（做事后解释："这条准入是用哪一版、哪组阈值放行的"）。
     /// <para>
-    /// 快照只含**本次判定实际消费**的字段 —— 本切片不消费 <see cref="PerFamilyCap"/> 与
+    /// 快照只含**本次判定实际消费**的字段 —— 本切片不消费 <see cref="PerFamilyCap"/>（G4-D2 起语义已定，但消费属后续交付物 ⇒ 仍不进快照） 与
     /// <see cref="StalenessDays"/>，故它们不进快照，避免让读者以为已生效（防幻影区间）。
     /// </para>
     /// </summary>
@@ -114,7 +121,7 @@ public sealed record SkillPortfolioPolicy : IVersionedCriterion
         int version,
         int hardCap,
         int softTarget,
-        int perFamilyCap,
+        int? perFamilyCap,
         double minMarginalGain,
         int stalenessDays)
     {
@@ -168,7 +175,7 @@ public sealed record SkillPortfolioPolicy : IVersionedCriterion
             version: 1,
             hardCap: softTarget + headroom,
             softTarget: softTarget,
-            perFamilyCap: 0,
+            perFamilyCap: null,   // 不设限（G4-D2）：0 会让家族上限对任何非空家族恒超限，必须用 null
             minMarginalGain: 0.05,
             stalenessDays: 90);
     }

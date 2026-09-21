@@ -20,13 +20,13 @@ public sealed class SkillPortfolioAdmissionJudgeTests
     {
         // 硬区间小于软区间 ⇒ 软区间恒为空（阶梯不存在），必须在构造期就被拒绝。
         var degenerate = Assert.ThrowsExactly<InvalidOperationException>(
-            () => SkillPortfolioPolicy.Create("p", 1, hardCap: 4, softTarget: 9, perFamilyCap: 0, minMarginalGain: 0.05, stalenessDays: 90));
+            () => SkillPortfolioPolicy.Create("p", 1, hardCap: 4, softTarget: 9, perFamilyCap: null, minMarginalGain: 0.05, stalenessDays: 90));
         StringAssert.Contains(degenerate.Message, "HardCap");
 
         Assert.ThrowsExactly<InvalidOperationException>(
-            () => SkillPortfolioPolicy.Create("p", 1, hardCap: 10, softTarget: 5, perFamilyCap: 0, minMarginalGain: -0.01, stalenessDays: 90));
+            () => SkillPortfolioPolicy.Create("p", 1, hardCap: 10, softTarget: 5, perFamilyCap: null, minMarginalGain: -0.01, stalenessDays: 90));
         Assert.ThrowsExactly<InvalidOperationException>(
-            () => SkillPortfolioPolicy.Create("p", 1, hardCap: 10, softTarget: -1, perFamilyCap: 0, minMarginalGain: 0.05, stalenessDays: 90));
+            () => SkillPortfolioPolicy.Create("p", 1, hardCap: 10, softTarget: -1, perFamilyCap: null, minMarginalGain: 0.05, stalenessDays: 90));
 
         // 合法配置不得抛。
         Assert.IsTrue(Policy().IsValid);
@@ -308,8 +308,59 @@ public sealed class SkillPortfolioAdmissionJudgeTests
 
     // ───────────────────────── helpers ─────────────────────────
 
-    private static SkillPortfolioPolicy Policy(int hardCap = 10, int softTarget = 5, double minMarginalGain = 0.05)
-        => SkillPortfolioPolicy.Create("skill-portfolio/test", 1, hardCap, softTarget, perFamilyCap: 0, minMarginalGain, stalenessDays: 90);
+    // ───────────────────────── G4-D2：PerFamilyCap 语义（int? / 拒 0 与负） ─────────────────────────
+
+    [TestMethod]
+    public void PerFamilyCap_ShouldRejectZeroAndNegative_ButAcceptNullAndPositive()
+    {
+        // 0 会让上限对任何非空家族恒超限（外表像"关闭了该判据"，实为"全禁"）；负值无意义。
+        Assert.ThrowsExactly<InvalidOperationException>(() => Policy(perFamilyCap: 0));
+        Assert.ThrowsExactly<InvalidOperationException>(() => Policy(perFamilyCap: -1));
+
+        // null = 显式"不设限"；正数 = 真上限。
+        Assert.IsTrue(Policy(perFamilyCap: null).IsValid);
+        Assert.IsTrue(Policy(perFamilyCap: 1).IsValid);
+    }
+
+    [TestMethod]
+    public void ZeroRegressionDefault_ShouldLeaveFamilyCapUnset()
+    {
+        // 默认策略的每家族上限必须是 null（不设限），不得用 0 当哨兵值。
+        // 139 = 只读盘点报告实测的启用技能数基线，用于确保本断言不依赖具体数字。
+        Assert.IsNull(SkillPortfolioPolicy.ZeroRegressionDefault(currentEnabledCount: 139).PerFamilyCap);
+    }
+
+    [TestMethod]
+    public void Judge_ShouldIgnorePerFamilyCap_UntilFamilyCapsAreWired()
+    {
+        // 载有 ≠ 生效：本切片只定义语义、不消费 ⇒ 仅 PerFamilyCap 不同的两个策略必须给出**同一**判定。
+        // ⚠️ 本用例是闸门：后续交付物让家族上限真正生效时，必须在同一提交里改掉它（不得静默放宽）。
+        var uncapped = new SkillPortfolioAdmissionJudge(Policy(perFamilyCap: null))
+            .Apply(FullBudgetInput(candidateScore: 0.90, minEnabledScore: 0.20, minEnabledSkillId: "weakest"));
+        var capped = new SkillPortfolioAdmissionJudge(Policy(perFamilyCap: 1))
+            .Apply(FullBudgetInput(candidateScore: 0.90, minEnabledScore: 0.20, minEnabledSkillId: "weakest"));
+
+        Assert.AreEqual(uncapped.Action, capped.Action);
+        Assert.AreEqual(uncapped.TargetSkillId, capped.TargetSkillId);
+        Assert.AreEqual(uncapped.Reason, capped.Reason);
+    }
+
+    [TestMethod]
+    public void AppliedSnapshot_ShouldNotClaimPerFamilyCap_UntilItIsConsumed()
+    {
+        // 防幻影区间：配置里有值 ≠ 已生效。快照字段集合必须**恰好**是本次判定实际消费的三个阈值。
+        // ⚠️ 本用例是闸门：家族上限被真正消费时，必须与"把字段加进快照"在同一提交里更新本用例。
+        var names = typeof(AppliedPortfolioPolicy).GetProperties()
+            .Select(property => property.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        CollectionAssert.AreEqual(
+            new[] { "HardCap", "MinMarginalGain", "PolicyId", "SoftTarget", "Version" }, names);
+    }
+
+    private static SkillPortfolioPolicy Policy(int hardCap = 10, int softTarget = 5, double minMarginalGain = 0.05, int? perFamilyCap = null)
+        => SkillPortfolioPolicy.Create("skill-portfolio/test", 1, hardCap, softTarget, perFamilyCap, minMarginalGain, stalenessDays: 90);
 
     private static SkillAdmissionResult CreateResult()
         => new()
