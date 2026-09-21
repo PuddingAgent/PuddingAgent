@@ -13,6 +13,13 @@ public static class SkillAdmissionActions
     public const string Merge = "merge";
     public const string Skip = "skip";
     public const string Defer = "defer";
+
+    /// <summary>
+    /// 置换：预算已满时禁用“价值最低者”以给候选项腾位（<b>禁用而非删除</b>，可回滚）。
+    /// <para>由 <c>SkillPortfolioAdmissionJudge</c> 产出；被置换的技能 id 放在
+    /// <see cref="SkillAdmissionResult.TargetSkillId"/>。</para>
+    /// </summary>
+    public const string Displace = "displace";
 }
 
 public sealed record SkillAdmissionResult
