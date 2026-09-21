@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingRuntime;
@@ -9,6 +10,52 @@ namespace PuddingRuntimeTests.Services;
 [TestClass]
 public sealed class IdleDetectorTests
 {
+    [TestMethod]
+    public async Task ReArm_KeepsCallbacksButLogsOnlyOncePerActivityWindow()
+    {
+        var clock = new ManualTimeProvider(DateTimeOffset.Parse("2026-06-17T00:00:00Z"));
+        var logger = new IdleWindowLogger();
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Heartbeat:IdleCheckIntervalSeconds"] = "1",
+            ["Heartbeat:GlobalIdleThresholdSeconds"] = "10",
+        }).Build();
+        using var detector = new IdleDetector(null, logger, clock, config);
+        using var callbacks = new SemaphoreSlim(0);
+        detector.OnIdleThresholdReached += (_, _) =>
+        {
+            detector.ReArm();
+            callbacks.Release();
+            return Task.CompletedTask;
+        };
+        clock.Advance(TimeSpan.FromSeconds(30));
+        await detector.StartAsync(CancellationToken.None);
+        try
+        {
+            for (var i = 0; i < 3; i++)
+                Assert.IsTrue(await callbacks.WaitAsync(TimeSpan.FromSeconds(10)));
+            Assert.AreEqual(1, logger.ThresholdLogCount);
+            detector.RecordActivity();
+            clock.Advance(TimeSpan.FromSeconds(30));
+            Assert.IsTrue(await callbacks.WaitAsync(TimeSpan.FromSeconds(10)));
+            Assert.AreEqual(2, logger.ThresholdLogCount);
+        }
+        finally { await detector.StopAsync(CancellationToken.None); }
+    }
+
+    private sealed class IdleWindowLogger : ILogger<IdleDetector>
+    {
+        private int _thresholdLogCount;
+        public int ThresholdLogCount => Volatile.Read(ref _thresholdLogCount);
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel level, EventId id, TState state, Exception? error, Func<TState, Exception?, string> formatter)
+        {
+            if (level == LogLevel.Information && formatter(state, error).Contains("Global idle threshold reached"))
+                Interlocked.Increment(ref _thresholdLogCount);
+        }
+    }
+
     [TestMethod]
     public void IdleDuration_UsesLastRecordedActivity()
     {

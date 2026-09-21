@@ -60,6 +60,7 @@ public sealed class IdleDetector : IIdleDetector, IHostedService, IDisposable
     private readonly List<IEventSubscriptionHandle> _subscriptions = [];
     private long _lastActiveUtcTicks;
     private bool _firedForCurrentWindow;
+    private int _loggedForCurrentActivityWindow;
     private CancellationTokenSource? _loopCts;
     private Task? _loopTask;
     private int _started;
@@ -102,6 +103,7 @@ public sealed class IdleDetector : IIdleDetector, IHostedService, IDisposable
     {
         Interlocked.Exchange(ref _lastActiveUtcTicks, _timeProvider.GetUtcNow().UtcTicks);
         _firedForCurrentWindow = false; // allow next idle window to fire again
+        Interlocked.Exchange(ref _loggedForCurrentActivityWindow, 0);
     }
 
     /// <inheritdoc />
@@ -211,9 +213,14 @@ public sealed class IdleDetector : IIdleDetector, IHostedService, IDisposable
             if (idle >= _globalIdleThreshold && !_firedForCurrentWindow)
             {
                 _firedForCurrentWindow = true;
-                _logger.LogInformation(
-                    "[IdleDetector] Global idle threshold reached duration={Dur}s",
-                    idle.TotalSeconds.ToString("F1"));
+                // ReArm is a scheduler continuation, not a new transition into idle.
+                // Keep callbacks periodic without printing the same state every tick.
+                if (Interlocked.Exchange(ref _loggedForCurrentActivityWindow, 1) == 0)
+                {
+                    _logger.LogInformation(
+                        "[IdleDetector] Global idle threshold reached duration={Dur}s",
+                        idle.TotalSeconds.ToString("F1"));
+                }
 
                 try { await callback(idle, ct); }
                 catch (Exception ex)
@@ -224,6 +231,7 @@ public sealed class IdleDetector : IIdleDetector, IHostedService, IDisposable
             else if (idle < _globalIdleThreshold && _firedForCurrentWindow)
             {
                 _firedForCurrentWindow = false;
+                Interlocked.Exchange(ref _loggedForCurrentActivityWindow, 0);
             }
         }
     }
