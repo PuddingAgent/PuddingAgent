@@ -1,4 +1,4 @@
-﻿import type { RequestOptions } from '@@/plugin-request/request';
+import type { RequestOptions } from '@@/plugin-request/request';
 import type { RequestConfig } from '@umijs/max';
 import { message, notification } from 'antd';
 
@@ -165,13 +165,18 @@ export const errorConfig: RequestConfig = {
   requestInterceptors: [
     (config: RequestOptions) => {
       const token = localStorage.getItem('pudding_token');
+      // API 响应一律禁止进入浏览器缓存。
+      // 2026-09-21 事故：SPA 回退把 523 字节 HTML 当成 /api/skill-hub/* 的 200 响应写进缓存，
+      // 服务端修好之后页面仍长期复用那份脏缓存，一直报「返回的不是对象/数组，实际为 HTML 文本」。
+      // no-cache 强制每次向服务端复检，从机制上消除这类“僵尸响应”。
+      const headers: Record<string, any> = {
+        ...config.headers,
+        'Cache-Control': 'no-cache',
+      };
       if (token) {
-        return {
-          ...config,
-          headers: { ...config.headers, Authorization: `Bearer ${token}` },
-        };
+        headers.Authorization = `Bearer ${token}`;
       }
-      return config;
+      return { ...config, headers };
     },
   ],
 
