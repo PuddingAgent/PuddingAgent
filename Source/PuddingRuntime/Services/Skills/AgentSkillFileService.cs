@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -497,22 +497,55 @@ public sealed partial class AgentSkillFileService
     private static string? NormalizeOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    /// <summary>
+    /// 从 SKILL.md 正文派生一句话摘要。
+    /// 必须先跳过 YAML frontmatter 块：否则首个非空行会是 <c>name: xxx</c> 这类元数据行，
+    /// 摘要会退化成 "name: &lt;skillId&gt;"（历史缺陷，实测污染 139/144 个技能）。
+    /// frontmatter 里若给出了 description，优先采用它——按 Agent Skills 规范 description
+    /// 本来就该写明"做什么 / 何时用"，是摘要的最佳来源。
+    /// </summary>
     private static string DeriveSummary(string markdown)
     {
-        foreach (var rawLine in markdown.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        var lines = markdown.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+        var index = 0;
+
+        if (index < lines.Length && lines[index].Trim() is "---")
         {
-            var line = rawLine.Trim();
+            index++;
+            string? description = null;
+            while (index < lines.Length && lines[index].Trim() is not "---")
+            {
+                var frontMatter = lines[index].Trim();
+                if (description is null && frontMatter.StartsWith("description:", StringComparison.Ordinal))
+                    description = frontMatter["description:".Length..].Trim().Trim('"', '\'');
+
+                index++;
+            }
+
+            if (index < lines.Length)
+                index++; // 跳过闭合的 "---"
+
+            if (!string.IsNullOrWhiteSpace(description))
+                return ClampSummary(description);
+        }
+
+        for (; index < lines.Length; index++)
+        {
+            var line = lines[index].Trim();
             if (line.Length == 0 || line is "---")
                 continue;
             if (line.StartsWith('#'))
                 line = line.TrimStart('#').Trim();
             if (line.Length == 0)
                 continue;
-            return line.Length <= 240 ? line : line[..240];
+            return ClampSummary(line);
         }
 
         return string.Empty;
     }
+
+    private static string ClampSummary(string value) =>
+        value.Length <= 240 ? value : value[..240];
 
     private static string ComputeContentHash(AgentSkillManifest manifest, string markdown)
     {

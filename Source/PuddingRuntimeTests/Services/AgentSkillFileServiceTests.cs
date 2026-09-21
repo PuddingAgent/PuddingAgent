@@ -217,6 +217,87 @@ public sealed class AgentSkillFileServiceTests
         CollectionAssert.AreEqual(new[] { "alpha", "zeta" }, index.Skills.Select(x => x.SkillId).ToArray());
     }
 
+    [TestMethod]
+    public async Task CreateAsync_DerivesSummaryFromFrontmatterDescription_NotTheNameLine()
+    {
+        using var temp = new TempDataRoot();
+        var service = new AgentSkillFileService(temp.Paths);
+
+        var created = await service.CreateAsync("agent-1", new AgentSkillCreateRequest
+        {
+            SkillId = "frontmatter-with-description",
+            Name = "Frontmatter With Description",
+            SkillMarkdown = "---\nname: frontmatter-with-description\ndescription: \"Use when deciding ownership of concurrent sub-agent edits.\"\ntags:\n  - demo\n---\n\n# Body Heading\n\nBody text.",
+        });
+
+        Assert.AreEqual("Use when deciding ownership of concurrent sub-agent edits.", created.Manifest.Summary);
+    }
+
+    [TestMethod]
+    public async Task CreateAsync_SkipsFrontmatterBlock_WhenNoDescriptionIsGiven()
+    {
+        using var temp = new TempDataRoot();
+        var service = new AgentSkillFileService(temp.Paths);
+
+        var created = await service.CreateAsync("agent-1", new AgentSkillCreateRequest
+        {
+            SkillId = "frontmatter-without-description",
+            Name = "Frontmatter Without Description",
+            SkillMarkdown = "---\nname: frontmatter-without-description\ntags:\n  - demo\n---\n\n# Body Heading\n\nBody text.",
+        });
+
+        Assert.AreEqual("Body Heading", created.Manifest.Summary);
+    }
+
+    [TestMethod]
+    public async Task CreateAsync_DerivesSummaryFromFirstHeading_WhenNoFrontmatter()
+    {
+        using var temp = new TempDataRoot();
+        var service = new AgentSkillFileService(temp.Paths);
+
+        var created = await service.CreateAsync("agent-1", new AgentSkillCreateRequest
+        {
+            SkillId = "legacy-no-frontmatter",
+            Name = "Legacy No Frontmatter",
+            SkillMarkdown = "# Legacy Skill\n\nLegacy body.",
+        });
+
+        Assert.AreEqual("Legacy Skill", created.Manifest.Summary);
+    }
+
+    [TestMethod]
+    public async Task CreateAsync_YieldsEmptySummary_WhenOnlyFrontmatterIsPresent()
+    {
+        using var temp = new TempDataRoot();
+        var service = new AgentSkillFileService(temp.Paths);
+
+        var created = await service.CreateAsync("agent-1", new AgentSkillCreateRequest
+        {
+            SkillId = "frontmatter-only",
+            Name = "Frontmatter Only",
+            SkillMarkdown = "---\nname: frontmatter-only\n---\n",
+        });
+
+        Assert.IsTrue(string.IsNullOrEmpty(created.Manifest.Summary));
+    }
+
+    [TestMethod]
+    public async Task CreateAsync_TruncatesDerivedSummaryTo240Characters()
+    {
+        using var temp = new TempDataRoot();
+        var service = new AgentSkillFileService(temp.Paths);
+        var longHeading = new string('x', 300);
+
+        var created = await service.CreateAsync("agent-1", new AgentSkillCreateRequest
+        {
+            SkillId = "long-summary-source",
+            Name = "Long Summary Source",
+            SkillMarkdown = $"# {longHeading}",
+        });
+
+        Assert.AreEqual(240, created.Manifest.Summary?.Length);
+    }
+
     private static async Task<AgentSkillIndex> ReadIndexAsync(string indexPath)
     {
         await using var stream = File.OpenRead(indexPath);

@@ -241,3 +241,58 @@ private static string DeriveSummary(string markdown)
 - 平台侧一致性核查：`agent_skill rebuild_index` 已执行（144 条索引重建成功，属受支持入口，无副作用）。
 - 未修改任何生产代码；`manifest.json` 一律未动。
 - 回滚点仍在：`temp/skills-backup-20260921-1910.zip`。
+
+---
+
+## 7. `DeriveSummary` 缺陷已修复（2026-09-21 同日闭环）
+
+§6.2 发现的平台缺陷已修复并带契约测试。
+
+### 7.1 改动
+
+`Source/PuddingRuntime/Services/Skills/AgentSkillFileService.cs`
+
+1. **`DeriveSummary` 先跳过 YAML frontmatter 块**（开头 `---` 到下一个 `---`），
+   不再把 `name: <skillId>` 当成摘要 —— 这是 139/144 个技能摘要退化的直接原因。
+2. **frontmatter 里若有 `description`，优先采用它**：按 Agent Skills 规范，
+   `description` 本就该写明「做什么 / 何时用」，是摘要的最佳来源；
+   同时自动去掉 `description` 值外层可能存在的引号。
+3. 抽出 `ClampSummary`（240 字符截断）供两条路径复用，保持原有截断语义不变。
+
+### 7.2 契约测试（`Source/PuddingRuntimeTests/Services/AgentSkillFileServiceTests.cs`）
+
+新增 5 条，覆盖「新行为 + 向后兼容 + 边界」：
+
+| 测试 | 断言 |
+|------|------|
+| `CreateAsync_DerivesSummaryFromFrontmatterDescription_NotTheNameLine` | 有 `description` ⇒ 摘要 = description（**不再**是 `name:` 行），且外层引号被剥离 |
+| `CreateAsync_SkipsFrontmatterBlock_WhenNoDescriptionIsGiven` | 无 `description` ⇒ 跳过 frontmatter，取正文首行标题 |
+| `CreateAsync_DerivesSummaryFromFirstHeading_WhenNoFrontmatter` | 无 frontmatter ⇒ 行为与修复前一致（**向后兼容**） |
+| `CreateAsync_YieldsEmptySummary_WhenOnlyFrontmatterIsPresent` | 只有 frontmatter ⇒ 空摘要（不返回 `name:` 垃圾值） |
+| `CreateAsync_TruncatesDerivedSummaryTo240Characters` | 240 字符截断语义保持不变 |
+
+### 7.3 实测结果
+
+```cmd
+dotnet test Source\PuddingRuntimeTests\PuddingRuntimeTests.csproj --filter "FullyQualifiedName~AgentSkillFileServiceTests"
+```
+
+```
+已通过! - 失败: 0，通过: 14，已跳过: 0，总计: 14，持续时间: 549 ms
+```
+
+（该类原有 9 条测试全绿 + 新增 5 条全绿 ⇒ 修复**未破坏**既有语义。）
+
+### 7.4 仍未解决的存量问题（下一轮）
+
+修复只影响**未来**的 `CreateAsync` / `UpdateAsync`（显式传空 Summary 时）；
+**已有 139 个技能的 manifest 里仍是旧的垃圾摘要**，且 §6.1 的 `contentHash` 同样过期。
+已确认的路径事实：
+
+- `RebuildIndexCoreAsync` 只读 manifest 的 `Summary`（`L378`），**不会**从磁盘重算 ⇒ `rebuild_index` 修不了；
+- `UpdateAsync` 在 `request.Summary == null` 时**保留**旧值（`L198-202`）⇒ 只有显式传空串才会触发 `DeriveSummary`。
+
+⇒ 正确的修复顺序是：**让 `UpdateAsync(Summary="")` 走一遍**（同时刷新 `summary` 与 `contentHash`，因为
+`L207` 会一并重算 hash）。这需要 139 次调用或一个走**真实服务代码**的批量入口（不要复刻哈希算法）。
+倾向后者：写一个调用 `AgentSkillFileService` 本体的维护脚本/测试宿主，
+以受支持入口批量刷新，避免手工复刻 `ComputeContentHash` 造成漂移。
