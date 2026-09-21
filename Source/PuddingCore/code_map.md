@@ -178,6 +178,7 @@
 | `Serialization/` | 序列化契约 |
 | `Skills/` | 技能系统抽象 |
 | `Skills/Portfolio/` | 🆕 G3 组合预算策略：`SkillPortfolioPolicy`（`IVersionedCriterion`，只含**被消费**的阈值）+ `AppliedPortfolioPolicy` + `SkillScoreSnapshot`（两态：`Observed`/`Unavailable` —— `Unavailable` **无 `Score` 字段** ⇒ “把无数据当低分”在类型上不可表达）。默认 `ZeroRegressionDefault(实测启用数, headroom)`。⚠️ 该目录**不在**算子架构门禁扫描范围（门禁只扫 `PuddingCore/Operators/**` 与 `PuddingRuntime/Operators/**`）⇒ 门禁 PASS **不构成**本目录纯净性证据 |
+| `Skills/Curation/` | 🆕 G7 提炼产物契约：`SkillCurationPolicy`（`IVersionedCriterion`，`MinRetainedValueRatio`/`ApplicabilityHeadings`/`PitfallHeadings`/`MinMarkdownLength`；**无默认实参、无默认策略工厂** —— 比例下限是治理结论）+ `AppliedSkillCurationPolicy` + `SkillDistillationContract`（反笔记不变式 P1–P6 违规码 + `SourceTurnsOf`/`SourceSessionsOf` tag 级抽取，供 C1/C2 复用）。⚠️ 同 `Skills/Portfolio/`：**不在**算子架构门禁扫描范围 |
 
 ## 事件 & 观测
 
