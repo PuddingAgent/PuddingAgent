@@ -8,7 +8,7 @@
 |------|------|
 | `PuddingHostAssemblyMarker.cs` | 程序集标记 |
 | `Extensions/PuddingServiceCollectionExtensions.Platform.cs` | 成品 Host 的 Platform/Runtime 组合注册；内置 Agent 模板直接使用 PuddingCore 唯一权威源；包含 MOA、V2 component registry/compiler、SQLite store/signal、Admin 手动 Run/HTTP Hook command service、SubAgent/图片生成/展示 executor、临时子代理目录两阶段 GC、hosted worker 与 replay-to-live follower；`TaskAgentCommandService` 与 Singleton `task_*` 工具同生命周期，服务内部每次调用通过 DbContextFactory 创建独立 DbContext；不能只在未被产品入口调用的 Runtime 扩展里注册 worker |
-| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册；assembly scan 自动发现的新工具，其构造依赖也必须在这里注册（例如 `SavePreferenceTool` → `IUserPreferenceService`） |
+| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 成品 Host 的 Runtime/Tool 组合注册；assembly scan 自动发现的新工具，其构造依赖也必须在这里注册（例如 `SavePreferenceTool` → `IUserPreferenceService`、`SkillEnforcerService` 的可选 `ISkillUsageTelemetrySink`：注册缺失时该可选参数**静默为 null**，不报错也不抛异常） |
 | `Tools/ImageReaderTool.cs` + `Tools/ImageReaderSourceResolver.cs` | 原生阅读与预处理：metadata/read/prepare，四档 detail，缩略图、裁剪、90度旋转、灰度、Gaussian降噪、jpeg/png/webp编码；源支持本地/URL/聊天artifact；复用 Platform ImagePreprocessing 和派生缓存，不调用模型/Agent，无 helper 路由。低权限只读源文件，URL每跳SSRF校验；输出源/派生引用供多次区域读取 |
 | `Hosting/PuddingApplicationInitializer.cs` | 启动期数据库初始化；包含 AppUsers、WorkspaceTask、TaskPlanning/WorkUnit/AwaitHandle、Goal 及通用编排 SQLite schema bootstrap，已有数据库也必须幂等升级；GoalSchemaBootstrapper 后执行 GoalRestartReconciler 启动 reconcile（按 `goal_runs.resume_policy` 分流：默认 disarm 为 paused；`auto_resume_on_restart` 则保持 Active 并换发 activation fence；输出 disarmed / auto-resumed 计数） |
 | `Storage/StorageMaintenanceService.cs` | 🔑 Core 所有的 SQLite/代码索引明细与安全清理；固定语义白名单、服务端预览、批量删除、checkpoint/VACUUM |

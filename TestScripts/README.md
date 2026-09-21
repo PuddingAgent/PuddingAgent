@@ -57,6 +57,60 @@ Run the diagnostic script tests with:
 python TestScripts\diagnose_session_logs_tests.py
 ```
 
+## Skill observability helpers
+
+Read-only reports over the skill portfolio and over RSI skill-usage telemetry. Both emit
+`KEY=VALUE` machine-readable lines as a first-class output, so callers never have to parse prose.
+
+### `report-skill-usage.ps1`
+
+Aggregates the telemetry written by `JsonlSkillUsageTelemetrySink`
+(`<DataRoot>/skill-usage/skill-usage-YYYYMMDD.jsonl`) into a per-skill leaderboard
+(injected / readFailed / records / distinct keywords / active agents / first-last seen), a
+most-matched-keyword table, and - with `-SkillsRoot` - the list of **installed but never
+observed** skills. Malformed lines are counted separately rather than silently dropped.
+
+Why the empty case is stated explicitly: the emitter lives **inside the host process** and only
+activates once that process restarts with the telemetry DI registration loaded, so the directory
+can legitimately be missing. `STATUS=NO_TELEMETRY_DIR` / `STATUS=NO_TELEMETRY_FILES` means
+"no instrumentation yet"; it must **never** be read as "no skill was ever used". Absence of
+records and absence of instrumentation are not distinguishable yet.
+
+Validate the aggregation against a synthetic fixture before trusting it in either direction -
+an instrument that has never been seen to fail is not evidence.
+
+```powershell
+pwsh -File TestScripts\report-skill-usage.ps1 -TelemetryDir D:\data\skill-usage
+pwsh -File TestScripts\report-skill-usage.ps1 -TelemetryDir <dir> -SkillsRoot <agent skills root> -OutFile report.md
+```
+
+### `goal-rotate.ps1`
+
+Keeps `goal.md` under the `goal_read` truncation limit (measured: a 16,692-byte file came back as
+tail-only), by moving the oldest entries **verbatim** into an archive file. Rotation is mechanical
+work; if it is not a command, it does not happen.
+
+Contract:
+
+- **dry-run by default**; `-Apply` is required to write anything.
+- **One structural check decides everything**: `preamble + all entries`, concatenated, must equal
+the original byte-for-byte. If not, the script refuses and writes nothing.
+- **Refuses when the budget is unreachable** even at `-KeepEntries` (`BUDGET_INFEASIBLE`).
+- `-Apply` **backs up first**, then verifies the written size on read-back.
+- **The script body is pure ASCII on purpose**: Windows PowerShell 5.1 decodes a BOM-less UTF-8
+  script as CP936, which turns non-ASCII source text into a parse error or mojibake. Non-ASCII
+  content here is data (goal text, `-PointerText`), read/written as explicit UTF-8 without BOM.
+- The pointer line is only inserted when entries actually move, so a no-op plan cannot report
+  `BYTES_AFTER > BYTES_BEFORE`.
+
+Statuses: `DRY_RUN_OK`, `APPLIED`, `NOTHING_TO_DO`, `NO_ENTRIES` (exit 0);
+`GOAL_NOT_FOUND`, `SLICE_NOT_LOSSLESS`, `BUDGET_INFEASIBLE`, `CONSERVATION_FAILED` (exit 3).
+
+Measured 2026-09-21 on a synthetic fixture (gitignored `TestScripts/temp/`): mutation of the slice
+boundary (`$starts[0] - 2`) produced `REBUILD_OK=False` and `SLICE_NOT_LOSSLESS` - i.e. the
+lossless check is **not** vacuous; `-Apply` on a copy produced independent conservation evidence
+`ENTRIES_TOTAL=4 IN_SLIM=2 IN_ARCHIVE=2 IN_BOTH=0` with `SLIM_STARTS_WITH_PREAMBLE=True`.
+
 ## Test suite gates
 
 Run the declared suite list and compare each suite's counts against a declared
