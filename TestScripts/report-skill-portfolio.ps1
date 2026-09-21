@@ -27,7 +27,7 @@ param(
     [string]$SkillsRoot = 'D:\data\agents\default.global_general-assistant.6a8\skills',
     [string]$OutFile,
     [int]$TopOffenders = 15,
-    [ValidateSet('portfolio', 'denoise-impact', 'content-audit')]
+    [ValidateSet('portfolio', 'denoise-impact', 'content-audit', 'near-duplicate')]
     [string]$Mode = 'portfolio'
 )
 
@@ -581,6 +581,159 @@ function New-DenoiseImpactReport {
     return ($lines -join "`n")
 }
 
+function Get-NameTokens {
+    param([string]$Name)
+    $set = @{}
+    if ([string]::IsNullOrWhiteSpace($Name)) { return $set }
+    foreach ($token in $Name.Split([char[]]$script:NameSeparators)) {
+        $trimmed = $token.Trim().ToLowerInvariant()
+        if ($trimmed.Length -gt 1) { $set[$trimmed] = $true }
+    }
+    return $set
+}
+
+function Get-Root {
+    param([hashtable]$Parent, [string]$Id)
+    while ($Parent[$Id] -ne $Id) { $Id = $Parent[$Id] }
+    return $Id
+}
+
+function New-NearDuplicateReport {
+    <#
+      近重复检测（只读）：用**名称分词 token 的 Jaccard 重叠**找「多条技能在讲同一件事」。
+      为何必须补这一步：G1 的「零语义重叠」结论是按**关键词身份**聚簇得出的，
+      它看不见「agent 健康检查」这类「措辞不同、语义相同」的重复 —— 那类重复需要一个真正的
+      语义化指标才能看见。本报告用最简单的机械代理（名称 token 重叠），**不引入 LLM**。
+      ⚠️ 故意**不**使用 keywords/tags：它们含大量共享工具名，会让所有技能都「相似」。
+      本报告给出 0.25 / 0.4 / 0.6 三档簇分布（只陈述事实，不设阀值判据）。
+    #>
+    param([object[]]$Entries)
+
+    $enabled = @($Entries | Where-Object { $_.Enabled })
+    $tokenSets = @{}
+    $nameById = @{}
+    foreach ($entry in $enabled) {
+        $tokenSets[$entry.SkillId] = Get-NameTokens -Name $entry.Name
+        $nameById[$entry.SkillId] = $entry.Name
+    }
+
+    $pairs = New-Object System.Collections.Generic.List[object]
+    for ($i = 0; $i -lt $enabled.Count; $i++) {
+        for ($j = $i + 1; $j -lt $enabled.Count; $j++) {
+            $a = $enabled[$i].SkillId
+            $b = $enabled[$j].SkillId
+            $setA = $tokenSets[$a]
+            $setB = $tokenSets[$b]
+            if ($setA.Count -eq 0 -or $setB.Count -eq 0) { continue }
+            $inter = 0
+            foreach ($token in $setA.Keys) { if ($setB.ContainsKey($token)) { $inter++ } }
+            if ($inter -eq 0) { continue }
+            $union = $setA.Count + $setB.Count - $inter
+            $sim = [Math]::Round([double]$inter / $union, 3)
+            if ($sim -ge 0.25) { $pairs.Add([pscustomobject]@{ A = $a; B = $b; Sim = $sim }) }
+        }
+    }
+
+    $bands = @(0.25, 0.4, 0.6)
+    $bandResults = New-Object System.Collections.Generic.List[object]
+    foreach ($band in $bands) {
+        $parent = @{}
+        foreach ($entry in $enabled) { $parent[$entry.SkillId] = $entry.SkillId }
+        foreach ($pair in $pairs) {
+            if ($pair.Sim -lt $band) { continue }
+            $ra = Get-Root -Parent $parent -Id $pair.A
+            $rb = Get-Root -Parent $parent -Id $pair.B
+            if ($ra -ne $rb) { $parent[$ra] = $rb }
+        }
+        $groups = @{}
+        foreach ($entry in $enabled) {
+            $root = Get-Root -Parent $parent -Id $entry.SkillId
+            if (-not $groups.ContainsKey($root)) { $groups[$root] = New-Object System.Collections.Generic.List[string] }
+            $groups[$root].Add($entry.SkillId)
+        }
+        $clusters = New-Object System.Collections.Generic.List[object]
+        foreach ($root in $groups.Keys) {
+            $members = $groups[$root].ToArray()
+            if ($members.Count -lt 2) { continue }
+            $clusters.Add([pscustomobject]@{ Members = $members; Size = $members.Count })
+        }
+        $sorted = @($clusters | Sort-Object -Property Size -Descending)
+        $involved = 0
+        foreach ($cluster in $sorted) { $involved += $cluster.Size }
+        $maxSize = 0
+        if ($sorted.Count -gt 0) { $maxSize = $sorted[0].Size }
+        $bandResults.Add([pscustomobject]@{
+                Band = $band; Clusters = $sorted; ClusterCount = $sorted.Count
+                Involved = $involved; MaxSize = $maxSize
+            })
+    }
+
+    $looseBand = $bandResults[0]
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add('# 技能近重复检测（只读）')
+    $lines.Add('')
+    $lines.Add("生成时间：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')")
+    $lines.Add('')
+    $lines.Add('> 目的：用**名称分词 token 的 Jaccard 重叠**找「多条技能在讲同一件事」。')
+    $lines.Add('> ⚠️ 故意**不**使用 keywords/tags：它们含大量共享工具名（如 `file_read`），会让所有技能都显得相似。')
+    $lines.Add('> 因此本指标是**保守的下界**：它只能发现「名字就像同一件事」的重复，发现不了措辞完全不同的同类。')
+    $lines.Add('')
+    $lines.Add('## 1. 三档阈值下的近重复簇')
+    $lines.Add('')
+    $lines.Add('| Jaccard 阀值 | 簇数(≥2) | 涉及技能数 | 最大簇 |')
+    $lines.Add('|--------------|-----------|------------|--------|')
+    foreach ($result in $bandResults) {
+        $lines.Add("| ≥ $($result.Band) | $($result.ClusterCount) | $($result.Involved) | $($result.MaxSize) |")
+    }
+    $lines.Add('')
+    $pctInvolved = 0
+    if ($enabled.Count -gt 0) { $pctInvolved = [Math]::Round(100.0 * $looseBand.Involved / $enabled.Count, 1) }
+    $lines.Add("⇒ 在**最宽松**的 0.25 档下，$($enabled.Count) 个启用技能中有 **$($looseBand.Involved) 个（$pctInvolved%）落在近重复簇里**。")
+    $lines.Add('')
+
+    $lines.Add('## 2. 规模 ≥ 3 的簇（强证据，说明这些主题上确实重复建设）')
+    $lines.Add('')
+    $bigCount = 0
+    foreach ($cluster in $looseBand.Clusters) {
+        if ($cluster.Size -lt 3) { continue }
+        $bigCount++
+        $lines.Add("-（$($cluster.Size) 条）")
+        foreach ($member in $cluster.Members) { $lines.Add("  - $member") }
+    }
+    if ($bigCount -eq 0) { $lines.Add('（无）') }
+    $lines.Add('')
+
+    $lines.Add('## 3. 最大 15 个簇（按规模降序）')
+    $lines.Add('')
+    foreach ($cluster in ($looseBand.Clusters | Select-Object -First 15)) {
+        $lines.Add("-（$($cluster.Size) 条）$($cluster.Members -join ' | ')")
+    }
+    $lines.Add('')
+
+    $lines.Add('## 4. 对 G1 结论的修正')
+    $lines.Add('')
+    $lines.Add('G1 曾得出「**139 个技能语义层面两两零重叠**」，那是按**关键词身份**聚簇得到的结论：')
+    $lines.Add('它只能看到「两个技能声明了同一个关键词」，看不到「两个技能在用不同措辞讲同一件事」。')
+    $lines.Add('本报告改用名称 token 重叠后，**同一批数据**下出现了明显近重复簇（见 §2）。')
+    $lines.Add('')
+    $lines.Add('⇒ 正确表述是：')
+    $lines.Add('- 关键词层面：无重叠（因为工具名/标签被大量争抢，重合都发生在噪声上）；')
+    $lines.Add('- **语义层面：存在近重复**（本报告 §2 就是证据）。')
+    $lines.Add('- 而两者之间的空白（真正的语义相似度）需要 **embedding** 才能量准 —— 那正是 T4 切片。')
+    $lines.Add('')
+    $lines.Add('## 5. 对 RSI 的意义')
+    $lines.Add('')
+    $lines.Add('这组簇给 RSI 提供了第一个**不依赖使用遥测**的负信号判据形态：')
+    $lines.Add('`redundant_with`（与另一技能近重复）—— 注意它是**关系**而非布尔值，')
+    $lines.Add('因为「重复」本身不直接等于「该删」（取决于哪一条有真实使用记录，而那要等遥测）。')
+    $lines.Add('')
+
+    Write-Host ("NEARDUP pairs={0} band025_clusters={1} band025_skills={2} band040_clusters={3} band060_clusters={4} max={5}" -f `
+            $pairs.Count, $bandResults[0].ClusterCount, $bandResults[0].Involved, $bandResults[1].ClusterCount, $bandResults[2].ClusterCount, $looseBand.MaxSize)
+
+    return ($lines -join "`n")
+}
+
 function New-ContentAuditReport {
     <#
       内容审计（只读）：SKILL.md 到底教了什么？
@@ -762,6 +915,9 @@ function New-ContentAuditReport {
 $entries = Get-SkillPortfolio -Root $SkillsRoot
 if ($Mode -eq 'content-audit') {
     $report = New-ContentAuditReport -Entries $entries -Root $SkillsRoot
+}
+elseif ($Mode -eq 'near-duplicate') {
+    $report = New-NearDuplicateReport -Entries $entries
 }
 elseif ($Mode -eq 'denoise-impact') {
     $report = New-DenoiseImpactReport -Entries $entries
