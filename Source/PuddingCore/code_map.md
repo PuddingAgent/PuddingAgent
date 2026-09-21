@@ -179,6 +179,8 @@
 | `Skills/` | 技能系统抽象 |
 | `Skills/Portfolio/` | 🆕 G3 组合预算策略：`SkillPortfolioPolicy`（`IVersionedCriterion`，只含**被消费**的阈值）+ `AppliedPortfolioPolicy` + `SkillScoreSnapshot`（两态：`Observed`/`Unavailable` —— `Unavailable` **无 `Score` 字段** ⇒ “把无数据当低分”在类型上不可表达）。默认 `ZeroRegressionDefault(实测启用数, headroom)`。⚠️ 该目录**不在**算子架构门禁扫描范围（门禁只扫 `PuddingCore/Operators/**` 与 `PuddingRuntime/Operators/**`）⇒ 门禁 PASS **不构成**本目录纯净性证据 |
 | `Skills/Curation/` | 🆕 G7 提炼产物契约：`SkillCurationPolicy`（`IVersionedCriterion`，`MinRetainedValueRatio`/`ApplicabilityHeadings`/`PitfallHeadings`/`MinMarkdownLength`；**无默认实参、无默认策略工厂** —— 比例下限是治理结论）+ `AppliedSkillCurationPolicy` + `SkillDistillationContract`（反笔记不变式 P1–P6 违规码 + `SourceTurnsOf`/`SourceSessionsOf` tag 级抽取，供 C1/C2 复用）。⚠️ 同 `Skills/Portfolio/`：**不在**算子架构门禁扫描范围 |
+| `Skills/Family/` | 🆕 G4 家族归类：`SkillFamilyPolicy`（`IVersionedCriterion`，阈值外置：家族名相似度下限等；`Create` 无默认实参 ⇒ 阈值是治理结论）、`SkillFamilyClustering`（**静态纯函数** `Cluster(subjects, policy)`：并查集 + 确定性排序；输出**含单成员簇**、按 `FamilyKey` 序数序、`FamilyKey = Members[0]`）、`SkillNameTokenization`（`StandardSeparators`/`Tokenize`/`Jaccard`；其分隔符与 `Skills/Retrieval/SkillKeywordNormalization.NameTokenSeparators` 是**同一份字符集**的两处表达，**有用例钉住相等**）、`SkillMergePolicy`（`IVersionedCriterion`，`MinimumProceduralTextSimilarity` 合法区间 (0,1]）。⛔ 家族标签**只用于分组**，不参与生死判定 |
+| `Skills/Retrieval/` | 🆕 G4 关键词**归一**的唯一定义（`SkillKeywordNormalization`）：`Collect(keywords, tags, skillId, name)` **逐字复现**原 `SkillEnforcerService.CollectKeywords`（口径唯一 ⇒ G7-C3 与 G4 必须共享同一来源）、`KeywordComparer = OrdinalIgnoreCase`（⛔ 不得改为序数敏感）、`NameTokenSeparators`/`MinimumNameTokenLength`/`IsInjectableKeyword`。⚠️ 该归一口径**保留原始大小写**：消费侧一律用 `KeywordComparer` 比较，⛔ 不得自建折叠步骤（G4-D6c 教训：判据曾用序数比较 ⇒ 真实数据 116 处被误拒） |
 
 ## 事件 & 观测
 

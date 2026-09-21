@@ -28,7 +28,11 @@
 | `Services/FactMemoryService.cs` | 事实记忆服务（23KB） |
 | `Services/MemoryRecallService.cs` | 记忆召回服务（19KB） |
 | `Services/MemoryLibrarian.cs` | 记忆图书馆员 |
-| `Services/SkillEvolutionDeduplicationService.cs` | 🔑 Skill 进化去重（26KB） |
+| `Services/SkillEvolutionDeduplicationService.cs` | 🔑 Skill 进化去重（26KB）。🆕 G4-D6b 起 `CalculateTextSimilarity` 与 `IsDeterministicallyEligible` 为 **`public static`**（原私有实现**原样提为公有、行为逐字不变** ⇒ 合并判据与既有闸门共享同一份口径，⛔ 不得另写第二套）；`ExtractSourceSessions` 供 C1/C2 复用 |
+| `Services/SkillFamilyCapJudge.cs` | 🆕 G4-D3 家族内上限判据：输入 = 分簇 + `PerFamilyCap`；输出 = 超限家族 + **评审请求**（**零写盘**：超限后果只有评审请求，⛔ 不得在超限分支禁用/删除技能） |
+| `Services/SkillKeywordOwnershipProbe.cs` | 🆕 G4-D4 关键词归属**只读**事实探针：每个关键词的**全部**竞争者（不止第一个）+ 共享关键词数 / 被挤掉次数（须与 G1 报告逐数一致） |
+| `Services/SkillKeywordOwnershipJudge.cs` | 🆕 G4-D5 归属**裁决**判据：冲突 ⇒ 待裁决 + reason code（⛔ 默认**不得**是先到先得，也不得是后来者一律拒绝）；归一谓词复用 `Skills/Retrieval/SkillKeywordNormalization` |
+| `Services/SkillMergeEligibilityJudge.cs` | 🆕 G4-D6 合并**四条件**判据（纯判定层：零 IO）：同族 / 关键词重叠 / 程序性文本相似度 ≥ 策略阈值 / 证据可归并；`SkillMergeVerdict.IsEligible` **派生自** `FailedConditions`（⛔ 不单独存储 ⇒ 不会自相矛盾）；畸形事实 fail-closed（自配对/重复配对/空字段/非有限相似度/空白关键词一律抛，⛔ 不静默跳过）。C2 用 `SkillKeywordNormalization.KeywordComparer`（D6c）。用例：`PuddingMemoryEngineTests/SkillMergeEligibilityJudgeTests.cs`；真实语料探针：`PuddingRuntimeTests/Services/SkillMergeEligibilityRealIndexProbeTests.cs` |
 | `Services/SubconsciousOrchestrator.cs` | 潜意识编排（75KB，核心）；🆕 G7 起 `SkillCurateAsync` 把 `ISkillDistillationSource` 产物逐条过 `SkillCurationGate`，三计数（products/shadow/rejected）写入 `SkillCurationReport`，且**零写盘**（未注入 source/policy ⇒ 恒定 0/0/0） |
 | `Services/SkillPortfolioAdmissionJudge.cs` | 🆕 G3 规则层：组合预算判定器（**纯函数**）。判定序 fail-closed；**no-upgrade**（非 create 永不变 create）；冷启动 Defer 禁 Displace；阈值全来自策略对象 |
 | `Services/SkillPortfolioAdmissionExecutor.cs` | 🆕 G3 副作用层：置换 = 先禁用“价值最低者”（**禁用而非删除 ⇒ 可回滚**）再物化候选；候选建不出来 ⇒ 回滚恢复；merge/skip/defer **零写盘**；无置换目标 ⇒ fail-closed defer 且零写盘 |
