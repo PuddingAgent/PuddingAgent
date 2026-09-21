@@ -14,6 +14,7 @@ public sealed class RuntimeCenterViewModel : INotifyPropertyChanged, IDisposable
     private DesktopRuntimeSnapshot _runtime;
     private string? _stateError;
     private string _coreLogText = "尚无 Core 输出。";
+    private string? _lastUptimeText;
     private int _frontendDeployInProgress;
     private int _disposeState;
 
@@ -187,11 +188,14 @@ public sealed class RuntimeCenterViewModel : INotifyPropertyChanged, IDisposable
 
     public void RefreshTransient()
     {
-        _runtime = _coordinator.RuntimeSnapshot;
-        CoreLogText = _coordinator.CoreLogBuffer.GetTail(500);
-        if (string.IsNullOrWhiteSpace(CoreLogText))
-            CoreLogText = "尚无 Core 输出。";
-        RaiseAll();
+        var tail = _coordinator.CoreLogBuffer.GetTail(500);
+        CoreLogText = string.IsNullOrWhiteSpace(tail) ? "尚无 Core 输出。" : tail;
+        var uptime = UptimeText;
+        if (_lastUptimeText != uptime)
+        {
+            _lastUptimeText = uptime;
+            OnPropertyChanged(nameof(UptimeText));
+        }
     }
 
     private void OnCoordinatorStateChanged(object? sender, DesktopStateChangedEventArgs e)

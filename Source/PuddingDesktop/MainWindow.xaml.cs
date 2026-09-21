@@ -54,8 +54,12 @@ public sealed partial class MainWindow : Window
         // from accessing null x:Name fields during XAML load.
         _initialized = true;
 
-        _statusVm.PropertyChanged += (_, _) =>
-            Dispatcher.Invoke(() => UpdateStatusDisplay());
+        _statusVm.PropertyChanged += (_, e) =>
+        {
+            // Log/uptime updates do not change the shell status or native tray icon.
+            if (e.PropertyName is nameof(RuntimeCenterViewModel.State) or nameof(RuntimeCenterViewModel.Runtime))
+                Dispatcher.Invoke(UpdateStatusDisplay);
+        };
 
         _coordinator.StateChanged += OnCoordinatorStateChanged;
 

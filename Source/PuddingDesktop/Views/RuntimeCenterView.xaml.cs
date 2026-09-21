@@ -10,17 +10,63 @@ namespace PuddingDesktop.Views;
 public partial class RuntimeCenterView : UserControl
 {
     private readonly DispatcherTimer _refreshTimer;
+    private Window? _ownerWindow;
+    private bool _disposed;
 
     public RuntimeCenterView()
     {
         InitializeComponent();
-        _refreshTimer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) =>
+        _refreshTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
+        {
+            Interval = TimeSpan.FromSeconds(1),
+        };
+        _refreshTimer.Tick += (_, _) =>
         {
             if (DataContext is RuntimeCenterViewModel viewModel)
                 viewModel.RefreshTransient();
-        }, Dispatcher);
-        Loaded += (_, _) => _refreshTimer.Start();
-        Unloaded += (_, _) => _refreshTimer.Stop();
+        };
+        Loaded += (_, _) =>
+        {
+            DetachWindow();
+            _ownerWindow = Window.GetWindow(this);
+            if (_ownerWindow is not null)
+            {
+                _ownerWindow.StateChanged += OnWindowStateChanged;
+                _ownerWindow.IsVisibleChanged += OnVisibilityChanged;
+            }
+            UpdateRefreshTimer();
+        };
+        IsVisibleChanged += OnVisibilityChanged;
+        Unloaded += (_, _) =>
+        {
+            _refreshTimer.Stop();
+            DetachWindow();
+        };
+    }
+
+    private void OnWindowStateChanged(object? sender, EventArgs e) => UpdateRefreshTimer();
+    private void OnVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e) => UpdateRefreshTimer();
+
+    private void UpdateRefreshTimer()
+    {
+        if (!_disposed && IsLoaded && IsVisible && _ownerWindow is { IsVisible: true }
+            && _ownerWindow.WindowState != WindowState.Minimized)
+        {
+            if (!_refreshTimer.IsEnabled)
+                ViewModel?.RefreshTransient();
+            _refreshTimer.Start();
+        }
+        else
+            _refreshTimer.Stop();
+    }
+
+    private void DetachWindow()
+    {
+        if (_ownerWindow is null)
+            return;
+        _ownerWindow.StateChanged -= OnWindowStateChanged;
+        _ownerWindow.IsVisibleChanged -= OnVisibilityChanged;
+        _ownerWindow = null;
     }
 
     private RuntimeCenterViewModel? ViewModel => DataContext as RuntimeCenterViewModel;
@@ -131,5 +177,10 @@ public partial class RuntimeCenterView : UserControl
         FeedbackText.Visibility = Visibility.Visible;
     }
 
-    public void DisposeOperations() => _refreshTimer.Stop();
+    public void DisposeOperations()
+    {
+        _disposed = true;
+        _refreshTimer.Stop();
+        DetachWindow();
+    }
 }

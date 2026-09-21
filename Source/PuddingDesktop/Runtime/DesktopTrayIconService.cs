@@ -63,7 +63,12 @@ public sealed class DesktopTrayIconService : IDisposable
 
     public void UpdateToolTip(string text)
     {
-        _toolTip = string.IsNullOrWhiteSpace(text) ? "Pudding Desktop" : text.Trim();
+        var toolTip = string.IsNullOrWhiteSpace(text) ? "Pudding Desktop" : text.Trim();
+        if (toolTip.Length > 127)
+            toolTip = toolTip[..127];
+        if (_toolTip == toolTip)
+            return;
+        _toolTip = toolTip;
         if (_windowHandle == IntPtr.Zero)
             return;
 

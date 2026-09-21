@@ -8,33 +8,44 @@ namespace PuddingDesktop.Core;
 /// </summary>
 public sealed class CoreProcessLogBuffer
 {
-    private readonly ConcurrentQueue<string> _lines = new();
+    private readonly object _gate = new();
+    private readonly Queue<string> _lines = new();
     private readonly int _capacity;
-    private int _count;
+    private string? _cachedTail;
+    private int _cachedMaxLines;
 
     public CoreProcessLogBuffer(int capacity = 500)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(capacity);
         _capacity = capacity;
     }
 
     public void Append(string line)
     {
-        _lines.Enqueue(line);
-        if (Interlocked.Increment(ref _count) > _capacity)
+        lock (_gate)
         {
-            _lines.TryDequeue(out _);
-            Interlocked.Decrement(ref _count);
+            _lines.Enqueue(line);
+            if (_lines.Count > _capacity)
+                _lines.Dequeue();
+            _cachedTail = null;
         }
     }
 
     public IReadOnlyList<string> Snapshot()
     {
-        return _lines.ToArray();
+        lock (_gate)
+            return _lines.ToArray();
     }
 
     public string GetTail(int maxLines = 100)
     {
-        var lines = _lines.Reverse().Take(maxLines).Reverse();
-        return string.Join(Environment.NewLine, lines);
+        ArgumentOutOfRangeException.ThrowIfNegative(maxLines);
+        lock (_gate)
+        {
+            if (_cachedTail is not null && _cachedMaxLines == maxLines)
+                return _cachedTail;
+            _cachedMaxLines = maxLines;
+            return _cachedTail = string.Join(Environment.NewLine, _lines.Skip(Math.Max(0, _lines.Count - maxLines)));
+        }
     }
 }
