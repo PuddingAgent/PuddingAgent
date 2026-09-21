@@ -187,6 +187,11 @@ export const useMessageStyles = createStyles(({ token }) => ({
     alignItems: 'center',
     gap: 2,
     margin: '6px 0 0 -6px',
+    // 2026-09-21 修卡片抖动：本行**常驻渲染**，隐藏只切 opacity（不卸载、不用 display:none）。
+    // minHeight 取按钮高度（28px）：即使按钮组暂时为空（无正文且无任何回调），
+    // 也保持同一高度，杜绝 hover 时 0 → 28px 的高度跳变。
+    minHeight: 28,
+    flexShrink: 0,
     opacity: 0,
     pointerEvents: 'none' as const,
     transition: 'opacity 180ms ease',

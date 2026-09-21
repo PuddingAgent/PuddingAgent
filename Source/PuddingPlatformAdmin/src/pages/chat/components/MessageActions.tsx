@@ -96,10 +96,15 @@ const MessageActions: React.FC<MessageActionsProps> = ({
 
   React.useEffect(() => stopVoice, [stopVoice]);
 
-  if (!visible) return null;
-
+  // ── 体积恒定约束（2026-09-21 修卡片抖动）─────────────────────────
+  // 本行必须**常驻 DOM**：隐藏只切透明度（messageActionsNew → messageActionsVisible）。
+  // 卸载或 display:none 会让卡片在 hover 进出间高度跳变（28px 按钮行 + 6px 上边距），
+  // 鼠标相对卡片的位置随之改变 ⇒ 反复 enter/leave ⇒ 卡片尺寸鬼畜抖动。
+  // 与 UserMessageBubble 的用户侧操作行（同样常驻 + 只切 class）保持同一契约。
+  // ⚠️ 不要恢复 `if (!visible) return null`。
   return (
     <div
+      data-testid="message-actions"
       className={cx(
         styles.messageActionsNew,
         visible && styles.messageActionsVisible,

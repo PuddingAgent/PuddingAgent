@@ -155,7 +155,7 @@
 | `src/pages/chat/components/IntentConsole.tsx` | Composer 壳：不再持有草稿态/面板态（下沉叶子），仅订阅低频事件（focus 变化、hasText 空↔非空翻转）；外部改写走 textInputRef.setValue；发送门控用 composerHasText |
 | `src/pages/chat/components/ChatMain.tsx` | `handlePinnedQuote` 用 inputValueRef 消除 inputValue 依赖（回调身份稳定，MessageList 的 React.memo 不再被逐键 lift 击穿） |
 | `src/pages/chat/types.ts` | `buildMessageBlocks` 仅滤除 `subagent_progress`（托盘坞承载）；spawned/completed 父级委派事实保留进主消息（DelegationRow 路径 A 数据源） |
-| `src/pages/chat/styles/message.styles.ts` | AgentTurnCard 宽屏最大 750px（720px 内容列 + 外壳），消除右侧卡内空白；正常流保留真实高度，不使用 `content-visibility` remembered intrinsic size；消息操作条为透明图标行，CurrentActivityPanel 委派大卡退役 |
+| `src/pages/chat/styles/message.styles.ts` | AgentTurnCard 宽屏最大 750px（720px 内容列 + 外壳），消除右侧卡内空白；正常流保留真实高度，不使用 `content-visibility` remembered intrinsic size；消息操作条为**常驻**透明图标行（2026-09-21 修卡片 hover 抖动）：隐藏只切 opacity、`minHeight: 28` 始终预留按钮高度，`MessageActions` **不得**在 `visible=false` 时提前 return，否则卡片高度随 hover 进出跳变；CurrentActivityPanel 委派大卡退役 |
 | `src/pages/chat/components/MarkdownBlock.tsx` | `preprocessMarkdown` 增量：正文 emoji run 包 `<span data-md-emoji>`（0.95em 收敛，围栏代码/行内 code 跳过；fence 状态跟踪） |
 | `src/pages/chat/viewport/useMessageViewportRuntime.ts` | 吸底阈值 `BOTTOM_THRESHOLD_PX`=24；scrollTop 单一写入者/instant snap/上滚停跟随；虚拟化权重同时计入消息正文、过程项和已水合 canonical render weight；follow effect 依赖 `totalSize`，ResizeObserver auto 模式在底部阈值内收敛 |
 | `src/pages/chat/viewport/executionFlowRenderWeight.ts` | 递归计算 reasoning/tool/delegation/message canonical 节点的结构与文本渲染成本，使 DOM 很重但消息数较少的会话提前进入虚拟化；按 immutable Projection 身份 WeakMap 缓存，未变化 Turn 不重复扫描 |

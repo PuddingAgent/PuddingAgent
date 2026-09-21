@@ -19,22 +19,38 @@ jest.mock('../styles', () => {
 });
 
 describe('MessageActions voice output', () => {
-  it('does not mount action buttons while hidden', () => {
-    render(
-      <MessageActions
-        content="整理今天的会议记录。"
-        visible={false}
-        onCopy={jest.fn()}
-        onRerun={jest.fn()}
-        onPin={jest.fn()}
-        onDelete={jest.fn()}
-      />,
-    );
+  it('keeps action buttons mounted while hidden so hovering never changes card height', () => {
+    // 2026-09-21 修「hover 抖动」：隐藏态**不得卸载按钮行**。
+    // 卸载会让卡片高度在「28px 按钮行 + 6px 上边距」之间反复跳变：
+    // 鼠标进入 ⇒ 卡片变高 ⇒ 鼠标相对位置改变 ⇒ 触发 leave ⇒ 变矮 ⇒ 又 enter …（鬼畜抖动）。
+    // 契约：隐藏只切透明度类（messageActionsNew → messageActionsVisible），
+    // 两种状态下 DOM 结构与按钮数量完全一致。
+    const sharedProps = {
+      content: '整理今天的会议记录。',
+      onCopy: jest.fn(),
+      onRerun: jest.fn(),
+      onPin: jest.fn(),
+      onDelete: jest.fn(),
+    };
 
-    expect(screen.queryByRole('button', { name: '复制' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '重新生成' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '固定' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
+    const hidden = render(<MessageActions {...sharedProps} visible={false} />);
+    const hiddenRow = hidden.container.querySelector(
+      '[data-testid="message-actions"]',
+    );
+    expect(hiddenRow).not.toBeNull();
+    expect(hiddenRow!.querySelectorAll('button').length).toBe(4);
+
+    const shown = render(<MessageActions {...sharedProps} visible />);
+    const shownRow = shown.container.querySelector(
+      '[data-testid="message-actions"]',
+    );
+    expect(shownRow).not.toBeNull();
+    // 核心断言：按钮数量不随显隐变化 ⇒ 不会触发 reflow
+    expect(shownRow!.querySelectorAll('button').length).toBe(
+      hiddenRow!.querySelectorAll('button').length,
+    );
+    // 仅类名不同（可见态追加 messageActionsVisible，即仅 opacity 1 与 pointerEvents auto）
+    expect(shownRow!.className).not.toBe(hiddenRow!.className);
   });
 
   it('speaks assistant text and lets the user stop playback', async () => {
