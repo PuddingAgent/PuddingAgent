@@ -1,3 +1,7 @@
+## 2026-09-21 夜间效率与RSI评估（只读取证）
+
+[评估报告](Docs/Reports/PuddingAgent夜间效率与RSI评估-2026-09-21.md)与[聚合数据](Docs/Reports/PuddingAgent夜间效率与RSI评估-2026-09-21.metrics.json)：窗口09-20 22:00至09-21 08:09，2410条Gateway用量，DeepSeek缓存98.0698%、GLM93.8195%；DeepSeek静态计价为账单单价两倍，精确窗口按账单价重估¥15.93但非供应商结算。82提交有实质产出，心跳/私有goal.md不等于平台Goal；降噪summary已部署生效，后半夜classifier未加载。RSI优先补suite门禁、执行身份、同目标失败episode与恢复片段评测；本轮无产品/配置/运行数据修改。
+
 ## 2026-09-20 计划语义版本与重规划修订分离
 
 `TaskPlanRunEntity.PlanVersion` 是固定编译语义；新增 `PlanRevision` 调度计数，`GoalSettlementStore.TryReplanBoundPlan` 仅增修订号，`GoalQueriesController`/熔断事件分别输出两者。`TaskPlanningSchemaBootstrapper` 幂等补列，`ExecutionCommandReader` 继续严格拒绝旧版/未知语义。`TestScripts/repair-task-plan-semantic-version.py` 是有编译绑定与连续事件证明的停机恢复工具，保留状态/成本/历史。源码 `08b3cbb` 已于21:21经Desktop部署，Core PID36380/Ready；原受影响任务第26轮真实工具调用通过。见[修复与验收记录](Docs/Reports/计划语义版本与重规划修订分离修复-2026-09-20.md)；完整 Task 侧合同重规划仍待实现。

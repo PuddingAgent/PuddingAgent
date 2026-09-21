@@ -1,3 +1,9 @@
+### 夜间效率与自改进不能只看缓存/提交数（2026-09-21）
+
+按明确BJT半开窗口核对Gateway usage、TokenUsageEvents归因、canonical命令/子Run、Task/Goal、Git和实际加载产物。SQLite时间列存在空格/T格式混用，先看样本和索引，分范围取数后归一UTC；不能把归因表加进账本。供应商日汇总不能直接代表22:00起的精确窗口，导出文件mtime不是结算水位；静态模型价格可能与实际优惠不同。本夜DeepSeek本地计价恰为账单2倍，GLM缺账单不报实际总费用。
+
+`goal_update`是私有goal.md、`sleep`是心跳偏好；平台Goal无迭代不等于Agent未自主工作。工具失败/预期红测与任务验收失败分开。`terminal_wait`当前可能因日志truncated提前返回；诊断时不要套用旧“任何输出即返回”的根因。部署以进程/程序集hash和实际事件为准：本夜降噪C1–C3已生效但Task卡陈旧，classifier源码切换尚未加载。自动Skill job completed且operationCount=0不能记为改进成功；学习时间/来源以canonical事件为准，便条曾二次加8小时。见[完整取证与RSI优先级](Docs/Reports/PuddingAgent夜间效率与RSI评估-2026-09-21.md)。
+
 ### 看板恢复后的去重与计划版本循环（2026-09-20）
 
 同日修复补充：语义版本与修订号已在源码分离，`/api/v1/goals/{id}/steps` 和 `goal.circuit_opened` 可分别读 `planVersion`/`planRevision`。历史错误的版本 3..N 不能直接全表改成 2。先经 Goal control API 暂停精确目标，读取 binding 的 `executionPlanVersion`/fingerprint 与逐次 replan 事件，核对预算；停止 Core 后用 `TestScripts/repair-task-plan-semantic-version.py --database <db> --plan-id <id> --backup <new-json>` 修复。`--dry-run` 只读预检；脚本默认实际应用，缺证据/身份冲突/在途命令/运行中 Core 均拒绝。恢复不重置轮数、不复活终态 Goal、不重跑已完成节点。见[实施和部署记录](Docs/Reports/计划语义版本与重规划修订分离修复-2026-09-20.md)。下文保留最初取证过程。
