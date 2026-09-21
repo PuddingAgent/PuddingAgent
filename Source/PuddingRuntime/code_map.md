@@ -6,7 +6,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `DependencyInjection.cs` | Runtime 服务注册入口；含 `FrozenVisionContextAccessor` singleton（V5 视觉冻结快照通道，DependencyInjection.cs:119） |
+| `DependencyInjection.cs` | Runtime 服务注册入口；含 `FrozenVisionContextAccessor` singleton（V5 视觉冻结快照通道，DependencyInjection.cs:119）；🆕 G7 注册 `ISkillDistillationSource → NullSkillDistillationSource`（`:112`，空生产者 ⇒ curate 报告逐字段零回归），并**刻意不注册** `SkillCurationPolicy`（`:111` 注释：阈值须经论证后由版本化策略对象提供，不得由组合根凭空编造） |
 | `Services/PuddingConfigLoader.cs` | JSON 配置加载 |
 | `Services/PuddingJsonConfig.cs` | 配置模型定义 |
 | `Services/RuntimeExecutionConfigService.cs` | 执行配置：忠实加载 runtime.execution.json（`Math.Max(1, cfg)`，已删除 600/2400/24h 强抬 normalize）；600/2400/24h 仅为系统 profile 默认（非下限/上限/强制统一值）；20 轮/30 分钟收尾宽限；规范化临时子代理目录保留/隔离参数；请求级预算覆盖见 SubAgentInvocationContracts（int? MaxRounds 等） |
@@ -167,7 +167,7 @@
 |------|------|
 | `Services/Plugins/PluginManifestCatalog.cs` | 当前 `pudding-plugin/v1` manifest-only Tool catalog；目标 v2 多 contribution + dependency/scope/activation |
 | `Services/Plugins/PluginPackageInstaller.cs` | 插件 ZIP 安全安装；目标增加签名/grant/staging activation/rollback |
-| `Services/Background/SubconsciousWorkerService.cs` | 持久潜意识 Job 消费 + 当前周期入队循环；目标按 learning stage plugin 拆分，Timer 只产生幂等 Command |
+| `Services/Background/SubconsciousWorkerService.cs` | 持久潜意识 Job 消费 + 当前周期入队循环；目标按 learning stage plugin 拆分，Timer 只产生幂等 Command；🆕 G7 起 `skill.curate` 作业结果 metadata 写入 `curated_products`/`curated_shadow`/`curated_rejected` 三计数（`:336` `CreateSkillCurationResultEnvelope`）⇒ “裁决被记录”在作业结果层可观测（此前只进报告与日志） |
 | `Services/Background/SubconsciousJobScheduler.cs` | 空闲、并发和预算约束下的 Job lease 决策 |
 | `Services/Hooks/SessionCompressedMemoryMaintenanceHook.cs` | 当前 `session.compressed` 事件到持久 Job 桥；目标作为 durable event consumer 重命名，不再称 Hook |
 
