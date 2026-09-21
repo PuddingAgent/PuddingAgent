@@ -477,7 +477,7 @@ R6 | 评测门禁**当前有洞**（Admin 数量判据、必测未测 exit 0） 
 
 | 切片 | 内容 | 验收 |
 |---|---|---|
-**S0（阻塞）** | 评测门禁可信化：判据改为 **case 身份 + 输入指纹**；必测未测 ⇒ **非零退出**；TRX/Jest JSON 机器可读 | 用**假 PASS 负例**（"修一红换一新红"、"全部未测"）证明旧脚本误放、新脚本拦住 |
+**S0（阻塞）** | 评测门禁可信化：判据改为 **case 身份**（预算由 `KnownRed.Count` 派生，删除 `AllowedFailures` 旋钮）；结构化证据（TRX / Jest JSON）为**唯一**判定源；必测未测 ⇒ **非零退出**；名单保鲜 30 天；豁免带到期日 | ✅ **已完成**（2026-09-21）：`-SelfTest` 11 例负例全通过且与旧判据并排对照（N1 旧 PASS/新 FAIL、N2/N4/N5 同）；实跑 Core/Runtime/Platform/AdminJest 全 PASS，退出码 0 |
 | **S1a** | 抽 `OperatorBase` + 三原语契约（`IScorer` / `IJudge` / `IClassifier`）+ `JudgementEnvelope` + `ThresholdPolicy`；**只落契约与基类，不接模型** | 契约单测：三投影读同一信封；阈值外置；`Abstain` 不被折叠；**反射守卫**（场景子类只允许覆盖 `ClassifyCoreAsync`）；**反向依赖守卫**（基础设施不出现 RSI/Goal/ToolApproval 标识）。**实施规格已冻结**：`Docs/Features/S1a-判定算子基础设施-实施规格-2026-09-21.md` |
 | **S1b** | 场景注册表 + 工具审批改为第一个适配者 | **行为零变更**：Runtime 1659 / Platform 1363 全绿；新增"场景键路由"用例；**Jev 隔离守卫测试**上线（§4.0.6） |
 **S2** | 泛化旁挂（audit / rule / health 按场景分区）；**保留"裁决先于留痕"** | 审计失败不影响裁决 + 有 Warning（已有用例须继续绿） |
@@ -940,7 +940,7 @@ signal ──▶ ImprovementProposal{ target?, op, evidence[], expectedGain }
 **L3 落点** | **两条互不相通的 add 通道**：技能侧 `IAgentSkillEvolutionStore`（SkillEnforcer 消费它）；记忆侧 `IMemoryLibrary`（**已有 `SupersededByChapterId` / `Status` ⇒ 记忆侧本就支持"取代而非新增"**） | 缺**统一落点抽象**：目标句柄 / 版本 / 变更操作 / 证据 / 回滚句柄。两条通道 id 类型不同，无法用同一份提案描述 |
 **L4 编排** | 潜意识作业队列（`auto_dream` / `extract_patterns` / `improve_skills`）+ 幂等键 `periodic:{jobType}:{ws}:{agent}:{bucket}` + 租约 | 缺「整理 / 提炼」作业（§14）；缺 Analyze→Plan→Implement 流水线（S5） |
 **横切** | canonical 事件、用量账本、会话日志、审计、健康面 | **缺使用遥测**（技能命中 / 注入 / 结局）；缺信号汇总存储；缺统一定价/成本记账口径 |
-**评测** | 五套件门禁脚本 | **门禁有洞**（S0 未做）；缺"变更前后对照"的机械流程 |
+**评测** | 五套件门禁脚本（S0 已可信化） | 结构化证据（TRX/JSON）+ 用例身份判据已就绪；仍缺「变更前后对照」的机械流程（待 S6 / L3-b） |
 
 ⭐⭐ **一处值得单独指出的发现**：**记忆侧已经实现了"更新/取代而非新增"**（`SupersededByChapterId` / `Status` / 降级为指针；本轮蜜糖把协议副本降级为指针即此模式）。
 ⇒ 所以 §15.4 的 `Update/Merge/Retire` **不是发明新语义，而是把记忆侧已有的成熟模式推广到技能侧与其它资产**。规划的合法性来自**已有先例**，不是设计者偏好。
@@ -1013,7 +1013,7 @@ decision ∈ { Apply | ApplyShadow | Reject | Defer }
 
 | 序 | 切片 | 轨道 | 状态 | 成本窗口 |
 |---|---|---|---|---|
-1 | **S0 评测门禁可信化**（判据改 case 身份+指纹；必测未测 ⇒ 非零退出） | 评测 | **未做（阻塞全链）** | 任意（纯脚本） |
+1 | **S0 评测门禁可信化** | 评测 | ✅ **已完成**（2026-09-21：判据=结构化证据+用例身份；`AllowedFailures` 旋钮已删除；必测未测⇒非零） | — |
 2 | S1a/S1b/S2a/S2b 判定算子基础设施 | 算子 | ✅ **已交付** | — |
 3 | **L3-a 提案模型最小契约**（`ArtifactRef` / `ImprovementProposal` / `ChangeVerdict`；纯类型 + 守卫测试，**零行为**） | 落点 | 未做 | 任意 |
 4 | **G1 组合盘点**（只读；含家族分布 + 索引 token 实测） | 治理 | 部分已做（存量 + 关键词空间） | 任意 |

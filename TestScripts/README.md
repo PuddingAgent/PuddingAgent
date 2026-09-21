@@ -75,29 +75,52 @@ to run" is not the same as "all suites".
 
 Contract:
 
-- each suite declares `AllowedFailures` (known-red budget) and `KnownRed` (test names allowed to fail);
-  - `KnownRed` with a **concrete list** ⇒ the names also participate: a failure inside the budget but
-    **not** on the list is still a FAIL;
-  - `KnownRed = $null` ⇒ the failing names are **not registered yet**, so the suite is judged
-    **by budget only** (the names are still printed for visibility). Enumerate them later to tighten.
-- the per-case disposition ledger for frontend known-red lives in
-  `TestScripts/known-red-dispositions.md` (class A = test lag / B = config-copy lag / C = real defect /
-  D = broken test, each with evidence). Only cases registered there may be tightened into `KnownRed`;
-  never guess a disposition - write `待查` instead;
-- `AllowedFailures = $null` means **report only** (`UNMEASURED`) - an unknown baseline is never treated as a pass;
-- full per-suite output is written to `temp/suite-gates/<suite>.log`; the script prints only a summary;
-- exit code `0` = every suite within budget **and** the operator architecture gate green;
-  `1` = at least one suite over budget **or** a non-zero operator architecture gate
-  (see "Operator architecture gate" below);
-- when counts change, update the baseline **inside the script** and state the measurement
-  date plus evidence in the commit message (the baseline is a contract, not a convenience).
+- **Judgement is case identity, not a failure count.** The budget is **derived** from `KnownRed.Count`;
+  the `AllowedFailures` knob has been **removed**. Replacing an old red with a brand-new red is therefore a
+  FAIL, never a silent pass - an optimiser must not be able to move the goalposts. `-SelfTest` prints the
+  legacy count-based verdict side by side to show exactly what the old rule let through.
+- **Evidence is structured only.** Counts and failing-case names come from machine-readable artifacts:
+  dotnet => `--logger "trx;LogFileName=<suite>.trx"` (UTF-8 XML), jest => `--json --outputFile`.
+  Human-readable text is **never** parsed. Measured 2026-09-21: the human log is mojibake (CP936 bytes
+  decoded as UTF-8), so text regexes silently matched **nothing** and three dotnet suites were
+  mis-reported as unmeasured. A missing or unparseable structured artifact means `UNMEASURED`
+  (fail-closed; no fallback to text guessing).
+- **TRX needs namespace-agnostic XPath.** All TRX elements live under the `VisualStudio/TeamTest/2010`
+  namespace, so `//ResultSummary/Counters` matches **nothing**; use `//*[local-name()='Counters']`.
+  (Same incident, second cause.)
+- **Case names are compared after structural normalisation**: any run of non-letter/non-digit/non-underscore
+  characters collapses to a single space, so the jest separator, `>`, and odd whitespace all agree. Both
+  sides use the same function, and the script contains no non-ASCII literal in any pattern.
+- **An unregistered list cannot pass.** `KnownRed = $null` with observed failures is never a PASS.
+- **Known-red lists expire.** `KnownRedMeasuredAt` plus `KnownRedMaxAgeDays` (default 30); an expired list is
+  a FAIL, so a known red cannot become a permanent exemption. A declared case that no longer fails is
+  reported as `known_red_stale` - a hint to tighten the list, not a FAIL.
+- **Required suites must be measured.** `Required = $true` (default) with `UNMEASURED` or `SKIPPED_LOCKED` is a
+  FAIL (`required_not_measured`) and a non-zero exit. Not measuring is no longer equivalent to passing.
+- **Exemptions carry an expiry.** `Required = $false` requires `Exemption = @{ Reason; ExpiresOn; Owner }`;
+  a missing or expired exemption is a FAIL. No silent opt-outs.
+- **Source fingerprint** (`HEAD` + dirty-entry hash) is recorded next to each `BaselineCommit`, so a baseline
+  can be traced to the revision it was measured on. Fingerprint drift is reported, not enforced - a gate that
+  is always red simply gets ignored.
+- The per-case disposition ledger for frontend known-red lives in `TestScripts/known-red-dispositions.md`
+  (class A = test lag / B = config-copy lag / C = real defect / D = broken test, each with evidence).
+  Only cases registered there may be tightened into `KnownRed`; never guess a disposition.
+- Evidence artifacts per suite: `temp/suite-gates/<suite>.raw.log` (human-readable, **not** used for
+  judgement) plus `temp/suite-gates/<suite>.trx` or `<suite>.jest.json` (**the** judgement source).
+- Exit code `0` = every suite PASS **and** the operator architecture gate green; `1` = any FAIL or a non-zero
+  operator gate (see "Operator architecture gate" below).
+- When a baseline changes, update it **inside the script** and state the measurement date plus evidence in the
+  commit message (the baseline is a contract, not a convenience).
 
-Current baselines (2026-09-21, 实测 via this script): `Core` 910 passed / 1 known-red,
-`Runtime` **1710** / 0, `Platform` 1363 / 0, `AdminJest` 1349 / 3 known-red
-(2 red suites, **all three are the voice family**; thirteen cases were fixed on 2026-09-21 - one
-**real defect** (missing admin menu icon mappings for `hdd`/`key`), one flaky suite calibrated
-(`jest.setTimeout`), one time-bomb fixture (relative dates), three copy/UI/carrier-migration cases,
-and seven other test-lag cases; see `known-red-dispositions.md`).
+Current baselines (2026-09-21, measured with this script; `-Only Core,AdminJest` and
+`-Only Runtime,Platform` both exited 0): `Core` 910 passed / **1 known-red**
+(`ProcessSwarmAsync_WithInvalidSwarmDirectory_HandlesError`), `Runtime` **1739** / 0,
+`Platform` **1379** / 0, `AdminJest` 1349 / 3 known-red - and those three cases are now
+**registered** in `KnownRed`, so that suite is judged by case identity rather than by budget alone.
+All three are the voice family; thirteen cases were fixed on 2026-09-21 - one **real defect**
+(missing admin menu icon mappings for `hdd`/`key`), one flaky suite calibrated (`jest.setTimeout`),
+one time-bomb fixture (relative dates), three copy/UI/carrier-migration cases, and seven other
+test-lag cases; see `known-red-dispositions.md`.
 
 The `Runtime` baseline moved 1659 → 1710 without any behaviour change, and the delta is **accounted for**:
 1710 − 22 = **1688**, where the 22 are the new operator-port cases added by the S1b slice
@@ -113,7 +136,9 @@ the raw evidence in the commit message.
 `Source/PuddingAgent/bin/Debug/net10.0/*.dll`, which the live process locks (`MSB3027`/`MSB3021`).
 The script reports that case as `SKIPPED_LOCKED` - a third honest state that is neither a pass nor a
 failure, so a build lock is never misread as a red suite. Measure it with the Core stopped
-(for example during a deployment window) and then tighten `AllowedFailures` to a real number.
+failure, so a build lock is never misread as a red suite. It is declared with an **explicit, expiring
+exemption** (`Required = $false` plus `Exemption.ExpiresOn = 2026-10-05`); once that date passes the gate
+**fails**, so the exemption cannot quietly become permanent.
 
 ## Operator architecture gate
 

@@ -1,7 +1,7 @@
 # 前端既有红：逐例定性台账（AdminJest）
 
-> **用途**：门禁 `TestScripts/test-pudding-suite-gates.ps1` 的 `AdminJest` 目前是 `KnownRed = $null`
-> （名单未登记 ⇒ **仅按预算判**）。**唯一**能把它收紧为"具体名单"的办法，是把每一例定性清楚并登记在此。
+> **用途**：门禁 `TestScripts/test-pudding-suite-gates.ps1` 的 `AdminJest` **已登记具体名单**
+> （`KnownRed` 三例，按**用例身份**判定）。本台账是 `KnownRed` 的**唯一依据**：只有在这里定性清楚、并带着证据的用例，才允许进 `KnownRed`。
 > **纪律**：本台账只写**有证据的判断**；没查清的写「待查」，**不得**用猜测填格。
 
 ## 定性分类（本台账口径）
@@ -14,7 +14,7 @@
 
 ## 当前基线（2026-09-21 实测）
 - `npx jest` 全量 ⇒ **`Tests: 3 failed, 1349 passed, 1352 total`（2 个红套件）**
-- 门禁：`AdminJest.AllowedFailures = 3`、`KnownRed = $null`
+- 门禁：`AdminJest.KnownRed` 已登记 **3 例**（按**用例身份**判定；预算由名单派生，`AllowedFailures` 旋钮已删除）
 - ✅ **剩余 3 例全是语音族**（已查清：孤儿组件 `VoiceConversationPanel.tsx` 生产内无任何引用）
   ⇒ 等用户定“接线 vs 移除”后再动测试（**无决策不动测试、不删组件**）。
 - ✅ **稳定性**：此前 1 例 flaky（access-token 套件并行下超时）**已治好**，见下方「flaky 已修」一节。
@@ -86,4 +86,4 @@
 ## 下一步
 1. 逐例补齐 #1/#2/#3/#4/#5/#8/#10/#11/#12/#13/#14 的定性（先读用例断言 + 生产侧对应行为/文案）。
 2. 语音归属（#6/#7/#9）等"接线 vs 移除"决策后再动。
-3. 每修完一例：跑该文件 → 跑全量 → **收紧 `AllowedFailures`** → 更新本台账与 `README.md` 基线。
+3. 每修完一例：跑 `-Only AdminJest` → 跑全量 → **从 `KnownRed` 移除该例**（预算由名单派生，自动收缩）→ 更新本台账与 `README.md` 基线。
