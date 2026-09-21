@@ -66,6 +66,46 @@ internal static class HarnessToolCompatibilityAdapter
     internal static bool IsRipgrepCommand(string? command)
         => string.Equals(ReadFirstExecutable(command), "rg", StringComparison.Ordinal);
 
+    // JsonNode materializes object dictionaries lazily; Parse alone does not
+    // reject duplicate keys. Never choose a first/last value for ambiguous input.
+    internal static string? GetArgumentValidationError(string? argumentsJson)
+    {
+        if (string.IsNullOrWhiteSpace(argumentsJson))
+            return null;
+        try
+        {
+            using var document = JsonDocument.Parse(argumentsJson);
+            return HasDuplicateProperty(document.RootElement)
+                ? "tool_arguments_duplicate_key: 工具参数包含重复的 JSON 字段，未执行工具。请为每个字段保留唯一值后重试。"
+                : null;
+        }
+        catch (JsonException)
+        {
+            // Preserve existing handling of malformed JSON and raw patch text.
+            return null;
+        }
+    }
+
+    private static bool HasDuplicateProperty(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var property in element.EnumerateObject())
+            {
+                if (!names.Add(property.Name) || HasDuplicateProperty(property.Value))
+                    return true;
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+                if (HasDuplicateProperty(item))
+                    return true;
+        }
+        return false;
+    }
+
     private static string NormalizeArguments(
         string toolName,
         string? argumentsJson,
@@ -74,6 +114,9 @@ internal static class HarnessToolCompatibilityAdapter
         adapted = false;
         if (string.IsNullOrWhiteSpace(argumentsJson))
             return argumentsJson ?? string.Empty;
+
+        if (GetArgumentValidationError(argumentsJson) is not null)
+            return argumentsJson;
 
         if (toolName is "apply_patch" or "file_patch"
             && LooksLikeRawPatch(argumentsJson))

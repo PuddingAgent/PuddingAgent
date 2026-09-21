@@ -1,3 +1,7 @@
+## 2026-09-21 工具重复参数键故障隔离
+
+`HarnessToolCompatibilityAdapter.GetArgumentValidationError` 按JSON对象递归检查重复属性，规范化保留歧义原文；`ToolInvocationService`/`PuddingToolExecutionService` 拒绝执行并返回 `tool_arguments_duplicate_key`，避免延迟JsonObject物化异常击穿Turn。`HarnessToolCompatibilityAdapterTests` 覆盖5种重复键、合法对象及失败后续行；连同分类器接线/健康/Jev单元回归60项通过。源码验证与Core重新加载分别记录。
+
 ## 2026-09-21 夜间效率问题登记与优化合同
 
 [第一性原理与代码级方案](Docs/Features/夜间效率问题登记与第一性原理优化方案-2026-09-21.md)：N01–N14覆盖测试门禁、RSI评测、执行身份、失败止损、价格对账、记忆/压缩、恢复片段、降噪余项、部署证据、信号来源、Goodput、最终请求与终端等待。优先补充现有任务，保留历史和执行状态；具体TaskId及写后核对见方案末尾登记表。登记不是实施或产品验收。

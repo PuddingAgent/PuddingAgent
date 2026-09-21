@@ -1,3 +1,7 @@
+### 工具参数重复键导致整个回合失败（2026-09-21）
+
+`HarnessToolCompatibilityAdapter.TryFind` 抛 `ArgumentException: same key ... pattern` 时，不能只在 `JsonNode.Parse` 外捕获 `JsonException`：JsonObject 的字典在首次枚举时才物化，重复属性延迟抛错。先用 JsonDocument 逐对象检测解码后的属性名（数组内对象分别计算），含重复键的原文不做别名改写；ToolInvocation 与统一 ToolExecution 边界返回 `tool_arguments_duplicate_key`，不选首值/末值、不执行工具、不熔断整个会话。回归需覆盖顶层/嵌套/数组/Unicode转义重复键、独立对象同名合法以及拒绝后继续正常调用。2026-09-21 实测旧版5反例失败，修复及分类器相关60项通过；产品加载另核对部署回执。
+
 ### 夜间效率与自改进不能只看缓存/提交数（2026-09-21）
 
 按明确BJT半开窗口核对Gateway usage、TokenUsageEvents归因、canonical命令/子Run、Task/Goal、Git和实际加载产物。SQLite时间列存在空格/T格式混用，先看样本和索引，分范围取数后归一UTC；不能把归因表加进账本。供应商日汇总不能直接代表22:00起的精确窗口，导出文件mtime不是结算水位；静态模型价格可能与实际优惠不同。本夜DeepSeek本地计价恰为账单2倍，GLM缺账单不报实际总费用。

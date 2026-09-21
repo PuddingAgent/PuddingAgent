@@ -5,12 +5,74 @@ using PuddingCode.Platform;
 using PuddingCode.Runtime;
 using PuddingCode.Tools;
 using PuddingRuntime.Services;
+using PuddingRuntime.Services.Tools;
 
 namespace PuddingRuntimeTests.Tools;
 
 [TestClass]
 public sealed class HarnessToolCompatibilityAdapterTests
 {
+    [DataTestMethod]
+    [DataRow("search_grep", "{\"pattern\":\"one\",\"pattern\":\"two\"}")]
+    [DataRow("shell", "{\"command\":\"safe\",\"command\":\"different\"}")]
+    [DataRow("rg", "{\"options\":{\"pattern\":1,\"pattern\":2}}")]
+    [DataRow("custom_tool", "{\"items\":[{\"name\":1,\"name\":2}]}")]
+    [DataRow("search_grep", "{\"pattern\":1,\"patt\\u0065rn\":2}")]
+    public async Task DuplicateArguments_AreRejectedWithoutExecution_AndNextCallCanContinue(
+        string toolName, string arguments)
+    {
+        // The streaming and buffered paths normalize before invoking the facade.
+        // Invalid JSON must survive normalization unchanged until it is rejected.
+        var normalized = HarnessToolCompatibilityAdapter.Normalize(toolName, arguments);
+        Assert.AreEqual(arguments, normalized.ArgumentsJson);
+        var executor = new RecordingExecutionService();
+        var service = new ToolInvocationService(executor);
+        var request = new ToolInvocationRequest
+        {
+            WorkspaceId = "workspace-1", SessionId = "session-1", AgentInstanceId = "agent-1",
+            ToolCallId = "bad-call", ToolName = normalized.ToolName,
+            ArgumentsJson = normalized.ArgumentsJson,
+        };
+        var result = await service.InvokeAsync(request);
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "tool_arguments_duplicate_key");
+        Assert.AreEqual("bad-call", result.ToolCallId);
+        Assert.IsNull(executor.ToolId, "Ambiguous arguments must never reach the executor.");
+        var next = await service.InvokeAsync(request with
+        {
+            ToolCallId = "next-call", ToolName = "search_grep",
+            ArgumentsJson = "{\"query\":\"ok\"}",
+        });
+        Assert.IsTrue(next.Success);
+    }
+
+    [TestMethod]
+    public async Task DirectExecution_RejectsDuplicatesBeforeToolLookupOrFirewall()
+    {
+        var service = new PuddingToolExecutionService(
+            new PuddingToolRegistry([]),
+            new SandboxExecutor(NullLogger<SandboxExecutor>.Instance),
+            NullLogger<PuddingToolExecutionService>.Instance);
+        var result = await service.ExecuteAsync("custom_tool", "{\"key\":1,\"key\":2}",
+            new ToolExecutionContext { WorkspaceId = "workspace-1", SessionId = "session-1", AgentInstanceId = "agent-1" }, null);
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual(400, result.ExitCode);
+        Assert.AreEqual("tool_arguments_duplicate_key", result.Status);
+    }
+
+    [TestMethod]
+    public async Task SamePropertyInSeparateObjects_IsNotADuplicate()
+    {
+        var service = new ToolInvocationService(new RecordingExecutionService());
+        var result = await service.InvokeAsync(new ToolInvocationRequest
+        {
+            WorkspaceId = "workspace-1", SessionId = "session-1", AgentInstanceId = "agent-1",
+            ToolCallId = "valid-call", ToolName = "custom_tool",
+            ArgumentsJson = "{\"items\":[{\"name\":1},{\"name\":2}]}",
+        });
+        Assert.IsTrue(result.Success);
+    }
+
     [TestMethod]
     public void Normalize_RgAliasAndArguments_ProducesCanonicalSearchGrepContract()
     {

@@ -41,6 +41,19 @@ public sealed class ToolInvocationService : IToolInvocationService
     public async Task<ToolInvocationResult> InvokeAsync(ToolInvocationRequest request, CancellationToken ct = default)
     {
         var startedAt = DateTimeOffset.UtcNow;
+        var argumentError = HarnessToolCompatibilityAdapter.GetArgumentValidationError(request.ArgumentsJson);
+        if (argumentError is not null)
+        {
+            return new ToolInvocationResult
+            {
+                Success = false,
+                ToolCallId = request.ToolCallId,
+                ToolName = request.ToolName,
+                Error = argumentError,
+                ArgsHash = ComputeArgsHash(request.ArgumentsJson),
+                DurationMs = 0,
+            };
+        }
         var compatibility = HarnessToolCompatibilityAdapter.Normalize(
             request.ToolName,
             request.ArgumentsJson);

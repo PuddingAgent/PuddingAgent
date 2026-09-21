@@ -620,6 +620,13 @@ public sealed class PuddingToolExecutionService : IPuddingToolExecutionService
         CancellationToken ct = default)
     {
         var startedAt = DateTimeOffset.UtcNow;
+        var argumentError = HarnessToolCompatibilityAdapter.GetArgumentValidationError(argumentsJson);
+        if (argumentError is not null)
+        {
+            var invalid = ToolExecutionResult.Fail(argumentError, 400, "tool_arguments_duplicate_key");
+            await RecordTelemetryAsync(toolId, argumentsJson, context, startedAt, invalid, "arguments", ct);
+            return invalid;
+        }
         var tool = _registry.GetTool(toolId, context.WorkspaceId);
         if (tool is null)
         {
