@@ -9,6 +9,7 @@ namespace PuddingBrowser.WebView2;
 /// </summary>
 public sealed class WebView2BrowserSurface : IBrowserSurface
 {
+    private readonly IDisposable _presentationGate;
     public PageId PageId { get; }
     public WebView2CompositionControl Control { get; }
     public CoreWebView2 CoreWebView => Control.CoreWebView2;
@@ -17,10 +18,12 @@ public sealed class WebView2BrowserSurface : IBrowserSurface
     {
         PageId = pageId;
         Control = control;
+        _presentationGate = WebView2PresentationGate.Attach(control);
     }
 
     public async ValueTask DisposeAsync()
     {
+        _presentationGate.Dispose();
         try
         {
             if (Control.CoreWebView2 is not null)

@@ -9,6 +9,7 @@ namespace PuddingDesktop.Views;
 public partial class WorkbenchView : UserControl
 {
     private WebView2CompositionControl? _webView;
+    private IDisposable? _presentationGate;
     private CoreWebView2Environment? _environment;
     private Uri? _expectedAdminAddress;
     private string? _userDataFolder;
@@ -57,6 +58,7 @@ public partial class WorkbenchView : UserControl
             webView.Visibility = Visibility.Visible;
             await webView.EnsureCoreWebView2Async(_environment);
             cancellationToken.ThrowIfCancellationRequested();
+            _presentationGate ??= PuddingBrowser.WebView2.WebView2PresentationGate.Attach(webView);
 
             webView.CoreWebView2.Settings.IsScriptEnabled = true;
             webView.CoreWebView2.Settings.IsWebMessageEnabled = true;
@@ -206,6 +208,8 @@ public partial class WorkbenchView : UserControl
         }
 
         WebViewHost.Children.Remove(webView);
+        _presentationGate?.Dispose();
+        _presentationGate = null;
         webView.Dispose();
         _webView = null;
         _eventsRegistered = false;
