@@ -73,8 +73,28 @@
   根因链：`PuddingWebApiTests.csproj:21` `<ProjectReference Include="..\PuddingAgent\PuddingAgent.csproj" />`，而宿主进程 PID 23764 正锁定自身 bin。
   ⇒ 结论实际来自 `-p:BuildProjectReferences=false`（只重编译测试程序集），引用的是 **`Source/PuddingAgent/bin/Debug/net10.0/PuddingAgent.dll`（mtime 2026-09-22 12:26:52）**，早于 HEAD `a313337`(13:08:08) 约 41 分钟。
 - **⚠️ 更正（2026-09-22 13:24 追加，推翻本报告初稿的「宿主占用」猜想）**：`Source/PuddingWebApiTests/CustomWebApplicationFactory.cs:30-38,110,119-120` 显示**每个测试实例都创建并使用独立的临时 data root**（`%TEMP%/pudding-webapi-tests/<guid>`，经 `PUDDING_DATA_ROOT` 注入，Dispose 时删除）⇒ **不存在与运行中宿主共用同一个 DB 的情形**，初稿「预置 DB 被宿主占用致迁移失败」的猜想**不成立**，特此更正。
-- **仍存在、性质未定（未证）**：两次运行均稳定出现 `[Startup] DB migration skipped — using pre-built database` 与 `Failed executing DbCommand … ALTER TABLE room_messages ADD COLUMN <col>;`，**共 81 条**，涉及 `conversation_id` / `reply_to_message_id` / `correlation_id` / `causation_id` / `metadata_json` 五列并按测试实例重复 ⇒ 属**一次性列迁移在全新库上仍反复失败**。最可能是「列已存在 ⇒ duplicate column name」的已知噪声（若是，则与 500 无关），但**异常文本尚未取证，故不定性**。
-- **闭环方法（已更新，不再需要独占 DB）**：① 从日志取这些 `Failed executing DbCommand` 的**完整 SQLite 异常文本**；② 核对 `0742fc6`(2026-09-19)「压缩 SQLite 一次性列迁移 —— 只保留最终 DDL」与预置模板库实际列集合是否一致；③ **逐条核对 5 个失败断言的契约期望是否滞后**（如 `CompactSession` 期望 200 实得 400、`Complete_CreatesAdminProviderAndDefaultModel` 期望 200 实得 500 —— 需定位对应产品路径与期望来源）。
+### 5 条失败用例的逐条判定（2026-09-22 13:40 追加；均由只读归因取得，父级抽验 3 处关键断言）
+
+| # | 用例 | 判定 | 依据（文件:行号） |
+|---|---|---|---|
+| 1 | `BootstrapApiControllerTests.Complete_CreatesAdminProviderAndDefaultModel` | **测试契约滞后（已证）**＋附产品健壮性缺口 | 测试发 provider 级 `protocol="openai"`（`BootstrapApiControllerTests.cs:35`），而契约只认 `chatModelProtocol`/`memoryModelProtocol`（`BootstrapApiController.cs:505,:507`；**父级抽验**）⇒ 读到 null ⇒ `:408` `throw InvalidOperationException("模型 'gpt-test' 必须选择 openai、responses 或 anthropic 协议。")` ⇒ 未处理 ⇒ 500 |
+| 2 | `GoalApiContractTests.GoalCommands_Conflict_When_NonTerminal_Goal_Exists` | **未证（仅已证「非确定性」）** | 全套跑失败、隔离单跑通过（失败 4/通过 1，该用例不在失败清单）；日志无 `[GoalCommand]` category、取不到首个请求的响应体 ⇒ 不足以判产品缺陷，也不足以下环境结论 |
+| 3 | `SessionApiControllerTests.CompactSession_Returns200_WithStringLevel` | **测试契约滞后（已证）** | 请求体无 `agentId`（`SessionApiControllerTests.cs:340-345`），产品空 `AgentId` 直接 400 `agent_id_required`（`SessionEventsController.cs:715`；**父级抽验命中**）；同端点兄弟用例传了 `agentId` 即得 200（`SessionEventsControllerTests.cs:201-205`）⇒ 机制性对照成立。溯源：守卫 `4b6a3d7`(2026-07-18) 晚于测试文本 `8e0ff89`(2026-02-12) |
+| 4 | `SessionApiControllerTests.CompactSession_DoesNotStackCompactionPrefixInNewSessionTitle` | **测试契约滞后（已证）** | 与 #3 **同因同一代码行** |
+| 5 | `SessionEventsControllerTests.Compact_Passes_Runtime_Profile_To_Compaction_Service` | **测试契约滞后（已证）** | 该测试自己在 `:181-182` 把 `IContextCompactionService` 换成捕获桩，真实发射点 `ContextCompactionService.cs:514-520` 根本不会执行；且更新的契约测试 `RequestCompactionHandlerTraceTests.cs:57,:99` **明文断言 `ContextCompactionStarted` 不得存在** |
+
+**⇒ 5 条中 4 条为「测试契约滞后」（均已证）、1 条未证（非确定性）；无一条可凭现有证据判为产品/真实缺陷。**
+
+**⚠️ 附带发现：一处已证但未修的产品健壮性缺口**
+#1 同时暴露：`BootstrapApiController` 把**客户端非法入参**（漏传 `chatModelProtocol`）映射为 **500** 而非 4xx（`BootstrapApiController.cs:401-409` throw → `:229-232` 回滚后 rethrow）。任何漏传协议的调用方都会看到 500。**本轮只归因、未修**，需产品侧决定修正方式。
+
+- **✅ 已闭环（2026-09-22 13:40 追加）——「一次性列迁移反复失败」的性质已取证并定性**：
+  - **形态**：80 条 ALTER = 2 次宿主启动 × 40 条（另 1 条 `INSERT INTO task_scheduler_scan_runs` 属另一宿主、不在本次范围）。引擎级复现（全新内存库 + sqlite3 3.49.1）得到 **`SQLITE_ERROR(code=1): duplicate column name: <col>`**（`conversation_id`/`reply_to_message_id`/`correlation_id`/`causation_id`/`metadata_json` 同形），并以「对不存在的列做 ALTER 会成功」的对照实验排除了文本歧义。
+  - **成因**：同一 DDL 里的 `CREATE TABLE IF NOT EXISTS` 已含这些列（如 `MessageFabricSchemaBootstrapper.cs:20-35`），且启动前 `PuddingApplicationInitializer.cs:45` 已用 EF 模型 `EnsureCreatedAsync` 建表；WebApiTests 更把 PlatformDbContext 换成 `Data Source=:memory:`（`CustomWebApplicationFactory.cs:68-77`）⇒ 每条 ALTER **必然**撞 duplicate column。**ALTER 只对更老的存量库有意义**。
+  - **是否被吞并**：四处同款分支 `ex.Message.Contains("duplicate column name") → continue` —— `MessageFabricSchemaBootstrapper.cs:164`（**父级抽验命中**）、`TaskPlanningSchemaBootstrapper.cs:163`（**命中**）、`GoalSchemaBootstrapper.cs:261`（**命中**）、`TodoSchemaBootstrapper.cs:86`（**命中**）；`WorkspaceTaskSchemaBootstrapper`（`pragma_table_info` 预检）与 `TokenUsageSchemaBootstrapper` 走预检、新库不发射。**不 throw、不中断启动**（`schema bootstrap failed` 计数 0；`Platform DB tables and schema upgrades ensured` 正常出现）。
+  - **是否影响列存在性**：**不影响**（已证）—— EF 实体 `MessageDeliveryEntity.cs:55-56,:64-65`、模型快照 `PlatformDbContextModelSnapshot.cs:1058-1071`、既有验收测试 `MessageFabricSchemaBootstrapperTests.cs:114-115` 与 `SchemaBootstrapperFreshDatabaseColumnTests`（PRAGMA 列集合比对）共同锁定。
+  - **⇒ 结论：设计内的幂等降级噪声，与 5 条失败无因果关系。** 副产物是它会把真实错误淹没在 80 条 ERR 里 ⇒ 建议降为 Debug 或一次性摘要（改进建议，未做）。
+  - **存疑但未证（相邻噪声）**：`ClassCleanup … NullReferenceException … SqliteConnection.Close()`；`SQLite Error 5: 'database is locked'`（GoalContinuation 扫描）；进程级 `PUDDING_DATA_ROOT` 由每个 factory 覆盖（`CustomWebApplicationFactory.cs:26-31`）⇒ 跨类并行时存在**结构性互相干扰风险**（这可能正是 #2 非确定性的来源，但**未证明因果**）。
 
 ## 五、未归因（3）
 
