@@ -633,6 +633,84 @@ public sealed class TaskControllerTests
         Assert.AreEqual("task.invalid_transition", Assert.IsInstanceOfType<TaskErrorResponse>(obj.Value).Code);
     }
 
+    // ── 13b. 看板列头总数：TaskPageDto.TotalCount（= 忽略 cursor 的完整过滤集大小）──
+
+    [TestMethod]
+    public async Task List_ReturnsTotalCount_ForFullFilteredSet_IgnoringCursor()
+    {
+        for (var i = 0; i < 7; i++)
+        {
+            await CreateTaskAsync($"backlog-{i}");
+        }
+
+        var controller = CreateController();
+
+        var result = await controller.List(WorkspaceId, null, "Backlog", null, null, 3, null, CancellationToken.None);
+
+        var page = AssertPage(result);
+        Assert.AreEqual(3, page.Items.Count);
+        Assert.IsNotNull(page.NextCursor);
+        Assert.AreEqual(7, page.TotalCount, "totalCount 必须是完整过滤集大小，而不是本页条数。");
+    }
+
+    [TestMethod]
+    public async Task List_TotalCount_IsStableAcrossPages()
+    {
+        for (var i = 0; i < 5; i++)
+        {
+            await CreateTaskAsync($"card-{i}");
+        }
+
+        var controller = CreateController();
+
+        var first = AssertPage(await controller.List(
+            WorkspaceId, null, "Backlog", null, null, 2, null, CancellationToken.None));
+        Assert.AreEqual(2, first.Items.Count);
+        Assert.IsNotNull(first.NextCursor);
+        Assert.AreEqual(5, first.TotalCount);
+
+        var second = AssertPage(await controller.List(
+            WorkspaceId, null, "Backlog", null, null, 2, first.NextCursor, CancellationToken.None));
+        Assert.AreEqual(2, second.Items.Count);
+        Assert.AreEqual(5, second.TotalCount, "第 2 页 totalCount 必须与第 1 页相同（与 cursor 无关）。");
+        Assert.AreEqual(
+            0,
+            second.Items.Select(i => i.TaskId).Intersect(first.Items.Select(i => i.TaskId)).Count(),
+            "第 2 页必须是另一批任务（证明 cursor 确实生效，而非分页失效）。");
+
+        var third = AssertPage(await controller.List(
+            WorkspaceId, null, "Backlog", null, null, 2, second.NextCursor, CancellationToken.None));
+        Assert.AreEqual(1, third.Items.Count);
+        Assert.IsNull(third.NextCursor);
+        Assert.AreEqual(5, third.TotalCount);
+    }
+
+    [TestMethod]
+    public async Task List_TotalCount_RespectsBoardColumnAndPriorityFilters()
+    {
+        var backlogP1A = await CreateTaskAsync("backlog-p1-a");
+        await SetPriorityAsync(backlogP1A.TaskId, TaskPriority.P1);
+        var backlogP1B = await CreateTaskAsync("backlog-p1-b");
+        await SetPriorityAsync(backlogP1B.TaskId, TaskPriority.P1);
+
+        await CreateTaskAsync("backlog-p3-a");
+        await CreateTaskAsync("backlog-p3-b");
+        await CreateTaskAsync("backlog-p3-c");
+
+        var todoP1 = await CreateTaskAsync("todo-p1");
+        await SetPriorityAsync(todoP1.TaskId, TaskPriority.P1);
+        await SetStatusAsync(todoP1.TaskId, WorkspaceTaskStatus.Ready);
+
+        var controller = CreateController();
+
+        var result = await controller.List(WorkspaceId, null, "Backlog", null, "p1", 1, null, CancellationToken.None);
+
+        var page = AssertPage(result);
+        Assert.AreEqual(1, page.Items.Count);
+        Assert.IsNotNull(page.NextCursor);
+        Assert.AreEqual(2, page.TotalCount, "totalCount 只应数 Backlog 列 + p1 的行（不含 Todo 列与 p3）。");
+    }
+
     // ── 14. B2：Watch SSE（游标 + Last-Event-ID 续传）──
 
     [TestMethod]
@@ -756,6 +834,14 @@ public sealed class TaskControllerTests
         await using var db = await _dbFactory.CreateDbContextAsync();
         var entity = await db.WorkspaceTasks.SingleAsync(t => t.TaskId == taskId);
         entity.Status = status;
+        await db.SaveChangesAsync();
+    }
+
+    private async Task SetPriorityAsync(string taskId, TaskPriority priority)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var entity = await db.WorkspaceTasks.SingleAsync(t => t.TaskId == taskId);
+        entity.Priority = priority;
         await db.SaveChangesAsync();
     }
 

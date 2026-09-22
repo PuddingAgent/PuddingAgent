@@ -131,6 +131,13 @@ public sealed record TaskPageDto
 {
     public required IReadOnlyList<TaskDto> Items { get; init; }
     public string? NextCursor { get; init; }
+
+    /// <summary>
+    /// 当前过滤条件（workspaceId + status/boardColumn + agentId + priority）下的命中行总数，
+    /// <b>与 cursor 无关</b>：翻页时该值恒定不变（第 2 页与第 1 页相同）。
+    /// 加性字段（非 required），旧构造点无需修改。
+    /// </summary>
+    public int TotalCount { get; init; }
 }
 
 /// <summary>

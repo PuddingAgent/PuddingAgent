@@ -174,6 +174,45 @@ public sealed class SqliteWorkspaceTaskStore(
         return results.AsReadOnly();
     }
 
+    /// <summary>
+    /// 列表总数：WHERE 子句与 <see cref="QueryTasksCoreAsync"/> 逐条一致
+    /// （workspaceId + status + statuses + agentId + priority），唯一差异是<b>刻意不含 keyset 游标段</b>，
+    /// 因此 totalCount 与分页位置无关（第 2 页与第 1 页相同）。
+    /// 只发一条 <c>SELECT COUNT(*)</c>，不把行读进内存再计数；不改变 ITaskStore 既有方法签名
+    /// （与 3 参 <see cref="QueryTasksAsync(TaskQuery, IReadOnlyList{WorkspaceTaskStatus}?, CancellationToken)"/> 同处暴露）。
+    /// </summary>
+    public async Task<int> CountTasksAsync(
+        TaskQuery query,
+        IReadOnlyList<WorkspaceTaskStatus>? statuses,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var conn = (SqliteConnection)db.Database.GetDbConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        var statusInSql = BuildStatusInClause(statuses, cmd);
+
+        cmd.CommandText = $"""
+            SELECT COUNT(*)
+            FROM workspace_tasks
+            WHERE workspace_id = @workspaceId
+              AND (@status IS NULL OR status = @status)
+              AND {StatusInOrTrue(statusInSql)}
+              AND (@agentId IS NULL OR preferred_agent_id = @agentId)
+              AND (@priority IS NULL OR priority = @priority)
+            """;
+        AddParam(cmd, "@workspaceId", query.WorkspaceId);
+        AddParam(cmd, "@status", query.Status.HasValue ? (int)query.Status.Value : null);
+        AddParam(cmd, "@agentId", query.AgentId);
+        AddParam(cmd, "@priority", query.Priority.HasValue ? (int)query.Priority.Value : null);
+
+        var scalar = await cmd.ExecuteScalarAsync(ct);
+        return Convert.ToInt32(scalar, CultureInfo.InvariantCulture);
+    }
+
     /// <inheritdoc />
     public async Task<WorkspaceTask> UpdateTaskAsync(UpdateTaskRequest request, CancellationToken ct = default)
     {

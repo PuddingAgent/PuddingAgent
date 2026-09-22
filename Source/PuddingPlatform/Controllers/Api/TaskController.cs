@@ -81,7 +81,18 @@ public class TaskController : ControllerBase
                 nextCursor = $"{last.SortOrder}|{last.TaskId}";
             }
 
-            return Ok(new TaskPageDto { Items = items, NextCursor = nextCursor });
+            // 列头总数：同一过滤条件但刻意忽略 cursor（Cursor = null）⇒ 翻页时与第 1 页相同。
+            var totalCount = await _store.CountTasksAsync(new TaskQuery
+            {
+                WorkspaceId = workspaceId,
+                Status = statusFilter,
+                AgentId = agentFilter,
+                Priority = priorityFilter,
+                Cursor = null,
+                Limit = limit,
+            }, boardStatuses, ct);
+
+            return Ok(new TaskPageDto { Items = items, NextCursor = nextCursor, TotalCount = totalCount });
         }
         catch (TaskStoreException ex)
         {
