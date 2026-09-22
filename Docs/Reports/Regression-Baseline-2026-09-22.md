@@ -72,10 +72,9 @@
   `error MSB3027 / MSB3021：无法将 Source/PuddingRuntime/bin/Debug/net10.0/PuddingRuntime.dll 复制到 bin/…：文件被 "PuddingAgent (23764)" 锁定 [Source/PuddingAgent/PuddingAgent.csproj]`。
   根因链：`PuddingWebApiTests.csproj:21` `<ProjectReference Include="..\PuddingAgent\PuddingAgent.csproj" />`，而宿主进程 PID 23764 正锁定自身 bin。
   ⇒ 结论实际来自 `-p:BuildProjectReferences=false`（只重编译测试程序集），引用的是 **`Source/PuddingAgent/bin/Debug/net10.0/PuddingAgent.dll`（mtime 2026-09-22 12:26:52）**，早于 HEAD `a313337`(13:08:08) 约 41 分钟。
-- **未证但可疑**：两次运行均伴随 `[Startup] DB migration skipped — using pre-built database` 与
-  `Failed executing DbCommand (…) ALTER TABLE room_messages ADD COLUMN conversation_id TEXT;`（旧口径 74 条 / 新口径 81 条）
-  ⇒ 疑为**预置 DB 被运行中宿主占用，导致一次性列迁移失败 → 依赖该列的端点返回 500**，属环境/并发而非代码回归。
-- **闭环方法**：在**独占 DB / 停止宿主**的口径下复跑该工程；并单独归因 `conversation_id` 列的迁移路径（`0742fc6` 2026-09-19「压缩 SQLite 一次性列迁移 —— 只保留最终 DDL」）。
+- **⚠️ 更正（2026-09-22 13:24 追加，推翻本报告初稿的「宿主占用」猜想）**：`Source/PuddingWebApiTests/CustomWebApplicationFactory.cs:30-38,110,119-120` 显示**每个测试实例都创建并使用独立的临时 data root**（`%TEMP%/pudding-webapi-tests/<guid>`，经 `PUDDING_DATA_ROOT` 注入，Dispose 时删除）⇒ **不存在与运行中宿主共用同一个 DB 的情形**，初稿「预置 DB 被宿主占用致迁移失败」的猜想**不成立**，特此更正。
+- **仍存在、性质未定（未证）**：两次运行均稳定出现 `[Startup] DB migration skipped — using pre-built database` 与 `Failed executing DbCommand … ALTER TABLE room_messages ADD COLUMN <col>;`，**共 81 条**，涉及 `conversation_id` / `reply_to_message_id` / `correlation_id` / `causation_id` / `metadata_json` 五列并按测试实例重复 ⇒ 属**一次性列迁移在全新库上仍反复失败**。最可能是「列已存在 ⇒ duplicate column name」的已知噪声（若是，则与 500 无关），但**异常文本尚未取证，故不定性**。
+- **闭环方法（已更新，不再需要独占 DB）**：① 从日志取这些 `Failed executing DbCommand` 的**完整 SQLite 异常文本**；② 核对 `0742fc6`(2026-09-19)「压缩 SQLite 一次性列迁移 —— 只保留最终 DDL」与预置模板库实际列集合是否一致；③ **逐条核对 5 个失败断言的契约期望是否滞后**（如 `CompactSession` 期望 200 实得 400、`Complete_CreatesAdminProviderAndDefaultModel` 期望 200 实得 500 —— 需定位对应产品路径与期望来源）。
 
 ## 五、未归因（3）
 
