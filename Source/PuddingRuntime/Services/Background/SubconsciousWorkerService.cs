@@ -64,7 +64,8 @@ public sealed class SubconsciousWorkerService : BackgroundService
     }
 
     /// <summary>
-    /// 后台执行循环：并行运行队列消费 + 三个定时循环。
+    /// 后台执行循环：并行运行队列消费 + 四个定时循环（`skill.extract_patterns` /
+    /// `memory.auto_dream` / `skill.improve` / `skill.curate`）。
     /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
