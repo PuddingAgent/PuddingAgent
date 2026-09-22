@@ -24,7 +24,11 @@
 | `Tests/PuddingBrowser.AgentTools.Tests` | 15 | 0 | 0 | 15 | 🟢 | 常规 |
 | `Tests/PuddingBrowser.WebView2.Smoke` | — | — | — | — | ⬜ 非测试工程 | `OutputType=Exe`+`UseWPF`，无测试 SDK |
 
-**合计：12 条红，其中 1 条已修（见二）；余 11 条待各线分诊。**
+**合计：12 条红 —— 1 条已修（见二）；10 条已证为「测试契约滞后 / 既有幂等噪声」（即**非回归**）；1 条未证（非确定性）。**
+
+> **最终结论（2026-09-22 13:50 收口）：本轮全仓基线发现的 12 条红中，「**无一条可凭证据判为产品回归**」。**
+> 其中 10 条属「契约/夹具滞后」（测试文本早于守卫或契约引入），剩余 1 条仅能证「非确定性」；
+> 唯一可行动的产品侧问题已另立缺陷卡：`c1a8d1da17014165ac3a17e6dc4cbc8d`（非法入参→500 而非 4xx）。
 
 **无基线**：`Tests/PuddingBrowser.WebView2.Smoke` 不是测试工程，`dotnet test` 仅还原即退出 0；其冒烟能力只能人工运行 Exe。
 
@@ -96,7 +100,7 @@
   - **⇒ 结论：设计内的幂等降级噪声，与 5 条失败无因果关系。** 副产物是它会把真实错误淹没在 80 条 ERR 里 ⇒ 建议降为 Debug 或一次性摘要（改进建议，未做）。
   - **存疑但未证（相邻噪声）**：`ClassCleanup … NullReferenceException … SqliteConnection.Close()`；`SQLite Error 5: 'database is locked'`（GoalContinuation 扫描）；进程级 `PUDDING_DATA_ROOT` 由每个 factory 覆盖（`CustomWebApplicationFactory.cs:26-31`）⇒ 跨类并行时存在**结构性互相干扰风险**（这可能正是 #2 非确定性的来源，但**未证明因果**）。
 
-## 五、未归因（3）
+## 五、已归因（3）—— 全部「测试契约滞后」（已证）
 
 `Tests/PuddingAgent.IntegrationTests`（首次入基线）：失败 3 / 通过 15 / 总计 18
 
@@ -106,8 +110,17 @@
 | `Feishu.FeishuInboundPostTests.PostEvent_WithImages_MaterializesArtifactsInOrder` | `:128` | `KeyNotFoundException: 'visionArtifactIds'` |
 | `Feishu.SendImageToolTests.ExecuteAsync_QueuesArtifactToCurrentTrustedFeishuRoute` | `:65` | 同 `Image header could not be decoded.` |
 
-- **已证**：该工程最后改动 `b20e95c`(**2026-09-19**)；`git log --since=2026-09-21 -- Source/…/Vision …/Feishu …/Rooms` **为空**（09-21 起无提交触碰相关路径）；`git ls-files -- Tests/PuddingAgent.IntegrationTests` **图像资源零命中**，测试源码内也搜不到图像文件路径引用 ⇒ 图像应为内联构造，"header 无法解码"更像**解码依赖/环境**问题。
-- **未证**：是否与原生图像解码依赖（如 SkiaSharp 类库）缺失或版本相关。
+- **⚠️ 更正（2026-09-22 13:50 追加）**：本节初稿的路径核查用的是 `Source/PuddingRuntime/Services/{Vision,Feishu,Rooms}`，**而真正的守卫在 `Source/PuddingPlatform/Services/`** ⇒ 那次「09-21 起无提交」的核查**未覆盖守卫所在路径**，属核查盲区，特此更正；结论亦由此改写（见下）。
+- **✅ 已归因：3 条全部为「测试契约滞后」（已证），0 条产品缺陷、0 条环境缺失**
+  - **单一根因**：`74ae4e0`（**2026-09-15**）`feat(vision): preprocess images locally for native agent reading` 在保存路径植入 **ADR-077 强制解码守卫** —— `ImagePreprocessing.cs:28` `SKCodec.Create(stream) ?? throw Error(VisionErrorCodes.MediaInvalid, "Image header could not be decoded.")`（**全仓唯一抛点，父级抽验命中**），接入点 `VisionArtifactStorageService.cs:178`（`SaveCoreAsync`）。该提交**同步更新了平台侧测试**（`PuddingPlatformTests/Services/VisionArtifactStorageServiceTests.cs`）**但漏更集成侧**（`git show --name-only 74ae4e0` 无任何 IntegrationTests 文件 —— **父级抽验**）。
+  - **夹具是伪造 PNG**（**父级抽验命中**）：`FeishuInboundImageTests.cs:142` 与 `FeishuInboundPostTests.cs:344` 均为 **8 字节** `[0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A]`（只有签名、**无 IHDR chunk**）；`SendImageToolTests.cs:64` 更只有 **4 字节** `[0x89,0x50,0x4E,0x47]`。合法 PNG 至少需 8 字节签名 + IHDR ⇒ **必然不可解码**；测试期望的仍是旧契约「**声明 MIME 可信 + 字节原样存储**」（`FeishuInboundImageTests.cs:86` 所断言的 base64 恰为 `iVBORw0KGgo=`，即这 8 字节）。
+  - **夹具早于守卫 1~1.7 个月**：`ff30d3d`(07-26) / `8b89cc6`(07-31) / `768f5a0`(08-13)；守卫后该目录仅被动过一次 `b20e95c`(09-19，依赖漏洞清理，**未碰这 3 个用例**，父级抽验) ⇒ **三例自 2026-09-15 起从未通过**（守卫前因「原样存储」语义本可通过）。
+  - **#2 的 `KeyNotFoundException` 是同根因级联（已证）**：同一份伪 PNG ⇒ `FeishuInboundMessageMapper.cs:164-171` 逐图 `catch` 吞掉 `VisionPipelineException`（「**丢图不丢文**」是产品设计，同套件已通过的兄弟用例 `FeishuInboundPostTests.cs:202` 反向断言该键不存在），随后 `:178-180` 的 `if (artifactIds.Count > 0)` 守卫使 `visionArtifactIds` **从未写入** ⇒ 读取处 `:128` 抛 KeyNotFound。**同一根因在 #1 表现为异常外抛、在 #2 表现为缺键。**
+  - **原生依赖不缺（已证，否证「环境缺失」）**：`Tests/PuddingAgent.IntegrationTests/bin/Debug/net10.0/runtimes/win-x64/native/libSkiaSharp.dll`（11,611,680 B，2026-02-06）与 managed `SkiaSharp.dll`（490,016 B）**均在**；且抛的是受管守卫的 `??` 空分支消息，而非 `DllNotFoundException`/`TypeInitializationException` ⇒ 原生库已成功加载并执行。
+  - **两层检测缝（解释力，已证）**：下载层 `FeishuInboundMessageMapper.cs:336-346` **只嗅 magic bytes**（长度≥8 且前缀匹配即判 `image/png`）⇒ 8 字节 payload **在下载层被接受、在存储层被拒**。
+- **明礁未证（不主张任何产品缺陷）**：①「真实飞书入站图片会被该守卫误拒」——**未证**（真实图含完整 IHDR/IDAT，静态分析不支持该假设）；② 两层 MIME 检测不一致是否构成**生产影响**——**未证**（仅证它是测试失效的缝）；③ #2 的「同一异常被吞」未由**运行时日志直读**（mapper 注入 `NullLogger`），属代码级演绎。
+- **修复（属写操作，需另行授权，未执行）**：把 3 处夹具换成**合法最小 PNG**，并同步 `FeishuInboundImageTests.cs:86` 与 `FeishuInboundPostTests.cs:128` 的期望值。
+- **附带观察（非当前影响，仅风险提示）**：同样的「伪 PNG」造法还出现在 `Tests/PuddingHost.Tests/Platform/UserAvatarApiControllerTests.cs:93`、`Tests/HarnessAgent.Core.Tests/Feishu/FeishuClientReplyTests.cs:134,207,362` —— 这些用例**当前通过**（不经保存路径），但一旦路由到解码守卫即会失效。
 
 ## 六、⚠️ 文件锁造成的口径污染（影响所有人）
 
