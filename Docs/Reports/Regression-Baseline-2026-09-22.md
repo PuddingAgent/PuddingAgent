@@ -16,7 +16,7 @@
 | `Source/PuddingMemoryEngineTests` | 286 | **3** | 0 | 289 | 🔴 | 常规 |
 | `Source/PuddingFullTextIndexTests` | 50 | 0 | 4 | 54 | 🟢 | 常规 |
 | `Source/PuddingCodexServiceTests` | 4 | 0 | 0 | 4 | 🟢 | 常规 |
-| `Source/PuddingWebApiTests` | 167 | **5** | 0 | 172 | 🔴 | ⚠️ `-p:BuildProjectReferences=false`（常规被文件锁阻断） |
+| `Source/PuddingWebApiTests` | **172** | **0** | 0 | 172 | 🟢 | ⚠️ `-p:BuildProjectReferences=false`（常规被文件锁阻断；修复 `d77fff02` 后） |
 | `Tests/PuddingHost.Tests` | 111 | 0 | 0 | 111 | 🟢 | 常规 |
 | `Tests/HarnessAgent.Core.Tests` | 20 | 0 | 1 | 21 | 🟢 | 常规 |
 | `Tests/PuddingAgent.IntegrationTests` | 15 | **3** | 0 | 18 | 🔴 | ⚠️ `-p:BuildProjectReferences=false` |
@@ -24,9 +24,9 @@
 | `Tests/PuddingBrowser.AgentTools.Tests` | 15 | 0 | 0 | 15 | 🟢 | 常规 |
 | `Tests/PuddingBrowser.WebView2.Smoke` | — | — | — | — | ⬜ 非测试工程 | `OutputType=Exe`+`UseWPF`，无测试 SDK |
 
-**合计：12 条红 —— 4 条已修（见二：2 组）；7 条已证为「测试契约滞后 / 既有幂等噪声」（即**非回归**）；1 条未证（非确定性）。**
+**合计：12 条红 —— 8 条已修；3 条已证为「测试契约滞后」（`PuddingMemoryEngineTests`，属 rsi/G4 活跃改写线，未抢改）；1 条未证（非确定性，本轮全套实测转绿）。**
 
-> **修复进展（2026-09-22 14:12 更新）**：`PuddingCoreTests` 1 条（SwarmOrchestratorTests）→ 全工程 **1014/1014 绿**；`PuddingAgent.IntegrationTests` 3 条（ADR-077 伪 PNG 夹具）→ 全工程 **18/18 绿**。剩余 2 簇（`PuddingMemoryEngineTests` 3 条、`PuddingWebApiTests` 5 条）未修，方案见 §三/§四。
+> **修复进展（2026-09-22 14:28 更新）**：`PuddingCoreTests` 1 条（SwarmOrchestratorTests）→ **1014/1014 绿**（`a313337`）；`PuddingAgent.IntegrationTests` 3 条（ADR-077 伪 PNG 夹具）→ **18/18 绿**（`dd9e27a`）；`PuddingWebApiTests` 4 条（测试契约滞后）→ **172/172 绿**（`d77fff02`）。剩余唯一未修簇：`PuddingMemoryEngineTests` 3 条（方案见 §三，归属 rsi/G4 线）。
 
 > **最终结论（2026-09-22 13:50 收口）：本轮全仓基线发现的 12 条红中，「**无一条可凭证据判为产品回归**」。**
 > 其中 10 条属「契约/夹具滞后」（测试文本早于守卫或契约引入），剩余 1 条仅能证「非确定性」；
@@ -80,9 +80,18 @@
 - **为何未直接修**：该测试工程今日仍被 rsi/G4 线活跃改写（最新 `afac60a`），抢改存在合并冲突与责任归属问题 ⇒ 交该线 owner。
 - 同类先例：`239c76b`（2026-09-21）「test(core): 修复 7 例既有红测试（契约冻结滞后）」。
 
-## 四、已证**口径污染**、归因未闭环（5）
+## 四、已归因**并已修复**（5）—— 4 条「测试契约滞后」（已证）+ 1 条非确定性（未证，本轮转绿）
 
-`Source/PuddingWebApiTests`（首次入基线）：失败 5 / 通过 167 / 总计 172
+`Source/PuddingWebApiTests`（首次入基线）：失败 5 / 通过 167 / 总计 172 ⇒ **修复后 172/172 绿（`d77fff02`，2026-09-22 14:27）**
+
+> **修复记录（2026-09-22 14:27 追加）**：改动 3 个测试文件（`BootstrapApiControllerTests.cs` / `SessionApiControllerTests.cs` / `SessionEventsControllerTests.cs`），**产品代码零变更**。
+> - #1：请求改用现行「模型级协议」字段 `chatModelProtocol`/`memoryModelProtocol`，并新增 `MemoryModelId` 断言（**强化**）。
+> - #3/#4：补 `agentId`（缺则 400 `agent_id_required`），新增 `EnsureCompactTestAgentAsync`/`CreateCompactSessionAsync` 夹具（经公开 API 物化最小可解析身份与真实会话）；断言附响应正文以便定位失败。
+> - #5：新增对捕获桩 `LastRequest` 的 `LlmConfig.Endpoint`/`KeyVaultId`/`AgentTemplateId` 断言（**强于**原先对副作用事件的间接观察）；事件断言由 `ContextCompactionStarted` 改为 `ContextCompactionCompleted` —— 已核实 `RequestCompactionHandlerTraceTests.cs:57,:99` 明文断言 `Started` **不得存在**。
+> - 父级审阅结论：**无断言删除、无放宽、无吞异常、无跳过**（`git diff` 逐行核对）。
+> - 验证：`dotnet test Source/PuddingWebApiTests -p:BuildProjectReferences=false` → **失败 0，通过 172，已跳过 0，总计 172（21 s，exit 0）**（父级独立复跑；定向过滤另得 3/3 通过 + 已核实第 4 条用例实名 `Compact_Passes_Runtime_Profile_To_Compaction_Service`）。
+> - #2（`GoalApiContractTests`，未证）**按指令未触碰**；本轮全套运行中它**通过**，与其「非确定性」判定一致。
+> - 改动由**失败**子代理 `sub-b10f559c` 落盘（run 状态 failed，但产物完整）；父级未据 run 状态丢弃，改走「逐行审阅 + 独立复跑」两道闸后提交。
 
 | 用例 | 位置 | 首个错误 |
 |---|---|---|
