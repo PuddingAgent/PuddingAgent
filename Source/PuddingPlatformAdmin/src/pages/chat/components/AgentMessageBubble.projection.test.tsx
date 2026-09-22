@@ -644,12 +644,10 @@ describe('AgentMessageBubble 正文渲染字符级完整性（缺陷 B 判定实
     expect(rendered).toBe(FULL_BODY);
   });
 
-  // ⚠️ 已知缺口（2026-09-23 实测，父级亲自跑）：投影正文 = 前 800 字符、权威全文 = 2355
-  // 字符时，**界面实际只渲染 800 字符（丢 1555）**，且无任何兜底（与 AgentMessageBubble.tsx:392-411
-  // 关闭兑底气泡 + executionFlowProjector.ts:679-712 不用 reply 覆盖段文本完全一致）。
-  // ⇒ **本组就是缺陷 B 的回归断言**：修复切片（设计文档 §12 第 4 项“终态正文与权威全文对齐”）
-  //   必须让它转绿，**转绿后必须取消 skip**，不得直接删除本组。
-  it.skip('② 投影残缺（800/2355）：当前渲染 800 —— 缺陷 B 已复现，待修复后转正', () => {
+  // ✅ 缺陷 B 回归断言（2026-09-23 修复后转正）：修复前实测渲染 800（丢 1555 字符，且无任何
+  // 兜底：AgentMessageBubble.tsx:392-411 关闭兜底气泡 + executionFlowProjector.ts:679-712
+  // 不用 reply 覆盖段文本）；引入 terminalBodyAlignment 后应渲染完整 2355。不得删除本组。
+  it('② 投影残缺（800/2355）：对齐后应渲染完整 2355 字符', () => {
     const truncated = FULL_BODY.slice(0, 800);
     const projection = projectExecutionFlow(bodyEvents(truncated), {
       turnId: 'turn-1',

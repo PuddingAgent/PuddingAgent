@@ -38,6 +38,7 @@ import {
 import {
   deriveStatsFromProjection,
 } from '../projections/turnContentBlocks';
+import { alignTerminalBodyText } from '../projections/terminalBodyAlignment';
 import TurnContentStream from './execution-flow/TurnContentStream';
 import {
   deriveStatsFromProcessItems,
@@ -416,6 +417,19 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
       status === 'executing' ||
       status === 'streaming') &&
     status !== 'success';
+
+  // 终态正文对齐（2026-09-23）：投影正文短于权威全文时，界面过去只渲染投影那份
+  // （实测 800/2355 ⇒ 丢 1555 字符，而兜底气泡已被 hasProjectedTextBlocks 关闭）。
+  // 这里**仅在终态**把「投影拼接是权威全文前缀」所缺的尾段补到最后一个正文段；
+  // 非前缀一律不动（fail-closed，不猜）。对齐**不会新建节点**，因此
+  // hasProjectedTextBlocks 的判定结果不受影响，正文仍只渲染一次、仍只一个正文区域。
+  const alignedProjection = React.useMemo(
+    () =>
+      alignTerminalBodyText(executionFlowProjection, content, {
+        terminal: !isRunActive,
+      }).projection,
+    [executionFlowProjection, content, isRunActive],
+  );
   const messageAgeMs = Math.max(0, Date.now() - createdAt);
   const shouldAnimateEntrance =
     isRunActive || messageAgeMs <= MESSAGE_ENTRANCE_WINDOW_MS;
@@ -654,7 +668,7 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
               <QuotedMessageBlock quotedMessage={quotedMessage} />
             )}
             <TurnContentStream
-              projection={executionFlowProjection}
+              projection={alignedProjection}
               processItems={processItems}
               isRunActive={isRunActive}
               workspaceId={workspaceId}
