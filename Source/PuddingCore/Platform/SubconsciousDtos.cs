@@ -18,6 +18,16 @@ public record ConsolidationJob
     public string? LastAssistantReply { get; init; }
     /// <summary>会话压缩阶段显意识 LLM 提取的待保存记忆线索。</summary>
     public IReadOnlyList<string> MemoryNotes { get; init; } = [];
+
+    /// <summary>
+    /// 入队时刻随作业携带的**提案型**元数据（G8-D3）。
+    /// <para>当前唯一写入者是潜意识周期作业的「节奏决定记录」，键以 <c>rhythm_</c> 开头且带
+    /// proposed/configured 前缀 —— 明确标注「这只是一种提案，不代表已生效」。</para>
+    /// <para>⛔ 默认 <c>null</c>（而非空字典）：record 的相等性对引用型成员按引用比较，
+    /// 若默认新建空字典，会让「两个本应相等的作业」变成不等价 —— 此处刻意保持零语义漂移。
+    /// 消费方（如结果信封透传）须自行处理 <c>null</c>。</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? Metadata { get; init; }
 }
 
 public sealed record SubconsciousMemoryScope

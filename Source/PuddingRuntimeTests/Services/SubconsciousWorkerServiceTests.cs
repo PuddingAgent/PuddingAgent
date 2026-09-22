@@ -817,6 +817,231 @@ public sealed class SubconsciousWorkerServiceTests
             => Task.CompletedTask;
     }
 
+    // ── G8-D3（2026-09-22）：节奏决定的可观测产物（提案语义，⛔ 不改调度行为）──
+
+    /// <summary>
+    /// 节奏测试夹具（**嵌套静态类**）。
+    /// <para>放在嵌套类而不是外层测试类里：外层是 <c>[TestClass]</c>，MSTest v4 的发现器会把其中的帮助方法
+    /// 当成测试候选并报 UTA007（“方法没有正确的签名”）—— 嵌套类不会被扫描，且与既有
+    /// <c>RecordingSubconsciousJobQueue</c> 同惯例。</para>
+    /// </summary>
+    private static class RhythmHarness
+    {
+    /// <summary>四个定时循环各用**不同**间隔：任何“把间隔统一成同一个值”的实现都会被逐字段断言抓到。</summary>
+    public static SubconsciousSchedulingOptions RhythmLoopScheduling() => new()
+    {
+        PeriodicJobsEnabled = true,
+        DefaultWorkspaceId = "workspace-rhythm",
+        DefaultAgentInstanceId = "agent-rhythm",
+        AutoDreamInitialDelaySeconds = 0,
+        PatternExtractionInitialDelaySeconds = 0,
+        SkillImprovementInitialDelaySeconds = 0,
+        SkillCurationInitialDelaySeconds = 0,
+        AutoDreamIntervalSeconds = 3600,
+        PatternExtractionIntervalSeconds = 3610,
+        SkillImprovementIntervalSeconds = 3620,
+        SkillCurationIntervalSeconds = 3630,
+    };
+
+    /// <summary>固定时钟 + 本地时区固定为 UTC ⇒ 窗口判定不受跑测试的机器时区影响。</summary>
+    public static readonly DateTimeOffset RhythmFixedNow =
+        new(2026, 9, 22, 23, 30, 0, TimeSpan.Zero); // 23:30 落在 [22:00, 08:00) 跨午夜窗口内
+
+    public static long RhythmExpectedBucket(int intervalSeconds) =>
+        RhythmFixedNow.UtcTicks / TimeSpan.FromSeconds(intervalSeconds).Ticks;
+
+    public static Dictionary<string, int> RhythmExpectedIntervals() => new(StringComparer.Ordinal)
+    {
+        [SubconsciousJobTypes.AutoDream] = 3600,
+        [SubconsciousJobTypes.ExtractPatterns] = 3610,
+        [SubconsciousJobTypes.ImproveSkills] = 3620,
+        [SubconsciousJobTypes.SkillCurate] = 3630,
+    };
+
+    public static readonly string[] FrozenRhythmKeys =
+    [
+        "rhythm_backlog",
+        "rhythm_configured_interval_seconds",
+        "rhythm_off_peak",
+        "rhythm_policy",
+        "rhythm_proposed_interval_seconds",
+        "rhythm_reason_code",
+        "rhythm_shortened",
+    ];
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+
+        public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
+    }
+
+    public static async Task<RecordingSubconsciousJobQueue> RunPeriodicLoopsAsync(
+        PuddingCode.Configuration.SubconsciousRhythmPolicy? rhythmPolicy)
+    {
+        var queue = new RecordingSubconsciousJobQueue { DisableLeasing = true };
+        var worker = new SubconsciousWorkerService(
+            Channel.CreateUnbounded<ConsolidationJob>(),
+            new RecordingSubconsciousOrchestrator(),
+            NullLogger<SubconsciousWorkerService>.Instance,
+            jobQueue: queue,
+            options: Options.Create(new SubconsciousOptions { Scheduling = RhythmHarness.RhythmLoopScheduling() }),
+            timeProvider: new FixedTimeProvider(RhythmFixedNow),
+            rhythmPolicy: rhythmPolicy);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await worker.StartAsync(cts.Token);
+        await queue.AllPeriodicJobsEnqueued.Task.WaitAsync(cts.Token);
+        await worker.StopAsync(CancellationToken.None);
+        return queue;
+    }
+    }
+
+
+    [TestMethod]
+    public async Task PeriodicLoop_Default_ShouldKeepAllFourIntervalsUnchanged()
+    {
+        // P1：未配置策略 ⇒ 四个作业的入队结果与今天逐字段一致；
+        // 特别是幂等键里的 bucket 仍必须由**配置间隔**派生（提案不得改变调度口径）。
+        var queue = await RhythmHarness.RunPeriodicLoopsAsync(rhythmPolicy: null);
+
+        Assert.AreEqual(4, queue.EnqueuedRequests.Count);
+        var expected = RhythmHarness.RhythmExpectedIntervals();
+        foreach (var request in queue.EnqueuedRequests)
+        {
+            var intervalSeconds = expected[request.JobType];
+            Assert.AreEqual(
+                $"periodic:{request.JobType}:workspace-rhythm:agent-rhythm:{RhythmHarness.RhythmExpectedBucket(intervalSeconds)}",
+                request.IdempotencyKey,
+                $"作业 {request.JobType} 的幂等键必须仍由配置间隔（{intervalSeconds}s）派生");
+            Assert.IsNull(
+                request.Job.Metadata,
+                $"{request.JobType} 未配置节奏策略时不得携带任何节奏记录");
+            Assert.AreEqual("workspace-rhythm", request.Job.WorkspaceId);
+            Assert.AreEqual("agent-rhythm", request.Job.AgentId);
+        }
+    }
+
+    [TestMethod]
+    public async Task PeriodicLoop_Default_ShouldNotEmitRhythmDecision()
+    {
+        // P1 / P4：默认路径不产生任何节奏决定记录（键集合为空，而不是“写了默认值”）。
+        var queue = await RhythmHarness.RunPeriodicLoopsAsync(rhythmPolicy: null);
+
+        Assert.AreEqual(4, queue.EnqueuedRequests.Count);
+        foreach (var request in queue.EnqueuedRequests)
+        {
+            Assert.IsFalse(
+                request.Job.Metadata?.Keys.Any(key => key.StartsWith("rhythm_", StringComparison.Ordinal)) ?? false,
+                $"{request.JobType} 默认路径不得出现 rhythm_* 键");
+        }
+    }
+
+    [TestMethod]
+    public async Task PeriodicLoop_WithPolicy_ShouldRecordProposalSemanticDecision()
+    {
+        // P9 载体：键集合**等值断言** —— 多出一个裸 rhythm_interval_seconds 即视为“幻影生效”并变红。
+        var policy = PuddingCode.Configuration.SubconsciousRhythmPolicy.Create(
+            policyId: "test.rhythm",
+            version: 1,
+            offPeakPriorityEnabled: true,
+            offPeakWindowStart: new TimeOnly(22, 0),
+            offPeakWindowEnd: new TimeOnly(8, 0),
+            offPeakIntervalSeconds: 600,
+            backlogShortenIntervalSeconds: 300,
+            sourceLabel: "unit-test");
+
+        var queue = await RhythmHarness.RunPeriodicLoopsAsync(policy);
+
+        Assert.AreEqual(4, queue.EnqueuedRequests.Count);
+        var expected = RhythmHarness.RhythmExpectedIntervals();
+        foreach (var request in queue.EnqueuedRequests)
+        {
+            var metadata = request.Job.Metadata;
+            Assert.IsNotNull(metadata, $"{request.JobType} 配置了策略就必须产生记录");
+
+            CollectionAssert.AreEquivalent(
+                RhythmHarness.FrozenRhythmKeys,
+                metadata!.Keys.OrderBy(key => key, StringComparer.Ordinal).ToArray(),
+                "节奏记录的键集合必须恰好是冻结的 7 个提案语义键");
+
+            Assert.AreEqual("600", metadata["rhythm_proposed_interval_seconds"]);
+            Assert.AreEqual(
+                expected[request.JobType].ToString(),
+                metadata["rhythm_configured_interval_seconds"]);
+            Assert.AreEqual("true", metadata["rhythm_off_peak"]);
+            Assert.AreEqual("false", metadata["rhythm_backlog"]); // D5 未接线 ⇒ 恒 false（诚实边界）
+            Assert.AreEqual("true", metadata["rhythm_shortened"]);
+            Assert.AreEqual(
+                PuddingCode.Configuration.SubconsciousRhythmReasonCodes.OffPeak,
+                metadata["rhythm_reason_code"]);
+            Assert.AreEqual("test.rhythm@1", metadata["rhythm_policy"]);
+
+            // ⛔ 提案不得改变调度：bucket 仍由配置间隔派生（与默认路径逐字段一致）。
+            Assert.IsTrue(
+                request.IdempotencyKey.EndsWith(
+                    ":" + RhythmHarness.RhythmExpectedBucket(expected[request.JobType]),
+                    StringComparison.Ordinal),
+                $"{request.JobType} 的记录不得改变幂等键口径");
+        }
+    }
+
+    [TestMethod]
+    public async Task DurableCurationResult_ShouldCarryRhythmProposalFromEnqueueTime()
+    {
+        // 任务书 §4.5：入队时刻的提案经 ConsolidationJob.Metadata 透传到**同一张**结果信封 metadata 表
+        // （⛔ 不新建并行遥测通道）；且不得把提案键伪装成“已生效”。
+        var queue = new RecordingSubconsciousJobQueue
+        {
+            JobType = SubconsciousJobTypes.SkillCurate,
+            Job = new ConsolidationJob
+            {
+                SessionId = "periodic:skill.curate",
+                WorkspaceId = "workspace-rhythm",
+                AgentId = "agent-rhythm",
+                AgentTemplateId = "agent-rhythm",
+                Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["rhythm_proposed_interval_seconds"] = "600",
+                    ["rhythm_configured_interval_seconds"] = "3630",
+                    ["rhythm_reason_code"] = PuddingCode.Configuration.SubconsciousRhythmReasonCodes.OffPeak,
+                    ["rhythm_off_peak"] = "true",
+                    ["rhythm_backlog"] = "false",
+                    ["rhythm_shortened"] = "true",
+                    ["rhythm_policy"] = "test.rhythm@1",
+                },
+            },
+        };
+        var worker = new SubconsciousWorkerService(
+            Channel.CreateUnbounded<ConsolidationJob>(),
+            new RecordingSubconsciousOrchestrator(),
+            NullLogger<SubconsciousWorkerService>.Instance,
+            jobQueue: queue);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await worker.StartAsync(cts.Token);
+        await queue.JobCompleted.Task.WaitAsync(cts.Token);
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.IsNotNull(queue.RecordedResult);
+        var metadata = queue.RecordedResult!.Metadata;
+
+        Assert.AreEqual("600", metadata["rhythm_proposed_interval_seconds"]);
+        Assert.AreEqual("3630", metadata["rhythm_configured_interval_seconds"]);
+        Assert.AreEqual("test.rhythm@1", metadata["rhythm_policy"]);
+        Assert.AreEqual(
+            PuddingCode.Configuration.SubconsciousRhythmReasonCodes.OffPeak,
+            metadata["rhythm_reason_code"]);
+        Assert.IsFalse(
+            metadata.ContainsKey("rhythm_interval_seconds"),
+            "结果信封不得出现裸名键（那会被读成“已生效间隔”）");
+
+        // 既有键必须原样保留（透传不得顶掉原有通道内容）
+        Assert.AreEqual(SubconsciousJobTypes.SkillCurate, metadata["job_type"]);
+        Assert.AreEqual("workspace-rhythm", metadata["workspace_id"]);
+        Assert.IsTrue(metadata.ContainsKey("n_before"));
+    }
+
     [TestMethod]
     [DataRow(SubconsciousJobTypes.AutoDream, SubconsciousJobResultKinds.MemoryAutoDream, 2)]
     [DataRow(SubconsciousJobTypes.ExtractPatterns, SubconsciousJobResultKinds.SkillPatternExtraction, 3)]

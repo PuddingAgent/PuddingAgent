@@ -31,6 +31,12 @@ public sealed class SubconsciousWorkerService : BackgroundService
     private readonly SubconsciousSchedulingOptions _scheduling;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<SubconsciousWorkerService> _logger;
+    /// <summary>
+    /// G8-D3：节奏策略（**尾随可选**，默认 <c>null</c>）。
+    /// <para>⛔ 组合根刻意**不注册**它：阈值/窗口必须来自版本化策略对象，不得由 DI 凭空编造。
+    /// 因此生产默认下本字段为 <c>null</c> ⇒ 不产生任何节奏记录（零回归）。</para>
+    /// </summary>
+    private readonly SubconsciousRhythmPolicy? _rhythmPolicy;
     private readonly string _leaseOwner = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
     public SubconsciousWorkerService(
@@ -46,7 +52,8 @@ public sealed class SubconsciousWorkerService : BackgroundService
         WikiPageWriteEntry? wikiPageWriteEntry = null,
         ISubconsciousRuntimeControl? runtimeControl = null,
         IOptions<SubconsciousOptions>? options = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        SubconsciousRhythmPolicy? rhythmPolicy = null)
     {
         _channel = channel;
         _orchestrator = orchestrator;
@@ -60,6 +67,7 @@ public sealed class SubconsciousWorkerService : BackgroundService
         _runtimeControl = runtimeControl;
         _scheduling = options?.Value.Scheduling ?? new SubconsciousSchedulingOptions();
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _rhythmPolicy = rhythmPolicy;
         _logger = logger;
     }
 
@@ -396,6 +404,16 @@ public sealed class SubconsciousWorkerService : BackgroundService
         };
         if (!string.IsNullOrWhiteSpace(queueItem.SourceCompactionId))
             metadata["request_id"] = queueItem.SourceCompactionId!;
+
+        // G8-D3：把入队时刻写下的节奏**提案**记录透传到结果信封的**既有** metadata 通道
+        //（同一张表，⛔ 不新建并行遥测通道）；键名原样保留 proposed/configured 语义。
+        // 未配置节奏策略时 Job.Metadata 为 null ⇒ 这里一个键也不加（P1 零回归）。
+        if (queueItem.Job.Metadata is { Count: > 0 } rhythmMetadata)
+        {
+            foreach (var pair in rhythmMetadata)
+                metadata[pair.Key] = pair.Value;
+        }
+
         return metadata;
     }
 
@@ -828,18 +846,25 @@ public sealed class SubconsciousWorkerService : BackgroundService
             return;
         }
 
+        var job = new ConsolidationJob
+        {
+            SessionId = $"periodic:{jobType}",
+            WorkspaceId = workspaceId,
+            AgentId = agentInstanceId,
+            AgentTemplateId = agentInstanceId,
+        };
+
+        // ── G8-D3：把这一轮的节奏决定写成**提案型**记录（⛔ 不改 interval / bucket / delay）──
+        var rhythmMetadata = BuildRhythmDecisionMetadata(interval);
+        if (rhythmMetadata.Count > 0)
+            job = job with { Metadata = rhythmMetadata };
+
         await _jobQueue.EnqueueAsync(new SubconsciousJobEnqueueRequest
         {
             JobType = jobType,
             IdempotencyKey = idempotencyKey,
             SourceHookName = "subconscious.periodic",
-            Job = new ConsolidationJob
-            {
-                SessionId = $"periodic:{jobType}",
-                WorkspaceId = workspaceId,
-                AgentId = agentInstanceId,
-                AgentTemplateId = agentInstanceId,
-            },
+            Job = job,
         }, ct);
 
         _logger.LogInformation(
@@ -848,5 +873,48 @@ public sealed class SubconsciousWorkerService : BackgroundService
             workspaceId,
             agentInstanceId,
             bucket);
+    }
+
+    /// <summary>
+    /// G8-D3：把这一轮“若启用节奏策略会采用哪个间隔”写成可解释记录。
+    /// <para>
+    /// ⛔ <b>提案语义</b>：全部键名带 <c>proposed</c>/<c>configured</c> 前缀，且**不改变任何调度** —— 采用间隔
+    /// 不会传给 <c>Task.Delay</c>，也不参与幂等键 <c>bucket</c> 的计算。原因是实测：周期作业速率由
+    /// <c>bucket</c> 除数（= 配置间隔）决定，只缩短 delay 是空操作（任务书 §4.4 裁决 1/2、不变式 P9）。
+    /// </para>
+    /// <para>
+    /// ⛔ 未配置策略（<see cref="_rhythmPolicy"/> 为 <c>null</c>）时返回空字典 ⇒ 记录整体不出现（P1 / P4）。
+    /// </para>
+    /// <para>
+    /// ⚠️ <b>诚实边界</b>：堆积条件（<c>isBacklog</c>）由 D5 提供，本切片**尚未接线** ⇒ 恒为 <c>false</c>；
+    /// 读到 <c>rhythm_backlog=false</c> 的人<b>不得</b>据此推断“没有堆积”。
+    /// </para>
+    /// </summary>
+    /// <param name="configuredInterval">配置间隔（即 <c>TryEnqueue</c> 实际使用的间隔；不会因本记录而改变）。</param>
+    private Dictionary<string, string> BuildRhythmDecisionMetadata(TimeSpan configuredInterval)
+    {
+        var policy = _rhythmPolicy;
+        if (policy is null)
+            return [];
+
+        var window = SubconsciousOffPeakEvaluator.From(policy);
+        var isOffPeak = window is not null
+            && SubconsciousOffPeakEvaluator.IsOffPeak(_timeProvider, window);
+
+        // configuredInterval 已由调用方的 Math.Max(1, …) 保证 ≥ 1 秒，这里再夹取一次以免策略
+        // 层抛 ArgumentOutOfRange 把整个入队循环打断（宁可记录退化为默认，也不得阻断调度）。
+        var configuredSeconds = (int)Math.Max(1d, Math.Floor(configuredInterval.TotalSeconds));
+        var decision = policy.Resolve(configuredSeconds, isOffPeak, isBacklog: false);
+
+        return new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["rhythm_proposed_interval_seconds"] = decision.IntervalSeconds.ToString(),
+            ["rhythm_configured_interval_seconds"] = decision.ConfiguredIntervalSeconds.ToString(),
+            ["rhythm_reason_code"] = decision.ReasonCode,
+            ["rhythm_off_peak"] = decision.IsOffPeak ? "true" : "false",
+            ["rhythm_backlog"] = decision.IsBacklog ? "true" : "false",
+            ["rhythm_shortened"] = decision.IsShortened ? "true" : "false",
+            ["rhythm_policy"] = $"{policy.PolicyId}@{policy.Version}",
+        };
     }
 }
