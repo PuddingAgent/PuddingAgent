@@ -1,4 +1,9 @@
 import { recordPerfStep } from '@/utils/perfEventRuntime';
+import {
+  detectUnconsumedProjectionEvidence,
+  isConversationEquivalent,
+  mergeCanonicalConversation,
+} from './canonicalMerge';
 import { DEFAULT_AGENT_CHAT_OWNER_ID } from './clientIdentity';
 import type { AgentChatLocalCache } from './localCache';
 import type { AgentConversationView, AgentStatusProjection } from './types';
@@ -23,17 +28,21 @@ export interface AgentChatClientSnapshot {
 }
 
 /**
- * The event cursor can reach a terminal event before the assistant message row
- * becomes visible in the conversation read model.  A snapshot ending with a
- * user message is therefore not safe to treat as fully caught up, even when
- * its cursor matches the Agent status cursor.
+ * 是否还有**未消费**的「待物化 / 待追平」证据（设计文档 §4、§12 落地顺序第 2 项）。
+ *
+ * 旧启发式只看末条 role：当终态事件已到达、assistant 行已出现但正文尚未物化时，
+ * 它会把快照当成「已追平」，轮询直接短路，界面只能等用户「再发一条」才恢复
+ * （= 用户报告的「晚一条」）。证据判定现收敛在 canonicalMerge，本函数只是页面
+ * 轮询档位（1200ms/5000ms）的提示，不再是「已追平」的唯一依据。
+ *
+ * 取舍与残余风险：末条是 user 时的「等待回复」在本地依然无法证伪服务端永不再回复
+ * （与旧实现一致，只是不再是唯一判据）；证据来源列表见
+ * canonicalMerge.detectUnconsumedProjectionEvidence，入口短路门的取舍见
+ * syncSelectedAgent 内的注释。
  */
 export const conversationNeedsProjectionCatchUp = (
   conversation: AgentConversationView | null | undefined,
-): boolean => {
-  const messages = conversation?.messages ?? [];
-  return messages.length > 0 && messages[messages.length - 1].role === 'user';
-};
+): boolean => detectUnconsumedProjectionEvidence(conversation).length > 0;
 
 const statusProjectionEquals = (
   previous: AgentStatusProjection,
@@ -84,19 +93,13 @@ export function createAgentChatClientStore(input: {
   const createTraceId = (prefix: string) =>
     `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-  // P0-perf: 比较两个 conversation 是否语义相同，避免无意义的 IndexedDB 写入和 React setState
+  // P0-perf: 只有**可判定的等价**（scope + message identity + 内容/状态/过程指纹 + cursor
+  // 全相等）才跳过 IndexedDB 写入与 React setState。禁止再用 messages.length 当等价判据
+  // （设计文档 §6 根因 A）：同一 messageId 的正文增长条数不变，旧判据会把新正文丢掉。
   const isConversationSame = (
     a: AgentConversationView | null,
     b: AgentConversationView,
-  ) => {
-    if (!a) return false;
-    return (
-      a.eventCursor === b.eventCursor &&
-      a.messages.length === b.messages.length &&
-      (a.activeRun?.runId ?? null) === (b.activeRun?.runId ?? null) &&
-      a.mainSessionId === b.mainSessionId
-    );
-  };
+  ) => isConversationEquivalent(a, b);
 
   const store = {
     subscribe(listener: () => void) {
@@ -376,15 +379,21 @@ export function createAgentChatClientStore(input: {
         (s) => s.agentId === agentId,
       );
       const existingConv = snapshot.conversation;
-      const projectionCatchUpPending =
-        conversationNeedsProjectionCatchUp(existingConv);
+      // 只要还有未消费的「待物化 / 待追平」证据就不得短路。新的跳过条件是旧条件
+      // （cursor 相同 + 无 activeRun + 末条不是 user）的真子集 ⇒ 相对旧行为只会更常
+      // 发请求，不会引入新的停滞。残余风险：若服务端在同一 messageId 上追加正文却既不
+      // 推进 eventCursor 也不改状态，本地字段无法证伪「已追平」；缓解 = 合并器在拿到
+      // 200 响应时按完整性单调采纳更长正文，且状态游标推进 / activeRun 出现时必然全量
+      // 回拉，终态一次回拉由后续切片的 completion hydration 补齐。
+      const projectionEvidence = detectUnconsumedProjectionEvidence(existingConv);
+      const projectionCatchUpPending = projectionEvidence.length > 0;
       if (
         matchingStatus &&
         existingConv &&
+        projectionEvidence.length === 0 &&
         matchingStatus.eventCursor === existingConv.eventCursor &&
         !matchingStatus.activeRunId &&
-        !existingConv.activeRun &&
-        !projectionCatchUpPending
+        !existingConv.activeRun
       ) {
         recordPerfStep(
           'agent.selectedSync',
@@ -450,8 +459,34 @@ export function createAgentChatClientStore(input: {
           },
         );
 
-        // P0-perf: 如果 conversation 语义相同，跳过 IndexedDB 写入和React setState
-        if (isConversationSame(snapshot.conversation, fresh)) {
+        // 唯一合并入口：候选快照必须经过 canonical merge 的单调证据比较，不得在 store 里
+        // 再用「看起来一样」直接丢弃权威响应（设计 §5：SSE/轮询/物化共用一个 merge port）。
+        const mergeResult = mergeCanonicalConversation(
+          snapshot.conversation,
+          fresh,
+        );
+        for (const diagnostic of mergeResult.diagnostics) {
+          recordPerfStep(
+            'agent.selectedSync',
+            `merge.${diagnostic.code}`,
+            syncStartedAt,
+            {
+              traceId,
+              workspaceId,
+              agentId,
+              ownerUserId,
+              messageId: diagnostic.messageId,
+              currentCursor: diagnostic.currentCursor,
+              candidateCursor: diagnostic.candidateCursor,
+              detail: diagnostic.detail,
+            },
+          );
+        }
+        const mergedConversation = mergeResult.conversation;
+
+        // P0-perf: 只有可判定的等价（scope + message identity + 内容/状态/过程指纹 + cursor）
+        // 才跳过 IndexedDB 写入和 React setState。
+        if (isConversationSame(snapshot.conversation, mergedConversation)) {
           if (version === backgroundSyncVersion) {
             recordPerfStep(
               'agent.selectedSync',
@@ -462,7 +497,8 @@ export function createAgentChatClientStore(input: {
                 workspaceId,
                 agentId,
                 ownerUserId,
-                eventCursor: fresh.eventCursor,
+                eventCursor: mergedConversation.eventCursor,
+                mergeChanged: mergeResult.changed,
               },
             );
           }
@@ -470,7 +506,7 @@ export function createAgentChatClientStore(input: {
         }
 
         const saveStartedAt = performance.now();
-        await input.cache.saveConversation(fresh);
+        await input.cache.saveConversation(mergedConversation);
         recordPerfStep(
           'agent.selectedSync',
           'cache.saveConversation',
@@ -480,8 +516,9 @@ export function createAgentChatClientStore(input: {
             workspaceId,
             agentId,
             ownerUserId,
-            sessionId: fresh.mainSessionId,
-            eventCursor: fresh.eventCursor,
+            sessionId: mergedConversation.mainSessionId,
+            messageCount: mergedConversation.messages.length,
+            eventCursor: mergedConversation.eventCursor,
           },
         );
         if (
@@ -490,14 +527,14 @@ export function createAgentChatClientStore(input: {
           snapshot.agentId === agentId &&
           snapshot.ownerUserId === ownerUserId
         ) {
-          set({ conversation: fresh, error: null });
+          set({ conversation: mergedConversation, error: null });
           recordPerfStep('agent.selectedSync', 'sync.finish', syncStartedAt, {
             traceId,
             workspaceId,
             agentId,
             ownerUserId,
-            sessionId: fresh.mainSessionId,
-            eventCursor: fresh.eventCursor,
+            sessionId: mergedConversation.mainSessionId,
+            eventCursor: mergedConversation.eventCursor,
           });
         } else {
           recordPerfStep('agent.selectedSync', 'sync.stale', syncStartedAt, {

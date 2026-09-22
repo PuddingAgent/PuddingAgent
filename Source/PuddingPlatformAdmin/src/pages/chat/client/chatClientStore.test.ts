@@ -458,4 +458,136 @@ describe('agent chat client store', () => {
       ),
     ).toBe(true);
   });
+
+  it('adopts a longer body for the same messageId when the message count is unchanged', async () => {
+    const cache = createMemoryAgentChatCache();
+    const shortBody = 'partial answer';
+    const longBody = 'partial answer with the materialized tail';
+    let callCount = 0;
+    const store = createAgentChatClientStore({
+      cache,
+      api: {
+        listStatuses: async () => [],
+        getConversation: async (_workspaceId, agentId) => {
+          callCount += 1;
+          return {
+            workspaceId: 'default',
+            ownerUserId: 'single-user',
+            agentId,
+            mainSessionId: `session-${agentId}`,
+            messages: [
+              {
+                messageId: 'agent-1',
+                role: 'agent',
+                sourceId: agentId,
+                sourceName: 'Agent A',
+                createdAt: '2026-06-07T00:00:01.000Z',
+                content: callCount === 1 ? shortBody : longBody,
+                status: 'succeeded',
+                processItems: [],
+              },
+            ],
+            activeRun: null,
+            eventCursor: 12,
+            updatedAt: '2026-06-07T00:00:01.000Z',
+          };
+        },
+      },
+    });
+
+    await store.selectAgent('default', 'agent-a');
+    expect(store.getSnapshot().conversation?.messages[0]?.content).toBe(
+      shortBody,
+    );
+
+    await store.syncSelectedAgent();
+
+    // 旧实现的 isConversationSame 只比 eventCursor / messages.length /
+    // activeRun / mainSessionId：全等 ⇒ 判定「没变」跳过提交，同一 messageId 的
+    // 正文增长被丢掉（= 用户报告的「晚一条」最小复现）。
+    expect(callCount).toBe(2);
+    expect(store.getSnapshot().conversation?.messages[0]?.content).toBe(
+      longBody,
+    );
+    await expect(
+      cache.loadConversation('default', 'agent-a'),
+    ).resolves.toMatchObject({
+      messages: [{ messageId: 'agent-1', content: longBody }],
+    });
+  });
+
+  it('does not short-circuit the poll while the terminal agent row has no materialized body', async () => {
+    const cache = createMemoryAgentChatCache();
+    const knownCursors: Array<number | undefined> = [];
+    let callCount = 0;
+    const buildConversation = (agentId: string, materialized: boolean) => ({
+      workspaceId: 'default',
+      ownerUserId: 'single-user',
+      agentId,
+      mainSessionId: `session-${agentId}`,
+      messages: [
+        {
+          messageId: 'user-1',
+          role: 'user' as const,
+          sourceId: 'admin',
+          sourceName: 'Pudding Admin',
+          createdAt: '2026-06-07T00:00:00.000Z',
+          content: 'long task',
+          status: 'sent' as const,
+          processItems: [],
+        },
+        {
+          messageId: 'agent-1',
+          role: 'agent' as const,
+          sourceId: agentId,
+          sourceName: 'Agent A',
+          createdAt: '2026-06-07T00:00:01.000Z',
+          content: materialized ? 'terminal answer' : '',
+          status: 'succeeded' as const,
+          processItems: [],
+        },
+      ],
+      activeRun: null,
+      eventCursor: 12,
+      updatedAt: '2026-06-07T00:00:01.000Z',
+    });
+    const store = createAgentChatClientStore({
+      cache,
+      api: {
+        listStatuses: async () => [
+          {
+            workspaceId: 'default',
+            ownerUserId: 'single-user',
+            agentId: 'agent-a',
+            mainSessionId: 'session-agent-a',
+            status: 'idle' as const,
+            summary: 'idle',
+            unreadCount: 0,
+            eventCursor: 12,
+            updatedAt: '2026-06-07T00:00:02.000Z',
+          },
+        ],
+        getConversation: async (_workspaceId, agentId, knownCursor) => {
+          knownCursors.push(knownCursor);
+          callCount += 1;
+          return buildConversation(agentId, callCount > 1);
+        },
+      },
+    });
+
+    await store.selectAgent('default', 'agent-a');
+    await store.syncStatuses('default');
+    expect(callCount).toBe(1);
+
+    await store.syncSelectedAgent();
+
+    // 旧实现：status 与 conversation 的 eventCursor 相同、无 activeRun，
+    // 且末条不是 user ⇒ 入口短路、根本不发请求；只有「再发一条」走发送路径
+    // 的定时器才把正文捞出来。
+    expect(callCount).toBe(2);
+    expect(knownCursors[1]).toBeUndefined();
+    expect(
+      store.getSnapshot().conversation?.messages.at(-1)?.content,
+    ).toBe('terminal answer');
+  });
 });
