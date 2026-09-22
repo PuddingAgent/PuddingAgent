@@ -17,7 +17,6 @@ import type {
 import {
   rememberWorkspaceVisit,
 } from '@/utils/workspaceNavigation';
-import type { RecentlyDeniedItem } from '../classifier/autoReviewClassifier';
 import type { AgentConversationView } from '../client/types';
 import { useAutoReviewClassifier } from '../hooks/useAutoReviewClassifier';
 import { useAutoTts } from '../hooks/useAutoTts';
@@ -30,11 +29,6 @@ import { useInitialIdleReady } from '../hooks/useInitialIdleReady';
 import { useNotificationSound } from '../hooks/useNotificationSound';
 import { useProviderBalance } from '../hooks/useProviderBalance';
 import type { ExecutionFlowProjection } from '../projections/executionFlowProjector';
-import type {
-  SandboxBoundaryInfo,
-  SandboxNetworkMode,
-} from '../sandbox/sandboxBoundary';
-import { createDefaultSandboxBoundary } from '../sandbox/sandboxBoundary';
 import { useChatStyles } from '../styles';
 import type {
   ChatTurn,
@@ -297,17 +291,12 @@ const ChatMain: React.FC<ChatMainProps> = ({
   React.useEffect(() => {
     autoReview.setEnabled(permissionMode === 'auto');
   }, [permissionMode, autoReview.setEnabled]);
-  // ── P2#10：Sandbox 边界可视化（当前为前端推导，后端就绪后可替换）──
-  const [sandboxNetworkMode, setSandboxNetworkMode] =
-    React.useState<SandboxNetworkMode>('allowlist');
-  const sandboxBoundary: SandboxBoundaryInfo = React.useMemo(
-    () => createDefaultSandboxBoundary(workspaceId, sandboxNetworkMode),
-    [workspaceId, sandboxNetworkMode],
-  );
-  const handleRestoreAuto = React.useCallback(() => {
-    autoReview.resetToAuto();
-    onPermissionModeChange('auto');
-  }, [autoReview, onPermissionModeChange]);
+  // 2026-09-22：设置 Popover（Sandbox 边界 + Auto-review 指示器）已移除。
+  //  - Sandbox 那半是前端伪造事实（root/保护路径/网络档位均硬编码），且后端
+  //    `SandboxExecutor` 只有工具能力策略，没有网络模式/可写根/保护路径这三个概念
+  //    ⇒ 不存在"等端点就绪"的真数据来源，故整体删除而不是留占位。
+  //  - 该 hook 的回退行为保留（连续拒绝达阈值即撤销完全访问），只是不再有 UI 面板；
+  //    UI 侧唯一的写入点是 onApprovalDenied。
   const [devMode, setDevMode] = useState<boolean>(
     () => localStorage.getItem(DEV_MODE_KEY) === '1',
   );
@@ -752,16 +741,6 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     latestAssistantText={latestAssistantText}
                     permissionMode={permissionMode}
                     onPermissionModeChange={onPermissionModeChange}
-                    autoReviewState={autoReview.state}
-                    recentlyDenied={autoReview.recentlyDenied}
-                    onAutoReviewRestore={handleRestoreAuto}
-                    onRetryDenied={(item: RecentlyDeniedItem) =>
-                      autoReview.retryDenied(item.id)
-                    }
-                    onRemoveDenied={autoReview.removeDenied}
-                    onClearDenied={autoReview.clearDenied}
-                    sandboxBoundary={sandboxBoundary}
-                    onSandboxNetworkModeChange={setSandboxNetworkMode}
                   />
                 </div>
                 {(hasSubAgentActivity || subAgentInspectorOpen) && (

@@ -6,7 +6,6 @@ import {
   LoadingOutlined,
   PlusOutlined,
   SendOutlined,
-  SettingOutlined,
   StopOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
@@ -33,12 +32,10 @@ import {
 } from '../hooks/browserVoiceOutput';
 import { createDashScopeVoiceInputAdapter } from '../hooks/dashScopeVoiceInput';
 import type { ChatInteractionQueueItem } from '../hooks/useChatState';
-import type { AutoReviewClassifierState } from '../classifier/autoReviewClassifier';
-import type { RecentlyDeniedItem } from '../classifier/autoReviewClassifier';
-import type { SandboxBoundaryInfo, SandboxNetworkMode } from '../sandbox/sandboxBoundary';
+
 import { useChatStyles } from '../styles';
 import type { PermissionMode } from '../types/chatStateTypes';
-import AutoReviewIndicator from './AutoReviewIndicator';
+
 import ComposerTextInput, {
   type ComposerTextInputHandle,
 } from './ComposerTextInput';
@@ -50,7 +47,7 @@ import ComposerStatusDetails, {
 } from './ComposerStatusDetails';
 import PermissionModeSelector from './PermissionModeSelector';
 import MessageQueueDropdown from './MessageQueueDropdown';
-import SandboxBoundaryIndicator from './SandboxBoundaryIndicator';
+
 import { normalizeVisionArtifactFile } from './visionArtifactImage';
 
 const CameraInputModal =
@@ -195,22 +192,7 @@ interface IntentConsoleProps {
   permissionMode?: PermissionMode;
   /** P1#4：权限模式变更回调 */
   onPermissionModeChange?: (mode: PermissionMode) => void;
-  /** P2#9：Auto-review classifier 状态（回退手动审批指示器） */
-  autoReviewState?: AutoReviewClassifierState;
-  /** P2#9：Recently denied 面板条目 */
-  recentlyDenied?: RecentlyDeniedItem[];
-  /** P2#9：恢复自动模式（重置 blocked 计数） */
-  onAutoReviewRestore?: () => void;
-  /** P2#9：重试 Recently denied 条目 */
-  onRetryDenied?: (item: RecentlyDeniedItem) => void;
-  /** P2#9：移除 Recently denied 条目 */
-  onRemoveDenied?: (id: string) => void;
-  /** P2#9：清空 Recently denied */
-  onClearDenied?: () => void;
-  /** P2#10：Sandbox 边界信息 */
-  sandboxBoundary?: SandboxBoundaryInfo | null;
-  /** P2#10：网络模式变更回调 */
-  onSandboxNetworkModeChange?: (mode: SandboxNetworkMode) => void;
+
 }
 
 const IntentConsole: React.FC<IntentConsoleProps> = ({
@@ -252,14 +234,6 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
     workspaceId,
   permissionMode = 'auto',
   onPermissionModeChange = () => undefined,
-  autoReviewState,
-  recentlyDenied = [],
-  onAutoReviewRestore,
-  onRetryDenied,
-  onRemoveDenied,
-  onClearDenied,
-  sandboxBoundary,
-  onSandboxNetworkModeChange,
 }) => {
   const { styles } = useChatStyles();
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -972,57 +946,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 />
               }
             />
-            {/* CU-11 §6.2：低频选项（Sandbox 边界 / Auto-review）收敛进设置 Popover，
-                需要盯防的活动态通过角标浮出；高频的执行偏好/权限/语音/发送保持直达。 */}
-            <Popover
-              trigger="click"
-              placement="topRight"
-              content={
-                <div
-                  className={styles.composerSettingsPanel}
-                  data-testid="composer-settings-panel"
-                >
-                  <SandboxBoundaryIndicator
-                    boundary={sandboxBoundary ?? null}
-                    disabled={disabled || !sandboxBoundary}
-                    onNetworkModeChange={onSandboxNetworkModeChange}
-                  />
-                  <AutoReviewIndicator
-                    state={
-                      autoReviewState ?? {
-                        enabled: permissionMode === 'auto',
-                        consecutiveBlocks: 0,
-                        totalBlocks: 0,
-                        fallbackTriggered: false,
-                        fallbackReason: null,
-                        lastBlockedAt: null,
-                        lastBlockRule: null,
-                      }
-                    }
-                    recentlyDenied={recentlyDenied}
-                    disabled={disabled || loading}
-                    onRestoreAuto={onAutoReviewRestore}
-                    onRetryDenied={onRetryDenied}
-                    onRemoveDenied={onRemoveDenied}
-                    onClearDenied={onClearDenied}
-                  />
-                </div>
-              }
-            >
-              <button
-                type="button"
-                className={styles.composerToolbarButton}
-                aria-label="沙箱与自动审查设置"
-                data-testid="composer-settings"
-              >
-                <SettingOutlined />
-                {Boolean(
-                  (autoReviewState?.consecutiveBlocks ?? 0) > 0 ||
-                    autoReviewState?.fallbackTriggered ||
-                    recentlyDenied.length > 0,
-                ) && <span className={styles.composerSettingsBadge} />}
-              </button>
-            </Popover>
+
             <Tooltip
               title={
                 recording ? '停止录音' : recognizing ? '识别中...' : '语音输入'
