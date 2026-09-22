@@ -375,10 +375,12 @@ public sealed class SwarmOrchestratorTests : IDisposable
     [TestMethod]
     public async Task ProcessSwarmAsync_WithInvalidSwarmDirectory_HandlesError()
     {
-        // Arrange: Use invalid path
+        // Arrange: Initialize git repo (same as sibling tests; WorkerManager requires a real repo)
+        await InitializeTestGitRepoAsync();
+
         var contractManager = new ContractManager(_testSwarmDir);
         var workerManager = new WorkerManager(_testRepoDir);
-        
+
         // Create orchestrator with valid paths (will initialize directory)
         var orchestrator = new SwarmOrchestrator(contractManager, workerManager, _testSwarmDir);
 
