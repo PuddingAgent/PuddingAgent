@@ -72,9 +72,15 @@ export const TaskColumn: React.FC<TaskColumnProps> = ({
             borderRadius: 10,
             padding: '1px 6px',
           }}
+          title={`已加载 ${slice.items.length} / 共 ${slice.totalCount}`}
         >
-          {slice.items.length}
+          {slice.totalCount}
         </span>
+        {slice.items.length < slice.totalCount && (
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            已加载 {slice.items.length}
+          </Text>
+        )}
       </div>
 
       <div

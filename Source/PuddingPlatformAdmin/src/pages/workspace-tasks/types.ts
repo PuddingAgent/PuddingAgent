@@ -187,6 +187,11 @@ export interface TaskPageDto {
   items: TaskDto[];
   /** keyset 游标 "{sort_order}|{task_id}"，无更多为 null */
   nextCursor: string | null;
+  /**
+   * 服务端返回的「该过滤条件下的总数」（与 cursor **无关**：第 2 页与第 1 页同值）。
+   * 列头徽标显示它，而不是已加载条数 items.length。
+   */
+  totalCount: number;
 }
 
 /** DELETE 智能删除响应：action = "deleted"（硬删，task 为 null）| "archived"（归档软删，task 为归档后任务） */
@@ -653,6 +658,8 @@ export function parseTaskError(error: unknown): ParsedTaskError {
 export interface ColumnSlice {
   items: TaskDto[];
   nextCursor: string | null;
+  /** 服务端真值：该列在当前过滤条件下的总数（与已加载条数无关）。未取到时为 0。 */
+  totalCount: number;
   loading: boolean;
   loadingMore: boolean;
   hasMore: boolean;
@@ -664,6 +671,7 @@ export function emptyColumnSlice(): ColumnSlice {
   return {
     items: [],
     nextCursor: null,
+    totalCount: 0,
     loading: false,
     loadingMore: false,
     hasMore: false,

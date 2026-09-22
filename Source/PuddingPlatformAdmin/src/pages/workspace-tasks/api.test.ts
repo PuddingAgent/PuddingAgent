@@ -28,7 +28,11 @@ describe('workspace task REST API（TB-04 §5.1，13 端点）', () => {
   });
 
   it('listTasks：GET + 路径编码 + boardColumn/cursor 参数', async () => {
-    mockRequest.mockResolvedValueOnce({ items: [], nextCursor: null });
+    mockRequest.mockResolvedValueOnce({
+      items: [],
+      nextCursor: null,
+      totalCount: 0,
+    });
     await listTasks('ws/default', {
       boardColumn: 'Todo',
       limit: 100,

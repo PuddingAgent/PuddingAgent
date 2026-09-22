@@ -172,6 +172,7 @@ export function WorkspaceTasksPanel({ workspaceId }: WorkspaceTasksPanelProps) {
             [column]: {
               items: page.items,
               nextCursor: page.nextCursor,
+              totalCount: page.totalCount,
               loading: false,
               loadingMore: false,
               hasMore: page.nextCursor !== null,
@@ -191,6 +192,48 @@ export function WorkspaceTasksPanel({ workspaceId }: WorkspaceTasksPanelProps) {
     if (!workspaceId) return;
     loadSnapshot();
   }, [loadSnapshot, workspaceId]);
+
+  // ─── 总数刷新：列头显示服务端真值，故 SSE 事件后需重新取一次 ───────────
+  // 列头徽标显示的是**服务端总数**（totalCount），不是已加载条数；因此任何可能
+  // 改变列归属/数量的 SSE 事件到来后，都要重新向服务端要一次总数。
+  // 用 limit:1 只取一行：响应载荷极小，而 totalCount 覆盖完整过滤集
+  // （TaskController.List 的 limit 只影响 Items，不影响 TotalCount）。
+  const totalsTimerRef = useRef<number | null>(null);
+  const refreshTotals = useCallback(() => {
+    if (totalsTimerRef.current !== null) {
+      window.clearTimeout(totalsTimerRef.current);
+    }
+    totalsTimerRef.current = window.setTimeout(async () => {
+      totalsTimerRef.current = null;
+      await Promise.all(
+        BOARD_COLUMN_ORDER.map(async (column) => {
+          try {
+            const page = await listTasks(workspaceId, {
+              boardColumn: column,
+              priority: filters.priority,
+              agentId: filters.agentId,
+              limit: 1,
+            });
+            setColumns((prev) => ({
+              ...prev,
+              [column]: { ...prev[column], totalCount: page.totalCount },
+            }));
+          } catch {
+            /* 总数刷新失败不打断看板；下一次事件会再试 */
+          }
+        }),
+      );
+    }, 500);
+  }, [workspaceId, filters.priority, filters.agentId]);
+
+  useEffect(
+    () => () => {
+      if (totalsTimerRef.current !== null) {
+        window.clearTimeout(totalsTimerRef.current);
+      }
+    },
+    [],
+  );
 
   // ─── Watch：SSE Cursor Watch，断线按 Last-Event-ID 追赶 ───────────────
   const reconcileTask = useCallback(
@@ -240,13 +283,14 @@ export function WorkspaceTasksPanel({ workspaceId }: WorkspaceTasksPanelProps) {
           };
         });
         reconcileTask(event.taskId);
+        refreshTotals();
       },
     }).catch(() => {
       /* HTTP 400/401/403/404/409 不重连，静默停止 */
     });
 
     return () => controller.abort();
-  }, [workspaceId, reconcileTask]);
+  }, [workspaceId, reconcileTask, refreshTotals]);
 
   // ─── 加载更多 ─────────────────────────────────────────────────────────
   const loadMore = useCallback(
@@ -271,6 +315,7 @@ export function WorkspaceTasksPanel({ workspaceId }: WorkspaceTasksPanelProps) {
             ...prev[column],
             items: [...prev[column].items, ...page.items],
             nextCursor: page.nextCursor,
+            totalCount: page.totalCount,
             loadingMore: false,
             hasMore: page.nextCursor !== null,
           },
