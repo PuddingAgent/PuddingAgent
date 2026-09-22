@@ -55,6 +55,13 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
 
         if (!response.IsSuccessStatusCode)
         {
+            // 部分 provider 账号只接受 stream:true 的 Responses 请求（实测 fastrouter 的
+            // gpt-6-astra / gpt-5.6-sol 路由返回 BadRequest + non_stream_not_allowed）。
+            // 自我修复式回退：用 stream:true 重发同一请求，把 SSE 流聚合成 LlmResponse 返回，
+            // 无需改动共享 provider 配置。只有该信号触发回退，其他错误保持原样 fail closed。
+            if (IsNonStreamNotAllowedError(json))
+                return await ChatViaStreamingFallbackAsync(messages, tools, ct);
+
             throw new HttpRequestException(
                 $"LLM Responses API error ({response.StatusCode}): {json}",
                 inner: null,
@@ -62,6 +69,89 @@ public sealed class ResponsesLlmGateway(HttpClient httpClient, LlmOptions option
         }
 
         return ParseResponsesResponse(json);
+    }
+
+    /// <summary>
+    /// 识别 provider 错误响应是否为「账号只接受流式」信号。只做保守匹配：错误体中出现
+    /// <c>non_stream_not_allowed</c>（大小写不敏感）即判定，其余一律 false。
+    /// 不解析 JSON：该信号在 code 与 message 两处都可能出现，且错误体不保证是合法 JSON。
+    /// </summary>
+    private static bool IsNonStreamNotAllowedError(string errorJson)
+        => !string.IsNullOrWhiteSpace(errorJson)
+           // ⚠️ 先用 ToLowerInvariant 归一，再做序数比较：不依赖 Contains 的重载语义/构建产物状态，
+           // 使判定在任何构建下都确定地大小写不敏感（实测 provider 发的是全小写，但错误体大小写
+           // 属第三方实现细节，不得因大小写而静默退化为 fail closed）。
+           && errorJson.ToLowerInvariant().Contains("non_stream_not_allowed", StringComparison.Ordinal);
+
+    /// <summary>
+    /// 非流式请求被 provider 以「只接受流式」拒绝时的回退：用 stream:true 重发同一请求，
+    /// 复用 <see cref="ChatStreamAsync"/> 的 SSE 解析语义，把 delta 流聚合成一个
+    /// <see cref="LlmResponse"/>。聚合规则与非流式 <see cref="ParseResponsesResponse"/> 对齐：
+    /// 文本/推理按序拼接；工具调用按 <see cref="StreamDelta.ToolCallIndex"/> 分组，id 取最后非空值，
+    /// 名称与参数逐段拼接；usage 与 continuationState 取最后一个非空值。
+    /// 截断（length/incomplete）时不暴露工具调用，与非流式 isIncomplete 分支一致
+    /// （参数 JSON 可能不完整，不得进入执行）。
+    /// </summary>
+    private async Task<LlmResponse> ChatViaStreamingFallbackAsync(
+        IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ITool> tools,
+        CancellationToken ct)
+    {
+        var content = new StringBuilder();
+        var reasoning = new StringBuilder();
+        var accumulatedToolCalls = new List<AccumulatedToolCall>();
+        TokenUsageDto? usage = null;
+        LlmContinuationState? continuationState = null;
+        var toolCallsExecutable = true;
+
+        await foreach (var delta in ChatStreamAsync(messages, tools, ct))
+        {
+            if (delta.ContentDelta is { Length: > 0 })
+                content.Append(delta.ContentDelta);
+            if (delta.ReasoningDelta is { Length: > 0 })
+                reasoning.Append(delta.ReasoningDelta);
+            if (delta.ToolCallIndex.HasValue)
+                AccumulateStreamedToolCall(accumulatedToolCalls, delta);
+            if (delta.Usage is not null)
+                usage = delta.Usage;
+            if (delta.ContinuationState is not null)
+                continuationState = delta.ContinuationState;
+            if (delta.FinishReason is "length" or "incomplete")
+                toolCallsExecutable = false;
+        }
+
+        IReadOnlyList<ToolCall>? toolCalls = toolCallsExecutable && accumulatedToolCalls.Count > 0
+            ? accumulatedToolCalls
+                .Select(call => new ToolCall(call.Id, call.Name, call.Arguments))
+                .ToList()
+            : null;
+
+        return new LlmResponse(
+            content.ToString(),
+            toolCalls,
+            reasoning.Length > 0 ? reasoning.ToString() : null,
+            usage,
+            continuationState);
+    }
+
+    /// <summary>
+    /// 与 AgentExecutionService 的流式工具调用累积语义一致：按 index 分组，
+    /// id 覆盖取最后非空值，名称与参数逐段拼接。
+    /// </summary>
+    private static void AccumulateStreamedToolCall(
+        List<AccumulatedToolCall> accumulated, StreamDelta delta)
+    {
+        var index = delta.ToolCallIndex!.Value;
+        while (accumulated.Count <= index)
+            accumulated.Add(new AccumulatedToolCall { Index = accumulated.Count });
+
+        var call = accumulated[index];
+        if (delta.ToolCallId is not null)
+            call.Id = delta.ToolCallId;
+        if (delta.ToolCallNameDelta is not null)
+            call.Name += delta.ToolCallNameDelta;
+        if (delta.ToolCallArgsDelta is not null)
+            call.Arguments += delta.ToolCallArgsDelta;
     }
 
     public async IAsyncEnumerable<StreamDelta> ChatStreamAsync(

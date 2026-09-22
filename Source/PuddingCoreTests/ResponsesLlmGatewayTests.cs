@@ -909,6 +909,104 @@ data:[DONE]
         Assert.AreEqual(expectedPath, requestUri!.AbsolutePath);
     }
 
+    [TestMethod]
+    public async Task ChatAsync_SuccessResponse_DoesNotUseStreamingFallback()
+    {
+        var requestBodies = new List<string>();
+        var gateway = CreateGateway(request =>
+        {
+            requestBodies.Add(ReadBody(request));
+            return OkResponsesResponse();
+        });
+
+        var response = await gateway.ChatAsync([new ChatMessage(ChatRole.User, "hello")], []);
+
+        Assert.AreEqual(1, requestBodies.Count, "成功响应不得触发任何重发");
+        Assert.IsFalse(JsonNode.Parse(requestBodies[0]!)!["stream"]!.GetValue<bool>());
+        Assert.AreEqual("ok", response.Content);
+    }
+
+    [TestMethod]
+    [DataRow("non_stream_not_allowed")]
+    [DataRow("NON_STREAM_NOT_ALLOWED")]
+    public async Task ChatAsync_StreamingOnlyAccount_FallsBackToStreamingAndAggregates(string errorCode)
+    {
+        // 实测 fastrouter 的原样拒绝体（这里只改变 code 的大小写，用于验证匹配大小写不敏感）：
+        // {"error":{"code":"non_stream_not_allowed","message":"This account only accepts streaming conversation requests.","type":"invalid_request_error"}}
+        var errorJson = """
+            {"error":{"code":"CODE_TOKEN","message":"This account only accepts streaming conversation requests.","type":"invalid_request_error"}}
+            """.Replace("CODE_TOKEN", errorCode, StringComparison.Ordinal);
+        const string sse = """
+            data:{"type":"response.reasoning_text.delta","delta":"thinking"}
+
+            data:{"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":""}}
+
+            data:{"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":1,"delta":"[1,"}
+
+            data:{"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":1,"delta":"2]"}
+
+            data:{"type":"response.function_call_arguments.done","item_id":"fc_1","output_index":1,"name":"lookup","arguments":"[1,2]"}
+
+            data:{"type":"response.output_text.delta","delta":"hello "}
+
+            data:{"type":"response.output_text.delta","delta":"world"}
+
+            data:{"type":"response.completed","response":{"status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"hello world"}]},{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":"[1,2]"}],"usage":{"input_tokens":7,"output_tokens":3,"total_tokens":10}}}
+
+            data:[DONE]
+
+            """;
+        var requestBodies = new List<string>();
+        var gateway = CreateGateway(request =>
+        {
+            requestBodies.Add(ReadBody(request));
+            return requestBodies.Count == 1
+                ? new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent(errorJson, Encoding.UTF8, "application/json"),
+                }
+                : SseResponse(sse);
+        });
+
+        var response = await gateway.ChatAsync([new ChatMessage(ChatRole.User, "hello")], []);
+
+        Assert.AreEqual(2, requestBodies.Count, "被拒后应恰好用 stream:true 重发一次");
+        Assert.IsFalse(JsonNode.Parse(requestBodies[0]!)!["stream"]!.GetValue<bool>());
+        Assert.IsTrue(JsonNode.Parse(requestBodies[1]!)!["stream"]!.GetValue<bool>(), "回退请求必须显式 stream:true");
+        Assert.AreEqual("hello world", response.Content);
+        Assert.AreEqual("thinking", response.ReasoningContent);
+        var toolCall = response.ToolCalls!.Single();
+        Assert.AreEqual("call_1", toolCall.Id);
+        Assert.AreEqual("lookup", toolCall.Name);
+        Assert.AreEqual("[1,2]", toolCall.ArgumentsJson);
+        Assert.AreEqual(10, response.Usage!.TotalTokens);
+        Assert.AreEqual(2, response.ContinuationState!.OutputItemsJson.Count);
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_NonStreamingSignalAbsent_DoesNotFallBack()
+    {
+        var sendCount = 0;
+        var gateway = CreateGateway(_ =>
+        {
+            sendCount++;
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"error":{"code":"invalid_api_key","message":"bad key"}}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            };
+        });
+
+        var exception = await ThrowsHttpRequestExceptionAsync(
+            () => gateway.ChatAsync([new ChatMessage(ChatRole.User, "hello")], []));
+
+        Assert.AreEqual(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.AreEqual(1, sendCount, "只有 non_stream_not_allowed 信号才允许回退");
+        StringAssert.Contains(exception.Message, "invalid_api_key");
+    }
+
     private static async Task<List<StreamDelta>> ReadStreamAsync(ResponsesLlmGateway gateway)
     {
         var deltas = new List<StreamDelta>();
