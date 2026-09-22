@@ -12,6 +12,14 @@ namespace PuddingAgent.IntegrationTests.Feishu;
 [TestClass]
 public sealed class FeishuInboundPostTests
 {
+    /// <summary>
+    /// ADR-077 夹具：合法最小 PNG（1×1 透明，67 字节，IHDR/IDAT/IEND 完整）。
+    /// 保存路径以 <c>ImagePreprocessing.Inspect</c>（<c>SKCodec.Create</c> 真解码）做嗅探，
+    /// 只含 8 字节 PNG 签名的伪夹具必然抛 MediaInvalid，post 路径会逐图 catch 吞掉并丢弃该图。
+    /// </summary>
+    private static readonly byte[] ValidPngBytes = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
+
     [TestMethod]
     public async Task PostEvent_MapsMarkdownAndPreservesGatewayMetadata()
     {
@@ -340,8 +348,7 @@ public sealed class FeishuInboundPostTests
                 });
             }
 
-            var content = new ByteArrayContent(
-                [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+            var content = new ByteArrayContent(ValidPngBytes);
             content.Headers.ContentType = new("image/png");
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {

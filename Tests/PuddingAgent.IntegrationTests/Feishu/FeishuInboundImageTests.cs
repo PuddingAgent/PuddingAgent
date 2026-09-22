@@ -12,6 +12,14 @@ namespace PuddingAgent.IntegrationTests.Feishu;
 [TestClass]
 public sealed class FeishuInboundImageTests
 {
+    /// <summary>
+    /// ADR-077 夹具：合法最小 PNG（1×1 透明，67 字节，IHDR/IDAT/IEND 完整）。
+    /// 保存路径以 <c>ImagePreprocessing.Inspect</c>（<c>SKCodec.Create</c> 真解码）做嗅探，
+    /// 只含 8 字节 PNG 签名的伪夹具必然抛 MediaInvalid。
+    /// </summary>
+    private static readonly byte[] ValidPngBytes = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
+
     [TestMethod]
     public async Task ImageEvent_DownloadsOnceAndMapsToCanonicalVisionArtifactMetadata()
     {
@@ -82,8 +90,11 @@ public sealed class FeishuInboundImageTests
             var resolved = await storage.ResolveAsync("default", artifactId);
             Assert.IsNotNull(resolved);
             Assert.AreEqual("image/png", resolved.MimeType);
+            // 存储不重编码：VisionArtifactStorageService.SaveCoreAsync 只对临时字节执行
+            // Inspect 校验，落盘的是输入流原字节（VisionArtifactStorageService.cs:159-175、:178），
+            // 因此 data URI 仍是「输入夹具字节的 base64」——字节级等值断言强度不变。
             Assert.AreEqual(
-                "data:image/png;base64,iVBORw0KGgo=",
+                $"data:image/png;base64,{Convert.ToBase64String(ValidPngBytes)}",
                 resolved.Uri);
         }
         finally
@@ -138,8 +149,7 @@ public sealed class FeishuInboundImageTests
                 });
             }
 
-            var content = new ByteArrayContent(
-                [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+            var content = new ByteArrayContent(ValidPngBytes);
             content.Headers.ContentType = new("image/png");
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {

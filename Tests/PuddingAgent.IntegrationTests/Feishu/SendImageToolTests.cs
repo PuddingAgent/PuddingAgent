@@ -20,6 +20,14 @@ namespace PuddingAgent.IntegrationTests.Feishu;
 [TestClass]
 public sealed class SendImageToolTests
 {
+    /// <summary>
+    /// ADR-077 夹具：合法最小 PNG（1×1 透明，67 字节，IHDR/IDAT/IEND 完整）。
+    /// 保存路径以 <c>ImagePreprocessing.Inspect</c>（<c>SKCodec.Create</c> 真解码）做嗅探，
+    /// 只含 4 字节 PNG 签名的伪夹具必然抛 MediaInvalid。
+    /// </summary>
+    private static readonly byte[] ValidPngBytes = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
+
     [TestMethod]
     public void GenerateImage_IsTemplateGrantedControlledNetworkOperation()
     {
@@ -60,8 +68,7 @@ public sealed class SendImageToolTests
             var artifacts = new VisionArtifactStorageService(
                 PuddingDataPaths.FromRoot(root),
                 NullLogger<VisionArtifactStorageService>.Instance);
-            await using var image =
-                new MemoryStream([0x89, 0x50, 0x4E, 0x47]);
+            await using var image = new MemoryStream(ValidPngBytes);
             var artifact = await artifacts.SaveAsync(
                 "default",
                 image,
