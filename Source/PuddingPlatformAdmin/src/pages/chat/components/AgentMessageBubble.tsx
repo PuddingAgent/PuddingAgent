@@ -420,15 +420,20 @@ const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({
 
   // 终态正文对齐（2026-09-23）：投影正文短于权威全文时，界面过去只渲染投影那份
   // （实测 800/2355 ⇒ 丢 1555 字符，而兜底气泡已被 hasProjectedTextBlocks 关闭）。
-  // 这里**仅在终态**把「投影拼接是权威全文前缀」所缺的尾段补到最后一个正文段；
+  // 这里**仅在终态**（且非错误/取消态）把「投影拼接是权威全文前缀」所缺的尾段补到最后一个正文段；
   // 非前缀一律不动（fail-closed，不猜）。对齐**不会新建节点**，因此
   // hasProjectedTextBlocks 的判定结果不受影响，正文仍只渲染一次、仍只一个正文区域。
+  const terminalForBodyAlignment = !isRunActive && !isError;
   const alignedProjection = React.useMemo(
     () =>
       alignTerminalBodyText(executionFlowProjection, content, {
-        terminal: !isRunActive,
+        // 错误/取消态**不介入**：该状态下诊断文本也会被写进 answerMarkdown，
+        // 若在此对齐会把诊断文本补进正文，与已有的错误摘要行形成重复。
+        terminal: terminalForBodyAlignment,
       }).projection,
-    [executionFlowProjection, content, isRunActive],
+    // 依赖派生布尔值（而非 isRunActive）：success→error 时 isRunActive 不变而
+    // isError 变，只依赖前者会命中陈旧 memo。
+    [executionFlowProjection, content, terminalForBodyAlignment],
   );
   const messageAgeMs = Math.max(0, Date.now() - createdAt);
   const shouldAnimateEntrance =

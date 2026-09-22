@@ -675,4 +675,21 @@ describe('AgentMessageBubble 正文渲染字符级完整性（缺陷 B 判定实
     const markdown = screen.getByTestId('message-item').getAttribute('data-markdown') ?? '';
     expect(markdown.length).toBe(BODY_TOTAL);
   });
+
+  it('④ 错误/取消态：不介入对齐（避免诊断文本与错误摘要行重复）', () => {
+    const truncated = FULL_BODY.slice(0, 800);
+    const projection = projectExecutionFlow(bodyEvents(truncated), {
+      turnId: 'turn-1',
+    });
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        status="error"
+        content={FULL_BODY}
+        executionFlowProjection={projection}
+      />,
+    );
+    // 错误态只渲染投影正文（800），**不**把权威全文的尾段补进来。
+    expect(renderedBodyText().length).toBe(800);
+  });
 });
