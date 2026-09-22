@@ -489,15 +489,15 @@ Desktop → Core Ready 契约（2026-08-28 增加冷升级启动租约）
 
 当前视觉链路（2026-09-12复核：ADR-077 V0–V3 已有实现；ADR-088收敛待实施）：typed image content part（`ContentPart{type=image, artifactId, detail}`）
   → ConversationAcceptanceStore 同事务写 `ChatMessages.ContentPartsJson`（v1 信封，Content 为文本拼接投影）
-  → ExecutionRunCoordinator 读 canonical parts + 冻结 AgentExecutionSnapshot（CapabilityTags/Protocol/VisionPolicy/VisionHelperRoute）
+  → ExecutionRunCoordinator 读 canonical parts + 冻结 AgentExecutionSnapshot（CapabilityTags/Protocol/VisionPolicy；VisionHelperRoute 已随 ADR-077 V2 去外挂化移除）
   → 主模型带 vision：ChatMessage.ContentParts 原生进入请求；文本模型只收 `artifact://` 占位并显式调用 image_reader
   → 已删除 VisualArtifactObservationService 自动预观察旁路（服务+注册+旧测试）
   → LlmVisualInputPlanner fail-closed；已有inline/Files两种路径，旧产品策略单图2MB转Files、inline聚合40MiB、默认8张和384估计由V5/V7纠偏，不作为当前各Provider通用限制
   → Responses：user `input_image`（detail original→high）；`function_call_output.output` 支持 [input_text, input_image] 数组
   → ChatCompletions/Anthropic 遇图片工具结果抛 vision_tool_output_not_supported
   → Image Reader（image_reader）：path 唯一必填（http(s) URL / 宿主绝对路径 / artifact://），Low 权限 ReadOnly|RequiresNetwork（2026-08-28 裁定：纯只读无写/删路径，免审直通）
-    → auto 优先 native（ToolExecutionResult.ToolContentParts 图片部件回交调用模型，零辅助 invocation）
-    → 文本调用模型或显式 mode=delegate 时用 manifest `visionHelperModel`（原 imageReaderModel 已改名）单次可归因 invocation
+    → 只有 native 一条路径（ADR-077 V2 去外挂化，2026-09）：ToolExecutionResult.ToolContentParts 图片部件回交调用模型，零辅助 LLM invocation；无 delegate/helper 回退
+    → 调用模型无视觉能力 ⇒ fail closed `vision_model_capability_mismatch`（工具输出明示 No helper model is used）；非 responses 协议 ⇒ `vision_tool_output_not_supported`；工具 schema 不提供 mode 参数
   → image_reader source resolver：URL 有界下载（每跳 SSRF/DNS 重校验、禁内网）、本地只读、内容哈希稳定 vision-* Artifact
   → DB 水合经 MessageEntity.AttachmentsJson 恢复图片 part；Snapshot 工厂冻结能力，单一判定来源
   → V3 Files已实现上传、持久remote ref与过期恢复；V4当前真实模型smoke与进程外验收待做。V7进一步收敛流式读取、多Provider传输、全请求预算和引用生命周期

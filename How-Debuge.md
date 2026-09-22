@@ -1615,14 +1615,15 @@ ADR-077（2026-08-23）后图片链路是 typed content parts + fail-closed Plan
    表示冻结判定为原生视觉：用户附图直接进入请求，正常路径不应出现任何辅助视觉 `[LlmInvocation]`
    （ADR-077 要求 `vision_auxiliary_llm_invocation_count=0`）。
 3. 文本主模型（`vision=0`）只收到消息正文中的 `artifact://vision-...` 占位与 image_reader 引导；
-   它显式调用 `image_reader` 时才会出现一条 `[ImageReader] Loaded source=... mode=delegate` +
-   helper `[LlmInvocation]`（精确一次，provenance 在工具输出 `helper=provider/model invocation=...`）。
-   未配置 helper 时返回 `vision_helper_model_required`（manifest 字段已改名 `visionHelperModel`）。
+   它显式调用 `image_reader` 会被 fail closed（`vision_model_capability_mismatch`，工具输出明示
+   No helper model is used）：**不会**出现任何辅助视觉 `[LlmInvocation]`，也不存在 delegate/helper 回退
+   （ADR-077 V2 去外挂化；manifest 的 `visionHelperModel` 即使配置也不再影响 image_reader）。
 4. 任何图片缺失/超限都不再静默降级为纯文本：`LlmVisualInputPlanner` 抛 ADR-077 §9.1 稳定错误码
    （`vision_artifact_missing`/`vision_request_limit_exceeded`/`vision_model_capability_mismatch` 等），
    SubmitTurn 受理层映射为 404/413/400/403。>2MB 单图在 Files API（V3）落地前按
    `vision_request_limit_exceeded` fail closed。
-5. `image_reader` 本身是取图工具（path 唯一必填：http(s) URL/宿主绝对路径/`artifact://`；High 权限）：
+5. `image_reader` 本身是取图工具（path 唯一必填：http(s) URL/宿主绝对路径/`artifact://`；Low 权限，
+   2026-08-28 由 High 降级 ⇒ ReadOnly 免审直通）：
    URL 下载每跳 SSRF 重校验，内网/环回地址返回 `vision_source_access_denied`；本地文件只读打开、
    内容哈希固化 `vision-*` Artifact，原文件不动。
 
