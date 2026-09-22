@@ -476,7 +476,12 @@ public static partial class PuddingServiceCollectionExtensions
         // 的全部删除都经它串行执行；StorageInventorySampler 是只读 reader 不占 writer。
         builder.Services.AddSingleton<StorageRetentionPolicyService>();
         builder.Services.AddSingleton<StorageInventorySnapshotStore>();
-        builder.Services.AddHostedService<StorageInventorySampler>();
+        // StorageInventorySampler 既作为 hosted service 运行，也被 StorageAdminController 直接注入具体类型；
+        // 必须先以具体类型注册单例，再由该单例派生 IHostedService —— .NET 的 AddHostedService<T>()
+        // 只注册 IHostedService 服务类型，不注册具体类型 T（只写它会让控制器激活时报
+        // "Unable to resolve service for type ..."，端点全 500）。
+        builder.Services.AddSingleton<StorageInventorySampler>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<StorageInventorySampler>());
         builder.Services.AddSingleton<StorageMaintenanceJobStore>();
         builder.Services.AddSingleton<StorageCleanupExecutor>();
         builder.Services.AddSingleton<StorageMaintenanceCoordinator>();
