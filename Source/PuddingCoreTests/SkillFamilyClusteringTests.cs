@@ -97,6 +97,30 @@ public sealed class SkillFamilyClusteringTests
     }
 
     [TestMethod]
+    public void Cluster_ShouldPickTheSameNameVariant_RegardlessOfInputOrder()
+    {
+        // ⭐ D8 变异 M-I1b 的取红载体：入口的**规范化排序**此前没有任何断言保护。
+        // 同一技能的大小写变体若名称不同，token 集合就不同 ⇒ 家族键会随输入顺序漂移；
+        // 只有“先按 id 排序、再去重（首个胜出）”能让结果与输入顺序无关。
+        var variants = new[]
+        {
+            Subject("S-1", "alpha beta"),
+            Subject("s-1", "gamma delta"),
+        };
+
+        var forward = SkillFamilyClusterer.Cluster(variants, Policy(threshold: 0.3));
+        var reversed = SkillFamilyClusterer.Cluster(variants.Reverse().ToArray(), Policy(threshold: 0.3));
+
+        Assert.AreEqual(1, forward.Count, "同一技能的大小写变体必须先合并成一个成员。");
+        Assert.AreEqual(1, reversed.Count);
+        Assert.AreEqual(
+            forward[0].FamilyKey,
+            reversed[0].FamilyKey,
+            "两个变体的名称逐字不同 ⇒ 入口若不做规范化排序，家族键会随输入顺序漂移。");
+        CollectionAssert.AreEqual(forward[0].Members.ToArray(), reversed[0].Members.ToArray());
+    }
+
+    [TestMethod]
     public void Cluster_ShouldKeepIsolatedSubjects_AsSingleMemberFamilies()
     {
         var clusters = SkillFamilyClusterer.Cluster(
