@@ -11,6 +11,10 @@ import { Avatar, Tooltip } from 'antd';
 import dayjs from 'dayjs';
 import React from 'react';
 import { useChatMessageStyles } from '../styles/messageStyleContext';
+import {
+  ImagePreviewOverlay,
+  type PreviewImageItem,
+} from './ImagePreviewOverlay';
 
 interface UserMessageBubbleProps {
   content: string;
@@ -64,9 +68,11 @@ interface VisionImageItemProps {
   artifactId: string;
   src?: string;
   alt: string;
-  /** single：单图 240px 长边；tile：64px 方块 */
-  variant: 'single' | 'tile';
+  /** single：单图 240px 长边；stack：多图纵向排列的展示块 */
+  variant: 'single' | 'stack';
   index: number;
+  /** 点击图片放大（失败占位态不触发）。 */
+  onOpen?: () => void;
 }
 
 /**
@@ -79,6 +85,7 @@ const VisionImageItem: React.FC<VisionImageItemProps> = ({
   alt,
   variant,
   index,
+  onOpen,
 }) => {
   const { styles } = useChatMessageStyles();
   const [dims, setDims] = React.useState<{
@@ -140,15 +147,31 @@ const VisionImageItem: React.FC<VisionImageItemProps> = ({
   }
 
   const isLoading = !failed && dims === null;
+  const canZoom = !failed && Boolean(onOpen);
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: 点击图片放大是预期交互，键盘等价物为 Enter/Space。
     <div
       className={
-        variant === 'single' ? styles.userVisionImageSingle : styles.userVisionTile
+        variant === 'single' ? styles.userVisionImageSingle : styles.userVisionThumb
       }
       style={frameStyle}
       data-testid={
-        variant === 'single' ? 'user-vision-single' : `user-vision-tile-${index}`
+        variant === 'single' ? 'user-vision-single' : `user-vision-thumb-${index}`
+      }
+      role={canZoom ? 'button' : undefined}
+      tabIndex={canZoom ? 0 : undefined}
+      aria-label={canZoom ? `放大查看 ${alt}` : undefined}
+      onClick={canZoom ? onOpen : undefined}
+      onKeyDown={
+        canZoom
+          ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onOpen?.();
+              }
+            }
+          : undefined
       }
     >
       {isLoading ? (
@@ -161,7 +184,11 @@ const VisionImageItem: React.FC<VisionImageItemProps> = ({
         <button
           type="button"
           className={styles.userVisionRetryBtn}
-          onClick={handleRetry}
+          onClick={(event) => {
+            // 失败占位里的重试不得冒泡成「放大预览」。
+            event.stopPropagation();
+            handleRetry();
+          }}
           aria-label={`重新加载图片 ${index + 1}`}
           data-testid={`user-vision-retry-${index}`}
         >
@@ -176,7 +203,7 @@ const VisionImageItem: React.FC<VisionImageItemProps> = ({
           className={
             variant === 'single'
               ? styles.userVisionImageSingleImg
-              : styles.userVisionTileImg
+              : styles.userVisionThumbImg
           }
           onLoad={handleLoad}
           onError={handleError}
@@ -243,6 +270,18 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
         : undefined,
     [workspaceId],
   );
+
+  // 全屏预览图集：与 artifactIds 保持 1:1 下标对应（点击第 N 张就开第 N 张）。
+  const previewItems = React.useMemo<PreviewImageItem[]>(
+    () =>
+      artifactIds.map((artifactId, index) => ({
+        src: visionSrcFor(artifactId) ?? '',
+        alt: `${content || '用户上传图片'} ${index + 1}/${artifactIds.length}`,
+      })),
+    [artifactIds, content, visionSrcFor],
+  );
+  // null = 未打开；下标即当前预览项。
+  const [previewIndex, setPreviewIndex] = React.useState<number | null>(null);
 
   // P1-4: 失败态 title 错误详情 —— 优先 metadata.error，缺省通用文案
   const errorDetail = React.useMemo(() => {
@@ -328,25 +367,27 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
             {isVisionModality ? (
               <div className={styles.userVisionImageWrap}>
                 {artifactIds.length === 1 ? (
-                  // P1-5: 单图 → 240px 长边展示盒
+                  // P1-5: 单图 → 240px 长边展示盒（点击进入全屏预览）
                   <VisionImageItem
                     artifactId={artifactIds[0]}
-                    src={visionSrcFor(artifactIds[0])}
+                    src={previewItems[0]?.src}
                     alt={`${content || '用户上传图片'} 1/1`}
                     variant="single"
                     index={0}
+                    onOpen={() => setPreviewIndex(0)}
                   />
                 ) : artifactIds.length > 1 ? (
-                  // P1-5: 多图（≥2）→ 64px 方块 tile 网格
-                  <div className={styles.userVisionTileGrid}>
+                  // 2026-09-22: 多图（≥2）→ 上下排列（原 64px tile 网格太小时看不出内容）
+                  <div className={styles.userVisionColumn}>
                     {artifactIds.map((artifactId, index) => (
                       <VisionImageItem
                         key={artifactId}
                         artifactId={artifactId}
-                        src={visionSrcFor(artifactId)}
+                        src={previewItems[index]?.src}
                         alt={`${content || '用户上传图片'} ${index + 1}/${artifactIds.length}`}
-                        variant="tile"
+                        variant="stack"
                         index={index}
+                        onOpen={() => setPreviewIndex(index)}
                       />
                     ))}
                   </div>
@@ -392,6 +433,14 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
           )}
         </div>
       </div>
+      {previewIndex !== null ? (
+        <ImagePreviewOverlay
+          items={previewItems}
+          index={previewIndex}
+          onIndexChange={setPreviewIndex}
+          onClose={() => setPreviewIndex(null)}
+        />
+      ) : null}
     </div>
   );
 };

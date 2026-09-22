@@ -178,7 +178,24 @@ describe('UserMessageBubble vision images (P1-5)', () => {
     expect(singleImageFit(100, 50)).toEqual({ width: 100, height: 50 });
   });
 
-  it('renders multi-image attachments as 64px tiles', () => {
+  it('stacks multi-image attachments vertically and keeps every image clickable', () => {
+    const { container } = renderBubble({
+      content: '比较图片',
+      modality: 'image',
+      visionArtifactIds: ['vision-a', 'vision-b', 'vision-c'],
+      workspaceId: 'default',
+    });
+
+    expect(screen.getByTestId('user-vision-thumb-0')).toBeTruthy();
+    expect(screen.getByTestId('user-vision-thumb-1')).toBeTruthy();
+    expect(screen.getByTestId('user-vision-thumb-2')).toBeTruthy();
+    expect(screen.getAllByAltText(/比较图片 \d\/3/)).toHaveLength(3);
+    // 2026-09-22：多图改上下排列（单列容器），旧的 64px tile 网格已退场
+    expect(container.querySelector('.userVisionColumn')).toBeTruthy();
+    expect(container.querySelector('.userVisionTileGrid')).toBeNull();
+  });
+
+  it('opens the full-screen preview at the clicked image index', () => {
     renderBubble({
       content: '比较图片',
       modality: 'image',
@@ -186,10 +203,62 @@ describe('UserMessageBubble vision images (P1-5)', () => {
       workspaceId: 'default',
     });
 
-    expect(screen.getByTestId('user-vision-tile-0')).toBeTruthy();
-    expect(screen.getByTestId('user-vision-tile-1')).toBeTruthy();
-    expect(screen.getByTestId('user-vision-tile-2')).toBeTruthy();
-    expect(screen.getAllByAltText(/比较图片 \d\/3/)).toHaveLength(3);
+    expect(screen.queryByTestId('image-preview-overlay')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('user-vision-thumb-1'));
+
+    expect(
+      (screen.getByTestId('image-preview-image') as HTMLImageElement).getAttribute(
+        'src',
+      ),
+    ).toContain('vision-b');
+    expect(screen.getByTestId('image-preview-counter').textContent).toContain(
+      '2 / 3',
+    );
+
+    // 预览内切换不影响会话内的缩略图
+    fireEvent.click(screen.getByTestId('image-preview-next'));
+    expect(
+      (screen.getByTestId('image-preview-image') as HTMLImageElement).getAttribute(
+        'src',
+      ),
+    ).toContain('vision-c');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('image-preview-overlay')).toBeNull();
+  });
+
+  it('opens the full-screen preview from a single image without multi-image navigation', () => {
+    renderBubble({
+      content: '单图放大',
+      modality: 'image',
+      visionArtifactId: 'vision-solo',
+      workspaceId: 'default',
+    });
+
+    fireEvent.click(screen.getByTestId('user-vision-single'));
+
+    expect(
+      (screen.getByTestId('image-preview-image') as HTMLImageElement).getAttribute(
+        'src',
+      ),
+    ).toContain('vision-solo');
+    expect(screen.queryByTestId('image-preview-next')).toBeNull();
+  });
+
+  it('does not open the preview when clicking retry on a failed image', () => {
+    renderBubble({
+      content: '失败勿放大',
+      modality: 'image',
+      visionArtifactId: 'vision-fail-zoom',
+      workspaceId: 'default',
+    });
+
+    fireEvent.error(screen.getByAltText('失败勿放大 1/1') as HTMLImageElement);
+    fireEvent.click(screen.getByTestId('user-vision-retry-0'));
+
+    // 失败占位里的重试不得冒泡成「放大预览」
+    expect(screen.queryByTestId('image-preview-overlay')).toBeNull();
   });
 
   it('shows a retry control on load failure and reloads with cache-bust on click', () => {
@@ -212,7 +281,7 @@ describe('UserMessageBubble vision images (P1-5)', () => {
     expect(screen.getByTestId('user-vision-loading-0')).toBeTruthy();
   });
 
-  it('keeps a failed tile placeholder the same 64px box (does not expand layout)', () => {
+  it('keeps a failed thumbnail placeholder the same box (does not expand layout)', () => {
     const { container } = renderBubble({
       content: '多图失败',
       modality: 'image',
@@ -225,9 +294,9 @@ describe('UserMessageBubble vision images (P1-5)', () => {
     fireEvent.error(img0);
     fireEvent.error(img1);
 
-    // 失败后仍是 tile 容器（64px 方块），未退化为小图标/文字行
-    const tile = container.querySelector('.userVisionTile') as HTMLElement;
-    expect(tile).toBeTruthy();
+    // 失败后仍是缩略图容器（不裁切、不抛大），未退化为小图标/文字行
+    const thumb = container.querySelector('.userVisionThumb') as HTMLElement;
+    expect(thumb).toBeTruthy();
     expect(screen.getByTestId('user-vision-retry-0')).toBeTruthy();
     expect(screen.getByTestId('user-vision-retry-1')).toBeTruthy();
   });

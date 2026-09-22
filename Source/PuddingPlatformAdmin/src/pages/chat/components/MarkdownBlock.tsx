@@ -8,6 +8,7 @@ import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { recordPerfEvent } from '@/utils/perfEventRuntime';
+import { ZoomableImage } from './ImagePreviewOverlay';
 
 interface MarkdownBlockProps {
   markdownText: string;
@@ -230,14 +231,14 @@ function sharedComponents(
             `/api/workspaces/${encodeURIComponent(workspaceId)}` +
             `/vision-artifacts/${encodeURIComponent(artifactId)}`;
           return (
-            <span className={styles.artifactImageWrap}>
-              <img
-                className={styles.artifactImage}
-                src={source}
-                alt="Agent 生成的图片"
-                loading="lazy"
-              />
-            </span>
+            // 点击放大查看原图（Agent 生成的图片往往很大，会话内缩略看不清）。
+            <ZoomableImage
+              src={source}
+              alt="Agent 生成的图片"
+              wrapperClassName={styles.artifactImageWrap}
+              imgClassName={styles.artifactImage}
+              loading="lazy"
+            />
           );
         }
       }

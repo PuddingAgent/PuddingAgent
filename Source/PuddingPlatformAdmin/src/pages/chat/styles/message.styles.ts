@@ -299,6 +299,7 @@ export const useMessageStyles = createStyles(({ token }) => ({
     background:
       'color-mix(in srgb, var(--accent-purple) 4%, var(--soft-white))',
     contain: 'layout style',
+    cursor: 'zoom-in' as const,
   },
   /** 单图 img：填满 clamp 后的展示盒，cover 裁切锚定左上 */
   userVisionImageSingleImg: {
@@ -311,21 +312,23 @@ export const useMessageStyles = createStyles(({ token }) => ({
     objectPosition: 'top left' as const,
     borderRadius: 8,
   },
-  /** 多图（≥2）：64px 方块 tile 网格，gap 10 */
-  userVisionTileGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, 64px)',
-    gap: 10,
-    justifyContent: 'flex-start',
-    maxWidth: '100%',
+  /**
+   * 多图（≥2）：上下排列（gap 6），每张最大 280×200 完整展示。
+   * 2026-09-22：原为 64px 方块 tile 网格 —— 缩略太小时多图基本看不出内容，
+   * 现改为纵向排列 + contain（不裁切）；点击任意一张进入全屏预览。
+   */
+  userVisionColumn: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 6,
+    maxWidth: 280,
   },
-  userVisionTile: {
+  userVisionThumb: {
     position: 'relative' as const,
     display: 'grid',
     placeItems: 'center',
-    width: 64,
-    height: 64,
-    minWidth: 64,
+    width: '100%',
+    maxWidth: 280,
     minHeight: 64,
     borderRadius: 8,
     overflow: 'hidden' as const,
@@ -334,12 +337,14 @@ export const useMessageStyles = createStyles(({ token }) => ({
     background:
       'color-mix(in srgb, var(--accent-purple) 4%, var(--soft-white))',
     contain: 'layout style',
+    cursor: 'zoom-in' as const,
   },
-  userVisionTileImg: {
+  userVisionThumbImg: {
     display: 'block',
     width: '100%',
-    height: '100%',
-    objectFit: 'cover' as const,
+    maxWidth: 280,
+    maxHeight: 200,
+    objectFit: 'contain' as const,
     borderRadius: 8,
   },
   /** 加载占位：浅色 shimmer；reduced-motion 降级为静态浅块 */
