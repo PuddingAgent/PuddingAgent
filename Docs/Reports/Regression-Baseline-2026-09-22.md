@@ -32,7 +32,11 @@
 
 **无基线**：`Tests/PuddingBrowser.WebView2.Smoke` 不是测试工程，`dotnet test` 仅还原即退出 0；其冒烟能力只能人工运行 Exe。
 
-**尚未跑**：`external/github.hyfree.GM/github.hyfree.GMTests`（确为测试工程，首轮清单遗漏）。
+**`external/github.hyfree.GM/github.hyfree.GMTests`：无法构成基线（已证，2026-09-22 13:55 补测）**
+- 它是**嵌套的独立 git 仓库**（`external/github.hyfree.GM/.git` 存在；`git ls-files external/github.hyfree.GM` 仅 1 条）⇒ **属独立仓库，不在本仓的测试矩阵内**，且按只读约束不修。
+- **当前无法编译**（实测 `dotnet test` 退出码 1）：`GMServiceTests.cs(199,20): error CS0117: "Assert"未包含"ThrowsException"的定义`。原因是该工程 `TargetFramework=net10.0` + `MSTest.TestFramework 4.2.1`，而 **MSTest 4.x 已移除 `Assert.ThrowsException`**（应改用 `Assert.Throws<T>`）；全工程该 API 仅 **1 处**用量。
+- 另有 `warning NU1504: 重复 PackageReference （coverlet.collector 6.* 与 10.0.0）`。
+- ⇒ **结论：该工程当前无任何测试基线可产（编译失败），且不属本仓职责范围**；如要修，属其自身 owner 的范围（两处小修：`ThrowsException` → `Throws`、去重复 PackageReference）。
 
 ## 二、已修复（1）
 
