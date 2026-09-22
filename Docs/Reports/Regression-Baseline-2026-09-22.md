@@ -58,8 +58,11 @@
 | `ContextPipeline_ShouldTriggerGentleCompaction` | `:753` | `System.InvalidOperationException: Sequence contains no matching element` |
 | `EnvironmentLayer_ShouldBePresentInAssemblyResult` | `:798` | `Assert.IsNotNull 失败：'envLayer'` |
 
-- **根因＝契约冻结滞后**：测试断言**中文层名**（`静态上下文`/`环境信息`/`动态工具`/`动态技能`/`用户偏好`/`当前消息`/`运行时指令`，见 `:660-674`），而现行 pipeline 层名早已是 **ASCII id**（`L0-STATIC`/`L0-ENVIRONMENT`/`L1-TOOLS`/`L2-SKILLS`/`L9-INBOUND`；参见 `PuddingRuntimeTests/Services/TaskPlannerContextBuilderTests.cs:122` 断言 `L0-ENVIRONMENT`、`ContextAssemblyEventEmissionTests.cs:98` `LayerName = "L0-STATIC"`）。
-- **已证非今日回归**：`git log -S "L0-ENVIRONMENT"` → `67af387`(**2026-08-18**)/`99860e2`(08-11)；`静态上下文` 最后出现于 `99860e2`(08-11)；`git log -S "环境信息" --since=2026-09-20 -- Source/` **为空**；`MemoryLibraryTests.cs` 最后改动 `717e1ce`(**2026-08-27**)。
+- **根因＝契约冻结滞后（已证；⚠️ 2026-09-22 14:05 更正措辞）**：测试断言的是**上一代层名**（`静态上下文`/`环境信息`/`动态工具`/`动态技能`/`用户偏好`/`当前消息`/`运行时指令`，见 `:660-674`）。现行 pipeline 的实际形态是**「显示名 + ASCII id」双轨**（父级抽验命中 `PuddingRuntime/Services/ContextPipelineOrchestrator.cs`）：`:61` `RecordLayer(sb, staticCtx, "静态上下文", "L0-STATIC", …)`、`:65` `"运行环境不变量", "L0-ENVIRONMENT"`、`:114` `"工具使用规则", "L1-TOOLS"`、`:120` `"技能使用规则", "L2-SKILLS"`、`:145` `new ContextLayerSnapshot("历史上下文", …)`。
+  ⇒ 精确表述：**部分层的显示名已换代**（`环境信息`→`运行环境不变量`、`动态工具`→`工具使用规则`、`动态技能`→`技能使用规则`、…），且每层**另带 ASCII id**；`L0-STATIC` 的显示名 `静态上下文` **至今未变**（故该条断言未必是失败点——实测首个失败断言确为 `"环境信息"`，与此一致）。
+  （本节初稿曾写「现行 pipeline 层名早已是 ASCII id」，**与 `:61/:65` 直接矛盾，特此更正**。）
+- **已证非今日回归**：`git log -S "L0-ENVIRONMENT"` → `67af387`(**2026-08-18**)/`99860e2`(08-11)；`git log -S "静态上下文"`（父级抽验）→ 最近命中 `99860e2`(08-11，partial-class 拆分**搬迁**该字面量)；`git log -S "环境信息" --since=2026-09-20 -- Source/` **为空**；`MemoryLibraryTests.cs` 最后改动 `717e1ce`(**2026-08-27**)。
+  > ⚠️ **口径更正（2026-09-22 14:05）**：本节初稿把 `-S` 的最近命中写成「`静态上下文` **最后出现于** `99860e2`」——**错误**。`git log -S` 命中的是「该字符串**出现次数发生变化**的提交」，**不等于最后一次出现**；该字面量**至今仍在** `ContextPipelineOrchestrator.cs:61`。**引用 `-S` 结论时必须写成「计数变化点」，不能写成「最后出现」。**
 - **修复建议**：改用具名 ASCII id，或引入「中文→id」映射常量，避免再次改名时二次失效。
 - **为何未直接修**：该测试工程今日仍被 rsi/G4 线活跃改写（最新 `afac60a`），抢改存在合并冲突与责任归属问题 ⇒ 交该线 owner。
 - 同类先例：`239c76b`（2026-09-21）「test(core): 修复 7 例既有红测试（契约冻结滞后）」。
