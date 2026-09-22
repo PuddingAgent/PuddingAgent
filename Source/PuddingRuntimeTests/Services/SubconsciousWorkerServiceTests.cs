@@ -850,6 +850,19 @@ public sealed class SubconsciousWorkerServiceTests
     public static long RhythmExpectedBucket(int intervalSeconds) =>
         RhythmFixedNow.UtcTicks / TimeSpan.FromSeconds(intervalSeconds).Ticks;
 
+    /// <summary>只启用堆积条件的策略（关掉非工作时段以隔离堆积分支）。</summary>
+    public static PuddingCode.Configuration.SubconsciousRhythmPolicy BacklogOnlyPolicy(
+        int backlogShortenIntervalSeconds) =>
+        PuddingCode.Configuration.SubconsciousRhythmPolicy.Create(
+            policyId: "test.rhythm.backlog",
+            version: 1,
+            offPeakPriorityEnabled: false,
+            offPeakWindowStart: null,
+            offPeakWindowEnd: null,
+            offPeakIntervalSeconds: null,
+            backlogShortenIntervalSeconds: backlogShortenIntervalSeconds,
+            sourceLabel: "unit-test");
+
     public static Dictionary<string, int> RhythmExpectedIntervals() => new(StringComparer.Ordinal)
     {
         [SubconsciousJobTypes.AutoDream] = 3600,
@@ -877,7 +890,9 @@ public sealed class SubconsciousWorkerServiceTests
     }
 
     public static async Task<RecordingSubconsciousJobQueue> RunPeriodicLoopsAsync(
-        PuddingCode.Configuration.SubconsciousRhythmPolicy? rhythmPolicy)
+        PuddingCode.Configuration.SubconsciousRhythmPolicy? rhythmPolicy,
+        PuddingCode.Skills.Portfolio.ISkillPortfolioBacklogSignal? backlogSignal = null,
+        PuddingCode.Skills.Portfolio.SkillPortfolioPolicy? portfolioPolicy = null)
     {
         var queue = new RecordingSubconsciousJobQueue { DisableLeasing = true };
         var worker = new SubconsciousWorkerService(
@@ -887,13 +902,35 @@ public sealed class SubconsciousWorkerServiceTests
             jobQueue: queue,
             options: Options.Create(new SubconsciousOptions { Scheduling = RhythmHarness.RhythmLoopScheduling() }),
             timeProvider: new FixedTimeProvider(RhythmFixedNow),
-            rhythmPolicy: rhythmPolicy);
+            rhythmPolicy: rhythmPolicy,
+            backlogSignal: backlogSignal,
+            portfolioPolicy: portfolioPolicy);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await worker.StartAsync(cts.Token);
         await queue.AllPeriodicJobsEnqueued.Task.WaitAsync(cts.Token);
         await worker.StopAsync(CancellationToken.None);
         return queue;
+    }
+
+    /// <summary>固定启用数的堆积信号替身。</summary>
+    public sealed class FakeBacklogSignal(int? enabledCount)
+        : PuddingCode.Skills.Portfolio.ISkillPortfolioBacklogSignal
+    {
+        public int CallCount { get; private set; }
+
+        public ValueTask<int?> TryGetEnabledSkillCountAsync(string agentInstanceId, CancellationToken ct)
+        {
+            CallCount++;
+            return ValueTask.FromResult(enabledCount);
+        }
+    }
+
+    /// <summary>查询直接抛错的堆积信号替身（用于证明“信号失败 ⇒ 记未评估且不打断入队”）。</summary>
+    public sealed class ThrowingBacklogSignal : PuddingCode.Skills.Portfolio.ISkillPortfolioBacklogSignal
+    {
+        public ValueTask<int?> TryGetEnabledSkillCountAsync(string agentInstanceId, CancellationToken ct)
+            => throw new InvalidOperationException("backlog signal exploded");
     }
     }
 
@@ -970,7 +1007,7 @@ public sealed class SubconsciousWorkerServiceTests
                 expected[request.JobType].ToString(),
                 metadata["rhythm_configured_interval_seconds"]);
             Assert.AreEqual("true", metadata["rhythm_off_peak"]);
-            Assert.AreEqual("false", metadata["rhythm_backlog"]); // D5 未接线 ⇒ 恒 false（诚实边界）
+            Assert.AreEqual("not_evaluated", metadata["rhythm_backlog"]); // 未注入堆积信号 ⇒ 未评估（⛔ 不是 false）
             Assert.AreEqual("true", metadata["rhythm_shortened"]);
             Assert.AreEqual(
                 PuddingCode.Configuration.SubconsciousRhythmReasonCodes.OffPeak,
@@ -983,6 +1020,106 @@ public sealed class SubconsciousWorkerServiceTests
                     ":" + RhythmHarness.RhythmExpectedBucket(expected[request.JobType]),
                     StringComparison.Ordinal),
                 $"{request.JobType} 的记录不得改变幂等键口径");
+        }
+    }
+
+    [TestMethod]
+    public async Task PeriodicLoop_WithBacklogSignal_ShouldRecordBacklogHit()
+    {
+        // D5：enabled(160) > SoftTarget(139) ⇒ 堆积命中；间隔仍**只记录不改**（提案语义）。
+        var signal = new RhythmHarness.FakeBacklogSignal(160);
+        var portfolio = PuddingCode.Skills.Portfolio.SkillPortfolioPolicy.ZeroRegressionDefault(
+            currentEnabledCount: 139,
+            headroom: 0);
+
+        var queue = await RhythmHarness.RunPeriodicLoopsAsync(
+            RhythmHarness.BacklogOnlyPolicy(backlogShortenIntervalSeconds: 300),
+            signal,
+            portfolio);
+
+        Assert.AreEqual(4, queue.EnqueuedRequests.Count);
+        Assert.IsTrue(signal.CallCount >= 1, "注入了信号就必须真的去取事实");
+        foreach (var request in queue.EnqueuedRequests)
+        {
+            var metadata = request.Job.Metadata;
+            Assert.IsNotNull(metadata);
+            Assert.AreEqual("true", metadata!["rhythm_backlog"]);
+            Assert.AreEqual("300", metadata["rhythm_proposed_interval_seconds"]);
+            Assert.AreEqual("true", metadata["rhythm_shortened"]);
+            Assert.AreEqual(
+                PuddingCode.Configuration.SubconsciousRhythmReasonCodes.Backlog,
+                metadata["rhythm_reason_code"]);
+            Assert.AreEqual("false", metadata["rhythm_off_peak"]);
+        }
+    }
+
+    [TestMethod]
+    public async Task PeriodicLoop_WithBacklogSignalAtSoftTarget_ShouldRecordFalseNotHit()
+    {
+        // 边界：enabled == SoftTarget **不是**堆积（设计口径是严格大于）⇒ 提案间隔不变、不认领理由码。
+        var signal = new RhythmHarness.FakeBacklogSignal(139);
+        var portfolio = PuddingCode.Skills.Portfolio.SkillPortfolioPolicy.ZeroRegressionDefault(
+            currentEnabledCount: 139,
+            headroom: 0);
+
+        var queue = await RhythmHarness.RunPeriodicLoopsAsync(
+            RhythmHarness.BacklogOnlyPolicy(backlogShortenIntervalSeconds: 300),
+            signal,
+            portfolio);
+
+        foreach (var request in queue.EnqueuedRequests)
+        {
+            var metadata = request.Job.Metadata;
+            Assert.IsNotNull(metadata);
+            Assert.AreEqual("false", metadata!["rhythm_backlog"], "enabled == SoftTarget 不得判为堆积");
+            Assert.AreEqual(
+                metadata["rhythm_configured_interval_seconds"],
+                metadata["rhythm_proposed_interval_seconds"]);
+            Assert.AreEqual("false", metadata["rhythm_shortened"]);
+            Assert.AreEqual(
+                PuddingCode.Configuration.SubconsciousRhythmReasonCodes.Default,
+                metadata["rhythm_reason_code"]);
+        }
+    }
+
+    [TestMethod]
+    public async Task PeriodicLoop_WithoutBacklogSignal_ShouldRecordNotEvaluated()
+    {
+        // 诚实边界：拿不到事实 ⇒ 记 not_evaluated；⛔ 绝不得写成 false（那是“测过且安全”）。
+        var queue = await RhythmHarness.RunPeriodicLoopsAsync(
+            RhythmHarness.BacklogOnlyPolicy(backlogShortenIntervalSeconds: 300));
+
+        Assert.AreEqual(4, queue.EnqueuedRequests.Count);
+        foreach (var request in queue.EnqueuedRequests)
+        {
+            var metadata = request.Job.Metadata;
+            Assert.IsNotNull(metadata);
+            Assert.AreEqual("not_evaluated", metadata!["rhythm_backlog"]);
+            Assert.AreNotEqual("false", metadata["rhythm_backlog"]);
+            Assert.AreEqual(
+                metadata["rhythm_configured_interval_seconds"],
+                metadata["rhythm_proposed_interval_seconds"]);
+        }
+    }
+
+    [TestMethod]
+    public async Task PeriodicLoop_BacklogSignalFailure_ShouldNotBreakEnqueue()
+    {
+        // 信号抛错 ⇒ 记录退化为 not_evaluated，但**四个作业照常入队**（记录不得阻断调度）。
+        var portfolio = PuddingCode.Skills.Portfolio.SkillPortfolioPolicy.ZeroRegressionDefault(
+            currentEnabledCount: 139,
+            headroom: 0);
+
+        var queue = await RhythmHarness.RunPeriodicLoopsAsync(
+            RhythmHarness.BacklogOnlyPolicy(backlogShortenIntervalSeconds: 300),
+            new RhythmHarness.ThrowingBacklogSignal(),
+            portfolio);
+
+        Assert.AreEqual(4, queue.EnqueuedRequests.Count, "信号失败不得丢作业");
+        foreach (var request in queue.EnqueuedRequests)
+        {
+            Assert.IsNotNull(request.Job.Metadata);
+            Assert.AreEqual("not_evaluated", request.Job.Metadata!["rhythm_backlog"]);
         }
     }
 

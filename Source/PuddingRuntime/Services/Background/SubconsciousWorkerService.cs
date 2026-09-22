@@ -5,6 +5,7 @@ using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingCode.Skills.Portfolio;
 
 namespace PuddingRuntime.Services.Background;
 
@@ -17,6 +18,9 @@ public sealed class SubconsciousWorkerService : BackgroundService
     private static readonly TimeSpan DurableLeaseDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan IdlePollDelay = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan RetryDelay = TimeSpan.FromMinutes(1);
+
+    /// <summary>G8-D5：堆积“未评估”字样（⛔ 不得与 <c>false</c> 混用：“未测”不是“测过且安全”）。</summary>
+    private const string BacklogNotEvaluated = "not_evaluated";
 
     private readonly Channel<ConsolidationJob> _channel;
     private readonly ISubconsciousOrchestrator _orchestrator;
@@ -37,6 +41,10 @@ public sealed class SubconsciousWorkerService : BackgroundService
     /// 因此生产默认下本字段为 <c>null</c> ⇒ 不产生任何节奏记录（零回归）。</para>
     /// </summary>
     private readonly SubconsciousRhythmPolicy? _rhythmPolicy;
+    /// <summary>G8-D5：堆积信号（**尾随可选**，默认 <c>null</c> ⇒ 记 <c>not_evaluated</c>，⛔ 不伪装成 false）。</summary>
+    private readonly ISkillPortfolioBacklogSignal? _backlogSignal;
+    /// <summary>G8-D5：阈值来源（<c>SoftTarget</c> 的**唯一**来源；未注入 ⇒ 无法判定 ⇒ <c>not_evaluated</c>）。</summary>
+    private readonly SkillPortfolioPolicy? _portfolioPolicy;
     private readonly string _leaseOwner = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
     public SubconsciousWorkerService(
@@ -53,7 +61,9 @@ public sealed class SubconsciousWorkerService : BackgroundService
         ISubconsciousRuntimeControl? runtimeControl = null,
         IOptions<SubconsciousOptions>? options = null,
         TimeProvider? timeProvider = null,
-        SubconsciousRhythmPolicy? rhythmPolicy = null)
+        SubconsciousRhythmPolicy? rhythmPolicy = null,
+        ISkillPortfolioBacklogSignal? backlogSignal = null,
+        SkillPortfolioPolicy? portfolioPolicy = null)
     {
         _channel = channel;
         _orchestrator = orchestrator;
@@ -68,6 +78,8 @@ public sealed class SubconsciousWorkerService : BackgroundService
         _scheduling = options?.Value.Scheduling ?? new SubconsciousSchedulingOptions();
         _timeProvider = timeProvider ?? TimeProvider.System;
         _rhythmPolicy = rhythmPolicy;
+        _backlogSignal = backlogSignal;
+        _portfolioPolicy = portfolioPolicy;
         _logger = logger;
     }
 
@@ -854,8 +866,8 @@ public sealed class SubconsciousWorkerService : BackgroundService
             AgentTemplateId = agentInstanceId,
         };
 
-        // ── G8-D3：把这一轮的节奏决定写成**提案型**记录（⛔ 不改 interval / bucket / delay）──
-        var rhythmMetadata = BuildRhythmDecisionMetadata(interval);
+        // ── G8-D3/D5：把这一轮的节奏决定写成**提案型**记录（⛔ 不改 interval / bucket / delay）──
+        var rhythmMetadata = await BuildRhythmDecisionMetadataAsync(interval, agentInstanceId, ct);
         if (rhythmMetadata.Count > 0)
             job = job with { Metadata = rhythmMetadata };
 
@@ -886,12 +898,17 @@ public sealed class SubconsciousWorkerService : BackgroundService
     /// ⛔ 未配置策略（<see cref="_rhythmPolicy"/> 为 <c>null</c>）时返回空字典 ⇒ 记录整体不出现（P1 / P4）。
     /// </para>
     /// <para>
-    /// ⚠️ <b>诚实边界</b>：堆积条件（<c>isBacklog</c>）由 D5 提供，本切片**尚未接线** ⇒ 恒为 <c>false</c>；
-    /// 读到 <c>rhythm_backlog=false</c> 的人<b>不得</b>据此推断“没有堆积”。
+    /// ⚠️ <b>诚实边界</b>：堆积条件（<c>isBacklog</c>）由注入的
+    /// <see cref="ISkillPortfolioBacklogSignal"/> + <see cref="SkillPortfolioPolicy.SoftTarget"/> 提供；
+    /// **未注入或未取得事实时记 </b><c>not_evaluated</c><b>，而不是 </b><c>false</c> —— 读到 <c>false</c>
+    /// 才是「测过且未堆积」，“未测”不得被读成安全。
     /// </para>
     /// </summary>
     /// <param name="configuredInterval">配置间隔（即 <c>TryEnqueue</c> 实际使用的间隔；不会因本记录而改变）。</param>
-    private Dictionary<string, string> BuildRhythmDecisionMetadata(TimeSpan configuredInterval)
+    private async Task<Dictionary<string, string>> BuildRhythmDecisionMetadataAsync(
+        TimeSpan configuredInterval,
+        string agentInstanceId,
+        CancellationToken ct)
     {
         var policy = _rhythmPolicy;
         if (policy is null)
@@ -901,10 +918,12 @@ public sealed class SubconsciousWorkerService : BackgroundService
         var isOffPeak = window is not null
             && SubconsciousOffPeakEvaluator.IsOffPeak(_timeProvider, window);
 
+        var (isBacklog, backlogState) = await ResolveBacklogSignalAsync(agentInstanceId, ct);
+
         // configuredInterval 已由调用方的 Math.Max(1, …) 保证 ≥ 1 秒，这里再夹取一次以免策略
         // 层抛 ArgumentOutOfRange 把整个入队循环打断（宁可记录退化为默认，也不得阻断调度）。
         var configuredSeconds = (int)Math.Max(1d, Math.Floor(configuredInterval.TotalSeconds));
-        var decision = policy.Resolve(configuredSeconds, isOffPeak, isBacklog: false);
+        var decision = policy.Resolve(configuredSeconds, isOffPeak, isBacklog);
 
         return new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -912,9 +931,47 @@ public sealed class SubconsciousWorkerService : BackgroundService
             ["rhythm_configured_interval_seconds"] = decision.ConfiguredIntervalSeconds.ToString(),
             ["rhythm_reason_code"] = decision.ReasonCode,
             ["rhythm_off_peak"] = decision.IsOffPeak ? "true" : "false",
-            ["rhythm_backlog"] = decision.IsBacklog ? "true" : "false",
+            ["rhythm_backlog"] = backlogState,
             ["rhythm_shortened"] = decision.IsShortened ? "true" : "false",
             ["rhythm_policy"] = $"{policy.PolicyId}@{policy.Version}",
         };
+    }
+
+    /// <summary>
+    /// G8-D5：解析堆积信号。<c>enabled &gt; SoftTarget</c> ⇒ 堆积（阈值口径与
+    /// <c>SkillPortfolioPolicy</c> 同源，此处不另造口径）。
+    /// <para>⛔ 拿不到事实 ⇒ <c>not_evaluated</c>（既不是 <c>false</c>，也不抛）。</para>
+    /// <para>⛔ 信号失败**不得**打断入队循环：记录退化为未评估，调度照跑。</para>
+    /// </summary>
+    private async Task<(bool IsBacklog, string State)> ResolveBacklogSignalAsync(
+        string agentInstanceId,
+        CancellationToken ct)
+    {
+        if (_backlogSignal is null || _portfolioPolicy is null)
+            return (false, BacklogNotEvaluated);
+
+        int? enabledCount;
+        try
+        {
+            enabledCount = await _backlogSignal.TryGetEnabledSkillCountAsync(agentInstanceId, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "[SubconsciousWorker] Backlog signal failed agent={AgentInstanceId}",
+                agentInstanceId);
+            return (false, BacklogNotEvaluated);
+        }
+
+        if (enabledCount is not int enabled)
+            return (false, BacklogNotEvaluated);
+
+        var isBacklog = enabled > _portfolioPolicy.SoftTarget;
+        return (isBacklog, isBacklog ? "true" : "false");
     }
 }
