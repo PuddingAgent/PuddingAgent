@@ -134,6 +134,31 @@ public sealed class ImageReaderToolTests
     }
 
     [TestMethod]
+    public async Task ArtifactReference_FromAnotherWorkspace_IsRejectedAsForbidden()
+    {
+        // V6 AC「跨 Workspace 授权拒绝」：artifact:// 只允许当前 Workspace 拥有的制品。
+        // 夹具 Context() 的 WorkspaceId 固定为 "default"，因此在 "other-workspace" 导入的 id 属跨 Workspace 引用。
+        var imagePath = CreateImageFile(out var root);
+        var (_, storage) = await CreateStorageAsync(root);
+
+        await using var foreign = new MemoryStream(Png);
+        var imported = await storage.SaveAsync("other-workspace", foreign, "image/png");
+
+        var tool = CreateTool(storage);
+        var result = await tool.ExecuteAsync(Request(
+            $"artifact://{imported.ArtifactId}",
+            context: Context(callerSnapshot: Snapshot(vision: true, protocol: "responses"))));
+
+        Assert.IsFalse(result.Success, "跨 Workspace 的 artifact:// 引用必须被拒绝");
+        StringAssert.Contains(result.Error, "vision_artifact_forbidden");
+        // 拒绝即拒绝：不得回交任何图片部件，也不得泄漏来源路径
+        Assert.IsTrue(result.ToolContentParts is null or { Count: 0 },
+            "被拒绝时不得回交图片内容");
+        Assert.IsFalse(result.Output.Contains(root, StringComparison.Ordinal),
+            "output must not leak the host path");
+    }
+
+    [TestMethod]
     public async Task RelativePath_RejectedWithStableError()
     {
         var root = Path.Combine(Path.GetTempPath(), $"pudding-image-reader-{Guid.NewGuid():N}");
