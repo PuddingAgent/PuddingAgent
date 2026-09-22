@@ -24,7 +24,9 @@
 | `Tests/PuddingBrowser.AgentTools.Tests` | 15 | 0 | 0 | 15 | 🟢 | 常规 |
 | `Tests/PuddingBrowser.WebView2.Smoke` | — | — | — | — | ⬜ 非测试工程 | `OutputType=Exe`+`UseWPF`，无测试 SDK |
 
-**合计：12 条红 —— 1 条已修（见二）；10 条已证为「测试契约滞后 / 既有幂等噪声」（即**非回归**）；1 条未证（非确定性）。**
+**合计：12 条红 —— 4 条已修（见二：2 组）；7 条已证为「测试契约滞后 / 既有幂等噪声」（即**非回归**）；1 条未证（非确定性）。**
+
+> **修复进展（2026-09-22 14:12 更新）**：`PuddingCoreTests` 1 条（SwarmOrchestratorTests）→ 全工程 **1014/1014 绿**；`PuddingAgent.IntegrationTests` 3 条（ADR-077 伪 PNG 夹具）→ 全工程 **18/18 绿**。剩余 2 簇（`PuddingMemoryEngineTests` 3 条、`PuddingWebApiTests` 5 条）未修，方案见 §三/§四。
 
 > **最终结论（2026-09-22 13:50 收口）：本轮全仓基线发现的 12 条红中，「**无一条可凭证据判为产品回归**」。**
 > 其中 10 条属「契约/夹具滞后」（测试文本早于守卫或契约引入），剩余 1 条仅能证「非确定性」；
@@ -38,7 +40,7 @@
 - 另有 `warning NU1504: 重复 PackageReference （coverlet.collector 6.* 与 10.0.0）`。
 - ⇒ **结论：该工程当前无任何测试基线可产（编译失败），且不属本仓职责范围**；如要修，属其自身 owner 的范围（两处小修：`ThrowsException` → `Throws`、去重复 PackageReference）。
 
-## 二、已修复（1）
+## 二、已修复（2 组 / 共 4 条）
 
 **`a313337` — `SwarmOrchestratorTests.ProcessSwarmAsync_WithInvalidSwarmDirectory_HandlesError`**（PuddingCoreTests）
 
@@ -47,6 +49,17 @@
 - **验证**：单测隔离 `--filter` → 失败 0/通过 1；全工程 → **失败 0 / 通过 1014 / 总计 1014**（1m08s，exit 0），修前为 1013 通过 + 1 失败。
 - **归因证据**：该红在 `412feab`(2026-09-17) / `8e0ff89`(2026-02-12) 的旧代码上即存在，与 09-20 以来各批提交无关。
 - **命名瑕疵（未擅改）**：用例名含 `WithInvalidSwarmDirectory`，但注释自承使用 "valid paths"、断言要求正常完成并产出 `SwarmCompletedEvent` ⇒ 名不副实；若要真正覆盖「无效 swarm 目录」场景应另立新用例。
+
+## 二·2 已修复（组 2 / 3 条）—— `Tests/PuddingAgent.IntegrationTests` → **18/18 绿**
+
+**`dd9e27a`** — ADR-077 伪 PNG 夹具改版（`FeishuInboundImageTests` / `FeishuInboundPostTests` / `SendImageToolTests`）
+
+- **根因＝测试夹具伪造 PNG，产品代码无问题**（详见 §五）：三处夹具只有 PNG 签名（8/8/4 字节，无 IHDR）⇒ 必然被 `ImagePreprocessing.cs:28` 的 `SKCodec.Create(...) ?? throw`（`74ae4e0`，2026-09-15，ADR-077）拒绝。
+- **修复**：夹具改为**合法最小 PNG**（1×1 透明，67 字节，IHDR/IDAT/IEND 完整）；`ImageEvent` 用例 `:86` 的**字节级等值断言保留**（期望值由同一夹具 base64 计算得出，而非硬编码字面量）。
+- **改动面**：仅 3 个测试文件；**产品代码零改动、无断言删除或放宽**（父级 `git_diff` 逐行审阅）。
+- **验证**：`dotnet test Tests/PuddingAgent.IntegrationTests -p:BuildProjectReferences=false` → **失败 0 / 通过 18 / 总计 18**（3 s，exit 0；修前 15 通过 / 3 失败）。
+- **⚠️ 过程披露**：本批改动的**实现**由一个子代理产出，而该子代理自身 run 因预算耗尽被标记 `failed`；父级未据其状态丢弃产物，而是 `git_diff` 逐行审阅 + **独立复跑**后采纳 ⇒ **子代理 run 状态 ≠ 其工作区改动有效性**。
+- **口径**：宿主 PID 23560（14:10:12 启动）；`Source/PuddingAgent/bin/Debug/net10.0/PuddingAgent.dll` mtime 12:26:52 ⇒ 引用产物早于 HEAD，已如实记录。
 
 ## 三、根因已明、方案已备，**归属不明**（3）
 
@@ -107,9 +120,9 @@
   - **⇒ 结论：设计内的幂等降级噪声，与 5 条失败无因果关系。** 副产物是它会把真实错误淹没在 80 条 ERR 里 ⇒ 建议降为 Debug 或一次性摘要（改进建议，未做）。
   - **存疑但未证（相邻噪声）**：`ClassCleanup … NullReferenceException … SqliteConnection.Close()`；`SQLite Error 5: 'database is locked'`（GoalContinuation 扫描）；进程级 `PUDDING_DATA_ROOT` 由每个 factory 覆盖（`CustomWebApplicationFactory.cs:26-31`）⇒ 跨类并行时存在**结构性互相干扰风险**（这可能正是 #2 非确定性的来源，但**未证明因果**）。
 
-## 五、已归因（3）—— 全部「测试契约滞后」（已证）
+## 五、已归因**并已修复**（3）—— 全部「测试契约滞后」（已证）
 
-`Tests/PuddingAgent.IntegrationTests`（首次入基线）：失败 3 / 通过 15 / 总计 18
+`Tests/PuddingAgent.IntegrationTests`（首次入基线）：失败 3 / 通过 15 / 总计 18 ⇒ **修复后 18/18 绿（`dd9e27a`，见 §二·2）**
 
 | 用例 | 位置 | 首个错误 |
 |---|---|---|
@@ -126,8 +139,9 @@
   - **原生依赖不缺（已证，否证「环境缺失」）**：`Tests/PuddingAgent.IntegrationTests/bin/Debug/net10.0/runtimes/win-x64/native/libSkiaSharp.dll`（11,611,680 B，2026-02-06）与 managed `SkiaSharp.dll`（490,016 B）**均在**；且抛的是受管守卫的 `??` 空分支消息，而非 `DllNotFoundException`/`TypeInitializationException` ⇒ 原生库已成功加载并执行。
   - **两层检测缝（解释力，已证）**：下载层 `FeishuInboundMessageMapper.cs:336-346` **只嗅 magic bytes**（长度≥8 且前缀匹配即判 `image/png`）⇒ 8 字节 payload **在下载层被接受、在存储层被拒**。
 - **明礁未证（不主张任何产品缺陷）**：①「真实飞书入站图片会被该守卫误拒」——**未证**（真实图含完整 IHDR/IDAT，静态分析不支持该假设）；② 两层 MIME 检测不一致是否构成**生产影响**——**未证**（仅证它是测试失效的缝）；③ #2 的「同一异常被吞」未由**运行时日志直读**（mapper 注入 `NullLogger`），属代码级演绎。
-- **修复（属写操作，需另行授权，未执行）**：把 3 处夹具换成**合法最小 PNG**，并同步 `FeishuInboundImageTests.cs:86` 与 `FeishuInboundPostTests.cs:128` 的期望值。
-- **附带观察（非当前影响，仅风险提示）**：同样的「伪 PNG」造法还出现在 `Tests/PuddingHost.Tests/Platform/UserAvatarApiControllerTests.cs:93`、`Tests/HarnessAgent.Core.Tests/Feishu/FeishuClientReplyTests.cs:134,207,362` —— 这些用例**当前通过**（不经保存路径），但一旦路由到解码守卫即会失效。
+- **修复（已完成，`dd9e27a`，2026-09-22 14:12）**：3 处夹具换成**合法最小 PNG**（1×1 透明 / 67 字节）；`:86` 的字节级等值断言保留（期望值由夹具 base64 计算）；`:128` 的 KeyNotFound **无需改断言**——夹具合法后 artifact 正常物化，该键自然存在（**再次印证 #2 是 #1 的同根因级联**）。验证 18/18。
+- **⚠️ 并存风险仍在（未证，未处理）**：同样的「伪 PNG」造法仍出现在 `Tests/PuddingHost.Tests/Platform/UserAvatarApiControllerTests.cs:93`、`Tests/HarnessAgent.Core.Tests/Feishu/FeishuClientReplyTests.cs:134,207,362`；这些用例**当前通过**（不经保存路径），但一旦其路径路由到解码守卫即会以同样方式失效 —— 属**潜伏同族缺陷**，建议随对应路径改动一并修正。
+- **附带观察（非当前影响，仅风险提示）**：见上条「并存风险仍在」。
 
 ## 六、⚠️ 文件锁造成的口径污染（影响所有人）
 
