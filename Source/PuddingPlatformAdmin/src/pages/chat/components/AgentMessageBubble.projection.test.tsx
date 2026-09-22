@@ -573,3 +573,108 @@ describe('AgentMessageBubble message-segment interleaving', () => {
     expect(fullTextItem).toBeUndefined();
   });
 });
+
+// ── 缺陷 B 判定实验：正文渲染的字符级完整性（2026-09-23）─────────────────────
+// 背景（父级逐行亲读确证）：
+//  ① AgentMessageBubble.tsx:392-411 —— 投影里存在**任一**非空 message 节点时，
+//     hasProjectedTextBlocks=true ⇒ 装载完整 answerMarkdown 的兜底气泡被整体关闭；
+//  ② executionFlowProjector.ts:679-712 —— message.completed.reply（全量持久化文本）
+//     仅在「整 turn 无任何 content delta」时才作正文源，否则**明确不投影**。
+// 两条防线同时关闭 ⇒ 若投影正文短于权威全文，界面就只能显示短的那份。
+// 本组用**带段号的分段正文**做字符级判定：一旦截断，失败信息可直接指出断点。
+describe('AgentMessageBubble 正文渲染字符级完整性（缺陷 B 判定实验）', () => {
+  const BODY_TOTAL = 2355;
+
+  /** 确定性分段正文：SEG0001|SEG0002|…（段号可定位，无空白字符以免被规范化）。 */
+  const buildBody = (): string => {
+    let text = '';
+    let n = 1;
+    while (text.length < BODY_TOTAL) {
+      text += `SEG${String(n).padStart(4, '0')}|`;
+      n += 1;
+    }
+    return text.slice(0, BODY_TOTAL);
+  };
+
+  const FULL_BODY = buildBody();
+
+  const bodyEvents = (delta: string): any[] => [
+    ev('message.content.appended', 1, { delta }),
+    ev('message.completed', 2, { reply: FULL_BODY }),
+  ];
+
+  /** 屏幕上实际承载的正文文本。
+   *  注：文本由被 mock 的 MessageItem 承载，mock 把正文放进 `data-markdown` 属性
+   *  （不渲染为 textContent）——首轮本函数误用 textContent 读成 0，属**测量口径错误**，
+   *  已按 mock 实际暴露的属性修正。 */
+  const renderedBodyText = (): string =>
+    screen
+      .queryAllByTestId('message-item')
+      .map((el) => el.getAttribute('data-markdown') ?? '')
+      .join('');
+
+  beforeEach(() => {
+    mockUseTypewriterStreaming.mockReset();
+    mockUseTypewriterStreaming.mockReturnValue({
+      stableMarkdown: '',
+      liveText: '',
+      visibleLiveText: '',
+      visibleStartOffset: 0,
+      isTyping: false,
+      isSettling: false,
+    });
+  });
+
+  it('① 投影完整（2355）⇒ 渲染正文长度 == 2355，且正文区域只有一个', () => {
+    const projection = projectExecutionFlow(bodyEvents(FULL_BODY), {
+      turnId: 'turn-1',
+    });
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        content={FULL_BODY}
+        executionFlowProjection={projection}
+      />,
+    );
+    const rendered = renderedBodyText();
+    expect(screen.getAllByTestId('turn-text-segment')).toHaveLength(1);
+    // 正文区域只有一个：一个 TextBlock ⇒ 一个 MessageItem（不是两个正文区域）。
+    expect(screen.getAllByTestId('message-item')).toHaveLength(1);
+    expect(rendered.length).toBe(BODY_TOTAL);
+    expect(rendered).toBe(FULL_BODY);
+  });
+
+  // ⚠️ 已知缺口（2026-09-23 实测，父级亲自跑）：投影正文 = 前 800 字符、权威全文 = 2355
+  // 字符时，**界面实际只渲染 800 字符（丢 1555）**，且无任何兜底（与 AgentMessageBubble.tsx:392-411
+  // 关闭兑底气泡 + executionFlowProjector.ts:679-712 不用 reply 覆盖段文本完全一致）。
+  // ⇒ **本组就是缺陷 B 的回归断言**：修复切片（设计文档 §12 第 4 项“终态正文与权威全文对齐”）
+  //   必须让它转绿，**转绿后必须取消 skip**，不得直接删除本组。
+  it.skip('② 投影残缺（800/2355）：当前渲染 800 —— 缺陷 B 已复现，待修复后转正', () => {
+    const truncated = FULL_BODY.slice(0, 800);
+    const projection = projectExecutionFlow(bodyEvents(truncated), {
+      turnId: 'turn-1',
+    });
+    render(
+      <AgentMessageBubble
+        {...baseProps}
+        content={FULL_BODY}
+        executionFlowProjection={projection}
+      />,
+    );
+    const rendered = renderedBodyText();
+    // 判定语义：渲染 == 800  ⇒ 缺陷 B 在渲染层复现（界面丢 1555 字符）；
+    //           渲染 == 2355 ⇒ 存在兜底/回填，缺陷应在上游（水合未触发）。
+    // eslint-disable-next-line no-console
+    console.log(
+      `[缺陷B判定] 投影=${truncated.length} 全文=${FULL_BODY.length} 渲染=${rendered.length}`,
+    );
+    expect(rendered.length).toBe(BODY_TOTAL);
+  });
+
+  it('③ 投影为空（无 message 节点）⇒ 走兜底气泡，正文长度 == 2355', () => {
+    render(<AgentMessageBubble {...baseProps} content={FULL_BODY} />);
+    // 无投影时正文由 answerMarkdown 承载（MessageItem 的 markdownText）。
+    const markdown = screen.getByTestId('message-item').getAttribute('data-markdown') ?? '';
+    expect(markdown.length).toBe(BODY_TOTAL);
+  });
+});
