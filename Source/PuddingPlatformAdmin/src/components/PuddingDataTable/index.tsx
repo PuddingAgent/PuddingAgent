@@ -22,6 +22,12 @@ export interface PuddingDataTableProps<T extends object> {
   onChange?: (pagination: TablePaginationConfig, filters: any, sorter: any) => void;
   /** 行勾选（列表批量操作）。 */
   rowSelection?: TableProps<T>['rowSelection'];
+  /** 透传 antd Table 的 scroll（横向/纵向滚动区），默认 undefined ⇒ 行为与改动前一致。 */
+  scroll?: TableProps<T>['scroll'];
+  /** 透传 antd Table 的 sticky（表头吸顶）。不传时 antd 默认行为不变。 */
+  sticky?: TableProps<T>['sticky'];
+  /** 最外层容器的内联样式，与 className 并存。 */
+  style?: React.CSSProperties;
 }
 
 export function PuddingDataTable<T extends object>({
@@ -34,9 +40,12 @@ export function PuddingDataTable<T extends object>({
   className,
   onChange,
   rowSelection,
+  scroll,
+  sticky,
+  style,
 }: PuddingDataTableProps<T>) {
   return (
-    <div className={classNames(styles.tableSurface, className)}>
+    <div className={classNames(styles.tableSurface, className)} style={style}>
       <Table<T>
         rowKey={rowKey}
         columns={columns}
@@ -45,6 +54,8 @@ export function PuddingDataTable<T extends object>({
         pagination={pagination}
         onChange={onChange}
         rowSelection={rowSelection}
+        scroll={scroll}
+        sticky={sticky}
         locale={{ emptyText: emptyText ?? '暂无数据' }}
         size="middle"
       />

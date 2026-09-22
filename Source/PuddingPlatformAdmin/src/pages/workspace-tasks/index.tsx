@@ -618,65 +618,91 @@ export function WorkspaceTasksPanel({ workspaceId }: WorkspaceTasksPanelProps) {
         ],
       }}
     >
-      <div style={{ marginBottom: 12 }}>
-        <Space wrap>
-          <Segmented
-            value={viewMode}
-            onChange={(value) => setViewMode(value as ViewMode)}
-            options={[
-              { label: '看板', value: 'board' },
-              { label: '列表', value: 'table' },
-            ]}
-          />
-          <Select
-            allowClear
-            placeholder="优先级"
-            style={{ width: 120 }}
-            options={PRIORITY_OPTIONS}
-            value={filters.priority}
-            onChange={(value?: TaskPriorityWire) =>
-              setFilters((prev) => ({ ...prev, priority: value }))
-            }
-          />
-          <Select
-            allowClear
-            showSearch
-            optionFilterProp="label"
-            placeholder="Agent"
-            style={{ width: 200 }}
-            options={agentOptions}
-            value={filters.agentId}
-            onChange={(value?: string) =>
-              setFilters((prev) => ({ ...prev, agentId: value }))
-            }
-          />
-          <Input.Search
-            allowClear
-            placeholder="搜索标题/描述"
-            style={{ width: 220 }}
-            value={filters.search}
-            onChange={(e) =>
-              setFilters((prev) => ({ ...prev, search: e.target.value }))
-            }
-          />
-        </Space>
-      </div>
+      {/* 面板列（2026-09-22）：仅作分组容器。⚠️ 此处**故意不写 height:100%** ——
+          pro-layout@7.22 在 PageContainer 根与其内容之间插入了三层 auto 高度的包装
+          （.ant-pro-grid-content / .ant-pro-grid-content-children /
+          .ant-pro-page-container-children-container），无法从 props 触及 ⇒
+          任何「填满祖先」的 height:100% / flex:1 在真实 DOM 里都是断链的。
+          布局由下方内容槽的显式定高驱动；不假装 flex 链有效，避免留下
+          「看起来在工作、实际是空操作」的声明。 */}
+      <div
+        data-testid="tasks-panel-column"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div style={{ marginBottom: 12, flex: '0 0 auto' }}>
+          <Space wrap>
+            <Segmented
+              value={viewMode}
+              onChange={(value) => setViewMode(value as ViewMode)}
+              options={[
+                { label: '看板', value: 'board' },
+                { label: '列表', value: 'table' },
+              ]}
+            />
+            <Select
+              allowClear
+              placeholder="优先级"
+              style={{ width: 120 }}
+              options={PRIORITY_OPTIONS}
+              value={filters.priority}
+              onChange={(value?: TaskPriorityWire) =>
+                setFilters((prev) => ({ ...prev, priority: value }))
+              }
+            />
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="Agent"
+              style={{ width: 200 }}
+              options={agentOptions}
+              value={filters.agentId}
+              onChange={(value?: string) =>
+                setFilters((prev) => ({ ...prev, agentId: value }))
+              }
+            />
+            <Input.Search
+              allowClear
+              placeholder="搜索标题/描述"
+              style={{ width: 220 }}
+              value={filters.search}
+              onChange={(e) =>
+                setFilters((prev) => ({ ...prev, search: e.target.value }))
+              }
+            />
+          </Space>
+        </div>
 
-      <div style={{ height: 'calc(80vh - 230px)', minHeight: 420 }}>
-        {viewMode === 'board' ? (
-          <TaskBoard
-            columns={visibleColumns}
-            actions={actions}
-            onLoadMore={loadMore}
-          />
-                ) : (
-          <TaskTable
-            items={tableItems}
-            onOpen={setSelectedTask}
-            onBatchRemove={handleBatchRemove}
-            onBatchStatus={handleBatchStatus}
-          />
-        )}
+        {/* 定高说明（2026-09-22）：此处**必须给出「确定的」高度**，不能只靠 flex。
+            这个 calc 是 TaskBoard（height:100%）与 TaskColumn 虚拟列表滚动区
+            （flex:1 + overflowY:auto + parentRef）**唯一的定高来源**；移除它会让看板各列
+            退化为按内容全高展开、列内滚动与虚拟化失效（实证 TaskBoard.tsx:27、
+            TaskColumn.tsx:82）。230px ≈ 模态 body 预留(88) + 页头 + 筛选行 + 外边距。
+            若要改为纯 flex 定高，需先在 global.style.ts 用作用域前缀（如 .pudding-tasks-panel）
+            补齐上述三层包装的 flex/min-height 声明，并在**真实浏览器**复验列表吸顶与
+            看板列内滚动之后，才可删除本行。 */}
+        <div
+          data-testid="tasks-content-slot"
+          style={{ height: 'calc(80vh - 230px)', minHeight: 420, overflow: 'auto' }}
+        >
+          {viewMode === 'board' ? (
+            <TaskBoard
+              columns={visibleColumns}
+              actions={actions}
+              onLoadMore={loadMore}
+            />
+          ) : (
+            <TaskTable
+              items={tableItems}
+              onOpen={setSelectedTask}
+              onBatchRemove={handleBatchRemove}
+              onBatchStatus={handleBatchStatus}
+            />
+          )}
+        </div>
       </div>
 
       <TaskEditorDrawer
@@ -770,6 +796,8 @@ export function TaskBoardModal({
         body: {
           height: 'calc(80vh - 88px)',
           overflow: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
         },
       }}
     >

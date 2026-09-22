@@ -1,7 +1,7 @@
 import { DeleteOutlined } from '@ant-design/icons';
 import { App, Button, Select, Space, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import { PuddingDataTable, PuddingStatusBadge } from '@/components';
 import type { PuddingStatusTone } from '@/components';
@@ -70,6 +70,9 @@ export const TaskTable: React.FC<TaskTableProps> = ({
   const [batchStatus, setBatchStatus] = useState<TaskStatusWire | undefined>(
     undefined,
   );
+  // 表格自身的滚动宿主：表头 sticky 以它为滚动容器（而非模态 body）。
+  // 祖先高度全部未解析时，本容器仍有 minHeight 240 与 overflow:auto ⇒ 内容不会消失。
+  const scrollHostRef = useRef<HTMLDivElement>(null);
 
   // 选中行可能因刷新/翻页而消失，始终基于当前 items 解析。
   const selectedTasks = useMemo(() => {
@@ -166,10 +169,22 @@ export const TaskTable: React.FC<TaskTableProps> = ({
   ];
 
   return (
-    <div>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        minHeight: 0,
+      }}
+    >
       {selectedTasks.length > 0 && (
         <Space
-          style={{ marginBottom: 12, width: '100%', justifyContent: 'flex-end' }}
+          style={{
+            marginBottom: 12,
+            width: '100%',
+            justifyContent: 'flex-end',
+            flex: '0 0 auto',
+          }}
           wrap
         >
           <Text type="secondary">已选 {selectedTasks.length} 项</Text>
@@ -202,18 +217,27 @@ export const TaskTable: React.FC<TaskTableProps> = ({
           </Button>
         </Space>
       )}
-      <PuddingDataTable<TaskDto>
-        rowKey="taskId"
-        columns={columns}
-        dataSource={items}
-        loading={loading}
-        emptyText="暂无任务"
-        pagination={false}
-        rowSelection={{
-          selectedRowKeys,
-          onChange: (keys) => setSelectedRowKeys(keys),
-        }}
-      />
+      <div
+        ref={scrollHostRef}
+        data-testid="tasks-table-scroll-host"
+        style={{ flex: '1 1 auto', minHeight: 240, overflow: 'auto' }}
+      >
+        <PuddingDataTable<TaskDto>
+          rowKey="taskId"
+          columns={columns}
+          dataSource={items}
+          loading={loading}
+          emptyText="暂无任务"
+          pagination={false}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: (keys) => setSelectedRowKeys(keys),
+          }}
+          sticky={{
+            getContainer: () => scrollHostRef.current ?? window,
+          }}
+        />
+      </div>
     </div>
   );
 };
