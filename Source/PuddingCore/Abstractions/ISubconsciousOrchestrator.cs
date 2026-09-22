@@ -1,4 +1,6 @@
 using PuddingCode.Platform;
+using PuddingCode.Skills.Family;
+using PuddingCode.Skills.Portfolio;
 
 namespace PuddingCode.Abstractions;
 
@@ -85,11 +87,22 @@ public interface ISubconsciousOrchestrator
     /// Skill 组合治理：只读扫描启用技能 → 产出组合变化报告（N_before → N_after + 未降原因）。
     /// G6 只报告，不修改/不禁用/不删除任何技能（I3 零写盘）。
     /// 由 SubconsciousWorkerService 定时触发（skill.curate）。
+    /// <para>
+    /// G4-D7 起可传入家族策略以**额外**产出家族评审计数（<see cref="SkillCurationReport.FamilyReviewCount"/>）；
+    /// 两个策略都是**尾随可选参数**，默认 <c>null</c> ⇒ 不划分家族、计数恒为 0（逐字段零回归）。
+    /// </para>
     /// </summary>
+    /// <param name="familyPolicy">
+    /// G4 家族划分策略（可选）。与 <paramref name="portfolioPolicy"/> **必须同时给出**才启用家族评审：
+    /// 任一为 <c>null</c> ⇒ 不划分家族（不产生“半套结论”）。
+    /// </param>
+    /// <param name="portfolioPolicy">G4 组合策略（<c>PerFamilyCap</c> 是家族内上限的唯一来源；该值为 <c>null</c> 表示不设限）。</param>
     Task<SkillCurationReport> SkillCurateAsync(
         string workspaceId,
         string agentInstanceId,
         MemoryLlmConfig? memoryLlmConfig = null,
+        SkillFamilyPolicy? familyPolicy = null,
+        SkillPortfolioPolicy? portfolioPolicy = null,
         CancellationToken ct = default);
 }
 

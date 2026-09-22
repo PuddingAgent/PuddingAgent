@@ -1,4 +1,4 @@
-﻿using PuddingCode.Abstractions;
+using PuddingCode.Abstractions;
 using PuddingCode.Models;
 
 namespace PuddingCode.Platform;
@@ -514,6 +514,15 @@ public sealed record SkillCurationReport
 
     /// <summary>G7：其中被拒绝的条数（含“评估期抛异常”的 fail-closed 计数：未评估 ≠ 已批准）。</summary>
     public int CuratedRejectedCount { get; init; }
+
+    /// <summary>
+    /// G4-D7：本轮「家族超限 ⇒ 进入合并评审」产生的**评审请求条数**（默认 0 ⇒ 未提供家族策略时逐字段零回归）。
+    /// <para>
+    /// ⚠️ 非 0 **只表示“产生了待裁决记录”**，不表示任何技能被禁用/合并（超限的唯一后果是评审请求，
+    /// 写盘职权属 L3-b）⇒ 读到非 0 时不应期待 <see cref="NAfter"/> 小于 <see cref="NBefore"/>。
+    /// </para>
+    /// </summary>
+    public int FamilyReviewCount { get; init; }
 
     public string? Summary { get; init; }
     public DateTime Timestamp { get; init; }

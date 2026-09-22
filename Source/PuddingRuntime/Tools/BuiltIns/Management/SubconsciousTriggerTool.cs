@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text.Json;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
@@ -149,7 +149,7 @@ public sealed class SubconsciousTriggerTool : PuddingToolBase<SubconsciousTrigge
         CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        var report = await _orchestrator.SkillCurateAsync(workspaceId, agentInstanceId, memoryLlmConfig, ct);
+        var report = await _orchestrator.SkillCurateAsync(workspaceId, agentInstanceId, memoryLlmConfig, ct: ct);
         return new
         {
             action = "skill_curate",

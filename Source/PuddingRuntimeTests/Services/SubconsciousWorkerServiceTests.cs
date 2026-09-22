@@ -8,6 +8,8 @@ using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
 using PuddingCode.Skills.Curation;
+using PuddingCode.Skills.Family;
+using PuddingCode.Skills.Portfolio;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Services;
 using PuddingRuntime.Services;
@@ -394,17 +396,89 @@ public sealed class SubconsciousWorkerServiceTests
         Assert.AreEqual(0, probe.WriteCallCount);
     }
 
+    // ───────────── G4 交付物 D7：家族评审计数必须能从作业结果观测 ─────────────
+    // 与 G7 同一教训：只写日志不算「被记录」——「裁决被记录」必须能在作业结果层断言。
+
+    [TestMethod]
+    public async Task SkillCurate_WithoutFamilyPolicies_ShouldReportZeroFamilyReviews()
+    {
+        var probe = new CurationProbeSkillStore();
+        await using var memory = await CreateMemoryScopeAsync();
+        var orchestrator = CreateCurationOrchestrator(
+            memory,
+            probe,
+            new FakeSkillDistillationSource([]),
+            CurationPolicy());
+
+        // 不传家族策略 = 作业侧现状（本片只有接缝，尚无策略来源）⇒ 逐字段零回归。
+        var report = await orchestrator.SkillCurateAsync(
+            "workspace-evolution",
+            "agent-evolution");
+
+        Assert.AreEqual(0, report.FamilyReviewCount, "I8：未传家族策略 ⇒ 家族评审计数恒为 0");
+        Assert.AreEqual(report.NBefore, report.NAfter, "I7：家族评审只裁决，n_after 必须等于 n_before");
+        Assert.AreEqual(0, probe.WriteCallCount, "I7：家族评审路径一次技能写盘都不能有");
+    }
+
+    [TestMethod]
+    public async Task SkillCurate_WithOverCapFamily_ShouldReportReviewRequestAndNeverWrite()
+    {
+        var probe = new CurationProbeSkillStore();
+        await using var memory = await CreateMemoryScopeAsync();
+        var orchestrator = CreateCurationOrchestrator(
+            memory,
+            probe,
+            new FakeSkillDistillationSource([]),
+            CurationPolicy());
+
+        // 探针仓里的 3 个启用技能（Same Name / Same Name / Other Name）在 0.25 阈值下同族（token 重叠）
+        // ⇒ 上限 1 时恰好 1 条评审请求（只产出待裁决记录，不禁用任何技能）。
+        var report = await orchestrator.SkillCurateAsync(
+            "workspace-evolution",
+            "agent-evolution",
+            memoryLlmConfig: null,
+            familyPolicy: FamilyPolicy(),
+            portfolioPolicy: PortfolioPolicy(perFamilyCap: 1));
+
+        Assert.AreEqual(1, report.FamilyReviewCount, "超限家族必须被计数，否则接线层看不到任何超限事实");
+        StringAssert.Contains(
+            report.NotReducedReason,
+            "family merge review request",
+            "报告文本必须交代多出来的待裁决记录（否则运维只能看到 n_before==n_after）");
+        Assert.AreEqual(report.NBefore, report.NAfter, "I7：超限只产出评审请求，不得降低启用技能数");
+        Assert.AreEqual(0, probe.WriteCallCount, "I7：超限路径同样不得有任何技能写调用");
+    }
+
+    [TestMethod]
+    public async Task SkillCurate_JobResult_ShouldExposeFamilyReviewCount()
+    {
+        var probe = new CurationProbeSkillStore();
+        var queue = await RunSkillCurateJobAsync(probe, new FakeSkillDistillationSource([]), CurationPolicy());
+
+        Assert.IsNotNull(queue.RecordedResult);
+        Assert.IsTrue(
+            queue.RecordedResult!.Metadata.TryGetValue("family_review_count", out var count),
+            "D7：家族评审计数必须能从作业结果观测到（key 缺失会让运维无法区分「没接线」与「没超限」）");
+        Assert.AreEqual(
+            "0",
+            count,
+            "作业侧尚无家族策略来源（本片只铺接缝）⇒ 计数为 0；非零传播由编排器级用例证明");
+        Assert.AreEqual(0, queue.RecordedResult.OperationCount, "I7：本作业零写盘");
+        Assert.AreEqual(0, probe.WriteCallCount);
+    }
+
     /// <summary>
-    /// 跑一次真实的 skill.curate 作业（走 Worker → 编排器 → 门禁），返回录到结果的队列。
+    /// 构造一个**真实编排器**（门禁/家族判据全走生产代码），供接线级用例直接调用 <c>SkillCurateAsync</c>。
+    /// 与 <see cref="RunSkillCurateJobAsync"/> 同源：构造参数只维护一份，否则参数一多必然漂移。
     /// </summary>
-    private static async Task<RecordingSubconsciousJobQueue> RunSkillCurateJobAsync(
+    private static SubconsciousOrchestrator CreateCurationOrchestrator(
+        MemoryScope memory,
         IAgentSkillEvolutionStore store,
         ISkillDistillationSource source,
         SkillCurationPolicy policy)
     {
-        await using var memory = await CreateMemoryScopeAsync();
         var llmClient = new StaticMemoryLlmClient("unused: curation must not call the llm");
-        var orchestrator = new SubconsciousOrchestrator(
+        return new SubconsciousOrchestrator(
             memory.Library,
             new ThrowingMemoryEngine(),
             llmClient,
@@ -419,6 +493,30 @@ public sealed class SubconsciousWorkerServiceTests
                 NullLogger<SkillEvolutionDeduplicationService>.Instance),
             skillDistillationSource: source,
             skillCurationPolicy: policy);
+    }
+
+    /// <summary>G4 家族划分策略（阈值取只读报告的第一档 0.25，仅为让用例可复现）。</summary>
+    private static SkillFamilyPolicy FamilyPolicy() => SkillFamilyPolicy.Create(
+        policyId: "skill-family/probe",
+        version: 1,
+        nameTokenJaccardThreshold: 0.25,
+        minTokenLength: 1,
+        nameSeparators: SkillNameTokenization.StandardSeparators);
+
+    /// <summary>G4 组合策略（<c>PerFamilyCap</c> 是家族内上限的唯一来源）。</summary>
+    private static SkillPortfolioPolicy PortfolioPolicy(int? perFamilyCap)
+        => SkillPortfolioPolicy.Create("skill-portfolio/probe", 1, 100, 50, perFamilyCap, 0.05, 90);
+
+    /// <summary>
+    /// 跑一次真实的 skill.curate 作业（走 Worker → 编排器 → 门禁），返回录到结果的队列。
+    /// </summary>
+    private static async Task<RecordingSubconsciousJobQueue> RunSkillCurateJobAsync(
+        IAgentSkillEvolutionStore store,
+        ISkillDistillationSource source,
+        SkillCurationPolicy policy)
+    {
+        await using var memory = await CreateMemoryScopeAsync();
+        var orchestrator = CreateCurationOrchestrator(memory, store, source, policy);
 
         var queue = new RecordingSubconsciousJobQueue
         {
@@ -1090,6 +1188,8 @@ public sealed class SubconsciousWorkerServiceTests
             string workspaceId,
             string agentInstanceId,
             MemoryLlmConfig? memoryLlmConfig = null,
+            SkillFamilyPolicy? familyPolicy = null,
+            SkillPortfolioPolicy? portfolioPolicy = null,
             CancellationToken ct = default)
         {
             CallCount++;

@@ -4,6 +4,8 @@ using PuddingCode.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Platform;
+using PuddingCode.Skills.Family;
+using PuddingCode.Skills.Portfolio;
 using PuddingCode.Tools;
 using PuddingRuntime.Services.Tools;
 
@@ -115,7 +117,10 @@ public sealed class SubconsciousTriggerToolTests
 
         public Task<SkillCurationReport> SkillCurateAsync(
             string workspaceId, string agentInstanceId,
-            MemoryLlmConfig? memoryLlmConfig = null, CancellationToken ct = default)
+            MemoryLlmConfig? memoryLlmConfig = null,
+            SkillFamilyPolicy? familyPolicy = null,
+            SkillPortfolioPolicy? portfolioPolicy = null,
+            CancellationToken ct = default)
         {
             SkillCurateCallCount++;
             return Task.FromResult(new SkillCurationReport

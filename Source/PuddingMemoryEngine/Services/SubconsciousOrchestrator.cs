@@ -1,9 +1,10 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PuddingCode.Abstractions;
 using PuddingCode.Improvement;
 using PuddingCode.Platform;
 using PuddingCode.Skills.Curation;
+using PuddingCode.Skills.Family;
 using PuddingCode.Skills.Portfolio;
 using PuddingMemoryEngine.Data;
 using PuddingMemoryEngine.Entities;
@@ -1800,12 +1801,50 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
         Score = CurationScoreUnavailable,
     };
 
+    // ── G4-D7：家族评审（纯函数，零 IO、零写盘）──
+
+    /// <summary>
+    /// G4-D7 家族评审：把**已启用**技能划分为家族，并对超限家族产出合并评审请求（只读结论）。
+    /// <para>
+    /// 任一族策略为 <c>null</c> ⇒ 返回零值结论（不划分家族、零评审）——
+    /// 这是本切片「尾随可选参数默认 <c>null</c> ⇒ 零回归」的实现点：未显式传入策略时，
+    /// 编排器的行为与本切片之前**逐字段相同**。
+    /// </para>
+    /// </summary>
+    /// <remarks>
+    /// ⛔ 唯一后果是**计数与待裁决记录**：不禁用、不删除、不合并、不改关键词（写盘职权属 L3-b）。
+    /// 与 D3 判据同口径：不隐式套用既有合并通道的评审窗口（<c>Take(50)</c>）—— 簇集合是全部启用技能。
+    /// 家族划分用 <c>SkillFamilyClusterer</c>（并查集 + 名称分词）⇒ 同一输入必得同一家族键（可复现）。
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="enabledSkills"/> 为 null。</exception>
+    /// <exception cref="InvalidOperationException">策略配置非法（由策略对象与判据入口校验）。</exception>
+    public static (int EvaluatedFamilyCount, int ReviewCount) EvaluateFamilyReviews(
+        IReadOnlyList<AgentSkillEvolutionDocument> enabledSkills,
+        SkillFamilyPolicy? familyPolicy,
+        SkillPortfolioPolicy? portfolioPolicy)
+    {
+        ArgumentNullException.ThrowIfNull(enabledSkills);
+        if (familyPolicy is null || portfolioPolicy is null)
+        {
+            return (0, 0);
+        }
+
+        var subjects = enabledSkills
+            .Select(skill => SkillFamilySubject.Create(skill.SkillId, skill.Name))
+            .ToList();
+        var clusters = SkillFamilyClusterer.Cluster(subjects, familyPolicy);
+        var capReport = new SkillFamilyCapJudge(portfolioPolicy).Apply(clusters);
+        return (capReport.EvaluatedFamilyCount, capReport.Reviews.Count);
+    }
+
     // ── Skill Curation（G6：只报告，零写盘）──
 
     public async Task<SkillCurationReport> SkillCurateAsync(
         string workspaceId,
         string agentInstanceId,
         MemoryLlmConfig? memoryLlmConfig = null,
+        SkillFamilyPolicy? familyPolicy = null,
+        SkillPortfolioPolicy? portfolioPolicy = null,
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
@@ -1853,12 +1892,27 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                 enabledSkills,
                 ct);
 
+            // G4-D7 薄接线：家族评审（只裁决，零写盘）。未传策略 ⇒ (0, 0)（逐字段零回归）。
+            var (evaluatedFamilies, familyReviews) = EvaluateFamilyReviews(
+                enabledSkills,
+                familyPolicy,
+                portfolioPolicy);
+
             var notReducedReason = retireSuggestionCount > 0
                 ? $"Report-only: identified {retireSuggestionCount} duplicate-name retire suggestion(s), " +
                   $"and evaluated {curatedProducts} distillation product(s) against the G7 C1-C5 gates " +
                   $"(shadow={curatedShadow}, rejected={curatedRejected}); " +
                   "the write authority for disable/replace belongs to L3-b, so no skill was modified."
                 : "No redundancy detected among enabled skills; nothing to retire this round.";
+
+            // 默认路径（未传家族策略）下 familyReviews 恒为 0 ⇒ 本段不改动任何既有文本（零回归）。
+            if (familyReviews > 0)
+            {
+                notReducedReason +=
+                    $" Additionally {familyReviews} family merge review request(s) were raised across " +
+                    $"{evaluatedFamilies} evaluated family/families (over-cap ⇒ review request only; " +
+                    "no skill was modified).";
+            }
 
             _logger.LogInformation(
                 "[SkillCuration] Report n_before={NBefore} n_after={NAfter} candidates={Candidates} retireSuggestions={Retire}",
@@ -1878,6 +1932,7 @@ public sealed class SubconsciousOrchestrator : ISubconsciousOrchestrator
                 CuratedProductCount = curatedProducts,
                 CuratedShadowCount = curatedShadow,
                 CuratedRejectedCount = curatedRejected,
+                FamilyReviewCount = familyReviews,
                 Summary = $"n_before={nBefore}, n_after={nAfter}, refine candidates={candidateCount}, " +
                           $"retire suggestions={retireSuggestionCount}; report-only, no skills modified",
                 Timestamp = DateTime.UtcNow

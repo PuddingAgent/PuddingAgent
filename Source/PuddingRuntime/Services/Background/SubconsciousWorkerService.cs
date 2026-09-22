@@ -1,4 +1,4 @@
-﻿using System.Threading.Channels;
+using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using PuddingCode.Abstractions;
@@ -260,7 +260,7 @@ public sealed class SubconsciousWorkerService : BackgroundService
                     queueItem.Job.WorkspaceId,
                     queueItem.Job.AgentId,
                     memoryLlmConfig,
-                    ct);
+                    ct: ct);
                 result = CreateSkillCurationResultEnvelope(queueItem, curationReport);
                 break;
             default:
@@ -349,6 +349,9 @@ public sealed class SubconsciousWorkerService : BackgroundService
         metadata["curated_products"] = report.CuratedProductCount.ToString();
         metadata["curated_shadow"] = report.CuratedShadowCount.ToString();
         metadata["curated_rejected"] = report.CuratedRejectedCount.ToString();
+        // G4-D7：家族评审计数同样必须能从**作业结果**观测到（同 G7 的教训：只写日志不算“被记录”）。
+        // ⚠️ 非 0 只表示“产生了待裁决记录”，不代表任何技能被禁用/合并。
+        metadata["family_review_count"] = report.FamilyReviewCount.ToString();
 
         // 零写盘（G6 I3）：本作业 OperationCount 恒为 0，不产生任何技能写操作。
         return CreateCompletedPeriodicResult(
