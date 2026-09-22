@@ -11,6 +11,43 @@ public static class ContextCompactionDefaults
     public const double TriggerRatio = 0.80;
 }
 
+/// <summary>
+/// 上下文门禁（gate）阈值常量。口径：分母为 <see cref="ContextHealthSnapshot.EffectiveWindowTokens"/>
+/// （有效输入窗口 = min(模型窗口 - 预留输出 - 安全缓冲, provider 输入上限)），语义是「输入还剩多少」。
+/// 2026-09-22 超限事故可见性修复：这组阈值原先是 <c>ContextHealthEvaluator</c> 里的裸字面量
+/// （0.60 / 0.75 / 0.92），现集中为常量，既供评估器引用，也可随 context_health 诊断输出，
+/// 避免「显示口径（UsageRatio，分母=模型窗口）」与「门禁口径」再次混淆。
+/// </summary>
+public static class ContextHealthGateThresholds
+{
+    /// <summary>Warning：输入占用达到有效输入窗口的 60%。</summary>
+    public const double WarningRatio = 0.60;
+
+    /// <summary>Unhealthy：输入占用达到有效输入窗口的 75%。</summary>
+    public const double UnhealthyRatio = 0.75;
+
+    /// <summary>Critical：输入占用达到压缩触发阈值（默认 0.80，可被 AutoCompactionThreshold 覆盖）。</summary>
+    public const double TriggerRatio = ContextCompactionDefaults.TriggerRatio;
+
+    /// <summary>Blocking：输入占用达到有效输入窗口的 92%，发送前必须硬门禁。</summary>
+    public const double BlockingRatio = 0.92;
+}
+
+/// <summary>门禁阈值快照（随 context_health 诊断输出，用于归因门禁判定口径）。</summary>
+public sealed record ContextHealthThresholds(
+    double Warning,
+    double Unhealthy,
+    double Trigger,
+    double Blocking)
+{
+    /// <summary>默认阈值（0.60 / 0.75 / TriggerRatio / 0.92）。</summary>
+    public static ContextHealthThresholds Default { get; } = new(
+        ContextHealthGateThresholds.WarningRatio,
+        ContextHealthGateThresholds.UnhealthyRatio,
+        ContextHealthGateThresholds.TriggerRatio,
+        ContextHealthGateThresholds.BlockingRatio);
+}
+
 [JsonConverter(typeof(JsonStringEnumConverter<ContextHealthState>))]
 public enum ContextHealthState
 {
@@ -62,8 +99,15 @@ public sealed record ContextHealthSnapshot(
     ContextHealthState State,
     bool ShouldSuggestCompact,
     bool ShouldAutoCompact,
-    bool ShouldBlockSend)
+    bool ShouldBlockSend,
+    double GateRatio = 0)
 {
+    /// <summary>
+    /// 门禁阈值常量快照。默认取 <see cref="ContextHealthGateThresholds"/> 常量默认值，
+    /// 评估器会把本次实际生效的触发阈值写回 <see cref="ContextHealthThresholds.Trigger"/>。
+    /// </summary>
+    public ContextHealthThresholds GateThresholds { get; init; } = ContextHealthThresholds.Default;
+
     public string UsageSource { get; init; } = "unknown";
     public string UsageConfidence { get; init; } = "estimated";
     public string? UsageRecordedAtUtc { get; init; }

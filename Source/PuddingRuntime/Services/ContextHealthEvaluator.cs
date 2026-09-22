@@ -32,16 +32,16 @@ public sealed class ContextHealthEvaluator
         var gateRatio = normalizedUsedTokens / (double)effectiveWindow;
         var state = gateRatio switch
         {
-            >= 0.92 => ContextHealthState.Blocking,
+            >= ContextHealthGateThresholds.BlockingRatio => ContextHealthState.Blocking,
             _ => ContextHealthState.Healthy,
         };
         if (state == ContextHealthState.Healthy)
         {
             if (gateRatio >= effectiveThreshold)
                 state = ContextHealthState.Critical;
-            else if (gateRatio >= 0.75)
+            else if (gateRatio >= ContextHealthGateThresholds.UnhealthyRatio)
                 state = ContextHealthState.Unhealthy;
-            else if (gateRatio >= 0.60)
+            else if (gateRatio >= ContextHealthGateThresholds.WarningRatio)
                 state = ContextHealthState.Warning;
         }
 
@@ -55,7 +55,16 @@ public sealed class ContextHealthEvaluator
             state,
             state >= ContextHealthState.Warning,
             state is ContextHealthState.Critical or ContextHealthState.Blocking,
-            state == ContextHealthState.Blocking);
+            state == ContextHealthState.Blocking,
+            // 2026-09-22 事故可见性：把门禁比率（分母=有效输入窗口）一并报告出去。
+            // 旧快照只暴露 UsageRatio（分母=模型窗口），本次事故中 usageRatio=0.609 看似宽松，
+            // 而 gateRatio=1.0041 已经超限，观测盲点就在于这个比率没有出口。
+            gateRatio)
+        {
+            // 阈值常量随快照输出，供诊断直接归因；Trigger 回写本次实际生效的压缩触发阈值
+            // （可能来自 AutoCompactionThreshold 配置，未必等于默认 0.80）。
+            GateThresholds = ContextHealthThresholds.Default with { Trigger = effectiveThreshold },
+        };
     }
 
     /// <summary>

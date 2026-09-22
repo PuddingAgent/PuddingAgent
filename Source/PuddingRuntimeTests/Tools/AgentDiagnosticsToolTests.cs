@@ -52,6 +52,55 @@ public sealed class AgentDiagnosticsToolTests
         }
     }
 
+    /// <summary>
+    /// 2026-09-22 超限事故可见性回归：context_health 必须同时输出门禁比率（分母 = 有效输入窗口）
+    /// 与门禁阈值常量，否则「usageRatio=0.609 看似宽松、gateRatio=1.0041 实际已超限」这类
+    /// 观测盲点无法从诊断输出里看出。
+    /// </summary>
+    [TestMethod]
+    public async Task ContextHealth_OutputCarriesGateRatioAndGateThresholds()
+    {
+        var resolver = new FakeContextCapacityResolver
+        {
+            Capacity = new ResolvedContextCapacity(200_000, 8_192, 128_000),
+        };
+        var compaction = new FakeContextCompactionService
+        {
+            Health = new ContextHealthSnapshot(
+                "session-1", 609_305, 1_000_000, 606_784, 0, 0.609305,
+                ContextHealthState.Blocking, true, true, true, GateRatio: 1.00415),
+        };
+        var tool = CreateTool(resolver, compaction, out var provider);
+        using (provider)
+        {
+            var result = await ExecuteAsync(
+                tool,
+                """{"action":"context_health"}""",
+                sessionId: "session-1",
+                workspaceId: "default",
+                agentInstanceId: "agent-a");
+
+            Assert.IsTrue(result.Success, result.Error);
+            using var doc = JsonDocument.Parse(result.Output);
+            var root = doc.RootElement;
+
+            Assert.AreEqual(0.609305, root.GetProperty("usageRatio").GetDouble(), 1e-6);
+            Assert.AreEqual(1.00415, root.GetProperty("gateRatio").GetDouble(), 1e-6);
+            Assert.IsGreaterThan(
+                root.GetProperty("usageRatio").GetDouble(),
+                root.GetProperty("gateRatio").GetDouble());
+
+            var thresholds = root.GetProperty("gateThresholds");
+            Assert.AreEqual(0.60, thresholds.GetProperty("warning").GetDouble(), 1e-9);
+            Assert.AreEqual(0.75, thresholds.GetProperty("unhealthy").GetDouble(), 1e-9);
+            Assert.AreEqual(
+                ContextCompactionDefaults.TriggerRatio,
+                thresholds.GetProperty("trigger").GetDouble(),
+                1e-9);
+            Assert.AreEqual(0.92, thresholds.GetProperty("blocking").GetDouble(), 1e-9);
+        }
+    }
+
     [TestMethod]
     public async Task ContextHealth_MissingAgentIdentity_ReturnsError()
     {

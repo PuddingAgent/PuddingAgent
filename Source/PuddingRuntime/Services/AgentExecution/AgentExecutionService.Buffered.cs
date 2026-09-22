@@ -704,7 +704,8 @@ public sealed partial class AgentExecutionService
                         injectedHistory,
                         llmTools,
                         effectiveLlmConfig,
-                        workUnitInputCapacity: request.UsageBudget?.MaxInputTokens);
+                        workUnitInputCapacity: request.UsageBudget?.MaxInputTokens,
+                        logger: _logger);
                     injectedHistory = budgetedRequest.Messages.ToList();
                     contextUsageSnapshot = budgetedRequest.Snapshot;
                     if (budgetedRequest.RemovedMessageCount > 0)

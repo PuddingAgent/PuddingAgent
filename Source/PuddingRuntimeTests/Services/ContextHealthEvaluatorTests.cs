@@ -1,4 +1,4 @@
-﻿using PuddingCode.Runtime;
+using PuddingCode.Runtime;
 using PuddingRuntime.Services;
 
 namespace PuddingRuntimeTests.Services;
@@ -138,5 +138,68 @@ public sealed class ContextHealthEvaluatorTests
             compactionThreshold: 0.90);
 
         Assert.AreEqual(ContextHealthState.Critical, health.State);
+    }
+
+    /// <summary>
+    /// 2026-09-22 超限事故的观测盲点回归：快照必须同时暴露门禁口径 GateRatio
+    /// （分母 = 有效输入窗口），它在 effectiveWindow &lt; modelWindow 时与显示口径 UsageRatio 不相等。
+    /// 事故实测：used=609305, modelWindow=1_000_000, effectiveWindow=606_784。
+    /// </summary>
+    [TestMethod]
+    public void Evaluate_ExposesGateRatio_AgainstEffectiveWindow_NotModelWindow()
+    {
+        var evaluator = new ContextHealthEvaluator();
+
+        var health = evaluator.Evaluate(
+            sessionId: "session-1",
+            usedTokens: 609_305,
+            contextWindowTokens: 1_000_000,
+            maxOutputTokens: 384_000,
+            safetyBufferTokens: 9_216,
+            compactionThreshold: 0.80);
+
+        Assert.AreEqual(606_784, health.EffectiveWindowTokens);
+        Assert.AreEqual(609_305.0 / 606_784.0, health.GateRatio, 1e-9);
+        Assert.AreEqual(609_305.0 / 1_000_000.0, health.UsageRatio, 1e-9);
+        Assert.IsGreaterThan(1.0, health.GateRatio);
+        Assert.AreNotEqual(health.UsageRatio, health.GateRatio);
+        Assert.AreEqual(ContextHealthState.Blocking, health.State);
+        Assert.IsTrue(health.ShouldBlockSend);
+
+        // 门禁阈值随快照输出，且引用常量而非字面量。
+        Assert.AreEqual(ContextHealthGateThresholds.WarningRatio, health.GateThresholds.Warning, 1e-9);
+        Assert.AreEqual(ContextHealthGateThresholds.UnhealthyRatio, health.GateThresholds.Unhealthy, 1e-9);
+        Assert.AreEqual(ContextHealthGateThresholds.TriggerRatio, health.GateThresholds.Trigger, 1e-9);
+        Assert.AreEqual(ContextHealthGateThresholds.BlockingRatio, health.GateThresholds.Blocking, 1e-9);
+        Assert.AreEqual(0.60, health.GateThresholds.Warning, 1e-9);
+        Assert.AreEqual(0.75, health.GateThresholds.Unhealthy, 1e-9);
+        Assert.AreEqual(0.80, health.GateThresholds.Trigger, 1e-9);
+        Assert.AreEqual(0.92, health.GateThresholds.Blocking, 1e-9);
+    }
+
+    /// <summary>
+    /// 无预留（输出 0、缓冲 0）时两个口径重合；有预留时 Trigger 阈值必须回写实际生效值。
+    /// </summary>
+    [TestMethod]
+    public void Evaluate_GateRatioAndThresholds_FollowReservationAndConfiguredTrigger()
+    {
+        var evaluator = new ContextHealthEvaluator();
+
+        var noReservation = evaluator.Evaluate("session-1", 50_000, 200_000, maxOutputTokens: 0);
+        Assert.AreEqual(0.25, noReservation.GateRatio, 1e-12);
+        Assert.AreEqual(noReservation.UsageRatio, noReservation.GateRatio, 1e-12);
+
+        // 有效窗口变小 ⇒ 门禁比率高于显示比率（两者不再相等）。
+        var reserved = evaluator.Evaluate("session-1", 50_000, 200_000, maxOutputTokens: 50_000);
+        Assert.AreEqual(150_000, reserved.EffectiveWindowTokens);
+        Assert.AreEqual(50_000.0 / 150_000.0, reserved.GateRatio, 1e-12);
+        Assert.AreEqual(0.25, reserved.UsageRatio, 1e-12);
+        Assert.AreNotEqual(reserved.UsageRatio, reserved.GateRatio);
+
+        // 配置了非默认压缩阈值时，输出必须回写实际生效值（而不是常量默认值）。
+        var custom = evaluator.Evaluate(
+            "session-1", 50_000, 200_000, maxOutputTokens: 50_000, compactionThreshold: 0.85);
+        Assert.AreEqual(0.85, custom.GateThresholds.Trigger, 1e-9);
+        Assert.AreEqual(0.60, custom.GateThresholds.Warning, 1e-9);
     }
 }
