@@ -335,16 +335,25 @@ public sealed class SessionApiControllerTests
     [TestMethod]
     public async Task CompactSession_Returns200_WithStringLevel()
     {
-        var sessionId = "compact-session-1";
+        // 现行 /compact 契约：AgentId 必填（空值直接 400 agent_id_required，
+        // SessionEventsController.cs:715），且后继会话要求源会话真实存在
+        // （CompactionSessionSuccessor.cs:26）。因此先物化一份可解析的 Agent 身份 + 一个真实会话；
+        // 用例本意（字符串 level 绑定 + 完整 envelope 契约）不变。
+        var agentId = await EnsureCompactTestAgentAsync();
+        var sessionId = await CreateCompactSessionAsync("compact-string-level");
 
         var response = await _client.PostAsJsonAsync($"/api/sessions/{sessionId}/compact", new
         {
             workspaceId = "default",
+            agentId,
             level = "Full",
             reason = "test compact",
         });
 
-        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.AreEqual(
+            HttpStatusCode.OK,
+            response.StatusCode,
+            await response.Content.ReadAsStringAsync());
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var compaction = doc.RootElement.GetProperty("compaction");
         Assert.AreEqual(sessionId, compaction.GetProperty("sessionId").GetString());
@@ -372,14 +381,21 @@ public sealed class SessionApiControllerTests
         createResp.EnsureSuccessStatusCode();
         var oldSession = await createResp.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
 
+        // 同因：/compact 现行契约需要 agentId，且服务端会用真实运行时档案解析它。
+        var agentId = await EnsureCompactTestAgentAsync();
+
         var response = await _client.PostAsJsonAsync($"/api/sessions/{oldSession!.SessionId}/compact", new
         {
             workspaceId = "default",
+            agentId,
             level = "Full",
             reason = "test compact",
         });
 
-        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.AreEqual(
+            HttpStatusCode.OK,
+            response.StatusCode,
+            await response.Content.ReadAsStringAsync());
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.AreEqual("压缩 - mimo", doc.RootElement.GetProperty("newSessionTitle").GetString());
         Assert.AreEqual(
@@ -390,4 +406,93 @@ public sealed class SessionApiControllerTests
                 .GetProperty("newSessionTitle")
                 .GetString());
     }
+
+    /// <summary>
+    /// /compact 现行契约要求请求携带 agentId，服务端会用真实 AgentRuntimeProfileResolver
+    /// 解析该 Agent 的运行时档案，而档案里的 preferredProviderId / preferredModelId 必须
+    /// 已注册在 data/config/llm.providers.json（否则 AgentConfigurationException ⇒ 400）。
+    /// 测试宿主是全新隔离数据根，默认既无 Agent 也无 Provider，因此这里通过公开 API 现场
+    /// 物化一份最小可解析身份：provider → 模型 → 引用它们的 workspace agent 实例。
+    /// 只做测试夹具准备，不改变任何被验证的产品语义。
+    /// </summary>
+    private async Task<string> EnsureCompactTestAgentAsync()
+    {
+        if (_compactTestAgentId is not null)
+            return _compactTestAgentId;
+
+        const string providerId = "compact-test-provider";
+        const string modelId = "compact-test-model";
+
+        var providerResponse = await _client.PostAsJsonAsync("/api/llm/providers", new
+        {
+            providerId,
+            name = "Compact Test Provider",
+            baseUrl = "https://api.example.com/v1",
+            apiKey = "test-key",
+            description = "压缩契约测试用 provider",
+            isEnabled = true,
+        });
+        Assert.IsTrue(
+            providerResponse.StatusCode is HttpStatusCode.Created or HttpStatusCode.Conflict,
+            $"物化压缩测试 provider 失败：{(int)providerResponse.StatusCode} {await providerResponse.Content.ReadAsStringAsync()}");
+
+        var modelResponse = await _client.PostAsJsonAsync(
+            $"/api/llm/providers/{providerId}/models",
+            new
+            {
+                modelId,
+                name = modelId,
+                protocol = "openai",
+                description = "压缩契约测试用模型",
+                maxContextTokens = 8192,
+                maxOutputTokens = 2048,
+                inputPricePer1MTokens = 0m,
+                outputPricePer1MTokens = 0m,
+                cacheHitPricePer1MTokens = 0m,
+                capabilityTags = Array.Empty<string>(),
+                isDeprecated = false,
+                isDefault = true,
+                isEmbedding = false,
+                sortOrder = 0,
+            });
+        Assert.IsTrue(
+            modelResponse.StatusCode is HttpStatusCode.Created or HttpStatusCode.Conflict,
+            $"物化压缩测试模型失败：{(int)modelResponse.StatusCode} {await modelResponse.Content.ReadAsStringAsync()}");
+
+        var agentResponse = await _client.PostAsJsonAsync("/api/workspaces/default/agents", new
+        {
+            name = "compact-contract-agent",
+            displayName = "compact-contract-agent",
+            sourceTemplateId = "global:general-assistant",
+            preferredProviderId = providerId,
+            preferredModelId = modelId,
+        });
+        Assert.AreEqual(
+            HttpStatusCode.Created,
+            agentResponse.StatusCode,
+            await agentResponse.Content.ReadAsStringAsync());
+        var agent = await agentResponse.Content.ReadFromJsonAsync<WorkspaceAgentIdDto>(JsonOpts);
+        Assert.IsNotNull(agent);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(agent!.AgentId));
+        _compactTestAgentId = agent.AgentId;
+        return _compactTestAgentId;
+    }
+
+    private async Task<string> CreateCompactSessionAsync(string titlePrefix)
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/sessions", new
+        {
+            workspaceId = "default",
+            agentTemplateId = "global:general-assistant",
+            title = $"{titlePrefix}-{Guid.NewGuid():N}",
+        });
+        createResponse.EnsureSuccessStatusCode();
+        var created = await createResponse.Content.ReadFromJsonAsync<SessionDto>(JsonOpts);
+        Assert.IsNotNull(created);
+        return created!.SessionId;
+    }
+
+    private static string? _compactTestAgentId;
+
+    private sealed record WorkspaceAgentIdDto(string AgentId);
 }

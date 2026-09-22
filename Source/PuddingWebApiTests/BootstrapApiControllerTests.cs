@@ -32,7 +32,12 @@ public sealed class BootstrapApiControllerTests
                 mode = "custom",
                 providerId = "bootstrap-openai",
                 name = "Bootstrap OpenAI",
-                protocol = "openai",
+                // 现行请求契约是「模型级协议」字段（BootstrapProviderRequest.ChatModelProtocol /
+                // MemoryModelProtocol，读取处 BootstrapApiController.cs:375,:380）；
+                // 旧的 provider 级 `protocol` 不是请求成员，两个协议字段为 null 时产品会
+                // 直接拒绝（BootstrapApiController.cs:408）并冒泡为 500。
+                chatModelProtocol = "openai",
+                memoryModelProtocol = "openai",
                 baseUrl = "https://api.example.com/v1",
                 apiKey = "test-key",
                 chatModelId = "gpt-test",
@@ -57,6 +62,7 @@ public sealed class BootstrapApiControllerTests
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", result.Token);
         Assert.AreEqual("bootstrap-openai", result.ProviderId);
         Assert.AreEqual("gpt-test", result.ChatModelId);
+        Assert.AreEqual("gpt-test-mini", result.MemoryModelId);
 
         var providerResponse = await client.GetAsync("/api/llm/providers/bootstrap-openai");
         Assert.AreEqual(HttpStatusCode.OK, providerResponse.StatusCode);

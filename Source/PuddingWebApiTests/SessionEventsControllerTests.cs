@@ -214,6 +214,21 @@ public sealed class SessionEventsControllerTests
             $"HTTP /compact 必须创建 Guid-N 根 Trace，实际为 '{capture.LastRequest.TraceId}'。");
         Assert.IsNotNull(capture.LastRequest!.LlmConfig);
         Assert.AreEqual("deepseek-v4-flash", capture.LastRequest.LlmConfig!.ModelId);
+        // runtime profile 透传：LlmConfig 的端点与密钥引用同样来自
+        // FixedAgentRuntimeProfileResolver 解析出的运行时档案，而不是任何默认/回退配置。
+        Assert.AreEqual(
+            "https://api.deepseek.com",
+            capture.LastRequest.LlmConfig!.Endpoint,
+            "压缩请求的 LlmConfig.Endpoint 必须来自运行时档案解析。");
+        Assert.AreEqual(
+            "test-key",
+            capture.LastRequest.LlmConfig!.KeyVaultId,
+            "压缩请求的 LlmConfig 密钥引用必须来自运行时档案解析。");
+        // runtime profile 透传：Agent 模板身份同样由运行时档案提供。
+        Assert.AreEqual(
+            "research-assistant",
+            capture.LastRequest.AgentTemplateId,
+            "压缩请求必须携带运行时档案解析出的 Agent 模板 ID（FixedAgentRuntimeProfileResolver.SourceTemplateId）。");
         Assert.IsNotNull(capture.LastRequest.CapabilityPolicy);
         Assert.IsNotNull(capture.LastRequest.ToolDefinitions);
         Assert.IsNotNull(capture.LastRequest.SkillPackages);
@@ -237,9 +252,13 @@ public sealed class SessionEventsControllerTests
             .EnumerateArray()
             .Select(item => item.GetProperty("type").GetString())
             .ToArray();
-        CollectionAssert.Contains(
-            sourceTypes,
-            ConversationEventTypes.ContextCompactionStarted);
+        // 契约变更：RequestCompactionHandler 只落 Completed/Failed 终态，不再发射
+        // ContextCompactionStarted；更新的契约测试明文断言该事件不得存在
+        // （PuddingPlatformTests/Services/RequestCompactionHandlerTraceTests.cs:57,:99）。
+        // 原断言 Started 存在属测试契约滞后：本用例在 :176-186 已把 IContextCompactionService
+        // 换成捕获桩，真实发射路径根本不会执行，该断言只能靠产品回退到旧行为才成立。
+        // 用例本意是「runtime profile 被传给压缩服务」，已由上面对捕获桩 LastRequest 的
+        // 档案字段断言覆盖（强于原先对副作用事件的间接观察）。
         CollectionAssert.Contains(
             sourceTypes,
             ConversationEventTypes.ContextCompactionCompleted);
