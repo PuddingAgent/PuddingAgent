@@ -92,10 +92,12 @@ public static class StartupConfigurationAudit
                 warnings);
         }
 
-        if (hasConfig)
+        // 去噪：ASPNETCORE_URLS 会被宿主配置链映射为 urls 键，两者取到同一值属同一来源，
+        // 不能当成「多来源冲突」报警（否则每个设了该变量的启动都会刷假告警）。
+        if (hasConfig && !string.Equals(configurationUrls, environmentUrls, StringComparison.Ordinal))
         {
             warnings.Add(
-                $"配置链 urls（{configurationUrls}）与环境变量 ASPNETCORE_URLS 同时存在，"
+                $"配置链 urls（{configurationUrls}）与环境变量 ASPNETCORE_URLS 同时存在且取值不同，"
                 + "最终由宿主配置链决定；请以 urls.effective 为准。");
         }
 

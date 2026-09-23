@@ -39,6 +39,27 @@ public sealed class StartupConfigurationAuditTests
     }
 
     /// <summary>
+    /// 去噪守卫：`ASPNETCORE_URLS` 会被宿主配置链映射为 urls 键，两者取到同一值属**同一来源**，
+    /// 不得报“多来源冲突”（否则每个设了该变量的启动都会刷假告警，把审计噪声化）。
+    /// </summary>
+    [Fact]
+    public void ResolveUrlBinding_DoesNotWarnWhenConfigurationEchoesTheEnvironmentValue()
+    {
+        var decision = StartupConfigurationAudit.ResolveUrlBinding(Empty, "http://env:1234", "http://env:1234");
+
+        Assert.Equal("ASPNETCORE_URLS", decision.Source);
+        Assert.Empty(decision.Warnings);
+    }
+
+    [Fact]
+    public void ResolveUrlBinding_WarnsWhenConfigurationDiffersFromEnvironment()
+    {
+        var decision = StartupConfigurationAudit.ResolveUrlBinding(Empty, "http://env:1234", "http://config:5678");
+
+        Assert.Contains(decision.Warnings, w => w.Contains("取值不同", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// C-1 的**证据性**断言：配置链里明明有 urls，却仍被硬编码默认值覆盖（既有行为）。
     /// 本测试锁定该事实并保留告警，但不修正它 —— 修正属 C-2。
     /// </summary>
