@@ -74,13 +74,15 @@ public static class PuddingApplicationHost
         builder.Host.UseSerilog();
 
         // ── URL binding ─────────────────────────────────────
-        if (options.Urls.Count > 0)
+        // ADR-094 C-1：解析结果与既往实现**逐字等价**（行为不变），仅把「哪个来源生效」纳入启动审计。
+        // 修正「配置链 urls 被硬编码默认值覆盖」属 C-2，需二次批准。
+        var urlBinding = StartupConfigurationAudit.ResolveUrlBinding(
+            options.Urls,
+            Environment.GetEnvironmentVariable("ASPNETCORE_URLS"),
+            builder.Configuration["urls"]);
+        if (urlBinding.ShouldCallUseUrls)
         {
-            builder.WebHost.UseUrls(options.Urls.ToArray());
-        }
-        else if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
-        {
-            builder.WebHost.UseUrls("http://0.0.0.0:8080");
+            builder.WebHost.UseUrls(urlBinding.ExplicitUrls!.ToArray());
         }
 
         // ── HTTP 请求日志 ────────────────────────────────────
@@ -119,6 +121,23 @@ public static class PuddingApplicationHost
                       .AllowAnyMethod()
                       .AllowCredentials());
         });
+
+        // ── ADR-094 C-1：生效来源审计（观测专用，零行为变更）──
+        StartupConfigurationAudit.Emit(
+            Console.WriteLine,
+            StartupConfigurationAudit.Build(
+                urlBinding,
+                options.Urls,
+                Environment.GetEnvironmentVariable("ASPNETCORE_URLS"),
+                corsOrigins,
+                builder.Configuration["Cors:AllowedOrigins"],
+                Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+                dataRoot,
+                string.IsNullOrWhiteSpace(options.DataRoot)
+                    ? "PuddingDataRootBootstrapper.ResolveDataRoot(args)"
+                    : "PuddingHostOptions.DataRoot",
+                bootstrapConfiguration["Serilog:MinimumLevel"]),
+            urlBinding.Warnings);
 
         // ── Controllers with ApplicationParts ───────────────
         var mvcBuilder = builder.Services.AddControllersWithViews()

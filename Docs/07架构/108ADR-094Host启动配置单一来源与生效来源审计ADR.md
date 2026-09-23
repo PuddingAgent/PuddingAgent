@@ -1,6 +1,6 @@
 # ADR-094：Host 启动配置的单一来源与生效来源审计
 
-日期：2026-09-23。状态：**Proposed**。决策责任：Host 组合与启动顺序、日志早期启动、URL/CORS/环境名等启动期边界；外部控制器负责部署与生命周期验收。
+日期：2026-09-23。状态：**Proposed**（C-1 已实施）。决策责任：Host 组合与启动顺序、日志早期启动、URL/CORS/环境名等启动期边界；外部控制器负责部署与生命周期验收。
 
 依据：[架构评审处置裁决](../Reports/ArchReview-Triage-2026-09-23.md)、[GPT-6 Astra 评审](../Reports/ArchReview-GPT6Astra-2026-09-23.md)。
 
@@ -63,9 +63,35 @@ CORS | `builder.Configuration["Cors:AllowedOrigins"]` + 代码内联默认值 | 
 
 覆盖矩阵：`env × CLI × system.json × appsettings` 四源组合 + 缺省路径 + 冲突路径 + DataRoot 覆盖 + 日志早期可用性。
 
+## 2026-09-23 C-1 实施记录
+
+**已落地（零行为变更）**：
+
+- 新增 `Source/PuddingHost/Hosting/StartupConfigurationAudit.cs`：纯函数式审计（`ResolveUrlBinding` / `Build` / `RenderValue` / `Emit`）。
+- `PuddingApplicationHost.CreateBuilder`：URL 绑定改为调用 `ResolveUrlBinding`，解析结果与旧实现**逐字等价**；
+  在 CORS 之后输出一次生效来源审计（`Console.WriteLine`，与既有 `[Startup]` 输出同风格）。
+  审计覆盖：`urls.effective` / `urls.options` / `urls.env` / `urls.configuration` / `Cors:AllowedOrigins` /
+  `ASPNETCORE_ENVIRONMENT` / `DataRoot`（指纹脱敏）/ `Serilog:MinimumLevel`；并输出覆盖告警。
+- 新增 `Tests/PuddingHost.Tests/Hosting/StartupConfigurationAuditTests.cs`（xunit，7 用例）。
+
+**验证（实跑）**：
+
+| 项 | 结果 |
+|---|---|
+定向 7 用例 | `失败 0 / 通过 7 / 总计 7` |
+**行为不变矩阵**（12 组合对拍旧谓词） | 绿；**变异取红**：把 C-2 的“让配置链 urls 生效”提前注入 ⇒ `失败 3 / 通过 4`，报错为 `Expected ["http://0.0.0.0:8080"] / Actual ["http://config:5678"]` |
+全量 `PuddingHost.Tests` | `失败 0 / 通过 119 / 总计 119`（启动路径改动，必须全量回归） |
+
+**派生事实**：`Source/PuddingHost/*.json` 中**不存在** `urls` 键
+⇒ C-2 的“静默改变监听地址”风险当前较低，但仍需在 C-1 观测到实际后台数据后再批。
+
+**尚未做**：C-2（统一解析口径、清零 `Environment` 直读点）；尚未重启部署（C-1 产出为启动日志，需重启才可见）。
+
+---
+
 ## 本次状态
 
-**Proposed。本 ADR 未改任何代码、未重启、未部署。**
+**Proposed（整体未批准；其中 C-1 已于 2026-09-23 实施并验证，见上一节）。未重启、未部署。**
 
 实施前必须由实施者回填（不得凭本 ADR 转述）：
 1. `appsettings.json` / `system.json` 中**是否已有 urls 类键**（决定 C-2 是否构成静默行为变更）；
