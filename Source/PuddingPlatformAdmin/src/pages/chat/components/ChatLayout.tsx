@@ -41,10 +41,8 @@ interface ChatLayoutProps {
   onWorkspaceChange: (v: string | undefined) => void;
   agents: WorkspaceAgentDto[];
   /** 本轮待附加技能（chip 展示）；发送时由 ChatPage 转为文本附加到消息末尾。 */
-  pendingSkills?: { name: string; description?: string }[];
-  onPendingSkillsChange?: (
-    skills: { name: string; description?: string }[],
-  ) => void;
+  pendingSkills?: { skillId: string; name: string }[];
+  onPendingSkillsChange?: (skills: { skillId: string; name: string }[]) => void;
   agentId: string | undefined;
   agentLoading: boolean;
   agOpts: { value: string; label: React.ReactNode; disabled: boolean }[];

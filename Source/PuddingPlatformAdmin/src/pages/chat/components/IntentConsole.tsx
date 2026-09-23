@@ -215,10 +215,8 @@ interface IntentConsoleProps {
     isFrozen?: boolean;
   }[];
   /** 本轮待附加技能（以 chip 展示在输入框上方；发送时转为文本）。 */
-  pendingSkills?: { name: string; description?: string }[];
-  onPendingSkillsChange?: (
-    skills: { name: string; description?: string }[],
-  ) => void;
+  pendingSkills?: { skillId: string; name: string }[];
+  onPendingSkillsChange?: (skills: { skillId: string; name: string }[]) => void;
   /** 打开 ChatMain 持有的固定子代理运行检查器。 */
   onOpenSubAgentInspector?: () => void;
   /** 浏览器语音输入适配器；测试与后续 ASR Provider 接入可替换该适配器 */
@@ -300,10 +298,10 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
    * 若状态停在本组件内，按 Enter 发送会丢掉技能、按发送按钮却带着技能。
    */
   const handleSelectSkill = useCallback(
-    (skill: { name: string; description?: string }) => {
+    (skill: { skillId: string; name: string }) => {
       const next = [
-        ...(pendingSkills ?? []).filter((s) => s.name !== skill.name),
-        { name: skill.name, description: skill.description },
+        ...(pendingSkills ?? []).filter((s) => s.skillId !== skill.skillId),
+        { skillId: skill.skillId, name: skill.name },
       ];
       onPendingSkillsChange?.(next);
       setShowComposerMenu(false);
@@ -313,9 +311,9 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   );
 
   const handleRemoveSkill = useCallback(
-    (name: string) => {
+    (skillId: string) => {
       onPendingSkillsChange?.(
-        (pendingSkills ?? []).filter((s) => s.name !== name),
+        (pendingSkills ?? []).filter((s) => s.skillId !== skillId),
       );
     },
     [pendingSkills, onPendingSkillsChange],
@@ -893,14 +891,19 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
         {(pendingSkills?.length ?? 0) > 0 && (
           <div style={pendingSkillsRowStyle} data-testid="pending-skills">
             {(pendingSkills ?? []).map((s) => (
-              <span key={s.name} style={skillChipStyle}>
+              <span
+                key={s.skillId}
+                style={skillChipStyle}
+                title={s.skillId}
+                data-testid={`pending-skill-${s.skillId}`}
+              >
                 <span>{s.name}</span>
                 <button
                   type="button"
                   style={skillChipRemoveStyle}
-                  onClick={() => handleRemoveSkill(s.name)}
+                  onClick={() => handleRemoveSkill(s.skillId)}
                   aria-label={`移除技能 ${s.name}`}
-                  data-testid={`pending-skill-remove-${s.name}`}
+                  data-testid={`pending-skill-remove-${s.skillId}`}
                 >
                   ×
                 </button>

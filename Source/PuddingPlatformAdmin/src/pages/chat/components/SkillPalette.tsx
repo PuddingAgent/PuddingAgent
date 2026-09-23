@@ -1,37 +1,39 @@
 // ── SkillPalette：`+` 菜单 →「技能」面板（搜索 + 选择）────────
-// 交互定调（用户 2026-09-23）：选中技能后**转换为文本附加到本轮会话**，
-// 提示 Agent 可使用该技能。因此本组件不依赖任何后端「本轮技能」参数 ——
-// SubmitConversationTurnRequest 只有 clientRequestId/clientMessageId/
-// recipients/content/metadata，技能仅绑在 Agent 配置（skillPackageIds）上。
-// 数据源：listSkillPackages(enabledOnly) —— 全局技能包，无需 workspaceId。
+// 交互定调（用户 2026-09-23）：选中技能后挂为 chip，**发送时**才转为文本附加到本轮。
+//
+// 数据源：SKILL Hub —— listHubSkills() → GET /api/skill-hub/skills
+// ⚠️ 曾误用 listSkillPackages()（/api/skill-packages）：那是「上传的技能包」，本机
+//    SkillPackages 表 0 行、WorkspaceSkills 1 行，而真正的技能库是 HubSkills（7 行）。
+//    误用导致面板显示「暂无已启用的技能包」——不是没数据，是查错了表。
 import {
-  listSkillPackages,
-  type SkillPackageDto,
+  listHubSkills,
+  type HubSkillSummaryDto,
 } from '@/services/platform/api';
 import React, { useEffect, useMemo, useState } from 'react';
 
-/** 按 name / description 子串过滤（大小写不敏感）。 */
-export function filterSkillPackages(
-  list: SkillPackageDto[],
+/** 按 skillId / name / summary 子串过滤（大小写不敏感）。 */
+export function filterHubSkills(
+  list: HubSkillSummaryDto[],
   filterText: string,
-): SkillPackageDto[] {
+): HubSkillSummaryDto[] {
   const q = filterText.trim().toLowerCase();
   if (!q) return list;
   return list.filter(
     (s) =>
+      s.skillId.toLowerCase().includes(q) ||
       s.name.toLowerCase().includes(q) ||
-      (s.description ?? '').toLowerCase().includes(q),
+      (s.summary ?? '').toLowerCase().includes(q),
   );
 }
 
 interface SkillPaletteProps {
   open: boolean;
   onClose: () => void;
-  onSelect: (skill: SkillPackageDto) => void;
+  onSelect: (skill: HubSkillSummaryDto) => void;
 }
 
 const wrapStyle: React.CSSProperties = {
-  width: 280,
+  width: 300,
   display: 'flex',
   flexDirection: 'column',
   gap: 6,
@@ -56,7 +58,7 @@ const searchStyle: React.CSSProperties = {
 };
 
 const listStyle: React.CSSProperties = {
-  maxHeight: 220,
+  maxHeight: 240,
   overflowY: 'auto',
 };
 
@@ -67,16 +69,24 @@ const noteStyle: React.CSSProperties = {
   color: 'color-mix(in srgb, var(--text-primary) 50%, transparent)',
 };
 
-function itemStyle(): React.CSSProperties {
-  return {
-    padding: '7px 8px',
-    borderRadius: 6,
-    cursor: 'pointer',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 2,
-  };
-}
+const itemStyle: React.CSSProperties = {
+  padding: '7px 8px',
+  borderRadius: 6,
+  cursor: 'pointer',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+};
+
+const itemSubStyle: React.CSSProperties = {
+  fontSize: 11,
+  lineHeight: 1.4,
+  color: 'color-mix(in srgb, var(--text-primary) 52%, transparent)',
+  display: '-webkit-box',
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: 'vertical',
+  overflow: 'hidden',
+};
 
 const SkillPalette: React.FC<SkillPaletteProps> = ({
   open,
@@ -85,7 +95,7 @@ const SkillPalette: React.FC<SkillPaletteProps> = ({
 }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [skills, setSkills] = useState<SkillPackageDto[]>([]);
+  const [skills, setSkills] = useState<HubSkillSummaryDto[]>([]);
   const [filterText, setFilterText] = useState('');
 
   useEffect(() => {
@@ -93,13 +103,13 @@ const SkillPalette: React.FC<SkillPaletteProps> = ({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    listSkillPackages(true)
+    listHubSkills({ status: 'active', pageSize: 100 })
       .then((list) => {
-        if (!cancelled) setSkills(list ?? []);
+        if (!cancelled) setSkills(Array.isArray(list) ? list : []);
       })
       .catch((e) => {
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : '技能列表加载失败');
+          setError(e instanceof Error ? e.message : '技能库加载失败');
         }
       })
       .finally(() => {
@@ -111,7 +121,7 @@ const SkillPalette: React.FC<SkillPaletteProps> = ({
   }, [open]);
 
   const filtered = useMemo(
-    () => filterSkillPackages(skills, filterText),
+    () => filterHubSkills(skills, filterText),
     [skills, filterText],
   );
 
@@ -133,18 +143,20 @@ const SkillPalette: React.FC<SkillPaletteProps> = ({
         {!loading && error && <div style={noteStyle}>{error}</div>}
         {!loading && !error && filtered.length === 0 && (
           <div style={noteStyle}>
-            {skills.length === 0 ? '暂无已启用的技能包' : '没有匹配的技能'}
+            {skills.length === 0 ? '技能库暂无技能' : '没有匹配的技能'}
           </div>
         )}
         {!loading &&
           !error &&
           filtered.map((s) => (
             <div
-              key={s.skillPackageId}
-              style={itemStyle()}
+              key={s.skillId}
+              style={itemStyle}
               role="button"
               tabIndex={0}
+              title={s.skillId}
               data-skill-item
+              data-testid={`skill-item-${s.skillId}`}
               onClick={() => onSelect(s)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') onSelect(s);
@@ -153,23 +165,15 @@ const SkillPalette: React.FC<SkillPaletteProps> = ({
               <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>
                 {s.name}
               </span>
-              {s.description && (
-                <span
-                  style={{
-                    fontSize: 11,
-                    color:
-                      'color-mix(in srgb, var(--text-primary) 52%, transparent)',
-                  }}
-                >
-                  {s.description}
-                </span>
+              {(s.summary || s.description) && (
+                <span style={itemSubStyle}>{s.summary || s.description}</span>
               )}
             </div>
           ))}
       </div>
-      {/* 诚实边界：本轮技能无法作为协议参数下发，只能以文本提示方式附加。 */}
+      {/* 诚实边界：本轮技能不能作为协议参数下发，只能以文本提示方式附加。 */}
       <div style={noteStyle}>
-        选择后会在输入框末尾附加一行提示文本，由 Agent 据此使用该技能。
+        选择后发送时会在消息末尾附加一行提示，由 Agent 据此使用该技能。
       </div>
       <button
         type="button"

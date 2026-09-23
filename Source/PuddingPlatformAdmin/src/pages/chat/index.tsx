@@ -73,16 +73,15 @@ function shallowEqualRecord(
 
 /** 把本轮待附加技能转为提示文本；附加在消息末尾以免破坏开头 @mention 路由。 */
 function buildPendingSkillHint(
-  skills: { name: string; description?: string }[],
+  skills: { skillId: string; name: string }[],
 ): string {
   if (skills.length === 0) return '';
-  const names = skills.map((s) => s.name).join('、');
-  const details = skills
-    .map((s) => ({ name: s.name, desc: (s.description ?? '').trim() }))
-    .filter((s) => s.desc)
-    .map((s) => `${s.name}：${s.desc}`)
-    .join('；');
-  return `（本轮请使用技能：${names}${details ? `（${details}）` : ''}）`;
+  // 同时给出 skillId 与展示名：Agent 侧技能索引以 skillId 为键，只给展示名
+  // 会难以精确对应（skillId 与 name 可能不同，如 ppt-master / PPT Master）。
+  const items = skills.map((s) =>
+    s.name && s.name !== s.skillId ? `${s.skillId}（${s.name}）` : s.skillId,
+  );
+  return `（本轮请使用技能：${items.join('、')}）`;
 }
 
 const ChatPageContent: React.FC = () => {
@@ -609,7 +608,7 @@ const ChatPageContent: React.FC = () => {
 
   /** 本轮待附加技能（chip 展示；发送时转为文本附加到消息末尾）。 */
   const [pendingSkills, setPendingSkills] = useState<
-    { name: string; description?: string }[]
+    { skillId: string; name: string }[]
   >([]);
 
   const handleSend = useCallback(() => {
