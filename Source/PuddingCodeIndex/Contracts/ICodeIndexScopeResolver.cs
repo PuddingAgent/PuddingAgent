@@ -1,7 +1,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace PuddingCodeIntelligence.Contracts;
+namespace PuddingCodeIndex.Contracts;
 
 /// <summary>
 /// Resolves a query context (file path, directory path, or explicit scope id)

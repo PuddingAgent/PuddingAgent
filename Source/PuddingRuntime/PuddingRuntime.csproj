@@ -30,6 +30,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PuddingCodeIntelligence\PuddingCodeIntelligence.csproj" />
+    <ProjectReference Include="..\PuddingCodeIndex\PuddingCodeIndex.csproj" />
     <ProjectReference Include="..\PuddingFullTextIndex\PuddingFullTextIndex.csproj" />
   </ItemGroup>
 

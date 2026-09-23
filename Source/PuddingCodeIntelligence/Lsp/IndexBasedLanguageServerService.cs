@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingCodeIntelligence.Lsp;
 

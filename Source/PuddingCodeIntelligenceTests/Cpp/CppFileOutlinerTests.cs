@@ -1,6 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.Cpp;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingCodeIntelligenceTests.Cpp;
 

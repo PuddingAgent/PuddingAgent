@@ -1,9 +1,9 @@
 using Microsoft.Data.Sqlite;
-using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 using System.Data.Common;
 using System.Globalization;
 
-namespace PuddingCodeIntelligence.Storage;
+namespace PuddingCodeIndex.Storage;
 
 /// <summary>
 /// SQLite-backed store for workspace-registered code projects and their semantic graph.

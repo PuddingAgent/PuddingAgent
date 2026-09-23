@@ -1,6 +1,6 @@
-using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 
-namespace PuddingCodeIntelligence.Services;
+namespace PuddingCodeIndex.Services;
 
 /// <summary>
 /// Scope resolver: searches existing scopes, then falls back to project root

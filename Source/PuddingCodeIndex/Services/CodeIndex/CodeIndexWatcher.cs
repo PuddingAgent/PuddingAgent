@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
-using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 
-namespace PuddingCodeIntelligence.Services.CodeIndex;
+namespace PuddingCodeIndex.Services.CodeIndex;
 
 /// <summary>
 /// Watches one code index scope root and turns file-system notifications into cheap

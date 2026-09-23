@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCodeIntelligence;
 using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingCodeIntelligenceTests.Services;
 

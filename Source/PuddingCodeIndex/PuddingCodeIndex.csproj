@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- Index component: maintains index artifacts (contracts, storage, change-capture pipeline,
+       scheduling, scope registry/resolution, exclude patterns, path identity).
+       Boundary rule (ADR-089 §2.1): this project MUST NOT reference PuddingCodeIntelligence. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingCodeIntelligenceTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>

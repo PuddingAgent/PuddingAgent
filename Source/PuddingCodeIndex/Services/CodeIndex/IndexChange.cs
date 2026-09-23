@@ -1,4 +1,4 @@
-namespace PuddingCodeIntelligence.Services.CodeIndex;
+namespace PuddingCodeIndex.Services.CodeIndex;
 
 /// <summary>Kind of file-system change observed for a single path inside a code index scope.</summary>
 public enum IndexChangeKind

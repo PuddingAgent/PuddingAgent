@@ -1,4 +1,4 @@
-﻿namespace PuddingCodeIntelligence.Services;
+﻿namespace PuddingCodeIndex.Services;
 
 /// <summary>
 /// Centralized exclude patterns for code indexing.

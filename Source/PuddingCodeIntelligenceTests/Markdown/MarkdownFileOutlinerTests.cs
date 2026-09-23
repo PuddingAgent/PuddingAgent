@@ -2,6 +2,7 @@
 
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.Markdown;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingCodeIntelligenceTests.Markdown;
 

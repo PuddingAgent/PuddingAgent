@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace PuddingCodeIntelligence.Contracts;
+namespace PuddingCodeIndex.Contracts;
 
 /// <summary>
 /// Maintains code index scope records. Supports idempotent ensure, parent/child

@@ -2,6 +2,7 @@
 
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.Json;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingCodeIntelligenceTests.Json;
 

@@ -1,4 +1,5 @@
 using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingCodeIntelligence.Services;
 

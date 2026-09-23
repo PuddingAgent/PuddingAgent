@@ -1,5 +1,6 @@
 using System;
 using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingCodeIntelligenceTests.Contracts;
 

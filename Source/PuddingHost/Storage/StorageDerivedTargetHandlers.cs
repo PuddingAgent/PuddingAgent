@@ -3,6 +3,8 @@ using PuddingCode.Configuration;
 using PuddingCode.Storage;
 using PuddingCodeIntelligence.Contracts;
 using PuddingPlatform.Services.StorageManagement;
+using PuddingCodeIndex.Contracts;
+using PuddingCodeIndex.Services;
 
 namespace PuddingHost.Storage;
 

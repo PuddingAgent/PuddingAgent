@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace PuddingCodeIntelligence.Contracts;
+namespace PuddingCodeIndex.Contracts;
 
 public sealed record CodeWorkspaceDescriptor(
     string WorkspaceId,

@@ -1,4 +1,5 @@
-﻿namespace PuddingCodeIntelligence.Contracts;
+﻿using PuddingCodeIndex.Contracts;
+namespace PuddingCodeIntelligence.Contracts;
 
 /// <summary>
 /// Language-agnostic file outliner.

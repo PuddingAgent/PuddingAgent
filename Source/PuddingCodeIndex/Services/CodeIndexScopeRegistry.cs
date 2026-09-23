@@ -1,8 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
-using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 
-namespace PuddingCodeIntelligence.Services;
+namespace PuddingCodeIndex.Services;
 
 /// <summary>
 /// Index scope registry built on the existing <see cref="ICodeIndexStore"/>.

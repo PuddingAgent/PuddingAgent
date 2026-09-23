@@ -2,6 +2,7 @@
 
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.PowerShell;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingCodeIntelligenceTests.PowerShell;
 

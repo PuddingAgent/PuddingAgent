@@ -1,5 +1,6 @@
 ﻿using PuddingCodeIntelligence.Contracts;
 using PuddingRuntime.Services.Tools;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingCodeIntelligenceTests.Services;
 

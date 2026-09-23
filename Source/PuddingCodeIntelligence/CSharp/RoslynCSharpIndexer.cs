@@ -5,6 +5,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
 
 using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingCodeIntelligence.CSharp;
 

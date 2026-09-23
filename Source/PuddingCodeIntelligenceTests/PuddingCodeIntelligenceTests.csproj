@@ -1,4 +1,4 @@
-﻿<Project Sdk="MSTest.Sdk/4.0.1">
+<Project Sdk="MSTest.Sdk/4.0.1">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -10,6 +10,7 @@
 
   <ItemGroup>
 <ProjectReference Include="..\\PuddingRuntime\\PuddingRuntime.csproj" />
+    <ProjectReference Include="..\\PuddingCodeIndex\\PuddingCodeIndex.csproj" />
   </ItemGroup>
 
 </Project>

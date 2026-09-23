@@ -6,6 +6,7 @@
     <Project Path="Source/PuddingBrowser.Protocol/PuddingBrowser.Protocol.csproj" />
     <Project Path="Source/PuddingBrowser.WebView2/PuddingBrowser.WebView2.csproj" />
     <Project Path="Source/PuddingCodeIntelligence/PuddingCodeIntelligence.csproj" />
+    <Project Path="Source/PuddingCodeIndex/PuddingCodeIndex.csproj" />
     <Project Path="Source/PuddingController/PuddingController.csproj" Id="5180d09e-4b2c-47e7-a624-7137a410ea9a" />
     <Project Path="Source/PuddingCodexService/PuddingCodexService.csproj" />
     <Project Path="Source/PuddingCore/PuddingCore.csproj" />

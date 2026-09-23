@@ -1,7 +1,7 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 
-namespace PuddingCodeIntelligence.Services.CodeIndex;
+namespace PuddingCodeIndex.Services.CodeIndex;
 
 /// <summary>
 /// Collapses scattered <see cref="IndexChange"/> observations into batches.

@@ -12,6 +12,8 @@ using PuddingCodeIntelligence.Python;
 using PuddingCodeIntelligence.Services;
 using PuddingCodeIntelligence.TypeScript;
 using PuddingCodeIntelligence.Yaml;
+using PuddingCodeIndex.Contracts;
+using PuddingCodeIndex.Services;
 
 namespace PuddingCodeIntelligence;
 

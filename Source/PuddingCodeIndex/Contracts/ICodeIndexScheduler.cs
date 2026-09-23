@@ -1,7 +1,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace PuddingCodeIntelligence.Contracts;
+namespace PuddingCodeIndex.Contracts;
 
 /// <summary>
 /// Enqueues background code indexing work. Ensure/register operations only

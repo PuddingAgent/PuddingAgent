@@ -1,8 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
-using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 
-namespace PuddingCodeIntelligence.Services;
+namespace PuddingCodeIndex.Services;
 
 /// <summary>
 /// Registers source directories as code-intelligence projects without assuming

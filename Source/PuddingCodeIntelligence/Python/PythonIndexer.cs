@@ -6,6 +6,8 @@ using Microsoft.Extensions.Logging;
 
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.Services;
+using PuddingCodeIndex.Contracts;
+using PuddingCodeIndex.Services;
 
 namespace PuddingCodeIntelligence.Python;
 

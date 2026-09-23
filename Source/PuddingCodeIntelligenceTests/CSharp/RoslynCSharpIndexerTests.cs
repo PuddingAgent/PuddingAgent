@@ -4,7 +4,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.CSharp;
-using PuddingCodeIntelligence.Storage;
+using PuddingCodeIndex.Contracts;
+using PuddingCodeIndex.Storage;
 
 namespace PuddingCodeIntelligenceTests.CSharp;
 

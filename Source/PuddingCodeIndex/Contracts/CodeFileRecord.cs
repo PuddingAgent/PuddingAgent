@@ -1,4 +1,4 @@
-namespace PuddingCodeIntelligence.Contracts;
+namespace PuddingCodeIndex.Contracts;
 
 public sealed record CodeFileRecord(
     string WorkspaceId,

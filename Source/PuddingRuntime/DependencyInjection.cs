@@ -26,8 +26,10 @@ using PuddingRuntime.Services.TaskPlanning;
 using PuddingRuntime.Services.Tools;
 using PuddingCodeIntelligence;
 using PuddingCodeIntelligence.Contracts;
-using PuddingCodeIntelligence.Storage;
+
 using System.Threading.Channels;
+using PuddingCodeIndex.Contracts;
+using PuddingCodeIndex.Storage;
 
 namespace PuddingRuntime;
 

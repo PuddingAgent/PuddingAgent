@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingHost.Storage;
 

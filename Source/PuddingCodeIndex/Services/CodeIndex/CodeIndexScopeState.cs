@@ -1,4 +1,4 @@
-namespace PuddingCodeIntelligence.Services.CodeIndex;
+namespace PuddingCodeIndex.Services.CodeIndex;
 
 /// <summary>
 /// Per-scope mutable observation state for the index change pipeline.

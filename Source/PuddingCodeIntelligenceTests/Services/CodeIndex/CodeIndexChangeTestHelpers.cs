@@ -1,5 +1,6 @@
 using PuddingCodeIntelligence.Contracts;
-using PuddingCodeIntelligence.Services.CodeIndex;
+using PuddingCodeIndex.Contracts;
+using PuddingCodeIndex.Services.CodeIndex;
 
 namespace PuddingCodeIntelligenceTests.Services.CodeIndex;
 

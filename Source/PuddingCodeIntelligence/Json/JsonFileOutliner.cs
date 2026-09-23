@@ -2,6 +2,7 @@
 using System.Text.RegularExpressions;
 
 using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingCodeIntelligence.Json;
 

@@ -1,6 +1,6 @@
-using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 
-namespace PuddingCodeIntelligence.Services;
+namespace PuddingCodeIndex.Services;
 
 /// <summary>
 /// Resolves registered project directories into C# workspace metadata that

@@ -1,4 +1,4 @@
-namespace PuddingCodeIntelligence.Services.CodeIndex;
+namespace PuddingCodeIndex.Services.CodeIndex;
 
 /// <summary>
 /// A coalesced unit of work produced by <see cref="CodeIndexChangeCoalescer"/>: the set of paths that

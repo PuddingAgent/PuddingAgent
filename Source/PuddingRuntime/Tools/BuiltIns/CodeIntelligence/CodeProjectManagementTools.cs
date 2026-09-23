@@ -2,6 +2,7 @@ using System.Text.Json;
 using PuddingCode.Models;
 using PuddingCode.Tools;
 using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingRuntime.Services.Tools;
 

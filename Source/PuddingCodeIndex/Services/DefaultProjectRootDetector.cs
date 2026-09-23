@@ -1,7 +1,7 @@
-using PuddingCodeIntelligence.Contracts;
-using PuddingCodeIntelligence.Services;
+using PuddingCodeIndex.Contracts;
+using PuddingCodeIndex.Services;
 
-namespace PuddingCodeIntelligence.Services;
+namespace PuddingCodeIndex.Services;
 
 /// <summary>
 /// Upward-only project root detector. Walks parent directories from the start

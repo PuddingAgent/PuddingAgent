@@ -1,6 +1,6 @@
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.Services;
-using PuddingCodeIntelligence.Storage;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingCodeIntelligenceTests.Services;
 

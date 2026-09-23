@@ -1,4 +1,4 @@
-namespace PuddingCodeIntelligence.Services;
+namespace PuddingCodeIndex.Services;
 
 internal static class CodePathIdentity
 {

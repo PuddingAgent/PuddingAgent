@@ -2,6 +2,7 @@
 
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.TypeScript;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingCodeIntelligenceTests.TypeScript;
 

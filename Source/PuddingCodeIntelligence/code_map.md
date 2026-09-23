@@ -1,45 +1,44 @@
 # PuddingCodeIntelligence CodeMAP
 
-> 代码索引与分析 | LSP · 符号搜索 · 调用图 · 多语言
+> 代码语言智能：**生产与消费**（语言索引器 · outliner · LSP · 查询 facade）
+> 边界（ADR-089 §2.1）：本工程 → `PuddingCodeIndex`（单向 `ProjectReference`）；索引产物维护（契约/存储/变更捕获/调度/范围解析）已迁至 `Source/PuddingCodeIndex`。本工程**不得被** `PuddingCodeIndex` 引用。
 
-## 核心服务（Services/）
+## 语言索引器（生产侧）
+
+| 目录 | 语言 | 说明 |
+|------|------|------|
+| `CSharp/` | C# | `RoslynCSharpIndexer`（`ICodeIndexer` 实现）· `RoslynSymbolId` · `RoslynWorkspaceBootstrapper` |
+| `TypeScript/` | TypeScript | `TypeScriptIndexer`（`ICodeIndexer`）· `TypeScriptFileOutliner` |
+| `Python/` | Python | `PythonIndexer`（`ICodeIndexer`）· `PythonFileOutliner` |
+| `Cpp/` | C++ | outliner |
+| `Json/` | JSON | outliner |
+| `Yaml/` | YAML | outliner |
+| `Markdown/` | Markdown | outliner |
+| `PowerShell/` | PowerShell | outliner |
+| `Bicep/` | Bicep | outliner |
+
+## 消费侧
 
 | 文件 | 用途 |
 |------|------|
-| `CodeIndexScheduler.cs` | 索引调度器 |
-| `CodeIndexScopeRegistry.cs` | 索引范围注册 |
-| `CodeIndexScopeResolver.cs` | 范围解析器 |
-| `CodeProjectRegistry.cs` | 项目注册 |
-| `CodeQueryService.cs` | 代码查询服务 |
-| `DefaultCodeWorkspaceResolver.cs` | 工作区解析 |
-| `DefaultProjectRootDetector.cs` | 项目根检测 |
-| `CodePathIdentity.cs` | 路径标识 |
-| `FileOutlinerRegistry.cs` | 文件大纲注册 |
-| `IndexExcludePatterns.cs` | 排除模式 |
-| `CodeIndex/` | **U3-A 变更捕获管线**：`IndexChange`（记录）· `CodeIndexChangeQueue`（有界 8192，`TryPublish` 不阻塞）· `CodeIndexScopeState`（dirty/version/reconcile，无 IO）· `CodeIndexWatcher`（64KB 缓冲，回调只过滤+TryPublish，Error 事件必处理）· `CodeIndexChangeCoalescer`（防抖 500ms/最长 2s，2 万路径折叠为 reconcile）· `CodeIndexChangeBatch`（重读/移除/reconcile） |
+| `Services/CodeQueryService.cs` | 代码查询服务（只读索引，`ICodeQueryService`） |
+| `Services/FileOutlinerRegistry.cs` | 文件大纲注册（按扩展名派发） |
+| `Lsp/IndexBasedLanguageServerService.cs` | 基于索引的 LSP 视图（hover / definition / references） |
+| `Lsp/NoOpLanguageServerService.cs` | 空实现 |
+| `Contracts/ICodeQueryService.cs` | 查询契约 |
+| `Contracts/IFileOutliner.cs` | outliner 契约（`OutlineNode.Kind` 复用 `PuddingCodeIndex.Contracts.CodeSymbolKind`） |
+| `Contracts/ILanguageServerService.cs` + `Contracts/LanguageServerContracts.cs` | LSP 契约 |
+| `DependencyInjection.cs` | `AddPuddingCodeIntelligence()` 组合根（同时注册 `PuddingCodeIndex` 侧实现：scheduler · scope registry/resolver · project registry · workspace resolver · root detector · `ICodeIndexer`） |
 
-## 语言支持
+## 已迁出（→ `Source/PuddingCodeIndex`，切片 1）
 
-| 目录 | 语言 |
-|------|------|
-| `CSharp/` | C# |
-| `TypeScript/` | TypeScript |
-| `Python/` | Python |
-| `Cpp/` | C++ |
-| `Json/` | JSON |
-| `Yaml/` | YAML |
-| `Markdown/` | Markdown |
-| `PowerShell/` | PowerShell |
-| `Bicep/` | Bicep |
-| `Lsp/` | LSP 客户端 |
+`Services/`：`CodeIndexScheduler` · `CodeIndexScopeRegistry` · `CodeIndexScopeResolver` · `CodeProjectRegistry` · `CodePathIdentity` · `IndexExcludePatterns` · `DefaultCodeWorkspaceResolver` · `DefaultProjectRootDetector`
+`Services/CodeIndex/`：U3-A 6 文件（`IndexChange` · `CodeIndexScopeState` · `CodeIndexChangeQueue` · `CodeIndexChangeBatch` · `CodeIndexWatcher` · `CodeIndexChangeCoalescer`）
+`Storage/`：`SqliteCodeIndexStore`
+`Contracts/`：索引契约（`CodeFileRecord` · `CodeIndex*` · `CodeSymbol*` · `CodeReferenceRecord` · `CodeRelation*` · `CodeWorkspaceDescriptor` · `ICodeIndex*` · `ICodeProjectRegistry` · `ICodeWorkspaceResolver` · `ICodeProjectRootDetector` · `CodeProject*`）
 
-## 存储 & 契约
-
-| 目录 | 用途 |
-|------|------|
-| `Storage/` | 索引存储 |
-| `Contracts/` | 契约定义 |
+详见 `../PuddingCodeIndex/code_map.md`。
 
 ## 测试
 
-`../Tests/PuddingCodeIntelligenceTests/` — 代码索引测试（U3-A 管线测试在 `Services/CodeIndex/`）
+`../PuddingCodeIntelligenceTests/` — 语言索引器 / outliner / LSP + 索引侧测试（索引侧测试直连 `PuddingCodeIndex`；切片 2 将拆分测试工程）

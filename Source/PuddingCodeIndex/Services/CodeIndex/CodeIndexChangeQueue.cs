@@ -1,6 +1,6 @@
 using System.Threading.Channels;
 
-namespace PuddingCodeIntelligence.Services.CodeIndex;
+namespace PuddingCodeIndex.Services.CodeIndex;
 
 /// <summary>
 /// Bounded, in-process hand-off between the file-system watcher callbacks (producers) and the

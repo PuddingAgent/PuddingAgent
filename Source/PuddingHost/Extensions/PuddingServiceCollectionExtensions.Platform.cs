@@ -28,7 +28,6 @@ using PuddingPlatform.Services.AgentChat;
 using PuddingPlatform.Services.Snapshot;
 using PuddingCodeIntelligence;
 using PuddingCodeIntelligence.Contracts;
-using PuddingCodeIntelligence.Storage;
 using PuddingPlatform.Services.MessageFabric;
 using PuddingPlatform.Services.MessageGateway;
 using PuddingPlatform.Services.Mcp;
@@ -70,6 +69,8 @@ using PuddingAgent.Services.Events;
 using PuddingHost.Hosting;
 using PuddingHost.Storage;
 using System.Threading.Channels;
+using PuddingCodeIndex.Contracts;
+using PuddingCodeIndex.Storage;
 
 namespace PuddingAgent.Services;
 
@@ -617,7 +618,6 @@ builder.Services.AddScoped<IGoodputAttributionService>(sp => sp.GetRequiredServi
         });
 
     }
-
 
     private static bool IsDiagnosticsTimelineEnabled(string aspnetcoreEnvironment)
     {

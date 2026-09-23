@@ -1,4 +1,4 @@
-namespace PuddingCodeIntelligence.Contracts;
+namespace PuddingCodeIndex.Contracts;
 
 /// <summary>How a code index scope was created.</summary>
 public enum ScopeSource

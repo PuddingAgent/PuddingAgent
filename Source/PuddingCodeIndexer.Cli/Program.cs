@@ -1,10 +1,11 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.CSharp;
-using PuddingCodeIntelligence.Storage;
 using PuddingCodeIntelligence.Python;
 using PuddingCodeIntelligence.TypeScript;
 using PuddingCodeIntelligence.Services;
+using PuddingCodeIndex.Contracts;
+using PuddingCodeIndex.Storage;
 
 // ── Logging setup ──────────────────────────────────────────────────────────
 using var loggerFactory = LoggerFactory.Create(builder =>

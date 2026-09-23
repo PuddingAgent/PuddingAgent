@@ -7,6 +7,7 @@ using PuddingCode.Models;
 using PuddingCode.Tools;
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.Services;
+using PuddingCodeIndex.Contracts;
 
 namespace PuddingRuntime.Services.Tools;
 

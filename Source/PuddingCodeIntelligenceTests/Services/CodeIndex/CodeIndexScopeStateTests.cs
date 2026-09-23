@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using PuddingCodeIntelligence.Services.CodeIndex;
+using PuddingCodeIndex.Services.CodeIndex;
 
 namespace PuddingCodeIntelligenceTests.Services.CodeIndex;
 
