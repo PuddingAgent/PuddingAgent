@@ -16,6 +16,9 @@ Pudding 是 Windows First 的 .NET 10 桌面智能助手与 IDE，支持六层�
 - 归属存疑的文件留在**引用方**一侧（宁可少拆），并逐条记录回退原因；禁止在抽取时顺手重构或改变行为。
 - 落地实例：`PuddingCodeIndex`（索引组件：契约/管线/存储/调度）独立于 `PuddingCodeIntelligence`（语言智能与查询），设计见 `Docs/Features/ADR-089-索引组件拆分设计-2026-09-23.md`。
 
+**组件交付顺序：先独立测试，再接入 PuddingAgent（用户裁定 2026-09-23）。** 组件先在自己的边界内完成构建与测试，通过门禁后才登记进解决方案与 DI；顺序不可颠倒。收益：① **不重启宿主即可开发调试**（独立程序集不碰运行中 Core 的文件锁）；② 保护接入后质量（接入只剩“登记+装配”）；③ 边界由**编译期**强制；④ PuddingAgent = 组件的组合。
+⇒ 完整门禁、自检清单与反例见 **`Docs/Conventions/组件化交付规程.md`**（含 S1~S5 五步与接入前 checklist）。**S5（接入）之前的任何一步都不得改动宿主。**
+
 ## PuddingDesktop 产品边界
 
 - `PuddingDesktop` 保持 `Microsoft.NET.Sdk` + WPF，不引用 `PuddingHost` 或 ASP.NET Core；Desktop 与 Core 只通过子进程协议、动态 Loopback HTTP 和认证 WebSocket Bridge 通信。
