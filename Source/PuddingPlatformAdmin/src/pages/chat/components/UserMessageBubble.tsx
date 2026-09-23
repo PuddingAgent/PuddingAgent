@@ -5,6 +5,7 @@ import {
   CopyOutlined,
   PictureOutlined,
   ReloadOutlined,
+  ThunderboltOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { Avatar, Tooltip } from 'antd';
@@ -31,6 +32,8 @@ interface UserMessageBubbleProps {
   userAvatarUrl?: string;
   /** 消息元数据；失败态下取 metadata.error 作为 title 错误详情。 */
   metadata?: Record<string, string>;
+  /** 本消息携带的技能；投影层已从正文剥离（见 types.ts 的 splitSkillHint）。 */
+  skillBadges?: string[];
   formatTime: (ts: number) => string;
   onContextMenu?: (e: React.MouseEvent) => void;
 }
@@ -225,6 +228,7 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
   userName,
   userAvatarUrl,
   metadata,
+  skillBadges,
   formatTime,
   onContextMenu,
 }) => {
@@ -400,7 +404,23 @@ const UserMessageBubble: React.FC<UserMessageBubbleProps> = ({
                 {content ? <span>{content}</span> : null}
               </div>
             ) : (
-              content
+              <>
+                {content}
+                {skillBadges && skillBadges.length > 0 && (
+                  <div style={skillBadgeRowStyle} data-testid="user-skill-badges">
+                    {skillBadges.map((skillId) => (
+                      <span
+                        key={skillId}
+                        style={skillBadgeStyle}
+                        title={`本轮使用技能：${skillId}`}
+                      >
+                        <ThunderboltOutlined />
+                        {skillId}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
           {isSending && (

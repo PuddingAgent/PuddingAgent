@@ -423,11 +423,9 @@ export function useChatState(
     () => ({
       apply: (text: string) => {
         if (pendingSkills.length === 0) return text;
-        // 同时给出 skillId 与展示名：Agent 侧技能索引以 skillId 为键，
-        // 只给展示名难以精确对应（ppt-master / PPT Master）。
-        const items = pendingSkills.map((s) =>
-          s.name && s.name !== s.skillId ? `${s.skillId}（${s.name}）` : s.skillId,
-        );
+        // 只给 skillId：Agent 侧技能索引以 skillId 为键，展示名对它无用、平白占 token。
+        // 展示名由聊天面板（SkillPalette）承担，不在消息正文里出现。
+        const items = pendingSkills.map((s) => s.skillId);
         const hint = `（本轮请使用技能：${items.join('、')}）`;
         return text ? `${text}\n${hint}` : hint;
       },

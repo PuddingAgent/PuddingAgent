@@ -143,6 +143,11 @@ export interface ChatMessageBlock {
   /** 用户信息（仅 role='user' 时有效） */
   userName?: string;
   userAvatarUrl?: string;
+  /**
+   * 用户消息携带的技能（前端在发送时当作文本附加到消息末尾，展示层剥离后渲染为徽标）。
+   * 见 splitSkillHint —— 正文保持干净，技能以胶囊呈现。
+   */
+  skillBadges?: string[];
 
   /** Agent 信息（仅 role='agent' 时有效） */
   agentId?: string;
@@ -206,6 +211,33 @@ export function extractVisionArtifactIds(
     .filter(Boolean);
 }
 
+/**
+ * 拆出“本轮请使用技能”提示。
+ *
+ * 技能不是协议参数：发送时由 useChatState 的 outgoingDecoration 当作文本附加到消息
+ * 末尾（形如 `（本轮请使用技能：id1、id2）`），以便 Agent 读取；展示层再把这段提示
+ * 剥离开渲染为徽标，避免系统提示混进用户正文。
+ * ⚠️ 正则必须与 useChatState 的 apply 保持格式一致；旧消息里的 `id（展示名）`
+ *    形式也在这里被归一为 id。
+ */
+export function splitSkillHint(text: string): {
+  text: string;
+  skillIds: string[];
+} {
+  // 用行内贪婪匹配（.+）取到本行**最后**一个 ）：旧格式 `id（展示名）` 里嵌套了
+  // 全角括号，若用 [^）]* 会在展示名的 ） 处提前截断，导致 skillId 残留展示名。
+  const match = text.match(/(?:^|\n)（本轮请使用技能：(.+)）[ \t]*$/);
+  if (!match) return { text, skillIds: [] };
+  const skillIds = match[1]
+    .split('、')
+    .map((item) => item.trim().replace(/（[^）]*）$/, '').trim())
+    .filter(Boolean);
+  return {
+    text: text.slice(0, match.index).trimEnd(),
+    skillIds,
+  };
+}
+
 export function buildMessageBlocks(
   turns: ChatTurn[],
   agentName?: string,
@@ -218,14 +250,18 @@ export function buildMessageBlocks(
 
     // ── 用户消息 ──
     if (turn.userMessage.text.trim()) {
+      const projected = formatGoalContinuationMessage(
+        turn.userMessage.text,
+        turn.userMessage.metadata,
+      );
+      // 技能提示从正文剥离，改由气泡以徽标呈现。
+      const { text: userContent, skillIds } = splitSkillHint(projected);
       blocks.push({
         id: `${turn.userMessage.id}:user`,
         turnId: turn.turnId,
         role: 'user',
-        content: formatGoalContinuationMessage(
-          turn.userMessage.text,
-          turn.userMessage.metadata,
-        ),
+        content: userContent,
+        skillBadges: skillIds.length > 0 ? skillIds : undefined,
         status: turn.userMessage.status === 'sending' ? 'sending' : 'success',
         createdAt: turn.userMessage.timestamp,
         metadata: turn.userMessage.metadata,
