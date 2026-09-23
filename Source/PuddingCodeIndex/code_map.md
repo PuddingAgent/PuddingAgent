@@ -19,7 +19,9 @@
 | `CodeWorkspaceDescriptor.cs` | 工作区描述符（索引器输入） |
 | `ICodeIndexStore.cs` | 索引存储端口 |
 | `ICodeIndexer.cs` | 索引器端口（实现在 Intelligence） |
-| `ICodeIndexScheduler.cs` | 后台调度端口 |
+| `ICodeIndexScheduler.cs` | 后台调度端口（成员语义未变） |
+| `ICodeIndexSchedulerDriver.cs` | **U3-B1** 显式泵端口（`ProcessPendingAsync` + 每 scope `Desired/Committed` 水位） |
+| `ICodeIndexMaintenance.cs` | **U3-B1** 变更驱动维护服务的生命周期/只读观测契约 + `CodeIndexMaintenanceScopeStatus` |
 | `ICodeIndexScopeRegistry.cs` | 范围注册端口 |
 | `ICodeIndexScopeResolver.cs` | 范围解析端口 + `ScopeResolution` |
 | `ICodeProjectRegistry.cs` | 项目注册端口 |
@@ -36,12 +38,14 @@
 | `CodeIndexWatcher.cs` | 文件系统监视器（64KB 缓冲，回调只过滤 + TryPublish） |
 | `CodeIndexChangeCoalescer.cs` | 防抖折叠（静默 500ms / 最长 2s，2 万路径 → reconcile） |
 | `CodeIndexChangeBatch.cs` | 折叠产物（重读集合 / 移除集合 / reconcile 标记） |
+| `CodeIndexChangeWatchers.cs` | **U3-B1** 变更源抽象（`ICodeIndexChangeWatcher` / `ICodeIndexWatcherFactory`）+ 真实 watcher 适配工厂 |
+| `CodeIndexMaintenanceService.cs` | **U3-B1** 变更→索引的单一驱动（消费批次、置脏补跑、removal/reconcile 可见化、有界停止） |
 
 ## 服务（Services/ → `PuddingCodeIndex.Services`）
 
 | 文件 | 用途 |
 |------|------|
-| `CodeIndexScheduler.cs` | 索引调度器（后台单并发，实现 `ICodeIndexScheduler`） |
+| `CodeIndexScheduler.cs` | 索引调度器（**U3-B1：显式驱动，无自建后台线程**；in-flight 期间到达的请求置脏并在结束后重新入队，不再丢弃） |
 | `CodeIndexScopeRegistry.cs` | 范围注册表（幂等 ensure / 父子覆盖 / 生命周期） |
 | `CodeIndexScopeResolver.cs` | 范围解析器（已注册范围优先，否则根探测 + 自动注册） |
 | `CodeProjectRegistry.cs` | 项目注册（`ICodeProjectRegistry` 实现） |
@@ -61,6 +65,12 @@
 - 包：`Microsoft.Data.Sqlite`、`Microsoft.Extensions.Logging.Abstractions`
 - **严禁**：`Microsoft.CodeAnalysis.*` / `Microsoft.Build*` / `Microsoft.Build.Locator`
 - 工程引用：**无**（叶子）
+
+## 驱动归属（ADR-089 §2，U3-B1 已落实）
+
+- `CodeIndexScheduler` **不再自建 `Task.Run` worker**；由 `CodeIndexMaintenanceService`（单一驱动）显式泵。
+- `CodeIndexMaintenanceService` **不实现 `IHostedService`**；Host 接线（DI + HostedService）属 **U3-B2**。
+- 批次仅按 **scope 粒度**触发重索引；**按文件增量提交属 U3-B3**。`PathsToRemove` / `ReconcileRequired` 只做**可见化**（计数 + 状态 + 日志），不得视为已处理。
 
 ## 测试
 
