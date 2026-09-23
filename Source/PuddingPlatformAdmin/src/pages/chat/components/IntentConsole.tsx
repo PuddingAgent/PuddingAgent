@@ -63,6 +63,20 @@ const CameraInputModal =
         .default as typeof import('./CameraInputModal').default)
     : React.lazy(() => import('./CameraInputModal'));
 
+/** `+` 菜单与技能子面板横向并排（级联 flyout，参照 WorkBuddy）。 */
+const composerMenuRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+};
+
+/** 子面板与主菜单的分隔：细左边线，保留“同属一个菜单”的整体感。 */
+const composerSkillFlyoutStyle: React.CSSProperties = {
+  marginLeft: 4,
+  paddingLeft: 8,
+  borderLeft:
+    '1px solid color-mix(in srgb, var(--earth-brown, #5c4a3a) 12%, transparent)',
+};
+
 const pendingSkillsRowStyle: React.CSSProperties = {
   display: 'flex',
   flexWrap: 'wrap',
@@ -305,7 +319,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       ];
       onPendingSkillsChange?.(next);
       setShowComposerMenu(false);
-      setComposerMenuView('actions');
+      setShowSkillFlyout(false);
     },
     [pendingSkills, onPendingSkillsChange],
   );
@@ -321,10 +335,8 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const handleComposerSendRef = useRef<() => void>(() => undefined);
   /** `+` 动作菜单 Popover */
   const [showComposerMenu, setShowComposerMenu] = useState(false);
-  /** `+` 菜单视图：动作列表 / 技能面板（技能面板惰性加载）。 */
-  const [composerMenuView, setComposerMenuView] = useState<'actions' | 'skills'>(
-    'actions',
-  );
+  /** 技能子面板（级联 flyout）：hover「技能」项时在右侧并排展开。 */
+  const [showSkillFlyout, setShowSkillFlyout] = useState(false);
   /** 运行状态详情 Popover */
 
   const [contextHealth, setContextHealth] =
@@ -936,34 +948,41 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
           <div className={styles.composerToolbarLeft}>
             <Popover
               content={
-                composerMenuView === 'skills' ? (
-                  <React.Suspense fallback={null}>
-                    <SkillPalette
-                      open
-                      onClose={() => setComposerMenuView('actions')}
-                      onSelect={handleSelectSkill}
-                      selectedSkillIds={(pendingSkills ?? []).map(
-                        (s) => s.skillId,
-                      )}
-                    />
-                  </React.Suspense>
-                ) : (
+                <div
+                  style={composerMenuRowStyle}
+                  onMouseLeave={() => setShowSkillFlyout(false)}
+                >
                   <ComposerActionMenu
                     onExport={onExport}
-                    onOpenSkills={() => setComposerMenuView('skills')}
+                    onOpenSkills={() => setShowSkillFlyout(true)}
+                    onHoverSkills={() => setShowSkillFlyout(true)}
+                    skillsActive={showSkillFlyout}
                     onOpenCamera={() => setShowCameraInput(true)}
                     cameraEnabled={cameraEnabled}
                     onOpenImage={handleOpenImagePicker}
                     imageEnabled={imageEnabled}
                     onClose={() => setShowComposerMenu(false)}
                   />
-                )
+                  {showSkillFlyout && (
+                    <div style={composerSkillFlyoutStyle}>
+                      <React.Suspense fallback={null}>
+                        <SkillPalette
+                          open
+                          onSelect={handleSelectSkill}
+                          selectedSkillIds={(pendingSkills ?? []).map(
+                            (s) => s.skillId,
+                          )}
+                        />
+                      </React.Suspense>
+                    </div>
+                  )}
+                </div>
               }
               trigger="click"
               open={showComposerMenu}
               onOpenChange={(next) => {
                 setShowComposerMenu(next);
-                if (!next) setComposerMenuView('actions');
+                if (!next) setShowSkillFlyout(false);
               }}
               placement="topLeft"
             >

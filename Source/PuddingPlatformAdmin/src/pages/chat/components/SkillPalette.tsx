@@ -38,7 +38,8 @@ export function filterHubSkills(
 
 interface SkillPaletteProps {
   open: boolean;
-  onClose: () => void;
+  /** 可选：作为级联子面板嵌入时无需「返回」（主菜单始终可见）。 */
+  onClose?: () => void;
   onSelect: (skill: HubSkillSummaryDto) => void;
   /** 已挂 chip 的技能 id，用于列表高亮（避免重复添加看不出来）。 */
   selectedSkillIds?: string[];
@@ -289,14 +290,16 @@ const SkillPalette: React.FC<SkillPaletteProps> = ({
       </div>
 
       <div style={footerStyle}>
-        <button
-          type="button"
-          style={footerItemStyle}
-          onClick={onClose}
-          data-testid="skill-palette-back"
-        >
-          返回
-        </button>
+        {onClose && (
+          <button
+            type="button"
+            style={footerItemStyle}
+            onClick={onClose}
+            data-testid="skill-palette-back"
+          >
+            返回
+          </button>
+        )}
         {/* 不提供「从本地添加技能」：本站没有本地上传技能的能力，不摆不能用的入口。
             只链接到真实存在的技能管理页。 */}
         <a

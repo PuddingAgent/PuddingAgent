@@ -4,6 +4,7 @@ import {
   DownloadOutlined,
   PaperClipOutlined,
   PictureOutlined,
+  RightOutlined,
   SettingOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
@@ -12,8 +13,12 @@ import { useChatStyles } from '../styles';
 
 interface ComposerActionMenuProps {
   onExport: () => void;
-  /** 打开技能面板（技能以文本提示附加到本轮，见 SkillPalette）。 */
+  /** 打开技能子面板（级联 flyout；hover 与点击均触发）。 */
   onOpenSkills?: () => void;
+  /** 鼠标悬停「技能」项时展开右侧子面板。 */
+  onHoverSkills?: () => void;
+  /** 技能子面板已展开：该项保持高亮（否则 hover 移向子面板后高亮会断）。 */
+  skillsActive?: boolean;
   onOpenCamera?: () => void;
   cameraEnabled?: boolean;
   onOpenImage?: () => void;
@@ -24,6 +29,8 @@ interface ComposerActionMenuProps {
 const ComposerActionMenu: React.FC<ComposerActionMenuProps> = ({
   onExport,
   onOpenSkills,
+  onHoverSkills,
+  skillsActive = false,
   onOpenCamera,
   cameraEnabled = false,
   onOpenImage,
@@ -93,16 +100,29 @@ const ComposerActionMenu: React.FC<ComposerActionMenuProps> = ({
           <PictureOutlined />
           <span>图片</span>
         </button>
-        {/* 技能：选中后转换为文本附加到本轮（不经过发送协议参数）。
-            点击后不关闭菜单，而是把 + 菜单切到技能面板视图（父级管理）。 */}
+        {/* 技能：hover 时在右侧**并排**展开子面板（级联菜单，参照 WorkBuddy），
+            而非把本菜单内容换成面板 —— 主菜单始终可见，不靠「返回」回退。
+            选中后转换为文本附加到本轮（不经过发送协议参数）。 */}
         <button
           className={
             styles.composerMenuItem +
             (onOpenSkills ? '' : ' ' + styles.composerMenuItemDisabled)
           }
           disabled={!onOpenSkills}
+          style={
+            skillsActive
+              ? {
+                  background:
+                    'color-mix(in srgb, var(--earth-brown, #5c4a3a) 8%, transparent)',
+                }
+              : undefined
+          }
           title={onOpenSkills ? '选择技能并附加到本轮' : '技能不可用'}
           aria-label={onOpenSkills ? '选择技能' : '技能不可用'}
+          aria-haspopup="true"
+          aria-expanded={skillsActive}
+          onMouseEnter={() => onHoverSkills?.()}
+          onFocus={() => onHoverSkills?.()}
           onClick={() => {
             if (!onOpenSkills) return;
             onOpenSkills();
@@ -110,6 +130,10 @@ const ComposerActionMenu: React.FC<ComposerActionMenuProps> = ({
         >
           <ThunderboltOutlined />
           <span>技能</span>
+          {/* 只有本项有下级，其余项没有子面板 —— 不给出误导性的箭头。 */}
+          <RightOutlined
+            style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.55 }}
+          />
         </button>
       </div>
 
