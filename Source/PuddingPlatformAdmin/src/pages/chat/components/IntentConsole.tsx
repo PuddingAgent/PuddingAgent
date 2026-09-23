@@ -168,6 +168,17 @@ interface IntentConsoleProps {
   compactionStatus?: string | null;
   /** 当前会话可见的子任务数 */
   subAgentsRunning?: number;
+  /**
+   * 可 @ 的 Agent 列表（仅供输入框 @ 补全；不参与发送路由决策）。
+   * 缺省时不启用补全，输入 @ 行为与改动前一致。
+   */
+  agents?: readonly {
+    agentId: string;
+    name?: string | null;
+    displayName?: string | null;
+    isEnabled?: boolean;
+    isFrozen?: boolean;
+  }[];
   /** 打开 ChatMain 持有的固定子代理运行检查器。 */
   onOpenSubAgentInspector?: () => void;
   /** 浏览器语音输入适配器；测试与后续 ASR Provider 接入可替换该适配器 */
@@ -224,6 +235,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   cacheHitRate,
   compactionStatus,
   subAgentsRunning = 0,
+  agents,
   onOpenSubAgentInspector,
   voiceInputAdapter = createDashScopeVoiceInputAdapter(),
   voiceOutputAdapter = defaultBrowserVoiceOutputAdapter,
@@ -823,6 +835,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
           className={styles.composerTextarea}
           onPaste={handlePasteImage}
           textareaRef={textAreaRef}
+          mentionAgents={agents}
         />
 
         <div className={styles.composerToolbar}>

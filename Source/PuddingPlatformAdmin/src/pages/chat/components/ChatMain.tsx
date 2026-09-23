@@ -245,6 +245,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
   onTurnInvisible,
   listEndRef,
   subAgentCards,
+  agents,
   currentUser,
   viewportScrollIntent,
   onViewportScrollIntentHandled,
@@ -722,6 +723,7 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     onStop={onStop}
                     onSteerCurrent={onSteerCurrent}
                     onExport={onExport}
+                    agents={agents}
                     onOpenDevDetails={() => setDevMode(true)}
                     disabled={disabled}
                     tLimit={tLimit}

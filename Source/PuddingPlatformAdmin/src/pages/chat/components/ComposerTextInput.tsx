@@ -27,6 +27,12 @@ import CommandPalette, {
   type Command,
   filterCommands,
 } from './CommandPalette';
+import MentionPalette, {
+  filterMentionCandidates,
+  toMentionCandidates,
+  type MentionAgentInput,
+  type MentionCandidate,
+} from './MentionPalette';
 
 export interface ComposerTextInputHandle {
   /** 外部改写草稿（语音转写/uiTest 填充/发送清空）；同步 lift 到父级。 */
@@ -54,6 +60,11 @@ export interface ComposerTextInputProps {
   onPaste?: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
   /** 外部持有的 textarea 引用（保持既有 textAreaRef 语义）。 */
   textareaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
+  /**
+   * 可 @ 的 Agent 原始列表（父级 state，引用稳定）。
+   * 候选转换在本叶子内 memo；缺省或为空时不启用 @ 补全。
+   */
+  mentionAgents?: ReadonlyArray<MentionAgentInput>;
 }
 
 /** 「光标前是否处于 /命令 词」判定（面板显隐 + 过滤共用）。 */
@@ -64,6 +75,17 @@ const matchSlashBeforeCursor = (
   const pos = selectionStart ?? value.length;
   const before = value.slice(0, pos);
   const match = before.match(/(?:^|\s)\/([^\s]*)$/);
+  return match ? match[1] : null;
+};
+
+/** 「光标前是否处于 @待补全词」判定（与 / 判定互斥：同一位置不可能同时命中）。 */
+const matchMentionBeforeCursor = (
+  value: string,
+  selectionStart: number | null,
+): string | null => {
+  const pos = selectionStart ?? value.length;
+  const before = value.slice(0, pos);
+  const match = before.match(/(?:^|\s)@([^\s@]*)$/);
   return match ? match[1] : null;
 };
 
@@ -82,12 +104,15 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
       className,
       onPaste,
       textareaRef,
+      mentionAgents,
     },
     ref,
   ) {
     const [draftValue, setDraftValue] = useState(inputValue);
     const [paletteVisible, setPaletteVisible] = useState(false);
     const [selectedIdx, setSelectedIdx] = useState(0);
+    const [mentionVisible, setMentionVisible] = useState(false);
+    const [mentionSelectedIdx, setMentionSelectedIdx] = useState(0);
     const isTextComposingRef = useRef(false);
     const hasTextRef = useRef(inputValue.trim().length > 0);
     // 自 lift 回显抑制：父级 inputValue 与最近一次 lift 相等时是 echo，不采纳；
@@ -107,7 +132,10 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
           lastLiftedRef.current = v;
           setDraftValue(v);
           onInputChange(v);
-          if (!v.trim()) setPaletteVisible(false);
+          if (!v.trim()) {
+            setPaletteVisible(false);
+            setMentionVisible(false);
+          }
         },
         focus: () => textareaRef.current?.focus(),
         getValue: () => draftValueRef.current,
@@ -122,7 +150,10 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
       if (isTextComposingRef.current) return;
       lastLiftedRef.current = inputValue;
       setDraftValue(inputValue);
-      if (!inputValue.trim()) setPaletteVisible(false);
+      if (!inputValue.trim()) {
+        setPaletteVisible(false);
+        setMentionVisible(false);
+      }
     }, [inputValue]);
 
     // hasText 翻转上报（composerActive / 发送按钮门控）
@@ -142,6 +173,14 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
       [],
     );
 
+    const updateMentionPaletteState = useCallback(
+      (value: string, selectionStart?: number | null) => {
+        setMentionVisible(matchMentionBeforeCursor(value, selectionStart ?? null) !== null);
+        setMentionSelectedIdx(0);
+      },
+      [],
+    );
+
     const slashFilterText = useMemo(() => {
       if (!paletteVisible) return '';
       return (
@@ -155,6 +194,27 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
       [slashFilterText],
     );
 
+    // 候选由 Agent 列表派生：deps 为父级 state 引用（稳定）⇒ 不破坏本叶子 memo。
+    const mentionCandidates = useMemo(
+      () => toMentionCandidates(mentionAgents ?? []),
+      [mentionAgents],
+    );
+
+    const mentionFilterText = useMemo(() => {
+      if (!mentionVisible) return '';
+      return (
+        matchMentionBeforeCursor(
+          draftValue,
+          textareaRef.current?.selectionStart ?? null,
+        ) ?? ''
+      );
+    }, [draftValue, mentionVisible, textareaRef]);
+
+    const mentionList = useMemo(
+      () => filterMentionCandidates(mentionCandidates, mentionFilterText),
+      [mentionCandidates, mentionFilterText],
+    );
+
     const handleInputChange = useCallback(
       (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const v = e.target.value;
@@ -164,8 +224,9 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
           onInputChange(v);
         }
         updateCommandPaletteState(v, e.target.selectionStart);
+        updateMentionPaletteState(v, e.target.selectionStart);
       },
-      [onInputChange, updateCommandPaletteState],
+      [onInputChange, updateCommandPaletteState, updateMentionPaletteState],
     );
 
     const handleCompositionStart = useCallback(() => {
@@ -180,8 +241,9 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
         lastLiftedRef.current = v;
         onInputChange(v);
         updateCommandPaletteState(v, e.currentTarget.selectionStart);
+        updateMentionPaletteState(v, e.currentTarget.selectionStart);
       },
-      [onInputChange, updateCommandPaletteState],
+      [onInputChange, updateCommandPaletteState, updateMentionPaletteState],
     );
 
     const handleCommandSelect = useCallback(
@@ -207,12 +269,61 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
       [draftValue, onInputChange, textareaRef],
     );
 
+    /** 选中候选：将光标前的 @前缀 替换为 @token＋空格，并把光标移到其后。 */
+    const handleMentionSelect = useCallback(
+      (candidate: MentionCandidate) => {
+        const pos = textareaRef.current?.selectionStart ?? draftValue.length;
+        const before = draftValue.slice(0, pos);
+        const after = draftValue.slice(pos);
+        const newBefore = before.replace(/@([^\s@]*)$/, `@${candidate.token} `);
+        const newValue = newBefore + after;
+        setDraftValue(newValue);
+        lastLiftedRef.current = newValue;
+        onInputChange(newValue);
+        setMentionVisible(false);
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            const newPos = newBefore.length;
+            textareaRef.current.selectionStart = newPos;
+            textareaRef.current.selectionEnd = newPos;
+            textareaRef.current.focus();
+          }
+        });
+      },
+      [draftValue, onInputChange, textareaRef],
+    );
+
     const handleKeyDown = useCallback(
       (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.nativeEvent.isComposing || isTextComposingRef.current) {
           return;
         }
 
+        if (mentionVisible && mentionList.length > 0) {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setMentionSelectedIdx((prev) =>
+              Math.min(mentionList.length - 1, prev + 1),
+            );
+            return;
+          }
+          if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setMentionSelectedIdx((prev) => Math.max(0, prev - 1));
+            return;
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            setMentionVisible(false);
+            return;
+          }
+          if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
+            e.preventDefault();
+            const candidate = mentionList[mentionSelectedIdx];
+            if (candidate) handleMentionSelect(candidate);
+            return;
+          }
+        }
         if (paletteVisible) {
           if (e.key === 'ArrowDown') {
             e.preventDefault();
@@ -255,6 +366,10 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
         filteredCommands,
         selectedIdx,
         handleCommandSelect,
+        mentionVisible,
+        mentionList,
+        mentionSelectedIdx,
+        handleMentionSelect,
         hasPendingImages,
         onEnterWithImages,
         onKeyDown,
@@ -293,6 +408,14 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
           onSelectIndex={setSelectedIdx}
           onSelect={handleCommandSelect}
           onClose={() => setPaletteVisible(false)}
+        />
+        <MentionPalette
+          visible={mentionVisible && mentionList.length > 0}
+          filterText={mentionFilterText}
+          candidates={mentionList}
+          selectedIdx={mentionSelectedIdx % Math.max(1, mentionList.length)}
+          onSelectIndex={setMentionSelectedIdx}
+          onSelect={handleMentionSelect}
         />
       </>
     );
