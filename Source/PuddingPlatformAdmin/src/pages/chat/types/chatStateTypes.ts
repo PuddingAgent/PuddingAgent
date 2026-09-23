@@ -244,6 +244,9 @@ export interface UseChatStateReturn {
     options?: { isCurrent?: () => boolean; selectSession?: boolean },
   ) => Promise<string | undefined>;
   sendMessage: (text: string, options?: ChatSendOptions) => Promise<void>;
+  /** 本轮待附加技能（chip 展示；发送时由出站装饰并入文本末尾）。 */
+  pendingSkills: { skillId: string; name: string }[];
+  setPendingSkills: (skills: { skillId: string; name: string }[]) => void;
   submitInteraction: (text: string, options?: ChatSendOptions) => Promise<void>;
   /**
    * 把文本注入当前正在运行的 canonical Turn（Steering）。

@@ -1,4 +1,4 @@
-﻿import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useEffect, useRef } from 'react';
 import {
   cancelConversationTurn,
@@ -29,6 +29,16 @@ interface QueueHarnessOptions {
   turns?: any[];
   /** 已受理且仍在运行的 canonical Turn（messageId → server turnId），用于停止测试。 */
   activeTurns?: Array<{ messageId: string; turnId: string }>;
+  /**
+   * 出站文本装饰（技能提示）；不传则行为等同无技能。
+   * 这里用内联结构类型而非导入 OutgoingDecoration：umi 的 jest babel 转换会把
+   * 跨模块類型引用当成值导入而报“Cannot transform the imported binding”。
+   */
+  outgoingDecoration?: {
+    apply: (text: string) => string;
+    canSendEmpty: () => boolean;
+    onConsumed: () => void;
+  };
 }
 
 function useQueueHarness(
@@ -73,6 +83,7 @@ function useQueueHarness(
       handleCompactCommand,
     },
     messageApi: messageApi as never,
+    outgoingDecoration: options.outgoingDecoration,
   });
   // Mirror useChatState's ordering: the queue hook registers its effects before
   // the outer owner synchronizes the canonical turns ref.
@@ -389,5 +400,119 @@ describe('useMessageInteractionQueue', () => {
 
     expect(requested).toBe(0);
     expect(cancelConversationTurn).not.toHaveBeenCalled();
+  });
+});
+
+// ── 出站装饰（技能提示）────────────────────────────────────────
+// 回归防线：Enter 发送走 handleKeyDown → submitInteraction，**不经过** ChatPage 的
+// handleSend。2026-09-23 曾把技能提示只拼在 handleSend 里，导致「点发送按钮带技能、
+// 按 Enter 丢技能」。以下用例锁住「装饰在 hook 层对所有路径生效」。
+describe('useMessageInteractionQueue · 出站装饰', () => {
+  const enterEvent = () => ({
+    key: 'Enter',
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    preventDefault: jest.fn(),
+  });
+
+  it('applies the decoration on the Enter path', async () => {
+    const sendMessage = jest.fn(async () => {});
+    const onConsumed = jest.fn();
+    const { result } = renderHook(() =>
+      useQueueHarness(undefined, {
+        outgoingDecoration: {
+          apply: (text: string) => `${text}\n（本轮请使用技能：ppt-master）`,
+          canSendEmpty: () => true,
+          onConsumed,
+        },
+      }),
+    );
+    act(() => result.current.bindSendMessage(sendMessage));
+    act(() => result.current.setInputValue('做个 PPT'));
+
+    await act(async () => {
+      result.current.handleKeyDown(enterEvent() as never);
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      '做个 PPT\n（本轮请使用技能：ppt-master）',
+      undefined,
+    );
+    expect(onConsumed).toHaveBeenCalled();
+  });
+
+  it('applies the decoration on the direct submit path', async () => {
+    const sendMessage = jest.fn(async () => {});
+    const { result } = renderHook(() =>
+      useQueueHarness(undefined, {
+        outgoingDecoration: {
+          apply: (text: string) => `${text}\n（本轮请使用技能：ppt-master）`,
+          canSendEmpty: () => true,
+          onConsumed: jest.fn(),
+        },
+      }),
+    );
+    act(() => result.current.bindSendMessage(sendMessage));
+
+    await act(async () => result.current.submitInteraction('做个 PPT'));
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      '做个 PPT\n（本轮请使用技能：ppt-master）',
+      undefined,
+    );
+  });
+
+  it('sends when raw text is empty but the decoration has content', async () => {
+    const sendMessage = jest.fn(async () => {});
+    const { result } = renderHook(() =>
+      useQueueHarness(undefined, {
+        outgoingDecoration: {
+          apply: () => '（本轮请使用技能：ppt-master）',
+          canSendEmpty: () => true,
+          onConsumed: jest.fn(),
+        },
+      }),
+    );
+    act(() => result.current.bindSendMessage(sendMessage));
+
+    await act(async () => {
+      result.current.handleKeyDown(enterEvent() as never);
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      '（本轮请使用技能：ppt-master）',
+      undefined,
+    );
+  });
+
+  it('does not send empty raw text when the decoration has no content', async () => {
+    const sendMessage = jest.fn(async () => {});
+    const { result } = renderHook(() =>
+      useQueueHarness(undefined, {
+        outgoingDecoration: {
+          apply: (text: string) => text,
+          canSendEmpty: () => false,
+          onConsumed: jest.fn(),
+        },
+      }),
+    );
+    act(() => result.current.bindSendMessage(sendMessage));
+
+    await act(async () => {
+      result.current.handleKeyDown(enterEvent() as never);
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('keeps trim/forward behavior unchanged without a decoration', async () => {
+    const sendMessage = jest.fn(async () => {});
+    const { result } = renderHook(() => useQueueHarness());
+    act(() => result.current.bindSendMessage(sendMessage));
+
+    await act(async () => result.current.submitInteraction('  hello  '));
+
+    expect(sendMessage).toHaveBeenCalledWith('hello', undefined);
   });
 });

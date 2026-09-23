@@ -14,10 +14,8 @@
 //    SkillPackages 表 0 行，而真正的技能库是 HubSkills（7 行）。误用导致面板显示
 //    「暂无已启用的技能包」——不是没数据，是查错了表。
 import { SearchOutlined } from '@ant-design/icons';
-import {
-  listHubSkills,
-  type HubSkillSummaryDto,
-} from '@/services/platform/api';
+import { listHubSkills } from '@/services/platform/api';
+import type { HubSkillSummaryDto } from '@/services/platform/api';
 import React, { useEffect, useMemo, useState } from 'react';
 import { stringToColor } from '../hooks/useChatState';
 

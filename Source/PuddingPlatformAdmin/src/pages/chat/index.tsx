@@ -71,19 +71,6 @@ function shallowEqualRecord(
   return true;
 }
 
-/** 把本轮待附加技能转为提示文本；附加在消息末尾以免破坏开头 @mention 路由。 */
-function buildPendingSkillHint(
-  skills: { skillId: string; name: string }[],
-): string {
-  if (skills.length === 0) return '';
-  // 同时给出 skillId 与展示名：Agent 侧技能索引以 skillId 为键，只给展示名
-  // 会难以精确对应（skillId 与 name 可能不同，如 ppt-master / PPT Master）。
-  const items = skills.map((s) =>
-    s.name && s.name !== s.skillId ? `${s.skillId}（${s.name}）` : s.skillId,
-  );
-  return `（本轮请使用技能：${items.join('、')}）`;
-}
-
 const ChatPageContent: React.FC = () => {
   const location = useLocation();
   const useAgentClientArchitecture = useMemo(
@@ -606,26 +593,18 @@ const ChatPageContent: React.FC = () => {
     chat.setCreateSceneOpen(true);
   }, [chat.createSceneForm, chat.setCreateSceneOpen]);
 
-  /** 本轮待附加技能（chip 展示；发送时转为文本附加到消息末尾）。 */
-  const [pendingSkills, setPendingSkills] = useState<
-    { skillId: string; name: string }[]
-  >([]);
-
   const handleSend = useCallback(() => {
     const t = chat.inputValue.trim();
-    const skillHint = buildPendingSkillHint(pendingSkills);
-    if (!t && !skillHint) return;
+    // 空文本但已选技能时仍应发出：技能提示由 chat 的出站装饰并入（见 useChatState），
+    // 此处只负责判定“有没有东西可发”。
+    if (!t && chat.pendingSkills.length === 0) return;
     chat.setInputValue('');
-    setPendingSkills([]);
-    // 技能提示放在消息末尾：开头要留给 @mention（resolveChatRoute 用 ^@ 匹配）。
-    void chat.submitInteraction(
-      skillHint ? (t ? `${t}\n${skillHint}` : skillHint) : t,
-    );
+    void chat.submitInteraction(t);
   }, [
     chat.inputValue,
     chat.setInputValue,
     chat.submitInteraction,
-    pendingSkills,
+    chat.pendingSkills.length,
   ]);
 
   const handleSendWithMetadata = useCallback(
@@ -635,16 +614,18 @@ const ChatPageContent: React.FC = () => {
       imageParts?: { type: 'image'; artifactId: string; detail?: 'original' | 'low' | 'high' | 'auto' }[],
     ) => {
       const text = content.trim();
-      const skillHint = buildPendingSkillHint(pendingSkills);
-      if (!text && !skillHint && !(imageParts && imageParts.length > 0)) return;
+      // 同上：技能提示由出站装饰并入，这里不拼接。
+      if (
+        !text &&
+        chat.pendingSkills.length === 0 &&
+        !(imageParts && imageParts.length > 0)
+      ) {
+        return;
+      }
       chat.setInputValue('');
-      setPendingSkills([]);
-      await chat.submitInteraction(
-        skillHint ? (text ? `${text}\n${skillHint}` : skillHint) : text,
-        { metadata, imageParts },
-      );
+      await chat.submitInteraction(text, { metadata, imageParts });
     },
-    [chat.setInputValue, chat.submitInteraction, pendingSkills],
+    [chat.setInputValue, chat.submitInteraction, chat.pendingSkills.length],
   );
 
   const handleStop = useCallback(() => {
@@ -691,8 +672,8 @@ const ChatPageContent: React.FC = () => {
         unreadCounts={chat.sessionUnreadCounts}
         workspaces={chat.workspaces}
         workspaceId={chat.workspaceId}
-        pendingSkills={pendingSkills}
-        onPendingSkillsChange={setPendingSkills}
+        pendingSkills={chat.pendingSkills}
+        onPendingSkillsChange={chat.setPendingSkills}
         workspaceLoading={chat.workspaceLoading}
         wsOpts={chat.wsOpts}
         onWorkspaceChange={handleWorkspaceChange}

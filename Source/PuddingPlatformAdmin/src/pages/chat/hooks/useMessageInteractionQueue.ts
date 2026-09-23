@@ -49,6 +49,25 @@ interface UseMessageInteractionQueueOptions {
   identity: MessageQueueIdentityPort;
   execution: MessageQueueExecutionPort;
   messageApi: MessageInstance;
+  /**
+   * 出站文本装饰（如「本轮待附加技能」提示）。
+   * 必须在这一层应用：Enter 发送走 handleKeyDown，它**直接调 submitInteraction**，
+   * 不经过 ChatPage 的 handleSend。若只在 handleSend 里拼接，按 Enter 就会丢掉装饰。
+   */
+  outgoingDecoration?: OutgoingDecoration;
+}
+
+/**
+ * 出站文本装饰。把「本轮待附加」内容并入真正发出的文本。
+ * 注入点固定在 submitInteraction，覆盖 Enter / 发送按钮 / 图片 / window 事件四条路径。
+ */
+export interface OutgoingDecoration {
+  /** 纯函数：同输入必同输出（可能被重复调用，不得携带副作用）。 */
+  apply: (text: string) => string;
+  /** 原文为空时是否仍有可发内容（决定「只选技能、不打字」能否发送）。 */
+  canSendEmpty: () => boolean;
+  /** 装饰已被应用（本轮内容已消费），用于清空 chip。 */
+  onConsumed: () => void;
 }
 
 /**
@@ -59,6 +78,7 @@ export function useMessageInteractionQueue({
   identity,
   execution,
   messageApi,
+  outgoingDecoration,
 }: UseMessageInteractionQueueOptions) {
   const { workspaceId, agentId, selectedSessionId, sessionIdRef } = identity;
   const {
@@ -212,11 +232,16 @@ export function useMessageInteractionQueue({
 
   const submitInteraction = useCallback(
     async (text: string, options?: ChatSendOptions) => {
-      const trimmed = text.trim();
-      if (!trimmed) return;
-      dispatchInteraction(trimmed, options);
+      const raw = text.trim();
+      // 装饰应用点：所有发送路径最终都汇到这里（含 Enter，它不经过 handleSend）。
+      const outgoing = outgoingDecoration
+        ? outgoingDecoration.apply(raw).trim()
+        : raw;
+      if (!outgoing) return;
+      outgoingDecoration?.onConsumed();
+      dispatchInteraction(outgoing, options);
     },
-    [dispatchInteraction],
+    [dispatchInteraction, outgoingDecoration],
   );
 
   const updateQueuedInteraction = useCallback(
@@ -608,7 +633,8 @@ export function useMessageInteractionQueue({
       ) {
         event.preventDefault();
         const trimmed = value.trim();
-        if (!trimmed) return;
+        // 原文为空但仍有装饰内容（如只选了技能没打字）时不得拦截发送。
+        if (!trimmed && !(outgoingDecoration?.canSendEmpty() ?? false)) return;
         setInputValue('');
         if (trimmed.toLowerCase() === COMPACT_COMMAND) {
           void handleCompactCommand();
@@ -645,6 +671,7 @@ export function useMessageInteractionQueue({
       handleCompactCommand,
       loading,
       messageIdToTurnIdRef,
+      outgoingDecoration,
       submitInteraction,
       submitSteeringInteraction,
       turns,
@@ -655,13 +682,14 @@ export function useMessageInteractionQueue({
   useEffect(() => {
     const handler = () => {
       const text = inputValueRef.current.trim();
-      if (!text) return;
+      // 同 handleKeyDown：空原文 + 有装饰内容时仍应发出。
+      if (!text && !(outgoingDecoration?.canSendEmpty() ?? false)) return;
       setInputValue('');
       void submitInteraction(text);
     };
     window.addEventListener('pudding:chat:send', handler);
     return () => window.removeEventListener('pudding:chat:send', handler);
-  }, [submitInteraction]);
+  }, [submitInteraction, outgoingDecoration]);
 
   return {
     inputValue,

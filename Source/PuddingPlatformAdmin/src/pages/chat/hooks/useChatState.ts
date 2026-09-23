@@ -403,6 +403,40 @@ export function useChatState(
     prepareForNewMessage,
   } = useSessionEventBuffers({ setTurns, completedTurnsRef });
 
+  /**
+   * 本轮待附加技能（chip 展示；发送时转为文本附加到消息末尾）。
+   * 状态放在本 hook 而非 ChatPage：Enter 发送走 useMessageInteractionQueue 的
+   * handleKeyDown → submitInteraction，**不经过** ChatPage 的 handleSend。
+   * 早前把状态放在 ChatPage，导致「点发送按钮带技能、按 Enter 丢技能」。
+   */
+  const [pendingSkills, setPendingSkills] = useState<
+    { skillId: string; name: string }[]
+  >([]);
+
+  /**
+   * 出站文本装饰：把技能提示并入真正发出的文本。
+   * apply 必须是纯函数（submitInteraction 可能重复调用），故只读快照；
+   * 消费清空由 onConsumed 负责。
+   * 提示附加在**消息末尾**：resolveChatRoute 用 ^@ 匹配消息开头，前置会破坏 @mention。
+   */
+  const outgoingDecoration = useMemo(
+    () => ({
+      apply: (text: string) => {
+        if (pendingSkills.length === 0) return text;
+        // 同时给出 skillId 与展示名：Agent 侧技能索引以 skillId 为键，
+        // 只给展示名难以精确对应（ppt-master / PPT Master）。
+        const items = pendingSkills.map((s) =>
+          s.name && s.name !== s.skillId ? `${s.skillId}（${s.name}）` : s.skillId,
+        );
+        const hint = `（本轮请使用技能：${items.join('、')}）`;
+        return text ? `${text}\n${hint}` : hint;
+      },
+      canSendEmpty: () => pendingSkills.length > 0,
+      onConsumed: () => setPendingSkills([]),
+    }),
+    [pendingSkills],
+  );
+
   const {
     handleCompactionLifecycleEvent,
     handleCompactCommand,
@@ -464,6 +498,7 @@ export function useChatState(
       handleCompactCommand,
     },
     messageApi,
+    outgoingDecoration,
   });
   const {
     historyLoading,
@@ -1523,6 +1558,8 @@ export function useChatState(
     loadingMore,
     inputValue,
     setInputValue,
+    pendingSkills,
+    setPendingSkills,
     loading,
     workingAgentIds,
     interactionQueue,
