@@ -558,6 +558,27 @@ public sealed partial class AgentExecutionService
                 return null;
             }
 
+            // 展示投影（presentation）：读工具自己声明的 Present，把 wire JSON 写进事件 payload，
+            // 前端据此选卡片族（未命中/失败 ⇒ generic，永不阻断工具执行与事件产出）。
+            JsonElement ProjectPresentation(string toolId, string? argumentsJson, string? resultJson)
+            {
+                try
+                {
+                    return (_toolPresentationProjector ?? ToolPresentationProjector.Default)
+                        .Project(toolId, argumentsJson, resultJson);
+                }
+                catch (Exception ex)
+                {
+                    // fail-open 硬要求：展示失败不得阻断工具调用，也不得丢掉事件。
+                    _logger.LogWarning(
+                        ex,
+                        "[AgentExec:Presentation] projection failed tool={Tool} session={Session}",
+                        toolId,
+                        request.SessionId);
+                    return ToolPresentationProjector.Generic;
+                }
+            }
+
             // ── 流式 Agent Loop（与同步路径共享护栏参数）──────
             // N00：显式请求轮次忠实生效（超限拒绝归上游 SubAgentManager.NormalizeExecutionBudget），
             // 未显式请求时回退系统 profile 默认；不做隐式钳制（与 Buffered 路径一致）。
@@ -1375,7 +1396,13 @@ public sealed partial class AgentExecutionService
                     }
 
                     var toolCallFrame = ServerSentEventFrame.Json(SseEventTypes.ToolCall,
-                        new { name = tc.Name, arguments = tc.ArgumentsJson, toolCallId = tc.Id });
+                        new
+                        {
+                            name = tc.Name,
+                            arguments = tc.ArgumentsJson,
+                            toolCallId = tc.Id,
+                            presentation = ProjectPresentation(tc.Name, tc.ArgumentsJson, null),
+                        });
                     ReportLiveness(request, $"tool.started:{tc.Name}");
                     await Append(toolCallFrame);
                     yield return toolCallFrame;
@@ -1498,6 +1525,7 @@ public sealed partial class AgentExecutionService
                         exitCode = result.ExitCode,
                         output = result.Output,
                         error = result.Error,
+                        presentation = ProjectPresentation(tc.Name, tc.ArgumentsJson, result.Output),
                     });
                     await Append(toolResultFrame);
                     yield return toolResultFrame;

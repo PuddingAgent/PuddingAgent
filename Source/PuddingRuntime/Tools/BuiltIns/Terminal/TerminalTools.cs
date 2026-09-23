@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using PuddingCode.Abstractions;
 using PuddingCode.Models;
 using PuddingCode.Tools;
+using PuddingCode.Tools.Definitions;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -218,6 +219,13 @@ public sealed class TerminalStartTool : PuddingToolBase<TerminalStartArgs, Termi
                     "Job already completed. Use the exit_code and output to continue."),
         };
     }
+
+    /// <summary>
+    /// terminal_start 的展示投影声明（tool-owned presentation）：kind=terminal，
+    /// meta 取参数里的 command/cwd，结果阶段用 job 快照补齐 job_id/exit_code。
+    /// </summary>
+    public static ToolPresentationIntent? Present(ToolPresentationInput input)
+        => TerminalToolPresentation.Present(input, commandFromArgs: true);
 }
 
 /// <summary>Blocks on a background terminal job until it exits, output saturates the preview cap, or the wait deadline.</summary>
@@ -286,6 +294,13 @@ public sealed class TerminalWaitTool : PuddingToolBase<TerminalWaitArgs, Termina
                 "Job is no longer running. Use the exit_code and output to continue."),
         };
     }
+
+    /// <summary>
+    /// terminal_wait 的展示投影声明（tool-owned presentation）：kind=terminal。
+    /// 参数里只有 job_id；命令/退出码只在结果 job 快照里，参数阶段不得凭空补 command。
+    /// </summary>
+    public static ToolPresentationIntent? Present(ToolPresentationInput input)
+        => TerminalToolPresentation.Present(input, commandFromArgs: false);
 }
 
 /// <summary>Reads a terminal output slice without waiting for new process output.</summary>
@@ -649,4 +664,79 @@ public sealed record TerminalWaitResult
 
     [JsonPropertyName("next_action")]
     public required string NextAction { get; init; }
+}
+
+/// <summary>
+/// terminal_start / terminal_wait 的展示投影（presentation）事实提取：
+/// 只读参数与结果里既有的 command / cwd / job_id / exit_code 事实，拿不到就不写该键（绝不猜值）。
+/// </summary>
+internal static class TerminalToolPresentation
+{
+    /// <param name="commandFromArgs">
+    /// terminal_start 的参数里带 command（参数即命令事实源）；terminal_wait 的参数只有 job_id，
+    /// 命令只可能来自结果里的 job 快照 —— 参数阶段不得凭空补 command。
+    /// </param>
+    public static ToolPresentationIntent? Present(ToolPresentationInput input, bool commandFromArgs)
+    {
+        var args = ToolPresentationArgs.Create(input.Arguments);
+        var job = TryReadJob(input.Result);
+        var meta = new ToolPresentationMeta();
+
+        meta.AddString("command", job?.Command ?? (commandFromArgs ? args.GetString("command") : null));
+        meta.AddString("cwd", job?.Cwd ?? args.GetString("cwd"));
+        meta.AddString("job_id", job?.JobId ?? args.GetString("job_id"));
+        meta.AddInt("exit_code", job?.ExitCode);
+
+        return new ToolPresentationIntent
+        {
+            Kind = ToolPresentationIntentKind.Terminal,
+            Meta = meta.Build(),
+        };
+    }
+
+    /// <summary>
+    /// 从结果 JSON 读 job 快照：terminal_start = <c>{job:{...}}</c>，
+    /// terminal_wait/terminal_read = <c>{result:{job:{...}}}</c>（键名见 <see cref="TerminalJobDto"/>）。
+    /// </summary>
+    private static (string? JobId, string? Command, string? Cwd, int? ExitCode)? TryReadJob(JsonElement? result)
+    {
+        if (result is not { ValueKind: JsonValueKind.Object } root)
+            return null;
+
+        if (!TryGetJob(root, out var job))
+            return null;
+
+        var facts = ToolPresentationArgs.Create(job);
+        return (
+            facts.GetString("job_id"),
+            facts.GetString("command"),
+            facts.GetString("cwd"),
+            facts.GetInt("exit_code"));
+    }
+
+    private static bool TryGetJob(JsonElement root, out JsonElement job)
+    {
+        var facts = ToolPresentationArgs.Create(root);
+
+        var direct = facts.Get("job");
+        if (direct is { ValueKind: JsonValueKind.Object } jobElement)
+        {
+            job = jobElement;
+            return true;
+        }
+
+        var nested = facts.Get("result");
+        if (nested is { ValueKind: JsonValueKind.Object } waitResult)
+        {
+            var inner = ToolPresentationArgs.Create(waitResult).Get("job");
+            if (inner is { ValueKind: JsonValueKind.Object } innerJob)
+            {
+                job = innerJob;
+                return true;
+            }
+        }
+
+        job = default;
+        return false;
+    }
 }

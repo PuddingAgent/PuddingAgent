@@ -92,6 +92,7 @@ public sealed partial class AgentExecutionService
     private readonly SkillEnforcerService? _skillEnforcer;
     private readonly ISessionExecutionGate _sessionExecutionGate;
     private readonly IExecutionProgressRegistry? _executionProgress;
+    private readonly IToolPresentationProjector? _toolPresentationProjector; // 前端改进 #1：工具展示投影（presentation）
     private readonly CompositionRecoveryService? _compositionRecovery; // P0-5 步骤 5：跨 1h/重启水合工具集合
 
     // V5：冻结视觉上下文通道（进程内 AsyncLocal）。执行入口 push 冻结路由快照，DirectLlmClient 单源消费。
@@ -157,7 +158,8 @@ public sealed partial class AgentExecutionService
         CompositionRecoveryService? compositionRecovery = null,
                 IRuntimeExecutionConfigService? runtimeExecutionConfig = null,
         ContextAssemblyStore? contextAssemblyStore = null,
-        FrozenVisionContextAccessor? frozenVisionContext = null)
+        FrozenVisionContextAccessor? frozenVisionContext = null,
+        IToolPresentationProjector? toolPresentationProjector = null)
     {
         _sessionManager      = sessionManager;
         _runtimeSessionStore = runtimeSessionStore;
@@ -208,6 +210,7 @@ public sealed partial class AgentExecutionService
         _frozenVisionContext      = frozenVisionContext;
         _skillEnforcer             = skillEnforcer;
         _executionProgress         = executionProgress;
+        _toolPresentationProjector = toolPresentationProjector;
         _conversationEventStore    = conversationEventStore;
         _compositionRecovery       = compositionRecovery;
         _runtimeExecutionConfig    = runtimeExecutionConfig;

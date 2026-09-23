@@ -460,6 +460,8 @@ public static partial class PuddingServiceCollectionExtensions
                 sp.GetRequiredService<ILogger<AgentPersonaFileProvider>>());
         });
         builder.Services.AddSingleton<SessionArchiver>();
+        // 前端改进 #1：工具展示投影（presentation）——发射侧读工具自己声明的 Present（失败/未命中 ⇒ generic）。
+        builder.Services.TryAddSingleton<IToolPresentationProjector, ToolPresentationProjector>();
         builder.Services.AddSingleton<AgentExecutionService>();
         builder.Services.AddSingleton<ITurnExecutor, TurnExecutorAdapter>();
         builder.Services.AddSingleton<IRuntimeAgentDispatcher, RuntimeAgentDispatcher>();

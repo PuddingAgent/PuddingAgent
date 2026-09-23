@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Tools;
+using PuddingCode.Tools.Definitions;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -42,6 +43,45 @@ public sealed class FilePatchTool : PuddingToolBase<FilePatchArgs>
         _audit = audit;
         _logger = logger;
         _mutationQueue = mutationQueue;
+    }
+
+    /// <summary>
+    /// file_patch 的展示投影声明（tool-owned presentation）：kind=diff，meta.path 取参数里的文件路径。
+    /// 路径不唯一（批量多文件 / 仅 patch_text）时省略 path（不得猜），前端回落到 +++ 头或通用标题。
+    /// 增删行数不进 meta：工具输出是自由文本，无结构化 diff 统计事实（渲染器自行从 diff 正文计数）。
+    /// </summary>
+    public static ToolPresentationIntent? Present(ToolPresentationInput input)
+    {
+        var args = ToolPresentationArgs.Create(input.Arguments);
+        var meta = new ToolPresentationMeta();
+        meta.AddString("path", TryReadSinglePath(args));
+
+        return new ToolPresentationIntent
+        {
+            Kind = ToolPresentationIntentKind.Diff,
+            Meta = meta.Build(),
+        };
+    }
+
+    /// <summary>唯一文件路径事实：args.path 优先，其次是 patches 里去重后恰好一个 path。</summary>
+    private static string? TryReadSinglePath(ToolPresentationArgs args)
+    {
+        var direct = args.GetString("path");
+        if (direct is not null)
+            return direct;
+
+        if (args.GetArray("patches") is not { } patches)
+            return null;
+
+        var paths = new List<string>();
+        foreach (var patch in patches.EnumerateArray())
+        {
+            var path = ToolPresentationArgs.Create(patch).GetString("path");
+            if (path is not null && !paths.Contains(path, StringComparer.Ordinal))
+                paths.Add(path);
+        }
+
+        return paths.Count == 1 ? paths[0] : null;
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(

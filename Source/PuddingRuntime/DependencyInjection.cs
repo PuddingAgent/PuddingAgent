@@ -221,6 +221,9 @@ public static class RuntimeServiceExtensions
 
         services.AddSingleton<SessionArchiver>();
 
+        // 前端改进 #1：工具展示投影（presentation）——事件发射侧读取工具自己声明的 Present，
+        // 未注册/投影失败时发射侧改用 ToolPresentationProjector.Default（fail-open 至 generic）。
+        services.TryAddSingleton<IToolPresentationProjector, ToolPresentationProjector>();
         services.AddSingleton<AgentExecutionService>();
         services.AddSingleton<IRuntimeAgentDispatcher, RuntimeAgentDispatcher>();
         services.AddSingleton<IAgentExecutionAvailabilityProvider, DefaultAgentExecutionAvailabilityProvider>();

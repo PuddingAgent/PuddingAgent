@@ -2,6 +2,7 @@ using System.Text;
 using PuddingCode.Models;
 using PuddingCode.Observability;
 using PuddingCode.Tools;
+using PuddingCode.Tools.Definitions;
 using PuddingCode.Tools.Retrieval;
 using PuddingFullTextIndex.Contracts;
 using PuddingRuntime.Services.Search;
@@ -69,6 +70,26 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         _searchTimeout = searchTimeout is { } timeout && timeout > TimeSpan.Zero
             ? timeout
             : ManagedSearchTimeout;
+    }
+
+    /// <summary>
+    /// search_grep 的展示投影声明（tool-owned presentation）：kind=search，
+    /// meta 取参数里确有的事实 query/pattern/directory。
+    /// 命中数不进 meta：工具输出是自由文本且带截断语义（文本行数 ≠ 命中数），没有结构化计数事实。
+    /// </summary>
+    public static ToolPresentationIntent? Present(ToolPresentationInput input)
+    {
+        var args = ToolPresentationArgs.Create(input.Arguments);
+        var meta = new ToolPresentationMeta();
+        meta.AddString("query", args.GetString("query"));
+        meta.AddString("pattern", args.GetString("pattern"));
+        meta.AddString("directory", args.GetString("directory"));
+
+        return new ToolPresentationIntent
+        {
+            Kind = ToolPresentationIntentKind.Search,
+            Meta = meta.Build(),
+        };
     }
 
     protected override async Task<ToolExecutionResult> ExecuteCoreAsync(
