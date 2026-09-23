@@ -74,4 +74,9 @@
 
 ## 测试
 
-`../PuddingCodeIntelligenceTests/`（切片 2 将拆出 `PuddingCodeIndexTests`；当前测试工程已加对 `PuddingCodeIndex` 的直引）
+**`../PuddingCodeIndexTests/`（本组件的独立测试工程 —— S2/S3 已兑现）**：只引用本工程，
+58 用例（55 个组件用例 + 3 条边界断言），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
+`InternalsVisibleTo` **仅**对本组件的测试工程开放（**不得**对上层开放 —— 那是反向依赖）。
+
+`../PuddingCodeIntelligenceTests/` 保留语言解析/查询/DI 等**上层**测试（89 用例）；
+2026-09-23 实测：移除指向它的 `InternalsVisibleTo` 后仍 build+test 全绿，故该条目已删除。

@@ -1,8 +1,7 @@
-using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIndex.Contracts;
 using PuddingCodeIndex.Storage;
 
-namespace PuddingCodeIntelligenceTests.Storage;
+namespace PuddingCodeIndexTests.Storage;
 
 [TestClass]
 public sealed class SqliteCodeIndexStoreTests

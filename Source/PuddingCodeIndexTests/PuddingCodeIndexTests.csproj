@@ -1,0 +1,21 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!-- Component tests for PuddingCodeIndex (组件化交付规程 S2/S3).
+       Boundary rule: this test project MUST reference PuddingCodeIndex ONLY.
+       It must never reference PuddingCodeIntelligence / PuddingRuntime / PuddingHost / PuddingAgent,
+       so that the index component can be built and tested without loading Roslyn/MSBuild
+       and without touching the running host (规程 R1: 不重启宿主即可开发调试).
+       The boundary is asserted at runtime by ComponentBoundaryTests. -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingCodeIndex\PuddingCodeIndex.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCodeIndex.Contracts;
 using PuddingCodeIndex.Services;
 
-namespace PuddingCodeIntelligenceTests.Services.CodeIndex;
+namespace PuddingCodeIndexTests.Services.CodeIndex;
 
 /// <summary>
 /// U3-B1, part 1: the scheduler may no longer drop a request that arrives while a scope is being
@@ -18,7 +18,7 @@ public sealed class CodeIndexSchedulerTests
     [TestMethod]
     public async Task Request_Arriving_While_A_Scope_Is_Being_Indexed_Is_Processed_Afterwards()
     {
-        using var fixture = CodeIntelligenceFixture.Create();
+        using var fixture = CodeIndexFixture.Create();
         await fixture.Store.UpsertProjectAsync(
             new CodeProjectRecord(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, fixture.Root, CodeProjectStatus.Active));
 
@@ -56,7 +56,7 @@ public sealed class CodeIndexSchedulerTests
     [TestMethod]
     public async Task Repeated_Requests_During_Indexing_Collapse_Into_One_Extra_Run()
     {
-        using var fixture = CodeIntelligenceFixture.Create();
+        using var fixture = CodeIndexFixture.Create();
         await fixture.Store.UpsertProjectAsync(
             new CodeProjectRecord(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, fixture.Root, CodeProjectStatus.Active));
 
@@ -89,7 +89,7 @@ public sealed class CodeIndexSchedulerTests
     [TestMethod]
     public async Task Cancelled_Pump_Re_Queues_The_Job_Instead_Of_Dropping_It()
     {
-        using var fixture = CodeIntelligenceFixture.Create();
+        using var fixture = CodeIndexFixture.Create();
         await fixture.Store.UpsertProjectAsync(
             new CodeProjectRecord(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, fixture.Root, CodeProjectStatus.Active));
 
@@ -136,7 +136,7 @@ public sealed class CodeIndexSchedulerTests
     [TestMethod]
     public async Task Scheduler_Does_Not_Run_Anything_Without_An_Explicit_Pump()
     {
-        using var fixture = CodeIntelligenceFixture.Create();
+        using var fixture = CodeIndexFixture.Create();
         await fixture.Store.UpsertProjectAsync(
             new CodeProjectRecord(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, fixture.Root, CodeProjectStatus.Active));
 
@@ -164,7 +164,7 @@ public sealed class CodeIndexSchedulerTests
     [TestMethod]
     public async Task Duplicate_Enqueue_While_Queued_Keeps_A_Single_Queue_Entry()
     {
-        using var fixture = CodeIntelligenceFixture.Create();
+        using var fixture = CodeIndexFixture.Create();
         await fixture.Store.UpsertProjectAsync(
             new CodeProjectRecord(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, fixture.Root, CodeProjectStatus.Active));
 
@@ -184,7 +184,7 @@ public sealed class CodeIndexSchedulerTests
     [TestMethod]
     public async Task Removed_Scope_Is_Skipped_Without_A_Completed_Run()
     {
-        using var fixture = CodeIntelligenceFixture.Create();
+        using var fixture = CodeIndexFixture.Create();
         await fixture.Store.UpsertProjectAsync(
             new CodeProjectRecord(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, fixture.Root, CodeProjectStatus.Removed));
 
@@ -201,7 +201,7 @@ public sealed class CodeIndexSchedulerTests
     [TestMethod]
     public void Progress_Of_An_Unknown_Scope_Is_Zeroed()
     {
-        using var fixture = CodeIntelligenceFixture.Create();
+        using var fixture = CodeIndexFixture.Create();
         using var scheduler = CreateScheduler(fixture, new RecordingCodeIndexer());
 
         var progress = scheduler.GetProgress("nope", "nope");
@@ -213,7 +213,7 @@ public sealed class CodeIndexSchedulerTests
         Assert.AreEqual(0, progress.MarkedWhileInFlightCount);
     }
 
-    private static CodeIndexScheduler CreateScheduler(CodeIntelligenceFixture fixture, RecordingCodeIndexer indexer) =>
+    private static CodeIndexScheduler CreateScheduler(CodeIndexFixture fixture, RecordingCodeIndexer indexer) =>
         new(
             indexer,
             new DefaultCodeWorkspaceResolver(fixture.Store),

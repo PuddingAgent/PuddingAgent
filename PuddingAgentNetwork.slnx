@@ -30,6 +30,7 @@
     <Project Path="Tests/PuddingDesktop.Tests/PuddingDesktop.Tests.csproj" />
     <Project Path="Tests/PuddingHost.Tests/PuddingHost.Tests.csproj" />
     <Project Path="Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj" />
+    <Project Path="Source/PuddingCodeIndexTests/PuddingCodeIndexTests.csproj" />
     <Project Path="Source/PuddingCodexServiceTests/PuddingCodexServiceTests.csproj" />
     <Project Path="Source/PuddingCoreTests/PuddingCoreTests.csproj" />
     <Project Path="Source/PuddingMemoryEngineTests/PuddingMemoryEngineTests.csproj" />

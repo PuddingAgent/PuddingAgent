@@ -1,3 +1,7 @@
+## 2026-09-23 组件化交付规程 S2/S3 首次兑现（PuddingCodeIndexTests）
+
+新建 `Source/PuddingCodeIndexTests/`：索引组件的独立测试工程，**只引用** `PuddingCodeIndex`（`ProjectReference` 恰好 1 条）。从 `PuddingCodeIntelligenceTests` 迁入 `Services/CodeIndex/` 8 文件 + `Storage/SqliteCodeIndexStoreTests.cs`（**55 用例，零丢弃**：守恒等式 `144 = 89 + 55`），另加 3 条机器可验的边界断言（`ComponentBoundaryTests`：探测器自检 / 进程未加载 Roslyn·MSBuild·上层程序集 / `*.deps.json` 依赖闭包）。`PuddingCodeIndex` 的 `InternalsVisibleTo` 由 `PuddingCodeIntelligenceTests` 改为 `PuddingCodeIndexTests`（实测移除后上层测试仍全绿），**未对上层开放任何反向可见性**。门禁：新工程 58/58 exit 0、`PuddingCodeIntelligenceTests` 89/89 exit 0、`PuddingAgent -c Release` exit 0；变异取红 2 组（加 `PuddingCodeIntelligence` 引用 ⇒ 2 条边界断言红、分别列出 5/7 个禁用程序集；`Compile Remove` 一个测试文件 ⇒ 通过数 58→51 而 exit 仍 0），复原后 `git hash-object` 逐位相同（`5505b031…`）、`MUTATION` 大小写敏感 0 残留。见 `Source/PuddingCodeIndexTests/code_map.md`、`Docs/Conventions/组件化交付规程.md` §4/§4.1。
+
 ## 2026-09-21 code_map 索引补齐（PuddingTaskRecall.Cli）
 
 按 `code-map-incremental-update` 技能做索引完整性审计：`Source/` 下 19 个生产项目均已有 L2 索引，唯一缺口是生产 CLI `Source/PuddingTaskRecall.Cli/`（有 `.csproj`、无 `code_map.md`，且未登记进顶层目录表）。已按模板补 `Source/PuddingTaskRecall.Cli/code_map.md`（入口 & 配置 / 核心功能 / 结果模型 / 测试）并在 L1 顶层目录表补链接。8 个 `*Tests`/Benchmarks 项目仍无索引（L1 无测试项目区，未擅自新增）。
@@ -666,6 +670,7 @@ Task scheduler effective-dispatch closure (2026-09-01 proposed)
 | `Tests/PuddingMemoryEngineTests/` | Library/Book/Chapter、FTS5、Skill 去重 |
 | `Tests/PuddingMemoryEngineBenchmarks/` | BenchmarkDotNet |
 | `Tests/PuddingCodeIntelligenceTests/` | 代码索引 |
+| `Source/PuddingCodeIndexTests/` | **索引组件（`PuddingCodeIndex`）独立测试工程**：变更管线/调度/维护/存储 + 边界断言（58 用例） |
 | `Tests/PuddingCodexServiceTests/` | Codex MCP Service |
 | `Tests/PuddingFullTextIndexTests/` | 全文索引 |
 | `Tests/PuddingWebApiTests/` | Web API |

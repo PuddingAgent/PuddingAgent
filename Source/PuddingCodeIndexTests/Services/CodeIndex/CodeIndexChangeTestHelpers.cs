@@ -1,8 +1,7 @@
-using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIndex.Contracts;
 using PuddingCodeIndex.Services.CodeIndex;
 
-namespace PuddingCodeIntelligenceTests.Services.CodeIndex;
+namespace PuddingCodeIndexTests.Services.CodeIndex;
 
 /// <summary>Throwaway directory under the temp path. Never touches the repository tree.</summary>
 internal sealed class TestDirectory : IDisposable

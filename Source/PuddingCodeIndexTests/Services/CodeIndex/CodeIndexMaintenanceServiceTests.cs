@@ -4,7 +4,7 @@ using PuddingCodeIndex.Contracts;
 using PuddingCodeIndex.Services;
 using PuddingCodeIndex.Services.CodeIndex;
 
-namespace PuddingCodeIntelligenceTests.Services.CodeIndex;
+namespace PuddingCodeIndexTests.Services.CodeIndex;
 
 /// <summary>
 /// U3-B1, part 2: the change-capture pipeline must actually drive indexing, batch payload must stay
@@ -231,7 +231,7 @@ public sealed class CodeIndexMaintenanceServiceTests
             TimeSpan? stopTimeout = null,
             int queueCapacity = CodeIndexChangeQueue.DefaultCapacity)
         {
-            Fixture = CodeIntelligenceFixture.Create();
+            Fixture = CodeIndexFixture.Create();
             Clock = new MutableTimeProvider(new DateTimeOffset(2026, 9, 23, 0, 0, 0, TimeSpan.Zero));
             Indexer = new RecordingCodeIndexer();
             Scheduler = new CodeIndexScheduler(
@@ -250,7 +250,7 @@ public sealed class CodeIndexMaintenanceServiceTests
                 stopTimeout: stopTimeout ?? CodeIndexMaintenanceService.DefaultStopTimeout);
         }
 
-        public CodeIntelligenceFixture Fixture { get; }
+        public CodeIndexFixture Fixture { get; }
 
         public MutableTimeProvider Clock { get; }
 

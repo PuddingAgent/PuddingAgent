@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using PuddingCodeIndex.Services.CodeIndex;
 
-namespace PuddingCodeIntelligenceTests.Services.CodeIndex;
+namespace PuddingCodeIndexTests.Services.CodeIndex;
 
 [TestClass]
 public sealed class CodeIndexScopeStateTests

@@ -10,7 +10,7 @@
        scheduling, scope registry/resolution, exclude patterns, path identity).
        Boundary rule (ADR-089 §2.1): this project MUST NOT reference PuddingCodeIntelligence. -->
   <ItemGroup>
-    <InternalsVisibleTo Include="PuddingCodeIntelligenceTests" />
+    <InternalsVisibleTo Include="PuddingCodeIndexTests" />
   </ItemGroup>
 
   <ItemGroup>

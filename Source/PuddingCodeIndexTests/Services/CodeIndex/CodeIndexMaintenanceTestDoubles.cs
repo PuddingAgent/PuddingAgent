@@ -1,7 +1,7 @@
 using PuddingCodeIndex.Contracts;
 using PuddingCodeIndex.Services.CodeIndex;
 
-namespace PuddingCodeIntelligenceTests.Services.CodeIndex;
+namespace PuddingCodeIndexTests.Services.CodeIndex;
 
 /// <summary>Indexer double: records every call, can run custom logic and can block.</summary>
 internal sealed class RecordingCodeIndexer : ICodeIndexer
