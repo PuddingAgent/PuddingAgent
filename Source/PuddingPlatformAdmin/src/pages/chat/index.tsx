@@ -312,14 +312,10 @@ const ChatPageContent: React.FC = () => {
           chat.setInputValue(turn.userMessage.text);
         }
       },
-      onEditAndRerun: (turnId: string) => {
-        const turn = chat.turns.find((t) => t.turnId === turnId);
-        if (turn) {
-          chat.setInputValue(turn.userMessage.text);
-        }
-      },
+      /* #10：原本还有一项 onEditAndRerun（菜单标签「修改指令并重跑」），
+         其实现与 onRerun 逐字相同、并不存在任何「重跑」，已合并删除。 */
       onAddToMemory: (_turnId: string) => {
-        /* TODO: 接入记忆引擎 */
+        messageApi.info('「加入记忆」尚未实现');
       },
       onPin: (turnId: string) => {
         const turn = chat.turns.find((t) => t.turnId === turnId);
@@ -345,7 +341,8 @@ const ChatPageContent: React.FC = () => {
         closeContextMenu();
       },
       onBranch: (_turnId: string) => {
-        /* TODO: 创建分支 */
+        // #10：原为空 TODO，点击毫无反应 ⇒ 至少给出明确反馈，不再静默。
+        messageApi.info('「从这里创建分支」尚未实现');
       },
     }),
     [

@@ -131,13 +131,16 @@ const MessageActions: React.FC<MessageActionsProps> = ({
           </button>
         </Tooltip>
       )}
+      {/* #10 诚实命名：本按钮**不发起任何请求**，只把本轮提问填回输入框
+          （见 pages/chat/index.tsx 的 handleRerunTurn）。
+          原名「重新生成」会让用户以为在重跑推理。 */}
       {onRerun && (
-        <Tooltip title="重新生成">
+        <Tooltip title="重新输入">
           <button
             type="button"
             className={styles.messageActionBtn}
             onClick={onRerun}
-            aria-label="重新生成"
+            aria-label="重新输入"
           >
             <ReloadOutlined />
           </button>

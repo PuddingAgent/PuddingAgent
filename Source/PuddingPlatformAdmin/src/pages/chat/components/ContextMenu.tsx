@@ -3,7 +3,6 @@ import {
   BranchesOutlined,
   CopyOutlined,
   DeleteOutlined,
-  EditOutlined,
   MessageOutlined,
   PushpinOutlined,
   ReloadOutlined,
@@ -114,17 +113,14 @@ function buildMenuItems(
       },
     ],
     [
+      // #10 诚实命名：本项**不发起任何请求**，只把该轮提问填回输入框
+      // （见 pages/chat/index.tsx 的 onRerun / handleRerunTurn）。
+      // 原「修改指令并重跑」与「重新执行」实现逐字相同（都只回填），已合并为一项。
       {
         icon: <ReloadOutlined />,
-        label: '重新执行',
+        label: '重新输入',
         disabled: !isUser,
         onClick: () => callbacks.onRerun(turnId),
-      },
-      {
-        icon: <EditOutlined />,
-        label: '修改指令并重跑',
-        disabled: !isUser,
-        onClick: () => callbacks.onEditAndRerun(turnId),
       },
       {
         icon: <StarOutlined />,
@@ -153,7 +149,6 @@ export interface ContextMenuCallbacks {
   onDelete: (turnId: string) => void;
   onSpeak?: (turnId: string) => void;
   onRerun: (turnId: string) => void;
-  onEditAndRerun: (turnId: string) => void;
   onAddToMemory: (turnId: string) => void;
   onBranch: (turnId: string) => void;
 }
