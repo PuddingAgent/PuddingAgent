@@ -39,6 +39,8 @@ interface SkillPaletteProps {
   /** 可选：作为级联子面板嵌入时无需「返回」（主菜单始终可见）。 */
   onClose?: () => void;
   onSelect: (skill: HubSkillSummaryDto) => void;
+  /** 打开技能管理（当前页弹模态，不跳转地址）。 */
+  onManageSkills?: () => void;
   /** 已挂 chip 的技能 id，用于列表高亮（避免重复添加看不出来）。 */
   selectedSkillIds?: string[];
 }
@@ -175,6 +177,7 @@ const SkillPalette: React.FC<SkillPaletteProps> = ({
   open,
   onClose,
   onSelect,
+  onManageSkills,
   selectedSkillIds,
 }) => {
   const [loading, setLoading] = useState(false);
@@ -299,15 +302,17 @@ const SkillPalette: React.FC<SkillPaletteProps> = ({
           </button>
         )}
         {/* 不提供「从本地添加技能」：本站没有本地上传技能的能力，不摆不能用的入口。
-            只链接到真实存在的技能管理页。 */}
-        <a
+            「管理技能」在**当前页弹模态**（复用 skill-management 的 SkillsTab），
+            不用 <a href> —— 那会整页跳转到 /admin/skill-management，丢掉会话现场。 */}
+        <button
+          type="button"
           style={footerItemStyle}
-          href="/skill-management"
-          target="_blank"
-          rel="noreferrer"
+          onClick={onManageSkills}
+          disabled={!onManageSkills}
+          data-testid="skill-palette-manage"
         >
           管理技能
-        </a>
+        </button>
       </div>
     </div>
   );

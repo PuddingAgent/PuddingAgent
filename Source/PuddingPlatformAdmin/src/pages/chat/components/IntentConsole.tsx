@@ -9,7 +9,7 @@ import {
   StopOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import { Dropdown, message, Popover, Tooltip } from 'antd';
+import { Dropdown, message, Modal, Popover, Tooltip } from 'antd';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   type CacheDiagnosticsReport,
@@ -47,6 +47,13 @@ const SkillPalette =
     ? (require('./SkillPalette')
         .default as typeof import('./SkillPalette').default)
     : React.lazy(() => import('./SkillPalette'));
+// 技能管理（模态内复用 skill-management 的 SkillsTab）同样按需加载：
+// 它是 632 行的重组件，直接进 chat 首屏包会顶破 check-chat-bundle-budget 的硬预算。
+// 与 SkillPalette 不同，这里不用 test 分支的 require：没有测试直接渲染它，
+// 模态默认关闭 ⇒ 纯 lazy 即可让测试完全不加载它。
+const SkillsTabLazy = React.lazy(
+  () => import('../../skill-management/SkillsTab'),
+);
 import ContextUsageRing from './ContextUsageRing';
 
 import ComposerStatusDetails, {
@@ -337,6 +344,8 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const [showComposerMenu, setShowComposerMenu] = useState(false);
   /** 技能子面板（级联 flyout）：hover「技能」项时在右侧并排展开。 */
   const [showSkillFlyout, setShowSkillFlyout] = useState(false);
+  /** 技能管理模态：在当前页弹窗复用 skill-management 的 SkillsTab，不整页跳转。 */
+  const [showSkillManager, setShowSkillManager] = useState(false);
   /** 运行状态详情 Popover */
 
   const [contextHealth, setContextHealth] =
@@ -969,6 +978,11 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                         <SkillPalette
                           open
                           onSelect={handleSelectSkill}
+                          onManageSkills={() => {
+                            setShowComposerMenu(false);
+                            setShowSkillFlyout(false);
+                            setShowSkillManager(true);
+                          }}
                           selectedSkillIds={(pendingSkills ?? []).map(
                             (s) => s.skillId,
                           )}
@@ -995,6 +1009,29 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                 <PlusOutlined />
               </button>
             </Popover>
+            {/* 「管理技能」在当前页弹模态，不用 <a href> —— 那会整页跳转到
+                /admin/skill-management，丢掉会话现场。SkillsTab 按需加载。 */}
+            <Modal
+              open={showSkillManager}
+              onCancel={() => setShowSkillManager(false)}
+              footer={null}
+              title="技能管理"
+              width="min(1100px, 92vw)"
+            >
+              {showSkillManager && (
+                <React.Suspense
+                  fallback={
+                    <div
+                      style={{ padding: 32, textAlign: 'center', fontSize: 13 }}
+                    >
+                      正在加载技能管理…
+                    </div>
+                  }
+                >
+                  <SkillsTabLazy />
+                </React.Suspense>
+              )}
+            </Modal>
             {uiTestMode && (
               <button
                 type="button"
