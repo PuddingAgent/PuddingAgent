@@ -1,6 +1,6 @@
 // ── ActivityGroup：TurnContentStream 行为组（AgentTurnCard 重构）────────────
 // 两个正文段之间的最大连续非正文节点序列（reasoning/tool/delegation/retry）。
-//  - 折叠态：单行「1 段思考 · 2 次工具 · 18s」，成员 DOM 完全卸载（不是 CSS
+//  - 折叠态：单行「1 步思考 · 2 次工具 · 18s」，成员 DOM 完全卸载（不是 CSS
 //    隐藏）——这是历史卡片 DOM/卡顿治理的主手段；
 //  - 展开态：成员按 canonical sequence 原序渲染（reasoning 行 / 工具树 /
 //    委派行），子代理连续委派聚合为一行；
@@ -28,12 +28,12 @@ import { isPlaceholderVoid, ToolCallTreeBranch } from './ToolCallTree';
 const INITIAL_VISIBLE_ACTIVITY_NODES = 6;
 const ACTIVITY_NODE_REVEAL_BATCH = 24;
 
-/** 折叠态摘要文案：「N 段思考 · M 次工具 · K 个子代理 · R 次重试」。 */
+/** 折叠态摘要文案：「N 步思考 · M 次工具 · K 个子代理 · R 次重试」。 */
 export const buildActivityGroupLabel = (
   summary: ActivityGroupBlock['summary'],
 ): string => {
   const parts: string[] = [];
-  if (summary.reasoningCount > 0) parts.push(`${summary.reasoningCount} 段思考`);
+  if (summary.reasoningCount > 0) parts.push(`${summary.reasoningCount} 步思考`);
   if (summary.toolCount > 0) parts.push(`${summary.toolCount} 次工具`);
   if (summary.delegationCount > 0) parts.push(`${summary.delegationCount} 个子代理`);
   if (summary.retryCount > 0) parts.push(`${summary.retryCount} 次重试`);

@@ -238,7 +238,7 @@ describe('TurnContentStream（内容块流）', () => {
     );
     expect(screen.queryAllByTestId('turn-text-segment')).toHaveLength(0);
     expect(groupHeaders()).toHaveLength(1);
-    expect(screen.getByTestId('activity-group-header').textContent).toContain('1 段思考');
+    expect(screen.getByTestId('activity-group-header').textContent).toContain('1 步思考');
     expect(screen.getByTestId('activity-group-header').textContent).toContain('1 次工具');
   });
 
@@ -322,7 +322,7 @@ describe('TurnContentStream（内容块流）', () => {
       ...events, ev('message.content.appended', 16, { delta: '最终回复' }),
     ])} />);
     expect(screen.getAllByTestId('message-item').map((el) => el.getAttribute('data-markdown'))).toEqual(['播报4', '最终回复']);
-    expect(screen.getByTestId('turn-earlier-toggle').textContent).toContain('含失败记录');
+    expect(screen.getByTestId('turn-earlier-toggle').textContent).toContain('含失败步骤');
     fireEvent.click(screen.getByTestId('turn-earlier-toggle'));
     expect(screen.getAllByTestId('message-item').map((el) => el.getAttribute('data-markdown'))).toEqual(['播报0', '播报1', '播报2', '播报3', '播报4', '最终回复']);
     rerender(<TurnContentStream projection={projectExecutionFlow([

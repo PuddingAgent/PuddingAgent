@@ -52,7 +52,7 @@ describe('TurnStatsLine', () => {
         totalDurationMs: 181_000,
         totalTokens: 4_200,
       }),
-    ).toEqual(['3 段思考', '12 工具', '3m01s', '4.2k tokens']);
+    ).toEqual(['3 步思考', '12 工具', '3m01s', '4.2k tokens']);
 
     expect(
       buildTurnStatsParts({ reasoningSegments: 0, toolCount: 5 }),
@@ -64,7 +64,7 @@ describe('TurnStatsLine', () => {
       <TurnStatsLine reasoningSegments={2} toolCount={6} totalDurationMs={90_000} />,
     );
     const line = screen.getByTestId('turn-stats-line');
-    expect(line.textContent).toContain('2 段思考');
+    expect(line.textContent).toContain('2 步思考');
     expect(line.textContent).toContain('6 工具');
     expect(line.textContent).toContain('1m30s');
 

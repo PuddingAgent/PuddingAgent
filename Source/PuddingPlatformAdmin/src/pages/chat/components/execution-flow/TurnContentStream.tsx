@@ -249,8 +249,8 @@ export const TurnContentStream: React.FC<TurnContentStreamProps> = ({
           data-testid="turn-earlier-toggle"
           onClick={() => setEarlierExpanded((value) => !value)}
         >
-          {earlierExpanded ? '收起较早过程' : '查看较早过程'} · {compactPrefixCount} 段
-          {earlierHasFailures && ' · 含失败记录'}
+          {earlierExpanded ? '收起更早的过程' : '展开更早的过程'} · {compactPrefixCount} 步
+          {earlierHasFailures && ' · 含失败步骤'}
         </button>
       )}
       {hiddenBlockCount > 0 && (earlierExpanded || compactPrefixCount === 0) && (

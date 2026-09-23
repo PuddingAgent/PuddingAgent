@@ -32,7 +32,7 @@ export interface TextBlock {
   sequence: number;
 }
 
-/** 行为组折叠态摘要（「1 段思考 · 2 次工具 · 18s」的数据源）。 */
+/** 行为组折叠态摘要（「1 步思考 · 2 次工具 · 18s」的数据源）。 */
 export interface ActivityGroupSummary {
   /** 非空 reasoning 节点数（对齐投影统计口径）。 */
   reasoningCount: number;

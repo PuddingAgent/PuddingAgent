@@ -1,5 +1,5 @@
 // ── TurnStatsLine：turn 终态计量行（行为链升级 §3.3，对齐 harness StatsLine）──
-// turn 落定后在正文下方渲染一行 caption 灰计量：`N 段思考 · M 工具 · 3m01s · 4.2k tokens`。
+// turn 落定后在正文下方渲染一行 caption 灰计量：`N 步思考 · M 工具 · 3m01s · 4.2k tokens`。
 // 数据全部来自 canonical 投影（段数/工具数/终态时间）与 usage（token），刷新不归零；
 // 缺失的计量项直接省略（不伪造），全缺失时整行不渲染。
 import React from 'react';
@@ -26,7 +26,7 @@ export const buildTurnStatsParts = ({
 }: TurnStatsLineProps): string[] => {
   const parts: string[] = [];
   if (typeof reasoningSegments === 'number' && reasoningSegments > 0) {
-    parts.push(`${reasoningSegments} 段思考`);
+    parts.push(`${reasoningSegments} 步思考`);
   }
   if (typeof toolCount === 'number' && toolCount > 0) {
     parts.push(`${toolCount} 工具`);
