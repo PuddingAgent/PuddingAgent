@@ -108,8 +108,9 @@ describe('InputArea status feedback', () => {
 
     expect(screen.queryByText('· 已完成')).toBeNull();
     expect(screen.getByText('· 正在生成回复…')).toBeTruthy();
-    // 运行中的占位文案已被改成「排队/插嘴」引导（生产：IntentConsole.tsx:843，
-    // loading ? '继续输入：Enter 排队，Ctrl/Cmd+Enter 插嘴当前 Agent…' : '输入你的问题或任务…'）
+    // 运行中的占位文案已被改成「排队/插嘴」引导（生产：IntentConsole.tsx:839，
+    // loading ? '继续输入：Enter 排队，Ctrl/Cmd+Enter 插嘴当前 Agent…'
+    //         : '输入你的问题或任务… 支持 @ 指派 Agent、/ 调用系统指令'）
     // ⇒ 旧期望「正在生成回复…」已不存在，按现状断言。
     expect(
       screen.getByPlaceholderText('继续输入：Enter 排队，Ctrl/Cmd+Enter 插嘴当前 Agent…'),

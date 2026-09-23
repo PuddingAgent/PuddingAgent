@@ -817,7 +817,7 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
           placeholder={
             loading
               ? '继续输入：Enter 排队，Ctrl/Cmd+Enter 插嘴当前 Agent…'
-              : '输入你的问题或任务…'
+              : '输入你的问题或任务… 支持 @ 指派 Agent、/ 调用系统指令'
           }
           disabled={disabled}
           className={styles.composerTextarea}
