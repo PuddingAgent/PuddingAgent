@@ -67,3 +67,13 @@ HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 St
 ## 测试
 
 `../Tests/PuddingHost.Tests/` — Browser Bridge、Remote proxy、Storage 管理与 DesktopChild 产品组合根构建验证；组合根测试显式验证 Singleton `task_*` 工具及其命令服务生命周期；Storage 定向测试 4/4 ✅
+
+## U3-B2a（2026-09-23）— 代码索引维护的宿主生命周期驱动
+
+| 文件 | 用途 |
+|------|------|
+| `Hosting/CodeIndexMaintenanceHostedService.cs` | 🔑 U3-B2a：索引维护组件的**唯一生命周期驱动**。`StartAsync` 非阻塞启动组件驱动（`ICodeIndexMaintenance`），并把「已注册 scope」挂上变更源 —— 附着在启动路径之外（`ScopeAttachmentCompleted` 可观测），失败只记日志，无 scope 时安全 no-op；`StopAsync` 有界（外层 10s 上限）且不抛异常逃逸、不丢已入队请求。**本身不含任何循环 / 队列 / 索引逻辑**：泵与变更捕获留在 `PuddingCodeIndex`（ADR-089 §2 驱动归属）。注册点：`PuddingServiceCollectionExtensions.Platform.cs` 紧邻 `AddPuddingCodeIntelligence()`。 |
+
+组合根同时新增 `../Tests/PuddingHost.Tests/Hosting/CodeIndexMaintenanceHostCompositionTests.cs`（3 用例）：驱动可解析、泵端口与 `ICodeIndexScheduler` 同实例、驱动已注册且持有同一实例、无 scope 时安全 no-op、`Enqueue → 泵 → ICodeIndexer`（替身计数）闭合、已注册 scope 被挂上变更源。
+
+顺带修复：`Storage/StorageMaintenanceServiceTests.cs` 与 `Storage/StorageManagementAdministrationTests.cs` 各补 1 行 `using PuddingCodeIndex.Contracts;` —— 此前 `ICodeIndexScheduler` 已迁出 `PuddingCodeIntelligence.Contracts`，整个 `PuddingHost.Tests` 编排期编译不过。

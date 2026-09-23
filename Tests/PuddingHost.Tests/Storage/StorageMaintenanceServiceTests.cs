@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Storage;
 using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIndex.Contracts;
 using PuddingHost.Storage;
 using PuddingPlatform.Services;
 using PuddingPlatform.Services.StorageManagement;

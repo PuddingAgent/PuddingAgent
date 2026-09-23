@@ -25,6 +25,23 @@ public interface ICodeIndexMaintenance
     /// <summary>True between <see cref="StartAsync"/> and <see cref="StopAsync"/>.</summary>
     bool IsRunning { get; }
 
+    /// <summary>
+    /// Attaches a scope to the driver and starts its change source.
+    /// <para>
+    /// This is the only way a scope's change-capture pipeline comes into existence, and it is accepted only
+    /// while the driver runs — which is what makes "no new change is accepted after <see cref="StopAsync"/>"
+    /// observable instead of aspirational.
+    /// </para>
+    /// </summary>
+    /// <param name="workspaceId">Workspace that owns the scope.</param>
+    /// <param name="scopeId">Scope to attach.</param>
+    /// <param name="rootPath">Root directory the scope is watched at.</param>
+    /// <returns>
+    /// <c>true</c> when the scope was attached; <c>false</c> when it was already attached, or when the
+    /// driver is not running (the request is counted as rejected, never silently ignored).
+    /// </returns>
+    bool EnsureScope(string workspaceId, string scopeId, string rootPath);
+
     /// <summary>Number of coalesced batches handled since construction.</summary>
     long BatchesProcessed { get; }
 

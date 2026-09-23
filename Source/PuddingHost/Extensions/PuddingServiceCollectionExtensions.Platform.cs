@@ -446,6 +446,12 @@ public static partial class PuddingServiceCollectionExtensions
         });
         builder.Services.AddPuddingCodeIntelligence();
 
+        // U3-B2a / P0 closure: the lifecycle driver of the code-index maintenance component. U3-B1 removed the
+        // index scheduler's self-started worker, so an enqueue is serviced only while something pumps the
+        // queue; without this hosted service code_index_register_project would enqueue into a queue nobody
+        // drains. The service only drives lifecycle and scope attachment - no index logic lives in the Host.
+        builder.Services.AddHostedService<CodeIndexMaintenanceHostedService>();
+
         // ── EF Core / 数据库 ──────────────────────────────────
         var connStr = builder.Configuration.GetConnectionString("Default")
             ?? $"Data Source={Path.Combine(dataPaths.DatabasesRoot, "pudding_platform.db")}";

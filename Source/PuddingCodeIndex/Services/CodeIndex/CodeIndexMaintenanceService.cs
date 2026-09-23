@@ -331,6 +331,13 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
     /// This is the same operation the driver loop performs, exposed so a caller (or a test) can drive the
     /// pipeline without depending on wall-clock polling.
     /// </para>
+    /// <para>
+    /// The step is always <b>complete</b>: it drains due batches <i>and</i> pumps the scheduler queue. The
+    /// queue is fed by every producer, not only by the change pipeline — <c>code_index_register_project</c>
+    /// enqueues a project directly, with no change batch behind it. Pumping only inside
+    /// <c>HandleBatchAsync</c> would starve exactly those requests: the scheduler owns no worker of its own
+    /// (U3-B1), and a scope that was never attached produces no batch at all.
+    /// </para>
     /// </summary>
     /// <param name="cancellationToken">Cancels the pump.</param>
     /// <returns>Number of batches handled.</returns>
@@ -351,6 +358,11 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
             await HandleBatchAsync(entry, batch, cancellationToken).ConfigureAwait(false);
             handled++;
         }
+
+        // Unconditional pump. The production acceptor (CodeProjectManagementTools) calls
+        // ICodeIndexScheduler.Enqueue directly, with no change batch behind it, so a step that only pumped
+        // inside HandleBatchAsync would leave those requests queued forever — that is the P0 defect.
+        await _scheduler.ProcessPendingAsync(cancellationToken).ConfigureAwait(false);
 
         return handled;
     }

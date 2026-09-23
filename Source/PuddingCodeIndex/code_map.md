@@ -80,3 +80,11 @@
 
 `../PuddingCodeIntelligenceTests/` 保留语言解析/查询/DI 等**上层**测试（89 用例）；
 2026-09-23 实测：移除指向它的 `InternalsVisibleTo` 后仍 build+test 全绿，故该条目已删除。
+
+## U3-B2a 更新（2026-09-23）— 队列泵已接入宿主
+
+- `ICodeIndexMaintenance` 契约补齐 **`EnsureScope(workspaceId, scopeId, rootPath)`**：宿主只能通过端口挂载 scope，不必解析具体实现类。
+- `CodeIndexMaintenanceService.ProcessDueBatchesAsync` 现在是**完整驱动步**：消费到期批次之外，**每步无条件泵一次** `ICodeIndexSchedulerDriver.ProcessPendingAsync`。生产受理点（`code_index_register_project`）直接 `Enqueue`、背后没有变更批次，只在 `HandleBatchAsync` 内泵会让这类请求永久饿死（P0）。
+- `CodeIndexMaintenanceService` 仍是普通组件服务（**不实现 `IHostedService`**）：宿主接线只在其外部（DI 注册 ＋ `PuddingHost` 的驱动），组件依赖方向不变。
+- 宿主接线（DI ＋ `IHostedService`）落在 `PuddingCodeIntelligence/DependencyInjection.cs` 与 `PuddingHost/Hosting/CodeIndexMaintenanceHostedService.cs` —— 本组件**仍然不引用** Host，边界由编译期强制（`ProjectReference` 清单不变，仍为空）。
+- 回归：`PuddingCodeIndexTests` 58/58（含 3 条边界断言）、`PuddingCodeIntelligenceTests` 89/89 均不变。
