@@ -144,9 +144,17 @@ public sealed class CodeIndexMaintenanceHostCompositionTests
                 $"expected {projectRoot}, called {indexer.CalledProjectPaths[0]}");
 
             // The water mark must have advanced: the pump ran one real run, it did not merely dequeue.
-            var progress = app.Services.GetRequiredService<ICodeIndexSchedulerDriver>()
-                .GetProgress(registered.WorkspaceId!, registered.ProjectId!);
-            Assert.True(progress.CommittedVersion >= 1, $"committed={progress.CommittedVersion}");
+            // CommittedVersion is written by ProcessJobAsync's finally block *after* the indexer returns, so it
+            // is NOT ordered against the call count observed above — asserting it immediately is a race
+            // (unfixed, this test failed roughly 1 run in 3). Wait for the post-condition instead of sampling it.
+            var progressPort = app.Services.GetRequiredService<ICodeIndexSchedulerDriver>();
+            Assert.True(
+                await WaitUntilAsync(
+                    () => progressPort.GetProgress(registered.WorkspaceId!, registered.ProjectId!)
+                        .CommittedVersion >= 1,
+                    TimeSpan.FromSeconds(10)),
+                "the pump must commit a version after the indexer returns, not merely dequeue");
+            var progress = progressPort.GetProgress(registered.WorkspaceId!, registered.ProjectId!);
             Assert.False(progress.Pending);
 
             using var stopCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));

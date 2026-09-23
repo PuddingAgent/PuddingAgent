@@ -4,10 +4,11 @@ using PuddingCodeIndex.Services.CodeIndex;
 namespace PuddingCodeIndexTests.Services.CodeIndex;
 
 /// <summary>Indexer double: records every call, can run custom logic and can block.</summary>
-internal sealed class RecordingCodeIndexer : ICodeIndexer
+internal sealed class RecordingCodeIndexer : ICodeIndexer, ICodeIndexFileUpdater
 {
     private readonly object _gate = new();
     private readonly List<CodeWorkspaceDescriptor> _calls = new();
+    private readonly List<string> _indexedFiles = new();
 
     /// <summary>Runs at the start of every indexing call, before the result is produced.</summary>
     public Func<CodeWorkspaceDescriptor, CancellationToken, Task>? OnIndexAsync { get; set; }
@@ -23,6 +24,46 @@ internal sealed class RecordingCodeIndexer : ICodeIndexer
     public IReadOnlyList<string> CalledProjectPaths
     {
         get { lock (_gate) return _calls.Select(call => call.ProjectPath).ToArray(); }
+    }
+
+    /// <summary>Absolute paths passed to <see cref="IndexFileAsync"/>, in call order.</summary>
+    public IReadOnlyList<string> IndexedFiles
+    {
+        get { lock (_gate) return _indexedFiles.ToArray(); }
+    }
+
+    /// <summary>Runs at the start of every per-file call, before the result is produced.</summary>
+    public Func<CodeWorkspaceDescriptor, string, CancellationToken, Task>? OnIndexFileAsync { get; set; }
+
+    /// <summary>Completes when the first per-file call has been observed.</summary>
+    public TaskCompletionSource FileStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>When set, per-file calls report this failure (the driver must escalate to a scope run).</summary>
+    public string? IndexFileFailureMessage { get; set; }
+
+    public async Task<CodeIndexResult> IndexFileAsync(
+        CodeWorkspaceDescriptor workspace,
+        string filePath,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            _indexedFiles.Add(filePath);
+        }
+
+        FileStarted.TrySetResult();
+
+        if (OnIndexFileAsync is not null)
+            await OnIndexFileAsync(workspace, filePath, cancellationToken).ConfigureAwait(false);
+
+        if (IndexFileFailureMessage is { } failure)
+        {
+            return new CodeIndexResult(false, CodeIndexStatus.Failed, failure,
+                WorkspaceId: workspace.WorkspaceId, ProjectId: workspace.ProjectId);
+        }
+
+        return new CodeIndexResult(true, CodeIndexStatus.Completed, "recording indexer (per file)",
+            WorkspaceId: workspace.WorkspaceId, ProjectId: workspace.ProjectId);
     }
 
     public async Task<CodeIndexResult> IndexWorkspaceAsync(
@@ -45,6 +86,41 @@ internal sealed class RecordingCodeIndexer : ICodeIndexer
             "recording indexer",
             WorkspaceId: workspace.WorkspaceId,
             ProjectId: workspace.ProjectId);
+    }
+
+    public Task<CodeIndexResult> RemoveWorkspaceIndexAsync(
+        string workspaceId,
+        string projectId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new CodeIndexResult(true, CodeIndexStatus.Completed));
+}
+
+/// <summary>
+/// Indexer double that implements <b>only</b> the full-workspace port. It stands for a registered indexer
+/// without the per-file capability: the driver must escalate such a batch to a scope-level run instead of
+/// pretending the changed file was indexed.
+/// </summary>
+internal sealed class WorkspaceOnlyCodeIndexer : ICodeIndexer
+{
+    private readonly object _gate = new();
+    private int _callCount;
+
+    public int CallCount
+    {
+        get { lock (_gate) return _callCount; }
+    }
+
+    public Task<CodeIndexResult> IndexWorkspaceAsync(
+        CodeWorkspaceDescriptor workspace,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            _callCount++;
+        }
+
+        return Task.FromResult(new CodeIndexResult(true, CodeIndexStatus.Completed, "workspace-only indexer",
+            WorkspaceId: workspace.WorkspaceId, ProjectId: workspace.ProjectId));
     }
 
     public Task<CodeIndexResult> RemoveWorkspaceIndexAsync(

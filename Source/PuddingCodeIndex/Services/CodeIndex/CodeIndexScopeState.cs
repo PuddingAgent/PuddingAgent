@@ -30,6 +30,9 @@ public sealed class CodeIndexScopeState
 
         /// <summary>An unexpected failure occurred inside a watcher callback.</summary>
         public const string CallbackFault = "callback_fault";
+
+        /// <summary>A batch could not be applied to the index (store/indexer failure); the scope must be reconciled.</summary>
+        public const string BatchApplicationFailed = "batch_application_failed";
     }
 
     private readonly object _gate = new();

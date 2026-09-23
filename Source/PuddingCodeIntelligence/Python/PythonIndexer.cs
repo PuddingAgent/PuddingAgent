@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -18,7 +18,7 @@ namespace PuddingCodeIntelligence.Python;
 /// Supports two modes: project-level extraction (--project) for cross-file references,
 /// and per-file extraction as a fallback.
 /// </summary>
-public sealed class PythonIndexer : ICodeIndexer
+public sealed class PythonIndexer : ICodeIndexer, ICodeIndexFileUpdater
 {
     // Uses centralized IndexExcludePatterns.NoiseDirNames for directory exclusion.
 
@@ -188,6 +188,125 @@ public sealed class PythonIndexer : ICodeIndexer
             return new CodeIndexResult(false, CodeIndexStatus.Failed, $"Indexing failed: {ex.Message}",
                 WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId,
                 StartedAtUtc: startedAt);
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Per-file increment (U3-B3): the file is extracted on its own and only its rows are replaced. Every
+    /// condition this indexer cannot handle (Python missing, extraction script missing, unusable extraction
+    /// output, not a Python file, noise path) is reported as <see cref="CodeIndexStatus.Failed"/> so the
+    /// caller escalates to a scope-level run instead of losing the change.
+    /// </remarks>
+    public async Task<CodeIndexResult> IndexFileAsync(
+        CodeWorkspaceDescriptor descriptor,
+        string filePath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+
+        if (string.IsNullOrWhiteSpace(descriptor.WorkspaceId) || string.IsNullOrWhiteSpace(descriptor.ProjectId))
+        {
+            return new CodeIndexResult(false, CodeIndexStatus.Failed,
+                "WorkspaceId and ProjectId are required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+        {
+            return new CodeIndexResult(false, CodeIndexStatus.Failed,
+                $"File does not exist: {filePath}",
+                WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId);
+        }
+
+        if (!SupportedExtensions.Contains(Path.GetExtension(filePath)) || IndexExcludePatterns.IsNoisePath(filePath))
+        {
+            return new CodeIndexResult(false, CodeIndexStatus.Failed,
+                $"Not an indexable Python file: {filePath}",
+                WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId);
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.ProjectPath) || !Directory.Exists(descriptor.ProjectPath))
+        {
+            return new CodeIndexResult(false, CodeIndexStatus.Failed,
+                $"Project path does not exist: {descriptor.ProjectPath}",
+                WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId);
+        }
+
+        var pythonCommand = GetPythonCommand();
+        if (pythonCommand is null)
+        {
+            return new CodeIndexResult(false, CodeIndexStatus.Failed,
+                "Python not available (tried 'python' and 'python3')",
+                WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId);
+        }
+
+        var scriptPath = Path.Combine(descriptor.ProjectPath, "Scripts", "extract-py-symbols.py");
+        if (!File.Exists(scriptPath))
+        {
+            return new CodeIndexResult(false, CodeIndexStatus.Failed,
+                $"Extraction script not found: {scriptPath}",
+                WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId);
+        }
+
+        var startedAt = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var extraction = await RunExtractionScriptAsync(pythonCommand, scriptPath, filePath, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (extraction is null)
+            {
+                return new CodeIndexResult(false, CodeIndexStatus.Failed,
+                    $"Extraction produced no usable output for {filePath}",
+                    WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId,
+                    StartedAtUtc: startedAt);
+            }
+
+            var symbols = new List<CodeSymbolRecord>();
+            var relations = new List<CodeRelationRecord>();
+            ConvertToRecords(descriptor.WorkspaceId, descriptor.ProjectId, filePath, extraction, symbols, relations);
+
+            await _store.ClearSymbolsForFileAsync(
+                descriptor.WorkspaceId, descriptor.ProjectId, filePath, cancellationToken).ConfigureAwait(false);
+
+            if (symbols.Count == 0)
+            {
+                // No declarations: a full run would not have a file record for it either.
+                await _store.RemoveFilesAsync(
+                    descriptor.WorkspaceId, descriptor.ProjectId, [filePath], cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await _store.UpsertFilesAsync(
+                    descriptor.WorkspaceId, descriptor.ProjectId,
+                    [new CodeFileRecord(descriptor.WorkspaceId, descriptor.ProjectId, filePath, "Python", DateTimeOffset.UtcNow)],
+                    cancellationToken).ConfigureAwait(false);
+                await _store.UpsertSymbolsAsync(
+                    descriptor.WorkspaceId, descriptor.ProjectId, symbols, cancellationToken).ConfigureAwait(false);
+                await _store.UpsertRelationsAsync(
+                    descriptor.WorkspaceId, descriptor.ProjectId, relations, cancellationToken).ConfigureAwait(false);
+            }
+
+            _logger.LogInformation(
+                "Python indexed file {FilePath}: {SymbolCount} symbols, {RelationCount} relations",
+                filePath, symbols.Count, relations.Count);
+
+            return new CodeIndexResult(true, CodeIndexStatus.Completed,
+                $"File indexed: {filePath}",
+                WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId,
+                StartedAtUtc: startedAt, CompletedAtUtc: DateTimeOffset.UtcNow);
+        }
+        catch (OperationCanceledException)
+        {
+            return new CodeIndexResult(false, CodeIndexStatus.Failed, "Indexing was cancelled.",
+                WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId, StartedAtUtc: startedAt);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Python indexing of file {FilePath} failed", filePath);
+            return new CodeIndexResult(false, CodeIndexStatus.Failed, $"Indexing failed: {ex.Message}",
+                WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId, StartedAtUtc: startedAt);
         }
     }
 

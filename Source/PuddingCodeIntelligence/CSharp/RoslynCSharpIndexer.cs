@@ -13,7 +13,7 @@ namespace PuddingCodeIntelligence.CSharp;
 /// C# code indexer that extracts declarations, Contains/Calls relations, and references
 /// from Roslyn compilations and persists them through <see cref="ICodeIndexStore"/>.
 /// </summary>
-public sealed class RoslynCSharpIndexer : ICodeIndexer
+public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater
 {
     private static readonly HashSet<string> NoisePathSegments = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -143,6 +143,191 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer
         }
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// Per-file increment (U3-B3): only the rows of <paramref name="filePath"/> are replaced instead of
+    /// re-reading every file of the scope. A file that was deleted, that is not a C# file of the loaded
+    /// workspace, or that lives under a noise directory is reported as <see cref="CodeIndexStatus.Failed"/>:
+    /// the caller escalates to a scope-level run rather than trusting a half-done per-file update.
+    /// </remarks>
+    public async Task<CodeIndexResult> IndexFileAsync(
+        CodeWorkspaceDescriptor descriptor,
+        string filePath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+
+        if (string.IsNullOrWhiteSpace(descriptor.WorkspaceId) || string.IsNullOrWhiteSpace(descriptor.ProjectId))
+        {
+            return new CodeIndexResult(false, CodeIndexStatus.Failed,
+                "WorkspaceId and ProjectId are required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+        {
+            return new CodeIndexResult(false, CodeIndexStatus.Failed,
+                $"File does not exist: {filePath}",
+                WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId);
+        }
+
+        if (IsNoiseFile(filePath))
+        {
+            return new CodeIndexResult(false, CodeIndexStatus.Failed,
+                $"File is excluded from indexing: {filePath}",
+                WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId);
+        }
+
+        if (string.IsNullOrWhiteSpace(descriptor.ProjectPath) || !Directory.Exists(descriptor.ProjectPath))
+        {
+            return new CodeIndexResult(false, CodeIndexStatus.Failed,
+                $"Project path does not exist: {descriptor.ProjectPath}",
+                WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId);
+        }
+
+        var startedAt = DateTimeOffset.UtcNow;
+
+        try
+        {
+            var bootstrapper = new RoslynWorkspaceBootstrapper(_logger);
+            using var roslynWorkspace = await bootstrapper.OpenWorkspaceAsync(descriptor, cancellationToken)
+                .ConfigureAwait(false);
+
+            var (compilation, syntaxTree) = await FindCompilationForFileAsync(
+                roslynWorkspace.CurrentSolution, filePath, cancellationToken).ConfigureAwait(false);
+
+            if (compilation is null || syntaxTree is null)
+            {
+                return new CodeIndexResult(false, CodeIndexStatus.Failed,
+                    $"File is not part of the loaded C# workspace: {filePath}",
+                    WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId,
+                    StartedAtUtc: startedAt);
+            }
+
+            // The previous rows of this file go away as part of the per-file write, exactly like the
+            // per-file step of a full run (deleted symbols must never persist).
+            await _store.ClearSymbolsForFileAsync(
+                descriptor.WorkspaceId, descriptor.ProjectId, filePath, cancellationToken).ConfigureAwait(false);
+
+            var extracted = await ExtractFileAsync(
+                compilation, syntaxTree, descriptor.WorkspaceId, descriptor.ProjectId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (extracted.Symbols.Count == 0)
+            {
+                // A file without declarations has no file record in a full run either, so the record is
+                // dropped instead of being left behind as a stale entry.
+                await _store.RemoveFilesAsync(
+                    descriptor.WorkspaceId, descriptor.ProjectId, [filePath], cancellationToken).ConfigureAwait(false);
+
+                return new CodeIndexResult(true, CodeIndexStatus.Completed,
+                    $"File indexed without symbols: {filePath}",
+                    WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId,
+                    StartedAtUtc: startedAt, CompletedAtUtc: DateTimeOffset.UtcNow);
+            }
+
+            await _store.UpsertFilesAsync(
+                descriptor.WorkspaceId, descriptor.ProjectId,
+                [new CodeFileRecord(descriptor.WorkspaceId, descriptor.ProjectId, filePath, "C#", DateTimeOffset.UtcNow)],
+                cancellationToken).ConfigureAwait(false);
+            await _store.UpsertSymbolsAsync(
+                descriptor.WorkspaceId, descriptor.ProjectId, extracted.Symbols, cancellationToken).ConfigureAwait(false);
+            await _store.UpsertRelationsAsync(
+                descriptor.WorkspaceId, descriptor.ProjectId, extracted.Relations, cancellationToken).ConfigureAwait(false);
+            await _store.UpsertReferencesAsync(
+                descriptor.WorkspaceId, descriptor.ProjectId, extracted.References, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Indexed file {FilePath}: {SymbolCount} symbols, {RelationCount} relations, {ReferenceCount} references",
+                filePath, extracted.Symbols.Count, extracted.Relations.Count, extracted.References.Count);
+
+            return new CodeIndexResult(true, CodeIndexStatus.Completed,
+                $"File indexed: {filePath}",
+                WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId,
+                StartedAtUtc: startedAt, CompletedAtUtc: DateTimeOffset.UtcNow);
+        }
+        catch (OperationCanceledException)
+        {
+            return new CodeIndexResult(false, CodeIndexStatus.Failed, "Indexing was cancelled.",
+                WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId, StartedAtUtc: startedAt);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Indexing file {FilePath} failed", filePath);
+            return new CodeIndexResult(false, CodeIndexStatus.Failed, $"Indexing failed: {ex.Message}",
+                WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId, StartedAtUtc: startedAt);
+        }
+    }
+
+    /// <summary>Records extracted from a single syntax tree.</summary>
+    private sealed record FileExtraction(
+        List<CodeSymbolRecord> Symbols,
+        List<CodeRelationRecord> Relations,
+        List<CodeReferenceRecord> References);
+
+    /// <summary>Extracts the records of one syntax tree. Reads no cross-file state and writes nothing.</summary>
+    private static async Task<FileExtraction> ExtractFileAsync(
+        Compilation compilation,
+        SyntaxTree syntaxTree,
+        string workspaceId,
+        string projectId,
+        CancellationToken cancellationToken)
+    {
+        var filePath = syntaxTree.FilePath;
+        var semanticModel = compilation.GetSemanticModel(syntaxTree);
+        var root = await syntaxTree.GetRootAsync(cancellationToken).ConfigureAwait(false);
+
+        var symbols = new List<CodeSymbolRecord>();
+        var relations = new List<CodeRelationRecord>();
+        var references = new List<CodeReferenceRecord>();
+
+        ExtractSymbols(root, semanticModel, workspaceId, projectId, filePath,
+            symbols, relations, cancellationToken);
+        ExtractReferences(root, semanticModel, workspaceId, projectId, filePath,
+            relations, references, cancellationToken);
+
+        return new FileExtraction(symbols, relations, references);
+    }
+
+    /// <summary>Finds the compilation and syntax tree that own <paramref name="filePath"/>.</summary>
+    private static async Task<(Compilation? Compilation, SyntaxTree? SyntaxTree)> FindCompilationForFileAsync(
+        Solution solution,
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        foreach (var project in solution.Projects)
+        {
+            if (project.Language != LanguageNames.CSharp)
+                continue;
+
+            var document = project.Documents.FirstOrDefault(
+                candidate => candidate.FilePath is { Length: > 0 } candidatePath && IsSamePath(candidatePath, filePath));
+
+            if (document is null)
+                continue;
+
+            var syntaxTree = await document.GetSyntaxTreeAsync(cancellationToken).ConfigureAwait(false);
+            var compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
+
+            if (syntaxTree is not null && compilation is not null)
+                return (compilation, syntaxTree);
+        }
+
+        return (null, null);
+    }
+
+    private static bool IsSamePath(string candidate, string filePath)
+    {
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(candidate), Path.GetFullPath(filePath), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
     private async Task<CodeIndexResult> IndexWorkspaceCoreAsync(
         Solution solution,
         string workspaceId,
@@ -188,24 +373,15 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer
                 await _store.ClearSymbolsForFileAsync(workspaceId, projectId, filePath, cancellationToken)
                     .ConfigureAwait(false);
 
-                var semanticModel = compilation.GetSemanticModel(syntaxTree);
-                var root = await syntaxTree.GetRootAsync(cancellationToken).ConfigureAwait(false);
+                var extracted = await ExtractFileAsync(
+                        compilation, syntaxTree, workspaceId, projectId, cancellationToken)
+                    .ConfigureAwait(false);
 
-                var symbols = new List<CodeSymbolRecord>();
-                var relations = new List<CodeRelationRecord>();
-                var references = new List<CodeReferenceRecord>();
-                var containerStack = new Stack<string>();
-
-                ExtractSymbols(root, semanticModel, workspaceId, projectId, filePath,
-                    symbols, relations, cancellationToken);
-                ExtractReferences(root, semanticModel, workspaceId, projectId, filePath,
-                    relations, references, cancellationToken);
-
-                if (symbols.Count > 0)
+                if (extracted.Symbols.Count > 0)
                 {
-                    allSymbols.AddRange(symbols);
-                    allRelations.AddRange(relations);
-                    allReferences.AddRange(references);
+                    allSymbols.AddRange(extracted.Symbols);
+                    allRelations.AddRange(extracted.Relations);
+                    allReferences.AddRange(extracted.References);
                     allFiles.Add(new CodeFileRecord(workspaceId, projectId, filePath,
                         "C#", now));
                 }

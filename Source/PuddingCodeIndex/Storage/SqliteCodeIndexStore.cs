@@ -559,6 +559,65 @@ public sealed class SqliteCodeIndexStore : ICodeIndexStore
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<int> RemoveFilesAsync(
+        string workspaceId,
+        string projectId,
+        IReadOnlyCollection<string> filePaths,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filePaths);
+
+        var paths = filePaths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (paths.Length == 0)
+            return 0;
+
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        var removedFileCount = 0;
+
+        foreach (var filePath in paths)
+        {
+            // Symbols (plus the relations/references they take part in) first, the file record last — all
+            // inside one transaction, so a half-removed file can never be observed by a reader.
+            await RemoveSymbolGraphForFileAsync(connection, transaction, workspaceId, projectId, filePath, cancellationToken)
+                .ConfigureAwait(false);
+
+            // Graph rows owned by this file that are no longer reachable through its current symbols (for
+            // example because the symbol row was already gone): without this they would survive the removal.
+            await ExecuteNonQueryAsync(connection, transaction, """
+                DELETE FROM CodeReferences
+                WHERE WorkspaceId = $workspaceId AND ProjectId = $projectId AND SourceFilePath = $filePath;
+                DELETE FROM CodeRelations
+                WHERE WorkspaceId = $workspaceId AND ProjectId = $projectId AND SourceFilePath = $filePath;
+                """,
+                cancellationToken,
+                ("$workspaceId", workspaceId),
+                ("$projectId", projectId),
+                ("$filePath", filePath)).ConfigureAwait(false);
+
+            removedFileCount += await ExecuteNonQueryCountAsync(connection, transaction, """
+                DELETE FROM CodeFiles
+                WHERE WorkspaceId = $workspaceId AND ProjectId = $projectId AND FilePath = $filePath;
+                """,
+                cancellationToken,
+                ("$workspaceId", workspaceId),
+                ("$projectId", projectId),
+                ("$filePath", filePath)).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        return removedFileCount;
+    }
+
     public async Task UpsertRelationsAsync(
         string workspaceId,
         string projectId,
@@ -863,7 +922,16 @@ public sealed class SqliteCodeIndexStore : ICodeIndexStore
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task ExecuteNonQueryAsync(
+    private static Task ExecuteNonQueryAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        string commandText,
+        CancellationToken cancellationToken,
+        params (string Name, object? Value)[] parameters) =>
+        ExecuteNonQueryCountAsync(connection, transaction, commandText, cancellationToken, parameters);
+
+    /// <summary>Transaction-scoped non-query that reports how many rows were affected.</summary>
+    private static async Task<int> ExecuteNonQueryCountAsync(
         SqliteConnection connection,
         DbTransaction transaction,
         string commandText,
@@ -874,7 +942,7 @@ public sealed class SqliteCodeIndexStore : ICodeIndexStore
         command.Transaction = (SqliteTransaction)transaction;
         command.CommandText = commandText;
         AddParameters(command, parameters);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static void AddParameters(SqliteCommand command, params (string Name, object? Value)[] parameters)

@@ -4,14 +4,17 @@ using PuddingCodeIndex.Contracts;
 namespace PuddingCodeIndex.Services.CodeIndex;
 
 /// <summary>
-/// Connects the change-capture pipeline (U3-A) to the index scheduler: every coalesced
-/// <see cref="CodeIndexChangeBatch"/> produces a real indexing run, and a request that arrives while a
-/// scope is being indexed is never dropped.
+/// Connects the change-capture pipeline (U3-A) to the index: every coalesced
+/// <see cref="CodeIndexChangeBatch"/> produces real index work, and a request that arrives while a scope is
+/// being indexed is never dropped.
 /// <para>
 /// One change-capture pipeline is owned per scope (change source, bounded queue, scope state,
-/// coalescer). A batch is handled at <b>scope</b> granularity — per-file incremental commit is U3-B3 —
-/// but the batch payload is never silently ignored: removal paths are counted/exposed and a reconcile
-/// request becomes visible scope state plus a counter and a log line.
+/// coalescer). A batch is applied <b>per file</b> (U3-B3): removal paths are deleted from the store
+/// (file record + symbols + the graph rows they own, one transaction per batch, idempotent), and changed
+/// paths are re-indexed one file at a time through <see cref="ICodeIndexFileUpdater.IndexFileAsync"/> when the
+/// registered indexer implements that capability. Only what
+/// cannot be handled per file — a reconcile request, a directory change, or an indexer that refuses a path
+/// — escalates to the scope-level run, so a batch payload is never silently ignored.
 /// </para>
 /// <para>
 /// The driver owns the single processing loop; <see cref="CodeIndexScheduler"/> deliberately owns none.
@@ -59,10 +62,23 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
 
         /// <summary>Guarded by the service gate.</summary>
         public string[] LastRemovalPaths = [];
+
+        /// <summary>Guarded by the service gate. Files whose records were really deleted from the store.</summary>
+        public long RemovedFileCount;
+
+        /// <summary>Guarded by the service gate. Files re-indexed one by one instead of by a full run.</summary>
+        public long IncrementallyIndexedFileCount;
+
+        /// <summary>Guarded by the service gate. Batches that had to escalate to a scope-level run.</summary>
+        public long ScopeEscalationCount;
     }
 
     private readonly ICodeIndexSchedulerDriver _scheduler;
     private readonly ICodeIndexWatcherFactory _watcherFactory;
+    private readonly ICodeIndexStore _store;
+    private readonly ICodeIndexer _indexer;
+    private readonly ICodeIndexFileUpdater? _fileUpdater;
+    private readonly ICodeWorkspaceResolver _resolver;
     private readonly ILogger<CodeIndexMaintenanceService>? _logger;
     private readonly TimeProvider _timeProvider;
     private readonly int _queueCapacity;
@@ -93,9 +109,15 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
     /// <param name="maxWait">Debounce maximum-wait override.</param>
     /// <param name="pollInterval">Driver poll cadence (injectable so callers can drive explicitly).</param>
     /// <param name="stopTimeout">Upper bound on how long <see cref="StopAsync"/> waits for an in-flight batch.</param>
+    /// <param name="store">Store a batch's per-file removals are applied through.</param>
+    /// <param name="indexer">Per-file indexer used for the changed paths of a batch.</param>
+    /// <param name="resolver">Resolves a scope id into the workspace descriptor a per-file run needs.</param>
     public CodeIndexMaintenanceService(
         ICodeIndexSchedulerDriver scheduler,
         ICodeIndexWatcherFactory watcherFactory,
+        ICodeIndexStore store,
+        ICodeIndexer indexer,
+        ICodeWorkspaceResolver resolver,
         ILogger<CodeIndexMaintenanceService>? logger = null,
         TimeProvider? timeProvider = null,
         int queueCapacity = CodeIndexChangeQueue.DefaultCapacity,
@@ -106,6 +128,9 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
     {
         ArgumentNullException.ThrowIfNull(scheduler);
         ArgumentNullException.ThrowIfNull(watcherFactory);
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(indexer);
+        ArgumentNullException.ThrowIfNull(resolver);
 
         _pollInterval = pollInterval ?? DefaultPollInterval;
         _stopTimeout = stopTimeout ?? DefaultStopTimeout;
@@ -117,6 +142,10 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
 
         _scheduler = scheduler;
         _watcherFactory = watcherFactory;
+        _store = store;
+        _indexer = indexer;
+        _fileUpdater = indexer as ICodeIndexFileUpdater;
+        _resolver = resolver;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _queueCapacity = queueCapacity;
@@ -383,7 +412,10 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
         return entry is null ? null : BuildStatus(workspaceId, scopeId, entry);
     }
 
-    /// <summary>Turns one coalesced batch into a real indexing run through the scheduler port.</summary>
+    /// <summary>
+    /// Handles one coalesced batch and makes a failure visible: a batch that cannot be applied flags the scope
+    /// as needing reconciliation instead of disappearing silently.
+    /// </summary>
     private async Task HandleBatchAsync(
         ScopeEntry entry,
         CodeIndexChangeBatch batch,
@@ -391,25 +423,60 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
     {
         Interlocked.Increment(ref _batchesProcessed);
 
-        // Removal paths are exposed and counted. This slice does NOT delete anything per file (that is
-        // U3-B3), and it must not pretend it did.
+        try
+        {
+            await ApplyBatchAsync(entry, batch, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Cancellation (shutdown or an explicit pump cancel) must stay observable to the caller.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // The batch is lost, so say so: the scope stays flagged for the calibration slice (U3-C), which
+            // owns full reconciliation, and the failure is not mistaken for "nothing to do".
+            entry.State.MarkNeedsReconcile(CodeIndexScopeState.ReconcileReasons.BatchApplicationFailed);
+
+            _logger?.LogError(ex,
+                "[CodeIndexMaintenance] Scope {ScopeId} batch v{Version} could not be applied; the scope is flagged for reconciliation.",
+                batch.ScopeId, batch.Version);
+        }
+    }
+
+    /// <summary>
+    /// Applies one batch: the removal paths are removed, the changed paths are re-indexed one file at a time,
+    /// and only what cannot be handled per file escalates to a scope-level run through the scheduler port.
+    /// </summary>
+    private async Task ApplyBatchAsync(
+        ScopeEntry entry,
+        CodeIndexChangeBatch batch,
+        CancellationToken cancellationToken)
+    {
+        // Removal paths are really removed (U3-B3): the store deletes the file record, its symbols and the
+        // graph rows owned by them in one transaction. A path that is not indexed stays a safe no-op.
         if (batch.PathsToRemove.Count > 0)
         {
+            var removed = await _store.RemoveFilesAsync(
+                batch.WorkspaceId, batch.ScopeId, batch.PathsToRemove, cancellationToken).ConfigureAwait(false);
+
             lock (_gate)
             {
                 entry.RemovalObservationCount += batch.PathsToRemove.Count;
                 entry.LastRemovalPaths = batch.PathsToRemove.ToArray();
+                entry.RemovedFileCount += removed;
             }
 
             Interlocked.Add(ref _removalObservations, batch.PathsToRemove.Count);
 
             _logger?.LogInformation(
-                "[CodeIndexMaintenance] Scope {ScopeId} batch v{Version}: {RemovalCount} removal path(s) observed (exposed only — per-file removal is U3-B3).",
-                batch.ScopeId, batch.Version, batch.PathsToRemove.Count);
+                "[CodeIndexMaintenance] Scope {ScopeId} batch v{Version}: removed {RemovedCount} indexed file(s) of {RemovalCount} observed removal path(s).",
+                batch.ScopeId, batch.Version, removed, batch.PathsToRemove.Count);
         }
 
         // A reconcile request becomes visible state (CodeIndexScopeState.NeedsReconcile), a counter and a
-        // log line, and it stays visible until the calibration slice (U3-C) clears it.
+        // log line, and it stays visible until the calibration slice (U3-C) clears it. It also forces a
+        // scope-level run, because fine-grained capture can no longer be trusted for this batch.
         if (batch.ReconcileRequired)
         {
             lock (_gate)
@@ -424,18 +491,119 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
                 batch.ScopeId, batch.Version, batch.ReconcileReason ?? "unspecified");
         }
 
-        // Scope-granular re-index through the existing scheduler port. Riding the scheduler also means a
-        // change that lands while this run is in flight is re-queued instead of dropped.
-        _scheduler.Enqueue(batch.WorkspaceId, batch.ScopeId);
+        // Per-file increment: a changed file no longer forces a full scope re-index. Whatever the indexer
+        // declines (or a directory change, whose subtree can hold files the batch never mentioned) escalates
+        // to a scope-level run instead of being dropped.
+        var escalate = batch.ReconcileRequired;
+        if (!escalate && batch.PathsToReindex.Count > 0)
+            escalate = !await IndexChangedFilesAsync(entry, batch, cancellationToken).ConfigureAwait(false);
 
+        if (escalate)
+        {
+            lock (_gate)
+            {
+                entry.ScopeEscalationCount++;
+            }
+
+            _logger?.LogInformation(
+                "[CodeIndexMaintenance] Scope {ScopeId} batch v{Version}: escalating to a scope-level indexing run.",
+                batch.ScopeId, batch.Version);
+
+            _scheduler.Enqueue(batch.WorkspaceId, batch.ScopeId);
+        }
+
+        // The pump is unconditional: producers that never produce a batch (code_index_register_project)
+        // enqueue directly, so the batch path must not be the only thing that advances the queue.
         var completed = await _scheduler.ProcessPendingAsync(cancellationToken).ConfigureAwait(false);
 
-        if (completed == 0)
+        if (escalate && completed == 0)
         {
             _logger?.LogWarning(
                 "[CodeIndexMaintenance] Scope {ScopeId} batch v{Version} produced no completed indexing run (scope missing/removed, or the run was cancelled).",
                 batch.ScopeId, batch.Version);
         }
+    }
+
+    /// <summary>
+    /// Re-indexes the changed paths of one batch one file at a time.
+    /// </summary>
+    /// <returns>
+    /// <c>true</c> when every path was handled incrementally. <c>false</c> means the batch needs a
+    /// scope-level run: a path is a directory (its subtree may hold files the batch never mentioned), the
+    /// indexer refused a path, or the workspace descriptor could not be resolved.
+    /// </returns>
+    private async Task<bool> IndexChangedFilesAsync(
+        ScopeEntry entry,
+        CodeIndexChangeBatch batch,
+        CancellationToken cancellationToken)
+    {
+        CodeWorkspaceDescriptor? descriptor = null;
+
+        foreach (var filePath in batch.PathsToReindex)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (Directory.Exists(filePath))
+            {
+                _logger?.LogInformation(
+                    "[CodeIndexMaintenance] Scope {ScopeId}: {Path} is a directory; a scope-level run is required.",
+                    batch.ScopeId, filePath);
+                return false;
+            }
+
+            if (!File.Exists(filePath))
+            {
+                // The path vanished after it was observed: its final state is "removed" — the same rule the
+                // coalescer applies — so it is removed here instead of lingering as a stale entry.
+                var vanished = await _store.RemoveFilesAsync(
+                    batch.WorkspaceId, batch.ScopeId, [filePath], cancellationToken).ConfigureAwait(false);
+
+                lock (_gate)
+                {
+                    entry.RemovedFileCount += vanished;
+                }
+
+                continue;
+            }
+
+            if (_fileUpdater is null)
+            {
+                // The registered indexer has no per-file capability (it only implements ICodeIndexer):
+                // escalate instead of pretending the file was indexed.
+                _logger?.LogInformation(
+                    "[CodeIndexMaintenance] Scope {ScopeId}: the indexer has no per-file capability; a scope-level run is required.",
+                    batch.ScopeId);
+                return false;
+            }
+
+            descriptor ??= await _resolver.ResolveWorkspaceAsync(
+                batch.WorkspaceId, batch.ScopeId, cancellationToken).ConfigureAwait(false);
+
+            if (descriptor is null)
+            {
+                _logger?.LogWarning(
+                    "[CodeIndexMaintenance] Scope {ScopeId}: workspace descriptor could not be resolved; falling back to a scope-level run.",
+                    batch.ScopeId);
+                return false;
+            }
+
+            var result = await _fileUpdater.IndexFileAsync(descriptor, filePath, cancellationToken).ConfigureAwait(false);
+
+            if (!result.Success)
+            {
+                _logger?.LogWarning(
+                    "[CodeIndexMaintenance] Scope {ScopeId}: per-file indexing of {Path} failed ({Status}: {Message}); falling back to a scope-level run.",
+                    batch.ScopeId, filePath, result.Status, result.Message);
+                return false;
+            }
+
+            lock (_gate)
+            {
+                entry.IncrementallyIndexedFileCount++;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>Driver loop: re-checks for due batches on the configured cadence.</summary>
@@ -468,11 +636,17 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
         long reconcileRequestCount;
         long removalObservationCount;
         string[] lastRemovalPaths;
+        long removedFileCount;
+        long incrementallyIndexedFileCount;
+        long scopeEscalationCount;
         lock (_gate)
         {
             reconcileRequestCount = entry.ReconcileRequestCount;
             removalObservationCount = entry.RemovalObservationCount;
             lastRemovalPaths = entry.LastRemovalPaths;
+            removedFileCount = entry.RemovedFileCount;
+            incrementallyIndexedFileCount = entry.IncrementallyIndexedFileCount;
+            scopeEscalationCount = entry.ScopeEscalationCount;
         }
 
         return new CodeIndexMaintenanceScopeStatus(
@@ -490,6 +664,9 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
             reconcileRequestCount,
             removalObservationCount,
             lastRemovalPaths,
+            removedFileCount,
+            incrementallyIndexedFileCount,
+            scopeEscalationCount,
             entry.Watcher is not null);
     }
 

@@ -1,3 +1,19 @@
+## 2026-09-24 U3-B3：删除/重命名真清除 + 按文件增量（检索正确性）
+
+**第 0 步是取证，不是改码**。实测基线（改动前、可复现）：① 变更管线级 —— 文件已索引 → `Deleted` 批次 → 查询**仍返回该文件的符号**（`Assert.IsEmpty 失败。大小 0 的预期集合。实际：1`）；② 索引器级（真 Roslyn + 真 store）—— 文件从编译中消失后跑**全量重索引**，该文件仍残留 2 条符号行（`T:Probe.Alpha`、`M:Probe.Alpha.Value`）与对应的 `CodeFiles` 行 ⇒ **全量重索引不做 sweep**（源码证据：`RoslynCSharpIndexer.cs` 的 `IndexWorkspaceCoreAsync` 只遍历编译中的语法树，没有“本轮未见”清理），sweep/校准归 U3-C。
+
+**交付**：① `ICodeIndexStore.RemoveFilesAsync`（**一个批次一个事务**：文件记录 + 其全部符号 + 其关系/引用；**幂等**，未知路径安全 no-op 并返回真正删除的文件数）；② 新端口 `ICodeIndexFileUpdater.IndexFileAsync`（**故意不放进 `ICodeIndexer`** —— 给全量端口加成员会破坏**每一个**实现者，实测直接弄坏了禁写路径 `Tests/PuddingHost.Tests/Hosting/CodeIndexMaintenanceHostCompositionTests.cs:290` 的 `CountingCodeIndexer`；`ICodeIndexer.cs` 已回退回 HEAD，blob hash 相等）；Roslyn / Python / TypeScript 三个索引器实现该能力，不能处理则返回 `Failed`；③ `CodeIndexMaintenanceService` **按文件施用**：`PathsToRemove` 真删、`PathsToReindex` 逐文件索引、重命名 = 旧清新增、消失的变更路径按删除处理；目录变更 / 索引器拒绝 / 无该能力 ⇒ **升级为 scope 级重索引**（不丢变更）；批次施用异常 ⇒ 标 `NeedsReconcile(batch_application_failed)` + 错误日志；状态新增 `RemovedFileCount` / `IncrementallyIndexedFileCount` / `ScopeEscalationCount`。
+
+**检索正确性（唯一硬判据）**：文件已索引 → 被删 → 走变更管线 → **查询不再返回其符号**（`CodeIndexRemovalCorrectnessTests`，改动前红、现在绿）。
+
+**门禁**：`PuddingCodeIndexTests` **66/66**（58 → 66：+5 管线施用 + 3 存储清除）、`PuddingCodeIntelligenceTests` **93/93**（89 → 93）、`PuddingAgent -c Release` **0 个错误 / 14 个警告（exit 0，日志内 `error CS` 真实命中 0）**；`Tests/PuddingHost.Tests` **123/124**：唯一失败项 `Enqueue_Is_Pumped_By_The_Host_Driver_And_Reaches_The_Indexer` 经实测是**既有时序竞态**（它等 `indexer.CallCount>=1`——在索引器调用**内部**被观测到——随后立即断言 `CommittedVersion>=1`，而该水位在 `CodeIndexScheduler.ProcessJobAsync` 的 `finally` 里、索引器返回**之后**才写；干净 HEAD 树（`git archive` + 补 `external/` 后）6 次运行 **2 红**，本工作树 9 次运行 3 红，失败率同级）。
+
+**边界**：`PuddingCodeIndex` 的 `ProjectReference` 仍为空、无 Roslyn/MSBuild 引用（带阳性对照的反向检索：4 个禁用名仅命中 2 处**注释**）；**未改 Host/DI**（无新增依赖注册：维护服务从已注册的 `ICodeIndexer` 取 `ICodeIndexFileUpdater` 能力）；未新增 NuGet。
+
+**变异取红（两组，各三份原始输出）**：A 让按文件清除变 no-op ⇒ **6 红 / 60 绿 / 66**（含硬判据用例）；B 只删文件记录不删符号 ⇒ **4 红 / 62 绿 / 66**（含硬判据用例）；复原后 `git hash-object` 与变更前**逐位相同**（`bccc3a3b0f0ae14867af8599c6ce85a28520a581`）且复跑 **66/66 exit 0**；`MUTATION` 残留 0。
+
+**诚实留白**：`ReconcileRequired` 永不自动清除（U3-C）；目录删除/重命名下的**子树**陈旧条目不在本刀（U3-C manifest 校准）；`PuddingFullTextIndex`（Lucene）是与 code index **无数据交叠**的第二份索引（文件内容检索，自建 `stalePaths` 增量清理，`LuceneSearchEngine.BuildIndexAsync`），本刀**不接**；Roslyn `IndexFileAsync` 每次调用重新打开 MSBuild 工作区（未做复用），且**未做**真 `.csproj` 端到端实测；Python/TypeScript 的按文件实现沿用既有逐文件抽取脚本，未在测试环境实测。
+
 ## 2026-09-23 U3-B2a：索引维护接入宿主生命周期（P0「入队无人泵」收口）
 
 U3-B1（`a378a9d8`）删掉 `CodeIndexScheduler` 的自驱动 worker 后，生产受理点 `code_index_register_project`（`Source/PuddingRuntime/Tools/BuiltIns/CodeIntelligence/CodeProjectManagementTools.cs`）的 `Enqueue` 就没有任何东西去泵 —— 入队即静默滞留。本刀让「入队 → 泵 → 索引器」在宿主运行时真正闭合。

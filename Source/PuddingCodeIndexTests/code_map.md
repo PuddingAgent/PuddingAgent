@@ -12,7 +12,7 @@
 - 测试框架/包版本与既有测试工程一致（`MSTest.Sdk/4.0.1`，`net10.0`，`UseVSTest`）；不新增 NuGet 依赖。
 - 运行期断言见 `ComponentBoundaryTests`：本进程**已加载**、**元数据引用**、**探测路径可达**三个维度都不允许出现禁用程序集。
 
-## 测试清单（58 用例 = 55 个迁入用例 + 3 条边界断言）
+## 测试清单（66 用例 = 63 个组件用例 + 3 条边界断言；U3-B3 后 58 → 66）
 
 | 文件 | 用途 |
 |------|------|
@@ -21,12 +21,15 @@
 | `Services/CodeIndex/CodeIndexChangeCoalescerTests.cs` | 防抖折叠（静默 500ms / 最长 2s / 2 万路径 → reconcile） |
 | `Services/CodeIndex/CodeIndexChangeQueueTests.cs` | 有界队列容量与 `TryPublish` 不阻塞 |
 | `Services/CodeIndex/CodeIndexChangeTestHelpers.cs` | 共享测试替身：`TestDirectory` / `MutableTimeProvider` / `CodeIndexChangeTestFactory` |
-| `Services/CodeIndex/CodeIndexMaintenanceServiceTests.cs` | **U3-B1** 变更驱动维护服务：单驱动泵、置脏补跑、可见化、有界停止 |
-| `Services/CodeIndex/CodeIndexMaintenanceTestDoubles.cs` | 维护服务测试替身：`RecordingCodeIndexer` / `FakeCodeIndexChangeWatcher` / `MaintenanceTestData` |
+| `Services/CodeIndex/CodeIndexMaintenanceServiceTests.cs` | **U3-B1** 变更驱动维护服务：单驱动泵、置脏补跑、有界停止；**U3-B3** 改写为按文件语义（单文件变更不触发全量重索引、删除不触发全量重索引） |
+| `Services/CodeIndex/CodeIndexMaintenanceTestDoubles.cs` | 维护服务测试替身：`RecordingCodeIndexer`（含 U3-B3 的 `IndexFileAsync` 记账与拒绝注入）/ `FakeCodeIndexChangeWatcher` / `MaintenanceTestData` |
+| `Services/CodeIndex/MaintenanceHarness.cs` | **U3-B3** 共享驱动夹具（真调度器 + 真 store + 假变更源，与管理服务测试共用） |
+| `Services/CodeIndex/CodeIndexRemovalCorrectnessTests.cs` | **U3-B3** 管线级施用：删除后**查询不再返回**该文件符号（A6 硬判据，改动前为红）、重命名旧清新增、消失路径按删除处理、索引器拒绝 ⇒ 升级 scope 级重索引 |
 | `Services/CodeIndex/CodeIndexSchedulerTests.cs` | **U3-B1** 调度器不变量：in-flight 期间到达的请求不得丢弃、取消时重新入队 |
 | `Services/CodeIndex/CodeIndexScopeStateTests.cs` | 范围状态（dirty/version/reconcile，无 IO） |
 | `Services/CodeIndex/CodeIndexWatcherTests.cs` | 文件系统监视器过滤与发布 |
 | `Storage/SqliteCodeIndexStoreTests.cs` | `SqliteCodeIndexStore` 项目/文件/符号/关系/引用往返，且不触碰源文件 |
+| `Storage/SqliteCodeIndexStoreRemoveFilesTests.cs` | **U3-B3** 按文件清除：文件记录 + 符号 + 关系/引用均消失且不动其他文件；幂等；**批次中途失败 ⇒ 一字不删**（触发器具确定性注入） |
 
 ## 运行
 
@@ -44,3 +47,5 @@ dotnet test Source\PuddingCodeIndexTests\PuddingCodeIndexTests.csproj
 本工程 55 个用例由 `Source/PuddingCodeIntelligenceTests/` 迁入（`Services/CodeIndex/` 8 文件 +
 `Storage/SqliteCodeIndexStoreTests.cs`），**零用例丢弃**：
 `搬迁前 144 = 搬迁后 89（IntelligenceTests）+ 55（本工程）`。
+U3-B3 在本工程新增 8 个用例（5 管线 + 3 存储），并把 
+`MaintenanceHarness` 提为共享夹具。

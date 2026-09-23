@@ -80,7 +80,10 @@ public interface ICodeIndexMaintenance
 /// <param name="ReconcileReason">Reason of the latest reconcile trigger, or null.</param>
 /// <param name="ReconcileRequestCount">Number of batches handled for this scope that required reconciliation.</param>
 /// <param name="RemovalObservationCount">Number of removal paths observed for this scope (cumulative).</param>
-/// <param name="LastRemovalPaths">Removal paths of the most recent batch (per-file removal is U3-B3).</param>
+/// <param name="LastRemovalPaths">Removal paths of the most recent batch. Since U3-B3 these paths are really removed from the index, not only counted.</param>
+/// <param name="RemovedFileCount">Number of indexed files whose rows were really deleted for this scope (cumulative).</param>
+/// <param name="IncrementallyIndexedFileCount">Number of files re-indexed one by one for this scope (cumulative) — work a full scope re-index did not have to do.</param>
+/// <param name="ScopeEscalationCount">Number of batches for this scope that had to escalate to a scope-level indexing run.</param>
 /// <param name="WatcherAttached">True when a change source is attached to the scope.</param>
 public sealed record CodeIndexMaintenanceScopeStatus(
     string WorkspaceId,
@@ -97,4 +100,7 @@ public sealed record CodeIndexMaintenanceScopeStatus(
     long ReconcileRequestCount,
     long RemovalObservationCount,
     IReadOnlyList<string> LastRemovalPaths,
+    long RemovedFileCount,
+    long IncrementallyIndexedFileCount,
+    long ScopeEscalationCount,
     bool WatcherAttached);
