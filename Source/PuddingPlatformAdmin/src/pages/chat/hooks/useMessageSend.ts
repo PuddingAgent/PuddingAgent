@@ -1,4 +1,4 @@
-﻿import type { MessageInstance } from 'antd/es/message/interface';
+import type { MessageInstance } from 'antd/es/message/interface';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useCallback, useRef } from 'react';
 import {
@@ -226,15 +226,21 @@ export function useMessageSend({
       const routeLabel = getChatRouteLabel(route, agents);
       const targetAgentId = route.primaryAgentId ?? agentId;
       const targetAgent = agents.find((item) => item.agentId === targetAgentId);
+      // 出站 agentIds 的唯一来源（入队 / submit / working 三处共用）。
+      // `[targetAgentId]` 兜底在 primaryAgentId 与 agentId 都缺失时会变成 [undefined]，
+      // 序列化后服务端 `Where(id => !IsNullOrWhiteSpace(id))` 一过滤就是空数组 ⇒
+      // 400 "At least one explicit agent ID is required."（见 ConversationTurnsController）。
+      // 这种请求注定失败，绝不入 outbox —— 否则会变成每次开页重放一次的垃圾记录。
+      const outboundAgentIds = (
+        route.targetAgentIds.length > 0 ? route.targetAgentIds : [targetAgentId]
+      ).filter(
+        (id): id is string =>
+          typeof id === 'string' && id.trim().length > 0,
+      );
+      if (outboundAgentIds.length === 0) return;
       const workingTargetAgentIds = isSystemCommand
         ? []
-        : Array.from(
-            new Set(
-              route.targetAgentIds.length > 0
-                ? route.targetAgentIds
-                : [targetAgentId],
-            ),
-          );
+        : Array.from(new Set(outboundAgentIds));
 
       let sendConversationId =
         sessionIdRef.current ??
@@ -427,10 +433,7 @@ export function useMessageSend({
           workspaceId,
           conversationId: sendConversationId,
           messageText: routedText,
-          agentIds:
-            route.targetAgentIds.length > 0
-              ? route.targetAgentIds
-              : [targetAgentId],
+          agentIds: outboundAgentIds,
           metadata: options?.metadata,
           imageParts: options?.imageParts,
         });
@@ -445,10 +448,7 @@ export function useMessageSend({
             clientMessageId,
             recipients: {
               type: 'agent',
-              agentIds:
-                route.targetAgentIds.length > 0
-                  ? route.targetAgentIds
-                  : [targetAgentId],
+              agentIds: outboundAgentIds,
             },
             content: options?.imageParts?.length
               ? [
