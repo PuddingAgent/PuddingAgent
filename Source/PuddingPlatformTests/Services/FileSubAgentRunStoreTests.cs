@@ -699,6 +699,94 @@ public sealed class FileSubAgentRunStoreTests
         Assert.IsFalse(degraded.IsConsistent);
     }
 
+    /// <summary>
+    /// ADR-093 A93-2（缺口 G3）：索引腿在创建时只写一次，此后写入失败只留 LogWarning，
+    /// **没有任何路径会去修它**。本用例模拟“索引腿损坏”（直接删行 / 改错状态），
+    /// 验证重建能修复它、且**幂等**（重复重建不写库、不产生重复行、不清零累加计数器）。
+    /// </summary>
+    [TestMethod]
+    public async Task RebuildRunIndex_RepairsMissingOrDivergedRow_AndIsIdempotent()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={Path.Combine(temp.Path, "platform.db")}")
+            .Options;
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var store = new FileSubAgentRunStore(
+            paths,
+            NullLogger<FileSubAgentRunStore>.Instance,
+            new TestDbContextFactory(options),
+            new RecordingConversationEventStore());
+        var handle = await store.CreateRunAsync(new SubAgentRunCreateRequest
+        {
+            ParentSessionId = "parent-session",
+            SubSessionId = "sub-session",
+            WorkspaceId = "default",
+            AgentInstanceId = "agent-1",
+            TemplateId = "developer",
+            Task = "Index rebuild",
+        });
+
+        // 破坏现场：索引行缺失（等价于创建时 DB 写入失败且无人修复），并预置一个累加计数器。
+        await using (var db = new PlatformDbContext(options))
+        {
+            var row = await db.SubAgentRuns.SingleAsync(r => r.RunId == handle.RunId);
+            db.SubAgentRuns.Remove(row);
+            await db.SaveChangesAsync();
+        }
+
+        var broken = await store.InspectArchiveConsistencyAsync(handle.RunId);
+        Assert.IsFalse(broken.IndexRowPresent);
+        Assert.IsTrue(broken.IndexReadable, "读得出空结果 ≠ 索引不可读");
+        Assert.IsFalse(broken.IsConsistent);
+
+        var first = await store.RebuildRunIndexAsync(handle.RunId);
+        Assert.AreEqual(SubAgentIndexRebuildResult.Created, first.Action, first.Detail);
+
+        var repaired = await store.InspectArchiveConsistencyAsync(handle.RunId);
+        Assert.IsTrue(repaired.IndexRowPresent);
+        Assert.AreEqual("running", repaired.IndexStatus, "状态必须取自权威 run.json");
+
+        // 幂等：第二次重建必须报 unchanged（已一致则不写库）
+        var second = await store.RebuildRunIndexAsync(handle.RunId);
+        Assert.AreEqual(SubAgentIndexRebuildResult.Unchanged, second.Action, second.Detail);
+        await using (var db = new PlatformDbContext(options))
+        {
+            Assert.AreEqual(1, await db.SubAgentRuns.CountAsync(r => r.RunId == handle.RunId));
+        }
+
+        // 状态分歧也要能修，且**不得清空累加计数器**（若 manifest 未提供就不能覆盖）
+        await using (var db = new PlatformDbContext(options))
+        {
+            var row = await db.SubAgentRuns.SingleAsync(r => r.RunId == handle.RunId);
+            row.Status = "failed";
+            row.TotalRounds = 7;
+            await db.SaveChangesAsync();
+        }
+
+        var diverged = await store.InspectArchiveConsistencyAsync(handle.RunId);
+        Assert.IsFalse(diverged.IsIndexStatusConsistent);
+
+        var third = await store.RebuildRunIndexAsync(handle.RunId);
+        Assert.AreEqual(SubAgentIndexRebuildResult.Updated, third.Action, third.Detail);
+
+        await using (var db = new PlatformDbContext(options))
+        {
+            var row = await db.SubAgentRuns.SingleAsync(r => r.RunId == handle.RunId);
+            Assert.AreEqual("running", row.Status, "索引状态必须被修回权威值");
+            Assert.AreEqual(7, row.TotalRounds, "manifest 未提供计数时不得把累加计数器清零");
+        }
+
+        var afterThird = await store.InspectArchiveConsistencyAsync(handle.RunId);
+        Assert.AreEqual("running", afterThird.IndexStatus);
+        Assert.IsTrue(afterThird.IsIndexStatusConsistent);
+    }
+
     [TestMethod]
     public async Task Concurrent_Archive_Read_And_Event_Append_Never_SharingViolate()
     {

@@ -1218,6 +1218,171 @@ public class FileSubAgentRunStore : ISubAgentRunStore
     }
 
     /// <summary>
+    /// 幂等重建 DB 索引（ADR-093 A93-2，缺口 G3）：按**权威** `run.json` 重放索引行。
+    /// <para>
+    /// 为何需要：索引在创建时只写一次，此后写入/更新失败一律只留 `LogWarning`（“DB 写入非致命”），
+    /// 于是索引腿可以在无人知晓的情况下**永久偏斜**——没有任何路径会去修它。
+    /// </para>
+    /// <para>
+    /// 边界：只修**索引腿**。不重放会话投影（投影链有持久游标 + 重放，本身自愈），也不动投影游标。
+    /// 字段边界：只覆盖由 manifest 派生的身份/状态字段；**运行期累加计数器**
+    /// （TotalRounds/TotalToolCalls/TotalDurationMs）仅在 manifest **确有取值**时才恢复，
+    /// 给不给结果都不会用 null 把它们清零。
+    /// </para>
+    /// </summary>
+    public async Task<SubAgentIndexRebuildResult> RebuildRunIndexAsync(
+        string runId, CancellationToken ct = default)
+    {
+        var runDir = ResolveRunDir(runId);
+        if (runDir is null)
+            return new SubAgentIndexRebuildResult(runId, SubAgentIndexRebuildResult.Failed, "归档目录不可解析");
+
+        var manifestPath = Path.Combine(runDir, "run.json");
+        if (!File.Exists(manifestPath))
+            return new SubAgentIndexRebuildResult(
+                runId, SubAgentIndexRebuildResult.Failed, "权威清单缺失（run.json）");
+
+        SubAgentRunManifest? manifest;
+        try
+        {
+            manifest = JsonSerializer.Deserialize<SubAgentRunManifest>(
+                await ReadAllTextSharedAsync(manifestPath, ct), PuddingJsonContracts.PrettyJson);
+        }
+        catch (JsonException ex)
+        {
+            return new SubAgentIndexRebuildResult(
+                runId, SubAgentIndexRebuildResult.Failed, $"权威清单不可解析：{ex.Message}");
+        }
+
+        if (manifest is null)
+            return new SubAgentIndexRebuildResult(
+                runId, SubAgentIndexRebuildResult.Failed, "权威清单反序列化为 null（不作任何写入）");
+
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync(ct);
+            var entity = await db.SubAgentRuns.FirstOrDefaultAsync(e => e.RunId == runId, ct);
+            var created = entity is null;
+            if (created)
+            {
+                entity = new SubAgentRunEntity
+                {
+                    RunId = runId,
+                    ParentSessionId = manifest.ParentSessionId,
+                    SubSessionId = manifest.SubSessionId,
+                    WorkspaceId = manifest.WorkspaceId,
+                    AgentInstanceId = manifest.AgentInstanceId,
+                    TemplateId = manifest.TemplateId,
+                    Status = manifest.Status,
+                    StartedAt = manifest.StartedAt.ToString("O"),
+                    ArchivePath = runDir,
+                };
+                db.SubAgentRuns.Add(entity);
+            }
+
+            var changed = ApplyManifestToIndex(entity!, manifest, runDir);
+
+            // 幂等：已一致则**不写库**（不发多余的 SaveChanges）。
+            if (!created && !changed)
+            {
+                return new SubAgentIndexRebuildResult(
+                    runId, SubAgentIndexRebuildResult.Unchanged, "索引行已与权威 manifest 一致");
+            }
+
+            await db.SaveChangesAsync(ct);
+            return new SubAgentIndexRebuildResult(
+                runId,
+                created ? SubAgentIndexRebuildResult.Created : SubAgentIndexRebuildResult.Updated,
+                created ? "按权威 manifest 补建索引行" : "按权威 manifest 修正索引行");
+        }
+        catch (Exception ex)
+        {
+            // 显式修复操作：不得只留一行日志 —— 失败必须由返回值携带。
+            _logger.LogError(ex,
+                "[FileSubAgentRunStore] code=archive_index_rebuild_failed runId={RunId}", runId);
+            return new SubAgentIndexRebuildResult(runId, SubAgentIndexRebuildResult.Failed, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 把权威 manifest 写入索引实体，返回是否发生了任何变更。
+    /// 与创建路径共用同一映射口径（`startedAt` 统一用 <c>"O"</c> 格式）。
+    /// </summary>
+    private static bool ApplyManifestToIndex(SubAgentRunEntity entity, SubAgentRunManifest manifest, string runDir)
+    {
+        var changed = false;
+
+        void Set(string current, string value, Action<string> apply)
+        {
+            if (string.Equals(current, value, StringComparison.Ordinal))
+                return;
+            apply(value);
+            changed = true;
+        }
+
+        void SetNullable(string? current, string? value, Action<string?> apply)
+        {
+            if (string.Equals(current, value, StringComparison.Ordinal))
+                return;
+            apply(value);
+            changed = true;
+        }
+
+        var startedAt = manifest.StartedAt.ToString("O");
+        var completedAt = manifest.CompletedAt?.ToString("O");
+        var taskPlanningJson = manifest.TaskPlanning.Count == 0
+            ? null
+            : JsonSerializer.Serialize(manifest.TaskPlanning, PuddingJsonContracts.JsonLines);
+
+        Set(entity.ParentSessionId, manifest.ParentSessionId, v => entity.ParentSessionId = v);
+        Set(entity.SubSessionId, manifest.SubSessionId, v => entity.SubSessionId = v);
+        Set(entity.WorkspaceId, manifest.WorkspaceId, v => entity.WorkspaceId = v);
+        Set(entity.AgentInstanceId, manifest.AgentInstanceId, v => entity.AgentInstanceId = v);
+        Set(entity.TemplateId, manifest.TemplateId, v => entity.TemplateId = v);
+        Set(entity.Status, manifest.Status, v => entity.Status = v);
+        Set(entity.StartedAt, startedAt, v => entity.StartedAt = v);
+        Set(entity.ArchivePath, runDir, v => entity.ArchivePath = v);
+        SetNullable(entity.CompletedAt, completedAt, v => entity.CompletedAt = v);
+        SetNullable(
+            entity.ParentTurnId,
+            NormalizeIdentityValue(manifest.ParentExecutionIdentity?.TurnId),
+            v => entity.ParentTurnId = v);
+        SetNullable(
+            entity.ParentCommandId,
+            NormalizeIdentityValue(manifest.ParentExecutionIdentity?.CommandId),
+            v => entity.ParentCommandId = v);
+        SetNullable(
+            entity.ParentRunId,
+            NormalizeIdentityValue(manifest.ParentExecutionIdentity?.RunId),
+            v => entity.ParentRunId = v);
+        SetNullable(entity.TaskPlanningMetadataJson, taskPlanningJson,
+            v => entity.TaskPlanningMetadataJson = v);
+        SetNullable(entity.ErrorMessage, manifest.ErrorMessage, v => entity.ErrorMessage = v);
+
+        // 累加计数器：**仅在 manifest 确有取值时**恢复。manifest 为 null 时不得覆盖——
+        // 否则一次重建就会把运行期累加的轮次/工具调用/耗时抹成 0。
+        if (manifest.TotalRounds is int rounds && entity.TotalRounds != rounds)
+        {
+            entity.TotalRounds = rounds;
+            changed = true;
+        }
+
+        if (manifest.TotalToolCalls is int toolCalls && entity.TotalToolCalls != toolCalls)
+        {
+            entity.TotalToolCalls = toolCalls;
+            changed = true;
+        }
+
+        if (manifest.TotalDurationMs is long durationMs && entity.TotalDurationMs != durationMs)
+        {
+            entity.TotalDurationMs = durationMs;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    /// <summary>
     /// 台账下一行序号 = 现有行数 + 1；读取失败时返回 <c>-1</c>（表示序号不可得），
     /// 且<b>不得**因为序号算不出来就不写台账**——事件身份才是主要线索。
     /// </summary>
