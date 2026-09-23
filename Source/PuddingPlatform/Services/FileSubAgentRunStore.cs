@@ -24,6 +24,12 @@ public class FileSubAgentRunStore : ISubAgentRunStore
     /// <summary>P0-4f-1a step6: subagent.run.* 事件的固定 producer_component（用户拍板三值之一：subagent.runtime）。</summary>
     private const string SubAgentRuntimeProducerComponent = "subagent.runtime";
 
+    /// <summary>
+    /// 降级台账文件名（ADR-093 A93-0）：逐条记录被丢弃的观测事件。
+    /// 与聚合标记 `archive-degraded.json` 并存：聚合给概览，台账给「丢了哪几条」。
+    /// </summary>
+    internal const string DegradationLedgerFileName = "archive-degraded-events.jsonl";
+
     private readonly PuddingDataPaths _paths;
     private readonly ILogger<FileSubAgentRunStore> _logger;
     private readonly IDbContextFactory<PlatformDbContext> _dbFactory;
@@ -177,12 +183,15 @@ public class FileSubAgentRunStore : ISubAgentRunStore
 
         var gate = _runGates.GetOrAdd(runId, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct);
+        // ADR-093 A93-0：事件身份必须在调用前生成——否则丢弃时唯一的痕迹只是个聚合计数，
+        // 无法回答「丢了哪几条」（台账需要 eventId）。
+        var eventId = Guid.NewGuid().ToString("N");
         try
         {
             await AppendEventCoreAsync(
                 runId,
                 runDir,
-                Guid.NewGuid().ToString("N"),
+                eventId,
                 eventType,
                 payload,
                 ct);
@@ -195,7 +204,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             _logger.LogError(ex,
                 "[FileSubAgentRunStore] Archive degraded — event dropped runId={RunId} eventType={EventType}",
                 runId, eventType);
-            await MarkArchiveDegradedAsync(runDir, runId, eventType, ex.Message, ct);
+            await MarkArchiveDegradedAsync(runDir, runId, eventType, ex.Message, eventId, ct);
         }
         finally
         {
@@ -226,7 +235,7 @@ public class FileSubAgentRunStore : ISubAgentRunStore
             _logger.LogError(ex,
                 "[FileSubAgentRunStore] Archive degraded — tool audit dropped runId={RunId} tool={Tool}",
                 runId, entry.ToolName);
-            await MarkArchiveDegradedAsync(runDir, runId, $"tool_audit:{entry.ToolName}", ex.Message, ct);
+            await MarkArchiveDegradedAsync(runDir, runId, $"tool_audit:{entry.ToolName}", ex.Message, eventId: null, ct);
         }
         finally
         {
@@ -1024,17 +1033,94 @@ public class FileSubAgentRunStore : ISubAgentRunStore
     /// 写/更新 archive-degraded.json 标记。标记写入本身也可能失败，
     /// 此时只记录日志——降级标记绝不能反向伤害运行中的子代理。
     /// </summary>
+    /// <summary>
+    /// 标记/台账**自身写入失败**的进程内计数（ADR-093 A93-0）。
+    /// <para>
+    /// 这是「连降级都没记下来」的二次降级信号。受 ADR-093 决策 4 约束<b>不得抛错</b>
+    /// （抛错会杀死运行中的子代理），因此改为必须能在健康面查到，而不是只留一行日志。
+    /// </para>
+    /// </summary>
+    public long DegradationMarkerWriteFailures => Interlocked.Read(ref _markerWriteFailures);
+
+    /// <summary>降级台账写入失败的进程内计数（同上，独立于聚合标记）。</summary>
+    public long DegradationLedgerWriteFailures => Interlocked.Read(ref _ledgerWriteFailures);
+
+    private long _markerWriteFailures;
+    private long _ledgerWriteFailures;
+
+    /// <summary>
+    /// 读取单次运行的降级台账（逐条：seq / eventId / eventType / error / at）。
+    /// 文件不存在或 run 目录不可解析时返回空列表；单行损坏会被跳过而不使整份台账不可读。
+    /// </summary>
+    public async Task<IReadOnlyList<SubAgentArchiveDroppedEvent>> GetDroppedEventLedgerAsync(
+        string runId, CancellationToken ct = default)
+    {
+        var runDir = ResolveRunDir(runId);
+        if (runDir is null)
+            return [];
+
+        var ledgerPath = Path.Combine(runDir, DegradationLedgerFileName);
+        if (!File.Exists(ledgerPath))
+            return [];
+
+        var entries = new List<SubAgentArchiveDroppedEvent>();
+        await foreach (var line in File.ReadLinesAsync(ledgerPath, ct))
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            try
+            {
+                var entry = JsonSerializer.Deserialize<SubAgentArchiveDroppedEvent>(
+                    line, PuddingJsonContracts.JsonLines);
+                if (entry is not null)
+                    entries.Add(entry);
+            }
+            catch (JsonException)
+            {
+                // 单行损坏不得使整份台账不可读：跳过该行继续。
+            }
+        }
+
+        return entries;
+    }
+
+    /// <summary>
+    /// 台账下一行序号 = 现有行数 + 1；读取失败时返回 <c>-1</c>（表示序号不可得），
+    /// 且<b>不得**因为序号算不出来就不写台账**——事件身份才是主要线索。
+    /// </summary>
+    private static long NextLedgerSeq(string runDir)
+    {
+        try
+        {
+            var ledgerPath = Path.Combine(runDir, DegradationLedgerFileName);
+            if (!File.Exists(ledgerPath))
+                return 1;
+
+            var count = 0L;
+            foreach (var _ in File.ReadLines(ledgerPath))
+                count++;
+            return count + 1;
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
     private async Task MarkArchiveDegradedAsync(
         string runDir,
         string runId,
         string eventType,
         string error,
+        string? eventId,
         CancellationToken ct)
     {
+        var now = DateTimeOffset.UtcNow.ToString("O");
+
         try
         {
             var previous = await TryReadArchiveDegradedAsync(runDir, ct);
-            var now = DateTimeOffset.UtcNow.ToString("O");
             var marker = new SubAgentArchiveDegradedInfo
             {
                 FirstFailureAt = string.IsNullOrEmpty(previous?.FirstFailureAt)
@@ -1052,8 +1138,29 @@ public class FileSubAgentRunStore : ISubAgentRunStore
         }
         catch (Exception ex)
         {
+            Interlocked.Increment(ref _markerWriteFailures);
             _logger.LogError(ex,
-                "[FileSubAgentRunStore] Failed to write archive-degraded marker runId={RunId}", runId);
+                "[FileSubAgentRunStore] code=archive_degraded_marker_write_failed runId={RunId}", runId);
+        }
+
+        // 逐条台账与聚合标记**相互独立**：任一失败不得阻止另一个写入。
+        try
+        {
+            var ledgerLine = JsonSerializer.Serialize(
+                new SubAgentArchiveDroppedEvent(NextLedgerSeq(runDir), eventId ?? string.Empty, eventType, error, now),
+                PuddingJsonContracts.JsonLines);
+            await AppendAllTextWithRetryAsync(
+                Path.Combine(runDir, DegradationLedgerFileName),
+                ledgerLine + Environment.NewLine,
+                runId,
+                DegradationLedgerFileName,
+                ct);
+        }
+        catch (Exception ex)
+        {
+            Interlocked.Increment(ref _ledgerWriteFailures);
+            _logger.LogError(ex,
+                "[FileSubAgentRunStore] code=archive_degraded_ledger_write_failed runId={RunId}", runId);
         }
     }
 

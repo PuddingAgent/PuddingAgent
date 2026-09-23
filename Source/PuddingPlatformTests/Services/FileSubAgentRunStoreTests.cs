@@ -515,12 +515,119 @@ public sealed class FileSubAgentRunStoreTests
         Assert.AreEqual(1, degraded.Degraded.DroppedEventCount);
         Assert.AreEqual("subagent.round.started", degraded.Degraded.LastEventType);
 
+        // ADR-093 A93-0：丢弃必须**可枚举**，不能只有聚合计数（聚合回答「几条」、台账回答「哪几条」）。
+        var ledger = await store.GetDroppedEventLedgerAsync(handle.RunId);
+        Assert.AreEqual(1, ledger.Count);
+        Assert.AreEqual("subagent.round.started", ledger[0].EventType);
+        Assert.AreEqual(1, ledger[0].Seq);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(ledger[0].EventId), "台账必须携带事件身份");
+        Assert.IsFalse(string.IsNullOrWhiteSpace(ledger[0].Error), "台账必须携带失败原因");
+        Assert.AreEqual(0, store.DegradationMarkerWriteFailures);
+        Assert.AreEqual(0, store.DegradationLedgerWriteFailures);
+
         // 锁释放后归档恢复写入，后续事件不再丢弃。
         await store.AppendEventAsync(handle.RunId, "subagent.round.completed", new { round = 1 });
         var recovered = await store.GetRunArchiveAsync(handle.RunId);
         Assert.IsNotNull(recovered);
         Assert.AreEqual(2, recovered.Events.Count);
         Assert.AreEqual(1, recovered.Degraded!.DroppedEventCount);
+    }
+
+    /// <summary>
+    /// ADR-093 A93-0：连续丢弃必须留下**逐条**台账（各自的事件身份 + 递增序号），
+    /// 而不是只把聚合计数从 1 加到 2。
+    /// </summary>
+    [TestMethod]
+    public async Task DroppedEventLedger_Enumerates_EachDroppedEvent()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={Path.Combine(temp.Path, "platform.db")}")
+            .Options;
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var store = new FileSubAgentRunStore(
+            paths,
+            NullLogger<FileSubAgentRunStore>.Instance,
+            new TestDbContextFactory(options),
+            new RecordingConversationEventStore());
+        var handle = await store.CreateRunAsync(new SubAgentRunCreateRequest
+        {
+            ParentSessionId = "parent-session",
+            SubSessionId = "sub-session",
+            WorkspaceId = "default",
+            AgentInstanceId = "agent-1",
+            TemplateId = "developer",
+            Task = "Enumerate dropped events",
+        });
+
+        var eventsPath = Path.Combine(handle.ArchivePath, "events.jsonl");
+        using (new FileStream(eventsPath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            await store.AppendEventAsync(handle.RunId, "subagent.round.started", new { round = 1 });
+            await store.AppendEventAsync(handle.RunId, "subagent.tool.started", new { round = 1, tool = "read" });
+        }
+
+        var ledger = await store.GetDroppedEventLedgerAsync(handle.RunId);
+        Assert.AreEqual(2, ledger.Count);
+        Assert.AreEqual("subagent.round.started", ledger[0].EventType);
+        Assert.AreEqual("subagent.tool.started", ledger[1].EventType);
+        Assert.AreEqual(1, ledger[0].Seq);
+        Assert.AreEqual(2, ledger[1].Seq);
+        Assert.AreNotEqual(ledger[0].EventId, ledger[1].EventId, "每条丢弃必须有自己的事件身份");
+    }
+
+    /// <summary>
+    /// 二次降级：聚合标记自身写不进去时**不得抛错**（抛错会杀死运行中的子代理，违反 ADR-093 决策 4），
+    /// 但必须在健康面可查（计数器），且**台账与标记相互独立**：标记失败不得连累台账。
+    /// 注入方式：把 `archive-degraded.json` 路径预先建成目录 ⇒ 写入必然失败（确定性，不依赖权限/磁盘状态）。
+    /// </summary>
+    [TestMethod]
+    public async Task DegradationMarkerWriteFailure_IsCounted_AndDoesNotBlockLedger()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={Path.Combine(temp.Path, "platform.db")}")
+            .Options;
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var store = new FileSubAgentRunStore(
+            paths,
+            NullLogger<FileSubAgentRunStore>.Instance,
+            new TestDbContextFactory(options),
+            new RecordingConversationEventStore());
+        var handle = await store.CreateRunAsync(new SubAgentRunCreateRequest
+        {
+            ParentSessionId = "parent-session",
+            SubSessionId = "sub-session",
+            WorkspaceId = "default",
+            AgentInstanceId = "agent-1",
+            TemplateId = "developer",
+            Task = "Marker write failure must be observable",
+        });
+
+        Directory.CreateDirectory(Path.Combine(handle.ArchivePath, "archive-degraded.json"));
+
+        var eventsPath = Path.Combine(handle.ArchivePath, "events.jsonl");
+        using (new FileStream(eventsPath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            await store.AppendEventAsync(handle.RunId, "subagent.round.started", new { round = 1 });
+        }
+
+        Assert.AreEqual(1, store.DegradationMarkerWriteFailures, "标记写入失败必须可查（不得只留一行日志）");
+        Assert.AreEqual(0, store.DegradationLedgerWriteFailures, "标记失败不得连累台账");
+
+        var ledger = await store.GetDroppedEventLedgerAsync(handle.RunId);
+        Assert.AreEqual(1, ledger.Count);
+        Assert.AreEqual("subagent.round.started", ledger[0].EventType);
     }
 
     [TestMethod]
