@@ -8,6 +8,7 @@ using PuddingRuntime.Services;
 using PuddingRuntime.Services.Skills;
 using PuddingRuntime.Services.Skills.Telemetry;
 using PuddingRuntime.Services.TaskTools;
+using PuddingRuntime.Services.Tools;
 
 namespace PuddingHost.Tests.Hosting;
 
@@ -72,6 +73,16 @@ public sealed class PuddingApplicationHostCompositionTests
                 Assert.NotNull(field);
                 Assert.Same(visionContext, field.GetValue(consumer));
             }
+
+            // 前端改进 #1：presentation 投影器同样是 AgentExecutionService 的**可选**依赖，
+            // 可选依赖可能在 ValidateOnBuild 通过时静默为 null，因此必须反射查真实消费者字段。
+            var presentationField = typeof(AgentExecutionService).GetField(
+                "_toolPresentationProjector",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.NotNull(presentationField);
+            Assert.Same(
+                ToolPresentationProjector.Default,
+                presentationField.GetValue(app.Services.GetRequiredService<AgentExecutionService>()));
 
             Assert.IsType<UserPreferenceService>(
                 app.Services.GetRequiredService<IUserPreferenceService>());

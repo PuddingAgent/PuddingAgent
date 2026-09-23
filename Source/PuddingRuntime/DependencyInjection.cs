@@ -223,7 +223,9 @@ public static class RuntimeServiceExtensions
 
         // 前端改进 #1：工具展示投影（presentation）——事件发射侧读取工具自己声明的 Present，
         // 未注册/投影失败时发射侧改用 ToolPresentationProjector.Default（fail-open 至 generic）。
-        services.TryAddSingleton<IToolPresentationProjector, ToolPresentationProjector>();
+        // 用工厂注册 Default（presenter 解析器由 ToolPresentationCatalog 静态提供），
+        // 否则容器会尝试注入未注册的 Func<string, Func<ToolPresentationInput, ToolPresentationIntent?>?> 导致 Build 校验失败。
+        services.TryAddSingleton<IToolPresentationProjector>(_ => ToolPresentationProjector.Default);
         services.AddSingleton<AgentExecutionService>();
         services.AddSingleton<IRuntimeAgentDispatcher, RuntimeAgentDispatcher>();
         services.AddSingleton<IAgentExecutionAvailabilityProvider, DefaultAgentExecutionAvailabilityProvider>();
