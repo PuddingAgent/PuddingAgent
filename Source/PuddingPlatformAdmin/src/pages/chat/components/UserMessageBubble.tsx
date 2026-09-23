@@ -38,6 +38,33 @@ interface UserMessageBubbleProps {
   onContextMenu?: (e: React.MouseEvent) => void;
 }
 
+/** 技能徽标行（气泡内、正文下方；与 composer 系菜单同源取色）。 */
+const skillBadgeRowStyle: React.CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 4,
+  marginTop: 6,
+};
+
+const skillBadgeStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  maxWidth: '100%',
+  padding: '1px 6px',
+  borderRadius: 4,
+  fontSize: 11,
+  lineHeight: 1.7,
+  color: 'var(--pudding-text-muted, #756b5f)',
+  background:
+    'color-mix(in srgb, var(--earth-brown, #5c4a3a) 8%, transparent)',
+  border:
+    '1px solid color-mix(in srgb, var(--earth-brown, #5c4a3a) 14%, transparent)',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
 const MESSAGE_ENTRANCE_WINDOW_MS = 5_000;
 
 /**
