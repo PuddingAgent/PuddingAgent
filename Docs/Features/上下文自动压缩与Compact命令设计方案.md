@@ -85,7 +85,11 @@ PuddingAgent 已经具备以下基础：
 
 本轮先落地不改变任务与工具调用能力的确定性边界：
 
-- 工具结果保持原始内容，不经过 KeyVault 脱敏；超过 8 KiB 的正文原样写入工作区 `.pudding/context-tool-results/<session>/`，模型历史接收不超过 8 KiB 的原始首尾预览和渐进读取路径。写入失败时 fail-open，保持原任务行为和信息完整性。
+- 工具结果保持原始内容，不经过 KeyVault 脱敏；超过 8 KiB 的正文原样写入工作区 `.pudding/context-tool-results/<session>/`，模型历史接收不超过 8 KiB 的原始首尾预览和渐进读取路径。
+  - **【2026-09-23 更正】写入失败时不再是 fail-open。** 原设计写的是「写入失败时 fail-open，保持原任务行为和信息完整性」，但该实现是把**未截断的原文**返回给模型 ⇒ **恰好在落盘设施损坏时取消了上下文预算**，而这正是该预算存在的目的（见 `Source/PuddingRuntime/Services/AgentExecution/ToolResultContextPolicy.cs`）。
+  - 现行为：落盘失败重试 1 次（共 2 次尝试）；仍失败则返回**仍然有界**的降级预览，并在正文内携带机器可读通知 `error=context_materialization_failed`，含 tool/session/call 身份、原始字符数 / UTF-8 字节数 / 行数、`content_sha256`、`full_output_file=UNAVAILABLE` 与恢复建议（重试工具调用或直接读源 artifact）。
+  - **口径：durability 仍是尽力而为，budget 不是。** 判据：`MaterializeAsync` 的**每一条**返回路径都满足 `result.Length <= MaxInlineChars`；`BuildBoundedPreview` 对超长通知同样不越界（旧实现按通知原文长度算预览预算，超长通知会把结果撑过上限）。
+  - 回归守护：`Source/PuddingRuntimeTests/Services/ToolResultContextPolicyTests.cs`（含"落盘不可能时仍守界并带失败码"与"超长通知不越界"两条）。**注意该测试类此前的 `MaterializeAsync_Fails_Open_When_Working_Directory_Does_Not_Exist` 曾把旧行为锁死（`Assert.AreEqual(content, result)`），已随本次更正改写。**
 - `file_read`、`search_grep`、目录列表和终端读取的默认返回窗口收紧；显式分页参数仍然可用，完整结果不会直接进入后续每一轮上下文。
 - 当前用户消息不再重复写入 system prompt；日期、潜意识/日志召回与 inbound message context 改为随本轮 User message 追加到缓存尾部。仅改变当前消息时，system prompt 必须字节级稳定。
 - `search_tools` 渐进加载出的工具 schema 在 live session 生命周期内保留，避免下一次 dispatch 先缩回核心 schema、再扩张并重复制造 `tool_spec_changed`。
