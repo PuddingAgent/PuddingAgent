@@ -1017,6 +1017,15 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
               footer={null}
               title="技能管理"
               width="min(1100px, 92vw)"
+              styles={{
+                body: {
+                  // SkillsTab 原本是整页 Tab 内容，Modal 内容区默认不滚动：
+                  // 不限定高度时长列表会把弹窗顶出视口，底部操作点不到。
+                  maxHeight: '68vh',
+                  overflow: 'auto',
+                  padding: '0 4px',
+                },
+              }}
             >
               {showSkillManager && (
                 <React.Suspense
