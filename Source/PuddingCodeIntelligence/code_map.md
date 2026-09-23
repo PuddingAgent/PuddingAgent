@@ -1,4 +1,4 @@
-﻿# PuddingCodeIntelligence CodeMAP
+# PuddingCodeIntelligence CodeMAP
 
 > 代码索引与分析 | LSP · 符号搜索 · 调用图 · 多语言
 
@@ -16,6 +16,7 @@
 | `CodePathIdentity.cs` | 路径标识 |
 | `FileOutlinerRegistry.cs` | 文件大纲注册 |
 | `IndexExcludePatterns.cs` | 排除模式 |
+| `CodeIndex/` | **U3-A 变更捕获管线**：`IndexChange`（记录）· `CodeIndexChangeQueue`（有界 8192，`TryPublish` 不阻塞）· `CodeIndexScopeState`（dirty/version/reconcile，无 IO）· `CodeIndexWatcher`（64KB 缓冲，回调只过滤+TryPublish，Error 事件必处理）· `CodeIndexChangeCoalescer`（防抖 500ms/最长 2s，2 万路径折叠为 reconcile）· `CodeIndexChangeBatch`（重读/移除/reconcile） |
 
 ## 语言支持
 
@@ -41,4 +42,4 @@
 
 ## 测试
 
-`../Tests/PuddingCodeIntelligenceTests/` — 代码索引测试
+`../Tests/PuddingCodeIntelligenceTests/` — 代码索引测试（U3-A 管线测试在 `Services/CodeIndex/`）
