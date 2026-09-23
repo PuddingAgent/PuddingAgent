@@ -942,6 +942,9 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
                       open
                       onClose={() => setComposerMenuView('actions')}
                       onSelect={handleSelectSkill}
+                      selectedSkillIds={(pendingSkills ?? []).map(
+                        (s) => s.skillId,
+                      )}
                     />
                   </React.Suspense>
                 ) : (
