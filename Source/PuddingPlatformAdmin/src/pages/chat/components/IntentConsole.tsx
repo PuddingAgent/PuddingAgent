@@ -63,6 +63,34 @@ const CameraInputModal =
         .default as typeof import('./CameraInputModal').default)
     : React.lazy(() => import('./CameraInputModal'));
 
+const pendingSkillsRowStyle: React.CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 6,
+  padding: '6px 4px 2px',
+};
+
+const skillChipStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 2,
+  padding: '2px 4px 2px 8px',
+  fontSize: 12,
+  borderRadius: 999,
+  background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)',
+  color: 'var(--text-primary)',
+};
+
+const skillChipRemoveStyle: React.CSSProperties = {
+  border: 'none',
+  background: 'transparent',
+  cursor: 'pointer',
+  fontSize: 13,
+  lineHeight: 1,
+  padding: '0 2px',
+  color: 'inherit',
+};
+
 /** Composer 的聊天状态 */
 export type ChatStatus =
   | 'idle'
@@ -186,6 +214,11 @@ interface IntentConsoleProps {
     isEnabled?: boolean;
     isFrozen?: boolean;
   }[];
+  /** 本轮待附加技能（以 chip 展示在输入框上方；发送时转为文本）。 */
+  pendingSkills?: { name: string; description?: string }[];
+  onPendingSkillsChange?: (
+    skills: { name: string; description?: string }[],
+  ) => void;
   /** 打开 ChatMain 持有的固定子代理运行检查器。 */
   onOpenSubAgentInspector?: () => void;
   /** 浏览器语音输入适配器；测试与后续 ASR Provider 接入可替换该适配器 */
@@ -243,6 +276,8 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   compactionStatus,
   subAgentsRunning = 0,
   agents,
+  pendingSkills,
+  onPendingSkillsChange,
   onOpenSubAgentInspector,
   voiceInputAdapter = createDashScopeVoiceInputAdapter(),
   voiceOutputAdapter = defaultBrowserVoiceOutputAdapter,
@@ -260,20 +295,30 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const textInputRef = useRef<ComposerTextInputHandle | null>(null);
 
   /**
-   * 技能选择 → 转换为文本附加到本轮（用户定调 2026-09-23）。
-   * 关键：不经过任何协议字段（发送请求无技能参数），只在输入框末尾追加一行
-   * 提示文本，随消息正文一起发出，由 Agent 据此使用该技能。
+   * 技能选择 → 挂为 chip（用户定调 2026-09-23：展示为 chip，发送时才转文本）。
+   * 状态提升到 ChatPage 而非本组件：Enter 发送逻辑在 ChatPage 的 handleSend，
+   * 若状态停在本组件内，按 Enter 发送会丢掉技能、按发送按钮却带着技能。
    */
   const handleSelectSkill = useCallback(
     (skill: { name: string; description?: string }) => {
-      const desc = (skill.description ?? '').trim();
-      const hint = `（本轮请使用技能：${skill.name}${desc ? ` —— ${desc}` : ''}）`;
-      const current = textInputRef.current?.getValue() ?? '';
-      if (!current.includes(hint)) textInputRef.current?.appendText(hint);
+      const next = [
+        ...(pendingSkills ?? []).filter((s) => s.name !== skill.name),
+        { name: skill.name, description: skill.description },
+      ];
+      onPendingSkillsChange?.(next);
       setShowComposerMenu(false);
       setComposerMenuView('actions');
     },
-    [],
+    [pendingSkills, onPendingSkillsChange],
+  );
+
+  const handleRemoveSkill = useCallback(
+    (name: string) => {
+      onPendingSkillsChange?.(
+        (pendingSkills ?? []).filter((s) => s.name !== name),
+      );
+    },
+    [pendingSkills, onPendingSkillsChange],
   );
   const handleComposerSendRef = useRef<() => void>(() => undefined);
   /** `+` 动作菜单 Popover */
@@ -845,6 +890,24 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
       )}
 
       <div className={styles.composerCapsuleBody}>
+        {(pendingSkills?.length ?? 0) > 0 && (
+          <div style={pendingSkillsRowStyle} data-testid="pending-skills">
+            {(pendingSkills ?? []).map((s) => (
+              <span key={s.name} style={skillChipStyle}>
+                <span>{s.name}</span>
+                <button
+                  type="button"
+                  style={skillChipRemoveStyle}
+                  onClick={() => handleRemoveSkill(s.name)}
+                  aria-label={`移除技能 ${s.name}`}
+                  data-testid={`pending-skill-remove-${s.name}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <ComposerTextInput
           ref={textInputRef}
           inputValue={inputValue}

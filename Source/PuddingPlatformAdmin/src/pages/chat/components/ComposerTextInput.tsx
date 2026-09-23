@@ -37,8 +37,7 @@ import MentionPalette, {
 export interface ComposerTextInputHandle {
   /** 外部改写草稿（语音转写/uiTest 填充/发送清空）；同步 lift 到父级。 */
   setValue: (v: string) => void;
-  /** 在草稿末尾追加一段文本并把光标移到末尾（技能提示附加用）。 */
-  appendText: (suffix: string) => void;
+
   focus: () => void;
   /** 读取当前草稿（发送组图时取提示词用；始终最新，不受 lift 时序影响）。 */
   getValue: () => string;
@@ -139,22 +138,7 @@ const ComposerTextInput = forwardRef<ComposerTextInputHandle, ComposerTextInputP
             setMentionVisible(false);
           }
         },
-        appendText: (suffix: string) => {
-          const base = draftValueRef.current.trimEnd();
-          const next = base ? `${base}\n${suffix}` : suffix;
-          isTextComposingRef.current = false;
-          lastLiftedRef.current = next;
-          setDraftValue(next);
-          onInputChange(next);
-          requestAnimationFrame(() => {
-            const el = textareaRef.current;
-            if (el) {
-              el.focus();
-              el.selectionStart = next.length;
-              el.selectionEnd = next.length;
-            }
-          });
-        },
+
         focus: () => textareaRef.current?.focus(),
         getValue: () => draftValueRef.current,
       }),

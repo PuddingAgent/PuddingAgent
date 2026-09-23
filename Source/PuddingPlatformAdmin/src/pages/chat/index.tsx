@@ -71,6 +71,20 @@ function shallowEqualRecord(
   return true;
 }
 
+/** 把本轮待附加技能转为提示文本；附加在消息末尾以免破坏开头 @mention 路由。 */
+function buildPendingSkillHint(
+  skills: { name: string; description?: string }[],
+): string {
+  if (skills.length === 0) return '';
+  const names = skills.map((s) => s.name).join('、');
+  const details = skills
+    .map((s) => ({ name: s.name, desc: (s.description ?? '').trim() }))
+    .filter((s) => s.desc)
+    .map((s) => `${s.name}：${s.desc}`)
+    .join('；');
+  return `（本轮请使用技能：${names}${details ? `（${details}）` : ''}）`;
+}
+
 const ChatPageContent: React.FC = () => {
   const location = useLocation();
   const useAgentClientArchitecture = useMemo(
@@ -593,12 +607,27 @@ const ChatPageContent: React.FC = () => {
     chat.setCreateSceneOpen(true);
   }, [chat.createSceneForm, chat.setCreateSceneOpen]);
 
+  /** 本轮待附加技能（chip 展示；发送时转为文本附加到消息末尾）。 */
+  const [pendingSkills, setPendingSkills] = useState<
+    { name: string; description?: string }[]
+  >([]);
+
   const handleSend = useCallback(() => {
     const t = chat.inputValue.trim();
-    if (!t) return;
+    const skillHint = buildPendingSkillHint(pendingSkills);
+    if (!t && !skillHint) return;
     chat.setInputValue('');
-    void chat.submitInteraction(t);
-  }, [chat.inputValue, chat.setInputValue, chat.submitInteraction]);
+    setPendingSkills([]);
+    // 技能提示放在消息末尾：开头要留给 @mention（resolveChatRoute 用 ^@ 匹配）。
+    void chat.submitInteraction(
+      skillHint ? (t ? `${t}\n${skillHint}` : skillHint) : t,
+    );
+  }, [
+    chat.inputValue,
+    chat.setInputValue,
+    chat.submitInteraction,
+    pendingSkills,
+  ]);
 
   const handleSendWithMetadata = useCallback(
     async (
@@ -607,11 +636,16 @@ const ChatPageContent: React.FC = () => {
       imageParts?: { type: 'image'; artifactId: string; detail?: 'original' | 'low' | 'high' | 'auto' }[],
     ) => {
       const text = content.trim();
-      if (!text && !(imageParts && imageParts.length > 0)) return;
+      const skillHint = buildPendingSkillHint(pendingSkills);
+      if (!text && !skillHint && !(imageParts && imageParts.length > 0)) return;
       chat.setInputValue('');
-      await chat.submitInteraction(text, { metadata, imageParts });
+      setPendingSkills([]);
+      await chat.submitInteraction(
+        skillHint ? (text ? `${text}\n${skillHint}` : skillHint) : text,
+        { metadata, imageParts },
+      );
     },
-    [chat.setInputValue, chat.submitInteraction],
+    [chat.setInputValue, chat.submitInteraction, pendingSkills],
   );
 
   const handleStop = useCallback(() => {
@@ -658,6 +692,8 @@ const ChatPageContent: React.FC = () => {
         unreadCounts={chat.sessionUnreadCounts}
         workspaces={chat.workspaces}
         workspaceId={chat.workspaceId}
+        pendingSkills={pendingSkills}
+        onPendingSkillsChange={setPendingSkills}
         workspaceLoading={chat.workspaceLoading}
         wsOpts={chat.wsOpts}
         onWorkspaceChange={handleWorkspaceChange}

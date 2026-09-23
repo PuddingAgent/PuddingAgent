@@ -93,6 +93,11 @@ interface ChatMainProps {
   onWorkspaceChange: (v: string | undefined) => void;
   // agent
   agents: WorkspaceAgentDto[];
+  /** 本轮待附加技能（chip）；发送时由 ChatPage 转为文本附加。 */
+  pendingSkills?: { name: string; description?: string }[];
+  onPendingSkillsChange?: (
+    skills: { name: string; description?: string }[],
+  ) => void;
   agentId: string | undefined;
   agentLoading: boolean;
   agOpts: { value: string; label: React.ReactNode; disabled: boolean }[];
@@ -246,6 +251,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
   listEndRef,
   subAgentCards,
   agents,
+  pendingSkills,
+  onPendingSkillsChange,
   currentUser,
   viewportScrollIntent,
   onViewportScrollIntentHandled,
@@ -724,6 +731,8 @@ const ChatMain: React.FC<ChatMainProps> = ({
                     onSteerCurrent={onSteerCurrent}
                     onExport={onExport}
                     agents={agents}
+                    pendingSkills={pendingSkills}
+                    onPendingSkillsChange={onPendingSkillsChange}
                     onOpenDevDetails={() => setDevMode(true)}
                     disabled={disabled}
                     tLimit={tLimit}
