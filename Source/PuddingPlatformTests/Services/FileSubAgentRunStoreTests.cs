@@ -630,6 +630,75 @@ public sealed class FileSubAgentRunStoreTests
         Assert.AreEqual("subagent.round.started", ledger[0].EventType);
     }
 
+    /// <summary>
+    /// ADR-093 A93-0 第二刀：只读对账必须把四条链的事实摊开并**如实报告差异**。
+    /// 差异用**确定性方式**制造（把投影游标写回 0），不依赖"刚写入的事件尚未被投影"这一时序假设。
+    /// </summary>
+    [TestMethod]
+    public async Task InspectArchiveConsistency_ReportsWatermarksAndDivergence()
+    {
+        using var temp = TemporaryDirectory.Create();
+        var paths = PuddingDataPaths.FromRoot(temp.Path);
+        var options = new DbContextOptionsBuilder<PlatformDbContext>()
+            .UseSqlite($"Data Source={Path.Combine(temp.Path, "platform.db")}")
+            .Options;
+        await using (var db = new PlatformDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var store = new FileSubAgentRunStore(
+            paths,
+            NullLogger<FileSubAgentRunStore>.Instance,
+            new TestDbContextFactory(options),
+            new RecordingConversationEventStore());
+        var handle = await store.CreateRunAsync(new SubAgentRunCreateRequest
+        {
+            ParentSessionId = "parent-session",
+            SubSessionId = "sub-session",
+            WorkspaceId = "default",
+            AgentInstanceId = "agent-1",
+            TemplateId = "developer",
+            Task = "Consistency reconciliation",
+        });
+
+        var report = await store.InspectArchiveConsistencyAsync(handle.RunId);
+        Assert.IsTrue(report.ArchiveFound);
+        Assert.IsTrue(report.IndexReadable, "索引不可读必须与“索引缺失”分开报告");
+        Assert.IsTrue(report.IndexRowPresent, "CreateRunAsync 应已写入索引行");
+        Assert.AreEqual("running", report.ArchiveStatus, "权威状态取自 run.json");
+        Assert.AreEqual("running", report.IndexStatus);
+        Assert.AreEqual(1, report.AuthoritativeEvents, "CreateRunAsync 写入 1 条基线事件");
+
+        // 投影追平 ⇒ 游标必须等于权威事件数，且判定为一致
+        await store.ReplayPendingConversationEventsAsync(maxRuns: 3);
+        var settled = await store.InspectArchiveConsistencyAsync(handle.RunId);
+        Assert.AreEqual(0, settled.UnprojectedEvents);
+        Assert.AreEqual(settled.AuthoritativeEvents, settled.ProjectionCursor, "投影游标必须追平权威事件数");
+        Assert.IsTrue(settled.IsConsistent, string.Join(" | ", settled.Findings));
+
+        // 确定性制造「权威已前进、投影未跟上」：把持久游标写回 0
+        await File.WriteAllTextAsync(
+            Path.Combine(handle.ArchivePath, "conversation-projection.cursor"), "0");
+        var diverged = await store.InspectArchiveConsistencyAsync(handle.RunId);
+        Assert.AreEqual(diverged.AuthoritativeEvents, diverged.UnprojectedEvents, "游标为 0 ⇒ 全部事件未投影");
+        Assert.IsTrue(diverged.UnprojectedEvents > 0);
+        Assert.IsFalse(diverged.IsConsistent);
+        StringAssert.Contains(diverged.Findings[0], "未投影");
+
+        // 丢弃也必须在对账里可见（台账 + 聚合标记），并使一致性判定为 false
+        var eventsPath = Path.Combine(handle.ArchivePath, "events.jsonl");
+        using (new FileStream(eventsPath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            await store.AppendEventAsync(handle.RunId, "subagent.round.completed", new { round = 1 });
+        }
+
+        var degraded = await store.InspectArchiveConsistencyAsync(handle.RunId);
+        Assert.AreEqual(1, degraded.DroppedEvents);
+        Assert.AreEqual(1, degraded.DegradedDroppedEventCount);
+        Assert.IsFalse(degraded.IsConsistent);
+    }
+
     [TestMethod]
     public async Task Concurrent_Archive_Read_And_Event_Append_Never_SharingViolate()
     {

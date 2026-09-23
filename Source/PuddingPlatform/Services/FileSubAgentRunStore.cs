@@ -1086,6 +1086,138 @@ public class FileSubAgentRunStore : ISubAgentRunStore
     }
 
     /// <summary>
+    /// 只读一致性对账（ADR-093 A93-0 第二刀）：
+    /// 把「权威事件数 / 投影游标 / DB 索引行 / 降级台账」四条事实一次摊开，
+    /// 让「文件已写而投影或索引未跟上」这类部分成功不再只能靠人翻日志发现。
+    /// <para><b>严格只读</b>：不写文件、不改状态、不修补差异（修补属 A93-2 重建作业）。</para>
+    /// </summary>
+    public async Task<SubAgentArchiveConsistencyReport> InspectArchiveConsistencyAsync(
+        string runId, CancellationToken ct = default)
+    {
+        var findings = new List<string>();
+        var runDir = ResolveRunDir(runId);
+        if (runDir is null)
+        {
+            findings.Add("归档目录不可解析：无法对账。");
+            return new SubAgentArchiveConsistencyReport(
+                runId, ArchiveFound: false, AuthoritativeEvents: 0, ProjectionCursor: -1,
+                UnprojectedEvents: 0, DroppedEvents: 0, DegradedDroppedEventCount: null,
+                IndexReadable: false, IndexRowPresent: false, IndexStatus: null, ArchiveStatus: null,
+                IsIndexStatusConsistent: false, IsConsistent: false, Findings: findings);
+        }
+
+        // ── 权威链：events.jsonl 行数（唯一权威事件数）──
+        var authoritativeEvents = 0;
+        var eventsPath = Path.Combine(runDir, "events.jsonl");
+        if (File.Exists(eventsPath))
+        {
+            foreach (var line in File.ReadLines(eventsPath))
+            {
+                if (!string.IsNullOrWhiteSpace(line))
+                    authoritativeEvents++;
+            }
+        }
+        else
+        {
+            findings.Add("权威事件文件缺失（events.jsonl）。");
+        }
+
+        // ── 投影链：持久游标 ──
+        var projectionCursor = -1L;
+        var cursorPath = Path.Combine(runDir, "conversation-projection.cursor");
+        if (File.Exists(cursorPath))
+        {
+            var raw = (await File.ReadAllTextAsync(cursorPath, ct)).Trim();
+            if (long.TryParse(raw, out var parsed))
+                projectionCursor = parsed;
+            else
+                findings.Add($"投影游标不可解析（原始值 '{raw}'）：按不可得处理。");
+        }
+        else
+        {
+            findings.Add("投影游标缺失：该运行从未投影或尚未开始投影。");
+        }
+
+        var unprojected = projectionCursor < 0
+            ? authoritativeEvents
+            : Math.Max(0, authoritativeEvents - projectionCursor);
+        if (unprojected > 0)
+            findings.Add($"未投影事件 {unprojected} 条（权威 {authoritativeEvents} > 游标 {projectionCursor}）。");
+
+        // ── 降级链：逐条台账 + 聚合标记 ──
+        var ledger = await GetDroppedEventLedgerAsync(runId, ct);
+        var degraded = await TryReadArchiveDegradedAsync(runDir, ct);
+        if (ledger.Count > 0)
+        {
+            findings.Add($"降级丢弃 {ledger.Count} 条（聚合标记计数 {degraded?.DroppedEventCount.ToString() ?? "<无标记>"}）。");
+        }
+        else if (degraded is not null && degraded.DroppedEventCount > 0)
+        {
+            findings.Add(
+                $"聚合标记称丢弃 {degraded.DroppedEventCount} 条，但台账为空（无逐条记录，无法定位）。");
+        }
+
+        // ── 权威态：run.json 的 status（不依赖任何投影）──
+        string? archiveStatus = null;
+        try
+        {
+            var manifestPath = Path.Combine(runDir, "run.json");
+            if (File.Exists(manifestPath))
+            {
+                var node = JsonNode.Parse(await File.ReadAllTextAsync(manifestPath, ct));
+                archiveStatus = node?["status"]?.GetValue<string>()
+                    ?? node?["Status"]?.GetValue<string>();
+                if (archiveStatus is null)
+                    findings.Add("权威 run.json 未提供 status 字段。");
+            }
+            else
+            {
+                findings.Add("权威清单缺失（run.json）。");
+            }
+        }
+        catch (JsonException ex)
+        {
+            findings.Add($"权威 run.json 不可解析：{ex.Message}");
+        }
+
+        // ── 索引链：DB 行（投影态）──
+        var indexReadable = false;
+        string? indexStatus = null;
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync(ct);
+            var row = await db.SubAgentRuns.AsNoTracking()
+                .FirstOrDefaultAsync(r => r.RunId == runId, ct);
+            indexReadable = true;
+            indexStatus = row?.Status;
+        }
+        catch (Exception ex)
+        {
+            // 读不出来 ≠ 没有行：必须分开报告，否则会把“索引不可读”误报成“索引缺失”。
+            findings.Add($"索引不可读：{ex.Message}");
+        }
+
+        var indexRowPresent = indexStatus is not null;
+        if (indexReadable && !indexRowPresent)
+            findings.Add("索引行缺失（权威归档存在但 DB 无对应行）。");
+
+        var indexStatusConsistent = archiveStatus is not null && indexStatus is not null
+            && string.Equals(archiveStatus, indexStatus, StringComparison.Ordinal);
+        if (indexRowPresent && archiveStatus is not null && !indexStatusConsistent)
+        {
+            findings.Add($"索引状态 '{indexStatus}' 与权威状态 '{archiveStatus}' 不一致。");
+        }
+
+        var consistent = authoritativeEvents > 0 && unprojected == 0 && ledger.Count == 0
+            && indexRowPresent && indexStatusConsistent;
+
+        return new SubAgentArchiveConsistencyReport(
+            runId, ArchiveFound: true, authoritativeEvents, projectionCursor, unprojected,
+            ledger.Count, degraded?.DroppedEventCount, indexReadable, indexRowPresent,
+            indexStatus, archiveStatus, indexStatusConsistent, consistent, findings);
+    }
+
+    /// <summary>
     /// 台账下一行序号 = 现有行数 + 1；读取失败时返回 <c>-1</c>（表示序号不可得），
     /// 且<b>不得**因为序号算不出来就不写台账**——事件身份才是主要线索。
     /// </summary>
