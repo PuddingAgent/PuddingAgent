@@ -40,6 +40,13 @@ import ComposerTextInput, {
   type ComposerTextInputHandle,
 } from './ComposerTextInput';
 import ComposerActionMenu from './ComposerActionMenu';
+
+// 技能面板按需加载：低频交互，且 chat 首屏有硬性包预算（scripts/check-chat-bundle-budget.cjs）。
+const SkillPalette =
+  process.env.NODE_ENV === 'test'
+    ? (require('./SkillPalette')
+        .default as typeof import('./SkillPalette').default)
+    : React.lazy(() => import('./SkillPalette'));
 import ContextUsageRing from './ContextUsageRing';
 
 import ComposerStatusDetails, {
@@ -251,9 +258,30 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   /** 输入叶子组件句柄（草稿态/IME 守卫/命令面板已下沉，外部改写走 setValue） */
   const textInputRef = useRef<ComposerTextInputHandle | null>(null);
+
+  /**
+   * 技能选择 → 转换为文本附加到本轮（用户定调 2026-09-23）。
+   * 关键：不经过任何协议字段（发送请求无技能参数），只在输入框末尾追加一行
+   * 提示文本，随消息正文一起发出，由 Agent 据此使用该技能。
+   */
+  const handleSelectSkill = useCallback(
+    (skill: { name: string; description?: string }) => {
+      const desc = (skill.description ?? '').trim();
+      const hint = `（本轮请使用技能：${skill.name}${desc ? ` —— ${desc}` : ''}）`;
+      const current = textInputRef.current?.getValue() ?? '';
+      if (!current.includes(hint)) textInputRef.current?.appendText(hint);
+      setShowComposerMenu(false);
+      setComposerMenuView('actions');
+    },
+    [],
+  );
   const handleComposerSendRef = useRef<() => void>(() => undefined);
   /** `+` 动作菜单 Popover */
   const [showComposerMenu, setShowComposerMenu] = useState(false);
+  /** `+` 菜单视图：动作列表 / 技能面板（技能面板惰性加载）。 */
+  const [composerMenuView, setComposerMenuView] = useState<'actions' | 'skills'>(
+    'actions',
+  );
   /** 运行状态详情 Popover */
 
   const [contextHealth, setContextHealth] =
@@ -842,18 +870,32 @@ const IntentConsole: React.FC<IntentConsoleProps> = ({
           <div className={styles.composerToolbarLeft}>
             <Popover
               content={
-                <ComposerActionMenu
-                  onExport={onExport}
-                  onOpenCamera={() => setShowCameraInput(true)}
-                  cameraEnabled={cameraEnabled}
-                  onOpenImage={handleOpenImagePicker}
-                  imageEnabled={imageEnabled}
-                  onClose={() => setShowComposerMenu(false)}
-                />
+                composerMenuView === 'skills' ? (
+                  <React.Suspense fallback={null}>
+                    <SkillPalette
+                      open
+                      onClose={() => setComposerMenuView('actions')}
+                      onSelect={handleSelectSkill}
+                    />
+                  </React.Suspense>
+                ) : (
+                  <ComposerActionMenu
+                    onExport={onExport}
+                    onOpenSkills={() => setComposerMenuView('skills')}
+                    onOpenCamera={() => setShowCameraInput(true)}
+                    cameraEnabled={cameraEnabled}
+                    onOpenImage={handleOpenImagePicker}
+                    imageEnabled={imageEnabled}
+                    onClose={() => setShowComposerMenu(false)}
+                  />
+                )
               }
               trigger="click"
               open={showComposerMenu}
-              onOpenChange={setShowComposerMenu}
+              onOpenChange={(next) => {
+                setShowComposerMenu(next);
+                if (!next) setComposerMenuView('actions');
+              }}
               placement="topLeft"
             >
               <button
