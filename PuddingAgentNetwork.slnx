@@ -22,6 +22,7 @@
     <Project Path="Source/PuddingRetrievalEvalProbe/PuddingRetrievalEvalProbe.csproj" />
     <Project Path="Source/PuddingRuntime/PuddingRuntime.csproj" Id="bf7b7efd-1c2a-4e06-9efa-f0e4af746f49" />
     <Project Path="Source/PuddingTaskRecall.Cli/PuddingTaskRecall.Cli.csproj" />
+    <Project Path="Source/PuddingVectorIndex/PuddingVectorIndex.csproj" />
     <Project Path="external/github.hyfree.GM/github.hyfree.GM/github.hyfree.GM.csproj" Id="2b2be7d9-5aae-437b-89f0-67b77d7f8e80" />
   </Folder>
   <Folder Name="/Tests/">
@@ -41,6 +42,7 @@
     <Project Path="Source/PuddingPlatformTests/PuddingPlatformTests.csproj" />
     <Project Path="Source/PuddingRetrievalEvalTests/PuddingRetrievalEvalTests.csproj" />
     <Project Path="Source/PuddingRuntimeTests/PuddingRuntimeTests.csproj" />
+    <Project Path="Source/PuddingVectorIndexTests/PuddingVectorIndexTests.csproj" />
     <Project Path="Source/PuddingWebApiTests/PuddingWebApiTests.csproj" Id="78289515-7caa-47b2-b209-900edeaeb8bf" />
   </Folder>
   <Folder Name="/TestScripts/">

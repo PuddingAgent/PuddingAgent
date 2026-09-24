@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- U4-1b vector-index component (ADR-089 §1: the enhanced index knows only a port).
+
+       Leaf by construction — ProjectReference = 0 and PackageReference = 0 (no vector database, no
+       new NuGet). The embeddings come in through the IEmbeddingProvider port, so this component never
+       references PuddingRuntime (where OpenAiEmbeddingService lives), PuddingHost, PuddingCodeIndex,
+       PuddingCodeIntelligence, PuddingFullTextIndex or PuddingRetrievalEval, and never reads the LLM
+       resource-pool config, holds an apiKey/baseUrl or speaks HTTP. That is what makes
+       "cosine + ranking + batch/single equivalence" testable outside the probe.
+
+       The boundary is asserted at runtime by PuddingVectorIndexTests (ComponentBoundaryTests) and
+       mechanically by the dependency-free ItemGroup below. -->
+  <ItemGroup>
+    <!-- Make "不得直连 HTTP" a compile-time fact instead of a convention: the implicit using would
+         otherwise put System.Net.Http in scope for every file of this component. Removing it means a
+         future HttpClient call cannot even compile without an explicit using, which the boundary test
+         then flags. (Implicit usings are identical for every SDK project; this is the one the SDK adds
+         that this component must not have.) -->
+    <Using Remove="System.Net.Http" />
+  </ItemGroup>
+
+</Project>

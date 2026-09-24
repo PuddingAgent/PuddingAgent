@@ -1,0 +1,23 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!-- Component tests for PuddingVectorIndex (组件化交付规程 S2/S3).
+
+       Boundary rule: this test project MUST reference PuddingVectorIndex ONLY — no Lucene, no HTTP
+       client component, no PuddingRuntime / PuddingHost / PuddingAgent / PuddingCodeIndex /
+       PuddingCodeIntelligence / PuddingFullTextIndex / PuddingRetrievalEval / PuddingIndexChunking.
+       The provider port is driven by a stand-in, which is exactly what makes the cosine/ranking
+       behaviour testable without a vector service running. Asserted at runtime by
+       ComponentBoundaryTests (which also re-reads the sibling csproj so the manifest cannot drift). -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingVectorIndex\PuddingVectorIndex.csproj" />
+  </ItemGroup>
+
+</Project>

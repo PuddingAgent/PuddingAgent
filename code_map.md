@@ -1,3 +1,46 @@
+## 2026-09-24 U4-1b：向量 / 全文 / 混合（RRF）同台对比（本地 Qwen3，零成本）
+
+**卡的是用户第 5 条指令后半段**：“评估不同索引模型的质量（**纯向量、全文检索、混合检索**）的检索质量、索引速度、查找速度、索引文件体积差异”。**同一批块（引擎换、块不换）**：三种检索器都走 `--chunks outline --tiers p0p1p2 --filter both` ⇒ 同一份 **1,352 块**；目录 = `Source/PuddingCodeIndex`（37 个 `.cs` / 237,586 B），标注集 = `eval/sets/small-puddingcodeindex.json`（**28 条，未改动**）。
+
+**交付 1：新叶子组件 `Source/PuddingVectorIndex/`（S1）** —— `ProjectReference = 0`、`PackageReference = 0`（**不引入向量数据库、不新增 NuGet**）。关键设计是**端口 `IEmbeddingProvider`**（`Describe()` / `EmbedAsync` / `EmbedBatchAsync` 保序）+ **值对象 `EmbeddingRoute`**（用户口径的 `"服务商/模型"`，按第一个斜杠切分 ⇒ modelId 可含斜杠）+ `EmbeddingModelInfo`（维度 / 最大上下文 / 是否本地 / **配置级**可用性）+ `VectorIndexEntry`（构造即**拷贝**向量）+ `VectorSearchResult`（含 `Score` 与 0 基 `Rank`）+ **`InMemoryVectorIndex`**（暴力余弦；分数降序、**同分按 id 序数**打破平局 ⇒ 两次检索逐位相同）+ `VectorIndexBuilder`（`BatchSize` 可控；**逐批校验数量/长度/非空**）。组件**不解析 route、不读资源池配置、不持 apiKey/baseUrl、不直连 HTTP**；**边界被编译期硬化**：csproj 里 `<Using Remove="System.Net.Http" />`（否则隐式 using 会把 HTTP 命名空间放进每个文件——这是实测发现的真实缺口）。
+
+**交付 2：独立测试工程 `Source/PuddingVectorIndexTests/`（S2/S3）** —— `ProjectReference` 恰好 1 条，**39 用例**，含 S4 边界断言（检测器**自带阳性对照** + `deps.json` 依赖闭包 + **读盘校验组件 csproj 的 `ProjectReference`/`PackageReference` 必须为 0** + **源码不得出现 `HttpClient`/`http://`/`apiKey`/`baseUrl`**）。
+
+**交付 3：探针扩展（适配器全在探针侧；默认行为不变）** —— `Source/PuddingRetrievalEvalProbe` 新增 `--retriever vector|fulltext|hybrid`（默认 `fulltext` ⇒ U4-1a 行为不变）、`--embedding-route`（**默认从 `llm.providers.json` 的 `embedding` 段解析，未硬编码**）、`--providers-config`、`--embedding-base-url`、`--embedding-dimensions`、`--embedding-batch`（默认 32）、`--rrf-k` / `--rrf-weight-fulltext` / `--rrf-weight-vector` / `--fusion-depth`。新增文件：`EmbeddingRouteResolver`（route → 端点/密钥/维度/价格，**未知/禁用/非 embedding 模型全部 fail-closed**）、`EmbeddingProviderAdapter`（OpenAI 兼容 `/v1/embeddings`；**调用次数/文本数/耗时/失败数/token 自计**）、`VectorStore`（`vectors.f32` 原始 float32 + `manifest.json`，供“索引体积”轴度量）、`VectorSearchProbe`（查询嵌入**故意不缓存**）、`RrfHybridProbe`（**文件级** RRF 融合）、`VectorRetrievalModes` + `VectorIndexRunReport`/`ProbeRunSidecar`（机器可读四轴）。**取舍理由**：生产实现 `OpenAiEmbeddingService` 在 `PuddingRuntime`，引用它会把整个 agent 运行时拖进探针 ⇒ 在探针侧写薄适配器（约 190 行，协议与批量语义对齐）。**未改** `PuddingCodeIndex` / `PuddingCodeIntelligence` / `PuddingFullTextIndex` / `PuddingIndexChunking` / `PuddingRetrievalEval` / `eval/sets/**` / Host / Runtime（`git diff --numstat` 对探针既有文件 = **184 插入 / 5 删除**，5 处删除分别是分支守卫、错误文案、探针构造、reproduce 串、一个访问修饰符；`.csproj` = **4 插入 / 0 删除**）。
+
+**交付 4：四轴数字**（`--warmup 1 --measured 3`；28 例 `failed=0`、`repetitionStable=True`）
+
+| 轴 | **F 全文**（Lucene outline） | **V 纯向量**（本地 Qwen3 + 暴力余弦） | **H 混合**（RRF k=60 wf=wv=1 depth=100） |
+|---|---|---|---|
+块数 | 1,352 | 1,352 | 1,352 |
+**索引速度** | **2,060 ms** = 语料 367 + Lucene 1,693 | **41,624 ms** = 语料 347 + **embedding 41,187（43 调用 / 1,352 文本）** + 存储 36 | **41,253 ms** = 语料 426 + **embedding 39,276（43 调用）** + Lucene 1,471 + 存储 35 |
+**索引体积** | **149,556 B**（0.143 MB，5 文件） | **5,918,577 B**（5.644 MB，2 文件；向量本体 5,537,792 = **39.6×**） | **6,068,133 B**（5.787 MB，7 文件 = **40.6×**） |
+**热查找** p50/p95/p99（ms） | **3.545 / 6.311 / 8.088** | **41.236 / 56.813 / 61.826** | **48.827 / 64.484 / 67.661** |
+`recall@1` | 0.7500 | **0.3571** | **0.7500** |
+`recall@5` | 0.8214 | 0.8929 | **0.9286** |
+`recall@10` | 0.9286 | **1.0000** | **1.0000** |
+`MRR` | 0.7941 | 0.5810 | **0.8295** |
+`precision@5 / @10` | 0.1643 / 0.0929 | 0.1786 / 0.1000 | **0.3000 / 0.1750** |
+`noiseRate@10` | 0.0000 | 0.0000 | 0.0000 |
+
+**交付 5：结论（三条必答）**
+
+① **混合（RRF）优于任一单一策略**：vs 全文 `recall@5` 0.8214 → **0.9286（+13.1%）**、`MRR` 0.7941 → **0.8295（+4.5%）**、`precision@5` 0.1643 → **0.3000（+82.6%）**、`precision@10` 0.0929 → **0.1750（+88.4%）**、`recall@10` 0.9286 → **1.0000**、`recall@1` **0.7500 持平**；vs 向量 `recall@1` 0.3571 → **0.7500（+110%）**、`MRR` 0.5810 → **0.8295（+42.8%）**、`recall@5` 0.8929 → **0.9286**、其余并列。代价：索引 **20.0×**、体积 **40.6×**、热 p50 **13.8×**。机制可解释（case 0：全文第 1 + 向量第 6 ⇒ RRF 后回到第 1）。
+② **向量只作为融合伙伴值得，单独用不值得**：单独 `recall@1` 只有全文的 **47.6%**（0.3571 vs 0.7500）、`MRR` **−26.8%**，但给融合带来 `recall@5` **+0.1071**、`MRR` **+0.0354**、`precision@5` **+0.1357**；体积 **4,378 B/块 vs 110.6 B/块（39.6×）**、热 p50 **11.6×**；**唯一完胜的轴是成本（本地 $0）** ⇒ 结论**依赖 route 是本地零成本，不可外推**。
+③ **本地向量与全文的延迟差 = 热 p50 11.63×（+37.69 ms）**：3.545 → 41.236 ms；拆项后 **≈27.3 ms/次是查询嵌入（占 66%）**，其余 ≈13.9 ms 是 1352×1024 余弦扫描。**并更正一处已知输入**：任务书中的“本地单条 393 ms”是**冷/首调用**数字，本刀实测冷首调 370 ms、热态平均 **27.3 ms/次**，两者不可混用。
+
+**消融（参数写进报告 + 三次对照）**：`k=10` vs `k=60` ⇒ 指标逐项相同且 top-5/top-10 窗口 **28/28 逐位相同**（k 在本语料规模不敏感）；`wVector=2.0` ⇒ 指标**整组塌回纯向量**（权重是敏感旋钮）；`fusionDepth=20` vs `100` ⇒ 指标逐项相同（**混合增益不是更深候选池造成的**，同时消除“单策略深度 20 / 混合深度 100”的实验不对称疑虑）。
+
+**花费 = $0.000000**：全部 ≈650 次 HTTP 往返都指向 `http://127.0.0.1:1234/v1/embeddings`，**无任何远程调用**；route 价格 0/1M。**诚实提醒**：LM Studio 的 `usage.prompt_tokens` 恒为 0 ⇒ 本地路径拿不到真实 token 数，换远程 route 时必须按服务真实 token 计费（当前服务不提供该字段）。
+
+**门禁（实测）**：新套件 **39/39 exit 0**；`PuddingIndexChunkingTests` **30/30**、`PuddingCodeIndexTests` **82/82**、`PuddingCodeIntelligenceTests` **93/93**、`PuddingRetrievalEvalTests` **78/78**、`Tests/PuddingHost.Tests` **124/124**（失败数未增加）；`dotnet build PuddingAgentNetwork.slnx -c Release` ⇒ **0 个错误 / 1588 个警告 / exit 0 / 失败工程数 0**（slnx 工程条目 44、构建输出行 45；两个新工程已登记进 slnx）。
+
+**变异取红（两处，三份原始输出 + hash 三点值）**：M1 `Cosine` 去分母 + M2 构建器把“维度不符即抛”改成**静默截断** ⇒ **4 红 / 35 绿 / 39**（`Provider_Returning_Wrong_Vector_Length_Fails_Closed`、`Cosine_Of_Identical_Direction_Is_One_And_Opposite_Is_Minus_One`、`Cosine_Matches_Hand_Computed_Value`、`Cosine_Is_Scale_Invariant`）；复原后 `VectorMath.cs`（`b1f75cef2a81e11113e3998a4b7ef3f7837a2b6f`）与 `VectorIndexBuilder.cs`（`b36e2f940882b24b3f04ad3e8166256469449523`）blob hash **逐位相同**，复原后 **39/39 绿**，`MUTATION` 残留 **0**。附带发现：去掉分母是**单调变换**，`Search_Ranks_By_Cosine_Descending` 在 M1 下**仍绿** ⇒ **排序测试不能替代数值断言**。
+
+**诚实留白**：① **小目录边界**（37 文件 / 1,352 块）——**不外推到全仓**（按 30.5 ms/块外推，全仓向量索引在时间上不可接受）；② 每个数字**只跑一次**（两次向量构建的 embedding 耗时差 **1,911 ms / 4.9%** **超过** Lucene 写入耗时 1,471 ms ⇒ “混合索引比纯向量快”**不构成证据**）；③ **标注集粒度太粗**（28 例、每例 1 个期望文件）⇒ 分不出 `wv=2` 与纯向量（top-10 窗口 25/28 不同）⇒ **指标相同 ≠ 排序相同**；④ 查询嵌入**故意不缓存**（缓存会藏起主项、缩小向量与全文的延迟差）；⑤ 暴力余弦**未引 ANN**，规模上界未测；⑥ 向量存储**未量化**（int8 理论 ~1,024 B/块，未实测）；⑦ **融合结果路径拼写不统一**（Lucene 绝对 / 向量相对）——指标不受影响，但用户可见列表不一致（探针侧呈现层小缺陷，未修）；⑧ 未测：并发/多进程、增量、跨语言分层、BFS/DFS、LLM 重排、远程 embedding 真实费用。
+
+**本刀未提交**（约束：不 git add/commit/push）；完整证据 `temp/U4-1b-REPORT.md`，受版本控制结论 `Docs/Features/ADR-089-索引策略优先级-2026-09-24.md` §6。
+
 ## 2026-09-24 U4-1a：小目录索引策略实验台（plain 全文 vs outline 优先分块 + 过滤）
 
 **卡的是用户第 1、2、5 条指令**：“避免把全部代码打包做索引 / 优先 code outline / 短 token 与关键字不入索引 / 先在小目录评估”。全仓实测（`c8fe4bd5`）已证明现状不可用（建索引 71.4 min、体积 838 MB、`recall@5` 从 0.66 掉到 0.41），本刀把“分层 + 过滤”验证到**可复现数字**。

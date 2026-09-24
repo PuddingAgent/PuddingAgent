@@ -4,6 +4,7 @@ using PuddingFullTextIndex.Infrastructure.Search;
 using PuddingRetrievalEval.Contracts;
 using PuddingIndexChunking;
 using PuddingRetrievalEval.Services;
+using PuddingVectorIndex;
 
 namespace PuddingRetrievalEvalProbe;
 
@@ -64,6 +65,23 @@ internal static class Program
         var tiers = (options.Get("tiers") ?? "p0p1p2").ToLowerInvariant();
         var filterName = (options.Get("filter") ?? "both").ToLowerInvariant();
         var indexJsonPath = options.Get("index-json");
+        var retriever = (options.Get("retriever") ?? "fulltext").ToLowerInvariant();
+        var providersConfig = options.Get("providers-config");
+        var embeddingRouteOverride = options.Get("embedding-route");
+        var embeddingBaseUrlOverride = options.Get("embedding-base-url");
+        var embeddingDimensionsOverride = options.GetIntOrNull("embedding-dimensions");
+        var embeddingBatchSize = options.GetInt("embedding-batch", 32);
+        var rrfK = options.GetInt("rrf-k", 60);
+        var rrfWeightFullText = options.GetDouble("rrf-weight-fulltext", 1d);
+        var rrfWeightVector = options.GetDouble("rrf-weight-vector", 1d);
+        var fusionDepth = options.GetInt("fusion-depth", 100);
+        var vectorStoreDirectory = Path.Combine(indexRoot, VectorStore.DirectoryName);
+
+        if (retriever is not ("fulltext" or "vector" or "hybrid"))
+        {
+            Console.Error.WriteLine($"unknown --retriever '{retriever}' (expected fulltext|vector|hybrid)");
+            return 5;
+        }
 
         Console.WriteLine($"mode          = {mode}");
         Console.WriteLine($"repoRoot      = {repoRoot}");
@@ -77,6 +95,18 @@ internal static class Program
         Console.WriteLine($"chunks        = {chunkStrategy}{(chunkStrategy == "outline" ? $" (tiers={tiers}, filter={filterName})" : string.Empty)}");
         Console.WriteLine($"patterns      = {patternsArgument ?? "<engine default>"}");
         Console.WriteLine($"indexJson     = {indexJsonPath ?? "<none>"}");
+        Console.WriteLine($"retriever     = {retriever}");
+        if (retriever != "fulltext")
+        {
+            Console.WriteLine($"vectorStore   = {vectorStoreDirectory}");
+            Console.WriteLine($"providersCfg  = {providersConfig ?? EmbeddingRouteResolver.DefaultProvidersConfigPath}");
+            Console.WriteLine($"embeddingRoute= {embeddingRouteOverride ?? "<route taken from the config embedding section>"}");
+            Console.WriteLine($"embeddingBase = {embeddingBaseUrlOverride ?? "<from providers config>"}");
+            Console.WriteLine($"embedBatch    = {embeddingBatchSize}");
+            if (retriever == "hybrid")
+                Console.WriteLine($"rrf           = k={rrfK} wFullText={rrfWeightFullText} wVector={rrfWeightVector} fusionDepth={fusionDepth}");
+        }
+
         Console.WriteLine();
 
         var indexOptions = new FullTextIndexOptions { IndexRootDirectory = indexRoot };
@@ -95,6 +125,33 @@ internal static class Program
                     return 5;
                 }
 
+                if (retriever != "fulltext")
+                {
+                    return await VectorRetrievalModes.RunIndexAsync(new VectorIndexRequest(
+                        retriever,
+                        chunkStrategy,
+                        engine,
+                        indexOptions,
+                        scope,
+                        repoRoot,
+                        label,
+                        indexRoot,
+                        vectorStoreDirectory,
+                        patterns,
+                        indexJsonPath,
+                        tiers,
+                        filterName,
+                        providersConfig,
+                        embeddingRouteOverride,
+                        embeddingBaseUrlOverride,
+                        embeddingDimensionsOverride,
+                        embeddingBatchSize,
+                        rrfK,
+                        rrfWeightFullText,
+                        rrfWeightVector,
+                        fusionDepth)).ConfigureAwait(false);
+                }
+
                 return chunkStrategy == "plain"
                     ? await RunPlainIndexAsync(engine, scope, label, indexRoot, patterns, indexJsonPath).ConfigureAwait(false)
                     : await RunOutlineIndexAsync(engine, indexOptions, scope, label, indexRoot, patterns, indexJsonPath, tiers, filterName).ConfigureAwait(false);
@@ -102,16 +159,16 @@ internal static class Program
 
             case "measure":
             {
-                if (!engine.HasIndex(scope))
+                if (retriever is "fulltext" or "hybrid" && !engine.HasIndex(scope))
                 {
-                    Console.Error.WriteLine($"scope '{scope}' has no index yet — run --mode index first");
+                    Console.Error.WriteLine(
+                        $"scope '{scope}' has no full-text index yet — run --mode index --retriever {retriever} --chunks outline first");
                     return 2;
                 }
 
                 var loaded = EvalSetLoader.LoadFromFile(setPath);
                 var set = RestrictCases(loaded, expectedUnder);
 
-                var probe = new LuceneFullTextProbe(engine);
                 var runOptions = new EvalRunOptions(
                     new SearchScope(scope, extensions),
                     label,
@@ -119,6 +176,60 @@ internal static class Program
                     options.GetInt("warmup", 1),
                     options.GetInt("measured", 3));
 
+                ResolvedEmbedding? embedding = null;
+                OpenAiCompatibleEmbeddingProvider? embeddingProvider = null;
+                InMemoryVectorIndex? vectorIndex = null;
+                long vectorStoreBytes = 0;
+                RrfHybridProbe? hybrid = null;
+                ISearchProbe probe;
+
+                if (retriever == "fulltext")
+                {
+                    probe = new LuceneFullTextProbe(engine);
+                }
+                else
+                {
+                    embedding = EmbeddingRouteResolver.Resolve(
+                        providersConfig, embeddingRouteOverride, embeddingBaseUrlOverride, embeddingDimensionsOverride);
+                    embeddingProvider = VectorRetrievalModes.CreateProvider(embedding);
+
+                    var preflight = await VectorRetrievalModes
+                        .VerifyReachableAsync(embeddingProvider, CancellationToken.None)
+                        .ConfigureAwait(false);
+
+                    Console.WriteLine($"EMBED  route      = {embedding.Route}");
+                    Console.WriteLine($"EMBED  endpoint   = {embeddingProvider.Endpoint}");
+                    Console.WriteLine($"EMBED  isLocal    = {embedding.IsLocal}");
+                    Console.WriteLine($"EMBED  price1M    = {embedding.PricePer1MInputTokens?.ToString("0.####") ?? "<unstated>"}");
+                    Console.WriteLine($"EMBED  preflight  = {preflight}");
+
+                    var store = VectorStore.Read(vectorStoreDirectory);
+                    vectorIndex = store.Index;
+                    vectorStoreBytes = store.Bytes;
+                    Console.WriteLine($"VSTORE entries    = {vectorIndex.Count} dimensions={vectorIndex.Dimensions} bytes={vectorStoreBytes} route={store.Manifest.Route}");
+
+                    var vectorProbe = new VectorSearchProbe(vectorIndex, embeddingProvider, "vector-cosine");
+
+                    if (retriever == "hybrid")
+                    {
+                        hybrid = new RrfHybridProbe(
+                            new LuceneFullTextProbe(engine),
+                            vectorProbe,
+                            rrfK,
+                            rrfWeightFullText,
+                            rrfWeightVector,
+                            fusionDepth,
+                            $"hybrid-rrf-k{rrfK}-wf{rrfWeightFullText}-wv{rrfWeightVector}");
+                        Console.WriteLine($"RRF    {hybrid.Parameters}");
+                        probe = hybrid;
+                    }
+                    else
+                    {
+                        probe = vectorProbe;
+                    }
+                }
+
+                var queryStatsBefore = embeddingProvider?.Stats;
                 var run = await new EvalRunner(probe)
                     .RunAsync(set, runOptions, CancellationToken.None)
                     .ConfigureAwait(false);
@@ -127,7 +238,11 @@ internal static class Program
                                 + $"--mode measure --scope \"{scope}\" --index-root \"{indexRoot}\" --set \"{setPath}\" "
                                 + $"--out \"{outBase}\" --label {label} --warmup {runOptions.WarmupRepetitions} "
                                 + $"--measured {runOptions.MeasuredRepetitions} --max-results {runOptions.MaxResults}"
-                                + (expectedUnder is null ? string.Empty : $" --expected-under {expectedUnder}");
+                                + (expectedUnder is null ? string.Empty : $" --expected-under {expectedUnder}")
+                                + (retriever == "fulltext" ? string.Empty : $" --retriever {retriever}")
+                                + (retriever == "hybrid"
+                                    ? $" --rrf-k {rrfK} --rrf-weight-fulltext {rrfWeightFullText} --rrf-weight-vector {rrfWeightVector} --fusion-depth {fusionDepth}"
+                                    : string.Empty);
 
                 EvalReportWriter.Write(outBase, run, reproduce);
 
@@ -140,6 +255,51 @@ internal static class Program
                 foreach (var slice in run.Slices)
                     Console.WriteLine($"RUN   [{slice.Language}] n={slice.CaseCount} recall@1={slice.RecallAt1:0.0000} recall@5={slice.RecallAt5:0.0000} recall@10={slice.RecallAt10:0.0000} MRR={slice.Mrr:0.0000} noise@10={slice.NoiseRateAt10:0.0000}");
                 Console.WriteLine($"RUN   wrote {outBase}.md and {outBase}.json");
+
+                if (embeddingProvider is not null)
+                {
+                    var queryStats = embeddingProvider.Stats - queryStatsBefore!;
+                    Console.WriteLine($"EMBED  query      = {queryStats}");
+
+                    var localRoute = embedding!.IsLocal;
+                    var price = embedding.PricePer1MInputTokens;
+                    var promptTokens = queryStats.PromptTokens;
+
+                    ProbeRunSidecar.Write(
+                        outBase + ".probe.json",
+                        new ProbeRunSidecar
+                        {
+                            Retriever = retriever,
+                            Probe = run.ProbeName,
+                            Scope = scope,
+                            ScopeLabel = label,
+                            SetPath = setPath,
+                            CaseCount = run.CaseCount,
+                            WarmupRepetitions = runOptions.WarmupRepetitions,
+                            MeasuredRepetitions = runOptions.MeasuredRepetitions,
+                            MaxResults = runOptions.MaxResults,
+                            EmbeddingRoute = embedding.Route.ToString(),
+                            EmbeddingEndpoint = embeddingProvider.Endpoint,
+                            EmbeddingIsLocal = localRoute,
+                            EmbeddingDimensions = embeddingProvider.ObservedDimensions,
+                            VectorEntryCount = vectorIndex!.Count,
+                            VectorStoreBytes = vectorStoreBytes,
+                            QueryEmbeddingCalls = queryStats.Calls,
+                            QueryEmbeddedTexts = queryStats.Texts,
+                            QueryEmbeddingMs = queryStats.ElapsedMs,
+                            QueryEmbeddingFailures = queryStats.Failures,
+                            QueryPromptTokens = promptTokens,
+                            RrfK = hybrid is null ? null : rrfK,
+                            RrfWeightFullText = hybrid is null ? null : rrfWeightFullText,
+                            RrfWeightVector = hybrid is null ? null : rrfWeightVector,
+                            FusionDepth = hybrid is null ? null : fusionDepth,
+                            EstimatedCostUsd = localRoute ? 0d : EstimateCostUsd(price, promptTokens),
+                            CostNote = localRoute
+                                ? "local inference on this machine: no tokens billed, cost 0 (the resource-pool price for this route is 0)"
+                                : "remote route: cost = promptTokens/1e6 * pricePer1MInputTokens, token usage taken from the service's own 'usage.prompt_tokens'",
+                            RecordedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+                        });
+                }
 
                 if (perLanguage is not null)
                     await WritePerLanguageReportsAsync(scope, set, label, outBase, engine, options, perLanguage).ConfigureAwait(false);
@@ -401,7 +561,7 @@ internal static class Program
     }
 
     /// <summary>Maps the probe's <c>--tiers</c> / <c>--filter</c> switches onto the component's options.</summary>
-    private static ChunkingOptions BuildChunkingOptions(string tiers, string filterName)
+    internal static ChunkingOptions BuildChunkingOptions(string tiers, string filterName)
     {
         var emitDocComments = true;
         var emitCodeText = true;
@@ -437,6 +597,12 @@ internal static class Program
             Filter = filter,
         };
     }
+
+    /// <summary>Cost of a remote embedding run; null when the service reported no token usage.</summary>
+    private static double? EstimateCostUsd(double? pricePer1MInputTokens, long? promptTokens) =>
+        pricePer1MInputTokens is { } price && promptTokens is { } tokens
+            ? tokens / 1_000_000d * price
+            : null;
 
     private static string FindRepoRoot()
     {
@@ -486,4 +652,17 @@ internal sealed class ProbeOptions
 
     public int GetInt(string key, int fallback) =>
         _values.TryGetValue(key, out var value) && int.TryParse(value, out var parsed) ? parsed : fallback;
+
+    public int? GetIntOrNull(string key) =>
+        _values.TryGetValue(key, out var value) && int.TryParse(value, out var parsed) ? parsed : null;
+
+    public double GetDouble(string key, double fallback) =>
+        _values.TryGetValue(key, out var value)
+        && double.TryParse(
+            value,
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var parsed)
+            ? parsed
+            : fallback;
 }

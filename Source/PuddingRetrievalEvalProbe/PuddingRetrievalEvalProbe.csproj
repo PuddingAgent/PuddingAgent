@@ -37,6 +37,10 @@
          the IOutlineSource adapter for C#. The component itself stays a leaf; the adapter is this project. -->
     <ProjectReference Include="..\PuddingIndexChunking\PuddingIndexChunking.csproj" />
     <ProjectReference Include="..\PuddingCodeIntelligence\PuddingCodeIntelligence.csproj" />
+    <!-- U4-1b: the vector-index component (leaf) plus this probe acting as the composition root that
+         turns an EmbeddingRoute into a live OpenAI-compatible vector service. The component itself
+         stays a leaf; the HTTP/credential-bearing adapter lives here. -->
+    <ProjectReference Include="..\PuddingVectorIndex\PuddingVectorIndex.csproj" />
   </ItemGroup>
 
 </Project>
