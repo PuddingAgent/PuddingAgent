@@ -1,0 +1,5659 @@
+{
+  "ProbeName": "lucene-fulltext",
+  "SetName": "seed-v1",
+  "SetVersion": 1,
+  "ScopeLabel": "root",
+  "ScopeRootDirectory": ".",
+  "StartedAtUtc": "2026-09-24T11:41:20.0691730\u002B00:00",
+  "TotalElapsedMs": 7554,
+  "CaseCount": 80,
+  "FailedCaseCount": 0,
+  "RecallAt1": 0.3,
+  "RecallAt5": 0.4375,
+  "RecallAt10": 0.4562,
+  "Mrr": 0.4217,
+  "PrecisionAt5": 0.105,
+  "PrecisionAt10": 0.0563,
+  "NoiseRateAt10": 0,
+  "Slices": [
+    {
+      "Language": "CSharp",
+      "CaseCount": 36,
+      "RecallAt1": 0.6111,
+      "RecallAt5": 0.6389,
+      "RecallAt10": 0.6667,
+      "Mrr": 0.7,
+      "PrecisionAt5": 0.1444,
+      "PrecisionAt10": 0.0778,
+      "NoiseRateAt10": 0
+    },
+    {
+      "Language": "TypeScript",
+      "CaseCount": 22,
+      "RecallAt1": 0.0682,
+      "RecallAt5": 0.5227,
+      "RecallAt10": 0.5455,
+      "Mrr": 0.3424,
+      "PrecisionAt5": 0.1364,
+      "PrecisionAt10": 0.0727,
+      "NoiseRateAt10": 0
+    },
+    {
+      "Language": "Markdown",
+      "CaseCount": 22,
+      "RecallAt1": 0.0227,
+      "RecallAt5": 0.0227,
+      "RecallAt10": 0.0227,
+      "Mrr": 0.0455,
+      "PrecisionAt5": 0.0091,
+      "PrecisionAt10": 0.0045,
+      "NoiseRateAt10": 0
+    }
+  ],
+  "ColdLatency": {
+    "Count": 80,
+    "MinMs": 4.569,
+    "P50Ms": 12.077,
+    "P95Ms": 49.095,
+    "P99Ms": 781.745,
+    "MaxMs": 781.745,
+    "MeanMs": 26.547
+  },
+  "WarmLatency": {
+    "Count": 320,
+    "MinMs": 4.156,
+    "P50Ms": 12.305,
+    "P95Ms": 47.008,
+    "P99Ms": 54.304,
+    "MaxMs": 77.109,
+    "MeanMs": 16.868
+  },
+  "AllRepetitionsIdentical": true,
+  "ColdObservations": [
+    {
+      "Index": 0,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 781.7447,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 1,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 11.9314,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 2,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 13.8637,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 3,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 11.0641,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 4,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.911,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 5,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.7027,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 6,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 14.8437,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 7,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 11.3007,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 8,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 13.0949,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 9,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 13.6451,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 10,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.9872,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 11,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 12.0488,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 12,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 12.097,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 13,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.2086,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 14,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 13.6284,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 15,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 13.5666,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 16,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 12.0773,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 17,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 12.1008,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 18,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.9938,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 19,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 19.0847,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 20,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 51.4383,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 21,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 35.2491,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 22,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 49.095,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 23,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 26.2974,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 24,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 42.5486,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 25,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 47.0225,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 26,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 56.8236,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 27,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 45.023,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 28,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 45.9072,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 29,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 28.5523,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 30,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 13.7509,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 31,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 13.8968,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 32,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.8122,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 33,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 6.9382,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 34,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 6.3604,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 35,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 6.0112,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 36,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 6.4726,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 37,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 5.7476,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 38,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 6.4184,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 39,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 6.1151,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 40,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 6.1173,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 41,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 5.6303,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 42,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 5.6893,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 43,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 6.0158,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 44,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 38.4895,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 45,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 41.6246,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 46,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 72.2322,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 47,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 31.0464,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 48,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 28.2104,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 49,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 36.606,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 50,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 32.8159,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 51,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 20.2944,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 52,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 7.7346,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 53,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 5.8287,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 54,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 5.5479,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 55,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 6.1574,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 56,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 4.9779,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 57,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 4.7272,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 58,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 7.4299,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 59,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 5.0835,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 60,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 5.0961,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 61,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 4.5692,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 62,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 4.8099,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 63,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 7.8386,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 64,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 6.1499,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 65,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 4.8265,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 66,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 12.1306,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 67,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 9.9572,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 68,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.551,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 69,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 9.8657,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 70,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 7.7613,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 71,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 9.829,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 72,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 12.6856,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 73,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 12.0162,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 74,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 6.6429,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 75,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 35.368,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 76,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 5.3223,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 77,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 7.5711,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 78,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 4.8292,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 79,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 5.2881,
+      "Success": true,
+      "Error": null
+    }
+  ],
+  "Cases": [
+    {
+      "Case": {
+        "Query": "SearchGrepTool",
+        "ExpectedHits": [
+          "Source/PuddingRuntime/Tools/BuiltIns/Search/SearchGrepTool.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRuntime\\Tools\\BuiltIns\\Search\\SearchGrepTool.cs",
+          "Symbol": null,
+          "Line": 62
+        }
+      ],
+      "ElapsedMs": 12.2037,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IndexExcludePatterns",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIndex\\Services\\IndexExcludePatterns.cs",
+          "Symbol": null,
+          "Line": 20
+        }
+      ],
+      "ElapsedMs": 14.0498,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "LuceneSearchEngine",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Infrastructure/Search/LuceneSearchEngine.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingFullTextIndex\\Infrastructure\\Search\\LuceneSearchEngine.cs",
+          "Symbol": null,
+          "Line": 47
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEvalProbe\\Program.cs",
+          "Symbol": null,
+          "Line": 454
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEvalProbe\\VectorRetrievalModes.cs",
+          "Symbol": null,
+          "Line": 17
+        }
+      ],
+      "ElapsedMs": 15.9793,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "ICodeIndexStore",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/ICodeIndexStore.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIndex\\Contracts\\ICodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 7
+        }
+      ],
+      "ElapsedMs": 14.0143,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IFullTextSearchEngine",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Contracts/IFullTextSearchEngine.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingFullTextIndex\\Contracts\\IFullTextSearchEngine.cs",
+          "Symbol": null,
+          "Line": 7
+        }
+      ],
+      "ElapsedMs": 17.0584,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "FullTextIndexOptions",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/FullTextIndexOptions.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingFullTextIndex\\FullTextIndexOptions.cs",
+          "Symbol": null,
+          "Line": 9
+        }
+      ],
+      "ElapsedMs": 15.8273,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "RetrievalGlobMatcher",
+        "ExpectedHits": [
+          "Source/PuddingCore/Tools/Retrieval/RetrievalGlobMatcher.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCore\\Tools\\Retrieval\\RetrievalGlobMatcher.cs",
+          "Symbol": null,
+          "Line": 34
+        }
+      ],
+      "ElapsedMs": 16.6854,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "RetrievalMatcher",
+        "ExpectedHits": [
+          "Source/PuddingCore/Tools/Retrieval/RetrievalMatcher.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCore\\Tools\\Retrieval\\RetrievalMatcher.cs",
+          "Symbol": null,
+          "Line": 25
+        }
+      ],
+      "ElapsedMs": 11.7643,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "SearchAttemptLedger",
+        "ExpectedHits": [
+          "Source/PuddingRuntime/Services/Search/SearchAttemptLedger.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRuntime\\Services\\Search\\SearchAttemptLedger.cs",
+          "Symbol": null,
+          "Line": 60
+        }
+      ],
+      "ElapsedMs": 10.0313,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "SqliteCodeIndexStore",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIndex\\Storage\\SqliteCodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 11
+        }
+      ],
+      "ElapsedMs": 14.4048,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeIndexChangeCoalescer",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIndex\\Services\\CodeIndex\\CodeIndexChangeCoalescer.cs",
+          "Symbol": null,
+          "Line": 25
+        }
+      ],
+      "ElapsedMs": 10.6586,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeIndexMaintenanceService",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIndex\\Services\\CodeIndex\\CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 244
+        }
+      ],
+      "ElapsedMs": 10.7251,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeIndexCalibrationService",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIndex\\Services\\CodeIndex\\CodeIndexCalibrationService.cs",
+          "Symbol": null,
+          "Line": 112
+        }
+      ],
+      "ElapsedMs": 15.294,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "DefaultProjectRootDetector",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/DefaultProjectRootDetector.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIndex\\Services\\DefaultProjectRootDetector.cs",
+          "Symbol": null,
+          "Line": 11
+        }
+      ],
+      "ElapsedMs": 14.0779,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "ComponentBoundaryTests",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndexTests/ComponentBoundaryTests.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingVectorIndexTests\\ComponentBoundaryTests.cs",
+          "Symbol": null,
+          "Line": 19
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEvalTests\\ComponentBoundaryTests.cs",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": ".\\Source\\PuddingPathFilteringTests\\ComponentBoundaryTests.cs",
+          "Symbol": null,
+          "Line": 10
+        },
+        {
+          "Path": ".\\Source\\PuddingIndexChunkingTests\\ComponentBoundaryTests.cs",
+          "Symbol": null,
+          "Line": 18
+        },
+        {
+          "Path": ".\\Source\\PuddingCodeIndexTests\\ComponentBoundaryTests.cs",
+          "Symbol": null,
+          "Line": 21
+        }
+      ],
+      "ElapsedMs": 13.7006,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.2,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 5,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IndexBasedLanguageServerService",
+        "ExpectedHits": [
+          "Source/PuddingCodeIntelligence/Lsp/IndexBasedLanguageServerService.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIntelligence\\Lsp\\IndexBasedLanguageServerService.cs",
+          "Symbol": null,
+          "Line": 19
+        }
+      ],
+      "ElapsedMs": 12.4396,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeQueryService",
+        "ExpectedHits": [
+          "Source/PuddingCodeIntelligence/Services/CodeQueryService.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIntelligence\\Services\\CodeQueryService.cs",
+          "Symbol": null,
+          "Line": 10
+        }
+      ],
+      "ElapsedMs": 9.7699,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "RoslynCSharpIndexer",
+        "ExpectedHits": [
+          "Source/PuddingCodeIntelligence/CSharp/RoslynCSharpIndexer.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIntelligence\\CSharp\\RoslynCSharpIndexer.cs",
+          "Symbol": null,
+          "Line": 17
+        }
+      ],
+      "ElapsedMs": 14.1566,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PlainTextExtractor",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Infrastructure/Search/PlainTextExtractor.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingFullTextIndex\\Infrastructure\\Search\\PlainTextExtractor.cs",
+          "Symbol": null,
+          "Line": 13
+        }
+      ],
+      "ElapsedMs": 16.268,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "JiebaAnalyzer",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Infrastructure/Text/JiebaAnalyzer.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingFullTextIndex\\Infrastructure\\Text\\JiebaAnalyzer.cs",
+          "Symbol": null,
+          "Line": 11
+        }
+      ],
+      "ElapsedMs": 16.3126,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the list of directories the grep tool skips by default",
+        "ExpectedHits": [
+          "Source/PuddingRuntime/Tools/BuiltIns/Search/SearchGrepTool.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1008
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 1417
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1088
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1280
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 27
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.md",
+          "Symbol": null,
+          "Line": 112
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 164
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 112
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 141
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\docs\\chapters\\02-tool-system.md",
+          "Symbol": null,
+          "Line": 423
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\architecture\\02-tool-system.md",
+          "Symbol": null,
+          "Line": 421
+        },
+        {
+          "Path": ".\\Docs\\07\u67B6\u6784\\tool-infrastructure-layering.md",
+          "Symbol": null,
+          "Line": 99
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEvalTests\\RetrievalMetricsTests.cs",
+          "Symbol": null,
+          "Line": 103
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\docs\\chapters\\03-coordinator.md",
+          "Symbol": null,
+          "Line": 34
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\architecture\\03-coordinator.md",
+          "Symbol": null,
+          "Line": 32
+        }
+      ],
+      "ElapsedMs": 43.8418,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "code that reads gitignore files and turns them into exclude patterns",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1041
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 1530
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1161
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1323
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 28
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.md",
+          "Symbol": null,
+          "Line": 113
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 165
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 113
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 142
+        },
+        {
+          "Path": ".\\Source\\PuddingCore\\Abstractions\\IAgentRuntimeProfileResolver.cs",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": ".\\.gitignore",
+          "Symbol": null,
+          "Line": 248
+        },
+        {
+          "Path": ".\\external\\github.hyfree.GM\\.gitignore",
+          "Symbol": null,
+          "Line": 217
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\plans\\2026-06-12-code-intelligence-core-mvp.md",
+          "Symbol": null,
+          "Line": 232
+        }
+      ],
+      "ElapsedMs": 31.3563,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how does the full text engine parse a query against content and file name",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Infrastructure/Search/LuceneSearchEngine.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1084
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 1603
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1259
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1421
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 29
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.md",
+          "Symbol": null,
+          "Line": 114
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 166
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 114
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 143
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\docs\\chapters\\01-query-engine.md",
+          "Symbol": null,
+          "Line": 635
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\architecture\\01-query-engine.md",
+          "Symbol": null,
+          "Line": 633
+        }
+      ],
+      "ElapsedMs": 53.7595,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which sqlite implementation stores code symbols and relations",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1117
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 1666
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1387
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1504
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 30
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.md",
+          "Symbol": null,
+          "Line": 115
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 167
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 115
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 144
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\plans\\2026-06-11-code-intelligence-mvp.md",
+          "Symbol": null,
+          "Line": 426
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\plans\\2026-06-12-code-intelligence-core-mvp.md",
+          "Symbol": null,
+          "Line": 177
+        }
+      ],
+      "ElapsedMs": 30.2202,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how are file system changes coalesced before the index is updated",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1180
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 1754
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1485
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1602
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-nofilter.json",
+          "Symbol": null,
+          "Line": 1421
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-nolength.json",
+          "Symbol": null,
+          "Line": 1451
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-nostopwords.json",
+          "Symbol": null,
+          "Line": 1441
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-p0p1.json",
+          "Symbol": null,
+          "Line": 1411
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline.json",
+          "Symbol": null,
+          "Line": 1451
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-plain.json",
+          "Symbol": null,
+          "Line": 1376
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-f32-all.json",
+          "Symbol": null,
+          "Line": 1731
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-f32-p0.json",
+          "Symbol": null,
+          "Line": 1886
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-frozen-f32-all.json",
+          "Symbol": null,
+          "Line": 1691
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-frozen-f32-p0.json",
+          "Symbol": null,
+          "Line": 1866
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-frozen-i8-all.json",
+          "Symbol": null,
+          "Line": 1686
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-frozen-i8-p0.json",
+          "Symbol": null,
+          "Line": 1866
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-i8-all.json",
+          "Symbol": null,
+          "Line": 1721
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-i8-p0.json",
+          "Symbol": null,
+          "Line": 1886
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\vectors-fulltext.json",
+          "Symbol": null,
+          "Line": 1451
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\vectors-hybrid-k10.json",
+          "Symbol": null,
+          "Line": 3291
+        }
+      ],
+      "ElapsedMs": 44.4154,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which service marks and sweeps index rows whose file no longer exists",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1218
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 1862
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1598
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1705
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-nofilter.json",
+          "Symbol": null,
+          "Line": 1665
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-nolength.json",
+          "Symbol": null,
+          "Line": 1715
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-nostopwords.json",
+          "Symbol": null,
+          "Line": 1685
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-p0p1.json",
+          "Symbol": null,
+          "Line": 1660
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline.json",
+          "Symbol": null,
+          "Line": 1700
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-plain.json",
+          "Symbol": null,
+          "Line": 1635
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-f32-all.json",
+          "Symbol": null,
+          "Line": 1920
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-f32-p0.json",
+          "Symbol": null,
+          "Line": 2060
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-frozen-f32-all.json",
+          "Symbol": null,
+          "Line": 1865
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-frozen-f32-p0.json",
+          "Symbol": null,
+          "Line": 2045
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-frozen-i8-all.json",
+          "Symbol": null,
+          "Line": 1860
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-frozen-i8-p0.json",
+          "Symbol": null,
+          "Line": 2045
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-i8-all.json",
+          "Symbol": null,
+          "Line": 1910
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-i8-p0.json",
+          "Symbol": null,
+          "Line": 2060
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\vectors-fulltext.json",
+          "Symbol": null,
+          "Line": 1700
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\vectors-hybrid-k10.json",
+          "Symbol": null,
+          "Line": 3675
+        }
+      ],
+      "ElapsedMs": 41.0998,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the project root detected for the code index scope",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/DefaultProjectRootDetector.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1301
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 1975
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1706
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1828
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.md",
+          "Symbol": null,
+          "Line": 118
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 170
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 118
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 147
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 33
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\plans\\2026-06-12-code-intelligence-core-mvp.md",
+          "Symbol": null,
+          "Line": 91
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.json",
+          "Symbol": null,
+          "Line": 865
+        },
+        {
+          "Path": ".\\Source\\PuddingHost\\default-data\\benchmark-seeds\\workspace-report-snapshot\\project.md",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-nofilter.json",
+          "Symbol": null,
+          "Line": 1572
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-nolength.json",
+          "Symbol": null,
+          "Line": 1622
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-nostopwords.json",
+          "Symbol": null,
+          "Line": 1597
+        }
+      ],
+      "ElapsedMs": 52.9388,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how is the code index maintenance loop driven by the host",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1354
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 2063
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1809
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1941
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 34
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.md",
+          "Symbol": null,
+          "Line": 119
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 171
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 119
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 148
+        },
+        {
+          "Path": ".\\Source\\PuddingRuntimeTests\\Tools\\GitCommitArgsSerializationTests.cs",
+          "Symbol": null,
+          "Line": 78
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 66204
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-nofilter.json",
+          "Symbol": null,
+          "Line": 1089
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-nolength.json",
+          "Symbol": null,
+          "Line": 1089
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-nostopwords.json",
+          "Symbol": null,
+          "Line": 1099
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline-p0p1.json",
+          "Symbol": null,
+          "Line": 1059
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline.json",
+          "Symbol": null,
+          "Line": 1094
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-plain.json",
+          "Symbol": null,
+          "Line": 1064
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-f32-all.json",
+          "Symbol": null,
+          "Line": 1514
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\u4-3-f32-p0.json",
+          "Symbol": null,
+          "Line": 1629
+        }
+      ],
+      "ElapsedMs": 45.9232,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where does the code query service run a symbol search",
+        "ExpectedHits": [
+          "Source/PuddingCodeIntelligence/Services/CodeQueryService.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1402
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 2146
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1922
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2039
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.md",
+          "Symbol": null,
+          "Line": 161
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 35
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 172
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 120
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 149
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\plans\\2026-06-11-code-intelligence-mvp.md",
+          "Symbol": null,
+          "Line": 1027
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\plans\\2026-06-12-code-intelligence-core-mvp.md",
+          "Symbol": null,
+          "Line": 277
+        }
+      ],
+      "ElapsedMs": 37.2141,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which file extracts plain text content for full text indexing",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Infrastructure/Search/PlainTextExtractor.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1429
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 2269
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1955
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2102
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 36
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.md",
+          "Symbol": null,
+          "Line": 121
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 173
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 121
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 150
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 99685
+        },
+        {
+          "Path": ".\\Docs\\IndepthCoding-Guide\\Hermes-Agent \u6280\u672F\u67B6\u6784\u6DF1\u5EA6\u89E3\u6790.md",
+          "Symbol": null,
+          "Line": 768
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\plans\\2026-06-03-file-search-provider.md",
+          "Symbol": null,
+          "Line": 78
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\docs\\chapters\\01-query-engine.md",
+          "Symbol": null,
+          "Line": 68
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\architecture\\01-query-engine.md",
+          "Symbol": null,
+          "Line": 66
+        }
+      ],
+      "ElapsedMs": 39.2075,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "RetrievalGlobMatcher",
+        "ExpectedHits": [
+          "Source/PuddingCore/Tools/Retrieval/RetrievalGlobMatcher.cs",
+          "Source/PuddingRuntime/Tools/BuiltIns/Search/SearchGrepTool.cs"
+        ],
+        "Kind": "Crossref",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCore\\Tools\\Retrieval\\RetrievalGlobMatcher.cs",
+          "Symbol": null,
+          "Line": 34
+        }
+      ],
+      "ElapsedMs": 16.2123,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IndexExcludePatterns",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs",
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexWatcher.cs"
+        ],
+        "Kind": "Crossref",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIndex\\Services\\IndexExcludePatterns.cs",
+          "Symbol": null,
+          "Line": 20
+        }
+      ],
+      "ElapsedMs": 14.1191,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "JiebaAnalyzer",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Infrastructure/Text/JiebaAnalyzer.cs",
+          "Source/PuddingFullTextIndex/Infrastructure/Search/LuceneSearchEngine.cs"
+        ],
+        "Kind": "Crossref",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingFullTextIndex\\Infrastructure\\Text\\JiebaAnalyzer.cs",
+          "Symbol": null,
+          "Line": 11
+        }
+      ],
+      "ElapsedMs": 15.2556,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "ICodeIndexStore",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/ICodeIndexStore.cs",
+          "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs"
+        ],
+        "Kind": "Crossref",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIndex\\Contracts\\ICodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 7
+        }
+      ],
+      "ElapsedMs": 7.0376,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IFileContentExtractor",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Contracts/IFileContentExtractor.cs",
+          "Source/PuddingFullTextIndex/Infrastructure/Search/LuceneSearchEngine.cs"
+        ],
+        "Kind": "Crossref",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingFullTextIndex\\Contracts\\IFileContentExtractor.cs",
+          "Symbol": null,
+          "Line": 7
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1603
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 2523
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 2204
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2346
+        },
+        {
+          "Path": ".\\Source\\PuddingFullTextIndex\\Infrastructure\\Search\\LuceneSearchEngine.cs",
+          "Symbol": null,
+          "Line": 50
+        },
+        {
+          "Path": ".\\Source\\PuddingFullTextIndex\\Infrastructure\\Search\\PlainTextExtractor.cs",
+          "Symbol": null,
+          "Line": 9
+        }
+      ],
+      "ElapsedMs": 8.1354,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.2,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 7,
+      "RelevantHitsAt10": 2,
+      "MatchedExpectedCount": 2,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "ILanguageServerService",
+        "ExpectedHits": [
+          "Source/PuddingCodeIntelligence/Contracts/ILanguageServerService.cs",
+          "Source/PuddingCodeIntelligence/Lsp/IndexBasedLanguageServerService.cs"
+        ],
+        "Kind": "Crossref",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIntelligence\\Contracts\\ILanguageServerService.cs",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1647
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 2587
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 2248
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2400
+        },
+        {
+          "Path": ".\\Source\\PuddingCodeIntelligence\\Lsp\\IndexBasedLanguageServerService.cs",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": ".\\Source\\PuddingCodeIntelligence\\Lsp\\NoOpLanguageServerService.cs",
+          "Symbol": null,
+          "Line": 10
+        },
+        {
+          "Path": ".\\Source\\PuddingCodeIntelligenceTests\\Services\\DependencyInjectionTests.cs",
+          "Symbol": null,
+          "Line": 25
+        }
+      ],
+      "ElapsedMs": 5.4438,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.2,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 8,
+      "RelevantHitsAt10": 2,
+      "MatchedExpectedCount": 2,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingDataTable",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/components/PuddingDataTable/index.tsx"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 47
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingDataTable\\index.tsx",
+          "Symbol": null,
+          "Line": 66
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingDataTable\\styles.ts",
+          "Symbol": null,
+          "Line": 2
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\common-async.js",
+          "Symbol": null,
+          "Line": 470
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 225
+        },
+        {
+          "Path": ".\\Docs\\Features\\AdminConsole\u53BBAntDesignPro\u5316\u4EE3\u7801\u7EA7\u8BBE\u8BA1\u65B9\u6848.md",
+          "Symbol": null,
+          "Line": 307
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\index.ts",
+          "Symbol": null,
+          "Line": 18
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 2666
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.json",
+          "Symbol": null,
+          "Line": 231
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2469
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 231
+        }
+      ],
+      "ElapsedMs": 5.313,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingStatusBadge",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/components/PuddingStatusBadge/index.tsx"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 196
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 135
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingStatusBadge\\index.tsx",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingStatusBadge\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\common-async.js",
+          "Symbol": null,
+          "Line": 1105
+        },
+        {
+          "Path": ".\\Docs\\Features\\AdminConsole\u53BBAntDesignPro\u5316\u4EE3\u7801\u7EA7\u8BBE\u8BA1\u65B9\u6848.md",
+          "Symbol": null,
+          "Line": 353
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\index.ts",
+          "Symbol": null,
+          "Line": 27
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 2749
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.json",
+          "Symbol": null,
+          "Line": 309
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2527
+        }
+      ],
+      "ElapsedMs": 5.8573,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.2,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "TaskBoard",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskBoard.tsx"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskBoard.tsx",
+          "Symbol": null,
+          "Line": 46
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\index.tsx",
+          "Symbol": null,
+          "Line": 737
+        }
+      ],
+      "ElapsedMs": 7.174,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "TaskCard",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskCard.tsx"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.test.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 275
+        }
+      ],
+      "ElapsedMs": 6.6423,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "syncEngine",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/syncEngine.ts"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\syncEngine.test.ts",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\syncEngine.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 6.5781,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "canonicalMerge",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/canonicalMerge.ts"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\canonicalMerge.test.ts",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\canonicalMerge.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 5.2384,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "workspaceNavigation",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/utils/workspaceNavigation.ts"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\utils\\workspaceNavigation.test.ts",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\utils\\workspaceNavigation.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 4.6348,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "autoReviewClassifier",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/classifier/autoReviewClassifier.ts"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\classifier\\autoReviewClassifier.test.ts",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\classifier\\autoReviewClassifier.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 6.6277,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the chat client store that keeps local cache in sync",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 3110
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.json",
+          "Symbol": null,
+          "Line": 665
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2833
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 580
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 54
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 188
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.md",
+          "Symbol": null,
+          "Line": 86
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 165
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 86
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\plans\\2026-06-07-agent-chat-client-architecture-redesign.md",
+          "Symbol": null,
+          "Line": 1297
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\specs\\2026-06-07-agent-chat-client-architecture-redesign-design.md",
+          "Symbol": null,
+          "Line": 257
+        }
+      ],
+      "ElapsedMs": 37.3558,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how does the chat client merge canonical server state",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/canonicalMerge.ts"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 3173
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.json",
+          "Symbol": null,
+          "Line": 738
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2906
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 663
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.md",
+          "Symbol": null,
+          "Line": 114
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 55
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 189
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 166
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 87
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\specs\\2026-06-07-agent-chat-client-architecture-redesign-design.md",
+          "Symbol": null,
+          "Line": 190
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\plans\\2026-06-07-agent-chat-client-architecture-redesign.md",
+          "Symbol": null,
+          "Line": 1278
+        }
+      ],
+      "ElapsedMs": 44.5561,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the checkpoint store used when resuming a chat session",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/checkpointStore.ts"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 3236
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.json",
+          "Symbol": null,
+          "Line": 765
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2999
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 771
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 56
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 190
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.md",
+          "Symbol": null,
+          "Line": 88
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 167
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 88
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\docs\\chapters\\03-coordinator.md",
+          "Symbol": null,
+          "Line": 40
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\architecture\\03-coordinator.md",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\specs\\2026-06-06-agent-first-main-session-chat-design.md",
+          "Symbol": null,
+          "Line": 41
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 57525
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\plans\\2026-06-06-agent-first-main-session-chat.md",
+          "Symbol": null,
+          "Line": 793
+        }
+      ],
+      "ElapsedMs": 52.7593,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which module renders the workspace task board columns",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskColumn.tsx"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 3329
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.json",
+          "Symbol": null,
+          "Line": 838
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 3067
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 824
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.md",
+          "Symbol": null,
+          "Line": 116
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": ".\\Tools\\Diagnostics\\audit_task_board.py",
+          "Symbol": null,
+          "Line": 170
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 191
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 168
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 89
+        }
+      ],
+      "ElapsedMs": 31.5023,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the scheduler drawer for recurring tasks",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/SchedulerDrawer.tsx"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 3387
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.json",
+          "Symbol": null,
+          "Line": 865
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 3120
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 907
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 58
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 192
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.md",
+          "Symbol": null,
+          "Line": 90
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 169
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 90
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1301
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1706
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatform\\Services\\ConversationProjectionWorker.cs",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": ".\\TestScripts\\README.md",
+          "Symbol": null,
+          "Line": 40
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 103839
+        }
+      ],
+      "ElapsedMs": 24.4312,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how is the agent template settings drawer organized into sections",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/agent-template-settings/AgentTemplateSettingsDrawer.tsx"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 3495
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.json",
+          "Symbol": null,
+          "Line": 918
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 3193
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 990
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.md",
+          "Symbol": null,
+          "Line": 118
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 59
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 193
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 170
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 91
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\src_pages_global-agent-template_index_tsx-async.js",
+          "Symbol": null,
+          "Line": 616
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\plans\\2026-05-24-agent-template-storage-chain.md",
+          "Symbol": null,
+          "Line": 7
+        }
+      ],
+      "ElapsedMs": 38.8521,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the access token secret shown once modal",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/access-token-management/components/SecretOnceModal.tsx"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 3563
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.json",
+          "Symbol": null,
+          "Line": 945
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 3231
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 1038
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 119
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 60
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.md",
+          "Symbol": null,
+          "Line": 119
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 194
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 171
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\src_pages_access-token-management_index_tsx-async.js",
+          "Symbol": null,
+          "Line": 361
+        },
+        {
+          "Path": ".\\Docs\\Features\\\u7B2C\u4E09\u65B9\u4EFB\u52A1\u770B\u677FAccessToken\u4E0E\u5916\u90E8API\u8BE6\u7EC6\u8BBE\u8BA1\u65B9\u6848.md",
+          "Symbol": null,
+          "Line": 745
+        }
+      ],
+      "ElapsedMs": 25.3148,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which util builds the workspace navigation menu",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/utils/workspaceNavigation.ts"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 3631
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.json",
+          "Symbol": null,
+          "Line": 972
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 3289
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 1071
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 61
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 195
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.md",
+          "Symbol": null,
+          "Line": 93
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 172
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 93
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\locales\\zh-TW\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\locales\\pt-BR\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\locales\\ja-JP\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\locales\\id-ID\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\locales\\fa-IR\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\locales\\en-US\\menu.ts",
+          "Symbol": null,
+          "Line": 58
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\locales\\bn-BD\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": ".\\Source\\PuddingPathFilteringTests\\Fixtures\\real-workspace-root.gitignore.txt",
+          "Symbol": null,
+          "Line": 127
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\locales\\zh-CN\\menu.ts",
+          "Symbol": null,
+          "Line": 4
+        }
+      ],
+      "ElapsedMs": 19.577,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "canonicalMerge",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/canonicalMerge.ts",
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\canonicalMerge.test.ts",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\canonicalMerge.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 5.8875,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "checkpointStore",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/checkpointStore.ts",
+          "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useCheckpointTimeline.ts"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\checkpointStore.test.ts",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\checkpointStore.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 6.749,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "TaskCard",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskCard.tsx",
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskColumn.tsx"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.test.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 275
+        }
+      ],
+      "ElapsedMs": 9.9539,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingStatusBadge",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/components/PuddingStatusBadge/index.tsx",
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskCard.tsx"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 196
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 135
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingStatusBadge\\index.tsx",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingStatusBadge\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\common-async.js",
+          "Symbol": null,
+          "Line": 1105
+        },
+        {
+          "Path": ".\\Docs\\Features\\AdminConsole\u53BBAntDesignPro\u5316\u4EE3\u7801\u7EA7\u8BBE\u8BA1\u65B9\u6848.md",
+          "Symbol": null,
+          "Line": 353
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\index.ts",
+          "Symbol": null,
+          "Line": 27
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 2749
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.json",
+          "Symbol": null,
+          "Line": 309
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2527
+        }
+      ],
+      "ElapsedMs": 6.4265,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.4,
+      "PrecisionAt10": 0.2,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 2,
+      "MatchedExpectedCount": 2,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "TaskEventTimeline",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskEventTimeline.tsx",
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskDetailsDrawer.tsx"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskEventTimeline.tsx",
+          "Symbol": null,
+          "Line": 69
+        }
+      ],
+      "ElapsedMs": 5.6477,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingAdminShell",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/components/PuddingAdminShell/index.tsx",
+          "Source/PuddingPlatformAdmin/src/components/index.ts"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Docs\\07\u67B6\u6784\\37ADR-036AdminConsole\u53BBAntDesignPro\u5316\u4E0EPudding\u8BBE\u8BA1\u8BED\u8A00\u7EDF\u4E00ADR.md",
+          "Symbol": null,
+          "Line": 99
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminShell\\index.tsx",
+          "Symbol": null,
+          "Line": 28
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminShell\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\common-async.js",
+          "Symbol": null,
+          "Line": 329
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\components\\index.ts",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 4034
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.typescript.json",
+          "Symbol": null,
+          "Line": 1345
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 3607
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 1364
+        }
+      ],
+      "ElapsedMs": 5.0415,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0.5,
+      "RecallAt10": 1,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.2,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 2,
+      "MatchedExpectedCount": 2,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingCodeIndex",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\small-puddingcodeindex.json",
+          "Symbol": null,
+          "Line": 2
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline.json",
+          "Symbol": null,
+          "Line": 281
+        }
+      ],
+      "ElapsedMs": 7.4445,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "InternalsVisibleTo",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRuntime\\PuddingRuntime.csproj",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 263
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 263
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 4156
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.json",
+          "Symbol": null,
+          "Line": 264
+        },
+        {
+          "Path": ".\\Source\\PuddingPathFiltering\\PuddingPathFiltering.csproj",
+          "Symbol": null,
+          "Line": 22
+        },
+        {
+          "Path": ".\\Source\\PuddingMemoryEngine\\PuddingMemoryEngine.csproj",
+          "Symbol": null,
+          "Line": 28
+        },
+        {
+          "Path": ".\\Source\\PuddingIndexChunking\\PuddingIndexChunking.csproj",
+          "Symbol": null,
+          "Line": 20
+        },
+        {
+          "Path": ".\\Source\\PuddingFullTextIndex\\PuddingFullTextIndex.csproj",
+          "Symbol": null,
+          "Line": 10
+        },
+        {
+          "Path": ".\\Source\\PuddingCodeIntelligence\\PuddingCodeIntelligence.csproj",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": ".\\Source\\PuddingCodeIndex\\PuddingCodeIndex.csproj",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": ".\\Source\\PuddingBrowser.WebView2\\PuddingBrowser.WebView2.csproj",
+          "Symbol": null,
+          "Line": 26
+        },
+        {
+          "Path": ".\\src\\HarnessAgent\\Core\\HarnessAgent.Core.csproj",
+          "Symbol": null,
+          "Line": 15
+        }
+      ],
+      "ElapsedMs": 7.3033,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeIndexMaintenanceHostedService",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingHost\\Hosting\\CodeIndexMaintenanceHostedService.cs",
+          "Symbol": null,
+          "Line": 45
+        }
+      ],
+      "ElapsedMs": 5.9549,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IndexExcludePatterns",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIndex\\Services\\IndexExcludePatterns.cs",
+          "Symbol": null,
+          "Line": 20
+        }
+      ],
+      "ElapsedMs": 6.7228,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "MemoryRecallService",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingMemoryEngine\\Services\\MemoryRecallService.cs",
+          "Symbol": null,
+          "Line": 25
+        },
+        {
+          "Path": ".\\Docs\\07\u67B6\u6784\\29ADR-028\u8BB0\u5FC6\u56FE\u4E66\u9986\u57FA\u7840\u8BBE\u65BD\u91CD\u6784ADR.md",
+          "Symbol": null,
+          "Line": 113
+        }
+      ],
+      "ElapsedMs": 6.5919,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "SearchGrepTool",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRuntime\\Tools\\BuiltIns\\Search\\SearchGrepTool.cs",
+          "Symbol": null,
+          "Line": 62
+        }
+      ],
+      "ElapsedMs": 7.0792,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "NoiseDirNames",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 513
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 513
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 4386
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.json",
+          "Symbol": null,
+          "Line": 445
+        },
+        {
+          "Path": ".\\Source\\PuddingCodeIntelligence\\TypeScript\\TypeScriptIndexer.cs",
+          "Symbol": null,
+          "Line": 373
+        },
+        {
+          "Path": ".\\Source\\PuddingCodeIntelligence\\Python\\PythonIndexer.cs",
+          "Symbol": null,
+          "Line": 377
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\Services\\NoiseDirectoryRules.cs",
+          "Symbol": null,
+          "Line": 44
+        },
+        {
+          "Path": ".\\Source\\PuddingCodeIndex\\Services\\IndexExcludePatterns.cs",
+          "Symbol": null,
+          "Line": 23
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEvalTests\\NoiseDirectoryRulesTests.cs",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.md",
+          "Symbol": null,
+          "Line": 82
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.md",
+          "Symbol": null,
+          "Line": 88
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.md",
+          "Symbol": null,
+          "Line": 84
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 208
+        },
+        {
+          "Path": ".\\Source\\PuddingPathFiltering\\PathNoiseRules.cs",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 76
+        }
+      ],
+      "ElapsedMs": 5.7279,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IndexBasedLanguageServerService",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIntelligence\\Lsp\\IndexBasedLanguageServerService.cs",
+          "Symbol": null,
+          "Line": 19
+        }
+      ],
+      "ElapsedMs": 10.1867,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "why is the gitignore parser dead code",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 589
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 589
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 4507
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.json",
+          "Symbol": null,
+          "Line": 525
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 79
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.md",
+          "Symbol": null,
+          "Line": 84
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.md",
+          "Symbol": null,
+          "Line": 90
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.md",
+          "Symbol": null,
+          "Line": 86
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 210
+        },
+        {
+          "Path": ".\\.gitignore",
+          "Symbol": null,
+          "Line": 169
+        },
+        {
+          "Path": ".\\external\\github.hyfree.GM\\.gitignore",
+          "Symbol": null,
+          "Line": 138
+        },
+        {
+          "Path": ".\\TestScripts\\goal-rotate.ps1",
+          "Symbol": null,
+          "Line": 10
+        },
+        {
+          "Path": ".\\TestScripts\\report-skill-usage.ps1",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": ".\\Source\\PuddingPathFilteringTests\\Fixtures\\real-workspace-root.gitignore.txt",
+          "Symbol": null,
+          "Line": 169
+        }
+      ],
+      "ElapsedMs": 12.0085,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how many different exclude rule sets exist in the repository",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 667
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 677
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 4580
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.json",
+          "Symbol": null,
+          "Line": 588
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.md",
+          "Symbol": null,
+          "Line": 85
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.md",
+          "Symbol": null,
+          "Line": 91
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.md",
+          "Symbol": null,
+          "Line": 87
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 211
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 80
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 57781
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\Services\\NoiseDirectoryRules.cs",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": ".\\Source\\PuddingIndexChunking\\ChunkFilter.cs",
+          "Symbol": null,
+          "Line": 87
+        },
+        {
+          "Path": ".\\Tests\\PuddingHost.Tests\\Hosting\\CodeIndexMaintenanceHostCompositionTests.cs",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": ".\\Source\\PuddingCodeIndex\\Services\\CodeIndex\\CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 1030
+        },
+        {
+          "Path": ".\\Source\\PuddingRuntimeTests\\Services\\ContextWindowManagerTests.cs",
+          "Symbol": null,
+          "Line": 1653
+        }
+      ],
+      "ElapsedMs": 12.1589,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how should the full solution build gate be run after a namespace change",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 785
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 795
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 4693
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.json",
+          "Symbol": null,
+          "Line": 636
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 81
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.md",
+          "Symbol": null,
+          "Line": 86
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.md",
+          "Symbol": null,
+          "Line": 92
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.md",
+          "Symbol": null,
+          "Line": 88
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 212
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_1-async.js",
+          "Symbol": null,
+          "Line": 37700
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\plans\\2026-07-01-memory-v2-f3-worker-scheduling-plan.md",
+          "Symbol": null,
+          "Line": 890
+        },
+        {
+          "Path": ".\\Directory.Build.props",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": ".\\Source\\PuddingRuntimeTests\\Services\\ContextWindowManagerTests.cs",
+          "Symbol": null,
+          "Line": 1636
+        },
+        {
+          "Path": ".\\Source\\PuddingRuntimeTests\\Tools\\GoalReadToolTests.cs",
+          "Symbol": null,
+          "Line": 90
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 58130
+        }
+      ],
+      "ElapsedMs": 20.2967,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "what does the architecture first principle say about dependency direction",
+        "ExpectedHits": [
+          "Agents.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 4796
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.json",
+          "Symbol": null,
+          "Line": 689
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 82
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.md",
+          "Symbol": null,
+          "Line": 89
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 213
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\specs\\2026-06-07-agent-chat-client-architecture-redesign-design.md",
+          "Symbol": null,
+          "Line": 374
+        },
+        {
+          "Path": ".\\Docs\\07\u67B6\u6784\\29ADR-028\u8BB0\u5FC6\u56FE\u4E66\u9986\u57FA\u7840\u8BBE\u65BD\u91CD\u6784ADR.md",
+          "Symbol": null,
+          "Line": 295
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\docs\\chapters\\01-query-engine.md",
+          "Symbol": null,
+          "Line": 595
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\architecture\\01-query-engine.md",
+          "Symbol": null,
+          "Line": 593
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\docs\\assets\\architecture-mermaid-full.md",
+          "Symbol": null,
+          "Line": 22
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\docs\\chapters\\10-context-assembly.md",
+          "Symbol": null,
+          "Line": 252
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\architecture\\10-context-assembly.md",
+          "Symbol": null,
+          "Line": 248
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\specs\\2026-06-06-agent-first-main-session-chat-design.md",
+          "Symbol": null,
+          "Line": 61
+        },
+        {
+          "Path": ".\\Docs\\deepseek-reference-architecture-master-plan-2026-08-14.md",
+          "Symbol": null,
+          "Line": 862
+        }
+      ],
+      "ElapsedMs": 13.7779,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the retrieval evaluation design described",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 893
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 903
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 4909
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.json",
+          "Symbol": null,
+          "Line": 787
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 83
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.md",
+          "Symbol": null,
+          "Line": 87
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.md",
+          "Symbol": null,
+          "Line": 93
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.md",
+          "Symbol": null,
+          "Line": 90
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 214
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\Contracts\\SearchProbeContracts.cs",
+          "Symbol": null,
+          "Line": 53
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\specs\\2026-05-20-memory-library-infrastructure-refactor-design.md",
+          "Symbol": null,
+          "Line": 632
+        },
+        {
+          "Path": ".\\Docs\\Features\\memory-design\\learning-mechanism-design.md",
+          "Symbol": null,
+          "Line": 281
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\specs\\2026-06-30-hook-system-v2-design.md",
+          "Symbol": null,
+          "Line": 30
+        },
+        {
+          "Path": ".\\.github\\skills\\ui-ux-pro-max\\scripts\\design_system.py",
+          "Symbol": null,
+          "Line": 496
+        }
+      ],
+      "ElapsedMs": 9.6293,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "what are the rules for temporary build artifacts",
+        "ExpectedHits": [
+          "Agents.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 5012
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.json",
+          "Symbol": null,
+          "Line": 885
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 84
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.md",
+          "Symbol": null,
+          "Line": 91
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 215
+        },
+        {
+          "Path": ".\\Source\\PuddingHost\\default-data\\benchmark-seeds\\memory-contract-pack\\materials\\product-rules.md",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": ".\\Docs\\superpowers\\plans\\2026-06-05-http-fetch-enhancement.md",
+          "Symbol": null,
+          "Line": 67
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\pages\\orchestration\\edgeEditor.ts",
+          "Symbol": null,
+          "Line": 525
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 62164
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\docs\\chapters\\07-permission-pipeline.md",
+          "Symbol": null,
+          "Line": 417
+        },
+        {
+          "Path": ".\\Docs\\claude-reviews-claude\\architecture\\07-permission-pipeline.md",
+          "Symbol": null,
+          "Line": 413
+        },
+        {
+          "Path": ".\\Directory.Build.props",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 1099
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 1109
+        }
+      ],
+      "ElapsedMs": 10.7236,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how is the index component delivered as an independent component",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 986
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 996
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 5125
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.json",
+          "Symbol": null,
+          "Line": 963
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 85
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.md",
+          "Symbol": null,
+          "Line": 88
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.md",
+          "Symbol": null,
+          "Line": 94
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.md",
+          "Symbol": null,
+          "Line": 92
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 216
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\locales\\zh-TW\\component.ts",
+          "Symbol": null,
+          "Line": 2
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\locales\\zh-CN\\component.ts",
+          "Symbol": null,
+          "Line": 2
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\locales\\pt-BR\\component.ts",
+          "Symbol": null,
+          "Line": 2
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\src\\locales\\ja-JP\\component.ts",
+          "Symbol": null,
+          "Line": 2
+        }
+      ],
+      "ElapsedMs": 12.3564,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "what are the U4 slices and in which order are they built",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 1099
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 1109
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 5208
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.json",
+          "Symbol": null,
+          "Line": 1001
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.md",
+          "Symbol": null,
+          "Line": 89
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.md",
+          "Symbol": null,
+          "Line": 95
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.md",
+          "Symbol": null,
+          "Line": 93
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.md",
+          "Symbol": null,
+          "Line": 217
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 86
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 75105
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_1-async.js",
+          "Symbol": null,
+          "Line": 30231
+        }
+      ],
+      "ElapsedMs": 15.4596,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingCodeIndex",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md",
+          "Docs/Features/ADR-089-\u7D22\u5F15\u7EC4\u4EF6\u62C6\u5206\u8BBE\u8BA1-2026-09-23.md"
+        ],
+        "Kind": "Crossref",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\sets\\small-puddingcodeindex.json",
+          "Symbol": null,
+          "Line": 2
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\compare-puddingcodeindex-outline.json",
+          "Symbol": null,
+          "Line": 281
+        }
+      ],
+      "ElapsedMs": 5.3716,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "search_grep",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md",
+          "Docs/Reports/ArchReview-GPT6Astra-2026-09-23.md"
+        ],
+        "Kind": "Crossref",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRuntime\\Services\\DesignCouncilRuntimeService.cs",
+          "Symbol": null,
+          "Line": 30
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatform\\Migrations\\20260513_SeedAllBuiltInCapabilities.cs",
+          "Symbol": null,
+          "Line": 93
+        },
+        {
+          "Path": ".\\Source\\PuddingRuntimeTests\\Tools\\PuddingToolInfrastructureTests.cs",
+          "Symbol": null,
+          "Line": 247
+        },
+        {
+          "Path": ".\\Source\\PuddingRuntimeTests\\Tools\\Presentation\\ToolPresentationProjectorTests.cs",
+          "Symbol": null,
+          "Line": 148
+        },
+        {
+          "Path": ".\\Source\\PuddingRuntimeTests\\Services\\ToolResultContextPolicyTests.cs",
+          "Symbol": null,
+          "Line": 23
+        },
+        {
+          "Path": ".\\Source\\PuddingRuntime\\Tools\\Platform\\HarnessToolCompatibilityAdapter.cs",
+          "Symbol": null,
+          "Line": 143
+        },
+        {
+          "Path": ".\\Source\\PuddingRuntime\\Tools\\BuiltIns\\Search\\SearchGrepTool.cs",
+          "Symbol": null,
+          "Line": 19
+        },
+        {
+          "Path": ".\\Docs\\Reports\\scheduler-noise-closeout-r2.md",
+          "Symbol": null,
+          "Line": 10
+        },
+        {
+          "Path": ".\\Docs\\Reports\\skill-portfolio-G1-2026-09-21.md",
+          "Symbol": null,
+          "Line": 45
+        },
+        {
+          "Path": ".\\Docs\\Reports\\PuddingAgent-Autonomy-Audit-2026-09-12\\evidence\\metrics-v2.json",
+          "Symbol": null,
+          "Line": 721
+        },
+        {
+          "Path": ".\\Docs\\Features\\ADR-089-\u524D\u7F6E\u8BBE\u65BD\u65BD\u5DE5\u8BA1\u5212-2026-09-23.md",
+          "Symbol": null,
+          "Line": 28
+        },
+        {
+          "Path": ".\\Docs\\07\u67B6\u6784\\50ADR-049\u4EE3\u7801\u8BED\u4E49\u7D22\u5F15\u4E0ELSP\u7F16\u8F91\u670D\u52A1ADR.md",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": ".\\Docs\\04\u5DE5\u5177\u4E0E\u6280\u80FD\\Pudding\u5DE5\u5177\u7CFB\u7EDF\u589E\u5F3A-CodeWhale\u53C2\u8003\u8BBE\u8BA1.md",
+          "Symbol": null,
+          "Line": 122
+        },
+        {
+          "Path": ".\\Source\\PuddingPlatformTests\\Services\\TokenUsageRecorderPrefixDiagnosticsTests.cs",
+          "Symbol": null,
+          "Line": 155
+        }
+      ],
+      "ElapsedMs": 30.9104,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "InternalsVisibleTo",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md",
+          "Docs/Reports/ADR-089-U0\u6B8B\u5DEEglob\u7EDF\u4E00\u9A8C\u6536-2026-09-13.md"
+        ],
+        "Kind": "Crossref",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingRuntime\\PuddingRuntime.csproj",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 263
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 263
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.json",
+          "Symbol": null,
+          "Line": 4156
+        },
+        {
+          "Path": ".\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-root-scope.markdown.json",
+          "Symbol": null,
+          "Line": 264
+        },
+        {
+          "Path": ".\\Source\\PuddingPathFiltering\\PuddingPathFiltering.csproj",
+          "Symbol": null,
+          "Line": 22
+        },
+        {
+          "Path": ".\\Source\\PuddingMemoryEngine\\PuddingMemoryEngine.csproj",
+          "Symbol": null,
+          "Line": 28
+        },
+        {
+          "Path": ".\\Source\\PuddingIndexChunking\\PuddingIndexChunking.csproj",
+          "Symbol": null,
+          "Line": 20
+        },
+        {
+          "Path": ".\\Source\\PuddingFullTextIndex\\PuddingFullTextIndex.csproj",
+          "Symbol": null,
+          "Line": 10
+        },
+        {
+          "Path": ".\\Source\\PuddingCodeIntelligence\\PuddingCodeIntelligence.csproj",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": ".\\Source\\PuddingCodeIndex\\PuddingCodeIndex.csproj",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": ".\\Source\\PuddingBrowser.WebView2\\PuddingBrowser.WebView2.csproj",
+          "Symbol": null,
+          "Line": 26
+        },
+        {
+          "Path": ".\\src\\HarnessAgent\\Core\\HarnessAgent.Core.csproj",
+          "Symbol": null,
+          "Line": 15
+        }
+      ],
+      "ElapsedMs": 7.456,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md",
+          "Docs/Features/ADR-089-\u524D\u7F6E\u8BBE\u65BD\u65BD\u5DE5\u8BA1\u5212-2026-09-23.md"
+        ],
+        "Kind": "Crossref",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Docs\\Conventions\\\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 7.1242,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IndexBasedLanguageServerService",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md",
+          "Docs/Features/ADR-089-\u524D\u7F6E\u8BBE\u65BD\u65BD\u5DE5\u8BA1\u5212-2026-09-23.md"
+        ],
+        "Kind": "Crossref",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingCodeIntelligence\\Lsp\\IndexBasedLanguageServerService.cs",
+          "Symbol": null,
+          "Line": 19
+        }
+      ],
+      "ElapsedMs": 5.113,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "MemoryRecallService",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md",
+          "Docs/Features/ADR-089-\u524D\u7F6E\u8BBE\u65BD\u65BD\u5DE5\u8BA1\u5212-2026-09-23.md"
+        ],
+        "Kind": "Crossref",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": ".\\Source\\PuddingMemoryEngine\\Services\\MemoryRecallService.cs",
+          "Symbol": null,
+          "Line": 25
+        },
+        {
+          "Path": ".\\Docs\\07\u67B6\u6784\\29ADR-028\u8BB0\u5FC6\u56FE\u4E66\u9986\u57FA\u7840\u8BBE\u65BD\u91CD\u6784ADR.md",
+          "Symbol": null,
+          "Line": 113
+        }
+      ],
+      "ElapsedMs": 4.7997,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    }
+  ]
+}

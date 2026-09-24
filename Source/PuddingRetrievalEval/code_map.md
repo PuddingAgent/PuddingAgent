@@ -66,3 +66,15 @@ PuddingRetrievalEval ──依赖──▶ ISearchProbe（本组件定义的端�
 - 冷样本只是"该查询在本进程内的第一次调用"，不是"进程刚启动 / OS 页缓存冷"；跨进程冷启动未测（见 `temp/U4-0-REPORT.md` RISKS）。
 - markdown 分层下 `noiseRate@10 = 0` 是真实值（`Docs/` 内无噪声段名），不代表 U4-1 无收益：收益在 `Source/` 与
   根 scope（`.pudding` 20,926 个可索引文件、`.tmp-build` 1,335 个）。
+
+## U4-6 验收：根 scope 索引 + 全 80 条覆盖（2026-09-24）
+
+| 文件 | scope | 用例数 | 说明 |
+|---|---|---|---|
+`u4-6-root-scope-2026-09-24.md/.json` | 仓库根（`.`）| **80** | U4-6 后根 scope 索引可行（**1.9 分钟 / 4,432 文件 / 97.8 MB**，旧实现 77 × 195 s ≈ 4.2 h）⇒ 覆盖度 78/80 → **80/80**（此前 2 条锚定仓储根文件 `Agents.md` / `Agents-Hygiene.md` 的用例「结构上不可测」）；recall@1 0.3000 / MRR 0.4217 / noiseRate@10 0.0000；冷 p50 12.077 / 热 p50 12.305，**热 p95 47.008 ms** |
+
+⚠️ **分层 recall@1 = C# 0.6111 / TS 0.0682 / md 0.0227**（同批 md 用例在 `Docs/` 子 scope 下为 0.2500）
+⇒ **检索面变大后词法召回被稀释**；这是 U4-2（作用域 + 文件类型合同化）与 U4-4（向量 + RRF 融合）的靶子。
+
+⚠️ 仪器瑕疵：报告内 `## Reproduce` 段落打印的是 `temp/U4-0-probe/PuddingRetrievalEvalProbe/...`，
+而活的探针工程在 `Source/PuddingRetrievalEvalProbe/`；复现按后者执行（待修）。
