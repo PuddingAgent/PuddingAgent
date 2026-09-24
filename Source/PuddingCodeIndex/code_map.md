@@ -47,7 +47,7 @@
 
 | 文件 | 用途 |
 |------|------|
-| `CodeIndexScheduler.cs` | 索引调度器（**U3-B1：显式驱动，无自建后台线程**；in-flight 期间到达的请求置脏并在结束后重新入队，不再丢弃） |
+| `CodeIndexScheduler.cs` | 索引调度器（**U3-B1：显式驱动，无自建后台线程**；in-flight 期间到达的请求置脏并在结束后重新入队，不再丢弃）；**U3-G1：取消分支不再“什么都不写”** —— 保持 `Status=Registering`（语义不变，“仍欠一次完整运行”）的前提下盖章一句可区分的 `StatusMessage`（含 `interrupted` / `cancelled`）；**仅当该行确实处于 `Registering` 时才盖章**（在认领该行之前就被取消的运行不得被记成“被中断”，已 `Removed`/`Active` 的行也绝不能被翻回 `Registering`）。未新增状态枚举值，未动附着判据 |
 | `CodeIndexScopeRegistry.cs` | 范围注册表（幂等 ensure / 父子覆盖 / 生命周期） |
 | `CodeIndexScopeResolver.cs` | 范围解析器（已注册范围优先，否则根探测 + 自动注册） |
 | `CodeProjectRegistry.cs` | 项目注册（`ICodeProjectRegistry` 实现） |
@@ -77,7 +77,7 @@
 ## 测试
 
 **`../PuddingCodeIndexTests/`（本组件的独立测试工程 —— S2/S3 已兑现）**：只引用本工程，
-**114 用例**（含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**，**U3-D 后 98 → 107：+9 条常规校准 / 成本用例**，**U3-E 后 107 → 114：+7 条退避用例（含 1 条反射边界断言）**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
+**116 用例**（含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**，**U3-D 后 98 → 107：+9 条常规校准 / 成本用例**，**U3-E 后 107 → 114：+7 条退避用例（含 1 条反射边界断言）**，**U3-G1 后 114 → 116：+2 条取消标记 + 对照用例**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
 `InternalsVisibleTo` **仅**对本组件的测试工程开放（**不得**对上层开放 —— 那是反向依赖）。
 
 `../PuddingCodeIntelligenceTests/` 保留语言解析/查询/DI 等**上层**测试（89 用例）；
@@ -188,3 +188,25 @@
 
 **门禁（本刀实测）**：`PuddingCodeIndexTests` **114/114**（改前 107/107；**+7 用例 = A1~A6**，含 1 条反射边界断言锁「阶梯是组件常量、构造函数无 backoff knob」）；`PuddingAgentNetwork.slnx -c Release` exit 0 / **0 个错误**（见 `temp/u3e-build-release.txt`）；M1（去封顶）/M2（系数改 1）/M3（成功后不复位）分别取红 **A2 / A1 / A3**，各三份原始输出（红 / 复原绿 / 全绿）在 `temp/u3e-m{1,2,3}-{red,green}.txt` + `temp/u3e-tests-green-full.txt`；复原后 hash 逐位相同、`MUTATION` 残留 **0**。
 **成本口径（推算，口径同上）**：坏 scope 由 1440 探测/天 → 52 探测/天（≈104 行 Error/天，对照 ≈2880）。
+
+## U3-G1 更新（2026-09-24）— 被中断的索引 scope：不再可删 + 可诊断
+
+**问题（两条，均已用实读代码 + 只读 SQL 钉死）**：
+1. **失数据边缘（宿主侧）**：冗余 scope 删除判据（`Source/PuddingHost/Storage/StorageMaintenanceQueries.cs` 的 `FindObsoleteCodeIndexScopesAsync`）把 `Status IN ('Removed','Failed','Registering')` 列为可删 —— 而 `Registering` 表示「有一次运行欠着」（本调度器的取消分支此前**什么都不写** ⇒ 被中断的运行把该行永久留在 `Registering`），**不是**「已废弃/冗余」。仓库根 scope `b375fee0d6524ad393a26e72ba1e917d` 正命中该判据（`ScopeState IS NULL` ✓ / `Status='Registering'` ✓ / `UpdatedAtUtc=2026-07-28` ✓），它带着 **1083 文件 / 34848 符号 / 96849 关系 / 143587 引用**，目前只靠 `AutomaticCleanupAllowed=false` 挡着 ⇒ **人工清理一次就连注册行一起 DELETE**。
+2. **不可诊断**：取消后 `StatusMessage` 仍为 NULL，与「从未开始过」无法区分（`CodeIndexRuns` 表空且全仓无写入者）。
+
+**交付（本组件侧仅取消分支 1 处；零 Host 侧行为改动由本刀承担）**：
+- `CodeIndexScheduler.cs`：新增 `private const string InterruptedStatusMessage` 与 `private async Task MarkInterruptedAsync(...)`；取消分支（`catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)`）在置 `cancelled = true` 之后调用它。复用既有 `ICodeIndexStore.UpdateProjectStatusAsync`（它只改 `Status` / `StatusMessage` / `UpdatedAtUtc`），并以 `CancellationToken.None` 写入（取消令牌已取消）。
+- **语义不变**：`Status` 仍写回 `Registering`（"仍欠一次完整运行"），**未新增状态枚举值**、未改宿主附着判据、未改 `ICodeIndexStore` 契约、未加 DI 注册。
+- **fail-closed 的 guard**：仅当该行**确实处于 `Registering`** 时才盖章 —— 在认领该行之前就被取消的运行不得被记成"被中断"，已 `Removed`/`Active` 的行也绝不能被翻回 `Registering`（否则等于伪造"欠一次运行"）。
+- 宿主侧配套 1 处（**不属本组件**）：删除判据去掉 `'Registering'`（`StorageMaintenanceQueries.cs`），并同步其**唯一副本** —— `StorageDerivedTargetHandlers.cs::RemoveScopeAsync` 的执行前重校验谓词（`Status IN (` 全仓 .cs **仅 2 处**，均已改；扫描分母 2389 个 .cs，全量覆盖）。`'Covered'` / `'Removed'` / `'Failed'` 语义一字未改。
+
+**门禁（本刀实测）**：`PuddingCodeIndexTests` **116/116**（改前 114/114，+2 = 取消标记用例 + "从未开始仍为 NULL"对照用例）；`PuddingHost.Tests` **126/126**（改前 124/124，+2 = A1/A2）；`PuddingAgentNetwork.slnx -c Release` exit 0 / **0 个错误**（见 `temp/u3g1-build-release.txt`）；M1（把 `'Registering'` 加回判据）取红 **A1**（`Interrupted_Scope_Is_Not_A_Cleanup_Candidate` 报 `Assert.Empty 失败。Collection: [... interrupted-scope ... ArtifactRows = 5]`）；M2（`MarkInterruptedAsync` 写 null）取红 **A3**（`Assert.IsFalse 失败：a cancelled run must leave a StatusMessage behind`）；复原后 `git hash-object` 与变异前**逐位相同**（`dad96e0f…` / `c8d92481…`），`MUTATION` 残留 **0**。
+**零写证明**：索引库 `906551296 B` / mtime `2026-09-24 16:25:18.732416` 在探针前后**完全一致**（`-wal` 仍 0 字节；`-shm` 大小不变、mtime 被 SQLite 只读连接推进 —— 非数据写入，已如实登记）。
+
+**R3 判据级复核（只读 SQL 且 SQL 从源码抽取，非手抄）**：改前命中 **1 行**（根 scope），改后命中 **0 行**；其余 3 行改前/改后**一致**（其中 `scope-6526fb344e33` 是 `ScopeState='Active'` + `Registering` 的第二种"卡住"形态 —— 它本来就被第一条分支保护，改前改后都不命中）。详见 `temp/U3-G1-REPORT.md` §2。
+
+**留白（未做，如实登记）**：
+- **仍无启动自愈**：被中断的行会一直停在 `Registering`。本刀只让它"可辨 + 不可被误删"，**没有**把它变回"可运行"（改语义/改附着判据不在本刀范围）。
+- **取消的取证粒度只有一句话**：`CodeIndexRuns` 仍空且无写入者 ⇒ 无法回答"哪一次运行被取消、被谁取消"。`StatusMessage` 会被**下一次运行**的成功写回覆盖（`Active` + 结果消息），因此它只表达"最近一次被中断"。
+- **`MarkInterruptedAsync` 的 guard 分支未有用例覆盖**（要在 store 层注入"取消发生在认领之前"才能触达）；正确性目前靠代码审阅 + `Removed`/`Active` 行不被翻回的状态机推理。

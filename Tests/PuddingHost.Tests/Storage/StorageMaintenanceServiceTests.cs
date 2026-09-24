@@ -217,6 +217,74 @@ public sealed class StorageMaintenanceServiceTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// U3-G1 A1: a scope whose only fault is "a run was interrupted" (Status=Registering, ScopeState NULL,
+    /// stale) must not be a cleanup candidate. The repository-root scope of the live index DB is exactly
+    /// this shape (1083 files / 34848 symbols / 96849 relations / 143587 references) - one manual cleanup
+    /// used to DELETE all of it together with the registration row.
+    /// </summary>
+    [Fact]
+    public async Task Interrupted_Scope_Is_Not_A_Cleanup_Candidate()
+    {
+        var paths = PuddingDataPaths.FromRoot(_dataRoot);
+        var codeIndexPath = Path.Combine(paths.DatabasesRoot, "code-index", "code_index.db");
+        await CreateInterruptedCodeIndexDatabaseAsync(codeIndexPath);
+
+        var candidates = await StorageMaintenanceQueries.FindObsoleteCodeIndexScopesAsync(
+            codeIndexPath, DateTimeOffset.UtcNow, CancellationToken.None);
+        Assert.Empty(candidates);
+
+        var handler = new CodeIndexScopeCleanupHandler(
+            paths, new IdleCodeIndexScheduler(), NullLogger<CodeIndexScopeCleanupHandler>.Instance);
+
+        var estimate = await handler.EstimateAsync(DateTimeOffset.UtcNow, CancellationToken.None);
+        Assert.Equal(0, estimate.CandidateCount);
+        Assert.Empty(estimate.PreviewItems);
+
+        var execution = await handler.ExecuteRoundAsync(DateTimeOffset.UtcNow, CancellationToken.None);
+        Assert.Equal(0, execution.ProcessedCount);
+        Assert.Equal(0, execution.UnitCount);
+
+        await using var connection = await OpenAsync(codeIndexPath);
+        Assert.Equal(
+            1,
+            await ScalarAsync(connection,
+                "SELECT COUNT(*) FROM CodeProjects WHERE ProjectId='interrupted-scope'"));
+        foreach (var table in StorageMaintenanceQueries.CodeIndexArtifactTables)
+        {
+            Assert.Equal(
+                1,
+                await ScalarAsync(connection,
+                    $"SELECT COUNT(*) FROM {table} WHERE ProjectId='interrupted-scope'"));
+        }
+    }
+
+    /// <summary>
+    /// U3-G1 A2: the pre-existing delete semantics must be untouched. The 'Covered' / 'Removed' scoped rows
+    /// are deliberately FRESH - the first clause never looked at age, and it still does not. A 'Removed' /
+    /// 'Failed' row with no ScopeState keeps its old (deletable) behaviour.
+    /// </summary>
+    [Fact]
+    public async Task Delete_Predicate_Keeps_Its_Existing_Semantics()
+    {
+        var paths = PuddingDataPaths.FromRoot(_dataRoot);
+        var codeIndexPath = Path.Combine(paths.DatabasesRoot, "code-index", "code_index.db");
+        await CreateScopeSemanticsDatabaseAsync(codeIndexPath);
+
+        var candidates = await StorageMaintenanceQueries.FindObsoleteCodeIndexScopesAsync(
+            codeIndexPath, DateTimeOffset.UtcNow, CancellationToken.None);
+
+        var ids = candidates
+            .Select(candidate => candidate.ProjectId)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(
+            new[] { "covered-fresh", "failed-stale", "removed-fresh", "removed-null-stale" },
+            ids);
+        Assert.DoesNotContain(candidates, candidate => candidate.ProjectId == InterruptedScopeId);
+        Assert.DoesNotContain(candidates, candidate => candidate.ProjectId == "active-null-stale");
+    }
+
     private static StorageMaintenanceService CreateService(
         PuddingDataPaths paths,
         out StorageMaintenanceCoordinator coordinator)
@@ -243,6 +311,62 @@ public sealed class StorageMaintenanceServiceTests : IDisposable
             coordinator,
             NullLogger<StorageMaintenanceService>.Instance);
     }
+
+    private const string InterruptedScopeId = "interrupted-scope";
+
+    private static async Task CreateInterruptedCodeIndexDatabaseAsync(string path)
+    {
+        await using var connection = await OpenAsync(path);
+        await CreateCodeIndexSchemaAsync(connection);
+        var stale = DateTimeOffset.UtcNow.AddDays(-3).ToString("O");
+        await ExecuteAsync(connection, """
+            INSERT INTO CodeProjects VALUES
+                ('default', 'interrupted-scope', 'C:\interrupted', 'Registering', 'interrupted',
+                 $stale, $stale, NULL, NULL);
+            INSERT INTO CodeFiles VALUES ('default', 'interrupted-scope', 'x');
+            INSERT INTO CodeSymbols VALUES ('default', 'interrupted-scope', 'x');
+            INSERT INTO CodeRelations VALUES ('default', 'interrupted-scope', 'x');
+            INSERT INTO CodeReferences VALUES ('default', 'interrupted-scope', 'x');
+            INSERT INTO CodeIndexRuns VALUES ('default', 'interrupted-scope', 'x');
+            """, ("$stale", stale));
+    }
+
+    private static async Task CreateScopeSemanticsDatabaseAsync(string path)
+    {
+        await using var connection = await OpenAsync(path);
+        await CreateCodeIndexSchemaAsync(connection);
+        var stale = DateTimeOffset.UtcNow.AddDays(-3).ToString("O");
+        var fresh = DateTimeOffset.UtcNow.ToString("O");
+        await ExecuteAsync(connection, """
+            INSERT INTO CodeProjects VALUES
+                ('default', 'covered-fresh', 'C:\covered', 'Active', 'covered', $fresh, $fresh, 'Auto', 'Covered'),
+                ('default', 'removed-fresh', 'C:\removed', 'Removed', 'removed', $fresh, $fresh, 'Auto', 'Removed'),
+                ('default', 'removed-null-stale', 'C:\removed2', 'Removed', 'removed2', $stale, $stale, NULL, NULL),
+                ('default', 'failed-stale', 'C:\failed', 'Failed', 'failed', $stale, $stale, NULL, NULL),
+                ('default', 'interrupted-scope', 'C:\interrupted', 'Registering', 'interrupted', $stale, $stale, NULL, NULL),
+                ('default', 'active-null-stale', 'C:\active', 'Active', 'active', $stale, $stale, NULL, NULL);
+            """, ("$stale", stale), ("$fresh", fresh));
+    }
+
+    private static Task CreateCodeIndexSchemaAsync(SqliteConnection connection) =>
+        ExecuteAsync(connection, """
+            CREATE TABLE CodeProjects (
+                WorkspaceId TEXT NOT NULL,
+                ProjectId TEXT NOT NULL,
+                ProjectPath TEXT,
+                Status TEXT NOT NULL,
+                DisplayName TEXT,
+                AddedAtUtc TEXT,
+                UpdatedAtUtc TEXT,
+                Source TEXT,
+                ScopeState TEXT,
+                PRIMARY KEY (WorkspaceId, ProjectId));
+            CREATE TABLE CodeFiles (WorkspaceId TEXT, ProjectId TEXT, Value TEXT);
+            CREATE TABLE CodeSymbols (WorkspaceId TEXT, ProjectId TEXT, Value TEXT);
+            CREATE TABLE CodeRelations (WorkspaceId TEXT, ProjectId TEXT, Value TEXT);
+            CREATE TABLE CodeReferences (WorkspaceId TEXT, ProjectId TEXT, Value TEXT);
+            CREATE TABLE CodeIndexRuns (WorkspaceId TEXT, ProjectId TEXT, Value TEXT);
+            """);
 
     private static async Task CreatePlatformDatabaseAsync(string path)
     {
@@ -311,7 +435,7 @@ public sealed class StorageMaintenanceServiceTests : IDisposable
         var fresh = DateTimeOffset.UtcNow.ToString("O");
         await ExecuteAsync(connection, """
             INSERT INTO CodeProjects VALUES
-                ('default', 'stale-scope', 'C:\stale', 'Registering', 'stale', $stale, $stale, NULL, NULL),
+                ('default', 'stale-scope', 'C:\stale', 'Failed', 'stale', $stale, $stale, NULL, NULL),
                 ('default', 'active-scope', 'C:\active', 'Active', 'active', $fresh, $fresh, 'Auto', 'Active');
             INSERT INTO CodeFiles VALUES ('default', 'stale-scope', 'x');
             INSERT INTO CodeSymbols VALUES ('default', 'stale-scope', 'x');

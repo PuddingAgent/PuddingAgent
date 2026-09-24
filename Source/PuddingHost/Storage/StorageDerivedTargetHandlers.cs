@@ -87,6 +87,9 @@ public sealed class CodeIndexScopeCleanupHandler(
         // 执行前重校验：预览后状态可能已变化。
         await using var recheck = connection.CreateCommand();
         recheck.Transaction = (SqliteTransaction)transaction;
+        // U3-G1: kept in step with StorageMaintenanceQueries.FindObsoleteCodeIndexScopesAsync -
+        // 'Registering' is not a deletable state (see the note there). The re-check must never accept a
+        // scope that the candidate query rejected.
         recheck.CommandText = """
             SELECT COUNT(*)
             FROM CodeProjects
@@ -95,7 +98,7 @@ public sealed class CodeIndexScopeCleanupHandler(
                     ScopeState IN ('Covered', 'Removed')
                     OR (
                          ScopeState IS NULL
-                         AND Status IN ('Removed', 'Failed', 'Registering')
+                         AND Status IN ('Removed', 'Failed')
                          AND COALESCE(UpdatedAtUtc, AddedAtUtc, '') < $staleBefore
                        )
                   )

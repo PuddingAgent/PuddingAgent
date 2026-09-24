@@ -12,10 +12,14 @@ internal sealed class CodeIndexFixture : IDisposable
     private CodeIndexFixture(string root)
     {
         Root = root;
-        Store = new SqliteCodeIndexStore(Path.Combine(root, "db", "code-index.db"));
+        DatabasePath = Path.Combine(root, "db", "code-index.db");
+        Store = new SqliteCodeIndexStore(DatabasePath);
     }
 
     public string Root { get; }
+
+    /// <summary>Path of the SQLite file behind <see cref="Store"/> (U3-G1 reads one raw column).</summary>
+    public string DatabasePath { get; }
 
     public SqliteCodeIndexStore Store { get; }
 

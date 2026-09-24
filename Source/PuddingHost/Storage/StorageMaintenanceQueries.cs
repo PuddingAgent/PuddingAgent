@@ -85,13 +85,17 @@ internal static class StorageMaintenanceQueries
             return [];
 
         await using var command = connection.CreateCommand();
+        // U3-G1: 'Registering' means "one run is still owed" (a cancelled/interrupted run leaves the row
+        // in that state forever) - it is NOT "obsolete/redundant". Listing it as deletable let a merely
+        // interrupted scope be DELETEd together with all of its index rows. Only this one predicate
+        // changed; the 'Covered' / 'Removed' / 'Failed' semantics are untouched.
         command.CommandText = """
             SELECT WorkspaceId, ProjectId, COALESCE(DisplayName, ProjectPath, ProjectId)
             FROM CodeProjects
             WHERE ScopeState IN ('Covered', 'Removed')
                OR (
                     ScopeState IS NULL
-                    AND Status IN ('Removed', 'Failed', 'Registering')
+                    AND Status IN ('Removed', 'Failed')
                     AND COALESCE(UpdatedAtUtc, AddedAtUtc, '') < $staleBefore
                )
             ORDER BY WorkspaceId, ProjectId

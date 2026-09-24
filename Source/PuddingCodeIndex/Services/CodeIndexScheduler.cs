@@ -234,8 +234,10 @@ public sealed class CodeIndexScheduler : ICodeIndexSchedulerDriver, IDisposable
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Explicitly cancelled: never counted as processed, and re-queued below.
+            // Explicitly cancelled: never counted as processed, and re-queued below. The row keeps the
+            // Registering status (a full run is still owed) but gets a distinguishable marker (U3-G1).
             cancelled = true;
+            await MarkInterruptedAsync(job).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -282,6 +284,41 @@ public sealed class CodeIndexScheduler : ICodeIndexSchedulerDriver, IDisposable
         }
 
         return !cancelled && ranIndexer;
+    }
+
+    /// <summary>
+    /// U3-G1: marker written when a run is cancelled before it can commit a result. It must be
+    /// distinguishable from a scope that never started (whose StatusMessage stays NULL).
+    /// </summary>
+    private const string InterruptedStatusMessage =
+        "Indexing run interrupted: cancelled before a result could be recorded; " +
+        "this scope still owes a full indexing run.";
+
+    /// <summary>
+    /// U3-G1: records a cancelled run without moving the row off <see cref="CodeProjectStatus.Registering"/>
+    /// (the scope still owes a full run - the status semantics are unchanged). The row is only stamped when
+    /// it really is in that state: a run cancelled before it claimed the row must not be recorded as an
+    /// interrupted one, and a removed/active scope must never be turned back into Registering.
+    /// </summary>
+    private async Task MarkInterruptedAsync((string WorkspaceId, string ScopeId) job)
+    {
+        try
+        {
+            var project = await _store
+                .GetProjectAsync(job.WorkspaceId, job.ScopeId, CancellationToken.None)
+                .ConfigureAwait(false);
+            if (project is null || project.Status != CodeProjectStatus.Registering)
+                return;
+
+            await _store.UpdateProjectStatusAsync(
+                job.WorkspaceId, job.ScopeId, CodeProjectStatus.Registering,
+                InterruptedStatusMessage, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[CodeIndexScheduler] Could not record the interrupted run for {ScopeId}", job.ScopeId);
+        }
     }
 
     /// <summary>Reads or creates the progress record for a key. Must be called under <see cref="_lock"/>.</summary>
