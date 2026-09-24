@@ -480,6 +480,38 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 status: ToolResultStatuses.ContractError);
         }
 
+        // ADR-089 U4-5a：引擎把 query 交给 Lucene 查询解析器，而 Lucene 的运算符语义与调用方的
+        // 正则/字面直觉并不一致——实测同一批词：'A|B|C' 静默 0 命中，而 'A OR B OR C' 命中 41 条
+        // （即在此 parser 配置下 '|' 不等价于 OR）。引擎自身对此返回 Success=true + 0 命中，
+        // 调用方于是拿到一句空洞的 "(no matches)"，会以为“这里真的没有”而换词重试 ⇒ 打转。
+        // 这正是 ADR-089 §8 硬约束 6 明禁的假否定，故在引擎内做**一次**降级重试并显式标注：
+        // 把 query 按非词字符拆词、以显式 OR 连接（已实测可用的形态）重试一次。
+        // 仅在“引擎 0 命中且 query 含 Lucene 语法字符”时触发 ⇒ 有命中的正常路径零行为变化。
+        string? queryFallback = null;
+        if ((engineResult.Matches?.Count ?? 0) == 0 && engineResult.TotalMatches == 0
+            && TryBuildOrFallbackQuery(query, out var fallbackQuery))
+        {
+            queryFallback = fallbackQuery;
+            try
+            {
+                var retried = await _searchEngine.SearchAsync(
+                    fallbackQuery, scopeDirectory, maxResults + 1,
+                    fileExtensionFilter: extFilter,
+                    subDirectoryFilter: null,
+                    ct: cts.Token);
+                if (retried.Success && retried.TotalMatches > 0)
+                    engineResult = retried;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[SearchGrep] index backend OR-fallback retry failed");
+            }
+        }
+
         // 后置过滤与旧路径共用 canonical 合同（IsPathInExcludedDir / RetrievalGlobMatcher），避免语义分叉。
         // 索引是快照：命中指向的文件若已被删除/移动，则不输出（避免把陈旧路径当命中）。
         var emitted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -520,6 +552,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             + (truncated ? ", truncated=max_results" : string.Empty)
             + (staleSkipped > 0 ? $", staleSkipped={staleSkipped}" : string.Empty)
             + (firstStaleRawPath is not null ? $", firstStaleRawPath={firstStaleRawPath}" : string.Empty)
+            + (queryFallback is not null ? $", queryFallback=\"{queryFallback}\"" : string.Empty)
             + "; single Lucene query-parser call, no managed scan — the 2000-file/64MB/10s caps do not apply, "
             + "coverage = files indexed under this scope, line text comes from the index snapshot)";
 
@@ -533,7 +566,12 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
                 ? $"(no matches — every one of the {staleSkipped} index hit(s) was skipped as stale: "
                   + "the index snapshot for this scope points at paths that no longer exist; rebuild this scope's index, "
                   + "or omit 'backend' to use the managed scan path)\n" + summary
-                : "(no matches)\n" + summary)
+                : queryFallback is not null
+                    ? $"(no matches — this query contains Lucene query-syntax characters, which the index backend "
+                      + $"interprets with Lucene semantics, not as a regex; it was retried as '{queryFallback}' "
+                      + "(explicit OR) and still returned 0 hits. Split the terms with spaces, use explicit 'OR'/'AND', "
+                      + "or omit 'backend' to use the managed scan path, which evaluates the query as a regex.)\n" + summary
+                    : "(no matches)\n" + summary)
             : string.Join('\n', lines) + "\n" + summary;
         return ToolExecutionResult.Ok(output,
             status: lines.Count == 0 ? ToolResultStatuses.NoMatch
@@ -563,6 +601,39 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
     private static string BuildDedupKey(string filePath, int lineNumber) =>
         $"{Path.GetFullPath(filePath).ToLowerInvariant()}|{lineNumber}";
+
+    /// <summary>
+    /// ADR-089 U4-5a：Lucene 查询语法字符集合。出现这些字符说明调用方给的很可能是正则/字面语法，
+    /// 而索引后端会按 Lucene 语义解释——二者语义不同（实测 '|' 不等价于 OR），必须显式降级而非静默返空。
+    /// </summary>
+    private static readonly char[] LuceneSyntaxChars =
+        ['|', '&', '(', ')', '"', '*', '?', '~', '^', ':', '[', ']', '{', '}', '+', '-', '!', '\\', '/'];
+
+    /// <summary>降级重试时用于拆词的非词字符。</summary>
+    private static readonly char[] FallbackTermSeparators =
+        [' ', '\t', '\r', '\n', '|', '&', '(', ')', '"', '*', '?', '~', '^', ':', '[', ']', '{', '}', '+',
+         '-', '!', '\\', '/', ',', ';', '=', '<', '>', '%', '$', '@', '#', '\''];
+
+    /// <summary>
+    /// ADR-089 U4-5a：把含 Lucene 语法字符的 query 降级成显式 OR 形态（已实测可用的形态）。
+    /// 返回 false 表示无需/无法降级（不含语法字符，或拆不出 ≥2 个词——单词查询的 0 命中就是真的 0）。
+    /// </summary>
+    private static bool TryBuildOrFallbackQuery(string query, out string fallback)
+    {
+        fallback = string.Empty;
+        if (query.IndexOfAny(LuceneSyntaxChars) < 0)
+            return false;
+
+        var terms = query
+            .Split(FallbackTermSeparators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (terms.Length < 2)
+            return false;
+
+        fallback = string.Join(" OR ", terms);
+        return true;
+    }
 
     /// <summary>
     /// ADR-089 U0 R1.2 / G2：路径级准入谓词——Lucene 候选与目录枚举共用同一约束：

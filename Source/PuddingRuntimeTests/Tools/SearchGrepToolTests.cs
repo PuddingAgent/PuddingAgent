@@ -1840,6 +1840,109 @@ public sealed class SearchGrepToolTests
     }
 
     [TestMethod]
+    public async Task Backend_Index_Zero_Hits_With_Lucene_Syntax_Chars_Retries_With_Explicit_Or()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-orfallback-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var recovered = Path.Combine(tempDir, "recovered.txt");
+        await File.WriteAllTextAsync(recovered, "alpha\nNEEDLE-recovered\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            // 复现实测到的引擎行为：原始 'A|B|C' 形态返回 0 命中；显式 OR 形态能命中。
+            var engine = new RecordingFullTextSearchEngine((q, callIndex) => callIndex == 1
+                ? new FullTextSearchResult(true, [], null, 0, 9)
+                : new FullTextSearchResult(true, [new FullTextSearchMatch(recovered, 2, "NEEDLE-recovered")], null, 1, 7));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, engine);
+
+            var result = await ExecuteAsync(tool, "Alpha|Beta|Gamma", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = tempDir,
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            // 核心判据：不得返回空洞否定——命中必须被降级重试救回，且降级事实必须可见。
+            Assert.IsFalse(result.Output.Contains("(no matches)"),
+                "含 Lucene 语法字符的查询在引擎 0 命中后必须降级重试，不得把假否定直接抛给调用方");
+            StringAssert.Contains(result.Output, "recovered.txt:2: NEEDLE-recovered");
+            StringAssert.Contains(result.Output, "queryFallback=");
+            Assert.AreEqual(2, engine.CallCount, "必须恰好重试一次（不得循环重试）");
+            Assert.AreEqual("Alpha|Beta|Gamma", engine.Queries[0]);
+            Assert.AreEqual("Alpha OR Beta OR Gamma", engine.Queries[1], "降级形态必须是显式 OR（已实测可用）");
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, tempDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task Backend_Index_Zero_Hits_Without_Syntax_Chars_Does_Not_Retry()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-noretry-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(true, [], null, 0, 5));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, engine);
+
+            var result = await ExecuteAsync(tool, "zzz", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = tempDir,
+            });
+
+            Assert.IsTrue(result.Success);
+            StringAssert.Contains(result.Output, "(no matches)");
+            Assert.IsFalse(result.Output.Contains("queryFallback="));
+            Assert.AreEqual(1, engine.CallCount, "纯词查询的 0 命中就是真的 0，不得触发降级重试");
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, tempDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task Backend_Index_With_Hits_Does_Not_Retry_Even_When_Query_Has_Syntax_Chars()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-noretry-hit-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var hit = Path.Combine(tempDir, "hit.txt");
+        await File.WriteAllTextAsync(hit, "alpha\nNEEDLE a|b\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(
+                true, [new FullTextSearchMatch(hit, 2, "NEEDLE a|b")], null, 1, 4));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, engine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE|a", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = tempDir,
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "hit.txt:2: NEEDLE a|b");
+            Assert.AreEqual(1, engine.CallCount, "有命中时正常路径必须零行为变化（不得多调一次引擎）");
+            Assert.IsFalse(result.Output.Contains("queryFallback="));
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, tempDir);
+        }
+    }
+
+    [TestMethod]
     public async Task Backend_Unknown_Value_Is_A_Contract_Error()
     {
         var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance,
@@ -2035,12 +2138,19 @@ public sealed class SearchGrepToolTests
     /// </summary>
     private sealed class RecordingFullTextSearchEngine : IFullTextSearchEngine
     {
-        private readonly FullTextSearchResult _result;
+        private readonly FullTextSearchResult? _result;
+        private readonly Func<string, int, FullTextSearchResult>? _selector;
 
         public RecordingFullTextSearchEngine(FullTextSearchResult result) => _result = result;
 
+        /// <summary>按 (query, 调用序号) 选择结果——用于断言降级重试真的发生了不同的调用。</summary>
+        public RecordingFullTextSearchEngine(Func<string, int, FullTextSearchResult> selector) => _selector = selector;
+
         public int CallCount { get; private set; }
         public string? LastQuery { get; private set; }
+
+        /// <summary>按顺序记录每次调用收到的 query（降级重试会追加第二条）。</summary>
+        public List<string> Queries { get; } = [];
         public string? LastDirectory { get; private set; }
         public int LastMaxResults { get; private set; }
         public string? LastExtensionFilter { get; private set; }
@@ -2057,11 +2167,12 @@ public sealed class SearchGrepToolTests
             FullTextSearchScope? scope = null)
         {
             CallCount++;
+            Queries.Add(q);
             LastQuery = q;
             LastDirectory = d;
             LastMaxResults = m;
             LastExtensionFilter = fileExtensionFilter;
-            return Task.FromResult(_result);
+            return Task.FromResult(_selector is null ? _result! : _selector(q, CallCount));
         }
 
         public Task<FullTextIndexResult> BuildIndexAsync(string d, string? fp, CancellationToken ct) =>
