@@ -77,7 +77,7 @@
 ## 测试
 
 **`../PuddingCodeIndexTests/`（本组件的独立测试工程 —— S2/S3 已兑现）**：只引用本工程，
-**82 用例**（含 3 条边界断言；U3-C 后 66 → 82：+16），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
+**98 用例**（含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
 `InternalsVisibleTo` **仅**对本组件的测试工程开放（**不得**对上层开放 —— 那是反向依赖）。
 
 `../PuddingCodeIntelligenceTests/` 保留语言解析/查询/DI 等**上层**测试（89 用例）；
@@ -121,3 +121,36 @@
 - **测试**：`CodeIndexCalibrationDriverTests`（A1 硬判据 / A2 不动文件系统 / A3 拒绝 sweep / A4 计数 / A5 watcher 失败也校准 / 宽限窗口 / 每轮 ceiling）、`CodeIndexCalibrationServiceTests`（A6 幂等 / 拒绝 / 宽限窗口 / 分批与上限 / 取消 / 只调用 `ListFiles`+`RemoveFiles` / 空 scope）、`CodeIndexCalibrationTestDoubles`（`RecordingCodeIndexStore` / `RecordingLogger` / `ThrowingWatcherFactory`）。
 - **门禁**：本工程 build exit 0；`PuddingCodeIndexTests` **82/82**、`PuddingCodeIntelligenceTests` **93/93**、`PuddingHost.Tests` **124/124**、`PuddingAgent -c Release` exit 0 且 `error CS`=0；`ProjectReference` 仍为 **0**；变异 A/B 取红 + 复原逐位相同（见根 `code_map.md` 的 U3-C 条目）。
 - **边界未击穿**：未新增 NuGet；本组件仍**不引用** `PuddingCodeIntelligence` / `PuddingRuntime` / `PuddingHost` / `PuddingAgent`（反向检索 4 名仅命中 2 处注释，带阳性对照）；未改 Host/DI（驱动器新增的可选构造参数有默认值，宿主照旧只解析 `ICodeIndexMaintenance`）。
+
+## U4-2a 更新（2026-09-24）— 检索意图与结果合同冻结（叶子侧，不接 Host）
+
+**新增目录 `Contracts/Retrieval/`（命名空间 `PuddingCodeIndex.Contracts.Retrieval`，24 文件）**：只冻结合同与纯函数，**不实现任何真实检索引擎**（U4-2c / U4-3 才做）。
+
+| 文件 | 内容 |
+|------|------|
+| `RetrievalIntent.cs` | 检索意图枚举；**`Auto = 0`（必须占 0 ⇒ 缺省即 Auto）**，共 12 值 |
+| `RetrievalIntentPolicy.cs` | intent → 层序 / 符号种类过滤 / 关系过滤 的**成文表**；`IsLegitimateBulkIntent`（正当的多豁免） |
+| `RetrievalTaxonomy.cs` | `RetrievalHitKind`（六层 + Unknown，值即层序）、`RetrievalConfidence`（信任秩 Semantic>Lexical>Unknown）、`RetrievalRelationKind`、`RetrievalMatchTarget`（`[Flags]`：只关注类名称 = `SymbolName`） |
+| `SymbolIdentity.cs` | 跨 scope 去重键（规范化 symbol_id + 文件 + 行；**归一化在构造期完成** ⇒ 取值相等即身份相等）；`ScopeIdSet.cs`（规范集合，避免裸数组的引用相等陷阱） |
+| `RetrievalEvidence.cs` | 证据位置（文件 + 行 + 可选片段）——"每条命中都能回答证据在哪" |
+| `RetrievalHit.cs` | 命中（层/种类/语言原始种类/关系/证据/置信度/分数/**why 必填**/匹配域/scope 盖章/`ScopeCorroborationWeight`） |
+| `RetrievalHitComparer.cs` | **显式全序**（有效分数 → 层序 → 路径 → 行 → 符号名 → 身份键）；`RetrievalHitOrdering.EnsureOrdered` / `EnsureUniqueIdentities` |
+| `RetrievalHitDeduplicator.cs` | 跨 scope 去重（同身份只留一条 + 并集 scope 盖章），**先于过载判定** |
+| `RetrievalFilter.cs` | 正交过滤面（扩展名 / 目录+递归 / 匹配域 / `CodeSymbolKind` / 命中层 / 关系 / 置信度下限）+ `RetrievalFacet`（放宽面）+ `Matches`（**AND 组合**）+ `Describe`（回显） |
+| `RetrievalDiagnostics.cs` | `QuerySpecificity` / `OverloadReasonKind` / `QueryDiagnostics`（Low 必须有原因、High 必须无原因）/ `RetrievalOverloadFacts`（聚合事实）/ `RetrievalOverloadDiagnostics.Evaluate`（成文规则） |
+| `RetrievalNextStep.cs` | 下一步建议（`NarrowQuery`/`RelaxFilter`/`RebuildIndex`/`UseAlternativeFace`/`AcceptAbsence`）+ `RetrievalSuggestionKind`（**恰好四类**收窄手段） |
+| `RetrievalEmptyReason.cs` | 空结果原因 + `RetrievalEmptyReasonPolicy`（裁决优先级成文；**过滤性空 ⇒ FilteredOut**） |
+| `RetrievalOverflow.cs` | 落盘信息（路径 + 条数 + 预算口径）+ `RetrievalSpillPolicy`（路径必须在 `.pudding`/`temp`/`.tmp` 或系统临时目录内） |
+| `RetrievalBudget.cs` | 双预算默认值（条数 + 字节/token，token 优先）与**估算**口径（非实测） |
+| `RetrievalRequest.cs` | 请求（query + scope + `Intent = Auto` + 过滤面 + 页大小 + 游标 + 双预算） |
+| `RetrievalResult.cs` | 结果（分层命中 + 双视图 + 真实总数 + 分页 + 落盘 + 分布 + 诊断 + 跨 scope 警告 + 降级标注 + 生效过滤面回显）；**唯一构造路径是两个静态工厂**，跨字段不变量 fail-closed |
+| `RetrievalHitViews.cs` | 双视图派生（`symbols` / `files`，各带命中原因摘要） |
+| `ScopeOverlap.cs` | 嵌套/重叠 scope 描述、警告与**纯函数检测器**（段边界，`repo` 不吞 `repo2`） |
+| `LanguageCapability.cs` | 能力矩阵条目（**不支持 ⇔ 必须给替代方案**）+ `ILanguageCapabilityMatrix` 端口 |
+| `RetrievalContractViolationException.cs` | 跨字段合同违反（与入参级 `ArgumentException` 分工明确） |
+| `RetrievalDistribution.cs` / `RetrievalPathFacts.cs` | 分布摘要（SortedDictionary ⇒ 确定性）+ 语言/顶层目录纯推导 |
+| `IRetrievalPort.cs` | 端口：`Task<RetrievalResult> RetrieveAsync(RetrievalRequest, CancellationToken)`（**本刀无实现**） |
+
+**把"空洞否定"变成不可表示**（不靠注释约定，靠类型与构造校验）：① `hits=0` 且无 `EmptyReason` 的构造路径不存在（无公开构造函数 + 工厂校验 + 反射断言）；② `Degraded=true` ⇒ `DegradedReason` 必填；③ `NextSteps` 至多 1 条（>1 抛异常，**不静默截断**）；④ 截断（`totalCount > hits.Count`）必须同时给 `Overflow`（落盘路径）+ `NextCursor` + 非空 `Distribution`，否则拒绝构造。
+
+**成品门禁（本刀实测）**：`dotnet build PuddingAgentNetwork.slnx -c Release` exit 0 / `0 个错误`（改前同）；`PuddingCodeIndexTests` **98/98**（改前 82/82）；`ProjectReference` 仍为 **0**、未新增 NuGet、未改任何 `DependencyInjection.cs` / `.slnx` / Host。
