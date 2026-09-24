@@ -22,7 +22,7 @@
 | `ICodeIndexFileUpdater.cs` | **U3-B3** 按文件增量**可选能力端口**（`IndexFileAsync(descriptor, filePath)`）：故意不放进 `ICodeIndexer` —— 给全量端口加成员会破坏**每一个**实现者（实测 2026-09-24：成员版直接弄坏了禁写路径 `Tests/PuddingHost.Tests` 的替身）；不实现该能力 ⇒ 调用方升级为 scope 级重索引 |
 | `ICodeIndexScheduler.cs` | 后台调度端口（成员语义未变） |
 | `ICodeIndexSchedulerDriver.cs` | **U3-B1** 显式泵端口（`ProcessPendingAsync` + 每 scope `Desired/Committed` 水位） |
-| `ICodeIndexMaintenance.cs` | **U3-B1** 变更驱动维护服务的生命周期/只读观测契约 + `CodeIndexMaintenanceScopeStatus`（**U3-B3** 状态增 `RemovedFileCount` / `IncrementallyIndexedFileCount` / `ScopeEscalationCount`） |
+| `ICodeIndexMaintenance.cs` | **U3-B1** 变更驱动维护服务的生命周期/只读观测契约 + `CodeIndexMaintenanceScopeStatus`（**U3-B3** 状态增 `RemovedFileCount` / `IncrementallyIndexedFileCount` / `ScopeEscalationCount`；**U3-C** 再增 `SweptFileCount` / `CalibrationRunCount` / `RejectedCalibrationRunCount` / `LastCalibrationAtUtc`） |
 | `ICodeIndexScopeRegistry.cs` | 范围注册端口 |
 | `ICodeIndexScopeResolver.cs` | 范围解析端口 + `ScopeResolution` |
 | `ICodeProjectRegistry.cs` | 项目注册端口 |
@@ -41,6 +41,7 @@
 | `CodeIndexChangeBatch.cs` | 折叠产物（重读集合 / 移除集合 / reconcile 标记） |
 | `CodeIndexChangeWatchers.cs` | **U3-B1** 变更源抽象（`ICodeIndexChangeWatcher` / `ICodeIndexWatcherFactory`）+ 真实 watcher 适配工厂 |
 | `CodeIndexMaintenanceService.cs` | **U3-B1/U3-B3** 变更→索引的单一驱动（消费批次、置脏补跑、有界停止）。**U3-B3 按文件施用**：`PathsToRemove` → store 真删除；`PathsToReindex` → `ICodeIndexFileUpdater.IndexFileAsync` 逐文件（索引器无该能力则同样升级）；仅 reconcile / 目录变更 / 索引器拒绝才升级为 scope 级重索引；批次施用失败 ⇒ 标 `NeedsReconcile` + 记错误日志（不静默丢弃） |
+| `CodeIndexCalibrationService.cs` | **U3-C 校准（mark-and-sweep）**：取 scope 已索引路径集合（`ListFilesAsync`），逐条判磁盘存在性，对"已消失"的调用 `RemoveFilesAsync`（只删索引行）；**根目录缺失/不可读 ⇒ 拒绝 sweep**（零移除 + 保持置位）；宽限窗口内被变更管线刚观测过的路径豁免；每事务 ≤256 条、每轮 ≤4096 条，可取消 |
 
 ## 服务（Services/ → `PuddingCodeIndex.Services`）
 
@@ -76,7 +77,7 @@
 ## 测试
 
 **`../PuddingCodeIndexTests/`（本组件的独立测试工程 —— S2/S3 已兑现）**：只引用本工程，
-**65 用例**（62 个组件用例 + 3 条边界断言；U3-B3 后 58 → 65：+4 管线施用 + 3 存储按文件清除），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
+**82 用例**（含 3 条边界断言；U3-C 后 66 → 82：+16），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
 `InternalsVisibleTo` **仅**对本组件的测试工程开放（**不得**对上层开放 —— 那是反向依赖）。
 
 `../PuddingCodeIntelligenceTests/` 保留语言解析/查询/DI 等**上层**测试（89 用例）；
@@ -106,3 +107,17 @@
   与 code index 无数据交叠 ⇒ 本刀**不接**，也未新增任何跨组件依赖。
 - **未验证项**：Roslyn 的 `IndexFileAsync` 每次调用会重新打开 MSBuild 工作区（批内多文件 = 多次加载）；
   未做工作区复用，也未做端到端（真 `.csproj`）的按文件索引实测。
+
+## U3-C 更新（2026-09-24）— 校准（mark-and-sweep）清陈旧行 + NeedsReconcile 归位
+
+- **新增 `Services/CodeIndex/CodeIndexCalibrationService.cs`**（同文件内 `CodeIndexCalibrationRequest` / `CodeIndexCalibrationResult` / `CodeIndexCalibrationRejections`）：scope 的 mark-and-sweep。
+  - **输入**：`WorkspaceId` / `ScopeId` / `RootPath`（先探测）/ `RecentObservations`（变更管线最近观测到的路径 → 时间戳）。
+  - **算法**：`ListFilesAsync` 取已索引路径 → 逐条 `File.Exists || Directory.Exists` → 对"已消失且不在宽限窗口内"的路径分批 `RemoveFilesAsync`（**只删索引行**，事务性、幂等）。
+  - **有界**：`DefaultSweepBatchSize`=256（每个事务）/ `DefaultMaxRemovalsPerRun`=4096（每轮，超出 ⇒ `Truncated=true` 留给下一轮）；逐路径与逐批次检查取消令牌。
+  - **宽限窗口** `DefaultGraceWindow`=2min：窗口内刚被观测的路径豁免（与 watcher/在途索引竞争；原子替换/在途重命名/构建重写自身输出的"瞬时不存在"不是历史遗留）。豁免是延后，窗口过后下一轮照扫。
+  - **拒绝（本刀最危险处的防线）**：`TryProbeRoot` 失败（路径/根缺失、根不可读）⇒ `RootUsable=false` + `Error` 日志 + **0 移除**（不列 store）；调用方据此保持/置位 `NeedsReconcile`。
+- **`CodeIndexMaintenanceService` 接入**：驱动步在"批次施用 + 无条件泵"之后跑 `CalibrateReconcileScopesAsync` —— 只处理 `NeedsReconcile` 的 scope；成功 ⇒ `CodeIndexScopeState.ClearNeedsReconcile()`；被拒/被截断 ⇒ 保持置位；每 scope ≥ `DefaultCalibrationInterval`(60s) 才重试（防不可用根目录按 200ms 轮询刷日志）。每个已施用批次的路径记入 `ScopeEntry.RecentObservations`（宽限窗口数据来源，按窗口清理防无界增长）。**变更源创建失败 ⇒ 立即 `MarkNeedsReconcile(watcher_error)`**。
+- **`CodeIndexScopeState`**：新增 `ClearNeedsReconcile()`（只清 reconcile + reason，**不动** dirty / 计数器 / ObservedVersion）与常量 `CalibrationRootUnavailable` / `CalibrationFailed`。
+- **测试**：`CodeIndexCalibrationDriverTests`（A1 硬判据 / A2 不动文件系统 / A3 拒绝 sweep / A4 计数 / A5 watcher 失败也校准 / 宽限窗口 / 每轮 ceiling）、`CodeIndexCalibrationServiceTests`（A6 幂等 / 拒绝 / 宽限窗口 / 分批与上限 / 取消 / 只调用 `ListFiles`+`RemoveFiles` / 空 scope）、`CodeIndexCalibrationTestDoubles`（`RecordingCodeIndexStore` / `RecordingLogger` / `ThrowingWatcherFactory`）。
+- **门禁**：本工程 build exit 0；`PuddingCodeIndexTests` **82/82**、`PuddingCodeIntelligenceTests` **93/93**、`PuddingHost.Tests` **124/124**、`PuddingAgent -c Release` exit 0 且 `error CS`=0；`ProjectReference` 仍为 **0**；变异 A/B 取红 + 复原逐位相同（见根 `code_map.md` 的 U3-C 条目）。
+- **边界未击穿**：未新增 NuGet；本组件仍**不引用** `PuddingCodeIntelligence` / `PuddingRuntime` / `PuddingHost` / `PuddingAgent`（反向检索 4 名仅命中 2 处注释，带阳性对照）；未改 Host/DI（驱动器新增的可选构造参数有默认值，宿主照旧只解析 `ICodeIndexMaintenance`）。

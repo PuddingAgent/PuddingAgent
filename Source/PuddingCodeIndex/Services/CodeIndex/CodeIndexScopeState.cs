@@ -33,6 +33,15 @@ public sealed class CodeIndexScopeState
 
         /// <summary>A batch could not be applied to the index (store/indexer failure); the scope must be reconciled.</summary>
         public const string BatchApplicationFailed = "batch_application_failed";
+
+        /// <summary>
+        /// Calibration (U3-C) was refused because the scope root is missing or unreadable, so "this path is
+        /// gone" could not be trusted for any path. The flag stays set and the sweep is retried later.
+        /// </summary>
+        public const string CalibrationRootUnavailable = "calibration_root_unavailable";
+
+        /// <summary>Calibration (U3-C) itself failed unexpectedly; the scope stays flagged for a later run.</summary>
+        public const string CalibrationFailed = "calibration_failed";
     }
 
     private readonly object _gate = new();
@@ -169,6 +178,26 @@ public sealed class CodeIndexScopeState
         {
             _droppedChangeCount += count;
             return _droppedChangeCount;
+        }
+    }
+
+    /// <summary>
+    /// Clears the reconcile flag after a successful calibration (U3-C).
+    /// <para>
+    /// Only "fine-grained capture can no longer be trusted" is resolved here: the dirty flag, the observation
+    /// version and every cumulative counter are deliberately left alone, because a calibration says nothing
+    /// about whether an observed change still has to be indexed. Clearing everything is <see cref="Reset()"/>.
+    /// </para>
+    /// </summary>
+    /// <returns><c>true</c> when the flag was set and is now clear.</returns>
+    public bool ClearNeedsReconcile()
+    {
+        lock (_gate)
+        {
+            var wasSet = _needsReconcile;
+            _needsReconcile = false;
+            _reconcileReason = null;
+            return wasSet;
         }
     }
 

@@ -86,6 +86,24 @@ public sealed class CodeIndexScopeStateTests
     }
 
     [TestMethod]
+    public void ClearNeedsReconcile_Clears_Only_That_Flag_And_Reports_The_Transition()
+    {
+        var state = CodeIndexChangeTestFactory.CreateState();
+        state.NextSequence();
+        state.MarkObserved(DateTimeOffset.UnixEpoch);
+        state.MarkNeedsReconcile(CodeIndexScopeState.ReconcileReasons.CalibrationRootUnavailable);
+
+        Assert.IsTrue(state.ClearNeedsReconcile());
+        Assert.IsFalse(state.NeedsReconcile);
+        Assert.IsNull(state.ReconcileReason);
+
+        Assert.IsFalse(state.ClearNeedsReconcile(), "clearing an already clear flag is a no-op, not a transition");
+        Assert.IsTrue(state.Dirty, "a calibration says nothing about pending changes: Dirty is left alone");
+        Assert.IsNotNull(state.LastObservedAtUtc);
+        Assert.AreEqual(1, state.ObservedVersion);
+    }
+
+    [TestMethod]
     public void Reset_With_Identity_Restamp_Keeps_Version_Monotonic()
     {
         var state = CodeIndexChangeTestFactory.CreateState();

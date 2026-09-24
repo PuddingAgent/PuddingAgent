@@ -74,8 +74,8 @@ public interface ICodeIndexMaintenance
 /// <param name="IndexPending">True while an indexing job for the scope is queued.</param>
 /// <param name="IndexInFlight">True while an indexing run for the scope is executing.</param>
 /// <param name="NeedsReconcile">
-/// True when fine-grained capture can no longer be trusted for the scope. This slice only <b>exposes</b>
-/// the flag; clearing it belongs to the calibration slice (U3-C).
+/// True when fine-grained capture can no longer be trusted for the scope. Since U3-C a successful calibration
+/// clears it; a refused or truncated one keeps it set.
 /// </param>
 /// <param name="ReconcileReason">Reason of the latest reconcile trigger, or null.</param>
 /// <param name="ReconcileRequestCount">Number of batches handled for this scope that required reconciliation.</param>
@@ -84,6 +84,11 @@ public interface ICodeIndexMaintenance
 /// <param name="RemovedFileCount">Number of indexed files whose rows were really deleted for this scope (cumulative).</param>
 /// <param name="IncrementallyIndexedFileCount">Number of files re-indexed one by one for this scope (cumulative) — work a full scope re-index did not have to do.</param>
 /// <param name="ScopeEscalationCount">Number of batches for this scope that had to escalate to a scope-level indexing run.</param>
+/// <param name="SweptFileCount">Number of stale indexed files calibration really removed for this scope (cumulative, U3-C).</param>
+/// <param name="CalibrationRunCount">Number of calibration runs completed for this scope (cumulative, U3-C). A refused run counts too, so the number never hides an attempt.</param>
+/// <param name="RejectedCalibrationRunCount">Number of calibration runs refused because the scope root was missing or unreadable (cumulative, U3-C).</param>
+/// <param name="LastCalibrationAtUtc">When the most recent calibration run for this scope completed, or null when none ever ran.</param>
+/// <param name="RecentObservationCount">Paths the change pipeline observed inside the calibration grace window right now (U3-C): they are the ones calibration leaves alone, and the map is bounded because aged-out entries are dropped.</param>
 /// <param name="WatcherAttached">True when a change source is attached to the scope.</param>
 public sealed record CodeIndexMaintenanceScopeStatus(
     string WorkspaceId,
@@ -103,4 +108,9 @@ public sealed record CodeIndexMaintenanceScopeStatus(
     long RemovedFileCount,
     long IncrementallyIndexedFileCount,
     long ScopeEscalationCount,
+    long SweptFileCount,
+    long CalibrationRunCount,
+    long RejectedCalibrationRunCount,
+    DateTimeOffset? LastCalibrationAtUtc,
+    long RecentObservationCount,
     bool WatcherAttached);

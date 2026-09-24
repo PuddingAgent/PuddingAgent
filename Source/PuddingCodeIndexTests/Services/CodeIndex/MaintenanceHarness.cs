@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCodeIndex.Contracts;
 using PuddingCodeIndex.Services;
@@ -17,29 +18,38 @@ internal sealed class MaintenanceHarness : IDisposable
         TimeSpan? pollInterval = null,
         TimeSpan? stopTimeout = null,
         int queueCapacity = CodeIndexChangeQueue.DefaultCapacity,
-        ICodeIndexer? indexer = null)
+        ICodeIndexer? indexer = null,
+        ILogger<CodeIndexMaintenanceService>? logger = null,
+        int maxRemovalsPerRun = CodeIndexCalibrationService.DefaultMaxRemovalsPerRun)
     {
         Fixture = CodeIndexFixture.Create();
         Clock = new MutableTimeProvider(new DateTimeOffset(2026, 9, 23, 0, 0, 0, TimeSpan.Zero));
         Indexer = new RecordingCodeIndexer();
         var effectiveIndexer = indexer ?? (ICodeIndexer)Indexer;
+        var effectiveLogger = logger ?? NullLogger<CodeIndexMaintenanceService>.Instance;
         Scheduler = new CodeIndexScheduler(
             effectiveIndexer,
             new DefaultCodeWorkspaceResolver(Fixture.Store),
             Fixture.Store,
             NullLogger<CodeIndexScheduler>.Instance);
         WatcherFactory = new FakeCodeIndexWatcherFactory();
+        Calibration = new CodeIndexCalibrationService(
+            Fixture.Store,
+            Clock,
+            maxRemovalsPerRun: maxRemovalsPerRun,
+            logger: effectiveLogger);
         Service = new CodeIndexMaintenanceService(
             Scheduler,
             WatcherFactory,
             Fixture.Store,
             effectiveIndexer,
             new DefaultCodeWorkspaceResolver(Fixture.Store),
-            NullLogger<CodeIndexMaintenanceService>.Instance,
+            effectiveLogger,
             Clock,
             queueCapacity: queueCapacity,
             pollInterval: pollInterval ?? TimeSpan.FromHours(1),
-            stopTimeout: stopTimeout ?? CodeIndexMaintenanceService.DefaultStopTimeout);
+            stopTimeout: stopTimeout ?? CodeIndexMaintenanceService.DefaultStopTimeout,
+            calibration: Calibration);
     }
 
     public CodeIndexFixture Fixture { get; }
@@ -51,6 +61,9 @@ internal sealed class MaintenanceHarness : IDisposable
     public CodeIndexScheduler Scheduler { get; }
 
     public FakeCodeIndexWatcherFactory WatcherFactory { get; }
+
+    /// <summary>Calibration the driver under test drives (same store, same clock), exposed for direct use.</summary>
+    public CodeIndexCalibrationService Calibration { get; }
 
     public CodeIndexMaintenanceService Service { get; }
 
@@ -65,17 +78,27 @@ internal sealed class MaintenanceHarness : IDisposable
     public string Combine(string relativePath) =>
         Path.Combine(Root, relativePath.Replace('/', Path.DirectorySeparatorChar));
 
-    public async Task StartWithActiveScopeAsync()
+    /// <summary>
+    /// Attaches the single test scope and starts its (fake) change source.
+    /// </summary>
+    /// <param name="scopeRootPath">
+    /// Root the scope is attached at; defaults to <see cref="Root"/>. Passing a path that does not exist
+    /// simulates "the scope root is not mounted / was renamed away any more" (U3-C refused-sweep case)
+    /// without moving the SQLite file of the fixture.
+    /// </param>
+    public async Task StartWithActiveScopeAsync(string? scopeRootPath = null)
     {
+        var root = scopeRootPath ?? Root;
+
         await Fixture.Store.UpsertProjectAsync(
             new CodeProjectRecord(
                 MaintenanceTestData.WorkspaceId,
                 MaintenanceTestData.ScopeId,
-                Root,
+                root,
                 CodeProjectStatus.Active));
 
         await Service.StartAsync();
-        Assert.IsTrue(Service.EnsureScope(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, Root));
+        Assert.IsTrue(Service.EnsureScope(MaintenanceTestData.WorkspaceId, MaintenanceTestData.ScopeId, root));
         Assert.IsTrue(Watcher.Started);
     }
 
@@ -100,13 +123,23 @@ internal sealed class MaintenanceHarness : IDisposable
     /// Persists a file record plus one symbol for it — the rows a real indexer run would have written —
     /// so a test can start from "this file is indexed" without running a language indexer.
     /// </summary>
-    public async Task SeedIndexedFileAsync(
+    public Task SeedIndexedFileAsync(
         string relativePath,
+        string symbolName,
+        string language = "C#",
+        CodeSymbolKind symbolKind = CodeSymbolKind.Class) =>
+        SeedIndexedAbsoluteFileAsync(Combine(relativePath), symbolName, language, symbolKind);
+
+    /// <summary>
+    /// Same as <see cref="SeedIndexedFileAsync"/> but for an absolute path, so a test can seed rows for a
+    /// scope whose root is not <see cref="Root"/> (for example a root that does not exist).
+    /// </summary>
+    public async Task SeedIndexedAbsoluteFileAsync(
+        string filePath,
         string symbolName,
         string language = "C#",
         CodeSymbolKind symbolKind = CodeSymbolKind.Class)
     {
-        var filePath = Combine(relativePath);
         await Fixture.Store.UpsertFilesAsync(
             MaintenanceTestData.WorkspaceId,
             MaintenanceTestData.ScopeId,

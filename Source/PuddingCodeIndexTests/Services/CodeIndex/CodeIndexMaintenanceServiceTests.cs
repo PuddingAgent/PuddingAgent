@@ -48,9 +48,14 @@ public sealed class CodeIndexMaintenanceServiceTests
         Assert.IsTrue(status.RootPath.Length > 0);
     }
 
-    /// <summary>I3 — a reconcile request must become visible state and be counted, never swallowed.</summary>
+    /// <summary>
+    /// I3 — a reconcile request must become visible state, be counted, and force a scope-level re-index, never be
+    /// swallowed. Since U3-C it is also <b>resolved</b>, not only exposed: the calibration at the end of the same
+    /// step sweeps the scope and clears the flag. The "refused ⇒ stays flagged" half is locked by
+    /// <c>CodeIndexCalibrationDriverTests</c>.
+    /// </summary>
     [TestMethod]
-    public async Task Reconcile_Request_Is_Exposed_And_Triggers_A_Scope_Re_Index()
+    public async Task Reconcile_Request_Is_Counted_Triggers_A_Scope_Re_Index_And_Is_Resolved_By_Calibration()
     {
         using var harness = new MaintenanceHarness(queueCapacity: 1);
         await harness.StartWithActiveScopeAsync();
@@ -62,18 +67,20 @@ public sealed class CodeIndexMaintenanceServiceTests
         var state = harness.Watcher.State;
         Assert.AreEqual(1, state.RecordOverflow());
         state.MarkNeedsReconcile(CodeIndexScopeState.ReconcileReasons.QueueOverflow);
+        Assert.IsTrue(state.NeedsReconcile, "the flag is set before the step runs");
 
         harness.AdvancePastDebounce();
 
         Assert.AreEqual(1, await harness.Service.ProcessDueBatchesAsync());
-        Assert.AreEqual(1, harness.Service.ReconcileRequests);
-        Assert.AreEqual(1, harness.Service.PendingReconcileScopeCount);
+        Assert.AreEqual(1, harness.Service.ReconcileRequests, "the request must be counted, never swallowed");
 
         var status = harness.Status();
-        Assert.IsTrue(status.NeedsReconcile, "the reconcile request must stay visible");
-        Assert.AreEqual(CodeIndexScopeState.ReconcileReasons.QueueOverflow, status.ReconcileReason);
         Assert.AreEqual(1, status.ReconcileRequestCount);
         Assert.AreEqual(1, harness.Indexer.CallCount, "a scope reconcile must trigger a real re-index");
+        Assert.AreEqual(1, status.CalibrationRunCount, "U3-C: the flagged scope is calibrated in the same step");
+        Assert.AreEqual(0, status.SweptFileCount, "nothing was stale in this scenario");
+        Assert.IsFalse(status.NeedsReconcile, "U3-C: a successful calibration resolves the request");
+        Assert.AreEqual(0, harness.Service.PendingReconcileScopeCount);
     }
 
     /// <summary>

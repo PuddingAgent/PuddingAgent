@@ -1,3 +1,24 @@
+## 2026-09-24 U3-C：索引校准（mark-and-sweep）—— 陈旧行清除 + NeedsReconcile 归位（检索正确性收口）
+
+**问题**：其它入口都是**变更驱动**的；`RoslynCSharpIndexer` 只遍历编译中现有语法树，scope 级/全量重索引**不做 sweep**（没有"本轮未见"这个概念）⇒ 历史遗留、整目录删除/改名、监听丢事件产生的陈旧行**永不被清除**，检索会持续返回已不存在文件的符号；`NeedsReconcile` 永不自动清除。
+
+**交付（全在 `Source/PuddingCodeIndex/`，未改 Host/DI、未改检索查询链、未改 Enqueue 语义、未改索引算法、未新增 NuGet）**：
+- 新增 `Services/CodeIndex/CodeIndexCalibrationService.cs`（`CodeIndexCalibrationRequest` / `CodeIndexCalibrationResult` / `CodeIndexCalibrationRejections`）：取 `ICodeIndexStore.ListFilesAsync` 的已索引路径集合，逐条判磁盘存在性，对"已消失"的调用 U3-B3 的 `RemoveFilesAsync`（事务性、幂等）；**只删索引行**；每事务 ≤ `DefaultSweepBatchSize`(256) 条、每轮 ≤ `DefaultMaxRemovalsPerRun`(4096) 条（超出则该轮 `Truncated=true` 并留给下一轮）；可取消（逐路径 + 逐批次，已提交批次不回滚）。
+- **安全红线**：① 根目录缺失/不可读 ⇒ **拒绝 sweep**（`TryProbeRoot`：`Directory.Exists` + 强制一次枚举以暴露 `UnauthorizedAccessException`/`IOException`），记 `Error` + 保持/置位 `NeedsReconcile(calibration_root_unavailable)` + 本轮移除 0；② 只删索引行；③ **宽限判据**：驱动器把每个已施用批次触及的路径连时间戳记入 `RecentObservations`，校准对窗口内（`DefaultGraceWindow`=2min）的路径一律豁免（与 watcher/在途索引竞争；瞬时"不存在"≠历史遗留），豁免是延后不是丢弃；④ 幂等（第二次移除 0，且不再调用 store 的删除）。
+- `CodeIndexMaintenanceService`：驱动步在"批次施用 + 无条件泵"之后追加校准步；`NeedsReconcile` 的 scope 走校准（仍保留既有 scope 级重索引升级：一个清陈旧行、一个补新增文件）；**成功 ⇒ `ClearNeedsReconcile()`**，被拒/被截断 ⇒ 保持；每 scope 至少间隔 `DefaultCalibrationInterval`(60s) 才重试；**变更源创建失败 ⇒ 立即标 `NeedsReconcile(watcher_error)`**（没有 watcher 就等于捕获不可信）。
+- `ICodeIndexMaintenance`：`CodeIndexMaintenanceScopeStatus` 增 `SweptFileCount` / `CalibrationRunCount` / `RejectedCalibrationRunCount` / `LastCalibrationAtUtc`。`CodeIndexScopeState` 增 `ClearNeedsReconcile()`（只清 reconcile，不动 dirty/计数器）+ 新原因常量 `CalibrationRootUnavailable` / `CalibrationFailed`。
+- 测试：新增 `Source/PuddingCodeIndexTests/Services/CodeIndex/CodeIndexCalibrationDriverTests.cs`（A1~A5 + 宽限窗口 + 每轮 ceiling）与 `CodeIndexCalibrationServiceTests.cs`（A6 幂等 + 拒绝守卫 + 宽限窗口 + 分批/上限 + 取消 + "只调用 ListFiles/RemoveFiles"），`CodeIndexCalibrationTestDoubles.cs`（记录型 store/logger 替身、失败 watcher 工厂），`CodeIndexScopeStateTests` +1；`MaintenanceHarness` 支持 scope 根覆盖 / 绝对路径播种 / 注入 logger / 注入 ceiling。
+
+**门禁（实测）**：`PuddingCodeIndexTests` **82/82**（66→82，+16）、`PuddingCodeIntelligenceTests` **93/93**、`Tests/PuddingHost.Tests` **124/124**、`PuddingAgent -c Release` exit 0 且日志内 `error CS`=0；`PuddingCodeIndex.csproj` 的 `ProjectReference` 仍为 **0**，4 个禁用程序集名在组件内只命中 2 处**注释**（阳性对照：同名在 `PuddingCodeIntelligence` 命中 21 处 ⇒ 方向为消费方→组件）。
+
+**改动前红（A1 基线）**：无事件 + 已删文件 ⇒ 步骤后 `SearchSymbolsAsync("LegacyClass")` 实际 **1** 条（`Assert.IsEmpty 失败。大小 0 的预期集合。实际： 1`），原始输出 `temp/u3c-A1-baseline-prefix-red.txt`。
+
+**变异取红（三份原始输出）**：**A** 移除"根目录缺失即拒绝"守卫 ⇒ **2 红/80 绿/82**（A3：`status.SweptFileCount` 期望 0 实际 **1** ⇒ 索引被误删）；**B** 把 sweep 做成 no-op ⇒ **11 红/71 绿/82**（A1 硬判据红：`Assert.IsEmpty 失败。实际： 1`）；**复原**后 `git hash-object` 与变更前**逐位相同**（`CodeIndexCalibrationService.cs` 三点值：变更前 `08433a58741e39fa041d8938f60f1fb8f8840eee` / 变异 A 后 `1cdba0d6a4d0d7e6e98c915f243db734e25064ea` / 变异 B 后 `da1c3b7f8d597f8fb1509760371128a8108a2562` / 复原后 `08433a58…`）且复跑 **82/82 exit 0**，`MUTATION` 残留 0。原始日志：`temp/test-out/u3c-mutationA.txt` / `u3c-mutationB.txt` / `u3c-restore-green.txt`（81 用例态）与 `u3c-final-index-tests.txt`（最终树 82/82 exit 0）。
+
+**§6 Lucene（只调查，未实现接线）**：内容文档的陈旧清除只在 `LuceneSearchEngine.BuildIndexInternalAsync` 的**增量**分支发生（`:325-352` 算集合、`:396-400` 消费），`stalePaths` 由引擎自己算（索引 `path` 词项 − 本次磁盘扫描），**无任何外部端口喂它**；唯一生产调用点是 `Source/PuddingPlatform/Services/RawSessionLogService.Fts.cs:74`。若接线，端口应定义在**能力所在侧**（`PuddingFullTextIndex/Contracts`），编排留在组合根（`PuddingHost` DI/HostedService）。详见施工计划 §U3 的 U3-C 块。
+
+**诚实留白**：校准只在 scope **被标 `NeedsReconcile`** 时才触发（未实现 §U3-C 的"每 15min 常规 metadata 校准"周期）；`RootUnreadable` 分支只有代码路径、无实测（Windows 上稳定复现"存在但不可读"成本高）；只区分"路径缺失/根缺失/根不可读"，**不区分**"根存在但部分子目录不可读"；`Truncated` 之后靠下一次重试续跑而非同一轮循环；`PuddingFullTextIndex`（Lucene）仍未接线；未部署、未重启。
+
 ## 2026-09-24 U3-B3：删除/重命名真清除 + 按文件增量（检索正确性）
 
 **第 0 步是取证，不是改码**。实测基线（改动前、可复现）：① 变更管线级 —— 文件已索引 → `Deleted` 批次 → 查询**仍返回该文件的符号**（`Assert.IsEmpty 失败。大小 0 的预期集合。实际：1`）；② 索引器级（真 Roslyn + 真 store）—— 文件从编译中消失后跑**全量重索引**，该文件仍残留 2 条符号行（`T:Probe.Alpha`、`M:Probe.Alpha.Value`）与对应的 `CodeFiles` 行 ⇒ **全量重索引不做 sweep**（源码证据：`RoslynCSharpIndexer.cs` 的 `IndexWorkspaceCoreAsync` 只遍历编译中的语法树，没有“本轮未见”清理），sweep/校准归 U3-C。
