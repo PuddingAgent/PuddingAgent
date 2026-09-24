@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using PuddingCode.Models;
 using PuddingCode.Observability;
@@ -18,7 +19,8 @@ namespace PuddingRuntime.Services.Skills;
 [Tool(
     id: "search_grep",
     name: "search_grep",
-    description: "在指定目录的代码文件中搜索指定文本。支持正则表达式。可选参数 pattern 过滤文件名（如 \"*.cs\"），file_ext 过滤扩展名（如 \"cs;ts\"），directory 限定搜索目录，exclude_dirs 排除子目录（默认 = 单一真源 PathNoiseRules 派生的噪声目录名单：构建产物/依赖/IDE/工具产物，含 .pudding/.tmp-build/.pnpm-store），exclude_dirs_append 追加排除目录，max_line_bytes 单行截断上限（默认 8192），max_total_bytes 结果总量上限（默认 16384）；结果不足时缩小范围后渐进检索。Hard limits: at most 2000 files are enumerated, at most 2000 files / 64MB are scanned, and one call is capped at 10s. Whenever a limit is hit, the output MUST carry an explicit notice — it never degrades into a silent \"(no matches)\". For large or unknown scopes prefer the indexed tools first: code_symbol_search / code_explore (code index, millisecond latency) or file_search (file-name index); then use search_grep to grep inside a narrow directory.",
+    description: "在指定目录的代码文件中搜索指定文本。支持正则表达式。可选参数 pattern 过滤文件名（如 \"*.cs\"），file_ext 过滤扩展名（如 \"cs;ts\"），directory 限定搜索目录，exclude_dirs 排除子目录（默认 = 单一真源 PathNoiseRules 派生的噪声目录名单：构建产物/依赖/IDE/工具产物，含 .pudding/.tmp-build/.pnpm-store），exclude_dirs_append 追加排除目录，max_line_bytes 单行截断上限（默认 8192），max_total_bytes 结果总量上限（默认 16384）；结果不足时缩小范围后渐进检索。Hard limits: at most 2000 files are enumerated, at most 2000 files / 64MB are scanned, and one call is capped at 10s. Whenever a limit is hit, the output MUST carry an explicit notice — it never degrades into a silent \"(no matches)\". For large or unknown scopes prefer the indexed tools first: code_symbol_search / code_explore (code index, millisecond latency) or file_search (file-name index); then use search_grep to grep inside a narrow directory. The optional backend parameter routes the call: omit it (or backend='scan') for the legacy managed scan (unchanged), or pass backend='index' to query the full-text index directly (no managed scan, returns per-call timing, requires the scope to be indexed).",
+
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe)]
@@ -58,6 +60,11 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     private const int MaxScannedFiles = 2000;
     private const long MaxScannedBytes = 64 * 1024 * 1024;
     private const int MaxErrors = 100;
+
+    // ADR-089 U4-5a（用户裁定 2026-09-24）：backend 路由参数的两个合法值。
+    // 默认（未传/空）= scan = 旧路径；只有显式 index 才进入新的全文索引后端。
+    private const string BackendScan = "scan";
+    private const string BackendIndex = "index";
 
     public SearchGrepTool(
         ILogger<SearchGrepTool> logger,
@@ -119,6 +126,24 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         // 执行快照冻结的 WorkingDirectory 解析出的绝对路径（与 file 工具同源），
         // 避免回落到进程 Environment.CurrentDirectory（运行时 bin 目录）。
         var managedDirectory = ResolveManagedSearchDirectory(args.Directory, context);
+
+        // ADR-089 U4-5a（用户裁定 2026-09-24）：backend 路由。
+        // 默认（未传/空/'scan'）= 旧路径，逐字节不变；只有显式 'index' 才进入新的全文索引后端。
+        // 旧路径完整保留作为兜底：新后端不可用时删掉该参数即可回退，无需回滚代码。
+        // 新后端**不写失败账本**：否则一次 index 调用的 no_match 会把同 query 的 scan 调用短路，
+        // 反而破坏兜底（账本键与 scan 共用，见 BuildAttemptKey）。
+        var backend = (args.Backend ?? string.Empty).Trim().ToLowerInvariant();
+        if (backend.Length == 0) backend = BackendScan;
+        if (backend is not (BackendScan or BackendIndex))
+            return ToolExecutionResult.Fail(
+                $"Unknown backend '{args.Backend}'. Valid values: '{BackendScan}' (default, legacy managed scan) "
+                + $"and '{BackendIndex}' (full-text index backend). Omit the parameter to use the default path.",
+                status: ToolResultStatuses.ContractError);
+
+        if (backend == BackendIndex)
+            return await IndexBackendSearchAsync(
+                query, args.Pattern, args.FileExt, args.Directory, managedDirectory,
+                ParseBool(args.CaseSensitive), maxResults, excludeDirs, maxLineBytes, context, ct);
 
         // 失败账本：仅对确定性重试（query/scope/glob/case/workspaceVersion 完全一致）短路。
         var key = BuildAttemptKey(query, args.Pattern, managedDirectory, caseSensitive, context);
@@ -376,6 +401,148 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
     /// 命中行去重键：归一化绝对路径 + 行号。Lucene 候选与托管扫描两条路径共用，
     /// 同一 (文件, 行) 只输出一次。
     /// </summary>
+    /// <summary>
+    /// ADR-089 U4-5a：全文索引后端（新路径，与旧路径完全独立）。
+    /// 契约：只消费索引命中，**不做托管全量扫描** ⇒ 2000 文件 / 64 MB / 10 s 三重上限不适用，
+    /// 因此不产生“扫描预算耗尽”型假否定；覆盖度 = 该 scope 已建索引的文件（索引不暗示文件系统完整）。
+    /// 语义：query 交给引擎的 Lucene 查询解析器（与评测探针 LuceneFullTextProbe 同源实测的配置一致），
+    /// 不是托管扫描的字面子串语义；需要字面/正则语义时用默认 backend（不传该参数）。
+    /// 观测：输出尾行含 engineMs（引擎侧）与 totalMs（工具侧，含后置过滤），并作为 telemetry 维度上报。
+    /// </summary>
+    private async Task<ToolExecutionResult> IndexBackendSearchAsync(
+        string query, string? pattern, string? fileExt, string? directory, string managedDirectory,
+        bool caseSensitive, int maxResults, HashSet<string> excludeDirs, long maxLineBytes,
+        ToolExecutionContext context, CancellationToken ct)
+    {
+        if (caseSensitive)
+            return ToolExecutionResult.Fail(
+                "backend='index' does not support case_sensitive=true: index hits come from the Lucene analyzer and do not honour case mode. "
+                + "Omit 'backend' to use the managed scan path, which supports case_sensitive.",
+                status: ToolResultStatuses.ContractError);
+
+        var total = Stopwatch.StartNew();
+
+        // scope：索引按绝对路径归一化哈希定位（LuceneSearchEngine.GetIndexDirectoryPath），故必须给绝对 scope。
+        // 省略 directory 时默认**工作区根**（而不是进程 CWD）；这与旧路径的 CWD 回退有意不同，
+        // 且在输出尾行里显式打印 scope 事实，调用方可核对。
+        var scopeDirectory = string.IsNullOrWhiteSpace(directory)
+            ? Path.GetFullPath(HostFileToolPaths.ResolveWorkspaceRoot(context.WorkingDirectory))
+            : Path.GetFullPath(managedDirectory);
+
+        // 扩展名过滤与旧路径同源：file_ext 优先，其次 pattern 为 "*.ext" 形态时的等价扩展名。
+        var filter = fileExt?.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(e => e.StartsWith('.') ? e : "." + e).ToArray();
+        var patternFilter = PatternToExtensionFilter(pattern);
+        string? extFilter = filter is { Length: > 0 }
+            ? string.Join(";", filter)
+            : patternFilter is { Length: > 0 } ? string.Join(";", patternFilter) : null;
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(_searchTimeout);
+
+        FullTextSearchResult engineResult;
+        try
+        {
+            // maxResults + 1：多取一条用于判定“是否被 max_results 截断”，不改变返回语义。
+            engineResult = await _searchEngine.SearchAsync(
+                query, scopeDirectory, maxResults + 1,
+                fileExtensionFilter: extFilter,
+                subDirectoryFilter: null,
+                ct: cts.Token);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw; // 调用方取消必须传播
+        }
+        catch (OperationCanceledException)
+        {
+            ReportIndexBackendTelemetry(context, scopeDirectory, "timeout", total.ElapsedMilliseconds);
+            return ToolExecutionResult.Fail(
+                $"Index backend timed out after {_searchTimeout.TotalSeconds:0.##}s for scope '{scopeDirectory}'. "
+                + "Narrow the scope or omit 'backend' to use the managed scan path.",
+                status: ToolResultStatuses.Timeout);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[SearchGrep] index backend failed");
+            ReportIndexBackendTelemetry(context, scopeDirectory, "error", total.ElapsedMilliseconds);
+            return ToolExecutionResult.Fail(
+                $"Index backend failed: {ex.Message}. Omit 'backend' (or pass 'scan') to use the managed scan path.",
+                status: ToolResultStatuses.ContractError);
+        }
+
+        if (!engineResult.Success)
+        {
+            ReportIndexBackendTelemetry(context, scopeDirectory, "unavailable", total.ElapsedMilliseconds);
+            return ToolExecutionResult.Fail(
+                $"Index backend unavailable for scope '{scopeDirectory}': {engineResult.Error ?? "engine reported failure"}. "
+                + "The scope must be indexed first; omit 'backend' (or pass 'scan') to use the managed scan path.",
+                status: ToolResultStatuses.ContractError);
+        }
+
+        // 后置过滤与旧路径共用 canonical 合同（IsPathInExcludedDir / RetrievalGlobMatcher），避免语义分叉。
+        // 索引是快照：命中指向的文件若已被删除/移动，则不输出（避免把陈旧路径当命中）。
+        var emitted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var lines = new List<string>();
+        bool truncated = false;
+        int staleSkipped = 0;
+        int engineMatchCount = 0;
+        foreach (var match in engineResult.Matches ?? [])
+        {
+            engineMatchCount++;
+            if (lines.Count >= maxResults) { truncated = true; break; }
+            var fullPath = Path.GetFullPath(match.FilePath);
+            if (!File.Exists(fullPath)) { staleSkipped++; continue; }
+            if (IsPathInExcludedDir(fullPath, scopeDirectory, excludeDirs)) continue;
+            var relative = NormalizeRelativePath(scopeDirectory, fullPath);
+            if (!string.IsNullOrWhiteSpace(pattern)
+                && !RetrievalGlobMatcher.Matches(Path.GetFileName(fullPath), relative, pattern, ignoreCase: true))
+                continue;
+            if (!emitted.Add(BuildDedupKey(fullPath, match.LineNumber))) continue;
+            var lineText = TruncateLine((match.LineText ?? string.Empty).Trim(), maxLineBytes);
+            lines.Add($"{relative}:{match.LineNumber}: {lineText}");
+        }
+
+        total.Stop();
+        var summary = $"(backend=index: scope={scopeDirectory}, lines={lines.Count}, engineMatches={engineMatchCount}, "
+            + $"engineTotalMatches={engineResult.TotalMatches}, engineMs={engineResult.ElapsedMs}, totalMs={total.ElapsedMilliseconds}"
+            + (truncated ? ", truncated=max_results" : string.Empty)
+            + (staleSkipped > 0 ? $", staleSkipped={staleSkipped}" : string.Empty)
+            + "; single Lucene query-parser call, no managed scan — the 2000-file/64MB/10s caps do not apply, "
+            + "coverage = files indexed under this scope, line text comes from the index snapshot)";
+
+        var outcome = lines.Count == 0 ? "no_match" : truncated ? "truncated" : "hit";
+        ReportIndexBackendTelemetry(context, scopeDirectory, outcome, total.ElapsedMilliseconds);
+
+        var output = lines.Count == 0
+            ? "(no matches)\n" + summary
+            : string.Join('\n', lines) + "\n" + summary;
+        return ToolExecutionResult.Ok(output,
+            status: lines.Count == 0 ? ToolResultStatuses.NoMatch
+                : truncated ? ToolResultStatuses.Truncated : null);
+    }
+
+    /// <summary>
+    /// ADR-089 U4-5a：index 后端的 telemetry。指标名与旧路径的 search_attempt 分离，
+    /// 避免两个后端的计数/维度互相污染；elapsed_ms 作为维度上报，供成本/延迟分析。
+    /// </summary>
+    private void ReportIndexBackendTelemetry(
+        ToolExecutionContext context, string scope, string outcome, long elapsedMs)
+    {
+        ReportTelemetry(
+            "search_backend_index",
+            outcome is "timeout" or "error" ? TelemetryMetricStatuses.Failed : TelemetryMetricStatuses.Succeeded,
+            outcome,
+            new Dictionary<string, string>
+            {
+                ["backend"] = BackendIndex,
+                ["scope"] = scope,
+                ["outcome"] = outcome,
+                ["elapsed_ms"] = elapsedMs.ToString(),
+            },
+            context);
+    }
+
     private static string BuildDedupKey(string filePath, int lineNumber) =>
         $"{Path.GetFullPath(filePath).ToLowerInvariant()}|{lineNumber}";
 
@@ -408,6 +575,7 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         {
             var relative = NormalizeRelativePath(cwd, fullPath);
             if (!RetrievalGlobMatcher.Matches(Path.GetFileName(fullPath), relative, glob, ignoreCase: true))
+
                 return false;
         }
 
@@ -829,4 +997,6 @@ public sealed record SearchGrepArgs
     public long? MaxLineBytes { get; init; }
     [ToolParam("Max total bytes of results before truncation. 0 disables the cap. Default: 16384")]
     public long? MaxTotalBytes { get; init; }
+    [ToolParam("Search backend routing. 'scan' (default) = legacy managed scan, unchanged behavior (2000-file / 64MB / 10s caps apply). 'index' = full-text (Lucene) index backend: queries the index directly, runs no managed scan, and returns engineMs/totalMs timing. Unknown values fail with a contract error. Requires the scope to be indexed.")]
+    public string? Backend { get; init; }
 }

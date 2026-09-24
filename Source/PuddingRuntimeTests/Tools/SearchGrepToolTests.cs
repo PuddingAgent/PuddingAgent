@@ -1755,4 +1755,244 @@ public sealed class SearchGrepToolTests
         public Task<FullTextIndexResult> BuildIndexAsync(string d, string? fp, CancellationToken ct) => Task.FromResult(new FullTextIndexResult(true, 0, 0, 0, null));
         public bool RemoveIndex(string d) => true;
     }
+
+    // ===== ADR-089 U4-5a：backend 路由（新全文索引后端 / 旧路径兑底）=====
+
+    [TestMethod]
+    public async Task Backend_Index_Returns_Index_Hits_Without_Managed_Scan()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-index-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var indexed = Path.Combine(tempDir, "indexed.txt");
+        var notIndexed = Path.Combine(tempDir, "notindexed.txt");
+        await File.WriteAllTextAsync(indexed, "alpha\nNEEDLE-from-index\nomega\n");
+        await File.WriteAllTextAsync(notIndexed, "NEEDLE-only-on-disk\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(
+                true,
+                [new FullTextSearchMatch(indexed, 2, "NEEDLE-from-index")],
+                null, 1, 4100));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, engine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = tempDir,
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "indexed.txt:2: NEEDLE-from-index");
+            Assert.IsFalse(result.Output.Contains("notindexed.txt"),
+                "backend=index 不得回落到托管扫描：未被索引的文件不得出现在结果里");
+
+            // 观测面：单次检索耗时必须在结果里可见（引擎侧 + 工具侧）
+            StringAssert.Contains(result.Output, "backend=index");
+            StringAssert.Contains(result.Output, "engineMs=4100");
+            StringAssert.Contains(result.Output, "totalMs=");
+            StringAssert.Contains(result.Output, "no managed scan");
+
+            // 引擎侧事实：scope = 调用方目录；取 max_results + 1 用于判定截断
+            Assert.AreEqual(1, engine.CallCount, "index 后端应只调用引擎一次（不得回落到扫描）");
+            Assert.AreEqual(Path.GetFullPath(tempDir), engine.LastDirectory);
+            Assert.AreEqual(21, engine.LastMaxResults);
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, tempDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task Backend_Index_Fails_Closed_When_Scope_Is_Not_Indexed()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-index-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "a.txt"), "NEEDLE here\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(
+                false, [], $"Directory '{tempDir}' is not indexed.", 0, 3));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, engine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = tempDir,
+            });
+
+            // fail-closed：不得静默回落到扫描（否则索引坏了也看不出来，且调用方无从得知覆盖度）
+            Assert.IsFalse(result.Success, "索引后端不可用时必须显式失败，不得静默降级");
+            StringAssert.Contains(result.Error, "Index backend unavailable");
+            StringAssert.Contains(result.Error, "omit 'backend'");
+            Assert.AreEqual(ToolResultStatuses.ContractError, result.Status);
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, tempDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task Backend_Unknown_Value_Is_A_Contract_Error()
+    {
+        var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance,
+            new RecordingFullTextSearchEngine(new FullTextSearchResult(true, [], null, 0, 0)));
+
+        var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string> { ["backend"] = "lucene" });
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "Unknown backend 'lucene'");
+        StringAssert.Contains(result.Error, "'scan'");
+        StringAssert.Contains(result.Error, "'index'");
+        Assert.AreEqual(ToolResultStatuses.ContractError, result.Status);
+        Assert.IsFalse(result.Output.Contains("NEEDLE"));
+    }
+
+    [TestMethod]
+    public async Task Backend_Default_Equals_Scan_Byte_For_Byte()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        await File.WriteAllTextAsync(Path.Combine(tempDir, "x.txt"), "alpha\nNEEDLE beta\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var toolDefault = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance,
+                new RecordingFullTextSearchEngine(new FullTextSearchResult(false, [], "not indexed", 0, 0)));
+            var toolScan = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance,
+                new RecordingFullTextSearchEngine(new FullTextSearchResult(false, [], "not indexed", 0, 0)));
+
+            var noParam = await ExecuteAsync(toolDefault, "NEEDLE", new Dictionary<string, string>());
+            var scanParam = await ExecuteAsync(toolScan, "NEEDLE", new Dictionary<string, string> { ["backend"] = "scan" });
+
+            Assert.IsTrue(noParam.Success, noParam.Error);
+            Assert.IsTrue(scanParam.Success, scanParam.Error);
+            Assert.AreEqual(noParam.Output, scanParam.Output, "backend 缺省与 backend='scan' 必须逐字节一致（旧路径零行为变化）");
+            Assert.AreEqual(noParam.Status, scanParam.Status);
+            StringAssert.Contains(noParam.Output, "x.txt:2");
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, tempDir);
+        }
+    }
+
+    [TestMethod]
+    public async Task Backend_Index_Rejects_CaseSensitive_Because_Analyzer_Ignores_CaseMode()
+    {
+        var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance,
+            new RecordingFullTextSearchEngine(new FullTextSearchResult(true, [], null, 0, 0)));
+
+        var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+        {
+            ["backend"] = "index",
+            ["case_sensitive"] = "true",
+        });
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.Error, "case_sensitive");
+        Assert.AreEqual(ToolResultStatuses.ContractError, result.Status);
+    }
+
+    [TestMethod]
+    public async Task Backend_Index_Skips_Stale_Paths_Whose_File_No_Longer_Exists()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-index-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var fresh = Path.Combine(tempDir, "fresh.txt");
+        var deleted = Path.Combine(tempDir, "deleted.txt");
+        await File.WriteAllTextAsync(fresh, "NEEDLE fresh\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(tempDir);
+            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(
+                true,
+                [
+                    new FullTextSearchMatch(fresh, 1, "NEEDLE fresh"),
+                    new FullTextSearchMatch(deleted, 1, "NEEDLE stale"),
+                ],
+                null, 2, 7));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, engine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = tempDir,
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "fresh.txt:1: NEEDLE fresh");
+            Assert.IsFalse(result.Output.Contains("NEEDLE stale"),
+                "索引快照指向已不存在的文件时不得把它当命中输出");
+            StringAssert.Contains(result.Output, "staleSkipped=1");
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, tempDir);
+        }
+    }
+
+    private static void RestoreAndDelete(string previousCwd, string tempDir)
+    {
+        Directory.SetCurrentDirectory(previousCwd);
+        try
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+        catch (DirectoryNotFoundException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// U4-5a：记录调用事实的引擎桩——用于断言 backend=index 真的走了引擎（而不是回落到托管扫描），
+    /// 以及传给引擎的 scope / max_results 事实。
+    /// </summary>
+    private sealed class RecordingFullTextSearchEngine : IFullTextSearchEngine
+    {
+        private readonly FullTextSearchResult _result;
+
+        public RecordingFullTextSearchEngine(FullTextSearchResult result) => _result = result;
+
+        public int CallCount { get; private set; }
+        public string? LastQuery { get; private set; }
+        public string? LastDirectory { get; private set; }
+        public int LastMaxResults { get; private set; }
+        public string? LastExtensionFilter { get; private set; }
+
+        public bool HasIndex(string d) => true;
+
+        public Task<FullTextSearchResult> SearchAsync(
+            string q,
+            string d,
+            int m = 30,
+            string? fileExtensionFilter = null,
+            string? subDirectoryFilter = null,
+            CancellationToken ct = default,
+            FullTextSearchScope? scope = null)
+        {
+            CallCount++;
+            LastQuery = q;
+            LastDirectory = d;
+            LastMaxResults = m;
+            LastExtensionFilter = fileExtensionFilter;
+            return Task.FromResult(_result);
+        }
+
+        public Task<FullTextIndexResult> BuildIndexAsync(string d, string? fp, CancellationToken ct) =>
+            Task.FromResult(new FullTextIndexResult(true, 0, 0, 0, null));
+
+        public bool RemoveIndex(string d) => true;
+    }
 }

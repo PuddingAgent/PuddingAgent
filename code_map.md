@@ -1,3 +1,20 @@
+## 2026-09-24 U4-5a：`search_grep` 新增 `backend` 路由参数（接全文索引后端，**旧路径零改动**）
+
+**用户裁定（2026-09-24）**：「不要修改原来的旧的，而是 search_grep 新建一个参数…使用一个参数来路由到新的检索代码上，稳定之后，我们合并到旧的代码」，并要求可观测（“是否可以返回检索一次的时间”）。
+
+**交付**（`Source/PuddingRuntime/Tools/BuiltIns/Search/SearchGrepTool.cs`）：
+- 新增参数 `backend`：`scan`（未传/缺省 = 旧路径托管扫描，**逐字节不变**）| `index`（新：直接吃全文索引，不跑托管扫描）| 其他值 ⇒ `contract_error`。
+- `index` 后端（新方法 `IndexBackendSearchAsync`）：单次 `IFullTextSearchEngine.SearchAsync`（Lucene 查询解析器语义，与评测探针 `LuceneFullTextProbe` 同源）；**不做托管全量扫描 ⇒ 2000 文件/64 MB/10 s 三重上限不适用**（这正是“假否定”的来源）；后置过滤复用既有 canonical 合同（`IsPathInExcludedDir` / `RetrievalGlobMatcher`）；索引快照指向已不存在文件时不输出并计 `staleSkipped`。
+- **fail-closed**：无索引/引擎异常/超时/`case_sensitive=true` 均显式失败并提示“省略 backend 走旧路径”，**不静默回落**（静默回落会让索引坏掉也看不出来）。
+- **不写失败账本**：否则一次 `index` 的 no_match 会把同 query 的旧路径调用短路，反而破坏兑底。
+- **观测**：结果尾行含 `backend=index` / `engineMs`（引擎侧）/ `totalMs`（工具侧，含后置过滤）/ `engineMatches` / `engineTotalMatches` / `staleSkipped` / `truncated` / `scope`；telemetry 指标名 `search_backend_index`（与旧路径 `search_attempt` 分离，`elapsed_ms` 作维度）；宿主侧另有 `agent_diagnostics(tool_stats, tool_name="search_grep")` 可查调用数/成功率/平均耗时。
+
+**门禁（S1~S3，未重启宿主）**：`PuddingRuntimeTests` 过滤 `SearchGrepToolTests` ⇒ **失败 0 / 通过 56 / 总计 56（5 s）**（新增 6 用例 + 既有 50 用例全绿；旧路径行为未变）。
+**变异取红**：去掉 `index` 分支的 `return`（= 静默回落扫描）⇒ **失败 4 / 通过 52 / 总计 56（exit 1）**，红点正好是新路径的 4 个 `index` 用例；复原后 **失败 0 / 通过 56（exit 0）**。原始输出：`temp/test-out/u4-5a-mut-red.txt`、`u4-5a-mut-green-restored.txt`。
+**未做（诚实留白）**：新参数要 Core 重启后才在本机 `search_grep` 上真正可用（宿主仍在跑旧程序集）；`index` 后端在活仓库上的真实召回/延迟未实测（评测面证据见 U4-6 根 scope 报告）；**“谁在生产里建全文索引”仍是未证实项**（`D:\data\fulltext-index` 有 9 个 SHA256 命名的索引目录，未逐个反查 scope）。
+
+---
+
 ## 2026-09-24 U4-6 验收：根 scope 索引建成（1.9 分钟 / 4,432 文件）+ 用例覆盖度 78/80 → 80/80
 
 **这是「增强检索跑起来」的第一个可见验收点**。U4-6（单次遍历 + 噪声目录剪枝）落地后，此前被判「不可行」的

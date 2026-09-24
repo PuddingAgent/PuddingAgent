@@ -257,3 +257,16 @@ S2a 已落地（`578c3c0`，**已推送；需重启才生效**）：把三处硬
 | `src/pages/chat/hooks/useSessionEventProjection.ts` | `applySessionEvent(ev, options?)` 仅把 `replay` 语义透传给压缩三个事件的分发，其余投影行为不变 |
 | `PuddingRuntime/Services/ContextWindowManager.cs` | Auto 压缩三态（started/completed/failed）必须携带**同一 compactionId**：`compactionId` 提升到 try 之外声明，catch 的 `context.compaction.failed` payload 此前漏发 id（异常发生在 id 赋值前时为 null） |
 | `PuddingRuntimeTests/Services/ContextWindowManagerTests.cs` | `TrimHistoryAsync_FailedCompaction_EmitsFailedEventWithCompactionId`：断言 started→failed 顺序且 failed payload 携带与 started 相同的 compactionId |
+
+## 变更（2026-09-24，ADR-089 U4-5a）：`search_grep` 新增 `backend` 路由参数
+
+| 项 | 事实 |
+|---|---|
+文件 | `Tools/BuiltIns/Search/SearchGrepTool.cs`（旧路径**一行未改**）+ `Tools/BuiltIns/Search/SearchGrepTool.cs` 的 `SearchGrepArgs.Backend` |
+参数 | `backend`：`scan`（未传/缺省 = 既有托管扫描，行为逐字节不变）\| `index`（新：直接吃全文索引，不做托管扫描）\| 其他 ⇒ `contract_error` |
+新方法 | `IndexBackendSearchAsync`（单次 `IFullTextSearchEngine.SearchAsync`，Lucene 查询解析器语义）+ `ReportIndexBackendTelemetry`（指标名 `search_backend_index`，`elapsed_ms` 作维度） |
+契约 | 无索引/异常/超时/`case_sensitive=true` ⇒ **fail-closed** + 提示"省略 backend 走旧路径"；**不写失败账本**（避免把旧路径兜底短路）；索引快照指向已删除文件 ⇒ 跳过并计 `staleSkipped` |
+观测 | 结果尾行：`backend=index` / `scope` / `engineMs` / `totalMs` / `engineMatches` / `engineTotalMatches` / `staleSkipped` / `truncated`；宿主侧 `agent_diagnostics(tool_stats, tool_name="search_grep")` 查调用数·成功率·平均耗时 |
+测试 | `Source/PuddingRuntimeTests/Tools/SearchGrepToolTests.cs` 新增 6 用例：索引命中且**不回落到扫描**、未建索引时 fail-closed、未知 backend ⇒ contract_error、缺省 == `scan` 逐字节一致、`case_sensitive` 被拒、陈旧路径被跳过 |
+门禁 | `dotnet test --filter FullyQualifiedName~SearchGrepToolTests` ⇒ **失败 0 / 通过 56 / 总计 56（5 s）**；变异（去掉 index 分支 `return` ⇒ 静默回落）⇒ **失败 4 / 通过 52（exit 1）**，复原 ⇒ **失败 0 / 通过 56（exit 0）** |
+未做 | 新参数需 Core 重启后才在本机 `search_grep` 上可用（宿主仍跑旧程序集）；`index` 后端在活仓库上的召回/延迟未实测 |
