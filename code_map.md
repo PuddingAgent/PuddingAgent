@@ -1,3 +1,26 @@
+## 2026-09-24 M2-a：容量预算配置化（1GB 不再是硬编码常量）
+
+**用户裁定（2026-09-24）**：容量上限必须由配置文件决定，便于后期改为 XXGB；默认值可由父级按推荐指定；建议用「项目目录 json」或「Data 目录配置文件」而非固定值。并明确指出「1GB」存在 **GB/GiB 歧义** ⇒ 必须固化为精确字节数。
+
+**交付（组件内 3 新契约/服务文件 + 1 测试文件；严格 S1~S3，未碰宿主）**：
+- `Contracts/CodeIndexLibraryBudget.cs`：`CodeIndexLibraryBudgetSource{Default,GlobalConfig,ProjectConfig}`｜`CodeIndexLibraryCapacityLevel{Ok,SoftExceeded,HardExceeded}`｜`CodeIndexLibraryBudget(MaxBytes, SoftRatio, Source, ConfigPath, Warnings)` + `SoftBytes`｜`CodeIndexLibraryBudgetDefaults.MaxLibraryBytes = 1L << 30`（**精确 1,073,741,824 B**，注释明示「改配置不要改常量」）｜`CodeIndexLibraryCapacityReport`。
+- `Contracts/CodeIndexSizes.cs`：`CodeIndexSizes.Parse` 锁定单位语义 —— `B`/无后缀=字节；`KiB/MiB/GiB/TiB`=**二进制（IEC 80000-13）**；`KB/MB/GB/TB`=**十进制（SI）**；未知单位/非正数/越界一律失败。
+- `Services/CodeIndexLibraryBudgetResolver.cs`：**路径注入**（组件不猜 DataRoot，边界显式），优先级 **项目文件 > 全局文件 > 内置默认**，**逐字段合并**；坏 JSON / 非法值 ⇒ **退回默认（fail-closed，绝不返回「无上限」）** 并告警；缺失文件 = 该来源缺席（不是错误）；两个 size 字段并存时以 `maxLibraryBytes`（精确字节）为准并告警；**使用十进制后缀时告警**，让 GB/GiB 歧义永不静默。
+- `Services/CodeIndexLibraryCapacity.cs`：`MeasureDirectoryBytes`（**库目录总占用：含 db + wal + shm + 向量段 + 临时重建** —— 按授权取「最简单且不会漏计」口径）+ `Evaluate`（Ok / SoftExceeded / HardExceeded）。
+- 测试 `PuddingCodeIndexTests/Services/CodeIndex/CodeIndexLibraryBudgetTests.cs`（**12 用例**）。
+
+**实际配置文件已按裁定落地**：`D:\data\config\code-index.json`（全局，沿用 `llm.providers.json` 同目录同风格，含 `_doc` 自述单位与优先级）；项目级约定 `<projectRoot>/.pudding/code-index.json`（`.pudding` 已被索引器硬排除）。⚠️ **尚未接线**：宿主侧的路径发现与结果注入属 S5，**当前无任何代码读取该文件** ⇒ 它是「就绪待接线」，不是「已生效」。
+
+**门禁（父级自跑）**：`PuddingCodeIndexTests` **失败 0 / 通过 133 / 总计 133**（基线 121，**+12**）；`PuddingHost.Tests` **126/126**（无回归）；两工程 `exit 0`。
+**变异取红（两次，原始输出 `temp/test-out/m2a-mut-red-failopen.txt` / `m2a-mut-red-gb-binary.txt`）**：
+- **#1** 坏 JSON 从 fail-closed 改成返回「无上限」⇒ **红**：`Invalid_Json_Falls_Back_To_The_Default_Instead_Of_Unlimited` 失败（应 `<1073741824>` 实 `9223372036854775807`），**失败 1 / 通过 11**；
+- **#2** `"GB"` 改成二进制 ⇒ **红**：`Size_Suffixes_Keep_Si_And_Iec_Semantics_Apart` + `Decimal_Unit_Use_Is_Surfaced_Instead_Of_Silently_Reinterpreted` 两条失败（应 `1000000000` 实 `1073741824`），**失败 2 / 通过 10**；
+- 复原后**全绿**；`MUTATION` 残留 grep **0 命中**。
+
+**仪器教训（本轮新踩）**：`file_patch` 一次调用里的多个 operation **只能作用于同一个 `path`** —— 我误把「复原 A 文件 + 变异 B 文件」放进同一次调用，结果第 1 个操作静默未命中、第 2 个已生效，**差点把两次变异混在一起污染归因**。规范：**一次 `file_patch` 只处理一个文件**。
+
+---
+
 ## 2026-09-24 M1-a：legacy scope 的覆盖态投影改穷举 + fail-safe（D1 根治第一刀）
 
 **问题比 U3-G1 描述更广**：`CodeProjectStatus` 有 **6** 个成员，而 `CodeIndexScopeRegistry.MapStatus` 只显式处理 3 个，`_ => ScopeState.Covered` 把 **`Unknown` / `Registering` / `Removing` 三个不同生命周期状态全部静默折叠成「被父 scope 覆盖」**。`Covered` 的语义是「不归属、不服务、无需索引」⇒ 命中它的 scope 会被附着循环**永久跳过、永远无法自愈**（根 scope 就是这样消失的）；**`Removing`（删除中）被当成「被覆盖」尤其荒谬**。

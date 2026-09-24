@@ -225,3 +225,27 @@
 - 本刀**只修投影**。`ScopeState` / `CodeProjectStatus` 两个枚举的**正交化**（coverage / serving / run 三轴拆分、`Registering` 不再借生命周期枚举表达）**未动** —— 属 M1 后续刀。
 - **RunState 仍未独立**：「欠一次运行」目前只能靠 `Status='Registering'` + `StatusMessage` 表达（`CodeIndexRuns` 表仍无写入者）。
 - **附着后果须在下次 Core 重启后实测**：`Registering`→`Active` 会让根 scope 在下次重启被附着；父级已用 `code_outline` 核实 `CodeIndexCalibrationService` **只有剪枝路径**（唯一变更方法 `RemoveBatchAsync`，结果字段无回填/重索引计数）⇒ 不会触发仓库级全量索引，但**本刀不便重启宿主**，实际行为待重启后观察（重点看根 scope 是否进入校准、库体积与 `-wal`）。
+
+## M2-a 更新（2026-09-24）— 容量预算配置化（护栏不再是硬编码常量）
+
+**背景**：用户裁定容量上限必须由配置文件决定（后期可改为 XXGB），并指出「1GB」的 GB/GiB 歧义必须固化为精确字节数。
+
+**本组件新增（严格 S1~S3：只动组件与独立测试，未碰宿主）**：
+- `Contracts/CodeIndexLibraryBudget.cs`：预算记录 + 来源/级别枚举 + fail-closed 默认（`1L << 30` = 1 GiB，注释明示「改配置不要改常量」）+ `CodeIndexLibraryCapacityReport`。
+- `Contracts/CodeIndexSizes.cs`：`CodeIndexSizes.Parse` —— `KiB/MiB/GiB/TiB` 为二进制(2ⁿ)，`KB/MB/GB/TB` 为十进制(10ⁿ)；**使用十进制后缀会被标记**（`UsedDecimalUnit`）供调用方告警，歧义永不静默。
+- `Services/CodeIndexLibraryBudgetResolver.cs`：**路径注入**（组件不猜 DataRoot），优先级 项目文件 > 全局文件 > 内置默认，**逐字段合并**（项目只设上限、全局设软线也能同时生效）；坏 JSON / 非正值 ⇒ **退回默认并告警（fail-closed）**；缺失文件 = 该来源缺席。
+- `Services/CodeIndexLibraryCapacity.cs`：`MeasureDirectoryBytes`（库目录总占用，含 `wal`/`shm`/向量段/临时重建）+ `Evaluate`（Ok / SoftExceeded / HardExceeded）。
+- 测试：`PuddingCodeIndexTests/Services/CodeIndex/CodeIndexLibraryBudgetTests.cs`（**12 用例**），锁定：默认精确字节、SI/IEC 单位语义、优先级、逐字段合并、fail-closed、十进制告警、目录测量、分级。
+
+**约定（供后续刀与宿主接线复用）**：
+- 全局文件 `<DataRoot>/config/code-index.json`（与 `llm.providers.json` 同目录同风格，已落地）；
+- 项目文件 `<projectRoot>/.pudding/code-index.json`（`.pudding` 已被索引器硬排除）；
+- 两者同 schema，只读 `library` 段：`{ "library": { "maxLibrarySize": "1GiB", "maxLibraryBytes": <exact>, "softRatio": 0.8 } }`。
+
+**门禁**：`PuddingCodeIndexTests` **133/133**（改前 121，+12）；`PuddingHost.Tests` 126/126。变异 #1（fail-open）⇒ **1 红**；变异 #2（`GB`→二进制）⇒ **2 红**；复原全绿，`MUTATION` 残留 grep 0 命中。
+
+**留白（未做，如实登记）**：
+- **尚未接线**：宿主侧「配置路径发现 + 解析结果注入组件」属 **S5**；当前**无任何代码读取** `D:\data\config\code-index.json` ⇒ 该文件是「就绪待接线」，不是「已生效」。
+- **阈值触发后的行为未实现**（拒绝增长 / GC / `GrepDegraded`），属 M2-b/c。
+- 测量口径为「库目录总占用」＝自觉取舍：不会漏计，但 `-wal` 抖动可能让瞬时读数越线；若后续要改为「仅主库文件」，是解析器 + 一处测量函数的局部改动（配置里未引入分支，避免投机式可配置性）。
+- 本刀**未做**「每项目一库」的拓扑迁移（M2-d），也未拆分现有中央库。
