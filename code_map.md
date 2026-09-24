@@ -1,3 +1,38 @@
+## 2026-09-24 U4-6：索引构建从「每个扩展名各遍历一次目录树」改为「单次遍历 + 噪声目录剪枝」
+
+**为什么这是「让增强检索跑起来」的第一刀**：任何检索面都依赖索引，而索引自己建不出来就等于检索不存在。
+`LuceneSearchEngine.BuildIndexInternalAsync` 把白名单里 **77 个扩展名**（`PlainTextExtensions` 76 + `ParsedExtensions`）
+逐个当成 glob 交给 `Directory.EnumerateFiles(..., AllDirectories)` ⇒ **同一棵树被完整遍历 77 次**；而
+`FullTextIndexOptions.IsExcludedPath` 只在枚举**之后**过滤 ⇒ 被排除目录仍被完整走一遍。探针据此判定「根 scope 索引不可行」
+（77 × 195 s ≈ 4.2 h；可索引 28,178 文件 / 743 MB，其中 `.pudding` 20,926 + `.tmp-build` 1,335 + `.pnpm-store` 1,075 +
+`.tmp-test-out` 240 占 84%）。后果：检索只能在 `Source/`、`Docs/` 等子目录建索引，仓库根上只能退化到 `search_grep` 的
+托管扫描（2000 文件 / 64 MB / 10 s 三重上限 ⇒ **假否定**）。
+
+**交付（S1~S3：只动组件与独立测试，未碰宿主）**：
+- `LuceneSearchEngine.EnumerateFilesPruned`（新增）：显式栈 DFS **单次遍历**，遇到噪声目录（`ExcludedDirectoryNames`）
+  **立即剪枝不再进入**；`DirectoryNotFoundException`/`UnauthorizedAccessException`/`IOException` 局部化到单目录，
+  不再中断整次扫描；不跳过重解析点（与旧 `AllDirectories` 一致，登记为既有风险）。
+- `LuceneSearchEngine.MatchesAnyPattern`（新增）：调用方 `filePatterns` 改由 `FileSystemName.MatchesSimpleExpression`
+  在枚举后按文件名过滤，不再以 77 次 glob 枚举表达白名单（语义不变：`".cs"`/`"*.cs"` 一律按 `*.cs` 解释）。
+- 扫描块：`foreach (var filePattern in filter)`（77 个 glob）→ **单次遍历**；扩展名白名单与调用方 glob 均在枚举后按文件过滤。
+- 测试 `Source/PuddingFullTextIndexTests/BuildIndexWalkTests.cs`（**6 用例**）：单次遍历不重复计数、噪声目录不入索引面、
+  显式 pattern 仍生效、空/超限文件跳过、排除文件名跳过、深层文件仍可被检索。
+
+**门禁（父级自跑）**：`PuddingFullTextIndexTests` **失败 0 / 通过 56 / 已跳过 4 / 总计 60**（新增 6 用例）。
+**行为等价性（同一天同一棵树同一缓存状态的配对实测，`Source/PuddingRuntime` scope）**：
+新代码 **filesIndexed=347 / totalBytes=3,868,333 / engineMs=7,009**；`git stash` 复原旧代码 **347 / 3,868,333 / 8,550**
+⇒ **文件集合与字节总量完全一致**。
+**收益实测（`Source/` scope，`BuildIndexAsync` 原路径）**：**462,192 ms → 68,971 ms（≈6.7×）**。
+⚠️ 同批 `filesIndexed=3404`（文档基线 3,514）：差额归因于**今日更早落地的排除清单扩容**（U4-4 D2/D4：33 项私有副本 →
+派生自 `PathNoiseRules.DirectoryNames` 52 项），**不是本刀**（配对实测已证本刀集合中性）；此为归因、非逐文件核对，如实登记。
+**变异取红**：移除本刀新增的调用方 glob 过滤 ⇒ **红**：`CallerPatterns_AreStillHonoured` 失败
+（`失败 1 / 通过 5 / 总计 6`，`temp/test-out/u46-mut-red-nopattern.txt`）；复原后**绿**（exit 0）。
+⚠️ **剪枝本身无语义可观测面** ⇒ 无可变异取红的单测（不用时间断言伪装）；证据是上述配对与计时。
+**仪器提醒**：Lucene `indexBytes` **不作为等价性判据**（同一输入 4,374,903 vs 4,368,078）。
+**留白**：`search_grep` 的三重硬上限（2000/64 MB/10 s ⇒ 假否定）未修（属 U4-5）；根 scope 尚未实际建过索引。
+
+---
+
 ## 2026-09-24 M2-a：容量预算配置化（1GB 不再是硬编码常量）
 
 **用户裁定（2026-09-24）**：容量上限必须由配置文件决定，便于后期改为 XXGB；默认值可由父级按推荐指定；建议用「项目目录 json」或「Data 目录配置文件」而非固定值。并明确指出「1GB」存在 **GB/GiB 歧义** ⇒ 必须固化为精确字节数。

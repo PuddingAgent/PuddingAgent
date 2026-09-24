@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO.Enumeration;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -248,18 +249,103 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
 
     // ── 索引构建核心 ────────────────────────────────────────────────
 
+    /// <summary>
+    /// 单次遍历目录树，遇到噪声目录立即剪枝（不再进入），并把枚举异常局部化。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么要剪枝</b>：<see cref="FullTextIndexOptions.IsExcludedPath"/> 只在文件枚举<b>之后</b>过滤，
+    /// 因此被排除的目录仍会被完整走一遍 —— 本仓库根 scope 里 <c>.pudding</c>（2 万+ 可索引文件）、
+    /// <c>.tmp-build</c>、<c>.pnpm-store</c>、<c>.tmp-test-out</c> 正是最大的枚举成本来源。
+    /// </para>
+    /// <para>
+    /// <b>行为等价性</b>：剪枝只提前终止递归，不改变任何本来会被索引的文件 —— 落在被排除目录下的路径
+    /// 本来就会被 <see cref="FullTextIndexOptions.IsExcludedPath"/> 拒绝。剪枝判据用的是<b>目录名</b>，
+    /// 与后者按<b>相对扫描根的路径段</b>匹配的语义一致（扫描根本身的名字不参与判定，
+    /// 因此把工作区建在 <c>Temp</c> 之类目录下不会被整棵树误排除）。
+    /// </para>
+    /// <para>
+    /// <b>保持与旧实现一致的遍历范围</b>：不跳过重解析点（旧实现用 <c>SearchOption.AllDirectories</c> 同样会跟随），
+    /// 因此经由目录联接可抵达的文件依旧会被枚举；这条既有风险未被本刀放大也未被修掉。
+    /// </para>
+    /// </remarks>
+    private IEnumerable<string> EnumerateFilesPruned(string rootDirectory, CancellationToken ct)
+    {
+        var pending = new Stack<string>();
+        pending.Push(rootDirectory);
+
+        while (pending.Count > 0)
+        {
+            ct.ThrowIfCancellationRequested();
+            var directory = pending.Pop();
+
+            string[] files;
+            try
+            {
+                files = Directory.GetFiles(directory);
+            }
+            catch (Exception ex) when (ex is DirectoryNotFoundException or UnauthorizedAccessException or IOException)
+            {
+                continue;
+            }
+
+            foreach (var file in files)
+            {
+                ct.ThrowIfCancellationRequested();
+                yield return file;
+            }
+
+            string[] subDirectories;
+            try
+            {
+                subDirectories = Directory.GetDirectories(directory);
+            }
+            catch (Exception ex) when (ex is DirectoryNotFoundException or UnauthorizedAccessException or IOException)
+            {
+                continue;
+            }
+
+            foreach (var subDirectory in subDirectories)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                // ── 剪枝：噪声目录不再进入（这是本刀的全部性能收益来源）──
+                if (_options.ExcludedDirectoryNames.Contains(Path.GetFileName(subDirectory)))
+                    continue;
+
+                pending.Push(subDirectory);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 文件名是否命中调用方给出的 glob 模式。
+    /// </summary>
+    /// <remarks>
+    /// 保持既有语义：调用方传 <c>".cs"</c> 或 <c>"*.cs"</c>，引擎一律按 <c>"*.cs"</c> 解释
+    /// （旧实现是 <c>$"*{p}"</c> + <c>Directory.EnumerateFiles</c>）。
+    /// 通配符匹配交给 <see cref="FileSystemName.MatchesSimpleExpression"/>，不自行实现 glob。
+    /// </remarks>
+    private static bool MatchesAnyPattern(string filePath, string[] patterns)
+    {
+        var fileName = Path.GetFileName(filePath);
+
+        foreach (var pattern in patterns)
+        {
+            var glob = pattern[0] == '*' ? pattern : "*" + pattern;
+            if (FileSystemName.MatchesSimpleExpression(glob, fileName, ignoreCase: true))
+                return true;
+        }
+
+        return false;
+    }
+
     private async Task<FullTextIndexResult> BuildIndexInternalAsync(
         string directoryPath, string? filePatterns, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         var indexDir = GetIndexDirectoryPath(directoryPath);
         var patterns = filePatterns?.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var filter = patterns is { Length: > 0 }
-            ? patterns.Select(p => $"*{p}").ToArray()
-            : _options.PlainTextExtensions
-                .Concat(_options.ParsedExtensions)
-                .Select(ext => $"*{ext}")
-                .ToArray();
         var patternHash = HashPatterns(filePatterns);
 
         // ── 决定构建模式：增量还是全量 ──
@@ -285,16 +371,22 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
         }
 
         // ── 扫描文件系统 ──
+        // U4-6（ADR-089）：单次遍历（"*"）。旧实现把白名单里每个扩展名各当成一个 glob 交给
+        // Directory.EnumerateFiles，同一棵树被完整遍历 77 次（PlainTextExtensions 76 项 + ParsedExtensions）：
+        // 实测 Source/ scope 77 × 6.6 s ≈ 462 s（索引耗时几乎全在重复遍历上）、根 scope 77 × 195 s ≈ 4.2 h
+        // —— 探针据此判定「根 scope 索引不可行」。扩展名白名单与调用方 glob 模式都在枚举后按文件过滤，
+        // 因此接受的文件集合与旧实现完全相同；真正的成本削减来自 EnumerateFilesPruned 的目录剪枝。
         var allFiles = new List<(string Path, DateTime LastWrite, long Size)>();
-        foreach (var filePattern in filter)
+        foreach (var _ in new[] { "*" })
         {
             try
             {
-                foreach (var file in Directory.EnumerateFiles(directoryPath, filePattern, SearchOption.AllDirectories))
+                foreach (var file in EnumerateFilesPruned(directoryPath, ct))
                 {
                     ct.ThrowIfCancellationRequested();
                     var ext = Path.GetExtension(file);
                     if (!_options.IsIndexableExtension(ext)) continue;
+                    if (patterns is { Length: > 0 } && !MatchesAnyPattern(file, patterns)) continue;
                     if (_options.IsExcludedPath(file, directoryPath)) continue;
 
                     var fi = new FileInfo(file);
