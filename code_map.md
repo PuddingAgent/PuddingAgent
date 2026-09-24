@@ -1,3 +1,20 @@
+## 2026-09-24 M1-a：legacy scope 的覆盖态投影改穷举 + fail-safe（D1 根治第一刀）
+
+**问题比 U3-G1 描述更广**：`CodeProjectStatus` 有 **6** 个成员，而 `CodeIndexScopeRegistry.MapStatus` 只显式处理 3 个，`_ => ScopeState.Covered` 把 **`Unknown` / `Registering` / `Removing` 三个不同生命周期状态全部静默折叠成「被父 scope 覆盖」**。`Covered` 的语义是「不归属、不服务、无需索引」⇒ 命中它的 scope 会被附着循环**永久跳过、永远无法自愈**（根 scope 就是这样消失的）；**`Removing`（删除中）被当成「被覆盖」尤其荒谬**。
+
+**交付（组件内 1 文件 + 新建独立测试文件）**：
+- `MapStatus` → 更名 **`ProjectLegacyScopeState`** 并**逐项穷举**：`Active`→`Active`｜`Registering`→**`Active`**（覆盖是**归属**事实；「欠一次运行」是运行态，不是覆盖态）｜`Unknown`→`Active`（未建立的状态不得冒充「被覆盖」）｜`Failed`→`Failed`｜`Removing`/`Removed`→`Removed`（删除中不得继续服务，且本就是合法清理目标）｜默认臂改为 **fail-safe：绝不报成 `Covered`**（`Covered` 是唯一「把 scope 藏起来」而非暴露它的投影）。
+- 显式 `ScopeState` 仍优先（`p.ScopeState ?? …`）⇒ **不改写已声明的真实覆盖关系**。
+- 新增独立测试 `Source/PuddingCodeIndexTests/Services/CodeIndex/CodeIndexScopeRegistryTests.cs`（**5 用例**，含 **2 条对照**：显式值优先、`Active`/`Failed` 不漂移）。
+
+**门禁（父级自跑）**：`PuddingCodeIndexTests` **失败 0 / 通过 121 / 总计 121**（基线 116，**+5**）；`PuddingHost.Tests` **126/126**（无回归）；两工程 `exit 0`。
+**变异取红（原始输出 `temp/test-out/m1a-mut-red.txt` / `-green.txt`）**：把整段投影回退为旧 `_ => Covered` ⇒ **恰好 3 条失败**（`Registering` 应 `Active` 实 `Covered`；`Unknown` 实 `Covered`；`Removing` 应 `Removed` 实 `Covered`），**2 条对照照常通过** ⇒ 测试**非空转、亦非互相绑定**；复原 ⇒ `MUT_green_EXIT=0`。
+
+**附着后果（已核实，非推测）**：`Registering → Active` 会让根 scope 在**下次重启**被附着（`CodeIndexMaintenanceHostedService` 的 `State != Active ⇒ continue`）。父级用 `code_outline` 核实 `CodeIndexCalibrationService` **只有剪枝路径**（唯一变更方法 `RemoveBatchAsync`；结果字段全是 `AbsentFileCount`/`SweptFileCount`/`ProtectedFileCount`/`Truncated`，**无回填/重索引计数**）⇒ 附着**不会**触发仓库级全量索引，**不构成对 1GB 护栏的冲击**；收益是根 scope 自愈（重新进入校准与变更管线）。⚠️ **须在下次重启后实测确认**：触发一次真实 Core 重启并观察根 scope 是否进入校准/索引、库体积与 `-wal` 变化。
+**零写**：本刀未改任何 DB 行；索引库未动。
+
+---
+
 ## 2026-09-24 U3-G1 + 第 2 轮规划与审查：被中断的 scope 不再可被删除候选命中
 
 **卡的是 D2+D3 数据风险**：取消分支不写任何状态 ⇒ 一次被取消的运行把该行**永久**留在 `Registering`；清理判据却把 `Status='Registering'` + `ScopeState IS NULL` + 超 24h 列为**可删候选** ⇒ 根 scope（携带 1,083 文件 / 34,848 符号 / 96,849 关系 / 143,587 引用行）**已命中**，仅靠 `AutomaticCleanupAllowed=false` 挡住 —— **一次人工清理即全删**。

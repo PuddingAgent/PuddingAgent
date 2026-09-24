@@ -210,3 +210,18 @@
 - **仍无启动自愈**：被中断的行会一直停在 `Registering`。本刀只让它"可辨 + 不可被误删"，**没有**把它变回"可运行"（改语义/改附着判据不在本刀范围）。
 - **取消的取证粒度只有一句话**：`CodeIndexRuns` 仍空且无写入者 ⇒ 无法回答"哪一次运行被取消、被谁取消"。`StatusMessage` 会被**下一次运行**的成功写回覆盖（`Active` + 结果消息），因此它只表达"最近一次被中断"。
 - **`MarkInterruptedAsync` 的 guard 分支未有用例覆盖**（要在 store 层注入"取消发生在认领之前"才能触达）；正确性目前靠代码审阅 + `Removed`/`Active` 行不被翻回的状态机推理。
+
+## M1-a 更新（2026-09-24）— 覆盖态投影：穷举 + fail-safe（D1 根治第一刀）
+
+**问题（本组件内，父级实读源码）**：`CodeIndexScopeRegistry.MapStatus`（原 `:222-228`）只显式处理 `Active`/`Failed`/`Removed` 三个生命周期状态，`_ => ScopeState.Covered` 把 **`Unknown` / `Registering` / `Removing` 三个不同状态静默折叠成「被父 scope 覆盖」**。而 `Covered` 在本组件契约里的语义是「不归属、不服务、无需索引」⇒ 命中该投影的 scope 被 `CodeIndexMaintenanceHostedService` 的 `State != Active ⇒ continue` **永久跳过、无法自愈**；`Removing`（删除中）被判为「被覆盖」还与宿主清理判据（`ScopeState IN ('Covered','Removed')`）方向相反。这同时是 U3-G1 留白中「仍无启动自愈」的根因之一 —— 仓库根 scope 正因此一直不可见。
+
+**交付（本组件 1 文件 + 1 新测试文件）**：
+- `Services/CodeIndexScopeRegistry.cs`：`MapStatus` → **`ProjectLegacyScopeState`**（更名以显式标出「只适用于 `ScopeState` 列为 NULL 的 legacy 行」），逐项穷举 6 个成员：`Active`→`Active`｜`Registering`→**`Active`**（**覆盖是归属事实**；「欠一次运行」属运行态）｜`Unknown`→`Active`（未建立的状态不得冒充「被覆盖」）｜`Failed`→`Failed`｜`Removing`/`Removed`→`Removed`｜默认臂 **fail-safe：绝不报 `Covered`**（`Covered` 是唯一「把 scope 藏起来」而非暴露它的投影）。调用点 `ToScope` 的 `p.ScopeState ?? ProjectLegacyScopeState(p.Status)` **优先级不变**（显式值永远胜出 ⇒ 不会改写已声明的真实覆盖关系）。
+- `PuddingCodeIndexTests/Services/CodeIndex/CodeIndexScopeRegistryTests.cs`（**新建，5 用例**）：`Registering`→`Active`（D1 断言）、`Unknown`≠`Covered`、`Removing`→`Removed`、`Active`/`Failed` 不漂移（对照）、显式 `Covered` 优先（对照）。夹具复用 `CodeIndexFixture`，**不传 scheduler**（列出注册表不得入队）。
+
+**门禁（本刀实测）**：`PuddingCodeIndexTests` **121/121**（改前 116，+5）；`PuddingHost.Tests` **126/126**（无回归）；变异（整段回退为 `_ => Covered`）⇒ **3 红 / 2 对照绿**（`temp/test-out/m1a-mut-red.txt`），复原 ⇒ `MUT_green_EXIT=0`（`-green.txt`）。
+
+**留白（未做，如实登记）**：
+- 本刀**只修投影**。`ScopeState` / `CodeProjectStatus` 两个枚举的**正交化**（coverage / serving / run 三轴拆分、`Registering` 不再借生命周期枚举表达）**未动** —— 属 M1 后续刀。
+- **RunState 仍未独立**：「欠一次运行」目前只能靠 `Status='Registering'` + `StatusMessage` 表达（`CodeIndexRuns` 表仍无写入者）。
+- **附着后果须在下次 Core 重启后实测**：`Registering`→`Active` 会让根 scope 在下次重启被附着；父级已用 `code_outline` 核实 `CodeIndexCalibrationService` **只有剪枝路径**（唯一变更方法 `RemoveBatchAsync`，结果字段无回填/重索引计数）⇒ 不会触发仓库级全量索引，但**本刀不便重启宿主**，实际行为待重启后观察（重点看根 scope 是否进入校准、库体积与 `-wal`）。

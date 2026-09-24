@@ -215,16 +215,39 @@ public sealed class CodeIndexScopeRegistry : ICodeIndexScopeRegistry
 
     private static CodeIndexScope ToScope(CodeProjectRecord p) =>
         new(p.WorkspaceId, p.ProjectId, p.ProjectPath,
-            p.ScopeState ?? MapStatus(p.Status),
+            p.ScopeState ?? ProjectLegacyScopeState(p.Status),
             p.Source ?? ScopeSource.Manual,
             p.DisplayName, p.AddedAtUtc, p.UpdatedAtUtc);
 
-    private static ScopeState MapStatus(CodeProjectStatus status) => status switch
+    /// <summary>
+    /// Projects the <b>lifecycle</b> status of a legacy row (one that predates — or never filled — the
+    /// <c>ScopeState</c> column) onto the <b>coverage/serving</b> state the registry exposes.
+    /// </summary>
+    /// <remarks>
+    /// M1/D1: coverage is an <b>ownership</b> fact, not a run-lifecycle fact — a scope that still owes a run
+    /// still owns its path. The previous <c>_ =&gt; ScopeState.Covered</c> fallback silently collapsed three
+    /// distinct lifecycle states (<see cref="CodeProjectStatus.Unknown"/>,
+    /// <see cref="CodeProjectStatus.Registering"/>, <see cref="CodeProjectStatus.Removing"/>) into
+    /// "covered by a parent", i.e. "owns nothing, serves nothing, needs no indexing". Such a scope was
+    /// therefore skipped by the attach loop forever and could never self-heal.
+    /// Every mapping here is explicit, and the fallback fails <b>safe</b>: an unrecognised status must never
+    /// be reported as covered, because "covered" is the one projection that hides the scope instead of
+    /// surfacing it.
+    /// </remarks>
+    private static ScopeState ProjectLegacyScopeState(CodeProjectStatus status) => status switch
     {
         CodeProjectStatus.Active => ScopeState.Active,
+        // Registering: owns its path; a run is still owed (that is a run fact, not a coverage fact).
+        CodeProjectStatus.Registering => ScopeState.Active,
+        // Unknown: nothing was ever established, so claim nothing — but never claim "covered".
+        CodeProjectStatus.Unknown => ScopeState.Active,
+        // Failed: needs attention; the status is the reason, the scope is still owned.
         CodeProjectStatus.Failed => ScopeState.Failed,
+        // Removing: mid-delete — must stop serving, and is a legitimate cleanup target.
+        CodeProjectStatus.Removing => ScopeState.Removed,
         CodeProjectStatus.Removed => ScopeState.Removed,
-        _ => ScopeState.Covered,
+        // Fail-safe for any status added later: never inherit the old "covered" default.
+        _ => ScopeState.Active,
     };
 
     private static string BuildScopeId(string workspaceId, string rootPath)
