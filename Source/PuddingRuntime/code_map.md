@@ -283,3 +283,17 @@ S2a 已落地（`578c3c0`，**已推送；需重启才生效**）：把三处硬
 测试 | `Source/PuddingRuntimeTests/Tools/SearchGrepToolTests.cs` 新增 2 用例：相对索引路径按 scope（而非进程 CWD）解析、全部陈旧时不得回空洞 no matches |
 门禁 | **失败 0 / 通过 58 / 总计 58**（基线 56，旧 56 条全绿无回归）；两处独立变异 ⇒ **失败 2 / 通过 0 / 总计 2（RC=1）**，变异版输出实测 `(no matches)\n(backend=index: ..., staleSkipped=1, firstStaleRawPath=...)`；复原 ⇒ 58/58（RC=0） |
 遗留 | **写入侧仍未规范化** `path` ⇒"同一逻辑 scope 因书写方式不同而存不同形态"的根源仍在；本刀只保证读取侧对两种形态都正确。改动前须评估评测夹具（按相对路径比对）的语义影响 |
+
+## 变更（2026-09-25，ADR-089 U4-5c）：索引后端静默假否定修复 —— Lucene 语法查询 0 命中时降级为显式 OR 重试
+
+| 项 | 事实 |
+|---|---|
+症状 | 仓库根上 `backend=index` 对某些多词查询静默返回 `(no matches)`（`engineMatches=0 / engineTotalMatches=0`，**引擎 `Success=true`**），而**同一 query 走旧 scan 路径却有命中** ⇒ **索引后端独有**的假否定 |
+根因（实测，非推理） | 引擎把 query 交给 Lucene 查询解析器，而 **`|` 在此 parser 配置下不等价于 OR**：同一批词 `BuildIndexAsync\|IndexScopeKeys` ⇒ 11 命中；再加一个 `\|ScopeKey` ⇒ **0 命中**；而 `BuildIndexAsync OR IndexScopeKeys OR ScopeKey` ⇒ **41 命中 / 42 total**。逐变量对照已排除 `regex=true`、`file_ext` 格式（`cs` 与 `.cs` 均命中）、`max_results`（单词 + `max_results=40` 仍 13 命中） |
+判据 | 违反 ADR-089 §8 硬约束 6「空结果/超时/partial 一律不得作为最终答复返回」——空洞否定正是打转的燃料 |
+修复 | 仅在「引擎 0 命中 **且** query 含 Lucene 语法字符」时，按非词字符拆词、以显式 `OR` 连接**重试一次**（已实测可用形态）；输出显式标注 `queryFallback="…"`；重试后仍 0 命中则给出非空洞的可行动说明（空格分隔 / 显式 OR·AND / 或省略 backend 走正则语义的旧路径）。**有命中的正常路径零行为变化**；旧 scan 路径一行未改 |
+新成员 | `LuceneSyntaxChars`（语法字符集）· `FallbackTermSeparators`（拆词分隔符）· `TryBuildOrFallbackQuery`（返回 false = 无需/无法降级：不含语法字符，或拆不出 ≥2 词——单词查询的 0 命中就是真的 0） |
+测试 | 新增 3 用例：① 取红主测——含语法字符且引擎 0 命中时必须重试并救回命中、断言恰好重试 **1** 次且降级形态 == `Alpha OR Beta OR Gamma`；② 守卫——纯词 0 命中**不得**重试；③ 守卫——有命中时**不得**多调一次引擎（正常路径零行为变化） |
+门禁 | **失败 0 / 通过 61 / 总计 61**（基线 58，旧 58 条全绿无回归）；变异（`TryBuildOrFallbackQuery` 直接 `return false` = 禁用降级）⇒ **失败 1 / 通过 0 / 总计 1（RC=1）**，红在正确断言上（`SearchGrepToolTests.cs:1868`，输出回落 `(no matches)`）；复原 ⇒ 61/61（RC=0）；MUTATION 残留 **0** |
+原始输出 | `temp/test-u4-5c-mut-red.txt`、`temp/test-u4-5c-green-restored.txt` |
+未做 | 新逻辑需 Core 重启后在本机 `search_grep` 上生效；`|` 在该 parser 下的词法层解释**未定位到 Lucene 源码级结论**——本刀不依赖该解释，只按“`|` ≠ OR、显式 OR 可用”两条实测事实做降级 |
