@@ -62,21 +62,47 @@ public sealed record VectorDocument
     public string Text { get; }
 }
 
-/// <summary>How many documents go into one provider round trip.</summary>
+/// <summary>
+/// How a build runs: batching, which tiers may become vectors, and whether the stored rows are
+/// quantised. Every option defaults to the U4-1b behaviour (no filter, no quantisation), so a caller
+/// that passes only a batch size still gets the identical index.
+/// </summary>
 public sealed record VectorIndexBuildOptions
 {
     /// <param name="batchSize">
     /// Documents per <see cref="IEmbeddingProvider.EmbedBatchAsync"/> call; must be &gt;= 1.
     /// </param>
-    public VectorIndexBuildOptions(int batchSize = 32)
+    /// <param name="tierFilter">
+    /// Which <see cref="VectorDocument.Kind"/> values may become vectors; <c>null</c> (the default) means
+    /// every tier. Applied <b>before</b> embedding, so an excluded document costs no round trip — and,
+    /// because it never reaches the index, the entries that remain are untouched (see
+    /// <see cref="VectorTierFilter"/>).
+    /// </param>
+    /// <param name="quantize">
+    /// When true, each vector is stored as symmetric int8 codes and the index is filled with the
+    /// <b>round-tripped</b> values. See <see cref="VectorIndexBuilder.BuildAsync"/> for why that is the
+    /// only honest way to measure what the format costs.
+    /// </param>
+    public VectorIndexBuildOptions(
+        int batchSize = 32,
+        VectorTierFilter? tierFilter = null,
+        bool quantize = false)
     {
         if (batchSize < 1)
             throw new ArgumentOutOfRangeException(nameof(batchSize), batchSize, "batch size must be >= 1");
 
         BatchSize = batchSize;
+        TierFilter = tierFilter;
+        Quantize = quantize;
     }
 
     public int BatchSize { get; }
+
+    /// <summary>Tiers allowed to become vectors; <c>null</c> = every tier (the default, unchanged behaviour).</summary>
+    public VectorTierFilter? TierFilter { get; }
+
+    /// <summary>Whether vectors are stored as int8 codes. Default false.</summary>
+    public bool Quantize { get; }
 }
 
 /// <summary>
@@ -84,13 +110,31 @@ public sealed record VectorIndexBuildOptions
 /// separately from the total build time on purpose: the index-speed axis must show how much of the
 /// wall time was the vector service and how much was everything else, and the number of round trips is
 /// what batching is judged by.
+/// <para>
+/// <see cref="SkippedByTierCount"/> and <see cref="EmptyReason"/> are the layered-selection accounting:
+/// a build that filtered everything out is reported as such rather than as "an empty index", because
+/// the second reading is a claim about the scope and the first one is a claim about the filter.
+/// </para>
 /// </summary>
 public sealed record VectorIndexBuildResult(
     InMemoryVectorIndex Index,
     int DocumentCount,
     int EmbeddingCalls,
     long EmbeddingMs,
-    int Dimensions);
+    int Dimensions,
+    int SkippedByTierCount = 0,
+    string? EmptyReason = null)
+{
+    /// <summary>
+    /// The quantised rows, in index order; empty unless the build was asked to quantise. A store writes
+    /// these (codes plus one scale per row) while the search side keeps using <see cref="Index"/>, so
+    /// the two halves of the pipeline cannot drift apart.
+    /// </summary>
+    public IReadOnlyList<QuantizedVectorEntry> QuantizedEntries { get; init; } = [];
+
+    /// <summary>Vectors actually in the index; equal to <c>DocumentCount - SkippedByTierCount</c> once the build completes.</summary>
+    public int IndexedCount => Index.Count;
+}
 
 /// <summary>
 /// Turns documents into an <see cref="InMemoryVectorIndex"/> through the
@@ -101,6 +145,13 @@ public sealed record VectorIndexBuildResult(
 /// A provider that returns fewer vectors than asked (a truncated batch) would otherwise silently shift
 /// every subsequent document onto the wrong vector — an indexing bug that looks like a retrieval
 /// quality result.
+/// </para>
+/// <para>
+/// Two optional mechanisms sit on top of that contract, both of them off by default so the U4-1b
+/// behaviour is preserved exactly: <b>layered selection</b> (<see cref="VectorIndexBuildOptions.TierFilter"/>
+/// decides, before any embedding, which tiers may become vectors) and <b>int8 quantisation</b>
+/// (<see cref="VectorIndexBuildOptions.Quantize"/> stores codes and fills the index with the
+/// round-tripped values, which is what makes the format's quality cost measurable rather than zero).
 /// </para>
 /// </summary>
 public static class VectorIndexBuilder
@@ -114,7 +165,8 @@ public static class VectorIndexBuilder
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(documents);
 
-        var batchSize = (options ?? new VectorIndexBuildOptions()).BatchSize;
+        var buildOptions = options ?? new VectorIndexBuildOptions();
+        var batchSize = buildOptions.BatchSize;
 
         var info = provider.Describe()
             ?? throw new InvalidOperationException("the embedding provider returned no model description");
@@ -129,18 +181,44 @@ public static class VectorIndexBuilder
                 $"embedding route '{info.Route}' declares {info.Dimensions} dimensions; a usable provider must "
                 + "declare its vector length before the index can be built");
 
+        // ── layered selection: the tier filter runs at BUILD time ───────────────────────────────
+        // A document the filter rejects is never embedded and never added. Filtering afterwards (by
+        // trimming the finished index) would have paid for every embedding anyway and would leave the
+        // surviving entries indistinguishable from an unfiltered build — a shape that makes "layered"
+        // unmeasurable. Keeping the decision here also means one place decides it, before any IO.
+        var selected = new List<VectorDocument>(documents.Count);
+        foreach (var document in documents)
+        {
+            if (buildOptions.TierFilter is null || buildOptions.TierFilter.Includes(document.Kind))
+                selected.Add(document);
+        }
+
+        var skippedByTier = documents.Count - selected.Count;
+
+        // An empty index has two very different causes, and they must not share a sentence: "the input
+        // was empty" is a fact about the scope, "the tier filter rejected everything" is a fact about
+        // the filter (ADR-089 §2.3 — filtered-empty is not really-empty).
+        var emptyReason = selected.Count > 0
+            ? null
+            : documents.Count == 0
+                ? "the build was handed no documents at all (an empty input, not a filter decision)"
+                : $"all {documents.Count} documents were excluded by the tier filter "
+                  + $"[{buildOptions.TierFilter!.Description}]; an empty index here is the filter's result, "
+                  + "not evidence that the scope has nothing to index";
+
         var index = new InMemoryVectorIndex(info.Dimensions, info.Route);
+        var quantizedEntries = new List<QuantizedVectorEntry>(buildOptions.Quantize ? selected.Count : 0);
         var embeddingCalls = 0;
         long embeddingMs = 0;
 
-        for (var offset = 0; offset < documents.Count; offset += batchSize)
+        for (var offset = 0; offset < selected.Count; offset += batchSize)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var count = Math.Min(batchSize, documents.Count - offset);
+            var count = Math.Min(batchSize, selected.Count - offset);
             var texts = new string[count];
             for (var i = 0; i < count; i++)
-                texts[i] = documents[offset + i].Text;
+                texts[i] = selected[offset + i].Text;
 
             var stopwatch = Stopwatch.StartNew();
             var vectors = await provider
@@ -158,16 +236,35 @@ public static class VectorIndexBuilder
 
             for (var i = 0; i < count; i++)
             {
+                var document = selected[offset + i];
+
                 var vector = vectors[i]
                     ?? throw new InvalidOperationException(
-                        $"embedding route '{info.Route}' returned a null vector for document '{documents[offset + i].Id}'");
+                        $"embedding route '{info.Route}' returned a null vector for document '{document.Id}'");
 
                 if (vector.Length != info.Dimensions)
                     throw new InvalidOperationException(
                         $"embedding route '{info.Route}' declared {info.Dimensions} dimensions but returned "
-                        + $"{vector.Length} for document '{documents[offset + i].Id}'");
+                        + $"{vector.Length} for document '{document.Id}'");
 
-                var document = documents[offset + i];
+                if (!buildOptions.Quantize)
+                {
+                    index.Add(new VectorIndexEntry(
+                        document.Id,
+                        document.SourceFile,
+                        document.StartLine,
+                        document.EndLine,
+                        document.Kind,
+                        document.Boost,
+                        vector));
+                    continue;
+                }
+
+                // Quantise, then index the ROUND-TRIPPED vector rather than the original. A store keeps
+                // only codes, so this is what a store loaded from disk would search; indexing the
+                // untouched float instead would report a quantisation cost of exactly zero, which is the
+                // one answer this measurement must not be able to produce.
+                var quantised = VectorQuantizer.Quantize(vector);
                 index.Add(new VectorIndexEntry(
                     document.Id,
                     document.SourceFile,
@@ -175,10 +272,29 @@ public static class VectorIndexBuilder
                     document.EndLine,
                     document.Kind,
                     document.Boost,
-                    vector));
+                    quantised.Dequantize()));
+
+                quantizedEntries.Add(new QuantizedVectorEntry(
+                    document.Id,
+                    document.SourceFile,
+                    document.StartLine,
+                    document.EndLine,
+                    document.Kind,
+                    document.Boost,
+                    quantised));
             }
         }
 
-        return new VectorIndexBuildResult(index, documents.Count, embeddingCalls, embeddingMs, info.Dimensions);
+        return new VectorIndexBuildResult(
+            index,
+            documents.Count,
+            embeddingCalls,
+            embeddingMs,
+            info.Dimensions,
+            skippedByTier,
+            emptyReason)
+        {
+            QuantizedEntries = quantizedEntries,
+        };
     }
 }

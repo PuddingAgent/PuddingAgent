@@ -71,6 +71,8 @@ internal static class Program
         var embeddingBaseUrlOverride = options.Get("embedding-base-url");
         var embeddingDimensionsOverride = options.GetIntOrNull("embedding-dimensions");
         var embeddingBatchSize = options.GetInt("embedding-batch", 32);
+        var vectorQuantization = (options.Get("vector-quantization") ?? "none").ToLowerInvariant();
+        var vectorTierFilter = (options.Get("vector-tier-filter") ?? "all").ToLowerInvariant();
         var rrfK = options.GetInt("rrf-k", 60);
         var rrfWeightFullText = options.GetDouble("rrf-weight-fulltext", 1d);
         var rrfWeightVector = options.GetDouble("rrf-weight-vector", 1d);
@@ -80,6 +82,18 @@ internal static class Program
         if (retriever is not ("fulltext" or "vector" or "hybrid"))
         {
             Console.Error.WriteLine($"unknown --retriever '{retriever}' (expected fulltext|vector|hybrid)");
+            return 5;
+        }
+
+        if (vectorQuantization is not ("none" or "int8"))
+        {
+            Console.Error.WriteLine($"unknown --vector-quantization '{vectorQuantization}' (expected none|int8)");
+            return 5;
+        }
+
+        if (vectorTierFilter is not ("all" or "p0"))
+        {
+            Console.Error.WriteLine($"unknown --vector-tier-filter '{vectorTierFilter}' (expected all|p0)");
             return 5;
         }
 
@@ -103,6 +117,8 @@ internal static class Program
             Console.WriteLine($"embeddingRoute= {embeddingRouteOverride ?? "<route taken from the config embedding section>"}");
             Console.WriteLine($"embeddingBase = {embeddingBaseUrlOverride ?? "<from providers config>"}");
             Console.WriteLine($"embedBatch    = {embeddingBatchSize}");
+            Console.WriteLine($"vecFormat     = {vectorQuantization}");
+            Console.WriteLine($"vecTierFilter = {vectorTierFilter}");
             if (retriever == "hybrid")
                 Console.WriteLine($"rrf           = k={rrfK} wFullText={rrfWeightFullText} wVector={rrfWeightVector} fusionDepth={fusionDepth}");
         }
@@ -149,7 +165,9 @@ internal static class Program
                         rrfK,
                         rrfWeightFullText,
                         rrfWeightVector,
-                        fusionDepth)).ConfigureAwait(false);
+                        fusionDepth,
+                        vectorQuantization,
+                        vectorTierFilter)).ConfigureAwait(false);
                 }
 
                 return chunkStrategy == "plain"
@@ -180,6 +198,8 @@ internal static class Program
                 OpenAiCompatibleEmbeddingProvider? embeddingProvider = null;
                 InMemoryVectorIndex? vectorIndex = null;
                 long vectorStoreBytes = 0;
+                string? vectorStoreFormat = null;
+                string? vectorStoreTierFilter = null;
                 RrfHybridProbe? hybrid = null;
                 ISearchProbe probe;
 
@@ -206,7 +226,33 @@ internal static class Program
                     var store = VectorStore.Read(vectorStoreDirectory);
                     vectorIndex = store.Index;
                     vectorStoreBytes = store.Bytes;
+                    vectorStoreFormat = store.Manifest.Format;
+                    vectorStoreTierFilter = store.Manifest.TierFilter;
                     Console.WriteLine($"VSTORE entries    = {vectorIndex.Count} dimensions={vectorIndex.Dimensions} bytes={vectorStoreBytes} route={store.Manifest.Route}");
+                    Console.WriteLine($"VSTORE format     = {store.Manifest.Format} tierFilter={store.Manifest.TierFilter ?? "<unrecorded>"} rowsPerVector={VectorStore.QuantizedRowBytes(vectorIndex.Dimensions)}");
+
+                    // The numbers about to be measured must be labelled with the format that produced them.
+                    // Reading a float32 store while claiming int8 (or the reverse) would publish a
+                    // mislabelled comparison, which is worse than a failed run.
+                    var expectedFormat = vectorQuantization == "int8" ? VectorStore.FormatInt8 : VectorStore.FormatFloat32;
+                    if (!string.Equals(store.Manifest.Format, expectedFormat, StringComparison.Ordinal))
+                    {
+                        Console.Error.WriteLine(
+                            $"the store at {vectorStoreDirectory} holds {store.Manifest.Format} rows but this run "
+                            + $"asks for --vector-quantization {vectorQuantization} ({expectedFormat}); refusing to "
+                            + "measure under a label the store does not support");
+                        return 5;
+                    }
+
+                    if (vectorTierFilter != "all"
+                        && !string.Equals(store.Manifest.TierFilter ?? "all", vectorTierFilter, StringComparison.Ordinal))
+                    {
+                        Console.Error.WriteLine(
+                            $"the store at {vectorStoreDirectory} was built with tier filter "
+                            + $"'{store.Manifest.TierFilter ?? "all"}' but this run says '{vectorTierFilter}'; the "
+                            + "store is the authority for what was indexed — fix the label or rebuild");
+                        return 5;
+                    }
 
                     var vectorProbe = new VectorSearchProbe(vectorIndex, embeddingProvider, "vector-cosine");
 
@@ -284,6 +330,8 @@ internal static class Program
                             EmbeddingDimensions = embeddingProvider.ObservedDimensions,
                             VectorEntryCount = vectorIndex!.Count,
                             VectorStoreBytes = vectorStoreBytes,
+                            VectorFormat = vectorStoreFormat,
+                            VectorTierFilter = vectorStoreTierFilter,
                             QueryEmbeddingCalls = queryStats.Calls,
                             QueryEmbeddedTexts = queryStats.Texts,
                             QueryEmbeddingMs = queryStats.ElapsedMs,

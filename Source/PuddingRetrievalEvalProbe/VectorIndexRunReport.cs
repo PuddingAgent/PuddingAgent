@@ -105,6 +105,27 @@ internal sealed record VectorIndexRunReport
 
     public long? VectorManifestBytes { get; init; }
 
+    /// <summary>What the vectors file actually contains: <c>float32</c> or <c>int8</c> (U4-3).</summary>
+    public string? VectorFormat { get; init; }
+
+    /// <summary>The build-time tier switch as requested (<c>all</c> / <c>p0</c>); <c>null</c> for non-vector retrievers.</summary>
+    public string? VectorTierFilter { get; init; }
+
+    /// <summary>The tier labels the filter actually accepted, as the component reports them (e.g. <c>Outline</c>).</summary>
+    public string? VectorTierFilterDescription { get; init; }
+
+    /// <summary>Blocks the builder was given, before the tier filter ran.</summary>
+    public int? VectorDocumentsConsidered { get; init; }
+
+    /// <summary>Blocks the tier filter removed <b>before</b> embedding — the saving layered selection buys.</summary>
+    public int? VectorDocumentsSkippedByTier { get; init; }
+
+    /// <summary>Vectors-file bytes divided by indexed rows — the per-row cost question 1 of U4-3 asks.</summary>
+    public double? VectorBytesPerDocument { get; init; }
+
+    /// <summary>Non-null when the build produced an empty index, with the cause (empty input vs tier filter).</summary>
+    public string? VectorEmptyReason { get; init; }
+
     public long? VectorStoreWriteMs { get; init; }
 
     /// <summary>Hybrid only: the RRF configuration that produced the fused ranking.</summary>
@@ -184,6 +205,12 @@ internal sealed record ProbeRunSidecar
     public int? VectorEntryCount { get; init; }
 
     public long? VectorStoreBytes { get; init; }
+
+    /// <summary>What the store the query side searched actually contains (U4-3): <c>float32</c> or <c>int8</c>.</summary>
+    public string? VectorFormat { get; init; }
+
+    /// <summary>The build-time tier filter the store recorded, when it recorded one.</summary>
+    public string? VectorTierFilter { get; init; }
 
     /// <summary>Total calls the query-side embedding made during the measured run (cold + warm-up + measured).</summary>
     public int? QueryEmbeddingCalls { get; init; }

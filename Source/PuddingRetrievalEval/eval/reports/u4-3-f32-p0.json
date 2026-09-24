@@ -1,0 +1,2132 @@
+{
+  "ProbeName": "vector-cosine",
+  "SetName": "small-puddingcodeindex-v1",
+  "SetVersion": 1,
+  "ScopeLabel": "u4-3-f32-p0",
+  "ScopeRootDirectory": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex",
+  "StartedAtUtc": "2026-09-24T04:50:24.7190518\u002B00:00",
+  "TotalElapsedMs": 4851,
+  "CaseCount": 28,
+  "FailedCaseCount": 0,
+  "RecallAt1": 0.3929,
+  "RecallAt5": 0.9286,
+  "RecallAt10": 1,
+  "Mrr": 0.6051,
+  "PrecisionAt5": 0.1857,
+  "PrecisionAt10": 0.1,
+  "NoiseRateAt10": 0,
+  "Slices": [
+    {
+      "Language": "CSharp",
+      "CaseCount": 28,
+      "RecallAt1": 0.3929,
+      "RecallAt5": 0.9286,
+      "RecallAt10": 1,
+      "Mrr": 0.6051,
+      "PrecisionAt5": 0.1857,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0
+    }
+  ],
+  "ColdLatency": {
+    "Count": 28,
+    "MinMs": 30.078,
+    "P50Ms": 33.878,
+    "P95Ms": 40.507,
+    "P99Ms": 40.703,
+    "MaxMs": 40.703,
+    "MeanMs": 34.889
+  },
+  "WarmLatency": {
+    "Count": 112,
+    "MinMs": 29.772,
+    "P50Ms": 33.683,
+    "P95Ms": 40.056,
+    "P99Ms": 40.893,
+    "MaxMs": 40.926,
+    "MeanMs": 34.468
+  },
+  "AllRepetitionsIdentical": true,
+  "ColdObservations": [
+    {
+      "Index": 0,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 39.2264,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 1,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 33.0906,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 2,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 31.8369,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 3,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 33.8775,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 4,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 40.5074,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 5,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 33.5135,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 6,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 30.251,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 7,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 31.7177,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 8,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 30.2689,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 9,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 30.0782,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 10,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 34.3957,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 11,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 31.1004,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 12,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 32.0896,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 13,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 33.5758,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 14,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 31.8431,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 15,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 33.1911,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 16,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 35.7307,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 17,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 34.1862,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 18,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 36.7492,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 19,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 31.438,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 20,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 38.9901,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 21,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 37.9653,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 22,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 38.5389,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 23,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 37.3182,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 24,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 39.4058,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 25,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 40.7029,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 26,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 36.5833,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 27,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 38.7161,
+      "Success": true,
+      "Error": null
+    }
+  ],
+  "Cases": [
+    {
+      "Case": {
+        "Query": "ICodeIndexer",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/ICodeIndexer.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 35
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 119
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 17
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeProjectRegistry.cs",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeWatchers.cs",
+          "Symbol": null,
+          "Line": 24
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexer.cs",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeResolver.cs",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/IndexChange.cs",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeProjectRegistry.cs",
+          "Symbol": null,
+          "Line": 7
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 20
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexSchedulerDriver.cs",
+          "Symbol": null,
+          "Line": 43
+        }
+      ],
+      "ElapsedMs": 33.4785,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 1,
+      "Mrr": 0.16666666666666666,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "ICodeIndexStore",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/ICodeIndexStore.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 118
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 37
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeProjectRegistry.cs",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs",
+          "Symbol": null,
+          "Line": 131
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 20
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 7
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/IndexChange.cs",
+          "Symbol": null,
+          "Line": 4
+        }
+      ],
+      "ElapsedMs": 33.3019,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 1,
+      "Mrr": 0.125,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "ICodeIndexMaintenance",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/ICodeIndexMaintenance.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 118
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexMaintenance.cs",
+          "Symbol": null,
+          "Line": 26
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/IndexChange.cs",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 35
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeBatch.cs",
+          "Symbol": null,
+          "Line": 22
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 17
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeWatchers.cs",
+          "Symbol": null,
+          "Line": 17
+        }
+      ],
+      "ElapsedMs": 34.6538,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 8,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "ICodeIndexScheduler",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/ICodeIndexScheduler.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 35
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 116
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexSchedulerDriver.cs",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 11
+        }
+      ],
+      "ElapsedMs": 33.3492,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.2,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 5,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "ICodeWorkspaceResolver",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/ICodeWorkspaceResolver.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeProjectRegistry.cs",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 22
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 36
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 122
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 19
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexer.cs",
+          "Symbol": null,
+          "Line": 8
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeWorkspaceDescriptor.cs",
+          "Symbol": null,
+          "Line": 5
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeResolver.cs",
+          "Symbol": null,
+          "Line": 14
+        }
+      ],
+      "ElapsedMs": 31.7797,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.2,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 8,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "ICodeProjectRootDetector",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/ICodeProjectRootDetector.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultProjectRootDetector.cs",
+          "Symbol": null,
+          "Line": 59
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeResolver.cs",
+          "Symbol": null,
+          "Line": 12
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeProjectRootDetector.cs",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeProjectRegistry.cs",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 63
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexScopeResolver.cs",
+          "Symbol": null,
+          "Line": 12
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeWorkspaceDescriptor.cs",
+          "Symbol": null,
+          "Line": 5
+        }
+      ],
+      "ElapsedMs": 32.5366,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 7,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeWorkspaceDescriptor",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/CodeWorkspaceDescriptor.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 63
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeProjectRegistry.cs",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexScopeState.cs",
+          "Symbol": null,
+          "Line": 49
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeWorkspaceDescriptor.cs",
+          "Symbol": null,
+          "Line": 5
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexer.cs",
+          "Symbol": null,
+          "Line": 8
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeProjectRegistry.cs",
+          "Symbol": null,
+          "Line": 21
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 41
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 23
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeProjectContracts.cs",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 131
+        }
+      ],
+      "ElapsedMs": 30.7554,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.25,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeFileRecord",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/CodeFileRecord.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeFileRecord.cs",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 979
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeReferenceRecord.cs",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeSymbolContracts.cs",
+          "Symbol": null,
+          "Line": 45
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeRelationContracts.cs",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/IndexChange.cs",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 63
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 53
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 216
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeProjectRegistry.cs",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexScopeState.cs",
+          "Symbol": null,
+          "Line": 237
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexWatcher.cs",
+          "Symbol": null,
+          "Line": 32
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeProjectContracts.cs",
+          "Symbol": null,
+          "Line": 3
+        }
+      ],
+      "ElapsedMs": 29.805,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeSymbolRecord",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/CodeSymbolContracts.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/RetrievalHitViews.cs",
+          "Symbol": null,
+          "Line": 35
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/RetrievalHit.cs",
+          "Symbol": null,
+          "Line": 73
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/RetrievalFilter.cs",
+          "Symbol": null,
+          "Line": 49
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeSymbolContracts.cs",
+          "Symbol": null,
+          "Line": 45
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/RetrievalResult.cs",
+          "Symbol": null,
+          "Line": 166
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/RetrievalIntentPolicy.cs",
+          "Symbol": null,
+          "Line": 210
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 987
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 76
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/RetrievalDistribution.cs",
+          "Symbol": null,
+          "Line": 47
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/SymbolIdentity.cs",
+          "Symbol": null,
+          "Line": 38
+        }
+      ],
+      "ElapsedMs": 29.9436,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.25,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IndexExcludePatterns",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs",
+          "Symbol": null,
+          "Line": 127
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexWatcher.cs",
+          "Symbol": null,
+          "Line": 393
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/RetrievalOverflow.cs",
+          "Symbol": null,
+          "Line": 30
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs",
+          "Symbol": null,
+          "Line": 95
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 82
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/ScopeIdSet.cs",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultProjectRootDetector.cs",
+          "Symbol": null,
+          "Line": 151
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeBatch.cs",
+          "Symbol": null,
+          "Line": 22
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/RetrievalFilter.cs",
+          "Symbol": null,
+          "Line": 54
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/ScopeOverlap.cs",
+          "Symbol": null,
+          "Line": 35
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexMaintenance.cs",
+          "Symbol": null,
+          "Line": 52
+        }
+      ],
+      "ElapsedMs": 30.5846,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodePathIdentity",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodePathIdentity.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodePathIdentity.cs",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 175
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/IndexChange.cs",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeProjectRegistry.cs",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs",
+          "Symbol": null,
+          "Line": 318
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexScopeResolver.cs",
+          "Symbol": null,
+          "Line": 39
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs",
+          "Symbol": null,
+          "Line": 101
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeIndexScopeContracts.cs",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeRelationContracts.cs",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeReferenceRecord.cs",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeFileRecord.cs",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexSchedulerDriver.cs",
+          "Symbol": null,
+          "Line": 43
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 17
+        }
+      ],
+      "ElapsedMs": 34.0034,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "DefaultProjectRootDetector",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/DefaultProjectRootDetector.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultProjectRootDetector.cs",
+          "Symbol": null,
+          "Line": 59
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeProjectRootDetector.cs",
+          "Symbol": null,
+          "Line": 18
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeResolver.cs",
+          "Symbol": null,
+          "Line": 12
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/ScopeOverlap.cs",
+          "Symbol": null,
+          "Line": 56
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs",
+          "Symbol": null,
+          "Line": 157
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 63
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexWatcher.cs",
+          "Symbol": null,
+          "Line": 108
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs",
+          "Symbol": null,
+          "Line": 349
+        }
+      ],
+      "ElapsedMs": 33.1645,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 8,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "DefaultCodeWorkspaceResolver",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeProjectRegistry.cs",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 22
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 36
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 122
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeWorkspaceDescriptor.cs",
+          "Symbol": null,
+          "Line": 5
+        }
+      ],
+      "ElapsedMs": 31.4191,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 6,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeProjectRegistry",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeProjectRegistry.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeProjectRegistry.cs",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeProjectContracts.cs",
+          "Symbol": null,
+          "Line": 24
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeProjectRegistry.cs",
+          "Symbol": null,
+          "Line": 17
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 63
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 967
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeWorkspaceDescriptor.cs",
+          "Symbol": null,
+          "Line": 5
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 23
+        }
+      ],
+      "ElapsedMs": 31.8722,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 7,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeIndexScopeRegistry",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndexScopeRegistry.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeResolver.cs",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexWatcher.cs",
+          "Symbol": null,
+          "Line": 32
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexScopeState.cs",
+          "Symbol": null,
+          "Line": 50
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 53
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexScopeResolver.cs",
+          "Symbol": null,
+          "Line": 12
+        }
+      ],
+      "ElapsedMs": 32.7726,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 7,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeIndexScheduler",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 116
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 35
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 17
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexSchedulerDriver.cs",
+          "Symbol": null,
+          "Line": 16
+        }
+      ],
+      "ElapsedMs": 31.3593,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 5,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "SqliteCodeIndexStore",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 17
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 37
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeProjectRegistry.cs",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 118
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 20
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs",
+          "Symbol": null,
+          "Line": 131
+        }
+      ],
+      "ElapsedMs": 33.6499,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 7,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeIndexCalibrationService",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 121
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs",
+          "Symbol": null,
+          "Line": 145
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexScopeState.cs",
+          "Symbol": null,
+          "Line": 41
+        }
+      ],
+      "ElapsedMs": 35.1571,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeIndexChangeCoalescer",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 71
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeQueue.cs",
+          "Symbol": null,
+          "Line": 47
+        }
+      ],
+      "ElapsedMs": 32.8696,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeIndexMaintenanceService",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 34
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexMaintenance.cs",
+          "Symbol": null,
+          "Line": 52
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeQueue.cs",
+          "Symbol": null,
+          "Line": 44
+        }
+      ],
+      "ElapsedMs": 33.4507,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the index maintenance switch that the host lifecycle drives",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/ICodeIndexMaintenance.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 136
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexMaintenance.cs",
+          "Symbol": null,
+          "Line": 26
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 27
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeQueue.cs",
+          "Symbol": null,
+          "Line": 44
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 109
+        }
+      ],
+      "ElapsedMs": 37.5212,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 5,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which file turns gitignore style patterns into the directories the index skips",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs",
+          "Symbol": null,
+          "Line": 43
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexWatcher.cs",
+          "Symbol": null,
+          "Line": 393
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultProjectRootDetector.cs",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeProjectRootDetector.cs",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/IndexChange.cs",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexFileUpdater.cs",
+          "Symbol": null,
+          "Line": 33
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 596
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 51
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeBatch.cs",
+          "Symbol": null,
+          "Line": 22
+        }
+      ],
+      "ElapsedMs": 38.7537,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how does the scheduler decide when a maintenance cycle may run",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 128
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexMaintenance.cs",
+          "Symbol": null,
+          "Line": 46
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 40
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexScheduler.cs",
+          "Symbol": null,
+          "Line": 22
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs",
+          "Symbol": null,
+          "Line": 172
+        }
+      ],
+      "ElapsedMs": 39.7579,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 5,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which sqlite store removes index rows for files that disappeared from disk",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 60
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 17
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeQueue.cs",
+          "Symbol": null,
+          "Line": 21
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs",
+          "Symbol": null,
+          "Line": 112
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 85
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexWatcher.cs",
+          "Symbol": null,
+          "Line": 30
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs",
+          "Symbol": null,
+          "Line": 31
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexScopeState.cs",
+          "Symbol": null,
+          "Line": 53
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs",
+          "Symbol": null,
+          "Line": 12
+        }
+      ],
+      "ElapsedMs": 38.7253,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 9,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where are file system change batches coalesced before the index is updated",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs",
+          "Symbol": null,
+          "Line": 309
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeQueue.cs",
+          "Symbol": null,
+          "Line": 47
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 476
+        }
+      ],
+      "ElapsedMs": 39.0914,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how is a code file path normalised so two spellings map to one identity",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodePathIdentity.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/SymbolIdentity.cs",
+          "Symbol": null,
+          "Line": 83
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodePathIdentity.cs",
+          "Symbol": null,
+          "Line": 34
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/RetrievalEvidence.cs",
+          "Symbol": null,
+          "Line": 45
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexWatcher.cs",
+          "Symbol": null,
+          "Line": 361
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 175
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/RetrievalPathFacts.cs",
+          "Symbol": null,
+          "Line": 50
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/Retrieval/RetrievalFilter.cs",
+          "Symbol": null,
+          "Line": 275
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 237
+        }
+      ],
+      "ElapsedMs": 40.2678,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.5,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 8,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the project root detected when no workspace descriptor exists",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/DefaultProjectRootDetector.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultProjectRootDetector.cs",
+          "Symbol": null,
+          "Line": 59
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeProjectRootDetector.cs",
+          "Symbol": null,
+          "Line": 18
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeProjectRegistry.cs",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 63
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndexScopeResolver.cs",
+          "Symbol": null,
+          "Line": 12
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeWorkspaceResolver.cs",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/CodeWorkspaceDescriptor.cs",
+          "Symbol": null,
+          "Line": 5
+        }
+      ],
+      "ElapsedMs": 36.8219,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 7,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which service marks and sweeps index rows whose file no longer exists",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 60
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexWatcher.cs",
+          "Symbol": null,
+          "Line": 30
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 85
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs",
+          "Symbol": null,
+          "Line": 112
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexMaintenance.cs",
+          "Symbol": null,
+          "Line": 52
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs",
+          "Symbol": null,
+          "Line": 259
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs",
+          "Symbol": null,
+          "Line": 12
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Contracts/ICodeIndexScopeRegistry.cs",
+          "Symbol": null,
+          "Line": 35
+        },
+        {
+          "Path": "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 849
+        }
+      ],
+      "ElapsedMs": 38.3295,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.25,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 9,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    }
+  ]
+}

@@ -33,7 +33,9 @@ internal sealed record VectorIndexRequest(
     int RrfK,
     double RrfWeightFullText,
     double RrfWeightVector,
-    int FusionDepth);
+    int FusionDepth,
+    string Quantization,
+    string TierFilter);
 
 /// <summary>
 /// The vector-side composition root: resolves the route, builds the provider, verifies the service is
@@ -43,6 +45,11 @@ internal sealed record VectorIndexRequest(
 /// The last point is the whole reason this slice is comparable with U4-1a: both retrievers consume the
 /// identical chunk corpus produced by <c>PuddingIndexChunking</c>, so a difference between them is a
 /// difference of <i>engine</i>, not of chunking (ADR-089 结构化地图检索设计 §6).
+/// </para>
+/// <para>
+/// U4-3 adds two switches that act on the vector side only — the tier filter (build vectors for P0
+/// outlines only) and int8 quantisation — while the corpus stays byte-identical across variants. That is
+/// what makes the four-variant matrix a comparison of storage and selection rather than of chunking.
 /// </para>
 /// </summary>
 internal static class VectorRetrievalModes
@@ -100,6 +107,33 @@ internal static class VectorRetrievalModes
                 + "vectors of a different length would not be comparable with the index");
 
         return provider.Stats - before;
+    }
+
+    /// <summary>
+    /// Maps the probe's <c>--vector-quantization</c> / <c>--vector-tier-filter</c> switches onto the
+    /// component's build options. The mapping from the requested priority (<c>p0</c>) onto a tier name
+    /// (<c>Outline</c>) lives here, in the composition root, on purpose: the leaf consumes tier labels as
+    /// values and must not carry the chunking component's priority table.
+    /// </summary>
+    public static VectorIndexBuildOptions BuildVectorOptions(string quantization, string tierFilter, int batchSize)
+    {
+        var filter = tierFilter switch
+        {
+            "all" => (VectorTierFilter?)null,
+            "p0" => VectorTierFilter.OutlineOnly,
+            _ => throw new ArgumentException(
+                $"unknown --vector-tier-filter '{tierFilter}' (expected all|p0)", nameof(tierFilter)),
+        };
+
+        var quantize = quantization switch
+        {
+            "none" => false,
+            "int8" => true,
+            _ => throw new ArgumentException(
+                $"unknown --vector-quantization '{quantization}' (expected none|int8)", nameof(quantization)),
+        };
+
+        return new VectorIndexBuildOptions(batchSize, filter, quantize);
     }
 
     /// <summary>Builds the vector store (and, for hybrid, the Lucene chunk index) and writes the JSON report.</summary>
@@ -172,15 +206,48 @@ internal static class VectorRetrievalModes
         var documents = BuildVectorDocuments(corpus, request.RepoRoot);
         Console.WriteLine($"VEC    documents    = {documents.Count}");
 
+        var buildOptions = BuildVectorOptions(request.Quantization, request.TierFilter, request.EmbeddingBatchSize);
+        var quantised = buildOptions.Quantize;
+
+        Console.WriteLine($"VEC    quantization = {request.Quantization} ({(quantised ? VectorStore.FormatInt8 : VectorStore.FormatFloat32)} rows)");
+        Console.WriteLine($"VEC    tierFilter   = {request.TierFilter}"
+                          + (buildOptions.TierFilter is { } filter ? $" ({filter.Description})" : " (every tier)"));
+
         var build = await VectorIndexBuilder
-            .BuildAsync(provider, documents, new VectorIndexBuildOptions(request.EmbeddingBatchSize))
+            .BuildAsync(provider, documents, buildOptions)
             .ConfigureAwait(false);
 
         var indexStats = provider.Stats - preflight;
+        Console.WriteLine($"VEC    considered   = {build.DocumentCount}");
+        Console.WriteLine($"VEC    skippedByTier= {build.SkippedByTierCount}");
+        Console.WriteLine($"VEC    indexed      = {build.IndexedCount}");
+        Console.WriteLine($"VEC    emptyReason  = {build.EmptyReason ?? "<none>"}");
         Console.WriteLine($"VEC    dimensions   = {build.Dimensions}");
         Console.WriteLine($"VEC    indexCalls   = {build.EmbeddingCalls}");
         Console.WriteLine($"VEC    embedMs      = {build.EmbeddingMs}");
         Console.WriteLine($"VEC    statsDelta   = {indexStats}");
+
+        // The manifest's row order must be the store's row order: provenance and numbers are written from
+        // the same list, and the writer refuses a count mismatch so the two cannot drift apart silently.
+        var rows = quantised
+            ? build.QuantizedEntries
+                .Select(entry => new VectorStoreEntry(
+                    entry.Id,
+                    entry.SourceFile,
+                    entry.StartLine,
+                    entry.EndLine,
+                    entry.Kind,
+                    entry.Boost))
+                .ToArray()
+            : build.Index.Entries
+                .Select(entry => new VectorStoreEntry(
+                    entry.Id,
+                    entry.SourceFile,
+                    entry.StartLine,
+                    entry.EndLine,
+                    entry.Kind,
+                    entry.Boost))
+                .ToArray();
 
         var manifest = new VectorStoreManifest(
             VectorStore.Schema,
@@ -191,26 +258,33 @@ internal static class VectorRetrievalModes
             build.EmbeddingCalls,
             build.EmbeddingMs,
             resolved.Dimensions,
-            build.Index.Entries
-                .Select(entry => new VectorStoreEntry(
-                    entry.Id,
-                    entry.SourceFile,
-                    entry.StartLine,
-                    entry.EndLine,
-                    entry.Kind,
-                    entry.Boost))
-                .ToArray(),
+            rows,
             DateTimeOffset.UtcNow.ToString("O"),
-            "Provenance only; the chunk text is not stored (see VectorIndexEntry). Rows are raw little-endian "
-            + "float32, in entry order, un-normalised and un-quantised.");
+            "Provenance only; the chunk text is not stored (see VectorIndexEntry). "
+            + (quantised
+                ? "Rows are symmetric absmax int8 codes (Dimensions bytes per row) followed by one "
+                  + "little-endian float32 scale per row, in entry order, un-normalised."
+                : "Rows are raw little-endian float32, in entry order, un-normalised and un-quantised."),
+            quantised ? VectorStore.FormatInt8 : VectorStore.FormatFloat32,
+            request.TierFilter);
 
         var storeWrite = Stopwatch.StartNew();
-        var (storeBytes, vectorBytes, manifestBytes) = VectorStore.Write(
-            request.VectorStoreDirectory, build.Index, manifest);
+        var (storeBytes, vectorBytes, manifestBytes) = quantised
+            ? VectorStore.WriteQuantized(request.VectorStoreDirectory, build.QuantizedEntries, manifest)
+            : VectorStore.Write(request.VectorStoreDirectory, build.Index, manifest);
         storeWrite.Stop();
 
         Console.WriteLine($"VSTORE directory  = {request.VectorStoreDirectory}");
+        Console.WriteLine($"VSTORE format     = {manifest.Format}");
         Console.WriteLine($"VSTORE bytes      = {storeBytes} (vectors={vectorBytes} manifest={manifestBytes})");
+        if (build.IndexedCount > 0)
+        {
+            var rowBytes = quantised
+                ? VectorStore.QuantizedRowBytes(build.Dimensions)
+                : (long)build.Dimensions * sizeof(float);
+            Console.WriteLine($"VSTORE rows       = {build.IndexedCount} x {rowBytes} bytes");
+            Console.WriteLine($"VSTORE bytesPerRow= {(double)vectorBytes / build.IndexedCount:0.####}");
+        }
 
         long? luceneWriteMs = null;
         int? luceneDocuments = null;
@@ -297,6 +371,13 @@ internal static class VectorRetrievalModes
                 VectorVectorsBytes = vectorBytes,
                 VectorManifestBytes = manifestBytes,
                 VectorStoreWriteMs = storeWrite.ElapsedMilliseconds,
+                VectorFormat = manifest.Format,
+                VectorTierFilter = request.TierFilter,
+                VectorTierFilterDescription = buildOptions.TierFilter?.Description,
+                VectorDocumentsConsidered = build.DocumentCount,
+                VectorDocumentsSkippedByTier = build.SkippedByTierCount,
+                VectorBytesPerDocument = build.IndexedCount > 0 ? (double)vectorBytes / build.IndexedCount : null,
+                VectorEmptyReason = build.EmptyReason,
                 RrfK = string.Equals(request.Retriever, "hybrid", StringComparison.Ordinal) ? request.RrfK : null,
                 RrfWeightFullText = string.Equals(request.Retriever, "hybrid", StringComparison.Ordinal) ? request.RrfWeightFullText : null,
                 RrfWeightVector = string.Equals(request.Retriever, "hybrid", StringComparison.Ordinal) ? request.RrfWeightVector : null,
@@ -307,7 +388,9 @@ internal static class VectorRetrievalModes
                 RecordedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
                 Note = "embedMs/IndexEmbeddingCalls are the vector service only; corpusMs is walk+outline+chunk+filter "
                      + "and is common to every retriever; the preflight call is reported separately so it is not "
-                     + "mistaken for indexing work. VectorStoreBytes is vectors.f32 + manifest.json, un-quantised.",
+                     + $"mistaken for indexing work. VectorStoreBytes is the {manifest.Format} file + manifest.json "
+                     + "(vectorBytes split reported separately). VectorDocumentsConsidered counts the blocks the "
+                     + "builder was given; SkippedByTier counts those the tier filter removed before embedding.",
             });
         }
 

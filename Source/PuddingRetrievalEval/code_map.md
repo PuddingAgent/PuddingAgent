@@ -35,7 +35,9 @@ PuddingRetrievalEval ──依赖──▶ ISearchProbe（本组件定义的端�
 `Services/EvalRun.cs` | 运行结果模型（逐 case 分数 + 分层聚合 + 冷/热 `LatencySummary` + 冷调用原始样本）|
 `Services/EvalReportWriter.cs` | Markdown + JSON（`ToMarkdown` / `ToJson` 纯函数；`Write` 落盘 UTF-8 无 BOM）。报告内**显式声明不设阈值** |
 `eval/sets/seed-v1.json` | **种子标注集**：80 条（C# 36 / TS-TSX 22 / md 22；symbol 36 / intent 26 / crossref 18），共 98 个 (query, 期望文件) 对 |
-`eval/reports/*.md,*.json` | 首份真实基线（Lucene 全文索引面），见 `eval/reports/README.md` |
+| `eval/reports/*.md,*.json` | 首份真实基线（Lucene 全文索引面），见 `eval/reports/README.md` |
+| `eval/reports/u4-3-frozen-{f32,i8}-{all,p0}.*` | **U4-3 四变体矩阵**（同一 1,352 块语料：float32/int8 × 全 tier/仅 P0），报告 `temp/U4-3-REPORT.md`。`.probe.json` 里记 `VectorFormat` / `VectorTierFilter`，与索引 JSON 的 `VectorFormat` 对得上 |
+| `eval/reports/u4-3-{f32,i8}-{all,p0}.*` | 同四变体在**活仓库语料**（U4-2a 提交后 61 文件 / 2,177 块）上的稳健性复跑 |
 
 ## 指标定义（分母固定，禁止口头约定）
 
