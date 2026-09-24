@@ -1,3 +1,25 @@
+## 2026-09-24 U3-E：校准重试指数退避 + 封顶（闭合 ADR-089「60s 轮询 **+ 退避**」）
+
+**卡的是 ADR-089 明写却从未实现的那半句**：退避。一个根目录消失/不可读的 scope 会被置 `NeedsReconcile`，之后**每 60s 重试、永不退避**；U3-D 又把这条路径从「只被标位的 scope 才可能走到」扩到「**任何根消失的 scope 首次常规 sweep 后都会走到**」⇒ 一个坏 scope = **1440 次探测 + ≈2880 行 Error/天**。
+
+**交付（生产仅 1 文件，153/10）**：新常量 `DefaultCalibrationBackoffMax = 30min`（`:90`，与 `DefaultPollInterval`/`DefaultCalibrationInterval`/`DefaultCalibrationPeriod` 并列，**不新增配置层**）；纯函数 `CalibrationBackoffInterval(long)`（`:1015`，`internal static`，**封顶在循环内以 `>` 夹取 + 循环出口双重保证 ⇒ 失败 10⁶ 次与 6 次同价、无溢出**）；`ScopeEntry` 纯新增 `ConsecutiveCalibrationFailures`（`:197`，与 `LastCalibrationAttemptAtUtc` 同 `_gate` 同位）；`IsCalibrationDue`（`:977`）**标位分支**拆为「从未尝试 ⇒ 立即（U3-C 逐字保留）」+「`now-lastAttempt >= CalibrationBackoffInterval(failures)`」，**else（15min 常规钟）一字未改**；`RegisterCalibrationFailure`（`:1035`）/ `ResetCalibrationBackoff`（`:1056`）；四条结局接线 = 异常 +1 档、被拒 +1 档、**截断复位**、**成功复位**（被拒/异常日志追加档位 + 下一次允许时刻）。
+
+**阶梯（父级实读源码复核算术）**：`failures=1 → 60s ｜ 2 → 2m ｜ 3 → 4m ｜ 4 → 8m ｜ 5 → 16m ｜ ≥6 → 封顶 30m`；单次失败仍等 60s（U3-C 语义保留）。**尝试时刻** `0, 60, 180, 420, 900, 1860` 秒后每 1800s ⇒ **首日 1440 → 52（−96.4%）**、**首周 10080 → 340（−96.6%）**；Error 行 ≈2880 → ≈104/天。
+
+**门禁（父级独立复跑）**：`PuddingCodeIndexTests` **114/114（失败 0，基线 107，+7）**；`slnx -c Release` **`BUILD_EXIT=0` + `error CS`/`error MSB` 行数 0 + 117 警告 / 0 错误**；`numstat Source/` = `153/10` + `22/2`（与自述逐条吻合）；三文件 `hash-object` = `422c166c…`/`8ccd7d57…`/`1823c28e…`（逐位相同）；`MUTATION` 残留 **0**；**`.csproj`/`.slnx`/Host/Runtime 零改动**；`Contracts/ICodeIndexer.cs` 有 `M` 但 numstat 零行（LF/CRLF artifact，未纳入）。**`ClearNeedsReconcile` 全组件仅 1 个调用点（`:940`）** ⇒ 「被标位的 scope 唯一出口是成功 sweep」成立。
+
+**变异取红（原文）**：M1 去封顶 ⇒ **A2 红**（应 7 实 6；纯函数例应 00:30:00 实 00:32:00）；M2 系数改 1 ⇒ **A1 红**（*"attempt 3 must not happen before 00:02:00 have elapsed since attempt 2"*）；M3 成功后不复位 ⇒ **A3 红**（*"after a success the first retry is 60 s again"*）。复原全绿 114/114。
+
+**必答三问**：① 阶梯/封顶如上；② **不叠加、不双扫**（判 due 二分支永不同时参与；反证：被标位 scope 跑完 31min 而 `CalibrationRunCount` 恰 = 6）；③ `LastCalibrationAtUtc` 被拒时**会盖章但不推迟常规钟**（标位时常规钟不被读取，解位唯一出口是成功 sweep）⇒ 常规钟实际始终锚在「上次成功」。
+
+**裁决**：**接受 `Truncated → 复位`**（截断 = 根可读 + 真删了行，是进展而非失败；算失败会拖慢大仓收敛）—— 已登记为**可逆单点选择**。
+
+**诚实留白**：① **根恢复检出延迟最坏 30min**（原 ≤60s）= 用检出延迟换 96% 探测量的**自觉取舍**；可用「变更管线再观测到该路径 / watcher 重附着」作复位信号压回 60s 量级，但**会改 U3-B3 管线语义**；② 档位**未暴露到 status/快照**（要暴露需单独下刀，会动 `Contracts/ICodeIndexMaintenance.cs`）；③ 探测量是「被拒次数」口径，未含「根可读但深层子目录不可读」；④ 未在真实 watcher / 真实 Roslyn 下端到端验证；⑤ `ListFilesAsync` 无分页仍缺。
+
+**仪器教训（本刀新踩，已入规范）**：用 `... | Select-String ...` 过滤构建输出会得到**空结果**，而 `exit 0` 是**管道最后一条命令**的状态、**不代表构建成功** ⇒ 必须「输出收进变量 + 显式打印 `$LASTEXITCODE` + 统计 `error CS|error MSB` 行数 + 尾行做非 ASCII 掩码但保留数字」。
+
+> 结论与关键数字固化：`Docs/Features/ADR-089-U3-E-校准重试退避实测-2026-09-24.md`；原始输出在 `temp/u3e-*.txt`（gitignore）。
+
 ## 2026-09-24 U3-D：按 scope 独立计时的常规校准周期（15 min）—— U3 唯一真功能缺口闭合
 
 **卡的是 U3-C 留下的洞**：校准过去**只在 `NeedsReconcile` 时触发**，于是变更源长期静默的 scope（watcher 溢出 / 进程未运行期间的变更 / 附着失败后不再有事件）其陈旧索引行**永远清不掉**。

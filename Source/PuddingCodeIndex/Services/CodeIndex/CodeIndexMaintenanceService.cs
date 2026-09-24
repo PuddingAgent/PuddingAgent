@@ -31,6 +31,15 @@ namespace PuddingCodeIndex.Services.CodeIndex;
     /// untouched by that: the due check is per scope, so a step that finds nothing due sweeps nothing.
     /// </para>
     /// <para>
+    /// <b>U3-E calibration retry backoff</b>: a scope whose root (or whose calibrator) keeps failing used to be
+    /// re-probed — and re-logged — every 60 s for ever, which U3-D made reachable for any scope whose root
+    /// disappears. The retry throttling is now an exponential ladder over
+    /// <see cref="DefaultCalibrationInterval"/> — 60 s, 2 min, 4 min, 8 min, 16 min — capped at
+    /// <see cref="DefaultCalibrationBackoffMax"/> (30 min), and every sweep that got to read the root puts the
+    /// ladder back at 60 s. The routine <see cref="DefaultCalibrationPeriod"/> clock is untouched: the ladder
+    /// only paces retries of a scope that already failed.
+    /// </para>
+    /// <para>
     /// The driver owns the single processing loop; <see cref="CodeIndexScheduler"/> deliberately owns none.
     /// Hosting (DI + <c>IHostedService</c>) is U3-B2, so this component never depends on the Host.
     /// </para>
@@ -44,15 +53,41 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
     public static readonly TimeSpan DefaultStopTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// Minimum interval between two calibration attempts for the same scope.
+    /// Minimum interval between two calibration attempts for the same scope, and the first rung of the U3-E retry
+    /// ladder.
     /// <para>
     /// Reconcile is an error path, and a root that stays unavailable must not be re-probed (and re-logged) at the
     /// driver's poll cadence, so an attempt no longer than once a minute is a deliberate bound. A scope that is
     /// flagged for the first time is calibrated on the very next step — this interval throttles retries, it does
     /// not delay the first attempt. (Cadence reference: ADR-089 §U3-C "监听不可用时 60s 轮询".)
     /// </para>
+    /// <para>
+    /// U3-E makes it the <b>base</b> of the backoff ladder rather than the whole bound: a scope that keeps being
+    /// refused waits this long before its second attempt, twice this long before its third, and so on up to
+    /// <see cref="DefaultCalibrationBackoffMax"/>. One failure therefore changes nothing, and only <b>repeated</b>
+    /// failure widens the gap.
+    /// </para>
     /// </summary>
     public static readonly TimeSpan DefaultCalibrationInterval = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Upper bound of the calibration retry ladder (U3-E): the longest a scope that keeps failing is left alone
+    /// before its next attempt.
+    /// <para>
+    /// The ladder is <see cref="DefaultCalibrationInterval"/> doubled once per consecutive unusable-root outcome —
+    /// 60 s, 2 min, 4 min, 8 min, 16 min — and this cap is where it stops (32 min would be the next rung, so the
+    /// effective ladder ends one doubling short of it). A scope whose root never comes back is therefore probed
+    /// about 52 times on its first day and about 340 times in its first week, instead of the 1440 / 10080 probes
+    /// (and error lines) a fixed 60 s retry costs; and a root that <b>does</b> come back is still noticed within
+    /// this window, because the ladder never grows past it.
+    /// </para>
+    /// <para>
+    /// Deliberately a component constant rather than a configuration-file setting, exactly like
+    /// <see cref="DefaultPollInterval"/> and <see cref="DefaultCalibrationPeriod"/>: the component takes its knobs
+    /// as constructor arguments, so this slice changes nothing on the host side.
+    /// </para>
+    /// </summary>
+    public static readonly TimeSpan DefaultCalibrationBackoffMax = TimeSpan.FromMinutes(30);
 
     /// <summary>
     /// Interval at which every attached scope is calibrated <b>routinely</b> (U3-D), whether or not anything
@@ -149,6 +184,17 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
 
         /// <summary>Guarded by the service gate. End of the latest calibration run.</summary>
         public DateTimeOffset? LastCalibrationAtUtc;
+
+        /// <summary>
+        /// Guarded by the service gate. Consecutive calibration outcomes that showed the scope root was unusable
+        /// (a refusal, or a run that threw) — the rung of the U3-E retry ladder this scope currently sits on.
+        /// <para>
+        /// Every outcome that <b>got to read the root</b> — a finished sweep and a truncated one alike — puts it
+        /// back to 0, so the ladder only ever measures <b>repeated</b> failure, and a root that has come back is
+        /// not throttled by the history of the outage before it.
+        /// </para>
+        /// </summary>
+        public long ConsecutiveCalibrationFailures;
     }
 
     private readonly ICodeIndexSchedulerDriver _scheduler;
@@ -789,8 +835,9 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
     /// <list type="number">
     ///   <item><description>
     ///     <b>It is flagged for reconciliation</b> (U3-C, unchanged): the first attempt happens on the very next
-    ///     step, later attempts are throttled to <see cref="DefaultCalibrationInterval"/> so a root that stays
-    ///     unavailable cannot be re-probed — and re-logged — at the driver's poll cadence.
+    ///     step, later attempts are throttled to <see cref="DefaultCalibrationInterval"/> — and, since U3-E, to
+    ///     the widening rungs of the backoff ladder above it — so a root that keeps being refused cannot be
+    ///     re-probed (nor re-logged) at the driver's poll cadence, nor once a minute for ever either.
     ///   </description></item>
     ///   <item><description>
     ///     <b>Its routine period elapsed</b>: a scope nobody flagged is calibrated once per
@@ -837,9 +884,13 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
             {
                 entry.State.MarkNeedsReconcile(CodeIndexScopeState.ReconcileReasons.CalibrationFailed);
 
+                // U3-E: a run that never got an answer out of the root is a failure like a refusal, so it walks
+                // the retry ladder too — otherwise a calibrator that always throws would be re-run every 60 s.
+                var failed = RegisterCalibrationFailure(entry);
+
                 _logger?.LogError(ex,
-                    "[CodeIndexMaintenance] Scope {ScopeId}: calibration failed; the scope stays flagged for reconciliation.",
-                    key.ScopeId);
+                    "[CodeIndexMaintenance] Scope {ScopeId}: calibration failed; the scope stays flagged for reconciliation. Consecutive unusable-root outcome {Failures}; next attempt no earlier than {NextAttemptAtUtc} ({Backoff} after the last attempt).",
+                    key.ScopeId, failed.Failures, failed.NextAttemptAtUtc, failed.Interval);
                 continue;
             }
 
@@ -859,9 +910,13 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
                 // the scope must stay flagged, and nothing was removed.
                 entry.State.MarkNeedsReconcile(CodeIndexScopeState.ReconcileReasons.CalibrationRootUnavailable);
 
+                // U3-E: the refusal also widens the gap before the next attempt. One refusal still means the
+                // 60 s bound U3-C fixed; it is the second and later ones that back off.
+                var refused = RegisterCalibrationFailure(entry);
+
                 _logger?.LogError(
-                    "[CodeIndexMaintenance] Scope {ScopeId}: calibration was refused ({Reason}); the scope stays flagged and no file was removed.",
-                    key.ScopeId, result.RejectionReason ?? "unspecified");
+                    "[CodeIndexMaintenance] Scope {ScopeId}: calibration was refused ({Reason}); the scope stays flagged and no file was removed. Consecutive unusable-root outcome {Failures}; next attempt no earlier than {NextAttemptAtUtc} ({Backoff} after the last attempt).",
+                    key.ScopeId, result.RejectionReason ?? "unspecified", refused.Failures, refused.NextAttemptAtUtc, refused.Interval);
                 continue;
             }
 
@@ -872,6 +927,10 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
                 // here instead of merely kept. The retry throttle paces the remaining rounds.
                 entry.State.MarkNeedsReconcile(CodeIndexScopeState.ReconcileReasons.CalibrationTruncated);
 
+                // U3-E: the run did read the root, so the remaining rounds are paced by the base interval again —
+                // a long outage before this run must not slow the completion of the sweep it just started.
+                ResetCalibrationBackoff(entry, key.ScopeId);
+
                 _logger?.LogWarning(
                     "[CodeIndexMaintenance] Scope {ScopeId}: calibration stopped at the per-run ceiling after sweeping {Swept} file(s); the scope stays flagged for a later run.",
                     key.ScopeId, result.SweptFileCount);
@@ -879,6 +938,10 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
             }
 
             entry.State.ClearNeedsReconcile();
+
+            // U3-E: a sweep that finished is the reset point of the ladder — the next failure starts from 60 s
+            // again, whatever the outage before this success cost.
+            ResetCalibrationBackoff(entry, key.ScopeId);
 
             _logger?.LogInformation(
                 "[CodeIndexMaintenance] Scope {ScopeId}: calibration swept {Swept} stale file(s) ({Absent} of {Scanned} indexed path(s) are not on disk, {Protected} left alone as recently observed); the reconcile flag is cleared.",
@@ -917,15 +980,95 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
         {
             // U3-C, unchanged: flagging a scope means "calibrate it on the very next step"; the retry interval
             // only throttles re-attempts of a scope that stays flagged.
-            return entry.LastCalibrationAttemptAtUtc is not { } lastAttempt
-                || nowUtc - lastAttempt >= DefaultCalibrationInterval;
+            if (entry.LastCalibrationAttemptAtUtc is not { } lastAttempt)
+                return true;
+
+            // U3-E: that interval is now the rung of the backoff ladder the scope sits on. A scope that has not
+            // failed yet sits on the first rung, which is exactly the 60 s bound U3-C fixed — so the ladder only
+            // ever widens <b>repeated</b> failure, and a scope flagged for the first time is still calibrated on
+            // the very next step (that path returns above, before any interval is consulted).
+            return nowUtc - lastAttempt >= CalibrationBackoffInterval(entry.ConsecutiveCalibrationFailures);
         }
 
         // U3-D: the routine cadence, measured from the completion of this scope's previous calibration run
         // (ADR-089 §U3-C: "均按上次完成后计时，不并发叠加"), and from the attach instant while none ever ran.
         // A run that threw never reaches this branch: it leaves the scope flagged, which is what the branch
-        // above is for.
+        // above is for. U3-E deliberately leaves this clock alone: the ladder paces retries of a scope that
+        // failed, it is not a second routine clock.
         return nowUtc - (entry.LastCalibrationAtUtc ?? entry.AttachedAtUtc) >= DefaultCalibrationPeriod;
+    }
+
+    /// <summary>
+    /// The U3-E retry ladder: how long a scope that has failed <paramref name="consecutiveFailures"/> times in a
+    /// row must wait before its next calibration attempt.
+    /// <para>
+    /// <see cref="DefaultCalibrationInterval"/> doubled once per further failure — 60 s, 2 min, 4, 8, 16 — and
+    /// capped at <see cref="DefaultCalibrationBackoffMax"/>. Doubling starts at the <b>second</b> failure, so one
+    /// refusal still waits the 60 s U3-C fixed and only repeated failure widens the gap.
+    /// </para>
+    /// <para>
+    /// Pure and total: every value maps to an interval, and the loop stops as soon as it reaches the cap, so a
+    /// scope that failed a million times costs no more than one that failed six.
+    /// </para>
+    /// </summary>
+    /// <param name="consecutiveFailures">Consecutive unusable-root outcomes for one scope (0 when none).</param>
+    internal static TimeSpan CalibrationBackoffInterval(long consecutiveFailures)
+    {
+        var interval = DefaultCalibrationInterval;
+
+        for (var rung = 1L; rung < consecutiveFailures && interval < DefaultCalibrationBackoffMax; rung++)
+        {
+            var doubled = interval + interval;
+            interval = doubled > DefaultCalibrationBackoffMax ? DefaultCalibrationBackoffMax : doubled;
+        }
+
+        return interval;
+    }
+
+    /// <summary>
+    /// Moves one scope one rung down the U3-E retry ladder after an outcome that showed its root was unusable,
+    /// and reports the rung it landed on — how many failures in a row that is, the interval the next attempt must
+    /// wait, and the instant it may happen.
+    /// </summary>
+    /// <param name="entry">Scope that failed.</param>
+    /// <returns>The rung the scope is on, for the caller to log.</returns>
+    private (long Failures, TimeSpan Interval, DateTimeOffset NextAttemptAtUtc) RegisterCalibrationFailure(ScopeEntry entry)
+    {
+        lock (_gate)
+        {
+            entry.ConsecutiveCalibrationFailures++;
+
+            var failures = entry.ConsecutiveCalibrationFailures;
+            var interval = CalibrationBackoffInterval(failures);
+            var nextAttemptAtUtc = (entry.LastCalibrationAttemptAtUtc ?? _timeProvider.GetUtcNow()) + interval;
+
+            return (failures, interval, nextAttemptAtUtc);
+        }
+    }
+
+    /// <summary>
+    /// Puts one scope back on the first rung of the U3-E retry ladder, because a run got to read the root (a
+    /// finished sweep or a truncated one). Logs only when there was something to reset, so a healthy scope is
+    /// silent about it.
+    /// </summary>
+    /// <param name="entry">Scope whose calibration got through.</param>
+    /// <param name="scopeId">Scoped id, for the log.</param>
+    private void ResetCalibrationBackoff(ScopeEntry entry, string scopeId)
+    {
+        long previous;
+
+        lock (_gate)
+        {
+            previous = entry.ConsecutiveCalibrationFailures;
+            entry.ConsecutiveCalibrationFailures = 0;
+        }
+
+        if (previous == 0)
+            return;
+
+        _logger?.LogInformation(
+            "[CodeIndexMaintenance] Scope {ScopeId}: calibration read the root again; the retry backoff is reset to {Reset} (it was {Failures} consecutive unusable-root outcome(s)).",
+            scopeId, DefaultCalibrationInterval, previous);
     }
 
     /// <summary>Driver loop: re-checks for due batches on the configured cadence.</summary>

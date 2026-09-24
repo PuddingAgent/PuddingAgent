@@ -40,7 +40,7 @@
 | `CodeIndexChangeCoalescer.cs` | 防抖折叠（静默 500ms / 最长 2s，2 万路径 → reconcile） |
 | `CodeIndexChangeBatch.cs` | 折叠产物（重读集合 / 移除集合 / reconcile 标记） |
 | `CodeIndexChangeWatchers.cs` | **U3-B1** 变更源抽象（`ICodeIndexChangeWatcher` / `ICodeIndexWatcherFactory`）+ 真实 watcher 适配工厂 |
-| `CodeIndexMaintenanceService.cs` | **U3-B1/U3-B3** 变更→索引的单一驱动（消费批次、置脏补跑、有界停止）。**U3-B3 按文件施用**：`PathsToRemove` → store 真删除；`PathsToReindex` → `ICodeIndexFileUpdater.IndexFileAsync` 逐文件（索引器无该能力则同样升级）；仅 reconcile / 目录变更 / 索引器拒绝才升级为 scope 级重索引；批次施用失败 ⇒ 标 `NeedsReconcile` + 记错误日志（不静默丢弃）。**U3-D 常规校准**：驱动步末尾的校准由 `TryBeginCalibration` 逐 scope 判due —— 被标位的 scope（U3-C，首次尝试在下一步、重试节流 `DefaultCalibrationInterval` 60s）**或**自有常规周期到期的 scope（`DefaultCalibrationPeriod` 15min，按**上次完成**计时，首次以挂载时刻为锚）。未到期 ⇒ **一次校准都不发起**（每日 200ms 步不会变成扫盘）；被拒/被截断 ⇒ **保持或置位** `NeedsReconcile` |
+| `CodeIndexMaintenanceService.cs` | **U3-B1/U3-B3** 变更→索引的单一驱动（消费批次、置脏补跑、有界停止）。**U3-B3 按文件施用**：`PathsToRemove` → store 真删除；`PathsToReindex` → `ICodeIndexFileUpdater.IndexFileAsync` 逐文件（索引器无该能力则同样升级）；仅 reconcile / 目录变更 / 索引器拒绝才升级为 scope 级重索引；批次施用失败 ⇒ 标 `NeedsReconcile` + 记错误日志（不静默丢弃）。**U3-D 常规校准**：驱动步末尾的校准由 `TryBeginCalibration` 逐 scope 判due —— 被标位的 scope（U3-C，首次尝试在下一步、重试节流 `DefaultCalibrationInterval` 60s）**或**自有常规周期到期的 scope（`DefaultCalibrationPeriod` 15min，按**上次完成**计时，首次以挂载时刻为锚）。未到期 ⇒ **一次校准都不发起**（每日 200ms 步不会变成扫盘）；被拒/被截断 ⇒ **保持或置位** `NeedsReconcile`。**U3-E 重试退避**：被标位 scope 的重试间隔改为**指数阶梯** —— 以 `DefaultCalibrationInterval`(60s) 为底、**第二次及以后的连续失败**逐次翻倍（60s/2m/4m/8m/16m），封顶到组件常量 `DefaultCalibrationBackoffMax`(**30min**)；**任何一次“读到了根”的 sweep（完成或截断）立刻把档位复位到 0**；15min 常规钟与“首次尝试在下一步 / 单次失败仍 60s”**逐字未变**（阶梯只判“重复失败”，且与常规钟不叠加：`IsCalibrationDue` 的 if/else 二者永不同时参与） |
 | `CodeIndexCalibrationService.cs` | **U3-C 校准（mark-and-sweep）**：取 scope 已索引路径集合（`ListFilesAsync`），逐条判磁盘存在性，对"已消失"的调用 `RemoveFilesAsync`（只删索引行）；**根目录缺失/不可读 ⇒ 拒绝 sweep**（零移除 + 保持置位）；宽限窗口内被变更管线刚观测过的路径豁免；每事务 ≤256 条、每轮 ≤4096 条，可取消 |
 
 ## 服务（Services/ → `PuddingCodeIndex.Services`）
@@ -77,7 +77,7 @@
 ## 测试
 
 **`../PuddingCodeIndexTests/`（本组件的独立测试工程 —— S2/S3 已兑现）**：只引用本工程，
-**107 用例**（含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**，**U3-D 后 98 → 107：+9 条常规校准 / 成本用例**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
+**114 用例**（含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**，**U3-D 后 98 → 107：+9 条常规校准 / 成本用例**，**U3-E 后 107 → 114：+7 条退避用例（含 1 条反射边界断言）**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
 `InternalsVisibleTo` **仅**对本组件的测试工程开放（**不得**对上层开放 —— 那是反向依赖）。
 
 `../PuddingCodeIntelligenceTests/` 保留语言解析/查询/DI 等**上层**测试（89 用例）；
@@ -168,3 +168,23 @@
 
 **门禁（本刀实测）**：`PuddingCodeIndexTests` **107/107**（改前 98/98；+9 用例）；`PuddingAgentNetwork.slnx -c Release` 见 `temp/U3-D-REPORT.md`；M1/M2/M3 三个变异各取红（A2 / A1 / A3），复原后 `git hash-object` 逐位相同、`MUTATION` 残留 0。
 **成本口径（实测）**：单 scope 350 条索引路径（348 在盘 / 2 已消失）一次常规 sweep = **19 ms**、清 2 行；**未到期的一步 = 0.03 ms**（不列盘）。⇒ 15min × N scope 的叠加成本可接受（见报告 §7.4）。
+
+## U3-E 更新（2026-09-24）— 校准重试指数退避 + 封顶
+
+**问题**：ADR-089 写的是「监听不可用时 60s 轮询 **+ 退避**」，**退避从未实现**。只要一个 scope 的根目录消失/不可读，它就被置 `NeedsReconcile`，此后**每 60s 重试、永不退避**；U3-D 又把这条路径从「只有被标位的 scope」扩到「**任何根消失的 scope 首次常规 sweep 后都会走到**」⇒ 一个坏 scope = **1440 次探测 + 2 行 Error/次/天**。
+
+**交付**（生产改动**只**在 `Services/CodeIndex/CodeIndexMaintenanceService.cs`：`git diff --numstat` = **153 插入 / 10 删除**，10 处删除全是被替换行。**零 Host / 零 DI / 零 csproj / 零 NuGet / 零排除规则 / 未动 `CodeIndexCalibrationService.cs`**）：
+- 新组件常量 **`DefaultCalibrationBackoffMax` = 30min**（与 `DefaultPollInterval` / `DefaultCalibrationInterval` / `DefaultCalibrationPeriod` 并列，不新增配置层）。
+- 新纯函数 **`CalibrationBackoffInterval(long consecutiveFailures)`**（`internal static`）：`DefaultCalibrationInterval`(60s) 为底、**第二次及以后的连续失败**逐次翻倍 ⇒ 60s/2m/4m/8m/16m；下一档本应 32m，**封顶为 30m** 且此后恒 30m。循环在触到封顶时立即结束（纯且全：失败 10⁶ 次与失败 6 次同价）。
+- `ScopeEntry` 纯新增 **`ConsecutiveCalibrationFailures`**（`_gate` 保护；与既有 `LastCalibrationAttemptAtUtc` 同锁同位置）。**未新增任何公共状态字段** ⇒ `CalibrationRunCount` / `RejectedCalibrationRunCount` / `LastCalibrationAtUtc` 语义与 `CodeIndexMaintenanceScopeStatus` 形状**一字未改**。
+- `IsCalibrationDue` 标位分支：`A || B` 拆为「从未尝试 ⇒ **立即**（U3-C 逐字保留）」+「`now - lastAttempt >= CalibrationBackoffInterval(failures)`」。**else 分支（15min 常规钟）一字未改** ⇒ **阶梯只作用于“重复失败”**：单次失败仍是 60s。
+- 三条结局接阶梯：**异常 ⇒ +1 档**、**被拒 ⇒ +1 档**、**截断 ⇒ 复位**、**成功 ⇒ 复位**；被拒/异常的日志追加「连续失败档位 + 下一次允许尝试的时刻」（R4 可见性）。`Truncated` 算「读到了根」故复位 —— 它是进展不是失败（规格未钉死，理由见 `temp/U3-E-REPORT.md` §2）。
+- 缺口（阶梯）**加宽了**，因此 `git hash-object` 在改前/每个变异复原后均为 `422c166c835e75c53d431505f46cd01518878968`。
+
+**必答三问（实测，详见 `temp/U3-E-REPORT.md`）**：
+1. **序列 60s→2m→4m→8m→16m→30m(封顶)**。永久坏掉的 scope 尝试时刻 `0, 60s, 180s, 420s, 900s, 1860s`，此后每 1800s ⇒ **首日 52 次（对照 1440，−96.4%）、首周 340 次（对照 10080，−96.6%）**。
+2. **不叠加、不会双扫**：`IsCalibrationDue` 的 `if (NeedsReconcile) {阶梯} else {15min}` 二者永不同时参与；每 scope 每步至多一次判定 + 一次 `CalibrateAsync`。实测反证：31 分钟时钟（>2×15min）内被标位 scope 恰好 6 次尝试 = 阶梯预测（叠加则至少多 2 次）。
+3. `LastCalibrationAtUtc` **在被拒时确实盖章**（无条件赋值在拒绝分支之前），**但不推迟常规钟** —— 被标位时常规钟不被读取，而解位唯一出口（成功 sweep，`ClearNeedsReconcile` 全组件仅 1 个调用点）会再盖一次 ⇒ 常规钟实际锚在「上次成功」。**根恢复后被重扫的最长等待 = 当前档位：单次失败 60s、档位爬满后 30min**（自觉取舍，见报告 §7③ 的后续建议）。
+
+**门禁（本刀实测）**：`PuddingCodeIndexTests` **114/114**（改前 107/107；**+7 用例 = A1~A6**，含 1 条反射边界断言锁「阶梯是组件常量、构造函数无 backoff knob」）；`PuddingAgentNetwork.slnx -c Release` exit 0 / **0 个错误**（见 `temp/u3e-build-release.txt`）；M1（去封顶）/M2（系数改 1）/M3（成功后不复位）分别取红 **A2 / A1 / A3**，各三份原始输出（红 / 复原绿 / 全绿）在 `temp/u3e-m{1,2,3}-{red,green}.txt` + `temp/u3e-tests-green-full.txt`；复原后 hash 逐位相同、`MUTATION` 残留 **0**。
+**成本口径（推算，口径同上）**：坏 scope 由 1440 探测/天 → 52 探测/天（≈104 行 Error/天，对照 ≈2880）。
