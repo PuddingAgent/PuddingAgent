@@ -1943,6 +1943,80 @@ public sealed class SearchGrepToolTests
         }
     }
 
+    [TestMethod]
+    public async Task Backend_Index_Resolves_Relative_Index_Paths_Against_The_Scope_Not_The_Process_Cwd()
+    {
+        // 真实索引可能存的是相对路径（探针 --scope "." 建出来的就是），此时必须以本次查询的 scope 为基准解析；
+        // 若按进程 CWD 解析，真实命中会被整体判成“陈旧”而静默丢弃（假否定）。
+        var previousCwd = Directory.GetCurrentDirectory();
+        var scopeDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-relscope-{Guid.NewGuid():N}");
+        var otherCwd = Path.Combine(Path.GetTempPath(), $"pudding-sgt-othercwd-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scopeDir);
+        Directory.CreateDirectory(otherCwd);
+        await File.WriteAllTextAsync(Path.Combine(scopeDir, "rel.txt"), "NEEDLE relative\n");
+
+        try
+        {
+            Directory.SetCurrentDirectory(otherCwd); // CWD 故意不等于 scope
+            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(
+                true,
+                [new FullTextSearchMatch(@".\rel.txt", 1, "NEEDLE relative")],
+                null, 1, 5));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, engine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = scopeDir,
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            StringAssert.Contains(result.Output, "rel.txt:1: NEEDLE relative");
+            Assert.IsFalse(result.Output.Contains("staleSkipped"),
+                "相对索引路径必须按 scope 解析；按进程 CWD 解析会把真实命中全当成陈旧条目丢弃");
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, scopeDir);
+            if (Directory.Exists(otherCwd))
+                Directory.Delete(otherCwd, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task Backend_Index_Does_Not_Report_A_Bare_No_Match_When_Every_Hit_Was_Stale()
+    {
+        var previousCwd = Directory.GetCurrentDirectory();
+        var scopeDir = Path.Combine(Path.GetTempPath(), $"pudding-sgt-allstale-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scopeDir);
+        var missing = Path.Combine(scopeDir, "gone.txt");
+
+        try
+        {
+            var engine = new RecordingFullTextSearchEngine(new FullTextSearchResult(
+                true,
+                [new FullTextSearchMatch(missing, 1, "NEEDLE gone")],
+                null, 1, 5));
+            var tool = new SearchGrepTool(NullLogger<SearchGrepTool>.Instance, engine);
+
+            var result = await ExecuteAsync(tool, "NEEDLE", new Dictionary<string, string>
+            {
+                ["backend"] = "index",
+                ["directory"] = scopeDir,
+            });
+
+            Assert.IsTrue(result.Success, result.Error);
+            Assert.AreEqual(ToolResultStatuses.NoMatch, result.Status);
+            StringAssert.Contains(result.Output, "skipped as stale");
+            Assert.IsFalse(result.Output.StartsWith("(no matches)\n"),
+                "全部命中都陈旧时不得只回一句空洞的 no matches（那是让调用方打转的假否定）");
+        }
+        finally
+        {
+            RestoreAndDelete(previousCwd, scopeDir);
+        }
+    }
+
     private static void RestoreAndDelete(string previousCwd, string tempDir)
     {
         Directory.SetCurrentDirectory(previousCwd);

@@ -487,12 +487,23 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
         bool truncated = false;
         int staleSkipped = 0;
         int engineMatchCount = 0;
+        string? firstStaleRawPath = null;
         foreach (var match in engineResult.Matches ?? [])
         {
             engineMatchCount++;
             if (lines.Count >= maxResults) { truncated = true; break; }
-            var fullPath = Path.GetFullPath(match.FilePath);
-            if (!File.Exists(fullPath)) { staleSkipped++; continue; }
+            // 索引里存的 path 不保证是绝对的：建索引时若 scope 写的是相对路径（探针的 --scope "." 即如此），
+            // 写入的就是相对路径。必须以「本次查询的 scope」为基准解析，而不是进程 CWD——
+            // 否则相对路径会被整体误判成陈旧条目而静默丢弃（引擎命中了、工具却答“没有”，即假否定）。
+            var fullPath = Path.IsPathRooted(match.FilePath)
+                ? Path.GetFullPath(match.FilePath)
+                : Path.GetFullPath(Path.Combine(scopeDirectory, match.FilePath));
+            if (!File.Exists(fullPath))
+            {
+                staleSkipped++;
+                firstStaleRawPath ??= match.FilePath;
+                continue;
+            }
             if (IsPathInExcludedDir(fullPath, scopeDirectory, excludeDirs)) continue;
             var relative = NormalizeRelativePath(scopeDirectory, fullPath);
             if (!string.IsNullOrWhiteSpace(pattern)
@@ -508,14 +519,21 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
             + $"engineTotalMatches={engineResult.TotalMatches}, engineMs={engineResult.ElapsedMs}, totalMs={total.ElapsedMilliseconds}"
             + (truncated ? ", truncated=max_results" : string.Empty)
             + (staleSkipped > 0 ? $", staleSkipped={staleSkipped}" : string.Empty)
+            + (firstStaleRawPath is not null ? $", firstStaleRawPath={firstStaleRawPath}" : string.Empty)
             + "; single Lucene query-parser call, no managed scan — the 2000-file/64MB/10s caps do not apply, "
             + "coverage = files indexed under this scope, line text comes from the index snapshot)";
 
         var outcome = lines.Count == 0 ? "no_match" : truncated ? "truncated" : "hit";
         ReportIndexBackendTelemetry(context, scopeDirectory, outcome, total.ElapsedMilliseconds);
 
+        // 全部命中都陈旧时不得只回一句空洞的 "(no matches)"：调用方会以为“这里没有”，转而换关键词重试 ——
+        // 那正是要消除的打转。必须给出可行动的原因与下一步。
         var output = lines.Count == 0
-            ? "(no matches)\n" + summary
+            ? (staleSkipped > 0
+                ? $"(no matches — every one of the {staleSkipped} index hit(s) was skipped as stale: "
+                  + "the index snapshot for this scope points at paths that no longer exist; rebuild this scope's index, "
+                  + "or omit 'backend' to use the managed scan path)\n" + summary
+                : "(no matches)\n" + summary)
             : string.Join('\n', lines) + "\n" + summary;
         return ToolExecutionResult.Ok(output,
             status: lines.Count == 0 ? ToolResultStatuses.NoMatch
