@@ -24,6 +24,13 @@ namespace PuddingCodeIndex.Services.CodeIndex;
     /// files that are gone. A successful sweep clears <c>NeedsReconcile</c>; a refused or truncated one keeps it.
     /// </para>
     /// <para>
+    /// <b>U3-D routine calibration</b>: that sweep used to depend on <c>NeedsReconcile</c>, so it only happened in
+    /// the moment something went wrong. Every scope is now calibrated once per
+    /// <see cref="DefaultCalibrationPeriod"/> as well, per scope and independent of the flag, because a scope
+    /// whose change source goes quiet for good has no other way to lose a stale row. The driver's poll cadence is
+    /// untouched by that: the due check is per scope, so a step that finds nothing due sweeps nothing.
+    /// </para>
+    /// <para>
     /// The driver owns the single processing loop; <see cref="CodeIndexScheduler"/> deliberately owns none.
     /// Hosting (DI + <c>IHostedService</c>) is U3-B2, so this component never depends on the Host.
     /// </para>
@@ -47,6 +54,29 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
     /// </summary>
     public static readonly TimeSpan DefaultCalibrationInterval = TimeSpan.FromSeconds(60);
 
+    /// <summary>
+    /// Interval at which every attached scope is calibrated <b>routinely</b> (U3-D), whether or not anything
+    /// flagged it for reconciliation.
+    /// <para>
+    /// Why it exists: calibration used to be reachable only through <c>NeedsReconcile</c>, i.e. only in the
+    /// moment a change source failed. A scope whose capture goes quiet for good — a change source that could not
+    /// be attached and was never retried, changes made while the process was not running, events lost before
+    /// anything flagged the scope — therefore kept every stale row it had, for ever: no change event is left to
+    /// mention those paths, and a scope-level re-index re-reads the files that exist, so it can never clear the
+    /// rows of the ones that are gone. A routine sweep is the only thing that can.
+    /// </para>
+    /// <para>
+    /// Measured per scope from the <b>completion</b> of that scope's previous calibration run (its attach
+    /// instant when none ever ran) — the clock ADR-089 §U3-C fixes for the routine cadence: "正常 metadata
+    /// 校准每 15min … 均按上次完成后计时，不并发叠加".
+    /// </para>
+    /// <para>
+    /// Deliberately a component constant rather than a configuration-file setting, like the poll cadence: the
+    /// component takes its knobs as constructor arguments, so this slice changes nothing on the host side.
+    /// </para>
+    /// </summary>
+    public static readonly TimeSpan DefaultCalibrationPeriod = TimeSpan.FromMinutes(15);
+
     /// <summary>Per-scope pipeline plus the counters this driver keeps about it.</summary>
     private sealed class ScopeEntry
     {
@@ -54,15 +84,23 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
             string rootPath,
             CodeIndexChangeQueue queue,
             CodeIndexScopeState state,
-            CodeIndexChangeCoalescer coalescer)
+            CodeIndexChangeCoalescer coalescer,
+            DateTimeOffset attachedAtUtc)
         {
             RootPath = rootPath;
             Queue = queue;
             State = state;
             Coalescer = coalescer;
+            AttachedAtUtc = attachedAtUtc;
         }
 
         public string RootPath { get; }
+
+        /// <summary>
+        /// The instant this scope was attached to the driver. It is the anchor the routine calibration clock
+        /// (U3-D) starts from, because a scope that was never calibrated has no completion time to measure from.
+        /// </summary>
+        public DateTimeOffset AttachedAtUtc { get; }
 
         public CodeIndexChangeQueue Queue { get; }
 
@@ -270,7 +308,8 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
             var coalescer = new CodeIndexChangeCoalescer(
                 queue, state, _timeProvider, _silenceWindow, _maxWait, logger: _logger);
 
-            var entry = new ScopeEntry(rootPath, queue, state, coalescer);
+            // The routine calibration clock of this scope (U3-D) is anchored here while it has never run.
+            var entry = new ScopeEntry(rootPath, queue, state, coalescer, _timeProvider.GetUtcNow());
 
             ICodeIndexChangeWatcher? watcher = null;
             try
@@ -445,10 +484,13 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
         // inside HandleBatchAsync would leave those requests queued forever — that is the P0 defect.
         await _scheduler.ProcessPendingAsync(cancellationToken).ConfigureAwait(false);
 
-        // U3-C: reconcile by calibration. Deliberately the last thing the step does — the flagged scope's batch
-        // has been applied and the queue has been pumped, so the sweep sees the pipeline's own result instead of
-        // racing it, and paths the batch just touched are still inside the calibration grace window.
-        await CalibrateReconcileScopesAsync(cancellationToken).ConfigureAwait(false);
+        // U3-C / U3-D: calibrate by mark-and-sweep. Deliberately the last thing the step does — the batch has
+        // been applied and the queue has been pumped, so the sweep sees the pipeline's own result instead of
+        // racing it, and paths the batch just touched are still inside the calibration grace window. Who is
+        // calibrated — a scope flagged for reconciliation (U3-C) or one whose routine period elapsed (U3-D) —
+        // is decided per scope inside; a scope that is not due is not swept at all, so the driver's poll
+        // cadence never becomes a per-step disk scan.
+        await CalibrateDueScopesAsync(cancellationToken).ConfigureAwait(false);
 
         return handled;
     }
@@ -740,16 +782,31 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
     }
 
     /// <summary>
-    /// Reconciles every scope that needs it by <b>calibrating</b> its index, and clears the flag when the sweep
-    /// was allowed to run to the end.
+    /// Calibrates every scope whose calibration is <b>due</b>, and clears the flag when the sweep was allowed to
+    /// run to the end.
     /// <para>
-    /// A refused sweep (root missing/unreadable) and a truncated one both keep the scope flagged, so "I could not
-    /// tell" is never mistaken for "nothing was stale". Attempts are throttled per scope
-    /// (<see cref="DefaultCalibrationInterval"/>), so a root that stays unavailable cannot be re-probed — and
-    /// re-logged — at the driver's poll cadence.
+    /// Two things make a scope due, and only these two (U3-D):
+    /// <list type="number">
+    ///   <item><description>
+    ///     <b>It is flagged for reconciliation</b> (U3-C, unchanged): the first attempt happens on the very next
+    ///     step, later attempts are throttled to <see cref="DefaultCalibrationInterval"/> so a root that stays
+    ///     unavailable cannot be re-probed — and re-logged — at the driver's poll cadence.
+    ///   </description></item>
+    ///   <item><description>
+    ///     <b>Its routine period elapsed</b>: a scope nobody flagged is calibrated once per
+    ///     <see cref="DefaultCalibrationPeriod"/> anyway. See that constant for why a routine sweep is the only
+    ///     thing that can clear the stale rows of a scope whose change source went quiet for good.
+    ///   </description></item>
+    /// </list>
+    /// Both clocks are read from the scope they belong to, so one scope coming due never calibrates another, and
+    /// the period bounds how often a scope is swept — it is never a licence to sweep on every step.
+    /// </para>
+    /// <para>
+    /// A refused sweep (root missing/unreadable) and a truncated one both keep — or set — the scope's flag, so
+    /// "I could not tell" is never mistaken for "nothing was stale"; the throttle then bounds what follows.
     /// </para>
     /// </summary>
-    private async Task CalibrateReconcileScopesAsync(CancellationToken cancellationToken)
+    private async Task CalibrateDueScopesAsync(CancellationToken cancellationToken)
     {
         var nowUtc = _timeProvider.GetUtcNow();
 
@@ -757,19 +814,8 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!entry.State.NeedsReconcile)
+            if (!TryBeginCalibration(entry, nowUtc))
                 continue;
-
-            lock (_gate)
-            {
-                if (entry.LastCalibrationAttemptAtUtc is { } lastAttempt
-                    && nowUtc - lastAttempt < DefaultCalibrationInterval)
-                {
-                    continue;
-                }
-
-                entry.LastCalibrationAttemptAtUtc = nowUtc;
-            }
 
             CodeIndexCalibrationResult result;
 
@@ -821,6 +867,11 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
 
             if (result.Truncated)
             {
+                // A truncated sweep is not a finished one: the scope is known to hold more stale rows than this
+                // run was allowed to remove, so the flag is set — on the routine path too, which is why it is set
+                // here instead of merely kept. The retry throttle paces the remaining rounds.
+                entry.State.MarkNeedsReconcile(CodeIndexScopeState.ReconcileReasons.CalibrationTruncated);
+
                 _logger?.LogWarning(
                     "[CodeIndexMaintenance] Scope {ScopeId}: calibration stopped at the per-run ceiling after sweeping {Swept} file(s); the scope stays flagged for a later run.",
                     key.ScopeId, result.SweptFileCount);
@@ -833,6 +884,48 @@ public sealed class CodeIndexMaintenanceService : ICodeIndexMaintenance, IDispos
                 "[CodeIndexMaintenance] Scope {ScopeId}: calibration swept {Swept} stale file(s) ({Absent} of {Scanned} indexed path(s) are not on disk, {Protected} left alone as recently observed); the reconcile flag is cleared.",
                 key.ScopeId, result.SweptFileCount, result.AbsentFileCount, result.ScannedFileCount, result.ProtectedFileCount);
         }
+    }
+
+    /// <summary>
+    /// Tells whether a calibration of <paramref name="entry"/> is due right now, and — when it is — stamps the
+    /// attempt so no later step re-attempts this scope before the relevant interval has elapsed.
+    /// <para>Per scope by construction: everything it reads and writes belongs to this entry alone.</para>
+    /// </summary>
+    /// <param name="entry">Scope to decide about.</param>
+    /// <param name="nowUtc">The step's instant (one reading per step, so a step is consistent with itself).</param>
+    /// <returns><c>true</c> when the caller must calibrate this scope now.</returns>
+    private bool TryBeginCalibration(ScopeEntry entry, DateTimeOffset nowUtc)
+    {
+        lock (_gate)
+        {
+            if (!IsCalibrationDue(entry, nowUtc))
+                return false;
+
+            // Both rules are measured from an attempt, so a scope that was just calibrated — for either reason
+            // — is not calibrated again by the very next step.
+            entry.LastCalibrationAttemptAtUtc = nowUtc;
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// The due rule of one scope. Deliberately pure and lock-free: the caller owns the service gate.
+    /// </summary>
+    private static bool IsCalibrationDue(ScopeEntry entry, DateTimeOffset nowUtc)
+    {
+        if (entry.State.NeedsReconcile)
+        {
+            // U3-C, unchanged: flagging a scope means "calibrate it on the very next step"; the retry interval
+            // only throttles re-attempts of a scope that stays flagged.
+            return entry.LastCalibrationAttemptAtUtc is not { } lastAttempt
+                || nowUtc - lastAttempt >= DefaultCalibrationInterval;
+        }
+
+        // U3-D: the routine cadence, measured from the completion of this scope's previous calibration run
+        // (ADR-089 §U3-C: "均按上次完成后计时，不并发叠加"), and from the attach instant while none ever ran.
+        // A run that threw never reaches this branch: it leaves the scope flagged, which is what the branch
+        // above is for.
+        return nowUtc - (entry.LastCalibrationAtUtc ?? entry.AttachedAtUtc) >= DefaultCalibrationPeriod;
     }
 
     /// <summary>Driver loop: re-checks for due batches on the configured cadence.</summary>

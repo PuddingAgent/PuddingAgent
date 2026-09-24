@@ -22,7 +22,7 @@
 | `ICodeIndexFileUpdater.cs` | **U3-B3** 按文件增量**可选能力端口**（`IndexFileAsync(descriptor, filePath)`）：故意不放进 `ICodeIndexer` —— 给全量端口加成员会破坏**每一个**实现者（实测 2026-09-24：成员版直接弄坏了禁写路径 `Tests/PuddingHost.Tests` 的替身）；不实现该能力 ⇒ 调用方升级为 scope 级重索引 |
 | `ICodeIndexScheduler.cs` | 后台调度端口（成员语义未变） |
 | `ICodeIndexSchedulerDriver.cs` | **U3-B1** 显式泵端口（`ProcessPendingAsync` + 每 scope `Desired/Committed` 水位） |
-| `ICodeIndexMaintenance.cs` | **U3-B1** 变更驱动维护服务的生命周期/只读观测契约 + `CodeIndexMaintenanceScopeStatus`（**U3-B3** 状态增 `RemovedFileCount` / `IncrementallyIndexedFileCount` / `ScopeEscalationCount`；**U3-C** 再增 `SweptFileCount` / `CalibrationRunCount` / `RejectedCalibrationRunCount` / `LastCalibrationAtUtc`） |
+| `ICodeIndexMaintenance.cs` | **U3-B1** 变更驱动维护服务的生命周期/只读观测契约 + `CodeIndexMaintenanceScopeStatus`（**U3-B3** 状态增 `RemovedFileCount` / `IncrementallyIndexedFileCount` / `ScopeEscalationCount`；**U3-C** 再增 `SweptFileCount` / `CalibrationRunCount` / `RejectedCalibrationRunCount` / `LastCalibrationAtUtc`；**U3-D** `CalibrationRunCount` 计入常规（周期）校准；`LastCalibrationAtUtc` 同时是常规时钟的锚） |
 | `ICodeIndexScopeRegistry.cs` | 范围注册端口 |
 | `ICodeIndexScopeResolver.cs` | 范围解析端口 + `ScopeResolution` |
 | `ICodeProjectRegistry.cs` | 项目注册端口 |
@@ -35,12 +35,12 @@
 |------|------|
 | `IndexChange.cs` | 单条文件系统变更观测（`IndexChangeKind`） |
 | `CodeIndexChangeQueue.cs` | 有界队列（容量 8192，`TryPublish` 不阻塞） |
-| `CodeIndexScopeState.cs` | 范围状态（dirty/version/reconcile，无 IO）；**U3-B3** 增 reconcile 原因 `BatchApplicationFailed` |
+| `CodeIndexScopeState.cs` | 范围状态（dirty/version/reconcile，无 IO）；**U3-B3** 增 reconcile 原因 `BatchApplicationFailed`；**U3-C** 增 `CalibrationRootUnavailable` / `CalibrationFailed`；**U3-D** 增 `CalibrationTruncated`（常规路径被 ceiling 截断也置位） |
 | `CodeIndexWatcher.cs` | 文件系统监视器（64KB 缓冲，回调只过滤 + TryPublish） |
 | `CodeIndexChangeCoalescer.cs` | 防抖折叠（静默 500ms / 最长 2s，2 万路径 → reconcile） |
 | `CodeIndexChangeBatch.cs` | 折叠产物（重读集合 / 移除集合 / reconcile 标记） |
 | `CodeIndexChangeWatchers.cs` | **U3-B1** 变更源抽象（`ICodeIndexChangeWatcher` / `ICodeIndexWatcherFactory`）+ 真实 watcher 适配工厂 |
-| `CodeIndexMaintenanceService.cs` | **U3-B1/U3-B3** 变更→索引的单一驱动（消费批次、置脏补跑、有界停止）。**U3-B3 按文件施用**：`PathsToRemove` → store 真删除；`PathsToReindex` → `ICodeIndexFileUpdater.IndexFileAsync` 逐文件（索引器无该能力则同样升级）；仅 reconcile / 目录变更 / 索引器拒绝才升级为 scope 级重索引；批次施用失败 ⇒ 标 `NeedsReconcile` + 记错误日志（不静默丢弃） |
+| `CodeIndexMaintenanceService.cs` | **U3-B1/U3-B3** 变更→索引的单一驱动（消费批次、置脏补跑、有界停止）。**U3-B3 按文件施用**：`PathsToRemove` → store 真删除；`PathsToReindex` → `ICodeIndexFileUpdater.IndexFileAsync` 逐文件（索引器无该能力则同样升级）；仅 reconcile / 目录变更 / 索引器拒绝才升级为 scope 级重索引；批次施用失败 ⇒ 标 `NeedsReconcile` + 记错误日志（不静默丢弃）。**U3-D 常规校准**：驱动步末尾的校准由 `TryBeginCalibration` 逐 scope 判due —— 被标位的 scope（U3-C，首次尝试在下一步、重试节流 `DefaultCalibrationInterval` 60s）**或**自有常规周期到期的 scope（`DefaultCalibrationPeriod` 15min，按**上次完成**计时，首次以挂载时刻为锚）。未到期 ⇒ **一次校准都不发起**（每日 200ms 步不会变成扫盘）；被拒/被截断 ⇒ **保持或置位** `NeedsReconcile` |
 | `CodeIndexCalibrationService.cs` | **U3-C 校准（mark-and-sweep）**：取 scope 已索引路径集合（`ListFilesAsync`），逐条判磁盘存在性，对"已消失"的调用 `RemoveFilesAsync`（只删索引行）；**根目录缺失/不可读 ⇒ 拒绝 sweep**（零移除 + 保持置位）；宽限窗口内被变更管线刚观测过的路径豁免；每事务 ≤256 条、每轮 ≤4096 条，可取消 |
 
 ## 服务（Services/ → `PuddingCodeIndex.Services`）
@@ -77,7 +77,7 @@
 ## 测试
 
 **`../PuddingCodeIndexTests/`（本组件的独立测试工程 —— S2/S3 已兑现）**：只引用本工程，
-**98 用例**（含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
+**107 用例**（含 3 条边界断言；U3-C 后 66 → 82，**U4-2a 后 82 → 98：+16 条检索合同契约测试**，**U3-D 后 98 → 107：+9 条常规校准 / 成本用例**），测试进程**不加载** Roslyn/MSBuild 与上层程序集。
 `InternalsVisibleTo` **仅**对本组件的测试工程开放（**不得**对上层开放 —— 那是反向依赖）。
 
 `../PuddingCodeIntelligenceTests/` 保留语言解析/查询/DI 等**上层**测试（89 用例）；
@@ -154,3 +154,17 @@
 **把"空洞否定"变成不可表示**（不靠注释约定，靠类型与构造校验）：① `hits=0` 且无 `EmptyReason` 的构造路径不存在（无公开构造函数 + 工厂校验 + 反射断言）；② `Degraded=true` ⇒ `DegradedReason` 必填；③ `NextSteps` 至多 1 条（>1 抛异常，**不静默截断**）；④ 截断（`totalCount > hits.Count`）必须同时给 `Overflow`（落盘路径）+ `NextCursor` + 非空 `Distribution`，否则拒绝构造。
 
 **成品门禁（本刀实测）**：`dotnet build PuddingAgentNetwork.slnx -c Release` exit 0 / `0 个错误`（改前同）；`PuddingCodeIndexTests` **98/98**（改前 82/82）；`ProjectReference` 仍为 **0**、未新增 NuGet、未改任何 `DependencyInjection.cs` / `.slnx` / Host。
+
+## U3-D 更新（2026-09-24）— 每 scope 15min 常规校准周期
+
+**问题**（U3-C 遗留、本刀唯一真功能缺口）：校准此前**只能**由 `NeedsReconcile` 触发 ⇒ 变更源长期静默的 scope（附着失败后再无事件、进程未运行期间的变更、标志位出现前丢的事件）**陈旧索引行永远清不掉**；而 scope 级重索引只重读"还在"的文件，结构上不可能清掉已消失者的行。
+
+**交付**（生产改动只在 `Services/CodeIndex/`：`CodeIndexMaintenanceService.cs`、`CodeIndexScopeState.cs`；外加 `Contracts/ICodeIndexMaintenance.cs` 的**文档注释**。**零 Host / 零 DI / 零 csproj / 零 NuGet / 零排除规则改动**）：
+- 新常量 `DefaultCalibrationPeriod = 15min`（组件侧常量，不新增配置层；与既有 `DefaultPollInterval`(200ms) / `DefaultCalibrationInterval`(60s) 并列）。
+- `ScopeEntry` 增 `AttachedAtUtc`；`CalibrateReconcileScopesAsync` → **`CalibrateDueScopesAsync`**，到期判定抽为 `TryBeginCalibration` + 静态纯函数 `IsCalibrationDue`（锁纪律不变：判定/盖章在服务门下）。
+- **到期 = 二者之一**：① 被标位（U3-C 原规则，首次尝试就在下一步、重试 ≥ `DefaultCalibrationInterval` 60s）；② 自有常规周期到期（按**上次完成**计时 —— ADR-089 §U3-C「正常 metadata 校准每 15min…均按上次完成后计时，不并发叠加」；从未跑过 ⇒ 以挂载时刻为锚）。**未到期 ⇒ 一次校准都不发起** ⇒ 200ms 驱动步不会变成扫盘。
+- **被拒 / 被截断 ⇒ 保持或置位 `NeedsReconcile`**：新增原因 `CalibrationTruncated`（常规路径被 ceiling 截断也置位，否则剩余陈旧行要等下一个周期），根不可用仍是 `CalibrationRootUnavailable`。校准**时间缝沿用既有构造参数 `TimeProvider`**（未改构造函数签名、未加 DI 注册）。
+- 未改构造函数签名、未加 DI 注册：时间缝沿用既有构造参数 `TimeProvider`（测试用 `MutableTimeProvider` 假钟推 15min，**不真等待**）；常规钟就是 `LastCalibrationAtUtc ?? AttachedAtUtc`，没有另新增一份时刻状态。
+
+**门禁（本刀实测）**：`PuddingCodeIndexTests` **107/107**（改前 98/98；+9 用例）；`PuddingAgentNetwork.slnx -c Release` 见 `temp/U3-D-REPORT.md`；M1/M2/M3 三个变异各取红（A2 / A1 / A3），复原后 `git hash-object` 逐位相同、`MUTATION` 残留 0。
+**成本口径（实测）**：单 scope 350 条索引路径（348 在盘 / 2 已消失）一次常规 sweep = **19 ms**、清 2 行；**未到期的一步 = 0.03 ms**（不列盘）。⇒ 15min × N scope 的叠加成本可接受（见报告 §7.4）。

@@ -1,3 +1,23 @@
+## 2026-09-24 U3-D：按 scope 独立计时的常规校准周期（15 min）—— U3 唯一真功能缺口闭合
+
+**卡的是 U3-C 留下的洞**：校准过去**只在 `NeedsReconcile` 时触发**，于是变更源长期静默的 scope（watcher 溢出 / 进程未运行期间的变更 / 附着失败后不再有事件）其陈旧索引行**永远清不掉**。
+
+**交付**：每个 scope 一条**独立常规校准钟**（`DefaultCalibrationPeriod = 15 min`，`CodeIndexMaintenanceService.cs:78`），**不依赖 `NeedsReconcile`**；`CalibrateReconcileScopesAsync` → `CalibrateDueScopesAsync`（`:809`），到期判定抽为 `TryBeginCalibration`（`:897`，判 due + 盖章同在 `_gate` 内）+ 纯函数 `IsCalibrationDue`（`:914`，`:928` 即「锚 = 上次**完成**时刻，从未跑过则取挂载时刻」）。另新增 `ReconcileReasons.CalibrationTruncated`（`CodeIndexScopeState.cs` +6/−0）。`numstat`：`CodeIndexMaintenanceService.cs` **+118/−25** · `ICodeIndexMaintenance.cs` **1/1（仅 XML 注释）** · 组件 `code_map.md` +18/−4；测试新增 1 文件 398 行 9 用例 ⇒ **98 → 107**。
+
+**必答四问（实测）**：① 实际间隔 = `15 min + 一次驱动步等待(≈200 ms) + 上次 sweep 耗时`，空载 **≈901.2 s**；被长批次挤占时**无硬上界**。② 静默 scope 从最后事件到陈旧行被清 **≈15 min 0.22 s**（仅对「根可读」成立）。③ 单 scope（350 文件）一次 sweep **19 ms、删除 2 条**，348 个在盘文件一行动不动；对照 **未到期的一步 = 0.03 ms** ⇒ 这就是「200 ms 步没变成扫盘」的直接量化。④ 每 scope **≈1.8 s CPU/天**；每 15 min 窗口占用 `N × 19 ms`（N=200 ⇒ 3.8 s = 0.42%）⇒ **判定可接受**；判据 `period ≥ N × t_sweep / 1%`。
+
+**变异取红（原始日志在 `temp/test-out/`）**：M1（去掉时间门）⇒ **A2 红**（应为 0 实际 50）+ A3 红，复原 A2/A3 已通过；M2（到期不执行）⇒ **A3 红**；M3（全局共享钟）⇒ **仅 A3 红**（红灯指向精确）。并附 `SRC/DLL` 时间戳核对（DLL 晚于 SRC）防「跑变异 DLL」事故。
+
+**门禁（父级独立复跑，非子代理自述）**：`PuddingCodeIndexTests` **107/107（失败 0）**；`PuddingAgentNetwork.slnx -c Release` **0 错误**；`MUTATION` 残留 **0**；**未改 Host / DI / csproj**（`git status` 对 Host/Runtime/Agent/CodeIntelligence/Tests = 0 条目）⇒ **零 Host / 零 DI 改动目标达成**（原因是组件**早已有** `TimeProvider? timeProvider = null` 构造参数）。
+
+**⚠️ 终态是 `failed`，但交付物完整**（与 U4-1b 同型）：真因 `file_patch ... starting at old line 48 did not match`（工具失败 7 次）；**报告写在 17:09:09、死亡在 17:09:38**（报告先落盘，收尾再试一次 patch 才失败）。磁盘证据：改动齐全、组件 0 错误、测试 107/107、`MUTATION` 残留 0 ⇒ **不重跑，直接接手验收**。
+
+**本刀对我任务书的两处校正（取证的价值）**：① 「驱动由 `CodeIndexMaintenanceHostedService` 以 200 ms 轮询」**不准** —— HostedService 不含循环/计时器（219 行只做 StartAsync + 挂载 + 有界 Stop），**200 ms 节拍在组件内部**（`RunLoop` + `Task.Delay(_pollInterval, _timeProvider)`）⇒ 本刀「零 Host 改动」是**结构上可能**而非运气；② 「校准被拒/被截断 ⇒ 保持置位」—— **被拒**成立，**截断**只在本就标位时成立（U3-C 的 `Truncated` 分支只告警 + `continue`）⇒ 这是我任务书里的一个**真缺口**，已补。
+
+**诚实留白**：① **退避仍未实现** —— 常规路径下「根不可用」会置位并按既有 60 s 节流重试（坏 scope **1440 次探测 + Error 行/天**）；② `ListFilesAsync` 无分页（读侧无上限）；③ 根可读但深层子目录不可读仍识别不了；④ 未在真实 `FileSystemWatcher` / 真实 Roslyn 索引器下端到端验证（「变更源静默」用「不发布事件」模拟）；⑤ 豁免即延后（被豁免者最多再等 15 min）；⑥ 15 min 是组件**常量**（按 R4 不新增配置层）；⑦ 19 ms 不能外推到网络盘/超大库。
+
+> 结论与关键数字固化：`Docs/Features/ADR-089-U3-D-常规校准周期实测-2026-09-24.md`；原始日志（18 个）在 `temp/test-out/u3d-*.txt`（gitignore）。
+
 ## 2026-09-24 U4-3c：就地 int8 扫描 + 有界 top-k（10,199 行 p95 45.152 → 14.068 ms）
 
 **卡的是 U4-3b 实测出的「今天就不合格」**：shipped 扫描路径 p95 拐点仅 **5,284 行**，而三个真实 scope 的 P0 就是 6,599 / 7,551 / **10,199** 行 ⇒ Runtime 59.2 ms、Core 72.3 ms（扫描预算 20.207 ms）。慢的三处根因（实读 `InMemoryVectorIndex.cs:110-131`）：① 每行构造一个 `VectorSearchResult`（O(N) 分配）；② 全量 `Sort` 只为取 top-k；③ 量化行走 `Dequantize()` ⇒ **每行分配 `float[1024]`（4 KB）**。

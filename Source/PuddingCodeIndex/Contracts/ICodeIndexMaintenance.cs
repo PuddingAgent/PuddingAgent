@@ -85,7 +85,7 @@ public interface ICodeIndexMaintenance
 /// <param name="IncrementallyIndexedFileCount">Number of files re-indexed one by one for this scope (cumulative) — work a full scope re-index did not have to do.</param>
 /// <param name="ScopeEscalationCount">Number of batches for this scope that had to escalate to a scope-level indexing run.</param>
 /// <param name="SweptFileCount">Number of stale indexed files calibration really removed for this scope (cumulative, U3-C).</param>
-/// <param name="CalibrationRunCount">Number of calibration runs completed for this scope (cumulative, U3-C). A refused run counts too, so the number never hides an attempt.</param>
+/// <param name="CalibrationRunCount">Number of calibration runs completed for this scope (cumulative, U3-C/U3-D) — the ones a reconcile flag asked for and the routine ones (U3-D) alike. A refused run counts too, so the number never hides an attempt.</param>
 /// <param name="RejectedCalibrationRunCount">Number of calibration runs refused because the scope root was missing or unreadable (cumulative, U3-C).</param>
 /// <param name="LastCalibrationAtUtc">When the most recent calibration run for this scope completed, or null when none ever ran.</param>
 /// <param name="RecentObservationCount">Paths the change pipeline observed inside the calibration grace window right now (U3-C): they are the ones calibration leaves alone, and the map is bounded because aged-out entries are dropped.</param>

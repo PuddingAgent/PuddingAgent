@@ -42,6 +42,12 @@ public sealed class CodeIndexScopeState
 
         /// <summary>Calibration (U3-C) itself failed unexpectedly; the scope stays flagged for a later run.</summary>
         public const string CalibrationFailed = "calibration_failed";
+
+        /// <summary>
+        /// Calibration (U3-C/U3-D) stopped at the per-run removal ceiling, so more stale rows are known to be
+        /// left than one run may remove. The flag is set (or kept) and a later run resumes the sweep.
+        /// </summary>
+        public const string CalibrationTruncated = "calibration_truncated";
     }
 
     private readonly object _gate = new();
