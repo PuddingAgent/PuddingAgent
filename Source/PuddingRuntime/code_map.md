@@ -270,3 +270,16 @@ S2a 已落地（`578c3c0`，**已推送；需重启才生效**）：把三处硬
 测试 | `Source/PuddingRuntimeTests/Tools/SearchGrepToolTests.cs` 新增 6 用例：索引命中且**不回落到扫描**、未建索引时 fail-closed、未知 backend ⇒ contract_error、缺省 == `scan` 逐字节一致、`case_sensitive` 被拒、陈旧路径被跳过 |
 门禁 | `dotnet test --filter FullyQualifiedName~SearchGrepToolTests` ⇒ **失败 0 / 通过 56 / 总计 56（5 s）**；变异（去掉 index 分支 `return` ⇒ 静默回落）⇒ **失败 4 / 通过 52（exit 1）**，复原 ⇒ **失败 0 / 通过 56（exit 0）** |
 未做 | 新参数需 Core 重启后才在本机 `search_grep` 上可用（宿主仍跑旧程序集）；`index` 后端在活仓库上的召回/延迟未实测 |
+
+## 变更（2026-09-25，ADR-089 U4-5b）：索引后端假否定修复 —— 相对索引路径按 scope 解析
+
+| 项 | 事实 |
+|---|---|
+症状 | 仓库根上 `backend=index` 返回 `engineMatches=11 / engineTotalMatches=11`，却回 `(no matches)`：11 条命中路径全部 `File.Exists` 失败 ⇒ `staleSkipped=11` |
+根因 1（写入侧） | `LuceneSearchEngine.GetIndexDirectoryPath` 把 scope 规范化成绝对路径再哈希（**索引目录定位本身正确**），但 `AddDocument` 把 `path` 按遍历原样写入 ⇒ 建索引时 scope 写成相对路径（探针 `--scope "."` 即如此）时，索引里存的就是**相对路径** |
+根因 2（读取侧） | 工具侧 `Path.GetFullPath(match.FilePath)` 对非绝对路径按**进程 CWD**（Core 的 bin 目录）解析 ⇒ 真实命中被整体误判为"陈旧条目"而静默丢弃：引擎命中了、工具却答"没有"（假否定） |
+实测证据 | 同一评分报告内两两对照：`--scope "."` 那次命中路径形如 `.\Source\PuddingRuntime\...`（537 条中绝对形式 **0** 条）；绝对 scope 那次形如 `E:\github\AgentNetworkPlan\PuddingAgent\Source\...` |
+修复 | 相对索引路径以**本次查询的 scope** 为基准解析（`IsPathRooted ? GetFullPath : GetFullPath(Combine(scope, p))`）；尾行新增 `firstStaleRawPath` 暴露索引里的原始形态；**全部命中都陈旧**时不再回空洞 `(no matches)`，改为给出命中数/原因/下一步（空洞否定会诱发"换关键词重试"式打转） |
+测试 | `Source/PuddingRuntimeTests/Tools/SearchGrepToolTests.cs` 新增 2 用例：相对索引路径按 scope（而非进程 CWD）解析、全部陈旧时不得回空洞 no matches |
+门禁 | **失败 0 / 通过 58 / 总计 58**（基线 56，旧 56 条全绿无回归）；两处独立变异 ⇒ **失败 2 / 通过 0 / 总计 2（RC=1）**，变异版输出实测 `(no matches)\n(backend=index: ..., staleSkipped=1, firstStaleRawPath=...)`；复原 ⇒ 58/58（RC=0） |
+遗留 | **写入侧仍未规范化** `path` ⇒"同一逻辑 scope 因书写方式不同而存不同形态"的根源仍在；本刀只保证读取侧对两种形态都正确。改动前须评估评测夹具（按相对路径比对）的语义影响 |
