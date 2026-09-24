@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    U4-0b — retrieval evaluation probe harness (ADR-089 §4 / slice U4-0).
+
+    This is the *adapter* side of the U4-0 port design: it knows about a concrete retrieval engine
+    (PuddingFullTextIndex / Lucene) while PuddingRetrievalEval knows only about ISearchProbe.
+    It therefore sits OUTSIDE the evaluation component's boundary and is NOT part of that leaf:
+    the component still has ProjectReference = 0. Being a CLI/app project (same shape as
+    Source/PuddingCodeIndexer.Cli) it is registered in PuddingAgentNetwork.slnx and version-controlled,
+    so the published baselines under Source/PuddingRetrievalEval/eval/reports/ are reproducible.
+
+    Modes (all read-only w.r.t. repository sources):
+      count   — corpus inventory for a scope
+      index   — build/refresh the Lucene index for a scope (timed); index data stays under temp/
+      measure — run the annotated query set through ISearchProbe and write the Markdown + JSON report
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>PuddingRetrievalEvalProbe</AssemblyName>
+    <RootNamespace>PuddingRetrievalEvalProbe</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingRetrievalEval\PuddingRetrievalEval.csproj" />
+    <ProjectReference Include="..\PuddingFullTextIndex\PuddingFullTextIndex.csproj" />
+  </ItemGroup>
+
+</Project>
