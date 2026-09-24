@@ -1,3 +1,34 @@
+## 2026-09-24 U4-0：检索评测设施（性能 + 准确率仪器 + 首份真实基线）
+
+**为什么它必须最先做**：ADR-089 §4 要求"评估性能和准确率"，但**没有基线就无法证明后续每一步变好了**——U4-1（统一忽略）/ U4-2（作用域·类型）/ U4-4（向量）/ U4-5（并行）的收益全部由本刀的指标判定。⇒ 本刀只产出**测量仪器 + 基线**，**零检索行为改动**。
+
+**交付 1：新叶子组件 `Source/PuddingRetrievalEval/`（S1）** —— `ProjectReference = 0`、`PackageReference = 0`（未新增 NuGet）。关键设计是**只依赖端口** `ISearchProbe`（query + scope → 命中列表 + 由探针自测的耗时）：评测因此成为叶子，换引擎不改评测。含标注集模型（kind∈symbol/intent/crossref、language∈CSharp/TypeScript/Markdown、`Unknown=0`）、指标（`recall@k` k=1/5/10、`MRR`、`precision@k`、**噪声率** = 命中落在噪声目录的比例 = U4-1 的收益度量）、最近秩百分位延迟统计（冷/热分离、p50/p95/p99、**只报原始数字不内置阈值**）、fail-closed 的 JSON 标注集加载器、Markdown+JSON 报告 writer。**噪声目录定义为现有三套规则的并集**（`SearchGrepTool.DefaultExcludeDirs` 12 ∪ `IndexExcludePatterns.NoiseDirNames` 28 ∪ `FullTextIndexOptions.ExcludedDirectoryNames` 33 = 46 个去重段名）——取并集是保守方向，避免仪器替 U4-1 预先裁决。
+
+**交付 2：独立测试工程 `Source/PuddingRetrievalEvalTests/`（S2/S3）** —— `ProjectReference` **恰好 1 条**（只指向本组件），**78 用例**：指标正确性（"期望命中第 1 位 ⇒ MRR=1.0 / 全落空 ⇒ 各指标 0 / 全落 `node_modules` ⇒ 噪声率 1.0"）、边界（k>命中数、空用例集、重复期望、同文件多行命中、大小写/分隔符/相对-绝对路径）、加载器 fail-closed 反例、冷/热调用调度、报告契约（显式不设阈值、UTF-8 无 BOM）、S4 边界断言（进程内 + `deps.json` 依赖闭包 + **检测器自带阳性对照**）。
+
+**交付 3：受版本控制的标注集 `Source/PuddingRetrievalEval/eval/sets/seed-v1.json`** —— 80 条 / **98** 个 (query, 期望文件) 对，语言分层 C# 36、TS-TSX 22、md 22（各 ≥15），kind 分层 symbol 36 / intent 26 / crossref 18。**禁止"用检索结果反过来当标注"**：98 个期望文件对全部由独立验证脚本 `temp/U4-0-probe/verify-set.ps1` 逐个核对（文件存在 + 该文件确实含查询字面量，或 intent 类的人工指定锚点 token）⇒ `caseCount=80 / pairCount=98 / missingFileCount=0 / unverifiedAnchorCount=0`（`temp/U4-0-probe/verify-set.txt`）。
+
+**交付 4：首份真实检索面基线** —— 面 = **Lucene 全文索引**（`Source/PuddingFullTextIndex/Infrastructure/Search/LuceneSearchEngine.cs`），它正是 `search_grep` 的快速候选路径（`SearchGrepTool.cs:340` 持有 `IFullTextSearchEngine`）。适配器 `LuceneFullTextProbe` 放在 `temp/U4-0-probe/PuddingRetrievalEvalProbe`（**不进 slnx、不进版本控制**——它是适配器，不属于组件边界；数字落在 `Source/PuddingRetrievalEval/eval/reports/`）。实测（`--warmup 1 --measured 3`，`repetitionStable=True`）：
+
+| scope | 用例 | recall@1 | recall@5 | recall@10 | MRR | precision@5 | precision@10 | noiseRate@10 |
+|---|---|---|---|---|---|---|---|---|
+`Source/`（C#+TS） | 58 | 0.4224 | 0.6638 | 0.6638 | 0.5768 | 0.1621 | 0.0810 | 0.0290
+`Source/`（C#） | 36 | 0.6389 | 0.6944 | 0.6944 | 0.7292 | — | — | 0.0439
+`Source/`（TS-TSX） | 22 | 0.0682 | 0.6136 | 0.6136 | 0.3273 | — | — | 0.0045
+`Docs/`（md） | 20 | 0.2500 | 0.4750 | 0.5250 | 0.4238 | 0.1300 | 0.0700 | 0.0000
+
+延迟（ms，冷/热分离，原始值）：`Source/` 冷 n=58 `p50=7.126 / p95=27.216 / p99=625.385`、热 n=232 `p50=7.116 / p95=26.548 / p99=31.313`；`Docs/` 冷 n=20 `p50=4.189 / p95=9.922 / p99=567.352`、热 n=80 `p50=4.175 / p95=7.698 / p99=12.896`。
+
+**顺带测出的检索面事实（只测量、未改）**：① 该引擎索引 `Source/` 3,514 文件 / 52.2 MB 用 **462 s**，索引 `Docs/` 680 文件 / 11.3 MB 用 **13 s**；② 原因是 `BuildIndexAsync` **对每一种扩展名各遍历一次目录树**（77 个模式）——单次完整遍历 `Source/` 实测 6.6 s，与 462 s ÷ 77 ≈ 6.0 s 同量级（两种规模各一次实测印证该模型）；③ 因此**仓储根作为 scope 的索引构建不可行**：实测根 scope 可索引 **28,178 文件 / 743 MB**、单次遍历 **195 s** ⇒ 量级为小时级；④ 根 scope 的头部噪声源是 **`.pudding`（20,926 个可索引文件）与 `.tmp-build`（1,335）**，两者均**不在**任何现有排除表内 ⇒ 这是 U4-1 最直接的收益口径（原始输出 `temp/U4-0-probe/corpus-inventory*.txt`）。
+
+**门禁（实测）**：`PuddingRetrievalEvalTests` **78/78 exit 0**；`PuddingCodeIndexTests` **82/82**、`PuddingCodeIntelligenceTests` **93/93**、`Tests/PuddingHost.Tests` **124/124**（与既有基线逐一相同，失败数**未增加**）；`dotnet build PuddingAgentNetwork.slnx -c Release` ⇒ **0 个错误 / 1580 个警告 / exit 0**（新工程已登记进 slnx：**+2 行 / 0 删除**）。新组件边界：`ProjectReference=0`、`PackageReference=0`；组件源码内对 6 个禁用程序集与 `Lucene.*` / `Microsoft.CodeAnalysis.*` / `Microsoft.Build.*` 的**代码引用 0 处**（仅 `NoiseDirectoryRules.cs:11-13` 注释里出现 3 处来源路径）；**阳性对照**：同名字符串在 `Source/PuddingRuntime` 命中 6 处 `using PuddingCodeIndex.* / PuddingFullTextIndex.*` ⇒ 搜索仪器本身有效，故组件的 0 命中是真实否定。
+
+**变异取红（三份原始输出 + hash 三点值）**：`recall@k` 分母改错 ⇒ **8 红/70 绿/78**；`MRR` 位置改错 ⇒ **5 红/73 绿/78**；复原后 `Services/RetrievalMetrics.cs` blob hash **逐位相同**（`93edd683b5396ebeb03c9026a483290be656ede9`；变异期分别为 `e32d7770679eb54b801c9922285125c403020f0b`、`8f14c759ded4559eee6ab898b28142e5470a92a2`）且 **78/78 绿**，残留变异标记 **0**。另有 S4 边界变异：组件临时引用 `PuddingFullTextIndex` ⇒ **1 红/77 绿/78**（断言点名 `Lucene.Net, Lucene.Net.Analysis.Common, Lucene.Net.Queries, Lucene.Net.QueryParser, Lucene.Net.Sandbox, PuddingFullTextIndex`），撤销后 csproj hash 逐位相同（`19dd4f5946fb16468a9d7decf883a20227f67414`）且 78/78 绿。原始日志：`temp/test-out/u4-0-mutation-A-recall-denominator.log`、`u4-0-mutation-B-mrr-position.log`、`u4-0-restore-green.log`、`u4-0-a8-boundary-mutation.log`、`u4-0-a8-boundary-restored.log`；汇总 `temp/U4-0-probe/mutation-transcript.txt`。
+
+**诚实留白**：① **S5 未接入**——不改 Host/DI、无宿主消费方、未注册进 DI 组合根；② 冷样本是"该查询在本进程内的第一次调用"，**不是**跨进程 / OS 页缓存冷启动；③ 根 scope 未能建索引 ⇒ 78/80 条用例有基线，**2 条**锚定在仓储根的 md 用例（`Agents.md`、`Agents-Hygiene.md`）当前**不可测**，而它们的可测性本身依赖 U4-1 把根 scope 规模压下来；④ 达标阈值（"毫秒级"落成具体 ms）**未内置**，属用户决策；⑤ 只接了一个面（Lucene）；代码索引面需 `ICodeIndexer`（Roslyn/MSBuild）产出语料、词法 grep 面的检索核心与工具壳尚未分离 ⇒ 两者的接入计划见 `temp/U4-0-REPORT.md` 的 BLOCKERS/RISKS。
+
+**本刀未提交**（约束：不 git add/commit/push）；改动文件见 `temp/U4-0-REPORT.md` 的 CHANGES。
+
 ## 2026-09-24 U3-C：索引校准（mark-and-sweep）—— 陈旧行清除 + NeedsReconcile 归位（检索正确性收口）
 
 **问题**：其它入口都是**变更驱动**的；`RoslynCSharpIndexer` 只遍历编译中现有语法树，scope 级/全量重索引**不做 sweep**（没有"本轮未见"这个概念）⇒ 历史遗留、整目录删除/改名、监听丢事件产生的陈旧行**永不被清除**，检索会持续返回已不存在文件的符号；`NeedsReconcile` 永不自动清除。

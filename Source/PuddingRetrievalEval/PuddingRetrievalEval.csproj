@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- Retrieval evaluation component (ADR-089 §4 / slice U4-0).
+
+       It is a LEAF by construction:
+         * ProjectReference = 0
+         * PackageReference = 0 (no new NuGet package was added)
+       It observes retrieval engines ONLY through the ISearchProbe port, so swapping an
+       engine never changes the evaluation.
+
+       Boundary rule (ADR-089 §6): this project MUST NOT reference PuddingCodeIntelligence /
+       PuddingRuntime / PuddingHost / PuddingAgent / PuddingCodeIndex.
+       The boundary is asserted at runtime by PuddingRetrievalEvalTests.ComponentBoundaryTests. -->
+
+  <!-- The annotated query sets are version-controlled data files, not code and not test constants. -->
+  <ItemGroup>
+    <Content Include="eval\sets\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Remove="eval\sets\**\*.json" />
+  </ItemGroup>
+
+</Project>
