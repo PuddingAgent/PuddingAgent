@@ -216,6 +216,80 @@ internal static class VectorStore
         _ => throw new ArgumentException($"unknown vector store format '{format}'", nameof(format)),
     };
 
+    /// <summary>
+    /// Reads an int8 store's rows in their <b>storage shape</b> — codes, scale and provenance — without
+    /// turning them into float32 rows.
+    /// <para>
+    /// This is an <i>additional</i> entry point over exactly the bytes <see cref="Read"/> already reads;
+    /// the existing reader is untouched. It exists because "dequantise 1,024 float32 values per row at
+    /// load, then scan floats" is the load-time cost the in-place scan is measured against, and reading
+    /// through <see cref="Read"/> would measure that cost as if it were free.
+    /// </para>
+    /// <para>
+    /// Fail-closed on the same conditions as <see cref="Read"/>: missing manifest, wrong schema, a format
+    /// that is not int8, or a vectors file whose length is not a whole number of rows. Dequantisation and
+    /// its refusal of an out-of-range code or a non-positive scale stay in the component.
+    /// </para>
+    /// </summary>
+    public static (IReadOnlyList<QuantizedVectorEntry> Entries, VectorStoreManifest Manifest) ReadInt8QuantizedEntries(
+        string storeDirectory)
+    {
+        var manifestPath = Path.Combine(storeDirectory, ManifestFileName);
+
+        if (!File.Exists(manifestPath))
+            throw new InvalidOperationException(
+                $"no vector store at {storeDirectory}; build one with --mode index --retriever vector "
+                + "--vector-quantization int8 first");
+
+        var manifest = JsonSerializer.Deserialize<VectorStoreManifest>(File.ReadAllText(manifestPath), Options)
+            ?? throw new InvalidOperationException($"vector store manifest at {manifestPath} is empty");
+
+        if (!string.Equals(manifest.Schema, Schema, StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                $"vector store at {storeDirectory} declares schema '{manifest.Schema}', this probe writes '{Schema}'");
+
+        if (!string.Equals(manifest.Format, FormatInt8, StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                $"vector store at {manifestPath} declares format '{manifest.Format}'; reading codes in place "
+                + $"needs the '{FormatInt8}' format. Refusing to guess.");
+
+        var vectorsPath = Path.Combine(storeDirectory, QuantizedVectorsFileName);
+        if (!File.Exists(vectorsPath))
+            throw new InvalidOperationException(
+                $"the manifest at {storeDirectory} declares int8 rows but {QuantizedVectorsFileName} is missing");
+
+        var bytes = File.ReadAllBytes(vectorsPath);
+        var rowBytes = QuantizedRowBytes(manifest.Dimensions);
+        var expected = (long)manifest.Count * rowBytes;
+
+        if (bytes.LongLength != expected)
+            throw new InvalidOperationException(
+                $"vector store at {vectorsPath} holds {bytes.LongLength} bytes but the manifest declares "
+                + $"{manifest.Count} rows of {manifest.Dimensions} int8 codes plus one float32 scale ({expected} bytes)");
+
+        var entries = new List<QuantizedVectorEntry>(manifest.Count);
+        for (var row = 0; row < manifest.Count; row++)
+        {
+            var rowOffset = (int)(row * rowBytes);
+            var codes = new sbyte[manifest.Dimensions];
+            for (var i = 0; i < manifest.Dimensions; i++)
+                codes[i] = unchecked((sbyte)bytes[rowOffset + i]);
+
+            var scale = BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(rowOffset + manifest.Dimensions));
+
+            entries.Add(new QuantizedVectorEntry(
+                manifest.Entries[row].Id,
+                manifest.Entries[row].SourceFile,
+                manifest.Entries[row].StartLine,
+                manifest.Entries[row].EndLine,
+                manifest.Entries[row].Kind,
+                manifest.Entries[row].Boost,
+                new QuantizedVector(codes, scale)));
+        }
+
+        return (entries, manifest);
+    }
+
     private static (InMemoryVectorIndex Index, VectorStoreManifest Manifest, long Bytes) ReadFloat32(
         string storeDirectory,
         VectorStoreManifest manifest)

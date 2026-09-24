@@ -355,8 +355,11 @@ internal static class Program
                 return run.FailedCaseCount == 0 ? 0 : 4;
             }
 
+            case "scan":
+                return VectorScanBench.Run(options, repoRoot);
+
             default:
-                Console.Error.WriteLine($"unknown mode '{mode}' (expected count|index|measure)");
+                Console.Error.WriteLine($"unknown mode '{mode}' (expected count|index|measure|scan)");
                 return 5;
         }
     }

@@ -1,3 +1,37 @@
+## 2026-09-24 U4-3c：就地 int8 扫描 + 有界 top-k（10,199 行 p95 45.152 → 14.068 ms）
+
+**卡的是 U4-3b 实测出的「今天就不合格」**：shipped 扫描路径 p95 拐点仅 **5,284 行**，而三个真实 scope 的 P0 就是 6,599 / 7,551 / **10,199** 行 ⇒ Runtime 59.2 ms、Core 72.3 ms（扫描预算 20.207 ms）。慢的三处根因（实读 `InMemoryVectorIndex.cs:110-131`）：① 每行构造一个 `VectorSearchResult`（O(N) 分配）；② 全量 `Sort` 只为取 top-k；③ 量化行走 `Dequantize()` ⇒ **每行分配 `float[1024]`（4 KB）**。
+
+**交付 1：叶子组件新增 `Source/PuddingVectorIndex/QuantizedInMemoryVectorIndex.cs`（282 行）** —— 持有 `IReadOnlyList<QuantizedVectorEntry>`，**codes 原样、不预先反量化**；未给既有 `InMemoryVectorIndex` 加开关（与该类型自身「separate type rather than a flag on it」的立场一致）。扫描核心：`var component = codes[i] * scale;`（**先在 float 里乘**）`dot += (double)component * query[i];`；范数在 `Add` 时按 `VectorMath.Norm` **同序**预计算一次 ⇒ 分数仍**逐位相同**。有界 top-k = 大小 `min(topK, Count)` 的**最大堆**，比较器逐字复刻 shipped（分数降序 → 同分 `CompareOrdinal(Id)`），出堆即 rank 逆序 ⇒ **不全量排序、不物化全量**。
+
+**交付 2：测试（`PuddingVectorIndexTests` 51 → 57 例）** 与**探针**（`VectorScanBench.cs` 新增；`VectorStore.cs` **+74/−0** 增 `ReadInt8QuantizedEntries`；`Program.cs` **+4/−1** 增 `--mode scan`，既有 mode 行为不变）。
+
+**核心数字**（`temp/U4-3c-logs/bench-scan.txt`，dim=1024 topK=20 n=100 热态，**仅扫描不含嵌入**）
+
+| 行数 | shipped p95 | 就地 p95 | 比 |
+|---|---|---|---|
+| 475（纯真实行） | 2.329 | 0.624 | 3.73× |
+| 4,096 | 18.773 | 5.761 | 3.26× |
+| **10,199** | **45.152** | **14.068** | **3.21×** |
+| 20,000 | 95.568 | 27.390 | 3.49× |
+| 65,536 | 300.382 | 89.930 | 3.34× |
+
+⇒ **必答问题：Core P0 规模（10,199 行）热态 p95 = 14.068 ms ≤ 20.207 ms 预算 ⇒ 达标（用掉 69.6%）**。单线程拐点 ≈ **14.7k 行**（两点**插值**，非实测点）；全仓 P0 45,677 行 ≫ 拐点 ⇒ **全仓仍需并行或 ANN**。
+
+**分配量（R5，不靠自述）**：N=4,096、k=20 ⇒ shipped **296,464 B/query** vs 就地 **1,752 B/query（0.59%）**；**N 翻倍到 8,192 仍为 1,752 B**（「不随 N 增长」比「比值」更硬）。
+
+**等价性**：5 规模 × 100 查询 × 3 路径，top-20 id 序列 **`mismatch = 0`**、每 rank **最大 |score 差| = 0（恰为 0，非 < ε）**。
+
+**变异取红（三元组齐备 + 复原逐位相同；库 hash `4ab28449…`）**：M1（少乘 scale）⇒ A2 红 `maxDelta=28.84`；**M1B（写成 `(double)codes[i]*(double)scale`，即「第二种相似度定义」）⇒ A2 红 `maxDelta=2.90E-09`，而 id 序列当时并未改变 —— 只有「分数差恰为 0」这条断言抓得住它**（本刀最有价值的证据：把「一条相似度定义」从注释变成断言）；M2（去掉 Id 序数打破）⇒ A3 红；M3（改回物化全量 + 全量排序）⇒ A4 红（分配回到 296,400 B/query）。**仪器自身取红**：只变异生产代码 ⇒ 探针 `mismatch = 20/20`、`maxΔscore = 1264.83`，排除「比较器恒报 0」的假绿。
+
+**门禁（父级独立复跑，非子代理自述）**：`PuddingAgentNetwork.slnx -c Release` **0 错误**（失败工程数 0）；`PuddingVectorIndexTests` **57/57**；`numstat` 与自述逐条吻合；`MUTATION` 残留 **0**；`PuddingVectorIndex.csproj` 两个引用元素 **0 个**。
+
+**顺带量化的设计决策**：同一有界插入扫描只把范数改成扫描内联 ⇒ 10,199 行 p95 **14.227 → 23.377 ms（+64%）**；堆 vs 有界插入仅差 ~1% ⇒ 预计算范数是**性能必需，不是提前优化**。
+
+**诚实留白**：① **未接入生产**，不主张任何端到端检索收益（`InMemoryVectorIndex` 仍是主链）；② 20.207 ms 是扫描预算，与嵌入 p95 29.793 相加得端到端 ≈43.9 ms 属**算术相加、未实测**；③ 10,199 是**真实规模**（Core P0 实测），但 ≥475 的向量是「真实行 + 扰动再量化」，真实 10,199 行嵌入需跑服务落盘；④ 范数预计算占 O(N) 个 double（10,199 行 82 KB、65,536 行 524 KB），**未计入 1 GB 磁盘体积预算**（口径不同）；⑤ p99 基于 n=100 nearest-rank（≈最大值）；⑥ **一次真实仪器事故**：首次「复原」用 `copy /y` 保留旧时间戳 ⇒ MSBuild 判定无需重编译、**测试跑的是变异 DLL**，靠「绿态输出与红态逐字节相同」才发现 ⇒ **DLL 时间戳核对已成为变异流程的固定步骤**。
+
+> 结论与关键数字固化：`Docs/Features/ADR-089-U4-3c-就地int8扫描实测-2026-09-24.md`；原始日志（24 个）在 `temp/U4-3c-logs/`（gitignore）。
+
 ## 2026-09-24 U4-4：统一路径忽略合同（单一真源 + gitignore 语义 + 仓库根语料 −84.5%）
 
 **卡的是用户第 4 条指令**：「忽略制成品、node_modules、读取 git 忽略文件的规则进行忽略」。审计证据显示**过去从未真正生效**且**规则分叉**：`IndexExcludePatterns` 内的 gitignore 解析**无任何外部调用点**（本工程内已证），其实现注释**自述跳过 `!` 取反**；同时全仓**七套互不相同**的排除表（`search_grep` 12 项 / 索引噪声目录 24 项 / `FullTextIndexOptions` 33 项 / `CodeIndexer.Cli` / `file_search` / `list_dir` / `project_map` 各自），且**第一大噪声源 `.pudding`（21,106 文件）在所有表里都缺席**（只有拼写相近的 `.pudding-code`）。
