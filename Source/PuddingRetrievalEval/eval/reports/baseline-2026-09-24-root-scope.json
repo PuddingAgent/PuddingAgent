@@ -1,0 +1,5679 @@
+{
+  "ProbeName": "lucene-fulltext",
+  "SetName": "seed-v1",
+  "SetVersion": 1,
+  "ScopeLabel": "root-scope",
+  "ScopeRootDirectory": "E:\\github\\AgentNetworkPlan\\PuddingAgent",
+  "StartedAtUtc": "2026-09-24T02:15:28.1926594\u002B00:00",
+  "TotalElapsedMs": 13986,
+  "CaseCount": 80,
+  "FailedCaseCount": 0,
+  "RecallAt1": 0.3125,
+  "RecallAt5": 0.4062,
+  "RecallAt10": 0.45,
+  "Mrr": 0.4025,
+  "PrecisionAt5": 0.0975,
+  "PrecisionAt10": 0.055,
+  "NoiseRateAt10": 0.0763,
+  "Slices": [
+    {
+      "Language": "CSharp",
+      "CaseCount": 36,
+      "RecallAt1": 0.6389,
+      "RecallAt5": 0.6667,
+      "RecallAt10": 0.6667,
+      "Mrr": 0.7222,
+      "PrecisionAt5": 0.1556,
+      "PrecisionAt10": 0.0778,
+      "NoiseRateAt10": 0.1084
+    },
+    {
+      "Language": "TypeScript",
+      "CaseCount": 22,
+      "RecallAt1": 0.0682,
+      "RecallAt5": 0.3636,
+      "RecallAt10": 0.5227,
+      "Mrr": 0.2365,
+      "PrecisionAt5": 0.0909,
+      "PrecisionAt10": 0.0682,
+      "NoiseRateAt10": 0.0045
+    },
+    {
+      "Language": "Markdown",
+      "CaseCount": 22,
+      "RecallAt1": 0.0227,
+      "RecallAt5": 0.0227,
+      "RecallAt10": 0.0227,
+      "Mrr": 0.0455,
+      "PrecisionAt5": 0.0091,
+      "PrecisionAt10": 0.0045,
+      "NoiseRateAt10": 0.0955
+    }
+  ],
+  "ColdLatency": {
+    "Count": 80,
+    "MinMs": 14.649,
+    "P50Ms": 18.286,
+    "P95Ms": 75.368,
+    "P99Ms": 683.688,
+    "MaxMs": 683.688,
+    "MeanMs": 42.327
+  },
+  "WarmLatency": {
+    "Count": 320,
+    "MinMs": 14.416,
+    "P50Ms": 18.5,
+    "P95Ms": 79.354,
+    "P99Ms": 172.419,
+    "MaxMs": 175.449,
+    "MeanMs": 33.06
+  },
+  "AllRepetitionsIdentical": true,
+  "ColdObservations": [
+    {
+      "Index": 0,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 683.6877,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 1,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 40.9053,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 2,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 37.6854,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 3,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 44.3927,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 4,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 56.9401,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 5,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 57.7344,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 6,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 54.4236,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 7,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 51.4058,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 8,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 52.325,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 9,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 53.1111,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 10,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 26.0539,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 11,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 21.3154,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 12,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 17.2074,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 13,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 17.4576,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 14,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 18.2862,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 15,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.6431,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 16,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 17.0701,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 17,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 17.8263,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 18,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 17.1366,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 19,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.4481,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 20,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 191.4531,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 21,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 51.2521,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 22,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 155.1315,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 23,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 31.9943,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 24,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 75.368,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 25,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 74.16,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 26,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 59.2801,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 27,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 54.3636,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 28,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 55.4985,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 29,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 69.5209,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 30,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.3881,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 31,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.8514,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 32,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 17.2929,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 33,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.8747,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 34,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.0437,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 35,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.3209,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 36,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.5634,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 37,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.207,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 38,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.5612,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 39,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.7623,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 40,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 17.2023,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 41,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.1786,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 42,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.0871,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 43,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.0099,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 44,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 42.5723,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 45,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 60.5445,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 46,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 43.5248,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 47,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 31.0195,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 48,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 29.2176,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 49,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 32.9847,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 50,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 30.7043,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 51,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 28.1761,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 52,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.2256,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 53,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.5838,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 54,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.3073,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 55,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.5384,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 56,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.4857,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 57,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.48,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 58,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.4081,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 59,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.71,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 60,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.0187,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 61,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.0729,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 62,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.7068,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 63,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.2395,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 64,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.8972,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 65,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.1014,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 66,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 31.2696,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 67,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 27.8581,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 68,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 38.4329,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 69,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 27.6905,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 70,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 26.0136,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 71,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 28.9698,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 72,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 38.0183,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 73,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 33.3741,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 74,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 14.7686,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 75,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 176.4282,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 76,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.0059,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 77,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 19.6305,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 78,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.1184,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 79,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 14.6493,
+      "Success": true,
+      "Error": null
+    }
+  ],
+  "Cases": [
+    {
+      "Case": {
+        "Query": "SearchGrepTool",
+        "ExpectedHits": [
+          "Source/PuddingRuntime/Tools/BuiltIns/Search/SearchGrepTool.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRuntime\\Tools\\BuiltIns\\Search\\SearchGrepTool.cs",
+          "Symbol": null,
+          "Line": 57
+        }
+      ],
+      "ElapsedMs": 39.2251,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IndexExcludePatterns",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\Services\\IndexExcludePatterns.cs",
+          "Symbol": null,
+          "Line": 7
+        }
+      ],
+      "ElapsedMs": 42.7474,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "LuceneSearchEngine",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Infrastructure/Search/LuceneSearchEngine.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingFullTextIndex\\Infrastructure\\Search\\LuceneSearchEngine.cs",
+          "Symbol": null,
+          "Line": 46
+        }
+      ],
+      "ElapsedMs": 44.6169,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "ICodeIndexStore",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/ICodeIndexStore.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\Contracts\\ICodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 7
+        }
+      ],
+      "ElapsedMs": 41.652,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IFullTextSearchEngine",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Contracts/IFullTextSearchEngine.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingFullTextIndex\\Contracts\\IFullTextSearchEngine.cs",
+          "Symbol": null,
+          "Line": 7
+        }
+      ],
+      "ElapsedMs": 56.3667,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "FullTextIndexOptions",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/FullTextIndexOptions.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingFullTextIndex\\FullTextIndexOptions.cs",
+          "Symbol": null,
+          "Line": 7
+        }
+      ],
+      "ElapsedMs": 57.7638,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "RetrievalGlobMatcher",
+        "ExpectedHits": [
+          "Source/PuddingCore/Tools/Retrieval/RetrievalGlobMatcher.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCore\\Tools\\Retrieval\\RetrievalGlobMatcher.cs",
+          "Symbol": null,
+          "Line": 34
+        }
+      ],
+      "ElapsedMs": 53.2145,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "RetrievalMatcher",
+        "ExpectedHits": [
+          "Source/PuddingCore/Tools/Retrieval/RetrievalMatcher.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCore\\Tools\\Retrieval\\RetrievalMatcher.cs",
+          "Symbol": null,
+          "Line": 25
+        }
+      ],
+      "ElapsedMs": 52.3973,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "SearchAttemptLedger",
+        "ExpectedHits": [
+          "Source/PuddingRuntime/Services/Search/SearchAttemptLedger.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRuntime\\Services\\Search\\SearchAttemptLedger.cs",
+          "Symbol": null,
+          "Line": 60
+        }
+      ],
+      "ElapsedMs": 55.6234,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "SqliteCodeIndexStore",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\Storage\\SqliteCodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 11
+        }
+      ],
+      "ElapsedMs": 49.9317,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeIndexChangeCoalescer",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\Services\\CodeIndex\\CodeIndexChangeCoalescer.cs",
+          "Symbol": null,
+          "Line": 25
+        }
+      ],
+      "ElapsedMs": 26.8792,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeIndexMaintenanceService",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\Services\\CodeIndex\\CodeIndexMaintenanceService.cs",
+          "Symbol": null,
+          "Line": 160
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-46f8bc7d\\call_00_akg8Ii8aDIMaowkjtV575424-file_read.txt",
+          "Symbol": null,
+          "Line": 98
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-4ae575df\\call_02_bHoWH4ugNxx7kQRpjhXc3662-file_read.txt",
+          "Symbol": null,
+          "Line": 98
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-50f12693\\call_02_q2hrbZa1PmFccPKiwxd18097-file_read.txt",
+          "Symbol": null,
+          "Line": 117
+        }
+      ],
+      "ElapsedMs": 21.4667,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0.75,
+      "NoiseHitsAt10": 3,
+      "DistinctHitsAt10": 4,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeIndexCalibrationService",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\Services\\CodeIndex\\CodeIndexCalibrationService.cs",
+          "Symbol": null,
+          "Line": 112
+        }
+      ],
+      "ElapsedMs": 16.9231,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "DefaultProjectRootDetector",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/DefaultProjectRootDetector.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\Services\\DefaultProjectRootDetector.cs",
+          "Symbol": null,
+          "Line": 11
+        }
+      ],
+      "ElapsedMs": 18.3615,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "ComponentBoundaryTests",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndexTests/ComponentBoundaryTests.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndexTests\\ComponentBoundaryTests.cs",
+          "Symbol": null,
+          "Line": 21
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEvalTests\\ComponentBoundaryTests.cs",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_01_3J4qFnlEdX7rdvJYDURA3822-file_read.txt",
+          "Symbol": null,
+          "Line": 23
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-08d33e9e\\call_01_VVVypaS8BGqcsDYczhz82116-file_read.txt",
+          "Symbol": null,
+          "Line": 23
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-46f8bc7d\\call_00_qoACg7zrC3oaeA6jjSls4208-file_read.txt",
+          "Symbol": null,
+          "Line": 23
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-50f12693\\call_00_vTYIlJ0ITcSH5r38l2ci2155-file_read.txt",
+          "Symbol": null,
+          "Line": 23
+        }
+      ],
+      "ElapsedMs": 16.8235,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0.6666666666666666,
+      "NoiseHitsAt10": 4,
+      "DistinctHitsAt10": 6,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IndexBasedLanguageServerService",
+        "ExpectedHits": [
+          "Source/PuddingCodeIntelligence/Lsp/IndexBasedLanguageServerService.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIntelligence\\Lsp\\IndexBasedLanguageServerService.cs",
+          "Symbol": null,
+          "Line": 19
+        }
+      ],
+      "ElapsedMs": 17.1669,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeQueryService",
+        "ExpectedHits": [
+          "Source/PuddingCodeIntelligence/Services/CodeQueryService.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIntelligence\\Services\\CodeQueryService.cs",
+          "Symbol": null,
+          "Line": 10
+        }
+      ],
+      "ElapsedMs": 16.6586,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "RoslynCSharpIndexer",
+        "ExpectedHits": [
+          "Source/PuddingCodeIntelligence/CSharp/RoslynCSharpIndexer.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIntelligence\\CSharp\\RoslynCSharpIndexer.cs",
+          "Symbol": null,
+          "Line": 16
+        }
+      ],
+      "ElapsedMs": 17.7211,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PlainTextExtractor",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Infrastructure/Search/PlainTextExtractor.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingFullTextIndex\\Infrastructure\\Search\\PlainTextExtractor.cs",
+          "Symbol": null,
+          "Line": 13
+        }
+      ],
+      "ElapsedMs": 16.9886,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "JiebaAnalyzer",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Infrastructure/Text/JiebaAnalyzer.cs"
+        ],
+        "Kind": "Symbol",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingFullTextIndex\\Infrastructure\\Text\\JiebaAnalyzer.cs",
+          "Symbol": null,
+          "Line": 11
+        }
+      ],
+      "ElapsedMs": 16.6033,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the list of directories the grep tool skips by default",
+        "ExpectedHits": [
+          "Source/PuddingRuntime/Tools/BuiltIns/Search/SearchGrepTool.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1088
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1280
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 27
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 112
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 141
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-8c1a8919\\call_00_gCyGFTBoZdKHWs2NO5Qf0072-http_fetch.txt",
+          "Symbol": null,
+          "Line": 1598
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-bc03662c\\call_-7251491494006091712-list_tool_approvals.txt",
+          "Symbol": null,
+          "Line": 202
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-c2c5c0a4\\call_-7293051040671195372-list_tool_approvals.txt",
+          "Symbol": null,
+          "Line": 168
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\42acf68a34a94626b184ea64581dbd65\\call_00_YtIdgbW579vKCpvxv1vv9792-list_tool_approvals.txt",
+          "Symbol": null,
+          "Line": 1001
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-0f4d4009\\legacy-53-53-list_tool_approvals.txt",
+          "Symbol": null,
+          "Line": 202
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-57fdf850\\call_00_dmoLohcHiCeUDKDJyiga2167-list_tool_approvals.txt",
+          "Symbol": null,
+          "Line": 661
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-57fdf850\\call_00_GQyBel6Msqnb8v1bhcVn9445-list_tool_approvals.txt",
+          "Symbol": null,
+          "Line": 202
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_00_QDKcF4e9vgFckdgQPe7Z4640-list_tool_approvals.txt",
+          "Symbol": null,
+          "Line": 219
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_00_SFnIPHzLmYkpwKcUhR2l7543-list_tool_approvals.txt",
+          "Symbol": null,
+          "Line": 474
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\42acf68a34a94626b184ea64581dbd65\\call_02_2v4wCY4mHceEsz2bjJVB8894-list_tool_approvals.txt",
+          "Symbol": null,
+          "Line": 644
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\compaction-status\\core\\.playwright\\package\\lib\\utilsBundle.js",
+          "Symbol": null,
+          "Line": 84699
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\heartbeat-deploy-20260920\\core\\.playwright\\package\\lib\\utilsBundle.js",
+          "Symbol": null,
+          "Line": 84699
+        }
+      ],
+      "ElapsedMs": 117.4382,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0.5,
+      "NoiseHitsAt10": 5,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "code that reads gitignore files and turns them into exclude patterns",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1161
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1323
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 28
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 113
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 142
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCore\\Abstractions\\IAgentRuntimeProfileResolver.cs",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.gitignore",
+          "Symbol": null,
+          "Line": 248
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\external\\github.hyfree.GM\\.gitignore",
+          "Symbol": null,
+          "Line": 217
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.firecrawl\\douyin-source\\.gitignore",
+          "Symbol": null,
+          "Line": 12
+        }
+      ],
+      "ElapsedMs": 54.1839,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 9,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how does the full text engine parse a query against content and file name",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Infrastructure/Search/LuceneSearchEngine.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1259
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1421
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 29
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 114
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 143
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\claude-reviews-claude\\architecture\\01-query-engine.md",
+          "Symbol": null,
+          "Line": 633
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\claude-reviews-claude\\docs\\chapters\\01-query-engine.md",
+          "Symbol": null,
+          "Line": 635
+        }
+      ],
+      "ElapsedMs": 100.5561,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 7,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which sqlite implementation stores code symbols and relations",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1387
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1504
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 30
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 115
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 144
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndexer.Cli\\Scripts\\extract-ts-symbols.js",
+          "Symbol": null,
+          "Line": 19
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndexer.Cli\\pub\\Scripts\\extract-ts-symbols.js",
+          "Symbol": null,
+          "Line": 19
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\plans\\2026-06-11-code-intelligence-mvp.md",
+          "Symbol": null,
+          "Line": 426
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\plans\\2026-06-12-code-intelligence-core-mvp.md",
+          "Symbol": null,
+          "Line": 177
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndexer.Cli\\Scripts\\extract-py-symbols.py",
+          "Symbol": null,
+          "Line": 87
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRuntimeTests\\Tools\\PluginManifestOnlyTests.cs",
+          "Symbol": null,
+          "Line": 130
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 69950
+        }
+      ],
+      "ElapsedMs": 30.6889,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how are file system changes coalesced before the index is updated",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1485
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1602
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 31
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 116
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 145
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\claude-reviews-claude\\architecture\\04-plugin-system.md",
+          "Symbol": null,
+          "Line": 222
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\claude-reviews-claude\\docs\\chapters\\04-plugin-system.md",
+          "Symbol": null,
+          "Line": 224
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\before.txt",
+          "Symbol": null,
+          "Line": 27
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\claude-reviews-claude\\architecture\\02-tool-system.md",
+          "Symbol": null,
+          "Line": 402
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\claude-reviews-claude\\docs\\chapters\\02-tool-system.md",
+          "Symbol": null,
+          "Line": 404
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-3836a2e0\\call_00_I1v1Nj4DkVXie5PZjsfm2900-file_read.txt",
+          "Symbol": null,
+          "Line": 147
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-88145414\\call_02_hECC8ivwUduOnAnlSFWZ0444-shell.txt",
+          "Symbol": null,
+          "Line": 99
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-8c1a8919\\call_01_vKNLMYdFVDBVGB6T6K0l4878-http_fetch.txt",
+          "Symbol": null,
+          "Line": 129
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-be6118fb\\call_00_WpBTuQkLkQdpuUE0GeJU3090-http_fetch.txt",
+          "Symbol": null,
+          "Line": 127
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-3836a2e0\\call_00_3QFyLmBRMaplxkvrFuhV8446-http_fetch.txt",
+          "Symbol": null,
+          "Line": 625
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-50f12693\\call_02_q2hrbZa1PmFccPKiwxd18097-file_read.txt",
+          "Symbol": null,
+          "Line": 9
+        }
+      ],
+      "ElapsedMs": 80.2063,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which service marks and sweeps index rows whose file no longer exists",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1598
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1705
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 32
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 117
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 146
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-50f12693\\call_00_ET_ZAVXYVGUejmq0cirkMri2905-shell.txt",
+          "Symbol": null,
+          "Line": 46
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-3836a2e0\\call_00_I1v1Nj4DkVXie5PZjsfm2900-file_read.txt",
+          "Symbol": null,
+          "Line": 144
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-08c03ac5\\call_uVngaVCxhAzXGZ6FYz7Aq3Bb-file_read.txt",
+          "Symbol": null,
+          "Line": 409
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-f4c07e64\\call_02_tkCXxVkZqvBcIRS6TLZh1417-file_read.txt",
+          "Symbol": null,
+          "Line": 289
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-88145414\\call_01_8CMDoH4QB0DlWtFLqaiX0104-shell.txt",
+          "Symbol": null,
+          "Line": 65
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndexTests\\Services\\CodeIndex\\CodeIndexCalibrationDriverTests.cs",
+          "Symbol": null,
+          "Line": 49
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingHost\\Hosting\\DesktopParentProcessMonitor.cs",
+          "Symbol": null,
+          "Line": 37
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-a6ac640c\\call_Tx6PjctxQ9RDNgJeCVuIZAsy-file_read.txt",
+          "Symbol": null,
+          "Line": 494
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_00_DbYP4RIToRLWAxtxXDiL5296-file_read.txt",
+          "Symbol": null,
+          "Line": 17
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-50f12693\\call_02_EUS13iNGLSPVFXz1tNC44774-file_read.txt",
+          "Symbol": null,
+          "Line": 17
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-bda3d761\\call_01_n0nLOwc0Ho4Tt6HeqQtA2703-file_read.txt",
+          "Symbol": null,
+          "Line": 164
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-2faf395a\\call_01_CtBmkfDX9yntdVQMi4Uc7944-file_read.txt",
+          "Symbol": null,
+          "Line": 94
+        }
+      ],
+      "ElapsedMs": 70.6732,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0.5,
+      "NoiseHitsAt10": 5,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the project root detected for the code index scope",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/DefaultProjectRootDetector.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1706
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1828
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 118
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 147
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 33
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\plans\\2026-06-12-code-intelligence-core-mvp.md",
+          "Symbol": null,
+          "Line": 91
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 907
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\Services\\CodeIndexScopeResolver.cs",
+          "Symbol": null,
+          "Line": 55
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\plan-version-core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 20302
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\skillhub-agent-out\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 20302
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\heartbeat-host\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 20302
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\compaction-status\\core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 20302
+        }
+      ],
+      "ElapsedMs": 55.7632,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how is the code index maintenance loop driven by the host",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1809
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 1941
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 34
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 119
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 148
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRuntimeTests\\Tools\\GitCommitArgsSerializationTests.cs",
+          "Symbol": null,
+          "Line": 78
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\plan-version-core\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\spec-driven-testing.md",
+          "Symbol": null,
+          "Line": 270
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\skillhub-agent-out\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\spec-driven-testing.md",
+          "Symbol": null,
+          "Line": 270
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\heartbeat-host\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\spec-driven-testing.md",
+          "Symbol": null,
+          "Line": 270
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\compaction-status\\core\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\spec-driven-testing.md",
+          "Symbol": null,
+          "Line": 270
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\heartbeat-deploy-20260920\\core\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\spec-driven-testing.md",
+          "Symbol": null,
+          "Line": 270
+        }
+      ],
+      "ElapsedMs": 54.583,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where does the code query service run a symbol search",
+        "ExpectedHits": [
+          "Source/PuddingCodeIntelligence/Services/CodeQueryService.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1922
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2039
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 35
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 120
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 149
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\plans\\2026-06-11-code-intelligence-mvp.md",
+          "Symbol": null,
+          "Line": 1027
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\.pudding\\context-tool-results\\cf7fc8fac97d43b0a2cb74d5fb195f11-sub-08ea83db\\call_02_xsDIeSuOsBu3EoHzfIXB0072-code_symbol_search.txt",
+          "Symbol": null,
+          "Line": 178
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_00_ClxjjklRAZ6VDehw3fW10080-code_symbol_search.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_00_dwKjbZvOstU110B3O1Ag7663-code_symbol_search.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_00_fjvm6s41hqrhh4exztPd0242-code_symbol_search.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_00_oENfiXgJgEv6ITHYaVqw2060-code_symbol_search.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_00_s0qGED2TY7xxGxo2EVg94495-code_symbol_search.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_01_49pTO6EK3QqygOkcFHZk8675-code_symbol_search.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_01_56YOOynSRfbmcg5NBqxP9432-code_symbol_search.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_01_EH1Yr0IVGam8fuewnlvv6936-code_symbol_search.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_01_ppgVbZsqsefS1m4k14ak1236-code_symbol_search.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_01_yE73XeXl2OM3srFXFlAO2789-code_symbol_search.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-961bc40e\\call_01_CyDErPwV3POIIvxOC0Z45997-code_symbol_search.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-961bc40e\\call_01_vNBxwMVkS9dzD2lOrbpw7273-code_symbol_search.txt",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 55.2118,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0.4,
+      "NoiseHitsAt10": 4,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which file extracts plain text content for full text indexing",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Infrastructure/Search/PlainTextExtractor.cs"
+        ],
+        "Kind": "Intent",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1955
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2102
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 36
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 121
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 150
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 99685
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 99685
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-91c8b374\\call_BApdRx68udq4sbiundCNWPeB-file_read.txt",
+          "Symbol": null,
+          "Line": 124
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-91c8b374\\call_GtHqcrpc4vWtQgMb9rB4grnB-file_read.txt",
+          "Symbol": null,
+          "Line": 124
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-cb7dd517\\call_Vn5Jdq0ERHXp2g8Av9FEQwmU-file_read.txt",
+          "Symbol": null,
+          "Line": 124
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-1dc7f034\\call_-7244923114620975221-file_read.txt",
+          "Symbol": null,
+          "Line": 122
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-4fb87907\\call_1nUFG8BzNHIVa3rmYYAot2Ti-file_read.txt",
+          "Symbol": null,
+          "Line": 124
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-4fb87907\\call_bIPp8Ry3yIsiUiT7RuKHJosd-file_read.txt",
+          "Symbol": null,
+          "Line": 124
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-4fb87907\\call_ovkcTKWVwW0jWcoBDr96Kj5H-file_read.txt",
+          "Symbol": null,
+          "Line": 124
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-4fb87907\\call_sUgvciEOfPIpFJ9DJVK3OKnp-file_read.txt",
+          "Symbol": null,
+          "Line": 124
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-4fb87907\\call_W0jjRM1UZbWpAp6dXCZLyVDc-file_read.txt",
+          "Symbol": null,
+          "Line": 124
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_00_8fT3dXEUMLGzfbZFf67I6936-file_read.txt",
+          "Symbol": null,
+          "Line": 123
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_00_ET_XqWzOIgTk2ziuTmBMBcN2207-file_read.txt",
+          "Symbol": null,
+          "Line": 119
+        }
+      ],
+      "ElapsedMs": 79.7166,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0.3,
+      "NoiseHitsAt10": 3,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "RetrievalGlobMatcher",
+        "ExpectedHits": [
+          "Source/PuddingCore/Tools/Retrieval/RetrievalGlobMatcher.cs",
+          "Source/PuddingRuntime/Tools/BuiltIns/Search/SearchGrepTool.cs"
+        ],
+        "Kind": "Crossref",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCore\\Tools\\Retrieval\\RetrievalGlobMatcher.cs",
+          "Symbol": null,
+          "Line": 34
+        }
+      ],
+      "ElapsedMs": 17.1766,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IndexExcludePatterns",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs",
+          "Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexWatcher.cs"
+        ],
+        "Kind": "Crossref",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\Services\\IndexExcludePatterns.cs",
+          "Symbol": null,
+          "Line": 7
+        }
+      ],
+      "ElapsedMs": 17.17,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "JiebaAnalyzer",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Infrastructure/Text/JiebaAnalyzer.cs",
+          "Source/PuddingFullTextIndex/Infrastructure/Search/LuceneSearchEngine.cs"
+        ],
+        "Kind": "Crossref",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingFullTextIndex\\Infrastructure\\Text\\JiebaAnalyzer.cs",
+          "Symbol": null,
+          "Line": 11
+        }
+      ],
+      "ElapsedMs": 16.6855,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "ICodeIndexStore",
+        "ExpectedHits": [
+          "Source/PuddingCodeIndex/Contracts/ICodeIndexStore.cs",
+          "Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs"
+        ],
+        "Kind": "Crossref",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\Contracts\\ICodeIndexStore.cs",
+          "Symbol": null,
+          "Line": 7
+        }
+      ],
+      "ElapsedMs": 16.8289,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IFileContentExtractor",
+        "ExpectedHits": [
+          "Source/PuddingFullTextIndex/Contracts/IFileContentExtractor.cs",
+          "Source/PuddingFullTextIndex/Infrastructure/Search/LuceneSearchEngine.cs"
+        ],
+        "Kind": "Crossref",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingFullTextIndex\\Contracts\\IFileContentExtractor.cs",
+          "Symbol": null,
+          "Line": 7
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingFullTextIndex\\Infrastructure\\Search\\LuceneSearchEngine.cs",
+          "Symbol": null,
+          "Line": 49
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingFullTextIndex\\Infrastructure\\Search\\PlainTextExtractor.cs",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-0569bf1d\\call_00_zRM6dBRi9Kdgel8MMxlE4899-file_read.txt",
+          "Symbol": null,
+          "Line": 51
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-08d33e9e\\call_00_IyXY6yqgjFOOnRxbHZ6x8246-file_read.txt",
+          "Symbol": null,
+          "Line": 51
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 2204
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2346
+        }
+      ],
+      "ElapsedMs": 16.2106,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.4,
+      "PrecisionAt10": 0.2,
+      "NoiseRateAt10": 0.2857142857142857,
+      "NoiseHitsAt10": 2,
+      "DistinctHitsAt10": 7,
+      "RelevantHitsAt10": 2,
+      "MatchedExpectedCount": 2,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "ILanguageServerService",
+        "ExpectedHits": [
+          "Source/PuddingCodeIntelligence/Contracts/ILanguageServerService.cs",
+          "Source/PuddingCodeIntelligence/Lsp/IndexBasedLanguageServerService.cs"
+        ],
+        "Kind": "Crossref",
+        "Language": "CSharp"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIntelligence\\Contracts\\ILanguageServerService.cs",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIntelligence\\Lsp\\IndexBasedLanguageServerService.cs",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIntelligence\\Lsp\\NoOpLanguageServerService.cs",
+          "Symbol": null,
+          "Line": 10
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-961bc40e\\call_01_vNBxwMVkS9dzD2lOrbpw7273-code_symbol_search.txt",
+          "Symbol": null,
+          "Line": 118
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-753f9b90\\call_00_jWJJssccL707gL0PJg006802-file_read.txt",
+          "Symbol": null,
+          "Line": 83
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-753f9b90\\call_01_tS1LsNUYAYL5owQhB3Fx4287-file_read.txt",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 2248
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2400
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-b5912c66\\call_03_r8oGNiVSA8UbHF7bsW1W8673-shell.txt",
+          "Symbol": null,
+          "Line": 442
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\260fe2a16805472184de70087a19801c\\call_3688ae68293e461687803a95-shell.txt",
+          "Symbol": null,
+          "Line": 448
+        }
+      ],
+      "ElapsedMs": 17.3611,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.4,
+      "PrecisionAt10": 0.2,
+      "NoiseRateAt10": 0.5,
+      "NoiseHitsAt10": 5,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 2,
+      "MatchedExpectedCount": 2,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingDataTable",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/components/PuddingDataTable/index.tsx"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 47
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 47
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\dist-dev\\common-async.js",
+          "Symbol": null,
+          "Line": 470
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\dist-dev\\common-async.js",
+          "Symbol": null,
+          "Line": 470
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingDataTable\\styles.ts",
+          "Symbol": null,
+          "Line": 2
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingDataTable\\styles.ts",
+          "Symbol": null,
+          "Line": 2
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingDataTable\\index.tsx",
+          "Symbol": null,
+          "Line": 66
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingDataTable\\index.tsx",
+          "Symbol": null,
+          "Line": 66
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 225
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 225
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\Features\\AdminConsole\u53BBAntDesignPro\u5316\u4EE3\u7801\u7EA7\u8BBE\u8BA1\u65B9\u6848.md",
+          "Symbol": null,
+          "Line": 307
+        }
+      ],
+      "ElapsedMs": 16.291,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 1,
+      "Mrr": 0.14285714285714285,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingStatusBadge",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/components/PuddingStatusBadge/index.tsx"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\dist-dev\\common-async.js",
+          "Symbol": null,
+          "Line": 1105
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\dist-dev\\common-async.js",
+          "Symbol": null,
+          "Line": 1105
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingStatusBadge\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingStatusBadge\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingStatusBadge\\index.tsx",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 196
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 135
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingStatusBadge\\index.tsx",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 196
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 135
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-b79b08fb\\call_-7264001737306929707-git_diff.txt",
+          "Symbol": null,
+          "Line": 301
+        }
+      ],
+      "ElapsedMs": 15.966,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 1,
+      "Mrr": 0.125,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "TaskBoard",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskBoard.tsx"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskBoard.tsx",
+          "Symbol": null,
+          "Line": 46
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskBoard.tsx",
+          "Symbol": null,
+          "Line": 46
+        }
+      ],
+      "ElapsedMs": 16.0227,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "TaskCard",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskCard.tsx"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.test.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskCard.test.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 275
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 275
+        }
+      ],
+      "ElapsedMs": 17.9876,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 4,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "syncEngine",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/syncEngine.ts"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\syncEngine.test.ts",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\chat\\client\\syncEngine.test.ts",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\syncEngine.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 17.183,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "canonicalMerge",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/canonicalMerge.ts"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\canonicalMerge.test.ts",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\chat\\client\\canonicalMerge.test.ts",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\canonicalMerge.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 16.9491,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "workspaceNavigation",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/utils/workspaceNavigation.ts"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\utils\\workspaceNavigation.test.ts",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\utils\\workspaceNavigation.test.ts",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\utils\\workspaceNavigation.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 15.8545,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "autoReviewClassifier",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/classifier/autoReviewClassifier.ts"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\classifier\\autoReviewClassifier.test.ts",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\chat\\classifier\\autoReviewClassifier.test.ts",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\classifier\\autoReviewClassifier.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 16.8741,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the chat client store that keeps local cache in sync",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2833
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 580
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 54
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 165
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 86
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\plans\\2026-06-07-agent-chat-client-architecture-redesign.md",
+          "Symbol": null,
+          "Line": 1297
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\specs\\2026-06-07-agent-chat-client-architecture-redesign-design.md",
+          "Symbol": null,
+          "Line": 348
+        }
+      ],
+      "ElapsedMs": 40.631,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 7,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how does the chat client merge canonical server state",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/canonicalMerge.ts"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2906
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 663
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 55
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 166
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 87
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\plans\\2026-06-07-agent-chat-client-architecture-redesign.md",
+          "Symbol": null,
+          "Line": 1278
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\specs\\2026-06-07-agent-chat-client-architecture-redesign-design.md",
+          "Symbol": null,
+          "Line": 190
+        }
+      ],
+      "ElapsedMs": 64.1447,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 7,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the checkpoint store used when resuming a chat session",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/checkpointStore.ts"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 2999
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 771
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 56
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 167
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 88
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\claude-reviews-claude\\architecture\\03-coordinator.md",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\claude-reviews-claude\\docs\\chapters\\03-coordinator.md",
+          "Symbol": null,
+          "Line": 40
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\specs\\2026-06-06-agent-first-main-session-chat-design.md",
+          "Symbol": null,
+          "Line": 41
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\plan-version-core\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\session-management.md",
+          "Symbol": null,
+          "Line": 166
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\skillhub-agent-out\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\session-management.md",
+          "Symbol": null,
+          "Line": 166
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\heartbeat-host\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\session-management.md",
+          "Symbol": null,
+          "Line": 166
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\compaction-status\\core\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\session-management.md",
+          "Symbol": null,
+          "Line": 166
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\heartbeat-deploy-20260920\\core\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\session-management.md",
+          "Symbol": null,
+          "Line": 166
+        }
+      ],
+      "ElapsedMs": 44.9763,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which module renders the workspace task board columns",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskColumn.tsx"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 3067
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 824
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Tools\\Diagnostics\\audit_task_board.py",
+          "Symbol": null,
+          "Line": 170
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 168
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 89
+        }
+      ],
+      "ElapsedMs": 32.1273,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 6,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the scheduler drawer for recurring tasks",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/SchedulerDrawer.tsx"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 3120
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 907
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 58
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 169
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 90
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.json",
+          "Symbol": null,
+          "Line": 1706
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\plan-version-core\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\playwright-tests.md",
+          "Symbol": null,
+          "Line": 34
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\skillhub-agent-out\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\playwright-tests.md",
+          "Symbol": null,
+          "Line": 34
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\heartbeat-host\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\playwright-tests.md",
+          "Symbol": null,
+          "Line": 34
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\compaction-status\\core\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\playwright-tests.md",
+          "Symbol": null,
+          "Line": 34
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\heartbeat-deploy-20260920\\core\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\playwright-tests.md",
+          "Symbol": null,
+          "Line": 34
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\Reports\\scheduler-explore-evidence-r1.md",
+          "Symbol": null,
+          "Line": 22
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\Reports\\scheduler-kernel-current-state-20260913.md",
+          "Symbol": null,
+          "Line": 26
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatform\\Services\\ConversationProjectionWorker.cs",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\dist-dev\\src_pages_workspace-tasks_index_tsx-async.js",
+          "Symbol": null,
+          "Line": 411
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\dist-dev\\src_pages_workspace-tasks_index_tsx-async.js",
+          "Symbol": null,
+          "Line": 411
+        }
+      ],
+      "ElapsedMs": 31.5124,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how is the agent template settings drawer organized into sections",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/agent-template-settings/AgentTemplateSettingsDrawer.tsx"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 3193
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 990
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 59
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 170
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 91
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\dist-dev\\src_pages_global-agent-template_index_tsx-async.js",
+          "Symbol": null,
+          "Line": 616
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\dist-dev\\src_pages_global-agent-template_index_tsx-async.js",
+          "Symbol": null,
+          "Line": 616
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\plans\\2026-05-24-agent-template-storage-chain.md",
+          "Symbol": null,
+          "Line": 7
+        }
+      ],
+      "ElapsedMs": 32.6569,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 8,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the access token secret shown once modal",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/access-token-management/components/SecretOnceModal.tsx"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 3231
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 1038
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 119
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 60
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 171
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\dist-dev\\src_pages_access-token-management_index_tsx-async.js",
+          "Symbol": null,
+          "Line": 361
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\dist-dev\\src_pages_access-token-management_index_tsx-async.js",
+          "Symbol": null,
+          "Line": 361
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\Features\\\u7B2C\u4E09\u65B9\u4EFB\u52A1\u770B\u677FAccessToken\u4E0E\u5916\u90E8API\u8BE6\u7EC6\u8BBE\u8BA1\u65B9\u6848.md",
+          "Symbol": null,
+          "Line": 745
+        }
+      ],
+      "ElapsedMs": 30.5583,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 8,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which util builds the workspace navigation menu",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/utils/workspaceNavigation.ts"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.json",
+          "Symbol": null,
+          "Line": 3289
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.json",
+          "Symbol": null,
+          "Line": 1071
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 61
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 172
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 93
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\bn-BD\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\en-US\\menu.ts",
+          "Symbol": null,
+          "Line": 58
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\fa-IR\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\id-ID\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\ja-JP\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\pt-BR\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\zh-TW\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\locales\\bn-BD\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\locales\\en-US\\menu.ts",
+          "Symbol": null,
+          "Line": 58
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\locales\\fa-IR\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\locales\\id-ID\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\locales\\ja-JP\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\locales\\pt-BR\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\locales\\zh-TW\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        }
+      ],
+      "ElapsedMs": 26.1816,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "canonicalMerge",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/canonicalMerge.ts",
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\canonicalMerge.test.ts",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\chat\\client\\canonicalMerge.test.ts",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\canonicalMerge.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 15.34,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "checkpointStore",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/checkpointStore.ts",
+          "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useCheckpointTimeline.ts"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\checkpointStore.test.ts",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\chat\\client\\checkpointStore.test.ts",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\checkpointStore.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 14.7677,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "TaskCard",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskCard.tsx",
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskColumn.tsx"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.test.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskCard.test.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 275
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 275
+        }
+      ],
+      "ElapsedMs": 14.8908,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 4,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingStatusBadge",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/components/PuddingStatusBadge/index.tsx",
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskCard.tsx"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\dist-dev\\common-async.js",
+          "Symbol": null,
+          "Line": 1105
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\dist-dev\\common-async.js",
+          "Symbol": null,
+          "Line": 1105
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingStatusBadge\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingStatusBadge\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingStatusBadge\\index.tsx",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 196
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 135
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingStatusBadge\\index.tsx",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 196
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 135
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-b79b08fb\\call_-7264001737306929707-git_diff.txt",
+          "Symbol": null,
+          "Line": 301
+        }
+      ],
+      "ElapsedMs": 14.7331,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 1,
+      "Mrr": 0.125,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0.2,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 2,
+      "MatchedExpectedCount": 2,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "TaskEventTimeline",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskEventTimeline.tsx",
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskDetailsDrawer.tsx"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskEventTimeline.tsx",
+          "Symbol": null,
+          "Line": 69
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskEventTimeline.tsx",
+          "Symbol": null,
+          "Line": 69
+        }
+      ],
+      "ElapsedMs": 14.8159,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingAdminShell",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/components/PuddingAdminShell/index.tsx",
+          "Source/PuddingPlatformAdmin/src/components/index.ts"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\07\u67B6\u6784\\37ADR-036AdminConsole\u53BBAntDesignPro\u5316\u4E0EPudding\u8BBE\u8BA1\u8BED\u8A00\u7EDF\u4E00ADR.md",
+          "Symbol": null,
+          "Line": 99
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\dist-dev\\common-async.js",
+          "Symbol": null,
+          "Line": 329
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\dist-dev\\common-async.js",
+          "Symbol": null,
+          "Line": 329
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminShell\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingAdminShell\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminShell\\index.tsx",
+          "Symbol": null,
+          "Line": 28
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingAdminShell\\index.tsx",
+          "Symbol": null,
+          "Line": 28
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-b79b08fb\\call_-7264001737306929707-git_diff.txt",
+          "Symbol": null,
+          "Line": 70
+        }
+      ],
+      "ElapsedMs": 14.7075,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0.5,
+      "Mrr": 0.14285714285714285,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0.1,
+      "NoiseHitsAt10": 1,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingCodeIndex",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\PuddingCodeIndex.csproj",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndexTests\\ComponentBoundaryTests.cs",
+          "Symbol": null,
+          "Line": 51
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEvalTests\\ComponentBoundaryTests.cs",
+          "Symbol": null,
+          "Line": 22
+        }
+      ],
+      "ElapsedMs": 14.679,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "InternalsVisibleTo",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 263
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 263
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\PuddingCodeIndex.csproj",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIntelligence\\PuddingCodeIntelligence.csproj",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingFullTextIndex\\PuddingFullTextIndex.csproj",
+          "Symbol": null,
+          "Line": 10
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingMemoryEngine\\PuddingMemoryEngine.csproj",
+          "Symbol": null,
+          "Line": 28
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRuntime\\PuddingRuntime.csproj",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingBrowser.WebView2\\PuddingBrowser.WebView2.csproj",
+          "Symbol": null,
+          "Line": 26
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatform\\AssemblyInfo.cs",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingDesktop\\Properties\\AssemblyInfo.cs",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingHost\\Properties\\AssemblyInfo.cs",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRuntime\\Services\\ContextWindowManager.cs",
+          "Symbol": null,
+          "Line": 723
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\src\\HarnessAgent\\Core\\HarnessAgent.Core.csproj",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRuntime\\Services\\AgentExecutionService.cs",
+          "Symbol": null,
+          "Line": 1374
+        }
+      ],
+      "ElapsedMs": 14.9903,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "CodeIndexMaintenanceHostedService",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingHost\\Hosting\\CodeIndexMaintenanceHostedService.cs",
+          "Symbol": null,
+          "Line": 45
+        }
+      ],
+      "ElapsedMs": 15.0591,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IndexExcludePatterns",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\Services\\IndexExcludePatterns.cs",
+          "Symbol": null,
+          "Line": 7
+        }
+      ],
+      "ElapsedMs": 15.2676,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "MemoryRecallService",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingMemoryEngine\\Services\\MemoryRecallService.cs",
+          "Symbol": null,
+          "Line": 25
+        }
+      ],
+      "ElapsedMs": 14.4618,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "SearchGrepTool",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRuntime\\Tools\\BuiltIns\\Search\\SearchGrepTool.cs",
+          "Symbol": null,
+          "Line": 57
+        }
+      ],
+      "ElapsedMs": 14.73,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "NoiseDirNames",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\Services\\IndexExcludePatterns.cs",
+          "Symbol": null,
+          "Line": 28
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\Services\\NoiseDirectoryRules.cs",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 513
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 513
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIntelligence\\Python\\PythonIndexer.cs",
+          "Symbol": null,
+          "Line": 374
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIntelligence\\TypeScript\\TypeScriptIndexer.cs",
+          "Symbol": null,
+          "Line": 370
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-4ae575df\\call_00_lTt9JMRtaEBDQjhqX8hI9813-file_read.txt",
+          "Symbol": null,
+          "Line": 257
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-4ae575df\\call_01_m61WoqcFGU4lZWUI7gUm1130-file_read.txt",
+          "Symbol": null,
+          "Line": 254
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\Services\\CodeIndex\\CodeIndexWatcher.cs",
+          "Symbol": null,
+          "Line": 403
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEvalTests\\NoiseDirectoryRulesTests.cs",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-b1591bbd\\call_00_XvRoi0TfVtIlhwHWn2V53953-shell.txt",
+          "Symbol": null,
+          "Line": 390
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_00_YbCM9LisILDr0i7qj9Vn6651-file_read.txt",
+          "Symbol": null,
+          "Line": 296
+        }
+      ],
+      "ElapsedMs": 15.1935,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0.2,
+      "NoiseHitsAt10": 2,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IndexBasedLanguageServerService",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Symbol",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIntelligence\\Lsp\\IndexBasedLanguageServerService.cs",
+          "Symbol": null,
+          "Line": 19
+        }
+      ],
+      "ElapsedMs": 15.1113,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "why is the gitignore parser dead code",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 589
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 589
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.gitignore",
+          "Symbol": null,
+          "Line": 169
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\external\\github.hyfree.GM\\.gitignore",
+          "Symbol": null,
+          "Line": 138
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 79
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.md",
+          "Symbol": null,
+          "Line": 84
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.md",
+          "Symbol": null,
+          "Line": 90
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\.gitignore",
+          "Symbol": null,
+          "Line": 26
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\.gitignore",
+          "Symbol": null,
+          "Line": 26
+        }
+      ],
+      "ElapsedMs": 30.8628,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 9,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how many different exclude rule sets exist in the repository",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 667
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 677
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.md",
+          "Symbol": null,
+          "Line": 85
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.md",
+          "Symbol": null,
+          "Line": 91
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 80
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-5c885d22\\call_-7263849764184125112-http_fetch.txt",
+          "Symbol": null,
+          "Line": 101
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-5c885d22\\call_-7263862752165228430-file_read.txt",
+          "Symbol": null,
+          "Line": 103
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.firecrawl\\ux-20260911-install-check.md",
+          "Symbol": null,
+          "Line": 853
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\plan-version-core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 11430
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\skillhub-agent-out\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 11430
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\heartbeat-host\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 11430
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\compaction-status\\core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 11430
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\heartbeat-deploy-20260920\\core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 11430
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\Services\\NoiseDirectoryRules.cs",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 57781
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 57781
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\How-Debuge.md",
+          "Symbol": null,
+          "Line": 1453
+        }
+      ],
+      "ElapsedMs": 26.8117,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0.2,
+      "NoiseHitsAt10": 2,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how should the full solution build gate be run after a namespace change",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 785
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 795
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 81
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.md",
+          "Symbol": null,
+          "Line": 86
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.md",
+          "Symbol": null,
+          "Line": 92
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-9107afae\\call_-7263841036810576560-doubao_search.txt",
+          "Symbol": null,
+          "Line": 70
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\plans\\2026-07-01-memory-v2-f3-worker-scheduling-plan.md",
+          "Symbol": null,
+          "Line": 890
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_1-async.js",
+          "Symbol": null,
+          "Line": 37700
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\dist-dev\\vendors_1-async.js",
+          "Symbol": null,
+          "Line": 37700
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\How-Debuge.md",
+          "Symbol": null,
+          "Line": 1294
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Directory.Build.props",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRuntimeTests\\Services\\ContextWindowManagerTests.cs",
+          "Symbol": null,
+          "Line": 1636
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-bdc93560\\call_00_XGxjrHYwXsFWi3KS43lm2765-file_read.txt",
+          "Symbol": null,
+          "Line": 735
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\plan-version-core\\.playwright\\package\\types\\types.d.ts",
+          "Symbol": null,
+          "Line": 4074
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\skillhub-agent-out\\.playwright\\package\\types\\types.d.ts",
+          "Symbol": null,
+          "Line": 4074
+        }
+      ],
+      "ElapsedMs": 37.9858,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0.1,
+      "NoiseHitsAt10": 1,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "what does the architecture first principle say about dependency direction",
+        "ExpectedHits": [
+          "Agents.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 82
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\specs\\2026-06-07-agent-chat-client-architecture-redesign-design.md",
+          "Symbol": null,
+          "Line": 374
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-8c1a8919\\call_01_q1IqFx7569nCfFR0Cggb5011-http_fetch.txt",
+          "Symbol": null,
+          "Line": 22
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\8fd0f96f82224bc0a282b4626ea4e4f5-sub-b9f9144a\\call_03_yMblfdNN9b6P8xRq7Wur2095-doubao_search.txt",
+          "Symbol": null,
+          "Line": 142
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\claude-reviews-claude\\docs\\assets\\architecture-mermaid-full.md",
+          "Symbol": null,
+          "Line": 22
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\07\u67B6\u6784\\29ADR-028\u8BB0\u5FC6\u56FE\u4E66\u9986\u57FA\u7840\u8BBE\u65BD\u91CD\u6784ADR.md",
+          "Symbol": null,
+          "Line": 295
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-95aa0691\\call_01_0fMn0yVnskXi04rWx5309630-file_read.txt",
+          "Symbol": null,
+          "Line": 44
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-dd2feb71\\call_00_plq0AUn1shpBFqt657Yt5396-http_fetch.txt",
+          "Symbol": null,
+          "Line": 123
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\claude-reviews-claude\\architecture\\01-query-engine.md",
+          "Symbol": null,
+          "Line": 593
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\claude-reviews-claude\\docs\\chapters\\01-query-engine.md",
+          "Symbol": null,
+          "Line": 595
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-d44c2df8\\call_00_MQA3CuqHGs6fvJkL5eVR2499-doubao_search.txt",
+          "Symbol": null,
+          "Line": 173
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-298715fa-sub-b46cc3ea\\call_-7252305682366457158-doubao_search.txt",
+          "Symbol": null,
+          "Line": 118
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\plan-version-core\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\spec-driven-testing.md",
+          "Symbol": null,
+          "Line": 114
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\skillhub-agent-out\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\spec-driven-testing.md",
+          "Symbol": null,
+          "Line": 114
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\heartbeat-host\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\spec-driven-testing.md",
+          "Symbol": null,
+          "Line": 114
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\compaction-status\\core\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\spec-driven-testing.md",
+          "Symbol": null,
+          "Line": 114
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\heartbeat-deploy-20260920\\core\\.playwright\\package\\lib\\tools\\cli-client\\skill\\references\\spec-driven-testing.md",
+          "Symbol": null,
+          "Line": 114
+        }
+      ],
+      "ElapsedMs": 28.049,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0.4,
+      "NoiseHitsAt10": 4,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the retrieval evaluation design described",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 893
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 903
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 83
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.md",
+          "Symbol": null,
+          "Line": 87
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.md",
+          "Symbol": null,
+          "Line": 93
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\Contracts\\SearchProbeContracts.cs",
+          "Symbol": null,
+          "Line": 53
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-6c48f654\\call_05_4J5kYFVLU8NmKhWgmIUH6611-doubao_search.txt",
+          "Symbol": null,
+          "Line": 173
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\specs\\2026-05-20-memory-library-infrastructure-refactor-design.md",
+          "Symbol": null,
+          "Line": 632
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\Features\\memory-design\\learning-mechanism-design.md",
+          "Symbol": null,
+          "Line": 281
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.github\\skills\\ui-ux-pro-max\\scripts\\design_system.py",
+          "Symbol": null,
+          "Line": 496
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\specs\\2026-06-30-hook-system-v2-design.md",
+          "Symbol": null,
+          "Line": 30
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\Reports\\skill-retrieval-industry-survey-2026-09-21.md",
+          "Symbol": null,
+          "Line": 47
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.csharp.md",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.md",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-source-scope.typescript.md",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 27.4634,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0.1,
+      "NoiseHitsAt10": 1,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "what are the rules for temporary build artifacts",
+        "ExpectedHits": [
+          "Agents.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 84
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-be6118fb\\call_00_7hYrS3v4pfh30RvD64Ea1578-http_fetch.txt",
+          "Symbol": null,
+          "Line": 34
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\plan-version-core\\default-data\\benchmark-seeds\\memory-contract-pack\\materials\\product-rules.md",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\skillhub-agent-out\\default-data\\benchmark-seeds\\memory-contract-pack\\materials\\product-rules.md",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingHost\\default-data\\benchmark-seeds\\memory-contract-pack\\materials\\product-rules.md",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\compaction-status\\core\\default-data\\benchmark-seeds\\memory-contract-pack\\materials\\product-rules.md",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\heartbeat-deploy-20260920\\core\\default-data\\benchmark-seeds\\memory-contract-pack\\materials\\product-rules.md",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\orchestration\\edgeEditor.ts",
+          "Symbol": null,
+          "Line": 525
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\orchestration\\edgeEditor.ts",
+          "Symbol": null,
+          "Line": 525
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\superpowers\\plans\\2026-06-05-http-fetch-enhancement.md",
+          "Symbol": null,
+          "Line": 67
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-88145414\\call_02_YinzQ3LyyZ4jEWhQBGlC0850-shell.txt",
+          "Symbol": null,
+          "Line": 328
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-d44c2df8\\call_00_poxJfieg8B8v0sGK8lGo4649-doubao_search.txt",
+          "Symbol": null,
+          "Line": 107
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\claude-reviews-claude\\architecture\\07-permission-pipeline.md",
+          "Symbol": null,
+          "Line": 413
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\claude-reviews-claude\\docs\\chapters\\07-permission-pipeline.md",
+          "Symbol": null,
+          "Line": 417
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 62164
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 62164
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Directory.Build.props",
+          "Symbol": null,
+          "Line": 14
+        }
+      ],
+      "ElapsedMs": 32.5947,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0.1,
+      "NoiseHitsAt10": 1,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how is the index component delivered as an independent component",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 986
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 996
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 85
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.md",
+          "Symbol": null,
+          "Line": 88
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.md",
+          "Symbol": null,
+          "Line": 94
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\bn-BD\\component.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\en-US\\component.ts",
+          "Symbol": null,
+          "Line": 2
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\fa-IR\\component.ts",
+          "Symbol": null,
+          "Line": 2
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\id-ID\\component.ts",
+          "Symbol": null,
+          "Line": 2
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\ja-JP\\component.ts",
+          "Symbol": null,
+          "Line": 2
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\pt-BR\\component.ts",
+          "Symbol": null,
+          "Line": 2
+        }
+      ],
+      "ElapsedMs": 39.8564,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "what are the U4 slices and in which order are they built",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md"
+        ],
+        "Kind": "Intent",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 1099
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 1109
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.md",
+          "Symbol": null,
+          "Line": 89
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.md",
+          "Symbol": null,
+          "Line": 95
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\sets\\seed-v1.json",
+          "Symbol": null,
+          "Line": 86
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\plan-version-core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 12940
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\skillhub-agent-out\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 12940
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\heartbeat-host\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 12940
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\compaction-status\\core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 12940
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\heartbeat-deploy-20260920\\core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 12940
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 75105
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\dist-dev\\vendors_0-async.js",
+          "Symbol": null,
+          "Line": 75105
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-3836a2e0\\call_00_f4fr79JhXbjiL4SkzDCK1217-http_fetch.txt",
+          "Symbol": null,
+          "Line": 806
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\8fd0f96f82224bc0a282b4626ea4e4f5-sub-60b14ef5\\call_00_HlgMraeepUvumsE9omKE6591-doubao_search.txt",
+          "Symbol": null,
+          "Line": 87
+        }
+      ],
+      "ElapsedMs": 33.5091,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingCodeIndex",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md",
+          "Docs/Features/ADR-089-\u7D22\u5F15\u7EC4\u4EF6\u62C6\u5206\u8BBE\u8BA1-2026-09-23.md"
+        ],
+        "Kind": "Crossref",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\PuddingCodeIndex.csproj",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndexTests\\ComponentBoundaryTests.cs",
+          "Symbol": null,
+          "Line": 51
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEvalTests\\ComponentBoundaryTests.cs",
+          "Symbol": null,
+          "Line": 22
+        }
+      ],
+      "ElapsedMs": 14.7399,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "search_grep",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md",
+          "Docs/Reports/ArchReview-GPT6Astra-2026-09-23.md"
+        ],
+        "Kind": "Crossref",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-a6ac640c\\call_5hRbWpQYsipQRyYyftHRmxGy-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-a6ac640c\\call_8DZjyoQVHDvcssFMzhXBnyPs-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-a6ac640c\\call_BxXNkFk2LEGnZqA60eUtSyXI-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-a6ac640c\\call_Ff4Ji4IYYS0TPO82V1rGFKzT-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-a6ac640c\\call_VunE9GgIrWKpIK2FmxlvvLHx-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-df89fb69\\call_Uk6urG3QwQKBcEIdK7bvL2Ip-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-fa543acb\\call_3suANnINlYkvI1ajak6N0PLl-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-fa543acb\\call_A8g8tGqnJrsNx2iWlBOPr3lg-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-fa543acb\\call_dL11VL27gYdQiUpZfOs2PkO8-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-fa543acb\\call_EwHr7aga2qgGnPWYy15qqKla-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-fa543acb\\call_hD8YScNjIKsqXt0k2Lzx8epi-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-fa543acb\\call_IHUq4zjk58o9LhZXP9FZF214-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-fa543acb\\call_IlKY1LaAm4WOfKeqnKxfCePw-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835-sub-fa543acb\\call_lhuVXcoJ1STlC5zJhRfenkqj-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_104aa28e09464317b6a6c154-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_1d07b84ebc944ec9a8e9e59f-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_992f65e3c2f649758ca0471f-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_b4ada6252a0f4525898fc0f2-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_bf93375c0e9e43a2bc6629cf-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pudding\\context-tool-results\\206a9b48ec904ebb93e7541131fbb835\\call_bfc56d87bbb44fe6aa2a35f7-search_grep.txt",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 172.4194,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 1,
+      "NoiseHitsAt10": 10,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "InternalsVisibleTo",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md",
+          "Docs/Reports/ADR-089-U0\u6B8B\u5DEEglob\u7EDF\u4E00\u9A8C\u6536-2026-09-13.md"
+        ],
+        "Kind": "Crossref",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.json",
+          "Symbol": null,
+          "Line": 263
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRetrievalEval\\eval\\reports\\baseline-2026-09-24-docs-scope.markdown.json",
+          "Symbol": null,
+          "Line": 263
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIndex\\PuddingCodeIndex.csproj",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIntelligence\\PuddingCodeIntelligence.csproj",
+          "Symbol": null,
+          "Line": 11
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingFullTextIndex\\PuddingFullTextIndex.csproj",
+          "Symbol": null,
+          "Line": 10
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingMemoryEngine\\PuddingMemoryEngine.csproj",
+          "Symbol": null,
+          "Line": 28
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRuntime\\PuddingRuntime.csproj",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingBrowser.WebView2\\PuddingBrowser.WebView2.csproj",
+          "Symbol": null,
+          "Line": 26
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatform\\AssemblyInfo.cs",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingDesktop\\Properties\\AssemblyInfo.cs",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingHost\\Properties\\AssemblyInfo.cs",
+          "Symbol": null,
+          "Line": 3
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRuntime\\Services\\ContextWindowManager.cs",
+          "Symbol": null,
+          "Line": 723
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\src\\HarnessAgent\\Core\\HarnessAgent.Core.csproj",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingRuntime\\Services\\AgentExecutionService.cs",
+          "Symbol": null,
+          "Line": 1374
+        }
+      ],
+      "ElapsedMs": 15.5788,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B",
+        "ExpectedHits": [
+          "Docs/Conventions/\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md",
+          "Docs/Features/ADR-089-\u524D\u7F6E\u8BBE\u65BD\u65BD\u5DE5\u8BA1\u5212-2026-09-23.md"
+        ],
+        "Kind": "Crossref",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Docs\\Conventions\\\u7EC4\u4EF6\u5316\u4EA4\u4ED8\u89C4\u7A0B.md",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 19.7649,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "IndexBasedLanguageServerService",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md",
+          "Docs/Features/ADR-089-\u524D\u7F6E\u8BBE\u65BD\u65BD\u5DE5\u8BA1\u5212-2026-09-23.md"
+        ],
+        "Kind": "Crossref",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingCodeIntelligence\\Lsp\\IndexBasedLanguageServerService.cs",
+          "Symbol": null,
+          "Line": 19
+        }
+      ],
+      "ElapsedMs": 15.6003,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "MemoryRecallService",
+        "ExpectedHits": [
+          "Docs/Features/ADR-089-\u68C0\u7D22\u589E\u5F3A\u9700\u6C42\u843D\u5730\u65B9\u6848-2026-09-24.md",
+          "Docs/Features/ADR-089-\u524D\u7F6E\u8BBE\u65BD\u65BD\u5DE5\u8BA1\u5212-2026-09-23.md"
+        ],
+        "Kind": "Crossref",
+        "Language": "Markdown"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingMemoryEngine\\Services\\MemoryRecallService.cs",
+          "Symbol": null,
+          "Line": 25
+        }
+      ],
+      "ElapsedMs": 15.7175,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 1,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    }
+  ]
+}

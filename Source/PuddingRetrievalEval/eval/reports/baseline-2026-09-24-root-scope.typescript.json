@@ -1,0 +1,1413 @@
+{
+  "ProbeName": "lucene-fulltext",
+  "SetName": "seed-v1",
+  "SetVersion": 1,
+  "ScopeLabel": "root-scope:typescript",
+  "ScopeRootDirectory": "E:\\github\\AgentNetworkPlan\\PuddingAgent",
+  "StartedAtUtc": "2026-09-24T02:15:47.1532218\u002B00:00",
+  "TotalElapsedMs": 2722,
+  "CaseCount": 22,
+  "FailedCaseCount": 0,
+  "RecallAt1": 0.0682,
+  "RecallAt5": 0.4318,
+  "RecallAt10": 0.5455,
+  "Mrr": 0.2477,
+  "PrecisionAt5": 0.1091,
+  "PrecisionAt10": 0.0727,
+  "NoiseRateAt10": 0,
+  "Slices": [
+    {
+      "Language": "TypeScript",
+      "CaseCount": 22,
+      "RecallAt1": 0.0682,
+      "RecallAt5": 0.4318,
+      "RecallAt10": 0.5455,
+      "Mrr": 0.2477,
+      "PrecisionAt5": 0.1091,
+      "PrecisionAt10": 0.0727,
+      "NoiseRateAt10": 0
+    }
+  ],
+  "ColdLatency": {
+    "Count": 22,
+    "MinMs": 14.902,
+    "P50Ms": 15.941,
+    "P95Ms": 45.668,
+    "P99Ms": 70.125,
+    "MaxMs": 70.125,
+    "MeanMs": 24.65
+  },
+  "WarmLatency": {
+    "Count": 88,
+    "MinMs": 14.444,
+    "P50Ms": 16.475,
+    "P95Ms": 45.297,
+    "P99Ms": 72.619,
+    "MaxMs": 72.619,
+    "MeanMs": 24.752
+  },
+  "AllRepetitionsIdentical": true,
+  "ColdObservations": [
+    {
+      "Index": 0,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.2426,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 1,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 16.0119,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 2,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.7725,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 3,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.9406,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 4,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.3217,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 5,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.468,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 6,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 14.9016,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 7,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 14.9109,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 8,
+      "Cold": true,
+      "HitCount": 14,
+      "ElapsedMs": 41.4724,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 9,
+      "Cold": true,
+      "HitCount": 0,
+      "ElapsedMs": 70.1249,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 10,
+      "Cold": true,
+      "HitCount": 11,
+      "ElapsedMs": 45.6683,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 11,
+      "Cold": true,
+      "HitCount": 0,
+      "ElapsedMs": 36.9555,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 12,
+      "Cold": true,
+      "HitCount": 15,
+      "ElapsedMs": 34.9375,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 13,
+      "Cold": true,
+      "HitCount": 0,
+      "ElapsedMs": 38.144,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 14,
+      "Cold": true,
+      "HitCount": 0,
+      "ElapsedMs": 31.3285,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 15,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 26.7627,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 16,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.0358,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 17,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.1757,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 18,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.0371,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 19,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.4091,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 20,
+      "Cold": true,
+      "HitCount": 20,
+      "ElapsedMs": 15.645,
+      "Success": true,
+      "Error": null
+    },
+    {
+      "Index": 21,
+      "Cold": true,
+      "HitCount": 16,
+      "ElapsedMs": 16.0243,
+      "Success": true,
+      "Error": null
+    }
+  ],
+  "Cases": [
+    {
+      "Case": {
+        "Query": "PuddingDataTable",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/components/PuddingDataTable/index.tsx"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 47
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 47
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingDataTable\\styles.ts",
+          "Symbol": null,
+          "Line": 2
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingDataTable\\styles.ts",
+          "Symbol": null,
+          "Line": 2
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingDataTable\\index.tsx",
+          "Symbol": null,
+          "Line": 66
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingDataTable\\index.tsx",
+          "Symbol": null,
+          "Line": 66
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 225
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 225
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\index.ts",
+          "Symbol": null,
+          "Line": 18
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\index.ts",
+          "Symbol": null,
+          "Line": 18
+        }
+      ],
+      "ElapsedMs": 17.1132,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.2,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingStatusBadge",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/components/PuddingStatusBadge/index.tsx"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingStatusBadge\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingStatusBadge\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingStatusBadge\\index.tsx",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 196
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 135
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingStatusBadge\\index.tsx",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 196
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 135
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\index.ts",
+          "Symbol": null,
+          "Line": 27
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\index.ts",
+          "Symbol": null,
+          "Line": 27
+        }
+      ],
+      "ElapsedMs": 16.4904,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 1,
+      "Mrr": 0.16666666666666666,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "TaskBoard",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskBoard.tsx"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskBoard.tsx",
+          "Symbol": null,
+          "Line": 46
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskBoard.tsx",
+          "Symbol": null,
+          "Line": 46
+        }
+      ],
+      "ElapsedMs": 16.218,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 1,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "TaskCard",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskCard.tsx"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.test.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskCard.test.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 275
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 275
+        }
+      ],
+      "ElapsedMs": 17.0061,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 4,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "syncEngine",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/syncEngine.ts"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\syncEngine.test.ts",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\chat\\client\\syncEngine.test.ts",
+          "Symbol": null,
+          "Line": 1
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\syncEngine.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 16.1845,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "canonicalMerge",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/canonicalMerge.ts"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\canonicalMerge.test.ts",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\chat\\client\\canonicalMerge.test.ts",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\canonicalMerge.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 16.3931,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "workspaceNavigation",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/utils/workspaceNavigation.ts"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\utils\\workspaceNavigation.test.ts",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\utils\\workspaceNavigation.test.ts",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\utils\\workspaceNavigation.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 15.8931,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "autoReviewClassifier",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/classifier/autoReviewClassifier.ts"
+        ],
+        "Kind": "Symbol",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\classifier\\autoReviewClassifier.test.ts",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\chat\\classifier\\autoReviewClassifier.test.ts",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\classifier\\autoReviewClassifier.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 16.5816,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 1,
+      "RecallAt10": 1,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the chat client store that keeps local cache in sync",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\plan-version-core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 21102
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\skillhub-agent-out\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 21102
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\heartbeat-host\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 21102
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\compaction-status\\core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 21102
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\heartbeat-deploy-20260920\\core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 21102
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\orchestration\\revisionEditor.test.ts",
+          "Symbol": null,
+          "Line": 475
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\orchestration\\revisionEditor.test.ts",
+          "Symbol": null,
+          "Line": 475
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\components\\MessageList.test.tsx",
+          "Symbol": null,
+          "Line": 1277
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\chat\\components\\MessageList.test.tsx",
+          "Symbol": null,
+          "Line": 1277
+        }
+      ],
+      "ElapsedMs": 43.5468,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 9,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how does the chat client merge canonical server state",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/canonicalMerge.ts"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [],
+      "ElapsedMs": 66.4304,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 0,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the checkpoint store used when resuming a chat session",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/checkpointStore.ts"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\services\\swagger\\store.ts",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\services\\swagger\\store.ts",
+          "Symbol": null,
+          "Line": 13
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\plan-version-core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 19791
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\skillhub-agent-out\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 19791
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\heartbeat-host\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 19791
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\compaction-status\\core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 19791
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\heartbeat-deploy-20260920\\core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 19791
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\orchestration\\connectionDrag.ts",
+          "Symbol": null,
+          "Line": 86
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\orchestration\\connectionDrag.ts",
+          "Symbol": null,
+          "Line": 86
+        }
+      ],
+      "ElapsedMs": 44.1185,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 9,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which module renders the workspace task board columns",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskColumn.tsx"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [],
+      "ElapsedMs": 35.3774,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 0,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the scheduler drawer for recurring tasks",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/SchedulerDrawer.tsx"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\plan-version-core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 11455
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\skillhub-agent-out\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 11455
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-test-out\\heartbeat-host\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 11455
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\compaction-status\\core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 11455
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.tmp-build\\heartbeat-deploy-20260920\\core\\.playwright\\package\\types\\protocol.d.ts",
+          "Symbol": null,
+          "Line": 11455
+        }
+      ],
+      "ElapsedMs": 34.3254,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 5,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "how is the agent template settings drawer organized into sections",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/agent-template-settings/AgentTemplateSettingsDrawer.tsx"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [],
+      "ElapsedMs": 35.3939,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 0,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "where is the access token secret shown once modal",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/access-token-management/components/SecretOnceModal.tsx"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [],
+      "ElapsedMs": 31.023,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 0,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "which util builds the workspace navigation menu",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/utils/workspaceNavigation.ts"
+        ],
+        "Kind": "Intent",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\bn-BD\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\en-US\\menu.ts",
+          "Symbol": null,
+          "Line": 58
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\fa-IR\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\id-ID\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\ja-JP\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\pt-BR\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\locales\\zh-TW\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\locales\\bn-BD\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\locales\\en-US\\menu.ts",
+          "Symbol": null,
+          "Line": 58
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\locales\\fa-IR\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\locales\\id-ID\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\locales\\ja-JP\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\locales\\pt-BR\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\locales\\zh-TW\\menu.ts",
+          "Symbol": null,
+          "Line": 57
+        }
+      ],
+      "ElapsedMs": 26.8367,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 0,
+      "Mrr": 0,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 0,
+      "MatchedExpectedCount": 0,
+      "ExpectedCount": 1,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "canonicalMerge",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/canonicalMerge.ts",
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/chatClientStore.ts"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\canonicalMerge.test.ts",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\chat\\client\\canonicalMerge.test.ts",
+          "Symbol": null,
+          "Line": 9
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\canonicalMerge.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 16.3373,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "checkpointStore",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/chat/client/checkpointStore.ts",
+          "Source/PuddingPlatformAdmin/src/pages/chat/hooks/useCheckpointTimeline.ts"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\checkpointStore.test.ts",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\chat\\client\\checkpointStore.test.ts",
+          "Symbol": null,
+          "Line": 15
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\chat\\client\\checkpointStore.ts",
+          "Symbol": null,
+          "Line": 1
+        }
+      ],
+      "ElapsedMs": 16.3655,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 3,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "TaskCard",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskCard.tsx",
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskColumn.tsx"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.test.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskCard.test.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 275
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 275
+        }
+      ],
+      "ElapsedMs": 15.8801,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 0.3333333333333333,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 4,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingStatusBadge",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/components/PuddingStatusBadge/index.tsx",
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskCard.tsx"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace\\index.tsx",
+          "Symbol": null,
+          "Line": 48
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingStatusBadge\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingStatusBadge\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingStatusBadge\\index.tsx",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 196
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 135
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 6
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingStatusBadge\\index.tsx",
+          "Symbol": null,
+          "Line": 38
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskCard.tsx",
+          "Symbol": null,
+          "Line": 196
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskTable.tsx",
+          "Symbol": null,
+          "Line": 135
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\index.ts",
+          "Symbol": null,
+          "Line": 27
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\index.ts",
+          "Symbol": null,
+          "Line": 27
+        }
+      ],
+      "ElapsedMs": 16.4748,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0,
+      "RecallAt10": 1,
+      "Mrr": 0.16666666666666666,
+      "PrecisionAt5": 0,
+      "PrecisionAt10": 0.2,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 10,
+      "RelevantHitsAt10": 2,
+      "MatchedExpectedCount": 2,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "TaskEventTimeline",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskEventTimeline.tsx",
+          "Source/PuddingPlatformAdmin/src/pages/workspace-tasks/TaskDetailsDrawer.tsx"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\pages\\workspace-tasks\\TaskEventTimeline.tsx",
+          "Symbol": null,
+          "Line": 69
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\pages\\workspace-tasks\\TaskEventTimeline.tsx",
+          "Symbol": null,
+          "Line": 69
+        }
+      ],
+      "ElapsedMs": 16.4834,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0.5,
+      "RecallAt5": 0.5,
+      "RecallAt10": 0.5,
+      "Mrr": 1,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.1,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 2,
+      "RelevantHitsAt10": 1,
+      "MatchedExpectedCount": 1,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    },
+    {
+      "Case": {
+        "Query": "PuddingAdminShell",
+        "ExpectedHits": [
+          "Source/PuddingPlatformAdmin/src/components/PuddingAdminShell/index.tsx",
+          "Source/PuddingPlatformAdmin/src/components/index.ts"
+        ],
+        "Kind": "Crossref",
+        "Language": "TypeScript"
+      },
+      "RankedHits": [
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminShell\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingAdminShell\\styles.ts",
+          "Symbol": null,
+          "Line": 4
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\PuddingAdminShell\\index.tsx",
+          "Symbol": null,
+          "Line": 28
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingAdminPrimitives.test.tsx",
+          "Symbol": null,
+          "Line": 14
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\PuddingAdminShell\\index.tsx",
+          "Symbol": null,
+          "Line": 28
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\Source\\PuddingPlatformAdmin\\src\\components\\index.ts",
+          "Symbol": null,
+          "Line": 16
+        },
+        {
+          "Path": "E:\\github\\AgentNetworkPlan\\PuddingAgent\\.pnpm-store\\v11\\projects\\80002e53f952d4818ac335df74a0bd0d\\src\\components\\index.ts",
+          "Symbol": null,
+          "Line": 16
+        }
+      ],
+      "ElapsedMs": 17.1901,
+      "Success": true,
+      "Error": null,
+      "RecallAt1": 0,
+      "RecallAt5": 0.5,
+      "RecallAt10": 1,
+      "Mrr": 0.25,
+      "PrecisionAt5": 0.2,
+      "PrecisionAt10": 0.2,
+      "NoiseRateAt10": 0,
+      "NoiseHitsAt10": 0,
+      "DistinctHitsAt10": 8,
+      "RelevantHitsAt10": 2,
+      "MatchedExpectedCount": 2,
+      "ExpectedCount": 2,
+      "RepetitionsIdentical": true
+    }
+  ]
+}
