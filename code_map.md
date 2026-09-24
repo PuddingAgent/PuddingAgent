@@ -1,3 +1,24 @@
+## 2026-09-24 U3-G1 + 第 2 轮规划与审查：被中断的 scope 不再可被删除候选命中
+
+**卡的是 D2+D3 数据风险**：取消分支不写任何状态 ⇒ 一次被取消的运行把该行**永久**留在 `Registering`；清理判据却把 `Status='Registering'` + `ScopeState IS NULL` + 超 24h 列为**可删候选** ⇒ 根 scope（携带 1,083 文件 / 34,848 符号 / 96,849 关系 / 143,587 引用行）**已命中**，仅靠 `AutomaticCleanupAllowed=false` 挡住 —— **一次人工清理即全删**。
+
+**交付（R1 判据 + R2 留痕，宿主侧 2 文件 + 组件 1 文件）**：
+- **R1** 删除判据摘掉 `'Registering'`：`Status IN ('Removed','Failed','Registering')` → `Status IN ('Removed','Failed')`，**宿主侧两处副本同步**（`StorageMaintenanceQueries.cs` 候选查询 + `StorageDerivedTargetHandlers.cs` 执行前重校验）；`'Covered'`/`'Removed'`/`'Failed'` 语义未动。
+- **R2** 取消分支新增 `MarkInterruptedAsync`：**仅当该行确实处于 `Registering` 时才打标**（未认领即取消的运行不误标；`Active`/`Removed` scope 绝不被翻回 `Registering`），**保持 `Status='Registering'` 只写 `StatusMessage`**，**不新增枚举值、不改附着判据**；`try/catch` + `LogWarning` 不打断调度；显式 `CancellationToken.None`。
+
+**门禁（父级独立复跑，不采信自述）**：`PuddingCodeIndexTests` **失败 0 / 通过 116 / 总计 116**（基线 114，**+2**）；`PuddingHost.Tests` **失败 0 / 通过 126 / 总计 126**（基线 124，**+2**）；两工程 `exit 0`。
+**变异取红（三段原始输出 `temp/test-out/u3g1-mut-red.txt` / `-green.txt`）**：还原 `'Registering'` ⇒ **红**（正是 `Interrupted_Scope_Is_Not_A_Cleanup_Candidate` 失败：`Assert.Empty` 收到 `CodeIndexScopeCandidate{interrupted-scope, ArtifactRows=5}`）⇒ 测试非空转；复原 ⇒ **绿**。
+**零写**：未改任何 DB 行；索引库 `code_index.db` mtime 仍 `2026-09-24 16:25:18 +08`、`-wal` 仍 `0 B`。
+
+**第 2 轮规划与审查（codex gpt-5.6-sol，`exit_code=0`，543 行）**：6 处纠错（**「906,551,296 B 占 1GB ≈88%」作废** ⇒ 按 1GB 为 **90.66%**、按 1GiB 为 **84.43%**；「1GB 护栏」有 GB/GiB 歧义须固化为精确字节数）+ P0~P2 全部采纳（**最高价值 P0-1：D1/D2 根因是状态模型把 `Coverage`/`ServingState`/`RunState` 三个正交概念揉进一个字段**，`Registering` 绝不能映射为 `Covered`；P0-2 删除资格须 **tombstone 驱动**；P0-5 **scope/工程发现不得由查询触发承担正确性**）+ §E 8 条冲突裁定 + 修订路线 M0~M6。
+
+**⚠️ 父级独立取证新发现（改写迁移方案）**：`CodeFiles` **distinct FilePath = 1,246 而 rows = 2,849** ⇒ **812 条路径跨 scope 重复**（样本同一文件在 4 个 scope 各存一份）；根 scope 1,083 行中 **706 与子 scope 重复**、**独立贡献上界仅 377 行**，且含**仓库外文件** `C:\Users\huany\.nuget\packages\microsoft.net.test.sdk\18.0.0\build\net8.0\Microsoft.NET.Test.Sdk.Program.cs` ⇒ **864.6 MiB 的主因是重复索引浪费而非内容量**；⇒ 采纳「**重扫构建新库，不做按 `ProjectId` 原样拆分**」；根 scope 处置由「E+A」改为「**E + 在新建项目库重建**」，**B 仍不推荐**。
+
+> 结论与裁定固化：`Docs/Features/ADR-089-第2轮规划与审查-2026-09-24.md`（新）+ `ADR-089-U3F-根scope诊断-2026-09-24.md`（补遗 5 项修正）。
+> ⚠️ **登记缺口（如实记账）**：`ADR-089-U3F-根scope诊断`、`ADR-089-U4-3b-向量规模化实测与裁决`、`ADR-089-U4-3c-就地int8扫描实测` 三刀已交付并推送（`59ed91fa` / `f4a86b29` 等），但**本变更日志此前未逐条登记**，待补。
+
+---
+
 ## 2026-09-24 U3-E：校准重试指数退避 + 封顶（闭合 ADR-089「60s 轮询 **+ 退避**」）
 
 **卡的是 ADR-089 明写却从未实现的那半句**：退避。一个根目录消失/不可读的 scope 会被置 `NeedsReconcile`，之后**每 60s 重试、永不退避**；U3-D 又把这条路径从「只被标位的 scope 才可能走到」扩到「**任何根消失的 scope 首次常规 sweep 后都会走到**」⇒ 一个坏 scope = **1440 次探测 + ≈2880 行 Error/天**。
