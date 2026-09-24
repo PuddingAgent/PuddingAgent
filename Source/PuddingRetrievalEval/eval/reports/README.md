@@ -23,6 +23,23 @@
 `baseline-2026-09-24-docs-scope.md/.json` | `Docs/` | 20 | markdown 分层 |
 `baseline-2026-09-24-docs-scope.markdown.md/.json` | `Docs/` + `file_ext=.md` | 20 | markdown 分层（查询期类型过滤）|
 
+## U4-1a 小目录策略对比（2026-09-24）
+
+同一批报告目录下另有一组**策略对比**报告（scope = `Source/PuddingCodeIndex`，标注集 `eval/sets/small-puddingcodeindex.json`，28 条）：
+
+| 文件 | 策略 |
+|---|---|
+`compare-puddingcodeindex-plain.{md,json}` | S1 现状：引擎目录遍历（全文、每非空行一条文档）|
+`compare-puddingcodeindex-outline.{md,json}` | S2：outline 优先分块（P0+P1+P2）+ C2 双过滤规则 |
+`compare-puddingcodeindex-outline-nofilter.{md,json}` | 同 S2，关掉两条过滤规则 |
+`compare-puddingcodeindex-outline-nostopwords.{md,json}` | 同 S2，只开最小 token 长度规则 |
+`compare-puddingcodeindex-outline-nolength.{md,json}` | 同 S2，只开关键字停用词规则 |
+`compare-puddingcodeindex-outline-p0p1.{md,json}` | 同 S2，但只索引 P0（outline）+ P1（注释），不要代码正文 |
+
+四轴汇总表与结论在 `compare-puddingcodeindex.md`（每个“更好/更差”的说法都带两组数字）；受版本控制的正式结论追加在
+`Docs/Features/ADR-089-索引策略优先级-2026-09-24.md` §5；完整证据链 `temp/U4-1a-REPORT.md`。
+运行方式：`pwsh -NoProfile -File temp/run-u4-1a-matrix.ps1`（会把每步原始 stdout 落到 `temp/U4-1a-logs/`）。
+
 ## 头部数字（原始值，未判定）
 
 | scope | 用例 | recall@1 | recall@5 | recall@10 | MRR | precision@5 | precision@10 | noiseRate@10 |

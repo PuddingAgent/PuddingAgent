@@ -2,6 +2,7 @@ using System.Diagnostics;
 using PuddingFullTextIndex;
 using PuddingFullTextIndex.Infrastructure.Search;
 using PuddingRetrievalEval.Contracts;
+using PuddingIndexChunking;
 using PuddingRetrievalEval.Services;
 
 namespace PuddingRetrievalEvalProbe;
@@ -57,6 +58,12 @@ internal static class Program
         var perLanguage = options.Get("per-language") is { Length: > 0 } languageList
             ? languageList.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             : null;
+        var patternsArgument = options.Get("patterns");
+        var patterns = IndexProbeFiles.NormalizePatterns(patternsArgument);
+        var chunkStrategy = (options.Get("chunks") ?? "plain").ToLowerInvariant();
+        var tiers = (options.Get("tiers") ?? "p0p1p2").ToLowerInvariant();
+        var filterName = (options.Get("filter") ?? "both").ToLowerInvariant();
+        var indexJsonPath = options.Get("index-json");
 
         Console.WriteLine($"mode          = {mode}");
         Console.WriteLine($"repoRoot      = {repoRoot}");
@@ -67,6 +74,9 @@ internal static class Program
         Console.WriteLine($"label         = {label}");
         Console.WriteLine($"expectedUnder = {expectedUnder ?? "<none>"}");
         Console.WriteLine($"extensions    = {(extensions is null ? "<none>" : string.Join(",", extensions))}");
+        Console.WriteLine($"chunks        = {chunkStrategy}{(chunkStrategy == "outline" ? $" (tiers={tiers}, filter={filterName})" : string.Empty)}");
+        Console.WriteLine($"patterns      = {patternsArgument ?? "<engine default>"}");
+        Console.WriteLine($"indexJson     = {indexJsonPath ?? "<none>"}");
         Console.WriteLine();
 
         var indexOptions = new FullTextIndexOptions { IndexRootDirectory = indexRoot };
@@ -79,18 +89,15 @@ internal static class Program
 
             case "index":
             {
-                Console.WriteLine($"INDEX  building over {scope} ...");
-                var stopwatch = Stopwatch.StartNew();
-                var result = await engine.BuildIndexAsync(scope, null, CancellationToken.None).ConfigureAwait(false);
-                stopwatch.Stop();
-                Console.WriteLine($"INDEX  success      = {result.Success}");
-                Console.WriteLine($"INDEX  filesIndexed = {result.IndexedFileCount}");
-                Console.WriteLine($"INDEX  totalBytes   = {result.TotalBytes}");
-                Console.WriteLine($"INDEX  engineMs     = {result.ElapsedMs}");
-                Console.WriteLine($"INDEX  harnessMs    = {stopwatch.ElapsedMilliseconds}");
-                Console.WriteLine($"INDEX  error        = {result.Error ?? "<none>"}");
-                Console.WriteLine($"INDEX  hasIndex     = {engine.HasIndex(scope)}");
-                return result.Success ? 0 : 3;
+                if (chunkStrategy is not ("plain" or "outline"))
+                {
+                    Console.Error.WriteLine($"unknown --chunks '{chunkStrategy}' (expected plain|outline)");
+                    return 5;
+                }
+
+                return chunkStrategy == "plain"
+                    ? await RunPlainIndexAsync(engine, scope, label, indexRoot, patterns, indexJsonPath).ConfigureAwait(false)
+                    : await RunOutlineIndexAsync(engine, indexOptions, scope, label, indexRoot, patterns, indexJsonPath, tiers, filterName).ConfigureAwait(false);
             }
 
             case "measure":
@@ -224,6 +231,211 @@ internal static class Program
             EvalReportWriter.Write(basePath, run, null);
             Console.WriteLine($"RUN   [{language}] cases={run.CaseCount} recall@1={run.RecallAt1:0.0000} recall@5={run.RecallAt5:0.0000} recall@10={run.RecallAt10:0.0000} MRR={run.Mrr:0.0000} warmP50={run.WarmLatency.P50Ms:0.###} warmP95={run.WarmLatency.P95Ms:0.###} -> {basePath}.md");
         }
+    }
+
+    // ── index mode: two strategies over one index layout ───────────────────────────────────
+
+    /// <summary>
+    /// S1 (control): the engine's own directory walk. Behaviour is unchanged — <c>filePatterns</c> is
+    /// passed through verbatim, and stays <c>null</c> unless the caller asks for a narrower whitelist.
+    /// </summary>
+    private static async Task<int> RunPlainIndexAsync(
+        LuceneSearchEngine engine,
+        string scope,
+        string label,
+        string indexRoot,
+        string? patterns,
+        string? indexJsonPath)
+    {
+        Console.WriteLine("INDEX  strategy     = plain (engine directory walk)");
+        Console.WriteLine($"INDEX  patterns     = {patterns ?? "<engine default>"}");
+        Console.WriteLine($"INDEX  building over {scope} ...");
+
+        var stopwatch = Stopwatch.StartNew();
+        var result = await engine.BuildIndexAsync(scope, patterns, CancellationToken.None).ConfigureAwait(false);
+        stopwatch.Stop();
+
+        Console.WriteLine($"INDEX  success      = {result.Success}");
+        Console.WriteLine($"INDEX  filesIndexed = {result.IndexedFileCount}");
+        Console.WriteLine($"INDEX  totalBytes   = {result.TotalBytes}");
+        Console.WriteLine($"INDEX  engineMs     = {result.ElapsedMs}");
+        Console.WriteLine($"INDEX  harnessMs    = {stopwatch.ElapsedMilliseconds}");
+        Console.WriteLine($"INDEX  error        = {result.Error ?? "<none>"}");
+        Console.WriteLine($"INDEX  hasIndex     = {engine.HasIndex(scope)}");
+
+        var (bytes, fileCount, directories) = IndexProbeFiles.MeasureIndexDirectory(indexRoot);
+        Console.WriteLine($"INDEX  indexBytes   = {bytes} ({bytes / 1024.0 / 1024.0:0.###} MB)");
+        Console.WriteLine($"INDEX  indexFiles   = {fileCount}");
+        Console.WriteLine($"INDEX  indexDir     = {directories}");
+
+        if (indexJsonPath is not null)
+        {
+            IndexRunReport.Write(indexJsonPath, new IndexRunReport
+            {
+                Strategy = "plain",
+                Tiers = "n/a",
+                Filter = "n/a",
+                Scope = scope,
+                ScopeLabel = label,
+                IndexRoot = Path.GetFullPath(indexRoot),
+                IndexDirectory = directories,
+                IndexBytes = bytes,
+                IndexFileCount = fileCount,
+                SourceFiles = result.IndexedFileCount,
+                BuildMs = stopwatch.ElapsedMilliseconds,
+                EngineMs = result.ElapsedMs,
+                Success = result.Success,
+                Error = result.Error,
+                RecordedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+                Note = "plain = the engine's own directory walk (one Lucene document per non-blank source line); "
+                     + "that path does not report document/token counts, so they stay null instead of being guessed.",
+            });
+        }
+
+        return result.Success ? 0 : 3;
+    }
+
+    /// <summary>
+    /// S2: the outline-first strategy. The chunk corpus is built OUTSIDE the index (walk → outline →
+    /// chunk → filter), then handed to the add-only <c>BuildChunkIndexAsync</c> entry point, so the
+    /// index layout and the search path stay exactly the ones the plain strategy uses.
+    /// </summary>
+    private static async Task<int> RunOutlineIndexAsync(
+        LuceneSearchEngine engine,
+        FullTextIndexOptions indexOptions,
+        string scope,
+        string label,
+        string indexRoot,
+        string? patterns,
+        string? indexJsonPath,
+        string tiers,
+        string filterName)
+    {
+        var chunking = BuildChunkingOptions(tiers, filterName);
+        var patternArray = IndexProbeFiles.NormalizePatternArray(patterns);
+
+        Console.WriteLine("INDEX  strategy     = outline (per-symbol chunks + C2 filter)");
+        Console.WriteLine($"INDEX  tiers        = {tiers}");
+        Console.WriteLine($"INDEX  filter       = {filterName}");
+        Console.WriteLine($"INDEX  patterns     = {patterns ?? "<engine default>"}");
+        Console.WriteLine($"INDEX  building chunk corpus over {scope} ...");
+
+        var total = Stopwatch.StartNew();
+        var corpus = await ChunkCorpusBuilder.BuildAsync(
+            scope,
+            indexOptions,
+            patternArray,
+            chunking,
+            new RoslynCSharpOutlineSource(),
+            message => Console.WriteLine(message),
+            CancellationToken.None).ConfigureAwait(false);
+
+        Console.WriteLine($"CHUNK  sourceFiles  = {corpus.SourceFiles}");
+        Console.WriteLine($"CHUNK  sourceBytes  = {corpus.SourceBytes}");
+        Console.WriteLine($"CHUNK  skippedFiles = {corpus.SkippedFiles}");
+        Console.WriteLine($"CHUNK  symbols      = {corpus.OutlineSymbolCount}");
+        Console.WriteLine($"CHUNK  documents    = {corpus.Documents.Count}");
+        Console.WriteLine($"CHUNK  perTier      = {string.Join(", ", corpus.ChunksPerTier.OrderBy(pair => pair.Key).Select(pair => $"{pair.Key}={pair.Value}"))}");
+        Console.WriteLine($"CHUNK  rawTokens    = {corpus.RawTokens}");
+        Console.WriteLine($"CHUNK  removedShort = {corpus.RemovedAsShort}");
+        Console.WriteLine($"CHUNK  removedStop  = {corpus.RemovedAsStopWord}");
+        Console.WriteLine($"CHUNK  indexedToks  = {corpus.IndexedTokens}");
+        Console.WriteLine($"CHUNK  corpusMs     = {corpus.CorpusMs}");
+        foreach (var outlineError in corpus.OutlineErrors)
+            Console.WriteLine($"CHUNK  outlineError = {outlineError}");
+
+        Console.WriteLine($"INDEX  writing Lucene index for {scope} ...");
+        var write = Stopwatch.StartNew();
+        var result = await engine.BuildChunkIndexAsync(scope, corpus.Documents, CancellationToken.None).ConfigureAwait(false);
+        write.Stop();
+        total.Stop();
+
+        Console.WriteLine($"INDEX  success      = {result.Success}");
+        Console.WriteLine($"INDEX  documents    = {result.DocumentCount}");
+        Console.WriteLine($"INDEX  sourceFiles  = {result.SourceFileCount}");
+        Console.WriteLine($"INDEX  textChars    = {result.TotalTextChars}");
+        Console.WriteLine($"INDEX  engineMs     = {result.ElapsedMs}");
+        Console.WriteLine($"INDEX  writeMs      = {write.ElapsedMilliseconds}");
+        Console.WriteLine($"INDEX  harnessMs    = {total.ElapsedMilliseconds}");
+        Console.WriteLine($"INDEX  error        = {result.Error ?? "<none>"}");
+        Console.WriteLine($"INDEX  hasIndex     = {engine.HasIndex(scope)}");
+
+        var (bytes, fileCount, directories) = IndexProbeFiles.MeasureIndexDirectory(indexRoot);
+        Console.WriteLine($"INDEX  indexBytes   = {bytes} ({bytes / 1024.0 / 1024.0:0.###} MB)");
+        Console.WriteLine($"INDEX  indexFiles   = {fileCount}");
+        Console.WriteLine($"INDEX  indexDir     = {directories}");
+
+        if (indexJsonPath is not null)
+        {
+            IndexRunReport.Write(indexJsonPath, new IndexRunReport
+            {
+                Strategy = "outline",
+                Tiers = tiers,
+                Filter = filterName,
+                Scope = scope,
+                ScopeLabel = label,
+                IndexRoot = Path.GetFullPath(indexRoot),
+                IndexDirectory = directories,
+                IndexBytes = bytes,
+                IndexFileCount = fileCount,
+                SourceFiles = result.SourceFileCount,
+                Documents = result.DocumentCount,
+                IndexedTextChars = result.TotalTextChars,
+                RawTokens = corpus.RawTokens,
+                RemovedAsShort = corpus.RemovedAsShort,
+                RemovedAsStopWord = corpus.RemovedAsStopWord,
+                IndexedTokens = corpus.IndexedTokens,
+                ChunksPerTier = corpus.ChunksPerTier.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
+                CorpusMs = corpus.CorpusMs,
+                BuildMs = total.ElapsedMilliseconds,
+                EngineMs = result.ElapsedMs,
+                Success = result.Success,
+                Error = result.Error,
+                RecordedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+                Note = "RawTokens counts tokens of the walked raw text (the filter's denominator); IndexedTokens counts "
+                     + "tokens actually present in the indexed documents, so it also reflects the tier selection.",
+            });
+        }
+
+        return result.Success ? 0 : 3;
+    }
+
+    /// <summary>Maps the probe's <c>--tiers</c> / <c>--filter</c> switches onto the component's options.</summary>
+    private static ChunkingOptions BuildChunkingOptions(string tiers, string filterName)
+    {
+        var emitDocComments = true;
+        var emitCodeText = true;
+
+        switch (tiers)
+        {
+            case "p0p1p2":
+                break;
+            case "p0p1":
+                emitCodeText = false;
+                break;
+            case "p0":
+                emitDocComments = false;
+                emitCodeText = false;
+                break;
+            default:
+                throw new ArgumentException($"unknown --tiers '{tiers}' (expected p0p1p2|p0p1|p0)");
+        }
+
+        var filter = filterName switch
+        {
+            "both" => new ChunkFilterOptions(),
+            "none" => new ChunkFilterOptions { RemoveStopWords = false, RemoveShortTokens = false },
+            "length" => new ChunkFilterOptions { RemoveStopWords = false },
+            "stopwords" => new ChunkFilterOptions { RemoveShortTokens = false },
+            _ => throw new ArgumentException($"unknown --filter '{filterName}' (expected both|none|length|stopwords)"),
+        };
+
+        return new ChunkingOptions
+        {
+            EmitDocCommentChunks = emitDocComments,
+            EmitCodeTextChunks = emitCodeText,
+            Filter = filter,
+        };
     }
 
     private static string FindRepoRoot()

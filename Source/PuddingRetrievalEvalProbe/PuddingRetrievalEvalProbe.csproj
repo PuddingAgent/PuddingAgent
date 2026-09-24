@@ -25,11 +25,18 @@
     <RootNamespace>PuddingRetrievalEvalProbe</RootNamespace>
     <IsPackable>false</IsPackable>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- Pulled in transitively by PuddingCodeIntelligence (Roslyn); the MSBuild copy check would
+         otherwise fail this project. Same switch that project already uses for itself. -->
+    <DisableMSBuildAssemblyCopyCheck>true</DisableMSBuildAssemblyCopyCheck>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PuddingRetrievalEval\PuddingRetrievalEval.csproj" />
     <ProjectReference Include="..\PuddingFullTextIndex\PuddingFullTextIndex.csproj" />
+    <!-- U4-1a: the chunking component (leaf) plus the Roslyn-bearing project that lets the probe act as
+         the IOutlineSource adapter for C#. The component itself stays a leaf; the adapter is this project. -->
+    <ProjectReference Include="..\PuddingIndexChunking\PuddingIndexChunking.csproj" />
+    <ProjectReference Include="..\PuddingCodeIntelligence\PuddingCodeIntelligence.csproj" />
   </ItemGroup>
 
 </Project>

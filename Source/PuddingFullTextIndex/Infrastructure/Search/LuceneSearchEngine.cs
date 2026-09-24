@@ -595,6 +595,145 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
             writer.AddDocuments(docs);
     }
 
+    // ── U4-1a：按预分块文档建索引（只新增入口；既有 BuildIndexAsync 一行未改）─────────────
+
+    /// <summary>
+    /// 用「预分块文档」构建（重建）<paramref name="directoryPath"/> 的索引，而不是按目录边遍历。
+    /// <para>
+    /// 为何需要这个入口：outline 优先分块策略的语料来自语言 outliner 的符号级小块，它们不存在于磁盘目录结构里，
+    /// 因此无法用 directory-walk 的 <see cref="BuildIndexAsync"/> 表达。
+    /// </para>
+    /// <para>
+    /// <b>与既有行为的关系</b>：这是一条新增路径，既有 <see cref="BuildIndexAsync"/> 的代码与行为未变；写入的文档沿用同一
+    /// 索引布局（<c>path</c> / <c>content</c> / <c>file_name</c> + <c>line_number</c> / <c>line_text</c>），
+    /// 所以 <see cref="SearchAsync"/>、<see cref="HasIndex"/>、<see cref="RemoveIndex"/> 全部原样复用（搜索路径不读取新字段）。
+    /// </para>
+    /// <para>每次都是全量重建：调用方一次性给出整个语料，做增量只会与 <c>.last_indexed</c> 协议相互干扰。</para>
+    /// </summary>
+    public async Task<ChunkIndexResult> BuildChunkIndexAsync(
+        string directoryPath,
+        IReadOnlyList<IndexChunkDocument> documents,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(directoryPath))
+            throw new ArgumentException("directory path is required", nameof(directoryPath));
+
+        ArgumentNullException.ThrowIfNull(documents);
+
+        var indexDir = GetIndexDirectoryPath(directoryPath);
+        var mutex = _indexLocks.GetOrAdd(indexDir, _ => new SemaphoreSlim(1, 1));
+        if (!await mutex.WaitAsync(TimeSpan.FromSeconds(30), ct))
+        {
+            return new ChunkIndexResult(false, 0, 0, 0, 0,
+                "Chunk index build skipped: another build is already in progress for this directory.");
+        }
+
+        var sw = Stopwatch.StartNew();
+
+        try
+        {
+            RemoveIndex(directoryPath);
+            Directory.CreateDirectory(indexDir);
+
+            var sourceFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var documentCount = 0;
+            long textChars = 0;
+
+            using (var dir = FSDirectory.Open(indexDir))
+            {
+                var config = new IndexWriterConfig(MatchVersion, _analyzer)
+                {
+                    OpenMode = OpenMode.CREATE,
+                    RAMBufferSizeMB = 48,
+                };
+
+                // write.lock 重试：与 BuildIndexInternalAsync 相同的量级（多进程竞争场景）
+                IndexWriter writer;
+                var retries = 0;
+                const int maxRetries = 10;
+                while (true)
+                {
+                    try
+                    {
+                        writer = new IndexWriter(dir, config);
+                        break;
+                    }
+                    catch (LockObtainFailedException)
+                    {
+                        retries++;
+                        if (retries >= maxRetries)
+                            throw;
+                        Thread.Sleep(500);
+                    }
+                }
+
+                using (writer)
+                {
+                    foreach (var document in documents)
+                    {
+                        ct.ThrowIfCancellationRequested();
+
+                        if (string.IsNullOrWhiteSpace(document.Path) || string.IsNullOrWhiteSpace(document.Text))
+                            continue;
+
+                        writer.AddDocument(CreateChunkDocument(document));
+                        sourceFiles.Add(document.Path);
+                        textChars += document.Text.Length;
+                        documentCount++;
+                    }
+
+                    writer.Commit();
+                }
+            }
+
+            return new ChunkIndexResult(true, documentCount, sourceFiles.Count, textChars, sw.ElapsedMilliseconds, null);
+        }
+        catch (OperationCanceledException)
+        {
+            RemoveIndex(directoryPath);
+            return new ChunkIndexResult(false, 0, 0, 0, sw.ElapsedMilliseconds, "Chunk index build cancelled.");
+        }
+        catch (Exception ex)
+        {
+            return new ChunkIndexResult(false, 0, 0, 0, sw.ElapsedMilliseconds, ex.Message);
+        }
+        finally
+        {
+            mutex.Release();
+        }
+    }
+
+    /// <summary>
+    /// 把一个分块文档映射成 Lucene 文档。字段与按行文档同构，差别只有两处：
+    /// ① content 的 boost 由块优先级给定（不再使用「短行加权」这类启发式，否则启发式会与优先级静默竞争）；
+    /// ② 额外存 chunk_kind / line_end，供报告审计（搜索路径不读这两个字段）。
+    /// </summary>
+    private static Document CreateChunkDocument(IndexChunkDocument chunk)
+    {
+        var fileName = Path.GetFileName(chunk.Path);
+
+        var contentField = new TextField("content", chunk.Text, Field.Store.NO)
+        {
+            Boost = chunk.Boost,
+        };
+
+        var fileNameField = new TextField("file_name", fileName, Field.Store.NO)
+        {
+            Boost = 2.0f,
+        };
+
+        return new Document
+        {
+            new StringField("path", chunk.Path, Field.Store.YES),
+            contentField,
+            fileNameField,
+            new StoredField("line_number", chunk.StartLine),
+            new StoredField("line_end", chunk.EndLine),
+            new StoredField("line_text", chunk.Text),
+            new StoredField("chunk_kind", chunk.Kind),
+        };
+    }
+
     private static bool IndexHasDocuments(string indexDir)
     {
         try

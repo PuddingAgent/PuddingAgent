@@ -1,3 +1,40 @@
+## 2026-09-24 U4-1a：小目录索引策略实验台（plain 全文 vs outline 优先分块 + 过滤）
+
+**卡的是用户第 1、2、5 条指令**：“避免把全部代码打包做索引 / 优先 code outline / 短 token 与关键字不入索引 / 先在小目录评估”。全仓实测（`c8fe4bd5`）已证明现状不可用（建索引 71.4 min、体积 838 MB、`recall@5` 从 0.66 掉到 0.41），本刀把“分层 + 过滤”验证到**可复现数字**。
+
+**交付 1：新叶子组件 `Source/PuddingIndexChunking/`（S1）** —— `ProjectReference = 0`、`PackageReference = 0`。关键设计是**端口 `IOutlineSource`**：outline 由外部适配器喂入 ⇒ 组件**不引用** `PuddingCodeIntelligence`（语言 outliner 所在层）也**不引用** `PuddingRuntime`/`Host`/`Agent`/`PuddingCodeIndex`/`PuddingRetrievalEval`，可只用替身 outline 全量测。含：`ChunkKind{Outline=0,DocComment=1,CodeText=2}`（**枚举值即优先级** = C1 的 P0/P1/P2）与 `ChunkPriorities.BoostOf`（2.0/1.5/1.0，**优先级语义在组件，加权数值由检索侧消费**）、`IndexChunk`（构造即校验）、`ChunkingOptions`（三层独立开关 + 切段上限 + 是否把文档摘要并入 P0）、`ChunkFilterRules`（按语言最小 token 长度：C#/TS/Py=3、md/plain=2；按语言关键字停用词，**Markdown 为空集** ⇒ 语言差异可观察）、`ChunkFilter`（规则开关、大小写开关、阈值覆盖、`ApplyDetailed` 带**逐规则归因**，固定“先长度后关键字”）、`FileChunkAssembler`（**按符号切 P0 块**、绝不包含函数体；整行注释 → P1；剩余代码行 → P2）。两个不变量被测试钉死：**同层不重叠**、**声明行不复用**。
+
+**交付 2：独立测试工程 `Source/PuddingIndexChunkingTests/`（S2/S3）** —— `ProjectReference` 恰好 1 条，**30 用例**，含 S4 边界断言（检测器自带**阳性对照** + `deps.json` 依赖闭包 + **读盘校验组件 csproj 的 `ProjectReference`/`PackageReference` 必须为 0**）。
+
+**交付 3：受版本控制的标注集 `Source/PuddingRetrievalEval/eval/sets/small-puddingcodeindex.json`** —— **28 条**（symbol 20 + intent 8，均 C#）；期望命中**逐个独立核对**（文件存在 + 该文件确实声明该符号）⇒ `suspect = 0`（脚本 `temp/verify-u4-1a-annotations.ps1`；**核对发现并修掉了一个真错误**：最初把“文件名 `CodeSymbolContracts`”当成了符号）。
+
+**交付 4：探针扩展 + 只增不改的索引入口** —— `Source/PuddingRetrievalEvalProbe` 新增 `--chunks plain|outline`（默认 `plain`，既有基线可复现）、`--tiers p0p1p2|p0p1|p0`、`--filter both|none|length|stopwords`、`--patterns`、`--index-json`；**`RoslynCSharpOutlineSource` = `IOutlineSource` 适配器**（经 `PuddingCodeIntelligence` 传递 Roslyn，**不新增 NuGet**，outline 语义对齐生产 `OutlineSyntaxVisitor`；该文件是本刀唯一新增的重依赖点，且它在组件**之外**）。`Source/PuddingFullTextIndex` **只增不改**：新增 `Contracts/IndexChunkDocument.cs` + `LuceneSearchEngine.BuildChunkIndexAsync`（按预分块文档全量建索引，boost 由调用方按优先级给定；**既有 `BuildIndexAsync` 一行未改** —— `git diff --numstat` = **139 insertions / 0 deletions**），写入沿用同一索引布局 ⇒ `SearchAsync`/`HasIndex`/`RemoveIndex` 原样复用。
+
+**交付 5：四轴数字与结论**（scope = `Source/PuddingCodeIndex`：37 个 `.cs` / 237,586 B；每变体从**空索引根**开始；六变体 `repetitionStable=True`、失败用例 0；两策略语料同为 37 文件 / 237,586 B）：
+
+| 轴 | **plain（现状）** | **outline（P0+P1+P2 + 双规则）** | **outline-p0p1（只 P0+P1）** |
+|---|---|---|---|
+索引文档数 | 引擎不报告（每非空行一条） | 1,352（Outline 475 / Doc 160 / Code 717） | 635（475 / 160 / 0）|
+**索引体积** | **283,159 B** | **149,556 B（−47.2%）** | **89,769 B（−68.3%）** |
+索引耗时（harness） | **1,987 ms** | 2,037 ms（语料 340 + 写入 ≈1,697） | 2,261 ms |
+`recall@1/@5/@10` | 0.7500 / 0.8214 / 0.9286 | 0.7500 / 0.8214 / 0.9286 | 0.7500 / 0.8214 / 0.9286 |
+`MRR` | 0.7885 | **0.7941** | **0.7941** |
+`precision@5 / @10` | 0.1643 / 0.0929 | 0.1643 / 0.0929 | 0.1643 / 0.0929 |
+`noiseRate@10` | 0.0000 | 0.0000 | 0.0000 |
+热 `p50/p95/p99`（ms） | 3.702 / 5.984 / 8.510 | 3.871 / 6.130 / 7.751 | 4.454 / 7.286 / 9.650 |
+
+**过滤规则各自贡献**（同 strategy，只切 `--filter`；基准 `none` = 173,627 B）：关键字规则单独 **−10.5%**（155,430 B）、长度规则单独 **−4.7%**（165,519 B）、两条同开 **−13.9%**（149,556 B）；质量上两条同开使 `recall@10` 0.8929 → **0.9286**，长度规则单独开使 `recall@5` 0.8214 → **0.8571**、`precision@5` 0.1643 → **0.1714**，四个变体 `recall@1` 均 0.7500。语料 21,533 token：长度规则删 2,172、关键字规则删 3,741。
+
+**结论**：① **outline 用 −47.2% 的索引体积换来不差（且 `MRR` 略好）的质量**，代价是索引耗时 +2.5%、热 `p50` +4.6%（热 `p99` −8.9%）；② **只索引 P0+P1 最划算**（plain 的 31.7%、outline 的 60.0%），而七项质量指标与 outline 逐项相同 ⇒ 本语料上 P2 代码正文未贡献召回；③ 两条过滤规则都有效且都不伤质量。正式结论已追加到 `Docs/Features/ADR-089-索引策略优先级-2026-09-24.md` §5（含 §5.5 诚实留白）。
+
+**门禁（实测）**：新测试工程 **30/30 exit 0**（0 警告除项目级 MSTEST0001）；`PuddingCodeIndexTests` **82/82**、`PuddingCodeIntelligenceTests` **93/93**、`PuddingRetrievalEvalTests` **78/78**、`Tests/PuddingHost.Tests` **124/124**（与既有基线逐项相同，**失败数未增加**）；`dotnet build PuddingAgentNetwork.slnx -c Release` ⇒ **0 个错误 / 1581 个警告 / exit 0 / 失败工程数 0**（两新工程已登记进 slnx，**+2 行 / 0 删除**）。组件边界：`ProjectReference=0`、`PackageReference=0`；组件源码对 7 个禁用程序集与 `Microsoft.CodeAnalysis.*` 的 **`using` 引用 0 处**，**阳性对照**：同一检索式在 `Source/PuddingRetrievalEvalProbe` 命中 12 处（含 `Microsoft.CodeAnalysis`）⇒ 零命中是真实否定。
+
+**变异取红（三份原始输出 + hash 三点值）**：`IsStopWord` 恒 false ⇒ **5 红 / 25 绿 / 30**；`IsShortToken` 恒 false（阈值恒 0）⇒ **7 红 / 23 绿 / 30**；两次复原后 `Source/PuddingIndexChunking/ChunkFilter.cs` 的 blob hash **逐位相同**（`290ba4794ca83d3c2a2493d3105b8b55a2efe6dc`），复原后 **30/30 绿**，`MUTATION` 残留 **0**。原始日志：`temp/U4-1a-logs/mutation-A.txt`、`mutation-B.txt`、`restored-green.txt`。
+
+**诚实留白**：① **未接入 Host/DI**（把分块+过滤固化进生产索引流程属 §3 的 **U4-3**）；② 只在**一个小目录（37 个 C# 文件 / 237 KB）**上、**各跑一次**（无方差；`repetitionStable` 只说明同一 run 内一致）；③ 冷样本是“本进程首次调用”，不是跨进程/OS 页缓存冷启动；④ “P2 无贡献”只在这批标注上成立（期望命中均为“定义符号的那个文件”，符号名已被 P0 覆盖），**不外推**；⑤ 未测：并发/多进程、增量路径、向量与混合（U4-1b）、BFS/DFS（C3）、统一忽略合同（U4-2）；⑥ `plain` 的文档数引擎不报告 ⇒ 留空不填估算值；⑦ 风险：`Source/PuddingCodeIndex/Contracts/ICodeIndexer.cs` 在本刀期间被**外部工作流并发修改**，结论绑定的是测量那一刻的目录内容（37 文件 / 237,586 B 已记录）。
+
+**本刀未提交**（约束：不 git add/commit/push）；改动文件与逐条证据见 `temp/U4-1a-REPORT.md`。
+
 ## 2026-09-24 U4-0：检索评测设施（性能 + 准确率仪器 + 首份真实基线）
 
 **为什么它必须最先做**：ADR-089 §4 要求"评估性能和准确率"，但**没有基线就无法证明后续每一步变好了**——U4-1（统一忽略）/ U4-2（作用域·类型）/ U4-4（向量）/ U4-5（并行）的收益全部由本刀的指标判定。⇒ 本刀只产出**测量仪器 + 基线**，**零检索行为改动**。

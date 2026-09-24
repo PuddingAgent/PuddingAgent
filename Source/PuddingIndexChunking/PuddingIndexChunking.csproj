@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- U4-1a chunking component (ADR-089 C1/C2: tiered chunks + filter rules as pure logic).
+
+       Leaf by construction — ProjectReference = 0 and PackageReference = 0.
+       The code outline this component needs is fed in through the IOutlineSource port, so the
+       component never references PuddingCodeIntelligence (where the language outliners live) nor any
+       other upper layer, and it can be tested with a stand-in outline. That is what keeps
+       "分块 + 过滤" testable outside the probe script.
+
+       The boundary is asserted at runtime by PuddingIndexChunkingTests (ComponentBoundaryTests),
+       and mechanically by the empty ItemGroup below. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingIndexChunkingTests" />
+  </ItemGroup>
+
+</Project>

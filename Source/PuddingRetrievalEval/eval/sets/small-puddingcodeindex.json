@@ -1,0 +1,36 @@
+{
+  "name": "small-puddingcodeindex-v1",
+  "version": 1,
+  "description": "U4-1a small-directory annotated set for the chunking-strategy comparison. Scope = Source/PuddingCodeIndex (37 .cs files, C# only, self-contained). Ground truth is derived from the repository content itself: every expected file exists and (for symbol cases) the symbol is declared in it, checked by a script that never touches a retrieval engine (see temp/U4-1a-REPORT.md A5). No expected hit was taken from any engine's result list.",
+  "cases": [
+    { "query": "ICodeIndexer", "expectedHits": ["Source/PuddingCodeIndex/Contracts/ICodeIndexer.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "ICodeIndexStore", "expectedHits": ["Source/PuddingCodeIndex/Contracts/ICodeIndexStore.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "ICodeIndexMaintenance", "expectedHits": ["Source/PuddingCodeIndex/Contracts/ICodeIndexMaintenance.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "ICodeIndexScheduler", "expectedHits": ["Source/PuddingCodeIndex/Contracts/ICodeIndexScheduler.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "ICodeWorkspaceResolver", "expectedHits": ["Source/PuddingCodeIndex/Contracts/ICodeWorkspaceResolver.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "ICodeProjectRootDetector", "expectedHits": ["Source/PuddingCodeIndex/Contracts/ICodeProjectRootDetector.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "CodeWorkspaceDescriptor", "expectedHits": ["Source/PuddingCodeIndex/Contracts/CodeWorkspaceDescriptor.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "CodeFileRecord", "expectedHits": ["Source/PuddingCodeIndex/Contracts/CodeFileRecord.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "CodeSymbolRecord", "expectedHits": ["Source/PuddingCodeIndex/Contracts/CodeSymbolContracts.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "IndexExcludePatterns", "expectedHits": ["Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "CodePathIdentity", "expectedHits": ["Source/PuddingCodeIndex/Services/CodePathIdentity.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "DefaultProjectRootDetector", "expectedHits": ["Source/PuddingCodeIndex/Services/DefaultProjectRootDetector.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "DefaultCodeWorkspaceResolver", "expectedHits": ["Source/PuddingCodeIndex/Services/DefaultCodeWorkspaceResolver.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "CodeProjectRegistry", "expectedHits": ["Source/PuddingCodeIndex/Services/CodeProjectRegistry.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "CodeIndexScopeRegistry", "expectedHits": ["Source/PuddingCodeIndex/Services/CodeIndexScopeRegistry.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "CodeIndexScheduler", "expectedHits": ["Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "SqliteCodeIndexStore", "expectedHits": ["Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "CodeIndexCalibrationService", "expectedHits": ["Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "CodeIndexChangeCoalescer", "expectedHits": ["Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs"], "kind": "symbol", "language": "csharp" },
+    { "query": "CodeIndexMaintenanceService", "expectedHits": ["Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexMaintenanceService.cs"], "kind": "symbol", "language": "csharp" },
+
+    { "query": "where is the index maintenance switch that the host lifecycle drives", "expectedHits": ["Source/PuddingCodeIndex/Contracts/ICodeIndexMaintenance.cs"], "kind": "intent", "language": "csharp" },
+    { "query": "which file turns gitignore style patterns into the directories the index skips", "expectedHits": ["Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs"], "kind": "intent", "language": "csharp" },
+    { "query": "how does the scheduler decide when a maintenance cycle may run", "expectedHits": ["Source/PuddingCodeIndex/Services/CodeIndexScheduler.cs"], "kind": "intent", "language": "csharp" },
+    { "query": "which sqlite store removes index rows for files that disappeared from disk", "expectedHits": ["Source/PuddingCodeIndex/Storage/SqliteCodeIndexStore.cs"], "kind": "intent", "language": "csharp" },
+    { "query": "where are file system change batches coalesced before the index is updated", "expectedHits": ["Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexChangeCoalescer.cs"], "kind": "intent", "language": "csharp" },
+    { "query": "how is a code file path normalised so two spellings map to one identity", "expectedHits": ["Source/PuddingCodeIndex/Services/CodePathIdentity.cs"], "kind": "intent", "language": "csharp" },
+    { "query": "where is the project root detected when no workspace descriptor exists", "expectedHits": ["Source/PuddingCodeIndex/Services/DefaultProjectRootDetector.cs"], "kind": "intent", "language": "csharp" },
+    { "query": "which service marks and sweeps index rows whose file no longer exists", "expectedHits": ["Source/PuddingCodeIndex/Services/CodeIndex/CodeIndexCalibrationService.cs"], "kind": "intent", "language": "csharp" }
+  ]
+}
