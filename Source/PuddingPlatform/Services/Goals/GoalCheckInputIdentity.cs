@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using PuddingPathFiltering;
 
 namespace PuddingPlatform.Services.Goals;
 
@@ -41,11 +42,12 @@ public sealed record GoalCheckInputManifest(
 /// </summary>
 public static partial class GoalCheckInputIdentity
 {
-    /// <summary>任何路径段命中这些名字的文件一律排除在源码分量之外（大小写不敏感）。</summary>
-    private static readonly string[] ExcludedPathSegments =
-    [
-        "bin", "obj", ".git", ".tmp-build", ".tmp-test-out", "TestResults", "artifacts", "node_modules",
-    ];
+    /// <summary>
+    /// 任何路径段命中这些名字的文件一律排除在源码分量之外（大小写不敏感）。
+    /// ADR-089 U4-4 D4：原先是一份 8 项私有副本，现派生自单一真源
+    /// <see cref="PathNoiseRules.DirectoryNames"/>（52 项）。
+    /// </summary>
+    private static IReadOnlySet<string> ExcludedPathSegments => PathNoiseRules.DirectoryNames;
 
     /// <summary>目录链上按同名收集的构建/运行配置文件。</summary>
     private static readonly string[] ChainConfigFileNames =
@@ -352,7 +354,7 @@ public static partial class GoalCheckInputIdentity
         var relative = Path.GetRelativePath(rootFullPath, fullPath);
         foreach (var segment in relative.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries))
         {
-            if (ExcludedPathSegments.Contains(segment, StringComparer.OrdinalIgnoreCase))
+            if (ExcludedPathSegments.Contains(segment))
                 return true;
         }
 

@@ -11,6 +11,8 @@
   <ItemGroup>
     <ProjectReference Include="..\PuddingCodeIntelligence\PuddingCodeIntelligence.csproj" />
     <ProjectReference Include="..\PuddingCodeIndex\PuddingCodeIndex.csproj" />
+    <!-- ADR-089 U4-4 D4: CLI file-walk exclusion lists are derived from this leaf. -->
+    <ProjectReference Include="..\PuddingPathFiltering\PuddingPathFiltering.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -5,6 +5,7 @@ using PuddingCode.Tools;
 using PuddingCode.Tools.Definitions;
 using PuddingCode.Tools.Retrieval;
 using PuddingFullTextIndex.Contracts;
+using PuddingPathFiltering;
 using PuddingRuntime.Services.Search;
 using PuddingRuntime.Services.Tools;
 
@@ -17,7 +18,7 @@ namespace PuddingRuntime.Services.Skills;
 [Tool(
     id: "search_grep",
     name: "search_grep",
-    description: "在指定目录的代码文件中搜索指定文本。支持正则表达式。可选参数 pattern 过滤文件名（如 \"*.cs\"），file_ext 过滤扩展名（如 \"cs;ts\"），directory 限定搜索目录，exclude_dirs 排除子目录（默认 $outputWwwroot;dist;node_modules;bin;obj;.git;.pudding;TestResults;artifacts;publish;.venv;.tmp），exclude_dirs_append 追加排除目录，max_line_bytes 单行截断上限（默认 8192），max_total_bytes 结果总量上限（默认 16384）；结果不足时缩小范围后渐进检索。Hard limits: at most 2000 files are enumerated, at most 2000 files / 64MB are scanned, and one call is capped at 10s. Whenever a limit is hit, the output MUST carry an explicit notice — it never degrades into a silent \"(no matches)\". For large or unknown scopes prefer the indexed tools first: code_symbol_search / code_explore (code index, millisecond latency) or file_search (file-name index); then use search_grep to grep inside a narrow directory.",
+    description: "在指定目录的代码文件中搜索指定文本。支持正则表达式。可选参数 pattern 过滤文件名（如 \"*.cs\"），file_ext 过滤扩展名（如 \"cs;ts\"），directory 限定搜索目录，exclude_dirs 排除子目录（默认 = 单一真源 PathNoiseRules 派生的噪声目录名单：构建产物/依赖/IDE/工具产物，含 .pudding/.tmp-build/.pnpm-store），exclude_dirs_append 追加排除目录，max_line_bytes 单行截断上限（默认 8192），max_total_bytes 结果总量上限（默认 16384）；结果不足时缩小范围后渐进检索。Hard limits: at most 2000 files are enumerated, at most 2000 files / 64MB are scanned, and one call is capped at 10s. Whenever a limit is hit, the output MUST carry an explicit notice — it never degrades into a silent \"(no matches)\". For large or unknown scopes prefer the indexed tools first: code_symbol_search / code_explore (code index, millisecond latency) or file_search (file-name index); then use search_grep to grep inside a narrow directory.",
     category: ToolCategory.Query,
     permission: ToolPermissionLevel.Low,
     safety: ToolSafetyFlags.ReadOnly | ToolSafetyFlags.ConcurrencySafe)]
@@ -31,7 +32,11 @@ public sealed class SearchGrepTool : PuddingToolBase<SearchGrepArgs>
 
     private const int DefaultMaxResults = 20;
     private const long MaxFileSizeBytes = 1 * 1024 * 1024;
-    private const string DefaultExcludeDirs = "$outputWwwroot;dist;node_modules;bin;obj;.git;.pudding;TestResults;artifacts;publish;.venv;.tmp";
+    // ADR-089 U4-4 D4: 默认排除名单不再是本文件里的 12 项私有副本，而是从单一真源渲染而来。
+    // 排序：先按长度再按序数，保证字符串稳定（不随 HashSet 枚举顺序变化，测试可断言）。
+    private static readonly string DefaultExcludeDirs = string.Join(';', PathNoiseRules.DirectoryNames
+        .OrderBy(name => name.Length)
+        .ThenBy(name => name, StringComparer.Ordinal));
     private const long DefaultMaxLineBytes = 8 * 1024;
     private const long DefaultMaxTotalBytes = 16 * 1024;
     private const string TruncatedMarker = "...[truncated, original={0} bytes]";
@@ -816,7 +821,7 @@ public sealed record SearchGrepArgs
     public int? MaxResults { get; init; }
     [ToolParam("Directory to search in. Default: current directory.")]
     public string? Directory { get; init; }
-    [ToolParam("Directories to exclude, semicolon-separated. Default: $outputWwwroot;dist;node_modules;bin;obj;.git;.pudding;TestResults;artifacts;publish;.venv;.tmp")]
+    [ToolParam("Directories to exclude, semicolon-separated. Default: the single-source noise directory set (PathNoiseRules.DirectoryNames) — build artifacts, dependencies, IDE and tool output, including .pudding/.tmp-build/.pnpm-store/.tmp-test-out.")]
     public string? ExcludeDirs { get; init; }
     [ToolParam("Extra directories to exclude, appended to the effective exclude list, semicolon-separated")]
     public string? ExcludeDirsAppend { get; init; }

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    Leaf component (ADR-089 U4-4, D1). Boundary rules, enforced by test
+    "PuddingPathFiltering_ProjectHasNoReferences":
+      * ZERO <ProjectReference>  — nothing may be depended upon, and every consumer
+        (PuddingCodeIndex / PuddingCodeIntelligence / PuddingFullTextIndex / PuddingRuntime)
+        may point at it without creating a reverse dependency.
+      * ZERO <PackageReference>  — the gitignore engine is implemented here, not taken
+        from NuGet (evidence in temp/U4-4-REPORT.md §D3): the accept criterion is
+        bit-level agreement with git, and a package would still need that same oracle,
+        while adding a supply-chain and offline-restore surface to the index path.
+  -->
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PuddingPathFilteringTests" />
+  </ItemGroup>
+
+</Project>

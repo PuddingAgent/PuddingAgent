@@ -1,8 +1,9 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using Microsoft.CodeAnalysis.CSharp;
 using PuddingCode.Models;
 using PuddingCode.Tools;
+using PuddingPathFiltering;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -103,16 +104,14 @@ public sealed class ProjectMapTool : PuddingToolBase<ProjectMapArgs>
             try
             {
                 var dirs = Directory.GetDirectories(currentPath);
-                // 跳过隐藏目录和常见非源码目录
+                // 跳过隐藏目录，以及单一真源（PathNoiseRules）里的噪声目录。
+                // ADR-089 U4-4 D4: 原先是「列出 4 个名字 + 全部点目录」的内联副本。
                 var filtered = dirs
                     .Where(d =>
                     {
                         var name = Path.GetFileName(d);
                         return !name.StartsWith('.')
-                            && name != "bin"
-                            && name != "obj"
-                            && name != "node_modules"
-                            && name != ".git";
+                            && !PathNoiseRules.IsNoiseSegment(name);
                     })
                     .ToList();
 

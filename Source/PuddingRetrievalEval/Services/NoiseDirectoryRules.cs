@@ -8,10 +8,16 @@ namespace PuddingRetrievalEval.Services;
 /// <b>union</b> of the three documented sets:
 /// </para>
 /// <list type="number">
-/// <item><description><c>SearchGrepTool.DefaultExcludeDirs</c> — Source/PuddingRuntime/Tools/BuiltIns/Search/SearchGrepTool.cs:34 (12 entries)</description></item>
-/// <item><description><c>IndexExcludePatterns.NoiseDirNames</c> — Source/PuddingCodeIndex/Services/IndexExcludePatterns.cs:12-24 (28 entries)</description></item>
-/// <item><description><c>FullTextIndexOptions.ExcludedDirectoryNames</c> — Source/PuddingFullTextIndex/FullTextIndexOptions.cs (33 entries)</description></item>
+/// <item><description><c>SearchGrepTool.DefaultExcludeDirs</c> — 12 entries（U4-4 之前是常量，现由 <c>PathNoiseRules</c> 派生）</description></item>
+/// <item><description><c>IndexExcludePatterns.NoiseDirNames</c> — 28 entries（U4-4 之后由 <c>PathNoiseRules.DirectoryNames</c> 派生）</description></item>
+/// <item><description><c>FullTextIndexOptions.ExcludedDirectoryNames</c> — 33 entries（U4-4 之后由 <c>PathNoiseRules.DirectoryNames</c> 派生）</description></item>
 /// </list>
+/// <para>
+/// <b>U4-4 之后本类型故意保持不变</b>：它是 <c>noiseRate@k</c> 的<b>度量定义</b>，不是运行时规则。
+/// 把度量定义换成新的单一真源会让改前/改后两组数字失去可比性（分母/判据同时变了），
+/// 因此这里冻结为「U4-4 之前的并集 + 46 段」这一历史口径，并由
+/// <c>NoiseDirectoryRulesTests</c> 锁定条数。运行时排除规则见 <c>PuddingPathFiltering/PathNoiseRules.cs</c>。
+/// </para>
 /// <para>
 /// Being a union makes the instrument <b>conservative: it over-reports noise rather than under-reports
 /// it</b>, which is the safe direction for a before/after comparison (the same instrument is applied to
@@ -31,16 +37,16 @@ public static class NoiseDirectoryRules
     /// <summary>Union of the three documented rule sets above (46 distinct segment names).</summary>
     public static IReadOnlySet<string> Segments { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        // SearchGrepTool.DefaultExcludeDirs (12)
+        // SearchGrepTool.DefaultExcludeDirs (12) — 冻结口径（U4-4 之前的原样）
         "$outputWwwroot", "dist", "node_modules", "bin", "obj", ".git", ".pudding",
         "TestResults", "artifacts", "publish", ".venv", ".tmp",
 
-        // IndexExcludePatterns.NoiseDirNames (28)
+        // IndexExcludePatterns.NoiseDirNames (28) — 冻结口径（U4-4 之前的原样）
         ".vs", ".idea", ".vscode", "packages", "build", ".next", "out",
         "__pycache__", "venv", ".tox", ".eggs", "coverage", ".nyc_output",
         ".pytest_cache", ".pudding-code", "Debug", "Release", "x64", "x86", "ARM", "ARM64",
 
-        // FullTextIndexOptions.ExcludedDirectoryNames (33)
+        // FullTextIndexOptions.ExcludedDirectoryNames (33) — 冻结口径（U4-4 之前的原样）
         ".svn", ".hg", "target", ".mypy_cache", "vendor", "bower_components",
         ".nuxt", ".output", ".angular", ".cache", ".turbo", "tmp", "temp",
     };

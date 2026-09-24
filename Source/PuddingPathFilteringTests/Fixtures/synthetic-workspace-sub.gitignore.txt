@@ -1,0 +1,4 @@
+nested-only.txt
+!inner/keep.txt
+!p-root-wins.log
+p-root-negates.txt

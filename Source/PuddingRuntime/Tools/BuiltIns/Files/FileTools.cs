@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PuddingCode.Configuration;
 using PuddingCode.Models;
 using PuddingCode.Tools;
+using PuddingPathFiltering;
 
 namespace PuddingRuntime.Services.Tools;
 
@@ -474,13 +475,10 @@ public sealed record FileWriteArgs
     SortOrder = 39)]
 public sealed class ListDirectoryTool : PuddingToolBase<ListDirectoryArgs>
 {
-    private static readonly HashSet<string> s_defaultExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".git",
-        "bin",
-        "obj",
-        "node_modules",
-    };
+    // ADR-089 U4-4 D4: list_dir 原先只排除 4 个名字（.git/bin/obj/node_modules），
+    // 与 search_grep / 索引侧不一致 —— 这正是「同一目录有的工具忽略、有的不忽略」的根因之一。
+    // 现在派生自单一真源。
+    private static IReadOnlySet<string> s_defaultExcludedDirectories => PathNoiseRules.DirectoryNames;
 
     protected override Task<ToolExecutionResult> ExecuteCoreAsync(
         ListDirectoryArgs args, ToolExecutionContext context, CancellationToken ct)

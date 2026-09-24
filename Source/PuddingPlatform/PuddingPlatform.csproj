@@ -29,6 +29,8 @@
     <ProjectReference Include="..\PuddingCore\PuddingCore.csproj" />
     <ProjectReference Include="..\PuddingMemoryEngine\PuddingMemoryEngine.csproj" />
     <ProjectReference Include="..\PuddingFullTextIndex\PuddingFullTextIndex.csproj" />
+    <!-- ADR-089 U4-4 D4: GoalCheckInputIdentity's excluded-segment set is derived from this leaf. -->
+    <ProjectReference Include="..\PuddingPathFiltering\PuddingPathFiltering.csproj" />
   </ItemGroup>
 
   <ItemGroup>

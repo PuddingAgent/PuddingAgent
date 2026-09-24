@@ -4,8 +4,9 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 using Microsoft.Extensions.Logging;
 
-using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIndex.Contracts;
+using PuddingCodeIndex.Services;
+using PuddingCodeIntelligence.Contracts;
 
 namespace PuddingCodeIntelligence.CSharp;
 
@@ -15,14 +16,7 @@ namespace PuddingCodeIntelligence.CSharp;
 /// </summary>
 public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater
 {
-    private static readonly HashSet<string> NoisePathSegments = new(StringComparer.OrdinalIgnoreCase)
-    {
-        $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
-        $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
-        $"{Path.DirectorySeparatorChar}.git{Path.DirectorySeparatorChar}",
-        $"{Path.DirectorySeparatorChar}.pudding-code{Path.DirectorySeparatorChar}",
-        $"{Path.DirectorySeparatorChar}node_modules{Path.DirectorySeparatorChar}",
-    };
+
 
     private readonly ICodeIndexStore _store;
     private readonly ILogger _logger;
@@ -170,7 +164,7 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater
                 WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId);
         }
 
-        if (IsNoiseFile(filePath))
+        if (IsNoiseFile(filePath, descriptor.ProjectPath))
         {
             return new CodeIndexResult(false, CodeIndexStatus.Failed,
                 $"File is excluded from indexing: {filePath}",
@@ -365,7 +359,9 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var filePath = syntaxTree.FilePath;
-                if (string.IsNullOrWhiteSpace(filePath) || IsNoiseFile(filePath))
+                // 根取该项目自己的目录（csproj 所在目录）；跨项目/链接文件由 IsNoisePathBelow 降级处理。
+                if (string.IsNullOrWhiteSpace(filePath) ||
+                    IsNoiseFile(filePath, Path.GetDirectoryName(project.FilePath)))
                     continue;
 
                 // Clear stale symbols for this file before re-indexing.
@@ -743,9 +739,18 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater
             _ => CodeSymbolKind.Unknown,
         };
 
-    private static bool IsNoiseFile(string filePath) =>
-        NoisePathSegments.Any(seg =>
-            filePath.Contains(seg, StringComparison.OrdinalIgnoreCase));
+    // ADR-089 U4-4 D4: 原先是一份 5 项、且靠“含分隔符片段 Contains”判定的私有副本
+    //（因此 path 首/尾段与大小写边界都与其它消费者不一致）；现统一走单一真源。
+    /// <summary>
+    /// 噪声判定必须喂「相对扫描根（项目根）」的路径。喂绝对路径会把宿主自身的目录名当噪声：
+    /// 例如工作区在 <c>%TEMP%</c> 下时段名 <c>Temp</c> 命中 <c>temp</c>，整个项目会被静默排除。
+    /// </summary>
+    private static bool IsNoiseFile(string filePath, string? projectRoot)
+        => string.IsNullOrWhiteSpace(projectRoot)
+            // 拿不到项目根（例如 ad-hoc 编译没有 csproj）：只能按最后一段判定。
+            // 绝不能用绝对路径做整串段匹配 —— 宿主自己的目录名（%TEMP% 里的 Temp）会命中。
+            ? IndexExcludePatterns.IsNoiseDirectoryName(Path.GetFileName(filePath))
+            : IndexExcludePatterns.IsNoisePathBelow(projectRoot, filePath);
 
     private static bool IsNamespace(ISymbol symbol) =>
         symbol is INamespaceSymbol;

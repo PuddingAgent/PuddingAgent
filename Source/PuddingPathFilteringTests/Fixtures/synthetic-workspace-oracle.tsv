@@ -1,0 +1,82 @@
+# U4-4 frozen oracle: produced by `git check-ignore -v -z --no-index --stdin` (git 2.53.0.windows.2)
+# columns: relativePath <TAB> isDirectory <TAB> verdict(ignore|keep) <TAB> source <TAB> line <TAB> pattern
+# verdict = last matching pattern is not a negation; missing row = no matching pattern = keep
+x.log	file	ignore	.gitignore	4	*.log
+keep.log	file	keep	.gitignore	5	!keep.log
+a.txt	file	ignore	.gitignore	13	[abc].txt
+b.txt	file	ignore	.gitignore	13	[abc].txt
+d.txt	file	keep	-	0	-
+ax.txt	file	keep	-	0	-
+bx.txt	file	keep	-	0	-
+cx.txt	file	keep	-	0	-
+5.dat	file	ignore	.gitignore	15	[0-9].dat
+q1estion.txt	file	ignore	.gitignore	16	q?estion.txt
+esc aped.txt	file	ignore	.gitignore	17	esc\ aped.txt
+trail.txt	file	ignore	.gitignore	18	trail.txt
+  lead.txt	file	keep	-	0	-
+hash#file	file	ignore	.gitignore	20	hash\#file
+!bang.txt	file	ignore	.gitignore	21	\!bang.txt
+plain	file	ignore	.gitignore	22	plain
+anchored.txt	file	ignore	.gitignore	8	/anchored.txt
+sub/nested-only.txt	file	ignore	sub/.gitignore	1	nested-only.txt
+sub/sub-keep.txt	file	ignore	.gitignore	26	sub/**
+sub/inner/nested-only.txt	file	ignore	.gitignore	26	sub/**
+sub/inner/keep.txt	file	ignore	.gitignore	26	sub/**
+sub/drop.txt	file	ignore	.gitignore	26	sub/**
+sub/sub/x.txt	file	ignore	.gitignore	26	sub/**
+sub-proj/x.txt	file	ignore	.gitignore	9	sub-*/x.txt
+other-proj/x.txt	file	keep	-	0	-
+logs/x.txt	file	ignore	.gitignore	6	logs/
+root-only/f.txt	file	ignore	.gitignore	7	/root-only/
+deep/a/b/c.txt	file	ignore	.gitignore	23	deep/**
+docs/x.md	file	ignore	.gitignore	11	docs/**
+docs/keep/y.md	file	ignore	.gitignore	11	docs/**
+star/one/end	file	keep	-	0	-
+a/b	file	ignore	.gitignore	10	a/**/b
+a/m/b/c.txt	file	ignore	.gitignore	10	a/**/b
+nested-ignore-dir/keep.txt	file	ignore	.gitignore	24	nested-ignore-dir/
+nested-ignore-dir/drop.txt	file	ignore	.gitignore	24	nested-ignore-dir/
+anywhere.txt	file	ignore	.gitignore	25	**/anywhere.txt
+sub/anywhere.txt	file	ignore	.gitignore	26	sub/**
+zz/anywhere.txt	file	ignore	.gitignore	25	**/anywhere.txt
+logs/keep.log	file	ignore	.gitignore	6	logs/
+sub/keep.log	file	keep	.gitignore	27	!sub/keep.log
+sub/p-root-wins.log	file	keep	sub/.gitignore	3	!p-root-wins.log
+sub/p-root-negates.txt	file	ignore	sub/.gitignore	4	p-root-negates.txt
+p-root-wins.log	file	ignore	.gitignore	28	p-root-wins.log
+p-root-negates.txt	file	keep	.gitignore	29	!p-root-negates.txt
+]lit.txt	file	ignore	.gitignore	30	[]]lit.txt
+brng.txt	file	ignore	.gitignore	31	[a-c]rng.txt
+zneg.txt	file	ignore	.gitignore	32	[^a-c]neg.txt
+aneg.txt	file	keep	-	0	-
+crng.txt	file	ignore	.gitignore	31	[a-c]rng.txt
+sptest.txt	file	keep	-	0	-
+  sptest.txt	file	keep	-	0	-
+   sptest.txt	file	ignore	.gitignore	33	   sptest.txt
+trailsp 	file	ignore	.gitignore	34	trailsp\ 
+pXq/r.txt	file	ignore	.gitignore	35	/p**q/r.txt
+p/q/r.txt	file	keep	-	0	-
+CASEPROBE.TXT	file	ignore	.gitignore	36	caseprobe.txt
+caseprobe.txt	file	ignore	.gitignore	36	caseprobe.txt
+bin	dir	keep	-	0	-
+obj	dir	keep	-	0	-
+logs	dir	ignore	.gitignore	6	logs/
+root-only	dir	ignore	.gitignore	7	/root-only/
+deep	dir	keep	-	0	-
+deep/a	dir	ignore	.gitignore	23	deep/**
+deep/a/b	dir	ignore	.gitignore	23	deep/**
+a	dir	keep	-	0	-
+a/m	dir	keep	-	0	-
+a/m/b	dir	ignore	.gitignore	10	a/**/b
+docs	dir	keep	-	0	-
+docs/keep	dir	ignore	.gitignore	11	docs/**
+star	dir	keep	-	0	-
+star/one	dir	keep	-	0	-
+sub	dir	keep	-	0	-
+sub/inner	dir	ignore	.gitignore	26	sub/**
+nested-ignore-dir	dir	ignore	.gitignore	24	nested-ignore-dir/
+sub-proj	dir	keep	-	0	-
+other-proj	dir	keep	-	0	-
+zz	dir	keep	-	0	-
+DirCase	dir	ignore	.gitignore	37	DirCase/
+dircase2	dir	keep	-	0	-

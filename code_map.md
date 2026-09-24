@@ -1,3 +1,27 @@
+## 2026-09-24 U4-4：统一路径忽略合同（单一真源 + gitignore 语义 + 仓库根语料 −84.5%）
+
+**卡的是用户第 4 条指令**：「忽略制成品、node_modules、读取 git 忽略文件的规则进行忽略」。审计证据显示**过去从未真正生效**且**规则分叉**：`IndexExcludePatterns` 内的 gitignore 解析**无任何外部调用点**（本工程内已证），其实现注释**自述跳过 `!` 取反**；同时全仓**七套互不相同**的排除表（`search_grep` 12 项 / 索引噪声目录 24 项 / `FullTextIndexOptions` 33 项 / `CodeIndexer.Cli` / `file_search` / `list_dir` / `project_map` 各自），且**第一大噪声源 `.pudding`（21,106 文件）在所有表里都缺席**（只有拼写相近的 `.pudding-code`）。
+
+**交付 1：新叶子组件 `Source/PuddingPathFiltering/`（S1）** —— 10 个 `.cs` + csproj + code_map。`ProjectReference = 0`、`PackageReference = 0`（**gitignore 引擎自实现，不引 NuGet**：验收判据是**与真实 git 逐位一致**，引包同样需要这份 oracle，却额外引入供应链与离线还原面）。成员：`GitWildcard`（`*`/`**`/`?`/字符类/尾斜杠目录语义）、`IgnoreRule`、`IgnoreFileParser`、`IgnoreStack`（**父目录排除下的取反恢复**，这是旧实现跳过的那一半语义）、`IgnoreFileLoader`、`WorkspacePathFilter`、`PathNoiseRules`（**噪声目录单一真源**）、`PathText`。边界由 `ComponentBoundaryTests` **编译期+读盘**双重强制。
+
+**交付 2：新测试工程 `Source/PuddingPathFilteringTests/`（S2/S3）** —— 17 文件、**84 用例**，含 `GitIgnoreOracleTests`（oracle）、`RepositoryRootReductionTests`（−84% 判据）、`ComponentBoundaryTests`（边界）、`IgnoreStackTests`（取反语义）。
+
+**交付 3：消费侧收敛（19 个既有文件 + 5 个 csproj）** —— `IndexExcludePatterns.cs`（**+50/−159 大幅瘦身**）、`FullTextIndexOptions.cs`（+14/−49）、`SearchGrepTool`/`FileTools`/`ProjectMapTool`（默认排除目录改由 `PathNoiseRules.DirectoryNames` 派生）、`RoslynCSharpIndexer`/`PythonIndexer`/`TypeScriptIndexer`、`CodeIndexWatcher`、`DefaultCodeWorkspaceResolver`、`DefaultProjectRootDetector`、`GoalCheckInputIdentity`（**删掉 8 项私有副本**改用单一真源）、`CodeIndexer.Cli`；`PuddingCodeIndex`/`PuddingRuntime`/`PuddingPlatform`/`PuddingFullTextIndex`/`CodeIndexer.Cli` csproj 各增 1 条 `ProjectReference`。
+
+**核心判据（实测，U4-0 `--mode count` 口径）**：仓库根可索引 **28,519 → 4,413（−84.5%）**、**743.6 MB → 80.7 MB**；`.pudding` / `.tmp-build` / `.pnpm-store` / `.tmp-test-out` 在顶层目录清单中**完全消失**，剩余为 `Source 3391 / Docs 684 / Tests 89 / …`；`visitedFiles = 4,902,722`、`excludedByOpts = 4,377,910`。
+
+**oracle（D3 核心验收）**：两份语料共 **192 条路径**与真实 `git check-ignore` 逐条对照，每条**双重断言**——① 结论（ignore/keep）一致；② **「定案规则的原文」与 `git check-ignore -v` 打印的 pattern 逐字一致**（只比结论会让「恰好结论相同但原因不同」漏网）。要求**零不一致**（比任务书的 ≥95% 更严）。
+
+**变异取红（两轮，各先红后绿）**：R1 打掉取反语义 ⇒ **失败 9 / 通过 71 / 总 80**；复原 **80/80**。R2 ⇒ **失败 4 / 通过 80 / 总 84**；复原 **84/84**。
+
+**门禁（父级独立复跑，非子代理自述）**：`dotnet build PuddingAgentNetwork.slnx -c Release` = **exit 0 / 0 个错误**；`PuddingPathFilteringTests` **84/84**、`PuddingCodeIndexTests` **98/98**、`PuddingCodeIntelligenceTests` **93/93**、`Tests/PuddingHost.Tests` **124/124**。
+
+**检索侧影响（同一 58 例标注集，Source scope）**：`noiseRate@10` **0.0290 → 0.0000**；`recall@1` **0.4224 持平**；`recall@5` **0.6638 → 0.6207（小幅下降）**、`precision@5` 0.1621 → 0.1517。**该对比不是受控 A/B**：两次运行之间语料本身已变（U4-1b/U4-2a/U4-3 各增文件），故下降**不能单独归因于忽略规则**。
+
+**诚实留白**：① oracle 为**冻结快照**（`.gitignore` 文本 + `git check-ignore -v` 输出均落盘为夹具），测试期**不实时调用 git**；② `RepositoryRootReductionTests` 是**冻结基线的覆盖断言**，非实时重测（实时重测需扫 490 万文件、约 212 s，不适合进单测）；③ `Source/` 的召回小幅下降未定位到具体 case；④ 未做：`.gitignore` 的 `[a-z]` 字符类全谱、`.git/info/exclude`、global excludes、大小写敏感性平台差异。
+
+> **本文档缺记的切片**：U4-2a（检索意图/结果/过滤合同）、U4-3（int8 量化 + 分层向量化）、U4-3b（向量规模化实测与裁决）的结论分别见 `Docs/Features/ADR-089-结构化地图检索设计-2026-09-24.md` 与 `Docs/Features/ADR-089-U4-3b-向量规模化实测与裁决-2026-09-24.md`；本条为 U4-4 补记，并登记该缺口。
+
 ## 2026-09-24 U4-1b：向量 / 全文 / 混合（RRF）同台对比（本地 Qwen3，零成本）
 
 **卡的是用户第 5 条指令后半段**：“评估不同索引模型的质量（**纯向量、全文检索、混合检索**）的检索质量、索引速度、查找速度、索引文件体积差异”。**同一批块（引擎换、块不换）**：三种检索器都走 `--chunks outline --tiers p0p1p2 --filter both` ⇒ 同一份 **1,352 块**；目录 = `Source/PuddingCodeIndex`（37 个 `.cs` / 237,586 B），标注集 = `eval/sets/small-puddingcodeindex.json`（**28 条，未改动**）。

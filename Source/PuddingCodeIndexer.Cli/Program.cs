@@ -6,6 +6,7 @@ using PuddingCodeIntelligence.TypeScript;
 using PuddingCodeIntelligence.Services;
 using PuddingCodeIndex.Contracts;
 using PuddingCodeIndex.Storage;
+using PuddingPathFiltering;
 
 // ── Logging setup ──────────────────────────────────────────────────────────
 using var loggerFactory = LoggerFactory.Create(builder =>
@@ -118,9 +119,7 @@ async Task<int> RunIndexAsync(string[] args)
     var tsFiles = Directory
         .GetFiles(projectPath, "*.*", SearchOption.AllDirectories)
         .Where(f => tsExtensions.Contains(Path.GetExtension(f))
-                 && !f.Contains(Path.DirectorySeparatorChar + "node_modules" + Path.DirectorySeparatorChar)
-                 && !f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar)
-                 && !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
+                 && !PathNoiseRules.IsNoisePath(Path.GetRelativePath(projectPath, f)))
         .ToList();
 
     if (tsFiles.Count > 0)
@@ -212,12 +211,10 @@ async Task<int> RunIndexAsync(string[] args)
 
     // ── Python indexing ─────────────────────────────────────────────────────
     var pyExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".py" };
-    var pyExcludedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "__pycache__", ".git", "venv", ".venv" };
+    // ADR-089 U4-4 D4: 原先是一份 4 项私有清单 + bin/obj 两段内联 → 统一走单一真源。
     var pyFiles = Directory
         .GetFiles(projectPath, "*.py", SearchOption.AllDirectories)
-        .Where(f => !f.Split(Path.DirectorySeparatorChar).Any(seg => pyExcludedDirs.Contains(seg))
-                 && !f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar)
-                 && !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
+        .Where(f => !PathNoiseRules.IsNoisePath(Path.GetRelativePath(projectPath, f)))
         .ToList();
 
     if (pyFiles.Count > 0)
@@ -321,8 +318,8 @@ async Task<int> RunWatchAsync(string[] args)
     // Set up file watching
     var watchExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         { ".cs", ".ts", ".tsx", ".js", ".jsx", ".py" };
-    var excludedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        { "bin", "obj", "node_modules", ".git", "__pycache__", ".pudding-code" };
+    // ADR-089 U4-4 D4: 原先是 6 项私有副本，现派生自单一真源。
+    var excludedDirs = PathNoiseRules.DirectoryNames;
 
     using var cts = new CancellationTokenSource();
     Console.CancelKeyPress += (_, e) =>

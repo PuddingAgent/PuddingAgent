@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using PuddingCodeIndex.Contracts;
+using PuddingPathFiltering;
 
 namespace PuddingCodeIndex.Services.CodeIndex;
 
@@ -26,7 +27,11 @@ public sealed class CodeIndexWatcher : IDisposable
     /// </summary>
     public const int InternalBufferSizeBytes = 64 * 1024;
 
-    /// <summary>Directory used by the index for its own artifacts. Never re-ingested as source.</summary>
+    /// <summary>
+    /// Directory used by the index for its own artifacts. Never re-ingested as source.
+    /// The name is part of the single-source noise set (<c>PathNoiseRules.DirectoryNames</c>); this
+    /// constant is retained only as the public, documented spelling of that name.
+    /// </summary>
     public const string IndexOwnDirectoryName = ".pudding-code";
 
     private readonly CodeIndexScope _scope;
@@ -36,6 +41,8 @@ public sealed class CodeIndexWatcher : IDisposable
     private readonly TimeProvider _timeProvider;
     private readonly string _rootPath;
     private readonly string _rootPrefix;
+    private readonly string _ignoreRootPath;
+    private readonly WorkspacePathFilter _pathFilter;
 
     private FileSystemWatcher? _watcher;
     private int _disposed;
@@ -71,6 +78,11 @@ public sealed class CodeIndexWatcher : IDisposable
         _rootPrefix = _rootPath.EndsWith(Path.DirectorySeparatorChar)
             ? _rootPath
             : _rootPath + Path.DirectorySeparatorChar;
+
+        // ADR-089 U4-4 D3: .gitignore 真正生效。基准是 git 仓库根（不是 scope 根），
+        // 且只收集 scope 树内的 .gitignore（避免把索引范围登记在被忽略目录里时被祖先规则整体清空）。
+        _ignoreRootPath = IndexExcludePatterns.ResolveRepositoryRoot(_rootPath);
+        _pathFilter = IndexExcludePatterns.CreateWorkspaceFilter(_ignoreRootPath, _rootPath);
 
         if (!Directory.Exists(_rootPath))
             throw new DirectoryNotFoundException($"Scope root '{_rootPath}' does not exist.");
@@ -385,9 +397,15 @@ public sealed class CodeIndexWatcher : IDisposable
     /// <summary>
     /// Directory filtering runs per event (a recursive watcher is not assumed to exclude subtrees).
     /// <para>
-    /// <see cref="IndexExcludePatterns.IsNoisePath"/> is fed the path <b>relative to the scope root</b>,
-    /// not the absolute path: otherwise a scope that merely lives under a directory called <c>build</c>
-    /// or <c>bin</c> would have every single event suppressed.
+    /// The <b>name-level</b> check is fed the path <b>relative to the scope root</b>, not the absolute
+    /// path: otherwise a scope that merely lives under a directory called <c>build</c> or <c>bin</c>
+    /// would have every single event suppressed. The index's own storage directory (<c>.pudding-code</c>)
+    /// is covered by that same single source (<c>PathNoiseRules</c>) — the former defensive loop here
+    /// was a second copy of the rule and is gone (ADR-089 U4-4 C9).
+    /// </para>
+    /// <para>
+    /// The <b>.gitignore</b> check is fed the path relative to the <b>git repository root</b>, because
+    /// that is what gitignore patterns are anchored to.
     /// </para>
     /// </summary>
     private bool IsExcluded(string fullPath)
@@ -399,16 +417,14 @@ public sealed class CodeIndexWatcher : IDisposable
         if (IndexExcludePatterns.IsNoisePath(relativePath))
             return true;
 
-        // Defensive: the index's own storage directory must never be re-ingested. (.pudding-code is
-        // also part of IndexExcludePatterns.NoiseDirNames; this keeps the intent explicit.)
-        foreach (var segment in relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
-        {
-            if (segment.Length != 0 &&
-                string.Equals(segment, IndexOwnDirectoryName, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
+        if (_pathFilter.GitIgnore.Count == 0)
+            return false;
 
-        return false;
+        var relativeToIgnoreRoot = string.Equals(_ignoreRootPath, _rootPath, StringComparison.Ordinal)
+            ? relativePath
+            : Path.GetRelativePath(_ignoreRootPath, fullPath);
+
+        return _pathFilter.GitIgnore.IsIgnored(relativeToIgnoreRoot, TryResolveIsDirectory(fullPath));
     }
 
     /// <summary>

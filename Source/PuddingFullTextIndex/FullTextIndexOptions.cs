@@ -1,3 +1,5 @@
+using PuddingPathFiltering;
+
 namespace PuddingFullTextIndex;
 
 /// <summary>
@@ -66,56 +68,19 @@ public sealed record FullTextIndexOptions
     public IReadOnlySet<string> ParsedExtensions { get; init; } =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>忽略的目录名（不含路径，仅匹配目录名本身）。忽略大小写。</summary>
-    public IReadOnlySet<string> ExcludedDirectoryNames { get; init; } =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "node_modules",
-            ".git",
-            ".svn",
-            ".hg",
-            ".vs",
-            ".idea",
-            ".vscode",
-            "bin",
-            "obj",
-            "dist",
-            "build",
-            "out",
-            "target",           // Rust / Maven
-            "__pycache__",
-            ".pytest_cache",
-            ".mypy_cache",
-            ".tox",
-            ".eggs",
-            "venv",
-            ".venv",
-            "vendor",           // PHP / Go
-            "bower_components",
-            ".next",
-            ".nuxt",
-            ".output",
-            "coverage",
-            "packages",         // NuGet
-            "TestResults",
-            ".angular",
-            ".cache",
-            ".turbo",
-            "tmp",
-            "temp",
-        };
+    /// <summary>
+    /// 忽略的目录名（不含路径，仅匹配目录名本身）。忽略大小写。
+    /// <para>
+    /// ADR-089 U4-4 D4：本清单原先是一份 33 项的私有副本，现直接派生自单一真源
+    /// <see cref="PathNoiseRules.DirectoryNames"/>（52 项 = 三套已文档化清单的并集 + 6 项显式补齐，
+    /// 含 <c>.pudding</c> / <c>.tmp-build</c> / <c>.pnpm-store</c> / <c>.tmp-test-out</c> / <c>.firecrawl</c>）。
+    /// 仍保留 <c>init</c> 可覆盖能力，配置侧行为不变。
+    /// </para>
+    /// </summary>
+    public IReadOnlySet<string> ExcludedDirectoryNames { get; init; } = PathNoiseRules.DirectoryNames;
 
-    /// <summary>忽略的文件名（精确匹配，忽略大小写）。</summary>
-    public IReadOnlySet<string> ExcludedFileNames { get; init; } =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "package-lock.json",
-            "yarn.lock",
-            "pnpm-lock.yaml",
-            ".DS_Store",
-            "Thumbs.db",
-            "desktop.ini",
-        };
+    /// <summary>忽略的文件名（精确匹配，忽略大小写）。单一真源：<see cref="PathNoiseRules.FileNames"/>。</summary>
+    public IReadOnlySet<string> ExcludedFileNames { get; init; } = PathNoiseRules.FileNames;
 
     /// <summary>单个文件最大索引大小（默认 10MB）。超过的不索引。</summary>
     public long MaxFileSizeBytes { get; init; } = 10 * 1024 * 1024;

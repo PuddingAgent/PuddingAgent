@@ -1,0 +1,37 @@
+# a comment line
+## second comment
+
+*.log
+!keep.log
+logs/
+/root-only/
+/anchored.txt
+sub-*/x.txt
+a/**/b
+docs/**
+!docs/keep/**
+[abc].txt
+[!abc]x.txt
+[0-9].dat
+q?estion.txt
+esc\ aped.txt
+trail.txt   
+   lead.txt
+hash\#file
+\!bang.txt
+plain
+deep/**
+nested-ignore-dir/
+**/anywhere.txt
+sub/**
+!sub/keep.log
+p-root-wins.log
+!p-root-negates.txt
+[]]lit.txt
+[a-c]rng.txt
+[^a-c]neg.txt
+   sptest.txt
+trailsp\ 
+/p**q/r.txt
+caseprobe.txt
+DirCase/

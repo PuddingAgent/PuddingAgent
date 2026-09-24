@@ -1,5 +1,5 @@
 using PuddingCodeIndex.Contracts;
-using PuddingCodeIndex.Services;
+using PuddingPathFiltering;
 
 namespace PuddingCodeIndex.Services;
 
@@ -12,14 +12,8 @@ public sealed class DefaultProjectRootDetector : ICodeProjectRootDetector
 {
     // Directories that stop the walk even without a marker file — they are
     // never project roots and should be treated as boundaries.
-    private static readonly HashSet<string> BoundaryDirectories = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".git",
-        ".pudding-code",
-        "bin",
-        "obj",
-        "node_modules",
-    };
+    // ADR-089 U4-4 D4: 单一真源 —— 原本是 5 项私有副本，现派生自 PathNoiseRules。
+    private static IReadOnlySet<string> BoundaryDirectories => PathNoiseRules.DirectoryNames;
 
     // Files whose presence in a directory marks it as a project root.
     private static readonly IReadOnlyList<RootDetectorRule> Rules = BuildRules();

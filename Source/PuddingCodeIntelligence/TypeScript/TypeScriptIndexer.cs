@@ -220,7 +220,8 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater
                 WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId);
         }
 
-        if (!SupportedExtensions.Contains(Path.GetExtension(filePath)) || IndexExcludePatterns.IsNoisePath(filePath))
+        if (!SupportedExtensions.Contains(Path.GetExtension(filePath)) ||
+            IndexExcludePatterns.IsNoisePathBelow(descriptor.ProjectPath, filePath))
         {
             return new CodeIndexResult(false, CodeIndexStatus.Failed,
                 $"Not an indexable TypeScript/JavaScript file: {filePath}",
@@ -360,7 +361,9 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater
         foreach (var file in Directory.EnumerateFiles(directory))
         {
             var ext = Path.GetExtension(file);
-            if (SupportedExtensions.Contains(ext) && !IndexExcludePatterns.IsNoisePath(file))
+            // 目录层已按名字剪枝；这里是「文件本身就叫 bin/obj」的兼容判断（不再做绝对路径扫描）。
+            if (SupportedExtensions.Contains(ext) &&
+                !IndexExcludePatterns.IsNoiseDirectoryName(Path.GetFileName(file)))
                 result.Add(file);
         }
 

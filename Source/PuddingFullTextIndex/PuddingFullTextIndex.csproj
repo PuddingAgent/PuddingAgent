@@ -12,6 +12,11 @@
     <InternalsVisibleTo Include="PuddingMemoryEngineTests" />
   </ItemGroup>
 
+  <!-- ADR-089 U4-4 D4: exclusion lists are derived from the single source in PuddingPathFiltering. -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingPathFiltering\PuddingPathFiltering.csproj" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Lucene.Net" Version="4.8.0-beta00016" />
     <PackageReference Include="Lucene.Net.Analysis.Common" Version="4.8.0-beta00016" />

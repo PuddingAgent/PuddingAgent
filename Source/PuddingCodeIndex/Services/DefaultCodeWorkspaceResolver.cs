@@ -1,4 +1,5 @@
 using PuddingCodeIndex.Contracts;
+using PuddingPathFiltering;
 
 namespace PuddingCodeIndex.Services;
 
@@ -8,14 +9,8 @@ namespace PuddingCodeIndex.Services;
 /// </summary>
 public sealed class DefaultCodeWorkspaceResolver : ICodeWorkspaceResolver
 {
-    private static readonly HashSet<string> IgnoredDirectoryNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".git",
-        ".pudding-code",
-        "bin",
-        "node_modules",
-        "obj",
-    };
+    // ADR-089 U4-4 D4: 单一真源 —— 本清单原先是一份 5 项的私有副本，现直接派生自 PathNoiseRules。
+    private static IReadOnlySet<string> IgnoredDirectoryNames => PathNoiseRules.DirectoryNames;
 
     private readonly ICodeIndexStore _store;
 
