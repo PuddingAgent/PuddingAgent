@@ -1,4 +1,20 @@
-## 2026-09-25 S5：宿主预建索引改走「协调器 + 暂存供给」（**默认关闭 ⇒ 零索引 I/O**）
+## 2026-09-25 文档回改：ADR-089 §8.3 留白已由 S5 关闭（正文同步，**纯文档 14/3**）
+
+**背景**：`Docs/Features/ADR-089-索引服务与库管理-2026-09-24.md` §8.3 仍写「`MinRebuildInterval` 的「索引是否足够新」用**索引根目录 mtime** 粗粒度代理（per-scope 索引目录在组件内且 `internal` ⇒ 宿主观测不到）」—— **该留白已在 S5（`ec7f221`）被关闭**：宿主端口 `IFullTextIndexSupplyComposition.LiveIndexLastWriteUtc(scopeRootPath)` 提供 **per-scope live 索引目录 mtime**（经组件单一真源 `IFullTextIndexRootedEngine.ResolveIndexDirectory` 解析目录，宿主**不复刻**命名哈希）。
+
+**回改内容**：
+- §8.3 追加更新块：留白已关闭 + 端口/实现位置（`Hosting/LuceneFullTextIndexSupplyCompositionFactory.cs`）。
+- 同块登记**残留（已知方向，非缺陷）**：该信号是**索引目录 mtime**，与引擎 `.last_indexed` 记录的 `t`（扫描开始时间）**并不等值** —— 本机实测相差 **80.3 s**（dir mtime `2026-09-25T07:50:06.783Z` vs `.last_indexed.t` `2026-09-25T07:48:46.511Z`）；因目录 mtime 更晚 ⇒ 索引显得更“新” ⇒ **可能漏判构建窗口内发生的改动**。更精确的「语料陈旧度」判定登记为后续切片。
+- 同块登记**已确认边界（非本刀引入）**：`PuddingPlatform/Services/RawSessionLogService.Fts.cs` 在召回路径**直接**调 `_ftsEngine.BuildIndexAsync(dayDir, "*.md")`，**不经**供给协调器（无租约 / 无 staging / 无预算硬限）。
+
+**证据（父级亲自复核）**：实读 `Hosting/LuceneFullTextIndexSupplyCompositionFactory.cs:91-115`（`ResolveIndexDirectory` + `Directory.GetLastWriteTimeUtc`，`catch` 回落 `MinValue` = fail-stale）；实读 `D:\data\fulltext-index\875d6cb5…` 的 `.last_indexed` = 
+`{"t":"2026-09-25T07:48:46.5108139Z","p":"b3ffbbff2d64"}`；**独立复算** `sha256("(default)")[..12] = b3ffbbff2d64`（与 `filePatterns=null` ⇒ `HashPatterns(null)` 一致）。
+
+**同时确认的机制事实（供后续切片引用）**：供给**每次必然全量**，成因是结构性的 —— staging 根每 job 唯一且**拒绝复用**（`StagedFullTextIndexBuilder.cs:180-198`）⇒ 目标索引目录从不存在 ⇒ `hasExistingIndex=false`（`LuceneSearchEngine.cs:357`）⇒ 引擎增量分支不生效。`LuceneSearchEngine.cs:797` 的「每次都是全量重建」注释属 `BuildChunkIndexAsync`（预分块/outline 路径），**不命中供给**。
+
+---
+
+
 
 **断点**：`IndexPrebuildService` 原为**直写** `_searchEngine.BuildIndexAsync` + 用**索引根** mtime 判新鲜 —— 绕开 A1 的跨进程租约与 A2a 的预算硬限 / staging / 原子切换；且多 scope 时根 mtime 是**错信号**（一个 scope 构建会让其它 scope 被误判“新鲜”）。
 
