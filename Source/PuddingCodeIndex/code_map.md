@@ -333,4 +333,14 @@
 2. **Admin 前端（`Source/PuddingPlatformAdmin/src/**`，TS/TSX）在符号检索上完全不可达** —— 这是 ADR-089「多语言抽象」的**真实缺口**。在此之前的判断「TS/md 同名符号会一起返回、白占结果位」**不成立**，不要再用它当作本刀的动因。
 3. **口径纪律**：`Docs/Features/ADR-089-索引策略优先级-2026-09-24.md:30-31` 的 `TypeScript 0.0682` / `Markdown 0.0227` 出自**评测探针的全文检索路径**，与符号库覆盖无关。**禁止**用它们解释符号检索的分层表现。
 
-**后续切片（已登记，未做）**：查清 TypeScript/TSX 为何未入符号库（是 Admin 工程未登记为 scope，还是 `TypeScriptIndexer` 未写 `CodeSymbols`），并给出「Admin 前端可通过符号检索定位」的验收判据。
+**根因已定位（2026-09-25；源码级 + 磁盘级双证，非推测）**：`Source/PuddingCodeIntelligence/TypeScript/TypeScriptIndexer.cs` 把提取脚本硬编码在**被索引项目根**之下 —— `:74` 与 `:245` 两处均为 `var scriptPath = Path.Combine(descriptor.ProjectPath, "Scripts", "extract-ts-symbols.js");`，文件不存在即 `return new CodeIndexResult(false, CodeIndexStatus.Failed, $"Extraction script not found: {scriptPath}", …)`。磁盘实测（全仓文件名匹配）：`extract-ts-symbols.js` **仅存在于** `Source/PuddingCodeIndexer.Cli/Scripts/`（及其 bin/pub 产物）——**4 个已登记 scope（仓库根 / PuddingCore / PuddingPlatform / PuddingRuntime）的 `ProjectPath` 下都没有 `Scripts/`** ⇒ TS 索引**必然** Failed ⇒ 符号库零 TS 符号。
+
+**已排除的假设**：不是缺 Node —— `IsNodeAvailable()`（`:328-350`）走 `node --version`，本机实测 **v24.15.0**（`C:\Program Files\nodejs\node.exe`，exit 0）⇒ 该分支不会命中。
+
+**同类缺陷（同代码模式，尚未验证效果）**：`Source/PuddingCodeIntelligence/Python/PythonIndexer.cs:72` / `:244` 同样要求 `<ProjectPath>/Scripts/extract-py-symbols.py` ⇒ **Python 符号索引大概率同样哑火**（未实测 Python 符号是否缺失）。
+
+**设计缺陷（本因，非症状）**：提取脚本属**工具链**，却被要求放在**被索引的数据目录**里 —— 于是「索引任意 TS/Python 工程」变成「往对方工程里丢脚本」。三种修法（择一，待裁定）：① 把脚本落到所需 scope 根（治症，成本最低）；② 将 `Source/PuddingPlatformAdmin` 单独登记为 scope 并把脚本放到其根；③ **改脚本解析基准**为程序集/宿主目录而非 `ProjectPath`（根治，但属 S5 接入面改动）。
+
+**副作用（放大了不可见性）**：该失败路径**无任何可见告警**（`CodeIndexResult.Failed` 未上报到日志/工具面），叠加「生产无人在建索引」（见下），使 TS 覆盖缺口长期不可见。
+
+**验收判据（修复后）**：`code_symbol_search("ChannelBinding")` 与 `("readRecentWorkspaceVisit")` 能返回 `.ts` 命中；且 `CodeFiles` 中出现 `Source/PuddingPlatformAdmin/src/**`。
