@@ -249,3 +249,32 @@
 - **阈值触发后的行为未实现**（拒绝增长 / GC / `GrepDegraded`），属 M2-b/c。
 - 测量口径为「库目录总占用」＝自觉取舍：不会漏计，但 `-wal` 抖动可能让瞬时读数越线；若后续要改为「仅主库文件」，是解析器 + 一处测量函数的局部改动（配置里未引入分支，避免投机式可配置性）。
 - 本刀**未做**「每项目一库」的拓扑迁移（M2-d），也未拆分现有中央库。
+
+---
+
+## 变更（2026-09-25，ADR-089 U4-2a）：符号检索的「匹配域」
+
+**症状**：`code_symbol_search(query="conf")` 返回 40 条**全部是 `.ctor`** —— 构造器的 Name 是 `.ctor`，命中实际发生在 **Signature** 列（其签名里含该词）。调用方无法表达「只关注符号名」，拿到的是假阳性；而工具的 query 描述还写着 "matched against symbol names"，与实现不符。
+
+**根因（代码级）**：`SqliteCodeIndexStore.SearchSymbolsAsync` 的 WHERE 让 query 同时匹配 `Name`/`Signature`/`Container` 三列：
+`AND ($query = '' OR Name LIKE $likeQuery OR Signature LIKE $likeQuery OR Container LIKE $likeQuery)`
+排序亦只有「`Name` 精确等于」优先 ⇒ 签名命中与名字部分匹配同权。
+
+**交付**：
+
+| 面 | 位置 | 事实 |
+| --- | --- | --- |
+| 契约 | `Contracts/CodeSymbolContracts.cs` | 新增 `[Flags] CodeSymbolMatchTarget { None=0, Name=1, Signature=2, Container=4, All=Name\|Signature\|Container }`；`CodeSymbolSearchRequest` 末尾新增可选 `MatchTarget = All` ⇒ **既有调用零行为变化** |
+| 存储 | `Storage/SqliteCodeIndexStore.cs` | WHERE 改为逐列开关 `($matchName=1 AND Name LIKE …) OR …`；`MatchTarget == None` 视为 `All`（否则退化为「返回全部」的静默陷阱） |
+| 工具 | `Source/PuddingRuntime/…/CodeIntelligence/CodeQueryTools.cs`（S5 接入） | 新增 `match_target`（逗号分隔，name/signature/container/all）；未知取值 **fail-closed** 且不触达服务；修正与实现不符的 query 描述 |
+
+**门禁**：`PuddingCodeIndexTests` **139/139**（基线 133 + 6）；`PuddingRuntimeTests` 全套 **1879 通过 / 0 失败 / 6 跳过 / 1885**；`dotnet build Source/PuddingRuntime -c Release` exit 0。
+
+**变异取红**：变异 = 三列恒全开（模拟修复前行为）⇒ 主测红在正确断言（应为 `<1>` 实际 `<3>`，`CodeSymbolMatchTargetTests.cs:60`）；复原后 139/139；`MUTATION` 残留 grep **0**。
+
+**诚实登记**：首个变异（`$matchName` 恒 1）**未能取红** —— 在 Name 域上它与正确实现等价（正确实现本就把另两列设 0），属**假变异**；改为模拟修复前行为后才取红。教训：变异必须真正改变受测路径的可观测行为。
+
+**留白（未做，如实登记）**：
+- 默认匹配域仍是 `All`（保持既有召回）⇒ 「搜 `conf` 返回一堆 `.ctor`」的**默认体验未变**，需调用方显式传 `match_target=name`。是否把默认改为 `Name` 是**召回/精度取舍**，留待裁定。
+- **排序未按匹配域加权**：`ORDER BY CASE WHEN Name = $query THEN 0 ELSE 1 END, Name, SymbolId` 仍只对「名字精确等于」加权。
+- `Kind` 与匹配域**正交但未联动**（各自独立过滤）。

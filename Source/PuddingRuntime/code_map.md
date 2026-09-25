@@ -296,4 +296,16 @@ S2a 已落地（`578c3c0`，**已推送；需重启才生效**）：把三处硬
 测试 | 新增 3 用例：① 取红主测——含语法字符且引擎 0 命中时必须重试并救回命中、断言恰好重试 **1** 次且降级形态 == `Alpha OR Beta OR Gamma`；② 守卫——纯词 0 命中**不得**重试；③ 守卫——有命中时**不得**多调一次引擎（正常路径零行为变化） |
 门禁 | **失败 0 / 通过 61 / 总计 61**（基线 58，旧 58 条全绿无回归）；变异（`TryBuildOrFallbackQuery` 直接 `return false` = 禁用降级）⇒ **失败 1 / 通过 0 / 总计 1（RC=1）**，红在正确断言上（`SearchGrepToolTests.cs:1868`，输出回落 `(no matches)`）；复原 ⇒ 61/61（RC=0）；MUTATION 残留 **0** |
 原始输出 | `temp/test-u4-5c-mut-red.txt`、`temp/test-u4-5c-green-restored.txt` |
-未做 | 新逻辑需 Core 重启后在本机 `search_grep` 上生效；`|` 在该 parser 下的词法层解释**未定位到 Lucene 源码级结论**——本刀不依赖该解释，只按“`|` ≠ OR、显式 OR 可用”两条实测事实做降级 |
+未做 | 新逻辑需 Core 重启后在本机 `search_grep` 上生效；`|` 在该 parser 下的词法层解释**未定位到 Lucene 源码级结论**——本刀不依赖该解释，只按“`|` ≠ OR、显式 OR 可用”两条实测事实做降级
+
+---
+
+## 变更（2026-09-25，ADR-089 U4-2a 接入面）：`code_symbol_search` 新增 `match_target`
+
+**改动**：`Tools/BuiltIns/CodeIntelligence/CodeQueryTools.cs` 的 `CodeSymbolSearchTool` / `CodeSymbolSearchArgs` —— 新增 `match_target` 参数（逗号分隔：`name` / `signature` / `container` / `all`），解析后写入 `CodeSymbolSearchRequest.MatchTarget`；未知取值 **fail-closed**（`Fail("Unknown match_target '…'")`）且**不触达** `ICodeQueryService`（不猜、不静默当全开）。同时修正 `query` 的 `[ToolParam]` 描述——原文写「matched against symbol names」，而实现实际匹配 Name/**Signature**/**Container** 三列。
+
+**配套组件**：核心检索行为在 `PuddingCodeIndex`（契约 `CodeSymbolMatchTarget` + `SqliteCodeIndexStore` 逐列开关），详见 `Source/PuddingCodeIndex/code_map.md` 的 U4-2a 条目（含变异取红原始输出）。
+
+**门禁**：新增 `CodeSymbolSearchMatchTargetTests` **4/4**（透传 / 缺省 All / 组合并集 / 未知值 fail-closed 且未触达服务）；`PuddingRuntimeTests` 全套 **1879 通过 / 0 失败 / 6 跳过 / 1885**。
+
+**留白**：`match_target` 只影响**匹配域**，不改变默认行为（缺省仍 `all`）；默认是否收敛为 `name` 属召回/精度取舍，未裁定。 |
