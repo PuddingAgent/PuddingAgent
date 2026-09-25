@@ -18,7 +18,7 @@
 |------|------|
 | `Search/` | 搜索实现 |
 | `Text/` | 文本处理 |
-| `Maintenance/` | **局部维护纯逻辑**（零 IO / 零线程）：`MaintenanceCheckpoint.cs`（checkpoint 模型 + 协议 JSON + 路径解析，**只经 `FullTextIndexPaths`**）· `MTimeComparison.cs`（`>=` 判定 / `effective = watermark - overlap` / `ComputeNextWatermark` 取**扫描开始**时刻 / 时钟回拨判定 / stat 稳定性）· `FullTextChangeCoalescer.cs`（per-path latest-wins / `Sources` 位或 / rename 折叠 / 越界拒绝）· `MaintenanceOptions.cs`（fail-closed 校验，默认全关） |
+| `Maintenance/` | **局部维护纯逻辑**（零 IO / 零线程）：`MaintenanceCheckpoint.cs`（checkpoint 模型 + 协议 JSON + 路径解析，**只经 `FullTextIndexPaths`**）· `MTimeComparison.cs`（`>=` 判定 / `effective = watermark - overlap` / `ComputeNextWatermark` 取**扫描开始**时刻 / 时钟回拨判定 / stat 稳定性）· `FullTextChangeCoalescer.cs`（per-path latest-wins / `Sources` 位或 / rename 折叠 / 越界拒绝）· `MaintenanceOptions.cs`（fail-closed 校验，默认全关）· `CheckpointAdvancePolicy.cs`（**决定「本轮要不要推进 checkpoint」的纯策略接缝**：`AllowsAdvance` / `Decide`，规则 `State==Applied && FailedCount==0 && RetainedOldCount==0`；给出可区分的阻止原因；文档注释内登记了**饥饿风险**——永久不可读文件 ⇒ checkpoint 永不推进、每轮重扫但不漏文件） |
 | `FullTextPolicyFingerprint.cs` | **`.last_indexed.p` patterns 指纹的唯一真源**（S1b 从 `LuceneSearchEngine` 私有方法收敛而来）：`filePatterns ?? "(default)"` → SHA256(UTF-8) → 小写 hex → **前 12 字符**。**不得**改大写 hex / 改截断长度 / 换哈希（会**静默**让全部现存 `.last_indexed` 判为「patterns 变了」⇒ 触发全量重建）；类内**不含**路径命名哈希 |
 
 ## 配置
@@ -29,7 +29,7 @@
 
 ## 测试
 
-`Source/PuddingFullTextIndexTests/` — 全文索引测试（**192 项：通过 188 / 跳过 4**；S1b 前为 180，S1a 前基线为 146）
+`Source/PuddingFullTextIndexTests/` — 全文索引测试（**207 项：通过 203 / 跳过 4**；S2a 前为 192，S1b 前为 180，S1a 前基线为 146）
 
 ## 变更（2026-09-24，ADR-089 U4-6：索引构建遍历改造）
 
@@ -308,3 +308,62 @@ M1（`ToUpperInvariant`→`ToLowerInvariant`）/ M2（去掉 `TrimEnd`）/ M3（
    它改用**确定性 PowerShell 原地位替换**（`occurrences==1` 才写）完成变异与复原。**父级裁定：接受**，
    因为该纪律的目的（防 `Copy-Item` 造成 mtime 回退 ⇒ MSBuild 跳过重编译 ⇒ 假绿）已由更强证据满足：
    `git hash-object` 逐位相同 + 源 mtime > DLL mtime + 复原后复跑为绿。
+
+## 变更（2026-09-25，S2a：checkpoint 推进策略接缝 + 崩溃/重放测试 · 组件 + 测试）
+
+**为什么本片要动生产代码**（codex 的 S2 原文只写「只修改测试工程」）：S1a 只交付了 `MaintenanceCheckpoint.Advance` ——
+一个**纯"推进"构造**（调用它必然产出一个新 checkpoint）。组件内**没有任何地方决定"要不要推进"**，
+而 codex 给 S2 的变异目标恰恰是「在某个文件失败时仍推进 checkpoint，故障重放测试必须红」。
+**决策点不存在，这条不变量就无法被测试守住** ⇒ 本片补上该接缝。它是纯逻辑、零 IO、约 163 行，现在补最便宜。
+
+**语义完全来自方案原文，未自行扩大或缩小**：
+- §2.4：`某个文件失败、其他文件成功 ⇒ 成功文件可提交，但全局 checkpoint 不推进；失败文件和成功文件下次都会重放`
+  以及 `成功文件被重复处理是允许的；漏掉文件不允许。`
+- §3.6 第 12 步：`若这是完整补偿轮次且所有批次成功，原子推进 checkpoint。`；末句：`取消…不写 checkpoint。`
+
+**落成的判定（`CheckpointAdvancePolicy.cs:114-117` 逐字）**：
+
+```csharp
+return result.State == FullTextMutationState.Applied
+    && result.FailedCount == 0
+    && result.RetainedOldCount == 0;
+```
+
+其余 5 个终态（`PartiallyApplied` / `Rejected` / `Busy` / `Cancelled` / `Failed`）一律阻止。
+`Decide` 另给 9 个 **ASCII** 阻止原因（可区分 失败 / 取消 / 预算拒绝 / 互斥 / 部分成功 / 计数矛盾 / 保留待重试）。
+
+**为什么 `RetainedOldCount > 0` 也必须阻止推进**：watermark 取**扫描开始**时刻，下轮判据是 `mtime >= watermark - overlap`。
+被"保留旧索引 + 待重试"的文件 mtime 早于新 watermark ⇒ **下轮被跳过 ⇒ 待重试永远不发生** ⇒ 索引永久停在旧内容。
+「旧文档还在」**不是**可推进的理由。与"失败"同构，三条件同一方向 fail-closed。
+
+**⚠️ 饥饿风险（已在类文档注释内显式登记，防后人"顺手优化"掉）**：若某文件**永久**不可读（长期独占锁 / 权限撤销 /
+永久离线网络盘），则 checkpoint **永不推进** ⇒ 每轮重扫整个 scope（CPU/IO 与单批路径上限被反复消耗），
+但**不会漏文件** —— 这是方案主动选择的 fail-closed 方向。逃生通道是体检层 `ManualRebuildRequired` / 人工重建，
+**不得**用"允许推进"绕过。本片是纯策略层，**无法**区分"暂时"与"永久"不可读（入参无重试历史）。
+
+**新增测试（15 条 / 2 个文件）**：
+- `CheckpointAdvancePolicyTests.cs`（411 行）：**24 格全状态矩阵**（6 状态 × `FailedCount∈{0,>0}` × `RetainedOldCount∈{0,>0}`，
+  测试内自证 `cells.Count == 24` 且断言 allowed 1 / blocked 23 ⇒ **每格都被实际执行**，不是只测代表值）·
+  故障重放（3 成功 + 1 失败 ⇒ 不推进，**且下一轮 4 个文件全部重放**）· retained 特测 · 取消特测 ·
+  **负向对照**（全成功 ⇒ 允许推进，防"永不推进"也能全绿的假绿）· 原因可区分 · 契约计数矛盾时 fail-closed
+  且**不读回** `FullTextMutationResult.CheckpointAdvanced`（防"同一事实两个真源"）· 静态面冻结 · null 拒绝。
+- `CheckpointCrashSafetyTests.cs`（392 行）：方案 §2.4 崩溃矩阵 5 行 —— 临时残留不算已提交 · 残留与正式并存只读正式 ·
+  原子替换后 generation 单调且 watermark = 扫描**开始**时刻 · commit 后 checkpoint 前重放幂等且不漏文件 ·
+  损坏/不可读 fail-closed 且**绝不**当作"无需维护"。
+
+**验证（父级独立复跑，不采信自述）**：组件与 CLI 构建 **0 警告 / 0 错误**；
+`PuddingFullTextIndexTests` **失败 0 / 通过 203 / 跳过 4 / 总计 207**（S2a 前 192 ⇒ +15）。
+**两条变异取红**（父级脚本 + TRX 机器可读计数，分开做两次）：M1 把判定整式换成
+`return result.State != FullTextMutationState.Failed;` ⇒ **failed 8**，红名单含
+`ThreeSucceededOneFailed_BlocksAdvance_AndAllFourFilesReplayNextRound`（★要求的重放用例）
+与 `FullyAppliedBatch_IsTheOnlyAdvancingCase`（负向对照）；M2 删掉 `&& result.RetainedOldCount == 0`
+⇒ **failed 5**，红名单含 `RetainedOld_SinglePendingRetryPath_BlocksAdvance`（★要求的 retained 用例）。
+两次复原后 blob **逐位相同** `fa843bd31530c20316ee5a039b41cf5e8827e13a`。
+`MUTATION` 残留 0（对照 `CheckpointAdvancePolicy` = 32 处）；S1a/S1b 的 **8 个既有文件哈希全部未变** ⇒ 零越界。
+
+**已登记未决项（父级需在 S3 前裁定）**：① `FullTextMutationResult.CheckpointAdvanced`
+字段的数据流方向（产物 or 输入）—— 本片按冻结规则只依赖 `State`/`FailedCount`/`RetainedOldCount`，
+把它当**产物、不回读**；若 S3 把它当输入会出现"同一事实两个真源"。
+② §3.6 第 12 步的「**且这是完整补偿轮次**」**不在本接缝范围内**（属调用方前置条件）；
+若 S3 忘记取交集，会退化为"不完整轮次也推进"，本片防不住。
+③ 建议 S3 在体检层加「同一路径**连续 N 轮** retained ⇒ 告警」的可观测项，否则永久不可读文件会导致长期重扫。
