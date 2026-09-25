@@ -24,7 +24,7 @@
 
 ## 测试
 
-`Source/PuddingFullTextIndexTests/` — 全文索引测试（134 项：通过 130 / 跳过 4）
+`Source/PuddingFullTextIndexTests/` — 全文索引测试（142 项：通过 138 / 跳过 4）
 
 ## 变更（2026-09-24，ADR-089 U4-6：索引构建遍历改造）
 
@@ -159,3 +159,42 @@ live 满索引被一次只含 **0/99 文档**的构建通过 A2a 的原子切换
 `StagedSupplyRegressionGateTests` 11 项（A1 / A1b / A2 / A3 / A4 / **A5 真 Lucene** / A6 / A7 / G1 / G1b / G4）；
 `PuddingFullTextIndex.Cli.Tests` **41/41**（未改 CLI）；M1（删 G2）/ M2（G3 比较写反）/ M3（live 不存在也拒）分别取红 **A1+A1b+A5+A6 / A2+A3+A6+A7 / A4**，复原后 blob hash 逐位相同，`MUTATION` 残留 0。
 详见 `temp/A22A-REPORT.md` 与 `temp/a22a-evidence/`。
+
+## 变更（2026-09-25，A22b 扫描期逐文件隔离 · 组件内 · 未接宿主）
+
+**目标**：消除「**整轮枚举被静默丢弃且 `Success=true`**」这条路径。缺陷本体：`LuceneSearchEngine.BuildIndexInternalAsync`
+的扫描块把 `catch (DirectoryNotFoundException)` / `catch (UnauthorizedAccessException)` 挂在 **foreach 之外**（连同仅为
+承载它的 `foreach (var _ in new[] { "*" })` 单次包装）⇒ 扫描途中任一文件抛这两类异常，被丢弃的是**整轮枚举的剩余部分**
+（生产形态 99/4510、另一轮 0/4510），而构建照常返回 `Success=true`；`IOException` 不在 catch 列表里 ⇒ 冒到方法级 catch 后
+`IndexedFileCount` 被硬写成 `0`（丢失「已经收集了多少」）。A22a 的闸门只能拦住这种结果被提升为 live，**不能消除结果本身**。
+
+**新增文件**（`Infrastructure/Search/FileCandidateCollector.cs`）
+
+| 成员 | 一句话 |
+|---|---|
+| `FileCandidateCollector.TryCollectCandidate(file, scanRoot, options, patterns, out CandidateEntry, out string? skipReason)` | 逐文件判定体（扩展名 → 调用方 pattern → 排除路径 → 空文件/超限）抽成 **internal 纯函数**：文件系统异常（`IOException` / `UnauthorizedAccessException` / `SecurityException`）**就地吃掉**并返回 `false` + `error:` 前缀原因，`OperationCanceledException` **原样外抛**。 |
+| `TryCollectCandidate(..., CancellationToken, out ..., out ...)` 重载 | 引擎扫描循环的入口：取消检查落在本类边界内、且**在吞异常的 catch 之外**（A4 锁死）。 |
+| `CandidateEntry` / `CandidateSkipReasons` / `IsErrorSkip` | 候选条目；策略原因常量（`not-indexable-extension` / `pattern-mismatch` / `excluded-path` / `empty-file` / `too-large`）+ 异常原因前缀 `error:`；`IsErrorSkip` 让调用方区分「策略拒绝」与「坏文件」。 |
+
+**改动**
+
+| 文件 | 改动 |
+|---|---|
+| `Infrastructure/Search/LuceneSearchEngine.cs` | 扫描块改用 helper，**删除**整轮级别的两个 catch 与 `foreach (var _ in ...)` 包装；新增 `enumeratedCount` / `skippedByError`；扫描期非取消异常 ⇒ 扫描级 catch **明确失败**（`Success=false` + 异常类型 + 「已枚举/已收集」计数 + 「扫描被中断」字样）；方法级 catch 同样带上计数（不再硬写 0）；写入循环两个既有逐文件 catch 各 `skippedByError++`；`MatchesAnyPattern` 由 `private` 提升为 `internal`（供 helper 复用，glob 保持单一实现）。 |
+| `Contracts/IFullTextSearchEngine.cs` | `FullTextIndexResult` **末尾追加** `int SkippedByError = 0`（带默认值 ⇒ CLI 与既有构造点不改一行）；`Success=true && SkippedByError>0` 时 `Error` 给出「部分构建」文本，终态不表现成一切正常。 |
+
+**实测（本刀）**：组件构建 **0 警告 0 错误**；`PuddingFullTextIndexTests` **142 项（通过 138 / 跳过 4 / 失败 0）**（基线 134 ⇒ **+8**，
+全部在 `ScanPerFileIsolationTests`：A1~A8）；`PuddingFullTextIndex.Cli.Tests` **41/41**（**未改 CLI 一行** ⇒ R3 未被撤回）；
+M1（去掉 helper 的 `IOException` catch）/ M2（取消检查被吞）/ M3（`SkippedByError` 恒 0）分别取红 **A2+A8 / A4 / A6+A8**；
+复原后 `LuceneSearchEngine.cs` blob `eb448a554c855fec2bf20b0e71f5b02d539c4903`、`FileCandidateCollector.cs` blob
+`c4996a8f6df380d0237357358e24bd6eef7e22b2` **逐位相同**，`MUTATION` 残留 **0**。
+详见 `temp/A22B-REPORT.md` 与 `temp/a22b-evidence/`。
+
+⚠️ **仪器坑（本刀实证）**：用「pristine 副本 + `Copy-Item` 覆盖」复原源码时，副本保留的是变异**前**的旧时间戳 ⇒ 源文件比已编译
+产物更旧，MSBuild 增量判定**跳过重编译**，于是「复原后应绿」的那一次跑其实跑的是变异后的旧 DLL（本刀首次复原即踩中）。
+复原必须刷新 `LastWriteTimeUtc`；判据是「blob hash 相同」**且**「重编译确实发生」。
+
+⚠️ **登记留白**：① `Infrastructure/Supply/FileSystemSupplyInventory.cs:68-84` 仍在**自己复刻**同一套判定（扩展名/排除/体积），
+本刀按「禁止顺手重构」未动它（它返回的是清点口径而非候选条目）；② 扫描级 catch 覆盖的是「逐文件判定」与「枚举」共用的异常出口，
+枚举器内部若抛非 `DirectoryNotFoundException`/`UnauthorizedAccessException`/`IOException` 的异常同样落到它 —— 这条路径有 A7 覆盖，
+但**枚举器自身**的注入端口不存在，测试用的是注入到扩展名白名单集合（见报告「仪器与注入点」）。

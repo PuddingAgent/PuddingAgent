@@ -67,4 +67,5 @@ public sealed record FullTextIndexResult(
     int IndexedFileCount,
     long TotalBytes,
     long ElapsedMs,
-    string? Error);
+    string? Error,
+    int SkippedByError = 0);

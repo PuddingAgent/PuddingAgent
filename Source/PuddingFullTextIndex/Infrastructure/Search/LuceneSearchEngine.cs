@@ -326,7 +326,7 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
     /// （旧实现是 <c>$"*{p}"</c> + <c>Directory.EnumerateFiles</c>）。
     /// 通配符匹配交给 <see cref="FileSystemName.MatchesSimpleExpression"/>，不自行实现 glob。
     /// </remarks>
-    private static bool MatchesAnyPattern(string filePath, string[] patterns)
+    internal static bool MatchesAnyPattern(string filePath, string[] patterns)
     {
         var fileName = Path.GetFileName(filePath);
 
@@ -377,26 +377,37 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
         // —— 探针据此判定「根 scope 索引不可行」。扩展名白名单与调用方 glob 模式都在枚举后按文件过滤，
         // 因此接受的文件集合与旧实现完全相同；真正的成本削减来自 EnumerateFilesPruned 的目录剪枝。
         var allFiles = new List<(string Path, DateTime LastWrite, long Size)>();
-        foreach (var _ in new[] { "*" })
+        var enumeratedCount = 0;
+        var skippedByError = 0;
+
+        // A22b：扫描期异常必须"明确失败"（不吞、不静默丢弃）：
+        //   · 取消照旧外抛（本 catch 用过滤器排除 OperationCanceledException，语义与改动前一致）；
+        //   · 其它异常 ⇒ Success=false + 异常类型 + 已枚举/已收集计数 + "扫描被中断"字样。
+        // ⚠️ 本 catch **不吞**异常：任何把它改成 { /* skip */ } 的改动都会让 A7 变红。
+        try
         {
-            try
+            foreach (var file in EnumerateFilesPruned(directoryPath, ct))
             {
-                foreach (var file in EnumerateFilesPruned(directoryPath, ct))
+                enumeratedCount++;
+
+                if (FileCandidateCollector.TryCollectCandidate(
+                        file, directoryPath, _options, patterns, ct, out var entry, out var skipReason))
                 {
-                    ct.ThrowIfCancellationRequested();
-                    var ext = Path.GetExtension(file);
-                    if (!_options.IsIndexableExtension(ext)) continue;
-                    if (patterns is { Length: > 0 } && !MatchesAnyPattern(file, patterns)) continue;
-                    if (_options.IsExcludedPath(file, directoryPath)) continue;
-
-                    var fi = new FileInfo(file);
-                    if (fi.Length > _options.MaxFileSizeBytes || fi.Length == 0) continue;
-
-                    allFiles.Add((file, fi.LastWriteTimeUtc, fi.Length));
+                    allFiles.Add((entry.Path, entry.LastWrite, entry.Size));
+                }
+                else if (FileCandidateCollector.IsErrorSkip(skipReason))
+                {
+                    skippedByError++;
                 }
             }
-            catch (DirectoryNotFoundException) { /* skip */ }
-            catch (UnauthorizedAccessException) { /* skip */ }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new FullTextIndexResult(
+                false, allFiles.Count, 0, sw.ElapsedMilliseconds,
+                $"扫描被中断：{ex.GetType().Name}: {ex.Message}" +
+                $"（已枚举文件 {enumeratedCount} 个，已收集文件 {allFiles.Count} 个）",
+                skippedByError);
         }
 
         // 增量模式下筛选变更文件
@@ -515,8 +526,8 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
                         indexedCount++;
                         totalBytes += size;
                     }
-                    catch (UnauthorizedAccessException) { /* skip */ }
-                    catch (IOException) { /* skip */ }
+                    catch (UnauthorizedAccessException) { skippedByError++; /* A22b：写入期跳过对外可见 */ }
+                    catch (IOException) { skippedByError++; /* A22b：写入期跳过对外可见 */ }
                 }
 
                 writer.Commit();
@@ -530,18 +541,30 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
                 // 更新 .last_indexed 时间戳（记录扫描开始时间而非构建完成时间）
                 await WriteLastIndexedAsync(indexDir, patternHash, scanTimestamp, ct);
 
-                return new FullTextIndexResult(true, indexedCount, totalBytes, sw.ElapsedMilliseconds, null);
+                // A22b：被跳过的文件数对外可见；有跳过时终态不得表现成「一切正常」
+                return new FullTextIndexResult(
+                    true, indexedCount, totalBytes, sw.ElapsedMilliseconds,
+                    skippedByError > 0
+                        ? $"{skippedByError} 个文件因异常被跳过（扫描期/写入期），本次索引为部分构建结果。"
+                        : null,
+                    skippedByError);
             }
         }
         catch (OperationCanceledException)
         {
             if (!incremental)
                 RemoveIndex(directoryPath);
-            return new FullTextIndexResult(false, 0, 0, sw.ElapsedMilliseconds, "Index build cancelled.");
+            return new FullTextIndexResult(false, 0, 0, sw.ElapsedMilliseconds, "Index build cancelled.", skippedByError);
         }
         catch (Exception ex)
         {
-            return new FullTextIndexResult(false, 0, 0, sw.ElapsedMilliseconds, ex.Message);
+            // A22b：非取消异常 ⇒ 明确失败（不再静默丢弃成部分成功）。计数必须带上"已经走到哪"：
+            // 旧实现把 IndexedFileCount 硬写成 0，于是「扫描到一半被打断」与「什么都没扫到」外观完全相同。
+            return new FullTextIndexResult(
+                false, allFiles.Count, 0, sw.ElapsedMilliseconds,
+                $"构建失败（扫描阶段之外）：{ex.GetType().Name}: {ex.Message}" +
+                $"（已枚举文件 {enumeratedCount} 个，已收集文件 {allFiles.Count} 个）",
+                skippedByError);
         }
     }
 
