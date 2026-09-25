@@ -20,7 +20,7 @@ namespace PuddingCodeIntelligence.TypeScript;
 /// Supports two modes: project-level extraction (--project) for cross-file references,
 /// and per-file extraction as a fallback.
 /// </summary>
-public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater
+public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater, ILanguageCodeIndexer
 {
     // Uses centralized IndexExcludePatterns.NoiseDirNames for directory exclusion.
 
@@ -51,6 +51,14 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater
         _logger = logger;
         _assetResolver = assetResolver;
     }
+
+    /// <inheritdoc />
+    public string Language => "TypeScript/JavaScript";
+
+    /// <inheritdoc />
+    // Explicit implementation: the class already declares a private static field of this name, and that
+    // field stays the single source of the extension set - no existing member is renamed or touched.
+    IReadOnlyCollection<string> ILanguageCodeIndexer.SupportedExtensions => SupportedExtensions;
 
     /// <inheritdoc />
     public async Task<CodeIndexResult> IndexWorkspaceAsync(

@@ -61,11 +61,22 @@ public static class DependencyInjection
 
         services.TryAddSingleton<ICodeQueryService, CodeQueryService>();
         services.TryAddSingleton<ILanguageServerService, IndexBasedLanguageServerService>();
-        services.TryAddSingleton<ICodeIndexer, RoslynCSharpIndexer>();
+
+        // ── Code indexers: multi-language fan-out ──────────────────────
+        // Every language implementation is registered under the marker port ILanguageCodeIndexer and the
+        // aggregate ICodeIndexer fans a scope out to all of them. Two ports and not one: an aggregate that
+        // injected IEnumerable<ICodeIndexer> would inject *itself* (it is an ICodeIndexer as well) and
+        // recurse without bound, so the split between "language implementation" and "the contract callers
+        // consume" is enforced at compile time instead.
+        // Registration order IS the merge order of messages and per-language outcomes: C# → TS/JS → Python.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ILanguageCodeIndexer, RoslynCSharpIndexer>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ILanguageCodeIndexer, TypeScriptIndexer>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ILanguageCodeIndexer, PythonIndexer>());
+        services.TryAddSingleton<ICodeIndexer, CompositeCodeIndexer>();
 
         // Extractor assets belong to this component and are resolved from the directory holding its own
-        // assembly (B4+). Registered so a container-built TypeScriptIndexer/PythonIndexer uses exactly
-        // the same resolver their default constructor falls back to.
+        // assembly (B4+). Registered so the container-built TypeScriptIndexer/PythonIndexer registered
+        // above use exactly the same resolver their default constructor falls back to.
         services.TryAddSingleton<IExtractorAssetResolver, ExtractorAssetResolver>();
 
         // ── File outliners (multi-language) ─────────────────────────────

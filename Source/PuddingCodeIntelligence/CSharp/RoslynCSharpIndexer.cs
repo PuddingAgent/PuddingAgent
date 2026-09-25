@@ -14,7 +14,7 @@ namespace PuddingCodeIntelligence.CSharp;
 /// C# code indexer that extracts declarations, Contains/Calls relations, and references
 /// from Roslyn compilations and persists them through <see cref="ICodeIndexStore"/>.
 /// </summary>
-public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater
+public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater, ILanguageCodeIndexer
 {
 
 
@@ -26,6 +26,22 @@ public sealed class RoslynCSharpIndexer : ICodeIndexer, ICodeIndexFileUpdater
         _store = store;
         _logger = logger;
     }
+
+    /// <inheritdoc />
+    public string Language => "C#";
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<string> SupportedExtensions => CSharpFileExtensions;
+
+    /// <summary>
+    /// The extension this indexer owns for per-file routing: C# files are normally resolved through the
+    /// Roslyn workspace rather than by extension, so this set exists precisely so that the aggregate can
+    /// hand a single changed file to its owner instead of guessing.
+    /// </summary>
+    private static readonly HashSet<string> CSharpFileExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".cs",
+    };
 
     /// <inheritdoc />
     public async Task<CodeIndexResult> IndexWorkspaceAsync(
