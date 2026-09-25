@@ -1,3 +1,19 @@
+## 2026-09-25 U4-7：全文索引「供给参数」配置化 + fail-closed 校验（**默认关闭，现网行为不变**）
+
+**用户裁定（2026-09-25）**：「1GB 请使用配置文件确定参数，方便后期替换为 XXGB……用项目目录的统计 json 或 **Data 目录的配置文件**决定，而不是选择一个固定值。」⇒ 取 **Data 目录 `<DataRoot>/config/system.json`** 的 `FullTextIndex` 节。
+
+**交付（宿主侧 4 文件 + 4 测试文件）**：
+- `Source/PuddingHost/Hosting/FullTextIndexSupplyOptions.cs`：`Enabled`（**默认 false**）/ `Scopes` / `WorkspaceRoot`（相对项的显式绝对基准，**禁用进程 CWD**）/ `MaxIndexBytes`（**默认 `1_073_741_824` = 1 GiB = 2^30**，硬天花板 1 TiB）/ `MinRebuildInterval`（默认 12h）。**单一真源**：1 GiB 字面量生产代码只出现一次。
+- `Source/PuddingHost/Hosting/FullTextIndexSupplyResolver.cs`：fail-closed **纯函数**校验（三态 scope 探针可注入替身 ⇒ 单测零文件系统访问）；关闭 ⇒ 空动作且**零 I/O**（探针调用数 0）；空 Scopes / 空串·不存在·非目录·重复项 / 相对无基准 / `MaxIndexBytes<=0` 或 >1 TiB / 负间隔 ⇒ **结构化拒绝**（参数名+值+原因枚举），accepted/rejected 分别列出。
+- `Source/PuddingHost/Hosting/IndexPrebuildFreshness.cs` + `Services/IndexPrebuildService.cs`：预建服务改为**配置门控**（`StartAsync` 永不阻塞；默认配置下不建索引、零索引 I/O、不记 Error；校验不过 ⇒ 记 Error 且什么都不做）；**目标来自配置，不再是 `Directory.GetCurrentDirectory()`**（历史缺陷）。
+- `Extensions/PuddingServiceCollectionExtensions.Runtime.cs`：`Configure<FullTextIndexSupplyOptions>(builder.Configuration.GetSection(...))`（**必须用 `builder.Configuration`**，`system.json` 只加在它上面）+ 把 `IndexPrebuildService` 从 `HOSTED-DISABLED` 改为常驻注册（默认关闭 ⇒ 等价 no-op）。
+
+**门禁（父级自跑口径的原始输出）**：`dotnet test Tests/PuddingHost.Tests/PuddingHost.Tests.csproj -c Release` ⇒ **失败 0 / 通过 146 / 总计 146**（基线 126 + 新增 20；新增用例过滤跑 `FullTextIndex|IndexPrebuild` = 20/20）。
+**变异取红 8 组**（红/复原绿原始输出在 `temp/u4-7-evidence/m{1..8}-red.txt` + `u4-7-test-green.txt` / `u4-7-test-full-green.txt`）：M1 打开默认关闭 ⇒ **4 红**（A1/A4/A6 + 无该节默认关闭）；M2 `MaxIndexBytes<=0`→`<0` ⇒ A5 红；M3 负间隔检查失效 ⇒ A5 红；M4 Scopes 为空检查失效 ⇒ **2 红**（A2 + 服务级「拒绝可见」）；M5/M6/M7/M8 分别打掉空串/不存在/重复/非目录判定 ⇒ A3 红。复原后四份源码 `git hash-object` 与变异前**逐位相同**。
+**⚠️ 留白（R5）**：体积护栏的**执行**（达上限 ⇒ 告警/拒写/GC）**未实现**（ADR-089 §7.2 早已登记「留到后续切片」）；`MinRebuildInterval` 的「索引是否足够新」目前用**索引根 mtime** 粗粒度代理（per-scope 索引目录在组件内且 `internal`）⇒ 精确口径待组件暴露端口。报告：`temp/U4-7-REPORT.md`；ADR 追加节：`Docs/Features/ADR-089-索引服务与库管理-2026-09-24.md` §8。
+
+---
+
 ## 2026-09-24 U4-5a：`search_grep` 新增 `backend` 路由参数（接全文索引后端，**旧路径零改动**）
 
 **用户裁定（2026-09-24）**：「不要修改原来的旧的，而是 search_grep 新建一个参数…使用一个参数来路由到新的检索代码上，稳定之后，我们合并到旧的代码」，并要求可观测（“是否可以返回检索一次的时间”）。

@@ -54,6 +54,7 @@ using PuddingFullTextIndex.Contracts;
 using PuddingFullTextIndex.Infrastructure.Search;
 using PuddingFullTextIndex.Infrastructure.Text;
 using PuddingAgent.Connectors;
+using PuddingHost.Hosting;
 using PuddingAgent.Services.Events;
 using System.Threading.Channels;
 
@@ -156,8 +157,17 @@ public static partial class PuddingServiceCollectionExtensions
         {
             IndexRootDirectory = Path.Combine(sp.GetRequiredService<PuddingDataPaths>().DataRoot, "fulltext-index"),
         });
+        // U4-7：全文索引「供给参数」从 **Data 目录的 system.json** 的 FullTextIndex 节绑定。
+        // 这里必须用 builder.Configuration，而不是 bootstrapConfiguration —— 后者只含 appsettings/环境变量；
+        // system.json 是在 PuddingApplicationHost.CreateBuilder 里加到 builder.Configuration 的。
+        builder.Services.Configure<FullTextIndexSupplyOptions>(
+            builder.Configuration.GetSection(FullTextIndexSupplyOptions.SectionName));
         builder.Services.AddSingleton<IFullTextSearchEngine, LuceneSearchEngine>();
-        // HOSTED-DISABLED: builder.Services.AddHostedService<IndexPrebuildService>();
+        // U4-7（2026-09-25）：IndexPrebuildService 从 HOSTED-DISABLED 改为**由配置门控**的常驻注册。
+        // 默认（system.json 无 FullTextIndex 节 / Enabled=false）下 StartAsync 立即返回、不建索引、零索引 I/O，
+        // 因此注册它不改变现网行为（该服务此前根本没被注册）；只有显式 Enabled=true 且 fail-closed 校验通过
+        // 才在启动路径之外按 Scopes 预建。
+        builder.Services.AddHostedService<IndexPrebuildService>();
         builder.Services.AddPuddingAgentTool<SearchGrepTool>();
 
         // ── Smart 工作流工具（角色化子代理）──

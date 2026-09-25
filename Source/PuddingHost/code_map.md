@@ -77,3 +77,20 @@ HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 St
 组合根同时新增 `../Tests/PuddingHost.Tests/Hosting/CodeIndexMaintenanceHostCompositionTests.cs`（3 用例）：驱动可解析、泵端口与 `ICodeIndexScheduler` 同实例、驱动已注册且持有同一实例、无 scope 时安全 no-op、`Enqueue → 泵 → ICodeIndexer`（替身计数）闭合、已注册 scope 被挂上变更源。
 
 顺带修复：`Storage/StorageMaintenanceServiceTests.cs` 与 `Storage/StorageManagementAdministrationTests.cs` 各补 1 行 `using PuddingCodeIndex.Contracts;` —— 此前 `ICodeIndexScheduler` 已迁出 `PuddingCodeIntelligence.Contracts`，整个 `PuddingHost.Tests` 编排期编译不过。
+
+## U4-7（2026-09-25）— 全文索引「供给参数」配置化 + fail-closed 校验（**默认关闭**）
+
+用户裁定（2026-09-25）：「1GB 请使用配置文件确定参数，方便后期替换为 XXGB……用**项目目录统计 json** 或 **Data 目录配置文件**决定，而不是选择一个固定值。」
+⇒ 本刀取 **Data 目录配置文件**：`<DataRoot>/config/system.json` 的 `FullTextIndex` 节（宿主 `PuddingApplicationHost.CreateBuilder` 已加载它并支持 hot reload）。
+
+| 文件 | 用途 |
+|------|------|
+| `Hosting/FullTextIndexSupplyOptions.cs` | 🔑 供给参数类型（节名 `FullTextIndex`）：`Enabled`（**默认 `false`**）/ `Scopes`（目标目录，可为绝对或相对 `WorkspaceRoot`）/ `WorkspaceRoot`（相对项的**显式绝对基准**，**禁用进程 CWD**）/ `MaxIndexBytes`（**默认 `1_073_741_824` = 1 GiB = 2^30**；硬天花板 `1L << 40` = 1 TiB）/ `MinRebuildInterval`（默认 12h，JSON 写 `"hh:mm:ss"`）。**单一真源**：1 GiB 字面量全仓生产代码只在此出现一次。 |
+| `Hosting/FullTextIndexSupplyResolver.cs` | 🔑 fail-closed **纯函数**校验（不依赖 DI / 文件系统 / 网络）：关闭 ⇒ 成功且空动作、**连 scope 探针都不调用**；开启而 `Scopes` 为空 / 含空串·不存在·非目录·重复项 / 相对项无绝对基准 / `MaxIndexBytes <= 0` 或超 1 TiB / `MinRebuildInterval < 0` ⇒ **结构化拒绝**（`ParameterName` + `Value` + 原因枚举 + 可读消息），且 accepted / rejected **分别列出**。scope 探针是三态委托（`Missing`/`NotDirectory`/`Directory`），可注入替身 ⇒ 单测零文件系统访问。 |
+| `Hosting/IndexPrebuildFreshness.cs` | `MinRebuildInterval` 的消费点（纯函数、注入时钟）：无索引 / 索引过旧 / 间隔 ≤ 0 ⇒ 重建；索引足够新 ⇒ 跳过。⚠️ 仪器口径 = **索引根目录 mtime**（per-scope 索引目录在 `PuddingFullTextIndex` 内且 `internal`）⇒ 粗粒度代理，已在交付报告登记留白。 |
+| `Services/IndexPrebuildService.cs` | 由配置门控的预建服务（此前是 `HOSTED-DISABLED`）。`StartAsync` **永不阻塞宿主**；**默认配置下不建索引、零索引 I/O、不记 Error**；校验不过 ⇒ 记 Error 且什么都不做（fail-closed，不部分生效）；通过 ⇒ 启动路径之外按 `Scopes` 逐个预建 —— **目标来自配置，不再是 `Directory.GetCurrentDirectory()`**（历史缺陷）。 |
+| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 接线：`Configure<FullTextIndexSupplyOptions>(builder.Configuration.GetSection(FullTextIndexSupplyOptions.SectionName))`。**必须是 `builder.Configuration`**：`bootstrapConfiguration` 只含 appsettings/环境变量，`system.json` 只加在 `builder.Configuration` 上。同处把 `IndexPrebuildService` 从 `HOSTED-DISABLED` 注释改为常驻注册（默认配置下等价 no-op，现网行为不变）。 |
+
+测试（`../Tests/PuddingHost.Tests/Hosting/`，**20 用例**）：`FullTextIndexSupplyResolverTests`（A1~A5 + 相对/绝对基准 + 零间隔边界，10 条）、`IndexPrebuildServiceTests`（A6 + 开启路径 + 拒绝可观测，3 条）、`IndexPrebuildFreshnessTests`（5 条）、`FullTextIndexSupplyHostBindingTests`（system.json → IOptions 绑定 + hosted 注册 + 无该节即默认关闭，2 条）。证据与变异输出见 `temp/U4-7-REPORT.md`、`temp/u4-7-evidence/`。
+
+⚠️ **留白（R5）**：体积护栏的**执行**行为（达 `MaxIndexBytes` 时告警 / 拒写 / GC）**未实现**，属后续切片（ADR-089 §7.2「触发 GC 留到后续切片」）。本刀只提供参数与校验。
