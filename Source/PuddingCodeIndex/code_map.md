@@ -325,3 +325,12 @@
 **变异取红**：把 `extensionClause` 恒设为 `1 = 1` ⇒ 失败 3 / 通过 1，红在正确断言（预期 1 实际 4 @ `CodeSymbolFileExtensionFilterTests.cs:82`）；**通过的那条正是「缺省/空集合不过滤」回归守卫** —— 变异只该打掉“过滤生效”的用例，这正是守卫设计意图；复原后 143/143；`MUTATION` 残留 **0**。
 
 **留白**：按**语言名**（`C#` / `TypeScript`，`CodeFiles.Language` 列）过滤尚未提供，目前只有扩展名维度；本改动需宿主重启才在运行中的 `code_symbol_search` 上生效。
+
+**实测补记（2026-09-25，宿主重启后冒烟）**：本刀既然引入了「文件类型」维度，父级顺手做了端到端对照，结果挖出一条**比本刀机制更重要**的事实 —— **符号库当前没有任何 TypeScript 符号**。证据（两条独立探针）：① `ChannelBinding`：`Source/PuddingPlatformAdmin/src/services/platform/api.ts:26` 确有同名 `export interface`，但**不加任何过滤**检索只返回 **4 条、全为 C#**（`PuddingCore/Platform/WorkspaceDefinition.cs`），TS 同名符号**根本不出现**；② `E2eEvidence`：`TestScripts/e2e/helpers/evidence.ts:5` 同名 `export interface`，检索只返回 **2 条 C#**（`GetE2EEvidence` / `GetE2EEvidenceAsync`，子串命中），TS 符号同样缺席。**对照**（证明不是工具坏了）：全文索引侧覆盖正常 —— `search_grep(backend="index", file_ext="ts;tsx")` 用 `export (function|const|class|interface)` 实测命中 15 行 `.ts` 文件（`engineMs=403`）。
+
+⇒ 三条含义（**必须按此口径引用，不得混用**）：
+1. **`file_extensions` 的实际价值当前只体现在 C# 一侧**：库里没有非 C# 行可被「选出」，故本刀的**正向**端到端证据仍缺（反向证据为 `file_extensions=ts` 返回 0，与「库里没有 TS 符号」一致，中立的解释）。单元测试与变异取红仍然有效 —— 它们证明的是**机制**，不是**覆盖率**。
+2. **Admin 前端（`Source/PuddingPlatformAdmin/src/**`，TS/TSX）在符号检索上完全不可达** —— 这是 ADR-089「多语言抽象」的**真实缺口**。在此之前的判断「TS/md 同名符号会一起返回、白占结果位」**不成立**，不要再用它当作本刀的动因。
+3. **口径纪律**：`Docs/Features/ADR-089-索引策略优先级-2026-09-24.md:30-31` 的 `TypeScript 0.0682` / `Markdown 0.0227` 出自**评测探针的全文检索路径**，与符号库覆盖无关。**禁止**用它们解释符号检索的分层表现。
+
+**后续切片（已登记，未做）**：查清 TypeScript/TSX 为何未入符号库（是 Admin 工程未登记为 scope，还是 `TypeScriptIndexer` 未写 `CodeSymbols`），并给出「Admin 前端可通过符号检索定位」的验收判据。
