@@ -1,0 +1,20 @@
+<Project Sdk="MSTest.Sdk/4.0.1">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+  </PropertyGroup>
+
+  <!--
+    A3 边界：只引用 CLI 工程（CLI 再引用 A1 组件）。不新增 NuGet 包
+    （Moq / coverlet 由 Directory.Build.targets 统一提供）。
+    ⚠️ 不登记进 PuddingAgentNetwork.slnx。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingFullTextIndex.Cli\PuddingFullTextIndex.Cli.csproj" />
+  </ItemGroup>
+
+</Project>
