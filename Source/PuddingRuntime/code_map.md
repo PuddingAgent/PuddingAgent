@@ -308,4 +308,16 @@ S2a 已落地（`578c3c0`，**已推送；需重启才生效**）：把三处硬
 
 **门禁**：新增 `CodeSymbolSearchMatchTargetTests` **4/4**（透传 / 缺省 All / 组合并集 / 未知值 fail-closed 且未触达服务）；`PuddingRuntimeTests` 全套 **1879 通过 / 0 失败 / 6 跳过 / 1885**。
 
-**留白**：`match_target` 只影响**匹配域**，不改变默认行为（缺省仍 `all`）；默认是否收敛为 `name` 属召回/精度取舍，未裁定。 |
+**留白**：`match_target` 只影响**匹配域**，不改变默认行为（缺省仍 `all`）；默认是否收敛为 `name` 属召回/精度取舍，未裁定。
+
+---
+
+## 变更（2026-09-25，ADR-089 U4-2c）：`file_extensions`「文件类型」过滤面
+
+**改动**：`Tools/BuiltIns/CodeIntelligence/CodeQueryTools.cs` 的 `CodeSymbolSearchArgs` 新增 `file_extensions`（逗号/分号分隔，前导点可选、大小写不敏感，如 `"cs"` 或 `".cs,.ts"`），经 `ParseFileExtensions` 切分去空白后写入 `CodeSymbolSearchRequest.FileExtensions`；**省略或全空白 ⇒ `null`**（不过滤，与历史行为逐字一致）。归一化（补前导点、大小写）刻意留给存储层，工具层只做切分。
+
+**配套组件**：过滤的 SQL 实现与归一化均在 `PuddingCodeIndex`，详见 `Source/PuddingCodeIndex/code_map.md` 的 U4-2c 条目（含变异取红原始输出）。
+
+**门禁**：`CodeSymbolSearchMatchTargetTests` **6/6**（新增「透传为切分后的列表」与「缺省为 null」两条）；`PuddingRuntimeTests` 全套 **1881 通过 / 0 失败 / 6 跳过 / 1887**。
+
+**留白**：本改动需宿主重启才在运行中的 `code_symbol_search` 上生效。 |

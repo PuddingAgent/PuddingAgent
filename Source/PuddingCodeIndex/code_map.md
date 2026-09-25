@@ -302,3 +302,26 @@
 - 去重发生在 store 的 `LIMIT` **之后** ⇒ 跨项目重复密度高时**返回条数可能少于 `limit`**；根治要在 SQL 层按 `SymbolId` 去重并让 `LIMIT` 作用于去重后集合。
 - 本改动需宿主重启才在运行中的 `code_symbol_search` 上生效。
 - **4 个嵌套 project 的拓扑本身未解决**（同一符号被索引 4 次 = 存储与索引时间都浪费 4 倍）—— 去重只是消费侧止血。
+
+---
+
+## 变更（2026-09-25，ADR-089 U4-2c）：符号检索的「文件类型」过滤面（§2.3）
+
+**缺席的能力**：`CodeSymbolSearchRequest` 原本**没有**任何语言/扩展名维度 ⇒ 调用方只想要 C# 符号时，其他语言（TS / md）里的同名符号会一起返回并白占结果位。分层实测 recall@1 = **C# 0.6111 / TS 0.0682 / md 0.0227**，混查等于让低信号文件类型稀释结果。
+
+**交付**：
+
+| 面 | 位置 | 事实 |
+| --- | --- | --- |
+| 契约 | `Contracts/CodeSymbolContracts.cs` | `CodeSymbolSearchRequest` 末尾加 `IReadOnlyList<string>? FileExtensions = null`（null/空 = 不过滤，既有调用逐字不变） |
+| 存储 | `Storage/SqliteCodeIndexStore.cs` | `AND ({extensionClause})`；子句里只出现**参数名**（`$ext0/$ext1…`），值一律参数化 ⇒ 脏字符串无法改变 SQL 结构；无过滤时退化为恒真 `1 = 1` |
+| 归一化 | 同上 `NormalizeFileExtensions` | 去空白、补前导点（`cs` → `.cs`）、按大小写不敏感去重；SQLite `LIKE` 对 ASCII 大小写不敏感 |
+| 工具 | `PuddingRuntime/.../CodeQueryTools.cs` | `code_symbol_search` 新增 `file_extensions`（逗号/分号分隔） |
+
+**关键差异（与 U4-2b 对比）**：本刀的过滤在 **SQL 层**完成 ⇒ `LIMIT` 作用于**过滤后**集合，不存在 U4-2b 那个「去重发生在 LIMIT 之后」的缺口。
+
+**门禁**：`PuddingCodeIndexTests` **143/143**（含 4 新）；`PuddingRuntimeTests` 全套 **1881 通过/0 失败/6 跳过/1887**（基线 +2 = 新工具层用例）；`PuddingCodeIntelligenceTests` **95/95**。
+
+**变异取红**：把 `extensionClause` 恒设为 `1 = 1` ⇒ 失败 3 / 通过 1，红在正确断言（预期 1 实际 4 @ `CodeSymbolFileExtensionFilterTests.cs:82`）；**通过的那条正是「缺省/空集合不过滤」回归守卫** —— 变异只该打掉“过滤生效”的用例，这正是守卫设计意图；复原后 143/143；`MUTATION` 残留 **0**。
+
+**留白**：按**语言名**（`C#` / `TypeScript`，`CodeFiles.Language` 列）过滤尚未提供，目前只有扩展名维度；本改动需宿主重启才在运行中的 `code_symbol_search` 上生效。
