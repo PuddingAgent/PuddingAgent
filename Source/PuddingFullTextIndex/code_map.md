@@ -16,9 +16,9 @@
 
 | 目录 | 用途 |
 |------|------|
-| `Search/` | 搜索实现 |
+| `Search/` | 搜索实现（`LuceneSearchEngine.cs`：**S3a 仅做了最小可见性放宽** —— `AddDocument` / `ExtractContentAsync` 由 `private` 放宽为 `internal`，并新增 2 个 internal 只读访问器 `Analyzer` / `GetScopeGate`；**签名与实现逐字不变、public 成员集未变**，供局部维护内核复用同一提取路径与同一文档结构，避免两套文档结构静默漂移） |
 | `Text/` | 文本处理 |
-| `Maintenance/` | **局部维护纯逻辑**（零 IO / 零线程）：`MaintenanceCheckpoint.cs`（checkpoint 模型 + 协议 JSON + 路径解析，**只经 `FullTextIndexPaths`**）· `MTimeComparison.cs`（`>=` 判定 / `effective = watermark - overlap` / `ComputeNextWatermark` 取**扫描开始**时刻 / 时钟回拨判定 / stat 稳定性）· `FullTextChangeCoalescer.cs`（per-path latest-wins / `Sources` 位或 / rename 折叠 / 越界拒绝）· `MaintenanceOptions.cs`（fail-closed 校验，默认全关）· `CheckpointAdvancePolicy.cs`（**决定「本轮要不要推进 checkpoint」的纯策略接缝**：`AllowsAdvance` / `Decide`，规则 `State==Applied && FailedCount==0 && RetainedOldCount==0`；给出可区分的阻止原因；文档注释内登记了**饥饿风险**——永久不可读文件 ⇒ checkpoint 永不推进、每轮重扫但不漏文件） |
+| `Maintenance/` | **局部维护纯逻辑**（零 IO / 零线程）：`MaintenanceCheckpoint.cs`（checkpoint 模型 + 协议 JSON + 路径解析，**只经 `FullTextIndexPaths`**）· `MTimeComparison.cs`（`>=` 判定 / `effective = watermark - overlap` / `ComputeNextWatermark` 取**扫描开始**时刻 / 时钟回拨判定 / stat 稳定性）· `FullTextChangeCoalescer.cs`（per-path latest-wins / `Sources` 位或 / rename 折叠 / 越界拒绝）· `MaintenanceOptions.cs`（fail-closed 校验，默认全关）· `CheckpointAdvancePolicy.cs`（**决定「本轮要不要推进 checkpoint」的纯策略接缝**：`AllowsAdvance` / `Decide`，规则 `State==Applied && FailedCount==0 && RetainedOldCount==0`；给出可区分的阻止原因；文档注释内登记了**饥饿风险**——永久不可读文件 ⇒ checkpoint 永不推进、每轮重扫但不漏文件）· `LuceneFullTextIndexMaintenanceEngine.cs`（**S3a 真实 Lucene 局部写内核 + path inventory**：`ApplyChangesAsync` 单批 `CREATE_OR_APPEND`，**内容先提取→后 delete/add**、提取失败绝不进 delete 集合、单批 `Commit`、取消/Busy/quota 超限一律不提交；`CheckpointAdvanced` 是**产物** = `CheckpointAdvancePolicy.AllowsAdvance` **且** 输入的 `RequiresCheckpointAdvance`（**显式取交集**：策略为唯一真源，输入只能否决、不能强制为真）。`ProbeIntegrityAsync` **未实现**（显式 `NotSupportedException`，属 S3d，绝不伪装 Healthy）） |
 | `FullTextPolicyFingerprint.cs` | **`.last_indexed.p` patterns 指纹的唯一真源**（S1b 从 `LuceneSearchEngine` 私有方法收敛而来）：`filePatterns ?? "(default)"` → SHA256(UTF-8) → 小写 hex → **前 12 字符**。**不得**改大写 hex / 改截断长度 / 换哈希（会**静默**让全部现存 `.last_indexed` 判为「patterns 变了」⇒ 触发全量重建）；类内**不含**路径命名哈希 |
 
 ## 配置
@@ -29,7 +29,7 @@
 
 ## 测试
 
-`Source/PuddingFullTextIndexTests/` — 全文索引测试（**222 项：通过 218 / 跳过 4**；S2b 前为 207，S2a 前为 192，S1b 前为 180，S1a 前基线为 146）
+`Source/PuddingFullTextIndexTests/` — 全文索引测试（**232 项：通过 228 / 跳过 4**；S3a 前为 222，S2b 前为 207，S2a 前为 192，S1b 前为 180，S1a 前基线为 146）
 
 ## 变更（2026-09-24，ADR-089 U4-6：索引构建遍历改造）
 
@@ -413,3 +413,66 @@ M2 让 `FullTextChangeCoalescer.IsWithinScopeKey` **恒返回 `true`** ⇒ **fai
    （`shell` 有硬超时，跑 `dotnet test` 这类命令会中途被杀）。
 3. 本次子代理**自己也修了 3 处新测试的缺陷**（首跑 `failed 3` → 终态 `failed 0`），
    并在报告中如实登记——这种"自曝中间失败"是可信信号，值得保留。
+
+## 变更（2026-09-25，S3a：真实 Lucene 局部写内核 + path inventory · 组件内 · 未接宿主）
+
+**本片是 codex 方案 §6 S3 的第一片**，实现 `LuceneFullTextIndexMaintenanceEngine` 的
+`ApplyChangesAsync`（真实 Lucene 局部写）与 `EnumerateIndexedPathsAsync`（path inventory）。
+**不接 Host、不重启宿主、零后台线程**（FSW / 补偿 / 体检组合留给 S3d）。
+
+**§3.6 执行层单批顺序的落地映射**
+
+| 步骤 | 本片 |
+|---|---|
+| ① 每 scope 进程内 gate | ✅（复用查询侧同一实例同一字典，`WaitAsync(ct)`；等待期取消 ⇒ `Cancelled`） |
+| ② 获取 `FileSupplyLease` | ⛔ **留给 S3c** |
+| ③ 最终 stat / 过滤 / 内容提取 | ✅（复用扫描期同一判定体 `Search/FileCandidateCollector.cs`，**不复制**白名单/噪声名单） |
+| ④ **提取失败不进 delete 集合** | ✅ ★变异 M1 靶点 |
+| ⑤ 单 writer `CREATE_OR_APPEND` | ✅（取锁失败单次尝试 ⇒ `Busy`，不抛不提交） |
+| ⑥⑦ delete-then-add / 确认删除 | ✅ |
+| ⑧ 预算硬限 | ✅ **写前预检**（`SupplyBudgetCalculator.Fits`）；**写入期实测硬限 ⇒ S3b 的 quota wrapper** |
+| ⑨ 单批 `Commit()` | ✅ |
+| ⑩ `InvalidateScope(scope)` | ⛔ **留给 S3c**（本类不持有查询侧 reader 缓存） |
+| ⑪ 释放 writer | ✅（提交成功 ⇒ `Dispose()`；未提交 ⇒ `Rollback()`；**不重复 Dispose**） |
+| ⑫ checkpoint 推进 | ✅ **只产出标志**（写盘 ⇒ S3d / S5） |
+
+**四条额外门禁**：live 索引目录不存在 ⇒ `Rejected` 且**不创建目录**（§3.5）；超过 `budget.MaxPaths` ⇒ `Rejected`；
+空变更集 ⇒ `Applied` 且不 commit；无成功项且无删除 ⇒ **不开 writer**、不 commit。
+
+**`CheckpointAdvanced` 语义（本轮裁定 ①，已落地）**：它是**产物**，判定唯一真源是 `CheckpointAdvancePolicy`，
+且与输入的 `RequiresCheckpointAdvance` **显式取交集**（裁定 ②）——策略为真源，**输入只能否决、不能强制为真**。
+
+**对 `LuceneSearchEngine.cs` 的改动（严格受限，唯一被改的既有文件）**：`numstat 28/2` = 24 行注释 +
+2 个 `internal` 只读访问器（`Analyzer` / `GetScopeGate`，键与既有 `_indexLocks` 完全一致）+
+2 处可见性放宽（`AddDocument` / `ExtractContentAsync`：`private` → `internal`）。
+**签名与实现逐字不变**，`IFullTextSearchEngine` / `IFullTextIndexRootedEngine` **成员集未变**（CLI 共用实现，加公开成员会破坏其编译）。
+**刻意不复制**这两个成员到新类 —— 复制会让两种文档结构**静默漂移**，比可见性放宽危险得多。
+
+**验证（父级独立复跑，不采信自述）**：组件与 CLI 构建 **0 警告 / 0 错误**；
+`PuddingFullTextIndexTests` **失败 0 / 通过 228 / 跳过 4 / 总计 232**（S3a 前 222 ⇒ +10）。
+**两条变异分开取红**（父级脚本 + TRX 机器可读计数）：
+M1 让**提取失败的文件仍进入 delete 集合**（破坏 §3.6 第 4 步，`var enterDeleteSet = content is not null;` → `= true;`）
+⇒ **failed 1**，红的**恰好只有** `I1_ExtractionFailure_KeepsOldDocuments_AndDoesNotTouchTheIndex`；
+M2 让 **quota 预检恒通过**（`budgetFits = SupplyBudgetCalculator.Fits(...)` → `= true;`）⇒ **failed 1**，
+红的**恰好只有** `I5_QuotaPrecheck_RejectsWithoutCommitting_AndKeepsIndexBytesEqual`。
+两次复原后引擎 `git hash-object` = `a84165ae7dd4b5bef032063fc0b55ae1e053d40b` **逐位相同**；
+`MUTATION` 残留 0（对照组 `enterDeleteSet` = 2、`budgetFits` = 2 ⇒ 仪器有效）。
+I6 给出**真实文件操作**的逐 path inventory 数据：`a.txt=2|b.txt=1` →（create c）`+c.txt=1` →（modify a）`a.txt=1` →
+（delete b）`-b.txt` →（rename c→d）`c.txt` 消失、`d.txt=1`，路径数 `2→3→3→2→2`；非目标 path 文档数与内容命中数逐条不变。
+
+**⚠️ 仪器教训（本片新增，重要）**：
+1. **PS 5.1 的 `Get-Content`（不带 `-Encoding`）读含中文的 UTF-8 文件会错报行数**：同一文件
+   `ReadAllLines` / `Get-Content -Encoding UTF8` = **655** 行，而 `Get-Content`（默认编码）= **601** 行（差 54）。
+   **行数统计必须用 `[System.IO.File]::ReadAllLines(...).Length` 或显式 `-Encoding UTF8`**。
+   （根因：`shell` 工具默认跑 pwsh 7（UTF-8 默认）而 `powershell -File` 是 5.1（ANSI/GBK 默认）⇒ 两套引擎结论不同时，
+   先确认自己用的是哪一套，别把仪器差异当成事实变化。）
+2. `terminal_wait` 的 `max_lines` 若小于当前输出行数，会**立即返回截断句柄而不阻塞** ⇒ 看起来像"任务卡住了"，
+   实际只是等待没生效。等待长任务时把 `max_lines` 放大（≥200）。
+
+**未做 / 未验证（如实登记）**：
+- `ProbeIntegrityAsync` **未实现**（显式 `NotSupportedException`，**绝不伪装 Healthy**）；S3d 落地时须同步改断言。
+- §4.1 的 S5 硬门禁「quota 失败后 rollback 保留旧 commit **且不突破预算**」目前只证明了**预检被拒**一侧；
+  **「写入期不突破预算」需 S3b 的 quota wrapper 给出实测证据**，直写方案**尚未据此放行**。
+- 「内容已缓冲 → `Commit()` 之前」的取消窗口有实现但**无确定性注入点 ⇒ 未验证**。
+- 未验证：多进程 writer 真实竞争、与手动供给 CLI 的预算竞态、大语料下 `RAMBufferSizeMB=48` flush 行为与
+  `EnumerateIndexedPathsAsync` 的耗时/内存。本片语料 ≤3 文件、内容 ≤2 行，**规模性结论不外推**。

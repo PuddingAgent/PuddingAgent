@@ -54,6 +54,30 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
             .ToDictionary(x => x.ext, x => x.e, StringComparer.OrdinalIgnoreCase);
     }
 
+    // ── 局部维护（S3a）所需的**最小**内部接缝 ────────────────────────────
+    // 两者都是 internal（不是 public）：既有的 public 成员签名 / 行为，以及 IFullTextSearchEngine /
+    // IFullTextIndexRootedEngine 的成员集逐字不变（CLI 与实现方共用这两个接口，加公开成员会破坏其编译）。
+
+    /// <summary>
+    /// 写入侧分析链（唯一真源）。局部维护打开 writer 时必须使用同一个 <see cref="Analyzer"/>，
+    /// 否则同一份索引里会混进两套分析结果（只读访问器，不创建任何状态）。
+    /// </summary>
+    internal Analyzer Analyzer => _analyzer;
+
+    /// <summary>
+    /// 取某个索引目录的**进程内 gate**（每 scope 一把 <see cref="SemaphoreSlim"/>）。
+    /// <para>
+    /// 键与 <see cref="BuildIndexAsync"/> / <see cref="BuildChunkIndexAsync"/> 用的键完全一致
+    /// （解析后的索引目录绝对路径）⇒ 局部写与全量构建在同一进程内互斥。
+    /// 调用方负责 <c>WaitAsync</c> 与 <c>Release</c>；本访问器只做「取或建」。
+    /// </para>
+    /// </summary>
+    internal SemaphoreSlim GetScopeGate(string indexDirectoryPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(indexDirectoryPath);
+        return _indexLocks.GetOrAdd(indexDirectoryPath, _ => new SemaphoreSlim(1, 1));
+    }
+
     // ── 公共接口 ────────────────────────────────────────────────────────
 
     public bool HasIndex(string directoryPath)
@@ -708,7 +732,8 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
     }
 
 
-    private async Task<string> ExtractContentAsync(string filePath, string extension, CancellationToken ct)
+    /// <remarks>S3a：可见性由 <c>private</c> 放宽为 <c>internal</c>（签名与实现逐字不变），供组件内局部维护内核复用同一提取路径。</remarks>
+    internal async Task<string> ExtractContentAsync(string filePath, string extension, CancellationToken ct)
     {
         // 纯文本文件 — 直接读取
         if (_options.PlainTextExtensions.Contains(extension))
@@ -730,7 +755,8 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
     /// content 字段用于全文检索，file_name 带 Boost 提高文件名命中权重。
     /// 每行附带 line_number（1-based）和 line_text 原文。
     /// </summary>
-    private static void AddDocument(IndexWriter writer, string filePath, string content)
+    /// <remarks>S3a：可见性由 <c>private</c> 放宽为 <c>internal</c>（签名与实现逐字不变），供组件内局部维护内核复用同一文档结构。</remarks>
+    internal static void AddDocument(IndexWriter writer, string filePath, string content)
     {
         var fileName = Path.GetFileName(filePath);
         var lines = content.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
