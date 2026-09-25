@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 
 using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIntelligence.Extractors;
 using PuddingCodeIntelligence.Services;
 using PuddingCodeIndex.Contracts;
 using PuddingCodeIndex.Services;
@@ -13,8 +14,9 @@ namespace PuddingCodeIntelligence.TypeScript;
 
 /// <summary>
 /// TypeScript/JavaScript code indexer that extracts symbols by invoking a Node.js
-/// extraction script (Scripts/extract-ts-symbols.js) as a subprocess and persists
-/// the results through <see cref="ICodeIndexStore"/>.
+/// extraction script (the component-owned asset <c>Scripts/extract-ts-symbols.js</c>, resolved from
+/// the directory holding this assembly through <see cref="IExtractorAssetResolver"/>) as a
+/// subprocess and persists the results through <see cref="ICodeIndexStore"/>.
 /// Supports two modes: project-level extraction (--project) for cross-file references,
 /// and per-file extraction as a fallback.
 /// </summary>
@@ -32,11 +34,22 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater
 
     private readonly ICodeIndexStore _store;
     private readonly ILogger<TypeScriptIndexer> _logger;
+    private readonly IExtractorAssetResolver _assetResolver;
 
+    /// <summary>Creates an indexer whose extractor assets are resolved from the component assembly directory.</summary>
     public TypeScriptIndexer(ICodeIndexStore store, ILogger<TypeScriptIndexer> logger)
+        : this(store, logger, new ExtractorAssetResolver())
     {
+    }
+
+    /// <summary>Creates an indexer with an injected extractor asset resolver.</summary>
+    public TypeScriptIndexer(ICodeIndexStore store, ILogger<TypeScriptIndexer> logger, IExtractorAssetResolver assetResolver)
+    {
+        ArgumentNullException.ThrowIfNull(assetResolver);
+
         _store = store;
         _logger = logger;
+        _assetResolver = assetResolver;
     }
 
     /// <inheritdoc />
@@ -70,15 +83,19 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater
                 StartedAtUtc: startedAt);
         }
 
-        // Locate the extraction script relative to the project root
-        var scriptPath = Path.Combine(descriptor.ProjectPath, "Scripts", "extract-ts-symbols.js");
-        if (!File.Exists(scriptPath))
+        // Resolve the component-owned extractor assets: they belong to this component and live next
+        // to its assembly, never under the indexed project (see IExtractorAssetResolver).
+        var assets = _assetResolver.Resolve(ExtractorAssetKind.TypeScriptScript);
+        if (!assets.Success)
         {
             return new CodeIndexResult(false, CodeIndexStatus.Failed,
-                $"Extraction script not found: {scriptPath}",
+                assets.Message,
                 WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId,
                 StartedAtUtc: startedAt);
         }
+
+        var scriptPath = assets.ScriptPath!;
+        var nodeModulesPath = assets.NodeModulesPath;
 
         try
         {
@@ -99,7 +116,7 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater
             var usedProjectMode = false;
 
             // Try project-level extraction first (single call, captures cross-file references)
-            var projectResult = await RunProjectExtractionAsync(scriptPath, descriptor.ProjectPath, cancellationToken)
+            var projectResult = await RunProjectExtractionAsync(scriptPath, nodeModulesPath, descriptor.ProjectPath, cancellationToken)
                 .ConfigureAwait(false);
 
             if (projectResult is not null && projectResult.Files is { Count: > 0 })
@@ -124,7 +141,7 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var extractionResult = await RunExtractionScriptAsync(scriptPath, filePath, cancellationToken)
+                    var extractionResult = await RunExtractionScriptAsync(scriptPath, nodeModulesPath, filePath, cancellationToken)
                         .ConfigureAwait(false);
 
                     if (extractionResult is null)
@@ -242,19 +259,23 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater
                 WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId);
         }
 
-        var scriptPath = Path.Combine(descriptor.ProjectPath, "Scripts", "extract-ts-symbols.js");
-        if (!File.Exists(scriptPath))
+        // Same component-owned assets as IndexWorkspaceAsync: never resolved from the indexed project.
+        var assets = _assetResolver.Resolve(ExtractorAssetKind.TypeScriptScript);
+        if (!assets.Success)
         {
             return new CodeIndexResult(false, CodeIndexStatus.Failed,
-                $"Extraction script not found: {scriptPath}",
+                assets.Message,
                 WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId);
         }
+
+        var scriptPath = assets.ScriptPath!;
+        var nodeModulesPath = assets.NodeModulesPath;
 
         var startedAt = DateTimeOffset.UtcNow;
 
         try
         {
-            var extraction = await RunExtractionScriptAsync(scriptPath, filePath, cancellationToken)
+            var extraction = await RunExtractionScriptAsync(scriptPath, nodeModulesPath, filePath, cancellationToken)
                 .ConfigureAwait(false);
 
             if (extraction is null)
@@ -383,6 +404,7 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater
     /// </summary>
     private async Task<TsProjectOutput?> RunProjectExtractionAsync(
         string scriptPath,
+        string? nodeModulesPath,
         string projectDirectory,
         CancellationToken cancellationToken)
     {
@@ -398,6 +420,9 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
+
+            // NODE_PATH is scoped to this child process only: never the host process environment.
+            ExtractorSubprocessEnvironment.ApplyNodeModulesPath(process.StartInfo, nodeModulesPath);
 
             process.Start();
 
@@ -556,6 +581,7 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater
 
     private async Task<TsExtractionOutput?> RunExtractionScriptAsync(
         string scriptPath,
+        string? nodeModulesPath,
         string filePath,
         CancellationToken cancellationToken)
     {
@@ -571,6 +597,9 @@ public sealed class TypeScriptIndexer : ICodeIndexer, ICodeIndexFileUpdater
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
+
+            // NODE_PATH is scoped to this child process only: never the host process environment.
+            ExtractorSubprocessEnvironment.ApplyNodeModulesPath(process.StartInfo, nodeModulesPath);
 
             process.Start();
 

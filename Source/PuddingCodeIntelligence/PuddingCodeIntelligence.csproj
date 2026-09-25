@@ -26,4 +26,29 @@
     <ProjectReference Include="..\PuddingCodeIndex\PuddingCodeIndex.csproj" />
   </ItemGroup>
 
+  <!--
+    B4+ (2026-09-25): extractor assets are owned by this component and are resolved from the directory
+    holding this assembly (Extractors/ExtractorAssetResolver) - never from the indexed project's
+    ProjectPath. The physical copy stays in PuddingCodeIndexer.Cli/Scripts; the items below are links,
+    so there is exactly one physical copy on disk. Leaving them out is what made the host-side
+    TypeScript/Python indexers fail with "Extraction script not found" while the CLI (which used to copy
+    the scripts into the target project) still worked.
+
+    NOTE: Scripts/node_modules is not tracked by git (node_modules is ignored), so on a fresh clone the
+    wildcard expands to nothing and the resolver fails closed with NodeModulesMissing instead of
+    silently indexing zero symbols. Replacing the 22.5 MB payload with a build-time bundle is the
+    follow-up slice registered in code_map.md.
+  -->
+  <ItemGroup>
+    <None Include="..\PuddingCodeIndexer.Cli\Scripts\extract-ts-symbols.js"
+          Link="Scripts\extract-ts-symbols.js"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PuddingCodeIndexer.Cli\Scripts\extract-py-symbols.py"
+          Link="Scripts\extract-py-symbols.py"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PuddingCodeIndexer.Cli\Scripts\node_modules\**\*"
+          Link="Scripts\node_modules\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

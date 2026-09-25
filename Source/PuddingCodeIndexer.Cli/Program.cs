@@ -128,52 +128,6 @@ async Task<int> RunIndexAsync(string[] args)
         Console.WriteLine($"TypeScript/JavaScript files found: {tsFiles.Count}");
         Console.WriteLine("Indexing TypeScript/JavaScript...");
 
-        // Locate the extraction script and node_modules.
-        // AppContext.BaseDirectory is bin/Debug/net10.0/ — walk up to find Scripts/ with node_modules.
-        string cliScriptsDir = Path.Combine(AppContext.BaseDirectory, "Scripts");
-        string extractScript = Path.Combine(cliScriptsDir, "extract-ts-symbols.js");
-        string cliNodeModules = Path.Combine(cliScriptsDir, "node_modules");
-
-        // If node_modules not in output dir, walk up to find source Scripts/ directory
-        if (!Directory.Exists(cliNodeModules))
-        {
-            string? walkDir = new DirectoryInfo(AppContext.BaseDirectory).Parent?.FullName;
-            for (int i = 0; i < 5 && walkDir is not null; i++)
-            {
-                string candidate = Path.Combine(walkDir, "Scripts", "node_modules");
-                if (Directory.Exists(candidate))
-                {
-                    cliScriptsDir = Path.Combine(walkDir, "Scripts");
-                    extractScript = Path.Combine(cliScriptsDir, "extract-ts-symbols.js");
-                    cliNodeModules = candidate;
-                    break;
-                }
-                walkDir = new DirectoryInfo(walkDir).Parent?.FullName;
-            }
-        }
-
-        // TypeScriptIndexer expects script at ProjectPath/Scripts/extract-ts-symbols.js
-        string targetScriptsDir = Path.Combine(projectPath, "Scripts");
-        string targetScriptPath = Path.Combine(targetScriptsDir, "extract-ts-symbols.js");
-
-        bool copiedScript = false;
-        if (!File.Exists(targetScriptPath) && File.Exists(extractScript))
-        {
-            Directory.CreateDirectory(targetScriptsDir);
-            File.Copy(extractScript, targetScriptPath, overwrite: true);
-            copiedScript = true;
-        }
-
-        // Set NODE_PATH so the extraction script can find the 'typescript' module
-        if (Directory.Exists(cliNodeModules))
-        {
-            string? existingNodePath = Environment.GetEnvironmentVariable("NODE_PATH");
-            string newNodePath = string.IsNullOrEmpty(existingNodePath)
-                ? cliNodeModules
-                : $"{existingNodePath}{Path.PathSeparator}{cliNodeModules}";
-            Environment.SetEnvironmentVariable("NODE_PATH", newNodePath);
-        }
-
         string tsProjectId = projectId + "_ts";
         var tsDescriptor = new CodeWorkspaceDescriptor(
             WorkspaceId: WorkspaceId,
@@ -192,13 +146,6 @@ async Task<int> RunIndexAsync(string[] args)
         Console.WriteLine($"TS Status   : {tsResult.Status}");
         if (!string.IsNullOrEmpty(tsResult.Message))
             Console.WriteLine($"TS Message  : {tsResult.Message}");
-
-        // Clean up copied script if we copied it
-        if (copiedScript)
-        {
-            try { File.Delete(targetScriptPath); } catch { /* best effort */ }
-            try { Directory.Delete(targetScriptsDir, recursive: false); } catch { /* dir may not be empty */ }
-        }
 
         if (!tsResult.Success)
             Console.WriteLine("Warning: TypeScript indexing failed. C# index is still valid.");
@@ -223,39 +170,6 @@ async Task<int> RunIndexAsync(string[] args)
         Console.WriteLine($"Python files found: {pyFiles.Count}");
         Console.WriteLine("Indexing Python...");
 
-        // Locate the extraction script
-        string pyCliScriptsDir = Path.Combine(AppContext.BaseDirectory, "Scripts");
-        string pyExtractScript = Path.Combine(pyCliScriptsDir, "extract-py-symbols.py");
-
-        // If not in output dir, walk up to find source Scripts/ directory
-        if (!File.Exists(pyExtractScript))
-        {
-            string? walkDir = new DirectoryInfo(AppContext.BaseDirectory).Parent?.FullName;
-            for (int i = 0; i < 5 && walkDir is not null; i++)
-            {
-                string candidate = Path.Combine(walkDir, "Scripts", "extract-py-symbols.py");
-                if (File.Exists(candidate))
-                {
-                    pyCliScriptsDir = Path.Combine(walkDir, "Scripts");
-                    pyExtractScript = candidate;
-                    break;
-                }
-                walkDir = new DirectoryInfo(walkDir).Parent?.FullName;
-            }
-        }
-
-        // PythonIndexer expects script at ProjectPath/Scripts/extract-py-symbols.py
-        string pyTargetScriptsDir = Path.Combine(projectPath, "Scripts");
-        string pyTargetScriptPath = Path.Combine(pyTargetScriptsDir, "extract-py-symbols.py");
-
-        bool copiedPyScript = false;
-        if (!File.Exists(pyTargetScriptPath) && File.Exists(pyExtractScript))
-        {
-            Directory.CreateDirectory(pyTargetScriptsDir);
-            File.Copy(pyExtractScript, pyTargetScriptPath, overwrite: true);
-            copiedPyScript = true;
-        }
-
         string pyProjectId = projectId + "_py";
         var pyDescriptor = new CodeWorkspaceDescriptor(
             WorkspaceId: WorkspaceId,
@@ -274,13 +188,6 @@ async Task<int> RunIndexAsync(string[] args)
         Console.WriteLine($"PY Status   : {pyResult.Status}");
         if (!string.IsNullOrEmpty(pyResult.Message))
             Console.WriteLine($"PY Message  : {pyResult.Message}");
-
-        // Clean up copied script if we copied it
-        if (copiedPyScript)
-        {
-            try { File.Delete(pyTargetScriptPath); } catch { /* best effort */ }
-            try { Directory.Delete(pyTargetScriptsDir, recursive: false); } catch { /* dir may not be empty */ }
-        }
 
         if (!pyResult.Success)
             Console.WriteLine("Warning: Python indexing failed. C# index is still valid.");

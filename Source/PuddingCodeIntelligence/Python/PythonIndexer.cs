@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 
 using PuddingCodeIntelligence.Contracts;
+using PuddingCodeIntelligence.Extractors;
 using PuddingCodeIntelligence.Services;
 using PuddingCodeIndex.Contracts;
 using PuddingCodeIndex.Services;
@@ -13,8 +14,9 @@ namespace PuddingCodeIntelligence.Python;
 
 /// <summary>
 /// Python code indexer that extracts symbols by invoking a Python
-/// extraction script (Scripts/extract-py-symbols.py) as a subprocess and persists
-/// the results through <see cref="ICodeIndexStore"/>.
+/// extraction script (the component-owned asset <c>Scripts/extract-py-symbols.py</c>, resolved from
+/// the directory holding this assembly through <see cref="IExtractorAssetResolver"/>) as a
+/// subprocess and persists the results through <see cref="ICodeIndexStore"/>.
 /// Supports two modes: project-level extraction (--project) for cross-file references,
 /// and per-file extraction as a fallback.
 /// </summary>
@@ -29,11 +31,22 @@ public sealed class PythonIndexer : ICodeIndexer, ICodeIndexFileUpdater
 
     private readonly ICodeIndexStore _store;
     private readonly ILogger<PythonIndexer> _logger;
+    private readonly IExtractorAssetResolver _assetResolver;
 
+    /// <summary>Creates an indexer whose extractor assets are resolved from the component assembly directory.</summary>
     public PythonIndexer(ICodeIndexStore store, ILogger<PythonIndexer> logger)
+        : this(store, logger, new ExtractorAssetResolver())
     {
+    }
+
+    /// <summary>Creates an indexer with an injected extractor asset resolver.</summary>
+    public PythonIndexer(ICodeIndexStore store, ILogger<PythonIndexer> logger, IExtractorAssetResolver assetResolver)
+    {
+        ArgumentNullException.ThrowIfNull(assetResolver);
+
         _store = store;
         _logger = logger;
+        _assetResolver = assetResolver;
     }
 
     /// <inheritdoc />
@@ -68,15 +81,18 @@ public sealed class PythonIndexer : ICodeIndexer, ICodeIndexFileUpdater
                 StartedAtUtc: startedAt);
         }
 
-        // Locate the extraction script relative to the project root
-        var scriptPath = Path.Combine(descriptor.ProjectPath, "Scripts", "extract-py-symbols.py");
-        if (!File.Exists(scriptPath))
+        // Resolve the component-owned extractor script: it belongs to this component and lives next
+        // to its assembly, never under the indexed project (see IExtractorAssetResolver).
+        var assets = _assetResolver.Resolve(ExtractorAssetKind.PythonScript);
+        if (!assets.Success)
         {
             return new CodeIndexResult(false, CodeIndexStatus.Failed,
-                $"Extraction script not found: {scriptPath}",
+                assets.Message,
                 WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId,
                 StartedAtUtc: startedAt);
         }
+
+        var scriptPath = assets.ScriptPath!;
 
         try
         {
@@ -241,13 +257,16 @@ public sealed class PythonIndexer : ICodeIndexer, ICodeIndexFileUpdater
                 WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId);
         }
 
-        var scriptPath = Path.Combine(descriptor.ProjectPath, "Scripts", "extract-py-symbols.py");
-        if (!File.Exists(scriptPath))
+        // Same component-owned asset as IndexWorkspaceAsync: never resolved from the indexed project.
+        var assets = _assetResolver.Resolve(ExtractorAssetKind.PythonScript);
+        if (!assets.Success)
         {
             return new CodeIndexResult(false, CodeIndexStatus.Failed,
-                $"Extraction script not found: {scriptPath}",
+                assets.Message,
                 WorkspaceId: descriptor.WorkspaceId, ProjectId: descriptor.ProjectId);
         }
+
+        var scriptPath = assets.ScriptPath!;
 
         var startedAt = DateTimeOffset.UtcNow;
 

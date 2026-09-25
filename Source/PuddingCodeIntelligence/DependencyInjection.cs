@@ -1,10 +1,11 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using PuddingCodeIntelligence.Bicep;
 using PuddingCodeIntelligence.Contracts;
 using PuddingCodeIntelligence.Cpp;
 using PuddingCodeIntelligence.CSharp;
+using PuddingCodeIntelligence.Extractors;
 using PuddingCodeIntelligence.Json;
 using PuddingCodeIntelligence.Lsp;
 using PuddingCodeIntelligence.Markdown;
@@ -61,6 +62,11 @@ public static class DependencyInjection
         services.TryAddSingleton<ICodeQueryService, CodeQueryService>();
         services.TryAddSingleton<ILanguageServerService, IndexBasedLanguageServerService>();
         services.TryAddSingleton<ICodeIndexer, RoslynCSharpIndexer>();
+
+        // Extractor assets belong to this component and are resolved from the directory holding its own
+        // assembly (B4+). Registered so a container-built TypeScriptIndexer/PythonIndexer uses exactly
+        // the same resolver their default constructor falls back to.
+        services.TryAddSingleton<IExtractorAssetResolver, ExtractorAssetResolver>();
 
         // ── File outliners (multi-language) ─────────────────────────────
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IFileOutliner, TypeScriptFileOutliner>());
