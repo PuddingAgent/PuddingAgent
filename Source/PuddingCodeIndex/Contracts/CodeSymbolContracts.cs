@@ -59,7 +59,14 @@ public sealed record CodeSymbolSearchRequest(
     CodeSymbolKind? Kind = null,
     int Limit = 50,
     int Skip = 0,
-    CodeSymbolMatchTarget MatchTarget = CodeSymbolMatchTarget.All);
+    CodeSymbolMatchTarget MatchTarget = CodeSymbolMatchTarget.All,
+
+    /// <summary>
+    /// ADR-089 §2.3「文件类型」过滤面：只保留这些扩展名文件里的符号
+    /// （如 <c>cs</c> / <c>.cs</c> / <c>ts</c>）。前导点可选、大小写不敏感；
+    /// <c>null</c> 或空集合 = 不过滤（既有行为不变）。
+    /// </summary>
+    IReadOnlyList<string>? FileExtensions = null);
 
 public sealed record CodeSymbolDetail(
     CodeSymbolRecord Symbol,

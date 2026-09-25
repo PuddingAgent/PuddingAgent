@@ -81,6 +81,33 @@ public sealed class CodeSymbolSearchMatchTargetTests
             "未知匹配域不得回落到'全开'去查：那会把筛错了伪装成筛过了");
     }
 
+    [TestMethod]
+    public async Task FileExtensions_Is_Passed_Through_As_Split_List()
+    {
+        var service = new RecordingQueryService();
+        var tool = new CodeSymbolSearchTool(service);
+
+        var result = await ExecuteAsync(tool, """{"query":"Handler","file_extensions":".cs, ts"}""");
+
+        Assert.IsTrue(result.Success, result.Error);
+        CollectionAssert.AreEqual(
+            new[] { ".cs", "ts" },
+            service.LastRequest!.FileExtensions!.ToArray(),
+            "工具层只做切分与去空白；归一化（补前导点、大小写）留给存储层");
+    }
+
+    [TestMethod]
+    public async Task FileExtensions_Defaults_To_Null_When_Omitted()
+    {
+        var service = new RecordingQueryService();
+        var tool = new CodeSymbolSearchTool(service);
+
+        await ExecuteAsync(tool, """{"query":"Conf"}""");
+
+        Assert.IsNull(service.LastRequest!.FileExtensions,
+            "缺省必须为 null —— 不过滤，与历史行为逐字一致");
+    }
+
     private sealed class RecordingQueryService : ICodeQueryService
     {
         public int SearchCallCount { get; private set; }

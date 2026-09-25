@@ -182,7 +182,8 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
             Kind: kind,
             Limit: args.Limit ?? 50,
             Skip: 0,
-            MatchTarget: matchTarget);
+            MatchTarget: matchTarget,
+            FileExtensions: ParseFileExtensions(args.FileExtensions));
 
         var results = await _queryService.SearchSymbolsAsync(request, ct);
 
@@ -259,6 +260,19 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
         return true;
     }
 
+    /// <summary>
+    /// ADR-089 §2.3「文件类型」过滤面：解析逗号/分号分隔的扩展名（前导点可选，归一化交给存储层）。
+    /// 省略或全空白 ⇒ 返回 <c>null</c>（不过滤，与历史行为一致）。
+    /// </summary>
+    private static IReadOnlyList<string>? ParseFileExtensions(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        var parts = raw.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length == 0 ? null : parts;
+    }
+
     private static ToolExecutionResult Ok(string output) => ToolExecutionResult.Ok(output);
     private static ToolExecutionResult Fail(string error) => ToolExecutionResult.Fail(error);
 }
@@ -289,6 +303,10 @@ public sealed record CodeSymbolSearchArgs
     [ToolParam("可选：匹配域，逗号分隔。name / signature / container / all（默认 all = 三列全开，与历史行为一致）。"
         + "name 只匹配符号名（例：查 Conf 只返回名字含 Conf 的符号，不再返回签名里提到它的构造器）。")]
     public string? MatchTarget { get; init; }
+
+    [ToolParam("可选：文件类型（扩展名）过滤，逗号分隔，前导点可选、大小写不敏感，如 \"cs\" 或 \".cs,.ts\"。"
+        + "只返回这些扩展名文件里定义的符号；省略 = 不过滤（跨全部语言，与历史行为一致）。")]
+    public string? FileExtensions { get; init; }
 }
 
 // ═══════════════════════════════════════════════════════════════

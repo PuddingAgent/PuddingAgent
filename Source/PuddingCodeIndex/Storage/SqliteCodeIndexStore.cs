@@ -460,6 +460,12 @@ public sealed class SqliteCodeIndexStore : ICodeIndexStore
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
+        // ADR-089 §2.3「文件类型」过滤面：子句里只出现**参数名**（$ext0/$ext1…），值一律走参数化，
+        // 所以调用方传入脏字符串也无法改变 SQL 结构。无过滤时退化为恒真的 1 = 1。
+        var fileExtensions = NormalizeFileExtensions(request.FileExtensions);
+        var extensionClause = fileExtensions.Count == 0
+            ? "1 = 1"
+            : string.Join(" OR ", fileExtensions.Select((_, i) => $"FilePath LIKE $ext{i} ESCAPE '\\'"));
         command.CommandText = $"""
             SELECT WorkspaceId, ProjectId, FilePath, SymbolId, Name, Kind, StartLine, EndLine, Signature, Container
             FROM CodeSymbols
@@ -470,6 +476,7 @@ public sealed class SqliteCodeIndexStore : ICodeIndexStore
                    OR ($matchName = 1 AND Name LIKE $likeQuery ESCAPE '\')
                    OR ($matchSignature = 1 AND Signature LIKE $likeQuery ESCAPE '\')
                    OR ($matchContainer = 1 AND Container LIKE $likeQuery ESCAPE '\'))
+              AND ({extensionClause})
             ORDER BY
               CASE WHEN Name = $query THEN 0 ELSE 1 END,
               Name,
@@ -489,12 +496,41 @@ public sealed class SqliteCodeIndexStore : ICodeIndexStore
         command.Parameters.AddWithValue("$matchName", matchTarget.HasFlag(CodeSymbolMatchTarget.Name) ? 1 : 0);
         command.Parameters.AddWithValue("$matchSignature", matchTarget.HasFlag(CodeSymbolMatchTarget.Signature) ? 1 : 0);
         command.Parameters.AddWithValue("$matchContainer", matchTarget.HasFlag(CodeSymbolMatchTarget.Container) ? 1 : 0);
+        for (var i = 0; i < fileExtensions.Count; i++)
+            command.Parameters.AddWithValue($"ext{i}", $"%{EscapeLike(fileExtensions[i])}%");
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             results.Add(ReadSymbol(reader));
 
         return results;
+    }
+
+    /// <summary>
+    /// 归一化「文件类型」过滤：去空白、补前导点（<c>cs</c> → <c>.cs</c>）、按大小写不敏感去重。
+    /// 空项被丢弃；返回空列表表示不过滤（既有行为不变）。SQLite 的 <c>LIKE</c> 对 ASCII 大小写不敏感。
+    /// </summary>
+    private static IReadOnlyList<string> NormalizeFileExtensions(IReadOnlyList<string>? extensions)
+    {
+        if (extensions is null || extensions.Count == 0)
+            return [];
+
+        var normalized = new List<string>(extensions.Count);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var extension in extensions)
+        {
+            if (string.IsNullOrWhiteSpace(extension))
+                continue;
+
+            var value = extension.Trim();
+            if (value[0] != '.')
+                value = "." + value;
+
+            if (seen.Add(value))
+                normalized.Add(value);
+        }
+
+        return normalized;
     }
 
     public async Task<CodeSymbolRecord?> GetSymbolAsync(
