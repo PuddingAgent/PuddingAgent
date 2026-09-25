@@ -4,11 +4,15 @@ namespace PuddingHost.Hosting;
 /// U4-7：<see cref="FullTextIndexSupplyOptions.MinRebuildInterval"/> 的**消费点** ——
 /// 「已有索引足够新则跳过重建」。纯函数，可独立单测（不碰时钟、不碰磁盘）。
 /// <para>
-/// ⚠️ **仪器口径（如实登记）**：宿主能观测到的「索引新旧」只有**索引根目录**的 mtime
-/// （<c>IFullTextSearchEngine</c> 只暴露 <c>HasIndex/RemoveIndex/Build/Search</c>，
-/// per-scope 索引目录映射在 <c>PuddingFullTextIndex</c> 内部且是 <c>internal</c>）。
-/// 因此这个判据是**粗粒度代理**：根目录在建出新的 scope 子目录时才会变。
-/// 精确到 scope 的 freshness 需要组件暴露端口，属**留白**（见交付报告）。
+/// ⚠️ **仪器口径（S5 起，2026-09-25 修正）**：「索引新旧」由调用方传入，口径是
+/// **该 scope 自己的 live 索引目录** <c>&lt;IndexRoot&gt;/&lt;64位hex&gt;</c> 的 mtime
+/// （宿主经 <c>IFullTextIndexSupplyComposition.LiveIndexLastWriteUtc</c> 取得，
+/// 目录映射来自组件内的单一真源 <c>IFullTextIndexRootedEngine.ResolveIndexDirectory</c>）。
+/// <para>
+/// 历史缺陷（U4-7）：那时读的是**索引根目录** mtime —— 只要建出任何一个 scope 的索引目录，
+/// 整个索引根就变新，其余 scope 会被**集体误判为新鲜**而全部跳过。per-scope 口径修掉了它
+/// （A scope 新鲜只跳 A，不影响 B）。
+/// </para>
 /// </para>
 /// <para>方向性：读不到时间 / 时间早于纪元 ⇒ age 极大 ⇒ **重建**（安全方向，绝不因读不到就跳过）。</para>
 /// </summary>

@@ -163,10 +163,33 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.Configure<FullTextIndexSupplyOptions>(
             builder.Configuration.GetSection(FullTextIndexSupplyOptions.SectionName));
         builder.Services.AddSingleton<IFullTextSearchEngine, LuceneSearchEngine>();
+        // S5（2026-09-25）：全文索引供给组合的**惰性**工厂 —— 宿主唯一的「拿到协调器」入口。
+        // 为什么不直接注册 IFullTextIndexSupplyCoordinator：默认（Enabled=false）下必须
+        // 「不解析 scope、不构造协调器组合、不 touch 索引根」；注册成工厂就把
+        // 协调器 / staged builder / 语料清点 / 文件租约的实例化推迟到真正进入供给路径之后。
+        // 引擎解析出来必须是**查询侧同一个实例**（staged 切换要在它身上失效 reader 缓存，
+        // 否则切换后仍会读到旧索引）；因此这里显式要求它实现 IFullTextIndexRootedEngine。
+        builder.Services.AddSingleton<IFullTextIndexSupplyCompositionFactory>(sp =>
+        {
+            var indexOptions = sp.GetRequiredService<FullTextIndexOptions>();
+            if (sp.GetRequiredService<IFullTextSearchEngine>() is not IFullTextIndexRootedEngine rootedEngine)
+            {
+                throw new InvalidOperationException(
+                    "S5：IFullTextSearchEngine 的实现必须同时实现 IFullTextIndexRootedEngine" +
+                    "（暂存供给需要「语料根 → 索引目录」映射与 reader 缓存失效这两个接缝）。");
+            }
+
+            return new LuceneFullTextIndexSupplyCompositionFactory(
+                indexOptions,
+                rootedEngine,
+                stagingOptions => new LuceneSearchEngine(stagingOptions));
+        });
         // U4-7（2026-09-25）：IndexPrebuildService 从 HOSTED-DISABLED 改为**由配置门控**的常驻注册。
         // 默认（system.json 无 FullTextIndex 节 / Enabled=false）下 StartAsync 立即返回、不建索引、零索引 I/O，
         // 因此注册它不改变现网行为（该服务此前根本没被注册）；只有显式 Enabled=true 且 fail-closed 校验通过
         // 才在启动路径之外按 Scopes 预建。
+        // S5（2026-09-25）：预建**不再直写引擎**——改为经上面的供给组合向 A1 协调器提交、
+        // 轮询到终态（租约 / 预算硬限 / staging / 原子切换都在组件内），且新鲜度改为 per-scope。
         builder.Services.AddHostedService<IndexPrebuildService>();
         builder.Services.AddPuddingAgentTool<SearchGrepTool>();
 

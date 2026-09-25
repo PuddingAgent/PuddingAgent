@@ -1,3 +1,22 @@
+## 2026-09-25 S5：宿主预建索引改走「协调器 + 暂存供给」（**默认关闭 ⇒ 零索引 I/O**）
+
+**断点**：`IndexPrebuildService` 原为**直写** `_searchEngine.BuildIndexAsync` + 用**索引根** mtime 判新鲜 —— 绕开 A1 的跨进程租约与 A2a 的预算硬限 / staging / 原子切换；且多 scope 时根 mtime 是**错信号**（一个 scope 构建会让其它 scope 被误判“新鲜”）。
+
+**交付（宿主 5 文件 + 3 测试文件）**：
+- 新增 `Source/PuddingHost/Hosting/IFullTextIndexSupplyComposition.cs`：供给组合端口 + **惰性工厂**端口（不直接注入协调器，正是为了满足 R4「默认关闭时**连组合都不构造**」）。
+- 新增 `Hosting/LuceneFullTextIndexSupplyCompositionFactory.cs`：生产装配（`FileSystemSupplyInventory` + `StagedFullTextIndexBuilder`（live 引擎 = 查询侧同一实例）+ `FileSupplyLease` + `FullTextIndexSupplyCoordinator`；配置流入；per-scope 新鲜度探针）。
+- 改 `Services/IndexPrebuildService.cs`（256/45）：写路径换「提交 → 轮询 `GetStatusAsync` 至终态（超时上限默认 30 min；**超时不取消 job**，只停止观测并如实记 last state）」；**每 scope 最多提交一次**（无重试风暴）；`Rejected/Busy/Failed/RolledBack/Cancelled/超时/未知 job` 逐类如实上报（带 jobId）；ctor 去掉 `FullTextIndexOptions`，保留引擎**仅供只读 `HasIndex`**。
+- 改 `Extensions/PuddingServiceCollectionExtensions.Runtime.cs`（23/0 纯追加：:172-186 注册工厂 + `IFullTextIndexRootedEngine` 接缝断言）、`Hosting/IndexPrebuildFreshness.cs`（9/5 **仅注释**：仪器口径由「索引根 mtime」改为 per-scope live 索引目录）、`Hosting/code_map.md`（22/0）。
+- 测试（`Tests/PuddingHost.Tests/Hosting/`，xUnit）：`S5IndexSupplyHostWiringTests`（Fact=7，A1~A6 + 轮询超时）+ `S5FullTextIndexSupplyHostCompositionTests`（Fact=1，组合根级配置流入证明）+ `S5SupplyTestDoubles`；`IndexPrebuildServiceTests.cs` 按新构造适配（仍 3 条）。
+
+**⚠️ 规格更正（父级任务书有错、实现是对的）**：任务书曾写「per-scope 新鲜度用 `SupplyIndexDirectoryLayout` 解析 `<IndexRoot>/<sha256(scopeKey)>`」——**实测两点不符**：① 该类型是 `internal`（宿主不可用）；② 它的 `Sha256Hex(scopeKey)` 用于 `.staging`/`.trash` 条目名与租约文件名，**不是 live 目录名**（live 目录名由 `LuceneSearchEngine.GetIndexDirectoryPath` 用**大写规范化全路径**算出）。照抄会得到永不存在的路径 ⇒ 每 scope 恒判「需重建」。实现改用组件文档指定的**单一真源** `IFullTextIndexRootedEngine.ResolveIndexDirectory(scope)`（public 契约，A2a 新增）。
+
+**门禁（父级独立复跑）**：`dotnet build Source\PuddingHost -c Release` ⇒ **0 警告 / 0 错误**；`dotnet test Tests\PuddingHost.Tests -c Release` ⇒ **通过 154 / 失败 0 / 跳过 0**（基线 146 ⇒ **+8** = 7+1，逐数吻合）；`PuddingFullTextIndexTests` ⇒ **123（119 通过 / 4 跳过 / 0 失败）**；`PuddingFullTextIndex.Cli.Tests` ⇒ **41/41**；四者 exit 均 0。机械断言：`Source/PuddingHost` 内 `.BuildIndexAsync(` 调用点 **0**、`1_073_741_824` **恰 1 处**（配置类 :35）。
+**变异取红 3 组**（原始输出 `temp/s5-evidence/M{1,2,3}-red.log` + `14-restored-green-for-mutations.log`）：M1 恢复直写 ⇒ `A2_...Live_Engine_Is_Never_Written_Directly` **红**（`Assert.Equal(0, engine.BuildCalls)`）；M2 拆掉 `Enabled` 门控 ⇒ `...Never_Touches_The_Engine` **红**（`Assert.Equal(0, factory.CreateCalls)`）；M3 新鲜度退回索引根 mtime ⇒ `A5_Per_Scope_Freshness...` **红**（陈旧 scope 被误判新鲜）；复原后三者转绿，`git hash-object` 与变异前**逐位相同**，代码内 `MUTATION` 残留 **0**（大小写敏感 + 含未跟踪；`.md` 与代码分开判定）。生产索引根全程只读（224 条目、无 `.staging`/`.trash`），构建/测试只用 `%TEMP%`。
+**留白**：① 超时**不取消** job（组件继续跑完并释放租约），如需「超时即取消」属后续切片；② `BuildWaitTimeout` 默认 30 min 为经验值（Source scope ≈69 s / 仓库根 ≈115 s）；③ `StartupDelay`（10 s）与 `StopAsync` 不等待后台作业沿用 U4-7 语义未改；④ 生产索引根现存目录是 **8 位 hex 旧命名**，当前引擎产出 **64 位 hex** ⇒ 一旦启用供给会**全量重建**；⑤ **运行态未验证**：本刀未重启、未启用 `Enabled`，重启后必须实测「默认关闭 ⇒ 零索引 I/O」与「启用后 `search_grep backend=index` 命中」。报告：`temp/S5-REPORT.md`；重启验证清单：`temp/s5-restart-verification-checklist.md`。
+
+---
+
 ## 2026-09-25 U4-7：全文索引「供给参数」配置化 + fail-closed 校验（**默认关闭，现网行为不变**）
 
 **用户裁定（2026-09-25）**：「1GB 请使用配置文件确定参数，方便后期替换为 XXGB……用项目目录的统计 json 或 **Data 目录的配置文件**决定，而不是选择一个固定值。」⇒ 取 **Data 目录 `<DataRoot>/config/system.json`** 的 `FullTextIndex` 节。

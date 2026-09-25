@@ -94,3 +94,25 @@ HttpClient 与 WS 握手各 15s 上限，避免外网黑洞把连接器卡在 St
 测试（`../Tests/PuddingHost.Tests/Hosting/`，**20 用例**）：`FullTextIndexSupplyResolverTests`（A1~A5 + 相对/绝对基准 + 零间隔边界，10 条）、`IndexPrebuildServiceTests`（A6 + 开启路径 + 拒绝可观测，3 条）、`IndexPrebuildFreshnessTests`（5 条）、`FullTextIndexSupplyHostBindingTests`（system.json → IOptions 绑定 + hosted 注册 + 无该节即默认关闭，2 条）。证据与变异输出见 `temp/U4-7-REPORT.md`、`temp/u4-7-evidence/`。
 
 ⚠️ **留白（R5）**：体积护栏的**执行**行为（达 `MaxIndexBytes` 时告警 / 拒写 / GC）**未实现**，属后续切片（ADR-089 §7.2「触发 GC 留到后续切片」）。本刀只提供参数与校验。
+
+## S5（2026-09-25）— 预建索引改走「协调器 + 暂存供给」（**默认关闭 ⇒ 零 I/O**）
+
+U4-7 的预建**直写** `IFullTextSearchEngine.BuildIndexAsync`，且用**索引根 mtime** 判所有 scope 的新鲜度。
+S5 把两条都换掉：写路径统一进组件协调器（跨进程租约 / 幂等合并 / 预算硬限 / staging / 原子切换），
+新鲜度改为 **per-scope**（该 scope **自己**的 live 索引目录）。
+
+| 文件 | 用途 |
+|------|------|
+| `Hosting/IFullTextIndexSupplyComposition.cs` | 🔑 宿主侧供给端口：`IFullTextIndexSupplyComposition`（`Coordinator` / `ComponentOptions` / `LiveIndexLastWriteUtc`）+ `IFullTextIndexSupplyCompositionFactory`。**为什么用工厂**：R4 要求 `Enabled=false` 时「不解析 scope、**不构造协调器组合**、不 touch 索引根」—— 协调器 / staged builder / 清点 / 租约的实例化被推迟到真正进入供给路径之后（默认关闭时永不发生）。 |
+| `Hosting/LuceneFullTextIndexSupplyCompositionFactory.cs` | 生产装配：`FileSystemSupplyInventory` + `StagedFullTextIndexBuilder`（live 引擎 = **查询侧同一实例**，否则 reader 失效打空）+ `FileSupplyLease` + `FullTextIndexSupplyCoordinator`；**配置流入组件**（R2）：`DefaultBudgetBytes = FullTextIndexSupplyOptions.MaxIndexBytes`、`MinRebuildInterval = MinRebuildInterval` —— 宿主侧「1 GiB」仍只有 `FullTextIndexSupplyOptions.DefaultMaxIndexBytes` 一处真源，组件常量退化为未接线时的兜底。**per-scope 新鲜度**（R3）= `IFullTextIndexRootedEngine.ResolveIndexDirectory(scope)` 指向的 **live 索引目录** mtime（组件内的映射单一真源；`SupplyIndexDirectoryLayout` 仍是 internal，宿主**不复刻**哈希规则）。 |
+| `Services/IndexPrebuildService.cs` | 写路径改为「提交 `SupplyScopeRequest` → 轮询 `GetStatusAsync` 到终态」（`StartupDelay` / `StatusPollInterval`(默认 250ms) / `BuildWaitTimeout`(默认 **30min 上限**) 可注入；**超时只停止观测、不取消 job、不重试**）；`Busy` / `Rejected`(含 OverBudget) / `Failed`(含 RolledBack / 切换失败，原因原文照登) / 超时**逐类如实记录**（带 jobId）；**每个 scope 最多提交一次**。引擎只剩**只读**用途（`HasIndex`）。 |
+| `Hosting/IndexPrebuildFreshness.cs` | 注释口径修正：新鲜度输入从「索引根 mtime」改为**该 scope 自己的 live 索引目录 mtime** —— U4-7 登记的「粗粒度代理」留白就此关闭（旧口径下建出任一 scope 就会把其余 scope 集体误判为新鲜）。 |
+| `Extensions/PuddingServiceCollectionExtensions.Runtime.cs` | 新增 `AddSingleton<IFullTextIndexSupplyCompositionFactory>(…)`：取 `FullTextIndexOptions` + 断言引擎实现 `IFullTextIndexRootedEngine`（staged 切换需要「语料根 → 索引目录」映射与 reader 缓存失效两个接缝），staging 引擎工厂 = `new LuceneSearchEngine(stagingOptions)`。 |
+
+测试（`../Tests/PuddingHost.Tests/Hosting/`，宿主 **154 用例**；S5 新增 8 条）：
+`S5IndexSupplyHostWiringTests`（A1 默认关闭零 I/O・工厂/协调器/引擎 0 调用・索引根不建；A2 **真实 Lucene** 端到端可查询 + live 引擎**零直写**；A3 OverBudget 如实记录且 live 逐字节不变、旧索引仍可查；A4 **真实跨进程文件租约** Busy ⇒ 只提交一次、记录 owner/PID、继续下一 scope；A5 per-scope 新鲜度只提交陈旧者（A 新鲜只跳 A）；A6 配置流入组件；轮询超时有界）、
+`S5FullTextIndexSupplyHostCompositionTests`（组合根：`system.json` → 组件策略 + `IFullTextIndexRootedEngine` 接缝成立，全程零索引写入）、
+`S5SupplyTestDoubles.cs`（夹具与替身）、`IndexPrebuildServiceTests`（U4-7 三条按 S5 语义适配）。
+证据：`temp/S5-REPORT.md`、`temp/s5-evidence/`。
+
+⚠️ **边界**：CLI 与其它工程一律未改（组件零改动）；**重启后的运行态验证由父级执行**（本刀禁止重启任何进程）。
