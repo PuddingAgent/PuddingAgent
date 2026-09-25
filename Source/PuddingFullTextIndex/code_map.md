@@ -24,7 +24,7 @@
 
 ## 测试
 
-`Source/PuddingFullTextIndexTests/` — 全文索引测试（60 项：通过 56 / 跳过 4）
+`Source/PuddingFullTextIndexTests/` — 全文索引测试（134 项：通过 130 / 跳过 4）
 
 ## 变更（2026-09-24，ADR-089 U4-6：索引构建遍历改造）
 
@@ -132,3 +132,30 @@ M3（Plan 顺带写租约）三个变异均**先红后绿**（详见 `temp/A1-RE
 
 **边界**：本刀**未接宿主**（S5/A4）、**未改 CLI**（CLI 仍是 A1 的直写模式）、不引用 Host/Agent/Runtime/Platform（引用仍只有 `PuddingPathFiltering` 一条）；
 所有构建/测试只在 `Path.GetTempPath()` 下的临时索引根进行，**未触碰** `D:\data\fulltext-index`（`.staging`/`.trash` 均不存在）。
+
+## 变更（2026-09-25，A22a 暂存切换的「回归闸门」· 组件内 · 未接宿主）
+
+**目标**：坏结果不再能被提升为 live。体积合规**不等于**内容可信 —— 2026-09-25 生产事故：仓库根 scope 的 ~98 MB
+live 满索引被一次只含 **0/99 文档**的构建通过 A2a 的原子切换静默替换（同命令 4 次中 2 次得 99/0 文件却全报 `Succeeded`），
+原有两道预算闸门**只看字节**。本刀在「实测体积硬限」与「原子切换」之间插入一道**只看文档数**的 fail-closed 闸门。
+
+**新增成员（一句话一条）**
+
+| 位置 | 新增 | 一句话 |
+|---|---|---|
+| `Contracts/IndexDocumentProbe.cs` | `readonly record struct IndexDocumentProbe(bool Exists, long? Documents)` | 文档数探针的三态结果：目录不存在 `Exists=false`、存在且可读给出真实篇数（`0` 合法）、存在但读不出为 `Documents=null`（**不得伪报 0**）。 |
+| `Contracts/IFullTextIndexRootedEngine.cs` | `IndexDocumentProbe ProbeDocuments(string corpusRootPath)` | 新增只读文档数探针接缝（路径复用 `ResolveIndexDirectory` 单一真源，不复刻哈希规则）；**不动** `IFullTextSearchEngine`（CLI 组合根冻结）。 |
+| `Infrastructure/Supply/SwapRegressionGate.cs` | `SwapRegressionGate.Evaluate` / `DescribeFacts` | 回归闸门的**唯一判定函数**（纯函数、不抛异常、不触盘）：G1 staging 不可读 / G2 staging 0 文档 / G3 `stagingDocs < liveDocs × 阈值` / G4 live 存在但读不出 —— 任一条命中即拒绝。 |
+| `Contracts/SupplySwapReport.cs` | `RejectedSuspiciousRegression`（outcome = 4） | 新终态：回归闸门拒绝 ⇒ 未切 live（live 一字节未动），staging 已清。 |
+| `Contracts/SupplySwapReport.cs` | `LiveDocsBefore` / `StagingDocs` / `RegressionRatio` / `RegressionVerdict` | 对外可见的文档数事实（`Describe()` 一律写进终态消息；不可计算时写 `<null>`，不把「无意义」伪装成 0）。 |
+| `SupplyCoordinatorOptions.cs` | `MinStagingToLiveDocRatio`（默认 `0.5`） | 回归闸门阈值；非法值（`NaN`/`≤0`/`>1`）由 builder **回落默认值并告警**（`Trace`），**绝不**按 0 放行。 |
+| `Infrastructure/Supply/StagedFullTextIndexBuilder.cs` | 步骤 **⑥-bis** | 回归闸门插入点：实测体积硬限之后、原子切换之前；拒绝路径 = 清 staging、**不**建 `.trash`、**不**失效 reader 缓存、live 一字节不动。 |
+| `Infrastructure/Search/LuceneSearchEngine.cs` | `IFullTextIndexRootedEngine.ProbeDocuments` 实现 | `DirectoryReader.Open(FSDirectory.Open(indexDir)).NumDocs`；目录不存在与「存在但读不出」严格区分。 |
+
+**闸门口径**：`live 不存在`（首次构建）⇒ **放行**（G2 仍生效）；`describe()` 与终态消息均携带
+`stagingDocs / liveDocs / ratio / 判定式` 四个可判定量。
+
+**实测（本刀）**：组件构建 **0 警告 0 错误**；`PuddingFullTextIndexTests` **134 项（通过 130 / 跳过 4 / 失败 0）**（基线 123 ⇒ **+11**）：
+`StagedSupplyRegressionGateTests` 11 项（A1 / A1b / A2 / A3 / A4 / **A5 真 Lucene** / A6 / A7 / G1 / G1b / G4）；
+`PuddingFullTextIndex.Cli.Tests` **41/41**（未改 CLI）；M1（删 G2）/ M2（G3 比较写反）/ M3（live 不存在也拒）分别取红 **A1+A1b+A5+A6 / A2+A3+A6+A7 / A4**，复原后 blob hash 逐位相同，`MUTATION` 残留 0。
+详见 `temp/A22A-REPORT.md` 与 `temp/a22a-evidence/`。

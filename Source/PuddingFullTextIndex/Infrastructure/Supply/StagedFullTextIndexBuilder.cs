@@ -40,6 +40,9 @@ public sealed class StagedFullTextIndexBuilder : IFullTextIndexBuilder, IFullTex
     private readonly SupplyCoordinatorOptions _options;
     private readonly IIndexDirectorySwapper _swapper;
 
+    /// <summary>已规范化的回归闸门阈值（A22a R4）：非法值已在构造时回落默认值并告警。</summary>
+    private readonly double _minStagingToLiveDocRatio;
+
     /// <summary>
     /// 构造安全供给 builder。
     /// </summary>
@@ -87,6 +90,9 @@ public sealed class StagedFullTextIndexBuilder : IFullTextIndexBuilder, IFullTex
 
         if (_options.StaleArtifactMaxAge <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(options), "StaleArtifactMaxAge 必须为正。");
+
+        // A22a R4：阈值非法（NaN / ≤0 / >1）⇒ 回落默认值并告警，**绝不**按 0 处理（0 = 放行一切 = 闸门失效）。
+        _minStagingToLiveDocRatio = NormalizeMinStagingToLiveDocRatio(_options.MinStagingToLiveDocRatio);
     }
 
     /// <summary>
@@ -146,8 +152,15 @@ public sealed class StagedFullTextIndexBuilder : IFullTextIndexBuilder, IFullTex
                 new SupplySwapReport(
                     SupplySwapOutcome.None, budget, 0, 0, 0,
                     StagingDirectory: null, TrashDirectory: null,
-                    cleanup.RemovedEntries, cleanup.Error));
+                    cleanup.RemovedEntries, cleanup.Error,
+                    // 文档数探针未取：字节基线本身就量不出，本次未进入构建阶段。
+                    LiveDocsBefore: null, StagingDocs: null, RegressionVerdict: null));
         }
+
+        // ②-bis live 文档数基线（A22a R1）：与字节基线同一时刻取。live 在 ⑦ 之前不会被任何代码触碰，
+        //      因此这里的探针值就是「切换前」的事实，供回归闸门与报告使用。
+        var liveProbe = ProbeDocumentsSafely(_liveEngine, scope.RootPath);
+        var liveDocs = liveProbe.Exists ? liveProbe.Documents : null;
 
         // ③ 预检（R2 第一道）：预测体积 + live 已用量。口径与 Plan、与第 ⑤ 步完全相同。
         var predictedIndexBytes = SupplyIndexSizeEstimator.PredictIndexBytes(scope.CorpusBytes ?? 0);
@@ -159,7 +172,8 @@ public sealed class StagedFullTextIndexBuilder : IFullTextIndexBuilder, IFullTex
                 new SupplySwapReport(
                     SupplySwapOutcome.RejectedOverBudget, budget, 0, liveBytesBefore, liveBytesBefore,
                     StagingDirectory: null, TrashDirectory: null,
-                    cleanup.RemovedEntries, cleanup.Error));
+                    cleanup.RemovedEntries, cleanup.Error,
+                    LiveDocsBefore: liveDocs, StagingDocs: null, RegressionVerdict: null));
         }
 
         // ④ staging 根（同卷、按 job 唯一）：<IndexRoot>/.staging/<sha256(scopeKey)>-<jobId>
@@ -177,7 +191,9 @@ public sealed class StagedFullTextIndexBuilder : IFullTextIndexBuilder, IFullTex
                     $"staging 目录已存在（{stagingRoot}），拒绝复用/覆盖，本次未构建、未切换。",
                     new SupplySwapReport(
                         SupplySwapOutcome.None, budget, 0, liveBytesBefore, liveBytesBefore,
-                        stagingRoot, TrashDirectory: null, cleanup.RemovedEntries, cleanup.Error));
+                        stagingRoot, TrashDirectory: null, cleanup.RemovedEntries, cleanup.Error,
+                        // staging 尚未构建 ⇒ staging 文档数未取；live 基线已有。
+                        LiveDocsBefore: liveDocs, StagingDocs: null, RegressionVerdict: null));
             }
 
             // ⑤ staging 构建（R1）：写的是 staging 根下的索引目录，live 完全不被触碰。
@@ -196,7 +212,9 @@ public sealed class StagedFullTextIndexBuilder : IFullTextIndexBuilder, IFullTex
                         SupplySwapOutcome.None, budget, stagingBytes, liveBytesBefore, liveBytesBefore,
                         stagingRoot, TrashDirectory: null,
                         cleanup.RemovedEntries,
-                        ArtifactCleanupResult.MergeError(cleanup.Error, stagingDeleteError)));
+                        ArtifactCleanupResult.MergeError(cleanup.Error, stagingDeleteError),
+                        // 构建失败 ⇒ 未走到探针（staging 已清），live 基线如实带上。
+                        LiveDocsBefore: liveDocs, StagingDocs: null, RegressionVerdict: null));
             }
 
             // ⑥ 实测硬限（R2 第二道）：与预检/Plan 同一个判定函数。
@@ -212,8 +230,40 @@ public sealed class StagedFullTextIndexBuilder : IFullTextIndexBuilder, IFullTex
                         SupplySwapOutcome.RejectedOverBudget, budget, stagingBytes, liveBytesBefore, liveBytesBefore,
                         stagingRoot, TrashDirectory: null,
                         cleanup.RemovedEntries,
-                        ArtifactCleanupResult.MergeError(cleanup.Error, stagingDeleteError)));
+                        ArtifactCleanupResult.MergeError(cleanup.Error, stagingDeleteError),
+                        // 体积闸门先于文档数闸门 ⇒ staging 探针未取（体积已否决，就不多做一次读）；live 基线带上。
+                        LiveDocsBefore: liveDocs, StagingDocs: null, RegressionVerdict: null));
             }
+
+            // ⑥-bis 回归闸门（A22a R2）：体积合规**不等于**内容可信。2026-09-25 生产事故里，
+            //        一次只含 0/99（另一轮 99/4510）文档的 staging 通过了上面两道体积闸门并被原子切换，
+            //        静默替换掉 ~98 MB 的 live 满索引 ⇒ 这里再加一道**只看文档数**的 fail-closed 闸门：
+            //        可疑 ⇒ 清 staging、不动 live 一字节、不建 .trash、不失效 reader 缓存。
+            var stagingProbe = ProbeDocumentsSafely(stagingEngine, scope.RootPath);
+            var gateDecision = SwapRegressionGate.Evaluate(stagingProbe, liveProbe, _minStagingToLiveDocRatio);
+
+            if (gateDecision.Rejected)
+            {
+                SupplyIndexDirectoryLayout.TryDelete(stagingRoot, out var stagingGateDeleteError);
+
+                return new SupplyBuildResult(
+                    false, stagingBuild.IndexedFileCount, stagingBuild.TotalBytes, stagingBuild.ElapsedMs,
+                    $"SuspiciousRegression：{gateDecision.Verdict}；"
+                    + $"{SwapRegressionGate.DescribeFacts(gateDecision, _minStagingToLiveDocRatio)}；"
+                    + $"未切换到 live（live 一字节未动，staging 已清理{DeleteNote(stagingGateDeleteError)}）。",
+                    new SupplySwapReport(
+                        SupplySwapOutcome.RejectedSuspiciousRegression, budget, stagingBytes,
+                        liveBytesBefore, liveBytesBefore,
+                        stagingRoot, TrashDirectory: null,
+                        cleanup.RemovedEntries,
+                        ArtifactCleanupResult.MergeError(cleanup.Error, stagingGateDeleteError),
+                        gateDecision.LiveDocs, gateDecision.StagingDocs,
+                        gateDecision.Ratio, gateDecision.Verdict));
+            }
+
+            // 闸门放行 ⇒ 已探到的文档数事实要随报告带下去（切换后 staging 目录已搬走，探针不可再取）。
+            var stagingDocs = gateDecision.StagingDocs;
+            var stagingRatio = gateDecision.Ratio;
 
             // ⑦ 原子切换（R3）
             var liveIndexDir = _liveEngine.ResolveIndexDirectory(scope.RootPath);
@@ -264,7 +314,9 @@ public sealed class StagedFullTextIndexBuilder : IFullTextIndexBuilder, IFullTex
                         cleanup.RemovedEntries,
                         ArtifactCleanupResult.MergeError(
                             ArtifactCleanupResult.MergeError(cleanup.Error, stagingDeleteError),
-                            ArtifactCleanupResult.MergeError(rollback.Error, measureError))));
+                            ArtifactCleanupResult.MergeError(rollback.Error, measureError)),
+                        LiveDocsBefore: liveDocs, StagingDocs: stagingDocs,
+                        RegressionRatio: stagingRatio, RegressionVerdict: null));
             }
 
             // ⑧ 切换成功后再次失效（R3 末句）：保证后续查询立刻看到新索引。
@@ -288,12 +340,50 @@ public sealed class StagedFullTextIndexBuilder : IFullTextIndexBuilder, IFullTex
                     stagingRoot,
                     trashRemoved ? null : trashDir,
                     cleanup.RemovedEntries,
-                    ArtifactCleanupResult.MergeError(finalCleanupError, afterMeasureError)));
+                    ArtifactCleanupResult.MergeError(finalCleanupError, afterMeasureError),
+                    LiveDocsBefore: liveDocs, StagingDocs: stagingDocs,
+                    RegressionRatio: stagingRatio, RegressionVerdict: null));
         }
         finally
         {
             if (stagingEngine is IDisposable disposable)
                 disposable.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// A22a R4：回归闸门阈值规范化。非法值（<c>NaN</c> / <c>Infinity</c> / <c>≤ 0</c> / <c>&gt; 1</c>）
+    /// ⇒ 回落 <see cref="SupplyCoordinatorOptions.DefaultMinStagingToLiveDocRatio"/> 并**告警**；
+    /// 绝不按 0 处理 —— 0 会让 <c>stagingDocs &lt; liveDocs × 0</c> 恒假，等于闸门静默失效。
+    /// </summary>
+    private static double NormalizeMinStagingToLiveDocRatio(double ratio)
+    {
+        if (double.IsNaN(ratio) || double.IsInfinity(ratio) || ratio <= 0d || ratio > 1d)
+        {
+            Trace.TraceWarning(
+                $"MinStagingToLiveDocRatio={ratio.ToString(System.Globalization.CultureInfo.InvariantCulture)} 非法（要求 (0, 1]）⇒ 回落默认值 "
+                + $"{SupplyCoordinatorOptions.DefaultMinStagingToLiveDocRatio}；不按 0 处理（0 会放行一切）。");
+            return SupplyCoordinatorOptions.DefaultMinStagingToLiveDocRatio;
+        }
+
+        return ratio;
+    }
+
+    /// <summary>
+    /// 文档数探针的安全封装（A22a R1）：探针自身抛异常时按「存在但读不出」（<c>Exists=true, Documents=null</c>）
+    /// 处理 —— 即 fail-closed：对 staging 触发 G1、对 live 触发 G4，既不伪报 0 也不放行。
+    /// </summary>
+    private static IndexDocumentProbe ProbeDocumentsSafely(IFullTextIndexRootedEngine engine, string corpusRootPath)
+    {
+        try
+        {
+            return engine.ProbeDocuments(corpusRootPath);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Trace.TraceWarning(
+                $"索引文档数探针异常（{ex.GetType().Name}: {ex.Message}）⇒ 按「存在但读不出」处理（fail-closed）。");
+            return new IndexDocumentProbe(Exists: true, Documents: null);
         }
     }
 

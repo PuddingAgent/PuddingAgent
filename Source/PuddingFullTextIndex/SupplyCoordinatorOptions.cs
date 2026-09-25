@@ -58,6 +58,21 @@ public sealed record SupplyCoordinatorOptions
     /// </summary>
     public TimeSpan StaleArtifactMaxAge { get; init; } = TimeSpan.FromHours(24);
 
+    /// <summary>
+    /// 回归闸门的文档数阈值**默认值**（A22a R4）：<c>0.5</c> —— staging 文档数低于 live 的一半即判可疑回归。
+    /// </summary>
+    public const double DefaultMinStagingToLiveDocRatio = 0.5;
+
+    /// <summary>
+    /// **回归闸门**的最小「staging/live 文档数比」（默认 <see cref="DefaultMinStagingToLiveDocRatio"/>，A22a R4）：
+    /// live 存在且文档数 &gt; 0 时，<c>stagingDocs &lt; liveDocs × 本值</c> ⇒ 拒绝切换（见 <see cref="IFullTextIndexRootedEngine.ProbeDocuments"/>）。
+    /// <para>
+    /// 非法值（<c>NaN</c> / <c>≤ 0</c> / <c>&gt; 1</c>）由 <c>StagedFullTextIndexBuilder</c>
+    /// **回落默认值并告警**，绝不按 0 处理（0 会放行一切，等于闸门失效）。
+    /// </para>
+    /// </summary>
+    public double MinStagingToLiveDocRatio { get; init; } = DefaultMinStagingToLiveDocRatio;
+
     /// <summary>本进程在租约里的 owner 标识（默认 <c>机器名#进程号</c>）。</summary>
     public string OwnerId { get; init; } = SupplyLeaseOwner.ForCurrentProcess().OwnerId;
 }

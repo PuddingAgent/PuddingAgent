@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace PuddingFullTextIndex.Contracts;
@@ -19,6 +20,13 @@ public enum SupplySwapOutcome
 
     /// <summary>切换途中失败，已把 <c>.trash</c> 副本回滚回 live（live 仍是旧索引）。</summary>
     RolledBack = 3,
+
+    /// <summary>
+    /// **回归闸门**（A22a）判为可疑回归 ⇒ 未切 live（live 一字节未动），staging 已被清理。
+    /// 触发场景：staging 文档数为 0、staging 文档数远少于 live（默认阈值 0.5）、
+    /// staging 文档数读不出、或 live 存在却读不出文档数（无法建立基线）。
+    /// </summary>
+    RejectedSuspiciousRegression = 4,
 }
 
 /// <summary>
@@ -39,6 +47,10 @@ public enum SupplySwapOutcome
 /// <param name="TrashDirectory">被替换下来的旧 live 的暂存路径；未移动过旧 live 或删除成功且无需保留时为 null。</param>
 /// <param name="CleanedArtifacts">本次供给开始前清掉的过期残留（相对 IndexRoot 的条目名）；没有则为空集合。</param>
 /// <param name="CleanupError">残留清理/trash 删除过程中遇到的问题（**不影响供给成败**，如实登记，不静默）。</param>
+/// <param name="LiveDocsBefore">切换前 live 索引的**文档数**（探针实测）；live 目录不存在或读不出时为 <c>null</c>（**不得伪报 0**）。</param>
+/// <param name="StagingDocs">staging 索引的**文档数**（探针实测，取切换前时刻，因为切换后 staging 目录已被搬走）；未探测到/读不出时为 <c>null</c>。</param>
+/// <param name="RegressionRatio"><c>StagingDocs / LiveDocsBefore</c>；仅当两者皆可知且 live &gt; 0 时有效，否则为 <c>0</c>（此时以 <paramref name="RegressionVerdict"/> 判定，切勿把它当成「比值确为 0」的唯一依据）。</param>
+/// <param name="RegressionVerdict">回归闸门的拒绝原因原文（G1~G4）；通过闸门时为 <c>null</c>。</param>
 public sealed record SupplySwapReport(
     SupplySwapOutcome Outcome,
     long BudgetBytes,
@@ -48,10 +60,20 @@ public sealed record SupplySwapReport(
     string? StagingDirectory = null,
     string? TrashDirectory = null,
     IReadOnlyList<string>? CleanedArtifacts = null,
-    string? CleanupError = null)
+    string? CleanupError = null,
+    long? LiveDocsBefore = null,
+    long? StagingDocs = null,
+    double RegressionRatio = 0d,
+    string? RegressionVerdict = null)
 {
     /// <summary>清理掉的过期残留条数。</summary>
     public int CleanedArtifactCount => CleanedArtifacts?.Count ?? 0;
+
+    /// <summary>
+    /// <see cref="RegressionRatio"/> 是否可计算（staging 与 live 的文档数均已读出且 live &gt; 0）；
+    /// 为 <c>false</c> 时该字段的 0 **不代表**「比值确实为 0」。
+    /// </summary>
+    public bool HasRegressionRatio => StagingDocs is not null && LiveDocsBefore is > 0;
 
     /// <summary>单行可读摘要（进 job 消息与测试断言；字段名与 R6 一一对应）。</summary>
     public string Describe()
@@ -62,6 +84,12 @@ public sealed record SupplySwapReport(
         text.Append("；liveBytesBefore=").Append(LiveBytesBefore);
         text.Append("；liveBytesAfter=").Append(LiveBytesAfter);
         text.Append("；budgetBytes=").Append(BudgetBytes);
+        text.Append("；stagingDocs=").Append(FormatDocs(StagingDocs));
+        text.Append("；liveDocs=").Append(FormatDocs(LiveDocsBefore));
+        text.Append("；ratio=").Append(FormatRatio());
+
+        if (!string.IsNullOrEmpty(RegressionVerdict))
+            text.Append("；regressionVerdict=").Append(RegressionVerdict);
 
         if (CleanedArtifactCount > 0)
             text.Append("；cleaned=").Append(CleanedArtifactCount);
@@ -71,4 +99,12 @@ public sealed record SupplySwapReport(
 
         return text.ToString();
     }
+
+    /// <summary>文档数格式化：未知一律写 <c>&lt;null&gt;</c>（与「确实是 0」区分，不用区域性数字格式）。</summary>
+    private static string FormatDocs(long? documents) =>
+        documents?.ToString(CultureInfo.InvariantCulture) ?? "<null>";
+
+    /// <summary>比值格式化：不可计算时写 <c>&lt;null&gt;</c>，不把「无意义」伪装成 0。</summary>
+    private string FormatRatio() =>
+        HasRegressionRatio ? RegressionRatio.ToString("0.####", CultureInfo.InvariantCulture) : "<null>";
 }

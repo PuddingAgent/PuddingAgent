@@ -38,6 +38,18 @@ internal sealed class FakeRootedEngine : IFullTextIndexRootedEngine
     /// <summary>覆盖构建行为（用于制造引擎失败）；返回 null 表示走默认行为。</summary>
     internal Func<string, CancellationToken, Task<FullTextIndexResult>>? BuildBehaviour { get; set; }
 
+    /// <summary>
+    /// 文档数探针上报的篇数（A22a）：<c>null</c> = 未显式设置 ⇒ 索引目录存在时报 <c>1</c> 篇（模拟健康索引）。
+    /// 要制造回归场景就显式设值（例如 live=100 / staging=0）。
+    /// </summary>
+    internal long? DocumentsOnProbe { get; set; }
+
+    /// <summary>整体覆盖探针返回值（含 <c>Exists</c> 与 <c>Documents=null</c> 语义）；设置后优先于 <see cref="DocumentsOnProbe"/>。</summary>
+    internal IndexDocumentProbe? ProbeOverride { get; set; }
+
+    /// <summary>探针被调用的语料根（断言「闸门确实探过 staging」）。</summary>
+    internal List<string> ProbeRequests { get; } = new();
+
     internal FullTextIndexResult DefaultResult { get; set; } = new(true, 1, 128, 3, null);
 
     public string ResolveIndexDirectory(string corpusRootPath) => Path.Combine(IndexRoot, IndexDirectoryName(corpusRootPath));
@@ -49,6 +61,23 @@ internal sealed class FakeRootedEngine : IFullTextIndexRootedEngine
     }
 
     public bool HasIndex(string directoryPath) => Directory.Exists(ResolveIndexDirectory(directoryPath));
+
+    /// <summary>
+    /// 文档数探针替身（A22a R1）：<c>Exists</c> 一律按目录实际是否存在（与真实引擎的三态语义同形），
+    /// <c>Documents</c> 取 <see cref="DocumentsOnProbe"/>（未设时为 1；要模拟「读不出」请用 <see cref="ProbeOverride"/>）。
+    /// </summary>
+    public IndexDocumentProbe ProbeDocuments(string corpusRootPath)
+    {
+        ProbeRequests.Add(corpusRootPath);
+
+        if (ProbeOverride is { } overridden)
+            return overridden;
+
+        var indexDirectory = ResolveIndexDirectory(corpusRootPath);
+        return Directory.Exists(indexDirectory)
+            ? new IndexDocumentProbe(Exists: true, DocumentsOnProbe ?? 1)
+            : new IndexDocumentProbe(Exists: false, Documents: null);
+    }
 
     public Task<FullTextSearchResult> SearchAsync(
         string query,
@@ -204,7 +233,8 @@ internal sealed class StagedRig : IDisposable
         bool useStaging = true,
         TimeSpan? staleArtifactMaxAge = null,
         Func<FakeRootedEngine, FakeRootedEngine>? stagingCustomizer = null,
-        Func<List<string>, IIndexDirectorySwapper>? swapperFactory = null)
+        Func<List<string>, IIndexDirectorySwapper>? swapperFactory = null,
+        double? minStagingToLiveDocRatio = null)
     {
         Fixture = new TempSupplyFixture();
         Events = new List<string>();
@@ -216,6 +246,7 @@ internal sealed class StagedRig : IDisposable
             DefaultBudgetBytes = budgetBytes,
             UseStaging = useStaging,
             StaleArtifactMaxAge = staleArtifactMaxAge ?? TimeSpan.FromHours(24),
+            MinStagingToLiveDocRatio = minStagingToLiveDocRatio ?? SupplyCoordinatorOptions.DefaultMinStagingToLiveDocRatio,
         };
 
         Builder = new StagedFullTextIndexBuilder(

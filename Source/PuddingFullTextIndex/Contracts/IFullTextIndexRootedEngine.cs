@@ -1,8 +1,8 @@
 namespace PuddingFullTextIndex.Contracts;
 
 /// <summary>
-/// **绑定在某个索引根上**的引擎实例：除构建/搜索外，额外提供 staged 供给（A2a）所需的两件事 ——
-/// 「语料根 → 本索引根下的索引目录」映射，与 reader 缓存的**显式失效**。
+/// **绑定在某个索引根上**的引擎实例：除构建/搜索外，额外提供 staged 供给（A2a/A22a）所需的**三件**事 ——
+/// 「语料根 → 本索引根下的索引目录」映射、reader 缓存的**显式失效**，与索引**文档数探针**。
 /// <para>
 /// ① <see cref="ResolveIndexDirectory"/> 是索引目录命名哈希的**单一真源**：
 /// 供给层（含 staged 切换）一律不得复刻「<c>sha256(大写规范化全路径)</c>」规则 ——
@@ -34,4 +34,20 @@ public interface IFullTextIndexRootedEngine : IFullTextSearchEngine
     /// 失效该语料根对应的 reader/searcher 缓存。幂等：缓存里没有该项也算成功。
     /// </summary>
     void InvalidateScope(string corpusRootPath);
+
+    /// <summary>
+    /// 探测「语料根 → 本索引根下索引目录」的**文档数**（A22a R1）：供给的回归闸门用它回答
+    /// 「staging 是不是近乎空的」这个体积答不了的问题（2026-09-25 事故：体积合规但只有 0/99 文档）。
+    /// <para>
+    /// 契约三态（实现必须区分，见 <see cref="IndexDocumentProbe"/>）：
+    /// 目录不存在 ⇒ <c>Exists=false</c>；存在且可读 ⇒ <c>Documents</c>=真实篇数（<c>0</c> 合法）；
+    /// 存在但读不出 ⇒ <c>Documents=null</c>（<b>不得</b>伪报 0）。
+    /// </para>
+    /// <para>
+    /// 路径解析必须复用 <see cref="ResolveIndexDirectory"/> 的同一规则（单一真源），
+    /// 探针只读：<b>不得</b>创建目录、不得写索引、不得改 reader 缓存（供 gate 在切换前调用）。
+    /// </para>
+    /// </summary>
+    /// <param name="corpusRootPath">语料根目录（不是索引目录）。</param>
+    IndexDocumentProbe ProbeDocuments(string corpusRootPath);
 }

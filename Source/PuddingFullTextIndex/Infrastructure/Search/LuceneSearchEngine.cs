@@ -660,6 +660,42 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
     /// <inheritdoc />
     void IFullTextIndexRootedEngine.InvalidateScope(string corpusRootPath) => InvalidateScope(corpusRootPath);
 
+    /// <summary>
+    /// 文档数探针（A22a R1）：与 <c>IndexHasDocuments</c> 同一读法（<c>DirectoryReader.Open(...).NumDocs</c>），
+    /// 但把既有实现丢弃的两类信息保留下来 —— <b>目录不存在</b> 与 <b>存在但读不出</b> 必须可区分：
+    /// 前者返回 <c>Exists=false</c>，后者返回 <c>Documents=null</c>（<b>不得伪报 0</b>）。
+    /// <para>
+    /// 路径一律经 <see cref="GetIndexDirectoryPath"/>（命名哈希的单一真源，不复刻规则）；
+    /// 本探针只读：不创建目录、不写索引、不动 reader 缓存（供给在切换前调用它）。
+    /// 读者（<c>DirectoryReader</c>）在方法内立即释放，不占用文件句柄（Windows 下未释放的句柄会阻止目录 Move）。
+    /// </para>
+    /// </summary>
+    IndexDocumentProbe IFullTextIndexRootedEngine.ProbeDocuments(string corpusRootPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(corpusRootPath);
+        var indexDir = GetIndexDirectoryPath(corpusRootPath);
+
+        if (!Directory.Exists(indexDir))
+            return new IndexDocumentProbe(Exists: false, Documents: null);
+
+        try
+        {
+            using var dir = FSDirectory.Open(indexDir);
+            if (!DirectoryReader.IndexExists(dir))
+                return new IndexDocumentProbe(Exists: true, Documents: null);
+
+            using var reader = DirectoryReader.Open(dir);
+            return new IndexDocumentProbe(Exists: true, Documents: reader.NumDocs);
+        }
+        catch
+        {
+            // 存在但读不出 ⇒ Documents=null（**不得**伪报 0）：与 IndexHasDocuments 同一兜底策略，
+            // 但本探针不把「读不出」与「确实是 0 文档」合并成 false，因为供给的回归闸门必须区分两者。
+            return new IndexDocumentProbe(Exists: true, Documents: null);
+        }
+    }
+
+
     private async Task<string> ExtractContentAsync(string filePath, string extension, CancellationToken ct)
     {
         // 纯文本文件 — 直接读取
