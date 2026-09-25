@@ -8,6 +8,9 @@
 |------|------|
 | `IFullTextSearchEngine.cs` | 搜索引擎接口 |
 | `IFileContentExtractor.cs` | 文件内容提取接口 |
+| `FullTextChangeSet.cs` | **三源统一变更集**（`FullTextChangeKind` / `FullTextChangeSource` Flags 1·2·4 / `FullTextFileChange` / `FullTextChangeSet`）—— watcher / mtime 补偿 / 体检共用同一种数据 |
+| `IFullTextIndexMaintenanceEngine.cs` | **局部维护执行接缝**（`ApplyChangesAsync` / `EnumerateIndexedPathsAsync` / `ProbeIntegrityAsync`）+ 预算/结果/探针 DTO。**独立于 `IFullTextSearchEngine`**（后者被 CLI 共同实现，加成员会破坏其编译） |
+| `IFullTextIndexMaintenance.cs` | **维护生命周期接缝**（`StartAsync` / `StopAsync` / `RequestRecoveryScanAsync` / `GetSnapshot`）+ scope/reason/snapshot DTO。宿主侧只负责起停 |
 
 ## 基础设施（Infrastructure/）
 
@@ -15,6 +18,7 @@
 |------|------|
 | `Search/` | 搜索实现 |
 | `Text/` | 文本处理 |
+| `Maintenance/` | **局部维护纯逻辑**（零 IO / 零线程）：`MaintenanceCheckpoint.cs`（checkpoint 模型 + 协议 JSON + 路径解析，**只经 `FullTextIndexPaths`**）· `MTimeComparison.cs`（`>=` 判定 / `effective = watermark - overlap` / `ComputeNextWatermark` 取**扫描开始**时刻 / 时钟回拨判定 / stat 稳定性）· `FullTextChangeCoalescer.cs`（per-path latest-wins / `Sources` 位或 / rename 折叠 / 越界拒绝）· `MaintenanceOptions.cs`（fail-closed 校验，默认全关） |
 
 ## 配置
 
@@ -24,7 +28,7 @@
 
 ## 测试
 
-`Source/PuddingFullTextIndexTests/` — 全文索引测试（146 项：通过 142 / 跳过 4）
+`Source/PuddingFullTextIndexTests/` — 全文索引测试（**180 项：通过 176 / 跳过 4**；本切片 S1a 前基线为 146：通过 142 / 跳过 4）
 
 ## 变更（2026-09-24，ADR-089 U4-6：索引构建遍历改造）
 
@@ -225,3 +229,37 @@ scope 键相反（保住盘根、不变文化小写、`/`→`\`），且服务�
 CLI `status` 打印的 `scopeKey` / `indexDirectory` 改动前后**逐字节相同**（`DIFF-COUNT=0`；仅剔除 `exe-sha256` 与 `owner=MSI#<pid>` 两类非确定性行）；
 M1（`ToUpperInvariant`→`ToLowerInvariant`）/ M2（去掉 `TrimEnd`）/ M3（删调用点但把复刻留回 CLI 侧）分别取红；复原后 blob 逐位相同、`MUTATION` 残留 **0**（含对照组）。
 详见 `temp/A19-REPORT.md` 与 `temp/a19-evidence/`。
+## 变更（2026-09-25，S1a：全文索引「局部维护」契约 + 纯逻辑 · 组件内 · 未接宿主）
+
+**动机（用户裁定 2026-09-25）**：**重建 = 小概率 / 手动事件，长周期内不做自动重建**；日常改为**局部更新**，
+触发源为「**FileWatcher 低延迟收集 + mtime checkpoint 补偿 + 低优先级体检**」。
+**根因**：现有唯一供给路径（`Infrastructure/Supply/StagedFullTextIndexBuilder`）的 staging 根**每 job 唯一且拒绝复用**
+⇒ 目标索引目录从不存在 ⇒ `LuceneSearchEngine` 的 `incremental` 判定恒 false ⇒ **每次全量重建（105 MB / ≈115 s）**，
+引擎自带的按文件「删旧 + 加新」增量分支**永远走不到**。
+
+**本切片只做契约与纯逻辑**（零 IO、零线程、不接真实 `IndexWriter`），为后续 S1b/S3 定形：
+
+- **新增契约（3）**：`Contracts/FullTextChangeSet.cs`、`Contracts/IFullTextIndexMaintenanceEngine.cs`、
+  `Contracts/IFullTextIndexMaintenance.cs`。两个接缝**均独立**，`IFullTextSearchEngine` / `IFullTextIndexRootedEngine`
+  **一个成员都没加**（它们被 CLI 工程共同实现，加成员会破坏 CLI 编译）。**本片不实现这两个接口**（属 S3）。
+- **新增纯逻辑（4，`Infrastructure/Maintenance/`）**：checkpoint 模型与路径解析 · mtime 比较 · 变更折叠 · options 校验。
+- **关键语义（已被测试钉住，不是注释级约定）**：
+  - mtime 判定用 **`>=`**（含等号）+ `effective = watermark - mtimeOverlap`（overlap 默认 2s，可注入）；
+  - **checkpoint 取「扫描开始时刻」**（绝不取结束时刻 —— 否则「已枚举过之后、扫描结束之前」被写的文件**下轮永久跳过**）；
+  - **mtime / watermark 读不到 ⇒ 判「需处理」**（fail-stale，绝不允许"读不到就跳过"）；
+  - **时钟回拨**（`scanStart < watermark`，严格小于）⇒ 判需全范围局部校准；
+  - 变更折叠：**per-path latest-wins**、`Sources` 位或合并、`rename` ⇒ `Delete(旧)+Upsert(新)`、暂时不可读 ⇒ 不产出动作 + 待重试；
+  - **越界路径「拒绝并如实返回」**（`FullTextRejectedPath` + `Reason=OutsideScope`），**不静默过滤**（已用 3 种形态取红）；
+  - checkpoint 路径 **只经 `FullTextIndexPaths.ResolveIndexDirectory`** 推导（不得复刻命名哈希）；`Enabled=false` ⇒ **零副作用**。
+- **验证（父级独立复跑，不采信自述）**：组件构建 **0 警告 / 0 错误**；CLI 构建 **0 警告 / 0 错误**（证明契约未破坏 CLI）；
+  `PuddingFullTextIndexTests` **失败 0 / 通过 176 / 跳过 4 / 总计 180**（基线 146 ⇒ +34）。
+  **两条变异取红**（父级脚本自跑）：`>=`→`>` ⇒ `MTime_GreaterOrEqualBoundary_RequiresProcessing` 变红（失败 1）；
+  watermark 改为扫描结束时刻 ⇒ `ScanWindow_WatermarkTakesScanStart_SoFileWrittenAfterEnumerationIsStillProcessedNextRound`
+  + `CheckpointAdvance_UsesScanStartAsWatermark_AndIncrementsGeneration` 变红（失败 2）；两次复原后 blob **逐位相同**
+  （`74ebb46fa0403fb1772211ac058f7c48fefa5dd9`）；`MUTATION` 残留 0（带对照组）。
+- **本片未做（诚实登记）**：不实现两个接口；不写真实 checkpoint 写盘/原子替换；不写 FSW / 去抖定时器 / 有界队列 / 体检循环；
+  不做时钟回拨的校准动作；**未抽取 patterns fingerprint helper** ⇒ `.last_indexed` golden 断言留 S1b（本片**未碰**
+  `LuceneSearchEngine.cs`）；**未实现「状态机」**（需执行层语义才有意义，归 S3）；未做 quota 真实计量与并发/崩溃注入（S3）。
+- **设计依据**：`temp/codex-plan-incremental-supply.md`（995 行，已抢救入 memory 侧同名副本）；
+  任务书 `temp/s1a-maintenance-contracts-task.md`；报告 `temp/s1a-report.md`；原始证据 `temp/s1a-evidence/`。
+- **⚠️ 遗留**：`Infrastructure/Supply/` 与 `Contracts/IFullTextIndexRootedEngine.cs` 等**既有多处未登记进本表**（历史欠账，非本片引入）。
