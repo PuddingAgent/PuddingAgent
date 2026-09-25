@@ -15,8 +15,9 @@ namespace PuddingFullTextIndex.Infrastructure.Maintenance;
 /// <b>只做两件事</b>：把一个统一变更集按「先提取、后 delete/add、单批 commit」写进 live 索引；
 /// 只读枚举索引里已有的路径清册（补偿扫描算 Delete 候选的来源）。
 /// 供宿主 / 维护器通过 <see cref="IFullTextIndexMaintenanceEngine"/> 调用；本片**不接 Host**、
-/// 不起 <c>FileSystemWatcher</c> / <c>Timer</c> / 长驻 <c>Task</c>、不获取跨进程租约、不做写入期配额 wrapper、
-/// 不失效查询侧 reader（分别属 S3b / S3c / S3d）。
+/// 不起 <c>FileSystemWatcher</c> / <c>Timer</c> / 长驻 <c>Task</c>、不获取跨进程租约、
+/// 不失效查询侧 reader（分别属 S3c / S3d）。写入期配额（S3b）已落地：writer 建在
+/// <see cref="QuotaEnforcingDirectory"/> 上，超限以 <see cref="IndexWriteQuotaExceededException"/> 中止本批并 rollback。
 /// </para>
 /// <para>
 /// <b>§3.6 单批次顺序（本类逐条对齐）</b>：
@@ -29,12 +30,16 @@ namespace PuddingFullTextIndex.Infrastructure.Maintenance;
 /// <item><description>④ <b>提取失败的文件不进入 Lucene delete 集合</b> —— 提取全部在内存中完成后才开始写；
 /// 任一文件提取失败 ⇒ 它的旧文档<b>保留</b>，只登记待重试（绝不先删后失败）。</description></item>
 /// <item><description>⑤ 打开<b>一个</b> <c>IndexWriter(OpenMode.CREATE_OR_APPEND)</c>；不可得锁 ⇒ 返回
-/// <see cref="FullTextMutationState.Busy"/>（不抛、不提交）。</description></item>
+/// <see cref="FullTextMutationState.Busy"/>（不抛、不提交）。writer 建在写入期配额包装层
+/// <see cref="QuotaEnforcingDirectory"/> 上，并显式用 <c>SerialMergeScheduler</c> ⇒ 合并写出的段文件
+/// 同步经过计数，且合并必然发生在 commit 点写盘<b>之前</b>（超限位置始终可回滚）。</description></item>
 /// <item><description>⑥ 成功的 Upsert：先 <c>DeleteDocuments(path)</c> 再添加当前文档
 /// （幂等重写；文档构造复用引擎的 <c>AddDocument</c>，<b>不复制</b>结构）。</description></item>
 /// <item><description>⑦ 确认删除：<c>DeleteDocuments(path)</c>。</description></item>
-/// <item><description>⑧ 预算硬限检查 —— 本片做<b>写前预检</b>（§4.2 原文即为「写前」）：与 A2a 同一个
-/// <see cref="SupplyBudgetCalculator.Fits"/> 口径；不在写入期拒绝（那是 S3b 的 quota wrapper）。</description></item>
+/// <item><description>⑧ 预算硬限 —— 双层：<b>写前预检</b>（§4.2 原文即为「写前」）与<b>写入期配额</b>（S3b）。
+/// 预检与 A2a 同一个 <see cref="SupplyBudgetCalculator.Fits"/> 口径；写入期由 <see cref="QuotaEnforcingDirectory"/>
+/// 统计实际输出字节（含自动合并写出的新段），越界 ⇒ <see cref="IndexWriteQuotaExceededException"/> 中止本批。
+/// 两者都只允许「拒绝 + rollback 保留上一个 commit」，绝不先写后超。</description></item>
 /// <item><description>⑨ <c>Commit()</c> —— 单批一次；未 commit 的文档对查询不可见（本类只在提交成功后才返回
 /// <see cref="FullTextMutationState.Applied"/> / <see cref="FullTextMutationState.PartiallyApplied"/>）。</description></item>
 /// <item><description>⑩ <c>InvalidateScope(scope)</c> —— <b>本片不做（S3c）</b>：本类不持有查询侧 reader 缓存。</description></item>
@@ -96,10 +101,28 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
         FullTextMutationBudget budget,
         CancellationToken cancellationToken = default)
     {
+        var (result, _) = await ApplyChangesWithReportAsync(changeSet, budget, cancellationToken).ConfigureAwait(false);
+        return result;
+    }
+
+    /// <summary>
+    /// 与 <see cref="ApplyChangesAsync"/> <b>同一实现</b>（唯一执行路径），额外产出本批的
+    /// <see cref="IndexSizeReport"/>（方案 §6 S3 完成标准⑥「连续局部更新的体积增长有机器可读报告」）。
+    /// <para>
+    /// internal：本片（S3b）不接 Host ⇒ 报告暂由组件内测试消费。报告与结果来自<b>同一次执行</b>，
+    /// 不存在「日志说一套、返回值说另一套」的可能。
+    /// </para>
+    /// </summary>
+    internal async Task<(FullTextMutationResult Result, IndexSizeReport Report)> ApplyChangesWithReportAsync(
+        FullTextChangeSet changeSet,
+        FullTextMutationBudget budget,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(changeSet);
         ArgumentNullException.ThrowIfNull(budget);
 
         var indexPath = _searchEngine.GetIndexDirectoryPath(changeSet.ScopeRoot);
+        var observation = new IndexSizeObservation();
 
         // ── ① 每 scope 进程内 gate（与全量构建共用同一把）──
         var gate = _searchEngine.GetScopeGate(indexPath);
@@ -109,21 +132,24 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
         }
         catch (OperationCanceledException)
         {
-            return NoWriteResult(
+            var canceled = NoWriteResult(
                 changeSet,
                 FullTextMutationState.Cancelled,
                 indexPath,
                 "取消：等待 scope gate 期间被取消（未写入、未提交）。");
+            return (canceled, IndexSizeReport.Create(canceled, budget, observation));
         }
 
+        FullTextMutationResult result;
         try
         {
-            return await ApplyUnderGateAsync(changeSet, budget, indexPath, cancellationToken).ConfigureAwait(false);
+            result = await ApplyUnderGateAsync(changeSet, budget, indexPath, observation, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             // ③（提取）或写入前的任意取消检查外抛 —— 统一转成显式的 Cancelled（不伪装成功、不吞掉语义）。
-            return NoWriteResult(
+            result = NoWriteResult(
                 changeSet,
                 FullTextMutationState.Cancelled,
                 indexPath,
@@ -133,12 +159,15 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
         {
             gate.Release();
         }
+
+        return (result, IndexSizeReport.Create(result, budget, observation));
     }
 
     private async Task<FullTextMutationResult> ApplyUnderGateAsync(
         FullTextChangeSet changeSet,
         FullTextMutationBudget budget,
         string indexPath,
+        IndexSizeObservation observation,
         CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
@@ -211,7 +240,9 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
 
         // ── ⑧ 预算硬限的**写前预检**（§4.2：与 A2a 同一个 SupplyBudgetCalculator 口径）──
         // 增长估计取「本批全部 Upsert 的最终 stat 字节数」：它是实际写入量的保守估计（提取失败的文件也算在内 ⇒ 偏大不偏小）。
-        // ⚠️ 写入期按实际输出字节拒绝属 S3b 的 quota wrapper；本片只做这一道预检。
+        // ⚠️ 这一道是「提取前」的粗筛，可能低估 Lucene 的实际输出（段格式开销）；写入期还有第二道按
+        // **实际输出字节**的硬限（S3b 的 QuotaEnforcingDirectory，见 RunWriterSession）。两者都只允许
+        // 「拒绝 + rollback 保留上一个 commit」，绝不先写后超。
         var predictedIncomingIndexBytes = 0L;
         foreach (var verified in verifiedUpserts)
             predictedIncomingIndexBytes += verified.ObservedBytes;
@@ -297,8 +328,9 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
                 DescribeRetained(retainedOldPaths, failureNotes));
         }
 
-        // ── ⑤⑥⑦⑨⑪ 单批 writer 会话 ──
-        var session = RunWriterSession(indexPath, deleteThenAddPaths, confirmedDeletes, preparedUpserts, cancellationToken);
+        // ── ⑤⑥⑦⑨⑪ 单批 writer 会话（S3b：writer 建在写入期配额包装层上）──
+        var session = RunWriterSession(
+            indexPath, budget, deleteThenAddPaths, confirmedDeletes, preparedUpserts, observation, cancellationToken);
         var indexBytesAfter = MeasureIndexBytes(indexPath);
 
         if (session.ShortCircuitState is { } shortCircuitState)
@@ -332,22 +364,41 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
     }
 
     /// <summary>
-    /// 一个批次的单次 writer 会话：打开 → delete-then-add → commit → 释放（**不**长持 writer lock）。
+    /// 一个批次的单次 writer 会话：打开（**写入期配额包装层**）→ delete-then-add → commit → 释放
+    /// （**不**长持 writer lock）。
     /// <para>
     /// 失败语义：取不到锁 ⇒ <see cref="FullTextMutationState.Busy"/>；取消 ⇒
-    /// <see cref="FullTextMutationState.Cancelled"/>；其它异常 ⇒ <see cref="FullTextMutationState.Failed"/>；
-    /// 三者一律经 <c>finally</c> 走 <c>Rollback()</c>（未提交的变更被丢弃，索引回到上一个 commit）。
+    /// <see cref="FullTextMutationState.Cancelled"/>；**写入期配额越界** ⇒
+    /// <see cref="FullTextMutationState.Rejected"/>（本批未 commit）；其它异常 ⇒
+    /// <see cref="FullTextMutationState.Failed"/>；未提交的一律由 <c>finally</c> 走 <c>Rollback()</c>
+    /// （未提交的变更被丢弃，索引回到上一个 commit）。
+    /// </para>
+    /// <para>
+    /// <b>为什么合并必须是同步的</b>（<c>SerialMergeScheduler</c>）：自动合并写出的新段文件同样要计入同一个预算，
+    /// 而且「超限」必须发生在 commit 点写盘<b>之前</b>才能靠 rollback 保住旧 commit。若用默认的后台合并调度器，
+    /// 越过预算的合并可能落在提交之后 —— 那时既无法回滚，也证明不了「提交后不产生无界临时段」。
     /// </para>
     /// </summary>
     private WriterSessionOutcome RunWriterSession(
         string indexPath,
+        FullTextMutationBudget budget,
         IReadOnlyList<string> deleteThenAddPaths,
         IReadOnlyList<string> confirmedDeletePaths,
         IReadOnlyList<PreparedUpsert> preparedUpserts,
+        IndexSizeObservation observation,
         CancellationToken cancellationToken)
     {
+        // 本批允许的**实际输出增长** = 集合预算 − 本批开始前全部 live scope 索引字节（§4.2 的集合口径）。
+        // ≤ 0 表示本批不得写出任何新字节（合同 FullTextMutationBudget.RemainingBytes 的语义）。
+        var quotaDirectory = new QuotaEnforcingDirectory(
+            FSDirectory.Open(indexPath),
+            budget.MaxIndexBytes,
+            budget.RemainingBytes);
+        observation.WriterSessionOpened = true;
+
         IndexWriter? writer = null;
         var committed = false;
+        var sessionState = new WriterSessionState();
 
         try
         {
@@ -355,53 +406,75 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
             {
                 // CREATE_OR_APPEND：局部写永远追加在既有索引之后（目录存在性已由守卫 B 保证）。
                 writer = new IndexWriter(
-                    FSDirectory.Open(indexPath),
+                    quotaDirectory,
                     new IndexWriterConfig(IndexWriterMatchVersion, _searchEngine.Analyzer)
                     {
                         OpenMode = OpenMode.CREATE_OR_APPEND,
                         RAMBufferSizeMB = WriterRamBufferMegabytes,
+                        MergeScheduler = new SerialMergeScheduler(),
                     });
             }
             catch (LockObtainFailedException ex)
             {
                 // 互斥未取得（另一 writer 持同一索引目录）⇒ 不抛异常、不提交（按 Busy/Retry 处理）。
-                return new WriterSessionOutcome(
+                sessionState.Outcome = new WriterSessionOutcome(
                     false,
                     null,
                     FullTextMutationState.Busy,
                     $"互斥失败：writer lock 被占用（{ex.Message}）⇒ 本批未写入、未提交。");
             }
 
-            // DeleteDocuments 保留旧接口语义：delete 不存在路径的文档是 no-op，不算失败。
-            foreach (var path in deleteThenAddPaths)
-                writer.DeleteDocuments(new Term("path", path));
-
-            foreach (var path in confirmedDeletePaths)
-                writer.DeleteDocuments(new Term("path", path));
-
-            // 文档构造复用引擎的同一实现（不复制结构 ⇒ 两种写入路径不会静默漂移）。
-            foreach (var prepared in preparedUpserts)
-                LuceneSearchEngine.AddDocument(writer, prepared.FullPath, prepared.Content);
-
-            if (cancellationToken.IsCancellationRequested)
+            if (sessionState.Outcome is null)
             {
-                return new WriterSessionOutcome(
-                    false,
-                    null,
-                    FullTextMutationState.Cancelled,
-                    "取消：提交前被取消 ⇒ 已 rollback、未提交。");
+                // DeleteDocuments 保留旧接口语义：delete 不存在路径的文档是 no-op，不算失败。
+                foreach (var path in deleteThenAddPaths)
+                    writer!.DeleteDocuments(new Term("path", path));
+
+                foreach (var path in confirmedDeletePaths)
+                    writer!.DeleteDocuments(new Term("path", path));
+
+                // 文档构造复用引擎的同一实现（不复制结构 ⇒ 两种写入路径不会静默漂移）。
+                foreach (var prepared in preparedUpserts)
+                    LuceneSearchEngine.AddDocument(writer!, prepared.FullPath, prepared.Content);
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    sessionState.Outcome = new WriterSessionOutcome(
+                        false,
+                        null,
+                        FullTextMutationState.Cancelled,
+                        "取消：提交前被取消 ⇒ 已 rollback、未提交。");
+                }
+                else
+                {
+                    // 先把本线程触发的合并全部落地（SerialMergeScheduler 下合并就在本线程执行），
+                    // 再判定是否已越界：越界 ⇒ **不 commit**（由 finally 的 rollback 保留上一个 commit）。
+                    writer!.WaitForMerges();
+
+                    if (quotaDirectory.Violation is { } violationBeforeCommit)
+                    {
+                        sessionState.Outcome = QuotaOutcome(violationBeforeCommit, "flush / merge 写出");
+                    }
+                    else
+                    {
+                        var stopwatch = Stopwatch.StartNew();
+                        writer!.Commit();
+                        var commitMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+                        committed = true;
+                        sessionState.Outcome = new WriterSessionOutcome(true, commitMilliseconds, null, null);
+                    }
+                }
             }
-
-            var stopwatch = Stopwatch.StartNew();
-            writer.Commit();
-            var commitMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
-            committed = true;
-
-            return new WriterSessionOutcome(true, commitMilliseconds, null, null);
+        }
+        catch (Exception ex) when (quotaDirectory.Violation is not null)
+        {
+            // 越界以**明确异常**中止本批。异常本身可能被 Lucene 包装（例如合并路径折成
+            // MergePolicy.MergeException），故判定依据取包装层记录的越界事实，不依赖异常类型 / 文本。
+            sessionState.Outcome = QuotaOutcome(quotaDirectory.Violation, ex.GetType().Name);
         }
         catch (OperationCanceledException)
         {
-            return new WriterSessionOutcome(
+            sessionState.Outcome = new WriterSessionOutcome(
                 false,
                 null,
                 FullTextMutationState.Cancelled,
@@ -409,7 +482,7 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
         }
         catch (Exception ex)
         {
-            return new WriterSessionOutcome(
+            sessionState.Outcome = new WriterSessionOutcome(
                 false,
                 null,
                 FullTextMutationState.Failed,
@@ -417,6 +490,8 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
         }
         finally
         {
+            var removedByRollback = 0;
+
             if (writer is not null)
             {
                 if (committed)
@@ -427,11 +502,37 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
                 else
                 {
                     // Rollback 自身即「关闭 + 删除本批新建的段文件」⇒ 索引回到上一个 commit；此处不再重复 Dispose。
+                    var removedBeforeRollback = quotaDirectory.DeletedFileCount;
                     writer.Rollback();
+                    removedByRollback = quotaDirectory.DeletedFileCount - removedBeforeRollback;
+                    sessionState.RolledBack = true;
                 }
             }
+
+            observation.Capture(quotaDirectory, sessionState.RolledBack, removedByRollback);
         }
+
+        if (sessionState.Outcome is not { } outcome)
+        {
+            // fail-loud：终态必须由业务分支 / catch 之一写入；走到这里说明本方法有逻辑漏洞（不伪造终态）。
+            throw new InvalidOperationException(
+                "writer 会话未产生终态：所有分支都必须写 sessionState.Outcome（内部逻辑错误）。");
+        }
+
+        return outcome;
     }
+
+    /// <summary>
+    /// 写入期配额越界的统一终态：**不提交**、由 <c>finally</c> 的 <c>Rollback()</c> 保留上一个 commit。
+    /// 消息里带上「写入期配额」与专用异常名，便于与写前预检的拒绝区分（后者讲「预算硬限 / 本批待写文件」）。
+    /// </summary>
+    private static WriterSessionOutcome QuotaOutcome(IndexWriteQuotaExceededException violation, string source)
+        => new(
+            false,
+            null,
+            FullTextMutationState.Rejected,
+            $"拒绝：写入期配额超限 —— {source}（{nameof(IndexWriteQuotaExceededException)}）"
+            + $"；本批未 commit、已 rollback 保留上一个 commit。{violation.Message}");
 
     // ── 只读：EnumerateIndexedPathsAsync ────────────────────────────────
 
@@ -638,6 +739,19 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// 一次 writer 会话的可变状态：终态在业务分支 / <c>catch</c> 里写入，体积报告在 <c>finally</c> 收尾
+    /// **之后**统一取 —— 回滚清理掉的段文件计数只有在回滚真的发生之后才是准的。
+    /// </summary>
+    private sealed class WriterSessionState
+    {
+        /// <summary>会话终态；<c>null</c> 表示「尚未定论」（仍在 try 块内）。</summary>
+        internal WriterSessionOutcome? Outcome { get; set; }
+
+        /// <summary>本会话是否走了 rollback（未提交）。</summary>
+        internal bool RolledBack { get; set; }
     }
 
     /// <summary>最终 stat 通过、等待内容提取的 Upsert（<see cref="ObservedBytes"/> 用于写前预检的增长估计）。</summary>

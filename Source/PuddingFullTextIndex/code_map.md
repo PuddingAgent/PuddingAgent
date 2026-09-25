@@ -18,7 +18,7 @@
 |------|------|
 | `Search/` | 搜索实现（`LuceneSearchEngine.cs`：**S3a 仅做了最小可见性放宽** —— `AddDocument` / `ExtractContentAsync` 由 `private` 放宽为 `internal`，并新增 2 个 internal 只读访问器 `Analyzer` / `GetScopeGate`；**签名与实现逐字不变、public 成员集未变**，供局部维护内核复用同一提取路径与同一文档结构，避免两套文档结构静默漂移） |
 | `Text/` | 文本处理 |
-| `Maintenance/` | **局部维护纯逻辑**（零 IO / 零线程）：`MaintenanceCheckpoint.cs`（checkpoint 模型 + 协议 JSON + 路径解析，**只经 `FullTextIndexPaths`**）· `MTimeComparison.cs`（`>=` 判定 / `effective = watermark - overlap` / `ComputeNextWatermark` 取**扫描开始**时刻 / 时钟回拨判定 / stat 稳定性）· `FullTextChangeCoalescer.cs`（per-path latest-wins / `Sources` 位或 / rename 折叠 / 越界拒绝）· `MaintenanceOptions.cs`（fail-closed 校验，默认全关）· `CheckpointAdvancePolicy.cs`（**决定「本轮要不要推进 checkpoint」的纯策略接缝**：`AllowsAdvance` / `Decide`，规则 `State==Applied && FailedCount==0 && RetainedOldCount==0`；给出可区分的阻止原因；文档注释内登记了**饥饿风险**——永久不可读文件 ⇒ checkpoint 永不推进、每轮重扫但不漏文件）· `LuceneFullTextIndexMaintenanceEngine.cs`（**S3a 真实 Lucene 局部写内核 + path inventory**：`ApplyChangesAsync` 单批 `CREATE_OR_APPEND`，**内容先提取→后 delete/add**、提取失败绝不进 delete 集合、单批 `Commit`、取消/Busy/quota 超限一律不提交；`CheckpointAdvanced` 是**产物** = `CheckpointAdvancePolicy.AllowsAdvance` **且** 输入的 `RequiresCheckpointAdvance`（**显式取交集**：策略为唯一真源，输入只能否决、不能强制为真）。`ProbeIntegrityAsync` **未实现**（显式 `NotSupportedException`，属 S3d，绝不伪装 Healthy）） |
+| `Maintenance/` | **局部维护（S3a/S3b）+ 纯逻辑（零 IO / 零线程）**：`MaintenanceCheckpoint.cs`（checkpoint 模型 + 协议 JSON + 路径解析，**只经 `FullTextIndexPaths`**）· `MTimeComparison.cs`（`>=` 判定 / `effective = watermark - overlap` / `ComputeNextWatermark` 取**扫描开始**时刻 / 时钟回拨判定 / stat 稳定性）· `FullTextChangeCoalescer.cs`（per-path latest-wins / `Sources` 位或 / rename 折叠 / 越界拒绝）· `MaintenanceOptions.cs`（fail-closed 校验，默认全关）· `CheckpointAdvancePolicy.cs`（**决定「本轮要不要推进 checkpoint」的纯策略接缝**：`AllowsAdvance` / `Decide`，规则 `State==Applied && FailedCount==0 && RetainedOldCount==0`；给出可区分的阻止原因；文档注释内登记了**饥饿风险**——永久不可读文件 ⇒ checkpoint 永不推进、每轮重扫但不漏文件）· `QuotaEnforcingDirectory.cs`（**S3b 写入期配额硬限**：`FilterDirectory` 子类 + `IndexOutput` 计数代理，超限抛专用异常）· `IndexSizeReport.cs`（体积增长机器可读报告）· `IndexWriteQuotaExceededException.cs`（越界异常，携带文件名/已写字节/允许增长/预算/越界量）· `LuceneFullTextIndexMaintenanceEngine.cs`（**S3a/S3b 真实 Lucene 局部写内核 + path inventory + 写入期配额硬限**：`ApplyChangesAsync` 单批 `CREATE_OR_APPEND`，**内容先提取→后 delete/add**、提取失败绝不进 delete 集合、单批 `Commit`、取消/Busy/quota 超限一律不提交；`CheckpointAdvanced` 是**产物** = `CheckpointAdvancePolicy.AllowsAdvance` **且** 输入的 `RequiresCheckpointAdvance`（**显式取交集**：策略为唯一真源，输入只能否决、不能强制为真）。`ProbeIntegrityAsync` **未实现**（显式 `NotSupportedException`，属 S3d，绝不伪装 Healthy）） |
 | `FullTextPolicyFingerprint.cs` | **`.last_indexed.p` patterns 指纹的唯一真源**（S1b 从 `LuceneSearchEngine` 私有方法收敛而来）：`filePatterns ?? "(default)"` → SHA256(UTF-8) → 小写 hex → **前 12 字符**。**不得**改大写 hex / 改截断长度 / 换哈希（会**静默**让全部现存 `.last_indexed` 判为「patterns 变了」⇒ 触发全量重建）；类内**不含**路径命名哈希 |
 
 ## 配置
@@ -29,7 +29,7 @@
 
 ## 测试
 
-`Source/PuddingFullTextIndexTests/` — 全文索引测试（**232 项：通过 228 / 跳过 4**；S3a 前为 222，S2b 前为 207，S2a 前为 192，S1b 前为 180，S1a 前基线为 146）
+`Source/PuddingFullTextIndexTests/` — 全文索引测试（**238 项：通过 234 / 跳过 4**；S3b 前为 232，S3a 前为 222，S2b 前为 207，S2a 前为 192，S1b 前为 180，S1a 前基线为 146）
 
 ## 变更（2026-09-24，ADR-089 U4-6：索引构建遍历改造）
 
@@ -476,3 +476,49 @@ I6 给出**真实文件操作**的逐 path inventory 数据：`a.txt=2|b.txt=1` 
 - 「内容已缓冲 → `Commit()` 之前」的取消窗口有实现但**无确定性注入点 ⇒ 未验证**。
 - 未验证：多进程 writer 真实竞争、与手动供给 CLI 的预算竞态、大语料下 `RAMBufferSizeMB=48` flush 行为与
   `EnumerateIndexedPathsAsync` 的耗时/内存。本片语料 ≤3 文件、内容 ≤2 行，**规模性结论不外推**。
+
+## 变更（2026-09-25，S3b：写入期 quota 硬限 + 体积增长机器可读报告 · 组件内 · 未接宿主）
+
+**本片补上 §4.1 的后半句硬门禁**。原文：`若 S3 无法证明 quota 失败后 rollback 保留旧 commit 且不突破预算，直写方案不得进入 S5`。
+S3a 只证明了「**写前预检被拒**」一侧；本片证明「**写入期**（含 auto-merge 产生的段文件）也不会突破预算」。
+
+**新增（`Infrastructure/Maintenance/`）**
+
+| 文件 | 行数 | 作用 |
+|---|---|---|
+| `QuotaEnforcingDirectory.cs` | 232 | `FilterDirectory` 子类 + `IndexOutput` 计数代理：每次写出**先记账、越界即抛**（该次写出不发生），并登记创建/删除的文件名 |
+| `IndexSizeReport.cs` | 246 | 体积增长**机器可读**报告（NDJSON 单行 + TSV 双形式，带往返解析）+ 观测累加器 + fail-closed 的 `WithinBudget` |
+| `IndexWriteQuotaExceededException.cs` | 48 | 越界专用异常，携带文件名 / 已写字节 / 允许增长 / 预算 / 越界量 |
+
+**接入点**：`LuceneFullTextIndexMaintenanceEngine.RunWriterSession` 的 writer 由 `FSDirectory.Open(indexPath)`
+改为建在 `QuotaEnforcingDirectory` 上（`allowed = budget.RemainingBytes`），并显式使用 **`SerialMergeScheduler`**
+（关键前提：**自动合并写出的新段文件必须计入同一预算**，若用后台合并调度器则合并可能在提交后才发生、无法回滚），
+commit 前新增 `WaitForMerges()` + 越界判定，越界走 `catch (Exception ex) when (quotaDirectory.Violation is not null)` ⇒ `Rejected`。
+
+**关键：S3a 已建立的门禁一条未削弱**（父级逐条 grep 实证）：`ProbeIntegrityAsync` 仍显式 `NotSupportedException`、
+`CheckpointAdvancePolicy.AllowsAdvance(candidate) && changeSet.RequiresCheckpointAdvance` 交集判定原样、
+「提取失败绝不进 delete 集合」的 `enterDeleteSet` 守卫原样、写前预检原样。
+**`LuceneSearchEngine.cs` 本片 0 改动**（blob 仍 `beb0c4bc`）⇒ CLI 兼容性不受影响。
+
+**验证（父级独立复跑，不采信自述）**：组件与 **CLI** 构建均 **0 警告 / 0 错误**；
+`PuddingFullTextIndexTests` **失败 0 / 通过 234 / 跳过 4 / 总计 238**（前 232 ⇒ +6）。
+**两条变异分开取红，且父级脚本抓取失败消息里的真实字节数**（不是只看测试名）：
+- **M3** 让包装层 `CreateOutput` **返回未包装的 `IndexOutput`**（计数失效）⇒ **failed 5**：`I8`/`I9`/`I10`/`I11` + `Quota_CountingCoversEveryWritePrimitive_NotJustWriteBytes`。
+  `I8` 失败消息为 `report.BytesWrittenByWriter > 0` 失败且同报告 `Delta=2184` ⇒ **字节确实在动而计数器读到 0**
+  ⇒ 证明被破坏的正是计数器，断言**非空洞**。
+- **M4** 让超限路径**不回滚** ⇒ **failed 2**：`I9` 的 **`Assert.AreEqual 失败。应为 <2060>，实际为 <14002>`**
+  （`bytesBefore` vs `result.IndexBytesAfter`）+ `I11` 的 `report.FilesRemovedByRollback > 0` 失败（报告 `Delta=9190` 残留）。
+  ⇒ **不回滚时索引真的从 2,060 B 涨到 14,002 B**，「不突破预算」这条断言有真实字节支撑。
+两次复原后两个文件 `git hash-object` **逐位相同**（`7576acb96a1efc54573651fad7e228306509fe90` /
+`1d94fc31cf136b54fdc81d95f36e7a7d0095e5ec`）；`MUTATION` 残留 0（对照 `QuotaEnforcingIndexOutput`=4、`writer.Rollback`=1）。
+
+**★ §4.1 的 S5 硬门禁是否已被证明？答：是 —— 但限定范围必须一起传播**：
+单 scope · 单进程 · 无并发 reader · 语料与索引根在 `%TEMP%` · 维护 writer 用同步合并调度器。
+**跨进程租约、多 scope 全局串行、reader 显式失效（S3c）未证明** ⇒ 「直写 live 可进 S5」这一**整体**结论仍取决于 S3c。
+
+**未做 / 未验证（如实登记）**：`ProbeIntegrityAsync` 仍未实现（S3d）· 报告无生产消费端（S5 需定 sink）·
+计数是**写出字节上界**（不抵扣删除/合并回收）⇒ 生产语料下的过拒率未量化 · `AddDocuments` 期间 RAM 缓冲触发 flush 的配额路径无用例 ·
+合并频率/成本未建模（未固定 `TieredMergePolicy` 参数）· 大语料（>48 MB 缓冲）未测。
+
+**⚠️ 仪器教训（本片新增）**：用 PS 5.1 读 TRX 时**中文失败消息会变乱码**（TRX 是 UTF-8、5.1 按 GBK 读），
+但**其中的数字与异常类型仍可读** ⇒ 取字节级证据时要挑数字看，别因为消息乱码就放弃该证据。
