@@ -278,3 +278,27 @@
 - 默认匹配域仍是 `All`（保持既有召回）⇒ 「搜 `conf` 返回一堆 `.ctor`」的**默认体验未变**，需调用方显式传 `match_target=name`。是否把默认改为 `Name` 是**召回/精度取舍**，留待裁定。
 - **排序未按匹配域加权**：`ORDER BY CASE WHEN Name = $query THEN 0 ELSE 1 END, Name, SymbolId` 仍只对「名字精确等于」加权。
 - `Kind` 与匹配域**正交但未联动**（各自独立过滤）。
+
+---
+
+## 变更（2026-09-25，ADR-089 U4-2b）：跨 scope 去重（硬约束 9/10）
+
+**症状（实测）**：`code_symbol_search` 不传 `project_id` 时，10 条结果里 **5 对重复** —— 同一 `SymbolId` 在仓库根 `b375fee0…` 与 `PuddingRuntime` `scope-6526fb…` 各出现一次。
+
+**根因**：库里有 **4 个互相嵌套的已登记 project**（仓库根 + PuddingCore/PuddingPlatform/PuddingRuntime），同一符号被各索引一份；而 `SymbolId` 是全限定名、跨项目唯一 ⇒ 未限定 project 的检索**必然**返回重复，白占结果位（50 条里可能只剩 25 个不同符号）。
+
+**交付**：
+
+| 面 | 位置 | 事实 |
+| --- | --- | --- |
+| 服务 | `PuddingCodeIntelligence/Services/CodeQueryService.cs` | `SearchSymbolsAsync` 按 `SymbolId` 去重（保留首次出现者） |
+| 存储 | `Storage/SqliteCodeIndexStore.cs` | `ORDER BY` 末尾加 `ProjectId` ⇒ 同 `SymbolId` 行的返回顺序确定，上层「保留哪一条」可预期 |
+
+**门禁**：`PuddingCodeIntelligenceTests` **95/95**（含 2 新用例）；`PuddingCodeIndexTests` **139/139**（ORDER BY 改动无回归）。
+
+**变异取红**：禁用去重 ⇒ 红在正确断言（`Assert.HasCount` 预期 1 实际 2，`CodeQueryServiceTests.cs:100`）；复原 95/95；`MUTATION` 残留 **0**。守卫用例 `SearchSymbols_Keeps_Same_Named_Symbols_That_Have_Distinct_SymbolIds` 锁定「**去重键是 `SymbolId` 不是 `Name`**」—— 两个项目里各自名为 `Helper` 的类必须都保留。
+
+**留白（未做，如实登记）**：
+- 去重发生在 store 的 `LIMIT` **之后** ⇒ 跨项目重复密度高时**返回条数可能少于 `limit`**；根治要在 SQL 层按 `SymbolId` 去重并让 `LIMIT` 作用于去重后集合。
+- 本改动需宿主重启才在运行中的 `code_symbol_search` 上生效。
+- **4 个嵌套 project 的拓扑本身未解决**（同一符号被索引 4 次 = 存储与索引时间都浪费 4 倍）—— 去重只是消费侧止血。

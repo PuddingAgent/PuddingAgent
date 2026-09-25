@@ -42,3 +42,9 @@
 ## 测试
 
 `../PuddingCodeIntelligenceTests/` — 语言索引器 / outliner / LSP + 索引侧测试（索引侧测试直连 `PuddingCodeIndex`；切片 2 将拆分测试工程）
+
+---
+
+## 变更（2026-09-25，ADR-089 U4-2b）
+
+`Services/CodeQueryService.cs` 的 `SearchSymbolsAsync` 增加**跨 scope 去重**（按 `SymbolId`，保留首次出现者）—— ADR-089 硬约束 9/10「跨 scope 去重优先于过载判定」。根因：本仓有 4 个互相嵌套的已登记 project，同一符号被各索引一份，未限定 project 的检索必然返回重复（实测 10 条里 5 对）。门禁 `PuddingCodeIntelligenceTests` **95/95**（含 2 新用例）；变异取红与留白见 `Source/PuddingCodeIndex/code_map.md` 的 U4-2b 条目。
