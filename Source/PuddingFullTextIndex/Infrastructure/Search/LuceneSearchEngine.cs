@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Enumeration;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Threading;
 using Lucene.Net.Analysis;
@@ -215,13 +213,6 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
     private static string GetLastIndexedFilePath(string indexDir) =>
         Path.Combine(indexDir, ".last_indexed");
 
-    private static string HashPatterns(string? filePatterns)
-    {
-        var input = filePatterns ?? "(default)";
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(input));
-        return Convert.ToHexStringLower(hash)[..12];
-    }
-
     private async Task<LastIndexedStamp?> ReadLastIndexedAsync(string indexDir, CancellationToken ct)
     {
         var path = GetLastIndexedFilePath(indexDir);
@@ -346,7 +337,7 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
         var sw = Stopwatch.StartNew();
         var indexDir = GetIndexDirectoryPath(directoryPath);
         var patterns = filePatterns?.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var patternHash = HashPatterns(filePatterns);
+        var patternHash = FullTextPolicyFingerprint.ComputePatternFingerprint(filePatterns);
 
         // ── 决定构建模式：增量还是全量 ──
         // 扫描开始时间：作为 .last_indexed 时间戳与变更比较基准，

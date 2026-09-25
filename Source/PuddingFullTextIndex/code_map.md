@@ -19,6 +19,7 @@
 | `Search/` | 搜索实现 |
 | `Text/` | 文本处理 |
 | `Maintenance/` | **局部维护纯逻辑**（零 IO / 零线程）：`MaintenanceCheckpoint.cs`（checkpoint 模型 + 协议 JSON + 路径解析，**只经 `FullTextIndexPaths`**）· `MTimeComparison.cs`（`>=` 判定 / `effective = watermark - overlap` / `ComputeNextWatermark` 取**扫描开始**时刻 / 时钟回拨判定 / stat 稳定性）· `FullTextChangeCoalescer.cs`（per-path latest-wins / `Sources` 位或 / rename 折叠 / 越界拒绝）· `MaintenanceOptions.cs`（fail-closed 校验，默认全关） |
+| `FullTextPolicyFingerprint.cs` | **`.last_indexed.p` patterns 指纹的唯一真源**（S1b 从 `LuceneSearchEngine` 私有方法收敛而来）：`filePatterns ?? "(default)"` → SHA256(UTF-8) → 小写 hex → **前 12 字符**。**不得**改大写 hex / 改截断长度 / 换哈希（会**静默**让全部现存 `.last_indexed` 判为「patterns 变了」⇒ 触发全量重建）；类内**不含**路径命名哈希 |
 
 ## 配置
 
@@ -28,7 +29,7 @@
 
 ## 测试
 
-`Source/PuddingFullTextIndexTests/` — 全文索引测试（**180 项：通过 176 / 跳过 4**；本切片 S1a 前基线为 146：通过 142 / 跳过 4）
+`Source/PuddingFullTextIndexTests/` — 全文索引测试（**192 项：通过 188 / 跳过 4**；S1b 前为 180，S1a 前基线为 146）
 
 ## 变更（2026-09-24，ADR-089 U4-6：索引构建遍历改造）
 
@@ -263,3 +264,47 @@ M1（`ToUpperInvariant`→`ToLowerInvariant`）/ M2（去掉 `TrimEnd`）/ M3（
 - **设计依据**：`temp/codex-plan-incremental-supply.md`（995 行，已抢救入 memory 侧同名副本）；
   任务书 `temp/s1a-maintenance-contracts-task.md`；报告 `temp/s1a-report.md`；原始证据 `temp/s1a-evidence/`。
 - **⚠️ 遗留**：`Infrastructure/Supply/` 与 `Contracts/IFullTextIndexRootedEngine.cs` 等**既有多处未登记进本表**（历史欠账，非本片引入）。
+
+## 变更（2026-09-25，S1b：patterns 指纹收敛为单一真源 + 组件边界断言 · 组件 + 测试）
+
+**做什么**：`.last_indexed.p` 的 patterns 指纹原本是 `LuceneSearchEngine` 的**私有静态方法**（`HashPatterns`）。
+本片它收敛为组件内**唯一真源** `Infrastructure/FullTextPolicyFingerprint.cs` 的 `ComputePatternFingerprint`，
+`HashPatterns` **整段删除**（不是委托），调用点（原 `:349` → 现 `:340`）改为**直接调用** helper。
+**全仓 `HashPatterns` 命中 = 0**；`LuceneSearchEngine.cs` numstat **1 增 / 10 删**（940 → 931 行，含随之失效的
+`using System.Security.Cryptography;` / `using System.Text;`）。
+
+**为什么**：S3 的维护层与 `policyFingerprint` 都要用同一语义；两份实现会让"patterns 是否变了"这个判定分裂。
+同时该语义**极脆弱** —— 改成大写 hex、改截断长度、换哈希，都会**静默**把全部现存 `.last_indexed` 判为
+「patterns 变了」⇒ 触发一次全量重建（105 MB / ≈115 s），正好是本方案要消灭的东西。因此四条规则已写死在类文档注释里。
+
+**协议形状零变化**：`.last_indexed` 的文件名、`{"t":…,"p":…}` 字段名与顺序、`t` 序列化、写入时机**一律未动**，
+并有往返测试钉住（形状整文件正则 + 字段顺序 + `p` 12 位小写 hex + 同 patterns 二次构建 `IndexedFileCount==0`，
+换 patterns ⇒ `==2` 作**对照组**，防「增量恒为真」；索引根在系统 Temp 并断言不含 `D:\data`）。
+
+**新增测试（12 条）**：8 条 golden（`null` / `"(default)"` / `*.cs` / `*.md` / `*.cs;*.md` / `*.ts` / `"(DEFAULT)"` / `""`）·
+形状断言 · `.last_indexed` 往返 · 组件边界断言 2 条。golden 期望值由**父级独立手算**并与
+**生产实际索引**交叉核对（根 scope `.last_indexed` 的 `p = b3ffbbff2d64` = `sha256("(default)")[..12]`），
+**不是**由被测代码产出 —— 避免自证。
+
+**组件边界断言（自 S2 提前到本片，理由：它正好守这一次抽取）**：断言组件 csproj 不存在指向
+`PuddingHost` / `PuddingRuntime` / `PuddingCodeIndex` / `PuddingPlatform` / `PuddingFullTextIndex.Cli` 的
+`ProjectReference`，并**必须**同时断言「确实找到 ≥1 个 ProjectReference」—— 否则输入退化为空集时会**恒真假绿**。
+
+**验证（父级独立复跑，不采信自述）**：组件与 CLI 构建 **0 警告 / 0 错误**；
+`PuddingFullTextIndexTests` **失败 0 / 通过 188 / 跳过 4 / 总计 192**（S1b 前 180 ⇒ +12）。
+**两条变异取红**（父级脚本 + TRX 机器可读计数）：`[..12]`→`[..16]` ⇒ **failed 10**（8 条 golden + 形状 + 往返）；
+`?? "(default)"`→`?? ""` ⇒ **failed 2**，红的正是 `null` 入参与 `(default)` 字面量两条 —— 若测试不覆盖 `null`，
+此变异会**照样绿**（那就等于没守住真正的不变量）。两次复原后 blob **逐位相同** `25239e6a34776b7e7794c92b6cb3643df8feae62`。
+`MUTATION` 残留 0（带对照组 `ComputePatternFingerprint` = 16 处）。
+
+**⚠️ 仪器教训（本次踩到，记录备查）**：
+1. 父级第一次写的验收脚本用**中文正则**匹配测试汇总行，在 PowerShell 5.1 下因「无 BOM 的 UTF-8 脚本按 GBK 解码」
+   直接 `ArgumentException` ⇒ **验收脚本必须纯 ASCII**，改用 TRX `Counters`（`total/executed/passed/failed`）做机器可读计数。
+2. `search_grep` 在 `Source/` 全仓检索会**触顶 2000 文件枚举上限**并返回 `coverage: partial` —— 此时 **0 命中不构成证据**。
+   改成按组件目录（小范围、全量覆盖）检索才得到决定性结论；同时 `code_symbol_search HashPatterns` 仍返回 1 条命中，
+   但那是**代码索引的陈旧投影**（索引建于 07:48Z，本片在 15:00Z 之后）——**不是磁盘事实**。
+   （顺带印证：这正是本项目「索引需要局部更新」要解决的问题本身。）
+3. 子代理报告 `apply_patch` / `file_patch` 对其**多数多行 hunk** 报 `Hunk … did not match`（父级自己的 patch 未复现该现象），
+   它改用**确定性 PowerShell 原地位替换**（`occurrences==1` 才写）完成变异与复原。**父级裁定：接受**，
+   因为该纪律的目的（防 `Copy-Item` 造成 mtime 回退 ⇒ MSBuild 跳过重编译 ⇒ 假绿）已由更强证据满足：
+   `git hash-object` 逐位相同 + 源 mtime > DLL mtime + 复原后复跑为绿。
