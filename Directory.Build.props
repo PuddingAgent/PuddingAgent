@@ -1,4 +1,4 @@
-﻿<Project>
+<Project>
   <!--
     ── Pudding 统一构建属性 ──────────────────────────────
     所有测试项目自动继承此文件，无需重复声明 SDK/TFM/ImplicitUsings。
@@ -19,21 +19,20 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);**/temp/**;**/tmp/**</DefaultItemExcludes>
   </PropertyGroup>
 
-  <!-- 测试项目通用设置（仅对 TestProject 生效） -->
-  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
-    <UseVSTest>true</UseVSTest>
-    <CollectCoverage>true</CollectCoverage>
-    <CoverletOutputFormat>cobertura,json</CoverletOutputFormat>
-    <CoverletOutput>$(MSBuildProjectDirectory)/TestResults/</CoverletOutput>
-  </PropertyGroup>
+  <!--
+    ⚠️ 测试项目共享属性与共享引用**不在此文件**（2026-09-25 S1 实测发现）：
 
-  <!-- 测试项目共享引用 -->
-  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
-    <PackageReference Include="Moq" Version="4.*" />
-    <PackageReference Include="coverlet.collector" Version="6.*">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-  </ItemGroup>
+    Microsoft.Common.props 会在 MSTest.Sdk / Microsoft.NET.Test.Sdk 的 props
+    **之前**导入本文件；此刻 $(IsTestProject) 尚未被测试 SDK 赋值，因此本文件里
+    任何以 IsTestProject 为条件的 PropertyGroup / ItemGroup 都会被**静默跳过**
+    （不报错、不警告，看起来生效，实际完全无效）。
+
+    实测证据（PuddingPathFilteringTests）：
+      - obj/project.assets.json 中 Moq / coverlet.collector / coverlet.msbuild 计数均为 0
+      - dotnet msbuild -getProperty:CollectCoverage 返回空字符串
+    文档依据：Docs/Conventions/质量门禁与Harness架构标准-2026-09-24.md §4（S1）
+
+    ⇒ 共享测试引用与覆盖率属性统一放在 Directory.Build.targets（评估时机更晚）。
+  -->
 
 </Project>
