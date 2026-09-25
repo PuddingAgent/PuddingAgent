@@ -29,7 +29,7 @@
 
 ## 测试
 
-`Source/PuddingFullTextIndexTests/` — 全文索引测试（**207 项：通过 203 / 跳过 4**；S2a 前为 192，S1b 前为 180，S1a 前基线为 146）
+`Source/PuddingFullTextIndexTests/` — 全文索引测试（**222 项：通过 218 / 跳过 4**；S2b 前为 207，S2a 前为 192，S1b 前为 180，S1a 前基线为 146）
 
 ## 变更（2026-09-24，ADR-089 U4-6：索引构建遍历改造）
 
@@ -367,3 +367,49 @@ return result.State == FullTextMutationState.Applied
 ② §3.6 第 12 步的「**且这是完整补偿轮次**」**不在本接缝范围内**（属调用方前置条件）；
 若 S3 忘记取交集，会退化为"不完整轮次也推进"，本片防不住。
 ③ 建议 S3 在体检层加「同一路径**连续 N 轮** retained ⇒ 告警」的可观测项，否则永久不可读文件会导致长期重扫。
+
+## 变更（2026-09-25，S2b：options 边界矩阵 + 路径越界全形态 + 折叠层矩阵 · **纯测试，零生产代码**）
+
+**本片是 codex 方案 §6 的 S2 收尾**，刻意**只新增测试、不动生产代码**（对照 S2a 必须补 `CheckpointAdvancePolicy` 接缝）——
+派发前先用 `code_outline` 勘查接缝，确认三处要测的性质都已存在公开面，因此能守住「只改测试工程」的边界。
+
+**新增 15 条用例 / 3 个文件**：
+
+- `MaintenanceOptionsBoundaryTests.cs`（332 行）：对着 `MaintenanceOptions` **公开的界常量**
+  （`MaxQueueCapacityAllowed` / `MaxBatchPathsAllowed` / `MaxHealthCheckSliceFilesAllowed` /
+  `Min·MaxRecoveryScanInterval` / `Min·MaxHealthCheckInterval` / `MaxMTimeOverlap` /
+  `MaxHealthCheckSliceDelay` / `MaxPressureBackoff`）做数据驱动边界矩阵 —— 测的是**区间两端都含**
+  这个**语义**、而不是当初拍的那些数字（界常量将来改了测试自动跟随）。
+  **断言拒绝时点名的是哪个 `Option`**（不是只断言 `IsValid == false`，否则"任何一个选项报错"都会让断言通过）；
+  **覆盖对照**（矩阵实际执行的用例数 == `cases.Count`，且与从源码收集的清单 `AreEquivalent`）；
+  并在边界值上复核 `Enabled=false` **不短路数值域**。
+- `MaintenancePathBoundaryTests.cs`（275 行）：26 行 / 13 形态路径越界矩阵，**每行断言 `Reason`**
+  （`BlankPath` / `NoSource` / `Unnormalizable` / `OutsideScope`），**★前缀同名兄弟 6 形态专项**，
+  外加分隔符/大小写等价类。行数自证；需真实目录才能判定的形态如实标"无法在本片验证"（本片零 IO）。
+- `FullTextChangeCoalescerMatrixTests.cs`（454 行）：8 终态全覆盖（含 `AreEquivalent(Enum.GetNames<…>)` 覆盖对照）·
+  **8 × 7 = 56 格** 来源交叉矩阵（双重自证）· 7 组位或合并且断言不漏位不添位 ·
+  **强确定性**（只打乱中间事件，6 种排列 ⇒ 整个结果签名逐字符相同，专门抓"字典迭代顺序泄漏到输出序列"）·
+  弱确定性（固定种子交错 12 轮）· 幂等 + 不修改输入 · 规范化后同物理路径只产 1 个动作 · 空/全拒绝输入不抛异常。
+
+**验证（父级独立复跑，不采信自述）**：组件与 CLI 构建 **0 警告 / 0 错误**；
+`PuddingFullTextIndexTests` **失败 0 / 通过 218 / 跳过 4 / 总计 222**（S2b 前 207 ⇒ +15）。
+**两条变异取红**（父级脚本 + TRX 机器可读计数，**分开做两次**）：
+M1 把 `MaintenanceOptions.Validate` 里 `QueueCapacity` 的上界检查由**含端点**改成**不含端点**
+（`> MaxQueueCapacityAllowed` → `>= MaxQueueCapacityAllowed`）⇒ **failed 1**，红的**恰好只有**
+`OptionsBoundary_EveryThreshold_AcceptsBothEnds_RejectsOneStepBeyond_AndNamesTheOption`
+⇒ off-by-one 被精确抓住且**无连带污染**；
+M2 让 `FullTextChangeCoalescer.IsWithinScopeKey` **恒返回 `true`** ⇒ **failed 6**，含
+★`PathMatrix_PrefixSiblings_AreNeverSwallowedAsInScope`、26 行路径矩阵、2 条 S1a 既有断言与规范化去重用例。
+两次复原后两个生产文件 **`git hash-object` 逐位相同**且**与 HEAD 版本逐位相同**（`FINAL_EQ_HEAD=True`）：
+`7f3fa423776dc43bb5ce91e93393d66e6e80aa86` / `1efe483ae9287baa32f7ca4c5c1b986d72928131`。
+`MUTATION` 残留 0（对照组 `MaintenanceOptions` = 99 处、`IsWithinScopeKey` = 3 处 ⇒ 仪器有效）。
+
+**⚠️ 仪器教训（本片新增，重要）**：
+1. **子代理终态 `failed` ≠ 工作没做**：本次子代理报 `shell: Command timed out after 120 seconds`、
+   `subagent_status=failed`、`resumable=false`，但它已把 3 个测试文件与报告全部落盘
+   （15:47 / 15:49 / 15:55 UTC，之后才死在最后一步的验收上）。
+   **必须先用 `git status` + 文件 hash 查磁盘再决定是否重派**，否则会白跑一遍（还计费）。
+2. **给子代理的任务书必须写明：长命令一律用 `terminal_start` + `terminal_wait`，不要用 `shell`**
+   （`shell` 有硬超时，跑 `dotnet test` 这类命令会中途被杀）。
+3. 本次子代理**自己也修了 3 处新测试的缺陷**（首跑 `failed 3` → 终态 `failed 0`），
+   并在报告中如实登记——这种"自曝中间失败"是可信信号，值得保留。
