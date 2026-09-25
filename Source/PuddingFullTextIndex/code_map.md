@@ -24,7 +24,7 @@
 
 ## 测试
 
-`Source/PuddingFullTextIndexTests/` — 全文索引测试（142 项：通过 138 / 跳过 4）
+`Source/PuddingFullTextIndexTests/` — 全文索引测试（146 项：通过 142 / 跳过 4）
 
 ## 变更（2026-09-24，ADR-089 U4-6：索引构建遍历改造）
 
@@ -198,3 +198,30 @@ M1（去掉 helper 的 `IOException` catch）/ M2（取消检查被吞）/ M3（
 本刀按「禁止顺手重构」未动它（它返回的是清点口径而非候选条目）；② 扫描级 catch 覆盖的是「逐文件判定」与「枚举」共用的异常出口，
 枚举器内部若抛非 `DirectoryNotFoundException`/`UnauthorizedAccessException`/`IOException` 的异常同样落到它 —— 这条路径有 A7 覆盖，
 但**枚举器自身**的注入端口不存在，测试用的是注入到扩展名白名单集合（见报告「仪器与注入点」）。
+
+## 变更（2026-09-25，A19：scope → 索引目录映射单一真源化 · 组件 + CLI）
+
+**目标**：把「语料根 → 索引目录名」的命名哈希收敛到**唯一实现**，让 CLI 不再复刻它，且 **CLI 输出逐字不变**。
+
+**新增文件**
+
+| 目录 | 文件 | 作用 |
+|------|------|------|
+| `Infrastructure/` | `FullTextIndexPaths.cs` | **命名哈希单一真源**（`public static`）：`NormalizeCorpusRoot` = `GetFullPath` → `TrimEnd(两个分隔符)` → `ToUpperInvariant`；`ResolveIndexDirectory(indexRoot, corpusRoot)` = `Path.Combine(indexRoot, sha256 小写 hex)`。规则与 `GetIndexDirectoryPath` **逐字等价**。 |
+
+**改动文件**
+
+| 文件 | 改动 |
+|---|---|
+| `Infrastructure/Search/LuceneSearchEngine.cs` | `GetIndexDirectoryPath` 改为**委托** `FullTextIndexPaths.ResolveIndexDirectory`（`internal` + 签名不变，10 处调用点一行未动）；`ResolveIndexDirectory` / `ProbeDocuments` 仍经它 ⇒ 自动统一。 |
+| `Contracts/IFullTextIndexRootedEngine.cs` | 文档同步：单一真源指向 `FullTextIndexPaths.ResolveIndexDirectory`；删除「CLI 侧 `SupplyScopeMirror` 登记为后续切片」的旧注（本刀已删该复刻）。 |
+
+⚠️ **与 `SupplyScopeNormalizer` 是两套口径，不可合并**：本规则**不**保住盘根（`C:\` 的哈希输入是 `C:`）、**大写**、不额外归一分隔符；
+scope 键相反（保住盘根、不变文化小写、`/`→`\`），且服务租约/去重/幂等键。`FullTextIndexPathsTests` 用 `A3_..._Does_Not_Preserve_The_Drive_Root` 冻结这条差异。
+
+**实测（本刀）**：组件构建 / CLI 构建 **0 警告 0 错误**；`PuddingFullTextIndexTests` **146 项（通过 142 / 跳过 4 / 失败 0）**（基线 142 ⇒ **+4**，全部在新文件 `FullTextIndexPathsTests.cs`）；
+`PuddingFullTextIndex.Cli.Tests` **45/45**（基线 41 ⇒ **+4**，全部在新文件 `A19SingleSourceTests.cs`）。
+四方（组件 helper / 引擎 `ResolveIndexDirectory` / 引擎 `ProbeDocuments` 解析出的目录 / 旧镜像金标准）在 6 类边界输入下逐字节相同；
+CLI `status` 打印的 `scopeKey` / `indexDirectory` 改动前后**逐字节相同**（`DIFF-COUNT=0`；仅剔除 `exe-sha256` 与 `owner=MSI#<pid>` 两类非确定性行）；
+M1（`ToUpperInvariant`→`ToLowerInvariant`）/ M2（去掉 `TrimEnd`）/ M3（删调用点但把复刻留回 CLI 侧）分别取红；复原后 blob 逐位相同、`MUTATION` 残留 **0**（含对照组）。
+详见 `temp/A19-REPORT.md` 与 `temp/a19-evidence/`。

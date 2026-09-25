@@ -30,15 +30,22 @@
 | `SupplyCliViews.cs` | 输出层：JSON DTO（camelCase）+ 人类可读 `key = value` 渲染 |
 | `SupplyCommandLine.cs` | 手写参数解析 + 用法文本；非法组合一律判用法错误（不默默忽略） |
 | `SupplyCliHost.cs` | 组合根：可注入装配面 + `RecordingIndexBuilder`（留住 builder 的结构化度量） |
-| `SupplyScopeMirror.cs` | 组件内部口径的镜像（`ToScopeKey` / `GetIndexDirectoryPath`，跨程序集不可见故复刻） |
+| `SupplyScopeMirror.cs` | 组件内部口径的镜像（**A19 后只剩** `ToScopeKey` / `NormalizeRoot`；索引目录名改调组件 `FullTextIndexPaths`，不再复刻） |
 
-## 与组件实现的唯一耦合点（须警惕）
+## 与组件实现的耦合点（须警惕）
 
-`SupplyScopeMirror` 复刻了组件的两处 internal 口径（`SupplyScopeNormalizer.ToScopeKey`、
-`LuceneSearchEngine.GetIndexDirectoryPath`）。漂移会让 `status` 报告错误的 scopeKey / 索引目录，
-因此由**真实构建的交叉断言**守护（`Source/PuddingFullTextIndex.Cli.Tests/SupplyCliBuildTests.cs`）：
-① `build --json` 的 `scopes[0].scopeKey`（来自协调器内部规范化）必须与镜像一致；
-② 真 Lucene 构建后，镜像解析出的索引目录必须**就是**磁盘上引擎实际建出的那个目录。
+A19 之后 `SupplyScopeMirror` **不再计算索引目录名**：`SupplyCli.ObserveScopeAsync` 改调组件单一真源
+`PuddingFullTextIndex.Infrastructure.FullTextIndexPaths.ResolveIndexDirectory`。CLI 侧只剩 `ToScopeKey` 一处复刻
+（镜像 `SupplyScopeNormalizer.ToScopeKey`）；`NormalizeRoot` **刻意保留** —— 它与组件 helper **语义不同**
+（保盘根 `C:\`、不改大小写，返回值参与显示与 scopeKey，见 `SupplyScopeMirror` 类注释）。
+
+漂移仍会让 `status` 报告错误的 scopeKey / 索引目录，因此由**真实构建的交叉断言**守护：
+- `SupplyCliBuildTests`：① `build --json` 的 `scopes[0].scopeKey`（来自协调器内部规范化）必须与**冻结金标准**
+  `ScopeMirrorGolden`（A19 之前镜像的逐字副本，现位于 `Source/PuddingFullTextIndex.Cli.Tests/ScopeMirrorGolden.cs`）一致；
+  ② 真 Lucene 构建后，金标准解析出的索引目录必须**就是**磁盘上引擎实际建出的那个目录。
+- `A19SingleSourceTests`：CLI 打印值 == 组件 helper == 引擎 `ResolveIndexDirectory` == 引擎 `ProbeDocuments` 解析目录
+  == 旧镜像金标准（6 类边界输入）；`A4` 结构性断言「生产工程内不得再出现 `SHA256.HashData` / `ToUpperInvariant` /
+  `Convert.ToHexStringLower`」（冻结副本在测试工程，属**豁免对象**，并由 A4 反向断言其仍存在）。
 
 ## 门禁
 

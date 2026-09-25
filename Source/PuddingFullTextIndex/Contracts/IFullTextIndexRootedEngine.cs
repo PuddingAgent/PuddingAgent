@@ -4,10 +4,10 @@ namespace PuddingFullTextIndex.Contracts;
 /// **绑定在某个索引根上**的引擎实例：除构建/搜索外，额外提供 staged 供给（A2a/A22a）所需的**三件**事 ——
 /// 「语料根 → 本索引根下的索引目录」映射、reader 缓存的**显式失效**，与索引**文档数探针**。
 /// <para>
-/// ① <see cref="ResolveIndexDirectory"/> 是索引目录命名哈希的**单一真源**：
-/// 供给层（含 staged 切换）一律不得复刻「<c>sha256(大写规范化全路径)</c>」规则 ——
-/// 它依赖引擎的路径规范化语义，复刻即第三处真源（CLI 侧已有一份 <c>SupplyScopeMirror</c>，
-/// 登记为后续切片单独处理，本切片不动 CLI）。
+/// ① <see cref="ResolveIndexDirectory"/> 暴露的命名哈希规则，其**唯一实现**是
+/// <c>FullTextIndexPaths.ResolveIndexDirectory</c>（A19 已收敛）：
+/// 供给层（含 staged 切换）与 CLI 一律经它取目录名，不得复刻「<c>sha256(大写规范化全路径)</c>」——
+/// 复刻即第二处真源（CLI 侧原有的 <c>SupplyScopeMirror.ResolveIndexDirectory</c> 已在 A19 删除）。
 /// staged 供给因此不需要自己算目录名：staging 引擎按同一规则把语料根映射到 staging 根之下。
 /// </para>
 /// <para>

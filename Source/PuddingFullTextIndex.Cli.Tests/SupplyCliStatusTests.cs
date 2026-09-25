@@ -96,8 +96,8 @@ public sealed class SupplyCliStatusTests
         Assert.AreEqual("false", run.Value("index-root-exists"));
         Assert.AreEqual(0, run.IntValue("index-root-top-level-entries"));
 
-        // 索引目录必须是"CLI 镜像解析出的那个"（与磁盘上引擎会用的目录同口径）
-        var expectedIndexDirectory = SupplyScopeMirror.ResolveIndexDirectory(fixture.IndexRoot, fixture.Corpus);
+        // 索引目录必须是「A19 冻结金标准解析出的那个」（与磁盘上引擎会用的目录同口径）
+        var expectedIndexDirectory = ScopeMirrorGolden.ResolveIndexDirectory(fixture.IndexRoot, fixture.Corpus);
         Assert.AreEqual(expectedIndexDirectory, run.Value("scope[0].indexDirectory"));
 
         Assert.IsFalse(Directory.Exists(fixture.IndexRoot), "status 只读：不得创建索引根");
@@ -112,7 +112,7 @@ public sealed class SupplyCliStatusTests
 
         var options = new FullTextIndexOptions { IndexRootDirectory = fixture.IndexRoot };
         var lease = new FileSupplyLease(options);
-        var scopeKey = SupplyScopeMirror.ToScopeKey(SupplyScopeMirror.NormalizeRoot(fixture.Corpus));
+        var scopeKey = ScopeMirrorGolden.ToScopeKey(ScopeMirrorGolden.NormalizeRoot(fixture.Corpus));
 
         var acquired = lease
             .TryAcquireAsync(scopeKey, new SupplyLeaseOwner("holder-owner", 4242, "unit-test-machine"), "job-held")

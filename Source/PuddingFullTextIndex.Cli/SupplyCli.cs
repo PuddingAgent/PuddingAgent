@@ -1,4 +1,5 @@
 using PuddingFullTextIndex.Contracts;
+using PuddingFullTextIndex.Infrastructure;
 
 namespace PuddingFullTextIndex.Cli;
 
@@ -180,7 +181,8 @@ public static class SupplyCli
         }
 
         var scopeKey = SupplyScopeMirror.ToScopeKey(scopePath);
-        var indexDirectory = SupplyScopeMirror.ResolveIndexDirectory(indexRoot, scopePath);
+        // A19：命名哈希不再由 CLI 复刻，直接问组件单一真源（与引擎 build/search 同一条实现）。
+        var indexDirectory = FullTextIndexPaths.ResolveIndexDirectory(indexRoot, scopePath);
         var (dirExists, entries, bytes) = ObserveDirectory(indexDirectory);
         var holder = await composition.Lease.DescribeHolderAsync(scopeKey).ConfigureAwait(false);
 

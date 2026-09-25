@@ -7,7 +7,7 @@ namespace PuddingFullTextIndex.Cli.Tests;
 /// <c>build</c> / <c>cancel</c>：
 /// A4（临时索引根 + 夹具语料 + 真 Lucene ⇒ 退出 0、<c>IndexedFileCount ≥ 1</c>，随后 <c>status</c> 看到索引）、
 /// A6（已在 <see cref="SupplyCliParsingTests"/> 覆盖）、A3（Rejected→2 / Busy→3 / Failed→4）、
-/// 跨进程 cancel 如实失败，以及 <see cref="SupplyScopeMirror"/> 与真实组件的交叉断言。
+/// 跨进程 cancel 如实失败，以及 <see cref="ScopeMirrorGolden"/>（A19 冻结的旧镜像）与真实组件的交叉断言。
 /// </summary>
 [TestClass]
 public sealed class SupplyCliBuildTests
@@ -57,7 +57,7 @@ public sealed class SupplyCliBuildTests
 
     /// <summary>
     /// 交叉断言 ①：<c>--json</c> 的 <c>scopes[0].scopeKey</c> 由协调器（A1 内部规范化）产生，
-    /// 必须与 CLI 镜像的 <c>ToScopeKey</c> 一致 —— 镜像漂移就红。
+    /// 必须与 CLI 镜像的 <c>ToScopeKey</c> 一致 —— 镜像漂移就红（A19：oracle 换成冻结副本 <see cref="ScopeMirrorGolden"/>）。
     /// </summary>
     [TestMethod]
     public void Build_Json_Scope_Key_Matches_The_Component_Normalizer()
@@ -81,12 +81,12 @@ public sealed class SupplyCliBuildTests
 
         var componentScopeKey = root.GetProperty("scopes")[0].GetProperty("scopeKey").GetString();
         Assert.AreEqual(
-            SupplyScopeMirror.ToScopeKey(SupplyScopeMirror.NormalizeRoot(fixture.Corpus)),
+            ScopeMirrorGolden.ToScopeKey(ScopeMirrorGolden.NormalizeRoot(fixture.Corpus)),
             componentScopeKey,
             "CLI 镜像的 scopeKey 必须与协调器内部口径逐字一致");
 
         // 交叉断言 ②：镜像解析出的索引目录必须**就是**磁盘上引擎实际建出的那个目录
-        var mirroredIndexDirectory = SupplyScopeMirror.ResolveIndexDirectory(fixture.IndexRoot, fixture.Corpus);
+        var mirroredIndexDirectory = ScopeMirrorGolden.ResolveIndexDirectory(fixture.IndexRoot, fixture.Corpus);
         Assert.IsTrue(Directory.Exists(mirroredIndexDirectory), $"镜像解析的索引目录必须真实存在：{mirroredIndexDirectory}");
 
         var engineDirectories = Directory

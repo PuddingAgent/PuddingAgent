@@ -634,13 +634,11 @@ public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
 
     internal string GetIndexDirectoryPath(string directoryPath)
     {
-        var normalized = Path.GetFullPath(directoryPath)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-            .ToUpperInvariant();
+        // A19：命名哈希规则的**唯一实现**已收敛到 FullTextIndexPaths.ResolveIndexDirectory；
+        // 本方法只负责把「本实例的索引根」绑上去，规则本身不再在此处复刻（可见性与签名保持不变）。
         // 持久化标识必须跨进程稳定；String.GetHashCode 会随 Core 重启变化。
         // 保持此引擎现有的 Windows 路径大小写语义，缓存无需兼容旧随机目录。
-        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)));
-        return Path.Combine(_options.IndexRootDirectory, hash);
+        return FullTextIndexPaths.ResolveIndexDirectory(_options.IndexRootDirectory, directoryPath);
     }
 
     /// <summary>
