@@ -49,10 +49,23 @@ public sealed class CodeQueryService : ICodeQueryService
         if (symbols.Count == 0)
             return [];
 
-        var fileCache = new Dictionary<(string WorkspaceId, string ProjectId), IReadOnlyDictionary<string, CodeFileRecord>>();
-        var results = new List<CodeSymbolDetail>(symbols.Count);
-
+        // ADR-089 硬约束 9/10：跨 scope 去重优先于过载判定。
+        // 未限定 project 的检索跨全部已登记项目（本仓即 4 个互相嵌套的 project），
+        // 而 SymbolId 是全限定名、跨项目唯一 ⇒ 同一符号会被返回多次
+        //（实测：code_symbol_search 的 10 条结果里有 5 对重复）。
+        // 保留首次出现者；store 已按 Name/SymbolId/ProjectId 稳定排序 ⇒ 保留哪一条是确定的。
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var unique = new List<CodeSymbolRecord>(symbols.Count);
         foreach (var symbol in symbols)
+        {
+            if (seen.Add(symbol.SymbolId))
+                unique.Add(symbol);
+        }
+
+        var fileCache = new Dictionary<(string WorkspaceId, string ProjectId), IReadOnlyDictionary<string, CodeFileRecord>>();
+        var results = new List<CodeSymbolDetail>(unique.Count);
+
+        foreach (var symbol in unique)
         {
             var files = await GetFilesAsync(symbol.WorkspaceId, symbol.ProjectId, fileCache, cancellationToken)
                 .ConfigureAwait(false);

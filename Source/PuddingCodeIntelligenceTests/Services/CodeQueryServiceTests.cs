@@ -67,6 +67,74 @@ public sealed class CodeQueryServiceTests
         Assert.AreEqual(CodeIndexStatus.Unknown, status.Status);
     }
 
+    [TestMethod]
+    public async Task SearchSymbols_Deduplicates_The_Same_Symbol_Indexed_Under_Multiple_Projects()
+    {
+        using var fixture = CodeIntelligenceFixture.Create();
+        var root = Project(fixture.Root, "project-root");
+        var nested = Project(fixture.Root, "project-nested");
+        var rootFile = new CodeFileRecord(root.WorkspaceId, root.ProjectId, "src/Conf.cs", "CSharp");
+        var nestedFile = new CodeFileRecord(nested.WorkspaceId, nested.ProjectId, "src/Conf.cs", "CSharp");
+
+        // 同一个符号（SymbolId 是全限定名，跨项目唯一）被两个互相嵌套的 project 各索引了一份
+        // —— 这正是本仓实测到的形态（仓库根 b375fee0… 与 PuddingRuntime scope-6526fb… 各一份）。
+        var inRoot = Symbol(root, rootFile.FilePath, "T:Demo.ConfLoader", "ConfLoader", CodeSymbolKind.Class);
+        var inNested = Symbol(nested, nestedFile.FilePath, "T:Demo.ConfLoader", "ConfLoader", CodeSymbolKind.Class);
+
+        await fixture.Store.UpsertProjectAsync(root);
+        await fixture.Store.UpsertProjectAsync(nested);
+        await fixture.Store.UpsertFilesAsync(root.WorkspaceId, root.ProjectId, [rootFile]);
+        await fixture.Store.UpsertFilesAsync(nested.WorkspaceId, nested.ProjectId, [nestedFile]);
+        await fixture.Store.UpsertSymbolsAsync(root.WorkspaceId, root.ProjectId, [inRoot]);
+        await fixture.Store.UpsertSymbolsAsync(nested.WorkspaceId, nested.ProjectId, [inNested]);
+
+        var service = new CodeQueryService(fixture.Store);
+
+        // 不传 project ⇒ 跨全部已登记项目检索（默认形态，实测会返回重复）
+        var across = await service.SearchSymbolsAsync(
+            new CodeSymbolSearchRequest(root.WorkspaceId, "ConfLoader"));
+        // 传 project ⇒ 单项目，原有行为不变
+        var scoped = await service.SearchSymbolsAsync(
+            new CodeSymbolSearchRequest(root.WorkspaceId, "ConfLoader", root.ProjectId));
+
+        Assert.HasCount(1, across);
+        Assert.AreEqual("T:Demo.ConfLoader", across[0].Symbol.SymbolId);
+        Assert.HasCount(1, scoped);
+    }
+
+    [TestMethod]
+    public async Task SearchSymbols_Keeps_Same_Named_Symbols_That_Have_Distinct_SymbolIds()
+    {
+        using var fixture = CodeIntelligenceFixture.Create();
+        var alpha = Project(fixture.Root, "project-alpha");
+        var beta = Project(fixture.Root, "project-beta");
+        var alphaFile = new CodeFileRecord(alpha.WorkspaceId, alpha.ProjectId, "src/Alpha/Helper.cs", "CSharp");
+        var betaFile = new CodeFileRecord(beta.WorkspaceId, beta.ProjectId, "src/Beta/Helper.cs", "CSharp");
+
+        await fixture.Store.UpsertProjectAsync(alpha);
+        await fixture.Store.UpsertProjectAsync(beta);
+        await fixture.Store.UpsertFilesAsync(alpha.WorkspaceId, alpha.ProjectId, [alphaFile]);
+        await fixture.Store.UpsertFilesAsync(beta.WorkspaceId, beta.ProjectId, [betaFile]);
+        await fixture.Store.UpsertSymbolsAsync(alpha.WorkspaceId, alpha.ProjectId,
+            [Symbol(alpha, alphaFile.FilePath, "T:Alpha.Helper", "Helper", CodeSymbolKind.Class)]);
+        await fixture.Store.UpsertSymbolsAsync(beta.WorkspaceId, beta.ProjectId,
+            [Symbol(beta, betaFile.FilePath, "T:Beta.Helper", "Helper", CodeSymbolKind.Class)]);
+
+        var service = new CodeQueryService(fixture.Store);
+        var results = await service.SearchSymbolsAsync(
+            new CodeSymbolSearchRequest(alpha.WorkspaceId, "Helper"));
+
+        // 两个不同项目里各自有名为 Helper 的类 —— 这是**不同的符号**（SymbolId 不同），
+        // 绝不能因为名字相同而被去重掉：去重键必须是 SymbolId，不是 Name。
+        Assert.HasCount(2, results);
+        CollectionAssert.AreEquivalent(
+            new[] { "T:Alpha.Helper", "T:Beta.Helper" },
+            results.Select(r => r.Symbol.SymbolId).ToArray());
+    }
+
+    private static CodeProjectRecord Project(string rootPath, string projectId) =>
+        new("workspace-one", projectId, rootPath, CodeProjectStatus.Active, UpdatedAtUtc: DateTimeOffset.UtcNow);
+
     private static CodeSymbolRecord Symbol(
         CodeProjectRecord project,
         string filePath,

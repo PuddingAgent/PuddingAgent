@@ -473,7 +473,8 @@ public sealed class SqliteCodeIndexStore : ICodeIndexStore
             ORDER BY
               CASE WHEN Name = $query THEN 0 ELSE 1 END,
               Name,
-              SymbolId
+              SymbolId,
+              ProjectId
             LIMIT {limit} OFFSET {skip};
             """;
         command.Parameters.AddWithValue("$workspaceId", request.WorkspaceId);
