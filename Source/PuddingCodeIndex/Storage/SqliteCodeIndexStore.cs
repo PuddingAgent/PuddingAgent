@@ -466,7 +466,10 @@ public sealed class SqliteCodeIndexStore : ICodeIndexStore
             WHERE WorkspaceId = $workspaceId
               AND ($projectId IS NULL OR ProjectId = $projectId)
               AND ($kind IS NULL OR Kind = $kind)
-              AND ($query = '' OR Name LIKE $likeQuery ESCAPE '\' OR Signature LIKE $likeQuery ESCAPE '\' OR Container LIKE $likeQuery ESCAPE '\')
+              AND ($query = ''
+                   OR ($matchName = 1 AND Name LIKE $likeQuery ESCAPE '\')
+                   OR ($matchSignature = 1 AND Signature LIKE $likeQuery ESCAPE '\')
+                   OR ($matchContainer = 1 AND Container LIKE $likeQuery ESCAPE '\'))
             ORDER BY
               CASE WHEN Name = $query THEN 0 ELSE 1 END,
               Name,
@@ -478,6 +481,13 @@ public sealed class SqliteCodeIndexStore : ICodeIndexStore
         command.Parameters.AddWithValue("$kind", request.Kind?.ToString() is { } kind ? kind : DBNull.Value);
         command.Parameters.AddWithValue("$query", request.Query ?? string.Empty);
         command.Parameters.AddWithValue("$likeQuery", $"%{EscapeLike(request.Query ?? string.Empty)}%");
+        // ADR-089 §2.3 匹配域：None 无意义（会退化成"返回全部"），按 All 处理以保持既有语义。
+        var matchTarget = request.MatchTarget == CodeSymbolMatchTarget.None
+            ? CodeSymbolMatchTarget.All
+            : request.MatchTarget;
+        command.Parameters.AddWithValue("$matchName", matchTarget.HasFlag(CodeSymbolMatchTarget.Name) ? 1 : 0);
+        command.Parameters.AddWithValue("$matchSignature", matchTarget.HasFlag(CodeSymbolMatchTarget.Signature) ? 1 : 0);
+        command.Parameters.AddWithValue("$matchContainer", matchTarget.HasFlag(CodeSymbolMatchTarget.Container) ? 1 : 0);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))

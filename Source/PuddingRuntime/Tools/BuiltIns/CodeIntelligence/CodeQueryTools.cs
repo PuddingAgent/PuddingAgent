@@ -172,13 +172,17 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
             kind = parsedKind;
         }
 
+        if (!TryParseMatchTarget(args.MatchTarget, out var matchTarget))
+            return Fail($"Unknown match_target '{args.MatchTarget}'. Valid values: name, signature, container, all (default).");
+
         var request = new CodeSymbolSearchRequest(
             WorkspaceId: context.WorkspaceId,
             Query: args.Query.Trim(),
             ProjectId: projectId,
             Kind: kind,
             Limit: args.Limit ?? 50,
-            Skip: 0);
+            Skip: 0,
+            MatchTarget: matchTarget);
 
         var results = await _queryService.SearchSymbolsAsync(request, ct);
 
@@ -228,13 +232,40 @@ public sealed class CodeSymbolSearchTool : PuddingToolBase<CodeSymbolSearchArgs>
         return Ok(output);
     }
 
+    /// <summary>
+    /// ADR-089 §2.3：解析匹配域（逗号/分号分隔）。未知取值返回 false ⇒ 调用方 fail-closed，
+    /// 不猜、不静默当成全开（静默会把"筛错了"变成"看起来筛过了"）。
+    /// </summary>
+    private static bool TryParseMatchTarget(string? raw, out CodeSymbolMatchTarget target)
+    {
+        target = CodeSymbolMatchTarget.All;
+        if (string.IsNullOrWhiteSpace(raw))
+            return true;
+
+        var parsed = CodeSymbolMatchTarget.None;
+        foreach (var part in raw.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            switch (part.ToLowerInvariant())
+            {
+                case "all": return true;
+                case "name": parsed |= CodeSymbolMatchTarget.Name; break;
+                case "signature": parsed |= CodeSymbolMatchTarget.Signature; break;
+                case "container": parsed |= CodeSymbolMatchTarget.Container; break;
+                default: return false;
+            }
+        }
+
+        target = parsed == CodeSymbolMatchTarget.None ? CodeSymbolMatchTarget.All : parsed;
+        return true;
+    }
+
     private static ToolExecutionResult Ok(string output) => ToolExecutionResult.Ok(output);
     private static ToolExecutionResult Fail(string error) => ToolExecutionResult.Fail(error);
 }
 
 public sealed record CodeSymbolSearchArgs
 {
-    [ToolParam("Search query matched against symbol names.")]
+    [ToolParam("Search query text. By default it matches symbol name, signature AND container (pre-existing behaviour); use match_target to narrow the match domain.")]
     public required string Query { get; init; }
 
     [ToolParam("Optional project to scope search to. Auto-detected from file_path/scope_path if omitted.")]
@@ -254,6 +285,10 @@ public sealed record CodeSymbolSearchArgs
 
     [ToolParam("是否包含参数 (Parameter) 和未知 (Unknown) 符号种类。默认 false，过滤以减少噪音。")]
     public bool? IncludeParameters { get; init; }
+
+    [ToolParam("可选：匹配域，逗号分隔。name / signature / container / all（默认 all = 三列全开，与历史行为一致）。"
+        + "name 只匹配符号名（例：查 Conf 只返回名字含 Conf 的符号，不再返回签名里提到它的构造器）。")]
+    public string? MatchTarget { get; init; }
 }
 
 // ═══════════════════════════════════════════════════════════════
