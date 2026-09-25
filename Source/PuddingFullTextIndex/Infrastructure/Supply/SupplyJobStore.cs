@@ -14,7 +14,11 @@ internal sealed class SupplyJobEntry
 
     internal string JobId { get; }
 
-    internal SupplyScope Scope { get; }
+    /// <summary>
+    /// 本 job 的 scope 载荷（身份 <c>ScopeKey</c>/<c>RootPath</c> 不变；预算/jobId 在受理时盖章，
+    /// 语料字节在 Discovering 阶段回填）。仅 <see cref="SupplyJobStore"/> 可改。
+    /// </summary>
+    internal SupplyScope Scope { get; set; }
 
     internal DateTimeOffset StartedAt { get; }
 
@@ -184,6 +188,18 @@ internal sealed class SupplyJobStore
         {
             entry.DiscoveredFileCount = fileCount;
             entry.DiscoveredBytes = totalBytes;
+        }
+    }
+
+    /// <summary>
+    /// 把清点到的语料字节回填进 job 的 scope 载荷（用于 staged 供给的预检）。
+    /// 只改 <c>CorpusBytes</c>，且与 <see cref="SetInventory"/> 同锁 —— 两者描述同一个事实（Discovering 结果）。
+    /// </summary>
+    internal void SetCorpusBytes(SupplyJobEntry entry, long corpusBytes)
+    {
+        lock (_gate)
+        {
+            entry.Scope = entry.Scope with { CorpusBytes = corpusBytes };
         }
     }
 

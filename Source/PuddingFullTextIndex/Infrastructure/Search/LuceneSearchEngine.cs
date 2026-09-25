@@ -23,7 +23,7 @@ namespace PuddingFullTextIndex.Infrastructure.Search;
 /// 每个目录对应一个独立的 Lucene 索引目录。
 /// 使用 jieba 分词（JiebaAnalyzer）对内容做索引和搜索。
 /// </summary>
-public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
+public sealed class LuceneSearchEngine : IFullTextIndexRootedEngine, IDisposable
 {
     private static readonly LuceneVersion MatchVersion = LuceneVersion.LUCENE_48;
 
@@ -523,12 +523,9 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
 
                 // 索引变更后显式失效该目录的缓存 Reader/Searcher：
                 // 全量重建路径（RemoveIndex + CREATE）后目录已被替换，
-                // OpenIfChanged 未必可靠感知，陈旧 Reader 会继续看到过期文档
-                if (_readerCache.TryRemove(indexDir, out var staleReader))
-                {
-                    _searcherCache.TryRemove(indexDir, out _);
-                    try { staleReader.Dispose(); } catch { /* ignore */ }
-                }
+                // OpenIfChanged 未必可靠感知，陈旧 Reader 会继续看到过期文档。
+                // 单一实现见 InvalidateScope（A2a 的 staging 切换走同一个方法）。
+                InvalidateScope(directoryPath);
 
                 // 更新 .last_indexed 时间戳（记录扫描开始时间而非构建完成时间）
                 await WriteLastIndexedAsync(indexDir, patternHash, scanTimestamp, ct);
@@ -622,6 +619,46 @@ public sealed class LuceneSearchEngine : IFullTextSearchEngine, IDisposable
         var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)));
         return Path.Combine(_options.IndexRootDirectory, hash);
     }
+
+    /// <summary>
+    /// 显式失效某语料根对应索引目录的 reader/searcher 缓存（A2a R4 接缝；幂等）。
+    /// <para>
+    /// <b>为什么必须存在</b>：本引擎用 <see cref="DirectoryReader.OpenIfChanged"/> 自刷新缓存，
+    /// 而该 API 只对「同一目录内新增/提交的段」可靠：一旦发生<b>整目录替换</b>
+    /// （staging 切换 = 旧目录改名移走 + 新目录改名就位），旧 Reader 仍指向已改名的旧文件，
+    /// 会继续返回过期文档（<c>BuildIndexInternalAsync</c> 里的既有注释已承认这一点）。
+    /// 另外 Windows 上未释放的 reader 句柄会阻止目录 Move/Delete，所以失效必须发生在移动<b>之前</b>。
+    /// </para>
+    /// <para>
+    /// ⚠️ 不改变 <see cref="RemoveIndex"/> 的既有语义：它仍是「删目录」的公开契约，
+    /// 不加缓存副作用（调用方需要失效时自己调本方法）。
+    /// </para>
+    /// </summary>
+    /// <param name="directoryPath">语料根目录（不是索引目录）。</param>
+    internal void InvalidateScope(string directoryPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(directoryPath);
+        var indexDir = GetIndexDirectoryPath(directoryPath);
+
+        if (_readerCache.TryRemove(indexDir, out var reader))
+        {
+            try { reader.Dispose(); } catch { /* ignore */ }
+        }
+
+        _searcherCache.TryRemove(indexDir, out _);
+    }
+
+    // ── A2a 接缝（IFullTextIndexRootedEngine）：语料根 → 索引目录映射 + reader 缓存失效 ──
+
+    /// <inheritdoc />
+    string IFullTextIndexRootedEngine.ResolveIndexDirectory(string corpusRootPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(corpusRootPath);
+        return GetIndexDirectoryPath(corpusRootPath);
+    }
+
+    /// <inheritdoc />
+    void IFullTextIndexRootedEngine.InvalidateScope(string corpusRootPath) => InvalidateScope(corpusRootPath);
 
     private async Task<string> ExtractContentAsync(string filePath, string extension, CancellationToken ct)
     {

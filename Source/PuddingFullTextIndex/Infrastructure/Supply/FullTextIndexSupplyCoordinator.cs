@@ -63,6 +63,12 @@ public sealed class FullTextIndexSupplyCoordinator : IFullTextIndexSupplyCoordin
 
         var budget = ResolveBudget(request);
 
+        // live 侧用量只能由**真正持有索引根**的 builder（staged 供给）实测：
+        // 协调器不持有 FullTextIndexOptions（它的组合根 = CLI 的 SupplyCliHost，属本切片红线不可改，
+        // 无法给它补一个索引根参数）。直写 builder 不参与预算（A1 语义：Plan 只做报表），此时按 0 计。
+        // ⚠️ 判定函数与构建侧同为 SupplyBudgetCalculator.Fits（R2：不得「报表说行、构建说不行」）。
+        var liveIndexBytes = _builder is IFullTextIndexLiveUsage usage ? usage.MeasureLiveIndexBytes() : 0;
+
         var normalization = SupplyScopeNormalizer.Normalize(request.RootPaths);
         var planScopes = new List<SupplyPlanScope>(normalization.Accepted.Count);
 
@@ -81,7 +87,8 @@ public sealed class FullTextIndexSupplyCoordinator : IFullTextIndexSupplyCoordin
                 inventory.TotalBytes,
                 predictedIndexBytes,
                 budget,
-                WithinBudget: predictedIndexBytes <= budget));
+                WithinBudget: SupplyBudgetCalculator.Fits(liveIndexBytes, predictedIndexBytes, budget),
+                LiveIndexBytes: liveIndexBytes));
         }
 
         return new SupplyPlanResult(
@@ -111,8 +118,12 @@ public sealed class FullTextIndexSupplyCoordinator : IFullTextIndexSupplyCoordin
                 rejectionScopes);
         }
 
+        // 预算在受理时解析一次，并随 scope 载荷盖章（见 SupplyScope 的说明：builder 端口签名被 CLI 冻结）——
+        // 保证「Plan 报表 / 预检 / 实测硬限」三处用的是同一个数值，不会各自解析出不同结果。
+        var budget = ResolveBudget(request);
+
         // 不同 scope 互相独立（A6）：并发提交，各自在自己的闸门内串行；结果顺序与请求顺序一致。
-        var submissions = normalization.Accepted.Select(scope => SubmitScopeAsync(scope, ct)).ToArray();
+        var submissions = normalization.Accepted.Select(scope => SubmitScopeAsync(scope, budget, ct)).ToArray();
         var outcomes = await Task.WhenAll(submissions).ConfigureAwait(false);
 
         return Aggregate(outcomes);
@@ -164,7 +175,7 @@ public sealed class FullTextIndexSupplyCoordinator : IFullTextIndexSupplyCoordin
         return Task.FromResult(true);
     }
 
-    private async Task<SupplyScopeOutcome> SubmitScopeAsync(SupplyScope scope, CancellationToken ct)
+    private async Task<SupplyScopeOutcome> SubmitScopeAsync(SupplyScope scope, long budgetBytes, CancellationToken ct)
     {
         var gate = _scopeGates.GetOrAdd(scope.ScopeKey, static _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct).ConfigureAwait(false);
@@ -226,7 +237,10 @@ public sealed class FullTextIndexSupplyCoordinator : IFullTextIndexSupplyCoordin
                 IsExpired: false,
                 lease.TakeoverReason);
 
-            var entry = _jobs.Create(scope, jobId, DateTimeOffset.UtcNow, holder);
+            // 本次 job 的载荷：生效预算 + job 标识（scope 身份字段不变；见 SupplyScope 的说明）。
+            var jobScope = scope with { BudgetBytes = budgetBytes, JobId = jobId };
+
+            var entry = _jobs.Create(jobScope, jobId, DateTimeOffset.UtcNow, holder);
             entry.Worker = Task.Run(() => RunJobAsync(entry, lease));
 
             var takeoverNote = lease.TakeoverReason is null ? string.Empty : $"；接管原因：{lease.TakeoverReason}";
@@ -264,17 +278,25 @@ public sealed class FullTextIndexSupplyCoordinator : IFullTextIndexSupplyCoordin
             var inventory = await _inventory.MeasureAsync(entry.Scope.RootPath, ct).ConfigureAwait(false);
             _jobs.SetInventory(entry, inventory.FileCount, inventory.TotalBytes);
 
+            // 把清点到的语料字节回填进 job 载荷：staged 供给的**预检**（R2 第一道）用它预测索引体积，
+            // 与 Plan 用同一个清点值 + 同一个系数 ⇒ 两条路线的预测值必然一致。
+            _jobs.SetCorpusBytes(entry, inventory.TotalBytes);
+
             _jobs.SetPhase(entry, SupplyJobPhases.Building);
             var result = await _builder.BuildAsync(entry.Scope, ct).ConfigureAwait(false);
 
             _jobs.SetPhase(entry, SupplyJobPhases.Finalizing);
+
+            // R6 可观察性：把切换口径（outcome / stagingBytes / liveBytesBefore / liveBytesAfter / budgetBytes）
+            // 折进终态消息，让「为什么没成功」一眼可见，而不是只报一句 failed。
+            var observation = result.Swap is null ? string.Empty : $"｜{result.Swap.Describe()}";
 
             if (result.Success)
             {
                 _jobs.TryTransition(
                     entry,
                     SupplyJobState.Succeeded,
-                    $"构建完成：{result.IndexedFileCount} 文件 / {result.TotalBytes} 字节 / {result.ElapsedMs} ms。",
+                    $"构建完成：{result.IndexedFileCount} 文件 / {result.TotalBytes} 字节 / {result.ElapsedMs} ms。{observation}",
                     DateTimeOffset.UtcNow);
             }
             else
@@ -282,7 +304,7 @@ public sealed class FullTextIndexSupplyCoordinator : IFullTextIndexSupplyCoordin
                 _jobs.TryTransition(
                     entry,
                     SupplyJobState.Failed,
-                    $"构建失败：{result.Error ?? "builder 返回 Success=false 但未给出原因"}",
+                    $"构建失败：{result.Error ?? "builder 返回 Success=false 但未给出原因"}{observation}",
                     DateTimeOffset.UtcNow);
             }
         }
@@ -428,6 +450,9 @@ public sealed class FullTextIndexSupplyCoordinator : IFullTextIndexSupplyCoordin
 
         if (options.LeaseRenewInterval <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(options), "LeaseRenewInterval 必须为正。");
+
+        if (options.StaleArtifactMaxAge <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(options), "StaleArtifactMaxAge 必须为正。");
 
         if (string.IsNullOrWhiteSpace(options.OwnerId))
             throw new ArgumentOutOfRangeException(nameof(options), "OwnerId 不能为空。");

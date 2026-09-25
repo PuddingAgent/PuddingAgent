@@ -6,8 +6,16 @@ namespace PuddingFullTextIndex.Contracts;
 /// <param name="FileCount">按索引口径清点到的可索引文件数。</param>
 /// <param name="CorpusBytes">这些文件的字节总量。</param>
 /// <param name="PredictedIndexBytes">预测索引体积 = <c>CorpusBytes × 系数</c>（系数见 <see cref="SupplyPlanResult.IndexSizeFactor"/>）。</param>
-/// <param name="BudgetBytes">本 scope 适用的预算（字节）。</param>
-/// <param name="WithinBudget">预测体积是否在预算内。⚠️ A1 只做报表，<b>不做</b>硬限（硬限属 A2）。</param>
+/// <param name="LiveIndexBytes">
+/// **全部** live scope 索引目录的实测字节合计（本次 Plan 测量一次，所有 scope 共享同一值）。
+/// 它是「配置集合总预算」口径的另一半：判定式是 <b>LiveIndexBytes + PredictedIndexBytes ≤ BudgetBytes</b>。
+/// 构建侧的预检与实测硬限调用同一个判定函数（<c>SupplyBudgetCalculator.Fits</c>），因此报表与构建不会各说一套。
+/// </param>
+/// <param name="BudgetBytes">本次请求生效的预算（字节）。</param>
+/// <param name="WithinBudget">
+/// 预测体积是否在预算内（**集合口径**：live 已用量 + 本 scope 预测值）。
+/// ⚠️ 这是报表；真正的硬限在构建侧（预检 + staging 实测），但两者同函数同口径。
+/// </param>
 public sealed record SupplyPlanScope(
     string ScopeKey,
     string RootPath,
@@ -15,7 +23,8 @@ public sealed record SupplyPlanScope(
     long CorpusBytes,
     long PredictedIndexBytes,
     long BudgetBytes,
-    bool WithinBudget);
+    bool WithinBudget,
+    long LiveIndexBytes = 0);
 
 /// <summary>
 /// 干跑结果（<c>PlanAsync</c>）：<b>零写入</b>——不建索引目录、不写租约、不写任何文件。

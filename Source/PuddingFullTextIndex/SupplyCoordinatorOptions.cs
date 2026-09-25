@@ -41,6 +41,23 @@ public sealed record SupplyCoordinatorOptions
     /// <summary>非法状态转换的被拒记录保留条数（默认 32）。</summary>
     public int MaxRetainedTransitionRejections { get; init; } = 32;
 
+    /// <summary>
+    /// 供给是否使用 **staging 暂存构建 + 原子切换**（默认 <c>true</c> = 安全路径）。
+    /// <para>
+    /// 由 <c>StagedFullTextIndexBuilder</c> 读取：<c>false</c> 退回「直写 live」（A1 的旧行为：
+    /// 不建 staging、不做预算硬限、不做原子切换），仅供对照/诊断。
+    /// <b>默认值是安全的那个</b>（启用 staging），因此这里不是「保持旧行为」的开关。
+    /// </para>
+    /// </summary>
+    public bool UseStaging { get; init; } = true;
+
+    /// <summary>
+    /// 残留清理阈值（默认 24h）：每次 staged 供给开始前，清理 <c>&lt;IndexRoot&gt;/.staging</c> 与
+    /// <c>&lt;IndexRoot&gt;/.trash</c> 下最后写入时间早于 <c>now - 此值</c> 的条目；更新的条目一律保留
+    /// （可能正被并发进程使用）。阈值应显著大于单次构建耗时。
+    /// </summary>
+    public TimeSpan StaleArtifactMaxAge { get; init; } = TimeSpan.FromHours(24);
+
     /// <summary>本进程在租约里的 owner 标识（默认 <c>机器名#进程号</c>）。</summary>
     public string OwnerId { get; init; } = SupplyLeaseOwner.ForCurrentProcess().OwnerId;
 }

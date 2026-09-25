@@ -81,3 +81,54 @@ M3（Plan 顺带写租约）三个变异均**先红后绿**（详见 `temp/A1-RE
 **边界**：本刀**未接宿主**（S5/A4）、**未调真实 Lucene**（测试全用替身）、不引用 Host/Agent/Runtime/Platform
 （引用仍只有 `PuddingPathFiltering` 一条）；测试全部使用 `Path.GetTempPath()` 下的临时目录，
 **未触碰** `D:\data\fulltext-index`。仍缺 O(1) 准确预算执行与原子切换（A2）。
+
+## 变更（2026-09-25，A2a staged 构建 + 预算硬限 + 原子切换 + reader 失效 · 组件内 · 未接宿主）
+
+**目标**：把「供给」从**直接写 live 索引**升级为**安全供给** —— 先构建到 **staging**，用**配置集合总预算**做**硬限**，
+通过后**原子切换**到 live；预算不足或切换失败 ⇒ **live 一字节不动、旧索引仍可查**；并修掉「切换后 reader 陈旧」这个已知缺陷。
+
+**新增文件**
+
+| 目录 | 文件 | 作用 |
+|------|------|------|
+| `Contracts/` | `SupplySwapReport.cs` | 切换终局快照：`SupplySwapOutcome`(`None`/`Swapped`/`RejectedOverBudget`/`RolledBack`) + R6 五项事实（`stagingBytes`/`liveBytesBefore`/`liveBytesAfter`/`budgetBytes`/`outcome`）+ 清理条目与清理错误 |
+| `Contracts/` | `IFullTextIndexRootedEngine.cs` | 「绑定单一索引根」的引擎接缝：`ResolveIndexDirectory`（目录名哈希的**单一真源**，禁止在供给层复刻）+ `InvalidateScope`（reader 缓存显式失效） |
+| `Contracts/` | `IFullTextIndexLiveUsage.cs` | live 用量实测数据源（Plan 与构建**同口径**的 live 侧） |
+| `Infrastructure/Supply/` | `StagedFullTextIndexBuilder.cs` | **安全供给 builder**：残留清理 → live 基线 → 预检 → staging 构建 → 实测硬限 → 原子切换（含回滚）→ 切换后失效与残留清理；实现 `IFullTextIndexLiveUsage` |
+| `Infrastructure/Supply/` | `SupplyIndexDirectoryLayout.cs` | 磁盘布局**单一真源**：`.staging`/`.trash`/保留名、live 目录识别（64 位小写 hex）、字节实测、尽力删除（不抛） |
+| `Infrastructure/Supply/` | `SupplyBudgetCalculator.cs` | 「配置集合总预算」**唯一判定函数** `live + incoming ≤ budget`（用减法避免 long 溢出把超限折成合规） |
+| `Infrastructure/Supply/` | `IndexDirectorySwapper.cs` | 目录移动原语接缝（默认 `Directory.Move`；内部构造可注入失败以复现回滚与断言步骤顺序） |
+
+**改动文件**
+
+| 文件 | 改动 |
+|---|---|
+| `Infrastructure/Search/LuceneSearchEngine.cs` | 实现 `IFullTextIndexRootedEngine`（**显式实现**，不改 `IFullTextSearchEngine` 契约 —— 该接口被 CLI 工程实现）；新增 `internal void InvalidateScope(string)`（R4）；构建收尾处原有的内联缓存清理改为调用同一方法（单实现，行为不变） |
+| `Infrastructure/Supply/FullTextIndexSupplyCoordinator.cs` | 受理时**只解析一次预算**并盖章到 scope 载荷；Discovering 后回填 `CorpusBytes`；终态消息折进 `SupplySwapReport.Describe()`；`PlanAsync.WithinBudget` 改用同一判定函数 + live 实测（不再各自比预算） |
+| `Infrastructure/Supply/SupplyJobStore.cs` | `Scope` 载荷可写（`SetCorpusBytes`，身份字段 `ScopeKey`/`RootPath` 不变） |
+| `Contracts/SupplyScopeRequest.cs` | `SupplyScope` 携带 job 载荷（`BudgetBytes`/`CorpusBytes`/`JobId`）—— 因为 `IFullTextIndexBuilder` 的签名被 CLI 组合根（红线不可改）冻结，无法再加参数 |
+| `Contracts/IFullTextIndexBuilder.cs` | `SupplyBuildResult` **尾部追加**可选 `Swap`（CLI 的按位置构造不受影响） |
+| `Contracts/SupplyPlanResult.cs` | `SupplyPlanScope` 追加 `LiveIndexBytes`（集合口径的 live 半，报表可解释） |
+| `SupplyCoordinatorOptions.cs` | 新增 `UseStaging`（默认 **true** = 安全路径）与 `StaleArtifactMaxAge`（默认 24h） |
+
+**冻结的口径与不变式**
+
+- 判定式只有一条：**`live 全部 scope 索引字节 + 本次索引字节 ≤ 预算`**，由 `SupplyBudgetCalculator.Fits` 给出；
+  Plan 报表 / 预检（预测值）/ 实测硬限（staging 实测）三处**同函数同口径**。
+- 两道硬限**都在** `StagedFullTextIndexBuilder` 内：协调器不持有 `FullTextIndexOptions`（其组合根 = CLI `SupplyCliHost`，本刀红线不可改），
+  live 实测与目录映射只能由**持有索引根**的 builder 提供（`IFullTextIndexLiveUsage` / `IFullTextIndexRootedEngine`）。
+- 切换顺序（R3）：**失效 live reader → 旧 live 移入 `.trash` → staging 移入 live → 再失效一次 → 尽力删除 `.trash`**；
+  第 3 步失败 ⇒ 把 `.trash` 副本**移回 live** 并报 `RolledBack`；`.trash` 删除失败**不**让 job 失败（live 已就位，只登记 `CleanupError`）。
+- 同卷前提（R1）：staging / trash / live 全在 `<IndexRoot>` 之下 ⇒ `Directory.Move` 是重命名语义（跨卷会退化成复制+删除，不原子）。
+- 残留清理（R5）只清「条目自身最后写入时间早于阈值」的（默认 24h；实测 Source scope 构建 ≈ 69 s，量级差三个数量级）。
+- staging 目录已存在 ⇒ **拒绝复用/覆盖**并报错（不猜、不做破坏性清理）。
+
+**实测（本刀）**：组件构建 **0 警告 0 错误**；`PuddingFullTextIndexTests` **123 项（通过 119 / 跳过 4 / 失败 0）**
+（基线 104 ⇒ **+19** = `StagedSupplyBuilderTests` 14 + `StagedSupplyCoordinatorTests` 3 + `StagedSupplyEndToEndTests` 2）；
+`PuddingFullTextIndex.Cli.Tests` **41/41**（**未改 CLI、未改任何 `*.slnx`**）；M1（去掉实测硬限）/ M2（切换前不失效 reader）/ M3（切换失败不回滚）
+分别取红 **A3 / A5 / A4**，附加 M2b（前后都不失效）⇒ 真实 Lucene 端到端**陈旧 reader 继续服务旧索引**取红；
+复原后 `StagedFullTextIndexBuilder.cs` blob hash 逐位相同（`033ac186e68a2aa1778e03128e3319cd2356839f`），`MUTATION_MARKER` 残留 **0**。
+详见 `temp/A2a-REPORT.md` 与 `temp/a2a-evidence/`。
+
+**边界**：本刀**未接宿主**（S5/A4）、**未改 CLI**（CLI 仍是 A1 的直写模式）、不引用 Host/Agent/Runtime/Platform（引用仍只有 `PuddingPathFiltering` 一条）；
+所有构建/测试只在 `Path.GetTempPath()` 下的临时索引根进行，**未触碰** `D:\data\fulltext-index`（`.staging`/`.trash` 均不存在）。
