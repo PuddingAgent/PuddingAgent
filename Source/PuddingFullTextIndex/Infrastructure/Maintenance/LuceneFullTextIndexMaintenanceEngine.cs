@@ -882,17 +882,193 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
     }
 
     /// <summary>
-    /// 体检探针：本片**未实现**（属 S3d：需要资源压力采样、小切片游走与三态判定）。
+    /// 索引完整性探针（方案 §3.5 / §3.7）：核对 live 索引与**磁盘路径集合**的差异，给出可区分的三态结论。
+    /// <list type="number">
+    /// <item><description>索引目录**不存在** ⇒ <see cref="FullTextIndexIntegrityState.ManualRebuildRequired"/>
+    /// （终态，不是「跳过」；**绝不**通过局部写偷偷初始化一份「初始全库索引」）。</description></item>
+    /// <item><description>目录存在但**不是可读的索引** / 读不出 / 无法完整枚举磁盘 ⇒ 同样 <c>ManualRebuildRequired</c>
+    /// （「无法证明新鲜」就是不许宣称健康）。</description></item>
+    /// <item><description>可读且路径集合与磁盘一致 ⇒ <see cref="FullTextIndexIntegrityState.Healthy"/>；
+    /// 有差异 ⇒ <see cref="FullTextIndexIntegrityState.Degraded"/>（差异应作为统一变更集发布出去，由维护层做）。</description></item>
+    /// </list>
     /// <para>
-    /// ⚠️ 这里显式抛 <see cref="NotSupportedException"/> 而不是返回一个「看着像健康」的结论：
-    /// 让「未实现」在调用点立刻可见，而不是把「没做体检」伪装成 <c>Healthy</c>。
+    /// <b>只读</b>：只经 <see cref="FullTextIndexPaths"/> 的命名哈希定位索引目录、只用 <c>FSDirectory</c> + <c>DirectoryReader</c> 读取，
+    /// <b>不创建</b>任何目录 / 文件、不开 <c>IndexWriter</c>、不动 reader 缓存、不写 <c>checkpoint</c>。
+    /// </para>
+    /// <para>
+    /// 磁盘侧的「可索引」判定与补偿扫描**共用**同一走查器（<c>MaintenanceCorpusScan</c>）与同一判定体
+    /// （<see cref="FileCandidateCollector"/>）；不变量：本探针报 <c>Healthy</c> ⇔ 维护层的补偿扫描算不出任何变更。
+    /// </para>
+    /// <para>
+    /// ⚠️ <c>CheckedPathCount</c> = 本轮实际参与比较的路径数（索引侧 + 磁盘侧的并集）；
+    /// <b>低优先级</b>与<b>切片</b>是维护层的职责（专用 <c>BelowNormal</c> 线程 + <c>HealthCheckSliceFiles</c> 限制每轮发布的修复条数），
+    /// 本探针本身不做资源压力退避 —— 它只回答「差异是什么」。
     /// </para>
     /// </summary>
+    /// <param name="scopeRoot">scope 语料根。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
     public Task<FullTextIndexIntegrityProbe> ProbeIntegrityAsync(
         string scopeRoot,
         CancellationToken cancellationToken = default)
-        => throw new NotSupportedException(
-            "ProbeIntegrityAsync 属 S3d（资源压力退避 + 小切片差异核对 + 三态判定），本片（S3a）不实现。");
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scopeRoot);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var scopeKey = FullTextChangeCoalescer.NormalizeComparisonKey(scopeRoot);
+        var indexPath = _searchEngine.GetIndexDirectoryPath(scopeRoot);
+
+        // ① 索引目录不存在 ⇒ ManualRebuildRequired。
+        if (!Directory.Exists(indexPath))
+        {
+            return Task.FromResult(new FullTextIndexIntegrityProbe(
+                scopeKey,
+                FullTextIndexIntegrityState.ManualRebuildRequired,
+                IndexDirectoryExists: false,
+                IndexedPathCount: null,
+                IndexedDocumentCount: null,
+                CheckedPathCount: 0,
+                MismatchCount: 0,
+                MismatchedPaths: Array.Empty<string>(),
+                IndexBytes: null,
+                Message: $"live 索引目录不存在（{indexPath}）⇒ 需手动重建；本探针只读，绝不通过局部写偷偷初始化。"));
+        }
+
+        var indexBytes = MeasureDirectoryBytesOrNull(indexPath);
+
+        // ② 目录存在但读不出 / 不是可读的索引 ⇒ 同样 ManualRebuildRequired（「无法证明新鲜」不许宣称健康）。
+        List<IndexedPathEntry> inventory;
+        try
+        {
+            using (var directory = FSDirectory.Open(indexPath))
+            {
+                if (!DirectoryReader.IndexExists(directory))
+                {
+                    return Task.FromResult(new FullTextIndexIntegrityProbe(
+                        scopeKey,
+                        FullTextIndexIntegrityState.ManualRebuildRequired,
+                        IndexDirectoryExists: true,
+                        IndexedPathCount: null,
+                        IndexedDocumentCount: null,
+                        CheckedPathCount: 0,
+                        MismatchCount: 0,
+                        MismatchedPaths: Array.Empty<string>(),
+                        indexBytes,
+                        Message: $"索引目录存在但不是可读的 Lucene 索引（{indexPath}）⇒ 需手动重建；探针不会初始化 / 修复它。"));
+                }
+            }
+
+            inventory = ReadInventory(scopeRoot, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(new FullTextIndexIntegrityProbe(
+                scopeKey,
+                FullTextIndexIntegrityState.ManualRebuildRequired,
+                IndexDirectoryExists: true,
+                IndexedPathCount: null,
+                IndexedDocumentCount: null,
+                CheckedPathCount: 0,
+                MismatchCount: 0,
+                MismatchedPaths: Array.Empty<string>(),
+                indexBytes,
+                Message: $"索引目录存在但读不出（{ex.GetType().Name}: {ex.Message}）⇒ 无法证明新鲜 ⇒ 需手动重建。"));
+        }
+
+        // ③ 磁盘侧路径集合（与补偿扫描共用同一走查器与同一可索引判定）。
+        var scan = MaintenanceCorpusScan.EnumerateFiles(scopeRoot, _options, cancellationToken);
+        if (!scan.IsComplete)
+        {
+            return Task.FromResult(new FullTextIndexIntegrityProbe(
+                scopeKey,
+                FullTextIndexIntegrityState.ManualRebuildRequired,
+                IndexDirectoryExists: true,
+                IndexedPathCount: null,
+                IndexedDocumentCount: null,
+                CheckedPathCount: 0,
+                MismatchCount: 0,
+                MismatchedPaths: Array.Empty<string>(),
+                indexBytes,
+                Message: $"无法完整枚举磁盘路径集合（失败目录 {scan.FailedDirectoryCount} 个：{scan.FirstFailure}）"
+                    + "⇒ 无法证明新鲜 ⇒ 需手动重建（探针只读）。"));
+        }
+
+        var diskPaths = new HashSet<string>(StringComparer.Ordinal);
+        var diskDisplayPaths = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var file in scan.Files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!FileCandidateCollector.TryCollectCandidate(file, scopeRoot, _options, patterns: null, out _, out _))
+                continue;
+
+            var key = FullTextChangeCoalescer.NormalizeComparisonKey(file);
+            diskPaths.Add(key);
+            diskDisplayPaths[key] = file;
+        }
+
+        var indexPaths = new HashSet<string>(StringComparer.Ordinal);
+        var documentCount = 0;
+        foreach (var entry in inventory)
+        {
+            indexPaths.Add(entry.NormalizedPath);
+            documentCount += entry.DocumentCount;
+        }
+
+        // CheckedPathCount 取**并集**：两侧的路径各被实际核对了一次，同一路径不重复计数。
+        var checkedPaths = new HashSet<string>(indexPaths, StringComparer.Ordinal);
+        foreach (var key in diskPaths)
+            checkedPaths.Add(key);
+
+        var mismatched = new List<string>();
+        foreach (var entry in inventory)
+        {
+            if (!diskPaths.Contains(entry.NormalizedPath))
+                mismatched.Add(entry.FullPath);
+        }
+
+        foreach (var key in diskPaths)
+        {
+            if (!indexPaths.Contains(key))
+                mismatched.Add(diskDisplayPaths[key]);
+        }
+
+        var state = mismatched.Count == 0
+            ? FullTextIndexIntegrityState.Healthy
+            : FullTextIndexIntegrityState.Degraded;
+
+        var message = state == FullTextIndexIntegrityState.Healthy
+            ? $"索引与磁盘路径集合一致（索引 {indexPaths.Count} 路径 / 磁盘 {diskPaths.Count} 路径）。"
+            : $"发现 {mismatched.Count} 条差异（索引 {indexPaths.Count} 路径 / 磁盘 {diskPaths.Count} 路径）⇒ Degraded。";
+
+        return Task.FromResult(new FullTextIndexIntegrityProbe(
+            scopeKey,
+            state,
+            IndexDirectoryExists: true,
+            IndexedPathCount: indexPaths.Count,
+            IndexedDocumentCount: documentCount,
+            CheckedPathCount: checkedPaths.Count,
+            MismatchCount: mismatched.Count,
+            MismatchedPaths: mismatched,
+            IndexBytes: indexBytes,
+            Message: message));
+    }
+
+    /// <summary>索引目录字节（不可测 ⇒ <c>null</c>，绝不伪报 0）。</summary>
+    private static long? MeasureDirectoryBytesOrNull(string indexPath)
+    {
+        try
+        {
+            return SupplyIndexDirectoryLayout.MeasureDirectoryBytes(indexPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
 
     // ── 结果构造与度量 ──────────────────────────────────────────────────
 

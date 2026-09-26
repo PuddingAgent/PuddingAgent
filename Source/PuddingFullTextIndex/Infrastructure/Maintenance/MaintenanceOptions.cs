@@ -76,6 +76,9 @@ public sealed record MaintenanceOptions
     /// <summary>体检切片间隔上限。</summary>
     public static readonly TimeSpan MaxHealthCheckSliceDelay = TimeSpan.FromMinutes(1);
 
+    /// <summary>连续 <c>RetainedOld</c> 告警阈值上限（比这更大就永远看不到告警）。</summary>
+    public const int MaxRetainedOldWarnThreshold = 1_000;
+
     /// <summary>资源压力退避时长上限。</summary>
     public static readonly TimeSpan MaxPressureBackoff = TimeSpan.FromHours(1);
 
@@ -165,6 +168,18 @@ public sealed record MaintenanceOptions
     /// <para>本项属<b>数值域</b>校验：与开关无关、始终校验（纯算术、零 IO、零路径推导）。</para>
     /// </summary>
     public TimeSpan LeaseWaitUpperBound { get; init; } = DefaultLeaseWaitUpperBound;
+
+    /// <summary>
+    /// 同一路径**连续多少轮** <c>RetainedOld</c> 触发告警（用户裁定③ / 任务书 M9）。
+    /// <para>
+    /// ⚠️ 告警**不得**被实现成「自动跳过该文件」：判据是「允许成功文件被重复处理，漏掉文件不允许」。
+    /// 本旋钮只控制<b>什么时候把这件事说出来</b>，不改变处理行为 —— 一个永久不可读的文件会让
+    /// checkpoint 永不推进、每轮重扫（<c>CheckpointAdvancePolicy</c> 文档里登记的饥饿风险），
+    /// 告警是让人介入的**唯一**出口。
+    /// </para>
+    /// <para>本项属<b>数值域</b>校验：与开关无关、始终校验（纯算术、零 IO）。</para>
+    /// </summary>
+    public int RetainedOldWarnThreshold { get; init; } = 3;
 
     /// <summary>
     /// fail-closed 校验（方案 §7.3）。返回结构化违规列表；**不修改**任何配置值。
@@ -298,6 +313,14 @@ public sealed record MaintenanceOptions
                 options.LeaseWaitUpperBound.ToString(),
                 $"LeaseWaitUpperBound 必须在 (0, {MaxLeaseWaitAllowed}] 之间：维护路径必须「有界等待」"
                 + "（0 = 不等待是供给/构建路径的语义，无穷大 = 无限挂起；两者都不接受）。"));
+        }
+
+        if (options.RetainedOldWarnThreshold <= 0 || options.RetainedOldWarnThreshold > MaxRetainedOldWarnThreshold)
+        {
+            violations.Add(new MaintenanceOptionsViolation(
+                nameof(RetainedOldWarnThreshold),
+                options.RetainedOldWarnThreshold.ToString(),
+                $"RetainedOldWarnThreshold 必须在 1..{MaxRetainedOldWarnThreshold} 之间（0 / 负值 = 永不告警，上限 = 让告警还有意义）。"));
         }
 
         // ── ② 路径与 scope 域：只在开关打开时校验（关闭即零副作用：不解析、不探测、不推导）──

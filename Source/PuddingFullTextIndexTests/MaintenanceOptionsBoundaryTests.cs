@@ -43,6 +43,7 @@ public sealed class MaintenanceOptionsBoundaryTests
         nameof(MaintenanceOptions.HealthCheckSliceDelay),
         nameof(MaintenanceOptions.PressureBackoff),
         nameof(MaintenanceOptions.LeaseWaitUpperBound),
+        nameof(MaintenanceOptions.RetainedOldWarnThreshold),
     };
 
     /// <summary>从源码里收集到的**界常量名**清单（与反射实测的公开静态字段清单对照）。</summary>
@@ -51,6 +52,7 @@ public sealed class MaintenanceOptionsBoundaryTests
         "MaxQueueCapacityAllowed",
         "MaxBatchPathsAllowed",
         "MaxHealthCheckSliceFilesAllowed",
+        "MaxRetainedOldWarnThreshold",
         "MinRecoveryScanInterval",
         "MaxRecoveryScanInterval",
         "MinHealthCheckInterval",
@@ -185,6 +187,10 @@ public sealed class MaintenanceOptionsBoundaryTests
         cases.Add(new(leaseWait, "LeaseWaitUpperBound (0, MaxLeaseWaitAllowed]", "above-upper", o => o with { LeaseWaitUpperBound = MaintenanceOptions.MaxLeaseWaitAllowed + OneTick }, false,
             "上界加 1 tick ⇒ 必须拒绝"));
 
+        // ⑥ S3d：连续 RetainedOld 告警阈值（下界 1 闭、上界为公开常量闭）
+        AddIntDomain(cases, nameof(MaintenanceOptions.RetainedOldWarnThreshold), "RetainedOldWarnThreshold 1..MaxRetainedOldWarnThreshold",
+            1, MaintenanceOptions.MaxRetainedOldWarnThreshold, (o, v) => o with { RetainedOldWarnThreshold = v });
+
         return cases;
     }
 
@@ -297,7 +303,7 @@ public sealed class MaintenanceOptionsBoundaryTests
             + string.Join(", ", boundFields.Select(f => f.Name)));
 
         CollectionAssert.AreEquivalent(
-            new[] { "MaxQueueCapacityAllowed", "MaxBatchPathsAllowed", "MaxHealthCheckSliceFilesAllowed" },
+            new[] { "MaxQueueCapacityAllowed", "MaxBatchPathsAllowed", "MaxHealthCheckSliceFilesAllowed", "MaxRetainedOldWarnThreshold" },
             intConsts.Select(f => f.Name).ToArray(),
             "整型容量上限必须是 const int");
         Assert.IsTrue(intConsts.All(f => f.FieldType == typeof(int)), "容量上限必须是 int");

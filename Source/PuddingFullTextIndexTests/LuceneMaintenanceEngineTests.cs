@@ -535,9 +535,16 @@ public sealed class LuceneMaintenanceEngineTests
         Assert.IsNull(noIndex.IndexBytesBefore, "索引目录不存在 ⇒ 字节不可测 ⇒ null（不得伪报 0）");
         Assert.IsNull(noIndex.IndexBytesAfter);
 
-        // ③ ProbeIntegrityAsync 本片未实现（属 S3d）⇒ 显式 NotSupportedException，绝不伪装成 Healthy
-        await Assert.ThrowsExactlyAsync<NotSupportedException>(
-            async () => { await harness.Maintenance.ProbeIntegrityAsync(_corpus); });
+        // ③ 索引不存在时体检探针 ⇒ ManualRebuildRequired（S3d 已落地）：须**明确要求手动重建**，
+        //    绝不得伪装成 Healthy，也绝不通过局部写偷偷创建「初始全库索引」
+        var probe = await harness.Maintenance.ProbeIntegrityAsync(_corpus);
+        Assert.AreEqual(
+            FullTextIndexIntegrityState.ManualRebuildRequired,
+            probe.State,
+            $"索引目录不存在 ⇒ 必须要求手动重建，而不是 Healthy / 跳过：{probe.Message}");
+        Assert.IsFalse(probe.IndexDirectoryExists);
+        Assert.IsNull(probe.IndexedPathCount, "读不出必须报 null，不得伪报 0");
+        Assert.IsFalse(Directory.Exists(indexDirectory), "★ 探针只读：不得创建索引目录");
 
         // ④ 空变更集 ⇒ Applied（合法的零变更）：不打开 writer、不 commit、字节不变
         var build = await harness.Search.BuildIndexAsync(_corpus);
