@@ -15,16 +15,25 @@ namespace PuddingFullTextIndex.Infrastructure.Maintenance;
 /// <b>只做两件事</b>：把一个统一变更集按「先提取、后 delete/add、单批 commit」写进 live 索引；
 /// 只读枚举索引里已有的路径清册（补偿扫描算 Delete 候选的来源）。
 /// 供宿主 / 维护器通过 <see cref="IFullTextIndexMaintenanceEngine"/> 调用；本片**不接 Host**、
-/// 不起 <c>FileSystemWatcher</c> / <c>Timer</c> / 长驻 <c>Task</c>、不获取跨进程租约、
-/// 不失效查询侧 reader（分别属 S3c / S3d）。写入期配额（S3b）已落地：writer 建在
+/// 不起 <c>FileSystemWatcher</c> / <c>Timer</c> / 长驻 <c>Task</c>（属 S3d）。写入期配额（S3b）已落地：writer 建在
 /// <see cref="QuotaEnforcingDirectory"/> 上，超限以 <see cref="IndexWriteQuotaExceededException"/> 中止本批并 rollback。
+/// 跨进程租约（S3c）已落地：每个合并批次<b>获取一次</b>、拿不到时**有界等待**（超时 ⇒
+/// <see cref="FullTextMutationState.Busy"/>、未写入、未推进 checkpoint）、<b>取得租约之后</b>才做最终 stat；
+/// index-root 级全局 gate 让多 scope 提交**全局串行**；commit 成功后**显式**失效查询侧 reader。
 /// </para>
 /// <para>
 /// <b>§3.6 单批次顺序（本类逐条对齐）</b>：
 /// <list type="number">
+/// <item><description>⓪ index-root 级<b>全局写者 gate</b>（<see cref="IndexRootWriteGate"/>；§4.2 末条「多 scope 增量提交默认全局串行」）
+/// —— 最先取得、最后释放；**固定加锁顺序** = 全局 index-root → per-scope → 跨进程租约（理由见
+/// <c>ApplyChangesWithReportAsync</c> 的注释）。</description></item>
 /// <item><description>① 每 scope 进程内 gate —— 复用查询侧<b>同一实例</b>的既有 gate（同一字典、同一键，
 /// 见 <c>LuceneSearchEngine.GetScopeGate</c>），因此局部写与全量构建在同一进程内互斥。</description></item>
-/// <item><description>② 跨进程 <c>FileSupplyLease</c> —— <b>本片不做（S3c）</b>。</description></item>
+/// <item><description>② 跨进程租约（<see cref="IFullTextSupplyLease"/> / <see cref="FileSupplyLease"/>）——
+/// <b>每个合并批次获取一次</b>（L1）：一次批次内 <c>TryAcquireAsync</c> 在无争用时恰好 1 次；拿不到时有界等待
+/// （上界 <c>MaintenanceOptions.LeaseWaitUpperBound</c>），超时 ⇒ <see cref="FullTextMutationState.Busy"/>；
+/// 批次结束（含失败 / 取消 / 异常）**无条件** <c>ReleaseAsync</c>。取租约在 ③ 的最终 stat <b>之前</b>
+/// （§4.4：等待期间的变更不得丢——否则会把等待前的旧内容写进刚刚被手动重建的新索引）。</description></item>
 /// <item><description>③ 对每个 Upsert 做最终 stat 与过滤 —— 复用扫描期同一判定体
 /// <see cref="FileCandidateCollector"/>（扩展名白名单 / 噪声名单 / 空文件 / 超限，唯一真源）。</description></item>
 /// <item><description>④ <b>提取失败的文件不进入 Lucene delete 集合</b> —— 提取全部在内存中完成后才开始写；
@@ -42,8 +51,12 @@ namespace PuddingFullTextIndex.Infrastructure.Maintenance;
 /// 两者都只允许「拒绝 + rollback 保留上一个 commit」，绝不先写后超。</description></item>
 /// <item><description>⑨ <c>Commit()</c> —— 单批一次；未 commit 的文档对查询不可见（本类只在提交成功后才返回
 /// <see cref="FullTextMutationState.Applied"/> / <see cref="FullTextMutationState.PartiallyApplied"/>）。</description></item>
-/// <item><description>⑩ <c>InvalidateScope(scope)</c> —— <b>本片不做（S3c）</b>：本类不持有查询侧 reader 缓存。</description></item>
-/// <item><description>⑪ 释放 writer（每次批次创建 / 提交 / 释放，不长持 writer lock）；跨进程租约的释放属 S3c。</description></item>
+/// <item><description>⑩ <c>InvalidateScope(scope)</c> —— <b>仅 commit 成功</b>时显式调用一次（经
+/// <see cref="IScopeReaderInvalidation"/>，传 <c>changeSet.ScopeRoot</c>）：未提交（Busy / Rejected / Failed /
+/// Cancelled / 无写入）一律 <b>0 次</b>。本类不持有 reader 缓存，实际失效由同一实例的
+/// <c>LuceneSearchEngine.InvalidateScope</c> 完成（§4.5）。</description></item>
+/// <item><description>⑪ 释放 writer（每次批次创建 / 提交 / 释放，不长持 writer lock）；随后释放跨进程租约（同一
+/// <c>finally</c>，与提交与否无关）。</description></item>
 /// <item><description>⑫ 推进 checkpoint —— <b>本片不写盘</b>：只<b>产出</b>
 /// <see cref="FullTextMutationResult.CheckpointAdvanced"/>（由 <see cref="CheckpointAdvancePolicy"/> 判定，
 /// 绝不回读输入）。</description></item>
@@ -74,8 +87,14 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
     /// <summary>writer 内存缓冲（与既有构建路径的取值一致：本片不做调优，也不引入 NRT）。</summary>
     private const double WriterRamBufferMegabytes = 48;
 
+    /// <summary>租约有界等待的最小重试间隔（有界等待的粒度；不含任何后台线程 / 定时器）。</summary>
+    private static readonly TimeSpan LeaseRetryInterval = TimeSpan.FromMilliseconds(50);
+
     private readonly LuceneSearchEngine _searchEngine;
     private readonly FullTextIndexOptions _options;
+    private readonly IFullTextSupplyLease _lease;
+    private readonly TimeSpan _leaseWaitUpperBound;
+    private readonly IScopeReaderInvalidation _readerInvalidation;
 
     /// <summary>
     /// 构造局部写内核。
@@ -87,10 +106,40 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
     /// 生效的索引选项（提供扩展名白名单 / 噪声名单 / 体积上限）。必须与构造 <paramref name="searchEngine"/> 时使用的同一实例
     /// （组合根负责），否则「能否索引」的判据会与实际建索引时不一致。
     /// </param>
-    public LuceneFullTextIndexMaintenanceEngine(LuceneSearchEngine searchEngine, FullTextIndexOptions options)
+    /// <param name="lease">
+    /// 跨进程 scope 写者租约（S3c）：<b>每个合并批次获取一次</b>、批次结束（成功 / 失败 / 取消 / 异常）无条件释放。
+    /// 必填：不存在「不取租约」的退化装配（可选参数 = null 这类兼容设计会让租约被静默绕过）。
+    /// </param>
+    /// <param name="leaseWaitUpperBound">
+    /// 租约**有界等待**上界（§4.4）。唯一真源是 <c>MaintenanceOptions.LeaseWaitUpperBound</c>，由组合根解析后传入；
+    /// 构造时 fail-closed 校验（必须为正且 ≤ <c>MaintenanceOptions.MaxLeaseWaitAllowed</c>，见下）。
+    /// </param>
+    /// <param name="readerInvalidation">
+    /// 查询侧 reader 缓存失效接缝（S3c）：<b>只有 commit 成功</b>才调用一次（§4.5）。
+    /// </param>
+    public LuceneFullTextIndexMaintenanceEngine(
+        LuceneSearchEngine searchEngine,
+        FullTextIndexOptions options,
+        IFullTextSupplyLease lease,
+        TimeSpan leaseWaitUpperBound,
+        IScopeReaderInvalidation readerInvalidation)
     {
         _searchEngine = searchEngine ?? throw new ArgumentNullException(nameof(searchEngine));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _lease = lease ?? throw new ArgumentNullException(nameof(lease));
+        _readerInvalidation = readerInvalidation ?? throw new ArgumentNullException(nameof(readerInvalidation));
+
+        // fail-closed：等待上界必须来自 MaintenanceOptions 的合法区间。
+        // 0 / 负值等价于「不等待」（那是*供给/构建*路径的语义，见 IFullTextSupplyLease 的接口注释），
+        // 维护路径按 §4.4 必须「有界等待」⇒ 这里直接拒绝，绝不静默退化成不等待或不设上界。
+        if (leaseWaitUpperBound <= TimeSpan.Zero || leaseWaitUpperBound > MaintenanceOptions.MaxLeaseWaitAllowed)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(leaseWaitUpperBound),
+                $"租约等待上界必须在 (0, {MaintenanceOptions.MaxLeaseWaitAllowed}] 之间，收到 {leaseWaitUpperBound}。");
+        }
+
+        _leaseWaitUpperBound = leaseWaitUpperBound;
     }
 
     // ── 局部写：ApplyChangesAsync ────────────────────────────────────────
@@ -124,6 +173,54 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
         var indexPath = _searchEngine.GetIndexDirectoryPath(changeSet.ScopeRoot);
         var observation = new IndexSizeObservation();
 
+        // ── ⓪ index-root 级**全局写者 gate**（§4.2 末条：多 scope 增量提交默认全局串行）──
+        // **固定加锁顺序** = 全局 index-root gate → 每 scope 进程内 gate → 跨进程租约。
+        // 为何必须固定、且为何全局必须在最外层：全局 gate 是唯一的跨 scope 共享资源，把它放在最外层 ⇒
+        // 任何已持有内层锁（per-scope gate / 租约）的写者都**不再申请**它，等待图里不可能成环；
+        // 若反过来（先 per-scope 再全局），会同时存在「持 S1 等全局」与「持全局等 S2」两种等待，
+        // 一旦供给/构建路径将来也引入同一全局资源即成死锁环（供给路径只取 per-scope gate + 租约，故当前无环）。
+        // 全局串行的目的见 §4.2：不让两个本进程 writer 同时消费**同一份剩余额度** ——
+        // 真正的防双花在 ApplyUnderLeaseAsync 里：进入临界区后**重测** live 字节，与调用方传入值取更严的一侧。
+        var indexRootGate = IndexRootWriteGate.For(_options.IndexRootDirectory);
+        try
+        {
+            await indexRootGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            var canceled = NoWriteResult(
+                changeSet,
+                FullTextMutationState.Cancelled,
+                indexPath,
+                "取消：等待全局 index-root 写者 gate 期间被取消（未写入、未提交）。");
+            return (canceled, IndexSizeReport.Create(canceled, budget, observation));
+        }
+
+        FullTextMutationResult result;
+        try
+        {
+            result = await ApplyUnderIndexRootGateAsync(changeSet, budget, indexPath, observation, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            indexRootGate.Release();
+        }
+
+        return (result, IndexSizeReport.Create(result, budget, observation));
+    }
+
+    /// <summary>
+    /// 全局 index-root gate 内的批次执行：再取**每 scope 进程内 gate**（与全量构建共用同一把）
+    /// ⇒ <see cref="ApplyUnderGateAsync"/>（守卫 → 跨进程租约 → 最终 stat → 单批 commit → 失效 reader）。
+    /// </summary>
+    private async Task<FullTextMutationResult> ApplyUnderIndexRootGateAsync(
+        FullTextChangeSet changeSet,
+        FullTextMutationBudget budget,
+        string indexPath,
+        IndexSizeObservation observation,
+        CancellationToken cancellationToken)
+    {
         // ── ① 每 scope 进程内 gate（与全量构建共用同一把）──
         var gate = _searchEngine.GetScopeGate(indexPath);
         try
@@ -132,24 +229,22 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
         }
         catch (OperationCanceledException)
         {
-            var canceled = NoWriteResult(
+            return NoWriteResult(
                 changeSet,
                 FullTextMutationState.Cancelled,
                 indexPath,
                 "取消：等待 scope gate 期间被取消（未写入、未提交）。");
-            return (canceled, IndexSizeReport.Create(canceled, budget, observation));
         }
 
-        FullTextMutationResult result;
         try
         {
-            result = await ApplyUnderGateAsync(changeSet, budget, indexPath, observation, cancellationToken)
+            return await ApplyUnderGateAsync(changeSet, budget, indexPath, observation, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             // ③（提取）或写入前的任意取消检查外抛 —— 统一转成显式的 Cancelled（不伪装成功、不吞掉语义）。
-            result = NoWriteResult(
+            return NoWriteResult(
                 changeSet,
                 FullTextMutationState.Cancelled,
                 indexPath,
@@ -159,8 +254,6 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
         {
             gate.Release();
         }
-
-        return (result, IndexSizeReport.Create(result, budget, observation));
     }
 
     private async Task<FullTextMutationResult> ApplyUnderGateAsync(
@@ -199,6 +292,60 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
                 $"拒绝：live 索引目录不存在（{indexPath}）⇒ 需手动重建，本地写入不创建初始索引（未写入、未提交）。");
         }
 
+        // ── ② 跨进程租约：**每个合并批次获取一次**（§4.4）；拿不到 ⇒ 有界等待，超时 ⇒ Busy ──
+        // （守卫 A / B 都只读、不写，放在取租约之前：不值得为必然被拒的批次去动跨进程租约文件。）
+        var leaseOwner = SupplyLeaseOwner.ForCurrentProcess();
+        var leaseAttempt = await AcquireLeaseWithinBoundAsync(changeSet, leaseOwner, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!leaseAttempt.Acquired)
+        {
+            // 未写入任何字节、未推进 checkpoint；同一变更集下一轮重放必须成功（幂等 delete-then-add 允许重放）。
+            return NoWriteResult(
+                changeSet,
+                FullTextMutationState.Busy,
+                indexPath,
+                DescribeLeaseBusy(leaseAttempt));
+        }
+
+        try
+        {
+            // ── ③ 最终 stat 必须在**取得租约之后**：等待期间文件被替换 / 删除 / 手动重建索引 ⇒
+            //     写进去的必须是「现在」的磁盘事实，绝不是等待前观察到的旧内容（§4.4）。
+            //     结构上这条顺序不可绕过：最终 stat 只存在于 ApplyUnderLeaseAsync，而它只从这里被调用。
+            var result = await ApplyUnderLeaseAsync(changeSet, budget, indexPath, observation, cancellationToken)
+                .ConfigureAwait(false);
+
+            // ── ⑩ commit 成功 ⇒ **显式**失效查询侧 reader（§4.5：读者无需重启即可见新内容）──
+            // 判据取契约字段：FullTextMutationResult.CommitMilliseconds 的语义是「commit 耗时；未提交时为 null」
+            // （见 Contracts/IFullTextIndexMaintenanceEngine.cs）⇒ 非 null ⇔ 本批真的提交过。
+            // 这样「无事可写（未开 writer、未 commit）」的 Applied 不会被误判为已提交（L6：未提交 ⇒ 0 次）。
+            if (result.CommitMilliseconds is not null)
+                _readerInvalidation.InvalidateScope(changeSet.ScopeRoot);
+
+            return result;
+        }
+        finally
+        {
+            // 释放与提交与否无关：成功 / 取消 / Busy / 异常路径都必须放（否则同一 scope 会被自己永久 Busy）。
+            // 令牌固定用 CancellationToken.None — 取消路径也必须释放（L1）。
+            await _lease.ReleaseAsync(changeSet.ScopeKey, leaseOwner.OwnerId, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 已取得租约后的批次主体：最终 stat → 写前预检 → 内容提取 → 单批 commit。
+    /// <para>本方法**不**碰租约 / gate / reader 缓存失效 —— 那些都在调用方，确保「租约必须覆盖最终 stat」
+    /// 这条顺序在代码结构上无法被绕过。</para>
+    /// </summary>
+    private async Task<FullTextMutationResult> ApplyUnderLeaseAsync(
+        FullTextChangeSet changeSet,
+        FullTextMutationBudget budget,
+        string indexPath,
+        IndexSizeObservation observation,
+        CancellationToken cancellationToken)
+    {
         var indexBytesBefore = MeasureIndexBytes(indexPath);
 
         // ── ③ 最终 stat 与过滤（提取之前；失败者一律保留旧文档）──
@@ -247,7 +394,39 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
         foreach (var verified in verifiedUpserts)
             predictedIncomingIndexBytes += verified.ObservedBytes;
 
-        var budgetFits = SupplyBudgetCalculator.Fits(budget.LiveIndexBytes, predictedIncomingIndexBytes, budget.MaxIndexBytes);
+        // ── ⓪c 集合口径的 live 字节：**临界区内重测**，与调用方传入值取**更严**的一侧 ──
+        // 为何必须重测：调用方的 LiveIndexBytes 是进锁**之前**量的；两个 scope 并发提交时双方手里都是
+        // 「对方尚未写入」的旧值 ⇒ 两块批次各按旧值消费同一份剩余额度，合计必然突破 MaxIndexBytes（§4.2 末条
+        // 正是为此要求「多 scope 增量提交默认全局串行」）。取 max 的语义：**只收紧、绝不放松**调用方预算 ——
+        // 调用方若故意传入更大的 live（例如模拟「其它 scope 已占用」），依然原样生效。
+        long liveIndexBytesNow;
+        try
+        {
+            liveIndexBytesNow = SupplyIndexDirectoryLayout.MeasureLiveIndexBytes(_options.IndexRootDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException)
+        {
+            // fail-closed：量不出「全部 live scope 合计」就不允许写 —— 绝不默默按 0 判定
+            // （那会把「量不到」当成「没占用」，从而绕过预算硬限）。
+            return BuildResult(
+                changeSet,
+                FullTextMutationState.Rejected,
+                0,
+                0,
+                retainedOldPaths,
+                failureNotes,
+                indexBytesBefore,
+                MeasureIndexBytes(indexPath),
+                null,
+                $"拒绝：无法实测 live 集合用量（{ex.GetType().Name}: {ex.Message}）⇒ fail-closed，本批未写入、未提交。");
+        }
+
+        var effectiveLiveIndexBytes = Math.Max(budget.LiveIndexBytes, liveIndexBytesNow);
+        var allowedGrowthBytes = effectiveLiveIndexBytes >= budget.MaxIndexBytes
+            ? 0
+            : budget.MaxIndexBytes - effectiveLiveIndexBytes;
+
+        var budgetFits = SupplyBudgetCalculator.Fits(effectiveLiveIndexBytes, predictedIncomingIndexBytes, budget.MaxIndexBytes);
 
         if (!budgetFits)
         {
@@ -261,7 +440,7 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
                 indexBytesBefore,
                 MeasureIndexBytes(indexPath),
                 null,
-                $"拒绝：预算硬限不通过 —— {SupplyBudgetCalculator.Describe("本批待写文件", budget.LiveIndexBytes, predictedIncomingIndexBytes, budget.MaxIndexBytes)}"
+                $"拒绝：预算硬限不通过 —— {SupplyBudgetCalculator.Describe("本批待写文件", effectiveLiveIndexBytes, predictedIncomingIndexBytes, budget.MaxIndexBytes)}"
                 + "；rollback 保留上一个 commit（未写入、未提交）。");
         }
 
@@ -330,8 +509,16 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
 
         // ── ⑤⑥⑦⑨⑪ 单批 writer 会话（S3b：writer 建在写入期配额包装层上）──
         var session = RunWriterSession(
-            indexPath, budget, deleteThenAddPaths, confirmedDeletes, preparedUpserts, observation, cancellationToken);
+            indexPath, budget, allowedGrowthBytes, deleteThenAddPaths, confirmedDeletes, preparedUpserts, observation,
+            cancellationToken);
         var indexBytesAfter = MeasureIndexBytes(indexPath);
+
+        // fail-loud 不变量：已提交 ⇔ 无短路态（RunWriterSession 的所有分支都满足这一点；不满足说明内部逻辑漏洞）。
+        if (session.Committed != (session.ShortCircuitState is null))
+        {
+            throw new InvalidOperationException(
+                "writer 会话结果自相矛盾：Committed 与 ShortCircuitState 不一致（内部逻辑错误）。");
+        }
 
         if (session.ShortCircuitState is { } shortCircuitState)
         {
@@ -382,18 +569,20 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
     private WriterSessionOutcome RunWriterSession(
         string indexPath,
         FullTextMutationBudget budget,
+        long allowedGrowthBytes,
         IReadOnlyList<string> deleteThenAddPaths,
         IReadOnlyList<string> confirmedDeletePaths,
         IReadOnlyList<PreparedUpsert> preparedUpserts,
         IndexSizeObservation observation,
         CancellationToken cancellationToken)
     {
-        // 本批允许的**实际输出增长** = 集合预算 − 本批开始前全部 live scope 索引字节（§4.2 的集合口径）。
-        // ≤ 0 表示本批不得写出任何新字节（合同 FullTextMutationBudget.RemainingBytes 的语义）。
+        // 本批允许的**实际输出增长**由调用方在**临界区内**算好（= 集合预算 − max(调用方 live, 临界区内重测 live)）：
+        // 两个并发 scope 不可能再各按「对方尚未写入」的旧值消费同一份剩余额度（§4.2）。
+        // 0 表示本批不得写出任何新字节（合同 FullTextMutationBudget.RemainingBytes 的语义）。
         var quotaDirectory = new QuotaEnforcingDirectory(
             FSDirectory.Open(indexPath),
             budget.MaxIndexBytes,
-            budget.RemainingBytes);
+            allowedGrowthBytes);
         observation.WriterSessionOpened = true;
 
         IndexWriter? writer = null;
@@ -533,6 +722,79 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
             FullTextMutationState.Rejected,
             $"拒绝：写入期配额超限 —— {source}（{nameof(IndexWriteQuotaExceededException)}）"
             + $"；本批未 commit、已 rollback 保留上一个 commit。{violation.Message}");
+
+    /// <summary>
+    /// 一次「有界等待」的租约获取汇总（仅诊断与 Busy 消息共用；不上报、不污染业务结果）。
+    /// </summary>
+    /// <param name="Acquired">是否在等待上界内取得。</param>
+    /// <param name="LastResult">最后一次尝试的原始结果（取得或未取得；用于持有者 / 原因可读化）。</param>
+    /// <param name="Attempts">实际调用 <c>TryAcquireAsync</c> 的次数（无争用时恰为 1）。</param>
+    /// <param name="Waited">从第一次尝试到定论的实测耗时。</param>
+    private readonly record struct LeaseAttempt(
+        bool Acquired,
+        SupplyLeaseAcquireResult? LastResult,
+        int Attempts,
+        TimeSpan Waited);
+
+    /// <summary>
+    /// **有界等待**地取得本批次的跨进程租约（§4.4）。
+    /// <para>
+    /// 语义：每批次只调用本方法一次（L1）；每次重试都是「一次 <c>TryAcquireAsync</c> + 一次有界延迟」，
+    /// 延迟由<b>调用方 token + 上界</b>驱动（<c>Task.Delay</c>），<b>不起任何后台线程 / 定时器</b>。
+    /// 超时后返回 <c>Acquired = false</c>，由调用方转成 <see cref="FullTextMutationState.Busy"/>（不写入、不推进 checkpoint）。
+    /// </para>
+    /// <para>
+    /// ⚠️ 与 <see cref="IFullTextSupplyLease"/> 接口注释「拿不到租约必须直接放弃本次构建（不得等待、不得写索引）」的
+    /// 差异：那是***供给 / 构建*路径**的语义（一次构建失败就让位给下一次供给，人工重跑代价低）；
+    /// 维护路径是**背景渐进**的（变更集每轮重放，但长持租约的可能是分钟级的手动重建）⇒ 按 §4.4 采用
+    /// <b>有界等待</b>：既不错过「很快就能拿到的窗口」，也不把维护线程无限挂住。接口与本片都没有被修改：
+    /// 等待循环在调用侧，租约实现仍然「一次尝试、一次回答」。
+    /// </para>
+    /// </summary>
+    private async Task<LeaseAttempt> AcquireLeaseWithinBoundAsync(
+        FullTextChangeSet changeSet,
+        SupplyLeaseOwner owner,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var attempts = 0;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var result = await _lease
+                .TryAcquireAsync(changeSet.ScopeKey, owner, changeSet.BatchId, cancellationToken)
+                .ConfigureAwait(false);
+            attempts++;
+
+            if (result.Acquired)
+                return new LeaseAttempt(true, result, attempts, stopwatch.Elapsed);
+
+            var waited = stopwatch.Elapsed;
+            var remaining = _leaseWaitUpperBound - waited;
+            if (remaining <= TimeSpan.Zero)
+                return new LeaseAttempt(false, result, attempts, waited);
+
+            await Task.Delay(remaining < LeaseRetryInterval ? remaining : LeaseRetryInterval, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>租约等待超时的可读说明：上界 / 实测等待 / 尝试次数 / 持有者 / 租约实现给出的原因。</summary>
+    private string DescribeLeaseBusy(LeaseAttempt attempt)
+    {
+        var holder = attempt.LastResult?.Holder is { } h
+            ? $"当前持有者 {h.OwnerId}（pid={h.ProcessId} @ {h.MachineName}，自 {h.StartedAtUtc:O} 起，"
+                + $"最近心跳 {h.HeartbeatUtc:O}，已过期={h.IsExpired}，job={h.JobId ?? "(无)"}）"
+            : "当前持有者未知（查阅时租约已释放或无法读取）";
+
+        var reason = attempt.LastResult?.Message;
+        return $"互斥失败：跨进程租约在 {_leaseWaitUpperBound.TotalMilliseconds:F0} ms 的有界等待内未取得"
+            + $"（实测等待 {attempt.Waited.TotalMilliseconds:F0} ms，尝试 {attempt.Attempts} 次）；{holder}"
+            + (string.IsNullOrEmpty(reason) ? string.Empty : $"；{reason}")
+            + "；本批未写入任何字节、未提交、未推进 checkpoint（下一轮重放同一变更集：幂等 delete-then-add 允许重放）。";
+    }
 
     // ── 只读：EnumerateIndexedPathsAsync ────────────────────────────────
 

@@ -80,6 +80,23 @@ public sealed record MaintenanceOptions
     public static readonly TimeSpan MaxPressureBackoff = TimeSpan.FromHours(1);
 
     /// <summary>
+    /// 跨进程租约**有界等待**上界的默认值（方案 §4.4：<c>租约等待期间的变更不能丢</c>、
+    /// <c>获取租约后必须重新 stat 最终状态</c>）。
+    /// <para>
+    /// 取值 2 s = 与 <see cref="MaxCoalesceWait"/> 同量级：维护是背景渐进路径，租约通常由「手动重建 / 另一个
+    /// 维护批次」持有；等太久只会把维护线程挂在别人身上，拿不到就下一轮重放同一变更集（见
+    /// <c>LuceneFullTextIndexMaintenanceEngine.AcquireLeaseWithinBoundAsync</c>）。
+    /// </para>
+    /// </summary>
+    public static readonly TimeSpan DefaultLeaseWaitUpperBound = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// 租约等待上界的允许上限（1 分钟）：再长就不再是「有界等待」而是把维护线程长挂住 ——
+    /// 与之竞争的常客是分钟级的手动重建，等它全程结束毫无收益。
+    /// </summary>
+    public static readonly TimeSpan MaxLeaseWaitAllowed = TimeSpan.FromMinutes(1);
+
+    /// <summary>
     /// 局部维护总开关。**默认 false**；默认关闭即零副作用（不探测 scope、不访问索引根、不创建状态目录、不起线程）。
     /// </summary>
     public bool Enabled { get; init; }
@@ -136,6 +153,18 @@ public sealed record MaintenanceOptions
 
     /// <summary>可选内存内容缓存上限（0 = 关闭；方案 §4.5 默认关闭）。</summary>
     public long ContentCacheMaxBytes { get; init; }
+
+    /// <summary>
+    /// 跨进程租约的**有界等待上界**（方案 §4.4）。拿不到租约时最多等这么久；超时 ⇒ 本批返回
+    /// <c>FullTextMutationState.Busy</c>（未写入任何字节、未推进 checkpoint），同一变更集下一轮重放。
+    /// <para>
+    /// 必须落在 <c>(0, <see cref="MaxLeaseWaitAllowed"/>]</c>：<b>0 / 负值被拒绝</b> ——
+    /// 「不等待、直接放弃」是*供给 / 构建*路径的语义（见 <c>IFullTextSupplyLease</c> 的接口注释），
+    /// 维护路径按 §4.4 必须<b>有界等待</b>；上界不设上限则等价于无限挂起。
+    /// </para>
+    /// <para>本项属<b>数值域</b>校验：与开关无关、始终校验（纯算术、零 IO、零路径推导）。</para>
+    /// </summary>
+    public TimeSpan LeaseWaitUpperBound { get; init; } = DefaultLeaseWaitUpperBound;
 
     /// <summary>
     /// fail-closed 校验（方案 §7.3）。返回结构化违规列表；**不修改**任何配置值。
@@ -260,6 +289,15 @@ public sealed record MaintenanceOptions
                 nameof(ContentCacheMaxBytes),
                 options.ContentCacheMaxBytes.ToString(),
                 "ContentCacheMaxBytes 不得为负（0 表示关闭内容缓存）。"));
+        }
+
+        if (options.LeaseWaitUpperBound <= TimeSpan.Zero || options.LeaseWaitUpperBound > MaxLeaseWaitAllowed)
+        {
+            violations.Add(new MaintenanceOptionsViolation(
+                nameof(LeaseWaitUpperBound),
+                options.LeaseWaitUpperBound.ToString(),
+                $"LeaseWaitUpperBound 必须在 (0, {MaxLeaseWaitAllowed}] 之间：维护路径必须「有界等待」"
+                + "（0 = 不等待是供给/构建路径的语义，无穷大 = 无限挂起；两者都不接受）。"));
         }
 
         // ── ② 路径与 scope 域：只在开关打开时校验（关闭即零副作用：不解析、不探测、不推导）──

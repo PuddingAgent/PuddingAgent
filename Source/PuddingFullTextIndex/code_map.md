@@ -18,7 +18,7 @@
 |------|------|
 | `Search/` | 搜索实现（`LuceneSearchEngine.cs`：**S3a 仅做了最小可见性放宽** —— `AddDocument` / `ExtractContentAsync` 由 `private` 放宽为 `internal`，并新增 2 个 internal 只读访问器 `Analyzer` / `GetScopeGate`；**签名与实现逐字不变、public 成员集未变**，供局部维护内核复用同一提取路径与同一文档结构，避免两套文档结构静默漂移） |
 | `Text/` | 文本处理 |
-| `Maintenance/` | **局部维护（S3a/S3b）+ 纯逻辑（零 IO / 零线程）**：`MaintenanceCheckpoint.cs`（checkpoint 模型 + 协议 JSON + 路径解析，**只经 `FullTextIndexPaths`**）· `MTimeComparison.cs`（`>=` 判定 / `effective = watermark - overlap` / `ComputeNextWatermark` 取**扫描开始**时刻 / 时钟回拨判定 / stat 稳定性）· `FullTextChangeCoalescer.cs`（per-path latest-wins / `Sources` 位或 / rename 折叠 / 越界拒绝）· `MaintenanceOptions.cs`（fail-closed 校验，默认全关）· `CheckpointAdvancePolicy.cs`（**决定「本轮要不要推进 checkpoint」的纯策略接缝**：`AllowsAdvance` / `Decide`，规则 `State==Applied && FailedCount==0 && RetainedOldCount==0`；给出可区分的阻止原因；文档注释内登记了**饥饿风险**——永久不可读文件 ⇒ checkpoint 永不推进、每轮重扫但不漏文件）· `QuotaEnforcingDirectory.cs`（**S3b 写入期配额硬限**：`FilterDirectory` 子类 + `IndexOutput` 计数代理，超限抛专用异常）· `IndexSizeReport.cs`（体积增长机器可读报告）· `IndexWriteQuotaExceededException.cs`（越界异常，携带文件名/已写字节/允许增长/预算/越界量）· `LuceneFullTextIndexMaintenanceEngine.cs`（**S3a/S3b 真实 Lucene 局部写内核 + path inventory + 写入期配额硬限**：`ApplyChangesAsync` 单批 `CREATE_OR_APPEND`，**内容先提取→后 delete/add**、提取失败绝不进 delete 集合、单批 `Commit`、取消/Busy/quota 超限一律不提交；`CheckpointAdvanced` 是**产物** = `CheckpointAdvancePolicy.AllowsAdvance` **且** 输入的 `RequiresCheckpointAdvance`（**显式取交集**：策略为唯一真源，输入只能否决、不能强制为真）。`ProbeIntegrityAsync` **未实现**（显式 `NotSupportedException`，属 S3d，绝不伪装 Healthy）） |
+| `Maintenance/` | **局部维护（S3a/S3b/S3c）+ 纯逻辑（零 IO / 零线程）**：`MaintenanceCheckpoint.cs`（checkpoint 模型 + 协议 JSON + 路径解析，**只经 `FullTextIndexPaths`**）· `MTimeComparison.cs`（`>=` 判定 / `effective = watermark - overlap` / `ComputeNextWatermark` 取**扫描开始**时刻 / 时钟回拨判定 / stat 稳定性）· `FullTextChangeCoalescer.cs`（per-path latest-wins / `Sources` 位或 / rename 折叠 / 越界拒绝）· `MaintenanceOptions.cs`（fail-closed 校验，默认全关）· `CheckpointAdvancePolicy.cs`（**决定「本轮要不要推进 checkpoint」的纯策略接缝**：`AllowsAdvance` / `Decide`，规则 `State==Applied && FailedCount==0 && RetainedOldCount==0`；给出可区分的阻止原因；文档注释内登记了**饥饿风险**——永久不可读文件 ⇒ checkpoint 永不推进、每轮重扫但不漏文件）· `QuotaEnforcingDirectory.cs`（**S3b 写入期配额硬限**：`FilterDirectory` 子类 + `IndexOutput` 计数代理，超限抛专用异常）· `IndexSizeReport.cs`（体积增长机器可读报告）· `IndexWriteQuotaExceededException.cs`（越界异常，携带文件名/已写字节/允许增长/预算/越界量）· `IndexRootWriteGate.cs`（**S3c 进程级 index-root 写者闸门**：按索引根规范键分桶，§4.2 末条「多 scope 增量提交默认全局串行」的落地）· `ScopeReaderInvalidation.cs`（**S3c 查询侧 reader 失效接缝** `IScopeReaderInvalidation` + 转调 `LuceneSearchEngine.InvalidateScope`；public 是因为引擎构造函数是 public，C# 不允许 public 成员暴露 internal 类型）· `LuceneFullTextIndexMaintenanceEngine.cs`（**S3a/S3b/S3c 真实 Lucene 局部写内核 + path inventory + 写入期配额硬限 + 跨进程租约/全局串行/commit 后失效 reader**：`ApplyChangesAsync` 单批 `CREATE_OR_APPEND`，**内容先提取→后 delete/add**、提取失败绝不进 delete 集合、单批 `Commit`、取消/Busy/quota 超限一律不提交；`CheckpointAdvanced` 是**产物** = `CheckpointAdvancePolicy.AllowsAdvance` **且** 输入的 `RequiresCheckpointAdvance`（**显式取交集**：策略为唯一真源，输入只能否决、不能强制为真）。`ProbeIntegrityAsync` **未实现**（显式 `NotSupportedException`，属 S3d，绝不伪装 Healthy）） |
 | `FullTextPolicyFingerprint.cs` | **`.last_indexed.p` patterns 指纹的唯一真源**（S1b 从 `LuceneSearchEngine` 私有方法收敛而来）：`filePatterns ?? "(default)"` → SHA256(UTF-8) → 小写 hex → **前 12 字符**。**不得**改大写 hex / 改截断长度 / 换哈希（会**静默**让全部现存 `.last_indexed` 判为「patterns 变了」⇒ 触发全量重建）；类内**不含**路径命名哈希 |
 
 ## 配置
@@ -29,7 +29,7 @@
 
 ## 测试
 
-`Source/PuddingFullTextIndexTests/` — 全文索引测试（**238 项：通过 234 / 跳过 4**；S3b 前为 232，S3a 前为 222，S2b 前为 207，S2a 前为 192，S1b 前为 180，S1a 前基线为 146）
+`Source/PuddingFullTextIndexTests/` — 全文索引测试（**249 项：通过 245 / 跳过 4**；S3c 前为 238，S3b 前为 232，S3a 前为 222，S2b 前为 207，S2a 前为 192，S1b 前为 180，S1a 前基线为 146）
 
 ## 变更（2026-09-24，ADR-089 U4-6：索引构建遍历改造）
 
@@ -522,3 +522,57 @@ commit 前新增 `WaitForMerges()` + 越界判定，越界走 `catch (Exception 
 
 **⚠️ 仪器教训（本片新增）**：用 PS 5.1 读 TRX 时**中文失败消息会变乱码**（TRX 是 UTF-8、5.1 按 GBK 读），
 但**其中的数字与异常类型仍可读** ⇒ 取字节级证据时要挑数字看，别因为消息乱码就放弃该证据。
+
+## 变更（2026-09-26，S3c：跨进程租约 + 全局串行 + commit 后失效 reader + 并发可见性 · 组件内 · 未接宿主）
+
+**本片补上引擎自己标注的两处缺口**（S3a 类注释原文）：`:27`「② 跨进程 `FileSupplyLease` —— 本片不做（S3c）」、
+`:45`「⑩ `InvalidateScope(scope)` —— 本片不做（S3c）：本类不持有查询侧 reader 缓存」。
+S3b 的 S5 硬门禁结论只覆盖「单 scope / 单进程 / 无并发 reader」，本片正是那之外的部分。
+
+**新增（`Infrastructure/Maintenance/`）**
+
+| 文件 | 行数 | 作用 |
+|---|---|---|
+| `IndexRootWriteGate.cs` | 47 | 进程级 index-root 写者闸门（按索引根规范键分桶）= §4.2 末条「多 scope 增量提交默认全局串行」 |
+| `ScopeReaderInvalidation.cs` | 54 | 查询侧 reader 失效接缝 `IScopeReaderInvalidation` + 真实实现转调 `LuceneSearchEngine.InvalidateScope` |
+| `Tests/LeaseAndVisibilityTests.cs` | 1247 | L1~L7 八个用例 + 两条**永久化探测**（见下） |
+
+**接入点**：引擎构造签名扩为 `(LuceneSearchEngine, FullTextIndexOptions, IFullTextSupplyLease, TimeSpan leaseWaitUpperBound, IScopeReaderInvalidation)`
+（全部 fail-closed 校验，**未**用「可选参数 = null 表示不取租约」这类兼容设计绕过租约）；`ApplyChangesWithReportAsync` 加 ⓪ 全局 index-root gate，
+**加锁顺序固定为 全局 index-root → per-scope → 跨进程租约**（全局是唯一跨 scope 共享资源，放最外层则等待图不成环）；
+写前预检在**临界区内重测 live 字节**并与调用方传入值取**更严**的一侧（`Math.Max`）；租约在**最终 stat 之前**取得，
+commit 成功才失效 reader，租约在 `finally` 无条件释放。`LuceneSearchEngine.cs` 本片 **0 改动**（blob 仍 `beb0c4bc`）。
+
+**★ 一条设计前提被实测证伪（重要，勿再沿用旧假设）**
+codex §6 指定的变异原形态是「删掉 commit 后的 `InvalidateScope` ⇒ 并发 reader 最终可见性测试必须红」。
+**实测结论：取不了红。** 两条永久化探测（PROBE1/PROBE2）：
+- **PROBE1**：已缓存的 reader 在另一个 writer 原地 commit 后**会自刷新** —— `LuceneSearchEngine.GetOrRefreshSearcher`（`:597-647`）用
+  `DirectoryReader.OpenIfChanged(existingReader)`。把失效替身设为「只计数、不转发」后搜索**仍**能看到新 commit
+  （`autoRefresh=YES newHits=1 oldHits=0`）。
+- **PROBE2**：缓存中的 reader **不**阻止索引目录删除（`deleteWithCachedReader=deleted-ok`）⇒ 「句柄释放」形态也观测不到失效效果。
+
+⇒ 在「进程内原地 commit」这一形态下，显式失效对**可见性**是冗余的（它对 `LuceneSearchEngine` 仍必要，原因是**整目录替换**
+（staging 切换 = 旧目录改名移走 + 新目录就位）时旧 Reader 会继续返回过期文档 —— 那条路属 **S3d（staging/切换）与 S5（接宿主）**）。
+因此本片实现的显式失效是**前瞻性接线**，其必要性**尚未在本片范围内被证明**；变异按任务书裁定换成等价形态（红点 = 失效**调用计数**不变量 L6）。
+**「有/无显式失效」的因果链对本进程内可见性未经证明** —— 这是 S3c 最需要被记住的一条限定，勿把「L7 绿」读成「失效调用被证明必要」。
+
+**验证（父级独立复跑，不采信自述）**：组件与 **CLI** 构建均 **0 警告 / 0 错误**；
+`PuddingFullTextIndexTests` **失败 0 / 通过 245 / 跳过 4 / 总计 249**（前 238 ⇒ +11）。
+**两条变异父级亲跑取红**：
+- **M5**（删 commit 后失效调用）⇒ **failed 6**（L1/L2/L3/L4/L6/Probe1，均为 `invalidation.Count` 0≠1），
+  而 **`L7_OUTCOME=Passed`** —— 父级亲眼看证伪了原变异前提。
+- **M6(a)**（拿不到租约也继续写）⇒ **failed 2**（L2/L6），消息 `Assert.AreEqual 失败。应为 <Busy>，实际为 <Applied>`
+  （`FullTextMutationState.Busy` vs `busy.State`）⇒ 断言非空洞、有状态级证据。
+复原三次 `git hash-object` = `8c18df34ba8af114d440bd1edabc493d47147a05` **逐位相同**；终态 failed=0 / passed=245 / total=249；
+`MUTATION` 残留 0（对照 `IndexRootWriteGate`=3、`_readerInvalidation.InvalidateScope`=1）；`%TEMP%` 残留 `pudding-fts-s3c-*` = **0（两轮红跑之后仍为 0）**；
+生产索引根 mtime 仍 `2026-09-25T07:48:46.6377737Z` 未被触碰。
+
+**★ 父级自纠一处未证实的缺陷归因（重要）**：先前把 S3b 的 `%TEMP%` 残留（6 个 `pudding-fts-s3b-*`）归因为
+「`QuotaEnforcementTests` 失败路径不清理」，但本片**试图复现时复现不出来**：把断言临时反转制造真实失败后，残留仍为 0；
+用旧静默清理（`catch (IOException) {}`）复跑同一失败场景，残留**同样为 0**。⇒ **该归因未获证实**（真正的触发条件是
+「删除 rollback 的那两条变异跑」这类**测试宿主异常终止**形态，而非普通断言失败）。本片已把静默清理改成**响亮失败**（隐患消除），
+但不得再把「失败路径不清理」当作已确证缺陷引用。
+
+**未做 / 未验证（如实登记）**：M6(b)「跳过取后重新 stat」**未用变异实测**（字面形态需先新增「等待前 stat 快照」这类代码，不属「删/弱化既有代码」的变异形态）
+⇒ L3 对「stat 顺序倒置」的敏感度**未经变异确认** · 跨进程的全局预算竞争不在本片范围（§4.2 原文把 index-root budget gate 指给协调器层，本片只做维护路径引擎内）·
+`ProbeIntegrityAsync` 仍未实现（S3d）· 多 scope 全局限定于**同进程同一索引根** · 一次**未取红**的变异 Mq（提交前越界判定加条件）已如实登记并解释（越界在写入原语处已抛出，提交前判定只是第二道守卫 ⇒ 行为等价）。

@@ -8,6 +8,7 @@ using PuddingFullTextIndex.Contracts;
 using PuddingFullTextIndex.Infrastructure;
 using PuddingFullTextIndex.Infrastructure.Maintenance;
 using PuddingFullTextIndex.Infrastructure.Search;
+using PuddingFullTextIndex.Infrastructure.Supply;
 using PuddingFullTextIndex.Infrastructure.Text;
 using Directory = System.IO.Directory;
 
@@ -769,7 +770,14 @@ public sealed class LuceneMaintenanceEngineTests
             Options = options;
             CorpusRoot = corpusRoot;
             Search = new LuceneSearchEngine(options, new JiebaAnalyzer(), extractors);
-            Maintenance = new LuceneFullTextIndexMaintenanceEngine(Search, options);
+            // S3c：真实跨进程租约 + 有界等待上界（取自 MaintenanceOptions 的唯一真源）+ 查询侧 reader 失效接缝。
+            // 三者都是**真实实现**：不存在「可选参数 = null 表示不取租约」这类绕过租约的装配。
+            Maintenance = new LuceneFullTextIndexMaintenanceEngine(
+                Search,
+                options,
+                new FileSupplyLease(options),
+                MaintenanceOptions.DefaultLeaseWaitUpperBound,
+                new SearchEngineScopeReaderInvalidation(Search));
         }
 
         internal FullTextIndexOptions Options { get; }

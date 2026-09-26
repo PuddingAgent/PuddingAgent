@@ -78,17 +78,46 @@ public sealed class QuotaEnforcementTests
         Directory.CreateDirectory(_indexRoot);
     }
 
+    /// <summary>
+    /// R8：**失败路径**（断言失败 / 变异取红）也必须把 <c>%TEMP%</c> 清干净。
+    /// <para>
+    /// 旧写法是 <c>catch (IOException) { }</c> —— 静默吞掉清理失败 ⇒ 失败一轮就在 <c>%TEMP%</c> 留下
+    /// <c>pudding-fts-s3b-*</c> 残留目录，且没有任何人被告知。改法：
+    /// 先删 → 必要时 <c>GC.Collect</c> 回收延迟释放的映射/句柄 + 短重试 → 仍失败就把残留**响亮报错**（测试转红）。
+    /// </para>
+    /// <para>
+    /// ⚠️ 如实登记：本片**未能复现**「失败路径残留 1 文件」现象 —— 用「I9 批处理后断言失败」的场景做对照，
+    /// 旧静默清理与新清理的残留都是 0。因此这条修复是把**隐患**（清理失败不可见）变响亮，而不是已证实的某个缺陷的靶向修复。
+    /// </para>
+    /// </summary>
     [TestCleanup]
     public void Cleanup()
+    {
+        var remaining = TryDeleteRoot();
+
+        for (var attempt = 0; attempt < 5 && remaining is not null; attempt++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            Thread.Sleep(50);
+            remaining = TryDeleteRoot();
+        }
+
+        Assert.IsNull(remaining, $"失败路径也必须清理 %TEMP%（残留目录 {_root}：{remaining}）");
+    }
+
+    private string? TryDeleteRoot()
     {
         try
         {
             if (Directory.Exists(_root))
                 Directory.Delete(_root, recursive: true);
+
+            return null;
         }
-        catch (IOException)
+        catch (Exception ex)
         {
-            // 临时目录清理失败不应把测试判红
+            return $"{ex.GetType().Name}: {ex.Message}";
         }
     }
 
@@ -850,7 +879,13 @@ public sealed class QuotaEnforcementTests
             Options = options;
             CorpusRoot = corpusRoot;
             Search = new LuceneSearchEngine(options, new JiebaAnalyzer(), extractors);
-            Maintenance = new LuceneFullTextIndexMaintenanceEngine(Search, options);
+            // S3c：真实跨进程租约 + 有界等待上界（MaintenanceOptions 的唯一真源）+ 查询侧 reader 失效接缝。
+            Maintenance = new LuceneFullTextIndexMaintenanceEngine(
+                Search,
+                options,
+                new FileSupplyLease(options),
+                MaintenanceOptions.DefaultLeaseWaitUpperBound,
+                new SearchEngineScopeReaderInvalidation(Search));
         }
 
         internal FullTextIndexOptions Options { get; }

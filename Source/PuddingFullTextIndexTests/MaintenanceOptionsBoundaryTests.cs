@@ -42,6 +42,7 @@ public sealed class MaintenanceOptionsBoundaryTests
         nameof(MaintenanceOptions.MTimeOverlap),
         nameof(MaintenanceOptions.HealthCheckSliceDelay),
         nameof(MaintenanceOptions.PressureBackoff),
+        nameof(MaintenanceOptions.LeaseWaitUpperBound),
     };
 
     /// <summary>从源码里收集到的**界常量名**清单（与反射实测的公开静态字段清单对照）。</summary>
@@ -57,6 +58,8 @@ public sealed class MaintenanceOptionsBoundaryTests
         "MaxMTimeOverlap",
         "MaxHealthCheckSliceDelay",
         "MaxPressureBackoff",
+        "DefaultLeaseWaitUpperBound",
+        "MaxLeaseWaitAllowed",
     };
 
     /// <summary>基线配置：合法（Enabled=true + 一个绝对 scope + 一个不嵌套的绝对索引根）。</summary>
@@ -122,7 +125,7 @@ public sealed class MaintenanceOptionsBoundaryTests
     }
 
     /// <summary>
-    /// 全量边界矩阵：**8 个阈值 × 每阈值 ≥4（实际 5~6）个采样点**，共 41 行。
+    /// 全量边界矩阵：**9 个阈值 × 每阈值 ≥4（实际 5~6）个采样点**，共 47 行。
     /// 采样值一律取自 <see cref="MaintenanceOptions"/> 公开界常量。
     /// </summary>
     private static List<BoundaryCase> BuildCases()
@@ -164,6 +167,22 @@ public sealed class MaintenanceOptionsBoundaryTests
         cases.Add(new(backoff, "PressureBackoff (0, MaxPressureBackoff]", "at-upper", o => o with { PressureBackoff = MaintenanceOptions.MaxPressureBackoff }, true,
             "上界是闭区间端点 ⇒ 必须接受"));
         cases.Add(new(backoff, "PressureBackoff (0, MaxPressureBackoff]", "above-upper", o => o with { PressureBackoff = MaintenanceOptions.MaxPressureBackoff + OneTick }, false,
+            "上界加 1 tick ⇒ 必须拒绝"));
+
+        // ⑤ S3c：租约有界等待上界 —— 与 ④ 同形（下界 0 开区间、上界闭），但**语义不同**：
+        //    0 被拒不是 off-by-one，而是「0 = 不等待」属供给/构建路径的语义（见 IFullTextSupplyLease 接口注释）。
+        var leaseWait = nameof(MaintenanceOptions.LeaseWaitUpperBound);
+        cases.Add(new(leaseWait, "LeaseWaitUpperBound (0, MaxLeaseWaitAllowed]", "below-lower", o => o with { LeaseWaitUpperBound = -OneTick }, false,
+            "负值 ⇒ 必须拒绝"));
+        cases.Add(new(leaseWait, "LeaseWaitUpperBound (0, MaxLeaseWaitAllowed]", "at-lower-exclusive", o => o with { LeaseWaitUpperBound = TimeSpan.Zero }, false,
+            "0 必须拒绝：维护路径按 §4.4 必须「有界等待」，而「不等待」是供给/构建路径的语义"));
+        cases.Add(new(leaseWait, "LeaseWaitUpperBound (0, MaxLeaseWaitAllowed]", "just-inside-lower", o => o with { LeaseWaitUpperBound = OneTick }, true,
+            "1 tick 是开下界的第一个可接受值 ⇒ 必须接受"));
+        cases.Add(new(leaseWait, "LeaseWaitUpperBound (0, MaxLeaseWaitAllowed]", "mid", o => o with { LeaseWaitUpperBound = TimeSpan.FromSeconds(30) }, true,
+            "区间内部 ⇒ 必须接受（对照）"));
+        cases.Add(new(leaseWait, "LeaseWaitUpperBound (0, MaxLeaseWaitAllowed]", "at-upper", o => o with { LeaseWaitUpperBound = MaintenanceOptions.MaxLeaseWaitAllowed }, true,
+            "上界是闭区间端点 ⇒ 必须接受"));
+        cases.Add(new(leaseWait, "LeaseWaitUpperBound (0, MaxLeaseWaitAllowed]", "above-upper", o => o with { LeaseWaitUpperBound = MaintenanceOptions.MaxLeaseWaitAllowed + OneTick }, false,
             "上界加 1 tick ⇒ 必须拒绝"));
 
         return cases;
@@ -214,7 +233,7 @@ public sealed class MaintenanceOptionsBoundaryTests
 
         // 行数自证
         Assert.AreEqual(cases.Count, evaluated, "矩阵必须逐行执行（行数自证）");
-        Assert.AreEqual(ExpectedOptionNames.Length * 5 + 1, cases.Count, "8 个域各 5 采样点 + PressureBackoff 多 1 行 = 41（行数自证）");
+        Assert.AreEqual(ExpectedOptionNames.Length * 5 + 2, cases.Count, "9 个域各 5 采样点 + PressureBackoff / LeaseWaitUpperBound 各多 1 行 = 47（行数自证）");
 
         // 覆盖对照（防静默漏项）：矩阵实际覆盖到的选项名集合 与 源码收集清单逐项相等
         CollectionAssert.AreEquivalent(
@@ -289,6 +308,7 @@ public sealed class MaintenanceOptionsBoundaryTests
                 "MinRecoveryScanInterval", "MaxRecoveryScanInterval",
                 "MinHealthCheckInterval", "MaxHealthCheckInterval",
                 "MaxMTimeOverlap", "MaxHealthCheckSliceDelay", "MaxPressureBackoff",
+                "DefaultLeaseWaitUpperBound", "MaxLeaseWaitAllowed",
             },
             spanStatics.Select(f => f.Name).ToArray(),
             "时间域界必须是 static readonly TimeSpan");
@@ -308,7 +328,7 @@ public sealed class MaintenanceOptionsBoundaryTests
         var beyondUpper = BuildCases().Where(c => c.Sample == "above-upper").ToArray();
 
         Assert.AreEqual(ExpectedOptionNames.Length, beyondUpper.Length,
-            "每个阈值必须恰好有一个「越上界一档」采样点（8 个域 ⇒ 8 行）");
+            "每个阈值必须恰好有一个「越上界一档」采样点（行数 = 域数）");
 
         foreach (var item in beyondUpper)
         {
