@@ -294,7 +294,9 @@ public sealed class LuceneFullTextIndexMaintenanceEngine : IFullTextIndexMainten
 
         // ── ② 跨进程租约：**每个合并批次获取一次**（§4.4）；拿不到 ⇒ 有界等待，超时 ⇒ Busy ──
         // （守卫 A / B 都只读、不写，放在取租约之前：不值得为必然被拒的批次去动跨进程租约文件。）
-        var leaseOwner = SupplyLeaseOwner.ForCurrentProcess();
+        // 角色必须显式：供给路径用 Supply、维护路径用 Maintenance ⇒ 同进程内两条路径的默认 owner 不同，
+        // 不会被租约判成「自己人」而重入（缺陷 ②）。同一角色跨批次仍可重入（见 ForCurrentProcess 注释）。
+        var leaseOwner = SupplyLeaseOwner.ForCurrentProcess(SupplyLeaseRole.Maintenance);
         var leaseAttempt = await AcquireLeaseWithinBoundAsync(changeSet, leaseOwner, cancellationToken)
             .ConfigureAwait(false);
 

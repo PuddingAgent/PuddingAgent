@@ -1,14 +1,22 @@
 namespace PuddingFullTextIndex.Contracts;
 
 /// <summary>租约持有者身份（owner 标识 + 进程号 + 机器名）。</summary>
-/// <param name="OwnerId">owner 标识，默认 <c>机器名#进程号</c>。</param>
+/// <param name="OwnerId">owner 标识，默认 <c>机器名#进程号#角色</c>（见 <see cref="ForCurrentProcess"/>）。</param>
 /// <param name="ProcessId">进程号。</param>
 /// <param name="MachineName">机器名。</param>
 public sealed record SupplyLeaseOwner(string OwnerId, int ProcessId, string MachineName)
 {
-    /// <summary>当前进程的默认身份。</summary>
-    public static SupplyLeaseOwner ForCurrentProcess() =>
-        new($"{Environment.MachineName}#{Environment.ProcessId}", Environment.ProcessId, Environment.MachineName);
+    /// <summary>
+    /// 当前进程在指定角色下的默认身份：<c>机器名#进程号#角色</c>。
+    /// <para>
+    /// <b>没有无参重载</b>（删除它是本修复的一部分）：角色是「谁在写」的一部分身份，
+    /// 必须由调用点在编译期显式表态，不得靠默认值蒙混 —— 否则同进程内两条路径又会拿到同一个
+    /// <c>OwnerId</c>，被租约判成「自己人」而重入，互斥形同虚设。
+    /// </para>
+    /// </summary>
+    /// <param name="role">调用方所属角色（供给 / 维护）。</param>
+    public static SupplyLeaseOwner ForCurrentProcess(SupplyLeaseRole role) =>
+        new($"{Environment.MachineName}#{Environment.ProcessId}#{role}", Environment.ProcessId, Environment.MachineName);
 }
 
 /// <summary>已取得的租约（值对象）。</summary>

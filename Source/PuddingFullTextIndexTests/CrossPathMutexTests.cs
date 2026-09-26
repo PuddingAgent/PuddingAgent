@@ -35,14 +35,16 @@ namespace PuddingFullTextIndexTests;
 /// （而非任务书设想的某个「维护 scope 描述符工厂」——组件内并不存在这样的工厂），供给侧入口 = <c>SupplyScopeNormalizer</c>。
 /// </para>
 /// <para>
-/// <b>★ 本片结论（实测，详见 <c>temp/s3e-report.md</c>）</b>：
+/// <b>★ 结论（S3e 实测 → 2026-09-26 修复后重钉）</b>：
 /// <list type="number">
 /// <item><description><b>普通目录：已证实</b> —— 两条路径经同一 <c>ToScopeKey</c> 口径得到逐字符相同的键
 /// ⇒ 同一个租约文件 ⇒ 行为级互斥（M1/M2/M4a/M4b）。</description></item>
-/// <item><description><b>盘根形态：已证伪</b> —— 供给侧保盘根（<c>"c:\"</c>），维护侧 <c>NormalizeComparisonKey</c>
-/// 去尾分隔符后<b>不</b>补回（<c>"c:"</c>）⇒ 不同租约文件 ⇒ 不互斥（M2 的 <c>drive-root-invariant-falsified</c>）。</description></item>
-/// <item><description><b>同进程默认身份：不互斥</b> —— 租约按 <c>OwnerId</c> 判「自己人」而重入，
-/// 而供给协调器与维护内核的默认 owner 相同 ⇒ 同进程内两条路径可并发（M4c）。</description></item>
+/// <item><description><b>盘根形态：已修复（回归钉）</b> —— S3e 片实测为两个键（供给侧 <c>"c:\"</c>、维护侧 <c>"c:"</c>）。
+/// 修复后两侧都经 <c>SupplyScopeNormalizer.TrimTrailingSeparators</c>（保盘根）⇒ 同键 / 同租约文件
+/// （M2 的 <c>drive-root-invariant</c>；变异 M-F1 会让它变红）。</description></item>
+/// <item><description><b>同进程默认身份：已修复（回归钉）</b> —— S3e 片实测两条路径的默认 owner 相同 ⇒ 重入 ⇒ 不互斥。
+/// 修复后 <c>ForCurrentProcess</c> 必须传角色，供给 / 维护分别拿到不同 <c>OwnerId</c> ⇒ 第二条被拒（M4c；
+/// 变异 M-F2 会让它变红）。两条路径的**进程内**闸门仍不是同一把（本类不声明超过跨路径租约这一层）。</description></item>
 /// </list>
 /// </para>
 /// <para>
@@ -185,7 +187,7 @@ public sealed class CrossPathMutexTests
     [DataRow("dot-segment")]
     [DataRow("dotdot-segment")]
     [DataRow("already-normalized-idempotent")]
-    [DataRow("drive-root-invariant-falsified")]
+    [DataRow("drive-root-invariant")]
     [DataRow("relative-vs-absolute")]
     [DataRow("missing-absolute")]
     public void M2_Boundary_Matrix_Each_Input_Is_Judged_On_Its_Own(string caseName)
@@ -222,31 +224,27 @@ public sealed class CrossPathMutexTests
                 Assert.AreEqual(1, supply.Accepted.Count, $"{caseName}：供给侧必须恰好接受 1 个 scope");
                 Assert.IsNull(maintenanceError, $"{caseName}：维护侧推导不得抛异常（{maintenanceError}）");
 
-                if (caseName == "drive-root-invariant-falsified")
+                if (caseName == "drive-root-invariant")
                 {
-                    // ★ 本片最重要的输出：盘根形态下两侧**不同键** ⇒ I-MUTEX 在此输入上**被证伪**（实测，非推理）。
-                    // 机理：供给侧保盘根（"c:\"）；维护侧 NormalizeComparisonKey 先 TrimEnd 分隔符、
-                    // 只在「裁剪后为空」时才补回，故盘根变成 "c:" ⇒ 两条路径落在**不同租约文件**上
-                    // ⇒ 并发写同一索引目录不可能被租约挡住。
-                    // 红线 R5：不为让断言变绿而放宽、也不允许本片顺手改生产代码 ⇒ 这里把**实测值**钉住，
-                    // 证伪结论与 RED 原始输出见 temp/s3e-report.md 的 BLOCKERS。
+                    // ★ 本行原为「证伪钉」（S3e 片实测盘根两侧不同键 ⇒ I-MUTEX 被证伪）；
+                    // 修复后**反向钉住正确行为**：盘根两侧必须逐字符同键 ⇒ 同一租约文件 ⇒ 互斥。
+                    // 机理：两侧都经 SupplyScopeNormalizer.TrimTrailingSeparators（保盘根）。
+                    // 变异 M-F1（把维护侧改回裸 TrimEnd）会让本分支变红。
                     var driveRoot = Path.GetPathRoot(_corpus)!;
                     var rootPreservingKey = driveRoot.ToLowerInvariant();
-                    var rootStrippingKey = driveRoot.TrimEnd('\\', '/').ToLowerInvariant();
 
-                    Assert.AreEqual(rootPreservingKey, supplyKeyOf(supply), "实测：供给侧（保盘根）对盘根给出的键");
                     Assert.AreEqual(
-                        rootStrippingKey,
-                        maintenanceKey,
-                        "实测：维护侧对盘根**去掉**尾分隔符且不补回（键比供给侧少一个尾分隔符）");
-                    Assert.AreNotEqual(
                         rootPreservingKey,
+                        supplyKeyOf(supply),
+                        "盘根：供给侧（保盘根）必须给出 c:\\ 形态的键");
+                    Assert.AreEqual(
+                        supplyKeyOf(supply),
                         maintenanceKey,
-                        "I-MUTEX 要求两键逐字符相同；实测不同 ⇒ 该输入上不变量被证伪");
-                    Assert.AreNotEqual(
+                        "★ 修复后：盘根下两侧键必须逐字符相同（否则同一语料根落在两个租约文件上）");
+                    Assert.AreEqual(
                         FileSupplyLease.ResolveLeaseFilePath(options, supplyKeyOf(supply)),
                         FileSupplyLease.ResolveLeaseFilePath(options, maintenanceKey!),
-                        "★ 已证伪：盘根语料根下两条路径推出**不同的租约文件** ⇒ 二者不互斥（I-MUTEX 在此输入上不成立）");
+                        "★ 修复后：盘根下两条路径必须推出同一个租约文件（互斥的承载面）");
                     break;
                 }
 
@@ -323,7 +321,7 @@ public sealed class CrossPathMutexTests
         "dot-segment" => Path.Combine(_corpus, "."),
         "dotdot-segment" => Path.Combine(CreateSubDirectory(), ".."),
         "already-normalized-idempotent" => SupplySideKey(_corpus),
-        "drive-root-invariant-falsified" => Path.GetPathRoot(_corpus)!,
+        "drive-root-invariant" => Path.GetPathRoot(_corpus)!,
         "relative-vs-absolute" => @"Source\PuddingFullTextIndex",
         "missing-absolute" => _corpus + "-does-not-exist",
         _ => throw new ArgumentOutOfRangeException(nameof(caseName), caseName, "未知的边界矩阵用例"),
@@ -476,22 +474,32 @@ public sealed class CrossPathMutexTests
     }
 
     /// <summary>
-    /// M4 的**边界**（如实钉住，不是把缺陷当正确）：文件租约以 <c>OwnerId</c> 判「自己人」，
-    /// 而供给协调器与维护内核的**默认 owner 都是** <see cref="SupplyLeaseOwner.ForCurrentProcess"/> ⇒
-    /// 同一进程内，第二条路径会**重入成功**而不是被拒。
+    /// M4c（**已升级为回归钉**）：同进程**默认身份**下两条路径**必须**互斥。
     /// <para>
-    /// 结论：I-MUTEX 只在「owner 可区分」（跨进程 / 显式不同 OwnerId）时成立；
-    /// 同进程默认身份下两条路径不互斥 —— 且两条路径的**进程内**闸门也不是同一把
-    /// （供给协调器的 per-scope gate vs <c>LuceneSearchEngine.GetScopeGate</c> + <c>IndexRootWriteGate</c>）。
-    /// 该结论进 <c>temp/s3e-report.md</c> 的 RISKS/BLOCKERS。
+    /// 历史：修复前本用例是「如实钉住缺陷」的边界用例 —— 租约以 <c>OwnerId</c> 判「自己人」，
+    /// 而供给协调器与维护内核的默认 owner 都是无参 <c>ForCurrentProcess()</c>
+    /// ⇒ 同进程内第二条路径重入成功 ⇒ 不互斥。
+    /// </para>
+    /// <para>
+    /// 修复：<see cref="SupplyLeaseOwner.ForCurrentProcess"/> **必须传角色**，默认身份为
+    /// <c>机器名#进程号#角色</c>；供给协调器用 <see cref="SupplyLeaseRole.Supply"/>、
+    /// 维护内核用 <see cref="SupplyLeaseRole.Maintenance"/> ⇒ 同进程内两条路径的默认 owner 天然不同
+    /// ⇒ 第二条被如实拒绝（不再是重入）。变异 M-F2（去掉角色段）会让本用例前半段变红。
+    /// </para>
+    /// <para>
+    /// 防过度修复（保持既有语义）：**同一角色**在同一进程内**跳批次仍可重入**（本用例末两条断言）。
+    /// 两条路径的**进程内**闸门仍不是同一把（供给协调器的 per-scope gate vs
+    /// <c>LuceneSearchEngine.GetScopeGate</c> + <c>IndexRootWriteGate</c>）；本用例证明的是
+    /// **跨路径租约**这一层。
     /// </para>
     /// </summary>
     [TestMethod]
-    public async Task M4c_Boundary_Same_OwnerId_Reentrancy_Means_Two_Paths_In_One_Process_Are_Not_Mutually_Exclusive()
+    public async Task M4c_Same_Process_Default_Owners_Carry_Role_So_Two_Paths_Are_Mutually_Exclusive()
     {
         var options = Options();
         var lease = new FileSupplyLease(options);
-        var sameOwner = SupplyLeaseOwner.ForCurrentProcess();
+        var maintenanceOwner = SupplyLeaseOwner.ForCurrentProcess(SupplyLeaseRole.Maintenance);
+        var supplyOwner = SupplyLeaseOwner.ForCurrentProcess(SupplyLeaseRole.Supply);
 
         var maintenanceKey = MaintenanceSideKey(_corpus);
         var supplyKey = SupplySideKey(_corpus);
@@ -499,26 +507,42 @@ public sealed class CrossPathMutexTests
         Assert.AreEqual(
             FileSupplyLease.ResolveLeaseFilePath(options, maintenanceKey),
             FileSupplyLease.ResolveLeaseFilePath(options, supplyKey),
-            "前置：两条路径确实指向同一个租约文件（否则本用例证明的不是重入）");
+            "前置：两条路径确实指向同一个租约文件（否则本用例证明的不是互斥）");
+
+        Assert.AreNotEqual(
+            maintenanceOwner.OwnerId,
+            supplyOwner.OwnerId,
+            "成因②的修复：两条路径的默认 owner 必须因**角色**而不同（否则又被判「自己人」而重入）");
 
         Assert.AreEqual(
-            sameOwner.OwnerId,
+            supplyOwner.OwnerId,
             new SupplyCoordinatorOptions().OwnerId,
-            "成因：供给协调器的默认 owner 与维护内核硬编码的 owner 都是 ForCurrentProcess()（同一进程 ⇒ 同一 OwnerId）");
+            "供给协调器的默认 owner 必须落在 Supply 角色上");
 
-        var first = await lease.TryAcquireAsync(maintenanceKey, sameOwner, "maintenance-batch-01");
+        var first = await lease.TryAcquireAsync(maintenanceKey, maintenanceOwner, "maintenance-batch-01");
         Assert.IsTrue(first.Acquired, first.Message);
 
-        var second = await lease.TryAcquireAsync(supplyKey, sameOwner, "supply-job-01");
-        Assert.IsTrue(
-            second.Acquired,
-            "实测：同一 OwnerId 被视为可重入 ⇒ 同进程内维护与供给两条路径**并不互斥**（跨进程才互斥）");
+        var refused = await lease.TryAcquireAsync(supplyKey, supplyOwner, "supply-job-01");
+        Assert.IsFalse(
+            refused.Acquired,
+            "★ 修复后：同进程内供给路径在维护路径持租约时必须被拒，实际取得了 ⇒ 两条路径仍未互斥");
+        Assert.IsNotNull(refused.Holder, "拒绝必须报出当前持有者");
+        Assert.AreEqual(maintenanceOwner.OwnerId, refused.Holder!.OwnerId, "拒绝必须点名真正的持有者（维护角色）");
 
         var holder = await lease.DescribeHolderAsync(maintenanceKey);
-        Assert.IsNotNull(holder, "重入后租约文件必须仍可读");
-        Assert.AreEqual("supply-job-01", holder!.JobId, "重入覆盖了 job 归属 ⇒ 原持有者的批次与实际写入者不再可区分");
+        Assert.IsNotNull(holder, "被拒后租约文件必须仍可读");
+        Assert.AreEqual("maintenance-batch-01", holder!.JobId, "拒绝 ⇒ 不得覆盖原持有者的 job 归属");
 
-        TestContext.WriteLine($"M4c sameOwner={sameOwner.OwnerId} secondAcquiredJob={holder.JobId}");
+        // 防过度修复：**同一角色**同进程跳批次仍必须可重入。
+        var reentrant = await lease.TryAcquireAsync(maintenanceKey, maintenanceOwner, "maintenance-batch-02");
+        Assert.IsTrue(reentrant.Acquired, "同一角色跳批次必须仍可重入，否则同一 scope 会被自己永久 Busy");
+        Assert.AreEqual(
+            first.Lease!.StartedAtUtc,
+            reentrant.Lease!.StartedAtUtc,
+            "重入不得重置起始时间");
+
+        TestContext.WriteLine(
+            $"M4c maintenance={maintenanceOwner.OwnerId} supply={supplyOwner.OwnerId} refused={!refused.Acquired}");
     }
 
     // ── M5：IndexRootWriteGate 的层级声明（文本级，带正/负对照）────────────

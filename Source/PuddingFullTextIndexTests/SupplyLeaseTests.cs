@@ -124,7 +124,7 @@ public sealed class SupplyLeaseTests
         using var fixture = new TempSupplyFixture();
         var lease = new FileSupplyLease(fixture.Options);
 
-        var acquired = await lease.TryAcquireAsync(fixture.ScopeKey, SupplyLeaseOwner.ForCurrentProcess(), "job-xyz");
+        var acquired = await lease.TryAcquireAsync(fixture.ScopeKey, SupplyLeaseOwner.ForCurrentProcess(SupplyLeaseRole.Supply), "job-xyz");
         Assert.IsTrue(acquired.Acquired, acquired.Message);
 
         var expectedName = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(fixture.ScopeKey))) + ".json";
@@ -150,7 +150,7 @@ public sealed class SupplyLeaseTests
         var t0 = new DateTimeOffset(2026, 9, 25, 2, 0, 0, TimeSpan.Zero);
         var now = t0;
         var lease = new FileSupplyLease(fixture.Options, utcNow: () => now);
-        var owner = SupplyLeaseOwner.ForCurrentProcess();
+        var owner = SupplyLeaseOwner.ForCurrentProcess(SupplyLeaseRole.Supply);
 
         var acquired = await lease.TryAcquireAsync(fixture.ScopeKey, owner, "job-1");
         Assert.IsTrue(acquired.Acquired, acquired.Message);

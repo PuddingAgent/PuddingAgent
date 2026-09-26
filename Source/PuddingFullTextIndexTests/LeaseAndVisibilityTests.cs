@@ -159,9 +159,9 @@ public sealed class LeaseAndVisibilityTests
         Assert.AreEqual("L1-SCOPE-KEY-VERBATIM", result.ScopeKey);
         Assert.AreEqual(changeSet.BatchId, lease.LastJobId, "租约里记录的 job 必须是本批的 BatchId（可查「谁在跑哪个 job」）");
         Assert.AreEqual(
-            SupplyLeaseOwner.ForCurrentProcess().OwnerId,
+            SupplyLeaseOwner.ForCurrentProcess(SupplyLeaseRole.Maintenance).OwnerId,
             lease.LastOwnerId,
-            "持有者身份必须是当前进程");
+            "持有者身份必须是当前进程的**维护**角色（角色是身份的一部分，见 SupplyLeaseRole）");
         Assert.AreEqual(0, lease.ConcurrentHolders, "释放后不得还持有");
 
         Assert.AreEqual(1, invalidation.Count, "commit 成功 ⇒ 失效恰好 1 次");

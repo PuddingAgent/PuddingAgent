@@ -616,3 +616,54 @@ codex §6 指定的变异原形态是「删掉 commit 后的 `InvalidateScope` �
 - **零生产改动**：终态 `git status --porcelain -- Source/PuddingFullTextIndex Source/PuddingFullTextIndexTests` 仅 `?? Source/PuddingFullTextIndexTests/CrossPathMutexTests.cs`（本条目是唯一文档追加）；生产索引根 `D:\data\fulltext-index` 全程只读（测试根硬断言不以 `D:\data` 开头、全部落 `%TEMP%`）。完整证据与 RED 原始输出见 `temp/s3e-report.md`。
 - ⚠️ **未做 / 未证实（如实登记）**：盘根不一致**未修**（本片红线禁止改生产代码；修复属生产切片）· 真正的跨**进程**并发写入未被构造（M4 用可区分 OwnerId 在同进程内制造「另一个持有者」，符合租约的真实判据）· `ProbeIntegrityAsync` 返回的 `scopeKey` 同样受盘根口径影响，但其消费方（诊断输出）不在本片范围。
 - ⚠️ **仪器陷阱（父级验收时踩到并已证实，今后变异类验收必须遵守）**：`Copy-Item` 复原**保留源文件的 LastWriteTime**（实测 `.bak` 与复原后源文件同为 `11:42:28.511`），而变异期编译出的 `PuddingFullTextIndex.dll` 为 `11:49:46` ⇒ MSBuild 判定 up-to-date、**不重编译** ⇒ 直接 `dotnet test` 会跑在**变异后的二进制**上，复现出**假红**（父级首次复跑得 `failed=10`，源 hash 却已逐位复原）。反之，若源文件恰好比产物新，同样的做法会给出**假绿**（「变异从未被编译」）。⇒ **恢复源码 ≠ 恢复构建产物**。变异类验收必须：① 用 `-t:Rebuild`（或写入时刷新时间戳）强制重编译后再判定；② **核对产物 SHA-256** —— 源码 `git hash-object` 只能证明源码复原，不能证明二进制复原。
+
+## 变更（2026-09-26，修复：同一语料根上「维护直写」与「供给整目录替换」不互斥 · 两个成因的**生产修复片**）
+
+**缺陷来源**：S3e 片（commit `cecfcc1`）实测证伪（`temp/s3e-report.md` §7，本文件下方 S3e 条目已如实登记「盘根不一致**未修**」），本片是它的修复片。任务书 `temp/fix-cross-path-exclusion-task.md`；完整证据 `temp/fix-exclusion-report.md`。
+
+- **成因① 「盘根键不一致 + 前缀判定在盘根键下失效」**：供给侧 `SupplyScopeNormalizer` 保盘根（`c:\`），维护侧 `FullTextChangeCoalescer.NormalizeComparisonKey` 用裸 `TrimEnd`（`c:`）⇒ 同一盘根语料根推出**两个租约文件** ⇒ 不互斥；且**两份重复实现**的 `IsAncestorOrSame` 都无条件拼 `"\"` ⇒ 盘根键得到 `c:\\` 前缀 ⇒ 父子嵌套 / 越界判定**恒 false**。
+- **成因② 「同进程默认身份下两条路径不互斥」**：文件租约以 `OwnerId` 判「自己人」而**重入**，而供给协调器与维护内核的默认 owner 都是无参 `SupplyLeaseOwner.ForCurrentProcess()` ⇒ 同进程内两条路径可并发写同一索引目录（只有跨进程才互斥）。
+
+**修改生产（7 文件：6 改 + 1 新增契约）**
+
+| 文件 | 行数（改前 → 改后） | numstat | 作用 |
+|------|------|------|------|
+| `Contracts/SupplyLeaseRole.cs` | 新增 **25** | — | **新公开枚举** `Supply / Maintenance`：角色是 owner 身份的一部分 ⇒ 编译期必须显式表态 |
+| `Contracts/IFullTextSupplyLease.cs` | 67 → **75** | +12/−4 | `ForCurrentProcess(SupplyLeaseRole)`（**删除无参重载**）；`OwnerId = 机器名#进程号#角色` |
+| `SupplyCoordinatorOptions.cs` | 78 → 78 | +2/−2 | 默认 `OwnerId` 走 `SupplyLeaseRole.Supply` |
+| `Infrastructure/Supply/SupplyScopeNormalizer.cs` | 143 → **181** | +42/−4 | 收为**单一真源**：`TrimTrailingSeparators` 提为 `internal`（保盘根）· `IsAncestorOrSame`（祖先键本身以 `\` 结尾时**不再补分隔符**）· `IsWithinScopeKey`（不含根自身） |
+| `Infrastructure/Maintenance/FullTextChangeCoalescer.cs` | 317 → **314** | +12/−15 | `NormalizeComparisonKey` 改走保盘根裁剪真源；**删除**私有 `IsWithinScopeKey`（改调真源） |
+| `Infrastructure/Maintenance/MaintenanceOptions.cs` | 476 → **474** | +4/−6 | **删除**私有 `IsAncestorOrSame`（改调真源，+`using …Infrastructure.Supply`） |
+| `Infrastructure/Maintenance/LuceneFullTextIndexMaintenanceEngine.cs` | 1207 → **1209** | +3/−1 | 维护侧 owner 走 `SupplyLeaseRole.Maintenance` |
+
+**新增测试（1 文件 / +13 用例）**：`Source/PuddingFullTextIndexTests/CrossPathExclusionFixTests.cs`（415 行）——
+F1 盘根键统一（键 + 租约文件路径，**只算不写**）· F2 前缀判定矩阵 8 行 · F3 单一真源（文本级 + 正/负对照）·
+F4 **默认身份**下行为级互斥（真实协调器 + 真实内核 + 真实文件租约：供给持租约 ⇒ 维护 `Busy`/未提交/0 次失效，释放后同变更集 `Applied`）·
+F5 同角色同进程跨批次仍可重入且**起始时间不被重置**（注入时钟推进 30s）· F6 盘根 scope 含子文件但**不含自身**。
+**修改测试（3 文件）**：`CrossPathMutexTests.cs`（672 → 696，+67/−43）—— 其中 M2 的 `drive-root-invariant-falsified` 行**反向重钉**为 `drive-root-invariant`、M4c 由「如实钉住缺陷」**升级为回归钉**并改名（`M4c_Same_Process_Default_Owners_Carry_Role_So_Two_Paths_Are_Mutually_Exclusive`）；`SupplyLeaseTests.cs`（205，2 处补角色）· `LeaseAndVisibilityTests.cs`（1247，1 处补角色）。
+⚠️ 这两处既有用例**原本钉的就是本片要修的缺陷**，修复必然使其断言反转 —— 这是**反向重钉，不是放宽断言**：重钉后变异 M-F1 / M-F2 仍能让它们变红（见下）。
+
+**验证（父级亲跑，不采信自述）**：组件构建 **0 警告 / 0 错误**；CLI 构建 **0 警告 / 0 错误**；CLI 测试 **45/45**；组件测试 **total=314 / passed=310 / failed=0 / skipped=4**（= 既有 301 条全绿 + 本片 13 条），且**连续 7 次全绿**。
+**变异三态（源码 `git hash-object` + 产物 SHA-256 双向核对，`-t:Rebuild` 强制重编译）**：DLL 基线 `15CA8FB5…64C186`；
+M-F1（维护侧改回裸 `TrimEnd`）⇒ `failed=2`（F1 + M2 盘根行，原文 `expected "c:\" / actual "c:"`）、DLL `15CA8FB5…` → `8745F830…`；
+M-F1b/M-F1c（叠加 / 单独复原前缀判定）⇒ F2 两条盘根行 + F6 变红、既有 M2 盘根行同时变红；
+M-F2（去掉角色段）⇒ `failed=2`（F4 原文 `expected <Busy> / actual <Applied>` + M4c 身份断言）、DLL `15CA8FB5…` → `D2A82046…`；
+两次复原后 `-t:Rebuild` 且 DLL **逐位回同** `15CA8FB5279BF6C9AAD94C7A789CF339939CC4F800A5B3C76874BED10364C186`；`MUTATION-M-F` 残留 **0**（活对照 `IsAncestorOrSame` 命中 5）。
+**宿主引用复核（R1 要求）**：全仓 `Source/` 递归（排除 bin/obj）`SupplyLeaseOwner` / `ForCurrentProcess` / `IFullTextSupplyLease` 的调用点只在
+组件本体、组件测试、CLI 组合根（`Source/PuddingFullTextIndex.Cli/SupplyCliHost.cs`，**只用接口类型**）与其测试；`Source/PuddingRuntime` 仅
+`Tools/BuiltIns/Search/SearchGrepTool.cs:8` 有 `using PuddingFullTextIndex.Contracts;` ⇒ **宿主未被改动、无需重启**。
+**未做 / 未证实（如实登记）**：`MaintenanceLoopTests.M3` 在一次变异跑中出现 1 次 `PendingChangeCount 2→3`，其后 7 次全绿复跑未复现，
+登记为**既有间歇性用例候选**（未改动，本片不夹带）· 生产索引根 `D:\data\fulltext-index` 全程只读（测试根硬断言不以 `D:\data` 开头、全部落 `%TEMP%`）。
+
+**父级独立验收（2026-09-26，不采信自述）**：git 范围**恰好 12 文件**（10 改 + 2 新增），与他述逐条吻合；组件 `-t:Rebuild` **0 警告 / 0 错误**、CLI `-t:Rebuild` **0 警告 / 0 错误**、CLI 测试 **45/45**。
+父级**亲跑**两条变异（`temp/mut-fix-verify.ps1`，ASCII-only，`-t:Rebuild` + DLL SHA-256 三态）：
+**M-F1**（维护侧改回裸 `TrimEnd`）⇒ `failed=2`，红点**恰好** `F1_Drive_Root_Yields_The_Same_ScopeKey_And_The_Same_Lease_File_On_Both_Paths` + `M2_Boundary_Matrix…("drive-root-invariant")`，DLL `15CA8FB5…64C186` → `AA18F35C…`；
+**M-F2**（删掉角色段）⇒ `failed=2`，红点**恰好** `F4_Default_Owners_Make_Supply_Hold_Block_Maintenance_With_Busy` + `M4c_…MutuallyExclusive`，DLL → `C5DA7EDE…`；
+两次复原**源码 `Get-FileHash` 逐位相同**，末次 `-t:Rebuild` 后 **DLL 逐位回同 `15CA8FB5279BF6C9AAD94C7A789CF339939CC4F800A5B3C76874BED10364C186`**（与子代理自述基线值一致），终态全量 **total=314 / passed=310 / failed=0**。
+残留扫描（大小写敏感，带活对照）：`MUTATION-M-F` **0** 命中，活对照 `IsAncestorOrSame` **5** 命中。单一真源另经独立复核：`IsAncestorOrSame` / `IsWithinScopeKey` / `TrimTrailingSeparators` 三个成员在组件内**各恰好 1 处定义**（均在 `SupplyScopeNormalizer.cs`）。生产索引根全程未被触碰（225 条目 / mtime `2026-09-25T07:48:46.6377737Z` 未变）。
+⚠️ **父级新发现的既有缺陷（非本片引入，已用基线对照证实）**：`MaintenanceLoopTests.M2_Lifecycle_IsIdempotentAndReentrant` 存在**竞态** ——
+`LuceneFullTextIndexMaintenance.cs:1186` `thread.Start()` 立即返回，而 `_healthThreadRunning = true`（`:1191`）是**线程体的第一句**，
+测试在 `StartAsync` 返回后立刻读该标志（`MaintenanceLoopTests.cs:120`）⇒ 线程尚未被调度即断言。
+取证：**隔离跑（`--filter FullyQualifiedName~MaintenanceLoopTests`）5/5 确定性失败**；
+在 `cecfcc1`（**无本修复**）的独立 worktree 上隔离跑，**同一用例、同一断言 `first.HealthThreadRunning` 同样失败** ⇒ **既有缺陷，与本修复无因果**。
+该用例在**全量跑**中为间歇性（子代理自述 7 次全绿；父级本次全量跑 1 红）。⇒ 后续若有人跑**过滤**测试看到红，**不是**本修复回归。建议单独立片修（诊断口径应为「线程已创建」或改为等待进入线程体，`ThreadPriority.BelowNormal` 使其更易被饿死）。

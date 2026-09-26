@@ -73,6 +73,6 @@ public sealed record SupplyCoordinatorOptions
     /// </summary>
     public double MinStagingToLiveDocRatio { get; init; } = DefaultMinStagingToLiveDocRatio;
 
-    /// <summary>本进程在租约里的 owner 标识（默认 <c>机器名#进程号</c>）。</summary>
-    public string OwnerId { get; init; } = SupplyLeaseOwner.ForCurrentProcess().OwnerId;
+    /// <summary>本进程在租约里的 owner 标识（默认 <c>机器名#进程号#角色</c>，角色固定为 <see cref="SupplyLeaseRole.Supply"/>）。</summary>
+    public string OwnerId { get; init; } = SupplyLeaseOwner.ForCurrentProcess(SupplyLeaseRole.Supply).OwnerId;
 }

@@ -121,14 +121,52 @@ internal static class SupplyScopeNormalizer
     internal static string ToScopeKey(string normalizedPath) =>
         normalizedPath.Replace('/', '\\').ToLowerInvariant();
 
-    private static bool IsAncestorOrSame(string candidateAncestor, string candidateDescendant) =>
-        string.Equals(candidateAncestor, candidateDescendant, StringComparison.OrdinalIgnoreCase)
-        || candidateDescendant.StartsWith(candidateAncestor + "\\", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// 规范化键下的「祖先**或相同**」判定（<b>本组件唯一实现</b>，两侧入口都必须经它）。
+    /// <para>
+    /// 入参必须是 <see cref="ToScopeKey"/> 的产物（已小写、分隔符已统一为 <c>\</c>）。
+    /// </para>
+    /// <para>
+    /// ⚠️ 祖先键**本身**若以 <c>\</c> 结尾（盘根 <c>c:\</c>），**不再补一个分隔符**：
+    /// 旧实现无条件拼 <c>"\\"</c>，于是盘根得到 <c>c:\\</c> 前缀 ⇒ 盘根 scope 的
+    /// 父子嵌套 / 越界判定**恒为 false**（缺陷 ① 的同族第二处）。
+    /// </para>
+    /// </summary>
+    /// <param name="candidateAncestor">候选祖先键。</param>
+    /// <param name="candidateDescendant">候选后代键。</param>
+    internal static bool IsAncestorOrSame(string candidateAncestor, string candidateDescendant)
+    {
+        if (string.Equals(candidateAncestor, candidateDescendant, StringComparison.Ordinal))
+            return true;
+
+        var prefix = candidateAncestor.EndsWith('\\')
+            ? candidateAncestor
+            : candidateAncestor + "\\";
+
+        return candidateDescendant.StartsWith(prefix, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 规范化键是否落在 scope 之内（**不含** scope 根自身；根是目录，不可能是文件变更对象）。
+    /// <para>本组件唯一实现：维护侧 <c>FullTextChangeCoalescer.IsWithinScope</c> 必须经它。</para>
+    /// </summary>
+    /// <param name="scopeKey">scope 规范键。</param>
+    /// <param name="pathKey">待判定的路径规范键。</param>
+    internal static bool IsWithinScopeKey(string scopeKey, string pathKey) =>
+        !string.Equals(scopeKey, pathKey, StringComparison.Ordinal)
+        && IsAncestorOrSame(scopeKey, pathKey);
 
     /// <summary>
     /// 去尾分隔符，但**保住盘根**：<c>C:\</c> 不能被裁成 <c>C:</c>（后者是盘符相对路径，语义完全不同）。
+    /// <para>
+    /// ⚠️ 这是本组件内「保盘根裁剪」的**单一真源**：供给侧规范化与维护侧
+    /// <c>FullTextChangeCoalescer.NormalizeComparisonKey</c> 都必须经它 —— 两侧各自复刻时，
+    /// 盘根会分别得到 <c>c:\</c> 与 <c>c:</c> 两个键 ⇒ 推出不同租约文件 ⇒ 同一语料根上
+    /// 维护直写与供给整目录替换**不互斥**（缺陷 ①）。
+    /// </para>
     /// </summary>
-    private static string TrimTrailingSeparators(string path)
+    /// <param name="path">已绝对化的路径。</param>
+    internal static string TrimTrailingSeparators(string path)
     {
         var trimmed = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         if (trimmed.Length == 0)

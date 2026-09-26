@@ -1,3 +1,5 @@
+using PuddingFullTextIndex.Infrastructure.Supply;
+
 namespace PuddingFullTextIndex.Infrastructure.Maintenance;
 
 /// <summary>
@@ -451,7 +453,8 @@ public sealed record MaintenanceOptions
                 {
                     foreach (var (index, scopeKey, resolved) in resolvedScopeKeys)
                     {
-                        if (!IsAncestorOrSame(indexKey, scopeKey) && !IsAncestorOrSame(scopeKey, indexKey))
+                        if (!SupplyScopeNormalizer.IsAncestorOrSame(indexKey, scopeKey)
+                            && !SupplyScopeNormalizer.IsAncestorOrSame(scopeKey, indexKey))
                             continue;
 
                         violations.Add(new MaintenanceOptionsViolation(
@@ -468,9 +471,4 @@ public sealed record MaintenanceOptions
             ? MaintenanceOptionsValidationResult.Valid
             : new MaintenanceOptionsValidationResult(false, violations);
     }
-
-    /// <summary>规范化键下的「祖先或相同」判定（键已小写且分隔符统一为 <c>\</c>）。</summary>
-    private static bool IsAncestorOrSame(string candidateAncestor, string candidateDescendant)
-        => string.Equals(candidateAncestor, candidateDescendant, StringComparison.Ordinal)
-            || candidateDescendant.StartsWith(candidateAncestor + "\\", StringComparison.Ordinal);
 }

@@ -169,7 +169,7 @@ public static class FullTextChangeCoalescer
                 continue;
             }
 
-            if (!IsWithinScopeKey(scopeKey, key))
+            if (!SupplyScopeNormalizer.IsWithinScopeKey(scopeKey, key))
             {
                 rejected.Add(new FullTextRejectedPath(
                     observation.FullPath,
@@ -272,10 +272,15 @@ public static class FullTextChangeCoalescer
     }
 
     /// <summary>
-    /// 折叠 / 比较用的规范化键：绝对化 → 去尾分隔符 → 分隔符统一 <c>\</c> + 不变文化小写。
+    /// 折叠 / 比较用的规范化键：绝对化 → **保盘根**去尾分隔符 → 分隔符统一 <c>\</c> + 不变文化小写。
     /// <para>
     /// ⚠️ 只服务**去重与大小写不敏感比较**（Windows First）。它**不是**命名哈希的输入，
     /// **不得**用于推导索引目录名（哈希唯一真源是 <c>FullTextIndexPaths.ResolveIndexDirectory</c>）。
+    /// </para>
+    /// <para>
+    /// ⚠️ 去尾分隔符必须走 <see cref="SupplyScopeNormalizer.TrimTrailingSeparators"/>（保盘根）：
+    /// 裸 <c>TrimEnd</c> 会把 <c>C:\</c> 裁成 <c>C:</c>，与供给侧的 <c>c:\</c> 不同键
+    /// ⇒ 推出不同租约文件 ⇒ 同一语料根上维护直写与供给整目录替换不互斥（缺陷 ①）。
     /// </para>
     /// </summary>
     /// <param name="fullPath">绝对路径（大小写与尾分隔符不敏感）。</param>
@@ -283,13 +288,8 @@ public static class FullTextChangeCoalescer
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fullPath);
 
-        var full = Path.GetFullPath(fullPath.Trim());
-        var trimmed = full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        if (trimmed.Length == 0)
-            trimmed = full;
-
-        // scope 键口径复用既有单一真源（分隔符统一 + 不变文化小写），不另立第三套。
-        return SupplyScopeNormalizer.ToScopeKey(trimmed);
+        // scope 键口径复用既有单一真源（保盘根裁剪 + 分隔符统一 + 不变文化小写），不另立第三套。
+        return SupplyScopeNormalizer.ToScopeKey(SupplyScopeNormalizer.TrimTrailingSeparators(Path.GetFullPath(fullPath.Trim())));
     }
 
     /// <summary>
@@ -307,11 +307,8 @@ public static class FullTextChangeCoalescer
         ArgumentException.ThrowIfNullOrWhiteSpace(scopeRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(fullPath);
 
-        return IsWithinScopeKey(NormalizeComparisonKey(scopeRoot), NormalizeComparisonKey(fullPath));
+        return SupplyScopeNormalizer.IsWithinScopeKey(
+            NormalizeComparisonKey(scopeRoot),
+            NormalizeComparisonKey(fullPath));
     }
-
-    private static bool IsWithinScopeKey(string scopeKey, string pathKey)
-        => pathKey.Length > scopeKey.Length + 1
-            && pathKey.StartsWith(scopeKey, StringComparison.Ordinal)
-            && pathKey[scopeKey.Length] == '\\';
 }
