@@ -222,7 +222,13 @@
 
 ### DS-07 — Skill Hub 六页签（P1；依赖 DS-00）
 
-状态：**进行中（2026-09-27）**。已交付「概览」「事件审计」「技能库」「EVO MAP」「安装台账」五个页签；仅 `legacy`（旧技能包）待续。
+状态：**进行中（2026-09-27）**。已交付「概览」「事件审计」「技能库」「EVO MAP」「安装台账」五个页签；`legacy`（旧技能包）的 **Core 下沉已完成**，桌面端表单待接。
+
+**旧技能包切片（Core 部分已交付）**
+- 按 §3.1 先下沉：`SkillPackageApiController` 中的校验（id `^[a-z0-9\-]+$`、名称非空、扩展名 `.zip`/`.tar.gz`）、重复 id 判定（冲突而非覆盖）、对象键构造与文件名净化、换版本时「先上传新对象再删除旧对象」（删失败只记日志，不丢上传）全部下沉为 `SkillPackageService`；控制器只做 `SkillHubResult` → HTTP 状态码映射，Web 行为不变。
+- 可测性：引入对象存储端口 `ISkillPackageObjectStore`（`MinioStorageService` 实现），`SkillPackageServiceTests` 用假存储 + 内存 SQLite 覆盖 5 组规则，包括「被拒绝的上传不得触碰对象存储」与「换版本被拒时保持原文件与对象」。
+- 登记差异：卡片写的是「zip/tar.gz/tgz 文件」，而 Core 只接受 `.zip` 与 `.tar.gz`；桌面端不擅自放宽，`.tgz` 仍会被拒绝（如需支持应作为独立需求改 Core）。
+- 待接：桌面端 `skills/legacy` 表单（列表/创建/编辑元数据/删除/上传新版本/下载链接）。上传依赖 MinIO 配置，未配置时必须显示 Core 的真实错误而不是假成功。
 
 **EVO MAP / 安装台账切片已交付**
 - `skills/evolution`：单技能谱系与全局谱系（含节点上限），缩进版本树 + 边列表，节点身份沿用 Core 的 `{skillId}@{version}`。
@@ -739,5 +745,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-04 模板与角色实例 | 进行中 2026-09-27 | 五个切片已接入（agent-directory / agent-basic / agent-prompts / agent-models / smart-models / guardrails）；仅 agent-grants 待续，被 DS-06、DS-07 目录依赖阻塞 |
 | DS-05 工作区与渠道 | 待实施 | — |
 | DS-06 工具与插件 | 已完成 2026-09-27 | 两张只读卡接入；manifest-only 与无效清单有真实固件测试 |
-| DS-07 Skill Hub 六页签 | 进行中 2026-09-27 | 概览 / 事件审计 / 技能库 / EVO MAP / 安装台账五页签已接入；仅旧技能包待续 |
+| DS-07 Skill Hub 六页签 | 进行中 2026-09-27 | 概览 / 事件审计 / 技能库 / EVO MAP / 安装台账五页签已接入；旧技能包完成 Core 下沉（`SkillPackageService` + 5 项独立测试），桌面端表单待接 |
 | DS-08 … DS-17 | 待实施 | — |

@@ -6,7 +6,7 @@ namespace PuddingPlatform.Services;
 /// <summary>
 /// MinIO 对象存储服务，负责 Skill 包文件的上传、预签名 URL 生成与删除。
 /// </summary>
-public sealed class MinioStorageService
+public sealed class MinioStorageService : ISkillPackageObjectStore
 {
     private readonly IMinioClient _client;
     private readonly string _bucket;

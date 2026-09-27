@@ -1,3 +1,6 @@
+## 2026-09-27 DS-07 Skill Hub（旧技能包：Core 下沉）
+
+按 §3.1「业务逻辑只在 Controller 内时先下沉为可独立测试的 Core 应用操作」，把 `SkillPackageApiController` 里的校验、对象键构造与旧对象清理下沉为 `SkillPackageService`，并引入对象存储端口 `ISkillPackageObjectStore`（`MinioStorageService` 实现）。控制器现在只做 HTTP 映射（`SkillHubResult` → 200/400/404/409），Web 行为不变。收益是可测性：`SkillPackageServiceTests` 用假对象存储 + 内存 SQLite 覆盖「被拒绝的上传不触碰对象存储」「元数据更新不动版本与对象」「换版本先传后删、被拒时保持原文件」「下载 URL 来自端口」「文件规则与 Web 契约一致（`.tgz` 不被接受）」。桌面端 UI 接下一轮。验证：`SkillPackageServiceTests` 5 项、Composition 13 项、窗口 smoke 165 项通过。
 ## 2026-09-27 DS-07 Skill Hub（EVO MAP 与安装台账切片）
 
 Foundation 新增 `SkillHubEvoMap.cs`（谱系节点/边、`RenderLineage` 缩进树、`DescribeLineage` 计数、`SkillHubUpdate` 落后判定），Composition 的 `DesktopSkillHubSettings` 扩到谱系与台账，Shell 新增 `MainWindow.SkillEvolutionSettings.cs`（`skills/evolution` 与 `skills/installs` 两个页签，只读）。谱系渲染刻意不隐藏异常形态：纯环组件没有可达根，会被当作「无根组件」显式列出（否则页面会是空的），环展开处标记并停止，父节点缺失与悬空边都有计数。更新检查按版本字符串差异判定落后，不猜测语义顺序。Composition 测试用 HTTP 发布 create+patch 两个版本后读回：根节点、父节点、边数、缩进树、全局谱系、台账筛选与「已登记 1.0.0 → 最新 1.1.0」的更新判定。验证：Foundation 115 项、Composition 13 项、窗口 smoke 165 项通过。
@@ -1292,3 +1295,7 @@ VisionRequestPolicy默认8、VisionCapabilityContract上限钳制、PuddingFileC
 ## 2026-09-27 Native 文本文件上下文
 
 PuddingChat/TextFileContext.cs 提供有界文本快照；ChatSelection/Contracts 保持角色草稿与重试内容，WinUI ChatComposer/ChatWorkspace 提供选择、预览、移除和发送。Composition/InProcessChatClient 使用 SubmittedText 直接提交既有 Core text 内容块。验证 57 逻辑/132 窗口/3 Core；设计见 Docs/Features/Desktop-Native-Text-Context-2026-09-27.md。
+
+## 2026-09-27 原生审批操作快照
+
+PuddingApproval/ApprovalOperation.cs：原始工具/参数/定义/目录快照及规范化指纹；ApprovalRecord 强制绑定，ApprovalService 在决定与消费前核对，SqliteApprovalStore 保存并禁止修改快照。18 逻辑/7 SQLite 测试通过；没有宿主接线，执行暂停/恢复仍待实现，证据见 Docs/Features/Desktop-Native-Approval-Integration-Design-2026-09-27.md。

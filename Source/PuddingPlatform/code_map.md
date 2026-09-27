@@ -234,6 +234,8 @@
 | `Services/DeepSeekLlmBalanceProvider.cs` | DeepSeek 适配器：GET {baseUrl 剥掉尾部 /v1}/user/balance + Bearer；解析 is_available/balance_infos（字符串金额兼容）与 error.message；CanHandle=providerId 含 deepseek 或 baseUrl 指向 deepseek.com；命名 HttpClient `LlmBalanceQuery`（30s） |
 | `Controllers/Api/LlmProviderApiController.cs` | Provider CRUD/配额/余额 HTTP 出口；`GET/PUT api/llm/providers/{providerId}/quota` 与 `POST .../quota/reset-daily` 由 `LlmProviderQuotaService` 实现（不再是 NoContent）；`GET api/llm/providers/{providerId}/balance`（KeyNotFound→404 / InvalidOperation→400 / HttpRequestException→502） |
 | `Services/LlmProviderQuotaService.cs` | Provider 自设 token 配额：限额与窗口起点存 `llm.providers.json`（`provider.quota`），已用 token 由 token 账本（`llm_gateway_usage_events` + `TokenUsageEvents`，经 `TokenUsageDailyAggregateService.GetRangeAsync`）按 `OccurredAtUtc ≥ 窗口起点` 实时推导，不重复记账；`reset-daily` 只把日窗口起点推进到“现在”，不删除账本、不影响月计数；`WindowStart` = max(自然周期起点, 重置时间) 且不超过“现在” |
+| `Services/SkillPackageService.cs` | Skill 包（旧文件包）应用操作：从 `SkillPackageApiController` 原位下沉——id/名称/扩展名校验（`.zip`/`.tar.gz`）、重复 id 为冲突而非覆盖、对象键构造与文件名净化、换版本时先传新对象再删旧对象（删失败只记日志，不丢上传）、删除行+对象、预签名下载 URL；返回 `SkillHubResult` 由控制器映射状态码 |
+| `Services/ISkillPackageObjectStore.cs`（同文件内） | 对象存储端口：`UploadAsync`/`GetPresignedDownloadUrlAsync`/`DeleteAsync`；`MinioStorageService` 实现它，使应用操作可在无 MinIO 的情况下独立测试 |
 | `Services/ChannelConfigurationFileService.cs` | 渠道配置（21KB） |
 | `Services/VoiceProviderFileService.cs` | 语音提供商/模型文件配置（config/voice/providers.json）：provider 字段与采样率校验、密钥保持/替换/清除（`ClearApiKey`）；模型 `IsDefault` 与运行时真源 `Default{Tts,Asr}{Provider,Model}Id` 同步维护（每个列表最多一个默认项，TTS 与 ASR 互不影响），删除模型/Provider 时清理根指针 |
 

@@ -447,6 +447,10 @@ public static partial class PuddingServiceCollectionExtensions
         // 配额：限额读 llm.providers.json，用量从 token 账本推导（见 LlmProviderQuotaService）。
         builder.Services.AddSingleton<LlmProviderQuotaService>();
 
+        // ── Skill 包（旧文件包）：HTTP 与原生客户端共用同一应用操作；对象存储走端口以便独立测试 ──
+        builder.Services.AddSingleton<ISkillPackageObjectStore>(sp => sp.GetRequiredService<MinioStorageService>());
+        builder.Services.AddScoped<SkillPackageService>();
+
         // ── 文件式 TTS/ASR 语音 Provider/Model 管理 ──
         builder.Services.AddSingleton<VoiceProviderFileService>();
 
