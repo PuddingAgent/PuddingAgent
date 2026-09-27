@@ -292,3 +292,13 @@ ChatComposer 的拖放及 Ctrl+V 现接收 StorageItems 中的图片与文本/�
 执行 `pwsh -NoProfile -File TestScripts/test-pudding-desktop-kernel.ps1` 成功。最终构建 0 errors / 146 warnings（依赖/既存编译和 PRI 资源警告；不称零警告）。产品进程 PID 30028，加载实际输出目录的 PuddingHost.dll，UI 回调、重启、目录保存、聊天挂载和重建标记全部通过，外部脚本退出码 0。证据：temp/native-chat-product-smoke-final.log；temp/test-out/kernel-winui-8751da31ad504dfc9d445cf211a7625d/report.json。
 
 此次使用共享工作树当时的完整产品构建，包含并行任务的现状，不宣称是单一聊天 commit 的隔离构建。未读写 D:\data、没有模型调用、没有发布替换用户 Desktop；健康探针沿用 /health/ready，角色和草稿路径是直接函数调用。发送/流式真实模型、审批恢复、完整视觉矩阵仍未通过产品验收。
+
+## 原生数学公式（2026-09-27）
+
+原 Web MarkdownBlock 使用 remark-math/rehype-katex。本轮以 Markdig Mathematics 解析，使用独立 MathFormulaView 原生显示，不加载 WebView 或启动 TeX。行内公式使用 RichTextBlock 的 InlineUIContainer，块公式使用可横向滚动的 Image。强调中的公式可显示，链接标签内保留 LaTeX 文本；代码围栏保留字面量。追加正文复用未变化公式控件，未闭合行内公式显示原文，闭合后转换。
+
+渲染在后台串行执行，避免共享字体/解析状态并发；源长度最多 4096、命令分隔符最多 128、组深度最多 64，逻辑位图尺寸最多 2048×1024，以 2 倍像素绘制。加载/主题变化触发重绘，取消与代次阻止旧结果更新卸载控件。语法错误、超限和渲染异常显示可选原文；上下文菜单复制原始 LaTeX，不复制解析器规范化结果。高对比度加载/重绘回退原文，尚未验收实时高对比度通知和完整辅助技术。
+
+依赖：[CSharpMath](https://github.com/verybadcat/CSharpMath) 的 [1.0.0-pre.1 包](https://www.nuget.org/packages/CSharpMath.SkiaSharp/1.0.0-pre.1) 支持当前 Core 使用的 SkiaSharp 3.119.2；pre.2 要求更高 Skia 版本，未为单个控件扩大升级范围。这是预发行库，保留语法回退，不声称与 KaTeX 全量对等。库内字体有各自许可证，发布时需保留依赖许可。
+
+验证：先独立控件后接入 Markdown，最终 `test-pudding-native-chat.ps1 -SkipCoreIntegration` 通过 57 逻辑/160 原生窗口检查，构建零警告/错误，日志 `temp/native-math-final.log`。新增 15 项覆盖分数/根号/求和渲染、位图尺寸、浅深主题实际字形像素、控件复用/回收、无效语法/深度/长度回退、行内/块/强调公式、流式未闭合转闭合及代码围栏。测试等待真实渲染/卸载结果，不能以 IsLoaded 瞬时值代替事件处理完成。本次未重新执行 Core 集成或产品部署，既有产品 smoke 不证明新公式包已在用户产品加载；真实模型、生成图片资源解析、审批闭环、语音与完整 DPI/IME/视觉验收仍未完成。

@@ -530,3 +530,9 @@ CodeBlockView 已使用 ColorCode.WinUI 2.0.15 原生 Inline 着色，覆盖库�
 ## 原生聊天产品装配验证（2026-09-27）
 
 MainWindow.Kernel.RunKernelSmokeAsync 与 test-pudding-desktop-kernel.ps1 已覆盖真实产品的原生聊天挂载、角色/附件草稿、Core 重启后客户端重建及角色重载；隔离产品进程 PID 30028 全部通过，退出释放目录租约。完整构建零错误但有既存警告。详情见原生聊天实施报告；该门禁不替代真实模型、审批恢复或完整视觉验收。
+
+## 原生公式消息组件（2026-09-27）
+
+MarkdownView 使用 Markdig Mathematics 解析行内与块公式，交由独立 MathFormulaView 渲染到 WinUI Image；包含公式的段落使用 RichTextBlock/InlineUIContainer，普通段落保持现有 TextBlock。未闭合输入保持可见原文，未变化块在流式追加时复用；代码围栏不解释公式。公式在后台串行渲染，限制源长度、嵌套深度和位图尺寸，取消/卸载代次阻止晚到结果更新已回收控件。原始 LaTeX 可复制，语法不支持、超限或失败时可选择复制原文；链接标签内公式保留文本。
+
+依赖选择为 CSharpMath.SkiaSharp 1.0.0-pre.1 与现有 SkiaSharp 3.119.2 对齐，明确是预发行版本，不代表与 Web KaTeX 完全等价。高对比度在加载/主题重绘时检查并显示原文；当前 2 倍像素渲染与辅助功能文本命名不替代完整 DPI/屏幕阅读器验收。独立窗口先通过后接入 Markdown，最终 57 逻辑/160 窗口检查通过；本次未重启用户 Desktop 或修改 DataRoot。

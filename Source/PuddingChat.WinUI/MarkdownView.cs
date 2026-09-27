@@ -3,6 +3,7 @@ using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using Markdig.Extensions.Tables;
 using Markdig.Extensions.TaskLists;
+using Markdig.Extensions.Mathematics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
@@ -15,7 +16,7 @@ namespace PuddingChat.WinUI;
 public sealed class MarkdownView : StackPanel
 {
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
-        .UsePipeTables().UseEmphasisExtras(Markdig.Extensions.EmphasisExtras.EmphasisExtraOptions.Strikethrough).UseTaskLists().UseAutoLinks().DisableHtml().Build();
+        .UsePipeTables().UseEmphasisExtras(Markdig.Extensions.EmphasisExtras.EmphasisExtraOptions.Strikethrough).UseTaskLists().UseAutoLinks().UseMathematics().DisableHtml().Build();
     private readonly List<(string Source, string Kind, UIElement View)> _rendered = [];
     public MarkdownView(string text) { Spacing = 10; Update(text); }
     public void Update(string text)
@@ -57,13 +58,11 @@ public sealed class MarkdownView : StackPanel
     {
         switch (block)
         {
+            case MathBlock math: return new MathFormulaView(math.Lines.ToString());
             case CodeBlock code:
                 return new CodeBlockView(code.Lines.ToString(), (code as FencedCodeBlock)?.Info ?? "代码");
             case HeadingBlock heading:
-                var title = Text(heading.Inline);
-                title.FontSize = heading.Level switch { 1 => 25, 2 => 22, 3 => 19, _ => 16 };
-                title.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
-                return title;
+                return Text(heading.Inline, heading.Level switch { 1 => 25, 2 => 22, 3 => 19, _ => 16 }, true);
             case ParagraphBlock paragraph: return Text(paragraph.Inline);
             case QuoteBlock quote:
                 var surface = Surfaces.Card("SubtleFillColorSecondaryBrush");
@@ -112,6 +111,13 @@ public sealed class MarkdownView : StackPanel
                         text.TextAlignment = table.ColumnDefinitions[column].Alignment?.ToString() switch
                         { "Right" => TextAlignment.Right, "Center" => TextAlignment.Center, _ => TextAlignment.Left };
                 }
+                foreach (var text in contents.Children.OfType<RichTextBlock>())
+                {
+                    if (row.IsHeader) text.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
+                    if (column < table.ColumnDefinitions.Count)
+                        text.TextAlignment = table.ColumnDefinitions[column].Alignment?.ToString() switch
+                        { "Right" => TextAlignment.Right, "Center" => TextAlignment.Center, _ => TextAlignment.Left };
+                }
                 border.Child = contents;
                 Grid.SetRow(border, rowIndex); Grid.SetColumn(border, column++); grid.Children.Add(border);
             }
@@ -121,18 +127,31 @@ public sealed class MarkdownView : StackPanel
             HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollMode = ScrollMode.Disabled };
     }
 
-    private static TextBlock Text(ContainerInline? input)
+    private static bool ContainsMath(ContainerInline input) => input.Any(item => item is MathInline
+        || item is ContainerInline container && ContainsMath(container));
+    private static FrameworkElement Text(ContainerInline? input, double size = 14, bool heading = false)
     {
-        var text = new TextBlock { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontSize = 14, LineHeight = 23 };
+        if (input is not null && ContainsMath(input))
+        {
+            var rich = new RichTextBlock { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontSize = size };
+            if (heading) rich.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
+            var paragraph = new Paragraph(); AddInlines(paragraph.Inlines, input, true); rich.Blocks.Add(paragraph);
+            return rich;
+        }
+        var text = new TextBlock { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontSize = size, LineHeight = 23 };
+        if (heading) text.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
         if (input is not null) AddInlines(text.Inlines, input);
         return text;
     }
-    private static void AddInlines(InlineCollection target, ContainerInline input)
+    private static void AddInlines(InlineCollection target, ContainerInline input, bool allowControls = false)
     {
         foreach (var item in input)
         {
             switch (item)
             {
+                case MathInline math:
+                    target.Add(allowControls ? new InlineUIContainer { Child = new MathFormulaView(math.Content.ToString(), true) }
+                        : new Run { Text = "$" + math.Content.ToString() + "$" }); break;
                 case LiteralInline literal: target.Add(new Run { Text = literal.Content.ToString() }); break;
                 case CodeInline code: target.Add(new Run { Text = code.Content, FontFamily = new FontFamily("Cascadia Mono, Consolas") }); break;
                 case LineBreakInline line: target.Add(line.IsHard ? new LineBreak() : new Run { Text = "\n" }); break;
@@ -140,7 +159,7 @@ public sealed class MarkdownView : StackPanel
                 case EmphasisInline emphasis:
                     Span span = emphasis.DelimiterChar == '~' ? new Span { TextDecorations = Windows.UI.Text.TextDecorations.Strikethrough }
                         : emphasis.DelimiterCount >= 2 ? new Bold() : new Italic();
-                    AddInlines(span.Inlines, emphasis); target.Add(span); break;
+                    AddInlines(span.Inlines, emphasis, allowControls); target.Add(span); break;
                 case LinkInline link:
                     var url = link.GetDynamicUrl?.Invoke() ?? link.Url;
                     Span label = !link.IsImage && Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http"
@@ -154,7 +173,7 @@ public sealed class MarkdownView : StackPanel
                     { var hyperlink = new Hyperlink { NavigateUri = address }; hyperlink.Inlines.Add(new Run { Text = auto.Url }); target.Add(hyperlink); }
                     else target.Add(new Run { Text = auto.Url });
                     break;
-                case ContainerInline container: AddInlines(target, container); break;
+                case ContainerInline container: AddInlines(target, container, allowControls); break;
                 default: target.Add(new Run { Text = item.ToString() }); break;
             }
         }

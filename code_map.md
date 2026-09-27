@@ -1323,3 +1323,7 @@ PuddingChat.WinUI/ChatWorkspace.FileTransfer.cs 与 ChatComposer.ReceiveAttachme
 ## 2026-09-27 原生聊天产品装配门禁
 
 PuddingDesktop/MainWindow.Kernel.RunKernelSmokeAsync 在隔离数据目录创建角色并验证真实 ChatWorkspace 的可见挂载、草稿/附件与 Core 重启后的重建和角色重载。TestScripts/test-pudding-desktop-kernel.ps1 强制校验新增报告字段及退出租约释放；PID 30028 实测通过，详见原生聊天实施报告。
+
+## 原生公式组件（2026-09-27）
+
+`Source/PuddingChat.WinUI/MathFormulaView.cs` 以 CSharpMath.SkiaSharp + SkiaSharp 后台绘制公式，在 WinUI Image 中显示，提供原文复制/失败回退、主题重绘与卸载取消。`MarkdownView` 将行内公式放入 RichTextBlock，块公式独立显示；`Source/PuddingChat.WinUITests/MathFormulaChecks.cs` 验证字形像素、主题、回收、超限和流式追加。范围及预发行依赖限制见原生聊天实施报告；57 逻辑/160 窗口检查通过。

@@ -185,9 +185,11 @@ public partial class App : Application
                 await VerifyTextFilesAsync(control, fixture);
                 await VerifyWorkspaceLayoutAsync(control, fixture);
                 await VerifyFileTransferAsync(control, fixture);
+                await VerifyMathFormulaAsync((Grid)control.Content);
+                await VerifyMathMarkdownAsync((Grid)control.Content);
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 145, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 160, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }

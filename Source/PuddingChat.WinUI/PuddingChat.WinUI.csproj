@@ -14,6 +14,8 @@
     <ProjectReference Include="../PuddingChat/PuddingChat.csproj" />
     <PackageReference Include="Markdig" Version="1.4.0" />
     <PackageReference Include="ColorCode.WinUI" Version="2.0.15" />
+    <PackageReference Include="CSharpMath.SkiaSharp" Version="1.0.0-pre.1" />
+    <PackageReference Include="SkiaSharp" Version="3.119.2" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" />
   </ItemGroup>
