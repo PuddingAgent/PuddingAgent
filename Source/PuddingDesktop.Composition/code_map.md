@@ -54,7 +54,7 @@
 
 `DesktopUserSettings` binds the account card to `UserService`; no password or hash is mapped into the shell's model.`n`n`DesktopTeamSettings` binds the teams card to `TeamService`; Core's guards (workspaces block team deletion, None is not a whitelist level, protected default workspace) surface as real errors.`n`n`DesktopRuntimeNodeSettings` reads `RuntimeRegistryService` and freezes/unfreezes through the shared `RuntimeNodeAdminService`, so a native freeze is audited like the HTTP one.
 
-`SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.
+`DesktopDiagnosticsSettings` reads the timeline and component health through `RuntimeDiagnosticsQueryService` (query + redaction in one operation), so the shell sees the same redacted payload as HTTP.`n`n`SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.
 `InProcessChatClient.Speech`: IChatSpeechClient direct Core IVoiceSynthesisService adapter. Reads authoritative message/envelope payload, validates workspace/role/local-owner identity, uses configured defaults and the existing tracked-operation cancellation lifetime.
 
 `InProcessChatClient.Transcription`: IChatTranscriptionClient → existing Core IAudioTranscriptionService; validates bounded recording and current enabled/unfrozen role, passes WAV bytes with default provider/model selection, follows tracked host cancellation. Integration tests use real configuration/application services and a fake provider; no Desktop HTTP or actual microphone.

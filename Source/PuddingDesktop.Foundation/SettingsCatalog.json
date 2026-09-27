@@ -1221,7 +1221,7 @@
             ],
             "source": "pages/diagnostics/DiagnosticsPage.tsx",
             "task": "DS-14",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },
@@ -1242,7 +1242,7 @@
             ],
             "source": "pages/diagnostics/RuntimeTimelinePage.tsx",
             "task": "DS-14",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },

@@ -23,11 +23,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels, IWorkspaceResourceSettings WorkspaceResources, IMemoryLibrarySettings MemoryLibrary, IStorageSettings Storage, ISecuritySettings Security, IAccessTokenSettings AccessTokens, IRoleSettings Roles, IUserSettings Users, ITeamSettings Teams, IRuntimeNodeSettings RuntimeNodes)> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels, IWorkspaceResourceSettings WorkspaceResources, IMemoryLibrarySettings MemoryLibrary, IStorageSettings Storage, ISecuritySettings Security, IAccessTokenSettings AccessTokens, IRoleSettings Roles, IUserSettings Users, ITeamSettings Teams, IRuntimeNodeSettings RuntimeNodes, IDiagnosticsSettings Diagnostics)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels, _workspaceResources, _memoryLibrary, _storage, _security, _accessTokens, _roles, _users, _teams, _runtimeNodes) = createKernel(_desktopServices);
+        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels, _workspaceResources, _memoryLibrary, _storage, _security, _accessTokens, _roles, _users, _teams, _runtimeNodes, _diagnostics) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -83,6 +83,8 @@ public sealed partial class MainWindow : Window
         BuildUserPanel();
         BuildTeamPanel();
         BuildRuntimeNodePanel();
+        BuildTimelinePanel();
+        BuildDiagnosticsOverviewPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -671,6 +673,17 @@ public sealed partial class MainWindow : Window
             Check(RuntimeNodesSettings.Content is StackPanel, "runtime nodes form is built");
             Check(!_rnReason.IsEnabled, "runtime nodes form stays disabled without Core");
             Check(_rnNotice.Title == "Core 未就绪", "runtime nodes tab reports the real Core state");
+            // DS-14 diagnostics slice (two cards).
+            OpenSettingsCategory("diagnostics", "timeline");
+            await WaitForSettingsUiAsync(() => _tlNotice.IsOpen);
+            Check(RuntimeTimelineSettings.Visibility == Visibility.Visible, "timeline tab is native");
+            Check(RuntimeTimelineSettings.Content is StackPanel, "timeline form is built");
+            Check(!_tlComponent.IsEnabled, "timeline filters stay disabled without Core");
+            OpenSettingsCategory("diagnostics", "overview");
+            await WaitForSettingsUiAsync(() => _dgNotice.IsOpen);
+            Check(DiagnosticsOverviewSettings.Visibility == Visibility.Visible, "diagnostics overview tab is native");
+            Check(DiagnosticsOverviewSettings.Content is StackPanel, "diagnostics overview form is built");
+            Check(!_dgRefresh.IsEnabled, "diagnostics overview stays disabled without Core");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

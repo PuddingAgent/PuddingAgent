@@ -31,6 +31,7 @@ public sealed class DesktopKernelFactory(IDesktopServices desktop) : IKernelSess
     public IUserSettings CreateUserSettings(IDesktopKernel kernel) => new DesktopUserSettings(kernel);
     public ITeamSettings CreateTeamSettings(IDesktopKernel kernel) => new DesktopTeamSettings(kernel);
     public IRuntimeNodeSettings CreateRuntimeNodeSettings(IDesktopKernel kernel) => new DesktopRuntimeNodeSettings(kernel);
+    public IDiagnosticsSettings CreateDiagnosticsSettings(IDesktopKernel kernel) => new DesktopDiagnosticsSettings(kernel);
     public async Task<IKernelSession> StartAsync(string dataRoot, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(dataRoot);

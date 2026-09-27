@@ -2157,6 +2157,53 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task DiagnosticsAdapter_QueriesRedactedTimelineAndComponentHealth()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var diagnostics = factory.CreateDiagnosticsSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => diagnostics.QueryTimelineAsync(RuntimeTimelineFilter.Default, timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            // 空数据根：分页元数据仍然可用，且不抛异常。
+            var page = await diagnostics.QueryTimelineAsync(RuntimeTimelineFilter.Default, timeout.Token);
+            Assert.True(page.Page >= 1);
+            Assert.True(page.PageSize is >= 1 and <= 500);
+            Assert.Equal(page.Items.Count, page.Total == 0 ? 0 : page.Items.Count);
+            Assert.False(page.CanGoBack);
+
+            // 筛选与分页参数原样送达 Core 的契约（非法值被 Normalize 收敛）。
+            var filtered = await diagnostics.QueryTimelineAsync(RuntimeTimelineFilter.Default with
+            {
+                SessionId = "composition-session", Status = "failed", Page = 0, PageSize = 9_999,
+            }, timeout.Token);
+            Assert.Equal(1, filtered.Page);
+            Assert.Equal(500, filtered.PageSize);
+
+            var overview = await diagnostics.LoadOverviewAsync(timeout.Token);
+            Assert.NotNull(overview);
+            // 空数据根没有组件；总量必须自洽。
+            Assert.Equal(overview.Components.Sum(component => component.StartedCount), overview.Started);
+            Assert.Equal(overview.Components.Sum(component => component.FailedCount), overview.Failed);
+            Assert.True(overview.UnhealthyCount <= overview.Components.Count);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => diagnostics.LoadOverviewAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

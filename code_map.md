@@ -1,6 +1,9 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-14 会话与诊断（时间线/概览切片，DS-14 进行中）
+
+`diagnostics/timeline` 与 `diagnostics/overview` 两张卡接入新的 `RuntimeDiagnosticsQueryService`（把「时间线查询 + 脱敏」从 `DiagnosticsTimelineController` 原位下沉）：时间线支持会话/Run/Trace/Agent/组件/状态筛选、排序、raw/user 展示模式、分页与事件详情；概览显示 Core 按事件统计的**组件健康计数**（开始/成功/失败/重试/取消）与近期失败事件。**又一处「脱敏只在控制器里」的修复**：`RedactItem` 原先只存在于控制器，任何直接调用 `RuntimeTimelineQueryService` 的管理面拿到的是**未脱敏**的 Summary/Error/Metadata——现在脱敏与查询是同一个应用操作，策略也只有一处。**两条诚实边界**（都有 Core 测试固定）：①`RedactText` **只做截断**，不清洗自由文本里长得像密钥的字符串（`sk-…` 会原样显示在事件文本里），界面把这条差异写在卡片上而不是假装已抹掉；②组件健康是**按事件统计的计数**，不是本机探针，也不是「服务是否在跑」的结论。验证：Core `RuntimeDiagnosticsQueryServiceTests` 3 项（敏感 key 值被替换、600 字符被截断、自由文本密钥**不**被清洗）、Foundation 199 项、Composition 30 项、窗口 smoke 239 项通过。
 ## 2026-09-27 DS-13 运行与节点（运行时节点）
 
 `runtime/nodes` 接上 Core 的 `RuntimeRegistryService` 与新的 `RuntimeNodeAdminService`：节点总数/在线/降级/离线/活跃会话/嵌入与冻结计数、节点详情（Endpoint、从 Endpoint 推导的主机、模式、宿主类型、心跳年龄、能力列表）与冻结/解冻。**又一处「审计只在控制器里」的修复**：冻结的审计事件原先只写在 `RuntimeRegistryController`，原生客户端直接调用注册表冻结节点**不留审计痕迹**，而冻结会拒绝该节点全部原生能力调用——已把「冻结/解冻 + 审计」下沉为 `RuntimeNodeAdminService`（放在 `PuddingController`：Controller 不引用 Platform，层次方向不允许反过来），HTTP 与原生共用。两条诚实边界：Core 的节点模型**没有 host/IP 字段**，主机名从 Endpoint 推导、解析不了就原样显示；**冻结原因只进审计 Detail**，节点模型没有原因字段，界面不凭空显示一个原因。踩坑记录：`IAuditEventStore` 在宿主里**没有注册**（Controller DI 只注册了具体 `InMemoryAuditEventStore`），DI 校验直接报错——共享应用操作必须依赖具体类型。验证：Foundation 193 项、Composition 29 项（真实 Host：列表与计数、未知节点被拒、冻结→状态变化→重复冻结被拒→解冻）、窗口 smoke 233 项通过。

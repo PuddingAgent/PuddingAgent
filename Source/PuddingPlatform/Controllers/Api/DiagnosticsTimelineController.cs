@@ -15,15 +15,18 @@ namespace PuddingPlatform.Controllers.Api;
 public class DiagnosticsTimelineController : ControllerBase
 {
     private readonly RuntimeTimelineQueryService _timelineService;
+    private readonly RuntimeDiagnosticsQueryService _diagnostics;
     private readonly SessionBenchmarkDiagnosticsService _benchmarkService;
     private readonly IDiagnosticRedactor _redactor;
 
     public DiagnosticsTimelineController(
         RuntimeTimelineQueryService timelineService,
+        RuntimeDiagnosticsQueryService diagnostics,
         SessionBenchmarkDiagnosticsService benchmarkService,
         IDiagnosticRedactor redactor)
     {
         _timelineService = timelineService;
+        _diagnostics = diagnostics;
         _benchmarkService = benchmarkService;
         _redactor = redactor;
     }
@@ -37,17 +40,8 @@ public class DiagnosticsTimelineController : ControllerBase
         [FromQuery] RuntimeTimelineQueryDto query,
         CancellationToken ct)
     {
-        var result = await _timelineService.QueryTimelineAsync(query, ct);
-
-        // 脱敏处理
-        var redactedItems = result.Items.Select(RedactItem).ToList();
-        return Ok(new PagedTimelineResultDto
-        {
-            Items = redactedItems,
-            Page = result.Page,
-            PageSize = result.PageSize,
-            Total = result.Total,
-        });
+        // 查询与脱敏在同一个应用操作里完成（原生客户端得到同一份已脱敏结果）。
+        return Ok(await _diagnostics.QueryTimelineAsync(query, ct));
     }
 
     /// <summary>
@@ -62,9 +56,7 @@ public class DiagnosticsTimelineController : ControllerBase
         if (string.IsNullOrWhiteSpace(sessionId))
             return BadRequest(new { message = "sessionId 不能为空" });
 
-        var items = await _timelineService.GetSessionTimelineAsync(sessionId, ct);
-        var redacted = items.Select(RedactItem).ToList();
-        return Ok(redacted);
+        return Ok(await _diagnostics.GetSessionTimelineAsync(sessionId, ct));
     }
 
     /// <summary>
@@ -119,7 +111,7 @@ public class DiagnosticsTimelineController : ControllerBase
             return NotFound(new { message = $"未找到 TraceId={traceId} 的证据" });
 
         // 脱敏 Timeline
-        var redactedTimeline = evidence.Timeline.Select(RedactItem).ToList();
+        var redactedTimeline = evidence.Timeline.Select(_diagnostics.Redact).ToList();
         return Ok(new DiagnosticEvidenceDto
         {
             TraceId = evidence.TraceId,
@@ -129,14 +121,6 @@ public class DiagnosticsTimelineController : ControllerBase
             SubAgentRuns = evidence.SubAgentRuns,
         });
     }
-
-    /// <summary>脱敏单条 Timeline 项的 Metadata 和 Summary/Error 文本。</summary>
-    private RuntimeTimelineItemDto RedactItem(RuntimeTimelineItemDto item) => item with
-    {
-        Summary = _redactor.RedactText(item.Summary),
-        Error = _redactor.RedactText(item.Error),
-        Metadata = _redactor.RedactMetadata(item.Metadata),
-    };
 
     private SessionBenchmarkReportDto RedactBenchmarkReport(SessionBenchmarkReportDto report) => report with
     {

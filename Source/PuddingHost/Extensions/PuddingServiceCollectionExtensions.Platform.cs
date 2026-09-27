@@ -62,6 +62,7 @@ using PuddingMemoryEngine.Services;
 using PuddingAgent.P2P;
 using PuddingFullTextIndex;
 using PuddingFullTextIndex.Contracts;
+using PuddingFullTextIndex.Infrastructure.Maintenance;
 using PuddingFullTextIndex.Infrastructure.Search;
 using PuddingFullTextIndex.Infrastructure.Text;
 using PuddingAgent.Connectors;
@@ -348,6 +349,8 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ISessionTimelineRecorder>(sp => sp.GetRequiredService<SessionTimelineRecorder>());
         builder.Services.AddSingleton<ISessionOutputWriter, SessionOutputWriter>();
         builder.Services.AddScoped<RuntimeTimelineQueryService>();
+        // 时间线查询与脱敏是同一个应用操作：原生管理面也必须拿到已脱敏结果。
+        builder.Services.AddScoped<RuntimeDiagnosticsQueryService>();
         builder.Services.AddScoped<SessionBenchmarkDiagnosticsService>();
         builder.Services.AddScoped<IAgentRunProjectionService, AgentRunProjectionService>();
         builder.Services.AddScoped<IAgentConversationProjectionService, AgentConversationProjectionService>();
@@ -451,6 +454,33 @@ public static partial class PuddingServiceCollectionExtensions
         // queue; without this hosted service code_index_register_project would enqueue into a queue nobody
         // drains. The service only drives lifecycle and scope attachment - no index logic lives in the Host.
         builder.Services.AddHostedService<CodeIndexMaintenanceHostedService>();
+
+        // ── S5b（2026-09-27）全文索引「局部维护循环」宿主接线：变更后自动更新 ──
+        // 配置节 FullTextIndex:Maintenance **直接绑定**组件的 MaintenanceOptions
+        //（宿主不建第二份字段副本）；其中的 Scopes / WorkspaceRoot / MaxIndexBytes / IndexRootDirectory
+        // 由服务在装配时从**供给与查询同源**填入（见 FullTextIndexMaintenanceOptions.ApplySingleSource）。
+        // 默认（无该子节 / Enabled=false）⇒ StartAsync 首句返回：不构造组合、不碰索引根、零副作用。
+        builder.Services.Configure<MaintenanceOptions>(
+            builder.Configuration.GetSection(FullTextIndexMaintenanceOptions.SectionName));
+        // 与供给组合同形：惰性工厂持有**查询侧同一个引擎实例**（维护 commit 后要在它身上失效 reader 缓存，
+        // 失效打在别的实例上等于没失效）；压力探针用组件默认实现（只采 CPU），时钟用宿主已注册的 TimeProvider。
+        builder.Services.AddSingleton<IFullTextIndexMaintenanceCompositionFactory>(sp =>
+        {
+            var indexOptions = sp.GetRequiredService<FullTextIndexOptions>();
+            if (sp.GetRequiredService<IFullTextSearchEngine>() is not IFullTextIndexRootedEngine rootedEngine)
+            {
+                throw new InvalidOperationException(
+                    "S5b：IFullTextSearchEngine 的实现必须同时实现 IFullTextIndexRootedEngine" +
+                    "（维护路径要按语料根映射索引目录，并在 commit 后失效同一个 reader 缓存）。");
+            }
+
+            return new LuceneFullTextIndexMaintenanceCompositionFactory(
+                indexOptions,
+                rootedEngine,
+                new SystemCpuResourcePressureProbe(),
+                sp.GetRequiredService<TimeProvider>());
+        });
+        builder.Services.AddHostedService<FullTextIndexMaintenanceHostedService>();
 
         // ── EF Core / 数据库 ──────────────────────────────────
         var connStr = builder.Configuration.GetConnectionString("Default")

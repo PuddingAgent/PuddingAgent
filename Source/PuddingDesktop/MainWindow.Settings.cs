@@ -237,6 +237,24 @@ public sealed partial class MainWindow
         var runtimeNodes = VisibilityOf("runtime", "nodes", tab);
         RuntimeNodesSettings.Visibility = runtimeNodes;
         if (runtimeNodes == Visibility.Visible) LoadRuntimeNodesIfNeeded();
+        var timeline = VisibilityOf("diagnostics", "timeline", tab);
+        RuntimeTimelineSettings.Visibility = timeline;
+        if (timeline == Visibility.Visible) QueryTimelineIfNeeded();
+        var overview = VisibilityOf("diagnostics", "overview", tab);
+        DiagnosticsOverviewSettings.Visibility = overview;
+        if (overview == Visibility.Visible) LoadDiagnosticsOverviewIfNeeded();
+    }
+
+    private async void QueryTimelineIfNeeded()
+    {
+        try { await QueryTimelineAsync(resetPage: true); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
+    }
+
+    private async void LoadDiagnosticsOverviewIfNeeded()
+    {
+        try { await LoadDiagnosticsOverviewAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadRuntimeNodesIfNeeded()
@@ -476,6 +494,8 @@ public sealed partial class MainWindow
         ("accounts", "users") => true,
         ("accounts", "teams") => true,
         ("runtime", "nodes") => true,
+        ("diagnostics", "timeline") => true,
+        ("diagnostics", "overview") => true,
         _ => false
     };
 

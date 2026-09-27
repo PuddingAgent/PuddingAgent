@@ -51,8 +51,8 @@ accounts,用户与权限,roles,权限角色,rbac,RBAC 角色,已接入,DS-12,rol
 runtime,运行与节点,local,本机内核,local-kernel,数据目录与生命周期,已有入口,DS-00,DataRoot 保存/恢复默认；重开生效；启动/停止/重启；PID/状态；独立诊断路径,Source/PuddingDesktop/MainWindow.Kernel.cs,现有功能位于运行中心；从本页进入。
 runtime,运行与节点,nodes,运行节点,runtime-nodes,节点目录与详情,已接入,DS-13,总数/在线/降级/离线/活跃会话；nodeId；endpoint；host/IP；heartbeat；mode；hostType；capabilities；冻结原因,pages/runtime-management/index.tsx,显示嵌入式/独立节点、能力；支持冻结/解冻的节点沿用现有准入。
 diagnostics,会话与诊断,sessions,会话,session-directory,会话管理,待迁移,DS-14,sessionId；场景；Agent 模板；渠道；类型；状态；用户；创建/最近活跃；表格/时间线；工作区/Agent/状态筛选,pages/session/index.tsx,查询/筛选会话、详情及页面已有操作。
-diagnostics,会话与诊断,overview,诊断概览,diagnostics-overview,运行诊断,待迁移,DS-14,Agent/会话/Run 筛选；运行状态；诊断指标；刷新/详情,pages/diagnostics/DiagnosticsPage.tsx,汇总状态、失败原因与查询条件。
-diagnostics,会话与诊断,timeline,事件时间线,runtime-timeline,运行时间线,待迁移,DS-14,时间窗；事件类型；Agent/Session/Run；分页/游标；事件详情,pages/diagnostics/RuntimeTimelinePage.tsx,按 canonical 事件显示时间、关联 ID 和详情。
+diagnostics,会话与诊断,overview,诊断概览,diagnostics-overview,运行诊断,已接入,DS-14,Agent/会话/Run 筛选；运行状态；诊断指标；刷新/详情,pages/diagnostics/DiagnosticsPage.tsx,汇总状态、失败原因与查询条件。
+diagnostics,会话与诊断,timeline,事件时间线,runtime-timeline,运行时间线,已接入,DS-14,时间窗；事件类型；Agent/Session/Run；分页/游标；事件详情,pages/diagnostics/RuntimeTimelinePage.tsx,按 canonical 事件显示时间、关联 ID 和详情。
 diagnostics,会话与诊断,subagents,子代理运行,subagent-runs,运行归档与输出,待迁移,DS-14,parentRunId；runId；subSessionId；状态；输入/输出；工具事件；错误与时间,pages/diagnostics/SubAgentRunsPage.tsx,区分复用的子会话身份和本次 Run。
 usage,用量与概览,tokens,Token 统计,token-summary,用量与费用,待迁移,DS-15,月份/时间范围；服务商/模型；输入/输出/缓存命中；金额；趋势；月度汇总,pages/stats/tokens/index.tsx,继承 Web 日期、服务商、模型等筛选及 RMB/Token 单位。
 usage,用量与概览,tokens,Token 统计,token-details,上下文层分析,待迁移,DS-15,层；职责；影响；Token 压力；缓存表现；变化；主要原因,pages/stats/tokens/index.tsx,迁移当前上下文层分析表；不能将不同账本重复相加。
