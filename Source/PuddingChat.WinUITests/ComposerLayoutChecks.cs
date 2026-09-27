@@ -39,6 +39,11 @@ public partial class App
             composer.Width = 360; root.UpdateLayout(); await Task.Delay(30); root.UpdateLayout();
             Check(Grid.GetRow(groups[1]) == 1 && composer.Draft == draft && composer.ImageCount == 1 && buttons.All(b => b.IsEnabled),
                 "resizing preserves draft, button identity and enabled state");
+            var withAttachment = composer.ActualHeight;
+            composer.SetImages([]); root.UpdateLayout();
+            Check(panel.Children.OfType<ScrollViewer>().Single().Visibility == Visibility.Collapsed
+                && panel.Children.OfType<InfoBar>().Single().Visibility == Visibility.Collapsed
+                && composer.ActualHeight < withAttachment - 20, "empty attachments and closed errors do not reserve composer space");
         }
         finally { root.Children.Remove(composer); }
     }

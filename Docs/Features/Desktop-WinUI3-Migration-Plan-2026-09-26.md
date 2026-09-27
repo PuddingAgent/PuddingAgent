@@ -542,3 +542,7 @@ MarkdownView 使用 Markdig Mathematics 解析行内与块公式，交由独立 
 Web `MarkdownBlock.tsx` 的 `language-image` 围栏通过 vision ID 或图片文件名引用资源。原生 `MarkdownImageReference` 提取 canonical ID，`MarkdownImageContext` 经既有 `IImageAttachmentClient.GetImagePreviewAsync` 直接调用 Core；实际文件由当前工作空间的 VisionArtifactStorageService 解析，不直接读取消息中的路径，也不请求旧 Web API。支持同工作空间相对资源 URL、标准 Markdown 图片及 image 围栏；远程 URL/任意文件/跨工作空间路由保留文本或代码。上下文已传入 MessageCard、活动 Turn 和展开的执行明细。
 
 图片只在控件挂载且展开时加载，收起/卸载释放位图，重新挂载恢复展开的预览。Markdown 缓存加入已解析的链接目标，使普通追加保留已解码控件，同时引用定义变化可正确更换目标。验证：60 逻辑/171 原生窗口检查通过，零构建警告/错误；本轮未改 Core 服务实现、未重启用户产品。外部图片、完整资源浏览与真实模型验收仍为后续门禁。
+
+## 组合视觉门禁补充（2026-09-27）
+
+新建 VisualPreview harness 使用真实原生控件生成宽/窄/深色样例图；实色捕获背景不代表系统云母材质。输入区已消除空附件/关闭错误提示的占位，角色标题副文案改为职责。完整消息行内公式在截图中仍显示原文，虽然独立控件检查与 Rendered 标志通过；该组合视觉差异保持未通过，继续定位，不能以此前公式实现条目作为完整视觉验收。

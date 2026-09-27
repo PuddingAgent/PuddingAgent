@@ -188,9 +188,11 @@ public partial class App : Application
                 await VerifyMathFormulaAsync((Grid)control.Content);
                 await VerifyMathMarkdownAsync((Grid)control.Content);
                 await VerifyMarkdownImagesAsync((Grid)control.Content, fixture);
+                await File.WriteAllTextAsync(Report, "{}");
+                var visuals = await CaptureVisualPreviewsAsync((Grid)control.Content);
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 171, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 172, native = true, visuals }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -233,6 +235,8 @@ public partial class App : Application
         { Inspected = key; return Task.FromResult(new SubAgentInspection(key, "completed", "委派任务", "完整结果", [], DateTimeOffset.UnixEpoch)); }
         public Agent Builder = new("builder", "代码工程师", Description: "实现功能与修复");
         public Agent Reviewer = new("reviewer", "代码审阅者", Description: "检查边界与验证");
+        public string AssistantContent = "# 进度\n```cs\nvar result = 1;\n```";
+        public ProcessItem[]? AssistantProcess;
         public PendingSend? Sent; public string? Cancelled; public bool Disposed;
         public TaskCompletionSource<Conversation?> Late = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int WorkspaceReads;
@@ -241,8 +245,8 @@ public partial class App : Application
         public Task<AgentStatus[]> GetStatusesAsync(string workspace, CancellationToken ct) => Task.FromResult<AgentStatus[]>([new("builder", "idle", "待命", 0)]);
         public Conversation Conversation(string agent) => new("test", agent, "session",
             Sent is null ? [] : [new("m", null, "user", "用户", DateTimeOffset.UtcNow, "implement", "accepted", []),
-                new("a", "r", "assistant", "代码工程师", DateTimeOffset.UtcNow, "# 进度\n```cs\nvar result = 1;\n```", "running",
-                    ShowDelegation ? [new("child-run", "delegation", "done", "委派摘要", 10, "reviewer", DelegationExecutionId: "exact-child-run")] : [])],
+                new("a", "r", "assistant", "代码工程师", DateTimeOffset.UtcNow, AssistantContent, Terminal ? "completed" : "running",
+                    AssistantProcess ?? (ShowDelegation ? [new("child-run", "delegation", "done", "委派摘要", 10, "reviewer", DelegationExecutionId: "exact-child-run")] : []))],
             Sent is null || Terminal ? null : new("r", "running", "执行中", "编译", new(Streaming ? "流式正文" : "输出", [new("e", "tool_call", "running", "dotnet build", 2, "terminal", ToolCallId: "call", TurnId: "turn")], new("turn", 2, 2, 2, false))),
             Sent is null ? 0 : Terminal ? 4 : Streaming ? 3 : 2, Sent is null ? null : new(10, 2));
         public int HistoryReads;

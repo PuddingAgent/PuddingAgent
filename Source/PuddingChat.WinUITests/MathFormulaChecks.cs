@@ -11,7 +11,8 @@ public partial class App
 {
     private static async Task VerifyMathFormulaAsync(Grid root)
     {
-        var formula = new MathFormulaView(@"\frac{1}{2}+\sqrt{x}+\sum_{i=1}^{n}i") { RequestedTheme = ElementTheme.Light };
+        var formula = new MathFormulaView(@"\frac{1}{2}+\sqrt{x}+\sum_{i=1}^{n}i")
+            { RequestedTheme = ElementTheme.Light, VerticalAlignment = VerticalAlignment.Top, Width = 420 };
         Grid.SetColumnSpan(formula, 2); root.Children.Add(formula);
         try
         {
@@ -20,7 +21,7 @@ public partial class App
             var image = (Image)((ScrollViewer)formula.Content).Content;
             Check(image.Source is BitmapImage bitmap && bitmap.PixelWidth > 20 && bitmap.PixelHeight > 20,
                 "formula has a decoded bitmap with nonempty dimensions");
-            root.UpdateLayout();
+            root.UpdateLayout(); await NextVisualFrameAsync();
             var light = new RenderTargetBitmap(); await light.RenderAsync(image);
             var pixels = (await light.GetPixelsAsync()).ToArray();
             Check(Enumerable.Range(0, pixels.Length / 4).Count(i => pixels[i * 4 + 3] > 128 && pixels[i * 4] < 32) > 30,
@@ -28,7 +29,7 @@ public partial class App
             var old = formula.Rendering; formula.RequestedTheme = ElementTheme.Dark;
             await UntilAsync(() => !ReferenceEquals(old, formula.Rendering)); await formula.Rendering;
             Check(formula.Rendered && ReferenceEquals(image, ((ScrollViewer)formula.Content).Content), "theme rerender retains native image without reparenting");
-            root.UpdateLayout();
+            root.UpdateLayout(); await NextVisualFrameAsync();
             var dark = new RenderTargetBitmap(); await dark.RenderAsync(image);
             pixels = (await dark.GetPixelsAsync()).ToArray();
             Check(Enumerable.Range(0, pixels.Length / 4).Count(i => pixels[i * 4 + 3] > 128 && pixels[i * 4] > 128) > 30,
@@ -48,6 +49,15 @@ public partial class App
             }
             finally { root.Children.Remove(fallback); }
         }
+    }
+
+    private static async Task NextVisualFrameAsync()
+    {
+        var frame = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        EventHandler<object> handler = (_, _) => frame.TrySetResult();
+        Microsoft.UI.Xaml.Media.CompositionTarget.Rendering += handler;
+        try { await frame.Task.WaitAsync(TimeSpan.FromSeconds(5)); }
+        finally { Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= handler; }
     }
 
     private static async Task VerifyMathMarkdownAsync(Grid root)

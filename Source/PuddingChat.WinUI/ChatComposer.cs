@@ -21,7 +21,8 @@ public sealed class ChatComposer : UserControl
     public int FileCount => _fileItems.Count;
     public void SetFiles(IReadOnlyList<TextFileContext> files) { _fileItems = files.ToArray(); RenderAttachments(); }
     public void SetFileAvailability(bool enabled) => _attachFile.IsEnabled = enabled;
-    private readonly InfoBar _transferNotice = new() { IsOpen = false, IsClosable = true, Severity = InfoBarSeverity.Error };
+    private readonly InfoBar _transferNotice = new() { IsOpen = false, Visibility = Visibility.Collapsed, IsClosable = true, Severity = InfoBarSeverity.Error };
+    private readonly ScrollViewer _attachmentScroll = new() { MaxHeight = 96, Visibility = Visibility.Collapsed, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     public Func<DataPackageView, Task>? ImportImagesAsync { get; set; }
     public Func<DataPackageView, Task>? ImportFilesAsync { get; set; }
     public string TransferError => _transferNotice.IsOpen ? _transferNotice.Message : "";
@@ -37,6 +38,7 @@ public sealed class ChatComposer : UserControl
     private void RenderAttachments()
     {
         _images.Children.Clear();
+        _attachmentScroll.Visibility = _imageItems.Count + _fileItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         foreach (var image in _imageItems)
         {
             var row = new Grid { ColumnSpacing = 8 };
@@ -81,7 +83,10 @@ public sealed class ChatComposer : UserControl
         _toolbar.Children.Add(_attachmentActions); _toolbar.Children.Add(_messageActions);
         Grid.SetColumn(_messageActions, 1);
         SizeChanged += (_, _) => UpdateToolbarLayout();
-        var panel = new StackPanel { Spacing = 12 }; panel.Children.Add(_editor); panel.Children.Add(new ScrollViewer { Content = _images, MaxHeight = 96, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }); panel.Children.Add(_transferNotice); panel.Children.Add(_hint); panel.Children.Add(_toolbar);
+        _attachmentScroll.Content = _images;
+        _transferNotice.RegisterPropertyChangedCallback(InfoBar.IsOpenProperty, (_, _) =>
+            _transferNotice.Visibility = _transferNotice.IsOpen ? Visibility.Visible : Visibility.Collapsed);
+        var panel = new StackPanel { Spacing = 12 }; panel.Children.Add(_editor); panel.Children.Add(_attachmentScroll); panel.Children.Add(_transferNotice); panel.Children.Add(_hint); panel.Children.Add(_toolbar);
         var surface = Surfaces.Card("CardBackgroundFillColorDefaultBrush");
         surface.Child = panel; surface.Padding = new Thickness(16); surface.CornerRadius = new CornerRadius(16); surface.BorderThickness = new Thickness(1);
         Content = surface;

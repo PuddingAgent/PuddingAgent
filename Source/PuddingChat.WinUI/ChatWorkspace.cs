@@ -337,7 +337,7 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
         _follow?.Cancel(); _follow?.Dispose(); _follow = null; _followSession = null;
         _state.Select(role); _agent = agent; _livePanel = null; _liveSnapshot = null; _liveEvents.Clear();
         _messageCards.Clear();
-        _title.Text = agent.Label; _subtitle.Text = $"{workspace} / {agent.AgentId} · {agent.Description}";
+        _title.Text = agent.Label; _subtitle.Text = agent.Description ?? "与角色的工作会话";
         _transcript.Clear(); SetDraft(); UpdateComposer();
         _notice.IsOpen = true; _notice.Title = "正在读取主会话"; _notice.Message = "";
         var generation = _state.Generation; var token = _selection.Token;
@@ -528,7 +528,7 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
         _transcript.SetItems(desired);
         _notice.IsOpen = snapshot.Messages.Length == 0 && snapshot.ActiveRun is null;
         _notice.Title = "开始新的工作"; _notice.Message = "向这位角色描述任务，消息将进入其主会话。";
-        _subtitle.Text = $"{role.WorkspaceId} / {role.AgentId} · 已加载 {snapshot.Messages.Length} 条消息 · {snapshot.MainSessionId}";
+        _subtitle.Text = _cards.GetValueOrDefault(role.AgentId)?.Agent.Description ?? "与角色的工作会话";
         if (snapshot.ActiveRun is { } statusRun)
             _subtitle.Text += $" · {statusRun.StatusText}" + (statusRun.OutputSnapshot.Window?.HasMoreBefore == true ? " · 正在补齐执行轨迹…" : "");
         UpdateComposer();

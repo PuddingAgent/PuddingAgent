@@ -1337,3 +1337,7 @@ PuddingDesktop/MainWindow.Kernel.RunKernelSmokeAsync 在隔离数据目录创建
 ## 原生聊天生成图片（2026-09-27）
 
 `PuddingChat/MarkdownImageReference` 解析 Web image 围栏及 Markdown 图片资源引用为 vision ID；`PuddingChat.WinUI/MarkdownImageContext` 经当前工作空间的直接 Core 端口创建 ImageAttachmentView。MessageCard、活动 Turn 和展开执行内容均传入资源上下文；图片支持挂载加载、回收重载和流式控件复用。`MarkdownImageReferenceTests` 与 `MarkdownImageChecks` 固定边界及真实原生行为，60 逻辑/171 窗口检查通过；详见原生聊天实施报告。
+
+## 原生聊天视觉检查与输入区收敛（2026-09-27）
+
+`ChatComposer` 折叠空附件区和关闭的错误提示，避免无内容时占据输入区间距；`ChatWorkspace` 标题显示角色职责；`MessageCard` 显示中文状态。`PuddingChat.WinUITests/VisualPreview.cs` 输出宽/窄/深色原生截图，MathFormulaChecks 等待绘制帧再检查像素。60 逻辑/172 窗口检查通过。完整消息行内公式截图仍显示原文，与 Rendered=true 诊断不一致，已记录为待修复视觉问题；详见原生聊天实施报告。

@@ -310,3 +310,11 @@ ChatComposer 的拖放及 Ctrl+V 现接收 StorageItems 中的图片与文本/�
 `MarkdownImageContext` 提供原生图片工厂，接入 Markdown image 围栏与标准图片语法，通过 MessageCard、活动 TurnContentView 与 ActivityContentView 传递工作空间/取消生命周期。ImageAttachmentView 自动展开生成图片、延迟到挂载才加载，收起与卸载释放位图，重挂载恢复展开预览。Markdown 按源文本与已解析链接目标共同缓存控件，解决追加正文导致普通 Markdown 图片重建的问题，同时保留引用定义变化时的失效行为。未解析的外部图片仍显示 alt/URL 文本，不声称任意远程 Markdown 图片已迁移。
 
 先运行独立 BCL 引用解析测试，再接原生展示：最终 `test-pudding-native-chat.ps1 -SkipCoreIntegration` 通过 60 逻辑/171 原生窗口检查，构建零警告/错误；日志 `temp/native-markdown-images-final.log`。新增 3 项 BCL 测试与 11 项窗口检查，覆盖引用规范化/工作空间路由/拒绝项、未挂载无读取、当前工作空间端口、流式保持、折叠重载、回收重载、标准图片 alt、引用目标变化、外部链接不读取、MessageCard 与执行活动装配。Core 服务和接口未修改，本轮没有重跑真实 Core 集成或部署用户产品；此前资源端口的真实 Core 测试已覆盖跨工作空间资源拒绝，但不作为本轮部署证明。
+
+## 完整产品复验与原生截图（2026-09-27）
+
+完整 Desktop + Core DLL 隔离 smoke 再次通过：PID 40964，原生聊天挂载、角色/文本附件草稿、Core 重启后聊天重建、UI 回调、目录保存和退出租约释放均通过。报告 `temp/test-out/kernel-winui-0442f5c9369e481cb53c60bd7b468a94/report.json`，日志 `temp/native-chat-product-refresh.log`；构建零错误、144 个既存警告。该验证包含此前公式/生成图片依赖的产品构建和启动，不证明这些内容已在真实模型会话显示，也不包括之后的输入区小改动。
+
+新增 `PuddingChat.WinUITests/VisualPreview.cs`：真实 ChatWorkspace + fixture，渲染 1000 DIP 浅色、360 DIP 浅色和 1000 DIP 深色截图，报告附图片路径。RenderTargetBitmap 使用实色主题背景，不能证明 Mica/Acrylic 系统材质。截图发现空附件区与关闭 InfoBar 的间距浪费，ChatComposer 现在将它们 Collapsed；新增布局断言验证实际高度减少。标题副文案显示角色职责，消息状态复用中文标签，不再把内部 workspace/agent/session ID 放在主界面。60 逻辑/172 窗口检查通过，组件构建零警告/错误。
+
+**视觉验收仍未通过：** 完整聊天截图中行内公式仍呈现原文（例如 `f(x)=x^2`），虽然控件诊断为 Rendered=true、RenderError=null；独立公式像素检查无法证明组合后的外观。已验证等待异步渲染/下一帧、重新测量 RichTextBlock 均未消除此现象；未保留无效的产品重新测量改动。下一步应检查 InlineUIContainer 内控件内容切换/原生捕获行为，不能据绿色组件测试宣称已修复。可复现截图：`temp/test-out/native-chat-dec817b4c5f64bcb89c814079fce51fd/`；后续诊断截图 `native-chat-53f298465f9b4d1c8ed9db4357cb2fed` 结果一致。完整 DPI、IME、屏幕阅读器和真实模型交互仍待验。

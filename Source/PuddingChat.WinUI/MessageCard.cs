@@ -46,7 +46,7 @@ public sealed class MessageCard : UserControl, IDisposable
                 else _attachments.Children.Add(new TextBlock { Text = $"附件 {number} · {part.Type}", Opacity = .65 });
             }
         }
-        _header.Text = $"{message.SourceName}  ·  {message.CreatedAt.ToLocalTime():HH:mm}  ·  {message.Status}";
+        _header.Text = $"{message.SourceName}  ·  {message.CreatedAt.ToLocalTime():HH:mm}  ·  {TurnFlow.StatusLabel(message.Status)}";
         if (_state.RunId != message.RunId)
         { _detailLoad?.Cancel(); _detailLoad = null; _detailsLoaded = false; _details.Children.Clear();
             if (_process is not null) _process.IsExpanded = false;
