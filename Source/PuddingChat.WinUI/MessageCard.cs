@@ -17,10 +17,12 @@ public sealed class MessageCard : UserControl, IDisposable
     private readonly MessageViewState _state;
     private readonly CancellationTokenSource _viewLifetime;
     private readonly TextBlock _header = new() { FontSize = 12, Opacity = .65, TextWrapping = TextWrapping.Wrap };
+    private readonly Button _copy = new() { Content = "复制", HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+    private readonly TextBlock _copyError = new() { TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
     private ChatMessage _message = null!;
     private readonly InfoBar _outcome = new() { IsClosable = false, Severity = InfoBarSeverity.Error };
     private readonly Dictionary<string, ProcessItem> _events;
-    private readonly StackPanel _attachments = new() { Spacing = 8 };
+    private readonly StackPanel _attachments = new() { Spacing = 8, Visibility = Visibility.Collapsed };
     private readonly IImageAttachmentClient? _imageClient;
     private readonly string? _workspace;
     private readonly CancellationToken _ct;
@@ -33,7 +35,9 @@ public sealed class MessageCard : UserControl, IDisposable
         if (_disposed) return;
         if (_message is not null && _message.MessageId != message.MessageId)
             throw new ArgumentException("A message card cannot change message identity.", nameof(message));
+        if (_message?.Content != message.Content) { _copy.Content = "复制"; _copyError.Visibility = Visibility.Collapsed; }
         _message = message;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_copy, $"复制 {message.SourceName} 的消息");
         if (_speech is not null && _speechRole is not null)
         {
             _speech.Update(new(_speechRole, message.MessageId, message.Content));
@@ -53,6 +57,7 @@ public sealed class MessageCard : UserControl, IDisposable
                         _state.Images.GetValueOrDefault(id), expanded => _state.Images[id] = expanded));
                 else _attachments.Children.Add(new TextBlock { Text = $"附件 {number} · {part.Type}", Opacity = .65 });
             }
+            _attachments.Visibility = _attachments.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
         _header.Text = $"{message.SourceName}  ·  {message.CreatedAt.ToLocalTime():HH:mm}  ·  {TurnFlow.StatusLabel(message.Status)}";
         if (_state.RunId != message.RunId)
@@ -63,6 +68,7 @@ public sealed class MessageCard : UserControl, IDisposable
         foreach (var item in message.ProcessItems) _events[item.Id] = item;
         _flow.Update(_events.Values, message.Content);
         _outcome.IsOpen = message.TurnOutcome is { Status: not "succeeded" };
+        _outcome.Visibility = _outcome.IsOpen ? Visibility.Visible : Visibility.Collapsed;
         _outcome.Severity = message.TurnOutcome?.Status == "cancelled" ? InfoBarSeverity.Informational : InfoBarSeverity.Error;
         _outcome.Title = message.TurnOutcome?.Status switch { "cancelled" => "执行已取消", "failed" => "执行失败", _ => message.TurnOutcome?.Status ?? "" };
         _outcome.Message = message.TurnOutcome?.ErrorMessage ?? "";
@@ -99,11 +105,13 @@ public sealed class MessageCard : UserControl, IDisposable
             expander.IsExpanded = _state.DetailsExpanded;
             panel.Children.Add(expander);
         }
-        var copy = new Button { Content = "复制", HorizontalAlignment = HorizontalAlignment.Left };
-        copy.Click += (_, _) => { var data = new Windows.ApplicationModel.DataTransfer.DataPackage(); data.SetText(_message.Content);
-            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data); };
-        panel.Children.Add(copy);
-        if (_speech is not null) panel.Children.Add(_speech);
+        var actions = new Grid { ColumnSpacing = 8 };
+        actions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _copy.Click += (_, _) => CopyText(Windows.ApplicationModel.DataTransfer.Clipboard.SetContent);
+        actions.Children.Add(_copy);
+        if (_speech is not null) { Grid.SetColumn(_speech, 1); actions.Children.Add(_speech); }
+        panel.Children.Add(actions); panel.Children.Add(_copyError);
         var surface = Surfaces.Card(message.Role == "user" ? "SubtleFillColorSecondaryBrush" : "CardBackgroundFillColorDefaultBrush");
         surface.Padding = new Thickness(20); surface.Margin = new Thickness(0, 0, 0, 12); surface.CornerRadius = new CornerRadius(14); surface.Child = panel;
         if (message.Role == "user") { surface.HorizontalAlignment = HorizontalAlignment.Right; surface.MaxWidth = 680; }
@@ -147,5 +155,18 @@ public sealed class MessageCard : UserControl, IDisposable
         finally { if (ReferenceEquals(_detailLoad, load)) _detailLoad = null; }
     }
     public static UIElement RenderText(string text) => new MarkdownView(text);
-    public void Dispose() { if (_disposed) return; _disposed = true; _speech?.Dispose(); _viewLifetime.Cancel(); _viewLifetime.Dispose(); }
+    internal void CopyText(Action<Windows.ApplicationModel.DataTransfer.DataPackage> publish)
+    {
+        if (_disposed) return;
+        try
+        {
+            var data = new Windows.ApplicationModel.DataTransfer.DataPackage(); data.SetText(_message.Content);
+            publish(data); _copy.Content = "已复制"; _copyError.Visibility = Visibility.Collapsed;
+        }
+        catch
+        {
+            _copy.Content = "重试复制"; _copyError.Text = "暂时无法写入剪贴板，请重试。"; _copyError.Visibility = Visibility.Visible;
+        }
+    }
+    public void Dispose() { if (_disposed) return; _disposed = true; _copy.IsEnabled = false; _speech?.Dispose(); _viewLifetime.Cancel(); _viewLifetime.Dispose(); }
 }

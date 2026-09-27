@@ -143,3 +143,11 @@ TextPageWindow 独立测试先通过，再验证分页窗口，最后接工具�
 来源必须同时记录：隔离工作树基线 ee7277afbd31fde898a080fea14bd72a42b07726，GM 子模块 ae0ca44294e9aa4853ab1002b076036346a651a3，另加入 WorkspaceService.cs 和 WorkspaceApiController.cs 两份既有合同重命名（WorkspaceDraft→WorkspaceCreateDraft、WorkspaceEdit→WorkspaceMetaUpdate），补丁存 temp/native-chat-validation-contract.patch。基线中的 Desktop 适配器已使用新名称，Core 重命名尚未提交，因此基线原样构建失败。本次通过不能被引用为该提交原样可构建的证据。最初共享目录构建另遇未提交 RoleSummary 重名，未在本任务改动该组工作。
 
 测试产物 PuddingChat.WinUI.dll SHA256：98D4ECF68B1F9CBB3FFEDA6A26C874C22BC7DB047D33267B28C5EE181B9FFF50。该测试证明当前聊天组件能随完整 Shell/Core 装配和释放，不执行真实模型、麦克风、Narrator 或所有新增交互；新增交互的证据仍来自 85 逻辑/236 窗口检查。完整目标保持进行中。
+
+## 消息操作区与空白收敛（2026-09-27）
+
+根据窄窗口截图，MessageCard 的复制与朗读从两行改为同一行 Grid（复制自动宽度、朗读使用剩余空间），朗读错误提示仍在该列内换行。空附件区和关闭的结果 InfoBar 收起，避免额外间距挤占正文。复制提供成功与可重试失败提示，始终取当前消息正文；消息回收后禁用复制，不再因剪贴板占用导致未处理异常。
+
+85 逻辑/243 原生窗口检查通过，零组件构建警告/错误，日志 temp/native-message-actions.log。新增七项覆盖空白区、320 DIP 操作同行、剪贴板失败/重试、最新正文、朗读失败宽度与回收保护。剪贴板检查使用注入发布回调与真实 DataPackage，不修改系统剪贴板。首次朗读错误断言在控件 Loaded 回调前执行，加入实际视觉帧等待后验证正确。
+
+已检查 temp/test-out/native-chat-16dce3b36f1147148b2ee7d8b5ae1405/ui.compact-light.png：操作按钮并排，更多工具/正文内容可见。宽/深色截图同步生成；本轮不是完整 Desktop 部署或真实读屏/输入法验收。
