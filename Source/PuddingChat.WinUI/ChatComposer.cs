@@ -17,6 +17,9 @@ public sealed class ChatComposer : UserControl
     public Func<DataPackageView, Task>? ImportImagesAsync { get; set; }
     public string TransferError => _transferNotice.IsOpen ? _transferNotice.Message : "";
     private readonly StackPanel _images = new() { Spacing = 4 };
+    private readonly Grid _toolbar = new() { ColumnSpacing = 8, RowSpacing = 8 };
+    private readonly StackPanel _attachmentActions = new() { Orientation = Orientation.Horizontal, Spacing = 8 };
+    private readonly StackPanel _messageActions = new() { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
     public event EventHandler? AttachRequested;
     public event Action<string>? RemoveImageRequested;
     public int ImageCount => _images.Children.Count;
@@ -25,10 +28,13 @@ public sealed class ChatComposer : UserControl
         _images.Children.Clear();
         foreach (var image in images)
         {
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            var row = new Grid { ColumnSpacing = 8 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var remove = new Button { Content = "移除", Tag = image.ArtifactId };
             remove.Click += (_, _) => RemoveImageRequested?.Invoke(image.ArtifactId);
-            row.Children.Add(new TextBlock { Text = image.Name, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 500, VerticalAlignment = VerticalAlignment.Center });
+            row.Children.Add(new TextBlock { Text = image.Name, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
+            ToolTipService.SetToolTip(row, image.Name); Grid.SetColumn(remove, 1);
             row.Children.Add(remove); _images.Children.Add(row);
         }
     }
@@ -41,9 +47,16 @@ public sealed class ChatComposer : UserControl
     public string Draft { get => _editor.Text; set { if (_editor.Text != value) _editor.Text = value; } }
     public ChatComposer()
     {
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
-        buttons.Children.Add(_attach); buttons.Children.Add(_pasteImage); buttons.Children.Add(_cancel); buttons.Children.Add(_send);
-        var panel = new StackPanel { Spacing = 12 }; panel.Children.Add(_editor); panel.Children.Add(new ScrollViewer { Content = _images, MaxHeight = 96, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }); panel.Children.Add(_transferNotice); panel.Children.Add(_hint); panel.Children.Add(buttons);
+        _toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        _toolbar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _toolbar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _attachmentActions.Children.Add(_attach); _attachmentActions.Children.Add(_pasteImage);
+        _messageActions.Children.Add(_cancel); _messageActions.Children.Add(_send);
+        _toolbar.Children.Add(_attachmentActions); _toolbar.Children.Add(_messageActions);
+        Grid.SetColumn(_messageActions, 1);
+        SizeChanged += (_, _) => UpdateToolbarLayout();
+        var panel = new StackPanel { Spacing = 12 }; panel.Children.Add(_editor); panel.Children.Add(new ScrollViewer { Content = _images, MaxHeight = 96, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }); panel.Children.Add(_transferNotice); panel.Children.Add(_hint); panel.Children.Add(_toolbar);
         var surface = Surfaces.Card("CardBackgroundFillColorDefaultBrush");
         surface.Child = panel; surface.Padding = new Thickness(16); surface.CornerRadius = new CornerRadius(16); surface.BorderThickness = new Thickness(1);
         Content = surface;
@@ -73,6 +86,14 @@ public sealed class ChatComposer : UserControl
         _attach.Click += (_, _) => AttachRequested?.Invoke(this, EventArgs.Empty);
         _cancel.Click += (_, _) => CancelRequested?.Invoke(this, EventArgs.Empty);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_editor, "当前角色的消息草稿");
+    }
+    private void UpdateToolbarLayout()
+    {
+        var compact = ActualWidth < 480;
+        Grid.SetColumnSpan(_attachmentActions, compact ? 2 : 1);
+        Grid.SetRow(_messageActions, compact ? 1 : 0);
+        Grid.SetColumn(_messageActions, compact ? 0 : 1);
+        Grid.SetColumnSpan(_messageActions, compact ? 2 : 1);
     }
     public void SetContext(string? role, bool editable)
     {

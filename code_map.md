@@ -32,6 +32,8 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 
 ## 2026-09-27 原生聊天交错消息流
 
+`ChatComposer` 在宽度小于 480 DIP 时将附件与发送/停止操作分成两行；附件行使用 Grid 保留移除按钮空间，长名称省略并通过提示显示全名。`ComposerLayoutChecks` 验证 320/360/900 DIP 的实际按钮边界、长附件名与缩放时草稿/状态保留。
+
 `PuddingChat.WinUI/MessageCard.LoadProcessDetailsAsync` 按 Run 隔离明细加载：运行身份变化取消旧等待并清空旧视图/缓存，释放控件取消等待，拒绝跨消息结果，历史明细不覆盖当前快照。`MessageDetailsChecks` 在原生窗口验证竞争加载、晚到结果、缓存回收与失败重试。
 
 `PuddingToolRegistry` 保留 NeedHuman 的 `human_decision_required` 状态；`ToolInvocationResult` 与 Runtime 的 `SkillResult` 透传 Status/ExitCode，流式工具结果携带状态，`PuddingChat/TurnFlow` 区分人工决定、依赖等待与失败。此链路尚不创建审批请求或暂停 Run；执行熔断策略保持原样。
