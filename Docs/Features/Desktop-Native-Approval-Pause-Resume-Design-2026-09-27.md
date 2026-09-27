@@ -139,3 +139,14 @@ S5 完成前，NC-01 不得记为完成，也不得据此关闭 NC-03 的「完�
 ## 6. 必测故障点
 
 请求落盘、决定落盘、通知前、消费后四个故障点各自需要持久记录与测试证据（任务书 NC-01 完成标准）。S2 覆盖「请求落盘（park）」与「唤醒 CAS 唯一性」两个点；决定落盘与通知前属于 NC-02；消费后属于 S5。
+
+## 7. 恢复时不可跳过的前置：驱动的 harness 尚不存在
+
+源码核查（2026-09-27）结论：**当前没有任何测试能真正驱动 `AgentExecutionService` 的流式工具循环**。
+
+- `Source/PuddingRuntimeTests` 中所有 `AgentExecution*` 用例都是对**被抽出的纯逻辑/策略**做断言（如 `TerminalArbitrationMatrixTests` 明确写「对齐 `AgentExecutionService.Buffered.cs` 的生产顺序」，而不是运行它）。
+- 没有 `ITurnExecutor` 的替身实现，也没有可编排的假 LLM 流式客户端来产出「工具调用 → NeedHuman」序列。
+
+因此 S3/S4 若在没有该 harness 的情况下落地，只能得到「编译通过」而**无法证明副作用 0/1、同批次不重跑、跨重启续行**——这正是任务书 NC-01 完成标准要求的东西。
+
+**结论：S5 的第一步不是改 Runtime，而是先建一个可编排的 harness**（可注入的 LLM 流式替身 + 真实工具注册表 + 可控 NeedHuman 工具 + 真实 SqliteJournal/LeaseStore）。在该 harness 通过之前，不得开始 S3 的暂停信号改动，否则会产生无法验收的半成品。这是本轮登记的、优先级最高的事实。

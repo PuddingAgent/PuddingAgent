@@ -34,7 +34,7 @@
 | ID | 优先级 | 任务 | 状态 | 前置 | 负责边界 |
 |---|---|---|---|---|---|
 | NC-00 | P0 | 收口暂停现场的审批等待/熔断修复 | 已完成，提交 `197761b` | 无 | Runtime |
-| NC-01 | P0 | 真实审批请求与持久暂停/原 invocation 恢复 | 未实现 | NC-00、既有 A1 | Runtime + Platform 执行调度 |
+| NC-01 | P0 | 真实审批请求与持久暂停/原 invocation 恢复 | 部分完成：S1/S2 已提交 `9562b9c`；S3/S4/S5 未实施 | NC-00、既有 A1 | Runtime + Platform 执行调度 |
 | NC-02 | P0 | Core 审批应用服务、事务通知和生命周期整合 | 未实现 | NC-01 的持久契约 | Core/Platform + Composition |
 | NC-03 | P0 | 原生固定待审批区与角色提示闭环 | 卡片已有，工作台未接 | NC-01、NC-02 | Chat/WinUI |
 | NC-04 | P1 | 真实模型端到端聊天与取消验收 | 未验收 | 当前聊天；审批部分依赖 NC-03 | 集成/外部验收 |
@@ -88,6 +88,22 @@
 4. 拒绝、到期、停止、角色冻结、Core 重启有明确权威转换；等待不计执行错误但仍受明确的等待期限/资源上限约束，不无限占用 worker。
 
 完成标准：可控工具真正触发 NeedHuman；批准前副作用 0，单次批准后 1；双击/并发/恢复不增加；同批次先前工具不重跑；等待释放槽位；跨重启恢复通过；DeferredDependency、硬拒绝不产生人工放行入口。请求落盘、决定落盘、通知前、消费后故障点均提供测试和持久记录证据。
+
+交付记录（2026-09-27 恢复执行）：
+
+| 项 | 内容 |
+|---|---|
+| 任务 ID | NC-01（部分完成） |
+| 状态 | **S1/S2 已实施并独立验证；S3/S4/S5 未实施；完成标准整体未达成** |
+| 提交号 | `9562b9c` |
+| 变更文件 | 新增 `Source/PuddingCore/Platform/ApprovalResumeContracts.cs`、`Source/PuddingPlatformTests/Services/ApprovalPauseResumeTests.cs`、`Docs/Features/Desktop-Native-Approval-Pause-Resume-Design-2026-09-27.md`；修改 `IExecutionJournal.cs`、`IExecutionLeaseStore.cs`、`ChatExecutionCommandEntity.cs`、`ExecutionRunSchemaBootstrapper.cs`、`SqliteExecutionJournal.cs`、`SqliteExecutionLeaseStore.cs`、`ExecutionRunSchemaBootstrapperTests.cs`、`code_map.md` |
+| 验证命令 | `dotnet test Source/PuddingPlatformTests/PuddingPlatformTests.csproj --artifacts-path temp/build/nc01-approval --nologo -p:CollectCoverage=false --filter "FullyQualifiedName~ApprovalPauseResumeTests|FullyQualifiedName~ExecutionRunSchemaBootstrapperTests"` |
+| 通过证据 | 18/18 通过（暂停恢复 14 项 + schema 补列 4 项），日志 `temp/nc01-approval-pause.log` |
+| 已覆盖的完成标准 | 请求落盘（park 三行 `waiting_approval`、无终态、释放租约）；等待释放槽位；单次批准只执行一次（连续与 8 路并发均只有一个赢家）；旧租约被更高 fencing token 围栏挡下；跨重启读回并唯一一次领取；未知版本/损坏恢复点拒绝；冻结截止时间已过不续行 |
+| 未覆盖 | **不由本次证明**：Runtime 未产生恢复点、Coordinator/Worker 未接线、同批次不重跑、副作用 0/1、DeferredDependency/硬拒绝无人工入口、到期暂停的扫描收口 |
+| 关键前置（本轮新事实） | **当前没有任何测试能驱动 `AgentExecutionService` 的流式工具循环**：`PuddingRuntimeTests` 的 `AgentExecution*` 用例都是对被抽出的纯逻辑做断言（`TerminalArbitrationMatrixTests` 自述「对齐 `Buffered.cs` 的生产顺序」），没有 `ITurnExecutor` 替身，也没有可编排的假 LLM 流式客户端。因此 S3/S4 之前必须先建该 harness，否则只能得到「编译通过」而无法验收。详见设计文档 §7 |
+| 已知限制 | 到期暂停没有扫描收口（测试显式固定该行保持 `waiting_approval`）；`RuntimeStateJson` 字段清单未冻结（设计文档 §3.4） |
+| 下一依赖 | 先建流式循环 harness → S3（Runtime 暂停信号）→ S4（Coordinator/Worker 接线）→ S5（端到端证据） |
 
 ### NC-02：Core 决定服务与事件接入
 
