@@ -46,7 +46,7 @@ security,密钥与审批,audit,审批审计,classifier-health,分类器健康,�
 access,外部访问,tokens,Access Token,access-tokens,令牌管理,已接入,DS-11,名称；Workspace 允许清单；Scope 八种现有权限；有效期；Owner；状态；最后使用；版本；撤销原因,pages/access-token-management/index.tsx,列表/详情/创建/重命名/撤销；新令牌仅显示一次。
 access,外部访问,tokens,Access Token,external-api-status,API 状态与限制,已接入,DS-11,API 可用性；最长有效期；每人 Active 上限；创建错误/版本冲突,pages/access-token-management/components/SecretOnceModal.tsx,显示服务端准入状态和创建限制。
 accounts,用户与权限,users,用户,users,账号与头像,已接入,DS-12,userId；username；email；displayName；userType(Admin/SimpleUser)；isEnabled；avatar；初始/新密码；确认密码；角色集合,pages/user-management/index.tsx,新增/编辑/启停/删除、修改密码、分配角色。
-accounts,用户与权限,teams,团队,teams,团队与成员,待迁移,DS-12,teamId；name；description；成员 userId/role；workspaceId/name/description/isEnabled；teamAccessPolicy/companyAccessPolicy；工作区成员 userId/accessLevel,pages/team-management/index.tsx,团队 CRUD、成员管理、团队工作区与访问策略。
+accounts,用户与权限,teams,团队,teams,团队与成员,已接入,DS-12,teamId；name；description；成员 userId/role；workspaceId/name/description/isEnabled；teamAccessPolicy/companyAccessPolicy；工作区成员 userId/accessLevel,pages/team-management/index.tsx,团队 CRUD、成员管理、团队工作区与访问策略。
 accounts,用户与权限,roles,权限角色,rbac,RBAC 角色,已接入,DS-12,roleId；name；description；workspace read/write/manage；team read/manage；user read/manage；agent run/manage；template read/manage；llm read/manage,pages/role-management/index.tsx,平台权限角色与智能体角色分别命名。
 runtime,运行与节点,local,本机内核,local-kernel,数据目录与生命周期,已有入口,DS-00,DataRoot 保存/恢复默认；重开生效；启动/停止/重启；PID/状态；独立诊断路径,Source/PuddingDesktop/MainWindow.Kernel.cs,现有功能位于运行中心；从本页进入。
 runtime,运行与节点,nodes,运行节点,runtime-nodes,节点目录与详情,待迁移,DS-13,总数/在线/降级/离线/活跃会话；nodeId；endpoint；host/IP；heartbeat；mode；hostType；capabilities；冻结原因,pages/runtime-management/index.tsx,显示嵌入式/独立节点、能力；支持冻结/解冻的节点沿用现有准入。

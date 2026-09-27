@@ -1,6 +1,9 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-12 用户与权限（团队切片，DS-12 完成）
+
+`accounts/teams` 接上新的 `TeamService`（从直接使用 DbContext 的 `TeamApiController` 下沉）：团队增删改、团队成员（用户 + Member/Admin 角色）、团队下的工作区（含团队/公司访问策略与启用状态）、工作区白名单（访问级别 None 不可用）。Core 的三道守卫都按原样呈现并在界面设了对应入口：**团队下还有工作区时不能删除团队**、**白名单级别不能用 None**、**内置默认工作空间受保护**。一处刻意修正：该控制器的工作区删除原先**没有**默认工作区保护（`WorkspaceApiController` 有），从团队页可以删掉 default——已补上同一条保护，`TeamServiceTests` 固定该行为。踩坑记录：`Tracked()` 只对团队实体成立，工作区需要各自的 tracked 查询，否则变更会作用在错误的实体类型上（编译期即暴露）。验证：Core `TeamServiceTests` 5 项、Foundation 187 项、Composition 28 项（真实 Host：建团队→加成员→建工作区→策略校验→None 白名单被拒→跨工作区删除被拒→默认工作区不可删→清理后可删团队）、窗口 smoke 229 项通过。DS-12 三张卡全部接入。
 ## 2026-09-27 DS-12 用户与权限（账号切片）
 
 `accounts/users` 接上新的 `UserService`（从直接使用 DbContext 的 `AppUserApiController` 下沉）：账号列表与详情、新建（二次确认密码）、编辑与启停、改密、**角色全量替换**、确认删除；密码只写不读，模型里没有密码也没有哈希。**本轮抓出并修复两个真实缺陷**：①变更路径沿用了 `AsNoTracking` 查询，实体是游离的，`SaveChanges` **静默不生效**（改名、分配角色都没落盘）——读用 no-tracking、写用 tracked，并在注释里写明原因；②`AppUserDto` 只 `Include(UserRoles)` 不含 `Role`，`MapToDto` 的 `ur.Role?.RoleId ?? 数字ID` 因此**总是回退成数字实体 ID**，界面拿到的不是角色 ID——现在两个查询都 `ThenInclude(Role)`。另有一处刻意修正：原 `Update` 不查邮箱重复，改成已占用邮箱会撞唯一索引变 500；现在与新建一致返回冲突（同一个数据库约束，错误形态更诚实）。Core 规则保留：新建/编辑的 UserType 校验、密码 6 位下限、删除最后一个 Admin 被拒。验证：Foundation 182 项、Composition 27 项（真实 Host：短密码被拒、重名/重邮箱冲突、改名与启停生效、改密、角色分配与清空、删除与重复删除、最后 Admin 保护）、窗口 smoke 225 项通过。

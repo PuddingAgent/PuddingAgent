@@ -463,6 +463,7 @@ public static partial class PuddingServiceCollectionExtensions
         // ── 权限角色：同一应用操作供 HTTP 与原生客户端复用 ──
         builder.Services.AddScoped<RoleService>();
         builder.Services.AddScoped<UserService>();
+        builder.Services.AddScoped<TeamService>();
 
         // ── 文件式 TTS/ASR 语音 Provider/Model 管理 ──
         builder.Services.AddSingleton<VoiceProviderFileService>();

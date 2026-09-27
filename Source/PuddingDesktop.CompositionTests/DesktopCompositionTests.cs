@@ -1998,6 +1998,112 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task TeamAdapter_ManagesTeamsMembersWorkspacesAndWhitelists()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var teams = factory.CreateTeamSettings(kernel);
+        var users = factory.CreateUserSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => teams.ListAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var seeded = await teams.ListAsync(timeout.Token);
+            Assert.NotEmpty(seeded);
+            // default 工作区属于某个已存在的团队，所以那个团队不能直接删除。
+            Assert.Contains(seeded, team => !team.CanDelete);
+
+            await teams.CreateAsync(new TeamEdit("composition-team", "Composition Team", "fixture", true), timeout.Token);
+            var created = Assert.Single(await teams.ListAsync(timeout.Token), team => team.TeamId == "composition-team");
+            Assert.True(created.IsEnabled);
+            Assert.True(created.CanDelete);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => teams.CreateAsync(
+                new TeamEdit("composition-team", "Duplicate", "", true), timeout.Token));
+            await teams.UpdateAsync(new TeamEdit("composition-team", "Renamed Team", "edited", false), timeout.Token);
+            var renamed = Assert.Single(await teams.ListAsync(timeout.Token), team => team.TeamId == "composition-team");
+            Assert.Equal("Renamed Team", renamed.Name);
+            Assert.False(renamed.IsEnabled);
+
+            // 隔离数据根没有用户，成员校验需要先建一个真实用户。
+            await users.CreateAsync(new UserCreate("composition-member", "Composition Member",
+                "composition-member@example.invalid", "", "SimpleUser", "s3cret-pass", "s3cret-pass"), timeout.Token);
+            var user = Assert.Single(await users.ListAsync(timeout.Token),
+                candidate => candidate.UserId == "composition-member");
+            await Assert.ThrowsAsync<InvalidOperationException>(() => teams.AddMemberAsync(
+                new TeamMemberAdd("composition-team", user.UserId, "Owner"), timeout.Token));
+            await teams.AddMemberAsync(new TeamMemberAdd("composition-team", user.UserId, "Admin"), timeout.Token);
+            var member = Assert.Single(await teams.ListMembersAsync("composition-team", timeout.Token));
+            Assert.Equal(user.UserId, member.UserId);
+            Assert.Equal("Admin", member.Role);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => teams.AddMemberAsync(
+                new TeamMemberAdd("composition-team", user.UserId, "Member"), timeout.Token));
+            await teams.RemoveMemberAsync("composition-team", user.UserId, timeout.Token);
+            Assert.Empty(await teams.ListMembersAsync("composition-team", timeout.Token));
+
+            // 工作区：创建后团队不可删除，策略必须合法。
+            await Assert.ThrowsAsync<InvalidOperationException>(() => teams.CreateWorkspaceAsync(
+                new TeamWorkspaceEdit("composition-team", "composition-space", "S", "", "", "Owner", "Manage", true),
+                timeout.Token));
+            await teams.CreateWorkspaceAsync(new TeamWorkspaceEdit("composition-team", "composition-space",
+                "Composition Space", "d", "", "Manage", "ReadOnly", true), timeout.Token);
+            var workspace = Assert.Single(await teams.ListWorkspacesAsync("composition-team", timeout.Token));
+            Assert.Equal("composition-team", workspace.TeamId);
+            Assert.Equal("ReadOnly", workspace.CompanyAccessPolicy);
+            Assert.Contains(await teams.ListAsync(timeout.Token),
+                team => team.TeamId == "composition-team" && !team.CanDelete);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => teams.DeleteAsync("composition-team", timeout.Token));
+
+            await teams.UpdateWorkspaceAsync(new TeamWorkspaceEdit("composition-team", "composition-space",
+                "Renamed Space", "d", "", "ReadOnly", "None", false), timeout.Token);
+            var updated = Assert.Single(await teams.ListWorkspacesAsync("composition-team", timeout.Token));
+            Assert.Equal("Renamed Space", updated.Name);
+            Assert.False(updated.IsEnabled);
+
+            // 白名单：None 被拒，重复被拒，跨工作区删除被拒。
+            await Assert.ThrowsAsync<InvalidOperationException>(() => teams.AddWorkspaceMemberAsync(
+                new TeamWorkspaceMemberAdd("composition-space", user.UserId, "None"), timeout.Token));
+            await teams.AddWorkspaceMemberAsync(new TeamWorkspaceMemberAdd("composition-space", user.UserId, "Write"),
+                timeout.Token);
+            var entry = Assert.Single(await teams.ListWorkspaceMembersAsync("composition-space", timeout.Token));
+            Assert.Equal("Write", entry.AccessLevel);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => teams.AddWorkspaceMemberAsync(
+                new TeamWorkspaceMemberAdd("composition-space", user.UserId, "Manage"), timeout.Token));
+
+            var otherWorkspace = (await teams.ListAsync(timeout.Token))
+                .SelectMany(team => team.WorkspaceCount > 0 ? new[] { team.TeamId } : [])
+                .FirstOrDefault();
+            if (otherWorkspace is not null)
+            {
+                var foreign = (await teams.ListWorkspacesAsync(otherWorkspace, timeout.Token)).FirstOrDefault();
+                if (foreign is not null)
+                    await Assert.ThrowsAsync<InvalidOperationException>(() => teams.RemoveWorkspaceMemberAsync(
+                        foreign.WorkspaceId, entry.Id, timeout.Token));
+            }
+            // 内置默认工作空间在此路径同样受保护。
+            await Assert.ThrowsAsync<InvalidOperationException>(() => teams.DeleteWorkspaceAsync("default", timeout.Token));
+
+            await teams.RemoveWorkspaceMemberAsync("composition-space", entry.Id, timeout.Token);
+            Assert.Empty(await teams.ListWorkspaceMembersAsync("composition-space", timeout.Token));
+            await teams.DeleteWorkspaceAsync("composition-space", timeout.Token);
+            Assert.Empty(await teams.ListWorkspacesAsync("composition-team", timeout.Token));
+            await teams.DeleteAsync("composition-team", timeout.Token);
+            Assert.DoesNotContain(await teams.ListAsync(timeout.Token), team => team.TeamId == "composition-team");
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => teams.ListAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

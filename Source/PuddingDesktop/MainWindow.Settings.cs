@@ -231,6 +231,15 @@ public sealed partial class MainWindow
         var users = VisibilityOf("accounts", "users", tab);
         UsersSettings.Visibility = users;
         if (users == Visibility.Visible) LoadUsersIfNeeded();
+        var teamTab = VisibilityOf("accounts", "teams", tab);
+        TeamsSettings.Visibility = teamTab;
+        if (teamTab == Visibility.Visible) LoadTeamsIfNeeded();
+    }
+
+    private async void LoadTeamsIfNeeded()
+    {
+        try { await LoadTeamsAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadUsersIfNeeded()
@@ -456,6 +465,7 @@ public sealed partial class MainWindow
         ("access", "tokens") => true,
         ("accounts", "roles") => true,
         ("accounts", "users") => true,
+        ("accounts", "teams") => true,
         _ => false
     };
 

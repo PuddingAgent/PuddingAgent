@@ -24,6 +24,7 @@
 | `SkillHubContracts.cs` | DS-07 全部分片：`ISkillHubSettings` 读模型与写入记录、概览统计与审计事件、Core 真实词表（SkillId 正则、进化动作/状态/可见性白名单）、技能库与版本发布、EVO MAP 谱系（`RenderLineage` 显式呈现无根组件与环、`DescribeLineage` 计数悬空边/缺失父节点）、安装台账语义与更新落后判定 |
 | `SkillPackageContracts.cs` | DS-07 旧技能包切片：`ISkillPackageSettings`（列表/元数据/删除/上传/替换/下载链接）、`SkillPackageText`（扩展名与 Core 一致、id 与排序校验、字节数显示） |
 | `AgentGrantContracts.cs` | DS-04 授权切片：可选授权项（能力/技能包）、`AgentGrantSet`、`AgentGrantSelection`（未指定 ≠ 明确不授权）、模板与实例的快照对比、目录外授权项校验 |
+| `TeamContracts.cs` | DS-12 团队切片：`ITeamSettings`（团队/成员/工作区/白名单）、团队与白名单词表（None 不是可用白名单级别）、团队删除与默认工作区保护说明 |
 | `UserContracts.cs` | DS-12 用户切片：`IUserSettings`、账号模型（**无密码无哈希**）、创建/改密的二次确认与 6 位下限、UserId/邮箱校验、最后 Admin 保护说明 |
 | `RoleContracts.cs | DS-12 角色切片：`IRoleSettings`（显式 create/update，不从缺失 ID 猜）、`PermissionRole`（系统内置只读、未知权限可标出）、Core 实际定义的 9 项权限词表与 `team:*/user:*` 差异说明 |
 | `AccessTokenContracts.cs | DS-11 访问令牌切片：`IAccessTokenSettings`、External API 策略、令牌元数据（**无明文也无哈希**）、8 项 scope 白名单与不隐含关系、创建/CAS/撤销语义 |
@@ -37,4 +38,4 @@
 | `WorkspaceContracts.cs` | DS-05 工作区/成员切片：`IWorkspaceSettings`、状态显示（停用/冻结分开）、Core 的访问策略词表、UserProfile 必须是合法 JSON、内置默认工作区不可停用 |
 | `PuddingDesktop.Foundation.csproj | 编译期拒绝任何项目/包引用；输出限于 temp/build/winui3 |
 
-独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。182 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。
+独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。187 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。

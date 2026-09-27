@@ -25,6 +25,7 @@
 | `MainWindow.MemoryLibrarySettings.cs` | DS-08 资料库切片：工作区/Agent/资料库选择（含确保默认库）、页面树只读渲染、节点创建、Book 打开/编辑/新建/归档、章节分页/编辑/新建/归档 |
 | `MainWindow.MemorySearchSettings.cs` | DS-08 搜索与检查器：全文搜索（条数选择、结果与分数按 Core 原样显示）、章节元数据、来源引用与图谱指针（出边/反链分开）、「在资料库中打开」定位 |
 | `MainWindow.ApprovalSettings.cs` | DS-10 授权与审批审计：规则增删改（含 effect allow/deny 与来源）、停用而非删除、审计事件筛选与统计；两张卡共用 security/audit 页签 |
+| `MainWindow.TeamSettings.cs` | DS-12 团队：团队增删改、成员与角色、团队下工作区（含访问策略）、工作区白名单（None 不可用）；默认工作区与「有工作区不能删团队」双重防线 |
 | `MainWindow.UserSettings.cs` | DS-12 账号：列表与详情、新建（含二次确认密码）、编辑与启停、改密、角色全量替换、确认删除；密码只写不读 |
 | `MainWindow.RoleSettings.cs` | DS-12 RBAC：角色列表与权限编辑（9 项 Core 权限可勾选）、系统内置角色禁用保存/删除、权限差异说明卡 |
 | `MainWindow.AccessTokenSettings.cs` | DS-11 访问令牌：External API 策略、令牌列表与筛选、创建（明文只显示一次并可复制）、重命名与撤销（带 expectedVersion）；界面无 reveal/unrevoke |

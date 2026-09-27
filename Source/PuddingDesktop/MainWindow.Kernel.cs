@@ -33,6 +33,7 @@ public sealed partial class MainWindow
     private readonly PuddingDesktop.Foundation.IAccessTokenSettings _accessTokens;
     private readonly PuddingDesktop.Foundation.IRoleSettings _roles;
     private readonly PuddingDesktop.Foundation.IUserSettings _users;
+    private readonly PuddingDesktop.Foundation.ITeamSettings _teams;
     private string? _chatDataRoot;
     private string KernelSettingsPath => Path.Combine(App.StateRoot, "desktop.kernel.json");
     private sealed record KernelSettings(string DataRoot);
