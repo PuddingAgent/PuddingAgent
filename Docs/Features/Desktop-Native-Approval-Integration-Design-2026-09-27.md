@@ -99,7 +99,7 @@ Core 决定服务拥有 Pending→Approved/Denied/Expired 的原子转换，禁�
 
 修复 NeedHuman 在 PuddingToolExecutionService 中被折叠为普通 403 的问题，新增 human_decision_required；DeferredDependency 保持 dependency_wait/428，终局拒绝仍为 403。ToolInvocationResult、Runtime SkillResult 与流式工具结果传递 Status/ExitCode；原生 TurnFlow 优先保留两种准入状态，普通非零退出仍显示失败。
 
-这只是现有执行链的结果保真，不创建持久审批请求、不建立 Run 暂停点、不自动重试工具，也不改变防火墙或错误熔断规则。熔断触发后的结果仍由既有熔断规则决定。A2/A3 尚未闭环，不能把“需人工决定”理解为 Run 已可靠挂起或已经允许继续执行。
+这只是现有执行链的结果保真，不创建持久审批请求、不建立 Run 暂停点、也不自动重试工具；当时**未**改动防火墙与错误熔断规则。两种准入等待被排除在工具熔断之外是后续 NC-00 收口另行完成的改动（见本文末节），熔断触发后的结果仍由既有熔断规则决定。A2/A3 尚未闭环，不能把“需人工决定”理解为 Run 已可靠挂起或已经允许继续执行。
 
 ## 2026-09-27 操作快照与 A2 执行证据
 
@@ -124,3 +124,18 @@ Core 决定服务拥有 Pending→Approved/Denied/Expired 的原子转换，禁�
 这里的 Pending 是保存状态，不等于“仍可批准”：过期但尚未经过状态转换的记录也返回 ExpiresAt，读取不替用户决定、不写 outbox。UI/应用服务必须据到期时间禁用操作，真正决定仍通过 ApprovalService 的到期检查和 CAS。各页不是跨请求事务快照；已提交状态通知后应从空游标刷新，以看到游标之前新插入的请求。作用域的调用者身份认证仍属于 Core 应用服务，存储过滤不能代替授权。
 
 18 项独立审批逻辑与 9 项 SQLite 测试通过，日志 temp/native-approval-inbox-logic.log、temp/native-approval-inbox.log。覆盖跨角色/会话/工作区隔离、游标无重复、提交决定后移除、重开数据库、参数化筛选、只读不改变过期请求、边界限制和取消。没有登记 Host、没有读取 D:\data、没有创建实际人工等待请求。A2 持久暂停/续行、A3 生产投影及 A5 原生区域接线仍未完成。
+
+## NC-00：准入等待不计入工具熔断（2026-09-27 收口）
+
+`human_decision_required` 此前只被当作“结果保真”新增，但它仍是 `Result.Success == false`，于是两处会把一次**等待**记成一次**失败**：
+
+- `Source/PuddingRuntime/Tools/Platform/ToolInvocationService.cs` 的 `RecordError` 排除列表原本只有 428 / `RequestLimitExceeded` / `DependencyWait`，`HumanDecisionRequired` 会进入 `RuntimeControlService` 的错误计数并按同失败族指纹累计（默认第 5 次熔断）。
+- `Source/PuddingRuntime/Services/AgentExecution/FailedToolCallTracker.cs` 会对两次“完全相同”的等待判定 `execution_stalled`，并让第三次直接短路不调用工具——对一次尚未得到人工决定的调用而言，这是把等待误报成停滞。
+
+改动语义：两种准入等待（`DependencyWait`、`HumanDecisionRequired`）**既不消耗失败熔断，也不清除此前已记录的真实失败**。等待只是让该次调用返回一个类型化结果；先前真实失败仍然按原阈值拦截，真实拒绝（403 / `Denied`）仍计错误，428 / `RequestLimitExceeded` 的既有豁免不变，硬拒绝与预算规则不变。
+
+一致性依据：ADR-091 §4.4「失败分类属于协议」要求 `AwaitingHuman`/`DeferredDependency` 使用 typed disposition 且不得折叠；§6 明确「等待和无可执行工作不是低效」。`DependencyWait` 已被排除在错误计数之外（`Docs/Features/安全分类器与工具调用准入方案-v2.md` §14.9.1），本次把同一规则补到 `HumanDecisionRequired`，两处判定同源。
+
+边界（本次**不**证明）：只改变错误/停滞计数，不创建持久审批请求、不建立 Run 暂停点、不恢复原 invocation、不释放 worker 名额。因此它不能关闭 NC-01/A2，也不能被引用为“Run 已暂停”。两种状态目前只有一个生产者 `PuddingToolRegistry.cs:681-685`，且一律经 `ToolExecutionResult.Fail` 返回 `Success = false`，所以 `FailedToolCallTracker` 的早退分支不会吞掉任何成功结果的失败清零。
+
+验证：`FailedToolCallTrackerTests` + `HumanDecision_ExecutorPreservesTypedDenialWithoutExecuting` 定向 7 项通过，日志 `temp/nc00-runtime-directed.log`；覆盖两种等待连续 4 次不触发停滞、不擦除先前失败、其后真实失败仍按第 2 次拦截，以及门面按 disposition 决定是否 `RecordError`（Denied 恰好一次，两种等待零次）。构建仍有既有代码/依赖告警，不能称为零警告。

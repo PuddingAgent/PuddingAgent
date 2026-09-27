@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using PuddingRuntime.Services.Skills;
+using PuddingCode.Tools;
 
 namespace PuddingRuntime.Services.AgentLoop;
 
@@ -15,6 +16,10 @@ internal sealed class FailedToolCallTracker
 
     internal SkillResult Observe(string canonicalCallKey, SkillResult result)
     {
+        // Admission waits are not failed executions. Do not consume the failure fuse
+        // or clear genuine failures already observed for this call.
+        if (result.Status is ToolResultStatuses.DependencyWait or ToolResultStatuses.HumanDecisionRequired)
+            return result;
         if (result.Success)
         {
             _failures.Remove(canonicalCallKey);

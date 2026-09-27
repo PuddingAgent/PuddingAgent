@@ -1,3 +1,7 @@
+## 2026-09-27 原生聊天 NC-00 收口：准入等待不计入工具熔断
+
+`ToolInvocationService` 的 `RecordError` 排除列表补上 `HumanDecisionRequired`（原先只排除 428 / `RequestLimitExceeded` / `DependencyWait`）；`FailedToolCallTracker.Observe` 对 `DependencyWait`/`HumanDecisionRequired` 直接早退，既不累计重复失败，也不清除此前真实失败。动机：两种准入等待都走 `ToolExecutionResult.Fail`（`Success=false`），此前会被错误熔断与 `execution_stalled` 误判为失败。语义与 ADR-091 §4.4（typed disposition 不得折叠）及既有 §14.9.1 对 `DependencyWait` 的排除同源；真实拒绝仍计错误，428/限流豁免、硬拒绝与预算不变。验证：`FailedToolCallTrackerTests` + `HumanDecision_ExecutorPreservesTypedDenialWithoutExecuting` 定向 7 项通过（`temp/nc00-runtime-directed.log`）。此项只改计数，不创建审批请求、不暂停 Run、不恢复 invocation，不能据此关闭 NC-01。
+
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
@@ -121,7 +125,7 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 
 `PuddingChat.WinUI/MessageCard.LoadProcessDetailsAsync` 按 Run 隔离明细加载：运行身份变化取消旧等待并清空旧视图/缓存，释放控件取消等待，拒绝跨消息结果，历史明细不覆盖当前快照。`MessageDetailsChecks` 在原生窗口验证竞争加载、晚到结果、缓存回收与失败重试。
 
-`PuddingToolRegistry` 保留 NeedHuman 的 `human_decision_required` 状态；`ToolInvocationResult` 与 Runtime 的 `SkillResult` 透传 Status/ExitCode，流式工具结果携带状态，`PuddingChat/TurnFlow` 区分人工决定、依赖等待与失败。此链路尚不创建审批请求或暂停 Run；执行熔断策略保持原样。
+`PuddingToolRegistry` 保留 NeedHuman 的 `human_decision_required` 状态；`ToolInvocationResult` 与 Runtime 的 `SkillResult` 透传 Status/ExitCode，流式工具结果携带状态，`PuddingChat/TurnFlow` 区分人工决定、依赖等待与失败。此链路尚不创建审批请求或暂停 Run；两种准入等待已被排除在工具熔断与重复失败停滞之外（见下文 NC-00 收口）。
 
 `PuddingChat/Approvals.cs` 与 `PuddingChat.WinUI/ApprovalCard.cs` 提供独立原生审批交互：权威版本快照、Core 允许的选项、稳定决定重试、过期/依赖等待禁用、释放后取消等待。`ApprovalCardChecks` 覆盖原生加载和竞态；尚未接入产品聊天区域与 Core 决定服务，不能视为审批执行闭环完成。
 

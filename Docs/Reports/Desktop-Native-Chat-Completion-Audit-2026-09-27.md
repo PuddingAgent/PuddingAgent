@@ -201,3 +201,13 @@ PagedTextView 的当前页文本放入最大 360 DIP 高的原生 ScrollViewer�
 ## 暂停交接（2026-09-27）
 
 用户已要求收尾暂停，剩余任务以 [Native 聊天剩余任务书](../Tasks/Desktop-Native-Chat-Remaining-Tasks-2026-09-27.md) 为恢复入口。本文早期「进行中」表示目标未完成，不表示仍在自动实施。暂停前审批等待/熔断修复的 7 项定向测试最终通过，日志 temp/native-approval-admission-fuse.log；四份未提交文件列于任务书 NC-00，未将其视为已交付。此次仅写任务书和索引，不恢复功能开发。
+
+## NC-00 收口（2026-09-27）
+
+暂停现场的四份文件经复核后独立提交：`Source/PuddingRuntime/Services/AgentExecution/FailedToolCallTracker.cs`、`Source/PuddingRuntime/Tools/Platform/ToolInvocationService.cs`、`Source/PuddingRuntimeTests/Services/FailedToolCallTrackerTests.cs`、`Source/PuddingRuntimeTests/Tools/PuddingToolInfrastructureTests.HumanDecision.cs`。复核确认语义与 ADR-091 §4.4/§6 一致：`DependencyWait` 与 `HumanDecisionRequired` 是**准入等待**而非执行失败，因此不消耗错误熔断、不触发 `execution_stalled`，也不清除此前已记录的真实失败；真实拒绝仍计错误，428/`RequestLimitExceeded` 豁免与硬拒绝/预算规则不变。
+
+复核到的两个关键事实：① 两种状态在全仓只有 `PuddingToolRegistry.cs:681-685` 一个生产者，且一律经 `ToolExecutionResult.Fail` 返回 `Success = false`，所以 `FailedToolCallTracker` 的早退分支不会吞掉成功结果的失败清零；② 暂停现场自基线 `17c813e` 起未被其他提交或工作树改动触碰，可直接提交。
+
+验证：定向 7 项通过（`FailedToolCallTrackerTests` 3 项 + 数据驱动 2 例，`HumanDecision_ExecutorPreservesTypedDenialWithoutExecuting` 3 例），日志 `temp/nc00-runtime-directed.log`。构建仍有既有代码/依赖告警，不称零警告。
+
+本项只改错误/停滞计数，**不**创建持久审批请求、不建立 Run 暂停点、不恢复原 invocation、不释放 worker 名额，因此不能关闭 NC-01 或 A2，也不能被引用为「Run 已暂停」。审批闭环门禁（请求生产、持久暂停/恢复、Core 决定端口、产品待审批区）全部保持未完成。

@@ -6,6 +6,7 @@ using PuddingCode.Tools;
 using PuddingCode.Runtime;
 using PuddingRuntime.Services;
 using PuddingRuntime.Services.Tools;
+using Moq;
 
 namespace PuddingRuntimeTests.Tools;
 
@@ -30,7 +31,8 @@ public sealed partial class PuddingToolInfrastructureTests
         Assert.AreEqual(status, result.Status); Assert.AreEqual(exitCode, result.ExitCode);
         Assert.AreEqual("unchanged denial reason", result.Error); Assert.AreEqual("", result.Output);
 
-        var facade = await new ToolInvocationService(executor).InvokeAsync(new ToolInvocationRequest
+        var control = new Mock<IRuntimeControlService>();
+        var facade = await new ToolInvocationService(executor, runtimeControl: control.Object).InvokeAsync(new ToolInvocationRequest
         {
             WorkspaceId = "workspace", SessionId = "session", AgentInstanceId = "agent",
             ToolCallId = "call", ToolName = "sample_high", ArgumentsJson = "{}",
@@ -39,5 +41,7 @@ public sealed partial class PuddingToolInfrastructureTests
         Assert.AreEqual(status, facade.Status);
         Assert.AreEqual(exitCode, facade.ExitCode);
         Assert.AreEqual(result.Error, facade.Error);
+        control.Verify(c => c.RecordError("session", RuntimeErrorKind.Tool, "sample_high", "unchanged denial reason"),
+            disposition == ToolApprovalDecision.Denied ? Times.Once() : Times.Never());
     }
 }
