@@ -23,11 +23,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages)> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages) = createKernel(_desktopServices);
+        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -69,6 +69,7 @@ public sealed partial class MainWindow : Window
         BuildSkillEvolutionPanels();
         BuildSkillPackagePanel();
         BuildAgentGrantPanel();
+        BuildWorkspacePanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -552,6 +553,13 @@ public sealed partial class MainWindow : Window
             Check(AgentCapabilitiesSettings.Content is StackPanel, "agent capabilities form is built");
             Check(!_grTemplatePicker.IsEnabled, "agent capabilities form stays disabled without Core");
             Check(_grNotice.Title == "Core 未就绪", "agent capabilities tab reports the real Core state");
+            // DS-05 workspace tab.
+            OpenSettingsCategory("workspaces", "basic");
+            await WaitForSettingsUiAsync(() => _wsNotice.IsOpen);
+            Check(WorkspaceBasicSettings.Visibility == Visibility.Visible, "workspace basic tab is native");
+            Check(WorkspaceBasicSettings.Content is StackPanel, "workspace basic form is built");
+            Check(!_wsPicker.IsEnabled, "workspace basic form stays disabled without Core");
+            Check(_wsNotice.Title == "Core 未就绪", "workspace basic tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

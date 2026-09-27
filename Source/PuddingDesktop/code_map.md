@@ -19,6 +19,7 @@
 | `MainWindow.SkillEvolutionSettings.cs` | DS-07 EVO MAP 与安装台账：谱系树/边、台账筛选与详情、按 Agent 的更新检查；只读 |
 | `MainWindow.SkillPackageSettings.cs` | DS-07 旧技能包：台账列表与详情、元数据编辑、确认删除、上传新包/上传新版本（文件选择器 + 路径输入）、预签名下载链接；上传失败显示 Core 真实错误 |
 | `MainWindow.AgentGrantSettings.cs` | DS-04 授权页签：模板授权搜索/添加/移除/保存；实例授权对比模板并区分「采用模板值 / 明确不授权 / 保持实例当前值」 |
+| `MainWindow.WorkspaceSettings.cs` | DS-05 工作区与成员：列表/详情/新建/编辑/冻结解冻/确认删除（内置默认工作区无删除入口）、成员增删与权限 |
 | `MainWindow.VoiceSettings.cs` | DS-03 语音原生表单：TTS/ASR 服务商、TTS 模型（音色/格式/采样率/四种能力）、ASR 模型（语言/采样率/三种能力）；逗号分隔列表编辑、默认项真源展示、Core 未就绪时禁用表单 |
 | `MainWindow.LlmSettings.cs` | DS-02 LLM 资源池原生表单：服务商连接、并发与速率、模型定义、上下文与计费；Keep/Replace/Clear 密钥语义、删除确认、Core 未就绪时禁用表单并显示真实原因 |
 | `Kernel/WinUiDesktopServices.cs` | Core 通过 DI 调用展示端口，DispatcherQueue 调度、取消及关闭处理 |

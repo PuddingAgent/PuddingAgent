@@ -17,8 +17,8 @@ agents,角色与模板,models,模型与记忆,agent-models,默认模型与记忆
 agents,角色与模板,smart,Smart 子代理,smart-models,子代理模型路由,已接入,DS-04,explorerModel；researcherModel；plannerModel；reviewerModel；developerModel；deployerModel；testerModel；每项服务商/模型选择,pages/workspace/[id]/SmartRoleModelFields.tsx,仅角色实例具有当前 Web 的 Smart 配置入口。
 agents,角色与模板,capabilities,能力与 Skill,agent-grants,工具与技能授权,已接入,DS-04,selectedCapabilityIds；selectedSkillPackageIds（模板）；skillPackageIds（实例）；搜索；添加/移除授权；继承/有效授权,pages/agent-template-settings/sections/CapabilitySkillSection.tsx,显示有效授权及继承来源；不要把空选择误作删除全部授权。
 agents,角色与模板,guardrails,执行护栏,guardrails,预算与运行环境,已接入,DS-04,maxRounds；maxElapsedSeconds；maxToolCallsTotal；containerImage,pages/agent-template-settings/sections/GuardrailSection.tsx,原样保留 Core 的校验与运行语义。
-workspaces,工作区与渠道,basic,工作区,workspace-basic,工作区信息,待迁移,DS-05,workspaceId；name；description；userProfile；isEnabled；团队归属/访问策略,pages/workspace/index.tsx,列表、创建、编辑、删除；本机首次使用流程保持独立。
-workspaces,工作区与渠道,basic,工作区,workspace-members,工作区成员,待迁移,DS-05,userId；accessLevel(ReadOnly/Write/Manage)；成员来源,pages/workspace/[id]/index.tsx,成员列表、添加/移除和权限展示。
+workspaces,工作区与渠道,basic,工作区,workspace-basic,工作区信息,已接入,DS-05,workspaceId；name；description；userProfile；isEnabled；团队归属/访问策略,pages/workspace/index.tsx,列表、创建、编辑、删除；本机首次使用流程保持独立。
+workspaces,工作区与渠道,basic,工作区,workspace-members,工作区成员,已接入,DS-05,userId；accessLevel(ReadOnly/Write/Manage)；成员来源,pages/workspace/[id]/index.tsx,成员列表、添加/移除和权限展示。
 workspaces,工作区与渠道,channels,渠道,channel-providers,渠道服务商,待迁移,DS-05,providerId；name；description；isEnabled,pages/workspace/[id]/index.tsx,编辑已支持服务商的展示信息与启用状态。
 workspaces,工作区与渠道,channels,渠道,channels,渠道绑定与凭据,待迁移,DS-05,name；providerId；description；boundAgentId；appId；appSecret；privilegedUserOpenIds；streamingRepliesEnabled；ttsRepliesEnabled；ttsVoice；isEnabled,pages/workspace/[id]/index.tsx,新增/编辑/删除渠道；敏感值单向输入。
 workspaces,工作区与渠道,resources,工作区资源,workspace-knowledge,知识库,待迁移,DS-05,name；kbType(VectorStore/Graph/FileIndex)；description；isEnabled,pages/workspace/[id]/index.tsx,知识库列表、新增、编辑、删除。

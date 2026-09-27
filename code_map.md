@@ -1,6 +1,9 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-05 工作区与成员（桌面端）
+
+`workspaces/basic` 接上 `WorkspaceService`：工作区列表/详情、新建、编辑（名称/描述/用户档案 JSON/团队与公司访问策略/启用）、冻结与解冻、确认删除；成员列表与增删、成员权限。内置默认工作区在界面上没有删除入口、也不能被停用，Core 侧同样拒绝。`UserProfile` 必须是合法 JSON 才允许保存，避免把不可读的内容写进库。验证：Foundation 128 项、Composition 16 项（真实 Host 建/改/冻结/删除 + 跨工作区与不存在对象的拒绝）、窗口 smoke 177 项通过。
 ## 2026-09-27 DS-05 工作区与渠道（工作区/成员 Core 下沉）
 
 `WorkspaceApiController` 原先直接使用 `PlatformDbContext`，按 DS-05「直接 DbContext 的旧 Controller 先下沉业务操作」把校验与数据访问下沉为 `WorkspaceService`，控制器只做 `SkillHubResult` → 400/404/409 映射，Web 行为不变。`WorkspaceServiceTests` 用内存 SQLite 固定规则：默认工作区不可删除、团队成员必须存在、访问策略枚举必须已定义、成员不重复、**跨工作区删除成员是 NotFound 而不是误删**。踩坑记录：`EnsureCreatedAsync` 会同时应用模型种子数据，测试种子必须幂等（`default` 工作区与 admin 用户已存在），且 `AppUsers.Email` 有唯一索引。验证：`WorkspaceServiceTests` 5 项通过。

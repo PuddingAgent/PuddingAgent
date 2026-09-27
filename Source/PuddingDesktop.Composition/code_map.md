@@ -34,4 +34,6 @@
 
 `DesktopAgentGrantSettings` (partial of `DesktopAgentDirectorySettings`) covers DS-04 grants: options come from the runtime tool catalogue plus the skill-package ledger, template grants read/write through `TemplateRequest`, and instance writes use `AgentGrantSelection` so null keeps the stored snapshot while an empty list clears it.
 
+`DesktopWorkspaceSettings` binds the workspace tab to the shared `WorkspaceService`; team and user pickers read `PlatformDbContext` through the same per-operation scope.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

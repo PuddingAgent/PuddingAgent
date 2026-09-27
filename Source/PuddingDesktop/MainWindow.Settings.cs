@@ -187,6 +187,15 @@ public sealed partial class MainWindow
         var capabilities = VisibilityOf("agents", "capabilities", tab);
         AgentCapabilitiesSettings.Visibility = capabilities;
         if (capabilities == Visibility.Visible) LoadAgentGrantsIfNeeded();
+        var workspaceBasic = VisibilityOf("workspaces", "basic", tab);
+        WorkspaceBasicSettings.Visibility = workspaceBasic;
+        if (workspaceBasic == Visibility.Visible) LoadWorkspacesIfNeeded();
+    }
+
+    private async void LoadWorkspacesIfNeeded()
+    {
+        try { await LoadWorkspacesAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadAgentGrantsIfNeeded()
@@ -314,6 +323,7 @@ public sealed partial class MainWindow
         ("skills", "installs") => true,
         ("skills", "legacy") => true,
         ("agents", "capabilities") => true,
+        ("workspaces", "basic") => true,
         _ => false
     };
 

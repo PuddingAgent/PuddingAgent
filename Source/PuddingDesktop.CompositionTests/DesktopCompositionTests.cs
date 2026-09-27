@@ -1100,6 +1100,88 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task WorkspaceAdapter_CreatesEditsFreezesAndKeepsMembersInsideTheirWorkspace()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var workspaces = factory.CreateWorkspaceSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => workspaces.ListAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var seeded = await workspaces.ListAsync(timeout.Token);
+            Assert.Contains(seeded, workspace => workspace.WorkspaceId == "default");
+            Assert.True(seeded.Single(workspace => workspace.WorkspaceId == "default").IsBuiltInDefault);
+
+            var teams = await workspaces.ListTeamsAsync(timeout.Token);
+            Assert.NotEmpty(teams);
+            // 隔离数据根没有经过 Bootstrap，因此没有用户；成员增删的正常路径由 WorkspaceServiceTests 覆盖，
+            // 这里验证适配器不会吞掉 Core 的拒绝。
+            _ = await workspaces.ListUsersAsync(timeout.Token);
+
+            // The built-in default workspace is refused by Core, and it must survive the attempt.
+            await Assert.ThrowsAsync<InvalidOperationException>(() => workspaces.DeleteAsync("default", timeout.Token));
+            Assert.Contains(await workspaces.ListAsync(timeout.Token), workspace => workspace.WorkspaceId == "default");
+
+            var create = new WorkspaceCreateRequest("fixture-space", teams[0].TeamId, "Fixture Space", "created by test",
+                "{\"theme\":\"dark\"}", "Manage", "ReadOnly");
+            await workspaces.CreateAsync(create, timeout.Token);
+            var created = (await workspaces.ListAsync(timeout.Token)).Single(workspace => workspace.WorkspaceId == "fixture-space");
+            Assert.True(created.IsEnabled, "新建工作区默认启用");
+            Assert.False(created.IsFrozen);
+            Assert.Equal(teams[0].TeamId, created.TeamId);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => workspaces.CreateAsync(
+                create with { WorkspaceId = "fixture-space" }, timeout.Token));
+
+            await workspaces.SaveAsync(new WorkspaceEdit("fixture-space", "Renamed Space", "edited",
+                "{\"theme\":\"light\"}", "ReadOnly", "None", true), timeout.Token);
+            var edited = (await workspaces.ListAsync(timeout.Token)).Single(workspace => workspace.WorkspaceId == "fixture-space");
+            Assert.Equal("Renamed Space", edited.Name);
+            Assert.Equal("ReadOnly", edited.TeamAccessPolicy);
+            // The default workspace is untouched by edits to another one.
+            Assert.Equal("default",
+                (await workspaces.ListAsync(timeout.Token)).Single(workspace => workspace.WorkspaceId == "default").WorkspaceId);
+
+            await workspaces.SetFrozenAsync("fixture-space", frozen: true, timeout.Token);
+            Assert.True((await workspaces.ListAsync(timeout.Token))
+                .Single(workspace => workspace.WorkspaceId == "fixture-space").IsFrozen);
+            await workspaces.SetFrozenAsync("fixture-space", frozen: false, timeout.Token);
+            Assert.False((await workspaces.ListAsync(timeout.Token))
+                .Single(workspace => workspace.WorkspaceId == "fixture-space").IsFrozen);
+
+            // A second workspace proves member operations stay inside the one they name.
+            await workspaces.CreateAsync(create with { WorkspaceId = "other-space", Name = "Other Space" }, timeout.Token);
+            Assert.Empty(await workspaces.ListMembersAsync("fixture-space", timeout.Token));
+            Assert.Empty(await workspaces.ListMembersAsync("other-space", timeout.Token));
+
+            // An unknown user is refused by Core and the adapter must surface it as a real failure.
+            await Assert.ThrowsAsync<InvalidOperationException>(() => workspaces.AddMemberAsync(
+                "fixture-space", "no-such-user-xyz", "Write", timeout.Token));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => workspaces.RemoveMemberAsync(
+                "other-space", 4242, timeout.Token));
+            // A member operation against a workspace that does not exist is refused too.
+            await Assert.ThrowsAsync<InvalidOperationException>(() => workspaces.AddMemberAsync(
+                "no-such-space", "no-such-user-xyz", "Write", timeout.Token));
+
+            await workspaces.DeleteAsync("fixture-space", timeout.Token);
+            Assert.DoesNotContain(await workspaces.ListAsync(timeout.Token),
+                workspace => workspace.WorkspaceId == "fixture-space");
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => workspaces.ListAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {
