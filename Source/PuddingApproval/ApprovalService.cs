@@ -8,8 +8,15 @@ public enum ApprovalOutcome { Applied, Replayed, NotFound, Conflict, BindingMism
 public sealed record ApprovalBinding(string WorkspaceId, string AgentId, string SessionId, string RunId,
     string TurnId, string InvocationId, string OperationFingerprint, string PolicyRevision);
 public sealed record DecisionCommand(string DecisionId, HumanDecision Decision, string Actor, string? Reason);
-public sealed record ApprovalRecord(string Id, ApprovalBinding Binding, DateTimeOffset ExpiresAt,
-    long Version = 0, ApprovalState State = ApprovalState.Pending, DecisionCommand? Decision = null);
+public sealed record ApprovalRecord(string Id, ApprovalBinding Binding, DateTimeOffset ExpiresAt, ApprovalOperation Operation,
+    long Version = 0, ApprovalState State = ApprovalState.Pending, DecisionCommand? Decision = null)
+{
+    public void ValidateOperation()
+    {
+        if (Operation is null || Binding.OperationFingerprint != Operation.Fingerprint())
+            throw new ArgumentException("Approval operation snapshot does not match its execution binding.");
+    }
+}
 public sealed record ApprovalResult(ApprovalOutcome Outcome, ApprovalRecord? Record);
 
 /// <summary>Implementations must atomically replace an existing version. Production also persists the corresponding outbox in that transaction.</summary>
@@ -32,6 +39,7 @@ public sealed class ApprovalService(IApprovalStore store, TimeProvider? clock = 
             || !Enum.IsDefined(command.Decision)) throw new ArgumentException("A valid decision, actor and stable decision ID are required.");
         var current = await store.ReadAsync(id, ct);
         if (current is null) return new(ApprovalOutcome.NotFound, null);
+        current.ValidateOperation();
         if (current.Binding != binding) return new(ApprovalOutcome.BindingMismatch, current);
         if (current.Decision?.DecisionId == command.DecisionId)
             return new(current.Decision == command ? ApprovalOutcome.Replayed : ApprovalOutcome.Conflict, current);
@@ -52,6 +60,7 @@ public sealed class ApprovalService(IApprovalStore store, TimeProvider? clock = 
         ValidateBinding(currentBinding);
         var current = await store.ReadAsync(id, ct);
         if (current is null) return new(ApprovalOutcome.NotFound, null);
+        current.ValidateOperation();
         if (current.Binding != currentBinding) return new(ApprovalOutcome.BindingMismatch, current);
         if (!hardBoundariesPassed || current.State != ApprovalState.Approved) return new(ApprovalOutcome.Unavailable, current);
         if (current.ExpiresAt <= _clock.GetUtcNow()) return await ExpireAsync(current, ct);

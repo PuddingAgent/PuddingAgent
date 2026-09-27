@@ -1,6 +1,6 @@
 # 原生聊天审批：真实执行链路与接入门禁
 
-状态：Proposed；2026-09-27 源码核查，A1 独立转换组件已实现，生产持久化与宿主接入未完成。此文件不是审批闭环已经交付的证明。
+状态：Proposed；2026-09-27 源码核查，A1 独立转换、操作快照及 SQLite 状态/outbox 组件已实现，生产接入与执行恢复未完成。此文件不是审批闭环已经交付的证明。
 
 ## 1. 已确认的现状
 
@@ -94,3 +94,19 @@ Core 决定服务拥有 Pending→Approved/Denied/Expired 的原子转换，禁�
 修复 NeedHuman 在 PuddingToolExecutionService 中被折叠为普通 403 的问题，新增 human_decision_required；DeferredDependency 保持 dependency_wait/428，终局拒绝仍为 403。ToolInvocationResult、Runtime SkillResult 与流式工具结果传递 Status/ExitCode；原生 TurnFlow 优先保留两种准入状态，普通非零退出仍显示失败。
 
 这只是现有执行链的结果保真，不创建持久审批请求、不建立 Run 暂停点、不自动重试工具，也不改变防火墙或错误熔断规则。熔断触发后的结果仍由既有熔断规则决定。A2/A3 尚未闭环，不能把“需人工决定”理解为 Run 已可靠挂起或已经允许继续执行。
+
+## 2026-09-27 操作快照与 A2 执行证据
+
+新增 `PuddingApproval/ApprovalOperation.cs`，ApprovalRecord 必须携带 ToolId、ArgumentsJson、ToolDefinitionJson、ExecutionRoot；指纹使用带版本 SHA-256，规范化对象键顺序、空白和字符串转义，保留数组顺序与数值原始表示（不通过 double 舍入把不同参数合并）。嵌套重复键、非对象 JSON、过深/超限输入及非绝对目录拒绝。Runtime 仍须先解析真实资源、工具定义和目录后提供快照；本组件不解析符号链接，也不证明工具实现或外部资源未变化，生产绑定还须提供可靠的定义/策略版本。
+
+状态与 outbox 保存原始快照，重开数据库能读回；Create 校验指纹，CAS 禁止修改快照，即便只是同义 JSON 重排也不能悄悄替换用户所见原文。决定和消费前再次验证保存快照与绑定一致。独立测试：18 项审批逻辑、7 项 SQLite 全部通过，日志 temp/native-approval-operation.log 与 temp/native-approval-operation-sqlite.log；包含旧竞争/幂等/故障回滚测试。尚未登记 Host，不改运行数据。
+
+本轮核查明确了 A2 不能采用“工具函数内无限等待按钮”的原因：
+
+- PuddingRuntime/Tools/Platform/PuddingToolRegistry.cs 的 NeedHuman 分支直接返回工具结果；现状没有挂起 invocation。
+- PuddingRuntime/Services/AgentLoop/ExecutionJournal.cs 的 ResumeAnchor 存在 ConcurrentDictionary，仅含 Agent 唤醒上下文，不含完整工具调用续行状态，不能作为进程重启恢复点。
+- PuddingPlatform/Services/AgentChat/ChatExecutionWorker.cs 持有 running 名额（默认 3）直到任务结束，长时间等人会占满执行名额。
+- ExecutionRunCoordinator.MonitorAsync 同时执行租约续期、取消、硬截止与无进展 watchdog；其控制消息只消费 CancelRequested，其他消息明确记录没有 Runtime 消费者。
+- IExecutionLeaseStore.ReleaseAsync 的 LeaseLost 会把 command 退回 pending、Turn 退回 accepted；不能冒充人工挂起，否则会重新执行整轮。
+
+下一接线必须先为既有执行 journal/lease 协议增加有持久检查点的人工等待转换，释放 worker 名额，并从同一 invocation 续行；明确审批等待期的取消/超时规则及消费后结果不确定的恢复路径。独立快照组件解决了请求内容可验证/可恢复保存这一项，不等于 A2/A3 已交付。不得把内存 TCS、lease-lost 重跑或用户消息重发写成原生审批闭环。

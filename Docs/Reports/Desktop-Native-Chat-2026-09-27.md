@@ -262,3 +262,7 @@ Composition 的 InProcessChatClient.SubAgents 直接读取 ISubAgentRunStore，�
 输入框新增文件选择、快照预览和移除，按角色保存附件草稿；发送冻结内容，回执仅清理已受理附件。Composition 直接把 SubmittedText 交给现有 ISubmitTurnHandler，不新增 HTTP。支持 UTF-8/带 BOM 的 UTF-16，单文件 256 KiB、8 文件、512 KiB 合计，并遵守 Core 100,000 字符限制；拒绝超限/乱码，不截断。旧 Web 一般附件按钮本来未实现，本项是新增文本上下文，PDF/Office 提取仍待实现。
 
 验证：57 项逻辑、132 项原生窗口、3/3 Core 组合测试通过；最终原生构建零警告/错误，Core 有既存警告。真实 Core 测试删除源文件后提交并重试，确认历史正文与快照一致、图片共存、零 HTTP。日志 temp/native-text-files-final.log、temp/native-text-files-core.log。没有部署运行中 Desktop。设计与剩余门禁见 Docs/Features/Desktop-Native-Text-Context-2026-09-27.md。
+
+## 审批操作快照（2026-09-27）
+
+PuddingApproval 新增有界、确定性的操作指纹和不可变工具/参数/定义/目录快照，ApprovalRecord 强制携带快照，决定/消费前核对。SQLite Create/CAS 强制一致与不可变，原始快照和状态/outbox 同事务保存。18 项逻辑与 7 项 SQLite 测试通过。没有 Host/Runtime 接线或产品发布；真实暂停/恢复尚未完成。新查明 worker 并发槽、watchdog、LeaseLost 重排队及内存 ResumeAnchor 的限制，具体后续接入门禁已写回原生审批设计，避免通过 UI 重发整轮伪造恢复。

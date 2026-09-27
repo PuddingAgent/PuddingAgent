@@ -34,6 +34,7 @@ public sealed class SqliteApprovalStore : IApprovalStore
     /// <summary>Only Core's AwaitingHuman producer may call this after policy admission.</summary>
     public async Task<bool> CreateAsync(ApprovalRecord record, CancellationToken ct = default)
     {
+        record.ValidateOperation();
         var b = record.Binding;
         if (record.State != ApprovalState.Pending || record.Version != 0 || record.Decision is not null
             || new[] { record.Id, b.WorkspaceId, b.AgentId, b.SessionId, b.RunId, b.TurnId, b.InvocationId,
@@ -58,12 +59,14 @@ public sealed class SqliteApprovalStore : IApprovalStore
 
     public async Task<bool> CompareExchangeAsync(string id, long expectedVersion, ApprovalRecord next, CancellationToken ct)
     {
+        next.ValidateOperation();
         if (next.Id != id || next.Version != checked(expectedVersion + 1)) throw new ArgumentException("Invalid approval identity or next version.");
         await using var db = await ConnectAsync(ct);
         using var tx = db.BeginTransaction();
         var current = await ReadAsync(db, tx, id, ct);
         if (current is null || current.Version != expectedVersion) return false;
-        if (current.Binding != next.Binding || current.ExpiresAt != next.ExpiresAt) throw new ArgumentException("Approval execution binding and expiry are immutable.");
+        if (current.Binding != next.Binding || current.ExpiresAt != next.ExpiresAt || current.Operation != next.Operation)
+            throw new ArgumentException("Approval execution binding, operation snapshot and expiry are immutable.");
         await using var command = db.CreateCommand(); command.Transaction = tx;
         command.CommandText = "UPDATE approvals SET version=$next,body=$body WHERE id=$id AND version=$expected";
         command.Parameters.AddWithValue("$id", id); command.Parameters.AddWithValue("$expected", expectedVersion);

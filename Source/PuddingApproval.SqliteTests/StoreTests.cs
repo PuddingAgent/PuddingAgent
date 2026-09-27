@@ -6,8 +6,26 @@ namespace PuddingApproval.SqliteTests;
 public class StoreTests : IDisposable
 {
     private readonly string _path = Path.Combine(Path.GetTempPath(), $"pudding-approval-test-{Guid.NewGuid():N}.db");
-    private static ApprovalRecord Request() => new("request", new("w", "a", "s", "r", "t", "i", "fingerprint", "policy"), DateTimeOffset.UtcNow.AddMinutes(5));
+    private static readonly ApprovalOperation Operation = new("tool", "{\"path\":\"file.txt\"}", "{\"version\":1}", Path.GetTempPath());
+    private static ApprovalRecord Request() => new("request", new("w", "a", "s", "r", "t", "i", Operation.Fingerprint(), "policy"), DateTimeOffset.UtcNow.AddMinutes(5), Operation);
     private static DecisionCommand Allow => new("decision", HumanDecision.AllowOnce, "human", null);
+    [Fact]
+    public async Task OperationSnapshotIsDurableImmutableAndCannotBeForged()
+    {
+        var store = await SqliteApprovalStore.OpenAsync(_path); var request = Request();
+        await Assert.ThrowsAsync<ArgumentException>(() => store.CreateAsync(request with { Operation = Operation with { ArgumentsJson = "{}" } }));
+        Assert.Empty(await store.ReadOutboxAsync());
+        await store.CreateAsync(request);
+        var reopened = await SqliteApprovalStore.OpenAsync(_path);
+        Assert.Equal(Operation, (await reopened.ReadAsync(request.Id))!.Operation);
+        Assert.Equal(Operation, Assert.Single(await reopened.ReadOutboxAsync()).Record.Operation);
+        // Equivalent JSON has the same fingerprint, but the exact display/execution snapshot stays immutable.
+        var equivalent = Operation with { ArgumentsJson = "{ \"path\" : \"file.txt\" }" };
+        Assert.Equal(Operation.Fingerprint(), equivalent.Fingerprint());
+        await Assert.ThrowsAsync<ArgumentException>(() => reopened.CompareExchangeAsync(request.Id, 0,
+            request with { Version = 1, Operation = equivalent }, default));
+        Assert.Equal(request, await reopened.ReadAsync(request.Id)); Assert.Single(await reopened.ReadOutboxAsync());
+    }
     public void Dispose() { foreach (var suffix in new[] { "", "-wal", "-shm" }) File.Delete(_path + suffix); }
 
     [Fact]

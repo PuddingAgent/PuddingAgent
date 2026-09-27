@@ -7,16 +7,27 @@ public class ApprovalTests
     [Fact]
     public void ComponentReferencesOnlyFrameworkAssemblies() => Assert.All(typeof(ApprovalService).Assembly.GetReferencedAssemblies(),
         reference => Assert.StartsWith("System.", reference.Name));
-    private static readonly ApprovalBinding Binding = new("w", "a", "s", "r", "t", "i", "operation", "policy");
+    private static readonly ApprovalOperation Operation = new("tool", "{}", "{}", Path.GetTempPath());
+    private static readonly ApprovalBinding Binding = new("w", "a", "s", "r", "t", "i", Operation.Fingerprint(), "policy");
     private static readonly DecisionCommand Allow = new("decision", HumanDecision.AllowOnce, "human", null);
     private sealed class Clock : TimeProvider { public DateTimeOffset Now = DateTimeOffset.UnixEpoch; public override DateTimeOffset GetUtcNow() => Now; }
     private sealed class Store : IApprovalStore
     {
         private readonly object _gate = new();
-        public ApprovalRecord Current = new("approval", Binding, DateTimeOffset.UnixEpoch.AddMinutes(1));
+        public ApprovalRecord Current = new("approval", Binding, DateTimeOffset.UnixEpoch.AddMinutes(1), Operation);
         public Task<ApprovalRecord?> ReadAsync(string id, CancellationToken ct) { lock (_gate) return Task.FromResult(id == Current.Id ? Current : null); }
         public Task<bool> CompareExchangeAsync(string id, long version, ApprovalRecord next, CancellationToken ct)
         { ct.ThrowIfCancellationRequested(); lock (_gate) { if (id != Current.Id || version != Current.Version) return Task.FromResult(false); Current = next; return Task.FromResult(true); } }
+    }
+    [Fact]
+    public async Task CorruptedPersistedSnapshotCannotBeApprovedOrConsumed()
+    {
+        var store = new Store(); var service = new ApprovalService(store, new Clock());
+        store.Current = store.Current with { Operation = Operation with { ArgumentsJson = "{\"changed\":true}" } };
+        await Assert.ThrowsAsync<ArgumentException>(() => service.DecideAsync("approval", 0, Binding, Allow));
+        store.Current = store.Current with { State = ApprovalState.Approved };
+        await Assert.ThrowsAsync<ArgumentException>(() => service.ConsumeAsync("approval", Binding, true));
+        Assert.Equal(0, store.Current.Version);
     }
     [Fact]
     public async Task ConcurrentDecisionsHaveOneWinner()
