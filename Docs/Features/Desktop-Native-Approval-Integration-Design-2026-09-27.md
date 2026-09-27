@@ -74,3 +74,9 @@ Core 决定服务拥有 Pending→Approved/Denied/Expired 的原子转换，禁�
 `Source/PuddingApproval` 是 BCL-only 叶组件，提供 ApprovalBinding、DecisionCommand、版本化 ApprovalRecord、IApprovalStore CAS 端口及 ApprovalService。不依赖 Core/Runtime/WinUI，编译目标拒绝任何包和项目反向引用。没有生产请求创建入口、持久存储适配器或 DI 注册；测试内存 store 只存在于独立测试工程。
 
 独立验证覆盖 32 路竞争决定和消费、相同决定重放与冲突、角色/操作/策略变化、硬边界、到期边界、拒绝、DispatchUnknown 和程序集依赖。下一步是生产事务存储与 outbox 的同事务适配及故障注入；在此之前不能直接把本组件挂到 UI，也不能把 A1 视为完整生产原子审批已经完成。
+
+### A1 存储组件进展
+
+`Source/PuddingApproval.Sqlite` 已实现独立适配器：显式数据库路径、执行身份唯一约束、版本比较交换和审批状态/outbox 同事务提交。事件消费者按 (approval ID, version) 去重后单条确认；读取本身不删除事件。6 项独立测试覆盖重新打开、两个实例 16 路竞争、事件插入故障导致创建/决定整体回滚、重复 invocation 拒绝、消费后重新打开不可重复消费和程序集依赖边界。测试数据位于系统 Temp 并由测试清理。
+
+此适配器尚未用于产品数据库，也没有 Host DI、事件消费者或 Runtime 续行接线；SQLite 回滚测试不等同于强杀/断电故障验收。下一步须把请求生产者、事件消费者和执行调度的持久边界接到同一 Core 真源后，才可提供原生审批交互。

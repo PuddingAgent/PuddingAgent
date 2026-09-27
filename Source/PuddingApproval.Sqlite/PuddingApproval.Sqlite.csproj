@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PuddingApproval\PuddingApproval.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
+  </ItemGroup>
+  <Target Name="EnforceApprovalStorageBoundary" BeforeTargets="ResolveReferences">
+    <Error Condition="'@(ProjectReference)' != '..\PuddingApproval\PuddingApproval.csproj'" Text="Approval storage may only reference the approval contract component." />
+  </Target>
+</Project>

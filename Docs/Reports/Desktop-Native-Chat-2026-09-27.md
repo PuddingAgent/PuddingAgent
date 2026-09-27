@@ -192,3 +192,9 @@ Desktop Release 发布通过（`temp/native-transfer-publish.log`，Core 有既�
 核对 ADR-091 后修订原生审批方案：原子许可不能保证任意外部副作用 exactly-once，消费后崩溃需持久派发状态与对账。组件没有创建 AwaitingHuman 请求的生产入口，不能把硬拒绝或 DeferredDependency 变成人工放行；Core 接入必须负责这些前置约束。
 
 独立测试 8/8（`temp/native-approval-state-final.log`）通过，包含 32 路竞争决定和消费、回执重放、身份/操作/策略变化、硬边界、到期、拒绝、未知执行以及仅依赖 System 程序集。测试仅使用内存 CAS store；生产事务存储、outbox、故障恢复和真实执行尚未验证，A1 生产门禁与 S5 接入保持未完成。没有读写 D:\data 或重启 Desktop。
+
+## A1 SQLite 状态与 outbox（2026-09-27）
+
+新增独立 PuddingApproval.Sqlite 及其测试工程，未修改 Host/Runtime。SQLite 事务同时保存审批记录与对应版本的 outbox；执行身份唯一约束防止不同审批 ID 重复创建相同 invocation 的许可。CompareExchange 检查版本及不可变身份，失败不追加事件。事件读取是有界、至少一次语义，消费者需先完成持久去重再确认，尚无运行消费者。
+
+独立测试 6/6 通过（`temp/native-approval-sqlite-final.log`）：重新打开数据库后状态/未确认事件存在、两个实例 16 路决定/消费各只有一个成功、触发器注入 outbox 写入故障时状态更新和请求创建均回滚、重复执行身份拒绝、消费后重新打开不可重复消费，以及程序集依赖断言。默认 SQLite 原生依赖触发 NU1903，已显式固定 bundle 2.1.13 后复验，无关闭审计。测试使用系统 Temp 并清理，不触碰 D:\data。强杀/断电、Core 消费者与真实执行恢复仍待验证；本轮不是审批 UI 闭环验收。
