@@ -72,3 +72,9 @@ NativeSpeechAudioPlayer 与 SpeechPlaybackButton 已独立实现并通过静音�
 真实 Host 集成套件 **3 项通过**，日志 `temp/native-transcription-core.log`（构建仍有既有警告）。新增用例路径组合真实 WorkspaceAgentFileService、真实 AudioTranscriptionService、隔离 VoiceProviderFileService 与替身 Provider，覆盖无默认配置、默认模型解析、角色/工作区不存在、空音频、空识别结果、内核停止取消和零 Desktop 聊天 HTTP。没有访问 D:\data 或真实供应商。WinRT 麦克风采集及聊天工作台装配仍未完成。
 
 后续采集实现依据 Microsoft [MediaCapture](https://learn.microsoft.com/uwp/api/windows.media.capture.mediacapture) 与 [StartRecordToStreamAsync](https://learn.microsoft.com/en-us/uwp/api/windows.media.capture.mediacapture.startrecordtostreamasync)：初始化在 UI/STA 上执行，显式用户操作才请求麦克风，采用随机访问内存流并在退出/取消时释放。Firecrawl Developer keyless 查询不可用，本次使用微软官方文档核对；设备权限与解包桌面实际行为仍需原生适配及产品验证，不能以查阅文档代替验收。
+
+## WinRT 音频采集组件（2026-09-27）
+
+`PuddingChat.WinUI/NativeVoiceCapture.cs` 实现 IVoiceCapture/IVoiceRecording。显式 OpenAsync 才在 UI/STA 线程初始化音频专用 MediaCapture；16 kHz、单声道、16-bit PCM 写入 WAV 内存流。底层固定 8 MiB 的不可扩容 MemoryStream，通过 AsRandomAccessStream 交给 WinRT，编码器越界写会失败而不继续扩容。2 分钟定时器或设备失败触发停止；Finish 与 Dispose 共享一次停止任务，停止后释放 MediaCapture，Dispose 再释放流；设备错误即使与结束录音相邻发生也不能交付成功结果。
+
+独立检查使用真实 WinRT 编码配置及流适配器：PCM 参数/无视频、WAV 字节写入不变、原生异步越界写拒绝、预取消不初始化设备。共 **77 逻辑/203 窗口检查通过**，零构建警告/错误，日志 `temp/native-voice-capture.log`。这不是实际麦克风录音验收，未调用 InitializeAsync 打开真实设备；设备权限、拔出、驱动行为和音频质量仍须用户显式操作验证。控件/设备/ASR 适配现已分别存在，下一步装配 ChatComposer/ChatWorkspace，并验证切换角色、离开聊天和宿主关闭的设备释放。

@@ -1381,3 +1381,7 @@ PuddingDesktop/MainWindow.Kernel.RunKernelSmokeAsync 在隔离数据目录创建
 ## 2026-09-27 Core ASR 原生适配
 
 `PuddingDesktop.Composition/InProcessChatClient.Transcription.cs` 直接调用 IAudioTranscriptionService，复用默认供应商/模型配置与操作取消。`Tests/PuddingNativeChat.IntegrationTests/NativeTranscriptionIntegrationTests.cs` 验证真实配置/应用服务加替身 Provider；Core 集成套件 3 项通过。设备采集与工作台装配待接，见原生语音方案。
+
+## 2026-09-27 WinRT 音频采集组件
+
+`PuddingChat.WinUI/NativeVoiceCapture.cs` 通过 MediaCapture 录制 PCM/WAV，限定内存和时长，显式打开、异步收尾释放。`VoiceCaptureChecks.cs` 验证真实编码/流边界和预取消，77 逻辑/203 原生窗口检查通过；未打开麦克风，设备行为与工作台装配仍待验证，详见原生语音方案。
