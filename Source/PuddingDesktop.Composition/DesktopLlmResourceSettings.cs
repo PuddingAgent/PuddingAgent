@@ -18,6 +18,11 @@ internal sealed class DesktopLlmResourceSettings(IDesktopKernel kernel) : ILlmRe
         => kernel.RunSettingsAsync(operationId,
             (scope, token) => body(scope.Services.GetRequiredService<LlmProviderFileService>(), token), cancellationToken);
 
+    private Task<T> RunQuotaAsync<T>(string operationId,
+        Func<LlmProviderQuotaService, CancellationToken, Task<T>> body, CancellationToken cancellationToken)
+        => kernel.RunSettingsAsync(operationId,
+            (scope, token) => body(scope.Services.GetRequiredService<LlmProviderQuotaService>(), token), cancellationToken);
+
     public Task<IReadOnlyList<LlmProviderSummary>> ListProvidersAsync(CancellationToken cancellationToken = default)
         => RunAsync("llm.providers.list", async (service, token) =>
         {
@@ -94,6 +99,23 @@ internal sealed class DesktopLlmResourceSettings(IDesktopKernel kernel) : ILlmRe
             await service.DeleteModelAsync(providerId, modelId, token);
             return true;
         }, cancellationToken);
+
+    public Task<LlmQuotaStatus?> GetQuotaAsync(string providerId, CancellationToken cancellationToken = default)
+        => RunQuotaAsync("llm.quota.read",
+            async (quota, token) => await quota.TryGetAsync(providerId, token) is { } status ? Map(status) : null,
+            cancellationToken);
+
+    public Task<LlmQuotaStatus> SaveQuotaAsync(string providerId, LlmQuotaLimits limits, CancellationToken cancellationToken = default)
+        => RunQuotaAsync("llm.quota.save", async (quota, token) => Map(await quota.UpsertAsync(providerId,
+            new UpdateQuotaRequest(limits.DailyTokenLimit, limits.MonthlyTokenLimit), token)), cancellationToken);
+
+    public Task<LlmQuotaStatus> ResetDailyQuotaAsync(string providerId, CancellationToken cancellationToken = default)
+        => RunQuotaAsync("llm.quota.reset-daily",
+            async (quota, token) => Map(await quota.ResetDailyAsync(providerId, token)), cancellationToken);
+
+    private static LlmQuotaStatus Map(LlmProviderQuotaDto quota) => new(
+        quota.DailyTokenLimit, quota.MonthlyTokenLimit, quota.DailyTokensUsed, quota.MonthlyTokensUsed,
+        quota.IsSuspended, quota.DailyResetAt, quota.MonthlyResetAt, quota.UpdatedAt);
 
     private static bool HasKey(PuddingLlmProviderConfig provider) =>
         !string.IsNullOrWhiteSpace(provider.ApiKey) || !string.IsNullOrWhiteSpace(provider.ApiKeyRef);

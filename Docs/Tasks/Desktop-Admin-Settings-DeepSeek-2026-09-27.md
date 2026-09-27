@@ -135,7 +135,7 @@
 
 ### DS-02 — LLM 服务商与模型（P0；依赖 DS-00）
 
-状态：**部分完成（2026-09-27）**。服务商连接、并发与速率、模型定义、上下文与计费四张卡已接入；配额卡仍为占位，等 Core 配额实现（见下）。
+状态：**已完成（2026-09-27）**。五张卡（服务商连接、并发与速率、模型定义、上下文与计费、限额与用量）全部接入。
 
 复用原生配置已有局部保存，替换 providers/model-definition 占位；依次补服务商并发、TPM/RPM、协议、能力、上下文与价格。服务商/模型嵌套选择和删除关联影响要明确。最后单独处理配额：先补 Core 配额状态与持久化并独立测试，再启用配额表单。验收：Keep/Replace/Clear 密钥、切换 Provider 的模型校验、保存一个字段后价格/其他模型不丢失、错误保留草稿；空配额端点不能导致“已保存”。
 
@@ -146,7 +146,11 @@
 
 已登记缺口：
 - 模型 `description`：`PuddingLlmModelConfig` 没有该字段，本页不提供模型描述输入（不造假控件）。
-- 配额（`quota` 卡）：Web 的 quota GET/PUT/reset-daily 仍是 `NoContent()`，且 `LlmProviderQuotaEntity` 挂在旧 DB 表上；按“配置文件优先”需要先在 `llm.providers.json` 侧补齐配额状态、用量与重置语义并独立测试，再启用表单。**未启用配额表单即未完成 DS-02。**
+
+配额实现（本轮补完）：
+- Core：`PuddingLlmProviderConfig.Quota`（`dailyTokenLimit`/`monthlyTokenLimit`/窗口起点/`updatedAt`）写入 `llm.providers.json`；新增 `LlmProviderQuotaService` 负责限额校验与用量推导，`LlmProviderApiController` 的 GET/PUT/reset-daily 不再是 `NoContent()`，provider 详情的 `quota` 也不再是硬编码零值。
+- 口径：**限额来自配置文件，已用 token 从 token 账本实时推导**（`llm_gateway_usage_events` + `TokenUsageEvents`，与统计口径同源），因此 `reset-daily` 只把日窗口起点推进到“现在”，不删除或改写任何账本数据，也不影响自然月计数；自然日/自然月切换照常生效（`WindowStart` = max(自然周期起点, 重置时间)，且不超过“现在”）。
+- 独立测试：`LlmProviderQuotaServiceTests` 覆盖限额持久化与校验、用量按 provider 归因、重置窗口语义与账本不变、窗口起点钳制。
 
 ### DS-03 — 语音服务商、TTS 与 ASR（P1；依赖 DS-00、DS-02 表单经验）
 
@@ -655,5 +659,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 |---|---|---|
 | DS-00 接入基线与生命周期 | 已完成 2026-09-27 | [接入说明](../Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)；Foundation 36 项、Composition 2 项（含真实 Host）、窗口 smoke 93 项通过 |
 | DS-01 通用、语言与关于 | 已完成 2026-09-27 | `language`/`help`/`about` 三卡原生化；Foundation 47 项、窗口 smoke 104 项通过 |
-| DS-02 LLM 服务商与模型 | 部分完成 2026-09-27 | 四张卡（providers / provider-limits / model-definition / model-limits）已接入；配额卡待 Core 实现 |
+| DS-02 LLM 服务商与模型 | 已完成 2026-09-27 | 五张卡接入；Core 补齐配额（限额入配置文件、用量来自账本、reset-daily 只推进窗口）；配额测试 4 项、Composition 真实 Host 端到端通过 |
 | DS-03 … DS-17 | 待实施 | — |

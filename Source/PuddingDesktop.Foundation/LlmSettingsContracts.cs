@@ -64,6 +64,37 @@ public sealed record LlmModelEdit(
     int SortOrder);
 
 /// <summary>
+/// Provider token quota as reported by Core: the stored limits plus usage derived from the token
+/// ledger. Usage is never a stored counter, so a reset only moves the accounting window.
+/// </summary>
+public sealed record LlmQuotaLimits(long? DailyTokenLimit, long? MonthlyTokenLimit)
+{
+    public static LlmQuotaLimits Unlimited { get; } = new(null, null);
+}
+
+public sealed record LlmQuotaStatus(
+    long? DailyTokenLimit,
+    long? MonthlyTokenLimit,
+    long DailyTokensUsed,
+    long MonthlyTokensUsed,
+    bool IsSuspended,
+    DateTimeOffset? DailyResetAt,
+    DateTimeOffset? MonthlyResetAt,
+    DateTimeOffset UpdatedAt)
+{
+    public double? DailyUsedPercent => DailyTokenLimit is > 0 ? (double)DailyTokensUsed / DailyTokenLimit.Value : null;
+    public double? MonthlyUsedPercent => MonthlyTokenLimit is > 0 ? (double)MonthlyTokensUsed / MonthlyTokenLimit.Value : null;
+
+    public LlmQuotaLimits Limits => new(DailyTokenLimit, MonthlyTokenLimit);
+
+    public string Describe() => IsSuspended
+        ? "已超出配额：新的调用会被按限额拒绝。"
+        : DailyTokenLimit is null && MonthlyTokenLimit is null
+            ? "未设置限额。"
+            : "配额内。";
+}
+
+/// <summary>
 /// Task-shaped operations for the LLM resource-pool settings pages, implemented in Composition against
 /// the in-process Core services. One method per thing a page does — not one per Web endpoint — and no
 /// HTTP, JWT or DTO relay. Authoritative validation stays in Core; the shell only pre-checks the form.
@@ -76,6 +107,9 @@ public interface ILlmResourceSettings
     Task DeleteProviderAsync(string providerId, CancellationToken cancellationToken = default);
     Task SaveModelAsync(LlmModelEdit edit, CancellationToken cancellationToken = default);
     Task DeleteModelAsync(string providerId, string modelId, CancellationToken cancellationToken = default);
+    Task<LlmQuotaStatus?> GetQuotaAsync(string providerId, CancellationToken cancellationToken = default);
+    Task<LlmQuotaStatus> SaveQuotaAsync(string providerId, LlmQuotaLimits limits, CancellationToken cancellationToken = default);
+    Task<LlmQuotaStatus> ResetDailyQuotaAsync(string providerId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Pure form helpers shared by the editor and its tests. No Core call, no persistence.</summary>
@@ -159,4 +193,15 @@ public static class LlmSettingsText
         Uri.TryCreate(value, UriKind.Absolute, out var uri)
         && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
         && uri.UserInfo.Length == 0 && uri.Query.Length == 0 && uri.Fragment.Length == 0;
+
+    /// <summary>Form-level check mirroring the Core quota rules; Core re-validates authoritatively.</summary>
+    public static IReadOnlyList<string> Validate(LlmQuotaLimits limits)
+    {
+        var errors = new List<string>();
+        if (limits.DailyTokenLimit is <= 0) errors.Add("每日 token 限额必须大于 0，或留空表示不限制。");
+        if (limits.MonthlyTokenLimit is <= 0) errors.Add("每月 token 限额必须大于 0，或留空表示不限制。");
+        if (limits is { DailyTokenLimit: { } daily, MonthlyTokenLimit: { } monthly } && daily > monthly)
+            errors.Add("每日 token 限额不能大于每月 token 限额。");
+        return errors;
+    }
 }

@@ -133,9 +133,11 @@ public sealed partial class MainWindow
         AboutSettings.Visibility = VisibilityOf("about", "product", tab);
         var providers = VisibilityOf("models", "providers", tab);
         var models = VisibilityOf("models", "models", tab);
+        var quota = VisibilityOf("models", "quota", tab);
         LlmProvidersSettings.Visibility = providers;
         LlmModelsSettings.Visibility = models;
-        if (providers == Visibility.Visible || models == Visibility.Visible) LoadLlmIfNeeded();
+        LlmQuotaSettings.Visibility = quota;
+        if (providers == Visibility.Visible || models == Visibility.Visible || quota == Visibility.Visible) LoadLlmIfNeeded();
     }
 
     private async void LoadLlmIfNeeded()
@@ -155,6 +157,7 @@ public sealed partial class MainWindow
         ("about", "product") => true,
         ("models", "providers") => true,
         ("models", "models") => true,
+        ("models", "quota") => true,
         _ => false
     };
 

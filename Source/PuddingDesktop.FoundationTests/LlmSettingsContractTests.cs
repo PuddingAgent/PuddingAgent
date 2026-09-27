@@ -88,4 +88,38 @@ public sealed class LlmSettingsContractTests
     {
         Assert.Equal(["openai", "responses", "anthropic"], LlmSettingsText.Protocols);
     }
+
+    [Fact]
+    public void QuotaLimitsAreOnlyRejectedWhenTheyCannotBeHonoured()
+    {
+        Assert.Empty(LlmSettingsText.Validate(LlmQuotaLimits.Unlimited));
+        Assert.Empty(LlmSettingsText.Validate(new LlmQuotaLimits(1000, 1000)));
+        Assert.Empty(LlmSettingsText.Validate(new LlmQuotaLimits(1000, null)));
+        Assert.Contains("每日", LlmSettingsText.Validate(new LlmQuotaLimits(0, null)).Single(), StringComparison.Ordinal);
+        Assert.Contains("每月", LlmSettingsText.Validate(new LlmQuotaLimits(null, -1)).Single(), StringComparison.Ordinal);
+        Assert.Contains("不能大于", LlmSettingsText.Validate(new LlmQuotaLimits(5000, 1000)).Single(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void QuotaStatusReportsUsageHonestlyAndNeverInventsACounter()
+    {
+        var unlimited = new LlmQuotaStatus(null, null, 120, 400, false, null, null, DateTimeOffset.UtcNow);
+        Assert.Null(unlimited.DailyUsedPercent);
+        Assert.Null(unlimited.MonthlyUsedPercent);
+        Assert.Contains("未设置限额", unlimited.Describe(), StringComparison.Ordinal);
+        Assert.Equal(LlmQuotaLimits.Unlimited, unlimited.Limits);
+
+        var half = new LlmQuotaStatus(200, 800, 100, 400, false, null, null, DateTimeOffset.UtcNow);
+        Assert.Equal(0.5, half.DailyUsedPercent);
+        Assert.Equal(0.5, half.MonthlyUsedPercent);
+        Assert.Equal("配额内。", half.Describe());
+
+        var suspended = new LlmQuotaStatus(200, 800, 200, 400, true, null, null, DateTimeOffset.UtcNow);
+        Assert.Contains("超出配额", suspended.Describe(), StringComparison.Ordinal);
+        Assert.Equal(1d, suspended.DailyUsedPercent);
+
+        var over = new LlmQuotaStatus(200, 800, 260, 400, true, null, null, DateTimeOffset.UtcNow);
+        Assert.True(over.DailyUsedPercent > 1d, "超额时百分比必须大于 100%，不得截断成 100%");
+        Assert.Equal(new LlmQuotaLimits(200, 800), over.Limits);
+    }
 }

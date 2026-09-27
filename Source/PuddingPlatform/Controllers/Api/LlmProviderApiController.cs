@@ -13,6 +13,7 @@ namespace PuddingPlatform.Controllers.Api;
 [Route("api/llm/providers")]
 public class LlmProviderApiController(
     LlmProviderFileService service,
+    LlmProviderQuotaService quotas,
     ILogger<LlmProviderApiController> logger) : ControllerBase
 {
     [HttpGet]
@@ -23,7 +24,10 @@ public class LlmProviderApiController(
     public async Task<ActionResult<LlmProviderDetailDto>> Get(string providerId, CancellationToken ct)
     {
         var result = await service.GetProviderAsync(providerId, ct);
-        return result is null ? NotFound() : Ok(result);
+        if (result is null) return NotFound();
+        // 配额 = 文件里的限额 + 账本推导的用量；provider 详情不再返回伪造的零值配额。
+        var quota = await quotas.TryGetAsync(providerId, ct);
+        return Ok(quota is null ? result : result with { Quota = quota });
     }
 
     [HttpPost]
@@ -65,16 +69,24 @@ public class LlmProviderApiController(
     }
 
     [HttpGet("{providerId}/quota")]
-    public IActionResult GetQuota(string providerId)
-        => NoContent();
+    public async Task<ActionResult<LlmProviderQuotaDto>> GetQuota(string providerId, CancellationToken ct)
+        => await quotas.TryGetAsync(providerId, ct) is { } quota ? Ok(quota) : NotFound();
 
     [HttpPut("{providerId}/quota")]
-    public IActionResult UpsertQuota(string providerId)
-        => NoContent();
+    public async Task<ActionResult<LlmProviderQuotaDto>> UpsertQuota(
+        string providerId, [FromBody] UpdateQuotaRequest request, CancellationToken ct)
+    {
+        try { return Ok(await quotas.UpsertAsync(providerId, request, ct)); }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (ArgumentException exception) { return BadRequest(new { error = exception.Message }); }
+    }
 
     [HttpPost("{providerId}/quota/reset-daily")]
-    public IActionResult ResetDailyQuota(string providerId)
-        => NoContent();
+    public async Task<ActionResult<LlmProviderQuotaDto>> ResetDailyQuota(string providerId, CancellationToken ct)
+    {
+        try { return Ok(await quotas.ResetDailyAsync(providerId, ct)); }
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
 
     // ── 余额查询（DeepSeek get-user-balance 等 OpenAI 兼容 provider）──
 

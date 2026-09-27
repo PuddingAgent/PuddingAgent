@@ -267,6 +267,30 @@ public sealed record PuddingLlmProviderConfig
 
     /// <summary>Provider compatibility settings for non-standard APIs (e.g., Kimi K3).</summary>
     public PuddingProviderCompatConfig? Compat { get; init; }
+
+    /// <summary>自设 token 配额（限额 + 计数窗口起点）。用量本身从 token 账本实时推导，不在此重复记账。</summary>
+    public PuddingLlmProviderQuotaConfig? Quota { get; init; }
+}
+
+/// <summary>
+/// Provider 级 token 配额。只保存“限额”和“本窗口起点”，已用 token 由 token 账本按
+/// OccurredAtUtc ≥ 窗口起点 聚合得出，因此重置不需要删除任何账本数据。
+/// </summary>
+public sealed record PuddingLlmProviderQuotaConfig
+{
+    /// <summary>每日最大 token 数（null=不限制）</summary>
+    public long? DailyTokenLimit { get; init; }
+
+    /// <summary>每月最大 token 数（null=不限制）</summary>
+    public long? MonthlyTokenLimit { get; init; }
+
+    /// <summary>日窗口起点（UTC）。为 null 时按自然日 UTC 00:00 计。</summary>
+    public DateTimeOffset? DailyResetAt { get; init; }
+
+    /// <summary>月窗口起点（UTC）。为 null 时按自然月 1 日 UTC 00:00 计。</summary>
+    public DateTimeOffset? MonthlyResetAt { get; init; }
+
+    public DateTimeOffset UpdatedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 
 public sealed record PuddingLlmModelConfig

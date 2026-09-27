@@ -81,6 +81,18 @@ public sealed class TokenUsageDailyAggregateService(
         return await AggregateRangeAsync(db, today, today.AddDays(1), ct);
     }
 
+    /// <summary>
+    /// 任意 UTC 时间窗内的实时聚合（不落缓存），用于按自定义窗口起点计算 provider 配额用量。
+    /// 与统计口径一致：同时覆盖 llm_gateway_usage_events 与 TokenUsageEvents 两个账本。
+    /// </summary>
+    public async Task<IReadOnlyList<LlmUsageDailyAggregateRow>> GetRangeAsync(
+        DateTime startUtc, DateTime endUtcExclusive, CancellationToken ct = default)
+    {
+        if (startUtc >= endUtcExclusive) return [];
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await AggregateRangeAsync(db, startUtc, endUtcExclusive, ct);
+    }
+
     /// <summary>账本重建后失效缓存：yearMonth 为空时清空全部。</summary>
     public async Task InvalidateAsync(string? yearMonth, CancellationToken ct = default)
     {

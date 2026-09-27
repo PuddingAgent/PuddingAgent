@@ -16,6 +16,7 @@ public sealed partial class MainWindow
     private IReadOnlyList<LlmModelSummary> _llmModels = [];
     private LlmProviderSummary? _llmProvider;
     private LlmModelSummary? _llmModel;
+    private LlmQuotaStatus? _llmQuota;
     private bool _llmLoading;
     private bool _llmBuilt;
 
@@ -36,6 +37,12 @@ public sealed partial class MainWindow
     private ToggleSwitch _llmIsDefault = null!, _llmIsDeprecated = null!, _llmIsEmbedding = null!;
     private InfoBar _llmModelNotice = null!;
     private Button _llmModelSave = null!, _llmModelDelete = null!;
+
+    private ComboBox _llmQuotaProvider = null!;
+    private TextBox _llmDailyLimit = null!, _llmMonthlyLimit = null!;
+    private TextBlock _llmQuotaUsage = null!, _llmQuotaState = null!;
+    private InfoBar _llmQuotaNotice = null!;
+    private Button _llmQuotaSave = null!, _llmQuotaReset = null!;
 
     private void BuildLlmPanels()
     {
@@ -148,6 +155,39 @@ public sealed partial class MainWindow
                 _llmModelNotice
             }
         };
+        BuildLlmQuotaPanel();
+    }
+
+    private void BuildLlmQuotaPanel()
+    {
+        _llmQuotaProvider = new ComboBox { Header = "服务商", HorizontalAlignment = HorizontalAlignment.Stretch };
+        AutomationProperties.SetName(_llmQuotaProvider, "配额所属服务商");
+        _llmQuotaProvider.SelectionChanged += (_, _) => LoadQuotaIfNeeded();
+        _llmDailyLimit = Field("每日 token 限额", "留空表示不限制");
+        _llmMonthlyLimit = Field("每月 token 限额", "留空表示不限制");
+        _llmQuotaUsage = new TextBlock { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+        _llmQuotaState = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = .75 };
+        _llmQuotaSave = new Button { Content = "保存配额" };
+        _llmQuotaSave.Click += async (_, _) => await SaveLlmQuotaAsync();
+        _llmQuotaReset = new Button { Content = "重置今日计数" };
+        _llmQuotaReset.Click += async (_, _) => await ResetLlmQuotaAsync();
+        var refresh = new Button { Content = "刷新" };
+        refresh.Click += async (_, _) => await LoadLlmAsync();
+        _llmQuotaNotice = new InfoBar { IsOpen = false, IsClosable = true };
+
+        LlmQuotaSettings.Content = new StackPanel
+        {
+            Spacing = 14,
+            Margin = new Thickness(0, 16, 8, 16),
+            Children =
+            {
+                Card("限额与用量", "限额保存在 llm.providers.json；已用 token 从 token 账本实时推导，不是存储的计数器。" +
+                    "重置只推进日统计窗口起点，不删除任何账本数据，也不影响自然月计数。",
+                    _llmQuotaProvider, Row(refresh), _llmDailyLimit, _llmMonthlyLimit,
+                    Row(_llmQuotaSave, _llmQuotaReset), _llmQuotaUsage, _llmQuotaState),
+                _llmQuotaNotice
+            }
+        };
         SetLlmEnabled(false);
     }
 
@@ -190,6 +230,7 @@ public sealed partial class MainWindow
             SetLlmEnabled(true);
             _llmProviderNotice.IsOpen = false;
             _llmModelNotice.IsOpen = false;
+            LoadQuotaIfNeeded();
         }
         catch (Exception exception) { ReportLlmFailure(exception); }
         finally { _llmLoading = false; }
@@ -215,15 +256,18 @@ public sealed partial class MainWindow
         var previous = _llmProvider?.ProviderId;
         _llmProviderPicker.Items.Clear();
         _llmModelProvider.Items.Clear();
+        _llmQuotaProvider.Items.Clear();
         foreach (var provider in _llmProviders)
         {
             _llmProviderPicker.Items.Add(new ComboBoxItem { Content = $"{provider.Name}（{provider.ProviderId}）", Tag = provider.ProviderId });
             _llmModelProvider.Items.Add(new ComboBoxItem { Content = $"{provider.Name}（{provider.ProviderId}）", Tag = provider.ProviderId });
+            _llmQuotaProvider.Items.Add(new ComboBoxItem { Content = $"{provider.Name}（{provider.ProviderId}）", Tag = provider.ProviderId });
         }
         var found = _llmProviders.ToList().FindIndex(provider => provider.ProviderId == previous);
         var index = _llmProviders.Count > 0 ? Math.Max(0, found) : -1;
         // Select the model provider first: it triggers the model load for that provider.
         _llmModelProvider.SelectedIndex = index;
+        _llmQuotaProvider.SelectedIndex = index;
         _llmProviderPicker.SelectedIndex = index;
         if (index >= 0) return;
         _llmProvider = null; _llmModel = null;
@@ -413,10 +457,72 @@ public sealed partial class MainWindow
         SetLlmEnabled(!unavailable);
         ShowNotice(_llmProviderNotice, severity, title, message);
         ShowNotice(_llmModelNotice, severity, title, message);
+        ShowNotice(_llmQuotaNotice, severity, title, message);
     }
 
-    private static void ShowNotice(InfoBar notice, InfoBarSeverity severity, string title, string message)
+    private async void LoadQuotaIfNeeded()
     {
+        if (LlmQuotaSettings.Visibility != Visibility.Visible) return;
+        if ((_llmQuotaProvider.SelectedItem as ComboBoxItem)?.Tag is not string providerId) return;
+        try
+        {
+            ApplyQuota(providerId, await _llmSettings.GetQuotaAsync(providerId));
+            SetLlmEnabled(true);
+        }
+        catch (Exception exception) { ReportLlmFailure(exception); }
+    }
+
+    private void ApplyQuota(string providerId, LlmQuotaStatus? quota)
+    {
+        _llmQuota = quota;
+        _llmDailyLimit.Text = LlmSettingsText.FormatOptional(quota?.DailyTokenLimit);
+        _llmMonthlyLimit.Text = LlmSettingsText.FormatOptional(quota?.MonthlyTokenLimit);
+        _llmQuotaUsage.Text = quota is null
+            ? $"{providerId}：没有可用的配额记录。"
+            : $"今日已用 {quota.DailyTokensUsed:N0} tokens · 日限额 {DescribeLimit(quota.DailyTokenLimit, quota.DailyUsedPercent)}\n" +
+              $"本月已用 {quota.MonthlyTokensUsed:N0} tokens · 月限额 {DescribeLimit(quota.MonthlyTokenLimit, quota.MonthlyUsedPercent)}\n" +
+              $"统计窗口起点：日 {DescribeReset(quota.DailyResetAt)} · 月 {DescribeReset(quota.MonthlyResetAt)}";
+        _llmQuotaState.Text = quota?.Describe() ?? "";
+        _llmQuotaReset.IsEnabled = quota is not null;
+        _llmQuotaNotice.IsOpen = false;
+    }
+
+    private static string DescribeLimit(long? limit, double? used) => limit is null
+        ? "不限制"
+        : $"{limit.Value:N0}（已用 {used.GetValueOrDefault() * 100:F1}%）";
+
+    private static string DescribeReset(DateTimeOffset? resetAt) =>
+        resetAt is null ? "按自然周期" : resetAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
+    private async Task SaveLlmQuotaAsync()
+    {
+        if ((_llmQuotaProvider.SelectedItem as ComboBoxItem)?.Tag is not string providerId) return;
+        var limits = new LlmQuotaLimits(
+            LlmSettingsText.ParseOptionalLong(_llmDailyLimit.Text),
+            LlmSettingsText.ParseOptionalLong(_llmMonthlyLimit.Text));
+        var errors = LlmSettingsText.Validate(limits);
+        if (errors.Count > 0) { ShowNotice(_llmQuotaNotice, InfoBarSeverity.Warning, "请先修正表单", string.Join(" ", errors)); return; }
+        await RunLlmAsync(_llmQuotaNotice, "配额已保存",
+            "限额已写入 llm.providers.json；已用 token 仍由 token 账本推导，不是存储的计数器。",
+            async () => ApplyQuota(providerId, await _llmSettings.SaveQuotaAsync(providerId, limits)));
+    }
+
+    private async Task ResetLlmQuotaAsync()
+    {
+        if ((_llmQuotaProvider.SelectedItem as ComboBoxItem)?.Tag is not string providerId) return;
+        var confirm = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot, Title = "重置今日计数",
+            Content = $"将 {providerId} 的日统计窗口起点推进到现在。已经发生的调用不会被删除，月计数不受影响。",
+            PrimaryButtonText = "重置", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close
+        };
+        if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+        await RunLlmAsync(_llmQuotaNotice, "今日计数已重置",
+            "日统计窗口起点已更新；token 账本数据未做任何修改。",
+            async () => ApplyQuota(providerId, await _llmSettings.ResetDailyQuotaAsync(providerId)));
+    }
+
+    private static void ShowNotice(InfoBar notice, InfoBarSeverity severity, string title, string message)    {
         notice.Severity = severity;
         notice.Title = title;
         notice.Message = message;
@@ -431,10 +537,12 @@ public sealed partial class MainWindow
             _llmProviderEnabled, _llmKeyChange, _llmNewKey, _llmProviderConcurrency, _llmProviderTpm, _llmProviderRpm,
             _llmProviderSave, _llmModelProvider, _llmModelPicker, _llmModelId, _llmModelName, _llmProtocol,
             _llmTags, _llmSortOrder, _llmIsDefault, _llmIsDeprecated, _llmIsEmbedding, _llmContext, _llmInputTokens,
-            _llmOutputTokens, _llmModelConcurrency, _llmInputPrice, _llmOutputPrice, _llmCachePrice, _llmModelSave
+            _llmOutputTokens, _llmModelConcurrency, _llmInputPrice, _llmOutputPrice, _llmCachePrice, _llmModelSave,
+            _llmQuotaProvider, _llmDailyLimit, _llmMonthlyLimit, _llmQuotaSave
         }) control.IsEnabled = enabled;
-        if (!enabled) { _llmProviderDelete.IsEnabled = false; _llmModelDelete.IsEnabled = false; return; }
+        if (!enabled) { _llmProviderDelete.IsEnabled = false; _llmModelDelete.IsEnabled = false; _llmQuotaReset.IsEnabled = false; return; }
         _llmProviderDelete.IsEnabled = _llmProvider is not null;
         _llmModelDelete.IsEnabled = _llmModel is not null;
+        _llmQuotaReset.IsEnabled = _llmQuota is not null;
     }
 }

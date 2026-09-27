@@ -431,8 +431,11 @@ public sealed partial class MainWindow : Window
             Check(LlmModelsSettings.Visibility == Visibility.Visible, "llm models tab is native");
             Check(!_llmModelSave.IsEnabled, "llm model form stays disabled without Core");
             OpenSettingsCategory("models", "quota");
-            Check(LlmProvidersSettings.Visibility == Visibility.Collapsed && LlmModelsSettings.Visibility == Visibility.Collapsed,
-                "quota tab remains a registered placeholder until Core quota is implemented");
+            await WaitForSettingsUiAsync(() => _llmQuotaNotice.IsOpen);
+            Check(LlmQuotaSettings.Visibility == Visibility.Visible, "llm quota tab is native");
+            Check(LlmQuotaSettings.Content is StackPanel, "llm quota form is built");
+            Check(!_llmQuotaSave.IsEnabled, "llm quota form stays disabled without Core");
+            Check(_llmQuotaNotice.Title == "Core 未就绪", "llm quota tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

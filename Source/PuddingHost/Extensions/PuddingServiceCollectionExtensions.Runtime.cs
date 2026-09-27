@@ -444,6 +444,8 @@ public static partial class PuddingServiceCollectionExtensions
         // ── 文件式 LLM Provider/Model 管理（A方案：Controller → Service → JSON 文件）──
         builder.Services.AddSingleton<LlmProviderFileService>();
         builder.Services.AddSingleton<ILlmResourcePoolService>(sp => sp.GetRequiredService<LlmProviderFileService>());
+        // 配额：限额读 llm.providers.json，用量从 token 账本推导（见 LlmProviderQuotaService）。
+        builder.Services.AddSingleton<LlmProviderQuotaService>();
 
         // ── 文件式 TTS/ASR 语音 Provider/Model 管理 ──
         builder.Services.AddSingleton<VoiceProviderFileService>();

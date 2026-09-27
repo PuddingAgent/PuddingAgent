@@ -139,6 +139,12 @@ public sealed class PuddingFileConfigLoader
                 errors.Add($"llm.providers.json provider '{provider.ProviderId}' tokensPerMinute must be greater than zero.");
             if (provider.RequestsPerMinute is <= 0)
                 errors.Add($"llm.providers.json provider '{provider.ProviderId}' requestsPerMinute must be greater than zero.");
+            if (provider.Quota is { DailyTokenLimit: <= 0 })
+                errors.Add($"llm.providers.json provider '{provider.ProviderId}' quota.dailyTokenLimit must be greater than zero.");
+            if (provider.Quota is { MonthlyTokenLimit: <= 0 })
+                errors.Add($"llm.providers.json provider '{provider.ProviderId}' quota.monthlyTokenLimit must be greater than zero.");
+            if (provider.Quota is { DailyTokenLimit: { } daily, MonthlyTokenLimit: { } monthly } && daily > monthly)
+                errors.Add($"llm.providers.json provider '{provider.ProviderId}' quota.dailyTokenLimit must not exceed monthlyTokenLimit.");
 
             var modelIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var model in provider.Models)

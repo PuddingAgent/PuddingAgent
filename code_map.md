@@ -1,6 +1,6 @@
-## 2026-09-27 DS-02 LLM 服务商与模型（部分完成）
+## 2026-09-27 DS-02 LLM 服务商与模型（已完成）
 
-Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形状边界、`ApiKeyChange`、纯表单助手），Composition 新增 `DesktopLlmResourceSettings`（经 `IDesktopKernel.RunSettingsAsync` 调用 `LlmProviderFileService`），Shell 新增 `MainWindow.LlmSettings.cs`（`models/providers` 与 `models/models` 两个页签原生表单）。Core 侧补 `UpsertLlmProviderRequest.ClearApiKey`（保持/替换/清除密钥，替换时清掉遗留 `ApiKeyRef`）与「一个服务商最多一个默认模型」。配额卡仍为占位：Web 的 quota 端点仍是 `NoContent()`，需先在 `llm.providers.json` 侧补齐配额状态与用量并独立测试。验证：Foundation 58 项、Composition 3 项（含真实 Host 端到端写入）、`LlmProviderFileServiceTests` 3 项、窗口 smoke 112 项通过。
+Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形状边界、`ApiKeyChange`、`LlmQuotaStatus`、纯表单助手），Composition 新增 `DesktopLlmResourceSettings`（经 `IDesktopKernel.RunSettingsAsync` 调用 `LlmProviderFileService` 与 `LlmProviderQuotaService`），Shell 新增 `MainWindow.LlmSettings.cs`（`models/providers`、`models/models`、`models/quota` 三个页签原生表单）。Core 侧：`UpsertLlmProviderRequest.ClearApiKey`（保持/替换/清除密钥，替换时清掉遗留 `ApiKeyRef`）、「一个服务商最多一个默认模型」、`PuddingLlmProviderConfig.Quota` + `LlmProviderQuotaService`（限额入 `llm.providers.json`，用量由 token 账本推导，`reset-daily` 只推进窗口起点），quota 三个 HTTP 端点不再是 `NoContent()`。验证：Foundation 60 项、Composition 3 项（含真实 Host 端到端写入与配额往返）、`LlmProvider*Tests` 11 项、窗口 smoke 115 项通过。
 
 ## 2026-09-27 DS-01 通用、语言与关于
 

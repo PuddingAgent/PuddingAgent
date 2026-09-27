@@ -152,7 +152,7 @@
           {
             "id": "quota",
             "title": "限额与用量",
-            "description": "Web 已有表单，但当前 Core 配额端点为空实现；须先补齐业务能力。",
+            "description": "限额保存在 llm.providers.json；已用 token 由 token 账本推导，重置只推进统计窗口起点。",
             "fields": [
               "dailyTokenLimit",
               "monthlyTokenLimit",
@@ -162,7 +162,7 @@
             ],
             "source": "pages/llm-resource-pool/index.tsx",
             "task": "DS-02",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       }

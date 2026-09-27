@@ -232,7 +232,8 @@
 | `Services/LlmProviderFileService.cs` | LLM Provider/模型文件配置；协议只存在于模型 DTO 与模型写入请求；`GetBalanceAsync` 余额查询——解析 apiKey（ApiKey/${ENV}/{{vault:NAME}}/ApiKeyRef→KeyVault）后按 `ILlmBalanceProvider` 注册表 CanHandle 分发，未注册适配器返回「暂不支持」DTO（apiKey 不进日志） |
 | `Services/ILlmBalanceProvider.cs` | 服务商余额查询适配器契约（多服务商计费抽象）：`CanHandle(provider)` + `QueryAsync(provider, apiKey, ct)`；网络错误抛 HttpRequestException（控制器映射 502），上游业务错误返回 IsAvailable=false DTO |
 | `Services/DeepSeekLlmBalanceProvider.cs` | DeepSeek 适配器：GET {baseUrl 剥掉尾部 /v1}/user/balance + Bearer；解析 is_available/balance_infos（字符串金额兼容）与 error.message；CanHandle=providerId 含 deepseek 或 baseUrl 指向 deepseek.com；命名 HttpClient `LlmBalanceQuery`（30s） |
-| `Controllers/Api/LlmProviderApiController.cs` | Provider CRUD/配额/余额 HTTP 出口；`GET api/llm/providers/{providerId}/balance`（KeyNotFound→404 / InvalidOperation→400 / HttpRequestException→502） |
+| `Controllers/Api/LlmProviderApiController.cs` | Provider CRUD/配额/余额 HTTP 出口；`GET/PUT api/llm/providers/{providerId}/quota` 与 `POST .../quota/reset-daily` 由 `LlmProviderQuotaService` 实现（不再是 NoContent）；`GET api/llm/providers/{providerId}/balance`（KeyNotFound→404 / InvalidOperation→400 / HttpRequestException→502） |
+| `Services/LlmProviderQuotaService.cs` | Provider 自设 token 配额：限额与窗口起点存 `llm.providers.json`（`provider.quota`），已用 token 由 token 账本（`llm_gateway_usage_events` + `TokenUsageEvents`，经 `TokenUsageDailyAggregateService.GetRangeAsync`）按 `OccurredAtUtc ≥ 窗口起点` 实时推导，不重复记账；`reset-daily` 只把日窗口起点推进到“现在”，不删除账本、不影响月计数；`WindowStart` = max(自然周期起点, 重置时间) 且不超过“现在” |
 | `Services/ChannelConfigurationFileService.cs` | 渠道配置（21KB） |
 | `Services/VoiceProviderFileService.cs` | 语音提供商（18KB） |
 
@@ -253,7 +254,7 @@
 | `Services/AppUserSchemaBootstrapper.cs` | 旧 SQLite 的 `AppUsers.Avatar` 幂等补列；避免头像实体升级后登录查询因 schema 漂移返回 500 |
 | `Services/TokenUsageRebuildService.cs` | 从成功网关活动 + session usage 帧重建计费事实，并保留无法覆盖的实时行；提交后按月失效按日聚合缓存 |
 | `Controllers/Api/StatsApiController.cs` | 月度/趋势优先网关计费账本，无网关历史月份回退会话投影；context-layer API 聚合 Token、UTF-8/GZIP 字节、压缩比、缓存与变化指标；三接口（monthly/series/context-layers）走闭日缓存 + 当天实时渐进加载 |
-| `Services/TokenUsageDailyAggregateService.cs` | Token 统计按日聚合缓存：已结束 UTC 日聚合一次落 `llm_usage_daily_aggregates`（day × source × provider × model），当天实时；Rebuild 后按月失效 |
+| `Services/TokenUsageDailyAggregateService.cs` | Token 统计按日聚合缓存：已结束 UTC 日聚合一次落 `llm_usage_daily_aggregates`（day × source × provider × model），当天实时；Rebuild 后按月失效；`GetRangeAsync` 提供任意 UTC 时间窗的实时聚合（配额按自定义窗口起点取用量） |
 | `Services/ContextLayerDailyRollupService.cs` | Context-layer 按日 rollup 缓存：`context_layer_daily_rollups` 存 JSON 分布（token/命中率数组 + 去重哈希集合），跨日精确合并 median/P95/distinctHashes；非对齐边界日直查明细 |
 | `Services/DailyCacheUtility.cs` | 按日缓存共用工具：cache_key、UTC 日枚举、闭日标记读取、SQLite DateTimeOffset 文本范围格式（EF 无法翻译 DateTimeOffset 参数比较） |
 | `Data/Entities/LlmUsageDailyAggregateEntity.cs` | `llm_usage_daily_aggregates` 闭日 Token 聚合行 |

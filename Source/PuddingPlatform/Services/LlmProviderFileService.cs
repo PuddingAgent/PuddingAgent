@@ -125,7 +125,7 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
             MaxConcurrentRequests: p.MaxConcurrentRequests,
             TokensPerMinute: p.TokensPerMinute,
             RequestsPerMinute: p.RequestsPerMinute,
-            Quota: p.IsEnabled ? new LlmProviderQuotaDto(null, null, 0, 0, false, null, null, DateTimeOffset.UtcNow) : null,
+            Quota: null, // 配额由 LlmProviderQuotaService 组合（限额来自本文件，用量来自 token 账本）。
             Models: p.Models.Select(m => new LlmModelDto(
                 Id: 0,
                 ProviderId: 0,
@@ -360,6 +360,32 @@ public sealed class LlmProviderFileService : ILlmResourcePoolService
         {
             _writeLock.Release();
         }
+    }
+
+    // ─── Quota Operations ─────────────────────────────────
+
+    /// <summary>
+    /// 在写锁内更新 Provider 配额。只保存限额与计数窗口起点；已用 token 由 token 账本推导，
+    /// 因此重置不需要删除或改写任何账本数据。
+    /// </summary>
+    public async Task<PuddingLlmProviderQuotaConfig> UpdateQuotaAsync(string providerId,
+        Func<PuddingLlmProviderQuotaConfig?, PuddingLlmProviderQuotaConfig> mutate, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        await _writeLock.WaitAsync(ct);
+        try
+        {
+            var config = await LoadAsync(ct);
+            var provider = config.Providers.FirstOrDefault(p =>
+                string.Equals(p.ProviderId, providerId, StringComparison.OrdinalIgnoreCase))
+                ?? throw new KeyNotFoundException($"Provider '{providerId}' 不存在");
+            var updated = mutate(provider.Quota) with { UpdatedAt = DateTimeOffset.UtcNow };
+            var replacement = provider with { Quota = updated };
+            config.Providers[config.Providers.IndexOf(provider)] = replacement;
+            await SaveConfigAsync(config, ct);
+            return updated;
+        }
+        finally { _writeLock.Release(); }
     }
 
     // ─── Model Operations ─────────────────────────────────

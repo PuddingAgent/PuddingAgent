@@ -141,8 +141,29 @@ public sealed class DesktopCompositionTests
             await settings.DeleteModelAsync("pool", "m2", timeout.Token);
             Assert.Single(await settings.ListModelsAsync("pool", timeout.Token));
 
+            // DS-02 quota: limits round-trip through the provider file, usage comes from the token ledger.
+            var quota = await settings.GetQuotaAsync("pool", timeout.Token);
+            Assert.NotNull(quota);
+            Assert.Null(quota.DailyTokenLimit);
+            Assert.Equal(0L, quota!.DailyTokensUsed);
+            Assert.False(quota!.IsSuspended);
+
+            var limited = await settings.SaveQuotaAsync("pool", new LlmQuotaLimits(500_000, 5_000_000), timeout.Token);
+            Assert.Equal(500_000L, limited.DailyTokenLimit);
+            Assert.Equal(5_000_000L, limited.MonthlyTokenLimit);
+            Assert.Equal(500_000L, (await settings.GetQuotaAsync("pool", timeout.Token))!.DailyTokenLimit);
+
+            // A limit Core rejects must not be written, and must not look like a successful save.
+            await Assert.ThrowsAsync<ArgumentException>(
+                () => settings.SaveQuotaAsync("pool", new LlmQuotaLimits(500_000, 1_000), timeout.Token));
+            Assert.Equal(5_000_000L, (await settings.GetQuotaAsync("pool", timeout.Token))!.MonthlyTokenLimit);
+
+            Assert.NotNull((await settings.ResetDailyQuotaAsync("pool", timeout.Token)).DailyResetAt);
+            Assert.Null(await settings.GetQuotaAsync("no-such-provider", timeout.Token));
+
             await kernel.StopAsync(timeout.Token);
             await Assert.ThrowsAsync<SettingsUnavailableException>(() => settings.ListProvidersAsync(timeout.Token));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => settings.GetQuotaAsync("pool", timeout.Token));
         }
         finally
         {
