@@ -919,7 +919,7 @@
             ],
             "source": "pages/keyvault/index.tsx",
             "task": "DS-10",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },
@@ -980,7 +980,7 @@
             ],
             "source": "pages/tool-approval/components/ClassifierHealthBanner.tsx",
             "task": "DS-10",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       }

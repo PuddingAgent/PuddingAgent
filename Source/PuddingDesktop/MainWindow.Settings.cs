@@ -213,6 +213,24 @@ public sealed partial class MainWindow
         var storageCleanup = VisibilityOf("storage", "cleanup", tab);
         StorageCleanupSettings.Visibility = storageCleanup;
         if (storageCleanup == Visibility.Visible) LoadStorageCleanupIfNeeded();
+        var securityVault = VisibilityOf("security", "vault", tab);
+        SecurityVaultSettings.Visibility = securityVault;
+        if (securityVault == Visibility.Visible) LoadSecurityVaultIfNeeded();
+        var securityAudit = VisibilityOf("security", "audit", tab);
+        SecurityAuditSettings.Visibility = securityAudit;
+        if (securityAudit == Visibility.Visible) LoadSecurityAuditIfNeeded();
+    }
+
+    private async void LoadSecurityVaultIfNeeded()
+    {
+        try { await LoadSecretsAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
+    }
+
+    private async void LoadSecurityAuditIfNeeded()
+    {
+        try { await LoadClassifierHealthAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadStorageCleanupIfNeeded()
@@ -396,6 +414,8 @@ public sealed partial class MainWindow
         ("storage", "overview") => true,
         ("storage", "policy") => true,
         ("storage", "cleanup") => true,
+        ("security", "vault") => true,
+        ("security", "audit") => true,
         _ => false
     };
 

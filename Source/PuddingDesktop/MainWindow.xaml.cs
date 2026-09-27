@@ -23,11 +23,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels, IWorkspaceResourceSettings WorkspaceResources, IMemoryLibrarySettings MemoryLibrary, IStorageSettings Storage)> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels, IWorkspaceResourceSettings WorkspaceResources, IMemoryLibrarySettings MemoryLibrary, IStorageSettings Storage, ISecuritySettings Security)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels, _workspaceResources, _memoryLibrary, _storage) = createKernel(_desktopServices);
+        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels, _workspaceResources, _memoryLibrary, _storage, _security) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -76,6 +76,7 @@ public sealed partial class MainWindow : Window
         BuildMemorySearchPanel();
         BuildStoragePanel();
         BuildStorageCleanupPanel();
+        BuildSecurityPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -612,6 +613,17 @@ public sealed partial class MainWindow : Window
             Check(StorageCleanupSettings.Visibility == Visibility.Visible, "storage cleanup tab is native");
             Check(StorageCleanupSettings.Content is StackPanel, "storage cleanup form is built");
             Check(!_scTargetPicker.IsEnabled, "storage cleanup form stays disabled without Core");
+            // DS-10 vault and classifier-health slice.
+            OpenSettingsCategory("security", "vault");
+            await WaitForSettingsUiAsync(() => _secNotice.IsOpen);
+            Check(SecurityVaultSettings.Visibility == Visibility.Visible, "security vault tab is native");
+            Check(SecurityVaultSettings.Content is StackPanel, "security vault form is built");
+            Check(!_secName.IsEnabled, "security vault form stays disabled without Core");
+            Check(_secNotice.Title == "Core 未就绪", "security vault tab reports the real Core state");
+            OpenSettingsCategory("security", "audit");
+            await WaitForSettingsUiAsync(() => _secAuditNotice.IsOpen);
+            Check(SecurityAuditSettings.Visibility == Visibility.Visible, "security audit tab is native");
+            Check(SecurityAuditSettings.Content is StackPanel, "security audit form is built");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

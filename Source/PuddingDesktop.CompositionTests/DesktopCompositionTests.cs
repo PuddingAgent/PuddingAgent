@@ -1644,6 +1644,60 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task SecurityAdapter_ManagesSecretMetadataWithoutEverReadingPlaintext()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var security = factory.CreateSecuritySettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => security.ListSecretsAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            Assert.Empty(await security.ListSecretsAsync(timeout.Token));
+
+            await security.SaveSecretAsync(new VaultSecretEdit("", "composition-key", "fixture", "api",
+                "super-secret-value", ["fixture"]), timeout.Token);
+            var created = Assert.Single(await security.ListSecretsAsync(timeout.Token));
+            Assert.Equal("composition-key", created.Name);
+            Assert.Equal("api", created.Category);
+            Assert.Equal(["fixture"], created.Tags);
+            // The model carries metadata and the placeholder only; reading plaintext is not even possible.
+            Assert.Equal("{{vault:composition-key}}", created.Placeholder);
+            Assert.DoesNotContain("super-secret-value", created.ToString(), StringComparison.Ordinal);
+
+            // A blank value on update keeps the stored secret (Core's documented semantics).
+            await security.SaveSecretAsync(new VaultSecretEdit(created.KeyVaultId, "composition-key",
+                "renamed description", "token", "", ["fixture", "eu"]), timeout.Token);
+            var updated = Assert.Single(await security.ListSecretsAsync(timeout.Token));
+            Assert.Equal("renamed description", updated.Description);
+            Assert.Equal("token", updated.Category);
+            Assert.Equal(2, updated.Tags.Count);
+            Assert.NotNull(updated.UpdatedAt);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => security.DeleteSecretAsync("no-such-id", timeout.Token));
+            await security.DeleteSecretAsync(created.KeyVaultId, timeout.Token);
+            Assert.Empty(await security.ListSecretsAsync(timeout.Token));
+
+            // Classifier health is an optional surface: either wired with entries, or explicitly unknown.
+            var health = await security.ReadClassifierHealthAsync(timeout.Token);
+            if (!health.Configured) Assert.Empty(health.Classifiers);
+            else Assert.All(health.Classifiers, item => Assert.False(string.IsNullOrWhiteSpace(item.ClassifierId)));
+            Assert.False(string.IsNullOrWhiteSpace(SecurityText.DescribeHealthSummary(health)));
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => security.ListSecretsAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

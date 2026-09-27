@@ -46,7 +46,9 @@
 
 `DesktopStorageSettings` reads Core's cached inventory snapshot, trend history, data-class catalogue and retention policy; a CAS conflict from `StorageAdminException` becomes `SettingsConflictException` so the shell can say the policy changed under it.
 
-`DesktopStorageSettings` also drives cleanup: bounded previews, idempotent job creation (Core's request id), job/event reads, and confirm/cancel.`n`n`SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.
+`DesktopStorageSettings` also drives cleanup: bounded previews, idempotent job creation (Core's request id), job/event reads, and confirm/cancel.`n`n`DesktopSecuritySettings` manages vault secret metadata through `IKeyVaultService` summaries only - it never requests the plaintext - and reads classifier health through the optional `IClassifierHealthReporter`, reporting an absent reporter as not wired.
+
+`SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.
 `InProcessChatClient.Speech`: IChatSpeechClient direct Core IVoiceSynthesisService adapter. Reads authoritative message/envelope payload, validates workspace/role/local-owner identity, uses configured defaults and the existing tracked-operation cancellation lifetime.
 
 `InProcessChatClient.Transcription`: IChatTranscriptionClient → existing Core IAudioTranscriptionService; validates bounded recording and current enabled/unfrozen role, passes WAV bytes with default provider/model selection, follows tracked host cancellation. Integration tests use real configuration/application services and a fake provider; no Desktop HTTP or actual microphone.

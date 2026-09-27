@@ -24,6 +24,7 @@
 | `MainWindow.WorkspaceResourceSettings.cs` | DS-05 资源三张卡：知识库、工作区技能（MCP configJson 编辑器）、工作流（definitionJson 编辑器）；空 ID 即新建 |
 | `MainWindow.MemoryLibrarySettings.cs` | DS-08 资料库切片：工作区/Agent/资料库选择（含确保默认库）、页面树只读渲染、节点创建、Book 打开/编辑/新建/归档、章节分页/编辑/新建/归档 |
 | `MainWindow.MemorySearchSettings.cs` | DS-08 搜索与检查器：全文搜索（条数选择、结果与分数按 Core 原样显示）、章节元数据、来源引用与图谱指针（出边/反链分开）、「在资料库中打开」定位 |
+| `MainWindow.SecuritySettings.cs` | DS-10 保管库与分类器健康：密钥元数据增删改（值只写、占位符可复制）、分类器健康快照（未接线时显示未知态） |
 | `MainWindow.StorageCleanupSettings.cs` | DS-09 清理：类别多选（仅 Core 允许手动清理的类别）、早于天数、预览（截止/过期/候选/警告）、按幂等键创建作业、确认/取消、进度计数与事件列表 |
 | `MainWindow.StorageSettings.cs` | DS-09 盘点与策略：缓存快照读取（不触发扫描）、显式刷新、趋势窗口 7/30/90、分类目录与受保护对象、保留策略按目标编辑并用读到的 revision 提交 |
 | `MainWindow.VoiceSettings.cs | DS-03 语音原生表单：TTS/ASR 服务商、TTS 模型（音色/格式/采样率/四种能力）、ASR 模型（语言/采样率/三种能力）；逗号分隔列表编辑、默认项真源展示、Core 未就绪时禁用表单 |

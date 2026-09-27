@@ -1,6 +1,9 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-10 密钥与审批（保管库 + 分类器健康切片）
+
+`security/vault` 与 `security/audit`（分类器健康卡）接上 Core：密钥列表/元数据增删改 + **只写密钥值** + `{{vault:名称}}` 占位符复制（走系统剪贴板，失败时把占位符显示出来让人手动复制）；分类器健康直接读 `IClassifierHealthReporter.Snapshot()`，**未接线时显示「未知态」而不是「健康」**。两条边界：适配器只请求 `ListSecretsAsync` 摘要，从不请求明文（`GetSecretAsync(includePlainText:true)` 有意不使用）；更新密钥留空值 = 保持原值，与 Core 的 `UpdateKeyVaultSecretCommand` 语义一致。分类器健康的枚举映射到 未知/健康/降级/不可用，未知取值原样显示。验证：Foundation 163 项、Composition 23 项（真实 Host：建密钥→元数据与占位符正确且模型里没有明文→留空更新保留密钥→删除→分类器健康要么已接线要么明确未知）、窗口 smoke 209 项通过。
 ## 2026-09-27 DS-09 存储（清理切片，DS-09 完成）
 
 `storage/cleanup` 接上 Core 的清理管线：类别多选（只列出 Core 允许手动清理的类别）、早于天数、**有界预览**（截止时间/过期时间/候选计数含 Truncated 标记/警告）、按幂等键创建作业、确认执行、请求取消、进度计数与事件列表。诚实边界：预览会过期，过期后界面拒绝创建作业并要求重新预览；**「超预算继续」在 Core 没有对应操作**（作业 DTO 不暴露 Budget，也没有 confirm-with-override），界面只呈现进度与剩余估算，明确写出不提供绕过预算的按钮。取消是请求而非回滚，确认框写清「已处理部分不会回滚」。命名踩坑：Foundation 的清理类型与 Core 的 `StorageCleanupPreview`/`StorageCleanupJob`/`StorageCleanupProgress` 同名，按既有先例改名为 `StorageCleanupEstimate`/`StorageCleanupRun`/`StorageCleanupCounters`/`StorageCleanupTargetEstimate`，Core 侧不动。验证：Foundation 157 项、Composition 22 项（真实 Host：受保护类别预览被拒、预览可建、同 requestId 幂等、同 preview 换 key 被拒、确认推进状态、事件可读）、窗口 smoke 203 项通过。
