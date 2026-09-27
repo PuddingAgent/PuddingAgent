@@ -33,7 +33,7 @@
 
 | ID | 优先级 | 任务 | 状态 | 前置 | 负责边界 |
 |---|---|---|---|---|---|
-| NC-00 | P0 | 收口暂停现场的审批等待/熔断修复 | 已改、7 项定向测试通过、未提交 | 无 | Runtime |
+| NC-00 | P0 | 收口暂停现场的审批等待/熔断修复 | 已完成，提交 `197761b` | 无 | Runtime |
 | NC-01 | P0 | 真实审批请求与持久暂停/原 invocation 恢复 | 未实现 | NC-00、既有 A1 | Runtime + Platform 执行调度 |
 | NC-02 | P0 | Core 审批应用服务、事务通知和生命周期整合 | 未实现 | NC-01 的持久契约 | Core/Platform + Composition |
 | NC-03 | P0 | 原生固定待审批区与角色提示闭环 | 卡片已有，工作台未接 | NC-01、NC-02 | Chat/WinUI |
@@ -61,6 +61,20 @@
 暂停前启动的测试最终通过 7 项，日志 `temp/native-approval-admission-fuse.log`；构建有既有代码/依赖告警，不能称为零警告。恢复后检查文件是否被他方继续修改，复核此语义与 ADR-091 一致、既有失败拦截仍有效，更新相应设计/代码地图后仅提交上述改动。不得顺带提交 Host 索引、设置页、dev-up 或 memory 工作。
 
 完成标准：定向测试通过且代码复核/独立提交完成。它不是“Run 已暂停”的证据，不能关闭 NC-01。
+
+交付记录（2026-09-27 恢复执行）：
+
+| 项 | 内容 |
+|---|---|
+| 任务 ID | NC-00 |
+| 状态 | 已完成（代码复核 + 定向测试 + 独立提交） |
+| 提交号 | `197761b` |
+| 变更文件 | 上述四份源码/测试；另更新 `Docs/Features/Desktop-Native-Approval-Integration-Design-2026-09-27.md`、`Docs/Reports/Desktop-Native-Chat-Completion-Audit-2026-09-27.md`、`code_map.md` |
+| 验证命令 | `dotnet test Source/PuddingRuntimeTests/PuddingRuntimeTests.csproj --artifacts-path temp/build/native-approval-runtime --nologo -p:CollectCoverage=false --filter "FullyQualifiedName~FailedToolCallTrackerTests\|FullyQualifiedName~HumanDecision_ExecutorPreservesTypedDenialWithoutExecuting"` |
+| 通过证据 | 7/7 通过（失败 0、跳过 0），本机日志 `temp/nc00-runtime-directed.log`；暂停前日志 `temp/native-approval-admission-fuse.log` 仍在 |
+| 复核结论 | 语义与 ADR-091 §4.4「失败分类属于协议」及 §6「等待不是低效」一致；`DependencyWait` 的既有排除见 `Docs/Features/安全分类器与工具调用准入方案-v2.md` §14.9.1。真实拒绝仍计错误，428/限流豁免、硬拒绝与预算未变。两种状态全仓唯一生产者 `PuddingToolRegistry.cs:681-685` 恒返回 `Success=false`，早退分支不会吞掉成功结果的失败清零。现场四文件自基线 `17c813e` 起未被他人改动 |
+| 已知限制 | 只改错误/停滞计数；不创建审批请求、不建立 Run 暂停点、不恢复原 invocation、不释放 worker。构建仍有既有代码/依赖告警，非零警告 |
+| 下一依赖 | NC-01（需要先定义可持久化恢复点） |
 
 ### NC-01：持久暂停与精确恢复
 
