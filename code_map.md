@@ -1,6 +1,9 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-05 工作区与渠道（工作区/成员 Core 下沉）
+
+`WorkspaceApiController` 原先直接使用 `PlatformDbContext`，按 DS-05「直接 DbContext 的旧 Controller 先下沉业务操作」把校验与数据访问下沉为 `WorkspaceService`，控制器只做 `SkillHubResult` → 400/404/409 映射，Web 行为不变。`WorkspaceServiceTests` 用内存 SQLite 固定规则：默认工作区不可删除、团队成员必须存在、访问策略枚举必须已定义、成员不重复、**跨工作区删除成员是 NotFound 而不是误删**。踩坑记录：`EnsureCreatedAsync` 会同时应用模型种子数据，测试种子必须幂等（`default` 工作区与 admin 用户已存在），且 `AppUsers.Email` 有唯一索引。验证：`WorkspaceServiceTests` 5 项通过。
 ## 2026-09-27 DS-07 Skill Hub（旧技能包桌面端）+ DS-07 完成
 
 桌面端 `skills/legacy` 接上上一轮下沉的 `SkillPackageService`：台账列表与详情、元数据编辑（不动文件与版本）、确认删除、上传新包、上传新版本（替换文件）、预签名下载链接（用默认浏览器打开）。文件选择器不可用时回退到路径输入框，并把原因显示出来。上传/下载依赖对象存储，未配置或不可达时显示 Core 的真实错误而不是假成功。验证：Foundation 118 项、Composition 14 项、窗口 smoke 169 项通过。至此 DS-07 六张卡全部接入（概览 / 事件审计 / 技能库 / EVO MAP / 安装台账 / 旧技能包）。

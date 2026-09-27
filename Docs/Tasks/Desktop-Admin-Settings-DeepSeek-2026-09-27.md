@@ -210,6 +210,14 @@
 
 ### DS-05 — 工作区与渠道（P1；依赖 DS-00、DS-04）
 
+状态：**进行中（2026-09-27）**。工作区/成员的 Core 下沉已完成，桌面端表单待接；渠道、资源三组页签未开始。
+
+**工作区/成员切片（Core 部分已交付）**
+- `WorkspaceApiController` 原先直接使用 `DbContext`，按本任务书「直接 DbContext 的旧 Controller 先下沉业务操作」下沉为 `WorkspaceService`（`PuddingPlatform.Services`），控制器只做语义结果 → HTTP 状态码映射。
+- 规则固定进独立测试：默认工作区不可删除；Team 必须存在；访问策略必须是已定义枚举值（`"99"` 也拒绝）；用户必须存在；同一工作区成员不重复；**跨工作区删除成员返回 NotFound，绝不错删**；更新一个工作区不影响另一个。
+- 踩坑登记：`EnsureCreatedAsync` 会同时应用模型种子数据，测试种子必须幂等；`AppUsers.Email` 有唯一索引。
+- 待接：桌面端 `workspaces/basic`（工作区列表/新建/编辑/删除/冻结 + 成员增删与权限）。
+
 工作区基础/成员、知识库、工作区技能、工作流、渠道服务商、渠道实例分别提交。直接 DbContext 的旧 Controller 先下沉业务操作。飞书配置保留 appId/appSecret、特权用户、Agent 绑定、流式回复、TTS 开关和音色；只显示真实支持的服务商字段。验收：工作区隔离、成员权限、不存在/删除中的角色绑定错误、密钥保持/替换，Core 重开后数据一致；客户端初始化不导入 Web Bootstrap 登录流程。
 
 ### DS-06 — 工具与插件（P1；依赖 DS-00）
@@ -755,7 +763,7 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-02 LLM 服务商与模型 | 已完成 2026-09-27 | 五张卡接入；Core 补齐配额（限额入配置文件、用量来自账本、reset-daily 只推进窗口）；配额测试 4 项、Composition 真实 Host 端到端通过 |
 | DS-03 语音服务商、TTS 与 ASR | 已完成 2026-09-27 | 三卡接入；Core 补密钥保持/替换/清除与默认项真源同步（TTS/ASR 互不覆盖）；语音 Core 测试 4 项 |
 | DS-04 模板与角色实例 | 已完成 2026-09-27 | 六张卡全部接入（agent-directory / agent-basic / agent-prompts / agent-models / smart-models / guardrails / agent-grants）；授权页签在 DS-06、DS-07 完成后补齐 |
-| DS-05 工作区与渠道 | 待实施 | — |
+| DS-05 工作区与渠道 | 进行中 2026-09-27 | 工作区/成员完成 Core 下沉（`WorkspaceService` + 5 项独立测试），桌面端与渠道/资源页签待接 |
 | DS-06 工具与插件 | 已完成 2026-09-27 | 两张只读卡接入；manifest-only 与无效清单有真实固件测试 |
 | DS-07 Skill Hub 六页签 | 已完成 2026-09-27 | 六张卡全部接入；旧技能包的校验/对象键构造下沉为可测试的 `SkillPackageService`（含 5 项独立测试），桌面端复用同一操作 |
 | DS-08 … DS-17 | 待实施 | — |

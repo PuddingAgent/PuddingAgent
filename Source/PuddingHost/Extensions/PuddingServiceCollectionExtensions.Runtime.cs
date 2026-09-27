@@ -451,6 +451,9 @@ public static partial class PuddingServiceCollectionExtensions
         builder.Services.AddSingleton<ISkillPackageObjectStore>(sp => sp.GetRequiredService<MinioStorageService>());
         builder.Services.AddScoped<SkillPackageService>();
 
+        // ── 工作区与成员：同一应用操作供 HTTP 与原生客户端复用 ──
+        builder.Services.AddScoped<WorkspaceService>();
+
         // ── 文件式 TTS/ASR 语音 Provider/Model 管理 ──
         builder.Services.AddSingleton<VoiceProviderFileService>();
 
