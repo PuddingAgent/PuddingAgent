@@ -338,3 +338,9 @@ MathFormulaView 现在使用固定 Grid 承载文本与图片，以 Visibility �
 新增 NativeSpeechAudioPlayer（WinRT MediaPlayer，WAV/MP3 内存流，结束/错误/取消释放）和 SpeechPlaybackButton（共享工作台播放通道上的消息动作，取消合成/停止/失败重试，控件卸载仅取消自身请求）。真实设备测试采用 IsMuted=true 的合成静音 WAV，未录音、未输出可听语音、未调用供应商。生产默认播放器不静音，只有显式 PlayAsync 才播放。
 
 窗口测试发现取消回调可同步恢复 UI 等待者；SpeechPlaybackSession.Stop 已调整为先发布 Idle，再 Cancel，防止回收等待结束时仍观察到合成中。逻辑测试同时检查取消回调的状态。最终 67 逻辑/188 原生窗口检查通过，零构建警告/错误，日志 temp/native-speech-controls.log；新增 4 个真实播放器检查、5 个按钮检查。产品 MessageCard/ChatWorkspace、Composition 语音端口、录音/ASR 和持续语音会话仍未接线，下一步在组件门禁通过后进行装配。
+
+## 消息朗读进程内接入（2026-09-27）
+
+已完成的角色回复（agent/assistant）显示原生朗读按钮。ChatWorkspace 拥有共享播放通道，切换角色、离开聊天和销毁工作台停止播放；虚拟列表回收按钮也取消所属播放。Composition 按消息 ID 读取已保存正文，验证工作空间、会话角色及本机用户归属，提取 canonical envelope 的人类正文而不朗读封装 JSON，再直接调用 IVoiceSynthesisService。供应商/模型由既有 Core 默认配置解析；没有新增 Desktop HTTP 路由。
+
+原生验证 67 项逻辑测试、192 项窗口检查通过，零构建警告/错误，日志 temp/native-speech-wiring-ui.log。测试查找朗读入口时排除 ItemsRepeater 尚留在视觉树中的已回收禁用控件；真实 Core 的 agent 投影已纳入 fixture，避免仅使用 assistant 测试漏掉入口。Core 集成 3 项测试通过（构建仍有既有依赖/代码警告），证据见 temp/native-speech-wiring-core.log；没有使用 D:\data、麦克风或付费供应商。录音/ASR、持续语音和真实供应商的产品验收仍待完成。

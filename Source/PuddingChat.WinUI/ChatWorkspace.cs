@@ -8,6 +8,7 @@ namespace PuddingChat.WinUI;
 public sealed partial class ChatWorkspace : UserControl, IDisposable
 {
     private readonly IChatClient _client;
+    private readonly SpeechPlaybackSession? _speech;
     private readonly Uri? _origin;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly ChatSelection _state = new();
@@ -65,7 +66,7 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
     {
         _active = active;
         if (active && _connected && !_disposed) _timer.Start(); else _timer.Stop();
-        if (!active) _roleFlyout.Hide();
+        if (!active) { _roleFlyout.Hide(); _speech?.Stop(); }
     }
 
     public void SetNavigationWidth(double width)
@@ -100,9 +101,10 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
         _chat.Padding = new Thickness(ActualWidth < 520 ? 12 : 24);
     }
 
-    public ChatWorkspace(IChatClient client, Uri? origin = null)
+    public ChatWorkspace(IChatClient client, Uri? origin = null, ISpeechAudioPlayer? speechPlayer = null)
     {
         _client = client; _origin = origin;
+        if (client is IChatSpeechClient speech) _speech = new(speech, speechPlayer ?? new NativeSpeechAudioPlayer());
         _olderItem = new("history-loader", _older, _ => _older) { IsAnchor = false };
         var root = new Grid(); root.ColumnDefinitions.Add(_navigationColumn);
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -329,6 +331,7 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
     }
     public async Task SelectRoleAsync(string workspace, Agent agent)
     {
+        _speech?.Stop();
         RememberReading();
         _selection?.Cancel(); _selection?.Dispose(); _selection = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         var role = new RoleKey(workspace, agent.AgentId);
@@ -492,7 +495,7 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
                     var state = new MessageViewState();
                     item = new TranscriptItem(id, rendered,
                         row => new MessageCard((ChatMessage)row.Data, () => _client.GetProcessAsync(role, id, ct),
-                            _client as IImageAttachmentClient, role.WorkspaceId, ct, state, InspectionHandler(role, snapshot.MainSessionId, ct)),
+                            _client as IImageAttachmentClient, role.WorkspaceId, ct, state, InspectionHandler(role, snapshot.MainSessionId, ct), _speech, role),
                         (view, data) => ((MessageCard)view).Update((ChatMessage)data));
                 }
                 else item.Update(rendered);
@@ -697,6 +700,6 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
     {
         if (_disposed) return; _disposed = true; _timer.Stop(); _lifetime.Cancel(); _selection?.Cancel();
         _roleFlyout.Hide();
-        _selection?.Dispose(); _follow?.Cancel(); _follow?.Dispose(); _client.Dispose(); _lifetime.Dispose();
+        _selection?.Dispose(); _follow?.Cancel(); _follow?.Dispose(); _speech?.Dispose(); _client.Dispose(); _lifetime.Dispose();
     }
 }

@@ -26,12 +26,20 @@ public sealed class MessageCard : UserControl, IDisposable
     private readonly CancellationToken _ct;
     private ContentPart[] _parts = [];
     private bool _disposed;
+    private readonly SpeechPlaybackButton? _speech;
+    private readonly RoleKey? _speechRole;
     public void Update(ChatMessage message)
     {
         if (_disposed) return;
         if (_message is not null && _message.MessageId != message.MessageId)
             throw new ArgumentException("A message card cannot change message identity.", nameof(message));
         _message = message;
+        if (_speech is not null && _speechRole is not null)
+        {
+            _speech.Update(new(_speechRole, message.MessageId, message.Content));
+            _speech.Visibility = message.Role is ("assistant" or "agent") && message.Status is ("succeeded" or "completed" or "done")
+                ? Visibility.Visible : Visibility.Collapsed;
+        }
         var parts = message.ContentParts ?? [];
         if (!_parts.SequenceEqual(parts))
         {
@@ -62,9 +70,11 @@ public sealed class MessageCard : UserControl, IDisposable
     }
     public bool IsProcessExpanded { get => _process?.IsExpanded ?? false; set { if (_process is not null) _process.IsExpanded = value; } }
     public MessageCard(ChatMessage message, Func<Task<ProcessDetails>>? loadDetails = null, IImageAttachmentClient? imageClient = null, string? workspace = null, CancellationToken ct = default,
-        MessageViewState? state = null, Action<string>? inspectDelegation = null)
+        MessageViewState? state = null, Action<string>? inspectDelegation = null, SpeechPlaybackSession? speech = null, RoleKey? speechRole = null)
     {
         _loadDetails = loadDetails;
+        _speechRole = speechRole;
+        if (speech is not null && speechRole is not null) _speech = new(speech, new(speechRole, message.MessageId, message.Content));
         _inspectDelegation = inspectDelegation;
         _state = state ?? new(); _events = _state.Events;
         _viewLifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -93,6 +103,7 @@ public sealed class MessageCard : UserControl, IDisposable
         copy.Click += (_, _) => { var data = new Windows.ApplicationModel.DataTransfer.DataPackage(); data.SetText(_message.Content);
             Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data); };
         panel.Children.Add(copy);
+        if (_speech is not null) panel.Children.Add(_speech);
         var surface = Surfaces.Card(message.Role == "user" ? "SubtleFillColorSecondaryBrush" : "CardBackgroundFillColorDefaultBrush");
         surface.Padding = new Thickness(20); surface.Margin = new Thickness(0, 0, 0, 12); surface.CornerRadius = new CornerRadius(14); surface.Child = panel;
         if (message.Role == "user") { surface.HorizontalAlignment = HorizontalAlignment.Right; surface.MaxWidth = 680; }
@@ -136,5 +147,5 @@ public sealed class MessageCard : UserControl, IDisposable
         finally { if (ReferenceEquals(_detailLoad, load)) _detailLoad = null; }
     }
     public static UIElement RenderText(string text) => new MarkdownView(text);
-    public void Dispose() { if (_disposed) return; _disposed = true; _viewLifetime.Cancel(); _viewLifetime.Dispose(); }
+    public void Dispose() { if (_disposed) return; _disposed = true; _speech?.Dispose(); _viewLifetime.Cancel(); _viewLifetime.Dispose(); }
 }

@@ -44,3 +44,9 @@ SpeechPlaybackSession 与消息/音频合同完成独立 BCL 验证，逻辑测�
 ## 语音原生组件门禁（2026-09-27）
 
 NativeSpeechAudioPlayer 与 SpeechPlaybackButton 已独立实现并通过静音真实媒体/原生窗口检查，67 逻辑/188 窗口检查通过；已修复 Stop 取消回调重入时状态发布顺序。下一步接产品消息卡片和 Core 合成端口；当前仍不能宣称产品朗读或完整语音会话可用。范围见原生语音方案。
+
+## 消息朗读进程内接入（2026-09-27）
+
+已完成的角色回复（agent/assistant）显示原生朗读按钮。ChatWorkspace 拥有共享播放通道，切换角色、离开聊天和销毁工作台停止播放；虚拟列表回收按钮也取消所属播放。Composition 按消息 ID 读取已保存正文，验证工作空间、会话角色及本机用户归属，提取 canonical envelope 的人类正文而不朗读封装 JSON，再直接调用 IVoiceSynthesisService。供应商/模型由既有 Core 默认配置解析；没有新增 Desktop HTTP 路由。
+
+原生验证 67 项逻辑测试、192 项窗口检查通过，零构建警告/错误，日志 temp/native-speech-wiring-ui.log。测试查找朗读入口时排除 ItemsRepeater 尚留在视觉树中的已回收禁用控件；真实 Core 的 agent 投影已纳入 fixture，避免仅使用 assistant 测试漏掉入口。Core 集成 3 项测试通过（构建仍有既有依赖/代码警告），证据见 temp/native-speech-wiring-core.log；没有使用 D:\data、麦克风或付费供应商。录音/ASR、持续语音和真实供应商的产品验收仍待完成。

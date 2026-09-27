@@ -190,11 +190,12 @@ public partial class App : Application
                 await VerifyMarkdownImagesAsync((Grid)control.Content, fixture);
                 await VerifyNativeSpeechPlayerAsync();
                 await VerifySpeechButtonAsync((Grid)control.Content);
+                await VerifyWorkspaceSpeechAsync((Grid)control.Content);
                 await File.WriteAllTextAsync(Report, "{}");
                 var visuals = await CaptureVisualPreviewsAsync((Grid)control.Content);
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 188, native = true, visuals }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 192, native = true, visuals }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -202,8 +203,10 @@ public partial class App : Application
         _window.Activate();
     }
     private static void Check(bool condition, string label) { if (!condition) throw new InvalidOperationException(label); }
-    private sealed class Fixture(string imagePath) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges, IImageAttachmentClient, IConversationActivity, IConversationHistory, ISubAgentInspectionClient
+    private sealed class Fixture(string imagePath) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges, IImageAttachmentClient, IConversationActivity, IConversationHistory, ISubAgentInspectionClient, IChatSpeechClient
     {
+        public SpeechRequest? LastSpeech;
+        public Task<SpeechAudio> SynthesizeAsync(SpeechRequest request, CancellationToken ct) { LastSpeech = request; return Task.FromResult(SilentWave(100)); }
         public int MaxImagesPerMessage => 600;
         public int ImageImports;
         public Task<AttachedImage> ImportImageAsync(RoleKey role, string path, CancellationToken ct)
@@ -247,7 +250,7 @@ public partial class App : Application
         public Task<AgentStatus[]> GetStatusesAsync(string workspace, CancellationToken ct) => Task.FromResult<AgentStatus[]>([new("builder", "idle", "待命", 0)]);
         public Conversation Conversation(string agent) => new("test", agent, "session",
             Sent is null ? [] : [new("m", null, "user", "用户", DateTimeOffset.UtcNow, "implement", "accepted", []),
-                new("a", "r", "assistant", "代码工程师", DateTimeOffset.UtcNow, AssistantContent, Terminal ? "completed" : "running",
+                new("a", "r", "agent", "代码工程师", DateTimeOffset.UtcNow, AssistantContent, Terminal ? "completed" : "running",
                     AssistantProcess ?? (ShowDelegation ? [new("child-run", "delegation", "done", "委派摘要", 10, "reviewer", DelegationExecutionId: "exact-child-run")] : []))],
             Sent is null || Terminal ? null : new("r", "running", "执行中", "编译", new(Streaming ? "流式正文" : "输出", [new("e", "tool_call", "running", "dotnet build", 2, "terminal", ToolCallId: "call", TurnId: "turn")], new("turn", 2, 2, 2, false))),
             Sent is null ? 0 : Terminal ? 4 : Streaming ? 3 : 2, Sent is null ? null : new(10, 2));

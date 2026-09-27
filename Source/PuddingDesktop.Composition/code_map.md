@@ -43,3 +43,4 @@
 `DesktopMemoryLibrarySettings` binds the memory library cards to the scoped `IMemoryLibraryAdminService` (Core registers the interface, not the concrete class) and always passes workspace + agent through.
 
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.
+`InProcessChatClient.Speech`: IChatSpeechClient direct Core IVoiceSynthesisService adapter. Reads authoritative message/envelope payload, validates workspace/role/local-owner identity, uses configured defaults and the existing tracked-operation cancellation lifetime.
