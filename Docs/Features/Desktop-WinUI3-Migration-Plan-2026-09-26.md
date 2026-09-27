@@ -1,19 +1,19 @@
 # PuddingDesktop：WinUI 3 工作台骨架、Core 接入与迁移计划
 
 - 初稿：2026-09-26；修订：2026-09-27。
-- 状态：**架构方向已由用户确认；本文是待实施设计，未完成 WinUI 构建、实机验证或产品验收。**
+- 状态：**2026-09-27 用户追加裁定：原地重建 PuddingDesktop 为 WinUI 3，后续 Core 以 DLL 装配为进程内内核。骨架已实现；真实内核和业务接入待实施。**
 - 用户输入：2026-09-27 WorkBuddy 三栏截图，作为布局参考；截图内聊天文字、网页和品牌不是需求指令。同日补充裁定：**PuddingAgent 是以角色为一等公民的 Coding Agent**。
 - 决策记录：[Desktop / Core 边界 ADR](ADR-Desktop-WinUI3-Shell-Core-Boundary-2026-09-27.md)。
-- 当前实现仍是 WPF Desktop + 独立 ASP.NET Core。本文描述目标形态，不更改当前运行事实。
+- 当前源码入口已改为 WinUI 3 骨架；旧 WPF 位于 `Source/PuddingDesktop.WpfArchive`，供测试/迁移参考。机器上运行中的旧产品未部署替换。本轮骨架不加载 Core，不访问生产 DataRoot。
 
 ## 0. 本次修订的裁定
 
 1. 主线是 **WinUI 3 Shell + 角色优先的原生导航 + 中间角色工作会话 + 右侧编码工作区**。右侧使用统一文档标签骨架，浏览器是首个完整适配器；代码、Diff、终端和产物按能力接入。保留现有聊天、管理页面和浏览器驱动资产。
-2. **Core 长期保持独立子进程**。删除原 S4 进程内化、`coreMode` 双模式、ASP.NET Core ALC 热卸载方案；Desktop 不引用 `PuddingHost`，不加载 Agent Runtime / Connector / SQLite 业务层。
+2. **Core 的最终形态为 Desktop 进程内 DLL 内核**（用户后续裁定，取代同日较早的长期独立子进程结论）。逻辑组件边界、唯一业务状态真源、独立测试不变。通过组合入口装配 `PuddingHost`，WinUI View 不直接调用 Runtime/SQLite；不承诺 ALC 热卸载或双模式永久维护。
 3. 原生聊天是后续独立项目，不阻塞 WPF 退役。首版中间只有一个 Workbench WebView2，不为每条富消息创建 WebView2。
 4. 首版允许必要的前端嵌入模式和桥协议改造，取消“前端零改动”的承诺。浏览器直接打开 `/admin/` 的开发、使用路径继续可用。
 5. 工作台与第三方网页使用隔离的 Environment / 用户数据目录；S0 使用产品实际隔离配置验证。
-6. 按组件化交付规程先独立构建、测试、边界检查，再接入宿主。旧阶段编号全部由本文 M0–M5 取代，避免与组件规程 S1–S5 混淆。
+6. 按组件化交付规程先独立构建、测试、边界检查，再接入。用户要求原地重建：唯一产品工程仍为 `Source/PuddingDesktop/PuddingDesktop.csproj`，不存在长期并行 WinUI 产品工程。WPF 归档只作旧测试基线；M0–M5 为迁移阶段，不替代组件门禁。
 7. 旧版 49–77 人日估算作废；主线范围改变后，应在 M0 结束按组件盘点重新估算。
 
 ## 1. 布局骨架：将参考图转为 Pudding 的职责分区
@@ -115,40 +115,41 @@
 
 ```mermaid
 flowchart TB
-  subgraph Desktop[Desktop 进程：WinUI 3]
-    Shell[Shell / 角色导航 / 设置 / 运行中心]
-    Foundation[Desktop Foundation：配置与生命周期策略]
-    Workbench[可信 Workbench WebView2]
-    WebBridge[ShellWebBridge：展示意图与导航摘要]
-    Documents[Coding 文档标签 / 来源上下文]
-    Browser[浏览器适配器 / Dispatcher / WinUI Adapter]
+  subgraph Desktop[Desktop 进程：最终目标]
+    Shell[WinUI Shell / 角色导航 / 设置 / 运行中心]
+    Foundation[Foundation：角色与文档展示合同]
+    Composition[组合入口 / IDesktopKernel 适配]
+    Workbench[可信 Web Workbench]
+    WebBridge[有限 ShellWebBridge]
+    Documents[Coding 文档 / 浏览器宿主]
+    subgraph Kernel[Core DLL：独立组件边界]
+      Host[PuddingHost 组合根]
+      API[现有 API / canonical 事件]
+      Runtime[Agent / Task / Goal / Connector / SQLite]
+      BrowserPort[浏览器命令合同 / Broker]
+      Host --> API
+      Host --> Runtime
+      Runtime --> BrowserPort
+    end
     Shell --> Foundation
+    Composition -->|生命周期| Host
+    Shell -->|窄生命周期端口| Composition
     Shell <--> WebBridge
     WebBridge <--> Workbench
+    Workbench <-->|沿用鉴权 HTTP/SSE| API
     Shell --> Documents
-    Documents --> Browser
+    BrowserPort <-->|UI Dispatcher 适配| Documents
   end
-  subgraph Core[独立 Core 子进程]
-    API[现有鉴权 API / canonical 事件]
-    Host[PuddingHost 组合根]
-    Runtime[Agent / Task / Goal / Connector / 存储]
-    Broker[Browser Bridge Broker]
-    Host --> API
-    Host --> Runtime
-    Runtime --> Broker
-  end
-  Foundation -->|启动协议 / Ready / 受认证生命周期控制| Core
-  Workbench <-->|HTTP + SSE，现有用户身份| API
-  Broker <-->|受认证 WebSocket| Browser
 ```
 
-图中箭头描述调用/通信，不代表 Desktop 引用 Core 程序集。
+
+图中为最终目标，当前只有 Shell/Foundation 和未配置内核适配器。Core DLL 引用只属于组合边界；UI 状态组件不得反向引用内核。HTTP/SSE 可在同进程内继续保留，DLL 装配不自动等于无监听端口。
 
 | 状态/能力 | 权威所有者 | Desktop 的职责 |
 |---|---|---|
 | 角色定义、Agent 实例、Conversation、Turn、Run、Task、Goal、权限、工具结果、持久事件 | Core | 呈现或发送已定义命令，不另建领域状态机 |
 | 模型/Agent/Connector 配置、SQLite 数据 | Core | 通过既有管理 API 编辑；不直接打开业务数据库 |
-| Core 子进程与发布操作 | Desktop 生命周期组件 | 唯一监督者；启动租约、停止、退避、部署、恢复 |
+| Core DLL 生命周期与发布操作 | Desktop 组合入口 + 进程外部署方 | 启动/停止/故障状态；程序集更新需退出进程，不能假设能原地替换已加载 DLL |
 | 窗口/面板/焦点/选中导航 | Desktop Shell | 本地 UI 状态，不代表 Run 状态 |
 | 当前角色工作上下文、消息投影、输入草稿、消息滚动 | Core 提供身份与执行事实，首版 Web Workbench 投影 | 复用现有 Agent 会话链；草稿和视图状态分角色，Shell 不再投影完整 transcript |
 | 导航名称/数量/任务状态 | Core，首版由 Web 适配器提供摘要 | 原生导航只缓存分页摘要与选中项；失联明确标旧 |
@@ -160,14 +161,14 @@ flowchart TB
 | 工程（拟） | 责任 | 允许的依赖 / 禁止的依赖 |
 |---|---|---|
 | `PuddingDesktop.Foundation` | UI 无关的监督策略、配置 DTO、启动协议、Shell 布局/命令合同 | `net10.0-windows`、基础库；禁止 WPF、WinUI、WebView2、Host、Runtime、Platform |
-| `PuddingDesktop.WinUi` | 产品组合根、WinUI 视图、主题/托盘、ShellWebBridge、平台适配 | Foundation、Browser Protocol/适配包；禁止 Host/Runtime/业务存储 |
+| `PuddingDesktop` | 原地重建后的唯一 WinUI 产品入口、视图、主题、平台适配 | 当前仅引用 Foundation；未来引用组合适配，视图不直接依赖 Host/Runtime/业务存储 |
 | `PuddingBrowser.Abstractions`、`.Protocol` | 已有浏览器抽象与跨进程消息 | 保持现有底层边界，不加入 WebView2 或 UI 类型 |
 | `PuddingBrowser.WebView2` | 框架中立驱动、CoreWebView2、Surface/Dispatcher 窄接口 | Browser 抽象与 WebView2 Core；不引用任一 UI 宿主 |
 | `PuddingBrowser.WebView2.Wpf` | 过渡期 WPF surface/dispatcher/presentation 实现 | 驱动 + WPF；不得反向引用 Desktop |
 | `PuddingBrowser.WebView2.WinUi3` | WinUI surface/dispatcher/presentation 实现 | 驱动 + WinUI；不得反向引用 Desktop |
-| `PuddingDesktop` | 过渡期旧 WPF 产品壳 | 保留修复、必要装配变更；不与 WinUI 同进程运行 |
+| `PuddingDesktop.WpfArchive` | 原 WPF 源码和测试基线 | 现有 `PuddingDesktop.Tests` 改指归档；不作为新产品入口，不与 WinUI 同进程装配 |
 
-不一次性搬迁 `Bootstrap/Runtime/Storage/Browser/Diagnostics` 全目录。`DesktopBootstrapSignalService` 现直接依赖 `DesktopApplicationCoordinator`，后者又持有 `MainWindow`，因此不能宣称“原样搬到基础库”。先按调用面定义最小端口，端口在消费它的组件内，宿主实现；无法脱离宿主的装配文件留在宿主，记录原因。
+不一次性搬迁 `Bootstrap/Runtime/Storage/Browser/Diagnostics` 全目录。归档的 `DesktopBootstrapSignalService` 直接依赖 `DesktopApplicationCoordinator`，后者又持有 `MainWindow`，因此不能宣称“原样搬到基础库”。先按调用面定义最小端口，端口在消费它的组件内，宿主实现；无法脱离宿主的装配文件留在宿主，记录原因。
 
 提取时保持命名空间和行为；组件提取与功能变化分别提交。已有配置服务若依赖 `PuddingCore` 的重配置类型，先盘点传递依赖，未完成边界拆分前留在壳侧，不能为了移动文件让 Foundation 引入 Core 业务闭包。
 
@@ -182,24 +183,24 @@ flowchart TB
 
 ## 3. PuddingAgent 的接入方式
 
-### 3.1 启动与失败恢复
+### 3.1 进程内内核启动与失败恢复（后续实现）
 
-1. WinUI App 先取得与旧壳一致的单实例所有权，再显示 Shell。已有实例负责处理激活消息，第二次启动不再拉 Core。
-2. 从 DesktopHome 读取 `desktop.json`。无 DataRoot/无 Core 路径时停留原生设置页，不能等待网页启动后才能修复。
-3. 通过现有 Core 路径解析和 supervisor 启动 `core/PuddingAgent.exe --desktop-child`，保持父 PID、DataRoot 与退出回收契约。
-4. 校验启动进度协议、进程身份、单调序号；保留静默租约与有界硬超时。只有 Ready 协议和 readiness 检查成立才接入工作台。
-5. 分别维护 `CoreAddress`、`WorkbenchAddress`：产品静态资源走 Core `/admin/`；源码调试可走既有反向代理。不得用当前 CWD 或硬编码 `localhost:80` 推断地址。
-6. 连接 `/desktop/browser-bridge` 并完成认证握手；Workbench 完成自身用户登录与 Shell 握手。三种状态分别展示：Core Ready、Workbench Ready、Browser Bridge Connected。
-7. Core 重启时撤销旧连接代次、取消待完成请求，显示重连状态；新实例 ready 后按游标恢复投影。不得自动重发用户消息或重执行旧浏览器命令。
+1. `PuddingDesktop.exe` 启动 WinUI Shell，先显示设置/运行中心，再由组合入口加载内核；不得在 App 构造函数同步启动耗时数据库/索引任务。
+2. Foundation 的 `IDesktopKernel` 暴露 Snapshot、StartAsync、StopAsync、DisposeAsync；Core 宿主适配器实现它，UI 不拿 `IServiceProvider` 或业务数据库实例。
+3. 组合入口构建 Core Host 的独立服务容器，负责唯一生命周期；启动异常映射为 Failed，界面仍可修复。UI 和内核 Dispatcher/线程职责分开，长任务不阻塞 UI。
+4. Workbench 先复用现有用户鉴权 API/SSE。内容根/default-data/wwwroot 随发布包显式解析，不使用进程 CWD；端口/路由策略在内核适配切片核对，不能假设进程内化自动消除 HTTP。
+5. 普通内核停止需有界取消后台任务、解除事件订阅、关闭 DB/文件句柄。是否支持同进程再次启动必须独立测试；没有证据前以完整 Desktop 重启为恢复方式。
+6. .NET 未处理异常、原生崩溃/OOM 仍可能结束整个进程；进程内设计不提供原有子进程崩溃隔离。外部部署/恢复工具负责新构建启动和崩溃后的恢复，不承诺 View 层 catch 可以兜住进程故障。
+7. 关闭到托盘、显式退出、Windows 会话结束、真实配置修复和内核资源回收，在内核接入阶段完成；本轮骨架关闭即退出，未声称达到原产品生命周期对等。
 
-**现状差异**：当前 `CoreProcessSupervisor` 中监听地址常量是 `0.0.0.0`，不是已经实现动态 Loopback 隔离。此次 UI 迁移消费 supervisor 给出的地址，不擅自收紧现有外部服务监听；控制端点的本地限制沿用现有实现。监听策略收敛需另行盘点 Connector/外部 API 使用者。
+当前 `UnconfiguredDesktopKernel` 明确返回 NotConfigured；启动/停止按钮禁用，不把空实现当作启动成功。预览配置位于独立 LocalAppData/指定临时目录。现有运行中的 Core、`D:/data` 与原配置不变。
 
 ### 3.2 三条通信通道
 
 | 通道 | 使用者 | 身份 / 语义 |
 |---|---|---|
 | 业务 HTTP / SSE | 首版 Workbench | 沿用现有登录态和授权；消息、任务、权限、事件都经 Core |
-| Browser Bridge WebSocket | Core Broker ↔ Desktop | 沿用 Desktop 认证、OperationId、deadline、连接代次和结果缓存 |
+| Browser 命令通道 | Core Broker ↔ WinUI 浏览器适配 | 保留 OperationId、deadline、准入/接管门控和结果合同；内核接入时用进程内 adapter 接 UI Dispatcher，现有 WebSocket 作为迁移参考，不重复建设工具语义 |
 | ShellWebBridge | 可信 Workbench ↔ WinUI | 窗口展示、导航、有限摘要和状态；不是通用 HTTP/脚本代理，也不承担 Agent 执行准入 |
 
 已有源码确认的业务入口：
@@ -270,7 +271,7 @@ Core 是业务事实真源；Web 首版是唯一完整会话投影消费者。Sh
 | `work.context.changed` | web → host | 已确认的角色/主会话/Run 引用及选择代次，不赋予执行权限 |
 | `document.open/revealSource` | 双向 | 类型化资源引用与角色/Run 关联；验证项目范围，不接受任意本地路径执行 |
 
-删除旧方案中有歧义的 `browser.takeover`：**人类接管/暂停是原生本地门控；Agent 操作仍经 Core → Browser Bridge**。若未来需要“授予 Agent 控制权”业务入口，先定义 Core 准入合同，不能仅增加一个 WebMessage。
+删除旧方案中有歧义的 `browser.takeover`：**人类接管/暂停是原生本地门控；Agent 操作仍经 Core → 受控浏览器命令适配**。若未来需要“授予 Agent 控制权”业务入口，先定义 Core 准入合同，不能仅增加一个 WebMessage。
 
 ### 4.3 信任与身份
 
@@ -282,7 +283,7 @@ Core 是业务事实真源；Web 首版是唯一完整会话投影消费者。Sh
 
 ## 5. 右侧浏览器工作区与 Agent 控制
 
-### 5.1 复用链路
+### 5.1 旧链路与 DLL 内核适配边界
 
 ```text
 Core Agent Tool
@@ -296,7 +297,7 @@ Core Agent Tool
   → WinUI SurfaceHost / DispatcherQueue
 ```
 
-沿用 OperationId 幂等、deadline、暂停/接管、Activity 证据、连接代次；不在 WinUI 新造一套 Agent 工具协议。所有 WinUI/WebView2 调用由 UI Dispatcher 执行；业务等待不能同步阻塞 UI 线程。
+上图为 WPF 归档的现有链路。DLL 接入时以本地窄端口替换进程间 transport，保留 OperationId 幂等、deadline、暂停/接管、Activity 证据和内核运行代次；不在 WinUI 新造一套 Agent 工具协议。所有 WinUI/WebView2 调用由 UI Dispatcher 执行；业务等待不能同步阻塞 UI 线程。
 
 ### 5.2 标签、会话与控制权
 
@@ -320,17 +321,16 @@ WPF 的 `WebView2PresentationGate` 操作 WPF `PART_image`，不直接移植。W
 
 不得用 Suspend、销毁 WebView 或停止页面脚本来“解决”隐藏窗口 CPU 而破坏正在执行的工具。无活动、允许挂起的用户标签可作为后续资源策略，不纳入迁移默认行为。
 
-## 6. 发布、单实例与可回滚
+## 6. 原地重建、发布与恢复
 
-- 最终用户入口保持 `PuddingDesktop.exe`，最终实现替换为 WinUI；Core 继续发布在 `core/`。开发期新工程可使用 `PuddingDesktop.WinUi.exe`。
-- 过渡期双壳分别发布为完整版本目录，禁止覆盖运行中文件。WPF 和 WinUI 使用同一产品单实例协议和 DataRoot 互斥策略，不能同时启动两个 Core。
-- 本轮不新造 `desktop.json.shell` 启动器开关。通过外部受控部署选择版本，退出旧实例并确认 Core 回收后启动选定版本。不要把“启动新 exe 被旧实例接收激活”当作迁移成功。
-- 复用 Bootstrap 的 Core 构建/部署能力，但**更新 Desktop 自身必须由进程外部署方完成**；现有 Core 部署 API 不等价于 Desktop 自更新。
-- 初选非打包发布以匹配现有目录和更新方式，Windows App SDK/.NET 是否 self-contained 在 M0 clean-machine 验证后确定；不在文档中捏造已支持版本。
-- 保留 `core/PuddingAgent.exe` 与 `core/wwwroot/admin/index.html` 发布完整性检查。运行不依赖 Python、Node 或 dev-up。
-- `desktop.json` 可增加有界 `shellLayout`（左右栏宽度/显隐、窗口恢复）；不保存消息正文、token、工具结果或 DOM ref。恢复时验证屏幕工作区，超出屏幕的窗口应重定位。
-- Core 与前端合同在回滚窗口内保持对旧壳可用；只改 UI 布局配置的新增可选字段。必须实测旧版本读取新配置；不满足则按版本保存布局配置，不能拿清空 DataRoot 作回滚。
-- 回滚使用完整旧版本目录并保留 DataRoot，核对发布哈希、PID、Ready、工作台和 Browser Bridge；目标停机时间在 M0 记录、M4 演练，不预先宣称已达成分钟级恢复。
+- 唯一新产品入口是 `Source/PuddingDesktop/PuddingDesktop.csproj` → `PuddingDesktop.exe`。旧源码移至 `Source/PuddingDesktop.WpfArchive`，独立 AssemblyName，现有测试保留；这不是永久双壳产品策略。
+- 本轮 Foundation 已独立测试后接入 WinUI，新的 UI 工程不加载旧 WPF 或 Core。临时验证工程在原地替换后撤除。
+- 当前锁定 Windows App SDK `1.8.260921001`、SDK BuildTools `10.0.26100.9169`、WebView2 `1.0.4078.44`，非打包、Windows App SDK self-contained、win-x64；.NET 是否随最终产品打包由发布切片确定。本机验证不是干净机器验收。
+- 骨架阶段使用独立的实例 key 与预览配置，避免干扰旧产品；在真实内核接入前必须恢复唯一产品实例/DataRoot 所有权门禁，不能同时读写同一业务数据。
+- 将来发布 Core DLL 及其依赖、内容根、SPA。移除对子进程 exe 的最终发布要求，但当前不得把一个只有 Shell 的包当作完整 Pudding 产品发布。
+- DLL 被 Desktop 加载后，更新由进程外部署方执行：退出 → 核对回收 → 部署完整版本 → 启动并验证；不实现未经证明的 ALC 热卸载。
+- 运行中心在内核启动失败时可用；硬崩溃的恢复必须依赖进程外工具。旧版已发布产物可用于版本级恢复，不靠删除 DataRoot 回滚。
+- 骨架只保存主题/面板尺寸等展示配置，坏配置保留原文件并报告。真实 DataRoot/Core 配置适配后续单独验证。
 
 ## 7. 实施阶段与交付门禁
 
@@ -339,11 +339,11 @@ WPF 的 `WebView2PresentationGate` 操作 WPF `PART_image`，不直接移植。W
 | 阶段 | 交付范围 | 退出门禁 |
 |---|---|---|
 | M0 技术验证 | 独立 WinUI harness、隔离双 WebView2、发布试包、依赖盘点 | 下列 G0 全过；无宿主/DI/生产数据改动 |
-| M1 骨架与组件 | Foundation/WinUI Adapter 独立测试、Mock 角色导航与文档标签、原生设置/运行中心；通过组件门禁后接入 | 无 Core 可启动；边界检查；单实例/托盘/IME/DPI；角色上下文不串线 |
-| M2 Core 与 Workbench | supervisor/Ready 接线、嵌入模式、ShellWebBridge、角色状态与主会话、原生导航摘要 | G1：真实角色身份与业务 API/SSE、断线恢复、来源校验、旧 Web 模式回归 |
+| M1 骨架与组件 | Foundation 独立测试后原地重建 WinUI；角色导航、文档标签、原生设置/运行中心 | 骨架构建/窗口 smoke；角色上下文不串线。托盘/真实配置/全部 DPI 门禁仍待后续验收 |
+| M2 Core DLL 与 Workbench | IDesktopKernel 适配、Host 容器/内容根/生命周期、嵌入模式、真实角色与主会话 | G1：真实内核启动/停止/失败修复、API/SSE、鉴权、资源回收；不以 Shell smoke 替代 |
 | M3 Coding 工作区接入 | 单 context 多 Tab、Agent 既有控制链、文档适配器、来源回溯、接管与活动；代码/Diff/终端接口缺口单列 | G2：真实角色执行与证据定位、浏览器工具、目标稳定、取消/断线/最小化；占位文档不算能力完成 |
-| M4 发布与日常验收 | 干净机器包、外部部署、故障注入、WPF 回滚演练 | G3：明确新构建、进程生命周期和长期日常使用通过；业务数据不被回滚操作破坏 |
-| M5 退役 | 默认入口转 WinUI、移除 WPF 装配/适配、更新构建测试文档 | 无 WPF 引用闭包；完整解决方案构建；可发布，原生聊天无需完成 |
+| M4 发布与日常验收 | 完整 Shell + Core DLL 包、干净机器、外部部署、故障注入和版本恢复 | G3：明确新构建、内核/产品生命周期和实际日常使用；业务数据不被恢复操作破坏 |
+| M5 归档收口 | 完成真实产品对等后退役 WPF 归档/旧测试或迁移其必要测试 | WinUI 产品闭包无 WPF；完整构建、完整发布与业务验收，原生聊天不作前提 |
 
 ### 7.1 G0：必须用产品配置验证
 
@@ -385,18 +385,18 @@ WPF 的 `WebView2PresentationGate` 操作 WPF `PART_image`，不直接移植。W
 | 目标 | 文件/目录 | 动作与边界 |
 |---|---|---|
 | Foundation | `Source/PuddingDesktop.Foundation/`、独立测试工程 | 提取可独立测试策略与合同；不反向引用宿主 |
-| 原生 Shell | `Source/PuddingDesktop.WinUi/App.xaml`、`Shell/{ShellWindow,TitleBarView,NavigationPaneView,ShellCommandRouter,ShellLayoutState}` | 薄组合根、三栏布局、焦点/菜单路由 |
+| 原生 Shell | `Source/PuddingDesktop/App.xaml`、`Shell/{ShellWindow,TitleBarView,NavigationPaneView,ShellCommandRouter,ShellLayoutState}` | 薄组合根、三栏布局、焦点/菜单路由 |
 | 角色与文档骨架 | `Shell/ActiveWorkContext`、`Workspace/{CodingWorkspaceView,WorkspaceDocumentRegistry,IWorkspaceDocumentHost}`（拟） | 消费现有身份/投影；类型化文档，不在 Desktop 新建 Role/Run 数据库 |
-| 工作台宿主 | `Source/PuddingDesktop.WinUi/Views/WorkbenchHostView`、`Shell/ShellWebBridge` | 来源校验、握手、generation、加载失败与重连 |
-| Core 接线 | 现 `Source/PuddingDesktop/Core/`、`Hosting/DesktopApplicationCoordinator.cs` | 先审依赖再抽取；Coordinator 的窗口创建留壳侧 |
-| 部署与修复 | 现 `Source/PuddingDesktop/Bootstrap/`、`Debug/`、`Configuration/` | 保留既有语义；依赖 Coordinator 的文件不得批量搬进 Foundation |
+| 工作台宿主 | `Source/PuddingDesktop/Views/WorkbenchHostView`、`Shell/ShellWebBridge` | 来源校验、握手、generation、加载失败与重连 |
+| Core 接线 | `Source/PuddingDesktop.Foundation/IDesktopKernel.cs`、`Source/PuddingDesktop/Kernel/`；后续独立 Host adapter | 骨架已有未配置适配器；真实 DLL 装配/容器/启动停止待实现，不直接搬旧 supervisor |
+| 部署与修复 | 归档 `Source/PuddingDesktop.WpfArchive/{Bootstrap,Debug,Configuration}/` | 保留既有语义；依赖 Coordinator 的文件不得批量搬进 Foundation |
 | 浏览器底层 | `Source/PuddingBrowser.WebView2/IBrowserSurfaceHost.cs`、`IWebView2UiDispatcher.cs` 与 csproj | 去除 UI 类型泄漏，驱动与 WPF 适配拆开 |
 | WinUI 适配 | `Source/PuddingBrowser.WebView2.WinUi3/` | SurfaceHost、Surface、DispatcherQueue；门控按 M0 结果决定 |
-| 浏览器编排 | 现 `Source/PuddingDesktop/Browser/`、新 WinUI browser view | 接线既有 Broker/Dispatcher/Controller，不同时改多 context 语义 |
+| 浏览器编排 | 归档 `Source/PuddingDesktop.WpfArchive/Browser/`、新 WinUI browser view | 接线既有 Broker/Dispatcher/Controller，不同时改多 context 语义 |
 | 前端接入 | `Source/PuddingPlatformAdmin/src/desktop-shell/`（新） | bridge、navigation adapter、embedded mode；有类型白名单 |
 | 前端布局 | `src/layouts/AdminLayout/`、`src/pages/chat/`、`src/pages/workspace/` 的实际外框 | 盘点后消除重复导航；保留业务和消息行为 |
 | 测试 | 现 `Tests/PuddingDesktop.Tests/` + 新组件/WinUI harness | 按依赖逐组迁移，不把全部测试改引用指向一个基础库 |
-| 发布 | WinUI csproj、既有 Desktop 发布/外部部署脚本 | 保留 Core bundle 检查；Shell 自更新由进程外负责 |
+| 发布 | WinUI csproj、既有 Desktop 发布/外部部署脚本 | 建立 Core DLL 完整性检查；Desktop 自更新由进程外负责，当前仅骨架包 |
 
 拆分/命名空间变更后必须覆盖全部工程构建，不能只构建 Desktop。构建测试发布串行使用同一项目，输出不得进入 DataRoot。精确暂存、每原子切片验证后提交，保留其他任务 WIP。
 
@@ -410,7 +410,7 @@ Markdown/公式/代码高亮/图表继续允许 Web；不默认每条消息嵌�
 
 ## 10. 本次证据与未关闭项
 
-### 10.1 本地代码依据（2026-09-27 只读核对）
+### 10.1 迁移前本地代码依据（旧 WPF 文件现位于 WpfArchive）
 
 - `Source/PuddingDesktop/PuddingDesktop.csproj`：WPF、独立 Core 发布、exe/SPA 断言。
 - `Source/PuddingDesktop/Hosting/DesktopApplicationCoordinator.cs`：窗口耦合、Core/Workbench 地址分离和 Bootstrap 装配。
@@ -442,4 +442,4 @@ Markdown/公式/代码高亮/图表继续允许 Web；不默认每条消息嵌�
 | Desktop 自身外部部署与回滚执行入口 | M4 前 | 未定位并演练前不切默认产品入口 |
 | 多 context registry / 多窗口 / 原生聊天 | 后续独立项目 | 不作为首版已具备能力 |
 
-本次只完成设计修订、架构决策记录和索引登记；未修改产品代码、配置、数据库或运行数据，未运行构建/测试/真实模型 smoke。
+2026-09-27 后续已实现 WinUI 骨架与 Foundation，并将原 WPF 纳入归档测试基线。具体构建、窗口/双 WebView2 验证与未完成项见 [骨架实施记录](../Reports/Desktop-WinUI3-Skeleton-2026-09-27.md)。未加载真实 Core DLL，未改生产配置/数据库/运行数据。

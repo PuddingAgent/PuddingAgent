@@ -2,7 +2,7 @@
 
 ## 2026-09-27 WinUI 3 角色工作台边界（待实施）
 
-[专题 ADR：角色优先的 WinUI 3 Coding 工作台与独立 Core](../Features/ADR-Desktop-WinUI3-Shell-Core-Boundary-2026-09-27.md) · [实施规格与 M0–M5 门禁](../Features/Desktop-WinUI3-Migration-Plan-2026-09-26.md)。角色身份沿用模板/Agent/主会话/Run；Desktop 只装配 UI、浏览器与进程监督，Core 继续独立。当前产品仍为 WPF，本次仅设计修订。
+2026-09-27 最新裁定：原地重建 `Source/PuddingDesktop` 为 WinUI 3，角色为一等公民；Core 后续作为进程内 DLL 内核。骨架、基础测试与双 WebView2 smoke 已通过，旧 WPF 保留归档测试基线，真实 Core 尚未接入。详见 [迁移规格](../Features/Desktop-WinUI3-Migration-Plan-2026-09-26.md)。
 
 ## 2026-09-17 Goal单一状态机与证据驱动续行
 

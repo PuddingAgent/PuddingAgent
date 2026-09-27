@@ -1,6 +1,6 @@
 ## 2026-09-27 WinUI 3：角色优先的 Coding 工作台设计（待实施）
 
-[骨架与迁移方案](Docs/Features/Desktop-WinUI3-Migration-Plan-2026-09-26.md) · [边界 ADR](Docs/Features/ADR-Desktop-WinUI3-Shell-Core-Boundary-2026-09-27.md)：原生角色导航、中间复用 Agent 主会话、右侧代码/Diff/终端/浏览器/产物文档骨架；Core 保持独立子进程。Foundation 与 WPF/WinUI 浏览器适配先独立测试后接入；业务 HTTP/SSE、Browser Bridge、ShellWebBridge 分责。M0–M5 不依赖原生聊天或 Core 进程内化。当前源码仍为 WPF，本次仅修订文档；接口与实机门禁未验收。
+2026-09-27 最新裁定：原地重建 `Source/PuddingDesktop` 为 WinUI 3，角色为一等公民；Core 后续作为进程内 DLL 内核。骨架、基础测试与双 WebView2 smoke 已通过，旧 WPF 保留归档测试基线，真实 Core 尚未接入。详见 [实施记录](Docs/Reports/Desktop-WinUI3-Skeleton-2026-09-27.md)。
 
 代码入口：`Source/PuddingDesktop/Hosting/DesktopApplicationCoordinator.cs`、`Core/CoreProcessSupervisor.cs`、`Browser/BrowserWorkspaceController.cs`（均相对 Desktop 目录）；`Source/PuddingCore/Platform/AgentTemplateDefinition.cs`、`AgentProjectionDtos.cs`；`Source/PuddingPlatformAdmin/src/pages/chat/client/agentChatApi.ts`。新工程、协议和 Coding 文档适配器详见方案 §8，均为拟建。
 
