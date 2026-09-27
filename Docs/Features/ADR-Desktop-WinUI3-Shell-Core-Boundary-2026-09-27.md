@@ -2,7 +2,7 @@
 
 - 标识：`Desktop-WinUI3-Shell-Core-Boundary`（专题 ADR，未占用仓库数字 ADR 编号）。
 - 日期：2026-09-27。
-- 状态：**用户最新裁定：原地重建 Desktop，Core 后续作为 DLL 内核。WinUI 骨架已实施，真实内核接入与完整产品验收未完成。**
+- 状态：**用户最新裁定：原地重建 Desktop，Core 后续作为 DLL 内核。WinUI 骨架、真实 DLL 内核与 Web 工作台已接入；完整产品迁移验收未完成。**
 - 权威实施规格：[WinUI 3 骨架与迁移方案](Desktop-WinUI3-Migration-Plan-2026-09-26.md)。
 - 取代范围：该方案 2026-09-26 初稿的阶段划分、Core 进程内化、共享浏览器环境、前端零改动及必然自研聊天布局等设计前提；不宣称改写当前 WPF 产品事实。
 
@@ -17,7 +17,7 @@
 1. **角色优先**：主导航是项目中的角色实例；角色承担工作，会话承载沟通，Run 承载执行。使用模板引用、workspaceId、agentId 和主会话等现有身份；Role 不是 RBAC、模型选择或前端自由文本标签。
 2. **WinUI Shell，混合呈现**：标题栏、角色导航、工作区标签、设置/运行中心原生化；中间复用现有 Web 工作会话。嵌入模式隐藏重复外框，保留消息、工具轨迹、输入与授权行为。
 3. **Coding 工作区**：右栏采用类型化文档合同，覆盖 file/diff/terminal/browser/artifact；浏览器是其中一个适配器。每个对象有明确工作区、角色、Run 来源。接口缺失则禁用能力并登记，不将日志冒充交互终端或把占位页算作已完成。
-4. **DLL 内核**：最终在 Desktop 进程内通过组合入口装配 Core Host。View/Foundation 不引用 Runtime/SQLite；`IDesktopKernel` 是窄生命周期端口。内核先独立测试，再接入；不承诺 ALC 热卸载。当前骨架的未配置适配器不伪装真实内核。
+4. **DLL 内核**：最终在 Desktop 进程内通过组合入口装配 Core Host。View/Foundation 不引用 Runtime/SQLite；`IDesktopKernel` 是窄生命周期端口。内核先独立测试，再接入；不承诺 ALC 热卸载。`InProcessKernel` 负责串行生命周期，Composition 装配真实 Host；Core 使用 `IDesktopServices` 回调桌面展示。
 5. **统一业务入口**：业务命令、权限、持久事件、Agent 生命周期由 Core 决定；首版复用现有 Web 登录、Agent 主会话和 HTTP/SSE 投影。原生导航消费受限摘要，不复制完整聊天状态机。
 6. **通道分责**：业务 HTTP/SSE 可在同进程继续复用，浏览器命令通过受控端口接 UI Dispatcher，ShellWebBridge 仅承载有限导航/展示意图。沿用 Broker 的准入、OperationId、deadline 和证据语义；不通过 WebMessage 授予 Agent 权限。
 7. **执行与显示分离**：选择角色、切会话、切可见标签不改变已受理命令或 Agent 浏览器目标。人类接管必须触发真正 Dispatcher 门控；活动操作的结果可追溯。
@@ -35,7 +35,7 @@
 | 浏览器实例与本地执行门控 | Desktop Browser 组件 | Bridge 端到端、接管/取消/目标稳定、后台执行和隔离验证 |
 | 内核生命周期与升级 | Desktop 组合入口 + 进程外部署方 | Host 启停/失败修复、资源回收、完整进程更新、崩溃恢复 |
 
-阶段门禁、文件级清单、协议和初始布局参数统一维护于实施规格，不在 ADR 重复版本化。WinUI 骨架构建与窗口 smoke 已有证据；不得据此声明 Core DLL 已加载或整个产品迁移完成。
+阶段门禁、文件级清单、协议和初始布局参数统一维护于实施规格，不在 ADR 重复版本化。WinUI 骨架构建与窗口 smoke 已有证据；DLL 接入另有真实 WinUI 启停/重启与程序集证据，不等于整个产品迁移完成。
 
 ## 代价与被排除的路线
 
@@ -51,4 +51,6 @@
 
 ## 当前实施边界
 
-`Source/PuddingDesktop` 已原地成为 WinUI 骨架；`Source/PuddingDesktop.WpfArchive` 保留旧 247 项测试基线。`Foundation` 已独立测试后接入。Core DLL、真实角色/API、工作台、托盘和完整产品升级仍待后续切片，详见[实施记录](../Reports/Desktop-WinUI3-Skeleton-2026-09-27.md)。
+`Source/PuddingDesktop` 已原地成为 WinUI 骨架；`Source/PuddingDesktop.WpfArchive` 保留旧 247 项测试基线。`Foundation` 已独立测试后接入。Core DLL、健康检查、工作台、直接 UI 回调和退出回收已有隔离 smoke；原生角色/API 同步、Agent 浏览器、托盘和完整产品升级仍待后续切片，详见[实施记录](../Reports/Desktop-WinUI3-Skeleton-2026-09-27.md)。
+
+详见[Core DLL 实施记录](../Reports/Desktop-Core-DLL-Integration-2026-09-27.md)。

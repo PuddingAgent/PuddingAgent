@@ -1,3 +1,7 @@
+## 2026-09-27 Desktop DLL 接入
+
+`Hosting/PuddingApplicationHost.cs` 的 Desktop 模式使用明确 Host ApplicationName 与程序目录，避免 WinUI 入口或工作目录污染 MVC/资源发现。`PuddingDataRootLease` 由 Desktop Composition 与 Console/历史 Child 入口共同持有，禁止新版入口并发使用同一 DataRoot。Desktop 不再启动 PuddingAgent.exe；Host 生命周期由 Composition 驱动。
+
 # PuddingHost CodeMAP
 
 > 唯一 Host 组合根 | Console 与 Desktop 共用 DI · Browser Bridge · 飞书连接器

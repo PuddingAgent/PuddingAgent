@@ -2,7 +2,7 @@
 
 ## 2026-09-27 WinUI 3 角色优先 Coding 工作台（待实施）
 
-2026-09-27 最新裁定：原地重建 `Source/PuddingDesktop` 为 WinUI 3，角色为一等公民；Core 后续作为进程内 DLL 内核。骨架、基础测试与双 WebView2 smoke 已通过，旧 WPF 保留归档测试基线，真实 Core 尚未接入。详见 [迁移规格](Features/Desktop-WinUI3-Migration-Plan-2026-09-26.md)。
+2026-09-27 最新裁定：原地重建 `Source/PuddingDesktop` 为 WinUI 3，角色为一等公民；Core 已作为进程内 DLL 接入。Foundation 生命周期、Composition 真实 Host、WinUI 工作台/后台回调/重启与退出 smoke 已通过；原生角色导航和 Agent 浏览器仍待迁移。旧 WPF 仅保留归档测试基线。详见 [迁移规格](Features/Desktop-WinUI3-Migration-Plan-2026-09-26.md)。
 
 ## 2026-09-17 Goal模式重新规划
 

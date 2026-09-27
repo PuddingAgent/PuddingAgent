@@ -1,10 +1,10 @@
 # PuddingDesktop：WinUI 3 工作台骨架、Core 接入与迁移计划
 
 - 初稿：2026-09-26；修订：2026-09-27。
-- 状态：**2026-09-27 用户追加裁定：原地重建 PuddingDesktop 为 WinUI 3，后续 Core 以 DLL 装配为进程内内核。骨架已实现；真实内核和业务接入待实施。**
+- 状态：**2026-09-27 用户追加裁定：原地重建 PuddingDesktop 为 WinUI 3，Core 已以 DLL 装配为进程内内核。真实工作台与生命周期已接入；原生角色导航和 Agent 浏览器迁移尚未完成。**
 - 用户输入：2026-09-27 WorkBuddy 三栏截图，作为布局参考；截图内聊天文字、网页和品牌不是需求指令。同日补充裁定：**PuddingAgent 是以角色为一等公民的 Coding Agent**。
 - 决策记录：[Desktop / Core 边界 ADR](ADR-Desktop-WinUI3-Shell-Core-Boundary-2026-09-27.md)。
-- 当前源码入口已改为 WinUI 3 骨架；旧 WPF 位于 `Source/PuddingDesktop.WpfArchive`，供测试/迁移参考。机器上运行中的旧产品未部署替换。本轮骨架不加载 Core，不访问生产 DataRoot。
+- 当前源码入口已改为 WinUI 3 骨架；旧 WPF 位于 `Source/PuddingDesktop.WpfArchive`，供测试/迁移参考。机器上运行中的旧产品未部署替换。当前源码已加载真实 Core DLL；验证使用隔离 DataRoot，未替换机器上运行中的旧产品。
 
 ## 0. 本次修订的裁定
 
@@ -143,7 +143,7 @@ flowchart TB
 ```
 
 
-图中为最终目标，当前只有 Shell/Foundation 和未配置内核适配器。Core DLL 引用只属于组合边界；UI 状态组件不得反向引用内核。HTTP/SSE 可在同进程内继续保留，DLL 装配不自动等于无监听端口。
+图中为最终目标；当前已实现 Shell/Foundation、Composition 真实内核适配和 Workbench WebView2。Core DLL 引用只属于组合边界；UI 状态组件不得反向引用内核。HTTP/SSE 可在同进程内继续保留，DLL 装配不自动等于无监听端口。
 
 | 状态/能力 | 权威所有者 | Desktop 的职责 |
 |---|---|---|
@@ -160,8 +160,8 @@ flowchart TB
 
 | 工程（拟） | 责任 | 允许的依赖 / 禁止的依赖 |
 |---|---|---|
-| `PuddingDesktop.Foundation` | UI 无关的监督策略、配置 DTO、启动协议、Shell 布局/命令合同 | `net10.0-windows`、基础库；禁止 WPF、WinUI、WebView2、Host、Runtime、Platform |
-| `PuddingDesktop` | 原地重建后的唯一 WinUI 产品入口、视图、主题、平台适配 | 当前仅引用 Foundation；未来引用组合适配，视图不直接依赖 Host/Runtime/业务存储 |
+| `PuddingDesktop.Foundation` | UI 无关的监督策略、配置 DTO、启动协议、Shell 布局/命令合同 | `net10.0`、基础库；禁止 WPF、WinUI、WebView2、Host、Runtime、Platform |
+| `PuddingDesktop` | 原地重建后的唯一 WinUI 产品入口、视图、主题、平台适配 | 显式引用 Foundation、Composition，禁用传递项目引用；视图编译时不可访问 Host/Runtime |
 | `PuddingBrowser.Abstractions`、`.Protocol` | 已有浏览器抽象与跨进程消息 | 保持现有底层边界，不加入 WebView2 或 UI 类型 |
 | `PuddingBrowser.WebView2` | 框架中立驱动、CoreWebView2、Surface/Dispatcher 窄接口 | Browser 抽象与 WebView2 Core；不引用任一 UI 宿主 |
 | `PuddingBrowser.WebView2.Wpf` | 过渡期 WPF surface/dispatcher/presentation 实现 | 驱动 + WPF；不得反向引用 Desktop |
@@ -183,7 +183,7 @@ flowchart TB
 
 ## 3. PuddingAgent 的接入方式
 
-### 3.1 进程内内核启动与失败恢复（后续实现）
+### 3.1 进程内内核启动与失败恢复（基础接入已实施）
 
 1. `PuddingDesktop.exe` 启动 WinUI Shell，先显示设置/运行中心，再由组合入口加载内核；不得在 App 构造函数同步启动耗时数据库/索引任务。
 2. Foundation 的 `IDesktopKernel` 暴露 Snapshot、StartAsync、StopAsync、DisposeAsync；Core 宿主适配器实现它，UI 不拿 `IServiceProvider` 或业务数据库实例。
@@ -193,7 +193,7 @@ flowchart TB
 6. .NET 未处理异常、原生崩溃/OOM 仍可能结束整个进程；进程内设计不提供原有子进程崩溃隔离。外部部署/恢复工具负责新构建启动和崩溃后的恢复，不承诺 View 层 catch 可以兜住进程故障。
 7. 关闭到托盘、显式退出、Windows 会话结束、真实配置修复和内核资源回收，在内核接入阶段完成；本轮骨架关闭即退出，未声称达到原产品生命周期对等。
 
-当前 `UnconfiguredDesktopKernel` 明确返回 NotConfigured；启动/停止按钮禁用，不把空实现当作启动成功。预览配置位于独立 LocalAppData/指定临时目录。现有运行中的 Core、`D:/data` 与原配置不变。
+当前由 `InProcessKernel` + `DesktopKernelFactory` 装配 PuddingHost，启动/停止/重启可用，关闭等待内核释放。默认数据根 `%LOCALAPPDATA%/Pudding/DesktopData`，配置为 StateRoot/desktop.kernel.json。Core 通过 DI 注入 `IDesktopServices` 直接调用原生页面导航或只读文档展示，DispatcherQueue 负责线程切换；不会直接持有控件，也不绕过业务权限。新版开发入口与 Desktop 共享数据根租约。既有旧进程必须先停止才能沿用其数据根。
 
 ### 3.2 三条通信通道
 
@@ -324,13 +324,13 @@ WPF 的 `WebView2PresentationGate` 操作 WPF `PART_image`，不直接移植。W
 ## 6. 原地重建、发布与恢复
 
 - 唯一新产品入口是 `Source/PuddingDesktop/PuddingDesktop.csproj` → `PuddingDesktop.exe`。旧源码移至 `Source/PuddingDesktop.WpfArchive`，独立 AssemblyName，现有测试保留；这不是永久双壳产品策略。
-- 本轮 Foundation 已独立测试后接入 WinUI，新的 UI 工程不加载旧 WPF 或 Core。临时验证工程在原地替换后撤除。
+- 本轮 Foundation 已独立测试后接入 WinUI，新的 UI 工程不加载旧 WPF；Core 由单独 Composition 层装配。临时验证工程在原地替换后撤除。
 - 当前锁定 Windows App SDK `1.8.260921001`、SDK BuildTools `10.0.26100.9169`、WebView2 `1.0.4078.44`，非打包、Windows App SDK self-contained、win-x64；.NET 是否随最终产品打包由发布切片确定。本机验证不是干净机器验收。
 - 骨架阶段使用独立的实例 key 与预览配置，避免干扰旧产品；在真实内核接入前必须恢复唯一产品实例/DataRoot 所有权门禁，不能同时读写同一业务数据。
-- 将来发布 Core DLL 及其依赖、内容根、SPA。移除对子进程 exe 的最终发布要求，但当前不得把一个只有 Shell 的包当作完整 Pudding 产品发布。
+- 发布现已包含 Core DLL 及其依赖、default-data、SPA。移除对子进程 exe 的最终发布要求，原生角色同步、Agent 浏览器适配、托盘及干净机器验收仍是产品交付门禁。
 - DLL 被 Desktop 加载后，更新由进程外部署方执行：退出 → 核对回收 → 部署完整版本 → 启动并验证；不实现未经证明的 ALC 热卸载。
 - 运行中心在内核启动失败时可用；硬崩溃的恢复必须依赖进程外工具。旧版已发布产物可用于版本级恢复，不靠删除 DataRoot 回滚。
-- 骨架只保存主题/面板尺寸等展示配置，坏配置保留原文件并报告。真实 DataRoot/Core 配置适配后续单独验证。
+- 骨架只保存主题/面板尺寸等展示配置，坏配置保留原文件并报告。内核配置由 desktop.kernel.json 单独保存，测试已覆盖隔离 DataRoot 的真实启动与资源回收。
 
 ## 7. 实施阶段与交付门禁
 
@@ -442,4 +442,4 @@ Markdown/公式/代码高亮/图表继续允许 Web；不默认每条消息嵌�
 | Desktop 自身外部部署与回滚执行入口 | M4 前 | 未定位并演练前不切默认产品入口 |
 | 多 context registry / 多窗口 / 原生聊天 | 后续独立项目 | 不作为首版已具备能力 |
 
-2026-09-27 后续已实现 WinUI 骨架与 Foundation，并将原 WPF 纳入归档测试基线。具体构建、窗口/双 WebView2 验证与未完成项见 [骨架实施记录](../Reports/Desktop-WinUI3-Skeleton-2026-09-27.md)。未加载真实 Core DLL，未改生产配置/数据库/运行数据。
+2026-09-27 后续已实现 WinUI 骨架与 Foundation，并将原 WPF 纳入归档测试基线。具体构建、窗口/双 WebView2 验证与未完成项见 [骨架实施记录](../Reports/Desktop-WinUI3-Skeleton-2026-09-27.md)。后续同日已接入真实 Core DLL，见 [进程内内核实施记录](../Reports/Desktop-Core-DLL-Integration-2026-09-27.md)；未改既有生产配置/数据库/运行数据。

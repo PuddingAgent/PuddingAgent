@@ -11,6 +11,7 @@ public sealed record DesktopKernelSnapshot(DesktopKernelState State, string Desc
 public interface IDesktopKernel : IAsyncDisposable
 {
     DesktopKernelSnapshot Snapshot { get; }
+    event EventHandler? StateChanged;
     Task StartAsync(string dataRoot, CancellationToken cancellationToken);
     Task StopAsync(CancellationToken cancellationToken);
 }

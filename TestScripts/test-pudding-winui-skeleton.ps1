@@ -7,9 +7,9 @@ Push-Location $repoRoot
 try {
     dotnet test Source/PuddingDesktop.FoundationTests/PuddingDesktop.FoundationTests.csproj --nologo "-p:CoverletOutput=$runRoot/coverage" --results-directory $runRoot
     if ($LASTEXITCODE -ne 0) { throw 'Foundation tests failed.' }
-    dotnet build Source/PuddingDesktop/PuddingDesktop.csproj -c Release --nologo
+    dotnet build Source/PuddingDesktop/PuddingDesktop.csproj -c Release --artifacts-path temp/build/desktop-kernel --nologo
     if ($LASTEXITCODE -ne 0) { throw 'WinUI build failed.' }
-    $exe = Join-Path $repoRoot 'temp/build/winui3/bin/PuddingDesktop/Release/net10.0-windows10.0.19041.0/win-x64/PuddingDesktop.exe'
+    $exe = Join-Path $repoRoot 'temp/build/winui3/bin/PuddingDesktop/release_win-x64/PuddingDesktop.exe'
     $report = Join-Path $runRoot 'smoke.json'
     $process = Start-Process -FilePath $exe -ArgumentList @('--state-root', ('"' + $runRoot + '"'), '--smoke-report', ('"' + $report + '"')) -WindowStyle Hidden -PassThru
     if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {

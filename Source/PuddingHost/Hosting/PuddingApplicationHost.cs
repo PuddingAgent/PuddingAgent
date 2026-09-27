@@ -54,7 +54,14 @@ public static class PuddingApplicationHost
         PuddingLoggingBootstrapper.Configure(dataPaths, bootstrapConfiguration);
 
         // ── WebApplicationBuilder ────────────────────────────
-        var builder = WebApplication.CreateBuilder(args);
+        var builder = options.Mode == PuddingHostMode.Desktop
+            ? WebApplication.CreateBuilder(new WebApplicationOptions
+            {
+                Args = args,
+                ApplicationName = typeof(PuddingHostAssemblyMarker).Assembly.GetName().Name,
+                ContentRootPath = AppContext.BaseDirectory,
+            })
+            : WebApplication.CreateBuilder(args);
         // Product/user-owned runtime policy lives below DataRoot. Add it after
         // the packaged appsettings defaults, then restore environment/CLI as
         // the highest-precedence operational overrides.

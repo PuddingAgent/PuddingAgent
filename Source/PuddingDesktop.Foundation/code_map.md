@@ -1,6 +1,6 @@
 # Desktop Foundation
 
-独立 BCL 叶组件，当前只包含 Shell 展示状态，不启动 Core、不打开业务数据库。
+独立 BCL 叶组件，包含 Shell 展示状态与可独立测试的内核生命周期协调；不引用 Host、不打开业务数据库。
 
 | 文件 | 职责 |
 |---|---|
@@ -10,4 +10,4 @@
 | `SkeletonSettingsStore.cs` | 隔离骨架配置原子保存；坏配置保留并报告 |
 | `PuddingDesktop.Foundation.csproj` | 编译期拒绝任何项目/包引用；输出限于 temp/build/winui3 |
 
-独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Core 生命周期；后续 DLL 内核通过独立合同装配。
+独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。18 项独立测试通过。

@@ -21,10 +21,13 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(IDesktopKernel kernel)
+    public MainWindow(Func<IDesktopServices, IDesktopKernel> createKernel)
     {
-        _kernel = kernel;
         InitializeComponent();
+        _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
+        _kernel = createKernel(_desktopServices);
+        _kernel.StateChanged += OnKernelStateChanged;
+        AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(DragRegion);
         SystemBackdrop = new MicaBackdrop();
@@ -57,7 +60,8 @@ public sealed partial class MainWindow : Window
         if (arguments.Contains("--demo")) LoadDemo();
         var smokeIndex = Array.IndexOf(arguments, "--smoke-report");
         if (smokeIndex >= 0 && smokeIndex + 1 < arguments.Length)
-            await RunSmokeAsync(Path.GetFullPath(arguments[smokeIndex + 1]));
+        { await RunSmokeAsync(Path.GetFullPath(arguments[smokeIndex + 1])); return; }
+        await InitializeKernelAsync(arguments);
     }
 
     private void OnLoadDemo(object sender, RoutedEventArgs args) => LoadDemo();
@@ -100,7 +104,8 @@ public sealed partial class MainWindow : Window
             DraftEditor.IsEnabled = _demo && role is not null;
             DraftHint.Text = role is null ? "先选择角色 · 草稿不会发送" : $"{role.Name}的草稿 · 未连接内核";
             foreach (var button in new[] { FileButton, DiffButton, TerminalButton, BrowserButton, ArtifactButton }) button.IsEnabled = _demo && role is not null;
-            WorkbenchPane.Visibility = _state.Page == ShellPage.Workbench ? Visibility.Visible : Visibility.Collapsed;
+            WorkbenchPane.Visibility = _state.Page == ShellPage.Workbench && _kernel.Snapshot.State != DesktopKernelState.Ready ? Visibility.Visible : Visibility.Collapsed;
+            CoreWorkbenchPane.Visibility = _state.Page == ShellPage.Workbench && _kernel.Snapshot.State == DesktopKernelState.Ready ? Visibility.Visible : Visibility.Collapsed;
             SettingsPane.Visibility = _state.Page == ShellPage.Settings ? Visibility.Visible : Visibility.Collapsed;
             RuntimePane.Visibility = _state.Page == ShellPage.RuntimeCenter ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -185,7 +190,7 @@ public sealed partial class MainWindow : Window
     private void OnSettings(object sender, RoutedEventArgs args) => _state.Navigate(ShellPage.Settings);
     private void OnRuntime(object sender, RoutedEventArgs args) => _state.Navigate(ShellPage.RuntimeCenter);
     private void OnWorkbench(object sender, RoutedEventArgs args) => _state.Navigate(ShellPage.Workbench);
-    private void OnExit(object sender, RoutedEventArgs args) => Close();
+    private async void OnExit(object sender, RoutedEventArgs args) => await RequestExitAsync();
     private void OnToggleNavigation(object sender, RoutedEventArgs args) { _layout = _layout with { NavigationVisible = !_layout.NavigationVisible }; ApplyLayout(); }
     private void OnToggleWorkspace(object sender, RoutedEventArgs args) { _layout = _layout with { WorkspaceVisible = !_layout.WorkspaceVisible }; ApplyLayout(); }
     private void OnRootSizeChanged(object sender, SizeChangedEventArgs args) { if (_loaded) ApplyLayout(); }
@@ -247,7 +252,7 @@ public sealed partial class MainWindow : Window
     }
     private async void OnAbout(object sender, RoutedEventArgs args)
     {
-        await new ContentDialog { XamlRoot = Root.XamlRoot, Title = "Pudding · WinUI 3", Content = "角色优先的 Coding 工作台\n\n这是可独立运行的骨架。\nCore DLL、真实会话和工具执行尚未接入。", CloseButtonText = "知道了" }.ShowAsync();
+        await new ContentDialog { XamlRoot = Root.XamlRoot, Title = "Pudding · WinUI 3", Content = "角色优先的 Coding 工作台\n\n这是可独立运行的骨架。\nCore 已通过 DLL 装配；原生角色导航与 Agent 浏览器仍在迁移。", CloseButtonText = "知道了" }.ShowAsync();
     }
     private async void OnHostingProbe(object sender, RoutedEventArgs args)
     {

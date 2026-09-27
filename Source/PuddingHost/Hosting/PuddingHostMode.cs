@@ -1,7 +1,7 @@
 ﻿namespace PuddingHost.Hosting;
 
 /// <summary>
-/// Host execution mode — Console (dev server), Desktop (in-process WPF),
+/// Host execution mode — Console (dev server), Desktop (in-process WinUI),
 /// or DesktopChild (child process launched by Desktop launcher).
 /// </summary>
 public enum PuddingHostMode
@@ -9,9 +9,9 @@ public enum PuddingHostMode
     /// <summary>Standalone console dev server.</summary>
     Console,
 
-    /// <summary>In-process within a WPF app (legacy Phase 0, no longer used in Phase 1A).</summary>
+    /// <summary>Product Core DLL within the WinUI Desktop process.</summary>
     Desktop,
 
-    /// <summary>Child process launched by PuddingDesktop.exe via Process.Start.</summary>
+    /// <summary>Historical WPF child mode, retained for migration/development only.</summary>
     DesktopChild,
 }

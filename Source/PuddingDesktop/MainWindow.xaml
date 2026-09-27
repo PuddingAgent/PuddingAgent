@@ -57,7 +57,7 @@
           <Border Height="1" Background="{ThemeResource DividerBrush}" Margin="0,8" />
           <Button Content="⚙  设置" Click="OnSettings" Style="{StaticResource QuietButton}" />
           <Button Content="◉  运行中心" Click="OnRuntime" Style="{StaticResource QuietButton}" />
-          <TextBlock Text="○  内核未接入" Opacity="0.6" FontSize="12" Margin="12,12,0,0" />
+          <TextBlock x:Name="KernelBadge" Text="○  内核未启动" Opacity="0.6" FontSize="12" Margin="12,12,0,0" />
         </StackPanel>
       </Grid>
       <Grid Grid.Column="1" x:Name="WorkbenchPane" Padding="28,22,28,24">
@@ -102,6 +102,9 @@
           </StackPanel>
         </Border>
       </Grid>
+      <Grid Grid.Column="1" x:Name="CoreWorkbenchPane" Visibility="Collapsed">
+        <WebView2 x:Name="CoreWorkbench" />
+      </Grid>
       <Grid Grid.Column="1" x:Name="SettingsPane" Visibility="Collapsed" Padding="36,28">
         <ScrollViewer>
           <StackPanel Spacing="22" MaxWidth="680" HorizontalAlignment="Stretch">
@@ -124,9 +127,11 @@
           <StackPanel Spacing="22" MaxWidth="680" HorizontalAlignment="Stretch">
             <Button Content="← 返回工作台" Click="OnWorkbench" HorizontalAlignment="Left" />
             <TextBlock Text="运行中心" FontSize="28" FontWeight="SemiBold" />
-            <InfoBar x:Name="KernelStatus" IsOpen="True" IsClosable="False" Severity="Informational" Title="Core DLL 尚未装配" Message="界面可独立运行。内核生命周期将在后续切片接入；此版本不会启动或重启现有 PuddingAgent。" />
-            <TextBlock Text="Desktop：WinUI 3 / .NET 10&#x0a;内核：未接入&#x0a;工作台：原生骨架&#x0a;业务数据：未连接" LineHeight="28" />
-            <StackPanel Orientation="Horizontal" Spacing="8"><Button Content="启动内核" IsEnabled="False" /><Button Content="停止内核" IsEnabled="False" /><Button Content="重启内核" IsEnabled="False" /></StackPanel>
+            <InfoBar x:Name="KernelStatus" IsOpen="True" IsClosable="False" Title="Core DLL" Message="Core 在 Desktop 进程内运行。首次启动使用独立数据目录；沿用旧数据前需先停止旧 Core。" />
+            <TextBox x:Name="DataRootEditor" Header="内核数据目录" />
+            <TextBlock x:Name="KernelDetails" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+            <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="StartKernelButton" Content="启动内核" Click="OnStartKernel" /><Button x:Name="StopKernelButton" Content="停止内核" Click="OnStopKernel" /><Button x:Name="RestartKernelButton" Content="重启内核" Click="OnRestartKernel" /></StackPanel>
+            <Button Content="打开工作台" Click="OnWorkbench" HorizontalAlignment="Left" />
             <TextBlock Text="WebView2 宿主验证" FontSize="18" FontWeight="SemiBold" />
             <TextBlock Text="在隔离临时目录创建两个不同的浏览器环境，验证控件初始化和 Cookie 隔离。仅使用本机生成的测试页面。" TextWrapping="Wrap" Opacity="0.65" />
             <Button x:Name="ProbeButton" Content="运行双浏览器验证" Click="OnHostingProbe" HorizontalAlignment="Left" />

@@ -1,3 +1,12 @@
+### WinUI / Core DLL 调试（2026-09-27）
+
+- 运行中心显示 Desktop/Core 同一 PID 和动态 Loopback 地址；不再等待 stdout 的 PUDDING_DESKTOP_READY。窗口异常日志在 StateRoot/desktop.log，Core 日志在所选 DataRoot。不要回显配置凭据。
+- 默认新数据根为 `%LOCALAPPDATA%/Pudding/DesktopData`，启动参数 `--state-root` 和 `--data-root` 可指定隔离环境；测试脚本强制自己的 temp/test-out 根。旧 Core 未退出前禁止复用其数据目录。
+- `test-pudding-desktop-kernel.ps1` 验证真实 WinUI 加载 PuddingHost.dll、ready、工作台导航、后台到 UI 回调、启停/重启、退出与目录锁释放。骨架检查使用 `--smoke-report`，不启动 Core；`--demo` 不自动启动 Core。
+- Core 停止失败时保留宿主引用，不允许装配第二个 Host；停止重试优先，不能以“DLL 卸载”描述 IHost.Dispose。
+- 若 build 输出可运行、publish 启动却报 XamlParseException，先对比 PuddingDesktop.pri / App.xbf / MainWindow.xbf；本次发布链已显式携带生成资源，发布目录必须单独 smoke。
+- WinUI WebView2 使用 WinRT `CreateWithOptionsAsync`；输入框使用同步 TextChanging 避免角色切换后的异步 TextChanged 覆盖草稿。Mica 必须保持最外层透明，否则不透明纯色会遮住系统材质。
+
 ### 全仓检索别用 search_grep 硬扫：2000 文件枚举上限与正确工具链（2026-09-21）
 
 `search_grep` 在大型仓库有**硬上限**：单次最多枚举 2000 个文件、最多扫描 2000 文件/64MB、单次调用封顶 10s。撞到上限时结果会带 partial 覆盖提示，但在缩小范围前很容易把偏短的 `no matches` 读成“真的没有”，从而得到**假阴性结论**。本次实测：定位“所有出站 HTTP 的 UA 设置点”时反复换窄模式仍覆盖不全，白跑一趟 Explorer 子代理做全仓清单式排查；反复扫的另一个代价是吃掉大量上下文。

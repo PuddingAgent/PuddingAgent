@@ -21,8 +21,8 @@ public static class PuddingHostOptionsFactory
     }
 
     /// <summary>
-    /// Create options for Desktop (WPF in-process) mode with loopback binding.
-    /// Legacy Phase 0 mode; Phase 1A uses DesktopChild instead.
+    /// Create options for Desktop (WinUI in-process) mode with loopback binding.
+    /// Product DLL kernel; Desktop owns its lifetime.
     /// </summary>
     public static PuddingHostOptions ForDesktop(string dataRoot)
     {
@@ -32,7 +32,7 @@ public static class PuddingHostOptionsFactory
             DataRoot = dataRoot,
             Urls = ["http://127.0.0.1:0"],
             ServeAdminSpa = true,
-            BrowserAutomationEnabled = true,
+            BrowserAutomationEnabled = false,
         };
     }
 

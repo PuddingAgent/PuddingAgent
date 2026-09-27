@@ -9,6 +9,7 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <UseWinUI>true</UseWinUI>
+    <DisableTransitiveProjectReferences>true</DisableTransitiveProjectReferences>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
@@ -21,15 +22,30 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\PuddingDesktop.Foundation\PuddingDesktop.Foundation.csproj" />
+    <ProjectReference Include="..\PuddingDesktop.Composition\PuddingDesktop.Composition.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
   </ItemGroup>
   <Target Name="EnforceShellBoundary" BeforeTargets="ResolveReferences">
     <ItemGroup>
-      <_ForbiddenShellReference Include="@(ProjectReference)" Condition="'%(Filename)' != 'PuddingDesktop.Foundation'" />
+      <_ForbiddenShellReference Include="@(ProjectReference)" Condition="'%(Filename)' != 'PuddingDesktop.Foundation' And '%(Filename)' != 'PuddingDesktop.Composition'" />
     </ItemGroup>
-    <Error Condition="'@(_ForbiddenShellReference)' != ''" Text="WinUI views may reference only Foundation. Put the future Core DLL adapter in the composition boundary, not the view assembly." />
+    <Error Condition="'@(_ForbiddenShellReference)' != ''" Text="WinUI shell may reference only Foundation and Composition. Put the future Core DLL adapter in the composition boundary, not the view assembly." />
+  </Target>
+  <Import Project="..\PuddingHost\Build\PuddingHostContent.props" />
+  <Target Name="IncludeWinUiShellResourcesInPublish" AfterTargets="ComputeFilesToPublish">
+    <!-- Unpackaged SDK publishing must carry the app's generated resource index and XAML binaries. -->
+    <Error Condition="!Exists('$(TargetDir)$(AssemblyName).pri')" Text="WinUI application PRI is missing; build the shell before publishing." />
+    <ItemGroup>
+      <_WinUiShellResource Include="$(TargetDir)$(AssemblyName).pri;$(TargetDir)*.xbf" />
+      <ResolvedFileToPublish Remove="@(_WinUiShellResource)" />
+      <ResolvedFileToPublish Include="@(_WinUiShellResource)">
+        <RelativePath>%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
   </Target>
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
 </Project>

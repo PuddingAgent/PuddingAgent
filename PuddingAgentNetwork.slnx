@@ -11,6 +11,7 @@
     <Project Path="Source/PuddingCodexService/PuddingCodexService.csproj" />
     <Project Path="Source/PuddingCore/PuddingCore.csproj" />
     <Project Path="Source/PuddingDesktop/PuddingDesktop.csproj" />
+    <Project Path="Source/PuddingDesktop.Composition/PuddingDesktop.Composition.csproj" />
     <Project Path="Source/PuddingDesktop.Foundation/PuddingDesktop.Foundation.csproj" />
     <Project Path="Source/PuddingDesktop.WpfArchive/PuddingDesktop.WpfArchive.csproj" />
     <Project Path="Source/PuddingFullTextIndex/PuddingFullTextIndex.csproj" />
@@ -36,6 +37,7 @@
     <Project Path="Tests/PuddingBrowser.WebView2.Smoke/PuddingBrowser.WebView2.Smoke.csproj" />
     <Project Path="Tests/PuddingDesktop.Tests/PuddingDesktop.Tests.csproj" />
     <Project Path="Source/PuddingDesktop.FoundationTests/PuddingDesktop.FoundationTests.csproj" />
+    <Project Path="Source/PuddingDesktop.CompositionTests/PuddingDesktop.CompositionTests.csproj" />
     <Project Path="Tests/PuddingHost.Tests/PuddingHost.Tests.csproj" />
     <Project Path="Source/PuddingCodeIntelligenceTests/PuddingCodeIntelligenceTests.csproj" />
     <Project Path="Source/PuddingCodeIndexTests/PuddingCodeIndexTests.csproj" />
