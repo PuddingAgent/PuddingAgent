@@ -20,6 +20,8 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 
 ## 2026-09-27 原生聊天交错消息流
 
+`PuddingChat.WinUI/TurnContentView.cs` 在活动卡展开时才创建输入/输出 Markdown，收起后释放内容；折叠期间仍更新 canonical 数据与标题状态。`LazyActivityChecks.cs` 用 500 个工具调用验证隐藏内容不创建控件、收起释放、重新展开显示最新输出及思考默认可见。此项不是整个 Turn 的块级虚拟化。
+
 `PuddingChat.WinUI/NativeImageTransfer.cs` 读取用户粘贴/拖放的 Windows 数据包，保留编码图片字节并清理短期暂存；`ChatComposer` 接入 TextBox.Paste、粘贴图片按钮和拖放反馈，`ChatWorkspace.AddImageBatchAsync` 在异步读取前捕获角色，复用 Core 图片导入端口。`ImageTransferChecks.cs` 覆盖数据包、清理、失败与延迟粘贴时角色切换。
 
 `PuddingChat.WinUI/VirtualTranscript.cs` 使用 ItemsRepeater/StackLayout/IElementFactory 按视口创建与释放消息卡；`MessageViewState.cs` 保留非视觉展开状态和执行明细，`ChatWorkspace` 持有稳定数据行。`VirtualTranscriptChecks.cs` 用 1000 条消息验证控件数量受视口约束、离屏更新、实际贴底、消息内锚点以及工具展开状态恢复；单个超长 Turn 内的块仍待虚拟化。

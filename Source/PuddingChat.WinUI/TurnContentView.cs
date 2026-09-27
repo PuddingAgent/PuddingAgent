@@ -24,8 +24,17 @@ public sealed class TurnContentView : StackPanel
                         HorizontalContentAlignment = HorizontalAlignment.Stretch };
                 if (view is Expander disclosure)
                 {
-                    disclosure.Expanding += (_, _) => _expansions[block.Key] = true;
-                    disclosure.Collapsed += (_, _) => _expansions[block.Key] = false;
+                    var disclosureKey = block.Key;
+                    disclosure.Expanding += (_, _) =>
+                    {
+                        _expansions[disclosureKey] = true;
+                        if (_blocks.TryGetValue(disclosureKey, out var current)) RenderDisclosure(disclosure, current.Value);
+                    };
+                    disclosure.Collapsed += (_, _) =>
+                    {
+                        _expansions[disclosureKey] = false;
+                        disclosure.Content = null;
+                    };
                 }
                 old = (null!, view);
             }
@@ -37,20 +46,7 @@ public sealed class TurnContentView : StackPanel
                     expander.Header = block.Kind == "thinking" ? "思考过程" :
                         $"{(block.Kind == "tool" ? "工具" : block.Kind == "delegation" ? "子代理" : "活动")} · {block.Name ?? block.Kind} · {TurnFlow.StatusLabel(block.Status)}" +
                         (block.ExitCode is { } exit ? $" · exit {exit}" : "");
-                    var content = new StackPanel { Spacing = 8 };
-                    if (block.Kind != "tool" || (string.IsNullOrEmpty(block.Arguments) && string.IsNullOrEmpty(block.Output))) content.Children.Add(MessageCard.RenderText(block.Text));
-                    if (block.Arguments is { Length: > 0 }) { content.Children.Add(new TextBlock { Text = "输入", Opacity = .6 }); content.Children.Add(MessageCard.RenderText(block.Arguments)); }
-                    if (block.Output is { Length: > 0 })
-                    {
-                        content.Children.Add(new TextBlock { Text = block.Kind == "delegation" ? "结果摘要" : "输出", Opacity = .6 });
-                        var output = block.Kind == "delegation" && block.Output.Length > 300 ? block.Output[..300] + "…（摘要）" : block.Output;
-                        content.Children.Add(MessageCard.RenderText(output));
-                    }
-                    var scroll = expander.Content as ScrollViewer ?? new ScrollViewer { MaxHeight = 320, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-                    var offset = scroll.VerticalOffset;
-                    var followLatest = scroll.ScrollableHeight - offset < 24;
-                    scroll.Content = content; expander.Content = scroll;
-                    if (scroll.IsLoaded) { scroll.UpdateLayout(); scroll.ChangeView(null, followLatest ? scroll.ScrollableHeight : offset, null, true); }
+                    if (expander.IsExpanded) RenderDisclosure(expander, block);
                 }
                 else if (((ContentControl)old.View).Content is MarkdownView markdown) markdown.Update(block.Text);
                 else ((ContentControl)old.View).Content = MessageCard.RenderText(block.Text);
@@ -61,5 +57,22 @@ public sealed class TurnContentView : StackPanel
         foreach (var child in Children.Where(c => !desired.Contains(c)).ToArray()) Children.Remove(child);
         for (var i = 0; i < desired.Count; i++)
             if (i >= Children.Count || !ReferenceEquals(Children[i], desired[i])) { Children.Remove(desired[i]); Children.Insert(i, desired[i]); }
+    }
+    private static void RenderDisclosure(Expander expander, FlowBlock block)
+    {
+        var content = new StackPanel { Spacing = 8 };
+        if (block.Kind != "tool" || (string.IsNullOrEmpty(block.Arguments) && string.IsNullOrEmpty(block.Output))) content.Children.Add(MessageCard.RenderText(block.Text));
+        if (block.Arguments is { Length: > 0 }) { content.Children.Add(new TextBlock { Text = "输入", Opacity = .6 }); content.Children.Add(MessageCard.RenderText(block.Arguments)); }
+        if (block.Output is { Length: > 0 })
+        {
+            content.Children.Add(new TextBlock { Text = block.Kind == "delegation" ? "结果摘要" : "输出", Opacity = .6 });
+            var output = block.Kind == "delegation" && block.Output.Length > 300 ? block.Output[..300] + "…（摘要）" : block.Output;
+            content.Children.Add(MessageCard.RenderText(output));
+        }
+        var scroll = expander.Content as ScrollViewer ?? new ScrollViewer { MaxHeight = 320, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        var offset = scroll.VerticalOffset;
+        var followLatest = scroll.ScrollableHeight - offset < 24;
+        scroll.Content = content; expander.Content = scroll;
+        if (scroll.IsLoaded) { scroll.UpdateLayout(); scroll.ChangeView(null, followLatest ? scroll.ScrollableHeight : offset, null, true); }
     }
 }

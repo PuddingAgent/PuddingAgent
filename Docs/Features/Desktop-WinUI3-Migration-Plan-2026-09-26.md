@@ -30,6 +30,8 @@
 | 稳定节点与折叠状态 | `MessageCard` / `TurnContentView` | 保留卡片和未变化的块，更新变化内容，不重建整个会话 |
 | 历史过程水合 | `IChatClient.GetProcessAsync` | 历史明细按需直接调用 Core；活动 Turn 自动分批重放补齐 |
 
+活动卡内容按需渲染：工具、子代理和其他折叠活动只创建标题控件，展开时使用当前 canonical 数据生成输入/输出 Markdown，收起即释放内容控件；折叠期间仍接收状态和结果更新。思考区继续默认展开并流式显示。500 个工具调用的窗口组件检查已覆盖此行为；活动标题数量仍随记录增长，整个 Turn 的块级虚拟化/渐进展开仍待完成。
+
 调用链为 `WinUI → PuddingChat 端口 → Composition → Core 应用服务`。发送、取消、配置继续使用直接异步函数调用；`IConversationChanges.WaitForChangeAsync` 订阅已提交事件，Core 广播唤醒所有订阅者，原生端合并 40 ms 内的突发通知后通过 `IConversationActivity` 读取强类型活动差量，每批最多 256 条 canonical 事件。正文、思考和工具活动直接合并进当前会话；生命周期和未知事件回到 Core 权威投影。没有聊天 HTTP/SSE、JWT 或 DTO JSON 往返，也不读取 `StreamingEventBus` 的竞争消费通道。Core 的 Run/Turn 状态机仍是唯一执行真源；Desktop 只维护选择代次、草稿、阅读锚点、折叠和订阅生命周期。
 
 已修复 `CommittedEventSignal` 的 Channel 竞争消费问题：保留单调 head、广播等待者、支持独立取消，覆盖先提交后订阅的竞态。投影读取前捕获 head，避免多查询投影末尾的较新游标确认尚未读入的事件。角色切换取消旧订阅；Core 停止时取消并等待进程内操作后释放宿主。
