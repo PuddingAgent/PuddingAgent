@@ -23,11 +23,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels, IWorkspaceResourceSettings WorkspaceResources, IMemoryLibrarySettings MemoryLibrary, IStorageSettings Storage, ISecuritySettings Security, IAccessTokenSettings AccessTokens, IRoleSettings Roles)> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels, IWorkspaceResourceSettings WorkspaceResources, IMemoryLibrarySettings MemoryLibrary, IStorageSettings Storage, ISecuritySettings Security, IAccessTokenSettings AccessTokens, IRoleSettings Roles, IUserSettings Users)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels, _workspaceResources, _memoryLibrary, _storage, _security, _accessTokens, _roles) = createKernel(_desktopServices);
+        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels, _workspaceResources, _memoryLibrary, _storage, _security, _accessTokens, _roles, _users) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -80,6 +80,7 @@ public sealed partial class MainWindow : Window
         BuildApprovalPanel();
         BuildAccessTokenPanel();
         BuildRolePanel();
+        BuildUserPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -647,6 +648,13 @@ public sealed partial class MainWindow : Window
             Check(RolesSettings.Content is StackPanel, "roles form is built");
             Check(!_rbName.IsEnabled, "roles form stays disabled without Core");
             Check(_rbNotice.Title == "Core 未就绪", "roles tab reports the real Core state");
+            // DS-12 user slice.
+            OpenSettingsCategory("accounts", "users");
+            await WaitForSettingsUiAsync(() => _usNotice.IsOpen);
+            Check(UsersSettings.Visibility == Visibility.Visible, "users tab is native");
+            Check(UsersSettings.Content is StackPanel, "users form is built");
+            Check(!_usUsername.IsEnabled, "users form stays disabled without Core");
+            Check(_usNotice.Title == "Core 未就绪", "users tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

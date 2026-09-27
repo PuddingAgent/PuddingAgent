@@ -1912,6 +1912,92 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task UserAdapter_CreatesUpdatesPasswordsRolesAndProtectsTheLastAdmin()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var users = factory.CreateUserSettings(kernel);
+        var roles = factory.CreateRoleSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => users.ListAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var before = await users.ListAsync(timeout.Token);
+
+            // 密码下限由 Core 强制；短密码必须是真实错误。
+            await Assert.ThrowsAsync<InvalidOperationException>(() => users.CreateAsync(new UserCreate(
+                "composition-user", "Composition User", "composition@example.invalid", "", "SimpleUser",
+                "abc", "abc"), timeout.Token));
+
+            await users.CreateAsync(new UserCreate("composition-user", "Composition User",
+                "composition@example.invalid", "Composition", "SimpleUser", "s3cret-pass", "s3cret-pass"), timeout.Token);
+            var created = Assert.Single(await users.ListAsync(timeout.Token),
+                user => user.UserId == "composition-user");
+            Assert.True(created.IsEnabled, "新账号默认启用");
+            Assert.False(created.IsAdmin);
+            Assert.Empty(created.RoleIds);
+
+            // 重复 UserId 与重复邮箱都是冲突（不是覆盖）。
+            await Assert.ThrowsAsync<InvalidOperationException>(() => users.CreateAsync(new UserCreate(
+                "composition-user", "Other", "other@example.invalid", "", "SimpleUser",
+                "s3cret-pass", "s3cret-pass"), timeout.Token));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => users.CreateAsync(new UserCreate(
+                "other-user", "Other", "composition@example.invalid", "", "SimpleUser",
+                "s3cret-pass", "s3cret-pass"), timeout.Token));
+
+            await users.UpdateAsync(new UserMetaEdit("composition-user", "Renamed User",
+                "renamed@example.invalid", "Renamed", "SimpleUser", false), timeout.Token);
+            var updated = Assert.Single(await users.ListAsync(timeout.Token), user => user.UserId == "composition-user");
+            Assert.Equal("Renamed User", updated.Username);
+            Assert.Equal("renamed@example.invalid", updated.Email);
+            Assert.False(updated.IsEnabled);
+
+            // 改邮箱撞已有邮箱：修正后与新建一致地冲突，而不是撞唯一索引变成 500。
+            var taken = before.FirstOrDefault(user => user.Email.Length > 0);
+            if (taken is not null)
+                await Assert.ThrowsAsync<InvalidOperationException>(() => users.UpdateAsync(new UserMetaEdit(
+                    "composition-user", "Renamed User", taken.Email, "", "SimpleUser", false), timeout.Token));
+
+            await users.ChangePasswordAsync(new UserPasswordChange("composition-user", "another-pass", "another-pass"),
+                timeout.Token);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => users.ChangePasswordAsync(
+                new UserPasswordChange("composition-user", "short", "short"), timeout.Token));
+
+            // 隔离数据根只有 4 个内置角色，所以先建一个自定义角色来验证分配。
+            await roles.CreateAsync(new RoleEdit("composition-assign-role", "Assign Role", "", ["workspace:read"]),
+                timeout.Token);
+            var role = (await roles.ListAsync(timeout.Token)).Single(item => item.RoleId == "composition-assign-role");
+            await users.AssignRolesAsync("composition-user", [role.RoleId], timeout.Token);
+            var assigned = Assert.Single(await users.ListAsync(timeout.Token), user => user.UserId == "composition-user");
+            Assert.Equal([role.RoleId], assigned.RoleIds);
+            // 空列表 = 全部移除（全量替换语义）。
+            await users.AssignRolesAsync("composition-user", [], timeout.Token);
+            Assert.Empty(Assert.Single(await users.ListAsync(timeout.Token),
+                user => user.UserId == "composition-user").RoleIds);
+
+            await users.DeleteAsync("composition-user", timeout.Token);
+            Assert.DoesNotContain(await users.ListAsync(timeout.Token), user => user.UserId == "composition-user");
+            await Assert.ThrowsAsync<InvalidOperationException>(() => users.DeleteAsync("composition-user", timeout.Token));
+
+            // 最后一个 Admin 不可删除：Core 直接拒绝。
+            var admins = (await users.ListAsync(timeout.Token)).Where(user => user.IsAdmin).ToArray();
+            if (admins.Length == 1)
+                await Assert.ThrowsAsync<InvalidOperationException>(() => users.DeleteAsync(admins[0].UserId, timeout.Token));
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => users.ListAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

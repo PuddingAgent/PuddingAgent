@@ -28,6 +28,7 @@ public sealed class DesktopKernelFactory(IDesktopServices desktop) : IKernelSess
     public ISecuritySettings CreateSecuritySettings(IDesktopKernel kernel) => new DesktopSecuritySettings(kernel);
     public IAccessTokenSettings CreateAccessTokenSettings(IDesktopKernel kernel) => new DesktopAccessTokenSettings(kernel);
     public IRoleSettings CreateRoleSettings(IDesktopKernel kernel) => new DesktopRoleSettings(kernel);
+    public IUserSettings CreateUserSettings(IDesktopKernel kernel) => new DesktopUserSettings(kernel);
     public async Task<IKernelSession> StartAsync(string dataRoot, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(dataRoot);

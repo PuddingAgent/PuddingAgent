@@ -228,6 +228,15 @@ public sealed partial class MainWindow
         var roles = VisibilityOf("accounts", "roles", tab);
         RolesSettings.Visibility = roles;
         if (roles == Visibility.Visible) LoadRolesIfNeeded();
+        var users = VisibilityOf("accounts", "users", tab);
+        UsersSettings.Visibility = users;
+        if (users == Visibility.Visible) LoadUsersIfNeeded();
+    }
+
+    private async void LoadUsersIfNeeded()
+    {
+        try { await LoadUsersAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadRolesIfNeeded()
@@ -446,6 +455,7 @@ public sealed partial class MainWindow
         ("security", "allowlist") => true,
         ("access", "tokens") => true,
         ("accounts", "roles") => true,
+        ("accounts", "users") => true,
         _ => false
     };
 
