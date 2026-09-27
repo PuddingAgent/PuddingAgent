@@ -30,6 +30,12 @@ public sealed class ChatComposer : UserControl
         _cancel.Click += (_, _) => CancelRequested?.Invoke(this, EventArgs.Empty);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_editor, "当前角色的消息草稿");
     }
+    public void SetContext(string? role, bool editable)
+    {
+        _editor.IsEnabled = editable;
+        _editor.PlaceholderText = role is null ? "先在左侧选择一位角色" : editable ? $"交给 {role} 的工作…" : "当前角色已停用或冻结";
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_editor, role is null ? "请选择角色后输入" : $"发给 {role} 的消息草稿");
+    }
     public void SetAvailability(bool send, bool cancel, bool retry)
     { _send.IsEnabled = send; _cancel.IsEnabled = cancel; _send.Content = retry ? "重试原消息" : "发送 ↑";
         _hint.Text = retry ? "上次发送尚未取得回执。重试沿用原消息；新草稿会保留。" : "Ctrl+Enter 发送 · Enter 换行"; }

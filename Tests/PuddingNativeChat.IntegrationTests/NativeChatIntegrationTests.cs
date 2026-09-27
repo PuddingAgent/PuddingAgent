@@ -103,7 +103,14 @@ public class NativeChatIntegrationTests
             var session = await client.EnsureSessionAsync(role, agent, timeout.Token);
             Assert.False(string.IsNullOrWhiteSpace(session));
             var pending = PendingSend.Create(role, session, "Native component admission test. Reply briefly.");
+            var changes = Assert.IsAssignableFrom<IConversationChanges>(client);
+            var beforeSend = await client.GetConversationAsync(role, null, timeout.Token);
+            var change = changes.WaitForChangeAsync(role, session, beforeSend!.EventCursor, timeout.Token);
+            var secondChange = changes.WaitForChangeAsync(role, session, beforeSend.EventCursor, timeout.Token);
             var receipt = await client.SendAsync(pending, timeout.Token);
+            await Task.WhenAll(change, secondChange).WaitAsync(TimeSpan.FromSeconds(5));
+            await changes.WaitForChangeAsync(role, session, beforeSend.EventCursor, timeout.Token).WaitAsync(TimeSpan.FromSeconds(5));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => changes.WaitForChangeAsync(role with { AgentId = "wrong" }, session, 0, timeout.Token));
             var retry = await client.SendAsync(pending, timeout.Token);
             Assert.Equal(receipt.MessageId, retry.MessageId);
             Assert.Equal(receipt.TurnIds, retry.TurnIds);
@@ -118,7 +125,9 @@ public class NativeChatIntegrationTests
             Assert.Empty(network.Requests);
             using var probe = await http.GetAsync(new Uri(address, "/health/ready"), timeout.Token);
             Assert.Contains("/health/ready", network.Requests); // Prove the zero-HTTP observation is not a disabled listener.
+            var pendingSubscription = changes.WaitForChangeAsync(role, session, long.MaxValue, timeout.Token);
             await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pendingSubscription);
             await Assert.ThrowsAsync<ObjectDisposedException>(() => client.GetWorkspacesAsync(timeout.Token));
             await kernel.StartAsync(root, timeout.Token);
             using var restarted = factory.CreateChatClient();

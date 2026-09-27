@@ -8,21 +8,36 @@ namespace PuddingChat.WinUI;
 public sealed class MessageCard : UserControl
 {
     private Expander? _process;
+    private readonly TurnContentView _flow = new();
+    private readonly TextBlock _header = new() { FontSize = 12, Opacity = .65, TextWrapping = TextWrapping.Wrap };
+    private ChatMessage _message = null!;
+    private readonly InfoBar _outcome = new() { IsClosable = false, Severity = InfoBarSeverity.Error };
+    private readonly Dictionary<string, ProcessItem> _events = [];
+    private string? _run;
+    public void Update(ChatMessage message)
+    {
+        _message = message;
+        _header.Text = $"{message.SourceName}  ·  {message.CreatedAt.ToLocalTime():HH:mm}  ·  {message.Status}";
+        if (_run != message.RunId) { _events.Clear(); _run = message.RunId; }
+        foreach (var item in message.ProcessItems) _events[item.Id] = item;
+        _flow.Update(_events.Values, message.Content);
+        _outcome.IsOpen = message.TurnOutcome?.ErrorMessage is { Length: > 0 };
+        _outcome.Title = message.TurnOutcome?.Status ?? "";
+        _outcome.Message = message.TurnOutcome?.ErrorMessage ?? "";
+        if (_process is not null) _process.Header = "加载完整执行明细";
+    }
     public bool IsProcessExpanded { get => _process?.IsExpanded ?? false; set { if (_process is not null) _process.IsExpanded = value; } }
     public MessageCard(ChatMessage message, Func<Task<ProcessDetails>>? loadDetails = null)
     {
         var panel = new StackPanel { Spacing = 12 };
-        panel.Children.Add(new TextBlock { Text = $"{message.SourceName}  ·  {message.CreatedAt.ToLocalTime():HH:mm}  ·  {message.Status}",
-            FontSize = 12, Opacity = .65, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(RenderText(message.Content));
+        panel.Children.Add(_header); panel.Children.Add(_flow); Update(message);
         if (message.ContentParts?.Any(p => p.Type != "text") == true)
             panel.Children.Add(new TextBlock { Text = "此消息包含附件；附件预览尚未迁移。", Opacity = .65 });
-        if (message.TurnOutcome is { ErrorMessage.Length: > 0 } outcome)
-            panel.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Error, Title = outcome.Status, Message = outcome.ErrorMessage });
-        if (message.ProcessItems.Length > 0 || message.ProcessSummary?.HasDetails == true)
+        panel.Children.Add(_outcome);
+        if (message.Role != "user")
         {
             var details = new StackPanel { Spacing = 8 };
-            var expander = new Expander { Header = $"执行过程 · {message.ProcessSummary?.TotalItems ?? message.ProcessItems.Length} 项",
+            var expander = new Expander { Header = "加载完整执行明细",
                 Content = details, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
             _process = expander;
             var loaded = false; var loading = false;
@@ -32,7 +47,8 @@ public sealed class MessageCard : UserControl
                 try
                 {
                     var result = loadDetails is null ? new ProcessDetails(message.MessageId, message.ProcessItems) : await loadDetails();
-                    details.Children.Clear(); RenderProcess(details, result.ProcessItems);
+                    details.Children.Clear(); foreach (var item in result.ProcessItems) _events[item.Id] = item;
+                    _flow.Update(_events.Values, _message.Content);
                     if (result.Window?.HasMoreBefore == true) details.Children.Insert(0, new TextBlock { Text = "当前为部分事件窗口。", Opacity = .6 });
                     loaded = true;
                 }
@@ -43,11 +59,12 @@ public sealed class MessageCard : UserControl
             panel.Children.Add(expander);
         }
         var copy = new Button { Content = "复制", HorizontalAlignment = HorizontalAlignment.Left };
-        copy.Click += (_, _) => { var data = new Windows.ApplicationModel.DataTransfer.DataPackage(); data.SetText(message.Content);
+        copy.Click += (_, _) => { var data = new Windows.ApplicationModel.DataTransfer.DataPackage(); data.SetText(_message.Content);
             Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data); };
         panel.Children.Add(copy);
         var surface = Surfaces.Card(message.Role == "user" ? "SubtleFillColorSecondaryBrush" : "CardBackgroundFillColorDefaultBrush");
         surface.Padding = new Thickness(20); surface.Margin = new Thickness(0, 0, 0, 12); surface.CornerRadius = new CornerRadius(14); surface.Child = panel;
+        if (message.Role == "user") { surface.HorizontalAlignment = HorizontalAlignment.Right; surface.MaxWidth = 680; }
         Content = surface;
     }
     public static UIElement RenderText(string text)
@@ -74,17 +91,5 @@ public sealed class MessageCard : UserControl
             else buffer.Add(line);
         }
         Flush(); return panel;
-    }
-    public static void RenderProcess(StackPanel target, IEnumerable<ProcessItem> items)
-    {
-        foreach (var item in ChatSelection.Ordered(items))
-        {
-            var content = new StackPanel { Spacing = 6 };
-            foreach (var value in new[] { item.Text, item.Arguments, item.Output, item.Message })
-                if (!string.IsNullOrEmpty(value)) content.Children.Add(RenderText(value));
-            target.Children.Add(new Expander { Header = $"#{item.Sequence}  {item.Kind}  {item.Name}  ·  {item.Status}" +
-                (item.ExitCode is { } code ? $" · exit {code}" : ""), Content = content,
-                HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch });
-        }
     }
 }

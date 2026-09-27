@@ -10,7 +10,7 @@ using Core = PuddingCode.Platform;
 namespace PuddingDesktop.Composition;
 
 /// <summary>Direct application-service adapter. No HTTP, controller invocation or JSON serialization.</summary>
-internal sealed class InProcessChatClient(IServiceScopeFactory scopes, CancellationToken hostStopping) : IChatClient, IWorkspaceSetupClient, IConfigurationClient
+internal sealed class InProcessChatClient(IServiceScopeFactory scopes, CancellationToken hostStopping) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges
 {
     private readonly CancellationTokenSource _shutdown = CancellationTokenSource.CreateLinkedTokenSource(hostStopping);
     private readonly object _gate = new();
@@ -118,7 +118,10 @@ internal sealed class InProcessChatClient(IServiceScopeFactory scopes, Cancellat
     {
         const string owner = LocalUserId;
         var projection = services.GetRequiredService<IAgentConversationProjectionService>();
-        if (cursor is not null && await projection.GetConversationCursorAsync(role.WorkspaceId, owner, role.AgentId, token) == cursor) return null;
+        // Capture before the multi-query projection: a later commit must never be acknowledged
+        // by a snapshot that may not yet contain it. A redundant refresh is safe.
+        var readHead = await projection.GetConversationCursorAsync(role.WorkspaceId, owner, role.AgentId, token);
+        if (cursor is not null && readHead == cursor) return null;
         var view = await projection.GetConversationAsync(role.WorkspaceId, owner, role.AgentId, token);
         return new Conversation(view.WorkspaceId, view.AgentId, view.MainSessionId,
             view.Messages.Select(m => new ChatMessage(m.MessageId, m.RunId, m.Role, m.SourceName, m.CreatedAt, m.Content, m.Status,
@@ -128,8 +131,23 @@ internal sealed class InProcessChatClient(IServiceScopeFactory scopes, Cancellat
                 m.ContentParts?.Select(p => new PuddingChat.ContentPart(p.Type, p.ArtifactId, p.Detail)).ToArray())).ToArray(),
             view.ActiveRun is { } run ? new ActiveRun(run.RunId, run.Status, run.StatusText, run.Summary,
                 new OutputSnapshot(run.OutputSnapshot.Markdown, run.OutputSnapshot.ProcessItems.Select(Map).ToArray(), Map(run.OutputSnapshot.Window))) : null,
-            view.EventCursor);
+            Math.Min(readHead, view.EventCursor));
     }, ct);
+    public async Task WaitForChangeAsync(RoleKey role, string sessionId, long cursor, CancellationToken ct)
+        => await ExecuteAsync(async (services, token) =>
+        {
+            var session = await services.GetRequiredService<ISessionRepository>().GetAsync(sessionId, token);
+            if (session is null || session.WorkspaceId != role.WorkspaceId || (session.PrincipalId ?? session.AgentInstanceId) != role.AgentId)
+                throw new InvalidOperationException("会话与角色归属不匹配。");
+            var store = services.GetRequiredService<IConversationEventStore>();
+            var signal = services.GetRequiredService<ICommittedEventSignal>();
+            while (true)
+            {
+                token.ThrowIfCancellationRequested();
+                if ((await store.GetBoundsAsync(sessionId, token)).MaxSequence > cursor) return true;
+                await signal.WaitForChangeAsync(sessionId, cursor, token);
+            }
+        }, ct);
     public Task<string> EnsureSessionAsync(RoleKey role, Agent agent, CancellationToken ct) => ExecuteAsync(async (services, token) =>
     {
         return (await services.GetRequiredService<AgentMainSessionService>().EnsureAsync(role.WorkspaceId, role.AgentId,

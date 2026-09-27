@@ -73,3 +73,13 @@ Core 新增局部保存路径，在既有写锁内合并字段；价格、配额
 当前原生角色字段为名称、职责、启用、主模型（含恢复默认）、角色类型和系统提示词。完整 Markdown、Skill、权限审批、头像和价格/配额编辑仍为迁移边界。配置验证不包含真实付费 LLM 或真实服务商可达性验收。
 
 验证结果：BCL 21/21、原生窗口 16 项断言、Core 配置保留回归 2/2、真实 Host 组合 1/1。覆盖表单校验、保存后清空密钥输入、读取脱敏、密钥三态、角色主模型选择/恢复默认、隐藏字段保留、配置重启持久化及业务零 HTTP。Release 发布和发布包启停/重启/回调/退出租约验证通过。记录：`temp/native-config-ui-final.log`、`temp/native-config-preservation-tests.log`、`temp/native-config-core-final.log`、`temp/native-config-publish.log`、`temp/native-config-smoke.log`。
+
+## 聊天布局与流式活动接入（2026-09-27）
+
+按 Web TurnContentStream 行为落地原生交错消息流：连续思考与正文分段、工具按调用 ID 归并输入/结果、失败状态与退出码可见；块更新保留展开状态，已有消息控件不会整列卸载。新增角色搜索、输入归属提示、角色草稿与阅读位置恢复、回到最新消息。活动窗口内已见事件在当前展示生命周期累积，尚未读取的早期轨迹由完整明细补齐；没有虚构思考、工具结果或耗时。
+
+原生会话改用 `IConversationChanges` 直接等待 Core commit 信号，40 ms 合并刷新；停止每秒会话轮询。修复 Core 通知广播和先提交后订阅竞态。读取投影前捕获游标，保留并发提交的后续追赶机会。UI 无聊天 HTTP/JSON 序列化往返；仍复用 Core 查询投影，尚未实现全量 Web 增量 reducer。角色列表状态每 15 秒刷新一次。
+
+验证：组件 26/26；实际 WinUI 窗口 20 项检查（通知更新、角色隔离、搜索、折叠实例保留等）；真实 Core/通知组合 3/3，包含广播、先提交后订阅、取消隔离、非法角色拒绝、停止宿主时取消订阅和零聊天 HTTP。日志 `temp/native-stream-final.log`。组件先独立验证，再接入 Composition；验证使用隔离数据目录，不读取用户模型密钥、不调用付费模型。尚未完成真实模型长时间流式会话与视觉人工验收。
+
+最终控件复核仍为 26/26 + 20 项（`temp/native-stream-ui-final.log`）。整包 Release 发布尝试受工作区并行设置页 WIP 阻塞：`MainWindow.xaml.cs` 的 `Grid.IsEnabled` 产生 CS1061（`temp/native-stream-publish.log`）；未覆盖该 WIP，因此本轮不能宣称整包发布/发布包生命周期通过。真实 Core 组合内的启停与订阅释放验证已通过。

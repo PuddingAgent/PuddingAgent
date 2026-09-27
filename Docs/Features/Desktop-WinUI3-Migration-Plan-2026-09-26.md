@@ -16,6 +16,26 @@
 6. 按组件化交付规程先独立构建、测试、边界检查，再接入。用户要求原地重建：唯一产品工程仍为 `Source/PuddingDesktop/PuddingDesktop.csproj`，不存在长期并行 WinUI 产品工程。WPF 归档只作旧测试基线；M0–M5 为迁移阶段，不替代组件门禁。
 7. 旧版 49–77 人日估算作废；主线范围改变后，应在 M0 结束按组件盘点重新估算。
 
+## 0.1 原生聊天体验与进程内消息流（2026-09-27 最新裁定）
+
+整体按聊天软件组织，但角色始终是一等公民：左侧工作空间与角色列表（头像、职责、状态、搜索），中间当前角色主会话与固定输入框，右侧按需打开编码产物。角色切换保存独立草稿与阅读锚点；新输出仅在用户已处于底部时跟随，阅读历史时显示“回到最新消息”。正文阅读宽度限制为 900 DIP，用户消息靠右，助手回复包含可展开的执行活动。
+
+消息卡片以现有 Web `TurnContentStream.tsx`、`ReasoningDisclosureRow.tsx`、`ToolCallTree.tsx` 为行为基线，不移植 React 或 HTTP 协议：
+
+| Web 行为 | Native 归属 | 当前实现 |
+|---|---|---|
+| 正文与活动按 canonical sequence 交错 | BCL `TurnFlow` → WinUI `TurnContentView` | 连续正文/思考分别成段，正文只渲染一次 |
+| 思考输出可见、可展开 | `TurnContentView` 思考区 | 默认展开真实思考文本，不合成推理内容或耗时 |
+| 工具调用与结果归并 | `TurnFlow` | 按 TurnId + ToolCallId 配对，展示输入、输出、状态与退出码；同名并行调用保持独立 |
+| 稳定节点与折叠状态 | `MessageCard` / `TurnContentView` | 保留卡片和未变化的块，更新变化内容，不重建整个会话 |
+| 历史过程水合 | `IChatClient.GetProcessAsync` | 用户打开完整执行明细时直接调用 Core；最近活动窗口有截断提示 |
+
+调用链为 `WinUI → PuddingChat 端口 → Composition → Core 应用服务`。发送、取消、配置继续使用直接异步函数调用；新增 `IConversationChanges.WaitForChangeAsync` 订阅已提交事件，Core 广播唤醒所有订阅者，原生端合并 40 ms 内的突发通知后读取权威投影。没有聊天 HTTP/SSE、JWT 或 DTO JSON 往返，也不读取 `StreamingEventBus` 的竞争消费通道。Core 的 Run/Turn 状态机仍是唯一执行真源；Desktop 只维护选择代次、草稿、阅读锚点、折叠和订阅生命周期。
+
+已修复 `CommittedEventSignal` 的 Channel 竞争消费问题：保留单调 head、广播等待者、支持独立取消，覆盖先提交后订阅的竞态。投影读取前捕获 head，避免多查询投影末尾的较新游标确认尚未读入的事件。角色切换取消旧订阅；Core 停止时取消并等待进程内操作后释放宿主。
+
+性能与迁移边界：当前是通知驱动的合并投影刷新，不是逐 token 的零查询增量 reducer；角色列表状态仍每 15 秒刷新一次，当前会话不再定时轮询。后续应在 Core 提供可复用的强类型增量投影与完整性边界，Native 仅应用呈现差量。完整 Markdown/附件、嵌套工具树/子代理聚合、历史分页虚拟化、审批交互及真实模型长会话验收仍须逐项完成，不将本轮视为 Web 全量迁移验收。
+
 ## 1. 布局骨架：将参考图转为 Pudding 的职责分区
 
 ### 1.1 首版线框

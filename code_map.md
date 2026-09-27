@@ -1,3 +1,7 @@
+## 2026-09-27 原生聊天交错消息流
+
+`PuddingChat/TurnFlow.cs`（BCL 事件顺序/工具配对与通知端口）、`ReadingPosition.cs`（阅读锚点）→ `PuddingChat.WinUI/TurnContentView.cs`（原生思考/正文/工具块）与 `ChatWorkspace.cs`（角色搜索、订阅、滚动）。Composition `InProcessChatClient` 用 `ICommittedEventSignal` 进程内广播合并刷新会话；Core 通知实现位于 `PuddingPlatform/Services/CommittedEventSignal.cs`。设计与验证见 Desktop WinUI3 迁移计划和原生聊天实施记录。
+
 ## 2026-09-27 Desktop 数据目录
 
 `MainWindow.Kernel.cs` 默认 `D:\data`，已保存设置及 `--data-root` 可覆盖；运行中心支持编辑、保存和恢复默认，保存不会切换运行中的 Core，重开 Desktop 生效，不搬迁数据。

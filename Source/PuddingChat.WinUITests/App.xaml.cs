@@ -64,6 +64,19 @@ public partial class App : Application
                 Check(control.Composer.Draft == "", "receipt clears draft");
                 Check(fixture.Sent?.Role.AgentId == "builder", "send retains role");
                 Check(control.CurrentConversation?.Messages.Length == 2, "canonical messages displayed");
+                control.SetRoleFilter("does-not-exist");
+                Check(control.VisibleRoleCount == 0 && control.SelectedRole?.AgentId == "builder", "search preserves active role");
+                control.SetRoleFilter(""); Check(control.VisibleRoleCount == 2, "clear search restores roles");
+                fixture.Streaming = true; fixture.Changed.TrySetResult();
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+                    while (control.CurrentConversation?.EventCursor != 3) await Task.Delay(10, timeout.Token);
+                Check(control.CurrentConversation?.ActiveRun?.OutputSnapshot.Markdown == "流式正文", "commit notification streams without polling");
+                var flow = new TurnContentView();
+                flow.Update([new("thought", "thinking", "running", "思考", 1)], "正文");
+                var reasoning = (Expander)flow.Children[0]; reasoning.IsExpanded = false;
+                var answer = flow.Children[1];
+                flow.Update([new("thought", "thinking", "running", "思考继续", 1)], "正文");
+                Check(ReferenceEquals(reasoning, flow.Children[0]) && !reasoning.IsExpanded && ReferenceEquals(answer, flow.Children[1]), "stream retains blocks and disclosure state");
                 await control.CancelAsync(); Check(fixture.Cancelled == "turn", "canonical cancellation");
                 Check(MessageCard.RenderText("# Title\n```cs\nConsole.WriteLine(1);\n```\n正文") is StackPanel { Children.Count: 3 }, "native heading code text");
                 var slow = control.SelectRoleAsync("test", new Agent("slow", "slow"));
@@ -72,7 +85,7 @@ public partial class App : Application
                 Check(control.CurrentConversation?.AgentId == "reviewer", "late reply rejected");
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 16, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 20, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -80,7 +93,7 @@ public partial class App : Application
         _window.Activate();
     }
     private static void Check(bool condition, string label) { if (!condition) throw new InvalidOperationException(label); }
-    private sealed class Fixture : IChatClient, IWorkspaceSetupClient, IConfigurationClient
+    private sealed class Fixture : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges
     {
         public RoleSettings? SavedRole;
         public ProviderModelEdit? SavedProvider;
@@ -103,8 +116,15 @@ public partial class App : Application
         public Conversation Conversation(string agent) => new("test", agent, "session",
             Sent is null ? [] : [new("m", null, "user", "用户", DateTimeOffset.UtcNow, "implement", "accepted", []),
                 new("a", "r", "assistant", "代码工程师", DateTimeOffset.UtcNow, "# 进度\n```cs\nvar result = 1;\n```", "running", [])],
-            Sent is null ? null : new("r", "running", "执行中", "编译", new("输出", [new("e", "tool_call", "running", "dotnet build", 2, "terminal", ToolCallId: "call", TurnId: "turn")], new("turn", 2, 2, 2, false))),
-            Sent is null ? 0 : 2);
+            Sent is null ? null : new("r", "running", "执行中", "编译", new(Streaming ? "流式正文" : "输出", [new("e", "tool_call", "running", "dotnet build", 2, "terminal", ToolCallId: "call", TurnId: "turn")], new("turn", 2, 2, 2, false))),
+            Sent is null ? 0 : Streaming ? 3 : 2);
+        public readonly TaskCompletionSource Changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Streaming;
+        public async Task WaitForChangeAsync(RoleKey role, string sessionId, long cursor, CancellationToken ct)
+        {
+            if (cursor < 3) await Changed.Task.WaitAsync(ct);
+            else await Task.Delay(Timeout.Infinite, ct);
+        }
         public Task<Conversation?> GetConversationAsync(RoleKey role, long? cursor, CancellationToken ct) =>
             role.AgentId == "slow" ? Late.Task : Task.FromResult<Conversation?>(Conversation(role.AgentId));
         public Task<string> EnsureSessionAsync(RoleKey role, Agent agent, CancellationToken ct) => Task.FromResult("session");
