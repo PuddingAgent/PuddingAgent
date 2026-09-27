@@ -18,7 +18,8 @@ public partial class App
         {
             await UntilAsync(() => formula.Rendered || formula.RenderError is not null);
             Check(formula.Rendered, "fraction root and sum render in native formula control: " + formula.RenderError);
-            var image = (Image)((ScrollViewer)formula.Content).Content;
+            var presentation = ((Grid)formula.Content).Children.OfType<ScrollViewer>().Single();
+            var image = (Image)presentation.Content;
             Check(image.Source is BitmapImage bitmap && bitmap.PixelWidth > 20 && bitmap.PixelHeight > 20,
                 "formula has a decoded bitmap with nonempty dimensions");
             root.UpdateLayout(); await NextVisualFrameAsync();
@@ -28,7 +29,7 @@ public partial class App
                 "light formula bitmap contains visible dark glyph pixels");
             var old = formula.Rendering; formula.RequestedTheme = ElementTheme.Dark;
             await UntilAsync(() => !ReferenceEquals(old, formula.Rendering)); await formula.Rendering;
-            Check(formula.Rendered && ReferenceEquals(image, ((ScrollViewer)formula.Content).Content), "theme rerender retains native image without reparenting");
+            Check(formula.Rendered && ReferenceEquals(image, presentation.Content), "theme rerender retains native image without reparenting");
             root.UpdateLayout(); await NextVisualFrameAsync();
             var dark = new RenderTargetBitmap(); await dark.RenderAsync(image);
             pixels = (await dark.GetPixelsAsync()).ToArray();
@@ -37,14 +38,18 @@ public partial class App
         }
         finally { root.Children.Remove(formula); }
         await UntilAsync(() => !formula.IsLoaded && !formula.Rendered);
-        Check(formula.Content is TextBlock, "unloaded formula releases its rendered bitmap");
+        Check(((Grid)formula.Content).Children.OfType<TextBlock>().Single().Visibility == Visibility.Visible, "unloaded formula releases its rendered bitmap");
+        root.Children.Add(formula);
+        try { await UntilAsync(() => formula.Rendered); Check(formula.IsLoaded, "genuinely detached formula renders again after remount"); }
+        finally { root.Children.Remove(formula); }
         foreach (var latex in new[] { @"\thiscommanddoesnotexist{x}", new string('{', 65) + "x" + new string('}', 65), new string('x', 4097) })
         {
             var fallback = new MathFormulaView(latex); root.Children.Add(fallback);
             try
             {
                 await UntilAsync(() => fallback.IsLoaded); await Task.Delay(50); await fallback.Rendering;
-                Check(!fallback.Rendered && fallback.Content is TextBlock text && text.IsTextSelectionEnabled && text.Text == latex,
+                var text = ((Grid)fallback.Content).Children.OfType<TextBlock>().Single();
+                Check(!fallback.Rendered && text.Visibility == Visibility.Visible && text.IsTextSelectionEnabled && text.Text == latex,
                     "unsupported or excessive formula preserves selectable exact source");
             }
             finally { root.Children.Remove(fallback); }

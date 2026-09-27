@@ -318,3 +318,11 @@ ChatComposer 的拖放及 Ctrl+V 现接收 StorageItems 中的图片与文本/�
 新增 `PuddingChat.WinUITests/VisualPreview.cs`：真实 ChatWorkspace + fixture，渲染 1000 DIP 浅色、360 DIP 浅色和 1000 DIP 深色截图，报告附图片路径。RenderTargetBitmap 使用实色主题背景，不能证明 Mica/Acrylic 系统材质。截图发现空附件区与关闭 InfoBar 的间距浪费，ChatComposer 现在将它们 Collapsed；新增布局断言验证实际高度减少。标题副文案显示角色职责，消息状态复用中文标签，不再把内部 workspace/agent/session ID 放在主界面。60 逻辑/172 窗口检查通过，组件构建零警告/错误。
 
 **视觉验收仍未通过：** 完整聊天截图中行内公式仍呈现原文（例如 `f(x)=x^2`），虽然控件诊断为 Rendered=true、RenderError=null；独立公式像素检查无法证明组合后的外观。已验证等待异步渲染/下一帧、重新测量 RichTextBlock 均未消除此现象；未保留无效的产品重新测量改动。下一步应检查 InlineUIContainer 内控件内容切换/原生捕获行为，不能据绿色组件测试宣称已修复。可复现截图：`temp/test-out/native-chat-dec817b4c5f64bcb89c814079fce51fd/`；后续诊断截图 `native-chat-53f298465f9b4d1c8ed9db4357cb2fed` 结果一致。完整 DPI、IME、屏幕阅读器和真实模型交互仍待验。
+
+## 行内公式生命周期修复（2026-09-27）
+
+关闭上节记录的“Rendered=true 但完整聊天显示原文”问题。诊断显示同一公式在短时间内渲染代次达到 46，实际内容不断回到 TextBlock，未报解析错误。InlineUIContainer 的布局期间存在短暂卸载/重载；原实现每次 Loaded 重绘、Unloaded 立即清空位图，形成循环。仅固定内容树或调用 InvalidateMeasure 不足以解决。
+
+MathFormulaView 现在使用固定 Grid 承载文本与图片，以 Visibility 切换；同主题已经完成或进行中的渲染不重复启动；卸载清理通过 DispatcherQueue 延后检查 IsLoaded，仅真正离开视觉树才取消/释放。真实卸载后重挂载仍重新渲染。修复后的诊断代次为 1，图片具有实际尺寸且原文折叠；行内字号 14、边距 2，与正文更协调，独立公式块字号保持 22。
+
+回归：60 逻辑/179 原生窗口检查通过，构建零警告/错误，日志 `temp/native-inline-math-final.log`。新增 7 项检查覆盖真正卸载重载，以及完整 ChatWorkspace 在宽屏/窄屏/深色三种场景的实际图片可见、原文折叠与后续帧稳定；保留浅深字形像素检查。实看最终截图 `temp/test-out/native-chat-5301d8a8a2c34a31a19eb67e08bba98f/ui.compact-light.png` 和 `ui.wide-dark.png`，公式正确排版，窄屏样例能与正文同排。此次没有重启用户产品、重新执行 Core 测试或验证全量 TeX、DPI/屏幕阅读器；只关闭已复现的组合显示问题。

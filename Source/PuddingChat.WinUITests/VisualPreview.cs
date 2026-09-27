@@ -36,8 +36,20 @@ public partial class App
                 await NextVisualFrameAsync(); root.UpdateLayout();
                 foreach (var math in Descendants<MathFormulaView>(view)) await math.Rendering;
                 root.UpdateLayout(); await NextVisualFrameAsync();
+                var formulas = Descendants<MathFormulaView>(view).ToArray();
+                Check(formulas.Length == 2 && formulas.All(math => math.Rendered
+                    && Descendants<Image>(math).Any(image => image.ActualWidth > 0 && image.ActualHeight > 0)
+                    && Descendants<TextBlock>(math).All(text => text.Visibility == Visibility.Collapsed)),
+                    name + " complete chat presents formula bitmaps instead of source fallback");
+                var renderTasks = formulas.Select(math => math.Rendering).ToArray();
+                await NextVisualFrameAsync(); await NextVisualFrameAsync();
+                Check(formulas.Select((math, index) => math.Rendered && ReferenceEquals(math.Rendering, renderTasks[index])).All(stable => stable),
+                    name + " inline formulas remain stable over subsequent layout frames");
                 await File.WriteAllTextAsync(Path.ChangeExtension(Report, "." + name + ".math.json"),
-                    System.Text.Json.JsonSerializer.Serialize(Descendants<MathFormulaView>(view).Select(math => new { math.Latex, math.IsLoaded, math.Rendered, math.RenderError })));
+                    System.Text.Json.JsonSerializer.Serialize(Descendants<MathFormulaView>(view).Select(math => new { math.Latex, math.IsLoaded, math.Rendered, math.RenderError,
+                        Content = math.Content?.GetType().Name, math.ActualWidth, math.ActualHeight, TaskStatus = math.Rendering.Status.ToString(),
+                        Text = Descendants<TextBlock>(math).Select(text => text.Text).ToArray(),
+                        Images = Descendants<Image>(math).Select(image => new { image.ActualWidth, image.ActualHeight, Source = image.Source?.GetType().Name }).ToArray() })));
                 var target = new RenderTargetBitmap(); await target.RenderAsync(surface);
                 var pixels = (await target.GetPixelsAsync()).ToArray();
                 var path = Path.ChangeExtension(Report, "." + name + ".png");

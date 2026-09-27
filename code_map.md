@@ -1344,3 +1344,7 @@ PuddingDesktop/MainWindow.Kernel.RunKernelSmokeAsync 在隔离数据目录创建
 ## 原生聊天视觉检查与输入区收敛（2026-09-27）
 
 `ChatComposer` 折叠空附件区和关闭的错误提示，避免无内容时占据输入区间距；`ChatWorkspace` 标题显示角色职责；`MessageCard` 显示中文状态。`PuddingChat.WinUITests/VisualPreview.cs` 输出宽/窄/深色原生截图，MathFormulaChecks 等待绘制帧再检查像素。60 逻辑/172 窗口检查通过。完整消息行内公式截图仍显示原文，与 Rendered=true 诊断不一致，已记录为待修复视觉问题；详见原生聊天实施报告。
+
+## 原生行内公式显示修复（2026-09-27）
+
+`PuddingChat.WinUI/MathFormulaView` 固定内容树、同主题渲染去重、延迟确认真实卸载，消除完整聊天中的反复重载回退。`VisualPreview` 验证宽/窄/深色消息中图片真实可见、原文折叠及跨帧稳定，`MathFormulaChecks` 验证真正卸载后重挂载；60 逻辑/179 窗口检查通过，已检查最终截图。详见原生聊天实施报告。

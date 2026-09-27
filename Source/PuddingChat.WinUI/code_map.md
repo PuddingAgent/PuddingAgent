@@ -21,3 +21,5 @@ The host supplies `IChatClient`, owns this control's disposal, and receives sett
 `WorkspaceSetupForm`: native workspace/first-role creation with existing model selection, validation and retry feedback. ChatWorkspace hosts the dialog and selects the returned role. Advanced Web management remains explicitly separate.
 
 `ProviderConfigurationForm`: native provider/chat-model create/edit and explicit key retention/replacement/clear, password input cleared on save/unload. `RoleConfigurationForm`: name, description, enabled, main model, role type and system prompt. ChatWorkspace opens modal editors, refreshes role cards after save; advanced settings remain separate.
+
+`MathFormulaView` lifecycle: stable Grid/visibility switching, same-theme render deduplication, and DispatcherQueue-delayed unload release guarded by IsLoaded. Prevents InlineUIContainer reflow from cancelling completed images repeatedly. VisualPreview asserts actual image dimensions, collapsed source and stable rendering tasks across frames in wide/compact/dark full-message scenes; genuine unmount/remount remains covered.
