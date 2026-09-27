@@ -10,7 +10,7 @@ Programmatic native WinUI controls, no WebView/HTML or host dependency.
 - `TurnContentView` / `ActivityContentView`: ordered thinking/tool/delegation disclosures, stable content slots and progressive expansion.
 - `VirtualTranscript` / `MessageViewState`: viewport realization and persistent nonvisual disclosure state.
 
-The host supplies `IChatClient`, owns this control's disposal, and receives settings/runtime navigation events. Image attachments and paged history are connected through independent contracts. Formula rendering, general file context, voice and remaining product acceptance are tracked in the native chat completion audit.
+The host supplies `IChatClient`, owns this control's disposal, and receives settings/runtime navigation events. Image attachments and paged history are connected through independent contracts. ChatComposer/ChatWorkspace import text files as per-role snapshots with native preview/removal, then send them through the existing client port. Binary document extraction, formula rendering, voice and remaining product acceptance are tracked in the native chat completion audit.
 
 `WorkspaceSetupForm`: native workspace/first-role creation with existing model selection, validation and retry feedback. ChatWorkspace hosts the dialog and selects the returned role. Advanced Web management remains explicitly separate.
 

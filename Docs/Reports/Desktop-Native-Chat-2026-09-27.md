@@ -256,3 +256,9 @@ Composition 的 InProcessChatClient.SubAgents 直接读取 ISubAgentRunStore，�
 验证：BCL 50/50、原生窗口 125 项，零构建警告/错误（temp/native-code-highlight-final.log）。新增 7 项覆盖 C# 彩色 Inline、实际浅/深主题、追加时换行与原文保留、JSON/JavaScript/Python/PowerShell、未知语言、20K 完整纯文本回退与 CRLF 无损。既有代码横向阅读和活动嵌套测试继续通过。未修改 Core 或部署当前 Desktop。
 
 来源：[官方仓库](https://github.com/CommunityToolkit/ColorCode-Universal)、[WinUI 包与许可](https://www.nuget.org/packages/ColorCode.WinUI/2.0.15)、[格式化器源文件](https://github.com/CommunityToolkit/ColorCode-Universal/blob/e6c2701c365a7a91d74d7ef38a6b60075008ce94/ColorCode.UWP/RichTextBlockFormatter.cs)。采用包元数据所声明的版本和 MIT 许可，未复制上游源码到项目。
+
+## 原生文本文件上下文（2026-09-27）
+
+输入框新增文件选择、快照预览和移除，按角色保存附件草稿；发送冻结内容，回执仅清理已受理附件。Composition 直接把 SubmittedText 交给现有 ISubmitTurnHandler，不新增 HTTP。支持 UTF-8/带 BOM 的 UTF-16，单文件 256 KiB、8 文件、512 KiB 合计，并遵守 Core 100,000 字符限制；拒绝超限/乱码，不截断。旧 Web 一般附件按钮本来未实现，本项是新增文本上下文，PDF/Office 提取仍待实现。
+
+验证：57 项逻辑、132 项原生窗口、3/3 Core 组合测试通过；最终原生构建零警告/错误，Core 有既存警告。真实 Core 测试删除源文件后提交并重试，确认历史正文与快照一致、图片共存、零 HTTP。日志 temp/native-text-files-final.log、temp/native-text-files-core.log。没有部署运行中 Desktop。设计与剩余门禁见 Docs/Features/Desktop-Native-Text-Context-2026-09-27.md。

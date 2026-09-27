@@ -158,7 +158,8 @@ internal sealed partial class InProcessChatClient(IServiceScopeFactory scopes, C
         if (session is null || session.WorkspaceId != send.Role.WorkspaceId || (session.PrincipalId ?? session.AgentInstanceId) != send.Role.AgentId)
             throw new InvalidOperationException("消息与角色主会话归属不匹配。");
         var parts = new List<Core.ContentPart>();
-        if (!string.IsNullOrWhiteSpace(send.Text)) parts.Add(new Core.ContentPart { Type = "text", Text = send.Text });
+        var submittedText = send.SubmittedText;
+        if (!string.IsNullOrWhiteSpace(submittedText)) parts.Add(new Core.ContentPart { Type = "text", Text = submittedText });
         foreach (var image in send.Images ?? []) parts.Add(new Core.ContentPart { Type = "image", ArtifactId = image.ArtifactId, Detail = "original" });
         var result = await services.GetRequiredService<ISubmitTurnHandler>().HandleAsync(new SubmitTurnCommand(
             send.ConversationId, send.Role.WorkspaceId, LocalUserId, send.ClientRequestId, send.ClientMessageId,

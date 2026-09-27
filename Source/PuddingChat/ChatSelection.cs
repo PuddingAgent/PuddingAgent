@@ -6,6 +6,18 @@ public sealed class ChatSelection
     private readonly Dictionary<RoleKey, string> _drafts = [];
     private readonly Dictionary<RoleKey, PendingSend> _pending = [];
     private readonly Dictionary<RoleKey, List<AttachedImage>> _images = [];
+    private readonly Dictionary<RoleKey, List<TextFileContext>> _files = [];
+    public IReadOnlyList<TextFileContext> Files => Role is { } role ? FilesFor(role) : [];
+    public IReadOnlyList<TextFileContext> FilesFor(RoleKey role) => _files.TryGetValue(role, out var files) ? files.ToArray() : [];
+    public void AddFiles(RoleKey role, IReadOnlyList<TextFileContext> files)
+    {
+        var merged = FilesFor(role).Concat(files).ToArray();
+        TextFileContexts.Validate(merged);
+        TextFileContexts.Compose(_drafts.GetValueOrDefault(role, ""), merged);
+        _files[role] = merged.ToList();
+    }
+    public void RemoveFile(string id)
+    { if (Role is { } role && _files.TryGetValue(role, out var files)) files.RemoveAll(f => f.Id == id); }
     public IReadOnlyList<AttachedImage> Images => Role is { } role ? ImagesFor(role) : [];
     public IReadOnlyList<AttachedImage> ImagesFor(RoleKey role) => _images.TryGetValue(role, out var images) ? images.ToArray() : [];
     public void AddImage(RoleKey role, AttachedImage image)
@@ -23,7 +35,7 @@ public sealed class ChatSelection
         set { if (Role is { } role) _drafts[role] = value; } }
     public PendingSend? Pending => Role is { } role ? _pending.GetValueOrDefault(role) : null;
     public void Select(RoleKey? role) { Role = role; Generation++; Conversation = null; _historyExpanded = false; }
-    public void Clear() { Select(null); _drafts.Clear(); _pending.Clear(); _images.Clear(); }
+    public void Clear() { Select(null); _drafts.Clear(); _pending.Clear(); _images.Clear(); _files.Clear(); }
     public bool Apply(long generation, Conversation conversation)
     {
         if (generation != Generation || Role != new RoleKey(conversation.WorkspaceId, conversation.AgentId)) return false;
@@ -50,20 +62,28 @@ public sealed class ChatSelection
     private static ChatMessage[] MergeMessages(IEnumerable<ChatMessage> older, IEnumerable<ChatMessage> current)
         => older.Concat(current).GroupBy(m => m.CanonicalMessageId ?? m.MessageId, StringComparer.Ordinal).Select(g => g.Last())
             .OrderBy(m => m.CreatedAt).ToArray();
-    public PendingSend Prepare(string session, string? capturedDraft = null, IReadOnlyList<AttachedImage>? capturedImages = null)
+    public PendingSend Prepare(string session, string? capturedDraft = null, IReadOnlyList<AttachedImage>? capturedImages = null, IReadOnlyList<TextFileContext>? capturedFiles = null)
     {
         var role = Role ?? throw new InvalidOperationException("先选择角色。");
         if (_pending.TryGetValue(role, out var retry)) return retry;
         var text = capturedDraft ?? Draft;
         var images = capturedImages ?? Images;
-        if (string.IsNullOrWhiteSpace(text) && images.Count == 0) throw new InvalidOperationException("请输入消息或添加图片。");
-        var send = PendingSend.Create(role, session, text, images);
+        var files = capturedFiles ?? Files;
+        TextFileContexts.Validate(files);
+        TextFileContexts.Compose(text, files);
+        if (string.IsNullOrWhiteSpace(text) && images.Count == 0 && files.Count == 0) throw new InvalidOperationException("请输入消息或添加附件。");
+        var send = PendingSend.Create(role, session, text, images, files);
         _pending.Add(role, send); return send;
     }
     public void Accept(PendingSend send)
     {
         if (!_pending.TryGetValue(send.Role, out var pending) || pending.ClientRequestId != send.ClientRequestId) return;
         _pending.Remove(send.Role);
+        if (_files.TryGetValue(send.Role, out var files))
+        {
+            var acceptedFiles = (send.Files ?? []).Select(f => f.Id).ToHashSet(StringComparer.Ordinal);
+            files.RemoveAll(f => acceptedFiles.Contains(f.Id));
+        }
         if (_images.TryGetValue(send.Role, out var images))
         {
             var accepted = (send.Images ?? []).Select(i => i.ArtifactId).ToHashSet(StringComparer.Ordinal);

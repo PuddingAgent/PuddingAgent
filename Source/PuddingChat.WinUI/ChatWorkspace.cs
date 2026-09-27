@@ -135,6 +135,8 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         Composer.DraftChanged += (_, _) => { if (!_changingDraft) _state.Draft = Composer.Draft; UpdateComposer(); };
         Composer.SendRequested += async (_, _) => await GuardAsync(SendAsync);
         Composer.AttachRequested += async (_, _) => await GuardAsync(PickImagesAsync);
+        Composer.AttachFileRequested += async (_, _) => await GuardAsync(PickTextFilesAsync);
+        Composer.RemoveFileRequested += id => { _state.RemoveFile(id); Composer.SetFiles(_state.Files); UpdateComposer(); };
         Composer.ImportImagesAsync = data => AddImageBatchAsync((import, ct) => NativeImageTransfer.ReadAsync(data, import, ct));
         Composer.RemoveImageRequested += id => { _state.RemoveImage(id); Composer.SetImages(_state.Images); UpdateComposer(); };
         Composer.CancelRequested += async (_, _) => await GuardAsync(CancelAsync);
@@ -507,6 +509,35 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         await AddImagesAsync(files.Select(f => f.Path));
     }
     public Task AddImagesAsync(IEnumerable<string> paths) => AddImageBatchAsync((import, _) => import(paths.ToArray()));
+    private async Task PickTextFilesAsync()
+    {
+        if (_state.Role is null || _addingImages || _busy) return;
+        var generation = _state.Generation;
+        var picker = new Microsoft.Windows.Storage.Pickers.FileOpenPicker(XamlRoot.ContentIslandEnvironment.AppWindowId)
+        { CommitButtonText = "添加文本文件", FileTypeFilter = { "*" } };
+        var files = await picker.PickMultipleFilesAsync().AsTask(_lifetime.Token);
+        if (_disposed || generation != _state.Generation) return;
+        await AddTextFilesAsync(files.Select(f => f.Path));
+    }
+    public async Task AddTextFilesAsync(IEnumerable<string> paths)
+    {
+        if (_state.Role is not { } role || _addingImages || _busy || _agent is not { IsEnabled: true, IsFrozen: false }) return;
+        var selected = paths.Take(TextFileContexts.MaxFiles + 1).ToArray();
+        if (selected.Length + _state.FilesFor(role).Count > TextFileContexts.MaxFiles)
+            throw new ArgumentException("每条消息最多添加 8 个文本文件。");
+        _addingImages = true; UpdateComposer();
+        try
+        {
+            var files = new List<TextFileContext>();
+            foreach (var path in selected)
+                files.Add(await Task.Run(() => TextFileContexts.ReadAsync(path, _lifetime.Token), _lifetime.Token));
+            if (_disposed) return;
+            // Batch import is atomic; failures keep the old draft, and late completion belongs to the captured role.
+            _state.AddFiles(role, files);
+            if (_state.Role == role) Composer.SetFiles(_state.Files);
+        }
+        finally { _addingImages = false; if (!_disposed) UpdateComposer(); }
+    }
     private async Task AddImageBatchAsync(Func<Func<IReadOnlyList<string>, Task>, CancellationToken, Task> read)
     {
         if (_client is not IImageAttachmentClient images || _state.Role is not { } role || _addingImages || _busy
@@ -538,6 +569,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         var generation = _state.Generation;
         var capturedDraft = _state.Draft;
         var capturedImages = _state.Images;
+        var capturedFiles = _state.Files;
         // Sending has a lifetime independent of selection. Its receipt belongs to the captured role.
         try
         {
@@ -546,7 +578,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
             {
                 var session = await _client.EnsureSessionAsync(role, agent, _lifetime.Token);
                 if (_disposed || generation != _state.Generation) return;
-                pending = _state.Prepare(session, capturedDraft, capturedImages);
+                pending = _state.Prepare(session, capturedDraft, capturedImages, capturedFiles);
             }
             try { await _client.SendAsync(pending, _lifetime.Token); }
             catch (ArgumentException) { _state.Reject(pending); throw; }
@@ -568,13 +600,14 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         if (_disposed || _state.Role != role) return;
         _notice.IsOpen = true; _notice.Title = "已请求停止"; _notice.Message = "等待 Core 确认取消结果。";
     }
-    private void SetDraft() { _changingDraft = true; try { Composer.Draft = _state.Draft; Composer.SetImages(_state.Images); } finally { _changingDraft = false; } }
+    private void SetDraft() { _changingDraft = true; try { Composer.Draft = _state.Draft; Composer.SetImages(_state.Images); Composer.SetFiles(_state.Files); } finally { _changingDraft = false; } }
     private void UpdateComposer()
     {
         Composer.SetAttachmentAvailability(!_busy && !_addingImages && _client is IImageAttachmentClient && _agent is { IsEnabled: true, IsFrozen: false });
+        Composer.SetFileAvailability(!_busy && !_addingImages && _agent is { IsEnabled: true, IsFrozen: false });
         Composer.SetContext(_agent?.Label, _agent is { IsEnabled: true, IsFrozen: false });
         Composer.SetAvailability(_connected && !_busy && !_addingImages && _agent is { IsEnabled: true, IsFrozen: false }
-        && (_state.Pending is not null || !string.IsNullOrWhiteSpace(_state.Draft) || _state.Images.Count > 0), ChatSelection.ActiveTurn(_state.Conversation) is not null, _state.Pending is not null);
+        && (_state.Pending is not null || !string.IsNullOrWhiteSpace(_state.Draft) || _state.Images.Count > 0 || _state.Files.Count > 0), ChatSelection.ActiveTurn(_state.Conversation) is not null, _state.Pending is not null);
     }
     public int VisibleRoleCount => _roles.Items.Count;
     public void SetRoleFilter(string text) { _search.Text = text; ApplyRoleFilter(); }

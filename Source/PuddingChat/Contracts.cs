@@ -25,10 +25,11 @@ public sealed record Conversation(string WorkspaceId, string AgentId, string Mai
     ActiveRun? ActiveRun, long EventCursor, HistoryCursor? OlderCursor = null);
 public sealed record ProcessDetails(string MessageId, ProcessItem[] ProcessItems, EventWindow? Window = null);
 public sealed record Acceptance(string ConversationId, string MessageId, string[] TurnIds, long AcceptedSequence);
-public sealed record PendingSend(RoleKey Role, string ConversationId, string Text, string ClientRequestId, string ClientMessageId, IReadOnlyList<AttachedImage>? Images = null)
+public sealed record PendingSend(RoleKey Role, string ConversationId, string Text, string ClientRequestId, string ClientMessageId, IReadOnlyList<AttachedImage>? Images = null, IReadOnlyList<TextFileContext>? Files = null)
 {
-    public static PendingSend Create(RoleKey role, string conversation, string text, IEnumerable<AttachedImage>? images = null) =>
-        new(role, conversation, text, Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), Array.AsReadOnly(images?.ToArray() ?? []));
+    public string SubmittedText => TextFileContexts.Compose(Text, Files ?? []);
+    public static PendingSend Create(RoleKey role, string conversation, string text, IEnumerable<AttachedImage>? images = null, IEnumerable<TextFileContext>? files = null) =>
+        new(role, conversation, text, Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), Array.AsReadOnly(images?.ToArray() ?? []), Array.AsReadOnly(files?.ToArray() ?? []));
 }
 
 public interface IChatClient : IDisposable

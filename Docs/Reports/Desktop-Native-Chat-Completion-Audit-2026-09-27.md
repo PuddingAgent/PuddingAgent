@@ -11,7 +11,7 @@
 | 稳定阅读与长记录 | VirtualTranscript、FlowWindow、ReadingBookmark、历史直接调用端口 | 窗口覆盖消息虚拟化、渐进展开、阅读锚点；单 Turn 全展开、巨型文本与长期内存指标待验 |
 | 消息/输入布局 | MessageCard、ChatComposer，用户消息靠右、900 DIP 阅读宽度、窄输入栏两行 | 窗口覆盖 320/360/900 DIP 输入区；整窗主题、DPI、字体缩放、键盘及 IME 尚缺完整矩阵 |
 | 原 Web 富文本能力 | MarkdownView 原生 GFM、CodeBlockView 通过 ColorCode 渲染原生语法高亮、ImageAttachmentView | 代码复制/换行/常见语言着色、列表表格链接及受控图片已具备；公式、Markdown 生成图片资源解析未实现。长代码不着色但保留全文，高对比度实时通知受宿主能力限制 |
-| 图片与一般上下文附件 | 原生选图/剪贴板/拖放→Core Artifact→typed input parts | 图片合同与解码已测；系统选择器实际操作、真实视觉调用待验，一般文件上下文入口未接入 |
+| 图片与一般上下文附件 | 图片：选图/剪贴板/拖放→Core Artifact；文本：系统选择器→不可变快照→角色草稿→既有 Core text 提交 | 文本/源代码预览、移除、发送及删除源文件后的重试已接通；57 逻辑/132 窗口/3 Core 测试通过。原 Web 的一般附件本就未实现；PDF/Office 提取、文件拖放与历史独立附件卡、真实模型及系统选择器人工验收仍缺失 |
 | 审批卡与真实工具恢复 | ApprovalCard、PuddingApproval、SqliteApprovalStore 独立组件；Runtime 保留准入状态 | 未完成：请求生产者、持久暂停/恢复、Core 决定端口及产品待审批区域未接线。不能用独立卡片测试替代闭环 |
 | 子代理与其他聊天富交互 | TurnFlow 保留精确 RunId；原生检查器经 Composition 读取 Core 归档，委派卡入口已接入；窗口 118 项与 Core 3/3 隔离验证 | 真实模型委派交互、超大归档性能待验；语音聊天尚未迁移 |
 | 用户实际产品效果 | 独立 WinUI harness 与历史部署记录 | 本轮没有发布/替换运行中 Desktop；不能凭组件通过宣称当前产品已加载新代码 |

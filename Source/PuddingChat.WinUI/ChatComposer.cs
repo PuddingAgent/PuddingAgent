@@ -13,6 +13,14 @@ public sealed class ChatComposer : UserControl
     private readonly Button _send = new() { Content = "发送 ↑", HorizontalAlignment = HorizontalAlignment.Right };
     private readonly Button _attach = new() { Content = "＋ 图片" };
     private readonly Button _pasteImage = new() { Content = "粘贴图片" };
+    private readonly Button _attachFile = new() { Content = "文件" };
+    private IReadOnlyList<AttachedImage> _imageItems = [];
+    private IReadOnlyList<TextFileContext> _fileItems = [];
+    public event EventHandler? AttachFileRequested;
+    public event Action<string>? RemoveFileRequested;
+    public int FileCount => _fileItems.Count;
+    public void SetFiles(IReadOnlyList<TextFileContext> files) { _fileItems = files.ToArray(); RenderAttachments(); }
+    public void SetFileAvailability(bool enabled) => _attachFile.IsEnabled = enabled;
     private readonly InfoBar _transferNotice = new() { IsOpen = false, IsClosable = true, Severity = InfoBarSeverity.Error };
     public Func<DataPackageView, Task>? ImportImagesAsync { get; set; }
     public string TransferError => _transferNotice.IsOpen ? _transferNotice.Message : "";
@@ -22,11 +30,13 @@ public sealed class ChatComposer : UserControl
     private readonly StackPanel _messageActions = new() { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
     public event EventHandler? AttachRequested;
     public event Action<string>? RemoveImageRequested;
-    public int ImageCount => _images.Children.Count;
+    public int ImageCount => _imageItems.Count;
     public void SetImages(IReadOnlyList<AttachedImage> images)
+    { _imageItems = images.ToArray(); RenderAttachments(); }
+    private void RenderAttachments()
     {
         _images.Children.Clear();
-        foreach (var image in images)
+        foreach (var image in _imageItems)
         {
             var row = new Grid { ColumnSpacing = 8 };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -36,6 +46,20 @@ public sealed class ChatComposer : UserControl
             row.Children.Add(new TextBlock { Text = image.Name, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
             ToolTipService.SetToolTip(row, image.Name); Grid.SetColumn(remove, 1);
             row.Children.Add(remove); _images.Children.Add(row);
+        }
+        foreach (var file in _fileItems)
+        {
+            var row = new Grid { ColumnSpacing = 8 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var preview = new Button { HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left,
+                Content = new TextBlock { Text = file.Name, TextTrimming = TextTrimming.CharacterEllipsis } };
+            ToolTipService.SetToolTip(preview, $"{file.SourcePath}\n{file.ByteCount:N0} 字节 · 点击查看导入时的文本快照");
+            preview.Flyout = new Flyout { Content = new ScrollViewer { MaxHeight = 300, MaxWidth = 420,
+                Content = new TextBlock { Text = file.Text, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true } } };
+            var remove = new Button { Content = "移除", Tag = file.Id };
+            remove.Click += (_, _) => RemoveFileRequested?.Invoke(file.Id);
+            Grid.SetColumn(remove, 1); row.Children.Add(preview); row.Children.Add(remove); _images.Children.Add(row);
         }
     }
     public void SetAttachmentAvailability(bool enabled) { _attach.IsEnabled = enabled; _pasteImage.IsEnabled = enabled; }
@@ -51,7 +75,7 @@ public sealed class ChatComposer : UserControl
         _toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         _toolbar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _toolbar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _attachmentActions.Children.Add(_attach); _attachmentActions.Children.Add(_pasteImage);
+        _attachmentActions.Children.Add(_attach); _attachmentActions.Children.Add(_pasteImage); _attachmentActions.Children.Add(_attachFile);
         _messageActions.Children.Add(_cancel); _messageActions.Children.Add(_send);
         _toolbar.Children.Add(_attachmentActions); _toolbar.Children.Add(_messageActions);
         Grid.SetColumn(_messageActions, 1);
@@ -84,6 +108,8 @@ public sealed class ChatComposer : UserControl
         AddHandler(DropEvent, new DragEventHandler(OnDrop), true);
         _send.Click += (_, _) => SendRequested?.Invoke(this, EventArgs.Empty);
         _attach.Click += (_, _) => AttachRequested?.Invoke(this, EventArgs.Empty);
+        _attachFile.Click += (_, _) => AttachFileRequested?.Invoke(this, EventArgs.Empty);
+        ToolTipService.SetToolTip(_attachFile, "添加文本或源代码文件（UTF-8 / 带 BOM 的 UTF-16，单文件最多 256 KiB）");
         _cancel.Click += (_, _) => CancelRequested?.Invoke(this, EventArgs.Empty);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_editor, "当前角色的消息草稿");
     }
