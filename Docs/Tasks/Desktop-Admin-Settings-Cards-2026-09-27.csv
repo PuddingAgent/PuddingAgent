@@ -32,8 +32,8 @@ skills,技能与进化,evolution,EVO MAP,skill-evolution,EVO MAP,已接入,DS-07
 skills,技能与进化,installs,安装台账,skill-installs,安装台账,已接入,DS-07,agentInstanceId；skillId；installedVersion；contentHash；安装台账；更新检查,pages/skill-management/InstallsTab.tsx,保留 Web 的实际查询、写入和错误语义。
 skills,技能与进化,events,事件审计,skill-events,事件审计,已接入,DS-07,技能/事件/时间筛选；分页；事件详情,pages/skill-management/EventsTab.tsx,保留 Web 的实际查询、写入和错误语义。
 skills,技能与进化,legacy,技能包（旧）,skill-legacy,技能包（旧）,已接入,DS-07,skillPackageId/name/description/version；sortOrder/isEnabled；zip/tar.gz/tgz 文件；创建/编辑/删除；上传新版本/下载,pages/skill-management/LegacySkillPackages.tsx,保留 Web 的实际查询、写入和错误语义。
-memory,记忆资料库,library,资料库,memory-tree,图书馆与页面树,待迁移,DS-08,libraryId；页面树；节点 name/summary/nodeType；父节点；创建 Page/Book,pages/memory-library/index.tsx,工作区 → Agent → 图书馆选择，刷新与默认库初始化。
-memory,记忆资料库,library,资料库,memory-books,书籍与章节,待迁移,DS-08,Book title/summary；章节 title/content/importance；章节分页；归档 Book/章节,pages/memory-library/index.tsx,阅读、编辑与归档；保留来源关联。
+memory,记忆资料库,library,资料库,memory-tree,图书馆与页面树,已接入,DS-08,libraryId；页面树；节点 name/summary/nodeType；父节点；创建 Page/Book,pages/memory-library/index.tsx,工作区 → Agent → 图书馆选择，刷新与默认库初始化。
+memory,记忆资料库,library,资料库,memory-books,书籍与章节,已接入,DS-08,Book title/summary；章节 title/content/importance；章节分页；归档 Book/章节,pages/memory-library/index.tsx,阅读、编辑与归档；保留来源关联。
 memory,记忆资料库,search,检索与来源,memory-search,记忆搜索,待迁移,DS-08,搜索词；范围；结果/匹配摘要；定位,pages/memory-library/components/MemorySearchResults.tsx,搜索结果定位到真实页面或章节。
 memory,记忆资料库,search,检索与来源,memory-inspector,来源与引用,待迁移,DS-08,元数据；sources；pointers；目标定位,pages/memory-library/components/MemoryInspector.tsx,原生详情区呈现出处和引用关系。
 storage,存储与清理,overview,空间总览,storage-inventory,总览与分类,待迁移,DS-09,总占用；分类占比；分类统计；受保护对象；7/30/90 天趋势；刷新,pages/storage/index.tsx,所有统计保留估算标记和采样时间。

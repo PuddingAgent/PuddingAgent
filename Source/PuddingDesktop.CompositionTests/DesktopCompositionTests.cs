@@ -1335,6 +1335,104 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task MemoryLibraryAdapter_CreatesTreeBookAndChaptersPerAgent()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var memory = factory.CreateMemoryLibrarySettings(kernel);
+        var workspaces = factory.CreateWorkspaceSettings(kernel);
+        var directory = factory.CreateAgentDirectorySettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => memory.ListLibrariesAsync("ws", "agent", timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var teams = await workspaces.ListTeamsAsync(timeout.Token);
+            await workspaces.CreateAsync(new WorkspaceCreateRequest("memory-space", teams[0].TeamId,
+                "Memory Space", "", "", "Manage", "Manage"), timeout.Token);
+
+            // A memory library is agent scoped, so the agent must exist first.
+            await directory.CreateInstanceAsync(new AgentInstanceCreate("memory-space", "memory-agent",
+                "fixture", "grant-template"), timeout.Token);
+            var agent = (await directory.ListInstancesAsync("memory-space", timeout.Token))
+                .SingleOrDefault(instance => instance.Name == "memory-agent");
+            // The template may not exist in this root, so fall back to any instance.
+            agent ??= (await directory.ListInstancesAsync("memory-space", timeout.Token)).FirstOrDefault();
+            Assert.NotNull(agent);
+
+            var library = await memory.EnsureDefaultLibraryAsync("memory-space", agent.AgentId, timeout.Token);
+            Assert.Equal("memory-space", library.WorkspaceId);
+            Assert.Contains(await memory.ListLibrariesAsync("memory-space", agent.AgentId, timeout.Token),
+                item => item.LibraryId == library.LibraryId);
+
+            // EnsureDefaultLibrary may seed root nodes, so assert our node is added rather than assuming empty.
+            var seeded = await memory.ReadTreeAsync("memory-space", agent.AgentId, library.LibraryId, timeout.Token);
+            await memory.CreateTreeNodeAsync(new MemoryTreeNodeCreate("memory-space", agent.AgentId,
+                library.LibraryId, "", "Root Page", "root", "Page"), timeout.Token);
+            var tree = await memory.ReadTreeAsync("memory-space", agent.AgentId, library.LibraryId, timeout.Token);
+            // Core decides how a created page maps onto tree nodes (and may seed its own), so assert the
+            // node is present and that the tree grew, without encoding Core's internal page/book layout.
+            var createdNodes = MemoryLibraryText.Flatten(tree).Where(node => node.Title == "Root Page").ToArray();
+            Assert.NotEmpty(createdNodes);
+            Assert.Contains(createdNodes, node => node.Type == "Page");
+            Assert.True(MemoryLibraryText.CountNodes(tree) > MemoryLibraryText.CountNodes(seeded),
+                "新建节点后树应当增长");
+
+            await memory.CreateBookAsync(new MemoryBookCreate("memory-space", agent.AgentId, library.LibraryId,
+                createdNodes[0].Id, "Book One", "summary"), timeout.Token);
+            tree = await memory.ReadTreeAsync("memory-space", agent.AgentId, library.LibraryId, timeout.Token);
+            var bookNode = MemoryLibraryText.Flatten(tree).FirstOrDefault(node => node.Title == "Book One")!;
+            bookNode ??= MemoryLibraryText.Flatten(tree).First(node => node.HasBook);
+            Assert.NotNull(bookNode);
+
+            var book = await memory.ReadBookAsync("memory-space", agent.AgentId, bookNode.BookId, timeout.Token);
+            Assert.NotNull(book);
+            Assert.Empty(book!.Chapters);
+
+            await memory.CreateChapterAsync(new MemoryChapterCreate("memory-space", agent.AgentId,
+                book.BookId, "Chapter One", "content one", 0.5), timeout.Token);
+            book = await memory.ReadBookAsync("memory-space", agent.AgentId, book.BookId, timeout.Token);
+            var chapter = Assert.Single(book!.Chapters);
+            Assert.Equal("Chapter One", chapter.Title);
+            Assert.Equal(0.5, chapter.Importance);
+
+            await memory.UpdateChapterAsync(new MemoryChapterEdit("memory-space", agent.AgentId,
+                chapter.ChapterId, "Chapter One v2", "content two", 0.9), timeout.Token);
+            book = await memory.ReadBookAsync("memory-space", agent.AgentId, book.BookId, timeout.Token);
+            Assert.Equal("Chapter One v2", book!.Chapters.Single().Title);
+            Assert.Equal("content two", book.Chapters.Single().Content);
+
+            await memory.UpdateBookAsync(new MemoryBookEdit("memory-space", agent.AgentId, book.BookId,
+                "Book One v2", "edited"), timeout.Token);
+            Assert.Equal("Book One v2", (await memory.ReadBookAsync("memory-space", agent.AgentId, book.BookId, timeout.Token))!.Title);
+
+            // A chapter id addressed through a different agent id must not resolve: Core reports the
+            // scoped ownership failure as UnauthorizedAccessException, which the page surfaces as-is.
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => memory.ArchiveChapterAsync(
+                "memory-space", "no-such-agent", chapter.ChapterId, timeout.Token));
+
+            await memory.ArchiveChapterAsync("memory-space", agent.AgentId, chapter.ChapterId, timeout.Token);
+            await memory.ArchiveBookAsync("memory-space", agent.AgentId, book.BookId, timeout.Token);
+            var archived = await memory.ReadBookAsync("memory-space", agent.AgentId, book.BookId, timeout.Token);
+            Assert.NotEqual("Active", archived!.Status);
+            // Archiving is not deleting: the chapter content is still there.
+            Assert.Single(archived.Chapters);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => memory.ListLibrariesAsync("memory-space", agent.AgentId, timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

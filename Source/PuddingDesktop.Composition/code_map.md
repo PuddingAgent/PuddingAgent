@@ -40,4 +40,6 @@
 
 `DesktopWorkspaceResourceSettings` binds the knowledge / skill / workflow cards to `WorkspaceResourceService`; an empty resource id means create, and Core keeps ownership of workspace isolation plus MCP config validation.
 
+`DesktopMemoryLibrarySettings` binds the memory library cards to the scoped `IMemoryLibraryAdminService` (Core registers the interface, not the concrete class) and always passes workspace + agent through.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

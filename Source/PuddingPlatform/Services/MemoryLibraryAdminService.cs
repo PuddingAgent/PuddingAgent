@@ -473,9 +473,11 @@ public sealed class MemoryLibraryAdminService : IMemoryLibraryAdminService
         // 先更新内容（含 FTS 同步），再通过 Book updater 覆盖 title 和 importance
         var updated = await _library.UpdateChapterContentAsync(chapterId, req.Content, ct);
         updated = await _library.UpdateChapterImportanceAsync(chapterId, req.Importance, ct);
+        // 修复：原先 req.Title 只进了返回 DTO，从未落盘（标题改了但不保存）。
+        updated = await _library.UpdateChapterTitleAsync(chapterId, req.Title, ct);
 
         return new MemoryChapterSectionDto(
-            updated.ChapterId, updated.BookId, req.Title, updated.Content,
+            updated.ChapterId, updated.BookId, updated.Title, updated.Content,
             updated.ContentType, updated.Importance, updated.CreatedAt, updated.UpdatedAt);
     }
 

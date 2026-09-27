@@ -763,7 +763,7 @@
             ],
             "source": "pages/memory-library/index.tsx",
             "task": "DS-08",
-            "status": "待迁移"
+            "status": "已接入"
           },
           {
             "id": "memory-books",
@@ -777,7 +777,7 @@
             ],
             "source": "pages/memory-library/index.tsx",
             "task": "DS-08",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },

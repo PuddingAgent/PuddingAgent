@@ -198,6 +198,15 @@ public sealed partial class MainWindow
         var workspaceResources = VisibilityOf("workspaces", "resources", tab);
         WorkspaceResourcesSettings.Visibility = workspaceResources;
         if (workspaceResources == Visibility.Visible) LoadWorkspaceResourcesIfNeeded();
+        var memoryLibrary = VisibilityOf("memory", "library", tab);
+        MemoryLibrarySettings.Visibility = memoryLibrary;
+        if (memoryLibrary == Visibility.Visible) LoadMemoryLibraryIfNeeded();
+    }
+
+    private async void LoadMemoryLibraryIfNeeded()
+    {
+        try { await LoadMemoryAgentsAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadWorkspaceResourcesIfNeeded()
@@ -346,6 +355,7 @@ public sealed partial class MainWindow
         ("workspaces", "basic") => true,
         ("workspaces", "channels") => true,
         ("workspaces", "resources") => true,
+        ("memory", "library") => true,
         _ => false
     };
 
