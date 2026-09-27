@@ -40,3 +40,7 @@ ActivityContentView 为正文、输入、输出保留独立槽位，变化时仅
 ## 语音基础进度（2026-09-27）
 
 SpeechPlaybackSession 与消息/音频合同完成独立 BCL 验证，逻辑测试总数 67；详情见 Desktop-Native-Voice-2026-09-27.md。真实播放器、朗读按钮、Core 装配、录音/ASR、持续语音会话均未接入，语音条目仍为未完成。
+
+## 语音原生组件门禁（2026-09-27）
+
+NativeSpeechAudioPlayer 与 SpeechPlaybackButton 已独立实现并通过静音真实媒体/原生窗口检查，67 逻辑/188 窗口检查通过；已修复 Stop 取消回调重入时状态发布顺序。下一步接产品消息卡片和 Core 合成端口；当前仍不能宣称产品朗读或完整语音会话可用。范围见原生语音方案。

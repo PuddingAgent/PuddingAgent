@@ -1352,3 +1352,7 @@ PuddingDesktop/MainWindow.Kernel.RunKernelSmokeAsync 在隔离数据目录创建
 ## 原生语音播放基础（2026-09-27）
 
 `PuddingChat/SpeechPlayback.cs` 与 `PuddingChatTests/SpeechPlaybackTests.cs` 提供消息朗读合同、单通道播放状态和取消/晚到结果防护，独立逻辑测试 67 项通过。`Docs/Features/Desktop-Native-Voice-2026-09-27.md` 明确原生播放器→按钮→Composition/Core 的接入顺序及录音/持续会话门禁；当前未接产品语音功能。
+
+## 原生朗读控件（2026-09-27）
+
+`PuddingChat.WinUI/NativeSpeechAudioPlayer.cs` 与 `SpeechPlaybackButton.cs` 已通过静音真实 WAV 和原生窗口测试；测试入口 `SpeechPlayerChecks.cs`、`SpeechButtonChecks.cs`，67 逻辑/188 窗口检查。`SpeechPlaybackSession.Stop` 在触发取消回调前发布 Idle，修复同步恢复时状态滞后。产品消息卡片和 Core 语音适配仍待接入，见 Desktop-Native-Voice 方案。

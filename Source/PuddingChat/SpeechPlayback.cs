@@ -84,8 +84,10 @@ public sealed class SpeechPlaybackSession(IChatSpeechClient client, ISpeechAudio
     {
         _generation++;
         var current = _current; _current = null;
-        current?.Cancel();
         SetState(new(SpeechPlaybackPhase.Idle));
+        // Cancellation callbacks can synchronously resume a caller on the UI context.
+        // Publish the stopped state before releasing those continuations.
+        current?.Cancel();
     }
     private void SetState(SpeechPlaybackState state) { State = state; Changed?.Invoke(this, EventArgs.Empty); }
     public void Dispose()

@@ -332,3 +332,9 @@ MathFormulaView 现在使用固定 Grid 承载文本与图片，以 Visibility �
 新增 PuddingChat/SpeechPlayback.cs：角色与消息绑定的 SpeechRequest、受限 SpeechAudio、合成端口/设备端口，以及拥有单条播放通道的 SpeechPlaybackSession。合成与播放分阶段，停止/新请求/销毁取消当前操作，代次拒绝迟到结果；播放错误可见但不回显供应商原始异常。当前只在独立 BCL 边界完成，不修改 Host 或 Composition，不创建原生语音入口。详细方案见 Desktop-Native-Voice-2026-09-27.md。
 
 67 项逻辑测试通过（新增 7 项），日志 temp/native-speech-state.log。未打开麦克风、扬声器，未调用付费服务或修改 D:\data。下一步为真实原生播放器/消息按钮组件，然后接 Core；录音转写及持续语音会话尚未实现。
+
+## 原生朗读播放器与按钮（2026-09-27）
+
+新增 NativeSpeechAudioPlayer（WinRT MediaPlayer，WAV/MP3 内存流，结束/错误/取消释放）和 SpeechPlaybackButton（共享工作台播放通道上的消息动作，取消合成/停止/失败重试，控件卸载仅取消自身请求）。真实设备测试采用 IsMuted=true 的合成静音 WAV，未录音、未输出可听语音、未调用供应商。生产默认播放器不静音，只有显式 PlayAsync 才播放。
+
+窗口测试发现取消回调可同步恢复 UI 等待者；SpeechPlaybackSession.Stop 已调整为先发布 Idle，再 Cancel，防止回收等待结束时仍观察到合成中。逻辑测试同时检查取消回调的状态。最终 67 逻辑/188 原生窗口检查通过，零构建警告/错误，日志 temp/native-speech-controls.log；新增 4 个真实播放器检查、5 个按钮检查。产品 MessageCard/ChatWorkspace、Composition 语音端口、录音/ASR 和持续语音会话仍未接线，下一步在组件门禁通过后进行装配。

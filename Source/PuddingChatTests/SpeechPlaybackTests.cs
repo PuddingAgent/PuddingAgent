@@ -52,7 +52,11 @@ public sealed class SpeechPlaybackTests
     {
         var client = new Client(); var player = new Player(); using var session = new SpeechPlaybackSession(client, player);
         var first = session.SpeakAsync(Request()); client.Requests[0].Result.SetResult(Audio);
-        await player.Started.Task.WaitAsync(TimeSpan.FromSeconds(2)); session.Stop(); await first;
+        await player.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var stateAtCancellation = SpeechPlaybackPhase.Playing;
+        using var observed = player.Token.Register(() => stateAtCancellation = session.State.Phase);
+        session.Stop(); await first;
+        Assert.Equal(SpeechPlaybackPhase.Idle, stateAtCancellation);
         Assert.True(player.Token.IsCancellationRequested);
         var second = session.SpeakAsync(Request("two")); player.Finished.SetException(new IOException("late device failure"));
         Assert.Equal("two", session.State.Request!.MessageId);
