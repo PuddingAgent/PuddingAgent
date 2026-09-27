@@ -178,3 +178,9 @@ Desktop Release 发布通过（`temp/native-transfer-publish.log`，Core 有既�
 新增 BCL FlowWindow，独立测试通过后接入 WinUI。参照 Web TurnContentStream 的最近内容块窗口，原生默认显示最新 40 块，每次显式展开更早 24 块，显示尚未展开数量；内容块包括思考、正文和工具，顺序不变。展开后绑定稳定 key，后续新增事件不会把已经展开的记录挤出范围。TurnContentView 复用仍可见控件，展开前后按可见块相对 ScrollViewer 的坐标补偿偏移。消息卡主内容、异常执行明细和活动 Run 分别保留非视觉范围，支持回收后恢复。
 
 验证：BCL 47/47，原生窗口 75 项（`temp/native-flow-window-final.log`），构建零警告零错误。新增检查覆盖初始 40 块、逐页到开头、追加时固定范围、缺失锚点/空集合、控件身份复用、实际位置保持（容差 2 DIP）、回收状态恢复和全部历史可达。原有 500 工具懒渲染测试改为主动展开全部后执行，仍覆盖完整量级。本轮不改 Core、不新增 HTTP、不替换运行中 Desktop。全量 FlowBlock 数据仍参与归并；渐进展开不是视口虚拟化，主动展开全部或单个巨型文本块的开销仍待性能验收。
+
+## 原生审批接入缺口核查与方案（2026-09-27）
+
+本轮为源码核查与设计，未新增产品代码、未运行测试或变更运行数据。全仓 C# 审批事件引用核查及 SessionApprovalDecideTests 表明：Web 会话决定端点缺请求生产者，结果写入也没有接到 Runtime 的执行续行；Runtime NeedHuman 指向 /authorize 的人工工具授权路径，DeferredDependency 是不同状态。票据 Save/Get/List 端口不提供人工决定的原子转换保证。
+
+新增 `Docs/Features/Desktop-Native-Approval-Integration-Design-2026-09-27.md`，状态 Proposed。列出真实证据、固定待处理区域、精确身份/操作绑定、Core 唯一决定真源、A1–A5 组件门禁及七项闭环验收。原生审批继续记为未接入；不以控件、事件追加或 404 接口回归冒充工具获准后恰好执行一次。下一步实施必须从 Core 真实暂停/恢复与原子决定边界开始，不能直接包装 Controller。
