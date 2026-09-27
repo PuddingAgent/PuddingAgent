@@ -1363,3 +1363,7 @@ PuddingDesktop/MainWindow.Kernel.RunKernelSmokeAsync 在隔离数据目录创建
 ## 2026-09-27 原生消息朗读接入
 
 `PuddingChat.WinUI/MessageCard` 与 `ChatWorkspace` 装配共享 SpeechPlaybackSession/NativeSpeechAudioPlayer，完成回复显示朗读/取消/停止/重试。`PuddingDesktop.Composition/InProcessChatClient.Speech.cs` 验证消息归属、读取 canonical 正文并直接调用 Core IVoiceSynthesisService。独立状态/窗口检查及真实仓储+替身供应商的集成验证见 `Docs/Features/Desktop-Native-Voice-2026-09-27.md`；录音/ASR、持续语音及真实供应商验收尚未完成。
+
+## 2026-09-27 原生语音输入状态组件
+
+`PuddingChat/VoiceInput.cs` 提供采集/转写端口和独立生命周期，`VoiceDraftResult` 防止晚到转写覆盖已编辑或已切换角色的草稿；设备释放完成后才能开启新录音。`PuddingChatTests/VoiceInputTests.cs` 新增 10 项，逻辑套件总计 77 项通过。WinRT 采集、录音控件和 Core ASR 接线仍待实现，具体证据与边界见 `Docs/Features/Desktop-Native-Voice-2026-09-27.md`。
