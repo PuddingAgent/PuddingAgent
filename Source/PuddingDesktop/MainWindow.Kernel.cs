@@ -19,12 +19,13 @@ public sealed partial class MainWindow
     private string? _chatDataRoot;
     private string KernelSettingsPath => Path.Combine(App.StateRoot, "desktop.kernel.json");
     private sealed record KernelSettings(string DataRoot);
+    private const string DefaultDataRoot = @"D:\data";
 
     private async Task InitializeKernelAsync(string[] arguments)
     {
         try
         {
-            var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pudding", "DesktopData");
+            var root = DefaultDataRoot;
             if (File.Exists(KernelSettingsPath))
             {
                 await using var settingsFile = File.OpenRead(KernelSettingsPath);
@@ -69,7 +70,7 @@ public sealed partial class MainWindow
         StartKernelButton.IsEnabled = snapshot.State is DesktopKernelState.Stopped or DesktopKernelState.Failed;
         StopKernelButton.IsEnabled = snapshot.State is DesktopKernelState.Starting or DesktopKernelState.Ready or DesktopKernelState.Failed;
         RestartKernelButton.IsEnabled = snapshot.State == DesktopKernelState.Ready;
-        DataRootEditor.IsEnabled = snapshot.State is DesktopKernelState.Stopped or DesktopKernelState.Failed;
+        DataRootEditor.IsEnabled = !_exiting;
         if (snapshot.State != DesktopKernelState.Ready && _nativeChat is not null)
         {
             _nativeChat.Dispose(); _nativeChat = null;
@@ -77,9 +78,13 @@ public sealed partial class MainWindow
         }
         if (_loaded) OnStateChanged(this, new PropertyChangedEventArgs(nameof(ShellState.Page)));
     }
-    private async Task StartKernelAsync()
+    private async Task<string> SaveDataRootAsync()
     {
-        var root = Path.GetFullPath(DataRootEditor.Text.Trim());
+        var input = DataRootEditor.Text.Trim();
+        if (string.IsNullOrWhiteSpace(input) || !Path.IsPathFullyQualified(input))
+            throw new ArgumentException("请输入完整的数据目录路径，例如 D:\\data。");
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(input));
+        if (File.Exists(root)) throw new ArgumentException("数据目录不能是文件。");
         Directory.CreateDirectory(App.StateRoot);
         var temporary = KernelSettingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -88,6 +93,29 @@ public sealed partial class MainWindow
             File.Move(temporary, KernelSettingsPath, true);
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        DataRootEditor.Text = root;
+        return root;
+    }
+    private async void OnSaveDataRoot(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            await SaveDataRootAsync();
+            KernelStatus.Title = "数据目录已保存";
+            KernelStatus.Message = "重新打开 Desktop 后使用保存的目录；当前内核继续使用原目录。不会自动迁移数据。";
+            KernelStatus.Severity = InfoBarSeverity.Success;
+        }
+        catch (Exception exception)
+        {
+            KernelStatus.Title = "目录未保存";
+            KernelStatus.Message = exception is ArgumentException ? exception.Message : "无法保存目录，请检查路径与配置文件权限。";
+            KernelStatus.Severity = InfoBarSeverity.Error;
+        }
+    }
+    private void OnResetDataRoot(object sender, RoutedEventArgs args) => DataRootEditor.Text = DefaultDataRoot;
+    private async Task StartKernelAsync()
+    {
+        var root = await SaveDataRootAsync();
         if (_chatDataRoot is not null && !string.Equals(root, _chatDataRoot, StringComparison.OrdinalIgnoreCase))
         {
             KernelStatus.Title = "新数据目录已保存";
@@ -168,6 +196,13 @@ public sealed partial class MainWindow
             using var http = new HttpClient();
             var address = _kernel.Snapshot.WorkbenchAddress!;
             (await http.GetAsync(new Uri(address, "/health/ready"))).EnsureSuccessStatusCode();
+            var runningRoot = DataRootEditor.Text;
+            DataRootEditor.Text = Path.Combine(runningRoot, "saved-next-root");
+            var savedWhileRunning = await SaveDataRootAsync();
+            if (_kernel.Snapshot.State != DesktopKernelState.Ready
+                || JsonSerializer.Deserialize<KernelSettings>(await File.ReadAllTextAsync(KernelSettingsPath))?.DataRoot != savedWhileRunning)
+                throw new InvalidOperationException("Saving a directory must persist without stopping the active Core.");
+            DataRootEditor.Text = runningRoot; await SaveDataRootAsync();
             await Task.Run(() => _desktopServices.ShowAsync(ShellPage.Settings));
             if (_state.Page != ShellPage.Settings) throw new InvalidOperationException("Desktop callback did not reach UI.");
             await _kernel.StopAsync(CancellationToken.None);
@@ -179,7 +214,7 @@ public sealed partial class MainWindow
             await StartKernelAsync();
             var savedSettings = JsonSerializer.Deserialize<KernelSettings>(await File.ReadAllTextAsync(KernelSettingsPath));
             if (savedSettings?.DataRoot != nextRoot || _kernel.Snapshot.State != DesktopKernelState.Stopped)
-                throw new InvalidOperationException("DataRoot change must be saved for next launch without reusing the old login context.");
+                throw new InvalidOperationException("DataRoot change must be saved for next launch without reusing the old local context.");
             Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
             await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(new { success = true, processId = Environment.ProcessId, coreAssembly = hostAssembly.Location, uiCallback = true, restart = true, dataRootChangeSaved = true }));
         }

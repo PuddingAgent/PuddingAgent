@@ -1,3 +1,7 @@
+## 2026-09-27 Desktop 数据目录
+
+`MainWindow.Kernel.cs` 默认 `D:\data`，已保存设置及 `--data-root` 可覆盖；运行中心支持编辑、保存和恢复默认，保存不会切换运行中的 Core，重开 Desktop 生效，不搬迁数据。
+
 ## 2026-09-27 原生模型、密钥与角色设置
 
 `PuddingChat/Configuration.cs` 定义独立配置端口；WinUI 的 `ProviderConfigurationForm`、`RoleConfigurationForm` 经 Composition 直接调用 Core 局部保存服务。入口为“模型与密钥”“编辑当前角色”。读取不返回已有密钥，保存保留未展示的高级配置。详见 Desktop 原生聊天实施记录。

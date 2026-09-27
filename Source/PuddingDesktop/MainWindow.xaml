@@ -125,8 +125,13 @@
           <StackPanel Spacing="22" MaxWidth="680" HorizontalAlignment="Stretch">
             <Button Content="← 返回工作台" Click="OnWorkbench" HorizontalAlignment="Left" />
             <TextBlock Text="运行中心" FontSize="28" FontWeight="SemiBold" />
-            <InfoBar x:Name="KernelStatus" IsOpen="True" IsClosable="False" Title="Core DLL" Message="Core 在 Desktop 进程内运行。首次启动使用独立数据目录；沿用旧数据前需先停止旧 Core。" />
-            <TextBox x:Name="DataRootEditor" Header="内核数据目录" />
+            <InfoBar x:Name="KernelStatus" IsOpen="True" IsClosable="False" Title="Core DLL" Message="Core 在 Desktop 进程内运行。默认数据目录为 D:\data，可在下方修改；同一目录不能同时由其他 Core 使用。" />
+            <TextBox x:Name="DataRootEditor" Header="内核数据目录" PlaceholderText="D:\data" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="保存数据目录" Click="OnSaveDataRoot" />
+              <Button Content="恢复默认目录" Click="OnResetDataRoot" />
+            </StackPanel>
+            <TextBlock Text="修改后保存，重新打开 Desktop 生效。已有数据不会自动搬迁。" TextWrapping="Wrap" Opacity="0.65" />
             <TextBlock x:Name="KernelDetails" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
             <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="StartKernelButton" Content="启动内核" Click="OnStartKernel" /><Button x:Name="StopKernelButton" Content="停止内核" Click="OnStopKernel" /><Button x:Name="RestartKernelButton" Content="重启内核" Click="OnRestartKernel" /></StackPanel>
             <Button Content="打开工作台" Click="OnWorkbench" HorizontalAlignment="Left" />

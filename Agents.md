@@ -4,7 +4,7 @@
 
 产品工程 `Source/PuddingDesktop` 已原地重建为 WinUI 3。Core 通过 `PuddingDesktop.Composition` 装配为进程内 PuddingHost DLL，不再由产品启动 PuddingAgent 子进程。Foundation 是 BCL 叶组件；Core 调用桌面展示能力使用注入的 `IDesktopServices`，不得引用 WinUI 控件。原 WPF 位于 `PuddingDesktop.WpfArchive`，只保留迁移基线。
 
-默认数据目录 `%LOCALAPPDATA%/Pudding/DesktopData`；`desktop.kernel.json` 位于独立 Desktop 配置目录。沿用旧 DataRoot 前必须停止旧 Core。新版 Console 与 Desktop 共享 `.pudding-host.lock` 文件句柄租约；不可删除锁文件绕过互斥。窗口关闭等待进程内内核停止与资源释放；托盘策略尚未恢复，不把历史托盘行为当作当前实现。
+默认数据目录 `D:\data`（2026-09-27 用户裁定，可在运行中心修改并保存，重开 Desktop 生效；已保存目录优先）；`desktop.kernel.json` 位于独立 Desktop 配置目录。沿用旧 DataRoot 前必须停止旧 Core。新版 Console 与 Desktop 共享 `.pudding-host.lock` 文件句柄租约；不可删除锁文件绕过互斥。窗口关闭等待进程内内核停止与资源释放；托盘策略尚未恢复，不把历史托盘行为当作当前实现。
 
 构建/发布使用 `--artifacts-path temp/build/desktop-kernel`，先 restore 再使用同目录的 `--no-restore`。独立 Foundation 测试、Composition 真实 Host 集成测试通过后接入。验证脚本 `TestScripts/test-pudding-desktop-kernel.ps1` 只使用隔离测试 DataRoot。`dev-up.py` 和 Console 仍是源码开发工具，不进入 Desktop 产品包。
 
