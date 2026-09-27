@@ -36,4 +36,6 @@
 
 `DesktopWorkspaceSettings` binds the workspace tab to the shared `WorkspaceService`; team and user pickers read `PlatformDbContext` through the same per-operation scope.
 
+`DesktopChannelSettings` binds the channel tabs to `ChannelConfigurationFileService`; a kept App Secret is sent as null so Core reuses the stored value, and the secret never travels back into the shell.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

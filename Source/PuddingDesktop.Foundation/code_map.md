@@ -24,7 +24,8 @@
 | `SkillHubContracts.cs` | DS-07 全部分片：`ISkillHubSettings` 读模型与写入记录、概览统计与审计事件、Core 真实词表（SkillId 正则、进化动作/状态/可见性白名单）、技能库与版本发布、EVO MAP 谱系（`RenderLineage` 显式呈现无根组件与环、`DescribeLineage` 计数悬空边/缺失父节点）、安装台账语义与更新落后判定 |
 | `SkillPackageContracts.cs` | DS-07 旧技能包切片：`ISkillPackageSettings`（列表/元数据/删除/上传/替换/下载链接）、`SkillPackageText`（扩展名与 Core 一致、id 与排序校验、字节数显示） |
 | `AgentGrantContracts.cs` | DS-04 授权切片：可选授权项（能力/技能包）、`AgentGrantSet`、`AgentGrantSelection`（未指定 ≠ 明确不授权）、模板与实例的快照对比、目录外授权项校验 |
+| `ChannelContracts.cs` | DS-05 渠道切片：`IChannelSettings`、服务商与渠道显示、`ChannelSecret`（只写不读；留空=保持，Core 没有清除语义）、Open ID 解析与回复方式描述 |
 | `WorkspaceContracts.cs` | DS-05 工作区/成员切片：`IWorkspaceSettings`、状态显示（停用/冻结分开）、Core 的访问策略词表、UserProfile 必须是合法 JSON、内置默认工作区不可停用 |
 | `PuddingDesktop.Foundation.csproj | 编译期拒绝任何项目/包引用；输出限于 temp/build/winui3 |
 
-独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。128 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。
+独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。133 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。

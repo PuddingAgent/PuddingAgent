@@ -23,11 +23,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces)> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces) = createKernel(_desktopServices);
+        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -70,6 +70,7 @@ public sealed partial class MainWindow : Window
         BuildSkillPackagePanel();
         BuildAgentGrantPanel();
         BuildWorkspacePanel();
+        BuildChannelPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -560,6 +561,15 @@ public sealed partial class MainWindow : Window
             Check(WorkspaceBasicSettings.Content is StackPanel, "workspace basic form is built");
             Check(!_wsPicker.IsEnabled, "workspace basic form stays disabled without Core");
             Check(_wsNotice.Title == "Core 未就绪", "workspace basic tab reports the real Core state");
+            // DS-05 channel tabs: providers plus channel credentials.
+            OpenSettingsCategory("workspaces", "channels");
+            await WaitForSettingsUiAsync(() => _chNotice.IsOpen);
+            Check(ChannelProvidersSettings.Visibility == Visibility.Visible, "channel providers tab is native");
+            Check(ChannelsSettings.Visibility == Visibility.Visible, "channels tab is native");
+            Check(ChannelProvidersSettings.Content is StackPanel, "channel providers form is built");
+            Check(ChannelsSettings.Content is StackPanel, "channels form is built");
+            Check(!_chProviderPicker.IsEnabled, "channel forms stay disabled without Core");
+            Check(_chNotice.Title == "Core 未就绪", "channel tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

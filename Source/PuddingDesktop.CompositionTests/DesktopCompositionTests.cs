@@ -1182,6 +1182,78 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task ChannelAdapter_KeepsTheStoredSecretAndEnforcesTheRealChannelRules()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var channels = factory.CreateChannelSettings(kernel);
+        var workspaces = factory.CreateWorkspaceSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => channels.ListProvidersAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var providers = await channels.ListProvidersAsync(timeout.Token);
+            var feishu = Assert.Single(providers, provider => provider.ProviderId == "feishu");
+            Assert.True(feishu.IsBuiltIn, "飞书服务商由 Core 内置定义");
+            Assert.Contains("streaming", feishu.Capabilities);
+
+            var workspaceId = (await workspaces.ListAsync(timeout.Token)).Single().WorkspaceId;
+            Assert.Empty(await channels.ListChannelsAsync(workspaceId, timeout.Token));
+
+            // A disabled provider cannot be used, and an unknown one is refused.
+            await channels.SaveProviderAsync(new ChannelProviderEdit("feishu", "飞书", "renamed", false), timeout.Token);
+            var disabled = await channels.ListProvidersAsync(timeout.Token);
+            Assert.False(disabled.Single(provider => provider.ProviderId == "feishu").IsEnabled);
+            var withDisabledProvider = new ChannelEdit(workspaceId, "", "Channel", "", "feishu", "", "cli_app",
+                ChannelSecret.Of("secret-value"), true, false, "", [], true);
+            // 停用的服务商是 InvalidOperationException；服务商不存在才是 KeyNotFoundException。
+            await Assert.ThrowsAsync<InvalidOperationException>(() => channels.CreateChannelAsync(withDisabledProvider, timeout.Token));
+            Assert.Empty(await channels.ListChannelsAsync(workspaceId, timeout.Token));
+
+            await channels.SaveProviderAsync(new ChannelProviderEdit("feishu", "飞书", "renamed back", true), timeout.Token);
+
+            // A bound agent must exist in this workspace (Core reports a missing agent as KeyNotFound).
+            await Assert.ThrowsAsync<KeyNotFoundException>(() => channels.CreateChannelAsync(
+                withDisabledProvider with { BoundAgentId = "no-such-agent" }, timeout.Token));
+
+            await channels.CreateChannelAsync(withDisabledProvider, timeout.Token);
+            var created = Assert.Single(await channels.ListChannelsAsync(workspaceId, timeout.Token));
+            Assert.Equal("cli_app", created.AppId);
+            Assert.True(created.HasAppSecret, "创建时必须带密钥，但返回值只有布尔标记");
+            Assert.True(created.StreamingRepliesEnabled);
+
+            // Editing without replacing keeps the stored secret; the adapter sends null for it.
+            await channels.SaveChannelAsync(new ChannelEdit(workspaceId, created.ChannelId, "Renamed Channel", "edited",
+                "feishu", "", "cli_app2", ChannelSecret.Keep, false, true, "Cherry", ["ou_1"], true), timeout.Token);
+            var edited = Assert.Single(await channels.ListChannelsAsync(workspaceId, timeout.Token));
+            Assert.Equal("Renamed Channel", edited.Name);
+            Assert.Equal("cli_app2", edited.AppId);
+            Assert.True(edited.HasAppSecret, "留空的密钥必须保持，不能被清除");
+            Assert.True(edited.TtsRepliesEnabled);
+            Assert.Equal("Cherry", edited.TtsVoice);
+            Assert.Equal(["ou_1"], edited.PrivilegedUserOpenIds);
+
+            // A second channel with the same Feishu App ID is refused.
+            await Assert.ThrowsAsync<InvalidOperationException>(() => channels.CreateChannelAsync(
+                withDisabledProvider with { Name = "Duplicate", AppId = "cli_app2" }, timeout.Token));
+
+            await channels.DeleteChannelAsync(workspaceId, created.ChannelId, timeout.Token);
+            Assert.Empty(await channels.ListChannelsAsync(workspaceId, timeout.Token));
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => channels.ListProvidersAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {
