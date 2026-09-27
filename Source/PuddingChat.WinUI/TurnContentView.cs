@@ -93,18 +93,11 @@ public sealed class TurnContentView : StackPanel
     }
     private static void RenderDisclosure(Expander expander, FlowBlock block)
     {
-        var content = new StackPanel { Spacing = 8 };
-        if (block.Kind != "tool" || (string.IsNullOrEmpty(block.Arguments) && string.IsNullOrEmpty(block.Output))) content.Children.Add(MessageCard.RenderText(block.Text));
-        if (block.Arguments is { Length: > 0 }) { content.Children.Add(new TextBlock { Text = "输入", Opacity = .6 }); content.Children.Add(MessageCard.RenderText(block.Arguments)); }
-        if (block.Output is { Length: > 0 })
-        {
-            content.Children.Add(new TextBlock { Text = block.Kind == "delegation" ? "结果摘要" : "输出", Opacity = .6 });
-            var output = block.Kind == "delegation" && block.Output.Length > 300 ? block.Output[..300] + "…（摘要）" : block.Output;
-            content.Children.Add(MessageCard.RenderText(output));
-        }
         var scroll = expander.Content as ScrollViewer ?? new ScrollViewer { MaxHeight = 320, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         var offset = scroll.VerticalOffset;
         var followLatest = scroll.ScrollableHeight - offset < 24;
+        var content = scroll.Content as ActivityContentView ?? new ActivityContentView();
+        content.Update(block);
         scroll.Content = content; expander.Content = scroll;
         if (scroll.IsLoaded) { scroll.UpdateLayout(); scroll.ChangeView(null, followLatest ? scroll.ScrollableHeight : offset, null, true); }
     }

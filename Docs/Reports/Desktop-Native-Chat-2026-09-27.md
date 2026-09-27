@@ -228,3 +228,9 @@ ChatComposer 原来的单行四按钮在窄聊天区会超出边界；附件名�
 对照 Web MarkdownBlock.tsx 的代码块与复制入口，新增 CodeBlockView：语言标签、可选择的等宽文本、复制最新代码与自动换行开关。MarkdownView 在同位置同类型代码块更新时复用组件，避免每个流式片段都重建代码 ScrollViewer；无换行模式继续横向滚动，开启换行后由原生 TextBlock 布局。代码内容始终作为文本，不执行 HTML/XAML。
 
 验证：BCL 50/50、原生窗口 102 项，零构建警告/错误（temp/native-code-block-final.log）。新增 5 项覆盖未闭合围栏的完整原文、真实横向滚动 100 DIP 后流式更新保持位置、切换换行、追加后保留控件/换行偏好和最新完整文本、恢复无换行。测试未读写用户剪贴板，复制处理器从当前 Code 属性取值；没有宣称系统剪贴板手工交互已验收。语法高亮、公式和完整视觉验收仍未完成，未修改 Core 或部署当前 Desktop。
+
+## 展开活动的增量内容与目标核对（2026-09-27）
+
+新增 ActivityContentView，替换 RenderDisclosure 每帧重建 StackPanel/MarkdownView 的路径。正文、输入、输出按稳定槽位更新，未变化文本不重新解析；输出移除时清理旧槽位；收起仍释放完整内容，保留既有懒加载规则。嵌套 CodeBlockView 的流式复用和换行选择因此在工具活动中也生效。
+
+BCL 50/50、原生窗口 108 项通过，构建零警告零错误（temp/native-activity-content-final.log）。新增 6 项验证实际窗口的容器/内容身份、代码偏好、终态、失效输出清理及思考正文更新。源码核对、证据范围与剩余功能汇总到 Desktop-Native-Chat-Completion-Audit-2026-09-27.md；未进行 Core 集成复验或产品部署，目标未完成。
