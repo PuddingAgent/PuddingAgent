@@ -1201,7 +1201,7 @@
             ],
             "source": "pages/session/index.tsx",
             "task": "DS-14",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },

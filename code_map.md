@@ -5,6 +5,9 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-14 会话与诊断（会话目录切片）
+
+`diagnostics/sessions` 接上进程内 `ISessionRepository`（与 Core 会话主线服务同一个单例，不是第二份存储）：会话列表、详情（类型/角色/状态/主体/血缘/创建与最近活跃）与筛选。**三条口径必须写清楚，因为 Core 的能力比卡片要求窄**：①Core 的会话仓库只支持按**渠道/用户/工作区**查询，**没有**分页、状态或模板筛选——本页的状态/角色/模板/关键字筛选与分页是在**已返回集合上做的**，卡片上写明「不是 Core 侧的过滤条件」，并用纯函数 `Apply` 让这部分可独立测试；②**Frozen 会话一律不列出**，与 `/api/sessions` 列表同一口径，并把被排除的数量显示出来；③时间线事件与「最近失败」等文本仍可能带自由文本密钥（见 DS-14 时间线切片的登记）。踩坑记录：Foundation 的 `SessionSummary` 与 `PuddingCode.Platform.SessionSummary` 撞名，按既有先例改名为 `SessionDirectoryEntry`。验证：Foundation 204 项、Composition 31 项（真实 Host：经宿主仓库写入两个会话→按 Core 条件读回→Frozen 被排除并计数→关键字命中/不命中）、窗口 smoke 242 项通过。
 ## 2026-09-27 DS-14 会话与诊断（时间线/概览切片，DS-14 进行中）
 
 `diagnostics/timeline` 与 `diagnostics/overview` 两张卡接入新的 `RuntimeDiagnosticsQueryService`（把「时间线查询 + 脱敏」从 `DiagnosticsTimelineController` 原位下沉）：时间线支持会话/Run/Trace/Agent/组件/状态筛选、排序、raw/user 展示模式、分页与事件详情；概览显示 Core 按事件统计的**组件健康计数**（开始/成功/失败/重试/取消）与近期失败事件。**又一处「脱敏只在控制器里」的修复**：`RedactItem` 原先只存在于控制器，任何直接调用 `RuntimeTimelineQueryService` 的管理面拿到的是**未脱敏**的 Summary/Error/Metadata——现在脱敏与查询是同一个应用操作，策略也只有一处。**两条诚实边界**（都有 Core 测试固定）：①`RedactText` **只做截断**，不清洗自由文本里长得像密钥的字符串（`sk-…` 会原样显示在事件文本里），界面把这条差异写在卡片上而不是假装已抹掉；②组件健康是**按事件统计的计数**，不是本机探针，也不是「服务是否在跑」的结论。验证：Core `RuntimeDiagnosticsQueryServiceTests` 3 项（敏感 key 值被替换、600 字符被截断、自由文本密钥**不**被清洗）、Foundation 199 项、Composition 30 项、窗口 smoke 239 项通过。

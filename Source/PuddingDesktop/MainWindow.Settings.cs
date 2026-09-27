@@ -243,6 +243,15 @@ public sealed partial class MainWindow
         var overview = VisibilityOf("diagnostics", "overview", tab);
         DiagnosticsOverviewSettings.Visibility = overview;
         if (overview == Visibility.Visible) LoadDiagnosticsOverviewIfNeeded();
+        var sessions = VisibilityOf("diagnostics", "sessions", tab);
+        SessionDirectorySettings.Visibility = sessions;
+        if (sessions == Visibility.Visible) QuerySessionsIfNeeded();
+    }
+
+    private async void QuerySessionsIfNeeded()
+    {
+        try { await QuerySessionsAsync(resetPage: true); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void QueryTimelineIfNeeded()
@@ -496,6 +505,7 @@ public sealed partial class MainWindow
         ("runtime", "nodes") => true,
         ("diagnostics", "timeline") => true,
         ("diagnostics", "overview") => true,
+        ("diagnostics", "sessions") => true,
         _ => false
     };
 

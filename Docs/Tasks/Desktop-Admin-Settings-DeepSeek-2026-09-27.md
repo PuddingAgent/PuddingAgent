@@ -414,7 +414,13 @@
 迁移节点汇总、在线/离线/降级、详情、能力、嵌入式冻结/解冻和原因。现有本机生命周期直接用运行中心，不另外实现第二份状态机。验收：过期心跳不会显示在线，冻结只影响目标节点；断线错误可重试；关闭页停止轮询；真实启动/退出仍需进程外验收。
 
 ### DS-14 — 会话与诊断（P1；依赖 DS-04、DS-00）
-状态：**进行中（2026-09-27）**。`runtime-timeline`（运行时间线）与 `diagnostics-overview`（诊断概览）已接入；`session-directory`（会话目录）与 `subagent-runs`（子代理运行）待续。
+状态：**进行中（2026-09-27）**。`diagnostics-overview`、`runtime-timeline` 与 `session-directory` 已接入；`subagent-runs`（子代理运行）待续。
+
+**会话目录切片已交付**
+- 数据来自**进程内 `ISessionRepository`**（与 Core 会话主线服务同一个单例），不是第二份会话存储。
+- 列表 + 详情：会话 ID、标题（无标题显示「未命名」）、工作区、渠道、Agent 模板、类型、角色、状态、主体（Principal + Owner）、血缘（父/根/Agent 实例/运行时节点）、创建与最近活跃。
+- **三条口径**：Core 的仓库只支持渠道/用户/工作区查询，**没有**分页与状态/模板筛选——状态/角色/模板/关键字筛选与分页都在**页侧**完成并在界面注明；**Frozen 会话不列出**（与 `/api/sessions` 同口径）且显示被排除数量；主体与血缘字段为空时明确写「没有关联」而不是留白。
+- 命名冲突登记：Foundation 的 `SessionSummary` 与 `PuddingCode.Platform.SessionSummary` 撞名，改名为 `SessionDirectoryEntry`。
 
 **时间线与概览切片已交付**
 - 时间线：按会话/Run/Trace/Agent 实例/组件/状态筛选，升/降序，raw 与 user 两种展示模式，分页（页码与每页条数按 Core 的 1–500 收敛），事件详情含关联 ID、摘要、错误与元数据。
@@ -900,5 +906,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-11 外部访问 | 已完成 2026-09-27 | 访问令牌与 External API 状态两张卡已接入（明文一次、撤销不可逆、8 项 scope 无通配符、CAS 冲突映射） |
 | DS-12 用户与权限 | 已完成 2026-09-27 | 三张卡全部接入（`RoleService`/`UserService`/`TeamService`）；修复了 AsNoTracking 变更失效、roleIds 回退成数字 ID、团队页可删默认工作区等问题 |
 | DS-13 运行与节点 | 已完成 2026-09-27 | `runtime/nodes` 已接入；冻结/解冻下沉为 `RuntimeNodeAdminService` 并补上审计 |
-| DS-14 会话与诊断 | 进行中 2026-09-27 | 时间线与诊断概览已接入（下沉 `RuntimeDiagnosticsQueryService` 并修掉脱敏旁路）；会话目录与子代理运行待续 |
+| DS-14 会话与诊断 | 进行中 2026-09-27 | 时间线、诊断概览与会话目录已接入（下沉 `RuntimeDiagnosticsQueryService` 并修掉脱敏旁路；会话目录用进程内 `ISessionRepository`）；子代理运行待续 |
 | DS-15 … DS-17 | 待实施 | — |

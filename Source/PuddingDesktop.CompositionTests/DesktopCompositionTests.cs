@@ -2204,6 +2204,79 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task SessionDirectoryAdapter_ReadsTheHostsSessionRepositoryAndAppliesPageFilters()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var sessions = factory.CreateSessionDirectorySettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => sessions.ListAsync(SessionFilter.Default, timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var before = await sessions.ListAsync(SessionFilter.Default, timeout.Token);
+            Assert.Equal(before.Items.Count, before.Total);
+
+            // 通过宿主的会话仓库写两条记录，再从目录里读回来。
+            await kernel.RunSettingsAsync("composition.seedSessions", async (scope, token) =>
+            {
+                var repository = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
+                    .GetRequiredService<PuddingCode.Platform.ISessionRepository>(scope.Services);
+                await repository.CreateAsync(new PuddingCode.Platform.SessionRecord
+                {
+                    SessionId = "composition-session-1",
+                    WorkspaceId = "composition-ws",
+                    AgentTemplateId = "global:composition",
+                    ChannelId = "composition-channel",
+                    OwnerUserId = "composition-owner",
+                    Title = "Composition session one",
+                    Status = PuddingCode.Platform.SessionStatus.Active,
+                }, token);
+                await repository.CreateAsync(new PuddingCode.Platform.SessionRecord
+                {
+                    SessionId = "composition-session-frozen",
+                    WorkspaceId = "composition-ws",
+                    AgentTemplateId = "global:composition",
+                    ChannelId = "composition-channel",
+                    OwnerUserId = "composition-owner",
+                    Title = "Composition frozen",
+                    Status = PuddingCode.Platform.SessionStatus.Frozen,
+                }, token);
+                return true;
+            }, timeout.Token);
+
+            // Core 只按渠道/用户/工作区过滤；这里先验证 Core 侧条件把记录取回来。
+            var scoped = await sessions.ListAsync(SessionFilter.Default with
+            {
+                WorkspaceId = "composition-ws", ChannelId = "composition-channel", UserId = "composition-owner",
+            }, timeout.Token);
+            Assert.Single(scoped.Items);
+            Assert.Equal("composition-session-1", scoped.Items[0].SessionId);
+            // Frozen 会话按 HTTP 列表口径被排除并计数。
+            Assert.Equal(1, scoped.FrozenExcluded);
+            Assert.Contains("活跃", scoped.Items[0].StatusText, StringComparison.Ordinal);
+
+            // 本页筛选：关键字只匹配标题，不匹配时为空。
+            Assert.Empty((await sessions.ListAsync(SessionFilter.Default with { Text = "no-such-title" }, timeout.Token)).Items);
+            Assert.Single((await sessions.ListAsync(SessionFilter.Default with { Text = "one" }, timeout.Token)).Items);
+            // 状态筛选在已返回集合上进行。
+            Assert.Empty((await sessions.ListAsync(SessionFilter.Default with { Status = "Failed" }, timeout.Token)).Items);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => sessions.ListAsync(SessionFilter.Default, timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {
