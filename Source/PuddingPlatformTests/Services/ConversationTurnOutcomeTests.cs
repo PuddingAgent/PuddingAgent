@@ -22,6 +22,7 @@ public class ConversationTurnOutcomeTests
     [TestMethod]
     [DataRow("turn.failed", "failed")]
     [DataRow("turn.cancelled", "cancelled")]
+    [DataRow("run.lease_lost", "failed")]
     public void MalformedPayload_DoesNotHideTerminalState(string type, string expected)
     {
         var outcome = AgentConversationProjectionService.ProjectTurnOutcome(new ConversationEventEntity { Type = type, Payload = "{" });

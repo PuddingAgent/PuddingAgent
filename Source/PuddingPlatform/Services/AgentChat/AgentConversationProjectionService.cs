@@ -328,7 +328,7 @@ public sealed class AgentConversationProjectionService(
 
     internal static ConversationTurnOutcomeView ProjectTurnOutcome(ConversationEventEntity evt)
     {
-        var status = evt.Type == ConversationEventTypes.TurnFailed ? "failed"
+        var status = evt.Type is ConversationEventTypes.TurnFailed or ConversationEventTypes.RunLeaseLost ? "failed"
             : evt.Type == ConversationEventTypes.TurnCancelled ? "cancelled" : "succeeded";
         string? errorCode = null;
         string? errorMessage = null;
@@ -375,17 +375,33 @@ public sealed class AgentConversationProjectionService(
             .FirstOrDefaultAsync(
                 m => m.SessionId == main.SessionId && m.MessageId == messageId,
                 ct);
-        if (message is null || !string.Equals(message.Role, "agent", StringComparison.OrdinalIgnoreCase))
+        if (message is null)
             return null;
 
-        var completedRunId = await db.ConversationEvents
+        // Failed/cancelled turns need not have an assistant transcript row. Their
+        // canonical activity remains accessible from the accepted input message.
+        var isInput = string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase);
+        if (!isInput && !string.Equals(message.Role, "agent", StringComparison.OrdinalIgnoreCase))
+            return null;
+        var turnId = message.TurnId;
+        if (isInput && string.IsNullOrWhiteSpace(turnId))
+            turnId = await db.ChatExecutionCommands.AsNoTracking()
+                .Where(c => c.SessionId == main.SessionId && c.UserMessageId == messageId)
+                .Select(c => c.TurnId).FirstOrDefaultAsync(ct);
+
+        var terminalQuery = db.ConversationEvents
             .AsNoTracking()
             .Where(e => e.ConversationId == main.SessionId)
-            .Where(e => e.MessageId == messageId)
-            .Where(e => e.Type == ConversationEventTypes.TurnCompleted)
+            .Where(e => TerminalEventTypes.Contains(e.Type));
+        terminalQuery = isInput
+            ? terminalQuery.Where(e => e.TurnId == turnId)
+            : terminalQuery.Where(e => e.MessageId == messageId);
+        var terminal = await terminalQuery
             .OrderByDescending(e => e.Sequence)
-            .Select(e => e.RunId)
             .FirstOrDefaultAsync(ct);
+        if (isInput && (terminal is null || terminal.Type == ConversationEventTypes.TurnCompleted))
+            return null;
+        var completedRunId = terminal?.RunId;
 
         IReadOnlyList<ProcessSummaryItem> processItems;
         TurnEventWindow? window = null;
@@ -398,7 +414,7 @@ public sealed class AgentConversationProjectionService(
             var processEvents = await db.ConversationEvents
                 .AsNoTracking()
                 .Where(e => e.ConversationId == main.SessionId)
-                .Where(e => e.MessageId == messageId)
+                .Where(e => e.TurnId == terminal!.TurnId)
                 // 父 run 事件按 completedRunId 收敛；子代理事件挂同一 message_id 但携带
                 // 子 run_id，放宽为按类型纳入，委派轨迹才能在完成后被回放。
                 .Where(e => e.RunId == completedRunId || SubAgentRunLifecycleEventTypes.Contains(e.Type))
@@ -416,7 +432,7 @@ public sealed class AgentConversationProjectionService(
                 && !string.IsNullOrWhiteSpace(message.TurnId ?? completedRunId))
             {
                 window = new TurnEventWindow(
-                    message.TurnId ?? completedRunId!,
+                    terminal!.TurnId,
                     processEvents[^1].Sequence,
                     processEvents[0].Sequence,
                     processEvents[^1].Sequence,

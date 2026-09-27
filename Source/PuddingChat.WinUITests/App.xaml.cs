@@ -115,13 +115,27 @@ public partial class App : Application
                     new("spawn", "delegation", "running", "review code", 3, "reviewer", DelegationExecutionId: "run"),
                     new("done", "delegation", "success", "reviewed", 4, DelegationExecutionId: "run")], "");
                 Check(ReferenceEquals(delegation, activity.Children[2]) && delegation.IsExpanded && delegation.Header.ToString()!.Contains("已完成"), "delegation terminal update preserves card and expansion");
+                var acceptedInput = new ChatMessage("failed-input", null, "user", "用户", DateTimeOffset.UtcNow, "原始请求", "accepted", []);
+                var interruptedCard = new MessageCard(acceptedInput, () => Task.FromResult(new ProcessDetails("failed-input",
+                    [new("thought", "thinking", "done", "已输出的思考", 1), new("tool", "tool_result", "error", "失败记录", 2, "terminal", ExitCode: 1)])));
+                var interruptedPanel = (StackPanel)((Border)interruptedCard.Content).Child;
+                var interruptedDetails = interruptedPanel.Children.OfType<Expander>().Single();
+                Check(interruptedDetails.Visibility == Visibility.Collapsed, "accepted input does not expose terminal detail prematurely");
+                interruptedCard.Update(acceptedInput with { TurnOutcome = new("cancelled", null, null) });
+                Check(interruptedPanel.Children.OfType<InfoBar>().Single() is { IsOpen: true, Severity: InfoBarSeverity.Informational }
+                    && interruptedDetails.Visibility == Visibility.Visible, "cancellation without error text remains visible on existing input card");
+                interruptedDetails.IsExpanded = true;
+                Check(((StackPanel)interruptedDetails.Content).Children.OfType<TurnContentView>().Single().Children.Count == 2,
+                    "terminal activity recovers into separate execution disclosure");
+                Check(((TurnContentView)interruptedPanel.Children[1]).Children.Count == 1,
+                    "recovered execution does not replace or mix with authored input");
                 var slow = control.SelectRoleAsync("test", new Agent("slow", "slow"));
                 await control.SelectRoleAsync("test", fixture.Reviewer);
                 fixture.Late.TrySetResult(fixture.Conversation("slow")); await slow;
                 Check(control.CurrentConversation?.AgentId == "reviewer", "late reply rejected");
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 34, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 38, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }

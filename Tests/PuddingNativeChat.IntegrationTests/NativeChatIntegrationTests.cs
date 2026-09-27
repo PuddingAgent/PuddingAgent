@@ -8,7 +8,7 @@ using PuddingDesktop.Foundation;
 
 namespace PuddingNativeChat.IntegrationTests;
 
-public class NativeChatIntegrationTests
+public partial class NativeChatIntegrationTests
 {
     [Fact]
     public async Task RealCore_LocalClientNeedsNoAccount_WebStillRequiresAuthentication()
@@ -145,6 +145,7 @@ public class NativeChatIntegrationTests
             Assert.Contains(await client.GetStatusesAsync(workspace.WorkspaceId, timeout.Token), status => status.AgentId == agent.AgentId);
             var process = await client.GetProcessAsync(role, receipt.MessageId, timeout.Token);
             Assert.Equal(receipt.MessageId, process.MessageId);
+            await VerifyTerminalActivityAsync(kernel, client, role, session, timeout.Token);
             Assert.Empty(network.Requests);
             using var probe = await http.GetAsync(new Uri(address, "/health/ready"), timeout.Token);
             Assert.Contains("/health/ready", network.Requests); // Prove the zero-HTTP observation is not a disabled listener.

@@ -39,10 +39,11 @@ public sealed class MessageCard : UserControl
         if (_run != message.RunId) { _events.Clear(); _run = message.RunId; }
         foreach (var item in message.ProcessItems) _events[item.Id] = item;
         _flow.Update(_events.Values, message.Content);
-        _outcome.IsOpen = message.TurnOutcome?.ErrorMessage is { Length: > 0 };
-        _outcome.Title = message.TurnOutcome?.Status ?? "";
+        _outcome.IsOpen = message.TurnOutcome is { Status: not "succeeded" };
+        _outcome.Severity = message.TurnOutcome?.Status == "cancelled" ? InfoBarSeverity.Informational : InfoBarSeverity.Error;
+        _outcome.Title = message.TurnOutcome?.Status switch { "cancelled" => "执行已取消", "failed" => "执行失败", _ => message.TurnOutcome?.Status ?? "" };
         _outcome.Message = message.TurnOutcome?.ErrorMessage ?? "";
-        if (_process is not null) _process.Header = "加载完整执行明细";
+        if (_process is not null) _process.Visibility = message.Role != "user" || _outcome.IsOpen ? Visibility.Visible : Visibility.Collapsed;
     }
     public bool IsProcessExpanded { get => _process?.IsExpanded ?? false; set { if (_process is not null) _process.IsExpanded = value; } }
     public MessageCard(ChatMessage message, Func<Task<ProcessDetails>>? loadDetails = null, IImageAttachmentClient? imageClient = null, string? workspace = null, CancellationToken ct = default)
@@ -51,12 +52,13 @@ public sealed class MessageCard : UserControl
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(_header); panel.Children.Add(_flow); panel.Children.Add(_attachments); Update(message);
         panel.Children.Add(_outcome);
-        if (message.Role != "user")
+        if (loadDetails is not null || message.Role != "user")
         {
             var details = new StackPanel { Spacing = 8 };
             var expander = new Expander { Header = "加载完整执行明细",
                 Content = details, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
             _process = expander;
+            expander.Visibility = message.Role != "user" || _outcome.IsOpen ? Visibility.Visible : Visibility.Collapsed;
             var loaded = false; var loading = false;
             expander.Expanding += async (_, _) =>
             {
@@ -64,8 +66,18 @@ public sealed class MessageCard : UserControl
                 try
                 {
                     var result = loadDetails is null ? new ProcessDetails(message.MessageId, message.ProcessItems) : await loadDetails();
-                    details.Children.Clear(); foreach (var item in result.ProcessItems) _events[item.Id] = item;
-                    _flow.Update(_events.Values, _message.Content);
+                    details.Children.Clear();
+                    if (_message.Role == "user")
+                    {
+                        // Execution belongs to Core, not to the user's authored text.
+                        var execution = new TurnContentView();
+                        execution.Update(result.ProcessItems, ""); details.Children.Add(execution);
+                    }
+                    else
+                    {
+                        foreach (var item in result.ProcessItems) _events[item.Id] = item;
+                        _flow.Update(_events.Values, _message.Content);
+                    }
                     if (result.Window?.HasMoreBefore == true) details.Children.Insert(0, new TextBlock { Text = "当前为部分事件窗口。", Opacity = .6 });
                     loaded = true;
                 }

@@ -112,3 +112,11 @@ Core 新增局部保存路径，在既有写锁内合并字段；价格、配额
 
 当前尚未验证系统选择器实际点击和真实模型视觉理解；本轮不调用付费模型。相机、剪贴板、拖放、Markdown 内生成图与一般文件上下文入口仍是后续工作；不把 PNG 解码测试外推为全部系统图片编解码器验收。
 `temp/native-images-publish.log` 的 Release 发布通过，`temp/native-images-smoke.log` 的隔离发布包启停、重启、UI 回调、目录保存与退出验证通过。未重启用户现有 Desktop，也未改动用户数据目录。
+
+## 异常终态执行记录恢复（2026-09-27）
+
+审计发现：失败/取消可能没有助手 ChatMessages 行，旧明细查询只接受 agent 行及 turn.completed；原生输入卡片也不提供明细入口。因此离开会话后，失败前的思考/工具活动无法恢复。另一个边界是 run.lease_lost 被默认映射为 succeeded。
+
+Core 明细查询现支持从已接受的用户输入定位异常终态，按会话、Turn 和根 Run 读取全部活动，并包含同 Turn 的子代理生命周期；子代理正文与其他 Turn 的事件不混入。成功回复仍走助手卡片。Native 为异常输入卡提供独立执行展开区，保留原始请求文本；取消不依赖 errorMessage 才可见，租约丢失显示失败。不新增 HTTP 调用或另一套执行状态机。
+
+验证：BCL 34/34、实际 WinUI 窗口 38 项（`temp/native-terminal-ui.log`）；真实 Core 组合 3/3（`temp/native-terminal-core-final.log`），其中覆盖成功/失败/取消/租约丢失四种终态、80 条思考记录及根/子执行过滤，并保持聊天零 HTTP；终态投影定向 4/4（`temp/native-terminal-projection.log`）。构建存在既有 Core 分析器警告。未部署替换当前 Desktop、未运行真实模型、未改动 D:\data。活动快照 64 条窗口的运行中增量追赶仍待后续实现，不能将本次终态完整恢复视为该缺口已经关闭。

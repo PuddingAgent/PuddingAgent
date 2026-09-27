@@ -12,6 +12,8 @@
 
 ## 2026-09-27 原生聊天交错消息流
 
+`AgentConversationProjectionService.GetMessageProcessItemsAsync` 支持失败/取消时从用户请求定位 canonical 终态执行明细；`MessageCard` 将其显示在独立展开区。租约丢失为失败状态。回归覆盖 `NativeChatTerminalActivityTests.cs`（真实 Core 中超过 64 条活动恢复、根/子执行边界）与原生窗口测试。
+
 `PuddingChat/ImageAttachments.cs`、`ChatSelection` 保存原生附件合同和角色草稿；`ChatComposer`/`ImageAttachmentView` 提供多选图片与按需预览，`InProcessChatClient.Images.cs` 直接调用 Core VisionArtifact 存储。SubmitTurn 使用 typed image parts，纯图片和重试都保留 Artifact 引用。
 
 `TurnFlow` 按明确父调用 ID 建树、按委派执行 ID 合并状态；`AgentProjectionDtos.ProcessSummaryItem` 与 `AgentConversationProjectionService` 提供 `ParentToolCallId`/`DelegationExecutionId`/精确委派状态，Composition 直接映射为 Native 卡片。投影字段回归见 `ConversationProcessMetadataTests`。
