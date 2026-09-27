@@ -9,6 +9,7 @@ public static class NativeImageTransfer
 {
     private static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase)
         { ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp" };
+    public static bool IsImagePath(string path) => Extensions.Contains(Path.GetExtension(path));
     public static bool ContainsImages(DataPackageView data) =>
         data.Contains(StandardDataFormats.StorageItems) || data.Contains(StandardDataFormats.Bitmap);
 

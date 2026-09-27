@@ -23,6 +23,7 @@ public sealed class ChatComposer : UserControl
     public void SetFileAvailability(bool enabled) => _attachFile.IsEnabled = enabled;
     private readonly InfoBar _transferNotice = new() { IsOpen = false, IsClosable = true, Severity = InfoBarSeverity.Error };
     public Func<DataPackageView, Task>? ImportImagesAsync { get; set; }
+    public Func<DataPackageView, Task>? ImportFilesAsync { get; set; }
     public string TransferError => _transferNotice.IsOpen ? _transferNotice.Message : "";
     private readonly StackPanel _images = new() { Spacing = 4 };
     private readonly Grid _toolbar = new() { ColumnSpacing = 8, RowSpacing = 8 };
@@ -88,13 +89,13 @@ public sealed class ChatComposer : UserControl
         _editor.KeyDown += OnKeyDown;
         _editor.Paste += async (_, args) =>
         {
-            if (!_attach.IsEnabled) return;
+            if (!_attach.IsEnabled && !_attachFile.IsEnabled) return;
             try
             {
                 var data = Clipboard.GetContent();
                 if (!NativeImageTransfer.ContainsImages(data)) return;
                 args.Handled = true;
-                await ReceiveImagesAsync(data);
+                await ReceiveAttachmentsAsync(data);
             }
             catch (Exception) { ShowTransferError("暂时无法读取剪贴板，请重试。"); }
         };
@@ -140,19 +141,30 @@ public sealed class ChatComposer : UserControl
         catch (Exception e) { ShowTransferError(e.Message); }
     }
     private void ShowTransferError(string message) { _transferNotice.Message = message; _transferNotice.IsOpen = true; }
+    public async Task ReceiveAttachmentsAsync(DataPackageView data)
+    {
+        if (!data.Contains(StandardDataFormats.StorageItems) || ImportFilesAsync is null)
+        { await ReceiveImagesAsync(data); return; }
+        if (!_attachFile.IsEnabled) return;
+        _transferNotice.IsOpen = false;
+        try { await ImportFilesAsync(data); }
+        catch (OperationCanceledException) { }
+        catch (Exception e) { ShowTransferError(e.Message); }
+    }
     private void OnDragOver(object sender, DragEventArgs args)
     {
         if (!NativeImageTransfer.ContainsImages(args.DataView)) return;
         args.Handled = true;
-        args.AcceptedOperation = _attach.IsEnabled ? DataPackageOperation.Copy : DataPackageOperation.None;
-        args.DragUIOverride.Caption = _attach.IsEnabled ? "添加图片到当前角色的草稿" : "当前无法添加图片";
+        var enabled = args.DataView.Contains(StandardDataFormats.StorageItems) ? _attachFile.IsEnabled : _attach.IsEnabled;
+        args.AcceptedOperation = enabled ? DataPackageOperation.Copy : DataPackageOperation.None;
+        args.DragUIOverride.Caption = enabled ? "添加图片或文本文件到当前角色的草稿" : "当前无法添加附件";
     }
     private async void OnDrop(object sender, DragEventArgs args)
     {
         if (!NativeImageTransfer.ContainsImages(args.DataView)) return;
         args.Handled = true;
         var deferral = args.GetDeferral();
-        try { await ReceiveImagesAsync(args.DataView); }
+        try { await ReceiveAttachmentsAsync(args.DataView); }
         finally { deferral.Complete(); }
     }
     private void OnKeyDown(object sender, KeyRoutedEventArgs args)

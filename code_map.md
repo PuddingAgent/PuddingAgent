@@ -1309,3 +1309,7 @@ PuddingApproval/ApprovalOperation.cs：原始工具/参数/定义/目录快照�
 ## 2026-09-27 原生聊天自适应角色导航
 
 PuddingChat.WinUI/ChatWorkspace.UpdateNavigationLayout 在消息可用宽度不足或宿主折叠侧栏时，将原有角色导航移入新的 WinUI Flyout 容器；宽屏还原宿主偏好与原控件。WorkspaceLayoutChecks 覆盖 320 DIP 消息区、草稿、角色切换、页面离开与反复切换，57 逻辑/139 窗口验证通过。
+
+## 2026-09-27 原生混合文件传入
+
+PuddingChat.WinUI/ChatWorkspace.FileTransfer.cs 与 ChatComposer.ReceiveAttachmentsAsync 接入拖放/Ctrl+V 的文本和图片批次；导入前捕获角色，成功后原子更新草稿。FileTransferChecks 覆盖真实 WinRT 延迟数据源和失败路径；57 逻辑/145 原生窗口检查通过。文本上下文设计文档记录范围及 Core Artifact 所有权。

@@ -278,3 +278,9 @@ ChatWorkspace 在可用宽度不足「宿主偏好侧栏宽度 + 520 DIP」或�
 实测发现关闭中的 Flyout 被移除 Content 后，再复用同一 Flyout 可能不触发下一次 Opened；现为每次紧凑布局创建新的弹出容器，内部导航控件继续复用。另将选角后的输入焦点恢复放到异步读会话之前，避免迟到读取抢走后续用户操作焦点。
 
 验证：57 逻辑测试、139 原生窗口检查通过，最终构建零警告/错误（temp/native-workspace-layout-final.log）。新增 7 项覆盖 320 DIP 整页、消息视口高度、实际弹出层、侧栏返回与草稿、宿主隐藏后的入口、选角关闭、离开工作台关闭和宽度偏好。测试以真实 Opened/Closed 事件同步；IsLoaded 不能作为 Flyout 关闭证明。未更改 Core、部署产品或完成系统级缩放/IME/主题视觉矩阵。
+
+## 原生混合文件拖放与粘贴（2026-09-27）
+
+ChatComposer 的拖放及 Ctrl+V 现接收 StorageItems 中的图片与文本/代码文件；普通文字与位图仍沿用原生文字粘贴及已有图片导入。ChatWorkspace.FileTransfer 在延迟数据源解析前捕获角色，校验数量/文本后导入图片，批次全部成功才更新草稿，失败保留原附件；不递归读文件夹、不把晚到附件写入新角色。草稿原子性不等于 Core Artifact 存储事务，已成功写入但最终未引用的图片生命周期仍归 Core。
+
+验证：57 项逻辑、145 项 WinUI 窗口检查通过，零构建警告/错误（temp/native-file-transfer-final.log）。新增 6 项用真实 WinRT DataPackage/StorageFile 测混合导入、二进制拒绝且不调用图片导入、延迟 provider 的角色隔离与原角色快照归属、文件夹拒绝、禁用状态。没有操作用户系统剪贴板或真实资源管理器鼠标拖动；没有更改 Core 或发布 Desktop。

@@ -14,6 +14,8 @@ The host supplies `IChatClient`, owns this control's disposal, and receives sett
 
 `ChatWorkspace.UpdateNavigationLayout`: preserves the host's preferred sidebar width; when chat would have less than 520 DIP, or the host collapses the sidebar, moves the existing role navigation into a native Flyout reached from the heading. Wide mode reuses the same controls. Role selection, leaving the workbench and disposal close the flyout; draft/role state is not recreated by resizing.
 
+`ChatWorkspace.FileTransfer.cs`: mixed image/text StorageItems transfer, capturing the role before deferred provider reads. Validates text snapshots first and commits draft attachments only after the entire batch succeeds. ChatComposer routes drop and Ctrl+V storage items here; explicit paste-image and bitmap clipboard retain NativeImageTransfer, ordinary text stays with TextBox.
+
 `WorkspaceSetupForm`: native workspace/first-role creation with existing model selection, validation and retry feedback. ChatWorkspace hosts the dialog and selects the returned role. Advanced Web management remains explicitly separate.
 
 `ProviderConfigurationForm`: native provider/chat-model create/edit and explicit key retention/replacement/clear, password input cleared on save/unload. `RoleConfigurationForm`: name, description, enabled, main model, role type and system prompt. ChatWorkspace opens modal editors, refreshes role cards after save; advanced settings remain separate.

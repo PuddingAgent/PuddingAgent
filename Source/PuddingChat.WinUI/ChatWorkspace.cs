@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml.Media;
 namespace PuddingChat.WinUI;
 
 /// <summary>Role-first native workspace. All continuations return to the UI thread; Core owns execution.</summary>
-public sealed class ChatWorkspace : UserControl, IDisposable
+public sealed partial class ChatWorkspace : UserControl, IDisposable
 {
     private readonly IChatClient _client;
     private readonly Uri? _origin;
@@ -185,6 +185,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         Composer.AttachFileRequested += async (_, _) => await GuardAsync(PickTextFilesAsync);
         Composer.RemoveFileRequested += id => { _state.RemoveFile(id); Composer.SetFiles(_state.Files); UpdateComposer(); };
         Composer.ImportImagesAsync = data => AddImageBatchAsync((import, ct) => NativeImageTransfer.ReadAsync(data, import, ct));
+        Composer.ImportFilesAsync = ImportDroppedFilesAsync;
         Composer.RemoveImageRequested += id => { _state.RemoveImage(id); Composer.SetImages(_state.Images); UpdateComposer(); };
         Composer.CancelRequested += async (_, _) => await GuardAsync(CancelAsync);
         _timer.Tick += async (_, _) => { if (_active && IsLoaded) await GuardAsync(RefreshAsync); };
