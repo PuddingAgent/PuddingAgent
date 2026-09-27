@@ -23,6 +23,8 @@
   <ItemGroup>
     <ProjectReference Include="..\PuddingDesktop.Foundation\PuddingDesktop.Foundation.csproj" />
     <ProjectReference Include="..\PuddingDesktop.Composition\PuddingDesktop.Composition.csproj" />
+    <ProjectReference Include="..\PuddingChat\PuddingChat.csproj" />
+    <ProjectReference Include="..\PuddingChat.WinUI\PuddingChat.WinUI.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" />
@@ -30,9 +32,9 @@
   </ItemGroup>
   <Target Name="EnforceShellBoundary" BeforeTargets="ResolveReferences">
     <ItemGroup>
-      <_ForbiddenShellReference Include="@(ProjectReference)" Condition="'%(Filename)' != 'PuddingDesktop.Foundation' And '%(Filename)' != 'PuddingDesktop.Composition'" />
+      <_ForbiddenShellReference Include="@(ProjectReference)" Condition="'%(Filename)' != 'PuddingDesktop.Foundation' And '%(Filename)' != 'PuddingDesktop.Composition' And '%(Filename)' != 'PuddingChat' And '%(Filename)' != 'PuddingChat.WinUI'" />
     </ItemGroup>
-    <Error Condition="'@(_ForbiddenShellReference)' != ''" Text="WinUI shell may reference only Foundation and Composition. Put the future Core DLL adapter in the composition boundary, not the view assembly." />
+    <Error Condition="'@(_ForbiddenShellReference)' != ''" Text="WinUI shell may reference only Foundation, Composition and native Chat components. Host services stay behind the composition boundary." />
   </Target>
   <Import Project="..\PuddingHost\Build\PuddingHostContent.props" />
   <Target Name="IncludeWinUiShellResourcesInPublish" AfterTargets="ComputeFilesToPublish">

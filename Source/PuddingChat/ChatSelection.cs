@@ -12,6 +12,7 @@ public sealed class ChatSelection
         set { if (Role is { } role) _drafts[role] = value; } }
     public PendingSend? Pending => Role is { } role ? _pending.GetValueOrDefault(role) : null;
     public void Select(RoleKey? role) { Role = role; Generation++; Conversation = null; }
+    public void Clear() { Select(null); _drafts.Clear(); _pending.Clear(); }
     public bool Apply(long generation, Conversation conversation)
     {
         if (generation != Generation || Role != new RoleKey(conversation.WorkspaceId, conversation.AgentId)) return false;
@@ -19,12 +20,13 @@ public sealed class ChatSelection
         if (Conversation is { } old && old.MainSessionId == conversation.MainSessionId && old.EventCursor > conversation.EventCursor) return false;
         Conversation = conversation; return true;
     }
-    public PendingSend Prepare(string session)
+    public PendingSend Prepare(string session, string? capturedDraft = null)
     {
         var role = Role ?? throw new InvalidOperationException("先选择角色。");
         if (_pending.TryGetValue(role, out var retry)) return retry;
-        if (string.IsNullOrWhiteSpace(Draft)) throw new InvalidOperationException("请输入消息。");
-        var send = PendingSend.Create(role, session, Draft);
+        var text = capturedDraft ?? Draft;
+        if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("请输入消息。");
+        var send = PendingSend.Create(role, session, text);
         _pending.Add(role, send); return send;
     }
     public void Accept(PendingSend send)
@@ -32,6 +34,10 @@ public sealed class ChatSelection
         if (!_pending.TryGetValue(send.Role, out var pending) || pending.ClientRequestId != send.ClientRequestId) return;
         _pending.Remove(send.Role);
         if (_drafts.GetValueOrDefault(send.Role) == send.Text) _drafts[send.Role] = "";
+    }
+    public void Reject(PendingSend send)
+    {
+        if (_pending.GetValueOrDefault(send.Role)?.ClientRequestId == send.ClientRequestId) _pending.Remove(send.Role);
     }
     public static ProcessItem[] Ordered(IEnumerable<ProcessItem> items) =>
         items.DistinctBy(item => item.Id).OrderBy(item => item.Sequence).ToArray();

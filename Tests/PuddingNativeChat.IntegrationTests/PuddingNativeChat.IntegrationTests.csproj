@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Source/PuddingChat/PuddingChat.csproj" />
+    <ProjectReference Include="../../Source/PuddingDesktop.Composition/PuddingDesktop.Composition.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <Import Project="../../Source/PuddingHost/Build/PuddingHostContent.props" />
+</Project>

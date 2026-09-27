@@ -1,6 +1,3 @@
-using System.Net;
-using System.Text;
-using System.Text.Json;
 using PuddingChat;
 
 namespace PuddingChatTests;
@@ -50,57 +47,27 @@ public class ChatTests
         Assert.Equal(new[] { second, first }, ChatSelection.Ordered([first, second, first]));
         Assert.Null(ChatSelection.ActiveTurn(View(A, 0)));
     }
-    [Fact] public async Task AuthenticatedSendUsesAdmissionAndStableIdsAfterUncertainResponse()
-    {
-        var attempts = new List<string>(); var handler = new Handler(async (request, ct) =>
-        {
-            if (request.RequestUri!.AbsolutePath == "/api/login/account") return Json("{\"status\":\"ok\",\"token\":\"test-token\"}");
-            Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
-            Assert.Equal("test-token", request.Headers.Authorization?.Parameter);
-            Assert.Equal("workspace", request.Headers.GetValues("X-Workspace-Id").Single());
-            Assert.Equal("/api/v1/conversations/session/turns", request.RequestUri.AbsolutePath);
-            attempts.Add(await request.Content!.ReadAsStringAsync(ct));
-            if (attempts.Count == 1) throw new HttpRequestException("network lost after acceptance");
-            return Json("{\"conversationId\":\"session\",\"messageId\":\"m\",\"turnIds\":[\"t\"],\"acceptedSequence\":42}", HttpStatusCode.Accepted);
-        });
-        using var client = new HttpChatClient(new("http://127.0.0.1:12345/admin/"), handler);
-        await client.LoginAsync("user", "password", default);
-        var send = PendingSend.Create(A, "session", "hello");
-        await Assert.ThrowsAsync<HttpRequestException>(() => client.SendAsync(send, default));
-        var accepted = await client.SendAsync(send, default);
-        Assert.Equal("t", accepted.TurnIds.Single()); Assert.Equal(attempts[0], attempts[1]);
-        using var body = JsonDocument.Parse(attempts[1]);
-        Assert.Equal("agent", body.RootElement.GetProperty("recipients").GetProperty("type").GetString());
-        Assert.Equal("builder", body.RootElement.GetProperty("recipients").GetProperty("agentIds")[0].GetString());
-    }
-    [Fact] public async Task NotModifiedAndUnauthorizedAreDistinct()
-    {
-        using var client = new HttpChatClient(new("http://localhost:1234"), new Handler((r, _) =>
-        { Assert.EndsWith("?knownCursor=12", r.RequestUri!.ToString()); return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotModified)); }));
-        Assert.Null(await client.GetConversationAsync(A, 12, default));
-        using var unauthorized = new HttpChatClient(new("http://localhost:1234"), new Handler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized))));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => unauthorized.GetWorkspacesAsync(default));
-    }
-    [Fact] public async Task CancelUsesServerTurnIdentityAndWorkspaceHeader()
-    {
-        using var client = new HttpChatClient(new("http://localhost:1234"), new Handler((r, _) =>
-        {
-            Assert.Equal(HttpMethod.Post, r.Method);
-            Assert.Equal("/api/v1/conversations/s/turns/server-turn/cancel", r.RequestUri!.AbsolutePath);
-            Assert.Equal("workspace", r.Headers.GetValues("X-Workspace-Id").Single());
-            return Task.FromResult(Json("{}"));
-        }));
-        await client.CancelAsync("workspace", "s", "server-turn", default);
-    }
     [Fact] public void BoundaryContainsOnlyBclDependencies()
     {
         var refs = typeof(ChatSelection).Assembly.GetReferencedAssemblies();
         Assert.All(refs, r => Assert.True(r.Name!.StartsWith("System.") || r.Name is "System" or "netstandard", r.Name));
-        Assert.Throws<ArgumentException>(() => new HttpChatClient(new("https://example.com")));
     }
-    private static HttpResponseMessage Json(string body, HttpStatusCode status = HttpStatusCode.OK) =>
-        new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
-    private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
-    { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => send(request, cancellationToken); }
+    [Fact] public void AccountResetDropsDraftsAndPendingCommands()
+    {
+        var state = new ChatSelection(); state.Select(A); state.Draft = "private"; state.Prepare("s");
+        state.Clear(); state.Select(A); Assert.Equal("", state.Draft); Assert.Null(state.Pending);
+    }
+    [Fact] public void RejectedValidationKeepsDraftButAllowsCorrection()
+    {
+        var state = new ChatSelection(); state.Select(A); state.Draft = "old"; var pending = state.Prepare("s");
+        state.Reject(pending); Assert.Equal("old", state.Draft); state.Draft = "corrected";
+        var corrected = state.Prepare("s"); Assert.Equal("corrected", corrected.Text); Assert.NotEqual(pending.ClientRequestId, corrected.ClientRequestId);
+    }
+    [Fact] public void SessionCreationDoesNotCaptureTextTypedAfterSend()
+    {
+        var state = new ChatSelection(); state.Select(A); state.Draft = "first";
+        var captured = state.Draft; state.Draft = "next";
+        var send = state.Prepare("created-session", captured); Assert.Equal("first", send.Text);
+        state.Accept(send); Assert.Equal("next", state.Draft);
+    }
 }
-

@@ -1,8 +1,8 @@
-## 2026-09-27 WinUI 3：角色优先的 Coding 工作台设计（待实施）
+## 2026-09-27 WinUI 3：原生角色聊天与进程内 Core 接入
 
-2026-09-27 最新裁定：原地重建 `Source/PuddingDesktop` 为 WinUI 3，角色为一等公民；Core 已作为进程内 DLL 接入。Foundation 生命周期、Composition 真实 Host、WinUI 工作台/后台回调/重启与退出 smoke 已通过；原生角色导航和 Agent 浏览器仍待迁移。旧 WPF 仅保留归档测试基线。详见 [实施记录](Docs/Reports/Desktop-WinUI3-Skeleton-2026-09-27.md)。
+原地重建的 `Source/PuddingDesktop` 已接入 `PuddingChat.WinUI` 原生角色头像卡、消息卡、执行明细与输入框，通过 `PuddingDesktop.Composition/InProcessChatClient.cs` 直接调用 Core 应用服务。聊天不使用 HTTP/JWT/WebView2。独立状态/原生窗口/真实 Core 组合验证与迁移边界见 [实施记录](Docs/Reports/Desktop-Native-Chat-2026-09-27.md)。
 
-代码入口：`Source/PuddingDesktop/Hosting/DesktopApplicationCoordinator.cs`、`Core/CoreProcessSupervisor.cs`、`Browser/BrowserWorkspaceController.cs`（均相对 Desktop 目录）；`Source/PuddingCore/Platform/AgentTemplateDefinition.cs`、`AgentProjectionDtos.cs`；`Source/PuddingPlatformAdmin/src/pages/chat/client/agentChatApi.ts`。新工程、协议和 Coding 文档适配器详见方案 §8，均为拟建。
+代码入口：`Source/PuddingChat`（BCL 合同/选择状态）、`Source/PuddingChat.WinUI`（独立原生控件）、`Source/PuddingDesktop/MainWindow.Kernel.cs`（装配）、`Source/PuddingPlatform/Services/AgentChat/AgentMainSessionService.cs`（主会话）与同目录投影服务。旧 WPF 路径已归档在 `Source/PuddingDesktop.WpfArchive`，不是当前产品入口。
 
 ## 2026-09-25 文档回改：ADR-089 §8.3 留白已由 S5 关闭（正文同步，**纯文档 14/3**）
 
@@ -757,7 +757,7 @@ Pudding — Windows 桌面智能助手。ASP.NET Core 是 Desktop 子进程，Co
 |------|------|----------|
 | `Source/PuddingAgent/` | 🔑 入口 (Program.cs · Console/DesktopChild 薄壳) | [code_map](Source/PuddingAgent/code_map.md) |
 | `Source/PuddingRuntime/` | 🔑 Agent Loop · LLM · 工具 · 上下文管线；压缩与冷水合共享 canonical ChatMessages 增量同步门禁 | [code_map](Source/PuddingRuntime/code_map.md) |
-| `Source/PuddingDesktop/` | WinUI 3 Shell · Core DLL 进程内装配 · 原生运行中心 · 隔离 WebView2 工作台 · UI 回调 | [code_map](Source/PuddingDesktop/code_map.md) |
+| `Source/PuddingDesktop/` | WinUI 3 Shell · Core DLL 进程内装配 · 原生运行中心 · 原生角色聊天 · 直接服务调用 · UI 回调 | [code_map](Source/PuddingDesktop/code_map.md) |
 | `Source/PuddingHost/` | 🔑 组合根 · 全网卡 HTTP/本机控制地址 · Browser Bridge · 飞书连接器 | [code_map](Source/PuddingHost/code_map.md) |
 | `Source/PuddingCore/` | 🔑 抽象与契约 · 接口 · 模型 | [code_map](Source/PuddingCore/code_map.md) |
 | `Source/PuddingPlatform/` | 🔑 Session · API（含认证/当前用户投影）· EF Core · 消息网关 | [code_map](Source/PuddingPlatform/code_map.md) |

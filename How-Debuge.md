@@ -1,5 +1,10 @@
 ### WinUI / Core DLL 调试（2026-09-27）
 
+- 原生聊天入口为 `PuddingChat.WinUI.ChatWorkspace`，调用 `InProcessChatClient`；聊天操作不产生 HTTP 请求。`test-pudding-native-chat.ps1` 分别验证 BCL 状态、独立 WinUI 窗口与真实 Core 直接调用（含零 HTTP 断言）。先确认选择代次、workspaceId/agentId/MainSessionId，再核查 Core canonical 消息与 Turn，不能把受理当完成。
+- 进程内适配每次创建独立 scope，后台线程执行，停机先取消并排空；若停机后 UI 仍调用旧客户端，应检查 ChatWorkspace.Dispose / Session.StopAsync，而不是重试旧地址。角色切换不取消已受理工作。
+- DLL Host 必须显式登记 PuddingController 的 MVC ApplicationPart；遗漏时管理页面外壳仍能加载，但内部 `/api/session/main` 返回 404，外层 `/api/sessions/main` 可能只显示 400。原生聊天已使用 Core 主会话服务，不再走这条 HTTP 链。
+- 程序化 WinUI 控件直接从 Application.Resources 取 Brush 会捕获当时主题（曾使浅色导航呈深灰）。原生组件现在用 ThemeResource 表达式保持 Light/Dark/HighContrast 随宿主变化；截图验证不能只看默认主题。
+
 - 运行中心显示 Desktop/Core 同一 PID 和动态 Loopback 地址；不再等待 stdout 的 PUDDING_DESKTOP_READY。窗口异常日志在 StateRoot/desktop.log，Core 日志在所选 DataRoot。不要回显配置凭据。
 - 默认新数据根为 `%LOCALAPPDATA%/Pudding/DesktopData`，启动参数 `--state-root` 和 `--data-root` 可指定隔离环境；测试脚本强制自己的 temp/test-out 根。旧 Core 未退出前禁止复用其数据目录。
 - `test-pudding-desktop-kernel.ps1` 验证真实 WinUI 加载 PuddingHost.dll、ready、工作台导航、后台到 UI 回调、启停/重启、退出与目录锁释放。骨架检查使用 `--smoke-report`，不启动 Core；`--demo` 不自动启动 Core。

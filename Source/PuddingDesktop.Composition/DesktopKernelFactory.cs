@@ -10,6 +10,9 @@ namespace PuddingDesktop.Composition;
 public sealed class DesktopKernelFactory(IDesktopServices desktop) : IKernelSessionFactory
 {
     private static readonly SemaphoreSlim ProcessHost = new(1, 1);
+    private Session? _active;
+    public PuddingChat.IChatClient CreateChatClient() => _active?.CreateChatClient()
+        ?? throw new InvalidOperationException("Core 尚未就绪。");
     public async Task<IKernelSession> StartAsync(string dataRoot, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(dataRoot);
@@ -32,11 +35,13 @@ public sealed class DesktopKernelFactory(IDesktopServices desktop) : IKernelSess
             builder.Services.AddSingleton(desktop);
             builder.Services.AddControllers().AddApplicationPart(typeof(DesktopPresentationController).Assembly);
             builder.Services.AddSingleton<IHostLifetime, DesktopHostLifetime>();
+            builder.Services.AddScoped<PuddingPlatform.Services.AgentChat.AgentMainSessionService>();
             app = PuddingApplicationHost.Build(builder);
             await PuddingApplicationHost.InitializeAsync(app, cancellationToken).ConfigureAwait(false);
             await app.StartAsync(cancellationToken).ConfigureAwait(false);
             var address = PuddingApplicationHost.CaptureBoundAddresses(app);
-            return new Session(app, lease, address);
+            _active = new Session(app, lease, address);
+            return _active;
         }
         catch
         {
@@ -51,12 +56,33 @@ public sealed class DesktopKernelFactory(IDesktopServices desktop) : IKernelSess
     private sealed class Session(WebApplication app, PuddingDataRootLease lease, Uri address) : IKernelSession
     {
         private bool _disposed;
+        private bool _stopping;
+        private readonly object _gate = new();
+        private readonly List<InProcessChatClient> _clients = [];
+        public PuddingChat.IChatClient CreateChatClient()
+        {
+            lock (_gate)
+            {
+                if (_disposed || _stopping) throw new InvalidOperationException("Core 正在停止。");
+                var client = new InProcessChatClient(app.Services.GetRequiredService<IServiceScopeFactory>(), Stopping);
+                _clients.Add(client); return client;
+            }
+        }
         public Uri WorkbenchAddress => new(address, "/admin/");
         public CancellationToken Stopping => app.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping;
-        public Task StopAsync(CancellationToken cancellationToken) => app.StopAsync(cancellationToken);
+        public async Task StopAsync(CancellationToken cancellationToken)
+        {
+            InProcessChatClient[] clients;
+            lock (_gate) { _stopping = true; clients = _clients.ToArray(); }
+            foreach (var client in clients) await client.DrainAsync(cancellationToken).ConfigureAwait(false);
+            await app.StopAsync(cancellationToken).ConfigureAwait(false);
+        }
         public async ValueTask DisposeAsync()
         {
             if (_disposed) return;
+            InProcessChatClient[] clients;
+            lock (_gate) { _stopping = true; clients = _clients.ToArray(); }
+            foreach (var client in clients) await client.DrainAsync(CancellationToken.None).ConfigureAwait(false);
             await app.DisposeAsync().ConfigureAwait(false);
             lease.Dispose();
             await Serilog.Log.CloseAndFlushAsync().ConfigureAwait(false);

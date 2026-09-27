@@ -29,7 +29,7 @@ public interface IAgentConversationProjectionService
 
 /// <summary>Default conversation projection service for the single-user Agent chat client.</summary>
 public sealed class AgentConversationProjectionService(
-    PlatformApiClient api,
+    ISessionRepository sessionRepository,
     WorkspaceAgentFileService workspaceAgentFileService,
     SessionRedirectStore redirectStore,
     PlatformDbContext db,
@@ -108,7 +108,7 @@ public sealed class AgentConversationProjectionService(
     {
         ownerUserId = NormalizeOwnerUserId(ownerUserId);
 
-        var sessions = await api.GetSessionsAsync(workspaceId, ct);
+        var sessions = await sessionRepository.QueryAsync(workspaceId: workspaceId, ct: ct);
         var agent = await workspaceAgentFileService.GetAgentAsync(workspaceId, agentId, ct);
         var main = await ResolveAgentMainSessionAsync(
             workspaceId,
@@ -358,7 +358,7 @@ public sealed class AgentConversationProjectionService(
         if (string.IsNullOrWhiteSpace(messageId))
             return null;
 
-        var sessions = await api.GetSessionsAsync(workspaceId, ct);
+        var sessions = await sessionRepository.QueryAsync(workspaceId: workspaceId, ct: ct);
         var agent = await workspaceAgentFileService.GetAgentAsync(workspaceId, agentId, ct);
         var main = await ResolveAgentMainSessionAsync(
             workspaceId,
@@ -435,7 +435,7 @@ public sealed class AgentConversationProjectionService(
     {
         ownerUserId = NormalizeOwnerUserId(ownerUserId);
 
-        var sessions = await api.GetSessionsAsync(workspaceId, ct);
+        var sessions = await sessionRepository.QueryAsync(workspaceId: workspaceId, ct: ct);
         var agent = await workspaceAgentFileService.GetAgentAsync(workspaceId, agentId, ct);
         var main = await ResolveAgentMainSessionAsync(
             workspaceId,
@@ -483,7 +483,7 @@ public sealed class AgentConversationProjectionService(
         foreach (var preferredSessionId in preferredSessionIds)
         {
             var preferred = sessions.FirstOrDefault(s => string.Equals(s.SessionId, preferredSessionId, StringComparison.Ordinal))
-                ?? await api.GetSessionAsync(preferredSessionId, ct);
+                ?? await sessionRepository.GetAsync(preferredSessionId, ct);
             if (preferred is not null && string.Equals(preferred.WorkspaceId, workspaceId, StringComparison.Ordinal))
                 return preferred;
         }

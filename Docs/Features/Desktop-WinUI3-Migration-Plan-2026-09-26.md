@@ -1,7 +1,7 @@
 # PuddingDesktop：WinUI 3 工作台骨架、Core 接入与迁移计划
 
 - 初稿：2026-09-26；修订：2026-09-27。
-- 状态：**2026-09-27 用户追加裁定：原地重建 PuddingDesktop 为 WinUI 3，Core 已以 DLL 装配为进程内内核。真实工作台与生命周期已接入；原生角色导航和 Agent 浏览器迁移尚未完成。**
+- 状态：**2026-09-27 用户追加裁定：原地重建 PuddingDesktop 为 WinUI 3，Core 已以 DLL 装配为进程内内核。原生角色卡、文字聊天与生命周期已接入，聊天直接调用 Core 应用服务；Agent 浏览器和其余富交互仍待迁移。**
 - 用户输入：2026-09-27 WorkBuddy 三栏截图，作为布局参考；截图内聊天文字、网页和品牌不是需求指令。同日补充裁定：**PuddingAgent 是以角色为一等公民的 Coding Agent**。
 - 决策记录：[Desktop / Core 边界 ADR](ADR-Desktop-WinUI3-Shell-Core-Boundary-2026-09-27.md)。
 - 当前源码入口已改为 WinUI 3 骨架；旧 WPF 位于 `Source/PuddingDesktop.WpfArchive`，供测试/迁移参考。机器上运行中的旧产品未部署替换。当前源码已加载真实 Core DLL；验证使用隔离 DataRoot，未替换机器上运行中的旧产品。
@@ -10,8 +10,8 @@
 
 1. 主线是 **WinUI 3 Shell + 角色优先的原生导航 + 中间角色工作会话 + 右侧编码工作区**。右侧使用统一文档标签骨架，浏览器是首个完整适配器；代码、Diff、终端和产物按能力接入。保留现有聊天、管理页面和浏览器驱动资产。
 2. **Core 的最终形态为 Desktop 进程内 DLL 内核**（用户后续裁定，取代同日较早的长期独立子进程结论）。逻辑组件边界、唯一业务状态真源、独立测试不变。通过组合入口装配 `PuddingHost`，WinUI View 不直接调用 Runtime/SQLite；不承诺 ALC 热卸载或双模式永久维护。
-3. 原生聊天是后续独立项目，不阻塞 WPF 退役。首版中间只有一个 Workbench WebView2，不为每条富消息创建 WebView2。
-4. 首版允许必要的前端嵌入模式和桥协议改造，取消“前端零改动”的承诺。浏览器直接打开 `/admin/` 的开发、使用路径继续可用。
+3. **最新裁定：角色卡和聊天全部使用原生 WinUI 3 组件，当前已接入文字聊天闭环。** `PuddingChat.WinUI` 只依赖 `PuddingChat`；通过 Composition 中的 `InProcessChatClient` 直接调用 Core 应用服务，不使用 HTTP、JWT 或 WebView2 聊天。
+4. 角色与模型管理暂保留独立 `/admin/` 页面，由用户点击“初始化与配置”进入；聊天不再依赖网页嵌入模式或 ShellWebBridge。
 5. 工作台与第三方网页使用隔离的 Environment / 用户数据目录；S0 使用产品实际隔离配置验证。
 6. 按组件化交付规程先独立构建、测试、边界检查，再接入。用户要求原地重建：唯一产品工程仍为 `Source/PuddingDesktop/PuddingDesktop.csproj`，不存在长期并行 WinUI 产品工程。WPF 归档只作旧测试基线；M0–M5 为迁移阶段，不替代组件门禁。
 7. 旧版 49–77 人日估算作废；主线范围改变后，应在 M0 结束按组件盘点重新估算。
@@ -24,15 +24,15 @@
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ 面板 / 搜索 / 筛选   文件  编辑  窗口  帮助             拖拽区  ─ □ ×       │
 ├───────────────┬───────────────────────────────────┬────────────────────────┤
-│ Pudding       │ 角色 / 项目 / 会话操作（Web）       │ 文件/Diff/终端/浏览器  │
+│ Pudding       │ 角色 / 项目 / 会话操作（原生）       │ 文件/Diff/终端/浏览器  │
 │ 当前项目      │ 当前执行根 / 分支 / Run 状态       ├───────┬────────────────┤
 │ 我的角色      │ 消息、推理摘要、工具调用、子代理    │ 概览  │ 文档专用工具条 │
-│ 技能 / 连接器 │ 状态、错误与交付物（Web）          │ 产物  ├────────────────┤
+│ 技能 / 连接器 │ 状态、错误与交付物（原生）          │ 产物  ├────────────────┤
 │ 定时任务/知识 │                                   │ 活动  │ 第三方网页     │
 │               │                                   │       │ 或产物预览     │
 │ 角色下的会话  │                                   │       │                │
 │ 工作区        ├───────────────────────────────────┤       │                │
-│               │ 输入、附件、模型、权限、发送（Web）│       │                │
+│               │ 输入与发送（原生；附件等待迁移）│       │                │
 │ 用户 / 设置   │                                   ├───────┴────────────────┤
 │ Core 状态     │                                   │ Agent控制状态/接管     │
 └───────────────┴───────────────────────────────────┴────────────────────────┘
@@ -42,7 +42,7 @@
 |---|---|---|
 | 顶部 | WinUI `TitleBarView`、`ShellCommandRouter` | 原生菜单、面板显隐、搜索入口、系统按钮、拖拽热区 |
 | 左栏 | WinUI `NavigationPaneView` | 当前项目、角色列表及角色状态、角色下会话/任务、用户入口、Core 状态 |
-| 中栏 | `WorkbenchHostView` + 一个可信 WebView2 | 复用聊天、管理页面、现有事件投影、输入和附件链路 |
+| 中栏 | `PuddingChat.WinUI.ChatWorkspace` | 原生文字聊天、执行明细、草稿、发送、取消；管理页面独立打开 |
 | 右栏 | WinUI `CodingWorkspaceView` + `BrowserWorkspaceView` 适配器 | 统一文档 Tab、按类型切换工具条、概览/产物/活动侧板；浏览器标签有地址栏 |
 | 右栏内容 | `IWorkspaceDocumentHost`（拟）及各类适配器 | 代码/Diff/终端输出/网页/产物；功能按 capability 显示，不以浏览器 URL 模拟所有对象 |
 | 设置 / 运行中心 | WinUI 原生视图，覆盖中间内容区域 | 无 Core、无 WebView2 Runtime、未设置 DataRoot 时仍能操作 |
@@ -188,7 +188,7 @@ flowchart TB
 1. `PuddingDesktop.exe` 启动 WinUI Shell，先显示设置/运行中心，再由组合入口加载内核；不得在 App 构造函数同步启动耗时数据库/索引任务。
 2. Foundation 的 `IDesktopKernel` 暴露 Snapshot、StartAsync、StopAsync、DisposeAsync；Core 宿主适配器实现它，UI 不拿 `IServiceProvider` 或业务数据库实例。
 3. 组合入口构建 Core Host 的独立服务容器，负责唯一生命周期；启动异常映射为 Failed，界面仍可修复。UI 和内核 Dispatcher/线程职责分开，长任务不阻塞 UI。
-4. Workbench 先复用现有用户鉴权 API/SSE。内容根/default-data/wwwroot 随发布包显式解析，不使用进程 CWD；端口/路由策略在内核适配切片核对，不能假设进程内化自动消除 HTTP。
+4. 原生聊天使用应用接口直接调用 Core，账号身份由 Core 仓储校验，业务调用不经 HTTP。管理页面和外部接口仍可使用 Host HTTP；内容根/default-data/wwwroot 随发布包显式解析。
 5. 普通内核停止需有界取消后台任务、解除事件订阅、关闭 DB/文件句柄。是否支持同进程再次启动必须独立测试；没有证据前以完整 Desktop 重启为恢复方式。
 6. .NET 未处理异常、原生崩溃/OOM 仍可能结束整个进程；进程内设计不提供原有子进程崩溃隔离。外部部署/恢复工具负责新构建启动和崩溃后的恢复，不承诺 View 层 catch 可以兜住进程故障。
 7. 关闭到托盘、显式退出、Windows 会话结束、真实配置修复和内核资源回收，在内核接入阶段完成；本轮骨架关闭即退出，未声称达到原产品生命周期对等。
@@ -199,13 +199,13 @@ flowchart TB
 
 | 通道 | 使用者 | 身份 / 语义 |
 |---|---|---|
-| 业务 HTTP / SSE | 首版 Workbench | 沿用现有登录态和授权；消息、任务、权限、事件都经 Core |
+| 聊天应用接口 | 原生控件 → Composition → Core | 直接函数调用；用户身份、统一 Turn 准入、幂等和 canonical 投影保留 |
 | Browser 命令通道 | Core Broker ↔ WinUI 浏览器适配 | 保留 OperationId、deadline、准入/接管门控和结果合同；内核接入时用进程内 adapter 接 UI Dispatcher，现有 WebSocket 作为迁移参考，不重复建设工具语义 |
 | ShellWebBridge | 可信 Workbench ↔ WinUI | 窗口展示、导航、有限摘要和状态；不是通用 HTTP/脚本代理，也不承担 Agent 执行准入 |
 
-已有源码确认的业务入口：
+以下是保留的 Web/外部接口索引；原生聊天直接调用其应用服务，不请求这些 HTTP 入口：
 
-- `GET /api/workspaces/{workspaceId}/agents/status`、`GET /api/workspaces/{workspaceId}/agents/{agentId}/conversation`：现有 `agentChatApi.ts` 使用的角色实例状态与主会话入口；原生导航优先复用这条链。
+- `GET /api/workspaces/{workspaceId}/agents/status`、`GET /api/workspaces/{workspaceId}/agents/{agentId}/conversation`：现有 `agentChatApi.ts` 使用的角色实例状态与主会话入口；原生导航复用其 Core 投影服务。
 - `POST /api/v1/conversations/{conversationId}/turns`：发送；受理不等于执行完成。
 - 同一路径下 `/{turnId}/cancel`、`/{turnId}/steering`：复用现有取消与引导语义。
 - `GET /api/conversations/{conversationId}/bootstrap`：会话恢复入口。
@@ -213,27 +213,22 @@ flowchart TB
 
 `conversationId`、`sessionId`、`turnId`、`runId` 不互相冒充。首版直接复用现有前端 transport，本文不假定所有上述路径属于同一个 API 版本。
 
-### 3.3 原生导航如何复用现有前端
+### 3.3 原生聊天直接接入 Core
 
-首版不新增一套 C# 用户登录和完整聊天 SDK：
+`IChatClient` 是 BCL 应用端口。WinUI 控件负责角色选择、草稿和显示；`InProcessChatClient` 创建独立 DI scope，在后台线程调用 Core。角色是 `(workspaceId, agentId)` 实例，模板不是实例身份。认证读取 Core 账号仓储并校验已有密码哈希，不签发 JWT；停机、重启不复用账号身份。
 
-- Workbench 在现有用户身份下读取 Core，`DesktopNavigationAdapter` 通过 ShellWebBridge 发布白名单字段的导航摘要（workspaceId、agentId、模板引用、名称、职责摘要、主会话、状态/未读、页游标），不传 token、原始 transcript 或工具参数。
-- 原生左栏点击产生有类型的 `navigation.open`；Web 用既有路由/权限执行，完成后返回当前选中项与标题。Shell 以回执提交选中状态，避免 UI 与路由分叉。
-- 角色/工作区/历史工作列表有界分页，初始页建议最多 50 项；现有 API 若仅返回全量列表，须登记服务端分页缺口，不能只在桥截断后宣称端到端有界。查询有取消和代次，旧角色结果不能覆盖新选择。状态/计数更新合并发送，不逐 token 刷新左栏。
-- 新建会话、任务等业务动作由有限 `workbench.command` 路由到现有业务入口，仍由 Core 鉴权。Shell 的启用/禁用显示不是授权结论。
-- Web 加载失败或未登录：显示原生基础导航、设置/运行中心；业务区显示“请登录/未连接”，不展示假空列表或假成功。
-- 前端加入 `desktopEmbedded` 呈现模式，隐藏重复的全局导航与网页外框，但保留会话头、消息工具条和输入区。模式由有效宿主握手启用；URL 参数本身不赋予任何权限。
-- 浏览器独立访问时桥不可用，完整 Web 布局照常显示；宿主限定动作返回明确 unavailable，不把 no-op 当成功。
+- 查询：`WorkspaceAgentFileService`、`IAgentRunProjectionService`、`IAgentConversationProjectionService`。后两者已直接引用 `ISessionRepository`，不再向本机 HTTP 回绕。
+- 主会话：Core `AgentMainSessionService` 负责创建、重定向与绑定。
+- 发送：`ISubmitTurnHandler`，稳定 ClientRequestId/ClientMessageId；受理不是完成。
+- 取消：`IRequestTurnCancellationHandler`，仅使用服务端 TurnId，取消回执不是已停止。
+- 停机：拒绝新调用、取消并排空旧调用，再释放 Host。重启创建全新的适配器与 UI 控件。
 
-未来若导航需要完全脱离 Web，在独立切片中增加受限 Core UI 查询客户端和用户认证合同；不得复用 Desktop ControlToken 作为普通用户的管理员登录。
+### 3.4 本次投影范围与后续门禁
 
-### 3.4 事件和断线恢复
+当前消费 Core 最近 20 条消息和有限活动事件窗口，活跃 1 秒/空闲 4 秒查询游标，隐藏页面暂停查询。历史明细按展开动作加载，按 canonical Sequence 排序；旧角色响应通过选择代次拒绝。未接入直接事件推送、完整历史分页、附件/语音/Live2D/审批卡；不将当前版本称为全部网页功能等价迁移。
 
-Core 是业务事实真源；Web 首版是唯一完整会话投影消费者。Shell 只订阅摘要，避免两个客户端分别实现聊天状态机。恢复时先取得快照及游标、再补齐事件、进入 live；按现有事件合同去重，检测游标失效并重建，不能只订阅未来事件。
-
-流式 UI 刷新允许合并（初始目标 30–60 ms 批次，最终事件立即落地），但持久事件不能丢失。窗口后台化不得中断 Core 执行。原生聊天如后续启动，应复用同一事件契约和测试样例，单列投影迁移。
-
-## 4. ShellWebBridge 合同（拟新增 v1）
+完整实现、测试入口与留白以 [原生聊天实施记录](../Reports/Desktop-Native-Chat-2026-09-27.md) 为准。本节取代本文件早期阶段表中“Web 是唯一聊天消费者”“原生聊天属于后续项目”“导航必须经 Web 桥”的前提。后续浏览器适配和编码文档合同继续有效。
+## 4. ShellWebBridge 合同（历史扩展参考；原生聊天不采用）
 
 ### 4.1 消息信封
 

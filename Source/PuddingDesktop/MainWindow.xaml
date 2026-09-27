@@ -102,9 +102,7 @@
           </StackPanel>
         </Border>
       </Grid>
-      <Grid Grid.Column="1" x:Name="CoreWorkbenchPane" Visibility="Collapsed">
-        <WebView2 x:Name="CoreWorkbench" />
-      </Grid>
+      <ContentControl Grid.ColumnSpan="2" x:Name="NativeChatPane" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
       <Grid Grid.Column="1" x:Name="SettingsPane" Visibility="Collapsed" Padding="36,28">
         <ScrollViewer>
           <StackPanel Spacing="22" MaxWidth="680" HorizontalAlignment="Stretch">

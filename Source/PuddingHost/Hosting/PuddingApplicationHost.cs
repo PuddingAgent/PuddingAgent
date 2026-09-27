@@ -150,6 +150,9 @@ public static class PuddingApplicationHost
         var mvcBuilder = builder.Services.AddControllersWithViews()
             .AddApplicationPart(typeof(PuddingHostAssemblyMarker).Assembly)
             .AddApplicationPart(typeof(BootstrapApiController).Assembly)
+            // DLL hosts cannot rely on the console executable's MVC discovery closure.
+            // Platform's main-session/projection client calls these control-plane routes.
+            .AddApplicationPart(typeof(PuddingController.Controllers.SessionController).Assembly)
             .AddApplicationPart(typeof(PuddingRuntime.Controllers.RuntimeSessionController).Assembly);
 
         // ── JWT ──────────────────────────────────────────────

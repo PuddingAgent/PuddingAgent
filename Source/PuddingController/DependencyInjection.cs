@@ -26,6 +26,7 @@ public static class ControllerServiceExtensions
         // Workspace & Session
         services.AddSingleton<InMemoryWorkspaceCatalog>();
         services.AddSingleton<InMemorySessionRepository>();
+        services.AddSingleton<PuddingCode.Platform.ISessionRepository>(sp => sp.GetRequiredService<InMemorySessionRepository>());
 
         // 审计 & 路由
         services.AddSingleton<InMemoryAuditEventStore>();

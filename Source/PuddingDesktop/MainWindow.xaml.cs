@@ -21,11 +21,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, IDesktopKernel> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        _kernel = createKernel(_desktopServices);
+        (_kernel, _createChatClient) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -105,7 +105,9 @@ public sealed partial class MainWindow : Window
             DraftHint.Text = role is null ? "先选择角色 · 草稿不会发送" : $"{role.Name}的草稿 · 未连接内核";
             foreach (var button in new[] { FileButton, DiffButton, TerminalButton, BrowserButton, ArtifactButton }) button.IsEnabled = _demo && role is not null;
             WorkbenchPane.Visibility = _state.Page == ShellPage.Workbench && _kernel.Snapshot.State != DesktopKernelState.Ready ? Visibility.Visible : Visibility.Collapsed;
-            CoreWorkbenchPane.Visibility = _state.Page == ShellPage.Workbench && _kernel.Snapshot.State == DesktopKernelState.Ready ? Visibility.Visible : Visibility.Collapsed;
+            NativeChatPane.Visibility = _state.Page == ShellPage.Workbench && _kernel.Snapshot.State == DesktopKernelState.Ready ? Visibility.Visible : Visibility.Collapsed;
+            _nativeChat?.SetActive(NativeChatPane.Visibility == Visibility.Visible);
+            NavigationPane.Visibility = NativeChatPane.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
             SettingsPane.Visibility = _state.Page == ShellPage.Settings ? Visibility.Visible : Visibility.Collapsed;
             RuntimePane.Visibility = _state.Page == ShellPage.RuntimeCenter ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -184,6 +186,7 @@ public sealed partial class MainWindow : Window
     private void OnNewWork(object sender, RoutedEventArgs args)
     {
         _state.Navigate(ShellPage.Workbench);
+        if (_nativeChat is not null) { _nativeChat.Composer.FocusEditor(); return; }
         if (_state.SelectedRole is null) { _layout = _layout with { NavigationVisible = true }; ApplyLayout(); RoleList.Focus(FocusState.Programmatic); }
         else DraftEditor.Focus(FocusState.Programmatic);
     }
@@ -199,7 +202,8 @@ public sealed partial class MainWindow : Window
         var allocation = _layout.Allocate(Root.ActualWidth);
         NavigationColumn.Width = new(allocation.NavigationWidth);
         WorkspaceColumn.Width = new(allocation.WorkspaceWidth);
-        NavigationPane.Visibility = allocation.NavigationWidth > 0 ? Visibility.Visible : Visibility.Collapsed;
+        NavigationPane.Visibility = allocation.NavigationWidth > 0 && NativeChatPane.Visibility != Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
+        _nativeChat?.SetNavigationWidth(allocation.NavigationWidth);
         WorkspacePane.Visibility = allocation.WorkspaceWidth > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
     private void OnLayoutSliderChanged(object sender, RangeBaseValueChangedEventArgs args)

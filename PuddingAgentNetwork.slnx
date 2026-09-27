@@ -6,6 +6,10 @@
     <Project Path="Source/PuddingBrowser.Protocol/PuddingBrowser.Protocol.csproj" />
     <Project Path="Source/PuddingBrowser.WebView2/PuddingBrowser.WebView2.csproj" />
     <Project Path="Source/PuddingCodeIntelligence/PuddingCodeIntelligence.csproj" />
+    <Project Path="Source/PuddingChat.WinUI/PuddingChat.WinUI.csproj" />
+    <Project Path="Source/PuddingChat.WinUITests/PuddingChat.WinUITests.csproj" />
+    <Project Path="Source/PuddingChat/PuddingChat.csproj" />
+    <Project Path="Source/PuddingChatTests/PuddingChatTests.csproj" />
     <Project Path="Source/PuddingCodeIndex/PuddingCodeIndex.csproj" />
     <Project Path="Source/PuddingController/PuddingController.csproj" Id="5180d09e-4b2c-47e7-a624-7137a410ea9a" />
     <Project Path="Source/PuddingCodexService/PuddingCodexService.csproj" />
@@ -51,6 +55,7 @@
     <Project Path="Source/PuddingRuntimeTests/PuddingRuntimeTests.csproj" />
     <Project Path="Source/PuddingVectorIndexTests/PuddingVectorIndexTests.csproj" />
     <Project Path="Source/PuddingWebApiTests/PuddingWebApiTests.csproj" Id="78289515-7caa-47b2-b209-900edeaeb8bf" />
+    <Project Path="Tests/PuddingNativeChat.IntegrationTests/PuddingNativeChat.IntegrationTests.csproj" />
   </Folder>
   <Folder Name="/TestScripts/">
     <Project Path="TestScripts/PuddingWsTest/PuddingWsTest.csproj" />

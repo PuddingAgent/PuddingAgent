@@ -16,7 +16,7 @@ public interface IAgentRunProjectionService
 
 /// <summary>Default Agent status projection service for the single-user admin chat client.</summary>
 public sealed class AgentRunProjectionService(
-    PlatformApiClient api,
+    ISessionRepository sessionRepository,
     WorkspaceAgentFileService workspaceAgentFileService,
     SessionRedirectStore redirectStore,
     PlatformDbContext db) : IAgentRunProjectionService
@@ -46,7 +46,7 @@ public sealed class AgentRunProjectionService(
     {
         ownerUserId = NormalizeOwnerUserId(ownerUserId);
 
-        var allWorkspaceSessions = await api.GetSessionsAsync(workspaceId, ct);
+        var allWorkspaceSessions = await sessionRepository.QueryAsync(workspaceId: workspaceId, ct: ct);
         var agents = await workspaceAgentFileService.ListAgentsAsync(workspaceId, ct);
         var projectedSessions = new List<(WorkspaceAgentDto Agent, SessionRecord? Session)>();
         foreach (var agent in agents)
@@ -151,7 +151,7 @@ public sealed class AgentRunProjectionService(
         foreach (var preferredSessionId in preferredSessionIds)
         {
             var preferred = sessions.FirstOrDefault(s => string.Equals(s.SessionId, preferredSessionId, StringComparison.Ordinal))
-                ?? await api.GetSessionAsync(preferredSessionId, ct);
+                ?? await sessionRepository.GetAsync(preferredSessionId, ct);
             if (preferred is not null && string.Equals(preferred.WorkspaceId, workspaceId, StringComparison.Ordinal))
                 return preferred;
         }

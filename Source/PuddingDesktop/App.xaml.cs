@@ -23,7 +23,11 @@ public partial class App : Application
             Exit();
             return;
         }
-        _window = new MainWindow(desktop => new PuddingDesktop.Foundation.InProcessKernel(new PuddingDesktop.Composition.DesktopKernelFactory(desktop)));
+        _window = new MainWindow(desktop =>
+        {
+            var factory = new PuddingDesktop.Composition.DesktopKernelFactory(desktop);
+            return (new PuddingDesktop.Foundation.InProcessKernel(factory), factory.CreateChatClient);
+        });
         instance.Activated += (_, _) => _window.DispatcherQueue.TryEnqueue(() => _window.Activate());
         _window.Activate();
     }

@@ -2,6 +2,8 @@
 
 > 代理控制层 | REST API · 会话路由 · 审批 · 审计 · 工作区
 
+2026-09-27：`DependencyInjection.cs` 将 `ISessionRepository` 映射到既有 `InMemorySessionRepository` 单例，供原生 Desktop 的主会话服务和既有 Agent 投影直接读取；不是第二份会话存储。
+
 ## Controllers（14 个）
 
 | 文件 | 用途 |

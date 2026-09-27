@@ -3,7 +3,8 @@ using System.Text.Json;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.Web.WebView2.Core;
+using PuddingChat;
+using PuddingChat.WinUI;
 using PuddingDesktop.Foundation;
 
 namespace PuddingDesktop;
@@ -13,8 +14,9 @@ public sealed partial class MainWindow
     private readonly Kernel.WinUiDesktopServices _desktopServices;
     private bool _allowClose;
     private bool _exiting;
-    private Uri? _workbenchOrigin;
-    private string? _webViewDataRoot;
+    private ChatWorkspace? _nativeChat;
+    private readonly Func<IChatClient> _createChatClient;
+    private string? _chatDataRoot;
     private string KernelSettingsPath => Path.Combine(App.StateRoot, "desktop.kernel.json");
     private sealed record KernelSettings(string DataRoot);
 
@@ -68,10 +70,10 @@ public sealed partial class MainWindow
         StopKernelButton.IsEnabled = snapshot.State is DesktopKernelState.Starting or DesktopKernelState.Ready or DesktopKernelState.Failed;
         RestartKernelButton.IsEnabled = snapshot.State == DesktopKernelState.Ready;
         DataRootEditor.IsEnabled = snapshot.State is DesktopKernelState.Stopped or DesktopKernelState.Failed;
-        if (snapshot.State != DesktopKernelState.Ready && _workbenchOrigin is not null)
+        if (snapshot.State != DesktopKernelState.Ready && _nativeChat is not null)
         {
-            _workbenchOrigin = null;
-            CoreWorkbench.CoreWebView2?.Navigate("about:blank");
+            _nativeChat.Dispose(); _nativeChat = null;
+            NativeChatPane.Content = null;
         }
         if (_loaded) OnStateChanged(this, new PropertyChangedEventArgs(nameof(ShellState.Page)));
     }
@@ -86,7 +88,7 @@ public sealed partial class MainWindow
             File.Move(temporary, KernelSettingsPath, true);
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
-        if (_webViewDataRoot is not null && !string.Equals(root, _webViewDataRoot, StringComparison.OrdinalIgnoreCase))
+        if (_chatDataRoot is not null && !string.Equals(root, _chatDataRoot, StringComparison.OrdinalIgnoreCase))
         {
             KernelStatus.Title = "新数据目录已保存";
             KernelStatus.Message = "请重新打开 Desktop 以切换目录和登录环境。";
@@ -99,51 +101,28 @@ public sealed partial class MainWindow
         RefreshKernel();
         await OpenWorkbenchAsync(root);
     }
-    private async Task OpenWorkbenchAsync(string dataRoot)
+    private Task OpenWorkbenchAsync(string dataRoot)
     {
         var address = _kernel.Snapshot.WorkbenchAddress;
-        if (address is null) return;
-        if (CoreWorkbench.CoreWebView2 is null)
+        if (address is null || _kernel.Snapshot.State != DesktopKernelState.Ready) return Task.CompletedTask;
+        _nativeChat?.Dispose();
+        _nativeChat = new ChatWorkspace(_createChatClient(), address);
+        _nativeChat.SettingsRequested += (_, _) => _state.Navigate(ShellPage.Settings);
+        _nativeChat.RuntimeRequested += (_, _) => _state.Navigate(ShellPage.RuntimeCenter);
+        _nativeChat.AdministrationRequested += async (_, _) =>
         {
-            var rootKey = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-                System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(dataRoot).TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant())));
-            var profile = Path.Combine(App.StateRoot, "workbench-profiles", rootKey);
-            var environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, profile, null);
-            await CoreWorkbench.EnsureCoreWebView2Async(environment);
-            CoreWorkbench.CoreWebView2!.Settings.IsWebMessageEnabled = false;
-            CoreWorkbench.CoreWebView2.NavigationStarting += (_, args) =>
-            {
-                if (args.Uri == "about:blank") return;
-                if (!Uri.TryCreate(args.Uri, UriKind.Absolute, out var target) || _workbenchOrigin is null
-                    || target.GetLeftPart(UriPartial.Authority) != _workbenchOrigin.GetLeftPart(UriPartial.Authority)) args.Cancel = true;
-            };
-            CoreWorkbench.CoreWebView2.NewWindowRequested += (_, args) => args.Handled = true;
-        }
-        // Stop may have completed while WebView2 initialized.
-        if (_kernel.Snapshot.State != DesktopKernelState.Ready || _kernel.Snapshot.WorkbenchAddress != address) return;
-        _webViewDataRoot = dataRoot;
-        _workbenchOrigin = address;
-        var navigation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnNavigationCompleted(CoreWebView2 sender, CoreWebView2NavigationCompletedEventArgs args)
-        {
-            if (args.IsSuccess) navigation.TrySetResult();
-            else navigation.TrySetException(new InvalidOperationException($"Workbench navigation failed: {args.WebErrorStatus}"));
-        }
-        CoreWorkbench.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
-        try
-        {
-            CoreWorkbench.CoreWebView2.Navigate(address.AbsoluteUri);
-            await navigation.Task.WaitAsync(TimeSpan.FromSeconds(30));
-        }
-        finally { CoreWorkbench.CoreWebView2.NavigationCompleted -= OnNavigationCompleted; }
-        if (_kernel.Snapshot.State != DesktopKernelState.Ready || _kernel.Snapshot.WorkbenchAddress != address) return;
+            try { await Windows.System.Launcher.LaunchUriAsync(address); }
+            catch (Exception exception) { App.WriteDiagnostic(exception); }
+        };
+        NativeChatPane.Content = _nativeChat;
+        _chatDataRoot = dataRoot;
         _demo = false;
         _state.ReplaceRoles([]);
-        RoleCount.Text = "—";
-        EmptyRoles.Visibility = Visibility.Visible;
         DemoButton.IsEnabled = false;
         ProjectLabel.Text = "已连接进程内 Core";
-        EmptyRoles.Text = "请在工作台中选择真实角色。原生角色导航正在迁移。";
+        EmptyRoles.Text = "返回工作台，在原生角色导航中选择角色。";
+        ApplyLayout();
+        return Task.CompletedTask;
     }
     private async void OnStartKernel(object sender, RoutedEventArgs args)
     { try { await StartKernelAsync(); } catch (Exception exception) { ReportKernelError(exception); } }
@@ -174,7 +153,7 @@ public sealed partial class MainWindow
             await _kernel.DisposeAsync();
             _kernel.StateChanged -= OnKernelStateChanged;
             _desktopServices.Dispose();
-            CoreWorkbench.Close();
+            _nativeChat?.Dispose(); _nativeChat = null; NativeChatPane.Content = null;
             _allowClose = true;
             Close();
         }
@@ -200,7 +179,7 @@ public sealed partial class MainWindow
             await StartKernelAsync();
             var savedSettings = JsonSerializer.Deserialize<KernelSettings>(await File.ReadAllTextAsync(KernelSettingsPath));
             if (savedSettings?.DataRoot != nextRoot || _kernel.Snapshot.State != DesktopKernelState.Stopped)
-                throw new InvalidOperationException("DataRoot change must be saved for next launch without reusing the old WebView.");
+                throw new InvalidOperationException("DataRoot change must be saved for next launch without reusing the old login context.");
             Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
             await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(new { success = true, processId = Environment.ProcessId, coreAssembly = hostAssembly.Location, uiCallback = true, restart = true, dataRootChangeSaved = true }));
         }

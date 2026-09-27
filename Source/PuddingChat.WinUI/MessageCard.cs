@@ -1,0 +1,90 @@
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+
+namespace PuddingChat.WinUI;
+
+/// <summary>Native selectable text/code blocks and canonical process disclosure; never renders HTML.</summary>
+public sealed class MessageCard : UserControl
+{
+    private Expander? _process;
+    public bool IsProcessExpanded { get => _process?.IsExpanded ?? false; set { if (_process is not null) _process.IsExpanded = value; } }
+    public MessageCard(ChatMessage message, Func<Task<ProcessDetails>>? loadDetails = null)
+    {
+        var panel = new StackPanel { Spacing = 12 };
+        panel.Children.Add(new TextBlock { Text = $"{message.SourceName}  ·  {message.CreatedAt.ToLocalTime():HH:mm}  ·  {message.Status}",
+            FontSize = 12, Opacity = .65, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(RenderText(message.Content));
+        if (message.ContentParts?.Any(p => p.Type != "text") == true)
+            panel.Children.Add(new TextBlock { Text = "此消息包含附件；附件预览尚未迁移。", Opacity = .65 });
+        if (message.TurnOutcome is { ErrorMessage.Length: > 0 } outcome)
+            panel.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Error, Title = outcome.Status, Message = outcome.ErrorMessage });
+        if (message.ProcessItems.Length > 0 || message.ProcessSummary?.HasDetails == true)
+        {
+            var details = new StackPanel { Spacing = 8 };
+            var expander = new Expander { Header = $"执行过程 · {message.ProcessSummary?.TotalItems ?? message.ProcessItems.Length} 项",
+                Content = details, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+            _process = expander;
+            var loaded = false; var loading = false;
+            expander.Expanding += async (_, _) =>
+            {
+                if (loaded || loading) return; loading = true;
+                try
+                {
+                    var result = loadDetails is null ? new ProcessDetails(message.MessageId, message.ProcessItems) : await loadDetails();
+                    details.Children.Clear(); RenderProcess(details, result.ProcessItems);
+                    if (result.Window?.HasMoreBefore == true) details.Children.Insert(0, new TextBlock { Text = "当前为部分事件窗口。", Opacity = .6 });
+                    loaded = true;
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception) { details.Children.Clear(); details.Children.Add(new TextBlock { Text = "过程明细加载失败，请收起后重试。" }); }
+                finally { loading = false; }
+            };
+            panel.Children.Add(expander);
+        }
+        var copy = new Button { Content = "复制", HorizontalAlignment = HorizontalAlignment.Left };
+        copy.Click += (_, _) => { var data = new Windows.ApplicationModel.DataTransfer.DataPackage(); data.SetText(message.Content);
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data); };
+        panel.Children.Add(copy);
+        var surface = Surfaces.Card(message.Role == "user" ? "SubtleFillColorSecondaryBrush" : "CardBackgroundFillColorDefaultBrush");
+        surface.Padding = new Thickness(20); surface.Margin = new Thickness(0, 0, 0, 12); surface.CornerRadius = new CornerRadius(14); surface.Child = panel;
+        Content = surface;
+    }
+    public static UIElement RenderText(string text)
+    {
+        // Keep unsupported Markdown visible verbatim; code fences and headings get native structure.
+        var panel = new StackPanel { Spacing = 10 };
+        var code = false; var buffer = new List<string>();
+        void Flush()
+        {
+            if (buffer.Count == 0) return;
+            var block = new TextBlock { Text = string.Join('\n', buffer), TextWrapping = TextWrapping.Wrap,
+                IsTextSelectionEnabled = true, FontSize = 14, LineHeight = 23 };
+            if (code) { block.FontFamily = new FontFamily("Cascadia Mono, Consolas"); var surface = Surfaces.Card("SubtleFillColorSecondaryBrush");
+                surface.Child = block; surface.Padding = new Thickness(12); surface.CornerRadius = new CornerRadius(8); panel.Children.Add(surface); }
+            else panel.Children.Add(block);
+            buffer.Clear();
+        }
+        foreach (var line in text.Replace("\r", "").Split('\n'))
+        {
+            if (line.StartsWith("```", StringComparison.Ordinal)) { Flush(); code = !code; continue; }
+            if (!code && line.StartsWith('#') && line.TrimStart('#').StartsWith(' '))
+            { Flush(); panel.Children.Add(new TextBlock { Text = line.TrimStart('#', ' '), FontSize = 19,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true }); }
+            else buffer.Add(line);
+        }
+        Flush(); return panel;
+    }
+    public static void RenderProcess(StackPanel target, IEnumerable<ProcessItem> items)
+    {
+        foreach (var item in ChatSelection.Ordered(items))
+        {
+            var content = new StackPanel { Spacing = 6 };
+            foreach (var value in new[] { item.Text, item.Arguments, item.Output, item.Message })
+                if (!string.IsNullOrEmpty(value)) content.Children.Add(RenderText(value));
+            target.Children.Add(new Expander { Header = $"#{item.Sequence}  {item.Kind}  {item.Name}  ·  {item.Status}" +
+                (item.ExitCode is { } code ? $" · exit {code}" : ""), Content = content,
+                HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch });
+        }
+    }
+}

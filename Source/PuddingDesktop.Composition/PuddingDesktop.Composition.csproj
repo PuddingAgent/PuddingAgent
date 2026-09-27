@@ -4,5 +4,6 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="../PuddingDesktop.Foundation/PuddingDesktop.Foundation.csproj" />
     <ProjectReference Include="../PuddingHost/PuddingHost.csproj" />
+    <ProjectReference Include="../PuddingChat/PuddingChat.csproj" />
   </ItemGroup>
 </Project>
