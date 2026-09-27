@@ -15,6 +15,13 @@ internal sealed class PagedTextView : StackPanel
     private readonly Button _previous = new() { Content = "上一页" };
     private readonly Button _next = new() { Content = "下一页" };
     private readonly Button _copy = new() { Content = "复制全文" };
+    private readonly ScrollViewer _viewport = new()
+    {
+        MaxHeight = 360, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Enabled,
+        IsTabStop = true
+    };
     internal int Page => _window.Page;
     internal string VisibleText => _text.Text;
     internal DataPackage CreateCopyData() { var data = new DataPackage(); data.SetText(_window.Source); return data; }
@@ -23,7 +30,8 @@ internal sealed class PagedTextView : StackPanel
         Spacing = 8;
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         actions.Children.Add(_previous); actions.Children.Add(_next); actions.Children.Add(_copy);
-        Children.Add(_position); Children.Add(actions); Children.Add(_text);
+        _viewport.Content = _text;
+        Children.Add(_position); Children.Add(actions); Children.Add(_viewport);
         _previous.Click += (_, _) => Move(Page - 1); _next.Click += (_, _) => Move(Page + 1);
         _copy.Click += (_, _) =>
         {
@@ -31,10 +39,16 @@ internal sealed class PagedTextView : StackPanel
             catch { _copy.Content = "复制失败"; }
         };
         AutomationProperties.SetName(_text, "当前页原文");
+        AutomationProperties.SetName(_viewport, "工具输出阅读区");
         Update(text);
     }
     public void Update(string text) { _window.Update(text); _copy.Content = "复制全文"; Render(); }
-    internal void Move(int page) { _window.Move(page); Render(); }
+    internal void Move(int page)
+    {
+        var before = Page;
+        _window.Move(page); Render();
+        if (Page != before) _viewport.ChangeView(null, 0, null, true);
+    }
     private void Render()
     {
         var text = _window.Text;

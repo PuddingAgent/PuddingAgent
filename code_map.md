@@ -1462,3 +1462,7 @@ PuddingApproval/ApprovalService.Cancellation.cs：未消费许可的幂等取消
 ## 2026-09-27 原生停止请求反馈
 
 ChatWorkspace.CancelAsync 将停止请求绑定到角色/会话/Turn，并以选择代次隔离旧回执；ChatComposer 提供等待、禁重入和重试反馈。85 逻辑 / 257 原生窗口检查通过；仅处理 UI 请求生命周期，执行终态仍由 Core 决定，审批撤销组件尚未接线。
+
+## 2026-09-27 大工具输出阅读区
+
+PuddingChat.WinUI/PagedTextView.cs 为大输出页增加最高 360 DIP 的原生滚动区，保留外部翻页/复制按钮；翻页回页首、流式更新保留位置。85 逻辑 / 260 原生窗口检查通过，详见聊天完成度核对。

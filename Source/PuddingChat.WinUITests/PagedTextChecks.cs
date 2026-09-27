@@ -29,6 +29,19 @@ public partial class App
                 "copy payload contains complete unmodified output across pages");
             Check(Descendants<Button>(view).All(b => b.TransformToVisual(view).TransformPoint(new()).X + b.ActualWidth <= view.ActualWidth + 1),
                 "pagination controls fit narrow activity cards");
+            root.UpdateLayout(); await NextVisualFrameAsync();
+            var viewport = Descendants<ScrollViewer>(view).Single();
+            Check(viewport.ActualHeight <= 360 && viewport.ScrollableHeight > 360 && view.ActualHeight < 500,
+                "large tool output has a bounded native scroll viewport instead of expanding the transcript");
+            viewport.ChangeView(null, 200, null, true);
+            await UntilAsync(() => viewport.VerticalOffset > 100);
+            var offset = viewport.VerticalOffset;
+            view.Update(source + "another streamed suffix"); root.UpdateLayout(); await NextVisualFrameAsync();
+            Check(Math.Abs(viewport.VerticalOffset - offset) < 1 && next.TransformToVisual(view).TransformPoint(new()).Y < viewport.TransformToVisual(view).TransformPoint(new()).Y,
+                "streaming preserves output reading position while pagination stays outside the scroll region");
+            ((IInvokeProvider)new ButtonAutomationPeer(next).GetPattern(PatternInterface.Invoke)).Invoke();
+            await UntilAsync(() => viewport.VerticalOffset < 1);
+            Check(view.Page == 2 && viewport.VerticalOffset < 1, "explicit page navigation starts the new output page at its beginning");
         }
         finally { root.Children.Remove(view); }
     }

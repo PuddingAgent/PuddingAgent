@@ -42,3 +42,5 @@ The host supplies `IChatClient`, owns this control's disposal, and receives sett
 `MarkdownView` skips identical snapshots and uses reference-identity membership sets when retaining controls; TurnContentView uses the same retention strategy. Full Markdown parsing remains necessary for late reference definitions. MarkdownStreamingChecks covers 801 completed blocks, repeated appends, stable code preferences and reference invalidation (250 native checks).
 
 `ChatWorkspace.CancelAsync` tracks in-flight stops by role/session/turn, suppresses duplicate calls and rejects late feedback after selection changes. ChatComposer disables the pending stop action; failure allows retry and success does not mark execution terminal. WorkspaceCancellationChecks covers seven window scenarios (257 native checks total).
+
+`PagedTextView` bounds each text page inside a native 360-DIP ScrollViewer while keeping pagination/copy outside it. Explicit page changes reset to the top; streaming updates retain the current page offset. PagedTextChecks verifies actual viewport and navigation geometry (260 native checks).
