@@ -44,6 +44,8 @@
 
 `DesktopMemoryLibrarySettings` also covers search and inspection: FTS hits as Core returns them, plus source references (ownerType/ownerId) and pointers (sourceType/sourceId) queried with Core's own two key pairs, keeping outgoing and backlink directions separate.
 
+`DesktopStorageSettings` reads Core's cached inventory snapshot, trend history, data-class catalogue and retention policy; a CAS conflict from `StorageAdminException` becomes `SettingsConflictException` so the shell can say the policy changed under it.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.
 `InProcessChatClient.Speech`: IChatSpeechClient direct Core IVoiceSynthesisService adapter. Reads authoritative message/envelope payload, validates workspace/role/local-owner identity, uses configured defaults and the existing tracked-operation cancellation lifetime.
 

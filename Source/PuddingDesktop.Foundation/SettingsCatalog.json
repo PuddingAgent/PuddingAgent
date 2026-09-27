@@ -842,7 +842,7 @@
             ],
             "source": "pages/storage/index.tsx",
             "task": "DS-09",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },
@@ -888,7 +888,7 @@
             ],
             "source": "pages/storage/StoragePolicyDrawer.tsx",
             "task": "DS-09",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       }

@@ -1501,6 +1501,76 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task StorageAdapter_ReadsCachedInventoryAndUpdatesThePolicyWithCas()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var storage = factory.CreateStorageSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => storage.ReadSnapshotAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+
+            // Reading is a cached read: it must work immediately without triggering a scan.
+            var snapshot = await storage.ReadSnapshotAsync(timeout.Token);
+            Assert.True(snapshot.Revision >= 0);
+            Assert.NotNull(snapshot.Databases);
+            Assert.NotNull(snapshot.Classes);
+            Assert.True(snapshot.TotalBytes >= 0);
+
+            var classes = await storage.ListDataClassesAsync(timeout.Token);
+            Assert.NotEmpty(classes);
+            Assert.Equal(classes.Count, classes.Select(item => item.TargetId).Distinct(StringComparer.Ordinal).Count());
+            Assert.All(classes, item => Assert.False(string.IsNullOrWhiteSpace(item.SafetyLevelName)));
+            var protectedObjects = await storage.ListProtectedObjectsAsync(timeout.Token);
+            Assert.NotNull(protectedObjects);
+
+            // The trend may legitimately be empty on a fresh root; it must still answer.
+            var trend = await storage.ReadTrendAsync(7, timeout.Token);
+            Assert.NotNull(trend);
+
+            var policy = await storage.ReadPolicyAsync(timeout.Token);
+            Assert.NotNull(policy.Targets);
+            var automatic = policy.Targets.Where(target => target.AutomaticCleanupAllowed).ToArray();
+            Assert.NotEmpty(automatic);
+            var target = automatic[0];
+
+            // A stale revision is a conflict, not an overwrite.
+            await Assert.ThrowsAsync<SettingsConflictException>(() => storage.SavePolicyAsync(
+                new StorageRetentionPolicyUpdate(policy.PolicyRevision + 99, policy.AutomaticCleanupEnabled,
+                    [new StorageRetentionTargetEdit(target.TargetId, true, target.DefaultRetentionDays ?? 14)]),
+                timeout.Token));
+
+            // A target Core protects against automatic cleanup cannot be enabled.
+            var forbidden = policy.Targets.FirstOrDefault(item => !item.AutomaticCleanupAllowed);
+            if (forbidden is not null)
+                await Assert.ThrowsAsync<InvalidOperationException>(() => storage.SavePolicyAsync(
+                    new StorageRetentionPolicyUpdate(policy.PolicyRevision, true,
+                        [new StorageRetentionTargetEdit(forbidden.TargetId, true, 7)]), timeout.Token));
+
+            // A valid update succeeds and advances the revision Core reports back.
+            var days = target.DefaultRetentionDays ?? target.MinRetentionDays ?? 14;
+            await storage.SavePolicyAsync(new StorageRetentionPolicyUpdate(policy.PolicyRevision,
+                policy.AutomaticCleanupEnabled,
+                [new StorageRetentionTargetEdit(target.TargetId, true, days)]), timeout.Token);
+            var updated = await storage.ReadPolicyAsync(timeout.Token);
+            Assert.True(updated.PolicyRevision > policy.PolicyRevision);
+            Assert.Contains(updated.Targets, item => item.TargetId == target.TargetId && item.Enabled);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => storage.ReadPolicyAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

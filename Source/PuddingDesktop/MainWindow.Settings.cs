@@ -204,6 +204,24 @@ public sealed partial class MainWindow
         var memorySearch = VisibilityOf("memory", "search", tab);
         MemorySearchSettings.Visibility = memorySearch;
         if (memorySearch == Visibility.Visible) LoadMemorySearchIfNeeded();
+        var storageOverview = VisibilityOf("storage", "overview", tab);
+        StorageOverviewSettings.Visibility = storageOverview;
+        if (storageOverview == Visibility.Visible) LoadStorageOverviewIfNeeded();
+        var storagePolicy = VisibilityOf("storage", "policy", tab);
+        StoragePolicySettings.Visibility = storagePolicy;
+        if (storagePolicy == Visibility.Visible) LoadStoragePolicyIfNeeded();
+    }
+
+    private async void LoadStorageOverviewIfNeeded()
+    {
+        try { await LoadStorageOverviewAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
+    }
+
+    private async void LoadStoragePolicyIfNeeded()
+    {
+        try { await LoadStoragePolicyAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadMemorySearchIfNeeded()
@@ -366,6 +384,8 @@ public sealed partial class MainWindow
         ("workspaces", "resources") => true,
         ("memory", "library") => true,
         ("memory", "search") => true,
+        ("storage", "overview") => true,
+        ("storage", "policy") => true,
         _ => false
     };
 
