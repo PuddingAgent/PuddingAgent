@@ -210,7 +210,15 @@
 
 ### DS-05 — 工作区与渠道（P1；依赖 DS-00、DS-04）
 
-状态：**进行中（2026-09-27）**。`workspaces/basic`（工作区、成员与权限）与 `workspaces/channels`（服务商、渠道绑定与凭据）四张卡已接入；`workspaces/resources` 三张卡未开始。
+状态：**进行中（2026-09-27）**。`workspaces/basic` 与 `workspaces/channels` 四张卡已接入；`workspaces/resources` 三张卡的 **Core 下沉已完成**，桌面端表单待接。
+
+**资源切片（Core 部分已交付）**
+- 三个直接使用 `DbContext` 的 Controller（知识库、工作区技能、工作流）合并下沉为 `WorkspaceResourceService`；控制器只做语义结果 → HTTP 状态码映射。
+- 核心不变量：**工作区隔离**——跨工作区的 kbId/skillId/workflowId 一律 NotFound（有测试固定），列表也按 `WorkspaceEntityId` 过滤。
+- MCP 技能的 `configJson` 沿用 Core 自己的 `McpServerConfig` 解析与规范化，非法配置直接 BadRequest；非 MCP 类型保持原样。MCP 变更后按需刷新连接管理器，且管理器允许缺省（测试用无管理器的组合验证）。
+- 工作流 `definitionJson` 允许为空（Core 原样存储），非空时必须是合法 JSON。
+- `WorkspaceSkillApiController` 的 `runtime-status` 仍直读 MCP 连接管理器：它不是工作区 CRUD，未下沉。
+- 验证：新增 5 项独立测试，并跑通**整个 PuddingPlatformTests 套件 1420 项**确认 Controller 改写未改变 Web 行为。
 
 **渠道切片（已完成）**
 - 服务商：Core 内置定义（当前仅飞书），桌面端只能改名/描述/启用状态，不提供新增或删除服务商。
@@ -777,7 +785,7 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-02 LLM 服务商与模型 | 已完成 2026-09-27 | 五张卡接入；Core 补齐配额（限额入配置文件、用量来自账本、reset-daily 只推进窗口）；配额测试 4 项、Composition 真实 Host 端到端通过 |
 | DS-03 语音服务商、TTS 与 ASR | 已完成 2026-09-27 | 三卡接入；Core 补密钥保持/替换/清除与默认项真源同步（TTS/ASR 互不覆盖）；语音 Core 测试 4 项 |
 | DS-04 模板与角色实例 | 已完成 2026-09-27 | 六张卡全部接入（agent-directory / agent-basic / agent-prompts / agent-models / smart-models / guardrails / agent-grants）；授权页签在 DS-06、DS-07 完成后补齐 |
-| DS-05 工作区与渠道 | 进行中 2026-09-27 | 工作区/成员/渠道服务商/渠道四张卡已接入；资源三张卡待接 |
+| DS-05 工作区与渠道 | 进行中 2026-09-27 | 工作区/成员/渠道服务商/渠道四张卡已接入；资源三张卡完成 Core 下沉（`WorkspaceResourceService` + 5 项独立测试 + 全量 1420 项回归），桌面端表单待接 |
 | DS-06 工具与插件 | 已完成 2026-09-27 | 两张只读卡接入；manifest-only 与无效清单有真实固件测试 |
 | DS-07 Skill Hub 六页签 | 已完成 2026-09-27 | 六张卡全部接入；旧技能包的校验/对象键构造下沉为可测试的 `SkillPackageService`（含 5 项独立测试），桌面端复用同一操作 |
 | DS-08 … DS-17 | 待实施 | — |

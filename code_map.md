@@ -1,6 +1,9 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-05 工作区资源（知识库/技能/工作流 Core 下沉）
+
+`KnowledgeBaseApiController`、`WorkspaceSkillApiController`、`WorkflowApiController` 原先直接使用 `PlatformDbContext`，按 DS-05「直接 DbContext 的旧 Controller 先下沉业务操作」合并下沉为 `WorkspaceResourceService`（三者形状一致：确认工作区存在 → 按 `WorkspaceEntityId` 作用域 CRUD）。核心不变量是工作区隔离：跨工作区的 kbId/skillId/workflowId 一律 NotFound，绝不误改。MCP 技能的 `configJson` 仍由 Core 自己的 `McpServerConfig.TryParse` 校验并 `ToCanonicalJson` 规范化（未做任何放宽），MCP 相关增删改按需刷新连接管理器且管理器可缺省。`WorkspaceSkillApiController` 的 `runtime-status` 仍直读连接管理器（不是工作区 CRUD，未下沉）。验证：`WorkspaceResourceServiceTests` 5 项 + **整个 PuddingPlatformTests 套件 1420 项通过**（含既有 Controller 测试，确认 Web 行为未变），Composition 17 项、窗口 smoke 183 项。
 ## 2026-09-27 DS-05 渠道（服务商与渠道实例）
 
 `workspaces/channels` 两张卡接上 `ChannelConfigurationFileService`（与 Web 控制器同一应用服务，无需下沉）。服务商由 Core 内置定义，只能改名/描述/启用状态。渠道表单覆盖名称、描述、服务商、绑定 Agent、App ID、**只写 App Secret**、流式与语音回复、音色与特权用户 Open ID。密钥语义按 Core 实现：留空=保持已保存值（适配器发 null），Core 没有清除密钥的操作，因此界面不提供「清除」；新建渠道没有已保存密钥时必须填。集成测试覆盖真实 Host：停用服务商被拒、绑定不存在的 Agent 被拒、创建后留空编辑仍保留密钥、重复飞书 App ID 被拒、删除后清空。踩坑：两个页签不能共用一个 InfoBar（一个 UIElement 不能同时挂在两个父级，会让窗口启动即崩），每个页签各自持有通知条。验证：Foundation 133 项、Composition 17 项、窗口 smoke 183 项通过。
