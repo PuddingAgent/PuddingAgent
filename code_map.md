@@ -1,6 +1,9 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-05 工作区资源（桌面端，DS-05 完成）
+
+`workspaces/resources` 一张页签三张卡接上 `WorkspaceResourceService`：知识库（名称/描述/kbType/启用，文档数只读）、工作区技能（名称/描述/skillType/configJson/启用，MCP 配置交给 Core 解析）、工作流（名称/描述/状态/definitionJson/启用，定义可留空）。三张卡都支持空 ID 新建与就地更新，并各自带确认删除。界面只做 JSON 形状预检，MCP 的规范化与工作区隔离仍由 Core 负责；跨工作区 ID 会被拒绝。验证：Foundation 139 项、Composition 18 项（真实 Host：建库/改库/跨工作区拒绝/坏 MCP 配置被拒/空定义可保存/删除清空）、窗口 smoke 187 项通过。至此 DS-05 七张卡全部接入。
 ## 2026-09-27 DS-05 工作区资源（知识库/技能/工作流 Core 下沉）
 
 `KnowledgeBaseApiController`、`WorkspaceSkillApiController`、`WorkflowApiController` 原先直接使用 `PlatformDbContext`，按 DS-05「直接 DbContext 的旧 Controller 先下沉业务操作」合并下沉为 `WorkspaceResourceService`（三者形状一致：确认工作区存在 → 按 `WorkspaceEntityId` 作用域 CRUD）。核心不变量是工作区隔离：跨工作区的 kbId/skillId/workflowId 一律 NotFound，绝不误改。MCP 技能的 `configJson` 仍由 Core 自己的 `McpServerConfig.TryParse` 校验并 `ToCanonicalJson` 规范化（未做任何放宽），MCP 相关增删改按需刷新连接管理器且管理器可缺省。`WorkspaceSkillApiController` 的 `runtime-status` 仍直读连接管理器（不是工作区 CRUD，未下沉）。验证：`WorkspaceResourceServiceTests` 5 项 + **整个 PuddingPlatformTests 套件 1420 项通过**（含既有 Controller 测试，确认 Web 行为未变），Composition 17 项、窗口 smoke 183 项。

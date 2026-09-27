@@ -38,4 +38,6 @@
 
 `DesktopChannelSettings` binds the channel tabs to `ChannelConfigurationFileService`; a kept App Secret is sent as null so Core reuses the stored value, and the secret never travels back into the shell.
 
+`DesktopWorkspaceResourceSettings` binds the knowledge / skill / workflow cards to `WorkspaceResourceService`; an empty resource id means create, and Core keeps ownership of workspace isolation plus MCP config validation.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

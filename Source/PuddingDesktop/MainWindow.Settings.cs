@@ -195,6 +195,15 @@ public sealed partial class MainWindow
         if (channelProviders == Visibility.Visible) LoadChannelProvidersIfNeeded();
         var channels = VisibilityOf("workspaces", "channels", tab);
         ChannelsSettings.Visibility = channels;
+        var workspaceResources = VisibilityOf("workspaces", "resources", tab);
+        WorkspaceResourcesSettings.Visibility = workspaceResources;
+        if (workspaceResources == Visibility.Visible) LoadWorkspaceResourcesIfNeeded();
+    }
+
+    private async void LoadWorkspaceResourcesIfNeeded()
+    {
+        try { await LoadWorkspaceResourcesAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadChannelProvidersIfNeeded()
@@ -336,6 +345,7 @@ public sealed partial class MainWindow
         ("agents", "capabilities") => true,
         ("workspaces", "basic") => true,
         ("workspaces", "channels") => true,
+        ("workspaces", "resources") => true,
         _ => false
     };
 

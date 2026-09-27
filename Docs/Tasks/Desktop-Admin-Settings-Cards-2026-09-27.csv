@@ -21,9 +21,9 @@ workspaces,工作区与渠道,basic,工作区,workspace-basic,工作区信息,�
 workspaces,工作区与渠道,basic,工作区,workspace-members,工作区成员,已接入,DS-05,userId；accessLevel(ReadOnly/Write/Manage)；成员来源,pages/workspace/[id]/index.tsx,成员列表、添加/移除和权限展示。
 workspaces,工作区与渠道,channels,渠道,channel-providers,渠道服务商,已接入,DS-05,providerId；name；description；isEnabled,pages/workspace/[id]/index.tsx,编辑已支持服务商的展示信息与启用状态。
 workspaces,工作区与渠道,channels,渠道,channels,渠道绑定与凭据,已接入,DS-05,name；providerId；description；boundAgentId；appId；appSecret；privilegedUserOpenIds；streamingRepliesEnabled；ttsRepliesEnabled；ttsVoice；isEnabled,pages/workspace/[id]/index.tsx,新增/编辑/删除渠道；敏感值单向输入。
-workspaces,工作区与渠道,resources,工作区资源,workspace-knowledge,知识库,待迁移,DS-05,name；kbType(VectorStore/Graph/FileIndex)；description；isEnabled,pages/workspace/[id]/index.tsx,知识库列表、新增、编辑、删除。
-workspaces,工作区与渠道,resources,工作区资源,workspace-skills,工作区技能配置,待迁移,DS-05,name；skillType(MCP/BuiltIn/CustomScript/HttpTool)；description；configJson；isEnabled,pages/workspace/[id]/index.tsx,此处是工作区资源配置，不与 Skill Hub 安装台账混同。
-workspaces,工作区与渠道,resources,工作区资源,workspace-workflows,工作流定义,待迁移,DS-05,name；status(Draft/Active/Paused)；description；definitionJson；isEnabled,pages/workspace/[id]/index.tsx,列表、创建、编辑、删除工作流。
+workspaces,工作区与渠道,resources,工作区资源,workspace-knowledge,知识库,已接入,DS-05,name；kbType(VectorStore/Graph/FileIndex)；description；isEnabled,pages/workspace/[id]/index.tsx,知识库列表、新增、编辑、删除。
+workspaces,工作区与渠道,resources,工作区资源,workspace-skills,工作区技能配置,已接入,DS-05,name；skillType(MCP/BuiltIn/CustomScript/HttpTool)；description；configJson；isEnabled,pages/workspace/[id]/index.tsx,此处是工作区资源配置，不与 Skill Hub 安装台账混同。
+workspaces,工作区与渠道,resources,工作区资源,workspace-workflows,工作流定义,已接入,DS-05,name；status(Draft/Active/Paused)；description；definitionJson；isEnabled,pages/workspace/[id]/index.tsx,列表、创建、编辑、删除工作流。
 tools,工具与插件,registry,工具注册表,tool-registry,工具目录,已接入,DS-06,工具名称/ID；分类；来源；说明；参数 Schema；启用/可用状态,pages/capability-management/index.tsx,搜索/筛选、查看工具定义与当前可用状态。
 tools,工具与插件,plugins,插件包,plugin-catalog,插件清单与诊断,已接入,DS-06,插件/工具统计；包 ID/版本/来源；工具声明；ManifestOnly；校验问题；详情与刷新,pages/capability-management/index.tsx,区分已注册工具、仅 Manifest 声明和无效插件。
 skills,技能与进化,overview,概览,skill-overview,概览,已接入,DS-07,技能总量/版本/安装统计；分布与最近事件,pages/skill-management/OverviewTab.tsx,保留 Web 的实际查询、写入和错误语义。

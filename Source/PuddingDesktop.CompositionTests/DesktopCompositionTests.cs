@@ -1254,6 +1254,87 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task WorkspaceResourceAdapter_KeepsResourcesInsideTheirWorkspace()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var resources = factory.CreateWorkspaceResourceSettings(kernel);
+        var workspaces = factory.CreateWorkspaceSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => resources.ListSkillsAsync("any", timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var teams = await workspaces.ListTeamsAsync(timeout.Token);
+            var template = new WorkspaceCreateRequest("resource-space", teams[0].TeamId, "Resource Space", "",
+                "", "Manage", "Manage");
+            await workspaces.CreateAsync(template, timeout.Token);
+            await workspaces.CreateAsync(template with { WorkspaceId = "other-space", Name = "Other Space" }, timeout.Token);
+
+            var workspaceId = "resource-space";
+            Assert.Empty(await resources.ListKnowledgeBasesAsync(workspaceId, timeout.Token));
+            // A workspace that does not exist is refused, not silently treated as empty.
+            await Assert.ThrowsAsync<InvalidOperationException>(() => resources.ListKnowledgeBasesAsync("ghost", timeout.Token));
+
+            await resources.SaveKnowledgeBaseAsync(new KnowledgeBaseEdit(workspaceId, "", "Docs", "notes", "VectorStore", true), timeout.Token);
+            var kb = Assert.Single(await resources.ListKnowledgeBasesAsync(workspaceId, timeout.Token));
+            Assert.Equal("VectorStore", kb.KbType);
+            Assert.Equal(0, kb.DocumentCount);
+            await resources.SaveKnowledgeBaseAsync(new KnowledgeBaseEdit(workspaceId, kb.KbId, "Docs v2", "edited", "Graph", false), timeout.Token);
+            var edited = Assert.Single(await resources.ListKnowledgeBasesAsync(workspaceId, timeout.Token));
+            Assert.Equal("Docs v2", edited.Name);
+            Assert.Equal("Graph", edited.KbType);
+            Assert.False(edited.IsEnabled);
+
+            // The other workspace cannot see or address it.
+            Assert.Empty(await resources.ListKnowledgeBasesAsync("other-space", timeout.Token));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => resources.SaveKnowledgeBaseAsync(
+                new KnowledgeBaseEdit("other-space", kb.KbId, "Hijack", "", "Graph", true), timeout.Token));
+
+            await resources.SaveSkillAsync(new WorkspaceSkillEdit(workspaceId, "", "Builtin", "", "BuiltIn", "{\"raw\":1}", true), timeout.Token);
+            var skills = await resources.ListSkillsAsync(workspaceId, timeout.Token);
+            var builtIn = Assert.Single(skills);
+            Assert.Equal("BuiltIn", builtIn.SkillType);
+            Assert.False(builtIn.IsMcp);
+            Assert.Equal("{\"raw\":1}", builtIn.ConfigJson);
+
+            // An MCP skill with malformed config is refused by Core and the adapter surfaces it.
+            await Assert.ThrowsAsync<InvalidOperationException>(() => resources.SaveSkillAsync(
+                new WorkspaceSkillEdit(workspaceId, "", "Broken", "", "MCP", "{not json", true), timeout.Token));
+            Assert.Single(await resources.ListSkillsAsync(workspaceId, timeout.Token));
+            Assert.Empty(await resources.ListSkillsAsync("other-space", timeout.Token));
+
+            await resources.SaveWorkflowAsync(new WorkspaceWorkflowEdit(workspaceId, "", "Flow", "", "{\"steps\":[]}", "Draft", true), timeout.Token);
+            var workflow = Assert.Single(await resources.ListWorkflowsAsync(workspaceId, timeout.Token));
+            Assert.Equal("Draft", workflow.Status);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => resources.SaveWorkflowAsync(
+                new WorkspaceWorkflowEdit(workspaceId, "", "Bad", "", "not json", "Draft", true), timeout.Token));
+            // An empty definition is allowed.
+            await resources.SaveWorkflowAsync(new WorkspaceWorkflowEdit(workspaceId, "", "Empty", "", "", "Active", true), timeout.Token);
+            var all = await resources.ListWorkflowsAsync(workspaceId, timeout.Token);
+            Assert.Equal(2, all.Count);
+            Assert.Contains(all, flow => flow.Status == "Active" && flow.DefinitionJson.Length == 0);
+
+            await resources.DeleteWorkflowAsync(workspaceId, workflow.WorkflowId, timeout.Token);
+            Assert.Single(await resources.ListWorkflowsAsync(workspaceId, timeout.Token));
+            await resources.DeleteSkillAsync(workspaceId, builtIn.SkillId, timeout.Token);
+            Assert.Empty(await resources.ListSkillsAsync(workspaceId, timeout.Token));
+            await resources.DeleteKnowledgeBaseAsync(workspaceId, kb.KbId, timeout.Token);
+            Assert.Empty(await resources.ListKnowledgeBasesAsync(workspaceId, timeout.Token));
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => resources.ListWorkflowsAsync(workspaceId, timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

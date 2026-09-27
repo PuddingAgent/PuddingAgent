@@ -23,11 +23,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels)> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels, IWorkspaceResourceSettings WorkspaceResources)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels) = createKernel(_desktopServices);
+        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels, _workspaceResources) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -71,6 +71,7 @@ public sealed partial class MainWindow : Window
         BuildAgentGrantPanel();
         BuildWorkspacePanel();
         BuildChannelPanel();
+        BuildWorkspaceResourcePanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -570,6 +571,13 @@ public sealed partial class MainWindow : Window
             Check(ChannelsSettings.Content is StackPanel, "channels form is built");
             Check(!_chProviderPicker.IsEnabled, "channel forms stay disabled without Core");
             Check(_chNotice.Title == "Core 未就绪", "channel tab reports the real Core state");
+            // DS-05 resource cards.
+            OpenSettingsCategory("workspaces", "resources");
+            await WaitForSettingsUiAsync(() => _wrNotice.IsOpen);
+            Check(WorkspaceResourcesSettings.Visibility == Visibility.Visible, "workspace resources tab is native");
+            Check(WorkspaceResourcesSettings.Content is StackPanel, "workspace resources form is built");
+            Check(!_wrWorkspacePicker.IsEnabled, "workspace resources form stays disabled without Core");
+            Check(_wrNotice.Title == "Core 未就绪", "workspace resources tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

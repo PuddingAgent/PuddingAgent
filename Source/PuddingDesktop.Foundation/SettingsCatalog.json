@@ -517,7 +517,7 @@
             ],
             "source": "pages/workspace/[id]/index.tsx",
             "task": "DS-05",
-            "status": "待迁移"
+            "status": "已接入"
           },
           {
             "id": "workspace-skills",
@@ -532,7 +532,7 @@
             ],
             "source": "pages/workspace/[id]/index.tsx",
             "task": "DS-05",
-            "status": "待迁移"
+            "status": "已接入"
           },
           {
             "id": "workspace-workflows",
@@ -547,7 +547,7 @@
             ],
             "source": "pages/workspace/[id]/index.tsx",
             "task": "DS-05",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       }

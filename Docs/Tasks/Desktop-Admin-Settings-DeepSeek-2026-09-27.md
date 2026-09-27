@@ -210,7 +210,13 @@
 
 ### DS-05 — 工作区与渠道（P1；依赖 DS-00、DS-04）
 
-状态：**进行中（2026-09-27）**。`workspaces/basic` 与 `workspaces/channels` 四张卡已接入；`workspaces/resources` 三张卡的 **Core 下沉已完成**，桌面端表单待接。
+状态：**已完成（2026-09-27）**。七张卡全部接入：工作区、工作区成员、渠道服务商、渠道绑定与凭据、知识库、工作区技能配置、工作流定义。
+
+**资源切片（桌面端已交付）**
+- `workspaces/resources` 一张页签三张卡：知识库（kbType 沿用 Core 的 VectorStore/Graph/FileIndex，文档数只读）、工作区技能（MCP configJson 交给 Core 解析）、工作流（definitionJson 可留空）。
+- 空资源 ID = 新建，非空 = 就地更新；三张卡各自带确认删除。
+- 界面只做 JSON 形状预检；MCP 规范化、工作区隔离与文档统计仍由 Core 负责，跨工作区 ID 会被拒绝（集成测试固定该行为）。
+- 集成测试覆盖真实 Host：建库/改库、跨工作区写入被拒、非法 MCP 配置被拒、空定义可保存、删除后清空。
 
 **资源切片（Core 部分已交付）**
 - 三个直接使用 `DbContext` 的 Controller（知识库、工作区技能、工作流）合并下沉为 `WorkspaceResourceService`；控制器只做语义结果 → HTTP 状态码映射。
@@ -785,7 +791,7 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-02 LLM 服务商与模型 | 已完成 2026-09-27 | 五张卡接入；Core 补齐配额（限额入配置文件、用量来自账本、reset-daily 只推进窗口）；配额测试 4 项、Composition 真实 Host 端到端通过 |
 | DS-03 语音服务商、TTS 与 ASR | 已完成 2026-09-27 | 三卡接入；Core 补密钥保持/替换/清除与默认项真源同步（TTS/ASR 互不覆盖）；语音 Core 测试 4 项 |
 | DS-04 模板与角色实例 | 已完成 2026-09-27 | 六张卡全部接入（agent-directory / agent-basic / agent-prompts / agent-models / smart-models / guardrails / agent-grants）；授权页签在 DS-06、DS-07 完成后补齐 |
-| DS-05 工作区与渠道 | 进行中 2026-09-27 | 工作区/成员/渠道服务商/渠道四张卡已接入；资源三张卡完成 Core 下沉（`WorkspaceResourceService` + 5 项独立测试 + 全量 1420 项回归），桌面端表单待接 |
+| DS-05 工作区与渠道 | 已完成 2026-09-27 | 七张卡全部接入；知识库/技能/工作流先下沉为 `WorkspaceResourceService`（5 项独立测试 + 全量 1420 项回归）再接桌面端 |
 | DS-06 工具与插件 | 已完成 2026-09-27 | 两张只读卡接入；manifest-only 与无效清单有真实固件测试 |
 | DS-07 Skill Hub 六页签 | 已完成 2026-09-27 | 六张卡全部接入；旧技能包的校验/对象键构造下沉为可测试的 `SkillPackageService`（含 5 项独立测试），桌面端复用同一操作 |
 | DS-08 … DS-17 | 待实施 | — |

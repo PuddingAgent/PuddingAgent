@@ -24,6 +24,7 @@ public sealed partial class MainWindow
     private readonly PuddingDesktop.Foundation.ISkillPackageSettings _skillPackages;
     private readonly PuddingDesktop.Foundation.IWorkspaceSettings _workspaces;
     private readonly PuddingDesktop.Foundation.IChannelSettings _channels;
+    private readonly PuddingDesktop.Foundation.IWorkspaceResourceSettings _workspaceResources;
     private string? _chatDataRoot;
     private string KernelSettingsPath => Path.Combine(App.StateRoot, "desktop.kernel.json");
     private sealed record KernelSettings(string DataRoot);
