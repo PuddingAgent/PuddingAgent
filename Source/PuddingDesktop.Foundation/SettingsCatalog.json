@@ -578,7 +578,7 @@
             ],
             "source": "pages/capability-management/index.tsx",
             "task": "DS-06",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },
@@ -600,7 +600,7 @@
             ],
             "source": "pages/capability-management/index.tsx",
             "task": "DS-06",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       }

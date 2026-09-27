@@ -1,3 +1,6 @@
+## 2026-09-27 DS-06 工具与插件（只读）
+
+Foundation 新增 `ToolPluginContracts.cs`（工具目录条目/参数、插件包/声明/诊断、`IsExecutable` 规则），Composition 新增 `DesktopToolPluginSettings`（工具注册表来自 `IPuddingToolCatalogService`，插件清单来自 `PluginManifestCatalog`，诊断来自 `PluginDiagnosticsReader`；只有 `ReloadPluginsAsync` 会重新读取 `plugin.json`），Shell 新增 `MainWindow.ToolPluginSettings.cs`（`tools/registry` 与 `tools/plugins` 两个页签）。两者都是只读：能力清单由运行时注册表推导，插件由数据目录下的 `plugin.json` 声明，页面不提供安装/启用/执行动作。可执行性只有运行时 `Available` 才算，`ManifestOnly` 与未知状态一律标为不可执行（Composition 测试用真实 manifest-only 与无效清单固件验证计数与校验原因）。验证：Foundation 102 项、Composition 10 项、窗口 smoke 151 项通过。
 ## 2026-09-27 DS-04 角色与模板（执行护栏切片）
 
 Foundation 新增 `AgentGuardrailContracts.cs`（执行预算与容器镜像），Composition 新增 `DesktopAgentGuardrailSettings`（partial，复用 `TemplateRequest`/`InstanceRequest`；实例侧走 `UpdateAgentProfileAsync`，因此 Core 会保留 Smart 路由）。UI 新增 `MainWindow.AgentGuardrailSettings.cs`（`agents/guardrails` 页签：模板与实例各自的轮次/时长/工具调用预算与容器镜像）。发现并纠正一个 Core 内部不一致：DTO 上 `MaxToolCallsTotal` 的默认字面量是 100，而 `AgentTemplateFileService`/`WorkspaceAgentFileService` 实际写入 400；契约按文件服务的真实默认值 400 对齐并在测试中固定。空容器镜像被当作「明确清除覆盖」保存为空串，而不是回退到模板值。验证：Foundation 96 项、Composition 9 项、窗口 smoke 145 项通过。

@@ -160,6 +160,24 @@ public sealed partial class MainWindow
         var guardrails = VisibilityOf("agents", "guardrails", tab);
         AgentGuardrailsSettings.Visibility = guardrails;
         if (guardrails == Visibility.Visible) LoadAgentGuardrailsIfNeeded();
+        var tools = VisibilityOf("tools", "registry", tab);
+        ToolRegistrySettings.Visibility = tools;
+        if (tools == Visibility.Visible) LoadToolRegistryIfNeeded();
+        var plugins = VisibilityOf("tools", "plugins", tab);
+        ToolsPluginsSettings.Visibility = plugins;
+        if (plugins == Visibility.Visible) LoadPluginCatalogIfNeeded();
+    }
+
+    private async void LoadToolRegistryIfNeeded()
+    {
+        try { await LoadToolRegistryAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
+    }
+
+    private async void LoadPluginCatalogIfNeeded()
+    {
+        try { await LoadPluginCatalogAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadAgentGuardrailsIfNeeded()
@@ -224,6 +242,8 @@ public sealed partial class MainWindow
         ("agents", "models") => true,
         ("agents", "smart") => true,
         ("agents", "guardrails") => true,
+        ("tools", "registry") => true,
+        ("tools", "plugins") => true,
         _ => false
     };
 

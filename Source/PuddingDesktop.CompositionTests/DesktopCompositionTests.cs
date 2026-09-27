@@ -661,6 +661,78 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task ToolPluginAdapter_ReadsRegistryAndReportsManifestOnlyWithoutClaimingExecution()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var settings = factory.CreateToolPluginSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => settings.ListToolsAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var tools = await settings.ListToolsAsync(timeout.Token);
+            Assert.NotEmpty(tools);
+            Assert.Equal(tools.Count, tools.Select(tool => tool.ToolId).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+            Assert.All(tools, tool => Assert.Equal(string.Empty, ToolPluginTextValidateNonExecutableMismatch(tool)));
+            // Read-only by construction: the adapter exposes no create/update/delete operation.
+
+            // A manifest-only package written into the data root must be reported as declared, not runnable.
+            var pluginRoot = Path.Combine(root, "plugins", "code-search");
+            Directory.CreateDirectory(pluginRoot);
+            await File.WriteAllTextAsync(Path.Combine(pluginRoot, "plugin.json"), """
+                {
+                  "schema": "pudding-plugin/v1",
+                  "id": "pudding.code-search",
+                  "name": "Code Search Plugin",
+                  "version": "1.0.0",
+                  "entry": { "assembly": "bin/CodeSearch.dll", "type": "CodeSearch.Plugin" },
+                  "tools": [
+                    { "id": "plugin_code_search", "name": "Plugin Code Search", "description": "searches" }
+                  ]
+                }
+                """);
+            // An invalid manifest must be diagnosable rather than silently ignored.
+            var brokenRoot = Path.Combine(root, "plugins", "broken-package");
+            Directory.CreateDirectory(brokenRoot);
+            await File.WriteAllTextAsync(Path.Combine(brokenRoot, "plugin.json"), "{ \"schema\": \"pudding-plugin/v1\" }");
+
+            await settings.ReloadPluginsAsync(timeout.Token);
+            var report = await settings.ReadPluginCatalogAsync(timeout.Token);
+            var declared = Assert.Single(report.Packages, package => package.PluginId == "pudding.code-search");
+            Assert.True(declared.IsManifestOnly);
+            Assert.Equal("1.0.0", declared.Version);
+            Assert.Equal(1, declared.ToolCount);
+
+            var declaredTool = Assert.Single(report.DeclaredTools, tool => tool.PluginId == "pudding.code-search");
+            Assert.Equal("plugin_code_search", declaredTool.ToolId);
+            Assert.False(declaredTool.IsExecutable);
+            Assert.Equal(1, report.ManifestOnlyToolCount);
+
+            var broken = Assert.Single(report.Packages, package => package.PluginId == "broken-package");
+            Assert.True(broken.IsInvalid);
+            Assert.False(string.IsNullOrWhiteSpace(broken.StatusReason));
+            Assert.Equal(1, report.InvalidManifestCount);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => settings.ReadPluginCatalogAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    /// <summary>Every registry entry must agree with the shared executability rule (empty means it does).</summary>
+    private static string ToolPluginTextValidateNonExecutableMismatch(PuddingDesktop.Foundation.ToolCatalogEntry tool) =>
+        tool.IsExecutable == PuddingDesktop.Foundation.ToolPluginText.IsExecutable(tool.RuntimeStatus)
+            ? string.Empty
+            : $"{tool.ToolId} disagrees with the executability rule";
     // The isolated data root is seeded with the shipped default providers, so target ours explicitly.
     private static PuddingDesktop.Foundation.LlmProviderSummary SinglePool(IReadOnlyList<PuddingDesktop.Foundation.LlmProviderSummary> providers)
         => Assert.Single(providers, provider => provider.ProviderId == "pool");

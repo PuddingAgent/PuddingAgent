@@ -13,6 +13,7 @@
 | `MainWindow.AgentModelSettings.cs` | DS-04 模型/记忆切片：模板与实例的对话/记忆/Embedding 三对模型选择、检索模式、推理强度；目录中已不存在的存储值会被保留并标注 |
 | `MainWindow.AgentSmartSettings.cs` | DS-04 Smart 切片：角色实例的七条子代理模型路由；半填选择被拒绝而不是写成「未路由」 |
 | `MainWindow.AgentGuardrailSettings.cs` | DS-04 护栏切片：模板与实例的执行预算与容器镜像；空镜像表示明确清除覆盖而不是回退模板 |
+| `MainWindow.ToolPluginSettings.cs` | DS-06 只读工具目录与插件清单/诊断：搜索过滤、参数 Schema、插件校验原因与最近诊断；不提供安装/启用/执行动作 |
 | `MainWindow.VoiceSettings.cs` | DS-03 语音原生表单：TTS/ASR 服务商、TTS 模型（音色/格式/采样率/四种能力）、ASR 模型（语言/采样率/三种能力）；逗号分隔列表编辑、默认项真源展示、Core 未就绪时禁用表单 |
 | `MainWindow.LlmSettings.cs` | DS-02 LLM 资源池原生表单：服务商连接、并发与速率、模型定义、上下文与计费；Keep/Replace/Clear 密钥语义、删除确认、Core 未就绪时禁用表单并显示真实原因 |
 | `Kernel/WinUiDesktopServices.cs` | Core 通过 DI 调用展示端口，DispatcherQueue 调度、取消及关闭处理 |

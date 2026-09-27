@@ -23,11 +23,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory)> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory) = createKernel(_desktopServices);
+        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -63,6 +63,7 @@ public sealed partial class MainWindow : Window
         BuildAgentModelPanel();
         BuildAgentSmartPanel();
         BuildAgentGuardrailPanel();
+        BuildToolPluginPanels();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -494,6 +495,17 @@ public sealed partial class MainWindow : Window
             Check(AgentGuardrailsSettings.Content is StackPanel, "agent guardrail form is built");
             Check(!_agTemplateRounds.IsEnabled, "agent guardrail form stays disabled without Core");
             Check(_ag2Notice.Title == "Core 未就绪", "agent guardrails tab reports the real Core state");
+            // DS-06 read-only tool registry and plugin catalogue.
+            OpenSettingsCategory("tools", "registry");
+            await WaitForSettingsUiAsync(() => _tpNotice.IsOpen);
+            Check(ToolRegistrySettings.Visibility == Visibility.Visible, "tool registry tab is native");
+            Check(ToolRegistrySettings.Content is StackPanel, "tool registry form is built");
+            Check(!_tpSearch.IsEnabled, "tool registry stays disabled without Core");
+            Check(_tpNotice.Title == "Core 未就绪", "tool registry tab reports the real Core state");
+            OpenSettingsCategory("tools", "plugins");
+            await WaitForSettingsUiAsync(() => _tpNotice.IsOpen);
+            Check(ToolsPluginsSettings.Visibility == Visibility.Visible, "plugin catalogue tab is native");
+            Check(ToolsPluginsSettings.Content is StackPanel, "plugin catalogue form is built");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

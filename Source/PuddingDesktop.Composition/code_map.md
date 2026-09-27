@@ -22,4 +22,6 @@
 
 `DesktopAgentGuardrailSettings` (partial of the directory adapter) covers the DS-04 guardrail slice through the shared `TemplateRequest`/`InstanceRequest` builders. An instance guardrail save goes through `UpdateAgentProfileAsync`, so Core keeps the Smart routes intact.
 
+`DesktopToolPluginSettings` implements `IToolPluginSettings` (DS-06) on the same gated path: the runtime tool registry (`IPuddingToolCatalogService`) and the plugin catalogue (`PluginManifestCatalog` + `PluginDiagnosticsReader`), both read-only plus an explicit manifest re-read.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

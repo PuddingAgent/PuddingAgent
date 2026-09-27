@@ -214,6 +214,10 @@
 
 ### DS-06 — 工具与插件（P1；依赖 DS-00）
 
+状态：**已完成（2026-09-27）**。`tool-registry` 与 `plugin-catalog` 两张卡以只读形式接入；能力目录可供 DS-04 的授权页签使用。
+
+已交付：`IToolPluginSettings`（Foundation）+ `DesktopToolPluginSettings`（Composition，读 `IPuddingToolCatalogService` / `PluginManifestCatalog` / `PluginDiagnosticsReader`）+ `MainWindow.ToolPluginSettings.cs`（`tools/registry`：搜索、分类/来源/状态、参数 Schema；`tools/plugins`：包 ID/版本/状态/校验原因/清单路径、声明工具、最近诊断）。可执行性只认运行时 `Available`，`ManifestOnly` 与未知状态一律不可执行；Composition 测试写入真实 manifest-only 与无效 `plugin.json` 固件，验证包状态、声明工具计数与校验原因。按任务书「不发明安装/执行动作」，本切片不提供安装、启用、卸载或执行入口。
+
 先只读工具注册表与插件包，再实现 Web 真实存在的管理动作。核查 name/ID、Schema、加载状态、来源与错误；能力目录给 DS-04 使用。验收：无效 Manifest 可诊断，ManifestOnly 不能被标成可执行；搜索/空状态/刷新不挂 UI，不发明安装/执行动作。
 
 ### DS-07 — Skill Hub 六页签（P1；依赖 DS-00）
@@ -710,4 +714,6 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-02 LLM 服务商与模型 | 已完成 2026-09-27 | 五张卡接入；Core 补齐配额（限额入配置文件、用量来自账本、reset-daily 只推进窗口）；配额测试 4 项、Composition 真实 Host 端到端通过 |
 | DS-03 语音服务商、TTS 与 ASR | 已完成 2026-09-27 | 三卡接入；Core 补密钥保持/替换/清除与默认项真源同步（TTS/ASR 互不覆盖）；语音 Core 测试 4 项 |
 | DS-04 模板与角色实例 | 进行中 2026-09-27 | 五个切片已接入（agent-directory / agent-basic / agent-prompts / agent-models / smart-models / guardrails）；仅 agent-grants 待续，被 DS-06、DS-07 目录依赖阻塞 |
-| DS-05 … DS-17 | 待实施 | — |
+| DS-05 工作区与渠道 | 待实施 | — |
+| DS-06 工具与插件 | 已完成 2026-09-27 | 两张只读卡接入；manifest-only 与无效清单有真实固件测试 |
+| DS-07 … DS-17 | 待实施 | — |

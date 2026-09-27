@@ -27,7 +27,7 @@ public partial class App : Application
         {
             var factory = new PuddingDesktop.Composition.DesktopKernelFactory(desktop);
             var kernel = new PuddingDesktop.Foundation.InProcessKernel(factory);
-            return (kernel, factory.CreateChatClient, factory.CreateLlmSettings(kernel), factory.CreateVoiceSettings(kernel), factory.CreateAgentDirectorySettings(kernel));
+            return (kernel, factory.CreateChatClient, factory.CreateLlmSettings(kernel), factory.CreateVoiceSettings(kernel), factory.CreateAgentDirectorySettings(kernel), factory.CreateToolPluginSettings(kernel));
         });
         instance.Activated += (_, _) => _window.DispatcherQueue.TryEnqueue(() => _window.Activate());
         _window.Activate();

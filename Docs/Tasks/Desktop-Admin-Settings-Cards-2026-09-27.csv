@@ -24,8 +24,8 @@ workspaces,工作区与渠道,channels,渠道,channels,渠道绑定与凭据,待
 workspaces,工作区与渠道,resources,工作区资源,workspace-knowledge,知识库,待迁移,DS-05,name；kbType(VectorStore/Graph/FileIndex)；description；isEnabled,pages/workspace/[id]/index.tsx,知识库列表、新增、编辑、删除。
 workspaces,工作区与渠道,resources,工作区资源,workspace-skills,工作区技能配置,待迁移,DS-05,name；skillType(MCP/BuiltIn/CustomScript/HttpTool)；description；configJson；isEnabled,pages/workspace/[id]/index.tsx,此处是工作区资源配置，不与 Skill Hub 安装台账混同。
 workspaces,工作区与渠道,resources,工作区资源,workspace-workflows,工作流定义,待迁移,DS-05,name；status(Draft/Active/Paused)；description；definitionJson；isEnabled,pages/workspace/[id]/index.tsx,列表、创建、编辑、删除工作流。
-tools,工具与插件,registry,工具注册表,tool-registry,工具目录,待迁移,DS-06,工具名称/ID；分类；来源；说明；参数 Schema；启用/可用状态,pages/capability-management/index.tsx,搜索/筛选、查看工具定义与当前可用状态。
-tools,工具与插件,plugins,插件包,plugin-catalog,插件清单与诊断,待迁移,DS-06,插件/工具统计；包 ID/版本/来源；工具声明；ManifestOnly；校验问题；详情与刷新,pages/capability-management/index.tsx,区分已注册工具、仅 Manifest 声明和无效插件。
+tools,工具与插件,registry,工具注册表,tool-registry,工具目录,已接入,DS-06,工具名称/ID；分类；来源；说明；参数 Schema；启用/可用状态,pages/capability-management/index.tsx,搜索/筛选、查看工具定义与当前可用状态。
+tools,工具与插件,plugins,插件包,plugin-catalog,插件清单与诊断,已接入,DS-06,插件/工具统计；包 ID/版本/来源；工具声明；ManifestOnly；校验问题；详情与刷新,pages/capability-management/index.tsx,区分已注册工具、仅 Manifest 声明和无效插件。
 skills,技能与进化,overview,概览,skill-overview,概览,待迁移,DS-07,技能总量/版本/安装统计；分布与最近事件,pages/skill-management/OverviewTab.tsx,保留 Web 的实际查询、写入和错误语义。
 skills,技能与进化,library,技能库,skill-library,技能库,待迁移,DS-07,搜索/标签/状态筛选；skillId/name/summary/tags；version/skillMarkdown；evolutionAction/parentVersion/publishNote；版本详情；编辑元数据；退役；安装登记,pages/skill-management/SkillsTab.tsx,保留 Web 的实际查询、写入和错误语义。
 skills,技能与进化,evolution,EVO MAP,skill-evolution,EVO MAP,待迁移,DS-07,技能选择；谱系节点/边；版本关系；详情定位,pages/skill-management/EvoMapTab.tsx,保留 Web 的实际查询、写入和错误语义。
