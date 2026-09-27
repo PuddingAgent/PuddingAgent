@@ -460,6 +460,9 @@ public static partial class PuddingServiceCollectionExtensions
         // ── 工具授权规则：规则变更与其审计写入是同一个应用操作（HTTP 与原生共用） ──
         builder.Services.AddScoped<ToolApprovalAdminService>();
 
+        // ── 权限角色：同一应用操作供 HTTP 与原生客户端复用 ──
+        builder.Services.AddScoped<RoleService>();
+
         // ── 文件式 TTS/ASR 语音 Provider/Model 管理 ──
         builder.Services.AddSingleton<VoiceProviderFileService>();
 

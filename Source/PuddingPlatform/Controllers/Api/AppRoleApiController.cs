@@ -1,56 +1,36 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System.Text.Json;
-using PuddingPlatform.Data;
+using PuddingCode.Skills;
 using PuddingPlatform.Data.Dtos;
-using PuddingPlatform.Data.Entities;
+using PuddingPlatform.Services;
 
 namespace PuddingPlatform.Controllers.Api;
 
-/// <summary>权限角色管理 API — CRUD</summary>
+/// <summary>权限角色管理 HTTP 出口。校验与数据访问在 RoleService（Web 与原生客户端共用）。</summary>
 [Authorize]
 [ApiController]
 [Route("api/roles")]
-public class AppRoleApiController(PlatformDbContext db) : ControllerBase
+public class AppRoleApiController(RoleService roles) : ControllerBase
 {
     // ── 角色列表 ──────────────────────────────────────────────
     [HttpGet]
     public async Task<ActionResult<List<AppRoleDto>>> List(CancellationToken ct)
-    {
-        var roles = await db.AppRoles.AsNoTracking().OrderBy(r => r.Id).ToListAsync(ct);
-        return Ok(roles.Select(MapToDto).ToList());
-    }
+        => Ok(await roles.ListAsync(ct));
 
     // ── 单个角色 ──────────────────────────────────────────────
     [HttpGet("{roleId}")]
     public async Task<ActionResult<AppRoleDto>> Get(string roleId, CancellationToken ct)
-    {
-        var role = await db.AppRoles.AsNoTracking()
-            .FirstOrDefaultAsync(r => r.RoleId == roleId, ct);
-        if (role is null) return NotFound();
-        return Ok(MapToDto(role));
-    }
+        => await roles.GetAsync(roleId, ct) is { } role ? Ok(role) : NotFound();
 
     // ── 创建角色 ──────────────────────────────────────────────
     [HttpPost]
-    public async Task<ActionResult<AppRoleDto>> Create(
-        [FromBody] UpsertRoleRequest req, CancellationToken ct)
+    public async Task<ActionResult<AppRoleDto>> Create([FromBody] UpsertRoleRequest req, CancellationToken ct)
     {
-        if (await db.AppRoles.AnyAsync(r => r.RoleId == req.RoleId, ct))
-            return Conflict(new { message = $"RoleId '{req.RoleId}' 已存在" });
-
-        var role = new AppRoleEntity
-        {
-            RoleId = req.RoleId,
-            Name = req.Name,
-            Description = req.Description,
-            PermissionsJson = JsonSerializer.Serialize(req.Permissions),
-            IsSystemRole = false,
-        };
-        db.AppRoles.Add(role);
-        await db.SaveChangesAsync(ct);
-        return CreatedAtAction(nameof(Get), new { roleId = role.RoleId }, MapToDto(role));
+        var result = await roles.CreateAsync(new RoleDraft(req.RoleId, req.Name, req.Description,
+            req.Permissions ?? []), ct);
+        return result.IsOk
+            ? CreatedAtAction(nameof(Get), new { roleId = result.Value!.RoleId }, result.Value)
+            : Problem(result);
     }
 
     // ── 更新角色 ──────────────────────────────────────────────
@@ -58,42 +38,24 @@ public class AppRoleApiController(PlatformDbContext db) : ControllerBase
     public async Task<ActionResult<AppRoleDto>> Update(
         string roleId, [FromBody] UpsertRoleRequest req, CancellationToken ct)
     {
-        var role = await db.AppRoles.FirstOrDefaultAsync(r => r.RoleId == roleId, ct);
-        if (role is null) return NotFound();
-
-        if (role.IsSystemRole)
-            return BadRequest(new { message = "系统内置角色不可修改" });
-
-        role.Name = req.Name;
-        role.Description = req.Description;
-        role.PermissionsJson = JsonSerializer.Serialize(req.Permissions);
-        role.UpdatedAt = DateTimeOffset.UtcNow;
-
-        await db.SaveChangesAsync(ct);
-        return Ok(MapToDto(role));
+        var result = await roles.UpdateAsync(roleId, new RoleDraft(req.RoleId, req.Name, req.Description,
+            req.Permissions ?? []), ct);
+        return result.IsOk ? Ok(result.Value) : Problem(result);
     }
 
     // ── 删除角色 ──────────────────────────────────────────────
     [HttpDelete("{roleId}")]
     public async Task<IActionResult> Delete(string roleId, CancellationToken ct)
     {
-        var role = await db.AppRoles.FirstOrDefaultAsync(r => r.RoleId == roleId, ct);
-        if (role is null) return NotFound();
-
-        if (role.IsSystemRole)
-            return BadRequest(new { message = "系统内置角色不可删除" });
-
-        db.AppRoles.Remove(role);
-        await db.SaveChangesAsync(ct);
-        return NoContent();
+        var result = await roles.DeleteAsync(roleId, ct);
+        return result.IsOk ? NoContent() : Problem(result);
     }
 
-    // ─────────────────────────────────────────────────────────
-    private static AppRoleDto MapToDto(AppRoleEntity r)
-    {
-        var perms = new List<string>();
-        try { perms = JsonSerializer.Deserialize<List<string>>(r.PermissionsJson) ?? []; }
-        catch (JsonException) { /* malformed PermissionsJson — treat as empty */ }
-        return new(r.Id, r.RoleId, r.Name, r.Description, perms, r.IsSystemRole, r.CreatedAt);
-    }
+    private ActionResult Problem<T>(SkillHubResult<T> result) where T : class =>
+        result.Status switch
+        {
+            SkillHubStatus.BadRequest => BadRequest(new { message = result.Error }),
+            SkillHubStatus.Conflict => Conflict(new { message = result.Error }),
+            _ => NotFound(new { message = result.Error })
+        };
 }

@@ -1,6 +1,9 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-12 用户与权限（RBAC 角色切片）
+
+`accounts/roles` 接上新的 `RoleService`（按 §3.1 从直接使用 DbContext 的 `AppRoleApiController` 下沉）：角色列表、自定义角色新建/编辑/删除、**系统内置角色不可修改也不可删除**（Core 直接拒绝，界面禁用保存与删除并在详情里说明）。权限词表以 Core 四个内置角色实际用到的 **9 项**为准（workspace/agent/template/llm × read/write/manage 组合）；卡片还列了 `team:*` 与 `user:*`，但**全仓没有任何授权检查引用它们**，因此界面不发明这些取值，并在「登记差异」卡里写明。另一条差异：Core 只把权限列表按字符串存 JSON，**不做白名单校验**，所以未知权限由表单拦截（界面规则，不是 Core 强制）。设计修正：角色 ID 在创建与更新时都由调用方给出，因此契约改为**显式 create/update**，不再用「ID 为空」猜意图（这是本轮测试抓出的错）。验证：Foundation 177 项、Composition 26 项（真实 Host：内置角色只读被拒、自定义角色建改删、重名冲突）、窗口 smoke 221 项通过。
 ## 2026-09-27 DS-11 外部访问（访问令牌）
 
 `access/tokens` 两张卡接上 Core 的 `ExternalAccessTokenService` 与 `ExternalTaskApiOptionsProvider`：External API 策略（启用/HTTPS/默认与上限有效期/每 Owner 上限/公开基地址）、令牌列表与筛选（状态/Owner/工作区/scope/分页）、创建（**明文只出现一次**，可一键复制）、重命名与撤销（都带 `expectedVersion`）。三条边界按 Core 实现：**明文只在创建响应出现一次**，模型里既没有明文也没有 `SecretHash`（结构上无法把哈希带进界面）；**撤销不可逆**且没有 unrevoke/硬删除/扩大 scope 的端点；**scope 白名单固定 8 项且无通配符**——`tasks.write` 不隐含 `tasks.command`、`tasks.evaluate` 不改状态，未知 scope 创建即被拒。踩坑登记：Core 的撤销原因只拒绝 >500 字符，空原因在 Core 侧允许——界面自己要求填写以便溯源，并在提示里写明这个差异，而不是假装 Core 强制。验证：Foundation 172 项、Composition 25 项（真实 Host：创建→列表无明文→改名→过期版本冲突被拒→撤销→按状态筛选→未知 scope 被拒）、窗口 smoke 217 项通过。

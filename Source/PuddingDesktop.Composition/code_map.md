@@ -50,6 +50,8 @@
 
 `DesktopAccessTokenSettings` binds the token cards to `ExternalAccessTokenService` and `ExternalTaskApiOptionsProvider`. The stored secret hash is deliberately not mapped into any model, and a stale `expectedVersion` becomes `SettingsConflictException`.
 
+`DesktopRoleSettings` binds the RBAC card to `RoleService`, keeping create and update as separate operations because a role's id is supplied on both paths.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.
 `InProcessChatClient.Speech`: IChatSpeechClient direct Core IVoiceSynthesisService adapter. Reads authoritative message/envelope payload, validates workspace/role/local-owner identity, uses configured defaults and the existing tracked-operation cancellation lifetime.
 

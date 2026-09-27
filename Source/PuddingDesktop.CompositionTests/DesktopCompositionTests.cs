@@ -1850,6 +1850,68 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task RoleAdapter_ListsBuiltInRolesAndRefusesToChangeThem()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var roles = factory.CreateRoleSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => roles.ListAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var seeded = await roles.ListAsync(timeout.Token);
+            Assert.NotEmpty(seeded);
+            // Core 内置四个系统角色，全部只读。
+            var systemRoles = seeded.Where(role => role.IsSystemRole).ToArray();
+            Assert.True(systemRoles.Length >= 4, $"内置角色应至少 4 个，实际 {systemRoles.Length}");
+            Assert.All(systemRoles, role => Assert.False(role.IsEditable));
+            Assert.All(systemRoles, role => Assert.All(role.Permissions, permission => Assert.True(
+                RoleText.IsKnownPermission(permission), $"内置角色出现未知权限 {permission}")));
+
+            // 系统角色不可改、不可删：Core 直接拒绝，适配器把它变成真实错误。
+            var admin = systemRoles[0];
+            await Assert.ThrowsAsync<InvalidOperationException>(() => roles.UpdateAsync(new RoleEdit(
+                admin.RoleId, "hijacked", "", ["workspace:read"]), timeout.Token));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => roles.DeleteAsync(admin.RoleId, timeout.Token));
+            Assert.Contains(await roles.ListAsync(timeout.Token), role => role.RoleId == admin.RoleId && role.Name == admin.Name);
+
+            // 自定义角色：创建、改名与改权限、重名冲突、删除。
+            await roles.CreateAsync(new RoleEdit("composition-role", "Composition Role", "fixture",
+                ["workspace:read", "template:read"]), timeout.Token);
+            var created = Assert.Single(await roles.ListAsync(timeout.Token),
+                role => role.RoleId == "composition-role");
+            Assert.False(created.IsSystemRole);
+            Assert.True(created.IsEditable);
+            Assert.Equal(["template:read", "workspace:read"], created.Permissions.OrderBy(value => value));
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => roles.CreateAsync(new RoleEdit(
+                "composition-role", "Duplicate", "", []), timeout.Token));
+
+            await roles.UpdateAsync(new RoleEdit("composition-role", "Renamed Role", "edited",
+                ["agent:run"]), timeout.Token);
+            var renamed = Assert.Single(await roles.ListAsync(timeout.Token),
+                role => role.RoleId == "composition-role");
+            Assert.Equal("Renamed Role", renamed.Name);
+            Assert.Equal(["agent:run"], renamed.Permissions);
+
+            await roles.DeleteAsync("composition-role", timeout.Token);
+            Assert.DoesNotContain(await roles.ListAsync(timeout.Token), role => role.RoleId == "composition-role");
+            await Assert.ThrowsAsync<InvalidOperationException>(() => roles.DeleteAsync("composition-role", timeout.Token));
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => roles.ListAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

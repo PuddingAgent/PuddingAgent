@@ -225,6 +225,15 @@ public sealed partial class MainWindow
         var accessTokens = VisibilityOf("access", "tokens", tab);
         AccessTokensSettings.Visibility = accessTokens;
         if (accessTokens == Visibility.Visible) LoadAccessTokensIfNeeded();
+        var roles = VisibilityOf("accounts", "roles", tab);
+        RolesSettings.Visibility = roles;
+        if (roles == Visibility.Visible) LoadRolesIfNeeded();
+    }
+
+    private async void LoadRolesIfNeeded()
+    {
+        try { await LoadRolesAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadAccessTokensIfNeeded()
@@ -436,6 +445,7 @@ public sealed partial class MainWindow
         ("security", "audit") => true,
         ("security", "allowlist") => true,
         ("access", "tokens") => true,
+        ("accounts", "roles") => true,
         _ => false
     };
 
