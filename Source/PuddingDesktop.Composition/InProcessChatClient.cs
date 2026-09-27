@@ -125,14 +125,10 @@ internal sealed partial class InProcessChatClient(IServiceScopeFactory scopes, C
         if (cursor is not null && readHead == cursor) return null;
         var view = await projection.GetConversationAsync(role.WorkspaceId, owner, role.AgentId, token);
         return new Conversation(view.WorkspaceId, view.AgentId, view.MainSessionId,
-            view.Messages.Select(m => new ChatMessage(m.MessageId, m.RunId, m.Role, m.SourceName, m.CreatedAt, m.Content, m.Status,
-                m.ProcessItems.Select(Map).ToArray(), m.TurnId,
-                m.ProcessSummary is { } summary ? new ProcessSummary(summary.TotalItems, summary.ToolCalls, summary.FailedTools, summary.HasDetails) : null,
-                m.TurnOutcome is { } outcome ? new TurnOutcome(outcome.Status, outcome.ErrorCode, outcome.ErrorMessage) : null,
-                m.ContentParts?.Select(p => new PuddingChat.ContentPart(p.Type, p.ArtifactId, p.Detail)).ToArray())).ToArray(),
+            view.Messages.Select(MapMessage).ToArray(),
             view.ActiveRun is { } run ? new ActiveRun(run.RunId, run.Status, run.StatusText, run.Summary,
                 new OutputSnapshot(run.OutputSnapshot.Markdown, run.OutputSnapshot.ProcessItems.Select(Map).ToArray(), Map(run.OutputSnapshot.Window))) : null,
-            Math.Min(readHead, view.EventCursor));
+            Math.Min(readHead, view.EventCursor), Map(view.OlderCursor));
     }, ct);
     public async Task WaitForChangeAsync(RoleKey role, string sessionId, long cursor, CancellationToken ct)
         => await ExecuteAsync(async (services, token) =>
@@ -185,6 +181,12 @@ internal sealed partial class InProcessChatClient(IServiceScopeFactory scopes, C
         return detail is null ? new ProcessDetails(message, []) : new ProcessDetails(detail.MessageId, detail.ProcessItems.Select(Map).ToArray(), Map(detail.Window));
     }, ct);
     private static ProcessItem Map(ProcessSummaryItem p) => new(p.Id, p.Kind, p.DelegationStatus ?? p.Status, p.Text, p.Sequence, p.Name, p.Arguments, p.Output, p.ExitCode, p.Message, p.ToolCallId, p.TurnId, p.DelegationRunId, p.ParentToolCallId, p.DelegationExecutionId);
+    private static ChatMessage MapMessage(Core.ConversationMessageView m) => new(m.MessageId, m.RunId, m.Role, m.SourceName, m.CreatedAt, m.Content, m.Status,
+        m.ProcessItems.Select(Map).ToArray(), m.TurnId,
+        m.ProcessSummary is { } summary ? new ProcessSummary(summary.TotalItems, summary.ToolCalls, summary.FailedTools, summary.HasDetails) : null,
+        m.TurnOutcome is { } outcome ? new TurnOutcome(outcome.Status, outcome.ErrorCode, outcome.ErrorMessage) : null,
+        m.ContentParts?.Select(p => new PuddingChat.ContentPart(p.Type, p.ArtifactId, p.Detail)).ToArray(), m.CanonicalMessageId);
+    private static HistoryCursor? Map(Core.ConversationHistoryCursor? cursor) => cursor is null ? null : new(cursor.CreatedAt, cursor.RowId);
     private static EventWindow? Map(TurnEventWindow? w) => w is null ? null : new(w.TurnId, w.ThroughSequence, w.MinSequence, w.MaxSequence, w.HasMoreBefore);
     private static string? LocalAvatar(string? path)
     {

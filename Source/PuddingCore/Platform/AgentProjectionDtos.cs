@@ -105,7 +105,12 @@ public sealed record AgentConversationView(
     IReadOnlyList<ConversationMessageView> Messages,
     AgentRunView? ActiveRun,
     long EventCursor,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt)
+{
+    public ConversationHistoryCursor? OlderCursor { get; init; }
+}
+
+public sealed record ConversationHistoryCursor(long CreatedAt, long RowId);
 
 /// <summary>Renderable chat message in an Agent conversation projection.</summary>
 public sealed record ConversationMessageView(
@@ -119,6 +124,8 @@ public sealed record ConversationMessageView(
     string Status,
     IReadOnlyList<ProcessSummaryItem> ProcessItems)
 {
+    /// <summary>Message Fabric identity, when several transcript rows contain the same envelope.</summary>
+    public string? CanonicalMessageId { get; init; }
     /// <summary>Canonical turn outcome, independent of whether an Agent reply was produced.</summary>
     public ConversationTurnOutcomeView? TurnOutcome { get; init; }
     /// <summary>Canonical conversation Turn identity shared by the user message and Agent reply.</summary>

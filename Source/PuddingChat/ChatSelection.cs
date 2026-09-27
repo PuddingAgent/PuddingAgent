@@ -18,18 +18,38 @@ public sealed class ChatSelection
     public RoleKey? Role { get; private set; }
     public long Generation { get; private set; }
     public Conversation? Conversation { get; private set; }
+    private bool _historyExpanded;
     public string Draft { get => Role is { } role ? _drafts.GetValueOrDefault(role, "") : "";
         set { if (Role is { } role) _drafts[role] = value; } }
     public PendingSend? Pending => Role is { } role ? _pending.GetValueOrDefault(role) : null;
-    public void Select(RoleKey? role) { Role = role; Generation++; Conversation = null; }
+    public void Select(RoleKey? role) { Role = role; Generation++; Conversation = null; _historyExpanded = false; }
     public void Clear() { Select(null); _drafts.Clear(); _pending.Clear(); _images.Clear(); }
     public bool Apply(long generation, Conversation conversation)
     {
         if (generation != Generation || Role != new RoleKey(conversation.WorkspaceId, conversation.AgentId)) return false;
         // Session rotation may reset the cursor; identity must be checked before ordering.
         if (Conversation is { } old && old.MainSessionId == conversation.MainSessionId && old.EventCursor > conversation.EventCursor) return false;
+        if (Conversation is { } previous && previous.MainSessionId == conversation.MainSessionId && _historyExpanded)
+        {
+            var known = previous.Messages.Select(m => m.CanonicalMessageId ?? m.MessageId).ToHashSet(StringComparer.Ordinal);
+            var overlaps = conversation.Messages.Any(m => known.Contains(m.CanonicalMessageId ?? m.MessageId));
+            // A burst larger than the latest page can leave a gap. Keep a cursor that can fill it.
+            conversation = conversation with { Messages = MergeMessages(previous.Messages, conversation.Messages),
+                OlderCursor = overlaps || conversation.Messages.Length == 0 ? previous.OlderCursor : conversation.OlderCursor };
+        }
+        else _historyExpanded = false;
         Conversation = conversation; return true;
     }
+    public bool PrependHistory(long generation, HistoryPage page)
+    {
+        if (generation != Generation || Conversation is not { } current || current.MainSessionId != page.MainSessionId
+            || current.OlderCursor != page.Before || (page.Next is not null && page.Next.CompareTo(page.Before) >= 0)) return false;
+        Conversation = current with { Messages = MergeMessages(page.Messages, current.Messages), OlderCursor = page.Next };
+        _historyExpanded = true; return true;
+    }
+    private static ChatMessage[] MergeMessages(IEnumerable<ChatMessage> older, IEnumerable<ChatMessage> current)
+        => older.Concat(current).GroupBy(m => m.CanonicalMessageId ?? m.MessageId, StringComparer.Ordinal).Select(g => g.Last())
+            .OrderBy(m => m.CreatedAt).ToArray();
     public PendingSend Prepare(string session, string? capturedDraft = null, IReadOnlyList<AttachedImage>? capturedImages = null)
     {
         var role = Role ?? throw new InvalidOperationException("先选择角色。");

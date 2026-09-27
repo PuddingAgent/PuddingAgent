@@ -16,12 +16,13 @@ public sealed record TurnOutcome(string Status, string? ErrorCode, string? Error
 public sealed record ContentPart(string Type, string? ArtifactId, string? Detail);
 public sealed record ChatMessage(string MessageId, string? RunId, string Role, string SourceName,
     DateTimeOffset CreatedAt, string Content, string Status, ProcessItem[] ProcessItems,
-    string? TurnId = null, ProcessSummary? ProcessSummary = null, TurnOutcome? TurnOutcome = null, ContentPart[]? ContentParts = null);
+    string? TurnId = null, ProcessSummary? ProcessSummary = null, TurnOutcome? TurnOutcome = null, ContentPart[]? ContentParts = null,
+    string? CanonicalMessageId = null);
 public sealed record EventWindow(string TurnId, long ThroughSequence, long MinSequence, long MaxSequence, bool HasMoreBefore);
 public sealed record OutputSnapshot(string Markdown, ProcessItem[] ProcessItems, EventWindow? Window = null);
 public sealed record ActiveRun(string RunId, string Status, string StatusText, string Summary, OutputSnapshot OutputSnapshot);
 public sealed record Conversation(string WorkspaceId, string AgentId, string MainSessionId, ChatMessage[] Messages,
-    ActiveRun? ActiveRun, long EventCursor);
+    ActiveRun? ActiveRun, long EventCursor, HistoryCursor? OlderCursor = null);
 public sealed record ProcessDetails(string MessageId, ProcessItem[] ProcessItems, EventWindow? Window = null);
 public sealed record Acceptance(string ConversationId, string MessageId, string[] TurnIds, long AcceptedSequence);
 public sealed record PendingSend(RoleKey Role, string ConversationId, string Text, string ClientRequestId, string ClientMessageId, IReadOnlyList<AttachedImage>? Images = null)

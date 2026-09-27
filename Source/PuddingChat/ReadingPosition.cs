@@ -4,9 +4,9 @@ public sealed record MessageBounds(string Id, double Top, double Height);
 public sealed record ReadingPosition(string? MessageId, double WithinMessage, double Offset, bool FollowLatest)
 {
     public static ReadingPosition Latest { get; } = new(null, 0, 0, true);
-    public static ReadingPosition Capture(IEnumerable<MessageBounds> messages, double offset, double scrollableHeight)
+    public static ReadingPosition Capture(IEnumerable<MessageBounds> messages, double offset, double scrollableHeight, bool followWhenNearBottom = true)
     {
-        if (scrollableHeight - offset < 80) return Latest;
+        if (followWhenNearBottom && scrollableHeight - offset < 80) return Latest;
         var anchor = messages.FirstOrDefault(m => m.Top + m.Height > offset);
         return new(anchor?.Id, anchor is null ? 0 : offset - anchor.Top, offset, false);
     }

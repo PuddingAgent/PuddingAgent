@@ -17,6 +17,8 @@ public interface IAgentConversationProjectionService
     Task<ConversationActivityPage> ReadActivityAsync(string workspaceId, string ownerUserId, string agentId,
         ConversationActivityRead read, CancellationToken ct);
     Task<AgentConversationView> GetConversationAsync(string workspaceId, string ownerUserId, string agentId, CancellationToken ct);
+    Task<AgentConversationView> GetHistoryAsync(string workspaceId, string ownerUserId, string agentId,
+        string sessionId, ConversationHistoryCursor before, CancellationToken ct);
 
     Task<MessageProcessDetailsView?> GetMessageProcessItemsAsync(
         string workspaceId,
@@ -102,11 +104,22 @@ public sealed partial class AgentConversationProjectionService(
         ConversationEventTypes.TurnCompleted,
     ];
 
-    public async Task<AgentConversationView> GetConversationAsync(
+    public Task<AgentConversationView> GetConversationAsync(string workspaceId, string ownerUserId, string agentId, CancellationToken ct)
+        => GetConversationPageAsync(workspaceId, ownerUserId, agentId, ct);
+
+    public Task<AgentConversationView> GetHistoryAsync(string workspaceId, string ownerUserId, string agentId,
+        string sessionId, ConversationHistoryCursor before, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        if (before.RowId <= 0) throw new ArgumentOutOfRangeException(nameof(before));
+        return GetConversationPageAsync(workspaceId, ownerUserId, agentId, ct, before, sessionId);
+    }
+
+    private async Task<AgentConversationView> GetConversationPageAsync(
         string workspaceId,
         string ownerUserId,
         string agentId,
-        CancellationToken ct)
+        CancellationToken ct, ConversationHistoryCursor? before = null, string? expectedSessionId = null)
     {
         ownerUserId = NormalizeOwnerUserId(ownerUserId);
 
@@ -120,6 +133,8 @@ public sealed partial class AgentConversationProjectionService(
             sessions,
             ct);
 
+        if (expectedSessionId is not null && main?.SessionId != expectedSessionId)
+            throw new InvalidOperationException("角色的主会话已变化，请刷新会话后重试。");
         if (main is null)
         {
             return new AgentConversationView(
@@ -134,11 +149,15 @@ public sealed partial class AgentConversationProjectionService(
         }
 
         var agentDisplayName = ResolveAgentDisplayName(agent, agentId);
-        var messageRows = await db.ChatMessages
+        var messageQuery = db.ChatMessages
             .AsNoTracking()
             .Where(m => m.SessionId == main.SessionId)
             .Where(m => m.Content != RuntimeDispatchMarkers.DuplicateMessagePlaceholder)
-            .Where(m => m.Content != RuntimeDispatchMarkers.DuplicateMessagePlaceholderLegacyHyphen)
+            .Where(m => m.Content != RuntimeDispatchMarkers.DuplicateMessagePlaceholderLegacyHyphen);
+        if (before is not null)
+            messageQuery = messageQuery.Where(m => m.CreatedAt < before.CreatedAt
+                || (m.CreatedAt == before.CreatedAt && m.Id < before.RowId));
+        var messageRows = await messageQuery
             .OrderByDescending(m => m.CreatedAt)
             .ThenByDescending(m => m.Id)
             .Take(ConversationMessageCandidateLimit)
@@ -156,6 +175,10 @@ public sealed partial class AgentConversationProjectionService(
         messageRows = DeduplicateCanonicalMessageRows(messageRows)
             .TakeLast(ConversationMessageLimit)
             .ToList();
+        ConversationHistoryCursor? olderCursor = null;
+        if (messageRows.FirstOrDefault() is { } oldest && await messageQuery.AnyAsync(
+            m => m.CreatedAt < oldest.CreatedAt || (m.CreatedAt == oldest.CreatedAt && m.Id < oldest.Id), ct))
+            olderCursor = new(oldest.CreatedAt, oldest.Id);
 
         var messageIds = messageRows
             .Select(m => m.MessageId)
@@ -227,7 +250,7 @@ public sealed partial class AgentConversationProjectionService(
         // 整体抢占快照。根 run = 最新 turn.started 的 RunId；快照按其 TurnId
         // 聚合父 Agent 正文/思考/工具与子代理生命周期事件（正文按根 RunId 收敛，
         // 子 run 的 content 不并入父快照）；根 run 已终态 → 无 active run。
-        var rootTurnStarted = await db.ConversationEvents
+        var rootTurnStarted = before is not null ? null : await db.ConversationEvents
             .AsNoTracking()
             .Where(e => e.ConversationId == main.SessionId)
             .Where(e => e.Type == ConversationEventTypes.TurnStarted)
@@ -312,7 +335,7 @@ public sealed partial class AgentConversationProjectionService(
             }
         }
 
-        var eventCursor = await GetEventCursorAsync(main.SessionId, ct);
+        var eventCursor = before is null ? await GetEventCursorAsync(main.SessionId, ct) : 0;
         var updatedAt = latestTurnEventAt is null
             ? main.LastActiveAt
             : ParseOccurredAt(latestTurnEventAt);
@@ -325,7 +348,7 @@ public sealed partial class AgentConversationProjectionService(
             messages,
             activeRun,
             eventCursor,
-            updatedAt);
+            updatedAt) { OlderCursor = olderCursor };
     }
 
     internal static ConversationTurnOutcomeView ProjectTurnOutcome(ConversationEventEntity evt)
@@ -710,6 +733,7 @@ public sealed partial class AgentConversationProjectionService(
             [])
         {
             TurnId = turnId,
+            CanonicalMessageId = string.IsNullOrWhiteSpace(envelope?.MessageId) ? null : envelope.MessageId,
             SourceKind = sourceKind,
             MessageType = messageType,
             LlmRole = message.Role,

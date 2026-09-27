@@ -72,6 +72,9 @@ public partial class App : Application
                 Check(control.CurrentConversation?.Messages.Length == 2, "canonical messages displayed");
                 Check(fixture.ReplayRestarts == 1 && control.CurrentConversation?.ActiveRun?.OutputSnapshot.Markdown == "输出",
                     "snapshot race restarts bounded replay instead of retaining truncated activity");
+                await control.LoadOlderAsync();
+                Check(control.CurrentConversation?.Messages.First().MessageId == "older" && control.CurrentConversation.OlderCursor is null,
+                    "native history prepends and reaches end without changing live cursor");
                 control.SetRoleFilter("does-not-exist");
                 Check(control.VisibleRoleCount == 0 && control.SelectedRole?.AgentId == "builder", "search preserves active role");
                 control.SetRoleFilter(""); Check(control.VisibleRoleCount == 2, "clear search restores roles");
@@ -94,6 +97,7 @@ public partial class App : Application
                     while (control.CurrentConversation?.EventCursor != 4) await Task.Delay(10, timeout.Token);
                 Check(control.CurrentConversation?.ActiveRun is null && fixture.ConversationReads > readsBeforeStreaming,
                     "lifecycle changes return to authoritative Core snapshot");
+                Check(control.CurrentConversation!.Messages.Any(m => m.MessageId == "older"), "authoritative refresh retains loaded history");
                 Check(MessageCard.RenderText("# Title\n```cs\nConsole.WriteLine(1);\n```\n正文") is StackPanel { Children.Count: 3 }, "native heading code text");
                 var markdown = new MarkdownView("**粗体** *斜体* ~~删除~~ `code` [文档](https://example.com) [危险](javascript:alert)\n\n> 引用\n\n3. 第一\n4. 第二\n\n|名称|值|\n|---|---|\n|a|b|");
                 var paragraph = (TextBlock)markdown.Children[0];
@@ -145,7 +149,7 @@ public partial class App : Application
                 Check(control.CurrentConversation?.AgentId == "reviewer", "late reply rejected");
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 41, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 43, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -153,7 +157,7 @@ public partial class App : Application
         _window.Activate();
     }
     private static void Check(bool condition, string label) { if (!condition) throw new InvalidOperationException(label); }
-    private sealed class Fixture(string imagePath) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges, IImageAttachmentClient, IConversationActivity
+    private sealed class Fixture(string imagePath) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges, IImageAttachmentClient, IConversationActivity, IConversationHistory
     {
         public int MaxImagesPerMessage => 600;
         public Task<AttachedImage> ImportImageAsync(RoleKey role, string path, CancellationToken ct) => Task.FromResult(new AttachedImage("vision-fixture", Path.GetFileName(path), "image/png", 1, 1));
@@ -189,7 +193,10 @@ public partial class App : Application
             Sent is null ? [] : [new("m", null, "user", "用户", DateTimeOffset.UtcNow, "implement", "accepted", []),
                 new("a", "r", "assistant", "代码工程师", DateTimeOffset.UtcNow, "# 进度\n```cs\nvar result = 1;\n```", "running", [])],
             Sent is null || Terminal ? null : new("r", "running", "执行中", "编译", new(Streaming ? "流式正文" : "输出", [new("e", "tool_call", "running", "dotnet build", 2, "terminal", ToolCallId: "call", TurnId: "turn")], new("turn", 2, 2, 2, false))),
-            Sent is null ? 0 : Terminal ? 4 : Streaming ? 3 : 2);
+            Sent is null ? 0 : Terminal ? 4 : Streaming ? 3 : 2, Sent is null ? null : new(10, 2));
+        public Task<HistoryPage> ReadHistoryAsync(RoleKey role, string sessionId, HistoryCursor before, CancellationToken ct)
+            => Task.FromResult(new HistoryPage(sessionId, before, null,
+                [new("older", null, "user", "用户", DateTimeOffset.UnixEpoch, "更早的消息", "accepted", [])]));
         public readonly TaskCompletionSource Changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public readonly TaskCompletionSource TerminalChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool Streaming, Terminal;

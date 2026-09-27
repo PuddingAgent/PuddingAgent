@@ -33,6 +33,8 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     private readonly InfoBar _notice = new() { IsOpen = true, IsClosable = false, Title = "正在加载工作空间", Message = "正在读取本机角色与主会话。" };
     private readonly Grid _chat = new() { RowSpacing = 16, Padding = new Thickness(24) };
     private readonly Button _refresh = new() { Content = "刷新角色" };
+    private readonly Button _older = new() { Content = "加载更早的消息", HorizontalAlignment = HorizontalAlignment.Center };
+    private bool _loadingHistory;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(15) };
     private readonly Dictionary<string, RoleAvatarCard> _cards = [];
     private readonly Dictionary<string, (ChatMessage Message, MessageCard Card)> _messageCards = [];
@@ -113,6 +115,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         _messages.MaxWidth = 900; _messages.HorizontalAlignment = HorizontalAlignment.Stretch;
         Composer.MaxWidth = 900; Composer.HorizontalAlignment = HorizontalAlignment.Stretch;
         _latest.Click += (_, _) => ScrollToLatest();
+        _older.Click += async (_, _) => await GuardAsync(LoadOlderAsync);
         _scroll.ViewChanged += (_, _) => _latest.Visibility = _scroll.ScrollableHeight - _scroll.VerticalOffset < 80 ? Visibility.Collapsed : Visibility.Visible;
         _search.TextChanged += (_, _) => ApplyRoleFilter();
         Grid.SetRow(Composer, 3); _chat.Children.Add(Composer);
@@ -311,6 +314,29 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         foreach (var status in statuses) if (_cards.TryGetValue(status.AgentId, out var card)) card.SetStatus(status);
     }
     private readonly SemaphoreSlim _conversationReads = new(1, 1);
+    public async Task LoadOlderAsync()
+    {
+        if (_loadingHistory || _client is not IConversationHistory history || _state.Role is not { } role
+            || _state.Conversation is not { OlderCursor: { } before } current || _selection is null) return;
+        var generation = _state.Generation; var ct = _selection.Token;
+        _loadingHistory = true; _older.IsEnabled = false; _older.Content = "正在加载…";
+        try
+        {
+            await _conversationReads.WaitAsync(ct);
+            try
+            {
+                var page = await history.ReadHistoryAsync(role, current.MainSessionId, before, ct).WaitAsync(ct);
+                if (_disposed || generation != _state.Generation) return;
+                var position = ReadingPosition.Capture(MessageGeometry(), _scroll.VerticalOffset, _scroll.ScrollableHeight, false);
+                if (!_state.PrependHistory(generation, page)) return;
+                _restoreReading = position;
+                RenderConversation(generation, role, _state.Conversation!, ct);
+            }
+            finally { _conversationReads.Release(); }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        finally { _loadingHistory = false; _older.IsEnabled = true; _older.Content = "加载更早的消息"; }
+    }
     private async Task RefreshConversationAsync(long generation, CancellationToken ct)
     {
         await _conversationReads.WaitAsync(ct);
@@ -350,10 +376,12 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     private void RenderConversation(long generation, RoleKey role, Conversation snapshot, CancellationToken ct)
     {
         if (_disposed || !_state.Apply(generation, snapshot)) return;
+        snapshot = _state.Conversation!; // Apply may retain previously loaded history.
         // A session rotation cancels the old follower, not the new cards or subscription.
         ct = _selection?.Token ?? ct;
         var position = _restoreReading ?? CaptureReading(); _restoreReading = null;
         var desired = new List<UIElement>();
+        if (_client is IConversationHistory && snapshot.OlderCursor is not null) desired.Add(_older);
         foreach (var message in snapshot.Messages)
         {
             var id = message.MessageId;
@@ -394,7 +422,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         }
         _notice.IsOpen = snapshot.Messages.Length == 0 && snapshot.ActiveRun is null;
         _notice.Title = "开始新的工作"; _notice.Message = "向这位角色描述任务，消息将进入其主会话。";
-        _subtitle.Text = $"{role.WorkspaceId} / {role.AgentId} · 最近 {snapshot.Messages.Length} 条消息 · {snapshot.MainSessionId}";
+        _subtitle.Text = $"{role.WorkspaceId} / {role.AgentId} · 已加载 {snapshot.Messages.Length} 条消息 · {snapshot.MainSessionId}";
         if (snapshot.ActiveRun is { } statusRun)
             _subtitle.Text += $" · {statusRun.StatusText}" + (statusRun.OutputSnapshot.Window?.HasMoreBefore == true ? " · 正在补齐执行轨迹…" : "");
         UpdateComposer();
