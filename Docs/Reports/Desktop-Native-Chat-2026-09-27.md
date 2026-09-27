@@ -198,3 +198,9 @@ Desktop Release 发布通过（`temp/native-transfer-publish.log`，Core 有既�
 新增独立 PuddingApproval.Sqlite 及其测试工程，未修改 Host/Runtime。SQLite 事务同时保存审批记录与对应版本的 outbox；执行身份唯一约束防止不同审批 ID 重复创建相同 invocation 的许可。CompareExchange 检查版本及不可变身份，失败不追加事件。事件读取是有界、至少一次语义，消费者需先完成持久去重再确认，尚无运行消费者。
 
 独立测试 6/6 通过（`temp/native-approval-sqlite-final.log`）：重新打开数据库后状态/未确认事件存在、两个实例 16 路决定/消费各只有一个成功、触发器注入 outbox 写入故障时状态更新和请求创建均回滚、重复执行身份拒绝、消费后重新打开不可重复消费，以及程序集依赖断言。默认 SQLite 原生依赖触发 NU1903，已显式固定 bundle 2.1.13 后复验，无关闭审计。测试使用系统 Temp 并清理，不触碰 D:\data。强杀/断电、Core 消费者与真实执行恢复仍待验证；本轮不是审批 UI 闭环验收。
+
+## A4 原生审批卡独立交互（2026-09-27）
+
+新增 PuddingChat 审批展示/提交合同与 WinUI ApprovalCard。卡片只提供 Core 声明的单次允许/拒绝选项，展示参数、描述、有效期和真实风险说明；没有风险信息时显示未提供。提交使用固定 decisionId，失败只重试原决定，不改变决定理由；不提前标记批准。禁用过期、依赖等待及处理中交互，拒绝跨请求回执和同版本状态修改，忽略旧版本，释放控件时取消异步等待。
+
+验证：BCL 47/47、原生窗口 86 项（`temp/native-approval-card-final.log`），构建零警告零错误。新增覆盖真实窗口加载、双击、失败/重试同一提交、权威状态、过期、Core 能力限制、依赖等待、旧版本、跨角色、同版本冲突及 Dispose 后晚到结果。测试使用可控 IChatApprovals 客户端，没有接入生产 Core，没有在产品 ChatWorkspace 显示尚不具备真实执行续行的按钮。固定待处理区域、Core 请求投影和执行恢复仍待完成。

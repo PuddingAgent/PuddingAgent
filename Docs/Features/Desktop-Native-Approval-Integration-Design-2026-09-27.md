@@ -80,3 +80,11 @@ Core 决定服务拥有 Pending→Approved/Denied/Expired 的原子转换，禁�
 `Source/PuddingApproval.Sqlite` 已实现独立适配器：显式数据库路径、执行身份唯一约束、版本比较交换和审批状态/outbox 同事务提交。事件消费者按 (approval ID, version) 去重后单条确认；读取本身不删除事件。6 项独立测试覆盖重新打开、两个实例 16 路竞争、事件插入故障导致创建/决定整体回滚、重复 invocation 拒绝、消费后重新打开不可重复消费和程序集依赖边界。测试数据位于系统 Temp 并由测试清理。
 
 此适配器尚未用于产品数据库，也没有 Host DI、事件消费者或 Runtime 续行接线；SQLite 回滚测试不等同于强杀/断电故障验收。下一步须把请求生产者、事件消费者和执行调度的持久边界接到同一 Core 真源后，才可提供原生审批交互。
+
+## 7. A4 独立原生审批卡
+
+`PuddingChat/Approvals.cs` 定义只用于进程内应用调用的展示快照、允许决定集合和带版本/稳定 decisionId 的提交合同。`PuddingChat.WinUI/ApprovalCard.cs` 显示工具、请求描述、完整参数、Core 风险说明（缺失时明确未提供）与有效期，提供 Core 允许的单次允许/拒绝按钮和可选理由。参数为只读原生文本，不作为 Markdown/命令执行。
+
+提交时冻结决定与理由，禁用重复提交；回执失败后仅重试原决定，decisionId/expectedVersion/理由保持一致。权威快照到来前不乐观批准。过期通过控件加载期间的计时器刷新；DeferredDependency 没有人工按钮。不同角色/会话/审批 ID 的回执被拒绝，旧版本忽略，同版本状态变更拒绝；Dispose 取消等待并忽略晚到回执。布局沿用主题卡片资源。
+
+此卡已完成独立窗口验证，但尚未放入产品 ChatWorkspace，也没有决定服务适配器。等待 A2/A3 完成后再接固定待处理区域；永久授权不在卡片选项中，不假称支持 Web 的 always_allow。

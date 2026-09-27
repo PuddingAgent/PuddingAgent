@@ -26,6 +26,8 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 
 ## 2026-09-27 原生聊天交错消息流
 
+`PuddingChat/Approvals.cs` 与 `PuddingChat.WinUI/ApprovalCard.cs` 提供独立原生审批交互：权威版本快照、Core 允许的选项、稳定决定重试、过期/依赖等待禁用、释放后取消等待。`ApprovalCardChecks` 覆盖原生加载和竞态；尚未接入产品聊天区域与 Core 决定服务，不能视为审批执行闭环完成。
+
 `Source/PuddingApproval.Sqlite/SqliteApprovalStore.cs` 为独立审批存储适配器：身份唯一、版本 CAS、状态/outbox 同事务提交、未确认事件读取与确认；`PuddingApproval.SqliteTests` 覆盖双实例竞争、重开和故障回滚。未登记 Host/DI，待接请求生产者与执行续行。
 
 `Source/PuddingApproval` 为独立 BCL 人工决定转换组件（尚未接入）：精确身份/操作绑定、版本 CAS、决定幂等、过期、一次许可消费与 DispatchUnknown。`PuddingApprovalTests` 只引用该叶组件；生产事务存储/outbox 与 Runtime 接线仍待实现，不能将内存测试视为审批功能交付。
