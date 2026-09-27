@@ -39,7 +39,7 @@ public sealed partial class SqliteApprovalStore : IApprovalStore, IApprovalInbox
     {
         record.ValidateOperation();
         var b = record.Binding;
-        if (record.State != ApprovalState.Pending || record.Version != 0 || record.Decision is not null
+        if (record.State != ApprovalState.Pending || record.Version != 0 || record.Decision is not null || record.Cancellation is not null
             || new[] { record.Id, b.WorkspaceId, b.AgentId, b.SessionId, b.RunId, b.TurnId, b.InvocationId,
                 b.OperationFingerprint, b.PolicyRevision }.Any(string.IsNullOrWhiteSpace))
             throw new ArgumentException("A new request requires a complete binding and pending version zero.");

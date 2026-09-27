@@ -171,3 +171,9 @@ MarkdownView 对相同正文跳过重复解析；判断旧控件是否仍存在�
 ## 审批读取侧组件（2026-09-27）
 
 IApprovalInbox 与 SQLite 角色/会话待处理查询已独立实现，18 逻辑/9 存储测试通过。详见原生审批接入设计 A1 读取侧章节。此项为固定待处理区域提供分页数据能力，不生成请求、不恢复工具、不证明审批闭环；A2/A3/A5 门禁继续保留。
+
+## 未消费审批许可撤销（2026-09-27）
+
+ApprovalService.CancelAsync 新增 Pending/Approved → Cancelled，保持版本 CAS、精确绑定、稳定取消 ID 与原决定审计。取消和消费竞争仅一方成功；已消费或派发未知不能撤销，已到期记为 Expired。SQLite 将取消事实与 outbox 同事务保存，重开后不能再次消费，也不会出现在待处理查询。
+
+独立验证 22 逻辑 / 10 SQLite 测试通过，日志 temp/native-approval-cancellation.log 和 temp/native-approval-cancellation-sqlite.log。未接聊天停止按钮、Host 或 Runtime 暂停/恢复，不宣称审批闭环完成；未操作 D:\data。

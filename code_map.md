@@ -1454,3 +1454,7 @@ MarkdownView 跳过相同正文，用引用集合替代旧控件保留判定中�
 ## 2026-09-27 原生审批读取侧
 
 PuddingApproval/ApprovalInbox.cs 定义按工作空间/角色/会话查询 Pending 的独立端口；PuddingApproval.Sqlite 增加索引与有界游标实现。18 审批逻辑/9 SQLite 测试通过，尚未装配 Host 或聊天待审批区域；读取不能代替决定与执行恢复。
+
+## 2026-09-27 审批许可撤销
+
+PuddingApproval/ApprovalService.Cancellation.cs：未消费许可的幂等取消，与消费 CAS 竞争；SQLite 保留取消事实/outbox。22 逻辑 / 10 存储测试通过，尚未接入聊天停止或 Runtime 暂停/恢复。

@@ -11,6 +11,8 @@
 
 版本化状态由 ApprovalService 负责；适配器不另建业务状态机。Microsoft.Data.Sqlite 的 Task API 不保证后台异步 I/O，Host 接线必须使用 Core 后台操作路径，不能在 UI 线程同步执行长存储操作。
 
+Cancelled 与取消命令随记录/outbox 同事务保存；初始请求禁止伪造 Cancellation。取消后重开仍不可消费、不会出现在 Pending 收件箱。当前共 10 项存储测试通过。
+
 依赖固定 Microsoft.Data.Sqlite 10.0.9 / SQLitePCLRaw.bundle_e_sqlite3 2.1.13，避免默认传递版本 2.1.11 导致 NU1903（[依赖告警](https://github.com/advisories/GHSA-2m69-gcr7-jv3q)）；未关闭 NuGet 审计。
 
 独立测试：`dotnet test Source/PuddingApproval.SqliteTests/PuddingApproval.SqliteTests.csproj --artifacts-path temp/build/native-approval-sqlite --nologo -p:CollectCoverage=false`。覆盖重新打开、双实例并发、事件故障回滚、重复执行身份、消费后重新打开及程序集边界。断电、进程强杀和真实 Runtime 续行尚未验收。

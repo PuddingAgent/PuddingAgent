@@ -5,6 +5,23 @@ namespace PuddingApproval.SqliteTests;
 
 public class StoreTests : IDisposable
 {
+    [Fact]
+    public async Task CancellationAndItsOutboxSurviveReopenWithoutRenewingPermission()
+    {
+        var store = await SqliteApprovalStore.OpenAsync(_path); var request = Request();
+        var cancel = new ApprovalCancellation("stop", "owner", "Stop task");
+        await Assert.ThrowsAsync<ArgumentException>(() => store.CreateAsync(request with { Cancellation = cancel }));
+        await store.CreateAsync(request);
+        await new ApprovalService(store).DecideAsync(request.Id, 0, request.Binding, Allow);
+        await new ApprovalService(store).CancelAsync(request.Id, 1, request.Binding, cancel);
+        var reopened = await SqliteApprovalStore.OpenAsync(_path);
+        var result = await new ApprovalService(reopened).CancelAsync(request.Id, 1, request.Binding, cancel);
+        Assert.Equal(ApprovalOutcome.Replayed, result.Outcome); Assert.Equal(ApprovalState.Cancelled, result.Record!.State);
+        Assert.Equal(cancel, result.Record.Cancellation); Assert.Equal(Allow, result.Record.Decision);
+        Assert.Equal(ApprovalState.Cancelled, (await reopened.ReadOutboxAsync()).Last().Record.State);
+        Assert.Empty((await reopened.ReadPendingAsync(new("w", "a", "s"))).Items);
+        Assert.Equal(ApprovalOutcome.Unavailable, (await new ApprovalService(reopened).ConsumeAsync(request.Id, request.Binding, true)).Outcome);
+    }
     private readonly string _path = Path.Combine(Path.GetTempPath(), $"pudding-approval-test-{Guid.NewGuid():N}.db");
     private static readonly ApprovalOperation Operation = new("tool", "{\"path\":\"file.txt\"}", "{\"version\":1}", Path.GetTempPath());
     private static ApprovalRecord Request() => new("request", new("w", "a", "s", "r", "t", "i", Operation.Fingerprint(), "policy"), DateTimeOffset.UtcNow.AddMinutes(5), Operation);

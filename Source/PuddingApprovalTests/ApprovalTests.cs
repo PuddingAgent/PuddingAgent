@@ -4,6 +4,47 @@ namespace PuddingApprovalTests;
 
 public class ApprovalTests
 {
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task CancellationRevokesOnlyUnconsumedPermissionAndReplaysExactly(bool approved)
+    {
+        var store = new Store(); var service = new ApprovalService(store, new Clock());
+        if (approved) await service.DecideAsync("approval", 0, Binding, Allow);
+        var version = store.Current.Version; var cancel = new ApprovalCancellation("stop", "owner", "Task stopped");
+        Assert.Equal(ApprovalOutcome.BindingMismatch, (await service.CancelAsync("approval", version, Binding with { SessionId = "other" }, cancel)).Outcome);
+        Assert.Equal(ApprovalOutcome.Applied, (await service.CancelAsync("approval", version, Binding, cancel)).Outcome);
+        Assert.Equal(ApprovalOutcome.Replayed, (await service.CancelAsync("approval", version, Binding, cancel)).Outcome);
+        Assert.Equal(ApprovalOutcome.Conflict, (await service.CancelAsync("approval", version, Binding, cancel with { Actor = "other" })).Outcome);
+        Assert.Equal(ApprovalState.Cancelled, store.Current.State);
+        Assert.Equal(ApprovalOutcome.Unavailable, (await service.ConsumeAsync("approval", Binding, true)).Outcome);
+        Assert.Equal(approved ? Allow : null, store.Current.Decision);
+    }
+    [Fact]
+    public async Task CancellationAndConsumptionHaveOnlyOneWinner()
+    {
+        var store = new Store(); var service = new ApprovalService(store, new Clock());
+        await service.DecideAsync("approval", 0, Binding, Allow);
+        var results = await Task.WhenAll(Enumerable.Range(0, 32).Select(i => Task.Run(() => i % 2 == 0
+            ? service.CancelAsync("approval", 1, Binding, new("stop", "owner", null))
+            : service.ConsumeAsync("approval", Binding, true))));
+        Assert.Single(results, result => result.Outcome == ApprovalOutcome.Applied);
+        Assert.Equal(2, store.Current.Version);
+        Assert.Contains(store.Current.State, new[] { ApprovalState.Cancelled, ApprovalState.Consumed });
+    }
+    [Fact]
+    public async Task CancellationCannotDisguiseConsumedDispatchAndExpiryTakesPrecedence()
+    {
+        var store = new Store(); var clock = new Clock(); var service = new ApprovalService(store, clock);
+        var cancel = new ApprovalCancellation("stop", "owner", null);
+        await service.DecideAsync("approval", 0, Binding, Allow);
+        await service.ConsumeAsync("approval", Binding, true);
+        Assert.Equal(ApprovalOutcome.Unavailable, (await service.CancelAsync("approval", 2, Binding, cancel)).Outcome);
+        await service.MarkDispatchUnknownAsync("approval", Binding);
+        Assert.Equal(ApprovalOutcome.Unavailable, (await service.CancelAsync("approval", 3, Binding, cancel)).Outcome);
+        var expiredStore = new Store(); clock.Now = DateTimeOffset.UnixEpoch.AddHours(1);
+        var expired = await new ApprovalService(expiredStore, clock).CancelAsync("approval", 0, Binding, cancel);
+        Assert.Equal(ApprovalOutcome.Expired, expired.Outcome); Assert.Null(expired.Record!.Cancellation);
+    }
     [Fact]
     public void ComponentReferencesOnlyFrameworkAssemblies() => Assert.All(typeof(ApprovalService).Assembly.GetReferencedAssemblies(),
         reference => Assert.StartsWith("System.", reference.Name));

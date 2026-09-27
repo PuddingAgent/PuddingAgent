@@ -1,6 +1,6 @@
 namespace PuddingApproval;
 
-public enum ApprovalState { Pending, Approved, Denied, Expired, Consumed, DispatchUnknown }
+public enum ApprovalState { Pending, Approved, Denied, Expired, Consumed, DispatchUnknown, Cancelled }
 public enum HumanDecision { AllowOnce, Deny }
 public enum ApprovalOutcome { Applied, Replayed, NotFound, Conflict, BindingMismatch, Expired, Unavailable }
 
@@ -8,8 +8,10 @@ public enum ApprovalOutcome { Applied, Replayed, NotFound, Conflict, BindingMism
 public sealed record ApprovalBinding(string WorkspaceId, string AgentId, string SessionId, string RunId,
     string TurnId, string InvocationId, string OperationFingerprint, string PolicyRevision);
 public sealed record DecisionCommand(string DecisionId, HumanDecision Decision, string Actor, string? Reason);
+public sealed record ApprovalCancellation(string CancellationId, string Actor, string? Reason);
 public sealed record ApprovalRecord(string Id, ApprovalBinding Binding, DateTimeOffset ExpiresAt, ApprovalOperation Operation,
-    long Version = 0, ApprovalState State = ApprovalState.Pending, DecisionCommand? Decision = null)
+    long Version = 0, ApprovalState State = ApprovalState.Pending, DecisionCommand? Decision = null,
+    ApprovalCancellation? Cancellation = null)
 {
     public void ValidateOperation()
     {
@@ -27,7 +29,7 @@ public interface IApprovalStore
 }
 
 /// <summary>Human decisions for requests already admitted by Core as AwaitingHuman. This is not a policy bypass or executor.</summary>
-public sealed class ApprovalService(IApprovalStore store, TimeProvider? clock = null)
+public sealed partial class ApprovalService(IApprovalStore store, TimeProvider? clock = null)
 {
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
 

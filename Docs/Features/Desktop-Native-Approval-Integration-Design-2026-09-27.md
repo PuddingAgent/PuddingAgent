@@ -81,6 +81,12 @@ Core 决定服务拥有 Pending→Approved/Denied/Expired 的原子转换，禁�
 
 此适配器尚未用于产品数据库，也没有 Host DI、事件消费者或 Runtime 续行接线；SQLite 回滚测试不等同于强杀/断电故障验收。下一步须把请求生产者、事件消费者和执行调度的持久边界接到同一 Core 真源后，才可提供原生审批交互。
 
+### A1 补充：未消费许可撤销（2026-09-27）
+
+`ApprovalService.CancelAsync` 是直接函数调用，以精确执行绑定、expectedVersion 和稳定 cancellationId 撤销 Pending/Approved；取消与消费通过同一 CAS 竞争，只能一方成功。重复相同取消命令返回原回执，改变身份或理由拒绝；过期优先记为 Expired。保留先前人工决定，Consumed/DispatchUnknown 不允许伪装成 Cancelled。取消事实及 outbox 在同一 SQLite 事务保存，重开后不恢复许可。
+
+22 项逻辑 / 10 项 SQLite 测试通过，包括 32 路取消/消费竞争、重开、收件箱移除与不可再次消费。此项尚未连接聊天停止按钮，也不停止或回滚运行中工具。A2 仍需持久保存工具批次、已完成结果和运行预算，并释放等待审批的 worker；现有内存 ResumeAnchor 不能替代该恢复点。
+
 ## 7. A4 独立原生审批卡
 
 `PuddingChat/Approvals.cs` 定义只用于进程内应用调用的展示快照、允许决定集合和带版本/稳定 decisionId 的提交合同。`PuddingChat.WinUI/ApprovalCard.cs` 显示工具、请求描述、完整参数、Core 风险说明（缺失时明确未提供）与有效期，提供 Core 允许的单次允许/拒绝按钮和可选理由。参数为只读原生文本，不作为 Markdown/命令执行。

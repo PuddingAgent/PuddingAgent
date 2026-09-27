@@ -3,6 +3,7 @@
 BCL-only 独立叶组件；未登记解决方案、未引用宿主、未装配 DI。`PuddingApproval.csproj` 在 ResolveReferences 前拒绝 ProjectReference/PackageReference。
 
 - `ApprovalService.cs`：精确执行绑定、人工决定幂等、版本 CAS、过期、单次消费、DispatchUnknown 状态。无执行器、无 UI、无策略模型、无自动创建请求入口。
+- `ApprovalService.Cancellation.cs`：按版本与精确绑定撤销 Pending/Approved 许可，保留决定记录；稳定 cancellationId 支持原命令重放。Consumed/DispatchUnknown 不可撤销，不代表停止已执行工具。
 - `ApprovalOperation.cs`：工具 ID、原始参数 JSON、工具定义 JSON、已解析绝对执行目录的不可变快照；有界 JSON 规范化及带版本 SHA-256 指纹。ApprovalRecord 必须携带快照，决定/消费前核对指纹；不根据未知文件系统语义合并路径或解析资源。
 - `IApprovalStore`：强制版本比较交换边界。`../PuddingApproval.Sqlite` 已提供独立 SQLite 状态/outbox 同事务适配器并完成组件测试，尚未接入 Host；测试内存 store 不用于交付。
 - `../PuddingApprovalTests/ApprovalTests.cs`：32 路竞争决定/消费、重复请求、身份/操作/策略变化、硬边界、过期、拒绝、未知执行及程序集依赖检查。
