@@ -1414,3 +1414,7 @@ PuddingChat/VoiceInput.cs 返回实际 ASR 元信息；ChatSelection 按角色�
 ## 2026-09-27 原生聊天输入快捷键
 
 ChatComposer 增加中文组词期间的发送保护、Ctrl+Enter 长按去重与禁用发送拦截。ComposerKeyboardChecks 五项组件检查通过，合计 83 逻辑/224 窗口；真实输入法候选词事件顺序尚未验收，见原生聊天完成度核对报告。
+
+## 2026-09-27 原生角色导航可访问性
+
+RoleAvatarCard 的状态/未读信息同步到 ListView 自动化名称，描述映射 HelpText，回收清除旧标签。冻结角色保留未读数。RoleAccessibilityChecks 覆盖实际自动化树，83 逻辑/228 窗口通过；Narrator 实际播报仍待验收。

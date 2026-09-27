@@ -201,6 +201,17 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable, IAsyncDisp
             }
         };
         _roles.ItemClick += (_, _) => { _roleFlyout.Hide(); if (_compactNavigation) Composer.FocusEditor(); };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_roles, "角色列表");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_search, "搜索角色名称或描述");
+        _roles.ContainerContentChanging += (_, args) =>
+        {
+            if (args.InRecycleQueue)
+            {
+                args.ItemContainer.ClearValue(Microsoft.UI.Xaml.Automation.AutomationProperties.NameProperty);
+                args.ItemContainer.ClearValue(Microsoft.UI.Xaml.Automation.AutomationProperties.HelpTextProperty);
+            }
+            else if (args.Item is RoleAvatarCard card) SetRoleContainerAccessibility(card, args.ItemContainer);
+        };
         Composer.DraftChanged += (_, _) => { if (!_changingDraft) _state.Draft = Composer.Draft; UpdateComposer(); };
         Composer.SendRequested += async (_, _) => await GuardAsync(SendAsync);
         Composer.AttachRequested += async (_, _) => await GuardAsync(PickImagesAsync);
@@ -344,7 +355,14 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable, IAsyncDisp
         var agents = await _client.GetAgentsAsync(workspace.WorkspaceId, _lifetime.Token);
         if (_disposed || generation != _workspaceGeneration) return;
         foreach (var agent in agents)
-        { var card = new RoleAvatarCard(agent, _origin); _cards.Add(agent.AgentId, card); }
+        {
+            var card = new RoleAvatarCard(agent, _origin);
+            card.AccessibleStateChanged += (_, _) =>
+            {
+                if (_roles.ContainerFromItem(card) is ListViewItem item) SetRoleContainerAccessibility(card, item);
+            };
+            _cards.Add(agent.AgentId, card);
+        }
         ApplyRoleFilter();
         _notice.IsOpen = true; _notice.Title = agents.Length == 0 ? "暂无角色" : "选择一位角色";
         _notice.Message = agents.Length == 0 ? "当前工作空间没有角色。角色配置仍由 Core 管理。" : "角色承担工作，主会话保留上下文。";
@@ -410,6 +428,11 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable, IAsyncDisp
         var statuses = await _client.GetStatusesAsync(workspace, ct);
         if (_disposed || generation != _workspaceGeneration) return;
         foreach (var status in statuses) if (_cards.TryGetValue(status.AgentId, out var card)) card.SetStatus(status);
+    }
+    private static void SetRoleContainerAccessibility(RoleAvatarCard card, Microsoft.UI.Xaml.Controls.Primitives.SelectorItem item)
+    {
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(item, card.AccessibleLabel);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(item, card.Agent.Description ?? "");
     }
     private readonly SemaphoreSlim _conversationReads = new(1, 1);
     public async Task LoadOlderAsync()

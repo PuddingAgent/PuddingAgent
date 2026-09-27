@@ -121,3 +121,9 @@ Composition 直接将 inputMode=voice、voiceSessionId、实际 asrProvider/asrM
 ChatComposer 接入 TextBox.TextCompositionStarted/Ended，在组词期间不发出发送请求；Ctrl+Enter 只接受无 Shift/Alt 的组合，长按自动重复不再次发送。发送不可用时消费该快捷键，避免等待回执时意外插入换行；普通 Enter 保持原生换行行为。卸载/禁用编辑器清除组词标记。
 
 83 项逻辑、224 项原生窗口检查通过，组件零警告/错误，日志 temp/native-composer-keyboard.log。新增五项检查在真实 WinUI 控件上调用内部键盘判定与组词状态入口，覆盖组合键、组词、重复、禁用发送及禁用编辑器；没有注入真实输入法候选词或系统键盘事件。因此这是发送保护的组件证据，尚不能关闭完整 IME/辅助技术验收门禁。
+
+## 角色导航自动化语义（2026-09-27）
+
+RoleAvatarCard 与实际 ListView 项的自动化名称现含角色、状态及未读数，描述作为 HelpText；状态刷新同步更新已实现容器，容器回收清除旧标签。搜索框和列表提供明确名称。冻结/停用角色仍显示未读数，不再被状态优先级隐藏；相同状态不重复触发变更。
+
+83 逻辑/228 原生窗口检查通过，零组件警告/错误，日志 temp/native-role-accessibility.log。新增检查读取实际角色容器的 AutomationPeer 名称/描述与更新结果，并从 ListView 的自动化子节点验证 SelectionItem 模式。首次检查错误地从容器 peer 获取选择模式，已改为 WinUI 数据项 peer。此证据验证自动化树语义，不代表已完成 Narrator 实际播报、键盘全路径或高对比度验收。

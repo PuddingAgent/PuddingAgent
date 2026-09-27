@@ -8,6 +8,8 @@ public sealed class RoleAvatarCard : UserControl
 {
     private readonly TextBlock _status = new() { FontSize = 11, Opacity = .65, TextWrapping = TextWrapping.Wrap };
     public Agent Agent { get; }
+    internal event EventHandler? AccessibleStateChanged;
+    internal string AccessibleLabel => $"{Agent.Label}，{_status.Text}";
     public RoleAvatarCard(Agent agent, Uri? origin = null)
     {
         Agent = agent;
@@ -29,8 +31,16 @@ public sealed class RoleAvatarCard : UserControl
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.Children.Add(portrait); Grid.SetColumn(labels, 1); grid.Children.Add(labels);
         Content = grid; SetStatus(null);
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(this, agent.Label);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(this, agent.Description ?? "");
     }
-    public void SetStatus(AgentStatus? status) => _status.Text = Agent.IsFrozen ? "已冻结" : !Agent.IsEnabled ? "已停用"
-        : status is null ? "尚无运行状态" : $"{status.Status}  {status.Summary}" + (status.UnreadCount > 0 ? $" · {status.UnreadCount} 条未读" : "");
+    public void SetStatus(AgentStatus? status)
+    {
+        var text = Agent.IsFrozen ? "已冻结" : !Agent.IsEnabled ? "已停用"
+            : status is null ? "尚无运行状态" : $"{status.Status}  {status.Summary}";
+        if (status?.UnreadCount > 0) text += $" · {status.UnreadCount} 条未读";
+        if (_status.Text == text) return;
+        _status.Text = text;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(this, AccessibleLabel);
+        AccessibleStateChanged?.Invoke(this, EventArgs.Empty);
+    }
 }
