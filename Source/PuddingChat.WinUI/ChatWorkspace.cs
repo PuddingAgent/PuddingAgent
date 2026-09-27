@@ -22,7 +22,8 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     private readonly TextBlock _searchEmpty = new() { Text = "没有匹配的角色", Visibility = Visibility.Collapsed, Opacity = .65 };
     private readonly Button _latest = new() { Content = "↓ 回到最新消息", HorizontalAlignment = HorizontalAlignment.Center,
         VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 12), Visibility = Visibility.Collapsed };
-    private readonly Dictionary<RoleKey, ReadingPosition> _reading = [];
+    private readonly Dictionary<RoleKey, ReadingBookmark> _reading = [];
+    private ReadingBookmark? _restoreBookmark;
     private ReadingPosition? _restoreReading;
     private bool _filtering;
     private ActiveRun? _liveSnapshot;
@@ -260,7 +261,8 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         RememberReading();
         _selection?.Cancel(); _selection?.Dispose(); _selection = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         var role = new RoleKey(workspace, agent.AgentId);
-        _restoreReading = _reading.GetValueOrDefault(role, ReadingPosition.Latest);
+        _restoreBookmark = _reading.GetValueOrDefault(role);
+        _restoreReading = _restoreBookmark?.Position ?? ReadingPosition.Latest;
         _follow?.Cancel(); _follow?.Dispose(); _follow = null; _followSession = null;
         _state.Select(role); _agent = agent; _livePanel = null; _liveSnapshot = null; _liveEvents.Clear();
         _messageCards.Clear();
@@ -370,6 +372,26 @@ public sealed class ChatWorkspace : UserControl, IDisposable
                 if (!page.HasMore) { snapshot = restored; break; }
             }
             if (!retry) break;
+        }
+        if (_restoreBookmark is { } bookmark)
+        {
+            _restoreReading = bookmark.PositionFor(snapshot);
+            if (_client is IConversationHistory history && bookmark.NeedsHistory(snapshot))
+            {
+                _notice.Title = "正在恢复上次阅读位置";
+                if (!_state.Apply(generation, snapshot)) return;
+                while (bookmark.NeedsHistory(_state.Conversation!))
+                {
+                    var current = _state.Conversation!;
+                    var page = await history.ReadHistoryAsync(role, current.MainSessionId, current.OlderCursor!, ct).WaitAsync(ct);
+                    if (_disposed || generation != _state.Generation) return;
+                    if (!_state.PrependHistory(generation, page))
+                        throw new InvalidOperationException("历史记录游标已变化，请重新选择角色。");
+                }
+                snapshot = _state.Conversation!;
+            }
+            if (_disposed || generation != _state.Generation) return;
+            _restoreBookmark = null;
         }
         RenderConversation(generation, role, snapshot, ct);
     }
@@ -536,8 +558,22 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         .Where(e => e.Tag is string).Select(e => new MessageBounds((string)e.Tag,
             e.TransformToVisual(_messages).TransformPoint(new Windows.Foundation.Point()).Y, e.ActualHeight)).ToArray();
     private ReadingPosition CaptureReading() => ReadingPosition.Capture(MessageGeometry(), _scroll.VerticalOffset, _scroll.ScrollableHeight);
-    private void RememberReading() { if (_state.Role is { } role && _state.Conversation is not null) _reading[role] = CaptureReading(); }
-    public void ScrollToLatest() { _scroll.ChangeView(null, _scroll.ScrollableHeight, null, true); if (_state.Role is { } role) _reading[role] = ReadingPosition.Latest; }
+    private void RememberReading()
+    {
+        // A cancelled restoration must not replace the saved bookmark with an empty viewport.
+        if (_restoreBookmark is null && _state.Role is { } role && _state.Conversation is { } conversation)
+        {
+            var position = CaptureReading();
+            _reading[role] = new(conversation.MainSessionId, position,
+                conversation.Messages.FirstOrDefault(m => m.MessageId == position.MessageId)?.CreatedAt);
+        }
+    }
+    public void ScrollToLatest()
+    {
+        _scroll.ChangeView(null, _scroll.ScrollableHeight, null, true);
+        if (_state.Role is { } role && _state.Conversation is { } conversation)
+            _reading[role] = new(conversation.MainSessionId, ReadingPosition.Latest, null);
+    }
     public void Dispose()
     {
         if (_disposed) return; _disposed = true; _timer.Stop(); _lifetime.Cancel(); _selection?.Cancel();

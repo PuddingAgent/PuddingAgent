@@ -98,6 +98,28 @@ public partial class App : Application
                 Check(control.CurrentConversation?.ActiveRun is null && fixture.ConversationReads > readsBeforeStreaming,
                     "lifecycle changes return to authoritative Core snapshot");
                 Check(control.CurrentConversation!.Messages.Any(m => m.MessageId == "older"), "authoritative refresh retains loaded history");
+                var chatGrid = ((Grid)control.Content).Children.OfType<Grid>().Single(g => Grid.GetColumn(g) == 1);
+                var viewport = chatGrid.Children.OfType<Grid>().Single(g => Grid.GetRow(g) == 2);
+                var transcriptScroll = viewport.Children.OfType<ScrollViewer>().Single();
+                transcriptScroll.ChangeView(null, 24, null, true); await Task.Delay(50);
+                var historyReads = fixture.HistoryReads;
+                await control.SelectRoleAsync("test", fixture.Reviewer);
+                await control.SelectRoleAsync("test", fixture.Builder);
+                Check(fixture.HistoryReads > historyReads && control.CurrentConversation!.Messages.Any(m => m.MessageId == "older"),
+                    "role switch reloads history to the saved message anchor");
+                await Task.Delay(50);
+                Check(Math.Abs(transcriptScroll.VerticalOffset - 24) < 2, "native scroll restores within-message offset after history recovery");
+                await control.SelectRoleAsync("test", fixture.Reviewer);
+                fixture.DelayHistory = true;
+                var cancelledRestore = control.SelectRoleAsync("test", fixture.Builder);
+                await control.SelectRoleAsync("test", fixture.Reviewer);
+                fixture.DelayHistory = false;
+                fixture.LateHistory.TrySetResult(new("session", new(10, 2), null, []));
+                await cancelledRestore;
+                Check(control.SelectedRole?.AgentId == "reviewer", "late history restoration cannot overwrite another role");
+                await control.SelectRoleAsync("test", fixture.Builder); await Task.Delay(50);
+                Check(control.CurrentConversation!.Messages.Any(m => m.MessageId == "older") && Math.Abs(transcriptScroll.VerticalOffset - 24) < 2,
+                    "cancelled restore preserves original deep reading bookmark");
                 Check(MessageCard.RenderText("# Title\n```cs\nConsole.WriteLine(1);\n```\n正文") is StackPanel { Children.Count: 3 }, "native heading code text");
                 var markdown = new MarkdownView("**粗体** *斜体* ~~删除~~ `code` [文档](https://example.com) [危险](javascript:alert)\n\n> 引用\n\n3. 第一\n4. 第二\n\n|名称|值|\n|---|---|\n|a|b|");
                 var paragraph = (TextBlock)markdown.Children[0];
@@ -149,7 +171,7 @@ public partial class App : Application
                 Check(control.CurrentConversation?.AgentId == "reviewer", "late reply rejected");
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 43, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 47, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -194,9 +216,17 @@ public partial class App : Application
                 new("a", "r", "assistant", "代码工程师", DateTimeOffset.UtcNow, "# 进度\n```cs\nvar result = 1;\n```", "running", [])],
             Sent is null || Terminal ? null : new("r", "running", "执行中", "编译", new(Streaming ? "流式正文" : "输出", [new("e", "tool_call", "running", "dotnet build", 2, "terminal", ToolCallId: "call", TurnId: "turn")], new("turn", 2, 2, 2, false))),
             Sent is null ? 0 : Terminal ? 4 : Streaming ? 3 : 2, Sent is null ? null : new(10, 2));
+        public int HistoryReads;
+        public bool DelayHistory;
+        public readonly TaskCompletionSource<HistoryPage> LateHistory = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task<HistoryPage> ReadHistoryAsync(RoleKey role, string sessionId, HistoryCursor before, CancellationToken ct)
-            => Task.FromResult(new HistoryPage(sessionId, before, null,
-                [new("older", null, "user", "用户", DateTimeOffset.UnixEpoch, "更早的消息", "accepted", [])]));
+        {
+            HistoryReads++;
+            if (DelayHistory) return LateHistory.Task;
+            return Task.FromResult(new HistoryPage(sessionId, before, null,
+                [new("older", null, "user", "用户", DateTimeOffset.UnixEpoch,
+                    string.Join("\n\n", Enumerable.Range(1, 40).Select(i => $"更早的消息 {i}")), "accepted", [])]));
+        }
         public readonly TaskCompletionSource Changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public readonly TaskCompletionSource TerminalChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool Streaming, Terminal;

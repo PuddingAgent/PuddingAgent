@@ -16,6 +16,8 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 
 ## 2026-09-27 原生聊天交错消息流
 
+`PuddingChat/ReadingBookmark.cs` 保存会话绑定的轻量阅读书签；`ChatWorkspace` 在角色切换后按需读取历史直到锚点或时间边界，再恢复消息内偏移。`ReadingBookmarkTests` 覆盖会话轮换/缺失目标边界；原生窗口覆盖深层历史恢复、实际滚动偏移和中断恢复后书签保留。
+
 `PuddingChat/ConversationHistory.cs`、`ChatSelection.PrependHistory` 管理历史游标、跨页去重与刷新保留；`ChatWorkspace.LoadOlderAsync` 保持阅读锚点。Core `AgentConversationProjectionService.GetHistoryAsync` 复用消息投影，按时间/行 ID 读取旧页，Composition `InProcessChatClient.History.cs` 直接调用。测试入口为 `ConversationHistoryTests` 与 `NativeChatHistoryTests`（同毫秒排序、并发新消息、完整翻页、canonical 信封去重）。
 
 `PuddingChat/ConversationActivity.cs` 提供强类型活动页与纯呈现 reducer；WinUI `ChatWorkspace` 按固定游标补齐活动 Turn，再合并增量。Core `AgentConversationProjectionService.Activity.cs` 分页读取 canonical 事件（256 条）、校验会话/根 Run、隔离子代理正文；`InProcessChatClient.Activity.cs` 直接装配，不走 HTTP。`ConversationActivityTests`、原生窗口和 `NativeChatActivityReplayTests` 分别验证状态边界、无全量刷新与 600 条活动的恢复/追赶。
