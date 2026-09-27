@@ -352,3 +352,11 @@ MathFormulaView 现在使用固定 Grid 承载文本与图片，以 Visibility �
 录音开始绑定角色、选择代次和原始草稿。返回的转写文本不直接修改草稿、不发送消息；TryAppendTo 仅在角色/代次/草稿都未变化时追加。拒绝追加时文本仍可供 UI 显式插入。取消转写可立即放弃等待，迟到供应商结果不再发布；设备打开或收尾即使忽略取消，也必须等获得/释放句柄后才能开始下一次录音，重复 DisposeAsync 同样等待释放。
 
 独立逻辑测试总计 **77 项通过**，新增 10 项覆盖完整收尾、设备先释放后转写、打开期间取消及迟到句柄、录音销毁、迟到 ASR、草稿编辑/角色切换、权限失败与重试、无效音频/空结果、收尾取消与重复释放等待、预取消不打开麦克风。日志 `temp/native-voice-input-state.log`，构建无警告/错误。测试全用替身设备与转写服务；**尚未实现 WinRT 麦克风采集、原生录音按钮或 Core ASR 装配，不能认定产品语音输入已可用。** 下一步按独立组件顺序完成设备与输入控件，再接 Composition/Core。
+
+## 远程 Markdown 图片原生预览（2026-09-27）
+
+RemoteImageReference 只接受不含用户信息的 HTTP(S) 地址；IRemoteImageSource 与 RemoteImageData 是独立合同。WinUI RemoteImageSource 采用不携带 Cookie/默认凭据的独立 HttpClient，最多 5 次重定向且逐跳校验地址，15 秒总超时、8 MiB 下载上限；没有 Content-Length 时也逐块计数。只接受 PNG/JPEG/WebP/GIF/BMP，WIC 实际解码并限定 6400 万源像素、1280 最大预览边长。默认仅展示来源主机与展开入口，明确展开才发请求，不把远程 URL 当作 Core Artifact 或本地路径。
+
+RemoteImageView 在收起/真实卸载时取消并释放图片，迟到数据不再展示；InlineUIContainer 的短暂布局卸载在队列中确认后再处理。MarkdownImageContext 接通消息正文及思考/工具等既有 Markdown 内容，流式追加保留相同图片控件与已解码内容。失败可收起后重试；网络请求是外部图片获取，不是 Desktop/Core HTTP。
+
+79 逻辑/218 窗口检查通过，零构建警告/错误，日志 temp/native-remote-images.log。新增地址规则、真实 WinRT 图片解码、无自动请求、显式展开、声明长度/无长度超限、凭据重定向拒绝、取消及流式控件复用检查。HTTP 使用替身 Handler，不依赖外网；完整 Desktop 部署与真实网站网络表现不在本轮证据范围内。

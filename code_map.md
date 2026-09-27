@@ -1395,3 +1395,7 @@ PuddingDesktop/MainWindow.Kernel.RunKernelSmokeAsync 在隔离数据目录创建
 ## 2026-09-27 原生语音输入工作台装配
 
 ChatComposer/ChatWorkspace 已组合 NativeVoiceCapture、VoiceInputControl 与 Core 转写端口，确认后加入草稿；角色切换和离开取消。ChatWorkspace 异步销毁等待设备释放，MainWindow.Kernel 的重新挂载/退出等待该任务。77 逻辑/209 窗口检查通过；真实麦克风、供应商及持续语音验收待完成，见原生语音方案。
+
+## 2026-09-27 外部 Markdown 图片原生预览
+
+`PuddingChat/RemoteImages.cs` 定义地址/数据合同，`PuddingChat.WinUI/RemoteImageSource.cs` 与 `RemoteImageView.cs` 实现按需外部图片获取、限流量/时间和原生解码；MarkdownImageContext 已接入正文及活动内容。79 逻辑/218 窗口检查通过（替身 HTTP + 真实解码），没有新增 Desktop/Core HTTP 路由。详见原生聊天完成度核对。

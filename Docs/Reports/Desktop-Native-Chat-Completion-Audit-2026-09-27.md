@@ -6,14 +6,14 @@
 |---|---|---|
 | 原生组件、编译期依赖边界 | PuddingChat.WinUI.csproj 仅引用 PuddingChat，并通过 EnforceChatViewBoundary 拒绝其他项目引用 | 已实现；组件窗口与完整 Desktop 构建通过，隔离产品进程已验证聊天挂载。正式产品发布需另验 |
 | 角色是一等公民 | RoleAvatarCard、ChatWorkspace、ChatSelection，按 RoleKey 保存草稿/选择/阅读位置 | 已接入，窗口 fixture 覆盖角色切换与晚到响应；真实角色日常使用待验 |
-| 同进程调用、客户端免登录 | Composition/InProcessChatClient 直接 DI scope 调用应用服务，固定 LocalDesktopIdentity；没有聊天 HTTP 适配 | 源码已接入；既有 NativeChatIntegrationTests 有 HTTP 探针，本轮未重复运行 Core 集成 |
+| 同进程调用、客户端免登录 | Composition/InProcessChatClient 直接 DI scope 调用应用服务，固定 LocalDesktopIdentity；没有聊天 HTTP 适配 | 源码已接入；NativeChatIntegrationTests 有 HTTP 探针，最近 Core ASR 接入的 3 项集成测试通过（temp/native-transcription-core.log） |
 | 流式正文、真实思考与工具链 | ConversationActivity、TurnFlow、TurnContentView、ActivityContentView；canonical 顺序、调用 ID 配对、默认展开思考、懒加载工具内容 | 已实现并有组件测试；真实模型长会话及取消仍需验收 |
 | 稳定阅读与长记录 | VirtualTranscript、FlowWindow、ReadingBookmark、历史直接调用端口 | 窗口覆盖消息虚拟化、渐进展开、阅读锚点；单 Turn 全展开、巨型文本与长期内存指标待验 |
 | 消息/输入布局 | MessageCard、ChatComposer，用户消息靠右、900 DIP 阅读宽度、窄输入栏两行；ChatWorkspace 在窄布局或宿主折叠侧栏时提供原生角色 Flyout | 57 逻辑/139 窗口检查通过，覆盖 320 DIP 整页消息/输入宽度、角色入口、反复收放、草稿和侧栏偏好恢复。整窗主题、DPI、字体缩放、键盘及 IME 尚缺完整矩阵 |
-| 原 Web 富文本能力 | MarkdownView 原生 GFM、CodeBlockView 通过 ColorCode 渲染原生语法高亮、ImageAttachmentView、MathFormulaView、MarkdownImageContext | 原生行内/块公式与生成图片解析已接入，60 逻辑/171 窗口检查通过；图片经当前工作空间 Core 资源端口读取，涵盖 image 围栏、Markdown 图片、流式复用与回收重载。外部远程图片仍显示文本；公式使用预发行库，不承诺完整 KaTeX 等价或完整 DPI/无障碍验收。长代码不着色但保留全文，高对比度实时通知受宿主能力限制 |
+| 原 Web 富文本能力 | MarkdownView 原生 GFM、CodeBlockView 通过 ColorCode 渲染原生语法高亮、ImageAttachmentView、MathFormulaView、MarkdownImageContext | 原生行内/块公式与生成图片解析已接入，60 逻辑/171 窗口检查通过；图片经当前工作空间 Core 资源端口读取，涵盖 image 围栏、Markdown 图片、流式复用与回收重载。外部 HTTP(S) 图片已接入点击展开的原生预览（79 逻辑/218 窗口检查）；公式使用预发行库，不承诺完整 KaTeX 等价或完整 DPI/无障碍验收。长代码不着色但保留全文，高对比度实时通知受宿主能力限制 |
 | 图片与一般上下文附件 | 图片：选图/剪贴板/拖放→Core Artifact；文本：选择器或文件拖放/粘贴→不可变快照→角色草稿→既有 Core text 提交 | 文本/源代码预览、移除、发送、源文件删除后重试和混合文件传入已接通；57 逻辑/145 窗口、既有 3 Core 测试通过。原 Web 的一般附件本就未实现；PDF/Office 提取、历史独立附件卡、真实模型及系统选择器/资源管理器拖放人工验收仍缺失 |
 | 审批卡与真实工具恢复 | ApprovalCard、PuddingApproval、SqliteApprovalStore 独立组件；Runtime 保留准入状态 | 未完成：请求生产者、持久暂停/恢复、Core 决定端口及产品待审批区域未接线。不能用独立卡片测试替代闭环 |
-| 子代理与其他聊天富交互 | TurnFlow 保留精确 RunId；原生检查器经 Composition 读取 Core 归档，委派卡入口已接入；窗口 118 项与 Core 3/3 隔离验证 | 真实模型委派交互、超大归档性能待验；语音聊天尚未迁移 |
+| 子代理与其他聊天富交互 | TurnFlow 保留精确 RunId；原生检查器经 Composition 读取 Core 归档，委派卡入口已接入；窗口 118 项与 Core 3/3 隔离验证 | 真实模型委派交互、超大归档性能待验；基础录音转写/消息朗读已原生接入，语音来源元数据与真实设备/供应商验收待补 |
 | 用户实际产品效果 | 独立 WinUI harness；新构建的 PuddingDesktop.exe + Core DLL 隔离 smoke，PID 30028，真实控件 IsLoaded/Visible、角色/附件草稿及重启后重新装配通过 | 已运行测试产品进程并正常退出、释放租约；未替换用户数据目录上的 Desktop。真实模型聊天、完整视觉与 DPI/IME 矩阵仍需验收 |
 
 ## 当前切片：展开活动内容保持
@@ -88,3 +88,11 @@ ChatWorkspace 增加 IAsyncDisposable，立即取消后等待设备释放；Main
 77 逻辑/209 原生窗口检查通过，零组件构建警告/错误，日志 `temp/native-voice-workspace.log`；新增完整工作台的角色绑定、确认追加、角色切换取消、草稿冲突、离开取消和等待设备释放断言。真实 WinUI 控件加替身录音/ASR，未启动真实麦克风或付费供应商；宽/窄/深色截图中已包含语音入口，窄屏截图已检查。完整产品生命周期证据另记，不能以这些组件检查替代实际录音质量或供应商验收。
 
 完整 Desktop 产品隔离生命周期测试通过（PID 45336，报告 temp/test-out/kernel-winui-4fec4db0fdd44982b357ce4256a39f79/report.json）：原生聊天挂载、角色/文件草稿、UI 回调、Core 重启后新建聊天区、数据目录配置保存、退出及锁释放。构建零错误/147 个既有警告，日志 temp/native-voice-product.log；该构建来自共享工作树，不是单独提交的隔离构建。此测试未实际录音，不能代替设备/供应商验收。
+
+## 远程 Markdown 图片原生预览（2026-09-27）
+
+RemoteImageReference 只接受不含用户信息的 HTTP(S) 地址；IRemoteImageSource 与 RemoteImageData 是独立合同。WinUI RemoteImageSource 采用不携带 Cookie/默认凭据的独立 HttpClient，最多 5 次重定向且逐跳校验地址，15 秒总超时、8 MiB 下载上限；没有 Content-Length 时也逐块计数。只接受 PNG/JPEG/WebP/GIF/BMP，WIC 实际解码并限定 6400 万源像素、1280 最大预览边长。默认仅展示来源主机与展开入口，明确展开才发请求，不把远程 URL 当作 Core Artifact 或本地路径。
+
+RemoteImageView 在收起/真实卸载时取消并释放图片，迟到数据不再展示；InlineUIContainer 的短暂布局卸载在队列中确认后再处理。MarkdownImageContext 接通消息正文及思考/工具等既有 Markdown 内容，流式追加保留相同图片控件与已解码内容。失败可收起后重试；网络请求是外部图片获取，不是 Desktop/Core HTTP。
+
+79 逻辑/218 窗口检查通过，零构建警告/错误，日志 temp/native-remote-images.log。新增地址规则、真实 WinRT 图片解码、无自动请求、显式展开、声明长度/无长度超限、凭据重定向拒绝、取消及流式控件复用检查。HTTP 使用替身 Handler，不依赖外网；完整 Desktop 部署与真实网站网络表现不在本轮证据范围内。

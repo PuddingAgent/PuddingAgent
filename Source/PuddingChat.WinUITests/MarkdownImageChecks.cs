@@ -46,8 +46,9 @@ public partial class App
             reads = fixture.PreviewReads;
             markdown.Update("![远程图](https://example.invalid/" + id + ".png)");
             var fallback = (Paragraph)((RichTextBlock)markdown.Children.Single()).Blocks.Single();
-            Check(!fallback.Inlines.OfType<InlineUIContainer>().Any() && fixture.PreviewReads == reads,
-                "unsupported remote image stays visible text without issuing a Core image read");
+            Check(fallback.Inlines.OfType<InlineUIContainer>().Single().Child is RemoteImageView remote
+                && !((Expander)remote.Content).IsExpanded && fixture.PreviewReads == reads,
+                "remote image offers an initially collapsed native preview without a Core artifact read");
         }
         finally { root.Children.Remove(markdown); }
 
