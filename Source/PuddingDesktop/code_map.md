@@ -17,6 +17,7 @@
 | `MainWindow.SkillHubSettings.cs` | DS-07 概览/事件切片：Hub 统计、进化动作分布、安装排行与审计事件查询（含事件详情）；本切片只读 |
 | `MainWindow.SkillLibrarySettings.cs` | DS-07 技能库切片：检索、技能/版本详情与 Markdown 全文、元数据编辑、软退役（带确认）、发布新版本、安装登记（台账语义提示） |
 | `MainWindow.SkillEvolutionSettings.cs` | DS-07 EVO MAP 与安装台账：谱系树/边、台账筛选与详情、按 Agent 的更新检查；只读 |
+| `MainWindow.SkillPackageSettings.cs` | DS-07 旧技能包：台账列表与详情、元数据编辑、确认删除、上传新包/上传新版本（文件选择器 + 路径输入）、预签名下载链接；上传失败显示 Core 真实错误 |
 | `MainWindow.VoiceSettings.cs` | DS-03 语音原生表单：TTS/ASR 服务商、TTS 模型（音色/格式/采样率/四种能力）、ASR 模型（语言/采样率/三种能力）；逗号分隔列表编辑、默认项真源展示、Core 未就绪时禁用表单 |
 | `MainWindow.LlmSettings.cs` | DS-02 LLM 资源池原生表单：服务商连接、并发与速率、模型定义、上下文与计费；Keep/Replace/Clear 密钥语义、删除确认、Core 未就绪时禁用表单并显示真实原因 |
 | `Kernel/WinUiDesktopServices.cs` | Core 通过 DI 调用展示端口，DispatcherQueue 调度、取消及关闭处理 |

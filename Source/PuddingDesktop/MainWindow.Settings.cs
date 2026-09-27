@@ -181,6 +181,15 @@ public sealed partial class MainWindow
         var skillInstalls = VisibilityOf("skills", "installs", tab);
         SkillInstallsSettings.Visibility = skillInstalls;
         if (skillInstalls == Visibility.Visible) LoadInstallsIfNeeded();
+        var skillLegacy = VisibilityOf("skills", "legacy", tab);
+        SkillPackagesSettings.Visibility = skillLegacy;
+        if (skillLegacy == Visibility.Visible) LoadSkillPackagesIfNeeded();
+    }
+
+    private async void LoadSkillPackagesIfNeeded()
+    {
+        try { await LoadSkillPackagesAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadLineageIfNeeded()
@@ -294,6 +303,7 @@ public sealed partial class MainWindow
         ("skills", "library") => true,
         ("skills", "evolution") => true,
         ("skills", "installs") => true,
+        ("skills", "legacy") => true,
         _ => false
     };
 

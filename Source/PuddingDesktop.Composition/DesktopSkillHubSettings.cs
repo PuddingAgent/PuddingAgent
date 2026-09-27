@@ -144,7 +144,7 @@ internal sealed class DesktopSkillHubSettings(IDesktopKernel kernel) : ISkillHub
         map.GeneratedAt);
 
     /// <summary>Core returns a semantic result instead of throwing; surface it as a real failure.</summary>
-    private static void Require<T>(SkillHubResult<T> result) where T : class
+    internal static void Require<T>(SkillHubResult<T> result) where T : class
     {
         if (!result.IsOk) throw new InvalidOperationException(result.Error ?? "Core 拒绝了该操作。");
     }

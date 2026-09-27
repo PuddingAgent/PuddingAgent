@@ -19,6 +19,7 @@ public sealed class DesktopKernelFactory(IDesktopServices desktop) : IKernelSess
     public IAgentDirectorySettings CreateAgentDirectorySettings(IDesktopKernel kernel) => new DesktopAgentDirectorySettings(kernel);
     public IToolPluginSettings CreateToolPluginSettings(IDesktopKernel kernel) => new DesktopToolPluginSettings(kernel);
     public ISkillHubSettings CreateSkillHubSettings(IDesktopKernel kernel) => new DesktopSkillHubSettings(kernel);
+    public ISkillPackageSettings CreateSkillPackageSettings(IDesktopKernel kernel) => new DesktopSkillPackageSettings(kernel);
     public async Task<IKernelSession> StartAsync(string dataRoot, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(dataRoot);

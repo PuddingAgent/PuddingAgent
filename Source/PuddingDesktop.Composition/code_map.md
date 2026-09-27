@@ -30,4 +30,6 @@
 
 `DesktopSkillHubSettings` also covers EVO MAP and the install ledger: lineage for one skill or globally, ledger queries and per-agent update checks.
 
+`DesktopSkillPackageSettings` binds the legacy skill-package page to the shared `SkillPackageService` (the same operation the Web controller uses); the file is opened before any Core call so a bad path fails without side effects.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

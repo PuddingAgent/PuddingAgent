@@ -174,6 +174,48 @@ public sealed class SkillHubContractTests
         Assert.DoesNotContain("· note", SkillHubText.DescribeUpdate(behind with { PublishNote = "" }), StringComparison.Ordinal);
     }
     [Fact]
+    public void SkillPackageFilesFollowTheCoreRuleAndNeverWidenIt()
+    {
+        Assert.Equal([".zip", ".tar.gz"], SkillPackageText.AllowedExtensions);
+        Assert.True(SkillPackageText.IsAllowedFile("pack.zip"));
+        Assert.True(SkillPackageText.IsAllowedFile("PACK.TAR.GZ"));
+        Assert.False(SkillPackageText.IsAllowedFile("pack.tgz"), "卡片提到 .tgz，但 Core 不接受，桌面端不得擅自放宽");
+        Assert.False(SkillPackageText.IsAllowedFile("pack.rar"));
+        Assert.False(SkillPackageText.IsAllowedFile(null));
+    }
+
+    [Fact]
+    public void SkillPackageFormsRejectWhatCoreWouldReject()
+    {
+        var meta = new SkillPackageMetaEdit("pack", "Name", "desc", true, 100);
+        Assert.Empty(SkillPackageText.Validate(meta));
+        Assert.Contains("技能包", SkillPackageText.Validate(meta with { SkillPackageId = "" }).Single(), StringComparison.Ordinal);
+        Assert.Contains("名称", SkillPackageText.Validate(meta with { Name = " " }).Single(), StringComparison.Ordinal);
+        Assert.Contains("排序", SkillPackageText.Validate(meta with { SortOrder = -1 }).Single(), StringComparison.Ordinal);
+
+        var upload = new SkillPackageUploadEdit("pack", "Name", "desc", "1.0.0", 100, "/tmp/pack.zip");
+        Assert.Empty(SkillPackageText.Validate(upload));
+        Assert.Contains("小写", SkillPackageText.Validate(upload with { SkillPackageId = "Pack" }).Single(), StringComparison.Ordinal);
+        Assert.Contains("小写", SkillPackageText.Validate(upload with { SkillPackageId = "pack_one" }).Single(), StringComparison.Ordinal);
+        Assert.Contains("包文件", SkillPackageText.Validate(upload with { FilePath = "" }).Single(), StringComparison.Ordinal);
+        Assert.Contains("格式", SkillPackageText.Validate(upload with { FilePath = "/tmp/pack.tgz" }).Single(), StringComparison.Ordinal);
+
+        var replace = new SkillPackageFileEdit("pack", "2.0.0", "/tmp/pack.zip");
+        Assert.Empty(SkillPackageText.Validate(replace));
+        Assert.Contains("版本", SkillPackageText.Validate(replace with { Version = "" }).Single(), StringComparison.Ordinal);
+        Assert.Contains("格式", SkillPackageText.Validate(replace with { FilePath = "/tmp/x.rar" }).Single(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PackageSizesAreRenderedReadably()
+    {
+        Assert.Equal("512 B", SkillPackageText.FormatBytes(512));
+        Assert.Equal("1.5 KB", SkillPackageText.FormatBytes(1536));
+        Assert.Equal("2.5 MB", SkillPackageText.FormatBytes(2_621_440));
+        Assert.Equal("1.5 GB", SkillPackageText.FormatBytes(1_610_612_736));
+        Assert.Equal("未知大小", SkillPackageText.FormatBytes(-1));
+    }
+    [Fact]
     public void EmptyOverviewIsExplicitlyEmptyRatherThanFabricated()
     {
         Assert.Equal(0, SkillHubOverview.Empty.TotalSkills);

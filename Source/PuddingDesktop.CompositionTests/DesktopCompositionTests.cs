@@ -977,6 +977,53 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task SkillPackageAdapter_NeverReportsSuccessWithoutAFileOrAStore()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var packages = factory.CreateSkillPackageSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => packages.ListAsync(timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            Assert.Empty(await packages.ListAsync(timeout.Token));
+
+            // Nothing is seeded, so every row-addressed operation must fail rather than pretend.
+            await Assert.ThrowsAsync<InvalidOperationException>(() => packages.SaveMetaAsync(
+                new SkillPackageMetaEdit("missing", "N", "", true, 1), timeout.Token));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => packages.DeleteAsync("missing", timeout.Token));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => packages.GetDownloadUrlAsync("missing", timeout.Token));
+
+            // A missing file is rejected before any Core call, so no row and no object can appear.
+            var missingFile = Path.Combine(root, "does-not-exist.zip");
+            await Assert.ThrowsAsync<FileNotFoundException>(() => packages.UploadAsync(
+                new SkillPackageUploadEdit("fixture-pack", "Fixture", "", "1.0.0", 100, missingFile), timeout.Token));
+            await Assert.ThrowsAsync<FileNotFoundException>(() => packages.ReplaceFileAsync(
+                new SkillPackageFileEdit("fixture-pack", "1.1.0", missingFile), timeout.Token));
+            Assert.Empty(await packages.ListAsync(timeout.Token));
+
+            // A real file with a rejected extension must also be refused before Core writes anything.
+            var rejected = Path.Combine(root, "fixture.tgz");
+            await File.WriteAllBytesAsync(rejected, [1, 2, 3], timeout.Token);
+            var badExtension = await Assert.ThrowsAsync<InvalidOperationException>(() => packages.UploadAsync(
+                new SkillPackageUploadEdit("fixture-pack", "Fixture", "", "1.0.0", 100, rejected), timeout.Token));
+            Assert.Contains("zip", badExtension.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Empty(await packages.ListAsync(timeout.Token));
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => packages.ListAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

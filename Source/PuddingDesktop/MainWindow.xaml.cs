@@ -23,11 +23,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub)> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub) = createKernel(_desktopServices);
+        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -67,6 +67,7 @@ public sealed partial class MainWindow : Window
         BuildSkillHubPanels();
         BuildSkillLibraryPanel();
         BuildSkillEvolutionPanels();
+        BuildSkillPackagePanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -536,6 +537,13 @@ public sealed partial class MainWindow : Window
             await WaitForSettingsUiAsync(() => _siNotice.IsOpen);
             Check(SkillInstallsSettings.Visibility == Visibility.Visible, "skill installs tab is native");
             Check(!_siUpdateAgent.IsEnabled, "skill installs form stays disabled without Core");
+            // DS-07 legacy skill packages: create/edit/delete/upload/download link.
+            OpenSettingsCategory("skills", "legacy");
+            await WaitForSettingsUiAsync(() => _spNotice.IsOpen);
+            Check(SkillPackagesSettings.Visibility == Visibility.Visible, "skill packages tab is native");
+            Check(SkillPackagesSettings.Content is StackPanel, "skill packages form is built");
+            Check(!_spPicker.IsEnabled, "skill packages form stays disabled without Core");
+            Check(_spNotice.Title == "Core 未就绪", "skill packages tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

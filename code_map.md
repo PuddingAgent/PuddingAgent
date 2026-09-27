@@ -1,3 +1,6 @@
+## 2026-09-27 DS-07 Skill Hub（旧技能包桌面端）+ DS-07 完成
+
+桌面端 `skills/legacy` 接上上一轮下沉的 `SkillPackageService`：台账列表与详情、元数据编辑（不动文件与版本）、确认删除、上传新包、上传新版本（替换文件）、预签名下载链接（用默认浏览器打开）。文件选择器不可用时回退到路径输入框，并把原因显示出来。上传/下载依赖对象存储，未配置或不可达时显示 Core 的真实错误而不是假成功。验证：Foundation 118 项、Composition 14 项、窗口 smoke 169 项通过。至此 DS-07 六张卡全部接入（概览 / 事件审计 / 技能库 / EVO MAP / 安装台账 / 旧技能包）。
 ## 2026-09-27 DS-07 Skill Hub（旧技能包：Core 下沉）
 
 按 §3.1「业务逻辑只在 Controller 内时先下沉为可独立测试的 Core 应用操作」，把 `SkillPackageApiController` 里的校验、对象键构造与旧对象清理下沉为 `SkillPackageService`，并引入对象存储端口 `ISkillPackageObjectStore`（`MinioStorageService` 实现）。控制器现在只做 HTTP 映射（`SkillHubResult` → 200/400/404/409），Web 行为不变。收益是可测性：`SkillPackageServiceTests` 用假对象存储 + 内存 SQLite 覆盖「被拒绝的上传不触碰对象存储」「元数据更新不动版本与对象」「换版本先传后删、被拒时保持原文件」「下载 URL 来自端口」「文件规则与 Web 契约一致（`.tgz` 不被接受）」。桌面端 UI 接下一轮。验证：`SkillPackageServiceTests` 5 项、Composition 13 项、窗口 smoke 165 项通过。
