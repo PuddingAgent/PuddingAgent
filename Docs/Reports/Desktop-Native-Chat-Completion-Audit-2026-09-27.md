@@ -115,3 +115,9 @@ RemoteImageView 在收起/真实卸载时取消并释放图片，迟到数据不
 Composition 直接将 inputMode=voice、voiceSessionId、实际 asrProvider/asrModel 交给 SubmitTurnCommand，使用 Core 既有消息元数据持久化流程。Core 当前 ASR 返回值没有语言检测结果，因此不填 language；未提供的字段均省略，不照抄 Web 的 browser/web-speech/zh-CN 常量。
 
 验证：83 项逻辑测试、219 项原生窗口检查、3 项真实 Core 集成测试通过，含实际 ChatMessages.MetadataJson 回读断言。日志为 temp/native-voice-origin-state.log、temp/native-voice-origin-ui.log、temp/native-voice-origin-core-recheck.log。首次 Core 运行在此前的供应商配置测试发生 File.Replace IOException（temp/native-voice-origin-core.log）；同一构建无改动复验通过，文件占用根因未确认、未在本次修复，不能据此声称并发配置写入问题关闭。没有使用真实麦克风、真实供应商或 D:\data；完整目标仍未完成。
+
+## 输入快捷键与组词保护（2026-09-27）
+
+ChatComposer 接入 TextBox.TextCompositionStarted/Ended，在组词期间不发出发送请求；Ctrl+Enter 只接受无 Shift/Alt 的组合，长按自动重复不再次发送。发送不可用时消费该快捷键，避免等待回执时意外插入换行；普通 Enter 保持原生换行行为。卸载/禁用编辑器清除组词标记。
+
+83 项逻辑、224 项原生窗口检查通过，组件零警告/错误，日志 temp/native-composer-keyboard.log。新增五项检查在真实 WinUI 控件上调用内部键盘判定与组词状态入口，覆盖组合键、组词、重复、禁用发送及禁用编辑器；没有注入真实输入法候选词或系统键盘事件。因此这是发送保护的组件证据，尚不能关闭完整 IME/辅助技术验收门禁。

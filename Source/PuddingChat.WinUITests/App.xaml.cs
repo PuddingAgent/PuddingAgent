@@ -177,6 +177,7 @@ public partial class App : Application
                 await VerifyApprovalCardAsync((Grid)control.Content);
                 await VerifyMessageDetailsAsync((Grid)control.Content);
                 await VerifyComposerLayoutAsync((Grid)control.Content);
+                await VerifyComposerKeyboardAsync((Grid)control.Content);
                 await VerifyCodeBlockAsync((Grid)control.Content);
                 await VerifyActivityStreamingAsync((Grid)control.Content);
                 await VerifySubAgentInspectorAsync((Grid)control.Content);
@@ -199,7 +200,7 @@ public partial class App : Application
                 var visuals = await CaptureVisualPreviewsAsync((Grid)control.Content);
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 219, native = true, visuals }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 224, native = true, visuals }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }

@@ -81,6 +81,8 @@ public sealed class ChatComposer : UserControl
     public event EventHandler? SendRequested;
     public event EventHandler? CancelRequested;
     public event EventHandler? DraftChanged;
+    private bool _composing;
+    internal void SetCompositionState(bool composing) => _composing = composing;
     public string Draft { get => _editor.Text; set { if (_editor.Text != value) _editor.Text = value; } }
     public ChatComposer()
     {
@@ -102,6 +104,9 @@ public sealed class ChatComposer : UserControl
         Content = surface;
         _editor.TextChanging += (_, _) => DraftChanged?.Invoke(this, EventArgs.Empty);
         _editor.KeyDown += OnKeyDown;
+        _editor.TextCompositionStarted += (_, _) => SetCompositionState(true);
+        _editor.TextCompositionEnded += (_, _) => SetCompositionState(false);
+        _editor.Unloaded += (_, _) => SetCompositionState(false);
         _editor.Paste += async (_, args) =>
         {
             if (!_attach.IsEnabled && !_attachFile.IsEnabled) return;
@@ -139,6 +144,7 @@ public sealed class ChatComposer : UserControl
     }
     public void SetContext(string? role, bool editable)
     {
+        if (!editable) SetCompositionState(false);
         _editor.IsEnabled = editable;
         _editor.PlaceholderText = role is null ? "先在左侧选择一位角色" : editable ? $"交给 {role} 的工作…" : "当前角色已停用或冻结";
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_editor, role is null ? "请选择角色后输入" : $"发给 {role} 的消息草稿");
@@ -184,8 +190,16 @@ public sealed class ChatComposer : UserControl
     }
     private void OnKeyDown(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Key == VirtualKey.Enter && _send.IsEnabled &&
-            Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
-        { args.Handled = true; SendRequested?.Invoke(this, EventArgs.Empty); }
+        static bool Down(VirtualKey key) => Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key)
+            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+        if (HandleSubmitKey(args.Key, Down(VirtualKey.Control), Down(VirtualKey.Shift), Down(VirtualKey.Menu), args.KeyStatus.WasKeyDown))
+            args.Handled = true;
+    }
+    // Keep IME candidate confirmation and key auto-repeat out of the submit path.
+    internal bool HandleSubmitKey(VirtualKey key, bool control, bool shift, bool alt, bool repeated)
+    {
+        if (key != VirtualKey.Enter || !control || shift || alt || _composing || !_editor.IsEnabled) return false;
+        if (!repeated && _send.IsEnabled) SendRequested?.Invoke(this, EventArgs.Empty);
+        return true;
     }
 }

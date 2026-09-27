@@ -1410,3 +1410,7 @@ VoiceConversationPanel 源码为手动录音/确认发送/手动朗读，未实�
 ## 2026-09-27 原生聊天语音来源
 
 PuddingChat/VoiceInput.cs 返回实际 ASR 元信息；ChatSelection 按角色保留来源，PendingSend 固定发送快照。ChatWorkspace 捕获后经 InProcessChatClient 直接提交 Core 元数据，集成测试回读 ChatMessages.MetadataJson。83 逻辑/219 窗口/3 Core 验证通过；首次配置文件替换占用、复验通过的限制及真实设备待验记录在 Docs/Features/Desktop-Native-Voice-2026-09-27.md。
+
+## 2026-09-27 原生聊天输入快捷键
+
+ChatComposer 增加中文组词期间的发送保护、Ctrl+Enter 长按去重与禁用发送拦截。ComposerKeyboardChecks 五项组件检查通过，合计 83 逻辑/224 窗口；真实输入法候选词事件顺序尚未验收，见原生聊天完成度核对报告。
