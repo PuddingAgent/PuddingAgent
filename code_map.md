@@ -1370,3 +1370,7 @@ PuddingDesktop/MainWindow.Kernel.RunKernelSmokeAsync 在隔离数据目录创建
 ## 2026-09-27 原生语音输入状态组件
 
 `PuddingChat/VoiceInput.cs` 提供采集/转写端口和独立生命周期，`VoiceDraftResult` 防止晚到转写覆盖已编辑或已切换角色的草稿；设备释放完成后才能开启新录音。`PuddingChatTests/VoiceInputTests.cs` 新增 10 项，逻辑套件总计 77 项通过。WinRT 采集、录音控件和 Core ASR 接线仍待实现，具体证据与边界见 `Docs/Features/Desktop-Native-Voice-2026-09-27.md`。
+
+## 2026-09-27 原生录音控件
+
+`PuddingChat.WinUI/VoiceInputControl.cs` 提供录音/结束/取消、转写预览、显式加入草稿与冲突提示；`PuddingChat.WinUITests/VoiceInputChecks.cs` 新增 7 项真实窗口检查，总计 77 逻辑/199 窗口检查通过。真实采集/Core ASR 和聊天工作台装配尚未完成，见原生语音方案与完成审计。
