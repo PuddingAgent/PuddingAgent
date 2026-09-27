@@ -222,7 +222,14 @@
 
 ### DS-07 — Skill Hub 六页签（P1；依赖 DS-00）
 
-状态：**进行中（2026-09-27）**。已交付「概览」与「事件审计」两个页签；`library`/`evolution`/`installs`/`legacy` 四个页签待续。
+状态：**进行中（2026-09-27）**。已交付「概览」「事件审计」「技能库」三个页签；`evolution`/`installs`/`legacy` 三个页签待续。
+
+**技能库切片已交付**
+- 检索（搜索/标签/状态）、技能详情、版本列表与版本全文（Skill Markdown 只读展示）、元数据编辑、软退役（确认对话框）、发布新版本（进化动作白名单 + 非 create 必填父版本）、安装登记。
+- 表单校验对齐 Core 真实词表：`SkillId ^[a-z0-9][a-z0-9-]{1,127}$`（不含点号）、进化动作 `create|patch|split|compress|retire|merge|fork`、状态 `active|deprecated|retired`、可见性 `global|workspace`；多条错误一次报全。
+- Core 的 `SkillHubResult` 语义失败被转成真实异常，不再出现「HTTP 成功但其实被拒绝」。
+- 安装台账按语义呈现：页面明确写出「台账只记录 Agent 上报的版本，不代表已安装或正在运行」。
+- 集成测试覆盖：HTTP 发布 → 详情/版本全文 → 改元数据（版本与 Markdown 不变）→ 发布 patch 版本（父版本血缘）→ 重复版本被拒 → 登记安装 → 软退役（版本保留、状态筛选可见）。
 
 **概览/事件切片已交付**
 - `ISkillHubSettings`（Foundation）+ `DesktopSkillHubSettings`（Composition，按操作解析 scoped 的 `ISkillHubService`）+ `MainWindow.SkillHubSettings.cs`（`skills/overview`：技能/版本/安装/覆盖 Agent/已进化计数、进化动作分布、安装排行；`skills/events`：技能与条数筛选、事件列表与详情含 PayloadJson）。
@@ -725,5 +732,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-04 模板与角色实例 | 进行中 2026-09-27 | 五个切片已接入（agent-directory / agent-basic / agent-prompts / agent-models / smart-models / guardrails）；仅 agent-grants 待续，被 DS-06、DS-07 目录依赖阻塞 |
 | DS-05 工作区与渠道 | 待实施 | — |
 | DS-06 工具与插件 | 已完成 2026-09-27 | 两张只读卡接入；manifest-only 与无效清单有真实固件测试 |
-| DS-07 Skill Hub 六页签 | 进行中 2026-09-27 | 概览与事件审计两页签已接入（含 HTTP 发布后读回的集成测试）；库/EVO MAP/安装台账/旧技能包待续 |
+| DS-07 Skill Hub 六页签 | 进行中 2026-09-27 | 概览 / 事件审计 / 技能库三页签已接入；EVO MAP、安装台账、旧技能包待续 |
 | DS-08 … DS-17 | 待实施 | — |

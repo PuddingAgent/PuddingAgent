@@ -26,4 +26,6 @@
 
 `DesktopSkillHubSettings` implements `ISkillHubSettings` (DS-07 overview/events slice) on the same gated path. `ISkillHubService` is registered scoped, so it is resolved from the per-operation Core scope instead of being captured. Write paths (publish/evolve/retire/install) are not exposed yet.
 
+`DesktopSkillHubSettings` also covers the DS-07 library slice: skill detail and version markdown, metadata edit, soft retirement, version publish and install registration. `SkillHubResult` failures are surfaced as real errors instead of ignored.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

@@ -651,7 +651,7 @@
             ],
             "source": "pages/skill-management/SkillsTab.tsx",
             "task": "DS-07",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },

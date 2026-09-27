@@ -55,6 +55,68 @@ public sealed class SkillHubContractTests
     }
 
     [Fact]
+    public void VocabularyMatchesCoresOwnWhitelists()
+    {
+        Assert.Equal(["create", "patch", "split", "compress", "retire", "merge", "fork"], SkillHubText.EvolutionActions);
+        Assert.Equal(["active", "deprecated", "retired"], SkillHubText.Statuses);
+        Assert.Equal(["global", "workspace"], SkillHubText.Visibilities);
+    }
+
+    [Fact]
+    public void SkillIdRulesMirrorCoresPattern()
+    {
+        Assert.Empty(SkillHubText.ValidateSkillId("pudding-code-search"));
+        Assert.Empty(SkillHubText.ValidateSkillId("ab"));
+        Assert.Contains("技能 ID", SkillHubText.ValidateSkillId(null).Single(), StringComparison.Ordinal);
+        Assert.Contains("技能 ID", SkillHubText.ValidateSkillId("").Single(), StringComparison.Ordinal);
+        // Core rejects dots, uppercase and a leading dash; the form must reject them first.
+        Assert.NotEmpty(SkillHubText.ValidateSkillId("pudding.code-search"));
+        Assert.NotEmpty(SkillHubText.ValidateSkillId("Pudding-Code"));
+        Assert.NotEmpty(SkillHubText.ValidateSkillId("-leading"));
+        Assert.NotEmpty(SkillHubText.ValidateSkillId("a"));
+        Assert.NotEmpty(SkillHubText.ValidateSkillId(new string('a', 129)));
+    }
+
+    [Fact]
+    public void MetaEditIsRejectedForValuesOutsideCoresVocabulary()
+    {
+        var valid = new SkillHubMetaEdit("Name", "summary", "description", ["a"], ["b"], "active", "global");
+        Assert.Empty(SkillHubText.Validate(valid));
+        Assert.Empty(SkillHubText.Validate(valid with { Status = "retired" }));
+        Assert.Contains("状态", SkillHubText.Validate(valid with { Status = "archived" }).Single(), StringComparison.Ordinal);
+        Assert.Contains("可见性", SkillHubText.Validate(valid with { Visibility = "public" }).Single(), StringComparison.Ordinal);
+        Assert.Contains("名称", SkillHubText.Validate(valid with { Name = " " }).Single(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void VersionPublishRequiresAParentForEveryActionExceptCreate()
+    {
+        var create = new SkillHubVersionPublish("pudding-a", "A", "1.0.0", "# A", "create", "", "", [], "global");
+        Assert.Empty(SkillHubText.Validate(create));
+
+        var patch = create with { EvolutionAction = "patch", ParentVersion = "1.0.0", Version = "1.1.0" };
+        Assert.Empty(SkillHubText.Validate(patch));
+        Assert.Contains("父版本", SkillHubText.Validate(patch with { ParentVersion = "" }).Single(), StringComparison.Ordinal);
+
+        Assert.Contains("进化动作", SkillHubText.Validate(create with { EvolutionAction = "refine", ParentVersion = "1.0.0" }).Single(), StringComparison.Ordinal);
+        // 非法动作与被漏掉的父版本会一起报出来，而不是一次只报一条。
+        Assert.Equal(2, SkillHubText.Validate(create with { EvolutionAction = "refine" }).Count);
+        Assert.Contains("版本号", SkillHubText.Validate(create with { Version = "" }).Single(), StringComparison.Ordinal);
+        Assert.Contains("Markdown", SkillHubText.Validate(create with { SkillMarkdown = "  " }).Single(), StringComparison.Ordinal);
+        Assert.Contains("技能 ID", SkillHubText.Validate(create with { SkillId = "pudding.a" }).Single(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InstallRegistrationNeedsASkillAgentAndVersion()
+    {
+        var valid = new SkillHubInstallRegistration("pudding-a", "default.agent_1", "default", "1.0.0", "", "tester");
+        Assert.Empty(SkillHubText.Validate(valid));
+        Assert.Contains("Agent 实例", SkillHubText.Validate(valid with { AgentInstanceId = "" }).Single(), StringComparison.Ordinal);
+        Assert.Contains("已安装版本", SkillHubText.Validate(valid with { InstalledVersion = "" }).Single(), StringComparison.Ordinal);
+        Assert.Contains("台账", SkillHubText.InstallLedgerNotice, StringComparison.Ordinal);
+        Assert.Contains("不代表", SkillHubText.InstallLedgerNotice, StringComparison.Ordinal);
+    }
+    [Fact]
     public void EmptyOverviewIsExplicitlyEmptyRatherThanFabricated()
     {
         Assert.Equal(0, SkillHubOverview.Empty.TotalSkills);

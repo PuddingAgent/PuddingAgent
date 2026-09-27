@@ -22,6 +22,7 @@
 | `AgentGuardrailContracts.cs` | DS-04 护栏切片：执行预算与容器镜像记录、只拒绝任何预算都无法成立的取值（≤0/空白镜像） |
 | `ToolPluginContracts.cs` | DS-06 工具/插件读模型：工具目录条目与参数、插件包/声明/诊断记录、`IsExecutable`（只有运行时 Available 才算可执行，未知状态 fail closed） |
 | `SkillHubContracts.cs` | DS-07 概览/事件切片：`ISkillHubSettings` 只读读模型、概览统计、审计事件与状态/事件类型/来源的显示规则（退役一律不可用） |
+| `SkillHubContracts.cs` | DS-07 概览/事件/技能库切片：`ISkillHubSettings` 读模型与写入记录、Core 的真实词表（`^[a-z0-9][a-z0-9-]{1,127}$`、`create|patch|split|compress|retire|merge|fork`、`active|deprecated|retired`、`global|workspace`）与安装台账语义说明 |
 | `PuddingDesktop.Foundation.csproj` | 编译期拒绝任何项目/包引用；输出限于 temp/build/winui3 |
 
-独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。107 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。
+独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。112 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。

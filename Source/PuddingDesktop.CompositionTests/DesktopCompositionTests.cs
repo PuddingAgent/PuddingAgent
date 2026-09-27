@@ -810,6 +810,101 @@ public sealed class DesktopCompositionTests
         }
     }
 
+    [Fact]
+    public async Task SkillLibraryAdapter_EditsMetaPublishesVersionRegistersInstallAndRetires()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var hub = factory.CreateSkillHubSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await kernel.StartAsync(root, timeout.Token);
+            using var client = await CreateAdminClientAsync(root, kernel.Snapshot.WorkbenchAddress!);
+            var publish = await client.PostAsJsonAsync("/api/skill-hub/skills", new
+            {
+                skillId = "pudding-library-skill",
+                name = "Library Skill",
+                summary = "summary",
+                description = "description",
+                tags = new[] { "fixture" },
+                version = "1.0.0",
+                skillMarkdown = "# Library\n\nfirst",
+                visibility = "global"
+            }, timeout.Token);
+            Assert.True(publish.IsSuccessStatusCode, await publish.Content.ReadAsStringAsync(timeout.Token));
+
+            var detail = await hub.ReadSkillAsync("pudding-library-skill", timeout.Token);
+            Assert.NotNull(detail);
+            Assert.Equal("1.0.0", detail!.Skill.LatestVersion);
+            var version = Assert.Single(detail.Versions);
+            Assert.Equal("create", version.EvolutionAction);
+
+            var content = await hub.ReadVersionAsync("pudding-library-skill", "1.0.0", timeout.Token);
+            Assert.NotNull(content);
+            Assert.Equal("# Library\n\nfirst", content!.SkillMarkdown);
+            Assert.NotEmpty(content.ContentHash);
+            Assert.Null(await hub.ReadVersionAsync("pudding-library-skill", "9.9.9", timeout.Token));
+            Assert.Null(await hub.ReadSkillAsync("no-such-skill", timeout.Token));
+
+            // Metadata edit must not touch the version or the markdown.
+            await hub.SaveSkillMetaAsync("pudding-library-skill",
+                new SkillHubMetaEdit("Library Skill renamed", "new summary", "new description",
+                    ["fixture", "v2"], ["keyword"], "active", "global"), timeout.Token);
+            detail = await hub.ReadSkillAsync("pudding-library-skill", timeout.Token);
+            Assert.Equal("Library Skill renamed", detail!.Skill.Name);
+            Assert.Equal(["fixture", "v2"], detail.Skill.Tags);
+            Assert.Single(detail.Versions);
+            Assert.Equal("# Library\n\nfirst",
+                (await hub.ReadVersionAsync("pudding-library-skill", "1.0.0", timeout.Token))!.SkillMarkdown);
+
+            // Publishing a version appends lineage and keeps the previous version readable.
+            await hub.PublishVersionAsync(new SkillHubVersionPublish("pudding-library-skill", "Library Skill renamed",
+                "1.1.0", "# Library\n\nsecond", "patch", "1.0.0", "fixture evolution", ["fixture"], "global"), timeout.Token);
+            detail = await hub.ReadSkillAsync("pudding-library-skill", timeout.Token);
+            Assert.Equal(2, detail!.Versions.Count);
+            Assert.Equal("1.1.0", detail.Skill.LatestVersion);
+            var evolved = Assert.Single(detail.Versions, item => item.Version == "1.1.0");
+            Assert.Equal("patch", evolved.EvolutionAction);
+            Assert.Equal("1.0.0", evolved.ParentVersion);
+            Assert.Equal("fixture evolution", evolved.PublishNote);
+
+            // A rejected publish is surfaced as a failure rather than a silent success.
+            await Assert.ThrowsAsync<InvalidOperationException>(() => hub.PublishVersionAsync(
+                new SkillHubVersionPublish("pudding-library-skill", "Library Skill renamed", "1.1.0",
+                    "# duplicate", "patch", "1.0.0", "", [], "global"), timeout.Token));
+
+            // Install registration is a ledger row the detail view reports.
+            await hub.RegisterInstallAsync(new SkillHubInstallRegistration("pudding-library-skill",
+                "default.agent_1", "default", "1.0.0", "", "composition-test"), timeout.Token);
+            detail = await hub.ReadSkillAsync("pudding-library-skill", timeout.Token);
+            var install = Assert.Single(detail!.RecentInstalls);
+            Assert.Equal("default.agent_1", install.AgentInstanceId);
+            Assert.Equal("1.0.0", install.InstalledVersion);
+
+            // Retirement is soft: the status changes and versions survive.
+            await hub.RetireSkillAsync("pudding-library-skill", timeout.Token);
+            detail = await hub.ReadSkillAsync("pudding-library-skill", timeout.Token);
+            Assert.Equal("retired", detail!.Skill.Status);
+            Assert.False(SkillHubText.IsUsable(detail.Skill.Status));
+            Assert.Equal(2, detail.Versions.Count);
+            var retired = await hub.ListSkillsAsync(null, null, "retired", 1, 50, timeout.Token);
+            Assert.Contains(retired, skill => skill.SkillId == "pudding-library-skill");
+            Assert.DoesNotContain(await hub.ListSkillsAsync(null, null, "active", 1, 50, timeout.Token),
+                skill => skill.SkillId == "pudding-library-skill");
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => hub.ReadSkillAsync("pudding-library-skill", timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

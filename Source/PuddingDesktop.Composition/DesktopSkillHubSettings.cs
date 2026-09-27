@@ -52,4 +52,83 @@ internal sealed class DesktopSkillHubSettings(IDesktopKernel kernel) : ISkillHub
                 entry.ActorKind, entry.ActorId ?? "", entry.WorkspaceId ?? "", entry.PayloadJson ?? "",
                 entry.CreatedAt)).ToArray();
         }, cancellationToken);
+
+    public Task<SkillHubDetail?> ReadSkillAsync(string skillId, CancellationToken cancellationToken = default)
+        => Hub("skills.library.detail", async (hub, token) =>
+        {
+            var detail = await hub.GetSkillAsync(skillId, token);
+            return detail is null ? null : new SkillHubDetail(Summary(detail.Skill), detail.Versions.Select(Map).ToArray(),
+                detail.RecentInstalls.Select(Map).ToArray());
+        }, cancellationToken);
+
+    public Task<SkillHubVersionContent?> ReadVersionAsync(string skillId, string version, CancellationToken cancellationToken = default)
+        => Hub("skills.library.version", async (hub, token) =>
+        {
+            var content = await hub.GetVersionAsync(skillId, version, token);
+            return content is null ? null : new SkillHubVersionContent(content.SkillId, content.Version, content.ContentHash,
+                content.EvolutionAction, content.ParentVersion ?? "", content.RelatedSkillIds ?? [],
+                content.PublishedByAgentId ?? "", content.PublishedByWorkspaceId ?? "", content.PublishNote ?? "",
+                content.ContentBytes, content.CreatedAt, content.SkillMarkdown);
+        }, cancellationToken);
+
+    public Task SaveSkillMetaAsync(string skillId, SkillHubMetaEdit edit, CancellationToken cancellationToken = default)
+        => Hub("skills.library.meta", async (hub, token) =>
+        {
+            Require(await hub.UpdateMetaAsync(skillId, new UpdateHubSkillMetaRequest(
+                edit.Name, edit.Summary, edit.Description, [.. edit.Tags], [.. edit.Keywords],
+                edit.Status, edit.Visibility), token));
+            return true;
+        }, cancellationToken);
+
+    public Task RetireSkillAsync(string skillId, CancellationToken cancellationToken = default)
+        => Hub("skills.library.retire", async (hub, token) =>
+        {
+            Require(await hub.RetireAsync(skillId, token));
+            return true;
+        }, cancellationToken);
+
+    public Task PublishVersionAsync(SkillHubVersionPublish publish, CancellationToken cancellationToken = default)
+        => Hub("skills.library.publish-version", async (hub, token) =>
+        {
+            Require(await hub.PublishVersionAsync(publish.SkillId, new PublishHubSkillRequest(
+                publish.SkillId, publish.Name, null, null, [.. publish.Tags], null,
+                publish.Version, publish.SkillMarkdown, null,
+                publish.EvolutionAction, Nullable(publish.ParentVersion), null, null, null,
+                Nullable(publish.PublishNote), null, publish.Visibility), token));
+            return true;
+        }, cancellationToken);
+
+    public Task RegisterInstallAsync(SkillHubInstallRegistration registration, CancellationToken cancellationToken = default)
+        => Hub("skills.installs.register", async (hub, token) =>
+        {
+            Require(await hub.RegisterInstallAsync(new RegisterInstallRequest(registration.SkillId,
+                registration.AgentInstanceId, Nullable(registration.WorkspaceId), registration.InstalledVersion,
+                Nullable(registration.ContentHash), Nullable(registration.InstalledBy)), token));
+            return true;
+        }, cancellationToken);
+
+    /// <summary>Core returns a semantic result instead of throwing; surface it as a real failure.</summary>
+    private static void Require<T>(SkillHubResult<T> result) where T : class
+    {
+        if (!result.IsOk) throw new InvalidOperationException(result.Error ?? "Core 拒绝了该操作。");
+    }
+
+    private static string? Nullable(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private static SkillHubSkillSummary Summary(HubSkillSummaryDto skill) => new(
+        skill.SkillId, skill.Name, skill.Summary ?? "", skill.Description ?? "",
+        skill.Tags ?? [], skill.Keywords ?? [],
+        skill.LatestVersion, skill.Status, skill.Visibility,
+        skill.VersionCount, skill.InstallCount, skill.PublishCount,
+        skill.LatestContentHash ?? "", skill.CreatedAt, skill.UpdatedAt);
+
+    private static SkillHubVersion Map(HubSkillVersionDto version) => new(
+        version.SkillId, version.Version, version.ContentHash, version.EvolutionAction,
+        version.ParentVersion ?? "", version.RelatedSkillIds ?? [],
+        version.PublishedByAgentId ?? "", version.PublishedByWorkspaceId ?? "",
+        version.PublishNote ?? "", version.ContentBytes, version.CreatedAt);
+
+    private static SkillHubInstall Map(HubSkillInstallDto install) => new(
+        install.SkillId, install.AgentInstanceId, install.WorkspaceId ?? "", install.InstalledVersion,
+        install.ContentHash ?? "", install.InstalledBy, install.InstalledAt, install.UpdatedAt);
 }

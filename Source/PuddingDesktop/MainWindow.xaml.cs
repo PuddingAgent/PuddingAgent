@@ -65,6 +65,7 @@ public sealed partial class MainWindow : Window
         BuildAgentGuardrailPanel();
         BuildToolPluginPanels();
         BuildSkillHubPanels();
+        BuildSkillLibraryPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -517,6 +518,13 @@ public sealed partial class MainWindow : Window
             await WaitForSettingsUiAsync(() => _skNotice.IsOpen);
             Check(SkillEventsSettings.Visibility == Visibility.Visible, "skill events tab is native");
             Check(!_skPageSize.IsEnabled, "skill events form stays disabled without Core");
+            // DS-07 library slice: skill detail, metadata edit, retire, version publish and install ledger.
+            OpenSettingsCategory("skills", "library");
+            await WaitForSettingsUiAsync(() => _slNotice.IsOpen);
+            Check(SkillLibrarySettings.Visibility == Visibility.Visible, "skill library tab is native");
+            Check(SkillLibrarySettings.Content is StackPanel, "skill library form is built");
+            Check(!_slQuery.IsEnabled, "skill library form stays disabled without Core");
+            Check(_slNotice.Title == "Core 未就绪", "skill library tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

@@ -172,6 +172,15 @@ public sealed partial class MainWindow
         var skillEvents = VisibilityOf("skills", "events", tab);
         SkillEventsSettings.Visibility = skillEvents;
         if (skillEvents == Visibility.Visible) LoadSkillEventsIfNeeded();
+        var skillLibrary = VisibilityOf("skills", "library", tab);
+        SkillLibrarySettings.Visibility = skillLibrary;
+        if (skillLibrary == Visibility.Visible) LoadSkillLibraryIfNeeded();
+    }
+
+    private async void LoadSkillLibraryIfNeeded()
+    {
+        try { await LoadSkillLibraryAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadSkillOverviewIfNeeded()
@@ -264,6 +273,7 @@ public sealed partial class MainWindow
         ("tools", "plugins") => true,
         ("skills", "overview") => true,
         ("skills", "events") => true,
+        ("skills", "library") => true,
         _ => false
     };
 

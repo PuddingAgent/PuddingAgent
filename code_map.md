@@ -1,3 +1,6 @@
+## 2026-09-27 DS-07 Skill Hub（技能库切片）
+
+`SkillHubContracts.cs` 扩到技能库：技能/版本/安装记录、元数据编辑、版本发布与安装登记，并把 Core 的真实词表固化进表单校验（SkillId `^[a-z0-9][a-z0-9-]{1,127}$`、进化动作 `create|patch|split|compress|retire|merge|fork`、状态 `active|deprecated|retired`、可见性 `global|workspace`）。`DesktopSkillHubSettings` 把 `SkillHubResult` 的语义失败转成真实异常（不再被当成成功）。UI 新增 `MainWindow.SkillLibrarySettings.cs`（`skills/library` 页签）。Composition 测试走完整链路：HTTP 发布技能 → 读详情/版本全文 → 改元数据（版本与 Markdown 不变）→ 发布 patch 版本（血缘父子）→ 重复版本被拒绝 → 登记安装台账 → 软退役（版本保留、状态筛选可见）。验证：Foundation 112 项、Composition 12 项、窗口 smoke 160 项通过。
 ## 2026-09-27 DS-07 Skill Hub（概览/事件切片）
 
 Foundation 新增 `SkillHubContracts.cs`（`ISkillHubSettings` 只读读模型、概览统计、审计事件、状态与事件类型/来源显示规则），Composition 新增 `DesktopSkillHubSettings`（`ISkillHubService` 是 scoped，按操作从 Core 作用域解析而不是被单例捕获），Shell 新增 `MainWindow.SkillHubSettings.cs`（`skills/overview` 与 `skills/events` 两个页签）。Composition 测试通过产品自身的 HTTP 面（`POST /api/skill-hub/skills` 与 `/versions`）发布一个技能与一个补丁版本，再用设置适配器读回：概览计数、进化动作分布、技能摘要与审计事件全部对齐。顺带修掉一个会让窗口启动即崩的真实缺陷：同一个 `InfoBar` 不能同时挂到两个页签的面板上（`UIElementCollection.Add` 抛 COMException），每个页签现在各有自己的通知条。验证：Foundation 107 项、Composition 11 项、窗口 smoke 156 项通过。
