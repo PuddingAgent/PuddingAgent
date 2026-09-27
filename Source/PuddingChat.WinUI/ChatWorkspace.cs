@@ -55,6 +55,7 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable, IAsyncDisp
     private bool _addingImages;
     private bool _loadingWorkspaces;
     private bool _inspectorOpen;
+    private readonly HashSet<(RoleKey Role, string Session, string Turn)> _stopping = [];
     private Task? _initialization;
     private long _workspaceGeneration;
     private Agent? _agent;
@@ -693,10 +694,28 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable, IAsyncDisp
     }
     public async Task CancelAsync()
     {
-        if (_state.Role is not { } role || _state.Conversation is not { } conversation || ChatSelection.ActiveTurn(conversation) is not { } turn) return;
-        await _client.CancelAsync(role.WorkspaceId, conversation.MainSessionId, turn, _lifetime.Token);
-        if (_disposed || _state.Role != role) return;
-        _notice.IsOpen = true; _notice.Title = "已请求停止"; _notice.Message = "等待 Core 确认取消结果。";
+        if (_disposed || !_connected || _state.Role is not { } role || _state.Conversation is not { } conversation || ChatSelection.ActiveTurn(conversation) is not { } turn) return;
+        var key = (Role: role, Session: conversation.MainSessionId, Turn: turn);
+        if (!_stopping.Add(key)) return;
+        var generation = _state.Generation;
+        bool StillCurrent() => !_disposed && generation == _state.Generation && _state.Role == role
+            && _state.Conversation?.MainSessionId == key.Session && ChatSelection.ActiveTurn(_state.Conversation) == turn;
+        UpdateComposer();
+        try
+        {
+            await _client.CancelAsync(role.WorkspaceId, conversation.MainSessionId, turn, _lifetime.Token);
+            if (!StillCurrent()) return;
+            _notice.IsOpen = true; _notice.Severity = InfoBarSeverity.Informational;
+            _notice.Title = "已请求停止"; _notice.Message = "等待 Core 确认取消结果。";
+        }
+        catch (OperationCanceledException) when (_disposed || _lifetime.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            if (!StillCurrent()) return;
+            _notice.IsOpen = true; _notice.Severity = InfoBarSeverity.Error;
+            _notice.Title = "停止请求未确认"; _notice.Message = "尚未取得 Core 回执，可再次点击停止；执行状态以会话进度为准。";
+        }
+        finally { _stopping.Remove(key); if (!_disposed) UpdateComposer(); }
     }
     private void SetDraft() { _changingDraft = true; try { Composer.Draft = _state.Draft; Composer.SetImages(_state.Images); Composer.SetFiles(_state.Files); } finally { _changingDraft = false; } }
     private void UpdateComposer()
@@ -706,7 +725,9 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable, IAsyncDisp
         Composer.SetFileAvailability(!_busy && !_addingImages && _agent is { IsEnabled: true, IsFrozen: false });
         Composer.SetContext(_agent?.Label, _agent is { IsEnabled: true, IsFrozen: false });
         Composer.SetAvailability(_connected && !_busy && !_addingImages && _agent is { IsEnabled: true, IsFrozen: false }
-        && (_state.Pending is not null || !string.IsNullOrWhiteSpace(_state.Draft) || _state.Images.Count > 0 || _state.Files.Count > 0), ChatSelection.ActiveTurn(_state.Conversation) is not null, _state.Pending is not null);
+        && (_state.Pending is not null || !string.IsNullOrWhiteSpace(_state.Draft) || _state.Images.Count > 0 || _state.Files.Count > 0), ChatSelection.ActiveTurn(_state.Conversation) is not null, _state.Pending is not null,
+            _state.Role is { } role && _state.Conversation is { } conversation && ChatSelection.ActiveTurn(conversation) is { } turn
+                && _stopping.Contains((role, conversation.MainSessionId, turn)));
     }
     public int VisibleRoleCount => _roles.Items.Count;
     public void SetRoleFilter(string text) { _search.Text = text; ApplyRoleFilter(); }

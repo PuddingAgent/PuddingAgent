@@ -177,3 +177,9 @@ IApprovalInbox 与 SQLite 角色/会话待处理查询已独立实现，18 逻�
 ApprovalService.CancelAsync 新增 Pending/Approved → Cancelled，保持版本 CAS、精确绑定、稳定取消 ID 与原决定审计。取消和消费竞争仅一方成功；已消费或派发未知不能撤销，已到期记为 Expired。SQLite 将取消事实与 outbox 同事务保存，重开后不能再次消费，也不会出现在待处理查询。
 
 独立验证 22 逻辑 / 10 SQLite 测试通过，日志 temp/native-approval-cancellation.log 和 temp/native-approval-cancellation-sqlite.log。未接聊天停止按钮、Host 或 Runtime 暂停/恢复，不宣称审批闭环完成；未操作 D:\data。
+
+## 停止请求的原生反馈与作用域（2026-09-27）
+
+ChatWorkspace 按角色、会话和 Turn 记录正在提交的停止请求，ChatComposer 显示「请求停止中…」并禁用重复点击。其他角色仍可停止自己的任务，返回原角色仍显示该请求的等待状态。回执必须匹配选择代次、会话和当前 Turn 才能显示提示，避免切走再切回时旧成功或失败覆盖新上下文。失败保留重试入口，成功明确为「已请求停止」，不乐观修改 Core 的运行状态。
+
+85 逻辑 / 257 原生窗口检查通过，组件构建零警告/错误；日志 temp/native-chat-cancellation-feedback.log。新增七项覆盖重复请求、跨角色隔离、返回原角色、晚到回执、失败重试、成功重置提示级别、销毁保护。使用真实控件与可控 Core 端口替身，不代表真实模型取消或审批暂停/恢复已验收。既有许可撤销组件仍未连接此停止路径。

@@ -1458,3 +1458,7 @@ PuddingApproval/ApprovalInbox.cs 定义按工作空间/角色/会话查询 Pendi
 ## 2026-09-27 审批许可撤销
 
 PuddingApproval/ApprovalService.Cancellation.cs：未消费许可的幂等取消，与消费 CAS 竞争；SQLite 保留取消事实/outbox。22 逻辑 / 10 存储测试通过，尚未接入聊天停止或 Runtime 暂停/恢复。
+
+## 2026-09-27 原生停止请求反馈
+
+ChatWorkspace.CancelAsync 将停止请求绑定到角色/会话/Turn，并以选择代次隔离旧回执；ChatComposer 提供等待、禁重入和重试反馈。85 逻辑 / 257 原生窗口检查通过；仅处理 UI 请求生命周期，执行终态仍由 Core 决定，审批撤销组件尚未接线。

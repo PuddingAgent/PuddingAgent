@@ -199,12 +199,13 @@ public partial class App : Application
                 await VerifyVoiceInputControlAsync((Grid)control.Content);
                 await VerifyVoiceCaptureContractAsync();
                 await VerifyWorkspaceVoiceAsync((Grid)control.Content);
+                await VerifyWorkspaceCancellationAsync((Grid)control.Content);
                 await VerifyRemoteImagesAsync((Grid)control.Content, fixture);
                 await File.WriteAllTextAsync(Report, "{}");
                 var visuals = await CaptureVisualPreviewsAsync((Grid)control.Content);
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 250, native = true, visuals }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 257, native = true, visuals }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -304,7 +305,10 @@ public partial class App : Application
         }
         public Task<string> EnsureSessionAsync(RoleKey role, Agent agent, CancellationToken ct) => Task.FromResult("session");
         public Task<Acceptance> SendAsync(PendingSend send, CancellationToken ct) { Sent = send; return Task.FromResult(new Acceptance("session", "m", ["turn"], 1)); }
-        public Task CancelAsync(string workspace, string conversation, string turn, CancellationToken ct) { Cancelled = turn; return Task.CompletedTask; }
+        public Func<CancellationToken, Task>? Cancellation;
+        public int CancellationCalls;
+        public Task CancelAsync(string workspace, string conversation, string turn, CancellationToken ct)
+        { Cancelled = turn; CancellationCalls++; return Cancellation?.Invoke(ct) ?? Task.CompletedTask; }
         public Task<ProcessDetails> GetProcessAsync(RoleKey role, string message, CancellationToken ct) => Task.FromResult(new ProcessDetails(message, []));
         public void Dispose() => Disposed = true;
     }
