@@ -3913,3 +3913,10 @@ VisionPipelineException包含source=tool function_call_output、message#、plann
 先按 conversation_id 索引查 canonical 的 context.compaction.started/completed/failed，按 payload.compactionId 配对；requested 只是意图，旧 started 或缺失终态不代表当前仍执行。`GET /api/sessions/{id}/compaction-status`（正常认证）给出进程内 activeCompaction，重启后为 null。核对 loaded bundle hash，避免源码修复已存在但页面仍加载旧 bundle。UI 的状态待确认不是后端失败；超时不得制造持久化 failed 事件。
 
 环形用量应检查分母：总窗口占用 used/contextWindow 与压缩压力 used/effectiveWindow 不同；并核对 usageRecordedAtUtc 和 usageConfidence。后端故障诊断保留原始事件，不补造成功记录。详细证据与验收见 `Docs/Features/上下文压缩运行状态与界面设计.md`。
+
+## 2026-09-27 WinUI 产品隔离构建与合同快照
+
+- 共享工作树有并行开发时，先固定提交到独立工作树，避免把其他模块的临时重名误判为聊天组件故障。完整 Desktop 依赖 external/github.hyfree.GM 子模块，单独 checkout 不会初始化它；使用 superproject 指定的提交，不复制运行数据。
+- 原提交自身也可能存在跨提交合同不一致。本次 ee7277a 的 DesktopWorkspaceSettings 使用 WorkspaceCreateDraft/WorkspaceMetaUpdate，而 Core 仍定义旧名称；验证加入已有两文件重命名补丁后通过。报告必须写明基线与补丁，不能称为纯提交成功。
+- Copy-Item 保留源修改时间，补入旧时间戳的源码可能被增量构建跳过；验证补丁后应触发对应项目重新编译，确认日志中的目标程序集确实更新。本次只更新时间戳后重新构建，未通过复制旧 DLL 绕过编译。
+- TestScripts/test-pudding-desktop-kernel.ps1 的成功报告还需结合进程 ExitCode、PID 与退出后的 .pudding-host.lock 独占打开；原生控件测试通过不能替代完整产品生命周期。证据：temp/native-chat-product-isolated.log、temp/native-chat-product-isolated-report.json、temp/native-chat-validation-contract.patch。

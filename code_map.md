@@ -1428,3 +1428,7 @@ RoleAvatarCard 的状态/未读信息同步到 ListView 自动化名称，描述
 ## 2026-09-27 大型工具结果分页
 
 TextPageWindow + PagedTextView 将大型工具正文/输入/输出改为原文分页，每页约 16K 字符，保留完整复制与流式阅读页。独立门禁后接入 ActivityContentView，85 逻辑/236 原生窗口检查通过。此项仅约束排版，不裁剪 Core 数据，也不代表总内存有界；验收边界见原生聊天完成度核对报告。
+
+## 2026-09-27 原生聊天完整产品复验
+
+隔离 Desktop PID 14388 通过 Core DLL/聊天挂载/角色与文件草稿/重启重建/设置保存/退出租约验证。基线 ee7277a 加两份已有工作空间合同重命名补丁，不能视为纯提交构建通过；来源、DLL 哈希及日志见 Docs/Reports/Desktop-Native-Chat-Completion-Audit-2026-09-27.md。迁移计划已纠正聊天初始化仍依赖 Web 的旧描述。

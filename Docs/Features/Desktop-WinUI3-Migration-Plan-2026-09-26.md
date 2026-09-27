@@ -11,7 +11,7 @@
 1. 主线是 **WinUI 3 Shell + 角色优先的原生导航 + 中间角色工作会话 + 右侧编码工作区**。右侧使用统一文档标签骨架，浏览器是首个完整适配器；代码、Diff、终端和产物按能力接入。保留现有聊天、管理页面和浏览器驱动资产。
 2. **Core 的最终形态为 Desktop 进程内 DLL 内核**（用户后续裁定，取代同日较早的长期独立子进程结论）。逻辑组件边界、唯一业务状态真源、独立测试不变。通过组合入口装配 `PuddingHost`，WinUI View 不直接调用 Runtime/SQLite；不承诺 ALC 热卸载或双模式永久维护。
 3. **最新裁定：角色卡和聊天全部使用原生 WinUI 3 组件，当前已接入文字聊天闭环。** `PuddingChat.WinUI` 只依赖 `PuddingChat`；通过 Composition 中的 `InProcessChatClient` 直接调用 Core 应用服务，不使用 HTTP、JWT 或 WebView2 聊天。
-4. 角色与模型管理暂保留独立 `/admin/` 页面，由用户点击“初始化与配置”进入；聊天不再依赖网页嵌入模式或 ShellWebBridge。
+4. 聊天已提供原生工作空间初始化、角色基本配置与服务商/聊天模型配置（WorkspaceSetupForm、RoleConfigurationForm、ProviderConfigurationForm），直接调用 Core 应用服务；客户端不依赖 Web 登录或 `/admin/` 初始化。更广泛的管理功能按各自迁移门禁验收，不能用聊天中的基础表单代表全部管理能力完成。
 5. 工作台与第三方网页使用隔离的 Environment / 用户数据目录；S0 使用产品实际隔离配置验证。
 6. 按组件化交付规程先独立构建、测试、边界检查，再接入。用户要求原地重建：唯一产品工程仍为 `Source/PuddingDesktop/PuddingDesktop.csproj`，不存在长期并行 WinUI 产品工程。WPF 归档只作旧测试基线；M0–M5 为迁移阶段，不替代组件门禁。
 7. 旧版 49–77 人日估算作废；主线范围改变后，应在 M0 结束按组件盘点重新估算。

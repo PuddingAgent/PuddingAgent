@@ -135,3 +135,11 @@ ActivityContentView 对超过 32,768 个 UTF-16 代码单元的工具正文/输�
 TextPageWindow 独立测试先通过，再验证分页窗口，最后接工具活动组件。当前 85 逻辑/236 原生窗口检查通过，零组件构建警告/错误；日志 temp/native-text-pages-state.log、temp/native-text-pages-ui.log、temp/native-text-pages-integration.log。检查涵盖分页无损拼接、emoji/CRLF 边界、追加/替换/空值、真实原生翻页、300 DIP 按钮布局、全文复制数据与工具流式接线。
 
 此变更限制工具输出的 Markdown 解析与可视排版规模，未裁剪 canonical 内容、未改变 Core 提交/事件协议。完整字符串仍在内存中，复制也会复制全文；不能据此宣称整体内存有界或关闭单 Turn 全展开、长期内存及真实模型验收门禁。
+
+## 完整 Desktop 隔离生命周期复验（2026-09-27）
+
+通过：PID 14388，Core DLL 加载、原生聊天挂载、角色/文本附件草稿、后台线程到 UI 回调、Core 停止/重启后新的聊天客户端与已保存角色加载、数据目录设置保存、进程退出及目录租约释放。构建 0 错误/63 个既有警告；执行 TestScripts/test-pudding-desktop-kernel.ps1。日志与报告保存在 temp/native-chat-product-isolated.log、temp/native-chat-product-isolated-report.json。
+
+来源必须同时记录：隔离工作树基线 ee7277afbd31fde898a080fea14bd72a42b07726，GM 子模块 ae0ca44294e9aa4853ab1002b076036346a651a3，另加入 WorkspaceService.cs 和 WorkspaceApiController.cs 两份既有合同重命名（WorkspaceDraft→WorkspaceCreateDraft、WorkspaceEdit→WorkspaceMetaUpdate），补丁存 temp/native-chat-validation-contract.patch。基线中的 Desktop 适配器已使用新名称，Core 重命名尚未提交，因此基线原样构建失败。本次通过不能被引用为该提交原样可构建的证据。最初共享目录构建另遇未提交 RoleSummary 重名，未在本任务改动该组工作。
+
+测试产物 PuddingChat.WinUI.dll SHA256：98D4ECF68B1F9CBB3FFEDA6A26C874C22BC7DB047D33267B28C5EE181B9FFF50。该测试证明当前聊天组件能随完整 Shell/Core 装配和释放，不执行真实模型、麦克风、Narrator 或所有新增交互；新增交互的证据仍来自 85 逻辑/236 窗口检查。完整目标保持进行中。
