@@ -905,6 +905,78 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task SkillLineageAndInstallLedgerAdapter_ReportChainsAndBehindVersions()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var hub = factory.CreateSkillHubSettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await kernel.StartAsync(root, timeout.Token);
+            using var client = await CreateAdminClientAsync(root, kernel.Snapshot.WorkbenchAddress!);
+            var created = await client.PostAsJsonAsync("/api/skill-hub/skills", new
+            {
+                skillId = "pudding-evo-skill", name = "Evo Skill", version = "1.0.0",
+                skillMarkdown = "# Evo\n\nfirst", visibility = "global"
+            }, timeout.Token);
+            Assert.True(created.IsSuccessStatusCode, await created.Content.ReadAsStringAsync(timeout.Token));
+            var evolved = await client.PostAsJsonAsync("/api/skill-hub/skills/pudding-evo-skill/versions", new
+            {
+                skillId = "pudding-evo-skill", name = "Evo Skill", version = "1.1.0",
+                skillMarkdown = "# Evo\n\nsecond", evolutionAction = "patch", parentVersion = "1.0.0",
+                publishNote = "chain"
+            }, timeout.Token);
+            Assert.True(evolved.IsSuccessStatusCode, await evolved.Content.ReadAsStringAsync(timeout.Token));
+
+            var lineage = await hub.ReadLineageAsync("pudding-evo-skill", timeout.Token);
+            Assert.NotNull(lineage);
+            Assert.Equal(2, lineage!.Nodes.Count);
+            var rootNode = Assert.Single(lineage.Nodes, node => node.Version == "1.0.0");
+            // create 版本是根节点。
+            Assert.Equal("", rootNode.ParentNodeId);
+            var childNode = Assert.Single(lineage.Nodes, node => node.Version == "1.1.0");
+            Assert.Equal(rootNode.NodeId, childNode.ParentNodeId);
+            Assert.Equal("patch", childNode.EvolutionAction);
+            Assert.Single(lineage.Edges);
+            var lines = SkillHubText.RenderLineage(lineage);
+            Assert.Equal(2, lines.Count);
+            Assert.StartsWith("1.0.0", lines[0], StringComparison.Ordinal);
+            Assert.StartsWith("  1.1.0", lines[1], StringComparison.Ordinal);
+
+            var global = await hub.ReadGlobalLineageAsync(null, 500, timeout.Token);
+            Assert.Contains(global.Nodes, node => node.SkillId == "pudding-evo-skill");
+            Assert.Null(await hub.ReadLineageAsync("no-such-skill", timeout.Token));
+
+            await hub.RegisterInstallAsync(new SkillHubInstallRegistration("pudding-evo-skill",
+                "default.evo_agent", "default", "1.0.0", "", "composition-test"), timeout.Token);
+            var installs = await hub.ListInstallsAsync("default.evo_agent", "pudding-evo-skill", 1, 50, timeout.Token);
+            var install = Assert.Single(installs);
+            Assert.Equal("1.0.0", install.InstalledVersion);
+            Assert.Equal("default.evo_agent", install.AgentInstanceId);
+            Assert.Empty(await hub.ListInstallsAsync("someone-else", null, 1, 50, timeout.Token));
+
+            // The agent reports an older version, so the hub must report it as behind.
+            var updates = await hub.ListUpdatesAsync("default.evo_agent", timeout.Token);
+            var update = Assert.Single(updates, entry => entry.SkillId == "pudding-evo-skill");
+            Assert.Equal("1.0.0", update.InstalledVersion);
+            Assert.Equal("1.1.0", update.LatestVersion);
+            Assert.True(update.IsBehind);
+            Assert.Empty(await hub.ListUpdatesAsync("no-such-agent", timeout.Token));
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => hub.ReadLineageAsync("pudding-evo-skill", timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

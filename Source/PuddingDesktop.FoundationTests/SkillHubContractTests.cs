@@ -116,6 +116,63 @@ public sealed class SkillHubContractTests
         Assert.Contains("台账", SkillHubText.InstallLedgerNotice, StringComparison.Ordinal);
         Assert.Contains("不代表", SkillHubText.InstallLedgerNotice, StringComparison.Ordinal);
     }
+    private static SkillHubEvoMap Map(params EvoMapNode[] nodes) => new(nodes,
+        nodes.Where(node => node.ParentNodeId.Length > 0)
+            .Select(node => new EvoMapEdge(node.ParentNodeId, node.NodeId, node.EvolutionAction)).ToArray(),
+        DateTimeOffset.UtcNow);
+
+    private static EvoMapNode Node(string version, string parent = "", string action = "patch", string status = "active") =>
+        new($"pudding-a@{version}", "pudding-a", version, action, parent, "A", status, "", DateTimeOffset.UtcNow, 100, 1);
+
+    [Fact]
+    public void LineageRendersAsATreeWithParentChildOrdering()
+    {
+        var map = Map(Node("1.0.0", action: "create"), Node("1.1.0", "pudding-a@1.0.0"), Node("1.2.0", "pudding-a@1.1.0"));
+        var lines = SkillHubText.RenderLineage(map);
+        Assert.Equal(3, lines.Count);
+        Assert.StartsWith("1.0.0 · create", lines[0], StringComparison.Ordinal);
+        Assert.StartsWith("  1.1.0 · patch", lines[1], StringComparison.Ordinal);
+        Assert.StartsWith("    1.2.0 · patch", lines[2], StringComparison.Ordinal);
+        Assert.Contains("节点 3 · 边 2 · 根 1", SkillHubText.DescribeLineage(map), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LineageStopsAtCyclesAndReportsMissingParentsInsteadOfLooping()
+    {
+        var cyclic = Map(
+            new EvoMapNode("a@1", "a", "1", "patch", "a@2", "A", "active", "", DateTimeOffset.UtcNow, 1, 0),
+            new EvoMapNode("a@2", "a", "2", "patch", "a@1", "A", "active", "", DateTimeOffset.UtcNow, 1, 0));
+        var lines = SkillHubText.RenderLineage(cyclic);
+        Assert.Contains(lines, line => line.Contains("无根组件", StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.Contains("谱系存在环", StringComparison.Ordinal));
+        Assert.Equal(3, lines.Count);
+        Assert.Contains("根 0", SkillHubText.DescribeLineage(cyclic), StringComparison.Ordinal);
+
+        var orphan = Map(Node("2.0.0", "pudding-a@9.9.9"));
+        var orphanLines = SkillHubText.RenderLineage(orphan);
+        Assert.Contains("父节点不在结果集中", orphanLines[0], StringComparison.Ordinal);
+        Assert.Contains("父节点缺失 1", SkillHubText.DescribeLineage(orphan), StringComparison.Ordinal);
+
+        // An edge whose endpoints are outside the node set is counted, not silently dropped.
+        var dangling = new SkillHubEvoMap([Node("1.0.0", action: "create")],
+            [new EvoMapEdge("gone@1", "pudding-a@1.0.0", "patch")], DateTimeOffset.UtcNow);
+        Assert.Contains("悬空边 1", SkillHubText.DescribeLineage(dangling), StringComparison.Ordinal);
+        Assert.Empty(SkillHubText.RenderLineage(new SkillHubEvoMap([], [], DateTimeOffset.UtcNow)));
+    }
+
+    [Fact]
+    public void UpdateBehindIsDecidedByStringDifferenceNotGuessedOrdering()
+    {
+        var behind = new SkillHubUpdate("pudding-a", "A", "1.0.0", "1.1.0", "patch", DateTimeOffset.UtcNow, "note");
+        Assert.True(behind.IsBehind);
+        Assert.False((behind with { LatestVersion = "1.0.0" }).IsBehind);
+        // A non-semver pair is reported as behind when the strings differ; the page never interprets it.
+        var odd = behind with { InstalledVersion = "v1", LatestVersion = "release-2" };
+        Assert.True(odd.IsBehind);
+        Assert.Contains("已登记 v1 → 最新 release-2", SkillHubText.DescribeUpdate(odd), StringComparison.Ordinal);
+        Assert.Contains("note", SkillHubText.DescribeUpdate(behind), StringComparison.Ordinal);
+        Assert.DoesNotContain("· note", SkillHubText.DescribeUpdate(behind with { PublishNote = "" }), StringComparison.Ordinal);
+    }
     [Fact]
     public void EmptyOverviewIsExplicitlyEmptyRatherThanFabricated()
     {

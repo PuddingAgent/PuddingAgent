@@ -28,4 +28,6 @@
 
 `DesktopSkillHubSettings` also covers the DS-07 library slice: skill detail and version markdown, metadata edit, soft retirement, version publish and install registration. `SkillHubResult` failures are surfaced as real errors instead of ignored.
 
+`DesktopSkillHubSettings` also covers EVO MAP and the install ledger: lineage for one skill or globally, ledger queries and per-agent update checks.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

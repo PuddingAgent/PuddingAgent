@@ -1,3 +1,6 @@
+## 2026-09-27 DS-07 Skill Hub（EVO MAP 与安装台账切片）
+
+Foundation 新增 `SkillHubEvoMap.cs`（谱系节点/边、`RenderLineage` 缩进树、`DescribeLineage` 计数、`SkillHubUpdate` 落后判定），Composition 的 `DesktopSkillHubSettings` 扩到谱系与台账，Shell 新增 `MainWindow.SkillEvolutionSettings.cs`（`skills/evolution` 与 `skills/installs` 两个页签，只读）。谱系渲染刻意不隐藏异常形态：纯环组件没有可达根，会被当作「无根组件」显式列出（否则页面会是空的），环展开处标记并停止，父节点缺失与悬空边都有计数。更新检查按版本字符串差异判定落后，不猜测语义顺序。Composition 测试用 HTTP 发布 create+patch 两个版本后读回：根节点、父节点、边数、缩进树、全局谱系、台账筛选与「已登记 1.0.0 → 最新 1.1.0」的更新判定。验证：Foundation 115 项、Composition 13 项、窗口 smoke 165 项通过。
 ## 2026-09-27 DS-07 Skill Hub（技能库切片）
 
 `SkillHubContracts.cs` 扩到技能库：技能/版本/安装记录、元数据编辑、版本发布与安装登记，并把 Core 的真实词表固化进表单校验（SkillId `^[a-z0-9][a-z0-9-]{1,127}$`、进化动作 `create|patch|split|compress|retire|merge|fork`、状态 `active|deprecated|retired`、可见性 `global|workspace`）。`DesktopSkillHubSettings` 把 `SkillHubResult` 的语义失败转成真实异常（不再被当成成功）。UI 新增 `MainWindow.SkillLibrarySettings.cs`（`skills/library` 页签）。Composition 测试走完整链路：HTTP 发布技能 → 读详情/版本全文 → 改元数据（版本与 Markdown 不变）→ 发布 patch 版本（血缘父子）→ 重复版本被拒绝 → 登记安装台账 → 软退役（版本保留、状态筛选可见）。验证：Foundation 112 项、Composition 12 项、窗口 smoke 160 项通过。
@@ -1285,3 +1288,7 @@ VisionRequestPolicy默认8、VisionCapabilityContract上限钳制、PuddingFileC
 - `ContextCompactionService.GetActiveCompaction` / `SessionEventsController.GetCompactionStatus`：精确 ID + 开始时间的轻量活性快照；started 移到摘要输入准入后；取消补写终态。
 - `useCompaction`：按 ID 投影，10 秒确认、30 秒动画许可、重放不切会话；`CompactionCard` 独立状态区；`ContextUsageRing` 总窗口占比、来源和采样时间；`IntentConsole` 压缩结束刷新并防旧响应覆盖。
 - 部署验收：实现 `aab7f5c`，2026-09-20 17:25 Core PID 23280 Ready，264 文件 manifest 匹配；`umi.83c11143.js` HTTP 哈希匹配。111 项定向回归通过，真实默认助手页面无伪压缩动画；自然压缩执行未被人工触发。
+
+## 2026-09-27 Native 文本文件上下文
+
+PuddingChat/TextFileContext.cs 提供有界文本快照；ChatSelection/Contracts 保持角色草稿与重试内容，WinUI ChatComposer/ChatWorkspace 提供选择、预览、移除和发送。Composition/InProcessChatClient 使用 SubmittedText 直接提交既有 Core text 内容块。验证 57 逻辑/132 窗口/3 Core；设计见 Docs/Features/Desktop-Native-Text-Context-2026-09-27.md。

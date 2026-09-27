@@ -107,6 +107,42 @@ internal sealed class DesktopSkillHubSettings(IDesktopKernel kernel) : ISkillHub
             return true;
         }, cancellationToken);
 
+    public Task<SkillHubEvoMap?> ReadLineageAsync(string skillId, CancellationToken cancellationToken = default)
+        => Hub("skills.evolution.lineage", async (hub, token) =>
+        {
+            var map = await hub.GetSkillLineageAsync(skillId, token);
+            return map is null ? null : Map(map);
+        }, cancellationToken);
+
+    public Task<SkillHubEvoMap> ReadGlobalLineageAsync(IReadOnlyList<string>? skillIds, int limit,
+        CancellationToken cancellationToken = default)
+        => Hub("skills.evolution.global", async (hub, token) =>
+            Map(await hub.GetLineageAsync(skillIds, limit, token)), cancellationToken);
+
+    public Task<IReadOnlyList<SkillHubInstall>> ListInstallsAsync(string? agentInstanceId, string? skillId,
+        int page, int pageSize, CancellationToken cancellationToken = default)
+        => Hub("skills.installs.list", async (hub, token) =>
+        {
+            var installs = await hub.ListInstallsAsync(agentInstanceId, skillId, page, pageSize, token);
+            return (IReadOnlyList<SkillHubInstall>)installs.Select(Map).ToArray();
+        }, cancellationToken);
+
+    public Task<IReadOnlyList<SkillHubUpdate>> ListUpdatesAsync(string agentInstanceId, CancellationToken cancellationToken = default)
+        => Hub("skills.installs.updates", async (hub, token) =>
+        {
+            var updates = await hub.ListUpdatesAsync(agentInstanceId, token);
+            return (IReadOnlyList<SkillHubUpdate>)updates.Select(update => new SkillHubUpdate(
+                update.SkillId, update.Name, update.InstalledVersion, update.LatestVersion,
+                update.LatestEvolutionAction, update.LatestPublishedAt, update.PublishNote ?? "")).ToArray();
+        }, cancellationToken);
+
+    private static SkillHubEvoMap Map(EvoMapDto map) => new(
+        map.Nodes.Select(node => new EvoMapNode(node.NodeId, node.SkillId, node.Version, node.EvolutionAction,
+            node.ParentNodeId ?? "", node.Name, node.Status, node.PublishedByAgentId ?? "", node.CreatedAt,
+            node.ContentBytes, node.InstallCount)).ToArray(),
+        map.Edges.Select(edge => new EvoMapEdge(edge.FromNodeId, edge.ToNodeId, edge.Action)).ToArray(),
+        map.GeneratedAt);
+
     /// <summary>Core returns a semantic result instead of throwing; surface it as a real failure.</summary>
     private static void Require<T>(SkillHubResult<T> result) where T : class
     {

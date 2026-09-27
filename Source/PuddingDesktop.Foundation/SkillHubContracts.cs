@@ -68,6 +68,27 @@ public sealed record SkillHubInstallRegistration(
     string SkillId, string AgentInstanceId, string WorkspaceId,
     string InstalledVersion, string ContentHash, string InstalledBy);
 
+public sealed record EvoMapNode(
+    string NodeId, string SkillId, string Version, string EvolutionAction, string ParentNodeId,
+    string Name, string Status, string PublishedByAgentId, DateTimeOffset CreatedAt,
+    int ContentBytes, int InstallCount);
+
+public sealed record EvoMapEdge(string FromNodeId, string ToNodeId, string Action);
+
+public sealed record SkillHubEvoMap(
+    IReadOnlyList<EvoMapNode> Nodes, IReadOnlyList<EvoMapEdge> Edges, DateTimeOffset GeneratedAt);
+
+public sealed record SkillHubUpdate(
+    string SkillId, string Name, string InstalledVersion, string LatestVersion,
+    string LatestEvolutionAction, DateTimeOffset LatestPublishedAt, string PublishNote)
+{
+    /// <summary>Reported as behind only when the strings differ; the page never guesses a semantic order.</summary>
+    public bool IsBehind => !string.Equals(InstalledVersion, LatestVersion, StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>A ledger row is what an Agent reported; it is not proof of installation or execution.</summary>
+public sealed record SkillHubInstallQuery(string AgentInstanceId, string SkillId, int Page, int PageSize);
+
 /// <summary>
 /// Task-shaped operations for the Skill Hub pages, implemented in Composition against ISkillHubService.
 /// </summary>
@@ -85,6 +106,12 @@ public interface ISkillHubSettings
     Task RetireSkillAsync(string skillId, CancellationToken cancellationToken = default);
     Task PublishVersionAsync(SkillHubVersionPublish publish, CancellationToken cancellationToken = default);
     Task RegisterInstallAsync(SkillHubInstallRegistration registration, CancellationToken cancellationToken = default);
+
+    Task<SkillHubEvoMap?> ReadLineageAsync(string skillId, CancellationToken cancellationToken = default);
+    Task<SkillHubEvoMap> ReadGlobalLineageAsync(IReadOnlyList<string>? skillIds, int limit, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SkillHubInstall>> ListInstallsAsync(
+        string? agentInstanceId, string? skillId, int page, int pageSize, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SkillHubUpdate>> ListUpdatesAsync(string agentInstanceId, CancellationToken cancellationToken = default);
 }
 
 public static class SkillHubText
@@ -146,6 +173,69 @@ public static class SkillHubText
     /// <summary>An install ledger row is a report, never a claim that the skill is running.</summary>
     public const string InstallLedgerNotice =
         "安装台账只记录 Agent 上报的版本，不代表技能已安装、已加载或正在运行。";
+
+    public static IReadOnlyList<int> InstallPageSizes { get; } = [20, 50, 100, 200];
+
+    /// <summary>
+    /// Renders the lineage as an indented version tree. Cycles stop expanding instead of looping, and a
+    /// node whose parent is missing from the result set is shown as a root with a note.
+    /// </summary>
+    public static IReadOnlyList<string> RenderLineage(SkillHubEvoMap map)
+    {
+        var byId = new Dictionary<string, EvoMapNode>(StringComparer.Ordinal);
+        foreach (var node in map.Nodes) byId[node.NodeId] = node;
+        var children = map.Nodes
+            .Where(node => node.ParentNodeId.Length > 0 && byId.ContainsKey(node.ParentNodeId))
+            .GroupBy(node => node.ParentNodeId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key,
+                group => group.OrderBy(node => node.Version, StringComparer.Ordinal).ToArray(), StringComparer.Ordinal);
+        var roots = map.Nodes
+            .Where(node => node.ParentNodeId.Length == 0 || !byId.ContainsKey(node.ParentNodeId))
+            .OrderBy(node => node.Version, StringComparer.Ordinal)
+            .ToArray();
+
+        var lines = new List<string>();
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        void Walk(EvoMapNode node, int depth, bool fromFallback)
+        {
+            var indent = new string(' ', depth * 2);
+            if (!visited.Add(node.NodeId))
+            {
+                lines.Add($"{indent}↺ {node.Version} · {node.EvolutionAction}（谱系存在环，已停止展开）");
+                return;
+            }
+            var notes = new List<string>();
+            if (depth == 0 && node.ParentNodeId.Length > 0 && !byId.ContainsKey(node.ParentNodeId))
+                notes.Add("父节点不在结果集中");
+            if (fromFallback) notes.Add("无根组件：该节点没有任何已发布的根版本");
+            var note = notes.Count == 0 ? "" : "（" + string.Join("；", notes) + "）";
+            lines.Add($"{indent}{node.Version} · {node.EvolutionAction} · {DescribeStatus(node.Status)}{note}" +
+                      $" · {node.ContentBytes} 字节 · 安装 {node.InstallCount}");
+            if (children.TryGetValue(node.NodeId, out var kids))
+                foreach (var kid in kids) Walk(kid, depth + 1, fromFallback: false);
+        }
+        foreach (var root in roots) Walk(root, 0, fromFallback: false);
+        // A component with no reachable root (a pure cycle) must still be shown rather than silently dropped.
+        foreach (var node in map.Nodes.OrderBy(node => node.Version, StringComparer.Ordinal))
+            if (!visited.Contains(node.NodeId)) Walk(node, 0, fromFallback: true);
+        return lines;
+    }
+
+    /// <summary>Counts what the page must not silently hide: dangling edges and nodes outside the result set.</summary>
+    public static string DescribeLineage(SkillHubEvoMap map)
+    {
+        var ids = new HashSet<string>(map.Nodes.Select(node => node.NodeId), StringComparer.Ordinal);
+        var dangling = map.Edges.Count(edge => !ids.Contains(edge.FromNodeId) || !ids.Contains(edge.ToNodeId));
+        var orphans = map.Nodes.Count(node => node.ParentNodeId.Length > 0 && !ids.Contains(node.ParentNodeId));
+        return $"节点 {map.Nodes.Count} · 边 {map.Edges.Count} · 根 {map.Nodes.Count(node => node.ParentNodeId.Length == 0)}" +
+               (orphans == 0 ? "" : $" · 父节点缺失 {orphans}") +
+               (dangling == 0 ? "" : $" · 悬空边 {dangling}");
+    }
+
+    public static string DescribeUpdate(SkillHubUpdate update) =>
+        $"{update.Name}（{update.SkillId}）· 已登记 {update.InstalledVersion} → 最新 {update.LatestVersion}" +
+        $" · 动作 {update.LatestEvolutionAction}" +
+        (string.IsNullOrWhiteSpace(update.PublishNote) ? "" : $" · {update.PublishNote}");
 
     public static string DescribeStatus(string? status) => status switch
     {

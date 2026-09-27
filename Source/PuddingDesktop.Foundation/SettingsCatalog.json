@@ -671,7 +671,7 @@
             ],
             "source": "pages/skill-management/EvoMapTab.tsx",
             "task": "DS-07",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },
@@ -693,7 +693,7 @@
             ],
             "source": "pages/skill-management/InstallsTab.tsx",
             "task": "DS-07",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },

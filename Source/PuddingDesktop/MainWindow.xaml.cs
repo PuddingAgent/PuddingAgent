@@ -66,6 +66,7 @@ public sealed partial class MainWindow : Window
         BuildToolPluginPanels();
         BuildSkillHubPanels();
         BuildSkillLibraryPanel();
+        BuildSkillEvolutionPanels();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -525,6 +526,16 @@ public sealed partial class MainWindow : Window
             Check(SkillLibrarySettings.Content is StackPanel, "skill library form is built");
             Check(!_slQuery.IsEnabled, "skill library form stays disabled without Core");
             Check(_slNotice.Title == "Core 未就绪", "skill library tab reports the real Core state");
+            // DS-07 EVO MAP and install ledger slices (read-only).
+            OpenSettingsCategory("skills", "evolution");
+            await WaitForSettingsUiAsync(() => _seNotice.IsOpen);
+            Check(SkillEvolutionSettings.Visibility == Visibility.Visible, "skill evolution tab is native");
+            Check(SkillEvolutionSettings.Content is StackPanel, "skill evolution form is built");
+            Check(!_seSkill.IsEnabled, "skill evolution form stays disabled without Core");
+            OpenSettingsCategory("skills", "installs");
+            await WaitForSettingsUiAsync(() => _siNotice.IsOpen);
+            Check(SkillInstallsSettings.Visibility == Visibility.Visible, "skill installs tab is native");
+            Check(!_siUpdateAgent.IsEnabled, "skill installs form stays disabled without Core");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);
