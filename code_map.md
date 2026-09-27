@@ -1305,3 +1305,7 @@ PuddingChat/TextFileContext.cs 提供有界文本快照；ChatSelection/Contract
 ## 2026-09-27 原生审批操作快照
 
 PuddingApproval/ApprovalOperation.cs：原始工具/参数/定义/目录快照及规范化指纹；ApprovalRecord 强制绑定，ApprovalService 在决定与消费前核对，SqliteApprovalStore 保存并禁止修改快照。18 逻辑/7 SQLite 测试通过；没有宿主接线，执行暂停/恢复仍待实现，证据见 Docs/Features/Desktop-Native-Approval-Integration-Design-2026-09-27.md。
+
+## 2026-09-27 原生聊天自适应角色导航
+
+PuddingChat.WinUI/ChatWorkspace.UpdateNavigationLayout 在消息可用宽度不足或宿主折叠侧栏时，将原有角色导航移入新的 WinUI Flyout 容器；宽屏还原宿主偏好与原控件。WorkspaceLayoutChecks 覆盖 320 DIP 消息区、草稿、角色切换、页面离开与反复切换，57 逻辑/139 窗口验证通过。

@@ -12,6 +12,8 @@ Programmatic native WinUI controls, no WebView/HTML or host dependency.
 
 The host supplies `IChatClient`, owns this control's disposal, and receives settings/runtime navigation events. Image attachments and paged history are connected through independent contracts. ChatComposer/ChatWorkspace import text files as per-role snapshots with native preview/removal, then send them through the existing client port. Binary document extraction, formula rendering, voice and remaining product acceptance are tracked in the native chat completion audit.
 
+`ChatWorkspace.UpdateNavigationLayout`: preserves the host's preferred sidebar width; when chat would have less than 520 DIP, or the host collapses the sidebar, moves the existing role navigation into a native Flyout reached from the heading. Wide mode reuses the same controls. Role selection, leaving the workbench and disposal close the flyout; draft/role state is not recreated by resizing.
+
 `WorkspaceSetupForm`: native workspace/first-role creation with existing model selection, validation and retry feedback. ChatWorkspace hosts the dialog and selects the returned role. Advanced Web management remains explicitly separate.
 
 `ProviderConfigurationForm`: native provider/chat-model create/edit and explicit key retention/replacement/clear, password input cleared on save/unload. `RoleConfigurationForm`: name, description, enabled, main model, role type and system prompt. ChatWorkspace opens modal editors, refreshes role cards after save; advanced settings remain separate.

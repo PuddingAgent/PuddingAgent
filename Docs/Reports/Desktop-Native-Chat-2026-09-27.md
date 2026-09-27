@@ -270,3 +270,11 @@ PuddingApproval 新增有界、确定性的操作指纹和不可变工具/参数
 ## 完整 Desktop 装配检查（2026-09-27）
 
 审批快照代码已提交 097bcf6。随后运行 `dotnet build Source/PuddingDesktop/PuddingDesktop.csproj -c Release --artifacts-path temp/build/desktop-kernel --no-restore --nologo`，当前共享工作树构建失败（134 warnings、2 errors；temp/native-chat-desktop-build.log）。根因是并行 DS-07 尚未提交的 DesktopSkillPackageSettings.cs 第 42 行 `SkillPackageUpload` 同时命中 Foundation 和 Platform 类型（CS0104），继而导致 ISkillPackageSettings.UploadAsync 未实现（CS0535）。未修改该并行任务文件；此记录仅反映该次共享工作树快照，不能替代后续修复后的产品构建验收。原生聊天与审批各自定向测试通过的结论不等于完整 Desktop 已通过或已发布。
+
+## 原生聊天整页自适应（2026-09-27）
+
+ChatWorkspace 在可用宽度不足「宿主偏好侧栏宽度 + 520 DIP」或宿主隐藏侧栏时，让消息区占满剩余宽度，在标题处显示“角色”按钮，通过 WinUI Flyout 访问原有工作空间/角色/设置导航。窄于 520 DIP 时页边距缩至 12 DIP。恢复宽屏后使用宿主原偏好宽度；复用同一角色控件、草稿和会话状态。选择角色关闭面板并回到输入框，离开工作台或释放控件也关闭弹出层。
+
+实测发现关闭中的 Flyout 被移除 Content 后，再复用同一 Flyout 可能不触发下一次 Opened；现为每次紧凑布局创建新的弹出容器，内部导航控件继续复用。另将选角后的输入焦点恢复放到异步读会话之前，避免迟到读取抢走后续用户操作焦点。
+
+验证：57 逻辑测试、139 原生窗口检查通过，最终构建零警告/错误（temp/native-workspace-layout-final.log）。新增 7 项覆盖 320 DIP 整页、消息视口高度、实际弹出层、侧栏返回与草稿、宿主隐藏后的入口、选角关闭、离开工作台关闭和宽度偏好。测试以真实 Opened/Closed 事件同步；IsLoaded 不能作为 Flyout 关闭证明。未更改 Core、部署产品或完成系统级缩放/IME/主题视觉矩阵。

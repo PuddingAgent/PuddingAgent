@@ -15,7 +15,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     private CancellationTokenSource? _follow;
     private string? _followSession;
     private readonly ComboBox _workspaces = new() { Header = "工作空间", HorizontalAlignment = HorizontalAlignment.Stretch, DisplayMemberPath = "Name" };
-    private readonly ListView _roles = new() { SelectionMode = ListViewSelectionMode.Single };
+    private readonly ListView _roles = new() { SelectionMode = ListViewSelectionMode.Single, IsItemClickEnabled = true };
     private readonly VirtualTranscript _transcript = new();
     private readonly ScrollViewer _scroll;
     private readonly TextBox _search = new() { PlaceholderText = "搜索角色或职责" };
@@ -41,6 +41,10 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     private readonly Dictionary<string, RoleAvatarCard> _cards = [];
     private readonly Dictionary<string, (ChatMessage Message, TranscriptItem Item)> _messageCards = [];
     private readonly ColumnDefinition _navigationColumn = new() { Width = new GridLength(248) };
+    private readonly Button _roleMenu = new() { Content = "角色", Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Top };
+    private Flyout _roleFlyout = new() { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft };
+    private double _preferredNavigationWidth = 248;
+    private bool _compactNavigation;
     private Grid? _navigation;
     private bool _disposed, _busy, _refreshing, _changingDraft, _connected;
     private bool _active = true;
@@ -57,12 +61,43 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     public event EventHandler? SettingsRequested;
     public event EventHandler? RuntimeRequested;
     public event EventHandler? AdministrationRequested;
-    public void SetActive(bool active) { _active = active; if (active && _connected && !_disposed) _timer.Start(); else _timer.Stop(); }
+    public void SetActive(bool active)
+    {
+        _active = active;
+        if (active && _connected && !_disposed) _timer.Start(); else _timer.Stop();
+        if (!active) _roleFlyout.Hide();
+    }
 
     public void SetNavigationWidth(double width)
     {
-        _navigationColumn.Width = new GridLength(width);
-        if (_navigation is not null) _navigation.Visibility = width > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (!double.IsFinite(width) || width < 0) throw new ArgumentOutOfRangeException(nameof(width));
+        _preferredNavigationWidth = width;
+        UpdateNavigationLayout();
+    }
+
+    private void UpdateNavigationLayout()
+    {
+        if (_disposed || _navigation is null || Content is not Grid root || ActualWidth <= 0) return;
+        var compact = _preferredNavigationWidth == 0 || ActualWidth < _preferredNavigationWidth + 520;
+        if (compact != _compactNavigation)
+        {
+            _roleFlyout.Hide();
+            if (compact)
+            {
+                root.Children.Remove(_navigation);
+                // A flyout that lost its content while closing may retain its old popup lifecycle.
+                // Reuse navigation controls, but give each compact-layout epoch a fresh popup host.
+                _roleFlyout = new Flyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft, Content = _navigation };
+                _roleMenu.Flyout = _roleFlyout;
+            }
+            else { _roleFlyout.Content = null; root.Children.Insert(0, _navigation); }
+            _compactNavigation = compact;
+        }
+        _navigationColumn.Width = new GridLength(compact ? 0 : _preferredNavigationWidth);
+        _navigation.Width = compact ? Math.Max(240, Math.Min(320, ActualWidth - 48)) : double.NaN;
+        _navigation.Height = compact ? Math.Max(360, ActualHeight - 96) : double.NaN;
+        _roleMenu.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
+        _chat.Padding = new Thickness(ActualWidth < 520 ? 12 : 24);
     }
 
     public ChatWorkspace(IChatClient client, Uri? origin = null)
@@ -111,7 +146,13 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         _chat.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _chat.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _chat.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var heading = new StackPanel { Spacing = 6 }; heading.Children.Add(_title); heading.Children.Add(_subtitle); _chat.Children.Add(heading);
+        var heading = new StackPanel { Spacing = 6 }; heading.Children.Add(_title); heading.Children.Add(_subtitle);
+        var headingRow = new Grid { ColumnSpacing = 12 };
+        headingRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        headingRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _roleMenu.Flyout = _roleFlyout;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_roleMenu, "打开角色与工作空间导航");
+        Grid.SetColumn(heading, 1); headingRow.Children.Add(_roleMenu); headingRow.Children.Add(heading); _chat.Children.Add(headingRow);
         Grid.SetRow(_notice, 1); _chat.Children.Add(_notice);
         _scroll = new ScrollViewer { Content = _transcript.View, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         var viewport = new Grid(); viewport.Children.Add(_scroll); viewport.Children.Add(_latest);
@@ -125,13 +166,19 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         Grid.SetRow(Composer, 3); _chat.Children.Add(Composer);
         Grid.SetColumn(_chat, 1); root.Children.Add(_chat);
         Content = root; UpdateComposer();
+        SizeChanged += (_, _) => UpdateNavigationLayout();
         _refresh.Click += async (_, _) => await GuardAsync(LoadWorkspacesAsync);
         _workspaces.SelectionChanged += async (_, _) => { if (!_loadingWorkspaces) await GuardAsync(RefreshRolesAsync); };
         _roles.SelectionChanged += async (_, _) =>
         {
             if (!_filtering && _roles.SelectedItem is RoleAvatarCard card && _workspaces.SelectedItem is Workspace workspace)
+            {
+                _roleFlyout.Hide();
+                if (_compactNavigation) Composer.FocusEditor();
                 await GuardAsync(() => SelectRoleAsync(workspace.WorkspaceId, card.Agent));
+            }
         };
+        _roles.ItemClick += (_, _) => { _roleFlyout.Hide(); if (_compactNavigation) Composer.FocusEditor(); };
         Composer.DraftChanged += (_, _) => { if (!_changingDraft) _state.Draft = Composer.Draft; UpdateComposer(); };
         Composer.SendRequested += async (_, _) => await GuardAsync(SendAsync);
         Composer.AttachRequested += async (_, _) => await GuardAsync(PickImagesAsync);
@@ -647,6 +694,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     public void Dispose()
     {
         if (_disposed) return; _disposed = true; _timer.Stop(); _lifetime.Cancel(); _selection?.Cancel();
+        _roleFlyout.Hide();
         _selection?.Dispose(); _follow?.Cancel(); _follow?.Dispose(); _client.Dispose(); _lifetime.Dispose();
     }
 }
