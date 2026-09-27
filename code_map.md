@@ -1,3 +1,13 @@
+## 2026-09-27 外壳拥有角色侧边栏（头像列表，直连 DataRoot）
+
+裁定：角色导航由 **PuddingDesktop 外壳**拥有，聊天组件不再自己画导航列。`MainWindow.xaml` 的 `NativeChatPane` 从 `Grid.ColumnSpan=2` 改为 `Grid.Column=1`，`ApplyLayout` 恒以 `SetNavigationWidth(0)` 通知聊天进入 compact；`ChatWorkspace.HostOwnsNavigation` 暴露该状态供验收断言，窄布局回退仍是聊天自带的角色 Flyout。
+
+`Source/PuddingDesktop/MainWindow.RoleNavigation.cs`（新 partial）用 `IChatClient`（Composition → Core 应用服务，**无聊天 HTTP/JWT/WebView**）读取工作空间、角色与状态，经 `PuddingChat.RoleNavigation.Build` 排序后渲染为 `RoleAvatarCard` 列表（`PersonPicture` + 名称 + 职责 + 权威状态）；头像走 `InProcessChatClient.LocalAvatar` 解析的 `wwwroot/assets/agent-avatars/*.png` file URI。读取失败显示真实原因而不是「没有角色」；`DuplicateAgentsDropped` 计数进工具提示，不静默折叠。角色选择、`OnRevealSource` 与 DS-00 设置目标绑定都改走侧边栏卡片；`LoadDemo` 用同一套卡片路径（合成 Agent，无头像）。
+
+纯逻辑在 `Source/PuddingChat/RoleNavigation.cs`（顺序保持调用方顺序、状态按 AgentId 匹配且缺失为 null、跨工作区同 AgentId 不合并、工作区内重复折叠并计数、冻结/停用仍列出但不可选），由 `PuddingChatTests/RoleNavigationTests.cs` 9 项固定。
+
+验证：`PuddingChatTests` 94/94、原生窗口检查 260 项；`TestScripts/test-pudding-desktop-kernel.ps1` 隔离 DataRoot 真实产品通过（PID 18280，0 错误/149 既有警告），报告新增 `hostOwnedRoleSidebar`/`roleSidebarLoadedFromDataRoot` 并已由脚本强制校验，日志 `temp/nc-role-sidebar-smoke.log`、报告 `temp/test-out/kernel-winui-9990a58d654845bab48680384b892064/report.json`。**未验证**：真实 DPI/缩放下的头像渲染、真实用户 DataRoot（用的是隔离目录）、多工作区/大量角色的滚动表现。
+
 ## 2026-09-27 NC-01 审批暂停恢复点（S1/S2 存储与调度片）
 
 `PuddingCode.Platform.ApprovalResumePoint`（`Source/PuddingCore/Platform/ApprovalResumeContracts.cs`）定义带版本的持久恢复点：身份绑定（workspace/agent/session/run/turn/command/invocation/approvalId）、原操作快照（toolId/args/定义/执行根/policyRevision）、冻结预算（截止时间/轮次/工具调用数/轮次位置）与 Runtime 私有状态 `RuntimeStateJson`（有版本、有 4 MiB 上限、必须是 JSON 对象）。`ToJson`/`TryParse` 是同一份实现，未知版本或任何越界一律拒绝还原。

@@ -5,6 +5,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
+using PuddingChat;
+using PuddingChat.WinUI;
 using PuddingDesktop.Foundation;
 using Windows.Graphics;
 
@@ -23,11 +25,11 @@ public sealed partial class MainWindow : Window
     private bool _demo;
     private HostingProbeWindow? _probe;
 
-    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels, IWorkspaceResourceSettings WorkspaceResources, IMemoryLibrarySettings MemoryLibrary, IStorageSettings Storage, ISecuritySettings Security, IAccessTokenSettings AccessTokens, IRoleSettings Roles, IUserSettings Users, ITeamSettings Teams, IRuntimeNodeSettings RuntimeNodes, IDiagnosticsSettings Diagnostics, ISessionDirectorySettings Sessions)> createKernel)
+    public MainWindow(Func<IDesktopServices, (IDesktopKernel Kernel, Func<PuddingChat.IChatClient> ChatClient, ILlmResourceSettings LlmSettings, IVoiceResourceSettings VoiceSettings, IAgentDirectorySettings AgentDirectory, IToolPluginSettings ToolPlugins, ISkillHubSettings SkillHub, ISkillPackageSettings SkillPackages, IWorkspaceSettings Workspaces, IChannelSettings Channels, IWorkspaceResourceSettings WorkspaceResources, IMemoryLibrarySettings MemoryLibrary, IStorageSettings Storage, ISecuritySettings Security, IAccessTokenSettings AccessTokens, IRoleSettings Roles, IUserSettings Users, ITeamSettings Teams, IRuntimeNodeSettings RuntimeNodes, IDiagnosticsSettings Diagnostics, ISessionDirectorySettings Sessions, ISubAgentRunSettings SubAgentRuns)> createKernel)
     {
         InitializeComponent();
         _desktopServices = new Kernel.WinUiDesktopServices(DispatcherQueue, ShowFromCore, OpenDocumentFromCore);
-        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels, _workspaceResources, _memoryLibrary, _storage, _security, _accessTokens, _roles, _users, _teams, _runtimeNodes, _diagnostics, _sessions) = createKernel(_desktopServices);
+        (_kernel, _createChatClient, _llmSettings, _voiceSettings, _agentDirectory, _toolPlugins, _skillHub, _skillPackages, _workspaces, _channels, _workspaceResources, _memoryLibrary, _storage, _security, _accessTokens, _roles, _users, _teams, _runtimeNodes, _diagnostics, _sessions, _subAgentRuns) = createKernel(_desktopServices);
         _kernel.StateChanged += OnKernelStateChanged;
         AppWindow.Closing += OnWindowClosing;
         ExtendsContentIntoTitleBar = true;
@@ -35,7 +37,6 @@ public sealed partial class MainWindow : Window
         SystemBackdrop = new MicaBackdrop();
         Root.ActualThemeChanged += (_, _) => UpdateCaptionColors();
         AppWindow.Resize(new SizeInt32(1540, 960));
-        RoleList.ItemsSource = _state.Roles;
         _state.PropertyChanged += OnStateChanged;
         Closed += (_, _) => { _state.PropertyChanged -= OnStateChanged; _probe?.Close(); };
     }
@@ -86,6 +87,7 @@ public sealed partial class MainWindow : Window
         BuildTimelinePanel();
         BuildDiagnosticsOverviewPanel();
         BuildSessionDirectoryPanel();
+        BuildSubAgentRunPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -110,8 +112,36 @@ public sealed partial class MainWindow : Window
             new(new("demo-project", "reviewer"), "demo/review", "代码审阅者", "检查边界 · 分析变更", "demo-reviewer-main", "布局示例 · 未运行"),
             new(new("demo-project", "tester"), "demo/test", "测试工程师", "设计验证 · 追踪证据", "demo-tester-main", "布局示例 · 未运行")
         ]);
+        // The sidebar renders agents; demo rows are synthetic agents so the same card and selection
+        // path is exercised as with live Core roles (only the avatar is absent).
+        var demoWorkspace = new Workspace("demo-project", "示例项目");
+        var demo = new[]
+        {
+            new Agent("builder", "代码工程师", Description: "实现功能 · 重构与修复", MainSessionId: "demo-builder-main"),
+            new Agent("reviewer", "代码审阅者", Description: "检查边界 · 分析变更", MainSessionId: "demo-reviewer-main"),
+            new Agent("tester", "测试工程师", Description: "设计验证 · 追踪证据", MainSessionId: "demo-tester-main"),
+        };
+        _renderingRoleSidebar = true;
+        try
+        {
+            RoleList.SelectedItem = null;
+            RoleList.Items.Clear();
+            _roleCards.Clear(); _roleCardItems.Clear(); _roleCardsByRole.Clear();
+            foreach (var agent in demo)
+            {
+                var card = new RoleAvatarCard(agent);
+                var item = new RoleNavigationItem(demoWorkspace, agent, new AgentStatus(agent.AgentId, "布局示例", "未运行", 0));
+                card.SetStatus(item.Status);
+                _roleCards.Add(card); _roleCardItems[card] = item;
+                _roleCardsByRole[item.Role] = card;
+                RoleList.Items.Add(card);
+            }
+        }
+        finally { _renderingRoleSidebar = false; }
         ProjectLabel.Text = "示例项目 / 不关联真实仓库";
         RoleCount.Text = _state.Roles.Count.ToString();
+        ToolTipService.SetToolTip(RoleCount, "布局示例中的角色数量。");
+        EmptyRoles.Text = "";
         EmptyRoles.Visibility = Visibility.Collapsed;
         DemoButton.Visibility = Visibility.Collapsed;
         RoleList.SelectedIndex = 0;
@@ -119,12 +149,29 @@ public sealed partial class MainWindow : Window
         PreviewNotice.Message = "角色与文档均为示例。草稿仅保存在本次进程内，不会提交给 Agent。";
     }
 
-    private void OnRoleSelected(object sender, SelectionChangedEventArgs args)
+    private async void OnRoleSelected(object sender, SelectionChangedEventArgs args)
     {
-        var role = RoleList.SelectedItem as RoleSummary;
-        if (role is not null) _state.SelectRole(role.Identity);
-        BindSettingsSelection(role);
+        if (_renderingRoleSidebar) return;
+        if (RoleList.SelectedItem is not RoleAvatarCard card) return;
+        if (!_roleCardItems.TryGetValue(card, out var item)) return;
+        // DS-00: the bound workspace/agent is part of the settings target, so it follows the sidebar.
+        BindSettingsSelection(ToRoleSummary(item));
+        if (_demo)
+        {
+            _state.SelectRole(new AgentIdentity(item.Role.WorkspaceId, item.Role.AgentId));
+            return;
+        }
+        await SelectSidebarRoleAsync(item);
     }
+
+    /// <summary>Settings binding only consumes the identity; the rest is presentation for the demo draft path.</summary>
+    private static RoleSummary ToRoleSummary(RoleNavigationItem item) => new(
+        new AgentIdentity(item.Role.WorkspaceId, item.Role.AgentId),
+        item.Agent.SourceTemplateId ?? "",
+        item.Label,
+        item.Agent.Description ?? "",
+        item.Agent.MainSessionId ?? "",
+        item.Status?.Status ?? "");
 
     private void OnStateChanged(object? sender, PropertyChangedEventArgs args)
     {
@@ -146,7 +193,8 @@ public sealed partial class MainWindow : Window
             WorkbenchPane.Visibility = showWorkbench && _kernel.Snapshot.State != DesktopKernelState.Ready ? Visibility.Visible : Visibility.Collapsed;
             NativeChatPane.Visibility = showWorkbench && _kernel.Snapshot.State == DesktopKernelState.Ready ? Visibility.Visible : Visibility.Collapsed;
             _nativeChat?.SetActive(_state.Page == ShellPage.Workbench && NativeChatPane.Visibility == Visibility.Visible);
-            NavigationPane.Visibility = NativeChatPane.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+            // The host owns role navigation: the sidebar stays visible next to the chat column.
+            NavigationPane.Visibility = _layout.Allocate(Root.ActualWidth).NavigationWidth > 0 ? Visibility.Visible : Visibility.Collapsed;
             SettingsPane.Visibility = _state.Page == ShellPage.Settings ? Visibility.Visible : Visibility.Collapsed;
             RuntimePane.Visibility = _state.Page == ShellPage.RuntimeCenter ? Visibility.Visible : Visibility.Collapsed;
             UpdateSettingsOverlay();
@@ -216,9 +264,10 @@ public sealed partial class MainWindow : Window
 
     private void OnRevealSource(object sender, RoutedEventArgs args)
     {
-        if (sender is Button { Tag: AgentIdentity agent })
+        if (sender is Button { Tag: AgentIdentity agent }
+            && _roleCardsByRole.TryGetValue(new RoleKey(agent.WorkspaceId, agent.AgentId), out var card))
         {
-            RoleList.SelectedItem = _state.Roles.FirstOrDefault(role => role.Identity == agent);
+            RoleList.SelectedItem = card;
             _state.Navigate(ShellPage.Workbench);
         }
     }
@@ -242,8 +291,10 @@ public sealed partial class MainWindow : Window
         var allocation = _layout.Allocate(Root.ActualWidth);
         NavigationColumn.Width = new(allocation.NavigationWidth);
         WorkspaceColumn.Width = new(allocation.WorkspaceWidth);
-        NavigationPane.Visibility = allocation.NavigationWidth > 0 && NativeChatPane.Visibility != Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
-        _nativeChat?.SetNavigationWidth(allocation.NavigationWidth);
+        NavigationPane.Visibility = allocation.NavigationWidth > 0 ? Visibility.Visible : Visibility.Collapsed;
+        // Width 0 is the host-owns-navigation contract: the chat keeps only its narrow-layout
+        // Flyout fallback and never renders a second role list next to the sidebar.
+        _nativeChat?.SetNavigationWidth(0);
         WorkspacePane.Visibility = allocation.WorkspaceWidth > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
     private void OnLayoutSliderChanged(object sender, RangeBaseValueChangedEventArgs args)

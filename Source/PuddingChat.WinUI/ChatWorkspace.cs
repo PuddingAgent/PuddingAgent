@@ -63,6 +63,12 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable, IAsyncDisp
     public RoleKey? SelectedRole => _state.Role;
     public Conversation? CurrentConversation => _state.Conversation;
     public int RoleCount => _cards.Count;
+
+    /// <summary>
+    /// True when the host owns role navigation (navigation width 0), so this workspace renders no
+    /// navigation column and only offers its narrow-layout Flyout fallback.
+    /// </summary>
+    public bool HostOwnsNavigation => _compactNavigation;
     public event EventHandler? SettingsRequested;
     public event EventHandler? RuntimeRequested;
     public event EventHandler? AdministrationRequested;

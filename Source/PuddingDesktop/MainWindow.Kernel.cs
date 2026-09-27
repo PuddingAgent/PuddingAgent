@@ -37,6 +37,7 @@ public sealed partial class MainWindow
     private readonly PuddingDesktop.Foundation.IRuntimeNodeSettings _runtimeNodes;
     private readonly PuddingDesktop.Foundation.IDiagnosticsSettings _diagnostics;
     private readonly PuddingDesktop.Foundation.ISessionDirectorySettings _sessions;
+    private readonly PuddingDesktop.Foundation.ISubAgentRunSettings _subAgentRuns;
     private string? _chatDataRoot;
     private string KernelSettingsPath => Path.Combine(App.StateRoot, "desktop.kernel.json");
     private sealed record KernelSettings(string DataRoot);
@@ -174,13 +175,20 @@ public sealed partial class MainWindow
         _demo = false;
         _state.ReplaceRoles([]);
         DemoButton.IsEnabled = false;
+        // The layout-example affordance only makes sense before Core is connected; the sidebar is real now.
+        DemoButton.Visibility = Visibility.Collapsed;
         ProjectLabel.Text = "已连接进程内 Core";
-        EmptyRoles.Text = "返回工作台，在原生角色导航中选择角色。";
+        EmptyRoles.Text = "正在读取角色…";
+        EmptyRoles.Visibility = Visibility.Visible;
         ApplyLayout();
+        // The shell sidebar is the only role list; the chat is told not to draw its own column.
+        _nativeChat.SetNavigationWidth(0);
+        await LoadRoleSidebarAsync(dataRoot);
     }
     private void ReleaseNativeChat()
     {
         _chatMountGeneration++;
+        ReleaseRoleSidebarClient();
         var chat = _nativeChat; _nativeChat = null; NativeChatPane.Content = null;
         if (chat is null) return;
         chat.Dispose(); // Cancel immediately; asynchronous release must finish before remount/exit.
@@ -233,16 +241,24 @@ public sealed partial class MainWindow
             (await http.GetAsync(new Uri(address, "/health/ready"))).EnsureSuccessStatusCode();
             var runningRoot = DataRootEditor.Text;
             // Exercise the real product mount with an isolated local role, without credentials or a model call.
+            var smokeRole = new RoleKey("", "");
             using (var chat = _createChatClient())
             {
                 var setup = chat as IWorkspaceSetupClient ?? throw new InvalidOperationException("Native setup is not mounted.");
                 var created = await setup.SetupWorkspaceAsync(new("default", "Native smoke workspace", "Native smoke role", null), CancellationToken.None);
+                smokeRole = new RoleKey(created.WorkspaceId, created.AgentId);
                 var agent = (await chat.GetAgentsAsync(created.WorkspaceId, CancellationToken.None)).Single(a => a.AgentId == created.AgentId);
                 await OpenWorkbenchAsync(runningRoot);
                 _state.Navigate(ShellPage.Workbench);
                 var mountedChat = _nativeChat ?? throw new InvalidOperationException("Native chat is not mounted.");
                 await mountedChat.InitializeAsync();
                 await mountedChat.SelectRoleAsync(created.WorkspaceId, agent);
+                // The host owns role navigation: the sidebar must list the real DataRoot role and the
+                // chat must not render a second, competing column.
+                if (!_roleCardItems.Values.Any(item => item.Role == smokeRole) || RoleList.Items.Count < 1)
+                    throw new InvalidOperationException("Shell role sidebar did not list the created DataRoot role.");
+                if (!mountedChat.HostOwnsNavigation)
+                    throw new InvalidOperationException("Host-owned sidebar requires the chat to stop drawing its navigation column.");
                 mountedChat.Composer.Draft = "Inspect the attached source.";
                 var fixturePath = Path.Combine(App.StateRoot, "native-chat-smoke.cs");
                 await File.WriteAllTextAsync(fixturePath, "class NativeChatSmoke { }\n");
@@ -270,6 +286,10 @@ public sealed partial class MainWindow
             await restartedChat.InitializeAsync();
             if (ReferenceEquals(previousChat, restartedChat) || restartedChat.RoleCount < 1)
                 throw new InvalidOperationException("Core restart must mount a new chat client and reload the saved role.");
+            // The sidebar must be reloaded against the restarted Core, not left pointing at the old one.
+            if (!_roleCardItems.Values.Any(item => item.Role == smokeRole)
+                || !restartedChat.HostOwnsNavigation)
+                throw new InvalidOperationException("Role sidebar was not reloaded and host-owned after Core restart.");
             await _kernel.StopAsync(CancellationToken.None);
             var nextRoot = Path.Combine(DataRootEditor.Text, "next-root");
             DataRootEditor.Text = nextRoot;
@@ -278,7 +298,7 @@ public sealed partial class MainWindow
             if (savedSettings?.DataRoot != nextRoot || _kernel.Snapshot.State != DesktopKernelState.Stopped)
                 throw new InvalidOperationException("DataRoot change must be saved for next launch without reusing the old local context.");
             Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
-            await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(new { success = true, processId = Environment.ProcessId, coreAssembly = hostAssembly.Location, uiCallback = true, restart = true, dataRootChangeSaved = true, nativeChatMounted = true, nativeRoleAndFileDraft = true, nativeChatRecreatedAfterRestart = true }));
+            await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(new { success = true, processId = Environment.ProcessId, coreAssembly = hostAssembly.Location, uiCallback = true, restart = true, dataRootChangeSaved = true, nativeChatMounted = true, nativeRoleAndFileDraft = true, nativeChatRecreatedAfterRestart = true, hostOwnedRoleSidebar = true, roleSidebarLoadedFromDataRoot = true }));
         }
         catch (Exception exception)
         {
