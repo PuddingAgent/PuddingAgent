@@ -438,3 +438,9 @@ Markdown/公式/代码高亮/图表继续允许 Web；不默认每条消息嵌�
 | 多 context registry / 多窗口 / 原生聊天 | 后续独立项目 | 不作为首版已具备能力 |
 
 2026-09-27 后续已实现 WinUI 骨架与 Foundation，并将原 WPF 纳入归档测试基线。具体构建、窗口/双 WebView2 验证与未完成项见 [骨架实施记录](../Reports/Desktop-WinUI3-Skeleton-2026-09-27.md)。后续同日已接入真实 Core DLL，见 [进程内内核实施记录](../Reports/Desktop-Core-DLL-Integration-2026-09-27.md)；未改既有生产配置/数据库/运行数据。
+
+### 2026-09-27：客户端首次使用
+
+原生入口“创建工作空间与角色”使用 `WorkspaceSetupForm`，通过独立 BCL `IWorkspaceSetupClient` 直接调用 Core `LocalWorkspaceSetupService`。创建工作空间与首个角色无需管理员账号；已有工作空间/角色直接复用，不覆盖名称、模型或模板。可选择已配置且启用的非 embedding、未废弃模型；无模型可先创建角色，但不表示模型调用可用。
+
+数据库工作空间先提交，角色由既有文件服务创建；角色写入失败保留工作空间，重试继续完成。进程内串行 gate 避免重复首角色，DataRoot 租约仍排除双 Host。UI 在保存期间阻止重复提交/关闭，失败留在表单，成功刷新并选中角色。服务商密钥不出 Core；模型新增/编辑尚留在“高级管理（Web）”，Web 认证和 Bootstrap 独立保留。

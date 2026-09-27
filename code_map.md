@@ -1,3 +1,7 @@
+## 2026-09-27 原生首次使用流程
+
+`PuddingChat/WorkspaceSetup.cs` → `PuddingChat.WinUI/WorkspaceSetupForm.cs` → Composition → Core `LocalWorkspaceSetupService`：无需账号创建工作空间和首个编码角色，选择已有模型，完成后直接选中角色。已有配置保留；服务商编辑仍在高级 Web 管理。验证见 Desktop 原生聊天实施记录。
+
 ## 2026-09-27 WinUI 3：原生角色聊天与进程内 Core 接入
 
 原地重建的 `Source/PuddingDesktop` 已接入 `PuddingChat.WinUI` 原生角色头像卡、消息卡、执行明细与输入框，通过 `PuddingDesktop.Composition/InProcessChatClient.cs` 直接调用 Core 应用服务。聊天不使用 HTTP/JWT/WebView2。客户端免登录，Composition 固定提供 Core 的 `single-user` 身份；启动自动加载角色，Web/远程认证保持独立。独立状态/原生窗口/真实 Core 组合验证与迁移边界见 [实施记录](Docs/Reports/Desktop-Native-Chat-2026-09-27.md)。

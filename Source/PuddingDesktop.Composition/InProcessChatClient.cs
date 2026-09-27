@@ -10,7 +10,7 @@ using Core = PuddingCode.Platform;
 namespace PuddingDesktop.Composition;
 
 /// <summary>Direct application-service adapter. No HTTP, controller invocation or JSON serialization.</summary>
-internal sealed class InProcessChatClient(IServiceScopeFactory scopes, CancellationToken hostStopping) : IChatClient
+internal sealed class InProcessChatClient(IServiceScopeFactory scopes, CancellationToken hostStopping) : IChatClient, IWorkspaceSetupClient
 {
     private readonly CancellationTokenSource _shutdown = CancellationTokenSource.CreateLinkedTokenSource(hostStopping);
     private readonly object _gate = new();
@@ -36,6 +36,22 @@ internal sealed class InProcessChatClient(IServiceScopeFactory scopes, Cancellat
             return task;
         }
     }
+    public Task<ModelChoice[]> GetSetupModelsAsync(CancellationToken ct) => ExecuteAsync(async (services, token) =>
+    {
+        var providers = services.GetRequiredService<LlmProviderFileService>();
+        var result = new List<ModelChoice>();
+        foreach (var provider in (await providers.ListProvidersAsync(token)).Where(p => p.IsEnabled))
+            foreach (var model in (await providers.ListModelsAsync(provider.ProviderId, token)).Where(m => !m.IsDeprecated && !m.IsEmbedding))
+                result.Add(new ModelChoice(provider.ProviderId, model.ModelId, $"{provider.Name} / {model.Name}"));
+        return result.ToArray();
+    }, ct);
+    public Task<WorkspaceSetupResult> SetupWorkspaceAsync(WorkspaceSetupRequest request, CancellationToken ct) => ExecuteAsync(async (services, token) =>
+    {
+        var input = request.Normalize();
+        var agentId = await services.GetRequiredService<LocalWorkspaceSetupService>().EnsureAsync(input.WorkspaceId,
+            input.WorkspaceName, input.RoleName, input.Model?.ProviderId, input.Model?.ModelId, token);
+        return new WorkspaceSetupResult(input.WorkspaceId, agentId);
+    }, ct);
     public Task<Workspace[]> GetWorkspacesAsync(CancellationToken ct) => ExecuteAsync(async (services, token) =>
     {
         return await services.GetRequiredService<PlatformDbContext>().Workspaces.AsNoTracking().OrderBy(w => w.Id)

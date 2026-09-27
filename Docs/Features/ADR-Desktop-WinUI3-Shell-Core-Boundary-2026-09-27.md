@@ -54,3 +54,7 @@
 `Source/PuddingDesktop` 已原地成为 WinUI 骨架；`Source/PuddingDesktop.WpfArchive` 保留旧 247 项测试基线。`Foundation` 已独立测试后接入。Core DLL、健康检查、工作台、直接 UI 回调和退出回收已有隔离 smoke；原生角色/API 同步、Agent 浏览器、托盘和完整产品升级仍待后续切片，详见[实施记录](../Reports/Desktop-WinUI3-Skeleton-2026-09-27.md)。
 
 详见[Core DLL 实施记录](../Reports/Desktop-Core-DLL-Integration-2026-09-27.md)。
+
+### 客户端首次使用补充（2026-09-27）
+
+客户端初始化不复用含管理员口令的 Web Bootstrap Controller。独立 `IWorkspaceSetupClient` 端口经 Composition 调用 Core `LocalWorkspaceSetupService`，创建/复用工作空间与首个角色，返回身份供导航。原生表单只选择已配置模型，密钥不出 Core。工作空间 DB 与角色文件采用可重试的分步完成，已有配置不覆盖；Web 账号与认证生命周期保持独立。

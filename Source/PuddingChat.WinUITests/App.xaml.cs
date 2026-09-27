@@ -29,6 +29,16 @@ public partial class App : Application
                     await control.SelectRoleAsync("test", fixture.Builder); control.Composer.Draft = "implement";
                     await control.SendAsync(); return;
                 }
+                var setup = new WorkspaceSetupForm(fixture);
+                await setup.LoadAsync(CancellationToken.None);
+                var setupLoaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                setup.Loaded += (_, _) => setupLoaded.TrySetResult();
+                var dialog = new ContentDialog { Content = setup, CloseButtonText = "关闭", XamlRoot = control.XamlRoot };
+                var showing = dialog.ShowAsync();
+                try { await setupLoaded.Task.WaitAsync(TimeSpan.FromSeconds(5)); Check(setup.IsLoaded, "native setup dialog loaded"); }
+                finally { dialog.Hide(); await showing; }
+                var created = await setup.SubmitAsync(CancellationToken.None);
+                Check(created?.AgentId == "builder" && fixture.Setup?.RoleName == "编码助手", "native setup calls application port");
                 Check(control.RoleCount == 2, "native role cards loaded");
                 await control.SelectRoleAsync("test", fixture.Builder);
                 control.Composer.Draft = "implement";
@@ -48,7 +58,7 @@ public partial class App : Application
                 Check(control.CurrentConversation?.AgentId == "reviewer", "late reply rejected");
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 11, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 13, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -56,8 +66,12 @@ public partial class App : Application
         _window.Activate();
     }
     private static void Check(bool condition, string label) { if (!condition) throw new InvalidOperationException(label); }
-    private sealed class Fixture : IChatClient
+    private sealed class Fixture : IChatClient, IWorkspaceSetupClient
     {
+        public WorkspaceSetupRequest? Setup;
+        public Task<ModelChoice[]> GetSetupModelsAsync(CancellationToken ct) => Task.FromResult<ModelChoice[]>([]);
+        public Task<WorkspaceSetupResult> SetupWorkspaceAsync(WorkspaceSetupRequest request, CancellationToken ct)
+        { Setup = request; return Task.FromResult(new WorkspaceSetupResult(request.WorkspaceId, "builder")); }
         public Agent Builder = new("builder", "代码工程师", Description: "实现功能与修复");
         public Agent Reviewer = new("reviewer", "代码审阅者", Description: "检查边界与验证");
         public PendingSend? Sent; public string? Cancelled; public bool Disposed;

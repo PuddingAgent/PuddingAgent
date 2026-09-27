@@ -5,3 +5,5 @@
 - `AgentRunProjectionService`: role run status/unread projection, same direct session repository.
 
 Desktop Composition consumes these application services in fresh scopes. Web controllers continue to consume the same projection interfaces. UI selection/drafts and WinUI types never enter this directory.
+
+`LocalWorkspaceSetupService`: account-free local workspace/first-role creation. Validates model availability before writes, preserves existing workspace/role settings, serializes concurrent setup, commits workspace DB state before file-backed role creation so failures can be retried. No account creation, JWT, Controller or Desktop reference.

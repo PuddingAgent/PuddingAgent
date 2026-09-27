@@ -36,6 +36,7 @@ public sealed class DesktopKernelFactory(IDesktopServices desktop) : IKernelSess
             builder.Services.AddControllers().AddApplicationPart(typeof(DesktopPresentationController).Assembly);
             builder.Services.AddSingleton<IHostLifetime, DesktopHostLifetime>();
             builder.Services.AddScoped<PuddingPlatform.Services.AgentChat.AgentMainSessionService>();
+            builder.Services.AddScoped<PuddingPlatform.Services.AgentChat.LocalWorkspaceSetupService>();
             app = PuddingApplicationHost.Build(builder);
             await PuddingApplicationHost.InitializeAsync(app, cancellationToken).ConfigureAwait(false);
             await app.StartAsync(cancellationToken).ConfigureAwait(false);

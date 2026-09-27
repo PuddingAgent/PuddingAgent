@@ -64,10 +64,21 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         var footer = new StackPanel { Spacing = 8 };
         var settings = new Button { Content = "设置", HorizontalAlignment = HorizontalAlignment.Stretch };
         var runtime = new Button { Content = "运行中心", HorizontalAlignment = HorizontalAlignment.Stretch };
-        var administration = new Button { Content = "初始化与配置", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var administration = new Button { Content = "高级管理（Web）", HorizontalAlignment = HorizontalAlignment.Stretch };
         settings.Click += (_, _) => SettingsRequested?.Invoke(this, EventArgs.Empty);
         runtime.Click += (_, _) => RuntimeRequested?.Invoke(this, EventArgs.Empty);
         administration.Click += (_, _) => AdministrationRequested?.Invoke(this, EventArgs.Empty);
+        if (_client is IWorkspaceSetupClient)
+        {
+            var setup = new Button { Content = "创建工作空间与角色", HorizontalAlignment = HorizontalAlignment.Stretch };
+            setup.Click += async (_, _) =>
+            {
+                setup.IsEnabled = false;
+                try { await GuardAsync(OpenSetupAsync); }
+                finally { setup.IsEnabled = true; }
+            };
+            footer.Children.Add(setup);
+        }
         footer.Children.Add(administration); footer.Children.Add(settings); footer.Children.Add(runtime); Grid.SetRow(footer, 2); navigation.Children.Add(footer); root.Children.Add(navigation);
         _chat.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _chat.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -93,6 +104,36 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         _timer.Tick += async (_, _) => { if (_active && IsLoaded) await GuardAsync(RefreshAsync); };
         Loaded += async (_, _) => { await GuardAsync(InitializeAsync); if (_active && _connected && !_disposed) _timer.Start(); };
         Unloaded += (_, _) => _timer.Stop();
+    }
+    private async Task OpenSetupAsync()
+    {
+        if (_client is not IWorkspaceSetupClient setupClient) return;
+        var form = new WorkspaceSetupForm(setupClient);
+        await form.LoadAsync(_lifetime.Token);
+        if (_disposed) return;
+        var dialog = new ContentDialog { Title = "准备编码工作空间", Content = form,
+            PrimaryButtonText = "创建或打开", CloseButtonText = "取消", XamlRoot = XamlRoot };
+        WorkspaceSetupResult? created = null;
+        var saving = false;
+        dialog.Closing += (_, args) => { if (saving && !_disposed) args.Cancel = true; };
+        dialog.PrimaryButtonClick += async (_, args) =>
+        {
+            var deferral = args.GetDeferral();
+            saving = true; dialog.IsPrimaryButtonEnabled = false;
+            try { created = await form.SubmitAsync(_lifetime.Token); args.Cancel = created is null; }
+            catch (OperationCanceledException) { args.Cancel = true; }
+            finally { saving = false; dialog.IsPrimaryButtonEnabled = true; deferral.Complete(); }
+        };
+        using var registration = _lifetime.Token.Register(() => DispatcherQueue.TryEnqueue(dialog.Hide));
+        await dialog.ShowAsync();
+        if (_disposed || created is null) return;
+        await LoadWorkspacesAsync();
+        if (_disposed) return;
+        _loadingWorkspaces = true;
+        try { _workspaces.SelectedItem = ((Workspace[])_workspaces.ItemsSource).First(w => w.WorkspaceId == created.WorkspaceId); }
+        finally { _loadingWorkspaces = false; }
+        await RefreshRolesAsync();
+        if (!_disposed && _cards.TryGetValue(created.AgentId, out var card)) _roles.SelectedItem = card;
     }
     private async Task GuardAsync(Func<Task> action)
     {
@@ -124,7 +165,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
             _messages.Children.Clear(); _messageCards.Clear(); _roles.Items.Clear(); _cards.Clear(); SetDraft();
             _workspaces.ItemsSource = workspaces;
             _notice.IsOpen = true; _notice.Severity = InfoBarSeverity.Informational; _notice.Title = "选择角色";
-            _notice.Message = workspaces.Length == 0 ? "暂无工作空间，请先完成 Core 初始化，然后刷新角色。" : "角色的主会话、草稿和运行状态会在这里展示。";
+            _notice.Message = workspaces.Length == 0 ? "暂无工作空间，请点击左侧“创建工作空间与角色”。" : "角色的主会话、草稿和运行状态会在这里展示。";
             if (workspaces.Length > 0) _workspaces.SelectedIndex = 0;
             await RefreshRolesAsync();
             if (_active && IsLoaded) _timer.Start();

@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 Push-Location $repoRoot
 try {
-    dotnet test Source/PuddingChatTests/PuddingChatTests.csproj --artifacts-path temp/build/native-chat --nologo
+    dotnet test Source/PuddingChatTests/PuddingChatTests.csproj --artifacts-path temp/build/native-chat --results-directory temp/test-out/native-chat --nologo -p:CollectCoverage=false
     if ($LASTEXITCODE -ne 0) { throw 'Chat component tests failed.' }
     if (-not $SkipBuild) {
         dotnet build Source/PuddingChat.WinUITests/PuddingChat.WinUITests.csproj -c Release --artifacts-path temp/build/native-chat --nologo

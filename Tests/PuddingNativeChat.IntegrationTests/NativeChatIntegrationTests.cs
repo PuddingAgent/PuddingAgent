@@ -27,7 +27,33 @@ public class NativeChatIntegrationTests
             using var http = new HttpClient();
             using var client = factory.CreateChatClient();
             // A fresh Core has no account: native reads must already work.
-            Assert.NotNull(await client.GetWorkspacesAsync(timeout.Token));
+            var originalWorkspaces = await client.GetWorkspacesAsync(timeout.Token);
+            Assert.NotNull(originalWorkspaces);
+            var localSetup = Assert.IsAssignableFrom<IWorkspaceSetupClient>(client);
+            using (var localNetwork = new LoopbackObserver(address))
+            {
+                Assert.NotNull(await localSetup.GetSetupModelsAsync(timeout.Token));
+                var input = new WorkspaceSetupRequest("default", "Native test", "Native builder", null);
+                var created = await Task.WhenAll(localSetup.SetupWorkspaceAsync(input, timeout.Token), localSetup.SetupWorkspaceAsync(input, timeout.Token));
+                Assert.Equal(created[0], created[1]);
+                var reused = await localSetup.SetupWorkspaceAsync(input with { WorkspaceName = "Do not rename", RoleName = "Do not replace" }, timeout.Token);
+                Assert.Equal(created[0], reused);
+                Assert.Equal("Native builder", Assert.Single(await client.GetAgentsAsync("default", timeout.Token)).Label);
+                Assert.Equal(Assert.Single(originalWorkspaces).Name, Assert.Single(await client.GetWorkspacesAsync(timeout.Token)).Name);
+                await Assert.ThrowsAsync<ArgumentException>(() => localSetup.SetupWorkspaceAsync(input with { WorkspaceId = "../outside" }, timeout.Token));
+                await Assert.ThrowsAsync<InvalidOperationException>(() => localSetup.SetupWorkspaceAsync(input with {
+                    WorkspaceId = "invalid-model", Model = new("missing", "missing", "missing") }, timeout.Token));
+                Assert.Single(await client.GetWorkspacesAsync(timeout.Token));
+                var newWorkspace = await localSetup.SetupWorkspaceAsync(input with { WorkspaceId = "native-new" }, timeout.Token);
+                Assert.Equal("native-new", newWorkspace.WorkspaceId);
+                Assert.Single(await client.GetAgentsAsync("native-new", timeout.Token));
+                Assert.Equal("Native test", (await client.GetWorkspacesAsync(timeout.Token)).Single(w => w.WorkspaceId == "native-new").Name);
+                Assert.Empty(localNetwork.Requests);
+            }
+            using var status = await http.GetAsync(new Uri(address, "/api/bootstrap/status"), timeout.Token);
+            using var statusBody = JsonDocument.Parse(await status.Content.ReadAsStringAsync(timeout.Token));
+            Assert.False(statusBody.RootElement.GetProperty("hasAdmin").GetBoolean());
+            Assert.Equal(0, statusBody.RootElement.GetProperty("userCount").GetInt32());
             var password = "Test-" + Guid.NewGuid().ToString("N") + "aA1";
             using var setup = await http.PostAsJsonAsync(new Uri(address, "/api/bootstrap/complete"), new
             { admin = new { userId = "native-test", email = "native@example.invalid", password },
@@ -50,7 +76,7 @@ public class NativeChatIntegrationTests
             using var network = new LoopbackObserver(address);
 
             var workspaces = await client.GetWorkspacesAsync(timeout.Token);
-            var workspace = Assert.Single(workspaces);
+            var workspace = Assert.Single(workspaces, w => w.WorkspaceId == "default");
             var agents = await client.GetAgentsAsync(workspace.WorkspaceId, timeout.Token);
             var agent = Assert.Single(agents, a => a.Name == "Native builder" || a.DisplayName == "Native builder");
             var role = new RoleKey(workspace.WorkspaceId, agent.AgentId);
