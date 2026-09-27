@@ -14,4 +14,17 @@ public interface IDesktopKernel : IAsyncDisposable
     event EventHandler? StateChanged;
     Task StartAsync(string dataRoot, CancellationToken cancellationToken);
     Task StopAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Kernel generation, bound selection and outstanding-operation accounting for settings pages.
+    /// Reads are free even when Core is not ready so every category stays browsable.
+    /// </summary>
+    SettingsOperationGate Settings { get; }
+
+    /// <summary>
+    /// Runs one settings operation inside an isolated Core scope. Refuses (never fakes) when Core
+    /// is not ready or is stopping, and invalidates the result when the generation/selection moved on.
+    /// </summary>
+    Task<T> RunSettingsAsync<T>(string operationId,
+        Func<ISettingsScope, CancellationToken, Task<T>> body, CancellationToken cancellationToken = default);
 }

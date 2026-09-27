@@ -1,3 +1,7 @@
+## 2026-09-27 DS-00 设置接入基线与生命周期
+
+`PuddingDesktop.Foundation/SettingsOperations.cs` 定义设置操作边界（`ISettingsScope`/`ISettingsOperationHost`/`SettingsOperationGate`/`SettingsVersionGuard`），`LocalDesktopIdentity.cs` 固定本机单用户身份；`InProcessKernel` 按内核代次拒绝未就绪/停止中的操作并在释放会话前排空，`DesktopKernelFactory.Session` 每操作开一个 Core DI 作用域。Shell 只传委托，不新建 HTTP 客户端、REST 适配层或逐接口转发器。接入方式与集成清单见 [DS-00 接入说明](Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。验证：Foundation 36 项、Composition 2 项（含真实 Host 进程内调用）、WinUI 窗口 smoke 93 项通过。
+
 ## 2026-09-27 Admin 原生设置骨架
 
 `PuddingDesktop.Foundation/SettingsCatalog.json` + `SettingsCatalog.cs` 定义 17 分类、49 页签、64 卡片与搜索；`PuddingDesktop/MainWindow.Settings.cs` 和 XAML 提供居中设置层、应用菜单入口、分类/页签、占位卡片及外观设置。后续直接调用 Core 既有方法，不新增 HTTP/逐接口包装层。完整字段、Core 缺口及 DS-00~17 实施任务见 [DeepSeek 交接任务书](Docs/Tasks/Desktop-Admin-Settings-DeepSeek-2026-09-27.md)，验证见 [实施记录](Docs/Reports/Desktop-Admin-Settings-Skeleton-2026-09-27.md)。

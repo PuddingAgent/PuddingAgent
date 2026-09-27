@@ -54,36 +54,69 @@ public sealed class DesktopKernelFactory(IDesktopServices desktop) : IKernelSess
         }
     }
 
-    private sealed class Session(WebApplication app, PuddingDataRootLease lease, Uri address) : IKernelSession
+    private sealed class Session(WebApplication app, PuddingDataRootLease lease, Uri address) : IKernelSession, ISettingsOperationHost
     {
         private bool _disposed;
         private bool _stopping;
         private readonly object _gate = new();
         private readonly List<InProcessChatClient> _clients = [];
+        private readonly List<Task> _settings = [];
+        private readonly IServiceScopeFactory _scopes = app.Services.GetRequiredService<IServiceScopeFactory>();
         public PuddingChat.IChatClient CreateChatClient()
         {
             lock (_gate)
             {
                 if (_disposed || _stopping) throw new InvalidOperationException("Core 正在停止。");
-                var client = new InProcessChatClient(app.Services.GetRequiredService<IServiceScopeFactory>(), Stopping);
+                var client = new InProcessChatClient(_scopes, Stopping);
                 _clients.Add(client); return client;
             }
         }
         public Uri WorkbenchAddress => new(address, "/admin/");
         public CancellationToken Stopping => app.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping;
+        public Task<T> RunAsync<T>(Func<ISettingsScope, CancellationToken, Task<T>> body, CancellationToken cancellationToken)
+        {
+            Task<T> operation;
+            lock (_gate)
+            {
+                // Refuse rather than queue: a stopping host must not accept new settings writes.
+                if (_disposed || _stopping)
+                    throw new SettingsUnavailableException(SettingsUnavailable.KernelStopping, "Core 正在停止，已拒绝新的设置操作。");
+                operation = Task.Run(async () =>
+                {
+                    using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, Stopping);
+                    linked.Token.ThrowIfCancellationRequested();
+                    await using var scope = new SettingsOperationScope(_scopes);
+                    return await body(scope, linked.Token).ConfigureAwait(false);
+                }, CancellationToken.None);
+                _settings.Add(operation);
+                _ = operation.ContinueWith(completed => { lock (_gate) _settings.Remove(completed); },
+                    CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            }
+            return operation;
+        }
+        private (InProcessChatClient[] Clients, Task[] Settings) BeginStop()
+        {
+            lock (_gate) { _stopping = true; return (_clients.ToArray(), _settings.ToArray()); }
+        }
+        private static async Task DrainSettingsAsync(Task[] settings, CancellationToken cancellationToken)
+        {
+            if (settings.Length == 0) return;
+            try { await Task.WhenAll(settings).WaitAsync(cancellationToken).ConfigureAwait(false); }
+            catch when (!cancellationToken.IsCancellationRequested) { /* each caller observes its own failure */ }
+        }
         public async Task StopAsync(CancellationToken cancellationToken)
         {
-            InProcessChatClient[] clients;
-            lock (_gate) { _stopping = true; clients = _clients.ToArray(); }
+            var (clients, settings) = BeginStop();
             foreach (var client in clients) await client.DrainAsync(cancellationToken).ConfigureAwait(false);
+            await DrainSettingsAsync(settings, cancellationToken).ConfigureAwait(false);
             await app.StopAsync(cancellationToken).ConfigureAwait(false);
         }
         public async ValueTask DisposeAsync()
         {
             if (_disposed) return;
-            InProcessChatClient[] clients;
-            lock (_gate) { _stopping = true; clients = _clients.ToArray(); }
+            var (clients, settings) = BeginStop();
             foreach (var client in clients) await client.DrainAsync(CancellationToken.None).ConfigureAwait(false);
+            await DrainSettingsAsync(settings, CancellationToken.None).ConfigureAwait(false);
             await app.DisposeAsync().ConfigureAwait(false);
             lease.Dispose();
             await Serilog.Log.CloseAndFlushAsync().ConfigureAwait(false);

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using PuddingDesktop.Composition;
 using PuddingDesktop.Foundation;
 
@@ -48,6 +49,54 @@ public sealed class DesktopCompositionTests
         }
         finally { await kernel.DisposeAsync(); Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
+    [Fact]
+    public async Task SettingsOperationsRunInsideRealHost_AndStopInvalidatesThem()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        await using var kernel = new InProcessKernel(new DesktopKernelFactory(new Desktop()));
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await kernel.StartAsync(root, timeout.Token);
+            Assert.Equal(DesktopKernelState.Ready, kernel.Snapshot.State);
+
+            kernel.Settings.SetSelection(new SettingsSelection("default", "general-assistant-001"));
+            var stamp = kernel.Settings.Capture();
+            Assert.True(stamp.Selection.IsSpecified);
+
+            // Direct call into the scoped Core service: no HttpClient, no controller, no JSON hop.
+            var providers = await kernel.RunSettingsAsync("llm.providers.read", async (scope, _) =>
+                (await scope.Services.GetRequiredService<PuddingPlatform.Services.LlmProviderFileService>()
+                    .ListProvidersAsync(CancellationToken.None)).Count);
+            Assert.True(providers >= 0);
+            kernel.Settings.EnsureCurrent(stamp);
+            Assert.Equal(0, kernel.Settings.OutstandingOperations);
+
+            await kernel.StopAsync(timeout.Token);
+            // The previous generation and its selection can no longer be written into.
+            Assert.False(kernel.Settings.IsCurrent(stamp));
+            var refused = await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => kernel.RunSettingsAsync("llm.providers.read", (_, _) => Task.FromResult(0)));
+            Assert.Equal(SettingsUnavailable.KernelStopped, refused.Reason);
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static async Task<string> CreateIsolatedDataRootAsync()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "Pudding-kernel-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "config"));
+        var key = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
+        await File.WriteAllTextAsync(Path.Combine(root, "config", "system.json"),
+            System.Text.Json.JsonSerializer.Serialize(new { Jwt = new { Key = key, Issuer = "kernel-test", Audience = "kernel-test" } }));
+        return root;
+    }
+
     private sealed class Desktop : IDesktopServices
     {
         public ShellPage? Page; public int ProcessId;

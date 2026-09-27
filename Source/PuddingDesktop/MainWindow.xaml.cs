@@ -86,7 +86,9 @@ public sealed partial class MainWindow : Window
 
     private void OnRoleSelected(object sender, SelectionChangedEventArgs args)
     {
-        if (RoleList.SelectedItem is RoleSummary role) _state.SelectRole(role.Identity);
+        var role = RoleList.SelectedItem as RoleSummary;
+        if (role is not null) _state.SelectRole(role.Identity);
+        BindSettingsSelection(role);
     }
 
     private void OnStateChanged(object? sender, PropertyChangedEventArgs args)
@@ -306,9 +308,26 @@ public sealed partial class MainWindow : Window
             _state.Navigate(ShellPage.Workbench);
             Check(ShellInteractionHost.IsEnabled, "closing settings restores background input");
             _state.Navigate(ShellPage.RuntimeCenter); Check(RuntimePane.Visibility == Visibility.Visible, "runtime center without Core");
+            // DS-00: without Core every category stays browsable, but no settings operation may fake success.
+            Check(_kernel.Settings.State == DesktopKernelState.Stopped, "settings availability reads the real kernel state");
+            Check(_kernel.Settings.Capture().IsUnbound, "settings are browsable before any Core generation");
+            try
+            {
+                await _kernel.RunSettingsAsync("smoke.offline", (_, _) => Task.FromResult(0));
+                throw new InvalidOperationException("a settings operation must not report success without Core");
+            }
+            catch (SettingsUnavailableException error)
+            {
+                Check(error.Reason == SettingsUnavailable.KernelStopped, "settings operation refused without Core");
+            }
             LoadDemo(); DraftEditor.Text = "builder draft";
             OpenDemoDocument(WorkspaceDocumentKind.File);
-            RoleList.SelectedIndex = 1; Check(DraftEditor.Text == "", "role drafts isolated");
+            Check(_kernel.Settings.Selection == new SettingsSelection("demo-project", "builder"), "settings selection follows the chosen Agent");
+            var boundStamp = _kernel.Settings.Capture();
+            RoleList.SelectedIndex = 1;
+            Check(!_kernel.Settings.IsCurrent(boundStamp), "Agent switch invalidates earlier settings stamps");
+            Check(_kernel.Settings.IsCurrent(_kernel.Settings.Capture()), "new settings stamp is current after the switch");
+            Check(DraftEditor.Text == "", "role drafts isolated");
             Check(_state.SelectedDocument?.Owner.Agent.AgentId == "builder", "document ownership stable");
             RoleList.SelectedIndex = 0; Check(DraftEditor.Text == "builder draft", "draft restored");
             foreach (var kind in Enum.GetValues<WorkspaceDocumentKind>()) OpenDemoDocument(kind);

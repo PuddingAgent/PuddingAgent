@@ -11,14 +11,32 @@ public sealed class InProcessKernel(IKernelSessionFactory factory) : IDesktopKer
     private string? _dataRoot;
     private volatile bool _disposed;
     private DesktopKernelSnapshot _snapshot = new(DesktopKernelState.Stopped, "内核未启动");
+    private readonly SettingsOperationGate _settings = new();
     public DesktopKernelSnapshot Snapshot => Volatile.Read(ref _snapshot);
+    public SettingsOperationGate Settings => _settings;
     public event EventHandler? StateChanged;
 
     private void Set(DesktopKernelState state, string description, Uri? address = null)
     {
         Volatile.Write(ref _snapshot, new(state, description, address));
+        _settings.SetState(state);
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    public async Task<T> RunSettingsAsync<T>(string operationId,
+        Func<ISettingsScope, CancellationToken, Task<T>> body, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationId);
+        ArgumentNullException.ThrowIfNull(body);
+        // Readiness and stopping are decided by the gate, not by a racy snapshot read.
+        _settings.EnsureAvailable();
+        if (_session is not ISettingsOperationHost host)
+            throw new SettingsUnavailableException(SettingsUnavailable.KernelNotConfigured,
+                "当前内核会话未提供设置操作边界，设置页暂时只能浏览。");
+        return await _settings.RunAsync<T>((_, _) => host.RunAsync(body, cancellationToken), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
 
     public async Task StartAsync(string dataRoot, CancellationToken cancellationToken)
     {
@@ -37,6 +55,8 @@ public sealed class InProcessKernel(IKernelSessionFactory factory) : IDesktopKer
             lock (_sync) _startup = startup;
             try
             {
+                // A new generation invalidates every stamp and selection captured from the previous session.
+                _settings.KernelChanged(DesktopKernelState.Starting);
                 Set(DesktopKernelState.Starting, "正在初始化进程内 Core…");
                 _session = await Task.Run(() => factory.StartAsync(root, startup.Token), CancellationToken.None).ConfigureAwait(false);
                 _dataRoot = root;
@@ -56,6 +76,7 @@ public sealed class InProcessKernel(IKernelSessionFactory factory) : IDesktopKer
             }
             catch
             {
+                _settings.KernelChanged(DesktopKernelState.Failed);
                 Set(DesktopKernelState.Failed, "内核启动失败或已取消，请查看诊断日志。");
                 if (_session is not null) { await _session.DisposeAsync().ConfigureAwait(false); _session = null; }
                 throw;
@@ -70,6 +91,9 @@ public sealed class InProcessKernel(IKernelSessionFactory factory) : IDesktopKer
     private async Task StopCoreAsync(CancellationToken cancellationToken, IKernelSession? expectedSession)
     {
         if (expectedSession is null) { lock (_sync) _startup?.Cancel(); }
+        // Refuse new settings work immediately, then cancel and drain accepted work before releasing the session.
+        _settings.SetState(DesktopKernelState.Stopping);
+        await _settings.DrainAsync(cancellationToken).ConfigureAwait(false);
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -84,9 +108,10 @@ public sealed class InProcessKernel(IKernelSessionFactory factory) : IDesktopKer
                     await _session.DisposeAsync().ConfigureAwait(false);
                     _session = null;
                 }
-                catch { Set(DesktopKernelState.Failed, "内核停止未完成；请重试停止。"); throw; }
+                catch { _settings.KernelChanged(DesktopKernelState.Failed); Set(DesktopKernelState.Failed, "内核停止未完成；请重试停止。"); throw; }
             }
             _dataRoot = null;
+            _settings.KernelChanged(DesktopKernelState.Stopped);
             Set(DesktopKernelState.Stopped, "内核已停止");
         }
         finally { _gate.Release(); }

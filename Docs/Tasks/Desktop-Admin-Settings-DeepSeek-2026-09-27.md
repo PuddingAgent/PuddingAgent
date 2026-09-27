@@ -119,7 +119,11 @@
 
 ### DS-00 — 接入基线与生命周期（P0，先行）
 
+状态：**已完成（2026-09-27）**。接入方式、本机身份结论、逐步接入清单与复现命令见 [DS-00 设置接入基线与生命周期](../Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。
+
 保留已完成骨架；确定本机管理权限与现有 Composition 的方法绑定位置。只为实际业务职责建立必要操作，不创建通用管理 API 包装器。实现并测试 Host 未就绪、停止中拒绝新操作、取消/排空、实例选择代次、版本冲突。保留外观配置和运行中心入口；补快捷键可单独切片。交付：一页接入说明、生命周期集成测试、无 Core 时所有设置分类仍可浏览。
+
+已交付：`IDesktopKernel.RunSettingsAsync` + `SettingsOperationGate`（Foundation，BCL 叶）；`DesktopKernelFactory.Session` 实现 `ISettingsOperationHost`，每操作一个 Core DI 作用域；`LocalDesktopIdentity` 固定本机身份；13 项独立测试 + 1 项真实 Host 集成测试 + 6 项窗口检查。
 
 ### DS-01 — 通用、语言与关于（P1；依赖 DS-00）
 
@@ -629,3 +633,10 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 ## 9. 本轮验证记录
 
 见 `Docs/Reports/Desktop-Admin-Settings-Skeleton-2026-09-27.md`。本文的业务任务仍待 DeepSeek 实施，不因骨架测试通过而变更状态。
+
+## 10. 实施进度
+
+| 任务 | 状态 | 证据 |
+|---|---|---|
+| DS-00 接入基线与生命周期 | 已完成 2026-09-27 | [接入说明](../Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)；Foundation 36 项、Composition 2 项（含真实 Host）、窗口 smoke 93 项通过 |
+| DS-01 … DS-17 | 待实施 | — |

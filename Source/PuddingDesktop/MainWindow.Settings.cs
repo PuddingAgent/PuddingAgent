@@ -18,6 +18,15 @@ public sealed partial class MainWindow
 
     private void InitializeSettingsNavigation() => FilterSettings();
 
+    /// <summary>
+    /// DS-00: the bound workspace/agent is part of the settings target. Changing the role invalidates
+    /// in-flight settings work, so a late result cannot write into the newly selected role.
+    /// </summary>
+    private void BindSettingsSelection(RoleSummary? role)
+        => _kernel.Settings.SetSelection(role is null
+            ? SettingsSelection.None
+            : new SettingsSelection(role.Identity.WorkspaceId, role.Identity.AgentId));
+
     private void OnSettingsSearchChanged(object sender, TextChangedEventArgs args)
     {
         if (_loaded) FilterSettings();

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PuddingChat;
 using PuddingCode.Platform;
+using PuddingDesktop.Foundation;
 using PuddingPlatform.Data;
 using PuddingPlatform.Services;
 using PuddingPlatform.Services.AgentChat;
@@ -17,7 +18,7 @@ internal sealed class InProcessChatClient(IServiceScopeFactory scopes, Cancellat
     private readonly HashSet<Task> _operations = [];
     private bool _closed;
     // Matches Core single-user session ownership; never supplied by the UI or HTTP ingress.
-    private const string LocalUserId = "single-user";
+    private const string LocalUserId = LocalDesktopIdentity.UserId;
     private Task<T> ExecuteAsync<T>(Func<IServiceProvider, CancellationToken, Task<T>> action, CancellationToken ct)
     {
         lock (_gate)
