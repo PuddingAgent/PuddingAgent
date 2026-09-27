@@ -210,3 +210,9 @@ Desktop Release 发布通过（`temp/native-transfer-publish.log`，Core 有既�
 NeedHuman、DeferredDependency 和终局拒绝现在在执行器出口保持区别；进程内调用合同与 SkillResult 传递原始状态/退出码，流式工具事件增加 status。原生 TurnFlow 不再将人工决定或依赖等待一律覆盖为失败。未改变权限、熔断、Run 调度或工具执行次数，没有新增 HTTP 调用。
 
 验证：Runtime 定向回归 174/174（工具基础设施、调用适配、执行上下文，含新增 3 个准入分类案例及真实 facade 透传断言），BCL 聊天测试 50/50。日志为 temp/native-admission-runtime-final.log 与 temp/native-admission-status.log。构建有既存分析器警告，无编译错误；本轮未运行原生窗口或真实模型端到端审批验收。请求生产者、持久暂停/恢复和产品审批卡接入仍未完成，不能视为审批闭环交付。未改动 D:\data，未重启 Desktop。
+
+## 消息执行明细生命周期（2026-09-27）
+
+修复 MessageCard 的异步明细竞态：旧实现将 loaded/loading 保存在构造器闭包中，Run 更新只清理非视觉状态，既不能重新加载，也可能让旧 Run 的回执写入新视图。现由卡片持有每次加载的取消源；Run 变化取消等待、清空缓存与旧控件并重新允许加载，Dispose 取消等待且不缓存晚到结果。同消息 ID 是控件更新前提，明细响应必须匹配消息 ID；已存在的当前 canonical 事件优先于较早明细快照，历史缺失事件仍可补入。
+
+验证：BCL 50/50、原生窗口 93 项，构建零警告零错误（temp/native-message-details-final.log）。新增 7 项覆盖并发去重、旧 Run 等待取消/新 Run 立即加载、晚到旧回执隔离、当前快照保留、虚拟化回收缓存恢复、Dispose 后回执不入缓存、跨消息响应拒绝后可重试。最初测试按思考卡数量断言未考虑连续思考合并，已改为核对显示正文，并复验通过。本轮为独立 WinUI 组件验证；未替换运行中 Desktop，未修改 Core 或 D:\data。

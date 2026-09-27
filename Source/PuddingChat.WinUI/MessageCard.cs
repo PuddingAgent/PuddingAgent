@@ -8,6 +8,10 @@ namespace PuddingChat.WinUI;
 public sealed class MessageCard : UserControl, IDisposable
 {
     private Expander? _process;
+    private readonly StackPanel _details = new() { Spacing = 8 };
+    private readonly Func<Task<ProcessDetails>>? _loadDetails;
+    private CancellationTokenSource? _detailLoad;
+    private bool _detailsLoaded;
     private readonly TurnContentView _flow;
     private readonly MessageViewState _state;
     private readonly CancellationTokenSource _viewLifetime;
@@ -23,6 +27,9 @@ public sealed class MessageCard : UserControl, IDisposable
     private bool _disposed;
     public void Update(ChatMessage message)
     {
+        if (_disposed) return;
+        if (_message is not null && _message.MessageId != message.MessageId)
+            throw new ArgumentException("A message card cannot change message identity.", nameof(message));
         _message = message;
         var parts = message.ContentParts ?? [];
         if (!_parts.SequenceEqual(parts))
@@ -40,8 +47,10 @@ public sealed class MessageCard : UserControl, IDisposable
         }
         _header.Text = $"{message.SourceName}  ·  {message.CreatedAt.ToLocalTime():HH:mm}  ·  {message.Status}";
         if (_state.RunId != message.RunId)
-        { _events.Clear(); _state.RunId = message.RunId; _state.Details = null; _state.Expansions.Clear(); _state.DetailsExpanded = false;
-            _state.FlowWindow.Reset(); _state.DetailWindow.Reset(); }
+        { _detailLoad?.Cancel(); _detailLoad = null; _detailsLoaded = false; _details.Children.Clear();
+            if (_process is not null) _process.IsExpanded = false;
+            _events.Clear(); _state.RunId = message.RunId; _state.Details = null; _state.Expansions.Clear(); _state.DetailsExpanded = false;
+            _state.FlowWindow.Reset(); _state.DetailWindow.Reset(); _flow.Update([], ""); }
         foreach (var item in message.ProcessItems) _events[item.Id] = item;
         _flow.Update(_events.Values, message.Content);
         _outcome.IsOpen = message.TurnOutcome is { Status: not "succeeded" };
@@ -54,6 +63,7 @@ public sealed class MessageCard : UserControl, IDisposable
     public MessageCard(ChatMessage message, Func<Task<ProcessDetails>>? loadDetails = null, IImageAttachmentClient? imageClient = null, string? workspace = null, CancellationToken ct = default,
         MessageViewState? state = null)
     {
+        _loadDetails = loadDetails;
         _state = state ?? new(); _events = _state.Events; _flow = new(_state.Expansions, _state.FlowWindow);
         _viewLifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _imageClient = imageClient; _workspace = workspace; _ct = _viewLifetime.Token;
@@ -62,38 +72,14 @@ public sealed class MessageCard : UserControl, IDisposable
         panel.Children.Add(_outcome);
         if (loadDetails is not null || message.Role != "user")
         {
-            var details = new StackPanel { Spacing = 8 };
             var expander = new Expander { Header = "加载完整执行明细",
-                Content = details, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+                Content = _details, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
             _process = expander;
             expander.Visibility = message.Role != "user" || _outcome.IsOpen ? Visibility.Visible : Visibility.Collapsed;
-            var loaded = false; var loading = false;
             expander.Expanding += async (_, _) =>
             {
                 _state.DetailsExpanded = true;
-                if (loaded || loading) return; loading = true;
-                try
-                {
-                    var result = _state.Details ?? (loadDetails is null ? new ProcessDetails(message.MessageId, message.ProcessItems) : await loadDetails().WaitAsync(_ct));
-                    _ct.ThrowIfCancellationRequested(); _state.Details = result;
-                    details.Children.Clear();
-                    if (_message.Role == "user")
-                    {
-                        // Execution belongs to Core, not to the user's authored text.
-                        var execution = new TurnContentView(_state.Expansions, _state.DetailWindow);
-                        execution.Update(result.ProcessItems, ""); details.Children.Add(execution);
-                    }
-                    else
-                    {
-                        foreach (var item in result.ProcessItems) _events[item.Id] = item;
-                        _flow.Update(_events.Values, _message.Content);
-                    }
-                    if (result.Window?.HasMoreBefore == true) details.Children.Insert(0, new TextBlock { Text = "当前为部分事件窗口。", Opacity = .6 });
-                    loaded = true;
-                }
-                catch (OperationCanceledException) { }
-                catch (Exception) { details.Children.Clear(); details.Children.Add(new TextBlock { Text = "过程明细加载失败，请收起后重试。" }); }
-                finally { loading = false; }
+                await LoadProcessDetailsAsync();
             };
             expander.Collapsed += (_, _) => _state.DetailsExpanded = false;
             expander.IsExpanded = _state.DetailsExpanded;
@@ -107,6 +93,43 @@ public sealed class MessageCard : UserControl, IDisposable
         surface.Padding = new Thickness(20); surface.Margin = new Thickness(0, 0, 0, 12); surface.CornerRadius = new CornerRadius(14); surface.Child = panel;
         if (message.Role == "user") { surface.HorizontalAlignment = HorizontalAlignment.Right; surface.MaxWidth = 680; }
         Content = surface;
+    }
+    public async Task LoadProcessDetailsAsync()
+    {
+        if (_disposed || _detailsLoaded || _detailLoad is not null) return;
+        using var load = CancellationTokenSource.CreateLinkedTokenSource(_ct);
+        _detailLoad = load;
+        var message = _message;
+        try
+        {
+            var result = _state.Details ?? (_loadDetails is null
+                ? new ProcessDetails(message.MessageId, message.ProcessItems)
+                : await _loadDetails().WaitAsync(load.Token));
+            load.Token.ThrowIfCancellationRequested();
+            if (result.MessageId != message.MessageId) throw new InvalidOperationException("Unexpected process message identity.");
+            _state.Details = result;
+            _details.Children.Clear();
+            if (_message.Role == "user")
+            {
+                var execution = new TurnContentView(_state.Expansions, _state.DetailWindow);
+                execution.Update(result.ProcessItems, ""); _details.Children.Add(execution);
+            }
+            else
+            {
+                // The current snapshot wins over older detail responses for the same event.
+                foreach (var item in result.ProcessItems) _events.TryAdd(item.Id, item);
+                _flow.Update(_events.Values, _message.Content);
+            }
+            if (result.Window?.HasMoreBefore == true) _details.Children.Insert(0, new TextBlock { Text = "当前为部分事件窗口。", Opacity = .6 });
+            _detailsLoaded = true;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception)
+        {
+            if (!load.IsCancellationRequested)
+            { _details.Children.Clear(); _details.Children.Add(new TextBlock { Text = "过程明细加载失败，请收起后重试。" }); }
+        }
+        finally { if (ReferenceEquals(_detailLoad, load)) _detailLoad = null; }
     }
     public static UIElement RenderText(string text) => new MarkdownView(text);
     public void Dispose() { if (_disposed) return; _disposed = true; _viewLifetime.Cancel(); _viewLifetime.Dispose(); }

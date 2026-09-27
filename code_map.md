@@ -32,6 +32,8 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 
 ## 2026-09-27 原生聊天交错消息流
 
+`PuddingChat.WinUI/MessageCard.LoadProcessDetailsAsync` 按 Run 隔离明细加载：运行身份变化取消旧等待并清空旧视图/缓存，释放控件取消等待，拒绝跨消息结果，历史明细不覆盖当前快照。`MessageDetailsChecks` 在原生窗口验证竞争加载、晚到结果、缓存回收与失败重试。
+
 `PuddingToolRegistry` 保留 NeedHuman 的 `human_decision_required` 状态；`ToolInvocationResult` 与 Runtime 的 `SkillResult` 透传 Status/ExitCode，流式工具结果携带状态，`PuddingChat/TurnFlow` 区分人工决定、依赖等待与失败。此链路尚不创建审批请求或暂停 Run；执行熔断策略保持原样。
 
 `PuddingChat/Approvals.cs` 与 `PuddingChat.WinUI/ApprovalCard.cs` 提供独立原生审批交互：权威版本快照、Core 允许的选项、稳定决定重试、过期/依赖等待禁用、释放后取消等待。`ApprovalCardChecks` 覆盖原生加载和竞态；尚未接入产品聊天区域与 Core 决定服务，不能视为审批执行闭环完成。
