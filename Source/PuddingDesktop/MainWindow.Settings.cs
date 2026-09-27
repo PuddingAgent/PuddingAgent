@@ -151,6 +151,15 @@ public sealed partial class MainWindow
         var documents = VisibilityOf("agents", "prompts", tab);
         AgentDocumentsSettings.Visibility = documents;
         if (documents == Visibility.Visible) LoadAgentDocumentsIfNeeded();
+        var agentModels = VisibilityOf("agents", "models", tab);
+        AgentModelsSettings.Visibility = agentModels;
+        if (agentModels == Visibility.Visible) LoadAgentModelsIfNeeded();
+    }
+
+    private async void LoadAgentModelsIfNeeded()
+    {
+        try { await LoadAgentModelsAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadAgentDocumentsIfNeeded()
@@ -194,6 +203,7 @@ public sealed partial class MainWindow
         ("voice", "asr") => true,
         ("agents", "directory") => true,
         ("agents", "prompts") => true,
+        ("agents", "models") => true,
         _ => false
     };
 

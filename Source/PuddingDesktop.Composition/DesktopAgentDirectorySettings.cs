@@ -87,15 +87,9 @@ internal sealed partial class DesktopAgentDirectorySettings(IDesktopKernel kerne
                 return true;
             }
             // Submit the stored template back with only the displayed fields replaced.
-            await service.UpdateTemplateAsync(edit.TemplateId, new UpsertGlobalAgentTemplateRequest(
-                existing.TemplateId, edit.Name, edit.Description, edit.Role, existing.SystemPrompt, existing.UserPromptTemplate,
-                existing.PreferredProviderId, existing.PreferredModelId, existing.MaxContextTokens, existing.ContainerImage,
-                existing.SelectedCapabilityIds, existing.SelectedSkillPackageIds, edit.IsEnabled, edit.SortOrder,
-                existing.PersonaPrompt, existing.ToolsDescription, existing.BootstrapTemplate, null,
-                Avatar(edit.AvatarId), existing.MemoryLlmProviderId, existing.MemoryLlmModelId, existing.EmbeddingProviderId,
-                existing.EmbeddingModelId, existing.MemorySearchMode, existing.ReasoningEffort, existing.MaxRounds,
-                existing.MaxElapsedSeconds, existing.MaxToolCallsTotal, existing.ConsciousProfileId,
-                existing.SubconsciousProfileId, existing.AgentsPrompt, existing.MemoryPrompt), token);
+            await service.UpdateTemplateAsync(edit.TemplateId, TemplateRequest(existing,
+                name: edit.Name, description: edit.Description, role: edit.Role,
+                isEnabled: edit.IsEnabled, sortOrder: edit.SortOrder, avatarId: Avatar(edit.AvatarId)), token);
             return true;
         }, cancellationToken);
 

@@ -63,6 +63,14 @@ public interface IAgentDirectorySettings
 
     /// <summary>Throws <see cref="SettingsConflictException"/> when the stored document changed since it was read.</summary>
     Task SaveInstanceDocumentAsync(string workspaceId, string agentId, string key, string content, string expectedSha256, CancellationToken cancellationToken = default);
+
+    /// <summary>Provider/model catalogue used by the model & memory pickers; embedding entries included.</summary>
+    Task<IReadOnlyList<AgentModelCatalogEntry>> ListModelCatalogAsync(CancellationToken cancellationToken = default);
+
+    Task<AgentModelPolicy> ReadTemplateModelPolicyAsync(string templateId, CancellationToken cancellationToken = default);
+    Task SaveTemplateModelPolicyAsync(string templateId, AgentModelPolicy policy, CancellationToken cancellationToken = default);
+    Task<AgentModelPolicy> ReadInstanceModelPolicyAsync(string workspaceId, string agentId, CancellationToken cancellationToken = default);
+    Task SaveInstanceModelPolicyAsync(string workspaceId, string agentId, AgentModelPolicy policy, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

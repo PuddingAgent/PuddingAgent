@@ -16,4 +16,6 @@
 
 `DesktopAgentDocumentsSettings` (partial of the directory adapter) covers the DS-04 document slice: template prompt/Markdown fields are saved with a fingerprint of what was read, instance Markdown documents use Core's own SHA-256 token, and a document the instance manifest does not reference is reported as repairable instead of failing the page.
 
+`DesktopAgentModelPolicySettings` (partial of the directory adapter) covers the DS-04 model & memory slice: the provider/model catalogue, the three pairs, memory search mode and reasoning effort for template and instance. Saves merge into the stored record, half-filled pairs are refused, and TemplateRequest is the single builder used by the basic, document and policy saves.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

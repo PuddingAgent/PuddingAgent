@@ -60,6 +60,7 @@ public sealed partial class MainWindow : Window
         BuildVoicePanels();
         BuildAgentDirectoryPanel();
         BuildAgentDocumentPanel();
+        BuildAgentModelPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -470,6 +471,13 @@ public sealed partial class MainWindow : Window
             Check(AgentDocumentsSettings.Content is StackPanel, "agent document form is built");
             Check(!_adTemplateText.IsEnabled, "agent document form stays disabled without Core");
             Check(_adNotice.Title == "Core 未就绪", "agent documents tab reports the real Core state");
+            // DS-04 model & memory slice: provider/model pairs plus memory mode and reasoning effort.
+            OpenSettingsCategory("agents", "models");
+            await WaitForSettingsUiAsync(() => _amNotice.IsOpen);
+            Check(AgentModelsSettings.Visibility == Visibility.Visible, "agent models tab is native");
+            Check(AgentModelsSettings.Content is StackPanel, "agent model form is built");
+            Check(!_amEffort.IsEnabled, "agent model form stays disabled without Core");
+            Check(_amNotice.Title == "Core 未就绪", "agent models tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

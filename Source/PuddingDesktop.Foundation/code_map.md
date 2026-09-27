@@ -17,6 +17,7 @@
 | `VoiceSettingsContracts.cs` | DS-03 语音设置边界：`IVoiceResourceSettings`、TTS/ASR 模型记录、`VoiceDefaults`（运行时真源）与纯表单助手 `VoiceSettingsText` |
 | `AgentDirectoryContracts.cs` | DS-04 角色目录切片边界：`IAgentDirectorySettings`、模板/实例/预设/头像记录、`AgentDirectoryText`（对象状态区分冻结与停用） |
 | `AgentDocumentContracts.cs` | DS-04 文档切片：模板/实例文档槽位、文档集指纹（模板并发保护）、`IsOverride`（实例覆盖判定） |
-| `PuddingDesktop.Foundation.csproj` | 编译期拒绝任何项目/包引用；输出限于 temp/build/winui3 |
+| `AgentModelPolicyContracts.cs` | DS-04 模型/记忆切片：三对服务商-模型选择、目录校验（停用/废弃/embedding 归属）、检索模式与推理强度保留策略 |
+| `PuddingDesktop.Foundation.csproj | 编译期拒绝任何项目/包引用；输出限于 temp/build/winui3 |
 
-独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。74 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。
+独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。80 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。

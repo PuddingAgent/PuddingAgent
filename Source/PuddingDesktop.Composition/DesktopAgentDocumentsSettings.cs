@@ -38,21 +38,14 @@ internal sealed partial class DesktopAgentDirectorySettings
             if (!string.Equals(stored.Fingerprint, documents.Fingerprint, StringComparison.OrdinalIgnoreCase))
                 throw new SettingsConflictException(
                     "模板文档已在别处修改。请重新读取后再保存，避免覆盖他人的改动。");
-            await service.UpdateTemplateAsync(documents.TemplateId, new UpsertGlobalAgentTemplateRequest(
-                current.TemplateId, current.Name, current.Description, current.Role,
-                Value(documents, "systemPrompt", current.SystemPrompt),
-                Value(documents, "userPromptTemplate", current.UserPromptTemplate),
-                current.PreferredProviderId, current.PreferredModelId, current.MaxContextTokens, current.ContainerImage,
-                current.SelectedCapabilityIds, current.SelectedSkillPackageIds, current.IsEnabled, current.SortOrder,
-                Value(documents, "personaPrompt", current.PersonaPrompt),
-                Value(documents, "toolsDescription", current.ToolsDescription),
-                Value(documents, "bootstrapTemplate", current.BootstrapTemplate),
-                null, current.AvatarId, current.MemoryLlmProviderId, current.MemoryLlmModelId, current.EmbeddingProviderId,
-                current.EmbeddingModelId, current.MemorySearchMode, current.ReasoningEffort, current.MaxRounds,
-                current.MaxElapsedSeconds, current.MaxToolCallsTotal, current.ConsciousProfileId,
-                current.SubconsciousProfileId,
-                Value(documents, "agentsPrompt", current.AgentsPrompt),
-                Value(documents, "memoryPrompt", current.MemoryPrompt)), token);
+            await service.UpdateTemplateAsync(documents.TemplateId, TemplateRequest(current,
+                systemPrompt: Value(documents, "systemPrompt", current.SystemPrompt),
+                userPromptTemplate: Value(documents, "userPromptTemplate", current.UserPromptTemplate),
+                personaPrompt: Value(documents, "personaPrompt", current.PersonaPrompt),
+                agentsPrompt: Value(documents, "agentsPrompt", current.AgentsPrompt),
+                toolsDescription: Value(documents, "toolsDescription", current.ToolsDescription),
+                bootstrapTemplate: Value(documents, "bootstrapTemplate", current.BootstrapTemplate),
+                memoryPrompt: Value(documents, "memoryPrompt", current.MemoryPrompt)), token);
             return true;
         }, cancellationToken);
 

@@ -1,3 +1,6 @@
+## 2026-09-27 DS-04 角色与模板（模型/记忆切片）
+
+Foundation 新增 `AgentModelPolicyContracts.cs`（三对 provider/model 选择、`AgentModelCatalogEntry` 目录校验、检索模式与推理强度处理），Composition 新增 `DesktopAgentModelPolicySettings`（partial）：模型目录来自 `LlmProviderFileService`，模板与实例的六项策略按「读回-合并-提交」写入，半填的服务商/模型对在边界直接拒绝；同文件新增 `TemplateRequest` 统一构造模板 upsert，基础信息、文档、模型策略三处共用。`memorySearchMode` 只提供文档化的 off/instant/deep，存储中的未知值会作为「现有值」保留而不是被改写；`reasoningEffort` 是自由文本（取值由服务商约定，如 low/medium/high/max），不做本地枚举。发现并固定：新建实例在创建时会继承模板的模型默认值（Composition 测试断言）。验证：Foundation 80 项、Composition 7 项、窗口 smoke 137 项通过。
 ## 2026-09-27 DS-04 角色与模板（文档切片）
 
 Foundation 新增 `AgentDocumentContracts.cs`（模板/实例文档槽位、文档集指纹、覆盖判定），Composition 的 `DesktopAgentDirectorySettings` 加 `partial` 文档实现：模板文档保存前比对读取指纹，实例文档直接使用 Core 的 SHA-256 冲突令牌（`AgentSelfStateConflictException` → `SettingsConflictException`），Shell 新增 `MainWindow.AgentDocumentSettings.cs`（`agents/prompts` 页签：模板文档与实例文档各自的文档选择器 + 大文本编辑器，草稿跨文档切换保留）。发现并如实呈现一个真实行为：模板没有对应默认值时，新建实例的 manifest 不引用该文档，`ReadDocumentAsync` 会拒绝；页面显示「保存会创建并修复引用」而不是整页失败，保存后引用即被修复。验证：Foundation 74 项、Composition 6 项、窗口 smoke 133 项通过。

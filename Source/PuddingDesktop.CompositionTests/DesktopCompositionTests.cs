@@ -427,6 +427,96 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task AgentModelPolicyAdapter_WritesPairsAndPreservesEveryOtherField()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var directory = factory.CreateAgentDirectorySettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await kernel.StartAsync(root, timeout.Token);
+
+            var catalog = await directory.ListModelCatalogAsync(timeout.Token);
+            Assert.NotEmpty(catalog);
+            var chatModel = catalog.First(entry => !entry.IsEmbedding && entry.IsEnabled && !entry.IsDeprecated);
+
+            // The shipped pool has no embedding model, so the fixture creates one through the LLM adapter.
+            var llm = factory.CreateLlmSettings(kernel);
+            await llm.SaveModelAsync(new LlmModelEdit(chatModel.ProviderId, "fixture-embedding", "Fixture Embedding",
+                "openai", [], 8192, null, 1024, null, 0m, 0m, 0m, false, false, true, 9), timeout.Token);
+            catalog = await directory.ListModelCatalogAsync(timeout.Token);
+            var embeddingModel = catalog.First(entry => entry.IsEmbedding && entry.ProviderId == chatModel.ProviderId);
+
+            // A template with a prompt and a document: the model policy save must not disturb either.
+            await directory.SaveTemplateAsync(new AgentTemplateEdit("ds04-models", "Models", "Service", "", true, 0, "pudding"), timeout.Token);
+            var documents = await directory.ReadTemplateDocumentsAsync("ds04-models", timeout.Token);
+            var edited = new Dictionary<string, string>(documents.Documents, StringComparer.Ordinal) { ["systemPrompt"] = "keep me" };
+            await directory.SaveTemplateDocumentsAsync(new AgentTemplateDocuments("ds04-models", documents.Fingerprint, edited), timeout.Token);
+
+            var initial = await directory.ReadTemplateModelPolicyAsync("ds04-models", timeout.Token);
+            Assert.False(initial.Chat.IsSet);
+            Assert.Equal(AgentModelPolicyText.DefaultMemorySearchMode, initial.MemorySearchMode);
+            Assert.Equal("", initial.ReasoningEffort);
+
+            var policy = new AgentModelPolicy(
+                new AgentModelChoice(chatModel.ProviderId, chatModel.ModelId),
+                new AgentModelChoice(embeddingModel.ProviderId, embeddingModel.ModelId),
+                new AgentModelChoice(embeddingModel.ProviderId, embeddingModel.ModelId),
+                "instant", "max");
+            await directory.SaveTemplateModelPolicyAsync("ds04-models", policy, timeout.Token);
+
+            var saved = await directory.ReadTemplateModelPolicyAsync("ds04-models", timeout.Token);
+            Assert.Equal(chatModel.ModelId, saved.Chat.ModelId);
+            Assert.Equal(embeddingModel.ModelId, saved.Memory.ModelId);
+            Assert.Equal(embeddingModel.ModelId, saved.Embedding.ModelId);
+            Assert.Equal("instant", saved.MemorySearchMode);
+            Assert.Equal("max", saved.ReasoningEffort);
+            // The document slice must survive a model-policy save.
+            Assert.Equal("keep me", (await directory.ReadTemplateDocumentsAsync("ds04-models", timeout.Token)).Documents["systemPrompt"]);
+
+            // A half-filled pair is refused and nothing is written.
+            await Assert.ThrowsAsync<ArgumentException>(() => directory.SaveTemplateModelPolicyAsync("ds04-models",
+                policy with { Chat = new AgentModelChoice(chatModel.ProviderId, "") }, timeout.Token));
+            Assert.Equal(chatModel.ModelId, (await directory.ReadTemplateModelPolicyAsync("ds04-models", timeout.Token)).Chat.ModelId);
+
+            var workspaces = await directory.ListWorkspacesAsync(timeout.Token);
+            var workspaceId = workspaces[0].WorkspaceId;
+            await directory.CreateInstanceAsync(new AgentInstanceCreate(workspaceId, "Models role", "", "ds04-models"), timeout.Token);
+            var instance = Assert.Single(await directory.ListInstancesAsync(workspaceId, timeout.Token),
+                candidate => candidate.Name == "Models role");
+
+            // A new instance inherits the template's model defaults at creation time.
+            var instancePolicy = await directory.ReadInstanceModelPolicyAsync(workspaceId, instance.AgentId, timeout.Token);
+            Assert.Equal(chatModel.ModelId, instancePolicy.Chat.ModelId);
+            Assert.Equal("instant", instancePolicy.MemorySearchMode);
+            Assert.Equal("max", instancePolicy.ReasoningEffort);
+
+            await directory.SaveInstanceModelPolicyAsync(workspaceId, instance.AgentId,
+                new AgentModelPolicy(new AgentModelChoice(chatModel.ProviderId, chatModel.ModelId), AgentModelChoice.None,
+                    AgentModelChoice.None, "off", "low"), timeout.Token);
+            var savedInstance = await directory.ReadInstanceModelPolicyAsync(workspaceId, instance.AgentId, timeout.Token);
+            Assert.Equal(chatModel.ModelId, savedInstance.Chat.ModelId);
+            Assert.False(savedInstance.Memory.IsSet);
+            Assert.Equal("off", savedInstance.MemorySearchMode);
+            Assert.Equal("low", savedInstance.ReasoningEffort);
+            // The template was not touched by an instance save.
+            Assert.Equal("instant", (await directory.ReadTemplateModelPolicyAsync("ds04-models", timeout.Token)).MemorySearchMode);
+            Assert.True(Assert.Single(await directory.ListInstancesAsync(workspaceId, timeout.Token),
+                candidate => candidate.AgentId == instance.AgentId).IsEnabled, "模型策略保存不得改变启用状态");
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => directory.ListModelCatalogAsync(timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     // The isolated data root is seeded with the shipped default providers, so target ours explicitly.
     private static PuddingDesktop.Foundation.LlmProviderSummary SinglePool(IReadOnlyList<PuddingDesktop.Foundation.LlmProviderSummary> providers)
         => Assert.Single(providers, provider => provider.ProviderId == "pool");
