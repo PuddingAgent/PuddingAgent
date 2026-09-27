@@ -146,6 +146,7 @@ public partial class NativeChatIntegrationTests
             var process = await client.GetProcessAsync(role, receipt.MessageId, timeout.Token);
             Assert.Equal(receipt.MessageId, process.MessageId);
             await VerifyTerminalActivityAsync(kernel, client, role, session, timeout.Token);
+            await VerifyActivityReplayAsync(kernel, client, role, session, timeout.Token);
             Assert.Empty(network.Requests);
             using var probe = await http.GetAsync(new Uri(address, "/health/ready"), timeout.Token);
             Assert.Contains("/health/ready", network.Requests); // Prove the zero-HTTP observation is not a disabled listener.

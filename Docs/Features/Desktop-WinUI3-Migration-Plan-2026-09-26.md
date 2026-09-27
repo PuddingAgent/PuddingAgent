@@ -28,9 +28,9 @@
 | 思考输出可见、可展开 | `TurnContentView` 思考区 | 默认展开真实思考文本，不合成推理内容或耗时 |
 | 工具调用与结果归并 | `TurnFlow` | 按 TurnId + ToolCallId 配对，展示输入、输出、状态与退出码；同名并行调用保持独立 |
 | 稳定节点与折叠状态 | `MessageCard` / `TurnContentView` | 保留卡片和未变化的块，更新变化内容，不重建整个会话 |
-| 历史过程水合 | `IChatClient.GetProcessAsync` | 用户打开完整执行明细时直接调用 Core；最近活动窗口有截断提示 |
+| 历史过程水合 | `IChatClient.GetProcessAsync` | 历史明细按需直接调用 Core；活动 Turn 自动分批重放补齐 |
 
-调用链为 `WinUI → PuddingChat 端口 → Composition → Core 应用服务`。发送、取消、配置继续使用直接异步函数调用；新增 `IConversationChanges.WaitForChangeAsync` 订阅已提交事件，Core 广播唤醒所有订阅者，原生端合并 40 ms 内的突发通知后读取权威投影。没有聊天 HTTP/SSE、JWT 或 DTO JSON 往返，也不读取 `StreamingEventBus` 的竞争消费通道。Core 的 Run/Turn 状态机仍是唯一执行真源；Desktop 只维护选择代次、草稿、阅读锚点、折叠和订阅生命周期。
+调用链为 `WinUI → PuddingChat 端口 → Composition → Core 应用服务`。发送、取消、配置继续使用直接异步函数调用；`IConversationChanges.WaitForChangeAsync` 订阅已提交事件，Core 广播唤醒所有订阅者，原生端合并 40 ms 内的突发通知后通过 `IConversationActivity` 读取强类型活动差量，每批最多 256 条 canonical 事件。正文、思考和工具活动直接合并进当前会话；生命周期和未知事件回到 Core 权威投影。没有聊天 HTTP/SSE、JWT 或 DTO JSON 往返，也不读取 `StreamingEventBus` 的竞争消费通道。Core 的 Run/Turn 状态机仍是唯一执行真源；Desktop 只维护选择代次、草稿、阅读锚点、折叠和订阅生命周期。
 
 已修复 `CommittedEventSignal` 的 Channel 竞争消费问题：保留单调 head、广播等待者、支持独立取消，覆盖先提交后订阅的竞态。投影读取前捕获 head，避免多查询投影末尾的较新游标确认尚未读入的事件。角色切换取消旧订阅；Core 停止时取消并等待进程内操作后释放宿主。
 
@@ -40,7 +40,9 @@
 
 图片消息组件已接入：`IImageAttachmentClient` 定义进程内导入和受控本地预览，`ChatComposer` 提供原生多选图片与移除，`ChatSelection` 保存每个角色的附件草稿并冻结重试引用，`MessageCard` 内的 `ImageAttachmentView` 按需解码、缩放预览。Windows App SDK FileOpenPicker 使用当前 XamlRoot 的 AppWindowId 绑定窗口。Core 复用 VisionArtifactStorageService 验证真实图片、持久化 Artifact；SubmitTurn 传入 text/image typed parts，图片 detail 为 original，不发送本地路径、不自动代读、不伪造纯图片消息正文。UI 解码尺寸上限只影响预览，不改变模型输入原图。数量上限读取 Core 合同；收起或卸载预览释放图片，避免一次解码全部附件。图片选择对话框与真实视觉模型的手工验收仍需执行，当前自动化验证覆盖控件、导入、持久化和 PNG 解码。剪贴板/拖放、Markdown 内生成图片、相机和非图片文件仍待迁移。
 
-性能与迁移边界：当前是通知驱动的合并投影刷新，不是逐 token 的零查询增量 reducer；角色列表状态仍每 15 秒刷新一次，当前会话不再定时轮询。后续应在 Core 提供可复用的强类型增量投影与完整性边界，Native 仅应用呈现差量。完整 Markdown/附件、子代理完整运行检查器、历史分页虚拟化、审批交互及真实模型长会话验收仍须逐项完成，不将本轮视为 Web 全量迁移验收。
+运行中恢复：进入角色后，先将该活动 Turn 按固定快照游标分批补齐，再订阅新增事件，不再只保留最近 64 条活动。重放期间新提交的内容留给随后增量读取，避免持续输出让恢复永不结束。Core 校验会话/角色归属和根 Run，父输出只包含根 Run 的文本与同 Turn 的委派生命周期。BCL `ConversationActivity` 校验会话、Run、Turn、游标连续性并按事件 ID 去重；它不推断业务生命周期。窗口序列化快照/差量读取，角色取消可释放等待，晚到结果由选择代次拒绝。
+
+性能与迁移边界：普通流式活动已不再刷新整份会话，但仍查询持久事件并执行呈现归并，不是零查询或零分配。生命周期与未知事件保留整份权威投影刷新；角色列表状态仍每 15 秒刷新一次，当前会话不定时轮询。真实模型长会话的耗时/内存指标尚未测量。完整 Markdown/附件、子代理完整运行检查器、历史分页虚拟化、审批交互及真实模型长会话验收仍须逐项完成，不将本轮视为 Web 全量迁移验收。
 
 异常终态的执行明细：失败、取消、执行租约丢失可能没有助手回复记录。此时在原始请求卡片显示终态与“加载完整执行明细”，直接从 Core 按会话、Turn 和根 Run 恢复正文片段、思考、工具与子代理活动；执行内容位于独立展开区，不混入用户输入，不伪造助手消息。明细不受活动快照的 64 条窗口限制；子代理正文不并入父回复，只纳入同 Turn 的委派生命周期。取消没有错误文本也显示状态，租约丢失显示失败。
 

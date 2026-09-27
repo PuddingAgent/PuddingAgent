@@ -265,7 +265,8 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         _messages.Children.Clear(); SetDraft(); UpdateComposer();
         _notice.IsOpen = true; _notice.Title = "正在读取主会话"; _notice.Message = "";
         var generation = _state.Generation; var token = _selection.Token;
-        await RefreshConversationAsync(generation, token);
+        try { await RefreshConversationAsync(generation, token); }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
     }
     private async Task FollowConversationAsync(IConversationChanges changes, long generation, CancellationToken ct)
     {
@@ -275,7 +276,22 @@ public sealed class ChatWorkspace : UserControl, IDisposable
             // Coalesce token bursts; only one projection request is ever outstanding per subscription.
             await Task.Delay(40, ct);
             if (generation != _state.Generation || _disposed) return;
-            await RefreshConversationAsync(generation, ct);
+            await _conversationReads.WaitAsync(ct);
+            try
+            {
+                current = _state.Conversation!;
+                if (_client is IConversationActivity activity && current?.ActiveRun is { } run
+                    && run.OutputSnapshot.Window is { } window)
+                {
+                    var page = await activity.ReadActivityAsync(role,
+                        new(current.MainSessionId, run.RunId, window.TurnId, current.EventCursor), ct);
+                    if (_disposed || generation != _state.Generation) return;
+                    if (ConversationActivity.Apply(current, page) is { } updated)
+                    { RenderConversation(generation, role, updated, ct); continue; }
+                }
+                await RefreshConversationCoreAsync(generation, ct);
+            }
+            finally { _conversationReads.Release(); }
         }
     }
     private async Task RefreshAsync()
@@ -294,11 +310,48 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         if (_disposed || generation != _workspaceGeneration) return;
         foreach (var status in statuses) if (_cards.TryGetValue(status.AgentId, out var card)) card.SetStatus(status);
     }
+    private readonly SemaphoreSlim _conversationReads = new(1, 1);
     private async Task RefreshConversationAsync(long generation, CancellationToken ct)
     {
+        await _conversationReads.WaitAsync(ct);
+        try { await RefreshConversationCoreAsync(generation, ct); }
+        finally { _conversationReads.Release(); }
+    }
+    private async Task RefreshConversationCoreAsync(long generation, CancellationToken ct)
+    {
         if (_state.Role is not { } role) return;
-        var snapshot = await _client.GetConversationAsync(role, _state.Conversation?.EventCursor, ct);
-        if (_disposed || snapshot is null || !_state.Apply(generation, snapshot)) return;
+        var snapshot = await _client.GetConversationAsync(role, _state.Conversation?.EventCursor, ct).WaitAsync(ct);
+        if (_disposed || snapshot is null || generation != _state.Generation) return;
+        while (_client is IConversationActivity activity && snapshot.ActiveRun is { } run && run.OutputSnapshot.Window is { } window)
+        {
+            var retry = false;
+            // Recover the entire active turn to a fixed committed ceiling before going live.
+            var restored = snapshot with { EventCursor = 0, ActiveRun = run with {
+                OutputSnapshot = new("", [], window with { ThroughSequence = 0 }) } };
+            while (true)
+            {
+                var page = await activity.ReadActivityAsync(role,
+                    new(snapshot.MainSessionId, run.RunId, window.TurnId, restored.EventCursor, snapshot.EventCursor, Replay: true), ct);
+                if (_disposed || generation != _state.Generation) return;
+                if (ConversationActivity.Apply(restored, page) is not { } applied)
+                {
+                    snapshot = await _client.GetConversationAsync(role, null, ct).WaitAsync(ct)
+                        ?? throw new InvalidOperationException("会话已变化，请重新选择角色。");
+                    retry = true;
+                    break;
+                }
+                restored = applied;
+                if (!page.HasMore) { snapshot = restored; break; }
+            }
+            if (!retry) break;
+        }
+        RenderConversation(generation, role, snapshot, ct);
+    }
+    private void RenderConversation(long generation, RoleKey role, Conversation snapshot, CancellationToken ct)
+    {
+        if (_disposed || !_state.Apply(generation, snapshot)) return;
+        // A session rotation cancels the old follower, not the new cards or subscription.
+        ct = _selection?.Token ?? ct;
         var position = _restoreReading ?? CaptureReading(); _restoreReading = null;
         var desired = new List<UIElement>();
         foreach (var message in snapshot.Messages)
@@ -343,7 +396,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         _notice.Title = "开始新的工作"; _notice.Message = "向这位角色描述任务，消息将进入其主会话。";
         _subtitle.Text = $"{role.WorkspaceId} / {role.AgentId} · 最近 {snapshot.Messages.Length} 条消息 · {snapshot.MainSessionId}";
         if (snapshot.ActiveRun is { } statusRun)
-            _subtitle.Text += $" · {statusRun.StatusText}" + (statusRun.OutputSnapshot.Window?.HasMoreBefore == true ? " · 部分执行轨迹，完成后可加载明细" : "");
+            _subtitle.Text += $" · {statusRun.StatusText}" + (statusRun.OutputSnapshot.Window?.HasMoreBefore == true ? " · 正在补齐执行轨迹…" : "");
         UpdateComposer();
         if (_client is IConversationChanges changes && !string.IsNullOrEmpty(snapshot.MainSessionId) && _followSession != snapshot.MainSessionId)
         {

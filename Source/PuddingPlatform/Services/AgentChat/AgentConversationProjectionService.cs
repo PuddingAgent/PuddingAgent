@@ -14,6 +14,8 @@ namespace PuddingPlatform.Services.AgentChat;
 /// <summary>Builds renderable Agent conversation projections from the canonical Conversation Event Store.</summary>
 public interface IAgentConversationProjectionService
 {
+    Task<ConversationActivityPage> ReadActivityAsync(string workspaceId, string ownerUserId, string agentId,
+        ConversationActivityRead read, CancellationToken ct);
     Task<AgentConversationView> GetConversationAsync(string workspaceId, string ownerUserId, string agentId, CancellationToken ct);
 
     Task<MessageProcessDetailsView?> GetMessageProcessItemsAsync(
@@ -28,7 +30,7 @@ public interface IAgentConversationProjectionService
 }
 
 /// <summary>Default conversation projection service for the single-user Agent chat client.</summary>
-public sealed class AgentConversationProjectionService(
+public sealed partial class AgentConversationProjectionService(
     ISessionRepository sessionRepository,
     WorkspaceAgentFileService workspaceAgentFileService,
     SessionRedirectStore redirectStore,

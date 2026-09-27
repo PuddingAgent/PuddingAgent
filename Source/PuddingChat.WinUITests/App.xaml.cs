@@ -70,13 +70,18 @@ public partial class App : Application
                 var imagePreview = new ImageAttachmentView(fixture, "test", "vision-fixture", "图片", CancellationToken.None);
                 await imagePreview.LoadAsync(); Check(imagePreview.PreviewLoaded, "native bitmap decodes Core resolved preview");
                 Check(control.CurrentConversation?.Messages.Length == 2, "canonical messages displayed");
+                Check(fixture.ReplayRestarts == 1 && control.CurrentConversation?.ActiveRun?.OutputSnapshot.Markdown == "输出",
+                    "snapshot race restarts bounded replay instead of retaining truncated activity");
                 control.SetRoleFilter("does-not-exist");
                 Check(control.VisibleRoleCount == 0 && control.SelectedRole?.AgentId == "builder", "search preserves active role");
                 control.SetRoleFilter(""); Check(control.VisibleRoleCount == 2, "clear search restores roles");
+                var readsBeforeStreaming = fixture.ConversationReads;
                 fixture.Streaming = true; fixture.Changed.TrySetResult();
                 using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
                     while (control.CurrentConversation?.EventCursor != 3) await Task.Delay(10, timeout.Token);
-                Check(control.CurrentConversation?.ActiveRun?.OutputSnapshot.Markdown == "流式正文", "commit notification streams without polling");
+                Check(control.CurrentConversation?.ActiveRun?.OutputSnapshot.Markdown == "输出流式正文", "commit notification streams without polling");
+                Check(fixture.ConversationReads == readsBeforeStreaming && fixture.ActivityReads > 1,
+                    "streaming activity uses deltas without full conversation refresh");
                 var flow = new TurnContentView();
                 flow.Update([new("thought", "thinking", "running", "思考", 1)], "正文");
                 var reasoning = (Expander)flow.Children[0]; reasoning.IsExpanded = false;
@@ -84,6 +89,11 @@ public partial class App : Application
                 flow.Update([new("thought", "thinking", "running", "思考继续", 1)], "正文");
                 Check(ReferenceEquals(reasoning, flow.Children[0]) && !reasoning.IsExpanded && ReferenceEquals(answer, flow.Children[1]), "stream retains blocks and disclosure state");
                 await control.CancelAsync(); Check(fixture.Cancelled == "turn", "canonical cancellation");
+                fixture.Terminal = true; fixture.TerminalChanged.TrySetResult();
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+                    while (control.CurrentConversation?.EventCursor != 4) await Task.Delay(10, timeout.Token);
+                Check(control.CurrentConversation?.ActiveRun is null && fixture.ConversationReads > readsBeforeStreaming,
+                    "lifecycle changes return to authoritative Core snapshot");
                 Check(MessageCard.RenderText("# Title\n```cs\nConsole.WriteLine(1);\n```\n正文") is StackPanel { Children.Count: 3 }, "native heading code text");
                 var markdown = new MarkdownView("**粗体** *斜体* ~~删除~~ `code` [文档](https://example.com) [危险](javascript:alert)\n\n> 引用\n\n3. 第一\n4. 第二\n\n|名称|值|\n|---|---|\n|a|b|");
                 var paragraph = (TextBlock)markdown.Children[0];
@@ -135,7 +145,7 @@ public partial class App : Application
                 Check(control.CurrentConversation?.AgentId == "reviewer", "late reply rejected");
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 38, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 41, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -143,7 +153,7 @@ public partial class App : Application
         _window.Activate();
     }
     private static void Check(bool condition, string label) { if (!condition) throw new InvalidOperationException(label); }
-    private sealed class Fixture(string imagePath) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges, IImageAttachmentClient
+    private sealed class Fixture(string imagePath) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges, IImageAttachmentClient, IConversationActivity
     {
         public int MaxImagesPerMessage => 600;
         public Task<AttachedImage> ImportImageAsync(RoleKey role, string path, CancellationToken ct) => Task.FromResult(new AttachedImage("vision-fixture", Path.GetFileName(path), "image/png", 1, 1));
@@ -178,17 +188,32 @@ public partial class App : Application
         public Conversation Conversation(string agent) => new("test", agent, "session",
             Sent is null ? [] : [new("m", null, "user", "用户", DateTimeOffset.UtcNow, "implement", "accepted", []),
                 new("a", "r", "assistant", "代码工程师", DateTimeOffset.UtcNow, "# 进度\n```cs\nvar result = 1;\n```", "running", [])],
-            Sent is null ? null : new("r", "running", "执行中", "编译", new(Streaming ? "流式正文" : "输出", [new("e", "tool_call", "running", "dotnet build", 2, "terminal", ToolCallId: "call", TurnId: "turn")], new("turn", 2, 2, 2, false))),
-            Sent is null ? 0 : Streaming ? 3 : 2);
+            Sent is null || Terminal ? null : new("r", "running", "执行中", "编译", new(Streaming ? "流式正文" : "输出", [new("e", "tool_call", "running", "dotnet build", 2, "terminal", ToolCallId: "call", TurnId: "turn")], new("turn", 2, 2, 2, false))),
+            Sent is null ? 0 : Terminal ? 4 : Streaming ? 3 : 2);
         public readonly TaskCompletionSource Changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public bool Streaming;
+        public readonly TaskCompletionSource TerminalChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Streaming, Terminal;
         public async Task WaitForChangeAsync(RoleKey role, string sessionId, long cursor, CancellationToken ct)
         {
             if (cursor < 3) await Changed.Task.WaitAsync(ct);
+            else if (cursor < 4) await TerminalChanged.Task.WaitAsync(ct);
             else await Task.Delay(Timeout.Infinite, ct);
         }
-        public Task<Conversation?> GetConversationAsync(RoleKey role, long? cursor, CancellationToken ct) =>
-            role.AgentId == "slow" ? Late.Task : Task.FromResult<Conversation?>(Conversation(role.AgentId));
+        public int ConversationReads, ActivityReads, ReplayRestarts;
+        public Task<Conversation?> GetConversationAsync(RoleKey role, long? cursor, CancellationToken ct)
+        { ConversationReads++; return role.AgentId == "slow" ? Late.Task : Task.FromResult<Conversation?>(Conversation(role.AgentId)); }
+        public Task<ActivityPage> ReadActivityAsync(RoleKey role, ActivityRead read, CancellationToken ct)
+        {
+            ActivityReads++;
+            if (read.Replay && ReplayRestarts == 0)
+            { ReplayRestarts++; return Task.FromResult(new ActivityPage(read, read.AfterSequence, false, true, [])); }
+            var ceiling = read.ThroughSequence ?? (Terminal ? 4 : Streaming ? 3 : 2);
+            ProcessItem[] events = [new("text-1", "text", "done", "输出", 1, TurnId: "turn"),
+                new("e", "tool_call", "running", "dotnet build", 2, "terminal", ToolCallId: "call", TurnId: "turn"),
+                new("text-3", "text", "done", "流式正文", 3, TurnId: "turn")];
+            return Task.FromResult(new ActivityPage(read, ceiling, false, Terminal && ceiling >= 4,
+                events.Where(e => e.Sequence > read.AfterSequence && e.Sequence <= ceiling).ToArray()));
+        }
         public Task<string> EnsureSessionAsync(RoleKey role, Agent agent, CancellationToken ct) => Task.FromResult("session");
         public Task<Acceptance> SendAsync(PendingSend send, CancellationToken ct) { Sent = send; return Task.FromResult(new Acceptance("session", "m", ["turn"], 1)); }
         public Task CancelAsync(string workspace, string conversation, string turn, CancellationToken ct) { Cancelled = turn; return Task.CompletedTask; }

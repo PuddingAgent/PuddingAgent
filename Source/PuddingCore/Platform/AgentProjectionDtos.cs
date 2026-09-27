@@ -1,5 +1,10 @@
 namespace PuddingCode.Platform;
 
+public sealed record ConversationActivityRead(string MainSessionId, string RunId, string TurnId,
+    long AfterSequence, long? ThroughSequence = null, bool Replay = false);
+public sealed record ConversationActivityPage(long ThroughSequence, bool HasMore, bool RequiresSnapshot,
+    IReadOnlyList<ProcessSummaryItem> Items);
+
 /// <summary>Workspace contact-list projection for an Agent in the chat client.</summary>
 public sealed record AgentStatusProjection(
     string WorkspaceId,
