@@ -197,3 +197,7 @@ PagedTextView 的当前页文本放入最大 360 DIP 高的原生 ScrollViewer�
 产品报告 temp/test-out/kernel-winui-644c164769734ba7a052741a7b3a4ce7/report.json 验证 Core DLL 加载、实际原生聊天挂载/可见、角色与文本附件草稿、后台到 UI 回调、Core 停止/重启后新的聊天客户端与角色重载、DataRoot 设置保存。脚本在退出后独占打开目录租约成功。日志 temp/native-chat-core-current.log、temp/native-chat-product-current.log；PuddingChat.WinUI.dll SHA256 为 5B4141A96D97FB4CC418400922B11095CFF6AA0798491A98E3453029D35F9856。
 
 来源是共享工作树：启动集成验证时 HEAD c1f22b3f83dbca3b29db531c149f6742cd82bbd2，另有 Desktop 设置、Host 和 Workspace 等并行未提交修改；不能把本结果当作该提交原样构建或发布包证明。全部数据隔离于系统 Temp/仓库 temp，不访问 D:\data。未调用真实模型或设备，未完成审批持久暂停/恢复；本轮关闭最新聊天组件的产品装配复验项，完整目标仍进行中。
+
+## 暂停交接（2026-09-27）
+
+用户已要求收尾暂停，剩余任务以 [Native 聊天剩余任务书](../Tasks/Desktop-Native-Chat-Remaining-Tasks-2026-09-27.md) 为恢复入口。本文早期「进行中」表示目标未完成，不表示仍在自动实施。暂停前审批等待/熔断修复的 7 项定向测试最终通过，日志 temp/native-approval-admission-fuse.log；四份未提交文件列于任务书 NC-00，未将其视为已交付。此次仅写任务书和索引，不恢复功能开发。

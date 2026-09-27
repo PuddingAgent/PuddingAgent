@@ -1472,3 +1472,7 @@ ChatWorkspace.CancelAsync 将停止请求绑定到角色/会话/Turn，并以选
 ## 2026-09-27 大工具输出阅读区
 
 PuddingChat.WinUI/PagedTextView.cs 为大输出页增加最高 360 DIP 的原生滚动区，保留外部翻页/复制按钮；翻页回页首、流式更新保留位置。85 逻辑 / 260 原生窗口检查通过，详见聊天完成度核对。
+
+## 2026-09-27 原生聊天暂停交接
+
+剩余实施与验收入口：Docs/Tasks/Desktop-Native-Chat-Remaining-Tasks-2026-09-27.md。按 NC-00～08 列明暂停现场、审批闭环、真实模型、UI/UX、性能、语音及发布门禁；开发保持暂停。暂停前 Runtime 定向测试最终 7 项通过，四份源码/测试改动仍待复核提交。
