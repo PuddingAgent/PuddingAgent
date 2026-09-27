@@ -125,11 +125,9 @@ internal sealed partial class DesktopAgentDirectorySettings(IDesktopKernel kerne
             var current = await service.GetAgentAsync(edit.WorkspaceId, edit.AgentId, token)
                 ?? throw new InvalidOperationException($"角色 {edit.AgentId} 不存在。");
             // Keep the stored profile shape; only the displayed fields change.
-            await service.UpdateAgentProfileAsync(edit.WorkspaceId, edit.AgentId, new UpdateWorkspaceAgentRequest(
-                edit.Name, edit.Description, edit.Name, Avatar(edit.AvatarId) ?? current.AvatarId, current.AvatarUrl, current.SourceTemplateId,
-                current.SystemPromptOverride, current.PreferredProviderId, current.PreferredModelId, edit.IsEnabled,
-                current.HeartbeatPrompt, edit.Role, current.SystemPrompt), token);
-            return true;
+            await service.UpdateAgentProfileAsync(edit.WorkspaceId, edit.AgentId, InstanceRequest(current,
+                name: edit.Name, description: edit.Description, displayName: edit.Name, role: edit.Role,
+                isEnabled: edit.IsEnabled), token);            return true;
         }, cancellationToken);
 
     public Task DeleteInstanceAsync(string workspaceId, string agentId, CancellationToken cancellationToken = default)

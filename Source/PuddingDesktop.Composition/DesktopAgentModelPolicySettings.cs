@@ -75,21 +75,12 @@ internal sealed partial class DesktopAgentDirectorySettings
             Guard(policy);
             var current = await service.GetAgentAsync(workspaceId, agentId, token)
                 ?? throw new InvalidOperationException($"角色 {agentId} 不存在。");
-            await service.UpdateAgentProfileAsync(workspaceId, agentId, new UpdateWorkspaceAgentRequest(
-                current.Name, current.Description, current.DisplayName, current.AvatarId, current.AvatarUrl,
-                current.SourceTemplateId, current.SystemPromptOverride,
-                policy.Chat.ProviderId, policy.Chat.ModelId,
-                current.IsEnabled, current.HeartbeatPrompt, current.Role, current.SystemPrompt,
-                current.UserPromptTemplate, AgentModelPolicyText.NormalizeMemorySearchMode(policy.MemorySearchMode),
-                AgentModelPolicyText.NormalizeReasoningEffort(policy.ReasoningEffort), current.MaxRounds,
-                current.MaxElapsedSeconds, current.MaxToolCallsTotal, current.ContainerImage,
-                policy.Memory.ProviderId, policy.Memory.ModelId,
-                policy.Embedding.ProviderId, policy.Embedding.ModelId,
-                current.AllowFileWrite, current.AllowShellExecution, current.AllowNetworkAccess,
-                current.SelectedCapabilityIds, current.SkillPackageIds, current.AllowedToolNames,
-                current.ExplorerModel, current.ResearcherModel, current.PlannerModel, current.ReviewerModel,
-                current.DeveloperModel, current.DeployerModel, current.TesterModel), token);
-            return true;
+            await service.UpdateAgentProfileAsync(workspaceId, agentId, InstanceRequest(current,
+                preferredProviderId: policy.Chat.ProviderId, preferredModelId: policy.Chat.ModelId,
+                memoryLlmProviderId: policy.Memory.ProviderId, memoryLlmModelId: policy.Memory.ModelId,
+                embeddingProviderId: policy.Embedding.ProviderId, embeddingModelId: policy.Embedding.ModelId,
+                memorySearchMode: AgentModelPolicyText.NormalizeMemorySearchMode(policy.MemorySearchMode),
+                reasoningEffort: AgentModelPolicyText.NormalizeReasoningEffort(policy.ReasoningEffort)), token);            return true;
         }, cancellationToken);
 
     /// <summary>

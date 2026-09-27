@@ -18,4 +18,6 @@
 
 `DesktopAgentModelPolicySettings` (partial of the directory adapter) covers the DS-04 model & memory slice: the provider/model catalogue, the three pairs, memory search mode and reasoning effort for template and instance. Saves merge into the stored record, half-filled pairs are refused, and TemplateRequest is the single builder used by the basic, document and policy saves.
 
+`DesktopAgentSmartRouteSettings` (partial of the directory adapter) covers the DS-04 Smart slice and owns `InstanceRequest`, the single instance-profile builder used by the basic, model-policy and Smart saves. Smart routes are written through `UpdateAgentAsync` because `UpdateAgentProfileAsync` deliberately forces the stored routing back; a basic profile edit therefore cannot clobber routing.
+
 `SettingsOperationScope` is the per-operation Core DI scope used by `Session.RunAsync`. `DesktopKernelFactory.CreateLlmSettings(kernel)` binds the LLM adapter to the kernel lifecycle.

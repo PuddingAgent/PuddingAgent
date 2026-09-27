@@ -1,3 +1,6 @@
+## 2026-09-27 DS-04 角色与模板（Smart 子代理切片）
+
+Foundation 新增 `AgentSmartRouteContracts.cs`（七个 Smart 角色槽位、`{providerId}/{modelId}` 路由解析与校验，规则与 Core `NormalizeSmartRoleModel` 一致），Composition 新增 `DesktopAgentSmartRouteSettings`（partial）：路由写入必须走 `UpdateAgentAsync`，因为 `UpdateAgentProfileAsync` 会把 manifest 里已存的 Smart 字段强制写回（这是 Core 有意为之，防止基础资料编辑清掉路由）；同文件新增 `InstanceRequest` 统一构造实例 profile，基础信息、模型策略、Smart 三处共用。UI 只在实例侧提供 Smart 入口（全局模板没有该字段）。验证：Foundation 92 项、Composition 8 项、窗口 smoke 141 项通过。
 ## 2026-09-27 DS-04 角色与模板（模型/记忆切片）
 
 Foundation 新增 `AgentModelPolicyContracts.cs`（三对 provider/model 选择、`AgentModelCatalogEntry` 目录校验、检索模式与推理强度处理），Composition 新增 `DesktopAgentModelPolicySettings`（partial）：模型目录来自 `LlmProviderFileService`，模板与实例的六项策略按「读回-合并-提交」写入，半填的服务商/模型对在边界直接拒绝；同文件新增 `TemplateRequest` 统一构造模板 upsert，基础信息、文档、模型策略三处共用。`memorySearchMode` 只提供文档化的 off/instant/deep，存储中的未知值会作为「现有值」保留而不是被改写；`reasoningEffort` 是自由文本（取值由服务商约定，如 low/medium/high/max），不做本地枚举。发现并固定：新建实例在创建时会继承模板的模型默认值（Composition 测试断言）。验证：Foundation 80 项、Composition 7 项、窗口 smoke 137 项通过。

@@ -517,6 +517,77 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task AgentSmartRouteAdapter_WritesRoutesWithoutClobberingOtherProfileFields()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var directory = factory.CreateAgentDirectorySettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await kernel.StartAsync(root, timeout.Token);
+
+            await directory.SaveTemplateAsync(new AgentTemplateEdit("ds04-smart", "Smart", "Service", "", true, 0, "pudding"), timeout.Token);
+            var workspaces = await directory.ListWorkspacesAsync(timeout.Token);
+            var workspaceId = workspaces[0].WorkspaceId;
+            await directory.CreateInstanceAsync(new AgentInstanceCreate(workspaceId, "Smart role", "keeps this", "ds04-smart"), timeout.Token);
+            var instance = Assert.Single(await directory.ListInstancesAsync(workspaceId, timeout.Token),
+                candidate => candidate.Name == "Smart role");
+
+            var initial = await directory.ReadSmartRoutesAsync(workspaceId, instance.AgentId, timeout.Token);
+            Assert.Equal(7, initial.Count);
+            Assert.All(SmartRoleRoutes.Roles, slot => Assert.Equal("", initial[slot.RoleId]));
+
+            var routes = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["explorer"] = "deepseek/deepseek-chat",
+                ["tester"] = "deepseek/deepseek-reasoner"
+            };
+            await directory.SaveSmartRoutesAsync(workspaceId, instance.AgentId, routes, timeout.Token);
+
+            var saved = await directory.ReadSmartRoutesAsync(workspaceId, instance.AgentId, timeout.Token);
+            Assert.Equal("deepseek/deepseek-chat", saved["explorer"]);
+            Assert.Equal("deepseek/deepseek-reasoner", saved["tester"]);
+            Assert.Equal("", saved["planner"]);
+            // A Smart save must not clear the description, nor the rest of the profile.
+            var after = Assert.Single(await directory.ListInstancesAsync(workspaceId, timeout.Token),
+                candidate => candidate.AgentId == instance.AgentId);
+            Assert.Equal("keeps this", after.Description);
+            Assert.True(after.IsEnabled);
+            Assert.Equal("ds04-smart", after.SourceTemplateId);
+
+            // Core owns the route format; the boundary refuses a malformed one before writing anything.
+            await Assert.ThrowsAsync<ArgumentException>(() => directory.SaveSmartRoutesAsync(workspaceId, instance.AgentId,
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["explorer"] = "not-a-route" }, timeout.Token));
+            Assert.Equal("deepseek/deepseek-chat",
+                (await directory.ReadSmartRoutesAsync(workspaceId, instance.AgentId, timeout.Token))["explorer"]);
+
+            // Clearing a route is an explicit empty string, not a missing key.
+            await directory.SaveSmartRoutesAsync(workspaceId, instance.AgentId,
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["explorer"] = "", ["tester"] = "deepseek/deepseek-reasoner" },
+                timeout.Token);
+            var cleared = await directory.ReadSmartRoutesAsync(workspaceId, instance.AgentId, timeout.Token);
+            Assert.Equal("", cleared["explorer"]);
+            Assert.Equal("deepseek/deepseek-reasoner", cleared["tester"]);
+
+            // The basic profile save preserves routing (Core forces the stored Smart fields back).
+            await directory.SaveInstanceAsync(new AgentInstanceEdit(workspaceId, instance.AgentId, "Smart role renamed",
+                "edited", "Service", true, "pudding"), timeout.Token);
+            Assert.Equal("deepseek/deepseek-reasoner",
+                (await directory.ReadSmartRoutesAsync(workspaceId, instance.AgentId, timeout.Token))["tester"]);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(() => directory.ReadSmartRoutesAsync(workspaceId, instance.AgentId, timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     // The isolated data root is seeded with the shipped default providers, so target ours explicitly.
     private static PuddingDesktop.Foundation.LlmProviderSummary SinglePool(IReadOnlyList<PuddingDesktop.Foundation.LlmProviderSummary> providers)
         => Assert.Single(providers, provider => provider.ProviderId == "pool");

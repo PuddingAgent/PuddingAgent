@@ -61,6 +61,7 @@ public sealed partial class MainWindow : Window
         BuildAgentDirectoryPanel();
         BuildAgentDocumentPanel();
         BuildAgentModelPanel();
+        BuildAgentSmartPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -478,6 +479,13 @@ public sealed partial class MainWindow : Window
             Check(AgentModelsSettings.Content is StackPanel, "agent model form is built");
             Check(!_amEffort.IsEnabled, "agent model form stays disabled without Core");
             Check(_amNotice.Title == "Core 未就绪", "agent models tab reports the real Core state");
+            // DS-04 Smart slice: the seven sub-agent routes on a role instance.
+            OpenSettingsCategory("agents", "smart");
+            await WaitForSettingsUiAsync(() => _asNotice.IsOpen);
+            Check(AgentSmartSettings.Visibility == Visibility.Visible, "agent smart tab is native");
+            Check(AgentSmartSettings.Content is StackPanel, "agent smart form is built");
+            Check(!_asWorkspace.IsEnabled, "agent smart form stays disabled without Core");
+            Check(_asNotice.Title == "Core 未就绪", "agent smart tab reports the real Core state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

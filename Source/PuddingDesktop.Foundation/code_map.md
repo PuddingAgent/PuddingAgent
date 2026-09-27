@@ -8,7 +8,7 @@
 | `ShellState.cs` | 角色选择代次、草稿隔离、文档身份/归属与关闭行为 |
 | `ShellLayout.cs` | 有界宽度与窄窗口自动折叠，不覆盖用户偏好 |
 | `SettingsCatalog.cs` / `SettingsCatalog.json` | 原生设置的 17 分类 / 49 页签 / 64 卡片、字段搜索与迁移任务来源；纯静态目录，无业务调用 |
-| `SkeletonSettingsStore.cs` | 已删除，由 `DesktopPreferences.cs` 取代 |
+| （已删除）`SkeletonSettingsStore.cs` | 由 `DesktopPreferences.cs` 取代 |
 | `SettingsOperations.cs` | DS-00 接入边界：`ISettingsScope`/`ISettingsOperationHost` 端口、`SettingsOperationGate`（未就绪/停止拒绝、取消排空、内核与选择代次）、`SettingsVersionGuard` 版本冲突；纯 BCL，无 DI/Host 引用 |
 | `LocalDesktopIdentity.cs` | 本机单用户身份常量与序号匹配；不来自输入、命令行或 HTTP，也不等于 Web Admin 角色 |
 | `DesktopPreferences.cs` | 真实桌面偏好（外观 + 语言）与原子保存；`DesktopLanguages` 只列随构建提供的语言，并声明需重启生效 |
@@ -18,6 +18,7 @@
 | `AgentDirectoryContracts.cs` | DS-04 角色目录切片边界：`IAgentDirectorySettings`、模板/实例/预设/头像记录、`AgentDirectoryText`（对象状态区分冻结与停用） |
 | `AgentDocumentContracts.cs` | DS-04 文档切片：模板/实例文档槽位、文档集指纹（模板并发保护）、`IsOverride`（实例覆盖判定） |
 | `AgentModelPolicyContracts.cs` | DS-04 模型/记忆切片：三对服务商-模型选择、目录校验（停用/废弃/embedding 归属）、检索模式与推理强度保留策略 |
-| `PuddingDesktop.Foundation.csproj | 编译期拒绝任何项目/包引用；输出限于 temp/build/winui3 |
+| `AgentSmartRouteContracts.cs` | DS-04 Smart 切片：七个子代理角色槽位、`{providerId}/{modelId}` 解析/格式化/校验（与 Core 的 NormalizeSmartRoleModel 同规则） |
+| `PuddingDesktop.Foundation.csproj` | 编译期拒绝任何项目/包引用；输出限于 temp/build/winui3 |
 
-独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。80 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。
+独立测试：`Source/PuddingDesktop.FoundationTests`。组件不负责真实角色注册、执行授权或 Host 装配。`InProcessKernel` 串行化启动/停止、取消与失败恢复，并把设置操作按内核代次拒绝/排空；`IDesktopServices` 提供展示端口；`IKernelSessionFactory` 由 Composition 适配 PuddingHost。92 项独立测试通过。接入方式与本机管理身份结论见 [DS-00 设置接入基线与生命周期](../../Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。

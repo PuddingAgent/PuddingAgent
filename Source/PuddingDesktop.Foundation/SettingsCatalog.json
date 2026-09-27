@@ -370,7 +370,7 @@
             ],
             "source": "pages/workspace/[id]/SmartRoleModelFields.tsx",
             "task": "DS-04",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },

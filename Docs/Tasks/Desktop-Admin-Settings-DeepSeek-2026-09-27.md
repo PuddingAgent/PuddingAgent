@@ -168,7 +168,7 @@
 
 ### DS-04 — 模板与角色实例完整设置（P0；依赖 DS-02、DS-06、DS-07 目录）
 
-状态：**进行中（2026-09-27）**。已交付「目录与基础」「角色与 Prompt」「模型与记忆」三个页签（`agent-directory` + `agent-basic` + `agent-prompts` + `agent-models`）；`smart`/`capabilities`/`guardrails` 三个页签待续。
+状态：**进行中（2026-09-27）**。已交付「目录与基础」「角色与 Prompt」「模型与记忆」「Smart 子代理」四个页签（`agent-directory` + `agent-basic` + `agent-prompts` + `agent-models` + `smart-models`）；`capabilities`/`guardrails` 两个页签待续。
 
 按六页签拆任务：目录/基础（含预设导入）→ 文档 → 模型/记忆 → Smart → 能力/Skill → 护栏。模板与实例保存目标必须可见；已有基础编辑不可回退。Markdown 编辑要保留换行与未修改内容；七种 Smart 子代理路由全部覆盖。验收：模板变更不误写实例覆盖，实例编辑不改全局模板；模型联动有效；授权继承清晰；局部编辑不清空其他 JSON/Markdown；冻结目标与选中目标一致。
 
@@ -190,6 +190,12 @@
 - 不抹除未知值：`memorySearchMode` 只列 off/instant/deep，但存储中的其他值会作为「现有值」出现在下拉里并可原样保存；`reasoningEffort` 是自由文本（取值由服务商约定，例如 low/medium/high/max），不构造本地枚举。
 - 真实行为登记：新建实例在创建时会继承模板的模型默认值（`CreateAgentAsync` 的 `?? template?.X`），因此在实例页看到的是继承值而不是空值；保存实例策略不会回写模板（Composition 测试断言）。
 - 同一切片做了小重构：模板 upsert 统一由 `TemplateRequest` 构造，基础信息、文档、模型策略三处共用，避免三份长参数列表漂移。
+
+**Smart 子代理切片已交付**
+- 七个子代理角色（explorer/researcher/planner/reviewer/developer/deployer/tester）各自的 `{providerId}/{modelId}` 路由；只在角色实例侧提供（全局模板没有 Smart 字段，与 Web 一致）。
+- 与 Core 同规则：半填的服务商/模型对在边界被拒绝，而不是被 `FromChoice` 静默写成「未路由」；格式错误（缺少 `/`、`/` 后为空）在表单与边界双重拦截。
+- 真实行为登记：`UpdateAgentProfileAsync` 会把 manifest 中已存的 Smart 字段**强制写回**（Core 有意保护基础资料编辑不清路由），因此原生 Smart 保存必须走 `UpdateAgentAsync`；Composition 测试同时断言「基础资料保存后路由仍在」。
+- 小重构：实例 profile upsert 统一由 `InstanceRequest` 构造，基础信息、模型策略、Smart 三处共用。
 
 **本切片登记的缺口**
 - 模板 ID / 名称等格式校验目前只在表单层（`AgentDirectoryText.Validate`）；`AgentTemplateFileService` 不拒绝非法 ID，尚未下沉到 Core。
@@ -697,5 +703,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | DS-01 通用、语言与关于 | 已完成 2026-09-27 | `language`/`help`/`about` 三卡原生化；Foundation 47 项、窗口 smoke 104 项通过 |
 | DS-02 LLM 服务商与模型 | 已完成 2026-09-27 | 五张卡接入；Core 补齐配额（限额入配置文件、用量来自账本、reset-daily 只推进窗口）；配额测试 4 项、Composition 真实 Host 端到端通过 |
 | DS-03 语音服务商、TTS 与 ASR | 已完成 2026-09-27 | 三卡接入；Core 补密钥保持/替换/清除与默认项真源同步（TTS/ASR 互不覆盖）；语音 Core 测试 4 项 |
-| DS-04 模板与角色实例 | 进行中 2026-09-27 | 目录/基础 + 文档 + 模型/记忆三切片已接入（agent-directory / agent-basic / agent-prompts / agent-models）；Smart/能力/护栏三个页签待续 |
+| DS-04 模板与角色实例 | 进行中 2026-09-27 | 目录/基础 + 文档 + 模型/记忆 + Smart 四切片已接入；能力/Skill（依赖 DS-06/DS-07）与护栏两个页签待续 |
 | DS-05 … DS-17 | 待实施 | — |

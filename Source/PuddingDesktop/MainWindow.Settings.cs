@@ -154,6 +154,15 @@ public sealed partial class MainWindow
         var agentModels = VisibilityOf("agents", "models", tab);
         AgentModelsSettings.Visibility = agentModels;
         if (agentModels == Visibility.Visible) LoadAgentModelsIfNeeded();
+        var agentSmart = VisibilityOf("agents", "smart", tab);
+        AgentSmartSettings.Visibility = agentSmart;
+        if (agentSmart == Visibility.Visible) LoadAgentSmartIfNeeded();
+    }
+
+    private async void LoadAgentSmartIfNeeded()
+    {
+        try { await LoadAgentSmartAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadAgentModelsIfNeeded()
@@ -204,6 +213,7 @@ public sealed partial class MainWindow
         ("agents", "directory") => true,
         ("agents", "prompts") => true,
         ("agents", "models") => true,
+        ("agents", "smart") => true,
         _ => false
     };
 

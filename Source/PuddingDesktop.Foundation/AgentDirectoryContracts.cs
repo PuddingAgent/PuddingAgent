@@ -71,6 +71,10 @@ public interface IAgentDirectorySettings
     Task SaveTemplateModelPolicyAsync(string templateId, AgentModelPolicy policy, CancellationToken cancellationToken = default);
     Task<AgentModelPolicy> ReadInstanceModelPolicyAsync(string workspaceId, string agentId, CancellationToken cancellationToken = default);
     Task SaveInstanceModelPolicyAsync(string workspaceId, string agentId, AgentModelPolicy policy, CancellationToken cancellationToken = default);
+
+    /// <summary>Smart sub-agent routes keyed by role id. Only role instances carry them.</summary>
+    Task<IReadOnlyDictionary<string, string>> ReadSmartRoutesAsync(string workspaceId, string agentId, CancellationToken cancellationToken = default);
+    Task SaveSmartRoutesAsync(string workspaceId, string agentId, IReadOnlyDictionary<string, string> routes, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
