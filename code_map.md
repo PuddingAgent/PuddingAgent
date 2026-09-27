@@ -1,3 +1,7 @@
+## 2026-09-27 DS-01 通用、语言与关于
+
+`DesktopPreferences`/`DesktopPreferencesStore`（`desktop.preferences.json`）保存外观与语言；`DesktopLanguages` 只列随构建真实提供的语言（本机为简体中文，并说明需补齐资源、重开 Desktop 生效）；`DesktopProductInfo` 从程序集元数据读取真实版本、判定外部帮助入口（沿用 Web 头部 `RightContent` 的 GitHub 链接）并给出只读配置位置。`general/preferences` 与 `about/product` 两个页签去掉占位卡，改为原生卡片。验证：Foundation 47 项、窗口 smoke 104 项通过。
+
 ## 2026-09-27 DS-00 设置接入基线与生命周期
 
 `PuddingDesktop.Foundation/SettingsOperations.cs` 定义设置操作边界（`ISettingsScope`/`ISettingsOperationHost`/`SettingsOperationGate`/`SettingsVersionGuard`），`LocalDesktopIdentity.cs` 固定本机单用户身份；`InProcessKernel` 按内核代次拒绝未就绪/停止中的操作并在释放会话前排空，`DesktopKernelFactory.Session` 每操作开一个 Core DI 作用域。Shell 只传委托，不新建 HTTP 客户端、REST 适配层或逐接口转发器。接入方式与集成清单见 [DS-00 接入说明](Docs/Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)。验证：Foundation 36 项、Composition 2 项（含真实 Host 进程内调用）、WinUI 窗口 smoke 93 项通过。

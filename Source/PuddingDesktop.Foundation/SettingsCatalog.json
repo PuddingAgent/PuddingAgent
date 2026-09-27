@@ -21,7 +21,7 @@
             ],
             "source": "components/GlobalActions/index.tsx",
             "task": "DS-01",
-            "status": "待迁移"
+            "status": "已接入"
           },
           {
             "id": "help",
@@ -33,7 +33,7 @@
             ],
             "source": "components/RightContent/index.tsx",
             "task": "DS-01",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       },
@@ -1473,7 +1473,7 @@
             ],
             "source": "Source/PuddingDesktop/MainWindow.xaml.cs",
             "task": "DS-01",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       }

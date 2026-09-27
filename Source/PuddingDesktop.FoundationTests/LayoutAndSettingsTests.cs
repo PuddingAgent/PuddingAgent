@@ -33,18 +33,18 @@ public sealed class LayoutAndSettingsTests
         var root = Path.Combine(Path.GetTempPath(), "pudding-winui-test-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var store = new SkeletonSettingsStore(root);
+            var store = new DesktopPreferencesStore(root);
             Assert.Null((await store.LoadAsync()).Warning);
             Directory.CreateDirectory(root);
             await File.WriteAllTextAsync(store.FilePath, "broken{");
             Assert.NotNull((await store.LoadAsync()).Warning);
             Assert.Equal("broken{", await File.ReadAllTextAsync(store.FilePath));
-            await store.SaveAsync(new(new(999, 450, false, true), "Dark", "Acrylic"));
+            await store.SaveAsync(new(new(999, 450, false, true), "Dark", "Acrylic", "zh-CN"));
             var loaded = await store.LoadAsync();
-            Assert.Null(loaded.Warning); Assert.Equal("Dark", loaded.Settings.Theme);
-            Assert.Equal("Acrylic", loaded.Settings.Material);
-            Assert.Equal(320, loaded.Settings.Layout.NavigationWidth);
-            Assert.False(loaded.Settings.Layout.NavigationVisible);
+            Assert.Null(loaded.Warning); Assert.Equal("Dark", loaded.Preferences.Theme);
+            Assert.Equal("Acrylic", loaded.Preferences.Material);
+            Assert.Equal(320, loaded.Preferences.Layout.NavigationWidth);
+            Assert.False(loaded.Preferences.Layout.NavigationVisible);
             Assert.Empty(Directory.GetFiles(root, "*.tmp"));
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }

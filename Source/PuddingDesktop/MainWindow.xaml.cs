@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Reflection;
 using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -13,9 +14,10 @@ public sealed partial class MainWindow : Window
 {
     private readonly ShellState _state = new();
     private readonly IDesktopKernel _kernel;
-    private readonly SkeletonSettingsStore _settingsStore = new(App.StateRoot);
+    private readonly DesktopPreferencesStore _settingsStore = new(App.StateRoot);
     private ShellLayout _layout = new();
     private string _material = "Mica";
+    private string _language = DesktopLanguages.Default;
     private bool _loaded;
     private bool _rendering;
     private bool _demo;
@@ -42,16 +44,19 @@ public sealed partial class MainWindow : Window
     {
         if (_loaded) return;
         var result = await _settingsStore.LoadAsync();
-        _layout = result.Settings.Layout;
-        ThemePicker.SelectedIndex = result.Settings.Theme switch { "Light" => 1, "Dark" => 2, _ => 0 };
-        Root.RequestedTheme = ParseTheme(result.Settings.Theme);
-        MaterialPicker.SelectedIndex = result.Settings.Material switch { "MicaAlt" => 1, "Acrylic" => 2, _ => 0 };
-        ApplyMaterial(result.Settings.Material);
+        _layout = result.Preferences.Layout;
+        _language = result.Preferences.Language;
+        ThemePicker.SelectedIndex = result.Preferences.Theme switch { "Light" => 1, "Dark" => 2, _ => 0 };
+        Root.RequestedTheme = ParseTheme(result.Preferences.Theme);
+        MaterialPicker.SelectedIndex = result.Preferences.Material switch { "MicaAlt" => 1, "Acrylic" => 2, _ => 0 };
+        ApplyMaterial(result.Preferences.Material);
         UpdateCaptionColors();
         NavigationWidthSlider.Value = _layout.NavigationWidth;
         WorkspaceWidthSlider.Value = _layout.WorkspaceWidth;
         SettingsPath.Text = _settingsStore.FilePath;
         DiagnosticPath.Text = Path.Combine(App.StateRoot, "desktop.log");
+        InitializePreferencesSettings();
+        RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
         _loaded = true;
@@ -251,13 +256,68 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            await _settingsStore.SaveAsync(new(_layout, Root.RequestedTheme.ToString(), _material));
-            SettingsNotice.Title = "布局已保存"; SettingsNotice.Message = "外观与布局偏好已保存。"; SettingsNotice.Severity = InfoBarSeverity.Success;
+            await _settingsStore.SaveAsync(new(_layout, Root.RequestedTheme.ToString(), _material, _language));
+            SettingsNotice.Title = "偏好已保存";
+            SettingsNotice.Message = DesktopLanguages.RequiresRestart && _language != DesktopLanguages.Default
+                ? "外观与布局已保存；语言切换在重新打开 Desktop 后生效。"
+                : "外观、布局与语言偏好已保存。";
+            SettingsNotice.Severity = InfoBarSeverity.Success;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            App.WriteDiagnostic(exception); SettingsNotice.Title = "保存失败"; SettingsNotice.Message = "无法写入预览配置，请检查目录权限。"; SettingsNotice.Severity = InfoBarSeverity.Error;
+            App.WriteDiagnostic(exception); SettingsNotice.Title = "保存失败"; SettingsNotice.Message = "无法写入偏好配置，请检查目录权限。"; SettingsNotice.Severity = InfoBarSeverity.Error;
         }
+    }
+    private void InitializePreferencesSettings()
+    {
+        LanguagePicker.Items.Clear();
+        foreach (var language in DesktopLanguages.Supported)
+            LanguagePicker.Items.Add(new ComboBoxItem { Content = language.DisplayName, Tag = language.Tag });
+        LanguagePicker.SelectedIndex = Math.Max(0, DesktopLanguages.Supported
+            .ToList().FindIndex(language => language.Tag == _language));
+        LanguageNotice.Text = DesktopLanguages.Supported.Count == 1
+            ? "当前构建只提供简体中文资源；新增语言需要先补齐资源后再出现在此列表。"
+            : "语言切换在重新打开 Desktop 后生效。";
+        HelpButton.Content = DesktopProductInfo.IsExternalLink(DesktopProductInfo.HelpUrl) ? "打开帮助（外部链接）" : "打开帮助";
+        HelpNotice.Text = DesktopProductInfo.HelpUrl + "\n由系统默认浏览器打开，本机不会提交任何凭据。";
+    }
+    private void OnLanguageChanged(object sender, SelectionChangedEventArgs args)
+    {
+        if (!_loaded || LanguagePicker.SelectedItem is not ComboBoxItem { Tag: string tag }) return;
+        _language = DesktopLanguages.Normalize(tag);
+        SettingsNotice.Title = "语言已选择";
+        SettingsNotice.Message = "重新打开 Desktop 后应用；当前会话继续使用简体中文。";
+        SettingsNotice.Severity = InfoBarSeverity.Informational;
+    }
+    private async void OnOpenHelp(object sender, RoutedEventArgs args)
+    {
+        if (!DesktopProductInfo.IsExternalLink(DesktopProductInfo.HelpUrl))
+        {
+            HelpNotice.Text = "帮助入口不可用：未配置有效的说明地址。";
+            return;
+        }
+        try
+        {
+            if (!await Windows.System.Launcher.LaunchUriAsync(new Uri(DesktopProductInfo.HelpUrl)))
+                HelpNotice.Text = "未能打开帮助页面，请手动访问 " + DesktopProductInfo.HelpUrl;
+        }
+        catch (Exception exception)
+        {
+            App.WriteDiagnostic(exception);
+            HelpNotice.Text = "打开帮助失败：" + exception.Message;
+        }
+    }
+    private void RefreshAbout()
+    {
+        var assembly = typeof(MainWindow).Assembly;
+        var informational = assembly.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        var fileVersion = System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly.Location).FileVersion;
+        AboutProduct.Text = DesktopProductInfo.ProductName;
+        AboutVersion.Text = "版本：" + DesktopProductInfo.NormalizeVersion(informational, fileVersion);
+        AboutShell.Text = DesktopProductInfo.ShellDescription;
+        AboutKernel.Text = DesktopProductInfo.KernelDescription + "\n内核状态：" + _kernel.Snapshot.Description;
+        AboutConfig.Text = DesktopProductInfo.DescribeLocations(App.StateRoot, _chatDataRoot ?? DataRootEditor.Text);
+        AboutHelp.Text = "帮助：" + DesktopProductInfo.HelpUrl + "（外部链接）";
     }
     private async void OnAbout(object sender, RoutedEventArgs args)
     {
@@ -340,9 +400,23 @@ public sealed partial class MainWindow : Window
             ApplyMaterial("MicaAlt"); Check(SystemBackdrop is MicaBackdrop { Kind: Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt }, "mica alt selected");
             ApplyMaterial("Mica"); Check(SystemBackdrop is MicaBackdrop, "mica selected");
             Check(Root.Background is SolidColorBrush { Color.A: 0 }, "root exposes system backdrop");
-            await _settingsStore.SaveAsync(new(_layout, "Light", "Acrylic"));
-            Check((await _settingsStore.LoadAsync()).Settings.Material == "Acrylic", "material persistence");
-            Check((await _settingsStore.LoadAsync()).Settings.Theme == "Light", "settings persistence");
+            await _settingsStore.SaveAsync(new(_layout, "Light", "Acrylic", "zh-CN"));
+            Check((await _settingsStore.LoadAsync()).Preferences.Material == "Acrylic", "material persistence");
+            Check((await _settingsStore.LoadAsync()).Preferences.Theme == "Light", "settings persistence");
+            Check((await _settingsStore.LoadAsync()).Preferences.Language == "zh-CN", "language persistence");
+            // DS-01: language, help and about are real native content instead of migration placeholders.
+            OpenSettingsCategory("general", "preferences");
+            Check(PreferencesSettings.Visibility == Visibility.Visible, "language and help card is native");
+            Check(LanguagePicker.Items.Count == DesktopLanguages.Supported.Count, "language list only offers shipped resources");
+            Check(LanguagePicker.SelectedIndex == 0, "current language is selected from the saved preference");
+            Check(LanguageNotice.Text.Contains("简体中文", StringComparison.Ordinal), "single-language build states the real limit");
+            Check(HelpNotice.Text.Contains(DesktopProductInfo.HelpUrl, StringComparison.Ordinal), "help entry is labelled as an external link");
+            OpenSettingsCategory("about", "product");
+            Check(AboutSettings.Visibility == Visibility.Visible, "about card is native");
+            Check(AboutVersion.Text.StartsWith("版本：", StringComparison.Ordinal), "about shows a real build version field");
+            Check(!AboutVersion.Text.Contains(DesktopProductInfo.UnknownVersion, StringComparison.Ordinal), "build version is not a placeholder");
+            Check(AboutConfig.Text.Contains("desktop.preferences.json", StringComparison.Ordinal), "about lists read-only configuration locations");
+            Check(AboutKernel.Text.Contains(_kernel.Snapshot.Description, StringComparison.Ordinal), "about reads the real kernel state");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

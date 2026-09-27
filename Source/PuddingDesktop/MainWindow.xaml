@@ -196,6 +196,37 @@
                   </StackPanel>
                 </Border>
               </ScrollViewer>
+              <ScrollViewer x:Name="PreferencesSettings" Grid.Row="2" Margin="0,48,0,0" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                <Border Background="{ThemeResource CardBackground}" CornerRadius="12" Padding="24" Margin="0,12,8,0">
+                  <StackPanel Spacing="20">
+                    <StackPanel Spacing="6">
+                      <TextBlock Text="界面语言" FontSize="17" FontWeight="SemiBold" />
+                      <TextBlock Text="只列出当前构建真正带有资源的语言；切换后重新打开 Desktop 生效。" TextWrapping="Wrap" Opacity="0.75" />
+                    </StackPanel>
+                    <ComboBox x:Name="LanguagePicker" Header="当前语言" SelectionChanged="OnLanguageChanged" HorizontalAlignment="Stretch" AutomationProperties.Name="界面语言" />
+                    <TextBlock x:Name="LanguageNotice" TextWrapping="Wrap" Opacity="0.65" FontSize="12" />
+                    <StackPanel Spacing="6">
+                      <TextBlock Text="帮助与使用说明" FontSize="17" FontWeight="SemiBold" />
+                      <TextBlock Text="打开项目说明。该入口指向外部网站，会使用系统默认浏览器打开。" TextWrapping="Wrap" Opacity="0.75" />
+                    </StackPanel>
+                    <Button x:Name="HelpButton" Content="打开帮助（外部链接）" Click="OnOpenHelp" HorizontalAlignment="Left" AutomationProperties.Name="打开帮助说明" />
+                    <TextBlock x:Name="HelpNotice" TextWrapping="Wrap" Opacity="0.65" FontSize="12" />
+                  </StackPanel>
+                </Border>
+              </ScrollViewer>
+              <ScrollViewer x:Name="AboutSettings" Grid.Row="2" Margin="0,48,0,0" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                <Border Background="{ThemeResource CardBackground}" CornerRadius="12" Padding="24" Margin="0,12,8,0">
+                  <StackPanel Spacing="12">
+                    <TextBlock x:Name="AboutProduct" FontSize="17" FontWeight="SemiBold" />
+                    <TextBlock x:Name="AboutVersion" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.Name="产品版本" />
+                    <TextBlock x:Name="AboutShell" TextWrapping="Wrap" />
+                    <TextBlock x:Name="AboutKernel" TextWrapping="Wrap" />
+                    <TextBlock Text="配置位置（只读）" FontSize="13" FontWeight="SemiBold" />
+                    <TextBlock x:Name="AboutConfig" TextWrapping="Wrap" IsTextSelectionEnabled="True" FontSize="12" Opacity="0.7" />
+                    <TextBlock x:Name="AboutHelp" TextWrapping="Wrap" FontSize="12" Opacity="0.7" />
+                  </StackPanel>
+                </Border>
+              </ScrollViewer>
             </Grid>
           </NavigationView>
         </Grid>

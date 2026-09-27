@@ -83,7 +83,7 @@ public sealed partial class MainWindow
         foreach (var tab in category.Tabs)
         {
             var cards = new StackPanel { Spacing = 14, Margin = new Thickness(0, 16, 8, 16) };
-            if (tab.Id != "appearance" || category.Id != "general")
+            if (!HasNativeSettingsContent(category.Id, tab.Id))
                 foreach (var card in tab.Cards) cards.Children.Add(CreateSettingsCard(card));
             SettingsTabs.TabItems.Add(new TabViewItem
             {
@@ -128,9 +128,22 @@ public sealed partial class MainWindow
     {
         if (SettingsTabs.SelectedItem is not TabViewItem { Tag: string tab }) return;
         _settingsTabIds[_settingsCategoryId] = tab;
-        AppearanceSettings.Visibility = _settingsCategoryId == "general" && tab == "appearance"
-            ? Visibility.Visible : Visibility.Collapsed;
+        AppearanceSettings.Visibility = VisibilityOf("general", "appearance", tab);
+        PreferencesSettings.Visibility = VisibilityOf("general", "preferences", tab);
+        AboutSettings.Visibility = VisibilityOf("about", "product", tab);
     }
+
+    private Visibility VisibilityOf(string category, string tab, string current) =>
+        _settingsCategoryId == category && current == tab ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>Tabs with native content must not also render the migration placeholder cards.</summary>
+    private bool HasNativeSettingsContent(string category, string tab) => (category, tab) switch
+    {
+        ("general", "appearance") => true,
+        ("general", "preferences") => true,
+        ("about", "product") => true,
+        _ => false
+    };
 
     private void UpdateSettingsOverlay()
     {

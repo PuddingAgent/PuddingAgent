@@ -127,7 +127,11 @@
 
 ### DS-01 — 通用、语言与关于（P1；依赖 DS-00）
 
+状态：**已完成（2026-09-27）**。卡片 `language`、`help`、`about` 已从占位改为原生内容，catalog 与 CSV 状态同步为「已接入」。
+
 保留主题/材质/宽度保存，迁移语言选择与帮助。关于读取实际构建版本，不写死版本；不展示调试路径作为普通用户表单。语言资源未齐全时只列真实支持语言。验收：重开后偏好一致、深浅/高对比资源可用、125%/150%/200% DPI 与键盘导航；Core 停止也可用。
+
+已交付：`DesktopPreferences`/`DesktopPreferencesStore`（`desktop.preferences.json`，含语言）、`DesktopLanguages`（只列真实随构建提供的语言，本机为简体中文，并显式说明“新增语言需先补资源”与“重开 Desktop 生效”）、`DesktopProductInfo`（版本取自程序集元数据，帮助入口沿用 Web 头部的 GitHub 链接并标示为外部链接）。未做：多语言资源包、DPI/高对比人工走查。
 
 ### DS-02 — LLM 服务商与模型（P0；依赖 DS-00）
 
@@ -639,4 +643,5 @@ P1 先调度策略/扫描状态/决策原因，P2 再独立原生看板/列表�
 | 任务 | 状态 | 证据 |
 |---|---|---|
 | DS-00 接入基线与生命周期 | 已完成 2026-09-27 | [接入说明](../Features/Desktop-Settings-Operation-Boundary-2026-09-27.md)；Foundation 36 项、Composition 2 项（含真实 Host）、窗口 smoke 93 项通过 |
-| DS-01 … DS-17 | 待实施 | — |
+| DS-01 通用、语言与关于 | 已完成 2026-09-27 | `language`/`help`/`about` 三卡原生化；Foundation 47 项、窗口 smoke 104 项通过 |
+| DS-02 … DS-17 | 待实施 | — |

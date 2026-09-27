@@ -7,7 +7,7 @@
 | `App.xaml(.cs)` | Windows 11 控件/主题，独立骨架单实例和激活转发，隔离配置、异常日志、组合入口 |
 | `MainWindow.Kernel.cs` | 内核配置、原生 ChatWorkspace 装配、生命周期按钮、退出协调与真实进程 smoke |
 | `MainWindow.xaml(.cs)` | 原生菜单、角色导航、草稿、五类文档标签、设置与运行中心、窄窗口折叠 |
-| `MainWindow.Settings.cs` | 居中设置层、分类/页签/占位卡片、字段搜索、背景输入隔离、Esc/焦点恢复；保留外观和运行中心入口；DS-00 绑定所选工作区/角色到设置选择代次 |
+| `MainWindow.Settings.cs` | 居中设置层、分类/页签/占位卡片、字段搜索、背景输入隔离、Esc/焦点恢复；DS-00 绑定所选工作区/角色到设置选择代次；DS-01 语言与关于页签改为原生内容 |
 | `Kernel/WinUiDesktopServices.cs` | Core 通过 DI 调用展示端口，DispatcherQueue 调度、取消及关闭处理 |
 | `HostingProbeWindow.cs` | 手动/自检双 WebView2，独立 UDF 与离线页面，Cookie 隔离，原生浮层验证 |
 | `PuddingDesktop.csproj` | WinUI 3/.NET 10/x64，非打包、AppSDK self-contained，禁止视图直接引用业务工程 |

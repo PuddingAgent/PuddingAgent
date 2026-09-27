@@ -77,6 +77,7 @@ public sealed partial class MainWindow
             NativeChatPane.Content = null;
         }
         if (_loaded) OnStateChanged(this, new PropertyChangedEventArgs(nameof(ShellState.Page)));
+        if (_loaded) RefreshAbout();
     }
     private async Task<string> SaveDataRootAsync()
     {
