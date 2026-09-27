@@ -326,3 +326,9 @@ ChatComposer 的拖放及 Ctrl+V 现接收 StorageItems 中的图片与文本/�
 MathFormulaView 现在使用固定 Grid 承载文本与图片，以 Visibility 切换；同主题已经完成或进行中的渲染不重复启动；卸载清理通过 DispatcherQueue 延后检查 IsLoaded，仅真正离开视觉树才取消/释放。真实卸载后重挂载仍重新渲染。修复后的诊断代次为 1，图片具有实际尺寸且原文折叠；行内字号 14、边距 2，与正文更协调，独立公式块字号保持 22。
 
 回归：60 逻辑/179 原生窗口检查通过，构建零警告/错误，日志 `temp/native-inline-math-final.log`。新增 7 项检查覆盖真正卸载重载，以及完整 ChatWorkspace 在宽屏/窄屏/深色三种场景的实际图片可见、原文折叠与后续帧稳定；保留浅深字形像素检查。实看最终截图 `temp/test-out/native-chat-5301d8a8a2c34a31a19eb67e08bba98f/ui.compact-light.png` 和 `ui.wide-dark.png`，公式正确排版，窄屏样例能与正文同排。此次没有重启用户产品、重新执行 Core 测试或验证全量 TeX、DPI/屏幕阅读器；只关闭已复现的组合显示问题。
+
+## 语音播放基础组件（2026-09-27）
+
+新增 PuddingChat/SpeechPlayback.cs：角色与消息绑定的 SpeechRequest、受限 SpeechAudio、合成端口/设备端口，以及拥有单条播放通道的 SpeechPlaybackSession。合成与播放分阶段，停止/新请求/销毁取消当前操作，代次拒绝迟到结果；播放错误可见但不回显供应商原始异常。当前只在独立 BCL 边界完成，不修改 Host 或 Composition，不创建原生语音入口。详细方案见 Desktop-Native-Voice-2026-09-27.md。
+
+67 项逻辑测试通过（新增 7 项），日志 temp/native-speech-state.log。未打开麦克风、扬声器，未调用付费服务或修改 D:\data。下一步为真实原生播放器/消息按钮组件，然后接 Core；录音转写及持续语音会话尚未实现。

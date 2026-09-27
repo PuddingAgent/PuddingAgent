@@ -550,3 +550,7 @@ Web `MarkdownBlock.tsx` 的 `language-image` 围栏通过 vision ID 或图片文
 ## 公式组合显示修复（2026-09-27）
 
 前述行内公式视觉差异已关闭。MathFormulaView 以稳定 Grid 和可见性切换呈现原文/位图，同主题渲染去重，卸载后排队检查是否真正离开视觉树再释放；避免 InlineUIContainer 重排期间反复取消渲染。完整消息宽/窄/深色截图与跨帧断言通过，60 逻辑/179 窗口检查通过。该结论不扩大为完整 DPI、TeX 或产品真实模型验收。
+
+## 原生语音组件进入实现（2026-09-27）
+
+设计与逐层接入见 [原生聊天语音](Desktop-Native-Voice-2026-09-27.md)。已独立实现 BCL 朗读合同与播放状态机，67 项逻辑测试通过；尚未接原生播放器、按钮或 Core，不宣称语音可用。复用 IVoiceSynthesisService，经进程内函数调用，不增加 Desktop HTTP；录音/转写和持续语音会话保留完整独立门禁。

@@ -12,3 +12,5 @@ Consumers own polling, dispatch, rendering and lifetime. Uncertain command compl
 `WorkspaceSetup.cs`: local first-use request normalization and `IWorkspaceSetupClient`; no login or secrets. Workspace IDs are bounded path-safe slugs.
 
 `Configuration.cs`: secret-free provider/model and role snapshots, explicit Keep/Replace/Clear secret commands, input validation, and `IConfigurationClient`. Secret-bearing edits redact their ToString.
+
+`SpeechPlayback.cs`: workspace/role/message-bound speech requests, bounded WAV/MP3 audio, synthesis/device ports and one UI-owned playback lane. Cancels replaced/stopped/disposed work and rejects stale completion; no platform audio, HTTP or Core dependency. Native device/Core adapters remain pending; see Desktop-Native-Voice-2026-09-27.md.

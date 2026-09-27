@@ -1348,3 +1348,7 @@ PuddingDesktop/MainWindow.Kernel.RunKernelSmokeAsync 在隔离数据目录创建
 ## 原生行内公式显示修复（2026-09-27）
 
 `PuddingChat.WinUI/MathFormulaView` 固定内容树、同主题渲染去重、延迟确认真实卸载，消除完整聊天中的反复重载回退。`VisualPreview` 验证宽/窄/深色消息中图片真实可见、原文折叠及跨帧稳定，`MathFormulaChecks` 验证真正卸载后重挂载；60 逻辑/179 窗口检查通过，已检查最终截图。详见原生聊天实施报告。
+
+## 原生语音播放基础（2026-09-27）
+
+`PuddingChat/SpeechPlayback.cs` 与 `PuddingChatTests/SpeechPlaybackTests.cs` 提供消息朗读合同、单通道播放状态和取消/晚到结果防护，独立逻辑测试 67 项通过。`Docs/Features/Desktop-Native-Voice-2026-09-27.md` 明确原生播放器→按钮→Composition/Core 的接入顺序及录音/持续会话门禁；当前未接产品语音功能。
