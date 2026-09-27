@@ -44,3 +44,5 @@ The host supplies `IChatClient`, owns this control's disposal, and receives sett
 `ChatWorkspace.CancelAsync` tracks in-flight stops by role/session/turn, suppresses duplicate calls and rejects late feedback after selection changes. ChatComposer disables the pending stop action; failure allows retry and success does not mark execution terminal. WorkspaceCancellationChecks covers seven window scenarios (257 native checks total).
 
 `PagedTextView` bounds each text page inside a native 360-DIP ScrollViewer while keeping pagination/copy outside it. Explicit page changes reset to the top; streaming updates retain the current page offset. PagedTextChecks verifies actual viewport and navigation geometry (260 native checks).
+
+Latest full composition verification: NativeChat integration 3/3; Desktop PID 30456 mounted native chat/role/file drafts, recreated chat after Core restart, and exited releasing its data lease. Shared dirty-worktree evidence, not a clean-commit release; see the completion audit for logs/hash and remaining real-model/approval gates.

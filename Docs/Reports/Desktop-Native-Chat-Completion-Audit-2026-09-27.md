@@ -189,3 +189,11 @@ ChatWorkspace 按角色、会话和 Turn 记录正在提交的停止请求，Cha
 PagedTextView 的当前页文本放入最大 360 DIP 高的原生 ScrollViewer，分页与复制操作保留在滚动区外，避免单页数千行仍撑长聊天。滚动区有独立无障碍名称和键盘焦点入口；主动切换页码回到页首，同页流式更新不主动滚动。仍使用有界文本页和原文完整复制，不更改 Core 内容或输入/输出归属。
 
 85 逻辑 / 260 原生窗口检查通过，组件构建零警告/错误，日志 temp/native-tool-output-viewport.log。新增实际布局断言覆盖阅读区上限、可滚动长内容、流式保持偏移、操作区位置和翻页回到顶部。此轮未验证真实触摸板嵌套滚动、Narrator 或完整 Desktop 产品行为，相关人工门禁保留。
+
+## 当前聊天组件完整装配复验（2026-09-27）
+
+最新停止请求反馈及长输出阅读区已经随完整产品装配验证。执行 NativeChat 集成测试（3/3，通过真实 Host，含本机免登录、直接服务调用、角色/会话隔离、事件重放、子代理与语音端口）和 TestScripts/test-pudding-desktop-kernel.ps1。Desktop 构建零错误、147 警告；测试 PID 30456，退出码 0。
+
+产品报告 temp/test-out/kernel-winui-644c164769734ba7a052741a7b3a4ce7/report.json 验证 Core DLL 加载、实际原生聊天挂载/可见、角色与文本附件草稿、后台到 UI 回调、Core 停止/重启后新的聊天客户端与角色重载、DataRoot 设置保存。脚本在退出后独占打开目录租约成功。日志 temp/native-chat-core-current.log、temp/native-chat-product-current.log；PuddingChat.WinUI.dll SHA256 为 5B4141A96D97FB4CC418400922B11095CFF6AA0798491A98E3453029D35F9856。
+
+来源是共享工作树：启动集成验证时 HEAD c1f22b3f83dbca3b29db531c149f6742cd82bbd2，另有 Desktop 设置、Host 和 Workspace 等并行未提交修改；不能把本结果当作该提交原样构建或发布包证明。全部数据隔离于系统 Temp/仓库 temp，不访问 D:\data。未调用真实模型或设备，未完成审批持久暂停/恢复；本轮关闭最新聊天组件的产品装配复验项，完整目标仍进行中。
