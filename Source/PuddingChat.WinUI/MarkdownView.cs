@@ -31,7 +31,13 @@ public sealed class MarkdownView : StackPanel
             var index = desired.Count;
             var reusable = !source.Contains('[') && index < _rendered.Count
                 && _rendered[index].Source == source && _rendered[index].Kind == kind;
-            desired.Add((source, kind, reusable ? _rendered[index].View : RenderBlock(block)));
+            if (block is CodeBlock code && index < _rendered.Count && _rendered[index].Kind == kind
+                && _rendered[index].View is CodeBlockView existingCode)
+            {
+                existingCode.Update(code.Lines.ToString(), (code as FencedCodeBlock)?.Info ?? "代码");
+                desired.Add((source, kind, existingCode));
+            }
+            else desired.Add((source, kind, reusable ? _rendered[index].View : RenderBlock(block)));
         }
         foreach (var child in Children.Where(c => !desired.Any(d => ReferenceEquals(d.View, c))).ToArray()) Children.Remove(child);
         for (var i = 0; i < desired.Count; i++)
@@ -52,7 +58,7 @@ public sealed class MarkdownView : StackPanel
         switch (block)
         {
             case CodeBlock code:
-                return Code(code.Lines.ToString(), (code as FencedCodeBlock)?.Info ?? "代码");
+                return new CodeBlockView(code.Lines.ToString(), (code as FencedCodeBlock)?.Info ?? "代码");
             case HeadingBlock heading:
                 var title = Text(heading.Inline);
                 title.FontSize = heading.Level switch { 1 => 25, 2 => 22, 3 => 19, _ => 16 };
@@ -113,27 +119,6 @@ public sealed class MarkdownView : StackPanel
         }
         return new ScrollViewer { Content = grid, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollMode = ScrollMode.Disabled };
-    }
-
-    private static UIElement Code(string code, string language)
-    {
-        var panel = new StackPanel { Spacing = 8 };
-        var header = new Grid();
-        header.Children.Add(new TextBlock { Text = language, Opacity = .6, VerticalAlignment = VerticalAlignment.Center });
-        var copy = new Button { Content = "复制代码", HorizontalAlignment = HorizontalAlignment.Right };
-        copy.Click += (_, _) =>
-        {
-            try { var data = new Windows.ApplicationModel.DataTransfer.DataPackage(); data.SetText(code);
-                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data); copy.Content = "已复制"; }
-            catch { copy.Content = "复制失败，请重试"; }
-        };
-        header.Children.Add(copy); panel.Children.Add(header);
-        panel.Children.Add(new ScrollViewer { Content = new TextBlock { Text = code, IsTextSelectionEnabled = true,
-            FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 13, LineHeight = 21 },
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Enabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollMode = ScrollMode.Disabled });
-        var surface = Surfaces.Card("SubtleFillColorSecondaryBrush"); surface.Padding = new Thickness(12);
-        surface.CornerRadius = new CornerRadius(8); surface.Child = panel; return surface;
     }
 
     private static TextBlock Text(ContainerInline? input)

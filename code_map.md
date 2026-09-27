@@ -35,6 +35,8 @@ Foundation 新增 `LlmSettingsContracts.cs`（`ILlmResourceSettings` 任务形�
 
 ## 2026-09-27 原生聊天交错消息流
 
+`PuddingChat.WinUI/CodeBlockView.cs` 为独立原生代码块控件：语言标签、最新代码复制、自动换行和横向阅读；`MarkdownView` 流式追加时复用同一代码块及滚动容器。`CodeBlockChecks` 验证未闭合围栏、100 DIP 横向偏移、追加后身份/换行状态及最新文本。
+
 `ChatComposer` 在宽度小于 480 DIP 时将附件与发送/停止操作分成两行；附件行使用 Grid 保留移除按钮空间，长名称省略并通过提示显示全名。`ComposerLayoutChecks` 验证 320/360/900 DIP 的实际按钮边界、长附件名与缩放时草稿/状态保留。
 
 `PuddingChat.WinUI/MessageCard.LoadProcessDetailsAsync` 按 Run 隔离明细加载：运行身份变化取消旧等待并清空旧视图/缓存，释放控件取消等待，拒绝跨消息结果，历史明细不覆盖当前快照。`MessageDetailsChecks` 在原生窗口验证竞争加载、晚到结果、缓存回收与失败重试。
