@@ -21,7 +21,9 @@ public partial class App : Application
         {
             try
             {
-                await control.ConnectAuthenticatedAsync();
+                await control.InitializeAsync();
+                await control.InitializeAsync();
+                Check(fixture.WorkspaceReads == 1, "automatic initialization shared across loads");
                 if (Environment.GetCommandLineArgs().Contains("--preview"))
                 {
                     await control.SelectRoleAsync("test", fixture.Builder); control.Composer.Draft = "implement";
@@ -46,7 +48,7 @@ public partial class App : Application
                 Check(control.CurrentConversation?.AgentId == "reviewer", "late reply rejected");
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 10, native = true }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 11, native = true }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -60,8 +62,8 @@ public partial class App : Application
         public Agent Reviewer = new("reviewer", "代码审阅者", Description: "检查边界与验证");
         public PendingSend? Sent; public string? Cancelled; public bool Disposed;
         public TaskCompletionSource<Conversation?> Late = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public Task LoginAsync(string user, string password, CancellationToken ct) => Task.CompletedTask;
-        public Task<Workspace[]> GetWorkspacesAsync(CancellationToken ct) => Task.FromResult<Workspace[]>([new("test", "组件测试")]);
+        public int WorkspaceReads;
+        public async Task<Workspace[]> GetWorkspacesAsync(CancellationToken ct) { WorkspaceReads++; await Task.Delay(20, ct); return [new("test", "组件测试")]; }
         public Task<Agent[]> GetAgentsAsync(string workspace, CancellationToken ct) => Task.FromResult(new[] { Builder, Reviewer });
         public Task<AgentStatus[]> GetStatusesAsync(string workspace, CancellationToken ct) => Task.FromResult<AgentStatus[]>([new("builder", "idle", "待命", 0)]);
         public Conversation Conversation(string agent) => new("test", agent, "session",

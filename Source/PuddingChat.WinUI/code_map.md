@@ -5,6 +5,6 @@ Programmatic native WinUI controls, no WebView/HTML or host dependency.
 - `RoleAvatarCard`: portrait fallback, description, canonical status and unread count.
 - `ChatComposer`: multiline per-role draft, Ctrl+Enter send, explicit retry and cancellation.
 - `MessageCard`: selectable text, native code/heading blocks, copy, lazy canonical process disclosure, unknown event fallback.
-- `ChatWorkspace`: login, workspace/role navigation, bounded recent conversation snapshot polling (1s active/4s idle), dispatch and lifetime.
+- `ChatWorkspace`: automatic local initialization (shared across Loaded calls, retryable after failure), workspace/role navigation, bounded recent conversation snapshot polling (1s active/4s idle), dispatch and lifetime.
 
 The host supplies `IChatClient`, owns this control's disposal, and receives settings/runtime navigation events. Current native formatting retains unsupported Markdown syntax verbatim. Attachments, voice, Live2D, complete historical pagination and admin editing are separate migration items.

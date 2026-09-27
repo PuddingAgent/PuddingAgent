@@ -32,7 +32,6 @@ public sealed record PendingSend(RoleKey Role, string ConversationId, string Tex
 
 public interface IChatClient : IDisposable
 {
-    Task LoginAsync(string user, string password, CancellationToken ct);
     Task<Workspace[]> GetWorkspacesAsync(CancellationToken ct);
     Task<Agent[]> GetAgentsAsync(string workspace, CancellationToken ct);
     Task<AgentStatus[]> GetStatusesAsync(string workspace, CancellationToken ct);

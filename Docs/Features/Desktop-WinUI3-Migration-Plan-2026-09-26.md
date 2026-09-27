@@ -188,7 +188,7 @@ flowchart TB
 1. `PuddingDesktop.exe` 启动 WinUI Shell，先显示设置/运行中心，再由组合入口加载内核；不得在 App 构造函数同步启动耗时数据库/索引任务。
 2. Foundation 的 `IDesktopKernel` 暴露 Snapshot、StartAsync、StopAsync、DisposeAsync；Core 宿主适配器实现它，UI 不拿 `IServiceProvider` 或业务数据库实例。
 3. 组合入口构建 Core Host 的独立服务容器，负责唯一生命周期；启动异常映射为 Failed，界面仍可修复。UI 和内核 Dispatcher/线程职责分开，长任务不阻塞 UI。
-4. 原生聊天使用应用接口直接调用 Core，账号身份由 Core 仓储校验，业务调用不经 HTTP。管理页面和外部接口仍可使用 Host HTTP；内容根/default-data/wwwroot 随发布包显式解析。
+4. 原生聊天使用应用接口直接调用 Core，由 Composition 提供固定的 `single-user` 本机身份，无需账号口令，业务调用不经 HTTP。管理页面和外部接口仍可使用 Host HTTP；内容根/default-data/wwwroot 随发布包显式解析。
 5. 普通内核停止需有界取消后台任务、解除事件订阅、关闭 DB/文件句柄。是否支持同进程再次启动必须独立测试；没有证据前以完整 Desktop 重启为恢复方式。
 6. .NET 未处理异常、原生崩溃/OOM 仍可能结束整个进程；进程内设计不提供原有子进程崩溃隔离。外部部署/恢复工具负责新构建启动和崩溃后的恢复，不承诺 View 层 catch 可以兜住进程故障。
 7. 关闭到托盘、显式退出、Windows 会话结束、真实配置修复和内核资源回收，在内核接入阶段完成；本轮骨架关闭即退出，未声称达到原产品生命周期对等。
@@ -215,7 +215,7 @@ flowchart TB
 
 ### 3.3 原生聊天直接接入 Core
 
-`IChatClient` 是 BCL 应用端口。WinUI 控件负责角色选择、草稿和显示；`InProcessChatClient` 创建独立 DI scope，在后台线程调用 Core。角色是 `(workspaceId, agentId)` 实例，模板不是实例身份。认证读取 Core 账号仓储并校验已有密码哈希，不签发 JWT；停机、重启不复用账号身份。
+`IChatClient` 是 BCL 应用端口。WinUI 控件负责角色选择、草稿和显示；`InProcessChatClient` 创建独立 DI scope，在后台线程调用 Core。角色是 `(workspaceId, agentId)` 实例，模板不是实例身份。客户端启动自动读取工作空间与角色，无登录界面、账号查询或口令校验；本机身份固定为 `single-user`，重启后直接可用。停机仍取消并排空旧客户端。Web/远程入口继续使用原有账号认证，禁止把本机免登录扩展为 HTTP 匿名访问。
 
 - 查询：`WorkspaceAgentFileService`、`IAgentRunProjectionService`、`IAgentConversationProjectionService`。后两者已直接引用 `ISessionRepository`，不再向本机 HTTP 回绕。
 - 主会话：Core `AgentMainSessionService` 负责创建、重定向与绑定。

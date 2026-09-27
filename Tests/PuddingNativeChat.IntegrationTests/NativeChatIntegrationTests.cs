@@ -11,7 +11,7 @@ namespace PuddingNativeChat.IntegrationTests;
 public class NativeChatIntegrationTests
 {
     [Fact]
-    public async Task RealCore_Login_Roles_MainSession_IdempotentAdmission_AndProjection()
+    public async Task RealCore_LocalClientNeedsNoAccount_WebStillRequiresAuthentication()
     {
         var root = Path.Combine(Path.GetTempPath(), "Pudding-native-chat-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(root, "config"));
@@ -25,15 +25,30 @@ public class NativeChatIntegrationTests
             await kernel.StartAsync(root, timeout.Token);
             var address = kernel.Snapshot.WorkbenchAddress!;
             using var http = new HttpClient();
+            using var client = factory.CreateChatClient();
+            // A fresh Core has no account: native reads must already work.
+            Assert.NotNull(await client.GetWorkspacesAsync(timeout.Token));
             var password = "Test-" + Guid.NewGuid().ToString("N") + "aA1";
             using var setup = await http.PostAsJsonAsync(new Uri(address, "/api/bootstrap/complete"), new
             { admin = new { userId = "native-test", email = "native@example.invalid", password },
                 defaults = new { workspaceName = "Native test", agentName = "Native builder" } }, timeout.Token);
             Assert.True(setup.IsSuccessStatusCode, $"Bootstrap: {setup.StatusCode}");
+            using var anonymous = await http.GetAsync(new Uri(address, "/api/workspaces"), timeout.Token);
+            Assert.Equal(System.Net.HttpStatusCode.Unauthorized, anonymous.StatusCode);
+            using var invalid = await http.PostAsJsonAsync(new Uri(address, "/api/login/account"),
+                new { username = "native-test", password = "wrong" }, timeout.Token);
+            using var invalidBody = JsonDocument.Parse(await invalid.Content.ReadAsStringAsync(timeout.Token));
+            Assert.Equal("error", invalidBody.RootElement.GetProperty("status").GetString());
+            using var remote = new HttpClient();
+            using var login = await remote.PostAsJsonAsync(new Uri(address, "/api/login/account"),
+                new { username = "native-test", password }, timeout.Token);
+            using var loginBody = JsonDocument.Parse(await login.Content.ReadAsStringAsync(timeout.Token));
+            Assert.Equal("ok", loginBody.RootElement.GetProperty("status").GetString());
+            remote.DefaultRequestHeaders.Authorization = new("Bearer", loginBody.RootElement.GetProperty("token").GetString());
+            using var authorized = await remote.GetAsync(new Uri(address, "/api/workspaces"), timeout.Token);
+            Assert.Equal(System.Net.HttpStatusCode.OK, authorized.StatusCode);
             using var network = new LoopbackObserver(address);
-            using var client = factory.CreateChatClient();
-            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => client.GetWorkspacesAsync(timeout.Token));
-            await client.LoginAsync("native-test", password, timeout.Token);
+
             var workspaces = await client.GetWorkspacesAsync(timeout.Token);
             var workspace = Assert.Single(workspaces);
             var agents = await client.GetAgentsAsync(workspace.WorkspaceId, timeout.Token);
@@ -61,8 +76,7 @@ public class NativeChatIntegrationTests
             await Assert.ThrowsAsync<ObjectDisposedException>(() => client.GetWorkspacesAsync(timeout.Token));
             await kernel.StartAsync(root, timeout.Token);
             using var restarted = factory.CreateChatClient();
-            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => restarted.GetWorkspacesAsync(timeout.Token));
-            await restarted.LoginAsync("native-test", password, timeout.Token);
+            Assert.NotEmpty(await restarted.GetWorkspacesAsync(timeout.Token));
             Assert.NotEmpty(await restarted.GetAgentsAsync(workspace.WorkspaceId, timeout.Token));
         }
         finally

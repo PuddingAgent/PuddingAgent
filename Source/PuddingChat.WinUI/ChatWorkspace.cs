@@ -18,20 +18,18 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     private readonly ScrollViewer _scroll;
     private readonly TextBlock _title = new() { Text = "选择角色，开始工作", FontSize = 24, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _subtitle = new() { FontSize = 12, Opacity = .65, TextWrapping = TextWrapping.Wrap };
-    private readonly InfoBar _notice = new() { IsOpen = true, IsClosable = false, Title = "登录 Core", Message = "使用当前数据目录中的账号登录。" };
-    private readonly StackPanel _login = new() { Spacing = 12, MaxWidth = 420, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+    private readonly InfoBar _notice = new() { IsOpen = true, IsClosable = false, Title = "正在加载工作空间", Message = "正在读取本机角色与主会话。" };
     private readonly Grid _chat = new() { RowSpacing = 16, Padding = new Thickness(24) };
-    private readonly TextBox _username = new() { Header = "账号" };
-    private readonly PasswordBox _password = new() { Header = "密码" };
-    private readonly Button _loginButton = new() { Content = "登录", HorizontalAlignment = HorizontalAlignment.Stretch };
-    private readonly Button _refresh = new() { Content = "刷新角色", IsEnabled = false };
+    private readonly Button _refresh = new() { Content = "刷新角色" };
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly Dictionary<string, RoleAvatarCard> _cards = [];
     private readonly Dictionary<string, (string Signature, MessageCard Card)> _messageCards = [];
     private readonly ColumnDefinition _navigationColumn = new() { Width = new GridLength(248) };
     private Grid? _navigation;
-    private bool _disposed, _busy, _refreshing, _changingDraft, _signedIn;
+    private bool _disposed, _busy, _refreshing, _changingDraft, _connected;
     private bool _active = true;
+    private bool _loadingWorkspaces;
+    private Task? _initialization;
     private long _workspaceGeneration;
     private Agent? _agent;
     public ChatComposer Composer { get; } = new();
@@ -41,7 +39,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     public event EventHandler? SettingsRequested;
     public event EventHandler? RuntimeRequested;
     public event EventHandler? AdministrationRequested;
-    public void SetActive(bool active) { _active = active; if (active && _signedIn && !_disposed) _timer.Start(); else _timer.Stop(); }
+    public void SetActive(bool active) { _active = active; if (active && _connected && !_disposed) _timer.Start(); else _timer.Stop(); }
 
     public void SetNavigationWidth(double width)
     {
@@ -80,15 +78,10 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         _scroll = new ScrollViewer { Content = _messages, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         Grid.SetRow(_scroll, 2); _chat.Children.Add(_scroll);
         Grid.SetRow(Composer, 3); _chat.Children.Add(Composer);
-        _login.Children.Add(new TextBlock { Text = "继续你的角色工作", FontSize = 24 });
-        _login.Children.Add(_username); _login.Children.Add(_password); _login.Children.Add(_loginButton);
-        _login.Children.Add(new TextBlock { Text = "首次使用请先打开左侧“初始化与配置”。模型与角色配置仍在管理页面中完成。", FontSize = 12, Opacity = .65, TextWrapping = TextWrapping.Wrap });
         Grid.SetColumn(_chat, 1); root.Children.Add(_chat);
-        Grid.SetRow(_login, 2); _chat.Children.Add(_login);
-        Content = root; Composer.Visibility = Visibility.Collapsed;
-        _loginButton.Click += async (_, _) => await GuardAsync(LoginAsync);
-        _refresh.Click += async (_, _) => await GuardAsync(RefreshRolesAsync);
-        _workspaces.SelectionChanged += async (_, _) => await GuardAsync(RefreshRolesAsync);
+        Content = root; UpdateComposer();
+        _refresh.Click += async (_, _) => await GuardAsync(LoadWorkspacesAsync);
+        _workspaces.SelectionChanged += async (_, _) => { if (!_loadingWorkspaces) await GuardAsync(RefreshRolesAsync); };
         _roles.SelectionChanged += async (_, _) =>
         {
             if (_roles.SelectedItem is RoleAvatarCard card && _workspaces.SelectedItem is Workspace workspace)
@@ -98,21 +91,13 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         Composer.SendRequested += async (_, _) => await GuardAsync(SendAsync);
         Composer.CancelRequested += async (_, _) => await GuardAsync(CancelAsync);
         _timer.Tick += async (_, _) => { if (_active && IsLoaded) await GuardAsync(RefreshAsync); };
-        Loaded += (_, _) => { if (_active && _signedIn && !_disposed) _timer.Start(); };
+        Loaded += async (_, _) => { await GuardAsync(InitializeAsync); if (_active && _connected && !_disposed) _timer.Start(); };
         Unloaded += (_, _) => _timer.Stop();
     }
     private async Task GuardAsync(Func<Task> action)
     {
         try { await action(); }
         catch (OperationCanceledException) { }
-        catch (UnauthorizedAccessException exception)
-        {
-            if (_disposed) return;
-            _signedIn = false; _timer.Stop(); _selection?.Cancel(); _state.Clear(); _agent = null;
-            _messageCards.Clear(); SetDraft();
-            _messages.Children.Clear(); _roles.Items.Clear(); _cards.Clear(); Composer.Visibility = Visibility.Collapsed;
-            _login.Visibility = Visibility.Visible; _notice.Title = "请登录"; _notice.Message = exception.Message; _notice.IsOpen = true;
-        }
         catch (Exception exception)
         {
             if (_disposed) return;
@@ -120,27 +105,36 @@ public sealed class ChatWorkspace : UserControl, IDisposable
             _notice.Message = exception is HttpRequestException or InvalidOperationException ? exception.Message : "请重试，或在运行中心检查 Core。";
         }
     }
-    private async Task LoginAsync()
+    public Task InitializeAsync()
     {
-        _loginButton.IsEnabled = false;
-        var password = _password.Password; _password.Password = "";
-        try { await _client.LoginAsync(_username.Text.Trim(), password, _lifetime.Token); await ConnectAuthenticatedAsync(); }
-        finally { if (!_disposed) _loginButton.IsEnabled = true; }
+        if (_initialization is null || _initialization.IsFaulted || _initialization.IsCanceled)
+            _initialization = LoadWorkspacesAsync();
+        return _initialization;
     }
-    public async Task ConnectAuthenticatedAsync()
+    private async Task LoadWorkspacesAsync()
     {
-        var workspaces = await _client.GetWorkspacesAsync(_lifetime.Token);
-        if (_disposed) return;
-        _signedIn = true; _login.Visibility = Visibility.Collapsed; Composer.Visibility = Visibility.Visible; _refresh.IsEnabled = true;
-        _workspaces.ItemsSource = workspaces;
-        _notice.Severity = InfoBarSeverity.Informational; _notice.Title = "选择角色";
-        _notice.Message = workspaces.Length == 0 ? "暂无工作空间，请先完成 Core 初始化。" : "角色的主会话、草稿和运行状态会在这里展示。";
-        if (workspaces.Length > 0) _workspaces.SelectedIndex = 0;
-        _timer.Start(); UpdateComposer();
+        if (_disposed || _loadingWorkspaces) return;
+        _loadingWorkspaces = true; _refresh.IsEnabled = false;
+        try
+        {
+            var workspaces = await _client.GetWorkspacesAsync(_lifetime.Token);
+            if (_disposed) return;
+            _connected = true;
+            _workspaceGeneration++; _selection?.Cancel(); _state.Select(null); _agent = null; UpdateComposer();
+            _messages.Children.Clear(); _messageCards.Clear(); _roles.Items.Clear(); _cards.Clear(); SetDraft();
+            _workspaces.ItemsSource = workspaces;
+            _notice.IsOpen = true; _notice.Severity = InfoBarSeverity.Informational; _notice.Title = "选择角色";
+            _notice.Message = workspaces.Length == 0 ? "暂无工作空间，请先完成 Core 初始化，然后刷新角色。" : "角色的主会话、草稿和运行状态会在这里展示。";
+            if (workspaces.Length > 0) _workspaces.SelectedIndex = 0;
+            await RefreshRolesAsync();
+            if (_active && IsLoaded) _timer.Start();
+            UpdateComposer();
+        }
+        finally { _loadingWorkspaces = false; if (!_disposed) _refresh.IsEnabled = true; }
     }
     private async Task RefreshRolesAsync()
     {
-        if (!_signedIn || _workspaces.SelectedItem is not Workspace workspace) return;
+        if (!_connected || _workspaces.SelectedItem is not Workspace workspace) return;
         var generation = ++_workspaceGeneration;
         _selection?.Cancel(); _state.Select(null); _agent = null; _messages.Children.Clear(); SetDraft(); UpdateComposer();
         _roles.Items.Clear(); _cards.Clear();
@@ -164,7 +158,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     }
     private async Task RefreshAsync()
     {
-        if (_refreshing || !_signedIn || _disposed) return;
+        if (_refreshing || !_connected || _disposed) return;
         _refreshing = true;
         try
         {
@@ -222,7 +216,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
     }
     public async Task SendAsync()
     {
-        if (_busy || !_signedIn || _agent is not { IsEnabled: true, IsFrozen: false } agent || _state.Role is not { } role) return;
+        if (_busy || !_connected || _agent is not { IsEnabled: true, IsFrozen: false } agent || _state.Role is not { } role) return;
         _busy = true; UpdateComposer();
         var generation = _state.Generation;
         var capturedDraft = _state.Draft;
@@ -257,7 +251,7 @@ public sealed class ChatWorkspace : UserControl, IDisposable
         _notice.IsOpen = true; _notice.Title = "已请求停止"; _notice.Message = "等待 Core 确认取消结果。";
     }
     private void SetDraft() { _changingDraft = true; try { Composer.Draft = _state.Draft; } finally { _changingDraft = false; } }
-    private void UpdateComposer() => Composer.SetAvailability(_signedIn && !_busy && _agent is { IsEnabled: true, IsFrozen: false }
+    private void UpdateComposer() => Composer.SetAvailability(_connected && !_busy && _agent is { IsEnabled: true, IsFrozen: false }
         && (_state.Pending is not null || !string.IsNullOrWhiteSpace(_state.Draft)), ChatSelection.ActiveTurn(_state.Conversation) is not null, _state.Pending is not null);
     public void Dispose()
     {

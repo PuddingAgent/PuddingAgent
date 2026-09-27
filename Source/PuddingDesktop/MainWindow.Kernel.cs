@@ -91,7 +91,7 @@ public sealed partial class MainWindow
         if (_chatDataRoot is not null && !string.Equals(root, _chatDataRoot, StringComparison.OrdinalIgnoreCase))
         {
             KernelStatus.Title = "新数据目录已保存";
-            KernelStatus.Message = "请重新打开 Desktop 以切换目录和登录环境。";
+            KernelStatus.Message = "请重新打开 Desktop 以切换数据目录与本机工作环境。";
             KernelStatus.Severity = InfoBarSeverity.Informational;
             return;
         }

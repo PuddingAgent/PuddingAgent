@@ -18,7 +18,7 @@
 2. **原生角色与聊天组件**：标题栏、角色卡、消息卡、执行明细、输入框、设置/运行中心使用 WinUI。`PuddingChat.WinUI → PuddingChat`；组件通过独立测试后接入 Desktop。管理页面暂由用户另行打开，不作为聊天容器。
 3. **Coding 工作区**：右栏采用类型化文档合同，覆盖 file/diff/terminal/browser/artifact；浏览器是其中一个适配器。每个对象有明确工作区、角色、Run 来源。接口缺失则禁用能力并登记，不将日志冒充交互终端或把占位页算作已完成。
 4. **DLL 内核**：最终在 Desktop 进程内通过组合入口装配 Core Host。View/Foundation 不引用 Runtime/SQLite；`IDesktopKernel` 是窄生命周期端口。内核先独立测试，再接入；不承诺 ALC 热卸载。`InProcessKernel` 负责串行生命周期，Composition 装配真实 Host；Core 使用 `IDesktopServices` 回调桌面展示。
-5. **统一业务入口与直接调用**：`InProcessChatClient` 在 Composition 内以独立 DI scope 调用 Core 账号、角色、主会话、SubmitTurn/Cancel handler 和投影服务。聊天没有 HTTP/JWT/Controller 调用；投影中的内部 HTTP 同样改为共享会话仓储。Core 持有唯一业务事实，UI 只管理选择与显示。
+5. **统一业务入口与直接调用**：`InProcessChatClient` 在 Composition 内以独立 DI scope 调用 Core 角色、主会话、SubmitTurn/Cancel handler 和投影服务。聊天没有 HTTP/JWT/Controller 调用；投影中的内部 HTTP 同样改为共享会话仓储。Core 持有唯一业务事实，UI 只管理选择与显示。
 6. **通道分责**：HTTP 保留给管理网页与外部接入；原生聊天使用应用接口，Core 回调桌面使用 `IDesktopServices` 与 UI Dispatcher。浏览器命令仍需受控端口、Broker 准入、OperationId、deadline 和证据语义。
 7. **执行与显示分离**：选择角色、切会话、切可见标签不改变已受理命令或 Agent 浏览器目标。人类接管必须触发真正 Dispatcher 门控；活动操作的结果可追溯。
 8. **浏览器隔离**：可信 Workbench 与第三方/产物环境隔离，只有前者可握手 Shell 桥；消息校验来源、版本和文档代次，控制 token 不进入网页。
@@ -40,7 +40,7 @@
 ## 代价与被排除的路线
 
 - 原生化增加文本呈现与控件维护成本，但复用 Core 应用服务和 canonical 投影，不复制业务执行状态机。当前只承诺实施记录中的文字聊天范围。
-- 每次调用独立 scope，停机必须取消并排空调用。账号身份不由控件自由填写到业务命令，适配器从已验证 Core 账号取得；同进程不等于绕过权限。
+- 每次调用独立 scope，停机必须取消并排空调用。客户端模式不显示登录、不读取账号或校验口令。Composition 为原生调用固定提供 `single-user` 本机身份，与 Core 单用户会话归属一致，控件不能指定身份。角色启用/冻结、会话归属与统一受理检查保留；Web/远程入口保持原有认证，不添加匿名或 loopback 自动登录。
 - DLL 内核失去原有进程崩溃隔离；普通启动失败可在 UI 修复，原生崩溃/OOM/未处理异常可能终止整个 Desktop。更新需退出进程，不能靠 View 层 try/catch 或停止 IHost 假装已卸载程序集。
 - 不采用每消息一个 WebView2、Desktop 直接打开业务数据库、复制运行状态机、Shell 桥任意执行脚本或同进程混合 WPF/WinUI Application。
 - 不为视觉迁移额外创建角色持久化体系；若需要跨项目独立 Role 实体或模板版本快照，由 Core 专题设计决定。

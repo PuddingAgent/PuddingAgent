@@ -1,6 +1,6 @@
 ## 2026-09-27 WinUI 3：原生角色聊天与进程内 Core 接入
 
-原地重建的 `Source/PuddingDesktop` 已接入 `PuddingChat.WinUI` 原生角色头像卡、消息卡、执行明细与输入框，通过 `PuddingDesktop.Composition/InProcessChatClient.cs` 直接调用 Core 应用服务。聊天不使用 HTTP/JWT/WebView2。独立状态/原生窗口/真实 Core 组合验证与迁移边界见 [实施记录](Docs/Reports/Desktop-Native-Chat-2026-09-27.md)。
+原地重建的 `Source/PuddingDesktop` 已接入 `PuddingChat.WinUI` 原生角色头像卡、消息卡、执行明细与输入框，通过 `PuddingDesktop.Composition/InProcessChatClient.cs` 直接调用 Core 应用服务。聊天不使用 HTTP/JWT/WebView2。客户端免登录，Composition 固定提供 Core 的 `single-user` 身份；启动自动加载角色，Web/远程认证保持独立。独立状态/原生窗口/真实 Core 组合验证与迁移边界见 [实施记录](Docs/Reports/Desktop-Native-Chat-2026-09-27.md)。
 
 代码入口：`Source/PuddingChat`（BCL 合同/选择状态）、`Source/PuddingChat.WinUI`（独立原生控件）、`Source/PuddingDesktop/MainWindow.Kernel.cs`（装配）、`Source/PuddingPlatform/Services/AgentChat/AgentMainSessionService.cs`（主会话）与同目录投影服务。旧 WPF 路径已归档在 `Source/PuddingDesktop.WpfArchive`，不是当前产品入口。
 
