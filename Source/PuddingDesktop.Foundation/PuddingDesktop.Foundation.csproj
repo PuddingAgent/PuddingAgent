@@ -1,0 +1,16 @@
+<Project>
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)..\..\temp\build\winui3\obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)..\..\temp\build\winui3\bin\$(MSBuildProjectName)\</BaseOutputPath>
+  </PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <Target Name="EnforceFoundationBoundary" BeforeTargets="ResolveReferences">
+    <Error Condition="'@(ProjectReference)' != '' Or '@(PackageReference)' != ''"
+           Text="Desktop Foundation is a BCL-only leaf. Host, UI, browser and package dependencies are forbidden." />
+  </Target>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>
