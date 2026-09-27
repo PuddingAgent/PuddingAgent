@@ -266,3 +266,7 @@ Composition 的 InProcessChatClient.SubAgents 直接读取 ISubAgentRunStore，�
 ## 审批操作快照（2026-09-27）
 
 PuddingApproval 新增有界、确定性的操作指纹和不可变工具/参数/定义/目录快照，ApprovalRecord 强制携带快照，决定/消费前核对。SQLite Create/CAS 强制一致与不可变，原始快照和状态/outbox 同事务保存。18 项逻辑与 7 项 SQLite 测试通过。没有 Host/Runtime 接线或产品发布；真实暂停/恢复尚未完成。新查明 worker 并发槽、watchdog、LeaseLost 重排队及内存 ResumeAnchor 的限制，具体后续接入门禁已写回原生审批设计，避免通过 UI 重发整轮伪造恢复。
+
+## 完整 Desktop 装配检查（2026-09-27）
+
+审批快照代码已提交 097bcf6。随后运行 `dotnet build Source/PuddingDesktop/PuddingDesktop.csproj -c Release --artifacts-path temp/build/desktop-kernel --no-restore --nologo`，当前共享工作树构建失败（134 warnings、2 errors；temp/native-chat-desktop-build.log）。根因是并行 DS-07 尚未提交的 DesktopSkillPackageSettings.cs 第 42 行 `SkillPackageUpload` 同时命中 Foundation 和 Platform 类型（CS0104），继而导致 ISkillPackageSettings.UploadAsync 未实现（CS0535）。未修改该并行任务文件；此记录仅反映该次共享工作树快照，不能替代后续修复后的产品构建验收。原生聊天与审批各自定向测试通过的结论不等于完整 Desktop 已通过或已发布。
