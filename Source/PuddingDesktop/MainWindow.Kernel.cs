@@ -15,6 +15,8 @@ public sealed partial class MainWindow
     private bool _allowClose;
     private bool _exiting;
     private ChatWorkspace? _nativeChat;
+    private Task _nativeChatRelease = Task.CompletedTask;
+    private long _chatMountGeneration;
     private readonly Func<IChatClient> _createChatClient;
     private readonly PuddingDesktop.Foundation.ILlmResourceSettings _llmSettings;
     private readonly PuddingDesktop.Foundation.IVoiceResourceSettings _voiceSettings;
@@ -27,6 +29,7 @@ public sealed partial class MainWindow
     private readonly PuddingDesktop.Foundation.IWorkspaceResourceSettings _workspaceResources;
     private readonly PuddingDesktop.Foundation.IMemoryLibrarySettings _memoryLibrary;
     private readonly PuddingDesktop.Foundation.IStorageSettings _storage;
+    private readonly PuddingDesktop.Foundation.ISecuritySettings _security;
     private string? _chatDataRoot;
     private string KernelSettingsPath => Path.Combine(App.StateRoot, "desktop.kernel.json");
     private sealed record KernelSettings(string DataRoot);
@@ -84,8 +87,7 @@ public sealed partial class MainWindow
         DataRootEditor.IsEnabled = !_exiting;
         if (snapshot.State != DesktopKernelState.Ready && _nativeChat is not null)
         {
-            _nativeChat.Dispose(); _nativeChat = null;
-            NativeChatPane.Content = null;
+            ReleaseNativeChat();
         }
         if (_loaded) OnStateChanged(this, new PropertyChangedEventArgs(nameof(ShellState.Page)));
         if (_loaded) RefreshAbout();
@@ -144,11 +146,14 @@ public sealed partial class MainWindow
         RefreshKernel();
         await OpenWorkbenchAsync(root);
     }
-    private Task OpenWorkbenchAsync(string dataRoot)
+    private async Task OpenWorkbenchAsync(string dataRoot)
     {
         var address = _kernel.Snapshot.WorkbenchAddress;
-        if (address is null || _kernel.Snapshot.State != DesktopKernelState.Ready) return Task.CompletedTask;
-        _nativeChat?.Dispose();
+        if (address is null || _kernel.Snapshot.State != DesktopKernelState.Ready) return;
+        ReleaseNativeChat();
+        var generation = _chatMountGeneration;
+        await _nativeChatRelease;
+        if (_exiting || generation != _chatMountGeneration || _kernel.Snapshot.State != DesktopKernelState.Ready) return;
         _nativeChat = new ChatWorkspace(_createChatClient(), address);
         _nativeChat.SettingsRequested += (_, _) => _state.Navigate(ShellPage.Settings);
         _nativeChat.RuntimeRequested += (_, _) => _state.Navigate(ShellPage.RuntimeCenter);
@@ -165,7 +170,14 @@ public sealed partial class MainWindow
         ProjectLabel.Text = "已连接进程内 Core";
         EmptyRoles.Text = "返回工作台，在原生角色导航中选择角色。";
         ApplyLayout();
-        return Task.CompletedTask;
+    }
+    private void ReleaseNativeChat()
+    {
+        _chatMountGeneration++;
+        var chat = _nativeChat; _nativeChat = null; NativeChatPane.Content = null;
+        if (chat is null) return;
+        chat.Dispose(); // Cancel immediately; asynchronous release must finish before remount/exit.
+        _nativeChatRelease = Task.WhenAll(_nativeChatRelease, chat.DisposeAsync().AsTask());
     }
     private async void OnStartKernel(object sender, RoutedEventArgs args)
     { try { await StartKernelAsync(); } catch (Exception exception) { ReportKernelError(exception); } }
@@ -193,10 +205,11 @@ public sealed partial class MainWindow
         _exiting = true;
         try
         {
+            ReleaseNativeChat();
+            await _nativeChatRelease;
             await _kernel.DisposeAsync();
             _kernel.StateChanged -= OnKernelStateChanged;
             _desktopServices.Dispose();
-            _nativeChat?.Dispose(); _nativeChat = null; NativeChatPane.Content = null;
             _allowClose = true;
             Close();
         }

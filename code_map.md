@@ -1388,3 +1388,7 @@ PuddingDesktop/MainWindow.Kernel.RunKernelSmokeAsync 在隔离数据目录创建
 ## 2026-09-27 WinRT 音频采集组件
 
 `PuddingChat.WinUI/NativeVoiceCapture.cs` 通过 MediaCapture 录制 PCM/WAV，限定内存和时长，显式打开、异步收尾释放。`VoiceCaptureChecks.cs` 验证真实编码/流边界和预取消，77 逻辑/203 原生窗口检查通过；未打开麦克风，设备行为与工作台装配仍待验证，详见原生语音方案。
+
+## 2026-09-27 原生语音输入工作台装配
+
+ChatComposer/ChatWorkspace 已组合 NativeVoiceCapture、VoiceInputControl 与 Core 转写端口，确认后加入草稿；角色切换和离开取消。ChatWorkspace 异步销毁等待设备释放，MainWindow.Kernel 的重新挂载/退出等待该任务。77 逻辑/209 窗口检查通过；真实麦克风、供应商及持续语音验收待完成，见原生语音方案。

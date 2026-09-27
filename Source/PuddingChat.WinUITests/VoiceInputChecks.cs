@@ -10,11 +10,12 @@ public partial class App
     private sealed class VoiceInputFixture : IVoiceCapture, IVoiceRecording, IChatTranscriptionClient
     {
         public bool Released;
+        public TaskCompletionSource? Release;
         public CancellationToken Token;
         public TaskCompletionSource<string> Result = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task<IVoiceRecording> OpenAsync(CancellationToken ct) { Released = false; Token = ct; return Task.FromResult<IVoiceRecording>(this); }
         public Task<RecordedSpeech> FinishAsync(CancellationToken ct) => Task.FromResult(new RecordedSpeech([1]));
-        public ValueTask DisposeAsync() { Released = true; return ValueTask.CompletedTask; }
+        public ValueTask DisposeAsync() { Released = true; return Release is null ? ValueTask.CompletedTask : new(Release.Task); }
         public Task<string> TranscribeAsync(RoleKey role, RecordedSpeech audio, CancellationToken ct) { Token = ct; return Result.Task; }
     }
     private static async Task VerifyVoiceInputControlAsync(Grid root)

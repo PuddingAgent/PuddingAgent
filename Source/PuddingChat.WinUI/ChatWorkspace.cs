@@ -5,10 +5,13 @@ using Microsoft.UI.Xaml.Media;
 namespace PuddingChat.WinUI;
 
 /// <summary>Role-first native workspace. All continuations return to the UI thread; Core owns execution.</summary>
-public sealed partial class ChatWorkspace : UserControl, IDisposable
+public sealed partial class ChatWorkspace : UserControl, IDisposable, IAsyncDisposable
 {
     private readonly IChatClient _client;
     private readonly SpeechPlaybackSession? _speech;
+    private readonly VoiceInputSession? _voice;
+    internal VoiceInputControl? VoiceInput { get; }
+    private Task _voiceShutdown = Task.CompletedTask;
     private readonly Uri? _origin;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly ChatSelection _state = new();
@@ -66,7 +69,8 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
     {
         _active = active;
         if (active && _connected && !_disposed) _timer.Start(); else _timer.Stop();
-        if (!active) { _roleFlyout.Hide(); _speech?.Stop(); }
+        if (!active) { _roleFlyout.Hide(); _speech?.Stop(); StopVoiceInput(); }
+        UpdateComposer();
     }
 
     public void SetNavigationWidth(double width)
@@ -101,10 +105,26 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
         _chat.Padding = new Thickness(ActualWidth < 520 ? 12 : 24);
     }
 
-    public ChatWorkspace(IChatClient client, Uri? origin = null, ISpeechAudioPlayer? speechPlayer = null)
+    public ChatWorkspace(IChatClient client, Uri? origin = null, ISpeechAudioPlayer? speechPlayer = null, IVoiceCapture? voiceCapture = null)
     {
         _client = client; _origin = origin;
         if (client is IChatSpeechClient speech) _speech = new(speech, speechPlayer ?? new NativeSpeechAudioPlayer());
+        if (client is IChatTranscriptionClient transcription)
+        {
+            _voice = new(voiceCapture ?? new NativeVoiceCapture(), transcription);
+            VoiceInput = new(_voice, () =>
+            {
+                if (_disposed || !_active || !_connected || _agent is not { IsEnabled: true, IsFrozen: false })
+                    throw new InvalidOperationException("当前角色不可录音。");
+                _speech?.Stop();
+                return VoiceDraftAnchor.Capture(_state);
+            }, result =>
+            {
+                if (_disposed || !_active || _busy || _agent is not { IsEnabled: true, IsFrozen: false } || !result.TryAppendTo(_state)) return false;
+                SetDraft(); UpdateComposer(); return true;
+            });
+            Composer.SetVoiceInput(VoiceInput);
+        }
         _olderItem = new("history-loader", _older, _ => _older) { IsAnchor = false };
         var root = new Grid(); root.ColumnDefinitions.Add(_navigationColumn);
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -192,7 +212,7 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
         Composer.CancelRequested += async (_, _) => await GuardAsync(CancelAsync);
         _timer.Tick += async (_, _) => { if (_active && IsLoaded) await GuardAsync(RefreshAsync); };
         Loaded += async (_, _) => { await GuardAsync(InitializeAsync); if (_active && _connected && !_disposed) _timer.Start(); };
-        Unloaded += (_, _) => _timer.Stop();
+        Unloaded += (_, _) => { _timer.Stop(); StopVoiceInput(); };
     }
     private Action<string>? InspectionHandler(RoleKey role, string parentSession, CancellationToken ct)
         => _client is not ISubAgentInspectionClient ? null : async runId => await GuardAsync(async () =>
@@ -316,6 +336,7 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
     }
     private async Task RefreshRolesAsync()
     {
+        StopVoiceInput();
         if (!_connected || _workspaces.SelectedItem is not Workspace workspace) return;
         var generation = ++_workspaceGeneration;
         RememberReading(); _selection?.Cancel(); _state.Select(null); _agent = null; _transcript.Clear(); SetDraft(); UpdateComposer();
@@ -331,6 +352,7 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
     }
     public async Task SelectRoleAsync(string workspace, Agent agent)
     {
+        StopVoiceInput();
         _speech?.Stop();
         RememberReading();
         _selection?.Cancel(); _selection?.Dispose(); _selection = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
@@ -655,6 +677,7 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
     private void SetDraft() { _changingDraft = true; try { Composer.Draft = _state.Draft; Composer.SetImages(_state.Images); Composer.SetFiles(_state.Files); } finally { _changingDraft = false; } }
     private void UpdateComposer()
     {
+        Composer.SetVoiceAvailability(!_disposed && _active && _connected && !_busy && _agent is { IsEnabled: true, IsFrozen: false });
         Composer.SetAttachmentAvailability(!_busy && !_addingImages && _client is IImageAttachmentClient && _agent is { IsEnabled: true, IsFrozen: false });
         Composer.SetFileAvailability(!_busy && !_addingImages && _agent is { IsEnabled: true, IsFrozen: false });
         Composer.SetContext(_agent?.Label, _agent is { IsEnabled: true, IsFrozen: false });
@@ -700,6 +723,10 @@ public sealed partial class ChatWorkspace : UserControl, IDisposable
     {
         if (_disposed) return; _disposed = true; _timer.Stop(); _lifetime.Cancel(); _selection?.Cancel();
         _roleFlyout.Hide();
+        StopVoiceInput(); VoiceInput?.Dispose();
+        _voiceShutdown = _voice?.DisposeAsync().AsTask() ?? Task.CompletedTask;
         _selection?.Dispose(); _follow?.Cancel(); _follow?.Dispose(); _speech?.Dispose(); _client.Dispose(); _lifetime.Dispose();
     }
+    private void StopVoiceInput() { Composer.CloseVoiceInput(); _voice?.Cancel(); }
+    public async ValueTask DisposeAsync() { Dispose(); await _voiceShutdown; }
 }

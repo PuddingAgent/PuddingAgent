@@ -78,3 +78,13 @@ NativeSpeechAudioPlayer 与 SpeechPlaybackButton 已独立实现并通过静音�
 `PuddingChat.WinUI/NativeVoiceCapture.cs` 实现 IVoiceCapture/IVoiceRecording。显式 OpenAsync 才在 UI/STA 线程初始化音频专用 MediaCapture；16 kHz、单声道、16-bit PCM 写入 WAV 内存流。底层固定 8 MiB 的不可扩容 MemoryStream，通过 AsRandomAccessStream 交给 WinRT，编码器越界写会失败而不继续扩容。2 分钟定时器或设备失败触发停止；Finish 与 Dispose 共享一次停止任务，停止后释放 MediaCapture，Dispose 再释放流；设备错误即使与结束录音相邻发生也不能交付成功结果。
 
 独立检查使用真实 WinRT 编码配置及流适配器：PCM 参数/无视频、WAV 字节写入不变、原生异步越界写拒绝、预取消不初始化设备。共 **77 逻辑/203 窗口检查通过**，零构建警告/错误，日志 `temp/native-voice-capture.log`。这不是实际麦克风录音验收，未调用 InitializeAsync 打开真实设备；设备权限、拔出、驱动行为和音频质量仍须用户显式操作验证。控件/设备/ASR 适配现已分别存在，下一步装配 ChatComposer/ChatWorkspace，并验证切换角色、离开聊天和宿主关闭的设备释放。
+
+## 语音输入工作台装配（2026-09-27）
+
+ChatComposer 增加“语音”入口，通过原生 Flyout 承载录音/转写控件；只有点击控件内“语音输入”才打开麦克风。ChatWorkspace 默认组合 NativeVoiceCapture、VoiceInputSession 与进程内 IChatTranscriptionClient，转写完成后必须显式“加入草稿”，角色/草稿冲突则保留可复制文本，不自动发送。开始录音停止当前朗读；角色/工作区切换、离开页面、控件卸载和销毁均取消录音。无可用角色时禁用入口。
+
+ChatWorkspace 增加 IAsyncDisposable，立即取消后等待设备释放；MainWindow 统一收集旧聊天区释放任务，重建/退出前等待完成，并用挂载代次拒绝异步等待期间失效的重建。输入区在语音入口可见时提前至 560 DIP 分成两行。布局测试显式启用语音入口，覆盖 320/360/520/900 DIP；TextBox 的原生换行规范化在断言中按等价换行比较。
+
+77 逻辑/209 原生窗口检查通过，零组件构建警告/错误，日志 `temp/native-voice-workspace.log`；新增完整工作台的角色绑定、确认追加、角色切换取消、草稿冲突、离开取消和等待设备释放断言。真实 WinUI 控件加替身录音/ASR，未启动真实麦克风或付费供应商；宽/窄/深色截图中已包含语音入口，窄屏截图已检查。完整产品生命周期证据另记，不能以这些组件检查替代实际录音质量或供应商验收。
+
+完整 Desktop 产品隔离生命周期测试通过（PID 45336，报告 temp/test-out/kernel-winui-4fec4db0fdd44982b357ce4256a39f79/report.json）：原生聊天挂载、角色/文件草稿、UI 回调、Core 重启后新建聊天区、数据目录配置保存、退出及锁释放。构建零错误/147 个既有警告，日志 temp/native-voice-product.log；该构建来自共享工作树，不是单独提交的隔离构建。此测试未实际录音，不能代替设备/供应商验收。

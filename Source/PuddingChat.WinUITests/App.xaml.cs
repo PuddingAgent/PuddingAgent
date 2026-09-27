@@ -193,11 +193,12 @@ public partial class App : Application
                 await VerifyWorkspaceSpeechAsync((Grid)control.Content);
                 await VerifyVoiceInputControlAsync((Grid)control.Content);
                 await VerifyVoiceCaptureContractAsync();
+                await VerifyWorkspaceVoiceAsync((Grid)control.Content);
                 await File.WriteAllTextAsync(Report, "{}");
                 var visuals = await CaptureVisualPreviewsAsync((Grid)control.Content);
                 control.Dispose(); Check(fixture.Disposed, "transport disposed");
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Report))!);
-                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 203, native = true, visuals }));
+                await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = true, checks = 209, native = true, visuals }));
             }
             catch (Exception e) { await File.WriteAllTextAsync(Report, JsonSerializer.Serialize(new { success = false, error = e.ToString() })); Environment.ExitCode = 1; }
             finally { if (!Environment.GetCommandLineArgs().Contains("--preview")) { control.Dispose(); _window.Close(); } }
@@ -205,8 +206,12 @@ public partial class App : Application
         _window.Activate();
     }
     private static void Check(bool condition, string label) { if (!condition) throw new InvalidOperationException(label); }
-    private sealed class Fixture(string imagePath) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges, IImageAttachmentClient, IConversationActivity, IConversationHistory, ISubAgentInspectionClient, IChatSpeechClient
+    private sealed class Fixture(string imagePath) : IChatClient, IWorkspaceSetupClient, IConfigurationClient, IConversationChanges, IImageAttachmentClient, IConversationActivity, IConversationHistory, ISubAgentInspectionClient, IChatSpeechClient, IChatTranscriptionClient
     {
+        public Func<RoleKey, RecordedSpeech, CancellationToken, Task<string>>? Transcription;
+        public RoleKey? LastTranscriptionRole;
+        public Task<string> TranscribeAsync(RoleKey role, RecordedSpeech audio, CancellationToken ct)
+        { LastTranscriptionRole = role; return Transcription?.Invoke(role, audio, ct) ?? Task.FromResult("transcribed"); }
         public SpeechRequest? LastSpeech;
         public Task<SpeechAudio> SynthesizeAsync(SpeechRequest request, CancellationToken ct) { LastSpeech = request; return Task.FromResult(SilentWave(100)); }
         public int MaxImagesPerMessage => 600;

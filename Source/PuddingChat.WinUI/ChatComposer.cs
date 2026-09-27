@@ -14,6 +14,16 @@ public sealed class ChatComposer : UserControl
     private readonly Button _attach = new() { Content = "＋ 图片" };
     private readonly Button _pasteImage = new() { Content = "粘贴图片" };
     private readonly Button _attachFile = new() { Content = "文件" };
+    private readonly Button _voice = new() { Content = "语音", Visibility = Visibility.Collapsed };
+    public void SetVoiceInput(VoiceInputControl control)
+    {
+        _voice.Flyout = new Flyout { Content = new ScrollViewer { MaxHeight = 400, Width = 280, Content = control } };
+        _voice.Visibility = Visibility.Visible;
+        UpdateToolbarLayout();
+        ToolTipService.SetToolTip(_voice, "录音转写，确认后加入草稿");
+    }
+    public void SetVoiceAvailability(bool enabled) => _voice.IsEnabled = enabled;
+    public void CloseVoiceInput() => _voice.Flyout?.Hide();
     private IReadOnlyList<AttachedImage> _imageItems = [];
     private IReadOnlyList<TextFileContext> _fileItems = [];
     public event EventHandler? AttachFileRequested;
@@ -79,7 +89,7 @@ public sealed class ChatComposer : UserControl
         _toolbar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _toolbar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _attachmentActions.Children.Add(_attach); _attachmentActions.Children.Add(_pasteImage); _attachmentActions.Children.Add(_attachFile);
-        _messageActions.Children.Add(_cancel); _messageActions.Children.Add(_send);
+        _messageActions.Children.Add(_voice); _messageActions.Children.Add(_cancel); _messageActions.Children.Add(_send);
         _toolbar.Children.Add(_attachmentActions); _toolbar.Children.Add(_messageActions);
         Grid.SetColumn(_messageActions, 1);
         SizeChanged += (_, _) => UpdateToolbarLayout();
@@ -121,7 +131,7 @@ public sealed class ChatComposer : UserControl
     }
     private void UpdateToolbarLayout()
     {
-        var compact = ActualWidth < 480;
+        var compact = ActualWidth < (_voice.Visibility == Visibility.Visible ? 560 : 480);
         Grid.SetColumnSpan(_attachmentActions, compact ? 2 : 1);
         Grid.SetRow(_messageActions, compact ? 1 : 0);
         Grid.SetColumn(_messageActions, compact ? 0 : 1);
