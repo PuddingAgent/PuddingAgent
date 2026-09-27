@@ -73,6 +73,7 @@ public sealed partial class MainWindow : Window
         BuildChannelPanel();
         BuildWorkspaceResourcePanel();
         BuildMemoryLibraryPanel();
+        BuildMemorySearchPanel();
         RefreshAbout();
         KernelStatus.Title = _kernel.Snapshot.Description;
         if (result.Warning is { } warning) { SettingsNotice.Message = warning; SettingsNotice.Severity = InfoBarSeverity.Warning; }
@@ -586,6 +587,12 @@ public sealed partial class MainWindow : Window
             Check(MemoryLibrarySettings.Content is StackPanel, "memory library form is built");
             Check(!_mlWorkspacePicker.IsEnabled, "memory library form stays disabled without Core");
             Check(_mlNotice.Title == "Core 未就绪", "memory library tab reports the real Core state");
+            // DS-08 search and inspector slice.
+            OpenSettingsCategory("memory", "search");
+            await WaitForSettingsUiAsync(() => _msNotice.IsOpen || _msQuery.IsEnabled);
+            Check(MemorySearchSettings.Visibility == Visibility.Visible, "memory search tab is native");
+            Check(MemorySearchSettings.Content is StackPanel, "memory search form is built");
+            Check(!_msQuery.IsEnabled, "memory search form stays disabled without Core");
             _probe = new HostingProbeWindow(); _probe.Activate();
             checks.Add(await _probe.RunAsync()); _probe.Close(); _probe = null;
             _state.Navigate(ShellPage.Workbench);

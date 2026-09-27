@@ -89,6 +89,48 @@ public sealed class MemoryLibraryContractTests
     }
 
     [Fact]
+    public void SearchFormsAndHitDescriptionsStayHonest()
+    {
+        Assert.Equal([10, 20, 50, 100], MemoryLibraryText.SearchTopKSizes);
+        Assert.Empty(MemoryLibraryText.ValidateSearch("ws", "agent", "query"));
+        Assert.Contains("工作区与 Agent", MemoryLibraryText.ValidateSearch("", "agent", "q").Single(), StringComparison.Ordinal);
+        Assert.Contains("搜索词", MemoryLibraryText.ValidateSearch("ws", "agent", "  ").Single(), StringComparison.Ordinal);
+        Assert.Contains("不重新排序", MemoryLibraryText.SearchNotice, StringComparison.Ordinal);
+
+        var hit = new MemorySearchHit("book", "chapter", "Book Title", "snippet", 0.123456);
+        Assert.Equal("0.123", hit.ScoreText);
+        Assert.Equal("book", hit.BookId);
+    }
+
+    [Fact]
+    public void InspectorKeysAreValidatedSeparatelyForSourcesAndPointers()
+    {
+        Assert.Empty(MemoryLibraryText.ValidateOwner("chapter", "ch-1", "来源 owner"));
+        Assert.Contains("来源 owner类型", MemoryLibraryText.ValidateOwner("", "ch-1", "来源 owner").Single(), StringComparison.Ordinal);
+        Assert.Contains("指针 source ID", MemoryLibraryText.ValidateOwner("chapter", "", "指针 source").Single(), StringComparison.Ordinal);
+        Assert.Contains("不会把它们混成一套", MemoryLibraryText.InspectorNotice, StringComparison.Ordinal);
+
+        // 方向是 Core 给的，未知方向原样显示。
+        Assert.Equal("出边", MemoryLibraryText.DescribeDirection("outgoing"));
+        Assert.Equal("入边（反链）", MemoryLibraryText.DescribeDirection("backlink"));
+        Assert.Equal("方向未知", MemoryLibraryText.DescribeDirection(null));
+        Assert.Equal("sideways", MemoryLibraryText.DescribeDirection("sideways"));
+    }
+
+    [Fact]
+    public void SourceAndPointerDisplaysUseCoreFieldsOnly()
+    {
+        var source = new MemorySource("s1", "chapter", "ch-1", "file", "src/app.cs", "10-20", "app.cs", "desc",
+            DateTimeOffset.UtcNow);
+        Assert.Equal("file:src/app.cs · app.cs", source.Display);
+        Assert.Equal("file:src/app.cs", (source with { Label = "" }).Display);
+
+        var pointer = new MemoryPointer("p1", "ch-1", "chapter", "ch-2", "Other", "text", 7, DateTimeOffset.UtcNow, "outgoing");
+        Assert.Contains("[outgoing]", pointer.Display, StringComparison.Ordinal);
+        Assert.Contains("相关度 7", pointer.Display, StringComparison.Ordinal);
+        Assert.Equal("[outgoing] chapter:ch-2 · 相关度 7", (pointer with { TargetLabel = "", Description = "" }).Display);
+    }
+    [Fact]
     public void NoticesSayArchiveIsNotDeleteAndThatScopeIsPerAgent()
     {
         Assert.Contains("不是删除", MemoryLibraryText.ArchiveNotice, StringComparison.Ordinal);

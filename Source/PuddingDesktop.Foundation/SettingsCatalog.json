@@ -797,7 +797,7 @@
             ],
             "source": "pages/memory-library/components/MemorySearchResults.tsx",
             "task": "DS-08",
-            "status": "待迁移"
+            "status": "已接入"
           },
           {
             "id": "memory-inspector",
@@ -811,7 +811,7 @@
             ],
             "source": "pages/memory-library/components/MemoryInspector.tsx",
             "task": "DS-08",
-            "status": "待迁移"
+            "status": "已接入"
           }
         ]
       }

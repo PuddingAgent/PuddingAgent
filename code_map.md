@@ -1,6 +1,9 @@
 ## 2026-09-27 DS-04 能力与 Skill 授权（DS-06/DS-07 解锁后）
 
 `agents/capabilities` 接上：授权项来自运行时工具目录（DS-06）与技能包台账（DS-07）。模板授权可搜索/添加/移除/保存，是新建实例的继承来源；实例授权显示与模板的偏差，并把三种写入意图分开——「采用模板授权」写模板当前值、「明确不授权」写空列表、「保持实例当前值」让 Core 收到 null。页面明确写出「实例只在创建时继承，此后是独立快照」，避免暗示存在活的继承链。验证：Foundation 123 项、Composition 15 项（真实 Host 建模板→建实例→继承→清空→保持→采用模板）、窗口 smoke 173 项通过。
+## 2026-09-27 DS-08 记忆资料库（搜索与检查器，DS-08 完成）
+
+`memory/search` 两张卡接上同一个 `IMemoryLibraryAdminService`：全文搜索（条数可选，结果顺序与分数按 Core 原样显示，不重排序）、结果详情（Book/章节/摘要）、检查器（章节元数据 + 来源引用 + 图谱指针，出边与反链分开计数）、以及「在资料库中打开」把资料库页签切到命中的 Book。检查器刻意保留 Core 的**两套键**：sources 用 ownerType/ownerId，pointers 用 sourceType/sourceId，界面不把它们合并。踩坑登记：搜索结果 DTO **不含章节标题**（只有 BookTitle 与 Snippet），所以检查器要显示章节元数据必须再读一次 Book，这也是定位的基础。验证：Foundation 148 项、Composition 20 项（真实 Host：建书建章 → 搜索命中 → 无匹配返回空 → sources/pointers 可查 → 命中章节可经 Book 读到）、窗口 smoke 194 项通过。至此 DS-08 四张卡全部接入。
 ## 2026-09-27 DS-08 记忆资料库（资料库/页面树/Book 与章节）
 
 `memory/library` 接上 Core 既有的 `IMemoryLibraryAdminService`（该服务已有实现，无需下沉）：工作区/Agent/资料库三级选择（含「确保默认资料库」）、页面树只读分层渲染、节点创建、Book 打开/编辑/新建/归档、章节分页/编辑/新建/归档。所有调用都是工作区+Agent 作用域，跨 Agent 访问章节会被 Core 以 `UnauthorizedAccessException` 拒绝（界面单独映射提示）。归档按 Core 语义呈现为「标记已归档、内容保留」，不是删除。**顺带修掉一个真实 Core 缺陷**：`UpdateChapterCoreAsync` 只把新标题放进返回 DTO、从未调用 `UpdateChapterTitleAsync`，调用方会以为标题已改而库里仍是旧标题；现在标题真实落盘并有端到端断言。验证：Foundation 145 项、Composition 19 项（真实 Host 建树/建 Book/建改章节/跨 Agent 被拒/归档保留内容）、平台全量 1420 项、窗口 smoke 191 项通过。

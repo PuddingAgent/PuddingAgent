@@ -1433,6 +1433,74 @@ public sealed class DesktopCompositionTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+    [Fact]
+    public async Task MemorySearchAdapter_FindsChaptersAndInspectsSourcesAndPointers()
+    {
+        var root = await CreateIsolatedDataRootAsync();
+        var factory = new DesktopKernelFactory(new Desktop());
+        await using var kernel = new InProcessKernel(factory);
+        var memory = factory.CreateMemoryLibrarySettings(kernel);
+        var workspaces = factory.CreateWorkspaceSettings(kernel);
+        var directory = factory.CreateAgentDirectorySettings(kernel);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => memory.SearchAsync("ws", "agent", "q", 10, timeout.Token));
+
+            await kernel.StartAsync(root, timeout.Token);
+            var teams = await workspaces.ListTeamsAsync(timeout.Token);
+            await workspaces.CreateAsync(new WorkspaceCreateRequest("search-space", teams[0].TeamId,
+                "Search Space", "", "", "Manage", "Manage"), timeout.Token);
+            await directory.CreateInstanceAsync(new AgentInstanceCreate("search-space", "search-agent",
+                "fixture", "grant-template"), timeout.Token);
+            var agent = (await directory.ListInstancesAsync("search-space", timeout.Token))
+                .FirstOrDefault(instance => instance.Name == "search-agent")
+                ?? (await directory.ListInstancesAsync("search-space", timeout.Token)).First();
+            Assert.NotNull(agent);
+
+            var library = await memory.EnsureDefaultLibraryAsync("search-space", agent!.AgentId, timeout.Token);
+            await memory.CreateBookAsync(new MemoryBookCreate("search-space", agent.AgentId, library.LibraryId,
+                "", "Searchable Book", "fixture"), timeout.Token);
+            var tree = await memory.ReadTreeAsync("search-space", agent.AgentId, library.LibraryId, timeout.Token);
+            var bookId = MemoryLibraryText.Flatten(tree).First(node => node.Title == "Searchable Book").BookId;
+            await memory.CreateChapterAsync(new MemoryChapterCreate("search-space", agent.AgentId, bookId,
+                "Zebra Chapter", "the quick brown zebra jumps", 0.6), timeout.Token);
+
+            var hits = await memory.SearchAsync("search-space", agent.AgentId, "zebra", 10, timeout.Token);
+            var hit = Assert.Single(hits, item => item.ChapterId.Length > 0);
+            Assert.Equal(bookId, hit.BookId);
+            // A hit carries the book title and the matched snippet only - no chapter title - which is why
+            // the inspector reads the book to show chapter metadata.
+            Assert.Equal("Searchable Book", hit.BookTitle);
+            Assert.Contains("zebra", hit.Snippet, StringComparison.OrdinalIgnoreCase);
+            // 分数由 Core 决定：FTS 路径可能就是 0，界面照实显示而不是自己造一个相关度。
+            Assert.True(hit.Score >= 0, "分数不应为负数");
+            // A query with no match returns nothing rather than a fabricated result.
+            Assert.Empty(await memory.SearchAsync("search-space", agent.AgentId, "zzzz-no-such-term", 10, timeout.Token));
+
+            // The inspector's two key pairs are independent Core queries.
+            var sources = await memory.ListSourcesAsync("search-space", agent.AgentId, "chapter", hit.ChapterId, timeout.Token);
+            Assert.NotNull(sources);
+            var pointers = await memory.ListPointersAsync("search-space", agent.AgentId, "chapter", hit.ChapterId, timeout.Token);
+            Assert.NotNull(pointers);
+
+            // The hit's chapter is readable through the library, which is what 定位 relies on.
+            var book = await memory.ReadBookAsync("search-space", agent.AgentId, hit.BookId, timeout.Token);
+            Assert.NotNull(book);
+            Assert.Contains(book!.Chapters, chapter => chapter.ChapterId == hit.ChapterId);
+
+            await kernel.StopAsync(timeout.Token);
+            await Assert.ThrowsAsync<SettingsUnavailableException>(
+                () => memory.SearchAsync("search-space", agent.AgentId, "zebra", 10, timeout.Token));
+        }
+        finally
+        {
+            await kernel.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
     /// <summary>Builds an admin client against the in-process host using the isolated root's own signing key.</summary>
     private static async Task<HttpClient> CreateAdminClientAsync(string root, Uri address)
     {

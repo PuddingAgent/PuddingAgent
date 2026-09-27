@@ -43,12 +43,43 @@ public sealed record MemoryChapterCreate(
 public sealed record MemoryChapterEdit(
     string WorkspaceId, string AgentId, string ChapterId, string Title, string Content, double Importance);
 
+/// <summary>A full-text hit. Core returns the book, chapter, snippet and score it actually computed.</summary>
+public sealed record MemorySearchHit(string BookId, string ChapterId, string BookTitle, string Snippet, double Score)
+{
+    public string ScoreText => Score.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+}
+
+/// <summary>A source reference that points at the memory owner.</summary>
+public sealed record MemorySource(
+    string SourceReferenceId, string OwnerType, string OwnerId, string TargetType, string TargetId,
+    string TargetRange, string Label, string Description, DateTimeOffset CreatedAt)
+{
+    public string Display => $"{TargetType}:{TargetId}" + (Label.Length == 0 ? "" : $" · {Label}");
+}
+
+/// <summary>A knowledge-graph pointer, with the direction Core reported it in.</summary>
+public sealed record MemoryPointer(
+    string PointerId, string ChapterId, string TargetType, string TargetId, string TargetLabel,
+    string Description, int Relevance, DateTimeOffset CreatedAt, string Direction)
+{
+    public string Display => $"[{Direction}] {TargetType}:{TargetId}" +
+                             (TargetLabel.Length == 0 ? "" : $" · {TargetLabel}") +
+                             $" · 相关度 {Relevance}";
+}
+
 /// <summary>
 /// Task-shaped operations for the memory library cards, implemented in Composition against the shared
 /// MemoryLibraryAdminService.
 /// </summary>
 public interface IMemoryLibrarySettings
 {
+    Task<IReadOnlyList<MemorySearchHit>> SearchAsync(
+        string workspaceId, string agentId, string query, int topK, CancellationToken cancellationToken = default);
+    /// <summary>Source references are addressed by owner type/id; pointers by source type/id (Core's own split).</summary>
+    Task<IReadOnlyList<MemorySource>> ListSourcesAsync(
+        string workspaceId, string agentId, string ownerType, string ownerId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MemoryPointer>> ListPointersAsync(
+        string workspaceId, string agentId, string sourceType, string sourceId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MemoryLibrary>> ListLibrariesAsync(string workspaceId, string agentId, CancellationToken cancellationToken = default);
     Task<MemoryLibrary> EnsureDefaultLibraryAsync(string workspaceId, string agentId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MemoryTreeNode>> ReadTreeAsync(string workspaceId, string agentId, string libraryId, CancellationToken cancellationToken = default);
@@ -69,6 +100,40 @@ public static class MemoryLibraryText
 
     public const string ArchiveNotice =
         "归档只是把 Book/章节标记为已归档（Core 会保留内容），不是删除；归档后仍可在这里看到它们的状态。";
+
+    /// <summary>Core returns FTS hits with its own score; the page never re-ranks or invents relevance.</summary>
+    public const string SearchNotice =
+        "搜索是 Core 的全文检索：结果与分数由 Core 返回，界面只做展示与定位，不重新排序。";
+
+    public const string InspectorNotice =
+        "来源（sources）按 ownerType/ownerId 查询，指针（pointers）按 sourceType/sourceId 查询——" +
+        "两者是 Core 自己的两套键，界面不会把它们混成一套。";
+
+    public static IReadOnlyList<int> SearchTopKSizes { get; } = [10, 20, 50, 100];
+
+    public static string DescribeDirection(string? direction) => direction switch
+    {
+        null or "" => "方向未知",
+        var value when string.Equals(value, "outgoing", StringComparison.OrdinalIgnoreCase) => "出边",
+        var value when string.Equals(value, "backlink", StringComparison.OrdinalIgnoreCase) => "入边（反链）",
+        var value => value
+    };
+
+    public static IReadOnlyList<string> ValidateSearch(string workspaceId, string agentId, string query)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(workspaceId) || string.IsNullOrWhiteSpace(agentId)) errors.Add("必须选择工作区与 Agent。");
+        if (string.IsNullOrWhiteSpace(query)) errors.Add("搜索词不能为空。");
+        return errors;
+    }
+
+    public static IReadOnlyList<string> ValidateOwner(string ownerType, string ownerId, string label)
+    {
+        var errors = new List<string>();
+        if (string.IsNullOrWhiteSpace(ownerType)) errors.Add($"{label}类型不能为空。");
+        if (string.IsNullOrWhiteSpace(ownerId)) errors.Add($"{label} ID 不能为空。");
+        return errors;
+    }
 
     public const string ScopeNotice =
         "记忆资料库严格按 工作区 + Agent 作用域读写：切换 Agent 会得到另一份资料库，不会互相串数据。";

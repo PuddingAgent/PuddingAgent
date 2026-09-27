@@ -201,6 +201,15 @@ public sealed partial class MainWindow
         var memoryLibrary = VisibilityOf("memory", "library", tab);
         MemoryLibrarySettings.Visibility = memoryLibrary;
         if (memoryLibrary == Visibility.Visible) LoadMemoryLibraryIfNeeded();
+        var memorySearch = VisibilityOf("memory", "search", tab);
+        MemorySearchSettings.Visibility = memorySearch;
+        if (memorySearch == Visibility.Visible) LoadMemorySearchIfNeeded();
+    }
+
+    private async void LoadMemorySearchIfNeeded()
+    {
+        try { await LoadMemorySearchAgentsAsync(); }
+        catch (Exception exception) { App.WriteDiagnostic(exception); }
     }
 
     private async void LoadMemoryLibraryIfNeeded()
@@ -356,6 +365,7 @@ public sealed partial class MainWindow
         ("workspaces", "channels") => true,
         ("workspaces", "resources") => true,
         ("memory", "library") => true,
+        ("memory", "search") => true,
         _ => false
     };
 

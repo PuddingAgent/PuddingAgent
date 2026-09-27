@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using PuddingCode.Abstractions;
 using PuddingDesktop.Foundation;
+using PuddingDesktop.Foundation;
 using PuddingPlatform.Services;
 
 namespace PuddingDesktop.Composition;
@@ -40,6 +41,42 @@ internal sealed class DesktopMemoryLibrarySettings(IDesktopKernel kernel) : IMem
             var nodes = await service.GetTreeAsync(workspaceId, agentId, libraryId, token);
             return (IReadOnlyList<MemoryTreeNode>)nodes.Select(Map).ToArray();
         }, cancellationToken);
+
+    public Task<IReadOnlyList<MemorySearchHit>> SearchAsync(
+        string workspaceId, string agentId, string query, int topK, CancellationToken cancellationToken = default)
+        => Memory("memory.search", async (service, token) =>
+        {
+            var hits = await service.SearchAsync(workspaceId, agentId, query, topK, token);
+            return (IReadOnlyList<MemorySearchHit>)hits.Select(hit => new MemorySearchHit(
+                hit.BookId, hit.ChapterId, hit.BookTitle, hit.Snippet, hit.Score)).ToArray();
+        }, cancellationToken);
+
+    public Task<IReadOnlyList<MemorySource>> ListSourcesAsync(
+        string workspaceId, string agentId, string ownerType, string ownerId, CancellationToken cancellationToken = default)
+        => Memory("memory.sources", async (service, token) =>
+        {
+            var sources = await service.GetSourcesAsync(workspaceId, agentId, ownerType, ownerId, token);
+            return (IReadOnlyList<MemorySource>)sources.Select(source => new MemorySource(
+                source.SourceReferenceId, source.OwnerType, source.OwnerId, source.TargetType, source.TargetId,
+                source.TargetRange ?? "", source.Label ?? "", source.Description ?? "",
+                DateTimeOffset.FromUnixTimeMilliseconds(source.CreatedAt))).ToArray();
+        }, cancellationToken);
+
+    public Task<IReadOnlyList<MemoryPointer>> ListPointersAsync(
+        string workspaceId, string agentId, string sourceType, string sourceId, CancellationToken cancellationToken = default)
+        => Memory("memory.pointers", async (service, token) =>
+        {
+            var pointers = await service.GetPointersAsync(workspaceId, agentId, sourceType, sourceId, token);
+            // Core splits the result into directions; keep that in the model instead of merging them.
+            var outgoing = pointers.Outgoing.Select(pointer => Map(pointer, "outgoing"));
+            var backlinks = pointers.Backlinks.Select(pointer => Map(pointer, "backlink"));
+            return (IReadOnlyList<MemoryPointer>)outgoing.Concat(backlinks).ToArray();
+        }, cancellationToken);
+
+    private static MemoryPointer Map(PointerRecord pointer, string direction) => new(
+        pointer.PointerId, pointer.ChapterId, pointer.TargetType, pointer.TargetId, pointer.TargetLabel ?? "",
+        pointer.Description ?? "", pointer.Relevance,
+        DateTimeOffset.FromUnixTimeMilliseconds(pointer.CreatedAt), direction);
 
     public Task CreateTreeNodeAsync(MemoryTreeNodeCreate create, CancellationToken cancellationToken = default)
         => Memory("memory.tree.create", async (service, token) =>
