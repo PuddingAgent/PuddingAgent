@@ -151,3 +151,11 @@ TextPageWindow 独立测试先通过，再验证分页窗口，最后接工具�
 85 逻辑/243 原生窗口检查通过，零组件构建警告/错误，日志 temp/native-message-actions.log。新增七项覆盖空白区、320 DIP 操作同行、剪贴板失败/重试、最新正文、朗读失败宽度与回收保护。剪贴板检查使用注入发布回调与真实 DataPackage，不修改系统剪贴板。首次朗读错误断言在控件 Loaded 回调前执行，加入实际视觉帧等待后验证正确。
 
 已检查 temp/test-out/native-chat-16dce3b36f1147148b2ee7d8b5ae1405/ui.compact-light.png：操作按钮并排，更多工具/正文内容可见。宽/深色截图同步生成；本轮不是完整 Desktop 部署或真实读屏/输入法验收。
+
+## 历史执行明细反馈（2026-09-27）
+
+核查 AgentConversationProjectionService.GetMessageProcessItemsAsync：当前完成消息的明细查询取全量过程事件，未使用 Take 截断，窗口 HasMoreBefore 为 false。因此本轮不凭 Window 类型推断接口已截断，也不另加重复分页协议。原生 FlowWindow 的逐段显示属于展示层，与 Core 返回范围不同。
+
+MessageCard 明细展开现在显示加载进度；成功后显示已加载项数，并说明执行记录合并到上方思考/工具过程，空结果明确提示无额外记录。若适配器提供部分窗口则明确标注“部分”。失败提供直接重试按钮，不再要求先收起再展开；Run 切换重置标题，保持旧请求取消与晚到结果隔离。
+
+85 逻辑/246 原生窗口检查通过，零组件警告/错误，日志 temp/native-message-details-feedback.log。新增状态断言覆盖等待进度、成功说明、错误入口，并通过原生 Invoke 调用重试按钮；既有消息身份、缓存与取消测试继续通过。全量事件查询的数据库/内存成本尚未因此降低，长期大记录门禁仍保留。

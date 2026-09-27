@@ -62,7 +62,7 @@ public sealed class MessageCard : UserControl, IDisposable
         _header.Text = $"{message.SourceName}  ·  {message.CreatedAt.ToLocalTime():HH:mm}  ·  {TurnFlow.StatusLabel(message.Status)}";
         if (_state.RunId != message.RunId)
         { _detailLoad?.Cancel(); _detailLoad = null; _detailsLoaded = false; _details.Children.Clear();
-            if (_process is not null) _process.IsExpanded = false;
+            if (_process is not null) { _process.IsExpanded = false; _process.Header = "加载执行明细"; }
             _events.Clear(); _state.RunId = message.RunId; _state.Details = null; _state.Expansions.Clear(); _state.DetailsExpanded = false;
             _state.FlowWindow.Reset(); _state.DetailWindow.Reset(); _flow.Update([], ""); }
         foreach (var item in message.ProcessItems) _events[item.Id] = item;
@@ -92,7 +92,7 @@ public sealed class MessageCard : UserControl, IDisposable
         panel.Children.Add(_outcome);
         if (loadDetails is not null || message.Role != "user")
         {
-            var expander = new Expander { Header = "加载完整执行明细",
+            var expander = new Expander { Header = "加载执行明细",
                 Content = _details, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
             _process = expander;
             expander.Visibility = message.Role != "user" || _outcome.IsOpen ? Visibility.Visible : Visibility.Collapsed;
@@ -123,6 +123,10 @@ public sealed class MessageCard : UserControl, IDisposable
         using var load = CancellationTokenSource.CreateLinkedTokenSource(_ct);
         _detailLoad = load;
         var message = _message;
+        _details.Children.Clear();
+        _details.Children.Add(new ProgressRing { IsActive = true, Width = 20, Height = 20, HorizontalAlignment = HorizontalAlignment.Left });
+        _details.Children.Add(new TextBlock { Text = "正在读取这条消息的执行明细…", TextWrapping = TextWrapping.Wrap });
+        if (_process is not null) _process.Header = "正在加载执行明细…";
         try
         {
             var result = _state.Details ?? (_loadDetails is null
@@ -142,15 +146,24 @@ public sealed class MessageCard : UserControl, IDisposable
                 // The current snapshot wins over older detail responses for the same event.
                 foreach (var item in result.ProcessItems) _events.TryAdd(item.Id, item);
                 _flow.Update(_events.Values, _message.Content);
+                _details.Children.Add(new TextBlock { Text = result.ProcessItems.Length == 0
+                    ? "这条消息没有额外执行记录。" : "执行记录已合并到上方的思考与工具过程；较早记录可继续展开查看。", TextWrapping = TextWrapping.Wrap });
             }
-            if (result.Window?.HasMoreBefore == true) _details.Children.Insert(0, new TextBlock { Text = "当前为部分事件窗口。", Opacity = .6 });
+            if (result.Window?.HasMoreBefore == true) _details.Children.Insert(0, new TextBlock { Text = "当前仅包含部分执行记录。", Opacity = .6, TextWrapping = TextWrapping.Wrap });
+            if (_process is not null) _process.Header = result.Window?.HasMoreBefore == true
+                ? $"执行明细 · {result.ProcessItems.Length} 项（部分）" : $"执行明细 · {result.ProcessItems.Length} 项";
             _detailsLoaded = true;
         }
         catch (OperationCanceledException) { }
         catch (Exception)
         {
             if (!load.IsCancellationRequested)
-            { _details.Children.Clear(); _details.Children.Add(new TextBlock { Text = "过程明细加载失败，请收起后重试。" }); }
+            {
+                _details.Children.Clear(); _details.Children.Add(new TextBlock { Text = "执行明细加载失败，请重试。", TextWrapping = TextWrapping.Wrap });
+                var retry = new Button { Content = "重试加载", HorizontalAlignment = HorizontalAlignment.Left };
+                retry.Click += async (_, _) => await LoadProcessDetailsAsync(); _details.Children.Add(retry);
+                if (_process is not null) _process.Header = "执行明细 · 加载失败";
+            }
         }
         finally { if (ReferenceEquals(_detailLoad, load)) _detailLoad = null; }
     }

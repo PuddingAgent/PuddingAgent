@@ -19,6 +19,10 @@ public partial class App
         {
             root.UpdateLayout(); await UntilAsync(() => card.IsLoaded);
             var first = card.LoadProcessDetailsAsync();
+            var disclosure = ((StackPanel)((Border)card.Content).Child).Children.OfType<Expander>().Single();
+            Check(disclosure.Header.ToString()!.Contains("正在加载")
+                && ((StackPanel)disclosure.Content).Children.OfType<ProgressRing>().Single().IsActive,
+                "details display progress while the application call is pending");
             await card.LoadProcessDetailsAsync();
             Check(calls == 1, "message details deduplicate concurrent loads");
             var fresh = message with { RunId = "new-run", ProcessItems = [new("fresh", "thinking", "done", "最新思考", 5)] };
@@ -30,6 +34,10 @@ public partial class App
             current.SetResult(new("details", [new("fresh", "thinking", "running", "旧快照", 5),
                 new("history", "thinking", "done", "历史思考", 2)]));
             await second;
+            Check(disclosure.Header.ToString()!.Contains("2 项")
+                && ((StackPanel)disclosure.Content).Children.OfType<TextBlock>().Any(t => t.Text.Contains("已合并"))
+                && !((StackPanel)disclosure.Content).Children.OfType<ProgressRing>().Any(),
+                "loaded details explain where records appear and remove progress");
             static string Text(MessageCard value) => string.Concat(((StackPanel)((Border)value.Content).Child)
                 .Children.OfType<TurnContentView>().Single().Children.OfType<Expander>()
                 .SelectMany(e => ((StackPanel)((ScrollViewer)e.Content!).Content).Children.OfType<MarkdownView>()
@@ -54,7 +62,14 @@ public partial class App
 
             var attempts = 0;
             using var mismatched = new MessageCard(message, () => Task.FromResult(new ProcessDetails(++attempts == 1 ? "wrong" : "details", [])));
-            await mismatched.LoadProcessDetailsAsync(); await mismatched.LoadProcessDetailsAsync();
+            await mismatched.LoadProcessDetailsAsync();
+            var failed = ((StackPanel)((Border)mismatched.Content).Child).Children.OfType<Expander>().Single();
+            var retry = ((StackPanel)failed.Content).Children.OfType<Button>().Single();
+            Check(failed.Header.ToString()!.Contains("加载失败") && retry.Content?.ToString() == "重试加载",
+                "failed detail load offers an explicit retry without requiring collapse");
+            ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(retry)
+                .GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
+            await UntilAsync(() => attempts == 2);
             Check(attempts == 2, "wrong-message details are rejected and remain retryable");
         }
         finally { root.Children.Remove(card); }
